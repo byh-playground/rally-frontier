@@ -4,11 +4,35 @@ RALLY FRONTIER는 브라우저에서 바로 실행할 수 있는 실시간 전�
 
 별도의 설치 없이 단일 HTML 파일로 게임 전체를 실행할 수 있으며, WebRTC 기반 P2P 멀티플레이와 싱글 플레이를 지원합니다.
 
+> **이 저장소는 개발 중인 최신 작업본이 아니라, 테스트와 검증을 완료한 Stable 버전을 관리하고 배포하기 위한 저장소입니다.**
+
 ## 플레이
 
-GitHub Pages를 통해 최신 버전을 바로 실행할 수 있습니다.
+GitHub Pages를 통해 현재 Stable 버전을 바로 실행할 수 있습니다.
 
 **https://byh-playground.github.io/rally-frontier/**
+
+## 버전 관리
+
+개발 중인 후보 버전은 별도의 개발·검증 환경에서 테스트합니다.
+
+실제 플레이, 주요 기능, 회귀 및 네트워크 동작 등의 검증을 통과하여 **VALIDATED** 상태가 된 버전만 이 저장소의 `main` 브랜치에 반영합니다.
+
+```text
+개발 및 수정
+    ↓
+개발·검증 환경 배포
+    ↓
+플레이 및 회귀 검증
+    ↓
+VALIDATED
+    ↓
+GitHub main/index.html
+    ↓
+GitHub Pages (Stable)
+```
+
+따라서 이 저장소의 `main/index.html`은 **현재 검증이 완료된 최신 Stable 버전**을 의미합니다.
 
 ## 프로젝트 구조
 
@@ -18,10 +42,8 @@ GitHub Pages를 통해 최신 버전을 바로 실행할 수 있습니다.
 
 ```text
 rally-frontier/
-└── index.html    # 게임 전체 소스 및 GitHub Pages 진입점
+└── index.html    # 검증 완료 Stable 게임 소스 및 GitHub Pages 진입점
 ```
-
-`main/index.html`을 정상 동작이 확인된 최신 기준 소스로 관리합니다.
 
 ## 주요 특징
 
@@ -40,9 +62,9 @@ rally-frontier/
 
 ## 개발 원칙
 
-RALLY FRONTIER는 실제 플레이 가능한 상태를 유지하면서 지속적으로 개선합니다.
+개발 중인 소스를 바로 `main`에 반영하지 않습니다.
 
-`main` 브랜치의 `index.html`을 기준 소스로 사용하며, 변경 시 기존 게임 플레이와 네트워크 동기화에 회귀가 발생하지 않는지 확인합니다.
+별도의 환경에서 충분히 검증된 버전만 Stable 버전으로 승격하며, `main/index.html`은 항상 플레이 가능한 검증 완료 상태를 유지하는 것을 원칙으로 합니다.
 
 게임의 최종 배포 형태는 하나의 `index.html` 파일을 유지합니다.
 
@@ -89,4 +111,4 @@ RALLY FRONTIER는 실제 플레이 가능한 상태를 유지하면서 지속적
 
 이 저장소는 BYH Playground의 게임 프로젝트 중 하나입니다.
 
-RALLY FRONTIER의 개발 및 배포 소스는 이 저장소의 `main` 브랜치를 기준으로 관리합니다.
+RALLY FRONTIER의 **검증 완료 Stable 버전 및 GitHub Pages 배포 소스**를 이 저장소의 `main` 브랜치에서 관리합니다.
