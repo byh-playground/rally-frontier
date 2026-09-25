@@ -5824,7 +5824,8 @@ button.mode-selected{outline-color:#658f60!important;background:#e3f0dd!importan
         <div id="selectionModeCopy" class="selection-mode-copy">서로 번갈아 유닛을 선택해 이번 경기의 조합을 완성합니다.</div>
       </div>
       <div class="start-mode-actions">
-        <button id="singleBtn" type="button" class="dialog-action primary start-mode-option">
+        <button id="campaignBtn" type="button" class="dialog-action primary start-mode-option"><b>캠페인</b><span class="single-entry-sub">외부 Mission JSON · 기존 전투 시스템 그대로 사용</span></button>
+<button id="singleBtn" type="button" class="dialog-action primary start-mode-option">
           싱글 플레이
           <span class="single-entry-sub">AI와 대전 · Host / Guest 역할 선택</span>
         </button>
@@ -5867,7 +5868,18 @@ button.mode-selected{outline-color:#658f60!important;background:#e3f0dd!importan
     </form>
   </dialog>
 
-  <dialog id="singleRoleDialog" class="game-dialog">
+  <dialog id="campaignDialog" class="game-dialog"><div class="dialog-shell">
+<button id="campaignCloseBtn" type="button" class="dialog-close">×</button><div class="dialog-kicker">CAMPAIGN · VERTICAL SLICE</div>
+<h2 id="campaignMissionTitle">캠페인</h2><p id="campaignMissionBrief" class="dialog-copy">정식 캠페인은 Repository에서 읽고, 개발 중 Mission JSON은 1회 Preview로 실행합니다.</p>
+<div id="campaignRepositoryList" style="display:grid;gap:8px;margin:10px 0 12px"></div>
+<button id="campaignRefreshBtn" type="button" class="dialog-action">정식 캠페인 새로고침</button>
+<details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;font-weight:800">개발용 Mission Preview</summary>
+<input id="campaignUrlInput" class="room-code-input" style="font-size:12px;letter-spacing:0;text-align:left;height:48px;margin-top:8px" placeholder="Mission JSON URL">
+<button id="campaignLoadUrlBtn" type="button" class="dialog-action">URL JSON Preview</button><input id="campaignFileInput" class="hidden" type="file" accept="application/json,.json">
+<button id="campaignLoadFileBtn" type="button" class="dialog-action">JSON 파일 Preview</button></details>
+<button id="campaignStartBtn" type="button" class="dialog-action primary" disabled>미션 시작</button>
+<div id="campaignStatus" class="dialog-error"></div></div></dialog>
+<dialog id="singleRoleDialog" class="game-dialog">
     <form method="dialog" class="dialog-shell" onsubmit="return false">
       <button id="singleRoleCloseBtn" type="button" class="dialog-close" aria-label="닫기">×</button>
       <div class="dialog-kicker">SINGLE TEST ROLE</div>
@@ -6458,7 +6470,7 @@ button.mode-selected{outline-color:#658f60!important;background:#e3f0dd!importan
 // Single source of truth for this HTML artifact.
 // The timestamp lives only inside BUILD_ID. updatedAt is derived from it, so the
 // build identity and the visible/exported update time cannot drift apart.
-const BUILD_ID="20260925T123500+0900-rf-clawhunter-retract";
+const BUILD_ID="20260925T174500+0900-rf-controller-owned-state-v28";
 
 class BuildMetadata{
   static buildUpdatedAtFromId(buildId){
@@ -6561,6 +6573,9 @@ class GameRuleDefinition{
     generator:"procedural-frontier",generatorVersion:2,width:3600,height:4200,biome:"frontier",
     topology:"mixed",symmetry:"rotational-180",openness:.5,chokeDensity:.5,
     obstacleDensity:.5,resourceDensity:.5,neutralDensity:.5,
+    // Shared map-content policy. Standard single/multiplayer use these defaults;
+    // authored maps may override them without introducing campaign-only simulation rules.
+    content:{resourcePlacement:"objective-auto",authoredForces:false,resourceAmounts:{baseMineral:700,baseGas:1600,objectiveMineral:900,objectiveGas:1800},authoredStructures:false},
     spawns:{host:{x:450,y:3750},guest:{x:3150,y:450}},spawnRules:"standard",
     generation:{
       seedSalt:"map",attempts:40,minSpawnClearance:560,minObjectiveClearance:260,
@@ -6596,7 +6611,8 @@ class GameRuleRuntime{
   const overrides=src.overrides&&typeof src.overrides==="object"&&!Array.isArray(src.overrides)?structuredClone(src.overrides):null;
   const simulationTps=RangeUtil.clamp(Math.round(Number(src.simulationTps)||10),10,30);
   const debugScenario=src.debugScenario&&typeof src.debugScenario==="object"&&!Array.isArray(src.debugScenario)?structuredClone(src.debugScenario):null;
-  return {schemaVersion:3,presetId,overrides,selectionMode:src.selectionMode==="deck"?"deck":"draft",simulationTps,debugScenario};
+  const campaignScenario=src.campaignScenario&&typeof src.campaignScenario==="object"&&!Array.isArray(src.campaignScenario)?structuredClone(src.campaignScenario):null;
+  return {schemaVersion:4,presetId,overrides,selectionMode:src.selectionMode==="deck"?"deck":"draft",simulationTps,debugScenario,campaignScenario};
 }
   static mergeGameRules(base,override){
   if(!override||typeof override!=="object")return structuredClone(base);
@@ -7529,6 +7545,29 @@ const MAIN_OBJECTIVE_RESPAWN_MS=90000;
 const OBJECTIVE_DRAGON_BREATH_PHASE=Object.freeze({IDLE:"idle",TELL:"tell",ACTIVE:"active"});
 const OBJECTIVE_DRAGON_BREATH_PHASES=new Set(Object.values(OBJECTIVE_DRAGON_BREATH_PHASE));
 
+class UnitCompositionDefinition{
+  static normalize(raw,{maxEntries=24,maxCount=120}={}){
+    const out=[];
+    const push=(unit,count=1)=>{
+      if(!UnitDefinition.get(unit))return;
+      count=RangeUtil.clamp(Math.round(Number(count)||1),1,maxCount);
+      const found=out.find(x=>x.unit===unit);
+      if(found)found.count=RangeUtil.clamp(found.count+count,1,maxCount);
+      else if(out.length<maxEntries)out.push({unit,count});
+    };
+    if(Array.isArray(raw)){
+      for(const entry of raw){
+        if(typeof entry==="string")push(entry,1);
+        else if(entry&&typeof entry==="object")push(String(entry.unit||entry.type||""),entry.count);
+      }
+    }
+    return out;
+  }
+  static expand(raw){const out=[];for(const e of this.normalize(raw))for(let i=0;i<e.count;i++)out.push(e.unit);return out}
+  static first(raw){return this.normalize(raw)?.[0]?.unit||""}
+  static total(raw){return this.normalize(raw).reduce((n,e)=>n+e.count,0)}
+}
+
 class CampDefinition{
   static all={
   // Passive shared-camp state machine (camp.state separately tracks alive/cooldown):
@@ -7542,15 +7581,17 @@ class CampDefinition{
   // gaugeDecay    : 전원이 범위 안에 2초 머무르면 감소. 현재 TPS와 무관하게 동일한 초당 감소량을 유지하도록 시간 기준으로 환산.
   // proactiveAggro: true면 IDLE에서도 aggroRadius 안의 공격 가능한 플레이어를 찾아 캠프 단위로 선공. 기본값 false.
   // resetHealPerSecond : 기존 정수 tick 회복량을 유지. 귀환 상태인 동안 안/밖 모두 적용.
-  hounds:{minorNeutral:true,name:"가시등 스프린터 무리",clearBonus:75,respawnMs:75000,aggroRadius:200,homeRadius:25,homeSpread:75,aggroGaugeMax:1000,gaugeGain:30,gaugeDecay:20,resetHealPerSecond:.1,members:["wildhound","wildhound","wildhound","wildhound"]},
-  boars:{minorNeutral:true,name:"껍질멧돼지 둥지",clearBonus:150,respawnMs:100000,aggroRadius:200,homeRadius:50,homeSpread:75,aggroGaugeMax:1000,gaugeGain:30,gaugeDecay:20,resetHealPerSecond:.1,members:["boar","boar"]},
-  toads:{minorNeutral:true,name:"포자두꺼비 웅덩이",clearBonus:100,respawnMs:100000,aggroRadius:200,homeRadius:25,homeSpread:75,aggroGaugeMax:1000,gaugeGain:30,gaugeDecay:20,resetHealPerSecond:.1,members:["sporetoad","sporetoad","sporetoad"]},
-  crabs:{minorNeutral:true,name:"꽃게딱지 군락",clearBonus:125,respawnMs:100000,aggroRadius:200,homeRadius:25,homeSpread:50,aggroGaugeMax:1000,gaugeGain:30,gaugeDecay:20,resetHealPerSecond:.1,members:["shellcrab","shellcrab"]},
-  wasps:{minorNeutral:true,name:"씨앗날벌 둥지",clearBonus:100,respawnMs:100000,aggroRadius:200,homeRadius:25,homeSpread:75,aggroGaugeMax:1000,gaugeGain:30,gaugeDecay:20,resetHealPerSecond:.1,members:["queenwasp","queenwasp","queenwasp"]},
-  objectiveBear:{name:"TOP · 고대곰 영역",clearBonus:0,respawnMs:MAIN_OBJECTIVE_RESPAWN_MS,aggroRadius:225,homeRadius:50,homeSpread:0,aggroGaugeMax:1000,gaugeGain:25,gaugeDecay:15,resetHealPerSecond:.10,members:["ancientbear"],proactiveAggro:true,mainObjective:true,laneKey:"top"},
-  objectiveDeathWorm:{name:"MID · 데스웜 영역",clearBonus:0,respawnMs:MAIN_OBJECTIVE_RESPAWN_MS,aggroRadius:225,homeRadius:50,homeSpread:0,aggroGaugeMax:1000,gaugeGain:25,gaugeDecay:15,resetHealPerSecond:.10,members:["deathworm"],proactiveAggro:true,mainObjective:true,laneKey:"mid"},
-  objectiveDragon:{name:"BOT · 드래곤 둥지",clearBonus:0,respawnMs:MAIN_OBJECTIVE_RESPAWN_MS,aggroRadius:225,homeRadius:50,homeSpread:0,aggroGaugeMax:1000,gaugeGain:25,gaugeDecay:15,resetHealPerSecond:.10,members:["dragon"],proactiveAggro:true,mainObjective:true,laneKey:"bot"},
-  relic:{name:"전술 오브젝트",clearBonus:175,respawnMs:125000,aggroRadius:200,homeRadius:50,homeSpread:75,aggroGaugeMax:1000,gaugeGain:30,gaugeDecay:20,resetHealPerSecond:.1,members:["boar","wildhound","wildhound"]}
+  hounds:{minorNeutral:true,name:"가시등 스프린터 무리",clearBonus:75,respawnMs:75000,aggroRadius:200,homeRadius:25,homeSpread:75,aggroGaugeMax:1000,gaugeGain:30,gaugeDecay:20,resetHealPerSecond:.1,composition:[{unit:"wildhound",count:4}]},
+  boars:{minorNeutral:true,name:"껍질멧돼지 둥지",clearBonus:150,respawnMs:100000,aggroRadius:200,homeRadius:50,homeSpread:75,aggroGaugeMax:1000,gaugeGain:30,gaugeDecay:20,resetHealPerSecond:.1,composition:[{unit:"boar",count:2}]},
+  toads:{minorNeutral:true,name:"포자두꺼비 웅덩이",clearBonus:100,respawnMs:100000,aggroRadius:200,homeRadius:25,homeSpread:75,aggroGaugeMax:1000,gaugeGain:30,gaugeDecay:20,resetHealPerSecond:.1,composition:[{unit:"sporetoad",count:3}]},
+  crabs:{minorNeutral:true,name:"꽃게딱지 군락",clearBonus:125,respawnMs:100000,aggroRadius:200,homeRadius:25,homeSpread:50,aggroGaugeMax:1000,gaugeGain:30,gaugeDecay:20,resetHealPerSecond:.1,composition:[{unit:"shellcrab",count:2}]},
+  wasps:{minorNeutral:true,name:"씨앗날벌 둥지",clearBonus:100,respawnMs:100000,aggroRadius:200,homeRadius:25,homeSpread:75,aggroGaugeMax:1000,gaugeGain:30,gaugeDecay:20,resetHealPerSecond:.1,composition:[{unit:"queenwasp",count:3}]},
+  objectiveBear:{name:"TOP · 고대곰 영역",clearBonus:0,respawnMs:MAIN_OBJECTIVE_RESPAWN_MS,aggroRadius:225,homeRadius:50,homeSpread:0,aggroGaugeMax:1000,gaugeGain:25,gaugeDecay:15,resetHealPerSecond:.10,composition:[{unit:"ancientbear",count:1}],proactiveAggro:true,mainObjective:true,laneKey:"top"},
+  objectiveDeathWorm:{name:"MID · 데스웜 영역",clearBonus:0,respawnMs:MAIN_OBJECTIVE_RESPAWN_MS,aggroRadius:225,homeRadius:50,homeSpread:0,aggroGaugeMax:1000,gaugeGain:25,gaugeDecay:15,resetHealPerSecond:.10,composition:[{unit:"deathworm",count:1}],proactiveAggro:true,mainObjective:true,laneKey:"mid"},
+  objectiveDragon:{name:"BOT · 드래곤 둥지",clearBonus:0,respawnMs:MAIN_OBJECTIVE_RESPAWN_MS,aggroRadius:225,homeRadius:50,homeSpread:0,aggroGaugeMax:1000,gaugeGain:25,gaugeDecay:15,resetHealPerSecond:.10,composition:[{unit:"dragon",count:1}],proactiveAggro:true,mainObjective:true,laneKey:"bot"},
+  relic:{name:"전술 오브젝트",clearBonus:175,respawnMs:125000,aggroRadius:200,homeRadius:50,homeSpread:75,aggroGaugeMax:1000,gaugeGain:30,gaugeDecay:20,resetHealPerSecond:.1,composition:[{unit:"boar",count:1},{unit:"wildhound",count:2}]},
+  scenarioUnitGroup:{name:"시나리오 공격 부대",scenarioObject:true,clearBonus:0,respawnMs:0,aggroRadius:200,homeRadius:25,homeSpread:45,aggroGaugeMax:1000,gaugeGain:30,gaugeDecay:20,resetHealPerSecond:0,composition:[]},
+  unitNeutralObject:{name:"유닛 기반 중립 오브젝트",unitBasedNeutralObject:true,clearBonus:0,respawnMs:0,aggroRadius:200,homeRadius:25,homeSpread:45,aggroGaugeMax:1000,gaugeGain:30,gaugeDecay:20,resetHealPerSecond:.1,composition:[],proactiveAggro:true}
 };
   static get(id){return this.all[id]||null}
 }
@@ -7976,7 +8017,11 @@ class DefenseCardDefinition{
 };
   static get(id){return this.all[id]||null}
   static forBuilding(type){return Object.values(this.all).find(card=>card.building===type)||null}
-  static list(){return Object.keys(this.all)}
+  static list(ids=null){
+    const all=Object.keys(this.all);
+    if(!Array.isArray(ids))return all;
+    return [...new Set(ids.map(String).filter(id=>!!this.get(id)))];
+  }
   static names(ids=[]){return ids.map(id=>this.get(id)?.name||id)}
 }
 
@@ -9139,15 +9184,20 @@ const resources=[];let mid=0;
   };
 
   // 메인 Base: 각자 자신의 실제 Base 좌표가 자원 원의 중심이며 미네랄 5개를 배치한다.
+  const amountCfg=ctx.resourceAmounts||{};
+  const baseMineral=Math.max(1,Math.round(Number(amountCfg.baseMineral)||700));
+  const baseGas=Math.max(1,Math.round(Number(amountCfg.baseGas)||1600));
+  const objectiveMineral=Math.max(1,Math.round(Number(amountCfg.objectiveMineral)||900));
+  const objectiveGas=Math.max(1,Math.round(Number(amountCfg.objectiveGas)||1800));
   commitCluster(
     "base-h",
     clusterPoints(host,{x:nx,y:ny},{x:ux,y:uy},{mineralRadius:220,gasRadius:305,mineralCount:5,seedKey:"base-h"}),
-    {mineralAmount:700,gasAmount:1600}
+    {mineralAmount:baseMineral,gasAmount:baseGas}
   );
   commitCluster(
     "base-g",
     clusterPoints(guest,{x:-nx,y:-ny},{x:-ux,y:-uy},{mineralRadius:220,gasRadius:305,mineralCount:5,seedKey:"base-g"}),
-    {mineralAmount:700,gasAmount:1600}
+    {mineralAmount:baseMineral,gasAmount:baseGas}
   );
 
   // 모든 점령지: 점령지 자체가 향후 전진 거점 중심이다.
@@ -9210,7 +9260,7 @@ const resources=[];let mid=0;
       ["shellcrab","shellcrab","wildhound"],
       ["sporetoad","wildhound","wildhound","wildhound"]
     ];
-    best.members=[...relicGroundCompositions[HashUtil.hash(`${ctx.seed}|relic|${cp.id}|${index}`)%relicGroundCompositions.length]];
+    best.composition=UnitCompositionDefinition.normalize(relicGroundCompositions[HashUtil.hash(`${ctx.seed}|relic|${cp.id}|${index}`)%relicGroundCompositions.length]);
     addPlaced(best);
   };
   const placePair=(id,kind,preferred)=>{
@@ -11183,19 +11233,63 @@ const OBJECTIVE_BEHAVIORS=Object.freeze({
   })
 });
 const UNIT_CAPABILITY_MIXINS=Object.freeze([BurrowableMixin,LeapableMixin,TurnLimitedFlightMixin,HealerMixin,SummonerMixin,InterceptorMixin,ChargerMixin,PullerMixin,StealthMixin,CloakAuraMixin,ShieldProviderMixin,DeployableCombatMixin,WorkerMixin,ObjectiveMixin]);
+class DefaultUnitLogicController{
+  constructor(owner,state={}){this.owner=owner;this.kind="default";this.state={...state}}
+  update(sim,vision){return sim.updateCombat(this.owner,vision)}
+  toState(){return {...this.state}}
+}
+class NeutralObjectUnitLogicController{
+  constructor(owner,state={}){
+    this.owner=owner;this.kind="neutral-object";
+    this.state={campId:null,aggroed:false,returningHome:false,...state};
+    delete this.state.homeX;delete this.state.homeY;
+  }
+  update(sim,_vision){return sim.updateNeutral(this.owner)}
+  toState(){return {...this.state}}
+}
+class UnitLogicControllerFactory{
+  static normalizeProfile(profile,side){
+    const p=String(profile||"").trim();
+    if(p==="default"||p==="neutral-object")return p;
+    return side===NEUTRAL_SIDE?"neutral-object":"default";
+  }
+  static create(owner,profile=null,state={}){
+    const normalized=this.normalizeProfile(profile,owner.side);
+    return normalized==="neutral-object"?new NeutralObjectUnitLogicController(owner,state):new DefaultUnitLogicController(owner,state);
+  }
+}
 class Unit extends CapabilityHost{
   constructor(spec={}){
-    super();const data={...spec};
+    super();const data={...spec},logic=data.logic||null;delete data.logic;
+    const legacyProfile=data.logicProfile;delete data.logicProfile;
+    const legacyNeutralState={};
+    for(const key of ["campId","aggroed","returningHome"]){if(Object.prototype.hasOwnProperty.call(data,key)){legacyNeutralState[key]=data[key];delete data[key]}}
+    delete data.homeX;delete data.homeY;
     this.timers=new SimTimerComponent(data.timers||{});delete data.timers;
     this.status=new StatusComponent(data.status||{});delete data.status;
     this.resources=new ResourceComponent(data.resources||{});delete data.resources;
     this.movement=new MovementComponent(data.movement||{});delete data.movement;
     this.combat=new CombatComponent(data.combat||{});delete data.combat;
     Object.assign(this,data);this.attachCapabilities();
+    const profile=logic?.type||legacyProfile||null,state=logic?.state||legacyNeutralState;
+    this.logicController=UnitLogicControllerFactory.create(this,profile,state);
+  }
+  get logicProfile(){return this.logicController?.kind||UnitLogicControllerFactory.normalizeProfile(null,this.side)}
+  neutralObjectState(){return this.logicController?.kind==="neutral-object"?this.logicController.state:null}
+  get campId(){return this.neutralObjectState()?.campId??null}
+  set campId(v){const st=this.neutralObjectState();if(st)st.campId=v??null}
+  get aggroed(){return !!this.neutralObjectState()?.aggroed}
+  set aggroed(v){const st=this.neutralObjectState();if(st)st.aggroed=!!v}
+  get returningHome(){return !!this.neutralObjectState()?.returningHome}
+  set returningHome(v){const st=this.neutralObjectState();if(st)st.returningHome=!!v}
+  setLogicProfile(profile,state={}){
+    this.logicController=UnitLogicControllerFactory.create(this,profile,state);
+    return this.logicController;
   }
   attachCapabilities(){const d=UnitDefinition.get(this.type)||{};for(const Mixin of UNIT_CAPABILITY_MIXINS)if(Mixin.supports(this,d))new Mixin(this)}
   toState(){
-    const out={};for(const key of Object.keys(this))out[key]=this[key];
+    const out={};for(const key of Object.keys(this)){if(key!=="logicController")out[key]=this[key]}
+    out.logic={type:this.logicController?.kind||"default",state:this.logicController?.toState?.()||{}};
     out.timers={deadlines:{...this.timers.deadlines},periodicPhase:{...this.timers.periodicPhase}};
     out.status={...this.status};out.resources={...this.resources};out.movement={...this.movement};out.combat={...this.combat};return out;
   }
@@ -11220,8 +11314,8 @@ class Projectile{
    Out-of-range acquisition is nearest-target based.
    Leap / hook / burrow / other explicit abilities own independent targeting policies. */
 class StrategySim{
-  constructor(draftState,seed,rules=GameRuleDefinition.current){
-    this.seed=seed>>>0;this.rules=rules||GameRuleDefinition.current;this.tps=RangeUtil.clamp(Math.round(Number(this.rules?.simulation?.tps)||SIM_TPS),10,30);this.mapDescriptor=MapGeneration.generateMapDescriptor({rules:this.rules,seed:this.seed,roundNumber:this.rules?.roundNumber||1});this.tick=0;this.seq=0;this.commandSeq=0;this.tickVisibilityCache=[new Map(),new Map()];this.tickVisibilityCacheTick=-1;this.hardFixSapAxis="x";this.hardFixSapOrder=[];this.hardFixSapEligible=[];this.hardFixSapWorkOrder=[];this.hardFixSapSweepActive=[];this.hardFixSapPairs=[];this.hardFixSapMarks=new Uint32Array(0);this.hardFixSapEpoch=1;this.units=[];this.buildings=[];this.projectiles=[];this.events=[];this.scheduled=new Map();
+  constructor(draftState,seed,rules=GameRuleDefinition.current,campaignScenario=null){
+    this.seed=seed>>>0;this.rules=rules||GameRuleDefinition.current;this.tps=RangeUtil.clamp(Math.round(Number(this.rules?.simulation?.tps)||SIM_TPS),10,30);const campaignHumanRole=MatchLifecycle.singleMatch?.humanRole||"host",campaignHumanSide=campaignHumanRole==="host"?0:1;this.mapDescriptor=campaignScenario?.map?CampaignMapDefinition.build(campaignScenario.map,this.rules,this.seed,campaignHumanSide):MapGeneration.generateMapDescriptor({rules:this.rules,seed:this.seed,roundNumber:this.rules?.roundNumber||1});this.tick=0;this.seq=0;this.commandSeq=0;this.tickVisibilityCache=[new Map(),new Map()];this.tickVisibilityCacheTick=-1;this.hardFixSapAxis="x";this.hardFixSapOrder=[];this.hardFixSapEligible=[];this.hardFixSapWorkOrder=[];this.hardFixSapSweepActive=[];this.hardFixSapPairs=[];this.hardFixSapMarks=new Uint32Array(0);this.hardFixSapEpoch=1;this.units=[];this.buildings=[];this.projectiles=[];this.events=[];this.scheduled=new Map();
     this.wallet=[START_MINERALS,START_MINERALS];
     this.gasWallet=[START_GAS,START_GAS];
     this.tech=[1,1];this.productionPaused=[false,false];
@@ -11237,7 +11331,7 @@ class StrategySim{
 
     // 전술 맵 / 스펠 상태도 lockstep 상태에 포함한다.
     this.capturePoints=this.mapDescriptor.capturePoints.map(p=>({
-      ...p,owner:null,progress:0,progressSide:null,enabled:false,outpostId:null
+      ...p,owner:p.owner===0||p.owner===1?p.owner:null,progress:0,progressSide:null,enabled:p.enabled!==false,outpostId:null
     }));
     this.spellBooks=[{},{}];
     this.equippedSpells=[[],[]];
@@ -11301,8 +11395,16 @@ class StrategySim{
     this.gasNodes=this.makeGasNodes();
     this.camps=this.makeNeutralCamps();
     this.createBaseAndWorkers(0);this.createBaseAndWorkers(1);
+    this.spawnAuthoredMapStructures();
     this.applyStartingSetupPreset();
-    for(const camp of this.camps)this.spawnCamp(camp);
+    for(const camp of this.camps)if(camp.spawnOnStart!==false)this.spawnCamp(camp);
+  }
+  spawnAuthoredMapStructures(){
+    for(const spec of this.mapDescriptor?.authoredStructures||[]){
+      const d=BuildingDefinition.get(spec.type);if(!d)continue;
+      const b=new Building({id:spec.id,type:spec.type,side:spec.side,x:spec.x,y:spec.y,hp:d.hp,maxHp:d.hp,alive:true,complete:true,progress:d.buildTimeMs!=null?this.msTicks(d.buildTimeMs):this.buildingBuildTicks(d),constructionState:"complete",builderUnitId:null,constructionHpGranted:d.hp,produceType:null,productionTotal:0,productionRemaining:0,productionBatchSize:0,productionTicks:0,productionBatchesCompleted:0,constructionMineralCost:0,constructionGasCost:0,gasNodeId:null,gasWorkerTarget:0,cooldownUntil:0,attackCooldownPhase:0,attackFlash:0,beamTargetId:null,beamStartedAt:-1,beamStage:0,queue:[]});
+      b.campaignStructureId=spec.id;b.capturePointId=spec.capturePoint||null;this.buildings.push(b);this.markBuildingSpatialDirty();this.onBuildingComplete(b);
+    }
   }
   msTicks(ms,options){return SimulationTiming.msToTicks(ms,this.tps,options)}
   ticksMs(ticks){return SimulationTiming.ticksToMs(ticks,this.tps)}
@@ -11644,6 +11746,7 @@ class StrategySim{
     camp.resetting=false;
     camp.engaged=false;
     camp.lastAggroGaugeTick=-1;
+    camp.memberHomes={};
     if(cd.mainObjective){
       camp.capturedUnitId=null;camp.capturedOwner=null;camp.lastDeathX=null;camp.lastDeathY=null;
     }
@@ -11651,25 +11754,28 @@ class StrategySim{
     // 이전 회차의 시체는 캠프 재생성 시 정리.
     this.units=this.units.filter(u=>!(u.side===NEUTRAL_SIDE&&u.campId===camp.id&&!u.alive));
 
-    const members=Array.isArray(camp.members)&&camp.members.length?camp.members:cd.members;
-    const count=members.length;
+    const composition=UnitCompositionDefinition.normalize(Array.isArray(camp.composition)&&camp.composition.length?camp.composition:(Array.isArray(camp.members)&&camp.members.length?camp.members:cd.composition));
+    const members=UnitCompositionDefinition.expand(composition),count=members.length;
+    const formation=String(camp.formation||"cluster"),radius=Number.isFinite(camp.homeSpread)?camp.homeSpread:cd.homeSpread;
     for(let i=0;i<count;i++){
-      const a=count===1?0:(i/count*Math.PI*2);
-      const radius=cd.homeSpread;
-      const x=camp.x+Math.cos(a)*radius;
-      const y=camp.y+Math.sin(a)*radius;
-      const u=this.spawnUnit(NEUTRAL_SIDE,members[i],x,y);
-      u.campId=camp.id;
-      u.homeX=x;u.homeY=y;
-      u.aggroed=false;
+      let x=camp.x,y=camp.y;
+      if(formation==="line"){const gap=Math.max(18,Math.min(42,radius*.42));x+=((i-(count-1)/2)*gap);}
+      else if(formation==="spread"){const cols=Math.max(1,Math.ceil(Math.sqrt(count))),gap=Math.max(22,Math.min(48,radius*.55));x+=(i%cols-(cols-1)/2)*gap;y+=(Math.floor(i/cols)-(Math.ceil(count/cols)-1)/2)*gap;}
+      else{const ring=Math.floor(Math.sqrt(i)),a=count===1?0:(i*2.399963229728653),rr=count===1?0:Math.min(radius,(ring+1)*Math.max(14,radius/Math.max(2,Math.sqrt(count))));x+=Math.cos(a)*rr;y+=Math.sin(a)*rr;}
+      const spawnSide=cd.scenarioObject&&(camp.side===0||camp.side===1)?camp.side:NEUTRAL_SIDE;
+      const logicProfile=cd.unitBasedNeutralObject?"neutral-object":null;
+      const u=this.spawnUnit(spawnSide,members[i],x,y,{logicProfile});
+      if(u.logicController?.kind==="neutral-object"){
+        const st=u.logicController.state;st.campId=camp.id;st.aggroed=false;st.returningHome=false;
+        camp.memberHomes[u.id]={x,y};
+      }else u.scenarioGroupId=camp.id;
       u.forcedTargetId=null;
-      u.returningHome=false;
     }
   }
   isMainObjectiveCamp(camp){return !!camp&&!!CampDefinition.get(camp.kind)?.mainObjective}
   spawnCapturedObjective(camp,side){
     if(!this.isMainObjectiveCamp(camp)||(side!==0&&side!==1))return null;
-    const type=CampDefinition.get(camp.kind)?.members?.[0],d=UnitDefinition.get(type);
+    const type=UnitCompositionDefinition.first(camp.composition?.length?camp.composition:CampDefinition.get(camp.kind)?.composition),d=UnitDefinition.get(type);
     if(!d)return null;
     const x=Number.isFinite(camp.lastDeathX)?camp.lastDeathX:camp.x;
     const y=Number.isFinite(camp.lastDeathY)?camp.lastDeathY:camp.y;
@@ -12285,10 +12391,12 @@ class StrategySim{
       if(!cd)continue;
 
       if(camp.state==="alive"){
-        this.updateCampAggroGauge(camp,cd);
+        if(!cd.scenarioObject)this.updateCampAggroGauge(camp,cd);
 
-        const alive=this.units.some(u=>u.alive&&u.side===NEUTRAL_SIDE&&u.campId===camp.id);
+        const campSide=cd.scenarioObject&&(camp.side===0||camp.side===1)?camp.side:NEUTRAL_SIDE;
+        const alive=this.units.some(u=>u.alive&&u.side===campSide&&u.campId===camp.id);
         if(!alive){
+          if(cd.scenarioObject||cd.unitBasedNeutralObject){camp.state="cleared";this.events.push({type:"scenarioObjectCleared",side:cd.unitBasedNeutralObject?camp.friendlySide:camp.side,x:camp.x,y:camp.y,campId:camp.id,label:camp.label||camp.id});continue}
           if(cd.mainObjective){
             if(camp.lastHitSide===0||camp.lastHitSide===1)this.spawnCapturedObjective(camp,camp.lastHitSide);
             else this.beginObjectiveRespawn(camp,camp.lastDeathX??camp.x,camp.lastDeathY??camp.y);
@@ -12313,7 +12421,7 @@ class StrategySim{
       }else if(camp.state==="cooldown"&&this.tick>=camp.respawnAt){
         this.spawnCamp(camp);
         if(cd.mainObjective){
-          const unit=cd.members?.[0]||"";
+          const unit=UnitCompositionDefinition.first(camp.composition?.length?camp.composition:cd.composition);
           this.events.push({type:"objectiveRespawned",side:NEUTRAL_SIDE,x:camp.x,y:camp.y,camp:camp.kind,unit,sourceType:unit,lane:camp.laneKey});
         }else this.events.push({type:"campRespawn",side:NEUTRAL_SIDE,x:camp.x,y:camp.y,camp:camp.kind});
       }
@@ -12321,7 +12429,7 @@ class StrategySim{
   }
 
   createBaseAndWorkers(side){
-    const bp=BASE_POS[side];
+    const bp=side===0?(this.mapDescriptor?.spawns?.host||BASE_POS[0]):(this.mapDescriptor?.spawns?.guest||BASE_POS[1]);
     const base=new Building({
       id:"base"+side,type:BuildingDefinition.forRole("mainBase"),side,x:bp.x,y:bp.y,
       hp:BuildingDefinition.get(BuildingDefinition.forRole("mainBase")).hp,maxHp:BuildingDefinition.get(BuildingDefinition.forRole("mainBase")).hp,
@@ -12376,12 +12484,33 @@ class StrategySim{
     return cfg;
   }
 
-  spawnUnit(side,type,x,y){
+  setUnitControlMode(u,{side=u?.side,logicProfile=null,logicState={}}={}){
+    if(!u)return null;
+    const nextSide=side===0||side===1||side===NEUTRAL_SIDE?side:u.side;
+    u.side=nextSide;
+    u.setLogicProfile(logicProfile|| (nextSide===NEUTRAL_SIDE?"neutral-object":"default"),logicState);
+    this.syncUnitSpatial(u);
+    return u;
+  }
+  enlistNeutralObjectUnit(u,side){
+    if(!u||(side!==0&&side!==1))return null;
+    return this.setUnitControlMode(u,{side,logicProfile:"default"});
+  }
+  makeUnitNeutralObject(u,campId=null,logicState={}){
+    if(!u)return null;
+    const next=this.setUnitControlMode(u,{side:NEUTRAL_SIDE,logicProfile:"neutral-object",logicState:{campId,...logicState}});
+    const camp=campId?this.camps.find(c=>c.id===campId):null;
+    if(camp&&!camp.memberHomes?.[u.id])this.registerCampMemberHome(camp,u,u.x,u.y);
+    return next;
+  }
+
+  applyCampaignScenario(raw){const cfg=CampaignMissionDefinition.normalize(raw),humanRole=MatchLifecycle.singleMatch?.humanRole||"host",humanSide=humanRole==="host"?0:1,enemySide=1-humanSide;this.campaignScenario=cfg;this.campaignTechCap=[3,3];this.campaignTechCap[humanSide]=cfg.player.techCap;this.campaignTechCap[enemySide]=cfg.enemy.techCap;this.decks=[[],[]];this.decks[humanSide]=cfg.player.units.slice();this.decks[enemySide]=cfg.enemy.units.slice();this.defenseCards[humanSide]=cfg.player.defenseCards.slice();this.defenseCards[enemySide]=cfg.enemy.defenseCards.slice();this.tech[humanSide]=Math.min(this.tech[humanSide],cfg.player.techCap);this.tech[enemySide]=Math.min(this.tech[enemySide],cfg.enemy.techCap);this.events.push({type:"campaignStart",missionId:cfg.missionId,title:cfg.title});return cfg}
+  spawnUnit(side,type,x,y,options=null){
     const d=UnitDefinition.get(type);
     const passiveMaxHp=this.passiveUnitMaxHp(side,type);
     const manaMax=UnitDefinition.manaMax(type),manaSchedule=UnitDefinition.manaRegenSchedule(type),initialMana=UnitDefinition.initialMana(type);
     const u=new Unit({
-      id:"u"+(++this.seq),type,side,fx:Math.round(x*FP),fy:Math.round(y*FP),x,y,
+      id:"u"+(++this.seq),type,side,logic:{type:options?.logicProfile||(side===NEUTRAL_SIDE?"neutral-object":"default"),state:options?.logicState||{}},fx:Math.round(x*FP),fy:Math.round(y*FP),x,y,
       hp:passiveMaxHp,maxHp:passiveMaxHp,alive:true,hitGuard:this.initialHitGuard(side,type),hitGuardSourceId:null,hitFlash:0,attackFlash:0,
       combat:{cooldownUntil:0,attackCooldownPhase:0,target:null,attackArcTargetId:null,attackArcUntilTick:0,attackWindupUntil:0,attackWindupStartedAt:0,attackWindupTargetId:null,attackWindupIsBuilding:false,moveRecoveryUntil:0,hitBurstCooldownUntil:0},
       status:{slowUntil:0,knockbackImmuneUntil:0,timedModifiers:{},airborneStartTick:0,airborneUntil:0,airborneDurationTicks:0,airborneHeight:0,airborneSourceType:null,impulseCompleteEffect:null},
@@ -12934,6 +13063,7 @@ class StrategySim{
   }
   buildingAllowed(side,type,produceType){
     const d=BuildingDefinition.get(type);if(!d)return false;
+    const campaignCap=this.campaignTechCap?.[side];if(Number.isFinite(campaignCap)&&Number(d.tech||0)>campaignCap)return false;
     if(d.alwaysBuildable)return true;
     if(d.isDefenseTower)return this.defenseBuildingUnlocked(side,type);
     if(d.singleton&&this.researchBuildingExists(side,type))return false;
@@ -14217,7 +14347,7 @@ class StrategySim{
     const neutralAggro=Number(d.aggroRange)||390;
     for(const idx of this.nearbyUnits(u.x,u.y,neutralAggro,NEUTRAL_SIDE)){
       const e=this.units[idx];
-      if(!e?.alive||e.side!==NEUTRAL_SIDE||!this.canAttackEntity(u.type,e,false))continue;
+      if(!e?.alive||e.side!==NEUTRAL_SIDE||this.neutralObjectFriendlyToSide(e,u.side)||!this.canAttackEntity(u.type,e,false))continue;
       const dx=e.x-u.x,dy=e.y-u.y,d2=dx*dx+dy*dy;
       if(d2>neutralAggro*neutralAggro||!this.isVisible(u.side,e.x,e.y,visibleSources))continue;
       const ed=UnitDefinition.get(e.type),dist=Math.sqrt(d2),max=this.interactionDistance(u,e,"attack",d.range),min=this.interactionDistance(u,e,"combat-contact")+(d.minRange||0);
@@ -14269,6 +14399,15 @@ class StrategySim{
   campCoreMembers(camp){
     return this.campMembers(camp).filter(u=>UnitDefinition.get(u.type)?.role!=="neutralSummon");
   }
+  campMemberHome(camp,u){
+    const h=camp?.memberHomes?.[u?.id];
+    return h&&Number.isFinite(h.x)&&Number.isFinite(h.y)?h:{x:camp?.x??u?.x??0,y:camp?.y??u?.y??0};
+  }
+  registerCampMemberHome(camp,u,x=u?.x,y=u?.y){
+    if(!camp||!u)return null;
+    if(!camp.memberHomes||typeof camp.memberHomes!=="object")camp.memberHomes={};
+    return camp.memberHomes[u.id]={x:Number(x)||0,y:Number(y)||0};
+  }
 
   insideCampAggroRadius(unit,camp,cd=CampDefinition.get(camp.kind)){
     const dx=unit.x-camp.x,dy=unit.y-camp.y;
@@ -14278,7 +14417,7 @@ class StrategySim{
   campAllHome(camp,cd){
     const members=this.campCoreMembers(camp);
     return !!members.length&&members.every(u=>{
-      const dx=u.x-u.homeX,dy=u.y-u.homeY;
+      const home=this.campMemberHome(camp,u),dx=u.x-home.x,dy=u.y-home.y;
       return dx*dx+dy*dy<=cd.homeRadius*cd.homeRadius;
     });
   }
@@ -14293,7 +14432,7 @@ class StrategySim{
     camp.lastAggroGaugeTick=this.tick;
 
     for(const u of this.campMembers(camp)){
-      u.x=u.homeX;u.y=u.homeY;
+      const home=this.campMemberHome(camp,u);u.x=home.x;u.y=home.y;
       u.fx=Math.round(u.x*FP);u.fy=Math.round(u.y*FP);
       this.syncUnitSpatial(u);
       u.returningHome=false;
@@ -14318,6 +14457,18 @@ class StrategySim{
     if(u&&valid(u))return u;
     if(b&&valid(b))return b;
     return this.units.find(valid)||this.buildings.find(valid)||null;
+  }
+
+  campFriendlySide(camp){return camp?.friendlySide===0||camp?.friendlySide===1?camp.friendlySide:null}
+  neutralObjectFriendlyToSide(entity,side){
+    if(!entity?.campId||(side!==0&&side!==1))return false;
+    const camp=this.camps.find(c=>c.id===entity.campId);
+    return this.campFriendlySide(camp)===side;
+  }
+  campsFriendly(a,b){
+    if(!a||!b)return false;
+    const as=this.campFriendlySide(a),bs=this.campFriendlySide(b);
+    return as!=null&&as===bs;
   }
 
   updateCampAggroGauge(camp,cd){
@@ -14375,7 +14526,7 @@ class StrategySim{
     // existing chase allowance outside the habitat.
     for(const collection of [this.units,this.buildings]){
       for(const e of collection){
-        if(e.alive===false||e.hp<=0||(e.side!==0&&e.side!==1))continue;
+        if(e.alive===false||e.hp<=0||(e.side!==0&&e.side!==1)||e.side===this.campFriendlySide(camp))continue;
         if(!BuildingDefinition.get(e.type)&&!members.some(m=>this.canAttackEntity(m.type,e,false)))continue;
         const radius=BuildingDefinition.get(e.type)?.size||0;
         const campDist=Math.max(0,Math.hypot(e.x-camp.x,e.y-camp.y)-radius);
@@ -14446,7 +14597,7 @@ class StrategySim{
     );
     let best=null,bestScore=Infinity;
     const consider=(e,isBuilding=false)=>{
-      if(!e||e.alive===false||e.hp<=0||(e.side!==0&&e.side!==1))return;
+      if(!e||e.alive===false||e.hp<=0||(e.side!==0&&e.side!==1)||e.side===this.campFriendlySide(camp))return;
       if(!isBuilding&&!this.canAttackEntity(u.type,e,false))return;
       const dist=Math.hypot(e.x-u.x,e.y-u.y);
       const attackDist=this.interactionDistance(u,e,"attack",attackRange);
@@ -14474,7 +14625,7 @@ class StrategySim{
     if(!target||target.side!==NEUTRAL_SIDE||!target.campId)return;
     if((sourceSide!==0&&sourceSide!==1)||!sourceEntityId)return;
     const camp=this.camps.find(c=>c.id===target.campId);
-    if(!camp||camp.state!=="alive")return;
+    if(!camp||camp.state!=="alive"||sourceSide===this.campFriendlySide(camp))return;
 
     // The struck MONSTER's position decides re-engagement, not the attacker's.
     // Outside hits still deal damage, but cannot stop a forced return/healing.
@@ -15558,7 +15709,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     for(let i=0;i<count;i++){
       const a=(HashUtil.hash(`${u.id}|seedwasp|${this.tick}|${i}`)%6283)/1000,rr=45;
       const c=this.spawnUnit(NEUTRAL_SIDE,summonType,RangeUtil.clamp(u.x+Math.cos(a)*rr,20,WORLD_W-20),RangeUtil.clamp(u.y+Math.sin(a)*rr,20,WORLD_H-20));
-      c.summonerId=u.id;c.campId=u.campId;c.homeX=u.homeX;c.homeY=u.homeY;
+      c.summonerId=u.id;c.campId=u.campId;this.registerCampMemberHome(camp,c,c.x,c.y);
       c.neutralSummonExpireTick=this.tick+(this.msTicks(d.summonLifetimeMs||10000));
     }
     u.nextNeutralSummonTick=this.tick+interval;
@@ -15615,8 +15766,9 @@ let value=Math.max(0,Number(d.flatArmor)||0);
           x:u.x,y:u.y,amount:u.hp-before,camp:camp.kind
         });
       }
-      if(Math.hypot(u.homeX-u.x,u.homeY-u.y)>cd.homeRadius*.45){
-        this.moveToward(u,u.homeX,u.homeY,d.speed);
+      const home=this.campMemberHome(camp,u);
+      if(Math.hypot(home.x-u.x,home.y-u.y)>cd.homeRadius*.45){
+        this.moveToward(u,home.x,home.y,d.speed);
       }
       return null;
     }
@@ -15633,8 +15785,9 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       this.clearAttackWindup(u);
       u.aggroed=false;
       u.forcedTargetId=null;
-      if(Math.hypot(u.homeX-u.x,u.homeY-u.y)>cd.homeRadius*.45){
-        this.moveToward(u,u.homeX,u.homeY,d.speed);
+      const home=this.campMemberHome(camp,u);
+      if(Math.hypot(home.x-u.x,home.y-u.y)>cd.homeRadius*.45){
+        this.moveToward(u,home.x,home.y,d.speed);
       }
       return null;
     }
@@ -15689,9 +15842,8 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       if(state.winner)return state.winner;
     }
 
-    // Forced rally is an explicit player movement order. While the team's flag
-    // is forced, combat units ignore acquisition, healing/support actions and
-    // retaliation even when taking damage, and keep moving to the flag.
+    // Forced rally belongs to DefaultUnitLogicController units only. Neutral-object
+    // garrisons never enter updateCombat, so no campaign/garrison exception is needed here.
     const rallyFlag=this.flags[u.side];
     if(rallyFlag?.forced){
       this.clearAttackWindup(u);
@@ -16589,8 +16741,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     mark=profile?now():0;
     for(const u of this.units){
       if(!u.alive||!!UnitDefinition.get(u.type)?.economyWorker)continue;
-      if(u.side===NEUTRAL_SIDE)winner=this.updateNeutral(u)||winner;
-      else winner=this.updateCombat(u,vision)||winner;
+      winner=u.logicController.update(this,vision)||winner;
     }
     const combatMs=profile?now()-mark:0;
 
@@ -16671,7 +16822,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       camps.ms(c.id);camps.ms(c.kind);camps.mf(c.x);camps.mf(c.y);camps.ms(c.state);camps.m(c.respawnAt||0);
       camps.m(c.lastHitSide==null?9:c.lastHitSide);camps.m(c.spawnNo||0);camps.ms(c.aggroTargetId||"");camps.m(c.aggroGauge||0);
       camps.m(c.insideAggroStartedAt??-1);camps.m(c.resetting?1:0);camps.m(c.engaged?1:0);camps.m(c.lastAggroGaugeTick||0);
-      camps.ms(StableSerializationUtil.stableStringify(c.members||[]));camps.ms(c.laneKey||"");camps.ms(c.capturedUnitId||"");camps.m(c.capturedOwner==null?9:c.capturedOwner);camps.mf(c.lastDeathX||0);camps.mf(c.lastDeathY||0);
+      camps.ms(StableSerializationUtil.stableStringify(UnitCompositionDefinition.normalize(c.composition?.length?c.composition:c.members||[])));camps.ms(c.laneKey||"");camps.ms(c.capturedUnitId||"");camps.m(c.capturedOwner==null?9:c.capturedOwner);camps.mf(c.lastDeathX||0);camps.mf(c.lastDeathY||0);
     }
 
     for(const b of this.buildings){
@@ -16691,7 +16842,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       h.m(u.combat.cooldownUntil||0);h.m(u.hitGuard||0);h.ms(u.hitGuardSourceId||"");h.m(u.nextGuardChargeTick||0);h.m(u.hitFlash||0);h.m(u.attackFlash||0);h.m(u.combat.attackWindupUntil||0);h.m(u.combat.attackWindupStartedAt||0);h.ms(u.combat.attackWindupTargetId||"");h.m(u.combat.attackWindupIsBuilding?1:0);h.m(u.combat.moveRecoveryUntil||0);h.m(u.carry||0);h.ms(u.carryType||"");h.ms(u.workResourceType||"");h.ms(u.workState||"");h.ms(u.buildTargetId||"");h.ms(u.mineId||"");h.m(u.mineStartedAt??-1);
       h.ms(u.target||"");h.ms(u.combat.attackArcTargetId||"");h.m(u.combat.attackArcUntilTick||0);h.m(u.resources.manaMax||0);h.m(u.resources.mana||0);h.m(u.resources.nextManaRegenTick||0);h.m(u.status.slowUntil||0);h.m(u.status.knockbackImmuneUntil||0);h.m(u.movement.chargeMomentum||1000);h.m(u.movement.outOfCombatStartedAt??-1);h.m(u.movement.lastMoveTick??-999999);h.m(u.movement.crouchStartedAt??-1);h.m(u.movement.crouched?1:0);h.ms(StableSerializationUtil.stableStringify(u.recentHitTicks||[]));h.m(u.combat.hitBurstCooldownUntil||0);h.ms(StableSerializationUtil.stableStringify(u.status.timedModifiers||{}));h.m(u.leapStartTick||0);h.m(u.leapEndTick||0);h.mf(u.leapStartX||0);h.mf(u.leapStartY||0);h.mf(u.leapEndX||0);h.mf(u.leapEndY||0);h.ms(u.behaviorState.leapTargetId||"");h.m(u.leapActive?1:0);h.m(u.behaviorState.blinkCooldownUntil||0);
       h.m(u.behaviorState.ambushReady?1:0);h.m(u.behaviorState.carrierInitialized?1:0);h.m(u.behaviorState.nextCarrierSpawnTick||0);h.ms(StableSerializationUtil.stableStringify(u.behaviorState.carrierRecoveryQueue||[]));h.ms(u.behaviorState.healTargetId||"");h.m(u.carrierSlot||0);h.m(u.pillbugBlastDone?1:0);h.m(u.behaviorState.rootSetupTicks||0);h.ms(u.behaviorState.rootTargetId||"");h.m(u.nextSummonTick||0);h.ms(u.summonerId||"");h.m(u.expireTick||0);
-      h.m(u.behaviorState.turnFlightHeadingMilliDeg==null?-1:u.behaviorState.turnFlightHeadingMilliDeg);h.ms(u.behaviorState.carrierFlightState||"active");h.m(u.behaviorState.hookCooldownUntil||0);h.m(u.behaviorState.clawRetargetBlockedUntil0||0);h.m(u.behaviorState.clawRetargetBlockedUntil1||0);h.ms(StableSerializationUtil.stableStringify(u.status.impulseCompleteEffect||null));h.mf(u.behaviorState.adaptiveRangeCache||0);h.mf(u.behaviorState.adaptiveMoveSpeedCache||0);h.m(u.behaviorState.adaptiveRangeCacheTick??-999999);h.m(u.movement.impulseFx||0);h.m(u.movement.impulseFy||0);h.m(u.movement.impulseUntil||0);h.m(u.movement.impulseDecay||0);h.m(u.status?.airborneStartTick||0);h.m(u.status?.airborneUntil||0);h.m(u.status?.airborneDurationTicks||0);h.mf(u.status?.airborneHeight||0);h.ms(u.status?.airborneSourceType||"");h.m(u.behaviorState.burrowCooldownUntil||0);h.ms(u.burrowPhase||"none");h.m(u.behaviorState.burrowPhaseUntil||0);h.ms(u.burrowTargetId||"");h.m(u.behaviorState.burrowTrackTarget?1:0);h.mf(u.behaviorState.burrowOriginX||0);h.mf(u.behaviorState.burrowOriginY||0);h.mf(u.burrowDestX||0);h.mf(u.burrowDestY||0);h.ms(u.campId||"");h.mf(u.homeX||0);h.mf(u.homeY||0);
+      h.m(u.behaviorState.turnFlightHeadingMilliDeg==null?-1:u.behaviorState.turnFlightHeadingMilliDeg);h.ms(u.behaviorState.carrierFlightState||"active");h.m(u.behaviorState.hookCooldownUntil||0);h.m(u.behaviorState.clawRetargetBlockedUntil0||0);h.m(u.behaviorState.clawRetargetBlockedUntil1||0);h.ms(StableSerializationUtil.stableStringify(u.status.impulseCompleteEffect||null));h.mf(u.behaviorState.adaptiveRangeCache||0);h.mf(u.behaviorState.adaptiveMoveSpeedCache||0);h.m(u.behaviorState.adaptiveRangeCacheTick??-999999);h.m(u.movement.impulseFx||0);h.m(u.movement.impulseFy||0);h.m(u.movement.impulseUntil||0);h.m(u.movement.impulseDecay||0);h.m(u.status?.airborneStartTick||0);h.m(u.status?.airborneUntil||0);h.m(u.status?.airborneDurationTicks||0);h.mf(u.status?.airborneHeight||0);h.ms(u.status?.airborneSourceType||"");h.m(u.behaviorState.burrowCooldownUntil||0);h.ms(u.burrowPhase||"none");h.m(u.behaviorState.burrowPhaseUntil||0);h.ms(u.burrowTargetId||"");h.m(u.behaviorState.burrowTrackTarget?1:0);h.mf(u.behaviorState.burrowOriginX||0);h.mf(u.behaviorState.burrowOriginY||0);h.mf(u.burrowDestX||0);h.mf(u.burrowDestY||0);h.ms(u.campId||"");
       h.m(u.objectiveCaptured?1:0);h.mf(u.objectiveCapturedScale||0);h.ms(u.behaviorState.objectiveCampId||"");h.ms(u.objectiveLane||"");h.mf(u.objectiveLaneT||0);h.m(u.objectiveAttackCount||0);h.m(u.behaviorState.basicAttackCount||0);h.m(u.behaviorState.objectiveAirCooldownUntil||0);h.m(u.objectiveChargePending?1:0);h.m(u.objectiveChargeActive?1:0);h.mf(u.behaviorState.objectiveChargeDirX||0);h.mf(u.behaviorState.objectiveChargeDirY||0);h.mf(u.objectiveChargeRemaining||0);h.ms(StableSerializationUtil.stableStringify(u.objectiveChargeHitIds||[]));h.ms(OBJECTIVE_DRAGON_BREATH_PHASES.has(u.objectiveBreathPhase)?u.objectiveBreathPhase:OBJECTIVE_DRAGON_BREATH_PHASE.IDLE);h.m(u.objectiveBreathTellUntil||0);h.m(u.objectiveBreathUntil||0);h.m(u.objectiveBreathNextTick||0);h.ms(u.objectiveBreathTargetId||"");h.mf(u.objectiveBreathDirX||0);h.mf(u.objectiveBreathDirY||0);
       h.ms(u.forcedTargetId||"");h.m(u.returningHome?1:0);h.m(u.aggroed?1:0);h.m(u.tunnelLockUntil||0);
     }
@@ -17798,6 +17949,7 @@ class GameSession{
     if(this.role!=="host"||this.sim)return false;
     return this.applyMatchConfig(config,{authoritative:true});
   }
+  prepareCampaignLiveDraft(){if(this.role!=="host"||!this.matchConfig?.campaignScenario)return false;const cfg=CampaignMissionDefinition.normalize(this.matchConfig.campaignScenario),humanRole=MatchLifecycle.singleMatch?.humanRole||"host",enemyRole=humanRole==="host"?"guest":"host";this.draft={phase:"live",roomCode:this.roomCode,selectionMode:"deck",decks:{host:[],guest:[]},defenseCards:{host:[],guest:[]},deckReady:{host:true,guest:true},deckSelectDeadlineAt:0,winner:null};this.draft.decks[humanRole]=cfg.player.units.slice();this.draft.decks[enemyRole]=cfg.enemy.units.slice();return true}
   prepareDebugScenarioLiveDraft(){
     if(this.role!=="host"||!this.matchConfig?.debugScenario)return false;
     const cfg=DebugScenarioHarness.normalize(this.matchConfig.debugScenario);
@@ -17813,6 +17965,7 @@ class GameSession{
   }
   start(){
     if(this.role==="host"){
+      if(this.matchConfig?.campaignScenario){this.prepareCampaignLiveDraft();return;}
       if(this.matchConfig?.debugScenario){
         // Debug scenario is not a deck-selection test. Wait for the real Guest HELLO,
         // then Host starts the real match directly from a deterministic live initial state.
@@ -17907,7 +18060,7 @@ class GameSession{
   }
   scheduleDraftGameStart(){
     if(this.role!=="host"||this.sim||this.draftGameStartTimer)return false;
-    const delay=this.matchConfig?.debugScenario?0:DRAFT_FINAL_GAME_START_DELAY_MS;
+    const delay=(this.matchConfig?.debugScenario||this.matchConfig?.campaignScenario)?0:DRAFT_FINAL_GAME_START_DELAY_MS;
     this.draftGameStartTimer=setTimeout(()=>{
       this.draftGameStartTimer=0;
       if(this.role==="host"&&!this.sim&&this.draft?.phase==="live")this.beginGame();
@@ -19180,6 +19333,7 @@ if(type==="DESYNC_CORRECTION_RUN"&&this.role==="guest"){
     }
     if(this.role==="host"){
       if(m.type==="HELLO"){
+        if(this.matchConfig?.campaignScenario){if(!this.draft||this.draft.phase!=="live")this.prepareCampaignLiveDraft();if(!this.sim)this.beginGame();else this.transport.send({type:"DRAFT_SYNC",seq:this.commitSeq,state:this.draft,matchConfig:this.matchConfig});return;}
         if(this.matchConfig?.debugScenario){
           if(!this.draft||this.draft.phase!=="live")this.prepareDebugScenarioLiveDraft();
           if(!this.sim)this.beginGame();
@@ -19287,8 +19441,16 @@ if(type==="DESYNC_CORRECTION_RUN"&&this.role==="guest"){
     }
 
     if(winner){
-      if(winner==="draw")this.endMatch(null,"draw",{notifyPeer:this.role==="host"});
-      else this.endMatch(winner,"base-destroyed",{notifyPeer:this.role==="host"});
+      const campaign=CampaignRuntime.pending,viewRole=MatchLifecycle.singleMatch?.humanRole||"host";
+      if(campaign&&winner===viewRole&&!this.campaignResultPending&&Array.isArray(campaign.presentation?.outro)&&campaign.presentation.outro.length){
+        this.campaignResultPending=true;this.syncHold=true;this.acc=0;
+        const finish=()=>{if(!this.simEnded)this.endMatch(winner,"base-destroyed",{notifyPeer:this.role==="host"})};
+        if(this.role===ActiveViewState.role)CampaignPresentation.playOutro(campaign.presentation.outro,finish);
+        else setTimeout(finish,CampaignPresentation.outroDuration(campaign.presentation.outro));
+      }else if(!this.campaignResultPending){
+        if(winner==="draw")this.endMatch(null,"draw",{notifyPeer:this.role==="host"});
+        else this.endMatch(winner,"base-destroyed",{notifyPeer:this.role==="host"});
+      }
     }
 
     return winner;
@@ -19409,8 +19571,9 @@ if(type==="DESYNC_CORRECTION_RUN"&&this.role==="guest"){
     this.clearPostRecoveryCountdown();
     this.simulationFatal=false;
     this.simulationFatalInfo=null;
-    this.sim=new StrategySim(this.draft,seed,this.roundRules);
+    this.sim=new StrategySim(this.draft,seed,this.roundRules,this.matchConfig?.campaignScenario||null);
     if(this.matchConfig?.debugScenario)this.sim.applyDebugScenario(this.matchConfig.debugScenario);
+    if(this.matchConfig?.campaignScenario)this.sim.applyCampaignScenario(this.matchConfig.campaignScenario);
     this.replayRecorder=new ReplayRecorder({seed,draft:this.draft,roomCode:this.roomCode,sim:this.sim,rules:this.roundRules});
     this.simEnded=false;
     this.matchResult=null;
@@ -19511,7 +19674,7 @@ class BotController{
 
   handleDraft(state){
     if(!this.enabled||!state)return;
-    if(this.session.matchConfig?.debugScenario)return;
+    if(this.session.matchConfig?.debugScenario||this.session.matchConfig?.campaignScenario)return;
     if(state.phase==="deck-select"){
       if(state.deckReady?.[this.role])return;
       const key=`deck|${state.roomCode}|${this.role}`;
@@ -22563,12 +22726,24 @@ class ProjectileVisualFallback{
   static render(rdr,c){const {p,sc,target,gx,gy,wp,pp,gp}=c;let {x,y}=c;
       const pd=UnitDefinition.get(p.type)||BuildingDefinition.get(p.type)||{};
       const impact=AttackPresentationDefinition.forSource(p.type).impact;
-      let tx=x+1,ty=y;
-      if(target){
-        const tp=rdr.worldToPx(rdr.viewX(target.x),rdr.viewY(target.y));
-        tx=tp[0];ty=tp[1];
+      // Projectile visual direction must not depend on the target still existing.
+      // Render motion is the primary source because it reflects the actual interpolated
+      // projectile trajectory. If a frame has no measurable motion, fall back to the
+      // projectile's simulation-owned last-known/locked aim point. Only then consult a
+      // live target for legacy snapshots. This prevents a dead/removed target from making
+      // the projectile sprite snap to an arbitrary horizontal direction.
+      let dx=Number(c.screenMotion?.dx)||0,dy=Number(c.screenMotion?.dy)||0;
+      let directionValid=!!c.screenMotion?.valid;
+      if(!directionValid&&Number.isFinite(Number(p.lockedAimX))&&Number.isFinite(Number(p.lockedAimY))){
+        const ap=rdr.worldToPx(rdr.viewX(Number(p.lockedAimX)),rdr.viewY(Number(p.lockedAimY)));
+        dx=ap[0]-x;dy=ap[1]-y;directionValid=Math.hypot(dx,dy)>.01;
       }
-      let dx=tx-x,dy=ty-y,len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
+      if(!directionValid&&target){
+        const tp=rdr.worldToPx(rdr.viewX(target.x),rdr.viewY(target.y));
+        dx=tp[0]-x;dy=tp[1]-y;directionValid=Math.hypot(dx,dy)>.01;
+      }
+      if(!directionValid){dx=1;dy=0}
+      const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
       if(impact==="arcane"){
         rdr.line(x-dx*12*sc,y-dy*12*sc,x-dx*3*sc,y-dy*3*sc,Math.max(1.2,2.2*sc),[.68,.48,1,.30]);
         rdr.circle(x,y,Math.max(2.4,4.6*sc),[.72,.53,1,1],8);
@@ -27942,6 +28117,7 @@ UiRegistry.refs.gameStartBtn=DomUtil.byId("gameStartBtn");
 UiRegistry.refs.gameStartDialog=DomUtil.byId("gameStartDialog");
 UiRegistry.refs.gameStartCloseBtn=DomUtil.byId("gameStartCloseBtn");
 UiRegistry.refs.singleBtn=DomUtil.byId("singleBtn");
+UiRegistry.refs.campaignBtn=DomUtil.byId("campaignBtn");UiRegistry.refs.campaignRepositoryList=DomUtil.byId("campaignRepositoryList");UiRegistry.refs.campaignRefreshBtn=DomUtil.byId("campaignRefreshBtn");UiRegistry.refs.campaignDialog=DomUtil.byId("campaignDialog");UiRegistry.refs.campaignCloseBtn=DomUtil.byId("campaignCloseBtn");UiRegistry.refs.campaignUrlInput=DomUtil.byId("campaignUrlInput");UiRegistry.refs.campaignLoadUrlBtn=DomUtil.byId("campaignLoadUrlBtn");UiRegistry.refs.campaignFileInput=DomUtil.byId("campaignFileInput");UiRegistry.refs.campaignLoadFileBtn=DomUtil.byId("campaignLoadFileBtn");UiRegistry.refs.campaignStartBtn=DomUtil.byId("campaignStartBtn");UiRegistry.refs.campaignStatus=DomUtil.byId("campaignStatus");UiRegistry.refs.campaignMissionTitle=DomUtil.byId("campaignMissionTitle");UiRegistry.refs.campaignMissionBrief=DomUtil.byId("campaignMissionBrief");
 UiRegistry.refs.unitTestBtn=DomUtil.byId("unitTestBtn");
 UiRegistry.refs.unitTestAllyType=DomUtil.byId("unitTestAllyType");
 UiRegistry.refs.unitTestAllyCount=DomUtil.byId("unitTestAllyCount");
@@ -28237,7 +28413,7 @@ CommandPresentation.scheduleCommandChoiceGridSync();
 
 const UI_RADIO=Object.freeze({
   screen:new Set(["lobby","draft","deck-select","finale","game","replay","result"]),
-  modal:new Set(["none","game-start","single-role","create","join","deck-builder","match-menu","detail","spell-choice","disconnect","help"]),
+  modal:new Set(["none","game-start","campaign","single-role","create","join","deck-builder","match-menu","detail","spell-choice","disconnect","help"]),
   command:new Set(["closed","tree","building"])
 });
 // UI STATE CONTRACT:
@@ -29977,6 +30153,144 @@ class DebugScenarioHarness{
   }
 }
 
+class CampaignMapDefinition{
+ static normalizeType(raw){
+  const type=String(raw?.type||raw?.generation||"manual").trim().toLowerCase();
+  if(["auto","automatic","procedural","generated"].includes(type))return "auto";
+  if(["manual","authored","handmade","fixed"].includes(type))return "manual";
+  throw new Error(`지원하지 않는 캠페인 맵 타입: ${type}`);
+ }
+ static build(raw,rules=GameRuleDefinition.current,seed=0,humanSide=0){
+  const mapType=this.normalizeType(raw);
+  if(mapType==="auto"){
+    const generated=MapGeneration.generateMapDescriptor({rules,seed:seed>>>0,roundNumber:rules?.roundNumber||1});
+    generated.campaignMapType="auto";
+    generated.campaignMapSchemaVersion=1;
+    return generated;
+  }
+  const width=Number(rules?.map?.width)||WORLD_W,height=Number(rules?.map?.height)||WORLD_H,minDim=Math.min(width,height);
+  const point=p=>({x:Math.round(RangeUtil.clamp(Number(p?.[0])||0,0,1)*width),y:Math.round(RangeUtil.clamp(Number(p?.[1])||0,0,1)*height)});
+  const pts=a=>(Array.isArray(a)?a:[]).map(point),radius=v=>Math.max(20,Math.round(RangeUtil.clamp(Number(v)||.05,.005,.4)*minDim));
+  const base=MapGeneration.fixedStandardMapDescriptor(rules,seed,1),sp=raw?.spawns||{};
+  base.generator="campaign-authored";base.generatorVersion=3;base.campaignMapType="manual";base.campaignMapSchemaVersion=2;base.seed=seed>>>0;
+  // Strict manual-map contract: procedural descriptor contents are never inherited.
+  // The authored JSON is the sole source of terrain/control/resources/scenario objects.
+  base.resources=[];base.gasNodes=[];base.camps=[];base.capturePoints=[];base.biome=String(raw?.biome||"flower-border");base.symmetry="authored";
+  base.spawns={host:point(sp.host||[.14,.84]),guest:point(sp.guest||[.86,.16])};
+  const lanes=raw?.lanes||{};for(const k of ["top","mid","bot"])if(Array.isArray(lanes[k])&&lanes[k].length>=2)base.laneControlPoints[k]=pts(lanes[k]);
+  base.flags=[MapGeometry.pointOnPolyline(base.laneControlPoints.mid,.18),MapGeometry.pointOnPolyline(base.laneControlPoints.mid,.82)].map(p=>({...p,forced:false}));
+  base.capturePoints=(Array.isArray(raw?.capturePoints)?raw.capturePoints:[]).map((c,i)=>({...point(c.position),id:String(c.id||`campaign-cp-${i}`),laneKey:String(c.lane||"mid"),lane:String(c.lane||"mid").toUpperCase(),label:String(c.label||"전선 거점"),stage:Number(c.stage)||1,enabled:c.enabled!==false,owner:c.owner===0||c.owner===1?c.owner:null}));
+  const t=raw?.terrain||{};base.terrain={riverPath:pts(t.river?.points),riverHalfWidth:radius(t.river?.halfWidth||.035),riverBranches:[],riverPolygon:[],riverBranchPolygons:[],bridges:(Array.isArray(t.bridges)?t.bridges:[]).map((b,i)=>({...point(b.position),id:String(b.id||`bridge-${i}`),angle:Number(b.angle)||0,halfLength:radius(b.halfLength||.055),halfWidth:radius(b.halfWidth||.018)})),hills:(Array.isArray(t.hills)?t.hills:[]).map((h,i)=>({...point(h.center),id:String(h.id||`hill-${i}`),rx:radius(h.rx||.06),ry:radius(h.ry||.045),angle:Number(h.angle)||0,height:Number(h.height)||1,objectiveHill:false}))};
+  // Resource placement is a shared map policy, not a campaign exception.
+  // objective-auto reuses the normal base/capture-point resource generator, so every
+  // expansion resource cluster has a meaningful control point and balance changes flow through automatically.
+  const resourcePlacement=String(raw?.content?.resourcePlacement||rules?.map?.content?.resourcePlacement||"objective-auto");
+  if(resourcePlacement==="objective-auto"){
+    const host=base.spawns.host,guest=base.spawns.guest,axisX=guest.x-host.x,axisY=guest.y-host.y,axisLen=Math.hypot(axisX,axisY)||1;
+    const ux=axisX/axisLen,uy=axisY/axisLen,nx=-uy,ny=ux,margin=150;
+    const ctx={rules,width,height,seed:seed>>>0,host,guest,ux,uy,nx,ny,scale:Math.min(width/3600,height/4200),clampPt:p=>({x:Math.round(RangeUtil.clamp(p.x,margin,width-margin)),y:Math.round(RangeUtil.clamp(p.y,margin,height-margin))})};
+    const amountCfg={...(rules?.map?.content?.resourceAmounts||{}),...(raw?.content?.resourceAmounts||{})};
+    ctx.resourceAmounts=amountCfg;
+    const generated=MapGeneration.generateProceduralResources(ctx,base.capturePoints);
+    base.resources=generated.resources;base.gasNodes=generated.gasNodes;
+  }else if(resourcePlacement==="manual"){
+    base.resources=(Array.isArray(raw?.resources)?raw.resources:[]).map((r,i)=>({...point(r.position),id:String(r.id||`cm${i+1}`),amount:Math.max(1,Math.round(Number(r.amount)||900)),max:Math.max(1,Math.round(Number(r.amount)||900)),r:28}));
+    base.gasNodes=(Array.isArray(raw?.gasNodes)?raw.gasNodes:[]).map((g,i)=>({...point(g.position),id:String(g.id||`cg${i+1}`),amount:Math.max(1,Math.round(Number(g.amount)||1600)),max:Math.max(1,Math.round(Number(g.amount)||1600)),r:32}));
+  }else{base.resources=[];base.gasNodes=[]}
+  base.mapContentPolicy={resourcePlacement,authoredForces:true};
+
+  const authoredForces=[
+    ...(Array.isArray(raw?.garrisons)?raw.garrisons:[]).map(o=>({...o,forceRole:"garrison",spawnOnStart:o.spawnOnStart!==false})),
+    ...(Array.isArray(raw?.attackForces)?raw.attackForces:[]).map(o=>({...o,forceRole:"attack-force"})),
+    // Legacy authored objects remain readable, but new data should use the explicit roles above.
+    ...(Array.isArray(raw?.objects)?raw.objects:[]).map(o=>({...o,forceRole:o.forceRole||"garrison"}))
+  ];
+  base.camps=authoredForces.map((o,i)=>{
+    const anchorId=String(o.capturePoint||o.anchorCapturePoint||"").trim();
+    const anchor=anchorId?base.capturePoints.find(cp=>cp.id===anchorId):null;
+    const rawPos=point(o.position);
+    const offset=Array.isArray(o.offset)?o.offset:[0,0];
+    const pos=anchor?{x:Math.round(anchor.x+(Number(offset[0])||0)*width),y:Math.round(anchor.y+(Number(offset[1])||0)*height)}:rawPos;
+    const composition=UnitCompositionDefinition.normalize(Array.isArray(o.composition)?o.composition:(Array.isArray(o.units)?o.units:[]));
+    const faction=String(o.faction||"").toLowerCase();
+    const hs=humanSide===1?1:0,enemySide=1-hs;const campSide=faction==="player"||faction==="ally"?hs:faction==="enemy"||faction==="opponent"?enemySide:faction==="host"?0:faction==="guest"?1:faction==="neutral"?NEUTRAL_SIDE:o.side===0?0:o.side===1?1:NEUTRAL_SIDE;
+    const forceRole=["garrison","attack-force","default"].includes(String(o.forceRole))?String(o.forceRole):"default";
+    const neutralObject=forceRole==="garrison"||String(o.objectMode||"")==="neutral";
+    const control=forceRole==="attack-force"?"guard":["guard","attack"].includes(String(o.control))?String(o.control):"attack";
+    return {id:String(o.id||`authored-force-${i}`),kind:neutralObject?"unitNeutralObject":"scenarioUnitGroup",x:pos.x,y:pos.y,state:"ready",respawnAt:0,lastHitSide:null,spawnNo:0,side:neutralObject?NEUTRAL_SIDE:campSide,friendlySide:neutralObject?campSide:null,faction:faction||String(campSide),composition,formation:["cluster","line","spread"].includes(String(o.formation))?String(o.formation):"cluster",forceRole,control,guardRadius:radius(o.guardRadius||.085),label:String(o.label||"배치 병력"),homeSpread:radius(o.spread||.018),spawnOnStart:o.spawnOnStart!==false};
+  }).filter(c=>UnitCompositionDefinition.total(c.composition)>0);
+  base.authoredStructures=(Array.isArray(raw?.structures)?raw.structures:[]).map((o,i)=>{
+    const anchorId=String(o.capturePoint||o.anchorCapturePoint||"").trim();
+    const anchor=anchorId?base.capturePoints.find(cp=>cp.id===anchorId):null;
+    const offset=Array.isArray(o.offset)?o.offset:[0,0],rawPos=point(o.position);
+    const pos=anchor?{x:Math.round(anchor.x+(Number(offset[0])||0)*width),y:Math.round(anchor.y+(Number(offset[1])||0)*height)}:rawPos;
+    const faction=String(o.faction||"").toLowerCase(),hs=humanSide===1?1:0,enemySide=1-hs;
+    const side=faction==="player"||faction==="ally"?hs:faction==="enemy"||faction==="opponent"?enemySide:faction==="host"?0:faction==="guest"?1:o.side===0?0:o.side===1?1:NEUTRAL_SIDE;
+    const type=String(o.building||o.type||"");
+    if(!BuildingDefinition.get(type))return null;
+    return {id:String(o.id||`authored-structure-${i}`),type,side,x:pos.x,y:pos.y,label:String(o.label||type),capturePoint:anchorId||null};
+  }).filter(Boolean);
+  base.mapContentPolicy={...(base.mapContentPolicy||{}),authoredStructures:base.authoredStructures.length>0};
+  return base;
+ }
+}
+class CampaignMissionDefinition{
+ static normalize(raw){if(!raw||typeof raw!=="object"||Array.isArray(raw))throw new Error("Mission JSON 객체가 필요합니다.");
+ const missionId=String(raw.missionId||raw.id||"").trim();if(!missionId)throw new Error("missionId가 필요합니다.");
+ const valid=id=>!!UnitDefinition.get(id)&&UnitDefinition.get(id).tier>=1&&UnitDefinition.get(id).tier<=3&&!UnitDefinition.get(id).economyWorker&&!UnitDefinition.get(id).carrierSummon;
+ const clean=v=>[...new Set((Array.isArray(v)?v:[]).filter(valid))],cleanDefense=v=>DefenseCardDefinition.list(Array.isArray(v)?v:[]),pu=clean(raw.player?.units),eu=clean(raw.enemy?.units),pd=cleanDefense(raw.player?.defenseCards),ed=cleanDefense(raw.enemy?.defenseCards);if(!pu.length||!eu.length)throw new Error("유효한 player.units / enemy.units가 필요합니다.");
+ const events=(Array.isArray(raw.events)?raw.events:[]).slice(0,48).map((e,i)=>({id:String(e.id||`event-${i}`),enabled:e.enabled!==false,once:e.once!==false,when:e.when&&typeof e.when==="object"?CloneUtil.clone(e.when):null,trigger:e.trigger&&typeof e.trigger==="object"?CloneUtil.clone(e.trigger):{},delayMs:Math.max(0,Number(e.delayMs)||0),cooldownMs:Math.max(0,Number(e.cooldownMs)||0),repeatCount:e.repeatCount==null?null:Math.max(1,Math.round(Number(e.repeatCount)||1)),actions:(Array.isArray(e.actions)?e.actions:[]).map(a=>a&&typeof a==="object"?CloneUtil.clone(a):null).filter(Boolean)}));
+ return Object.freeze({schemaVersion:2,missionId,title:String(raw.title||missionId),briefing:String(raw.briefing||""),faction:String(raw.faction||"frontier"),seed:(Number(raw.seed)>>>0)||HashUtil.hash(missionId),map:raw.map&&typeof raw.map==="object"?CloneUtil.clone(raw.map):null,player:{units:pu,defenseCards:pd,techCap:RangeUtil.clamp(Math.round(Number(raw.player?.techCap)||1),1,3)},enemy:{units:eu,defenseCards:ed,techCap:RangeUtil.clamp(Math.round(Number(raw.enemy?.techCap)||1),1,3),difficulty:String(raw.enemy?.difficulty||"normal")},presentation:{opening:Array.isArray(raw.presentation?.opening)?raw.presentation.opening.map(String).slice(0,8):[],outro:Array.isArray(raw.presentation?.outro)?raw.presentation.outro.map(String).slice(0,8):[]},regions:raw.regions&&typeof raw.regions==="object"?CloneUtil.clone(raw.regions):{},objectives:Array.isArray(raw.objectives)?CloneUtil.clone(raw.objectives).slice(0,16):[],flags:raw.flags&&typeof raw.flags==="object"?CloneUtil.clone(raw.flags):{},events})}
+}
+
+class CampaignPresentation{
+ static shownMissionId=null; static timers=[]; static eventTimer=null; static fired=new Set(); static flags=Object.create(null); static objectives=new Map(); static fireState=new Map();
+ static ensureBubble(){let el=document.getElementById("campaignStoryBubble");const host=document.querySelector("#gameScreen .canvas-wrap");if(el){if(host&&el.parentElement!==host)host.appendChild(el);return el}el=document.createElement("div");el.id="campaignStoryBubble";el.setAttribute("role","status");el.setAttribute("aria-live","polite");el.style.cssText="position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:30;width:max-content;max-width:min(760px,88%);box-sizing:border-box;padding:12px 16px;border:1px solid rgba(230,240,220,.5);border-radius:14px;background:rgba(15,28,24,.92);color:#f4f7ef;font:600 15px/1.45 system-ui;text-align:center;box-shadow:0 8px 28px rgba(0,0,0,.32);pointer-events:none;opacity:0;transition:opacity .18s ease";(host||document.body).appendChild(el);return el}
+ static toast(text,duration=3200){const el=this.ensureBubble();el.textContent=String(text||"");el.style.opacity="1";this.timers.push(setTimeout(()=>{el.style.opacity="0"},Math.max(900,Number(duration)||3200)))}
+ static clear(){for(const t of this.timers)clearTimeout(t);this.timers=[];if(this.eventTimer){clearInterval(this.eventTimer);this.eventTimer=null}this.fired.clear();this.flags=Object.create(null);this.objectives.clear();this.fireState.clear();const el=document.getElementById("campaignStoryBubble");if(el)el.style.opacity="0"}
+ static region(def){const m=CampaignRuntime.pending;if(typeof def==="string")return m?.regions?.[def]||null;return def&&typeof def==="object"?def:null}
+ static triggerMet(t,sim,humanSide){if(!t||!sim)return false;if(Array.isArray(t.all))return t.all.every(x=>this.triggerMet(x,sim,humanSide));if(Array.isArray(t.any))return t.any.some(x=>this.triggerMet(x,sim,humanSide));if(t.not)return !this.triggerMet(t.not,sim,humanSide);const type=String(t.type||"");
+  if(type==="time")return sim.tick>=sim.msTicks((Number(t.seconds)||0)*1000);
+  if(type==="flag")return this.flags?.[String(t.id||"")]===t.equals;
+  if(type==="objectAlive"||type==="objectDead"){const alive=sim.units.some(u=>u.alive&&(u.campId||u.scenarioGroupId)===String(t.objectId||t.id||""));return type==="objectAlive"?alive:!alive}
+  if(type==="groupCount"){const n=sim.units.filter(u=>u.alive&&(u.campId||u.scenarioGroupId)===String(t.group||t.objectId||"")).length,v=Math.max(0,Number(t.value)||0),op=String(t.op||"<=");return op===">="?n>=v:op===">"?n>v:op==="="?n===v:op==="<"?n<v:n<=v}
+  if(type==="regionCaptured"){const cp=sim.capturePoints.find(c=>c.id===String(t.id||t.captureId||"")),side=t.side==="enemy"?1-humanSide:humanSide;return !!cp&&cp.owner===side}
+  if(type==="resource"){const side=t.side==="enemy"?1-humanSide:humanSide,val=String(t.resource||"mineral")==="gas"?sim.gasWallet?.[side]:sim.wallet?.[side];return Number(val||0)>=Number(t.atLeast||t.value||0)}
+  if(type==="techReached"){const side=t.side==="enemy"?1-humanSide:humanSide;return Number(sim.tech?.[side]||0)>=Number(t.tier||1)}
+  if(type==="enterRegion"||type==="unitsInRegion"){const r=this.region(t.region)||{center:t.center||[.5,.5],radius:t.radius||.08},x=(Number(r.center?.[0])||0)*WORLD_W,y=(Number(r.center?.[1])||0)*WORLD_H,rad=(Number(r.radius)||.08)*Math.min(WORLD_W,WORLD_H),side=t.side==="enemy"?1-humanSide:humanSide,n=sim.units.filter(u=>u.alive&&u.side===side&&Math.hypot(u.x-x,u.y-y)<=rad).length;return n>=Math.max(1,Number(t.count)||1)}
+  if(type==="discoverObject"){const camp=sim.camps?.find(c=>c.id===String(t.objectId||""));if(!camp)return false;const targets=sim.units.filter(u=>u.alive&&(u.campId||u.scenarioGroupId)===camp.id),r=(Number(t.radius)||.11)*Math.min(WORLD_W,WORLD_H);return targets.length>0&&sim.units.some(a=>a.alive&&a.side===humanSide&&targets.some(x=>Math.hypot(a.x-x.x,a.y-x.y)<=r))}
+  return false}
+ static renderObjectives(){let el=document.getElementById("campaignObjectives"),host=document.querySelector("#gameScreen .canvas-wrap");if(!el){el=document.createElement("div");el.id="campaignObjectives";el.style.cssText="position:absolute;left:10px;top:10px;z-index:29;max-width:min(360px,62%);padding:8px 10px;border-radius:10px;background:rgba(12,22,19,.78);border:1px solid rgba(220,235,215,.28);color:#eef4e8;font:600 12px/1.45 system-ui;pointer-events:none";(host||document.body).appendChild(el)}el.innerHTML=[...this.objectives.values()].filter(o=>o.state!=="hidden").map(o=>`<div style="opacity:${o.state==="complete"?.55:1}">${o.state==="complete"?"✓":"◆"} ${o.text}</div>`).join("");el.style.display=el.innerHTML?"block":"none"}
+ static runAction(a){const type=String(a?.type||"");if(type==="toast"){this.toast(a.text,a.durationMs);return}if(type==="setFlag"){this.flags[String(a.id||"")]=a.value;return}if(type==="setObjective"){const id=String(a.id||"objective"),old=this.objectives.get(id)||{};this.objectives.set(id,{...old,id,text:String(a.text||old.text||id),state:String(a.state||"active")});this.renderObjectives();return}if(type==="completeObjective"){const id=String(a.id||""),old=this.objectives.get(id);if(old){this.objectives.set(id,{...old,state:"complete"});this.renderObjectives()}return}
+  if(type==="cameraFocus"){const r=ActiveViewState.renderer;if(!r)return;const rg=this.region(a.region),p=rg?.center||a.position;if(!Array.isArray(p))return;const x=(Number(p[0])||0)*WORLD_W,y=(Number(p[1])||0)*WORLD_H,vx=r.viewX(x),vy=r.viewY(y);r.cameraLeft=RangeUtil.clamp(vx-r.viewWorldW()/2,0,Math.max(0,WORLD_W-r.viewWorldW()));r.cameraTop=RangeUtil.clamp(vy-r.viewWorldH()/2,0,Math.max(0,WORLD_H-r.viewWorldH()));return}
+  const sess=MatchLifecycle.activeSession?.(),sim=sess?.sim;if(!sim)return;
+  if(type==="spawnGroup"){const id=String(a.id||a.group||`campaign-${sim.seq+1}`);let camp=sim.camps.find(c=>c.id===id);if(!camp){const p=a.position||[.5,.5],f=String(a.faction||"enemy"),side=f==="player"||f==="ally"?this.humanSide():f==="enemy"?1-this.humanSide():NEUTRAL_SIDE;camp={id,kind:"scenarioUnitGroup",x:(Number(p[0])||0)*WORLD_W,y:(Number(p[1])||0)*WORLD_H,state:"ready",respawnAt:0,spawnNo:0,side,faction:f,composition:UnitCompositionDefinition.normalize(a.composition),formation:String(a.formation||"cluster"),label:String(a.label||id),homeSpread:(Number(a.spread)||.02)*Math.min(WORLD_W,WORLD_H),spawnOnStart:false};sim.camps.push(camp)}if(!sim.units.some(u=>u.alive&&(u.campId||u.scenarioGroupId)===id))sim.spawnCamp(camp);return}
+  if(type==="order"){const id=String(a.group||a.objectId||""),members=sim.units.filter(u=>u.alive&&(u.campId||u.scenarioGroupId)===id),camp=sim.camps.find(c=>c.id===id);let target=null;if(a.target==="playerBase")target=sim.buildings.find(b=>b.side===this.humanSide()&&b.alive!==false&&b.hp>0&&BuildingDefinition.get(b.type)?.isMainBase);else if(a.target==="enemyBase")target=sim.buildings.find(b=>b.side!==this.humanSide()&&b.side!==NEUTRAL_SIDE&&b.alive!==false&&b.hp>0&&BuildingDefinition.get(b.type)?.isMainBase);const order=String(a.order||"attack");if(camp)camp.control=order==="hold"?"guard":"attack";for(const u of members){if(order==="hold"){u.aggroed=false;u.forcedTargetId=null;u.target=null}else{u.aggroed=true;if(target){u.forcedTargetId=target.id;u.target=target.id}}}sim.events.push({type:"campaignOrder",groupId:id,order,targetId:target?.id||null});return}
+  if(type==="spawnObject"||type==="attackWave"){const camp=sim.camps?.find(c=>c.id===String(a.objectId||""));if(!camp)return;if(!sim.units.some(u=>u.alive&&(u.campId||u.scenarioGroupId)===camp.id))sim.spawnCamp(camp);if(type==="attackWave")this.runAction({type:"order",group:camp.id,order:"attack",target:a.target||"playerBase"});return}
+  if(type==="setCaptureActive"){const cp=sim.capturePoints.find(c=>c.id===String(a.id||a.captureId||""));if(cp)cp.enabled=a.enabled!==false;return}
+  if(type==="setFaction"){const id=String(a.group||a.objectId||""),side=a.faction==="player"?this.humanSide():a.faction==="enemy"?1-this.humanSide():NEUTRAL_SIDE,c=sim.camps.find(x=>x.id===id);if(c)c.side=side;for(const u of sim.units)if((u.campId||u.scenarioGroupId)===id){if(side===NEUTRAL_SIDE){u.scenarioGroupId=null;sim.makeUnitNeutralObject(u,id)}else{sim.enlistNeutralObjectUnit(u,side);u.scenarioGroupId=id}}return}
+  if(type==="victory"||type==="defeat"){const human=MatchLifecycle.singleMatch?.humanRole||"host",winner=type==="victory"?human:(human==="host"?"guest":"host");sess.endMatch(winner,"campaign-trigger",{notifyPeer:sess.role==="host"});return}
+ }
+ static humanSide(){return (MatchLifecycle.singleMatch?.humanRole||"host")==="host"?0:1}
+ static startEvents(){const m=CampaignRuntime.pending;if(!m?.events?.length)return;this.eventTimer=setInterval(()=>{const sess=MatchLifecycle.activeSession?.(),sim=sess?.sim;if(!sim)return;const h=this.humanSide(),now=performance.now();for(const e of m.events){if(e.enabled===false||this.fired.has(e.id))continue;const st=this.fireState.get(e.id)||{count:0,last:-Infinity};if(now-st.last<Math.max(0,Number(e.cooldownMs)||0)||!this.triggerMet(e.when||e.trigger,sim,h))continue;st.count++;st.last=now;this.fireState.set(e.id,st);const fire=()=>{for(const a of e.actions)this.runAction(a)};const delay=Math.max(0,Number(e.delayMs)||0);if(delay)this.timers.push(setTimeout(fire,delay));else fire();if(e.once!==false||(e.repeatCount!=null&&st.count>=Number(e.repeatCount)))this.fired.add(e.id)}},250)}
+ static onGameEnter(){const m=CampaignRuntime.pending;if(!m||this.shownMissionId===m.missionId)return;this.shownMissionId=m.missionId;this.clear();this.flags={...(m.flags||{})};for(const o of m.objectives||[])this.objectives.set(String(o.id),{id:String(o.id),text:String(o.text||o.label||o.id),state:String(o.state||"active")});this.renderObjectives();const lines=m.presentation?.opening||[],el=this.ensureBubble();lines.forEach((line,i)=>this.timers.push(setTimeout(()=>{el.textContent=line;el.style.opacity="1"},i*3200)));if(lines.length)this.timers.push(setTimeout(()=>{el.style.opacity="0"},lines.length*3200+2600));this.timers.push(setTimeout(()=>this.startEvents(),Math.max(500,lines.length*3200+500)))}
+ static outroDuration(lines){const n=Array.isArray(lines)?lines.filter(Boolean).length:0;return n? n*3200+350:0}
+ static playOutro(lines,onDone){const seq=Array.isArray(lines)?lines.filter(Boolean):[];if(!seq.length){onDone?.();return 0}const el=this.ensureBubble();let total=0;for(const line of seq){this.timers.push(setTimeout(()=>{el.textContent=String(line);el.style.opacity="1"},total));total+=3200}this.timers.push(setTimeout(()=>{el.style.opacity="0"},Math.max(0,total-350)));this.timers.push(setTimeout(()=>onDone?.(),total+350));return total+350}
+ static recordResult(winner,viewRole){const m=CampaignRuntime.pending;if(!m||winner!==viewRole)return false;const entry={completed:true,completedAt:Date.now()};CampaignRuntime.progress[m.missionId]=entry;try{const key="rallyFrontierCampaignProgressV1",data=JSON.parse(localStorage.getItem(key)||"{}");data[m.missionId]=entry;localStorage.setItem(key,JSON.stringify(data))}catch{}return true}
+}
+
+class CampaignRepository{
+ static baseUrl="https://byh-playground.github.io/rally-frontier/campaign/";
+ static manifest=null;
+ static resolve(path){return new URL(String(path||""),this.baseUrl).href}
+ static async loadJson(url){const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.json()}
+ static async loadManifest(){const raw=await this.loadJson(this.resolve("manifest.json"));if(!raw||typeof raw!=="object")throw new Error("manifest 객체가 필요합니다.");const schemaVersion=Math.max(1,Math.round(Number(raw.schemaVersion)||1));const campaigns=(Array.isArray(raw.campaigns)?raw.campaigns:[]).map(c=>({id:String(c.id||""),title:String(c.title||c.id||"Campaign"),missions:(Array.isArray(c.missions)?c.missions:[]).map(m=>({id:String(m.id||""),title:String(m.title||m.id||"Mission"),src:String(m.src||"")})).filter(m=>m.id&&m.src)})).filter(c=>c.id&&c.missions.length);this.manifest={schemaVersion,campaigns};return this.manifest}
+ static async loadMission(entry){return this.loadJson(this.resolve(entry.src))}
+}
+class CampaignRuntime{
+ static pending=null; static progress=Object.create(null); static setMission(raw){this.pending=CampaignMissionDefinition.normalize(raw);return this.pending} static clear(){this.pending=null}
+ static matchConfig(){const m=this.pending;if(!m)return null;return {selectionMode:"deck",presetId:"standard",simulationTps:UiRuntimeState.value.settings.simulationTps,campaignScenario:m,overrides:{draft:{enabled:false}}}}
+}
 class MatchLifecycle{
   static localTest=null;
   static singleMatch=null;
@@ -29986,6 +30300,7 @@ class MatchLifecycle{
   if(LocalEnvironmentUtil.isLocalTest()){ActiveViewState.session=MatchLifecycle.localTest.sessions[ActiveViewState.role];ActiveViewState.transport=MatchLifecycle.localTest.transports[ActiveViewState.role]}
 }
   static currentMatchConfig(){
+  if(CampaignRuntime.pending)return CampaignRuntime.matchConfig();
   return {selectionMode:UiRuntimeState.value.settings.selectionMode,presetId:UiRuntimeState.value.settings.presetId,simulationTps:UiRuntimeState.value.settings.simulationTps,debugScenario:DebugScenarioHarness.pending?DebugScenarioHarness.normalize(DebugScenarioHarness.pending):null};
 }
   static wireSessionForView(r,sess,trans){
@@ -30398,6 +30713,7 @@ class MatchLifecycle{
   else if(reason==="disconnect-timeout")UiRegistry.refs.resultText.textContent=mine?"상대 연결이 60초 동안 복구되지 않았습니다.":"연결을 60초 안에 복구하지 못했습니다.";
   else if(reason==="draw")UiRegistry.refs.resultText.textContent="양쪽 메인 거점이 같은 tick에 파괴되었습니다.";
   else UiRegistry.refs.resultText.textContent=mine?"적 메인 거점을 파괴했습니다.":"내 메인 거점이 파괴되었습니다.";
+  if(mine&&CampaignPresentation.recordResult(winner,viewRole))UiRegistry.refs.resultText.textContent+=" · 캠페인 진행 저장 완료";
   const replayReady=!!ReplayPresentation.replaySourceSession()?.replayRecorder?.result;
   if(UiRegistry.refs.replaySaveBtn)UiRegistry.refs.replaySaveBtn.disabled=!replayReady;
   if(UiRegistry.refs.replayWatchBtn)UiRegistry.refs.replayWatchBtn.disabled=!replayReady;
@@ -31648,7 +31964,7 @@ class BattlePresentation{
   UiController.setUiScreen("game");
   DraftPresentation.clearDraftFinalePresentation();
   draftPointerLocked=false;
-  if(enteringGame)BattlePresentation.closeTransientBattleUi();
+  if(enteringGame){BattlePresentation.closeTransientBattleUi();CampaignPresentation.onGameEnter();}
   UiController.closeUiModal("create");UiController.closeUiModal("join");
   
   if(LocalEnvironmentUtil.isLocalTest())ViewRuntimeState.byRole[ActiveViewState.role].snapshot=s;
@@ -31929,7 +32245,7 @@ class BattlePresentation{
           : ` · ${density.kind==="defense"?"발사":"생산"} 100%`)
       : "";
     const defenseText=BuildingDefinition.isDefenseTower(UiRuntimeState.value.target.building)
-      ? `<br><b>방어 포탑:</b> 개수/거점 제한 없음 · ${DEFENSE_CLUSTER_RADIUS} 이내 밀집 시 발사효율 ${DEFENSE_CLUSTER_SPEED_PCT.join("→")}%`
+      ? `<br><b>방어 포탑:</b> 개수/거점 제한 없음 · ${DEFENSE_CLUSTER_RADIUS} 이내 밀집 시 발사효율 ${PRODUCTION_CLUSTER_SPEED_PCT.join("→")}%`
       : "";
     const singletonTech=!!BuildingDefinition.get(UiRuntimeState.value.target.building)?.singleton;
     const buildModeText=singletonTech
@@ -32464,7 +32780,7 @@ class ResearchPresentation{
 
 
 
-const UI_MODAL_DIALOG_KEYS=Object.freeze({"game-start":"gameStartDialog","single-role":"singleRoleDialog",create:"createDialog",join:"joinDialog","deck-builder":"deckBuilderDialog",detail:"infoDetailDialog"});
+const UI_MODAL_DIALOG_KEYS=Object.freeze({"game-start":"gameStartDialog",campaign:"campaignDialog","single-role":"singleRoleDialog",create:"createDialog",join:"joinDialog","deck-builder":"deckBuilderDialog",detail:"infoDetailDialog"});
 
 
 
@@ -32798,9 +33114,21 @@ UiRegistry.refs.gameStartDialog.addEventListener("click",e=>{
   if(e.target===UiRegistry.refs.gameStartDialog)UiController.closeUiModal("game-start");
 });
 
+const renderCampaignLoadedMission=(m,source="preview")=>{UiRegistry.refs.campaignMissionTitle.textContent=m.title;UiRegistry.refs.campaignMissionBrief.textContent=m.briefing||m.missionId;UiRegistry.refs.campaignStatus.textContent=`${source==="repository"?"정식":"Preview"} · ${m.player.units.length}종 VS ${m.enemy.units.length}종 · 현재 Definition 수치 사용`;UiRegistry.refs.campaignStartBtn.disabled=false};
+const loadCampaignMissionObject=(raw,source="preview")=>{try{renderCampaignLoadedMission(CampaignRuntime.setMission(raw),source)}catch(e){CampaignRuntime.clear();UiRegistry.refs.campaignStartBtn.disabled=true;UiRegistry.refs.campaignStatus.textContent=e?.message||String(e)}};
+const renderCampaignRepository=manifest=>{const host=UiRegistry.refs.campaignRepositoryList;if(!host)return;host.replaceChildren();for(const campaign of manifest.campaigns){const head=document.createElement("div");head.textContent=campaign.title;head.style.cssText="font-weight:900;font-size:13px;margin-top:4px";host.appendChild(head);for(const mission of campaign.missions){const b=document.createElement("button");b.type="button";b.className="dialog-action";b.textContent=mission.title;b.dataset.missionId=mission.id;b.onclick=async()=>{UiRegistry.refs.campaignStatus.textContent=`${mission.title} 불러오는 중…`;try{loadCampaignMissionObject(await CampaignRepository.loadMission(mission),"repository")}catch(e){CampaignRuntime.clear();UiRegistry.refs.campaignStartBtn.disabled=true;UiRegistry.refs.campaignStatus.textContent="정식 미션 로드 실패 · "+(e?.message||e)}};host.appendChild(b)}}if(!host.childElementCount){const e=document.createElement("div");e.className="dialog-copy";e.textContent="등록된 정식 캠페인이 없습니다.";host.appendChild(e)}};
+const refreshCampaignRepository=async()=>{UiRegistry.refs.campaignStatus.textContent="정식 캠페인 목록 불러오는 중…";try{const m=await CampaignRepository.loadManifest();renderCampaignRepository(m);UiRegistry.refs.campaignStatus.textContent=`정식 캠페인 ${m.campaigns.reduce((n,c)=>n+c.missions.length,0)}개 미션` }catch(e){UiRegistry.refs.campaignRepositoryList?.replaceChildren();UiRegistry.refs.campaignStatus.textContent="Repository 로드 실패 · 개발용 JSON Preview는 계속 사용할 수 있습니다. · "+(e?.message||e)}};
+UiRegistry.refs.campaignBtn.onclick=()=>{audioSystem.unlock();DebugScenarioHarness.pending=null;CampaignRuntime.clear();UiRegistry.refs.campaignStartBtn.disabled=true;UiRegistry.refs.campaignMissionTitle.textContent="캠페인";UiRegistry.refs.campaignMissionBrief.textContent="정식 캠페인은 Repository에서 읽고, 개발 중 Mission JSON은 1회 Preview로 실행합니다.";UiController.closeUiModal("game-start");UiController.openUiModal("campaign");refreshCampaignRepository()};
+UiRegistry.refs.campaignRefreshBtn.onclick=()=>refreshCampaignRepository();
+UiRegistry.refs.campaignCloseBtn.onclick=()=>UiController.closeUiModal("campaign");
+UiRegistry.refs.campaignLoadFileBtn.onclick=()=>UiRegistry.refs.campaignFileInput.click();
+UiRegistry.refs.campaignFileInput.onchange=async()=>{const f=UiRegistry.refs.campaignFileInput.files?.[0];if(!f)return;try{loadCampaignMissionObject(JSON.parse(await f.text()),"preview")}catch(e){UiRegistry.refs.campaignStatus.textContent="JSON 읽기 실패 · "+(e?.message||e)}};
+UiRegistry.refs.campaignLoadUrlBtn.onclick=async()=>{const url=UiRegistry.refs.campaignUrlInput.value.trim();if(!url)return;UiRegistry.refs.campaignStatus.textContent="불러오는 중…";try{const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw new Error(`HTTP ${r.status}`);loadCampaignMissionObject(await r.json(),"preview")}catch(e){UiRegistry.refs.campaignStatus.textContent="URL 로드 실패 · CORS/주소 확인 · "+(e?.message||e)}};
+UiRegistry.refs.campaignStartBtn.onclick=()=>{if(!CampaignRuntime.pending)return;audioSystem.unlock();UiController.closeUiModal("campaign");UiRegistry.refs.singleBtn.disabled=true;UiRegistry.refs.singleStatus.textContent=`캠페인 · ${CampaignRuntime.pending.title} 준비 중…`;UiController.setElementVisible(UiRegistry.refs.singleStatus,true);NetworkModuleLoader.pendingPeerAction=null;MatchLifecycle.startSinglePlayerWebRTC("host")};
 UiRegistry.refs.singleBtn.onclick=()=>{
   audioSystem.unlock();
   DebugScenarioHarness.pending=null;
+  CampaignRuntime.clear();
   UiRuntimeState.value.settings.presetId="standard";
   UiController.setElementVisible(UiRegistry.refs.singleStatus,false);
   UiController.closeUiModal("game-start");
