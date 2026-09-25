@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "campaigns": [
+    {
+      "id": "flower",
+      "title": "화원",
+      "missions": [
+        {
+          "id": "flower-01",
+          "title": "01 · 낯선 개척자",
+          "src": "flower/01.json"
+        }
+      ]
+    }
+  ]
+}
