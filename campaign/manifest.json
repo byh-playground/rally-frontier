@@ -1,15 +1,18 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "campaigns": [
     {
       "id": "flower",
       "title": "화원",
       "missions": [
-        {
-          "id": "flower-01",
-          "title": "01 · 낯선 개척자",
-          "src": "flower/01.json"
-        }
+        {"id": "flower-01", "title": "화원 01 · 낯선 개척자", "src": "flower-01.js"}
+      ]
+    },
+    {
+      "id": "benchmark",
+      "title": "Campaign Benchmark",
+      "missions": [
+        {"id": "benchmark-outbreak-01", "title": "Benchmark 01 · 주야 공세", "src": "benchmark-outbreak-01.js"}
       ]
     }
   ]
