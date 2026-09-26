@@ -4743,7 +4743,7 @@ button.mode-selected{outline-color:#658f60!important;background:#e3f0dd!importan
 </style>
 
 </head>
-<body class="boot-loading"><script>document.documentElement.dataset.build="20260924T194500+0900-rf-medic-research-staged-v14"</script>
+<body class="boot-loading"><script>document.documentElement.dataset.build="20260926T120000+0900-rf-campaign-flat-v48"</script>
 
 <div id="renderFatalOverlay" class="render-fatal-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="renderFatalTitle">
   <div class="render-fatal-card">
@@ -5788,7 +5788,7 @@ button.mode-selected{outline-color:#658f60!important;background:#e3f0dd!importan
         <div class="title-actions title-actions-main">
           <button id="gameStartBtn" class="title-button primary title-main-action" type="button">게임 시작</button>
           <button id="replayOpenBtn" class="title-button title-main-action" type="button">리플레이</button>
-          <input id="replayFileInput" class="hidden" type="file" accept="application/json,.json">
+          <input id="replayFileInput" class="hidden" type="file" accept="text/javascript,application/javascript,.js">
         </div>
         <button id="installPwaBtn" class="pwa-install-button hidden" type="button">
           <span class="pwa-install-main">⬇ 앱으로 설치</span>
@@ -5824,7 +5824,7 @@ button.mode-selected{outline-color:#658f60!important;background:#e3f0dd!importan
         <div id="selectionModeCopy" class="selection-mode-copy">서로 번갈아 유닛을 선택해 이번 경기의 조합을 완성합니다.</div>
       </div>
       <div class="start-mode-actions">
-        <button id="campaignBtn" type="button" class="dialog-action primary start-mode-option"><b>캠페인</b><span class="single-entry-sub">외부 Mission JSON · 기존 전투 시스템 그대로 사용</span></button>
+        <button id="campaignBtn" type="button" class="dialog-action primary start-mode-option"><b>캠페인</b><span class="single-entry-sub">외부 Mission JS · 기존 전투 시스템 그대로 사용</span></button>
 <button id="singleBtn" type="button" class="dialog-action primary start-mode-option">
           싱글 플레이
           <span class="single-entry-sub">AI와 대전 · Host / Guest 역할 선택</span>
@@ -5870,13 +5870,13 @@ button.mode-selected{outline-color:#658f60!important;background:#e3f0dd!importan
 
   <dialog id="campaignDialog" class="game-dialog"><div class="dialog-shell">
 <button id="campaignCloseBtn" type="button" class="dialog-close">×</button><div class="dialog-kicker">CAMPAIGN · VERTICAL SLICE</div>
-<h2 id="campaignMissionTitle">캠페인</h2><p id="campaignMissionBrief" class="dialog-copy">정식 캠페인은 Repository에서 읽고, 개발 중 Mission JSON은 1회 Preview로 실행합니다.</p>
+<h2 id="campaignMissionTitle">캠페인</h2><p id="campaignMissionBrief" class="dialog-copy">정식 캠페인은 campaign/ 단일 폴더의 Mission JS를 읽고, 개발 중 Mission JS는 1회 Preview로 실행합니다.</p>
 <div id="campaignRepositoryList" style="display:grid;gap:8px;margin:10px 0 12px"></div>
 <button id="campaignRefreshBtn" type="button" class="dialog-action">정식 캠페인 새로고침</button>
 <details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;font-weight:800">개발용 Mission Preview</summary>
-<input id="campaignUrlInput" class="room-code-input" style="font-size:12px;letter-spacing:0;text-align:left;height:48px;margin-top:8px" placeholder="Mission JSON URL">
-<button id="campaignLoadUrlBtn" type="button" class="dialog-action">URL JSON Preview</button><input id="campaignFileInput" class="hidden" type="file" accept="application/json,.json">
-<button id="campaignLoadFileBtn" type="button" class="dialog-action">JSON 파일 Preview</button></details>
+<input id="campaignUrlInput" class="room-code-input" style="font-size:12px;letter-spacing:0;text-align:left;height:48px;margin-top:8px" placeholder="Mission JS URL · 예: .../campaign/flower-01.js">
+<button id="campaignLoadUrlBtn" type="button" class="dialog-action">URL JS Preview</button><input id="campaignFileInput" class="hidden" type="file" accept="text/javascript,application/javascript,.js">
+<button id="campaignLoadFileBtn" type="button" class="dialog-action">JS 파일 Preview</button></details>
 <button id="campaignStartBtn" type="button" class="dialog-action primary" disabled>미션 시작</button>
 <div id="campaignStatus" class="dialog-error"></div></div></dialog>
 <dialog id="singleRoleDialog" class="game-dialog">
@@ -6470,7 +6470,7 @@ button.mode-selected{outline-color:#658f60!important;background:#e3f0dd!importan
 // Single source of truth for this HTML artifact.
 // The timestamp lives only inside BUILD_ID. updatedAt is derived from it, so the
 // build identity and the visible/exported update time cannot drift apart.
-const BUILD_ID="20260925T174500+0900-rf-controller-owned-state-v28";
+const BUILD_ID="20260926T120000+0900-rf-campaign-flat-v48";
 
 class BuildMetadata{
   static buildUpdatedAtFromId(buildId){
@@ -6488,7 +6488,7 @@ const BUILD_META=Object.freeze({
 /* =========================
    1. Definitions
    ========================= */
-const SIM_TPS=10,FP=100,SIM_VERSION=163,CHECKSUM_EVERY=80,COMMAND_DELAY_MS=500;
+const SIM_TPS=10,FP=100,SIM_VERSION=164,CHECKSUM_EVERY=80,COMMAND_DELAY_MS=500;
 
 // Authoritative time contract:
 // - balance/design data uses integer milliseconds
@@ -6982,6 +6982,7 @@ const DEFAULT_ARTILLERY_MOVE_RECOVERY_MS=350;
 const NAV_BUILDING_MARGIN=6;
 const SPAWN_CLEARANCE=22;
 const SPAWN_UNIT_GAP=5;
+const SUMMON_SPAWN_ACTION_GRACE_MS=200;
 const PRODUCTION_CLUSTER_RADIUS=250;
 const DEFENSE_CLUSTER_RADIUS=250;
 const BUILD_START_HP_PCT=GameRuleDefinition.current.production.constructionStartHpPct;
@@ -8427,6 +8428,46 @@ class BuildingDefinition{
 });
 
   static forRole(role){return this.byRole[role]||null}
+}
+
+const BUILDER_NAV_PLACEMENT_RADIUS=Math.max(1,(ECONOMY_WORKER_DEF.size||10)*COLLISION_RADIUS_SCALE);
+function buildingPlacementEdgeMargin(type){
+  // Buildings may sit against the battlefield edge. The builder only needs one
+  // reachable interaction face inside the world; reserving a full worker corridor
+  // on every edge made legitimate perimeter construction impossible.
+  const bd=BuildingDefinition.get(type);
+  return Math.ceil((bd?.size||35)+2);
+}
+function buildingPlacementSeparation(typeA,typeB){
+  const a=BuildingDefinition.get(typeA),b=BuildingDefinition.get(typeB);
+  return (a?.size||35)+(b?.size||35)+Math.ceil((BUILDER_NAV_PLACEMENT_RADIUS+NAV_BUILDING_MARGIN)*2+2);
+}
+function buildingPlacementInsideWorld(type,x,y){
+  const m=buildingPlacementEdgeMargin(type);
+  return x>=m&&x<=WORLD_W-m&&y>=m&&y<=WORLD_H-m;
+}
+function builderApproachPoints(type,x,y){
+  const bd=BuildingDefinition.get(type);
+  const r=(bd?.size||35)+BUILDER_NAV_PLACEMENT_RADIUS+NAV_BUILDING_MARGIN+BUILDER_INTERACTION_PADDING;
+  const out=[];
+  for(let i=0;i<16;i++){
+    const a=i*Math.PI/8;
+    out.push({x:x+Math.cos(a)*r,y:y+Math.sin(a)*r});
+  }
+  return out;
+}
+function builderApproachPointClear(point,buildings,ignoreId=null){
+  const edge=BUILDER_NAV_PLACEMENT_RADIUS+2;
+  if(point.x<edge||point.x>WORLD_W-edge||point.y<edge||point.y>WORLD_H-edge)return false;
+  for(const b of buildings||[]){
+    if(!b||b.alive===false||b.id===ignoreId)continue;
+    const min=BUILDER_NAV_PLACEMENT_RADIUS+(BuildingDefinition.get(b.type)?.size||35)+NAV_BUILDING_MARGIN;
+    if(Math.hypot(point.x-b.x,point.y-b.y)<min)return false;
+  }
+  return true;
+}
+function buildingHasBuilderApproach(type,x,y,buildings,ignoreId=null){
+  return builderApproachPoints(type,x,y).some(q=>builderApproachPointClear(q,buildings,ignoreId));
 }
 
 for(const def of Object.values(BuildingDefinition.all)){
@@ -10706,7 +10747,7 @@ class LeapableMixin extends UnitCapability{
     return winner;
   }
   tryAuto(sim,visionSources,ability){
-    const u=this.owner,d=UnitDefinition.get(u.type)||{};if(sim.tick<(u.behaviorState.blinkCooldownUntil||0))return false;
+    const u=this.owner,d=UnitDefinition.get(u.type)||{};if(sim.tick<(u.behaviorState.spawnActionLockUntilTick||0))return false;if(sim.tick<(u.behaviorState.blinkCooldownUntil||0))return false;
     let enabled=false,roles=DIVE_BACKLINE_ROLES,range=Math.max(1,Number(d.leapRange)||ROGUE_BLINK_RANGE);
     const policy=String(d.leapAutoPolicy||"");
     if(policy==="always")enabled=true;
@@ -10814,9 +10855,9 @@ class SummonerMixin extends UnitCapability{
     const summonType=d.summonType||"sporeling",interval=Math.max(1,sim.msTicks(Number(d.summonIntervalMs)||500)),max=Math.max(1,Math.round(Number(d.summonMax)||5)),cost=Math.max(1,Math.round(Number(d.summonManaCost)||35));
     if(!u.nextSummonTick)u.nextSummonTick=sim.tick+interval;if(sim.tick<u.nextSummonTick)return false;u.nextSummonTick=sim.tick+interval;
     const living=sim.units.filter(x=>x.alive&&x.type===summonType&&x.summonerId===u.id).length;if(living>=max||(Number(u.resources.mana)||0)<cost)return false;
-    const seed=HashUtil.hash(`${u.id}|summon|${sim.tick}|${living}`),baseAngle=(seed%6283)/1000,baseR=sim.unitRadius(u.type)+sim.unitRadius(summonType)+SPAWN_UNIT_GAP+6;let spawn=null;
-    for(let k=0;k<8;k++){const angle=baseAngle+k*Math.PI/4,rr=baseR+(k%3)*5,x=RangeUtil.clamp(u.x+Math.cos(angle)*rr,20,WORLD_W-20),y=RangeUtil.clamp(u.y+Math.sin(angle)*rr,20,WORLD_H-20);if(sim.pointClearForUnit(summonType,x,y,null,[])){spawn={x,y};break}}
-    if(!spawn||!sim.consumeUnitMana(u,cost))return false;const child=sim.spawnUnit(u.side,summonType,spawn.x,spawn.y);child.summonerId=u.id;child.expireTick=child.timers.start(sim,"summonLifetime",d.summonLifetimeMs||12000);
+    const baseR=sim.unitRadius(u.type)+sim.unitRadius(summonType)+SPAWN_UNIT_GAP+6;
+    const spawn=sim.findOpenSpawnAround(u,summonType,{baseRadius:baseR,maxRadius:baseR+48,angleSlots:12,radialStep:8,seedKey:`${u.id}|summon|${sim.tick}|${living}`});
+    if(!spawn||!sim.consumeUnitMana(u,cost))return false;const child=sim.spawnUnit(u.side,summonType,spawn.x,spawn.y);child.summonerId=u.id;child.behaviorState.spawnActionLockUntilTick=sim.tick+Math.max(1,sim.msTicks(SUMMON_SPAWN_ACTION_GRACE_MS));child.expireTick=child.timers.start(sim,"summonLifetime",d.summonLifetimeMs||12000);
     sim.events.push({type:"sporeSpawn",side:u.side,x:spawn.x,y:spawn.y,unitId:child.id,intervalTicks:interval,manaCost:cost});return true;
   }
 }
@@ -11403,7 +11444,7 @@ class StrategySim{
     for(const spec of this.mapDescriptor?.authoredStructures||[]){
       const d=BuildingDefinition.get(spec.type);if(!d)continue;
       const b=new Building({id:spec.id,type:spec.type,side:spec.side,x:spec.x,y:spec.y,hp:d.hp,maxHp:d.hp,alive:true,complete:true,progress:d.buildTimeMs!=null?this.msTicks(d.buildTimeMs):this.buildingBuildTicks(d),constructionState:"complete",builderUnitId:null,constructionHpGranted:d.hp,produceType:null,productionTotal:0,productionRemaining:0,productionBatchSize:0,productionTicks:0,productionBatchesCompleted:0,constructionMineralCost:0,constructionGasCost:0,gasNodeId:null,gasWorkerTarget:0,cooldownUntil:0,attackCooldownPhase:0,attackFlash:0,beamTargetId:null,beamStartedAt:-1,beamStage:0,queue:[]});
-      b.campaignStructureId=spec.id;b.capturePointId=spec.capturePoint||null;this.buildings.push(b);this.markBuildingSpatialDirty();this.onBuildingComplete(b);
+      b.campaignStructureId=spec.id;b.capturePointId=spec.capturePoint||null;b.campaignObjectiveGroup=spec.objectiveGroup||null;this.buildings.push(b);this.markBuildingSpatialDirty();this.onBuildingComplete(b);
     }
   }
   msTicks(ms,options){return SimulationTiming.msToTicks(ms,this.tps,options)}
@@ -11473,7 +11514,7 @@ class StrategySim{
     for(const b of this.buildings){
       if(b.alive===false)continue;
       const od=BuildingDefinition.get(b.type)||{size:35};
-      if(Math.hypot(x-b.x,y-b.y)<bd.size+od.size+24)return false;
+      if(Math.hypot(x-b.x,y-b.y)<buildingPlacementSeparation(type,b.type))return false;
     }
     for(const m of this.resources||[])if(Math.hypot(x-m.x,y-m.y)<bd.size+(m.r||28)+MINERAL_BUILD_MARGIN)return false;
     for(const g of this.gasNodes||[])if(Math.hypot(x-g.x,y-g.y)<bd.size+(g.r||32)+18)return false;
@@ -12504,7 +12545,7 @@ class StrategySim{
     return next;
   }
 
-  applyCampaignScenario(raw){const cfg=CampaignMissionDefinition.normalize(raw),humanRole=MatchLifecycle.singleMatch?.humanRole||"host",humanSide=humanRole==="host"?0:1,enemySide=1-humanSide;this.campaignScenario=cfg;this.campaignTechCap=[3,3];this.campaignTechCap[humanSide]=cfg.player.techCap;this.campaignTechCap[enemySide]=cfg.enemy.techCap;this.decks=[[],[]];this.decks[humanSide]=cfg.player.units.slice();this.decks[enemySide]=cfg.enemy.units.slice();this.defenseCards[humanSide]=cfg.player.defenseCards.slice();this.defenseCards[enemySide]=cfg.enemy.defenseCards.slice();this.tech[humanSide]=Math.min(this.tech[humanSide],cfg.player.techCap);this.tech[enemySide]=Math.min(this.tech[enemySide],cfg.enemy.techCap);this.events.push({type:"campaignStart",missionId:cfg.missionId,title:cfg.title});return cfg}
+  applyCampaignScenario(raw){const cfg=CampaignMissionDefinition.normalize(raw),humanRole=MatchLifecycle.singleMatch?.humanRole||"host",humanSide=humanRole==="host"?0:1,enemySide=1-humanSide;this.campaignScenario=cfg;this.campaignTechCap=[3,3];this.campaignTechCap[humanSide]=cfg.player.techCap;this.campaignTechCap[enemySide]=cfg.enemy.techCap;this.decks=[[],[]];this.decks[humanSide]=cfg.player.units.slice();this.decks[enemySide]=cfg.enemy.units.slice();this.defenseCards[humanSide]=cfg.player.defenseCards.slice();this.defenseCards[enemySide]=cfg.enemy.defenseCards.slice();this.tech[humanSide]=Math.min(this.tech[humanSide],cfg.player.techCap);this.tech[enemySide]=Math.min(this.tech[enemySide],cfg.enemy.techCap);this.campaignScriptRuntime=new CampaignScriptRuntime(this,cfg);this.campaignScriptRuntime.start();this.events.push({type:"campaignStart",missionId:cfg.missionId,title:cfg.title});return cfg}
   spawnUnit(side,type,x,y,options=null){
     const d=UnitDefinition.get(type);
     const passiveMaxHp=this.passiveUnitMaxHp(side,type);
@@ -12516,7 +12557,7 @@ class StrategySim{
       status:{slowUntil:0,knockbackImmuneUntil:0,timedModifiers:{},airborneStartTick:0,airborneUntil:0,airborneDurationTicks:0,airborneHeight:0,airborneSourceType:null,impulseCompleteEffect:null},
       resources:{manaMax,mana:initialMana,nextManaRegenTick:manaSchedule&&initialMana<manaMax?this.tick+manaSchedule.intervalTicks:0},
       movement:{impulseFx:0,impulseFy:0,impulseUntil:0,impulseDecay:0,lastMoveTick:-999999,outOfCombatStartedAt:-1,chargeMomentum:1000,crouchStartedAt:-1,crouched:false},
-      behaviorState:{blinkCooldownUntil:0,ambushReady:false,carrierInitialized:false,nextCarrierSpawnTick:0,carrierRecoveryQueue:[],healTargetId:null,rootSetupTicks:0,rootTargetId:null,adaptiveRangeCache:0,adaptiveMoveSpeedCache:0,adaptiveRangeCacheTick:-999999,turnFlightHeadingMilliDeg:null,carrierFlightState:"active",burrowTrailNextTick:0,objectiveChargeDirX:0,objectiveChargeDirY:0,leapTargetId:null,hookCooldownUntil:0,clawRetargetBlockedUntil0:0,clawRetargetBlockedUntil1:0,burrowCooldownUntil:0,burrowPhaseUntil:0,burrowTrackTarget:false,burrowOriginX:0,burrowOriginY:0,objectiveCampId:null,basicAttackCount:0,objectiveAirCooldownUntil:0},
+      behaviorState:{spawnActionLockUntilTick:0,blinkCooldownUntil:0,ambushReady:false,carrierInitialized:false,nextCarrierSpawnTick:0,carrierRecoveryQueue:[],healTargetId:null,rootSetupTicks:0,rootTargetId:null,adaptiveRangeCache:0,adaptiveMoveSpeedCache:0,adaptiveRangeCacheTick:-999999,turnFlightHeadingMilliDeg:null,carrierFlightState:"active",burrowTrailNextTick:0,objectiveChargeDirX:0,objectiveChargeDirY:0,leapTargetId:null,hookCooldownUntil:0,clawRetargetBlockedUntil0:0,clawRetargetBlockedUntil1:0,burrowCooldownUntil:0,burrowPhaseUntil:0,burrowTrackTarget:false,burrowOriginX:0,burrowOriginY:0,objectiveCampId:null,basicAttackCount:0,objectiveAirCooldownUntil:0},
       carry:0,carryType:null,workResourceType:UnitDefinition.get(type)?.economyWorker?"mineral":null,workState:UnitDefinition.get(type)?.economyWorker?"seek":null,buildTargetId:null,mineId:null,mineStartedAt:-1,
       recentHitTicks:[],
       leapStartTick:0,leapEndTick:0,leapStartX:0,leapStartY:0,leapEndX:0,leapEndY:0,leapActive:false,
@@ -12882,6 +12923,21 @@ class StrategySim{
     return true;
   }
 
+  findOpenSpawnAround(anchor,type,{baseRadius=null,maxRadius=null,angleSlots=12,radialStep=8,seedKey="spawn",reserved=[]}={}){
+    if(!anchor)return null;
+    const ur=this.unitRadius(type),ar=anchor.type?this.unitRadius(anchor.type):0;
+    const start=Math.max(ur+ar+SPAWN_UNIT_GAP,Number(baseRadius)||0);
+    const limit=Math.max(start,Number(maxRadius)||start+48),slots=Math.max(8,Math.round(Number(angleSlots)||12)),step=Math.max(4,Number(radialStep)||8);
+    const phase=(HashUtil.hash(String(seedKey))%6283)/1000;
+    for(let rr=start;rr<=limit+0.001;rr+=step){
+      for(let k=0;k<slots;k++){
+        const a=phase+k*Math.PI*2/slots,x=RangeUtil.clamp(anchor.x+Math.cos(a)*rr,ur+8,WORLD_W-ur-8),y=RangeUtil.clamp(anchor.y+Math.sin(a)*rr,ur+8,WORLD_H-ur-8);
+        if(this.pointClearForUnit(type,x,y,null,reserved))return{x,y};
+      }
+    }
+    return null;
+  }
+
   preferredSpawnAngle(b,type){
     let tx=null,ty=null;
 
@@ -13000,14 +13056,22 @@ class StrategySim{
     const remain=Math.max(0,b.productionRemaining||0);
     return Math.min(Math.max(1,b.productionBatchSize||1),remain);
   }
+  reservableProductionBatchSize(side,b){
+    const desired=this.nextProductionBatchSize(b);
+    if(desired<=0||!b?.produceType)return 0;
+    const perUnit=Math.max(0,Number(UnitDefinition.get(b.produceType)?.supply)||0);
+    if(perUnit<=0)return desired;
+    const free=Math.max(0,this.supplyCap(side)-this.supplyUsed(side));
+    return Math.min(desired,Math.floor(free/perUnit));
+  }
   productionSupplyBlocked(side){
     for(const b of this.buildings){
       if(b.alive===false||b.side!==side||!b.complete)continue;
       if(!BuildingDefinition.get(b.type)?.isProductionBuilding)continue;
       if(this.productionPaused[side]||!b.produceType||!this.unitUnlocked(side,b.produceType))continue;
       if((b.queue||[]).length)continue;
-      const count=this.nextProductionBatchSize(b);
-      if(count>0&&!this.canReserveBatchSupply(side,b.produceType,count))return true;
+      const desired=this.nextProductionBatchSize(b);
+      if(desired>0&&this.reservableProductionBatchSize(side,b)<=0)return true;
     }
     return false;
   }
@@ -13341,7 +13405,11 @@ class StrategySim{
       const mineralCost=buildCost.mineral,gasCost=buildCost.gas;
 
       // 실제 커밋 시점에 다시 시야/자원/배치를 검사한다.
+      // Perimeter construction is legal when at least one real builder interaction
+      // face remains inside the world and clear of existing static buildings.
       if(
+        !buildingPlacementInsideWorld(action.building,x,y)||
+        !buildingHasBuilderApproach(action.building,x,y,this.buildings)||
         !this.buildPointVisible(side,x,y)||
         this.buildingOverlapsMineral(action.building,x,y)||
         this.wallet[side]<mineralCost||
@@ -13350,7 +13418,7 @@ class StrategySim{
       )return;
 
       for(const b of this.buildings){
-        if(b.alive!==false&&Math.hypot(b.x-x,b.y-y)<bd.size+(BuildingDefinition.get(b.type)?.size||35)+20)return;
+        if(b.alive!==false&&Math.hypot(b.x-x,b.y-y)<buildingPlacementSeparation(action.building,b.type))return;
       }
 
       this.wallet[side]-=mineralCost;
@@ -13611,8 +13679,11 @@ class StrategySim{
       if(BuildingDefinition.get(b.type)?.isProductionBuilding&&!this.productionPaused[b.side]&&b.produceType&&this.unitUnlocked(b.side,b.produceType)){
         // 유한 생산 계약. batch 전체 Supply를 생산 시작 순간 예약한다.
         if(!b.queue.length&&(b.productionRemaining||0)>0){
-          const count=this.nextProductionBatchSize(b);
-          if(count>0&&this.canReserveBatchSupply(b.side,b.produceType,count)){
+          // Preferred batches may shrink under supply pressure. This keeps a
+          // production contract live whenever at least one unit can fit, while
+          // preserving the contract total and normal interval semantics.
+          const count=this.reservableProductionBatchSize(b.side,b);
+          if(count>0){
             const total=this.scaledProductionTicks(b.productionTicks||this.tps*10)*100;
             b.queue.push({
               type:b.produceType,count,remaining:total,total,
@@ -13978,7 +14049,14 @@ class StrategySim{
         }else{
           u.workState="buildTravel";
           b.constructionState="waitingWorker";
-          this.moveToward(u,b.x,b.y,d.speed);
+          // Aim at a concrete interaction face rather than the building center.
+          // This prevents edge + static-building concavities from repeatedly asking
+          // the generic collision slider to solve an impossible center-line target.
+          const candidates=builderApproachPoints(b.type,b.x,b.y)
+            .filter(q=>builderApproachPointClear(q,this.buildings,b.id))
+            .sort((a,c)=>Math.hypot(u.x-a.x,u.y-a.y)-Math.hypot(u.x-c.x,u.y-c.y)||a.x-c.x||a.y-c.y);
+          const q=candidates[0]||{x:b.x,y:b.y};
+          this.moveToward(u,q.x,q.y,d.speed);
         }
         return;
       }
@@ -15353,7 +15431,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     this.events.push({
       type:"rootSpike",side:u.side,x:u.x,y:u.y,
       x2:u.x+nx*thornReach,y2:u.y+ny*thornReach,
-      width,spikeCount:Math.max(6,Math.round(thornReach/28))
+      width,spikeCount:Math.max(6,Math.round(thornReach/28)),travelMs:Math.max(420,Math.min(900,Math.round(thornReach*2.4)))
     });
     return win;
   }
@@ -16691,6 +16769,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
 
     this.tick++;
     this.events=[];
+    this.campaignScriptRuntime?.tick();
     if(this.tickVisibilityCacheTick!==this.tick){
       this.tickVisibilityCache[0].clear();this.tickVisibilityCache[1].clear();
       this.tickVisibilityCacheTick=this.tick;
@@ -16765,6 +16844,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     if(!hostBaseAlive&&!guestBaseAlive)winner="draw";
     else if(!hostBaseAlive)winner="guest";
     else if(!guestBaseAlive)winner="host";
+    if(this.campaignScriptRuntime&&this.events.length){for(const event of [...this.events])this.campaignScriptRuntime.event(event)}
     this.updateBalanceTelemetry(winner);
     this.cleanupDeadEntities();
     const postMs=profile?now()-mark:0;
@@ -16803,6 +16883,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
 
     core.m(this.tick);core.m(this.seq);core.m(this.commandSeq||0);core.m(this.spellRewardSeq||0);
     for(const f of this.flags){core.mf(f.x);core.mf(f.y);core.m(f.forced?1:0)}
+    core.ms(StableSerializationUtil.stableStringify(this.campaignScriptRuntime?.state||null));
 
     economy.m(this.wallet[0]);economy.m(this.wallet[1]);economy.m(this.gasWallet[0]);economy.m(this.gasWallet[1]);
     economy.m(this.tech[0]);economy.m(this.tech[1]);economy.m(this.productionPaused[0]?1:0);economy.m(this.productionPaused[1]?1:0);
@@ -16841,7 +16922,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       h.ms(u.id);h.ms(u.type);h.m(u.side);h.m(u.fx);h.m(u.fy);h.mf(u.x);h.mf(u.y);h.m(u.hp);h.m(u.maxHp||0);h.m(u.alive?1:0);
       h.m(u.combat.cooldownUntil||0);h.m(u.hitGuard||0);h.ms(u.hitGuardSourceId||"");h.m(u.nextGuardChargeTick||0);h.m(u.hitFlash||0);h.m(u.attackFlash||0);h.m(u.combat.attackWindupUntil||0);h.m(u.combat.attackWindupStartedAt||0);h.ms(u.combat.attackWindupTargetId||"");h.m(u.combat.attackWindupIsBuilding?1:0);h.m(u.combat.moveRecoveryUntil||0);h.m(u.carry||0);h.ms(u.carryType||"");h.ms(u.workResourceType||"");h.ms(u.workState||"");h.ms(u.buildTargetId||"");h.ms(u.mineId||"");h.m(u.mineStartedAt??-1);
       h.ms(u.target||"");h.ms(u.combat.attackArcTargetId||"");h.m(u.combat.attackArcUntilTick||0);h.m(u.resources.manaMax||0);h.m(u.resources.mana||0);h.m(u.resources.nextManaRegenTick||0);h.m(u.status.slowUntil||0);h.m(u.status.knockbackImmuneUntil||0);h.m(u.movement.chargeMomentum||1000);h.m(u.movement.outOfCombatStartedAt??-1);h.m(u.movement.lastMoveTick??-999999);h.m(u.movement.crouchStartedAt??-1);h.m(u.movement.crouched?1:0);h.ms(StableSerializationUtil.stableStringify(u.recentHitTicks||[]));h.m(u.combat.hitBurstCooldownUntil||0);h.ms(StableSerializationUtil.stableStringify(u.status.timedModifiers||{}));h.m(u.leapStartTick||0);h.m(u.leapEndTick||0);h.mf(u.leapStartX||0);h.mf(u.leapStartY||0);h.mf(u.leapEndX||0);h.mf(u.leapEndY||0);h.ms(u.behaviorState.leapTargetId||"");h.m(u.leapActive?1:0);h.m(u.behaviorState.blinkCooldownUntil||0);
-      h.m(u.behaviorState.ambushReady?1:0);h.m(u.behaviorState.carrierInitialized?1:0);h.m(u.behaviorState.nextCarrierSpawnTick||0);h.ms(StableSerializationUtil.stableStringify(u.behaviorState.carrierRecoveryQueue||[]));h.ms(u.behaviorState.healTargetId||"");h.m(u.carrierSlot||0);h.m(u.pillbugBlastDone?1:0);h.m(u.behaviorState.rootSetupTicks||0);h.ms(u.behaviorState.rootTargetId||"");h.m(u.nextSummonTick||0);h.ms(u.summonerId||"");h.m(u.expireTick||0);
+      h.m(u.behaviorState.spawnActionLockUntilTick||0);h.m(u.behaviorState.ambushReady?1:0);h.m(u.behaviorState.carrierInitialized?1:0);h.m(u.behaviorState.nextCarrierSpawnTick||0);h.ms(StableSerializationUtil.stableStringify(u.behaviorState.carrierRecoveryQueue||[]));h.ms(u.behaviorState.healTargetId||"");h.m(u.carrierSlot||0);h.m(u.pillbugBlastDone?1:0);h.m(u.behaviorState.rootSetupTicks||0);h.ms(u.behaviorState.rootTargetId||"");h.m(u.nextSummonTick||0);h.ms(u.summonerId||"");h.m(u.expireTick||0);
       h.m(u.behaviorState.turnFlightHeadingMilliDeg==null?-1:u.behaviorState.turnFlightHeadingMilliDeg);h.ms(u.behaviorState.carrierFlightState||"active");h.m(u.behaviorState.hookCooldownUntil||0);h.m(u.behaviorState.clawRetargetBlockedUntil0||0);h.m(u.behaviorState.clawRetargetBlockedUntil1||0);h.ms(StableSerializationUtil.stableStringify(u.status.impulseCompleteEffect||null));h.mf(u.behaviorState.adaptiveRangeCache||0);h.mf(u.behaviorState.adaptiveMoveSpeedCache||0);h.m(u.behaviorState.adaptiveRangeCacheTick??-999999);h.m(u.movement.impulseFx||0);h.m(u.movement.impulseFy||0);h.m(u.movement.impulseUntil||0);h.m(u.movement.impulseDecay||0);h.m(u.status?.airborneStartTick||0);h.m(u.status?.airborneUntil||0);h.m(u.status?.airborneDurationTicks||0);h.mf(u.status?.airborneHeight||0);h.ms(u.status?.airborneSourceType||"");h.m(u.behaviorState.burrowCooldownUntil||0);h.ms(u.burrowPhase||"none");h.m(u.behaviorState.burrowPhaseUntil||0);h.ms(u.burrowTargetId||"");h.m(u.behaviorState.burrowTrackTarget?1:0);h.mf(u.behaviorState.burrowOriginX||0);h.mf(u.behaviorState.burrowOriginY||0);h.mf(u.burrowDestX||0);h.mf(u.burrowDestY||0);h.ms(u.campId||"");
       h.m(u.objectiveCaptured?1:0);h.mf(u.objectiveCapturedScale||0);h.ms(u.behaviorState.objectiveCampId||"");h.ms(u.objectiveLane||"");h.mf(u.objectiveLaneT||0);h.m(u.objectiveAttackCount||0);h.m(u.behaviorState.basicAttackCount||0);h.m(u.behaviorState.objectiveAirCooldownUntil||0);h.m(u.objectiveChargePending?1:0);h.m(u.objectiveChargeActive?1:0);h.mf(u.behaviorState.objectiveChargeDirX||0);h.mf(u.behaviorState.objectiveChargeDirY||0);h.mf(u.objectiveChargeRemaining||0);h.ms(StableSerializationUtil.stableStringify(u.objectiveChargeHitIds||[]));h.ms(OBJECTIVE_DRAGON_BREATH_PHASES.has(u.objectiveBreathPhase)?u.objectiveBreathPhase:OBJECTIVE_DRAGON_BREATH_PHASE.IDLE);h.m(u.objectiveBreathTellUntil||0);h.m(u.objectiveBreathUntil||0);h.m(u.objectiveBreathNextTick||0);h.ms(u.objectiveBreathTargetId||"");h.mf(u.objectiveBreathDirX||0);h.mf(u.objectiveBreathDirY||0);
       h.ms(u.forcedTargetId||"");h.m(u.returningHome?1:0);h.m(u.aggroed?1:0);h.m(u.tunnelLockUntil||0);
@@ -16950,10 +17031,12 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     this.rebuildRuntimeIndexes();
     return true;
   }
-  exportState(){return CloneUtil.clone({seed:this.seed,rules:this.rules,mapDescriptor:this.mapDescriptor,tick:this.tick,seq:this.seq,wallet:this.wallet,gasWallet:this.gasWallet,gasNodes:this.gasNodes,tech:this.tech,attackUpgrade:this.attackUpgrade,armorUpgrade:this.armorUpgrade,abilities:this.abilities,specialResearch:this.specialResearch,researchQueues:this.researchQueues,productionPaused:this.productionPaused,flags:this.flags,decks:this.decks,defenseCards:this.defenseCards,resources:this.resources,camps:this.camps,capturePoints:this.capturePoints,spellBooks:this.spellBooks,equippedSpells:this.equippedSpells,passiveCards:this.passiveCards,spellChests:this.spellChests,pendingChestOffers:this.pendingChestOffers,pendingSpellReplacement:this.pendingSpellReplacement,spellRewardSeq:this.spellRewardSeq,activeSpells:this.activeSpells,delayedEffects:this.delayedEffects,units:this.units,buildings:this.buildings,projectiles:this.projectiles,scheduled:[...this.scheduled.entries()]})}
+  exportState(){return CloneUtil.clone({seed:this.seed,rules:this.rules,mapDescriptor:this.mapDescriptor,campaignScenario:this.campaignScenario||null,campaignScriptState:this.campaignScriptRuntime?.state||null,tick:this.tick,seq:this.seq,wallet:this.wallet,gasWallet:this.gasWallet,gasNodes:this.gasNodes,tech:this.tech,attackUpgrade:this.attackUpgrade,armorUpgrade:this.armorUpgrade,abilities:this.abilities,specialResearch:this.specialResearch,researchQueues:this.researchQueues,productionPaused:this.productionPaused,flags:this.flags,decks:this.decks,defenseCards:this.defenseCards,resources:this.resources,camps:this.camps,capturePoints:this.capturePoints,spellBooks:this.spellBooks,equippedSpells:this.equippedSpells,passiveCards:this.passiveCards,spellChests:this.spellChests,pendingChestOffers:this.pendingChestOffers,pendingSpellReplacement:this.pendingSpellReplacement,spellRewardSeq:this.spellRewardSeq,activeSpells:this.activeSpells,delayedEffects:this.delayedEffects,units:this.units,buildings:this.buildings,projectiles:this.projectiles,scheduled:[...this.scheduled.entries()]})}
   importState(s){
     const copy=CloneUtil.clone(s),scheduled=copy.scheduled||[];delete copy.scheduled;delete copy.collisionTree;delete copy.collisionGrid;delete copy.collisionCandidates;
     Object.assign(this,copy);
+    if(copy.campaignScenario?.moduleSource){this.campaignScenario=CampaignMissionDefinition.normalize(copy.campaignScenario);this.campaignScriptRuntime=new CampaignScriptRuntime(this,this.campaignScenario);this.campaignScriptRuntime.started=true;this.campaignScriptRuntime.state=CloneUtil.clone(copy.campaignScriptState||{})}else{this.campaignScriptRuntime=null}
+    delete this.campaignScriptState;
     this.units=(copy.units||[]).map(Unit.fromState);this.buildings=(copy.buildings||[]).map(Building.fromState);this.projectiles=(copy.projectiles||[]).map(Projectile.fromState);
     this.scheduled=new Map(scheduled);
     this.events=[];
@@ -19650,6 +19733,297 @@ if(type==="DESYNC_CORRECTION_RUN"&&this.role==="guest"){
    - 게임 상태 변경은 반드시 guest GameSession의 draftAct()/command()를 거친다.
    - 실제 싱글 연결은 NostrRtcTransport의 raw WebRTC 경로를 그대로 사용하고 signaling만 in-page local bus로 대체한다.
    ========================= */
+
+// === AI decision architecture v33 ===
+// Observation -> SituationAnalyzer -> Policy -> MacroAction -> existing deterministic executor.
+// Policies never mutate simulation state directly, so a future learned policy can replace UtilityAiPolicy
+// without changing production/build/movement execution contracts.
+class AiObservationBuilder{
+  static build(bot,state,p){
+    const enemySide=1-bot.side;
+    const ownProduction=bot.productionFacilityCount(state,bot.side);
+    // Enemy values intentionally come from the bot perception snapshot (p) wherever practical.
+    const visibleEnemyProduction=(p.enemyBuildings||[]).filter(b=>BuildingDefinition.get(b.type)?.isProductionBuilding).length;
+    const ownBases=bot.workerBases(state).length;
+    const visibleEnemyBases=(p.enemyBuildings||[]).filter(b=>BuildingDefinition.get(b.type)?.isDropoff).length;
+    const ownWorkers=(p.ownWorkers||[]).length;
+    const visibleEnemyWorkers=(p.enemyUnits||[]).filter(u=>!!UnitDefinition.get(u.type)?.economyWorker).length;
+    const ownArmy=(p.ownArmy||[]).length;
+    const visibleEnemyArmy=(p.enemyUnits||[]).filter(u=>!UnitDefinition.get(u.type)?.economyWorker).length;
+    const neutralObjectives=(p.capturePoints||[]).filter(cp=>cp.enabled&&cp.owner==null).length;
+    const ownedObjectives=(p.capturePoints||[]).filter(cp=>cp.enabled&&cp.owner===bot.side).length;
+    const enemyObjectives=(p.capturePoints||[]).filter(cp=>cp.enabled&&cp.owner===enemySide).length;
+    const wallet=Number(state.wallet?.[bot.side]||0),gas=Number(state.gasWallet?.[bot.side]||0);
+    const queued=state.buildings.filter(b=>b.alive!==false&&b.side===bot.side&&BuildingDefinition.get(b.type)?.isProductionBuilding)
+      .reduce((n,b)=>n+(Array.isArray(b.queue)?b.queue.length:0)+((b.productionRemaining||0)>0?1:0),0);
+    const productionCapacity=Math.max(1,ownProduction);
+    const spendPressure=Math.max(0,Math.min(3,wallet/(350*productionCapacity)));
+    let nearbyThreat=0;
+    for(const base of p.ownBuildings||[]){
+      if(!BuildingDefinition.get(base.type)?.isDropoff)continue;
+      for(const e of p.enemyUnits||[])if(Math.hypot(e.x-base.x,e.y-base.y)<560)nearbyThreat++;
+    }
+    return Object.freeze({
+      tick:Number(state.tick||0),elapsedSec:Number(state.tick||0)/Math.max(1,bot.session?.sim?.tps||SIM_TPS),
+      economy:Object.freeze({minerals:wallet,gas,ownBases,visibleEnemyBases,ownWorkers,visibleEnemyWorkers,spendPressure}),
+      production:Object.freeze({own:ownProduction,enemyObserved:visibleEnemyProduction,queued,idlePressure:Math.max(0,ownProduction-queued)}),
+      military:Object.freeze({ownArmy,enemyObservedArmy:visibleEnemyArmy,nearbyThreat}),
+      map:Object.freeze({neutralObjectives,ownedObjectives,enemyObjectives}),
+      tech:Object.freeze({tier:Number(state.tech?.[bot.side]||1)}),
+      enemy:Object.freeze({side:enemySide})
+    });
+  }
+}
+class AiSituationAnalyzer{
+  static analyze(o){
+    const productionDelta=o.production.enemyObserved-o.production.own;
+    const productionComparable=Math.abs(productionDelta)<=1;
+    const playerProductionAhead=productionDelta>=2;
+    const enemyEvidence=o.production.enemyObserved+o.economy.visibleEnemyWorkers+o.economy.visibleEnemyBases+o.military.enemyObservedArmy;
+    const enemyGreedEarly=o.elapsedSec<=210&&enemyEvidence>0&&(
+      o.production.enemyObserved<=Math.max(1,o.production.own-1)||
+      o.economy.visibleEnemyWorkers>=o.economy.ownWorkers+4||
+      o.economy.visibleEnemyBases>o.economy.ownBases
+    )&&o.military.enemyObservedArmy<=Math.max(5,o.military.ownArmy*.8);
+    const armyRatio=o.military.ownArmy/Math.max(1,o.military.enemyObservedArmy);
+    const decisiveArmyLead=o.military.ownArmy>=18&&armyRatio>=2;
+    const overwhelmingArmyLead=o.military.ownArmy>=24&&armyRatio>=3;
+    return Object.freeze({productionDelta,productionComparable,playerProductionAhead,enemyGreedEarly,armyRatio,decisiveArmyLead,overwhelmingArmyLead,
+      underThreat:o.military.nearbyThreat>=2,canExpand:o.map.neutralObjectives>0,
+      floatingResources:o.economy.spendPressure>=1.35,severeFloat:o.economy.spendPressure>=2.1});
+  }
+}
+class AiPolicy{
+  decide(_observation,_situation,_legalActions){return null}
+  intentWeights(_observation,_situation){return Object.freeze({})}
+}
+class UtilityAiPolicy extends AiPolicy{
+  intentWeights(o,s){
+    let expand=0,defend=0,rush=0,army=0,production=0,tech=0,fortify=0;
+    if(s.productionComparable&&s.canExpand)expand+=Math.max(10,42-o.map.ownedObjectives*10-o.economy.ownBases*4);
+    else if(o.production.own>o.production.enemyObserved&&s.canExpand)expand+=Math.max(8,24-o.map.ownedObjectives*6);
+    // Expansion is a means to win, not a checklist. Once the army lead is decisive,
+    // neutral ground has sharply diminishing value and must not delay a direct push.
+    if(s.decisiveArmyLead&&!s.underThreat)expand*=.35;
+    if(s.overwhelmingArmyLead&&!s.underThreat)expand=0;
+    if(s.playerProductionAhead){defend+=48;army+=42;production+=46;fortify+=30}
+    else if(s.productionDelta===1){defend+=24;army+=18}
+    if(s.enemyGreedEarly){rush+=72;army+=34}
+    if(s.underThreat){defend+=90;fortify+=55;army+=35}
+    if(s.floatingResources){army+=35;production+=32;expand+=s.canExpand?18:0}
+    if(s.severeFloat){army+=35;production+=45;tech+=18}
+    if(s.armyRatio<.75){defend+=30;army+=45}
+    else if(s.armyRatio>1.5&&!s.underThreat)rush+=22+Math.min(35,o.map.ownedObjectives*8);
+    if(s.decisiveArmyLead&&!s.underThreat)rush+=55;
+    if(s.overwhelmingArmyLead&&!s.underThreat)rush+=70;
+    if(!s.underThreat&&o.military.ownArmy>=12&&o.military.enemyObservedArmy>0&&s.armyRatio>=1.25)rush+=38;
+    if(!s.underThreat&&o.military.ownArmy>=16&&s.severeFloat)rush+=30;
+    return Object.freeze({expand,defend,rush,army,production,tech,fortify});
+  }
+  decide(o,s,legalActions){
+    const w=this.intentWeights(o,s);
+    if(!legalActions?.length)return null;
+    const scored=legalActions.map(a=>{
+      const intent=a.intent||"army";
+      const utility=Number(a.baseScore||0)+Number(w[intent]||0)+Number(a.contextScore||0);
+      return{...a,utility};
+    }).sort((a,b)=>b.utility-a.utility||String(a.id||a.kind||'').localeCompare(String(b.id||b.kind||'')));
+    return scored[0]||null;
+  }
+}
+// Placeholder adapter contract for a future inference model. It deliberately consumes the same
+// observation/legal-action boundary as UtilityAiPolicy; no simulation object leaks into the model.
+class LearnedAiPolicy extends AiPolicy{
+  constructor(inference=null,fallback=new UtilityAiPolicy()){super();this.inference=inference;this.fallback=fallback}
+  intentWeights(o,s){return this.fallback.intentWeights(o,s)}
+  decide(o,s,legalActions){
+    if(typeof this.inference!=="function")return this.fallback.decide(o,s,legalActions);
+    const picked=this.inference(o,legalActions.map(a=>({id:a.id||a.kind,intent:a.intent||"army"})));
+    return legalActions.find(a=>(a.id||a.kind)===picked)||this.fallback.decide(o,s,legalActions);
+  }
+}
+class AiDecisionTrace{
+  constructor(limit=256){this.enabled=false;this.limit=limit;this.rows=[]}
+  record(row){if(!this.enabled)return;this.rows.push(row);if(this.rows.length>this.limit)this.rows.splice(0,this.rows.length-this.limit)}
+  snapshot(){return this.rows.slice()}
+}
+
+// === AI response planning architecture v35 ===
+// Strategic policy says WHY; planner/action-generator/scheduler decide WHAT NOW and the
+// executor is the only layer allowed to translate that plan into existing game commands.
+class AiActionGenerator{
+  static threat(bot,state,p){
+    let best=null;
+    const anchors=(p.ownBuildings||[]).filter(b=>BuildingDefinition.get(b.type)?.isDropoff);
+    for(const a of anchors)for(const e of p.enemyUnits||[]){
+      const d=Math.hypot(e.x-a.x,e.y-a.y),ed=UnitDefinition.get(e.type)||{};
+      const speed=Math.max(30,Number(ed.speed)||100);
+      const eta=Math.max(0,(d-Math.max(60,Number(ed.range)||0))/speed);
+      const score=Math.max(0,700-d)+(ed.layer==="AIR"?120:0);
+      if(!best||eta<best.eta||(eta===best.eta&&score>best.score))best={anchor:a,enemy:e,distance:d,eta,score};
+    }
+    return best;
+  }
+  static unitScores(bot,state,p){
+    let enemyAir=0,enemyGround=0,enemyLight=0,enemyHeavy=0,enemyRanged=0;
+    for(const e of p.enemyUnits||[]){
+      const d=UnitDefinition.get(e.type)||{};
+      if(d.layer==="AIR")enemyAir++;else enemyGround++;
+      if(d.sizeClass==="heavy")enemyHeavy++;else enemyLight++;
+      if((d.range||0)>=180)enemyRanged++;
+    }
+    const ownCounts=new Map();for(const u of p.ownArmy||[])ownCounts.set(u.type,(ownCounts.get(u.type)||0)+1);
+    const gas=Number(state.gasWallet?.[bot.side]||0),wallet=Number(state.wallet?.[bot.side]||0);
+    return bot.deck().filter(id=>bot.productionPrerequisitesReady(state,id)).map(id=>{
+      const d=UnitDefinition.get(id)||{},c=UnitDefinition.productionCost(id),profile=UnitDefinition.productionProfile(id)||{};
+      let score=40;
+      if(enemyAir&&d.canAttackAir)score+=90+enemyAir*7;
+      if(enemyAir&&!d.canAttackAir)score-=70;
+      if(enemyLight>=enemyHeavy&&["artillery","caster","controller"].includes(d.role))score+=35;
+      if(enemyHeavy>enemyLight&&["pikeman","bruiser","artillery"].includes(d.role))score+=32;
+      if(enemyRanged>=3&&["assassin","charger","guardian"].includes(d.role))score+=24;
+      if(enemyGround&&["guardian","bruiser","pikeman"].includes(d.role))score+=18;
+      score-=Math.min(45,(ownCounts.get(id)||0)*4);
+      if(c.gas>gas)score-=80;if(c.mineral>wallet)score-=45;
+      const productionSec=Math.max(1,(profile.productionMs||3000)/1000);
+      const facilityType=bot.productionBuildingType(id),hasFacility=bot.productionContractCount(state,id)>0;
+      const facilitySec=hasFacility?0:Math.max(0,Number(BuildingDefinition.get(facilityType)?.buildTimeMs||0)/1000);
+      const sec=productionSec+facilitySec;score+=Math.max(0,18-sec*1.2);
+      return{id,score,cost:c,effectSec:sec,affordableNow:c.mineral<=wallet&&c.gas<=gas};
+    }).sort((a,b)=>b.score-a.score||a.cost.gas-b.cost.gas||a.cost.mineral-b.cost.mineral||String(a.id).localeCompare(String(b.id)));
+  }
+  static generate(bot,state,p,ctx){
+    const out=[],o=ctx.observation,s=ctx.situation,w=ctx.weights,th=this.threat(bot,state,p);
+    const unitScores=this.unitScores(bot,state,p),bestUnit=unitScores.find(x=>x.affordableNow)||unitScores[0]||null;
+    const affordableUnits=unitScores.filter(x=>x.affordableNow).slice(0,3);
+    const freeSupply=Math.max(0,bot.supplyCap(state)-bot.supplyUsed(state));
+    const nextSupplyNeed=affordableUnits.length?Math.max(1,...affordableUnits.map(x=>(UnitDefinition.get(x.id)?.supply||0)*Math.max(1,UnitDefinition.productionProfile(x.id)?.batchSize||1))):0;
+    if(th&&th.distance<720){
+      const deadline=Math.max(1,th.eta);
+      out.push({id:`hold:${th.anchor.id}`,kind:"hold",intent:"defend",priority:deadline<12?460+(w.defend||0):220+(w.defend||0),deadlineSec:deadline,target:th.anchor});
+      // Static defense wins the time-to-effect race when fresh troops cannot arrive before contact.
+      if(deadline<Math.max(10,(bestUnit?.effectSec||25)+8))out.push({id:`fortify:${th.anchor.id}`,kind:"fortify",intent:"fortify",priority:720+(w.fortify||0),deadlineSec:deadline,target:th.anchor});
+      if(bestUnit)out.push({id:`reinforce:${bestUnit.id}`,kind:"production",intent:"army",priority:deadline<12?310+(w.army||0):205+(w.army||0),deadlineSec:deadline,unitType:bestUnit.id});
+    }
+    if(nextSupplyNeed>0&&freeSupply<nextSupplyNeed)out.push({id:"supply-buffer",kind:"supply",intent:"army",priority:260+(w.army||0)});
+    for(let i=0;i<affordableUnits.length;i++){const pick=affordableUnits[i];if(s.floatingResources||s.armyRatio<1||s.playerProductionAhead||p.ownArmy.length<12)out.push({id:`army:${pick.id}`,kind:"production",intent:"army",priority:120+(w.army||0)+(s.severeFloat?35:0)-i*8,unitType:pick.id});}
+    if(!affordableUnits.length&&unitScores.some(x=>x.cost.gas>Number(state.gasWallet?.[bot.side]||0)))out.push({id:"gas-readiness",kind:"gas-readiness",intent:"economy",priority:180+(w.army||0)});
+    if(s.floatingResources||s.playerProductionAhead)out.push({id:"capacity",kind:"production-capacity",intent:"production",priority:105+(w.production||0)});
+    if(s.canExpand&&!s.underThreat&&p.ownArmy.length>=4&&!s.overwhelmingArmyLead){
+      const cps=(p.capturePoints||[]).filter(cp=>cp.enabled&&cp.owner==null).map(cp=>({...cp,d:bot.armyDistance(p,cp.x,cp.y)})).sort((a,b)=>a.d-b.d||String(a.id).localeCompare(String(b.id)));
+      const leadPenalty=s.decisiveArmyLead?90:0;
+      if(cps[0])out.push({id:`expand:${cps[0].id}`,kind:"expand",intent:"expand",priority:95+(w.expand||0)-leadPenalty-cps[0].d/100,target:cps[0]});
+    }
+    if(s.enemyGreedEarly&&p.ownArmy.length>=7)out.push({id:"rush-main",kind:"attack",intent:"rush",priority:135+(w.rush||0),target:{x:BASE_POS[1-bot.side].x,y:BASE_POS[1-bot.side].y}});
+    // Mid-game pressure prevents a healthy army from endlessly re-selecting neutral expansions.
+    // It uses the same rally/attack path as normal play; no free units/resources are created.
+    const observedEnemyArmy=Math.max(1,Number(o.military.enemyObservedArmy)||1);
+    const pressureReady=p.ownArmy.length>=18&&p.ownArmy.length>=Math.ceil(observedEnemyArmy*1.2)&&o.map.ownedObjectives>=1;
+    if(!s.underThreat&&pressureReady){
+      const visibleTarget=(p.enemyBuildings||[]).slice().sort((a,b)=>Math.hypot(a.x-BASE_POS[bot.side].x,a.y-BASE_POS[bot.side].y)-Math.hypot(b.x-BASE_POS[bot.side].x,b.y-BASE_POS[bot.side].y))[0];
+      const target=visibleTarget||{x:BASE_POS[1-bot.side].x,y:BASE_POS[1-bot.side].y};
+      out.push({id:"pressure-main",kind:"attack",intent:"rush",priority:150+(w.rush||0)+Math.min(55,(p.ownArmy.length-observedEnemyArmy)*3),target});
+    }
+    // A mature army must convert its economic lead into a win instead of endlessly taking neutral ground.
+    // This is a normal rally/attack order; no units or resources are granted.
+    const decisiveArmy=p.ownArmy.length>=Math.max(24,Math.ceil(Math.max(1,o.military.enemyObservedArmy)*1.5));
+    const mapLead=o.map.ownedObjectives>=o.map.enemyObjectives;
+    // A large military lead is itself enough reason to try to end the game.
+    // Remaining neutral objectives may improve the position, but they never gate FINISH.
+    if(!s.underThreat&&decisiveArmy){
+      const visibleMain=(p.enemyBuildings||[]).find(b=>BuildingDefinition.get(b.type)?.isMainBase);
+      const target=visibleMain||{x:BASE_POS[1-bot.side].x,y:BASE_POS[1-bot.side].y};
+      out.push({id:"finish-main",kind:"attack",intent:"rush",priority:225+(w.rush||0)+(s.severeFloat?35:0)+(mapLead?15:0)+(s.overwhelmingArmyLead?80:s.decisiveArmyLead?40:0),target});
+    }
+    if(!s.underThreat&&o.economy.minerals>650)out.push({id:"tech",kind:"tech",intent:"tech",priority:60+(w.tech||0)});
+    return out.sort((a,b)=>b.priority-a.priority||String(a.id).localeCompare(String(b.id)));
+  }
+}
+class AiResponsePlanner{
+  static plan(bot,state,p){
+    const ctx=bot.aiDecisionContext(state,p),actions=AiActionGenerator.generate(bot,state,p,ctx);
+    const legal=actions.map(a=>({...a,baseScore:a.priority,contextScore:a.deadlineSec?Math.max(0,40-a.deadlineSec*2):0}));
+    const selected=bot.aiPolicy.decide(ctx.observation,ctx.situation,legal)||legal[0]||null;
+    return{tick:state.tick,observation:ctx.observation,situation:ctx.situation,weights:ctx.weights,actions:legal,selected};
+  }
+}
+class AiMacroExecutor{
+  static execute(bot,state,p,a){
+    if(!a)return false;
+    if(a.kind==="hold"||a.kind==="expand"||a.kind==="attack"){
+      bot.currentTarget={kind:a.kind,id:a.target?.id||null,x:a.target.x,y:a.target.y,score:a.priority||0};
+      if(a.id==="finish-main"){
+        const center=bot.armyCenter(p),tx=a.target.x,ty=a.target.y,own=p.ownArmy||[];
+        if(center){
+          const dx=center.x-tx,dy=center.y-ty,d=Math.hypot(dx,dy);
+          const nearest=own.reduce((best,u)=>Math.min(best,Math.hypot(u.x-tx,u.y-ty)),Infinity);
+          // Forced march ignores only irrelevant friction. If the visible vanguard
+          // meets a meaningful combat group or a defensive structure, restore normal
+          // combat immediately; after that threat disappears the next planner pulse
+          // may resume the march. This preserves FINISH urgency without donating an
+          // army while it is being shot on the way in.
+          let localOwn=0,defenseContact=false;const localEnemyIds=new Set();
+          for(const u of own){
+            if(Math.hypot(u.x-tx,u.y-ty)>nearest+520)continue;
+            localOwn++;
+            for(const e of p.enemyUnits||[]){
+              if(!!UnitDefinition.get(e.type)?.economyWorker)continue;
+              if(Math.hypot(u.x-e.x,u.y-e.y)<=360)localEnemyIds.add(e.id||`${e.type}:${Math.round(e.x)}:${Math.round(e.y)}`);
+            }
+            if(!defenseContact)for(const b of p.enemyBuildings||[]){
+              if(BuildingDefinition.isDefenseTower(b.type)&&Math.hypot(u.x-b.x,u.y-b.y)<=460){defenseContact=true;break;}
+            }
+          }
+          const meaningfulResistance=defenseContact||localEnemyIds.size>=Math.max(2,Math.ceil(Math.max(1,localOwn)*.25));
+          if(nearest>850&&!meaningfulResistance){const keep=700/Math.max(1,d);bot.setFlag(tx+dx*keep,ty+dy*keep,{forced:true});return true;}
+        }
+        bot.setFlag(tx,ty,{forced:false});return true;
+      }
+      bot.setFlag(a.target.x,a.target.y,{forced:false});return true;
+    }
+    if(a.kind==="fortify"){
+      const cards=DefenseCardDefinition.list(state.defenseCards?.[bot.side]||bot.session.draft?.defenseCards?.[bot.role]);
+      for(const card of cards){const type=DefenseCardDefinition.get(card)?.building;if(!type)continue;const c=BuildingDefinition.resourceCost(type);if((state.wallet[bot.side]||0)<c.mineral||(state.gasWallet?.[bot.side]||0)<c.gas)continue;if(bot.tryBuild(state,p,type,null,a.target.id))return true;}return false;
+    }
+    if(a.kind==="production"){
+      const id=a.unitType;if(!id||!bot.productionPrerequisitesReady(state,id))return false;
+      const c=UnitDefinition.productionCost(id);if((state.wallet[bot.side]||0)<c.mineral||(state.gasWallet?.[bot.side]||0)<c.gas)return false;
+      const type=bot.productionBuildingType(id);return bot.tryBuild(state,p,type,id,null,{allowProductionDensity:true});
+    }
+    if(a.kind==="supply"){const t=BuildingDefinition.forRole("supply"),c=BuildingDefinition.resourceCost(t);if((state.wallet[bot.side]||0)<c.mineral)return false;return bot.tryBuild(state,p,t);}
+    if(a.kind==="gas-readiness"){const t=BuildingDefinition.forRole("gasExtractor"),c=BuildingDefinition.resourceCost(t);if((state.wallet[bot.side]||0)<c.mineral)return false;const existing=state.buildings.some(b=>b.alive!==false&&b.side===bot.side&&BuildingDefinition.get(b.type)?.isGasExtractor);if(!existing)return bot.tryBuild(state,p,t);const bases=bot.workerBases(state);return bot.updateGasAssignments(state,p,bases)===true;}
+    if(a.kind==="production-capacity")return bot.trySurplusProduction(state,p);
+    if(a.kind==="tech"){
+      const tier=Number(state.tech?.[bot.side]||1),wallet=Number(state.wallet?.[bot.side]||0),gas=Number(state.gasWallet?.[bot.side]||0);
+      if(tier<2){const t=BuildingDefinition.forRole("academy"),c=BuildingDefinition.resourceCost(t);if(bot.countBuilding(state,t)===0&&wallet>=c.mineral&&gas>=c.gas)return bot.tryBuild(state,p,t);}
+      if(tier===2&&bot.deck().some(id=>(UnitDefinition.get(id)?.tier||0)>=3)){const t=BuildingDefinition.forRole("lab"),c=BuildingDefinition.resourceCost(t);if(bot.countBuilding(state,t)===0&&wallet>=c.mineral&&gas>=c.gas)return bot.tryBuild(state,p,t);}
+      return bot.runResearch(state,p)===true;
+    }
+    return false;
+  }
+}
+class AiActionScheduler{
+  static run(bot,state,p,plan){
+    if(!plan?.actions?.length)return null;
+    const ordered=plan.selected?[plan.selected,...plan.actions.filter(a=>a.id!==plan.selected.id)]:plan.actions;
+    const executed=[];let tacticalCommitted=false,spendCommitted=0;
+    // Strategic movement and economy are orthogonal. A PUSH must not freeze production for the
+    // whole planning pulse, otherwise a winning AI floats thousands of minerals while attacking.
+    // Keep one positional order plus at most two resource-spending actions per pulse.
+    for(const a of ordered){
+      if(Number(a.priority??0)<0)continue;
+      const tactical=a.kind==="hold"||a.kind==="expand"||a.kind==="attack";
+      const spending=a.kind==="fortify"||a.kind==="production"||a.kind==="production-capacity"||a.kind==="tech"||a.kind==="supply"||a.kind==="gas-readiness";
+      if(tactical&&tacticalCommitted)continue;if(spending&&spendCommitted>=2)continue;
+      if(!AiMacroExecutor.execute(bot,state,p,a))continue;
+      executed.push(a);if(tactical)tacticalCommitted=true;if(spending)spendCommitted++;
+      if(executed.length>=3)break;
+    }
+    return executed.length?{primary:executed[0],actions:executed}:null;
+  }
+}
+
+window.RallyAiArchitecture={AiObservationBuilder,AiSituationAnalyzer,AiPolicy,UtilityAiPolicy,LearnedAiPolicy,AiActionGenerator,AiResponsePlanner,AiActionScheduler,AiMacroExecutor};
 class BotController{
   constructor(session,options={}){
     this.session=session;
@@ -19662,12 +20036,18 @@ class BotController{
     this.lastSnapshot=null;
     this.lastEconomyTick=-99999;
     this.lastStrategyTick=-99999;
+    this.lastPlannerTick=-99999;
+    this.lastResponsePlan=null;
+    this.lastExecutedMacro=null;
     this.lastSpellTick=-99999;
     this.lastResearchTick=-99999;
     this.lastSpellChoiceId="";
     this.currentTarget=null;
     this.enemyMemory=new Map();
     this.lastFlagTarget=null;
+    this.aiPolicy=options.aiPolicy||new UtilityAiPolicy();
+    this.aiTrace=options.aiTrace||new AiDecisionTrace();
+    this.lastAiDecision=null;
   }
 
   stop(){this.enabled=false}
@@ -19754,6 +20134,8 @@ class BotController{
     if(!this.enabled||!state)return;
     this.lastSnapshot=state;
     if(this.session.matchConfig?.debugScenario)return;
+    const campaign=this.session.matchConfig?.campaignScenario,humanRole=MatchLifecycle.singleMatch?.humanRole||"host";
+    if(campaign?.enemy?.aiProfile==="scripted"&&this.role!==humanRole)return;
 
     const p=this.perceive(state);
     this.rememberEnemies(p,state.tick);
@@ -19761,7 +20143,7 @@ class BotController{
     // 오브젝트 보상은 다른 판단보다 우선한다.
     if(this.handleTacticalChest(state,p))return;
 
-    if(state.tick-this.lastEconomyTick>=90){
+    if(state.tick-this.lastEconomyTick>=45){
       this.lastEconomyTick=state.tick;
       this.runEconomy(state,p);
     }
@@ -19771,9 +20153,9 @@ class BotController{
       this.runResearch(state,p);
     }
 
-    if(state.tick-this.lastStrategyTick>=150){
-      this.lastStrategyTick=state.tick;
-      this.runStrategy(state,p);
+    if(state.tick-this.lastPlannerTick>=20){
+      this.lastPlannerTick=state.tick;
+      this.runResponsePlanner(state,p);
     }
 
     if(state.tick-this.lastSpellTick>=90){
@@ -20011,7 +20393,10 @@ return threat;
 
   trySurplusProduction(state,p){
     const wallet=state.wallet?.[this.side]||0,gas=state.gasWallet?.[this.side]||0;
-    if(wallet<650)return false;
+    const signals=this.strategicSignals(state,p);
+    // 생산시설에서 밀리거나 적이 초반 경제에 치우치면 현금을 쌓지 말고 즉시 병력 축으로 전환한다.
+    const spendFloor=(signals.productionWeight>=40||signals.armyWeight>=45||signals.rushWeight>=60)?275:(signals.spendPressure>=1.35?325:425);
+    if(wallet<spendFloor)return false;
     const totalContracts=this.totalProductionContractCount(state);
     const cap=this.surplusProductionCap(state);
     if(totalContracts>=cap)return false;
@@ -20031,6 +20416,8 @@ return threat;
       // 미네랄이 남는데 가스가 부족하면 미네랄 병종을 즉시 증원한다.
       if(c.gas===0)score+=120;
       else if(affordable)score+=55;
+      if(signals.playerProductionAhead)score+=70;
+      if(signals.enemyGreedEarly)score+=55;
       else score-=Math.min(140,(c.gas-gas)*.7);
       if(airThreat>0&&d.canAttackAir)score+=83;
       score+=(d.tier||1)*8;
@@ -20235,6 +20622,33 @@ return threat;
     );
   }
 
+  productionFacilityCount(state,side){
+    return state.buildings.filter(b=>
+      b.alive!==false&&b.complete&&b.side===side&&BuildingDefinition.get(b.type)?.isProductionBuilding
+    ).length;
+  }
+
+  aiDecisionContext(state,p){
+    const observation=AiObservationBuilder.build(this,state,p);
+    const situation=AiSituationAnalyzer.analyze(observation);
+    const weights=this.aiPolicy.intentWeights(observation,situation)||{};
+    return{observation,situation,weights};
+  }
+
+  strategicSignals(state,p){
+    const ctx=this.aiDecisionContext(state,p),o=ctx.observation,s=ctx.situation,w=ctx.weights;
+    return{
+      elapsedSec:o.elapsedSec,ownProduction:o.production.own,enemyProduction:o.production.enemyObserved,
+      productionDelta:s.productionDelta,productionComparable:s.productionComparable,playerProductionAhead:s.playerProductionAhead,
+      ownBases:o.economy.ownBases,enemyBases:o.economy.visibleEnemyBases,ownWorkers:o.economy.ownWorkers,
+      enemyWorkers:o.economy.visibleEnemyWorkers,ownArmy:o.military.ownArmy,enemyArmy:o.military.enemyObservedArmy,
+      neutralCaptures:o.map.neutralObjectives,enemyGreedEarly:s.enemyGreedEarly,
+      expansionWeight:Number(w.expand||0),defenseWeight:Number(w.defend||0),rushWeight:Number(w.rush||0),
+      armyWeight:Number(w.army||0),productionWeight:Number(w.production||0),fortifyWeight:Number(w.fortify||0),
+      spendPressure:o.economy.spendPressure,observation:o,situation:s
+    };
+  }
+
   runEconomy(state,p){
     const wallet=state.wallet[this.side]||0;
     const gas=state.gasWallet?.[this.side]||0;
@@ -20329,6 +20743,13 @@ return threat;
     // T1 생산축. 실행 가능한 지상/공중 선행조건을 먼저 만족한 카드만 건설한다.
     if(buildMissingProduction(t1))return;
 
+    // 플레이어 생산시설이 앞서거나 초반 경제에 과투자하면 테크/장식성 투자보다
+    // 실제 병력 생산축을 먼저 늘린다. 공짜 병력은 주지 않고 보유 자원을 즉시 소비한다.
+    {
+      const signals=this.strategicSignals(state,p);
+      if((signals.playerProductionAhead||signals.enemyGreedEarly)&&this.trySurplusProduction(state,p))return;
+    }
+
     // 이미 배운 테크의 실물 인프라가 파괴된 경우 신규 상위티어 생산이 막히므로
     // 일반 방어 투자보다 재건을 먼저 수행한다.
     if(
@@ -20415,6 +20836,7 @@ return threat;
     if(!anchors.length)return null;
     const enemyAir=this.enemyAirThreat(state,p)>0;
     const canAA=!!bd.canAttackAir;
+    const signals=this.strategicSignals(state,p);
     const scored=[];
     for(const a of anchors){
       const count=this.defenseTowerCountAt(state,a);
@@ -20431,10 +20853,12 @@ return threat;
       let desired=1;
       if(threat>=3)desired=2;
       if(threat>=7)desired=3;
+      // 플레이어 생산축이 더 크면 확보한 경제권을 먼저 요새화한다.
+      if(signals.playerProductionAhead)desired+=1;
       if(enemyAir&&!canAA&&threat===0)desired=0;
       if(count>=desired)continue;
       const ad=BuildingDefinition.get(a.type)||{};
-      let score=(Number(ad.aiDefenseAnchorBaseScore)||26)+threat*20-count*12+(Number(ad.aiDefenseAnchorBonus)||0);
+      let score=(Number(ad.aiDefenseAnchorBaseScore)||26)+threat*20-count*12+(Number(ad.aiDefenseAnchorBonus)||0)+signals.defenseWeight;
       scored.push({a,score});
     }
     scored.sort((x,y)=>y.score-x.score||(x.a.id<y.a.id?-1:1));
@@ -20517,8 +20941,13 @@ return threat;
       for(const radius of radii){
         for(let i=0;i<angleSteps;i++){
           const angle=backAngle+(i%2===0?1:-1)*Math.ceil(i/2)*(Math.PI/8);
-          const x=Math.round(RangeUtil.clamp(anchor.x+Math.cos(angle)*radius,70,WORLD_W-70));
-          const y=Math.round(RangeUtil.clamp(anchor.y+Math.sin(angle)*radius,70,WORLD_H-70));
+          const edgeMargin=buildingPlacementEdgeMargin(type);
+          const x=Math.round(RangeUtil.clamp(anchor.x+Math.cos(angle)*radius,edgeMargin,WORLD_W-edgeMargin));
+          const y=Math.round(RangeUtil.clamp(anchor.y+Math.sin(angle)*radius,edgeMargin,WORLD_H-edgeMargin));
+
+          // Same authoritative accessibility contract as BUILD: edge placement is
+          // allowed, but at least one builder interaction face must remain usable.
+          if(!buildingHasBuilderApproach(type,x,y,state.buildings||[]))continue;
 
           // 실제로 아군 시야 안이어야 BUILD 커밋이 유효하다.
           if(!this.pointVisible(x,y,p.sources,0))continue;
@@ -20543,7 +20972,7 @@ return threat;
           let collision=false;
           for(const b of own){
             const od=BuildingDefinition.get(b.type);
-            if(Math.hypot(b.x-x,b.y-y)<bd.size+(od?.size||35)+24){
+            if(Math.hypot(b.x-x,b.y-y)<buildingPlacementSeparation(type,b.type)){
               collision=true;break;
             }
           }
@@ -20567,7 +20996,7 @@ return threat;
   }
 
   runResearch(state,p){
-    if((state.tech?.[this.side]||1)<2)return;
+    if((state.tech?.[this.side]||1)<2)return false;
     const wallet=state.wallet[this.side]||0;
     const queues=state.researchQueues?.[this.side]||{};
     // Lab이 아직 없고 T3 카드가 남아 있으면 그 건설비를 연구가 먼저 소모하지 않는다.
@@ -20579,26 +21008,27 @@ return threat;
     const lvA=state.attackUpgrade?.[this.side]||0;
     const attackDef=ResearchDefinition.all.attack[lvA];
     if(!queues.attack&&attackDef&&wallet>=attackDef.cost+80+techReserve){
-      this.session.command({type:"START_RESEARCH",research:"attack"});return;
+      this.session.command({type:"START_RESEARCH",research:"attack"});return true;
     }
     const lvD=state.armorUpgrade?.[this.side]||0;
     const armorDef=ResearchDefinition.all.armor[lvD];
     if(!queues.armor&&armorDef&&wallet>=armorDef.cost+80+techReserve){
-      this.session.command({type:"START_RESEARCH",research:"armor"});return;
+      this.session.command({type:"START_RESEARCH",research:"armor"});return true;
     }
     if(!queues.ability){
       const gas=state.gasWallet?.[this.side]||0;
       for(const unit of this.deck()){
         if(ABILITY_INFO[unit]&&!state.abilities?.[this.side]?.[unit]){
           const def=ResearchDefinition.abilityForUnit(unit);
-          if(wallet>=def.cost+80+techReserve&&gas>=def.gasCost){this.session.command({type:"START_RESEARCH",research:"ability",unit});return}
+          if(wallet>=def.cost+80+techReserve&&gas>=def.gasCost){this.session.command({type:"START_RESEARCH",research:"ability",unit});return true}
         }
         for(const def of UnitSpecialResearchDefinition.forUnit(unit)){
           if(state.specialResearch?.[this.side]?.[def.id]||!ResearchDefinition.specialResearchPrereqMet(state,this.side,def))continue;
-          if(wallet>=def.cost+80+techReserve&&gas>=def.gasCost){this.session.command({type:"START_RESEARCH",research:"ability",unit,researchId:def.id});return}
+          if(wallet>=def.cost+80+techReserve&&gas>=def.gasCost){this.session.command({type:"START_RESEARCH",research:"ability",unit,researchId:def.id});return true}
         }
       }
     }
+    return false;
   }
 
   handleTacticalChest(state,p){
@@ -20647,7 +21077,21 @@ return threat;
     return false;
   }
 
+  runResponsePlanner(state,p){
+    const plan=AiResponsePlanner.plan(this,state,p);
+    this.lastResponsePlan=plan;
+    const scheduled=AiActionScheduler.run(this,state,p,plan),executed=scheduled?.primary||null;
+    if(executed){
+      this.lastExecutedMacro={tick:state.tick,id:executed.id,kind:executed.kind,intent:executed.intent,priority:executed.priority,actions:(scheduled.actions||[]).map(a=>a.id)};
+      this.lastAiDecision={tick:state.tick,action:executed.id,intent:executed.intent,utility:executed.utility??executed.priority};
+    }else if(plan.selected){
+      this.lastAiDecision={tick:state.tick,action:plan.selected.id,intent:plan.selected.intent,utility:plan.selected.utility??plan.selected.priority,blocked:true};
+    }
+    this.aiTrace.record({tick:state.tick,observation:plan.observation,situation:plan.situation,legalActions:plan.actions.map(a=>({id:a.id,kind:a.kind,intent:a.intent,priority:a.priority,deadlineSec:a.deadlineSec??null})),selected:this.lastAiDecision,executed:this.lastExecutedMacro});
+  }
+
   runStrategy(state,p){
+    const signals=this.strategicSignals(state,p);
     if(!p.ownArmy.length){
       const base=p.ownBuildings.find(b=>BuildingDefinition.get(b.type)?.isMainBase);
       if(base)this.setFlag(base.x-180,base.y+180);
@@ -20677,13 +21121,27 @@ return threat;
 
     const candidates=[];
 
+    // 플레이어 생산축이 더 크면 무리하게 다음 멀티로 달리기보다 현재 경제권 주변에
+    // 병력을 모아 생산 격차를 따라잡는다. 실제 적이 접근하면 위의 즉시 방어가 우선한다.
+    if(signals.playerProductionAhead){
+      const anchors=p.ownBuildings.filter(b=>BuildingDefinition.get(b.type)?.isDropoff);
+      if(anchors.length){
+        const forward=anchors.slice().sort((a,b)=>{
+          const ea=Math.hypot(a.x-BASE_POS[1-this.side].x,a.y-BASE_POS[1-this.side].y);
+          const eb=Math.hypot(b.x-BASE_POS[1-this.side].x,b.y-BASE_POS[1-this.side].y);
+          return ea-eb||(a.id<b.id?-1:1);
+        })[0];
+        candidates.push({kind:"defense-posture",id:forward.id,x:forward.x,y:forward.y,score:126+signals.defenseWeight});
+      }
+    }
+
     // 활성 중립 점령지는 높은 가치.
     for(const cp of p.capturePoints){
       if(cp.owner==null&&cp.enabled){
         const d=this.armyDistance(p,cp.x,cp.y);
         candidates.push({
           kind:"capture",id:cp.id,x:cp.x,y:cp.y,
-          score:120-d/80
+          score:120+signals.expansionWeight-signals.defenseWeight*.35-d/80
         });
       }
     }
@@ -20694,7 +21152,7 @@ return threat;
         const d=this.armyDistance(p,cp.x,cp.y);
         candidates.push({
           kind:"enemyOutpost",id:cp.id,x:cp.x,y:cp.y,
-          score:110-d/95
+          score:110+signals.expansionWeight*.45+signals.rushWeight*.25-d/95
         });
       }
     }
@@ -20723,13 +21181,23 @@ return threat;
       });
     }
 
+    // 상대가 초반 생산보다 일꾼/확장에 치우치면 이미 가진 병력으로 실제 러시를 시도한다.
+    // 별도 스폰/자원 지급 없이 현재 군대가 상대 본진으로 움직이는 것뿐이다.
+    if(signals.enemyGreedEarly&&p.ownArmy.length>=7){
+      candidates.push({
+        kind:"greed-punish",
+        x:BASE_POS[1-this.side].x,y:BASE_POS[1-this.side].y,
+        score:138+signals.rushWeight-this.armyDistance(p,BASE_POS[1-this.side].x,BASE_POS[1-this.side].y)/165
+      });
+    }
+
     // 어느 정도 전진 거점을 먹었으면 상대 메인도 항상 후보.
     const ownedPoints=p.capturePoints.filter(cp=>cp.owner===this.side).length;
     if(ownedPoints>=2||p.ownArmy.length>=10){
       candidates.push({
         kind:"main",
         x:BASE_POS[1-this.side].x,y:BASE_POS[1-this.side].y,
-        score:55+ownedPoints*12-this.armyDistance(
+        score:55+ownedPoints*12+signals.rushWeight-signals.defenseWeight*.25-this.armyDistance(
           p,BASE_POS[1-this.side].x,BASE_POS[1-this.side].y
         )/150
       });
@@ -20744,8 +21212,13 @@ return threat;
       }
     }
 
-    candidates.sort((a,b)=>b.score-a.score);
-    const best=candidates[0];
+    const intentForKind=kind=>({capture:"expand","enemyOutpost":"expand",objective:"army",enemyBuilding:"rush","greed-punish":"rush",main:"rush","defense-posture":"defend"}[kind]||"army");
+    const ctx=this.aiDecisionContext(state,p);
+    const legalActions=candidates.map(c=>({...c,id:c.id||`${c.kind}:${Math.round(c.x)}:${Math.round(c.y)}`,intent:intentForKind(c.kind),baseScore:c.score}));
+    const best=this.aiPolicy.decide(ctx.observation,ctx.situation,legalActions)||legalActions.slice().sort((a,b)=>b.baseScore-a.baseScore)[0];
+    if(!best)return;
+    this.lastAiDecision={tick:state.tick,action:best.id,intent:best.intent,utility:best.utility??best.baseScore};
+    this.aiTrace.record({tick:state.tick,observation:ctx.observation,situation:ctx.situation,legalActions:legalActions.map(a=>({id:a.id,intent:a.intent,baseScore:a.baseScore})),selected:this.lastAiDecision});
 
     this.currentTarget=best;
     this.setFlag(best.x,best.y);
@@ -20766,15 +21239,16 @@ return threat;
     return{x:x/p.ownArmy.length,y:y/p.ownArmy.length};
   }
 
-  setFlag(x,y){
-    const target={x:Math.round(x),y:Math.round(y)};
+  setFlag(x,y,options={}){
+    const target={x:Math.round(x),y:Math.round(y),forced:!!options.forced};
     if(
       this.lastFlagTarget&&
+      this.lastFlagTarget.forced===target.forced&&
       Math.hypot(target.x-this.lastFlagTarget.x,target.y-this.lastFlagTarget.y)<90
     )return;
 
     this.lastFlagTarget=target;
-    this.session.command({type:"SET_FLAG",x:target.x,y:target.y});
+    this.session.command({type:"SET_FLAG",x:target.x,y:target.y,forced:target.forced});
   }
 
   spellReady(state,id){
@@ -23996,7 +24470,7 @@ class GLRenderer{
     const fx=this.combatFxPool.acquire();
     fx.kind=kind;fx.x=Number(e.x)||0;fx.y=Number(e.y)||0;fx.x2=Number(e.x2)||0;fx.y2=Number(e.y2)||0;
     fx.sourceType=e.sourceType||e.unit||"";fx.targetType=e.targetType||e.entity||"";fx.entity=e.entity||"";fx.spell=e.spell||"";
-    fx.amount=Number(e.amount)||0;fx.radius=Number(e.radius)||0;fx.width=Number(e.width)||0;fx.remaining=Math.max(0,Number(e.remaining)||0);
+    fx.amount=Number(e.amount)||0;fx.radius=Number(e.radius)||0;fx.width=Number(e.width)||0;fx.remaining=Math.max(0,Number(e.remaining)||0);fx.spikeCount=Math.max(0,Math.round(Number(e.spikeCount)||0));
     fx.airborneHeight=Number(e.height??e.status?.airborneHeight)||0;fx.airborneTicks=Number(e.airborneTicks)||0;fx.durationTicks=Number(e.durationTicks)||0;
     fx.sourceId=e.sourceId||null;fx.targetId=e.targetId||null;
     fx.travelMs=Number(e.travelMs)||0;fx.arcHeight=Number(e.arcHeight)||0;fx.retractMs=Number(e.retractMs)||0;fx.pullTicks=Number(e.pullTicks)||0;fx.fromX=Number(e.fromX)||0;fx.fromY=Number(e.fromY)||0;
@@ -24501,7 +24975,7 @@ class GLRenderer{
         fx.kind==="buildingBurst"?620:
         fx.kind==="deathBurst"?480:
         fx.kind==="pillbugBurst"?540:
-        fx.kind==="rootSpike"?560:
+        fx.kind==="rootSpike"?Math.max(560,Number(fx.travelMs)||0):
         fx.kind==="deepThornCast"?620:
         fx.kind==="deepThornSpike"?760:
         fx.kind==="airborneBurst"?300:
@@ -24832,21 +25306,27 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
       }else if(fx.kind==="rootSpike"){
         const e2=this.worldToPx(this.viewX(fx.x2),this.viewY(fx.y2));
         const count=Math.max(6,fx.spikeCount||9),dx=e2[0]-x,dy=e2[1]-y;
-        // Brown/earth palette keeps the lurker-like spikes readable over the green battlefield.
-        ctx.globalAlpha=.28*(1-t);ctx.strokeStyle="#5a351b";ctx.lineWidth=Math.max(1.4,2.25*sc);
-        ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(e2[0],e2[1]);ctx.stroke();
+        // Rootstalker is a ground-travelling attack, not a normal airborne projectile.
+        // Keep a clearly visible dirt ridge travelling along the authoritative attack line,
+        // then erupt each spike as that ridge reaches it.
+        const head=RangeUtil.clamp(t*1.18,0,1),hx=x+dx*head,hy=y+dy*head;
+        ctx.globalAlpha=.34*(1-t*.45);ctx.strokeStyle="#5a351b";ctx.lineWidth=Math.max(2.0,3.2*sc);
+        ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(hx,hy);ctx.stroke();
+        ring(hx,hy,(5+7*Math.sin(Math.min(1,t*1.5)*Math.PI))*sc,Math.max(1.5,2.4*sc),"#9a6330",.62*(1-t*.35));
+        dot(hx,hy,Math.max(2.2,3.4*sc),"#6b421f",.78*(1-t*.25));
         for(let i=0;i<count;i++){
-          const along=(i+.55)/count,delay=i/(count*1.42);
-          const local=RangeUtil.clamp((t-delay)/.42,0,1);
+          const along=(i+.55)/count;
+          // A spike starts only after the underground ridge reaches its position.
+          const arrival=along/.92;
+          const local=RangeUtil.clamp((t-arrival)/.28,0,1);
           if(local<=0||local>=1)continue;
           const rise=Math.sin(local*Math.PI),px=x+dx*along,py=y+dy*along;
-          const h=(13+17*(i/count))*rise*sc,w=(4.5+3*rise)*sc;
-          ctx.globalAlpha=.97-.30*local;ctx.fillStyle=i%2?"#75441f":"#9a6330";
+          const h=(14+18*(i/count))*rise*sc,w=(5+3*rise)*sc;
+          ctx.globalAlpha=.98-.24*local;ctx.fillStyle=i%2?"#75441f":"#9a6330";
           ctx.beginPath();ctx.moveTo(px-w,py+2*sc);ctx.lineTo(px,py-h);ctx.lineTo(px+w,py+2*sc);ctx.closePath();ctx.fill();
-          // Pale woody tip separates the spike silhouette from dark ground/fog as well.
-          ctx.globalAlpha=.72*(1-local*.55);ctx.fillStyle="#d2a66a";
+          ctx.globalAlpha=.78*(1-local*.5);ctx.fillStyle="#d2a66a";
           ctx.beginPath();ctx.moveTo(px-w*.25,py-h*.72);ctx.lineTo(px,py-h);ctx.lineTo(px+w*.25,py-h*.72);ctx.closePath();ctx.fill();
-          dot(px,py+2*sc,Math.max(1.1,2.0*sc),"#4a2b18",.38*(1-local));
+          dot(px,py+2*sc,Math.max(1.2,2.2*sc),"#4a2b18",.48*(1-local));
         }
       }else if(fx.kind==="deepThornCast"){
         const to=this.worldToPx(this.viewX(fx.x2),this.viewY(fx.y2));
@@ -30228,19 +30708,54 @@ class CampaignMapDefinition{
     const side=faction==="player"||faction==="ally"?hs:faction==="enemy"||faction==="opponent"?enemySide:faction==="host"?0:faction==="guest"?1:o.side===0?0:o.side===1?1:NEUTRAL_SIDE;
     const type=String(o.building||o.type||"");
     if(!BuildingDefinition.get(type))return null;
-    return {id:String(o.id||`authored-structure-${i}`),type,side,x:pos.x,y:pos.y,label:String(o.label||type),capturePoint:anchorId||null};
+    return {id:String(o.id||`authored-structure-${i}`),type,side,x:pos.x,y:pos.y,label:String(o.label||type),capturePoint:anchorId||null,objectiveGroup:String(o.objectiveGroup||o.group||"").trim()||null};
   }).filter(Boolean);
   base.mapContentPolicy={...(base.mapContentPolicy||{}),authoredStructures:base.authoredStructures.length>0};
   return base;
  }
 }
+class CampaignModuleLoader{
+ static evaluate(source,label="campaign.js"){
+  const text=String(source||"").trim();if(!text)throw new Error("빈 Mission JS입니다.");
+  let mission;
+  try{mission=(new Function('"use strict";return (\n'+text+'\n);\n//# sourceURL='+String(label).replace(/[^a-zA-Z0-9_./:-]/g,"_") ))()}
+  catch(e){throw new Error(`Mission JS 실행 실패 · ${e?.message||e}`)}
+  if(!mission||typeof mission!=="object"||Array.isArray(mission))throw new Error("Mission JS는 미션 객체를 반환해야 합니다.");
+  Object.defineProperty(mission,"__moduleSource",{value:text,enumerable:false,configurable:true});
+  return mission;
+ }
+ static sourceOf(raw){return typeof raw?.__moduleSource==="string"?raw.__moduleSource:String(raw?.moduleSource||"")}
+}
+class CampaignScriptRuntime{
+ constructor(sim,mission){this.sim=sim;this.mission=mission;this.state=Object.create(null);this.module=null;this.script=null;this.started=false;this.compile()}
+ compile(){const source=String(this.mission?.moduleSource||"");if(!source)return;this.module=CampaignModuleLoader.evaluate(source,this.mission?.missionId||"campaign.js");this.script=this.module?.script&&typeof this.module.script==="object"?this.module.script:null}
+ ctx(){const sim=this.sim,mission=this.mission,state=this.state,humanRole=MatchLifecycle.singleMatch?.humanRole||"host",humanSide=humanRole==="host"?0:1,enemySide=1-humanSide;
+  const group=id=>sim.units.filter(u=>u.alive&&(u.campId||u.scenarioGroupId)===String(id));
+  const mainBase=side=>sim.buildings.find(b=>b.alive!==false&&b.hp>0&&b.side===side&&BuildingDefinition.get(b.type)?.isMainBase)||null;
+  return Object.freeze({sim,time:Object.freeze({tick:sim.tick,seconds:sim.ticksMs(sim.tick)/1000,tps:sim.tps}),state,mission,humanSide,enemySide,
+   random:Object.freeze({next:()=>{const n=(state.__randomSeq=(state.__randomSeq||0)+1),v=HashUtil.hash(`${sim.seed}|campaign-script|${mission.missionId}|${sim.tick}|${n}`)>>>0;return v/4294967296},range:(a,b)=>{const n=(state.__randomSeq=(state.__randomSeq||0)+1),v=(HashUtil.hash(`${sim.seed}|campaign-script|${mission.missionId}|${sim.tick}|${n}`)>>>0)/4294967296;return a+v*(b-a)}}),
+   units:Object.freeze({all:()=>sim.units.filter(u=>u.alive),group,side:s=>sim.units.filter(u=>u.alive&&u.side===s),inRegion:(region,side=null)=>{const r=typeof region==="string"?mission.regions?.[region]:region;if(!r)return[];const x=(Number(r.center?.[0])||0)*WORLD_W,y=(Number(r.center?.[1])||0)*WORLD_H,rr=(Number(r.radius)||.08)*Math.min(WORLD_W,WORLD_H);return sim.units.filter(u=>u.alive&&(side==null||u.side===side)&&Math.hypot(u.x-x,u.y-y)<=rr)}}),
+   buildings:Object.freeze({all:()=>sim.buildings.filter(b=>b.alive!==false&&b.hp>0),side:s=>sim.buildings.filter(b=>b.alive!==false&&b.hp>0&&b.side===s),mainBase}),
+   resources:Object.freeze({minerals:s=>Number(sim.wallet?.[s]||0),gas:s=>Number(sim.gasWallet?.[s]||0)}),
+   groups:Object.freeze({get:group}),regions:Object.freeze({get:id=>mission.regions?.[id]||null}),
+   orders:Object.freeze({attack:(id,target="playerBase")=>{const targetBuilding=target==="playerBase"?mainBase(humanSide):target==="enemyBase"?mainBase(enemySide):sim.buildings.find(b=>b.id===target);for(const u of group(id)){u.aggroed=true;if(targetBuilding){u.forcedTargetId=targetBuilding.id;u.target=targetBuilding.id}}},hold:id=>{for(const u of group(id)){u.aggroed=false;u.forcedTargetId=null;u.target=null}}}),
+   spawn:Object.freeze({group:id=>{const camp=sim.camps?.find(c=>c.id===String(id));if(camp&&!group(id).length)sim.spawnCamp(camp);return group(id)}}),
+   flags:Object.freeze({get:id=>state.flags?.[id],set:(id,v)=>{(state.flags||(state.flags=Object.create(null)))[id]=v}}),
+   emit:(type,data={})=>sim.events.push({type:String(type),...data}),raw:Object.freeze({sim})});
+ }
+ call(name,...args){const fn=this.script?.[name];if(typeof fn!=="function")return;return fn(this.ctx(),...args)}
+ start(){if(this.started)return;this.started=true;this.call("onInit");this.call("onStart")}
+ tick(){if(!this.started)this.start();this.call("onTick")}
+ event(event){this.call("onEvent",event)}
+ dispose(){this.call("onDispose")}
+}
 class CampaignMissionDefinition{
- static normalize(raw){if(!raw||typeof raw!=="object"||Array.isArray(raw))throw new Error("Mission JSON 객체가 필요합니다.");
+ static normalize(raw){if(!raw||typeof raw!=="object"||Array.isArray(raw))throw new Error("Mission JS가 반환한 객체가 필요합니다.");
  const missionId=String(raw.missionId||raw.id||"").trim();if(!missionId)throw new Error("missionId가 필요합니다.");
  const valid=id=>!!UnitDefinition.get(id)&&UnitDefinition.get(id).tier>=1&&UnitDefinition.get(id).tier<=3&&!UnitDefinition.get(id).economyWorker&&!UnitDefinition.get(id).carrierSummon;
  const clean=v=>[...new Set((Array.isArray(v)?v:[]).filter(valid))],cleanDefense=v=>DefenseCardDefinition.list(Array.isArray(v)?v:[]),pu=clean(raw.player?.units),eu=clean(raw.enemy?.units),pd=cleanDefense(raw.player?.defenseCards),ed=cleanDefense(raw.enemy?.defenseCards);if(!pu.length||!eu.length)throw new Error("유효한 player.units / enemy.units가 필요합니다.");
  const events=(Array.isArray(raw.events)?raw.events:[]).slice(0,48).map((e,i)=>({id:String(e.id||`event-${i}`),enabled:e.enabled!==false,once:e.once!==false,when:e.when&&typeof e.when==="object"?CloneUtil.clone(e.when):null,trigger:e.trigger&&typeof e.trigger==="object"?CloneUtil.clone(e.trigger):{},delayMs:Math.max(0,Number(e.delayMs)||0),cooldownMs:Math.max(0,Number(e.cooldownMs)||0),repeatCount:e.repeatCount==null?null:Math.max(1,Math.round(Number(e.repeatCount)||1)),actions:(Array.isArray(e.actions)?e.actions:[]).map(a=>a&&typeof a==="object"?CloneUtil.clone(a):null).filter(Boolean)}));
- return Object.freeze({schemaVersion:2,missionId,title:String(raw.title||missionId),briefing:String(raw.briefing||""),faction:String(raw.faction||"frontier"),seed:(Number(raw.seed)>>>0)||HashUtil.hash(missionId),map:raw.map&&typeof raw.map==="object"?CloneUtil.clone(raw.map):null,player:{units:pu,defenseCards:pd,techCap:RangeUtil.clamp(Math.round(Number(raw.player?.techCap)||1),1,3)},enemy:{units:eu,defenseCards:ed,techCap:RangeUtil.clamp(Math.round(Number(raw.enemy?.techCap)||1),1,3),difficulty:String(raw.enemy?.difficulty||"normal")},presentation:{opening:Array.isArray(raw.presentation?.opening)?raw.presentation.opening.map(String).slice(0,8):[],outro:Array.isArray(raw.presentation?.outro)?raw.presentation.outro.map(String).slice(0,8):[]},regions:raw.regions&&typeof raw.regions==="object"?CloneUtil.clone(raw.regions):{},objectives:Array.isArray(raw.objectives)?CloneUtil.clone(raw.objectives).slice(0,16):[],flags:raw.flags&&typeof raw.flags==="object"?CloneUtil.clone(raw.flags):{},events})}
+ const moduleSource=CampaignModuleLoader.sourceOf(raw); return Object.freeze({schemaVersion:3,moduleSource,missionId,title:String(raw.title||missionId),briefing:String(raw.briefing||""),faction:String(raw.faction||"frontier"),seed:(Number(raw.seed)>>>0)||HashUtil.hash(missionId),map:raw.map&&typeof raw.map==="object"?CloneUtil.clone(raw.map):null,player:{units:pu,defenseCards:pd,techCap:RangeUtil.clamp(Math.round(Number(raw.player?.techCap)||1),1,3)},enemy:{units:eu,defenseCards:ed,techCap:RangeUtil.clamp(Math.round(Number(raw.enemy?.techCap)||1),1,3),difficulty:String(raw.enemy?.difficulty||"normal"),aiProfile:["standard","scripted"].includes(String(raw.enemy?.aiProfile||"standard"))?String(raw.enemy?.aiProfile||"standard"):"standard"},presentation:{opening:Array.isArray(raw.presentation?.opening)?raw.presentation.opening.map(String).slice(0,8):[],outro:Array.isArray(raw.presentation?.outro)?raw.presentation.outro.map(String).slice(0,8):[]},regions:raw.regions&&typeof raw.regions==="object"?CloneUtil.clone(raw.regions):{},objectives:Array.isArray(raw.objectives)?CloneUtil.clone(raw.objectives).slice(0,16):[],flags:raw.flags&&typeof raw.flags==="object"?CloneUtil.clone(raw.flags):{},events})}
 }
 
 class CampaignPresentation{
@@ -30259,6 +30774,8 @@ class CampaignPresentation{
   if(type==="techReached"){const side=t.side==="enemy"?1-humanSide:humanSide;return Number(sim.tech?.[side]||0)>=Number(t.tier||1)}
   if(type==="enterRegion"||type==="unitsInRegion"){const r=this.region(t.region)||{center:t.center||[.5,.5],radius:t.radius||.08},x=(Number(r.center?.[0])||0)*WORLD_W,y=(Number(r.center?.[1])||0)*WORLD_H,rad=(Number(r.radius)||.08)*Math.min(WORLD_W,WORLD_H),side=t.side==="enemy"?1-humanSide:humanSide,n=sim.units.filter(u=>u.alive&&u.side===side&&Math.hypot(u.x-x,u.y-y)<=rad).length;return n>=Math.max(1,Number(t.count)||1)}
   if(type==="discoverObject"){const camp=sim.camps?.find(c=>c.id===String(t.objectId||""));if(!camp)return false;const targets=sim.units.filter(u=>u.alive&&(u.campId||u.scenarioGroupId)===camp.id),r=(Number(t.radius)||.11)*Math.min(WORLD_W,WORLD_H);return targets.length>0&&sim.units.some(a=>a.alive&&a.side===humanSide&&targets.some(x=>Math.hypot(a.x-x.x,a.y-x.y)<=r))}
+  if(type==="cyclePhase"){const cycle=Math.max(1,Number(t.cycleSeconds)||1),offset=Number(t.offsetSeconds)||0,elapsed=Math.max(0,sim.ticksMs(sim.tick)/1000-offset);if(sim.ticksMs(sim.tick)/1000<offset)return false;const cycleIndex=Math.floor(elapsed/cycle)+1,within=elapsed%cycle,start=Math.max(0,Number(t.startSeconds)||0),end=Math.min(cycle,Number(t.endSeconds??cycle));if(cycleIndex<Math.max(1,Number(t.cycleAtLeast)||1))return false;if(t.cycleAtMost!=null&&cycleIndex>Number(t.cycleAtMost))return false;return within>=start&&within<end}
+  if(type==="structureCount"){const side=t.side==="enemy"?1-humanSide:t.side==="player"?humanSide:t.side==="neutral"?NEUTRAL_SIDE:null,group=String(t.group||t.objectiveGroup||""),types=Array.isArray(t.types)?new Set(t.types.map(String)):null,r=this.region(t.region),cx=(Number(r?.center?.[0])||0)*WORLD_W,cy=(Number(r?.center?.[1])||0)*WORLD_H,rr=r?(Number(r.radius)||.08)*Math.min(WORLD_W,WORLD_H):0;const n=sim.buildings.filter(b=>b.alive!==false&&b.hp>0&&(side==null||b.side===side)&&(!group||b.campaignObjectiveGroup===group)&&(!types||types.has(String(b.type)))&&(!r||Math.hypot(b.x-cx,b.y-cy)<=rr)).length,v=Math.max(0,Number(t.value)||0),op=String(t.op||"<=");return op===">="?n>=v:op===">"?n>v:op==="="?n===v:op==="<"?n<v:n<=v}
   return false}
  static renderObjectives(){let el=document.getElementById("campaignObjectives"),host=document.querySelector("#gameScreen .canvas-wrap");if(!el){el=document.createElement("div");el.id="campaignObjectives";el.style.cssText="position:absolute;left:10px;top:10px;z-index:29;max-width:min(360px,62%);padding:8px 10px;border-radius:10px;background:rgba(12,22,19,.78);border:1px solid rgba(220,235,215,.28);color:#eef4e8;font:600 12px/1.45 system-ui;pointer-events:none";(host||document.body).appendChild(el)}el.innerHTML=[...this.objectives.values()].filter(o=>o.state!=="hidden").map(o=>`<div style="opacity:${o.state==="complete"?.55:1}">${o.state==="complete"?"✓":"◆"} ${o.text}</div>`).join("");el.style.display=el.innerHTML?"block":"none"}
  static runAction(a){const type=String(a?.type||"");if(type==="toast"){this.toast(a.text,a.durationMs);return}if(type==="setFlag"){this.flags[String(a.id||"")]=a.value;return}if(type==="setObjective"){const id=String(a.id||"objective"),old=this.objectives.get(id)||{};this.objectives.set(id,{...old,id,text:String(a.text||old.text||id),state:String(a.state||"active")});this.renderObjectives();return}if(type==="completeObjective"){const id=String(a.id||""),old=this.objectives.get(id);if(old){this.objectives.set(id,{...old,state:"complete"});this.renderObjectives()}return}
@@ -30272,7 +30789,7 @@ class CampaignPresentation{
   if(type==="victory"||type==="defeat"){const human=MatchLifecycle.singleMatch?.humanRole||"host",winner=type==="victory"?human:(human==="host"?"guest":"host");sess.endMatch(winner,"campaign-trigger",{notifyPeer:sess.role==="host"});return}
  }
  static humanSide(){return (MatchLifecycle.singleMatch?.humanRole||"host")==="host"?0:1}
- static startEvents(){const m=CampaignRuntime.pending;if(!m?.events?.length)return;this.eventTimer=setInterval(()=>{const sess=MatchLifecycle.activeSession?.(),sim=sess?.sim;if(!sim)return;const h=this.humanSide(),now=performance.now();for(const e of m.events){if(e.enabled===false||this.fired.has(e.id))continue;const st=this.fireState.get(e.id)||{count:0,last:-Infinity};if(now-st.last<Math.max(0,Number(e.cooldownMs)||0)||!this.triggerMet(e.when||e.trigger,sim,h))continue;st.count++;st.last=now;this.fireState.set(e.id,st);const fire=()=>{for(const a of e.actions)this.runAction(a)};const delay=Math.max(0,Number(e.delayMs)||0);if(delay)this.timers.push(setTimeout(fire,delay));else fire();if(e.once!==false||(e.repeatCount!=null&&st.count>=Number(e.repeatCount)))this.fired.add(e.id)}},250)}
+ static startEvents(){const m=CampaignRuntime.pending;if(!m?.events?.length)return;this.eventTimer=setInterval(()=>{const sess=MatchLifecycle.activeSession?.(),sim=sess?.sim;if(!sim)return;const h=this.humanSide();for(const e of m.events){if(e.enabled===false||this.fired.has(e.id))continue;const st=this.fireState.get(e.id)||{count:0,lastTick:-Infinity};const cooldownTicks=sim.msTicks(Math.max(0,Number(e.cooldownMs)||0));if(sim.tick-st.lastTick<cooldownTicks||!this.triggerMet(e.when||e.trigger,sim,h))continue;st.count++;st.lastTick=sim.tick;this.fireState.set(e.id,st);const fire=()=>{for(const a of e.actions)this.runAction(a)};const delay=Math.max(0,Number(e.delayMs)||0);if(delay)this.timers.push(setTimeout(fire,delay));else fire();if(e.once!==false||(e.repeatCount!=null&&st.count>=Number(e.repeatCount)))this.fired.add(e.id)}},250)}
  static onGameEnter(){const m=CampaignRuntime.pending;if(!m||this.shownMissionId===m.missionId)return;this.shownMissionId=m.missionId;this.clear();this.flags={...(m.flags||{})};for(const o of m.objectives||[])this.objectives.set(String(o.id),{id:String(o.id),text:String(o.text||o.label||o.id),state:String(o.state||"active")});this.renderObjectives();const lines=m.presentation?.opening||[],el=this.ensureBubble();lines.forEach((line,i)=>this.timers.push(setTimeout(()=>{el.textContent=line;el.style.opacity="1"},i*3200)));if(lines.length)this.timers.push(setTimeout(()=>{el.style.opacity="0"},lines.length*3200+2600));this.timers.push(setTimeout(()=>this.startEvents(),Math.max(500,lines.length*3200+500)))}
  static outroDuration(lines){const n=Array.isArray(lines)?lines.filter(Boolean).length:0;return n? n*3200+350:0}
  static playOutro(lines,onDone){const seq=Array.isArray(lines)?lines.filter(Boolean):[];if(!seq.length){onDone?.();return 0}const el=this.ensureBubble();let total=0;for(const line of seq){this.timers.push(setTimeout(()=>{el.textContent=String(line);el.style.opacity="1"},total));total+=3200}this.timers.push(setTimeout(()=>{el.style.opacity="0"},Math.max(0,total-350)));this.timers.push(setTimeout(()=>onDone?.(),total+350));return total+350}
@@ -30280,15 +30797,16 @@ class CampaignPresentation{
 }
 
 class CampaignRepository{
+ // Repository contract: campaign/ is flat. Mission src values are basenames such as flower-01.js.
  static baseUrl="https://byh-playground.github.io/rally-frontier/campaign/";
  static manifest=null;
  static resolve(path){return new URL(String(path||""),this.baseUrl).href}
  static async loadJson(url){const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.json()}
- static async loadManifest(){const raw=await this.loadJson(this.resolve("manifest.json"));if(!raw||typeof raw!=="object")throw new Error("manifest 객체가 필요합니다.");const schemaVersion=Math.max(1,Math.round(Number(raw.schemaVersion)||1));const campaigns=(Array.isArray(raw.campaigns)?raw.campaigns:[]).map(c=>({id:String(c.id||""),title:String(c.title||c.id||"Campaign"),missions:(Array.isArray(c.missions)?c.missions:[]).map(m=>({id:String(m.id||""),title:String(m.title||m.id||"Mission"),src:String(m.src||"")})).filter(m=>m.id&&m.src)})).filter(c=>c.id&&c.missions.length);this.manifest={schemaVersion,campaigns};return this.manifest}
- static async loadMission(entry){return this.loadJson(this.resolve(entry.src))}
+ static async loadManifest(){const raw=await this.loadJson(this.resolve("manifest.json"));if(!raw||typeof raw!=="object")throw new Error("manifest 객체가 필요합니다.");const schemaVersion=Math.max(1,Math.round(Number(raw.schemaVersion)||1));const campaigns=(Array.isArray(raw.campaigns)?raw.campaigns:[]).map(c=>({id:String(c.id||""),title:String(c.title||c.id||"Campaign"),missions:(Array.isArray(c.missions)?c.missions:[]).map(m=>({id:String(m.id||""),title:String(m.title||m.id||"Mission"),src:String(m.src||"")})).filter(m=>m.id&&m.src&&!/[\\/]/.test(m.src))})).filter(c=>c.id&&c.missions.length);this.manifest={schemaVersion,campaigns};return this.manifest}
+ static async loadMission(entry){const url=this.resolve(entry.src),r=await fetch(url,{cache:"no-store"});if(!r.ok)throw new Error(`HTTP ${r.status}`);const source=await r.text();return {raw:CampaignModuleLoader.evaluate(source,url),source}}
 }
 class CampaignRuntime{
- static pending=null; static progress=Object.create(null); static setMission(raw){this.pending=CampaignMissionDefinition.normalize(raw);return this.pending} static clear(){this.pending=null}
+ static pending=null; static progress=Object.create(null); static setMission(raw,source=""){if(source&&raw&&typeof raw==="object")Object.defineProperty(raw,"__moduleSource",{value:String(source),enumerable:false,configurable:true});this.pending=CampaignMissionDefinition.normalize(raw);return this.pending} static clear(){this.pending=null}
  static matchConfig(){const m=this.pending;if(!m)return null;return {selectionMode:"deck",presetId:"standard",simulationTps:UiRuntimeState.value.settings.simulationTps,campaignScenario:m,overrides:{draft:{enabled:false}}}}
 }
 class MatchLifecycle{
@@ -31058,17 +31576,16 @@ class BuildingPresentation{
     progressPct=100;
     label="생산 계약 완료";
   }else{
-    const nextCount=Math.min(batch,remaining);
-    const supplyNeeded=(unit?.supply||0)*nextCount;
-    const supplyUsed=liveSim?.supplyUsed?.(b.side)??0;
-    const supplyCap=liveSim?.supplyCap?.(b.side)??0;
+    const preferredCount=Math.min(batch,remaining);
+    const supplyPerUnit=Math.max(0,Number(unit?.supply)||0);
+    const reservable=liveSim?.reservableProductionBatchSize?.(b.side,b)??preferredCount;
 
-    if(supplyUsed+supplyNeeded>supplyCap){
+    if(preferredCount>0&&reservable<=0){
       state="blocked";
-      label=`보급 대기 · ${supplyNeeded} 필요`;
+      label=`보급 대기 · 유닛당 ${supplyPerUnit} 필요`;
     }else{
       state="idle";
-      label=`다음 ${nextCount}기 생산 대기`;
+      label=reservable<preferredCount?`보급에 맞춰 ${reservable}기 우선 생산`:`다음 ${preferredCount}기 생산 대기`;
     }
   }
 
@@ -31427,6 +31944,13 @@ class BuildingPresentation{
 
   const liveSim=MatchLifecycle.activeSession()?.sim;
 
+  if(!buildingPlacementInsideWorld(action.building,action.x,action.y)){
+    return "건물이 맵 바깥으로 나갈 수 없습니다.";
+  }
+  if(!buildingHasBuilderApproach(action.building,action.x,action.y,state.buildings||[])){
+    return "건설 일꾼이 접근할 수 있는 면이 필요합니다.";
+  }
+
   if(BuildingDefinition.isDefenseTower(action.building)){
     const selected=DefenseCardDefinition.list(state.defenseCards?.[side]||liveSim?.defenseCards?.[side]);
     if(!selected.some(id=>DefenseCardDefinition.get(id)?.building===action.building))return "선택하지 않은 방어 건물 카드입니다.";
@@ -31479,7 +32003,7 @@ class BuildingPresentation{
   for(const b of state.buildings){
     if(b.alive===false)continue;
     const other=BuildingDefinition.get(b.type);
-    if(Math.hypot(b.x-action.x,b.y-action.y)<bd.size+(other?.size||35)+20)return "다른 건물과 너무 가깝습니다.";
+    if(Math.hypot(b.x-action.x,b.y-action.y)<buildingPlacementSeparation(action.building,b.type))return "다른 건물과 너무 가깝습니다. 일꾼 이동 통로를 확보하세요.";
   }
   return null;
 }
@@ -32428,11 +32952,8 @@ class BattlePresentation{
     if(liveSim&&!paused){
       supplyWaiting=active.some(b=>{
         if(b.queue?.length||(Number(b.productionRemaining)||0)<=0)return false;
-        const count=Math.min(
-          Math.max(1,Number(b.productionBatchSize)||1),
-          Math.max(0,Number(b.productionRemaining)||0)
-        );
-        return count>0&&!liveSim.canReserveBatchSupply(b.side,b.produceType,count);
+        const count=liveSim.reservableProductionBatchSize?.(b.side,b)??0;
+        return (Number(b.productionRemaining)||0)>0&&count<=0;
       });
     }
 
@@ -33115,15 +33636,15 @@ UiRegistry.refs.gameStartDialog.addEventListener("click",e=>{
 });
 
 const renderCampaignLoadedMission=(m,source="preview")=>{UiRegistry.refs.campaignMissionTitle.textContent=m.title;UiRegistry.refs.campaignMissionBrief.textContent=m.briefing||m.missionId;UiRegistry.refs.campaignStatus.textContent=`${source==="repository"?"정식":"Preview"} · ${m.player.units.length}종 VS ${m.enemy.units.length}종 · 현재 Definition 수치 사용`;UiRegistry.refs.campaignStartBtn.disabled=false};
-const loadCampaignMissionObject=(raw,source="preview")=>{try{renderCampaignLoadedMission(CampaignRuntime.setMission(raw),source)}catch(e){CampaignRuntime.clear();UiRegistry.refs.campaignStartBtn.disabled=true;UiRegistry.refs.campaignStatus.textContent=e?.message||String(e)}};
-const renderCampaignRepository=manifest=>{const host=UiRegistry.refs.campaignRepositoryList;if(!host)return;host.replaceChildren();for(const campaign of manifest.campaigns){const head=document.createElement("div");head.textContent=campaign.title;head.style.cssText="font-weight:900;font-size:13px;margin-top:4px";host.appendChild(head);for(const mission of campaign.missions){const b=document.createElement("button");b.type="button";b.className="dialog-action";b.textContent=mission.title;b.dataset.missionId=mission.id;b.onclick=async()=>{UiRegistry.refs.campaignStatus.textContent=`${mission.title} 불러오는 중…`;try{loadCampaignMissionObject(await CampaignRepository.loadMission(mission),"repository")}catch(e){CampaignRuntime.clear();UiRegistry.refs.campaignStartBtn.disabled=true;UiRegistry.refs.campaignStatus.textContent="정식 미션 로드 실패 · "+(e?.message||e)}};host.appendChild(b)}}if(!host.childElementCount){const e=document.createElement("div");e.className="dialog-copy";e.textContent="등록된 정식 캠페인이 없습니다.";host.appendChild(e)}};
-const refreshCampaignRepository=async()=>{UiRegistry.refs.campaignStatus.textContent="정식 캠페인 목록 불러오는 중…";try{const m=await CampaignRepository.loadManifest();renderCampaignRepository(m);UiRegistry.refs.campaignStatus.textContent=`정식 캠페인 ${m.campaigns.reduce((n,c)=>n+c.missions.length,0)}개 미션` }catch(e){UiRegistry.refs.campaignRepositoryList?.replaceChildren();UiRegistry.refs.campaignStatus.textContent="Repository 로드 실패 · 개발용 JSON Preview는 계속 사용할 수 있습니다. · "+(e?.message||e)}};
-UiRegistry.refs.campaignBtn.onclick=()=>{audioSystem.unlock();DebugScenarioHarness.pending=null;CampaignRuntime.clear();UiRegistry.refs.campaignStartBtn.disabled=true;UiRegistry.refs.campaignMissionTitle.textContent="캠페인";UiRegistry.refs.campaignMissionBrief.textContent="정식 캠페인은 Repository에서 읽고, 개발 중 Mission JSON은 1회 Preview로 실행합니다.";UiController.closeUiModal("game-start");UiController.openUiModal("campaign");refreshCampaignRepository()};
+const loadCampaignMissionObject=(raw,source="preview",moduleSource="")=>{try{renderCampaignLoadedMission(CampaignRuntime.setMission(raw,moduleSource),source)}catch(e){CampaignRuntime.clear();UiRegistry.refs.campaignStartBtn.disabled=true;UiRegistry.refs.campaignStatus.textContent=e?.message||String(e)}};
+const renderCampaignRepository=manifest=>{const host=UiRegistry.refs.campaignRepositoryList;if(!host)return;host.replaceChildren();for(const campaign of manifest.campaigns){const head=document.createElement("div");head.textContent=campaign.title;head.style.cssText="font-weight:900;font-size:13px;margin-top:4px";host.appendChild(head);for(const mission of campaign.missions){const b=document.createElement("button");b.type="button";b.className="dialog-action";b.textContent=mission.title;b.dataset.missionId=mission.id;b.onclick=async()=>{UiRegistry.refs.campaignStatus.textContent=`${mission.title} 불러오는 중…`;try{const loaded=await CampaignRepository.loadMission(mission);loadCampaignMissionObject(loaded.raw,"repository",loaded.source)}catch(e){CampaignRuntime.clear();UiRegistry.refs.campaignStartBtn.disabled=true;UiRegistry.refs.campaignStatus.textContent="정식 미션 로드 실패 · "+(e?.message||e)}};host.appendChild(b)}}if(!host.childElementCount){const e=document.createElement("div");e.className="dialog-copy";e.textContent="등록된 정식 캠페인이 없습니다.";host.appendChild(e)}};
+const refreshCampaignRepository=async()=>{UiRegistry.refs.campaignStatus.textContent="정식 캠페인 목록 불러오는 중…";try{const m=await CampaignRepository.loadManifest();renderCampaignRepository(m);UiRegistry.refs.campaignStatus.textContent=`정식 캠페인 ${m.campaigns.reduce((n,c)=>n+c.missions.length,0)}개 미션` }catch(e){UiRegistry.refs.campaignRepositoryList?.replaceChildren();UiRegistry.refs.campaignStatus.textContent="Repository 로드 실패 · 개발용 JS Preview는 계속 사용할 수 있습니다. · "+(e?.message||e)}};
+UiRegistry.refs.campaignBtn.onclick=()=>{audioSystem.unlock();DebugScenarioHarness.pending=null;CampaignRuntime.clear();UiRegistry.refs.campaignStartBtn.disabled=true;UiRegistry.refs.campaignMissionTitle.textContent="캠페인";UiRegistry.refs.campaignMissionBrief.textContent="정식 캠페인은 campaign/ 단일 폴더의 Mission JS를 읽고, 개발 중 Mission JS는 1회 Preview로 실행합니다.";UiController.closeUiModal("game-start");UiController.openUiModal("campaign");refreshCampaignRepository()};
 UiRegistry.refs.campaignRefreshBtn.onclick=()=>refreshCampaignRepository();
 UiRegistry.refs.campaignCloseBtn.onclick=()=>UiController.closeUiModal("campaign");
 UiRegistry.refs.campaignLoadFileBtn.onclick=()=>UiRegistry.refs.campaignFileInput.click();
-UiRegistry.refs.campaignFileInput.onchange=async()=>{const f=UiRegistry.refs.campaignFileInput.files?.[0];if(!f)return;try{loadCampaignMissionObject(JSON.parse(await f.text()),"preview")}catch(e){UiRegistry.refs.campaignStatus.textContent="JSON 읽기 실패 · "+(e?.message||e)}};
-UiRegistry.refs.campaignLoadUrlBtn.onclick=async()=>{const url=UiRegistry.refs.campaignUrlInput.value.trim();if(!url)return;UiRegistry.refs.campaignStatus.textContent="불러오는 중…";try{const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw new Error(`HTTP ${r.status}`);loadCampaignMissionObject(await r.json(),"preview")}catch(e){UiRegistry.refs.campaignStatus.textContent="URL 로드 실패 · CORS/주소 확인 · "+(e?.message||e)}};
+UiRegistry.refs.campaignFileInput.onchange=async()=>{const f=UiRegistry.refs.campaignFileInput.files?.[0];if(!f)return;try{const source=await f.text();loadCampaignMissionObject(CampaignModuleLoader.evaluate(source,f.name),"preview",source)}catch(e){UiRegistry.refs.campaignStatus.textContent="JS 읽기 실패 · "+(e?.message||e)}};
+UiRegistry.refs.campaignLoadUrlBtn.onclick=async()=>{const url=UiRegistry.refs.campaignUrlInput.value.trim();if(!url)return;UiRegistry.refs.campaignStatus.textContent="불러오는 중…";try{const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw new Error(`HTTP ${r.status}`);const source=await r.text();loadCampaignMissionObject(CampaignModuleLoader.evaluate(source,url),"preview",source)}catch(e){UiRegistry.refs.campaignStatus.textContent="URL 로드 실패 · CORS/주소 확인 · "+(e?.message||e)}};
 UiRegistry.refs.campaignStartBtn.onclick=()=>{if(!CampaignRuntime.pending)return;audioSystem.unlock();UiController.closeUiModal("campaign");UiRegistry.refs.singleBtn.disabled=true;UiRegistry.refs.singleStatus.textContent=`캠페인 · ${CampaignRuntime.pending.title} 준비 중…`;UiController.setElementVisible(UiRegistry.refs.singleStatus,true);NetworkModuleLoader.pendingPeerAction=null;MatchLifecycle.startSinglePlayerWebRTC("host")};
 UiRegistry.refs.singleBtn.onclick=()=>{
   audioSystem.unlock();
