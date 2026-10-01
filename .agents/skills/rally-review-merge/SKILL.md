@@ -45,8 +45,12 @@ description: Review and merge GitHub pull requests for the rally-frontier projec
 
 `gh pr view`로 `state`, `mergedAt`, `mergeCommit`, `url`을 확인한 뒤 머지 성공을 보고한다. 로컬 작업 트리가 깨끗하면 `git fetch origin`, `git switch main`, `git pull --ff-only origin main`으로 동기화한다. 미커밋 변경이나 로컬 main 분기가 있으면 그대로 보존하고 동기화하지 못한 이유를 보고한다. reset, 자동 stash, 변경 삭제로 정리하지 않는다.
 
-동기화 성공 후 해당 PR의 `headRefName`과 일치하는 로컬 작업 브랜치만 정리한다. main 또는 다른 작업의 브랜치를 삭제하지 않는다. `git worktree list --porcelain`로 다른 worktree에서 사용 중인지 확인하고, `git merge-base --is-ancestor <작업-브랜치> main`으로 로컬 tip까지 main에 포함되는지 확인한 뒤 `git branch -d <작업-브랜치>`로 삭제한다. 브랜치가 없으면 이미 정리된 것으로 처리한다. 로컬에 추가 커밋이 있거나 다른 worktree가 사용 중이면 브랜치를 보존하고 이유를 보고한다. `-D`로 강제 삭제하지 않는다. 이미 머지된 PR을 확인하는 경우에도 같은 절차를 적용한다.
+동기화 성공 후 해당 PR뿐 아니라 남아 있는 머지 완료 로컬 작업 브랜치도 정리한다. 사용자가 “이미 머지된 브랜치 정리해줘”라고 요청하면 같은 절차를 독립적으로 실행한다. main, 열린 PR, PR 머지 여부를 확인할 수 없는 브랜치를 삭제하지 않는다. `git worktree list --porcelain`로 다른 worktree에서 사용 중인지 확인한다. 로컬 브랜치 이름과 일치하는 PR이 MERGED 상태인지, PR의 머지 커밋이 현재 main에 포함되는지 확인한다. 재사용된 브랜치의 열린 PR도 확인한다. 로컬 tip까지 main의 조상이면 `git branch -d <작업-브랜치>`로 삭제한다. 브랜치가 없으면 이미 정리된 것으로 처리한다. 로컬에 추가 커밋이 있거나 다른 worktree가 사용 중이면 브랜치를 보존하고 이유를 보고한다. 이미 머지된 PR을 확인하는 경우에도 같은 절차를 적용한다.
 
 squash 전 커밋을 가리키는 로컬 브랜치는 main의 조상이 아니므로 조상 검사만으로 미반영이라고 판단하지 않는다. 로컬 tip이 기록한 원본 head SHA와 같고, 원본 head와 통합 커밋의 tree가 같으며, 통합 커밋이 main에 포함되고 다른 worktree에서 사용하지 않는 경우에만 복구용 원본 head 참조를 남긴 뒤 해당 로컬 브랜치를 통합 커밋으로 갱신하고 `git branch -d`로 삭제한다. tree 차이나 추가 로컬 커밋이 있으면 보존한다. 이번 squash를 위해 만든 임시 브랜치/worktree도 검증 후 정리한다.
+
+과거 GitHub Squash merge로 main의 조상이 아닌 브랜치도 로컬 tip이 머지된 PR의 head SHA와 같고, 해당 tip과 PR mergeCommit의 tree가 동일하며 mergeCommit이 main에 포함되면 정리할 수 있다. 원본 tip을 `refs/codex/merged-backups/<브랜치>`에 보존하고, 로컬 브랜치를 확인한 mergeCommit으로 갱신한 뒤 `git branch -d`로 삭제한다. 증거가 부족하거나 tree가 다르면 강제 삭제하지 않는다. 브랜치 목록 정리와 복구용 Git 참조 보존을 구분하며, 원격 브랜치는 별도 지시 없이 삭제하지 않는다.
+
+`git branch -d`가 오래된 원격 upstream에 포함되지 않았다는 이유로 거부하면, main 포함 여부를 확인한 뒤 삭제 대상 로컬 브랜치의 upstream 설정만 `git branch --unset-upstream <브랜치>`로 해제하고 `git branch -d`를 재시도한다. 원격 참조를 수정하거나 `-D`로 우회하지 않는다.
 
 완료 응답에는 PR 링크, 리뷰/검증 결과, 머지 커밋, 로컬 동기화 및 브랜치 정리 결과를 간결하게 포함한다.
