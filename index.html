@@ -10579,7 +10579,7 @@ body.campaign-mode #p2pHealthText {
 // Single source of truth for this HTML artifact.
 // The timestamp lives only inside BUILD_ID. updatedAt is derived from it, so the
 // build identity and the visible/exported update time cannot drift apart.
-const BUILD_ID="20261002T003812+0900-rf-fog-texture-v73";
+const BUILD_ID="20261002T005414+0900-rf-guest-minimap-fog-v73";
 
 class BuildMetadata{
   static buildUpdatedAtFromId(buildId){
@@ -32644,7 +32644,8 @@ e.stopPropagation();
     const r=this.renderer;if(!r||r.replayObserverAll)return;const w=this.canvas.width,h=this.canvas.height,step=64,mw=Math.max(2,Math.ceil(r.world.width/step)+1),mh=Math.max(2,Math.ceil(r.world.height/step)+1),
       mask=this.fogMask||(this.fogMask=document.createElement('canvas'));if(mask.width!==mw||mask.height!==mh){mask.width=mw;mask.height=mh}
     const c=mask.getContext('2d'),img=c.createImageData(mw,mh),dark=r.replayVisionMode?[2,4,6,245]:[7,12,13,224];
-    for(let j=0;j<mh;j++){const y=j/(mh-1)*r.world.height;for(let i=0;i<mw;i++){const x=i/(mw-1)*r.world.width,k=(j*mw+i)*4,visible=r.visibleRaw(x,y,false);img.data[k]=dark[0];img.data[k+1]=dark[1];img.data[k+2]=dark[2];img.data[k+3]=visible?0:dark[3]}}
+    // Mask texels are in minimap view coordinates; visibility uses authoritative world coordinates.
+    for(let j=0;j<mh;j++){const y=r.viewY(j/(mh-1)*r.world.height);for(let i=0;i<mw;i++){const x=r.viewX(i/(mw-1)*r.world.width),k=(j*mw+i)*4,visible=r.visibleRaw(x,y,false);img.data[k]=dark[0];img.data[k+1]=dark[1];img.data[k+2]=dark[2];img.data[k+3]=visible?0:dark[3]}}
     c.putImageData(img,0,0);const out=this.ctx;out.save();out.imageSmoothingEnabled=true;out.imageSmoothingQuality='high';out.drawImage(mask,0,0,mw,mh,0,0,w,h);out.restore();
   }
   draw(){
@@ -41916,7 +41917,7 @@ AppLifecycle.runBootAndStartApp();
 {
   "version": "v73",
   "kind": "current-ssot",
-  "build": "20261002T003812+0900-rf-fog-texture-v73",
+  "build": "20261002T005414+0900-rf-guest-minimap-fog-v73",
   "simVersion": 178,
   "ssot": {
     "runtime": "Current executable code and top development contract are authoritative.",
