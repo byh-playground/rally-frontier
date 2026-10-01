@@ -17,3 +17,8 @@ USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES 
 - 완료 응답에는 PR 링크와 검증 결과를 제공한다. PR 생성이나 푸시가 실패하면 완료로 보고하지 않고 장애와 남은 작업을 알린다.
 - 사용자의 명시적 머지 지시 없이 PR을 머지하지 않는다. 공개 배포 변경은 별도 사용자 지시에 따른다.
 - 게임 개발 방향과 품질 기준은 `index.html` 상단 Development Contract를 따른다.
+
+## 프로젝트 스킬
+
+- PR 리뷰·머지 요청에는 [.agents/skills/rally-review-merge/SKILL.md](.agents/skills/rally-review-merge/SKILL.md)를 읽고 적용한다.
+- “머지해줘” 또는 “리뷰하고 문제 없으면 머지해줘”라는 명시적 지시가 있으면 이 스킬로 처리하고, 같은 머지에 대한 확인을 반복해서 요청하지 않는다.
