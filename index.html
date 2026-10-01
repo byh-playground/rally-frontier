@@ -10579,7 +10579,7 @@ body.campaign-mode #p2pHealthText {
 // Single source of truth for this HTML artifact.
 // The timestamp lives only inside BUILD_ID. updatedAt is derived from it, so the
 // build identity and the visible/exported update time cannot drift apart.
-const BUILD_ID="20261001T183802+0900-rf-terrain-fog-smoothing-v71";
+const BUILD_ID="20261002T003812+0900-rf-fog-texture-v73";
 
 class BuildMetadata{
   static buildUpdatedAtFromId(buildId){
@@ -10980,21 +10980,29 @@ class TerrainSurfaceAtlas{
   static lerp(a,b,t){return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t}}
   static pointKey(p){return `${Math.round(Number(p.x)*1000)/1000},${Math.round(Number(p.y)*1000)/1000}`}
   static directedEdgeKey(a,b){return this.pointKey(a)+">"+this.pointKey(b)}
-  static smoothClosedContour(points,protectedKeys=new Set(),iterations=2,cut=.16){
-    let cur=(points||[]).map(p=>({x:Number(p.x),y:Number(p.y),locked:protectedKeys.has(this.pointKey(p))}));
-    for(let pass=0;pass<iterations&&cur.length>=3;pass++){
-      const out=[],n=cur.length;
-      for(let i=0;i<n;i++){
-        const prev=cur[(i+n-1)%n],p=cur[i],next=cur[(i+1)%n];
-        if(p.locked){out.push({x:p.x,y:p.y,locked:true});continue}
-        out.push({x:p.x*(1-cut)+prev.x*cut,y:p.y*(1-cut)+prev.y*cut,locked:false});
-        out.push({x:p.x*(1-cut)+next.x*cut,y:p.y*(1-cut)+next.y*cut,locked:false});
-      }
-      cur=[];
-      for(const q of out){const last=cur[cur.length-1];if(!last||Math.hypot(last.x-q.x,last.y-q.y)>.01)cur.push(q)}
-      if(cur.length>2&&Math.hypot(cur[0].x-cur[cur.length-1].x,cur[0].y-cur[cur.length-1].y)<.01)cur.pop();
+  static smoothClosedContour(points,protectedKeys=new Set(),_iterations=0,_cut=0){
+    // Presentation-only corner rounding. Long authored edges stay perfectly straight;
+    // only the immediate corner is replaced by a short quadratic arc. This avoids
+    // the inflated/blob-like silhouette produced by repeated Chaikin subdivision.
+    const src=(points||[]).map(p=>({x:Number(p.x),y:Number(p.y)})),n=src.length;if(n<3)return src;
+    const out=[],radius=28,segments=3;
+    const add=q=>{const last=out[out.length-1];if(!last||Math.hypot(last.x-q.x,last.y-q.y)>.01)out.push(q)};
+    for(let i=0;i<n;i++){
+      const prev=src[(i+n-1)%n],p=src[i],next=src[(i+1)%n];
+      if(protectedKeys.has(this.pointKey(p))){add({...p});continue}
+      const ax=prev.x-p.x,ay=prev.y-p.y,bx=next.x-p.x,by=next.y-p.y,la=Math.hypot(ax,ay),lb=Math.hypot(bx,by);
+      if(la<1||lb<1){add({...p});continue}
+      const ua={x:ax/la,y:ay/la},ub={x:bx/lb,y:by/lb},dot=RangeUtil.clamp(ua.x*ub.x+ua.y*ub.y,-1,1);
+      // Near-straight vertices are not rounded.
+      if(dot<-0.985){add({...p});continue}
+      const cut=Math.min(radius,la*.22,lb*.22);
+      const a={x:p.x+ua.x*cut,y:p.y+ua.y*cut},b={x:p.x+ub.x*cut,y:p.y+ub.y*cut};
+      add(a);
+      for(let k=1;k<segments;k++){const t=k/segments,u=1-t;add({x:u*u*a.x+2*u*t*p.x+t*t*b.x,y:u*u*a.y+2*u*t*p.y+t*t*b.y})}
+      add(b);
     }
-    return cur.map(({x,y})=>({x,y}));
+    if(out.length>2&&Math.hypot(out[0].x-out[out.length-1].x,out[0].y-out[out.length-1].y)<.01)out.pop();
+    return out;
   }
   static polygonsOverlap(a,b){
     if(a.some(p=>MapGeometry.pointInSimplePolygon(p.x,p.y,b))||b.some(p=>MapGeometry.pointInSimplePolygon(p.x,p.y,a)))return true;
@@ -26050,6 +26058,11 @@ class ReusableFloat32Buffer{
     const next=new Float32Array(cap);next.set(this.data.subarray(0,this.length));
     this.data=next;this.grows++;
   }
+  push5(a,b,c,d,e){
+    this.ensure(5);const i=this.length,v=this.data;
+    v[i]=a;v[i+1]=b;v[i+2]=c;v[i+3]=d;v[i+4]=e;
+    this.length=i+5;
+  }
   push7(a,b,c,d,e,f,g){
     this.ensure(7);const i=this.length,v=this.data;
     v[i]=a;v[i+1]=b;v[i+2]=c;v[i+3]=d;v[i+4]=e;v[i+5]=f;v[i+6]=g;
@@ -28263,6 +28276,19 @@ class GLRenderer{
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.LEQUAL);
       gl.depthMask(true);
+
+      // Fog uses a separate texture program. Visibility is sampled in world-space
+      // from a low-resolution mask and linearly filtered by the GPU. Simulation
+      // visibility remains exact and is never derived from this presentation texture.
+      const fogVs=`attribute vec3 a;attribute vec2 uv;uniform vec2 r;varying mediump vec2 vuv;void main(){vec2 p=a.xy/r*2.0-1.0;gl_Position=vec4(p.x,-p.y,a.z,1.0);vuv=uv;}`,
+        fogFs=`precision mediump float;varying mediump vec2 vuv;uniform sampler2D tex;uniform vec4 fog;void main(){float vis=texture2D(tex,vuv).r;float edge=smoothstep(.12,.88,vis);gl_FragColor=vec4(fog.rgb,fog.a*(1.0-edge));}`;
+      this.fogProgram=gl.createProgram();
+      gl.attachShader(this.fogProgram,mk(gl.VERTEX_SHADER,fogVs));gl.attachShader(this.fogProgram,mk(gl.FRAGMENT_SHADER,fogFs));gl.linkProgram(this.fogProgram);
+      if(!gl.getProgramParameter(this.fogProgram,gl.LINK_STATUS))throw new Error("Fog shader link failed: "+gl.getProgramInfoLog(this.fogProgram));
+      this.fogA=gl.getAttribLocation(this.fogProgram,"a");this.fogUv=gl.getAttribLocation(this.fogProgram,"uv");
+      this.fogR=gl.getUniformLocation(this.fogProgram,"r");this.fogTexUniform=gl.getUniformLocation(this.fogProgram,"tex");this.fogColorUniform=gl.getUniformLocation(this.fogProgram,"fog");
+      this.fogBuf=gl.createBuffer();this.fogFrame=new ReusableFloat32Buffer(5*8192);this._fogGpuCapacityBytes=0;
+      this.fogTextures=new Map();this._fogTextureKey=null;this.fogMaskStep=64;
 
 
     // Reusable CPU staging buffer + persistent GPU allocation. This removes the
@@ -30752,6 +30778,14 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
     }
     return false;
   }
+  visibleRawAtLevel(x,y,targetLevel){
+    if(this.replayObserverAll)return true;if(!this.snapshot)return false;
+    const cell=this.visionCellSize,key=Math.floor(x/cell)+","+Math.floor(y/cell);
+    for(const side of this.replayVisionSides()){const bucket=this.visionGridBySide[side].get(key);if(!bucket)continue;
+      for(const src of bucket)if(VisibilityPolicy.sourceCanSeePoint(this.snapshot,src,x,y,{targetAir:false,targetLevel}))return true;
+    }
+    return false;
+  }
   detectedRaw(x,y,targetAir=false){
     if(this.replayObserverAll||this.replayVisionMode==="union")return true;
     if(!this.snapshot)return false;
@@ -32191,55 +32225,46 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       }
     }
   }
+  ensureFogTextures(){
+    if(!this.snapshot)return null;
+    const gl=this.gl,atlas=this.world.terrain.surfaces,step=this.fogMaskStep||64,w=Math.max(2,Math.ceil(this.world.width/step)+1),h=Math.max(2,Math.ceil(this.world.height/step)+1),
+      key=`${this.snapshot.tick}|${this.replayVisionMode||this.mySide()}|${this.replayObserverAll?1:0}|${this.world.width}x${this.world.height}|${atlas.maxLevel}|${w}x${h}`;
+    if(this._fogTextureKey===key)return{w,h};this._fogTextureKey=key;
+    const upload=(id,data)=>{let tex=this.fogTextures.get(id);if(!tex){tex=gl.createTexture();this.fogTextures.set(id,tex)}gl.bindTexture(gl.TEXTURE_2D,tex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.LUMINANCE,w,h,0,gl.LUMINANCE,gl.UNSIGNED_BYTE,data);return tex};
+    const make=(level=null)=>{const a=new Uint8Array(w*h);for(let j=0;j<h;j++){const y=j/(h-1)*this.world.height;for(let i=0;i<w;i++){const x=i/(w-1)*this.world.width;
+      a[j*w+i]=(level==null?this.visibleRaw(x,y,false):this.visibleRawAtLevel(x,y,level))?255:0}}return a};
+    for(let level=0;level<=atlas.maxLevel;level++)upload(`level:${level}`,make(level));
+    upload('ramp',make(null));gl.bindTexture(gl.TEXTURE_2D,null);return{w,h};
+  }
+  fogVertex(world){
+    const q=this.projectRenderWorldPosition(world),u=RangeUtil.clamp(world.x/this.world.width,0,1),v=RangeUtil.clamp(world.z/this.world.height,0,1);
+    // Slight camera-facing bias keeps the transparent fog coplanar with terrain without z-fighting.
+    this.fogFrame.push5(q.x,q.y,q.depth-.00035,u,v);
+  }
+  flushFog(texture,color){
+    if(!this.fogFrame.length||!texture)return;const gl=this.gl,d=this.fogFrame.view(),bytes=this.fogFrame.length*4;
+    gl.useProgram(this.fogProgram);gl.uniform2f(this.fogR,this.canvas.width,this.canvas.height);gl.uniform4f(this.fogColorUniform,...color);gl.uniform1i(this.fogTexUniform,0);
+    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.bindBuffer(gl.ARRAY_BUFFER,this.fogBuf);
+    if(this._fogGpuCapacityBytes<this.fogFrame.data.byteLength){gl.bufferData(gl.ARRAY_BUFFER,this.fogFrame.data.byteLength,gl.DYNAMIC_DRAW);this._fogGpuCapacityBytes=this.fogFrame.data.byteLength}
+    gl.bufferSubData(gl.ARRAY_BUFFER,0,d);gl.enableVertexAttribArray(this.fogA);gl.vertexAttribPointer(this.fogA,3,gl.FLOAT,false,20,0);
+    gl.enableVertexAttribArray(this.fogUv);gl.vertexAttribPointer(this.fogUv,2,gl.FLOAT,false,20,12);gl.drawArrays(gl.TRIANGLES,0,this.fogFrame.length/5);
+    this.perfStats.drawCalls=(this.perfStats.drawCalls||0)+1;this.perfStats.bufferUploadBytes=(this.perfStats.bufferUploadBytes||0)+bytes;this.fogFrame.reset();
+  }
   drawFog(){
-    if(this.replayObserverAll||!this.snapshot)return;
-    const atlas=this.world.terrain.surfaces,step=96,key=`${this.snapshot.tick}|${this.replayVisionMode||this.mySide()}|${step}|${atlas.maxLevel}`;
-    if(this._terrainFogKey!==key){
-      this._terrainFogKey=key;this._terrainFogCellsByLevel=new Map();this._terrainFogRampCells=new Map();
-      const addFlat=(level,x,y)=>{let a=this._terrainFogCellsByLevel.get(level);if(!a)this._terrainFogCellsByLevel.set(level,a=[]);a.push([x,y])};
-      const addRamp=(ramp,x,y,elevation)=>{let a=this._terrainFogRampCells.get(ramp.id);if(!a)this._terrainFogRampCells.set(ramp.id,a=[]);a.push([x,y,elevation])};
-      for(let y=step/2;y<this.world.height;y+=step)for(let x=step/2;x<this.world.width;x+=step){
-        if(!this.visibleRaw(x,y,false))continue;const surface=atlas.sample(x,y);
-        if(surface.ramp)addRamp(surface.ramp,x,y,surface.elevation);else addFlat(surface.level,x,y);
-      }
-      // Ramps are narrow enough that the coarse flat sampling grid can miss them.
-      // Sample each authored ramp directly; the fog still uses the common visibility policy.
-      for(const ramp of atlas.ramps)for(const t of [.15,.38,.62,.85])for(const u of [.22,.5,.78]){
-        const lo=TerrainSurfaceAtlas.lerp(ramp.lowA,ramp.lowB,u),hi=TerrainSurfaceAtlas.lerp(ramp.highA,ramp.highB,u),q=TerrainSurfaceAtlas.lerp(lo,hi,t);
-        if(this.visibleRaw(q.x,q.y,false))addRamp(ramp,q.x,q.y,ramp.lowElevation+(ramp.highElevation-ramp.lowElevation)*t);
-      }
-    }
-    const gl=this.gl,previousDepth=this._renderDepth,white=[1,1,1,1],renderMesh=atlas.renderSurfaceMesh||atlas.surfaceMesh,sign=this.orientationRole()==='guest'?-1:1;
-    const drawPatchMask=patch=>{
-      if(patch.kind==='cliff'&&patch.outwardY*sign<=1e-8)return;
-      const pts=patch.vertices.map(v=>this.projectRenderWorldPosition(v));
-      for(const tri of patch.triangles)for(const i of tri){const q=pts[i];this.setRenderDepth(q.depth);this.v(q.x,q.y,white)}
-    };
-    const clearSurfaceBit=()=>{gl.stencilMask(0x01);gl.clearStencil(0);gl.clear(gl.STENCIL_BUFFER_BIT)};
-    const beginSurfaceMask=()=>{gl.stencilMask(0x01);gl.stencilFunc(gl.ALWAYS,0x01,0x01);gl.stencilOp(gl.REPLACE,gl.REPLACE,gl.REPLACE);this.begin()};
-    const markVisible=(cells,level=null)=>{
-      if(!cells?.length)return;gl.disable(gl.DEPTH_TEST);gl.stencilMask(0x02);gl.stencilFunc(gl.EQUAL,0x03,0x01);gl.stencilOp(gl.KEEP,gl.KEEP,gl.REPLACE);this.begin();
-      const radius=step*.73*this.sc();
-      for(const cell of cells){const x=cell[0],y=cell[1],elevation=level==null?cell[2]:level*TERRAIN_LEVEL_HEIGHT;if(!this.onScreenAuth(x,y,step))continue;const q=this.projectRenderWorldPosition({x,y:elevation,z:y,groundY:0});this.setRenderDepth(0);this.regularPolygon(q.x,q.y,radius,white,16,Math.PI/16)}
-      this.flush();
-    };
-    gl.enable(gl.STENCIL_TEST);gl.stencilMask(0xff);gl.clearStencil(0);gl.clear(gl.STENCIL_BUFFER_BIT);gl.colorMask(false,false,false,false);gl.depthMask(false);
-    // Each flat level gets its own fog layer. The terrain depth buffer clips lower
-    // layers behind higher plateaus, so a visibility hole can never leak across levels.
-    for(let level=0;level<=atlas.maxLevel;level++){
-      clearSurfaceBit();gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);beginSurfaceMask();
-      if(level===0){this.setRenderDepth(.97);this.rect(0,0,this.canvas.width,this.canvas.height,white)}
-      else for(const patch of renderMesh)if(patch.kind==='plateau'&&patch.level===level||patch.kind==='cliff'&&patch.face?.highLevel===level)drawPatchMask(patch);
-      this.flush();markVisible(this._terrainFogCellsByLevel?.get(level),level);
-    }
-    // Ramps use their authored continuous height instead of a flat level offset.
-    for(const ramp of atlas.ramps){
-      clearSurfaceBit();gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);beginSurfaceMask();
-      const patch=renderMesh.find(p=>p.kind==='ramp'&&p.id===ramp.id);if(patch)drawPatchMask(patch);this.flush();markVisible(this._terrainFogRampCells?.get(ramp.id),null);
-    }
-    gl.colorMask(true,true,true,true);gl.disable(gl.DEPTH_TEST);gl.stencilMask(0x00);gl.stencilFunc(gl.EQUAL,0,0x02);gl.stencilOp(gl.KEEP,gl.KEEP,gl.KEEP);
-    this.begin();this.setRenderDepth(0);this.rect(0,0,this.canvas.width,this.canvas.height,this.replayVisionMode?[.008,.012,.018,.96]:[.025,.045,.048,.88]);this.flush();
-    gl.stencilMask(0xff);gl.disable(gl.STENCIL_TEST);gl.depthFunc(gl.LEQUAL);this.setRenderDepth(previousDepth);
+    if(this.replayObserverAll||!this.snapshot)return;this.ensureFogTextures();
+    const gl=this.gl,atlas=this.world.terrain.surfaces,mesh=atlas.renderSurfaceMesh||atlas.surfaceMesh,color=this.replayVisionMode?[.008,.012,.018,.96]:[.025,.045,.048,.88],sign=this.orientationRole()==='guest'?-1:1;
+    const emitPatch=(patch)=>{if(patch.kind==='cliff'&&patch.outwardY*sign<=1e-8)return;for(const tri of patch.triangles)for(const i of tri)this.fogVertex(patch.vertices[i])};
+    gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+    // Base level is one projected world plane. Higher terrain already owns nearer depth,
+    // so the level-0 fog cannot leak through a plateau.
+    this.fogFrame.reset();const base=[{x:0,y:0,z:0,groundY:0},{x:this.world.width,y:0,z:0,groundY:0},{x:this.world.width,y:0,z:this.world.height,groundY:0},{x:0,y:0,z:this.world.height,groundY:0}];
+    for(const i of [0,1,2,0,2,3])this.fogVertex(base[i]);this.flushFog(this.fogTextures.get('level:0'),color);
+    for(let level=1;level<=atlas.maxLevel;level++){this.fogFrame.reset();for(const patch of mesh)if(patch.kind==='plateau'&&patch.level===level||patch.kind==='cliff'&&patch.face?.highLevel===level)emitPatch(patch);this.flushFog(this.fogTextures.get(`level:${level}`),color)}
+    this.fogFrame.reset();for(const patch of mesh)if(patch.kind==='ramp')emitPatch(patch);this.flushFog(this.fogTextures.get('ramp'),color);
+    gl.bindTexture(gl.TEXTURE_2D,null);gl.useProgram(this.p);gl.uniform2f(this.r,this.canvas.width,this.canvas.height);gl.disable(gl.DEPTH_TEST);gl.depthMask(false);
   }
   drawFogLandmarks(){
     if(this.replayObserverAll)return;
@@ -32616,13 +32641,11 @@ e.stopPropagation();
     c.fill();
   }
   drawFog(){
-    const r=this.renderer;if(!r||r.replayObserverAll)return;
-    const w=this.canvas.width,h=this.canvas.height,mask=this.fogMask||(this.fogMask=document.createElement('canvas'));
-    if(mask.width!==w||mask.height!==h){mask.width=w;mask.height=h}
-    const c=mask.getContext('2d');c.clearRect(0,0,w,h);c.save();c.fillStyle=r.replayVisionMode?"rgba(2,4,6,.96)":"rgba(7,12,13,.88)";c.fillRect(0,0,w,h);
-    c.globalCompositeOperation="destination-out";const step=120;
-    for(let y=step/2;y<r.world.height;y+=step)for(let x=step/2;x<r.world.width;x+=step){if(!r.visibleRaw(x,y,false))continue;const p=this.point(x,y),rw=step/r.world.width*w*1.12,rh=step/r.world.height*h*1.12;c.fillStyle="rgba(0,0,0,1)";c.fillRect(p[0]-rw/2,p[1]-rh/2,rw,rh)}
-    c.restore();this.ctx.drawImage(mask,0,0);
+    const r=this.renderer;if(!r||r.replayObserverAll)return;const w=this.canvas.width,h=this.canvas.height,step=64,mw=Math.max(2,Math.ceil(r.world.width/step)+1),mh=Math.max(2,Math.ceil(r.world.height/step)+1),
+      mask=this.fogMask||(this.fogMask=document.createElement('canvas'));if(mask.width!==mw||mask.height!==mh){mask.width=mw;mask.height=mh}
+    const c=mask.getContext('2d'),img=c.createImageData(mw,mh),dark=r.replayVisionMode?[2,4,6,245]:[7,12,13,224];
+    for(let j=0;j<mh;j++){const y=j/(mh-1)*r.world.height;for(let i=0;i<mw;i++){const x=i/(mw-1)*r.world.width,k=(j*mw+i)*4,visible=r.visibleRaw(x,y,false);img.data[k]=dark[0];img.data[k+1]=dark[1];img.data[k+2]=dark[2];img.data[k+3]=visible?0:dark[3]}}
+    c.putImageData(img,0,0);const out=this.ctx;out.save();out.imageSmoothingEnabled=true;out.imageSmoothingQuality='high';out.drawImage(mask,0,0,mw,mh,0,0,w,h);out.restore();
   }
   draw(){
     if(!this.renderer||!this.snapshot)return;
@@ -41891,9 +41914,9 @@ AppLifecycle.runBootAndStartApp();
 </script>
 <script id="RALLY_STABILITY_INVENTORY" type="application/json">
 {
-  "version": "v71",
+  "version": "v73",
   "kind": "current-ssot",
-  "build": "20261001T183802+0900-rf-terrain-fog-smoothing-v71",
+  "build": "20261002T003812+0900-rf-fog-texture-v73",
   "simVersion": 178,
   "ssot": {
     "runtime": "Current executable code and top development contract are authoritative.",
@@ -41915,7 +41938,7 @@ AppLifecycle.runBootAndStartApp();
       "terrainVisionQA": "PASS — arbitrary stacking through level 5, level 1→2 ramp derivation, elevation LOS, intermediate high-ground occlusion, air vision, independent wall vision/projectile flags, exact 50% deterministic uphill miss, launch-time miss freezing and attack reveal",
       "rampMovement": "PASS — each uphill ramp independently applies 100/85/70/50% by its own progress, including level 1→2",
       "local2p": "PASS — real LoopbackTransport/GameSession/StrategySim/WebGL debug combat reached authoritative base-destroyed result on both peers; extended run crossed checksum cadence with zero mismatch/correction",
-      "terrainPresentation": "PASS — fog is rendered per terrain level with level-specific offsets and ramp-height sampling; render-only terrain contours are smoothed while authoritative level polygons remain unchanged",
+      "terrainPresentation": "PASS — battlefield fog uses per-level low-resolution visibility textures with GPU linear filtering and fixed level offsets; ramps use the continuous surface mask. Terrain corners use bounded quadratic rounding while authoritative level polygons remain unchanged",
       "webgl": "PASS — headed Chromium + Xvfb + SwiftShader/ANGLE"
     }
   },
