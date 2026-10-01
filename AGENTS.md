@@ -18,7 +18,7 @@ USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES 
 - PR 설명에는 변경 목적, 주요 변경 내용, 수행한 검증 및 미검증 항목을 명확히 적는다. 미검증 버전을 VALIDATED 또는 Stable로 표시하지 않는다.
 - 완료 응답에는 PR 링크와 검증 결과를 제공한다. PR 생성이나 푸시가 실패하면 완료로 보고하지 않고 장애와 남은 작업을 알린다.
 - 사용자의 명시적 머지 지시 없이 PR을 머지하지 않는다. 공개 배포 변경은 별도 사용자 지시에 따른다.
-- 머지 기본 방식은 작업 커밋을 하나로 squash한 뒤 Merge commit을 만드는 방식이다. main에 통합 작업 커밋 하나와 머지 커밋을 남기고, 머지 후 로컬 main을 동기화한 뒤 해당 PR의 로컬 작업 브랜치를 정리한다. 세부 절차는 프로젝트 리뷰·머지 스킬을 따른다.
+- 머지 기본 방식은 작업 커밋을 하나로 squash한 뒤 Merge commit을 만드는 방식이다. main에 통합 작업 커밋 하나와 머지 커밋을 남기고, 머지 후 로컬 main을 동기화한 뒤 해당 PR과 남아 있는 머지 완료 로컬 작업 브랜치를 정리한다. 세부 절차는 프로젝트 리뷰·머지 스킬을 따른다.
 - 게임 개발 방향과 품질 기준은 `index.html` 상단 Development Contract를 따른다.
 
 ## 프로젝트 스킬
