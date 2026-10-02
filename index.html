@@ -21978,7 +21978,7 @@ class ReplayPlayer{
     this.endTick=data?.result?.endTick!=null&&Number.isFinite(recordedEnd)?Math.max(0,Math.round(recordedEnd)):
       (data?.commands||[]).reduce((end,c)=>Math.max(end,Number(c.tick)||0),0);
     this.loop=this.loop.bind(this);
-    this.seek(0,{render:false});
+    try{this.seek(0,{render:false})}catch(error){this.stop();throw error}
   }
   command(){return false}
   inputAvailable(){return false}
@@ -35094,12 +35094,18 @@ class ReplayPresentation{
   if(UiRegistry.refs.replayZoomValue)UiRegistry.refs.replayZoomValue.textContent=`${Math.round((ReplayPresentation.replayPlayer.zoom||1)*100)}%`;
 }
   static startReplay(data){
-  try{ReplayPolicy.validateReplayPayload(data)}catch(e){LogUtil.log(`⚠ ${e.message}`);return false}
+  let loadedData,player,snapshot;
+  try{
+    ReplayPolicy.validateReplayPayload(data);
+    loadedData=CloneUtil.clone(data);
+    player=new ReplayPlayer(loadedData);
+    snapshot=player.sim.snapshot();
+  }catch(e){player?.stop();LogUtil.log(`⚠ 리플레이 열기 실패 · ${e.message||e}`);return false}
   CampaignPresentation.clear();CampaignRuntime.clear();
   MatchLifecycle.disposeMatches("replay-start");
   ReplayPresentation.replayPlayer?.stop();
-  ReplayPresentation.replayLoadedData=CloneUtil.clone(data);
-  ReplayPresentation.replayPlayer=new ReplayPlayer(ReplayPresentation.replayLoadedData);
+  ReplayPresentation.replayLoadedData=loadedData;
+  ReplayPresentation.replayPlayer=player;
   UiRuntimeState.value.target={type:"flag"};UiRuntimeState.value.selection.buildingId=null;UiRuntimeState.value.selection.unit=null;
   UiController.setUiCommand({branch:"closed",page:null});
   if(UiRuntimeState.value.modal==="spell-choice")UiController.closeUiModal("spell-choice");SpellPresentation.setSpellChoicePhase("idle");
@@ -35109,7 +35115,7 @@ class ReplayPresentation{
   }
   UiController.closeUiModal("create");UiController.closeUiModal("join");
   
-  ReplayPresentation.renderReplaySnapshot(ReplayPresentation.replayPlayer.sim.snapshot());
+  ReplayPresentation.renderReplaySnapshot(snapshot);
   ReplayPresentation.applyReplayPerspective();ReplayPresentation.syncReplayControls();
   ReplayPresentation.replayPlayer.start();
   LogUtil.log(`▶ 리플레이 시작 · ${ReplayPresentation.formatReplayTime(ReplayPresentation.replayPlayer.endTick)} · 명령 ${data.commands.length}개`);
