@@ -87,6 +87,7 @@ PURPOSE
 - 능력/VFX는 가능하면 그 기능을 담당하는 실제 신체/무기/기관에서 발생하는 것처럼 보여야 한다.
 
 9. RALLY FRONTIER VISUAL LANGUAGE
+- 중립도 하나의 진영이다. 모든 유닛은 병종의 기본 외형·크기·고유 재질에 진영 색상을 적용하며, 소속 변경만으로 몸통 구성이나 크기를 바꾸지 않는다.
 - RALLY FRONTIER의 기본 시각 언어는 florr.io 계열처럼 적은 수의 큰 geometric primitive로
   개체의 특징과 역할이 즉시 읽히는 방향이다.
 - 디테일의 양보다 실제 인게임 크기와 상면 시점에서 살아남는 실루엣/비율/기능 가독성을 우선한다.
@@ -13326,62 +13327,28 @@ mage:{
   ancientmistray:{family:"air-ray",facing:"full",shape:"leaf",crest:"veil",weapon:"mist",accent:[.58,.80,.92,1],fx:"cloak"},
   hivecarrier:{family:"air-carrier",shape:"seed",crest:"pod",weapon:"drones",accent:[.74,.64,.34,1],fx:"spawn"},
   carriermite:{family:"air-drone",facing:"full",shape:"bug",crest:"none",weapon:"sting",accent:[.84,.72,.30,1],fx:"air"},
-  deathworm:{objectiveFxStyle:"worm"},
-  sporetoad:{breathVfxPreset:"poisonBreath",breathTellColor:"#e9ff82"},
-  dragon:{facing:"full",specialMouthPose:true,objectiveFxStyle:"dragon",breathVfxPreset:"fireBreath",breathTellColor:"#ffe075"},
-  greatbear:{minimapNeutralRadius:2.8},
+  ancientbear:{visualScale:1.28},
+  deathworm:{visualScale:1.28,objectiveFxStyle:"worm"},
+  wildhound:{commonGroundBody:false,visualScale:1.28,dark:[.19,.27,.14,1],accent:[.83,.94,.43,1]},
+  boar:{commonGroundBody:false,visualScale:1.28,dark:[.25,.18,.11,1],accent:[.88,.68,.36,1]},
+  sporetoad:{commonGroundBody:false,visualScale:1.28,dark:[.20,.30,.16,1],accent:[.78,.92,.48,1],breathVfxPreset:"poisonBreath",breathTellColor:"#e9ff82"},
+  shellcrab:{commonGroundBody:false,visualScale:1.28,dark:[.27,.17,.11,1],accent:[.92,.68,.34,1]},
+  queenwasp:{visualScale:1.28},
+  seedwasp:{commonGroundBody:false,visualScale:1.28,dark:[.24,.18,.10,1],accent:[.95,.86,.48,1]},
+  dragon:{visualScale:1.28,facing:"full",specialMouthPose:true,objectiveFxStyle:"dragon",breathVfxPreset:"fireBreath",breathTellColor:"#ffe075"},
+  greatbear:{commonGroundBody:false,visualScale:1.28,dark:[.21,.15,.10,1],accent:[.82,.63,.34,1],minimapNeutralRadius:2.8},
 };
   static get(id){return this.all[id]||null}
 }
 
-// AIR silhouette/motion profiles are presentation-only. Species identity lives here
-// instead of being flattened into one generic winged body. Simulation never reads this table.
-class NeutralVisualDefinition{
+// Faction supplies colors only; species owns body geometry, scale and materials.
+class UnitFactionPalette{
   static all={
-  wildhound:{
-    family:"wild-runner",
-    body:[.41,.55,.29,1],
-    dark:[.19,.27,.14,1],
-    accent:[.83,.94,.43,1],
-    feature:"thorn-back"
-  },
-  boar:{
-    family:"shell-brute",
-    body:[.56,.42,.26,1],
-    dark:[.25,.18,.11,1],
-    accent:[.88,.68,.36,1],
-    feature:"seed-shell"
-  },
-  sporetoad:{
-    family:"spore-toad",
-    body:[.43,.58,.28,1],
-    dark:[.20,.30,.16,1],
-    accent:[.78,.92,.48,1],
-    feature:"spore-sacs"
-  },
-  shellcrab:{
-    family:"seed-crab",
-    body:[.58,.39,.24,1],
-    dark:[.27,.17,.11,1],
-    accent:[.92,.68,.34,1],
-    feature:"broad-shell"
-  },
-  seedwasp:{
-    family:"seed-wasp",
-    body:[.66,.54,.24,1],
-    dark:[.24,.18,.10,1],
-    accent:[.95,.86,.48,1],
-    feature:"leaf-wings"
-  },
-  greatbear:{
-    family:"ancient-guardian",
-    body:[.48,.36,.24,1],
-    dark:[.21,.15,.10,1],
-    accent:[.82,.63,.34,1],
-    feature:"flower-back"
-  }
-};
-  static get(id){return this.all[id]||null}
+    friendly:{body:[.18,.43,.93,1],dark:[.07,.19,.46,1],light:[.48,.68,1,1],ring:[.32,.58,1,.58]},
+    enemy:{body:[.89,.28,.28,1],dark:[.48,.08,.10,1],light:[1,.55,.55,1],ring:[1,.35,.35,.58]},
+    neutral:{body:[.48,.35,.22,1],dark:[.25,.18,.12,1],light:[.72,.57,.34,1],ring:[.76,.61,.28,.46]}
+  };
+  static get(relation){return this.all[relation]}
 }
 
 // 생산건물은 건설 순간 아래 계약을 복사한다.
@@ -26770,7 +26737,7 @@ const UNIT_VISUAL_RENDER_FNS=Object.freeze({
     }
   },
   "ancientbear":(rdr,ctx)=>{
-    const {u,own,sc,neutral,x,y,r}=ctx;
+    const {u,sc,x,y,r,factionPalette}=ctx;
     {
       // TOP main objective: preserve the established greatbear visual language, scaled up into a boss silhouette.
       const fur=[.53,.39,.22,1],furDark=[.28,.20,.12,1],furHi=[.68,.53,.30,1],pollen=[.78,.68,.34,1];
@@ -26784,14 +26751,14 @@ const UNIT_VISUAL_RENDER_FNS=Object.freeze({
       // Oversized forepaws sell the slam/charge weight without turning the creature into armor.
       rdr.circle(x-r*.82,y+r*.48,r*.46,furDark,11);rdr.circle(x+r*.82,y+r*.48,r*.46,furDark,11);
       rdr.circle(x-r*.82,y+r*.52,r*.34,fur,10);rdr.circle(x+r*.82,y+r*.52,r*.34,fur,10);
-      const ownerRing=neutral?[.76,.61,.28,.46]:own?[.32,.58,1,.58]:[1,.35,.35,.58];
+      const ownerRing=factionPalette.ring;
       rdr.outlineCircle(x,y,r*1.32,Math.max(1.6,2.4*sc),ownerRing,22,1);
       if(u.objectiveChargeActive)rdr.outlineCircle(x,y,r*1.42,Math.max(2,3.4*sc),[1,.68,.28,.52],24,1);
     
     }
   },
   "deathworm":(rdr,ctx)=>{
-    const {u,own,sc,neutral,groundWorld,groundPos,x,y,r}=ctx;
+    const {u,sc,groundWorld,groundPos,x,y,r,factionPalette}=ctx;
     {
       // MID objective: eyeless flesh worm. The circular maw is the face.
       const flesh=[.73,.49,.39,1],fleshHi=[.86,.62,.51,1],fleshDark=[.48,.28,.24,1];
@@ -26838,13 +26805,13 @@ const UNIT_VISUAL_RENDER_FNS=Object.freeze({
       }else{
         rdr.withWorldSpriteDepth(groundWorld,()=>rdr.circle(hx,hy+r*.40,r*.36,[.72,.43,.34,.18],12));
       }
-      const ownerRing=neutral?[.76,.61,.28,.46]:own?[.32,.58,1,.58]:[1,.35,.35,.58];
+      const ownerRing=factionPalette.ring;
       rdr.withWorldSpriteDepth(groundWorld,()=>rdr.outlineCircle(hx,hy+r*.12,r*1.18,Math.max(1.6,2.4*sc),ownerRing,22,1));
     
     }
   },
   "dragon":(rdr,ctx)=>{
-    const {u,own,sc,neutral,x,y,r,attack}=ctx;
+    const {u,sc,x,y,r,attack,factionPalette}=ctx;
     {
       // BOT objective: one local facing coordinate drives body, head, mouth, wings and tail.
       const pose=rdr.resolveDragonRenderPose(u,x,y,r),P=pose.point,fire=[1,.42,.12,1],fireHi=[1,.82,.28,1],wing=[.39,.14,.11,1],wingHi=[.52,.19,.14,1],body=[.58,.24,.15,1],bodyDark=[.42,.16,.11,1],head=[.66,.27,.14,1],ink=[.10,.055,.035,1];
@@ -26879,7 +26846,7 @@ const UNIT_VISUAL_RENDER_FNS=Object.freeze({
       rdr.line(pose.tailA[0],pose.tailA[1],pose.tailB[0],pose.tailB[1],Math.max(3,4.8*sc),bodyDark);
       rdr.line(pose.tailB[0],pose.tailB[1],pose.tailTip[0],pose.tailTip[1],Math.max(2.6,4.0*sc),bodyDark);
       rdr.circle(pose.tailTip[0],pose.tailTip[1],r*.20,fire,9);rdr.circle(pose.tailTip[0]+pose.forwardX*r*.03,pose.tailTip[1]+pose.forwardY*r*.03,r*.10,fireHi,8);
-      const ownerRing=neutral?[.76,.61,.28,.46]:own?[.32,.58,1,.58]:[1,.35,.35,.58];
+      const ownerRing=factionPalette.ring;
       rdr.outlineCircle(x,y,r*1.48,Math.max(1.6,2.4*sc),ownerRing,24,1);
       if(u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.TELL){rdr.circle(mouth[0],mouth[1],r*.30,[1,.54,.15,.34],12);rdr.circle(mouth[0],mouth[1],r*.14,fireHi,10)}
       else if(u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.ACTIVE){rdr.circle(mouth[0],mouth[1],r*.24,[1,.78,.28,.78],10);rdr.circle(mouth[0],mouth[1],r*.11,[1,.96,.62,1],8)}
@@ -26890,8 +26857,8 @@ const UNIT_VISUAL_RENDER_FNS=Object.freeze({
   "wildhound":(rdr,ctx)=>{
     const {sc,x,y,r,attack}=ctx;
     {
-      const nv=NeutralVisualDefinition.all.wildhound;
-      const body=nv.body,dark=nv.dark,accent=nv.accent;
+      const vd=UnitVisualDefinition.get(ctx.u.type);
+      const body=ctx.team,dark=vd.dark,accent=vd.accent;
       // Fast runner: low oval body and thorn-leaf mane.
       rdr.poly([
         [x-r*.96,y+r*.18],[x-r*.56,y-r*.30],
@@ -26923,8 +26890,8 @@ const UNIT_VISUAL_RENDER_FNS=Object.freeze({
   "boar":(rdr,ctx)=>{
     const {x,y,r,attack}=ctx;
     {
-      const nv=NeutralVisualDefinition.all.boar;
-      const body=nv.body,dark=nv.dark,accent=nv.accent;
+      const vd=UnitVisualDefinition.get(ctx.u.type);
+      const body=ctx.team,dark=vd.dark,accent=vd.accent;
       // Seed-shell brute: chunky seed armor plates and tusk-like sprouts.
       rdr.poly([
         [x-r*.98,y+r*.50],[x-r*.88,y-r*.36],
@@ -26956,7 +26923,7 @@ const UNIT_VISUAL_RENDER_FNS=Object.freeze({
   "sporetoad":(rdr,ctx)=>{
     const {sc,x,y,r,attack}=ctx;
     {
-      const nv=NeutralVisualDefinition.all.sporetoad,body=nv.body,dark=nv.dark,accent=nv.accent;
+      const vd=UnitVisualDefinition.get(ctx.u.type),body=ctx.team,dark=vd.dark,accent=vd.accent;
       // Low, broad toad silhouette. Spore sacs sit on the BACK instead of reading as lateral wings.
       const sacPulse=attack?1.16:1;
       rdr.circle(x-r*.38,y-r*.52,r*.30*sacPulse,accent,11);
@@ -26985,7 +26952,7 @@ const UNIT_VISUAL_RENDER_FNS=Object.freeze({
   "shellcrab":(rdr,ctx)=>{
     const {sc,x,y,r,attack}=ctx;
     {
-      const nv=NeutralVisualDefinition.all.shellcrab,body=nv.body,dark=nv.dark,accent=nv.accent;
+      const vd=UnitVisualDefinition.get(ctx.u.type),body=ctx.team,dark=vd.dark,accent=vd.accent;
       // Very wide low silhouette: seed-shell body plus two oversized claws.
       rdr.poly([[x-r*.92,y+r*.34],[x-r*.72,y-r*.38],[x,y-r*.62],[x+r*.72,y-r*.38],[x+r*.92,y+r*.34],[x+r*.52,y+r*.62],[x-r*.52,y+r*.62]],dark);
       rdr.circle(x,y,r*.74,body,14);
@@ -27002,8 +26969,8 @@ const UNIT_VISUAL_RENDER_FNS=Object.freeze({
   "seedwasp":(rdr,ctx)=>{
     const {sc,x,y,r,attack}=ctx;
     {
-      const nv=NeutralVisualDefinition.all.seedwasp,body=nv.body,dark=nv.dark,accent=nv.accent;
-      // Air neutral: seed abdomen + broad leaf wings; common AIR height/shadow handles altitude.
+      const vd=UnitVisualDefinition.get(ctx.u.type),body=ctx.team,dark=vd.dark,accent=vd.accent;
+      // Seed abdomen + broad leaf wings; common AIR height/shadow handles altitude.
       rdr.poly([[x-r*.18,y],[x-r*1.10,y-r*.62],[x-r*.78,y+r*.18],[x-r*.16,y+r*.30]],[.72,.88,.58,.72]);
       rdr.poly([[x+r*.18,y],[x+r*1.10,y-r*.62],[x+r*.78,y+r*.18],[x+r*.16,y+r*.30]],[.72,.88,.58,.72]);
       rdr.circle(x,y+r*.10,r*.48,body,11);
@@ -27018,8 +26985,8 @@ const UNIT_VISUAL_RENDER_FNS=Object.freeze({
   "greatbear":(rdr,ctx)=>{
     const {u,sc,x,y,r,attack}=ctx;
     {
-      const nv=NeutralVisualDefinition.all.greatbear;
-      const body=nv.body,dark=nv.dark,accent=nv.accent;
+      const vd=UnitVisualDefinition.get(ctx.u.type);
+      const body=ctx.team,dark=vd.dark,accent=vd.accent;
       // Ancient flower-back bear: huge round mass with established petals/seed plates.
       rdr.circle(x,y+r*.10,r*1.06,dark,14);
       rdr.circle(x,y+r*.04,r*.92,body,14);
@@ -28843,7 +28810,7 @@ class GLRenderer{
   }
   isFriendlySide(side){return side===this.mySide()}
   factionRelation(side){
-    if(side==null)return "neutral";
+    if(side==null||side===NEUTRAL_SIDE)return "neutral";
     return this.isFriendlySide(side)?"friendly":"enemy";
   }
   factionColor(side,{alpha=1,neutral=[.95,.73,.25]}={}){
@@ -30999,7 +30966,7 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
       const maxHp=Math.max(1,Number(u.maxHp)||1);
       const showHp=(Number(u.hp)||0)<maxHp;
       if(!u.alive||(!showHp&&!hasMana))continue;
-      const own=u.side===side,neutral=u.side===NEUTRAL_SIDE,d=UnitDefinition.get(u.type)||{};
+      const own=u.side===side,d=UnitDefinition.get(u.type)||{};
       const cloaked=this.snapshotStealthed(u);
       const detected=own?true:this.detectedRaw(u.x,u.y);
       if(!own&&(!this.visibleRaw(u.x,u.y,UnitDefinition.get(u.type)?.layer==="AIR")||(cloaked&&!detected)))continue;
@@ -31008,8 +30975,7 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
       const wp=this.resolveRenderWorldPosition(u,"unit");
       const projected=this.projectRenderWorldPosition(wp);
       const x=projected.x,y=projected.y;
-      const visualScale=neutral?1.28:1.08;
-      const r=Math.max(6.2,(d.size||10)*sc*1.56*visualScale);
+      const r=this.unitRenderRadius(u);
       const bw=r*2.2,bh=Math.max(2.2,3.2*sc);
       const airUnit=d.layer==="AIR";
       const barLift=airUnit?1.90:1.58;
@@ -31940,7 +31906,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
   // Identity comes from species silhouette, appendages, equipment and VFX.
 
   unitRenderVisualScale(u){
-    return u?.side===NEUTRAL_SIDE?1.28:1.08;
+    return UnitVisualDefinition.get(u?.type)?.visualScale??1.08;
   }
   unitRenderRadius(u){
     const d=UnitDefinition.get(u?.type)||{};
@@ -32060,8 +32026,8 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
   }
 
   drawUnitCommonBody(ctx){
-    const {u,neutral,airUnit,x,y,r,team,teamLight}=ctx;
-    if(!neutral&&!UnitDefinition.get(u.type)?.objectiveKind&&!airUnit&&UnitVisualDefinition.get(u.type)?.commonGroundBody!==false){
+    const {u,airUnit,x,y,r,team,teamLight}=ctx;
+    if(!UnitDefinition.get(u.type)?.objectiveKind&&!airUnit&&UnitVisualDefinition.get(u.type)?.commonGroundBody!==false){
       this.circle(x,y+r*.12,r*.78,[.07,.10,.13,1],12);
       this.circle(x,y+r*.08,r*.68,team,12);
       this.circle(x-r*.18,y-r*.04,r*.25,teamLight,10);
@@ -32083,9 +32049,8 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
   }
   drawFallbackUnit(u){
     const p=this.projectEntityScreen(u,"unit"),r=this.unitRenderRadius(u);
-    const own=u.side===this.mySide(),neutral=u.side===NEUTRAL_SIDE;
-    const body=neutral?[.46,.34,.20,1]:own?[.18,.43,.93,1]:[.89,.28,.28,1];
-    const edge=neutral?[.22,.16,.10,1]:own?[.07,.18,.42,1]:[.46,.07,.09,1];
+    const palette=UnitFactionPalette.get(this.factionRelation(u.side));
+    const body=palette.body,edge=palette.dark;
     this.circle(p.x,p.y,r*.78,edge,12);
     this.circle(p.x,p.y-r*.04,r*.58,body,12);
     this.circle(p.x+r*.22,p.y-r*.18,r*.12,[.95,.90,.55,1],8);
@@ -32191,9 +32156,10 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       this.line(cx,cy-r*.14,cx,cy+r*.14,w,[.65,1,.68,.62]);
     }
 
-    const team=neutral?[.48,.35,.22,1]:own?[.18,.43,.93,ownStealthAlpha]:[.89,.28,.28,1];
-    const teamDark=neutral?[.25,.18,.12,1]:own?[.07,.19,.46,ownStealthAlpha]:[.48,.08,.10,1];
-    const teamLight=neutral?[.72,.57,.34,1]:own?[.48,.68,1,ownStealthAlpha]:[1,.55,.55,1];
+    const factionPalette=UnitFactionPalette.get(this.factionRelation(u.side));
+    const team=ownStealthAlpha<1?[...factionPalette.body.slice(0,3),ownStealthAlpha]:factionPalette.body;
+    const teamDark=ownStealthAlpha<1?[...factionPalette.dark.slice(0,3),ownStealthAlpha]:factionPalette.dark;
+    const teamLight=ownStealthAlpha<1?[...factionPalette.light.slice(0,3),ownStealthAlpha]:factionPalette.light;
     const ink=[.09,.12,.16,ownStealthAlpha],
       metal=[.23,.28,.34,ownStealthAlpha],
       gold=[.96,.72,.24,ownStealthAlpha];
@@ -32201,7 +32167,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     const attack=u.attackFlash>0;
     const accent=UnitVisualDefinition.get(u.type)?.accent||teamLight;
     // Ground silhouettes are authored vertically, then rotated by common presentation facing.
-    const dir=own?-1:1;
+    const dir=-1;
     const previousFacingTransform=this._unitFacingTransform;
     if(!airUnit&&this.unitFacingEnabled(u))this.beginUnitFacingTransform(u,x,y);
 
@@ -32220,7 +32186,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     const unitRenderCtx={
       u,own,d,sc,neutral,worldPos,bodyPos,groundWorld,groundProjection,groundPos,
       x,y,airborne,airUnit,r:presentationR,workerBuildAnim,ownStealthAlpha,cloaked,
-      team,teamDark,teamLight,ink,metal,gold,accent,hit,attack,dir
+      team,teamDark,teamLight,factionPalette,ink,metal,gold,accent,hit,attack,dir
     };
     // HAS-A common body + IS-A species visual. Immutable bodies use a local-space
     // mesh cache; CAN-BE dynamic species keep the procedural path.
