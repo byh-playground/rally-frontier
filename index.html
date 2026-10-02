@@ -39,6 +39,7 @@ PURPOSE
 - 보간 대상은 위치에 한정하지 않고 필요 시 회전/높이/애니메이션 등을 선언적으로 확장 가능하게 한다.
 - hit shake/camera shake 등 최종 화면 offset을 simulation 또는 안정 좌표가 필요한 계산의 원본으로 쓰지 않는다.
 - 동일한 월드·카메라·표현 상태는 입력 경로와 관계없이 동일하게 그린다. 드래그는 카메라 위치만 변경하며 지형·격자·Fog의 월드 표면과 접합 기하를 바꾸지 않는다.
+- 카메라 흔들림은 완성된 전장 화면의 최종 합성에서만 적용한다. 월드 투영·지형 깊이·Fog 샘플링·공간 조회는 흔들림 없는 좌표를 사용하고 화면 입력은 최종 합성을 한 번 역변환한다.
 - 맵 크기·본진 좌표·공간 인덱스는 각 simulation의 WorldContext를 사용한다. renderer·AI·리플레이는 자기 simulation의 context를 명시적으로 받아 다른 경기의 전역 좌표를 바꾸지 않는다.
 
 5. DETERMINISM FIRST
@@ -10583,7 +10584,7 @@ body.campaign-mode #p2pHealthText {
 // Single source of truth for this HTML artifact.
 // The timestamp lives only inside BUILD_ID. updatedAt is derived from it, so the
 // build identity and the visible/exported update time cannot drift apart.
-const BUILD_ID="20261002T190142+0900-rf-stable-world-render-v73";
+const BUILD_ID="20261002T200317+0900-rf-world-frame-composition-v73";
 
 class BuildMetadata{
   static buildUpdatedAtFromId(buildId){
@@ -27853,7 +27854,7 @@ const SHARED_GEOMETRY_TEMPLATES=new GeometryTemplateCache();
 
 class RenderPassProfiler{
   constructor(){
-    this.names=["prepare","ground","shadow","world","overlay","ui-fx","minimap"];
+    this.names=["prepare","ground","shadow","world","overlay","ui-fx","camera-compose","minimap"];
     this.current=Object.create(null);this.ewma=Object.create(null);this.max=Object.create(null);
   }
   beginFrame(){for(const n of this.names)this.current[n]=0}
@@ -28859,7 +28860,7 @@ class GLRenderer{
   }
   projectedCoordinatesAtScreen(px,py){
     const sc=this.sc(),ox=(this.canvas.width-this.viewWorldW()*sc)/2;
-    return{x:(px-ox-(this.frameShakeX||0))/sc+this.cameraLeft,y:(py-(this.frameShakeY||0))/sc+this.cameraTop};
+    return{x:(px-ox)/sc+this.cameraLeft,y:py/sc+this.cameraTop};
   }
   surfaceAtScreen(px,py){
     const p=this.projectedCoordinatesAtScreen(px,py);
@@ -28867,7 +28868,8 @@ class GLRenderer{
   }
   pxToWorld(cx,cy){
     const rect=this.canvas.getBoundingClientRect();
-    const p=this.surfaceAtScreen((cx-rect.left)/rect.width*this.canvas.width,(cy-rect.top)/rect.height*this.canvas.height);
+    const stable=this.sceneCoordinatesAtDisplay((cx-rect.left)/rect.width*this.canvas.width,(cy-rect.top)/rect.height*this.canvas.height,{sampled:true});
+    const p=this.surfaceAtScreen(stable.x,stable.y);
     return[this.viewX(p.x),this.viewY(p.z)];
   }
   begin(){this.frame.reset()}
@@ -29244,15 +29246,14 @@ class GLRenderer{
   }
   projectRenderWorldPositionStable(p){
     // Same projection as projectRenderWorldPosition, but intentionally before
-    // transient frameShakeX/Y. Used for orientation/motion inference only.
+    // final screen composition. All world consumers use this stable projection.
     const sc=this.sc(),ox=(this.canvas.width-this.viewWorldW()*sc)/2;
     const vx=this.viewX(p.x),vz=this.viewY(p.z);
     const resolved=p.groundY==null?{...p,y:p.y+this.world.terrain.surfaces.heightAt(p.x,p.z),groundY:this.world.terrain.surfaces.heightAt(p.x,p.z)}:p;
     return{x:ox+(vx-this.cameraLeft)*sc,y:(BattlefieldProjection.planarY(vz,resolved.y)-this.cameraTop)*sc,depth:this.renderDepthForWorld(resolved),world:resolved};
   }
   projectRenderWorldPosition(p){
-    const stable=this.projectRenderWorldPositionStable(p);
-    return{x:stable.x+(this.frameShakeX||0),y:stable.y+(this.frameShakeY||0),depth:stable.depth,world:p};
+    return this.projectRenderWorldPositionStable(p);
   }
   projectEntityScreen(entity,kind="unit"){
     return this.projectRenderWorldPosition(this.resolveRenderWorldPosition(entity,kind));
@@ -32949,6 +32950,53 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.drawFloatingFx();
     this.gl.depthMask(true);this.gl.enable(this.gl.DEPTH_TEST)
   }
+  displayCoordinatesAtScene(x,y){return{x:x+(this.frameShakeX||0),y:y+(this.frameShakeY||0)}}
+  sceneCoordinatesAtDisplay(x,y,{sampled=false}={}){
+    const sx=this.frameShakeX||0,sy=this.frameShakeY||0,point={x:x-sx,y:y-sy};
+    // The final texture repeats its border texel where the translated scene ends.
+    // Picking follows that displayed sample; internal scene queries stay unclamped.
+    return sampled&&(sx||sy)?{x:RangeUtil.clamp(point.x,.5,this.canvas.width-.5),y:RangeUtil.clamp(point.y,.5,this.canvas.height-.5)}:point;
+  }
+  renderCameraShakePass(){
+    // Translate the resolved, antialiased scene once; geometry, visibility and Fog
+    // have already rendered with the same stable projection as spatial inference.
+    const gl=this.gl,w=this.canvas.width,h=this.canvas.height,{x:sx,y:sy}=this.displayCoordinatesAtScene(0,0);
+    const rect=this.canvas.getBoundingClientRect(),cssX=sx*rect.width/w,cssY=sy*rect.height/h;
+    if(this.fxCanvas)this.fxCanvas.style.transform=`translate(${cssX}px,${cssY}px)`;
+    for(const el of document.querySelectorAll('.campaign-world-ping'))el.style.translate=`${cssX}px ${cssY}px`;
+    // Prime the program and sized texture with an identity copy on first use or
+    // resize, so the first impact never pays the cold composition setup cost.
+    const needsWarmup=!this.frameComposition||this.frameComposition.width!==w||this.frameComposition.height!==h;
+    if(!sx&&!sy&&!needsWarmup)return;
+    const state={program:gl.getParameter(gl.CURRENT_PROGRAM),buffer:gl.getParameter(gl.ARRAY_BUFFER_BINDING),active:gl.getParameter(gl.ACTIVE_TEXTURE),depthMask:gl.getParameter(gl.DEPTH_WRITEMASK),colorMask:gl.getParameter(gl.COLOR_WRITEMASK),caps:[gl.BLEND,gl.DEPTH_TEST,gl.STENCIL_TEST,gl.SCISSOR_TEST].map(cap=>[cap,gl.isEnabled(cap)])};
+    gl.activeTexture(gl.TEXTURE0);state.texture=gl.getParameter(gl.TEXTURE_BINDING_2D);
+    if(!this.frameComposition){
+      const compile=(type,source)=>{const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(shader));return shader};
+      const precision=gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER,gl.HIGH_FLOAT)?.precision?'highp':'mediump';
+      const program=gl.createProgram(),vs=compile(gl.VERTEX_SHADER,'attribute vec2 position;void main(){gl_Position=vec4(position,0.0,1.0);}'),fs=compile(gl.FRAGMENT_SHADER,`precision ${precision} float;uniform sampler2D scene;uniform vec2 size;uniform vec2 offset;void main(){gl_FragColor=texture2D(scene,(gl_FragCoord.xy-offset)/size);}`);
+      gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);
+      if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));
+      const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
+      const texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      this.frameComposition={program,buffer,texture,position:gl.getAttribLocation(program,'position'),size:gl.getUniformLocation(program,'size'),offset:gl.getUniformLocation(program,'offset'),scene:gl.getUniformLocation(program,'scene'),width:0,height:0};
+    }
+    const c=this.frameComposition,a=c.position,attribute={enabled:gl.getVertexAttrib(a,gl.VERTEX_ATTRIB_ARRAY_ENABLED),buffer:gl.getVertexAttrib(a,gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING),size:gl.getVertexAttrib(a,gl.VERTEX_ATTRIB_ARRAY_SIZE),type:gl.getVertexAttrib(a,gl.VERTEX_ATTRIB_ARRAY_TYPE),normalized:gl.getVertexAttrib(a,gl.VERTEX_ATTRIB_ARRAY_NORMALIZED),stride:gl.getVertexAttrib(a,gl.VERTEX_ATTRIB_ARRAY_STRIDE),offset:gl.getVertexAttribOffset(a,gl.VERTEX_ATTRIB_ARRAY_POINTER)};
+    try{
+      gl.bindTexture(gl.TEXTURE_2D,c.texture);
+      if(c.width!==w||c.height!==h){gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,w,h,0,gl.RGB,gl.UNSIGNED_BYTE,null);c.width=w;c.height=h}
+      gl.copyTexSubImage2D(gl.TEXTURE_2D,0,0,0,0,0,w,h);
+      for(const [cap] of state.caps)gl.disable(cap);gl.depthMask(false);gl.colorMask(true,true,true,true);
+      gl.useProgram(c.program);gl.bindBuffer(gl.ARRAY_BUFFER,c.buffer);gl.enableVertexAttribArray(a);gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
+      gl.uniform1i(c.scene,0);gl.uniform2f(c.size,w,h);gl.uniform2f(c.offset,sx,-sy);gl.drawArrays(gl.TRIANGLES,0,6);
+      this.perfStats.drawCalls++;
+    }finally{
+      if(attribute.buffer){gl.bindBuffer(gl.ARRAY_BUFFER,attribute.buffer);gl.vertexAttribPointer(a,attribute.size,attribute.type,attribute.normalized,attribute.stride,attribute.offset)}
+      if(attribute.enabled)gl.enableVertexAttribArray(a);else gl.disableVertexAttribArray(a);
+      gl.bindBuffer(gl.ARRAY_BUFFER,state.buffer);gl.useProgram(state.program);gl.bindTexture(gl.TEXTURE_2D,state.texture);gl.activeTexture(state.active);
+      for(const [cap,enabled] of state.caps){if(enabled)gl.enable(cap);else gl.disable(cap)}
+      gl.depthMask(state.depthMask);gl.colorMask(...state.colorMask);
+    }
+  }
   renderMinimapPass(){
     const now=performance.now();
     if(ActiveViewState.minimap&&now-this.lastMinimapDrawAt>=100){this.lastMinimapDrawAt=now;ActiveViewState.minimap.draw()}
@@ -32996,6 +33044,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.passProfiler.measure("world",()=>this.renderWorldPass(visibleUnits));
     this.passProfiler.measure("overlay",()=>this.renderOverlayPass());
     this.passProfiler.measure("ui-fx",()=>this.renderUiFxPass());
+    this.passProfiler.measure("camera-compose",()=>this.renderCameraShakePass());
     this.passProfiler.measure("minimap",()=>this.renderMinimapPass());
 
     rp.geometryTemplateHits=this.geometryTemplateHits;
@@ -35350,7 +35399,7 @@ const performanceBenchmark={
           frameIntervalMs:summary(nums(["frameIntervalMs"])),
           drawCalls:summary(nums(["drawCalls"])),
           uploadBytes:summary(nums(["uploadBytes"])),
-          passes:Object.fromEntries(["prepare","ground","shadow","world","overlay","ui-fx","minimap"].map(name=>[
+          passes:Object.fromEntries(["prepare","ground","shadow","world","overlay","ui-fx","camera-compose","minimap"].map(name=>[
             name,summary(samples.map(x=>Number(x.passes?.[name]?.ms)).filter(Number.isFinite))
           ]))
         },
@@ -42401,7 +42450,7 @@ AppLifecycle.runBootAndStartApp();
 {
   "version": "v73",
   "kind": "current-ssot",
-  "build": "20261002T190142+0900-rf-stable-world-render-v73",
+  "build": "20261002T200317+0900-rf-world-frame-composition-v73",
   "simVersion": 181,
   "ssot": {
     "runtime": "Current executable code and top development contract are authoritative.",
@@ -42426,6 +42475,7 @@ AppLifecycle.runBootAndStartApp();
       "terrainPresentation": "PASS scoped — positive 48 / negative 24 tiers align signed floors, banks, bridges, picking, water and Fog; cross-zero ramps split at physical midpoint; 13 signed and 11 river-bank groups pass real WebGL",
       "fogTransition": "PASS scoped — binary-mask flash reproduced on actual GPU; 100ms display transition and interrupted updates are continuous; perspective/world/seek/snap reset immediately without changing exact visibility",
       "cameraRendering": "PASS scoped — shared conforming Terrain/Fog mesh: seed 1/8, host/guest, 36 fractional-pan frames have zero bright coverage gaps; GPU roundtrip differs by at most 1/255. Actual paused Guest replay with frozen presentation time returns via mouse drag to identical camera coordinates and identical full-frame pixels. World grid and DPR 1/1.6 pointer handlers also pass.",
+      "cameraComposition": "PASS scoped — world/Fog render without impact shake; resolved MSAA scene is translated once at final composition with matching text overlay and sampled-edge input inverse. Software GPU raw pixels and native GPU vertex/UV/color streams are invariant across shake; composed image matches each actual source-frame bilinear reference within 0.5/255. Native headed default Guest battle retains shake and verifies actual drag with zero world-projection error at DPR 1/1.6.",
       "webgl": "PASS scoped — Edge/Chromium headless with SwiftShader/ANGLE; asymmetric signed tiers and actual generated-river combat render with zero page errors. The prior 1.2ms ground-pass measurement was not repeated for this build.",
       "singleCampaignUi": "PASS scoped — automatic generated-river Mission JS imported through UI, real local WebRTC/GameSession, natural bank combat to victory UI",
       "replayUi": "PASS scoped — recorded combat opens through result UI; guest orientation/vision, zoom and timeline seek reach generated-river combat end tick 102 with original final checksum 51d4cc7c and zero page errors"
