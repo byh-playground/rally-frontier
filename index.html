@@ -15008,7 +15008,7 @@ class NostrRtcTransport{
     this.pc=null;this.dc=null;this.conn=null;this.signaler=null;
     this.onMessage=()=>{};this.onPeerReady=()=>{};this.onOpen=()=>{};this.onClose=()=>{};this.onError=()=>{};
     this.intentionalClose=false;this.everOpened=false;this.connState="idle";
-    this.connectionSerial=0;this.lastAcceptedConnectionSerial=0;this.connAttemptStartedAt=0;
+    this.connectionSerial=0;this.lastAcceptedConnectionSerial=0;this.lastAcceptedOffer=null;this.connAttemptStartedAt=0;
     this.reconnectTimer=0;this.connAttemptTimer=0;this.rtcDisconnectTimer=0;this.helloTimer=0;
     this.remoteSignalId="";this.pendingIce=[];this.prePcIce=[];this.sendQueue=[];this.sendQueueBytes=0;
     this.signalSecret=null;this.signalId="local-"+Math.random().toString(36).slice(2,12);
@@ -15083,6 +15083,10 @@ class NostrRtcTransport{
       }
       if(m.type==="offer"&&this.role==="guest"){
         if(this.remoteSignalId&&this.remoteSignalId!==m.from)return;
+        const serial=Number(m.serial);
+        if(!Number.isSafeInteger(serial)||serial<1)return;
+        if(this.lastAcceptedOffer?.peer===peer&&serial<=this.lastAcceptedOffer.serial)return;
+        this.lastAcceptedOffer={peer,serial};
         this.remoteSignalId=String(m.from||"");this.stopHelloLoop();
         this.lastAcceptedConnectionSerial=Math.max(this.lastAcceptedConnectionSerial,Number(m.serial)||0);
         await this.acceptOffer(m.sdp);return;
@@ -15231,6 +15235,7 @@ class NostrRtcTransport{
   resetRtcNegotiation(reason,{guestHello=false}={}){
     if(this.intentionalClose)return false;
     this.clearReconnectControlTimers();
+    // Retain the last offer across recovery; a new host identity has its own serial.
     this.remoteSignalId="";
     this.discardCurrentConnection(reason);
     this.openSignaling();
