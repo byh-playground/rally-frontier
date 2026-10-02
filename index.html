@@ -38,6 +38,7 @@ PURPOSE
 - 낮은 TPS에서도 자연스러운 렌더를 위해 필요한 값은 공통 Presentation/Render State 계층으로 관리한다.
 - 보간 대상은 위치에 한정하지 않고 필요 시 회전/높이/애니메이션 등을 선언적으로 확장 가능하게 한다.
 - hit shake/camera shake 등 최종 화면 offset을 simulation 또는 안정 좌표가 필요한 계산의 원본으로 쓰지 않는다.
+- 동일한 월드·카메라·표현 상태는 입력 경로와 관계없이 동일하게 그린다. 드래그는 카메라 위치만 변경하며 지형·격자·Fog의 월드 표면과 접합 기하를 바꾸지 않는다.
 - 맵 크기·본진 좌표·공간 인덱스는 각 simulation의 WorldContext를 사용한다. renderer·AI·리플레이는 자기 simulation의 context를 명시적으로 받아 다른 경기의 전역 좌표를 바꾸지 않는다.
 
 5. DETERMINISM FIRST
@@ -10582,7 +10583,7 @@ body.campaign-mode #p2pHealthText {
 // Single source of truth for this HTML artifact.
 // The timestamp lives only inside BUILD_ID. updatedAt is derived from it, so the
 // build identity and the visible/exported update time cannot drift apart.
-const BUILD_ID="20261002T180513+0900-rf-shallow-terrain-fog-v73";
+const BUILD_ID="20261002T190142+0900-rf-stable-world-render-v73";
 
 class BuildMetadata{
   static buildUpdatedAtFromId(buildId){
@@ -10953,7 +10954,7 @@ class TerrainSurfaceProjection{
     value={triangles,index:new NavigationObstacleIndex(triangles)};cache.set(key,value);return value;
   }
   renderProjectedSurfaceMesh(flipped=false){
-    const mesh=this.atlas.renderSurfaceMesh||this.atlas.surfaceMesh,key=(flipped?1:0)+":"+BattlefieldProjection.heightScale;
+    const mesh=this.atlas.presentationSurfaceMesh(),key=(flipped?1:0)+":"+BattlefieldProjection.heightScale;
     let cached=this.renderProjectedMeshCache.get(key);if(cached?.mesh===mesh)return cached;
     const triangles=[],sign=flipped?-1:1;
     for(const patch of mesh){
@@ -11107,6 +11108,64 @@ class TerrainSurfaceAtlas{
       for(let i=1;i+1<out.length;i++){const a=out[0],b=out[i],c=out[i+1];if(Math.abs((b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x))>1e-8)mesh.triangles.push([start,start+i,start+i+1])}
     }
     return parts;
+  }
+  presentationSurfaceMesh(){
+    if(this._presentationSurfaceMesh)return this._presentationSurfaceMesh;
+    // Terrain and fixed-level Fog share one tessellation. Simulation/navigation
+    // retain surfaceMesh; camera input never changes these derived world vertices.
+    const patches=[];
+    for(const patch of this.renderSurfaceMesh||this.surfaceMesh){
+      if(patch.kind==='ramp'){
+        const split=TerrainSurfaceAtlas.splitRampAtLevelTransition(patch);
+        for(const side of ['low','high'])patches.push({...patch,...split[side],fogLevel:side==='low'?patch.lowLevel:patch.highLevel});
+      }else patches.push({...patch,fogLevel:patch.kind==='cliff'?patch.face.highLevel:patch.level});
+    }
+    // Slab decomposition creates T-junctions against long ramp/cliff edges.
+    // Resolve them once per atlas in 3D, never joining different height planes.
+    // Match only arithmetic noise far below a Float32 vertex quantum. Keep
+    // original doubles and triangles; no quantization or proximity welding.
+    const tolerance=1e-7,cellSize=128,vertices=new Map(),cells=new Map();
+    const key=v=>[v.x,v.y,v.z].join(',');
+    for(const patch of patches)for(const v of patch.vertices){
+      const id=key(v);if(vertices.has(id))continue;
+      const q={x:v.x,y:v.y,z:v.z,groundY:v.groundY??0};vertices.set(id,q);
+      const cell=Math.floor(q.x/cellSize)+':'+Math.floor(q.z/cellSize);
+      if(!cells.has(cell))cells.set(cell,[]);cells.get(cell).push(q);
+    }
+    const edgeCache=new Map();
+    const boundary=(a,b)=>{
+      const ka=key(a),kb=key(b),forward=ka<kb,id=forward?ka+'>'+kb:kb+'>'+ka;
+      let cached=edgeCache.get(id);
+      if(!cached){
+        const start=forward?a:b,end=forward?b:a,dx=end.x-start.x,dy=end.y-start.y,dz=end.z-start.z,length=dx*dx+dy*dy+dz*dz;
+        const cuts=[{t:0,v:start},{t:1,v:end}];
+        if(length>0){
+          const minX=Math.floor((Math.min(start.x,end.x)-tolerance)/cellSize),maxX=Math.floor((Math.max(start.x,end.x)+tolerance)/cellSize),minZ=Math.floor((Math.min(start.z,end.z)-tolerance)/cellSize),maxZ=Math.floor((Math.max(start.z,end.z)+tolerance)/cellSize);
+          for(let x=minX;x<=maxX;x++)for(let z=minZ;z<=maxZ;z++)for(const v of cells.get(x+':'+z)||[]){
+            if(v===start||v===end)continue;
+            const t=((v.x-start.x)*dx+(v.y-start.y)*dy+(v.z-start.z)*dz)/length;
+            if(t<=0||t>=1)continue;
+            if(Math.hypot(v.x-start.x-dx*t,v.y-start.y-dy*t,v.z-start.z-dz*t)<=tolerance)cuts.push({t,v});
+          }
+        }
+        cuts.sort((a,b)=>a.t-b.t);cached=cuts.map(c=>c.v);edgeCache.set(id,cached);
+      }
+      return forward?cached:cached.slice().reverse();
+    };
+    this._presentationSurfaceMesh=patches.map(patch=>{
+      const out={...patch,vertices:[],triangles:[]};
+      for(const triangle of patch.triangles){
+        const corners=triangle.map(i=>vertices.get(key(patch.vertices[i]))),ring=[];
+        for(let i=0;i<3;i++)ring.push(...boundary(corners[i],corners[(i+1)%3]).slice(0,-1));
+        const start=out.vertices.length;
+        if(ring.length===3){out.vertices.push(...corners);out.triangles.push([start,start+1,start+2]);continue}
+        const center={x:corners.reduce((s,v)=>s+v.x,0)/3,y:corners.reduce((s,v)=>s+v.y,0)/3,z:corners.reduce((s,v)=>s+v.z,0)/3,groundY:0};
+        out.vertices.push(center,...ring);
+        for(let i=0;i<ring.length;i++)out.triangles.push([start,start+i+1,start+(i+1)%ring.length+1]);
+      }
+      return out;
+    });
+    return this._presentationSurfaceMesh;
   }
   static rampVisionPolygons(r){
     let cached=this.rampVisionCache.get(r);if(cached)return cached;
@@ -11306,7 +11365,12 @@ class TerrainSurfaceAtlas{
       rampEdges.set(TerrainSurfaceAtlas.directedEdgeKey(qh,q),{kind:'side',raised,lowA:inner,lowB:Math.min(outer,inner),highA:inner,highB:Math.max(outer,inner)});
       rampEdges.set(TerrainSurfaceAtlas.directedEdgeKey(ph,qh),{kind:'seam'});
     }
-    this.renderFaces=this.faces.filter(face=>face.bridge);
+    // Collision probes sample just outside a deck to choose its supporting plane.
+    // Presentation must evaluate that plane on the actual rim, otherwise the
+    // .02 probe offset leaves a visible slit between its wall and a sloping bank.
+    this.renderFaces=this.faces.filter(face=>face.bridge).map(face=>({...face,
+      lowA:Math.min(face.high,this.sampleTerrain(face.a.x,face.a.y).elevation),
+      lowB:Math.min(face.high,this.sampleTerrain(face.b.x,face.b.y).elevation)}));
     for(const layer of this.layers){
       if(layer.innerPoints){layer.renderTopPoints=layer.innerPoints;continue}
       layer.renderTopPoints=TerrainSurfaceAtlas.smoothClosedContour(layer.topPoints,protectedKeys,2,.16);
@@ -31500,6 +31564,22 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
     this.circle(x,y,Math.max(8,28*sc),edge,18);
   }
 
+  drawGroundGrid(){
+    // The underlay grid belongs to the level-zero world plane. Its height and
+    // phase must never come from terrain sampled at a moving viewport edge.
+    const step=220,sc=this.sc(),vw=this.viewWorldW(),vh=this.viewWorldH(),
+      guest=this.orientationRole()==='guest',
+      phaseX=guest?this.world.width%step:0,phaseY=guest?this.world.height%step:0,
+      point=(x,z)=>this.projectRenderWorldPosition({x:this.viewX(x),y:0,z:this.viewY(z),groundY:0});
+    for(let y=Math.floor((this.cameraTop-phaseY)/step)*step+phaseY;y<=this.cameraTop+vh+step;y+=step){
+      const a=point(this.cameraLeft,y),b=point(this.cameraLeft+vw,y);
+      this.line(a.x,a.y,b.x,b.y,1,[1,1,1,.035]);
+    }
+    for(let x=Math.floor((this.cameraLeft-phaseX)/step)*step+phaseX;x<=this.cameraLeft+vw+step;x+=step){
+      const a=point(x,this.cameraTop),b=point(x,this.cameraTop+this.canvas.height/sc);
+      this.line(a.x,a.y,b.x,b.y,1,[1,1,1,.03]);
+    }
+  }
   drawGround(){
     const sc=this.sc(),vw=this.viewWorldW(),vh=this.viewWorldH(),ox=(this.canvas.width-vw*sc)/2;
 
@@ -31518,15 +31598,7 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
       this.circle(p[0],p[1],Math.max(90,b.r*sc),b.c,28);
     }
 
-    // 은은한 월드 격자
-    for(let y=Math.floor(this.cameraTop/220)*220;y<this.cameraTop+vh;y+=220){
-      const p=this.worldToPx(this.cameraLeft,y);
-      this.line(ox,p[1],ox+vw*sc,p[1],1,[1,1,1,.035]);
-    }
-    for(let x=Math.floor(this.cameraLeft/220)*220;x<this.cameraLeft+vw;x+=220){
-      const p=this.worldToPx(x,this.cameraTop);
-      this.line(p[0],0,p[0],this.canvas.height,1,[1,1,1,.03]);
-    }
+    this.drawGroundGrid();
 
     // TOP / MID / BOT 길은 밝은 흙길 느낌. 절차맵 descriptor를 그대로 사용한다.
     const mapDesc=this.snapshot?.mapDescriptor||null;
@@ -32596,15 +32668,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       if(!surfaces.has(level))surfaces.set(level,[]);
       surfaces.get(level).push(patch);
     };
-    for(const patch of atlas.renderSurfaceMesh||atlas.surfaceMesh){
-      if(patch.kind==='ramp'){
-        // Match TerrainSurfaceAtlas.sample's level transition. Each half uses a
-        // fixed-level mask, so neighboring low-ground texels cannot reveal its high seam.
-        const split=TerrainSurfaceAtlas.splitRampAtLevelTransition(patch);
-        add(patch.lowLevel,{kind:'ramp',...split.low});
-        add(patch.highLevel,{kind:'ramp',...split.high});
-      }else add(patch.kind==='cliff'?patch.face.highLevel:patch.level,patch);
-    }
+    for(const patch of atlas.presentationSurfaceMesh())add(patch.fogLevel,patch);
     for(const [id,texture] of this.fogTextures)if(!surfaces.has(Number(id.slice(6)))){
       this.gl.deleteTexture(texture);this.fogTextures.delete(id);
     }
@@ -32673,12 +32737,18 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
   }
   drawFog(){
     if(this.replayObserverAll||!this.snapshot){this.resetFogTransition();return}this.ensureFogTextures();
-    const gl=this.gl,color=this.replayVisionMode?[.008,.012,.018,.96]:[.025,.045,.048,.88],sign=this.orientationRole()==='guest'?-1:1;
-    const emitPatch=(patch)=>{if(patch.kind==='cliff'&&patch.outwardY*sign<=1e-8)return;for(const tri of patch.triangles)for(const i of tri)this.fogVertex(patch.vertices[i])};
+    const gl=this.gl,color=this.replayVisionMode?[.008,.012,.018,.96]:[.025,.045,.048,.88];
+    // Reuse terrain's projected spatial index and orientation filter. Tessellation
+    // is built once; offscreen triangles never enter the per-frame Fog upload.
+    const mesh=TerrainSurfaceProjection.forAtlas(this.world.terrain.surfaces).renderProjectedSurfaceMesh(this.orientationRole()==='guest'),
+      a=this.projectedCoordinatesAtScreen(0,0),b=this.projectedCoordinatesAtScreen(this.canvas.width,this.canvas.height),visible=new Map();
+    for(const tri of mesh.index.query(a.x,a.y,b.x,b.y,1/this.sc())){
+      const level=tri.patch.fogLevel;if(!visible.has(level))visible.set(level,[]);visible.get(level).push(tri);
+    }
     gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
     // The atlas clips the base floor around authored surfaces, including depressions.
     // Fog uses those same patches so an implicit level-0 plane cannot cover a lower floor.
-    for(const [level,patches] of this.fogSurfaces){this.fogFrame.reset();for(const patch of patches)emitPatch(patch);this.flushFog(this.fogTextures.get(`level:${level}`),color,this.fogPreviousTextures.get(`level:${level}`))}
+    for(const level of this.fogSurfaces.keys()){this.fogFrame.reset();for(const tri of visible.get(level)||[])for(const v of tri.vertices)this.fogVertex(v);this.flushFog(this.fogTextures.get(`level:${level}`),color,this.fogPreviousTextures.get(`level:${level}`))}
     gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,null);gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D,null);gl.useProgram(this.p);gl.uniform2f(this.r,this.canvas.width,this.canvas.height);gl.disable(gl.DEPTH_TEST);gl.depthMask(false);
   }
@@ -40048,7 +40118,10 @@ class BattlePresentation{
 
     // 건설 모드에서는 짧은 손가락 흔들림을 카메라 드래그로 오인하지 않는다.
     if(ActiveViewState.drag.moved){
-      const dx=e.clientX-ActiveViewState.drag.x,dy=e.clientY-ActiveViewState.drag.y,scale=ActiveViewState.renderer.sc();
+      const rect=UiRegistry.refs.canvas.getBoundingClientRect(),
+        dx=(e.clientX-ActiveViewState.drag.x)*UiRegistry.refs.canvas.width/rect.width,
+        dy=(e.clientY-ActiveViewState.drag.y)*UiRegistry.refs.canvas.height/rect.height,
+        scale=ActiveViewState.renderer.sc();
       ActiveViewState.renderer.cameraLeft=RangeUtil.clamp(ActiveViewState.drag.left-dx/scale,0,Math.max(0,(ActiveViewState.renderer?.world||WorldContext.standard).width-ActiveViewState.renderer.viewWorldW()));
       ActiveViewState.renderer.cameraTop=ActiveViewState.renderer.clampCameraTop(ActiveViewState.drag.top-dy/scale);
       if(LocalEnvironmentUtil.isLocalTest()){
@@ -42328,7 +42401,7 @@ AppLifecycle.runBootAndStartApp();
 {
   "version": "v73",
   "kind": "current-ssot",
-  "build": "20261002T180513+0900-rf-shallow-terrain-fog-v73",
+  "build": "20261002T190142+0900-rf-stable-world-render-v73",
   "simVersion": 181,
   "ssot": {
     "runtime": "Current executable code and top development contract are authoritative.",
@@ -42352,6 +42425,7 @@ AppLifecycle.runBootAndStartApp();
       "local2p": "NOT RUN in this signed-terrain pass; actual single-campaign local WebRTC/GameSession and final replay checksum were exercised",
       "terrainPresentation": "PASS scoped — positive 48 / negative 24 tiers align signed floors, banks, bridges, picking, water and Fog; cross-zero ramps split at physical midpoint; 13 signed and 11 river-bank groups pass real WebGL",
       "fogTransition": "PASS scoped — binary-mask flash reproduced on actual GPU; 100ms display transition and interrupted updates are continuous; perspective/world/seek/snap reset immediately without changing exact visibility",
+      "cameraRendering": "PASS scoped — shared conforming Terrain/Fog mesh: seed 1/8, host/guest, 36 fractional-pan frames have zero bright coverage gaps; GPU roundtrip differs by at most 1/255. Actual paused Guest replay with frozen presentation time returns via mouse drag to identical camera coordinates and identical full-frame pixels. World grid and DPR 1/1.6 pointer handlers also pass.",
       "webgl": "PASS scoped — Edge/Chromium headless with SwiftShader/ANGLE; asymmetric signed tiers and actual generated-river combat render with zero page errors. The prior 1.2ms ground-pass measurement was not repeated for this build.",
       "singleCampaignUi": "PASS scoped — automatic generated-river Mission JS imported through UI, real local WebRTC/GameSession, natural bank combat to victory UI",
       "replayUi": "PASS scoped — recorded combat opens through result UI; guest orientation/vision, zoom and timeline seek reach generated-river combat end tick 102 with original final checksum 51d4cc7c and zero page errors"
