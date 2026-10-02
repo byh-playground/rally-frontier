@@ -10579,7 +10579,7 @@ body.campaign-mode #p2pHealthText {
 // Single source of truth for this HTML artifact.
 // The timestamp lives only inside BUILD_ID. updatedAt is derived from it, so the
 // build identity and the visible/exported update time cannot drift apart.
-const BUILD_ID="20261002T005414+0900-rf-guest-minimap-fog-v73";
+const BUILD_ID="20261002T013102+0900-rf-ramp-fog-level-masks-v73";
 
 class BuildMetadata{
   static buildUpdatedAtFromId(buildId){
@@ -28280,13 +28280,14 @@ class GLRenderer{
       // Fog uses a separate texture program. Visibility is sampled in world-space
       // from a low-resolution mask and linearly filtered by the GPU. Simulation
       // visibility remains exact and is never derived from this presentation texture.
-      const fogVs=`attribute vec3 a;attribute vec2 uv;uniform vec2 r;varying mediump vec2 vuv;void main(){vec2 p=a.xy/r*2.0-1.0;gl_Position=vec4(p.x,-p.y,a.z,1.0);vuv=uv;}`,
+      const fogVs=`attribute vec3 a;attribute vec2 uv;uniform vec2 r;uniform vec2 maskSize;varying mediump vec2 vuv;void main(){vec2 p=a.xy/r*2.0-1.0;gl_Position=vec4(p.x,-p.y,a.z,1.0);vuv=(uv*(maskSize-1.0)+0.5)/maskSize;}`,
         fogFs=`precision mediump float;varying mediump vec2 vuv;uniform sampler2D tex;uniform vec4 fog;void main(){float vis=texture2D(tex,vuv).r;float edge=smoothstep(.12,.88,vis);gl_FragColor=vec4(fog.rgb,fog.a*(1.0-edge));}`;
       this.fogProgram=gl.createProgram();
       gl.attachShader(this.fogProgram,mk(gl.VERTEX_SHADER,fogVs));gl.attachShader(this.fogProgram,mk(gl.FRAGMENT_SHADER,fogFs));gl.linkProgram(this.fogProgram);
       if(!gl.getProgramParameter(this.fogProgram,gl.LINK_STATUS))throw new Error("Fog shader link failed: "+gl.getProgramInfoLog(this.fogProgram));
       this.fogA=gl.getAttribLocation(this.fogProgram,"a");this.fogUv=gl.getAttribLocation(this.fogProgram,"uv");
       this.fogR=gl.getUniformLocation(this.fogProgram,"r");this.fogTexUniform=gl.getUniformLocation(this.fogProgram,"tex");this.fogColorUniform=gl.getUniformLocation(this.fogProgram,"fog");
+      this.fogMaskSizeUniform=gl.getUniformLocation(this.fogProgram,"maskSize");
       this.fogBuf=gl.createBuffer();this.fogFrame=new ReusableFloat32Buffer(5*8192);this._fogGpuCapacityBytes=0;
       this.fogTextures=new Map();this._fogTextureKey=null;this.fogMaskStep=64;
 
@@ -32225,19 +32226,43 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       }
     }
   }
+  prepareFogSurfaces(atlas){
+    if(this._fogSurfaceAtlas===atlas)return;
+    const surfaces=new Map([[0,[]]]),add=(level,patch)=>{
+      if(!surfaces.has(level))surfaces.set(level,[]);
+      surfaces.get(level).push(patch);
+    };
+    const midpoint=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2,z:(a.z+b.z)/2,groundY:0});
+    for(const patch of atlas.renderSurfaceMesh||atlas.surfaceMesh){
+      if(patch.kind==='ramp'){
+        // Match TerrainSurfaceAtlas.sample's level transition. Each half uses a
+        // fixed-level mask, so neighboring low-ground texels cannot reveal its high seam.
+        const [a,b,c,d]=patch.vertices,ma=midpoint(a,d),mb=midpoint(b,c),triangles=[[0,1,2],[0,2,3]];
+        add(patch.lowLevel,{kind:'ramp',vertices:[a,b,mb,ma],triangles});
+        add(patch.highLevel,{kind:'ramp',vertices:[ma,mb,c,d],triangles});
+      }else add(patch.kind==='cliff'?patch.face.highLevel:patch.level,patch);
+    }
+    for(const [id,texture] of this.fogTextures)if(!surfaces.has(Number(id.slice(6)))){
+      this.gl.deleteTexture(texture);this.fogTextures.delete(id);
+    }
+    this.fogSurfaces=surfaces;this._fogSurfaceAtlas=atlas;this._fogTextureKey=null;
+  }
   ensureFogTextures(){
     if(!this.snapshot)return null;
     const gl=this.gl,atlas=this.world.terrain.surfaces,step=this.fogMaskStep||64,w=Math.max(2,Math.ceil(this.world.width/step)+1),h=Math.max(2,Math.ceil(this.world.height/step)+1),
       key=`${this.snapshot.tick}|${this.replayVisionMode||this.mySide()}|${this.replayObserverAll?1:0}|${this.world.width}x${this.world.height}|${atlas.maxLevel}|${w}x${h}`;
-    if(this._fogTextureKey===key)return{w,h};this._fogTextureKey=key;
+    this.prepareFogSurfaces(atlas);
+    if(this._fogTextureKey===key&&this._fogVisionGrid===this.visionGridBySide)return this.fogMaskSize;
     const upload=(id,data)=>{let tex=this.fogTextures.get(id);if(!tex){tex=gl.createTexture();this.fogTextures.set(id,tex)}gl.bindTexture(gl.TEXTURE_2D,tex);
       gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
       gl.texImage2D(gl.TEXTURE_2D,0,gl.LUMINANCE,w,h,0,gl.LUMINANCE,gl.UNSIGNED_BYTE,data);return tex};
-    const make=(level=null)=>{const a=new Uint8Array(w*h);for(let j=0;j<h;j++){const y=j/(h-1)*this.world.height;for(let i=0;i<w;i++){const x=i/(w-1)*this.world.width;
-      a[j*w+i]=(level==null?this.visibleRaw(x,y,false):this.visibleRawAtLevel(x,y,level))?255:0}}return a};
-    for(let level=0;level<=atlas.maxLevel;level++)upload(`level:${level}`,make(level));
-    upload('ramp',make(null));gl.bindTexture(gl.TEXTURE_2D,null);return{w,h};
+    const make=level=>{const a=new Uint8Array(w*h);for(let j=0;j<h;j++){const y=j/(h-1)*this.world.height;for(let i=0;i<w;i++){const x=i/(w-1)*this.world.width;
+      a[j*w+i]=this.visibleRawAtLevel(x,y,level)?255:0}}return a};
+    // Levels need not be contiguous: only surfaces that exist need a texture.
+    for(const level of this.fogSurfaces.keys())upload(`level:${level}`,make(level));
+    gl.bindTexture(gl.TEXTURE_2D,null);this.fogMaskSize={w,h};
+    this._fogTextureKey=key;this._fogVisionGrid=this.visionGridBySide;return this.fogMaskSize;
   }
   fogVertex(world){
     const q=this.projectRenderWorldPosition(world),u=RangeUtil.clamp(world.x/this.world.width,0,1),v=RangeUtil.clamp(world.z/this.world.height,0,1);
@@ -32247,6 +32272,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
   flushFog(texture,color){
     if(!this.fogFrame.length||!texture)return;const gl=this.gl,d=this.fogFrame.view(),bytes=this.fogFrame.length*4;
     gl.useProgram(this.fogProgram);gl.uniform2f(this.fogR,this.canvas.width,this.canvas.height);gl.uniform4f(this.fogColorUniform,...color);gl.uniform1i(this.fogTexUniform,0);
+    gl.uniform2f(this.fogMaskSizeUniform,this.fogMaskSize.w,this.fogMaskSize.h);
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.bindBuffer(gl.ARRAY_BUFFER,this.fogBuf);
     if(this._fogGpuCapacityBytes<this.fogFrame.data.byteLength){gl.bufferData(gl.ARRAY_BUFFER,this.fogFrame.data.byteLength,gl.DYNAMIC_DRAW);this._fogGpuCapacityBytes=this.fogFrame.data.byteLength}
     gl.bufferSubData(gl.ARRAY_BUFFER,0,d);gl.enableVertexAttribArray(this.fogA);gl.vertexAttribPointer(this.fogA,3,gl.FLOAT,false,20,0);
@@ -32255,15 +32281,14 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
   }
   drawFog(){
     if(this.replayObserverAll||!this.snapshot)return;this.ensureFogTextures();
-    const gl=this.gl,atlas=this.world.terrain.surfaces,mesh=atlas.renderSurfaceMesh||atlas.surfaceMesh,color=this.replayVisionMode?[.008,.012,.018,.96]:[.025,.045,.048,.88],sign=this.orientationRole()==='guest'?-1:1;
+    const gl=this.gl,color=this.replayVisionMode?[.008,.012,.018,.96]:[.025,.045,.048,.88],sign=this.orientationRole()==='guest'?-1:1;
     const emitPatch=(patch)=>{if(patch.kind==='cliff'&&patch.outwardY*sign<=1e-8)return;for(const tri of patch.triangles)for(const i of tri)this.fogVertex(patch.vertices[i])};
     gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
     // Base level is one projected world plane. Higher terrain already owns nearer depth,
     // so the level-0 fog cannot leak through a plateau.
     this.fogFrame.reset();const base=[{x:0,y:0,z:0,groundY:0},{x:this.world.width,y:0,z:0,groundY:0},{x:this.world.width,y:0,z:this.world.height,groundY:0},{x:0,y:0,z:this.world.height,groundY:0}];
     for(const i of [0,1,2,0,2,3])this.fogVertex(base[i]);this.flushFog(this.fogTextures.get('level:0'),color);
-    for(let level=1;level<=atlas.maxLevel;level++){this.fogFrame.reset();for(const patch of mesh)if(patch.kind==='plateau'&&patch.level===level||patch.kind==='cliff'&&patch.face?.highLevel===level)emitPatch(patch);this.flushFog(this.fogTextures.get(`level:${level}`),color)}
-    this.fogFrame.reset();for(const patch of mesh)if(patch.kind==='ramp')emitPatch(patch);this.flushFog(this.fogTextures.get('ramp'),color);
+    for(const [level,patches] of this.fogSurfaces){this.fogFrame.reset();for(const patch of patches)emitPatch(patch);this.flushFog(this.fogTextures.get(`level:${level}`),color)}
     gl.bindTexture(gl.TEXTURE_2D,null);gl.useProgram(this.p);gl.uniform2f(this.r,this.canvas.width,this.canvas.height);gl.disable(gl.DEPTH_TEST);gl.depthMask(false);
   }
   drawFogLandmarks(){
@@ -41917,7 +41942,7 @@ AppLifecycle.runBootAndStartApp();
 {
   "version": "v73",
   "kind": "current-ssot",
-  "build": "20261002T005414+0900-rf-guest-minimap-fog-v73",
+  "build": "20261002T013102+0900-rf-ramp-fog-level-masks-v73",
   "simVersion": 178,
   "ssot": {
     "runtime": "Current executable code and top development contract are authoritative.",
@@ -41939,13 +41964,15 @@ AppLifecycle.runBootAndStartApp();
       "terrainVisionQA": "PASS — arbitrary stacking through level 5, level 1→2 ramp derivation, elevation LOS, intermediate high-ground occlusion, air vision, independent wall vision/projectile flags, exact 50% deterministic uphill miss, launch-time miss freezing and attack reveal",
       "rampMovement": "PASS — each uphill ramp independently applies 100/85/70/50% by its own progress, including level 1→2",
       "local2p": "PASS — real LoopbackTransport/GameSession/StrategySim/WebGL debug combat reached authoritative base-destroyed result on both peers; extended run crossed checksum cadence with zero mismatch/correction",
-      "terrainPresentation": "PASS — battlefield fog uses per-level low-resolution visibility textures with GPU linear filtering and fixed level offsets; ramps use the continuous surface mask. Terrain corners use bounded quadratic rounding while authoritative level polygons remain unchanged",
-      "webgl": "PASS — headed Chromium + Xvfb + SwiftShader/ANGLE"
+      "terrainPresentation": "PASS scoped — mobile-portrait real WebGL short-ramp seams at levels 0→1 and 1→2; ramp halves share the low/high masks at the authoritative level transition. Texel centers, same-tick map/vision replacement and sparse level textures pass GPU regression assertions. Terrain gameplay polygons are unchanged.",
+      "webgl": "PASS — Edge/Chromium headless with SwiftShader/ANGLE; real terrain/Fog shader draws, zero GL/page errors",
+      "singleCampaignUi": "PASS scoped — mobile-portrait UI campaign import/start, local WebRTC/GameSession, natural combat clears authored enemy roster, victory result UI",
+      "replayUi": "PASS scoped — recorded combat opens through result UI; guest orientation/vision, zoom and timeline seek reach end tick 123 with the original final checksum and zero page errors"
     }
   },
   "limits": [
-    "Native Single-Player local WebRTC ICE remains an environment-specific verification limitation; LOCAL 2P is not claimed as that negotiation test.",
-    "Physical mobile devices and external two-peer networks were not exercised in this terrain/vision pass."
+    "This pass exercised a short authored single-campaign combat fixture, not full campaign progression or an external two-peer network.",
+    "Physical mobile devices were not exercised; mobile-portrait WebGL QA used a 412×915 browser viewport."
   ]
 }
 </script>
