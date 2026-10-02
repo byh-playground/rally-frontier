@@ -64,7 +64,11 @@ async function run() {
           CampaignModuleLoader.evaluate(source, 'game-start-regression.js')
         );
         const transport = {
-          send: packet => packets.push(packet.type), close() {}, onError() {}
+          send: packet => packets.push(packet.type),
+          sendNetcode: packet => { packets.push(`SDK:${packet.byteLength}`); return true; },
+          subscribeNetcode: () => () => {},
+          isNetcodeOpen: () => true,
+          close() {}, onError() {}
         };
         session = new GameSession('guest', transport, 'GAME-START-QA', {
           selectionMode: 'deck', campaignScenario: mission
@@ -94,7 +98,8 @@ async function run() {
         check(session.sim && session.sim.tick === 0, 'Real StrategySim starts at tick zero');
         check(session.lastPongAt >= Date.now() - 10, 'Startup completion refreshes peer liveness');
         check(session.simClockLast >= snapshotCompletedAt, 'Simulation clock starts after snapshot initialization');
-        check(session.hostClockReceivedAt >= snapshotCompletedAt, 'Guest clock starts after snapshot initialization');
+        check(session.netcodeSession?.tick === 0, 'Actual SDK session starts at the same pre-step tick zero');
+        check(session.netcodeNow >= snapshotCompletedAt, 'SDK runtime clock starts after snapshot initialization');
         heartbeat();
         check(!session.syncHold && session.recoveryPhase === 'idle', 'Slow local startup does not require manual recovery');
         const startup = {
@@ -120,7 +125,7 @@ async function run() {
         offset += P2P_STALL_RECYCLE_MS + 1;
         heartbeat();
         check(session.syncHold && session.simpleRecoveryNeedsManual, 'Real subsequent peer silence still freezes gameplay');
-        check(session.simpleRecoveryReason === 'sync-stall', 'Subsequent silence retains the existing recovery reason');
+        check(session.simpleRecoveryReason === 'network-silence', 'Subsequent silence retains the current connection recovery reason');
         return { startup, positionOrder, subsequentSilence: {
           syncHold: session.syncHold, recoveryPhase: session.recoveryPhase,
           reason: session.simpleRecoveryReason
