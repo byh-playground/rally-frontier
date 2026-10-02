@@ -34,7 +34,7 @@ function verifyResults(result, pageErrors) {
   for (const midpoint of result.ramp.midpoints) {
     assert.equal(midpoint.progress, 0.5);
     assert.equal(midpoint.level, 5);
-    assert.equal(midpoint.elevation, 240);
+    assert.equal(midpoint.elevation, result.ramp.midpointElevation);
   }
   assert.deepEqual(result.ramp.samples.map(sample => sample.level), [0, 5, 5]);
   assert.equal(result.unchangedCacheUploadDelta, 0);
@@ -207,6 +207,7 @@ async function run() {
       const highHalf = renderer.fogSurfaces.get(5)
         .find(patch => patch.kind === 'ramp');
       out.ramp = {
+        midpointElevation: (ramp.lowElevation + ramp.highElevation) / 2,
         midpoints: highHalf.vertices.filter(vertex =>
           Math.abs(vertex.y - (ramp.lowElevation + ramp.highElevation) / 2) < 1e-7
         ).map(vertex => ({

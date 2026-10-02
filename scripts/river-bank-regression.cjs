@@ -105,7 +105,7 @@ async function run() {
           for (let corner = 0; corner < contour.points.length; corner++) {
             for (const progress of [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1]) {
               const point = TerrainSurfaceAtlas.lerp(contour.points[corner], contour.innerPoints[corner], progress);
-              close(atlas.heightAt(point.x, point.y), -96 * progress, 'Adjacent bank triangles share the continuous corner height');
+              close(atlas.heightAt(point.x, point.y), -24 * progress, 'Adjacent bank triangles share the continuous corner height');
               samples++;
             }
           }
@@ -118,7 +118,7 @@ async function run() {
                 const sample = atlas.sample(point.x, point.y);
                 check(sample.ramp?.bank, 'Interior bank triangle is a bank surface');
                 close(sample.elevation, expectedHeight, 'Sample agrees with actual triangle plane');
-                close(sample.progress, (expectedHeight + 96) / 96, 'Progress derives from physical height');
+                close(sample.progress, (expectedHeight + 24) / 24, 'Progress derives from physical height');
                 close(sample.gradient.x, (atlas.heightAt(point.x + 0.01, point.y) - atlas.heightAt(point.x - 0.01, point.y)) / 0.02, 'Bank x gradient matches finite difference');
                 close(sample.gradient.z, (atlas.heightAt(point.x, point.y + 0.01) - atlas.heightAt(point.x, point.y - 0.01)) / 0.02, 'Bank z gradient matches finite difference');
                 samples++;
@@ -178,19 +178,19 @@ async function run() {
         canvas.width = 390; canvas.height = 650;
         const renderer = new GLRenderer(canvas), gl = renderer.gl;
         renderer.world = WorldContext.fromMap(descriptor); renderer.role = 'host';
-        renderer.cameraLeft = 1536 - 450; renderer.cameraTop = 2048 - 96 * 0.6 - 750;
+        renderer.cameraLeft = 1536 - 450; renderer.cameraTop = 2048 - 48 * 0.6 - 750;
         gl.viewport(0, 0, canvas.width, canvas.height);
         gl.useProgram(renderer.p); gl.uniform2f(renderer.r, canvas.width, canvas.height);
         gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true);
         gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         renderer.begin(); TerrainPresentation.drawSurfaces(renderer); renderer.flush();
-        const point = renderer.projectRenderWorldPosition({ x: 1536, y: 96, z: 2048, groundY: 0 });
+        const point = renderer.projectRenderWorldPosition({ x: 1536, y: 48, z: 2048, groundY: 0 });
         const rgba = new Uint8Array(4);
         gl.readPixels(Math.floor(point.x), canvas.height - 1 - Math.floor(point.y), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
         check(rgba[0] > 100 && rgba[1] > 100, 'Bridge-only opaque surface renders');
-        close(renderer.surfaceAtScreen(point.x, point.y).y, 96, 'Bridge rendering and picking share elevation');
+        close(renderer.surfaceAtScreen(point.x, point.y).y, 48, 'Bridge rendering and picking share elevation');
         equal(gl.getError(), 0, 'Bridge-only shader has no GL error');
-        return { rgba: [...rgba], pickedHeight: 96 };
+        return { rgba: [...rgba], pickedHeight: 48 };
       });
 
       test('Bridge footprint removes hidden cliff contacts for navigation and SurfaceMotion', () => {
@@ -232,12 +232,12 @@ async function run() {
           { id: 'inner', level: -1, points: rectangle(200, 200, 1000, 1000) }
         ]);
         const nestedAtlas = stateFor(nested).world.terrain.surfaces;
-        equal(nestedAtlas.sampleTerrain(600, 600).elevation, -96, 'Inner lower floor overrides higher parent support');
+        equal(nestedAtlas.sampleTerrain(600, 600).elevation, -24, 'Inner lower floor overrides higher parent support');
         equal(nestedAtlas.heightAt(600, 600), 0, 'Deck over a nested lower floor remains valid');
         const bank = bankMap(1280, true);
         const bankAtlas = stateFor(bank).world.terrain.surfaces;
         equal(bankAtlas.sample(850, 1950).bridge?.id, 'crossing', 'Deck over a sloped bank remains valid');
-        return { containedIslandRejected: rejected, nestedSupport: -96, bankDeck: 0 };
+        return { containedIslandRejected: rejected, nestedSupport: -24, bankDeck: 0 };
       });
 
       test('Procedural seeds 1 through 12 have deterministic safe bank surfaces and walkable perimeters', () => {

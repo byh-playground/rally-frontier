@@ -91,7 +91,7 @@ async function run() {
           atlas.levelAt(1100, 1500), atlas.levelAt(1500, 1500)
         ];
         equal(JSON.stringify(levels), '[0,-1,-2,0]', 'Base, pit, nested pit, island levels');
-        close(atlas.heightAt(1100, 1500), -192, 'Negative elevation derives from level');
+        close(atlas.heightAt(1100, 1500), -48, 'Negative elevation derives from level');
         // Alternating upward/downward nesting must choose containment, not numeric maximum.
         const alternating = TerrainSurfaceAtlas.fromMap(map([
           rectangle('positive', 2, 300, 300, 2700, 3500),
@@ -111,11 +111,37 @@ async function run() {
             rectangle('distant-level', level, 600, 600, 1800, 2200)
           ]));
           equal(atlas.levelAt(1200, 1600), level, 'Large signed level remains authored');
-          close(atlas.heightAt(1200, 1600), level * 96, 'Large signed elevation');
+          close(atlas.heightAt(1200, 1600), level * (level < 0 ? 24 : 48), 'Large signed elevation');
           equal(atlas.minLevel, Math.min(0, level), 'Derived minimum');
           equal(atlas.maxLevel, Math.max(0, level), 'Derived maximum');
           return level;
         });
+      });
+
+      test('Asymmetric signed tiers share physical ramp midpoint and inverse conversion', () => {
+        for (const level of [-10000, -2, -1, 0, 1, 2, 10000]) {
+          close(TerrainSurfaceAtlas.elevationForLevel(level), level * (level < 0 ? 24 : 48), 'Signed physical tier size');
+          close(TerrainSurfaceAtlas.levelForElevation(TerrainSurfaceAtlas.elevationForLevel(level)), level, 'Signed inverse preserves tier');
+        }
+        const descriptor = map([
+          rectangle('pit', -1, 300, 300, 2700, 3500),
+          rectangle('hill', 1, 900, 900, 2100, 2500)
+        ], [{ id: 'cross-zero', layerId: 'hill', edge: 0, t0: 0.25, t1: 0.75, run: 160 }]);
+        const atlas = TerrainSurfaceAtlas.fromMap(descriptor);
+        const ramp = atlas.ramps[0];
+        const low = TerrainSurfaceAtlas.lerp(ramp.lowA, ramp.lowB, 0.5);
+        const high = TerrainSurfaceAtlas.lerp(ramp.highA, ramp.highB, 0.5);
+        const mid = TerrainSurfaceAtlas.lerp(low, high, 0.5);
+        close(atlas.heightAt(mid.x, mid.y), 12, 'Physical midpoint spans -24 to +48');
+        const patch = atlas.surfaceMesh.find(p => p.kind === 'ramp');
+        const split = TerrainSurfaceAtlas.splitRampAtLevelTransition(patch);
+        check(split.low.vertices.some(p => Math.abs(p.y - 12) < 1e-7), 'Low Fog half reaches actual midpoint');
+        check(split.high.vertices.some(p => Math.abs(p.y - 12) < 1e-7), 'High Fog half starts at actual midpoint');
+        for (const [t, level] of [[0.4999, -1], [0.5001, 1]]) {
+          const point = TerrainSurfaceAtlas.lerp(low, high, t);
+          equal(atlas.levelAt(point.x, point.y), level, 'Fog split matches sampled tier');
+        }
+        return { low: ramp.lowElevation, high: ramp.highElevation, midpoint: 12 };
       });
 
       test('Depression ramps order low/high independently of exterior', () => {
@@ -129,7 +155,7 @@ async function run() {
           const point = TerrainSurfaceAtlas.lerp(low, high, t);
           const sampled = atlas.sample(point.x, point.y);
           close(sampled.progress, t, 'Ramp progress follows actual ascent');
-          close(sampled.elevation, -96 + 96 * t, 'Ramp elevation interpolates signed endpoints');
+          close(sampled.elevation, -24 + 24 * t, 'Ramp elevation interpolates signed endpoints');
           return sampled.level;
         });
         equal(JSON.stringify(samples), '[-1,-1,0,0]', 'Ramp midpoint changes to higher level');
@@ -282,11 +308,11 @@ async function run() {
         const projection = TerrainSurfaceProjection.forAtlas(atlas);
         const picks = [false, true].map(flipped => {
           const x = flipped ? atlas.width - 1536 : 1536;
-          const y = (flipped ? atlas.height - 1536 : 1536) - (-192) * 0.6;
+          const y = (flipped ? atlas.height - 1536 : 1536) - (-48) * 0.6;
           const picked = projection.pickSurface(x, y, flipped);
           close(picked.x, 1536, 'Picked floor world x');
           close(picked.z, 1536, 'Picked floor world z');
-          close(picked.y, -192, 'Picked depressed floor height');
+          close(picked.y, -48, 'Picked depressed floor height');
           return { flipped, x: picked.x, y: picked.y, z: picked.z };
         });
         return picks;
@@ -332,9 +358,9 @@ async function run() {
           renderer.world = renderer.snapshot.world;
           // Signed terrain extends the bottom camera bound by the projected pit depth.
           const bottomCameraTop = renderer.clampCameraTop(100000);
-          close(bottomCameraTop, 4096 + 192 * 0.6 - 1500, 'Negative floor bottom camera bound');
+          close(bottomCameraTop, 4096 + 48 * 0.6 - 1500, 'Negative floor bottom camera bound');
           close(renderer.clampCameraTop(-100000), 0, 'All-negative map top camera bound');
-          const target = { x: 1536, y: -192, z: 1536, groundY: 0 };
+          const target = { x: 1536, y: -48, z: 1536, groundY: 0 };
           renderer.cameraLeft = renderer.viewX(target.x) - 450;
           renderer.cameraTop = renderer.viewY(target.z) - target.y * 0.6 - 750;
           const projected = renderer.projectRenderWorldPosition(target);
@@ -383,7 +409,7 @@ async function run() {
         const mesh = TerrainPresentation.riverSurfaceMesh(descriptor, atlas);
         check(mesh.length > 0, 'River mesh intersects authored negative floors');
         const elevations = [...new Set(mesh.flatMap(triangle => triangle.vertices.map(vertex => vertex.y)))].sort((a, b) => a - b);
-        equal(JSON.stringify(elevations), '[-192,-96]', 'Water vertices use actual signed floor heights');
+        equal(JSON.stringify(elevations), '[-48,-24]', 'Water vertices use actual signed floor heights');
         for (const triangle of mesh) {
           for (const vertex of triangle.vertices) {
             equal(vertex.groundY, 0, 'Water vertices already contain their elevation');
@@ -416,8 +442,8 @@ async function run() {
         const pixels = [];
         for (const role of ['host', 'guest']) {
           for (const target of [
-            { x: 800, y: -96, z: 1800, groundY: 0 },
-            { x: 1100, y: -192, z: 1800, groundY: 0 }
+            { x: 800, y: -24, z: 1800, groundY: 0 },
+            { x: 1100, y: -48, z: 1800, groundY: 0 }
           ]) {
             const canvas = document.createElement('canvas');
             canvas.width = 390;
