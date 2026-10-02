@@ -62,6 +62,40 @@ rally-frontier/
 * 리플레이 지원
 * HTML 안의 게임 엔진과 하나의 캠페인 데이터 모듈
 
+## 공통 동기화 라이브러리 적용
+
+게임은 [rollback-netcode](https://github.com/byh-playground/rollback-netcode)의 공개 계약을 사용합니다. `GameSession`은 경기의 로비·UI·수명주기를 조정하며, Core와 게임 Adapter, Transport를 **Has-a**로 소유합니다.
+
+| 관계 | 구현과 사용 시나리오 |
+| --- | --- |
+| **Is-a** | `GameSession`은 경기 Coordinator, `StrategySim`은 게임 Simulation입니다. 둘을 Netcode 타입별로 상속하지 않습니다. |
+| **Has-a** | Coordinator가 `RollbackSession`, `RallySimulationAdapter`, 전송 capability를 조합합니다. 온라인·싱글 WebRTC·LOCAL 2P가 같은 경로를 사용합니다. |
+| **Can-be** | prediction·hold·resimulation·recovery는 Core의 실행 상태입니다. 별도 게임 모드나 동기화 구현으로 분기하지 않습니다. |
+
+개발자가 새 게임 명령을 추가할 때는 UI와 AI 모두 `GameSession.command(action)`에 제출합니다. SDK의 player-local sequence를 받은 뒤, Core가 결정한 실행 프레임에서 Adapter가 `StrategySim.queueCommand()`와 `step()`을 호출합니다. 입력 지연, 상대 틱 차이, 롤백과 복구를 게임 명령 처리에 다시 구현하지 않습니다.
+
+`RallySimulationAdapter`는 `save / load / step / validateSnapshot` capability를 제공합니다. Core의 프레임 `t`는 게임의 step 이전 상태 `S[t]`이며, 그 입력으로 게임 틱 `t+1`을 실행합니다. 저장 대상은 `StateContract`가 선언한 전체 Authoritative 상태입니다. 렌더·캐시·AI 명령 예약은 Runtime 또는 Presentation이며, 새 타임라인에서 재생성합니다. 재실행 결과는 확정된 프레임부터 UI 효과와 리플레이에 한 번만 공개합니다.
+
+전송은 `send(Uint8Array)`와 `subscribe(listener)` capability로 연결합니다. Nostr는 방 발견·RTC 협상에만 사용하고, 게임 입력·시계·해시·복구는 SDK의 `WebRTCTransport`가 실제 입력·제어 DataChannel로 전송합니다. 게임은 SDK의 바이너리 헤더나 내부 필드를 해석하지 않습니다.
+
+게임은 [GitHub Pages의 원본 단일 ES module](https://byh-playground.github.io/rollback-netcode/rollback-netcode.js)을 직접 import합니다. 필수 API 확인 후 초기화하며 로딩 실패나 미배포 API는 사용자에게 오류로 표시합니다. 내장 Core와 로컬 fallback은 없습니다. 이 URL은 버전 고정 URL이 아닙니다. 2026-10-03 라이브러리 PR #2 머지 후 실제 공개 URL에서 새 코덱 API와 초기화 성공을 확인했습니다. 존재하지 않는 versions URL이나 쿼리스트링을 버전 고정으로 사용하지 않습니다. 이후에도 필수 API가 없으면 게임 시작이 차단됩니다.
+
+공통 createValueCodec의 기본 바이너리 코덱을 상태와 명령에 조합하고 Core에는 opaque bytes만 전달합니다. 선택 JSON 코덱은 비교·진단용입니다.
+
+```text
+index.html
+  RallyNetcode                 공통 Core 원본을 고정한 생성 번들
+  GameSession                  경기 Coordinator
+  RallySimulationAdapter       게임 상태와 명령을 SDK 계약에 연결
+  RallyStateCodec / CommandCodec
+  StrategySim                  게임 규칙과 Authoritative State
+scripts/netcode-qa-module.cjs   검증용 후보 URL 응답 (제품 fallback 아님)
+scripts/netcode-*-regression.cjs 집중 회귀 검사
+scripts/netcode-ui-e2e.cjs      실제 UI·RTC·WebGL·종료·리플레이 검사
+```
+
+장기 개발 계약은 `index.html` 상단이 SSOT이며, 이 절은 사용 경로와 소스 위치를 안내합니다. 검증 범위와 미검증 항목은 실행물의 안정화 기록과 해당 PR에서 확인합니다.
+
 ## 개발 원칙
 
 개발 중인 소스를 바로 `main`에 반영하지 않습니다.
@@ -122,3 +156,13 @@ rally-frontier/
 이 저장소는 BYH Playground의 게임 프로젝트 중 하나입니다.
 
 RALLY FRONTIER의 **검증 완료 Stable 버전 및 GitHub Pages 배포 소스**를 이 저장소의 `main` 브랜치에서 관리합니다.
+
+### URL·바이너리 통합 검증 (2026-10-03)
+
+라이브러리 tests85/85와 실제 Edge 상태11/AI9/RTC 수명주기6 검사를 통과했습니다. 412px native NVIDIA WebGL의 Host/Guest 덱·건설·생산·전투·종료·replay 탐색을 확인했고 오류0, 종료/replay checksum 일치입니다. 실제 RTC depth5 롤백과 snapshot 복구, 손상 후보 거부를 확인했습니다. 렌더 arcHeight/drawRadius/visualTag는 권위 상태에서 제외하고 impactEventKind와 burstIndex로 표현을 재생성합니다. 명령14종은 허용 Authoritative 필드만 받습니다.
+
+동일 상태/35tick 게임 결과를 JSON과 binary로 비교했습니다. 78/158유닛은126427→43675B,232165→75253B로 약65~68% 줄었습니다. 기존 중복 JSON 복사를 포함한 경로 대비 저장 median4.9→3.4ms/8.5→5.9ms, 복원4.8→3.9ms/6.8→6.2ms, step+save9.3→5.4ms/19.7→16.3ms였습니다. 중복복사를 제거한 JSON restore2.9/4.9ms는 binary3.9/6.2ms보다 빠릅니다. 고정 맵과 복제 유닛의 CPU 비교로 렌더·실제망·FPS 개선을 주장하지 않으며, 구조/입력이 같은 복원 상태와 게임 결과를 비교하고 포맷이 다른 byte hash는 비교하지 않습니다. 재현: QA_SDK_PATH를 후보 원본 모듈 경로로 명시하고 node scripts/netcode-codec-benchmark.cjs를 실행합니다. 공개 URL을 검증할 때는 QA_SDK_PATH를 설정하지 않습니다.
+
+실제 모바일 기기, 다른 엔진 장시간 결정론, 서로 다른 외부 NAT의 두 기기는 미검증입니다. Stable로 승격하지 않았습니다.
+
+최종 main36c29a5 통합·실제 공개 SDK URL 검사에서도 Host1220틱/af1574ea, Guest1361틱/27148070의 종료와 replay가 일치했습니다. 유닛 표시102case, 캠페인 모듈, startup, 상태11, 실제 RTC수명주기6 및 transport를 통과했습니다.

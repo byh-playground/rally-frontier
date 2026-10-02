@@ -198,6 +198,7 @@ async function run() {
       await single.route('http://127.0.0.1:32127/', r => r.fulfill({ contentType: 'text/html', body: html }));
       await single.route('http://127.0.0.1:32127/campaign/campaigns.js*', r => r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync(path.join(root, 'campaign/campaigns.js'), 'utf8') }));
       await single.goto('http://127.0.0.1:32127/');
+      await single.waitForFunction(() => window.__unitQA);
       await single.evaluate(() => {
         const q = window.__unitQA, original = q.GLRenderer.prototype.drawUnit;
         window.__singleCombatFrames = [];

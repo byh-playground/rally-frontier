@@ -31,6 +31,8 @@ const context = vm.createContext({
   GameRuleDefinition: { current: {} },
   CloneUtil: { clone: structuredClone },
   RangeUtil: { clamp: (v, a, b) => Math.min(b, Math.max(a, v)) },
+  RallyNetcode: { hashBytes: () => 0x12345678 },
+  RallyStateCodec: { encode: value => value },
   StrategySim: class {
     constructor() {
       this.tick = 0;
@@ -39,6 +41,7 @@ const context = vm.createContext({
     }
     importState(state) { Object.assign(this, state); }
     checksum() { return 'valid'; }
+    exportState() { return { tick: this.tick }; }
     snapshot() {
       if (failSnapshot) throw Error('snapshot failure');
       events.push('snapshot-ready');
@@ -51,6 +54,7 @@ const context = vm.createContext({
   CampaignRuntime: { clear: () => events.push('campaign-runtime-clear') },
   MatchLifecycle: { disposeMatches: () => events.push('matches-dispose') },
   UiRuntimeState: { value: { target: {}, selection: {}, modal: null } },
+  UiRegistry: { refs: { log: { style: { removeProperty() {} } } } },
   UiController: { setUiCommand() {}, invalidatePanelHtmlCaches() {}, closeUiModal() {} },
   SpellPresentation: { setSpellChoicePhase() {} },
   ActiveViewState: { renderer: null },
@@ -70,8 +74,8 @@ const payload = {
   protocol: 'test', simVersion: 1, seed: 123, finalDraft: {}, commands: [],
   result: { endTick: 50 },
   checkpoints: [{
-    tick: 0, state: { tick: 0 }, checksum: 'valid',
-    checksumScope: 'state-without-scheduled-v1'
+    tick: 0, state: { tick: 0 }, checksum: '12345678',
+    checksumScope: 'complete-state-without-scheduled-v2'
   }]
 };
 
