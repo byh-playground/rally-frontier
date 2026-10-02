@@ -27,7 +27,7 @@ description: Review and merge GitHub pull requests for the rally-frontier projec
 - PR이 이미 머지됐으면 중복 요청하지 않고 결과와 로컬 상태를 확인한다. 닫힌 PR을 임의로 다시 열지 않는다.
 - 충돌, Draft, 실패하거나 진행 중인 필수 검사, 브랜치 보호 차단을 우회하지 않는다. 상태가 UNKNOWN이면 한 번 재조회하고 여전히 불명확하면 원인을 보고한다.
 - 기본 방식은 **작업 커밋을 하나로 squash한 뒤 Merge commit**이다. main에는 통합 작업 커밋 하나와 두 부모를 가진 머지 커밋이 남도록 한다. GitHub의 `gh pr merge --squash`는 별도의 머지 커밋을 만들지 않으므로 이 기본 흐름을 대체하지 못한다. 사용자가 해당 PR에 다른 방식을 명시하면 따른다. Merge commit이 금지돼 있으면 차단 이유를 보고한다.
-- 사용자의 머지 지시에는 해당 PR 작업 커밋의 squash도 포함된다. 여러 커밋이면 최신 base/head를 fetch하고 검토한 원본 head SHA를 기록한다. 깨끗한 임시 브랜치 또는 worktree에서 base를 시작점으로 `git merge --squash <원본-head>`를 실행해 한글 메시지의 통합 커밋 하나를 만든다. 원본 head와 통합 커밋의 tree가 같은지 확인한다. base 변경 때문에 tree가 달라지면 그 차이를 검토하고 필요한 검증을 수행한 뒤 계속한다.
+- 사용자의 머지 지시에는 해당 PR 작업 커밋의 squash도 포함된다. 여러 커밋이면 최신 base/head를 fetch하고 검토한 원본 head SHA를 기록한다. 다른 대화가 수정 중이지 않은 전용 worktree에서 base를 시작점으로 `git merge --squash <원본-head>`를 실행해 한글 메시지의 통합 커밋 하나를 만든다. 독립 clone이나 공유 주 폴더의 브랜치 전환으로 처리하지 않는다. 원본 head와 통합 커밋의 tree가 같은지 확인한다. base 변경 때문에 tree가 달라지면 그 차이를 검토하고 필요한 검증을 수행한 뒤 계속한다.
 - PR head 갱신 직전에 서버 head가 기록한 SHA와 같은지 다시 확인한다. 해당 PR head 브랜치에만 `git push --force-with-lease=refs/heads/<headRefName>:<원본-head-SHA> origin <통합-커밋-SHA>:refs/heads/<headRefName>`으로 갱신한다. 이 제한된 squash 갱신 외 강제 푸시는 금지한다. lease 실패 시 다른 변경을 덮어쓰지 않는다. 원본 head를 복구할 수 있도록 로컬 참조를 유지하고, 미푸시 로컬 작업 커밋이나 다른 작업자의 진행 중 변경을 squash에 포함하지 않는다.
 - head 갱신 후 새 SHA의 PR diff, 필수 검사, 승인 및 mergeability를 다시 확인한다. squash로 승인이 무효화되거나 검사가 진행 중이면 머지를 보류하고 이유를 보고한다. 통합 커밋이 이미 하나라면 불필요하게 재작성하지 않는다.
 - 검토한 head SHA를 `--match-head-commit`에 지정해 실행한다:
@@ -43,7 +43,9 @@ description: Review and merge GitHub pull requests for the rally-frontier projec
 
 ## 완료 및 로컬 브랜치 정리
 
-`gh pr view`로 `state`, `mergedAt`, `mergeCommit`, `url`을 확인한 뒤 머지 성공을 보고한다. 로컬 작업 트리가 깨끗하면 `git fetch origin`, `git switch main`, `git pull --ff-only origin main`으로 동기화한다. 미커밋 변경이나 로컬 main 분기가 있으면 그대로 보존하고 동기화하지 못한 이유를 보고한다. reset, 자동 stash, 변경 삭제로 정리하지 않는다.
+`gh pr view`로 `state`, `mergedAt`, `mergeCommit`, `url`을 확인한 뒤 머지 성공을 보고한다. `git worktree list --porcelain`에서 주 작업 폴더를 확인하고 그 폴더의 현재 브랜치·미커밋 변경·로컬 분기를 따로 점검한다. 주 폴더가 `main`이고 기존 파일을 덮어쓰지 않고 동기화할 수 있을 때 그 경로에서 `git fetch origin`, `git pull --ff-only origin main`을 실행한다. 전용 worktree에서 `git switch main`을 실행하지 않는다. 주 폴더가 다른 작업 브랜치이거나 미커밋 변경·로컬 분기 때문에 동기화할 수 없으면 그대로 보존하고 이유를 보고한다. reset, 자동 stash, 변경 삭제로 정리하지 않는다.
+
+완료한 전용 worktree는 소유 작업이 끝나고 필요한 변경·검증 자료가 보존됐는지 확인한 뒤 생성에 사용한 관리 도구로 archive하거나, 직접 만든 Git worktree라면 `git worktree remove`로 정리한다. 해당 worktree를 유지하면서 이번 작업 브랜치만 정리해야 하면 파일 내용이 같은 현재 커밋에 detach할 수 있다. 이 과정에서 다른 대화의 worktree를 제거하거나 `main`을 중복 체크아웃하지 않는다.
 
 동기화 성공 후 해당 PR뿐 아니라 남아 있는 머지 완료 로컬 작업 브랜치도 정리한다. 사용자가 “이미 머지된 브랜치 정리해줘”라고 요청하면 같은 절차를 독립적으로 실행한다. main, 열린 PR, PR 머지 여부를 확인할 수 없는 브랜치를 삭제하지 않는다. `git worktree list --porcelain`로 다른 worktree에서 사용 중인지 확인한다. 로컬 브랜치 이름과 일치하는 PR이 MERGED 상태인지, PR의 머지 커밋이 현재 main에 포함되는지 확인한다. 재사용된 브랜치의 열린 PR도 확인한다. 로컬 tip까지 main의 조상이면 `git branch -d <작업-브랜치>`로 삭제한다. 브랜치가 없으면 이미 정리된 것으로 처리한다. 로컬에 추가 커밋이 있거나 다른 worktree가 사용 중이면 브랜치를 보존하고 이유를 보고한다. 이미 머지된 PR을 확인하는 경우에도 같은 절차를 적용한다.
 
@@ -54,3 +56,9 @@ squash 전 커밋을 가리키는 로컬 브랜치는 main의 조상이 아니�
 `git branch -d`가 오래된 원격 upstream에 포함되지 않았다는 이유로 거부하면, main 포함 여부를 확인한 뒤 삭제 대상 로컬 브랜치의 upstream 설정만 `git branch --unset-upstream <브랜치>`로 해제하고 `git branch -d`를 재시도한다. 원격 참조를 수정하거나 `-D`로 우회하지 않는다.
 
 완료 응답에는 PR 링크, 리뷰/검증 결과, 머지 커밋, 로컬 동기화 및 브랜치 정리 결과를 간결하게 포함한다.
+
+## 복구 이력과 그래프 정리
+
+복구용 참조도 `git log --all`에 표시되므로 작업 브랜치를 지운 것과 전체 참조가 정리된 것을 구별한다. 이번 머지에서 직접 만든 원본 head 복구 참조는 정리 단계에서 Git 공통 디렉터리 아래의 PR별 bundle 파일로 보관한다. 원본 참조가 포함된 `git bundle create`를 실행하고, `git bundle verify` 및 `git bundle list-heads`로 원본 SHA와 참조 이름이 들어 있음을 확인한 뒤에만 해당 임시 복구 참조를 삭제한다. 검증에 실패하면 참조를 보존한다. worktree의 `.git` 경로를 디렉터리로 가정하지 않는다.
+
+기존의 다른 작업 백업이나 앱 소유 `refs/codex/snapshots/*`·worktree 복구 참조는 일괄 삭제하지 않는다. 미반영 로컬 브랜치를 복구 bundle만 있다는 이유로 지우지도 않는다. 원격 브랜치는 기존 원칙대로 별도 사용자 지시 없이 삭제하지 않으며, 진행 작업·남겨 둔 원격 브랜치·백업 참조가 있으면 정리 결과에 명시한다. 이미 공개된 `main` 이력을 그래프 모양을 바꾸기 위해 재작성하지 않는다.
