@@ -11,6 +11,7 @@ async function run(){
  const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];
  page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
  await page.route('http://127.0.0.1:32119/',r=>r.fulfill({contentType:'text/html',body:html}));
+ await page.route('http://127.0.0.1:32119/campaign/campaigns.js*',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../campaign/campaigns.js'),'utf8')}));
  await page.goto('http://127.0.0.1:32119/');await page.locator('#gameStartBtn').click();await page.locator('#campaignBtn').click();await page.locator('[data-mission-id="frontier-01-first-flag"]').click();await page.locator('#campaignStartBtn').click();
  await page.waitForFunction(()=>window.__campaignQA.ActiveViewState.snap?.tick>20,null,{timeout:30000});
  const initial=await page.evaluate(()=>{const q=window.__campaignQA;return {deck:q.ActiveViewState.snap.decks,backend:q.ActiveViewState.renderer.backend,tick:q.ActiveViewState.snap.tick,simDeck:q.MatchLifecycle.activeSession().sim.decks}});
