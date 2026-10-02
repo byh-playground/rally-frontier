@@ -40396,9 +40396,28 @@ class BattlePresentation{
   if(UiRegistry.refs.tacticalChestArea.innerHTML!==html)UiRegistry.refs.tacticalChestArea.innerHTML=html;
   SpellPresentation.renderSpellChoiceModal(state);
 }
+  static productionDeck(state,side){
+    const decks=state?.decks;
+    if(!Array.isArray(decks)||decks.length!==2||!decks.every(deck=>Array.isArray(deck)&&deck.every(id=>typeof id==="string"&&Object.hasOwn(UnitDefinition.all,id))))return null;
+    return decks[side]??null;
+  }
   static renderGame(s){
   // An already queued snapshot must never switch Result back to Game.
   if(UiRuntimeState.value.screen==="result")return;
+  const side=ConnectionSideUtil.roleSide(ActiveViewState.role);
+  const liveSession=MatchLifecycle.activeSession();
+  const deck=BattlePresentation.productionDeck(s,side);
+  if(!liveSession?.sim||deck===null){
+    DiagnosticPresentation.presentFatalDiagnostic({
+      kind:"RALLY_FRONTIER_PRESENTATION_CONTRACT_FATAL",
+      build:BUILD_ID,at:new Date().toISOString(),source:"BattlePresentation.renderGame",
+      role:ActiveViewState.role,tick:Number(s?.tick)||0,
+      message:!liveSession?.sim
+        ?"Live snapshot reached game presentation without an active simulation."
+        :"Live snapshot reached game presentation without valid authoritative production decks."
+    });
+    return;
+  }
 
   // BattlePresentation.renderGame() is also the recurring live-snapshot render path.
   // Transient battle UI must be reset only when entering the game screen;
@@ -40449,18 +40468,6 @@ class BattlePresentation{
   ActiveViewState.minimap.draw();
   audioSystem.processSnapshot(s,ActiveViewState.renderer);
 
-  const side=ConnectionSideUtil.roleSide(ActiveViewState.role);
-  const liveSession=MatchLifecycle.activeSession();
-  const deck=liveSession?.draft?.decks?.[ActiveViewState.role]||[];
-  if(!liveSession?.sim||!deck.length){
-    DiagnosticPresentation.presentFatalDiagnostic({
-      kind:"RALLY_FRONTIER_PRESENTATION_CONTRACT_FATAL",
-      build:BUILD_ID,at:new Date().toISOString(),source:"BattlePresentation.renderGame",
-      role:ActiveViewState.role,tick:Number(s?.tick)||0,
-      message:"Live snapshot reached game presentation without an active simulation/deck."
-    });
-    return;
-  }
   const unlocked=deck.filter(t=>UnitDefinition.get(t)?.tier<=s.tech[side]);
 
   // 생산 카드 선택은 UI selection state이며, 생산 가능 여부는 authoritative deck/tech 상태에서 계산한다.
@@ -41111,7 +41118,8 @@ class ResearchPresentation{
     }
   }
   if(UiRegistry.refs.researchAbilityGrid){
-    const deck=(ActiveViewState.session?.draft?.decks?.[ActiveViewState.role]||[]).filter(id=>UnitDefinition.get(id)?.tier===ResearchPresentation.researchAbilityTier&&UnitSpecialResearchDefinition.hasOptions(id));
+    const deck=BattlePresentation.productionDeck(state,side)?.filter(id=>UnitDefinition.get(id)?.tier===ResearchPresentation.researchAbilityTier&&UnitSpecialResearchDefinition.hasOptions(id));
+    if(!deck)return;
     const q=queues.ability;
     const cards=deck.flatMap(id=>{
       const out=[];
