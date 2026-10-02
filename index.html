@@ -57,7 +57,7 @@ PURPOSE
 - Map Descriptor의 terrain.blockers / layers / ramps가 지형 SSOT다. TerrainSurfaceAtlas가 고지 면·경사로·절벽 접촉면·NavMesh seam을 함께 파생한다. 렌더·미니맵·건설·spawn·일반 이동·외력 제한은 같은 geometry를 사용한다. 경사로 외의 층 전환과 경사로 위 일반 건설은 금지한다.
 - 지형 표면의 실제 삼각형과 정점 높이를 렌더 깊이·화면 역투영이 함께 사용한다. 고지 바닥을 별도 고정 깊이로 칠하거나 절벽 뒤 지면을 클릭하지 않는다. 유닛·그림자·건물의 primitive와 캐시는 지지면 깊이를 적용하되 simulation 위치를 시각 보정으로 변경하지 않는다.
 - 일반 절차맵도 같은 지형 시스템을 사용한다. 전투 공간·연결 통로·고지대·경사로의 배치는 MapGeneration이 소유하고, 본진·점령지·자원·중립의 유효한 배치와 접근성을 공통 geometry로 검증한다. 지형 높이는 level 하나만 SSOT로 사용하며 특정 버전의 벽 개수나 배치 레시피를 장기 계약에 고정하지 않는다.
-- level은 부호 있는 정수이며 기본 지면은 0이다. 음수·양수에 임의의 게임상 상한/하한을 두지 않고 높이는 level * 96으로 파생한다. 중첩 지형은 가장 안쪽 영역이 표면을 소유한다. 기본 지면도 함몰면·섬·경사로를 제외한 실제 mesh로 만들고 렌더·Fog·클릭이 같은 표면을 사용한다.
+- level은 부호 있는 정수이며 기본 지면은 0이다. 음수·양수에 임의의 게임상 상한/하한을 두지 않고 높이는 공통 변환으로 파생하며 양수는 레벨당 48, 음수는 그 절반인 24를 사용한다. 중첩 지형은 가장 안쪽 영역이 표면을 소유한다. 기본 지면도 함몰면·섬·경사로를 제외한 실제 mesh로 만들고 렌더·Fog·클릭이 같은 표면을 사용한다.
 - 이동 명령의 점 목표와 공격·채집·반납·건설·치유의 상호작용 영역 목표를 구분한다. 실제 사거리·최소 사거리·지형 접촉 규칙은 InteractionGeometry가 한 번 정의하며 판정과 NavigationGoal이 공유한다. 건물 중심 투영이나 고정 각도 접근점을 작업 목표로 사용하지 않는다.
 - 지상 경로는 도달 가능한 목표 영역 전체를 종점으로 하는 목적지/충돌 크기별 공유 역방향 NavMesh portal field로 계산하고 근거리 충돌은 기존 solver를 유지한다. 직선이 열리면 즉시 직진한다. 유닛마다 매 tick 전체 맵을 탐색하지 않는다. 경로 cache는 결과를 바꾸지 않는 파생 상태이며 저장/체크섬에서 제외한다.
 - NavMesh는 경로를 선택하고 SurfaceMotion은 그 경로의 이동·외력·군중 보정을 동일한 건물/지형 접촉으로 처리한다. 검증된 부분 이동을 틱 시작점부터의 직선으로 다시 잘라내지 않는다. 접선 투영은 공통화하되 외력에 자발적인 우회 속도를 추가하지 않는다.
@@ -10582,7 +10582,7 @@ body.campaign-mode #p2pHealthText {
 // Single source of truth for this HTML artifact.
 // The timestamp lives only inside BUILD_ID. updatedAt is derived from it, so the
 // build identity and the visible/exported update time cannot drift apart.
-const BUILD_ID="20261002T151928+0900-rf-procedural-river-banks-v73";
+const BUILD_ID="20261002T180513+0900-rf-shallow-terrain-fog-v73";
 
 class BuildMetadata{
   static buildUpdatedAtFromId(buildId){
@@ -10600,7 +10600,7 @@ const BUILD_META=Object.freeze({
 /* =========================
    1. Definitions
    ========================= */
-const SIM_TPS=10,FP=100,SIM_VERSION=180,CHECKSUM_EVERY=80,COMMAND_DELAY_MS=500;
+const SIM_TPS=10,FP=100,SIM_VERSION=181,CHECKSUM_EVERY=80,COMMAND_DELAY_MS=500;
 
 // Authoritative time contract:
 // - balance/design data uses integer milliseconds
@@ -10994,8 +10994,11 @@ class TerrainSurfaceProjection{
   }
 }
 
-const TERRAIN_LEVEL_HEIGHT=96;
+const TERRAIN_LEVEL_HEIGHT=48;
+const TERRAIN_NEGATIVE_LEVEL_DEPTH=TERRAIN_LEVEL_HEIGHT*.5;
 class TerrainSurfaceAtlas{
+  static elevationForLevel(level){return level*(level<0?TERRAIN_NEGATIVE_LEVEL_DEPTH:TERRAIN_LEVEL_HEIGHT)}
+  static levelForElevation(elevation){return elevation/(elevation<0?TERRAIN_NEGATIVE_LEVEL_DEPTH:TERRAIN_LEVEL_HEIGHT)}
   static cache=new WeakMap();
   static rampPlaneCache=new WeakMap();
   static rampVisionCache=new WeakMap();
@@ -11092,7 +11095,7 @@ class TerrainSurfaceAtlas{
     return null;
   }
   static splitRampAtLevelTransition(patch){
-    const midpoint=(patch.lowLevel+patch.highLevel)*TERRAIN_LEVEL_HEIGHT*.5;
+    const midpoint=(this.elevationForLevel(patch.lowLevel)+this.elevationForLevel(patch.highLevel))*.5;
     const parts={low:{vertices:[],triangles:[]},high:{vertices:[],triangles:[]}};
     for(const side of ['low','high'])for(const triangle of patch.triangles){
       const src=triangle.map(i=>patch.vertices[i]),out=[],inside=p=>side==='low'?p.y<=midpoint+1e-8:p.y>=midpoint-1e-8;
@@ -11123,11 +11126,11 @@ class TerrainSurfaceAtlas{
   }
   constructor(map){
     this.width=Number(map?.width)||3600;this.height=Number(map?.height)||4200;
-    this.layers=(map?.terrain?.layers||[]).map(p=>TerrainSurfaceAtlas.bounds({...p,level:Number(p.level),elevation:Number(p.level)*TERRAIN_LEVEL_HEIGHT,points:p.points.map(q=>({...q})),...(p.innerPoints?{innerPoints:p.innerPoints.map(q=>({...q}))}:{})}));
+    this.layers=(map?.terrain?.layers||[]).map(p=>TerrainSurfaceAtlas.bounds({...p,level:Number(p.level),elevation:TerrainSurfaceAtlas.elevationForLevel(Number(p.level)),points:p.points.map(q=>({...q})),...(p.innerPoints?{innerPoints:p.innerPoints.map(q=>({...q}))}:{})}));
     this.ramps=[];this.cliffs=[];this.faces=[];this.seams=[];
-    this.bridges=(map?.terrain?.bridges||[]).map((b,i)=>{const ca=Math.cos(b.angle||0),sa=Math.sin(b.angle||0),points=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([x,y])=>({x:b.x+x*b.halfLength*ca-y*b.halfWidth*sa,y:b.y+x*b.halfLength*sa+y*b.halfWidth*ca}));return TerrainSurfaceAtlas.bounds({...b,id:String(b.id||'bridge-'+i),level:Number(b.level??0),elevation:Number(b.level??0)*TERRAIN_LEVEL_HEIGHT,points})});
-    this.maxLevel=Math.max(0,...this.layers.map(p=>p.level),...this.bridges.map(p=>p.level));this.maxHeight=this.maxLevel*TERRAIN_LEVEL_HEIGHT;
-    this.minLevel=Math.min(0,...this.layers.map(p=>p.level),...this.bridges.map(p=>p.level));this.minHeight=this.minLevel*TERRAIN_LEVEL_HEIGHT;
+    this.bridges=(map?.terrain?.bridges||[]).map((b,i)=>{const ca=Math.cos(b.angle||0),sa=Math.sin(b.angle||0),points=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([x,y])=>({x:b.x+x*b.halfLength*ca-y*b.halfWidth*sa,y:b.y+x*b.halfLength*sa+y*b.halfWidth*ca}));return TerrainSurfaceAtlas.bounds({...b,id:String(b.id||'bridge-'+i),level:Number(b.level??0),elevation:TerrainSurfaceAtlas.elevationForLevel(Number(b.level??0)),points})});
+    this.maxLevel=Math.max(0,...this.layers.map(p=>p.level),...this.bridges.map(p=>p.level));this.maxHeight=TerrainSurfaceAtlas.elevationForLevel(this.maxLevel);
+    this.minLevel=Math.min(0,...this.layers.map(p=>p.level),...this.bridges.map(p=>p.level));this.minHeight=TerrainSurfaceAtlas.elevationForLevel(this.minLevel);
     const ids=new Set();
     for(const layer of this.layers){
       if(!layer.id||layer.id==='low-ground'||ids.has(layer.id)||!Number.isSafeInteger(layer.level)||!Number.isFinite(layer.elevation))throw new Error('Invalid terrain layer: '+layer.id);
@@ -11250,7 +11253,7 @@ class TerrainSurfaceAtlas{
         if(under>bridge.elevation+.01)throw new Error('Terrain bridge is below its supporting surface: '+bridge.id);
         if(bridge.elevation-under<.01)continue;
         const lowA=Math.min(bridge.elevation,this.sampleTerrain(p.x+outX*.02,p.y+outY*.02).elevation),lowB=Math.min(bridge.elevation,this.sampleTerrain(q.x+outX*.02,q.y+outY*.02).elevation),id=bridge.id+':side:'+edge+':'+i;
-        const wall=TerrainSurfaceAtlas.wall(p,q,id);if(wall)this.cliffs.push(wall);this.faces.push({a:p,b:q,lowA,lowB,high:bridge.elevation,lowLevel:Math.round(Math.min(lowA,lowB)/TERRAIN_LEVEL_HEIGHT),highLevel:bridge.level,outwardY:outY,bridge:true});
+        const wall=TerrainSurfaceAtlas.wall(p,q,id);if(wall)this.cliffs.push(wall);this.faces.push({a:p,b:q,lowA,lowB,high:bridge.elevation,lowLevel:Math.round(TerrainSurfaceAtlas.levelForElevation(Math.min(lowA,lowB))),highLevel:bridge.level,outwardY:outY,bridge:true});
       }
     }
     // Exact terrain triangles drive gameplay picking/navigation. Elevation is derived solely from level.
@@ -11316,7 +11319,7 @@ class TerrainSurfaceAtlas{
         if(special?.kind==='side'){({lowA,lowB,highA,highB}=special);if(!special.raised)outwardY=-outwardY}
         else{const outer=layer.parent?.elevation||0;lowA=lowB=Math.min(outer,layer.elevation);highA=highB=Math.max(outer,layer.elevation);if(outer>layer.elevation)outwardY=-outwardY}
         if(Math.max(highA-lowA,highB-lowB)<.001)continue;
-        this.renderFaces.push({a,b,lowA,lowB,high:Math.max(highA,highB),highA,highB,lowLevel:Math.round(Math.min(lowA,lowB)/TERRAIN_LEVEL_HEIGHT),highLevel:Math.round(Math.max(highA,highB)/TERRAIN_LEVEL_HEIGHT),outwardY});
+        this.renderFaces.push({a,b,lowA,lowB,high:Math.max(highA,highB),highA,highB,lowLevel:Math.round(TerrainSurfaceAtlas.levelForElevation(Math.min(lowA,lowB))),highLevel:Math.round(TerrainSurfaceAtlas.levelForElevation(Math.max(highA,highB))),outwardY});
       }
     }
     // Rendering uses the rounded presentation contour; simulation/picking keeps surfaceMesh.
@@ -14177,7 +14180,7 @@ class FrontierTerrainLayout{
     const {width:w,height:h,seed}=ctx;
     const shift=(HashUtil.hash(seed+'|lowland-stream')%21-10)/2000;
     const riverHalfWidth=65+5*(HashUtil.hash(seed+'|stream-width')%4);
-    const riverBankWidth=TERRAIN_LEVEL_HEIGHT,outerWidth=riverHalfWidth+riverBankWidth;
+    const riverBankWidth=96,outerWidth=riverHalfWidth+riverBankWidth;
     // Caps extend along the tangent as well as across it. Reserve the maximum
     // possible cap extent before smoothing; paired contours are never clamped.
     const startX=Math.max(.075,(outerWidth*Math.hypot(1,.72)+20)/w);
@@ -16730,7 +16733,7 @@ class TerrainQuery{
     }
     const surface=(atlas||(map?TerrainSurfaceAtlas.fromMap(map):null))?.sample(x,y)||{elevation:0,level:0,ramp:null};
     const raised=surface.layer&&surface.level>(surface.layer.parent?.level??0);
-    return{river:surface.elevation>0||raised||surface.ramp?false:river,bridge,level:surface.level,height:surface.elevation/TERRAIN_LEVEL_HEIGHT,surfaceElevation:surface.elevation,terrainLayer:surface.level,ramp:surface.ramp?.id||null,rampProgress:surface.ramp?RangeUtil.clamp(Number(surface.progress)||0,0,1):null};
+    return{river:surface.elevation>0||raised||surface.ramp?false:river,bridge,level:surface.level,height:TerrainSurfaceAtlas.levelForElevation(surface.elevation),surfaceElevation:surface.elevation,terrainLayer:surface.level,ramp:surface.ramp?.id||null,rampProgress:surface.ramp?RangeUtil.clamp(Number(surface.progress)||0,0,1):null};
   }
 }
 // Tracks authoritative obstacle values without per-tick filter/map/string allocation.
@@ -22306,7 +22309,7 @@ class ReplayPlayer{
     this.eventBuffer.length=0;
     this.acc=0;
     this.last=performance.now();
-    if(render)this.publish();
+    if(render){ActiveViewState.renderer?.resetFogTransition?.();this.publish()}
     return this.sim.tick;
   }
   stepOnce(){
@@ -28349,7 +28352,7 @@ class TerrainPresentation{
           if(NavigationMeshBuilder.cross(clip[0],clip[1],clip[2])<0)clip.reverse();
           for(const tri of triangles){
             const points=NavigationGoal.clipPolygon(tri.map(i=>poly[i]),clip);
-            for(let i=1;i<points.length-1;i++){const tri=[points[0],points[i],points[i+1]],x=tri.reduce((s,p)=>s+p.x,0)/3,y=tri.reduce((s,p)=>s+p.y,0)/3;if(atlas.levelAt(x,y)!==floor.level||!TerrainQuery.at(map,x,y,atlas).river)continue;mesh.push({color,vertices:tri.map(p=>({x:p.x,y:floor.level*TERRAIN_LEVEL_HEIGHT,z:p.y,groundY:0}))})}
+            for(let i=1;i<points.length-1;i++){const tri=[points[0],points[i],points[i+1]],x=tri.reduce((s,p)=>s+p.x,0)/3,y=tri.reduce((s,p)=>s+p.y,0)/3;if(atlas.levelAt(x,y)!==floor.level||!TerrainQuery.at(map,x,y,atlas).river)continue;mesh.push({color,vertices:tri.map(p=>({x:p.x,y:TerrainSurfaceAtlas.elevationForLevel(floor.level),z:p.y,groundY:0}))})}
           }
         }
       }
@@ -28403,7 +28406,7 @@ class TerrainPresentation{
         const f=patch.face,dx=f.b.x-f.a.x,dy=f.b.y-f.a.y,light=(dx-dy)/(Math.hypot(dx,dy)||1);
         colors=patch.vertices.map(()=>[.31+light*.035,.37+light*.035,.25+light*.025,1]);
       }else if(patch.kind==='ramp')colors=patch.vertices.map(v=>{
-        const t=RangeUtil.clamp((v.y-patch.lowLevel*TERRAIN_LEVEL_HEIGHT)/((patch.highLevel-patch.lowLevel)*TERRAIN_LEVEL_HEIGHT),0,1);
+        const t=RangeUtil.clamp((v.y-TerrainSurfaceAtlas.elevationForLevel(patch.lowLevel))/(TerrainSurfaceAtlas.elevationForLevel(patch.highLevel)-TerrainSurfaceAtlas.elevationForLevel(patch.lowLevel)),0,1);
         return this.colors.rampLow.map((c,i)=>c+(this.colors.rampHigh[i]-c)*t);
       });
       // The level-0 underlay already owns its grass/water markings. Write the
@@ -28664,15 +28667,18 @@ class GLRenderer{
       // from a low-resolution mask and linearly filtered by the GPU. Simulation
       // visibility remains exact and is never derived from this presentation texture.
       const fogVs=`attribute vec3 a;attribute vec2 uv;uniform vec2 r;uniform vec2 maskSize;varying mediump vec2 vuv;void main(){vec2 p=a.xy/r*2.0-1.0;gl_Position=vec4(p.x,-p.y,a.z,1.0);vuv=(uv*(maskSize-1.0)+0.5)/maskSize;}`,
-        fogFs=`precision mediump float;varying mediump vec2 vuv;uniform sampler2D tex;uniform vec4 fog;void main(){float vis=texture2D(tex,vuv).r;float edge=smoothstep(.12,.88,vis);gl_FragColor=vec4(fog.rgb,fog.a*(1.0-edge));}`;
+        fogFs=`precision mediump float;varying mediump vec2 vuv;uniform sampler2D tex;uniform sampler2D previousTex;uniform float transition;uniform vec4 fog;void main(){float vis=mix(texture2D(previousTex,vuv).r,texture2D(tex,vuv).r,transition);float edge=smoothstep(.12,.88,vis);gl_FragColor=vec4(fog.rgb,fog.a*(1.0-edge));}`;
       this.fogProgram=gl.createProgram();
       gl.attachShader(this.fogProgram,mk(gl.VERTEX_SHADER,fogVs));gl.attachShader(this.fogProgram,mk(gl.FRAGMENT_SHADER,fogFs));gl.linkProgram(this.fogProgram);
       if(!gl.getProgramParameter(this.fogProgram,gl.LINK_STATUS))throw new Error("Fog shader link failed: "+gl.getProgramInfoLog(this.fogProgram));
       this.fogA=gl.getAttribLocation(this.fogProgram,"a");this.fogUv=gl.getAttribLocation(this.fogProgram,"uv");
       this.fogR=gl.getUniformLocation(this.fogProgram,"r");this.fogTexUniform=gl.getUniformLocation(this.fogProgram,"tex");this.fogColorUniform=gl.getUniformLocation(this.fogProgram,"fog");
+      this.fogPreviousTexUniform=gl.getUniformLocation(this.fogProgram,"previousTex");this.fogTransitionUniform=gl.getUniformLocation(this.fogProgram,"transition");
       this.fogMaskSizeUniform=gl.getUniformLocation(this.fogProgram,"maskSize");
       this.fogBuf=gl.createBuffer();this.fogFrame=new ReusableFloat32Buffer(5*8192);this._fogGpuCapacityBytes=0;
       this.fogTextures=new Map();this._fogTextureKey=null;this.fogMaskStep=64;
+      this.fogPreviousTextures=new Map();this.fogMaskRecords=new Map();this.fogTransitionDurationMs=STATE_PUBLISH_INTERVAL_MS;
+      this._fogTransitionStartedAt=null;this._fogMaskContext=null;
 
 
     // Reusable CPU staging buffer + persistent GPU allocation. This removes the
@@ -29364,6 +29370,7 @@ class GLRenderer{
 
   setSnapshot(s,{liveTargets=false,snapTargets=false}={}){
     const old=this.snapshot;
+    if(snapTargets||!old)this.resetFogTransition();
     this.world=WorldContext.forState(s);
     this.snapshot=s;
     this.snapshotReceivedAt=performance.now();
@@ -32601,7 +32608,17 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     for(const [id,texture] of this.fogTextures)if(!surfaces.has(Number(id.slice(6)))){
       this.gl.deleteTexture(texture);this.fogTextures.delete(id);
     }
+    for(const [id,texture] of this.fogPreviousTextures)if(!surfaces.has(Number(id.slice(6)))){
+      this.gl.deleteTexture(texture);this.fogPreviousTextures.delete(id);
+    }
+    this.resetFogTransition();
     this.fogSurfaces=surfaces;this._fogSurfaceAtlas=atlas;this._fogTextureKey=null;
+  }
+  resetFogTransition(){
+    this._fogTransitionStartedAt=null;this._fogMaskContext=null;this._fogTextureKey=null;this.fogMaskRecords.clear();
+  }
+  fogTransitionAmount(now=performance.now()){
+    return this._fogTransitionStartedAt==null?1:RangeUtil.clamp((now-this._fogTransitionStartedAt)/this.fogTransitionDurationMs,0,1);
   }
   ensureFogTextures(){
     if(!this.snapshot)return null;
@@ -32609,14 +32626,31 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       key=`${this.snapshot.tick}|${this.replayVisionMode||this.mySide()}|${this.replayObserverAll?1:0}|${this.world.width}x${this.world.height}|${atlas.maxLevel}|${w}x${h}`;
     this.prepareFogSurfaces(atlas);
     if(this._fogTextureKey===key&&this._fogVisionGrid===this.visionGridBySide)return this.fogMaskSize;
-    const upload=(id,data)=>{let tex=this.fogTextures.get(id);if(!tex){tex=gl.createTexture();this.fogTextures.set(id,tex)}gl.bindTexture(gl.TEXTURE_2D,tex);
+    const now=performance.now(),perspective=`${this.orientationRole()}|${this.replayVisionMode||this.mySide()}|${this.replayObserverAll?1:0}`,
+      previous=this._fogMaskContext,delta=Number(this.snapshot.tick)-Number(previous?.tick),
+      continuous=previous?.atlas===atlas&&previous.perspective===perspective&&previous.w===w&&previous.h===h&&delta>0&&delta<=Math.ceil((Number(this.snapshot.rules?.simulation?.tps)||SIM_TPS)*.25),
+      amount=this.fogTransitionAmount(now);
+    const upload=(textures,id,data)=>{let tex=textures.get(id);if(!tex){tex=gl.createTexture();textures.set(id,tex)}gl.bindTexture(gl.TEXTURE_2D,tex);
       gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
       gl.texImage2D(gl.TEXTURE_2D,0,gl.LUMINANCE,w,h,0,gl.LUMINANCE,gl.UNSIGNED_BYTE,data);return tex};
     const make=level=>{const a=new Uint8Array(w*h);for(let j=0;j<h;j++){const y=j/(h-1)*this.world.height;for(let i=0;i<w;i++){const x=i/(w-1)*this.world.width;
       a[j*w+i]=this.visibleRawAtLevel(x,y,level)?255:0}}return a};
     // Levels need not be contiguous: only surfaces that exist need a texture.
-    for(const level of this.fogSurfaces.keys())upload(`level:${level}`,make(level));
+    for(const level of this.fogSurfaces.keys()){
+      const id=`level:${level}`,target=make(level),record=this.fogMaskRecords.get(id);
+      // Blend only the presentation mask. Exact entity visibility continues to use
+      // VisibilityPolicy against the current snapshot, never these texture values.
+      let from=target;
+      if(continuous&&record){
+        from=new Uint8Array(target.length);
+        for(let i=0;i<from.length;i++)from[i]=Math.round(record.from[i]+(record.target[i]-record.from[i])*amount);
+        upload(this.fogPreviousTextures,id,from);
+      }
+      upload(this.fogTextures,id,target);this.fogMaskRecords.set(id,{from,target});
+    }
+    this._fogTransitionStartedAt=continuous?now:null;
+    this._fogMaskContext={atlas,perspective,tick:this.snapshot.tick,w,h};
     gl.bindTexture(gl.TEXTURE_2D,null);this.fogMaskSize={w,h};
     this._fogTextureKey=key;this._fogVisionGrid=this.visionGridBySide;return this.fogMaskSize;
   }
@@ -32625,24 +32659,27 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     // Slight camera-facing bias keeps the transparent fog coplanar with terrain without z-fighting.
     this.fogFrame.push5(q.x,q.y,q.depth-.00035,u,v);
   }
-  flushFog(texture,color){
+  flushFog(texture,color,previousTexture=texture){
     if(!this.fogFrame.length||!texture)return;const gl=this.gl,d=this.fogFrame.view(),bytes=this.fogFrame.length*4;
-    gl.useProgram(this.fogProgram);gl.uniform2f(this.fogR,this.canvas.width,this.canvas.height);gl.uniform4f(this.fogColorUniform,...color);gl.uniform1i(this.fogTexUniform,0);
+    gl.useProgram(this.fogProgram);gl.uniform2f(this.fogR,this.canvas.width,this.canvas.height);gl.uniform4f(this.fogColorUniform,...color);gl.uniform1i(this.fogTexUniform,0);gl.uniform1i(this.fogPreviousTexUniform,1);
+    gl.uniform1f(this.fogTransitionUniform,this.fogTransitionAmount());
     gl.uniform2f(this.fogMaskSizeUniform,this.fogMaskSize.w,this.fogMaskSize.h);
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.bindBuffer(gl.ARRAY_BUFFER,this.fogBuf);
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,this._fogTransitionStartedAt==null?texture:previousTexture);gl.activeTexture(gl.TEXTURE0);
     if(this._fogGpuCapacityBytes<this.fogFrame.data.byteLength){gl.bufferData(gl.ARRAY_BUFFER,this.fogFrame.data.byteLength,gl.DYNAMIC_DRAW);this._fogGpuCapacityBytes=this.fogFrame.data.byteLength}
     gl.bufferSubData(gl.ARRAY_BUFFER,0,d);gl.enableVertexAttribArray(this.fogA);gl.vertexAttribPointer(this.fogA,3,gl.FLOAT,false,20,0);
     gl.enableVertexAttribArray(this.fogUv);gl.vertexAttribPointer(this.fogUv,2,gl.FLOAT,false,20,12);gl.drawArrays(gl.TRIANGLES,0,this.fogFrame.length/5);
     this.perfStats.drawCalls=(this.perfStats.drawCalls||0)+1;this.perfStats.bufferUploadBytes=(this.perfStats.bufferUploadBytes||0)+bytes;this.fogFrame.reset();
   }
   drawFog(){
-    if(this.replayObserverAll||!this.snapshot)return;this.ensureFogTextures();
+    if(this.replayObserverAll||!this.snapshot){this.resetFogTransition();return}this.ensureFogTextures();
     const gl=this.gl,color=this.replayVisionMode?[.008,.012,.018,.96]:[.025,.045,.048,.88],sign=this.orientationRole()==='guest'?-1:1;
     const emitPatch=(patch)=>{if(patch.kind==='cliff'&&patch.outwardY*sign<=1e-8)return;for(const tri of patch.triangles)for(const i of tri)this.fogVertex(patch.vertices[i])};
     gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
     // The atlas clips the base floor around authored surfaces, including depressions.
     // Fog uses those same patches so an implicit level-0 plane cannot cover a lower floor.
-    for(const [level,patches] of this.fogSurfaces){this.fogFrame.reset();for(const patch of patches)emitPatch(patch);this.flushFog(this.fogTextures.get(`level:${level}`),color)}
+    for(const [level,patches] of this.fogSurfaces){this.fogFrame.reset();for(const patch of patches)emitPatch(patch);this.flushFog(this.fogTextures.get(`level:${level}`),color,this.fogPreviousTextures.get(`level:${level}`))}
+    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,null);gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D,null);gl.useProgram(this.p);gl.uniform2f(this.r,this.canvas.width,this.canvas.height);gl.disable(gl.DEPTH_TEST);gl.depthMask(false);
   }
   drawFogLandmarks(){
@@ -42291,17 +42328,17 @@ AppLifecycle.runBootAndStartApp();
 {
   "version": "v73",
   "kind": "current-ssot",
-  "build": "20261002T151928+0900-rf-procedural-river-banks-v73",
-  "simVersion": 180,
+  "build": "20261002T180513+0900-rf-shallow-terrain-fog-v73",
+  "simVersion": 181,
   "ssot": {
     "runtime": "Current executable code and top development contract are authoritative.",
-    "terrain": "terrain.layers[].level is the only authored elevation SSOT. Levels are signed integer world tiers with no arbitrary gameplay floor/ceiling; base level is 0, elevation is level * 96 and the innermost containing region owns each surface, including negative floors and level-0 islands.",
+    "terrain": "terrain.layers[].level is the only authored elevation SSOT. Levels are signed integer world tiers with no arbitrary gameplay floor/ceiling; base level is 0, elevation derives from the shared level conversion (48 per positive tier, 24 per negative tier) and the innermost containing region owns each surface, including negative floors and level-0 islands.",
     "vision": "Ground vision cannot see a higher target level and is blocked by higher intermediate terrain or blocksVision occluders. Air/Flare ignore elevation occlusion; allied vision is shared. Detection remains a separate gate.",
     "combat": "Ground ranged attacks from a lower level to a higher ground target deterministically miss 50%. Level gap does not stack. Ground melee and any air-involved attack are exempt; projectile miss is fixed at launch. High-to-low attacks briefly reveal the attacker.",
     "occlusion": "Terrain blockers independently declare blocksMovement, blocksVision, blocksProjectile and blocksAirVision. Surface cliffs block ground movement but do not intrinsically block projectiles.",
     "campaign": "Built-in campaign schema 7 remains authoritative; all seven Frontier Opening missions are independent maps and mission 2 now uses level/ramp terrain instead of legacy hills.",
     "network": "Nostr signaling plus WebRTC DataChannel is the online transport; LOCAL 2P reuses GameSession and StrategySim.",
-    "compatibility": "SIM_VERSION 180 rejects prior replay/state contracts after continuous river banks, level-based bridge supports and generator version 10."
+    "compatibility": "SIM_VERSION 181 rejects prior replay/state contracts after shallower signed elevation tiers (positive 48, negative 24) and generator version 10."
   },
   "verification": {
     "static": {
@@ -42313,8 +42350,9 @@ AppLifecycle.runBootAndStartApp();
       "terrainVisionQA": "PASS scoped — signed nested floors/islands, negative ramp navigation, raised-terrain LOS between separate basins, air vision and host/guest picking; prior full combat-balance suite was not rerun in this pass",
       "rampMovement": "PASS scoped — continuous closed river banks, corner/cap gradients and bidirectional navigation; 2338 generated-bank traversals pass across 12 accepted default maps; bridge ends connect to land level 0",
       "local2p": "NOT RUN in this signed-terrain pass; actual single-campaign local WebRTC/GameSession and final replay checksum were exercised",
-      "terrainPresentation": "PASS scoped — signed/bank/bridge meshes align picking and Fog; bridge-clipped variable vertex patches, dry islands and viewport culling pass real WebGL; host/guest water viewport RGBA is unchanged by culling",
-      "webgl": "PASS — Edge/Chromium headless with SwiftShader/ANGLE; ground pass dropped from about 160ms to 1.2ms latest / 2.9ms EWMA in the profiled UI run; zero GL/page errors",
+      "terrainPresentation": "PASS scoped — positive 48 / negative 24 tiers align signed floors, banks, bridges, picking, water and Fog; cross-zero ramps split at physical midpoint; 13 signed and 11 river-bank groups pass real WebGL",
+      "fogTransition": "PASS scoped — binary-mask flash reproduced on actual GPU; 100ms display transition and interrupted updates are continuous; perspective/world/seek/snap reset immediately without changing exact visibility",
+      "webgl": "PASS scoped — Edge/Chromium headless with SwiftShader/ANGLE; asymmetric signed tiers and actual generated-river combat render with zero page errors. The prior 1.2ms ground-pass measurement was not repeated for this build.",
       "singleCampaignUi": "PASS scoped — automatic generated-river Mission JS imported through UI, real local WebRTC/GameSession, natural bank combat to victory UI",
       "replayUi": "PASS scoped — recorded combat opens through result UI; guest orientation/vision, zoom and timeline seek reach generated-river combat end tick 102 with original final checksum 51d4cc7c and zero page errors"
     }
