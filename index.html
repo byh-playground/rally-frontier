@@ -57,6 +57,7 @@ PURPOSE
 - Map Descriptor의 terrain.blockers / layers / ramps가 지형 SSOT다. TerrainSurfaceAtlas가 고지 면·경사로·절벽 접촉면·NavMesh seam을 함께 파생한다. 렌더·미니맵·건설·spawn·일반 이동·외력 제한은 같은 geometry를 사용한다. 경사로 외의 층 전환과 경사로 위 일반 건설은 금지한다.
 - 지형 표면의 실제 삼각형과 정점 높이를 렌더 깊이·화면 역투영이 함께 사용한다. 고지 바닥을 별도 고정 깊이로 칠하거나 절벽 뒤 지면을 클릭하지 않는다. 유닛·그림자·건물의 primitive와 캐시는 지지면 깊이를 적용하되 simulation 위치를 시각 보정으로 변경하지 않는다.
 - 일반 절차맵도 같은 지형 시스템을 사용한다. 전투 공간·연결 통로·고지대·경사로의 배치는 MapGeneration이 소유하고, 본진·점령지·자원·중립의 유효한 배치와 접근성을 공통 geometry로 검증한다. 지형 높이는 level 하나만 SSOT로 사용하며 특정 버전의 벽 개수나 배치 레시피를 장기 계약에 고정하지 않는다.
+- level은 부호 있는 정수이며 기본 지면은 0이다. 음수·양수에 임의의 게임상 상한/하한을 두지 않고 높이는 level * 96으로 파생한다. 중첩 지형은 가장 안쪽 영역이 표면을 소유한다. 기본 지면도 함몰면·섬·경사로를 제외한 실제 mesh로 만들고 렌더·Fog·클릭이 같은 표면을 사용한다.
 - 이동 명령의 점 목표와 공격·채집·반납·건설·치유의 상호작용 영역 목표를 구분한다. 실제 사거리·최소 사거리·지형 접촉 규칙은 InteractionGeometry가 한 번 정의하며 판정과 NavigationGoal이 공유한다. 건물 중심 투영이나 고정 각도 접근점을 작업 목표로 사용하지 않는다.
 - 지상 경로는 도달 가능한 목표 영역 전체를 종점으로 하는 목적지/충돌 크기별 공유 역방향 NavMesh portal field로 계산하고 근거리 충돌은 기존 solver를 유지한다. 직선이 열리면 즉시 직진한다. 유닛마다 매 tick 전체 맵을 탐색하지 않는다. 경로 cache는 결과를 바꾸지 않는 파생 상태이며 저장/체크섬에서 제외한다.
 - NavMesh는 경로를 선택하고 SurfaceMotion은 그 경로의 이동·외력·군중 보정을 동일한 건물/지형 접촉으로 처리한다. 검증된 부분 이동을 틱 시작점부터의 직선으로 다시 잘라내지 않는다. 접선 투영은 공통화하되 외력에 자발적인 우회 속도를 추가하지 않는다.
@@ -9748,6 +9749,8 @@ body.campaign-mode #p2pHealthText {
 <section id="help-draft" class="wiki-section"><h2><span class="wiki-num">4.</span> 드래프트와 덱</h2><p><b>드래프트</b>는 제시된 카드 중 하나를 고르면 나머지를 상대가 얻습니다. 제한시간과 선택자는 화면에 표시되며 시간이 끝나면 결정론적인 자동 선택이 적용됩니다. 상대의 공중·은신과 내 대공·Detection 보유 표시를 함께 보세요.</p><p><b>덱 선택</b>은 저장된 덱을 확정해서 시작합니다. 편집 중 카드를 누르면 다음 빈칸에 추가하고 다시 누르면 제거합니다. 저장 형식이나 카드 구성이 호환되지 않으면 시작을 차단합니다. 단순 SIM_VERSION 변경은 저장 덱을 무효화하지 않습니다.</p><div id="helpDeckFacts" class="wiki-note"></div><p>양쪽 선택이 끝나면 확정 로스터와 실제 맵을 미리 보여 준 뒤 전투를 시작합니다. 미리보기는 사용자의 전장 시점과 맵 종횡비를 유지합니다.</p></section>
 <section id="help-map" class="wiki-section"><h2><span class="wiki-num">5.</span> 맵과 전선</h2><p>기본 일반전은 <b>4200 × 4800</b> 전장에서 <b>TOP / MID / BOT</b> 축으로 본진과 점령지를 연결합니다. 절차 생성 맵은 각 전선에 영구 절벽·뿌리 지형을 적극 배치해 직선 진군만 반복되지 않게 하며, 벽 양끝의 열린 측면을 통해 우회할 수 있습니다. 길·강·고지·중립 배치도 시드에 따라 달라집니다. 수제 캠페인은 같은 맵 시스템에 위치와 콘텐츠를 선언하며 미네랄·가스는 기지·점령지 자원권과 연결됩니다.</p><div id="helpWorldFacts" class="wiki-note"></div><p>큰 캠페인 맵을 플레이한 뒤 일반전을 시작해도 이전 맵의 크기·본진 좌표를 재사용하지 않습니다. 미니맵의 밝은 영역은 현재 확보한 시야이며 상대 본진 같은 공개 랜드마크와 현재 관측 정보는 다릅니다.</p></section>
 <section id="help-terrain" class="wiki-section"><div class="wiki-note"><b>level 기반 고지와 경사로:</b> 모든 지면 높이는 <b>level 0, 1, 2…</b> 하나로 정의하며 상한은 없습니다. 레벨당 실제 높이가 자동 누적되고 지상군은 연결된 경사로로만 층을 오르내립니다. 오르막 감속은 각 경사로 진행도에 따라 100/85/70/50%로 적용되고 정상·내리막은 일반 속도입니다.</div><h2><span class="wiki-num">6.</span> 지형</h2><div class="wiki-table-wrap"><table class="wiki-table"><tr><th>지형</th><th>전투 의미</th></tr><tr><td>강</td><td>지상 이동이 느려지고 피격 피해가 증가합니다. 도하 중인 적을 노리고 강 안의 장기 교전을 피하세요.</td></tr><tr><td>고지</td><td>낮은 지상 시야는 더 높은 level의 지상을 볼 수 없습니다. 아군이 시야를 제공하면 낮은 지상의 원거리 공격도 가능하지만 50% 확률로 빗나갑니다. 레벨 차이가 커져도 페널티는 누적되지 않습니다.</td></tr><tr><td>다리</td><td>실제 다리 영역은 평지입니다. 강 패널티를 피하는 도하로가 되며 캠페인의 배치는 수제 맵에 따릅니다.</td></tr><tr><td>공중</td><td>지형 level에 의한 시야·명중 페널티와 지상 이동 제약을 무시해 고지 정찰과 포병 관측에 사용할 수 있습니다.</td></tr></table></div><p>고지에서 낮은 적을 공격하면 공격자는 잠시 드러나 반격할 수 있습니다. 시야는 진영 전체가 공유하므로 정찰병이 본 목표를 장거리 포병이 공격할 수 있습니다.</p><div class="wiki-note"><b>절벽·벽 차폐:</b> 지형은 이동 차단, 시야 차단, 투사체 차단을 각각 독립적으로 선언합니다. level 경계의 절벽은 경사로 밖 지상 이동을 막지만 투사체는 기본적으로 통과합니다. 시야 차폐 벽은 지상 LOS를 가리며, 투사체 차단이 별도로 켜진 벽만 실제 탄환도 막습니다. <b>굳은 뿌리 장벽</b>은 파괴 가능한 이동·시야 차폐 지형 건물이며 투사체는 기본 통과합니다.</div></section>
+<div class="wiki-note"><b>지형 높이:</b> 기본 지면은 level 0이며, 낮은 함몰면에는 음수 level을 사용합니다. 강바닥 -1과 그 안의 level 0 섬처럼 높고 낮은 지형을 중첩할 수 있습니다. 함몰면에서도 높은 지면을 향한 지상 시야와 원거리 빗나감 규칙이 적용됩니다.</div>
+<div class="wiki-note"><b>기본 맵의 강:</b> 강바닥은 level -1이고, 양쪽 강둑은 level 0 지면에 연결되는 통과 가능한 연속 경사면입니다. 다리는 강둑을 넘어 양쪽 level 0 평지에 닿습니다. 강바닥의 이동 감속과 도하 중 피격 규칙은 그대로 적용됩니다.</div>
 <div class="wiki-note"><b>고지대와 경사로 표시:</b> 경사로는 낮은 입구에서 고지대 윗면까지 연속으로 연결됩니다. 절벽에 가려진 면은 보이는 것처럼 선택할 수 없으며, 클릭은 화면에 실제로 보이는 지형 면을 기준으로 합니다. 지상 병력은 경사로에서만 오르내립니다.</div>
 <section id="help-economy" class="wiki-section"><h2><span class="wiki-num">7.</span> 경제와 보급</h2><p>일꾼은 자원을 채취해 가까운 완공 메인·전진 거점으로 반납하고 건설 현장에 배정되면 채집을 잠시 멈춥니다. 일꾼은 거점 선택 화면에서 생산합니다.</p><div id="helpEconomyFacts" class="wiki-note"></div><p>가스 지점에는 먼저 추출장을 지어야 합니다. 추출장 완공 때 가장 가까운 거점의 가스 배정 목표를 늘리며, 이후에는 거점의 − / +로 직접 조절할 수 있습니다. 유효한 추출장이 없으면 해당 일꾼은 미네랄로 복귀합니다. 미네랄은 고갈되면 없어지고 가스는 고갈 후에도 낮은 효율로 채취합니다.</p><div class="wiki-note"><b>보급은 살아 있는 유닛과 생산 중인 batch를 합산</b>합니다. 선호 batch 전체가 들어가지 않아도 여유 보급에 들어가는 수부터 생산하고 나머지 계약을 이어갑니다. 이미 시작한 batch의 예약 보급은 출격까지 유지합니다. 생산시설의 출구가 막혔으면 완성된 batch가 안전하게 나갈 때까지 대기합니다.</div><p>병종 생산축은 건설할 때 미네랄·가스를 지불하고 유한한 계약량을 자동 생산합니다. 계약이 모두 출격한 뒤 시설이 소진됩니다. 취소·철거·소진은 실제 지불 비용 기준 환불이며 적에게 파괴된 건물은 환불하지 않습니다.</p></section>
 <section id="help-capture" class="wiki-section"><h2><span class="wiki-num">8.</span> 중립·점령·전진 거점</h2><p>일반 중립과 캠페인 주둔군은 자기 영역을 지키는 별도 행동 Controller를 사용합니다. 적대 주둔군은 일반 적과 함께 전투 대상으로 평가하고, 우호 주둔군은 공격하지 않습니다. 미션의 공격대는 주둔군과 달리 실제 이동·공격 명령으로 전선을 압박합니다.</p><div class="wiki-note">어그로 게이지는 서식지 밖 교전의 허용량입니다. 강제 귀환 중에는 회복하지만 대기·교전 중에는 회복하지 않습니다. 서식지 안에서 다시 공격받으면 교전에 복귀합니다. 일반 복귀나 원위치 도착만으로 체력을 강제로 채우지 않습니다.</div><div id="helpCaptureFacts" class="wiki-note"></div><p>점령을 막는 적을 제거하고 지상 전투 병력을 반경 안에 유지하세요. 공중은 단독 점령할 수 없지만 적 공중도 점령을 방해합니다. 점령 완료로 생성된 전진 거점은 자원 반납·일꾼 생산·시야·건설권을 제공합니다.</p><p>메인 오브젝트는 막타 진영에 합류하면 지정 레인을 따라 전진하고 일반 깃발을 따르지 않습니다. 획득 개체가 죽은 뒤에야 중립 재등장 대기가 시작됩니다. 전술 오브젝트의 상자는 원하는 때 전술 메뉴에서 열고 보상을 선택합니다.</p><div id="helpNeutralTable" class="wiki-table-wrap"></div></section>
@@ -10579,7 +10582,7 @@ body.campaign-mode #p2pHealthText {
 // Single source of truth for this HTML artifact.
 // The timestamp lives only inside BUILD_ID. updatedAt is derived from it, so the
 // build identity and the visible/exported update time cannot drift apart.
-const BUILD_ID="20261002T013102+0900-rf-ramp-fog-level-masks-v73";
+const BUILD_ID="20261002T151928+0900-rf-procedural-river-banks-v73";
 
 class BuildMetadata{
   static buildUpdatedAtFromId(buildId){
@@ -10597,7 +10600,7 @@ const BUILD_META=Object.freeze({
 /* =========================
    1. Definitions
    ========================= */
-const SIM_TPS=10,FP=100,SIM_VERSION=178,CHECKSUM_EVERY=80,COMMAND_DELAY_MS=500;
+const SIM_TPS=10,FP=100,SIM_VERSION=180,CHECKSUM_EVERY=80,COMMAND_DELAY_MS=500;
 
 // Authoritative time contract:
 // - balance/design data uses integer milliseconds
@@ -10629,7 +10632,7 @@ class GameRuleDefinition{
     setup:{preset:"standard",startingTech:1,startingBuildings:[],startingSupplyBuildings:0},
     draft:{pickTimeoutMs:5000},
     map:{
-      generator:"procedural-frontier",generatorVersion:9,width:4200,height:4800,biome:"frontier",
+      generator:"procedural-frontier",generatorVersion:10,width:4200,height:4800,biome:"frontier",
       topology:"mixed",symmetry:"rotational-180",openness:.5,chokeDensity:.5,obstacleDensity:.5,
       content:{resourcePlacement:"objective-auto",resourceAmounts:{baseMineral:700,baseGas:1600,objectiveMineral:900,objectiveGas:1800}},
       spawns:{host:{x:525,y:4285},guest:{x:3675,y:515}},
@@ -10942,7 +10945,24 @@ class BattlefieldProjection{
 class TerrainSurfaceProjection{
   static owners=new WeakMap();
   static forAtlas(atlas){let owner=this.owners.get(atlas);if(!owner){owner=new TerrainSurfaceProjection(atlas);this.owners.set(atlas,owner)}return owner}
-  constructor(atlas){this.atlas=atlas;this.projectedMeshCache=new Map()}
+  constructor(atlas){this.atlas=atlas;this.projectedMeshCache=new Map();this.renderProjectedMeshCache=new Map();this.projectedTriangleCaches=new WeakMap()}
+  projectedTriangleMesh(mesh,flipped=false){
+    let cache=this.projectedTriangleCaches.get(mesh);if(!cache)this.projectedTriangleCaches.set(mesh,cache=new Map());
+    const key=(flipped?1:0)+":"+BattlefieldProjection.heightScale;let value=cache.get(key);if(value)return value;
+    const triangles=mesh.map((tri,order)=>TerrainSurfaceAtlas.bounds({tri,order,points:tri.vertices.map(v=>({x:flipped?this.atlas.width-v.x:v.x,y:BattlefieldProjection.planarY(flipped?this.atlas.height-v.z:v.z,v.y)}))}));
+    value={triangles,index:new NavigationObstacleIndex(triangles)};cache.set(key,value);return value;
+  }
+  renderProjectedSurfaceMesh(flipped=false){
+    const mesh=this.atlas.renderSurfaceMesh||this.atlas.surfaceMesh,key=(flipped?1:0)+":"+BattlefieldProjection.heightScale;
+    let cached=this.renderProjectedMeshCache.get(key);if(cached?.mesh===mesh)return cached;
+    const triangles=[],sign=flipped?-1:1;
+    for(const patch of mesh){
+      if(patch.kind==='cliff'&&patch.outwardY*sign<=1e-8)continue;
+      const points=patch.vertices.map(v=>({x:flipped?this.atlas.width-v.x:v.x,y:BattlefieldProjection.planarY(flipped?this.atlas.height-v.z:v.z,v.y)}));
+      for(const indices of patch.triangles)triangles.push(TerrainSurfaceAtlas.bounds({points:indices.map(i=>points[i]),vertices:indices.map(i=>patch.vertices[i]),indices,patch,order:triangles.length}));
+    }
+    cached={mesh,triangles,index:new NavigationObstacleIndex(triangles)};this.renderProjectedMeshCache.set(key,cached);return cached;
+  }
   projectedSurfaceMesh(flipped=false){
     const key=(flipped?1:0)+":"+BattlefieldProjection.heightScale;let cached=this.projectedMeshCache.get(key);if(cached)return cached;
     const triangles=[],sign=flipped?-1:1;
@@ -10951,7 +10971,9 @@ class TerrainSurfaceProjection{
       const points=patch.vertices.map(p=>({x:flipped?this.atlas.width-p.x:p.x,y:BattlefieldProjection.planarY(flipped?this.atlas.height-p.z:p.z,p.y)}));
       for(const tri of patch.triangles){const p=tri.map(i=>points[i]),[a,b,c]=p;
         const den=(b.y-c.y)*(a.x-c.x)+(c.x-b.x)*(a.y-c.y);if(Math.abs(den)<1e-8)continue;
-        triangles.push(TerrainSurfaceAtlas.bounds({points:p,vertices:tri.map(i=>patch.vertices[i]),kind:patch.kind,id:patch.id,den}));
+        const vertices=tri.map(i=>patch.vertices[i]),[u,v,w]=vertices,worldDen=(v.x-u.x)*(w.z-u.z)-(v.z-u.z)*(w.x-u.x);
+        const gradient=Math.abs(worldDen)>1e-8?{x:((v.y-u.y)*(w.z-u.z)-(w.y-u.y)*(v.z-u.z))/worldDen,z:((v.x-u.x)*(w.y-u.y)-(w.x-u.x)*(v.y-u.y))/worldDen}:null;
+        triangles.push(TerrainSurfaceAtlas.bounds({points:p,vertices,kind:patch.kind,id:patch.id,den,gradient}));
       }
     }
     const transitions=this.atlas.surfaceMesh.filter(p=>p.kind==='cliff'||p.kind==='ramp').map(p=>TerrainSurfaceAtlas.bounds({points:p.vertices.map(v=>({x:flipped?this.atlas.width-v.x:v.x,y:BattlefieldProjection.planarY(flipped?this.atlas.height-v.z:v.z,v.y)}))}));
@@ -10959,22 +10981,24 @@ class TerrainSurfaceProjection{
   }
   pickSurface(viewX,projectedY,flipped=false){
     const ax=flipped?this.atlas.width-viewX:viewX,az=flipped?this.atlas.height-projectedY:projectedY;
-    let best={x:ax,y:0,z:az,groundY:0,kind:'low-ground'};
+    let best=null;
     for(const tri of this.projectedSurfaceMesh(flipped).index.query(viewX,projectedY)){
       const [a,b,c]=tri.points,wa=((b.y-c.y)*(viewX-c.x)+(c.x-b.x)*(projectedY-c.y))/tri.den;
       const wb=((c.y-a.y)*(viewX-c.x)+(a.x-c.x)*(projectedY-c.y))/tri.den,wc=1-wa-wb;
       if(Math.min(wa,wb,wc)<-1e-7)continue;
       const [p,q,r]=tri.vertices,height=wa*p.y+wb*q.y+wc*r.y;
-      if(height<best.y-1e-6||Math.abs(height-best.y)<=1e-6&&tri.kind==='cliff')continue;
-      best={x:wa*p.x+wb*q.x+wc*r.x,y:height,z:wa*p.z+wb*q.z+wc*r.z,groundY:0,kind:tri.kind,id:tri.id};
+      if(best&&(height<best.y-1e-6||Math.abs(height-best.y)<=1e-6&&tri.kind==='cliff'))continue;
+      best={x:wa*p.x+wb*q.x+wc*r.x,y:height,z:wa*p.z+wb*q.z+wc*r.z,groundY:0,kind:tri.kind,id:tri.id,gradient:tri.gradient};
     }
-    return best;
+    return best||{x:ax,y:this.atlas.heightAt(ax,az),z:az,groundY:0,kind:'outside-map'};
   }
 }
 
 const TERRAIN_LEVEL_HEIGHT=96;
 class TerrainSurfaceAtlas{
   static cache=new WeakMap();
+  static rampPlaneCache=new WeakMap();
+  static rampVisionCache=new WeakMap();
   static fromMap(map){let value=this.cache.get(map);if(!value){value=new TerrainSurfaceAtlas(map);this.cache.set(map,value)}return value}
   static bounds(item){const p=item.points;return Object.assign(item,{minX:Math.min(...p.map(v=>v.x)),maxX:Math.max(...p.map(v=>v.x)),minY:Math.min(...p.map(v=>v.y)),maxY:Math.max(...p.map(v=>v.y))})}
   static lerp(a,b,t){return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t}}
@@ -11019,14 +11043,94 @@ class TerrainSurfaceAtlas{
     return false;
   }
   static wall(a,b,id){const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy);if(len<.01)return null;const x=-dy/len*2,y=dx/len*2;return{id,kind:'cliff',surfaceBoundary:true,blocksMovement:true,blocksVision:false,blocksProjectile:false,points:[{x:a.x+x,y:a.y+y},{x:b.x+x,y:b.y+y},{x:b.x-x,y:b.y-y},{x:a.x-x,y:a.y-y}]}}
+  static flatMesh(contour,holes,elevation){
+    // WorldContext's empty rectangular map is constructed before geometry helpers.
+    if(!holes.length&&contour.length===4&&contour.every((p,i)=>{const q=contour[(i+1)%4];return p.x===q.x||p.y===q.y}))return{
+      vertices:contour.map(p=>({x:p.x,y:typeof elevation==='function'?elevation(p.x,p.y):elevation,z:p.y,groundY:0})),triangles:[[0,1,2],[0,2,3]]};
+    // Exact vertical decomposition of one floor minus its child floors and ramps.
+    // Every vertex/intersection is a slab boundary, so each open interval has a
+    // constant polygon membership and its four corners lie on original edges.
+    const polygons=[contour,...holes],edges=[],xs=[];
+    for(const points of polygons)for(let i=0;i<points.length;i++){
+      const a=points[i],b=points[(i+1)%points.length];xs.push(a.x);
+      if(Math.abs(a.x-b.x)>1e-9)edges.push({a,b,minX:Math.min(a.x,b.x),maxX:Math.max(a.x,b.x),slope:(b.y-a.y)/(b.x-a.x)});
+    }
+    const at=(e,x)=>e.a.y+(x-e.a.x)*e.slope;
+    for(let i=0;i<edges.length;i++)for(let j=i+1;j<edges.length;j++){
+      const a=edges[i],b=edges[j],d=a.slope-b.slope;if(Math.abs(d)<1e-10)continue;
+      const x=(b.a.y-b.slope*b.a.x-a.a.y+a.slope*a.a.x)/d;
+      if(x>Math.max(a.minX,b.minX)+1e-8&&x<Math.min(a.maxX,b.maxX)-1e-8)xs.push(x);
+    }
+    xs.sort((a,b)=>a-b);const cuts=xs.filter((x,i)=>!i||x-xs[i-1]>1e-8),vertices=[],triangles=[];
+    for(let i=1;i<cuts.length;i++){
+      const left=cuts[i-1],right=cuts[i],mid=(left+right)/2;
+      const active=edges.filter(e=>e.minX<mid&&e.maxX>mid).sort((a,b)=>at(a,mid)-at(b,mid));
+      for(let j=1;j<active.length;j++){
+        const lower=active[j-1],upper=active[j],y=(at(lower,mid)+at(upper,mid))/2;
+        if(at(upper,mid)-at(lower,mid)<1e-8||!MapGeometry.pointInSimplePolygon(mid,y,contour)||holes.some(p=>MapGeometry.pointInSimplePolygon(mid,y,p)))continue;
+        const start=vertices.length;vertices.push(...[{x:left,y:at(lower,left)},{x:right,y:at(lower,right)},{x:right,y:at(upper,right)},{x:left,y:at(upper,left)}].map(p=>({x:p.x,y:typeof elevation==='function'?elevation(p.x,p.y):elevation,z:p.y,groundY:0})));
+        const p=vertices.slice(start),area=(a,b,c)=>Math.abs((b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x));
+        if(area(p[0],p[1],p[2])>1e-8)triangles.push([start,start+1,start+2]);
+        if(area(p[0],p[2],p[3])>1e-8)triangles.push([start,start+2,start+3]);
+      }
+    }
+    return{vertices,triangles};
+  }
+  static rampTriangle(r,index){
+    let cached=this.rampPlaneCache.get(r);if(!cached){cached=[];this.rampPlaneCache.set(r,cached)}if(cached[index])return cached[index];
+    const vertices=[{...r.lowA,h:r.lowElevation},{...r.lowB,h:r.lowElevation},{...r.highB,h:r.highElevation},{...r.highA,h:r.highElevation}];
+    const [a,b,c]=(index===0?[0,1,2]:[0,2,3]).map(i=>vertices[i]),den=(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+    const gradient={x:((b.h-a.h)*(c.y-a.y)-(c.h-a.h)*(b.y-a.y))/den,z:((b.x-a.x)*(c.h-a.h)-(c.x-a.x)*(b.h-a.h))/den};
+    return cached[index]={points:[a,b,c],gradient,heightAt:(x,y)=>a.h+gradient.x*(x-a.x)+gradient.z*(y-a.y),den};
+  }
+  static sampleRamp(r,x,y){
+    for(let i=0;i<2;i++){
+      const triangle=this.rampTriangle(r,i),[a,b,c]=triangle.points;
+      const u=((x-a.x)*(c.y-a.y)-(y-a.y)*(c.x-a.x))/triangle.den,v=((b.x-a.x)*(y-a.y)-(b.y-a.y)*(x-a.x))/triangle.den;
+      if(u>=-1e-6&&v>=-1e-6&&u+v<=1+1e-6){const elevation=triangle.heightAt(x,y),progress=RangeUtil.clamp((elevation-r.lowElevation)/(r.highElevation-r.lowElevation),0,1);return{elevation,progress,gradient:triangle.gradient,triangleIndex:i}}
+    }
+    return null;
+  }
+  static splitRampAtLevelTransition(patch){
+    const midpoint=(patch.lowLevel+patch.highLevel)*TERRAIN_LEVEL_HEIGHT*.5;
+    const parts={low:{vertices:[],triangles:[]},high:{vertices:[],triangles:[]}};
+    for(const side of ['low','high'])for(const triangle of patch.triangles){
+      const src=triangle.map(i=>patch.vertices[i]),out=[],inside=p=>side==='low'?p.y<=midpoint+1e-8:p.y>=midpoint-1e-8;
+      for(let i=0;i<src.length;i++){
+        const a=src[i],b=src[(i+1)%src.length],aIn=inside(a),bIn=inside(b);if(aIn)out.push({...a});
+        if(aIn!==bIn){const t=(midpoint-a.y)/(b.y-a.y);out.push({x:a.x+(b.x-a.x)*t,y:midpoint,z:a.z+(b.z-a.z)*t,groundY:0})}
+      }
+      const mesh=parts[side],start=mesh.vertices.length;mesh.vertices.push(...out);
+      for(let i=1;i+1<out.length;i++){const a=out[0],b=out[i],c=out[i+1];if(Math.abs((b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x))>1e-8)mesh.triangles.push([start,start+i,start+i+1])}
+    }
+    return parts;
+  }
+  static rampVisionPolygons(r){
+    let cached=this.rampVisionCache.get(r);if(cached)return cached;
+    const patch={lowLevel:r.lowLevel,highLevel:r.highLevel,vertices:[{x:r.lowA.x,y:r.lowElevation,z:r.lowA.y},{x:r.lowB.x,y:r.lowElevation,z:r.lowB.y},{x:r.highB.x,y:r.highElevation,z:r.highB.y},{x:r.highA.x,y:r.highElevation,z:r.highA.y}],triangles:[[0,1,2],[0,2,3]]},split=this.splitRampAtLevelTransition(patch);
+    cached=[];for(const part of [split.low,split.high])for(const tri of part.triangles)cached.push({points:tri.map(i=>({x:part.vertices[i].x,y:part.vertices[i].z}))});
+    this.rampVisionCache.set(r,cached);return cached;
+  }
+  static segmentCuts(x0,y0,x1,y1,polygons){
+    const dx=x1-x0,dy=y1-y0,cuts=[0,1];
+    for(const polygon of polygons)for(let i=0;i<polygon.points.length;i++){
+      const a=polygon.points[i],b=polygon.points[(i+1)%polygon.points.length],ex=b.x-a.x,ey=b.y-a.y,den=dx*ey-dy*ex;
+      if(Math.abs(den)<1e-10)continue;
+      const t=((a.x-x0)*ey-(a.y-y0)*ex)/den,u=((a.x-x0)*dy-(a.y-y0)*dx)/den;
+      if(t>0&&t<1&&u>=-1e-8&&u<=1+1e-8)cuts.push(t);
+    }
+    cuts.sort((a,b)=>a-b);return cuts.filter((t,i)=>!i||t-cuts[i-1]>1e-8);
+  }
   constructor(map){
     this.width=Number(map?.width)||3600;this.height=Number(map?.height)||4200;
-    this.layers=(map?.terrain?.layers||[]).map(p=>TerrainSurfaceAtlas.bounds({...p,level:Number(p.level),elevation:Number(p.level)*TERRAIN_LEVEL_HEIGHT,points:p.points.map(q=>({...q}))}));
+    this.layers=(map?.terrain?.layers||[]).map(p=>TerrainSurfaceAtlas.bounds({...p,level:Number(p.level),elevation:Number(p.level)*TERRAIN_LEVEL_HEIGHT,points:p.points.map(q=>({...q})),...(p.innerPoints?{innerPoints:p.innerPoints.map(q=>({...q}))}:{})}));
     this.ramps=[];this.cliffs=[];this.faces=[];this.seams=[];
-    this.maxLevel=Math.max(0,...this.layers.map(p=>p.level));this.maxHeight=this.maxLevel*TERRAIN_LEVEL_HEIGHT;
+    this.bridges=(map?.terrain?.bridges||[]).map((b,i)=>{const ca=Math.cos(b.angle||0),sa=Math.sin(b.angle||0),points=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([x,y])=>({x:b.x+x*b.halfLength*ca-y*b.halfWidth*sa,y:b.y+x*b.halfLength*sa+y*b.halfWidth*ca}));return TerrainSurfaceAtlas.bounds({...b,id:String(b.id||'bridge-'+i),level:Number(b.level??0),elevation:Number(b.level??0)*TERRAIN_LEVEL_HEIGHT,points})});
+    this.maxLevel=Math.max(0,...this.layers.map(p=>p.level),...this.bridges.map(p=>p.level));this.maxHeight=this.maxLevel*TERRAIN_LEVEL_HEIGHT;
+    this.minLevel=Math.min(0,...this.layers.map(p=>p.level),...this.bridges.map(p=>p.level));this.minHeight=this.minLevel*TERRAIN_LEVEL_HEIGHT;
     const ids=new Set();
     for(const layer of this.layers){
-      if(!layer.id||ids.has(layer.id)||!Number.isInteger(layer.level)||layer.level<1)throw new Error('Invalid terrain layer: '+layer.id);
+      if(!layer.id||layer.id==='low-ground'||ids.has(layer.id)||!Number.isSafeInteger(layer.level)||!Number.isFinite(layer.elevation))throw new Error('Invalid terrain layer: '+layer.id);
       ids.add(layer.id);
       if(layer.points.length<3||layer.points.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)||p.x<0||p.y<0||p.x>this.width||p.y>this.height))throw new Error('Invalid terrain layer polygon: '+layer.id);
       for(let i=0;i<layer.points.length;i++)for(let j=i+2;j<layer.points.length;j++){
@@ -11038,7 +11142,21 @@ class TerrainSurfaceAtlas{
       const area=layer.points.reduce((sum,p,i)=>{const q=layer.points[(i+1)%layer.points.length];return sum+p.x*q.y-q.x*p.y},0);
       if(Math.abs(area)<1)throw new Error('Degenerate terrain layer: '+layer.id);
       layer.area=area;layer.topPoints=[];
+      if(layer.innerPoints){
+        if(layer.innerPoints.length!==layer.points.length||layer.innerPoints.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)||!MapGeometry.pointInSimplePolygon(p.x,p.y,layer.points))||TerrainSurfaceAtlas.boundariesCross(layer.points,layer.innerPoints))throw new Error('Invalid terrain bank inner contour: '+layer.id);
+        PolygonTriangulation.mesh(layer.innerPoints);
+        for(let i=0;i<layer.innerPoints.length;i++)for(let j=i+2;j<layer.innerPoints.length;j++){
+          if(i===0&&j===layer.innerPoints.length-1)continue;
+          const a=layer.innerPoints[i],b=layer.innerPoints[(i+1)%layer.innerPoints.length],c=layer.innerPoints[j],d=layer.innerPoints[(j+1)%layer.innerPoints.length];
+          if(TerrainGeometry.segmentsIntersect(a.x,a.y,b.x,b.y,c.x,c.y,d.x,d.y))throw new Error('Self-intersecting terrain bank: '+layer.id);
+        }
+      }
     }
+    for(const bridge of this.bridges){
+      if(ids.has(bridge.id)||bridge.id==='low-ground'||!Number.isSafeInteger(bridge.level)||!Number.isFinite(bridge.elevation)||!(bridge.halfLength>0&&bridge.halfWidth>0)||bridge.points.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)||p.x<0||p.y<0||p.x>this.width||p.y>this.height))throw new Error('Invalid terrain bridge: '+bridge.id);
+      ids.add(bridge.id);
+    }
+    for(let i=0;i<this.bridges.length;i++)for(let j=i+1;j<this.bridges.length;j++)if(TerrainSurfaceAtlas.polygonsOverlap(this.bridges[i].points,this.bridges[j].points))throw new Error('Overlapping terrain bridges: '+this.bridges[i].id+' / '+this.bridges[j].id);
     // Layers may stack only by strict containment. Crossing/partial overlaps are ambiguous.
     for(let i=0;i<this.layers.length;i++)for(let j=i+1;j<this.layers.length;j++){
       const a=this.layers[i],b=this.layers[j];
@@ -11046,107 +11164,193 @@ class TerrainSurfaceAtlas{
       const aInB=MapGeometry.pointInSimplePolygon(a.points[0].x,a.points[0].y,b.points);
       const bInA=MapGeometry.pointInSimplePolygon(b.points[0].x,b.points[0].y,a.points);
       if(aInB&&bInA)throw new Error('Duplicate terrain layer footprint: '+a.id+' / '+b.id);
-      if(aInB&&a.level<=b.level)throw new Error('Nested terrain layer must have a higher level: '+a.id+' / '+b.id);
-      if(bInA&&b.level<=a.level)throw new Error('Nested terrain layer must have a higher level: '+b.id+' / '+a.id);
     }
-    const underlyingAt=(x,y,belowLevel,excludeId=null)=>{
+    for(const layer of this.layers){
+      const parents=this.layers.filter(p=>p!==layer&&MapGeometry.pointInSimplePolygon(layer.points[0].x,layer.points[0].y,p.points));
+      layer.parent=parents.sort((a,b)=>Math.abs(a.area)-Math.abs(b.area))[0]||null;
+      if(layer.parent?.innerPoints&&(layer.points.some(p=>!MapGeometry.pointInSimplePolygon(p.x,p.y,layer.parent.innerPoints))||TerrainSurfaceAtlas.boundariesCross(layer.points,layer.parent.innerPoints)))throw new Error('Terrain child overlaps its parent bank: '+layer.id);
+    }
+    const underlyingAt=(x,y,excludeId=null)=>{
       let best={id:'low-ground',level:0,elevation:0};
       for(const layer of this.layers){
-        if(layer.id===excludeId||layer.level>=belowLevel||layer.level<best.level)continue;
-        if(MapGeometry.pointInSimplePolygon(x,y,layer.points)||this.onBoundary(layer.points,x,y))best={id:layer.id,level:layer.level,elevation:layer.elevation};
+        if(layer.id===excludeId||best.area!==undefined&&Math.abs(layer.area)>=Math.abs(best.area))continue;
+        if(MapGeometry.pointInSimplePolygon(x,y,layer.points)||this.onBoundary(layer.points,x,y))best={id:layer.id,level:layer.level,elevation:layer.elevation,area:layer.area};
       }
       return best;
     };
     for(const layer of this.layers){
+      if(layer.innerPoints){
+        const outer=layer.parent||{id:'low-ground',level:0,elevation:0},raised=layer.level>outer.level;
+        if(layer.level===outer.level)throw new Error('Terrain bank must connect different levels: '+layer.id);
+        if((map.terrain?.ramps||[]).some(r=>r.layerId===layer.id))throw new Error('Continuous terrain bank cannot have authored ramp openings: '+layer.id);
+        layer.topPoints=layer.innerPoints;
+        for(let i=0;i<layer.points.length;i++){
+          const j=(i+1)%layer.points.length,a=layer.points[i],b=layer.points[j],ia=layer.innerPoints[i],ib=layer.innerPoints[j],loA=raised?a:ia,loB=raised?b:ib,hiA=raised?ia:a,hiB=raised?ib:b,dx=(hiA.x+hiB.x-loA.x-loB.x)/2,dy=(hiA.y+hiB.y-loA.y-loB.y)/2,run=Math.hypot(dx,dy);
+          const ramp=TerrainSurfaceAtlas.bounds({id:layer.id+':bank:'+i,bank:true,edge:i,layer,lowLevel:Math.min(layer.level,outer.level),highLevel:Math.max(layer.level,outer.level),lowElevation:Math.min(layer.elevation,outer.elevation),highElevation:Math.max(layer.elevation,outer.elevation),lowSurfaceId:raised?outer.id:layer.id,highSurfaceId:raised?layer.id:outer.id,lowA:loA,lowB:loB,highA:hiA,highB:hiB,nx:dx/run,ny:dy/run,run,points:[loA,loB,hiB,hiA]});
+          const triangles=[TerrainSurfaceAtlas.rampTriangle(ramp,0),TerrainSurfaceAtlas.rampTriangle(ramp,1)];
+          if(!run||triangles.some(t=>!Number.isFinite(t.den)||Math.abs(t.den)<1e-6)||triangles[0].den*triangles[1].den<0)throw new Error('Invalid terrain bank strip: '+ramp.id);
+          this.ramps.push(ramp);this.seams.push({a,b},{a:ia,b:ib},{a,b:ia});
+        }
+        continue;
+      }
       const area=layer.area,sign=area>0?1:-1;
       for(let edge=0;edge<layer.points.length;edge++){
         const a=layer.points[edge],b=layer.points[(edge+1)%layer.points.length],dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy),nx=-dy/len*sign,ny=dx/len*sign;
         layer.topPoints.push(a);
-        const outside=t=>{const q=TerrainSurfaceAtlas.lerp(a,b,t),eps=.25;return underlyingAt(q.x-nx*eps,q.y-ny*eps,layer.level,layer.id)};
+        const outside=t=>{const q=TerrainSurfaceAtlas.lerp(a,b,t),eps=.25;return underlyingAt(q.x-nx*eps,q.y-ny*eps,layer.id)};
         const lows=[outside(.15),outside(.5),outside(.85)];
         if(lows.some(q=>q.level!==lows[0].level||q.id!==lows[0].id))throw new Error('Terrain edge crosses multiple lower levels; split the layer edge: '+layer.id+' / edge '+edge);
         const low=lows[0];
         const openings=(map.terrain?.ramps||[]).filter(r=>r.layerId===layer.id&&r.edge===edge).slice().sort((u,v)=>u.t0-v.t0||String(u.id).localeCompare(String(v.id)));
         let end=0;
-        const cliff=(lo,hi)=>{if(hi-lo<1e-8)return;const p=TerrainSurfaceAtlas.lerp(a,b,lo),q=TerrainSurfaceAtlas.lerp(a,b,hi),id=`${layer.id}:edge:${edge}:${lo}`;this.cliffs.push(TerrainSurfaceAtlas.wall(p,q,id));this.faces.push({a:p,b:q,lowA:low.elevation,lowB:low.elevation,high:layer.elevation,lowLevel:low.level,highLevel:layer.level,outwardY:-ny})};
+        const raised=layer.level>low.level;
+        const cliff=(lo,hi)=>{if(hi-lo<1e-8||layer.level===low.level)return;const p=TerrainSurfaceAtlas.lerp(a,b,lo),q=TerrainSurfaceAtlas.lerp(a,b,hi),id=`${layer.id}:edge:${edge}:${lo}`;this.cliffs.push(TerrainSurfaceAtlas.wall(p,q,id));this.faces.push({a:p,b:q,lowA:Math.min(low.elevation,layer.elevation),lowB:Math.min(low.elevation,layer.elevation),high:Math.max(low.elevation,layer.elevation),lowLevel:Math.min(low.level,layer.level),highLevel:Math.max(low.level,layer.level),outwardY:raised?-ny:ny})};
         for(const spec of openings){
           if(!spec.id||ids.has(spec.id)||!(spec.t0>=end&&spec.t1>spec.t0&&spec.t1<=1&&spec.run>0))throw new Error('Invalid terrain ramp: '+spec.id);
           ids.add(spec.id);cliff(end,spec.t0);end=spec.t1;
           const p=TerrainSurfaceAtlas.lerp(a,b,spec.t0),q=TerrainSurfaceAtlas.lerp(a,b,spec.t1),ph={x:p.x+nx*spec.run,y:p.y+ny*spec.run},qh={x:q.x+nx*spec.run,y:q.y+ny*spec.run};
           for(const v of [ph,qh,TerrainSurfaceAtlas.lerp(ph,qh,.5)])if(!MapGeometry.pointInSimplePolygon(v.x-nx*.02,v.y-ny*.02,layer.points))throw new Error('Ramp extends outside its layer: '+spec.id);
-          const ramp=TerrainSurfaceAtlas.bounds({...spec,layer,lowLevel:low.level,lowSurfaceId:low.id,lowElevation:low.elevation,highLevel:layer.level,highElevation:layer.elevation,lowA:p,lowB:q,highA:ph,highB:qh,nx,ny,points:[p,q,qh,ph]});
+          if(layer.level===low.level)throw new Error('Ramp must connect different terrain levels: '+spec.id);
+          const ramp=TerrainSurfaceAtlas.bounds({...spec,layer,lowLevel:Math.min(low.level,layer.level),lowSurfaceId:raised?low.id:layer.id,lowElevation:Math.min(low.elevation,layer.elevation),highLevel:Math.max(low.level,layer.level),highSurfaceId:raised?layer.id:low.id,highElevation:Math.max(low.elevation,layer.elevation),lowA:raised?p:ph,lowB:raised?q:qh,highA:raised?ph:p,highB:raised?qh:q,nx:raised?nx:-nx,ny:raised?ny:-ny,points:[p,q,qh,ph]});
           this.ramps.push(ramp);layer.topPoints.push(p,ph,qh,q);
           this.cliffs.push(TerrainSurfaceAtlas.wall(p,ph,spec.id+':left'),TerrainSurfaceAtlas.wall(q,qh,spec.id+':right'));
-          this.faces.push({a:p,b:ph,lowA:low.elevation,lowB:layer.elevation,high:layer.elevation,lowLevel:low.level,highLevel:layer.level,outwardY:dy/len},{a:qh,b:q,lowA:layer.elevation,lowB:low.elevation,high:layer.elevation,lowLevel:low.level,highLevel:layer.level,outwardY:-dy/len});
+          this.faces.push({a:p,b:ph,lowA:ramp.lowElevation,lowB:layer.elevation,high:layer.elevation,highA:raised?layer.elevation:low.elevation,highB:layer.elevation,lowLevel:ramp.lowLevel,highLevel:ramp.highLevel,outwardY:dy/len*(raised?1:-1)},{a:qh,b:q,lowA:layer.elevation,lowB:ramp.lowElevation,high:layer.elevation,highA:layer.elevation,highB:raised?layer.elevation:low.elevation,lowLevel:ramp.lowLevel,highLevel:ramp.highLevel,outwardY:-dy/len*(raised?1:-1)});
           this.seams.push({a:p,b:q},{a:ph,b:qh});
         }
         cliff(end,1);
       }
     }
-    for(let i=0;i<this.ramps.length;i++)for(let j=i+1;j<this.ramps.length;j++)if(TerrainSurfaceAtlas.polygonsOverlap(this.ramps[i].points,this.ramps[j].points))throw new Error('Overlapping terrain ramps: '+this.ramps[i].id+' / '+this.ramps[j].id);
+    for(let i=0;i<this.ramps.length;i++)for(let j=i+1;j<this.ramps.length;j++){
+      const a=this.ramps[i],b=this.ramps[j];if(a.bank&&b.bank&&a.layer===b.layer&&(Math.abs(a.edge-b.edge)===1||Math.abs(a.edge-b.edge)===a.layer.points.length-1))continue;
+      if(TerrainSurfaceAtlas.polygonsOverlap(a.points,b.points))throw new Error('Overlapping terrain ramps: '+a.id+' / '+b.id);
+    }
+    for(const ramp of this.ramps)for(const child of this.layers){
+      let parent=child.parent;while(parent&&parent!==ramp.layer)parent=parent.parent;
+      if(parent===ramp.layer&&TerrainSurfaceAtlas.polygonsOverlap(ramp.points,child.points))throw new Error('Terrain ramp overlaps a child layer: '+ramp.id+' / '+child.id);
+    }
     for(const layer of this.layers)PolygonTriangulation.mesh(layer.topPoints);
     for(const r of map?.terrain?.ramps||[])if(!this.ramps.some(q=>q.id===r.id))throw new Error('Unknown ramp layer/edge: '+r.id);
-    this.cliffs=this.cliffs.filter(Boolean);this.layerIndex=new NavigationObstacleIndex(this.layers);this.rampIndex=new NavigationObstacleIndex(this.ramps);
+    this.cliffs=this.cliffs.filter(Boolean);this.layerIndex=new NavigationObstacleIndex(this.layers);this.rampIndex=new NavigationObstacleIndex(this.ramps);this.bridgeIndex=new NavigationObstacleIndex(this.bridges);
+    // Hidden terrain contacts are cut by the same deck footprint as the floors.
+    // All collision consumers receive these exposed polygons, including motion casts.
+    if(this.bridges.length)this.cliffs=this.cliffs.flatMap(wall=>{
+      const bounds=TerrainSurfaceAtlas.bounds(wall),holes=this.bridgeIndex.query(bounds.minX,bounds.minY,bounds.maxX,bounds.maxY).map(b=>b.points);
+      if(!holes.length)return[wall];
+      const mesh=TerrainSurfaceAtlas.flatMesh(wall.points,holes,0);
+      return mesh.triangles.map((t,i)=>({...wall,id:wall.id+':exposed:'+i,points:t.map(j=>({x:mesh.vertices[j].x,y:mesh.vertices[j].z}))}));
+    });
+    // A bridge joins equal-height ground at its ends; unsupported side edges are
+    // physical cliffs, split wherever the terrain plane changes under the deck.
+    const terrainPolygons=[...this.layers,...this.ramps,...this.ramps.map(r=>({points:[r.lowA,r.highB]}))];
+    for(const bridge of this.bridges)for(let edge=0;edge<4;edge++){
+      const a=bridge.points[edge],b=bridge.points[(edge+1)%4],dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy),outX=dy/len,outY=-dx/len,cuts=TerrainSurfaceAtlas.segmentCuts(a.x,a.y,b.x,b.y,terrainPolygons);
+      this.seams.push({a,b});
+      for(let i=1;i<cuts.length;i++){
+        const p=TerrainSurfaceAtlas.lerp(a,b,cuts[i-1]),q=TerrainSurfaceAtlas.lerp(a,b,cuts[i]),m=TerrainSurfaceAtlas.lerp(p,q,.5),under=this.sampleTerrain(m.x+outX*.02,m.y+outY*.02).elevation;
+        if(under>bridge.elevation+.01)throw new Error('Terrain bridge is below its supporting surface: '+bridge.id);
+        if(bridge.elevation-under<.01)continue;
+        const lowA=Math.min(bridge.elevation,this.sampleTerrain(p.x+outX*.02,p.y+outY*.02).elevation),lowB=Math.min(bridge.elevation,this.sampleTerrain(q.x+outX*.02,q.y+outY*.02).elevation),id=bridge.id+':side:'+edge+':'+i;
+        const wall=TerrainSurfaceAtlas.wall(p,q,id);if(wall)this.cliffs.push(wall);this.faces.push({a:p,b:q,lowA,lowB,high:bridge.elevation,lowLevel:Math.round(Math.min(lowA,lowB)/TERRAIN_LEVEL_HEIGHT),highLevel:bridge.level,outwardY:outY,bridge:true});
+      }
+    }
     // Exact terrain triangles drive gameplay picking/navigation. Elevation is derived solely from level.
     this.surfaceMesh=[];
     const vertex=(p,height)=>({x:p.x,y:height,z:p.y,groundY:0});
-    for(const layer of this.layers)this.surfaceMesh.push({kind:'plateau',id:layer.id,level:layer.level,
-      vertices:layer.topPoints.map(p=>vertex(p,layer.elevation)),triangles:PolygonTriangulation.mesh(layer.topPoints).triangles});
-    for(const ramp of this.ramps)this.surfaceMesh.push({kind:'ramp',id:ramp.id,lowLevel:ramp.lowLevel,highLevel:ramp.highLevel,
-      vertices:[vertex(ramp.lowA,ramp.lowElevation),vertex(ramp.lowB,ramp.lowElevation),vertex(ramp.highB,ramp.highElevation),vertex(ramp.highA,ramp.highElevation)],triangles:[[0,1,2],[0,2,3]]});
+    const baseContour=[{x:0,y:0},{x:this.width,y:0},{x:this.width,y:this.height},{x:0,y:this.height}];
+    const floorMesh=(layer,render=false,bridges=this.bridges)=>{
+      const contour=layer?(layer.innerPoints||(render?layer.renderTopPoints:layer.points)):baseContour;
+      const childLayers=this.layers.filter(p=>p.parent===(layer||null)),children=childLayers.map(p=>p.innerPoints?p.points:render?p.renderTopPoints:p.points);
+      const ramps=this.ramps.filter(r=>!r.bank&&(r.layer===layer||render&&childLayers.includes(r.layer))).map(r=>r.points);
+      return{kind:'plateau',id:layer?.id||'low-ground',level:layer?.level||0,...TerrainSurfaceAtlas.flatMesh(contour,[...children,...ramps,...bridges.map(b=>b.points)],layer?.elevation||0)};
+    };
+    // Check the full footprint against exposed terrain before subtracting decks.
+    // Parent surfaces hidden by nested layers must not count as bridge support.
+    if(this.bridges.length){
+      const supports=[];
+      for(const layer of [null,...this.layers]){
+        const mesh=floorMesh(layer,false,[]);
+        for(const t of mesh.triangles)supports.push({points:t.map(i=>({x:mesh.vertices[i].x,y:mesh.vertices[i].z})),heightAt:()=>layer?.elevation||0});
+      }
+      for(const ramp of this.ramps)for(let i=0;i<2;i++)supports.push(TerrainSurfaceAtlas.rampTriangle(ramp,i));
+      for(const bridge of this.bridges)for(const support of supports){
+        const overlap=NavigationGoal.clipPolygon(support.points,bridge.points);
+        const area=Math.abs(overlap.reduce((sum,p,i)=>{const q=overlap[(i+1)%overlap.length];return sum+p.x*q.y-q.x*p.y},0));
+        if(area>1e-8&&overlap.some(p=>support.heightAt(p.x,p.y)>bridge.elevation+.01))throw new Error('Terrain bridge is below its supporting surface: '+bridge.id);
+      }
+    }
+    const rampMesh=ramp=>{
+      const patch={kind:'ramp',id:ramp.id,bank:!!ramp.bank,lowLevel:ramp.lowLevel,highLevel:ramp.highLevel,vertices:[],triangles:[]};
+      if(!this.bridges.length){patch.vertices=[vertex(ramp.lowA,ramp.lowElevation),vertex(ramp.lowB,ramp.lowElevation),vertex(ramp.highB,ramp.highElevation),vertex(ramp.highA,ramp.highElevation)];patch.triangles=[[0,1,2],[0,2,3]];return patch}
+      for(let i=0;i<2;i++){const plane=TerrainSurfaceAtlas.rampTriangle(ramp,i),mesh=TerrainSurfaceAtlas.flatMesh(plane.points,this.bridges.map(b=>b.points),plane.heightAt),start=patch.vertices.length;patch.vertices.push(...mesh.vertices);patch.triangles.push(...mesh.triangles.map(t=>t.map(j=>j+start)))}
+      return patch;
+    };
+    const bridgeMesh=bridge=>({kind:'plateau',id:bridge.id,bridge:true,level:bridge.level,vertices:bridge.points.map(p=>vertex(p,bridge.elevation)),triangles:[[0,1,2],[0,2,3]]});
+    this.surfaceMesh.push(floorMesh(null));
+    for(const layer of this.layers)this.surfaceMesh.push(floorMesh(layer));
+    for(const ramp of this.ramps)this.surfaceMesh.push(rampMesh(ramp));
+    for(const bridge of this.bridges)this.surfaceMesh.push(bridgeMesh(bridge));
     for(const face of this.faces)this.surfaceMesh.push({kind:'cliff',outwardY:face.outwardY,face,
-      vertices:[vertex(face.a,face.lowA),vertex(face.b,face.lowB),vertex(face.b,face.high),vertex(face.a,face.high)],triangles:[[0,1,2],[0,2,3]]});
+      vertices:[vertex(face.a,face.lowA),vertex(face.b,face.lowB),vertex(face.b,face.highB??face.high),vertex(face.a,face.highA??face.high)],triangles:[[0,1,2],[0,2,3]]});
 
     // Presentation contour: round only authored corners. Ramp joins stay locked so
     // plateau/ramp/cliff surfaces continue to meet at exactly the same endpoints.
     const protectedKeys=new Set(),rampEdges=new Map();
     for(const ramp of this.ramps){
+      if(ramp.bank)continue;
       for(const q of [ramp.lowA,ramp.lowB,ramp.highA,ramp.highB])protectedKeys.add(TerrainSurfaceAtlas.pointKey(q));
-      rampEdges.set(TerrainSurfaceAtlas.directedEdgeKey(ramp.lowA,ramp.highA),{kind:'side',lowA:ramp.lowElevation,lowB:ramp.highElevation});
-      rampEdges.set(TerrainSurfaceAtlas.directedEdgeKey(ramp.highB,ramp.lowB),{kind:'side',lowA:ramp.highElevation,lowB:ramp.lowElevation});
-      rampEdges.set(TerrainSurfaceAtlas.directedEdgeKey(ramp.highA,ramp.highB),{kind:'seam'});
+      const [p,q,qh,ph]=ramp.points,raised=ramp.layer.level===ramp.highLevel,outer=raised?ramp.lowElevation:ramp.highElevation,inner=ramp.layer.elevation;
+      rampEdges.set(TerrainSurfaceAtlas.directedEdgeKey(p,ph),{kind:'side',raised,lowA:Math.min(outer,inner),lowB:inner,highA:Math.max(outer,inner),highB:inner});
+      rampEdges.set(TerrainSurfaceAtlas.directedEdgeKey(qh,q),{kind:'side',raised,lowA:inner,lowB:Math.min(outer,inner),highA:inner,highB:Math.max(outer,inner)});
+      rampEdges.set(TerrainSurfaceAtlas.directedEdgeKey(ph,qh),{kind:'seam'});
     }
-    this.renderFaces=[];
+    this.renderFaces=this.faces.filter(face=>face.bridge);
     for(const layer of this.layers){
+      if(layer.innerPoints){layer.renderTopPoints=layer.innerPoints;continue}
       layer.renderTopPoints=TerrainSurfaceAtlas.smoothClosedContour(layer.topPoints,protectedKeys,2,.16);
       const pts=layer.renderTopPoints,area=pts.reduce((sum,q,i)=>{const t=pts[(i+1)%pts.length];return sum+q.x*t.y-t.x*q.y},0),sign=area>=0?1:-1;
       for(let i=0;i<pts.length;i++){
         const a=pts[i],b=pts[(i+1)%pts.length],special=rampEdges.get(TerrainSurfaceAtlas.directedEdgeKey(a,b));
         if(special?.kind==='seam')continue;
         const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy);if(len<.01)continue;
-        let lowA,lowB;
-        if(special?.kind==='side'){lowA=special.lowA;lowB=special.lowB}
-        else{const m={x:(a.x+b.x)/2,y:(a.y+b.y)/2},low=underlyingAt(m.x,m.y,layer.level,layer.id);lowA=low.elevation;lowB=low.elevation}
-        if(Math.max(lowA,lowB)>=layer.elevation-.001)continue;
-        this.renderFaces.push({a,b,lowA,lowB,high:layer.elevation,lowLevel:Math.round(Math.min(lowA,lowB)/TERRAIN_LEVEL_HEIGHT),highLevel:layer.level,outwardY:-dx/len*sign});
+        let lowA,lowB,highA,highB,outwardY=-dx/len*sign;
+        if(special?.kind==='side'){({lowA,lowB,highA,highB}=special);if(!special.raised)outwardY=-outwardY}
+        else{const outer=layer.parent?.elevation||0;lowA=lowB=Math.min(outer,layer.elevation);highA=highB=Math.max(outer,layer.elevation);if(outer>layer.elevation)outwardY=-outwardY}
+        if(Math.max(highA-lowA,highB-lowB)<.001)continue;
+        this.renderFaces.push({a,b,lowA,lowB,high:Math.max(highA,highB),highA,highB,lowLevel:Math.round(Math.min(lowA,lowB)/TERRAIN_LEVEL_HEIGHT),highLevel:Math.round(Math.max(highA,highB)/TERRAIN_LEVEL_HEIGHT),outwardY});
       }
     }
     // Rendering uses the rounded presentation contour; simulation/picking keeps surfaceMesh.
     this.renderSurfaceMesh=[];
-    for(const layer of this.layers)this.renderSurfaceMesh.push({kind:'plateau',id:layer.id,level:layer.level,
-      vertices:layer.renderTopPoints.map(p=>vertex(p,layer.elevation)),triangles:PolygonTriangulation.mesh(layer.renderTopPoints).triangles});
-    for(const ramp of this.ramps)this.renderSurfaceMesh.push({kind:'ramp',id:ramp.id,lowLevel:ramp.lowLevel,highLevel:ramp.highLevel,
-      vertices:[vertex(ramp.lowA,ramp.lowElevation),vertex(ramp.lowB,ramp.lowElevation),vertex(ramp.highB,ramp.highElevation),vertex(ramp.highA,ramp.highElevation)],triangles:[[0,1,2],[0,2,3]]});
+    this.renderSurfaceMesh.push(floorMesh(null,true));
+    for(const layer of this.layers)this.renderSurfaceMesh.push(floorMesh(layer,true));
+    for(const ramp of this.ramps)this.renderSurfaceMesh.push(rampMesh(ramp));
+    for(const bridge of this.bridges)this.renderSurfaceMesh.push(bridgeMesh(bridge));
     for(const face of this.renderFaces)this.renderSurfaceMesh.push({kind:'cliff',outwardY:face.outwardY,face,
-      vertices:[vertex(face.a,face.lowA),vertex(face.b,face.lowB),vertex(face.b,face.high),vertex(face.a,face.high)],triangles:[[0,1,2],[0,2,3]]});
+      vertices:[vertex(face.a,face.lowA),vertex(face.b,face.lowB),vertex(face.b,face.highB??face.high),vertex(face.a,face.highA??face.high)],triangles:[[0,1,2],[0,2,3]]});
   }
   onBoundary(points,x,y){for(let i=0;i<points.length;i++){const a=points[i],b=points[(i+1)%points.length];if(MapGeometry.pointSegDist(x,y,a.x,a.y,b.x,b.y)<1e-6)return true}return false}
-  rampProgress(r,x,y){return RangeUtil.clamp(((x-r.lowA.x)*r.nx+(y-r.lowA.y)*r.ny)/r.run,0,1)}
+  rampProgress(r,x,y){return TerrainSurfaceAtlas.sampleRamp(r,x,y)?.progress??RangeUtil.clamp(((x-r.lowA.x)*r.nx+(y-r.lowA.y)*r.ny)/r.run,0,1)}
   sample(x,y){
+    for(const bridge of this.bridgeIndex.query(x,y))if(MapGeometry.pointInSimplePolygon(x,y,bridge.points)||this.onBoundary(bridge.points,x,y))return{id:bridge.id,level:bridge.level,elevation:bridge.elevation,bridge,ramp:null,progress:1,gradient:{x:0,z:0}};
+    return this.sampleTerrain(x,y);
+  }
+  sampleTerrain(x,y){
     let bestRamp=null;
     for(const r of this.rampIndex.query(x,y))if((MapGeometry.pointInSimplePolygon(x,y,r.points)||this.onBoundary(r.points,x,y))&&(!bestRamp||r.highLevel>bestRamp.highLevel))bestRamp=r;
     if(bestRamp){
-      const t=this.rampProgress(bestRamp,x,y),elevation=bestRamp.lowElevation+(bestRamp.highElevation-bestRamp.lowElevation)*t;
-      return{id:bestRamp.id,level:t<.5?bestRamp.lowLevel:bestRamp.highLevel,elevation,ramp:bestRamp,progress:t};
+      const plane=TerrainSurfaceAtlas.sampleRamp(bestRamp,x,y),t=plane?.progress??this.rampProgress(bestRamp,x,y),elevation=plane?.elevation??bestRamp.lowElevation+(bestRamp.highElevation-bestRamp.lowElevation)*t;
+      return{id:bestRamp.id,level:t<.5?bestRamp.lowLevel:bestRamp.highLevel,elevation,ramp:bestRamp,progress:t,gradient:plane?.gradient,triangleIndex:plane?.triangleIndex};
     }
     let best=null;
-    for(const l of this.layerIndex.query(x,y))if((MapGeometry.pointInSimplePolygon(x,y,l.points)||this.onBoundary(l.points,x,y))&&(!best||l.level>best.level))best=l;
-    if(best)return{id:best.id,level:best.level,elevation:best.elevation,ramp:null,progress:1};
+    for(const l of this.layerIndex.query(x,y))if((MapGeometry.pointInSimplePolygon(x,y,l.points)||this.onBoundary(l.points,x,y))&&(!best||Math.abs(l.area)<Math.abs(best.area)))best=l;
+    if(best)return{id:best.id,level:best.level,elevation:best.elevation,layer:best,ramp:null,progress:1};
     return{id:'low-ground',level:0,elevation:0,ramp:null,progress:0};
   }
   levelAt(x,y){return this.sample(x,y).level}
   heightAt(x,y){return this.sample(x,y).elevation}
   buildable(x,y,r){
+    // A footprint fully supported by the bridge does not touch the hidden bank below.
+    for(const bridge of this.bridgeIndex.query(x,y,x,y,r))if(MapGeometry.pointInBridgeZone(x,y,bridge,-r))return true;
     for(const ramp of this.rampIndex.query(x,y,x,y,r)){
       if(MapGeometry.pointInSimplePolygon(x,y,ramp.points))return false;
       for(let i=0;i<4;i++){const a=ramp.points[i],b=ramp.points[(i+1)%4];if(MapGeometry.pointSegDist(x,y,a.x,a.y,b.x,b.y)<r+2)return false}
@@ -11154,11 +11358,21 @@ class TerrainSurfaceAtlas{
   }
   transition(a,b,p,q){
     if(a.id===b.id)return true;
+    const x=(p.x+q.x)/2,y=(p.y+q.y)/2;
+    if(a.bridge||b.bridge){
+      if(a.bridge&&b.bridge)return false;
+      const bridge=a.bridge||b.bridge;
+      return this.onBoundary(bridge.points,x,y)&&Math.abs(this.sampleTerrain(x,y).elevation-bridge.elevation)<.01;
+    }
     if(!a.ramp&&!b.ramp)return a.level===b.level;
-    if(a.ramp&&b.ramp)return a.ramp.id===b.ramp.id;
-    const r=a.ramp||b.ramp,flat=a.ramp?b:a,x=(p.x+q.x)/2,y=(p.y+q.y)/2,t=((x-r.lowA.x)*r.nx+(y-r.lowA.y)*r.ny)/r.run;
+    if(a.ramp&&b.ramp){
+      const u=a.ramp,v=b.ramp;if(u.id===v.id)return true;
+      if(!u.bank||!v.bank||u.layer!==v.layer||!this.onBoundary(u.points,x,y)||!this.onBoundary(v.points,x,y))return false;
+      const left=TerrainSurfaceAtlas.sampleRamp(u,x,y),right=TerrainSurfaceAtlas.sampleRamp(v,x,y);return!!left&&!!right&&Math.abs(left.elevation-right.elevation)<.01;
+    }
+    const r=a.ramp||b.ramp,flat=a.ramp?b:a,t=this.rampProgress(r,x,y);
     if(Math.abs(t)<1e-4)return flat.level===r.lowLevel&&(r.lowSurfaceId==='low-ground'||flat.id===r.lowSurfaceId);
-    if(Math.abs(t-1)<1e-4)return flat.id===r.layer.id&&flat.level===r.highLevel;
+    if(Math.abs(t-1)<1e-4)return flat.level===r.highLevel&&(r.highSurfaceId==='low-ground'||flat.id===r.highSurfaceId);
     return false;
   }
   segmentCrossesLayer(layer,x0,y0,x1,y1){
@@ -11167,7 +11381,11 @@ class TerrainSurfaceAtlas{
     return false;
   }
   higherLevelBlocksVision(sourceLevel,x0,y0,x1,y1){
-    for(const layer of this.layerIndex.query(x0,y0,x1,y1))if(layer.level>sourceLevel&&this.segmentCrossesLayer(layer,x0,y0,x1,y1))return true;
+    if(sourceLevel>=this.maxLevel)return false;
+    const dx=x1-x0,dy=y1-y0,ramps=this.rampIndex.query(x0,y0,x1,y1),polygons=[...this.layerIndex.query(x0,y0,x1,y1),...ramps,...this.bridgeIndex.query(x0,y0,x1,y1)];
+    for(const r of ramps)polygons.push(...TerrainSurfaceAtlas.rampVisionPolygons(r));
+    const cuts=TerrainSurfaceAtlas.segmentCuts(x0,y0,x1,y1,polygons);
+    for(let i=1;i<cuts.length;i++){const t=(cuts[i-1]+cuts[i])/2;if(this.levelAt(x0+dx*t,y0+dy*t)>sourceLevel)return true}
     return false;
   }
 }
@@ -13925,14 +14143,17 @@ class FrontierTerrainLayout{
   }
   static safety(map){
     const geometry=TerrainGeometry.fromMap(map),atlas=geometry.surfaces,terrain=map.terrain;
-    const waterPaths=[terrain.riverPath,...(terrain.riverBranches||[])];
-    const waterClear=waterPaths.every(path=>path.every((p,i)=>atlas.heightAt(p.x,p.y)===0&&geometry.circleClear(p.x,p.y,terrain.riverHalfWidth+20)&&(!i||geometry.segmentClear(path[i-1].x,path[i-1].y,p.x,p.y,terrain.riverHalfWidth+20))));
+    const dryGeometry=TerrainGeometry.fromMap({...map,terrain:{...terrain,layers:(terrain.layers||[]).filter(l=>!l.innerPoints?.length),bridges:[]}});
+    const waterPaths=[terrain.riverPath,...(terrain.riverBranches||[])],banks=atlas.layers.filter(l=>l.innerPoints?.length),elevated=atlas.layers.filter(l=>l.level>0);
+    const clearance=(terrain.riverHalfWidth||0)+(terrain.riverBankWidth||0)+20;
+    const waterClear=waterPaths.every(path=>path.every((p,i)=>dryGeometry.circleClear(p.x,p.y,clearance)&&(!i||dryGeometry.segmentClear(path[i-1].x,path[i-1].y,p.x,p.y,clearance))))&&banks.every((b,i)=>b.points.every(p=>p.x>=0&&p.x<=map.width&&p.y>=0&&p.y<=map.height)&&!elevated.some(l=>TerrainSurfaceAtlas.polygonsOverlap(b.points,l.points))&&!banks.slice(i+1).some(l=>TerrainSurfaceAtlas.polygonsOverlap(b.points,l.points)));
     const bridgeClear=(terrain.bridges||[]).every(b=>{
       const ca=Math.cos(b.angle),sa=Math.sin(b.angle),p=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([x,y])=>({x:b.x+x*b.halfLength*ca-y*b.halfWidth*sa,y:b.y+x*b.halfLength*sa+y*b.halfWidth*ca}));
-      return p.every((v,i)=>atlas.heightAt(v.x,v.y)===0&&geometry.segmentClear(v.x,v.y,p[(i+1)%4].x,p[(i+1)%4].y,2))&&!atlas.layers.some(l=>TerrainSurfaceAtlas.polygonsOverlap(p,l.points));
+      const groundedEndcaps=[1,3].every(i=>banks.every(bank=>bank.points.every((a,j)=>{const z=bank.points[(j+1)%bank.points.length],v=p[i],q=p[(i+1)%4];return TerrainGeometry.segmentEdgeDistance(v.x,v.y,q.x,q.y,a.x,a.y,z.x,z.y)>=2})));
+      return groundedEndcaps&&p.every((v,i)=>atlas.heightAt(v.x,v.y)===0&&dryGeometry.segmentClear(v.x,v.y,p[(i+1)%4].x,p[(i+1)%4].y,2))&&!elevated.some(l=>TerrainSurfaceAtlas.polygonsOverlap(p,l.points));
     });
-    const pads=[map.spawns.host,map.spawns.guest,...map.capturePoints,...map.gasNodes];
-    const buildablePads=pads.every(p=>geometry.circleClear(p.x,p.y,42)&&atlas.buildable(p.x,p.y,42));
+    const pads=[map.spawns.host,map.spawns.guest,...map.capturePoints,...map.gasNodes,...map.resources,...map.camps];
+    const buildablePads=pads.every(p=>geometry.circleClear(p.x,p.y,42)&&atlas.buildable(p.x,p.y,42)&&!banks.some(b=>MapGeometry.pointInSimplePolygon(p.x,p.y,b.points)));
     return {waterLayerSeparation:waterClear,bridgeRampSeparation:bridgeClear,buildablePads};
   }
   static connectedLayout(map){
@@ -13955,13 +14176,30 @@ class FrontierTerrainLayout{
   static water(ctx){
     const {width:w,height:h,seed}=ctx;
     const shift=(HashUtil.hash(seed+'|lowland-stream')%21-10)/2000;
-    const controls=[[.035,.66],[.13,.645],[.215,.615],[.29,.57+shift],[.36,.55+shift],[.445,.555+shift]].map(([x,y])=>({x:x*w,y:y*h}));
-    const riverPath=MapGeometry.smoothPolylineCatmull(controls,5).map(p=>({x:Math.round(p.x),y:Math.round(p.y)}));
     const riverHalfWidth=65+5*(HashUtil.hash(seed+'|stream-width')%4);
-    const riverBranches=[riverPath.map(p=>({x:w-p.x,y:h-p.y}))];
-    return {riverPath,riverHalfWidth,riverBranches,
-      riverPolygon:MapGeometry.polylineToRibbonPolygon(riverPath,riverHalfWidth),
-      riverBranchPolygons:riverBranches.map(p=>MapGeometry.polylineToRibbonPolygon(p,riverHalfWidth))};
+    const riverBankWidth=TERRAIN_LEVEL_HEIGHT,outerWidth=riverHalfWidth+riverBankWidth;
+    // Caps extend along the tangent as well as across it. Reserve the maximum
+    // possible cap extent before smoothing; paired contours are never clamped.
+    const startX=Math.max(.075,(outerWidth*Math.hypot(1,.72)+20)/w);
+    const templates=[[[startX,.66],[.13,.645],[.215,.615],[.29,.57+shift],[.36,.555+shift],[.445,.56+shift]]];
+    // Short maps cannot fit the full stream between the fixed physical ramps.
+    // Search a shorter lowland ribbon while keeping the same gentle bank width.
+    const offsets=[0,.015,-.015,.03,-.03],reverse=(HashUtil.hash(seed+'|compact-stream')&1)?1:-1;
+    for(const dy of offsets)for(const dx of offsets)templates.push([[.34,.76],[.38,.75],[.425,.72],[.47,.675]].map(([x,y])=>[x+dx*reverse,y+dy]));
+    const layout=ctx.terrainLayout||FrontierTerrainLayout.create(ctx),geometry=new TerrainGeometry({width:w,height:h,terrain:layout}),atlas=geometry.surfaces;
+    const pads=[ctx.host,ctx.guest,...FrontierTerrainLayout.lanes(ctx).capturePoints],clearance=outerWidth+20;
+    for(const coords of templates){
+      const controls=coords.map(([x,y])=>({x:x*w,y:y*h}));
+      const riverPath=MapGeometry.smoothPolylineCatmull(controls,5).map(p=>({x:Math.round(p.x),y:Math.round(p.y)}));
+      const riverBranches=[riverPath.map(p=>({x:w-p.x,y:h-p.y}))],paths=[riverPath,...riverBranches];
+      const riverBankLayers=paths.map((path,i)=>({id:'river-bank-'+i,level:-1,points:MapGeometry.polylineToRibbonPolygon(path,outerWidth),innerPoints:MapGeometry.polylineToRibbonPolygon(path,riverHalfWidth)}));
+      const clear=riverBankLayers.every((b,i)=>b.points.every(p=>p.x>=0&&p.x<=w&&p.y>=0&&p.y<=h)&&![...atlas.layers,...atlas.ramps].some(l=>TerrainSurfaceAtlas.polygonsOverlap(b.points,l.points))&&!riverBankLayers.slice(i+1).some(l=>TerrainSurfaceAtlas.polygonsOverlap(b.points,l.points))&&pads.every(p=>!MapGeometry.pointInSimplePolygon(p.x,p.y,b.points)&&b.points.every((a,j)=>{const z=b.points[(j+1)%b.points.length];return MapGeometry.pointSegDist(p.x,p.y,a.x,a.y,z.x,z.y)>=42})));
+      if(!clear||!paths.every(path=>path.every((p,i)=>geometry.circleClear(p.x,p.y,clearance)&&(!i||geometry.segmentClear(path[i-1].x,path[i-1].y,p.x,p.y,clearance)))))continue;
+      return {riverPath,riverHalfWidth,riverBranches,riverBankWidth,riverBankLayers,
+        riverPolygon:MapGeometry.polylineToRibbonPolygon(riverPath,riverHalfWidth),
+        riverBranchPolygons:riverBranches.map(p=>MapGeometry.polylineToRibbonPolygon(p,riverHalfWidth))};
+    }
+    throw new Error('No lowland corridor can fit the physical river banks');
   }
 }
 
@@ -14079,7 +14317,7 @@ const resources=[];let mid=0;
         const separated=
           minerals.every(m=>Math.hypot(m.x-q.x,m.y-q.y)>=minMineralGap)&&
           gasNodes.every(g=>Math.hypot(g.x-q.x,g.y-q.y)>=120);
-        if(inBounds&&separated){chosen=q;break}
+        if(inBounds&&separated&&(!ctx.isNavigable||ctx.isNavigable(q.x,q.y,42))){chosen=q;break}
       }
 
       // 극단적인 가장자리에서도 반드시 결정적으로 배치되도록 fallback.
@@ -14093,7 +14331,7 @@ const resources=[];let mid=0;
           const separated=
             minerals.every(m=>Math.hypot(m.x-q.x,m.y-q.y)>=minMineralGap)&&
             gasNodes.every(g=>Math.hypot(g.x-q.x,g.y-q.y)>=120);
-          if(separated)chosen=q;
+          if(separated&&(!ctx.isNavigable||ctx.isNavigable(q.x,q.y,42)))chosen=q;
         }
       }
       if(!chosen)chosen=clampPt({x:center.x+Math.cos(slot*Math.PI*2/mineralCount)*mineralRadius,y:center.y+Math.sin(slot*Math.PI*2/mineralCount)*mineralRadius});
@@ -14111,7 +14349,7 @@ const resources=[];let mid=0;
         minerals.every(m=>Math.hypot(m.x-q.x,m.y-q.y)>=135)&&
         resources.every(m=>Math.hypot(m.x-q.x,m.y-q.y)>=120)&&
         gasNodes.every(g=>Math.hypot(g.x-q.x,g.y-q.y)>=110);
-      if(inBounds&&separated){gas=q;break}
+      if(inBounds&&separated&&(!ctx.isNavigable||ctx.isNavigable(q.x,q.y,42))){gas=q;break}
     }
     if(!gas){
       const start=Math.atan2(-normal.y,-normal.x);
@@ -14122,7 +14360,7 @@ const resources=[];let mid=0;
           minerals.every(m=>Math.hypot(m.x-q.x,m.y-q.y)>=135)&&
           resources.every(m=>Math.hypot(m.x-q.x,m.y-q.y)>=120)&&
           gasNodes.every(g=>Math.hypot(g.x-q.x,g.y-q.y)>=110);
-        if(separated)gas=q;
+        if(separated&&(!ctx.isNavigable||ctx.isNavigable(q.x,q.y,42)))gas=q;
       }
     }
     if(!gas)gas=clampPt({x:center.x-normal.x*gasRadius,y:center.y-normal.y*gasRadius});
@@ -14274,18 +14512,20 @@ const resources=[];let mid=0;
   static proceduralFrontierMapCandidate(rules=GameRuleDefinition.current,baseSeed=0,roundNumber=1,candidateSeed=null){
     const ctx=MapGeneration.createProceduralMapContext(rules,baseSeed,roundNumber,candidateSeed);
     const layout=FrontierTerrainLayout.create(ctx),{layers,ramps,blockers,structures}=layout;
+    ctx.terrainLayout=layout;
     const {laneControlPoints,laneNormals,capturePoints}=MapGeneration.generateProceduralLanes(ctx);
     const terrain={layers,ramps,blockers,riverPath:[],riverBranches:[],riverPolygon:[],riverBranchPolygons:[],riverHalfWidth:80,bridges:[]};
-    const geometry=new TerrainGeometry({width:ctx.width,height:ctx.height,terrain});
-    ctx.isNavigable=(x,y,r=140)=>geometry.circleClear(x,y,r);
-    const {resources,gasNodes}=MapGeneration.generateProceduralResources(ctx,capturePoints);
-    const camps=MapGeneration.generateProceduralCamps(ctx,capturePoints,laneControlPoints);
-    // Lowland streams are part of the room layout; their polygons never cross a
-    // plateau or ramp. Main and secondary water polygons have equal width.
+    // Add the full walkable bank before placing strategic objects, so placement
+    // sees the same signed heights and slopes as movement and visibility.
     Object.assign(terrain,FrontierTerrainLayout.water(ctx));
     terrain.bridges=MapGeneration.generateProceduralBridges(ctx,laneControlPoints,terrain);
+    terrain.layers.push(...terrain.riverBankLayers);delete terrain.riverBankLayers;
+    const geometry=new TerrainGeometry({width:ctx.width,height:ctx.height,terrain});
+    ctx.isNavigable=(x,y,r=140)=>geometry.circleClear(x,y,r)&&geometry.surfaces.buildable(x,y,r)&&!geometry.surfaces.layers.some(l=>l.innerPoints?.length&&MapGeometry.pointInSimplePolygon(x,y,l.points));
+    const {resources,gasNodes}=MapGeneration.generateProceduralResources(ctx,capturePoints);
+    const camps=MapGeneration.generateProceduralCamps(ctx,capturePoints,laneControlPoints);
     const {m,width,height,seed,host,guest,topology,terrainArchetype}=ctx;
-    return {schemaVersion:MAP_DESCRIPTOR_SCHEMA_VERSION,generator:'procedural-frontier',generatorVersion:9,seed,width,height,biome:m.biome||'frontier',topology,terrainArchetype,symmetry:'rotational-terrain',spawns:{host,guest},flags:[MapGeometry.pointOnPolyline(laneControlPoints.mid,.18),MapGeometry.pointOnPolyline(laneControlPoints.mid,.82)].map(p=>({...p,forced:false})),laneControlPoints,laneNormals,capturePoints,terrain,resources,gasNodes,camps,authoredStructures:structures};
+    return {schemaVersion:MAP_DESCRIPTOR_SCHEMA_VERSION,generator:'procedural-frontier',generatorVersion:10,seed,width,height,biome:m.biome||'frontier',topology,terrainArchetype,symmetry:'rotational-terrain',spawns:{host,guest},flags:[MapGeometry.pointOnPolyline(laneControlPoints.mid,.18),MapGeometry.pointOnPolyline(laneControlPoints.mid,.82)].map(p=>({...p,forced:false})),laneControlPoints,laneNormals,capturePoints,terrain,resources,gasNodes,camps,authoredStructures:structures};
   }
   static mapTerrainDescriptor(mapDescriptor){
   return mapDescriptor?.terrain||{layers:[],ramps:[],blockers:[],riverPath:RIVER_PATH,riverHalfWidth:RIVER_HALF_WIDTH,riverBranches:[],bridges:[]};
@@ -14326,7 +14566,7 @@ const resources=[];let mid=0;
     if(bridgeLevelOverlap)break;
   }
   return{
-    elevatedLayerCount:atlas.layers.length,elevatedCoverageByLane,riverCrossingCount:crossings.length,bridgeCount:(terrain.bridges||[]).length,
+    elevatedLayerCount:atlas.layers.filter(l=>l.level>0).length,elevatedCoverageByLane,riverCrossingCount:crossings.length,bridgeCount:(terrain.bridges||[]).length,
     objectiveFlankWidth:Math.round(objectiveFlankWidth),mainObjectiveAccessibility:accessible,bridgeLevelOverlap
   };
 }
@@ -14335,7 +14575,8 @@ const resources=[];let mid=0;
   const host=desc.spawns.host,guest=desc.spawns.guest;
   const hostileCamps=desc.camps.filter(c=>c.kind!=="relic");
   const allNeutralCamps=desc.camps||[];
-  const elevatedCenters=TerrainSurfaceAtlas.fromMap(desc).layers.map(l=>({x:l.points.reduce((n,p)=>n+p.x,0)/l.points.length,y:l.points.reduce((n,p)=>n+p.y,0)/l.points.length}));
+  // A base's own plateau is its buildable starting room, not a spawn hazard.
+  const elevatedCenters=TerrainSurfaceAtlas.fromMap(desc).layers.filter(l=>l.level>0&&!MapGeometry.pointInSimplePolygon(host.x,host.y,l.points)&&!MapGeometry.pointInSimplePolygon(guest.x,guest.y,l.points)).map(l=>({x:l.points.reduce((n,p)=>n+p.x,0)/l.points.length,y:l.points.reduce((n,p)=>n+p.y,0)/l.points.length}));
   const spawnHazardDistance=Math.min(MapGeometry.nearestMapDistance(host,hostileCamps),MapGeometry.nearestMapDistance(guest,hostileCamps),MapGeometry.nearestMapDistance(host,elevatedCenters),MapGeometry.nearestMapDistance(guest,elevatedCenters));
   const resourceClearance=Math.min(MapGeometry.minMapPairDistance(desc.resources),MapGeometry.minMapPairDistance(desc.gasNodes));
   const neutralClearance=MapGeometry.minMapPairDistance(allNeutralCamps);
@@ -14465,7 +14706,8 @@ const resources=[];let mid=0;
   return out;
 }
   static generateProceduralBridges(ctx,laneControlPoints,terrain){
-  const crossings=MapGeometry.laneRiverCrossings(laneControlPoints,terrain),eligible=[];
+  // Span the depressed floor and both banks; bridge endpoints return to level 0.
+  const crossings=MapGeometry.laneRiverCrossings(laneControlPoints,{...terrain,riverHalfWidth:(terrain.riverHalfWidth||80)+(terrain.riverBankWidth||0)}),eligible=[];
   for(const c of crossings){
     const chance=c.laneKey==="mid"?.55:.32;
     const roll=(HashUtil.hash(`${ctx.seed}|bridge|${c.laneKey}|${Math.round(c.t*1000)}`)%10000)/10000;
@@ -14479,15 +14721,32 @@ const resources=[];let mid=0;
     const project=(p)=>{const ox=p.x-c.x,oy=p.y-c.y;return ox*ca-oy*sa};
     const bankSpan=Math.max(Math.abs(project(c.start)),Math.abs(project(c.end)));
     const bankOverhang=Math.max(28*ctx.scale,(terrain.riverHalfWidth||80)*.18);
+    const x=Math.round(c.x),y=Math.round(c.y),halfWidth=Math.round(46*ctx.scale),banks=terrain.riverBankLayers||(terrain.layers||[]).filter(l=>l.innerPoints?.length);
+    // The lane crossing is curved but the deck is straight. Projected lane
+    // endpoints can miss a thin bank sliver between sampled endcap points.
+    // Require both complete endcap segments, plus their land margin, to clear
+    // every bank polygon before fixing the actual level-0 bridge footprint.
+    const endcapsClear=halfLength=>[-1,1].every(sign=>{
+      const ex=x+sign*halfLength*Math.cos(angle),ey=y+sign*halfLength*Math.sin(angle);
+      const a={x:ex-halfWidth*Math.sin(angle),y:ey+halfWidth*Math.cos(angle)},b={x:ex+halfWidth*Math.sin(angle),y:ey-halfWidth*Math.cos(angle)};
+      return banks.every(bank=>!MapGeometry.pointInSimplePolygon(a.x,a.y,bank.points)&&!MapGeometry.pointInSimplePolygon(b.x,b.y,bank.points)&&bank.points.every((p,j)=>{const q=bank.points[(j+1)%bank.points.length];return TerrainGeometry.segmentEdgeDistance(a.x,a.y,b.x,b.y,p.x,p.y,q.x,q.y)>=bankOverhang}));
+    });
+    let halfLength=Math.max(120,Math.ceil(bankSpan+bankOverhang));
+    const extent=Math.ceil(Math.hypot(ctx.width,ctx.height));
+    while(halfLength<extent&&!endcapsClear(halfLength))halfLength++;
     return {
-      id:`bridge-${c.laneKey}-${i}`,laneKey:c.laneKey,x:Math.round(c.x),y:Math.round(c.y),
+      id:`bridge-${c.laneKey}-${i}`,laneKey:c.laneKey,level:0,x,y,
       angle,
-      halfLength:Math.max(120,Math.ceil(bankSpan+bankOverhang)),
-      halfWidth:Math.round(46*ctx.scale),
+      halfLength,
+      halfWidth,
       crossingT:Math.round(c.t*10000)/10000,
       crossingStartT:Math.round(c.startT*10000)/10000,
       crossingEndT:Math.round(c.endT*10000)/10000
     };
+  }).filter(b=>{
+    const ca=Math.cos(b.angle),sa=Math.sin(b.angle),points=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([x,y])=>({x:b.x+x*b.halfLength*ca-y*b.halfWidth*sa,y:b.y+x*b.halfLength*sa+y*b.halfWidth*ca}));
+    const atlas=TerrainSurfaceAtlas.fromMap({width:ctx.width,height:ctx.height,terrain:ctx.terrainLayout||FrontierTerrainLayout.create(ctx)});
+    return points.every(p=>p.x>=0&&p.x<=ctx.width&&p.y>=0&&p.y<=ctx.height)&&![...atlas.layers,...atlas.ramps].some(l=>TerrainSurfaceAtlas.polygonsOverlap(points,l.points));
   });
 }
 }
@@ -16470,7 +16729,8 @@ class TerrainQuery{
       }
     }
     const surface=(atlas||(map?TerrainSurfaceAtlas.fromMap(map):null))?.sample(x,y)||{elevation:0,level:0,ramp:null};
-    return{river:surface.elevation>0||surface.ramp?false:river,bridge,level:surface.level,height:surface.elevation/TERRAIN_LEVEL_HEIGHT,surfaceElevation:surface.elevation,terrainLayer:surface.level,ramp:surface.ramp?.id||null,rampProgress:surface.ramp?RangeUtil.clamp(Number(surface.progress)||0,0,1):null};
+    const raised=surface.layer&&surface.level>(surface.layer.parent?.level??0);
+    return{river:surface.elevation>0||raised||surface.ramp?false:river,bridge,level:surface.level,height:surface.elevation/TERRAIN_LEVEL_HEIGHT,surfaceElevation:surface.elevation,terrainLayer:surface.level,ramp:surface.ramp?.id||null,rampProgress:surface.ramp?RangeUtil.clamp(Number(surface.progress)||0,0,1):null};
   }
 }
 // Tracks authoritative obstacle values without per-tick filter/map/string allocation.
@@ -24033,6 +24293,7 @@ if(type==="DESYNC_CORRECTION_RUN"&&this.role==="guest"){
     }
     if(m.type==="GAME_START"&&this.role!=="host"){
       if(this.simEnded)return;
+      this.lastPongAt=Date.now();
       if(m.matchConfig)this.applyMatchConfig(m.matchConfig,{authoritative:true});
       if(m.roundRules&&typeof m.roundRules==="object")this.roundRules=structuredClone(m.roundRules);
       this.draft=m.draft;
@@ -24386,6 +24647,13 @@ if(type==="DESYNC_CORRECTION_RUN"&&this.role==="guest"){
     if(snapStart){const ms=performance.now()-snapStart;this.sim.perfStats.snapshotMs=ms;this.sim.perfStats.maxSnapshotMs=ms}
     this.onSnapshot(initialSnapshot);
     this.onRenderTargets(this.sim,true);
+
+    // Local map/script construction and initial presentation can block the event
+    // loop. Start gameplay/liveness clocks after that work, not before it.
+    const startedAt=performance.now();
+    this.simClockLast=startedAt;this.lastDriverPulseAt=startedAt;this.lastSnapshotEmitAt=startedAt;
+    this.lastPongAt=Date.now();
+    if(this.role!=="host")this.hostClockReceivedAt=startedAt;
 
     if(this.role==="host"){
       this.lastSyncPulseAt=0;
@@ -28062,39 +28330,110 @@ class TerrainPresentation{
   });
   static css(color){return `rgba(${Math.round(color[0]*255)},${Math.round(color[1]*255)},${Math.round(color[2]*255)},${color[3]??1})`}
   static fillPlanarGround(c,w,h){c.fillStyle=this.css(this.colors.lowGround);c.fillRect(0,0,w,h)}
+  static riverSurfaceCache=new WeakMap();
+  static riverSurfaceMesh(map,atlas){
+    let mesh=this.riverSurfaceCache.get(atlas);if(mesh)return mesh;
+    mesh=[];
+    {
+      const terrain=MapGeneration.mapTerrainDescriptor(map),sources=[];
+      const add=poly=>{if(poly?.length>=3)sources.push(poly)};
+      if(terrain.riverPolygon?.length>=3)add(terrain.riverPolygon);
+      else if(terrain.riverPath?.length>1)add(MapGeometry.polylineToRibbonPolygon(terrain.riverPath,terrain.riverHalfWidth));
+      for(const poly of terrain.riverBranchPolygons||[])add(poly);
+      if(!terrain.riverBranchPolygons?.length)for(const path of terrain.riverBranches||[])if(path.length>1)add(MapGeometry.polylineToRibbonPolygon(path,terrain.riverHalfWidth*.72));
+      const floors=(atlas.renderSurfaceMesh||atlas.surfaceMesh).filter(p=>{if(p.kind!=='plateau'||p.level>0)return false;const layer=atlas.layers.find(l=>l.id===p.id);return !layer||p.level<=(layer.parent?.level??0)});
+      for(const source of sources)for(const [poly,color] of [[source,[.10,.31,.39,.60]],[MapGeometry.insetPolygonTowardCenter(source,.12),[.20,.52,.64,.44]]]){
+        const triangles=PolygonTriangulation.mesh(poly).triangles;
+        for(const floor of floors)for(const indices of floor.triangles){
+          const clip=indices.map(i=>({x:floor.vertices[i].x,y:floor.vertices[i].z}));
+          if(NavigationMeshBuilder.cross(clip[0],clip[1],clip[2])<0)clip.reverse();
+          for(const tri of triangles){
+            const points=NavigationGoal.clipPolygon(tri.map(i=>poly[i]),clip);
+            for(let i=1;i<points.length-1;i++){const tri=[points[0],points[i],points[i+1]],x=tri.reduce((s,p)=>s+p.x,0)/3,y=tri.reduce((s,p)=>s+p.y,0)/3;if(atlas.levelAt(x,y)!==floor.level||!TerrainQuery.at(map,x,y,atlas).river)continue;mesh.push({color,vertices:tri.map(p=>({x:p.x,y:floor.level*TERRAIN_LEVEL_HEIGHT,z:p.y,groundY:0}))})}
+          }
+        }
+      }
+    }
+    this.riverSurfaceCache.set(atlas,mesh);return mesh;
+  }
+  static drawRiverSurfaces(r,map,restoreDepthWrite=null){
+    const mesh=this.riverSurfaceMesh(map,r.world.terrain.surfaces);if(!mesh.length)return;
+    const projection=TerrainSurfaceProjection.forAtlas(r.world.terrain.surfaces).projectedTriangleMesh(mesh,r.orientationRole()==='guest');
+    const a=r.projectedCoordinatesAtScreen(0,0),b=r.projectedCoordinatesAtScreen(r.canvas.width,r.canvas.height);
+    const visible=projection.index.query(a.x,a.y,b.x,b.y,1/r.sc()).sort((a,b)=>a.order-b.order);
+    r.perfStats.riverVisibleTriangles=visible.length;r.perfStats.riverTotalTriangles=mesh.length;
+    const previous=r._renderDepth,depthWrite=restoreDepthWrite??r.gl.getParameter(r.gl.DEPTH_WRITEMASK);
+    r.gl.depthMask(false);r.begin();
+    try{for(const {tri} of visible)for(const v of tri.vertices){const p=r.projectRenderWorldPosition(v);r.setRenderDepth(p.depth-.0001);r.v(p.x,p.y,tri.color)}r.flush()}
+    finally{r.gl.depthMask(depthWrite);r.setRenderDepth(previous);r.begin()}
+  }
+  static drawBridges(r,terrain,restoreDepthWrite=null){
+    const sc=r.sc(),previous=r._renderDepth,depthWrite=restoreDepthWrite??r.gl.getParameter(r.gl.DEPTH_WRITEMASK);r.gl.depthMask(false);r.begin();
+    try{
+    // 다리: 실제 lane×river crossing descriptor를 그대로 사용. 다리 footprint는 평지 판정이다.
+    for(const br of terrain.bridges||[])r.withWorldSpriteDepth({x:br.x,y:0,z:br.y},()=>{
+      const c=r.worldToPx(r.viewX(br.x),r.viewY(br.y));
+      const a=(Number(br.angle)||0)+(r.orientationRole()==="guest"?Math.PI:0);
+      const ca=Math.cos(a),sa=Math.sin(a),hl=(br.halfLength||80)*sc,hw=(br.halfWidth||30)*sc;
+      const corners=[[-hl,-hw],[hl,-hw],[hl,hw],[-hl,hw]].map(([lx,ly])=>[c[0]+lx*ca-ly*sa,c[1]+lx*sa+ly*ca]);
+      r.poly(corners,[.58,.45,.28,1]);
+      // simple plank/stone bands so the crossing reads at combat zoom.
+      for(let i=-2;i<=2;i++){
+        const t=i/2.5,px=c[0]+ca*hl*t,py=c[1]+sa*hl*t;
+        r.line(px-sa*hw*.92,py+ca*hw*.92,px+sa*hw*.92,py-ca*hw*.92,Math.max(1,1.4*sc),[.76,.64,.42,.50]);
+      }
+      r.line(corners[0][0],corners[0][1],corners[1][0],corners[1][1],Math.max(1.2,1.8*sc),[.34,.27,.18,.75]);
+      r.line(corners[3][0],corners[3][1],corners[2][0],corners[2][1],Math.max(1.2,1.8*sc),[.34,.27,.18,.75]);
+    });
+      r.flush();
+    }finally{r.gl.depthMask(depthWrite);r.setRenderDepth(previous);r.begin()}
+  }
   static drawSurfaces(r){
-    const atlas=r.world.terrain.surfaces;if(!atlas.layers.length)return;
-    const sign=r.orientationRole()==='guest'?-1:1,previous=r._renderDepth;
-    for(const patch of (atlas.renderSurfaceMesh||atlas.surfaceMesh)){
-      if(patch.kind==='cliff'&&patch.outwardY*sign<=1e-8)continue;
-      const points=patch.vertices.map(p=>r.projectRenderWorldPosition(p));
-      let colors;
+    const atlas=r.world.terrain.surfaces;if(!atlas.layers.length&&!atlas.bridges.length)return;
+    const previous=r._renderDepth,mesh=TerrainSurfaceProjection.forAtlas(atlas).renderProjectedSurfaceMesh(r.orientationRole()==='guest');
+    const a=r.projectedCoordinatesAtScreen(0,0),b=r.projectedCoordinatesAtScreen(r.canvas.width,r.canvas.height);
+    const visible=mesh.index.query(a.x,a.y,b.x,b.y,1/r.sc()).sort((a,b)=>a.order-b.order);
+    r.perfStats.terrainVisibleTriangles=visible.length;r.perfStats.terrainTotalTriangles=mesh.triangles.length;
+    const colorCache=mesh.colors||(mesh.colors=new Map());
+    for(const tri of visible){
+      const patch=tri.patch;
+      let colors=colorCache.get(patch);
+      if(!colors){
       if(patch.kind==='cliff'){
         const f=patch.face,dx=f.b.x-f.a.x,dy=f.b.y-f.a.y,light=(dx-dy)/(Math.hypot(dx,dy)||1);
-        colors=points.map(()=>[.31+light*.035,.37+light*.035,.25+light*.025,1]);
-      }else if(patch.kind==='ramp')colors=[this.colors.rampLow,this.colors.rampLow,this.colors.rampHigh,this.colors.rampHigh];
-      else colors=points.map(()=>this.colors.highGround);
-      for(const tri of patch.triangles)for(const i of tri){r.setRenderDepth(points[i].depth);r.v(points[i].x,points[i].y,colors[i])}
+        colors=patch.vertices.map(()=>[.31+light*.035,.37+light*.035,.25+light*.025,1]);
+      }else if(patch.kind==='ramp')colors=patch.vertices.map(v=>{
+        const t=RangeUtil.clamp((v.y-patch.lowLevel*TERRAIN_LEVEL_HEIGHT)/((patch.highLevel-patch.lowLevel)*TERRAIN_LEVEL_HEIGHT),0,1);
+        return this.colors.rampLow.map((c,i)=>c+(this.colors.rampHigh[i]-c)*t);
+      });
+      // The level-0 underlay already owns its grass/water markings. Write the
+      // exact floor depth without repainting those colors; authored depressions remain opaque.
+      else colors=patch.vertices.map(()=>patch.id==='low-ground'?[...this.colors.lowGround.slice(0,3),0]:patch.level===0?this.colors.lowGround:this.colors.highGround);
+      colorCache.set(patch,colors);
+      }
+      for(let i=0;i<3;i++){const p=r.projectRenderWorldPosition(tri.vertices[i]);r.setRenderDepth(p.depth);r.v(p.x,p.y,colors[tri.indices[i]])}
     }
     r.setRenderDepth(previous);
   }
-  static drawSurfaceEdges(r){
-    const atlas=r.world.terrain.surfaces;if(!atlas.layers.length)return;
-    const sc=r.sc(),previous=r._renderDepth;
-    // Surface markings test terrain depth but never become invisible occluders.
-    // Endpoint depths preserve picking/render alignment on every ramp orientation.
-    const edge=(a,b,ha,hb,width,color)=>{
+  static surfaceLine(r,a,b,ha,hb,width,color){
+      const previous=r._renderDepth;
       const p=r.projectRenderWorldPosition({x:a.x,y:ha,z:a.y,groundY:0}),q=r.projectRenderWorldPosition({x:b.x,y:hb,z:b.y,groundY:0});
       const dx=q.x-p.x,dy=q.y-p.y,len=Math.hypot(dx,dy)||1,nx=-dy/len*width/2,ny=dx/len*width/2;
       const v=[{x:p.x+nx,y:p.y+ny,d:p.depth},{x:q.x+nx,y:q.y+ny,d:q.depth},{x:q.x-nx,y:q.y-ny,d:q.depth},{x:p.x-nx,y:p.y-ny,d:p.depth}];
       for(const i of [0,1,2,0,2,3]){const p=v[i];r.setRenderDepth(p.d-.0008);r.v(p.x,p.y,color)}
-    };
-    for(const f of (atlas.renderFaces||atlas.faces))edge(f.a,f.b,f.high,f.high,Math.max(1,3*sc),[.80,.83,.60,1]);
+      r.setRenderDepth(previous);
+  }
+  static drawSurfaceEdges(r){
+    const atlas=r.world.terrain.surfaces;if(!atlas.layers.length&&!atlas.bridges.length)return;
+    const sc=r.sc(),previous=r._renderDepth;
+    // Endpoint depths preserve picking/render alignment on every ramp orientation.
+    const edge=(...args)=>this.surfaceLine(r,...args);
+    for(const f of (atlas.renderFaces||atlas.faces))edge(f.a,f.b,f.highA??f.high,f.highB??f.high,Math.max(1,3*sc),[.80,.83,.60,1]);
     for(const ramp of atlas.ramps){
-      edge(ramp.lowA,ramp.lowB,0,0,Math.max(.8,1.5*sc),[.78,.73,.53,1]);
-      edge(ramp.highA,ramp.highB,ramp.layer.elevation,ramp.layer.elevation,Math.max(.8,1.5*sc),[.86,.81,.60,1]);
+      edge(ramp.lowA,ramp.lowB,ramp.lowElevation,ramp.lowElevation,Math.max(.8,1.5*sc),[.78,.73,.53,1]);
+      edge(ramp.highA,ramp.highB,ramp.highElevation,ramp.highElevation,Math.max(.8,1.5*sc),[.86,.81,.60,1]);
       for(const t of [.25,.5,.75]){
-        const a=TerrainSurfaceAtlas.lerp(ramp.lowA,ramp.highA,t),b=TerrainSurfaceAtlas.lerp(ramp.lowB,ramp.highB,t),h=ramp.layer.elevation*t;
+        const a=TerrainSurfaceAtlas.lerp(ramp.lowA,ramp.highA,t),b=TerrainSurfaceAtlas.lerp(ramp.lowB,ramp.highB,t),h=ramp.lowElevation+(ramp.highElevation-ramp.lowElevation)*t;
         edge(a,b,h,h,Math.max(.6,1.1*sc),[.84,.79,.57,.28]);
       }
     }
@@ -28103,7 +28442,7 @@ class TerrainPresentation{
   static drawSurfaceMini(c,map,pt,scale){
     const atlas=TerrainSurfaceAtlas.fromMap(map);if(!atlas.layers.length)return;
     const fill=(points,color)=>{c.fillStyle=color;c.beginPath();for(let i=0;i<points.length;i++){const p=pt(points[i]);if(i)c.lineTo(...p);else c.moveTo(...p)}c.closePath();c.fill()};
-    for(const layer of atlas.layers)fill(layer.renderTopPoints||layer.topPoints,this.css(this.colors.highGround));
+    for(const layer of atlas.layers.slice().sort((a,b)=>Math.abs(b.area)-Math.abs(a.area)))fill(layer.renderTopPoints||layer.topPoints,this.css(layer.level===0?this.colors.lowGround:this.colors.highGround));
     for(const ramp of atlas.ramps){
       const a=pt(TerrainSurfaceAtlas.lerp(ramp.lowA,ramp.lowB,.5)),b=pt(TerrainSurfaceAtlas.lerp(ramp.highA,ramp.highB,.5));
       const gradient=c.createLinearGradient(...a,...b);
@@ -28119,29 +28458,37 @@ class TerrainPresentation{
     for(const [a,b,c] of triangles)r.tri(...points[a],...points[b],...points[c],color);
   }
 
-  static drawWorld(r,terrain){
+  static drawWorld(r,terrain,restoreDepthWrite=null){
+    const depthWrite=restoreDepthWrite??r.gl.getParameter(r.gl.DEPTH_WRITEMASK);
     this.drawSurfaces(r);
+    // Only solid terrain owns occlusion. Ground decoration must not hide Fog.
+    r.flush();r.begin();
+    r.gl.depthMask(false);
     const sc=r.sc(),pt=p=>r.worldToPx(r.viewX(p.x),r.viewY(p.y));
     for(const road of terrain.roads||[]){
-      const points=road.points.map(pt),width=road.width*sc;
-      for(let i=0;i<points.length-1;i++){
-        const a=points[i],b=points[i+1];
-        r.line(a[0],a[1],b[0],b[1],width,[.73,.68,.50,.42]);
-        r.line(a[0],a[1],b[0],b[1],width*.74,[.84,.79,.62,.42]);
+      const width=road.width*sc,atlas=r.world.terrain.surfaces;
+      for(let i=0;i<road.points.length-1;i++){
+        const a=road.points[i],b=road.points[i+1],ha=atlas.heightAt(a.x,a.y),hb=atlas.heightAt(b.x,b.y);
+        this.surfaceLine(r,a,b,ha,hb,width,[.73,.68,.50,.42]);
+        this.surfaceLine(r,a,b,ha,hb,width*.74,[.84,.79,.62,.42]);
       }
-      for(const p of points)r.circle(p[0],p[1],width*.37,[.84,.79,.62,.25],16);
+      for(const p of road.points){const q=pt(p);
+        r.withWorldSpriteDepth({x:p.x,y:atlas.heightAt(p.x,p.y),z:p.y,groundY:0},()=>r.circle(q[0],q[1],width*.37,[.84,.79,.62,.25],16));
+      }
     }
     for(const block of terrain.blockers||[]){
       const points=block.points.map(pt),roots=block.kind==="roots";
       const center=points.reduce((p,q)=>[p[0]+q[0]/points.length,p[1]+q[1]/points.length],[0,0]);
       const minX=Math.min(...points.map(p=>p[0])),maxX=Math.max(...points.map(p=>p[0])),minY=Math.min(...points.map(p=>p[1])),maxY=Math.max(...points.map(p=>p[1]));
       if(maxX<-40||minX>r.canvas.width+40||maxY<-40||minY>r.canvas.height+40)continue;
+      const anchor=block.points.reduce((p,q)=>({x:p.x+q.x/block.points.length,y:p.y+q.y/block.points.length}),{x:0,y:0});
+      r.withWorldSpriteDepth({x:anchor.x,y:r.world.terrain.surfaces.heightAt(anchor.x,anchor.y),z:anchor.y,groundY:0},()=>{
       const mesh=TerrainPresentation.polygonMesh(block.points);
       if(!mesh.convex){
         TerrainPresentation.fillMesh(r,points.map(p=>[p[0]+7*sc,p[1]+12*sc]),mesh.triangles,[.12,.17,.12,.24]);
         TerrainPresentation.fillMesh(r,points,mesh.triangles,roots?[.47,.43,.28,1]:[.49,.55,.44,1]);
         for(let i=0;i<points.length;i++){const a=points[i],b=points[(i+1)%points.length];r.line(a[0],a[1],b[0],b[1],Math.max(1,3*sc),[.70,.73,.59,.8])}
-        continue;
+        return;
       }
       r.poly(points.map(p=>[p[0]+7*sc,p[1]+12*sc]),[.12,.17,.12,.24]);
       r.poly(points,roots?[.27,.26,.17,1]:[.24,.31,.26,1]);
@@ -28162,10 +28509,40 @@ class TerrainPresentation{
       }else{
         for(let i=0;i<top.length;i+=3){const a=top[i],b=top[(i+1)%top.length];r.poly([a,b,center],[.68,.71,.57,.23])}
       }
+      });
+    }
+    r.flush();r.begin();
+    r.gl.depthMask(depthWrite);
+  }
+  static miniRiverCache=new WeakMap();
+  static drawMiniBridges(c,terrain,pt,style){
+    const origin=pt({x:0,y:0}),xAxis=pt({x:1,y:0}),yAxis=pt({x:0,y:1});
+    const sx=Math.hypot(xAxis[0]-origin[0],xAxis[1]-origin[1]),sy=Math.hypot(yAxis[0]-origin[0],yAxis[1]-origin[1]);
+    const orientation=Math.atan2(xAxis[1]-origin[1],xAxis[0]-origin[0]);
+    for(const br of terrain.bridges||[]){
+      const q=pt(br),hl=(br.halfLength||80)*sx,hw=(br.halfWidth||30)*sy;
+      c.save();c.translate(...q);c.rotate((Number(br.angle)||0)+orientation);
+      c.fillStyle=style.fill;c.strokeStyle=style.stroke;c.lineWidth=style.lineWidth;
+      c.fillRect(-hl,-hw,hl*2,hw*2);c.strokeRect(-hl,-hw,hl*2,hw*2);c.restore();
     }
   }
-  static drawMini(c,map,pt,scale){
+  static drawMini(c,map,pt,scale,bridgeStyle={fill:"#9a7a47",stroke:"#d2b477",lineWidth:Math.max(.8,c.canvas.width*.0022)}){
     this.drawSurfaceMini(c,map,pt,scale);
+    const atlas=TerrainSurfaceAtlas.fromMap(map),mesh=this.riverSurfaceMesh(map,atlas);
+    if(mesh.length){
+      let cache=this.miniRiverCache.get(atlas);if(!cache)this.miniRiverCache.set(atlas,cache=new Map());
+      const origin=pt({x:0,y:0}),extent=pt({x:atlas.width,y:atlas.height}),key=[c.canvas.width,c.canvas.height,...origin,...extent,scale].join(':');
+      let image=cache.get(key);
+      if(!image){
+        image=document.createElement('canvas');image.width=c.canvas.width;image.height=c.canvas.height;const water=image.getContext('2d');
+        for(const tri of mesh){
+          water.fillStyle=this.css(tri.color);water.beginPath();
+          for(let i=0;i<tri.vertices.length;i++){const v=tri.vertices[i],p=pt({x:v.x,y:v.z});if(i)water.lineTo(...p);else water.moveTo(...p)}water.closePath();water.fill();
+        }
+        if(cache.size>=4)cache.delete(cache.keys().next().value);cache.set(key,image);
+      }
+      c.drawImage(image,0,0);
+    }
     const terrain=map?.terrain||{};
     for(const road of terrain.roads||[]){const p=road.points.map(pt);if(!p.length)continue;
       c.lineCap="round";c.lineJoin="round";c.lineWidth=Math.max(1,road.width*scale);c.strokeStyle="#94896988";
@@ -28175,6 +28552,7 @@ class TerrainPresentation{
       c.fillStyle=b.kind==="roots"?"#615b38":"#4e5c4b";c.strokeStyle="#9aa884";c.lineWidth=Math.max(.7,scale*10);
       c.beginPath();c.moveTo(...p[0]);for(let i=1;i<p.length;i++)c.lineTo(...p[i]);c.closePath();c.fill();c.stroke();
     }
+    this.drawMiniBridges(c,terrain,pt,bridgeStyle);
   }
   static drawBarrier(r,b){
     if(!r.isFriendlySide(b.side)&&!r.visibleRaw(b.x,b.y))return;
@@ -28375,6 +28753,11 @@ class GLRenderer{
   sc(){return this.baseSc()*(this.replayZoom||1)}
   viewWorldW(){return VIEW_W/(this.replayZoom||1)}
   viewWorldH(){return VIEW_H/(this.replayZoom||1)}
+  clampCameraTop(top){
+    const atlas=this.world.terrain.surfaces,min=-atlas.maxHeight*BattlefieldProjection.heightScale;
+    const max=Math.max(min,this.world.height-atlas.minHeight*BattlefieldProjection.heightScale-this.viewWorldH());
+    return RangeUtil.clamp(top,min,max);
+  }
   orientationRole(){return this.replayOrientationRole||this.role}
   viewX(x){return this.orientationRole()==="guest"?this.world.width-x:x}
   viewY(y){return this.orientationRole()==="guest"?this.world.height-y:y}
@@ -28428,7 +28811,8 @@ class GLRenderer{
     const anchor=this.projectRenderWorldPosition(world),previous=this._spriteDepthPlane,depth=this._renderDepth;
     const surface=conform?this.world.terrain.surfaces.sample(world.x,world.z):null,ramp=surface?.ramp;
     const sign=this.orientationRole()==='guest'?-1:1,a=GLRenderer.DEPTH_PROJECTION.viewSpan/this.world.height,b=GLRenderer.DEPTH_PROJECTION.height,vertical=BattlefieldProjection.heightScale;
-    let kx=ramp?ramp.nx*ramp.layer.elevation/ramp.run:0,kz=ramp?ramp.ny*ramp.layer.elevation/ramp.run:0;
+    const rise=ramp?ramp.highElevation-ramp.lowElevation:0;
+    let kx=surface?.gradient?.x??(ramp?ramp.nx*rise/ramp.run:0),kz=surface?.gradient?.z??(ramp?ramp.ny*rise/ramp.run:0);
     // An edge-on/back-facing support plane has no front-facing screen inverse.
     // Keep the billboard camera-facing; nearer terrain still owns occlusion.
     if(1-vertical*sign*kz<=1e-7){kx=0;kz=0}
@@ -28786,7 +29170,7 @@ class GLRenderer{
     // camera-facing bias. Keep range tight for mobile depth precision.
     const vz=this.viewY(p.z),elevation=p.groundY==null?this.world.terrain.surfaces.heightAt(p.x,p.z):0;
     const d=GLRenderer.DEPTH_PROJECTION;
-    return RangeUtil.clamp(d.offset-vz/this.world.height*d.viewSpan-(Math.max(0,p.y+elevation)||0)*d.height,d.min,d.max);
+    return RangeUtil.clamp(d.offset-vz/this.world.height*d.viewSpan-(Number(p.y+elevation)||0)*d.height,d.min,d.max);
   }
   projectRenderWorldPositionStable(p){
     // Same projection as projectRenderWorldPosition, but intentionally before
@@ -31157,42 +31541,10 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
     }
 
     const terrain=MapGeneration.mapTerrainDescriptor(mapDesc);
-    // 강: 굵은 선을 이어 붙이지 않고 닫힌 polygon 영역 자체를 채운다.
-    const drawRiverPolygon=(poly,outer,inner)=>{
-      if(!Array.isArray(poly)||poly.length<3)return;
-      const pts=poly.map(p=>this.worldToPx(this.viewX(p.x),this.viewY(p.y)));
-      const mesh=PolygonTriangulation.mesh(poly);
-      TerrainPresentation.fillMesh(this,pts,mesh.triangles,outer);
-      const innerWorld=MapGeometry.insetPolygonTowardCenter(poly,.12);
-      const innerPts=innerWorld.map(p=>this.worldToPx(this.viewX(p.x),this.viewY(p.y)));
-      TerrainPresentation.fillMesh(this,innerPts,mesh.triangles,inner);
-    };
-    drawRiverPolygon(terrain.riverPolygon||[],[.10,.31,.39,.60],[.20,.52,.64,.44]);
-    for(const poly of terrain.riverBranchPolygons||[])drawRiverPolygon(poly,[.10,.31,.39,.58],[.20,.52,.64,.42]);
-    if((!terrain.riverPolygon||terrain.riverPolygon.length<3)&&terrain.riverPath?.length>1){
-      const river=terrain.riverPath.map(p=>this.worldToPx(this.viewX(p.x),this.viewY(p.y)));
-      for(let i=0;i<river.length-1;i++)this.line(
-        river[i][0],river[i][1],river[i+1][0],river[i+1][1],
-        Math.max(34,terrain.riverHalfWidth*1.6*sc),[.18,.48,.60,.42]
-      );
-    }
-    // 다리: 실제 lane×river crossing descriptor를 그대로 사용. 다리 footprint는 평지 판정이다.
-    for(const br of terrain.bridges||[]){
-      const c=this.worldToPx(this.viewX(br.x),this.viewY(br.y));
-      const a=(Number(br.angle)||0)+(this.orientationRole()==="guest"?Math.PI:0);
-      const ca=Math.cos(a),sa=Math.sin(a),hl=(br.halfLength||80)*sc,hw=(br.halfWidth||30)*sc;
-      const corners=[[-hl,-hw],[hl,-hw],[hl,hw],[-hl,hw]].map(([lx,ly])=>[c[0]+lx*ca-ly*sa,c[1]+lx*sa+ly*ca]);
-      this.poly(corners,[.58,.45,.28,1]);
-      // simple plank/stone bands so the crossing reads at combat zoom.
-      for(let i=-2;i<=2;i++){
-        const t=i/2.5,px=c[0]+ca*hl*t,py=c[1]+sa*hl*t;
-        this.line(px-sa*hw*.92,py+ca*hw*.92,px+sa*hw*.92,py-ca*hw*.92,Math.max(1,1.4*sc),[.76,.64,.42,.50]);
-      }
-      this.line(corners[0][0],corners[0][1],corners[1][0],corners[1][1],Math.max(1.2,1.8*sc),[.34,.27,.18,.75]);
-      this.line(corners[3][0],corners[3][1],corners[2][0],corners[2][1],Math.max(1.2,1.8*sc),[.34,.27,.18,.75]);
-    }
-
-    TerrainPresentation.drawWorld(this,terrain);
+    // renderGroundPass owns depth writes here; avoid GPU state readbacks between batches.
+    TerrainPresentation.drawWorld(this,terrain,true);
+    TerrainPresentation.drawRiverSurfaces(this,mapDesc,true);
+    TerrainPresentation.drawBridges(this,terrain,true);
   }
   drawMineral(m){
     if(m.amount<=0||!this.visibleRaw(m.x,m.y))return;
@@ -32237,14 +32589,13 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       if(!surfaces.has(level))surfaces.set(level,[]);
       surfaces.get(level).push(patch);
     };
-    const midpoint=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2,z:(a.z+b.z)/2,groundY:0});
     for(const patch of atlas.renderSurfaceMesh||atlas.surfaceMesh){
       if(patch.kind==='ramp'){
         // Match TerrainSurfaceAtlas.sample's level transition. Each half uses a
         // fixed-level mask, so neighboring low-ground texels cannot reveal its high seam.
-        const [a,b,c,d]=patch.vertices,ma=midpoint(a,d),mb=midpoint(b,c),triangles=[[0,1,2],[0,2,3]];
-        add(patch.lowLevel,{kind:'ramp',vertices:[a,b,mb,ma],triangles});
-        add(patch.highLevel,{kind:'ramp',vertices:[ma,mb,c,d],triangles});
+        const split=TerrainSurfaceAtlas.splitRampAtLevelTransition(patch);
+        add(patch.lowLevel,{kind:'ramp',...split.low});
+        add(patch.highLevel,{kind:'ramp',...split.high});
       }else add(patch.kind==='cliff'?patch.face.highLevel:patch.level,patch);
     }
     for(const [id,texture] of this.fogTextures)if(!surfaces.has(Number(id.slice(6)))){
@@ -32289,10 +32640,8 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     const gl=this.gl,color=this.replayVisionMode?[.008,.012,.018,.96]:[.025,.045,.048,.88],sign=this.orientationRole()==='guest'?-1:1;
     const emitPatch=(patch)=>{if(patch.kind==='cliff'&&patch.outwardY*sign<=1e-8)return;for(const tri of patch.triangles)for(const i of tri)this.fogVertex(patch.vertices[i])};
     gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
-    // Base level is one projected world plane. Higher terrain already owns nearer depth,
-    // so the level-0 fog cannot leak through a plateau.
-    this.fogFrame.reset();const base=[{x:0,y:0,z:0,groundY:0},{x:this.world.width,y:0,z:0,groundY:0},{x:this.world.width,y:0,z:this.world.height,groundY:0},{x:0,y:0,z:this.world.height,groundY:0}];
-    for(const i of [0,1,2,0,2,3])this.fogVertex(base[i]);this.flushFog(this.fogTextures.get('level:0'),color);
+    // The atlas clips the base floor around authored surfaces, including depressions.
+    // Fog uses those same patches so an implicit level-0 plane cannot cover a lower floor.
     for(const [level,patches] of this.fogSurfaces){this.fogFrame.reset();for(const patch of patches)emitPatch(patch);this.flushFog(this.fogTextures.get(`level:${level}`),color)}
     gl.bindTexture(gl.TEXTURE_2D,null);gl.useProgram(this.p);gl.uniform2f(this.r,this.canvas.width,this.canvas.height);gl.disable(gl.DEPTH_TEST);gl.depthMask(false);
   }
@@ -32604,7 +32953,7 @@ e.stopPropagation();
       const vw=this.renderer.viewWorldW(),vh=this.renderer.viewWorldH();
       this.renderer.cameraLeft=RangeUtil.clamp(viewWorldX-vw/2,0,Math.max(0,this.renderer.world.width-vw));
       const elevation=this.renderer.world.terrain.surfaces.heightAt(this.renderer.viewX(viewWorldX),this.renderer.viewY(viewWorldY));
-      this.renderer.cameraTop=RangeUtil.clamp(BattlefieldProjection.planarY(viewWorldY,elevation)-vh/2,0,Math.max(0,this.renderer.world.height-vh));
+      this.renderer.cameraTop=this.renderer.clampCameraTop(BattlefieldProjection.planarY(viewWorldY,elevation)-vh/2);
 
       if(LocalEnvironmentUtil.isLocalTest()&&ActiveViewState.role){
         ViewRuntimeState.byRole[ActiveViewState.role].cameraLeft=this.renderer.cameraLeft;
@@ -32702,12 +33051,6 @@ e.stopPropagation();
       const pts=miniTerrain.riverPath.map(p=>this.point(p.x,p.y));
       c.lineCap="round";c.strokeStyle="#326d84";c.lineWidth=Math.max(2,(miniTerrain.riverHalfWidth||80)/this.renderer.world.width*w*2);
       c.beginPath();c.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)c.lineTo(pts[i][0],pts[i][1]);c.stroke();
-    }
-    for(const br of miniTerrain.bridges||[]){
-      const q=this.point(br.x,br.y),a=(Number(br.angle)||0)+(r.orientationRole?.()==="guest"?Math.PI:0);
-      const hl=(br.halfLength||80)/this.renderer.world.width*w,hw=(br.halfWidth||30)/this.renderer.world.height*h;
-      c.save();c.translate(q[0],q[1]);c.rotate(a);c.fillStyle="#9a7a47";c.strokeStyle="#d2b477";c.lineWidth=Math.max(.8,w*.0022);
-      c.fillRect(-hl,-hw,hl*2,hw*2);c.strokeRect(-hl,-hw,hl*2,hw*2);c.restore();
     }
     TerrainPresentation.drawMini(c,s.mapDescriptor,p=>this.point(p.x,p.y),w/this.renderer.world.width);
     // 현재 맵 descriptor의 실제 lane을 표시한다.
@@ -34169,13 +34512,7 @@ const river=terrain.riverPath;
     c.lineCap="round";c.strokeStyle="#3e86a4";c.lineWidth=Math.max(5,(terrain.riverHalfWidth||80)/worldW*w*2);
     c.beginPath();let q=pt(river[0]);c.moveTo(q[0],q[1]);for(let i=1;i<river.length;i++){q=pt(river[i]);c.lineTo(q[0],q[1])}c.stroke();
   }
-  for(const br of terrain.bridges||[]){
-    const q=pt(br),hl=(br.halfLength||80)/worldW*w,hw=(br.halfWidth||30)/worldH*h;
-    const a=(Number(br.angle)||0)+(guestView?Math.PI:0);
-    c.save();c.translate(q[0],q[1]);c.rotate(a);c.fillStyle="#a1804c";c.strokeStyle="#d8bd7a";c.lineWidth=Math.max(.8,dpr*.7);
-    c.fillRect(-hl,-hw,hl*2,hw*2);c.strokeRect(-hl,-hw,hl*2,hw*2);c.restore();
-  }
-  TerrainPresentation.drawMini(c,descriptor,pt,w/worldW);
+  TerrainPresentation.drawMini(c,descriptor,pt,w/worldW,{fill:"#a1804c",stroke:"#d8bd7a",lineWidth:Math.max(.8,dpr*.7)});
   const laneColors={top:"#9ac7e3aa",mid:"#ead36eaa",bot:"#96d08aaa"};
   for(const id of ["top","mid","bot"]){
     const pts=descriptor.laneControlPoints?.[id]||[];
@@ -35027,7 +35364,7 @@ class ReplayPresentation{
   if(preserveCenter){
     const vw=ActiveViewState.renderer.viewWorldW(),vh=ActiveViewState.renderer.viewWorldH();
     ActiveViewState.renderer.cameraLeft=RangeUtil.clamp(oldCenterX-vw/2,0,Math.max(0,(ActiveViewState.renderer?.world||WorldContext.standard).width-vw));
-    ActiveViewState.renderer.cameraTop=RangeUtil.clamp(oldCenterY-vh/2,0,Math.max(0,(ActiveViewState.renderer?.world||WorldContext.standard).height-vh));
+    ActiveViewState.renderer.cameraTop=ActiveViewState.renderer.clampCameraTop(oldCenterY-vh/2);
   }
   if(ActiveViewState.minimap)ActiveViewState.minimap.renderer=ActiveViewState.renderer;
   UiRegistry.refs.replayHostViewBtn?.classList.toggle("active",viewMode==="host");
@@ -35053,7 +35390,7 @@ class ReplayPresentation{
   ActiveViewState.renderer.replayZoom=RangeUtil.clamp(Number(value)||1,.6,1.8);
   const vw=ActiveViewState.renderer.viewWorldW(),vh=ActiveViewState.renderer.viewWorldH();
   ActiveViewState.renderer.cameraLeft=RangeUtil.clamp(centerX-vw/2,0,Math.max(0,(ActiveViewState.renderer?.world||WorldContext.standard).width-vw));
-  ActiveViewState.renderer.cameraTop=RangeUtil.clamp(centerY-vh/2,0,Math.max(0,(ActiveViewState.renderer?.world||WorldContext.standard).height-vh));
+  ActiveViewState.renderer.cameraTop=ActiveViewState.renderer.clampCameraTop(centerY-vh/2);
   ActiveViewState.minimap?.draw();
 }
   static renderReplaySnapshot(s){
@@ -35218,8 +35555,8 @@ class CampaignMapDefinition{
   const lanes=raw?.lanes||{};for(const k of ["top","mid","bot"])base.laneControlPoints[k]=Array.isArray(lanes[k])&&lanes[k].length>=2?pts(lanes[k]):[{...base.spawns.host},{...base.spawns.guest}];
   base.flags=[MapGeometry.pointOnPolyline(base.laneControlPoints.mid,.18),MapGeometry.pointOnPolyline(base.laneControlPoints.mid,.82)].map(p=>({...p,forced:false}));
   base.capturePoints=(Array.isArray(raw?.capturePoints)?raw.capturePoints:[]).map((c,i)=>({...point(c.position),id:String(c.id||`campaign-cp-${i}`),laneKey:String(c.lane||"mid"),lane:String(c.lane||"mid").toUpperCase(),label:String(c.label||"전선 거점"),stage:Number(c.stage)||1,enabled:c.enabled!==false,owner:c.owner===0||c.owner===1?c.owner:null}));
-  const t=raw?.terrain||{};base.terrain={riverPath:pts(t.river?.points),riverHalfWidth:radius(t.river?.halfWidth||.035),riverBranches:[],riverPolygon:[],riverBranchPolygons:[],bridges:(Array.isArray(t.bridges)?t.bridges:[]).map((b,i)=>({...point(b.position),id:String(b.id||`bridge-${i}`),angle:Number(b.angle)||0,halfLength:radius(b.halfLength||.055),halfWidth:radius(b.halfWidth||.018)}))};
-  base.terrain.layers=(t.layers||[]).map(o=>({id:String(o.id),level:Number(o.level),points:pts(o.points)}));
+  const t=raw?.terrain||{};base.terrain={riverPath:pts(t.river?.points),riverHalfWidth:radius(t.river?.halfWidth||.035),riverBranches:[],riverPolygon:[],riverBranchPolygons:[],bridges:(Array.isArray(t.bridges)?t.bridges:[]).map((b,i)=>({...point(b.position),id:String(b.id||`bridge-${i}`),angle:Number(b.angle)||0,level:Number(b.level??0),halfLength:radius(b.halfLength||.055),halfWidth:radius(b.halfWidth||.018)}))};
+  base.terrain.layers=(t.layers||[]).map(o=>({id:String(o.id),level:Number(o.level),points:pts(o.points),...(o.innerPoints?{innerPoints:pts(o.innerPoints)}:{})}));
   base.terrain.ramps=(t.ramps||[]).map(o=>({...o,run:radius(o.run)}));
   base.terrain.blockers=(t.blockers||[]).map(o=>({id:o.id,kind:o.kind||"cliff",points:pts(o.points),blocksMovement:o.blocksMovement!==false,blocksVision:o.blocksVision!==false,blocksProjectile:!!o.blocksProjectile,blocksAirVision:!!o.blocksAirVision}));
   base.terrain.roads=(t.roads||[]).map(o=>({id:o.id,points:pts(o.points),width:Math.max(32,(Number(o.width)||.04)*minDim)}));
@@ -35397,7 +35734,7 @@ class CampaignScriptRuntime{
    if(i<0)st.objectives.push(next);else st.objectives[i]=next;return;
   }},
 {types:["spawnGroup"],run(a,sim,st){const id=String(a.id||a.group||`campaign-${sim.seq+1}`);let camp=sim.camps.find(c=>c.id===id);if(!camp){const p=a.position||[.5,.5],side=CampaignFaction.side(a.faction||"enemy",this.humanSide());camp={id,kind:"scenarioUnitGroup",x:(Number(p[0])||0)*sim.world.width,y:(Number(p[1])||0)*sim.world.height,state:"ready",respawnAt:0,spawnNo:0,side,composition:UnitCompositionDefinition.normalize(a.composition),formation:String(a.formation||"cluster"),label:String(a.label||id),homeSpread:(Number(a.spread)||.02)*Math.min(sim.world.width,sim.world.height),spawnOnStart:false};sim.camps.push(camp)}if(!sim.units.some(u=>u.alive&&(u.campId||u.scenarioGroupId)===id))sim.spawnCamp(camp);return}},
-{types:["order"],run(a,sim,st){const id=String(a.group||a.objectId||""),members=sim.units.filter(u=>u.alive&&(u.campId||u.scenarioGroupId)===id),camp=sim.camps.find(c=>c.id===id);let target=null;if(a.target==="playerBase")target=sim.buildings.find(b=>b.side===this.humanSide()&&b.alive!==false&&b.hp>0&&BuildingDefinition.get(b.type)?.isMainBase);else if(a.target==="enemyBase")target=sim.buildings.find(b=>b.side!==this.humanSide()&&b.side!==NEUTRAL_SIDE&&b.alive!==false&&b.hp>0&&BuildingDefinition.get(b.type)?.isMainBase);if(!target&&typeof a.target==="string")target=sim.liveEntityRefById(a.target)?.entity||null;if(!target&&Array.isArray(a.position))target={x:Number(a.position[0])*sim.world.width,y:Number(a.position[1])*sim.world.height};const order=String(a.order||"attack");if(camp){camp.control=order==="hold"?"guard":"attack";camp.order={type:order,targetId:target?.id||null,x:target?.x??camp.x,y:target?.y??camp.y};}for(const u of members){if(order==="hold"){u.aggroed=false;u.forcedTargetId=null;u.target=null}else{u.aggroed=true;if(target){u.forcedTargetId=target.id;u.target=target.id}}}sim.events.push({type:"campaignOrder",groupId:id,order,targetId:target?.id||null});return}},
+{types:["order"],run(a,sim,st){const id=String(a.group||a.objectId||""),members=sim.units.filter(u=>u.alive&&(u.campId||u.scenarioGroupId)===id),camp=sim.camps.find(c=>c.id===id);let target=null;if(a.target==="playerBase")target=sim.buildings.find(b=>b.side===this.humanSide()&&b.alive!==false&&b.hp>0&&BuildingDefinition.get(b.type)?.isMainBase);else if(a.target==="enemyBase")target=sim.buildings.find(b=>b.side!==this.humanSide()&&b.side!==NEUTRAL_SIDE&&b.alive!==false&&b.hp>0&&BuildingDefinition.get(b.type)?.isMainBase);if(!target&&typeof a.target==="string")target=sim.liveEntityRefById(a.target)?.entity||null;if(!target&&Array.isArray(a.position))target={x:Number(a.position[0])*sim.world.width,y:Number(a.position[1])*sim.world.height};const order=String(a.order||"attack");if(camp){camp.control=order==="hold"?"guard":"attack";camp.order={type:order,targetId:target?.id||null,x:target?.x??camp.x,y:target?.y??camp.y};}for(const u of members){if(order==="hold"){u.aggroed=false;u.forcedTargetId=null;u.target=null}else{u.aggroed=true;if(target){u.forcedTargetId=target.id??null;u.target=target.id??null}}}sim.events.push({type:"campaignOrder",groupId:id,order,targetId:target?.id||null});return}},
 {types:["spawnObject","attackWave"],run(a,sim,st){const type=String(a.type||"");const camp=sim.camps?.find(c=>c.id===String(a.objectId||""));if(!camp)return;if(!sim.units.some(u=>u.alive&&(u.campId||u.scenarioGroupId)===camp.id))sim.spawnCamp(camp);if(type==="attackWave")this.runAction({type:"order",group:camp.id,order:"attack",target:a.target||"playerBase"});return}},
 {types:["setCaptureActive"],run(a,sim,st){const cp=sim.capturePoints.find(c=>c.id===String(a.id||a.captureId||""));if(cp)cp.enabled=a.enabled!==false;return}},
 {types:["setFaction"],run(a,sim,st){const id=String(a.group||a.objectId||""),side=CampaignFaction.side(a.faction,this.humanSide()),c=sim.camps.find(x=>x.id===id);if(c)c.side=side;for(const u of sim.units)if((u.campId||u.scenarioGroupId)===id){if(side===NEUTRAL_SIDE){u.scenarioGroupId=null;sim.makeUnitNeutralObject(u,id)}else{sim.enlistNeutralObjectUnit(u,side);u.scenarioGroupId=id}}return}},
@@ -35623,9 +35960,10 @@ class CampaignContentValidator{
    const path=`map.terrain.layers[${i}]`;if(!object(l,path))return;
    name(l.id,path+'.id');add(terrainIds,l.id,path+'.id');terrainLayers.set(l.id,l);
    if(Object.prototype.hasOwnProperty.call(l,'elevation'))err(path+'.elevation','고도는 level에서 자동 파생됩니다. elevation을 선언하지 마세요.');
-   if(!Number.isInteger(l.level)||l.level<1)err(path+'.level','1 이상의 정수가 필요합니다.');
+   if(!Number.isSafeInteger(l.level))err(path+'.level','부호 있는 정수가 필요합니다.');
    const points=array(l.points,path+'.points');if(points.length<3)err(path+'.points','정점 3개 이상이 필요합니다.');
    points.forEach((p,j)=>position(p,path+`.points[${j}]`));
+   if(l.innerPoints!=null){const inner=array(l.innerPoints,path+'.innerPoints');if(inner.length!==points.length)err(path+'.innerPoints','경사면 안쪽과 바깥쪽 정점 수가 같아야 합니다.');inner.forEach((p,j)=>position(p,path+`.innerPoints[${j}]`));}
   });
   array(terrain.ramps,'map.terrain.ramps').forEach((r,i)=>{
    const path=`map.terrain.ramps[${i}]`;if(!object(r,path))return;
@@ -35652,7 +35990,7 @@ class CampaignContentValidator{
     }
   });
   array(terrain.river?.points,"map.terrain.river.points").forEach((p,i)=>position(p,`map.terrain.river.points[${i}]`));
-  array(terrain.bridges,"map.terrain.bridges").forEach((item,i)=>{if(object(item,`map.terrain.bridges[${i}]`))position(item.position,`map.terrain.bridges[${i}].position`)});
+  array(terrain.bridges,"map.terrain.bridges").forEach((item,i)=>{if(object(item,`map.terrain.bridges[${i}]`)){position(item.position,`map.terrain.bridges[${i}].position`);if(item.level!=null&&!Number.isSafeInteger(item.level))err(`map.terrain.bridges[${i}].level`,"부호 있는 정수가 필요합니다.")}});
   if(Array.isArray(terrain.hills)&&terrain.hills.length)err("map.terrain.hills","고지는 terrain.layers의 level로 선언하세요.");
   if(map.content?.resourcePlacement!=null&&!["objective-auto","manual","none"].includes(map.content.resourcePlacement))err("map.content.resourcePlacement","지원하지 않는 자원 배치 정책입니다.");
   for(const key of ["resources","gasNodes"])array(map[key],`map.${key}`).forEach((v,i)=>{if(object(v,`map.${key}[${i}]`))position(v.position,`map.${key}[${i}].position`)});
@@ -35712,7 +36050,7 @@ class CampaignPresentation{
  static renderObjectives(){let el=document.getElementById("campaignObjectives"),host=document.querySelector("#gameScreen .canvas-wrap");if(!el){el=document.createElement("div");el.id="campaignObjectives";el.style.cssText="position:absolute;left:7px;top:48px;z-index:29;width:min(250px,56%);box-sizing:border-box;padding:7px 9px;border-radius:8px;background:rgba(12,22,19,.84);border:1px solid rgba(220,235,215,.28);color:#eef4e8;font:600 10px/1.35 system-ui;pointer-events:none";(host||document.body).appendChild(el)}const sim=MatchLifecycle.activeSession?.()?.sim,phase=this.phaseInfo(sim),counter=this.counterInfo(sim);let head="";if(phase){const icon=phase.phase==="day"?"☀":"☾",label=phase.phase==="day"?String(phase.cfg.dayLabel||"낮"):String(phase.cfg.nightLabel||"밤"),secs=Math.max(0,Math.ceil(phase.remaining)),mm=String(Math.floor(secs/60)).padStart(2,"0"),ss=String(secs%60).padStart(2,"0"),progress=phase.phase==="day"?1-phase.remaining/Math.max(1,phase.day):1-phase.remaining/Math.max(1,phase.cycle-phase.day),accent=phase.phase==="day"?"#d7b65e":"#7ea2d8";head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:7px;font-size:11px;font-weight:950"><span>${icon} ${label} · ${phase.index}주기</span><b>${mm}:${ss}</b></div><div style="height:3px;margin:5px 0 6px;background:#ffffff20;border-radius:999px;overflow:hidden"><i style="display:block;height:100%;width:${Math.round(RangeUtil.clamp(progress,0,1)*100)}%;background:${accent}"></i></div>`}let count="";if(counter)count=`<div style="margin-bottom:5px;color:#dce8d6;font-size:9px"><b>${counter.label}</b> · ${counter.remaining}/${counter.total} 남음</div>`;const obj=(sim?.campaignScriptRuntime?.scenario.objectives||[...this.objectives.values()]).filter(o=>o.state!=="hidden").map(o=>`<div style="margin-top:2px;opacity:${o.state==="complete"?.55:1}">${o.state==="complete"?"✓":"◆"} ${o.text}</div>`).join("");el.innerHTML=head+count+obj;el.style.display=el.innerHTML?"block":"none"}
  static ping(a){const r=ActiveViewState.renderer,host=document.querySelector("#gameScreen .canvas-wrap");if(!r||!host)return;const rg=this.region(a.region),p=rg?.center||a.position;if(!Array.isArray(p))return;const wx=(Number(p[0])||0)*r.world.width,wy=(Number(p[1])||0)*r.world.height,vx=r.viewX(wx),vy=r.viewY(wy),canvas=r.canvas,rect=canvas.getBoundingClientRect(),px=r.worldToPx(vx,vy),cx=px[0]/canvas.width*rect.width,cy=px[1]/canvas.height*rect.height,inside=cx>=8&&cx<=rect.width-8&&cy>=8&&cy<=rect.height-8,id=++this.pingSeq;let el=document.createElement("div");el.className=inside?"campaign-world-ping":"campaign-edge-ping";el.dataset.pingId=String(id);if(inside){el.style.cssText=`position:absolute;z-index:17;left:${cx}px;top:${cy}px;width:42px;height:42px;transform:translate(-50%,-50%);border:3px solid #f0c55b;border-radius:50%;box-shadow:0 0 0 8px #f0c55b24;pointer-events:none;animation:campaignPingPulse .72s ease-out 3`;}else{const ex=RangeUtil.clamp(cx,18,rect.width-18),ey=RangeUtil.clamp(cy,18,rect.height-18),dx=cx-rect.width/2,dy=cy-rect.height/2,angle=Math.atan2(dy,dx)*180/Math.PI;el.textContent="➤";el.style.cssText=`position:absolute;z-index:17;left:${ex}px;top:${ey}px;transform:translate(-50%,-50%) rotate(${angle}deg);color:#f0c55b;font-size:22px;font-weight:1000;text-shadow:0 1px 3px #000;pointer-events:none;animation:campaignEdgePulse .72s ease-in-out 3`;}host.appendChild(el);this.after(()=>el.remove(),2400)}
  static runAction(a){const type=String(a?.type||"");if(type==="ping"){this.ping(a);return}if(type==="toast"){this.toast(a.text,a.durationMs);return}if(type==="setFlag"){this.flags[String(a.id||"")]=a.value;return}if(type==="setObjective"){const id=String(a.id||"objective"),old=this.objectives.get(id)||{};this.objectives.set(id,{...old,id,text:String(a.text||old.text||id),state:String(a.state||"active")});this.renderObjectives();return}if(type==="completeObjective"){const id=String(a.id||""),old=this.objectives.get(id);if(old){this.objectives.set(id,{...old,state:"complete"});this.renderObjectives()}return}
-  if(type==="cameraFocus"){const r=ActiveViewState.renderer;if(!r)return;const rg=this.region(a.region),p=rg?.center||a.position;if(!Array.isArray(p))return;const x=(Number(p[0])||0)*r.world.width,y=(Number(p[1])||0)*r.world.height,vx=r.viewX(x),vy=r.viewY(y);r.cameraLeft=RangeUtil.clamp(vx-r.viewWorldW()/2,0,Math.max(0,r.world.width-r.viewWorldW()));r.cameraTop=RangeUtil.clamp(vy-r.viewWorldH()/2,0,Math.max(0,r.world.height-r.viewWorldH()));return}
+  if(type==="cameraFocus"){const r=ActiveViewState.renderer;if(!r)return;const rg=this.region(a.region),p=rg?.center||a.position;if(!Array.isArray(p))return;const x=(Number(p[0])||0)*r.world.width,y=(Number(p[1])||0)*r.world.height,vx=r.viewX(x),vy=r.viewY(y);r.cameraLeft=RangeUtil.clamp(vx-r.viewWorldW()/2,0,Math.max(0,r.world.width-r.viewWorldW()));r.cameraTop=r.clampCameraTop(BattlefieldProjection.planarY(vy,r.world.terrain.surfaces.heightAt(x,y))-r.viewWorldH()/2);return}
   throw new Error(`시뮬레이션 액션은 CampaignScriptRuntime에서 실행해야 합니다: ${type}`);
  }
  static humanSide(){return (MatchLifecycle.activeSession?.()?.sim?.campaignScenario?.playerRole||"host")==="host"?0:1}
@@ -35725,7 +36063,7 @@ class CampaignPresentation{
    this.runAction(e.action);
   }
  }
- static onGameEnter(){const sim=MatchLifecycle.activeSession?.()?.sim,m=sim?.campaignScenario;if(!m){this.clear();return}if(this.shownSim===sim)return;this.clear();this.shownMissionId=m.missionId;this.shownSim=sim;document.body.classList.add("campaign-mode");if(UiRegistry.refs.reinforcementOverview){UiRegistry.refs.reinforcementOverview.style.left="auto";UiRegistry.refs.reinforcementOverview.style.right="7px";UiRegistry.refs.reinforcementOverview.style.top="62px"}this.flags={...(m.flags||{})};for(const o of m.objectives||[])this.objectives.set(String(o.id),{id:String(o.id),text:String(o.text||o.label||o.id),state:String(o.state||"active")});this.renderObjectives();this.renderAtmosphere();this.hudTimer=setInterval(()=>{this.renderObjectives();this.renderAtmosphere()},250);const humanRole=MatchLifecycle.singleMatch?.humanRole||ActiveViewState.role||"host",spawn=m.map?.spawns?.[humanRole];if(Array.isArray(spawn)){const focus=()=>{const renderer=ActiveViewState.renderer;if(!renderer)return;const x=(Number(spawn[0])||0)*sim.world.width,y=(Number(spawn[1])||0)*sim.world.height,vx=renderer.viewX(x),vy=renderer.viewY(y),left=RangeUtil.clamp(vx-renderer.viewWorldW()/2,0,Math.max(0,sim.world.width-renderer.viewWorldW())),top=RangeUtil.clamp(vy-renderer.viewWorldH()/2,0,Math.max(0,sim.world.height-renderer.viewWorldH()));renderer.cameraLeft=left;renderer.cameraTop=top;if(ViewRuntimeState.byRole?.[ActiveViewState.role]){ViewRuntimeState.byRole[ActiveViewState.role].cameraLeft=left;ViewRuntimeState.byRole[ActiveViewState.role].cameraTop=top}};focus();this.after(focus,120)}const lines=m.presentation?.opening||[],el=this.ensureBubble();lines.forEach((line,i)=>this.after(()=>{el.textContent=line;el.style.opacity="1"},i*3200));if(lines.length)this.after(()=>{el.style.opacity="0"},lines.length*3200+2600);}
+ static onGameEnter(){const sim=MatchLifecycle.activeSession?.()?.sim,m=sim?.campaignScenario;if(!m){this.clear();return}if(this.shownSim===sim)return;this.clear();this.shownMissionId=m.missionId;this.shownSim=sim;document.body.classList.add("campaign-mode");if(UiRegistry.refs.reinforcementOverview){UiRegistry.refs.reinforcementOverview.style.left="auto";UiRegistry.refs.reinforcementOverview.style.right="7px";UiRegistry.refs.reinforcementOverview.style.top="62px"}this.flags={...(m.flags||{})};for(const o of m.objectives||[])this.objectives.set(String(o.id),{id:String(o.id),text:String(o.text||o.label||o.id),state:String(o.state||"active")});this.renderObjectives();this.renderAtmosphere();this.hudTimer=setInterval(()=>{this.renderObjectives();this.renderAtmosphere()},250);const humanRole=MatchLifecycle.singleMatch?.humanRole||ActiveViewState.role||"host",spawn=m.map?.spawns?.[humanRole];if(Array.isArray(spawn)){const focus=()=>{const renderer=ActiveViewState.renderer;if(!renderer)return;const x=(Number(spawn[0])||0)*sim.world.width,y=(Number(spawn[1])||0)*sim.world.height,vx=renderer.viewX(x),vy=renderer.viewY(y),left=RangeUtil.clamp(vx-renderer.viewWorldW()/2,0,Math.max(0,sim.world.width-renderer.viewWorldW())),top=renderer.clampCameraTop(BattlefieldProjection.planarY(vy,sim.world.terrain.surfaces.heightAt(x,y))-renderer.viewWorldH()/2);renderer.cameraLeft=left;renderer.cameraTop=top;if(ViewRuntimeState.byRole?.[ActiveViewState.role]){ViewRuntimeState.byRole[ActiveViewState.role].cameraLeft=left;ViewRuntimeState.byRole[ActiveViewState.role].cameraTop=top}};focus();this.after(focus,120)}const lines=m.presentation?.opening||[],el=this.ensureBubble();lines.forEach((line,i)=>this.after(()=>{el.textContent=line;el.style.opacity="1"},i*3200));if(lines.length)this.after(()=>{el.style.opacity="0"},lines.length*3200+2600);}
  static outroDuration(lines){const n=Array.isArray(lines)?lines.filter(Boolean).length:0;return n? n*3200+350:0}
  static playOutro(lines,onDone){const seq=Array.isArray(lines)?lines.filter(Boolean):[];if(!seq.length){onDone?.();return 0}const el=this.ensureBubble();let total=0;for(const line of seq){this.after(()=>{el.textContent=String(line);el.style.opacity="1"},total);total+=3200}this.after(()=>{el.style.opacity="0"},Math.max(0,total-350));this.after(()=>onDone?.(),total+350);return total+350}
 }
@@ -39675,7 +40013,7 @@ class BattlePresentation{
     if(ActiveViewState.drag.moved){
       const dx=e.clientX-ActiveViewState.drag.x,dy=e.clientY-ActiveViewState.drag.y,scale=ActiveViewState.renderer.sc();
       ActiveViewState.renderer.cameraLeft=RangeUtil.clamp(ActiveViewState.drag.left-dx/scale,0,Math.max(0,(ActiveViewState.renderer?.world||WorldContext.standard).width-ActiveViewState.renderer.viewWorldW()));
-      ActiveViewState.renderer.cameraTop=RangeUtil.clamp(ActiveViewState.drag.top-dy/scale,0,Math.max(0,(ActiveViewState.renderer?.world||WorldContext.standard).height-ActiveViewState.renderer.viewWorldH()));
+      ActiveViewState.renderer.cameraTop=ActiveViewState.renderer.clampCameraTop(ActiveViewState.drag.top-dy/scale);
       if(LocalEnvironmentUtil.isLocalTest()){
         ViewRuntimeState.byRole[ActiveViewState.role].cameraLeft=ActiveViewState.renderer.cameraLeft;
         ViewRuntimeState.byRole[ActiveViewState.role].cameraTop=ActiveViewState.renderer.cameraTop;
@@ -41953,17 +42291,17 @@ AppLifecycle.runBootAndStartApp();
 {
   "version": "v73",
   "kind": "current-ssot",
-  "build": "20261002T013102+0900-rf-ramp-fog-level-masks-v73",
-  "simVersion": 178,
+  "build": "20261002T151928+0900-rf-procedural-river-banks-v73",
+  "simVersion": 180,
   "ssot": {
     "runtime": "Current executable code and top development contract are authoritative.",
-    "terrain": "terrain.layers[].level is the only authored elevation SSOT. Levels are non-negative integer world tiers with no engine maximum; render height is level * 96 and nested higher levels/ramp connections derive automatically.",
+    "terrain": "terrain.layers[].level is the only authored elevation SSOT. Levels are signed integer world tiers with no arbitrary gameplay floor/ceiling; base level is 0, elevation is level * 96 and the innermost containing region owns each surface, including negative floors and level-0 islands.",
     "vision": "Ground vision cannot see a higher target level and is blocked by higher intermediate terrain or blocksVision occluders. Air/Flare ignore elevation occlusion; allied vision is shared. Detection remains a separate gate.",
     "combat": "Ground ranged attacks from a lower level to a higher ground target deterministically miss 50%. Level gap does not stack. Ground melee and any air-involved attack are exempt; projectile miss is fixed at launch. High-to-low attacks briefly reveal the attacker.",
     "occlusion": "Terrain blockers independently declare blocksMovement, blocksVision, blocksProjectile and blocksAirVision. Surface cliffs block ground movement but do not intrinsically block projectiles.",
     "campaign": "Built-in campaign schema 7 remains authoritative; all seven Frontier Opening missions are independent maps and mission 2 now uses level/ramp terrain instead of legacy hills.",
     "network": "Nostr signaling plus WebRTC DataChannel is the online transport; LOCAL 2P reuses GameSession and StrategySim.",
-    "compatibility": "SIM_VERSION 178 rejects previous replay/state contracts after authoritative terrain/visibility/combat changes."
+    "compatibility": "SIM_VERSION 180 rejects prior replay/state contracts after continuous river banks, level-based bridge supports and generator version 10."
   },
   "verification": {
     "static": {
@@ -41972,17 +42310,18 @@ AppLifecycle.runBootAndStartApp();
       "campaignSchema": "PASS — all seven built-in missions normalize/build with level terrain and no hills"
     },
     "runtime": {
-      "terrainVisionQA": "PASS — arbitrary stacking through level 5, level 1→2 ramp derivation, elevation LOS, intermediate high-ground occlusion, air vision, independent wall vision/projectile flags, exact 50% deterministic uphill miss, launch-time miss freezing and attack reveal",
-      "rampMovement": "PASS — each uphill ramp independently applies 100/85/70/50% by its own progress, including level 1→2",
-      "local2p": "PASS — real LoopbackTransport/GameSession/StrategySim/WebGL debug combat reached authoritative base-destroyed result on both peers; extended run crossed checksum cadence with zero mismatch/correction",
-      "terrainPresentation": "PASS scoped — mobile-portrait real WebGL short-ramp seams at levels 0→1 and 1→2; ramp halves share the low/high masks at the authoritative level transition. Texel centers, same-tick map/vision replacement and sparse level textures pass GPU regression assertions. Terrain gameplay polygons are unchanged.",
-      "webgl": "PASS — Edge/Chromium headless with SwiftShader/ANGLE; real terrain/Fog shader draws, zero GL/page errors",
-      "singleCampaignUi": "PASS scoped — mobile-portrait UI campaign import/start, local WebRTC/GameSession, natural combat clears authored enemy roster, victory result UI",
-      "replayUi": "PASS scoped — recorded combat opens through result UI; guest orientation/vision, zoom and timeline seek reach end tick 123 with the original final checksum and zero page errors"
+      "terrainVisionQA": "PASS scoped — signed nested floors/islands, negative ramp navigation, raised-terrain LOS between separate basins, air vision and host/guest picking; prior full combat-balance suite was not rerun in this pass",
+      "rampMovement": "PASS scoped — continuous closed river banks, corner/cap gradients and bidirectional navigation; 2338 generated-bank traversals pass across 12 accepted default maps; bridge ends connect to land level 0",
+      "local2p": "NOT RUN in this signed-terrain pass; actual single-campaign local WebRTC/GameSession and final replay checksum were exercised",
+      "terrainPresentation": "PASS scoped — signed/bank/bridge meshes align picking and Fog; bridge-clipped variable vertex patches, dry islands and viewport culling pass real WebGL; host/guest water viewport RGBA is unchanged by culling",
+      "webgl": "PASS — Edge/Chromium headless with SwiftShader/ANGLE; ground pass dropped from about 160ms to 1.2ms latest / 2.9ms EWMA in the profiled UI run; zero GL/page errors",
+      "singleCampaignUi": "PASS scoped — automatic generated-river Mission JS imported through UI, real local WebRTC/GameSession, natural bank combat to victory UI",
+      "replayUi": "PASS scoped — recorded combat opens through result UI; guest orientation/vision, zoom and timeline seek reach generated-river combat end tick 102 with original final checksum 51d4cc7c and zero page errors"
     }
   },
   "limits": [
-    "This pass exercised a short authored single-campaign combat fixture, not full campaign progression or an external two-peer network.",
+    "This pass exercised a short scripted combat roster on an automatically generated map, not full campaign progression or an external two-peer network.",
+    "Compact custom dimensions construct valid bank/bridge geometry, but their full strategic placement quality remains unaccepted as in the prior baseline.",
     "Physical mobile devices were not exercised; mobile-portrait WebGL QA used a 412×915 browser viewport."
   ]
 }

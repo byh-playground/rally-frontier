@@ -207,7 +207,9 @@ async function run() {
       const highHalf = renderer.fogSurfaces.get(5)
         .find(patch => patch.kind === 'ramp');
       out.ramp = {
-        midpoints: highHalf.vertices.slice(0, 2).map(vertex => ({
+        midpoints: highHalf.vertices.filter(vertex =>
+          Math.abs(vertex.y - (ramp.lowElevation + ramp.highElevation) / 2) < 1e-7
+        ).map(vertex => ({
           progress: worldA.terrain.surfaces.rampProgress(ramp, vertex.x, vertex.z),
           level: worldA.terrain.surfaces.sample(vertex.x, vertex.z).level,
           elevation: vertex.y
