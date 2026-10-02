@@ -22321,11 +22321,11 @@ class ReplayPlayer{
     if(!this.data?.finalDraft||!Number.isFinite(Number(this.data?.seed)))throw new Error("리플레이 초기 상태가 없습니다.");
     return true;
   }
-  queueCommandsAfter(tick){
+  queueCommandsAfter(sim,tick){
     for(const cmd of this.data.commands||[]){
       // A commit scheduled after the recorded end is still part of the final
       // authoritative queue. Restore it, but stepOnce/seek never execute past endTick.
-      if(Number(cmd.tick)>tick)this.sim.queueCommand(CloneUtil.clone(cmd));
+      if(Number(cmd.tick)>tick)sim.queueCommand(CloneUtil.clone(cmd));
     }
   }
   checkpointFor(targetTick){
@@ -22335,42 +22335,45 @@ class ReplayPlayer{
     }
     return best;
   }
-  validateImportedCheckpoint(cp,baseTick){
+  validateImportedCheckpoint(sim,cp,baseTick){
     if(!cp?.checksum)return true;
     if(cp.checksumScope!=="state-without-scheduled-v1")throw new Error("지원하지 않는 체크포인트 형식입니다.");
-    const actual=this.sim.checksum();
+    const actual=sim.checksum();
     if(actual!==String(cp.checksum))throw new Error(`리플레이 체크포인트 손상 · tick ${baseTick}`);
     return true;
   }
-  resetAtCheckpoint(targetTick){
-    this.validate();
+  resetAtCheckpoint(sim,targetTick){
     const cp=this.checkpointFor(targetTick);
-    this.sim?.dispose("replay-seek");
-    this.sim=new StrategySim(this.data.finalDraft,Number(this.data.seed)>>>0,this.data.rules||GameRuleDefinition.current);
     let baseTick=0;
     if(cp?.state){
-      this.sim.importState(cp.state);
-      this.sim.scheduled=new Map();
-      const stateTick=Number(this.sim.tick)||0;
+      sim.importState(cp.state);
+      sim.scheduled=new Map();
+      const stateTick=Number(sim.tick)||0;
       baseTick=Number(cp.tick)||stateTick;
       if(stateTick!==baseTick)throw new Error(`리플레이 체크포인트 tick 불일치 · index ${baseTick} / state ${stateTick}`);
-      this.validateImportedCheckpoint(cp,baseTick);
+      this.validateImportedCheckpoint(sim,cp,baseTick);
     }
     // captureCheckpoint() runs immediately after sim.step(), so every command at
     // baseTick has already executed and was removed from `scheduled`. Re-queue only
     // strictly-future commands; using >= would execute the checkpoint tick twice.
-    this.queueCommandsAfter(baseTick);
-    this.eventBuffer.length=0;
+    this.queueCommandsAfter(sim,baseTick);
     return baseTick;
   }
   seek(targetTick,{render=true}={}){
     targetTick=RangeUtil.clamp(Math.round(Number(targetTick)||0),0,this.endTick||0);
-    this.resetAtCheckpoint(targetTick);
-    while(this.sim.tick<targetTick){
-      const previous=this.sim.tick,winner=this.sim.step();
-      if(this.sim.tick<=previous||winner&&this.sim.tick<targetTick)
-        throw new Error(`리플레이가 기록된 종료 시각 전에 멈췄습니다 · tick ${this.sim.tick} / ${targetTick}`);
-    }
+    this.validate();
+    const candidate=new StrategySim(this.data.finalDraft,Number(this.data.seed)>>>0,this.data.rules||GameRuleDefinition.current);
+    try{
+      this.resetAtCheckpoint(candidate,targetTick);
+      while(candidate.tick<targetTick){
+        const previous=candidate.tick,winner=candidate.step();
+        if(candidate.tick<=previous||winner&&candidate.tick<targetTick)
+          throw new Error(`리플레이가 기록된 종료 시각 전에 멈췄습니다 · tick ${candidate.tick} / ${targetTick}`);
+      }
+    }catch(error){candidate.dispose("replay-seek-failed");throw error}
+    const previousSim=this.sim;
+    this.sim=candidate;
+    previousSim?.dispose("replay-seek");
     this.eventBuffer.length=0;
     this.acc=0;
     this.last=performance.now();
@@ -35616,6 +35619,7 @@ class ReplayPresentation{
   ReplayPresentation.renderReplaySnapshot(snapshot);
   ReplayPresentation.applyReplayPerspective();ReplayPresentation.syncReplayControls();
   ReplayPresentation.replayPlayer.start();
+  UiRegistry.refs.log.style.removeProperty("display");
   LogUtil.log(`▶ 리플레이 시작 · ${ReplayPresentation.formatReplayTime(ReplayPresentation.replayPlayer.endTick)} · 명령 ${data.commands.length}개`);
   return true;
 }
@@ -42225,8 +42229,15 @@ class ReplayInteraction{
   if(!ReplayPresentation.replayPlayer)return;
   const targetTick=Math.round(RangeUtil.clamp(Number(seconds)||0,0,ReplayPresentation.replayPlayer.endTick/SimulationTiming.tps())*SimulationTiming.tps());
   const shouldResume=resumePlaying==null?!!ReplayPresentation.replayPlayer.playing:!!resumePlaying;
-  if((ReplayPresentation.replayPlayer.sim?.tick||0)!==targetTick)ReplayPresentation.replayPlayer.seek(targetTick);
-  ReplayPresentation.replayPlayer.setPlaying(shouldResume&&targetTick<ReplayPresentation.replayPlayer.endTick);
+  try{
+    if((ReplayPresentation.replayPlayer.sim?.tick||0)!==targetTick)ReplayPresentation.replayPlayer.seek(targetTick);
+    UiRegistry.refs.log.style.removeProperty("display");
+  }catch(error){
+    LogUtil.log(`⚠ 리플레이 시간 이동 실패 · ${error.message||error}`);
+    UiRegistry.refs.log.style.display="block";
+    if(UiRegistry.refs.replayTimeInput)UiRegistry.refs.replayTimeInput.value=ReplayPresentation.formatReplayTime(ReplayPresentation.replayPlayer.sim?.tick||0);
+  }
+  ReplayPresentation.replayPlayer.setPlaying(shouldResume&&(ReplayPresentation.replayPlayer.sim?.tick||0)<ReplayPresentation.replayPlayer.endTick);
   ReplayPresentation.syncReplayControls();
 }
   static parseTimeInput(value){
