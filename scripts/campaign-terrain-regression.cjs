@@ -40,7 +40,7 @@ async function run() {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}/`;
   const browser = await chromium.launch({ channel: process.env.QA_BROWSER_CHANNEL || 'msedge', headless: true,
-    args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+    args: process.env.QA_NATIVE_WEBGL==='1'?[]:['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const result = { integration: [], ui: [], pageErrors: [] };
   try {
     const page = await browser.newPage({ viewport: { width: 1600, height: 1400 } });

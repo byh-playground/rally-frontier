@@ -66,6 +66,8 @@ PURPOSE
 - 건설 미리보기는 위치·겹침·자원·시야만 검사하며 NavMesh를 생성하지 않는다. 일꾼 접근성은 BUILD 실행 시 권위 시뮬레이션이 검증한다. 건물 변경은 영향받는 고정 영역의 메쉬만 다시 만들며, 캐시 준비 순서나 롤백 이력과 무관하게 같은 토폴로지에서 같은 경로를 선택해야 한다.
 - AIR과 명시적 도약은 장벽 상공을 지날 수 있지만 도착은 유효한 위치여야 한다. 지면 잠복·일꾼·주둔군도 같은 지상 경로를 따른다. 통행 불가와 시야/사격 차폐는 동일 의미가 아니다.
 
+- 메쉬 갱신은 변경 없는 타일의 식별자·셀·포털·내부 연결을 보존하고 변경 타일과 이웃 경계의 연결만 교체한다. 메모리 슬롯 재사용 순서를 경로 선택의 동률 기준으로 사용하지 않는다. 전체 연결성 판정과 경로 캐시 무효화는 객체 재생성과 분리한다.
+
 6.2. BURROW OCCUPANCY
 - 잠복은 엔티티 소멸이 아니라 interaction layer 변화다.
 - 잠복 유닛끼리는 기존 공통 allied separation을 그대로 유지한다.
@@ -10667,7 +10669,7 @@ const BUILD_META=Object.freeze({
 /* =========================
    1. Definitions
    ========================= */
-const SIM_TPS=20,FP=100,SIM_VERSION=184;
+const SIM_TPS=20,FP=100,SIM_VERSION=185;
 
 // Authoritative time contract:
 // - balance/design data uses integer milliseconds
@@ -10931,16 +10933,16 @@ class TerrainGeometry{
   }
 }
 class NavigationMinHeap{
-  constructor(){this.ids=[];this.costs=[]}
+  constructor(compare=(a,b)=>a-b){this.ids=[];this.costs=[];this.compare=compare}
   get length(){return this.ids.length}
   push(id,cost){let i=this.ids.length;this.ids.push(id);this.costs.push(cost);
-    while(i){const p=(i-1)>>1;if(this.costs[p]<cost||(this.costs[p]===cost&&this.ids[p]<=id))break;this.ids[i]=this.ids[p];this.costs[i]=this.costs[p];i=p}
+    while(i){const p=(i-1)>>1;if(this.costs[p]<cost||(this.costs[p]===cost&&this.compare(this.ids[p],id)<=0))break;this.ids[i]=this.ids[p];this.costs[i]=this.costs[p];i=p}
     this.ids[i]=id;this.costs[i]=cost;
   }
   pop(){const id=this.ids[0],cost=this.costs[0],lastId=this.ids.pop(),lastCost=this.costs.pop();
     if(this.ids.length){let i=0;while(true){let c=i*2+1;if(c>=this.ids.length)break;const r=c+1;
-      if(r<this.ids.length&&(this.costs[r]<this.costs[c]||(this.costs[r]===this.costs[c]&&this.ids[r]<this.ids[c])))c=r;
-      if(this.costs[c]>lastCost||(this.costs[c]===lastCost&&this.ids[c]>=lastId))break;
+      if(r<this.ids.length&&(this.costs[r]<this.costs[c]||(this.costs[r]===this.costs[c]&&this.compare(this.ids[r],this.ids[c])<0)))c=r;
+      if(this.costs[c]>lastCost||(this.costs[c]===lastCost&&this.compare(this.ids[c],lastId)>=0))break;
       this.ids[i]=this.ids[c];this.costs[i]=this.costs[c];i=c;
     }this.ids[i]=lastId;this.costs[i]=lastCost}
     return{id,cost};
@@ -11636,22 +11638,11 @@ class NavigationMeshBuilder{
         p.nodes.push(fieldNodes.length);fieldNodes.push({id:fieldNodes.length,portal:p.id,x:v.x,y:v.y,links:[]});
       }
     }
-    for(const c of cells){
-      // Reuse only geometry-derived costs. IDs and links are always rebuilt in
-      // canonical order; changed neighboring seam endpoints invalidate the cache.
-      const cache=c.graphCache;let costs=null,ci=0;
-      if(cache){
-        const coordinates=[];for(const link of c.links){const p=portals[link.portal];coordinates.push(p.p.x,p.p.y,p.q.x,p.q.y)}
-        if(cache.coordinates?.length===coordinates.length&&coordinates.every((v,i)=>v===cache.coordinates[i]))costs=cache.costs;
-        else{cache.coordinates=coordinates;cache.costs=new Float64Array(c.links.length*(c.links.length-1)/2*9)}
-      }
-      for(let i=0;i<c.links.length;i++)for(let j=i+1;j<c.links.length;j++){
+    for(const c of cells)for(let i=0;i<c.links.length;i++)for(let j=i+1;j<c.links.length;j++){
       const pa=portals[c.links[i].portal],pb=portals[c.links[j].portal];
       for(const ai of pa.nodes)for(const bi of pb.nodes){
-        const a=fieldNodes[ai],b=fieldNodes[bi],cost=costs?costs[ci]:Math.max(1,Math.round(Math.hypot(a.x-b.x,a.y-b.y)*1024));
-        if(cache&&!costs)cache.costs[ci]=cost;ci++;
+        const a=fieldNodes[ai],b=fieldNodes[bi],cost=Math.max(1,Math.round(Math.hypot(a.x-b.x,a.y-b.y)*1024));
         a.links.push({to:b.id,via:c.id,cost});b.links.push({to:a.id,via:c.id,cost});
-      }
       }
     }
     for(const p of fieldNodes)p.links.sort((a,b)=>a.to-b.to||a.via-b.via);
@@ -11668,19 +11659,43 @@ class NavigationMeshBuilder{
     }return best;
   }
 }
-class NavigationMeshTiles{
-  static SIZE=1024;
+class NavigationGraphOrder{
+  static cell(a,b){return a.tile-b.tile||a.local-b.local}
+  static portal(a,b){return a.kind-b.kind||a.owner-b.owner||a.direction-b.direction||a.local-b.local}
+  static node(a,b){return this.portal(a.order,b.order)||a.sample-b.sample}
+}
+class NavigationGraphSlots{
+  constructor(){this.items=[];this.free=[];this.count=0}
+  add(value){const id=this.free.length?this.free.pop():this.items.length;value.id=id;this.items[id]=value;this.count++;return value}
+  remove(id){if(!this.items[id])return;this.items[id]=null;this.free.push(id);this.count--}
+}
+class NavigationTileIndex{
+  constructor(owner){this.owner=owner;this.out=[]}
+  query(x0,y0,x1=x0,y1=y0,pad=0){
+    const owner=this.owner,size=NavigationMeshTiles.SIZE;this.out.length=0;
+    const minX=Math.max(0,Math.floor((Math.min(x0,x1)-pad)/size)),maxX=Math.min(owner.columns-1,Math.floor((Math.max(x0,x1)+pad)/size));
+    const minY=Math.max(0,Math.floor((Math.min(y0,y1)-pad)/size)),maxY=Math.min(owner.rows-1,Math.floor((Math.max(y0,y1)+pad)/size));
+    // Include the cell on both sides of an exact tile boundary.
+    const left=(Math.min(x0,x1)-pad)/size,bottom=(Math.min(y0,y1)-pad)/size;
+    for(let y=Math.max(0,minY-(Number.isInteger(bottom)?1:0));y<=maxY;y++)for(let x=Math.max(0,minX-(Number.isInteger(left)?1:0));x<=maxX;x++){
+      const id=y*owner.columns+x,index=owner.tileIndex?owner.tileIndex(id):owner.tiles[id].index;if(index)this.out.push(...index.query(x0,y0,x1,y1,pad));
+    }
+    return this.out;
+  }
+}
+class NavigationTileGeometry{
   constructor(geometry,r,fixed,ignoreBuildings){
     this.geometry=geometry;this.r=r;this.ignoreBuildings=ignoreBuildings;this.tiles=[];this.dirty=new Set();
+    this.staticParts=new Map();this.dynamicSource=null;this.dynamic=[];
     const size=NavigationMeshTiles.SIZE,margin=r+.02;
     this.columns=Math.ceil(geometry.width/size);this.rows=Math.ceil(geometry.height/size);
-    const boxes=fixed.map(points=>({points,minX:Math.min(...points.map(p=>p.x)),maxX:Math.max(...points.map(p=>p.x)),minY:Math.min(...points.map(p=>p.y)),maxY:Math.max(...points.map(p=>p.y))}));
+    const boxes=fixed?.map(NavigationTileGeometry.polygonBounds);
     const overlaps=(a,b)=>a.minX<=b.maxX&&a.maxX>=b.minX&&a.minY<=b.maxY&&a.maxY>=b.minY;
     for(let y=0;y<this.rows;y++)for(let x=0;x<this.columns;x++){
       const bounds={minX:Math.max(margin,x*size),maxX:Math.min(geometry.width-margin,(x+1)*size),minY:Math.max(margin,y*size),maxY:Math.min(geometry.height-margin,(y+1)*size)};
       const surfaces=Object.create(geometry.surfaces);
       surfaces.seams=geometry.surfaces.seams.filter(s=>overlaps(bounds,{minX:Math.min(s.a.x,s.b.x),maxX:Math.max(s.a.x,s.b.x),minY:Math.min(s.a.y,s.b.y),maxY:Math.max(s.a.y,s.b.y)}));
-      this.tiles.push({bounds,surfaces,fixed:boxes.filter(b=>overlaps(bounds,b)).map(b=>b.points),mesh:null});this.dirty.add(this.tiles.length-1);
+      this.tiles.push({bounds,surfaces,fixed:boxes?boxes.filter(b=>overlaps(bounds,b)).map(b=>b.points):null,mesh:null,cells:[],portals:[],index:null});this.dirty.add(this.tiles.length-1);
     }
   }
   invalidate(records){
@@ -11690,45 +11705,139 @@ class NavigationMeshTiles{
         for(let x=Math.max(0,Math.floor((b.minX-padding)/size));x<=Math.min(this.columns-1,Math.floor((b.maxX+padding)/size));x++)this.dirty.add(y*this.columns+x);
     }
   }
+  static polygonBounds(points){return {points,minX:Math.min(...points.map(p=>p.x)),maxX:Math.max(...points.map(p=>p.x)),minY:Math.min(...points.map(p=>p.y)),maxY:Math.max(...points.map(p=>p.y))}}
+  buildTile(id,circles){
+    const tile=this.tiles[id],b=tile.bounds,r=this.r,g=this.geometry;
+    const overlaps=p=>p.minX<=b.maxX&&p.maxX>=b.minX&&p.minY<=b.maxY&&p.maxY>=b.minY;
+    if(!tile.fixed){
+      // Projection has no need to inflate terrain on the other side of the map.
+      // Keep the authored block order used by the full layer builder.
+      const blocks=g.index.query(b.minX,b.minY,b.maxX,b.maxY,r+.3).slice().sort((a,b)=>g.blocks.indexOf(a)-g.blocks.indexOf(b));
+      tile.fixed=blocks.flatMap(block=>{let parts=this.staticParts.get(block);
+        if(!parts){parts=NavigationMeshBuilder.inflate(block.points,r).map(NavigationTileGeometry.polygonBounds);this.staticParts.set(block,parts)}
+        return parts.filter(overlaps).map(p=>p.points);
+      });
+    }
+    if(this.dynamicSource!==circles){this.dynamicSource=circles;
+      this.dynamic=circles.filter(b=>!this.ignoreBuildings||b.terrainBarrier).map(b=>NavigationTileGeometry.polygonBounds(NavigationMeshBuilder.circle(b.r+r+.25).map(p=>({x:b.x+p.x,y:b.y+p.y}))));
+    }
+    const polygons=tile.fixed.concat(this.dynamic.filter(overlaps).map(p=>p.points));
+    tile.mesh=b.maxX>b.minX&&b.maxY>b.minY?NavigationMeshBuilder.build(g.width,g.height,r,polygons,tile.surfaces,b):{cells:[],portals:[],slabs:0};
+    return tile.mesh;
+  }
+}
+class NavigationMeshTiles extends NavigationTileGeometry{
+  static SIZE=1024;
+  constructor(geometry,r,fixed,ignoreBuildings){
+    super(geometry,r,fixed,ignoreBuildings);
+    this.cellSlots=new NavigationGraphSlots();this.portalSlots=new NavigationGraphSlots();this.nodeSlots=new NavigationGraphSlots();this.boundaries=new Map();
+    this.layer={cells:this.cellSlots.items,portals:this.portalSlots.items,fieldNodes:this.nodeSlots.items,fields:new Map(),goals:new Map(),index:new NavigationTileIndex(this),tiles:this,slabs:0};
+  }
   rebuild(circles){
-    const begun=performance.now(),rebuilt=this.dirty.size,g=this.geometry,r=this.r;
-    const dynamic=circles.filter(b=>!this.ignoreBuildings||b.terrainBarrier).map(b=>{
-      const points=NavigationMeshBuilder.circle(b.r+r+.25).map(p=>({x:b.x+p.x,y:b.y+p.y}));
-      return {points,minX:Math.min(...points.map(p=>p.x)),maxX:Math.max(...points.map(p=>p.x)),minY:Math.min(...points.map(p=>p.y)),maxY:Math.max(...points.map(p=>p.y))};
-    });
-    for(const id of this.dirty){const tile=this.tiles[id],b=tile.bounds;
-      const polygons=tile.fixed.concat(dynamic.filter(p=>p.minX<=b.maxX&&p.maxX>=b.minX&&p.minY<=b.maxY&&p.maxY>=b.minY).map(p=>p.points));
-      tile.mesh=b.maxX>b.minX&&b.maxY>b.minY?NavigationMeshBuilder.build(g.width,g.height,r,polygons,tile.surfaces,b):{cells:[],portals:[],slabs:0};
+    const begun=performance.now(),dirty=[...this.dirty].sort((a,b)=>a-b),g=this.geometry,r=this.r,layer=this.layer;
+    const oldCells=this.cellSlots.count,oldPortals=this.portalSlots.count,oldNodes=this.nodeSlots.count;
+    const touched=new Set(),touchedNodes=new Set(),seams=new Map(),stats={cellsRemoved:0,cellsAdded:0,portalsRemoved:0,portalsAdded:0,nodesRemoved:0,nodesAdded:0,cellsRelinked:0,nodesRelinked:0,edgesAdded:0};
+    const boundary=(a,direction)=>{const b=a+(direction===0?1:this.columns);seams.set(a+':'+direction,{a,b,direction})};
+    for(const id of dirty){const x=id%this.columns,y=Math.floor(id/this.columns);
+      if(x>0)boundary(id-1,0);if(x+1<this.columns)boundary(id,0);if(y>0)boundary(id-this.columns,1);if(y+1<this.rows)boundary(id,1);
+      for(const c of this.tiles[id].cells)touched.add(c);
     }
-    this.dirty.clear();
-    const geometryMs=performance.now()-begun,connectAt=performance.now();
-    // Canonical tile/local ordering is independent of edit history and cache warmth.
-    const cells=[],portals=[],copies=[];let slabs=0;
-    const add=(a,b,p,q)=>{if(!g.surfaces.transition(a.surface,b.surface,p,q))return;
-      const id=portals.length;portals.push({id,a:a.id,b:b.id,p,q});a.links.push({to:b.id,portal:id});b.links.push({to:a.id,portal:id});
+    for(const key of seams.keys())for(const p of this.boundaries.get(key)||[]){touched.add(layer.cells[p.a]);touched.add(layer.cells[p.b])}
+    // Remove only edges contributed by changed cells or their seam neighbors.
+    const cleared=new Set(),clearEdges=c=>{if(cleared.has(c))return;cleared.add(c);
+      for(const link of c.links){const p=layer.portals[link.portal];for(const id of p.nodes){const node=layer.fieldNodes[id];
+        for(let i=node.links.length-1;i>=0;i--)if(node.links[i].via===c.id)node.links.splice(i,1);touchedNodes.add(node);
+      }}
     };
-    for(const tile of this.tiles){const offset=cells.length,local=tile.mesh.cells.map(c=>({id:offset+c.id,xl:c.xl,xr:c.xr,lo:c.lo,hi:c.hi,links:[],component:-1,surface:c.surface,terrainLayer:c.terrainLayer,points:c.points,x:c.x,y:c.y,minX:c.minX,maxX:c.maxX,minY:c.minY,maxY:c.maxY,graphCache:c.graphCache||(c.graphCache={})}));copies.push(local);cells.push(...local);slabs+=tile.mesh.slabs;
-      for(const p of tile.mesh.portals)add(local[p.a],local[p.b],p.p,p.q);
+    for(const c of touched)clearEdges(c);
+    const removePortal=p=>{
+      for(const id of [p.a,p.b]){const links=layer.cells[id].links,index=links.findIndex(link=>link.portal===p.id);if(index>=0)links.splice(index,1)}
+      for(const id of p.nodes){this.nodeSlots.remove(id);stats.nodesRemoved++}this.portalSlots.remove(p.id);stats.portalsRemoved++;
+    };
+    for(const key of seams.keys()){for(const p of this.boundaries.get(key)||[])removePortal(p);this.boundaries.delete(key)}
+    for(const id of dirty){const tile=this.tiles[id];
+      for(const p of tile.portals)removePortal(p);
+      for(const c of tile.cells){this.cellSlots.remove(c.id);stats.cellsRemoved++}
+      layer.slabs-=tile.mesh?.slabs||0;tile.cells=[];tile.portals=[];
     }
-    const join=(left,right,vertical,edge)=>{
+    const detachMs=performance.now()-begun,geometryAt=performance.now();
+    for(const id of dirty)layer.slabs+=this.buildTile(id,circles).slabs;
+    this.dirty.clear();
+    const geometryMs=performance.now()-geometryAt,connectAt=performance.now();
+    const add=(a,b,p,q,order)=>{
+      clearEdges(a);clearEdges(b);
+      const portal=this.portalSlots.add({...order,a:a.id,b:b.id,p,q,x:(p.x+q.x)/2,y:(p.y+q.y)/2,nodes:[]});stats.portalsAdded++;
+      for(const [sample,v]of [p,{x:portal.x,y:portal.y},q].entries()){
+        const node=this.nodeSlots.add({portal:portal.id,order:portal,sample,x:v.x,y:v.y,links:[]});portal.nodes.push(node.id);touchedNodes.add(node);stats.nodesAdded++;
+      }
+      a.links.push({to:b.id,portal:portal.id});b.links.push({to:a.id,portal:portal.id});touched.add(a);touched.add(b);return portal;
+    };
+    for(const id of dirty){const tile=this.tiles[id];
+      tile.cells=tile.mesh.cells.map(c=>{const cell=this.cellSlots.add({...c,tile:id,local:c.id,links:[],component:-1});stats.cellsAdded++;touched.add(cell);return cell});
+      for(const p of tile.mesh.portals)tile.portals.push(add(tile.cells[p.a],tile.cells[p.b],p.p,p.q,{kind:0,owner:id,direction:0,local:p.id}));
+      tile.index=new NavigationObstacleIndex(tile.cells);
+    }
+    const join=(left,right,vertical,edge,owner,direction)=>{
+      const result=[];
       const eps=NavigationMeshBuilder.EPS,at=NavigationMeshBuilder.at;
       const side=(list,first)=>list.flatMap(c=>{
         if(vertical){if(Math.abs((first?c.xr:c.xl)-edge)>eps)return [];return [{c,lo:at(c.lo,edge),hi:at(c.hi,edge)}]}
         const e=first?c.hi:c.lo;if(Math.abs(at(e,c.xl)-edge)>eps||Math.abs(at(e,c.xr)-edge)>eps)return [];
         return [{c,lo:c.xl,hi:c.xr}];
-      }).sort((a,b)=>a.lo-b.lo||a.hi-b.hi||a.c.id-b.c.id);
+      }).sort((a,b)=>a.lo-b.lo||a.hi-b.hi||NavigationGraphOrder.cell(a.c,b.c));
       const a=side(left,true),b=side(right,false);let i=0,j=0;
       while(i<a.length&&j<b.length){const low=Math.max(a[i].lo,b[j].lo),high=Math.min(a[i].hi,b[j].hi);
-        if(high-low>eps)add(a[i].c,b[j].c,vertical?{x:edge,y:low}:{x:low,y:edge},vertical?{x:edge,y:high}:{x:high,y:edge});
+        if(high-low>eps){const p=vertical?{x:edge,y:low}:{x:low,y:edge},q=vertical?{x:edge,y:high}:{x:high,y:edge};
+          if(g.surfaces.transition(a[i].c.surface,b[j].c.surface,p,q))result.push(add(a[i].c,b[j].c,p,q,{kind:1,owner,direction,local:result.length}));
+        }
         if(a[i].hi<b[j].hi-eps)i++;else if(b[j].hi<a[i].hi-eps)j++;else{i++;j++}
       }
+      return result;
     };
-    for(let y=0;y<this.rows;y++)for(let x=0;x<this.columns;x++){const id=y*this.columns+x;
-      if(x+1<this.columns)join(copies[id],copies[id+1],true,(x+1)*NavigationMeshTiles.SIZE);
-      if(y+1<this.rows)join(copies[id],copies[id+this.columns],false,(y+1)*NavigationMeshTiles.SIZE);
+    for(const [key,{a,b,direction}]of [...seams].sort((x,y)=>x[1].a-y[1].a||x[1].direction-y[1].direction)){
+      const edge=(direction===0?a%this.columns+1:Math.floor(a/this.columns)+1)*NavigationMeshTiles.SIZE;
+      this.boundaries.set(key,join(this.tiles[a].cells,this.tiles[b].cells,direction===0,edge,a,direction));
     }
-    const layer=NavigationMeshBuilder.connect(cells,portals,slabs);
-    return {...layer,tiles:this,rebuiltTiles:rebuilt,geometryMs,connectMs:performance.now()-connectAt};
+    for(const c of touched){if(layer.cells[c.id]!==c)continue;stats.cellsRelinked++;
+      c.links.sort((a,b)=>NavigationGraphOrder.cell(layer.cells[a.to],layer.cells[b.to])||NavigationGraphOrder.portal(layer.portals[a.portal],layer.portals[b.portal]));
+      for(let i=0;i<c.links.length;i++)for(let j=i+1;j<c.links.length;j++){
+        const pa=layer.portals[c.links[i].portal],pb=layer.portals[c.links[j].portal];
+        for(const ai of pa.nodes)for(const bi of pb.nodes){const a=layer.fieldNodes[ai],b=layer.fieldNodes[bi],cost=Math.max(1,Math.round(Math.hypot(a.x-b.x,a.y-b.y)*1024));
+          a.links.push({to:b.id,via:c.id,cost});b.links.push({to:a.id,via:c.id,cost});touchedNodes.add(a);touchedNodes.add(b);stats.edgesAdded+=2;
+        }
+      }
+    }
+    for(const node of touchedNodes)if(layer.fieldNodes[node.id]===node){stats.nodesRelinked++;
+      node.links.sort((a,b)=>NavigationGraphOrder.node(layer.fieldNodes[a.to],layer.fieldNodes[b.to])||NavigationGraphOrder.cell(layer.cells[a.via],layer.cells[b.via]));
+    }
+    const relinkMs=performance.now()-connectAt,componentsAt=performance.now();
+    // A local deletion can split distant reachability; labels and goal fields
+    // are global derived values, while all unaffected graph objects stay intact.
+    for(const tile of this.tiles)for(const c of tile.cells)c.component=-1;
+    let components=0;
+    for(const tile of this.tiles)for(const c of tile.cells)if(c.component<0){const queue=[c];c.component=components;
+      for(let i=0;i<queue.length;i++)for(const link of queue[i].links){const next=layer.cells[link.to];if(next.component<0){next.component=components;queue.push(next)}}components++;
+    }
+    layer.fields.clear();layer.goals.clear();
+    Object.assign(stats,{cellsPreserved:oldCells-stats.cellsRemoved,portalsPreserved:oldPortals-stats.portalsRemoved,nodesPreserved:oldNodes-stats.nodesRemoved});
+    Object.assign(layer,{components,rebuiltTiles:dirty.length,geometryMs,connectMs:detachMs+performance.now()-connectAt,detachMs,relinkMs,componentMs:performance.now()-componentsAt,graphChanges:stats,cellCount:this.cellSlots.count,portalCount:this.portalSlots.count,nodeCount:this.nodeSlots.count});
+    return layer;
+  }
+}
+class NavigationProjectionTiles extends NavigationTileGeometry{
+  constructor(navigation,r,ignoreBuildings){
+    super(navigation.geometry,r,null,ignoreBuildings);this.navigation=navigation;
+    this.layer={index:new NavigationTileIndex(this),ignoreId:ignoreBuildings?'*':null};
+  }
+  tileIndex(id){const tile=this.tiles[id];
+    if(this.dirty.has(id)){
+      const begun=performance.now(),b=tile.bounds,circles=this.navigation.circleIndex.query(b.minX,b.minY,b.maxX,b.maxY,this.r+.55).slice().sort((a,b)=>String(a.id)<String(b.id)?-1:String(a.id)>String(b.id)?1:0);
+      const mesh=this.buildTile(id,circles);
+      for(const c of mesh.cells){c.tile=id;c.local=c.id}
+      tile.index=new NavigationObstacleIndex(mesh.cells);this.dirty.delete(id);
+      this.navigation.metrics.projectionTilesBuilt++;this.navigation.metrics.projectionBuildMs+=performance.now()-begun;
+    }
+    return tile.index;
   }
 }
 class NavigationFunnel{
@@ -12054,7 +12163,7 @@ class SurfaceMotion{
       // A newly placed solid may cover a stationary unit. Reuse the mesh's exact
       // nearest exterior projection, with a monotone departure sweep: never cross
       // terrain or another building while resolving that pre-existing overlap.
-      const layer=nav.layer(r,ignoreId==='*'),p=nav.locate(x,y,layer,null,{radius:r});
+      const p=nav.nearestExterior(x,y,r,ignoreId==='*');
       if(p){const end={x:Math.round(p.point.x*FP)/FP,y:Math.round(p.point.y*FP)/FP};
         if(this.clear(end.x,end.y,end.x,end.y,r,ignoreId)&&nav.departureClear(x,y,end.x,end.y,r,ignoreId))return end;
       }
@@ -12147,14 +12256,15 @@ class TerrainNavigation{
     return nav;
   }
   constructor(sim){
-    this.sim=sim;this.geometry=sim.world.terrain;this.layers=new Map();this.staticOffsets=new Map();this.topology=new NavigationTopology();this.sceneTick=-1;this.circles=[];this.circleIndex=new NavigationObstacleIndex([]);this.motion=new SurfaceMotion(this);
-    this.metrics={backend:'navmesh',fieldsBuilt:0,fieldHits:0,layersBuilt:0,routeQueries:0,directQueries:0,unreachable:0,funnelQueries:0,meshCells:0,meshPortals:0,meshBuildMs:0,meshBuildMaxMs:0,meshGeometryMs:0,meshConnectMs:0,meshTilesBuilt:0,fieldBuildMs:0,invalidations:0,endpointProjections:0,regionsBuilt:0,regionHits:0};
+    this.sim=sim;this.geometry=sim.world.terrain;this.layers=new Map();this.projections=new Map();this.staticOffsets=new Map();this.topology=new NavigationTopology();this.sceneTick=-1;this.circles=[];this.circleIndex=new NavigationObstacleIndex([]);this.motion=new SurfaceMotion(this);
+    this.metrics={backend:'navmesh',fieldsBuilt:0,fieldHits:0,layersBuilt:0,routeQueries:0,directQueries:0,unreachable:0,funnelQueries:0,meshCells:0,meshPortals:0,meshBuildMs:0,meshBuildMaxMs:0,meshGeometryMs:0,meshConnectMs:0,meshTilesBuilt:0,projectionQueries:0,projectionTilesBuilt:0,projectionBuildMs:0,fieldBuildMs:0,invalidations:0,endpointProjections:0,regionsBuilt:0,regionHits:0};
   }
   sync(){
     if(this.sceneTick===this.sim.tick&&this.sceneRevision===this.sim.navigationRevision)return;
     this.sceneTick=this.sim.tick;this.sceneRevision=this.sim.navigationRevision;
     if(!this.topology.refresh(this.sim.buildings))return;
     for(const layer of this.layers.values())layer.tiles.invalidate(this.topology.changes);
+    for(const projection of this.projections.values())projection.invalidate(this.topology.changes);
     this.metrics.invalidations++;
     this.circles=this.topology.records;this.circleIndex=new NavigationObstacleIndex(this.circles);
   }
@@ -12192,6 +12302,18 @@ class TerrainNavigation{
     return true;
   }
   departureClear(x,y,tx,ty,r,ignoreId=null){return this.segmentClear(x,y,tx,ty,r,ignoreId,true)}
+  nearestExterior(x,y,radius,ignoreBuildings=false){
+    this.sync();this.metrics.projectionQueries++;
+    const r=Math.ceil((radius+.10)*100)/100,key=r+':'+ignoreBuildings,ready=this.layers.get(key);
+    if(ready&&!ready.tiles.dirty.size)return this.locate(x,y,ready,null,{radius});
+    let projection=this.projections.get(key);
+    if(!projection){
+      projection=new NavigationProjectionTiles(this,r,ignoreBuildings);
+      if(this.projections.size>=12)this.projections.delete(this.projections.keys().next().value);
+      this.projections.set(key,projection);
+    }
+    return this.locate(x,y,projection.layer,null,{radius});
+  }
   layer(radius,ignoreBuildings=false){
     this.sync();const r=Math.ceil((radius+.10)*100)/100,key=r+':'+ignoreBuildings;
     let layer=this.layers.get(key);if(layer&&!layer.tiles.dirty.size)return layer;
@@ -12202,13 +12324,13 @@ class TerrainNavigation{
     if(!this.layers.has(key)&&this.layers.size>=12)this.layers.delete(this.layers.keys().next().value);
     this.layers.set(key,layer);const elapsed=performance.now()-begun;
     this.metrics.meshGeometryMs+=layer.geometryMs;this.metrics.meshConnectMs+=layer.connectMs;this.metrics.meshTilesBuilt+=layer.rebuiltTiles;
-    this.metrics.layersBuilt++;this.metrics.meshBuildMs+=elapsed;this.metrics.meshBuildMaxMs=Math.max(this.metrics.meshBuildMaxMs,elapsed);this.metrics.meshCells=layer.cells.length;this.metrics.meshPortals=layer.portals.length;
+    this.metrics.layersBuilt++;this.metrics.meshBuildMs+=elapsed;this.metrics.meshBuildMaxMs=Math.max(this.metrics.meshBuildMaxMs,elapsed);this.metrics.meshCells=layer.cellCount;this.metrics.meshPortals=layer.portalCount;
     return layer;
   }
   locate(x,y,layer,component=null,departure=null){
     let result=null;
     for(const c of layer.index.query(x,y))if((component==null||c.component===component)&&NavigationMeshBuilder.contains(c,x,y)){
-      if(!result||c.id<result.cell.id)result={cell:c,point:{x,y},d2:0};
+      if(!result||NavigationGraphOrder.cell(c,result.cell)<0)result={cell:c,point:{x,y},d2:0};
     }
     if(result)return result;
     // Spatial bins only accelerate point location; they are not navigation cells.
@@ -12221,7 +12343,7 @@ class TerrainNavigation{
         const p=NavigationMeshBuilder.closest(c,x,y);
         if(p.d2<=range*range)candidates.push({cell:c,point:{x:p.x,y:p.y},d2:p.d2});
       }
-      candidates.sort((a,b)=>a.d2-b.d2||a.cell.id-b.cell.id);
+      candidates.sort((a,b)=>a.d2-b.d2||NavigationGraphOrder.cell(a.cell,b.cell));
       for(const candidate of candidates){
         if(departure&&!this.departureClear(x,y,candidate.point.x,candidate.point.y,departure.radius,layer.ignoreId))continue;
         this.metrics.endpointProjections++;return candidate;
@@ -12248,14 +12370,14 @@ class TerrainNavigation{
       const g=this.locate(goal.x,goal.y,layer,component);
       if(g&&(goal.project||g.d2<=NavigationGoal.EPS)){
         // Cell order must not select a side of an equally close blocked point.
-        const range=Math.sqrt(g.d2)+.01,candidates=layer.index.query(goal.x,goal.y,goal.x,goal.y,range).slice().sort((a,b)=>a.id-b.id);
+        const range=Math.sqrt(g.d2)+.01,candidates=layer.index.query(goal.x,goal.y,goal.x,goal.y,range).slice().sort(NavigationGraphOrder.cell);
         for(const c of candidates){if(component!=null&&c.component!==component)continue;const p=NavigationMeshBuilder.closest(c,goal.x,goal.y);
           if(p.d2<=g.d2+NavigationGoal.EPS)add(c,c.points,{x:p.x,y:p.y});
         }
       }
     }else{
       const visibility=NavigationGoalVisibility.build(goal,this.geometry);
-      const cells=layer.index.query(goal.x,goal.y,goal.x,goal.y,goal.radius).slice().sort((a,b)=>a.id-b.id);
+      const cells=layer.index.query(goal.x,goal.y,goal.x,goal.y,goal.radius).slice().sort(NavigationGraphOrder.cell);
       for(const cell of cells){
         if(component!=null&&cell.component!==component)continue;
         if(!goal.closest(goal.x,goal.y,cell.points))continue;
@@ -12272,7 +12394,7 @@ class TerrainNavigation{
   }
   field(regions,layer){
     const key=regions.key;let f=layer.fields.get(key);if(f){this.metrics.fieldHits++;return f}
-    const begun=performance.now(),n=layer.fieldNodes.length,cost=new Float64Array(n),next=new Int32Array(n),via=new Int32Array(n),terminal=new Int32Array(n),heap=new NavigationMinHeap();
+    const begun=performance.now(),n=layer.fieldNodes.length,cost=new Float64Array(n),next=new Int32Array(n),via=new Int32Array(n),terminal=new Int32Array(n),heap=new NavigationMinHeap((a,b)=>NavigationGraphOrder.node(layer.fieldNodes[a],layer.fieldNodes[b]));
     const endX=new Float64Array(n),endY=new Float64Array(n);
     cost.fill(Infinity);next.fill(-1);via.fill(-1);terminal.fill(-1);
     for(const area of regions.areas)for(const l of area.cell.links)for(const id of layer.portals[l.portal].nodes){
@@ -12283,7 +12405,7 @@ class TerrainNavigation{
     }
     while(heap.length){const a=heap.pop(),node=layer.fieldNodes[a.id];if(a.cost!==cost[a.id])continue;
       for(const link of node.links){const alt=a.cost+link.cost;
-        if(alt<cost[link.to]||alt===cost[link.to]&&next[link.to]>=0&&a.id<next[link.to]){
+        if(alt<cost[link.to]||alt===cost[link.to]&&next[link.to]>=0&&NavigationGraphOrder.node(node,layer.fieldNodes[next[link.to]])<0){
           cost[link.to]=alt;next[link.to]=a.id;via[link.to]=link.via;terminal[link.to]=terminal[a.id];heap.push(link.to,alt);
         }
       }
