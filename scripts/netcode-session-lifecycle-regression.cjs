@@ -68,6 +68,7 @@ async function runLifecycle(config){
       check(!h.dispose('lifecycle-regression')&&!g.dispose('lifecycle-regression'),'Disposal is idempotent');
       await wait(()=>all.every(([pc,...channels])=>(!pc||pc.connectionState==='closed')&&channels.every(c=>!c||c.readyState==='closed')),'all RTC resources closed');
       check(ht.netcodeListeners.size===0&&gt.netcodeListeners.size===0,'Raw core subscribers detach on final transport close');
+      check(ht.netcodeStatusListeners.size===0&&gt.netcodeStatusListeners.size===0,'Core transport status subscribers detach on final close');
       for(const s of[h,g])check(s.netcodeSession.closed&&!s.heartbeatTimer&&!s.disconnectGraceTimer&&!s.draftPickTimer&&!s.deckSelectTimer,'Core and coordinator timers close');
       return {channelsClosed:true,subscribersDetached:true,timersCleared:true,idempotent:true};
     };
@@ -105,7 +106,8 @@ async function runLifecycle(config){
   const p=await pair({late:true});
   try{
     check(!p.g.sim&&!p.h.netcodeSession.ready,'Host SDK starts before remote GameSession initialization');
-    await p.pump(()=>p.h.netcodeNow-p.h.simClockLast>650,'Early HELLO retry window',0,20);
+    const earlyHandshakeAt=p.h.netcodeNow;
+    await p.pump(()=>p.h.netcodeNow-earlyHandshakeAt>650,'Early HELLO retry window',0,20);
     check(p.h.sim.tick===0,'Unready Core creates no gameplay ticks');
     p.releaseStart();
     await p.pump(()=>p.h.netcodeSession.ready&&p.g.netcodeSession.ready,'Late SDK HELLO retries settle',0);
@@ -159,6 +161,26 @@ async function runLifecycle(config){
     check(hash(early.h)===hash(early.g),'False terminal recovery preserves the full authoritative state');
     results.push({name:'false-early-terminal-recovery',finalTick:12,stateHash:hash(early.h),guestRecoveries:early.g.netcodeSession.metrics.recoveries,replay:[verifyReplay(early.h),verifyReplay(early.g)],cleanup:await early.cleanup()});
   }finally{if(!early.h.disposed){early.h.dispose();early.g.dispose();}}
+  const paced=await pair();
+  try{
+    let now=Math.max(paced.h.netcodeNow,paced.g.netcodeNow,performance.now());
+    const pulse=async()=>{now+=100;for(const s of[paced.h,paced.g])s.advanceSimulation(now);await pause(5);};
+    for(let i=0;i<80&&Math.min(paced.h.confirmedGameTick,paced.g.confirmedGameTick)<12;i++)await pulse();
+    check(paced.h.confirmedGameTick>=12&&paced.g.confirmedGameTick>=12,'Public createLoop pulses advance real RTC sessions');
+    check(!paced.h.heartbeatTimer&&!paced.g.heartbeatTimer,'In-game coordinator has no lobby heartbeat');
+    const send=[paced.ht.sendNetcode,paced.gt.sendNetcode];
+    paced.ht.sendNetcode=paced.gt.sendNetcode=()=>true;
+    for(let i=0;i<25;i++)await pulse();
+    check([paced.h,paced.g].every(s=>s.netcodeSession.status==='interrupted'&&s.syncHold&&s.networkState==='unstable'),'Core interruption drives the hold and UI');
+    for(let i=0;i<95;i++)await pulse();
+    check([paced.h,paced.g].every(s=>s.netcodeSession.status==='disconnected'&&s.simpleRecoveryNeedsManual&&s.disconnectGraceTimer),'Core timeout drives reconnect guidance');
+    const ticks=[paced.h.sim.tick,paced.g.sim.tick];
+    paced.ht.sendNetcode=send[0];paced.gt.sendNetcode=send[1];
+    for(let i=0;i<80&&[paced.h,paced.g].some((s,j)=>s.sim.tick<=ticks[j]||s.syncHold);i++)await pulse();
+    check([paced.h,paced.g].every((s,j)=>s.sim.tick>ticks[j]&&!s.syncHold&&!s.simpleRecoveryNeedsManual&&!s.disconnectGraceTimer),'Poll continues through holds and Core resumption clears reconnect guidance');
+    check(!paced.h.simulationFatal&&!paced.g.simulationFatal&&paced.faults.length===0,'Paced reconnect has no adapter or transport failure');
+    results.push({name:'public-loop-core-interruption-timeout-resumption',ticksBeforeResume:ticks,ticksAfterResume:[paced.h.sim.tick,paced.g.sim.tick],cleanup:await paced.cleanup()});
+  }finally{if(!paced.h.disposed){paced.h.dispose();paced.g.dispose();}}
   return results;
 }
 

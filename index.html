@@ -9785,7 +9785,7 @@ body.campaign-mode #p2pHealthText {
 <div id="lockstepDebugPanel" class="lockstep-debug-panel hidden" role="dialog" aria-modal="false" aria-labelledby="lockstepDebugTitle">
   <div class="lockstep-debug-head">
     <div>
-      <div class="lockstep-debug-kicker">LOCKSTEP DEBUG</div>
+      <div class="lockstep-debug-kicker">SYNCTEST · CORE</div>
       <div id="lockstepDebugTitle" class="lockstep-debug-title">동기화 진단</div>
     </div>
     <button id="lockstepDebugCloseBtn" class="drawer-close" type="button">닫기</button>
@@ -9793,35 +9793,27 @@ body.campaign-mode #p2pHealthText {
 
   <div id="lockstepDebugSummary" class="lockstep-debug-summary"></div>
 
+  <p>확정된 실제 입력의 시작 구간을 최대 32틱 검사합니다. 공통 Synctest가 같은 Adapter를 별도 시뮬레이션에서 저장·복원·재실행하며, 온라인 동기화와 다른 기기의 결정론까지 보장하지 않습니다. 검사 틱 사이에는 게임과 네트워크 처리를 계속합니다.</p>
+  <button id="synctestRunBtn" class="lockstep-debug-reset" type="button">확정 입력 Synctest 실행</button>
   <div class="lockstep-debug-grid">
-    <div class="lockstep-debug-card"><span>Checksum 비교</span><b id="dbgChecksumCompared">0</b></div>
-    <div class="lockstep-debug-card"><span>Checksum 불일치</span><b id="dbgChecksumMismatch">0</b></div>
-    <div class="lockstep-debug-card"><span>일반 보정 송신</span><b id="dbgDesyncCorrectionSent">0</b></div>
-    <div class="lockstep-debug-card"><span>일반 보정 수신</span><b id="dbgDesyncCorrectionReceived">0</b></div>
-    <div class="lockstep-debug-card"><span>재연결 스냅샷 송신</span><b id="dbgRecoverySnapshotSent">0</b></div>
-    <div class="lockstep-debug-card"><span>재연결 스냅샷 수신</span><b id="dbgRecoverySnapshotReceived">0</b></div>
-    <div class="lockstep-debug-card"><span>복구 완료</span><b id="dbgRecoveryCompleted">0</b></div>
-    <div class="lockstep-debug-card"><span>복구 재시도</span><b id="dbgRecoveryRetries">0</b></div>
+    <div class="lockstep-debug-card"><span>Synctest 상태</span><b id="dbgSyncStatus">미실행</b></div>
+    <div class="lockstep-debug-card"><span>검사한 틱</span><b id="dbgSyncChecked">미실행</b></div>
+    <div class="lockstep-debug-card"><span>재실행한 틱</span><b id="dbgSyncResimulated">미실행</b></div>
+    <div class="lockstep-debug-card"><span>재실행 거리</span><b id="dbgSyncDistance">미실행</b></div>
+    <div class="lockstep-debug-card"><span>검사 상태 해시</span><b id="dbgSyncHash">미실행</b></div>
+    <div class="lockstep-debug-card"><span>보관 상태 크기</span><b id="dbgSyncBytes">미실행</b></div>
+    <div class="lockstep-debug-card"><span>검사 실행 시간 · 양보 제외</span><b id="dbgSyncCost">미실행</b></div>
+    <div class="lockstep-debug-card"><span>최초 불일치</span><b id="dbgSyncFailure">미실행</b></div>
   </div>
-
   <div class="lockstep-debug-table">
-    <div><span>DESYNC 요청 송신 / 수신</span><b id="dbgDesyncRequests">0 / 0</b></div>
-    <div><span>현재 local tick</span><b id="dbgLocalTick">-</b></div>
-    <div><span>remote tick</span><b id="dbgRemoteTick">-</b></div>
-    <div><span>tick 차이</span><b id="dbgTickDrift">-</b></div>
-    <div><span>runtimeSeq</span><b id="dbgRuntimeSeq">-</b></div>
-    <div><span>마지막 mismatch tick</span><b id="dbgLastMismatchTick">-</b></div>
-    <div><span>마지막 보정 이유</span><b id="dbgLastCorrectionReason">-</b></div>
-    <div><span>마지막 보정 범위</span><b id="dbgLastCorrectionScope">-</b></div>
-    <div><span>부분 보정 / 전체 fallback</span><b id="dbgPartialCorrection">0 / 0</b></div>
-    <div><span>마지막 스냅샷 크기</span><b id="dbgLastCorrectionBytes">-</b></div>
-    <div><span>현재 복구 단계</span><b id="dbgRecoveryPhase">idle</b></div>
-    <div><span>대기 입력 / proposal</span><b id="dbgPending">0 / 0</b></div>
-    <div><span>DataConnection serial</span><b id="dbgConnectionSerial">-</b></div>
-    <div><span>Host accepted serial</span><b id="dbgAcceptedSerial">-</b></div>
-    <div><span>복구 requestId</span><b id="dbgRecoveryRequestId">-</b></div>
-    <div><span>DataConnection 상태</span><b id="dbgConnState">-</b></div>
-    <div><span>resume probe</span><b id="dbgResumeProbe">-</b></div>
+    <div><span>RTT / 지터</span><b id="dbgCoreLatency">-</b></div>
+    <div><span>hold / stall / pace</span><b id="dbgCorePacing">-</b></div>
+    <div><span>예측 틱 / 늦은 입력 비율(EMA)</span><b id="dbgCorePrediction">-</b></div>
+    <div><span>이력 bytes / 상태 hash 계산</span><b id="dbgCoreHistory">-</b></div>
+    <div><span>Core 상태 / 확정 tick</span><b id="dbgCoreStatus">-</b></div>
+    <div><span>입력 지연 / rollback / 재실행</span><b id="dbgCoreRollback">-</b></div>
+    <div><span>해시 불일치 / 복구 / 후보 거부</span><b id="dbgCoreRecovery">-</b></div>
+    <div><span>송신 / 수신 bytes</span><b id="dbgCoreBytes">-</b></div>
   </div>
 
   <div class="lockstep-debug-kicker" style="margin-top:12px">LOCAL PERFORMANCE</div>
@@ -9838,8 +9830,6 @@ body.campaign-mode #p2pHealthText {
     <div><span>Collision 후보 / overlap / 반복</span><b id="dbgPerfCollision">-</b></div>
     <div><span>Render FPS / frame work</span><b id="dbgPerfRender">-</b></div>
     <div><span id="dbgPerfBudgetLabel">현재 TPS tick budget</span><b id="dbgPerfBudget">-</b></div>
-    <div><span>장기 mismatch / 10,000 tick</span><b id="dbgEnduranceMismatchRate">-</b></div>
-    <div><span>장기 correction / 10,000 tick</span><b id="dbgEnduranceCorrectionRate">-</b></div>
     <div><span>엔티티 peak 유닛 / 건물 / 투사체</span><b id="dbgEndurancePeaks">-</b></div>
   </div>
 
@@ -9879,7 +9869,7 @@ body.campaign-mode #p2pHealthText {
       600 유닛 성능 벤치
     </button>
     <button id="lockstepDebugResetBtn" class="lockstep-debug-reset" type="button">
-      진단 카운터 초기화
+      진단 Synctest 결과 지우기
     </button>
   </div>
 </div>
@@ -10593,9 +10583,11 @@ const RALLY_NETCODE_URL="https://byh-playground.github.io/rollback-netcode/rollb
 let RallyNetcode;
 try{
   RallyNetcode=await import(RALLY_NETCODE_URL);
-  for(const name of ["createSession","hashBytes","createValueCodec","WebRTCTransport","createNostrSignaler"]){
+  for(const name of ["createSession","hashBytes","createValueCodec","WebRTCTransport","createNostrSignaler","createLoop","runSyncTestAsync"]){
     if(typeof RallyNetcode[name]!=="function")throw new Error("공개 라이브러리에 필수 API "+name+"가 없습니다. 라이브러리 배포 상태를 확인해 주세요.");
   }
+  if(typeof Object.getOwnPropertyDescriptor(RallyNetcode.SyncTestSession?.prototype||{},"metrics")?.get!=="function")throw new Error("공개 라이브러리에 Synctest metrics API가 없습니다. 라이브러리 배포 상태를 확인해 주세요.");
+  if(typeof RallyNetcode.RollbackSession?.prototype.exportSyncTestFrames!=="function")throw new Error("공개 라이브러리에 확정 입력 Synctest export API가 없습니다. 라이브러리 배포 상태를 확인해 주세요.");
   window.RallyNetcode=RallyNetcode;
   window.RallyNetcodeSource=Object.freeze({url:RALLY_NETCODE_URL,version:RallyNetcode.VERSION,pinned:false});
 }catch(error){
@@ -10607,7 +10599,7 @@ try{
 // Single source of truth for this HTML artifact.
 // The timestamp lives only inside BUILD_ID. updatedAt is derived from it, so the
 // build identity and the visible/exported update time cannot drift apart.
-const BUILD_ID="20261003T083000+0900-rf-url-binary-netcode-v75-candidate";
+const BUILD_ID="20261003T091900+0900-rf-sdk-synctest-v76-candidate";
 
 class BuildMetadata{
   static buildUpdatedAtFromId(buildId){
@@ -14852,30 +14844,6 @@ const RECOVERY_EVENT_LIMIT=300;
 
 
 class RecoveryTelemetry{
-  static createLockstepDebugMetrics(){return {
-    checksumCompared:0,checksumMismatch:0,desyncCorrectionSent:0,desyncCorrectionReceived:0,
-    recoverySnapshotSent:0,recoverySnapshotReceived:0,recoveryCompleted:0,recoveryRetries:0,
-    fullConnectionResets:0,desyncRequestsSent:0,desyncRequestsReceived:0,lastMismatchTick:null,
-    lastCorrectionReason:null,lastCorrectionBytes:0,lastCorrectionTick:null,lastMismatchPaths:[],
-    partialCorrectionSent:0,partialCorrectionApplied:0,fullCorrectionFallbacks:0,lastCorrectionScope:''
-  }}
-  static resetLockstepDebugCounters(){
-  correctionFlightRecorder.clear();
-  const active=MatchLifecycle.activeSession?.();
-  if(!active?.debugMetrics)return;
-  active.debugMetrics={
-    checksumCompared:0,checksumMismatch:0,
-    desyncCorrectionSent:0,desyncCorrectionReceived:0,
-    recoverySnapshotSent:0,recoverySnapshotReceived:0,
-    recoveryCompleted:0,recoveryRetries:0,fullConnectionResets:0,
-    desyncRequestsSent:0,desyncRequestsReceived:0,
-    lastMismatchTick:null,lastCorrectionReason:null,
-    lastCorrectionBytes:0,lastCorrectionTick:null,lastMismatchPaths:[],
-    partialCorrectionSent:0,partialCorrectionApplied:0,fullCorrectionFallbacks:0,lastCorrectionScope:""
-  };
-  ConnectionPresentation.renderLockstepDebugPanel();
-}
-
   static recoveryTransportState(trans){
   const pc=trans?.conn?.peerConnection||null;
   const dc=trans?.conn?.dataChannel||null;
@@ -15217,7 +15185,7 @@ class NostrRtcTransport{
   constructor(role,roomCode,{signalMode="nostr"}={}){
     this.role=role;this.roomCode=roomCode;this.signalMode=signalMode;
     this.pc=null;this.dc=null;this.conn=null;this.signaler=null;
-    this.netcodeInputChannel=null;this.netcodeControlChannel=null;this.netcodeTransport=null;this.netcodeUnsubscribe=null;this.netcodeListeners=new Set();
+    this.netcodeInputChannel=null;this.netcodeControlChannel=null;this.netcodeTransport=null;this.netcodeUnsubscribe=null;this.netcodeStatusUnsubscribe=null;this.netcodeListeners=new Set();this.netcodeStatusListeners=new Set();
     this.onMessage=()=>{};this.onPeerReady=()=>{};this.onOpen=()=>{};this.onClose=()=>{};this.onError=()=>{};
     this.intentionalClose=false;this.everOpened=false;this.connState="idle";
     this.connectionSerial=0;this.lastAcceptedConnectionSerial=0;this.lastAcceptedOffer=null;this.connAttemptStartedAt=0;
@@ -15397,6 +15365,8 @@ class NostrRtcTransport{
       const Carrier=window.RallyNetcode?.WebRTCTransport;
       if(typeof Carrier!=="function")throw new Error("URL 넷코드 전송 모듈이 준비되지 않았습니다.");
       const carrier=this.netcodeTransport=new Carrier({inputChannel:this.netcodeInputChannel,controlChannel:this.netcodeControlChannel});
+      this.netcodeStatusUnsubscribe=carrier.subscribeStatus(()=>this.emitNetcodeStatus());
+      this.emitNetcodeStatus();
       this.netcodeUnsubscribe=carrier.subscribe(packet=>{
         if(this.netcodeTransport!==carrier||!this.isCurrentPeer(pc))return;
         this.lastDataAt=Date.now();
@@ -15404,6 +15374,19 @@ class NostrRtcTransport{
       });
     }
   }
+  get netcodeState(){
+    if(this.intentionalClose||!this.pc)return 'closed';
+    const state=this.pc.connectionState,ice=this.pc.iceConnectionState;
+    if(state==='failed'||ice==='failed')return 'failed';
+    if(state==='closed')return 'closed';
+    if(state==='disconnected'||ice==='disconnected')return 'interrupted';
+    return this.netcodeTransport?.state||'connecting';
+  }
+  subscribeNetcodeStatus(listener){
+    if(typeof listener!=='function')throw new TypeError('netcode status subscriber');
+    this.netcodeStatusListeners.add(listener);return ()=>this.netcodeStatusListeners.delete(listener);
+  }
+  emitNetcodeStatus(){for(const listener of this.netcodeStatusListeners){try{listener(this.netcodeState)}catch(error){this.onError(error)}}}
   get netcodeBufferedAmount(){return this.netcodeTransport?.bufferedAmount||0}
   isNetcodeOpen(){return !!(this.netcodeInputChannel?.readyState==="open"&&this.netcodeControlChannel?.readyState==="open")}
   sendNetcode(packet){
@@ -15440,7 +15423,7 @@ class NostrRtcTransport{
   watchRtcState(pc){
     if(this.pc!==pc||this.intentionalClose)return;
     const state=String(pc.connectionState||""),ice=String(pc.iceConnectionState||"");
-    this.trace("rtc.state",{state,ice});
+    this.trace("rtc.state",{state,ice});this.emitNetcodeStatus();
     if(state==="failed"||state==="closed"||ice==="failed"){this.failRtcConnection(pc,`rtc-${state||ice||"failed"}`);return}
     if(state==="disconnected"||ice==="disconnected"){
       if(!this.rtcDisconnectTimer)this.rtcDisconnectTimer=setTimeout(()=>{
@@ -15472,13 +15455,14 @@ class NostrRtcTransport{
     const coreChannels=[this.netcodeInputChannel,this.netcodeControlChannel],had=!!dc||!!pc||!!this.conn;
     this.netcodeTransport=null;this.netcodeInputChannel=null;this.netcodeControlChannel=null;
     this.netcodeUnsubscribe?.();this.netcodeUnsubscribe=null;
+    this.netcodeStatusUnsubscribe?.();this.netcodeStatusUnsubscribe=null;
     for(const channel of coreChannels)if(channel)channel.onopen=channel.onclose=channel.onerror=null;
     try{carrier?.close()}catch(error){this.onError(error)}
     for(const channel of coreChannels){try{channel?.close()}catch{}}
     this.dc=null;this.pc=null;this.conn=null;this.connState="idle";this.connAttemptStartedAt=0;this.pendingIce=[];this.sendQueue=[];this.sendQueueBytes=0;
     try{if(dc){dc.onopen=dc.onmessage=dc.onclose=dc.onerror=dc.onbufferedamountlow=null;dc.close()}}catch{}
     try{if(pc){pc.onicecandidate=pc.ondatachannel=null;pc.close()}}catch{}
-    this.trace("rtc.discard",{reason});return had;
+    this.emitNetcodeStatus();this.trace("rtc.discard",{reason});return had;
   }
   scheduleReconnect(){
     if(this.intentionalClose||this.conn?.open||this.reconnectTimer)return;
@@ -15526,7 +15510,7 @@ class NostrRtcTransport{
     try{dc.send(frame);return true}catch(e){this.onError(e);this.forceReconnect("send-failed");return false}
   }
   close(){
-    this.intentionalClose=true;this.clearReconnectControlTimers();this.discardCurrentConnection("intentional-close");this.signaler?.close?.();this.signaler=null;this.signalingOpen=false;this.netcodeListeners.clear();
+    this.intentionalClose=true;this.clearReconnectControlTimers();this.discardCurrentConnection("intentional-close");this.signaler?.close?.();this.signaler=null;this.signalingOpen=false;this.netcodeListeners.clear();this.netcodeStatusListeners.clear();
   }
 }
 
@@ -15537,7 +15521,7 @@ class NostrRtcTransport{
  */
 class LoopbackTransport{
   constructor(role,roomCode){
-    this.role=role;this.roomCode=roomCode;this.peerTransport=null;this.opened=false;this.connected=false;this.netcodeListeners=new Set();
+    this.role=role;this.roomCode=roomCode;this.peerTransport=null;this.opened=false;this.connected=false;this.netcodeListeners=new Set();this.netcodeStatusListeners=new Set();
     this.onMessage=()=>{};this.onPeerReady=()=>{};this.onOpen=()=>{};this.onClose=()=>{};this.onError=()=>{};
   }
   pair(other){this.peerTransport=other}
@@ -15552,7 +15536,7 @@ class LoopbackTransport{
   tryConnect(){
     const other=this.peerTransport;
     if(!other||!this.opened||!other.opened||this.connected||other.connected)return;
-    this.connected=true;other.connected=true;
+    this.connected=true;other.connected=true;this.emitNetcodeStatus();other.emitNetcodeStatus();
     queueMicrotask(()=>{if(this.connected&&other.connected&&this.peerTransport===other&&other.peerTransport===this){this.onOpen();other.onOpen()}});
   }
   isOpen(){return !!(this.connected&&this.peerTransport?.connected)}
@@ -15569,6 +15553,12 @@ class LoopbackTransport{
     });
     return true;
   }
+  get netcodeState(){return this.isOpen()?'open':'closed'}
+  subscribeNetcodeStatus(listener){
+    if(typeof listener!=='function')throw new TypeError('netcode status subscriber');
+    this.netcodeStatusListeners.add(listener);return ()=>this.netcodeStatusListeners.delete(listener);
+  }
+  emitNetcodeStatus(){for(const listener of this.netcodeStatusListeners)listener(this.netcodeState)}
   get netcodeBufferedAmount(){return 0}
   isNetcodeOpen(){return this.isOpen()}
   subscribeNetcode(listener){
@@ -15595,10 +15585,10 @@ class LoopbackTransport{
   close(){
     if(!this.opened&&!this.connected)return;
     const other=this.peerTransport;
-    this.opened=false;this.connected=false;
+    this.opened=false;this.connected=false;this.emitNetcodeStatus();
     queueMicrotask(()=>this.onClose());
     if(other&&other.connected){
-      other.connected=false;
+      other.connected=false;other.emitNetcodeStatus();
       queueMicrotask(()=>other.onClose());
     }
   }
@@ -16835,6 +16825,11 @@ class StrategySim{
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","maxUnitRadius",
     "cloakCacheTick","auraCloakedIds","tickVisibilityCache","tickVisibilityCacheTick","economyCacheTick","workerGasAssignments","validGasExtractorsBySide","navigationRevision","navigation"
   ],children:{delayedEffects:DelayedEffectState}});
+  static createForMatch({draft,seed,rules=GameRuleDefinition.current,campaignScenario=null,debugScenario=null}={}){
+    const sim=new StrategySim(draft,seed,rules,campaignScenario);
+    try{if(debugScenario)sim.applyDebugScenario(debugScenario);if(campaignScenario)sim.applyCampaignScenario(campaignScenario);return sim}
+    catch(error){sim.dispose("initialization-failed");throw error}
+  }
   constructor(draftState,seed,rules=GameRuleDefinition.current,campaignScenario=null){
     this.seed=seed>>>0;this.rules=rules||GameRuleDefinition.current;this.tps=RangeUtil.clamp(Math.round(Number(this.rules?.simulation?.tps)||SIM_TPS),10,30);const campaignHumanRole=campaignScenario?.playerRole||"host",campaignHumanSide=campaignHumanRole==="host"?0:1;this.mapDescriptor=campaignScenario?.map?CampaignMapDefinition.build(campaignScenario.map,this.rules,this.seed,campaignHumanSide):MapGeneration.generateMapDescriptor({rules:this.rules,seed:this.seed,roundNumber:this.rules?.roundNumber||1});StateValue.freeze(this.mapDescriptor);this.world=WorldContext.fromMap(this.mapDescriptor);this.tick=0;this.seq=0;this.units=[];this.buildings=[];this.projectiles=[];this.events=[];this.scheduled=new Map();
     this.wallet=[0,1].map(()=>Math.max(0,Number(this.rules?.economy?.startingResources?.minerals)||0));
@@ -22515,7 +22510,7 @@ class RallySimulationAdapter{
   }
   validateSnapshot(bytes,context){try{this.readSnapshot(bytes,context);return true}catch{return false}}
   load(bytes){const state=this.readSnapshot(bytes);this.session.sim.importState(state,{rollback:true})}
-  step({tick,tickRate,inputs=[],resimulating=false,recovering=false}){
+  step({tick,tickRate,inputs=[],resimulating=false,recovering=false,synctesting=false}){
     const sim=this.session.sim;
     if(!Number.isSafeInteger(tick)||tick<0||tick>RallySimulationAdapter.maxFrameTick||sim.tick!==tick||tickRate!==sim.tps||!Array.isArray(inputs))throw new Error("SDK frame과 게임 simulation tick이 다릅니다.");
     const commands=[];
@@ -22529,8 +22524,41 @@ class RallySimulationAdapter{
     }
     for(const command of commands)sim.queueCommand(command);
     const winner=sim.step();
-    this.session.onNetcodeFrameApplied?.({frameTick:tick,gameTick:sim.tick,commands:StateValue.copy(commands),events:StateValue.copy(sim.events),winner,resimulating,recovering});
+    if(!synctesting)this.session.onNetcodeFrameApplied?.({frameTick:tick,gameTick:sim.tick,commands:StateValue.copy(commands),events:StateValue.copy(sim.events),winner,resimulating,recovering});
     return winner;
+  }
+}
+
+class RallySynctestDiagnostics{
+  static reports=new WeakMap();
+  static maxFrames=32;
+  static report(session){return this.reports.get(session)||null}
+  static clear(session){const report=this.reports.get(session);report?.controller?.abort();if(session)this.reports.delete(session)}
+  static async run(session){
+    const core=session?.netcodeSession;
+    if(!core||core.resimulating||session.disposed)throw new Error("활성 경기가 안정된 뒤 검사해 주세요.");
+    const replay=core.exportSyncTestFrames({maxFrames:this.maxFrames}),frames=replay.frames;
+    if(!frames.length)throw new Error("검사할 확정 입력이 없습니다.");
+    const record={status:"running",metrics:null,controller:new AbortController()};this.reports.set(session,record);
+    let sim,report;
+    try{
+      sim=StrategySim.createForMatch({draft:session.draft,seed:session.sim.seed,rules:session.sim.rules,campaignScenario:session.sim.campaignScenario||null,debugScenario:session.matchConfig?.debugScenario||null});
+      const adapter=new RallySimulationAdapter({sim});adapter.load(replay.initialState);
+      const result=await RallyNetcode.runSyncTestAsync({adapter,players:replay.players,inputSize:replay.inputSize,tickRate:replay.tickRate,initialTick:0,
+        checkDistance:Math.max(1,Math.min(6,core.profile.rollbackWindowTicks)),maxSnapshotBytes:RallyStateCodec.maxBytes,maxHistoryBytes:core.profile.maxHistoryBytes,frames,signal:record.controller.signal});
+      report={status:"passed",metrics:result.metrics};
+    }catch(error){report={status:"failed",metrics:error.syncTestMetrics||null,error:String(error.message||error)}}
+    finally{try{sim?.dispose("synctest-complete")}catch(error){report={status:"failed",metrics:report?.metrics||null,error:"진단 시뮬레이션 정리 실패: "+String(error.message||error)}}}
+    if(this.reports.get(session)===record&&!session.disposed)this.reports.set(session,report);return report;
+  }
+  static request(){
+    const session=MatchLifecycle.activeSession?.();if(!session||this.report(session)?.status==="running")return;
+    const queued={status:"running",metrics:null};this.reports.set(session,queued);ConnectionPresentation.renderLockstepDebugPanel();
+    setTimeout(async()=>{
+      if(this.reports.get(session)!==queued||session.disposed)return;
+      try{await this.run(session)}catch(error){if(!session.disposed&&this.reports.get(session)===queued)this.reports.set(session,{status:"failed",metrics:error.syncTestMetrics||null,error:String(error.message||error)})}
+      ConnectionPresentation.renderLockstepDebugPanel();
+    },0);
   }
 }
 
@@ -22556,12 +22584,11 @@ class GameSession{
     this.recoveryPhase='idle';this.simpleRecoveryNeedsManual=false;this.simpleRecoveryToken='';this.simpleRecoverySeq=0;
     this.recoveryAttempt=0;this.fullConnectionResetCount=0;this.postRecoveryResumeAt=0;this.postRecoveryTimer=0;
     this.pendingResumeProbeToken='';this.lastResumeProbeAckAt=0;
-    this.localVisible=true;this.acc=0;this.simClockLast=0;this.last=0;this.raf=0;
-    this.lastDriverPulseAt=performance.now();this.lastSnapshotEmitAt=0;
+    this.localVisible=true;this.netcodeLoop=null;this.last=0;this.raf=0;
+    this.lastDriverPulseAt=performance.now();this.lastSnapshotEmitAt=0;this.lastRenderedSimulationTick=-1;
     this.presentationEventBuffer=[];this.presentationEventsBuffered=0;this.presentationEventsPublished=0;
     this.simEnded=false;this.matchResult=null;this.simulationFatal=false;this.simulationFatalInfo=null;
     this.disconnectGraceDeadlineAt=0;this.disconnectGraceReason='';this.disconnectGraceTimer=0;
-    this.debugMetrics=RecoveryTelemetry.createLockstepDebugMetrics();
     this.onDraft=()=>{};this.onSnapshot=()=>{};this.onRenderTargets=()=>{};this.onLog=()=>{};this.onResult=()=>{};this.onNetworkHealth=()=>{};
     this.networkOpened=false;this.heartbeatTimer=0;this.lastPingAt=0;this.lastPongAt=0;this.lastRtt=null;this.networkState='hidden';
     transport.onMessage=m=>this.handle(m);
@@ -22571,11 +22598,11 @@ class GameSession{
   cancelScheduledWork(){
     this.clearDisconnectGrace();this.clearPostRecoveryCountdown();this.clearDraftPickTimer();this.clearDeckSelectTimer();
     for(const key of ['draftGameStartTimer','campaignOutroTimer']){if(this[key])clearTimeout(this[key]);this[key]=0}
-    this.stopHeartbeat(false);AppLifecycle.unregisterBackgroundSession(this);
+    this.stopHeartbeat(false);this.netcodeLoop?.stop();AppLifecycle.unregisterBackgroundSession(this);
   }
   dispose(reason='session-replaced'){
     if(this.disposed)return false;
-    this.disposed=true;this.simEnded=true;this.syncHold=true;this.cancelScheduledWork();
+    this.disposed=true;RallySynctestDiagnostics.clear(this);this.simEnded=true;this.syncHold=true;this.cancelScheduledWork();
     this.netcodeSession?.close();this.detachNetcodeTransport?.();this.detachNetcodeTransport=null;
     this.deferredActions.length=0;this.pendingNetcodeCommands.clear();this.frameOutputs.clear();this.candidateFrameOutputs.clear();
     try{this.sim?.dispose(reason)}finally{
@@ -22594,7 +22621,7 @@ class GameSession{
   endMatch(winner,reason='base-destroyed'){
     if(this.simEnded)return false;
     this.simEnded=true;this.matchResult={winner:winner||null,reason,tick:this.sim?.tick||0};
-    this.cancelScheduledWork();this.syncHold=true;this.acc=0;
+    this.cancelScheduledWork();this.syncHold=true;this.netcodeLoop?.resetTiming();
     this.replayRecorder?.finalize(winner,this.sim,reason);this.netcodeSession?.close();
     this.sim?.dispose('match-ended');this.onResult(winner,reason);
     if(this.leaveAfterResult)setTimeout(()=>location.reload(),0);
@@ -22608,9 +22635,9 @@ class GameSession{
   onTransportOpen(){
     if(this.disposed)return;
     const reconnect=this.everTransportOpened;
-    this.transportConnected=true;this.everTransportOpened=true;this.syncHold=this.simEnded;
+    this.transportConnected=true;this.everTransportOpened=true;this.syncHold=this.simEnded||!!this.sim;
     this.simpleRecoveryNeedsManual=false;this.recoveryPhase='idle';this.clearDisconnectGrace();
-    this.acc=0;this.simClockLast=performance.now();this.startHeartbeat();
+    this.netcodeLoop?.resetTiming();this.startHeartbeat();
     if(!reconnect)this.start();
     else if(!this.sim){if(this.role==='guest')this.start();else this.armDraftPickTimer(false)}
     else this.onLog('P2P 재연결 · 공통 코어의 입력 이력으로 재개');
@@ -22618,19 +22645,20 @@ class GameSession{
   }
   onTransportClosed(){
     if(this.disposed||this.simulationFatal||!this.everTransportOpened||this.simEnded)return;
+    if(this.netcodeSession)return; // Core transport status events own in-game liveness.
     this.markManualRecoveryNeeded('transport-close');this.startDisconnectGrace('transport-close');
     this.onLog('P2P 연결 끊김 · 입력 대기 · 60초 안에 재접속 필요');
   }
   markManualRecoveryNeeded(reason='connection-lost'){
     if(this.simEnded)return false;
-    this.transportConnected=false;this.syncHold=true;this.acc=0;this.simClockLast=performance.now();
+    this.transportConnected=false;this.syncHold=true;this.netcodeLoop?.resetTiming();
     this.simpleRecoveryReason=reason;this.simpleRecoveryNeedsManual=true;this.recoveryPhase='needs-manual';this.stopHeartbeat(true);
     RecoveryTelemetry.recordRecovery('netcode.connection-lost',this,this.transport,{reason});return true;
   }
   prepareSimpleRecovery(token,reason='manual-reconnect'){
     if(!this.sim||this.simEnded)return false;
     this.simpleRecoveryToken=String(token||'');this.simpleRecoveryReason=reason;
-    this.transportConnected=false;this.syncHold=true;this.acc=0;this.simClockLast=performance.now();
+    this.transportConnected=false;this.syncHold=true;this.netcodeLoop?.resetTiming();
     this.simpleRecoveryNeedsManual=false;this.recoveryPhase='reconnecting';this.stopHeartbeat(false);return true;
   }
   startSimpleRecovery(reason='manual-reconnect'){
@@ -22646,17 +22674,16 @@ class GameSession{
   setLocalVisibility(visible){this.localVisible=!!visible;if(!visible)this.netcodeSession?.releaseInput()}
   emitNetworkHealth(state=this.networkState){
     if(this.simulationFatal)state='fatal';this.networkState=state;
-    this.lastRtt=this.netcodeSession?.metrics.smoothedRTT||this.lastRtt;
+    this.lastRtt=this.netcodeSession?.metrics.smoothedRTT??this.lastRtt;
     this.onNetworkHealth({state,simulationFatal:this.simulationFatal,simulationFatalInfo:this.simulationFatalInfo,rtt:this.lastRtt,
-      silence:this.lastPongAt?Date.now()-this.lastPongAt:0,recoveryPhase:this.recoveryPhase,recoveryAttempt:this.recoveryAttempt,
+      silence:this.sim?0:(this.lastPongAt?Date.now()-this.lastPongAt:0),recoveryPhase:this.recoveryPhase,recoveryAttempt:this.recoveryAttempt,
       connectionSerial:this.transport?.connectionSerial||0,acceptedConnectionSerial:this.transport?.lastAcceptedConnectionSerial||0,transportLastDataAt:this.transport?.lastDataAt||0});
   }
   startHeartbeat(){
-    this.stopHeartbeat(false);this.networkOpened=true;this.lastPongAt=Date.now();this.emitNetworkHealth('connected');
+    this.stopHeartbeat(false);if(this.sim)return;this.networkOpened=true;this.lastPongAt=Date.now();this.emitNetworkHealth('connected');
     this.heartbeatTimer=setInterval(()=>{
-      if(!this.networkOpened||this.simEnded)return;
+      if(!this.networkOpened||this.simEnded||this.sim)return;
       const silence=Date.now()-this.lastPongAt;
-      if(silence>=P2P_STALL_RECYCLE_MS&&this.sim){this.markManualRecoveryNeeded('network-silence');this.startDisconnectGrace('network-silence');return}
       this.emitNetworkHealth(silence>=4000?'unstable':'connected');
       // 로비 생존 확인일 뿐 simulation clock과 입력 지연은 Core가 측정한다.
       if(Date.now()-this.lastPingAt>=1000){this.lastPingAt=Date.now();this.transport.send({type:'LOBBY_PING',ts:this.lastPingAt})}
@@ -22677,7 +22704,7 @@ class GameSession{
       if(m.type!=='VERSION_MISMATCH')this.transport.send({type:'VERSION_MISMATCH',simVersion:SIM_VERSION});
       this.syncHold=true;this.transport.onError({type:'version-mismatch',nonFatal:true,message:'게임 버전이 다릅니다. 양쪽 모두 같은 HTML로 새로고침하세요.'});return;
     }
-    this.lastPongAt=Date.now();
+    if(!this.sim)this.lastPongAt=Date.now();
     if(m.type==='SIMULATION_FATAL'){this.enterSimulationFatal(new Error(m.message||'상대 simulation 오류'),{source:'peer-simulation-fatal',notifyPeer:false,remoteInfo:m});return}
     if(m.type==='LOBBY_PING'){this.transport.send({type:'LOBBY_PONG',ts:m.ts});return}
     if(m.type==='LOBBY_PONG'){if(!this.sim)this.lastRtt=Math.max(0,Date.now()-Number(m.ts));return}
@@ -22793,25 +22820,31 @@ class GameSession{
     if(this.disposed||this.sim)return false;
     if(!globalThis.RallyNetcode)throw new Error('URL Netcode가 로딩되지 않았습니다.');
     this.clearDisconnectGrace();this.clearPostRecoveryCountdown();
-    this.sim=new StrategySim(this.draft,seed,this.roundRules,this.matchConfig?.campaignScenario||null);
-    if(this.matchConfig?.debugScenario)this.sim.applyDebugScenario(this.matchConfig.debugScenario);
-    if(this.matchConfig?.campaignScenario)this.sim.applyCampaignScenario(this.matchConfig.campaignScenario);
+    this.sim=StrategySim.createForMatch({draft:this.draft,seed,rules:this.roundRules,campaignScenario:this.matchConfig?.campaignScenario||null,debugScenario:this.matchConfig?.debugScenario||null});
     this.simulationAdapter=new RallySimulationAdapter(this);
     this.replayRecorder=new ReplayRecorder({seed,draft:this.draft,roomCode:this.roomCode,sim:this.sim,rules:this.roundRules});
+    this.simEnded=false;this.matchResult=null;this.publishedGameTick=0;this.netcodeLoop?.resetTiming();
+    this.onSnapshot(this.sim.snapshot());this.onRenderTargets(this.sim,true);
     this.netcodeNow=performance.now();
     // RTS Profile만 선택한다. 동일 public Core가 prediction/hold/resim/hash/recovery를 실행한다.
     this.netcodeSession=RallyNetcode.createSession({players:['host','guest'],localPlayerId:this.role,authorityPlayerId:'host',
       sessionId:String(this.roomCode),simulationVersion:String(SIM_VERSION),seed:seed>>>0,inputSize:1,
-      profile:{...RallyNetcode.profiles.rts,tickRate:this.sim.tps,checksumInterval:20,resimulationBudget:2,maxCommandBytes:12*1024,maxHistoryBytes:64*1024*1024,maxSnapshotBytes:RallyStateCodec.maxBytes},
+      profile:{...RallyNetcode.profiles.rts,tickRate:this.sim.tps,maxCatchupSteps:MAX_CATCHUP_STEPS_PER_PULSE,checksumInterval:20,resimulationBudget:2,maxCommandBytes:12*1024,maxHistoryBytes:64*1024*1024,maxSnapshotBytes:RallyStateCodec.maxBytes},
       adapter:this.simulationAdapter,clock:()=>this.netcodeNow,onEvent:event=>this.onNetcodeEvent(event)});
+    const statusTransport=this.transport;
     this.detachNetcodeTransport=this.netcodeSession.attachTransport(this.role==='host'?'guest':'host',{
       send:bytes=>this.transport.sendNetcode(bytes),
-      subscribe:listener=>this.transport.subscribeNetcode(bytes=>{this.lastPongAt=Date.now();listener(bytes)})
+      subscribe:listener=>this.transport.subscribeNetcode(listener),
+      ...(typeof statusTransport.subscribeNetcodeStatus==="function"?{subscribeStatus:listener=>statusTransport.subscribeNetcodeStatus(listener),get state(){return statusTransport.netcodeState}}:{})
     });
-    this.simEnded=false;this.matchResult=null;this.publishedGameTick=0;this.acc=0;
-    this.onSnapshot(this.sim.snapshot());this.onRenderTargets(this.sim,true);
-    this.simClockLast=performance.now();this.netcodeNow=this.simClockLast;this.lastDriverPulseAt=this.simClockLast;this.lastSnapshotEmitAt=this.simClockLast;
-    this.lastPongAt=Date.now();this.syncHold=!this.transportConnected;AppLifecycle.registerBackgroundSession(this);return true;
+    this.netcodeNow=performance.now();this.lastDriverPulseAt=this.netcodeNow;this.lastSnapshotEmitAt=this.netcodeNow;
+    this.stopHeartbeat(false);
+    this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,maxWorkMs:SIM_PULSE_BUDGET_MS,
+      beforeFrame:now=>{this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now)},
+      canAdvance:()=>!this.simEnded&&!this.simulationFatal&&!this.pendingTerminalFrame&&!this.syncHold&&!this.frameOutputs.get(this.sim.tick)?.winner,
+      onAdvance:()=>this.reconcileNetcodePresentation(),render:()=>this.reconcileNetcodePresentation(),
+      onError:error=>this.enterSimulationFatal(error,{source:'netcode-loop'})});
+    this.syncHold=!this.transportConnected;AppLifecycle.registerBackgroundSession(this);return true;
   }
   onNetcodeFrameApplied(frame){
     // Candidate resimulation은 commit 전까지 UI/AI/replay/VFX에 공개하지 않는다.
@@ -22823,18 +22856,28 @@ class GameSession{
     (frame.recovering?this.candidateFrameOutputs:this.frameOutputs).set(frame.gameTick,frame);
   }
   onNetcodeEvent(event){
-    if(event.type==='rollback'){
+    if(event.type==='peer-interrupted'){
+      this.syncHold=true;this.recoveryPhase='interrupted';this.emitNetworkHealth('unstable');
+      this.onLog('공통 코어 입력 통신 중단 · 유효 패킷 수신을 기다립니다.');
+    }else if(['peer-timeout','peer-disconnected'].includes(event.type)){
+      this.markManualRecoveryNeeded(event.type);this.startDisconnectGrace(event.type);
+      this.onLog('공통 코어 연결 끊김 · 60초 안에 재접속 필요');
+    }else if(event.type==='peer-resumed'){
+      this.transportConnected=true;this.simpleRecoveryNeedsManual=false;this.recoveryPhase='idle';this.clearDisconnectGrace();
+      this.syncHold=!!this.pendingTerminalFrame||this.simEnded||this.simulationFatal;this.netcodeLoop?.resetTiming();
+      this.emitNetworkHealth('connected');this.flushDeferredActions();
+    }else if(event.type==='rollback'){
       for(const tick of this.frameOutputs.keys())if(tick>event.from)this.frameOutputs.delete(tick);
       this.renderTimelineChanged=true;
     }else if(event.type==='desync'){
-      this.debugMetrics.checksumMismatch++;this.debugMetrics.lastMismatchTick=event.at;this.onLog('상태 해시 불일치 · 공통 코어의 과거 snapshot 검증/재실행');
+      this.onLog('상태 해시 불일치 · 공통 코어의 과거 snapshot 검증/재실행');
     }else if(event.type==='recovered'){
       const terminal=[...this.candidateFrameOutputs.values()].filter(frame=>frame.winner).sort((a,b)=>a.gameTick-b.gameTick)[0];
       if(terminal||this.pendingTerminalFrame)this.recoveredJournalFrom=event.from;
       for(const [tick,frame]of this.candidateFrameOutputs)this.frameOutputs.set(tick,frame);
-      this.candidateFrameOutputs.clear();this.debugMetrics.recoveryCompleted++;this.debugMetrics.desyncCorrectionReceived++;
+      this.candidateFrameOutputs.clear();
       this.terminalRecoveryKey='';this.recoveryAttempt=0;
-      this.debugMetrics.lastCorrectionTick=event.from;this.debugMetrics.lastCorrectionReason='transactional-snapshot-resync';this.renderTimelineChanged=true;this.recoveryPhase='idle';
+      this.renderTimelineChanged=true;this.recoveryPhase='idle';
     }else if(['recovery-rejected','recovery-timeout'].includes(event.type)){
       this.candidateFrameOutputs.clear();this.terminalRecoveryKey='';this.onLog('Snapshot 복구 후보 거부 · '+(event.reason||'시간 초과'));
     }else if(['version-mismatch','handshake-mismatch'].includes(event.type)||event.type==='protocol-error'&&!this.netcodeSession?.ready){
@@ -22879,7 +22922,7 @@ class GameSession{
   }
   beginTerminalBarrier(frame){
     // 이 ACK는 상대의 동일한 확정 판정 확인이다. 수신 메시지로 승자를 정하지 않는다.
-    this.pendingTerminalFrame=frame;this.syncHold=true;this.acc=0;
+    this.pendingTerminalFrame=frame;this.syncHold=true;this.netcodeLoop?.resetTiming();
     this.sendTerminalReceipt();this.tryFinishTerminalBarrier();
   }
   sendTerminalReceipt(){
@@ -22907,7 +22950,7 @@ class GameSession{
     if(this.recoveryAttempt>=3){this.enterSimulationFatal(new Error('확정 종료 상태를 복구하지 못했습니다.'),{source:'terminal-recovery-exhausted'});return}
     const past=Math.max(0,Math.min(receipt.tick-1,this.confirmedGameTick-1));
     if(this.netcodeSession.requestResync(past)){
-      this.terminalRecoveryKey=key;this.recoveryAttempt++;this.debugMetrics.recoveryRetries++;
+      this.terminalRecoveryKey=key;this.recoveryAttempt++;
       this.onLog('종료 상태 해시 불일치 · 과거 snapshot 검증/재실행');
     }
   }
@@ -22922,44 +22965,32 @@ class GameSession{
     const reason=frame.reason;
     const finish=()=>{if(!this.simEnded)this.endMatch(winner==='draw'?null:winner,reason)};
     if(campaign&&winner===viewRole&&Array.isArray(campaign.presentation?.outro)&&campaign.presentation.outro.length){
-      this.campaignResultPending=true;this.syncHold=true;this.acc=0;
+      this.campaignResultPending=true;this.syncHold=true;this.netcodeLoop?.resetTiming();
       if(this.role===ActiveViewState.role)CampaignPresentation.playOutro(campaign.presentation.outro,finish);
       else this.campaignOutroTimer=setTimeout(finish,CampaignPresentation.outroDuration(campaign.presentation.outro));
     }else finish();
   }
-  stepSimulationOnce(now=this.netcodeNow){
-    if(!this.sim||this.simEnded||this.simulationFatal||!this.transportConnected||this.syncHold&&!this.pendingTerminalFrame)return null;
-    this.netcodeNow=Math.max(this.netcodeNow,Number(now)||0);
-    if(this.pendingTerminalFrame){
-      this.netcodeSession.poll(this.netcodeNow);
-      this.publishConfirmedFrames();
-      if(this.netcodeNow-this.lastTerminalReceiptAt>=500)this.sendTerminalReceipt();
-      this.tryFinishTerminalBarrier();return {status:'terminal-barrier',tick:this.netcodeSession.tick};
-    }
-    // terminal prediction에 도달하면 새 tick 없이 수신/reconciliation만 진행한다.
-    const terminal=this.frameOutputs.get(this.sim.tick)?.winner;
-    let result;
-    if(terminal&&!this.netcodeSession.resimulating){this.netcodeSession.poll(this.netcodeNow);result={status:'terminal',tick:this.netcodeSession.tick}}
-    else result=this.netcodeSession.advance(this.neutralInput);
+  reconcileNetcodePresentation(){
+    if(this.simEnded||this.simulationFatal)return;
     this.publishConfirmedFrames();
+    if(this.pendingTerminalFrame&&this.netcodeNow-this.lastTerminalReceiptAt>=500)this.sendTerminalReceipt();
     this.tryFinishTerminalBarrier();
-    if(!this.netcodeSession.resimulating&&!this.simEnded){this.onRenderTargets(this.sim,!!this.renderTimelineChanged);this.renderTimelineChanged=false}
-    return result;
+    if(!this.netcodeSession.resimulating&&!this.simEnded&&(this.renderTimelineChanged||this.lastRenderedSimulationTick!==this.sim.tick)){this.onRenderTargets(this.sim,!!this.renderTimelineChanged);this.lastRenderedSimulationTick=this.sim.tick;this.renderTimelineChanged=false}
+  }
+  stepSimulationOnce(now=this.netcodeNow){
+    if(!this.sim||this.simEnded||this.simulationFatal)return null;
+    this.netcodeNow=Math.max(this.netcodeNow,Number(now)||0);
+    this.netcodeSession.poll(this.netcodeNow);
+    const terminal=this.frameOutputs.get(this.sim.tick)?.winner;
+    const result=this.pendingTerminalFrame?{status:'terminal-barrier',tick:this.netcodeSession.tick}:
+      terminal&&!this.netcodeSession.resimulating?{status:'terminal',tick:this.netcodeSession.tick}:
+      this.syncHold?{status:this.netcodeSession.status,tick:this.netcodeSession.tick}:this.netcodeSession.advance(this.neutralInput);
+    this.reconcileNetcodePresentation();return result;
   }
   advanceSimulation(now=performance.now()){
     if(!this.sim||this.simEnded||this.simulationFatal)return;
-    this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now);
-    const elapsed=Math.max(0,now-this.simClockLast);this.simClockLast=now;
-    if(!this.transportConnected){this.acc=0;return}
-    if(this.pendingTerminalFrame){this.stepSimulationOnce(now);this.acc=0;return}
-    if(this.syncHold){this.acc=0;return}
-    const tickMs=this.simulationTickMs();this.acc=Math.min(this.acc+elapsed,tickMs*MAX_CATCHUP_STEPS_PER_PULSE);
-    let steps=0;const began=performance.now();
-    if(this.acc<tickMs){this.netcodeSession.poll(this.netcodeNow);this.publishConfirmedFrames()}
-    while(this.acc>=tickMs&&steps<MAX_CATCHUP_STEPS_PER_PULSE&&!this.simEnded){
-      const result=this.stepSimulationOnce(now);this.acc-=tickMs;steps++;
-      if(result?.status!=='advanced'||performance.now()-began>=SIM_PULSE_BUDGET_MS){this.acc=Math.min(this.acc,tickMs);break}
-    }
+    // Library owns pacing, accumulation, bounded catchup, and polling during holds.
+    this.netcodeLoop.pulse(now);
     if(!this.netcodeSession.resimulating&&now-this.lastSnapshotEmitAt>=SNAPSHOT_EMIT_INTERVAL_MS){
       this.lastSnapshotEmitAt=now;
       const snapshot=this.publishConfirmedSnapshots?this.latestConfirmedSnapshot:this.sim.snapshot();
@@ -22998,8 +23029,8 @@ enterSimulationFatal(err,{source="simulation",notifyPeer=true,remoteInfo=null}={
     this.simulationFatalInfo=info;
     this.syncHold=true;
     this.transportConnected=false;
-    this.acc=0;
-    this.simClockLast=performance.now();
+    this.netcodeLoop?.resetTiming();
+
     this.recoveryPhase="simulation-fatal";
     this.deferredActions.length=0;
     this.pendingNetcodeCommands.clear();
@@ -32212,31 +32243,23 @@ UiRegistry.refs.recoveryLogExportBtn=DomUtil.byId("recoveryLogExportBtn");
 UiRegistry.refs.balanceTelemetryExportBtn=DomUtil.byId("balanceTelemetryExportBtn");UiRegistry.refs.performanceBenchmarkBtn=DomUtil.byId("performanceBenchmarkBtn");
 UiRegistry.refs.lockstepDebugSummary=DomUtil.byId("lockstepDebugSummary");
 UiRegistry.refs.lockstepDebugVerdict=DomUtil.byId("lockstepDebugVerdict");
-UiRegistry.refs.dbgChecksumCompared=DomUtil.byId("dbgChecksumCompared");
-UiRegistry.refs.dbgChecksumMismatch=DomUtil.byId("dbgChecksumMismatch");
-UiRegistry.refs.dbgDesyncCorrectionSent=DomUtil.byId("dbgDesyncCorrectionSent");
-UiRegistry.refs.dbgDesyncCorrectionReceived=DomUtil.byId("dbgDesyncCorrectionReceived");
-UiRegistry.refs.dbgRecoverySnapshotSent=DomUtil.byId("dbgRecoverySnapshotSent");
-UiRegistry.refs.dbgRecoverySnapshotReceived=DomUtil.byId("dbgRecoverySnapshotReceived");
-UiRegistry.refs.dbgRecoveryCompleted=DomUtil.byId("dbgRecoveryCompleted");
-UiRegistry.refs.dbgRecoveryRetries=DomUtil.byId("dbgRecoveryRetries");
-UiRegistry.refs.dbgDesyncRequests=DomUtil.byId("dbgDesyncRequests");
-UiRegistry.refs.dbgLocalTick=DomUtil.byId("dbgLocalTick");
-UiRegistry.refs.dbgRemoteTick=DomUtil.byId("dbgRemoteTick");
-UiRegistry.refs.dbgTickDrift=DomUtil.byId("dbgTickDrift");
-UiRegistry.refs.dbgRuntimeSeq=DomUtil.byId("dbgRuntimeSeq");
-UiRegistry.refs.dbgLastMismatchTick=DomUtil.byId("dbgLastMismatchTick");
-UiRegistry.refs.dbgLastCorrectionReason=DomUtil.byId("dbgLastCorrectionReason");
-UiRegistry.refs.dbgLastCorrectionScope=DomUtil.byId("dbgLastCorrectionScope");
-UiRegistry.refs.dbgPartialCorrection=DomUtil.byId("dbgPartialCorrection");
-UiRegistry.refs.dbgLastCorrectionBytes=DomUtil.byId("dbgLastCorrectionBytes");
-UiRegistry.refs.dbgRecoveryPhase=DomUtil.byId("dbgRecoveryPhase");
-UiRegistry.refs.dbgPending=DomUtil.byId("dbgPending");
-UiRegistry.refs.dbgConnectionSerial=DomUtil.byId("dbgConnectionSerial");
-UiRegistry.refs.dbgAcceptedSerial=DomUtil.byId("dbgAcceptedSerial");
-UiRegistry.refs.dbgRecoveryRequestId=DomUtil.byId("dbgRecoveryRequestId");
-UiRegistry.refs.dbgConnState=DomUtil.byId("dbgConnState");
-UiRegistry.refs.dbgResumeProbe=DomUtil.byId("dbgResumeProbe");
+UiRegistry.refs.synctestRunBtn=DomUtil.byId("synctestRunBtn");
+UiRegistry.refs.dbgSyncStatus=DomUtil.byId("dbgSyncStatus");
+UiRegistry.refs.dbgSyncChecked=DomUtil.byId("dbgSyncChecked");
+UiRegistry.refs.dbgSyncResimulated=DomUtil.byId("dbgSyncResimulated");
+UiRegistry.refs.dbgSyncDistance=DomUtil.byId("dbgSyncDistance");
+UiRegistry.refs.dbgSyncHash=DomUtil.byId("dbgSyncHash");
+UiRegistry.refs.dbgSyncBytes=DomUtil.byId("dbgSyncBytes");
+UiRegistry.refs.dbgSyncCost=DomUtil.byId("dbgSyncCost");
+UiRegistry.refs.dbgSyncFailure=DomUtil.byId("dbgSyncFailure");
+UiRegistry.refs.dbgCoreLatency=DomUtil.byId("dbgCoreLatency");
+UiRegistry.refs.dbgCorePacing=DomUtil.byId("dbgCorePacing");
+UiRegistry.refs.dbgCorePrediction=DomUtil.byId("dbgCorePrediction");
+UiRegistry.refs.dbgCoreHistory=DomUtil.byId("dbgCoreHistory");
+UiRegistry.refs.dbgCoreStatus=DomUtil.byId("dbgCoreStatus");
+UiRegistry.refs.dbgCoreRollback=DomUtil.byId("dbgCoreRollback");
+UiRegistry.refs.dbgCoreRecovery=DomUtil.byId("dbgCoreRecovery");
+UiRegistry.refs.dbgCoreBytes=DomUtil.byId("dbgCoreBytes");
 UiRegistry.refs.dbgPerfStep=DomUtil.byId("dbgPerfStep");UiRegistry.refs.dbgPerfPeerStep=DomUtil.byId("dbgPerfPeerStep");UiRegistry.refs.dbgPerfCore=DomUtil.byId("dbgPerfCore");UiRegistry.refs.dbgPerfCombat=DomUtil.byId("dbgPerfCombat");UiRegistry.refs.dbgPerfTail=DomUtil.byId("dbgPerfTail");
 UiRegistry.refs.dbgPerfSnapshot=DomUtil.byId("dbgPerfSnapshot");UiRegistry.refs.dbgPerfEntities=DomUtil.byId("dbgPerfEntities");UiRegistry.refs.dbgPerfSpatial=DomUtil.byId("dbgPerfSpatial");UiRegistry.refs.dbgPerfTarget=DomUtil.byId("dbgPerfTarget");UiRegistry.refs.dbgPerfCollision=DomUtil.byId("dbgPerfCollision");UiRegistry.refs.dbgPerfRender=DomUtil.byId("dbgPerfRender");UiRegistry.refs.dbgPerfBudgetLabel=DomUtil.byId("dbgPerfBudgetLabel");UiRegistry.refs.dbgPerfBudget=DomUtil.byId("dbgPerfBudget");
 UiRegistry.refs.dbgEnduranceMismatchRate=DomUtil.byId("dbgEnduranceMismatchRate");UiRegistry.refs.dbgEnduranceCorrectionRate=DomUtil.byId("dbgEnduranceCorrectionRate");UiRegistry.refs.dbgEndurancePeaks=DomUtil.byId("dbgEndurancePeaks");
@@ -33542,13 +33565,15 @@ class ConnectionPresentation{
   static closeLockstepDebugPanel(){UiRuntimeState.value.options.lockstepDebugOpen=false;UiController.renderUiState()}
   static renderP2PHealth(info,isLocal=false){
   if(!info)return;
+  const netcode=MatchLifecycle.activeSession?.()?.netcodeSession;
+  if(netcode){const state={running:"connected",resimulating:"connected",synchronizing:"unstable",recovering:"unstable",interrupted:"unstable",disconnected:"disconnected",failed:"fatal",closed:"disconnected"}[netcode.status];info={...info,rtt:netcode.metrics.smoothedRTT,state:info.state==="fatal"?"fatal":state||info.state}}
   ConnectionPresentation.lastP2PHealthInfo=info;ConnectionPresentation.lastP2PHealthLocal=!!isLocal;
   UiRegistry.refs.p2pHealth.classList.remove("hidden","connected","unstable","disconnected","fatal");
   const state=info.state||"connected";UiRegistry.refs.p2pHealth.classList.add(state==="fatal"?"disconnected":state);
   if(state==="fatal")UiRegistry.refs.p2pHealthText.textContent="오류";
   else if(state==="disconnected")UiRegistry.refs.p2pHealthText.textContent="끊김";
   else if(state==="unstable")UiRegistry.refs.p2pHealthText.textContent=info.rtt==null?"불안정":`⚠ ${Math.round(info.rtt)}ms`;
-  else UiRegistry.refs.p2pHealthText.textContent=isLocal?"● 0ms":info.rtt==null?"● P2P":`● ${Math.round(info.rtt)}ms`;
+  else UiRegistry.refs.p2pHealthText.textContent=info.rtt==null?(isLocal?"● LOCAL":"● P2P"):`● ${Math.round(info.rtt)}ms`;
   const active=MatchLifecycle.activeSession?.(),rp=ActiveViewState.renderer?.perfStats,detail=[];if(info.rtt!=null)detail.push(`RTT ${Math.round(info.rtt)}ms`);if(active?.sim)detail.push(`tick ${active.sim.tick}`,`${SimulationTiming.tps()} TPS`);if(rp?.fps>0)detail.push(`${Math.round(rp.fps)} FPS`);UiRegistry.refs.p2pHealth.title=detail.join(" · ")||"동기화 진단 열기";
   ConnectionPresentation.positionP2PHealthNextToMenu();
 }
@@ -33556,55 +33581,30 @@ class ConnectionPresentation{
   if(!UiRuntimeState.value.options.lockstepDebugOpen)return;
   const active=MatchLifecycle.activeSession?.();
 
-  if(!active?.debugMetrics){
-    UiRegistry.refs.lockstepDebugSummary.textContent="활성 게임 세션이 없습니다.";
-    UiRegistry.refs.lockstepDebugVerdict.className="lockstep-debug-verdict warn";
-    UiRegistry.refs.lockstepDebugVerdict.textContent="게임이 시작되면 lockstep 진단 지표가 표시됩니다.";
-    return;
+  if(!active?.netcodeSession){
+    UiRegistry.refs.lockstepDebugSummary.textContent="활성 경기에서 확정 입력을 검사할 수 있습니다.";
+    UiRegistry.refs.synctestRunBtn.disabled=true;return;
   }
-
-  const m=active.debugMetrics;
-  const localTick=active.sim?.tick??null;
-  const remoteTick=active.netcodeSession?active.confirmedGameTick:null;
-  const drift=(localTick!=null&&remoteTick!=null)?localTick-Math.round(remoteTick):null;
-
-  UiRegistry.refs.dbgChecksumCompared.textContent=String(m.checksumCompared);
-  UiRegistry.refs.dbgChecksumMismatch.textContent=String(m.checksumMismatch);
-  UiRegistry.refs.dbgDesyncCorrectionSent.textContent=String(m.desyncCorrectionSent);
-  UiRegistry.refs.dbgDesyncCorrectionReceived.textContent=String(m.desyncCorrectionReceived);
-  UiRegistry.refs.dbgRecoverySnapshotSent.textContent=String(m.recoverySnapshotSent);
-  UiRegistry.refs.dbgRecoverySnapshotReceived.textContent=String(m.recoverySnapshotReceived);
-  UiRegistry.refs.dbgRecoveryCompleted.textContent=String(m.recoveryCompleted);
-  UiRegistry.refs.dbgRecoveryRetries.textContent=String(m.recoveryRetries);
-  UiRegistry.refs.dbgDesyncRequests.textContent=`${m.desyncRequestsSent} / ${m.desyncRequestsReceived}`;
-
-  UiRegistry.refs.dbgLocalTick.textContent=localTick==null?"-":String(localTick);
-  UiRegistry.refs.dbgRemoteTick.textContent=remoteTick==null?"-":String(Math.round(remoteTick));
-  UiRegistry.refs.dbgTickDrift.textContent=drift==null?"-":`${drift>0?"+":""}${drift}t`;
-  UiRegistry.refs.dbgRuntimeSeq.textContent=String(active.runtimeSeq??0);
-  UiRegistry.refs.dbgLastMismatchTick.textContent=m.lastMismatchTick==null?"없음":String(m.lastMismatchTick);
-  UiRegistry.refs.dbgLastCorrectionReason.textContent=m.lastCorrectionReason||"없음";
-  UiRegistry.refs.dbgLastCorrectionScope.textContent=m.lastCorrectionScope||((m.lastMismatchPaths||[]).slice(0,3).join(", ")||"-");
-  UiRegistry.refs.dbgPartialCorrection.textContent=`${m.partialCorrectionApplied||0} / ${m.fullCorrectionFallbacks||0}`;
-  UiRegistry.refs.dbgLastCorrectionBytes.textContent=m.lastCorrectionBytes?DebugFormatUtil.formatDebugBytes(m.lastCorrectionBytes):"없음";
-  UiRegistry.refs.dbgRecoveryPhase.textContent=active.recoveryPhase||"idle";
-  UiRegistry.refs.dbgPending.textContent=`${active.deferredActions?.length||0} / ${active.pendingNetcodeCommands?.size||0}`;
-  UiRegistry.refs.dbgConnectionSerial.textContent=String(active.transport?.connectionSerial||0);
-  UiRegistry.refs.dbgAcceptedSerial.textContent=String(active.transport?.lastAcceptedConnectionSerial||0);
-  UiRegistry.refs.dbgRecoveryRequestId.textContent=active.simpleRecoveryToken||"-";
-  const connAge=active.transport?.connAttemptStartedAt
-    ?Math.max(0,Date.now()-active.transport.connAttemptStartedAt)
-    :0;
-  UiRegistry.refs.dbgConnState.textContent=
-    `${active.transport?.connState||"idle"}`+
-    (connAge?` · ${connAge}ms`:"");
-  UiRegistry.refs.dbgResumeProbe.textContent=
-    active.pendingResumeProbeToken
-      ?"대기"
-      :active.lastResumeProbeAckAt
-        ?`ACK · ${Math.max(0,Date.now()-active.lastResumeProbeAckAt)}ms 전`
-        :"-";
-
+  const core=active.netcodeSession,metrics=core.metrics,report=RallySynctestDiagnostics.report(active),sync=report?.metrics;
+  const text=(id,value)=>{UiRegistry.refs[id].textContent=value};
+  text("dbgSyncStatus",report?.status||"미실행");
+  text("dbgSyncChecked",sync?String(sync.checkedTicks):"-");
+  text("dbgSyncResimulated",sync?String(sync.resimulatedTicks):"-");
+  text("dbgSyncDistance",sync?String(sync.checkDistance):"-");
+  text("dbgSyncHash",sync?.stateHash!=null?sync.stateHash.toString(16).padStart(8,"0"):"-");
+  text("dbgSyncBytes",sync?DebugFormatUtil.formatDebugBytes(sync.historyBytes):"-");
+  text("dbgSyncCost",sync?Number(sync.totalCostMs).toFixed(2)+"ms":"-");
+  const failure=sync?.failure;
+  text("dbgSyncFailure",failure?.code==="determinism-mismatch"?"S["+failure.tick+"] · byte "+failure.firstDifference+" · "+failure.expectedHash.toString(16).padStart(8,"0")+" / "+failure.actualHash.toString(16).padStart(8,"0"):failure?.message||report?.error||"없음");
+  text("dbgCoreLatency",metrics.smoothedRTT.toFixed(2)+"ms / "+metrics.jitter.toFixed(2)+"ms");
+  text("dbgCorePacing",metrics.holds+" / "+metrics.stalls+" / "+metrics.pace);
+  text("dbgCorePrediction",metrics.predictedTicks+" / "+metrics.lateInputRate.toFixed(4));
+  text("dbgCoreHistory",DebugFormatUtil.formatDebugBytes(metrics.retainedSnapshotBytes)+" / "+metrics.stateHashComputations);
+  text("dbgCoreStatus",core.status+" / "+core.confirmedTick);
+  text("dbgCoreRollback",metrics.inputDelay+"t / "+metrics.rollbacks+" / "+metrics.resimulatedTicks);
+  text("dbgCoreRecovery",metrics.hashMismatches+" / "+metrics.recoveries+" / "+metrics.rejectedSnapshots);
+  text("dbgCoreBytes",DebugFormatUtil.formatDebugBytes(metrics.sentBytes)+" / "+DebugFormatUtil.formatDebugBytes(metrics.receivedBytes));
+  UiRegistry.refs.synctestRunBtn.disabled=report?.status==="running"||core.resimulating||active.disposed;
   const perf=active.sim?.perfStats||PerformanceTelemetry.createLocalPerfStats();
   const fmtMs=v=>`${(Number(v)||0).toFixed(2)}ms`;
   const peerRole=active.role==="host"?"guest":"host";
@@ -33628,10 +33628,6 @@ class ConnectionPresentation{
   const combinedStep=ownStep+(SinglePlayerModeUtil.isSinglePlayer()?peerStep:0),stepLoad=combinedStep/budget;
   const prefix=SinglePlayerModeUtil.isSinglePlayer()?`싱글 합산 ${fmtMs(combinedStep)} · `:`${fmtMs(combinedStep)} · `;
   UiRegistry.refs.dbgPerfBudget.textContent=prefix+(stepLoad>=1?`초과 ${(stepLoad*100).toFixed(0)}%`:stepLoad>=.75?`주의 ${(stepLoad*100).toFixed(0)}%`:`여유 ${(stepLoad*100).toFixed(0)}%`);
-  const tick10k=Math.max(1,(localTick||0)/10000);
-  const normalCorrectionTotal=(m.desyncCorrectionSent||0)+(m.desyncCorrectionReceived||0);
-  UiRegistry.refs.dbgEnduranceMismatchRate.textContent=`${((m.checksumMismatch||0)/tick10k).toFixed(2)}회`;
-  UiRegistry.refs.dbgEnduranceCorrectionRate.textContent=`${(normalCorrectionTotal/tick10k).toFixed(2)}회`;
   UiRegistry.refs.dbgEndurancePeaks.textContent=`${perf.peakAliveUnits||0} / ${perf.peakBuildings||0} / ${perf.peakProjectiles||0}`;
 
   const bs=active.sim?.balanceStats||PerformanceTelemetry.createLocalBalanceStats();
@@ -33679,47 +33675,10 @@ const formatTickTime=t=>t==null?"-":`${SimulationTiming.ticksToSeconds(t).toFixe
     UiRegistry.refs.fullConnectionResetBtn.classList.add("hidden");
   }
 
-  const normalCorrections=m.desyncCorrectionSent+m.desyncCorrectionReceived;
-  const mismatchRate=m.checksumCompared?m.checksumMismatch/m.checksumCompared:0;
+  UiRegistry.refs.lockstepDebugSummary.textContent="확정 입력 Synctest · "+(sync?"S[0]~S["+sync.tick+"]":"미실행")+" · Core "+core.status;
+  UiRegistry.refs.lockstepDebugVerdict.className="lockstep-debug-verdict "+(report?.status==="failed"?"bad":report?.status==="passed"?"ok":"warn");
+  UiRegistry.refs.lockstepDebugVerdict.textContent=report?.status==="passed"?"검사한 입력 구간의 저장·복원·재실행 결과가 일치했습니다.":report?.status==="failed"?"Synctest가 실패했습니다. 위 라이브러리 실패 정보를 확인하세요.":report?.status==="running"?"공통 Synctest 검사 중…":"Synctest를 실행하면 라이브러리가 측정한 결과를 표시합니다.";
 
-  const singleRecoveryNote=SinglePlayerModeUtil.isSinglePlayer()
-    ?` · 싱글 검증 경로 Human ${MatchLifecycle.singleMatch?.humanRole||"guest"}→AI ${MatchLifecycle.singleMatch?.botRole||"host"}`
-    :"";
-
-  const core=active.netcodeSession,metrics=core?.metrics;
-  const trNote=core?` · 입력 지연 ${core.inputDelay}t · rollback ${metrics.rollbacks} · hold ${metrics.holds}`:"";
-
-  UiRegistry.refs.lockstepDebugSummary.textContent=
-    `확정 tick ${active.confirmedGameTick} · hash mismatch ${metrics?.hashMismatches||0}회 · `+
-    `snapshot resync ${metrics?.recoveries||0}회 · `+
-    `연결 완전 리셋 ${m.fullConnectionResets||0}회`+
-    trNote+singleRecoveryNote;
-
-  UiRegistry.refs.lockstepDebugVerdict.classList.remove("ok","warn","bad");
-
-  if(m.checksumCompared>=3&&m.checksumMismatch===0&&normalCorrections===0&&
-     m.desyncRequestsSent===0&&m.desyncRequestsReceived===0){
-    UiRegistry.refs.lockstepDebugVerdict.classList.add("ok");
-    UiRegistry.refs.lockstepDebugVerdict.textContent=
-      "정상: checksum 불일치가 없고 일반 checksum 청크 보정에도 의존하지 않고 있습니다.";
-  }else if(m.checksumMismatch>=3||mismatchRate>=0.15||normalCorrections>=3){
-    UiRegistry.refs.lockstepDebugVerdict.classList.add("bad");
-    UiRegistry.refs.lockstepDebugVerdict.textContent=
-      "문제 가능성 높음: lockstep 불일치 또는 일반 checksum 청크 보정이 반복됩니다. 실제로 반복적인 checksum 청크 보정에 의존하는지 확인하세요.";
-  }else if(m.checksumMismatch>0||normalCorrections>0||
-           m.desyncRequestsSent>0||m.desyncRequestsReceived>0){
-    UiRegistry.refs.lockstepDebugVerdict.classList.add("warn");
-    UiRegistry.refs.lockstepDebugVerdict.textContent=
-      "관찰 필요: lockstep 보정 이벤트가 발생했습니다. 장기 플레이에서 카운터 증가 추세를 확인하세요.";
-  }else if(m.recoveryCompleted>0){
-    UiRegistry.refs.lockstepDebugVerdict.classList.add("ok");
-    UiRegistry.refs.lockstepDebugVerdict.textContent=
-      "정상: 네트워크 재연결 복구는 있었지만 lockstep 불일치에 따른 일반 checksum 청크 보정은 없습니다.";
-  }else{
-    UiRegistry.refs.lockstepDebugVerdict.classList.add("ok");
-    UiRegistry.refs.lockstepDebugVerdict.textContent=
-      "표본 수집 중: checksum 비교가 누적되면 lockstep 안정성을 판정합니다.";
-  }
 }
   static renderConnectionGate(){
   if(!UiRegistry.refs.disconnectGate||ReplayPresentation.replayPlayer){ConnectionPresentation.setDisconnectPhase("hidden");if(UiRuntimeState.value.modal==="disconnect")UiController.closeUiModal("disconnect");return}
@@ -33955,7 +33914,8 @@ UiRegistry.refs.balanceTelemetryExportBtn?.addEventListener("click",e=>{
   e.preventDefault();
   PerformanceTelemetry.exportBalanceTelemetry();
 });
-UiRegistry.refs.lockstepDebugResetBtn?.addEventListener("click",RecoveryTelemetry.resetLockstepDebugCounters);
+UiRegistry.refs.synctestRunBtn?.addEventListener("click",()=>RallySynctestDiagnostics.request());
+UiRegistry.refs.lockstepDebugResetBtn?.addEventListener("click",()=>{RallySynctestDiagnostics.clear(MatchLifecycle.activeSession?.());ConnectionPresentation.renderLockstepDebugPanel()});
 setInterval(()=>{
   if(UiRuntimeState.value.options.lockstepDebugOpen)ConnectionPresentation.renderLockstepDebugPanel();
 },500);
@@ -38498,13 +38458,13 @@ AppLifecycle.runBootAndStartApp();
 </script>
 <script id="RALLY_STABILITY_INVENTORY" type="application/json">
 {
-  "version": "v75-url-binary",
+  "version": "v76-sdk-synctest",
   "kind": "current-ssot",
-  "build": "20261003T083000+0900-rf-url-binary-netcode-v75-candidate",
+  "build": "20261003T091900+0900-rf-sdk-synctest-v76-candidate",
   "simVersion": 183,
-  "status": "검증한 적용 후보 · 공개 URL 통합 검사 통과",
+  "status": "검증한 적용 후보 · 실제 공개 SDK 연계 통과",
   "ssot": {
-    "network": "URL로 불러온 rollback-netcode 공개 Core와 게임 Adapter가 입력·진행·롤백·해시·복구를 소유한다. GameSession은 경기 Coordinator다.",
+    "network": "URL로 불러온 rollback-netcode 공개 Core와 게임 Adapter가 입력·진행·롤백·해시·복구를 소유한다. GameSession은 경기 Coordinator다. 실행은 createLoop, 연결 판단은 Core 이벤트, 진단은 Synctest.metrics를 사용한다.",
     "sdkUrl": "https://byh-playground.github.io/rollback-netcode/rollback-netcode.js",
     "sdkVersion": "0.2.0-dev",
     "versionPinned": false
@@ -38515,21 +38475,23 @@ AppLifecycle.runBootAndStartApp();
     "ai": "PASS 9 — actor-local 영수증, speculative 명령 예약, rewind, 실제 StrategySim 소비",
     "transport": "PASS — SDK 시그널러, 실제 입력/제어 RTC, 재접속·구독·정리, Loopback 격리",
     "integration": "PASS — 입력 손실/지연/역순, depth 3 rollback, 3회 ring wrap, peer drift 최대 4tick, 손상 chunk 거부와 staged snapshot atomic commit",
-    "lifecycle": "PASS 6 — 종료 지연/유실 depth 5 rollback, 종료 hash DESYNC, 조기 종료 취소, 늦은 HELLO·같은 Core의 RTC 재접속, 초기 상태 불일치 중단. 종료 replay tick 0 재생/해시 일치",
+    "lifecycle": "PASS7 — 기존 rollback/terminal/snapshot recovery/replay6, 공통 loop의 interruption→timeout→resumption",
     "ui": "PASS — 412px Host/Guest 실제 덱 선택·건설·생산·AI·전투·항복 종료·결과·replay 재생/중간/끝 탐색·복귀. Native NVIDIA D3D11 WebGL, uncaught/fatal/hash mismatch 0",
     "replay": {
       "host": {
-        "endTick": 1220,
-        "checksum": "af1574ea"
+        "endTick": 2022,
+        "checksum": "72c36eab"
       },
       "guest": {
-        "endTick": 1361,
-        "checksum": "27148070"
+        "endTick": 1178,
+        "checksum": "1c7e9d1b"
       }
     },
     "publicNostr": "이번 후보는 공개 relay 시그널러/RTC 연결과 실제 binary 전달 검사 PASS. 외부 NAT 두 기기는 미검증.",
-    "mainCombination": "PASS — main36c29a5 통합, 실제 공개 SDK import 상태11/RTC수명주기6/캠페인모듈/시작/UI/유닛표시102 검사",
-    "loading": "PASS — 실제 공개 URL 새 API 로딩과 초기화, 오프라인/필수 API 부재/지연 오류·대기"
+    "mainCombination": "PASS — main38e54ee 기반, 공개 SDK5ee7b30와 actual RTC lifecycle7/Synctest/campaign/startup/WebGL Host·Guest UI",
+    "loading": "PASS — 실제 공개 SDK 새 API/필수 API 거부/오프라인/지연. Core 측정 RTT badge 직접 표시",
+    "synctest": "PASS — actual confirmed32ticks/177resim, failure firstbyte/hash, live progress/running, cancel/dispose/campaign/cleanup error race",
+    "sdk": "PASS96 — source/generated/TypeScript, actual RTC240, bounded confirmed prefix, async heartbeat"
   },
   "currentEnvironmentUnverified": [
     "실제 모바일 기기",

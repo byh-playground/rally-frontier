@@ -166,3 +166,15 @@ RALLY FRONTIER의 **검증 완료 Stable 버전 및 GitHub Pages 배포 소스**
 실제 모바일 기기, 다른 엔진 장시간 결정론, 서로 다른 외부 NAT의 두 기기는 미검증입니다. Stable로 승격하지 않았습니다.
 
 최종 main36c29a5 통합·실제 공개 SDK URL 검사에서도 Host1220틱/af1574ea, Guest1361틱/27148070의 종료와 replay가 일치했습니다. 유닛 표시102case, 캠페인 모듈, startup, 상태11, 실제 RTC수명주기6 및 transport를 통과했습니다.
+
+### 공통 실행·연결·진단 capability (2026-10-03)
+
+GameSession은 공통 createLoop의 수동 pulse를 사용합니다. 시간 누적·pacing·따라잡기·작업 예산은 라이브러리가 소유하며 게임은 종료/로비/표현 callback만 조정합니다. 경기 중 별도 heartbeat/silence timeout 판단과 임의 수신의 생존 연장은 제거하고 Core의 peer-interrupted/timeout/disconnected/resumed 이벤트 및 Transport 상태 capability를 사용합니다. 보류 중에도 poll은 계속하여 같은 Core의 재개와 snapshot 복구를 처리합니다.
+
+동기화 진단 패널은 두 SDK 결과를 구분합니다. Session.metrics/status/getPeerState는 RTT·지터·입력 지연·prediction·hold/stall·rollback/resimulation·hash/recovery·송수신·이력 지표입니다. Synctest.metrics는 실제 확정 입력의 시작 구간 최대32틱을 저장·복원·재실행한 결과입니다. 자체 checksum/보정 카운터와 임계치 판정을 제거했으며 game perf/FPS와 경기 balance는 별도로 표시하는 게임 소유 계측입니다.
+
+검사 버튼은 Core.exportSyncTestFrames의 제한된 prefix와 공통 runSyncTestAsync를 사용합니다. 실제 게임과 같은 StrategySim.createForMatch/RallySimulationAdapter를 별도 시뮬레이션에서 사용하며 캠페인·디버그 초기화도 공유합니다. 검사 틱 경계에서 SDK가 실행을 양보하고 검사 취소·세션 종료 시 shadow를 정리합니다. 각 검사 틱의 내부 재실행은 동기식이라 무거운 게임에는 부하가 남으며, 정상 게임에 매틱 진단을 자동 추가하지 않습니다. 검사 시간은 SDK가 필수 forward 상태 복원까지 측정한 실행 시간이고, 양보 대기 및 batch 준비/정리 시간은 제외합니다. 검사한 구간의 일치가 다른 엔진·모바일·NAT 환경의 결정론까지 증명하지 않습니다.
+
+라이브러리96검사·strict TS·생성물 검사 및 actual RTC240tick을 통과했습니다. 랠리는 실제 RTC lifecycle7(깊이5 종료 rollback/recovery/replay, 공통 loop interruption→timeout→resumption), 상태11/AI9/transport를 통과했습니다. 412px WebGL의 Synctest32틱/177재실행 통과·고의불일치 최초바이트/해시 표시·검사 중 live progression/running·취소/종료·캠페인 runtime 보존·cleanup 오류 경합을 확인했습니다. 단일 synchronous live 검사 후보의 약1초 block/interruption 결과는 최종 PASS 근거에서 제외했습니다.
+
+최종 공개 SDK5ee7b30와 native WebGL Host2022틱/72c36eab, Guest1178틱/1c7e9d1b 종료·replay 일치와 오류0을 확인했습니다. 기존 3틱 catchup 및12ms 작업 예산은 SDK profile/maxWorkMs로 유지합니다. 초기 표시 뒤 Core clock/liveness를 시작하며 로비 heartbeat가 gameplay를 판정하지 않는 느린 시작 회귀도 통과했습니다. UI RTT badge는 Session.metrics의 현재 값을 읽습니다.
