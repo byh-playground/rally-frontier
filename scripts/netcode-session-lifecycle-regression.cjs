@@ -78,15 +78,24 @@ async function runLifecycle(config){
     const p=await pair();
     try{
       await p.pump(()=>p.h.netcodeSession.ready&&p.g.netcodeSession.ready,'Public SDK peers become ready',0);
-      check(p.h.netcodeSession.profile.resimulationBudget===2,'Candidate uses a bounded two-frame resimulation budget');
       await p.pump(()=>p.h.sim.tick===7&&p.g.sim.tick===7,'Both peers reach fixture tick 7',7);
+      const synchronousRollbacks=[],guestCore=p.g.netcodeSession,guestPoll=guestCore.poll;
+      guestCore.poll=function(...args){
+        const target=this.tick,rollbacks=this.metrics.rollbacks;
+        const result=guestPoll.apply(this,args);
+        if(this.metrics.rollbacks>rollbacks){
+          check(!this.resimulating&&this.tick>=target,'Rollback completes to the original current tick in the same poll call');
+          synchronousRollbacks.push({target,completedTick:this.tick,depth:this.metrics.maxRollbackDepth});
+        }
+        return result;
+      };
       const held=[];let faultCount=0;
       const channel=p.ht.netcodeInputChannel,send=channel.send.bind(channel);
       // Opaque packet-size fault on the SDK-selected input channel. No protocol bytes are read.
       channel.send=data=>{const packet=new Uint8Array(data.buffer||data,data.byteOffset||0,data.byteLength);if(packet.byteLength>64){faultCount++;if(mode==='delay')held.push(packet.slice());return;}send(data);};
       check(p.h.surrender(),'Surrender enters the public SDK command queue');
       await p.pump(()=>p.h.pendingTerminalFrame&&p.g.sim.tick>p.h.pendingTerminalFrame.gameTick,'Terminal peer waits while remote predicts beyond terminal',Infinity,150);
-      await p.pump(()=>p.g.sim.tick>=p.h.pendingTerminalFrame.gameTick+3,'Prediction extends beyond the two-frame resimulation budget',Infinity,120);
+      await p.pump(()=>p.g.sim.tick>=p.h.pendingTerminalFrame.gameTick+3,'Remote predicts at least three ticks beyond the terminal command',Infinity,120);
       const before={hostTick:p.h.sim.tick,guestTick:p.g.sim.tick,terminalTick:p.h.pendingTerminalFrame.gameTick,hostCoreOpen:!p.h.netcodeSession.closed};
       check(!p.h.simEnded&&!p.g.simEnded&&before.hostCoreOpen,'Local confirmation retains Core until mutual completion');
       channel.send=send;
@@ -96,11 +105,11 @@ async function runLifecycle(config){
       check(p.h.matchResult.winner==='guest'&&p.g.matchResult.winner==='guest'&&p.h.matchResult.reason==='surrender'&&p.g.matchResult.reason==='surrender','Resolved outcome agrees');
       const stateHash=s=>RallyNetcode.hashBytes(s.simulationAdapter.save());
       check(stateHash(p.h)===stateHash(p.g)&&p.h.sim.checksum()===p.g.sim.checksum(),'Completed authoritative state agrees byte-for-byte by full state hash');
-      check(p.g.netcodeSession.metrics.rollbacks>0&&p.g.netcodeSession.metrics.maxRollbackDepth>=3,'Late terminal command uses multiple bounded SDK rollback pulses');
+      check(synchronousRollbacks.some(r=>r.depth>=3),'Late terminal command finishes a deep rollback in one SDK poll');
       check(p.ht.isOpen()&&p.gt.isOpen()&&p.ht.isNetcodeOpen()&&p.gt.isNetcodeOpen(),'Core completion leaves the game carrier open until disposal');
       check(p.lobby.some(m=>m.type==='MATCH_TERMINAL_ACK'),'Reliable game completion receipt was exchanged');
       check(p.faults.length===0,'No transport errors: '+p.faults.join(';'));
-      results.push({name:'terminal-'+mode,before,faultPackets:faultCount,finalTick:p.h.matchResult.tick,stateHash:stateHash(p.h),rollbackCount:p.g.netcodeSession.metrics.rollbacks,rollbackDepth:p.g.netcodeSession.metrics.maxRollbackDepth,replay:[verifyReplay(p.h),verifyReplay(p.g)],cleanup:await p.cleanup()});
+      results.push({name:'terminal-'+mode,before,faultPackets:faultCount,finalTick:p.h.matchResult.tick,stateHash:stateHash(p.h),rollbackCount:p.g.netcodeSession.metrics.rollbacks,rollbackDepth:p.g.netcodeSession.metrics.maxRollbackDepth,synchronousRollbacks,replay:[verifyReplay(p.h),verifyReplay(p.g)],cleanup:await p.cleanup()});
     }finally{if(!p.h.disposed){p.h.dispose();p.g.dispose();}}
   }
   const p=await pair({late:true});
