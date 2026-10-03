@@ -27,12 +27,22 @@ GitHub Pages를 통해 현재 Stable 버전을 바로 실행할 수 있습니다
     ↓
 VALIDATED
     ↓
-GitHub main/index.html
+GitHub main 소스
+    ↓
+Actions 빌드 (업데이트 시각·소스 커밋 자동 주입)
     ↓
 GitHub Pages (Stable)
 ```
 
-따라서 이 저장소의 `main/index.html`은 **현재 검증이 완료된 최신 Stable 버전**을 의미합니다.
+`main`은 검증한 배포 소스를 관리하며, 공개 페이지는 Actions에서 생성한 `_site/index.html`입니다. 빌드 성공이나 업데이트 시각 갱신이 게임 검증 또는 **VALIDATED** 승격을 자동으로 의미하지는 않습니다.
+
+## 업데이트 시각과 배포
+
+업데이트 시각은 수동으로 수정하지 않습니다. `.github/workflows/pages.yml`이 `main` 변경 또는 `main` 대상 수동 실행마다 `scripts/build-pages.cjs`를 실행하여 빌드 시각과 전체 Git 커밋 SHA를 `_site/build.json`에 기록하고, 같은 빌드 식별자를 `_site/index.html`에 주입합니다. 공개 화면의 업데이트 표시는 이 실행물의 빌드 정보를 사용합니다. 생성된 `_site`만 Pages artifact로 배포하며 소스 `index.html`에는 `BUILD_ID = 'development'`를 유지합니다.
+
+PR에서는 동일한 빌드 검사와 생성만 수행하고 배포하지 않습니다. Pages 게시 소스는 저장소 **Settings → Pages → Build and deployment → GitHub Actions**를 사용해야 합니다. 브랜치의 원본 HTML을 직접 게시하면 이 자동 빌드 과정이 적용되지 않습니다. 빌드·배포가 실패하면 기존 공개 실행물이 유지되므로 업데이트 표시도 바뀌지 않습니다.
+
+로컬에서 배포 실행물을 확인하려면 `node --test scripts/build-pages.test.cjs`와 `node scripts/build-pages.cjs`를 실행하고 `_site`를 정적 HTTP 서버로 제공합니다. 시각·커밋 정보는 빌드 시점에 고정되며 브라우저 접속 시각으로 바뀌지 않습니다. 게임 검증 기록의 날짜와 결과는 실제 검증 근거로 별도 관리합니다.
 
 ## 프로젝트 구조
 
@@ -42,9 +52,12 @@ GitHub Pages (Stable)
 
 ```text
 rally-frontier/
-├── index.html             # 게임 엔진·UI 및 GitHub Pages 진입점
-└── campaign/
-    └── campaigns.js       # 현재 정식 캠페인 데이터 전체 (default manifest)
+├── index.html             # 게임 엔진·UI 소스 (development 빌드)
+├── campaign/
+│   └── campaigns.js       # 현재 정식 캠페인 데이터 전체 (default manifest)
+├── scripts/build-pages.cjs # 배포 HTML·메타데이터·정적 리소스 생성
+├── .github/workflows/pages.yml # PR 빌드 검사 및 main Pages 배포
+└── _site/                 # 자동 생성한 배포 실행물 (Git 제외)
 ```
 
 ## 주요 특징
@@ -84,7 +97,7 @@ rally-frontier/
 
 ```text
 index.html
-  RallyNetcode                 공통 Core 원본을 고정한 생성 번들
+  RallyNetcode                 공개 URL에서 직접 import한 공통 ES module
   GameSession                  경기 Coordinator
   RallySimulationAdapter       게임 상태와 명령을 SDK 계약에 연결
   RallyStateCodec / CommandCodec
@@ -102,7 +115,7 @@ scripts/netcode-ui-e2e.cjs      실제 UI·RTC·WebGL·종료·리플레이 검�
 
 별도의 환경에서 충분히 검증된 버전만 Stable 버전으로 승격하며, `main/index.html`은 항상 플레이 가능한 검증 완료 상태를 유지하는 것을 원칙으로 합니다.
 
-게임 실행 파일은 `index.html`과 `campaign/campaigns.js`를 함께 배포합니다. 로컬에서도 저장소 폴더를 정적 HTTP 서버로 제공하여 실행하세요(예: `python -m http.server 8000` 후 `http://localhost:8000/`). 브라우저의 native ES module 보안 정책 때문에 `file://`로 직접 연 파일에서는 정식 캠페인을 불러올 수 없습니다. 빌드 과정은 필요하지 않습니다.
+공개 배포는 빌드가 생성한 `_site` 전체를 사용하며 게임 HTML, 캠페인, PWA manifest와 아이콘을 함께 배포합니다. 개발할 때는 빌드 없이 저장소 폴더를 정적 HTTP 서버로 제공해 실행할 수 있습니다(예: `python -m http.server 8000` 후 `http://localhost:8000/`). 이때 업데이트 표시는 개발 소스임을 나타냅니다. 브라우저의 native ES module 보안 정책 때문에 `file://`로 직접 연 파일에서는 정식 캠페인을 불러올 수 없습니다.
 
 ## 커밋 메시지
 
