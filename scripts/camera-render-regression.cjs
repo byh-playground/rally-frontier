@@ -19,6 +19,7 @@ async function run() {
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
       await page.setContent(html);
+    await page.waitForFunction(() => window.__cameraQA);
       await page.locator('#gameStartBtn').click();
       const grid = await page.evaluate(() => {
         const { GLRenderer, WorldContext } = window.__cameraQA;
