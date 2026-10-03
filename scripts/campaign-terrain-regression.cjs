@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '..');
 const output = path.join(root, '.qa/campaign-terrain');
 // Gameplay projection after campaign enemy AI and starting army balance.
 // Spatial placement and prose may change; troop counts, trigger radii, waves and victory do not.
-const gameplayDigest = '6360fa3d23729cdac4273c11226842669ae06a4443b1fc4279e40f677678e60d';
+const gameplayDigest = 'a63db0cedb66bece7a75811cbfa7b45176a4c5171e54c476a1735c36e540fc91';
 function gameplayFingerprint(manifest) {
   const omitted = new Set(['terrain', 'lanes', 'spawns', 'position', 'offset', 'center',
     'title', 'briefing', 'presentation', 'label', 'text']);
@@ -233,8 +233,9 @@ async function run() {
         await ui.goto(url);await ui.locator('#gameStartBtn').click();await ui.locator('#campaignBtn').click();
         await ui.locator(`[data-mission-id="${entry.id}"]`).click();await ui.locator('#campaignStartBtn').click();
         await ui.waitForFunction(()=>window.__terrainQA.ActiveViewState.snap?.tick>20,null,{timeout:30000});
-        const live=await ui.evaluate(()=>{const q=window.__terrainQA;return{id:q.MatchLifecycle.activeSession().sim.campaignScenario.missionId,tick:q.ActiveViewState.snap.tick,backend:q.ActiveViewState.renderer.backend}});
+        const live=await ui.evaluate(()=>{const q=window.__terrainQA;return{id:q.MatchLifecycle.activeSession().sim.campaignScenario.missionId,tick:q.ActiveViewState.snap.tick,backend:q.ActiveViewState.renderer.backend,supply:document.querySelector("#supply").textContent}});
         assert.equal(live.id,entry.id);assert.equal(live.backend,'WebGL');
+        const [used,cap]=live.supply.split('/').map(Number);assert.ok(cap-used>=15,'Actual UI starts with production supply available');
         await ui.screenshot({path:path.join(output,`${entry.id}-ui-entry.png`)});
         // Additional real movement commands are opt-in while all mission starts remain mandatory.
         if(process.env.QA_TERRAIN_MOVEMENT==='1'&&entry.id==='frontier-02-rear-fire') {
