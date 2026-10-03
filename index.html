@@ -63,6 +63,7 @@ PURPOSE
 - 이동 명령의 점 목표와 공격·채집·반납·건설·치유의 상호작용 영역 목표를 구분한다. 실제 사거리·최소 사거리·지형 접촉 규칙은 InteractionGeometry가 한 번 정의하며 판정과 NavigationGoal이 공유한다. 건물 중심 투영이나 고정 각도 접근점을 작업 목표로 사용하지 않는다.
 - 지상 경로는 도달 가능한 목표 영역 전체를 종점으로 하는 목적지/충돌 크기별 공유 역방향 NavMesh portal field로 계산하고 근거리 충돌은 기존 solver를 유지한다. 직선이 열리면 즉시 직진한다. 유닛마다 매 tick 전체 맵을 탐색하지 않는다. 경로 cache는 결과를 바꾸지 않는 파생 상태이며 저장/체크섬에서 제외한다.
 - NavMesh는 경로를 선택하고 SurfaceMotion은 그 경로의 이동·외력·군중 보정을 동일한 건물/지형 접촉으로 처리한다. 검증된 부분 이동을 틱 시작점부터의 직선으로 다시 잘라내지 않는다. 접선 투영은 공통화하되 외력에 자발적인 우회 속도를 추가하지 않는다.
+- 건설 미리보기는 위치·겹침·자원·시야만 검사하며 NavMesh를 생성하지 않는다. 일꾼 접근성은 BUILD 실행 시 권위 시뮬레이션이 검증한다. 건물 변경은 영향받는 고정 영역의 메쉬만 다시 만들며, 캐시 준비 순서나 롤백 이력과 무관하게 같은 토폴로지에서 같은 경로를 선택해야 한다.
 - AIR과 명시적 도약은 장벽 상공을 지날 수 있지만 도착은 유효한 위치여야 한다. 지면 잠복·일꾼·주둔군도 같은 지상 경로를 따른다. 통행 불가와 시야/사격 차폐는 동일 의미가 아니다.
 
 6.2. BURROW OCCUPANCY
@@ -10666,7 +10667,7 @@ const BUILD_META=Object.freeze({
 /* =========================
    1. Definitions
    ========================= */
-const SIM_TPS=20,FP=100,SIM_VERSION=183;
+const SIM_TPS=20,FP=100,SIM_VERSION=184;
 
 // Authoritative time contract:
 // - balance/design data uses integer milliseconds
@@ -11519,8 +11520,8 @@ class NavigationMeshBuilder{
     return {a,b,id,minX:Math.min(a.x,b.x),maxX:Math.max(a.x,b.x),minY:Math.min(a.y,b.y),maxY:Math.max(a.y,b.y),slope:Math.abs(b.x-a.x)>1e-12?(b.y-a.y)/(b.x-a.x):0};
   }
   static at(e,x){return e.a.y+(x-e.a.x)*e.slope}
-  static build(width,height,radius,polygons,surfaces=null){
-    const eps=this.EPS,xmin=radius+.02,xmax=width-radius-.02,ymin=radius+.02,ymax=height-radius-.02;
+  static build(width,height,radius,polygons,surfaces=null,bounds=null){
+    const eps=this.EPS,xmin=bounds?.minX??radius+.02,xmax=bounds?.maxX??width-radius-.02,ymin=bounds?.minY??radius+.02,ymax=bounds?.maxY??height-radius-.02;
     const edges=[],polys=[],xs=[xmin,xmax];let seq=0;
     for(const points of polygons){
       const p={edges:[],minX:Infinity,maxX:-Infinity};
@@ -11535,7 +11536,9 @@ class NavigationMeshBuilder{
       polys.push(p);
     }
     const seams=(surfaces?.seams||[]).map(s=>this.edge(s.a,s.b,seq++));
-    for(const e of seams){edges.push(e);for(const p of [e.a,e.b])if(p.x>xmin+eps&&p.x<xmax-eps)xs.push(p.x)}
+    for(const e of seams){edges.push(e);for(const p of [e.a,e.b])if(p.x>xmin+eps&&p.x<xmax-eps)xs.push(p.x);
+      if(Math.abs(e.slope)>eps)for(const y of [ymin,ymax]){const x=e.a.x+(y-e.a.y)/e.slope;if(x>Math.max(xmin,e.minX)+eps&&x<Math.min(xmax,e.maxX)-eps)xs.push(x)}
+    }
     const edgeIndex=new NavigationObstacleIndex(edges);
     for(const a of edges){
       if(a.maxX-a.minX<eps)continue;
@@ -11617,6 +11620,11 @@ class NavigationMeshBuilder{
       c.minX=c.xl;c.maxX=c.xr;c.minY=Math.min(...c.points.map(p=>p.y));c.maxY=Math.max(...c.points.map(p=>p.y));
       c.links.sort((a,b)=>a.to-b.to||a.portal-b.portal);
     }
+    if(bounds)return {cells,portals,slabs:events.length-1};
+    return this.connect(cells,portals,events.length-1);
+  }
+  static connect(cells,portals,slabs){
+    for(const c of cells){c.component=-1;c.links.sort((a,b)=>a.to-b.to||a.portal-b.portal)}
     let components=0;
     for(const c of cells)if(c.component<0){const queue=[c.id];c.component=components;
       for(let i=0;i<queue.length;i++)for(const link of cells[queue[i]].links){const next=cells[link.to];if(next.component<0){next.component=components;queue.push(next.id)}}components++;
@@ -11628,15 +11636,26 @@ class NavigationMeshBuilder{
         p.nodes.push(fieldNodes.length);fieldNodes.push({id:fieldNodes.length,portal:p.id,x:v.x,y:v.y,links:[]});
       }
     }
-    for(const c of cells)for(let i=0;i<c.links.length;i++)for(let j=i+1;j<c.links.length;j++){
+    for(const c of cells){
+      // Reuse only geometry-derived costs. IDs and links are always rebuilt in
+      // canonical order; changed neighboring seam endpoints invalidate the cache.
+      const cache=c.graphCache;let costs=null,ci=0;
+      if(cache){
+        const coordinates=[];for(const link of c.links){const p=portals[link.portal];coordinates.push(p.p.x,p.p.y,p.q.x,p.q.y)}
+        if(cache.coordinates?.length===coordinates.length&&coordinates.every((v,i)=>v===cache.coordinates[i]))costs=cache.costs;
+        else{cache.coordinates=coordinates;cache.costs=new Float64Array(c.links.length*(c.links.length-1)/2*9)}
+      }
+      for(let i=0;i<c.links.length;i++)for(let j=i+1;j<c.links.length;j++){
       const pa=portals[c.links[i].portal],pb=portals[c.links[j].portal];
       for(const ai of pa.nodes)for(const bi of pb.nodes){
-        const a=fieldNodes[ai],b=fieldNodes[bi],cost=Math.max(1,Math.round(Math.hypot(a.x-b.x,a.y-b.y)*1024));
+        const a=fieldNodes[ai],b=fieldNodes[bi],cost=costs?costs[ci]:Math.max(1,Math.round(Math.hypot(a.x-b.x,a.y-b.y)*1024));
+        if(cache&&!costs)cache.costs[ci]=cost;ci++;
         a.links.push({to:b.id,via:c.id,cost});b.links.push({to:a.id,via:c.id,cost});
+      }
       }
     }
     for(const p of fieldNodes)p.links.sort((a,b)=>a.to-b.to||a.via-b.via);
-    return {cells,portals,fieldNodes,components,index:new NavigationObstacleIndex(cells),fields:new Map(),goals:new Map(),slabs:events.length-1};
+    return {cells,portals,fieldNodes,components,index:new NavigationObstacleIndex(cells),fields:new Map(),goals:new Map(),slabs};
   }
   static contains(c,x,y){const e=1e-5;return x>=c.xl-e&&x<=c.xr+e&&y>=this.at(c.lo,x)-e&&y<=this.at(c.hi,x)+e}
   static closest(c,x,y){
@@ -11647,6 +11666,69 @@ class NavigationMeshBuilder{
       const t=RangeUtil.clamp(((x-a.x)*dx+(y-a.y)*dy)/(dx*dx+dy*dy||1),0,1),px=a.x+t*dx,py=a.y+t*dy,d2=(px-x)**2+(py-y)**2;
       if(!best||d2<best.d2)best={x:px,y:py,d2};
     }return best;
+  }
+}
+class NavigationMeshTiles{
+  static SIZE=1024;
+  constructor(geometry,r,fixed,ignoreBuildings){
+    this.geometry=geometry;this.r=r;this.ignoreBuildings=ignoreBuildings;this.tiles=[];this.dirty=new Set();
+    const size=NavigationMeshTiles.SIZE,margin=r+.02;
+    this.columns=Math.ceil(geometry.width/size);this.rows=Math.ceil(geometry.height/size);
+    const boxes=fixed.map(points=>({points,minX:Math.min(...points.map(p=>p.x)),maxX:Math.max(...points.map(p=>p.x)),minY:Math.min(...points.map(p=>p.y)),maxY:Math.max(...points.map(p=>p.y))}));
+    const overlaps=(a,b)=>a.minX<=b.maxX&&a.maxX>=b.minX&&a.minY<=b.maxY&&a.maxY>=b.minY;
+    for(let y=0;y<this.rows;y++)for(let x=0;x<this.columns;x++){
+      const bounds={minX:Math.max(margin,x*size),maxX:Math.min(geometry.width-margin,(x+1)*size),minY:Math.max(margin,y*size),maxY:Math.min(geometry.height-margin,(y+1)*size)};
+      const surfaces=Object.create(geometry.surfaces);
+      surfaces.seams=geometry.surfaces.seams.filter(s=>overlaps(bounds,{minX:Math.min(s.a.x,s.b.x),maxX:Math.max(s.a.x,s.b.x),minY:Math.min(s.a.y,s.b.y),maxY:Math.max(s.a.y,s.b.y)}));
+      this.tiles.push({bounds,surfaces,fixed:boxes.filter(b=>overlaps(bounds,b)).map(b=>b.points),mesh:null});this.dirty.add(this.tiles.length-1);
+    }
+  }
+  invalidate(records){
+    const padding=this.r+.55,size=NavigationMeshTiles.SIZE;
+    for(const b of records){if(this.ignoreBuildings&&!b.terrainBarrier)continue;
+      for(let y=Math.max(0,Math.floor((b.minY-padding)/size));y<=Math.min(this.rows-1,Math.floor((b.maxY+padding)/size));y++)
+        for(let x=Math.max(0,Math.floor((b.minX-padding)/size));x<=Math.min(this.columns-1,Math.floor((b.maxX+padding)/size));x++)this.dirty.add(y*this.columns+x);
+    }
+  }
+  rebuild(circles){
+    const begun=performance.now(),rebuilt=this.dirty.size,g=this.geometry,r=this.r;
+    const dynamic=circles.filter(b=>!this.ignoreBuildings||b.terrainBarrier).map(b=>{
+      const points=NavigationMeshBuilder.circle(b.r+r+.25).map(p=>({x:b.x+p.x,y:b.y+p.y}));
+      return {points,minX:Math.min(...points.map(p=>p.x)),maxX:Math.max(...points.map(p=>p.x)),minY:Math.min(...points.map(p=>p.y)),maxY:Math.max(...points.map(p=>p.y))};
+    });
+    for(const id of this.dirty){const tile=this.tiles[id],b=tile.bounds;
+      const polygons=tile.fixed.concat(dynamic.filter(p=>p.minX<=b.maxX&&p.maxX>=b.minX&&p.minY<=b.maxY&&p.maxY>=b.minY).map(p=>p.points));
+      tile.mesh=b.maxX>b.minX&&b.maxY>b.minY?NavigationMeshBuilder.build(g.width,g.height,r,polygons,tile.surfaces,b):{cells:[],portals:[],slabs:0};
+    }
+    this.dirty.clear();
+    const geometryMs=performance.now()-begun,connectAt=performance.now();
+    // Canonical tile/local ordering is independent of edit history and cache warmth.
+    const cells=[],portals=[],copies=[];let slabs=0;
+    const add=(a,b,p,q)=>{if(!g.surfaces.transition(a.surface,b.surface,p,q))return;
+      const id=portals.length;portals.push({id,a:a.id,b:b.id,p,q});a.links.push({to:b.id,portal:id});b.links.push({to:a.id,portal:id});
+    };
+    for(const tile of this.tiles){const offset=cells.length,local=tile.mesh.cells.map(c=>({id:offset+c.id,xl:c.xl,xr:c.xr,lo:c.lo,hi:c.hi,links:[],component:-1,surface:c.surface,terrainLayer:c.terrainLayer,points:c.points,x:c.x,y:c.y,minX:c.minX,maxX:c.maxX,minY:c.minY,maxY:c.maxY,graphCache:c.graphCache||(c.graphCache={})}));copies.push(local);cells.push(...local);slabs+=tile.mesh.slabs;
+      for(const p of tile.mesh.portals)add(local[p.a],local[p.b],p.p,p.q);
+    }
+    const join=(left,right,vertical,edge)=>{
+      const eps=NavigationMeshBuilder.EPS,at=NavigationMeshBuilder.at;
+      const side=(list,first)=>list.flatMap(c=>{
+        if(vertical){if(Math.abs((first?c.xr:c.xl)-edge)>eps)return [];return [{c,lo:at(c.lo,edge),hi:at(c.hi,edge)}]}
+        const e=first?c.hi:c.lo;if(Math.abs(at(e,c.xl)-edge)>eps||Math.abs(at(e,c.xr)-edge)>eps)return [];
+        return [{c,lo:c.xl,hi:c.xr}];
+      }).sort((a,b)=>a.lo-b.lo||a.hi-b.hi||a.c.id-b.c.id);
+      const a=side(left,true),b=side(right,false);let i=0,j=0;
+      while(i<a.length&&j<b.length){const low=Math.max(a[i].lo,b[j].lo),high=Math.min(a[i].hi,b[j].hi);
+        if(high-low>eps)add(a[i].c,b[j].c,vertical?{x:edge,y:low}:{x:low,y:edge},vertical?{x:edge,y:high}:{x:high,y:edge});
+        if(a[i].hi<b[j].hi-eps)i++;else if(b[j].hi<a[i].hi-eps)j++;else{i++;j++}
+      }
+    };
+    for(let y=0;y<this.rows;y++)for(let x=0;x<this.columns;x++){const id=y*this.columns+x;
+      if(x+1<this.columns)join(copies[id],copies[id+1],true,(x+1)*NavigationMeshTiles.SIZE);
+      if(y+1<this.rows)join(copies[id],copies[id+this.columns],false,(y+1)*NavigationMeshTiles.SIZE);
+    }
+    const layer=NavigationMeshBuilder.connect(cells,portals,slabs);
+    return {...layer,tiles:this,rebuiltTiles:rebuilt,geometryMs,connectMs:performance.now()-connectAt};
   }
 }
 class NavigationFunnel{
@@ -12066,13 +12148,14 @@ class TerrainNavigation{
   }
   constructor(sim){
     this.sim=sim;this.geometry=sim.world.terrain;this.layers=new Map();this.staticOffsets=new Map();this.topology=new NavigationTopology();this.sceneTick=-1;this.circles=[];this.circleIndex=new NavigationObstacleIndex([]);this.motion=new SurfaceMotion(this);
-    this.metrics={backend:'navmesh',fieldsBuilt:0,fieldHits:0,layersBuilt:0,routeQueries:0,directQueries:0,unreachable:0,funnelQueries:0,meshCells:0,meshPortals:0,meshBuildMs:0,meshBuildMaxMs:0,fieldBuildMs:0,invalidations:0,endpointProjections:0,regionsBuilt:0,regionHits:0};
+    this.metrics={backend:'navmesh',fieldsBuilt:0,fieldHits:0,layersBuilt:0,routeQueries:0,directQueries:0,unreachable:0,funnelQueries:0,meshCells:0,meshPortals:0,meshBuildMs:0,meshBuildMaxMs:0,meshGeometryMs:0,meshConnectMs:0,meshTilesBuilt:0,fieldBuildMs:0,invalidations:0,endpointProjections:0,regionsBuilt:0,regionHits:0};
   }
   sync(){
     if(this.sceneTick===this.sim.tick&&this.sceneRevision===this.sim.navigationRevision)return;
     this.sceneTick=this.sim.tick;this.sceneRevision=this.sim.navigationRevision;
     if(!this.topology.refresh(this.sim.buildings))return;
-    this.layers.clear();this.metrics.invalidations++;
+    for(const layer of this.layers.values())layer.tiles.invalidate(this.topology.changes);
+    this.metrics.invalidations++;
     this.circles=this.topology.records;this.circleIndex=new NavigationObstacleIndex(this.circles);
   }
   obstacles(x,y,tx,ty,r,ignoreId){const found=this.circleIndex.query(x,y,tx,ty,r);return ignoreId==='*'?found.filter(b=>b.terrainBarrier):found}
@@ -12111,14 +12194,14 @@ class TerrainNavigation{
   departureClear(x,y,tx,ty,r,ignoreId=null){return this.segmentClear(x,y,tx,ty,r,ignoreId,true)}
   layer(radius,ignoreBuildings=false){
     this.sync();const r=Math.ceil((radius+.10)*100)/100,key=r+':'+ignoreBuildings;
-    let layer=this.layers.get(key);if(layer)return layer;
+    let layer=this.layers.get(key);if(layer&&!layer.tiles.dirty.size)return layer;
     const begun=performance.now();let fixed=this.staticOffsets.get(r);
     if(!fixed){fixed=this.geometry.blocks.flatMap(b=>NavigationMeshBuilder.inflate(b.points,r));this.staticOffsets.set(r,fixed)}
-    const polygons=fixed.slice();
-    for(const b of this.circles){if(ignoreBuildings&&!b.terrainBarrier)continue;const ball=NavigationMeshBuilder.circle(b.r+r+.25);polygons.push(ball.map(p=>({x:b.x+p.x,y:b.y+p.y})))}
-    layer=NavigationMeshBuilder.build(this.geometry.width,this.geometry.height,r,polygons,this.geometry.surfaces);layer.r=r;layer.ignoreId=ignoreBuildings?'*':null;
-    if(this.layers.size>=12)this.layers.delete(this.layers.keys().next().value);
+    const tiles=layer?.tiles||new NavigationMeshTiles(this.geometry,r,fixed,ignoreBuildings);
+    layer=tiles.rebuild(this.circles);layer.r=r;layer.ignoreId=ignoreBuildings?'*':null;
+    if(!this.layers.has(key)&&this.layers.size>=12)this.layers.delete(this.layers.keys().next().value);
     this.layers.set(key,layer);const elapsed=performance.now()-begun;
+    this.metrics.meshGeometryMs+=layer.geometryMs;this.metrics.meshConnectMs+=layer.connectMs;this.metrics.meshTilesBuilt+=layer.rebuiltTiles;
     this.metrics.layersBuilt++;this.metrics.meshBuildMs+=elapsed;this.metrics.meshBuildMaxMs=Math.max(this.metrics.meshBuildMaxMs,elapsed);this.metrics.meshCells=layer.cells.length;this.metrics.meshPortals=layer.portals.length;
     return layer;
   }
@@ -16804,17 +16887,22 @@ class TerrainQuery{
 // Tracks authoritative obstacle values without per-tick filter/map/string allocation.
 // Direct writes by trusted campaign scripts are still noticed on the next sync.
 class NavigationTopology{
-  constructor(){this.records=[];this.version=0;this.scans=0}
+  constructor(){this.records=[];this.byId=new Map();this.changes=[];this.version=0;this.scans=0}
   refresh(buildings){
-    this.scans++;let i=0,changed=this.version===0;
-    for(const b of buildings){if(b.alive===false||!(b.hp>0))continue;const old=this.records[i++],d=BuildingDefinition.get(b.type),r=(d?.size||35)+NAV_BUILDING_MARGIN;
-      const blocksVision=!!d?.blocksVision,blocksProjectile=!!d?.blocksProjectile,blocksAirVision=!!d?.blocksAirVision;
-      if(!old||old.id!==b.id||old.x!==b.x||old.y!==b.y||old.type!==b.type||old.r!==r||old.terrainBarrier!==!!d?.isTerrainBarrier||old.blocksVision!==blocksVision||old.blocksProjectile!==blocksProjectile||old.blocksAirVision!==blocksAirVision)changed=true;
+    this.scans++;let count=0,changed=this.version===0;
+    for(const b of buildings)if(b.alive!==false&&b.hp>0){count++;const old=this.byId.get(b.id),d=BuildingDefinition.get(b.type),r=(d?.size||35)+NAV_BUILDING_MARGIN;
+      if(!old||old.type!==b.type||old.x!==b.x||old.y!==b.y||old.r!==r||old.terrainBarrier!==!!d?.isTerrainBarrier||old.blocksVision!==!!d?.blocksVision||old.blocksProjectile!==!!d?.blocksProjectile||old.blocksAirVision!==!!d?.blocksAirVision)changed=true;
     }
-    if(i!==this.records.length)changed=true;
-    if(!changed)return false;
-    this.records=[];
-    for(const b of buildings)if(b.alive!==false&&b.hp>0){const d=BuildingDefinition.get(b.type),r=(d?.size||35)+NAV_BUILDING_MARGIN;this.records.push({id:b.id,type:b.type,x:b.x,y:b.y,r,terrainBarrier:!!d?.isTerrainBarrier,blocksVision:!!d?.blocksVision,blocksProjectile:!!d?.blocksProjectile,blocksAirVision:!!d?.blocksAirVision,minX:b.x-r,maxX:b.x+r,minY:b.y-r,maxY:b.y+r})}
+    if(!changed&&count===this.records.length)return false;
+    const old=new Map(this.byId),records=[],changes=[];
+    for(const b of buildings)if(b.alive!==false&&b.hp>0){const d=BuildingDefinition.get(b.type),r=(d?.size||35)+NAV_BUILDING_MARGIN;
+      const next={id:b.id,type:b.type,x:b.x,y:b.y,r,terrainBarrier:!!d?.isTerrainBarrier,blocksVision:!!d?.blocksVision,blocksProjectile:!!d?.blocksProjectile,blocksAirVision:!!d?.blocksAirVision,minX:b.x-r,maxX:b.x+r,minY:b.y-r,maxY:b.y+r},previous=old.get(b.id);
+      if(!previous||Object.keys(next).some(key=>next[key]!==previous[key])){if(previous)changes.push(previous);changes.push(next)}
+      records.push(next);old.delete(b.id);
+    }
+    changes.push(...old.values());this.changes=changes;
+    if(!changes.length&&this.version>0)return false;
+    this.records=records.sort((a,b)=>String(a.id)<String(b.id)?-1:String(a.id)>String(b.id)?1:0);this.byId=new Map(this.records.map(b=>[b.id,b]));
     this.version++;return true;
   }
 }
@@ -22089,7 +22177,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       this.navigation.sceneTick=-1;this.navigation.sceneRevision=undefined;
       this.navigation.motion=new SurfaceMotion(this.navigation);
       // sync compares the complete authoritative building obstacle layout. Same
-      // topology retains mesh/goal fields; changed layout clears them immediately.
+      // topology retains mesh/goal fields; changed layout marks affected tiles dirty.
       this.navigation.sync();
     }
     this.rebuildRuntimeIndexes();
@@ -35961,6 +36049,8 @@ class BuildingPresentation{
   }
 }
   static buildValidation(state,side,action){
+  // Pointer preview checks placement only. Builder reachability is authoritative
+  // simulation work when BUILD executes; never construct a NavMesh for a pointer.
   const bd=BuildingDefinition.get(action.building);
   if(!bd)return "알 수 없는 건물입니다.";
   const ruleReason=BuildPrerequisitePolicy.buildingReason(state,side,action.building,action.produceType);
@@ -35974,12 +36064,6 @@ class BuildingPresentation{
   const liveSim=MatchLifecycle.activeSession()?.sim;
 
   if(!buildingPlacementInsideWorld(action.building,action.x,action.y,WorldContext.forState(state)))return "절벽·뿌리벽·경사로 위에는 건설할 수 없습니다.";
-  if(!buildingPlacementInsideWorld(action.building,action.x,action.y,WorldContext.forState(state))){
-    return "건물이 맵 바깥으로 나갈 수 없습니다.";
-  }
-  if(!buildingHasBuilderApproach(state,action.building,action.x,action.y)){
-    return "건설 일꾼이 접근할 수 있는 면이 필요합니다.";
-  }
 
   if(bd.isGasExtractor){
     const gas=liveSim?.nearestGasNodeAt(action.x,action.y);
@@ -35989,7 +36073,6 @@ class BuildingPresentation{
     action.y=gas.y;
   }
 
-  if(!buildingHasReachableBuilder(state,side,action.building,action.x,action.y))return "일꾼이 연결된 건설면으로 접근할 수 없습니다.";
   for(const m of state.resources||[]){
     const min=bd.size+(m.r||28)+MINERAL_BUILD_MARGIN;
     if(Math.hypot(m.x-action.x,m.y-action.y)<min){
