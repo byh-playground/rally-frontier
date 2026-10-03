@@ -35,13 +35,14 @@ async function run() {
         GameSession, StrategySim, CampaignMissionDefinition, CampaignModuleLoader, SIM_VERSION,
         P2P_STALL_RECYCLE_MS, NETWORK_HEALTH_POLL_MS
       } = window.__gameStartQA;
-      const realNow = Date.now, realSetInterval = window.setInterval;
+      const realNow = Date.now, realSetInterval = window.setInterval, realPerformanceNow=performance.now.bind(performance), performanceNowDescriptor=Object.getOwnPropertyDescriptor(performance,"now");
       let offset = 0, heartbeat = null, session = null, restored = null;
       const packets = [];
       const check = (condition, message) => {
         if (!condition) throw new Error(message);
       };
       Date.now = () => realNow() + offset;
+      Object.defineProperty(performance,"now",{configurable:true,value:()=>realPerformanceNow()+offset});
       try {
         const rawMission = {
           schemaVersion: 7, missionId: 'game-start-heartbeat-regression',
@@ -96,8 +97,8 @@ async function run() {
             defenseCards: { host: [], guest: [] } }
         });
         check(session.sim && session.sim.tick === 0, 'Real StrategySim starts at tick zero');
-        check(session.lastPongAt >= Date.now() - 10, 'Startup completion refreshes peer liveness');
-        check(session.simClockLast >= snapshotCompletedAt, 'Simulation clock starts after snapshot initialization');
+        check(session.heartbeatTimer===0, 'In-game liveness belongs to Core, lobby heartbeat is stopped');
+        check(session.netcodeSession.getPeerState('host').lastReceivedAt >= snapshotCompletedAt, 'Core liveness starts after snapshot initialization');
         check(session.netcodeSession?.tick === 0, 'Actual SDK session starts at the same pre-step tick zero');
         check(session.netcodeNow >= snapshotCompletedAt, 'SDK runtime clock starts after snapshot initialization');
         heartbeat();
@@ -124,8 +125,10 @@ async function run() {
         };
         offset += P2P_STALL_RECYCLE_MS + 1;
         heartbeat();
-        check(session.syncHold && session.simpleRecoveryNeedsManual, 'Real subsequent peer silence still freezes gameplay');
-        check(session.simpleRecoveryReason === 'network-silence', 'Subsequent silence retains the current connection recovery reason');
+        check(!session.syncHold&&!session.simpleRecoveryNeedsManual, 'Obsolete lobby timer cannot classify gameplay liveness');
+        session.stepSimulationOnce(session.netcodeNow+session.netcodeSession.profile.peerTimeoutMs+1);
+        check(session.syncHold && session.simpleRecoveryNeedsManual, 'Core timeout freezes gameplay');
+        check(session.simpleRecoveryReason === 'peer-timeout', 'Subsequent silence retains the current connection recovery reason');
         return { startup, positionOrder, subsequentSilence: {
           syncHold: session.syncHold, recoveryPhase: session.recoveryPhase,
           reason: session.simpleRecoveryReason
@@ -135,6 +138,7 @@ async function run() {
         restored?.dispose('regression-test-complete');
         session?.dispose('regression-test-complete');
         Date.now = realNow;
+        if(performanceNowDescriptor)Object.defineProperty(performance,"now",performanceNowDescriptor);else delete performance.now;
       }
     });
     console.log(JSON.stringify({ result, pageErrors }, null, 2));
