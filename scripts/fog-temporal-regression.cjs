@@ -17,6 +17,7 @@ async function run() {
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.setContent(html);
+    await page.waitForFunction(() => window.__fogTemporalQA);
     const result = await page.evaluate(() => {
       const { GLRenderer, WorldContext } = window.__fogTemporalQA;
       const canvas = document.createElement('canvas');

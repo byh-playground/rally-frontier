@@ -57,7 +57,7 @@ PURPOSE
 
 6.1. TERRAIN NAVIGATION
 - Map Descriptor의 terrain.blockers / layers / ramps가 지형 SSOT다. TerrainSurfaceAtlas가 고지 면·경사로·절벽 접촉면·NavMesh seam을 함께 파생한다. 렌더·미니맵·건설·spawn·일반 이동·외력 제한은 같은 geometry를 사용한다. 경사로 외의 층 전환과 경사로 위 일반 건설은 금지한다.
-- 지형 표면의 실제 삼각형과 정점 높이를 렌더 깊이·화면 역투영이 함께 사용한다. 고지 바닥을 별도 고정 깊이로 칠하거나 절벽 뒤 지면을 클릭하지 않는다. 유닛·그림자·건물의 primitive와 캐시는 지지면 깊이를 적용하되 simulation 위치를 시각 보정으로 변경하지 않는다.
+- 지형 표면의 삼각형과 정점 높이는 화면 투영·역투영에 사용한다. 고도는 화면 위치에만 반영하며 depth는 맵 크기로 정규화한 지면 앞뒤 좌표에서 계산한다. 유닛·건물의 몸체 정점은 동일한 위치 기준 depth를 사용하며 지형 기울기로 깊이를 변형하거나 몸체를 지형별로 재분할하지 않는다. 논리 XY, 현재 화면 위치·외형·고도 오프셋은 유지하고 몸체를 옮겨 잘림을 보정하지 않는다.
 - 일반 절차맵도 같은 지형 시스템을 사용한다. 전투 공간·연결 통로·고지대·경사로의 배치는 MapGeneration이 소유하고, 본진·점령지·자원·중립의 유효한 배치와 접근성을 공통 geometry로 검증한다. 지형 높이는 level 하나만 SSOT로 사용하며 특정 버전의 벽 개수나 배치 레시피를 장기 계약에 고정하지 않는다.
 - level은 부호 있는 정수이며 기본 지면은 0이다. 음수·양수에 임의의 게임상 상한/하한을 두지 않고 높이는 공통 변환으로 파생하며 양수는 레벨당 48, 음수는 그 절반인 24를 사용한다. 중첩 지형은 가장 안쪽 영역이 표면을 소유한다. 기본 지면도 함몰면·섬·경사로를 제외한 실제 mesh로 만들고 렌더·Fog·클릭이 같은 표면을 사용한다.
 - 이동 명령의 점 목표와 공격·채집·반납·건설·치유의 상호작용 영역 목표를 구분한다. 실제 사거리·최소 사거리·지형 접촉 규칙은 InteractionGeometry가 한 번 정의하며 판정과 NavigationGoal이 공유한다. 건물 중심 투영이나 고정 각도 접근점을 작업 목표로 사용하지 않는다.
@@ -110,7 +110,7 @@ PURPOSE
 - 실제 상면 시점과 실제 인게임 크기에서도 확인한다.
 - 실루엣, 비율, 기능 가독성, 시안 일치, 불필요한 장식 여부, 전체 시각 언어를 확인한다.
 - 조건이 부족하면 수정 -> 재렌더 -> 재확인을 반복한다.
-- 빌보드형 유닛·건물은 내부 도형을 painter 순서로 합성하고 지형 깊이만 검사한다. 지형 뒤 아군 실루엣도 기존 시야·은신·잠복 필터를 통과한 몸체만 사용하며 판정에는 관여하지 않는다.
+- 배경 표면·불투명 객체·반투명 효과의 패스 순서는 명시적으로 정하며 지형과 개체를 직접 정렬하는 별도 큐를 만들지 않는다. 배경인 평지·고지 윗면·경사로는 몸체를 가리지 않고, 앞 절벽·경사로 초입의 앞쪽 면 뒤와 다리 아래의 가림은 depth 버퍼로 처리한다. 다리는 같은 지면 좌표에 표면이 겹치는 명시적 depth 레이어 예외다. 빌보드 내부 도형의 합성 순서는 유지하며 불투명 도형만 depth를 기록한다. 지형 뒤 아군 실루엣은 기존 시야·은신·잠복 필터를 통과한 몸체만 사용하되 다리 아래에는 표시하지 않고 판정에는 관여하지 않는다.
 - 시각적으로 납득된 후보만 본게임에 반영한다. 반영 후에도 실제 게임 E2E에서 주변 유닛/지형/VFX와 함께 재확인한다.
 - 코드가 정상 실행되고 에러가 없다는 사실은 Visual Acceptance를 통과했다는 뜻이 아니다.
 
@@ -10599,7 +10599,7 @@ try{
 // Single source of truth for this HTML artifact.
 // The timestamp lives only inside BUILD_ID. updatedAt is derived from it, so the
 // build identity and the visible/exported update time cannot drift apart.
-const BUILD_ID="20261003T091900+0900-rf-sdk-synctest-v76-candidate";
+const BUILD_ID="20261003T095920+0900-rf-ground-depth-v77-validated";
 
 class BuildMetadata{
   static buildUpdatedAtFromId(buildId){
@@ -27041,7 +27041,8 @@ class TerrainPresentation{
       else colors=patch.vertices.map(()=>patch.id==='low-ground'?[...this.colors.lowGround.slice(0,3),0]:patch.level===0?this.colors.lowGround:this.colors.highGround);
       colorCache.set(patch,colors);
       }
-      for(let i=0;i<3;i++){const p=r.projectRenderWorldPosition(tri.vertices[i]);r.setRenderDepth(p.depth);r.v(p.x,p.y,colors[tri.indices[i]])}
+      const bridge=patch.bridge?atlas.bridges.find(b=>b.id===patch.id):null,deckDepth=bridge?r.bridgeDepth(bridge):null;
+      for(let i=0;i<3;i++){const p=r.projectRenderWorldPosition(tri.vertices[i]);r.setRenderDepth(deckDepth??p.depth);r.v(p.x,p.y,colors[tri.indices[i]])}
     }
     r.setRenderDepth(previous);
   }
@@ -27201,7 +27202,7 @@ class TerrainPresentation{
 }
 
 class GLRenderer{
-  static DEPTH_PROJECTION=Object.freeze({offset:.88,viewSpan:1.72,height:.00022,min:-.94,max:.94});
+  static DEPTH_PROJECTION=Object.freeze({offset:.88,viewSpan:1.72,min:-.94,max:.94});
   constructor(canvas){
     this.canvas=canvas;
     // HAS-A immutable topology cache. Unit positions/state stay dynamic; only reusable
@@ -27264,6 +27265,7 @@ class GLRenderer{
         // carries the depth produced from one render-world (x,height,z) projection.
         vs=`attribute vec3 a;attribute vec4 ac;uniform vec2 r;varying lowp vec4 vc;void main(){vec2 p=a.xy/r*2.0-1.0;gl_Position=vec4(p.x,-p.y,a.z,1.0);vc=ac;}`,
         fs=`precision lowp float;varying lowp vec4 vc;void main(){gl_FragColor=vc;}`,
+        spriteFs=`precision lowp float;varying lowp vec4 vc;uniform lowp float alphaCutoff;void main(){if(vc.a<alphaCutoff)discard;gl_FragColor=vc;}`,
         mk=(t,s)=>{
           const sh=gl.createShader(t);
           gl.shaderSource(sh,s);
@@ -27276,6 +27278,7 @@ class GLRenderer{
       this.p=gl.createProgram();
       gl.attachShader(this.p,mk(gl.VERTEX_SHADER,vs));
       gl.attachShader(this.p,mk(gl.FRAGMENT_SHADER,fs));
+      gl.bindAttribLocation(this.p,0,"a");gl.bindAttribLocation(this.p,1,"ac");
       gl.linkProgram(this.p);
       if(!gl.getProgramParameter(this.p,gl.LINK_STATUS)){
         throw new Error("WebGL program link failed: "+gl.getProgramInfoLog(this.p));
@@ -27283,6 +27286,11 @@ class GLRenderer{
       this.a=gl.getAttribLocation(this.p,"a");
       this.ac=gl.getAttribLocation(this.p,"ac");
       this.r=gl.getUniformLocation(this.p,"r");
+      this.spriteProgram=gl.createProgram();
+      gl.attachShader(this.spriteProgram,mk(gl.VERTEX_SHADER,vs));gl.attachShader(this.spriteProgram,mk(gl.FRAGMENT_SHADER,spriteFs));
+      gl.bindAttribLocation(this.spriteProgram,0,"a");gl.bindAttribLocation(this.spriteProgram,1,"ac");gl.linkProgram(this.spriteProgram);
+      if(!gl.getProgramParameter(this.spriteProgram,gl.LINK_STATUS))throw new Error("Sprite shader link failed: "+gl.getProgramInfoLog(this.spriteProgram));
+      this.spriteR=gl.getUniformLocation(this.spriteProgram,"r");this.alphaCutoff=gl.getUniformLocation(this.spriteProgram,"alphaCutoff");
       this.buf=gl.createBuffer();
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
@@ -27437,26 +27445,17 @@ class GLRenderer{
   begin(){this.frame.reset()}
   setRenderDepth(depth){this._renderDepth=RangeUtil.clamp(Number(depth)||0,-.98,.98)}
   withRenderDepth(depth,fn){
-    const prev=this._renderDepth,plane=this._spriteDepthPlane;
-    this._spriteDepthPlane=null;this.setRenderDepth(depth);
-    try{return fn()}finally{this._renderDepth=prev;this._spriteDepthPlane=plane}
+    const prev=this._renderDepth;
+    this.setRenderDepth(depth);
+    try{return fn()}finally{this._renderDepth=prev}
   }
-  withWorldSpriteDepth(world,fn,conform=true,bias=.0005){
-    const anchor=this.projectRenderWorldPosition(world),previous=this._spriteDepthPlane,depth=this._renderDepth;
-    const surface=conform?this.world.terrain.surfaces.sample(world.x,world.z):null,ramp=surface?.ramp;
-    const sign=this.orientationRole()==='guest'?-1:1,a=GLRenderer.DEPTH_PROJECTION.viewSpan/this.world.height,b=GLRenderer.DEPTH_PROJECTION.height,vertical=BattlefieldProjection.heightScale;
-    const rise=ramp?ramp.highElevation-ramp.lowElevation:0;
-    let kx=surface?.gradient?.x??(ramp?ramp.nx*rise/ramp.run:0),kz=surface?.gradient?.z??(ramp?ramp.ny*rise/ramp.run:0);
-    // An edge-on/back-facing support plane has no front-facing screen inverse.
-    // Keep the billboard camera-facing; nearer terrain still owns occlusion.
-    if(1-vertical*sign*kz<=1e-7){kx=0;kz=0}
-    const denominator=1-vertical*sign*kz,sc=this.sc();
-    this._spriteDepthPlane={x:anchor.x,y:anchor.y,dx:-(a*vertical+b)*sign*kx/denominator/sc,dy:(-a-b*sign*kz)/denominator/sc,bias};
-    this.setRenderDepth(anchor.depth);
-    try{return fn()}finally{this._spriteDepthPlane=previous;this._renderDepth=depth}
+  withWorldSpriteDepth(world,fn,bias=.0005){
+    return this.withRenderDepth(this.spriteDepthForWorld(world,bias),fn);
   }
-  spriteVertexDepth(x,y,depth){
-    const p=this._spriteDepthPlane;return p?depth+(x-p.x)*p.dx+(y-p.y)*p.dy-p.bias:depth;
+  spriteDepthForWorld(world,bias=.0005){
+    const bridge=this.renderBridgeAt(world.x,world.z);
+    const height=bridge?world.y+(world.groundY==null?this.world.terrain.surfaces.heightAt(world.x,world.z):0):0;
+    return (bridge&&height>=bridge.elevation-.01?this.bridgeDepth(bridge):this.renderDepthForWorld(world))-bias;
   }
   css(c,alphaMul=1){
     const r=Math.round(RangeUtil.clamp(c[0],0,1)*255),g=Math.round(RangeUtil.clamp(c[1],0,1)*255),b=Math.round(RangeUtil.clamp(c[2],0,1)*255),a=RangeUtil.clamp((c[3]??1)*alphaMul,0,1);
@@ -27465,7 +27464,7 @@ class GLRenderer{
   v(x,y,c){
     const alphaMul=this._unitRenderAlphaMul==null?1:this._unitRenderAlphaMul;
     if(this._unitFacingTransform)[x,y]=this.unitFacingPoint(x,y);
-    this.frame.push7(x,y,this.spriteVertexDepth(x,y,this._renderDepth??0),c[0],c[1],c[2],RangeUtil.clamp((c[3]??1)*alphaMul,0,1));
+    this.frame.push7(x,y,this._renderDepth??0,c[0],c[1],c[2],RangeUtil.clamp((c[3]??1)*alphaMul,0,1));
   }
   regularPolygon(x,y,r,c,n=10,rot=0){
     if(n<3||r<=0)return;
@@ -27535,7 +27534,7 @@ class GLRenderer{
       );
     }
   }
-  flush(frame=this.frame){
+  flush(frame=this.frame,worldDepth=false){
     if(!frame.length)return;
     const gl=this.gl,d=frame.view(),usedBytes=frame.length*4;
     gl.bindBuffer(gl.ARRAY_BUFFER,this.buf);
@@ -27548,8 +27547,25 @@ class GLRenderer{
     gl.vertexAttribPointer(this.a,3,gl.FLOAT,false,28,0);
     gl.enableVertexAttribArray(this.ac);
     gl.vertexAttribPointer(this.ac,4,gl.FLOAT,false,28,12);
-    gl.drawArrays(gl.TRIANGLES,0,frame.length/7);
-    this.perfStats.drawCalls=(this.perfStats.drawCalls||0)+1;
+    let draws=0;
+    if(worldDepth){
+      gl.useProgram(this.spriteProgram);gl.uniform2f(this.spriteR,this.canvas.width,this.canvas.height);
+      // Preserve authored component order. Only solid runs write depth; alpha
+      // details retain blending without creating invisible occluding surfaces.
+      let start=0,solid=null;
+      const draw=end=>{
+        if(end<=start)return;
+        gl.depthMask(solid);gl.uniform1f(this.alphaCutoff,solid?.5:0);
+        gl.drawArrays(gl.TRIANGLES,start/7,(end-start)/7);draws++;start=end;
+      };
+      for(let i=0;i<frame.length;i+=21){
+        const next=Math.min(d[i+6],d[i+13],d[i+20])>=.999||Math.max(d[i+6],d[i+13],d[i+20])<=0;
+        if(solid!==null&&next!==solid)draw(i);
+        solid=next;
+      }
+      draw(frame.length);gl.depthMask(false);gl.useProgram(this.p);
+    }else{gl.drawArrays(gl.TRIANGLES,0,frame.length/7);draws=1}
+    this.perfStats.drawCalls=(this.perfStats.drawCalls||0)+draws;
     this.perfStats.bufferUploadBytes=(this.perfStats.bufferUploadBytes||0)+usedBytes;
     this.perfStats.vertexBufferGrows=frame.grows;
   }
@@ -27800,11 +27816,22 @@ class GLRenderer{
     return{x:p.x,y:groundY+.001,z:p.y,groundY,motion:"ground"};
   }
   renderDepthForWorld(p){
-    // Orthographic top-down depth: larger view-Z is closer, height adds a tiny
-    // camera-facing bias. Keep range tight for mobile depth precision.
-    const vz=this.viewY(p.z),elevation=p.groundY==null?this.world.terrain.surfaces.heightAt(p.x,p.z):0;
+    // Height belongs to screen projection only. Ground progression owns depth,
+    // normalized to this map's extent in either camera orientation.
+    const vz=this.viewY(p.z);
     const d=GLRenderer.DEPTH_PROJECTION;
-    return RangeUtil.clamp(d.offset-vz/this.world.height*d.viewSpan-(Number(p.y+elevation)||0)*d.height,d.min,d.max);
+    if(p.bridgeId){const bridge=this.world.terrain.surfaces.bridges.find(b=>b.id===p.bridgeId);if(bridge)return this.bridgeDepth(bridge)}
+    return RangeUtil.clamp(d.offset-vz/this.world.height*d.viewSpan,d.min,d.max);
+  }
+  bridgeDepth(bridge){
+    // A deck is a separate occluding layer over the same ground footprint.
+    const vz=Math.max(this.viewY(bridge.minY),this.viewY(bridge.maxY)),d=GLRenderer.DEPTH_PROJECTION;
+    return RangeUtil.clamp(d.offset-vz/this.world.height*d.viewSpan,d.min,d.max);
+  }
+  renderBridgeAt(x,z){
+    const atlas=this.world.terrain.surfaces;
+    if(!atlas.bridges.length)return null;
+    return atlas.bridgeIndex.query(x,z).find(b=>MapGeometry.pointInSimplePolygon(x,z,b.points)||atlas.onBoundary(b.points,x,z))||null;
   }
   projectRenderWorldPositionStable(p){
     // Same projection as projectRenderWorldPosition, but intentionally before
@@ -27858,7 +27885,7 @@ class GLRenderer{
     this.withWorldSpriteDepth(groundWorld,()=>{
       this.circle(ground.x+2*sc,ground.y+Math.max(1,2*sc),r*.96*shrink,own&&cloaked?[.05,.12,.08,alpha*.42]:[.04,.06,.08,alpha],12);
       this.circle(ground.x,ground.y,r*.52*shrink,[.04,.06,.08,alpha*.50],10);
-    },true,.0003);
+    },.0003);
   }
 
   renderTrackedFlag(side){
@@ -30571,7 +30598,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
         const rx=lx*cos-ly*sin,ry=lx*sin+ly*cos;lx=rx;ly=ry;
       }
       const o=start+i;
-      out[o]=px+lx;out[o+1]=py+ly;out[o+2]=this.spriteVertexDepth(out[o],out[o+1],baseDepth+data[i+2]);
+      out[o]=px+lx;out[o+1]=py+ly;out[o+2]=baseDepth+data[i+2];
       out[o+3]=data[i+3];out[o+4]=data[i+4];out[o+5]=data[i+5];out[o+6]=data[i+6];
     }
     frame.length=start+n;
@@ -30591,12 +30618,12 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     }
     this.unitBodyMeshCacheMisses++;
     // Generate once without entity facing, then store local-space vertices.
-    const start=this.frame.length,baseDepth=this._renderDepth??0,depthPlane=this._spriteDepthPlane;
-    this._unitFacingTransform=null;this._spriteDepthPlane=null;
+    const start=this.frame.length,baseDepth=this._renderDepth??0;
+    this._unitFacingTransform=null;
     try{
       this.drawUnitCommonBody(ctx);unitVisual.render(this,ctx);
     }finally{
-      this._unitFacingTransform=facing;this._spriteDepthPlane=depthPlane;
+      this._unitFacingTransform=facing;
     }
     const end=this.frame.length,n=end-start,local=new Float32Array(n);
     const data=this.frame.data;
@@ -30613,7 +30640,6 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     // supporting plane to every instance, including the first one.
     for(let i=start;i<end;i+=7){
       if(facing){const lx=data[i]-ctx.x,ly=data[i+1]-ctx.y;data[i]=ctx.x+lx*facing.cos-ly*facing.sin;data[i+1]=ctx.y+lx*facing.sin+ly*facing.cos}
-      data[i+2]=this.spriteVertexDepth(data[i],data[i+1],data[i+2]);
     }
   }
 
@@ -30694,7 +30720,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     const r=this.unitRenderRadius(u);
 
     // All body geometry shares one GPU depth derived from the render-world coordinate.
-    this.setRenderDepth(bodyPos.depth);
+    this.setRenderDepth(this.spriteDepthForWorld(worldPos));
 
     // Leap trail samples the exact same 3D trajectory instead of rebuilding a
     // screen-space lift. r is defined before this branch.
@@ -30790,7 +30816,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       if(!unitVisual.render)throw new Error(`Missing unit visual renderer for ${u.type}`);
       this.drawUnitBodyComposed(unitRenderCtx,unitVisual);
     }
-    if(own&&!cloaked&&!airUnit&&this.world.terrain.surfaces.layers.length)this.appendTerrainOccludedBody(bodyStart,this.frame.length);
+    if(own&&!cloaked&&!airUnit&&this.world.terrain.surfaces.layers.length)this.appendTerrainOccludedBody(bodyStart,this.frame.length,worldPos);
 
     // CAN-BE hit/attack presentation layer.
     this.drawUnitStateFeedback(unitRenderCtx);
@@ -30817,7 +30843,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     const pp=this.projectRenderWorldPosition(wp);
     const gp=this.projectRenderWorldPosition(this.resolveGroundShadowPosition(p,"projectile"));
     const gx=gp.x,gy=gp.y;let x=pp.x,y=pp.y;
-    this.setRenderDepth(pp.depth);
+    this.setRenderDepth(this.spriteDepthForWorld(wp));
     const target=(this.snapshot?.units||[]).find(u=>u.id===p.target&&u.alive)||
       (this.snapshot?.buildings||[]).find(b=>b.id===p.target&&b.alive!==false);
     if(wp.y>0.01){
@@ -31280,10 +31306,10 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     gl.bindTexture(gl.TEXTURE_2D,null);this.fogMaskSize={w,h};
     this._fogTextureKey=key;this._fogVisionGrid=this.visionGridBySide;return this.fogMaskSize;
   }
-  fogVertex(world){
+  fogVertex(world,bridgeId=null){
     const q=this.projectRenderWorldPosition(world),u=RangeUtil.clamp(world.x/this.world.width,0,1),v=RangeUtil.clamp(world.z/this.world.height,0,1);
     // Slight camera-facing bias keeps the transparent fog coplanar with terrain without z-fighting.
-    this.fogFrame.push5(q.x,q.y,q.depth-.00035,u,v);
+    this.fogFrame.push5(q.x,q.y,(bridgeId?this.renderDepthForWorld({...world,bridgeId}):q.depth)-.00035,u,v);
   }
   flushFog(texture,color,previousTexture=texture){
     if(!this.fogFrame.length||!texture)return;const gl=this.gl,d=this.fogFrame.view(),bytes=this.fogFrame.length*4;
@@ -31310,7 +31336,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
     // The atlas clips the base floor around authored surfaces, including depressions.
     // Fog uses those same patches so an implicit level-0 plane cannot cover a lower floor.
-    for(const level of this.fogSurfaces.keys()){this.fogFrame.reset();for(const tri of visible.get(level)||[])for(const v of tri.vertices)this.fogVertex(v);this.flushFog(this.fogTextures.get(`level:${level}`),color,this.fogPreviousTextures.get(`level:${level}`))}
+    for(const level of this.fogSurfaces.keys()){this.fogFrame.reset();for(const tri of visible.get(level)||[])for(const v of tri.vertices)this.fogVertex(v,tri.patch.bridge?tri.patch.id:null);this.flushFog(this.fogTextures.get(`level:${level}`),color,this.fogPreviousTextures.get(`level:${level}`))}
     gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,null);gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D,null);gl.useProgram(this.p);gl.uniform2f(this.r,this.canvas.width,this.canvas.height);gl.disable(gl.DEPTH_TEST);gl.depthMask(false);
   }
@@ -31428,7 +31454,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     const add=(kind,entity,world)=>{
       const entry=this.worldSpritePool[used]||(this.worldSpritePool[used]={});used++;
       entry.kind=kind;entry.entity=entity;entry.world=world;
-      entry.depth=this.renderDepthForWorld(world);entry.key=kind+":"+entity.id;out.push(entry);
+      entry.depth=this.spriteDepthForWorld(world);entry.key=kind+":"+entity.id;out.push(entry);
     };
     for(const m of this.snapshot.resources||[])if(m.amount>0&&this.onScreenAuth(m.x,m.y,90))add("mineral",m,{x:m.x,y:0,z:m.y});
     for(const g of this.snapshot.gasNodes||[])if(this.onScreenAuth(g.x,g.y,90))add("gas",g,{x:g.x,y:0,z:g.y});
@@ -31446,8 +31472,10 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.perfStats.visibleSprites=out.length;
     return out;
   }
-  appendTerrainOccludedBody(start,end){
+  appendTerrainOccludedBody(start,end,world=null){
     if(end<=start)return;
+    const deck=world?this.renderBridgeAt(world.x,world.z):null;
+    if(deck&&world.y<deck.elevation-.01)return;
     const src=this.frame.data,dst=this.terrainOccludedBodyFrame;
     let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
     for(let i=start;i<end;i+=7){minX=Math.min(minX,src[i]);maxX=Math.max(maxX,src[i]);minY=Math.min(minY,src[i+1]);maxY=Math.max(maxY,src[i+1])}
@@ -31471,9 +31499,25 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.flush(frame);
     gl.disable(gl.STENCIL_TEST);gl.depthFunc(gl.LEQUAL);
   }
+  renderTerrainOcclusionDepth(){
+    const atlas=this.world.terrain.surfaces,gl=this.gl;
+    if(!atlas._occlusionMesh){
+      atlas._occlusionMesh=[];
+      for(const patch of atlas.renderSurfaceMesh)if(patch.kind==='cliff'||patch.bridge)
+        for(const indices of patch.triangles)atlas._occlusionMesh.push({vertices:indices.map(i=>patch.bridge?{...patch.vertices[i],bridgeId:patch.id}:patch.vertices[i])});
+    }
+    const projection=TerrainSurfaceProjection.forAtlas(atlas).projectedTriangleMesh(atlas._occlusionMesh,this.orientationRole()==='guest'),a=this.projectedCoordinatesAtScreen(0,0),b=this.projectedCoordinatesAtScreen(this.canvas.width,this.canvas.height);
+    gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);gl.colorMask(false,false,false,false);this.begin();
+    try{
+      for(const item of projection.index.query(a.x,a.y,b.x,b.y))for(const v of item.tri.vertices){
+        const p=this.projectRenderWorldPosition(v);this.setRenderDepth(p.depth);this.v(p.x,p.y,[1,1,1,1]);
+      }
+      this.flush();
+    }finally{gl.colorMask(true,true,true,true);gl.depthMask(false);this.begin()}
+  }
   renderWorldPass(visibleUnits){
     if(!this.snapshot)return;
-    const gl=this.gl;this.terrainOccludedBodyFrame.reset();this.begin();
+    const gl=this.gl;this.renderTerrainOcclusionDepth();this.terrainOccludedBodyFrame.reset();this.begin();
     // Terrain alone owns the depth buffer. Each billboard's authored painter
     // order must never compete with its own coplanar component triangles.
     for(const entry of this.prepareWorldSpriteFrame(visibleUnits)){
@@ -31484,13 +31528,13 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
         else if(kind==="projectile")this.drawProjectileSafely(entity);
         else if(kind==="mineral")this.drawMineral(entity);
         else this.drawGasNode(entity);
-      },kind!=="projectile"&&(kind!=="unit"||world.motion==="ground"));
+      });
     }
     gl.depthMask(false);
     try{
       // Behind-terrain friendly bodies are faint, and foreground sprites paint
       // over them. Fog/detection filtering has already selected visibleUnits.
-      this.renderTerrainOccludedBodies();this.flush();
+      this.renderTerrainOccludedBodies();this.flush(this.frame,true);
     }finally{
       gl.disable(gl.STENCIL_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(true);
     }
@@ -31601,8 +31645,8 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     }
 
     this.passProfiler.measure("ground",()=>this.renderGroundPass());
-    this.passProfiler.measure("shadow",()=>this.renderShadowPass(visibleUnits));
     this.passProfiler.measure("world",()=>this.renderWorldPass(visibleUnits));
+    this.passProfiler.measure("shadow",()=>this.renderShadowPass(visibleUnits));
     this.passProfiler.measure("overlay",()=>this.renderOverlayPass());
     this.passProfiler.measure("ui-fx",()=>this.renderUiFxPass());
     this.passProfiler.measure("camera-compose",()=>this.renderCameraShakePass());

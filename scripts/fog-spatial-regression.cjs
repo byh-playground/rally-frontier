@@ -16,6 +16,7 @@ const { chromium } = require('playwright');
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.setContent(html);
+    await page.waitForFunction(() => window.__spatialQA);
     const results = await page.evaluate(negative => {
       const { GLRenderer, WorldContext, TerrainPresentation, TerrainSurfaceAtlas, MapGeneration, GameRuleDefinition } = window.__spatialQA;
       if (negative) TerrainSurfaceAtlas.prototype.presentationSurfaceMesh = function () {
