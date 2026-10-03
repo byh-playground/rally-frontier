@@ -237,6 +237,8 @@ END OF DEVELOPMENT CONTRACT
 <meta name="rally-frontier-build" content="">
 <meta name="rally-frontier-updated-at" content="">
 <title>RALLY FRONTIER</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/rally-180.png">
 
 
 <style id="rf-ui-styles">
@@ -9907,7 +9909,7 @@ body.campaign-mode #p2pHealthText {
           <span id="installPwaMeta">설치 가능한 경우 표시됩니다</span>
         </button>
         <button id="installGuideBtn" class="install-guide-link hidden" type="button">
-          Android Chrome에서 앱 설치하는 방법
+          앱 설치 안내
         </button>
         <div id="singleStatus" class="single-status hidden" aria-live="polite"></div>
         <div class="title-foot">드래프트/덱 선택 → 생산망 → 세 전선 → 거점 확장 → 상대 메인 거점 파괴</div>
@@ -10498,6 +10500,49 @@ body.campaign-mode #p2pHealthText {
 
 
 
+<script id="rf-pwa-install">
+(()=>{
+  "use strict";
+  let pending=null,busy=false,installed=false;
+  const standalone=()=>installed||matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+  const render=()=>{
+    const button=document.getElementById("installPwaBtn"),guide=document.getElementById("installGuideBtn"),meta=document.getElementById("installPwaMeta");
+    if(!button||!guide)return;
+    button.classList.toggle("hidden",standalone()||!pending);button.disabled=busy;
+    guide.classList.toggle("hidden",standalone());
+    if(meta)meta.textContent=busy?"브라우저 설치 창 확인 중…":"브라우저 설치 창을 엽니다";
+  };
+  const showGuide=()=>document.getElementById("installGuideModal")?.classList.remove("hidden");
+  const hideGuide=()=>document.getElementById("installGuideModal")?.classList.add("hidden");
+  addEventListener("beforeinstallprompt",event=>{event.preventDefault();pending=event;render()});
+  addEventListener("appinstalled",()=>{installed=true;pending=null;busy=false;hideGuide();render()});
+  matchMedia("(display-mode: standalone)").addEventListener("change",render);
+  const bind=()=>{
+    render();
+    document.getElementById("installPwaBtn").addEventListener("click",async()=>{
+      if(busy)return;
+      if(!pending){if(!standalone())showGuide();return}
+      const prompt=pending;pending=null;busy=true;render();
+      try{await prompt.prompt();await prompt.userChoice}
+      catch(error){showGuide();document.querySelector(".install-guide-lead").textContent="설치 창을 열지 못했습니다. 브라우저 메뉴에서 설치해 주세요. "+String(error.message||error)}
+      finally{busy=false;render()}
+    });
+    document.getElementById("installGuideBtn").addEventListener("click",showGuide);
+    for(const id of ["installGuideCloseBtn","installGuideDoneBtn","installGuideBackdrop"])document.getElementById(id).addEventListener("click",hideGuide);
+    addEventListener("keydown",event=>{if(event.key==="Escape")hideGuide()});
+    if(/iPhone|iPad|iPod/.test(navigator.userAgent)||navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1){
+      document.querySelector("#installGuideModal .small").textContent="iOS · Safari";
+      document.querySelector(".install-guide-lead").textContent="Safari에서 공유 버튼을 누른 뒤 홈 화면에 추가를 선택하세요.";
+      document.querySelector(".install-guide-steps").innerHTML="<li><b>Safari에서 현재 페이지를 엽니다.</b></li><li><b>공유 → 홈 화면에 추가 → 추가를 누릅니다.</b></li><li><b>홈 화면의 RALLY 아이콘으로 실행합니다.</b></li>";
+    }else if(!/Android/.test(navigator.userAgent)){
+      document.querySelector("#installGuideModal .small").textContent="Chrome · Edge";
+      document.querySelector(".install-guide-lead").textContent="주소창의 설치 아이콘 또는 브라우저 메뉴에서 앱 설치를 선택하세요.";
+      document.querySelector(".install-guide-steps").innerHTML="<li><b>Chrome 또는 Edge에서 현재 게임 페이지를 엽니다.</b></li><li><b>주소창의 설치 아이콘 또는 메뉴에서 앱 설치를 선택합니다.</b></li><li><b>설치된 RALLY 앱으로 실행합니다.</b></li>";
+    }
+  };
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",bind,{once:true});else bind();
+})();
+</script>
 <script id="rf-diagnostic-bootstrap">
 (()=>{
   "use strict";

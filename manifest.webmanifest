@@ -1,0 +1,26 @@
+{
+  "id": "./",
+  "name": "RALLY FRONTIER",
+  "short_name": "RALLY",
+  "lang": "ko",
+  "description": "생태 군단과 집결 깃발로 전장을 지휘하는 전략 게임",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#dcebd2",
+  "theme_color": "#245fd6",
+  "icons": [
+    {
+      "src": "icons/rally-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/rally-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
