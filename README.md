@@ -184,3 +184,5 @@ GameSession은 공통 createLoop의 수동 pulse를 사용합니다. 시간 누�
 기존 설치 버튼 DOM만 있고 manifest/아이콘/설치 이벤트 코드가 없어 공개 페이지가 no-manifest를 보고했습니다. 상대경로 manifest.webmanifest와192/512 PNG·180px Apple icon을 연결하고 beforeinstallprompt/appinstalled와 기존 설치/안내 버튼을 연결했습니다. manifest start_url/id/scope는 모두 저장소 경로를 기준으로 하며 standalone으로 실행합니다. 실제 프롬프트가 제공되면 설치 버튼을 표시하고 그 외에는 Chrome/Edge 또는 iOS Safari의 수동 설치 안내를 제공합니다. 브라우저 설치 이벤트는 사용 조건·기설치 여부·탐색 환경에 따라 달라집니다.
 
 일반 persistent Edge profile의 CDP manifest/installability 오류0과 실제 beforeinstallprompt, 설치 버튼 노출, 안내 열기/닫기·프롬프트1회/취소·prompt 오류·appinstalled 숨김을 확인했습니다. 최초 incognito 진단의 in-incognito는 별도 환경 제한이며 사이트 원인은 no-manifest입니다. 실제 모바일 기기/iOS 및 OS 설치 완료까지 검증한 것으로 확대하지 않습니다. 서비스 워커와 오프라인 게임을 추가하지 않았으며 넷코드는 기존 원본 URL import를 유지합니다.
+
+틱 진단은 허용시간(1000/TPS), 게임step EWMA 사용시간/사용률, 남은 틱 여유/여유율을 분리합니다. 싱글은 같은 프로세스의 두 세션 step을 합산합니다. 여유는 게임step만 뺀 추정치이며 Adapter 저장·Core·렌더 비용을 포함한 전체 CPU 여유가 아닙니다. 초과는 남은0과 초과ms로 표시하고 미측정 상태는 표본 수집 중으로 표시합니다.

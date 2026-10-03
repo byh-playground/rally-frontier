@@ -9831,7 +9831,10 @@ body.campaign-mode #p2pHealthText {
     <div><span>Target / Visibility 검사</span><b id="dbgPerfTarget">-</b></div>
     <div><span>Collision 후보 / overlap / 반복</span><b id="dbgPerfCollision">-</b></div>
     <div><span>Render FPS / frame work</span><b id="dbgPerfRender">-</b></div>
-    <div><span id="dbgPerfBudgetLabel">현재 TPS tick budget</span><b id="dbgPerfBudget">-</b></div>
+    <div><span id="dbgPerfAllowanceLabel">틱 허용시간</span><b id="dbgPerfAllowance">-</b></div>
+    <div><span id="dbgPerfUsedLabel">사용시간 · step EWMA</span><b id="dbgPerfUsed">-</b></div>
+    <div><span id="dbgPerfBudgetLabel">남은 틱 여유 · 추정</span><b id="dbgPerfBudget">-</b></div>
+    <div><span>여유 계측 범위</span><b>게임 step 기준 · 저장/Core/렌더 제외</b></div>
     <div><span>엔티티 peak 유닛 / 건물 / 투사체</span><b id="dbgEndurancePeaks">-</b></div>
   </div>
 
@@ -32350,7 +32353,7 @@ UiRegistry.refs.dbgCoreRollback=DomUtil.byId("dbgCoreRollback");
 UiRegistry.refs.dbgCoreRecovery=DomUtil.byId("dbgCoreRecovery");
 UiRegistry.refs.dbgCoreBytes=DomUtil.byId("dbgCoreBytes");
 UiRegistry.refs.dbgPerfStep=DomUtil.byId("dbgPerfStep");UiRegistry.refs.dbgPerfPeerStep=DomUtil.byId("dbgPerfPeerStep");UiRegistry.refs.dbgPerfCore=DomUtil.byId("dbgPerfCore");UiRegistry.refs.dbgPerfCombat=DomUtil.byId("dbgPerfCombat");UiRegistry.refs.dbgPerfTail=DomUtil.byId("dbgPerfTail");
-UiRegistry.refs.dbgPerfSnapshot=DomUtil.byId("dbgPerfSnapshot");UiRegistry.refs.dbgPerfEntities=DomUtil.byId("dbgPerfEntities");UiRegistry.refs.dbgPerfSpatial=DomUtil.byId("dbgPerfSpatial");UiRegistry.refs.dbgPerfTarget=DomUtil.byId("dbgPerfTarget");UiRegistry.refs.dbgPerfCollision=DomUtil.byId("dbgPerfCollision");UiRegistry.refs.dbgPerfRender=DomUtil.byId("dbgPerfRender");UiRegistry.refs.dbgPerfBudgetLabel=DomUtil.byId("dbgPerfBudgetLabel");UiRegistry.refs.dbgPerfBudget=DomUtil.byId("dbgPerfBudget");
+UiRegistry.refs.dbgPerfSnapshot=DomUtil.byId("dbgPerfSnapshot");UiRegistry.refs.dbgPerfEntities=DomUtil.byId("dbgPerfEntities");UiRegistry.refs.dbgPerfSpatial=DomUtil.byId("dbgPerfSpatial");UiRegistry.refs.dbgPerfTarget=DomUtil.byId("dbgPerfTarget");UiRegistry.refs.dbgPerfCollision=DomUtil.byId("dbgPerfCollision");UiRegistry.refs.dbgPerfRender=DomUtil.byId("dbgPerfRender");UiRegistry.refs.dbgPerfAllowanceLabel=DomUtil.byId("dbgPerfAllowanceLabel");UiRegistry.refs.dbgPerfAllowance=DomUtil.byId("dbgPerfAllowance");UiRegistry.refs.dbgPerfUsedLabel=DomUtil.byId("dbgPerfUsedLabel");UiRegistry.refs.dbgPerfUsed=DomUtil.byId("dbgPerfUsed");UiRegistry.refs.dbgPerfBudgetLabel=DomUtil.byId("dbgPerfBudgetLabel");UiRegistry.refs.dbgPerfBudget=DomUtil.byId("dbgPerfBudget");
 UiRegistry.refs.dbgEnduranceMismatchRate=DomUtil.byId("dbgEnduranceMismatchRate");UiRegistry.refs.dbgEnduranceCorrectionRate=DomUtil.byId("dbgEnduranceCorrectionRate");UiRegistry.refs.dbgEndurancePeaks=DomUtil.byId("dbgEndurancePeaks");
 UiRegistry.refs.dbgBalanceTime=DomUtil.byId("dbgBalanceTime");UiRegistry.refs.dbgBalanceT2=DomUtil.byId("dbgBalanceT2");UiRegistry.refs.dbgBalanceT3=DomUtil.byId("dbgBalanceT3");UiRegistry.refs.dbgBalanceTech=DomUtil.byId("dbgBalanceTech");UiRegistry.refs.dbgBalanceCombat=DomUtil.byId("dbgBalanceCombat");UiRegistry.refs.dbgBalanceCapture=DomUtil.byId("dbgBalanceCapture");
 UiRegistry.refs.dbgBalanceMineral=DomUtil.byId("dbgBalanceMineral");UiRegistry.refs.dbgBalanceGas=DomUtil.byId("dbgBalanceGas");UiRegistry.refs.dbgBalanceArmy=DomUtil.byId("dbgBalanceArmy");UiRegistry.refs.dbgBalanceAir=DomUtil.byId("dbgBalanceAir");UiRegistry.refs.dbgBalanceAA=DomUtil.byId("dbgBalanceAA");UiRegistry.refs.dbgBalanceExhaust=DomUtil.byId("dbgBalanceExhaust");UiRegistry.refs.dbgBalanceLosses=DomUtil.byId("dbgBalanceLosses");
@@ -33711,12 +33714,17 @@ class ConnectionPresentation{
   UiRegistry.refs.dbgPerfCollision.textContent=`${perf.collisionPairs||0} / ${perf.collisionOverlaps||0} / ${perf.collisionIterations||0}`;
   const rp=ActiveViewState.renderer?.perfStats;
   UiRegistry.refs.dbgPerfRender.textContent=rp?`${(rp.fps||0).toFixed(1)} FPS / ${fmtMs(rp.ewmaFrameWorkMs)} (max ${fmtMs(rp.maxFrameWorkMs)})`:"-";
-  const activeTps=SimulationTiming.tps(),budget=1000/activeTps;
-  UiRegistry.refs.dbgPerfBudgetLabel.textContent=`${activeTps} TPS tick budget (${fmtMs(budget)})`;
-  const ownStep=perf.ewmaStepMs||perf.totalMs||0,peerStep=peerPerf?(peerPerf.ewmaStepMs||peerPerf.totalMs||0):0;
-  const combinedStep=ownStep+(SinglePlayerModeUtil.isSinglePlayer()?peerStep:0),stepLoad=combinedStep/budget;
-  const prefix=SinglePlayerModeUtil.isSinglePlayer()?`싱글 합산 ${fmtMs(combinedStep)} · `:`${fmtMs(combinedStep)} · `;
-  UiRegistry.refs.dbgPerfBudget.textContent=prefix+(stepLoad>=1?`초과 ${(stepLoad*100).toFixed(0)}%`:stepLoad>=.75?`주의 ${(stepLoad*100).toFixed(0)}%`:`여유 ${(stepLoad*100).toFixed(0)}%`);
+  const activeTps=SimulationTiming.tps(),allowanceMs=1000/activeTps,isSingle=SinglePlayerModeUtil.isSinglePlayer();
+  UiRegistry.refs.dbgPerfAllowanceLabel.textContent=activeTps+" TPS 틱 허용시간";
+  UiRegistry.refs.dbgPerfAllowance.textContent=fmtMs(allowanceMs);
+  UiRegistry.refs.dbgPerfUsedLabel.textContent=isSingle?"사용시간 · 싱글 두 세션 step EWMA":"사용시간 · 현재 세션 step EWMA";
+  const sampled=perf.sampleTick>0&&(!isSingle||peerPerf?.sampleTick>0);
+  if(!sampled){UiRegistry.refs.dbgPerfUsed.textContent=UiRegistry.refs.dbgPerfBudget.textContent="표본 수집 중"}
+  else{
+    const usedMs=perf.ewmaStepMs+(isSingle?peerPerf.ewmaStepMs:0),remainingMs=Math.max(0,allowanceMs-usedMs),overrunMs=Math.max(0,usedMs-allowanceMs);
+    UiRegistry.refs.dbgPerfUsed.textContent=fmtMs(usedMs)+" · "+(usedMs/allowanceMs*100).toFixed(1)+"% 사용";
+    UiRegistry.refs.dbgPerfBudget.textContent=fmtMs(remainingMs)+" · "+(remainingMs/allowanceMs*100).toFixed(1)+"% 남음"+(overrunMs>0?" · "+fmtMs(overrunMs)+" 초과":"");
+  }
   UiRegistry.refs.dbgEndurancePeaks.textContent=`${perf.peakAliveUnits||0} / ${perf.peakBuildings||0} / ${perf.peakProjectiles||0}`;
 
   const bs=active.sim?.balanceStats||PerformanceTelemetry.createLocalBalanceStats();
