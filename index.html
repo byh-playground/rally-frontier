@@ -23717,6 +23717,70 @@ class AiDecisionTrace{
 // === AI response planning architecture v35 ===
 // Strategic policy says WHY; planner/action-generator/scheduler decide WHAT NOW and the
 // executor is the only layer allowed to translate that plan into existing game commands.
+// Campaign pacing owns only local AI intent. Every resulting order still travels
+// through the normal command ledger; units/resources and replay state stay in sim.
+class CampaignAiOffense{
+  constructor(bot){this.bot=bot;this.phase="gather";this.readyAt=0;this.members=[];this.target=null;this.pending=null;this.staging=null;this.lastTick=-1;this.wave=0}
+  config(){
+    const m=this.bot.session.matchConfig?.campaignScenario;
+    return m&&m.enemy?.aiProfile==="standard"&&this.bot.role!==(m.playerRole||"host")?m.enemy.offense||null:null;
+  }
+  combat(p){return p.ownArmy.filter(u=>u.alive!==false&&!u.scenarioGroupId&&!u.campId&&UnitDefinition.get(u.type)?.role!=="support")}
+  matches(flag,target){return !!flag&&!flag.forced&&Math.hypot(flag.x-target.x,flag.y-target.y)<90}
+  regroup(tick,cfg,tps){
+    this.phase="gather";this.readyAt=tick+SimulationTiming.msToTicks(cfg.regroupMs,tps);
+    this.members=[];this.target=null;this.pending=null;this.staging=null;
+  }
+  order(target,phase,members=[]){return{id:phase==="assault"?`campaign-attack:${target.id}`:"campaign-gather",kind:phase==="assault"?"attack":"hold",intent:phase==="assault"?"rush":"defend",priority:260,target,campaignOffense:{phase,members}}}
+  accept(action,state){
+    if(action.campaignOffense?.phase!=="assault"||this.phase==="assault"&&this.target?.id===action.target.id)return;
+    if(!this.pending)this.pending={target:{...action.target},members:action.campaignOffense.members.slice(),tick:state.tick};
+  }
+  action(state,p,ctx){
+    const cfg=this.config();if(!cfg)return null;
+    const tps=state.tps||SIM_TPS,combat=this.combat(p),world=WorldContext.forState(state);
+    if(this.lastTick<0||state.tick<this.lastTick){
+      this.phase="gather";this.readyAt=SimulationTiming.msToTicks(cfg.firstAttackMs,tps);
+      this.target=null;this.pending=null;this.members=[];this.staging=null;
+    }
+    this.lastTick=state.tick;
+    if(this.pending&&state.tick>this.pending.tick&&this.matches(state.flags?.[this.bot.side],this.pending.target)){
+      this.phase="assault";this.target=this.pending.target;this.members=this.pending.members;this.pending=null;this.wave++;
+    }
+    // Defense can interrupt a wave. New attackers must regroup after that defense,
+    // rather than letting the ordinary expansion/rush planner overwrite this cycle.
+    if(ctx.situation.underThreat){
+      if(this.phase!=="gather"||this.pending)this.regroup(state.tick,cfg,tps);
+      return null;
+    }
+    // Owned points disable neutral capture while their outpost stands. Ownership,
+    // not that neutral-capture switch, determines counterattack targets.
+    const points=(p.capturePoints||[]).filter(cp=>cfg.counterattackPoints.includes(cp.id));
+    const center=this.bot.armyCenter({ownArmy:combat})||world.bases[this.bot.side];
+    const counter=points.filter(cp=>cp.owner===1-this.bot.side).sort((a,b)=>Math.hypot(a.x-center.x,a.y-center.y)-Math.hypot(b.x-center.x,b.y-center.y)||String(a.id).localeCompare(String(b.id)))[0];
+    if(this.phase==="assault"){
+      const living=new Set(combat.map(u=>u.id)),survivors=this.members.filter(id=>living.has(id)).length;
+      const objective=this.target.capturePointId?points.find(cp=>cp.id===this.target.capturePointId):null;
+      if(survivors<Math.max(1,Math.ceil(this.members.length*.4))||this.target.capturePointId&&(!objective||objective.owner===this.bot.side||objective.owner==null&&!objective.enabled))this.regroup(state.tick,cfg,tps);
+      else if(!this.pending){
+        if(counter&&!this.target.capturePointId)return this.order({id:`capture:${counter.id}`,capturePointId:counter.id,x:counter.x,y:counter.y},"assault",combat.map(u=>u.id));
+        return this.order(this.target,"assault");
+      }
+    }
+    if(this.pending)return this.order(this.pending.target,"assault",this.pending.members);
+    const anchors=(p.ownBuildings||[]).filter(b=>b.alive!==false&&b.complete&&BuildingDefinition.get(b.type)?.isDropoff);
+    if(!this.staging||!anchors.some(b=>b.id===this.staging.id)){
+      const anchor=anchors.slice().sort((a,b)=>Math.hypot(a.x-center.x,a.y-center.y)-Math.hypot(b.x-center.x,b.y-center.y)||String(a.id).localeCompare(String(b.id)))[0];
+      this.staging=anchor?{id:anchor.id,x:anchor.x,y:anchor.y}:{id:"home",...world.bases[this.bot.side]};
+    }
+    const gathered=combat.filter(u=>Math.hypot(u.x-this.staging.x,u.y-this.staging.y)<=500);
+    if(state.tick>=this.readyAt&&gathered.length>=cfg.attackSize){
+      const base=world.bases[1-this.bot.side],target=counter?{id:`capture:${counter.id}`,capturePointId:counter.id,x:counter.x,y:counter.y}:{id:"main",x:base.x,y:base.y};
+      return this.order(target,"assault",gathered.map(u=>u.id));
+    }
+    return this.order(this.staging,"gather");
+  }
+}
 class AiActionGenerator{
   static threat(bot,state,p){
     let best=null;
@@ -23816,6 +23880,11 @@ class AiActionGenerator{
       out.push({id:"finish-main",kind:"attack",intent:"rush",priority:225+(w.rush||0)+(s.severeFloat?35:0)+(mapLead?15:0)+(s.overwhelmingArmyLead?80:s.decisiveArmyLead?40:0),target});
     }
     if(!s.underThreat&&o.economy.minerals>650)out.push({id:"tech",kind:"tech",intent:"tech",priority:60+(w.tech||0)});
+    if(bot.campaignOffense?.config()){
+      const offense=bot.campaignOffense.action(state,p,ctx);
+      for(let i=out.length-1;i>=0;i--)if(out[i].kind==="attack"||out[i].kind==="expand")out.splice(i,1);
+      if(offense)out.push(offense);
+    }
     return out.sort((a,b)=>b.priority-a.priority||String(a.id).localeCompare(String(b.id)));
   }
 }
@@ -23831,6 +23900,11 @@ class AiMacroExecutor{
   static execute(bot,state,p,a){
     if(!a)return false;
     if(a.kind==="hold"||a.kind==="expand"||a.kind==="attack"){
+      if(a.campaignOffense){
+        const admitted=bot.setFlag(a.target.x,a.target.y,{forced:false});
+        if(!admitted&&!bot.campaignOffense.matches(state.flags?.[bot.side],a.target))return false;
+        bot.currentTarget={kind:a.kind,...a.target};bot.campaignOffense.accept(a,state);return true;
+      }
       bot.currentTarget={kind:a.kind,id:a.target?.id||null,x:a.target.x,y:a.target.y,score:a.priority||0};
       if(a.id==="finish-main"){
         const center=bot.armyCenter(p),tx=a.target.x,ty=a.target.y,own=p.ownArmy||[];
@@ -23998,7 +24072,7 @@ class BotController{
     this.lastSpellChoiceId="";
     this.currentTarget=null;
     this.enemyMemory=new Map();
-    this.lastFlagTarget=null;
+    this.campaignOffense=new CampaignAiOffense(this);
     this.aiPolicy=options.aiPolicy||new UtilityAiPolicy();
     this.aiTrace=options.aiTrace||new AiDecisionTrace();
     this.lastAiDecision=null;
@@ -24761,6 +24835,12 @@ return threat;
 
   tryBuild(state,p,type,produceType=null,preferredAnchorId=null,options=null){
     const bd=BuildingDefinition.get(type),cost=BuildingDefinition.resourceCost(type,produceType);
+    const productionLimit=this.campaignOffense?.config()?.productionLimit;
+    if(bd?.isProductionBuilding&&productionLimit!=null){
+      const active=state.buildings.filter(b=>b.alive!==false&&b.side===this.side&&BuildingDefinition.get(b.type)?.isProductionBuilding).length;
+      const reserved=this.commandExecutor.outstanding().filter(entry=>entry.action.type==="BUILD"&&BuildingDefinition.get(entry.action.building)?.isProductionBuilding).length;
+      if(active+reserved>=productionLimit)return false;
+    }
     if(BuildPrerequisitePolicy.buildingReason(state,this.side,type,produceType))return false;
     if(!bd||(state.wallet[this.side]||0)<cost.mineral)return false;
     if((state.gasWallet?.[this.side]||0)<cost.gas)return false;
@@ -25003,14 +25083,9 @@ return threat;
 
   setFlag(x,y,options={}){
     const target={x:Math.round(x),y:Math.round(y),forced:!!options.forced};
-    if(
-      this.lastFlagTarget&&
-      this.lastFlagTarget.forced===target.forced&&
-      Math.hypot(target.x-this.lastFlagTarget.x,target.y-this.lastFlagTarget.y)<90
-    )return false;
-
-    const accepted=this.issueCommand({type:"SET_FLAG",x:target.x,y:target.y,forced:target.forced});
-    if(accepted)this.lastFlagTarget=target;return accepted;
+    const matches=f=>f&&!!f.forced===target.forced&&Math.hypot(target.x-f.x,target.y-f.y)<90;
+    if(matches(this.lastSnapshot?.flags?.[this.side])||this.commandExecutor.outstanding().some(entry=>entry.action.type==="SET_FLAG"&&matches(entry.action)))return false;
+    return this.issueCommand({type:"SET_FLAG",x:target.x,y:target.y,forced:target.forced});
   }
 
   spellReady(state,id){
@@ -34845,6 +34920,15 @@ class CampaignContentValidator{
    if(!object(cp,`map.capturePoints[${i}]`))return;
    add(cps,cp.id||`campaign-cp-${i}`,`map.capturePoints[${i}].id`);position(cp.position,`map.capturePoints[${i}].position`);
   });
+  if(raw.enemy?.offense!=null&&object(raw.enemy.offense,"enemy.offense")){
+    const cfg=raw.enemy.offense;
+    if(raw.enemy.aiProfile==="scripted")err("enemy.offense","standard AI에서만 공세 설정을 사용합니다.");
+    for(const key of Object.keys(cfg))if(!["firstAttackMs","regroupMs","attackSize","counterattackPoints","productionLimit"].includes(key))err(`enemy.offense.${key}`,"알 수 없는 공세 설정입니다.");
+    number(cfg.firstAttackMs,"enemy.offense.firstAttackMs",0);number(cfg.regroupMs,"enemy.offense.regroupMs",0);
+    if(!Number.isSafeInteger(cfg.attackSize)||cfg.attackSize<1)err("enemy.offense.attackSize","1 이상의 정수가 필요합니다.");
+    if(cfg.productionLimit!=null&&(!Number.isSafeInteger(cfg.productionLimit)||cfg.productionLimit<1))err("enemy.offense.productionLimit","1 이상의 정수가 필요합니다.");
+    array(cfg.counterattackPoints,"enemy.offense.counterattackPoints").forEach((id,i)=>check(cps,id,`enemy.offense.counterattackPoints[${i}]`));
+  }
   const anchor=(o,path)=>{const id=o.capturePoint;if(id){check(cps,id,`${path}.capturePoint`);if(o.offset)position(o.offset,`${path}.offset`,true)}else position(o.position,`${path}.position`);faction(o.faction,`${path}.faction`,true)};
   let forceIndex=0;
   for(const key of ["garrisons","attackForces"])array(map[key],`map.${key}`).forEach((o,i)=>{
@@ -35002,7 +35086,8 @@ class CampaignMissionDefinition{
  const player=this.normalizeSide(raw.player),enemyBase=this.normalizeSide(raw.enemy),events=(Array.isArray(raw.events)?raw.events:[]).map((e,i)=>({id:String(e.id||`event-${i}`),enabled:e.enabled!==false,once:e.once!==false,when:e.when&&typeof e.when==="object"?CloneUtil.clone(e.when):null,delayMs:Math.max(0,Number(e.delayMs)||0),cooldownMs:Math.max(0,Number(e.cooldownMs)||0),repeatCount:e.repeatCount==null?null:Math.max(1,Math.round(Number(e.repeatCount)||1)),actions:(Array.isArray(e.actions)?e.actions:[]).map(a=>a&&typeof a==="object"?CloneUtil.clone(a):null).filter(Boolean)}));
  if(new Set(events.map(e=>e.id)).size!==events.length)throw new Error("중복된 캠페인 이벤트 ID입니다.");
  if(raw.map?.terrain?.blockers?.length||raw.map?.terrain?.layers?.length)CampaignMapDefinition.build(raw.map,GameRuleDefinition.resolve(),Number(raw.seed)||HashUtil.hash(missionId),raw.playerRole==="guest"?1:0);
- const moduleSource=CampaignModuleLoader.sourceOf(raw),enemy=Object.freeze({...enemyBase,aiProfile:["standard","scripted"].includes(String(raw.enemy?.aiProfile||"standard"))?String(raw.enemy?.aiProfile||"standard"):"standard"});
+ const offense=raw.enemy?.offense?Object.freeze({firstAttackMs:raw.enemy.offense.firstAttackMs,regroupMs:raw.enemy.offense.regroupMs,attackSize:raw.enemy.offense.attackSize,productionLimit:raw.enemy.offense.productionLimit??null,counterattackPoints:Object.freeze([...(raw.enemy.offense.counterattackPoints||[])])}):null;
+ const moduleSource=CampaignModuleLoader.sourceOf(raw),enemy=Object.freeze({...enemyBase,offense,aiProfile:["standard","scripted"].includes(String(raw.enemy?.aiProfile||"standard"))?String(raw.enemy?.aiProfile||"standard"):"standard"});
  return Object.freeze({schemaVersion:CAMPAIGN_MISSION_SCHEMA_VERSION,moduleSource,missionId,playerRole:raw.playerRole==="guest"?"guest":"host",victory:CampaignOutcomeRules.normalize(raw.victory,raw.map),title:String(raw.title||missionId),briefing:String(raw.briefing||""),faction:String(raw.faction||"frontier"),seed:(Number(raw.seed)>>>0)||HashUtil.hash(missionId),map:raw.map&&typeof raw.map==="object"?CloneUtil.clone(raw.map):null,player,enemy,presentation:{opening:Array.isArray(raw.presentation?.opening)?raw.presentation.opening.map(String):[],outro:Array.isArray(raw.presentation?.outro)?raw.presentation.outro.map(String):[],hud:raw.presentation?.hud&&typeof raw.presentation.hud==="object"?CloneUtil.clone(raw.presentation.hud):null},regions:raw.regions&&typeof raw.regions==="object"?CloneUtil.clone(raw.regions):{},objectives:Array.isArray(raw.objectives)?CloneUtil.clone(raw.objectives):[],flags:raw.flags&&typeof raw.flags==="object"?CloneUtil.clone(raw.flags):{},events})}
 }
 
@@ -38780,11 +38865,11 @@ AppLifecycle.runBootAndStartApp();
 </script>
 <script id="RALLY_STABILITY_INVENTORY" type="application/json">
 {
-  "version": "campaign-ai",
+  "version": "campaign-opening-supply",
   "kind": "current-ssot",
   "build": "development",
-  "simVersion": 183,
-  "status": "캠페인 AI 검증 후보 · 전체 난이도와 장시간 성능 미검증",
+  "simVersion": 185,
+  "status": "실제 공략별 캠페인 난이도 검증 후보 · 보편적 최소 병력과 장시간 성능 미검증",
   "ssot": {
     "network": "URL로 불러온 rollback-netcode 공개 Core와 게임 Adapter가 입력·진행·롤백·해시·복구를 소유한다. GameSession은 경기 Coordinator다. 실행은 createLoop, 연결 판단은 Core 이벤트, 진단은 Synctest.metrics를 사용한다.",
     "sdkUrl": "https://byh-playground.github.io/rollback-netcode/rollback-netcode.js",
@@ -38792,19 +38877,21 @@ AppLifecycle.runBootAndStartApp();
     "versionPinned": false
   },
   "verification": {
-    "ai": "PASS 9 — actor-local 영수증, speculative 예약, rewind, 실제 StrategySim 자원 소비",
-    "campaign": "PASS 7 — 동일 시작 카드·자원·테크, Host/Guest 동시 해금, 실제 AI 건설·생산, 생산 없는 직진 진군 패배. 제한된 진군 검사이며 전체 공략 난이도 판정은 아님",
-    "terrain": "PASS 7 — 생성·채집·건설 공간·지형 경로, 실제 캠페인 시작과 항복 복귀",
-    "presentation": "PASS — 첫 미션 실제 합류·병종 해금·생산시설 건설·생산·결과 복귀, WebGL 시각 확인",
-    "module": "PASS — 7개 미션 네이티브 모듈 로딩·캐시·메뉴 선택·지연·재시도"
+    "ai": "PASS 9 — actor-local 영수증·예산·재실행 중 중복 입력 방지",
+    "offense": "PASS — 14개 역할 계약과 5개 실제 명령 검사. 재출격·전초기지 파괴/재점령·거절/지연 재시도·생산 슬롯 상한과 유료 교체",
+    "balance": "PASS — 최신 main1f85d21 기반 7개 미션 실제 조건 달성 후 유료 생산 승리. 무생산은 1~6번 조건 완료 후 패배, 7번 조건 완료 전 패배. 확인한 공략 사례이며 절대 최소 병력 아님",
+    "presentation": "보급소 배치 전 후보에서 실제 UI 1번 3계약/45기 및 SIM185 7번 일꾼8·동시 생산4·누적135기 승리. 시작 보급 변경 후에는 각 미션 실제 시작 화면·보급 표시·종료를 별도로 확인. 캠페인 조건을 강제 완료하지 않음",
+    "terrain": "PASS 7 — 생성·채집·건설 공간과 지형 경로",
+    "module": "PASS — 7개 미션 네이티브 모듈·메뉴·캐시·지연·재시도",
+    "build": "PASS 3 — 배포 빌드 기록과 development source"
   },
   "currentEnvironmentUnverified": [
     "실제 모바일 기기",
     "서로 다른 브라우저 엔진 사이의 장시간 결정론",
     "서로 다른 외부 NAT를 건너는 실제 두 기기 게임",
-    "7개 미션의 사람이 운영하고 생산하는 전체 승리 공략과 난이도 곡선",
-    "AI 활성화 후 장시간 최대 병력에서 렌더 FPS·simulation headroom 비교",
-    "이 후보의 전체 온라인·리플레이 회귀 검사는 재실행하지 않음"
+    "2~6번 실제 UI 전체 승리 공략 및 다양한 수동 조작·병종·타이밍의 최소 병력",
+    "장시간 최대 병력의 렌더 FPS·simulation headroom 비교",
+    "전체 온라인·리플레이 회귀는 이 후보에서 재실행하지 않음"
   ],
   "designDebt": [
     "게임 Simulation에는 기존 부동소수 계산 경로가 남아 있다. fixed-point 전면 전환은 공통 Core 적용과 별도의 게임 소유 작업이다.",

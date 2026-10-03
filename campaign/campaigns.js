@@ -13,7 +13,7 @@ export default {
           "schemaVersion": 7,
           "missionId": "frontier-01-first-flag",
           "title": "1. 첫 깃발",
-          "briefing": "넓은 개척로를 따라 고립된 칼잎 전사대와 합류하고 첫 전선을 만드십시오. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오.",
+          "briefing": "넓은 개척로를 따라 고립된 칼잎 전사대와 합류하고 첫 전선을 만드십시오. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오. 적은 병력을 모아 반복 공격합니다.",
           "playerRole": "host",
           "faction": "frontier",
           "seed": 690101,
@@ -34,7 +34,16 @@ export default {
               "gas": 0
             },
             "startingTech": 1,
-            "startingBuildings": [],
+            "startingBuildings": [
+              {
+                "id": "opening-supply-1",
+                "building": "supply"
+              },
+              {
+                "id": "opening-supply-2",
+                "building": "supply"
+              }
+            ],
             "defenseCards": [],
             "techCap": 1
           },
@@ -55,7 +64,14 @@ export default {
             "startingBuildings": [],
             "defenseCards": [],
             "techCap": 1,
-            "aiProfile": "standard"
+            "aiProfile": "standard",
+            "offense": {
+              "firstAttackMs": 60000,
+              "regroupMs": 20000,
+              "attackSize": 6,
+              "counterattackPoints": [],
+              "productionLimit": 1
+            }
           },
           "map": {
             "type": "manual",
@@ -421,7 +437,7 @@ export default {
           "schemaVersion": 7,
           "missionId": "frontier-02-rear-fire",
           "title": "2. 뒤에서 쏘는 자들",
-          "briefing": "남쪽의 넓은 경사로로 궁수 고지에 올라 씨앗궁수대와 합류하십시오. 고지 북쪽에는 적 방어선이 있습니다. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오.",
+          "briefing": "남쪽의 넓은 경사로로 궁수 고지에 올라 씨앗궁수대와 합류하십시오. 고지 북쪽에는 적 방어선이 있습니다. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오. 적은 병력을 모아 반복 공격합니다.",
           "playerRole": "host",
           "faction": "frontier",
           "seed": 690102,
@@ -444,7 +460,16 @@ export default {
               "gas": 0
             },
             "startingTech": 1,
-            "startingBuildings": [],
+            "startingBuildings": [
+              {
+                "id": "opening-supply-1",
+                "building": "supply"
+              },
+              {
+                "id": "opening-supply-2",
+                "building": "supply"
+              }
+            ],
             "defenseCards": [],
             "techCap": 1
           },
@@ -467,7 +492,14 @@ export default {
             "startingBuildings": [],
             "defenseCards": [],
             "techCap": 1,
-            "aiProfile": "standard"
+            "aiProfile": "standard",
+            "offense": {
+              "firstAttackMs": 50000,
+              "regroupMs": 20000,
+              "attackSize": 8,
+              "counterattackPoints": [],
+              "productionLimit": 1
+            }
           },
           "map": {
             "type": "manual",
@@ -877,7 +909,7 @@ export default {
           "schemaVersion": 7,
           "missionId": "frontier-03-spear-wall",
           "title": "3. 창벽",
-          "briefing": "양쪽 능선 사이의 넓은 협곡에서 가시창풀 방어선과 합류하십시오. 북쪽에서 빠른 돌격대가 후열을 노립니다. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오.",
+          "briefing": "양쪽 능선 사이의 넓은 협곡에서 가시창풀 방어선과 합류하십시오. 북쪽에서 빠른 돌격대가 후열을 노립니다. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오. 적은 병력을 모아 반복 공격합니다.",
           "playerRole": "host",
           "faction": "frontier",
           "seed": 690103,
@@ -905,7 +937,20 @@ export default {
               "gas": 50
             },
             "startingTech": 1,
-            "startingBuildings": [],
+            "startingBuildings": [
+              {
+                "id": "opening-supply-1",
+                "building": "supply"
+              },
+              {
+                "id": "opening-supply-2",
+                "building": "supply"
+              },
+              {
+                "id": "opening-supply-3",
+                "building": "supply"
+              }
+            ],
             "defenseCards": [],
             "techCap": 1
           },
@@ -933,7 +978,14 @@ export default {
             "startingBuildings": [],
             "defenseCards": [],
             "techCap": 1,
-            "aiProfile": "standard"
+            "aiProfile": "standard",
+            "offense": {
+              "firstAttackMs": 45000,
+              "regroupMs": 20000,
+              "attackSize": 10,
+              "counterattackPoints": [],
+              "productionLimit": 2
+            }
           },
           "map": {
             "type": "manual",
@@ -1356,7 +1408,7 @@ export default {
           "schemaVersion": 7,
           "missionId": "frontier-04-moving-front",
           "title": "4. 움직이는 전선",
-          "briefing": "남쪽 강변의 포자사수와 합류하십시오. 낮은 강바닥을 가로지르는 다리 북쪽에는 중장갑 병력과 넓은 기동장이 있습니다. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오.",
+          "briefing": "남쪽 강변의 포자사수와 합류하십시오. 낮은 강바닥을 가로지르는 다리 북쪽에는 중장갑 병력과 넓은 기동장이 있습니다. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오. 적은 병력을 모아 반복 공격합니다.",
           "playerRole": "host",
           "faction": "frontier",
           "seed": 690104,
@@ -1389,7 +1441,20 @@ export default {
               "gas": 75
             },
             "startingTech": 1,
-            "startingBuildings": [],
+            "startingBuildings": [
+              {
+                "id": "opening-supply-1",
+                "building": "supply"
+              },
+              {
+                "id": "opening-supply-2",
+                "building": "supply"
+              },
+              {
+                "id": "opening-supply-3",
+                "building": "supply"
+              }
+            ],
             "defenseCards": [],
             "techCap": 1
           },
@@ -1422,7 +1487,14 @@ export default {
             "startingBuildings": [],
             "defenseCards": [],
             "techCap": 1,
-            "aiProfile": "standard"
+            "aiProfile": "standard",
+            "offense": {
+              "firstAttackMs": 45000,
+              "regroupMs": 18000,
+              "attackSize": 12,
+              "counterattackPoints": [],
+              "productionLimit": 2
+            }
           },
           "map": {
             "type": "manual",
@@ -1833,7 +1905,7 @@ export default {
           "schemaVersion": 7,
           "missionId": "frontier-05-two-flags",
           "title": "5. 두 개의 깃발",
-          "briefing": "중앙 언덕을 돌아가는 북쪽 긴 길과 남쪽 빠른 길이 두 거점으로 이어집니다. 민들레 주자대와 합류해 병력을 나누십시오. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오.",
+          "briefing": "중앙 언덕을 돌아가는 북쪽 긴 길과 남쪽 빠른 길이 두 거점으로 이어집니다. 민들레 주자대와 합류해 병력을 나누십시오. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오. 적은 병력을 모아 반복 공격합니다. 점령한 거점에는 반격이 올 수 있습니다.",
           "playerRole": "host",
           "faction": "frontier",
           "seed": 690105,
@@ -1867,7 +1939,20 @@ export default {
               "gas": 100
             },
             "startingTech": 1,
-            "startingBuildings": [],
+            "startingBuildings": [
+              {
+                "id": "opening-supply-1",
+                "building": "supply"
+              },
+              {
+                "id": "opening-supply-2",
+                "building": "supply"
+              },
+              {
+                "id": "opening-supply-3",
+                "building": "supply"
+              }
+            ],
             "defenseCards": [],
             "techCap": 1
           },
@@ -1901,7 +1986,17 @@ export default {
             "startingBuildings": [],
             "defenseCards": [],
             "techCap": 1,
-            "aiProfile": "standard"
+            "aiProfile": "standard",
+            "offense": {
+              "firstAttackMs": 40000,
+              "regroupMs": 18000,
+              "attackSize": 12,
+              "counterattackPoints": [
+                "north",
+                "south"
+              ],
+              "productionLimit": 2
+            }
           },
           "map": {
             "type": "manual",
@@ -2392,7 +2487,7 @@ export default {
           "schemaVersion": 7,
           "missionId": "frontier-06-wounded-road",
           "title": "6. 상처 입은 길",
-          "briefing": "폐허 사이의 넓은 도로를 따라 첫 방어선을 돌파하고 이슬치유사와 합류하십시오. 후방 공간에서 회복한 뒤 다음 전선을 밀어내십시오. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오.",
+          "briefing": "폐허 사이의 넓은 도로를 따라 첫 방어선을 돌파하고 이슬치유사와 합류하십시오. 후방 공간에서 회복한 뒤 다음 전선을 밀어내십시오. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오. 적은 병력을 모아 반복 공격합니다.",
           "playerRole": "host",
           "faction": "frontier",
           "seed": 690106,
@@ -2431,6 +2526,18 @@ export default {
               {
                 "id": "academy",
                 "building": "academy"
+              },
+              {
+                "id": "opening-supply-1",
+                "building": "supply"
+              },
+              {
+                "id": "opening-supply-2",
+                "building": "supply"
+              },
+              {
+                "id": "opening-supply-3",
+                "building": "supply"
               }
             ],
             "defenseCards": [],
@@ -2472,7 +2579,14 @@ export default {
             ],
             "defenseCards": [],
             "techCap": 2,
-            "aiProfile": "standard"
+            "aiProfile": "standard",
+            "offense": {
+              "firstAttackMs": 40000,
+              "regroupMs": 15000,
+              "attackSize": 14,
+              "counterattackPoints": [],
+              "productionLimit": 3
+            }
           },
           "map": {
             "type": "manual",
@@ -2955,7 +3069,7 @@ export default {
           "schemaVersion": 7,
           "missionId": "frontier-07-frontier-line",
           "title": "7. 개척선",
-          "briefing": "서쪽의 넓은 중장갑 전장, 동쪽 고지, 중앙 다리의 세 전선을 확보하십시오. 두 다리와 완만한 동쪽 강둑을 이용해 병력을 나누고 북쪽 본진으로 진격하십시오. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오.",
+          "briefing": "서쪽의 넓은 중장갑 전장, 동쪽 고지, 중앙 다리의 세 전선을 확보하십시오. 두 다리와 완만한 동쪽 강둑을 이용해 병력을 나누고 북쪽 본진으로 진격하십시오. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오. 적은 병력을 모아 반복 공격합니다. 점령한 거점에는 반격이 올 수 있습니다.",
           "playerRole": "host",
           "faction": "frontier",
           "seed": 690107,
@@ -2999,6 +3113,18 @@ export default {
               {
                 "id": "academy",
                 "building": "academy"
+              },
+              {
+                "id": "opening-supply-1",
+                "building": "supply"
+              },
+              {
+                "id": "opening-supply-2",
+                "building": "supply"
+              },
+              {
+                "id": "opening-supply-3",
+                "building": "supply"
               }
             ],
             "defenseCards": [],
@@ -3045,7 +3171,18 @@ export default {
             ],
             "defenseCards": [],
             "techCap": 2,
-            "aiProfile": "standard"
+            "aiProfile": "standard",
+            "offense": {
+              "firstAttackMs": 90000,
+              "regroupMs": 35000,
+              "attackSize": 16,
+              "counterattackPoints": [
+                "west",
+                "east",
+                "center"
+              ],
+              "productionLimit": 2
+            }
           },
           "map": {
             "type": "manual",
