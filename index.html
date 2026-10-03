@@ -75,6 +75,7 @@ PURPOSE
 - GameSession은 경기 Coordinator이며 공통 rollback-netcode Session, Simulation Adapter, Transport capability를 Has-a로 소유한다. 게임은 공개 계약에 맞추며 전용 Core fork나 내부 필드 접근을 만들지 않는다.
 - Input Prediction / Adaptive Input Delay / Simulation Clock Synchronization / Rollback / Resimulation / Periodic State Hash / Transactional Snapshot Resync는 한 Core가 소유한다. 차이는 Profile Parameter로 표현하며 기본 pacing은 Discrete Tick Hold다.
 - Authoritative는 StrategySim과 StateContract, Runtime은 Core·캐시·명령 영수증 추적, Presentation은 Render State·확정 효과 journal이 소유한다. 재실행은 외부 AI 결정·VFX·결과·replay 기록을 중복 실행하지 않는다.
+- 롤백은 제한된 prediction 범위 안에서 과거 상태를 복원한 호출 안에 현재 틱까지 동기 재실행한다. 시뮬레이션은 렌더링·DOM과 분리하며 재실행 중 소리·알림을 중복 발생시키지 않는다.
 - Core frame t는 게임의 step 이전 S[t]다. UI·AI 명령은 player-local sequence로 제출하며 확정 frame의 정렬된 입력만 게임 명령과 replay로 변환한다. Gameplay 시간은 Simulation Tick, scheduler와 지연 정책은 Runtime이다.
 - Nostr는 Discovery/Signaling만 사용하며 Gameplay는 raw RTCDataChannel의 바이너리로 전송한다. 개발자 소유 서버·TURN fallback은 사용하지 않는다. SDK 원본 단일 ES module을 GitHub Pages URL에서 직접 import한다. 로딩과 필수 API 확인 후 초기화하며 실패 시 오류를 표시한다. 로컬 복사본·내장 Core fallback은 사용하지 않는다.
 
@@ -10813,7 +10814,6 @@ const NETWORK_HEALTH_POLL_MS=100;
 // Simulation is not tied to requestAnimationFrame.
 // Worker/main-thread pulses schedule bounded work; Core holds an ahead peer.
 const BACKGROUND_TICK_PULSE_MS=25;
-const SIM_PULSE_BUDGET_MS=12;
 const SNAPSHOT_EMIT_INTERVAL_MS=STATE_PUBLISH_INTERVAL_MS;
 // Derived, immutable world geometry. Each simulation and renderer owns a context;
 // no active-view switch can change another match's coordinates or spatial grids.
@@ -22877,7 +22877,7 @@ class GameSession{
     // RTS Profile만 선택한다. 동일 public Core가 prediction/hold/resim/hash/recovery를 실행한다.
     this.netcodeSession=RallyNetcode.createSession({players:['host','guest'],localPlayerId:this.role,authorityPlayerId:'host',
       sessionId:String(this.roomCode),simulationVersion:String(SIM_VERSION),seed:seed>>>0,inputSize:1,
-      profile:{...RallyNetcode.profiles.rts,tickRate:this.sim.tps,maxCatchupSteps:MAX_CATCHUP_STEPS_PER_PULSE,checksumInterval:20,resimulationBudget:2,maxCommandBytes:12*1024,maxHistoryBytes:64*1024*1024,maxSnapshotBytes:RallyStateCodec.maxBytes},
+      profile:{...RallyNetcode.profiles.rts,tickRate:this.sim.tps,maxCatchupSteps:MAX_CATCHUP_STEPS_PER_PULSE,checksumInterval:20,maxCommandBytes:12*1024,maxHistoryBytes:64*1024*1024,maxSnapshotBytes:RallyStateCodec.maxBytes},
       adapter:this.simulationAdapter,clock:()=>this.netcodeNow,onEvent:event=>this.onNetcodeEvent(event)});
     const statusTransport=this.transport;
     this.detachNetcodeTransport=this.netcodeSession.attachTransport(this.role==='host'?'guest':'host',{
@@ -22887,7 +22887,7 @@ class GameSession{
     });
     this.netcodeNow=performance.now();this.lastDriverPulseAt=this.netcodeNow;this.lastSnapshotEmitAt=this.netcodeNow;
     this.stopHeartbeat(false);
-    this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,maxWorkMs:SIM_PULSE_BUDGET_MS,
+    this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,
       beforeFrame:now=>{this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now)},
       canAdvance:()=>!this.simEnded&&!this.simulationFatal&&!this.pendingTerminalFrame&&!this.syncHold&&!this.frameOutputs.get(this.sim.tick)?.winner,
       onAdvance:()=>this.reconcileNetcodePresentation(),render:()=>this.reconcileNetcodePresentation(),

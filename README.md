@@ -169,7 +169,7 @@ RALLY FRONTIER의 **검증 완료 Stable 버전 및 GitHub Pages 배포 소스**
 
 ### 공통 실행·연결·진단 capability (2026-10-03)
 
-GameSession은 공통 createLoop의 수동 pulse를 사용합니다. 시간 누적·pacing·따라잡기·작업 예산은 라이브러리가 소유하며 게임은 종료/로비/표현 callback만 조정합니다. 경기 중 별도 heartbeat/silence timeout 판단과 임의 수신의 생존 연장은 제거하고 Core의 peer-interrupted/timeout/disconnected/resumed 이벤트 및 Transport 상태 capability를 사용합니다. 보류 중에도 poll은 계속하여 같은 Core의 재개와 snapshot 복구를 처리합니다.
+GameSession은 공통 createLoop의 수동 pulse를 사용합니다. 시간 누적·pacing·따라잡기는 라이브러리가 소유하며 게임은 종료/로비/표현 callback만 조정합니다. 롤백은 과거 상태를 복원한 호출 안에서 원래 현재 틱까지 재실행하며 여러 pulse로 나누지 않습니다. snapshot 복구도 필요한 입력 이력이 준비되면 목표 틱까지 같은 호출에서 재실행합니다. 실행 시간이 12ms를 넘었다는 이유로 정상 틱을 미루던 작업 예산 검사는 제거했습니다. 경기 중 별도 heartbeat/silence timeout 판단과 임의 수신의 생존 연장은 제거하고 Core의 peer-interrupted/timeout/disconnected/resumed 이벤트 및 Transport 상태 capability를 사용합니다. 보류 중에도 poll은 계속하여 같은 Core의 재개와 snapshot 복구를 처리합니다.
 
 동기화 진단 패널은 두 SDK 결과를 구분합니다. Session.metrics/status/getPeerState는 RTT·지터·입력 지연·prediction·hold/stall·rollback/resimulation·hash/recovery·송수신·이력 지표입니다. Synctest.metrics는 실제 확정 입력의 시작 구간 최대32틱을 저장·복원·재실행한 결과입니다. 자체 checksum/보정 카운터와 임계치 판정을 제거했으며 game perf/FPS와 경기 balance는 별도로 표시하는 게임 소유 계측입니다.
 
@@ -177,7 +177,9 @@ GameSession은 공통 createLoop의 수동 pulse를 사용합니다. 시간 누�
 
 라이브러리96검사·strict TS·생성물 검사 및 actual RTC240tick을 통과했습니다. 랠리는 실제 RTC lifecycle7(깊이5 종료 rollback/recovery/replay, 공통 loop interruption→timeout→resumption), 상태11/AI9/transport를 통과했습니다. 412px WebGL의 Synctest32틱/177재실행 통과·고의불일치 최초바이트/해시 표시·검사 중 live progression/running·취소/종료·캠페인 runtime 보존·cleanup 오류 경합을 확인했습니다. 단일 synchronous live 검사 후보의 약1초 block/interruption 결과는 최종 PASS 근거에서 제외했습니다.
 
-최종 공개 SDK5ee7b30와 native WebGL Host2022틱/72c36eab, Guest1178틱/1c7e9d1b 종료·replay 일치와 오류0을 확인했습니다. 기존 3틱 catchup 및12ms 작업 예산은 SDK profile/maxWorkMs로 유지합니다. 초기 표시 뒤 Core clock/liveness를 시작하며 로비 heartbeat가 gameplay를 판정하지 않는 느린 시작 회귀도 통과했습니다. UI RTT badge는 Session.metrics의 현재 값을 읽습니다.
+이전 공개 SDK5ee7b30와 native WebGL Host2022틱/72c36eab, Guest1178틱/1c7e9d1b 종료·replay 일치와 오류0을 확인했습니다. 정상 wall-clock 따라잡기는 pulse당 최대 3틱이며, 이는 롤백 재실행을 나누는 제한이 아닙니다. 초기 표시 뒤 Core clock/liveness를 시작하며 로비 heartbeat가 gameplay를 판정하지 않는 느린 시작 회귀도 통과했습니다. UI RTT badge는 Session.metrics의 현재 값을 읽습니다.
+
+분할 제거 후보 SDK는 명시적 QA URL 라우팅으로 검증했습니다. 실제 RTC lifecycle 7개 시나리오에서 지연·손실에 의한 깊이 5 롤백이 한 poll 안에 기존 현재 틱 16까지 완료되고, 종료·복구·replay 상태가 일치했습니다. 통합 검사는 입력 손실·재정렬·손상 snapshot 거부 및 이력 순환 후 복구/replay 일치를 통과했습니다. 412×915 native WebGL UI에서 Host 1315틱/ca749c02, Guest 869틱/9a21fd81 종료와 replay가 일치했고 오류는 0개였습니다. UI 검사는 동기 재실행 중 상태 플래그 보완 직전 후보에서 수행했으며, 최종 플래그 보완 뒤 lifecycle·통합 검사를 다시 통과했습니다. 이 결과는 공개 배포 검증이나 독립적인 성능 비교를 의미하지 않습니다.
 
 ### PWA 설치 (2026-10-03)
 
