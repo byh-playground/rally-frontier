@@ -178,3 +178,9 @@ GameSession은 공통 createLoop의 수동 pulse를 사용합니다. 시간 누�
 라이브러리96검사·strict TS·생성물 검사 및 actual RTC240tick을 통과했습니다. 랠리는 실제 RTC lifecycle7(깊이5 종료 rollback/recovery/replay, 공통 loop interruption→timeout→resumption), 상태11/AI9/transport를 통과했습니다. 412px WebGL의 Synctest32틱/177재실행 통과·고의불일치 최초바이트/해시 표시·검사 중 live progression/running·취소/종료·캠페인 runtime 보존·cleanup 오류 경합을 확인했습니다. 단일 synchronous live 검사 후보의 약1초 block/interruption 결과는 최종 PASS 근거에서 제외했습니다.
 
 최종 공개 SDK5ee7b30와 native WebGL Host2022틱/72c36eab, Guest1178틱/1c7e9d1b 종료·replay 일치와 오류0을 확인했습니다. 기존 3틱 catchup 및12ms 작업 예산은 SDK profile/maxWorkMs로 유지합니다. 초기 표시 뒤 Core clock/liveness를 시작하며 로비 heartbeat가 gameplay를 판정하지 않는 느린 시작 회귀도 통과했습니다. UI RTT badge는 Session.metrics의 현재 값을 읽습니다.
+
+### PWA 설치 (2026-10-03)
+
+기존 설치 버튼 DOM만 있고 manifest/아이콘/설치 이벤트 코드가 없어 공개 페이지가 no-manifest를 보고했습니다. 상대경로 manifest.webmanifest와192/512 PNG·180px Apple icon을 연결하고 beforeinstallprompt/appinstalled와 기존 설치/안내 버튼을 연결했습니다. manifest start_url/id/scope는 모두 저장소 경로를 기준으로 하며 standalone으로 실행합니다. 실제 프롬프트가 제공되면 설치 버튼을 표시하고 그 외에는 Chrome/Edge 또는 iOS Safari의 수동 설치 안내를 제공합니다. 브라우저 설치 이벤트는 사용 조건·기설치 여부·탐색 환경에 따라 달라집니다.
+
+일반 persistent Edge profile의 CDP manifest/installability 오류0과 실제 beforeinstallprompt, 설치 버튼 노출, 안내 열기/닫기·프롬프트1회/취소·prompt 오류·appinstalled 숨김을 확인했습니다. 최초 incognito 진단의 in-incognito는 별도 환경 제한이며 사이트 원인은 no-manifest입니다. 실제 모바일 기기/iOS 및 OS 설치 완료까지 검증한 것으로 확대하지 않습니다. 서비스 워커와 오프라인 게임을 추가하지 않았으며 넷코드는 기존 원본 URL import를 유지합니다.
