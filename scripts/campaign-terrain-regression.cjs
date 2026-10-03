@@ -7,9 +7,9 @@ const { chromium } = require('playwright');
 
 const root = path.resolve(__dirname, '..');
 const output = path.join(root, '.qa/campaign-terrain');
-// Gameplay projection of the catalog before the authored terrain upgrade (PR21).
+// Gameplay projection after campaign enemy AI and starting army balance.
 // Spatial placement and prose may change; troop counts, trigger radii, waves and victory do not.
-const gameplayDigest = '826c64b12996b93e4af431d2bad7bd2f8ec10436ff0ec0e98752882c1f515720';
+const gameplayDigest = '6360fa3d23729cdac4273c11226842669ae06a4443b1fc4279e40f677678e60d';
 function gameplayFingerprint(manifest) {
   const omitted = new Set(['terrain', 'lanes', 'spawns', 'position', 'offset', 'center',
     'title', 'briefing', 'presentation', 'label', 'text']);
@@ -48,7 +48,7 @@ async function run() {
     page.on('dialog', dialog => dialog.accept());
     await page.goto(url); await page.waitForFunction(() => window.__terrainQA);
     const manifest = await page.evaluate(() => window.__terrainQA.CampaignBuiltinCatalog.manifest());
-    assert.equal(gameplayFingerprint(manifest), gameplayDigest, 'Terrain edits preserve non-spatial mission rules and every trigger radius');
+    assert.equal(gameplayFingerprint(manifest), gameplayDigest, 'Terrain verification matches the current non-spatial mission rules and trigger radii');
     result.integration = await page.evaluate(manifest => {
       const q = window.__terrainQA;
       const check = (condition, message) => { if (!condition) throw Error(message); };
