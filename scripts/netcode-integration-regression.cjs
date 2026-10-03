@@ -7,7 +7,7 @@ const chromium = require('./netcode-qa-module.cjs').wrapChromium(nativeChromium)
 
 const htmlPath = path.resolve(process.argv[2] || path.join(__dirname, '..', 'index.html'));
 const output = path.resolve(__dirname, '..', '.qa', 'netcode-integration');
-const source = fs.readFileSync(htmlPath, 'utf8');
+const source = fs.readFileSync(htmlPath, 'utf8').replace('economy:{startingResources:{minerals:0,gas:0}}','economy:{startingResources:{minerals:10000,gas:10000}}'); // Equal pre-game resource fixture on both peers.
 const consumer = source;
 assert.ok(!/\b(?:netcodeSession|netcode|core|sdk|RallyNetcode)\s*(?:\.|\?\.)\s*_[A-Za-z]/.test(consumer),
   'Game consumer never accesses private SDK members');
@@ -20,8 +20,11 @@ for (const [i, script] of [...source.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/scr
 const end = source.lastIndexOf('})();');
 assert.ok(end > 0, 'Production app IIFE exists');
 const html = source.slice(0, end) + `
+// Preserve the pre-game economy workers in this 120-combat-unit fixture so BUILD is meaningful.
+const originalDebug=StrategySim.prototype.applyDebugScenario;
+StrategySim.prototype.applyDebugScenario=function(...args){const workers=this.units.filter(u=>UnitDefinition.get(u.type)?.economyWorker);const result=originalDebug.apply(this,args);this.units.push(...workers);this.rebuildRuntimeIndexes();return result;};
 window.__netcodeIntegration={GameSession,LoopbackTransport,AppLifecycle,
-  RallyStateCodec,RallyCommandCodec,StrategySim,SIM_VERSION,BUILD_ID};
+  RallyStateCodec,RallyCommandCodec,StrategySim,BuildingDefinition,BuildingPresentation,SIM_VERSION,BUILD_ID};
 ` + source.slice(end);
 
 async function integration() {
@@ -144,6 +147,13 @@ async function integration() {
     const hostTicket={...host.lastCommandTicket},guestTicket={...guest.lastCommandTicket};
     check(hostTicket.actor==='host'&&guestTicket.actor==='guest','Ticket identifies the actor');
     check(hostTicket.sequence===guestTicket.sequence,'Equal player-local sequences remain distinct actor identities');
+    const guestBase=guest.sim.buildings.find(b=>b.side===1&&q.BuildingDefinition.get(b.type)?.isMainBase);
+    let buildAction=null;
+    outer:for(let radius=180;radius<=500;radius+=40)for(let i=0;i<24;i++){
+      const action={type:'BUILD',building:'barracks',produceType:'swordsman',x:Math.round(guestBase.x+Math.cos(i*Math.PI/12)*radius),y:Math.round(guestBase.y+Math.sin(i*Math.PI/12)*radius)};
+      if(!q.BuildingPresentation.buildValidation(guest.sim.snapshot(),1,action)){buildAction=action;break outer;}
+    }
+    check(buildAction&&guest.command(buildAction)===true,'Delayed guest BUILD enters the production command stream');
     await step(7);
     check(faults.dropped===2&&faults.held.length>0,'Typed frames were genuinely lost and delayed');
     faults.mode='off';
@@ -168,6 +178,8 @@ async function integration() {
     check(new Set(commands.map(c=>c.seq)).size===2,'Canonical game sequence remains globally unique');
     const canonical=commands.every(c=>c.seq>=Math.floor((c.tick-1)*4096)+1&&c.seq<=Math.floor((c.tick-1)*4096)+4096);
     check(canonical,'Game command sequence follows SDK frame and stable ordinal');
+    check(host.replayRecorder.commands.filter(c=>c.action?.type==='BUILD').length===1,'Rollback records the construction command exactly once');
+    check(sessions.every(s=>[...s.sim.buildings,...s.sim.constructionOrders].filter(b=>b.side===1&&b.produceType==='swordsman'&&Math.hypot(b.x-buildAction.x,b.y-buildAction.y)<1).length===1),'Delayed construction produces exactly one order or real building on each peer: '+JSON.stringify(sessions.map(s=>({role:s.role,receipts:s.sim.commandReceipts,workers:s.sim.units.filter(u=>u.type==='worker').length,wallet:s.sim.wallet,orders:s.sim.constructionOrders,buildings:s.sim.buildings.map(b=>({id:b.id,type:b.type,side:b.side,produceType:b.produceType,x:b.x,y:b.y}))}))));
     const firstRing=host.netcodeSession.profile.stateHistorySize;
     await step(firstRing*3);
     const wrapped=confirmedEquality('After three state-ring wraps');

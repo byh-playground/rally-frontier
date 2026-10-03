@@ -19,7 +19,7 @@ async function run() {
   assert.ok(end >= 0, 'Application IIFE exists');
   html = html.slice(0, end) + `
     window.__netcodeAiQA = { AiCommandExecutor, BotController, StrategySim,
-      StableSerializationUtil, StateValue, BuildingDefinition, WORKER_COST, WORKER_QUEUE_LIMIT };
+      StableSerializationUtil, StateValue, BuildingDefinition, UnitDefinition, AiMacroExecutor, WORKER_COST, WORKER_QUEUE_LIMIT };
   ` + html.slice(end);
   const browser = await chromium.launch({
     channel: process.env.QA_BROWSER_CHANNEL || 'msedge', headless: true,
@@ -36,7 +36,7 @@ async function run() {
     await page.waitForFunction(() => window.__netcodeAiQA);
     const results = await page.evaluate(() => {
       const { AiCommandExecutor, BotController, StrategySim, StableSerializationUtil,
-        StateValue, BuildingDefinition, WORKER_COST, WORKER_QUEUE_LIMIT } = window.__netcodeAiQA;
+        StateValue, BuildingDefinition, UnitDefinition, AiMacroExecutor, WORKER_COST, WORKER_QUEUE_LIMIT } = window.__netcodeAiQA;
       const check = (condition, message) => { if (!condition) throw Error(message); };
       const equal = (actual, expected, message) => check(actual === expected, `${message}: ${actual} != ${expected}`);
       const clone = value => StateValue.copy(value);
@@ -111,7 +111,7 @@ async function run() {
           f.sim.runtimeEpoch++; f.executor.reconcile(f.state);
           equal(f.executor.pending.length, 1, 'Scheduled command is retained');
         });
-        test('Speculative receipts retain reservations until confirmation', () => {
+        test('Speculative receipts retain command identities until confirmation', () => {
           const f = fixture(), entry = submit(f, build);
           f.tickets.clear(); f.sim.runtimeEpoch++; f.sim.commandReceipts = [receipt(entry, 14, false)];
           f.executor.reconcile({ tick: 20 });
@@ -151,6 +151,58 @@ async function run() {
           const poor = fixture(); poor.state.wallet[1] = WORKER_COST - 1; poor.executor.begin(poor.state);
           check(!poor.executor.offer(worker), 'Resource shortage rejects worker');
           equal(poor.executor.stats.budgetRejected, 1, 'Budget rejection is recorded');
+        });
+        test('Accepted construction orders replace pending costs and survive worker travel', () => {
+          const f = fixture(), entry = submit(f, build);
+          const bot = Object.assign(Object.create(BotController.prototype), f.bot, { commandExecutor: f.executor });
+          f.executor.bot = bot;
+          equal(bot.productionContractCount(f.state, 'swordsman'), 1, 'Submitted build already occupies one planning contract');
+          f.state.tick = 14; f.state.wallet[1] -= entry.cost.mineral; f.state.gasWallet[1] -= entry.cost.gas;
+          f.state.constructionOrders = [{ id: 'order-test', type: build.building, side: 1, x: build.x, y: build.y, produceType: build.produceType, paidMineral: entry.cost.mineral, paidGas: entry.cost.gas }];
+          f.sim.commandReceipts = [receipt(entry, 14, true)]; f.tickets.clear();
+          const view = f.executor.begin(f.state);
+          equal(view.wallet[1], f.state.wallet[1], 'Already-paid order never subtracts the accepted command price twice');
+          equal(f.executor.pending.length, 1, 'Unconfirmed identity remains tracked for rollback');
+          equal(bot.productionContractCount(view, 'swordsman'), 1, 'Receipt and order are counted once');
+          equal(bot.productionPipelineRemaining(view, 'swordsman'), UnitDefinition.productionProfile('swordsman').totalUnits, 'Paid future production remains a planning commitment');
+          check(f.executor.conflictsBuilding(build.building, build.x, build.y), 'Order reserves footprint before a building exists');
+          f.session.confirmedGameTick = 14; f.executor.begin(f.state);
+          equal(f.executor.pending.length, 0, 'Confirmed BUILD retires immediately without waiting for arrival');
+          equal(bot.productionContractCount(f.state, 'swordsman'), 1, 'Order alone prevents missing-production duplicate');
+          // Restoring before application must reserve the still-submitted command again.
+          f.executor.pending = [entry]; f.sim.commandReceipts = []; f.sim.runtimeEpoch++; f.tickets.set(entry.netcodeSequence, { actor: entry.actor, sequence: entry.netcodeSequence });
+          const prior = clone(baseline); prior.constructionOrders = [];
+          equal(f.executor.begin(prior).wallet[1], prior.wallet[1] - entry.cost.mineral, 'Rollback before application restores unspent reservation');
+        });
+        test('Construction plans suppress duplicates without granting completed capabilities', () => {
+          const f = fixture();
+          const bot = Object.assign(Object.create(BotController.prototype), f.bot, { commandExecutor: f.executor });
+          f.executor.bot = bot; bot.supplyCap = BotController.prototype.supplyCap;
+          const type = BuildingDefinition.forRole('academy'), gasType = BuildingDefinition.forRole('gasExtractor'), supplyType = BuildingDefinition.forRole('supply');
+          const worker = f.state.units.find(u => u.side === 1 && UnitDefinition.get(u.type)?.economyWorker);
+          check(worker, 'Fixture owns a real worker'); worker.buildTargetId = 'academy-order';
+          const order = (id, type, extra = {}) => ({ id, type, side: 1, x: 1200, y: 1400, ...extra });
+          const priorCap = bot.supplyCap(f.state), priorFacilities = bot.productionFacilityCount(f.state, 1), priorBases = bot.workerBases(f.state).length;
+          f.state.constructionOrders = [order('academy-order', type), order('gas-order', gasType, {gasNodeId: f.state.gasNodes[0].id}), order('supply-order', supplyType), order('production-order', 'barracks', {produceType:'swordsman'})];
+          const view = f.executor.begin(f.state);
+          equal(bot.countBuilding(view, type), 1, 'Traveling academy counts as ordered');
+          equal(bot.activeConstructionDemand(view), 1, 'Traveling builder remains detached from economy');
+          equal(bot.supplyCap(view), priorCap, 'Ghost grants no actual supply');
+          equal(bot.productionFacilityCount(view, 1), priorFacilities, 'Ghost grants no operational production');
+          equal(bot.workerBases(view).length, priorBases, 'Ghost grants no dropoff');
+          equal(bot.rawGasWorkerDemand(view), 0, 'Ghost extractor grants no usable gas slots');
+          check(!bot.tryBuild(view, {}, type), 'Singleton order blocks duplicate before placement search');
+          check(!bot.tryBuild(view, {}, supplyType), 'One unfinished supply plan prevents repeated supply orders');
+          bot.campaignOffense = {config: () => ({productionLimit: 1})};
+          check(!bot.tryBuild(view, {}, 'barracks', 'swordsman'), 'Campaign production limit includes traveling construction');
+          bot.runResearch = () => false; bot.deck = () => ['swordsman'];
+          check(!AiMacroExecutor.execute(bot, view, {}, {kind:'tech'}), 'Tech macro does not order a second academy');
+          let assigned = 0; bot.updateGasAssignments = () => {assigned++; return false};
+          check(!AiMacroExecutor.execute(bot, view, {}, {kind:'gas-readiness'}), 'Gas macro recognizes paid extractor order');
+          equal(assigned, 1, 'Gas macro moves to existing-resource assignment rather than new placement');
+          check(!bot.productionPrerequisitesReady(view, 'guardshroom'), 'Pending academy does not unlock tier-two production');
+          const empty = {...view, constructionOrders:[]};
+          equal(bot.countBuilding(empty, type), 0, 'Cancellation immediately allows replacement planning');
         });
         test('Disposal cancels unresolved and admitted commands exactly once', () => {
           const f = fixture(); submit(f, flag); f.executor.begin(f.state);
