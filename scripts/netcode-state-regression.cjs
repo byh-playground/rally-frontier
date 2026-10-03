@@ -234,14 +234,19 @@ async function run() {
           check(sameBytes(coldBytes, game.adapter.save()), 'Warm and regenerated navigation produce identical full gameplay bytes');
         }
         const navigation = sim.navigation, topologyVersion = navigation.topology.version;
+        navigation.layer(12); // Exercise a building-aware layer as well as burrow layers.
         const changed = StateCodec.decode(checkpoint); changed.state.buildings[0].x += 90;
         const changedBytes = StateCodec.encode(changed);
         game.adapter.load(changedBytes);
-        check(sim.navigation === navigation && navigation.topology.version > topologyVersion && navigation.layers.size === 0, 'Changed authoritative building layout immediately invalidates mesh/goal caches');
+        const dirtyLayers=[...navigation.layers.values()].filter(layer=>layer.tiles.dirty.size>0);
+        check(sim.navigation === navigation && navigation.topology.version > topologyVersion && dirtyLayers.length>0 && dirtyLayers.every(layer=>layer.tiles.dirty.size<layer.tiles.tiles.length), 'Changed authoritative layout invalidates only affected geometry before the next query');
         game.adapter.step({ tick: 0, tickRate: sim.tps, inputs: [] });
         const changedResult = game.adapter.save();
         game.adapter.load(changedBytes); game.adapter.step({ tick: 0, tickRate: sim.tps, inputs: [] });
         check(sameBytes(changedResult, game.adapter.save()), 'Changed-layout warmed replay is deterministic');
+        game.adapter.load(changedBytes); SimulationRuntimeState.initialize(sim);
+        game.adapter.step({ tick: 0, tickRate: sim.tps, inputs: [] });
+        check(sameBytes(changedResult, game.adapter.save()), 'Local geometry updates and fresh full initialization produce identical gameplay bytes');
         const fullState = sim.exportState(), beforeDefault = sim.navigation;
         sim.importState(fullState);
         check(sim.navigation !== beforeDefault && sim.navigation.layers.size === 0, 'Default replay import still initializes fresh derived runtime');
