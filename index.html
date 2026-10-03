@@ -61,8 +61,9 @@ PURPOSE
 - 일반 절차맵도 같은 지형 시스템을 사용한다. 전투 공간·연결 통로·고지대·경사로의 배치는 MapGeneration이 소유하고, 본진·점령지·자원·중립의 유효한 배치와 접근성을 공통 geometry로 검증한다. 지형 높이는 level 하나만 SSOT로 사용하며 특정 버전의 벽 개수나 배치 레시피를 장기 계약에 고정하지 않는다.
 - level은 부호 있는 정수이며 기본 지면은 0이다. 음수·양수에 임의의 게임상 상한/하한을 두지 않고 높이는 공통 변환으로 파생하며 양수는 레벨당 48, 음수는 그 절반인 24를 사용한다. 중첩 지형은 가장 안쪽 영역이 표면을 소유한다. 기본 지면도 함몰면·섬·경사로를 제외한 실제 mesh로 만들고 렌더·Fog·클릭이 같은 표면을 사용한다.
 - 이동 명령의 점 목표와 공격·채집·반납·건설·치유의 상호작용 영역 목표를 구분한다. 실제 사거리·최소 사거리·지형 접촉 규칙은 InteractionGeometry가 한 번 정의하며 판정과 NavigationGoal이 공유한다. 건물 중심 투영이나 고정 각도 접근점을 작업 목표로 사용하지 않는다.
-- 지상 경로는 도달 가능한 목표 영역 전체를 종점으로 하는 목적지/충돌 크기별 공유 역방향 NavMesh portal field로 계산하고 근거리 충돌은 기존 solver를 유지한다. 직선이 열리면 즉시 직진한다. 유닛마다 매 tick 전체 맵을 탐색하지 않는다. 경로 cache는 결과를 바꾸지 않는 파생 상태이며 저장/체크섬에서 제외한다.
+- 지상 경로 탐색은 유닛 정의의 navigationPlanner 설정(astar, shared-astar 또는 flow-field)으로 선택한다. 기본값은 flow-field이고 일꾼 정의의 기본값은 shared-astar다. 이동·거리·도달 가능성 검사는 같은 설정을 따르며 종류별 예외 분기를 만들지 않는다. 세 탐색기는 같은 NavMesh·포털·연속 목표 영역·funnel·충돌 규칙을 공유한다. 직선이 열리면 즉시 직진한다. 경로 cache는 결과를 바꾸지 않는 파생 상태이며 저장/체크섬에서 제외한다.
 - NavMesh는 경로를 선택하고 SurfaceMotion은 그 경로의 이동·외력·군중 보정을 동일한 건물/지형 접촉으로 처리한다. 검증된 부분 이동을 틱 시작점부터의 직선으로 다시 잘라내지 않는다. 접선 투영은 공통화하되 외력에 자발적인 우회 속도를 추가하지 않는다.
+- 건설 명령은 비용을 선결제하고 constructionOrders에 예약한다. 예약은 위치 중복만 막고 물리·전투·시야·보급·기술에 참여하지 않는다. 일꾼 도착 시 같은 ID의 실제 건물을 생성한다. 착공 전 취소·위치 무효화는 전액 환불하며 실제 착공 후 기존 환불 규칙을 따른다. 예약은 권위 상태로 복원하고 UI·AI도 동일한 예약을 조회한다.
 - 건설 미리보기는 위치·겹침·자원·시야만 검사하며 NavMesh를 생성하지 않는다. 일꾼 접근성은 BUILD 실행 시 권위 시뮬레이션이 검증한다. 건물 변경은 영향받는 고정 영역의 메쉬만 다시 만들며, 캐시 준비 순서나 롤백 이력과 무관하게 같은 토폴로지에서 같은 경로를 선택해야 한다.
 - AIR과 명시적 도약은 장벽 상공을 지날 수 있지만 도착은 유효한 위치여야 한다. 지면 잠복·일꾼·주둔군도 같은 지상 경로를 따른다. 통행 불가와 시야/사격 차폐는 동일 의미가 아니다.
 
@@ -9770,7 +9771,7 @@ body.campaign-mode #p2pHealthText {
 <div class="wiki-note"><b>고지대와 경사로 표시:</b> 경사로는 낮은 입구에서 고지대 윗면까지 연속으로 연결됩니다. 절벽에 가려진 면은 보이는 것처럼 선택할 수 없으며, 클릭은 화면에 실제로 보이는 지형 면을 기준으로 합니다. 지상 병력은 경사로에서만 오르내립니다.</div>
 <section id="help-economy" class="wiki-section"><h2><span class="wiki-num">7.</span> 경제와 보급</h2><p>일꾼은 자원을 채취해 가까운 완공 메인·전진 거점으로 반납하고 건설 현장에 배정되면 채집을 잠시 멈춥니다. 일꾼은 거점 선택 화면에서 생산합니다.</p><div id="helpEconomyFacts" class="wiki-note"></div><p>가스 지점에는 먼저 추출장을 지어야 합니다. 추출장 완공 때 가장 가까운 거점의 가스 배정 목표를 늘리며, 이후에는 거점의 − / +로 직접 조절할 수 있습니다. 유효한 추출장이 없으면 해당 일꾼은 미네랄로 복귀합니다. 미네랄은 고갈되면 없어지고 가스는 고갈 후에도 낮은 효율로 채취합니다.</p><div class="wiki-note"><b>보급은 살아 있는 유닛과 생산 중인 batch를 합산</b>합니다. 선호 batch 전체가 들어가지 않아도 여유 보급에 들어가는 수부터 생산하고 나머지 계약을 이어갑니다. 이미 시작한 batch의 예약 보급은 출격까지 유지합니다. 생산시설의 출구가 막혔으면 완성된 batch가 안전하게 나갈 때까지 대기합니다.</div><p>병종 생산축은 건설할 때 미네랄·가스를 지불하고 유한한 계약량을 자동 생산합니다. 계약이 모두 출격한 뒤 시설이 소진됩니다. 취소·철거·소진은 실제 지불 비용 기준 환불이며 적에게 파괴된 건물은 환불하지 않습니다.</p></section>
 <section id="help-capture" class="wiki-section"><h2><span class="wiki-num">8.</span> 중립·점령·전진 거점</h2><p>일반 중립과 캠페인 주둔군은 자기 영역을 지키는 별도 행동 Controller를 사용합니다. 적대 주둔군은 일반 적과 함께 전투 대상으로 평가하고, 우호 주둔군은 공격하지 않습니다. 미션의 공격대는 주둔군과 달리 실제 이동·공격 명령으로 전선을 압박합니다.</p><div class="wiki-note">어그로 게이지는 서식지 밖 교전의 허용량입니다. 강제 귀환 중에는 회복하지만 대기·교전 중에는 회복하지 않습니다. 서식지 안에서 다시 공격받으면 교전에 복귀합니다. 일반 복귀나 원위치 도착만으로 체력을 강제로 채우지 않습니다.</div><div id="helpCaptureFacts" class="wiki-note"></div><p>점령을 막는 적을 제거하고 지상 전투 병력을 반경 안에 유지하세요. 공중은 단독 점령할 수 없지만 적 공중도 점령을 방해합니다. 점령 완료로 생성된 전진 거점은 자원 반납·일꾼 생산·시야·건설권을 제공합니다.</p><p>메인 오브젝트는 막타 진영에 합류하면 지정 레인을 따라 전진하고 일반 깃발을 따르지 않습니다. 획득 개체가 죽은 뒤에야 중립 재등장 대기가 시작됩니다. 전술 오브젝트의 상자는 원하는 때 전술 메뉴에서 열고 보상을 선택합니다.</p><div id="helpNeutralTable" class="wiki-table-wrap"></div></section>
-<section id="help-buildings" class="wiki-section"><h2><span class="wiki-num">9.</span> 건설·테크·연구</h2><p>건설 명령은 비용을 지불하고 기초 부지를 만든 뒤 <b>일꾼이 실제 현장에 도착해야</b> 진행됩니다. 건설 일꾼이 죽으면 다른 가용 일꾼을 배정합니다. 외곽도 안쪽 접근면이 있으면 지을 수 있지만 건물끼리 일꾼 통로를 막는 배치는 거절됩니다.</p><p>테크 지식과 실제 인프라는 구분됩니다. <b>아카데미가 없거나 재건 중이면 새 첨단 전술 연구소를 지을 수 없습니다.</b> 이미 완공된 연구소는 아카데미가 파괴돼도 상위 생산 인프라로 인정합니다. 필요한 생산 인프라가 사라지면 계약·예약 보급을 유지한 채 생산을 멈추고 재건 후 이어갑니다. 공중 생산에는 공중 배양소도 필요합니다.</p><div id="helpBuildingTable" class="wiki-table-wrap"></div><p>공격·방어·특수 연구는 전장의 별도 연구동이 아니라 명령 패널에서 각각의 채널로 진행합니다. 이미 지어진 생산 계약의 수량·주기는 건설 시점에 확정됩니다. 생산시설과 방어타워를 밀집시키면 효율이 감소하므로 분산 배치하세요.</p><div id="helpResearchTable" class="wiki-table-wrap"></div></section>
+<section id="help-buildings" class="wiki-section"><h2><span class="wiki-num">9.</span> 건설·테크·연구</h2><p>건설 위치를 확정하면 자원을 먼저 지불하고 예약 이미지가 표시됩니다. 일꾼이 도착해야 실제 건물이 생기고 공사를 시작합니다. 예약 이미지를 선택해 착공 전에 취소하면 지불한 자원을 전액 돌려받습니다. 예약은 이동을 막거나 보급·기술 효과를 제공하지 않습니다.</p><p>건설 명령은 비용을 지불하고 기초 부지를 만든 뒤 <b>일꾼이 실제 현장에 도착해야</b> 진행됩니다. 건설 일꾼이 죽으면 다른 가용 일꾼을 배정합니다. 외곽도 안쪽 접근면이 있으면 지을 수 있지만 건물끼리 일꾼 통로를 막는 배치는 거절됩니다.</p><p>테크 지식과 실제 인프라는 구분됩니다. <b>아카데미가 없거나 재건 중이면 새 첨단 전술 연구소를 지을 수 없습니다.</b> 이미 완공된 연구소는 아카데미가 파괴돼도 상위 생산 인프라로 인정합니다. 필요한 생산 인프라가 사라지면 계약·예약 보급을 유지한 채 생산을 멈추고 재건 후 이어갑니다. 공중 생산에는 공중 배양소도 필요합니다.</p><div id="helpBuildingTable" class="wiki-table-wrap"></div><p>공격·방어·특수 연구는 전장의 별도 연구동이 아니라 명령 패널에서 각각의 채널로 진행합니다. 이미 지어진 생산 계약의 수량·주기는 건설 시점에 확정됩니다. 생산시설과 방어타워를 밀집시키면 효율이 감소하므로 분산 배치하세요.</p><div id="helpResearchTable" class="wiki-table-wrap"></div></section>
 <section id="help-spells" class="wiki-section"><h2><span class="wiki-num">10.</span> 전술 스펠</h2><p>전술상자 후보는 열었을 때 결정되며 닫아도 바뀌지 않습니다. 선택을 확정할 때 상자를 소비합니다. 패시브는 획득 즉시 적용하고 스펠은 장착·재사용 대기·숙련 상태를 가집니다. 스펠 위치 지정을 취소하면 시전하거나 소비하지 않습니다.</p><div id="helpSpellFacts" class="wiki-note"></div><div id="helpSpellTable" class="wiki-table-wrap"></div></section>
 <section id="help-units" class="wiki-section"><h2><span class="wiki-num">11.</span> 병종과 생산 계약</h2><p>근접 전열·원거리 화력·범위 공격·제어·지원·공중을 조합하세요. 상위 병종은 체급뿐 아니라 물량·능력·사거리로 역할이 달라집니다. 표의 병종 가격은 개체 한 기가 아니라 해당 생산시설의 계약 가격입니다. 캠페인 해금은 사용할 수 있는 기존 시스템을 넓히며 별도의 복제 능력치를 사용하지 않습니다.</p><div id="helpUnitTable" class="wiki-table-wrap"></div></section>
 <div class="wiki-note"><b>공통 지형 이동:</b> 지상군은 절벽·뿌리벽·건물 사이의 실제 열린 공간을 NavMesh로 연결하고, 같은 목적지의 이동장을 공유합니다. 길목을 지난 뒤 기존 충돌·분리 규칙으로 움직입니다. 공격·채집·반납·건설·치유는 대상의 중심이 아니라 실제 사거리·작업 범위 중 도달 가능한 가까운 곳으로 접근합니다. 최소 사거리와 근접·작업의 지형 차폐는 그대로 적용됩니다. 직선 접근이 열리면 돌아가지 않고 바로 이동합니다. 장벽 파괴나 건설로 공간이 바뀌면 경로 정보도 갱신됩니다. 이는 통행 경로이며 적 사격을 피하는 전술 판단이나 새로운 시야 차폐를 뜻하지 않습니다. 탑쿼터 시점의 높이 표현은 이동 판정과 분리됩니다. 절벽 뒤에 가려진 아군은 옅은 파란 몸체 실루엣으로 위치를 알 수 있으며, 은신·잠복·전장 시야 규칙을 해제하지 않습니다. 미니맵의 연녹색 저지대·올리브색 고지대·황토색 경사로는 전장과 같은 지형 데이터를 표시합니다.</div>
@@ -10669,7 +10670,7 @@ const BUILD_META=Object.freeze({
 /* =========================
    1. Definitions
    ========================= */
-const SIM_TPS=20,FP=100,SIM_VERSION=185;
+const SIM_TPS=20,FP=100,SIM_VERSION=186;
 
 // Authoritative time contract:
 // - balance/design data uses integer milliseconds
@@ -10946,6 +10947,26 @@ class NavigationMinHeap{
       this.ids[i]=this.ids[c];this.costs[i]=this.costs[c];i=c;
     }this.ids[i]=lastId;this.costs[i]=lastCost}
     return{id,cost};
+  }
+}
+class NavigationAStarScratch{
+  constructor(layer){this.layer=layer;this.capacity=0;this.epoch=0;this.heap=new NavigationMinHeap((a,b)=>NavigationGraphOrder.node(layer.fieldNodes[a],layer.fieldNodes[b]))}
+  begin(size){
+    if(size>this.capacity){
+      this.capacity=Math.max(size,this.capacity*2,64);
+      this.stamp=new Uint32Array(this.capacity);this.closed=new Uint32Array(this.capacity);
+      this.cost=new Float64Array(this.capacity);this.estimate=new Float64Array(this.capacity);
+      this.whole=new Float64Array(this.capacity);this.fraction=new Float64Array(this.capacity);
+      this.previous=new Int32Array(this.capacity);this.via=new Int32Array(this.capacity);this.epoch=0;
+    }
+    if(++this.epoch===0xffffffff){this.stamp.fill(0);this.closed.fill(0);this.epoch=1}
+    this.heap.ids.length=0;this.heap.costs.length=0;return this;
+  }
+  static heuristic(node,goal,radius){
+    // round(d) with a minimum edge cost of 1 is >= d/2; the final
+    // round(d) may be zero, so subtract .5 once. This is a consistent
+    // lower bound even for tiny graph edges and continuous terminal regions.
+    return Math.max(0,(Math.hypot(node.x-goal.x,node.y-goal.y)-radius)*512-.5);
   }
 }
 class PolygonTriangulation{
@@ -11818,7 +11839,7 @@ class NavigationMeshTiles extends NavigationTileGeometry{
     for(const tile of this.tiles)for(const c of tile.cells)if(c.component<0){const queue=[c];c.component=components;
       for(let i=0;i<queue.length;i++)for(const link of queue[i].links){const next=layer.cells[link.to];if(next.component<0){next.component=components;queue.push(next)}}components++;
     }
-    layer.fields.clear();layer.goals.clear();
+    layer.fields.clear();layer.goals.clear();layer.sharedPaths?.clear();
     Object.assign(stats,{cellsPreserved:oldCells-stats.cellsRemoved,portalsPreserved:oldPortals-stats.portalsRemoved,nodesPreserved:oldNodes-stats.nodesRemoved});
     Object.assign(layer,{components,rebuiltTiles:dirty.length,geometryMs,connectMs:detachMs+performance.now()-connectAt,detachMs,relinkMs,componentMs:performance.now()-componentsAt,graphChanges:stats,cellCount:this.cellSlots.count,portalCount:this.portalSlots.count,nodeCount:this.nodeSlots.count});
     return layer;
@@ -12006,13 +12027,17 @@ class InteractionGeometry{
     }
     return Math.max(0,Number(extra)||0);
   }
-  static goal(source,target,kind,extra=0,minRange=null){
+  static region(source,target,kind,extra=0,minRange=null,inset=false){
     let inner=0;
     if(kind==='attack'){
       const minimum=minRange??UnitDefinition.get(source.type)?.minRange??0;
       if(minimum>0)inner=this.contact(source,target)+minimum;
     }else if(kind.startsWith('worker-')&&BuildingDefinition.get(target?.type))inner=this.buildingClearance(source,target);
-    return NavigationGoal.range(target.x,target.y,this.reach(source,target,kind,extra),inner,this.requiresTerrainLine(source,kind,extra));
+    const outer=this.reach(source,target,kind,extra),terrainLine=this.requiresTerrainLine(source,kind,extra);
+    return inset?NavigationGoal.range(target.x,target.y,outer,inner,terrainLine):new NavigationGoal(target.x,target.y,outer,inner,terrainLine);
+  }
+  static goal(source,target,kind,extra=0,minRange=null){
+    return this.region(source,target,kind,extra,minRange,true);
   }
 }
 
@@ -12239,6 +12264,9 @@ class SurfaceMotion{
 }
 
 class TerrainNavigation{
+  static MAX_LAYERS=12;
+  static SHARED_ASTAR_GOALS=16;
+  static SHARED_ASTAR_NODES=2048;
   static stateCache=new WeakMap();
   static snapshotOwners=new WeakMap();
   static bindSnapshot(snapshot,sim){
@@ -12257,7 +12285,7 @@ class TerrainNavigation{
   }
   constructor(sim){
     this.sim=sim;this.geometry=sim.world.terrain;this.layers=new Map();this.projections=new Map();this.staticOffsets=new Map();this.topology=new NavigationTopology();this.sceneTick=-1;this.circles=[];this.circleIndex=new NavigationObstacleIndex([]);this.motion=new SurfaceMotion(this);
-    this.metrics={backend:'navmesh',fieldsBuilt:0,fieldHits:0,layersBuilt:0,routeQueries:0,directQueries:0,unreachable:0,funnelQueries:0,meshCells:0,meshPortals:0,meshBuildMs:0,meshBuildMaxMs:0,meshGeometryMs:0,meshConnectMs:0,meshTilesBuilt:0,projectionQueries:0,projectionTilesBuilt:0,projectionBuildMs:0,fieldBuildMs:0,invalidations:0,endpointProjections:0,regionsBuilt:0,regionHits:0};
+    this.metrics={backend:'navmesh',fieldsBuilt:0,fieldHits:0,layersBuilt:0,routeQueries:0,directQueries:0,unreachable:0,funnelQueries:0,meshCells:0,meshPortals:0,meshBuildMs:0,meshBuildMaxMs:0,meshGeometryMs:0,meshConnectMs:0,meshTilesBuilt:0,projectionQueries:0,projectionTilesBuilt:0,projectionBuildMs:0,fieldBuildMs:0,astarQueries:0,astarExpanded:0,astarCostMs:0,astarMoveQueries:0,astarDistanceQueries:0,sharedAstarQueries:0,sharedAstarHits:0,sharedAstarCachedNodes:0,invalidations:0,endpointProjections:0,regionsBuilt:0,regionHits:0};
   }
   sync(){
     if(this.sceneTick===this.sim.tick&&this.sceneRevision===this.sim.navigationRevision)return;
@@ -12302,9 +12330,33 @@ class TerrainNavigation{
     return true;
   }
   departureClear(x,y,tx,ty,r,ignoreId=null){return this.segmentClear(x,y,tx,ty,r,ignoreId,true)}
+  static layerProfile(radius,ignoreBuildings){const r=Math.ceil((radius+.10)*100)/100;return {r,key:r+':'+ignoreBuildings}}
+  prepareLayers(units=[],types=[]){
+    const begun=performance.now(),before=this.metrics.layersBuilt,present=new Map(),available=new Map();
+    const add=(type,ignoreBuildings,destination)=>{
+      const definition=UnitDefinition.get(type);if(!definition||definition.layer==='AIR')return;
+      const radius=this.sim.unitRadius(type)+.12,profile=TerrainNavigation.layerProfile(radius,ignoreBuildings);
+      destination.set(profile.key,{...profile,radius,ignoreBuildings});
+    };
+    for(const u of units)if(u&&u.alive!==false&&u.hp>0)add(u.type,TerrainNavigation.ignoresBuildings(u),present);
+    for(const type of types)add(type,TerrainNavigation.ignoresBuildings({type}),available);
+    const order=(a,b)=>a.r-b.r||Number(a.ignoreBuildings)-Number(b.ignoreBuildings);
+    const profiles=[...present.values()].sort(order).concat([...available.values()].filter(p=>!present.has(p.key)).sort(order));
+    const selected=profiles.slice(0,TerrainNavigation.MAX_LAYERS),keys=new Set(selected.map(p=>p.key));
+    const missing=selected.filter(p=>!this.layers.has(p.key)).length;
+    // Reserve only the missing slots, preserving both selected cached layers
+    // and unrelated layers whenever the capacity can hold them together.
+    for(const key of this.layers.keys())if(this.layers.size+missing>TerrainNavigation.MAX_LAYERS&&!keys.has(key))this.layers.delete(key);
+    for(const profile of selected)this.layer(profile.radius,profile.ignoreBuildings);
+    const elapsed=performance.now()-begun;
+    this.metrics.preparationMs=(this.metrics.preparationMs||0)+elapsed;
+    this.metrics.preparationLayersBuilt=(this.metrics.preparationLayersBuilt||0)+this.metrics.layersBuilt-before;
+    this.metrics.preparationProfiles=selected.length;this.metrics.preparationSkippedProfiles=profiles.length-selected.length;
+    return {profiles:selected.map(p=>p.key),skipped:profiles.length-selected.length,elapsedMs:elapsed,layersBuilt:this.metrics.layersBuilt-before};
+  }
   nearestExterior(x,y,radius,ignoreBuildings=false){
     this.sync();this.metrics.projectionQueries++;
-    const r=Math.ceil((radius+.10)*100)/100,key=r+':'+ignoreBuildings,ready=this.layers.get(key);
+    const {r,key}=TerrainNavigation.layerProfile(radius,ignoreBuildings),ready=this.layers.get(key);
     if(ready&&!ready.tiles.dirty.size)return this.locate(x,y,ready,null,{radius});
     let projection=this.projections.get(key);
     if(!projection){
@@ -12315,13 +12367,13 @@ class TerrainNavigation{
     return this.locate(x,y,projection.layer,null,{radius});
   }
   layer(radius,ignoreBuildings=false){
-    this.sync();const r=Math.ceil((radius+.10)*100)/100,key=r+':'+ignoreBuildings;
+    this.sync();const {r,key}=TerrainNavigation.layerProfile(radius,ignoreBuildings);
     let layer=this.layers.get(key);if(layer&&!layer.tiles.dirty.size)return layer;
     const begun=performance.now();let fixed=this.staticOffsets.get(r);
     if(!fixed){fixed=this.geometry.blocks.flatMap(b=>NavigationMeshBuilder.inflate(b.points,r));this.staticOffsets.set(r,fixed)}
     const tiles=layer?.tiles||new NavigationMeshTiles(this.geometry,r,fixed,ignoreBuildings);
     layer=tiles.rebuild(this.circles);layer.r=r;layer.ignoreId=ignoreBuildings?'*':null;
-    if(!this.layers.has(key)&&this.layers.size>=12)this.layers.delete(this.layers.keys().next().value);
+    if(!this.layers.has(key)&&this.layers.size>=TerrainNavigation.MAX_LAYERS)this.layers.delete(this.layers.keys().next().value);
     this.layers.set(key,layer);const elapsed=performance.now()-begun;
     this.metrics.meshGeometryMs+=layer.geometryMs;this.metrics.meshConnectMs+=layer.connectMs;this.metrics.meshTilesBuilt+=layer.rebuiltTiles;
     this.metrics.layersBuilt++;this.metrics.meshBuildMs+=elapsed;this.metrics.meshBuildMaxMs=Math.max(this.metrics.meshBuildMaxMs,elapsed);this.metrics.meshCells=layer.cellCount;this.metrics.meshPortals=layer.portalCount;
@@ -12414,7 +12466,134 @@ class TerrainNavigation{
     if(layer.fields.size>=48)layer.fields.delete(layer.fields.keys().next().value);layer.fields.set(key,f);
     this.metrics.fieldsBuilt++;this.metrics.fieldBuildMs+=performance.now()-begun;return f;
   }
-  plan(x,y,goal,radius,ignoreBuildings=false){
+  static planner(type){
+    const planner=UnitDefinition.get(type)?.navigationPlanner??'flow-field';
+    if(planner!=='astar'&&planner!=='shared-astar'&&planner!=='flow-field')throw new Error('Unknown navigation planner: '+planner);
+    return planner;
+  }
+  plan(x,y,goal,radius,ignoreBuildings=false,planner='flow-field'){
+    if(planner==='astar')return this.astarPlan(x,y,goal,radius,ignoreBuildings);
+    if(planner==='shared-astar')return this.astarPlan(x,y,goal,radius,ignoreBuildings,true);
+    if(planner==='flow-field')return this.fieldPlan(x,y,goal,radius,ignoreBuildings);
+    throw new Error('Unknown navigation planner: '+planner);
+  }
+  astarPlan(x,y,goal,radius,ignoreBuildings=false,shared=false){
+    const begun=performance.now();this.metrics.astarQueries++;
+    if(shared)this.metrics.sharedAstarQueries=(this.metrics.sharedAstarQueries||0)+1;
+    try{
+      const layer=this.layer(radius,ignoreBuildings),s=this.locate(x,y,layer,null,{radius:Math.max(0,radius-.12)});
+      if(!s||s.d2>256*256)return null;
+      const regions=this.regions(goal,layer,s.cell.component);if(!regions.areas.length)return null;
+      let best=Infinity,endpoint=null,area=null;
+      for(const a of regions.byCell.get(s.cell.id)||[]){const p=this.regionPoint(a,goal,s.point.x,s.point.y),cost=p?Math.sqrt(p.d2)*1024:Infinity;
+        if(cost<best){best=cost;endpoint=p;area=a}
+      }
+      if(best===0||!layer.nodeCount)return Number.isFinite(best)?this.finishPlan(layer,s,goal,x,y,endpoint,area,[],best):null;
+      let bestWhole=Math.floor(best),bestFraction=Number.isFinite(best)?best-bestWhole:0;
+      const directWhole=bestWhole,directFraction=bestFraction,candidates=new Map();let cache=null;
+      const competitive=(whole,fraction)=>whole<bestWhole||whole===bestWhole&&fraction<=bestFraction;
+      const setBest=(whole,fraction)=>{bestWhole=whole;bestFraction=fraction;best=whole+fraction};
+      if(shared){
+        layer.sharedPaths??=new Map();cache=layer.sharedPaths.get(regions.key);
+        if(!cache){cache=new Map();if(layer.sharedPaths.size>=TerrainNavigation.SHARED_ASTAR_GOALS)layer.sharedPaths.delete(layer.sharedPaths.keys().next().value);layer.sharedPaths.set(regions.key,cache)}
+      }
+      let reach=goal.radius;
+      if(goal.radius===0)for(const a of regions.areas)reach=Math.max(reach,Math.hypot(a.point.x-goal.x,a.point.y-goal.y));
+      const scratch=(layer.astarScratch||(layer.astarScratch=new NavigationAStarScratch(layer))).begin(layer.fieldNodes.length),epoch=scratch.epoch,heap=scratch.heap;
+      const offer=(id,whole,fraction,previous,via)=>{
+        const fresh=scratch.stamp[id]!==epoch,oldWhole=fresh?Infinity:scratch.whole[id],oldFraction=fresh?0:scratch.fraction[id];
+        if(whole>oldWhole||whole===oldWhole&&fraction>oldFraction)return;
+        if(whole===oldWhole&&fraction===oldFraction){const prev=scratch.previous[id];
+          if(previous<0||prev<0||NavigationGraphOrder.node(layer.fieldNodes[previous],layer.fieldNodes[prev])>=0)return;
+          scratch.previous[id]=previous;scratch.via[id]=via;return;
+        }
+        if(fresh){scratch.stamp[id]=epoch;scratch.estimate[id]=NavigationAStarScratch.heuristic(layer.fieldNodes[id],goal,reach)}
+        const cost=whole+fraction;scratch.whole[id]=whole;scratch.fraction[id]=fraction;
+        scratch.cost[id]=cost;scratch.previous[id]=previous;scratch.via[id]=via;scratch.closed[id]=0;
+        const priority=cost+scratch.estimate[id];if(priority<=best)heap.push(id,priority);
+      };
+      // Keep the initial Euclidean fraction separate from integral graph costs.
+      // Adding a cached suffix once must equal adding its edges individually.
+      for(const link of s.cell.links)for(const id of layer.portals[link.portal].nodes){const node=layer.fieldNodes[id],cost=Math.hypot(node.x-s.point.x,node.y-s.point.y)*1024,whole=Math.floor(cost);offer(id,whole,cost-whole,-1,s.cell.id)}
+      while(heap.length){const current=heap.pop(),id=current.id,node=layer.fieldNodes[id];
+        if(current.cost>best)break;
+        if(scratch.closed[id]===epoch||current.cost!==scratch.cost[id]+scratch.estimate[id])continue;
+        scratch.closed[id]=epoch;this.metrics.astarExpanded++;
+        const memo=cache?.get(id);
+        if(memo){
+          this.metrics.sharedAstarHits=(this.metrics.sharedAstarHits||0)+1;
+          const whole=scratch.whole[id]+memo.remaining,fraction=scratch.fraction[id];
+          if(competitive(whole,fraction)){setBest(whole,fraction);candidates.set(id,{head:id,remaining:memo.remaining,area:memo.area,point:memo.point,cached:true})}
+          continue;
+        }
+        const portal=layer.portals[node.portal];
+        for(const cellId of [portal.a,portal.b])for(const candidate of regions.byCell.get(cellId)||[]){
+          const p=this.regionPoint(candidate,goal,node.x,node.y);if(!p)continue;
+          const remaining=Math.round(Math.sqrt(p.d2)*1024),whole=scratch.whole[id]+remaining,fraction=scratch.fraction[id],previous=candidates.get(id);
+          if(competitive(whole,fraction)){
+            if(!previous||remaining<previous.remaining||remaining===previous.remaining&&candidate.id<previous.area.id)candidates.set(id,{head:id,remaining,area:candidate,point:p,cached:false});
+            const chosen=candidates.get(id);setBest(scratch.whole[id]+chosen.remaining,fraction);
+          }
+        }
+        for(const edge of node.links)offer(edge.to,scratch.whole[id]+edge.cost,scratch.fraction[id],id,edge.via);
+      }
+      if(!Number.isFinite(best))return null;
+      const portals=[];let selected=null;
+      if(bestWhole<directWhole||bestWhole===directWhole&&bestFraction<directFraction){
+        // Compare complete paths only after all competitive frontiers finish:
+        // equal-cost predecessor improvements may occur after a cache hit.
+        for(const candidate of candidates.values())if(scratch.whole[candidate.head]+candidate.remaining===bestWhole&&scratch.fraction[candidate.head]===bestFraction){
+          const trace=this.astarTrace(layer,scratch,candidate,cache);
+          if(!selected||this.compareAstarTraces(layer,trace,selected)<0)selected=trace;
+        }
+        if(!selected)throw new Error('Missing optimal A* terminal');
+        endpoint=selected.point;area=selected.area;let current=s.cell.id;
+        for(let i=0;i<selected.nodes.length;i++){
+          const p=layer.portals[layer.fieldNodes[selected.nodes[i]].portal],to=selected.via[i];
+          if(to!==current){portals.push(this.orientPortal(layer,p,current,to));current=to}
+        }
+        if(cache){let remaining=0;
+          // Cache from the terminal backwards, so every stored next pointer is
+          // a complete valid suffix, even when the per-goal bound is reached.
+          for(let i=selected.nodes.length-1;i>=0;i--){remaining+=selected.costs[i];const id=selected.nodes[i];
+            if(cache.has(id))continue;if(cache.size>=TerrainNavigation.SHARED_ASTAR_NODES)break;
+            cache.set(id,{remaining,next:i+1<selected.nodes.length?selected.nodes[i+1]:-1,via:selected.via[i],area,point:{x:endpoint.x,y:endpoint.y}});
+          }
+        }
+      }
+      if(shared)this.metrics.sharedAstarCachedNodes=[...this.layers.values()].reduce((sum,l)=>sum+[...(l.sharedPaths?.values()||[])].reduce((n,c)=>n+c.size,0),0);
+      return this.finishPlan(layer,s,goal,x,y,endpoint,area,portals,best);
+    }finally{this.metrics.astarCostMs+=performance.now()-begun}
+  }
+  astarTrace(layer,scratch,candidate,cache){
+    const nodes=[],via=[],costs=[];let id=candidate.head;
+    while(id>=0){if(nodes.length>layer.nodeCount)throw new Error('NavMesh A* predecessor cycle');nodes.push(id);id=scratch.previous[id]}
+    nodes.reverse();
+    for(let i=0;i+1<nodes.length;i++){
+      const cell=scratch.via[nodes[i+1]],edge=layer.fieldNodes[nodes[i]].links.find(e=>e.to===nodes[i+1]&&e.via===cell);
+      if(!edge)throw new Error('Missing A* corridor edge');via.push(cell);costs.push(edge.cost);
+    }
+    if(candidate.cached){id=candidate.head;
+      while(true){const entry=cache.get(id);if(!entry)throw new Error('Incomplete shared A* suffix');via.push(entry.via);
+        if(entry.next<0){costs.push(entry.remaining);break}
+        const next=cache.get(entry.next);if(!next||nodes.length>layer.nodeCount)throw new Error('Invalid shared A* suffix');
+        costs.push(entry.remaining-next.remaining);nodes.push(entry.next);id=entry.next;
+      }
+    }else{via.push(candidate.area.cell.id);costs.push(candidate.remaining)}
+    return {nodes,via,costs,area:candidate.area,point:candidate.point};
+  }
+  compareAstarTraces(layer,a,b){
+    let order=NavigationGraphOrder.node(layer.fieldNodes[a.nodes.at(-1)],layer.fieldNodes[b.nodes.at(-1)])||a.area.id-b.area.id;
+    for(let ai=a.nodes.length-2,bi=b.nodes.length-2;!order&&ai>=0&&bi>=0;ai--,bi--)order=NavigationGraphOrder.node(layer.fieldNodes[a.nodes[ai]],layer.fieldNodes[b.nodes[bi]]);
+    return order||a.nodes.length-b.nodes.length;
+  }
+  orientPortal(layer,p,current,to){
+    if((p.a!==current&&p.b!==current)||(p.a!==to&&p.b!==to))throw new Error('Invalid NavMesh goal portal');
+    const dx=layer.cells[to].x-layer.cells[current].x,dy=layer.cells[to].y-layer.cells[current].y;
+    const left=dx*(p.p.y-p.q.y)-dy*(p.p.x-p.q.x)>0?p.p:p.q;
+    return {left,right:left===p.p?p.q:p.p};
+  }
+  fieldPlan(x,y,goal,radius,ignoreBuildings=false){
     const layer=this.layer(radius,ignoreBuildings),s=this.locate(x,y,layer,null,{radius:Math.max(0,radius-.12)});
     if(!s||s.d2>256*256)return null;
     const regions=this.regions(goal,layer,s.cell.component);if(!regions.areas.length)return null;
@@ -12434,15 +12613,16 @@ class TerrainNavigation{
         if(count>layer.fieldNodes.length||id<0)throw new Error('NavMesh goal field did not converge');
         const p=layer.portals[layer.fieldNodes[id].portal],to=f.via[id];
         if(to!==current){
-          if(p.a!==current&&p.b!==current)throw new Error('Invalid NavMesh goal portal');
-          const dx=layer.cells[to].x-layer.cells[current].x,dy=layer.cells[to].y-layer.cells[current].y;
-          const left=dx*(p.p.y-p.q.y)-dy*(p.p.x-p.q.x)>0?p.p:p.q,right=left===p.p?p.q:p.p;
-          portals.push({left,right});current=to;
+          portals.push(this.orientPortal(layer,p,current,to));current=to;
         }
         if(f.next[id]<0){endpoint={x:f.endX[id],y:f.endY[id]};area=regions.areas[f.terminal[id]];break}
         id=f.next[id];
       }
     }
+    return this.finishPlan(layer,s,goal,x,y,endpoint,area,portals,best);
+  }
+  finishPlan(layer,s,goal,x,y,endpoint,area,portals,graphCost){
+    endpoint={x:endpoint.x,y:endpoint.y};
     this.metrics.funnelQueries++;
     let path=NavigationFunnel.path(s.point,endpoint,portals);
     // Refine the continuous terminal set from the actual final funnel corner.
@@ -12459,18 +12639,20 @@ class TerrainNavigation{
     }
     if(s.d2>1e-8)path.unshift({x,y});
     let length=0;for(let i=1;i<path.length;i++)length+=Math.hypot(path[i].x-path[i-1].x,path[i].y-path[i-1].y);
-    return{layer,path,start:s,goal:{cell:area.cell,point:endpoint},length};
+    return{layer,path,start:s,goal:{cell:area.cell,point:endpoint},length,graphCost};
   }
   directGoal(x,y,goal,radius,ignoreBuildings=false){
     const p=goal.closest(x,y);if(!p||!this.acceptsGoalPoint(goal,p.x,p.y))return null;
     return this.segmentClear(x,y,p.x,p.y,radius,ignoreBuildings?'*':null,true,0)?p:null;
   }
   nextPoint(u,goal){
+    const planner=TerrainNavigation.planner(u.type);
     if(UnitDefinition.get(u.type)?.layer==='AIR')return goal.closest(u.x,u.y);
     this.sync();const ignore=TerrainNavigation.ignoresBuildings(u),r=this.sim.unitRadius(u.type);this.metrics.routeQueries++;
     const direct=this.directGoal(u.x,u.y,goal,r,ignore);
     if(direct){this.metrics.directQueries++;return direct}
-    const plan=this.plan(u.x,u.y,goal,r+.12,ignore);
+    if(planner!=='flow-field')this.metrics.astarMoveQueries++;
+    const plan=this.plan(u.x,u.y,goal,r+.12,ignore,planner);
     if(!plan){this.metrics.unreachable++;return null}
     // Recheck the farthest physically visible corner, without changing the goal.
     for(let i=plan.path.length-1;i>1;i--)if(this.segmentClear(u.x,u.y,plan.path[i].x,plan.path[i].y,r,ignore?'*':null,true,0))return plan.path[i];
@@ -12485,9 +12667,11 @@ class TerrainNavigation{
     const p=this.geometry.nearestOpen(tx,ty,r,256,(x,y)=>this.pointClear(x,y,r,ignoreId));return p&&this.connected(u.x,u.y,p.x,p.y,u.type,ignoreBuildings)?p:null;
   }
   distance(x,y,goal,type='worker',ignoreBuildings=false){
+    const planner=TerrainNavigation.planner(type);
     this.sync();const r=this.sim.unitRadius(type),direct=this.directGoal(x,y,goal,r,ignoreBuildings);
     if(direct)return Math.sqrt(direct.d2);
-    const plan=this.plan(x,y,goal,r+.12,ignoreBuildings);return plan?plan.length:Infinity;
+    if(planner!=='flow-field')this.metrics.astarDistanceQueries++;
+    const plan=this.plan(x,y,goal,r+.12,ignoreBuildings,planner);return plan?plan.length:Infinity;
   }
 
 }
@@ -13306,7 +13490,7 @@ class UnitDefinition{
   
 
   static all={
-  worker:{requiresContactTerrain:true,name:"일꾼콩",tier:1,mineralCost:WORKER_COST,supply:1,buildTimeMs:4000,hp:50,atk:5,range:25,speed:150,cooldownMs:750,size:10,sizeClass:"light",role:"worker",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:225,builderTargetPriority:true,economyWorker:true,captureExcluded:true,recallExcluded:true,spellHealExcluded:true},
+  worker:{requiresContactTerrain:true,navigationPlanner:"shared-astar",name:"일꾼콩",tier:1,mineralCost:WORKER_COST,supply:1,buildTimeMs:4000,hp:50,atk:5,range:25,speed:150,cooldownMs:750,size:10,sizeClass:"light",role:"worker",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:225,builderTargetPriority:true,economyWorker:true,captureExcluded:true,recallExcluded:true,spellHealExcluded:true},
 
   // Neutral PvE units - 생산/드래프트 대상이 아닌 맵 오브젝트
   wildhound:{requiresContactTerrain:true,name:"가시등 스프린터",tier:0,mineralCost:0,supply:0,buildTimeMs:0,hp:275,atk:40,range:25,speed:125,cooldownMs:750,size:20,sizeClass:"light",attackVisual:{sourceMotion:"slash",travel:"none",impact:"light"},role:"neutral",sight:0,leapRange:225,leapCooldownMs:2000,leapSplashRadius:75,leapSplashDamagePct:200,damageClass:"smallSpecialist"},
@@ -16894,7 +17078,7 @@ class BuildPrerequisitePolicy{
     if(!d)return "알 수 없는 건물입니다.";
     const cap=state.campaignTechCap?.[side];
     if(Number.isFinite(cap)&&Number(d.tech||0)>cap)return "이 미션에서 해금되지 않은 테크입니다.";
-    if(d.singleton&&(state.buildings||[]).some(b=>b.alive!==false&&b.hp>0&&b.side===side&&b.type===type))return `${d.name}은(는) 하나만 건설할 수 있습니다.`;
+    if(d.singleton&&((state.buildings||[]).some(b=>b.alive!==false&&b.hp>0&&b.side===side&&b.type===type)||(state.constructionOrders||[]).some(b=>b.side===side&&b.type===type)))return `${d.name}은(는) 하나만 건설할 수 있습니다.`;
     if(Number(d.requiresTech)>0&&(state.tech?.[side]||1)<d.requiresTech)return `T${d.requiresTech} 테크가 필요합니다.`;
     for(const dependency of d.requiresBuildings||[]){
       if(!this.completed(state,side,dependency))return `${BuildingDefinition.get(dependency)?.name||dependency} 완공/재건이 필요합니다.`;
@@ -17089,7 +17273,7 @@ class StrategySim{
     catch(error){sim.dispose("initialization-failed");throw error}
   }
   constructor(draftState,seed,rules=GameRuleDefinition.current,campaignScenario=null){
-    this.seed=seed>>>0;this.rules=rules||GameRuleDefinition.current;this.tps=RangeUtil.clamp(Math.round(Number(this.rules?.simulation?.tps)||SIM_TPS),10,30);const campaignHumanRole=campaignScenario?.playerRole||"host",campaignHumanSide=campaignHumanRole==="host"?0:1;this.mapDescriptor=campaignScenario?.map?CampaignMapDefinition.build(campaignScenario.map,this.rules,this.seed,campaignHumanSide):MapGeneration.generateMapDescriptor({rules:this.rules,seed:this.seed,roundNumber:this.rules?.roundNumber||1});StateValue.freeze(this.mapDescriptor);this.world=WorldContext.fromMap(this.mapDescriptor);this.tick=0;this.seq=0;this.units=[];this.buildings=[];this.projectiles=[];this.events=[];this.scheduled=new Map();
+    this.seed=seed>>>0;this.rules=rules||GameRuleDefinition.current;this.tps=RangeUtil.clamp(Math.round(Number(this.rules?.simulation?.tps)||SIM_TPS),10,30);const campaignHumanRole=campaignScenario?.playerRole||"host",campaignHumanSide=campaignHumanRole==="host"?0:1;this.mapDescriptor=campaignScenario?.map?CampaignMapDefinition.build(campaignScenario.map,this.rules,this.seed,campaignHumanSide):MapGeneration.generateMapDescriptor({rules:this.rules,seed:this.seed,roundNumber:this.rules?.roundNumber||1});StateValue.freeze(this.mapDescriptor);this.world=WorldContext.fromMap(this.mapDescriptor);this.tick=0;this.seq=0;this.units=[];this.buildings=[];this.constructionOrders=[];this.projectiles=[];this.events=[];this.scheduled=new Map();
     this.wallet=[0,1].map(()=>Math.max(0,Number(this.rules?.economy?.startingResources?.minerals)||0));
     this.gasWallet=[0,1].map(()=>Math.max(0,Number(this.rules?.economy?.startingResources?.gas)||0));
     this.tech=[1,1];this.productionPaused=[false,false];
@@ -17801,7 +17985,7 @@ class StrategySim{
   }
 
   gasNodeOccupied(gasNodeId,excludeBuildingId=null){
-    return this.buildings.some(b=>
+    return [...this.buildings,...this.constructionOrders].some(b=>
       b.alive!==false&&
       b.id!==excludeBuildingId&&
       BuildingDefinition.get(b.type)?.isGasExtractor&&
@@ -18801,6 +18985,56 @@ class StrategySim{
   productionPenaltyPct(b){
     return 100-this.productionSpeedPct(b);
   }
+  resolveConstructionTarget(id){return this.constructionOrders.find(order=>order.id===id)||this.buildingById.get(id)||this.buildings.find(b=>b.id===id)||null}
+  cancelConstructionOrder(order,reason="cancelled"){
+    const index=this.constructionOrders.indexOf(order);if(index<0)return false;
+    this.releaseBuilderForBuilding(order);this.constructionOrders.splice(index,1);
+    this.wallet[order.side]+=order.paidMineral;this.gasWallet[order.side]+=order.paidGas;
+    this.events.push({type:"buildCancelled",side:order.side,x:order.x,y:order.y,building:order.type,refund:order.paidMineral,gasRefund:order.paidGas,wasComplete:false,reason});
+    return true;
+  }
+  startConstructionOrder(order){
+    if(!this.constructionOrders.includes(order))return null;
+    const {side,x,y}=order,bd=BuildingDefinition.get(order.type),mineralCost=order.paidMineral,gasCost=order.paidGas;
+    if(!buildingPlacementInsideWorld(order.type,x,y,this.world)||!buildingHasBuilderApproach(this,order.type,x,y)||this.buildingOverlapsMineral(order.type,x,y)||this.buildings.some(b=>b.alive!==false&&Math.hypot(b.x-x,b.y-y)<buildingPlacementSeparation(order.type,b.type))||bd.isGasExtractor&&this.gasNodeOccupied(order.gasNodeId,order.id)){
+      this.cancelConstructionOrder(order,"placement-blocked");return null;
+    }
+    this.constructionOrders.splice(this.constructionOrders.indexOf(order),1);
+    const profile=BuildingDefinition.isProduction(order.type)
+      ?UnitDefinition.productionProfile(order.produceType)
+      :null;
+
+    const buildingId=order.id;
+    const startHp=Math.max(1,Math.floor(bd.hp*BUILD_START_HP_PCT/100));
+    const created=new Building({
+      id:buildingId,type:order.type,side,x,y,
+      hp:startHp,maxHp:bd.hp,complete:false,progress:0,
+      constructionState:"waitingWorker",builderUnitId:order.builderUnitId,constructionHpGranted:startHp,
+      produceType:BuildingDefinition.isProduction(order.type)?(order.produceType||null):null,
+      productionTotal:profile?.totalUnits||0,
+      productionRemaining:profile?.totalUnits||0,
+      productionBatchSize:profile?.batchSize||0,
+      productionTicks:profile?.productionMs?this.msTicks(profile.productionMs):(profile?.productionTicks||0),
+      productionBatchesCompleted:0,
+      constructionMineralCost:mineralCost,
+      constructionGasCost:gasCost,
+      gasNodeId:order.gasNodeId,
+      gasWorkerTarget:0,
+      cooldownUntil:0,attackCooldownPhase:0,attackFlash:0,
+      beamTargetId:null,beamStartedAt:-1,beamStage:0,
+      queue:[]
+    });
+    this.buildings.push(created);
+    this.markBuildingSpatialDirty();
+    this.events.push({type:"build",side,x,y,building:order.type,mineralCost,gasCost,gasNodeId:order.gasNodeId});
+    return created;
+  }
+  updateConstructionOrders(){
+    for(const order of this.constructionOrders.slice()){
+      const builder=this.ensureBuilderForBuilding(order);
+      if(this.builderCanConstruct(builder,order))this.startConstructionOrder(order);
+    }
+  }
   releaseBuilderForBuilding(b){
     if(!b)return;
     const id=b.builderUnitId||null;
@@ -18845,7 +19079,7 @@ class StrategySim{
   builderCanConstruct(u,b){
     if(!u||!u.alive||!b||b.alive===false||b.complete||u.buildTargetId!==b.id)return false;
     if(this.isAirborneStatus(u))return false;
-    return Math.hypot(u.x-b.x,u.y-b.y)<=this.interactionDistance(u,b,"worker-build");
+    return this.navigation.acceptsGoalPoint(InteractionGeometry.region(u,b,"worker-build"),u.x,u.y);
   }
   applyCommand(actor,action){
     if(!["host","guest"].includes(actor))return false;
@@ -18976,6 +19210,8 @@ class StrategySim{
       return true;
     }
     if(action.type==="CANCEL_BUILDING"){
+      const order=this.constructionOrders.find(o=>o.id===action.buildingId&&o.side===side);
+      if(order)return this.cancelConstructionOrder(order);
       const b=this.buildings.find(x=>x.id===action.buildingId&&x.alive!==false&&x.side===side);
       if(!b||BuildingDefinition.get(b.type)?.isDropoff)return false;
 
@@ -19027,45 +19263,16 @@ class StrategySim{
         !this.buildingAllowed(side,action.building,action.produceType)
       )return false;
 
-      for(const b of this.buildings){
+      for(const b of [...this.buildings,...this.constructionOrders]){
         if(b.alive!==false&&Math.hypot(b.x-x,b.y-y)<buildingPlacementSeparation(action.building,b.type))return false;
       }
 
       this.wallet[side]-=mineralCost;
       this.gasWallet[side]-=gasCost;
 
-      const profile=BuildingDefinition.isProduction(action.building)
-        ?UnitDefinition.productionProfile(action.produceType)
-        :null;
-
-      const buildingId="b"+(++this.seq);
-      const startHp=Math.max(1,Math.floor(bd.hp*BUILD_START_HP_PCT/100));
-      const created=new Building({
-        id:buildingId,type:action.building,side,x,y,
-        hp:startHp,maxHp:bd.hp,complete:false,progress:0,
-        constructionState:"waitingWorker",builderUnitId:null,constructionHpGranted:startHp,
-        produceType:BuildingDefinition.isProduction(action.building)?(action.produceType||null):null,
-        productionTotal:profile?.totalUnits||0,
-        productionRemaining:profile?.totalUnits||0,
-        productionBatchSize:profile?.batchSize||0,
-        productionTicks:profile?.productionMs?this.msTicks(profile.productionMs):(profile?.productionTicks||0),
-        productionBatchesCompleted:0,
-        constructionMineralCost:mineralCost,
-        constructionGasCost:gasCost,
-        gasNodeId:gasNode?.id||null,
-        gasWorkerTarget:0,
-        cooldownUntil:0,attackCooldownPhase:0,attackFlash:0,
-        beamTargetId:null,beamStartedAt:-1,beamStage:0,
-        queue:[]
-      });
-      this.buildings.push(created);
-      this.markBuildingSpatialDirty();
-      this.assignBuilderToBuilding(created);
-
-      this.events.push({
-        type:"build",side,x,y,building:action.building,
-        mineralCost,gasCost,gasNodeId:gasNode?.id||null
-      });
+      const order={id:"b"+(++this.seq),type:action.building,side,x,y,produceType:BuildingDefinition.isProduction(action.building)?(action.produceType||null):null,gasNodeId:gasNode?.id||null,createdTick:this.tick,builderUnitId:null,paidMineral:mineralCost,paidGas:gasCost,constructionState:"waitingWorker"};
+      this.constructionOrders.push(order);this.assignBuilderToBuilding(order);
+      this.events.push({type:"buildOrdered",side,x,y,building:action.building,buildingId:order.id,mineralCost,gasCost,gasNodeId:order.gasNodeId});
       return true;
     }
     return false;
@@ -19252,6 +19459,7 @@ class StrategySim{
     }
   }
   updateBuildings(){
+    this.updateConstructionOrders();
     for(const b of this.buildings){if(b.alive===false)continue;const bd=BuildingDefinition.get(b.type);
       if(!b.complete){
         const builder=this.ensureBuilderForBuilding(b);
@@ -19340,11 +19548,14 @@ class StrategySim{
   }
   nearestInteractionTarget(u,targets,kind,extra=0){
     let best=null,bestDistance=Infinity;const ignore=TerrainNavigation.ignoresBuildings(u);
-    for(const target of targets){
-      const goal=InteractionGeometry.goal(u,target,kind,extra),nearest=goal.closest(u.x,u.y);
-      // The planar lower bound can only prune a strictly worse candidate. Ties
-      // still reach the exact route query and keep the original ID tie-break.
-      if(nearest&&Math.hypot(nearest.x-u.x,nearest.y-u.y)>bestDistance+1e-8){this.navigation.metrics.targetCandidatesPruned=(this.navigation.metrics.targetCandidatesPruned||0)+1;continue}
+    const candidates=targets.map(target=>{const goal=InteractionGeometry.goal(u,target,kind,extra),nearest=goal.closest(u.x,u.y);
+      return {target,goal,lowerBound:nearest?Math.hypot(nearest.x-u.x,nearest.y-u.y):0};
+    }).sort((a,b)=>a.lowerBound-b.lowerBound||(String(a.target.id)<String(b.target.id)?-1:String(a.target.id)>String(b.target.id)?1:0));
+    for(const {target,goal,lowerBound} of candidates){
+      // Evaluate promising candidates first; a far first entry must not force a
+      // map-wide query before the existing exact-distance bound can prune it.
+      // Ties still use the original exact distance and target ID rule.
+      if(lowerBound>bestDistance+1e-8){this.navigation.metrics.targetCandidatesPruned=(this.navigation.metrics.targetCandidatesPruned||0)+1;continue}
       this.navigation.metrics.targetDistanceQueries=(this.navigation.metrics.targetDistanceQueries||0)+1;
       const distance=this.navigation.distance(u.x,u.y,goal,u.type,ignore);
       if(distance<bestDistance||distance===bestDistance&&best&&String(target.id)<String(best.id)){best=target;bestDistance=distance}
@@ -19444,7 +19655,7 @@ class StrategySim{
     if(this.isAirborneStatus(u))return;
 
     if(u.buildTargetId){
-      const b=this.buildingById.get(u.buildTargetId)||this.buildings.find(x=>x.id===u.buildTargetId);
+      const b=this.resolveConstructionTarget(u.buildTargetId);
       if(!b||b.alive===false||b.complete||b.side!==u.side||b.builderUnitId!==u.id){
         u.buildTargetId=null;u.workState="seek";u.mineId=null;u.worker?.resetMine();u.workResourceType="mineral";
       }else{
@@ -20058,7 +20269,7 @@ class StrategySim{
     target.alive=false;
 
     if(UnitDefinition.get(target.type)?.economyWorker&&target.buildTargetId){
-      const b=this.buildingById.get(target.buildTargetId)||this.buildings.find(x=>x.id===target.buildTargetId);
+      const b=this.resolveConstructionTarget(target.buildTargetId);
       if(b&&b.builderUnitId===target.id){b.builderUnitId=null;if(!b.complete&&b.alive!==false)b.constructionState="waitingWorker"}
     }
     if(UnitDefinition.get(target.type)?.ownsSummonedUnits){
@@ -22156,6 +22367,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     const neutral=Array.from({length:NEUTRAL_CHECKSUM_BUCKETS},makeHasher);
     const projectiles=makeHasher(),capture=makeHasher(),spells=makeHasher(),scheduledH=makeHasher();
 
+    for(const order of this.constructionOrders)buildings[order.side].ms(StableSerializationUtil.stableStringify(order));
     core.m(this.mapFingerprint());core.m(this.tick);core.m(this.seq);core.m(this.spellRewardSeq||0);
     for(const f of this.flags){core.mf(f.x);core.mf(f.y);core.m(f.forced?1:0)}
     core.ms(StableSerializationUtil.stableStringify(this.campaignScriptRuntime?.state||null));
@@ -22227,7 +22439,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     const groups=new Set();
     for(const raw of paths||[]){
       const p=String(raw||"");
-      if(p.startsWith("buildings.")){groups.add("buildings");groups.add("units")}
+      if(p.startsWith("buildings.")||p.startsWith("constructionOrders")){groups.add("buildings");groups.add("units")}
       else if(p.startsWith("units.")){groups.add("units");groups.add("buildings")}
       else if(p.startsWith("core"))groups.add("core");
       else if(p.startsWith("economy"))groups.add("economy");
@@ -22304,7 +22516,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     }
     this.rebuildRuntimeIndexes();
   }
-  snapshot(){return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState()),buildings:this.buildings.map(b=>b.toState()),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
+  snapshot(){return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState()),buildings:this.buildings.map(b=>b.toState()),constructionOrders:StateValue.copy(this.constructionOrders),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
 }
 
 /* =========================
@@ -22718,7 +22930,7 @@ class RallySimulationAdapter{
     const state=this.stateData();
     // Required root fields come from the authoritative owner, not another save list.
     const kind=value=>value===null?"null":Array.isArray(value)?"array":typeof value;
-    this.rootShape=Object.fromEntries(Object.entries(state).map(([key,value])=>[key,{kind:kind(value),items:Array.isArray(value)&&value.length===2&&!['units','buildings','projectiles','resources','gasNodes','camps','capturePoints','activeSpells','delayedEffects','scheduled'].includes(key)?value.map(kind):null}]));
+    this.rootShape=Object.fromEntries(Object.entries(state).map(([key,value])=>[key,{kind:kind(value),items:Array.isArray(value)&&value.length===2&&!['units','buildings','constructionOrders','projectiles','resources','gasNodes','camps','capturePoints','activeSpells','delayedEffects','scheduled'].includes(key)?value.map(kind):null}]));
   }
   stateData(){
     const sim=this.session.sim;
@@ -22750,6 +22962,18 @@ class RallySimulationAdapter{
           if(!Object.prototype.hasOwnProperty.call(BuildingDefinition.all,entity.type)||!Number.isFinite(entity.hp)||!Number.isFinite(entity.maxHp)||!Array.isArray(entity.queue))throw new Error("게임 snapshot의 건물 정의가 잘못되었습니다.");
           RallyStateCodec.assertContract(entity,Building.stateContract);
         }
+      }
+    }
+    const orderIds=new Set(state.buildings.map(b=>b.id)),builderIds=new Set();
+    const orderFields=new Set(["id","type","side","x","y","produceType","gasNodeId","createdTick","builderUnitId","paidMineral","paidGas","constructionState"]);
+    for(const order of state.constructionOrders){
+      if(!order||Array.isArray(order)||typeof order!=="object"||Object.keys(order).some(key=>!orderFields.has(key))||Object.keys(order).length!==orderFields.size||typeof order.id!=="string"||!order.id||order.id.length>256||orderIds.has(order.id)||![0,1].includes(order.side)||!Object.prototype.hasOwnProperty.call(BuildingDefinition.all,order.type)||!Number.isFinite(order.x)||!Number.isFinite(order.y)||!Number.isSafeInteger(order.createdTick)||order.createdTick<0||order.createdTick>state.tick||!Number.isFinite(order.paidMineral)||order.paidMineral<0||!Number.isFinite(order.paidGas)||order.paidGas<0||!["waitingWorker","building"].includes(order.constructionState))throw new Error("게임 snapshot의 건설 예약이 잘못되었습니다.");
+      orderIds.add(order.id);
+      if(order.produceType!==null&&!Object.prototype.hasOwnProperty.call(UnitDefinition.all,order.produceType)||order.gasNodeId!==null&&!state.gasNodes.some(g=>g.id===order.gasNodeId))throw new Error("게임 snapshot의 건설 예약 정의가 잘못되었습니다.");
+      if(order.builderUnitId!==null){
+        const worker=state.units.find(u=>u.id===order.builderUnitId);
+        if(builderIds.has(order.builderUnitId)||!worker||!worker.alive||worker.side!==order.side||!UnitDefinition.get(worker.type)?.economyWorker||worker.buildTargetId!==order.id)throw new Error("게임 snapshot의 예약 일꾼이 잘못되었습니다.");
+        builderIds.add(order.builderUnitId);
       }
     }
     if(state.campaignScriptState!==null&&(typeof state.campaignScriptState!=="object"||Array.isArray(state.campaignScriptState))||!this.identity.campaignScenario&&state.campaignScriptState!==null)throw new Error("게임 snapshot의 캠페인 state가 잘못되었습니다.");
@@ -23079,6 +23303,8 @@ class GameSession{
     if(!globalThis.RallyNetcode)throw new Error('URL Netcode가 로딩되지 않았습니다.');
     this.clearDisconnectGrace();this.clearPostRecoveryCountdown();
     this.sim=StrategySim.createForMatch({draft:this.draft,seed,rules:this.roundRules,campaignScenario:this.matchConfig?.campaignScenario||null,debugScenario:this.matchConfig?.debugScenario||null});
+    try{this.sim.navigation.prepareLayers(this.sim.units,this.sim.decks.flat())}
+    catch(error){try{this.sim.dispose('initialization-failed')}finally{this.sim=null}throw error}
     this.simulationAdapter=new RallySimulationAdapter(this);
     this.replayRecorder=new ReplayRecorder({seed,draft:this.draft,roomCode:this.roomCode,sim:this.sim,rules:this.roundRules});
     this.simEnded=false;this.matchResult=null;this.publishedGameTick=0;this.netcodeLoop?.resetTiming();
@@ -23806,7 +24032,7 @@ class AiActionGenerator{
     // Include already-paid reinforcements so support cannot crowd out the army
     // while the first combat batches are still travelling or in production.
     const committedCounts=new Map(ownCounts);
-    for(const b of state.buildings||[])if(b.alive!==false&&b.side===bot.side&&b.produceType){
+    for(const b of bot.plannedBuildings(state))if(b.alive!==false&&b.side===bot.side&&b.produceType){
       committedCounts.set(b.produceType,(committedCounts.get(b.produceType)||0)+Math.max(0,Number(b.productionRemaining)||0));
     }
     let combatCount=0,supportCount=0,frontCount=0;
@@ -23946,7 +24172,7 @@ class AiMacroExecutor{
       const type=bot.productionBuildingType(id);return bot.tryBuild(state,p,type,id,null,{allowProductionDensity:true});
     }
     if(a.kind==="supply"){const t=BuildingDefinition.forRole("supply"),c=BuildingDefinition.resourceCost(t);if((state.wallet[bot.side]||0)<c.mineral)return false;return bot.tryBuild(state,p,t);}
-    if(a.kind==="gas-readiness"){const t=BuildingDefinition.forRole("gasExtractor"),c=BuildingDefinition.resourceCost(t);if((state.wallet[bot.side]||0)<c.mineral)return false;const existing=state.buildings.some(b=>b.alive!==false&&b.side===bot.side&&BuildingDefinition.get(b.type)?.isGasExtractor);if(!existing)return bot.tryBuild(state,p,t);const bases=bot.workerBases(state);return bot.updateGasAssignments(state,p,bases)===true;}
+    if(a.kind==="gas-readiness"){const t=BuildingDefinition.forRole("gasExtractor"),c=BuildingDefinition.resourceCost(t);if((state.wallet[bot.side]||0)<c.mineral)return false;const existing=bot.plannedBuildings(state).some(b=>b.alive!==false&&b.side===bot.side&&BuildingDefinition.get(b.type)?.isGasExtractor);if(!existing)return bot.tryBuild(state,p,t);const bases=bot.workerBases(state);return bot.updateGasAssignments(state,p,bases)===true;}
     if(a.kind==="production-capacity")return bot.trySurplusProduction(state,p);
     if(a.kind==="tech"){
       const tier=Number(state.tech?.[bot.side]||1),wallet=Number(state.wallet?.[bot.side]||0),gas=Number(state.gasWallet?.[bot.side]||0);
@@ -23986,6 +24212,12 @@ class AiCommandExecutor{
   static key(action){return StableSerializationUtil.stableStringify(action)}
   remember(entry){this.history.push({...entry,action:StateValue.copy(entry.action)});if(this.history.length>256)this.history.shift()}
   outstanding(){return this.pending.concat(this.queue)}
+  // Receipt identity stays pending until confirmed; a decision state that already
+  // contains its execution must not reserve the same money or capacity again.
+  reservations(state=this.state){
+    const receipts=this.bot.session.sim?.commandReceipts||[];
+    return this.pending.filter(entry=>!receipts.some(r=>r.netcodeSequence===entry.netcodeSequence&&r.actor===entry.actor&&r.tick<=(state?.tick??-1))).concat(this.queue);
+  }
   quote(state,action){
     if(action.type==="BUILD")return BuildingDefinition.get(action.building)?BuildingDefinition.resourceCost(action.building,action.produceType):null;
     if(action.type==="TRAIN_WORKER")return{mineral:WORKER_COST,gas:0};
@@ -24012,16 +24244,19 @@ class AiCommandExecutor{
     this.reconcile(snapshot);this.queue=[];
     // This is an isolated decision view, never a mutation of a published snapshot.
     const view={...snapshot,wallet:snapshot.wallet.slice(),gasWallet:(snapshot.gasWallet||[0,0]).slice()};
-    for(const p of this.pending){view.wallet[this.bot.side]-=p.cost.mineral;view.gasWallet[this.bot.side]-=p.cost.gas}
+    for(const p of this.reservations(snapshot)){view.wallet[this.bot.side]-=p.cost.mineral;view.gasWallet[this.bot.side]-=p.cost.gas}
     this.state=view;return view;
   }
   withChannel(channel,fn){const old=this.channel;this.channel=channel;try{return fn()}finally{this.channel=old}}
   withMacro(id,fn){const old=this.macro;this.macro=id;try{return fn()}finally{this.macro=old}}
-  conflictsBuilding(type,x,y){return this.outstanding().some(p=>p.action.type==="BUILD"&&Math.hypot(p.action.x-x,p.action.y-y)<buildingPlacementSeparation(type,p.action.building))}
+  conflictsBuilding(type,x,y){
+    return (this.state?.constructionOrders||[]).some(p=>p.side===this.bot.side&&Math.hypot(p.x-x,p.y-y)<buildingPlacementSeparation(type,p.type))||
+      this.reservations().some(p=>p.action.type==="BUILD"&&Math.hypot(p.action.x-x,p.action.y-y)<buildingPlacementSeparation(type,p.action.building));
+  }
   offer(action){
     if(!this.state)return false;
     const session=this.bot.session;if(session.disposed||session.simEnded||session.netcodeSession?.resimulating||typeof session.inputAvailable==="function"&&!session.inputAvailable())return false;
-    this.stats.offered++;const key=AiCommandExecutor.key(action),entries=this.outstanding(),side=this.bot.side,cost=this.quote(this.state,action);
+    this.stats.offered++;const key=AiCommandExecutor.key(action),entries=this.reservations(),side=this.bot.side,cost=this.quote(this.state,action);
     if(!cost)return false;
     const duplicates=entries.some(p=>p.key===key&&action.type!=="TRAIN_WORKER"||action.type==="START_RESEARCH"&&p.action.type==="START_RESEARCH"&&((action.research==="ability")===(p.action.research==="ability")));
     if(duplicates){this.stats.duplicateRejected++;return false}
@@ -24322,19 +24557,19 @@ return threat;
 
   productionContractCount(state,unitType){
     const building=this.productionBuildingType(unitType);
-    return state.buildings.filter(b=>
+    return this.plannedBuildings(state).filter(b=>
       b.alive!==false&&b.side===this.side&&b.type===building&&b.produceType===unitType
     ).length;
   }
 
   totalProductionContractCount(state){
-    return state.buildings.filter(b=>
+    return this.plannedBuildings(state).filter(b=>
       b.alive!==false&&b.side===this.side&&BuildingDefinition.get(b.type)?.isProductionBuilding&&!!b.produceType
     ).length;
   }
 
   productionPipelineRemaining(state,unitType){
-    return state.buildings.reduce((sum,b)=>{
+    return this.plannedBuildings(state).reduce((sum,b)=>{
       if(b.alive===false||b.side!==this.side||b.produceType!==unitType)return sum;
       return sum+Math.max(0,Number(b.productionRemaining)||0);
     },0);
@@ -24479,7 +24714,7 @@ return threat;
 
   activeConstructionDemand(state){
     const activeTargets=new Set(
-      state.buildings
+      state.buildings.concat(state.constructionOrders||[])
         .filter(b=>b.alive!==false&&b.side===this.side&&!b.complete&&b.type!=="wall")
         .map(b=>b.id)
     );
@@ -24574,8 +24809,17 @@ return threat;
     return false;
   }
 
+  // Planning commitments only. Completed capabilities continue to read state.buildings.
+  plannedBuildings(state){
+    const plans=(state.constructionOrders||[]).map(order=>({...order,complete:false,productionRemaining:UnitDefinition.productionProfile(order.produceType)?.totalUnits||0}));
+    for(const entry of this.commandExecutor.reservations(state))if(entry.action.type==="BUILD"){
+      const a=entry.action;plans.push({type:a.building,side:this.side,x:a.x,y:a.y,produceType:a.produceType,complete:false,productionRemaining:UnitDefinition.productionProfile(a.produceType)?.totalUnits||0});
+    }
+    return state.buildings.concat(plans);
+  }
+
   countBuilding(state,type,produceType=null){
-    return state.buildings.filter(b=>
+    return this.plannedBuildings(state).filter(b=>
       b.alive!==false&&b.side===this.side&&b.type===type&&
       (produceType==null||b.produceType===produceType)
     ).length;
@@ -24650,7 +24894,7 @@ return threat;
     const gasDemand=gasShortage>0;
 
     if(gasDemand){
-      const extractors=state.buildings.filter(
+      const extractors=this.plannedBuildings(state).filter(
         b=>b.alive!==false&&b.side===this.side&&BuildingDefinition.get(b.type)?.isGasExtractor
       );
       const maxExtractors=Math.max(1,Math.min(3,bases.length));
@@ -24791,7 +25035,7 @@ return threat;
   }
 
   defenseTowerCountAt(state,anchor){
-    return state.buildings.filter(b=>
+    return this.plannedBuildings(state).filter(b=>
       b.alive!==false&&b.side===this.side&&BuildingDefinition.isDefenseTower(b.type)&&
       Math.hypot(b.x-anchor.x,b.y-anchor.y)<=DEFENSE_CLUSTER_RADIUS
     ).length;
@@ -24837,10 +25081,11 @@ return threat;
     const bd=BuildingDefinition.get(type),cost=BuildingDefinition.resourceCost(type,produceType);
     const productionLimit=this.campaignOffense?.config()?.productionLimit;
     if(bd?.isProductionBuilding&&productionLimit!=null){
-      const active=state.buildings.filter(b=>b.alive!==false&&b.side===this.side&&BuildingDefinition.get(b.type)?.isProductionBuilding).length;
-      const reserved=this.commandExecutor.outstanding().filter(entry=>entry.action.type==="BUILD"&&BuildingDefinition.get(entry.action.building)?.isProductionBuilding).length;
-      if(active+reserved>=productionLimit)return false;
+      const active=this.plannedBuildings(state).filter(b=>b.alive!==false&&b.side===this.side&&BuildingDefinition.get(b.type)?.isProductionBuilding).length;
+      if(active>=productionLimit)return false;
     }
+    if(bd?.singleton&&this.countBuilding(state,type)>0)return false;
+    if(bd?.supplyPlus&&this.plannedBuildings(state).some(b=>b.alive!==false&&b.side===this.side&&b.type===type&&!b.complete))return false;
     if(BuildPrerequisitePolicy.buildingReason(state,this.side,type,produceType))return false;
     if(!bd||(state.wallet[this.side]||0)<cost.mineral)return false;
     if((state.gasWallet?.[this.side]||0)<cost.gas)return false;
@@ -24864,7 +25109,7 @@ return threat;
   }
 
   findBuildPoint(state,p,type,produceType,preferredAnchorId=null,options=null){
-    const own=state.buildings.filter(b=>b.alive!==false&&b.side===this.side);
+    const own=this.plannedBuildings(state).filter(b=>b.alive!==false&&b.side===this.side);
 
     if(BuildingDefinition.get(type)?.isGasExtractor){
       const liveSim=this.session?.sim||null;
@@ -28403,10 +28648,10 @@ class GLRenderer{
     if(this.pendingBuildGhosts?.length){
       this.pendingBuildGhosts=this.pendingBuildGhosts.filter(g=>{
         if(now-g.start>PREDICTED_BUILD_GHOST_TTL_MS)return false;
-        return !(s?.buildings||[]).some(b=>
+        return [...(s?.buildings||[]),...(s?.constructionOrders||[])].every(b=>!(
           b.alive!==false&&b.side===mySide&&b.type===g.building&&
           Math.hypot((b.x||0)-g.x,(b.y||0)-g.y)<4
-        );
+        ));
       });
     }
     if(this.predictedFlag){
@@ -28475,6 +28720,17 @@ class GLRenderer{
     const now=performance.now();
     this.latencySpellFx.push({spellId,start:now,...payload});
     if(this.latencySpellFx.length>8)this.latencySpellFx.splice(0,this.latencySpellFx.length-8);
+  }
+  drawConstructionOrders(){
+    const side=this.mySide(),prev=this._unitRenderAlphaMul;
+    this._unitRenderAlphaMul=.38;
+    try{
+      for(const order of this.snapshot?.constructionOrders||[]){
+        if(order.side!==side)continue;
+        // Presentation DTO only: reservations never enter the entity render/HP pass.
+        this.drawBuildingSafely({...order,complete:true,queue:[]});
+      }
+    }finally{this._unitRenderAlphaMul=prev}
   }
   drawPendingBuildGhosts(){
     if(!this.pendingBuildGhosts?.length)return;
@@ -29987,7 +30243,7 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
   drawSelectedBuildingOverlay(){
     const ctx=this.fxCtx,snap=this.snapshot,id=this.selectedBuildingId;
     if(!ctx||!snap||!id)return;
-    const side=this.mySide(),b=(snap.buildings||[]).find(x=>x.id===id&&x.alive!==false&&x.side===side);
+    const side=this.mySide(),b=[...(snap.buildings||[]),...(snap.constructionOrders||[])].find(x=>x.id===id&&x.alive!==false&&x.side===side);
     if(!b||!this.onScreenAuth(b.x,b.y,(BuildingDefinition.get(b.type)?.size||40)+100))return;
     const sc=this.sc(),[x,y]=this.worldToPx(this.viewX(b.x),this.viewY(b.y));
     const r=(BuildingDefinition.get(b.type)?.size||35)*sc*1.06,m=Math.max(4,8*sc),lw=Math.max(1.8,2.8*sc);
@@ -31901,8 +32157,8 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
   renderUiFxPass(){
     if(this.spellPreview){this.begin();this.drawSpellPreview();this.flush()}
     if(this.buildPreview){this.begin();this.drawBuildPreview();this.flush()}
-    if(this.pendingBuildGhosts?.length||this.latencySpellFx?.length){
-      this.begin();this.drawPendingBuildGhosts();this.drawLatencySpellFx();this.flush();
+    if(this.snapshot?.constructionOrders?.length||this.pendingBuildGhosts?.length||this.latencySpellFx?.length){
+      this.begin();this.drawConstructionOrders();this.drawPendingBuildGhosts();this.drawLatencySpellFx();this.flush();
     }
     this.drawFloatingFx();
     this.gl.depthMask(true);this.gl.enable(this.gl.DEPTH_TEST)
@@ -35979,7 +36235,7 @@ class BuildingPresentation{
   if(!ActiveViewState.snap)return null;
   const side=ConnectionSideUtil.roleSide(ActiveViewState.role);
   let best=null,bestD=Infinity;
-  for(const b of ActiveViewState.snap.buildings){
+  for(const b of [...ActiveViewState.snap.buildings,...(ActiveViewState.snap.constructionOrders||[])]){
     if(b.alive===false||b.side!==side)continue;
     const size=BuildingDefinition.get(b.type)?.size||35;
     const d=Math.hypot(b.x-authX,b.y-authY);
@@ -36041,8 +36297,11 @@ class BuildingPresentation{
   static selectedOwnBuilding(state=ActiveViewState.snap){
   if(!state||!UiRuntimeState.value.selection.buildingId)return null;
   const side=ConnectionSideUtil.roleSide(ActiveViewState.role);
-  return state.buildings.find(b=>b.id===UiRuntimeState.value.selection.buildingId&&b.alive!==false&&b.side===side)||null;
+  return [...state.buildings,...(state.constructionOrders||[])].find(b=>b.id===UiRuntimeState.value.selection.buildingId&&b.alive!==false&&b.side===side)||null;
 }
+  static isConstructionOrder(b,state=ActiveViewState.snap){
+    return !!b&&(state?.constructionOrders||[]).some(order=>order.id===b.id);
+  }
   static detailForDefenseBuilding(buildingType){
   const bd=BuildingDefinition.get(buildingType);
   const entry=Object.entries(DefenseCardDefinition.all).find(([,v])=>v?.building===buildingType);
@@ -36109,6 +36368,19 @@ class BuildingPresentation{
   const side=ConnectionSideUtil.roleSide(ActiveViewState.role),bd=BuildingDefinition.get(b.type),liveSim=MatchLifecycle.activeSession()?.sim;
 
   UiRegistry.refs.buildingPanelTitle.textContent=bd?.name||"건물";
+
+  if(BuildingPresentation.isConstructionOrder(b,state)){
+    const refund=b.paidMineral||0,gasRefund=b.paidGas||0;
+    UiRegistry.refs.buildingPanelStatus.innerHTML=`건설 예약 · <b>${b.builderUnitId?"일꾼 이동 중":"가용 일꾼 대기"}</b>`;
+    BuildingPresentation.setBuildingActionsHtml(
+      `<div class="small">선결제 <b>${refund} 미네랄${gasRefund?` · ${gasRefund} 가스`:""}</b> · 일꾼이 도착하면 착공합니다.<br>착공 전 취소하면 지불한 비용을 전액 돌려받습니다.</div>`
+    );
+    UiRegistry.refs.cancelModeBtn.disabled=false;
+    UiRegistry.refs.cancelModeBtn.classList.remove("hidden");
+    UiRegistry.refs.cancelModeBtn.classList.add("cancel-refund");
+    UiRegistry.refs.cancelModeBtn.innerHTML=`예약 취소 · +${refund} 미네랄${gasRefund?` · +${gasRefund} 가스`:""} 전액 환불`;
+    return;
+  }
 
   if(!b.complete){
     const pct=Math.max(0,Math.min(100,Math.floor((b.progress/Math.max(1,SimulationTiming.msToTicks(bd.buildTimeMs,SimulationTiming.tps())))*100)));
@@ -36300,9 +36572,9 @@ class BuildingPresentation{
     return "현재 확보한 시야 안에서만 건설할 수 있습니다.";
   }
 
-  for(const b of state.buildings){
+  for(const b of [...state.buildings,...(state.constructionOrders||[])]){
     if(b.alive===false)continue;
-    if(Math.hypot(b.x-action.x,b.y-action.y)<buildingPlacementSeparation(action.building,b.type))return "다른 건물과 너무 가깝습니다. 일꾼 이동 통로를 확보하세요.";
+    if(Math.hypot(b.x-action.x,b.y-action.y)<buildingPlacementSeparation(action.building,b.type))return "다른 건물·건설 예약과 너무 가깝습니다. 일꾼 이동 통로를 확보하세요.";
   }
   return null;
 }
@@ -38558,7 +38830,7 @@ UiController.bindImmediateButton(UiRegistry.refs.cancelModeBtn,()=>{
     LogUtil.log("⚠ 철거할 아군 건물을 먼저 선택하세요.");
     return;
   }
-  if(BuildingDefinition.get(b.type)?.isDropoff){
+  if(!BuildingPresentation.isConstructionOrder(b)&&BuildingDefinition.get(b.type)?.isDropoff){
     LogUtil.log("⚠ 메인/전진 거점은 직접 철거할 수 없습니다.");
     return;
   }
@@ -38567,8 +38839,9 @@ UiController.bindImmediateButton(UiRegistry.refs.cancelModeBtn,()=>{
     return;
   }
 
-  const refund=Math.floor((BuildingDefinition.get(b.type)?.cost||0)*.5);
-  const actionName=b.complete?"철거":"건설 취소";
+  const order=BuildingPresentation.isConstructionOrder(b);
+  const refund=order?(b.paidMineral||0):(Number(b.constructionMineralCost)||BuildingDefinition.mineralCost(b.type,b.produceType||null))*.5;
+  const actionName=order?"예약 취소":b.complete?"철거":"건설 취소";
   const buildingId=b.id;
 
   // selectedBuildingId가 다음 동적 TPS 시뮬레이션 렌더에서 변해도 정확한 ID로 이미 명령을 보낸다.
