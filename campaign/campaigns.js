@@ -13,7 +13,7 @@ export default {
           "schemaVersion": 7,
           "missionId": "frontier-01-first-flag",
           "title": "1. 첫 깃발",
-          "briefing": "넓은 개척로를 따라 고립된 칼잎 전사대와 합류하고 첫 전선을 만드십시오.",
+          "briefing": "넓은 개척로를 따라 고립된 칼잎 전사대와 합류하고 첫 전선을 만드십시오. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오.",
           "playerRole": "host",
           "faction": "frontier",
           "seed": 690101,
@@ -40,17 +40,22 @@ export default {
           },
           "enemy": {
             "availableUnits": [],
-            "startingUnits": [],
+            "startingUnits": [
+              {
+                "unit": "swordsman",
+                "count": 3
+              }
+            ],
             "startingWorkers": 5,
             "startingResources": {
-              "minerals": 0,
+              "minerals": 325,
               "gas": 0
             },
             "startingTech": 1,
             "startingBuildings": [],
             "defenseCards": [],
             "techCap": 1,
-            "aiProfile": "scripted"
+            "aiProfile": "standard"
           },
           "map": {
             "type": "manual",
@@ -339,6 +344,11 @@ export default {
                   "unit": "swordsman"
                 },
                 {
+                  "type": "unlockUnit",
+                  "unit": "swordsman",
+                  "side": "enemy"
+                },
+                {
                   "type": "toast",
                   "text": "칼잎 전사대가 합류했습니다. 이제 칼잎 전사를 생산할 수 있습니다."
                 },
@@ -411,7 +421,7 @@ export default {
           "schemaVersion": 7,
           "missionId": "frontier-02-rear-fire",
           "title": "2. 뒤에서 쏘는 자들",
-          "briefing": "남쪽의 넓은 경사로로 궁수 고지에 올라 씨앗궁수대와 합류하십시오. 고지 북쪽에는 적 방어선이 있습니다.",
+          "briefing": "남쪽의 넓은 경사로로 궁수 고지에 올라 씨앗궁수대와 합류하십시오. 고지 북쪽에는 적 방어선이 있습니다. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오.",
           "playerRole": "host",
           "faction": "frontier",
           "seed": 690102,
@@ -439,18 +449,25 @@ export default {
             "techCap": 1
           },
           "enemy": {
-            "availableUnits": [],
-            "startingUnits": [],
+            "availableUnits": [
+              "swordsman"
+            ],
+            "startingUnits": [
+              {
+                "unit": "swordsman",
+                "count": 8
+              }
+            ],
             "startingWorkers": 5,
             "startingResources": {
-              "minerals": 0,
+              "minerals": 350,
               "gas": 0
             },
             "startingTech": 1,
             "startingBuildings": [],
             "defenseCards": [],
             "techCap": 1,
-            "aiProfile": "scripted"
+            "aiProfile": "standard"
           },
           "map": {
             "type": "manual",
@@ -788,6 +805,11 @@ export default {
                   "unit": "archer"
                 },
                 {
+                  "type": "unlockUnit",
+                  "unit": "archer",
+                  "side": "enemy"
+                },
+                {
                   "type": "toast",
                   "text": "씨앗궁수대가 합류했습니다. 전열 뒤에서도 화력을 유지합니다."
                 },
@@ -855,7 +877,7 @@ export default {
           "schemaVersion": 7,
           "missionId": "frontier-03-spear-wall",
           "title": "3. 창벽",
-          "briefing": "양쪽 능선 사이의 넓은 협곡에서 가시창풀 방어선과 합류하십시오. 북쪽에서 빠른 돌격대가 후열을 노립니다.",
+          "briefing": "양쪽 능선 사이의 넓은 협곡에서 가시창풀 방어선과 합류하십시오. 북쪽에서 빠른 돌격대가 후열을 노립니다. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오.",
           "playerRole": "host",
           "faction": "frontier",
           "seed": 690103,
@@ -888,18 +910,30 @@ export default {
             "techCap": 1
           },
           "enemy": {
-            "availableUnits": [],
-            "startingUnits": [],
+            "availableUnits": [
+              "swordsman",
+              "archer"
+            ],
+            "startingUnits": [
+              {
+                "unit": "swordsman",
+                "count": 8
+              },
+              {
+                "unit": "archer",
+                "count": 7
+              }
+            ],
             "startingWorkers": 5,
             "startingResources": {
-              "minerals": 0,
-              "gas": 0
+              "minerals": 400,
+              "gas": 50
             },
             "startingTech": 1,
             "startingBuildings": [],
             "defenseCards": [],
             "techCap": 1,
-            "aiProfile": "scripted"
+            "aiProfile": "standard"
           },
           "map": {
             "type": "manual",
@@ -1240,6 +1274,11 @@ export default {
                   "unit": "pikeman"
                 },
                 {
+                  "type": "unlockUnit",
+                  "unit": "pikeman",
+                  "side": "enemy"
+                },
+                {
                   "type": "toast",
                   "text": "가시창풀이 합류했습니다. 공격할 때마다 접근하는 적을 밀어냅니다."
                 },
@@ -1317,7 +1356,7 @@ export default {
           "schemaVersion": 7,
           "missionId": "frontier-04-moving-front",
           "title": "4. 움직이는 전선",
-          "briefing": "남쪽 강변의 포자사수와 합류하십시오. 낮은 강바닥을 가로지르는 다리 북쪽에는 중장갑 병력과 넓은 기동장이 있습니다.",
+          "briefing": "남쪽 강변의 포자사수와 합류하십시오. 낮은 강바닥을 가로지르는 다리 북쪽에는 중장갑 병력과 넓은 기동장이 있습니다. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오.",
           "playerRole": "host",
           "faction": "frontier",
           "seed": 690104,
@@ -1355,18 +1394,35 @@ export default {
             "techCap": 1
           },
           "enemy": {
-            "availableUnits": [],
-            "startingUnits": [],
+            "availableUnits": [
+              "swordsman",
+              "archer",
+              "pikeman"
+            ],
+            "startingUnits": [
+              {
+                "unit": "swordsman",
+                "count": 7
+              },
+              {
+                "unit": "pikeman",
+                "count": 5
+              },
+              {
+                "unit": "archer",
+                "count": 5
+              }
+            ],
             "startingWorkers": 5,
             "startingResources": {
-              "minerals": 0,
-              "gas": 0
+              "minerals": 450,
+              "gas": 75
             },
             "startingTech": 1,
             "startingBuildings": [],
             "defenseCards": [],
             "techCap": 1,
-            "aiProfile": "scripted"
+            "aiProfile": "standard"
           },
           "map": {
             "type": "manual",
@@ -1702,6 +1758,11 @@ export default {
                   "unit": "skirmisher"
                 },
                 {
+                  "type": "unlockUnit",
+                  "unit": "skirmisher",
+                  "side": "enemy"
+                },
+                {
                   "type": "toast",
                   "text": "포자사수가 합류했습니다. 거리를 유지할 공간이 있을수록 강합니다."
                 },
@@ -1772,7 +1833,7 @@ export default {
           "schemaVersion": 7,
           "missionId": "frontier-05-two-flags",
           "title": "5. 두 개의 깃발",
-          "briefing": "중앙 언덕을 돌아가는 북쪽 긴 길과 남쪽 빠른 길이 두 거점으로 이어집니다. 민들레 주자대와 합류해 병력을 나누십시오.",
+          "briefing": "중앙 언덕을 돌아가는 북쪽 긴 길과 남쪽 빠른 길이 두 거점으로 이어집니다. 민들레 주자대와 합류해 병력을 나누십시오. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오.",
           "playerRole": "host",
           "faction": "frontier",
           "seed": 690105,
@@ -1811,18 +1872,36 @@ export default {
             "techCap": 1
           },
           "enemy": {
-            "availableUnits": [],
-            "startingUnits": [],
+            "availableUnits": [
+              "swordsman",
+              "archer",
+              "pikeman",
+              "skirmisher"
+            ],
+            "startingUnits": [
+              {
+                "unit": "swordsman",
+                "count": 7
+              },
+              {
+                "unit": "pikeman",
+                "count": 5
+              },
+              {
+                "unit": "archer",
+                "count": 5
+              }
+            ],
             "startingWorkers": 5,
             "startingResources": {
-              "minerals": 0,
-              "gas": 0
+              "minerals": 500,
+              "gas": 100
             },
             "startingTech": 1,
             "startingBuildings": [],
             "defenseCards": [],
             "techCap": 1,
-            "aiProfile": "scripted"
+            "aiProfile": "standard"
           },
           "map": {
             "type": "manual",
@@ -2198,6 +2277,11 @@ export default {
                   "unit": "dandelion"
                 },
                 {
+                  "type": "unlockUnit",
+                  "unit": "dandelion",
+                  "side": "enemy"
+                },
+                {
                   "type": "toast",
                   "text": "민들레 주자대가 합류했습니다. 빠른 병력으로 빈 전선을 먼저 차지할 수 있습니다."
                 },
@@ -2308,7 +2392,7 @@ export default {
           "schemaVersion": 7,
           "missionId": "frontier-06-wounded-road",
           "title": "6. 상처 입은 길",
-          "briefing": "폐허 사이의 넓은 도로를 따라 첫 방어선을 돌파하고 이슬치유사와 합류하십시오. 후방 공간에서 회복한 뒤 다음 전선을 밀어내십시오.",
+          "briefing": "폐허 사이의 넓은 도로를 따라 첫 방어선을 돌파하고 이슬치유사와 합류하십시오. 후방 공간에서 회복한 뒤 다음 전선을 밀어내십시오. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오.",
           "playerRole": "host",
           "faction": "frontier",
           "seed": 690106,
@@ -2353,18 +2437,42 @@ export default {
             "techCap": 2
           },
           "enemy": {
-            "availableUnits": [],
-            "startingUnits": [],
+            "availableUnits": [
+              "swordsman",
+              "archer",
+              "pikeman",
+              "skirmisher",
+              "dandelion"
+            ],
+            "startingUnits": [
+              {
+                "unit": "swordsman",
+                "count": 8
+              },
+              {
+                "unit": "pikeman",
+                "count": 5
+              },
+              {
+                "unit": "archer",
+                "count": 7
+              }
+            ],
             "startingWorkers": 5,
             "startingResources": {
-              "minerals": 0,
-              "gas": 0
+              "minerals": 425,
+              "gas": 225
             },
             "startingTech": 2,
-            "startingBuildings": [],
+            "startingBuildings": [
+              {
+                "id": "academy",
+                "building": "academy"
+              }
+            ],
             "defenseCards": [],
             "techCap": 2,
-            "aiProfile": "scripted"
+            "aiProfile": "standard"
           },
           "map": {
             "type": "manual",
@@ -2765,6 +2873,11 @@ export default {
                   "unit": "medic"
                 },
                 {
+                  "type": "unlockUnit",
+                  "unit": "medic",
+                  "side": "enemy"
+                },
+                {
                   "type": "toast",
                   "text": "이슬치유사가 합류했습니다. 부상병을 회복시키고 가까운 은신 적을 탐지합니다."
                 },
@@ -2842,7 +2955,7 @@ export default {
           "schemaVersion": 7,
           "missionId": "frontier-07-frontier-line",
           "title": "7. 개척선",
-          "briefing": "서쪽의 넓은 중장갑 전장, 동쪽 고지, 중앙 다리의 세 전선을 확보하십시오. 두 다리와 완만한 동쪽 강둑을 이용해 병력을 나누고 북쪽 본진으로 진격하십시오.",
+          "briefing": "서쪽의 넓은 중장갑 전장, 동쪽 고지, 중앙 다리의 세 전선을 확보하십시오. 두 다리와 완만한 동쪽 강둑을 이용해 병력을 나누고 북쪽 본진으로 진격하십시오. 적도 같은 해금 병종과 테크 안에서 채집·건설·생산합니다. 생산시설을 세워 전선을 유지하십시오.",
           "playerRole": "host",
           "faction": "frontier",
           "seed": 690107,
@@ -2892,18 +3005,47 @@ export default {
             "techCap": 2
           },
           "enemy": {
-            "availableUnits": [],
-            "startingUnits": [],
+            "availableUnits": [
+              "swordsman",
+              "archer",
+              "pikeman",
+              "skirmisher",
+              "dandelion",
+              "medic"
+            ],
+            "startingUnits": [
+              {
+                "unit": "swordsman",
+                "count": 8
+              },
+              {
+                "unit": "pikeman",
+                "count": 5
+              },
+              {
+                "unit": "archer",
+                "count": 5
+              },
+              {
+                "unit": "medic",
+                "count": 3
+              }
+            ],
             "startingWorkers": 5,
             "startingResources": {
-              "minerals": 0,
-              "gas": 0
+              "minerals": 650,
+              "gas": 300
             },
             "startingTech": 2,
-            "startingBuildings": [],
+            "startingBuildings": [
+              {
+                "id": "academy",
+                "building": "academy"
+              }
+            ],
             "defenseCards": [],
             "techCap": 2,
-            "aiProfile": "scripted"
+            "aiProfile": "standard"
           },
           "map": {
             "type": "manual",

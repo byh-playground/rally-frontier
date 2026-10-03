@@ -23529,6 +23529,18 @@ class AiActionGenerator{
       if((d.range||0)>=180)enemyRanged++;
     }
     const ownCounts=new Map();for(const u of p.ownArmy||[])ownCounts.set(u.type,(ownCounts.get(u.type)||0)+1);
+    // Include already-paid reinforcements so support cannot crowd out the army
+    // while the first combat batches are still travelling or in production.
+    const committedCounts=new Map(ownCounts);
+    for(const b of state.buildings||[])if(b.alive!==false&&b.side===bot.side&&b.produceType){
+      committedCounts.set(b.produceType,(committedCounts.get(b.produceType)||0)+Math.max(0,Number(b.productionRemaining)||0));
+    }
+    let combatCount=0,supportCount=0,frontCount=0;
+    for(const [id,count] of committedCounts){
+      const role=UnitDefinition.get(id)?.role;
+      if(role==="support")supportCount+=count;else combatCount+=count;
+      if(["guardian","bruiser","pikeman","charger"].includes(role))frontCount+=count;
+    }
     const gas=Number(state.gasWallet?.[bot.side]||0),wallet=Number(state.wallet?.[bot.side]||0);
     return bot.deck().filter(id=>bot.productionPrerequisitesReady(state,id)).map(id=>{
       const d=UnitDefinition.get(id)||{},c=UnitDefinition.productionCost(id),profile=UnitDefinition.productionProfile(id)||{};
@@ -23539,6 +23551,8 @@ class AiActionGenerator{
       if(enemyHeavy>enemyLight&&["pikeman","bruiser","artillery"].includes(d.role))score+=32;
       if(enemyRanged>=3&&["assassin","charger","guardian"].includes(d.role))score+=24;
       if(enemyGround&&["guardian","bruiser","pikeman"].includes(d.role))score+=18;
+      if(frontCount===0&&["guardian","bruiser","pikeman"].includes(d.role))score+=24;
+      if(d.role==="support"&&(combatCount===0||supportCount>=Math.max(1,combatCount*.25)))score-=100;
       score-=Math.min(45,(ownCounts.get(id)||0)*4);
       if(c.gas>gas)score-=80;if(c.mineral>wallet)score-=45;
       const productionSec=Math.max(1,(profile.productionMs||3000)/1000);
@@ -23974,7 +23988,7 @@ class BotController{
   supplyUsed(state){return SupplyPolicy.used(state,this.side)}
   supplyCap(state){return SupplyPolicy.cap(state,this.side)}
 
-  deck(){return this.session.draft?.decks?.[this.role]||[]}
+  deck(){return this.lastSnapshot?.decks?.[this.side]||this.session.sim?.decks?.[this.side]||this.session.draft?.decks?.[this.role]||[]}
 
   productionBuildingType(unitType){
     return (UnitDefinition.get(unitType)?.tier||0)>=3?"factory":"barracks";
@@ -23996,12 +24010,18 @@ return threat;
   }
 
   orderedProductionUnits(state,p,units){
+    const scores=new Map(AiActionGenerator.unitScores(this,state,p).map(pick=>[pick.id,pick]));
     const airThreat=this.enemyAirThreat(state,p);
     return units.slice().sort((a,b)=>{
       const da=UnitDefinition.get(a)||{},db=UnitDefinition.get(b)||{};
       const readyA=this.productionPrerequisitesReady(state,a)?1:0;
       const readyB=this.productionPrerequisitesReady(state,b)?1:0;
       if(readyA!==readyB)return readyB-readyA;
+      const pickA=scores.get(a),pickB=scores.get(b);
+      const affordableA=pickA?.affordableNow?1:0,affordableB=pickB?.affordableNow?1:0;
+      if(affordableA!==affordableB)return affordableB-affordableA;
+      const scoreA=pickA?.score??-Infinity,scoreB=pickB?.score??-Infinity;
+      if(scoreA!==scoreB)return scoreA>scoreB?-1:1;
       if(airThreat>0){
         const aaA=da.canAttackAir?1:0,aaB=db.canAttackAir?1:0;
         if(aaA!==aaB)return aaB-aaA;
@@ -24071,17 +24091,17 @@ return threat;
     if(totalContracts>=cap)return false;
 
     const airThreat=this.enemyAirThreat(state,p);
-    const ownCounts=new Map();
-    for(const u of p.ownArmy||[])ownCounts.set(u.type,(ownCounts.get(u.type)||0)+1);
+    const unitScores=new Map(AiActionGenerator.unitScores(this,state,p).map(pick=>[pick.id,pick.score]));
     const candidates=[];
     for(const id of this.deck()){
       if(!this.productionPrerequisitesReady(state,id))continue;
       const d=UnitDefinition.get(id)||{},c=UnitDefinition.productionCost(id),existing=this.productionContractCount(state,id);
+      if(d.role==="support"&&(unitScores.get(id)??0)<0)continue;
       const maxPerType=c.gas>0?2:(wallet>=1800?3:2);
       if(existing>=maxPerType)continue;
       const pipeline=this.productionPipelineRemaining(state,id);
       const affordable=wallet>=c.mineral&&gas>=c.gas;
-      let score=0;
+      let score=unitScores.get(id)||0;
       // 미네랄이 남는데 가스가 부족하면 미네랄 병종을 즉시 증원한다.
       if(c.gas===0)score+=120;
       else if(affordable)score+=55;
@@ -24092,7 +24112,6 @@ return threat;
       score+=(d.tier||1)*8;
       score-=existing*34;
       score-=Math.min(45,pipeline*2);
-      score-=Math.min(35,(ownCounts.get(id)||0)*2);
       // 계약이 거의 바닥난 병종은 미리 다음 계약을 붙여 생산 공백을 줄인다.
       if(existing>0&&pipeline<=Math.max(2,UnitDefinition.productionProfile(id)?.batchSize||1))score+=45;
       candidates.push({id,c,score,affordable});
@@ -38556,11 +38575,11 @@ AppLifecycle.runBootAndStartApp();
 </script>
 <script id="RALLY_STABILITY_INVENTORY" type="application/json">
 {
-  "version": "v76-sdk-synctest",
+  "version": "campaign-ai",
   "kind": "current-ssot",
-  "build": "20261003T091900+0900-rf-sdk-synctest-v76-candidate",
+  "build": "development",
   "simVersion": 183,
-  "status": "검증한 적용 후보 · 실제 공개 SDK 연계 통과",
+  "status": "캠페인 AI 검증 후보 · 전체 난이도와 장시간 성능 미검증",
   "ssot": {
     "network": "URL로 불러온 rollback-netcode 공개 Core와 게임 Adapter가 입력·진행·롤백·해시·복구를 소유한다. GameSession은 경기 Coordinator다. 실행은 createLoop, 연결 판단은 Core 이벤트, 진단은 Synctest.metrics를 사용한다.",
     "sdkUrl": "https://byh-playground.github.io/rollback-netcode/rollback-netcode.js",
@@ -38568,33 +38587,19 @@ AppLifecycle.runBootAndStartApp();
     "versionPinned": false
   },
   "verification": {
-    "static": "PASS — 실행 스크립트/생성 라이브러리 검사, 내장 Core 및 생성 스크립트 제거",
-    "state": "PASS 11 — 상태 왕복/17개 손상 후보, 렌더 변조 비영향 및 충돌 이벤트 보존, 명령14 whitelist",
-    "ai": "PASS 9 — actor-local 영수증, speculative 명령 예약, rewind, 실제 StrategySim 소비",
-    "transport": "PASS — SDK 시그널러, 실제 입력/제어 RTC, 재접속·구독·정리, Loopback 격리",
-    "integration": "PASS — 입력 손실/지연/역순, depth 3 rollback, 3회 ring wrap, peer drift 최대 4tick, 손상 chunk 거부와 staged snapshot atomic commit",
-    "lifecycle": "PASS7 — 기존 rollback/terminal/snapshot recovery/replay6, 공통 loop의 interruption→timeout→resumption",
-    "ui": "PASS — 412px Host/Guest 실제 덱 선택·건설·생산·AI·전투·항복 종료·결과·replay 재생/중간/끝 탐색·복귀. Native NVIDIA D3D11 WebGL, uncaught/fatal/hash mismatch 0",
-    "replay": {
-      "host": {
-        "endTick": 2022,
-        "checksum": "72c36eab"
-      },
-      "guest": {
-        "endTick": 1178,
-        "checksum": "1c7e9d1b"
-      }
-    },
-    "publicNostr": "이번 후보는 공개 relay 시그널러/RTC 연결과 실제 binary 전달 검사 PASS. 외부 NAT 두 기기는 미검증.",
-    "mainCombination": "PASS — main38e54ee 기반, 공개 SDK5ee7b30와 actual RTC lifecycle7/Synctest/campaign/startup/WebGL Host·Guest UI",
-    "loading": "PASS — 실제 공개 SDK 새 API/필수 API 거부/오프라인/지연. Core 측정 RTT badge 직접 표시",
-    "synctest": "PASS — actual confirmed32ticks/177resim, failure firstbyte/hash, live progress/running, cancel/dispose/campaign/cleanup error race",
-    "sdk": "PASS96 — source/generated/TypeScript, actual RTC240, bounded confirmed prefix, async heartbeat"
+    "ai": "PASS 9 — actor-local 영수증, speculative 예약, rewind, 실제 StrategySim 자원 소비",
+    "campaign": "PASS 7 — 동일 시작 카드·자원·테크, Host/Guest 동시 해금, 실제 AI 건설·생산, 생산 없는 직진 진군 패배. 제한된 진군 검사이며 전체 공략 난이도 판정은 아님",
+    "terrain": "PASS 7 — 생성·채집·건설 공간·지형 경로, 실제 캠페인 시작과 항복 복귀",
+    "presentation": "PASS — 첫 미션 실제 합류·병종 해금·생산시설 건설·생산·결과 복귀, WebGL 시각 확인",
+    "module": "PASS — 7개 미션 네이티브 모듈 로딩·캐시·메뉴 선택·지연·재시도"
   },
   "currentEnvironmentUnverified": [
     "실제 모바일 기기",
     "서로 다른 브라우저 엔진 사이의 장시간 결정론",
-    "서로 다른 외부 NAT를 건너는 실제 두 기기 게임"
+    "서로 다른 외부 NAT를 건너는 실제 두 기기 게임",
+    "7개 미션의 사람이 운영하고 생산하는 전체 승리 공략과 난이도 곡선",
+    "AI 활성화 후 장시간 최대 병력에서 렌더 FPS·simulation headroom 비교",
+    "이 후보의 전체 온라인·리플레이 회귀 검사는 재실행하지 않음"
   ],
   "designDebt": [
     "게임 Simulation에는 기존 부동소수 계산 경로가 남아 있다. fixed-point 전면 전환은 공통 Core 적용과 별도의 게임 소유 작업이다.",
