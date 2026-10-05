@@ -321,3 +321,17 @@ node scripts/ground-query-benchmark.cjs --distance near --counts 1,2,5,10,16,17,
 node scripts/ground-query-benchmark.cjs --distance near --patterns same --counts 20,30,40,50,60,80,100 --large-runs 12 --output .qa/query-near-refine
 node scripts/report-ground-query-benchmark.cjs .qa/query-far/results.json .qa/query-near/results.json .qa/query-near-refine/results.json benchmarks/ground-query-20261003.json
 ```
+
+### 적응형 길찾기와 소규모 지연 확인
+
+이제 지상 유닛의 기본 `navigationPlanner`는 `adaptive`다. 직선으로 갈 수 있는 요청은 기존처럼 NavMesh를 건너뛰고, 막힌 실제 이동 요청만 목표·반경·건물 무시 여부·연결 성분으로 묶는다. 첫 요청은 A*, 같은 틱의 두 번째 요청부터는 shared A*를 사용하며, 원거리 요청 20개 또는 같은 목표 요청 80개가 확인된 목표군은 다음 틱부터 Flow-field를 사용한다. 승격된 목표군 목록은 권위 상태에 포함되므로 롤백·스냅샷·두 피어의 선택이 같다. 거리 계산·UI 조회·캐시 존재 여부·벽시계 시간은 집계에 참여하지 않는다. 건물의 통행 토폴로지가 바뀌면 승격 목록을 지운다. `astar`, `shared-astar`, `flow-field`를 유닛 Definition에 명시하면 적응형 선택을 사용하지 않는다.
+
+이 경계는 CPU 예산 게이트가 아니라 2026-10-03의 동일 목표 조회 교차점에서 얻은 보수적 초기 보정값이다. 맵 간선 밀도와 목표 위치에 따라 달라지므로 모든 맵의 최적 경계라고 주장하지 않는다. 다음 시험으로 두 피어가 같은 체크섬을 내는지, 첫 틱의 승격 비용과 다음 틱의 steady-state 비용을 나누어 확인한다.
+
+```sh
+node scripts/ground-planner-benchmark.cjs --modes adaptive --counts 2,10,20,100 --complexities low,medium,high --runs 2 --output .qa/adaptive-planners
+node scripts/worker-navigation-regression.cjs
+node scripts/navigation-spatial-index-regression.cjs --benchmark
+```
+
+소수 유닛 지연은 길찾기만의 문제가 아니었다. 생산과 AI를 멈춘 검병 5기/피어의 실제 Edge/WebGL 시험에서 조용한 장면은 틱 약 3.70ms, `nextPoint` 합계 약 0.2ms였고, 명령으로 이동시킨 경우에도 경로 질의는 약 55.4ms/5초였다. 같은 시험에서 `NavigationObstacleIndex.query`는 주로 렌더 지형·Fog 샘플링 경로에서 약 562ms/5초를 차지했고, 상태 캡처도 약 422ms inclusive였다. 따라서 NavMesh 생성만 줄여서는 소수 유닛의 체감 지연을 설명할 수 없으며, 이번 변경은 공간 인덱스의 문자열 셀 키와 단일 셀 중복 검사를 제거하고 동일 렌더 높이 샘플을 한 번만 계산한다. 기존 반환 순서·체크섬·경계 판정은 회귀 스크립트로 비교한다.

@@ -10,9 +10,9 @@ const root=path.resolve(__dirname,'..'),args=process.argv.slice(2);
 const opt=(k,d)=>{const i=args.indexOf('--'+k);return i<0?d:args[i+1]};
 const config={timingVersion:2,modes:opt('modes','astar,shared-astar,flow-field').split(','),counts:opt('counts','100,200,400').split(',').map(Number),complexities:opt('complexities','low,medium,high').split(','),runs:Number(opt('runs','2')),ticks:Number(opt('ticks','10')),scenario:opt('scenario','movement'),formation:opt('formation','dense'),synctest:opt('synctest','0')==='1',unit:opt('unit','swordsman'),timeoutMs:Number(opt('timeout','120000')),output:path.resolve(opt('output',path.join(root,'.qa','ground-planners')))};
 assert(Number.isInteger(config.runs)&&config.runs>0);assert(Number.isInteger(config.ticks)&&config.ticks>5);
-assert(config.modes.every(x=>['astar','shared-astar','flow-field'].includes(x)));
+assert(config.modes.every(x=>['astar','shared-astar','flow-field','adaptive'].includes(x)));
 assert(config.complexities.every(x=>['low','medium','high'].includes(x)));
-assert(config.counts.every(x=>Number.isInteger(x)&&x>=2&&x<=400&&x%2===0));assert(['movement','battle'].includes(config.scenario));assert(['dense','clear'].includes(config.formation));assert(config.formation!=='clear'||config.scenario==='movement');
+assert(config.counts.every(x=>Number.isInteger(x)&&x>=1&&x<=400&&(config.scenario==='movement'||x%2===0)));assert(['movement','battle'].includes(config.scenario));assert(['dense','clear'].includes(config.formation));assert(config.formation!=='clear'||config.scenario==='movement');
 const hash=x=>crypto.createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const stats=xs=>{const a=xs.filter(Number.isFinite).sort((a,b)=>a-b);return a.length?{n:a.length,mean:a.reduce((s,x)=>s+x,0)/a.length,p50:a[Math.floor((a.length-1)*.5)],p95:a[Math.floor((a.length-1)*.95)],max:a.at(-1),sum:a.reduce((s,x)=>s+x,0)}:null};
 const write=(p,x)=>fs.writeFileSync(p,JSON.stringify(x,null,2));
@@ -20,11 +20,12 @@ function instrument(cfg){
   const q=window.__groundBench={cfg,MatchLifecycle,ActiveViewState,RallySynctestDiagnostics,RangeUtil,BattlefieldProjection,ViewRuntimeState,initial:{},end:{},steps:[],frames:[],startedAt:null,done:false,complete:false,readyForMeasure:false,networkEvents:[],errors:[],validation:{}};
   const {initialPoints}=installFixture(cfg);
   const netEvent=GameSession.prototype.onNetcodeEvent;GameSession.prototype.onNetcodeEvent=function(event){if(q.startedAt!==null&&!q.complete&&['peer-interrupted','peer-resumed','peer-timeout'].includes(event.type))q.networkEvents.push({role:this.role,...event});return netEvent.call(this,event);};
-  const navKeys=['routeQueries','directQueries','fieldsBuilt','fieldHits','fieldBuildMs','astarQueries','astarExpanded','astarCostMs','sharedAstarQueries','sharedAstarHits','layersBuilt','meshBuildMs','regionsBuilt','regionHits'];
+  const navKeys=['routeQueries','directQueries','fieldsBuilt','fieldHits','fieldBuildMs','astarQueries','astarExpanded','astarCostMs','sharedAstarQueries','sharedAstarHits','layersBuilt','meshBuildMs','regionsBuilt','regionHits','adaptiveFlowQueries','adaptiveSharedQueries','adaptiveAstarQueries'];
   const snapshotResult=sim=>{
     const starts=new Map(initialPoints.get(sim).map(p=>[p.id,p])),alive=sim.units.filter(u=>u.alive),poses=alive.map(u=>({id:u.id,x:u.x,y:u.y,hp:u.hp,side:u.side})).sort((a,b)=>a.id.localeCompare(b.id));
     return {heightChanged:alive.filter(u=>Math.abs(sim.world.terrain.surfaces.heightAt(u.x,u.y)-starts.get(u.id).height)>.01).length,tick:sim.tick,checksum:sim.checksum(),alive:alive.length,hp:alive.reduce((s,u)=>s+u.hp,0),
       movedDistance:alive.reduce((s,u)=>s+Math.hypot(u.x-starts.get(u.id).x,u.y-starts.get(u.id).y),0)/Math.max(1,alive.length),
+      navigationAdmissions:Array.isArray(sim.navigationAdmissions)?sim.navigationAdmissions.slice():[],
       remainingDistance:alive.reduce((s,u)=>s+Math.hypot(u.x-3500,u.y-2400),0)/Math.max(1,alive.length),poses,nav:{...sim.navigation.metrics}};
   };
   q.collect=()=>{for(const [role,s] of Object.entries(MatchLifecycle.singleMatch.sessions)){if(s.sim.tick!==cfg.ticks)throw Error('Timed endpoint overshot');q.end[role]=snapshotResult(s.sim);}};
@@ -83,12 +84,13 @@ async function runOne(browser,mode,count,complexity,rep){
     result.fixtureHash=hash({map:result.initial.host.map,roster:result.initial.host.roster,state:result.initial.host.stateHash,tps:result.initial.host.tps});
     assert.equal(result.initial.host.stateHash,result.initial.guest.stateHash,'Peers start with same authority state');
     assert.equal(result.end.host.checksum,result.end.guest.checksum,'Same fixed tick results agree across peers');
+    assert.deepEqual(result.end.host.navigationAdmissions,result.end.guest.navigationAdmissions,'Adaptive navigation admissions agree across peers');
     assert.equal(result.backend,'WebGL');assert(!/swiftshader|llvmpipe|software/i.test(result.gpu),'Native GPU required');
     assert.deepEqual(errors,[]);assert(result.sessions.every(s=>!s.fatal&&s.metrics.hashMismatches===0));
     result.summary={step:stats(result.steps.map(s=>s.ms)),firstTick:stats(result.steps.filter(s=>s.tick===1).map(s=>s.ms)),laterTicks:stats(result.steps.filter(s=>s.tick>5).map(s=>s.ms)),frame:stats(result.frames.map(f=>f.interval)),render:stats(result.frames.map(f=>f.work)),interruptions:result.networkEvents.filter(e=>e.type==='peer-interrupted').length,windowThroughput:config.ticks*1000/result.durationMs,actualTps:2*(config.ticks-1)*1000/['host','guest'].reduce((sum,role)=>{const rows=result.steps.filter(s=>s.role===role),first=rows[0],last=rows.at(-1);return sum+(last.at+last.ms-first.at-first.ms);},0),combatHits:result.steps.reduce((sum,s)=>sum+s.hits,0),
       nav:Object.fromEntries(Object.keys(result.steps[0].nav).map(k=>[k,result.steps.reduce((sum,s)=>sum+s.nav[k],0)])),heightChanged:result.end.host.heightChanged,alive:result.end.host.alive,hp:result.end.host.hp,movedDistance:result.end.host.movedDistance,checksum:result.end.host.checksum,complexity:result.initial.host.complexity};
     assert.equal(result.steps.length,config.ticks*2,'Exactly same simulated work window');
-    if(config.scenario==='movement'){assert(result.end.host.heightChanged>0,'Real movement changes terrain height in the measured window');assert.equal(result.end.host.alive,count);assert(result.summary.nav.routeQueries>0);if(mode==='flow-field')assert(result.summary.nav.fieldsBuilt>0);else assert.equal(result.summary.nav.fieldsBuilt,0);}
+    if(config.scenario==='movement'){if(result.initial.host.roster.some(p=>p.height!==0))assert(result.end.host.heightChanged>0,'Real movement changes terrain height in the measured window');assert(result.end.host.movedDistance>0,'Units actually move');assert.equal(result.end.host.alive,count);assert(result.summary.nav.routeQueries>0);if(mode==='flow-field')assert(result.summary.nav.fieldsBuilt>0);else if(mode!=='adaptive')assert.equal(result.summary.nav.fieldsBuilt,0);}
     if(config.scenario==='battle')assert(result.summary.combatHits>0,'Battle fixture must include actual combat');
     if(config.synctest){result.synctest=await page.evaluate(async()=>await __groundBench.RallySynctestDiagnostics.run(__groundBench.MatchLifecycle.singleMatch.sessions.host));assert.equal(result.synctest.status,'passed','Library Synctest validates the benchmark game state');}
     write(path.join(dir,'result.json'),result);
@@ -106,8 +108,8 @@ async function runOne(browser,mode,count,complexity,rep){
       const modes=config.modes.slice((rep-1)%config.modes.length).concat(config.modes.slice(0,(rep-1)%config.modes.length));
       for(const mode of modes){
         const result=await runOne(browser,mode,count,complexity,rep),peers=results.filter(r=>r.config.count===count&&r.config.complexity===complexity);
-        for(const previous of peers){assert.equal(result.fixtureHash,previous.fixtureHash,'Map/roster/state/TPS identical across all modes and repeats');if(previous.config.mode===mode||[previous.config.mode,mode].every(m=>m!=='flow-field'))assert.equal(result.summary.checksum,previous.summary.checksum,'Repeated mode and plain/shared A* have identical fixed-tick result');}
-        results.push(result);write(path.join(config.output,'summary.json'),{config,revision,machine:{cpus:os.cpus().map(c=>c.model),memory:os.totalmem()},browser:browser.version(),results});
+        for(const previous of peers){assert.equal(result.fixtureHash,previous.fixtureHash,'Map/roster/state/TPS identical across all modes and repeats');if(previous.config.mode===mode||[previous.config.mode,mode].every(m=>['astar','shared-astar'].includes(m)))assert.equal(result.summary.checksum,previous.summary.checksum,'Repeated mode and plain/shared A* have identical fixed-tick result');}
+        results.push(result);write(path.join(config.output,'summary.json'),{config,revision,sourceHash:hash(fs.readFileSync(path.join(root,'index.html'),'utf8')),machine:{cpus:os.cpus().map(c=>c.model),memory:os.totalmem()},browser:browser.version(),results});
       }
     }
   }finally{await browser.close();}
