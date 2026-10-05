@@ -72,7 +72,7 @@ async function run(){
       }
       results.push({sharedSourceOrders:3,sharedSources:starts.length,boundedSuffixes:true});
       const {nav,sim}=create(),worker=UnitDefinition.get('worker'),combat=UnitDefinition.get('swarmbug'),oldWorker=worker.navigationPlanner,oldCombat=combat.navigationPlanner;
-      check(TerrainNavigation.planner('worker')==='shared-astar'&&TerrainNavigation.planner('swarmbug')==='flow-field','Default unit configuration selects worker shared A* and combat field');
+      check(TerrainNavigation.planner('worker')==='adaptive'&&TerrainNavigation.planner('swarmbug')==='adaptive','Default unit configuration selects adaptive for every ground unit');
       const original=nav.field;let fieldCalls=0;nav.field=function(...args){fieldCalls++;return original.apply(this,args)};
       for(const [workerMode,combatMode]of [['astar','flow-field'],['flow-field','astar']]){
         worker.navigationPlanner=workerMode;combat.navigationPlanner=combatMode;

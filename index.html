@@ -61,7 +61,7 @@ PURPOSE
 - 일반 절차맵도 같은 지형 시스템을 사용한다. 전투 공간·연결 통로·고지대·경사로의 배치는 MapGeneration이 소유하고, 본진·점령지·자원·중립의 유효한 배치와 접근성을 공통 geometry로 검증한다. 지형 높이는 level 하나만 SSOT로 사용하며 특정 버전의 벽 개수나 배치 레시피를 장기 계약에 고정하지 않는다.
 - level은 부호 있는 정수이며 기본 지면은 0이다. 음수·양수에 임의의 게임상 상한/하한을 두지 않고 높이는 공통 변환으로 파생하며 양수는 레벨당 48, 음수는 그 절반인 24를 사용한다. 중첩 지형은 가장 안쪽 영역이 표면을 소유한다. 기본 지면도 함몰면·섬·경사로를 제외한 실제 mesh로 만들고 렌더·Fog·클릭이 같은 표면을 사용한다.
 - 이동 명령의 점 목표와 공격·채집·반납·건설·치유의 상호작용 영역 목표를 구분한다. 실제 사거리·최소 사거리·지형 접촉 규칙은 InteractionGeometry가 한 번 정의하며 판정과 NavigationGoal이 공유한다. 건물 중심 투영이나 고정 각도 접근점을 작업 목표로 사용하지 않는다.
-- 지상 경로 탐색은 유닛 정의의 navigationPlanner 설정(astar, shared-astar 또는 flow-field)으로 선택한다. 기본값은 flow-field이고 일꾼 정의의 기본값은 shared-astar다. 이동·거리·도달 가능성 검사는 같은 설정을 따르며 종류별 예외 분기를 만들지 않는다. 세 탐색기는 같은 NavMesh·포털·연속 목표 영역·funnel·충돌 규칙을 공유한다. 직선이 열리면 즉시 직진한다. 경로 cache는 결과를 바꾸지 않는 파생 상태이며 저장/체크섬에서 제외한다.
+- 지상 경로 탐색은 유닛 정의의 navigationPlanner 설정(adaptive, astar, shared-astar 또는 flow-field)으로 선택한다. 모든 종류의 기본값은 adaptive다. adaptive는 직선이 막힌 실제 이동의 동일 목표·반경·연결 성분 요청을 집계해 A*/공유 A*/Flow를 선택하며 직전 틱의 Flow 사용 자격은 권위 상태로 저장한다. 거리·도달 가능성 검사는 adaptive에서 A*를 쓰고 집계에 참여하지 않는다. 명시한 세 알고리즘은 이동·거리 검사에 같은 설정을 사용한다. 세 탐색기는 같은 NavMesh·포털·연속 목표 영역·funnel·충돌 규칙을 공유한다. 직선이 열리면 즉시 직진한다. 경로 cache는 결과를 바꾸지 않는 파생 상태이며 저장/체크섬에서 제외한다.
 - NavMesh는 경로를 선택하고 SurfaceMotion은 그 경로의 이동·외력·군중 보정을 동일한 건물/지형 접촉으로 처리한다. 검증된 부분 이동을 틱 시작점부터의 직선으로 다시 잘라내지 않는다. 접선 투영은 공통화하되 외력에 자발적인 우회 속도를 추가하지 않는다.
 - 건설 명령은 비용을 선결제하고 constructionOrders에 예약한다. 예약은 위치 중복만 막고 물리·전투·시야·보급·기술에 참여하지 않는다. 일꾼 도착 시 같은 ID의 실제 건물을 생성한다. 착공 전 취소·위치 무효화는 전액 환불하며 실제 착공 후 기존 환불 규칙을 따른다. 예약은 권위 상태로 복원하고 UI·AI도 동일한 예약을 조회한다.
 - 건설 미리보기는 위치·겹침·자원·시야만 검사하며 NavMesh를 생성하지 않는다. 일꾼 접근성은 BUILD 실행 시 권위 시뮬레이션이 검증한다. 건물 변경은 영향받는 고정 영역의 메쉬만 다시 만들며, 캐시 준비 순서나 롤백 이력과 무관하게 같은 토폴로지에서 같은 경로를 선택해야 한다.
@@ -10670,7 +10670,7 @@ const BUILD_META=Object.freeze({
 /* =========================
    1. Definitions
    ========================= */
-const SIM_TPS=20,FP=100,SIM_VERSION=186;
+const SIM_TPS=20,FP=100,SIM_VERSION=187;
 
 // Authoritative time contract:
 // - balance/design data uses integer milliseconds
@@ -10829,17 +10829,30 @@ class NavigationObstacleIndex{
     for(let i=0;i<items.length;i++){
       const b=items[i];
       for(let y=Math.floor(b.minY/cell);y<=Math.floor(b.maxY/cell);y++)for(let x=Math.floor(b.minX/cell);x<=Math.floor(b.maxX/cell);x++){
-        const key=x+","+y;let bin=this.bins.get(key);if(!bin)this.bins.set(key,bin=[]);bin.push(i);
+        let row=this.bins.get(y);if(!row)this.bins.set(y,row=new Map());
+        let bin=row.get(x);if(!bin)row.set(x,bin=[]);bin.push(i);
       }
     }
   }
   query(x0,y0,x1=x0,y1=y0,pad=0){
-    this.out.length=0;if(++this.epoch===0xffffffff){this.marks.fill(0);this.epoch=1}
+    this.out.length=0;if(!this.items.length)return this.out;
     const minX=Math.min(x0,x1)-pad,maxX=Math.max(x0,x1)+pad,minY=Math.min(y0,y1)-pad,maxY=Math.max(y0,y1)+pad;
-    for(let y=Math.floor(minY/this.cell);y<=Math.floor(maxY/this.cell);y++)for(let x=Math.floor(minX/this.cell);x<=Math.floor(maxX/this.cell);x++){
-      const bin=this.bins.get(x+","+y);if(!bin)continue;
-      for(const i of bin){if(this.marks[i]===this.epoch)continue;this.marks[i]=this.epoch;const b=this.items[i];
+    const bx0=Math.floor(minX/this.cell),bx1=Math.floor(maxX/this.cell),by0=Math.floor(minY/this.cell),by1=Math.floor(maxY/this.cell);
+    if(bx0===bx1&&by0===by1){
+      const bin=this.bins.get(by0)?.get(bx0);
+      if(bin)for(const i of bin){const b=this.items[i];
         if(b.maxX>=minX&&b.minX<=maxX&&b.maxY>=minY&&b.minY<=maxY)this.out.push(b);
+      }
+      return this.out;
+    }
+    if(++this.epoch===0xffffffff){this.marks.fill(0);this.epoch=1}
+    for(let y=by0;y<=by1;y++){
+      const row=this.bins.get(y);if(!row)continue;
+      for(let x=bx0;x<=bx1;x++){
+        const bin=row.get(x);if(!bin)continue;
+        for(const i of bin){if(this.marks[i]===this.epoch)continue;this.marks[i]=this.epoch;const b=this.items[i];
+          if(b.maxX>=minX&&b.minX<=maxX&&b.maxY>=minY&&b.minY<=maxY)this.out.push(b);
+        }
       }
     }
     return this.out;
@@ -12263,6 +12276,57 @@ class SurfaceMotion{
   }
 }
 
+// Coarse prior-tick Flow admission is authoritative; local cache warmth is not.
+class AdaptiveNavigationDemand{
+  // Conservative empirical query crossovers. Distance is a tunable calibration,
+  // not an inferred map-complexity or CPU-budget model.
+  static FAR_DISTANCE=1000;
+  static FAR_REQUESTS=20;
+  static TOTAL_REQUESTS=80;
+  static MAX_ADMISSIONS=4096;
+  static begin(sim){sim.navigationDemandScope={previous:new Set(sim.navigationAdmissions),groups:new Map()}}
+  static end(sim){
+    const scope=sim.navigationDemandScope;sim.navigationDemandScope=null;
+    if(!scope)return;
+    sim.navigationAdmissions=[...scope.groups].filter(([,g])=>this.eligible(g)).map(([key])=>key).sort().slice(0,this.MAX_ADMISSIONS);
+  }
+  static invalidate(sim){
+    sim.navigationAdmissions=[];
+    if(sim.navigationDemandScope){sim.navigationDemandScope.previous.clear();sim.navigationDemandScope.groups.clear()}
+  }
+  static eligible(group){return group.far.size>=this.FAR_REQUESTS||group.units.size>=this.TOTAL_REQUESTS}
+  static validate(keys){
+    if(!Array.isArray(keys)||keys.length>this.MAX_ADMISSIONS)throw new Error('Invalid navigation admissions');
+    let previous=null;
+    for(const key of keys){
+      if(typeof key!=='string'||key.length>512||previous!==null&&key<=previous)throw new Error('Invalid navigation admission key');
+      let parts;try{parts=JSON.parse(key)}catch{throw new Error('Invalid navigation admission key')}
+      if(!Array.isArray(parts)||parts.length!==3||typeof parts[0]!=='string'||!/^\d+(?:\.\d+)?:[01]$/.test(parts[0])||!Number.isSafeInteger(parts[1])||parts[1]<0||typeof parts[2]!=='string')throw new Error('Invalid navigation admission profile');
+      const goal=parts[2].split(':').map(Number);
+      if(goal.length!==6||!goal.every(Number.isFinite)||goal[2]<0||goal[3]<0||goal[3]>goal[2]||![0,1].includes(goal[4])||![0,1].includes(goal[5])||goal.join(':')!==parts[2]||JSON.stringify(parts)!==key)throw new Error('Invalid navigation admission goal');
+      previous=key;
+    }
+  }
+  static select(nav,u,goal,radius,ignore){
+    const scope=nav.sim.navigationDemandScope;
+    // Preview/speculative calls never acquire admission or alter future movement.
+    if(!scope)return 'astar';
+    const layer=nav.layer(radius,ignore),start=nav.locate(u.x,u.y,layer,null,{radius:Math.max(0,radius-.12)});
+    if(!start||start.d2>256*256)return 'astar';
+    // Components follow canonical tile/local traversal, not reusable graph slots.
+    const profile=TerrainNavigation.layerProfile(radius,ignore);
+    const key=JSON.stringify([profile.r+':'+(ignore?1:0),start.cell.component,goal.key]);
+    let group=scope.groups.get(key);
+    if(!group){group={units:new Set(),far:new Set()};scope.groups.set(key,group)}
+    group.units.add(u.id);
+    if(Math.hypot(u.x-goal.x,u.y-goal.y)>=this.FAR_DISTANCE)group.far.add(u.id);
+    const mode=scope.previous.has(key)||this.eligible(group)?'flow-field':group.units.size>1?'shared-astar':'astar';
+    const metric=mode==='flow-field'?'adaptiveFlowQueries':mode==='shared-astar'?'adaptiveSharedQueries':'adaptiveAstarQueries';
+    nav.metrics[metric]=(nav.metrics[metric]||0)+1;
+    return mode;
+  }
+}
+
 class TerrainNavigation{
   static MAX_LAYERS=12;
   static SHARED_ASTAR_GOALS=16;
@@ -12467,8 +12531,8 @@ class TerrainNavigation{
     this.metrics.fieldsBuilt++;this.metrics.fieldBuildMs+=performance.now()-begun;return f;
   }
   static planner(type){
-    const planner=UnitDefinition.get(type)?.navigationPlanner??'flow-field';
-    if(planner!=='astar'&&planner!=='shared-astar'&&planner!=='flow-field')throw new Error('Unknown navigation planner: '+planner);
+    const planner=UnitDefinition.get(type)?.navigationPlanner??'adaptive';
+    if(planner!=='adaptive'&&planner!=='astar'&&planner!=='shared-astar'&&planner!=='flow-field')throw new Error('Unknown navigation planner: '+planner);
     return planner;
   }
   plan(x,y,goal,radius,ignoreBuildings=false,planner='flow-field'){
@@ -12646,11 +12710,12 @@ class TerrainNavigation{
     return this.segmentClear(x,y,p.x,p.y,radius,ignoreBuildings?'*':null,true,0)?p:null;
   }
   nextPoint(u,goal){
-    const planner=TerrainNavigation.planner(u.type);
+    let planner=TerrainNavigation.planner(u.type);
     if(UnitDefinition.get(u.type)?.layer==='AIR')return goal.closest(u.x,u.y);
     this.sync();const ignore=TerrainNavigation.ignoresBuildings(u),r=this.sim.unitRadius(u.type);this.metrics.routeQueries++;
     const direct=this.directGoal(u.x,u.y,goal,r,ignore);
     if(direct){this.metrics.directQueries++;return direct}
+    if(planner==='adaptive')planner=AdaptiveNavigationDemand.select(this,u,goal,r+.12,ignore);
     if(planner!=='flow-field')this.metrics.astarMoveQueries++;
     const plan=this.plan(u.x,u.y,goal,r+.12,ignore,planner);
     if(!plan){this.metrics.unreachable++;return null}
@@ -12667,7 +12732,7 @@ class TerrainNavigation{
     const p=this.geometry.nearestOpen(tx,ty,r,256,(x,y)=>this.pointClear(x,y,r,ignoreId));return p&&this.connected(u.x,u.y,p.x,p.y,u.type,ignoreBuildings)?p:null;
   }
   distance(x,y,goal,type='worker',ignoreBuildings=false){
-    const planner=TerrainNavigation.planner(type);
+    const configured=TerrainNavigation.planner(type),planner=configured==='adaptive'?'astar':configured;
     this.sync();const r=this.sim.unitRadius(type),direct=this.directGoal(x,y,goal,r,ignoreBuildings);
     if(direct)return Math.sqrt(direct.d2);
     if(planner!=='flow-field')this.metrics.astarDistanceQueries++;
@@ -13490,7 +13555,7 @@ class UnitDefinition{
   
 
   static all={
-  worker:{requiresContactTerrain:true,navigationPlanner:"shared-astar",name:"일꾼콩",tier:1,mineralCost:WORKER_COST,supply:1,buildTimeMs:4000,hp:50,atk:5,range:25,speed:150,cooldownMs:750,size:10,sizeClass:"light",role:"worker",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:225,builderTargetPriority:true,economyWorker:true,captureExcluded:true,recallExcluded:true,spellHealExcluded:true},
+  worker:{requiresContactTerrain:true,navigationPlanner:"adaptive",name:"일꾼콩",tier:1,mineralCost:WORKER_COST,supply:1,buildTimeMs:4000,hp:50,atk:5,range:25,speed:150,cooldownMs:750,size:10,sizeClass:"light",role:"worker",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:225,builderTargetPriority:true,economyWorker:true,captureExcluded:true,recallExcluded:true,spellHealExcluded:true},
 
   // Neutral PvE units - 생산/드래프트 대상이 아닌 맵 오브젝트
   wildhound:{requiresContactTerrain:true,name:"가시등 스프린터",tier:0,mineralCost:0,supply:0,buildTimeMs:0,hp:275,atk:40,range:25,speed:125,cooldownMs:750,size:20,sizeClass:"light",attackVisual:{sourceMotion:"slash",travel:"none",impact:"light"},role:"neutral",sight:0,leapRange:225,leapCooldownMs:2000,leapSplashRadius:75,leapSplashDamagePct:200,damageClass:"smallSpecialist"},
@@ -17241,7 +17306,7 @@ class SimulationRuntimeState{
   static initialize(sim,{newMatch=false}={}){
     sim.runtimeEpoch=(sim.runtimeEpoch||0)+1;
     this.collision(sim);this.spatial(sim);this.visibility(sim);this.economy(sim);
-    sim.navigationRevision=0;sim.navigation=new TerrainNavigation(sim);
+    sim.navigationDemandScope=null;sim.navigationRevision=0;sim.navigation=new TerrainNavigation(sim);
     sim.perfStats=PerformanceTelemetry.createLocalPerfStats();sim._perfCollect=null;
     if(newMatch||!sim.balanceStats)sim.balanceStats=PerformanceTelemetry.createLocalBalanceStats();
     sim.commandReceipts=[];
@@ -17261,7 +17326,7 @@ class StrategySim{
   // Runtime owners declare only the local/derived exclusions; entity owners keep
   // their existing StateContracts and serialization.
   static stateContract=new StateContract({}, {presentation:["events","perfStats","balanceStats","_perfCollect"],derived:[
-    "world","tps","campaignScriptRuntime","campaignTechCap","disposed","runtimeEpoch","commandReceipts",
+    "navigationDemandScope","world","tps","campaignScriptRuntime","campaignTechCap","disposed","runtimeEpoch","commandReceipts",
     "collisionGrid","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
     "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapMarks","hardFixSapEpoch",
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","maxUnitRadius",
@@ -17273,7 +17338,7 @@ class StrategySim{
     catch(error){sim.dispose("initialization-failed");throw error}
   }
   constructor(draftState,seed,rules=GameRuleDefinition.current,campaignScenario=null){
-    this.seed=seed>>>0;this.rules=rules||GameRuleDefinition.current;this.tps=RangeUtil.clamp(Math.round(Number(this.rules?.simulation?.tps)||SIM_TPS),10,30);const campaignHumanRole=campaignScenario?.playerRole||"host",campaignHumanSide=campaignHumanRole==="host"?0:1;this.mapDescriptor=campaignScenario?.map?CampaignMapDefinition.build(campaignScenario.map,this.rules,this.seed,campaignHumanSide):MapGeneration.generateMapDescriptor({rules:this.rules,seed:this.seed,roundNumber:this.rules?.roundNumber||1});StateValue.freeze(this.mapDescriptor);this.world=WorldContext.fromMap(this.mapDescriptor);this.tick=0;this.seq=0;this.units=[];this.buildings=[];this.constructionOrders=[];this.projectiles=[];this.events=[];this.scheduled=new Map();
+    this.seed=seed>>>0;this.rules=rules||GameRuleDefinition.current;this.tps=RangeUtil.clamp(Math.round(Number(this.rules?.simulation?.tps)||SIM_TPS),10,30);const campaignHumanRole=campaignScenario?.playerRole||"host",campaignHumanSide=campaignHumanRole==="host"?0:1;this.mapDescriptor=campaignScenario?.map?CampaignMapDefinition.build(campaignScenario.map,this.rules,this.seed,campaignHumanSide):MapGeneration.generateMapDescriptor({rules:this.rules,seed:this.seed,roundNumber:this.rules?.roundNumber||1});StateValue.freeze(this.mapDescriptor);this.world=WorldContext.fromMap(this.mapDescriptor);this.tick=0;this.seq=0;this.units=[];this.buildings=[];this.constructionOrders=[];this.navigationAdmissions=[];this.projectiles=[];this.events=[];this.scheduled=new Map();
     this.wallet=[0,1].map(()=>Math.max(0,Number(this.rules?.economy?.startingResources?.minerals)||0));
     this.gasWallet=[0,1].map(()=>Math.max(0,Number(this.rules?.economy?.startingResources?.gas)||0));
     this.tech=[1,1];this.productionPaused=[false,false];
@@ -17448,7 +17513,7 @@ class StrategySim{
     const alive=ref.isBuilding?ref.entity.alive!==false:!!ref.entity.alive;
     return alive?ref:null;
   }
-  markBuildingSpatialDirty(){this.buildingSpatialDirty=true;this.navigationRevision=(this.navigationRevision||0)+1}
+  markBuildingSpatialDirty(){this.buildingSpatialDirty=true;this.navigationRevision=(this.navigationRevision||0)+1;AdaptiveNavigationDemand.invalidate(this)}
   ensureBuildingSpatial(){
     if(!this.buildingSpatial)this.buildingSpatial=new DeterministicBuildingSpatialGrid(SIM_SPATIAL_CELL,this.world);
     if(this.buildingSpatialDirty){this.buildingSpatial.reset(this.buildings);this.buildingSpatialDirty=false}
@@ -22245,6 +22310,10 @@ let value=Math.max(0,Number(d.flatArmor)||0);
 
   step(){
     if(this.disposed)throw new Error("종료된 StrategySim은 다시 진행할 수 없습니다.");
+    AdaptiveNavigationDemand.begin(this);
+    try{return this.stepSimulation()}finally{AdaptiveNavigationDemand.end(this)}
+  }
+  stepSimulation(){
     const profile=((this.tick+1)%this.msTicks(PERF_SAMPLE_EVERY_MS)===0)&&typeof performance!=="undefined";
     const now=profile?()=>performance.now():null;
     const stepStart=profile?now():0;
@@ -22368,6 +22437,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     const projectiles=makeHasher(),capture=makeHasher(),spells=makeHasher(),scheduledH=makeHasher();
 
     for(const order of this.constructionOrders)buildings[order.side].ms(StableSerializationUtil.stableStringify(order));
+    core.ms(StableSerializationUtil.stableStringify(this.navigationAdmissions));
     core.m(this.mapFingerprint());core.m(this.tick);core.m(this.seq);core.m(this.spellRewardSeq||0);
     for(const f of this.flags){core.mf(f.x);core.mf(f.y);core.m(f.forced?1:0)}
     core.ms(StableSerializationUtil.stableStringify(this.campaignScriptRuntime?.state||null));
@@ -22964,6 +23034,7 @@ class RallySimulationAdapter{
         }
       }
     }
+    AdaptiveNavigationDemand.validate(state.navigationAdmissions);
     const orderIds=new Set(state.buildings.map(b=>b.id)),builderIds=new Set();
     const orderFields=new Set(["id","type","side","x","y","produceType","gasNodeId","createdTick","builderUnitId","paidMineral","paidGas","constructionState"]);
     for(const order of state.constructionOrders){
@@ -28435,7 +28506,8 @@ class GLRenderer{
     // final screen composition. All world consumers use this stable projection.
     const sc=this.sc(),ox=(this.canvas.width-this.viewWorldW()*sc)/2;
     const vx=this.viewX(p.x),vz=this.viewY(p.z);
-    const resolved=p.groundY==null?{...p,y:p.y+this.world.terrain.surfaces.heightAt(p.x,p.z),groundY:this.world.terrain.surfaces.heightAt(p.x,p.z)}:p;
+    const groundY=p.groundY==null?this.world.terrain.surfaces.heightAt(p.x,p.z):p.groundY;
+    const resolved=p.groundY==null?{...p,y:p.y+groundY,groundY}:p;
     return{x:ox+(vx-this.cameraLeft)*sc,y:(BattlefieldProjection.planarY(vz,resolved.y)-this.cameraTop)*sc,depth:this.renderDepthForWorld(resolved),world:resolved};
   }
   projectRenderWorldPosition(p){
