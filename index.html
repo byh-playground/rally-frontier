@@ -75,9 +75,10 @@ PURPOSE
 - 잠복 유닛과 지상 유닛/지상 건물은 물리 충돌하지 않는다.
 - 공통 separation으로 해결 가능한 경우 잠복 전용 packing/separation 알고리즘을 새로 만들지 않는다.
 
-5.1. CONFIGURABLE ROLLBACK NETCODE
+5.1. CONFIGURABLE LOCKSTEP / ROLLBACK NETCODE
 - GameSession은 경기 Coordinator이며 공통 rollback-netcode Session, Simulation Adapter, Transport capability를 Has-a로 소유한다. 게임은 공개 계약에 맞추며 전용 Core fork나 내부 필드 접근을 만들지 않는다.
-- Input Prediction / Adaptive Input Delay / Simulation Clock Synchronization / Rollback / Resimulation / Periodic State Hash / Transactional Snapshot Resync는 한 Core가 소유한다. 차이는 Profile Parameter로 표현하며 기본 pacing은 Discrete Tick Hold다.
+- CONFIG.netcode.mode의 기본값은 lockstep이다. 고급 테스트 설정에서 다음 경기의 lockstep/rollback을 선택하며, 생성된 세션의 모드는 바뀌지 않는다. 온라인 양쪽 설정이 다르면 HELLO에서 거부한다.
+- Input Prediction / Adaptive Input Delay / Simulation Clock Synchronization / Rollback / Resimulation / Periodic State Hash / Transactional Snapshot Resync는 한 Core가 소유한다. lockstep은 확정 입력을 기다리며 예측·롤백용 매 틱 snapshot을 만들지 않는다. checksumInterval 주기의 체크포인트와 요청 시 현재 경계의 저장은 유지한다. 기존 RTS 입력 지연·Discrete Tick Hold와 게임 TPS는 그대로다.
 - Authoritative는 StrategySim과 StateContract, Runtime은 Core·캐시·명령 영수증 추적, Presentation은 Render State·확정 효과 journal이 소유한다. 재실행은 외부 AI 결정·VFX·결과·replay 기록을 중복 실행하지 않는다.
 - 롤백은 제한된 prediction 범위 안에서 과거 상태를 복원한 호출 안에 현재 틱까지 동기 재실행한다. 시뮬레이션은 렌더링·DOM과 분리하며 재실행 중 소리·알림을 중복 발생시키지 않는다.
 - Core frame t는 게임의 step 이전 S[t]다. UI·AI 명령은 player-local sequence로 제출하며 확정 frame의 정렬된 입력만 게임 명령과 replay로 변환한다. Gameplay 시간은 Simulation Tick, scheduler와 지연 정책은 Runtime이다.
@@ -9974,6 +9975,14 @@ body.campaign-mode #p2pHealthText {
           <div id="simulationTpsCopy" class="selection-mode-copy">10 TPS · 현재 기본값</div>
           <div class="selection-mode-copy">FPS와 무관한 게임 로직 처리 주기입니다. 온라인 경기는 Host가 선택하고 Guest는 동일 설정을 따릅니다.</div>
         </div>
+        <div style="margin-top:10px">
+          <div class="selection-mode-label">동기화 모드 · 다음 경기부터 적용</div>
+          <div class="selection-mode-toggle" id="netcodeModeToggle">
+            <button type="button" class="selection-mode-btn active" data-netcode-mode="lockstep">락스텝 · 기본</button>
+            <button type="button" class="selection-mode-btn" data-netcode-mode="rollback">롤백</button>
+          </div>
+          <div class="selection-mode-copy">락스텝은 입력을 기다리고, 롤백은 입력을 예측한 뒤 보정합니다. 온라인 양쪽의 선택이 같아야 합니다. TPS·FPS는 바뀌지 않습니다.</div>
+        </div>
         <div id="unitTestScenario" style="display:grid;grid-template-columns:minmax(0,1fr) 72px;gap:7px;margin-top:12px">
           <label class="selection-mode-label" style="grid-column:1/-1">빠른 실제 전투 초기조건</label>
           <select id="unitTestAllyType" class="room-code-input" style="width:100%;font-size:11px;padding:7px"></select>
@@ -10633,7 +10642,7 @@ body.campaign-mode #p2pHealthText {
 (async function(){
 "use strict";
 const RALLY_GAMEKIT_MODULES=Object.freeze({rollback:'./vendor/gamekit/rollback.js',deterministic:'./vendor/gamekit/deterministic.js',simloop:'./vendor/gamekit/simloop.js',transport:'./vendor/gamekit/transport.js',interpolation:'./vendor/gamekit/interpolation.js',rendering:'./vendor/gamekit/rendering.js',input:'./vendor/gamekit/input.js',camera:'./vendor/gamekit/camera.js',events:'./vendor/gamekit/presentation-events.js',hud:'./vendor/gamekit/hud.js',debug:'./vendor/gamekit/debug-tools.js'});
-const RALLY_GAMEKIT_SOURCE=Object.freeze({repository:'byh-playground/bloom-gamekit',sourceCommit:'9be41746b488d8d51699b6aad023370d9f5389e3',distCommit:'a3e4bd670361b6af653d8ec5686ecb564d428398'});
+const RALLY_GAMEKIT_SOURCE=Object.freeze({repository:'byh-playground/bloom-gamekit',sourceCommit:'e93bfa2888cf0a84d48507bf283d3b5bb823a6df',distCommit:'9c28208fb689bed60ee877d511338ba4d6a0a1b0'});
 const RALLY_NETCODE_URL='gamekit:'+RALLY_GAMEKIT_SOURCE.distCommit;
 let RallyNetcode,RallyGamekit;
 try{
@@ -10678,6 +10687,13 @@ const BUILD_META=Object.freeze({
    1. Definitions
    ========================= */
 const SIM_TPS=20,FP=100,SIM_VERSION=187;
+// Local session policy, deliberately outside canonical gameplay/save rules.
+// A session captures this setting once; changing it only affects the next match.
+const CONFIG={netcode:{mode:'lockstep'}};
+function netcodeMode(value=CONFIG.netcode.mode){
+  if(value!=='lockstep'&&value!=='rollback')throw new Error('지원하지 않는 동기화 모드: '+value);
+  return value;
+}
 
 // Authoritative time contract:
 // - balance/design data uses integer milliseconds
@@ -23129,6 +23145,7 @@ class GameSession{
   constructor(role,transport,roomCode,matchConfig=null){
     if(!['host','guest'].includes(role))throw new Error('경기 플레이어 역할이 잘못되었습니다.');
     this.role=role;this.transport=transport;this.roomCode=roomCode;
+    this.netcodeMode=netcodeMode();
     this.matchConfig=GameRuleRuntime.normalizeMatchConfig(matchConfig);
     this.matchPresetId=this.matchConfig.presetId;this.matchRuleOverrides=this.matchConfig.overrides;
     this.roundRules=GameRuleRuntime.resolveMatchRules({presetId:this.matchPresetId,matchOverrides:GameRuleRuntime.mergeGameRules(this.matchRuleOverrides||{},{simulation:{tps:this.matchConfig.simulationTps}})});
@@ -23393,10 +23410,11 @@ class GameSession{
     this.simEnded=false;this.matchResult=null;this.publishedGameTick=0;this.netcodeLoop?.resetTiming();
     this.onSnapshot(this.sim.snapshot());this.onRenderTargets(this.sim,true);
     this.netcodeNow=performance.now();
-    // RTS Profile만 선택한다. 동일 public Core가 prediction/hold/resim/hash/recovery를 실행한다.
+    // Keep the existing RTS delay/pacing. One Core owns both configured modes;
+    // lockstep waits for actual inputs and only serializes periodic/on-demand checkpoints.
     this.netcodeSession=RallyNetcode.createSession({players:['host','guest'],localPlayerId:this.role,authorityPlayerId:'host',
       sessionId:String(this.roomCode),simulationVersion:String(SIM_VERSION),seed:seed>>>0,inputSize:1,
-      profile:{...RallyNetcode.profiles.rts,tickRate:this.sim.tps,maxCatchupSteps:MAX_CATCHUP_STEPS_PER_PULSE,checksumInterval:20,maxCommandBytes:12*1024,maxHistoryBytes:64*1024*1024,maxSnapshotBytes:RallyStateCodec.maxBytes},
+      profile:{...RallyNetcode.profiles.rts,mode:this.netcodeMode,rollbackWindowTicks:this.netcodeMode==='lockstep'?0:RallyNetcode.profiles.rts.rollbackWindowTicks,tickRate:this.sim.tps,maxCatchupSteps:MAX_CATCHUP_STEPS_PER_PULSE,checksumInterval:20,maxCommandBytes:12*1024,maxHistoryBytes:64*1024*1024,maxSnapshotBytes:RallyStateCodec.maxBytes},
       adapter:this.simulationAdapter,clock:()=>this.netcodeNow,onEvent:event=>this.onNetcodeEvent(event)});
     const statusTransport=this.transport;
     this.detachNetcodeTransport=this.netcodeSession.attachTransport(this.role==='host'?'guest':'host',{
@@ -23448,7 +23466,7 @@ class GameSession{
     }else if(['recovery-rejected','recovery-timeout'].includes(event.type)){
       this.candidateFrameOutputs.clear();this.terminalRecoveryKey='';this.onLog('Snapshot 복구 후보 거부 · '+(event.reason||'시간 초과'));
     }else if(['version-mismatch','handshake-mismatch'].includes(event.type)||event.type==='protocol-error'&&!this.netcodeSession?.ready){
-      this.enterSimulationFatal(event.error||new Error('넷코드 초기 계약이 다릅니다: '+event.type),{source:'netcode-handshake'});
+      this.enterSimulationFatal(new Error('게임 버전 또는 동기화 설정이 다릅니다. 양쪽 모두 새로고침하고 같은 동기화 모드를 선택하세요. ('+event.type+')'),{source:'netcode-handshake'});
     }else if(event.type==='desync-unrecoverable')this.enterSimulationFatal(new Error('공통 넷코드 복구 시도를 소진했습니다.'),{source:'netcode-recovery'});
     else if(event.type==='fatal')this.enterSimulationFatal(event.error,{source:'netcode-adapter'});
   }
@@ -32943,6 +32961,7 @@ UiRegistry.refs.singleGuestBtn=DomUtil.byId("singleGuestBtn");
 UiRegistry.refs.selectionDraftBtn=DomUtil.byId("selectionDraftBtn");
 UiRegistry.refs.selectionDeckBtn=DomUtil.byId("selectionDeckBtn");
 UiRegistry.refs.selectionModeCopy=DomUtil.byId("selectionModeCopy");
+UiRegistry.refs.netcodeModeToggle=DomUtil.byId("netcodeModeToggle");
 UiRegistry.refs.simulationTpsToggle=DomUtil.byId("simulationTpsToggle");UiRegistry.refs.simulationTpsCopy=DomUtil.byId("simulationTpsCopy");UiRegistry.refs.advancedTestSettings=DomUtil.byId("advancedTestSettings");
 UiRegistry.refs.deckSelect=DomUtil.byId("deckSelectScreen");
 UiRegistry.refs.deckSelectStatus=DomUtil.byId("deckSelectStatus");
@@ -33326,6 +33345,10 @@ class UiController{
   if(UiRegistry.refs.selectionModeCopy)UiRegistry.refs.selectionModeCopy.textContent=UiRuntimeState.value.settings.selectionMode==="draft"
     ?"서로 번갈아 유닛을 선택해 이번 경기의 조합을 완성합니다."
     :"저장한 카드 덱을 선택해 바로 경기를 준비합니다.";
+}
+  static setStartNetcodeMode(value){
+  CONFIG.netcode.mode=netcodeMode(value);
+  for(const btn of UiRegistry.refs.netcodeModeToggle?.querySelectorAll("[data-netcode-mode]")||[])btn.classList.toggle("active",btn.dataset.netcodeMode===CONFIG.netcode.mode);
 }
   static setStartSimulationTps(value){
   UiRuntimeState.value.settings.simulationTps=RangeUtil.clamp(Math.round(Number(value)||10),10,30);
@@ -34232,7 +34255,7 @@ class ConnectionPresentation{
   else if(state==="disconnected")UiRegistry.refs.p2pHealthText.textContent="끊김";
   else if(state==="unstable")UiRegistry.refs.p2pHealthText.textContent=info.rtt==null?"불안정":`⚠ ${Math.round(info.rtt)}ms`;
   else UiRegistry.refs.p2pHealthText.textContent=info.rtt==null?(isLocal?"● LOCAL":"● P2P"):`● ${Math.round(info.rtt)}ms`;
-  const active=MatchLifecycle.activeSession?.(),rp=ActiveViewState.renderer?.perfStats,detail=[];if(info.rtt!=null)detail.push(`RTT ${Math.round(info.rtt)}ms`);if(active?.sim)detail.push(`tick ${active.sim.tick}`,`${SimulationTiming.tps()} TPS`);if(rp?.fps>0)detail.push(`${Math.round(rp.fps)} FPS`);UiRegistry.refs.p2pHealth.title=detail.join(" · ")||"동기화 진단 열기";
+  const active=MatchLifecycle.activeSession?.(),rp=ActiveViewState.renderer?.perfStats,detail=[];if(info.rtt!=null)detail.push(`RTT ${Math.round(info.rtt)}ms`);if(active?.sim)detail.push(active.netcodeMode,`tick ${active.sim.tick}`,`${SimulationTiming.tps()} TPS`);if(rp?.fps>0)detail.push(`${Math.round(rp.fps)} FPS`);UiRegistry.refs.p2pHealth.title=detail.join(" · ")||"동기화 진단 열기";
   ConnectionPresentation.positionP2PHealthNextToMenu();
 }
   static renderLockstepDebugPanel(){
@@ -34258,7 +34281,7 @@ class ConnectionPresentation{
   text("dbgCorePacing",metrics.holds+" / "+metrics.stalls+" / "+metrics.pace);
   text("dbgCorePrediction",metrics.predictedTicks+" / "+metrics.lateInputRate.toFixed(4));
   text("dbgCoreHistory",DebugFormatUtil.formatDebugBytes(metrics.retainedSnapshotBytes)+" / "+metrics.stateHashComputations);
-  text("dbgCoreStatus",core.status+" / "+core.confirmedTick);
+  text("dbgCoreStatus",core.profile.mode+" / "+core.status+" / "+core.confirmedTick);
   text("dbgCoreRollback",metrics.inputDelay+"t / "+metrics.rollbacks+" / "+metrics.resimulatedTicks);
   text("dbgCoreRecovery",metrics.hashMismatches+" / "+metrics.recoveries+" / "+metrics.rejectedSnapshots);
   text("dbgCoreBytes",DebugFormatUtil.formatDebugBytes(metrics.sentBytes)+" / "+DebugFormatUtil.formatDebugBytes(metrics.receivedBytes));
@@ -34338,7 +34361,7 @@ const formatTickTime=t=>t==null?"-":`${SimulationTiming.ticksToSeconds(t).toFixe
     UiRegistry.refs.fullConnectionResetBtn.classList.add("hidden");
   }
 
-  UiRegistry.refs.lockstepDebugSummary.textContent="확정 입력 Synctest · "+(sync?"S[0]~S["+sync.tick+"]":"미실행")+" · Core "+core.status;
+  UiRegistry.refs.lockstepDebugSummary.textContent="확정 입력 Synctest · "+(sync?"S[0]~S["+sync.tick+"]":"미실행")+" · "+core.profile.mode+" · Core "+core.status;
   UiRegistry.refs.lockstepDebugVerdict.className="lockstep-debug-verdict "+(report?.status==="failed"?"bad":report?.status==="passed"?"ok":"warn");
   UiRegistry.refs.lockstepDebugVerdict.textContent=report?.status==="passed"?"검사한 입력 구간의 저장·복원·재실행 결과가 일치했습니다.":report?.status==="failed"?"Synctest가 실패했습니다. 위 라이브러리 실패 정보를 확인하세요.":report?.status==="running"?"공통 Synctest 검사 중…":"Synctest를 실행하면 라이브러리가 측정한 결과를 표시합니다.";
 
@@ -38196,6 +38219,8 @@ pointerInteractions.install();
 
 
 UiRegistry.refs.selectionDraftBtn.onclick=()=>UiController.setStartSelectionMode("draft");
+UiController.setStartNetcodeMode(CONFIG.netcode.mode);
+UiRegistry.refs.netcodeModeToggle?.addEventListener("click",e=>{const b=e.target.closest("[data-netcode-mode]");if(b)UiController.setStartNetcodeMode(b.dataset.netcodeMode)});
 UiController.setStartSimulationTps(10);
 UiRegistry.refs.simulationTpsToggle?.addEventListener("click",e=>{const b=e.target.closest("[data-sim-tps]");if(b)UiController.setStartSimulationTps(b.dataset.simTps)});
 UiRegistry.refs.selectionDeckBtn.onclick=()=>UiController.setStartSelectionMode("deck");

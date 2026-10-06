@@ -51,12 +51,13 @@ window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntime
     const gl=renderer?.gl,gpuInfo=gl?.getExtension('WEBGL_debug_renderer_info');
     const cores=Object.values(match?.sessions||{}).map(s=>s.netcodeSession).filter(Boolean);
     const confirmedTick=cores.length?Math.min(...cores.map(c=>Math.min(c.tick,c.confirmedTick+1))):null;
+    const stateHashTick=cores[0]?.profile.mode==='lockstep'?Math.floor(confirmedTick/cores[0].profile.checksumInterval)*cores[0].profile.checksumInterval:confirmedTick;
     const sessions=Object.fromEntries(Object.entries(match?.sessions||{}).map(([role,s])=>{
       const core=s.netcodeSession, sim=s.sim, replay=core&&!core.resimulating?core.exportReplay():null;
       return [role,{role,tick:sim?.tick,tps:sim?.tps,checksum:sim?.checksum(),
         coreName:core?.constructor.name,coreTick:core?.tick,ready:core?.ready,
         confirmedGameTick:s.confirmedGameTick,resimulating:core?.resimulating,
-        confirmedStateHash:core?.getStateHash(confirmedTick),
+        confirmedStateHash:core?.getStateHash(stateHashTick),stateHashTick,
         metrics:core?.metrics,profile:core?.profile,fatal:s.simulationFatal,
         fatalInfo:s.simulationFatalInfo,simEnded:s.simEnded,result:s.matchResult,
         lastCommandTicket:s.lastCommandTicket,pending:s.getPendingCommandTickets?.(),
@@ -84,7 +85,7 @@ window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntime
         gpuVendor:gpuInfo?gl.getParameter(gpuInfo.UNMASKED_VENDOR_WEBGL):null,
         gpuRenderer:gpuInfo?gl.getParameter(gpuInfo.UNMASKED_RENDERER_WEBGL):null},
       humanRole:match?.humanRole,botRole:match?.botRole,
-      confirmedTick,
+      confirmedTick,stateHashTick,
       aiStats:match?.bot?.commandExecutor?.stats,
       combatHits:this.observeCombat(),telemetry:this.telemetry(),
       aiHistory:match?.bot?.commandExecutor?.history?.map(c=>({actor:c.actor,
@@ -190,6 +191,12 @@ async function runRole(browser, html, humanRole) {
     await page.locator('#selectionDeckBtn').click();
     await page.locator('#advancedTestSettings summary').click();
     await page.locator('[data-sim-tps="20"]').click();
+    assert(await page.locator('[data-netcode-mode="lockstep"]').evaluate(b=>b.classList.contains('active')),'Lockstep is selected by default');
+    await page.locator('[data-netcode-mode="rollback"]').click();
+    assert(await page.locator('[data-netcode-mode="rollback"]').evaluate(b=>b.classList.contains('active')),'Rollback selector responds');
+    await page.locator('[data-netcode-mode="lockstep"]').click();
+    assert(await page.locator('[data-netcode-mode="lockstep"]').evaluate(b=>b.classList.contains('active')),'Switching back selects lockstep');
+    await page.screenshot({path:path.join(output,`${humanRole}-mode-settings.png`)});
     await page.locator('#singleBtn').click();
     await page.locator(humanRole==='host'?'#singleHostBtn':'#singleGuestBtn').click();
     await confirmDeck(page);
@@ -201,6 +208,7 @@ async function runRole(browser, html, humanRole) {
     assert.equal(initial.sdkVersion,'0.2.0-dev','The URL imported SDK actually runs');
     assert.ok(initial.sdkRevision.startsWith('gamekit:'),'Pinned shared SDK provenance');
     assert.equal(initial.renderer.backend,'WebGL');
+    assert(Object.values(initial.sessions).every(s=>s.profile.mode==='lockstep'&&s.tps===20),'UI selection preserves chosen TPS and creates both lockstep peers');
     assert.equal(initial.role,humanRole);
     assert.deepEqual(Object.keys(initial.sessions).sort(),['guest','host']);
     for(const role of ['host','guest']){

@@ -345,3 +345,14 @@ node scripts/navigation-spatial-index-regression.cjs --benchmark
 ### 공통 모듈 마이그레이션 검증
 
 `npm ci`, `npx playwright install chromium`, `node scripts/build-pages.cjs` 후 `QA_BROWSER_CHANNEL=chromium QA_SOFTWARE_GPU=1 node scripts/netcode-ui-e2e.cjs _site/index.html`로 실제 게임 UI·RTC·WebGL·결과·리플레이를 검사합니다. `.github/workflows/gamekit-validation.yml`은 이 경로와 기존 회귀 검사를 실행합니다. 소프트웨어 GPU의 CPU/FPS 수치는 물리 GPU 성능으로 일반화하지 않습니다. 새 보간은 전체 scalar snapshot의 원자적 교체에 O(NF) 할당이 발생하고 GPU 모듈은 제출별 계약 검사를 수행하므로 동일 fixture A/B 결과를 확인하기 전 성능 개선을 주장하지 않습니다.
+
+
+### 동기화 모드
+
+고급 테스트 설정의 **동기화 모드**는 다음 경기부터 적용됩니다. 기본은 **락스텝**이며, 필요한 경우 같은 SDK의 **롤백**으로 바꿀 수 있습니다. 코드 기본값은 `CONFIG.netcode.mode` 한 곳에서 관리합니다. 진행 중인 경기의 설정은 고정되며, 온라인 양쪽이 서로 다른 모드를 선택하면 게임을 진행하지 않고 새로고침·설정 일치 안내를 표시합니다.
+
+락스텝은 실제 입력이 모일 때까지 기다립니다. 매 틱 예측 상태를 실행하거나 롤백용 전체 상태를 저장하지 않습니다. 기존 RTS 입력 지연·페이싱은 유지하고, 20틱마다 체크섬용 복구 체크포인트를 보관합니다. 현재 상태 hash·SDK replay 요청에는 필요 시 현재 완료 경계의 정규 bytes를 저장합니다. 게임 replay 체크포인트·종료 상태·복구와 기존 저장 schema는 유지합니다. 선택한 TPS, 렌더·보간, 밸런스 및 아트는 변경하지 않습니다.
+
+`netcode-integration-regression.cjs`는 기본 락스텝의 입력 지연·유실·역순·확정 명령·희소 체크포인트 복구를 검사합니다. `QA_NETCODE_MODE=rollback`으로 기존 지연 입력 롤백 검사를 명시적으로 실행합니다. `netcode-session-lifecycle-regression.cjs`는 반복 모드 전환, 설정 불일치, 두 모드의 종료 상태 복구를 포함합니다. `netcode-mode-benchmark.cjs`는 동일 seed·개체수·틱별 입력에서 실제 게임/어댑터/SDK의 snapshot 저장 횟수·bytes와 advance/step/save CPU 비용을 분리합니다. WebGL 값은 별도 CPU 제출시간이며 GPU 완료시간·기기 FPS가 아닙니다.
+
+현재 CI 성능 job은 이번 모드 선택의 동일 입력 비교를 실행합니다. 이전 마이그레이션의 긴 `c6106ee6` 비교는 매 변경마다 반복하지 않으며, `game-performance-benchmark.cjs`와 기존 기록은 수동 역사 비교용으로 그대로 보존합니다. 기능·픽셀·실제 RTC 검증은 유지합니다.
