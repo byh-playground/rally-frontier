@@ -58,6 +58,18 @@ async function run() {
         inspect(preview,'draft',role,[161,128,76,255],[(role==='guest'?1600:1600)/3200*preview.width,(role==='guest'?4096-1800:1800)/4096*preview.height]);
       }
       for (const name of Object.keys(originals)) if(originals[name]) TerrainPresentation[name]=originals[name];
+      UiController.setUiScreen('game');renderer.role='host';mini.draw();
+      const bounds=mini.contentRect(),point=f=>({clientX:bounds.left+bounds.width*f,clientY:bounds.top+bounds.height*.5});
+      const pointer=(target,type,id,f)=>target.dispatchEvent(new PointerEvent(type,{bubbles:true,cancelable:true,pointerId:id,pointerType:'touch',button:0,buttons:type==='pointerup'?0:1,...point(f)}));
+      const check=(yes,message)=>{if(!yes)throw new Error('Minimap input: '+message)};
+      pointer(mini.canvas,'pointerdown',1,.25);const initialLeft=renderer.cameraLeft;
+      pointer(mini.canvas,'pointerdown',2,.75);check(mini.pointerId===1&&renderer.cameraLeft===initialLeft,'secondary pointer cannot replace active drag');
+      pointer(document,'pointermove',1,.75);check(renderer.cameraLeft!==initialLeft,'document fallback moves active camera drag');
+      pointer(mini.canvas,'lostpointercapture',1,.75);check(!mini.dragging&&mini.pointerId===null,'lost capture cancels drag');
+      const stoppedLeft=renderer.cameraLeft;pointer(document,'pointermove',1,.1);check(renderer.cameraLeft===stoppedLeft,'cancelled pointer cannot move camera');
+      pointer(document,'pointerup',2,.75);
+      pointer(mini.canvas,'pointerdown',3,.4);window.dispatchEvent(new Event('blur'));check(!mini.dragging&&mini.pointerId===null,'blur releases minimap ownership');
+      pointer(mini.canvas,'pointerdown',4,.6);pointer(document,'pointerup',4,.9);check(!mini.dragging&&mini.pointerId===null,'outside pointerup releases fresh drag');
       return images;
     });
     fs.mkdirSync(artifactDir,{recursive:true});

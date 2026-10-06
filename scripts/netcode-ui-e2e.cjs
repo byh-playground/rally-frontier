@@ -199,7 +199,7 @@ async function runRole(browser, html, humanRole) {
     const initial=await page.evaluate(()=>window.__netcodeE2E.inspect());
     fs.writeFileSync(path.join(output,humanRole+'-initial.json'),JSON.stringify(initial,null,2));
     assert.equal(initial.sdkVersion,'0.2.0-dev','The URL imported SDK actually runs');
-    assert.equal(initial.sdkRevision,'https://byh-playground.github.io/rollback-netcode/rollback-netcode.js');
+    assert.ok(initial.sdkRevision.startsWith('gamekit:'),'Pinned shared SDK provenance');
     assert.equal(initial.renderer.backend,'WebGL');
     assert.equal(initial.role,humanRole);
     assert.deepEqual(Object.keys(initial.sessions).sort(),['guest','host']);

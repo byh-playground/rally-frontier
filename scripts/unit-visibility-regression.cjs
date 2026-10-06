@@ -98,8 +98,7 @@ async function run() {
             cacheCases.push({ type, side, attack, coldMatches: equal(cold), warmMatches: equal(warm) });
           }
         } finally { UnitVisualLookup.cachePolicy = policy; }
-        gl.viewport(0, 0, canvas.width, canvas.height); gl.useProgram(r.p); gl.uniform2f(r.r, canvas.width, canvas.height);
-        gl.clearColor(.125, .21, .15, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); gl.disable(gl.DEPTH_TEST);
+        if(r.device.active)r.device.endFrame(); r.device.beginFrame({clearColor:[.125, .21, .15, 1]}); Object.assign(r.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]}); r.passState.depthEnabled=false;
         r.begin();
         const gallery = ['swordsman', 'pikeman', 'archer', 'skirmisher', 'wildhound', 'sporetoad'];
         const pixels = [];

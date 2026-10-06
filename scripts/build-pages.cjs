@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { bundleGame } = require('./bundle-gamekit.cjs');
 
 function stampHtml(html, { commit, builtAt = new Date().toISOString() }) {
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('Invalid build commit');
@@ -19,7 +20,7 @@ function stampHtml(html, { commit, builtAt = new Date().toISOString() }) {
 function buildPages(root = path.resolve(__dirname, '..')) {
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
   const source = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const result = stampHtml(source, { commit });
+  const result = stampHtml(bundleGame(root,source), { commit });
   // The only deleted directory is this fixed, ignored build output inside the checkout.
   const out = path.resolve(root, '_site');
   if (path.dirname(out) !== path.resolve(root) || path.basename(out) !== '_site') throw new Error('Invalid output directory');

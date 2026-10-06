@@ -4,7 +4,7 @@ const path=require('node:path');
 const vm=require('node:vm');
 const {chromium: nativeChromium}=require('playwright');
 const chromium=require('./netcode-qa-module.cjs').wrapChromium(nativeChromium);
-const htmlPath=process.env.QA_HTML_PATH||path.resolve(__dirname,'..','index.html');
+const htmlPath=process.argv[2]||process.env.QA_HTML_PATH||path.resolve(__dirname,'..','index.html');
 let html=fs.readFileSync(htmlPath,'utf8');
 for(const [,attrs,source] of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)){
   if(!/\btype=["'](?:module|application\/json)["']/i.test(attrs))new vm.Script(source);

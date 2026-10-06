@@ -103,31 +103,27 @@ async function run() {
       const gl = renderer.gl;
       const out = {
         webglVersion: gl.getParameter(gl.VERSION),
-        shaderLinked: gl.getProgramParameter(renderer.fogProgram, gl.LINK_STATUS)
+        shaderLinked: false
       };
 
-      // Observe real GPU uploads without replacing the production implementation.
-      const uploads = [];
-      const deletedTextures = [];
-      let boundTexture = null;
-      const nativeBindTexture = gl.bindTexture.bind(gl);
-      const nativeUpload = gl.texImage2D.bind(gl);
-      const nativeDeleteTexture = gl.deleteTexture.bind(gl);
-      gl.bindTexture = (target, texture) => {
-        boundTexture = texture;
-        return nativeBindTexture(target, texture);
+      // Observe the real device boundary; native uploads/draws still execute unchanged.
+      const uploads = [], deletedTextures = [];
+      const device = renderer.device;
+      const nativeCreate = device.createTexture.bind(device), nativeUpdate = device.updateTexture.bind(device), nativeDelete = device.deleteTexture.bind(device);
+      device.createTexture = (source, options) => {
+        const texture = nativeCreate(source, options);
+        uploads.push({texture,w:source.width,h:source.height,data:new Uint8Array(source.data)});
+        return texture;
       };
-      gl.texImage2D = (...args) => {
-        uploads.push({
-          texture: boundTexture, w: args[3], h: args[4],
-          data: new Uint8Array(args[8])
-        });
-        return nativeUpload(...args);
+      device.updateTexture = (texture, source, region) => {
+        const result = nativeUpdate(texture, source, region);
+        uploads.push({texture,w:source.width,h:source.height,data:new Uint8Array(source.data)});
+        return result;
       };
-      gl.deleteTexture = texture => {
-        deletedTextures.push(texture);
-        return nativeDeleteTexture(texture);
-      };
+      device.deleteTexture = texture => { const result=nativeDelete(texture); if(result)deletedTextures.push(texture); return result; };
+      let lastMaskSize;
+      const nativeDraw=device.draw.bind(device);
+      device.draw=command=>{const result=nativeDraw(command);if(command.pipeline===renderer.fogProgram){lastMaskSize=[...command.uniforms.maskSize];out.shaderLinked=gl.getProgramParameter(gl.getParameter(gl.CURRENT_PROGRAM),gl.LINK_STATUS);}return result;};
 
       function mapFor(level, withRamp = true, edgeY = 1024, run = 256) {
         return {
@@ -256,16 +252,7 @@ async function run() {
       };
 
       function uploadMask(texture, width, height, data) {
-        gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texImage2D(
-          gl.TEXTURE_2D, 0, gl.LUMINANCE, width, height, 0,
-          gl.LUMINANCE, gl.UNSIGNED_BYTE, data
-        );
+        return texture ? device.updateTexture(texture,{width,height,data}) : device.createTexture({width,height,data},{format:'luminance',filter:'linear'});
       }
 
       function readPixel(x, y) {
@@ -282,14 +269,8 @@ async function run() {
       const height = 61;
       const isolatedMask = new Uint8Array(width * height);
       isolatedMask[15 * width + 20] = 255;
-      const isolatedTexture = gl.createTexture();
-      uploadMask(isolatedTexture, width, height, isolatedMask);
-      gl.viewport(0, 0, canvas.width, canvas.height);
-      gl.disable(gl.DEPTH_TEST);
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-      gl.clearColor(0, 0, 0, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT);
+      const isolatedTexture = uploadMask(null, width, height, isolatedMask);
+      if(renderer.device.active)renderer.device.endFrame(); renderer.device.beginFrame({clearColor:[0, 0, 0, 1]}); Object.assign(renderer.passState,{depthEnabled:false,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
       renderer.fogMaskSize = { w: width, h: height };
       renderer.fogFrame.reset();
       const quad = [
@@ -299,7 +280,7 @@ async function run() {
       for (const vertex of quad) renderer.fogFrame.push5(...vertex);
       renderer.flushFog(isolatedTexture, [1, 0, 0, 1]);
       out.nonSquareUV = {
-        maskSizeUniform: [...gl.getUniform(renderer.fogProgram, renderer.fogMaskSizeUniform)],
+        maskSizeUniform: lastMaskSize,
         center: readPixel(205, 152),
         leftNeighbor: readPixel(194, 152),
         lowerNeighbor: readPixel(205, 163)
@@ -332,15 +313,7 @@ async function run() {
       const projected = renderer.projectRenderWorldPosition(targetWorld);
 
       function drawTerrain() {
-        gl.viewport(0, 0, canvas.width, canvas.height);
-        gl.enable(gl.DEPTH_TEST);
-        gl.depthFunc(gl.LEQUAL);
-        gl.depthMask(true);
-        gl.clearDepth(1);
-        gl.clearColor(0, 0, 0, 1);
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-        gl.useProgram(renderer.p);
-        gl.uniform2f(renderer.r, canvas.width, canvas.height);
+        if(renderer.device.active)renderer.device.endFrame(); renderer.device.beginFrame({clearColor:[0, 0, 0, 1]}); Object.assign(renderer.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
         renderer.begin();
         // Production atlas vertices carry groundY:0 and their explicit elevation.
         TerrainPresentation.drawSurfaces(renderer);

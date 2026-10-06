@@ -12,7 +12,7 @@ const missionIds = ['frontier-01-first-flag', 'frontier-02-rear-fire', 'frontier
 async function run() {
   fs.mkdirSync(output, { recursive: true });
   let baseline;
-  const source = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const source = fs.readFileSync(process.argv[2]||path.join(root, 'index.html'), 'utf8');
   const end = source.lastIndexOf('})();');
   assert.ok(end >= 0);
   const html = source.slice(0, end) + 'window.__campaignModuleQA={CampaignBuiltinCatalog,CampaignRuntime,UiRuntimeState};' + source.slice(end);

@@ -44,9 +44,8 @@ async function run() {
       };
       function draw() {
         streams=[];
-        gl.viewport(0,0,canvas.width,canvas.height); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true);
-        gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA); gl.clearColor(.13,.19,.23,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-        gl.useProgram(r.p); gl.uniform2f(r.r,canvas.width,canvas.height); r.begin(); TerrainPresentation.drawSurfaces(r); r.flush(); r.drawFog();
+        if(r.device.active)r.device.endFrame(); r.device.beginFrame({clearColor:[.13,.19,.23,1]}); Object.assign(r.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
+        r.begin(); TerrainPresentation.drawSurfaces(r); r.flush(); r.drawFog();
       }
       for (const [w,h] of [[320,480],[413,619]]) for (const role of ['host','guest']) for (const level of [0,2]) {
         canvas.width=w; canvas.height=h; r.role=role;
