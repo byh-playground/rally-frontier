@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "modules": [
+    {
+      "file": "interpolation.js",
+      "sha256": "f0affef627f5a6195892b80480ae2ffb28676f2526840f5a5c11e49b7ac08b1a"
+    },
+    {
+      "file": "rendering.js",
+      "sha256": "6a8ca01bca9db3282ba3a66a9881ebcd4719df798f9ff0d471e5df23f471ccb1"
+    },
+    {
+      "file": "input.js",
+      "sha256": "6cca8d6d870df9baed3b51c5cff2090746953a54f4cd1dc4a466475ec07e5c85"
+    },
+    {
+      "file": "deterministic.js",
+      "sha256": "921eb25f9a0e42bcfdd9c3a4bad4a4581dedf35f1bc3b85a9ff5ffc7ae30f072"
+    },
+    {
+      "file": "simloop.js",
+      "sha256": "a348d2d6bf84779b1710391d4e8d4c790cb5c3899bc38fa635e03f7e0cf4548c"
+    },
+    {
+      "file": "transport.js",
+      "sha256": "2044d95fc6a9b6bb225a164b83ead88d5a5cf8a0ecf6b643fce91da0649b5df9"
+    },
+    {
+      "file": "replay.js",
+      "sha256": "e8c70ea864cbca52d3725ed9dc5ed935b642875ae88bd416d1f5344e6bd6e9b5"
+    },
+    {
+      "file": "rollback.js",
+      "sha256": "9c311cae60e9f19dede81b19a568df8665fd1be5edbb254d0f7e002e3f148bd1"
+    },
+    {
+      "file": "rollback-netcode.js",
+      "sha256": "16ce5b8e7f534885c8c5a541cb4dfe953783752d9c87e6e17934fe160abc7e78"
+    },
+    {
+      "file": "camera.js",
+      "sha256": "790fb684d67f73e7ab1636caa4afbf8ed0d0d54af9ac7c56a0d3f9fdba53dbcd"
+    },
+    {
+      "file": "presentation-events.js",
+      "sha256": "61d11a42d7edc72d8b9219902ed7e9d0025f05b77a9d681d21582767117af0e6"
+    },
+    {
+      "file": "hud.js",
+      "sha256": "2b0e09f4af78a0779308a5c50e7a2cf72264567e26a27bfc011cbb62ca83bb0b"
+    },
+    {
+      "file": "debug-tools.js",
+      "sha256": "50194cd84d8bdec147928afb429fe0aa0660bd68994a0120c9db7d1ce430d4e6"
+    }
+  ]
+}

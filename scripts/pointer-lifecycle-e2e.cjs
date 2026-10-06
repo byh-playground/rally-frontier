@@ -1,0 +1,27 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {chromium}=require('playwright');const {bundleGame}=require('./bundle-gamekit.cjs');
+(async()=>{
+ const root=path.resolve(__dirname,'..');let source=bundleGame(root,fs.readFileSync(root+'/index.html','utf8'));const tail=source.lastIndexOf('})();');
+ source=source.slice(0,tail)+`window.__pointerQA={pointerInteractions,counts:{tap:0,detail:0}};const qaButton=document.createElement('button');qaButton.id='qa-pointer';qaButton.textContent='Pointer lifecycle';qaButton.style='position:fixed;top:10px;left:10px;width:300px;height:100px;z-index:999999';document.body.appendChild(qaButton);pointerInteractions.register({selector:'#qa-pointer',key:()=> 'qa',holdMs:450,detail:()=>{window.__pointerQA.counts.detail++;return null},tap:()=>window.__pointerQA.counts.tap++});`+source.slice(tail);
+ const browser=await chromium.launch({channel:process.env.QA_BROWSER_CHANNEL||'chromium',headless:true,args:['--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+ try{const page=await browser.newPage({hasTouch:true});const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.route('http://localhost:32121/',r=>r.fulfill({contentType:'text/html',body:source}));await page.goto('http://localhost:32121/');await page.waitForFunction(()=>window.__pointerQA);// Hold-time assertions use a controlled browser clock; native pointer/click/scroll dispatch remains real.
+  await page.clock.install({time:new Date('2026-10-06T00:00:00Z')});await page.clock.pauseAt(new Date('2026-10-06T00:00:01Z'));
+  const button=page.locator('#qa-pointer');
+  await button.click();assert.equal(await page.evaluate(()=>__pointerQA.counts.tap),1);
+  await page.mouse.move(50,50);await page.mouse.down();await page.mouse.move(90,50);await page.mouse.up();assert.equal(await page.evaluate(()=>__pointerQA.counts.tap),1,'drag plus native click must not activate');
+  await button.focus();await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>__pointerQA.counts.tap),2,'keyboard click preserved');
+  await page.mouse.move(50,50);await page.mouse.down();await page.clock.runFor(600);await page.mouse.up();assert.deepEqual(await page.evaluate(()=>__pointerQA.counts),{tap:2,detail:1},'long press only details');
+  await page.mouse.down();await page.evaluate(()=>window.dispatchEvent(new Event('blur')));await page.clock.runFor(600);await page.mouse.up();assert.deepEqual(await page.evaluate(()=>__pointerQA.counts),{tap:2,detail:1},'blur clears active hold before timer');
+  await page.mouse.down();await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'))});await page.clock.runFor(600);await page.mouse.up();assert.deepEqual(await page.evaluate(()=>__pointerQA.counts),{tap:2,detail:1},'hidden clears timer and suppresses click');await page.evaluate(()=>delete document.hidden);
+  await button.click();assert.equal(await page.evaluate(()=>__pointerQA.counts.tap),3,'fresh gesture clears suppression');
+  for(const type of ['pointercancel','lostpointercapture']){await page.mouse.down();await page.evaluate(type=>{const a=__pointerQA.pointerInteractions.active;document.querySelector('#qa-pointer').dispatchEvent(new PointerEvent(type,{bubbles:true,pointerId:a.pointerId,isPrimary:true,pointerType:'mouse'}))},type);await page.clock.runFor(600);await page.mouse.up();assert.deepEqual(await page.evaluate(()=>__pointerQA.counts),{tap:3,detail:1},type)}
+  await page.evaluate(()=>{const scroller=document.createElement('div');scroller.id='qa-scroll';scroller.style='position:fixed;left:400px;top:10px;width:250px;height:120px;overflow:auto;touch-action:auto;z-index:999999';scroller.innerHTML='<button id="qa-scroll-button" style="height:700px;width:100%;touch-action:auto">Scroll me</button>';document.body.appendChild(scroller);__pointerQA.pointerInteractions.register({selector:'#qa-scroll-button',key:()=> 'qa-scroll',holdMs:450,detail:()=>{__pointerQA.counts.detail++;return null},tap:()=>__pointerQA.counts.tap++})});
+  await page.evaluate(()=>{__pointerQA.touchEvents=[];for(const type of ['pointerdown','pointermove','pointercancel','pointerup'])document.addEventListener(type,e=>{if(e.pointerType==='touch')__pointerQA.touchEvents.push({type,x:e.clientX,y:e.clientY,at:performance.now(),active:!!__pointerQA.pointerInteractions.active})},true)});
+  const cdp=await page.context().newCDPSession(page);await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:450,y:100}]});
+  for(const y of [60,40,20])await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:450,y}]});
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.clock.runFor(600);
+  console.log('RALLY_TOUCH_EVENTS '+JSON.stringify(await page.evaluate(()=>__pointerQA.touchEvents)));
+  assert(await page.locator('#qa-scroll').evaluate(el=>el.scrollTop)>0,'native touch scroll remains possible');assert.deepEqual(await page.evaluate(()=>__pointerQA.counts),{tap:3,detail:1},'scroll cannot activate or leave a hold timer');
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({nativeMouse:true,keyboard:true,drag:true,longPress:true,blur:true,visibility:true,cancel:true,lostCapture:true,touchScroll:true,errors}));
+ }finally{await browser.close()}
+})().catch(e=>{console.error(e);process.exitCode=1});

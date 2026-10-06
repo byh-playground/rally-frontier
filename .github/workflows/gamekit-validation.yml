@@ -26,6 +26,10 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: node --test scripts/build-pages.test.cjs && node scripts/build-pages.cjs
+      - name: Cached render-state parity and interrupted pointer lifecycle
+        run: |
+          node scripts/render-store-regression.cjs
+          node scripts/pointer-lifecycle-e2e.cjs
       - name: Self-contained HTML without external network
         id: standalone
         continue-on-error: true
@@ -67,7 +71,7 @@ jobs:
 
   performance:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     env:
       QA_BROWSER_CHANNEL: chromium
       QA_SOFTWARE_GPU: '1'
@@ -82,7 +86,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Same-fixture alternating baseline and migration
-        run: node scripts/game-performance-benchmark.cjs --revisions f6037f05,HEAD --runs 3 --duration 8000 --warmup 3000 --conditions quiet,commands --count 30 --trace-costs 0
+        run: node scripts/game-performance-benchmark.cjs --revisions c6106ee6,HEAD --runs 2 --duration 60000 --warmup 3000 --start-tick 150 --min-frames 300 --max-duration 120000 --render-ablation c6106ee6 --conditions quiet,commands --count 30 --trace-costs 0
       - name: Measured stages and bounded visual evidence
         if: always()
         run: node scripts/log-visual-evidence.cjs
