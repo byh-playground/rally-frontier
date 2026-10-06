@@ -4,7 +4,7 @@ if(fs.existsSync(performanceFile)){
  const report=JSON.parse(fs.readFileSync(performanceFile,'utf8'));
  console.log('RALLY_PERFORMANCE '+JSON.stringify({config:report.config,machine:report.machine,browserVersion:report.browserVersion,results:report.results.map(({revision,condition,repetition,setup,summary})=>({revision,condition,repetition,setup,summary}))}));
 }
-const preferred=['.qa/netcode-ui-e2e/guest-battle.png','.qa/gamekit-standalone/standalone-campaign-game.png','.qa/game-performance-benchmark/f6037f05-quiet-1/battle.png','.qa/game-performance-benchmark/HEAD-quiet-1/battle.png'];
+const preferred=['.qa/netcode-ui-e2e/host-mode-settings.png','.qa/netcode-ui-e2e/guest-battle.png','.qa/gamekit-standalone/standalone-campaign-game.png','.qa/game-performance-benchmark/f6037f05-quiet-1/battle.png','.qa/game-performance-benchmark/HEAD-quiet-1/battle.png'];
 const fallback=['.qa/gamekit-standalone','.qa/netcode-ui-e2e','.qa/ground-depth'].flatMap(root=>fs.existsSync(root)?fs.readdirSync(root).filter(name=>name.endsWith('.png')).map(name=>path.join(root,name)):[]);
 let count=0;
 for(const file of new Set([...preferred,...fallback])){

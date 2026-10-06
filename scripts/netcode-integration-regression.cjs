@@ -5,8 +5,10 @@ const vm = require('node:vm');
 const { chromium: nativeChromium } = require('playwright');
 const chromium = require('./netcode-qa-module.cjs').wrapChromium(nativeChromium);
 
+const mode=process.env.QA_NETCODE_MODE||'lockstep';
+assert(['lockstep','rollback'].includes(mode));
 const htmlPath = path.resolve(process.argv[2] || path.join(__dirname, '..', 'index.html'));
-const output = path.resolve(__dirname, '..', '.qa', 'netcode-integration');
+const output = path.resolve(__dirname, '..', '.qa', 'netcode-integration-'+mode);
 const source = fs.readFileSync(htmlPath, 'utf8').replace('economy:{startingResources:{minerals:0,gas:0}}','economy:{startingResources:{minerals:10000,gas:10000}}'); // Equal pre-game resource fixture on both peers.
 const consumer = source;
 assert.ok(!/\b(?:netcodeSession|netcode|core|sdk|RallyNetcode)\s*(?:\.|\?\.)\s*_[A-Za-z]/.test(consumer),
@@ -20,15 +22,16 @@ for (const [i, script] of [...source.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/scr
 const end = source.lastIndexOf('})();');
 assert.ok(end > 0, 'Production app IIFE exists');
 const html = source.slice(0, end) + `
+CONFIG.netcode.mode=${JSON.stringify(mode)};
 // Preserve the pre-game economy workers in this 120-combat-unit fixture so BUILD is meaningful.
 const originalDebug=StrategySim.prototype.applyDebugScenario;
 StrategySim.prototype.applyDebugScenario=function(...args){const workers=this.units.filter(u=>UnitDefinition.get(u.type)?.economyWorker);const result=originalDebug.apply(this,args);this.units.push(...workers);this.rebuildRuntimeIndexes();return result;};
 window.__netcodeIntegration={GameSession,LoopbackTransport,AppLifecycle,
-  RallyStateCodec,RallyCommandCodec,StrategySim,BuildingDefinition,BuildingPresentation,SIM_VERSION,BUILD_ID};
+  CONFIG,RallyStateCodec,RallyCommandCodec,StrategySim,BuildingDefinition,BuildingPresentation,SIM_VERSION,BUILD_ID};
 ` + source.slice(end);
 
 async function integration() {
-  const q=window.__netcodeIntegration,sdk=window.RallyNetcode;
+  const q=window.__netcodeIntegration,sdk=window.RallyNetcode,mode=q.CONFIG.netcode.mode;
   const check=(yes,message)=>{if(!yes)throw Error(message);};
   const equal=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
   const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -100,7 +103,8 @@ async function integration() {
   };
   const confirmedEquality=label=>{
     const a=host.netcodeSession,b=guest.netcodeSession;
-    const tick=Math.min(a.tick,b.tick,a.confirmedTick+1,b.confirmedTick+1);
+    const common=Math.min(a.tick,b.tick,a.confirmedTick+1,b.confirmedTick+1);
+    const tick=mode==='lockstep'&&a.tick!==b.tick?Math.floor(common/a.profile.checksumInterval)*a.profile.checksumInterval:common;
     const ah=a.getStateHash(tick),bh=b.getStateHash(tick);
     check(Number.isInteger(ah)&&ah===bh,label+': public confirmed SDK state hashes agree at '+tick+' ('+ah+'/'+bh+')');
     return {tick,hash:ah};
@@ -111,6 +115,7 @@ async function integration() {
     runtimeNow=Math.max(...sessions.map(s=>s.netcodeNow));
     for(const s of sessions)q.AppLifecycle.unregisterBackgroundSession(s);
     check(host.sim.tps===20&&guest.sim.tps===20,'Production TPS negotiation is preserved');
+    check(core().every(c=>c.profile.mode===mode),'The selected next-session mode reaches both SDK peers');
     check(core().every(c=>c.constructor===sdk.RollbackSession),'GameSession owns actual SDK RollbackSession');
     check(core().every(c=>c.tick===sizedTick(c.adapter.save())),'Fresh SDK tick uses the pre-step game-state boundary');
     for(const s of sessions){
@@ -141,6 +146,7 @@ async function integration() {
     for(const s of sessions)s.netcodeSession.setInputDelay(0);
     await step(5); // Drain immutable frames captured before public delay reduction.
     faults.mode='inputs';
+    const faultStartTick=host.sim.tick,faultStartStalls=host.netcodeSession.metrics.stalls;
     const guestFlag={type:'SET_FLAG',x:Math.round(guest.sim.world.width*.57),y:Math.round(guest.sim.world.height*.41),forced:false};
     const hostFlag={type:'SET_FLAG',x:Math.round(host.sim.world.width*.43),y:Math.round(host.sim.world.height*.59),forced:false};
     check(host.command(hostFlag)===true&&guest.command(guestFlag)===true,'Both roles register commands through GameSession');
@@ -156,14 +162,16 @@ async function integration() {
     check(buildAction&&guest.command(buildAction)===true,'Delayed guest BUILD enters the production command stream');
     await step(7);
     check(faults.dropped===2&&faults.held.length>0,'Typed frames were genuinely lost and delayed');
+    if(mode==='lockstep')check(host.sim.tick<faultStartTick+7&&host.netcodeSession.metrics.stalls>faultStartStalls&&host.netcodeSession.metrics.predictedTicks===0,'Missing remote input stalls without prediction');
     faults.mode='off';
     // Newest retransmission arrives first, then old copies in reverse order.
     for(const bytes of faults.held.reverse()){rawSends.get(guestTransport)(bytes);faults.reordered++;}
     faults.held=[];
     await step(10);
     const rollback=host.netcodeSession.metrics;
-    check(rollback.rollbacks>0&&rollback.maxRollbackDepth>=1&&rollback.resimulatedTicks>=1,
+    if(mode==='rollback')check(rollback.rollbacks>0&&rollback.maxRollbackDepth>=1&&rollback.resimulatedTicks>=1,
       'Late actual RTS commands cause a real SDK rollback within production pacing limits: '+JSON.stringify(rollback));
+    else check(rollback.rollbacks===0&&rollback.resimulatedTicks===0&&rollback.predictedTicks===0,'Lockstep fault recovery never predicts or rolls back gameplay');
     check(rollback.maxRollbackDepth<=host.netcodeSession.profile.rollbackWindowTicks,
       'The actual game rollback respects the SDK prediction/history limit');
     check(rollback.holds+rollback.stalls>0,'Faults exercised real SDK hold/stall pacing');
@@ -223,7 +231,13 @@ async function integration() {
     check(replay.frames.length>firstRing*3&&!replay.truncated,'Actual SDK confirmed input replay remains available past ring wraps');
     check(replay.frames.flatMap(f=>f.inputs.flatMap(i=>i.commands.map(c=>({actor:i.playerId,sequence:c.sequence}))))
       .filter(c=>c.sequence===hostTicket.sequence).length===2,'SDK replay retains both distinct actor-local command identities');
-    return {build:q.BUILD_ID,sdkVersion:sdk.VERSION,startup,stateChecks,hostTicket,guestTicket,
+    if(mode==='lockstep'){
+      for(const c of core())check(c.metrics.snapshotSaves<c.tick/3,'Sparse lockstep checkpoints do not serialize every tick: '+JSON.stringify(c.metrics));
+      const c=host.netcodeSession,before=c.metrics.snapshotSaves;
+      check(c.getStateHash()===sdk.hashBytes(host.simulationAdapter.save()),'On-demand hash uses current canonical game bytes');
+      c.getStateHash();check(c.metrics.snapshotSaves<=before+1,'Repeated same-boundary hash does not serialize again');
+    }
+    return {mode,build:q.BUILD_ID,sdkVersion:sdk.VERSION,startup,stateChecks,hostTicket,guestTicket,
       faults:{lost:faults.dropped,reordered:faults.reordered,corruptedChunks:faults.corrupted},
       afterFaults,wrapped,recovered,ringSize:firstRing,metrics,maxGameTickDrift,pendingRecoveryChecks,
       binaryChunks:{count:chunks.length,maxBytes:Math.max(...chunks.map(p=>p.bytes))},

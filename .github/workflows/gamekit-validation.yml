@@ -41,6 +41,7 @@ jobs:
       - name: Rollback, recovery and authoritative state
         run: |
           node scripts/netcode-integration-regression.cjs _site/index.html
+          QA_NETCODE_MODE=rollback node scripts/netcode-integration-regression.cjs _site/index.html
           node scripts/netcode-state-regression.cjs _site/index.html
           node scripts/netcode-session-lifecycle-regression.cjs _site/index.html
           node scripts/netcode-transport-regression.cjs _site/index.html
@@ -71,7 +72,7 @@ jobs:
 
   performance:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     env:
       QA_BROWSER_CHANNEL: chromium
       QA_SOFTWARE_GPU: '1'
@@ -85,8 +86,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - name: Same-fixture alternating baseline and migration
-        run: node scripts/game-performance-benchmark.cjs --revisions c6106ee6,HEAD --runs 2 --duration 60000 --warmup 3000 --start-tick 150 --min-frames 300 --max-duration 120000 --render-ablation c6106ee6 --conditions quiet,commands --count 30 --trace-costs 0
+      - name: Identical inputs across lockstep and rollback
+        run: node scripts/build-pages.cjs && node scripts/netcode-mode-benchmark.cjs _site/index.html
       - name: Measured stages and bounded visual evidence
         if: always()
         run: node scripts/log-visual-evidence.cjs

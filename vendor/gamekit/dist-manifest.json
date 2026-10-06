@@ -15,7 +15,7 @@
     },
     {
       "file": "deterministic.js",
-      "sha256": "921eb25f9a0e42bcfdd9c3a4bad4a4581dedf35f1bc3b85a9ff5ffc7ae30f072"
+      "sha256": "73220d0abc59460aec36b226042353359a084461bb425061a396c9ebee1ce573"
     },
     {
       "file": "simloop.js",
@@ -23,19 +23,19 @@
     },
     {
       "file": "transport.js",
-      "sha256": "2044d95fc6a9b6bb225a164b83ead88d5a5cf8a0ecf6b643fce91da0649b5df9"
+      "sha256": "e1acfb4757689cb80a7dcbec6bb9bc2c7c39a85ae116866640522cbaf0e59188"
     },
     {
       "file": "replay.js",
-      "sha256": "e8c70ea864cbca52d3725ed9dc5ed935b642875ae88bd416d1f5344e6bd6e9b5"
+      "sha256": "e3bc407c634a49e6c9a2b4724efccd959ad91082474fe2c3848e7bdad46ee7b9"
     },
     {
       "file": "rollback.js",
-      "sha256": "9c311cae60e9f19dede81b19a568df8665fd1be5edbb254d0f7e002e3f148bd1"
+      "sha256": "c0fbe1ed0e975a56e4274827bc44d489e4019c69e163bea64af17cc44f465b00"
     },
     {
       "file": "rollback-netcode.js",
-      "sha256": "16ce5b8e7f534885c8c5a541cb4dfe953783752d9c87e6e17934fe160abc7e78"
+      "sha256": "e54edcf8c6310bbda6e35e99f7697691834b7699e1bc33e9041ee0773411e0a3"
     },
     {
       "file": "camera.js",

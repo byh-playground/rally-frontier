@@ -47,6 +47,7 @@ var PROTOCOL_VERSION = 1;
 var CHUNK_SIZE = 16384;
 var MAX_TICK = 2147483646;
 var defaults = {
+  mode: "rollback",
   tickRate: 60,
   baseInputDelayTicks: 2,
   minInputDelayTicks: 0,
@@ -87,6 +88,7 @@ var profiles = Object.freeze({
   }),
   lockstep: Object.freeze({
     ...defaults,
+    mode: "lockstep",
     tickRate: 20,
     baseInputDelayTicks: 4,
     maxInputDelayTicks: 20,
@@ -245,10 +247,50 @@ var StateHistory = class {
     }
   }
 };
+var CheckpointHistory = class {
+  constructor(size, maxBytes) {
+    this.size = size;
+    this.maxBytes = maxBytes;
+    this.records = /* @__PURE__ */ new Map();
+    this.byteLength = 0;
+  }
+  get slots() {
+    return this.records.values();
+  }
+  get(tick) {
+    return this.records.get(tick);
+  }
+  atOrBefore(tick) {
+    let result;
+    for (const state of this.records.values()) if (state.tick <= tick && (!result || state.tick > result.tick)) result = state;
+    return result;
+  }
+  get oldestTick() {
+    return Math.min(...this.records.keys());
+  }
+  put(state) {
+    const oldest = Math.max(0, state.tick - this.size + 1);
+    const base = this.atOrBefore(oldest);
+    const expired = [...this.records.values()].filter((s) => base && s.tick < base.tick);
+    const next = this.byteLength - expired.reduce((n, s) => n + s.bytes.length, 0) - (this.records.get(state.tick)?.bytes.length ?? 0) + state.bytes.length;
+    if (next > this.maxBytes) throw Object.assign(new RangeError("checkpoint history byte budget"), { code: "history-capacity", requiredBytes: next, maxHistoryBytes: this.maxBytes, snapshotBytes: state.bytes.length });
+    for (const s of expired) this.records.delete(s.tick);
+    this.records.set(state.tick, state);
+    this.byteLength = next;
+  }
+  invalidateAfter(tick) {
+    for (const [t, state] of this.records) if (t > tick) {
+      this.records.delete(t);
+      this.byteLength -= state.bytes.length;
+    }
+  }
+};
 
 // packages/rollback/src/core.js
 function profileOf(profile) {
   const p = { ...defaults, ...profile };
+  if (!["rollback", "lockstep"].includes(p.mode)) throw new TypeError("session mode");
+  if (p.mode === "lockstep") p.rollbackWindowTicks = 0;
   for (const field of [
     "tickRate",
     "stateHistorySize",
@@ -271,6 +313,7 @@ function profileOf(profile) {
   if (p.minInputDelayTicks > p.baseInputDelayTicks || p.baseInputDelayTicks > p.maxInputDelayTicks) throw new RangeError("input delay bounds");
   if (p.peerTimeoutMs <= p.peerInterruptMs) throw new RangeError("peerTimeoutMs must exceed peerInterruptMs");
   if (p.stateHistorySize < p.rollbackWindowTicks + 2) throw new RangeError("stateHistorySize must exceed rollback window by two");
+  if (p.mode === "lockstep" && p.checksumInterval > p.stateHistorySize) throw new RangeError("lockstep checksumInterval must fit input history window");
   if (p.stateHistorySize > 8192) throw new RangeError("stateHistorySize capacity (8192)");
   if (p.tickRate > 240 || p.maxCommandBytes > CHUNK_SIZE - 1024 || p.maxSnapshotBytes > 64 * 1024 * 1024) throw new RangeError("profile size limit");
   if (!["hold", "neutral"].includes(p.predictionPolicy) && typeof p.predictionPolicy !== "function") throw new TypeError("predictionPolicy");
@@ -318,7 +361,7 @@ var RollbackSession = class {
     this._requestedInputDelay = this._inputDelay;
     this.closed = false;
     this._failure = null;
-    this._history = new StateHistory(this.profile.stateHistorySize, this.profile.maxHistoryBytes);
+    this._history = this._newHistory();
     this._inputWriter = new Writer(CHUNK_SIZE * this.players.length);
     this._inputs = new Map(this.players.map((p) => [p, /* @__PURE__ */ new Map()]));
     this._through = new Map(this.players.map((p) => [p, -1]));
@@ -362,18 +405,22 @@ var RollbackSession = class {
       stallFrequency: 0,
       resimulationCostMs: 0,
       stateHashComputations: 0,
-      hashedStateBytes: 0
+      hashedStateBytes: 0,
+      snapshotSaves: 0,
+      serializedSnapshotBytes: 0
     };
     this._recordReplay = recordReplay;
     this._replayFrames = [];
     this._replayBytes = 0;
     this._replayFinalHash = void 0;
     const initial = this._save();
-    const requiredBytes = initial.length * this.profile.stateHistorySize;
-    if (requiredBytes > this.profile.maxHistoryBytes) throw Object.assign(new RangeError("initial snapshot cannot fill state history byte budget"), { code: "history-capacity", snapshotBytes: initial.length, requiredBytes, maxHistoryBytes: this.profile.maxHistoryBytes });
+    const retainedCount = this.profile.mode === "lockstep" ? Math.ceil(this.profile.stateHistorySize / this.profile.checksumInterval) + 2 : this.profile.stateHistorySize;
+    const requiredBytes = initial.length * retainedCount;
+    if (requiredBytes > this.profile.maxHistoryBytes) throw Object.assign(new RangeError("initial snapshot cannot fill retained history byte budget"), { code: "history-capacity", snapshotBytes: initial.length, requiredBytes, maxHistoryBytes: this.profile.maxHistoryBytes });
     this._initialState = initial.slice();
     const initialRecord = { tick: 0, bytes: initial, inputHash: this._inputHash };
     this._history.put(initialRecord);
+    this._currentState = initialRecord;
     this._hello = encoder.encode(JSON.stringify({
       protocol: PROTOCOL_VERSION,
       library: VERSION,
@@ -384,6 +431,9 @@ var RollbackSession = class {
       tickRate: this.profile.tickRate,
       inputSize,
       authorityPlayerId: this.authorityPlayerId,
+      mode: this.profile.mode,
+      baseInputDelayTicks: this.profile.mode === "lockstep" ? this.profile.baseInputDelayTicks : null,
+      checksumInterval: this.profile.mode === "lockstep" ? this.profile.checksumInterval : null,
       initialHash: this._stateHash(initialRecord)
     }));
     for (let t = 0; t < this.inputDelay; t++) this._commitLocal(t, this._lastLocalInput, []);
@@ -449,6 +499,19 @@ var RollbackSession = class {
       retainedSnapshotBytes: this._history.byteLength
     };
   }
+  _newHistory() {
+    const History = this.profile.mode === "lockstep" ? CheckpointHistory : StateHistory;
+    return new History(this.profile.stateHistorySize, this.profile.maxHistoryBytes);
+  }
+  _stateAt(tick) {
+    const retained = this._history.get(tick);
+    if (retained) return retained;
+    if (this.profile.mode !== "lockstep" || tick !== this.tick || this.resimulating) return void 0;
+    if (this._currentState?.tick === tick) return this._currentState;
+    if (this._failure?.type === "fatal") return void 0;
+    if (this._currentState?.tick !== tick) this._currentState = { tick, bytes: this._save(), inputHash: this._inputHash };
+    return this._currentState;
+  }
   _stateHash(state) {
     if (!state) return void 0;
     if (state.hash === void 0) {
@@ -512,6 +575,8 @@ var RollbackSession = class {
   _save() {
     const state = bytes(this.adapter.save(), "snapshot").slice();
     if (!state.length || state.length > this.profile.maxSnapshotBytes) throw new RangeError("snapshot size");
+    this._metrics.snapshotSaves++;
+    this._metrics.serializedSnapshotBytes += state.length;
     return state;
   }
   _nextSequence() {
@@ -827,7 +892,10 @@ var RollbackSession = class {
     const map = this._inputs.get(peer.id);
     for (let i = 0; i < count; i++) {
       const old = map.get(first + i);
-      if (old && !frameEqual(old, incoming[i])) throw new Error("conflicting committed input");
+      if (old && !frameEqual(old, incoming[i])) {
+        if (this.profile.mode === "lockstep" && first + i < this.tick) this._fail("desync-unrecoverable", { reason: "conflicting-confirmed-input", peerId: peer.id, inputTick: first + i });
+        throw new Error("conflicting committed input");
+      }
     }
     peer.ack = Math.max(peer.ack, ack);
     if (peer.progressSequence === void 0 || sequence - peer.progressSequence >>> 0 < 2147483648 && sequence !== peer.progressSequence) {
@@ -844,6 +912,10 @@ var RollbackSession = class {
       if (t < this.tick) this._window.late++;
       const used = this._used.get(t)?.find((x) => x.playerId === peer.id);
       if (used && t < this.tick && !frameEqual(used, incoming[i])) {
+        if (this.profile.mode === "lockstep") {
+          this._fail("desync-unrecoverable", { reason: "conflicting-confirmed-input", peerId: peer.id, inputTick: t });
+          return;
+        }
         if (!this._history.get(t)) {
           this._event("history-exhausted", { inputTick: t });
           this.requestResync(Math.min(this.confirmedTick + 1, this.tick));
@@ -886,6 +958,7 @@ var RollbackSession = class {
     return this.players.map((playerId) => {
       const map = this._inputs.get(playerId), actual = map.get(tick);
       if (actual) return { playerId, ...copyFrame(actual), predicted: false };
+      if (this.profile.mode === "lockstep") throw new Error("lockstep input is not confirmed");
       let prior = this._used.get(tick - 1)?.find((f) => f.playerId === playerId)?.input ?? new Uint8Array(this.inputSize);
       const policy = this.profile.predictionPolicy;
       if (typeof policy === "function") prior = bytes(policy({ playerId, tick, previousInput: prior.slice(), lastConfirmedTick: this._through.get(playerId) }));
@@ -894,20 +967,51 @@ var RollbackSession = class {
       return { playerId, input: prior.slice(), commands: [], predicted: true };
     });
   }
+  _restoreConfirmedBoundary(tick) {
+    const base = this._history.atOrBefore(tick);
+    if (!base) throw new Error("lockstep recovery base expired");
+    this.adapter.load(base.bytes.slice());
+    for (let t = base.tick; t < tick; t++) runSimulationFrame(this.adapter, {
+      tick: t,
+      tickRate: this.profile.tickRate,
+      inputs: this._resolve(t),
+      resimulating: true,
+      recovering: true
+    });
+  }
+  _replayFrameBytes(inputs) {
+    return inputs.reduce((s, f) => s + f.input.length + f.commands.reduce((k, c) => k + c.payload.length + 12, 0), 16);
+  }
   _step(inputs, resimulating) {
     const before = this._history.get(this.tick);
-    const tick = this.tick;
+    const tick = this.tick, lockstep = this.profile.mode === "lockstep";
     integer(tick, "session tick limit", 0, MAX_TICK);
+    if (lockstep && this._recordReplay && this._replayBytes + this._replayFrameBytes(inputs) > this.profile.maxReplayBytes) {
+      this._replayFinalHash = this._stateHash(this._stateAt(tick));
+      this._recordReplay = false;
+      this._event("replay-capacity");
+    }
     try {
       runSimulationFrame(this.adapter, { tick, tickRate: this.profile.tickRate, inputs, resimulating });
       const inputHash = this._hashInputFrame(tick, inputs, this._inputHash);
-      const state = this._save();
-      this._history.put({ tick: tick + 1, bytes: state, inputHash });
-      this._used.set(tick, inputs.map((f) => ({ ...copyFrame(f), playerId: f.playerId, predicted: f.predicted })));
+      if (!lockstep || (tick + 1) % this.profile.checksumInterval === 0) {
+        const state = this._save();
+        this._history.put({ tick: tick + 1, bytes: state, inputHash });
+      }
+      if (!lockstep) this._used.set(tick, inputs.map((f) => ({ ...copyFrame(f), playerId: f.playerId, predicted: f.predicted })));
       this._tick++;
       this._inputHash = inputHash;
+      this._currentState = null;
     } catch (error) {
-      if (before) this.adapter.load(before.bytes.slice());
+      try {
+        if (before) this.adapter.load(before.bytes.slice());
+        else if (lockstep) this._restoreConfirmedBoundary(tick);
+        if (lockstep) this._currentState = { tick, bytes: this._save(), inputHash: this._inputHash };
+      } catch (restoreError) {
+        this._currentState = null;
+        this._fail("fatal", { error, restoreError });
+        throw error;
+      }
       this._fail("fatal", { error });
       throw error;
     }
@@ -969,6 +1073,11 @@ var RollbackSession = class {
     if (hold) {
       this._metrics.holds++;
       return { status: "held", tick: this.tick };
+    }
+    if (this.profile.mode === "lockstep" && this.players.some((id) => !this._inputs.get(id).has(this.tick))) {
+      this._metrics.stalls++;
+      this._window.stall++;
+      return { status: "stalled", tick: this.tick };
     }
     const inputs = this._resolve(this.tick), predicted = inputs.some((f) => f.predicted);
     const minAck = this._peers.size ? Math.min(...[...this._peers.values()].map((p) => p.ack)) : this.tick;
@@ -1049,6 +1158,7 @@ var RollbackSession = class {
       if (local.inputHash !== remote.inputHash) {
         peer.hashes.delete(tick);
         this._event("input-history-mismatch", { peerId: peer.id, at: tick });
+        if (this.profile.mode === "lockstep") this._fail("desync-unrecoverable", { reason: "input-history-mismatch", peerId: peer.id, at: tick });
         continue;
       }
       if (this._stateHash(local) !== remote.hash) {
@@ -1062,7 +1172,7 @@ var RollbackSession = class {
     }
   }
   getStateHash(tick = this.tick) {
-    return this._stateHash(this._history.get(tick));
+    return this._stateHash(this._stateAt(tick));
   }
   requestResync(tick) {
     if (this.closed || this._failure) return false;
@@ -1071,8 +1181,9 @@ var RollbackSession = class {
     const peer = this._peers.get(this.authorityPlayerId);
     if (!peer?.ready || this._requestedRecovery) return false;
     if (this._recoveryExhausted("attempt-limit")) return false;
-    const state = this._history.get(tick);
+    const state = this.profile.mode === "lockstep" ? this._history.atOrBefore(tick) : this._history.get(tick);
     if (!state) return false;
+    tick = state.tick;
     if (!this._queue(peer, packet(TYPE.REQUEST, this._nextSequence(), (w) => w.u32(tick)))) return false;
     this._requestedRecovery = { tick, inputHash: state.inputHash, at: this._clock() };
     this._recoveryAttempts++;
@@ -1186,15 +1297,19 @@ var RollbackSession = class {
           recovering: true
         });
         job.inputHash = this._hashInputFrame(t, inputs, job.inputHash);
-        job.state = this._save();
-        job.staged.push({ tick: t + 1, bytes: job.state, inputHash: job.inputHash });
-        job.stagedInputs.push([t, inputs]);
+        const lockstep = this.profile.mode === "lockstep";
+        if (!lockstep || (t + 1) % this.profile.checksumInterval === 0) {
+          job.state = this._save();
+          job.staged.push({ tick: t + 1, bytes: job.state, inputHash: job.inputHash });
+          job.stageBytes += job.state.length;
+        }
+        if (!lockstep) job.stagedInputs.push([t, inputs]);
+        if (lockstep && !this._recordReplay && t + 1 === this._replayFrames.length) job.replayFinalHash = hashBytes(this._save());
         job.next++;
         this._metrics.resimulatedTicks++;
-        job.stageBytes += job.state.length;
         if (job.stageBytes > this.profile.maxHistoryBytes) throw new RangeError("candidate replay byte budget");
       }
-      const replacement = new StateHistory(this.profile.stateHistorySize, this.profile.maxHistoryBytes);
+      const replacement = this._newHistory();
       for (const state of this._history.slots) if (state && state.tick < job.candidate.tick) replacement.put(state);
       replacement.put({
         tick: job.candidate.tick,
@@ -1208,6 +1323,12 @@ var RollbackSession = class {
       this._history = replacement;
       this._used = used;
       this._inputHash = job.inputHash;
+      this._currentState = null;
+      if (this.profile.mode === "lockstep") {
+        this._replayFinalState = null;
+        if (!this._recordReplay && job.candidate.tick === this._replayFrames.length) this._replayFinalHash = job.candidate.hash;
+        if (job.replayFinalHash !== void 0) this._replayFinalHash = job.replayFinalHash;
+      }
       this._requestedRecovery = null;
       this._recoveryAttempts = 0;
       this._metrics.recoveries++;
@@ -1228,7 +1349,7 @@ var RollbackSession = class {
     const through = Math.min(this.confirmedTick, this.tick - 1);
     for (let t = this._replayFrames.length; t <= through; t++) {
       const inputs = this.players.map((playerId) => ({ playerId, ...copyFrame(this._inputs.get(playerId).get(t)), predicted: false }));
-      const n = inputs.reduce((s, f) => s + f.input.length + f.commands.reduce((k, c) => k + c.payload.length + 12, 0), 16);
+      const n = this._replayFrameBytes(inputs);
       if (this._replayBytes + n > this.profile.maxReplayBytes) {
         this._replayFinalHash = this._stateHash(this._replayFinalState);
         this._replayFinalState = null;
@@ -1261,6 +1382,8 @@ var RollbackSession = class {
     if (this.resimulating) throw new Error("finish rollback before exporting replay");
     this._recordConfirmed();
     const tick = this._replayFrames.length;
+    const hash = this._stateHash(this._stateAt(tick)) ?? this._stateHash(this._replayFinalState) ?? this._replayFinalHash;
+    if (tick > 0 && hash === void 0) throw new Error("replay final boundary is unavailable after fatal restoration failure");
     return {
       version: VERSION,
       simulationVersion: this.simulationVersion,
@@ -1274,12 +1397,13 @@ var RollbackSession = class {
         inputs: f.inputs.map((x) => ({ ...copyFrame(x), playerId: x.playerId, predicted: false }))
       })),
       tick,
-      hash: this._stateHash(this._history.get(tick)) ?? this._stateHash(this._replayFinalState) ?? this._replayFinalHash ?? hashBytes(this._initialState),
+      hash: hash ?? hashBytes(this._initialState),
       truncated: !this._recordReplay
     };
   }
   _prune() {
-    const oldest = Math.max(0, this.tick - this.profile.stateHistorySize + 1);
+    const windowOldest = Math.max(0, this.tick - this.profile.stateHistorySize + 1);
+    const oldest = this.profile.mode === "lockstep" ? Math.min(windowOldest, this._history.oldestTick) : windowOldest;
     for (const t of this._used.keys()) if (t < oldest - 1) this._used.delete(t);
     const minAck = this._peers.size ? Math.min(...[...this._peers.values()].map((p) => p.ack)) : this.tick;
     for (const [playerId, map] of this._inputs) for (const t of map.keys()) if (t < oldest && (playerId !== this.localPlayerId || t <= minAck)) map.delete(t);

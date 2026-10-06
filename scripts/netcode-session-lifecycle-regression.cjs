@@ -10,11 +10,14 @@ for(const [,attrs,source] of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script
   if(!/\btype=["'](?:module|application\/json)["']/i.test(attrs))new vm.Script(source);
 }
 const end=html.lastIndexOf('})();');assert.ok(end>=0);
-html=html.slice(0,end)+'window.__lifecycleQA={GameSession,NostrRtcTransport,AppLifecycle,DebugScenarioHarness,ReplayPlayer,ReplayPolicy};'+html.slice(end);
+html=html.slice(0,end)+'window.__lifecycleQA={CONFIG,UiController,GameSession,NostrRtcTransport,AppLifecycle,DebugScenarioHarness,ReplayPlayer,ReplayPolicy};'+html.slice(end);
 const debugConfig={selectionMode:'deck',debugScenario:{allyType:'swordsman',enemyType:'swordsman',allyCount:1,enemyCount:1,research:false,humanRole:'host'}};
 
 async function runLifecycle(config){
-  const {GameSession,NostrRtcTransport,AppLifecycle,ReplayPlayer,ReplayPolicy}=window.__lifecycleQA;
+  const {CONFIG,UiController,GameSession,NostrRtcTransport,AppLifecycle,ReplayPlayer,ReplayPolicy}=window.__lifecycleQA;
+  checkModeDefault();
+  function checkModeDefault(){if(CONFIG.netcode.mode!=='lockstep')throw Error('Production default must be lockstep');}
+  UiController.setStartNetcodeMode('rollback'); // Retain the existing deep rollback/terminal regressions explicitly.
   const check=(v,m)=>{if(!v)throw Error(m);};
   const pause=ms=>new Promise(r=>setTimeout(r,ms));
   const wait=async(fn,label)=>{const end=Date.now()+16000;while(!fn()){if(Date.now()>end)throw Error('Timed out: '+label);await pause(5);}};
@@ -34,10 +37,14 @@ async function runLifecycle(config){
     }finally{player.stop();}
   }
   let serial=0;
-  async function pair({late=false,mismatch=false}={}){
+  async function pair({late=false,mismatch=false,mode=CONFIG.netcode.mode,guestMode=mode}={}){
     const room='lifecycle-'+(++serial);
     const ht=new NostrRtcTransport('host',room,{signalMode:'local'}),gt=new NostrRtcTransport('guest',room,{signalMode:'local'});
-    const h=new GameSession('host',ht,room,config),g=new GameSession('guest',gt,room);
+    UiController.setStartNetcodeMode(mode);
+    const h=new GameSession('host',ht,room,config);
+    UiController.setStartNetcodeMode(guestMode);
+    const g=new GameSession('guest',gt,room);
+    check(h.netcodeMode===mode&&g.netcodeMode===guestMode,'Mode captured for each new session');
     const faults=[],lobby=[];let delayedStart;
     for(const [s,t]of[[h,ht],[g,gt]]){
       const start=s.startSim.bind(s);
@@ -50,7 +57,7 @@ async function runLifecycle(config){
       }s.handle(m);};
     }
     ht.open();gt.open();
-    await wait(()=>h.sim&&(late?delayedStart:g.sim)&&(mismatch||ht.isNetcodeOpen()&&gt.isNetcodeOpen()),'RTC channels and production HELLO/GAME_START');
+    await wait(()=>h.sim&&(late?delayedStart:g.sim)&&(mismatch||mode!==guestMode||ht.isNetcodeOpen()&&gt.isNetcodeOpen()),'RTC channels and production HELLO/GAME_START');
     let now=Math.max(h.netcodeNow,g.netcodeNow,performance.now());
     const pulse=async(target=Infinity)=>{
       now+=100;
@@ -140,7 +147,8 @@ async function runLifecycle(config){
     check([bad.h,bad.g].some(s=>s.simulationFatalInfo.source==='netcode-handshake'),'Mismatch reports the public SDK handshake failure');
     results.push({name:'initial-state-mismatch',fatal:true,gameTicks:[bad.h.sim.tick,bad.g.sim.tick],cleanup:await bad.cleanup()});
   }finally{if(!bad.h.disposed){bad.h.dispose();bad.g.dispose();}}
-  const divergent=await pair();
+  for(const recoveryMode of ['rollback','lockstep']){
+  const divergent=await pair({mode:recoveryMode});
   try{
     await divergent.pump(()=>divergent.h.netcodeSession.ready&&divergent.g.netcodeSession.ready,'Divergence fixture is ready',0);
     check(divergent.h.command({type:'SET_FLAG',x:1200,y:1500}),'Replay fixture submits a meaningful earlier command');
@@ -153,9 +161,9 @@ async function runLifecycle(config){
     const hash=s=>RallyNetcode.hashBytes(s.simulationAdapter.save());
     check(hash(divergent.h)===hash(divergent.g),'Recovered terminal full state agrees');
     check(divergent.g.replayRecorder.commands.filter(c=>c.action.type==='SET_FLAG').length===1,'Recovery retains the earlier input log exactly once');
-    results.push({name:'terminal-hash-divergence',finalTick:divergent.h.matchResult.tick,stateHash:hash(divergent.h),guestRecoveries:divergent.g.netcodeSession.metrics.recoveries,replay:[verifyReplay(divergent.h),verifyReplay(divergent.g)],cleanup:await divergent.cleanup()});
+    results.push({name:'terminal-hash-divergence-'+recoveryMode,finalTick:divergent.h.matchResult.tick,stateHash:hash(divergent.h),guestRecoveries:divergent.g.netcodeSession.metrics.recoveries,replay:[verifyReplay(divergent.h),verifyReplay(divergent.g)],cleanup:await divergent.cleanup()});
   }finally{if(!divergent.h.disposed){divergent.h.dispose();divergent.g.dispose();}}
-  const early=await pair();
+  const early=await pair({mode:recoveryMode});
   try{
     await early.pump(()=>early.h.netcodeSession.ready&&early.g.netcodeSession.ready,'False early-terminal fixture is ready',0);
     check(early.h.command({type:'SET_FLAG',x:1200,y:1500}),'False terminal replay has an earlier real input');
@@ -168,9 +176,11 @@ async function runLifecycle(config){
     check(early.h.matchResult.tick===12&&early.g.matchResult.tick===12&&early.h.matchResult.winner==='guest'&&early.g.matchResult.winner==='guest','Both peers publish the independently replayed real outcome');
     const hash=s=>RallyNetcode.hashBytes(s.simulationAdapter.save());
     check(hash(early.h)===hash(early.g),'False terminal recovery preserves the full authoritative state');
-    results.push({name:'false-early-terminal-recovery',finalTick:12,stateHash:hash(early.h),guestRecoveries:early.g.netcodeSession.metrics.recoveries,replay:[verifyReplay(early.h),verifyReplay(early.g)],cleanup:await early.cleanup()});
+    results.push({name:'false-early-terminal-recovery-'+recoveryMode,finalTick:12,stateHash:hash(early.h),guestRecoveries:early.g.netcodeSession.metrics.recoveries,replay:[verifyReplay(early.h),verifyReplay(early.g)],cleanup:await early.cleanup()});
   }finally{if(!early.h.disposed){early.h.dispose();early.g.dispose();}}
-  const paced=await pair();
+  }
+  for(const pacingMode of ['rollback','lockstep']){
+  const paced=await pair({mode:pacingMode});
   try{
     let now=Math.max(paced.h.netcodeNow,paced.g.netcodeNow,performance.now());
     const pulse=async()=>{now+=100;for(const s of[paced.h,paced.g])s.advanceSimulation(now);await pause(5);};
@@ -188,8 +198,31 @@ async function runLifecycle(config){
     for(let i=0;i<80&&[paced.h,paced.g].some((s,j)=>s.sim.tick<=ticks[j]||s.syncHold);i++)await pulse();
     check([paced.h,paced.g].every((s,j)=>s.sim.tick>ticks[j]&&!s.syncHold&&!s.simpleRecoveryNeedsManual&&!s.disconnectGraceTimer),'Poll continues through holds and Core resumption clears reconnect guidance');
     check(!paced.h.simulationFatal&&!paced.g.simulationFatal&&paced.faults.length===0,'Paced reconnect has no adapter or transport failure');
-    results.push({name:'public-loop-core-interruption-timeout-resumption',ticksBeforeResume:ticks,ticksAfterResume:[paced.h.sim.tick,paced.g.sim.tick],cleanup:await paced.cleanup()});
+    results.push({name:'public-loop-core-interruption-timeout-resumption-'+pacingMode,ticksBeforeResume:ticks,ticksAfterResume:[paced.h.sim.tick,paced.g.sim.tick],cleanup:await paced.cleanup()});
   }finally{if(!paced.h.disposed){paced.h.dispose();paced.g.dispose();}}
+  }
+  for(const mode of ['lockstep','rollback','lockstep']){
+    const p=await pair({mode});
+    try{
+      await p.pump(()=>p.h.netcodeSession.ready&&p.g.netcodeSession.ready,'Mode flip handshake '+mode,0);
+      UiController.setStartNetcodeMode(mode==='lockstep'?'rollback':'lockstep');
+      check([p.h,p.g].every(s=>s.netcodeSession.profile.mode===mode),'Changing lobby selection cannot mutate an active session');
+      await p.pump(()=>p.h.sim.tick===9&&p.g.sim.tick===9,'Mode flip actual progress '+mode,9);
+      check(p.h.surrender(),'Mode flip surrender queued');
+      await p.pump(()=>p.h.simEnded&&p.g.simEnded,'Mode flip outcome '+mode);
+      check(p.h.sim.checksum()===p.g.sim.checksum(),'Mode flip canonical outcome agrees');
+      if(mode==='lockstep')check([p.h,p.g].every(s=>s.netcodeSession.metrics.predictedTicks===0&&s.netcodeSession.metrics.rollbacks===0),'Lockstep repeated session never predicts or rolls back');
+      results.push({name:'repeated-mode-'+mode,replay:[verifyReplay(p.h),verifyReplay(p.g)],cleanup:await p.cleanup()});
+    }finally{if(!p.h.disposed){p.h.dispose();p.g.dispose();}}
+  }
+  const mismatch=await pair({mode:'lockstep',guestMode:'rollback'});
+  try{
+    await mismatch.pump(()=>mismatch.h.simulationFatal&&mismatch.g.simulationFatal,'Different modes rejected by public HELLO',0);
+    check([mismatch.h,mismatch.g].every(s=>s.sim.tick===0&&s.netcodeSession.closed),'Mode mismatch starts no gameplay');
+    check([mismatch.h,mismatch.g].some(s=>s.simulationFatalInfo.message.includes('동기화 설정')),'Mode mismatch provides refresh/settings guidance');
+    results.push({name:'mode-mismatch',fatal:true,cleanup:await mismatch.cleanup()});
+  }finally{if(!mismatch.h.disposed){mismatch.h.dispose();mismatch.g.dispose();}}
+  UiController.setStartNetcodeMode('lockstep');
   return results;
 }
 
