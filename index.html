@@ -10633,7 +10633,7 @@ body.campaign-mode #p2pHealthText {
 (async function(){
 "use strict";
 const RALLY_GAMEKIT_MODULES=Object.freeze({rollback:'./vendor/gamekit/rollback.js',deterministic:'./vendor/gamekit/deterministic.js',simloop:'./vendor/gamekit/simloop.js',transport:'./vendor/gamekit/transport.js',interpolation:'./vendor/gamekit/interpolation.js',rendering:'./vendor/gamekit/rendering.js',input:'./vendor/gamekit/input.js',camera:'./vendor/gamekit/camera.js',events:'./vendor/gamekit/presentation-events.js',hud:'./vendor/gamekit/hud.js',debug:'./vendor/gamekit/debug-tools.js'});
-const RALLY_GAMEKIT_SOURCE=Object.freeze({repository:'byh-playground/bloom-gamekit',sourceCommit:'b822ec6463ab7c018d440ba87c16c0d87fccecb2',distCommit:'5c009f9b9f1a15bce1e5a1e94ddfab652cdb1994'});
+const RALLY_GAMEKIT_SOURCE=Object.freeze({repository:'byh-playground/bloom-gamekit',sourceCommit:'9be41746b488d8d51699b6aad023370d9f5389e3',distCommit:'a3e4bd670361b6af653d8ec5686ecb564d428398'});
 const RALLY_NETCODE_URL='gamekit:'+RALLY_GAMEKIT_SOURCE.distCommit;
 let RallyNetcode,RallyGamekit;
 try{
@@ -25667,46 +25667,68 @@ class ReusableFloat32Buffer{
    because the unit body itself is hidden. */
 // Game-owned identity/discontinuity policy; the gamekit timeline owns interpolation.
 class RenderStateStore{
-  constructor(definitions){this.definitions=definitions;this.kinds=Object.create(null);this.clock=0}
+  constructor(definitions){this.definitions=definitions;this.kinds=Object.create(null);this.clock=0;this.zeroDelta=Object.freeze({x:0,y:0})}
   state(kind){
     if(!this.kinds[kind]){
       const def=this.definitions[kind],schema=Object.fromEntries(Object.entries(def.fields).map(([name,cfg])=>[name,cfg.mode==="shortest-angle"?"angle":"number"]));
-      this.kinds[kind]={def,schema,entries:new Map(),seeds:new Map(),pending:[],epoch:0,sequence:0,revision:0,duration:0,timeline:null};
+      this.kinds[kind]={def,schema,fields:Object.keys(schema),entries:new Map(),seeds:new Map(),pending:[],epoch:0,sequence:0,revision:0,generation:0,duration:0,timeline:null};
     }
     return this.kinds[kind];
   }
   time(now){return this.clock=Math.max(this.clock,Number(now)||0)}
-  begin(kind){const k=this.state(kind);k.pending=[];return ++k.epoch}
+  begin(kind){const k=this.state(kind);k.pending.length=0;return ++k.epoch}
+  sample(k,e,at){
+    if(e.sampleAt!==at){
+      // Each identity owns its borrowed, read-only pose. Never share one global scratch
+      // object: callers can hold two positions while computing an endpoint/direction.
+      if(!k.timeline?.sampleInto(e.id,e.generation,at,e.pose))Object.assign(e.pose,e.values);
+      e.sampleAt=at;
+    }
+    return e.pose;
+  }
+  entry(k,key,source,at){
+    const values={};for(const name of k.fields){const v=Number(source[name]);values[name]=Number.isFinite(v)?v:0}
+    return {id:key,generation:++k.generation,values,pose:{...values},sampleAt:NaN,initialValues:undefined,teleport:false,epoch:0,at,delta:{x:0,y:0}};
+  }
   track(kind,id,source,now,epoch,snap=false,durationMs=1){
     const k=this.state(kind),key=String(id),at=this.time(now),duration=Math.max(1,Number(durationMs)||1);
     if(k.duration!==duration){k.duration=duration;k.timeline=new RallyGamekit.InterpolationTimeline({schema:k.schema,stepMs:duration});k.entries.clear();k.sequence=0;k.revision++}
-    const previous=k.entries.get(key)||k.seeds.get(key),values={},pose={...previous?.values};
-    for(const name of Object.keys(k.schema))values[name]=Number.isFinite(Number(source[name]))?Number(source[name]):0;
-    if(previous)k.timeline.sampleInto(key,previous.generation,at,pose);
-    const allowance=k.def.snapDistance*Math.max(1,Math.max(duration,at-(previous?.at??at))/duration);
-    const teleport=!!snap||!!previous&&Math.hypot(values.x-previous.values.x,values.y-previous.values.y)>allowance;
-    const entry={id:key,generation:previous?.generation??0,values,initialValues:k.seeds.get(key)?.values,teleport,epoch,at,delta:{x:teleport?0:values.x-(pose.x??values.x),y:teleport?0:values.y-(pose.y??values.y)}};
-    k.pending.push(entry);k.entries.set(key,entry);return entry;
+    const previous=k.entries.get(key)||k.seeds.get(key),e=previous||this.entry(k,key,source,at);
+    const pose=previous?this.sample(k,e,at):e.pose;
+    const x=Number.isFinite(Number(source.x))?Number(source.x):0,y=Number.isFinite(Number(source.y))?Number(source.y):0;
+    const allowance=k.def.snapDistance*Math.max(1,Math.max(duration,at-e.at)/duration);
+    const teleport=!!snap||!!previous&&Math.hypot(x-e.values.x,y-e.values.y)>allowance;
+    e.delta.x=teleport?0:x-(pose.x??x);e.delta.y=teleport?0:y-(pose.y??y);
+    // Initial seeds are copied once. Timeline.accept copies packet values, so the
+    // entry, delta and target storage can be reused on each authoritative snapshot.
+    e.initialValues=k.seeds.has(key)?{...e.values}:undefined;
+    for(const name of k.fields){const v=Number(source[name]);e.values[name]=Number.isFinite(v)?v:0}
+    e.teleport=teleport;e.epoch=epoch;e.at=at;e.sampleAt=NaN;
+    k.pending.push(e);k.entries.set(key,e);return e;
   }
   end(kind,epoch){
     const k=this.state(kind);if(!k.timeline)return;
     for(const [id,e]of k.entries)if(e.epoch!==epoch)k.entries.delete(id);
     k.seeds.clear();
     k.timeline.accept({revision:k.revision,sequence:++k.sequence,timeMs:this.clock,entities:k.pending},this.clock);
+    // Acceptance can change the pose at the same timestamp (teleport/rollback).
+    for(const e of k.pending)e.sampleAt=NaN;
   }
   ensure(kind,id,source,now){
     const k=this.state(kind),key=String(id);if(k.entries.has(key)||k.seeds.has(key))return;
-    const values=Object.fromEntries(Object.keys(k.schema).map(name=>[name,Number(source[name])||0]));
-    k.seeds.set(key,{values,generation:0,at:this.time(now)});
+    k.seeds.set(key,this.entry(k,key,source,this.time(now)));
   }
   has(kind,id){const k=this.kinds[kind],key=String(id);return !!k&&(k.entries.has(key)||k.seeds.has(key))}
   position(kind,id,source,now=performance.now()){
-    const k=this.kinds[kind],e=k?.entries.get(String(id)),out={x:Number(source?.x)||0,y:Number(source?.y)||0};
-    if(e)k.timeline.sampleInto(String(id),e.generation,this.time(now),out);
-    else if(k?.seeds.has(String(id)))Object.assign(out,k.seeds.get(String(id)).values);return out;
+    const k=this.kinds[kind],key=String(id),e=k?.entries.get(key)||k?.seeds.get(key);
+    if(e)return this.sample(k,e,this.time(now));
+    return {x:Number(source?.x)||0,y:Number(source?.y)||0};
   }
-  value(kind,id,field,fallback,now=performance.now()){return this.position(kind,id,{[field]:fallback},now)[field]??(Number(fallback)||0)}
-  delta(kind,id){return this.kinds[kind]?.entries.get(String(id))?.delta||{x:0,y:0}}
+  value(kind,id,field,fallback,now=performance.now()){
+    const k=this.kinds[kind],key=String(id),e=k?.entries.get(key)||k?.seeds.get(key);
+    return e?(this.sample(k,e,this.time(now))[field]??(Number(fallback)||0)):(Number(fallback)||0);
+  }
+  delta(kind,id){return this.kinds[kind]?.entries.get(String(id))?.delta||this.zeroDelta}
   clear(){this.kinds=Object.create(null)}
 }
 class FloatingTextPresentationDefinition{
@@ -36965,7 +36987,7 @@ class BattlePresentation{
         try{if(point.type==='up')battlefieldPointerUp(event);else battlefieldPointerCancel(event)}
         finally{if(ActiveViewState.drag?.id===point.pointerId){cancelForcedRallyHold(true);ActiveViewState.drag=null}}
       }
-    },onRelease:()=>{cancelForcedRallyHold(true);ActiveViewState.drag=null}
+    },onRelease:()=>{cancelForcedRallyHold(true);ActiveViewState.drag=null;pointerInteractions.cancelActive()}
   });
 
 }
@@ -37629,6 +37651,7 @@ class PointerInteractionController{
     this.bindings=[];
     this.active=null;
     this.suppressKey=null;
+    this.suppressElement=null;
     this.suppressUntil=0;
     this.installed=false;
   }
@@ -37649,6 +37672,12 @@ class PointerInteractionController{
     if(this.active?.timer)clearTimeout(this.active.timer);
     this.active=null;
   }
+  suppressActive(active){
+    if(!active)return;
+    this.suppressKey=active.key;this.suppressElement=active.el;
+    this.suppressUntil=performance.now()+900;
+  }
+  cancelActive(){this.suppressActive(this.active);this.clearActive()}
   install(){
     if(this.installed)return;
     this.installed=true;
@@ -37656,7 +37685,8 @@ class PointerInteractionController{
     document.addEventListener("pointerdown",e=>{
       if(!e.isPrimary||(e.pointerType==="mouse"&&e.button!==0))return;
       const hit=this.bindingForTarget(e.target);if(!hit)return;
-      this.clearActive();
+      this.cancelActive();
+      this.suppressKey=null;this.suppressElement=null;this.suppressUntil=0;
       const {binding,el}=hit,key=this.actionKey(binding,el);
       const active=this.active={
         pointerId:e.pointerId,pointerType:e.pointerType||"",
@@ -37667,15 +37697,12 @@ class PointerInteractionController{
       if(allowLong){
         active.timer=setTimeout(()=>{
           active.timer=0;
-          if(this.active!==active||active.cancelled)return;
+          if(this.active!==active||active.cancelled||document.hidden||active.el.isConnected===false){if(this.active===active)this.cancelActive();return}
           active.longPressed=true;
           if(active.pointerType!=="mouse"&&navigator.vibrate)try{navigator.vibrate(18)}catch(_e){}
           const detail=typeof binding.detail==="function"?binding.detail(active.el):BattlePresentation.longPressDetailFor(active.el);
           if(detail)BattlePresentation.showInfoDetail(detail);
-          if(active.key){
-            this.suppressKey=active.key;
-            this.suppressUntil=performance.now()+900;
-          }
+          this.suppressActive(active);
         },binding.holdMs||POINTER_INTERACTION_HOLD_MS);
       }
     },true);
@@ -37694,6 +37721,7 @@ class PointerInteractionController{
       const a=this.active;if(!a||e.pointerId!==a.pointerId)return;
       if(a.timer)clearTimeout(a.timer);
       a.timer=0;
+      if(a.cancelled||a.longPressed)this.suppressActive(a);
       // Native click is the single activation event for normal controls.
       // Pointer tracking here exists only for long-press detail and drag cancellation.
       // Never synthesize el.click() from pointerup: W3C defines click as the
@@ -37702,8 +37730,8 @@ class PointerInteractionController{
       this.active=null;
     },true);
 
-    document.addEventListener("pointercancel",e=>{if(this.active&&e.pointerId===this.active.pointerId)this.clearActive()},true);
-    document.addEventListener("lostpointercapture",e=>{if(this.active&&e.pointerId===this.active.pointerId)this.clearActive()},true);
+    document.addEventListener("pointercancel",e=>{if(this.active&&e.pointerId===this.active.pointerId)this.cancelActive()},true);
+    document.addEventListener("lostpointercapture",e=>{if(this.active&&e.pointerId===this.active.pointerId)this.cancelActive()},true);
     document.addEventListener("contextmenu",e=>{
       const hit=this.bindingForTarget(e.target);
       if(hit&&this.active?.longPressed)e.preventDefault();
@@ -37716,11 +37744,11 @@ class PointerInteractionController{
     document.addEventListener("click",e=>{
       const hit=this.bindingForTarget(e.target);if(!hit)return;
       const {binding,el}=hit,key=this.actionKey(binding,el);
-      const suppressing=!!this.suppressKey&&performance.now()<this.suppressUntil&&key===this.suppressKey&&e.detail!==0;
+      const suppressing=performance.now()<this.suppressUntil&&(el===this.suppressElement||!!this.suppressKey&&key===this.suppressKey)&&e.detail!==0;
       if(suppressing){
         e.preventDefault();
         e.stopImmediatePropagation();
-        this.suppressKey=null;
+        this.suppressKey=null;this.suppressElement=null;
         this.suppressUntil=0;
         return;
       }

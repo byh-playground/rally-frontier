@@ -36,13 +36,19 @@ var PresentationEventQueue = class {
     this.active = /* @__PURE__ */ new Set();
     this.rollbackFrom = null;
     this.disposed = false;
+    this.confirmationDirty = false;
     this.stats = { started: 0, duplicates: 0, cancelled: 0, expired: 0, collected: 0, rejectedOld: 0 };
   }
   _ready() {
     if (this.disposed) throw new Error("event queue disposed");
   }
   _start(record) {
-    record.handle = record.adapter.start(record.event, this.nowMs);
+    try {
+      record.handle = record.adapter.start(record.event, this.nowMs);
+    } catch (error) {
+      if (record.confirmed) this.confirmationDirty = true;
+      throw error;
+    }
     record.startedMs = this.nowMs;
     record.state = "active";
     this.active.add(record);
@@ -54,9 +60,13 @@ var PresentationEventQueue = class {
   }
   _release(record) {
     if (!record.confirmed || record.state === "active" || record.state === "pending") return;
-    const { tick, sequence, entityId, generation, kind, policy } = record.event;
-    record.event = { tick, sequence, entityId, generation, kind, policy };
-    record.handle = void 0;
+    const { tick } = record.event;
+    if (!record.compacted) {
+      const { sequence, entityId, generation, kind, policy } = record.event;
+      record.event = { tick, sequence, entityId, generation, kind, policy };
+      record.handle = void 0;
+      record.compacted = true;
+    }
     if (tick <= this.confirmedTick - this.retentionTicks && this.records.delete(record.key)) this.stats.collected++;
   }
   _stop(record, reason) {
@@ -116,7 +126,8 @@ var PresentationEventQueue = class {
       state: "pending",
       handle: void 0,
       startedMs: 0,
-      seen: true
+      seen: true,
+      compacted: false
     };
     this.records.set(key, record);
     if (policy === "speculative" || record.confirmed) this._start(record);
@@ -150,7 +161,9 @@ var PresentationEventQueue = class {
     integer(tick, "tick");
     if (this.rollbackFrom !== null) throw new Error("finish rollback before confirmation");
     if (tick < this.confirmedTick) throw new RangeError("confirmed tick cannot regress");
+    if (tick === this.confirmedTick && !this.confirmationDirty) return;
     this.confirmedTick = tick;
+    this.confirmationDirty = true;
     for (const record of this.records.values()) if (record.event.tick <= tick) {
       const wasConfirmed = record.confirmed;
       record.confirmed = true;
@@ -159,6 +172,7 @@ var PresentationEventQueue = class {
       this._release(record);
     }
     this.collect();
+    this.confirmationDirty = false;
   }
   update(nowMs) {
     this._ready();
@@ -185,7 +199,7 @@ var PresentationEventQueue = class {
   collect() {
     this._ready();
     const cutoff = this.confirmedTick - this.retentionTicks;
-    for (const [key, record] of this.records) if (record.confirmed && record.event.tick <= cutoff && record.state !== "active") {
+    for (const [key, record] of this.records) if (record.confirmed && record.event.tick <= cutoff && record.state !== "active" && record.state !== "pending") {
       this.records.delete(key);
       this.stats.collected++;
     }

@@ -24,6 +24,10 @@ const config = {
   runs: Number(option('runs', 3)),
   durationMs: Number(option('duration', 10000)),
   warmupMs: Number(option('warmup', 4000)),
+  minFrames: Number(option('min-frames', 0)),
+  maxDurationMs: Number(option('max-duration', 120000)),
+  startTick: Number(option('start-tick', 0)),
+  renderAblation: option('render-ablation', ''),
   conditions: option('conditions', 'quiet,commands').split(','),
   output: path.resolve(option('output', path.join(root, '.qa', 'game-performance-benchmark'))),
   canonicalMap: option('canonical-map', null),
@@ -53,7 +57,7 @@ function stats(values) {
   const a = values.filter(Number.isFinite).sort((x, y) => x - y);
   if (!a.length) return null;
   return { n: a.length, mean: a.reduce((sum, x) => sum + x, 0) / a.length,
-    p50: a[Math.floor((a.length - 1) * .5)], p95: a[Math.floor((a.length - 1) * .95)], max: a[a.length - 1] };
+    p50: a[Math.floor((a.length - 1) * .5)], p95: a[Math.floor((a.length - 1) * .95)], p99: a[Math.floor((a.length - 1) * .99)], max: a[a.length - 1] };
 }
 function profileSummary(profile, inclusive = false) {
   const nodes = new Map(profile.nodes.map(n => [n.id, n]));
@@ -96,7 +100,13 @@ function instrumentation({ roomToken, canonicalMap, traceCosts }) {
   }).observe({ type: 'longtask', buffered: false }); } catch (_) { /* Browser support is recorded separately. */ }
   const step = StrategySim.prototype.step;
   StrategySim.prototype.step = function (...args) {
-    if (!b.measuring) return step.apply(this, args);
+    if (!b.measuring) {
+      const result=step.apply(this,args);
+      if(b.pendingStart&&this===MatchLifecycle.singleMatch?.sessions.host.sim&&this.tick>=b.pendingStart.tick){
+        const pending=b.pendingStart;b.pendingStart=null;b.begin(pending.condition,pending.interval);
+      }
+      return result;
+    }
     const t = performance.now();
     const before = { ...this.navigation?.metrics };
     const result = step.apply(this, args);
@@ -143,6 +153,10 @@ function instrumentation({ roomToken, canonicalMap, traceCosts }) {
       }, commandIntervalMs);
     }
   };
+  b.arm=(tick,condition,interval)=>{
+    if(MatchLifecycle.singleMatch.sessions.host.sim.tick>=tick)throw Error('Benchmark start tick already passed');
+    b.pendingStart={tick,condition,interval};
+  };
   b.end = () => {
     b.measuring = false; clearInterval(b.commandTimer);
     return { durationMs: performance.now() - b.startedAt, costs:b.costs, frames: b.frames, steps: b.steps,
@@ -161,7 +175,24 @@ async function runOne(browser, revision, condition, repetition, canonicalMap) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   let source = git('show', `${revision.sha}:index.html`);
-  if(source.includes('const RALLY_GAMEKIT_MODULES='))source=require('./bundle-gamekit.cjs').bundleGame(root,source);
+  if(revision.renderStoreRef){
+    const baseline=git('show',`${revision.renderStoreRef}:index.html`),start=baseline.indexOf('class RenderStateStore{'),end=baseline.indexOf('class FloatingTextPresentationDefinition{',start);
+    assert(start>=0&&end>start);
+    const a=source.indexOf('class RenderStateStore{'),z=source.indexOf('class FloatingTextPresentationDefinition{',a);assert(a>=0&&z>a);
+    source=source.slice(0,a)+baseline.slice(start,end)+source.slice(z);
+  }
+  if(source.includes('const RALLY_GAMEKIT_MODULES=')){
+    // Compare each revision with its own pinned SDK and bundling rules. Using the
+    // current vendor directory for both sides would hide SDK regressions.
+    const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'rally-benchmark-'));
+    try{
+      const archive=execFileSync('git',['archive',revision.sha,'vendor','campaign','icons','manifest.webmanifest'],{cwd:root,maxBuffer:20*1024*1024});
+      execFileSync('tar',['-x','-C',fixture],{input:archive});
+      const module={exports:{}};
+      new Function('require','module',git('show',`${revision.sha}:scripts/bundle-gamekit.cjs`))(require,module);
+      source=module.exports.bundleGame(fixture,source);
+    }finally{fs.rmSync(fixture,{recursive:true,force:true})}
+  }
   // Baseline uses the exact same imported SDK algorithms, without a live CDN dependency.
   const baselineSDK=['rollback','deterministic','simloop','transport'].map(name=>`export * from ${JSON.stringify('data:text/javascript;base64,'+fs.readFileSync(path.join(root,'vendor/gamekit',name+'.js')).toString('base64'))};`).join('\n');
   await page.route('https://byh-playground.github.io/rollback-netcode/rollback-netcode.js',route=>route.fulfill({contentType:'text/javascript',headers:{'access-control-allow-origin':'*'},body:baselineSDK}));
@@ -217,8 +248,11 @@ async function runOne(browser, revision, condition, repetition, canonicalMap) {
     }, config.warmupMs, { timeout: 60000 });
     setup.presentation=await page.evaluate(()=>{const {ActiveViewState:r,MatchLifecycle:m}=window.__perfBench;const v=r.renderer;return {cameraLeft:v.cameraLeft,cameraTop:v.cameraTop,canvasWidth:v.canvas.width,canvasHeight:v.canvas.height,zoom:v.replayZoom,role:v.role,perspective:v.mySide(),observerAll:v.replayObserverAll,visibilitySources:v.visionSourcesBySide.map(a=>a.length),startTick:m.sessions?.host?.sim?.tick??m.singleMatch.sessions.host.sim.tick}});
     if (config.profile) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 1000 }); await cdp.send('Profiler.start'); }
-    await page.evaluate(({ condition, interval }) => window.__perfBench.begin(condition, interval), { condition, interval: config.commandIntervalMs });
-    await page.waitForTimeout(config.durationMs);
+    await page.evaluate(({condition,interval,tick})=>tick?window.__perfBench.arm(tick,condition,interval):window.__perfBench.begin(condition,interval),{condition,interval:config.commandIntervalMs,tick:config.startTick});
+    await page.waitForFunction(()=>window.__perfBench.measuring,null,{timeout:120000});
+    setup.measurementStartTicks=await page.evaluate(()=>window.__perfBench.startTicks);
+    if(config.startTick)assert.equal(setup.measurementStartTicks.host,config.startTick,'Measurement starts at exact same authoritative host tick');
+    await page.waitForFunction(({duration,frames})=>performance.now()-window.__perfBench.startedAt>=duration&&window.__perfBench.frames.length>=frames,{duration:config.durationMs,frames:config.minFrames},{timeout:config.maxDurationMs});
     const measurements = await page.evaluate(() => window.__perfBench.end());
     let cpu = null, cpuInclusive = null;
     if (config.profile) { const { profile } = await cdp.send('Profiler.stop'); json(path.join(dir, 'cpu.cpuprofile'), profile); cpu = profileSummary(profile); cpuInclusive = profileSummary(profile, true); }
@@ -271,9 +305,10 @@ async function main() {
   fs.mkdirSync(config.output, { recursive: true });
   const canonicalMap = config.canonicalMap ? JSON.parse(fs.readFileSync(config.canonicalMap, 'utf8')) : null;
   const revisions = config.revisions.map(label => ({ label, sha: git('rev-parse', `${label}^{commit}`).trim() }));
+  if(config.renderAblation){const latest=revisions.at(-1);revisions.splice(revisions.length-1,0,{...latest,label:latest.label+'-uncached',renderStoreRef:config.renderAblation})}
   const machine = { platform: process.platform, cpus: os.cpus().map(c => c.model), memoryBytes: os.totalmem(), node: process.version };
   const results = [];
-  const browser = await chromium.launch({ channel: process.env.QA_BROWSER_CHANNEL || 'msedge', headless: process.env.QA_HEADED !== '1' });
+  const browser = await chromium.launch({ channel: process.env.QA_BROWSER_CHANNEL || 'msedge', headless: process.env.QA_HEADED !== '1', args: process.env.QA_SOFTWARE_GPU === '1' ? ['--use-angle=swiftshader','--enable-unsafe-swiftshader'] : [] });
   try {
     for (let rep = 1; rep <= config.runs; rep++) {
       // Rotate revision order to avoid always penalizing the latest revision with heat/background drift.
@@ -283,6 +318,7 @@ async function main() {
         if (results.length) {
           assert.equal(result.setup.seed, results[0].setup.seed, 'Simulation seed is identical across conditions');
           assert.equal(result.setup.rosterHash, results[0].setup.rosterHash, 'Initial unit roster is identical across conditions');
+          assert.equal(result.setup.mapHash, results[0].setup.mapHash, 'Full map fixture is identical across conditions');
         }
         results.push(result);
         json(path.join(config.output, 'summary.json'), { kind: 'RALLY_REAL_WEBGL_BENCHMARK', config, machine, browserVersion: browser.version(), results });

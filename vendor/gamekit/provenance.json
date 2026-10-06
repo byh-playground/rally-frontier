@@ -1,12 +1,12 @@
 {
   "repository": "byh-playground/bloom-gamekit",
-  "sourceCommit": "b822ec6463ab7c018d440ba87c16c0d87fccecb2",
-  "distCommit": "5c009f9b9f1a15bce1e5a1e94ddfab652cdb1994",
+  "sourceCommit": "9be41746b488d8d51699b6aad023370d9f5389e3",
+  "distCommit": "a3e4bd670361b6af653d8ec5686ecb564d428398",
   "upstreamRollbackCommit": "c3173914519a78834360430071e7a125736d86d5",
   "modules": {
     "rollback": {
       "file": "rollback.js",
-      "sha256": "bac765ad45e0637358f359f72be3188ceeb101869fc07ef90edcbd826038debe"
+      "sha256": "9c311cae60e9f19dede81b19a568df8665fd1be5edbb254d0f7e002e3f148bd1"
     },
     "deterministic": {
       "file": "deterministic.js",
@@ -14,7 +14,7 @@
     },
     "simloop": {
       "file": "simloop.js",
-      "sha256": "e4f71d4edd68da7f93d5aea13a1de6fb4ff19c2f292c6005dab4f8ec7dc0dc8e"
+      "sha256": "a348d2d6bf84779b1710391d4e8d4c790cb5c3899bc38fa635e03f7e0cf4548c"
     },
     "transport": {
       "file": "transport.js",
@@ -38,7 +38,7 @@
     },
     "events": {
       "file": "presentation-events.js",
-      "sha256": "c0785f505a1d0ccb169074f513eca6a43e33b2f7dad1354b138ce81ee32ecec0"
+      "sha256": "61d11a42d7edc72d8b9219902ed7e9d0025f05b77a9d681d21582767117af0e6"
     },
     "hud": {
       "file": "hud.js",
@@ -49,5 +49,5 @@
       "sha256": "50194cd84d8bdec147928afb429fe0aa0660bd68994a0120c9db7d1ce430d4e6"
     }
   },
-  "distManifestSha256": "d43313b6794200b2d064b8f34f2b1ab3464a267d6d0687f9ff3f07ad988f5fb2"
+  "distManifestSha256": "47137d8df08c9ea7199d4029da29af417cd17f5315262821055164511f427ca6"
 }
