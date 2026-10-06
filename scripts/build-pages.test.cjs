@@ -38,3 +38,10 @@ test('source checkout identifies itself as development rather than a stale relea
   vm.runInNewContext(declaration + ';globalThis.metadata=BUILD_META;', sandbox);
   assert.equal(sandbox.metadata.updatedAt, null);
 });
+
+test('standalone build bundles verified modules, campaign and visual assets',()=>{
+  const {bundleGame}=require('./bundle-gamekit.cjs');const root=path.resolve(__dirname,'..'),html=bundleGame(root,source);
+  assert(html.includes('data:text/javascript;base64,'));assert(!html.includes('import(this.importAttempt?'));
+  assert(!html.includes('href="./icons/'));assert(!html.includes('href="./manifest.webmanifest"'));
+  for(const [,attrs,js]of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi))if(!/type=["'](?:module|application\/json)/i.test(attrs))new vm.Script(js);
+});

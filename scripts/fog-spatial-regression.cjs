@@ -31,10 +31,7 @@ const { chromium } = require('playwright');
       canvas.width = 900; canvas.height = 1500;
       const r = new GLRenderer(canvas), gl = r.gl;
       function frame() {
-        gl.useProgram(r.p); gl.uniform2f(r.r, canvas.width, canvas.height);
-        gl.viewport(0, 0, canvas.width, canvas.height); gl.disable(gl.DITHER);
-        gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.depthFunc(gl.LEQUAL); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-        gl.clearDepth(1); gl.clearColor(.69, .81, .63, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        if(r.device.active)r.device.endFrame(); r.device.beginFrame({clearColor:[.69, .81, .63, 1]}); Object.assign(r.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
         r.begin(); TerrainPresentation.drawSurfaces(r); r.flush();
         const terrain = new Uint8Array(canvas.width * canvas.height * 4);
         gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, terrain);

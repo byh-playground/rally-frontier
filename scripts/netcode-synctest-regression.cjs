@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium:nativeChromium}=require('playwright'),chromium=require('./netcode-qa-module.cjs').wrapChromium(nativeChromium);
-let html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8'),end=html.lastIndexOf('})();');
+let html=fs.readFileSync(process.argv[2]||path.join(__dirname,'..','index.html'),'utf8'),end=html.lastIndexOf('})();');
 html=html.slice(0,end)+'window.__syncQA={MatchLifecycle,RallySynctestDiagnostics,ConnectionPresentation,UiRuntimeState,RallySimulationAdapter,StrategySim};'+html.slice(end);
 (async()=>{const browser=await chromium.launch({channel:process.env.QA_BROWSER_CHANNEL||'msedge',headless:true});try{
  const page=await browser.newPage({viewport:{width:412,height:915}}),errors=[];page.on('pageerror',e=>errors.push(e.message));

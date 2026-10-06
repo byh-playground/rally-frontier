@@ -17,7 +17,7 @@ PURPOSE
 
 1. INLINE ENGINE / SELF-DESCRIBING
 - index.html은 엔진 실행물이며 최신 개발 베이스다. 캠페인 데이터는 campaign/campaigns.js 한 모듈에 둔다. 과거 파일/중간 후보본으로 되돌아가지 않는다.
-- 엔진 코드는 HTML 안에 유지하며 구조와 장기 개발 의도를 이 Contract에 보존한다. 캠페인 실행에는 index.html과 campaign/campaigns.js를 함께 HTTP(S)로 제공한다.
+- 게임 규칙·아트 코드는 HTML 안에 유지하며 공통 실행 기반은 gamekit 모듈로 조합한다. 개발 소스는 HTTP(S)에서 vendor/gamekit 및 campaign/campaigns.js를 함께 제공하고 배포 HTML은 해당 모듈과 데이터를 포함하여 외부 파일 다운로드 없이 부팅·싱글·캠페인을 실행한다. 싱글은 기존의 실제 WebRTC 로컬 연결을 유지하며 네트워크 어댑터 전체 차단 상태의 연결은 별도 검증 범위다. 멀티플레이 발견·연결에는 네트워크가 필요하다.
 - 구체적인 현재 구현 상태는 실행 코드가 SSOT이며, 제품 설명/수치는 인게임 위키와 Definition이 담당한다.
 
 2. STRUCTURE — IS-A / HAS-A / CAN-BE
@@ -81,7 +81,7 @@ PURPOSE
 - Authoritative는 StrategySim과 StateContract, Runtime은 Core·캐시·명령 영수증 추적, Presentation은 Render State·확정 효과 journal이 소유한다. 재실행은 외부 AI 결정·VFX·결과·replay 기록을 중복 실행하지 않는다.
 - 롤백은 제한된 prediction 범위 안에서 과거 상태를 복원한 호출 안에 현재 틱까지 동기 재실행한다. 시뮬레이션은 렌더링·DOM과 분리하며 재실행 중 소리·알림을 중복 발생시키지 않는다.
 - Core frame t는 게임의 step 이전 S[t]다. UI·AI 명령은 player-local sequence로 제출하며 확정 frame의 정렬된 입력만 게임 명령과 replay로 변환한다. Gameplay 시간은 Simulation Tick, scheduler와 지연 정책은 Runtime이다.
-- Nostr는 Discovery/Signaling만 사용하며 Gameplay는 raw RTCDataChannel의 바이너리로 전송한다. 개발자 소유 서버·TURN fallback은 사용하지 않는다. SDK 원본 단일 ES module을 GitHub Pages URL에서 직접 import한다. 로딩과 필수 API 확인 후 초기화하며 실패 시 오류를 표시한다. 로컬 복사본·내장 Core fallback은 사용하지 않는다.
+- Nostr는 Discovery/Signaling만 사용하며 Gameplay는 raw RTCDataChannel의 바이너리로 전송한다. 개발자 소유 서버·TURN fallback은 사용하지 않는다. SDK는 공통 gamekit의 고정 source/dist 커밋으로 검증한 분리 모듈을 사용한다. 원본 dist bytes와 SHA-256을 vendor/gamekit에 보관하고 배포 빌드는 모든 모듈·정식 캠페인을 단일 HTML에 포함한다. 로딩과 필수 API 확인 후 초기화하며 실패 시 오류를 표시한다. 다른 버전·CDN·내장 대체 Core fallback은 사용하지 않는다.
 
 7. ONE MEANING, ONE COMMON MECHANIC
 - projectile, continuous damage, targeting, VFX 등 같은 의미의 기능은 하나의 공통 계약을 사용한다.
@@ -10632,17 +10632,24 @@ body.campaign-mode #p2pHealthText {
 <script>
 (async function(){
 "use strict";
-const RALLY_NETCODE_URL="https://byh-playground.github.io/rollback-netcode/rollback-netcode.js";
-let RallyNetcode;
+const RALLY_GAMEKIT_MODULES=Object.freeze({rollback:'./vendor/gamekit/rollback.js',deterministic:'./vendor/gamekit/deterministic.js',simloop:'./vendor/gamekit/simloop.js',transport:'./vendor/gamekit/transport.js',interpolation:'./vendor/gamekit/interpolation.js',rendering:'./vendor/gamekit/rendering.js',input:'./vendor/gamekit/input.js',camera:'./vendor/gamekit/camera.js',events:'./vendor/gamekit/presentation-events.js',hud:'./vendor/gamekit/hud.js',debug:'./vendor/gamekit/debug-tools.js'});
+const RALLY_GAMEKIT_SOURCE=Object.freeze({repository:'byh-playground/bloom-gamekit',sourceCommit:'b822ec6463ab7c018d440ba87c16c0d87fccecb2',distCommit:'5c009f9b9f1a15bce1e5a1e94ddfab652cdb1994'});
+const RALLY_NETCODE_URL='gamekit:'+RALLY_GAMEKIT_SOURCE.distCommit;
+let RallyNetcode,RallyGamekit;
 try{
-  RallyNetcode=await import(RALLY_NETCODE_URL);
+  const modules=await Promise.all(Object.entries(RALLY_GAMEKIT_MODULES).map(async([name,url])=>[name,await import(url)]));
+  const namespaces=Object.fromEntries(modules);
+  RallyNetcode=Object.freeze({...namespaces.rollback,...namespaces.deterministic,...namespaces.simloop,...namespaces.transport});
+  RallyGamekit=Object.freeze(Object.assign({},...modules.map(([,module])=>module)));
+  window.RallyGamekit=RallyGamekit;
+  for(const name of ['InterpolationTimeline','WebGLDevice','createDOMInput','CameraViewport','PresentationEventQueue','resolveAnchorInto','DiagnosticRing','ReplayTimeline'])if(typeof RallyGamekit[name]!=='function')throw new Error('Gamekit module API missing: '+name);
   for(const name of ["createSession","hashBytes","createValueCodec","WebRTCTransport","createNostrSignaler","createLoop","runSyncTestAsync"]){
     if(typeof RallyNetcode[name]!=="function")throw new Error("공개 라이브러리에 필수 API "+name+"가 없습니다. 라이브러리 배포 상태를 확인해 주세요.");
   }
   if(typeof Object.getOwnPropertyDescriptor(RallyNetcode.SyncTestSession?.prototype||{},"metrics")?.get!=="function")throw new Error("공개 라이브러리에 Synctest metrics API가 없습니다. 라이브러리 배포 상태를 확인해 주세요.");
   if(typeof RallyNetcode.RollbackSession?.prototype.exportSyncTestFrames!=="function")throw new Error("공개 라이브러리에 확정 입력 Synctest export API가 없습니다. 라이브러리 배포 상태를 확인해 주세요.");
   window.RallyNetcode=RallyNetcode;
-  window.RallyNetcodeSource=Object.freeze({url:RALLY_NETCODE_URL,version:RallyNetcode.VERSION,pinned:false});
+  window.RallyNetcodeSource=Object.freeze({url:RALLY_NETCODE_URL,version:RallyNetcode.VERSION,pinned:true,...RALLY_GAMEKIT_SOURCE});
 }catch(error){
   window.__RALLY_PRESENT_FATAL__({kind:"RALLY_NETCODE_LOAD_FAILED",message:"넷코드 라이브러리를 불러오지 못해 게임을 시작할 수 없습니다. "+String(error?.message||error),url:RALLY_NETCODE_URL});
   return;
@@ -15794,7 +15801,8 @@ class NostrRtcTransport{
   makePeerConnection(originator){
     this.discardCurrentConnection("replace-before-new-rtc");
     const serial=++this.connectionSerial;
-    const pc=new RTCPeerConnection({iceServers:RALLY_ICE_SERVERS,sdpSemantics:"unified-plan"});
+    // Same-machine peers use real RTC host candidates; external STUN discovery is unnecessary.
+    const pc=new RTCPeerConnection({iceServers:this.signalMode==="local"?[]:RALLY_ICE_SERVERS,sdpSemantics:"unified-plan"});
     this.pc=pc;
     this.pendingIce=this.prePcIce.filter(x=>!this.remoteSignalId||x.from===this.remoteSignalId).map(x=>x.candidate);
     this.prePcIce=[];
@@ -23132,7 +23140,7 @@ class GameSession{
     this.netcodeNow=performance.now();this.neutralInput=new Uint8Array(1);this.replayRecorder=null;
     this.pendingNetcodeCommands=new Map();this.lastCommandTicket=null;this.frameOutputs=new Map();this.candidateFrameOutputs=new Map();this.publishedGameTick=0;
     this.publishConfirmedSnapshots=false;this.latestConfirmedSnapshot=null;
-    this.pendingTerminalFrame=null;this.remoteTerminalReceipt=null;this.lastTerminalReceiptAt=0;this.terminalRecoveryKey='';this.recoveredJournalFrom=null;this.publishedEffectTick=0;
+    this.pendingTerminalFrame=null;this.remoteTerminalReceipt=null;this.lastTerminalReceiptAt=0;this.terminalRecoveryKey='';this.recoveredJournalFrom=null;
     this.transportConnected=false;this.everTransportOpened=false;this.syncHold=true;this.deferredActions=[];
     this.recoveryPhase='idle';this.simpleRecoveryNeedsManual=false;this.simpleRecoveryToken='';this.simpleRecoverySeq=0;
     this.recoveryAttempt=0;this.fullConnectionResetCount=0;this.postRecoveryResumeAt=0;this.postRecoveryTimer=0;
@@ -23140,6 +23148,9 @@ class GameSession{
     this.localVisible=true;this.netcodeLoop=null;this.last=0;this.raf=0;
     this.lastDriverPulseAt=performance.now();this.lastSnapshotEmitAt=0;this.lastRenderedSimulationTick=-1;
     this.presentationEventBuffer=[];this.presentationEventsBuffered=0;this.presentationEventsPublished=0;
+    this.presentationJournal=new RallyGamekit.PresentationEventQueue({adapters:{frame:{start:record=>{
+      this.presentationEventBuffer.push({...record.payload,presentationTick:record.tick});this.presentationEventsBuffered++;
+    }}},retentionTicks:120});
     this.simEnded=false;this.matchResult=null;this.simulationFatal=false;this.simulationFatalInfo=null;
     this.disconnectGraceDeadlineAt=0;this.disconnectGraceReason='';this.disconnectGraceTimer=0;
     this.onDraft=()=>{};this.onSnapshot=()=>{};this.onRenderTargets=()=>{};this.onLog=()=>{};this.onResult=()=>{};this.onNetworkHealth=()=>{};
@@ -23154,6 +23165,7 @@ class GameSession{
     this.stopHeartbeat(false);this.netcodeLoop?.stop();AppLifecycle.unregisterBackgroundSession(this);
   }
   dispose(reason='session-replaced'){
+    this.presentationJournal?.dispose();
     if(this.disposed)return false;
     this.disposed=true;RallySynctestDiagnostics.clear(this);this.simEnded=true;this.syncHold=true;this.cancelScheduledWork();
     this.netcodeSession?.close();this.detachNetcodeTransport?.();this.detachNetcodeTransport=null;
@@ -23462,9 +23474,14 @@ class GameSession{
         this.runtimeSeq++;
         if(command.actor===this.role)this.pendingNetcodeCommands.delete(command.netcodeSequence);
       }
-      if(tick>this.publishedEffectTick){
-        for(const event of frame.events)this.presentationEventBuffer.push({...event,presentationTick:tick});
-        this.presentationEventsBuffered+=frame.events.length;this.publishedEffectTick=tick;
+      this.presentationJournal.update(performance.now());
+      // Recovery may republish the authoritative journal, but already heard timeline
+      // intervals must stay silent even when corrected events have different identities.
+      if(tick>this.presentationJournal.confirmedTick){
+        frame.events.forEach((event,sequence)=>this.presentationJournal.emit({tick,sequence,
+          entityId:event.entityId??event.id??event.sourceId??'world',generation:0,kind:'frame',
+          payload:event,policy:'confirmed',durationMs:0}));
+        this.presentationJournal.confirmThrough(tick);
       }
       if(frame.snapshot)this.latestConfirmedSnapshot=frame.snapshot;
       this.publishedGameTick=tick;
@@ -25648,100 +25665,49 @@ class ReusableFloat32Buffer{
    reads registered x/y through RenderStateStore. Snapshot x/y remains authoritative for gameplay,
    visibility/detection and checksum; presentation must not bypass interpolation merely
    because the unit body itself is hidden. */
+// Game-owned identity/discontinuity policy; the gamekit timeline owns interpolation.
 class RenderStateStore{
-  constructor(definitions){
-    this.kinds=Object.create(null);
-    for(const kind of Object.keys(definitions||{})){
-      const def=definitions[kind]||{},fields=[],fieldIndex=Object.create(null);
-      for(const name of Object.keys(def.fields||{})){
-        const cfg=def.fields[name]||{};
-        fieldIndex[name]=fields.length;
-        fields.push({name,mode:cfg.mode==="shortest-angle"?"shortest-angle":"linear"});
-      }
-      this.kinds[kind]={map:new Map(),fields,fieldIndex,epoch:0,snapDistance:Math.max(0,Number(def.snapDistance)||0)};
+  constructor(definitions){this.definitions=definitions;this.kinds=Object.create(null);this.clock=0}
+  state(kind){
+    if(!this.kinds[kind]){
+      const def=this.definitions[kind],schema=Object.fromEntries(Object.entries(def.fields).map(([name,cfg])=>[name,cfg.mode==="shortest-angle"?"angle":"number"]));
+      this.kinds[kind]={def,schema,entries:new Map(),seeds:new Map(),pending:[],epoch:0,sequence:0,revision:0,duration:0,timeline:null};
     }
+    return this.kinds[kind];
   }
-  begin(kind){const k=this.kinds[kind];if(!k)return 0;k.epoch++;if(k.epoch>0x3fffffff)k.epoch=1;return k.epoch}
-  normalizedTarget(mode,current,target){
-    if(mode!=="shortest-angle")return target;
-    const tau=Math.PI*2;
-    const delta=((target-current+Math.PI)%tau+tau)%tau-Math.PI;
-    return current+delta;
-  }
-  currentValue(entry,index,now){
-    const f=entry.values[index],q=RangeUtil.clamp((now-f.start)/Math.max(1,f.duration),0,1);
-    return f.from+(f.to-f.from)*q;
-  }
-  createEntry(k,source,now,epoch,durationMs){
-    const values=k.fields.map(field=>{
-      const raw=Number(source?.[field.name]),v=Number.isFinite(raw)?raw:0;
-      return{from:v,to:v,start:now,duration:Math.max(1,Number(durationMs)||1)};
-    });
-    return{epoch,values,source:{...source},retiring:false,retireAt:0,lastTrackAt:now};
-  }
-  track(kind,id,source,now,epoch,snap=false,durationMs=0){
-    const k=this.kinds[kind];if(!k||id==null||!source)return null;
-    let entry=k.map.get(id);
-    const duration=Math.max(1,Number(durationMs)||1);
-    if(!entry){entry=this.createEntry(k,source,now,epoch,duration);k.map.set(id,entry);return entry}
-    entry.epoch=epoch;entry.source={...source};entry.retiring=false;entry.retireAt=0;
-    let snapNow=!!snap;
-    if(!snapNow&&k.snapDistance>0){
-      const xi=k.fieldIndex.x,yi=k.fieldIndex.y;
-      if(xi!=null&&yi!=null){
-        const nx=Number(source.x),ny=Number(source.y);
-        if(Number.isFinite(nx)&&Number.isFinite(ny)){
-          // Snap only on an authoritative target discontinuity. Comparing the new
-          // target with the interpolated presentation position makes a renderer
-          // stall look like a teleport: fast units can advance > snapDistance while
-          // the draw thread is busy, then visibly jump when tracking resumes.
-          const px=entry.values[xi].to,py=entry.values[yi].to;
-          const elapsed=Math.max(duration,now-(Number(entry.lastTrackAt)||now));
-          const continuousAllowance=k.snapDistance*Math.max(1,elapsed/duration);
-          if(Math.hypot(nx-px,ny-py)>continuousAllowance)snapNow=true;
-        }
-      }
-    }
-    entry.lastTrackAt=now;
-    for(let i=0;i<k.fields.length;i++){
-      const field=k.fields[i],raw=Number(source[field.name]);if(!Number.isFinite(raw))continue;
-      const current=this.currentValue(entry,i,now);
-      const target=this.normalizedTarget(field.mode,current,raw);
-      const f=entry.values[i];
-      f.from=snapNow?target:current;f.to=target;f.start=now;f.duration=duration;
-    }
-    return entry;
-  }
-  ensure(kind,id,source,now){
-    const k=this.kinds[kind];if(!k||id==null||!source||k.map.has(id))return;
-    k.map.set(id,this.createEntry(k,source,now,k.epoch,1));
+  time(now){return this.clock=Math.max(this.clock,Number(now)||0)}
+  begin(kind){const k=this.state(kind);k.pending=[];return ++k.epoch}
+  track(kind,id,source,now,epoch,snap=false,durationMs=1){
+    const k=this.state(kind),key=String(id),at=this.time(now),duration=Math.max(1,Number(durationMs)||1);
+    if(k.duration!==duration){k.duration=duration;k.timeline=new RallyGamekit.InterpolationTimeline({schema:k.schema,stepMs:duration});k.entries.clear();k.sequence=0;k.revision++}
+    const previous=k.entries.get(key)||k.seeds.get(key),values={},pose={...previous?.values};
+    for(const name of Object.keys(k.schema))values[name]=Number.isFinite(Number(source[name]))?Number(source[name]):0;
+    if(previous)k.timeline.sampleInto(key,previous.generation,at,pose);
+    const allowance=k.def.snapDistance*Math.max(1,Math.max(duration,at-(previous?.at??at))/duration);
+    const teleport=!!snap||!!previous&&Math.hypot(values.x-previous.values.x,values.y-previous.values.y)>allowance;
+    const entry={id:key,generation:previous?.generation??0,values,initialValues:k.seeds.get(key)?.values,teleport,epoch,at,delta:{x:teleport?0:values.x-(pose.x??values.x),y:teleport?0:values.y-(pose.y??values.y)}};
+    k.pending.push(entry);k.entries.set(key,entry);return entry;
   }
   end(kind,epoch){
-    const k=this.kinds[kind];if(!k)return;
-    for(const [id,entry] of k.map)if(entry.epoch!==epoch)k.map.delete(id);
+    const k=this.state(kind);if(!k.timeline)return;
+    for(const [id,e]of k.entries)if(e.epoch!==epoch)k.entries.delete(id);
+    k.seeds.clear();
+    k.timeline.accept({revision:k.revision,sequence:++k.sequence,timeMs:this.clock,entities:k.pending},this.clock);
   }
-  
-  has(kind,id){return !!this.kinds[kind]?.map.has(id)}
-  value(kind,id,fieldName,fallback,now=performance.now()){
-    const k=this.kinds[kind],entry=k?.map.get(id),index=k?.fieldIndex?.[fieldName];
-    if(!k||!entry||index==null)return Number(fallback)||0;
-    return this.currentValue(entry,index,now);
+  ensure(kind,id,source,now){
+    const k=this.state(kind),key=String(id);if(k.entries.has(key)||k.seeds.has(key))return;
+    const values=Object.fromEntries(Object.keys(k.schema).map(name=>[name,Number(source[name])||0]));
+    k.seeds.set(key,{values,generation:0,at:this.time(now)});
   }
+  has(kind,id){const k=this.kinds[kind],key=String(id);return !!k&&(k.entries.has(key)||k.seeds.has(key))}
   position(kind,id,source,now=performance.now()){
-    const k=this.kinds[kind],entry=k?.map.get(id);
-    if(!k||!entry)return{x:Number(source?.x)||0,y:Number(source?.y)||0};
-    const xi=k.fieldIndex.x,yi=k.fieldIndex.y;
-    return{
-      x:xi==null?(Number(source?.x)||0):this.currentValue(entry,xi,now),
-      y:yi==null?(Number(source?.y)||0):this.currentValue(entry,yi,now)
-    };
+    const k=this.kinds[kind],e=k?.entries.get(String(id)),out={x:Number(source?.x)||0,y:Number(source?.y)||0};
+    if(e)k.timeline.sampleInto(String(id),e.generation,this.time(now),out);
+    else if(k?.seeds.has(String(id)))Object.assign(out,k.seeds.get(String(id)).values);return out;
   }
-  delta(kind,id,now=performance.now()){
-    const k=this.kinds[kind],entry=k?.map.get(id);if(!k||!entry)return{x:0,y:0};
-    const axis=i=>i==null?0:(entry.values[i].to-entry.values[i].from);
-    return{x:axis(k.fieldIndex.x),y:axis(k.fieldIndex.y)};
-  }
-  clear(){for(const k of Object.values(this.kinds))k.map.clear()}
+  value(kind,id,field,fallback,now=performance.now()){return this.position(kind,id,{[field]:fallback},now)[field]??(Number(fallback)||0)}
+  delta(kind,id){return this.kinds[kind]?.entries.get(String(id))?.delta||{x:0,y:0}}
+  clear(){this.kinds=Object.create(null)}
 }
 class FloatingTextPresentationDefinition{
   static presets=Object.freeze({
@@ -25954,7 +25920,10 @@ class CommonEffectPool{
    - renderer fatal catch
    Heuristic "nothing happened for N seconds" presentation errors are forbidden. */
 class DiagnosticPresentation{
+  static journal=new RallyGamekit.DiagnosticRing({capacity:20,release:BUILD_ID});
   static presentFatalDiagnostic(diag){
+    this.journal.report(new Error(diag.message||diag.kind),{kind:diag.kind||'fatal',fatal:true,origin:diag.stage||'game'});
+    diag={...diag,gamekitDiagnostic:this.journal.snapshot()};
     const sink=window.__RALLY_PRESENT_FATAL__;
     if(typeof sink==="function"){sink(diag);return}
     window.__RALLY_FATAL_DIAGNOSTIC__=diag;
@@ -27660,13 +27629,13 @@ class TerrainPresentation{
     const a=r.projectedCoordinatesAtScreen(0,0),b=r.projectedCoordinatesAtScreen(r.canvas.width,r.canvas.height);
     const visible=projection.index.query(a.x,a.y,b.x,b.y,1/r.sc()).sort((a,b)=>a.order-b.order);
     r.perfStats.riverVisibleTriangles=visible.length;r.perfStats.riverTotalTriangles=mesh.length;
-    const previous=r._renderDepth,depthWrite=restoreDepthWrite??r.gl.getParameter(r.gl.DEPTH_WRITEMASK);
-    r.gl.depthMask(false);r.begin();
+    const previous=r._renderDepth,depthWrite=restoreDepthWrite??r.passState.depthWrite;
+    r.passState.depthWrite=false;r.begin();
     try{for(const {tri} of visible)for(const v of tri.vertices){const p=r.projectRenderWorldPosition(v);r.setRenderDepth(p.depth-.0001);r.v(p.x,p.y,tri.color)}r.flush()}
-    finally{r.gl.depthMask(depthWrite);r.setRenderDepth(previous);r.begin()}
+    finally{r.passState.depthWrite=depthWrite;r.setRenderDepth(previous);r.begin()}
   }
   static drawBridges(r,terrain,restoreDepthWrite=null){
-    const sc=r.sc(),previous=r._renderDepth,depthWrite=restoreDepthWrite??r.gl.getParameter(r.gl.DEPTH_WRITEMASK);r.gl.depthMask(false);r.begin();
+    const sc=r.sc(),previous=r._renderDepth,depthWrite=restoreDepthWrite??r.passState.depthWrite;r.passState.depthWrite=false;r.begin();
     try{
     // 다리: 실제 lane×river crossing descriptor를 그대로 사용. 다리 footprint는 평지 판정이다.
     for(const br of terrain.bridges||[])r.withWorldSpriteDepth({x:br.x,y:0,z:br.y},()=>{
@@ -27684,7 +27653,7 @@ class TerrainPresentation{
       r.line(corners[3][0],corners[3][1],corners[2][0],corners[2][1],Math.max(1.2,1.8*sc),[.34,.27,.18,.75]);
     });
       r.flush();
-    }finally{r.gl.depthMask(depthWrite);r.setRenderDepth(previous);r.begin()}
+    }finally{r.passState.depthWrite=depthWrite;r.setRenderDepth(previous);r.begin()}
   }
   static drawSurfaces(r){
     const atlas=r.world.terrain.surfaces;if(!atlas.layers.length&&!atlas.bridges.length)return;
@@ -27758,11 +27727,11 @@ class TerrainPresentation{
   }
 
   static drawWorld(r,terrain,restoreDepthWrite=null){
-    const depthWrite=restoreDepthWrite??r.gl.getParameter(r.gl.DEPTH_WRITEMASK);
+    const depthWrite=restoreDepthWrite??r.passState.depthWrite;
     this.drawSurfaces(r);
     // Only solid terrain owns occlusion. Ground decoration must not hide Fog.
     r.flush();r.begin();
-    r.gl.depthMask(false);
+    r.passState.depthWrite=false;
     const sc=r.sc(),pt=p=>r.worldToPx(r.viewX(p.x),r.viewY(p.y));
     for(const road of terrain.roads||[]){
       const width=road.width*sc,atlas=r.world.terrain.surfaces;
@@ -27811,7 +27780,7 @@ class TerrainPresentation{
       });
     }
     r.flush();r.begin();
-    r.gl.depthMask(depthWrite);
+    r.passState.depthWrite=depthWrite;
   }
   static miniRiverCache=new WeakMap();
   static drawMiniBridges(c,terrain,pt,style){
@@ -27893,7 +27862,9 @@ class GLRenderer{
       powerPreference:"high-performance",
       failIfMajorPerformanceCaveat:false
     };
-    this.gl=canvas.getContext("webgl",this.webglAttrs);
+    this.device=new RallyGamekit.WebGLDevice(canvas,this.webglAttrs);
+    this.gl=this.device.gl;
+    this.passState={depthEnabled:true,depthWrite:true,depthFunc:"lequal",stencil:false,colorMask:[true,true,true,true]};
     if(!this.gl)throw new Error("RALLY FRONTIER requires WebGL for battlefield rendering.");
     this.backend="WebGL";
     this.canvas.dataset.rendererBackend=this.backend;
@@ -27928,57 +27899,20 @@ class GLRenderer{
     this.renderStage="init";this.renderEntity=null;this.renderFatalReported=false;
 
 
-      const gl=this.gl,
-        // Procedural geometry is still generated in screen space, but every vertex
-        // carries the depth produced from one render-world (x,height,z) projection.
-        vs=`attribute vec3 a;attribute vec4 ac;uniform vec2 r;varying lowp vec4 vc;void main(){vec2 p=a.xy/r*2.0-1.0;gl_Position=vec4(p.x,-p.y,a.z,1.0);vc=ac;}`,
+      // Game shaders express Rally's terrain/depth/fog policy. Gamekit owns GPU resources and submission.
+      const vs=`attribute vec3 a;attribute vec4 ac;uniform vec2 r;varying lowp vec4 vc;void main(){vec2 p=a.xy/r*2.0-1.0;gl_Position=vec4(p.x,-p.y,a.z,1.0);vc=ac;}`,
         fs=`precision lowp float;varying lowp vec4 vc;void main(){gl_FragColor=vc;}`,
         spriteFs=`precision lowp float;varying lowp vec4 vc;uniform lowp float alphaCutoff;void main(){if(vc.a<alphaCutoff)discard;gl_FragColor=vc;}`,
-        mk=(t,s)=>{
-          const sh=gl.createShader(t);
-          gl.shaderSource(sh,s);
-          gl.compileShader(sh);
-          if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS)){
-            throw new Error("WebGL shader compile failed: "+gl.getShaderInfoLog(sh));
-          }
-          return sh
-        };
-      this.p=gl.createProgram();
-      gl.attachShader(this.p,mk(gl.VERTEX_SHADER,vs));
-      gl.attachShader(this.p,mk(gl.FRAGMENT_SHADER,fs));
-      gl.bindAttribLocation(this.p,0,"a");gl.bindAttribLocation(this.p,1,"ac");
-      gl.linkProgram(this.p);
-      if(!gl.getProgramParameter(this.p,gl.LINK_STATUS)){
-        throw new Error("WebGL program link failed: "+gl.getProgramInfoLog(this.p));
-      }
-      this.a=gl.getAttribLocation(this.p,"a");
-      this.ac=gl.getAttribLocation(this.p,"ac");
-      this.r=gl.getUniformLocation(this.p,"r");
-      this.spriteProgram=gl.createProgram();
-      gl.attachShader(this.spriteProgram,mk(gl.VERTEX_SHADER,vs));gl.attachShader(this.spriteProgram,mk(gl.FRAGMENT_SHADER,spriteFs));
-      gl.bindAttribLocation(this.spriteProgram,0,"a");gl.bindAttribLocation(this.spriteProgram,1,"ac");gl.linkProgram(this.spriteProgram);
-      if(!gl.getProgramParameter(this.spriteProgram,gl.LINK_STATUS))throw new Error("Sprite shader link failed: "+gl.getProgramInfoLog(this.spriteProgram));
-      this.spriteR=gl.getUniformLocation(this.spriteProgram,"r");this.alphaCutoff=gl.getUniformLocation(this.spriteProgram,"alphaCutoff");
-      this.buf=gl.createBuffer();
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
-      gl.enable(gl.DEPTH_TEST);
-      gl.depthFunc(gl.LEQUAL);
-      gl.depthMask(true);
-
-      // Fog uses a separate texture program. Visibility is sampled in world-space
-      // from a low-resolution mask and linearly filtered by the GPU. Simulation
-      // visibility remains exact and is never derived from this presentation texture.
+        attributes=[{name:'a',size:3,offset:0},{name:'ac',size:4,offset:12}];
+      this.p=this.device.createPipeline({vertex:vs,fragment:fs,stride:28,attributes,uniforms:{r:'2f'}});
+      this.spriteProgram=this.device.createPipeline({vertex:vs,fragment:spriteFs,stride:28,attributes,uniforms:{r:'2f',alphaCutoff:'1f'}});
+      this.buf=this.device.createVertexBuffer({capacityBytes:7*16384*4});
       const fogVs=`attribute vec3 a;attribute vec2 uv;uniform vec2 r;uniform vec2 maskSize;varying mediump vec2 vuv;void main(){vec2 p=a.xy/r*2.0-1.0;gl_Position=vec4(p.x,-p.y,a.z,1.0);vuv=(uv*(maskSize-1.0)+0.5)/maskSize;}`,
         fogFs=`precision mediump float;varying mediump vec2 vuv;uniform sampler2D tex;uniform sampler2D previousTex;uniform float transition;uniform vec4 fog;void main(){float vis=mix(texture2D(previousTex,vuv).r,texture2D(tex,vuv).r,transition);float edge=smoothstep(.12,.88,vis);gl_FragColor=vec4(fog.rgb,fog.a*(1.0-edge));}`;
-      this.fogProgram=gl.createProgram();
-      gl.attachShader(this.fogProgram,mk(gl.VERTEX_SHADER,fogVs));gl.attachShader(this.fogProgram,mk(gl.FRAGMENT_SHADER,fogFs));gl.linkProgram(this.fogProgram);
-      if(!gl.getProgramParameter(this.fogProgram,gl.LINK_STATUS))throw new Error("Fog shader link failed: "+gl.getProgramInfoLog(this.fogProgram));
-      this.fogA=gl.getAttribLocation(this.fogProgram,"a");this.fogUv=gl.getAttribLocation(this.fogProgram,"uv");
-      this.fogR=gl.getUniformLocation(this.fogProgram,"r");this.fogTexUniform=gl.getUniformLocation(this.fogProgram,"tex");this.fogColorUniform=gl.getUniformLocation(this.fogProgram,"fog");
-      this.fogPreviousTexUniform=gl.getUniformLocation(this.fogProgram,"previousTex");this.fogTransitionUniform=gl.getUniformLocation(this.fogProgram,"transition");
-      this.fogMaskSizeUniform=gl.getUniformLocation(this.fogProgram,"maskSize");
-      this.fogBuf=gl.createBuffer();this.fogFrame=new ReusableFloat32Buffer(5*8192);this._fogGpuCapacityBytes=0;
+      this.fogProgram=this.device.createPipeline({vertex:fogVs,fragment:fogFs,stride:20,
+        attributes:[{name:'a',size:3,offset:0},{name:'uv',size:2,offset:12}],
+        uniforms:{r:'2f',maskSize:'2f',tex:'1i',previousTex:'1i',transition:'1f',fog:'4f'}});
+      this.fogBuf=this.device.createVertexBuffer({capacityBytes:5*8192*4});this.fogFrame=new ReusableFloat32Buffer(5*8192);
       this.fogTextures=new Map();this._fogTextureKey=null;this.fogMaskStep=64;
       this.fogPreviousTextures=new Map();this.fogMaskRecords=new Map();this.fogTransitionDurationMs=STATE_PUBLISH_INTERVAL_MS;
       this._fogTransitionStartedAt=null;this._fogMaskContext=null;
@@ -27989,7 +27923,6 @@ class GLRenderer{
     this.frame=new ReusableFloat32Buffer(7*16384);
     this.worldSpriteFrame=[];this.worldSpritePool=[];
     this.terrainOccludedBodyFrame=new ReusableFloat32Buffer(7*4096);
-    this._gpuVertexCapacityBytes=0;
     this.world=WorldContext.standard;
     this.snapshot=null;
     this.role="host";
@@ -28056,7 +27989,7 @@ class GLRenderer{
       this.fxCanvas.width=w;
       this.fxCanvas.height=h;
     }
-    this.gl.viewport(0,0,w,h);
+
   }
   baseSc(){return Math.min(this.canvas.width/VIEW_W,this.canvas.height/VIEW_H)}
   sc(){return this.baseSc()*(this.replayZoom||1)}
@@ -28096,10 +28029,20 @@ class GLRenderer{
     const ax=this.viewX(x),az=this.viewY(y),height=elevation??this.world.terrain.surfaces.heightAt(ax,az);
     const p=this.projectRenderWorldPosition({x:ax,y:height,z:az,groundY:0});return[p.x,p.y];
   }
-  projectedCoordinatesAtScreen(px,py){
-    const sc=this.sc(),ox=(this.canvas.width-this.viewWorldW()*sc)/2;
-    return{x:(px-ox)/sc+this.cameraLeft,y:py/sc+this.cameraTop};
+  stableCamera(){
+    if(this._frameCamera)return this._frameCamera;
+    // Rally owns terrain projection/axis meaning. The shared camera owns viewport transforms.
+    if(!this.cameraViewport)this.cameraViewport=new RallyGamekit.CameraViewport({projection:{
+      projectInto:(x,z,height,out)=>{out.x=x;out.y=BattlefieldProjection.planarY(z,height);return out},
+      groundInto:(x,y,out,height=0)=>{out.x=x;out.y=y+height*BattlefieldProjection.heightScale;out.z=height;return out}
+    }});
+    const camera=this.cameraViewport,sc=this.sc();
+    if(camera.width!==this.canvas.width||camera.height!==this.canvas.height)camera.setViewport({width:this.canvas.width,height:this.canvas.height});
+    const x=this.cameraLeft+this.viewWorldW()/2,y=this.cameraTop+this.canvas.height/sc/2;
+    if(camera.camera.x!==x||camera.camera.y!==y||camera.camera.zoom!==sc)camera.setCamera({x,y,zoom:sc});
+    return camera;
   }
+  projectedCoordinatesAtScreen(px,py){return (this._frameCamera||this.stableCamera()).screenToPlaneInto(px,py,{})}
   surfaceAtScreen(px,py){
     const p=this.projectedCoordinatesAtScreen(px,py);
     return TerrainSurfaceProjection.forAtlas(this.world.terrain.surfaces).pickSurface(p.x,p.y,this.orientationRole()==='guest');
@@ -28202,39 +28145,33 @@ class GLRenderer{
       );
     }
   }
+  drawBatch(pipeline,buffer,first,count,uniforms,textures=[]){
+    // Direct regression renders can submit a pass without starting the animation loop.
+    if(!this.device.active&&!this.device.beginFrame())return;
+    const state=this.passState;
+    this.device.draw({pipeline,buffer,first,count,uniforms,textures,blend:'straight-alpha',
+      depth:state.depthEnabled?{func:state.depthFunc,write:state.depthWrite}:false,
+      stencil:state.stencil,colorMask:state.colorMask});
+  }
   flush(frame=this.frame,worldDepth=false){
     if(!frame.length)return;
-    const gl=this.gl,d=frame.view(),usedBytes=frame.length*4;
-    gl.bindBuffer(gl.ARRAY_BUFFER,this.buf);
-    if(this._gpuVertexCapacityBytes<frame.data.byteLength){
-      gl.bufferData(gl.ARRAY_BUFFER,frame.data.byteLength,gl.DYNAMIC_DRAW);
-      this._gpuVertexCapacityBytes=frame.data.byteLength;
-    }
-    gl.bufferSubData(gl.ARRAY_BUFFER,0,d);
-    gl.enableVertexAttribArray(this.a);
-    gl.vertexAttribPointer(this.a,3,gl.FLOAT,false,28,0);
-    gl.enableVertexAttribArray(this.ac);
-    gl.vertexAttribPointer(this.ac,4,gl.FLOAT,false,28,12);
-    let draws=0;
+    const d=frame.view();this.device.uploadVertices(this.buf,d);let draws=0;
+    const uniforms={r:[this.canvas.width,this.canvas.height]};
     if(worldDepth){
-      gl.useProgram(this.spriteProgram);gl.uniform2f(this.spriteR,this.canvas.width,this.canvas.height);
-      // Preserve authored component order. Only solid runs write depth; alpha
-      // details retain blending without creating invisible occluding surfaces.
       let start=0,solid=null;
       const draw=end=>{
         if(end<=start)return;
-        gl.depthMask(solid);gl.uniform1f(this.alphaCutoff,solid?.5:0);
-        gl.drawArrays(gl.TRIANGLES,start/7,(end-start)/7);draws++;start=end;
+        this.passState.depthWrite=solid;
+        this.drawBatch(this.spriteProgram,this.buf,start/7,(end-start)/7,{...uniforms,alphaCutoff:solid?.5:0});draws++;start=end;
       };
       for(let i=0;i<frame.length;i+=21){
         const next=Math.min(d[i+6],d[i+13],d[i+20])>=.999||Math.max(d[i+6],d[i+13],d[i+20])<=0;
-        if(solid!==null&&next!==solid)draw(i);
-        solid=next;
+        if(solid!==null&&next!==solid)draw(i);solid=next;
       }
-      draw(frame.length);gl.depthMask(false);gl.useProgram(this.p);
-    }else{gl.drawArrays(gl.TRIANGLES,0,frame.length/7);draws=1}
+      draw(frame.length);this.passState.depthWrite=false;
+    }else{this.drawBatch(this.p,this.buf,0,frame.length/7,uniforms);draws=1}
     this.perfStats.drawCalls=(this.perfStats.drawCalls||0)+draws;
-    this.perfStats.bufferUploadBytes=(this.perfStats.bufferUploadBytes||0)+usedBytes;
+    this.perfStats.bufferUploadBytes=(this.perfStats.bufferUploadBytes||0)+d.byteLength;
     this.perfStats.vertexBufferGrows=frame.grows;
   }
   onScreenAuth(x,y,pad=120){
@@ -28504,11 +28441,11 @@ class GLRenderer{
   projectRenderWorldPositionStable(p){
     // Same projection as projectRenderWorldPosition, but intentionally before
     // final screen composition. All world consumers use this stable projection.
-    const sc=this.sc(),ox=(this.canvas.width-this.viewWorldW()*sc)/2;
     const vx=this.viewX(p.x),vz=this.viewY(p.z);
     const groundY=p.groundY==null?this.world.terrain.surfaces.heightAt(p.x,p.z):p.groundY;
     const resolved=p.groundY==null?{...p,y:p.y+groundY,groundY}:p;
-    return{x:ox+(vx-this.cameraLeft)*sc,y:(BattlefieldProjection.planarY(vz,resolved.y)-this.cameraTop)*sc,depth:this.renderDepthForWorld(resolved),world:resolved};
+    const projected={depth:this.renderDepthForWorld(resolved),world:resolved};
+    return (this._frameCamera||this.stableCamera()).worldToScreenInto(vx,vz,resolved.y,projected);
   }
   projectRenderWorldPosition(p){
     return this.projectRenderWorldPositionStable(p);
@@ -30200,8 +30137,9 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
       if(!own&&!this.visibleRaw(b.x,b.y))continue;
       if(!this.onScreenAuth(b.x,b.y,(BuildingDefinition.get(b.type)?.size||40)+100))continue;
       const d=BuildingDefinition.get(b.type)||{size:35,buildTime:1};
-      const [x,y]=this.worldToPx(this.viewX(b.x),this.viewY(b.y));
-      const r=d.size*sc;
+      const anchor=RallyGamekit.resolveAnchorInto(this.stableCamera(),{space:'world',
+        x:this.viewX(b.x),y:this.viewY(b.y),z:this.world.terrain.surfaces.heightAt(b.x,b.y)},{});
+      const {x,y}=anchor,r=d.size*sc;
 
       if(!b.complete){
         const q=RangeUtil.clamp((b.progress||0)/Math.max(1,SimulationTiming.msToTicks(d.buildTimeMs,this.snapshot?.tps||SIM_TPS)),0,1);
@@ -31938,10 +31876,10 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     };
     for(const patch of atlas.presentationSurfaceMesh())add(patch.fogLevel,patch);
     for(const [id,texture] of this.fogTextures)if(!surfaces.has(Number(id.slice(6)))){
-      this.gl.deleteTexture(texture);this.fogTextures.delete(id);
+      this.device.deleteTexture(texture);this.fogTextures.delete(id);
     }
     for(const [id,texture] of this.fogPreviousTextures)if(!surfaces.has(Number(id.slice(6)))){
-      this.gl.deleteTexture(texture);this.fogPreviousTextures.delete(id);
+      this.device.deleteTexture(texture);this.fogPreviousTextures.delete(id);
     }
     this.resetFogTransition();
     this.fogSurfaces=surfaces;this._fogSurfaceAtlas=atlas;this._fogTextureKey=null;
@@ -31962,10 +31900,12 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       previous=this._fogMaskContext,delta=Number(this.snapshot.tick)-Number(previous?.tick),
       continuous=previous?.atlas===atlas&&previous.perspective===perspective&&previous.w===w&&previous.h===h&&delta>0&&delta<=Math.ceil((Number(this.snapshot.rules?.simulation?.tps)||SIM_TPS)*.25),
       amount=this.fogTransitionAmount(now);
-    const upload=(textures,id,data)=>{let tex=textures.get(id);if(!tex){tex=gl.createTexture();textures.set(id,tex)}gl.bindTexture(gl.TEXTURE_2D,tex);
-      gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-      gl.texImage2D(gl.TEXTURE_2D,0,gl.LUMINANCE,w,h,0,gl.LUMINANCE,gl.UNSIGNED_BYTE,data);return tex};
+    const upload=(textures,id,data)=>{
+      let tex=textures.get(id);
+      if(tex&&(this.fogMaskSize?.w!==w||this.fogMaskSize?.h!==h)){this.device.deleteTexture(tex);textures.delete(id);tex=null}
+      if(!tex){tex=this.device.createTexture({width:w,height:h,data},{format:'luminance',filter:'linear'});textures.set(id,tex)}
+      else this.device.updateTexture(tex,{width:w,height:h,data});return tex;
+    };
     const make=level=>{const a=new Uint8Array(w*h);for(let j=0;j<h;j++){const y=j/(h-1)*this.world.height;for(let i=0;i<w;i++){const x=i/(w-1)*this.world.width;
       a[j*w+i]=this.visibleRawAtLevel(x,y,level)?255:0}}return a};
     // Levels need not be contiguous: only surfaces that exist need a texture.
@@ -31983,7 +31923,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     }
     this._fogTransitionStartedAt=continuous?now:null;
     this._fogMaskContext={atlas,perspective,tick:this.snapshot.tick,w,h};
-    gl.bindTexture(gl.TEXTURE_2D,null);this.fogMaskSize={w,h};
+    this.fogMaskSize={w,h};
     this._fogTextureKey=key;this._fogVisionGrid=this.visionGridBySide;return this.fogMaskSize;
   }
   fogVertex(world,bridgeId=null){
@@ -31992,16 +31932,14 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.fogFrame.push5(q.x,q.y,(bridgeId?this.renderDepthForWorld({...world,bridgeId}):q.depth)-.00035,u,v);
   }
   flushFog(texture,color,previousTexture=texture){
-    if(!this.fogFrame.length||!texture)return;const gl=this.gl,d=this.fogFrame.view(),bytes=this.fogFrame.length*4;
-    gl.useProgram(this.fogProgram);gl.uniform2f(this.fogR,this.canvas.width,this.canvas.height);gl.uniform4f(this.fogColorUniform,...color);gl.uniform1i(this.fogTexUniform,0);gl.uniform1i(this.fogPreviousTexUniform,1);
-    gl.uniform1f(this.fogTransitionUniform,this.fogTransitionAmount());
-    gl.uniform2f(this.fogMaskSizeUniform,this.fogMaskSize.w,this.fogMaskSize.h);
-    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.bindBuffer(gl.ARRAY_BUFFER,this.fogBuf);
-    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,this._fogTransitionStartedAt==null?texture:previousTexture);gl.activeTexture(gl.TEXTURE0);
-    if(this._fogGpuCapacityBytes<this.fogFrame.data.byteLength){gl.bufferData(gl.ARRAY_BUFFER,this.fogFrame.data.byteLength,gl.DYNAMIC_DRAW);this._fogGpuCapacityBytes=this.fogFrame.data.byteLength}
-    gl.bufferSubData(gl.ARRAY_BUFFER,0,d);gl.enableVertexAttribArray(this.fogA);gl.vertexAttribPointer(this.fogA,3,gl.FLOAT,false,20,0);
-    gl.enableVertexAttribArray(this.fogUv);gl.vertexAttribPointer(this.fogUv,2,gl.FLOAT,false,20,12);gl.drawArrays(gl.TRIANGLES,0,this.fogFrame.length/5);
-    this.perfStats.drawCalls=(this.perfStats.drawCalls||0)+1;this.perfStats.bufferUploadBytes=(this.perfStats.bufferUploadBytes||0)+bytes;this.fogFrame.reset();
+    if(!this.fogFrame.length||!texture)return;const d=this.fogFrame.view();
+    this.device.uploadVertices(this.fogBuf,d);
+    this.drawBatch(this.fogProgram,this.fogBuf,0,this.fogFrame.length/5,{
+      r:[this.canvas.width,this.canvas.height],fog:color,tex:0,previousTex:1,
+      transition:this.fogTransitionAmount(),maskSize:[this.fogMaskSize.w,this.fogMaskSize.h]
+    },[texture,this._fogTransitionStartedAt==null?texture:previousTexture]);
+    this.perfStats.drawCalls=(this.perfStats.drawCalls||0)+1;
+    this.perfStats.bufferUploadBytes=(this.perfStats.bufferUploadBytes||0)+d.byteLength;this.fogFrame.reset();
   }
   drawFog(){
     if(this.replayObserverAll||!this.snapshot){this.resetFogTransition();return}this.ensureFogTextures();
@@ -32013,12 +31951,11 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     for(const tri of mesh.index.query(a.x,a.y,b.x,b.y,1/this.sc())){
       const level=tri.patch.fogLevel;if(!visible.has(level))visible.set(level,[]);visible.get(level).push(tri);
     }
-    gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+    this.passState.depthEnabled=true;this.passState.depthFunc="lequal";this.passState.depthWrite=false;
     // The atlas clips the base floor around authored surfaces, including depressions.
     // Fog uses those same patches so an implicit level-0 plane cannot cover a lower floor.
     for(const level of this.fogSurfaces.keys()){this.fogFrame.reset();for(const tri of visible.get(level)||[])for(const v of tri.vertices)this.fogVertex(v,tri.patch.bridge?tri.patch.id:null);this.flushFog(this.fogTextures.get(`level:${level}`),color,this.fogPreviousTextures.get(`level:${level}`))}
-    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,null);gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D,null);gl.useProgram(this.p);gl.uniform2f(this.r,this.canvas.width,this.canvas.height);gl.disable(gl.DEPTH_TEST);gl.depthMask(false);
+    this.passState.depthEnabled=false;this.passState.depthWrite=false;
   }
   drawFogLandmarks(){
     if(this.replayObserverAll)return;
@@ -32102,9 +32039,9 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
 
   renderGroundPass(){
     this.renderStage="ground";this.renderEntity=null;
-    const gl=this.gl;gl.depthMask(true);
+    const gl=this.gl;this.passState.depthWrite=true;
     this.setRenderDepth(.97);this.begin();this.drawGround();this.flush();
-    gl.depthMask(false);
+    this.passState.depthWrite=false;
     this.begin();TerrainPresentation.drawSurfaceEdges(this);
     this.setRenderDepth(.969);this.drawStrategicMap();this.drawNeutralCampMarkers();this.drawRallyGuide();
     for(const u of this.snapshot?.units||[]){
@@ -32120,14 +32057,14 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
         this.circle(bx,by,Math.max(3,(7+2*pulse)*sc),[.58,.39,.22,.34],10);
       });
     }
-    this.flush();gl.depthMask(true);
+    this.flush();this.passState.depthWrite=true;
   }
   renderShadowPass(visibleUnits){
     if(!this.snapshot)return;
-    this.gl.depthMask(false);
+    this.passState.depthWrite=false;
     this.begin();this.renderStage="unit-shadow";
     for(const u of visibleUnits){this.renderEntity=u;try{this.drawUnitShadow(u,true)}catch(err){this.reportEntityRenderError("unit-shadow",u,err)}}
-    this.flush();this.gl.depthMask(true);
+    this.flush();this.passState.depthWrite=true;
   }
   prepareWorldSpriteFrame(visibleUnits){
     const out=this.worldSpriteFrame;out.length=0;let used=0;
@@ -32173,11 +32110,11 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
   renderTerrainOccludedBodies(){
     const frame=this.terrainOccludedBodyFrame;if(!frame.length)return;
     const gl=this.gl;
-    gl.enable(gl.STENCIL_TEST);gl.stencilMask(0xff);gl.clearStencil(0);gl.clear(gl.STENCIL_BUFFER_BIT);
-    gl.stencilFunc(gl.EQUAL,0,0xff);gl.stencilOp(gl.KEEP,gl.KEEP,gl.INCR);
-    gl.depthFunc(gl.GREATER);
+    this.device.clear({stencil:0});
+    this.passState.stencil={func:"equal",ref:0,mask:255,writeMask:255,fail:"keep",zfail:"keep",pass:"increment"};
+    this.passState.depthFunc="greater";
     this.flush(frame);
-    gl.disable(gl.STENCIL_TEST);gl.depthFunc(gl.LEQUAL);
+    this.passState.stencil=false;this.passState.depthFunc="lequal";
   }
   renderTerrainOcclusionDepth(){
     const atlas=this.world.terrain.surfaces,gl=this.gl;
@@ -32187,13 +32124,13 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
         for(const indices of patch.triangles)atlas._occlusionMesh.push({vertices:indices.map(i=>patch.bridge?{...patch.vertices[i],bridgeId:patch.id}:patch.vertices[i])});
     }
     const projection=TerrainSurfaceProjection.forAtlas(atlas).projectedTriangleMesh(atlas._occlusionMesh,this.orientationRole()==='guest'),a=this.projectedCoordinatesAtScreen(0,0),b=this.projectedCoordinatesAtScreen(this.canvas.width,this.canvas.height);
-    gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);gl.colorMask(false,false,false,false);this.begin();
+    this.passState.depthWrite=true;this.device.clear({depth:1});this.passState.colorMask=[false,false,false,false];this.begin();
     try{
       for(const item of projection.index.query(a.x,a.y,b.x,b.y))for(const v of item.tri.vertices){
         const p=this.projectRenderWorldPosition(v);this.setRenderDepth(p.depth);this.v(p.x,p.y,[1,1,1,1]);
       }
       this.flush();
-    }finally{gl.colorMask(true,true,true,true);gl.depthMask(false);this.begin()}
+    }finally{this.passState.colorMask=[true,true,true,true];this.passState.depthWrite=false;this.begin()}
   }
   renderWorldPass(visibleUnits){
     if(!this.snapshot)return;
@@ -32210,17 +32147,17 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
         else this.drawGasNode(entity);
       });
     }
-    gl.depthMask(false);
+    this.passState.depthWrite=false;
     try{
       // Behind-terrain friendly bodies are faint, and foreground sprites paint
       // over them. Fog/detection filtering has already selected visibleUnits.
       this.renderTerrainOccludedBodies();this.flush(this.frame,true);
     }finally{
-      gl.disable(gl.STENCIL_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(true);
+      this.passState.stencil=false;this.passState.depthFunc="lequal";this.passState.depthWrite=true;
     }
   }
   renderOverlayPass(){
-    this.gl.disable(this.gl.DEPTH_TEST);this.gl.depthMask(false)
+    this.passState.depthEnabled=false;this.passState.depthWrite=false
     this.drawFog();
     this.begin();this.setRenderDepth(0);
     this.drawSharedShieldsOverlay();this.drawFogLandmarks();this.drawActiveSpells();this.flush();
@@ -32233,7 +32170,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       this.begin();this.drawConstructionOrders();this.drawPendingBuildGhosts();this.drawLatencySpellFx();this.flush();
     }
     this.drawFloatingFx();
-    this.gl.depthMask(true);this.gl.enable(this.gl.DEPTH_TEST)
+    this.passState.depthWrite=true;this.passState.depthEnabled=true
   }
   displayCoordinatesAtScene(x,y){return{x:x+(this.frameShakeX||0),y:y+(this.frameShakeY||0)}}
   sceneCoordinatesAtDisplay(x,y,{sampled=false}={}){
@@ -32253,35 +32190,21 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     // resize, so the first impact never pays the cold composition setup cost.
     const needsWarmup=!this.frameComposition||this.frameComposition.width!==w||this.frameComposition.height!==h;
     if(!sx&&!sy&&!needsWarmup)return;
-    const state={program:gl.getParameter(gl.CURRENT_PROGRAM),buffer:gl.getParameter(gl.ARRAY_BUFFER_BINDING),active:gl.getParameter(gl.ACTIVE_TEXTURE),depthMask:gl.getParameter(gl.DEPTH_WRITEMASK),colorMask:gl.getParameter(gl.COLOR_WRITEMASK),caps:[gl.BLEND,gl.DEPTH_TEST,gl.STENCIL_TEST,gl.SCISSOR_TEST].map(cap=>[cap,gl.isEnabled(cap)])};
-    gl.activeTexture(gl.TEXTURE0);state.texture=gl.getParameter(gl.TEXTURE_BINDING_2D);
     if(!this.frameComposition){
-      const compile=(type,source)=>{const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(shader));return shader};
       const precision=gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER,gl.HIGH_FLOAT)?.precision?'highp':'mediump';
-      const program=gl.createProgram(),vs=compile(gl.VERTEX_SHADER,'attribute vec2 position;void main(){gl_Position=vec4(position,0.0,1.0);}'),fs=compile(gl.FRAGMENT_SHADER,`precision ${precision} float;uniform sampler2D scene;uniform vec2 size;uniform vec2 offset;void main(){gl_FragColor=texture2D(scene,(gl_FragCoord.xy-offset)/size);}`);
-      gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);
-      if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));
-      const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
-      const texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-      this.frameComposition={program,buffer,texture,position:gl.getAttribLocation(program,'position'),size:gl.getUniformLocation(program,'size'),offset:gl.getUniformLocation(program,'offset'),scene:gl.getUniformLocation(program,'scene'),width:0,height:0};
+      const program=this.device.createPipeline({vertex:'attribute vec2 position;void main(){gl_Position=vec4(position,0.0,1.0);}',
+        fragment:`precision ${precision} float;uniform sampler2D scene;uniform vec2 size;uniform vec2 offset;void main(){gl_FragColor=texture2D(scene,(gl_FragCoord.xy-offset)/size);}`,
+        stride:8,attributes:[{name:'position',size:2,offset:0}],uniforms:{scene:'1i',size:'2f',offset:'2f'}});
+      const buffer=this.device.createVertexBuffer({capacityBytes:48});
+      this.frameComposition={program,buffer,texture:null,width:0,height:0};
     }
-    const c=this.frameComposition,a=c.position,attribute={enabled:gl.getVertexAttrib(a,gl.VERTEX_ATTRIB_ARRAY_ENABLED),buffer:gl.getVertexAttrib(a,gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING),size:gl.getVertexAttrib(a,gl.VERTEX_ATTRIB_ARRAY_SIZE),type:gl.getVertexAttrib(a,gl.VERTEX_ATTRIB_ARRAY_TYPE),normalized:gl.getVertexAttrib(a,gl.VERTEX_ATTRIB_ARRAY_NORMALIZED),stride:gl.getVertexAttrib(a,gl.VERTEX_ATTRIB_ARRAY_STRIDE),offset:gl.getVertexAttribOffset(a,gl.VERTEX_ATTRIB_ARRAY_POINTER)};
-    try{
-      gl.bindTexture(gl.TEXTURE_2D,c.texture);
-      if(c.width!==w||c.height!==h){gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,w,h,0,gl.RGB,gl.UNSIGNED_BYTE,null);c.width=w;c.height=h}
-      gl.copyTexSubImage2D(gl.TEXTURE_2D,0,0,0,0,0,w,h);
-      for(const [cap] of state.caps)gl.disable(cap);gl.depthMask(false);gl.colorMask(true,true,true,true);
-      gl.useProgram(c.program);gl.bindBuffer(gl.ARRAY_BUFFER,c.buffer);gl.enableVertexAttribArray(a);gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
-      gl.uniform1i(c.scene,0);gl.uniform2f(c.size,w,h);gl.uniform2f(c.offset,sx,-sy);gl.drawArrays(gl.TRIANGLES,0,6);
-      this.perfStats.drawCalls++;
-    }finally{
-      if(attribute.buffer){gl.bindBuffer(gl.ARRAY_BUFFER,attribute.buffer);gl.vertexAttribPointer(a,attribute.size,attribute.type,attribute.normalized,attribute.stride,attribute.offset)}
-      if(attribute.enabled)gl.enableVertexAttribArray(a);else gl.disableVertexAttribArray(a);
-      gl.bindBuffer(gl.ARRAY_BUFFER,state.buffer);gl.useProgram(state.program);gl.bindTexture(gl.TEXTURE_2D,state.texture);gl.activeTexture(state.active);
-      for(const [cap,enabled] of state.caps){if(enabled)gl.enable(cap);else gl.disable(cap)}
-      gl.depthMask(state.depthMask);gl.colorMask(...state.colorMask);
-    }
+    const c=this.frameComposition;
+    if(c.width!==w||c.height!==h){if(c.texture)this.device.deleteTexture(c.texture);c.texture=this.device.createTexture({width:w,height:h,data:null});c.width=w;c.height=h}
+    this.device.uploadVertices(c.buffer,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]));
+    this.device.copyFrameToTexture(c.texture);
+    this.device.draw({pipeline:c.program,buffer:c.buffer,count:6,uniforms:{scene:0,size:[w,h],offset:[sx,-sy]},textures:[c.texture],blend:false,depth:false});
   }
+
   renderMinimapPass(){
     const now=performance.now();
     if(ActiveViewState.minimap&&now-this.lastMinimapDrawAt>=100){this.lastMinimapDrawAt=now;ActiveViewState.minimap.draw()}
@@ -32291,13 +32214,16 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     try{
     const frameStarted=performance.now();this._framePresentationAt=frameStarted;
     this.resize();
+    // DOM viewport synchronization is once per frame, not once per terrain/Fog vertex.
+    // All math still uses the shared camera; input and standalone passes refresh on demand.
+    this._frameCamera=this.stableCamera();
     this.updateClientShake();
 
     // Result/lobby UI owns the screen after a match ends. Do not continue sampling
     // presentation state from an ended match (especially the delayed sample buffer).
     if(UiRuntimeState.value.screen!=="game"&&UiRuntimeState.value.screen!=="replay"){
-      const gl=this.gl;
-      gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+      if(this.device.active)this.device.endFrame();
+      if(this.device.beginFrame())this.device.endFrame();
       requestAnimationFrame(this.loop);
       return;
     }
@@ -32313,16 +32239,9 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
 
     this.passProfiler.beginFrame();
     const visibleUnits=this.passProfiler.measure("prepare",()=>this.snapshot?this.prepareVisibleUnitFrame():this.visibleUnitFrame);
-    {
-      const gl=this.gl;
-      gl.useProgram(this.p);
-      gl.uniform2f(this.r,this.canvas.width,this.canvas.height);
-      gl.enable(gl.DEPTH_TEST);
-      gl.depthFunc(gl.LEQUAL);
-      gl.depthMask(true);
-      gl.clearDepth(1);
-      gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-    }
+    if(this.device.active)this.device.endFrame();
+    if(!this.device.beginFrame()){requestAnimationFrame(this.loop);return}
+    Object.assign(this.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
 
     this.passProfiler.measure("ground",()=>this.renderGroundPass());
     this.passProfiler.measure("world",()=>this.renderWorldPass(visibleUnits));
@@ -32362,7 +32281,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       // above; a remaining frame-level failure keeps the diagnostic visible and retries so
       // recovery/correction or a later valid snapshot can restore presentation.
       requestAnimationFrame(this.loop);
-    }finally{this._framePresentationAt=null}
+    }finally{if(this.device.active)this.device.endFrame();this._framePresentationAt=null;this._frameCamera=null}
 
   }
 }
@@ -32403,27 +32322,20 @@ e.stopPropagation();
       this.draw();
     };
 
-    this.canvas.addEventListener("pointerdown",e=>{
-      this.dragging=true;
-      this.pointerId=e.pointerId;
-      this.canvas.setPointerCapture?.(e.pointerId);
-      jump(e);
+    this.input=RallyGamekit.createDOMInput({target:this.canvas,
+      pointerButtons:{0:'minimap',1:'minimap',2:'minimap'},touchAction:'none',
+      onPointer:point=>{
+        const e=point.originalEvent;
+        if(point.type==='down'){
+          if(this.dragging&&this.pointerId!==point.pointerId)return;
+          this.dragging=true;this.pointerId=point.pointerId;jump(e);
+        }else if(point.type==='move'){
+          if(this.dragging&&this.pointerId===point.pointerId)jump(e);
+        }else if(this.pointerId===point.pointerId){
+          this.dragging=false;this.pointerId=null;e?.preventDefault();e?.stopPropagation();
+        }
+      },onRelease:()=>{this.dragging=false;this.pointerId=null}
     });
-    this.canvas.addEventListener("pointermove",e=>{
-      if(!this.dragging||e.pointerId!==this.pointerId)return;
-      jump(e);
-    });
-    const end=e=>{
-      if(e.pointerId!==this.pointerId)return;
-      this.dragging=false;
-      this.pointerId=null;
-      try{this.canvas.releasePointerCapture?.(e.pointerId)}catch(_){}
-      e.preventDefault();
-      e.stopPropagation();
-    };
-    this.canvas.addEventListener("pointerup",end);
-    this.canvas.addEventListener("pointercancel",end);
-    this.canvas.addEventListener("contextmenu",e=>e.preventDefault());
   }
   set(renderer,snapshot){
     this.renderer=renderer;
@@ -34670,6 +34582,11 @@ class ReplayPresentation{
   static replayLoadedData=null;
   static replayTimelineDragging=false;
   static replayTimelineResumePlaying=null;
+  static timeline=new RallyGamekit.ReplayTimeline({
+    read:()=>({tick:ReplayPresentation.replayPlayer?.sim?.tick||0,firstTick:0,lastTick:ReplayPresentation.replayPlayer?.endTick||0,playing:!!ReplayPresentation.replayPlayer?.playing}),
+    seek:tick=>ReplayPresentation.replayPlayer?.seek(tick),
+    setPlaying:value=>ReplayPresentation.replayPlayer?.setPlaying(value)
+  });
 
   static formatReplayTime(tick){
   const sec=Math.max(0,Math.floor((Number(tick)||0)/SimulationTiming.tps()));
@@ -36854,7 +36771,8 @@ class BattlePresentation{
     },FORCE_RALLY_HOLD_MS);
   };
 
-  UiRegistry.refs.canvas.addEventListener("pointerdown",e=>{
+  const battlefieldPointerDown=e=>{
+    if(ActiveViewState.drag&&ActiveViewState.drag.id!==e.pointerId)return;
     audioSystem.unlock();
     e.preventDefault();
     if(!ActiveViewState.renderer)return;
@@ -36882,11 +36800,10 @@ class BattlePresentation{
       moved:false,
       started:performance.now()
     };
-    try{UiRegistry.refs.canvas.setPointerCapture(e.pointerId)}catch{}
     armForcedRallyHold(e);
-  },{passive:false});
+  };
 
-  UiRegistry.refs.canvas.addEventListener("pointermove",e=>{
+  const battlefieldPointerMove=e=>{
     if(!ActiveViewState.renderer)return;
     if(!ReplayPresentation.replayPlayer&&(UiRuntimeState.value.target.type==="build"||UiRuntimeState.value.target.type==="spell"))pointerPreview(e);
     if(!ActiveViewState.drag||ActiveViewState.drag.id!==e.pointerId)return;
@@ -36914,16 +36831,16 @@ class BattlePresentation{
     }
     ActiveViewState.drag.lastX=e.clientX;
     ActiveViewState.drag.lastY=e.clientY;
-  },{passive:false});
+  };
 
-  UiRegistry.refs.canvas.addEventListener("pointercancel",e=>{
+  const battlefieldPointerCancel=e=>{
     if(ActiveViewState.drag&&ActiveViewState.drag.id===e.pointerId){
       cancelForcedRallyHold(true);
       ActiveViewState.drag=null;
     }
-  });
+  };
 
-  UiRegistry.refs.canvas.addEventListener("pointerup",e=>{
+  const battlefieldPointerUp=e=>{
     if(!ActiveViewState.renderer||!ActiveViewState.snap)return;
     e.preventDefault();
     if(!ActiveViewState.drag||ActiveViewState.drag.id!==e.pointerId)return;
@@ -37037,7 +36954,20 @@ class BattlePresentation{
       // 연속 건설 종료 안내는 전장 하단 buildFinishBtn 하나로 통일.
       LogUtil.log("↻ 같은 건물 연속 배치 모드 유지");
     }
-  },{passive:false});
+  };
+  const battlefieldInput=RallyGamekit.createDOMInput({target:UiRegistry.refs.canvas,
+    pointerButtons:{0:'battlefield'},touchAction:'none',
+    onPointer:point=>{
+      const event=point.originalEvent||point;
+      if(point.type==='down')battlefieldPointerDown(event);
+      else if(point.type==='move')battlefieldPointerMove(event);
+      else{
+        try{if(point.type==='up')battlefieldPointerUp(event);else battlefieldPointerCancel(event)}
+        finally{if(ActiveViewState.drag?.id===point.pointerId){cancelForcedRallyHold(true);ActiveViewState.drag=null}}
+      }
+    },onRelease:()=>{cancelForcedRallyHold(true);ActiveViewState.drag=null}
+  });
+
 }
 
   static detailForUnit(id){
@@ -38985,7 +38915,7 @@ class ReplayInteraction{
   const targetTick=Math.round(RangeUtil.clamp(Number(seconds)||0,0,ReplayPresentation.replayPlayer.endTick/SimulationTiming.tps())*SimulationTiming.tps());
   const shouldResume=resumePlaying==null?!!ReplayPresentation.replayPlayer.playing:!!resumePlaying;
   try{
-    if((ReplayPresentation.replayPlayer.sim?.tick||0)!==targetTick)ReplayPresentation.replayPlayer.seek(targetTick);
+    if((ReplayPresentation.replayPlayer.sim?.tick||0)!==targetTick)ReplayPresentation.timeline.seek(targetTick);
     UiRegistry.refs.log.style.removeProperty("display");
   }catch(error){
     LogUtil.log(`⚠ 리플레이 시간 이동 실패 · ${error.message||error}`);

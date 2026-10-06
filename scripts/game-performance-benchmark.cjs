@@ -28,6 +28,7 @@ const config = {
   output: path.resolve(option('output', path.join(root, '.qa', 'game-performance-benchmark'))),
   canonicalMap: option('canonical-map', null),
   profile: option('profile', '0') !== '0',
+  traceCosts: option('trace-costs', '0') !== '0',
   count: Number(option('count', 30)),
   unit: option('unit', 'shelltitan'),
   role: option('role', 'host'),
@@ -74,10 +75,20 @@ function profileSummary(profile, inclusive = false) {
     .sort((a, b) => (b.inclusiveMs ?? b.selfMs) - (a.inclusiveMs ?? a.selfMs)).slice(0, inclusive ? 70 : 35);
 }
 
-function instrumentation({ roomToken, canonicalMap }) {
+function instrumentation({ roomToken, canonicalMap, traceCosts }) {
   window.__perfBench = { ActiveViewState, MatchLifecycle, BUILD_META, StrategySim, TerrainNavigation,
     frames: [], steps: [], longTasks: [], packets: [], commands: [], measuring: false };
   const b = window.__perfBench;
+  b.costs={};
+  const measureMethod=(owner,name,label)=>{
+    const original=owner?.[name];if(typeof original!=='function')return;
+    owner[name]=function(...args){if(!b.measuring)return original.apply(this,args);const start=performance.now();try{return original.apply(this,args)}finally{const ms=performance.now()-start,row=b.costs[label]||(b.costs[label]={calls:0,ms:0,maxMs:0});row.calls++;row.ms+=ms;row.maxMs=Math.max(row.maxMs,ms)}};
+  };
+  if(traceCosts){
+    for(const name of ['getParameter','getError','getContextAttributes'])measureMethod(WebGLRenderingContext.prototype,name,'gpu.'+name);
+    for(const name of ['projectRenderWorldPositionStable','stableCamera','flush','flushFog','ensureFogTextures','renderCameraShakePass','updatePresentationTargets'])measureMethod(GLRenderer.prototype,name,'renderer.'+name);
+    for(const name of ['beginFrame','draw','uploadVertices','updateTexture','copyFrameToTexture'])measureMethod(window.RallyGamekit?.WebGLDevice?.prototype,name,'device.'+name);
+  }
   MatchLifecycle.singleRoomToken = () => roomToken;
   if (canonicalMap) MapGeneration.generateMapDescriptor = () => JSON.parse(JSON.stringify(canonicalMap));
   try { new PerformanceObserver(list => {
@@ -104,7 +115,7 @@ function instrumentation({ roomToken, canonicalMap }) {
     return packet.call(this, payload, ...rest);
   };
   b.begin = (condition, commandIntervalMs) => {
-    b.startedAt = performance.now(); b.measuring = true;
+    b.startedAt = performance.now(); b.costs={}; b.measuring = true;
     b.startTicks = Object.fromEntries(Object.entries(MatchLifecycle.singleMatch.sessions).map(([role, s]) => [role, s.sim.tick]));
     let last = performance.now();
     const frame = () => {
@@ -134,7 +145,7 @@ function instrumentation({ roomToken, canonicalMap }) {
   };
   b.end = () => {
     b.measuring = false; clearInterval(b.commandTimer);
-    return { durationMs: performance.now() - b.startedAt, frames: b.frames, steps: b.steps,
+    return { durationMs: performance.now() - b.startedAt, costs:b.costs, frames: b.frames, steps: b.steps,
       longTasks: b.longTasks, packets: b.packets, commands: b.commands, startTicks: b.startTicks,
       endTicks: Object.fromEntries(Object.entries(MatchLifecycle.singleMatch.sessions).map(([role, s]) => [role, s.sim.tick])),
       rendererFatalReported: !!ActiveViewState.renderer?.renderFatalReported,
@@ -150,9 +161,13 @@ async function runOne(browser, revision, condition, repetition, canonicalMap) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   let source = git('show', `${revision.sha}:index.html`);
+  if(source.includes('const RALLY_GAMEKIT_MODULES='))source=require('./bundle-gamekit.cjs').bundleGame(root,source);
+  // Baseline uses the exact same imported SDK algorithms, without a live CDN dependency.
+  const baselineSDK=['rollback','deterministic','simloop','transport'].map(name=>`export * from ${JSON.stringify('data:text/javascript;base64,'+fs.readFileSync(path.join(root,'vendor/gamekit',name+'.js')).toString('base64'))};`).join('\n');
+  await page.route('https://byh-playground.github.io/rollback-netcode/rollback-netcode.js',route=>route.fulfill({contentType:'text/javascript',headers:{'access-control-allow-origin':'*'},body:baselineSDK}));
   const tail = source.lastIndexOf('})();');
   assert.ok(tail >= 0, 'App IIFE injection boundary is present');
-  source = source.slice(0, tail) + `\n(${instrumentation.toString()})(${JSON.stringify({ roomToken: config.roomToken, canonicalMap })});\n` + source.slice(tail);
+  source = source.slice(0, tail) + `\n(${instrumentation.toString()})(${JSON.stringify({ roomToken: config.roomToken, canonicalMap,traceCosts:config.traceCosts })});\n` + source.slice(tail);
   await page.route('http://127.0.0.1:32119/**', route => {
     const requested = new URL(route.request().url()).pathname;
     if (requested === '/') return route.fulfill({ contentType: 'text/html', body: source });
@@ -200,6 +215,7 @@ async function runOne(browser, revision, condition, repetition, canonicalMap) {
       const s = window.__perfBench.MatchLifecycle.singleMatch.sessions.host.sim;
       return s.tick >= 5 + Math.ceil(warmup * s.tps / 1000);
     }, config.warmupMs, { timeout: 60000 });
+    setup.presentation=await page.evaluate(()=>{const {ActiveViewState:r,MatchLifecycle:m}=window.__perfBench;const v=r.renderer;return {cameraLeft:v.cameraLeft,cameraTop:v.cameraTop,canvasWidth:v.canvas.width,canvasHeight:v.canvas.height,zoom:v.replayZoom,role:v.role,perspective:v.mySide(),observerAll:v.replayObserverAll,visibilitySources:v.visionSourcesBySide.map(a=>a.length),startTick:m.sessions?.host?.sim?.tick??m.singleMatch.sessions.host.sim.tick}});
     if (config.profile) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 1000 }); await cdp.send('Profiler.start'); }
     await page.evaluate(({ condition, interval }) => window.__perfBench.begin(condition, interval), { condition, interval: config.commandIntervalMs });
     await page.waitForTimeout(config.durationMs);
@@ -215,6 +231,7 @@ async function runOne(browser, revision, condition, repetition, canonicalMap) {
     delete setup.map;
     const passes = [...new Set(measurements.frames.flatMap(f => Object.keys(f.passes || {})))];
     result.summary = {
+      measuredDurationMs:measurements.durationMs,costs:measurements.costs,
       frames: measurements.frames.length, frameIntervalMs: stats(measurements.frames.slice(1).map(f => f.intervalMs)),
       frameWorkMs: stats(measurements.frames.map(f => f.workMs)),
       longTasks: { count: measurements.longTasks.length, totalMs: measurements.longTasks.reduce((sum, x) => sum + x.duration, 0), durationMs: stats(measurements.longTasks.map(x => x.duration)) },
@@ -243,7 +260,9 @@ async function runOne(browser, revision, condition, repetition, canonicalMap) {
     assert.deepEqual(errors, [], 'No browser JavaScript errors');
     return { revision, condition, repetition, setup, summary: result.summary, cpu, cpuInclusive, system, directory: dir };
   } catch (error) {
-    json(path.join(dir, 'failure.json'), { message: error.stack, errors, body: await page.locator('body').innerText().catch(() => '') });
+    const diagnostic=await page.evaluate(()=>{const q=window.__perfBench,m=q?.MatchLifecycle.singleMatch;return {screen:typeof UiRuntimeState==='undefined'?null:UiRuntimeState.value.screen,status:document.querySelector('#singleStatus')?.textContent,fatal:window.__RALLY_FATAL_DIAGNOSTIC__,transports:Object.fromEntries(Object.entries(m?.transports||{}).map(([role,t])=>[role,{open:t.isOpen(),connection:t.pc?.connectionState,ice:t.pc?.iceConnectionState,gathering:t.pc?.iceGatheringState,iceServerCount:t.pc?.getConfiguration().iceServers?.length}]))}}).catch(()=>null);
+    const failure={revision:revision.label,condition,repetition,message:error.stack,errors,diagnostic,body:(await page.locator('body').innerText().catch(()=>'' )).slice(-5000)};
+    json(path.join(dir,'failure.json'),failure);console.log('RALLY_CASE_FAILURE '+JSON.stringify(failure));
     throw error;
   } finally { await cdp.detach(); await page.close(); }
 }

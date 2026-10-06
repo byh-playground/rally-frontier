@@ -5,6 +5,8 @@ const vm = require('node:vm');
 
 // Exercise production replay methods with isolated simulation and UI dependencies.
 // Real StrategySim, renderer and Single-Player UI verification remain separate.
+async function main(){
+const RallyGamekit=await import('data:text/javascript;base64,'+fs.readFileSync(path.join(__dirname,'../vendor/gamekit/debug-tools.js')).toString('base64'));
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 for (const [, attributes, source] of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)) {
   if (!attributes.includes('application/json')) new vm.Script(source);
@@ -25,6 +27,7 @@ const events = [];
 const sims = [];
 let failSnapshot = false;
 const context = vm.createContext({
+  RallyGamekit,
   performance: { now: () => 100 },
   SIM_VERSION: 1,
   REPLAY_PROTOCOL: 'test',
@@ -135,3 +138,6 @@ for (const playing of [true, false]) {
   assert.equal(presentation.replayPlayer.sim.disposed, undefined);
 }
 console.log('PASS: corrupt checkpoints, header, clone and snapshot failures preserve replay; candidates disposed; preparation precedes teardown.');
+
+}
+main().catch(error=>{console.error(error);process.exitCode=1});

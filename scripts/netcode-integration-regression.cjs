@@ -40,8 +40,8 @@ async function integration() {
     }
   };
   check(sdk?.VERSION==='0.2.0-dev','URL imported SDK is available');
-  check(window.RallyNetcodeSource?.url==='https://byh-playground.github.io/rollback-netcode/rollback-netcode.js',
-    'SDK uses the actual public module URL');
+  check(window.RallyNetcodeSource?.pinned===true&&window.RallyNetcodeSource?.repository==='byh-playground/bloom-gamekit',
+    'SDK uses the pinned shared gamekit modules');
   const hostTransport=new q.LoopbackTransport('host','NETCODE-INTEGRATION');
   const guestTransport=new q.LoopbackTransport('guest','NETCODE-INTEGRATION');
   hostTransport.pair(guestTransport);guestTransport.pair(hostTransport);

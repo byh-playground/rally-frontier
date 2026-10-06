@@ -91,13 +91,18 @@ rally-frontier/
 
 전송은 `send(Uint8Array)`와 `subscribe(listener)` capability로 연결합니다. Nostr는 방 발견·RTC 협상에만 사용하고, 게임 입력·시계·해시·복구는 SDK의 `WebRTCTransport`가 실제 입력·제어 DataChannel로 전송합니다. 게임은 SDK의 바이너리 헤더나 내부 필드를 해석하지 않습니다.
 
-게임은 [GitHub Pages의 원본 단일 ES module](https://byh-playground.github.io/rollback-netcode/rollback-netcode.js)을 직접 import합니다. 필수 API 확인 후 초기화하며 로딩 실패나 미배포 API는 사용자에게 오류로 표시합니다. 내장 Core와 로컬 fallback은 없습니다. 이 URL은 버전 고정 URL이 아닙니다. 2026-10-03 라이브러리 PR #2 머지 후 실제 공개 URL에서 새 코덱 API와 초기화 성공을 확인했습니다. 존재하지 않는 versions URL이나 쿼리스트링을 버전 고정으로 사용하지 않습니다. 이후에도 필수 API가 없으면 게임 시작이 차단됩니다.
+게임은 이제 [bloom-gamekit](https://github.com/byh-playground/bloom-gamekit)의 고정 source/dist 커밋에서 가져온 분리 모듈을 사용합니다. `vendor/gamekit/provenance.json`이 파일별 SHA-256과 정확한 출처를 기록하며 빌드는 원본 배포 bytes의 무결성을 확인합니다. 기존의 변경 가능한 rollback-netcode Pages URL 직접 import 계약은 사용자 요청의 공통 모듈 마이그레이션과 단일 HTML 배포로 대체합니다. 이전 저장소는 수정하거나 제거하지 않습니다. 모듈 로드 실패는 오류로 표시하며 CDN/다른 버전 fallback은 없습니다.
 
+`rollback`, `deterministic`, `simloop`, `transport`의 조합이 기존 `GameSession` 실행 경로를 담당합니다. `interpolation`이 단위·투사체·깃발의 목표 보간을 소유하고 게임 어댑터는 식별자·TPS·불연속 정책만 제공합니다. `rendering.WebGLDevice`가 shader/program/buffer/texture 수명주기와 실제 GPU 제출을 소유합니다. 게임에는 아트 기하 생성, 지형 깊이, Fog 마스크, 알파 패스·스텐실 실루엣 및 최종 화면 흔들림 정책이 남습니다. `camera`는 안정 화면/월드 평면 변환, `input`은 포인터 capture·document fallback·취소·blur 정리를 담당합니다. `presentation-events`는 확정 효과 중복 제거, `hud`는 절대 고도 anchor, `debug-tools`는 오류 기록·리플레이 탐색 UI를 담당합니다.
+
+Rally의 적응형 A*/공유 A*/Flow-field, 게임 규칙과 체크포인트 리플레이 포맷은 변경하지 않습니다. 공통 `playReplay`는 SDK의 연속 frame 파일을 위한 API이므로 기존 Rally의 독립 체크포인트·캠페인 저장 포맷을 억지로 변환하지 않습니다. 체크포인트 검증/복원은 게임 소유이고 공통 `ReplayTimeline`이 탐색 범위·재생 조작을 담당합니다.
+
+배포 빌드는 검증한 모듈, 캠페인 JS, 아이콘과 manifest를 `_site/index.html`에 넣습니다. 실제 file://에서 HTTP/WebSocket과 외부 DNS를 차단하고 STUN/TURN 없이 같은 기기의 실제 RTC host 후보로 캠페인 시작·종료를 검사합니다. 이는 외부 네트워크 없는 단일 HTML 실행 검증이며 브라우저 전체 Network.offline 또는 네트워크 어댑터가 꺼진 상태의 RTC 시작 성공을 뜻하지 않습니다. 엄격한 Network.offline 진단 모드는 유지하며 해당 모드에서는 ICE 연결이 대기하는 것이 관측됐습니다. 소스 `index.html` 개발 실행은 HTTP 서버 및 vendor 디렉터리가 필요합니다. PWA 설치 주소는 기존 Pages 주소로 유지하며 멀티플레이는 여전히 네트워크가 필요합니다.
 공통 createValueCodec의 기본 바이너리 코덱을 상태와 명령에 조합하고 Core에는 opaque bytes만 전달합니다. 선택 JSON 코덱은 비교·진단용입니다.
 
 ```text
 index.html
-  RallyNetcode                 공개 URL에서 직접 import한 공통 ES module
+  RallyNetcode                 고정 gamekit rollback/deterministic/simloop/transport 조합
   GameSession                  경기 Coordinator
   RallySimulationAdapter       게임 상태와 명령을 SDK 계약에 연결
   RallyStateCodec / CommandCodec
@@ -115,7 +120,7 @@ scripts/netcode-ui-e2e.cjs      실제 UI·RTC·WebGL·종료·리플레이 검�
 
 별도의 환경에서 충분히 검증된 버전만 Stable 버전으로 승격하며, `main/index.html`은 항상 플레이 가능한 검증 완료 상태를 유지하는 것을 원칙으로 합니다.
 
-공개 배포는 빌드가 생성한 `_site` 전체를 사용하며 게임 HTML, 캠페인, PWA manifest와 아이콘을 함께 배포합니다. 개발할 때는 빌드 없이 저장소 폴더를 정적 HTTP 서버로 제공해 실행할 수 있습니다(예: `python -m http.server 8000` 후 `http://localhost:8000/`). 이때 업데이트 표시는 개발 소스임을 나타냅니다. 브라우저의 native ES module 보안 정책 때문에 `file://`로 직접 연 파일에서는 정식 캠페인을 불러올 수 없습니다.
+공개 배포는 빌드가 생성한 `_site` 전체를 사용하며 게임 HTML, 캠페인, PWA manifest와 아이콘을 함께 배포합니다. 개발할 때는 빌드 없이 저장소 폴더를 정적 HTTP 서버로 제공해 실행할 수 있습니다(예: `python -m http.server 8000` 후 `http://localhost:8000/`). 이때 업데이트 표시는 개발 소스임을 나타냅니다. 개발 소스를 `file://`로 직접 열면 상대 ES module 보안 제한을 받습니다. 파일 하나로 실행하려면 빌드한 `_site/index.html`을 사용합니다.
 
 ## 커밋 메시지
 
@@ -335,3 +340,8 @@ node scripts/navigation-spatial-index-regression.cjs --benchmark
 ```
 
 소수 유닛 지연은 길찾기만의 문제가 아니었다. 생산과 AI를 멈춘 검병 5기/피어의 실제 Edge/WebGL 시험에서 조용한 장면은 틱 약 3.70ms, `nextPoint` 합계 약 0.2ms였고, 명령으로 이동시킨 경우에도 경로 질의는 약 55.4ms/5초였다. 같은 시험에서 `NavigationObstacleIndex.query`는 주로 렌더 지형·Fog 샘플링 경로에서 약 562ms/5초를 차지했고, 상태 캡처도 약 422ms inclusive였다. 따라서 NavMesh 생성만 줄여서는 소수 유닛의 체감 지연을 설명할 수 없으며, 이번 변경은 공간 인덱스의 문자열 셀 키와 단일 셀 중복 검사를 제거하고 동일 렌더 높이 샘플을 한 번만 계산한다. 기존 반환 순서·체크섬·경계 판정은 회귀 스크립트로 비교한다.
+
+
+### 공통 모듈 마이그레이션 검증
+
+`npm ci`, `npx playwright install chromium`, `node scripts/build-pages.cjs` 후 `QA_BROWSER_CHANNEL=chromium QA_SOFTWARE_GPU=1 node scripts/netcode-ui-e2e.cjs _site/index.html`로 실제 게임 UI·RTC·WebGL·결과·리플레이를 검사합니다. `.github/workflows/gamekit-validation.yml`은 이 경로와 기존 회귀 검사를 실행합니다. 소프트웨어 GPU의 CPU/FPS 수치는 물리 GPU 성능으로 일반화하지 않습니다. 새 보간은 전체 scalar snapshot의 원자적 교체에 O(NF) 할당이 발생하고 GPU 모듈은 제출별 계약 검사를 수행하므로 동일 fixture A/B 결과를 확인하기 전 성능 개선을 주장하지 않습니다.

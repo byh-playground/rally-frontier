@@ -250,14 +250,7 @@ async function run() {
           const picked = renderer.surfaceAtScreen(195, 325);
           equal(picked.kind, 'cliff', 'Mobile pixel picks the exposed ramp wall');
           close(picked.y, target.y, 'Picking follows the wall elevation');
-          gl.viewport(0, 0, canvas.width, canvas.height);
-          gl.useProgram(renderer.p);
-          gl.uniform2f(renderer.r, canvas.width, canvas.height);
-          gl.enable(gl.DEPTH_TEST);
-          gl.depthFunc(gl.LEQUAL);
-          gl.depthMask(true);
-          gl.clearColor(0, 0, 0, 1);
-          gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+          if(renderer.device.active)renderer.device.endFrame(); renderer.device.beginFrame({clearColor:[0, 0, 0, 1]}); Object.assign(renderer.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
           renderer.begin();
           TerrainPresentation.drawSurfaces(renderer);
           renderer.flush();
@@ -370,14 +363,7 @@ async function run() {
           close(picked.x, target.x, 'Mobile picking x');
           close(picked.z, target.z, 'Mobile picking planar y');
           close(picked.y, target.y, 'Mobile picking negative height');
-          gl.viewport(0, 0, canvas.width, canvas.height);
-          gl.useProgram(renderer.p);
-          gl.uniform2f(renderer.r, canvas.width, canvas.height);
-          gl.enable(gl.DEPTH_TEST);
-          gl.depthFunc(gl.LEQUAL);
-          gl.depthMask(true);
-          gl.clearColor(0, 0, 0, 1);
-          gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+          if(renderer.device.active)renderer.device.endFrame(); renderer.device.beginFrame({clearColor:[0, 0, 0, 1]}); Object.assign(renderer.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
           renderer.begin();
           TerrainPresentation.drawSurfaces(renderer);
           renderer.flush();
@@ -463,14 +449,7 @@ async function run() {
             close(picked.z, target.z, 'Water surface picking world z');
             close(picked.y, target.y, 'Water surface picking signed elevation');
 
-            gl.viewport(0, 0, canvas.width, canvas.height);
-            gl.useProgram(renderer.p);
-            gl.uniform2f(renderer.r, canvas.width, canvas.height);
-            gl.enable(gl.DEPTH_TEST);
-            gl.depthFunc(gl.LEQUAL);
-            gl.depthMask(true);
-            gl.clearColor(0, 0, 0, 1);
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            if(renderer.device.active)renderer.device.endFrame(); renderer.device.beginFrame({clearColor:[0, 0, 0, 1]}); Object.assign(renderer.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
             renderer.begin();
             TerrainPresentation.drawSurfaces(renderer);
             renderer.flush();
@@ -481,7 +460,7 @@ async function run() {
             };
             const floor = read();
             TerrainPresentation.drawRiverSurfaces(renderer, descriptor);
-            equal(gl.getParameter(gl.DEPTH_WRITEMASK), true, 'Water restores caller depth-write state');
+            equal(renderer.passState.depthWrite, true, 'Water restores caller depth-write state');
             const water = read();
             check(water[2] > water[0] + 30, 'Water visibly replaces floor with blue');
             check(water[2] >= water[1], 'Depressed water blue component exceeds green');
@@ -517,14 +496,7 @@ async function run() {
           renderer.world = renderer.snapshot.world;
           renderer.cameraLeft = target.x - 450;
           renderer.cameraTop = target.z - 750;
-          gl.viewport(0, 0, canvas.width, canvas.height);
-          gl.useProgram(renderer.p);
-          gl.uniform2f(renderer.r, canvas.width, canvas.height);
-          gl.enable(gl.DEPTH_TEST);
-          gl.depthFunc(gl.LEQUAL);
-          gl.depthMask(true);
-          gl.clearColor(0.1, 0.3, 0.6, 1);
-          gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+          if(renderer.device.active)renderer.device.endFrame(); renderer.device.beginFrame({clearColor:[0.1, 0.3, 0.6, 1]}); Object.assign(renderer.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
           const read = () => {
             const rgba = new Uint8Array(4);
             gl.readPixels(195, 324, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, rgba);

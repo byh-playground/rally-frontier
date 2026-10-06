@@ -1,22 +1,19 @@
-const assert=require('node:assert/strict');
-const fs=require('node:fs');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require('playwright');
-const url='https://byh-playground.github.io/rollback-netcode/rollback-netcode.js';
-const html=fs.readFileSync(require('node:path').join(__dirname,'..','index.html'),'utf8');
-assert(!html.includes('rally-netcode-bundle'));
-assert(!fs.existsSync(require('node:path').join(__dirname,'embed-netcode.cjs')));
-(async()=>{const browser=await chromium.launch({channel:process.env.QA_BROWSER_CHANNEL||'msedge',headless:true});
+const html=fs.readFileSync(process.argv[2]||path.join(__dirname,'../_site/index.html'),'utf8');
+(async()=>{const browser=await chromium.launch({channel:process.env.QA_BROWSER_CHANNEL||'chromium',headless:true});
 try{const results=[];
-for(const mode of ['public','offline','missing-api','candidate','delayed']){
- const page=await browser.newPage();const requests=[];page.on('request',r=>{if(r.url().includes('rollback-netcode'))requests.push(r.url())});
- await page.route('https://loading-qa.local/',r=>r.fulfill({contentType:'text/html',body:html}));
- if(mode==='offline')await page.route(url,r=>r.abort());
- if(mode==='missing-api')await page.route(url,r=>r.fulfill({contentType:'text/javascript',body:'export const VERSION="missing";'}));
- if(['candidate','delayed'].includes(mode))await page.route(url,async r=>{if(mode==='delayed'){await new Promise(resolve=>setTimeout(resolve,750));}await r.fulfill({contentType:'text/javascript',body:fs.readFileSync(process.env.QA_SDK_PATH,'utf8')})});
- await page.goto('https://loading-qa.local/',{waitUntil:'domcontentloaded'});
- if(mode==='delayed'){assert.equal(await page.evaluate(()=>window.RallyNetcode),undefined);}
- if(mode==='public'){await page.waitForFunction(()=>window.RallyNetcode||window.__RALLY_FATAL_DIAGNOSTIC__); }
- if(['candidate','delayed'].includes(mode)){await page.waitForFunction(()=>window.RallyNetcode);assert.equal(await page.evaluate(()=>window.__RALLY_FATAL_DIAGNOSTIC__?.kind),undefined);}
- else if(mode!=='public'||!(await page.evaluate(()=>!!window.RallyNetcode))){await page.waitForFunction(()=>window.__RALLY_FATAL_DIAGNOSTIC__?.kind==='RALLY_NETCODE_LOAD_FAILED');assert(await page.locator('#renderFatalOverlay').isVisible());assert.equal(await page.evaluate(()=>window.RallyNetcode),undefined);}
- assert(requests.length===1&&requests[0]===url);results.push({mode,status:'PASS',diagnostic:await page.evaluate(()=>window.__RALLY_FATAL_DIAGNOSTIC__?.message)});await page.close();
+for(const mode of ['bundled-offline','missing-api','invalid-module','delayed']){
+ const page=await browser.newPage(),requests=[];page.on('request',r=>{if(/^https?:/.test(r.url()))requests.push(r.url())});
+ let source=html;
+ if(mode==='missing-api'||mode==='invalid-module'||mode==='delayed'){
+  const replacement=mode==='missing-api'?'export const VERSION="missing"':mode==='invalid-module'?'invalid Javascript!':'await new Promise(resolve=>setTimeout(resolve,750));'+fs.readFileSync(path.join(__dirname,'../vendor/gamekit/rollback.js'),'utf8');
+  const map=source.match(/const RALLY_GAMEKIT_MODULES=Object.freeze\((\{[^\n]+\})\);/);assert(map);
+  const modules=JSON.parse(map[1]);modules.rollback='data:text/javascript;base64,'+Buffer.from(replacement).toString('base64');source=source.replace(map[0],`const RALLY_GAMEKIT_MODULES=Object.freeze(${JSON.stringify(modules)});`);
+ }
+ await page.route('**/*',route=>route.abort());await page.setContent(source);
+ if(mode==='delayed')assert.equal(await page.evaluate(()=>window.RallyNetcode),undefined);
+ if(mode==='bundled-offline'||mode==='delayed'){await page.waitForFunction(()=>window.RallyNetcode);assert.equal(await page.evaluate(()=>window.__RALLY_FATAL_DIAGNOSTIC__?.kind),undefined)}
+ else{await page.waitForFunction(()=>window.__RALLY_FATAL_DIAGNOSTIC__?.kind==='RALLY_NETCODE_LOAD_FAILED');assert(await page.locator('#renderFatalOverlay').isVisible());assert.equal(await page.evaluate(()=>window.RallyNetcode),undefined)}
+ assert.deepEqual(requests,[]);results.push({mode,status:'PASS'});await page.close();
 }console.log(JSON.stringify(results,null,2));}finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

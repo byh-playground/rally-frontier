@@ -179,10 +179,7 @@ async function run() {
         const renderer = new GLRenderer(canvas), gl = renderer.gl;
         renderer.world = WorldContext.fromMap(descriptor); renderer.role = 'host';
         renderer.cameraLeft = 1536 - 450; renderer.cameraTop = 2048 - 48 * 0.6 - 750;
-        gl.viewport(0, 0, canvas.width, canvas.height);
-        gl.useProgram(renderer.p); gl.uniform2f(renderer.r, canvas.width, canvas.height);
-        gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true);
-        gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        if(renderer.device.active)renderer.device.endFrame(); renderer.device.beginFrame({clearColor:[0, 0, 0, 1]}); Object.assign(renderer.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
         renderer.begin(); TerrainPresentation.drawSurfaces(renderer); renderer.flush();
         const point = renderer.projectRenderWorldPosition({ x: 1536, y: 48, z: 2048, groundY: 0 });
         const rgba = new Uint8Array(4);
@@ -393,14 +390,7 @@ async function run() {
           equal(projection.projectedTriangleMesh(mesh, flipped), projection.projectedTriangleMesh(mesh, flipped), 'Projected river index is persistently cached');
 
           function paint(reference) {
-            gl.viewport(0, 0, canvas.width, canvas.height);
-            gl.useProgram(renderer.p);
-            gl.uniform2f(renderer.r, canvas.width, canvas.height);
-            gl.enable(gl.DEPTH_TEST);
-            gl.depthFunc(gl.LEQUAL);
-            gl.depthMask(true);
-            gl.clearColor(...TerrainPresentation.colors.lowGround);
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            if(renderer.device.active)renderer.device.endFrame(); renderer.device.beginFrame({clearColor:TerrainPresentation.colors.lowGround}); Object.assign(renderer.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
             renderer.begin();
             TerrainPresentation.drawSurfaces(renderer);
             renderer.flush();
@@ -410,7 +400,7 @@ async function run() {
               // Reference draws the same production mesh in full, with its original order
               // and depth bias. Only the viewport selection is bypassed.
               const previous = renderer._renderDepth;
-              gl.depthMask(false);
+              renderer.passState.depthWrite=false;
               renderer.begin();
               for (const triangle of mesh) {
                 for (const vertex of triangle.vertices) {
@@ -420,7 +410,7 @@ async function run() {
                 }
               }
               renderer.flush();
-              gl.depthMask(true);
+              renderer.passState.depthWrite=true;
               renderer.setRenderDepth(previous);
               renderer.begin();
             }
@@ -483,14 +473,7 @@ async function run() {
           close(picked.y, target.y, 'Bank picking continuous signed height');
           equal(VisibilityPolicy.sourceCanSeePoint(renderer.snapshot, visionSource, point.x, point.y), progress < 0.5, 'Low floor source uses actual bank visibility level');
           const gl = renderer.gl;
-          gl.viewport(0, 0, canvas.width, canvas.height);
-          gl.useProgram(renderer.p);
-          gl.uniform2f(renderer.r, canvas.width, canvas.height);
-          gl.enable(gl.DEPTH_TEST);
-          gl.depthFunc(gl.LEQUAL);
-          gl.depthMask(true);
-          gl.clearColor(0, 0, 0, 1);
-          gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+          if(renderer.device.active)renderer.device.endFrame(); renderer.device.beginFrame({clearColor:[0, 0, 0, 1]}); Object.assign(renderer.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
           renderer.begin();
           TerrainPresentation.drawSurfaces(renderer);
           renderer.flush();
@@ -535,14 +518,7 @@ async function run() {
           renderer.cameraLeft = renderer.viewX(bridge.x) - 450;
           renderer.cameraTop = renderer.viewY(bridge.y) - 750;
           const gl = renderer.gl;
-          gl.viewport(0, 0, canvas.width, canvas.height);
-          gl.useProgram(renderer.p);
-          gl.uniform2f(renderer.r, canvas.width, canvas.height);
-          gl.enable(gl.DEPTH_TEST);
-          gl.depthFunc(gl.LEQUAL);
-          gl.depthMask(true);
-          gl.clearColor(0, 0, 0, 1);
-          gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+          if(renderer.device.active)renderer.device.endFrame(); renderer.device.beginFrame({clearColor:[0, 0, 0, 1]}); Object.assign(renderer.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
           renderer.renderGroundPass();
           equal(gl.getError(), gl.NO_ERROR, 'Production generated ground pass completes without GPU errors');
           equal(renderer.renderFatalReported, false, 'Production generated ground pass has no render fatal');
