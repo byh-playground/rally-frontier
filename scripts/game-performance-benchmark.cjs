@@ -193,6 +193,7 @@ async function runOne(browser, revision, condition, repetition, canonicalMap) {
       source=module.exports.bundleGame(fixture,source);
     }finally{fs.rmSync(fixture,{recursive:true,force:true})}
   }
+  // Historical URL is only an intercepted fixture key, not a live repository dependency.
   // Baseline uses the exact same imported SDK algorithms, without a live CDN dependency.
   const baselineSDK=['rollback','deterministic','simloop','transport'].map(name=>`export * from ${JSON.stringify('data:text/javascript;base64,'+fs.readFileSync(path.join(root,'vendor/gamekit',name+'.js')).toString('base64'))};`).join('\n');
   await page.route('https://byh-playground.github.io/rollback-netcode/rollback-netcode.js',route=>route.fulfill({contentType:'text/javascript',headers:{'access-control-allow-origin':'*'},body:baselineSDK}));
