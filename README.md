@@ -77,7 +77,7 @@ rally-frontier/
 
 ## 공통 동기화 라이브러리 적용
 
-게임은 [rollback-netcode](https://github.com/byh-playground/rollback-netcode)의 공개 계약을 사용합니다. `GameSession`은 경기의 로비·UI·수명주기를 조정하며, Core와 게임 Adapter, Transport를 **Has-a**로 소유합니다.
+게임은 [bloom-gamekit 동기화 모듈](https://github.com/byh-playground/bloom-gamekit)의 공개 계약을 사용합니다. `GameSession`은 경기의 로비·UI·수명주기를 조정하며, Core와 게임 Adapter, Transport를 **Has-a**로 소유합니다.
 
 | 관계 | 구현과 사용 시나리오 |
 | --- | --- |
@@ -91,7 +91,7 @@ rally-frontier/
 
 전송은 `send(Uint8Array)`와 `subscribe(listener)` capability로 연결합니다. Nostr는 방 발견·RTC 협상에만 사용하고, 게임 입력·시계·해시·복구는 SDK의 `WebRTCTransport`가 실제 입력·제어 DataChannel로 전송합니다. 게임은 SDK의 바이너리 헤더나 내부 필드를 해석하지 않습니다.
 
-게임은 이제 [bloom-gamekit](https://github.com/byh-playground/bloom-gamekit)의 고정 source/dist 커밋에서 가져온 분리 모듈을 사용합니다. `vendor/gamekit/provenance.json`이 파일별 SHA-256과 정확한 출처를 기록하며 빌드는 원본 배포 bytes의 무결성을 확인합니다. 기존의 변경 가능한 rollback-netcode Pages URL 직접 import 계약은 사용자 요청의 공통 모듈 마이그레이션과 단일 HTML 배포로 대체합니다. 이전 저장소는 수정하거나 제거하지 않습니다. 모듈 로드 실패는 오류로 표시하며 CDN/다른 버전 fallback은 없습니다.
+게임은 이제 [bloom-gamekit](https://github.com/byh-playground/bloom-gamekit)의 고정 source/dist 커밋에서 가져온 분리 모듈을 사용합니다. `vendor/gamekit/provenance.json`이 파일별 SHA-256과 정확한 출처를 기록하며 빌드는 원본 배포 bytes의 무결성을 확인합니다. 기존의 변경 가능한 rollback-netcode Pages URL 직접 import 계약은 사용자 요청의 공통 모듈 마이그레이션과 단일 HTML 배포로 대체합니다. 기존 SDK의 예제·검증 자료·출처는 gamekit으로 이관하며, 이 게임의 고정 배포본은 별도 업그레이드 전까지 유지합니다. 모듈 로드 실패는 오류로 표시하며 CDN/다른 버전 fallback은 없습니다.
 
 `rollback`, `deterministic`, `simloop`, `transport`의 조합이 기존 `GameSession` 실행 경로를 담당합니다. `interpolation`이 단위·투사체·깃발의 목표 보간을 소유하고 게임 어댑터는 식별자·TPS·불연속 정책만 제공합니다. `rendering.WebGLDevice`가 shader/program/buffer/texture 수명주기와 실제 GPU 제출을 소유합니다. 게임에는 아트 기하 생성, 지형 깊이, Fog 마스크, 알파 패스·스텐실 실루엣 및 최종 화면 흔들림 정책이 남습니다. `camera`는 안정 화면/월드 평면 변환, `input`은 포인터 capture·document fallback·취소·blur 정리를 담당합니다. `presentation-events`는 확정 효과 중복 제거, `hud`는 절대 고도 anchor, `debug-tools`는 오류 기록·리플레이 탐색 UI를 담당합니다.
 
@@ -107,7 +107,7 @@ index.html
   RallySimulationAdapter       게임 상태와 명령을 SDK 계약에 연결
   RallyStateCodec / CommandCodec
   StrategySim                  게임 규칙과 Authoritative State
-scripts/netcode-qa-module.cjs   검증용 후보 URL 응답 (제품 fallback 아님)
+scripts/netcode-qa-module.cjs   과거 HTML의 SDK 요청을 로컬 고정 모듈/명시적 후보로 응답 (외부 배포 의존 없음)
 scripts/netcode-*-regression.cjs 집중 회귀 검사
 scripts/netcode-ui-e2e.cjs      실제 UI·RTC·WebGL·종료·리플레이 검사
 ```
