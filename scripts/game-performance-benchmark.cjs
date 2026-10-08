@@ -186,7 +186,7 @@ async function runOne(browser, revision, condition, repetition, canonicalMap) {
     // current vendor directory for both sides would hide SDK regressions.
     const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'rally-benchmark-'));
     try{
-      const archive=execFileSync('git',['archive',revision.sha,'vendor','campaign','icons','manifest.webmanifest'],{cwd:root,maxBuffer:20*1024*1024});
+      const archive=execFileSync('git',['-c','core.autocrlf=false','archive',revision.sha,'vendor','campaign','icons','manifest.webmanifest'],{cwd:root,maxBuffer:20*1024*1024});
       execFileSync('tar',['-x','-C',fixture],{input:archive});
       const module={exports:{}};
       new Function('require','module',git('show',`${revision.sha}:scripts/bundle-gamekit.cjs`))(require,module);
