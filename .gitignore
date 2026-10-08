@@ -1,3 +1,4 @@
 .qa/
 _site/
+.cache/
 /.temp-projects/

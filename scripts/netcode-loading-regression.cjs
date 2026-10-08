@@ -1,5 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require('playwright');
+const {modules:gamekitModules}=require('./setup-gamekit.cjs').readGamekit(path.join(__dirname,'..'));
 const html=fs.readFileSync(process.argv[2]||path.join(__dirname,'../_site/index.html'),'utf8');
 (async()=>{const browser=await chromium.launch({channel:process.env.QA_BROWSER_CHANNEL||'chromium',headless:true});
 try{const results=[];
@@ -7,7 +8,7 @@ for(const mode of ['bundled-offline','missing-api','invalid-module','delayed']){
  const page=await browser.newPage(),requests=[];page.on('request',r=>{if(/^https?:/.test(r.url()))requests.push(r.url())});
  let source=html;
  if(mode==='missing-api'||mode==='invalid-module'||mode==='delayed'){
-  const replacement=mode==='missing-api'?'export const VERSION="missing"':mode==='invalid-module'?'invalid Javascript!':'await new Promise(resolve=>setTimeout(resolve,750));'+fs.readFileSync(path.join(__dirname,'../vendor/gamekit/rollback.js'),'utf8');
+  const replacement=mode==='missing-api'?'export const VERSION="missing"':mode==='invalid-module'?'invalid Javascript!':'await new Promise(resolve=>setTimeout(resolve,750));'+gamekitModules.rollback.toString('utf8');
   const map=source.match(/const RALLY_GAMEKIT_MODULES=Object.freeze\((\{[^\n]+\})\);/);assert(map);
   const modules=JSON.parse(map[1]);modules.rollback='data:text/javascript;base64,'+Buffer.from(replacement).toString('base64');source=source.replace(map[0],`const RALLY_GAMEKIT_MODULES=Object.freeze(${JSON.stringify(modules)});`);
  }

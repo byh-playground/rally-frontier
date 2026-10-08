@@ -86,11 +86,11 @@ function fixture(t) {
   const os = require('node:os');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rally-bundle-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  for (const asset of ['vendor', 'campaign', 'icons', 'manifest.webmanifest']) fs.cpSync(path.join(root, asset), path.join(dir, asset), { recursive: true });
+  for (const asset of ['gamekit.lock.json', '.cache/gamekit', 'campaign', 'icons', 'manifest.webmanifest']) fs.cpSync(path.join(root, asset), path.join(dir, asset), { recursive: true });
   return dir;
 }
 function changeLock(dir, change) {
-  const filename = path.join(dir, 'vendor/gamekit/provenance.json');
+  const filename = path.join(dir, 'gamekit.lock.json');
   const lock = JSON.parse(fs.readFileSync(filename, 'utf8'));
   change(lock);
   fs.writeFileSync(filename, JSON.stringify(lock));
@@ -98,7 +98,7 @@ function changeLock(dir, change) {
 
 test('standalone detects modified module bytes', t => {
   const dir = fixture(t);
-  fs.appendFileSync(path.join(dir, 'vendor/gamekit/camera.js'), '\n// modified\n');
+  fs.appendFileSync(path.join(dir, '.cache/gamekit/camera.js'), '\n// modified\n');
   assert.throws(() => bundleGame(dir, source), /integrity mismatch: camera.js/);
 });
 
@@ -114,15 +114,15 @@ for (const [name, change] of [
 ]) test(`standalone rejects invalid provenance: ${name}`, t => {
   const dir = fixture(t);
   changeLock(dir, change);
-  assert.throws(() => bundleGame(dir, source), /Invalid Gamekit provenance/);
+  assert.throws(() => bundleGame(dir, source), /Invalid Gamekit lock/);
 });
 
 test('a new dependency fails even when its module hash is updated', t => {
   const dir = fixture(t);
-  const filename = path.join(dir, 'vendor/gamekit/camera.js');
+  const filename = path.join(dir, '.cache/gamekit/camera.js');
   fs.appendFileSync(filename, '\nimport "./extra.js";\n');
   changeLock(dir, lock => { lock.modules.camera.sha256 = require('node:crypto').createHash('sha256').update(fs.readFileSync(filename)).digest('hex'); });
-  const manifestPath=path.join(dir,'vendor/gamekit/dist-manifest.json'), manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));
+  const manifestPath=path.join(dir,'.cache/gamekit/manifest.json'), manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));
   manifest.modules.find(entry=>entry.file==='camera.js').sha256=require('node:crypto').createHash('sha256').update(fs.readFileSync(filename)).digest('hex');
   fs.writeFileSync(manifestPath,JSON.stringify(manifest));
   changeLock(dir,lock=>{lock.distManifestSha256=require('node:crypto').createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex')});
@@ -136,7 +136,7 @@ test('authored campaigns cannot introduce hidden data-module dependencies', t =>
 });
 
 test('source checkout URL customization is untouched and standalone uses verified assets', () => {
-  const customized = source.replace('./vendor/gamekit/camera.js', './custom/camera.js');
+  const customized = source.replace('./.cache/gamekit/camera.js', './custom/camera.js');
   const html = bundleGame(root, customized);
   assert(customized.includes('./custom/camera.js'));
   assert(!html.includes('./custom/camera.js'));
@@ -145,7 +145,7 @@ test('source checkout URL customization is untouched and standalone uses verifie
 
 test('bundled module bytes and embedded revision exactly match provenance', () => {
   const html = bundleGame(root, source);
-  const lock = JSON.parse(fs.readFileSync(path.join(root, 'vendor/gamekit/provenance.json'), 'utf8'));
+  const lock = JSON.parse(fs.readFileSync(path.join(root, 'gamekit.lock.json'), 'utf8'));
   const modules = JSON.parse(html.match(/const RALLY_GAMEKIT_MODULES=Object\.freeze\((\{[^\n]+\})\);/)[1]);
   const provenance = JSON.parse(html.match(/const RALLY_GAMEKIT_SOURCE=Object\.freeze\((\{[^\n]+\})\);/)[1]);
   assert.deepEqual(provenance, { repository: lock.repository, sourceCommit: lock.sourceCommit, distCommit: lock.distCommit });
@@ -153,13 +153,25 @@ test('bundled module bytes and embedded revision exactly match provenance', () =
   for (const [name, entry] of Object.entries(lock.modules)) {
     const bytes = Buffer.from(modules[name].split(',')[1], 'base64');
     assert.equal(require('node:crypto').createHash('sha256').update(bytes).digest('hex'), entry.sha256);
-    assert.deepEqual(bytes, fs.readFileSync(path.join(root, 'vendor/gamekit', entry.file)));
+    assert.deepEqual(bytes, fs.readFileSync(path.join(root, '.cache/gamekit', entry.file)));
   }
+});
+
+test('native source metadata reads the dependency lock instead of duplicating revision values', () => {
+  const descriptor = source.match(/const RALLY_GAMEKIT_SOURCE=Object\.freeze\((\{[^\n]+\})\);/)[1];
+  const sandbox = {};
+  vm.runInNewContext('globalThis.descriptor=' + descriptor, sandbox);
+  assert.equal(sandbox.descriptor.lock, './gamekit.lock.json');
+  assert.deepEqual(Object.keys(sandbox.descriptor), ['lock']);
+  const html = bundleGame(root, source);
+  assert.ok(!html.includes('./gamekit.lock.json'));
+  const modules = JSON.parse(html.match(/const RALLY_GAMEKIT_MODULES=Object\.freeze\((\{[^\n]+\})\);/)[1]);
+  assert.ok(Object.values(modules).every(url => url.startsWith('data:text/javascript;base64,')));
 });
 
 
 test('distribution manifest digest and per-module provenance must agree',t=>{
- const dir=fixture(t),file=path.join(dir,'vendor/gamekit/dist-manifest.json'),bytes=fs.readFileSync(file);
+ const dir=fixture(t),file=path.join(dir,'.cache/gamekit/manifest.json'),bytes=fs.readFileSync(file);
  fs.appendFileSync(file,' ');assert.throws(()=>bundleGame(dir,source),/dist manifest integrity mismatch/);
  fs.writeFileSync(file,bytes);changeLock(dir,lock=>{lock.modules.camera.sha256='0'.repeat(64)});
  assert.throws(()=>bundleGame(dir,source),/dist manifest module mismatch: camera.js/);

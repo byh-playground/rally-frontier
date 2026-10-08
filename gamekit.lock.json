@@ -1,0 +1,53 @@
+{
+  "repository": "byh-playground/bloom-gamekit",
+  "sourceCommit": "059d6babf344efbf54867a342fecdd64f70a6a86",
+  "distCommit": "17ef4c9340c8d8760ed8f648f1358430dca9c71f",
+  "upstreamRollbackCommit": "c3173914519a78834360430071e7a125736d86d5",
+  "modules": {
+    "rollback": {
+      "file": "rollback.js",
+      "sha256": "5a5032e7492195c63f15eed431eb122049e1e053677b342a639765c25f154c43"
+    },
+    "deterministic": {
+      "file": "deterministic.js",
+      "sha256": "00ef12c8300fa6eda38d7a814bb136ecd6787d5f5cfbe620a123663528467654"
+    },
+    "simloop": {
+      "file": "simloop.js",
+      "sha256": "8a89d888ffaf164be37200d250d6939cc221dcd651aabeb5810a659669e4225c"
+    },
+    "transport": {
+      "file": "transport.js",
+      "sha256": "d0f815926ca740371981a80bd03c1f24e909fcce45e98496eb7d85187eca8942"
+    },
+    "interpolation": {
+      "file": "interpolation.js",
+      "sha256": "23c90f377beb1fd2389023f42d11137c3c6e63ea148e07eb938882aeb9e9c45f"
+    },
+    "input": {
+      "file": "input.js",
+      "sha256": "ae84399953c7e54c8d96408c97208f42b2246a8ac27ef5265053cb0beb306168"
+    },
+    "rendering": {
+      "file": "rendering.js",
+      "sha256": "b6030b90345a31f7aad9cb832d3c47f775fff43f0990c7b925768a55a1a0017e"
+    },
+    "camera": {
+      "file": "camera.js",
+      "sha256": "972268ad14de778f1dca437913cff576155754adf1195948897c0df3ff8f66de"
+    },
+    "events": {
+      "file": "presentation-events.js",
+      "sha256": "30a1c9fd62f223998bba34e299b6f6baf0a789a4f09d468b62df87c8193930c5"
+    },
+    "hud": {
+      "file": "hud.js",
+      "sha256": "acec30fdab522ef151ab582113f26058aabb48a1d8d11cfe0ea640e1b61c86df"
+    },
+    "debug": {
+      "file": "debug-tools.js",
+      "sha256": "2081257b357e16442d245ea7242a188a24235864a7991e2164376a7d8eee4b1d"
+    }
+  },
+  "distManifestSha256": "951712c6bcc4af2e86ac20358e9b7b11d3c7fbb3e9b3b1423789ab8e052ad997"
+}

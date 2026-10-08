@@ -1,6 +1,11 @@
 {
   "name": "rally-frontier-tooling",
   "private": true,
+  "scripts": {
+    "setup:gamekit": "node scripts/setup-gamekit.cjs",
+    "build": "npm run setup:gamekit && node scripts/build-pages.cjs",
+    "test:build": "node --test scripts/setup-gamekit.test.cjs scripts/build-pages.test.cjs scripts/netcode-qa-module.test.cjs"
+  },
   "engines": {
     "node": ">=22"
   },
