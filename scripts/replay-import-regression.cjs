@@ -6,7 +6,7 @@ const vm = require('node:vm');
 // Exercise production replay methods with isolated simulation and UI dependencies.
 // Real StrategySim, renderer and Single-Player UI verification remain separate.
 async function main(){
-const RallyGamekit=await import('data:text/javascript;base64,'+fs.readFileSync(path.join(__dirname,'../vendor/gamekit/debug-tools.js')).toString('base64'));
+const RallyGamekit=await import('data:text/javascript;base64,'+require('./setup-gamekit.cjs').readGamekit(path.join(__dirname,'..')).modules.debug.toString('base64'));
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 for (const [, attributes, source] of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)) {
   if (!attributes.includes('application/json')) new vm.Script(source);

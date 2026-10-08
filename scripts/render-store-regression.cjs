@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),cp=require('node:child_process'),path=require('node:path');
 const root=path.resolve(__dirname,'..');
 (async()=>{
- const kit=await import('data:text/javascript;base64,'+fs.readFileSync(root+'/vendor/gamekit/interpolation.js').toString('base64'));
+ const kit=await import('data:text/javascript;base64,'+require('./setup-gamekit.cjs').readGamekit(root).modules.interpolation.toString('base64'));
  const source=fs.readFileSync(root+'/index.html','utf8'),before=cp.execFileSync('git',['show','c6106ee:index.html'],{cwd:root,encoding:'utf8',maxBuffer:5e6});
  const make=s=>{const ctx=vm.createContext({RallyGamekit:kit,performance});vm.runInContext(s.slice(s.indexOf('class RenderStateStore{'),s.indexOf('class FloatingTextPresentationDefinition'))+';globalThis.C=RenderStateStore',ctx);return new ctx.C({unit:{snapDistance:120,fields:{x:{},y:{},angle:{mode:'shortest-angle'}}}})};
  const old=make(before),fresh=make(source);let checks=0;

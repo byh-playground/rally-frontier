@@ -24,8 +24,10 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: '22'
+      - name: Fetch and verify pinned Gamekit dependency
+        run: npm run setup:gamekit
       - name: Test build metadata and output
-        run: node --test scripts/build-pages.test.cjs
+        run: npm run test:build
       - name: Build deployment artifact
         run: node scripts/build-pages.cjs
       - name: Upload Pages artifact

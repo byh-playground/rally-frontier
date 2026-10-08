@@ -183,19 +183,23 @@ async function runOne(browser, revision, condition, repetition, canonicalMap) {
   }
   if(source.includes('const RALLY_GAMEKIT_MODULES=')){
     // Compare each revision with its own pinned SDK and bundling rules. Using the
-    // current vendor directory for both sides would hide SDK regressions.
+    // current dependency cache for both sides would hide SDK regressions.
     const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'rally-benchmark-'));
     try{
-      const archive=execFileSync('git',['-c','core.autocrlf=false','archive',revision.sha,'vendor','campaign','icons','manifest.webmanifest'],{cwd:root,maxBuffer:20*1024*1024});
+      const hasLock=git('ls-tree','--name-only',revision.sha,'gamekit.lock.json').trim()==='gamekit.lock.json';
+      const dependency=hasLock?['gamekit.lock.json','scripts']:['vendor','scripts/bundle-gamekit.cjs'];
+      const archive=execFileSync('git',['-c','core.autocrlf=false','archive',revision.sha,...dependency,'campaign','icons','manifest.webmanifest'],{cwd:root,maxBuffer:20*1024*1024});
       execFileSync('tar',['-x','-C',fixture],{input:archive});
-      const module={exports:{}};
-      new Function('require','module',git('show',`${revision.sha}:scripts/bundle-gamekit.cjs`))(require,module);
-      source=module.exports.bundleGame(fixture,source);
+      // Each revision's own setup/bundler resolves its own lock. Fetching here is
+      // an explicit historical-fixture preparation step, before timed gameplay.
+      if(hasLock)await require(path.join(fixture,'scripts/setup-gamekit.cjs')).setupGamekit(fixture);
+      source=require(path.join(fixture,'scripts/bundle-gamekit.cjs')).bundleGame(fixture,source);
     }finally{fs.rmSync(fixture,{recursive:true,force:true})}
   }
   // Historical URL is only an intercepted fixture key, not a live repository dependency.
   // Baseline uses the exact same imported SDK algorithms, without a live CDN dependency.
-  const baselineSDK=['rollback','deterministic','simloop','transport'].map(name=>`export * from ${JSON.stringify('data:text/javascript;base64,'+fs.readFileSync(path.join(root,'vendor/gamekit',name+'.js')).toString('base64'))};`).join('\n');
+  const baselineModules=require('./setup-gamekit.cjs').readGamekit(root).modules;
+  const baselineSDK=['rollback','deterministic','simloop','transport'].map(name=>`export * from ${JSON.stringify('data:text/javascript;base64,'+baselineModules[name].toString('base64'))};`).join('\n');
   await page.route('https://byh-playground.github.io/rollback-netcode/rollback-netcode.js',route=>route.fulfill({contentType:'text/javascript',headers:{'access-control-allow-origin':'*'},body:baselineSDK}));
   const tail = source.lastIndexOf('})();');
   assert.ok(tail >= 0, 'App IIFE injection boundary is present');

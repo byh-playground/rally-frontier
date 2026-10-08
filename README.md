@@ -42,7 +42,7 @@ GitHub Pages (Stable)
 
 PR에서는 동일한 빌드 검사와 생성만 수행하고 배포하지 않습니다. Pages 게시 소스는 저장소 **Settings → Pages → Build and deployment → GitHub Actions**를 사용해야 합니다. 브랜치의 원본 HTML을 직접 게시하면 이 자동 빌드 과정이 적용되지 않습니다. 빌드·배포가 실패하면 기존 공개 실행물이 유지되므로 업데이트 표시도 바뀌지 않습니다.
 
-로컬에서 배포 실행물을 확인하려면 `node --test scripts/build-pages.test.cjs`와 `node scripts/build-pages.cjs`를 실행하고 `_site`를 정적 HTTP 서버로 제공합니다. 시각·커밋 정보는 빌드 시점에 고정되며 브라우저 접속 시각으로 바뀌지 않습니다. 게임 검증 기록의 날짜와 결과는 실제 검증 근거로 별도 관리합니다.
+로컬에서 배포 실행물을 확인하려면 `npm run setup:gamekit`, `npm run test:build`, `npm run build`를 실행하고 `_site`를 정적 HTTP 서버로 제공합니다. setup은 고정된 공통 모듈을 가져와 검증하며 이미 검증한 cache가 있으면 네트워크 없이 재사용합니다. 개별 테스트와 `node scripts/build-pages.cjs`는 네트워크 요청을 하지 않으며 cache가 없으면 setup 안내와 함께 실패합니다. 시각·커밋 정보는 빌드 시점에 고정되며 브라우저 접속 시각으로 바뀌지 않습니다. 게임 검증 기록의 날짜와 결과는 실제 검증 근거로 별도 관리합니다.
 
 ## 프로젝트 구조
 
@@ -53,10 +53,13 @@ PR에서는 동일한 빌드 검사와 생성만 수행하고 배포하지 않�
 ```text
 rally-frontier/
 ├── index.html             # 게임 엔진·UI 소스 (development 빌드)
+├── gamekit.lock.json      # 공통 모듈의 고정 source/dist 커밋·SHA-256
 ├── campaign/
 │   └── campaigns.js       # 현재 정식 캠페인 데이터 전체 (default manifest)
+├── scripts/setup-gamekit.cjs # 불변 dist 다운로드·무결성 검증
 ├── scripts/build-pages.cjs # 배포 HTML·메타데이터·정적 리소스 생성
 ├── .github/workflows/pages.yml # PR 빌드 검사 및 main Pages 배포
+├── .cache/gamekit/        # setup이 가져온 원본 dist bytes (Git 제외)
 └── _site/                 # 자동 생성한 배포 실행물 (Git 제외)
 ```
 
@@ -91,13 +94,13 @@ rally-frontier/
 
 전송은 `send(Uint8Array)`와 `subscribe(listener)` capability로 연결합니다. Nostr는 방 발견·RTC 협상에만 사용하고, 게임 입력·시계·해시·복구는 SDK의 `WebRTCTransport`가 실제 입력·제어 DataChannel로 전송합니다. 게임은 SDK의 바이너리 헤더나 내부 필드를 해석하지 않습니다.
 
-게임은 이제 [bloom-gamekit](https://github.com/byh-playground/bloom-gamekit)의 고정 source/dist 커밋에서 가져온 분리 모듈을 사용합니다. `vendor/gamekit/provenance.json`이 파일별 SHA-256과 정확한 출처를 기록하며 빌드는 원본 배포 bytes의 무결성을 확인합니다. 기존의 변경 가능한 rollback-netcode Pages URL 직접 import 계약은 사용자 요청의 공통 모듈 마이그레이션과 단일 HTML 배포로 대체합니다. 기존 SDK의 예제·검증 자료·출처는 gamekit으로 이관하며, 이 게임의 고정 배포본은 별도 업그레이드 전까지 유지합니다. 모듈 로드 실패는 오류로 표시하며 CDN/다른 버전 fallback은 없습니다.
+공통 모듈 원본은 [bloom-gamekit](https://github.com/byh-playground/bloom-gamekit)에서만 관리합니다. Rally는 코드 복사본 대신 `gamekit.lock.json`에 source/dist의 전체 커밋 SHA와 manifest·사용 모듈별 SHA-256을 기록합니다. `npm run setup:gamekit`은 정확한 불변 dist 커밋의 `manifest.json`과 필요한 파일을 받아 모든 hash를 확인하고 Git 제외 `.cache/gamekit/`에 원본 bytes 그대로 저장합니다. 빌드는 같은 lock으로 cache를 다시 검증해 단일 HTML에 포함합니다. 새 checkout의 최초 setup에는 GitHub 접근이 필요하며, 검증한 cache가 있으면 오프라인 빌드가 가능합니다. 업그레이드는 upstream dist 검증 후 lock을 변경하는 작업이고 Rally에서 모듈 사본을 수정하는 방식으로 하지 않습니다. 모듈 로드 실패는 오류로 표시하며 CDN/다른 버전 fallback은 없습니다.
 
 `rollback`, `deterministic`, `simloop`, `transport`의 조합이 기존 `GameSession` 실행 경로를 담당합니다. `interpolation`이 단위·투사체·깃발의 목표 보간을 소유하고 게임 어댑터는 식별자·TPS·불연속 정책만 제공합니다. `rendering.WebGLDevice`가 shader/program/buffer/texture 수명주기와 실제 GPU 제출을 소유합니다. 게임에는 아트 기하 생성, 지형 깊이, Fog 마스크, 알파 패스·스텐실 실루엣 및 최종 화면 흔들림 정책이 남습니다. `camera`는 안정 화면/월드 평면 변환, `input`은 포인터 capture·document fallback·취소·blur 정리를 담당합니다. `presentation-events`는 확정 효과 중복 제거, `hud`는 절대 고도 anchor, `debug-tools`는 오류 기록·리플레이 탐색 UI를 담당합니다.
 
 Rally의 적응형 A*/공유 A*/Flow-field, 게임 규칙과 체크포인트 리플레이 포맷은 변경하지 않습니다. 공통 `playReplay`는 SDK의 연속 frame 파일을 위한 API이므로 기존 Rally의 독립 체크포인트·캠페인 저장 포맷을 억지로 변환하지 않습니다. 체크포인트 검증/복원은 게임 소유이고 공통 `ReplayTimeline`이 탐색 범위·재생 조작을 담당합니다.
 
-배포 빌드는 검증한 모듈, 캠페인 JS, 아이콘과 manifest를 `_site/index.html`에 넣습니다. 실제 file://에서 HTTP/WebSocket과 외부 DNS를 차단하고 STUN/TURN 없이 같은 기기의 실제 RTC host 후보로 캠페인 시작·종료를 검사합니다. 이는 외부 네트워크 없는 단일 HTML 실행 검증이며 브라우저 전체 Network.offline 또는 네트워크 어댑터가 꺼진 상태의 RTC 시작 성공을 뜻하지 않습니다. 엄격한 Network.offline 진단 모드는 유지하며 해당 모드에서는 ICE 연결이 대기하는 것이 관측됐습니다. 소스 `index.html` 개발 실행은 HTTP 서버 및 vendor 디렉터리가 필요합니다. PWA 설치 주소는 기존 Pages 주소로 유지하며 멀티플레이는 여전히 네트워크가 필요합니다.
+배포 빌드는 검증한 모듈, 캠페인 JS, 아이콘과 manifest를 `_site/index.html`에 넣습니다. 실제 file://에서 HTTP/WebSocket과 외부 DNS를 차단하고 STUN/TURN 없이 같은 기기의 실제 RTC host 후보로 캠페인 시작·종료를 검사합니다. 이는 외부 네트워크 없는 단일 HTML 실행 검증이며 브라우저 전체 Network.offline 또는 네트워크 어댑터가 꺼진 상태의 RTC 시작 성공을 뜻하지 않습니다. 엄격한 Network.offline 진단 모드는 유지하며 해당 모드에서는 ICE 연결이 대기하는 것이 관측됐습니다. 소스 `index.html` 개발 실행은 setup 후 저장소 루트를 제공하는 HTTP 서버가 필요하며 `.cache/gamekit/`와 `gamekit.lock.json`도 함께 제공합니다. source의 모듈 출처 정보는 lock에서 읽고 배포 HTML은 빌드 때 같은 출처를 포함합니다. PWA 설치 주소는 기존 Pages 주소로 유지하며 멀티플레이는 여전히 네트워크가 필요합니다.
 공통 createValueCodec의 기본 바이너리 코덱을 상태와 명령에 조합하고 Core에는 opaque bytes만 전달합니다. 선택 JSON 코덱은 비교·진단용입니다.
 
 ```text
@@ -344,7 +347,7 @@ node scripts/navigation-spatial-index-regression.cjs --benchmark
 
 ### 공통 모듈 마이그레이션 검증
 
-`npm ci`, `npx playwright install chromium`, `node scripts/build-pages.cjs` 후 `QA_BROWSER_CHANNEL=chromium QA_SOFTWARE_GPU=1 node scripts/netcode-ui-e2e.cjs _site/index.html`로 실제 게임 UI·RTC·WebGL·결과·리플레이를 검사합니다. `.github/workflows/gamekit-validation.yml`은 이 경로와 기존 회귀 검사를 실행합니다. 소프트웨어 GPU의 CPU/FPS 수치는 물리 GPU 성능으로 일반화하지 않습니다. 새 보간은 전체 scalar snapshot의 원자적 교체에 O(NF) 할당이 발생하고 GPU 모듈은 제출별 계약 검사를 수행하므로 동일 fixture A/B 결과를 확인하기 전 성능 개선을 주장하지 않습니다.
+`npm ci`, `npx playwright install chromium`, `npm run build` 후 `QA_BROWSER_CHANNEL=chromium QA_SOFTWARE_GPU=1 node scripts/netcode-ui-e2e.cjs _site/index.html`로 실제 게임 UI·RTC·WebGL·결과·리플레이를 검사합니다. `.github/workflows/pages.yml`은 명시적 setup과 build 무결성 검사를 수행하며, 실제 게임 UI 검증은 별도로 실행합니다. 소프트웨어 GPU의 CPU/FPS 수치는 물리 GPU 성능으로 일반화하지 않습니다. 새 보간은 전체 scalar snapshot의 원자적 교체에 O(NF) 할당이 발생하고 GPU 모듈은 제출별 계약 검사를 수행하므로 동일 fixture A/B 결과를 확인하기 전 성능 개선을 주장하지 않습니다.
 
 
 ### 동기화 모드

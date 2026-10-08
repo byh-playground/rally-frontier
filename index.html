@@ -17,7 +17,7 @@ PURPOSE
 
 1. INLINE ENGINE / SELF-DESCRIBING
 - index.html은 엔진 실행물이며 최신 개발 베이스다. 캠페인 데이터는 campaign/campaigns.js 한 모듈에 둔다. 과거 파일/중간 후보본으로 되돌아가지 않는다.
-- 게임 규칙·아트 코드는 HTML 안에 유지하며 공통 실행 기반은 gamekit 모듈로 조합한다. 개발 소스는 HTTP(S)에서 vendor/gamekit 및 campaign/campaigns.js를 함께 제공하고 배포 HTML은 해당 모듈과 데이터를 포함하여 외부 파일 다운로드 없이 부팅·싱글·캠페인을 실행한다. 싱글은 기존의 실제 WebRTC 로컬 연결을 유지하며 네트워크 어댑터 전체 차단 상태의 연결은 별도 검증 범위다. 멀티플레이 발견·연결에는 네트워크가 필요하다.
+- 게임 규칙·아트 코드는 HTML 안에 유지하며 공통 실행 기반은 gamekit 모듈로 조합한다. 공통 코드 원본은 bloom-gamekit 저장소에서만 관리하며 이 저장소는 gamekit.lock.json에 고정 버전·SHA-256만 기록한다. 명시적 setup으로 검증한 원본 dist bytes를 Git 제외 .cache/gamekit에 가져온다. 개발 소스는 HTTP(S)에서 이 cache·lock 및 campaign/campaigns.js를 함께 제공하고 배포 HTML은 해당 모듈과 데이터를 포함하여 외부 파일 다운로드 없이 부팅·싱글·캠페인을 실행한다. 싱글은 기존의 실제 WebRTC 로컬 연결을 유지하며 네트워크 어댑터 전체 차단 상태의 연결은 별도 검증 범위다. 멀티플레이 발견·연결에는 네트워크가 필요하다.
 - 구체적인 현재 구현 상태는 실행 코드가 SSOT이며, 제품 설명/수치는 인게임 위키와 Definition이 담당한다.
 
 2. STRUCTURE — IS-A / HAS-A / CAN-BE
@@ -82,7 +82,7 @@ PURPOSE
 - Authoritative는 StrategySim과 StateContract, Runtime은 Core·캐시·명령 영수증 추적, Presentation은 Render State·확정 효과 journal이 소유한다. 재실행은 외부 AI 결정·VFX·결과·replay 기록을 중복 실행하지 않는다.
 - 롤백은 제한된 prediction 범위 안에서 과거 상태를 복원한 호출 안에 현재 틱까지 동기 재실행한다. 시뮬레이션은 렌더링·DOM과 분리하며 재실행 중 소리·알림을 중복 발생시키지 않는다.
 - Core frame t는 게임의 step 이전 S[t]다. UI·AI 명령은 player-local sequence로 제출하며 확정 frame의 정렬된 입력만 게임 명령과 replay로 변환한다. Gameplay 시간은 Simulation Tick, scheduler와 지연 정책은 Runtime이다.
-- Nostr는 Discovery/Signaling만 사용하며 Gameplay는 raw RTCDataChannel의 바이너리로 전송한다. 개발자 소유 서버·TURN fallback은 사용하지 않는다. SDK는 공통 gamekit의 고정 source/dist 커밋으로 검증한 분리 모듈을 사용한다. 원본 dist bytes와 SHA-256을 vendor/gamekit에 보관하고 배포 빌드는 모든 모듈·정식 캠페인을 단일 HTML에 포함한다. 로딩과 필수 API 확인 후 초기화하며 실패 시 오류를 표시한다. 다른 버전·CDN·내장 대체 Core fallback은 사용하지 않는다.
+- Nostr는 Discovery/Signaling만 사용하며 Gameplay는 raw RTCDataChannel의 바이너리로 전송한다. 개발자 소유 서버·TURN fallback은 사용하지 않는다. SDK는 gamekit.lock.json의 고정 source/dist 커밋·manifest 및 모듈 SHA-256으로 검증한 공통 gamekit 분리 모듈을 사용한다. setup은 정확한 불변 dist 커밋에서 bytes를 가져오고 배포 빌드는 모든 모듈·정식 캠페인을 단일 HTML에 포함한다. source 출처도 같은 lock에서 읽는다. 로딩과 필수 API 확인 후 초기화하며 실패 시 오류를 표시한다. 다른 버전·CDN·내장 대체 Core fallback은 사용하지 않는다.
 
 7. ONE MEANING, ONE COMMON MECHANIC
 - projectile, continuous damage, targeting, VFX 등 같은 의미의 기능은 하나의 공통 계약을 사용한다.
@@ -10672,11 +10672,20 @@ body.campaign-mode #p2pHealthText {
 <script>
 (async function(){
 "use strict";
-const RALLY_GAMEKIT_MODULES=Object.freeze({rollback:'./vendor/gamekit/rollback.js',deterministic:'./vendor/gamekit/deterministic.js',simloop:'./vendor/gamekit/simloop.js',transport:'./vendor/gamekit/transport.js',interpolation:'./vendor/gamekit/interpolation.js',rendering:'./vendor/gamekit/rendering.js',input:'./vendor/gamekit/input.js',camera:'./vendor/gamekit/camera.js',events:'./vendor/gamekit/presentation-events.js',hud:'./vendor/gamekit/hud.js',debug:'./vendor/gamekit/debug-tools.js'});
-const RALLY_GAMEKIT_SOURCE=Object.freeze({repository:'byh-playground/bloom-gamekit',sourceCommit:'e93bfa2888cf0a84d48507bf283d3b5bb823a6df',distCommit:'9c28208fb689bed60ee877d511338ba4d6a0a1b0'});
-const RALLY_NETCODE_URL='gamekit:'+RALLY_GAMEKIT_SOURCE.distCommit;
+const RALLY_GAMEKIT_MODULES=Object.freeze({rollback:'./.cache/gamekit/rollback.js',deterministic:'./.cache/gamekit/deterministic.js',simloop:'./.cache/gamekit/simloop.js',transport:'./.cache/gamekit/transport.js',interpolation:'./.cache/gamekit/interpolation.js',rendering:'./.cache/gamekit/rendering.js',input:'./.cache/gamekit/input.js',camera:'./.cache/gamekit/camera.js',events:'./.cache/gamekit/presentation-events.js',hud:'./.cache/gamekit/hud.js',debug:'./.cache/gamekit/debug-tools.js'});
+const RALLY_GAMEKIT_SOURCE=Object.freeze({lock:'./gamekit.lock.json'});
+let RALLY_NETCODE_URL=RALLY_GAMEKIT_SOURCE.lock||'gamekit:'+RALLY_GAMEKIT_SOURCE.distCommit;
 let RallyNetcode,RallyGamekit;
 try{
+  let gamekitSource=RALLY_GAMEKIT_SOURCE;
+  if(gamekitSource.lock){
+    const response=await fetch(gamekitSource.lock,{cache:'no-store'});
+    if(!response.ok)throw new Error('Gamekit lock를 불러오지 못했습니다. npm run setup:gamekit 후 HTTP 서버를 실행해 주세요.');
+    const lock=await response.json();
+    if(lock.repository!=='byh-playground/bloom-gamekit'||!/^[a-f0-9]{40}$/.test(lock.sourceCommit||'')||!/^[a-f0-9]{40}$/.test(lock.distCommit||''))throw new Error('Gamekit lock 출처가 올바르지 않습니다.');
+    gamekitSource=Object.freeze({repository:lock.repository,sourceCommit:lock.sourceCommit,distCommit:lock.distCommit});
+  }
+  RALLY_NETCODE_URL='gamekit:'+gamekitSource.distCommit;
   const modules=await Promise.all(Object.entries(RALLY_GAMEKIT_MODULES).map(async([name,url])=>[name,await import(url)]));
   const namespaces=Object.fromEntries(modules);
   RallyNetcode=Object.freeze({...namespaces.rollback,...namespaces.deterministic,...namespaces.simloop,...namespaces.transport});
@@ -10689,7 +10698,7 @@ try{
   if(typeof Object.getOwnPropertyDescriptor(RallyNetcode.SyncTestSession?.prototype||{},"metrics")?.get!=="function")throw new Error("공개 라이브러리에 Synctest metrics API가 없습니다. 라이브러리 배포 상태를 확인해 주세요.");
   if(typeof RallyNetcode.RollbackSession?.prototype.exportSyncTestFrames!=="function")throw new Error("공개 라이브러리에 확정 입력 Synctest export API가 없습니다. 라이브러리 배포 상태를 확인해 주세요.");
   window.RallyNetcode=RallyNetcode;
-  window.RallyNetcodeSource=Object.freeze({url:RALLY_NETCODE_URL,version:RallyNetcode.VERSION,pinned:true,...RALLY_GAMEKIT_SOURCE});
+  window.RallyNetcodeSource=Object.freeze({url:RALLY_NETCODE_URL,version:RallyNetcode.VERSION,pinned:true,...gamekitSource});
 }catch(error){
   window.__RALLY_PRESENT_FATAL__({kind:"RALLY_NETCODE_LOAD_FAILED",message:"넷코드 라이브러리를 불러오지 못해 게임을 시작할 수 없습니다. "+String(error?.message||error),url:RALLY_NETCODE_URL});
   return;
@@ -23351,6 +23360,13 @@ class GameSession{
     if(!ok){this.simpleRecoveryNeedsManual=true;this.recoveryPhase='needs-manual'}return !!ok;
   }
   setLocalVisibility(visible){this.localVisible=!!visible;if(!visible)this.netcodeSession?.releaseInput()}
+  onBacklogDrop({elapsedMs=0,droppedTicks=0,timestamp=performance.now()}={}){
+    // Dropping scheduler debt does not invalidate the confirmed tick timeline.
+    // State divergence and recovery remain owned by the Core.
+    this.lastDriverPulseAt=timestamp;this.netcodeNow=Math.max(this.netcodeNow,timestamp);
+    const activeSession=!!this.netcodeSession?.ready&&this.transportConnected&&this.sim?.tick>0&&this.confirmedGameTick>0;
+    RecoveryTelemetry.recordRecovery('simulation.backlog-drop',this,this.transport,{elapsedMs,droppedTicks,phase:activeSession?'timing-rebase':'bootstrap'});
+  }
   emitNetworkHealth(state=this.networkState){
     if(this.simulationFatal)state='fatal';this.networkState=state;
     this.lastRtt=this.netcodeSession?.metrics.smoothedRTT??this.lastRtt;
@@ -23521,7 +23537,8 @@ class GameSession{
     });
     this.netcodeNow=performance.now();this.lastDriverPulseAt=this.netcodeNow;this.lastSnapshotEmitAt=this.netcodeNow;
     this.stopHeartbeat(false);
-    this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,
+    this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,maxBacklogTicks:MAX_CATCHUP_STEPS_PER_PULSE,
+      onBacklogDrop:event=>this.onBacklogDrop(event),
       beforeFrame:now=>{this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now)},
       canAdvance:()=>!this.simEnded&&!this.simulationFatal&&!this.pendingTerminalFrame&&!this.syncHold&&!this.frameOutputs.get(this.sim.tick)?.winner,
       onAdvance:()=>this.reconcileNetcodePresentation(),render:()=>this.reconcileNetcodePresentation(),
@@ -23684,6 +23701,8 @@ class GameSession{
   }
   advanceSimulation(now=performance.now()){
     if(!this.sim||this.simEnded||this.simulationFatal)return;
+    const gap=Math.max(0,now-this.lastDriverPulseAt),maxGap=1000/this.sim.tps*MAX_CATCHUP_STEPS_PER_PULSE;
+    if(gap>maxGap){this.netcodeLoop?.resetTiming();this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now);this.onBacklogDrop({elapsedMs:gap,droppedTicks:Math.floor(gap/(1000/this.sim.tps)),timestamp:now});return}
     // Library owns pacing, accumulation, bounded catchup, and polling during holds.
     this.netcodeLoop.pulse(now);
     if(!this.netcodeSession.resimulating&&now-this.lastSnapshotEmitAt>=SNAPSHOT_EMIT_INTERVAL_MS){

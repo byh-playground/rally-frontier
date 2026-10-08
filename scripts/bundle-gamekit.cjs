@@ -1,23 +1,11 @@
 const fs=require('node:fs');
 const path=require('node:path');
-const crypto=require('node:crypto');
+const {readGamekit}=require('./setup-gamekit.cjs');
 const dataURL=(mime,bytes)=>`data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
-// This is a closed list of the standalone entry points, not a general JS bundler.
-const moduleFiles={rollback:'rollback.js',deterministic:'deterministic.js',simloop:'simloop.js',transport:'transport.js',interpolation:'interpolation.js',input:'input.js',rendering:'rendering.js',camera:'camera.js',events:'presentation-events.js',hud:'hud.js',debug:'debug-tools.js'};
 function replaceOnce(source,marker,replacement,label){
   const matches=typeof marker==='string'?source.split(marker).length-1:[...source.matchAll(new RegExp(marker.source,'g'))].length;
   if(matches!==1)throw Error(`Expected exactly one ${label} marker; found ${matches}`);
   return source.replace(marker,()=>replacement);
-}
-function validateProvenance(lock){
-  if(!lock||lock.repository!=='byh-playground/bloom-gamekit')throw Error('Invalid Gamekit provenance repository');
-  for(const key of ['sourceCommit','distCommit','upstreamRollbackCommit'])if(!/^[a-f0-9]{40}$/.test(lock[key]||''))throw Error(`Invalid Gamekit provenance ${key}`);
-  if(!/^[a-f0-9]{64}$/.test(lock.distManifestSha256||''))throw Error('Invalid Gamekit provenance distManifestSha256');
-  if(!lock.modules||Object.keys(lock.modules).sort().join(',')!==Object.keys(moduleFiles).sort().join(','))throw Error('Invalid Gamekit provenance module set');
-  for(const [name,file]of Object.entries(moduleFiles)){
-    const entry=lock.modules[name];
-    if(!entry||entry.file!==file||!/^[a-f0-9]{64}$/.test(entry.sha256||''))throw Error(`Invalid Gamekit provenance module: ${name}`);
-  }
 }
 const withoutBlockComments=source=>source.replace(/\/\*[\s\S]*?\*\//g,'');
 const selfContainedURL=value=>/^(?:data:|blob:|https?:|wss?:|#)/i.test(value);
@@ -36,7 +24,7 @@ function checkResources(source,label,css=false){
 }
 function checkModule(source,label){
   const code=withoutBlockComments(source);
-  // Vendored entry points and authored campaign data are dependency-free. Even an
+  // Pinned dist entry points and authored campaign data are dependency-free. Even an
   // absolute import must be reviewed rather than silently added to a data module.
   if(/\bimport\s*(?:\(|['"{*]|[\w$]+\s*(?:,|from\b))|\bexport\s+(?:\*|\{[^}]*\})\s*from\b/.test(code))throw Error(`Unresolved runtime import in ${label}`);
   checkResources(code,label);
@@ -64,20 +52,10 @@ function checkHTML(html){
   for(const [,css]of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi))checkResources(css,'standalone stylesheet',true);
 }
 function bundleGame(root,source){
-  const lock=JSON.parse(fs.readFileSync(path.join(root,'vendor/gamekit/provenance.json'),'utf8'));
-  validateProvenance(lock);
-  const manifestBytes=fs.readFileSync(path.join(root,'vendor/gamekit/dist-manifest.json'));
-  if(crypto.createHash('sha256').update(manifestBytes).digest('hex')!==lock.distManifestSha256)throw Error('Gamekit dist manifest integrity mismatch');
-  const distManifest=JSON.parse(manifestBytes);
-  if(distManifest.schemaVersion!==1||!Array.isArray(distManifest.modules))throw Error('Invalid Gamekit dist manifest');
-  for(const entry of Object.values(lock.modules)){
-    const matches=distManifest.modules.filter(item=>item.file===entry.file);
-    if(matches.length!==1||matches[0].sha256!==entry.sha256)throw Error(`Gamekit dist manifest module mismatch: ${entry.file}`);
-  }
+  const {lock,modules:moduleBytes}=readGamekit(root);
   const modules={};
   for(const [name,entry] of Object.entries(lock.modules)){
-    const bytes=fs.readFileSync(path.join(root,'vendor/gamekit',entry.file));
-    if(crypto.createHash('sha256').update(bytes).digest('hex')!==entry.sha256)throw Error(`Gamekit integrity mismatch: ${entry.file}`);
+    const bytes=moduleBytes[name];
     checkModule(bytes.toString('utf8'),entry.file);
     modules[name]=dataURL('text/javascript',bytes);
   }

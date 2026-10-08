@@ -4,13 +4,14 @@ const root=path.resolve(__dirname,'..'),out=path.join(root,'.qa/performance-timi
 const source=require('./bundle-gamekit.cjs').bundleGame(root,fs.readFileSync(path.join(root,'index.html'),'utf8'));
 const end=source.lastIndexOf('})();');assert(end>0);
 const html=source.slice(0,end)+'window.__timingQA={MatchLifecycle,PerformanceTelemetry,ActiveViewState};'+source.slice(end);
-async function run(browser,{name,role,mode,viewport}){
+async function run(browser,{name,role,mode,viewport,tps=10}){
   const page=await browser.newPage({viewport}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
   try{
     await page.route('http://timing-qa.local/**',r=>r.fulfill({contentType:'text/html',body:html}));
     await page.goto('http://timing-qa.local/');
     await page.locator('#gameStartBtn').click();await page.locator('#advancedTestSettings summary').click();
     await page.locator(`[data-netcode-mode="${mode}"]`).click();
+    await page.locator(`[data-sim-tps="${tps}"]`).click();
     await page.locator('#unitTestAllyCount').fill('10');await page.locator('#unitTestEnemyCount').fill('10');
     await page.locator('#unitTestBtn').click();await page.locator(role==='host'?'#singleHostBtn':'#singleGuestBtn').click();
     await page.locator('#gameScreen').waitFor({state:'visible'});
@@ -22,7 +23,8 @@ async function run(browser,{name,role,mode,viewport}){
       const ids=[...document.querySelectorAll('#performanceTimingPanel b')].map(el=>el.id);
       return {ids,counts:ids.map(id=>document.querySelectorAll('#'+id).length),tick:s.sim.tick,mode:s.netcodeMode,
         timings:s.performanceStats.timings,snapshotSamples:s.sim.perfStats.snapshotSamples,backend:r.backend,
-        passes:r.perfStats.passes,longTasks:q.PerformanceTelemetry.runtimeMonitor.longTasks};
+        passes:r.perfStats.passes,longTasks:q.PerformanceTelemetry.runtimeMonitor.longTasks,
+        recoveries:Object.fromEntries(Object.entries(q.MatchLifecycle.singleMatch.sessions).map(([role,s])=>[role,s.netcodeSession.metrics.recoveries]))};
     });
     assert.equal(before.backend,'WebGL');assert.equal(before.mode,mode);assert(before.ids.length>=24);
     assert(before.counts.every(n=>n===1),'Each timing has one owner in the top section');
@@ -34,6 +36,8 @@ async function run(browser,{name,role,mode,viewport}){
     await page.waitForFunction(n=>window.__timingQA.PerformanceTelemetry.runtimeMonitor.longTasks>n,before.longTasks);
     await page.waitForFunction(()=>window.__timingQA.PerformanceTelemetry.runtimeMonitor.timings.eventLoop?.maxMs>=50);
     await page.waitForFunction(t=>window.__timingQA.MatchLifecycle.activeSession().sim.tick>t,before.tick);
+    const recovered=await page.evaluate(()=>Object.fromEntries(Object.entries(window.__timingQA.MatchLifecycle.singleMatch.sessions).map(([role,s])=>[role,s.netcodeSession.metrics.recoveries])));
+    assert.deepEqual(recovered,before.recoveries,'A scheduling delay does not request snapshot recovery without state divergence');
     await page.screenshot({path:path.join(out,name+'-top.png')});
     await page.locator('#dbgPerfNavigation').scrollIntoViewIfNeeded();
     await page.screenshot({path:path.join(out,name+'-details.png')});
@@ -60,7 +64,8 @@ async function run(browser,{name,role,mode,viewport}){
   try{
     const results=[];
     for(const scenario of [{name:'desktop-lockstep',role:'host',mode:'lockstep',viewport:{width:1280,height:800}},
-      {name:'mobile-rollback',role:'guest',mode:'rollback',viewport:{width:412,height:915}}])results.push(await run(browser,scenario));
+      {name:'mobile-rollback',role:'guest',mode:'rollback',viewport:{width:412,height:915}},
+      {name:'desktop-lockstep-20tps',role:'host',mode:'lockstep',tps:20,viewport:{width:1280,height:800}}])results.push(await run(browser,scenario));
     console.log(JSON.stringify(results,null,2));
   }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});
