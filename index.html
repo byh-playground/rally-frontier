@@ -6159,6 +6159,12 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
   white-space: nowrap;
   text-align: right;
 }
+/* 핵심 시간은 진단창 첫 영역에서 같은 단위로 비교한다. */
+#performanceTimingTitle { margin: 14px 0 6px; font-size: 14px; }
+.performance-timing-note { color: #526376; font-size: 10px; line-height: 1.5; }
+.performance-timing-table>div { font-size: 10px; align-items: flex-start; }
+.performance-timing-table span { flex: 1; min-width: 0; }
+.performance-timing-table b { flex: 1.2; max-width: 60%; overflow: visible; white-space: normal; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 
 /* 명령 패널 */
 @media (max-width:639px) {
@@ -9793,13 +9799,50 @@ body.campaign-mode #p2pHealthText {
 <div id="lockstepDebugPanel" class="lockstep-debug-panel hidden" role="dialog" aria-modal="false" aria-labelledby="lockstepDebugTitle">
   <div class="lockstep-debug-head">
     <div>
-      <div class="lockstep-debug-kicker">SYNCTEST · CORE</div>
-      <div id="lockstepDebugTitle" class="lockstep-debug-title">동기화 진단</div>
+      <div class="lockstep-debug-kicker">PERFORMANCE · CORE · SYNCTEST</div>
+      <div id="lockstepDebugTitle" class="lockstep-debug-title">성능·동기화 진단</div>
     </div>
     <button id="lockstepDebugCloseBtn" class="drawer-close" type="button">닫기</button>
   </div>
 
   <div id="lockstepDebugSummary" class="lockstep-debug-summary"></div>
+
+  <section id="performanceTimingPanel" aria-labelledby="performanceTimingTitle">
+    <h3 id="performanceTimingTitle">성능 시간 지표 · ms</h3>
+    <p class="performance-timing-note">현재 / 평균(EWMA) / 최대. 서로 포함되는 구간은 합산하지 않습니다. RTT에는 양쪽 브라우저의 메시지 처리 대기가 포함됩니다.</p>
+    <div class="lockstep-debug-table performance-timing-table">
+      <div><span>게임 메시지 RTT / 지터</span><b id="dbgCoreLatency">-</b></div>
+      <div><span>입력 지연 설정 · 틱 → ms</span><b id="dbgPerfInputDelay">-</b></div>
+      <div><span>WebRTC 연결 RTT · ICE</span><b id="dbgPerfIceRtt">표본 수집 중</b></div>
+      <div><span>메인 스레드 timer 지연</span><b id="dbgPerfEventLoop">-</b></div>
+      <div><span>긴 작업 · 50ms 이상</span><b id="dbgPerfLongTask">-</b></div>
+      <div><span>세션 호출 간격</span><b id="dbgPerfPulseGap">-</b></div>
+      <div><span>세션 전체 · 저장 / 해시 / 출력 포함</span><b id="dbgPerfPulse">-</b></div>
+      <div><span>Sim step 현재 / EWMA / 최대</span><b id="dbgPerfStep">-</b></div>
+      <div><span>싱글 반대 역할 Sim step</span><b id="dbgPerfPeerStep">-</b></div>
+      <div><span>상태 저장 · 복제 + encode</span><b id="dbgPerfStateSave">-</b></div>
+      <div><span>Core 재실행 최근 / 평균</span><b id="dbgPerfResimulation">미실행</b></div>
+      <div><span>수동 Synctest 실행 · 양보 제외</span><b id="dbgSyncCost">미실행</b></div>
+      <div><span>표시 Snapshot 현재 / 최대</span><b id="dbgPerfSnapshot">-</b></div>
+      <div><span>표시 갱신 · Render targets / UI</span><b id="dbgPerfPresentation">-</b></div>
+      <div><span>Render FPS / frame CPU · EWMA</span><b id="dbgPerfRender">-</b></div>
+      <div><span>프레임 간격</span><b id="dbgPerfFrameInterval">-</b></div>
+      <div><span>GPU 프레임 시작 · CPU 대기</span><b id="dbgPerfDeviceBegin">-</b></div>
+      <div><span>Render prepare / ground / world</span><b id="dbgPerfRenderPasses">-</b></div>
+      <div><span>Shadow / overlay / UI FX</span><b id="dbgPerfRenderEffects">-</b></div>
+      <div><span>Camera compose / minimap / depth sort</span><b id="dbgPerfRenderTail">-</b></div>
+      <div><span>Index / World / Economy</span><b id="dbgPerfCore">-</b></div>
+      <div><span>Worker / Vision / Combat</span><b id="dbgPerfCombat">-</b></div>
+      <div><span>Projectile / Collision / Post</span><b id="dbgPerfTail">-</b></div>
+      <div><span>NavMesh / A* / Flow · 누적</span><b id="dbgPerfNavigation">-</b></div>
+      <div><span>지형 투영 준비 · 누적</span><b id="dbgPerfProjection">-</b></div>
+      <div><span id="dbgPerfAllowanceLabel">틱 허용시간</span><b id="dbgPerfAllowance">-</b></div>
+      <div><span id="dbgPerfUsedLabel">사용시간 · step EWMA</span><b id="dbgPerfUsed">-</b></div>
+      <div><span id="dbgPerfBudgetLabel">남은 틱 여유 · 추정</span><b id="dbgPerfBudget">-</b></div>
+    </div>
+    <p class="performance-timing-note">틱 여유는 게임 step만 계산합니다. 저장·Core·렌더를 함께 확인하세요. Core 내부 해시 시간은 공개 계측이 없어 전체 처리에 포함합니다. GPU 시작 시간은 CPU 호출 대기입니다.</p>
+    <button id="performanceTimingExportBtn" class="lockstep-debug-reset" type="button">성능 시간 지표 JSON 저장</button>
+  </section>
 
   <p>확정된 실제 입력의 시작 구간을 최대 32틱 검사합니다. 공통 Synctest가 같은 Adapter를 별도 시뮬레이션에서 저장·복원·재실행하며, 온라인 동기화와 다른 기기의 결정론까지 보장하지 않습니다. 검사 틱 사이에는 게임과 네트워크 처리를 계속합니다.</p>
   <button id="synctestRunBtn" class="lockstep-debug-reset" type="button">확정 입력 Synctest 실행</button>
@@ -9810,11 +9853,9 @@ body.campaign-mode #p2pHealthText {
     <div class="lockstep-debug-card"><span>재실행 거리</span><b id="dbgSyncDistance">미실행</b></div>
     <div class="lockstep-debug-card"><span>검사 상태 해시</span><b id="dbgSyncHash">미실행</b></div>
     <div class="lockstep-debug-card"><span>보관 상태 크기</span><b id="dbgSyncBytes">미실행</b></div>
-    <div class="lockstep-debug-card"><span>검사 실행 시간 · 양보 제외</span><b id="dbgSyncCost">미실행</b></div>
     <div class="lockstep-debug-card"><span>최초 불일치</span><b id="dbgSyncFailure">미실행</b></div>
   </div>
   <div class="lockstep-debug-table">
-    <div><span>RTT / 지터</span><b id="dbgCoreLatency">-</b></div>
     <div><span>hold / stall / pace</span><b id="dbgCorePacing">-</b></div>
     <div><span>예측 틱 / 늦은 입력 비율(EMA)</span><b id="dbgCorePrediction">-</b></div>
     <div><span>이력 bytes / 상태 hash 계산</span><b id="dbgCoreHistory">-</b></div>
@@ -9826,21 +9867,11 @@ body.campaign-mode #p2pHealthText {
 
   <div class="lockstep-debug-kicker" style="margin-top:12px">LOCAL PERFORMANCE</div>
   <div class="lockstep-debug-table">
-    <div><span>Sim step 현재 / EWMA / 최대</span><b id="dbgPerfStep">-</b></div>
-    <div><span>싱글 반대 역할 Sim step</span><b id="dbgPerfPeerStep">-</b></div>
-    <div><span>Index / World / Economy</span><b id="dbgPerfCore">-</b></div>
-    <div><span>Worker / Vision / Combat</span><b id="dbgPerfCombat">-</b></div>
-    <div><span>Projectile / Collision / Post</span><b id="dbgPerfTail">-</b></div>
-    <div><span>Snapshot 현재 / 최대</span><b id="dbgPerfSnapshot">-</b></div>
     <div><span>유닛 생존 / 전투 / 일꾼 / 투사체</span><b id="dbgPerfEntities">-</b></div>
     <div><span>Spatial query / 후보(평균)</span><b id="dbgPerfSpatial">-</b></div>
     <div><span>Target / Visibility 검사</span><b id="dbgPerfTarget">-</b></div>
     <div><span>Collision 후보 / overlap / 반복</span><b id="dbgPerfCollision">-</b></div>
-    <div><span>Render FPS / frame work</span><b id="dbgPerfRender">-</b></div>
-    <div><span id="dbgPerfAllowanceLabel">틱 허용시간</span><b id="dbgPerfAllowance">-</b></div>
-    <div><span id="dbgPerfUsedLabel">사용시간 · step EWMA</span><b id="dbgPerfUsed">-</b></div>
-    <div><span id="dbgPerfBudgetLabel">남은 틱 여유 · 추정</span><b id="dbgPerfBudget">-</b></div>
-    <div><span>여유 계측 범위</span><b>게임 step 기준 · 저장/Core/렌더 제외</b></div>
+    <div><span>Render draw calls / 업로드 bytes</span><b id="dbgPerfDrawCalls">-</b></div>
     <div><span>엔티티 peak 유닛 / 건물 / 투사체</span><b id="dbgEndurancePeaks">-</b></div>
   </div>
 
@@ -12894,6 +12925,63 @@ const BALANCE_HISTORY_EVERY_MS=30000;
 const BALANCE_HISTORY_MAX=160;
 
 class PerformanceTelemetry{
+  static runtimeMonitor=null;
+  static recordTiming(stats,key,ms){
+    const row=stats[key]||(stats[key]={samples:0,currentMs:0,ewmaMs:0,maxMs:0});
+    row.currentMs=Math.max(0,ms);row.ewmaMs=row.samples?row.ewmaMs*.85+row.currentMs*.15:row.currentMs;
+    row.maxMs=Math.max(row.maxMs,row.currentMs);row.samples++;
+  }
+  static measureSessionPulse(session,now){
+    const stats=session.performanceStats;
+    if(!stats||!session.sim||session.simEnded||session.simulationFatal)return session.advanceSimulation(now);
+    const started=performance.now();
+    if(stats.lastPulseAt!==null)this.recordTiming(stats.timings,'pulseGap',started-stats.lastPulseAt);
+    stats.lastPulseAt=started;
+    try{return session.advanceSimulation(now)}finally{this.recordTiming(stats.timings,'pulse',performance.now()-started)}
+  }
+  static startRuntimeMonitor(){
+    if(this.runtimeMonitor)return;
+    const m=this.runtimeMonitor={timings:{},longTasks:0,longTaskMs:0,maxLongTaskMs:0,lastLongTaskAt:null,observer:null,timer:0};
+    let expectedAt=performance.now()+250;
+    m.timer=setInterval(()=>{const now=performance.now();this.recordTiming(m.timings,'eventLoop',now-expectedAt);expectedAt=now+250},250);
+    if(globalThis.PerformanceObserver?.supportedEntryTypes?.includes('longtask')){
+      m.observer=new PerformanceObserver(list=>{for(const e of list.getEntries()){m.longTasks++;m.longTaskMs=e.duration;m.maxLongTaskMs=Math.max(m.maxLongTaskMs,e.duration);m.lastLongTaskAt=e.startTime+e.duration}});
+      m.observer.observe({type:'longtask',buffered:false});
+    }
+  }
+  static stopRuntimeMonitor(){
+    const m=this.runtimeMonitor;if(!m)return;
+    clearInterval(m.timer);m.observer?.disconnect();this.runtimeMonitor=null;
+  }
+  static async sampleConnection(session){
+    const stats=session.performanceStats,pc=session.transport?.pc,now=performance.now();
+    if(session.performanceIceConnection!==pc){session.performanceIceConnection=pc;stats.iceRttMs=null;stats.iceFetchedAt=null;stats.iceError=null;stats.iceRequestedAt=-1000}
+    if(!pc?.getStats||stats.icePending||now-stats.iceRequestedAt<1000||session.disposed)return;
+    stats.iceRequestedAt=now;stats.icePending=true;
+    try{
+      const report=await pc.getStats();
+      if(session.disposed||session.transport?.pc!==pc)return;
+      let pair=null;
+      for(const row of report.values())if(row.type==='transport'&&row.selectedCandidatePairId)pair=report.get(row.selectedCandidatePairId)||pair;
+      if(!pair)for(const row of report.values())if(row.type==='candidate-pair'&&row.state==='succeeded'&&row.nominated){pair=row;break}
+      stats.iceRttMs=Number.isFinite(pair?.currentRoundTripTime)?pair.currentRoundTripTime*1000:null;
+      stats.iceFetchedAt=performance.now();stats.iceError=null;
+    }catch(error){if(!session.disposed&&session.transport?.pc===pc){stats.iceRttMs=null;stats.iceFetchedAt=performance.now();stats.iceError=String(error.message||error)}}
+    finally{stats.icePending=false}
+  }
+  static exportTimingTelemetry(){
+    const active=MatchLifecycle.activeSession?.();if(!active?.sim)return;
+    const sessions=SinglePlayerModeUtil.isSinglePlayer()?MatchLifecycle.singleMatch.sessions:{[active.role]:active};
+    const m=this.runtimeMonitor;
+    const payload={exportedAt:new Date().toISOString(),build:BUILD_META.id,simVersion:SIM_VERSION,visibility:document.visibilityState,
+      note:'Local timings only. Nested timings overlap. App RTT includes browser message handling; ICE RTT is a separate sample. GPU begin time is CPU API cost.',
+      mainThread:m?{timings:m.timings,longTasks:m.longTasks,lastLongTaskMs:m.longTaskMs,maxLongTaskMs:m.maxLongTaskMs}:null,
+      renderer:ActiveViewState.renderer?.perfStats||null,
+      sessions:Object.fromEntries(Object.entries(sessions).map(([role,s])=>[role,{tick:s.sim?.tick,mode:s.netcodeMode,status:s.netcodeSession?.status,
+        timings:s.performanceStats,simulation:s.sim?.perfStats,core:s.netcodeSession?.metrics,bufferedBytes:s.transport?.netcodeBufferedAmount||0}]))};
+    const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));
+    const a=document.createElement('a');a.href=url;a.download=`rally-frontier-performance-${Date.now()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
   static exportBalanceTelemetry(){
   const active=MatchLifecycle.activeSession?.();
   if(!active?.sim)return;
@@ -12935,7 +13023,7 @@ class PerformanceTelemetry{
   static createLocalPerfStats(){
     return{
       sampleTick:0,totalMs:0,indexMs:0,worldMs:0,economyMs:0,workerMs:0,visionMs:0,combatMs:0,
-      projectileMs:0,collisionMs:0,postMs:0,snapshotMs:0,maxSnapshotMs:0,maxStepMs:0,ewmaStepMs:0,
+      projectileMs:0,collisionMs:0,postMs:0,snapshotMs:0,maxSnapshotMs:0,snapshotSamples:0,maxStepMs:0,ewmaStepMs:0,
       aliveUnits:0,workers:0,combatUnits:0,projectiles:0,
       peakAliveUnits:0,peakBuildings:0,peakProjectiles:0,
       spatialQueries:0,spatialCandidates:0,
@@ -22610,7 +22698,11 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     }
     this.rebuildRuntimeIndexes();
   }
-  snapshot(){return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState()),buildings:this.buildings.map(b=>b.toState()),constructionOrders:StateValue.copy(this.constructionOrders),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
+  snapshot(){
+    const started=performance.now();
+    try{return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState()),buildings:this.buildings.map(b=>b.toState()),constructionOrders:StateValue.copy(this.constructionOrders),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
+    finally{const perf=this.perfStats;perf.snapshotMs=performance.now()-started;perf.maxSnapshotMs=Math.max(perf.maxSnapshotMs,perf.snapshotMs);perf.snapshotSamples++}
+  }
 }
 
 /* =========================
@@ -23031,7 +23123,11 @@ class RallySimulationAdapter{
     if(sim.seed!==this.identity.seed||sim.rules!==this.identity.rules||sim.mapDescriptor!==this.identity.mapDescriptor||(sim.campaignScenario||null)!==this.identity.campaignScenario)throw new Error("경기 정의가 변경되면 새 simulation Adapter가 필요합니다.");
     return sim.exportState({includeIdentity:false});
   }
-  save(){return RallyStateCodec.encode({schemaVersion:RallyStateCodec.schemaVersion,simVersion:SIM_VERSION,matchId:this.matchId,mapFingerprint:this.mapFingerprint,state:this.stateData()})}
+  save(){
+    const started=performance.now();
+    try{return RallyStateCodec.encode({schemaVersion:RallyStateCodec.schemaVersion,simVersion:SIM_VERSION,matchId:this.matchId,mapFingerprint:this.mapFingerprint,state:this.stateData()})}
+    finally{if(this.session.performanceStats)PerformanceTelemetry.recordTiming(this.session.performanceStats.timings,'save',performance.now()-started)}
+  }
   readSnapshot(bytes,{tick}={}){
     const envelope=RallyStateCodec.decode(bytes),state=envelope?.state;
     if(envelope.schemaVersion!==RallyStateCodec.schemaVersion||envelope.simVersion!==SIM_VERSION||envelope.matchId!==this.matchId||envelope.mapFingerprint!==this.mapFingerprint||!state||Array.isArray(state)||typeof state!=="object")throw new Error("게임 snapshot의 경기 정의가 다릅니다.");
@@ -23164,6 +23260,7 @@ class GameSession{
     this.pendingResumeProbeToken='';this.lastResumeProbeAckAt=0;
     this.localVisible=true;this.netcodeLoop=null;this.last=0;this.raf=0;
     this.lastDriverPulseAt=performance.now();this.lastSnapshotEmitAt=0;this.lastRenderedSimulationTick=-1;
+    this.performanceStats={timings:{},lastPulseAt:null,icePending:false,iceRequestedAt:-1000,iceRttMs:null,iceFetchedAt:null,iceError:null};
     this.presentationEventBuffer=[];this.presentationEventsBuffered=0;this.presentationEventsPublished=0;
     this.presentationJournal=new RallyGamekit.PresentationEventQueue({adapters:{frame:{start:record=>{
       this.presentationEventBuffer.push({...record.payload,presentationTick:record.tick});this.presentationEventsBuffered++;
@@ -23408,7 +23505,7 @@ class GameSession{
     this.simulationAdapter=new RallySimulationAdapter(this);
     this.replayRecorder=new ReplayRecorder({seed,draft:this.draft,roomCode:this.roomCode,sim:this.sim,rules:this.roundRules});
     this.simEnded=false;this.matchResult=null;this.publishedGameTick=0;this.netcodeLoop?.resetTiming();
-    this.onSnapshot(this.sim.snapshot());this.onRenderTargets(this.sim,true);
+    this.emitSnapshot(this.sim.snapshot());this.emitRenderTargets(this.sim,true);
     this.netcodeNow=performance.now();
     // Keep the existing RTS delay/pacing. One Core owns both configured modes;
     // lockstep waits for actual inputs and only serializes periodic/on-demand checkpoints.
@@ -23550,7 +23647,7 @@ class GameSession{
     // 동일한 종료 frame을 보존한다. Core를 종료한 뒤에만 terminal state를 복원한다.
     this.netcodeSession.close();
     this.simulationAdapter.load(frame.terminalState);
-    this.onRenderTargets(this.sim,true);this.onSnapshot(this.sim.snapshot());
+    this.emitRenderTargets(this.sim,true);this.emitSnapshot(this.sim.snapshot());
     const winner=frame.winner,campaign=this.sim.campaignScenario,viewRole=campaign?.playerRole||'host';
     const reason=frame.reason;
     const finish=()=>{if(!this.simEnded)this.endMatch(winner==='draw'?null:winner,reason)};
@@ -23565,7 +23662,7 @@ class GameSession{
     this.publishConfirmedFrames();
     if(this.pendingTerminalFrame&&this.netcodeNow-this.lastTerminalReceiptAt>=500)this.sendTerminalReceipt();
     this.tryFinishTerminalBarrier();
-    if(!this.netcodeSession.resimulating&&!this.simEnded&&(this.renderTimelineChanged||this.lastRenderedSimulationTick!==this.sim.tick)){this.onRenderTargets(this.sim,!!this.renderTimelineChanged);this.lastRenderedSimulationTick=this.sim.tick;this.renderTimelineChanged=false}
+    if(!this.netcodeSession.resimulating&&!this.simEnded&&(this.renderTimelineChanged||this.lastRenderedSimulationTick!==this.sim.tick)){this.emitRenderTargets(this.sim,!!this.renderTimelineChanged);this.lastRenderedSimulationTick=this.sim.tick;this.renderTimelineChanged=false}
   }
   stepSimulationOnce(now=this.netcodeNow){
     if(!this.sim||this.simEnded||this.simulationFatal)return null;
@@ -23577,6 +23674,14 @@ class GameSession{
       this.syncHold?{status:this.netcodeSession.status,tick:this.netcodeSession.tick}:this.netcodeSession.advance(this.neutralInput);
     this.reconcileNetcodePresentation();return result;
   }
+  emitSnapshot(snapshot){
+    const started=performance.now();
+    try{return this.onSnapshot(snapshot)}finally{PerformanceTelemetry.recordTiming(this.performanceStats.timings,'snapshotUi',performance.now()-started)}
+  }
+  emitRenderTargets(sim,snap){
+    const started=performance.now();
+    try{return this.onRenderTargets(sim,snap)}finally{PerformanceTelemetry.recordTiming(this.performanceStats.timings,'renderTargets',performance.now()-started)}
+  }
   advanceSimulation(now=performance.now()){
     if(!this.sim||this.simEnded||this.simulationFatal)return;
     // Library owns pacing, accumulation, bounded catchup, and polling during holds.
@@ -23584,7 +23689,7 @@ class GameSession{
     if(!this.netcodeSession.resimulating&&now-this.lastSnapshotEmitAt>=SNAPSHOT_EMIT_INTERVAL_MS){
       this.lastSnapshotEmitAt=now;
       const snapshot=this.publishConfirmedSnapshots?this.latestConfirmedSnapshot:this.sim.snapshot();
-      if(snapshot){snapshot.events=StateValue.copy(this.presentationEventBuffer.splice(0));this.presentationEventsPublished+=snapshot.events.length;this.onSnapshot(snapshot)}
+      if(snapshot){snapshot.events=StateValue.copy(this.presentationEventBuffer.splice(0));this.presentationEventsPublished+=snapshot.events.length;this.emitSnapshot(snapshot)}
     }
   }
 enterSimulationFatal(err,{source="simulation",notifyPeer=true,remoteInfo=null}={}){
@@ -27093,7 +27198,7 @@ const SHARED_GEOMETRY_TEMPLATES=new GeometryTemplateCache();
 
 class RenderPassProfiler{
   constructor(){
-    this.names=["prepare","ground","shadow","world","overlay","ui-fx","camera-compose","minimap"];
+    this.names=["prepare","device-begin","ground","shadow","world","overlay","ui-fx","camera-compose","minimap"];
     this.current=Object.create(null);this.ewma=Object.create(null);this.max=Object.create(null);
   }
   beginFrame(){for(const n of this.names)this.current[n]=0}
@@ -32280,7 +32385,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.passProfiler.beginFrame();
     const visibleUnits=this.passProfiler.measure("prepare",()=>this.snapshot?this.prepareVisibleUnitFrame():this.visibleUnitFrame);
     if(this.device.active)this.device.endFrame();
-    if(!this.device.beginFrame()){requestAnimationFrame(this.loop);return}
+    if(!this.passProfiler.measure("device-begin",()=>this.device.beginFrame())){requestAnimationFrame(this.loop);return}
     Object.assign(this.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
 
     this.passProfiler.measure("ground",()=>this.renderGroundPass());
@@ -32929,6 +33034,7 @@ UiRegistry.refs.dbgSyncBytes=DomUtil.byId("dbgSyncBytes");
 UiRegistry.refs.dbgSyncCost=DomUtil.byId("dbgSyncCost");
 UiRegistry.refs.dbgSyncFailure=DomUtil.byId("dbgSyncFailure");
 UiRegistry.refs.dbgCoreLatency=DomUtil.byId("dbgCoreLatency");
+for(const id of ['dbgPerfInputDelay','dbgPerfIceRtt','dbgPerfEventLoop','dbgPerfLongTask','dbgPerfPulseGap','dbgPerfPulse','dbgPerfStateSave','dbgPerfResimulation','dbgPerfPresentation','dbgPerfFrameInterval','dbgPerfDeviceBegin','dbgPerfRenderPasses','dbgPerfRenderEffects','dbgPerfRenderTail','dbgPerfNavigation','dbgPerfProjection','dbgPerfDrawCalls','performanceTimingExportBtn'])UiRegistry.refs[id]=DomUtil.byId(id);
 UiRegistry.refs.dbgCorePacing=DomUtil.byId("dbgCorePacing");
 UiRegistry.refs.dbgCorePrediction=DomUtil.byId("dbgCorePrediction");
 UiRegistry.refs.dbgCoreHistory=DomUtil.byId("dbgCoreHistory");
@@ -34263,6 +34369,7 @@ class ConnectionPresentation{
   const active=MatchLifecycle.activeSession?.();
 
   if(!active?.netcodeSession){
+    for(const el of UiRegistry.refs.lockstepDebugPanel.querySelectorAll('#performanceTimingPanel b'))el.textContent='-';
     UiRegistry.refs.lockstepDebugSummary.textContent="활성 경기에서 확정 입력을 검사할 수 있습니다.";
     UiRegistry.refs.synctestRunBtn.disabled=true;return;
   }
@@ -34296,13 +34403,34 @@ class ConnectionPresentation{
   UiRegistry.refs.dbgPerfCore.textContent=`${fmtMs(perf.indexMs)} / ${fmtMs(perf.worldMs)} / ${fmtMs(perf.economyMs)}`;
   UiRegistry.refs.dbgPerfCombat.textContent=`${fmtMs(perf.workerMs)} / ${fmtMs(perf.visionMs)} / ${fmtMs(perf.combatMs)}`;
   UiRegistry.refs.dbgPerfTail.textContent=`${fmtMs(perf.projectileMs)} / ${fmtMs(perf.collisionMs)} / ${fmtMs(perf.postMs)}`;
-  UiRegistry.refs.dbgPerfSnapshot.textContent=`${fmtMs(perf.snapshotMs)} / ${fmtMs(perf.maxSnapshotMs)}`;
+  UiRegistry.refs.dbgPerfSnapshot.textContent=perf.snapshotSamples?`${fmtMs(perf.snapshotMs)} / ${fmtMs(perf.maxSnapshotMs)}`:'표본 수집 중';
   UiRegistry.refs.dbgPerfEntities.textContent=`${perf.aliveUnits||0} / ${perf.combatUnits||0} / ${perf.workers||0} / ${perf.projectiles||0}`;
   UiRegistry.refs.dbgPerfSpatial.textContent=`${perf.spatialQueries||0} / ${perf.spatialCandidates||0} (${avgCandidates.toFixed(1)})`;
   UiRegistry.refs.dbgPerfTarget.textContent=`target ${perf.targetQueries||0} · reject ${perf.targetVisibilityRejects||0} / vis ${perf.visibilityChecks||0} · sideQ ${perf.sideSpatialQueries||0}`;
   UiRegistry.refs.dbgPerfCollision.textContent=`${perf.collisionPairs||0} / ${perf.collisionOverlaps||0} / ${perf.collisionIterations||0}`;
   const rp=ActiveViewState.renderer?.perfStats;
   UiRegistry.refs.dbgPerfRender.textContent=rp?`${(rp.fps||0).toFixed(1)} FPS / ${fmtMs(rp.ewmaFrameWorkMs)} (max ${fmtMs(rp.maxFrameWorkMs)})`:"-";
+  const stats=active.performanceStats,t=stats.timings,m=PerformanceTelemetry.runtimeMonitor;
+  const timing=row=>row?.samples?`${fmtMs(row.currentMs)} / ${fmtMs(row.ewmaMs)} / ${fmtMs(row.maxMs)}`:'표본 수집 중';
+  PerformanceTelemetry.sampleConnection(active);
+  text('dbgPerfInputDelay',`${metrics.inputDelay}t · ${fmtMs(metrics.inputDelay*1000/active.sim.tps)}`);
+  const iceAge=stats.iceFetchedAt===null?null:performance.now()-stats.iceFetchedAt;
+  text('dbgPerfIceRtt',!active.transport?.pc?.getStats?'지원 안 됨':stats.iceError?'조회 실패':stats.iceRttMs===null?'ICE RTT 표본 없음':`${fmtMs(stats.iceRttMs)} · ${fmtMs(iceAge)} 전 조회`);
+  text('dbgPerfEventLoop',timing(m?.timings.eventLoop)+(document.hidden?' · 백그라운드':''));
+  text('dbgPerfLongTask',!m?.observer?'지원 안 됨':`${m.longTasks}회 · 최근 ${fmtMs(m.longTaskMs)} / 최대 ${fmtMs(m.maxLongTaskMs)}`);
+  text('dbgPerfPulseGap',timing(t.pulseGap));text('dbgPerfPulse',timing(t.pulse));text('dbgPerfStateSave',timing(t.save));
+  text('dbgPerfResimulation',metrics.resimulatedTicks?`${fmtMs(metrics.latestResimulationMs)} / ${fmtMs(metrics.resimulationCostMs)}`:'미실행');
+  text('dbgPerfPresentation',`Targets ${timing(t.renderTargets)} · UI ${timing(t.snapshotUi)}`);
+  text('dbgPerfFrameInterval',rp?`${fmtMs(rp.frameIntervalMs)} / ${fmtMs(rp.ewmaFrameIntervalMs)} / ${fmtMs(rp.maxFrameIntervalMs)}`:'표본 수집 중');
+  const pass=name=>rp?.passes?.[name],passMs=name=>pass(name)?fmtMs(pass(name).ms):'-',begin=pass('device-begin');
+  text('dbgPerfDeviceBegin',begin?`${fmtMs(begin.ms)} / ${fmtMs(begin.ewmaMs)} / ${fmtMs(begin.maxMs)}`:'표본 수집 중');
+  text('dbgPerfRenderPasses',`${passMs('prepare')} / ${passMs('ground')} / ${passMs('world')}`);
+  text('dbgPerfRenderEffects',`${passMs('shadow')} / ${passMs('overlay')} / ${passMs('ui-fx')}`);
+  text('dbgPerfRenderTail',`${passMs('camera-compose')} / ${passMs('minimap')} / ${rp?fmtMs(rp.cpuDepthSortMs):'-'}`);
+  const nav=active.sim.navigation?.metrics;
+  text('dbgPerfNavigation',nav?`${fmtMs(nav.meshBuildMs)} / ${fmtMs(nav.astarCostMs)} / ${fmtMs(nav.fieldBuildMs)}`:'-');
+  text('dbgPerfProjection',nav?fmtMs(nav.projectionBuildMs):'-');
+  text('dbgPerfDrawCalls',`${rp?.drawCalls||0} / ${DebugFormatUtil.formatDebugBytes(rp?.bufferUploadBytes||0)} · 전송 대기 ${DebugFormatUtil.formatDebugBytes(active.transport?.netcodeBufferedAmount||0)}`);
   const activeTps=SimulationTiming.tps(),allowanceMs=1000/activeTps,isSingle=SinglePlayerModeUtil.isSinglePlayer();
   UiRegistry.refs.dbgPerfAllowanceLabel.textContent=activeTps+" TPS 틱 허용시간";
   UiRegistry.refs.dbgPerfAllowance.textContent=fmtMs(allowanceMs);
@@ -34602,6 +34730,7 @@ UiRegistry.refs.balanceTelemetryExportBtn?.addEventListener("click",e=>{
 });
 UiRegistry.refs.synctestRunBtn?.addEventListener("click",()=>RallySynctestDiagnostics.request());
 UiRegistry.refs.lockstepDebugResetBtn?.addEventListener("click",()=>{RallySynctestDiagnostics.clear(MatchLifecycle.activeSession?.());ConnectionPresentation.renderLockstepDebugPanel()});
+UiRegistry.refs.performanceTimingExportBtn?.addEventListener('click',()=>PerformanceTelemetry.exportTimingTelemetry());
 setInterval(()=>{
   if(UiRuntimeState.value.options.lockstepDebugOpen)ConnectionPresentation.renderLockstepDebugPanel();
 },500);
@@ -35943,7 +36072,7 @@ class AppLifecycle{
   static pulseBackgroundSessions(now=performance.now()){
   for(const sess of [...BACKGROUND_TICK_SESSIONS]){
     try{
-      sess.advanceSimulation(now);
+      PerformanceTelemetry.measureSessionPulse(sess,now);
     }catch(err){
       try{
         if(typeof sess?.enterSimulationFatal==="function"){
@@ -35958,16 +36087,17 @@ class AppLifecycle{
       }
     }
   }
-  if(BACKGROUND_TICK_SESSIONS.size===0)AppLifecycle.stopBackgroundTicker();
+  if(BACKGROUND_TICK_SESSIONS.size===0){AppLifecycle.stopBackgroundTicker();PerformanceTelemetry.stopRuntimeMonitor()}
 }
   static registerBackgroundSession(sess){
   if(!sess)return;
+  if(BACKGROUND_TICK_SESSIONS.size===0)PerformanceTelemetry.startRuntimeMonitor();
   BACKGROUND_TICK_SESSIONS.add(sess);
   AppLifecycle.ensureBackgroundTicker();
 }
   static unregisterBackgroundSession(sess){
   BACKGROUND_TICK_SESSIONS.delete(sess);
-  if(BACKGROUND_TICK_SESSIONS.size===0)AppLifecycle.stopBackgroundTicker();
+  if(BACKGROUND_TICK_SESSIONS.size===0){AppLifecycle.stopBackgroundTicker();PerformanceTelemetry.stopRuntimeMonitor()}
 }
   static applyPageVisibility(){
   const visible=document.visibilityState==="visible";
