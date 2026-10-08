@@ -28002,6 +28002,66 @@ class TerrainPresentation{
   }
 }
 
+class FogVisibilityGrid{
+  constructor(renderer,step){
+    this.atlas=renderer.world.terrain.surfaces;this.width=renderer.world.width;this.height=renderer.world.height;
+    this.step=step;this.w=Math.max(2,Math.ceil(this.width/step)+1);this.h=Math.max(2,Math.ceil(this.height/step)+1);
+    this.x=Float64Array.from({length:this.w},(_,i)=>i/(this.w-1)*this.width);
+    this.y=Float64Array.from({length:this.h},(_,j)=>j/(this.h-1)*this.height);
+    this.ceilings=new Float64Array(this.w*this.h);this.groundLevels=null;this.guestGroundLevels=null;
+    this.masks=new Map();this.groundMasks=new Map();this.generation=0;
+  }
+  sameGeometry(renderer,step){return this.atlas===renderer.world.terrain.surfaces&&this.width===renderer.world.width&&this.height===renderer.world.height&&this.step===step}
+  update(renderer){
+    const sides=renderer.replayVisionSides(),sideKey=sides.join(',');
+    if(this.snapshot===renderer.snapshot&&this.tick===renderer.snapshot.tick&&this.grid===renderer.visionGridBySide&&this.sideKey===sideKey&&this.observer===renderer.replayObserverAll)return this;
+    this.snapshot=renderer.snapshot;this.tick=renderer.snapshot.tick;this.grid=renderer.visionGridBySide;
+    this.sideKey=sideKey;this.sides=sides;this.observer=renderer.replayObserverAll;this.cellSize=renderer.visionCellSize;
+    // Published mask arrays remain immutable while the GPU transition retains them.
+    this.masks.clear();this.groundMasks.clear();this.generation++;
+    for(let j=0;j<this.h;j++)for(let i=0;i<this.w;i++)this.ceilings[j*this.w+i]=this.ceilingAt(this.x[i],this.y[j]);
+    return this;
+  }
+  ceilingAt(x,y){
+    if(this.observer)return Infinity;
+    const key=Math.floor(x/this.cellSize)+','+Math.floor(y/this.cellSize);let best=-Infinity;
+    for(const side of this.sides){const bucket=this.grid[side].get(key);if(!bucket)continue;
+      for(const src of bucket){
+        const level=Number(src.level||0),ceiling=src.air||src.ignoresTerrainVision||!Number.isFinite(level)?Infinity:level;
+        if(ceiling<=best)continue;
+        if(VisibilityPolicy.sourceCanSeePoint(this.snapshot,src,x,y,{targetAir:false,targetLevel:level})){
+          best=ceiling;if(best>=this.atlas.maxLevel)return best;
+        }
+      }
+    }
+    return best;
+  }
+  atLevel(level){
+    let mask=this.masks.get(level);if(mask)return mask;
+    mask=Uint8Array.from(this.ceilings,ceiling=>ceiling>=level?255:0);this.masks.set(level,mask);return mask;
+  }
+  atGround(renderer){
+    const role=renderer.orientationRole();let mask=this.groundMasks.get(role);if(mask)return mask;
+    if(!this.groundLevels)this.groundLevels=Float64Array.from(this.ceilings,(_,k)=>this.atlas.levelAt(this.x[k%this.w],this.y[Math.floor(k/this.w)]));
+    mask=new Uint8Array(this.w*this.h);
+    if(role!=='guest')for(let k=0;k<mask.length;k++)mask[k]=this.ceilings[k]>=this.groundLevels[k]?255:0;
+    else{
+      if(!this.guestGroundLevels)this.guestGroundLevels=new Float64Array(mask.length);
+      const buildLevels=!this.guestLevelsReady;
+      for(let j=0;j<this.h;j++)for(let i=0;i<this.w;i++){
+        const k=j*this.w+i,ri=this.w-1-i,rj=this.h-1-j,rk=rj*this.w+ri,x=renderer.viewX(this.x[i]),y=renderer.viewY(this.y[j]);
+        // Keep the old reflected-coordinate arithmetic at exact geometry boundaries.
+        const canonical=x===this.x[ri]&&y===this.y[rj];
+        if(buildLevels)this.guestGroundLevels[k]=canonical?this.groundLevels[rk]:this.atlas.levelAt(x,y);
+        const ceiling=canonical?this.ceilings[rk]:this.ceilingAt(x,y);
+        mask[k]=ceiling>=this.guestGroundLevels[k]?255:0;
+      }
+      this.guestLevelsReady=true;
+    }
+    this.groundMasks.set(role,mask);return mask;
+  }
+}
+
 class GLRenderer{
   static DEPTH_PROJECTION=Object.freeze({offset:.88,viewSpan:1.72,min:-.94,max:.94});
   constructor(canvas){
@@ -28038,7 +28098,7 @@ class GLRenderer{
     this.visionSourcesBySide=[[],[]];
     this.visionGridBySide=[new Map(),new Map()];
     this.snapshotCloakedIds=new Set();
-    this.lastMinimapDrawAt=0;
+    this.fogVisibilityGrids=new Map();
     this.visibleUnitFrame=[];
 
     // High-frequency renderer pools. They are presentation-only and deliberately
@@ -32054,6 +32114,13 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
   fogTransitionAmount(now=performance.now()){
     return this._fogTransitionStartedAt==null?1:RangeUtil.clamp((now-this._fogTransitionStartedAt)/this.fogTransitionDurationMs,0,1);
   }
+  fogVisibilityGrid(step=this.fogMaskStep||64){
+    const activeStep=this.fogMaskStep||64;
+    for(const key of this.fogVisibilityGrids.keys())if(key!==64&&key!==activeStep)this.fogVisibilityGrids.delete(key);
+    let field=this.fogVisibilityGrids.get(step);
+    if(!field||!field.sameGeometry(this,step)){field=new FogVisibilityGrid(this,step);this.fogVisibilityGrids.set(step,field)}
+    return field.update(this);
+  }
   ensureFogTextures(){
     if(!this.snapshot)return null;
     const gl=this.gl,atlas=this.world.terrain.surfaces,step=this.fogMaskStep||64,w=Math.max(2,Math.ceil(this.world.width/step)+1),h=Math.max(2,Math.ceil(this.world.height/step)+1),
@@ -32070,11 +32137,10 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       if(!tex){tex=this.device.createTexture({width:w,height:h,data},{format:'luminance',filter:'linear'});textures.set(id,tex)}
       else this.device.updateTexture(tex,{width:w,height:h,data});return tex;
     };
-    const make=level=>{const a=new Uint8Array(w*h);for(let j=0;j<h;j++){const y=j/(h-1)*this.world.height;for(let i=0;i<w;i++){const x=i/(w-1)*this.world.width;
-      a[j*w+i]=this.visibleRawAtLevel(x,y,level)?255:0}}return a};
+    const visibility=this.fogVisibilityGrid(step);
     // Levels need not be contiguous: only surfaces that exist need a texture.
     for(const level of this.fogSurfaces.keys()){
-      const id=`level:${level}`,target=make(level),record=this.fogMaskRecords.get(id);
+      const id=`level:${level}`,target=visibility.atLevel(level),record=this.fogMaskRecords.get(id);
       // Blend only the presentation mask. Exact entity visibility continues to use
       // VisibilityPolicy against the current snapshot, never these texture values.
       let from=target;
@@ -32371,7 +32437,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
 
   renderMinimapPass(){
     const now=performance.now();
-    if(ActiveViewState.minimap&&now-this.lastMinimapDrawAt>=100){this.lastMinimapDrawAt=now;ActiveViewState.minimap.draw()}
+    if(ActiveViewState.minimap&&now-ActiveViewState.minimap.lastDrawAt>=100)ActiveViewState.minimap.draw();
   }
 
   loop(){
@@ -32455,6 +32521,7 @@ class MiniMap{
     this.ctx=canvas.getContext("2d");
     this.renderer=null;
     this.snapshot=null;
+    this.lastDrawAt=0;this.fogMaskTarget=null;this.fogMaskDarkKey='';
     this.dragging=false;
     this.pointerId=null;
     this.bind();
@@ -32537,15 +32604,19 @@ e.stopPropagation();
     c.fill();
   }
   drawFog(){
-    const r=this.renderer;if(!r||r.replayObserverAll)return;const w=this.canvas.width,h=this.canvas.height,step=64,mw=Math.max(2,Math.ceil(r.world.width/step)+1),mh=Math.max(2,Math.ceil(r.world.height/step)+1),
+    const r=this.renderer;if(!r||r.replayObserverAll)return;const w=this.canvas.width,h=this.canvas.height,field=r.fogVisibilityGrid(64),mw=field.w,mh=field.h,
       mask=this.fogMask||(this.fogMask=document.createElement('canvas'));if(mask.width!==mw||mask.height!==mh){mask.width=mw;mask.height=mh}
-    const c=mask.getContext('2d'),img=c.createImageData(mw,mh),dark=r.replayVisionMode?[2,4,6,245]:[7,12,13,224];
-    // Mask texels are in minimap view coordinates; visibility uses authoritative world coordinates.
-    for(let j=0;j<mh;j++){const y=r.viewY(j/(mh-1)*r.world.height);for(let i=0;i<mw;i++){const x=r.viewX(i/(mw-1)*r.world.width),k=(j*mw+i)*4,visible=r.visibleRaw(x,y,false);img.data[k]=dark[0];img.data[k+1]=dark[1];img.data[k+2]=dark[2];img.data[k+3]=visible?0:dark[3]}}
-    c.putImageData(img,0,0);const out=this.ctx;out.save();out.imageSmoothingEnabled=true;out.imageSmoothingQuality='high';out.drawImage(mask,0,0,mw,mh,0,0,w,h);out.restore();
+    const target=field.atGround(r),dark=r.replayVisionMode?[2,4,6,245]:[7,12,13,224],darkKey=dark.join(',');
+    if(this.fogMaskTarget!==target||this.fogMaskDarkKey!==darkKey){
+      const c=mask.getContext('2d'),img=c.createImageData(mw,mh);
+      for(let k=0;k<target.length;k++){const p=k*4;img.data[p]=dark[0];img.data[p+1]=dark[1];img.data[p+2]=dark[2];img.data[p+3]=target[k]?0:dark[3]}
+      c.putImageData(img,0,0);this.fogMaskTarget=target;this.fogMaskDarkKey=darkKey;
+    }
+    const out=this.ctx;out.save();out.imageSmoothingEnabled=true;out.imageSmoothingQuality='high';out.drawImage(mask,0,0,mw,mh,0,0,w,h);out.restore();
   }
   draw(){
     if(!this.renderer||!this.snapshot)return;
+    this.lastDrawAt=performance.now();
     this.resize();
 
     const c=this.ctx,w=this.canvas.width,h=this.canvas.height,s=this.snapshot,r=this.renderer;
