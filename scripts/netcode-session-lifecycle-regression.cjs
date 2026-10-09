@@ -170,13 +170,14 @@ async function runLifecycle(config){
     await early.pump(()=>early.h.sim.tick===7&&early.g.sim.tick===7,'False terminal fixture reaches tick 7',7);
     // An authoritative-state DESYNC can invent a premature outcome before the real command.
     early.g.sim.netcodeMatchResult={winner:'host',reason:'surrender',tick:early.g.sim.tick};
+    const expectedOutcomeTick=early.h.sim.tick+early.h.netcodeSession.inputDelay+1;
     check(early.h.surrender(),'Authority submits the actual later terminal command');
     await early.pump(()=>early.h.simEnded&&early.g.simEnded,'A corrected nonterminal snapshot clears the obsolete terminal barrier');
     check(!early.h.simulationFatal&&!early.g.simulationFatal&&early.g.netcodeSession.metrics.recoveries>=1,'False early outcome recovers without a fatal stop');
-    check(early.h.matchResult.tick===12&&early.g.matchResult.tick===12&&early.h.matchResult.winner==='guest'&&early.g.matchResult.winner==='guest','Both peers publish the independently replayed real outcome');
+    check(early.h.matchResult.tick===expectedOutcomeTick&&early.g.matchResult.tick===expectedOutcomeTick&&early.h.matchResult.winner==='guest'&&early.g.matchResult.winner==='guest','Both peers publish the independently replayed real outcome at the captured public input delay');
     const hash=s=>RallyNetcode.hashBytes(s.simulationAdapter.save());
     check(hash(early.h)===hash(early.g),'False terminal recovery preserves the full authoritative state');
-    results.push({name:'false-early-terminal-recovery-'+recoveryMode,finalTick:12,stateHash:hash(early.h),guestRecoveries:early.g.netcodeSession.metrics.recoveries,replay:[verifyReplay(early.h),verifyReplay(early.g)],cleanup:await early.cleanup()});
+    results.push({name:'false-early-terminal-recovery-'+recoveryMode,finalTick:expectedOutcomeTick,stateHash:hash(early.h),guestRecoveries:early.g.netcodeSession.metrics.recoveries,replay:[verifyReplay(early.h),verifyReplay(early.g)],cleanup:await early.cleanup()});
   }finally{if(!early.h.disposed){early.h.dispose();early.g.dispose();}}
   }
   for(const pacingMode of ['rollback','lockstep']){
