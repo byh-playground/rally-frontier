@@ -16,6 +16,9 @@ async function run(browser,{name,role,mode,viewport,tps=10}){
     await page.locator('#unitTestBtn').click();await page.locator(role==='host'?'#singleHostBtn':'#singleGuestBtn').click();
     await page.locator('#gameScreen').waitFor({state:'visible'});
     await page.waitForFunction(()=>window.__timingQA.MatchLifecycle.activeSession()?.sim?.tick>=4);
+    const canvas=await page.locator('#glCanvas').boundingBox();
+    await page.mouse.click(canvas.x+canvas.width*.5,canvas.y+canvas.height*.65);
+    await page.waitForFunction(()=>window.__timingQA.MatchLifecycle.activeSession()?.performanceStats.timings.commandConfirm?.samples>0);
     await page.locator('#p2pHealth').click();
     await page.waitForFunction(()=>window.__timingQA.MatchLifecycle.activeSession()?.performanceStats.iceFetchedAt!==null);
     const before=await page.evaluate(()=>{
@@ -28,7 +31,7 @@ async function run(browser,{name,role,mode,viewport,tps=10}){
     });
     assert.equal(before.backend,'WebGL');assert.equal(before.mode,mode);assert(before.ids.length>=24);
     assert(before.counts.every(n=>n===1),'Each timing has one owner in the top section');
-    for(const name of ['save','pulse','pulseGap','renderTargets','snapshotUi'])assert(before.timings[name]?.samples>0,name+' is actually measured');
+    for(const name of ['save','pulse','pulseGap','renderTargets','snapshotUi','commandConfirm'])assert(before.timings[name]?.samples>0,name+' is actually measured');
     assert(before.snapshotSamples>0);assert(before.passes['device-begin']);
     assert.equal(await page.evaluate(()=>Number.isFinite(window.__timingQA.MatchLifecycle.activeSession().performanceStats.iceRttMs)),true,'Real RTC supplies a numeric connection RTT');
     // A real main-thread stall must appear separately from the network sample.
@@ -38,6 +41,17 @@ async function run(browser,{name,role,mode,viewport,tps=10}){
     await page.waitForFunction(t=>window.__timingQA.MatchLifecycle.activeSession().sim.tick>t,before.tick);
     const recovered=await page.evaluate(()=>Object.fromEntries(Object.entries(window.__timingQA.MatchLifecycle.singleMatch.sessions).map(([role,s])=>[role,s.netcodeSession.metrics.recoveries])));
     assert.deepEqual(recovered,before.recoveries,'A scheduling delay does not request snapshot recovery without state divergence');
+    await page.evaluate(()=>Object.values(window.__timingQA.MatchLifecycle.singleMatch.sessions).forEach(s=>s.syncHold=true));
+    await page.waitForTimeout(250);
+    const held=await page.evaluate(()=>{
+      const q=window.__timingQA,s=q.MatchLifecycle.activeSession(),r=q.ActiveViewState.renderer;
+      r.predictFlag(100,100,false);
+      return {tick:s.sim.tick,publications:s.performanceStats.timings.snapshotUi.samples};
+    });
+    await page.waitForFunction(()=>!window.__timingQA.ActiveViewState.renderer.predictedFlag,null,{timeout:9000});
+    const expired=await page.evaluate(()=>{const s=window.__timingQA.MatchLifecycle.activeSession();return {tick:s.sim.tick,publications:s.performanceStats.timings.snapshotUi.samples}});
+    assert.deepEqual(expired,held,'Predicted flag expires on real render frames without new snapshots or ticks');
+    await page.evaluate(()=>Object.values(window.__timingQA.MatchLifecycle.singleMatch.sessions).forEach(s=>s.syncHold=false));
     await page.screenshot({path:path.join(out,name+'-top.png')});
     await page.locator('#dbgPerfNavigation').scrollIntoViewIfNeeded();
     await page.screenshot({path:path.join(out,name+'-details.png')});
@@ -46,6 +60,7 @@ async function run(browser,{name,role,mode,viewport,tps=10}){
     const download=await downloadPromise,file=path.join(out,name+'.json');await download.saveAs(file);
     const data=JSON.parse(fs.readFileSync(file,'utf8'));
     assert.equal(data.sessions[role].mode,mode);assert(data.sessions[role].timings.timings.pulse.samples>0);
+    assert(data.sessions[role].timings.timings.commandConfirm.samples>0,'Real command latency is included in the shared export');
     assert(data.mainThread.maxLongTaskMs>=300);assert(data.renderer.passes['device-begin']);
     await page.locator('#lockstepDebugCloseBtn').click();
     await page.locator('#matchMenuBtnGame').click();await page.locator('#matchMenuSurrenderBtn').click();

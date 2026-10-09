@@ -9809,10 +9809,12 @@ body.campaign-mode #p2pHealthText {
 
   <section id="performanceTimingPanel" aria-labelledby="performanceTimingTitle">
     <h3 id="performanceTimingTitle">성능 시간 지표 · ms</h3>
-    <p class="performance-timing-note">현재 / 평균(EWMA) / 최대. 서로 포함되는 구간은 합산하지 않습니다. RTT에는 양쪽 브라우저의 메시지 처리 대기가 포함됩니다.</p>
+    <p class="performance-timing-note">현재 / 평균(EWMA) / 최대. Step 전체는 매 틱, 세부 단계는 1초 주기 표본입니다. 서로 포함되는 구간은 합산하지 않습니다. RTT에는 양쪽 브라우저의 메시지 처리 대기가 포함됩니다.</p>
     <div class="lockstep-debug-table performance-timing-table">
       <div><span>게임 메시지 RTT / 지터</span><b id="dbgCoreLatency">-</b></div>
       <div><span>입력 지연 설정 · 틱 → ms</span><b id="dbgPerfInputDelay">-</b></div>
+      <div><span>명령 접수 → 확정 · 실측</span><b id="dbgPerfCommandConfirm">입력 없음</b></div>
+      <div><span>미확정 명령 · 최장 대기</span><b id="dbgPerfCommandPending">-</b></div>
       <div><span>WebRTC 연결 RTT · ICE</span><b id="dbgPerfIceRtt">표본 수집 중</b></div>
       <div><span>메인 스레드 timer 지연</span><b id="dbgPerfEventLoop">-</b></div>
       <div><span>긴 작업 · 50ms 이상</span><b id="dbgPerfLongTask">-</b></div>
@@ -10869,6 +10871,10 @@ const RENDER_TRACKS=Object.freeze({
 
 // wall-clock driver 한 pulse의 bounded catch-up. 논리 dt와 tick sequence는 Core가 유지한다.
 const MAX_CATCHUP_STEPS_PER_PULSE=3;
+const SIM_PULSE_BUDGET_MS=12;
+const SIM_SUSPENSION_THRESHOLD_MS=3000;
+const LOCKSTEP_INPUT_DELAY_BASE_MS=100;
+const LOCKSTEP_INPUT_DELAY_MAX_MS=300;
 
 // DataChannel reconnection / authoritative session recovery.
 const P2P_RECONNECT_MIN_MS=350;
@@ -12125,7 +12131,7 @@ class SweptCircleContact{
   });
   static cast(rx,ry,vx,vy,r,policy,fallback=null){
     const aa=vx*vx+vy*vy,radial=rx*vx+ry*vy,c=rx*rx+ry*ry-r*r;
-    const length=Math.hypot(rx,ry),distancePolicy=policy.contactDistanceEpsilon!=null;
+    const distancePolicy=policy.contactDistanceEpsilon!=null,length=distancePolicy?Math.hypot(rx,ry):0;
     if(distancePolicy&&aa<policy.minSpeed2)return null;
     const contact=distancePolicy?length<=r+policy.contactDistanceEpsilon:c<=policy.contactSquaredEpsilon;
     let t=0;
@@ -13032,7 +13038,7 @@ class PerformanceTelemetry{
   static createLocalPerfStats(){
     return{
       sampleTick:0,totalMs:0,indexMs:0,worldMs:0,economyMs:0,workerMs:0,visionMs:0,combatMs:0,
-      projectileMs:0,collisionMs:0,postMs:0,snapshotMs:0,maxSnapshotMs:0,snapshotSamples:0,maxStepMs:0,ewmaStepMs:0,
+      projectileMs:0,collisionMs:0,postMs:0,snapshotMs:0,maxSnapshotMs:0,snapshotSamples:0,lastStepMs:0,stepSamples:0,maxStepMs:0,ewmaStepMs:0,
       aliveUnits:0,workers:0,combatUnits:0,projectiles:0,
       peakAliveUnits:0,peakBuildings:0,peakProjectiles:0,
       spatialQueries:0,spatialCandidates:0,
@@ -17402,6 +17408,7 @@ class NavigationTopology{
 class SimulationRuntimeState{
   static collision(sim){
     sim.collisionGrid=new DeterministicCollisionGrid(COLLISION_SPATIAL_CELL,sim.world);
+    sim.collisionMotion=null;
     for(const key of ["collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther"])sim[key]=new Int32Array(0);
     sim.collisionCnt=new Uint16Array(0);
     for(const key of ["collisionBestT","collisionBestNx","collisionBestNy"])sim[key]=new Float64Array(0);
@@ -17448,7 +17455,7 @@ class StrategySim{
   // their existing StateContracts and serialization.
   static stateContract=new StateContract({}, {presentation:["events","perfStats","balanceStats","_perfCollect"],derived:[
     "navigationDemandScope","world","tps","campaignScriptRuntime","campaignTechCap","disposed","runtimeEpoch","commandReceipts",
-    "collisionGrid","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
+    "collisionGrid","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
     "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapMarks","hardFixSapEpoch",
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","maxUnitRadius",
     "cloakCacheTick","auraCloakedIds","tickVisibilityCache","tickVisibilityCacheTick","economyCacheTick","workerGasAssignments","validGasExtractorsBySide","navigationRevision","navigation"
@@ -17687,6 +17694,7 @@ class StrategySim{
     this.collisionNextFx=new Int32Array(cap);this.collisionNextFy=new Int32Array(cap);
     this.collisionBestT=new Float64Array(cap);this.collisionBestNx=new Float64Array(cap);this.collisionBestNy=new Float64Array(cap);
     this.collisionBestOther=new Int32Array(cap);
+    this.collisionMotion={flags:new Uint8Array(cap),layers:[],sx:new Float64Array(cap),sy:new Float64Array(cap),ex:new Float64Array(cap),ey:new Float64Array(cap),vx:new Float64Array(cap),vy:new Float64Array(cap)};
   }
   captureCollisionStepStarts(){
     const n=this.units.length;this.ensureCollisionBuffers(n);
@@ -21973,41 +21981,45 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     const ai=String(a?.id||""),bi=String(b?.id||""),lo=ai<bi?ai:bi,hi=ai<bi?bi:ai,v=ds[HashUtil.hash(lo+"|"+hi)&7];
     return ai===lo?v:[-v[0],-v[1]];
   }
-  sweptSolidContactFrom(i,j,radii,asx,asy,bsx,bsy,aex,aey,bex,bey){
-    const a=this.units[i],b=this.units[j];if(!a?.alive||!b?.alive)return null;
-    return SweptCircleContact.cast(asx-bsx,asy-bsy,(aex-asx)-(bex-bsx),(aey-asy)-(bey-bsy),(radii[i]+radii[j])/FP,SweptCircleContact.policies.relative,()=>{const n=this.fallbackNormal(a,b);return{x:n[0]/COLLISION_NORMAL,y:n[1]/COLLISION_NORMAL}});
-  }
-
   resolveNonAlliedSurfaceMotion(startFx,startFy,radii,maxRadius,maxPasses=4){
     const units=this.units,n=units.length;
     if(!n)return 0;
+    this.ensureCollisionBuffers(n);
     const segX=this.collisionSegmentFx,segY=this.collisionSegmentFy;
     const nextX=this.collisionNextFx,nextY=this.collisionNextFy;
     const bestT=this.collisionBestT,bestNx=this.collisionBestNx,bestNy=this.collisionBestNy,bestOther=this.collisionBestOther;
     const grid=this.collisionGrid,buckets=grid.buckets,cols=grid.cols;
+    const motion=this.collisionMotion,{flags,layers}=motion;
+    const layerRadii=new Map();
 
     for(let i=0;i<n;i++){
       const u=units[i];
       segX[i]=i<startFx.length?startFx[i]:(u?.fx??0);
       segY[i]=i<startFy.length?startFy[i]:(u?.fy??0);
+      // Capabilities/layers do not change during a contact sweep. Positions do.
+      flags[i]=(!!u?.capability(BurrowableMixin.KEY)?.isActive()?1:0)|(!!u?.capability(LeapableMixin.KEY)?.isActive(this)?2:0)|(u?.objectiveChargeActive?4:0);
+      layers[i]=this.unitLayer(u?.type);
+      if(u?.alive&&radii[i]>0&&!flags[i])layerRadii.set(layers[i],Math.max(layerRadii.get(layers[i])||0,radii[i]));
     }
 
     let totalCorrections=0;
     for(let pass=0;pass<maxPasses;pass++){
       bestT.fill(Infinity,0,n);bestOther.fill(-1,0,n);
-      let maxTravel=0;
+      const layerTravel=new Map();
       for(let i=0;i<n;i++){
         const u=units[i];if(!u?.alive)continue;
-        maxTravel=Math.max(maxTravel,Math.ceil(Math.hypot(u.fx-segX[i],u.fy-segY[i])));
+        motion.sx[i]=segX[i]/FP;motion.sy[i]=segY[i]/FP;motion.ex[i]=u.fx/FP;motion.ey[i]=u.fy/FP;
+        motion.vx[i]=motion.ex[i]-motion.sx[i];motion.vy[i]=motion.ey[i]-motion.sy[i];
+        if(radii[i]>0&&!flags[i])layerTravel.set(layers[i],Math.max(layerTravel.get(layers[i])||0,Math.ceil(Math.hypot(u.fx-segX[i],u.fy-segY[i]))));
       }
 
       grid.reset(units);
       let pairContacts=0;
       for(let i=0;i<n;i++){
         const a=units[i];
-        if(!a?.alive||radii[i]<=0||!!a?.capability(BurrowableMixin.KEY)?.isActive()||!!a?.capability(LeapableMixin.KEY)?.isActive(this)||a.objectiveChargeActive)continue;
+        if(!a?.alive||radii[i]<=0||flags[i]||!layerTravel.get(layers[i]))continue;
         const sx=segX[i],sy=segY[i],ex=a.fx,ey=a.fy;
-        const reach=radii[i]+maxRadius+maxTravel;
+        const reach=radii[i]+layerRadii.get(layers[i])+layerTravel.get(layers[i]);
         const minCx=grid.cellXFP(Math.min(sx,ex)-reach),maxCx=grid.cellXFP(Math.max(sx,ex)+reach);
         const minCy=grid.cellYFP(Math.min(sy,ey)-reach),maxCy=grid.cellYFP(Math.max(sy,ey)+reach);
         for(let cy=minCy;cy<=maxCy;cy++)for(let cx=minCx;cx<=maxCx;cx++){
@@ -22015,15 +22027,12 @@ let value=Math.max(0,Number(d.flatArmor)||0);
           for(let k=0;k<bucket.length;k++){
             const j=bucket[k];if(j<=i)continue;
             const b=units[j];
-            if(!b?.alive||radii[j]<=0||this.isAlliedCollisionUnit(a,b))continue;
-            if(!!b?.capability(BurrowableMixin.KEY)?.isActive()||!!b?.capability(LeapableMixin.KEY)?.isActive(this)||b.objectiveChargeActive)continue;
-            if(this.unitLayer(a.type)!==this.unitLayer(b.type))continue;
-
-            const hit=this.sweptSolidContactFrom(
-              i,j,radii,
-              segX[i]/FP,segY[i]/FP,segX[j]/FP,segY[j]/FP,
-              a.fx/FP,a.fy/FP,b.fx/FP,b.fy/FP
-            );
+            if(!b?.alive||radii[j]<=0||flags[j]||layers[i]!==layers[j]||this.isAlliedCollisionUnit(a,b))continue;
+            // Keep the original floating-point subtraction order. Equal relative
+            // motion has no inward contact, including a stationary overlap.
+            const vx=motion.vx[i]-motion.vx[j],vy=motion.vy[i]-motion.vy[j];
+            if(vx===0&&vy===0)continue;
+            const hit=SweptCircleContact.cast(motion.sx[i]-motion.sx[j],motion.sy[i]-motion.sy[j],vx,vy,(radii[i]+radii[j])/FP,SweptCircleContact.policies.relative,()=>{const v=this.fallbackNormal(a,b);return{x:v[0]/COLLISION_NORMAL,y:v[1]/COLLISION_NORMAL}});
             if(!hit)continue;
             pairContacts++;
 
@@ -22267,9 +22276,10 @@ let value=Math.max(0,Number(d.flatArmor)||0);
             const j=bucket[k];if(j<=i)continue;
             const b=units[j];
             if(radii[j]<=0)continue;
-            const aBurrow=!!a?.capability(BurrowableMixin.KEY)?.isActive(),bBurrow=!!b?.capability(BurrowableMixin.KEY)?.isActive();
-            if(!b.alive||aBurrow!==bBurrow||!!a?.capability(LeapableMixin.KEY)?.isActive(this)||!!b?.capability(LeapableMixin.KEY)?.isActive(this)||a.objectiveChargeActive||b.objectiveChargeActive||this.unitLayer(a.type)!==this.unitLayer(b.type))continue;
+            const flags=this.collisionMotion.flags,layers=this.collisionMotion.layers;
+            if(!b.alive||(flags[i]&1)!==(flags[j]&1)||(flags[i]&6)||(flags[j]&6)||layers[i]!==layers[j])continue;
             if(perf)perf.collisionPairs++;
+            if(!this.isAlliedCollisionUnit(a,b))continue;
             const min=radii[i]+radii[j];
             let dx=b.fx-a.fx,dy=b.fy-a.fy;const d2=dx*dx+dy*dy;
             if(d2>=min*min)continue;
@@ -22277,7 +22287,6 @@ let value=Math.max(0,Number(d.flatArmor)||0);
             if(d2===0){[nx,ny]=this.fallbackNormal(a,b);dist=0}
             else{dist=Math.max(1,Math.floor(Math.sqrt(d2)));nx=Math.trunc(dx*COLLISION_NORMAL/dist);ny=Math.trunc(dy*COLLISION_NORMAL/dist)}
             const pen=min-dist;if(pen<=0)continue;
-            if(!this.isAlliedCollisionUnit(a,b))continue;
             overlaps++;if(perf)perf.collisionOverlaps++;
             const ma=masses[i],mb=masses[j],tot=ma+mb;
             const pa=Math.max(1,Math.floor(pen*mb/tot)),pb=Math.max(1,pen-pa);
@@ -22431,8 +22440,18 @@ let value=Math.max(0,Number(d.flatArmor)||0);
 
   step(){
     if(this.disposed)throw new Error("종료된 StrategySim은 다시 진행할 수 없습니다.");
+    const started=typeof performance!=="undefined"?performance.now():null;
     AdaptiveNavigationDemand.begin(this);
-    try{return this.stepSimulation()}finally{AdaptiveNavigationDemand.end(this)}
+    try{return this.stepSimulation()}finally{
+      AdaptiveNavigationDemand.end(this);
+      // Coarse timing covers every tick, including one-off commands and cold paths.
+      // The detailed stage/candidate counters below remain sampled once per second.
+      if(started!==null){
+        const ms=performance.now()-started,p=this.perfStats;
+        p.lastStepMs=ms;p.stepSamples=(p.stepSamples||0)+1;p.maxStepMs=Math.max(p.maxStepMs||0,ms);
+        p.ewmaStepMs=p.stepSamples>1?p.ewmaStepMs*.8+ms*.2:ms;
+      }
+    }
   }
   stepSimulation(){
     const profile=((this.tick+1)%this.msTicks(PERF_SAMPLE_EVERY_MS)===0)&&typeof performance!=="undefined";
@@ -22530,7 +22549,6 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       for(const u of this.units)if(u.alive){aliveUnits++;if(!!UnitDefinition.get(u.type)?.economyWorker)workers++;else combatUnits++}
       p.sampleTick=this.tick;p.totalMs=total;p.indexMs=indexMs;p.worldMs=worldMs;p.economyMs=economyMs;p.workerMs=workerMs;p.visionMs=visionMs;
       p.combatMs=combatMs;p.projectileMs=projectileMs;p.collisionMs=collisionMs;p.postMs=postMs;
-      p.maxStepMs=Math.max(p.maxStepMs||0,total);p.ewmaStepMs=p.ewmaStepMs?((p.ewmaStepMs*.8)+(total*.2)):total;
       p.aliveUnits=aliveUnits;p.workers=workers;p.combatUnits=combatUnits;p.projectiles=this.projectiles.length;
       p.peakAliveUnits=Math.max(p.peakAliveUnits||0,aliveUnits);
       p.peakBuildings=Math.max(p.peakBuildings||0,this.buildings.length);
@@ -23389,7 +23407,7 @@ class GameSession{
     if(!this.inputAvailable()||!this.sim||!this.netcodeSession||this.netcodeSession.resimulating||this.pendingNetcodeCommands.size>=128)return false;
     try{
       const sequence=this.netcodeSession.queueCommand(RallyCommandCodec.encode(action));
-      const ticket={sequence,actor:this.role,key:StableSerializationUtil.stableStringify(action),submittedTick:this.sim.tick,action:StateValue.copy(action)};
+      const ticket={sequence,actor:this.role,key:StableSerializationUtil.stableStringify(action),submittedTick:this.sim.tick,submittedAt:performance.now(),action:StateValue.copy(action)};
       this.lastCommandTicket=ticket;this.pendingNetcodeCommands.set(sequence,ticket);return true;
     }catch(error){this.onLog('명령 접수 실패 · '+error.message);return false}
   }
@@ -23523,11 +23541,15 @@ class GameSession{
     this.simEnded=false;this.matchResult=null;this.publishedGameTick=0;this.netcodeLoop?.resetTiming();
     this.emitSnapshot(this.sim.snapshot());this.emitRenderTargets(this.sim,true);
     this.netcodeNow=performance.now();
-    // Keep the existing RTS delay/pacing. One Core owns both configured modes;
-    // lockstep waits for actual inputs and only serializes periodic/on-demand checkpoints.
+    // Express Rally's lockstep command lead in milliseconds across the TPS choices.
+    // Core adapts within these bounds and waits for late inputs; no missing input is predicted.
+    const baseInputDelay=Math.max(1,Math.ceil(LOCKSTEP_INPUT_DELAY_BASE_MS*this.sim.tps/1000));
+    const inputDelayProfile=this.netcodeMode==='lockstep'?{baseInputDelayTicks:baseInputDelay,minInputDelayTicks:baseInputDelay,maxInputDelayTicks:Math.floor(LOCKSTEP_INPUT_DELAY_MAX_MS*this.sim.tps/1000)}:{};
     this.netcodeSession=RallyNetcode.createSession({players:['host','guest'],localPlayerId:this.role,authorityPlayerId:'host',
       sessionId:String(this.roomCode),simulationVersion:String(SIM_VERSION),seed:seed>>>0,inputSize:1,
-      profile:{...RallyNetcode.profiles.rts,mode:this.netcodeMode,rollbackWindowTicks:this.netcodeMode==='lockstep'?0:RallyNetcode.profiles.rts.rollbackWindowTicks,tickRate:this.sim.tps,maxCatchupSteps:MAX_CATCHUP_STEPS_PER_PULSE,checksumInterval:20,maxCommandBytes:12*1024,maxHistoryBytes:64*1024*1024,maxSnapshotBytes:RallyStateCodec.maxBytes},
+      profile:{...RallyNetcode.profiles.rts,mode:this.netcodeMode,rollbackWindowTicks:this.netcodeMode==='lockstep'?0:RallyNetcode.profiles.rts.rollbackWindowTicks,
+        ...inputDelayProfile,
+        tickRate:this.sim.tps,maxCatchupSteps:MAX_CATCHUP_STEPS_PER_PULSE,checksumInterval:20,maxCommandBytes:12*1024,maxHistoryBytes:64*1024*1024,maxSnapshotBytes:RallyStateCodec.maxBytes},
       adapter:this.simulationAdapter,clock:()=>this.netcodeNow,onEvent:event=>this.onNetcodeEvent(event)});
     const statusTransport=this.transport;
     this.detachNetcodeTransport=this.netcodeSession.attachTransport(this.role==='host'?'guest':'host',{
@@ -23537,11 +23559,16 @@ class GameSession{
     });
     this.netcodeNow=performance.now();this.lastDriverPulseAt=this.netcodeNow;this.lastSnapshotEmitAt=this.netcodeNow;
     this.stopHeartbeat(false);
-    this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,maxBacklogTicks:MAX_CATCHUP_STEPS_PER_PULSE,
+    let pulseStartedAt=0,pulseAdvances=0;
+    // A slow ongoing battle is not a suspended page. The loop still caps elapsed
+    // accumulation and catch-up work independently of this suspension threshold.
+    this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,maxBacklogTicks:Math.ceil(SIM_SUSPENSION_THRESHOLD_MS*this.sim.tps/1000),
       onBacklogDrop:event=>this.onBacklogDrop(event),
-      beforeFrame:now=>{this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now)},
-      canAdvance:()=>!this.simEnded&&!this.simulationFatal&&!this.pendingTerminalFrame&&!this.syncHold&&!this.frameOutputs.get(this.sim.tick)?.winner,
-      onAdvance:()=>this.reconcileNetcodePresentation(),render:()=>this.reconcileNetcodePresentation(),
+      beforeFrame:now=>{pulseStartedAt=performance.now();pulseAdvances=0;this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now)},
+      // Always allow one ordinary attempt. Expensive ticks yield before additional
+      // catch-up; Core still owns dt, polling, pacing and synchronous rollback.
+      canAdvance:()=>!this.simEnded&&!this.simulationFatal&&!this.pendingTerminalFrame&&!this.syncHold&&!this.frameOutputs.get(this.sim.tick)?.winner&&(!pulseAdvances||performance.now()-pulseStartedAt<SIM_PULSE_BUDGET_MS),
+      onAdvance:()=>{pulseAdvances++;this.reconcileNetcodePresentation()},render:()=>this.reconcileNetcodePresentation(),
       onError:error=>this.enterSimulationFatal(error,{source:'netcode-loop'})});
     this.syncHold=!this.transportConnected;AppLifecycle.registerBackgroundSession(this);return true;
   }
@@ -23604,7 +23631,11 @@ class GameSession{
         // 기존 replay 파일의 command schema에만 변환한다. 이 메시지는 네트워크로 보내지 않는다.
         this.replayRecorder?.recordCommand({type:'RUNTIME_COMMIT',...command,authorityTick:frame.frameTick});
         this.runtimeSeq++;
-        if(command.actor===this.role)this.pendingNetcodeCommands.delete(command.netcodeSequence);
+        if(command.actor===this.role){
+          const ticket=this.pendingNetcodeCommands.get(command.netcodeSequence);
+          if(Number.isFinite(ticket?.submittedAt))PerformanceTelemetry.recordTiming(this.performanceStats.timings,'commandConfirm',performance.now()-ticket.submittedAt);
+          this.pendingNetcodeCommands.delete(command.netcodeSequence);
+        }
       }
       this.presentationJournal.update(performance.now());
       // Recovery may republish the authoritative journal, but already heard timeline
@@ -23693,7 +23724,11 @@ class GameSession{
   }
   emitSnapshot(snapshot){
     const started=performance.now();
-    try{return this.onSnapshot(snapshot)}finally{PerformanceTelemetry.recordTiming(this.performanceStats.timings,'snapshotUi',performance.now()-started)}
+    try{
+      const result=this.onSnapshot(snapshot);
+      this.lastSnapshotPublication={sim:this.sim,tick:this.sim?.tick,epoch:this.sim?.runtimeEpoch,publishedTick:this.publishedGameTick,confirmed:this.latestConfirmedSnapshot};
+      return result;
+    }finally{PerformanceTelemetry.recordTiming(this.performanceStats.timings,'snapshotUi',performance.now()-started)}
   }
   emitRenderTargets(sim,snap){
     const started=performance.now();
@@ -23701,11 +23736,11 @@ class GameSession{
   }
   advanceSimulation(now=performance.now()){
     if(!this.sim||this.simEnded||this.simulationFatal)return;
-    const gap=Math.max(0,now-this.lastDriverPulseAt),maxGap=1000/this.sim.tps*MAX_CATCHUP_STEPS_PER_PULSE;
-    if(gap>maxGap){this.netcodeLoop?.resetTiming();this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now);this.onBacklogDrop({elapsedMs:gap,droppedTicks:Math.floor(gap/(1000/this.sim.tps)),timestamp:now});return}
     // Library owns pacing, accumulation, bounded catchup, and polling during holds.
     this.netcodeLoop.pulse(now);
-    if(!this.netcodeSession.resimulating&&now-this.lastSnapshotEmitAt>=SNAPSHOT_EMIT_INTERVAL_MS){
+    const previous=this.lastSnapshotPublication;
+    const presentationChanged=!previous||previous.sim!==this.sim||previous.tick!==this.sim.tick||previous.epoch!==this.sim.runtimeEpoch||previous.publishedTick!==this.publishedGameTick||this.presentationEventBuffer.length>0||(this.publishConfirmedSnapshots&&previous.confirmed!==this.latestConfirmedSnapshot);
+    if(presentationChanged&&!this.netcodeSession.resimulating&&now-this.lastSnapshotEmitAt>=SNAPSHOT_EMIT_INTERVAL_MS){
       this.lastSnapshotEmitAt=now;
       const snapshot=this.publishConfirmedSnapshots?this.latestConfirmedSnapshot:this.sim.snapshot();
       if(snapshot){snapshot.events=StateValue.copy(this.presentationEventBuffer.splice(0));this.presentationEventsPublished+=snapshot.events.length;this.emitSnapshot(snapshot)}
@@ -28891,10 +28926,9 @@ class GLRenderer{
       const af=s?.flags?.[mySide];
       if(af&&af.forced===this.predictedFlag.forced&&Math.hypot(af.x-this.predictedFlag.x,af.y-this.predictedFlag.y)<3){
         this.predictedFlag=null;
-      }else if(now-this.predictedFlag.start>PREDICTED_BUILD_GHOST_TTL_MS){
-        this.predictedFlag=null;
       }
     }
+    this.prunePredictedFlag(now);
     if(this.latencySpellFx?.length)this.latencySpellFx=this.latencySpellFx.filter(f=>now-f.start<PREDICTED_COMMAND_FX_TTL_MS);
 
     this.rebuildVisibilityCache();
@@ -28939,6 +28973,9 @@ class GLRenderer{
       x:action.x,y:action.y,start:performance.now()
     });
     if(this.pendingBuildGhosts.length>12)this.pendingBuildGhosts.splice(0,this.pendingBuildGhosts.length-12);
+  }
+  prunePredictedFlag(now=performance.now()){
+    if(this.predictedFlag&&now-this.predictedFlag.start>PREDICTED_BUILD_GHOST_TTL_MS)this.predictedFlag=null;
   }
   predictFlag(x,y,forced=false){
     const now=performance.now(),side=this.mySide();
@@ -32443,6 +32480,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
   loop(){
     try{
     const frameStarted=performance.now();this._framePresentationAt=frameStarted;
+    this.prunePredictedFlag(frameStarted);
     this.resize();
     // DOM viewport synchronization is once per frame, not once per terrain/Fog vertex.
     // All math still uses the shared camera; input and standalone passes refresh on demand.
@@ -33124,7 +33162,7 @@ UiRegistry.refs.dbgSyncBytes=DomUtil.byId("dbgSyncBytes");
 UiRegistry.refs.dbgSyncCost=DomUtil.byId("dbgSyncCost");
 UiRegistry.refs.dbgSyncFailure=DomUtil.byId("dbgSyncFailure");
 UiRegistry.refs.dbgCoreLatency=DomUtil.byId("dbgCoreLatency");
-for(const id of ['dbgPerfInputDelay','dbgPerfIceRtt','dbgPerfEventLoop','dbgPerfLongTask','dbgPerfPulseGap','dbgPerfPulse','dbgPerfStateSave','dbgPerfResimulation','dbgPerfPresentation','dbgPerfFrameInterval','dbgPerfDeviceBegin','dbgPerfRenderPasses','dbgPerfRenderEffects','dbgPerfRenderTail','dbgPerfNavigation','dbgPerfProjection','dbgPerfDrawCalls','performanceTimingExportBtn'])UiRegistry.refs[id]=DomUtil.byId(id);
+for(const id of ['dbgPerfInputDelay','dbgPerfCommandConfirm','dbgPerfCommandPending','dbgPerfIceRtt','dbgPerfEventLoop','dbgPerfLongTask','dbgPerfPulseGap','dbgPerfPulse','dbgPerfStateSave','dbgPerfResimulation','dbgPerfPresentation','dbgPerfFrameInterval','dbgPerfDeviceBegin','dbgPerfRenderPasses','dbgPerfRenderEffects','dbgPerfRenderTail','dbgPerfNavigation','dbgPerfProjection','dbgPerfDrawCalls','performanceTimingExportBtn'])UiRegistry.refs[id]=DomUtil.byId(id);
 UiRegistry.refs.dbgCorePacing=DomUtil.byId("dbgCorePacing");
 UiRegistry.refs.dbgCorePrediction=DomUtil.byId("dbgCorePrediction");
 UiRegistry.refs.dbgCoreHistory=DomUtil.byId("dbgCoreHistory");
@@ -34488,8 +34526,8 @@ class ConnectionPresentation{
   const peerRole=active.role==="host"?"guest":"host";
   const peerPerf=SinglePlayerModeUtil.isSinglePlayer()?MatchLifecycle.singleMatch?.sessions?.[peerRole]?.sim?.perfStats:null;
   const avgCandidates=perf.spatialQueries?perf.spatialCandidates/perf.spatialQueries:0;
-  UiRegistry.refs.dbgPerfStep.textContent=`${fmtMs(perf.totalMs)} / ${fmtMs(perf.ewmaStepMs)} / ${fmtMs(perf.maxStepMs)}`;
-  UiRegistry.refs.dbgPerfPeerStep.textContent=peerPerf?`${peerRole} ${fmtMs(peerPerf.totalMs)} / EWMA ${fmtMs(peerPerf.ewmaStepMs)}`:"-";
+  UiRegistry.refs.dbgPerfStep.textContent=`${fmtMs(perf.lastStepMs)} / ${fmtMs(perf.ewmaStepMs)} / ${fmtMs(perf.maxStepMs)}`;
+  UiRegistry.refs.dbgPerfPeerStep.textContent=peerPerf?`${peerRole} ${fmtMs(peerPerf.lastStepMs)} / EWMA ${fmtMs(peerPerf.ewmaStepMs)}`:"-";
   UiRegistry.refs.dbgPerfCore.textContent=`${fmtMs(perf.indexMs)} / ${fmtMs(perf.worldMs)} / ${fmtMs(perf.economyMs)}`;
   UiRegistry.refs.dbgPerfCombat.textContent=`${fmtMs(perf.workerMs)} / ${fmtMs(perf.visionMs)} / ${fmtMs(perf.combatMs)}`;
   UiRegistry.refs.dbgPerfTail.textContent=`${fmtMs(perf.projectileMs)} / ${fmtMs(perf.collisionMs)} / ${fmtMs(perf.postMs)}`;
@@ -34504,6 +34542,10 @@ class ConnectionPresentation{
   const timing=row=>row?.samples?`${fmtMs(row.currentMs)} / ${fmtMs(row.ewmaMs)} / ${fmtMs(row.maxMs)}`:'표본 수집 중';
   PerformanceTelemetry.sampleConnection(active);
   text('dbgPerfInputDelay',`${metrics.inputDelay}t · ${fmtMs(metrics.inputDelay*1000/active.sim.tps)}`);
+  text('dbgPerfCommandConfirm',t.commandConfirm?.samples?timing(t.commandConfirm):'입력 없음');
+  const commandNow=performance.now();let pendingCommandMs=0;
+  for(const ticket of active.pendingNetcodeCommands.values())if(Number.isFinite(ticket.submittedAt))pendingCommandMs=Math.max(pendingCommandMs,commandNow-ticket.submittedAt);
+  text('dbgPerfCommandPending',`${active.pendingNetcodeCommands.size}개 · ${fmtMs(pendingCommandMs)}`);
   const iceAge=stats.iceFetchedAt===null?null:performance.now()-stats.iceFetchedAt;
   text('dbgPerfIceRtt',!active.transport?.pc?.getStats?'지원 안 됨':stats.iceError?'조회 실패':stats.iceRttMs===null?'ICE RTT 표본 없음':`${fmtMs(stats.iceRttMs)} · ${fmtMs(iceAge)} 전 조회`);
   text('dbgPerfEventLoop',timing(m?.timings.eventLoop)+(document.hidden?' · 백그라운드':''));
@@ -34525,7 +34567,7 @@ class ConnectionPresentation{
   UiRegistry.refs.dbgPerfAllowanceLabel.textContent=activeTps+" TPS 틱 허용시간";
   UiRegistry.refs.dbgPerfAllowance.textContent=fmtMs(allowanceMs);
   UiRegistry.refs.dbgPerfUsedLabel.textContent=isSingle?"사용시간 · 싱글 두 세션 step EWMA":"사용시간 · 현재 세션 step EWMA";
-  const sampled=perf.sampleTick>0&&(!isSingle||peerPerf?.sampleTick>0);
+  const sampled=perf.stepSamples>0&&(!isSingle||peerPerf?.stepSamples>0);
   if(!sampled){UiRegistry.refs.dbgPerfUsed.textContent=UiRegistry.refs.dbgPerfBudget.textContent="표본 수집 중"}
   else{
     const usedMs=perf.ewmaStepMs+(isSingle?peerPerf.ewmaStepMs:0),remainingMs=Math.max(0,allowanceMs-usedMs),overrunMs=Math.max(0,usedMs-allowanceMs);
@@ -36282,13 +36324,15 @@ class AppLifecycle{
   if(typeof Worker==="function"&&typeof Blob==="function"&&typeof URL!=="undefined"){
     try{
       const source=`
-        let timer=0;
+        let timer=0,pending=false;
         function start(){
           if(timer)return;
-          timer=setInterval(()=>postMessage(1),${BACKGROUND_TICK_PULSE_MS});
+          // A busy page must not accumulate Worker tasks ahead of RTC/input events.
+          timer=setInterval(()=>{if(!pending){pending=true;postMessage(1)}},${BACKGROUND_TICK_PULSE_MS});
         }
         onmessage=e=>{
           if(e.data==="stop"){if(timer){clearInterval(timer);timer=0}return}
+          if(e.data==="ack"){pending=false;return}
           start();
         };
         start();
@@ -36298,7 +36342,11 @@ class AppLifecycle{
       const worker=new Worker(url);
       URL.revokeObjectURL(url);
       AppLifecycle.backgroundTickWorker=worker;
-      worker.onmessage=()=>AppLifecycle.pulseBackgroundSessions(performance.now());
+      worker.onmessage=()=>{
+        if(AppLifecycle.backgroundTickWorker!==worker)return;
+        try{AppLifecycle.pulseBackgroundSessions(performance.now())}
+        finally{if(AppLifecycle.backgroundTickWorker===worker)worker.postMessage("ack")}
+      };
       worker.onerror=()=>{
         if(AppLifecycle.backgroundTickWorker!==worker)return;
         try{worker.onmessage=null;worker.onerror=null;worker.terminate()}catch{}
