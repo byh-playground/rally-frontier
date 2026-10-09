@@ -237,4 +237,61 @@ contact(i,j,radii,asx,asy,bsx,bsy,aex,aey,bex,bey){
     const a=this.units[i],b=this.units[j];if(!a?.alive||!b?.alive)return null;
     return SweptCircleContact.cast(asx-bsx,asy-bsy,(aex-asx)-(bex-bsx),(aey-asy)-(bey-bsy),(radii[i]+radii[j])/FP,SweptCircleContact.policies.relative,()=>{const n=this.fallbackNormal(a,b);return{x:n[0]/COLLISION_NORMAL,y:n[1]/COLLISION_NORMAL}});
   }
+,
+target(u,visibleSources){
+    // Fireable hostile threats share one pool, regardless of player/neutral storage.
+    // Keep a valid target within its priority tier; an idle structure cannot mask
+    // a fireable combatant. Only acquire a chase target when nothing can be hit.
+    if(this._perfCollect)this._perfCollect.targetQueries++;
+    const d=UnitDefinition.get(u.type),attackRange=this.basicAttackRange(u);
+    const aggro=Number(d.aggroRange)||(d.role==="artillery"?560:d.role==="assassin"?430:390);
+    const queryRange=Math.max(aggro,attackRange+this.unitRadius(u.type)+Math.max(this.maxUnitRadius,this.maxBuildingRadius));
+    let taunt=null,tauntD2=Infinity,currentInRange=null;
+    let inRangeBest=null,inRangeScore=Infinity,inRangeRank=Infinity;
+    let acquireBest=null,acquireD2=Infinity,currentAcquire=null,currentAcquireD2=Infinity;
+    let closeFallback=null,closeFallbackD2=Infinity;
+    const consider=(entity,isBuilding,def,d2)=>{
+      const dist=Math.sqrt(d2),max=this.interactionDistance(u,entity,"attack",attackRange);
+      if(dist>aggro&&dist>max)return;
+      const min=d.minRange?this.interactionDistance(u,entity,"combat-contact")+d.minRange:0;
+      const candidate={entity,isBuilding,def};
+      if(min&&dist<min){
+        if(this.targetChoiceBetter(d2,entity.id,closeFallbackD2,closeFallback)){closeFallback=candidate;closeFallbackD2=d2}
+        return;
+      }
+      if(!isBuilding&&d.role!=="assassin"&&d.role!=="artillery"&&def.taunt&&d2<=(def.tauntRadius||0)**2){
+        if(this.targetChoiceBetter(d2,entity.id,tauntD2,taunt)){taunt=candidate;tauntD2=d2}
+      }
+      if(dist<=max){
+        const rank=isBuilding?(BuildingDefinition.isDefenseTower(entity.type)?0:2):(def.economyWorker?1:0);
+        const score=d2*100/this.targetPriorityFactor(u,def);
+        if(entity.id===u.target)currentInRange={candidate,rank};
+        if(rank<inRangeRank||(rank===inRangeRank&&this.targetChoiceBetter(score,entity.id,inRangeScore,inRangeBest))){inRangeBest=candidate;inRangeScore=score;inRangeRank=rank}
+      }else{
+        if(this.targetChoiceBetter(d2,entity.id,acquireD2,acquireBest)){acquireBest=candidate;acquireD2=d2}
+        if(entity.id===u.target){currentAcquire=candidate;currentAcquireD2=d2}
+      }
+    };
+    this.forEachNearbyHostileUnit(u.side,u.x,u.y,queryRange,e=>{
+      if(!this.canAttackEntity(u.type,e,false)||!this.canTargetUnit(u.side,e,visibleSources))return;
+      if(!this.canSeeCombatTarget(u.side,e,visibleSources)){if(this._perfCollect)this._perfCollect.targetVisibilityRejects++;return}
+      consider(e,false,UnitDefinition.get(e.type),(e.x-u.x)**2+(e.y-u.y)**2);
+    });
+    for(const i of this.nearbyBuildingIndices(u.x,u.y,queryRange)){
+      const b=this.buildings[i];
+      if(!this.isHostileCombatBuilding(u.side,b)||!this.canAttackEntity(u.type,b,true)||!this.isVisible(u.side,b.x,b.y,visibleSources))continue;
+      const bd=BuildingDefinition.get(b.type);
+      consider(b,true,{role:bd.isMainBase?"base":"building",sizeClass:"heavy",size:bd.size},(b.x-u.x)**2+(b.y-u.y)**2);
+    }
+    if(taunt)return taunt;
+    if(currentInRange&&currentInRange.rank<=inRangeRank)return currentInRange.candidate;
+    if(inRangeBest)return inRangeBest;
+    if(currentAcquire&&currentAcquireD2*100<=acquireD2*COMBAT_TARGET_STICKINESS_PCT)return currentAcquire;
+    return acquireBest||closeFallback;
+  },
+geometryContact(source,target){
+    const st=typeof source==='string'?source:source?.type,tt=typeof target==='string'?target:target?.type,sd=UnitDefinition.get(st)||{};
+    if(BuildingDefinition.get(tt))return source?.side===NEUTRAL_SIDE?this.unitRadius(st)+(BuildingDefinition.get(tt)?.size||35):((sd.size||10)+(BuildingDefinition.get(tt)?.size||30))*COLLISION_RADIUS_SCALE;
+    return this.unitRadius(st)+this.unitRadius(tt);
+  }
 };

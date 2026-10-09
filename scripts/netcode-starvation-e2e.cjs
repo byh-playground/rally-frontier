@@ -81,6 +81,10 @@ function connect({role,c,canonical}){
       for(let i=0;i<2;i++)await pages[i].exposeBinding('__emitSignal',async(_,payload)=>bounded(pages[1-i].evaluate(p=>window.__signalBridge?.onSignal(p),payload),10000,'signaling'));
       await pages[0].evaluate(connect,{role:'host',c,canonical});await pages[1].evaluate(connect,{role:'guest',c,canonical});
       await Promise.all(pages.map(p=>p.waitForFunction(()=>window.__starvation.ActiveViewState.session?.sim?.tick>=4&&window.__starvation.ActiveViewState.session.netcodeSession.ready,null,{timeout:45000})));
+      if(c.center)for(const p of pages){
+        const point=await p.evaluate(()=>{const rect=window.__starvation.ActiveViewState.minimap.contentRect();return{x:rect.left+rect.width*.5,y:rect.top+rect.height*.5}});
+        await p.mouse.click(point.x,point.y);
+      }
       // Measure before changing CPU rate so the watchdog does not depend on a busy page starting a timer.
       await Promise.all(pages.map(p=>p.evaluate(()=>window.__starvation.start())));
       for(const p of pages){const d=await p.context().newCDPSession(p);cdps.push(d);if(c.rate>1)await d.send('Emulation.setCPUThrottlingRate',{rate:c.rate})}

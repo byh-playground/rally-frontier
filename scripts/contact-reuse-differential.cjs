@@ -7,7 +7,7 @@ const end=source.lastIndexOf('})();');assert(end>0);
 // Frozen pre-optimization functions are a byte-equality oracle, only inside QA.
 const html=source.slice(0,end)+`
 ${reference}
-window.__contactQA={StrategySim,GameRuleDefinition,DebugScenarioHarness,RallyStateCodec,
+window.__contactQA={StrategySim,GameRuleDefinition,DebugScenarioHarness,RallyStateCodec,InteractionGeometry,
   SweptCircleContact,reference:contactReference};
 `+source.slice(end);
 (async()=>{
@@ -17,9 +17,9 @@ window.__contactQA={StrategySim,GameRuleDefinition,DebugScenarioHarness,RallySta
     await page.route('https://contact-qa.local/**',r=>r.fulfill({contentType:'text/html',body:html}));
     await page.goto('https://contact-qa.local/');await page.waitForFunction(()=>window.__contactQA&&window.RallyNetcode);
     const results=await page.evaluate(async()=>{
-      const q=window.__contactQA,{StrategySim,GameRuleDefinition,DebugScenarioHarness,RallyStateCodec,SweptCircleContact}=q;
-      const actual={cast:SweptCircleContact.cast,sweep:StrategySim.prototype.resolveNonAlliedSurfaceMotion,solve:StrategySim.prototype.solveContacts};
-      const install=methods=>{SweptCircleContact.cast=methods.cast;StrategySim.prototype.resolveNonAlliedSurfaceMotion=methods.sweep;StrategySim.prototype.solveContacts=methods.solve};
+      const q=window.__contactQA,{StrategySim,GameRuleDefinition,DebugScenarioHarness,RallyStateCodec,SweptCircleContact,InteractionGeometry}=q;
+      const actual={cast:SweptCircleContact.cast,sweep:StrategySim.prototype.resolveNonAlliedSurfaceMotion,solve:StrategySim.prototype.solveContacts,target:StrategySim.prototype.pickCombatTarget,geometryContact:InteractionGeometry.contact};
+      const install=methods=>{SweptCircleContact.cast=methods.cast;StrategySim.prototype.resolveNonAlliedSurfaceMotion=methods.sweep;StrategySim.prototype.solveContacts=methods.solve;StrategySim.prototype.pickCombatTarget=methods.target;InteractionGeometry.contact=methods.geometryContact};
       const bytes=sim=>RallyStateCodec.encode(sim.exportState());
       const same=(a,b,label)=>{if(a.length!==b.length||!a.every((v,i)=>v===b[i]))throw Error('Authoritative bytes differ: '+label)};
       const results=[];
@@ -36,10 +36,12 @@ window.__contactQA={StrategySim,GameRuleDefinition,DebugScenarioHarness,RallySta
       results.push({primitiveComparisons:20000,identical:true});
       for(const c of [{type:'swordsman',count:60,seed:3,ticks:120},{type:'shelltitan',count:60,seed:8,ticks:80},{type:'hivecarrier',count:15,seed:3,ticks:80},
         {type:'sporeherd',count:20,seed:8,ticks:100},{type:'pillbug',count:20,seed:3,ticks:80},
-        {type:'burrowbeast',count:20,seed:8,ticks:80},{type:'swarmbug',count:20,seed:3,ticks:80},{type:'kickhopper',count:20,seed:8,ticks:80}]){
-        const draft={decks:{host:[c.type],guest:[c.type]},defenseCards:{host:[],guest:[]}};
-        const scenario=DebugScenarioHarness.normalize({kind:'unit-combat',allyType:c.type,enemyType:c.type,allyCount:c.count,enemyCount:c.count,research:true,humanRole:'host'});
-        if(scenario.allyType!==c.type||scenario.enemyType!==c.type)throw Error('Unknown fixture unit '+c.type);
+        {type:'burrowbeast',count:20,seed:8,ticks:80},{type:'swarmbug',count:20,seed:3,ticks:80},{type:'kickhopper',count:20,seed:8,ticks:80},
+        {type:'mantis',enemy:'medic',count:20,seed:3,ticks:80},{type:'ancientmistray',enemy:'lanternmoth',count:20,seed:8,ticks:80},
+        {type:'siege',enemy:'tank',count:20,seed:3,ticks:80},{type:'rocket',enemy:'swordsman',count:20,seed:8,ticks:80}]){
+        const enemy=c.enemy||c.type,draft={decks:{host:[c.type],guest:[enemy]},defenseCards:{host:[],guest:[]}};
+        const scenario=DebugScenarioHarness.normalize({kind:'unit-combat',allyType:c.type,enemyType:enemy,allyCount:c.count,enemyCount:c.count,research:true,humanRole:'host'});
+        if(scenario.allyType!==c.type||scenario.enemyType!==enemy)throw Error('Unknown fixture unit '+c.type);
         const rules=GameRuleDefinition.resolve({overrides:{simulation:{tps:10}}});
         const a=StrategySim.createForMatch({draft,seed:c.seed,rules,debugScenario:scenario}),b=StrategySim.createForMatch({draft,seed:c.seed,rules,debugScenario:scenario});
         let referenceMs=0,actualMs=0;
@@ -63,4 +65,4 @@ window.__contactQA={StrategySim,GameRuleDefinition,DebugScenarioHarness,RallySta
     fs.writeFileSync(path.join(root,'.qa/contact-reuse/differential.json'),JSON.stringify(results,null,2));
     console.log(JSON.stringify(results,null,2));
   }finally{await browser.close()}
-})().catch(e=>{console.error(e.stack);process.exitCode=1});
+})().catch(e=>{console.error(String(e.stack).replace(/data:text\/javascript;base64,[A-Za-z0-9+/=]+/g,'[bundled gamekit]'));process.exitCode=1});

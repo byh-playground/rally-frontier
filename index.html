@@ -12088,8 +12088,8 @@ class InteractionGeometry{
     return this.unitRadius(st)+(BuildingDefinition.get(tt)?.size||35)+NAV_BUILDING_MARGIN;
   }
   static contact(source,target){
-    const st=typeof source==='string'?source:source?.type,tt=typeof target==='string'?target:target?.type,sd=UnitDefinition.get(st)||{};
-    if(BuildingDefinition.get(tt))return source?.side===NEUTRAL_SIDE?this.unitRadius(st)+(BuildingDefinition.get(tt)?.size||35):((sd.size||10)+(BuildingDefinition.get(tt)?.size||30))*COLLISION_RADIUS_SCALE;
+    const st=typeof source==='string'?source:source?.type,tt=typeof target==='string'?target:target?.type,building=BuildingDefinition.get(tt);
+    if(building)return source?.side===NEUTRAL_SIDE?this.unitRadius(st)+(building.size||35):(((UnitDefinition.get(st)||{}).size||10)+(building.size||30))*COLLISION_RADIUS_SCALE;
     return this.unitRadius(st)+this.unitRadius(tt);
   }
   static requiresTerrainLine(source,kind,extra=0){
@@ -16251,6 +16251,69 @@ class DeterministicCollisionGrid{
   }
 }
 
+// Each circle's own swept bounds prune false candidates. Ordered bucket streams
+// preserve the old coarse-grid traversal, including epsilon contact ties.
+class DeterministicSweptCollisionGrid{
+  static MAX_CELLS=16;
+  constructor(world){
+    this.cellFP=64*FP;this.cols=Math.ceil(world.width/64);this.rows=Math.ceil(world.height/64);
+    this.buckets=new Array(this.cols*this.rows);this.used=[];
+    this.ordered=[];this.overflow=[];this.lists=[];this.cursors=new Int32Array(DeterministicSweptCollisionGrid.MAX_CELLS+1);this.out=[];
+    this.capacity=0;this.bounds=null;
+  }
+  cellX(x){return RangeUtil.clamp(Math.floor(x/this.cellFP),0,this.cols-1)}
+  cellY(y){return RangeUtil.clamp(Math.floor(y/this.cellFP),0,this.rows-1)}
+  reset(units,motion,radii,segX,segY,coarse){
+    for(const key of this.used)this.buckets[key].length=0;
+    this.used.length=0;this.ordered.length=0;this.overflow.length=0;
+    if(units.length>this.capacity){
+      this.capacity=Math.max(units.length,this.capacity*2,64);
+      this.bounds=Object.fromEntries(['minX','minY','maxX','maxY'].map(key=>[key,new Float64Array(this.capacity)]));
+      this.rank=new Int32Array(this.capacity);this.endCell=new Int32Array(this.capacity);
+    }
+    const b=this.bounds;
+    for(let key=0;key<coarse.buckets.length;key++)for(const i of coarse.buckets[key]){
+      const u=units[i];if(!u?.alive||radii[i]<=0||motion.flags[i])continue;
+      this.rank[i]=this.ordered.length;this.endCell[i]=key;this.ordered.push(i);
+      b.minX[i]=Math.min(segX[i],u.fx)-radii[i]-1;b.maxX[i]=Math.max(segX[i],u.fx)+radii[i]+1;
+      b.minY[i]=Math.min(segY[i],u.fy)-radii[i]-1;b.maxY[i]=Math.max(segY[i],u.fy)+radii[i]+1;
+      const x0=this.cellX(b.minX[i]),x1=this.cellX(b.maxX[i]),y0=this.cellY(b.minY[i]),y1=this.cellY(b.maxY[i]);
+      if((x1-x0+1)*(y1-y0+1)>DeterministicSweptCollisionGrid.MAX_CELLS){this.overflow.push(i);continue}
+      for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+        const cell=y*this.cols+x,bucket=this.buckets[cell]||(this.buckets[cell]=[]);
+        if(!bucket.length)this.used.push(cell);bucket.push(i);
+      }
+    }
+  }
+  query(i,coarse,minCx,maxCx,minCy,maxCy){
+    const b=this.bounds,out=this.out;out.length=0;
+    const accept=j=>{
+      if(j<=i)return;
+      const key=this.endCell[j],x=key%coarse.cols,y=Math.floor(key/coarse.cols);
+      if(x<minCx||x>maxCx||y<minCy||y>maxCy)return;
+      if(b.maxX[i]<b.minX[j]||b.maxX[j]<b.minX[i]||b.maxY[i]<b.minY[j]||b.maxY[j]<b.minY[i])return;
+      out.push(j);
+    };
+    const x0=this.cellX(b.minX[i]),x1=this.cellX(b.maxX[i]),y0=this.cellY(b.minY[i]),y1=this.cellY(b.maxY[i]);
+    // Large sweeps inspect every eligible unit once, including ordinary bins.
+    if((x1-x0+1)*(y1-y0+1)>DeterministicSweptCollisionGrid.MAX_CELLS){for(const j of this.ordered)accept(j);return out}
+    const lists=this.lists;lists.length=0;
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const bucket=this.buckets[y*this.cols+x];if(bucket?.length)lists.push(bucket)}
+    if(this.overflow.length)lists.push(this.overflow);
+    this.cursors.fill(0,0,lists.length);
+    // At most 17 streams, already sorted by old (end-cell, unit-index) order.
+    // Consume equal heads together: no duplicate pair and no per-query sort.
+    for(;;){
+      let next=-1,rank=Infinity;
+      for(let k=0;k<lists.length;k++){const cursor=this.cursors[k];if(cursor>=lists[k].length)continue;const j=lists[k][cursor];if(this.rank[j]<rank){rank=this.rank[j];next=j}}
+      if(next<0)break;
+      for(let k=0;k<lists.length;k++)if(lists[k][this.cursors[k]]===next)this.cursors[k]++;
+      accept(next);
+    }
+    return out;
+  }
+}
+
 /* Runtime-only deterministic unit spatial grid.
  * Dense fixed arrays replace Map lookup + per-query sorting in the combat hot path.
  * Each cell also keeps side-specific buckets, so enemy/ally queries do not scan
@@ -17408,6 +17471,7 @@ class NavigationTopology{
 class SimulationRuntimeState{
   static collision(sim){
     sim.collisionGrid=new DeterministicCollisionGrid(COLLISION_SPATIAL_CELL,sim.world);
+    sim.collisionSweepGrid=new DeterministicSweptCollisionGrid(sim.world);
     sim.collisionMotion=null;
     for(const key of ["collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther"])sim[key]=new Int32Array(0);
     sim.collisionCnt=new Uint16Array(0);
@@ -17455,7 +17519,7 @@ class StrategySim{
   // their existing StateContracts and serialization.
   static stateContract=new StateContract({}, {presentation:["events","perfStats","balanceStats","_perfCollect"],derived:[
     "navigationDemandScope","world","tps","campaignScriptRuntime","campaignTechCap","disposed","runtimeEpoch","commandReceipts",
-    "collisionGrid","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
+    "collisionGrid","collisionSweepGrid","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
     "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapMarks","hardFixSapEpoch",
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","maxUnitRadius",
     "cloakCacheTick","auraCloakedIds","tickVisibilityCache","tickVisibilityCacheTick","economyCacheTick","workerGasAssignments","validGasExtractorsBySide","navigationRevision","navigation"
@@ -20076,7 +20140,7 @@ class StrategySim{
   canSeeCombatTarget(attackerSide,target,sources){
     if(!target||target.alive===false||target.side===attackerSide||this.neutralObjectFriendlyToSide(target,attackerSide))return false;
     const side=attackerSide===1?1:0,cache=this.tickVisibilityCache?.[side],key=target.id;
-    if(cache&&key!=null&&cache.has(key)){if(this._perfCollect)this._perfCollect.visibilityCacheHits=(this._perfCollect.visibilityCacheHits||0)+1;return cache.get(key)}
+    if(cache&&key!=null){const cached=cache.get(key);if(cached!==undefined){if(this._perfCollect)this._perfCollect.visibilityCacheHits=(this._perfCollect.visibilityCacheHits||0)+1;return cached}}
     const stealth=this.isStealthed(target),targetAir=this.unitLayer(target.type)==="AIR",targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(target.x,target.y);
     const candidates=this.visionSourceCandidates(sources,target.x,target.y);
     if(this._perfCollect){this._perfCollect.visibilityChecks++;this._perfCollect.visionCandidateChecks+=candidates?candidates.length:(sources?.length||0)}
@@ -20118,6 +20182,7 @@ class StrategySim{
     // a fireable combatant. Only acquire a chase target when nothing can be hit.
     if(this._perfCollect)this._perfCollect.targetQueries++;
     const d=UnitDefinition.get(u.type),attackRange=this.basicAttackRange(u);
+    const attackNeedsTerrainLine=InteractionGeometry.requiresTerrainLine(u,'attack',attackRange);
     const aggro=Number(d.aggroRange)||(d.role==="artillery"?560:d.role==="assassin"?430:390);
     const queryRange=Math.max(aggro,attackRange+this.unitRadius(u.type)+Math.max(this.maxUnitRadius,this.maxBuildingRadius));
     let taunt=null,tauntD2=Infinity,currentInRange=null;
@@ -20125,9 +20190,14 @@ class StrategySim{
     let acquireBest=null,acquireD2=Infinity,currentAcquire=null,currentAcquireD2=Infinity;
     let closeFallback=null,closeFallbackD2=Infinity;
     const consider=(entity,isBuilding,def,d2)=>{
-      const dist=Math.sqrt(d2),max=this.interactionDistance(u,entity,"attack",attackRange);
+      const dist=Math.sqrt(d2);
+      // Preserve visibility memo seeding above. The source's terrain policy is
+      // constant for this selection; AIR/ranged reach needs no per-target ray gate.
+      const rawReach=!attackNeedsTerrainLine||dist>aggro?InteractionGeometry.reach(u,entity,'attack',attackRange):null;
+      if(dist>aggro&&dist>rawReach)return;
+      const max=attackNeedsTerrainLine?this.interactionDistance(u,entity,"attack",attackRange):rawReach;
       if(dist>aggro&&dist>max)return;
-      const min=d.minRange?this.interactionDistance(u,entity,"combat-contact")+d.minRange:0;
+      const min=d.minRange?InteractionGeometry.contact(u,entity)+d.minRange:0;
       const candidate={entity,isBuilding,def};
       if(min&&dist<min){
         if(this.targetChoiceBetter(d2,entity.id,closeFallbackD2,closeFallback)){closeFallback=candidate;closeFallbackD2=d2}
@@ -22005,15 +22075,19 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     let totalCorrections=0;
     for(let pass=0;pass<maxPasses;pass++){
       bestT.fill(Infinity,0,n);bestOther.fill(-1,0,n);
-      const layerTravel=new Map();
+      const layerTravel=new Map();let anyMotion=false;
       for(let i=0;i<n;i++){
         const u=units[i];if(!u?.alive)continue;
         motion.sx[i]=segX[i]/FP;motion.sy[i]=segY[i]/FP;motion.ex[i]=u.fx/FP;motion.ey[i]=u.fy/FP;
         motion.vx[i]=motion.ex[i]-motion.sx[i];motion.vy[i]=motion.ey[i]-motion.sy[i];
-        if(radii[i]>0&&!flags[i])layerTravel.set(layers[i],Math.max(layerTravel.get(layers[i])||0,Math.ceil(Math.hypot(u.fx-segX[i],u.fy-segY[i]))));
+        if(radii[i]>0&&!flags[i]){
+          const travel=Math.ceil(Math.hypot(u.fx-segX[i],u.fy-segY[i]));
+          if(travel)anyMotion=true;layerTravel.set(layers[i],Math.max(layerTravel.get(layers[i])||0,travel));
+        }
       }
-
+      if(!anyMotion)break; // Every relative cast would reject zero motion.
       grid.reset(units);
+      this.collisionSweepGrid.reset(units,motion,radii,segX,segY,grid);
       let pairContacts=0;
       for(let i=0;i<n;i++){
         const a=units[i];
@@ -22022,10 +22096,8 @@ let value=Math.max(0,Number(d.flatArmor)||0);
         const reach=radii[i]+layerRadii.get(layers[i])+layerTravel.get(layers[i]);
         const minCx=grid.cellXFP(Math.min(sx,ex)-reach),maxCx=grid.cellXFP(Math.max(sx,ex)+reach);
         const minCy=grid.cellYFP(Math.min(sy,ey)-reach),maxCy=grid.cellYFP(Math.max(sy,ey)+reach);
-        for(let cy=minCy;cy<=maxCy;cy++)for(let cx=minCx;cx<=maxCx;cx++){
-          const bucket=buckets[cy*cols+cx];
-          for(let k=0;k<bucket.length;k++){
-            const j=bucket[k];if(j<=i)continue;
+        const candidates=this.collisionSweepGrid.query(i,grid,minCx,maxCx,minCy,maxCy);
+        for(const j of candidates){
             const b=units[j];
             if(!b?.alive||radii[j]<=0||flags[j]||layers[i]!==layers[j]||this.isAlliedCollisionUnit(a,b))continue;
             // Keep the original floating-point subtraction order. Equal relative
@@ -22042,7 +22114,6 @@ let value=Math.max(0,Number(d.flatArmor)||0);
             if(hit.t<bestT[j]-1e-9||(Math.abs(hit.t-bestT[j])<=1e-9&&(bestOther[j]<0||i<bestOther[j]))){
               bestT[j]=hit.t;bestNx[j]=-hit.nx;bestNy[j]=-hit.ny;bestOther[j]=i;
             }
-          }
         }
       }
       if(!pairContacts)break;
@@ -28131,6 +28202,7 @@ class GLRenderer{
     // Render-only visibility spatial cache.
     this.visionCellSize=320;
     this.visionSourcesBySide=[[],[]];
+    this.detectionGridBySide=[new Map(),new Map()];
     this.visionGridBySide=[new Map(),new Map()];
     this.snapshotCloakedIds=new Set();
     this.fogVisibilityGrids=new Map();
@@ -28761,7 +28833,7 @@ class GLRenderer{
   }
 
   rebuildVisibilityCache(){
-    this.visionSourcesBySide=[[],[]];this.visionGridBySide=[new Map(),new Map()];this.snapshotCloakedIds.clear();
+    this.visionSourcesBySide=[[],[]];this.visionGridBySide=[new Map(),new Map()];this.detectionGridBySide=[new Map(),new Map()];this.snapshotCloakedIds.clear();
     if(!this.snapshot)return;
     const cell=this.visionCellSize;
     for(const side of [0,1]){
@@ -28769,6 +28841,12 @@ class GLRenderer{
       for(const src of sources){const r=Math.max(src.r,src.detect);
         for(let cy=Math.floor((src.y-r)/cell);cy<=Math.floor((src.y+r)/cell);cy++)for(let cx=Math.floor((src.x-r)/cell);cx<=Math.floor((src.x+r)/cell);cx++){
           const key=cx+","+cy;let bin=grid.get(key);if(!bin)grid.set(key,bin=[]);bin.push(src);
+        }
+        // Zero-radius sources still detect their exact point in the existing
+        // predicate. Index them too; one fixed-point quantum pads float boundaries.
+        const detect=Math.max(0,Number(src.detect)||0)+1/FP,detection=this.detectionGridBySide[side];
+        for(let y=Math.floor((src.y-detect)/64);y<=Math.floor((src.y+detect)/64);y++)for(let x=Math.floor((src.x-detect)/64);x<=Math.floor((src.x+detect)/64);x++){
+          const key=x+','+y;let bin=detection.get(key);if(!bin)detection.set(key,bin=[]);bin.push(src);
         }
       }
     }
@@ -30719,7 +30797,11 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
     if(this.replayObserverAll||this.replayVisionMode==="union")return true;
     if(!this.snapshot)return false;
     const targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(x,y);
-    for(const side of this.replayVisionSides())for(const src of this.visionSourcesBySide[side]||[])if(VisibilityPolicy.sourceCanDetectPoint(this.snapshot,src,x,y,{targetAir,targetLevel}))return true;
+    const finite=Number.isFinite(x)&&Number.isFinite(y),key=finite?Math.floor(x/64)+','+Math.floor(y/64):null;
+    for(const side of this.replayVisionSides()){
+      const sources=finite?(this.detectionGridBySide[side].get(key)||[]):this.visionSourcesBySide[side]||[];
+      for(const src of sources)if(VisibilityPolicy.sourceCanDetectPoint(this.snapshot,src,x,y,{targetAir,targetLevel}))return true;
+    }
     return false;
   }
   snapshotStealthed(u){
