@@ -1,12 +1,17 @@
-const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{execFileSync}=require('node:child_process');
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..');
 const reference=fs.readFileSync(path.join(__dirname,'fixtures/contact-reference.js'),'utf8');
+const baseline=execFileSync('git',['show','714aed8f49ee8eff4ccc887791dd5b2045d8c54c:index.html'],{cwd:root,encoding:'utf8',maxBuffer:16*1024*1024});
+const hardFixStart=baseline.indexOf('  enforceNonAlliedNoOverlap('),hardFixEnd=baseline.indexOf('\n  resetTerrainMotionOrigin(',hardFixStart);
+assert(hardFixStart>=0&&hardFixEnd>hardFixStart,'Pinned pre-grid hard-fix baseline must exist');
+const referenceHardFix=baseline.slice(hardFixStart,hardFixEnd).trim();
 const source=require('./bundle-gamekit.cjs').bundleGame(root,fs.readFileSync(path.join(root,'index.html'),'utf8'));
 const end=source.lastIndexOf('})();');assert(end>0);
 // Frozen pre-optimization functions are a byte-equality oracle, only inside QA.
 const html=source.slice(0,end)+`
 ${reference}
+contactReference.hardFix={${referenceHardFix}}.enforceNonAlliedNoOverlap;
 window.__contactQA={StrategySim,GameRuleDefinition,DebugScenarioHarness,RallyStateCodec,InteractionGeometry,
   SweptCircleContact,reference:contactReference};
 `+source.slice(end);
@@ -18,8 +23,9 @@ window.__contactQA={StrategySim,GameRuleDefinition,DebugScenarioHarness,RallySta
     await page.goto('https://contact-qa.local/');await page.waitForFunction(()=>window.__contactQA&&window.RallyNetcode);
     const results=await page.evaluate(async()=>{
       const q=window.__contactQA,{StrategySim,GameRuleDefinition,DebugScenarioHarness,RallyStateCodec,SweptCircleContact,InteractionGeometry}=q;
-      const actual={cast:SweptCircleContact.cast,sweep:StrategySim.prototype.resolveNonAlliedSurfaceMotion,solve:StrategySim.prototype.solveContacts,target:StrategySim.prototype.pickCombatTarget,geometryContact:InteractionGeometry.contact};
-      const install=methods=>{SweptCircleContact.cast=methods.cast;StrategySim.prototype.resolveNonAlliedSurfaceMotion=methods.sweep;StrategySim.prototype.solveContacts=methods.solve;StrategySim.prototype.pickCombatTarget=methods.target;InteractionGeometry.contact=methods.geometryContact};
+      const actual={cast:SweptCircleContact.cast,sweep:StrategySim.prototype.resolveNonAlliedSurfaceMotion,solve:StrategySim.prototype.solveContacts,target:StrategySim.prototype.pickCombatTarget,geometryContact:InteractionGeometry.contact,hardFix:StrategySim.prototype.enforceNonAlliedNoOverlap};
+      const referenceMethods={...q.reference,hardFix:q.reference.hardFix};
+      const install=methods=>{SweptCircleContact.cast=methods.cast;StrategySim.prototype.resolveNonAlliedSurfaceMotion=methods.sweep;StrategySim.prototype.solveContacts=methods.solve;StrategySim.prototype.pickCombatTarget=methods.target;InteractionGeometry.contact=methods.geometryContact;StrategySim.prototype.enforceNonAlliedNoOverlap=methods.hardFix};
       const bytes=sim=>RallyStateCodec.encode(sim.exportState());
       const same=(a,b,label)=>{if(a.length!==b.length||!a.every((v,i)=>v===b[i]))throw Error('Authoritative bytes differ: '+label)};
       const results=[];
@@ -49,7 +55,7 @@ window.__contactQA={StrategySim,GameRuleDefinition,DebugScenarioHarness,RallySta
           same(bytes(a),bytes(b),'initial '+c.type);
           for(let tick=1;tick<=c.ticks;tick++){
             if(tick===30||tick===60)for(const sim of [a,b])sim.applyCommand('host',{type:'SET_FLAG',x:sim.world.width*.5+120,y:sim.world.height*.5-120,forced:tick===60});
-            install(q.reference);let started=performance.now();a.step();referenceMs+=performance.now()-started;
+            install(referenceMethods);let started=performance.now();a.step();referenceMs+=performance.now()-started;
             install(actual);started=performance.now();b.step();actualMs+=performance.now()-started;
             same(bytes(a),bytes(b),c.type+' tick '+tick);
             if(tick===45){b.importState(a.exportState());same(bytes(a),bytes(b),'cold restore '+c.type)}

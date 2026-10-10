@@ -9875,6 +9875,9 @@ body.campaign-mode #p2pHealthText {
     <div><span>Grid 후보 / PBD 접촉합 / 최대 이웃(접촉 평균) / 반복</span><b id="dbgPerfCollision">-</b></div>
     <div><span>충돌 ms · 준비 / grid / pair scan / PBD 보정</span><b id="dbgPerfCollisionCore">-</b></div>
     <div><span>충돌 ms · 이동 sweep / 지형 / 최종 SAP / 기타</span><b id="dbgPerfCollisionTail">-</b></div>
+    <div><span>전투 ms · 주 대상 선택 / 기타 · 대상 선택 calls</span><b id="dbgPerfCombatSplit">-</b></div>
+    <div><span>Swept 호출 / 활성 pass / 후보 / hit / 보정 유닛 / 무보정 pass</span><b id="dbgPerfCollisionSweepFlow">-</b></div>
+    <div><span>Hard-fix 호출 / pass / SAP pair 검사 / 후보 / 보정 / 무보정</span><b id="dbgPerfCollisionHardFixFlow">-</b></div>
     <div><span>Render draw calls / 업로드 bytes</span><b id="dbgPerfDrawCalls">-</b></div>
     <div><span>엔티티 peak 유닛 / 건물 / 투사체</span><b id="dbgEndurancePeaks">-</b></div>
   </div>
@@ -13043,6 +13046,9 @@ class PerformanceTelemetry{
       projectileMs:0,collisionMs:0,collisionPrepMs:0,collisionGridBuildMs:0,collisionPairScanMs:0,collisionPbdApplyMs:0,collisionSweptMotionMs:0,collisionTerrainMs:0,collisionHardFixMs:0,collisionOtherMs:0,
       collisionPbdContacts:0,collisionPbdMaxNeighbors:0,collisionPbdNeighborOccurrences:0,collisionPbdNeighborSum:0,
       collisionPbdPeakNeighbors:0,collisionPbdContactTotal:0,collisionPbdNeighborObservations:0,collisionPbdNeighborTotal:0,collisionPbdDetailedSamples:0,
+      collisionSweptCalls:0,collisionSweptActivePasses:0,collisionSweptZeroMotionCalls:0,collisionSweptEmptyPasses:0,collisionSweptPairTests:0,collisionSweptHits:0,collisionSweptCorrectionUnits:0,collisionSweptNoCorrectionPasses:0,
+      collisionHardFixCalls:0,collisionHardFixPasses:0,collisionHardFixActivePairTests:0,collisionHardFixCandidates:0,collisionHardFixCorrections:0,collisionHardFixNoOpCalls:0,
+      combatTargetPickMs:0,combatTargetPickCalls:0,combatOtherMs:0,
       postMs:0,snapshotMs:0,maxSnapshotMs:0,snapshotSamples:0,lastStepMs:0,stepSamples:0,maxStepMs:0,ewmaStepMs:0,
       aliveUnits:0,workers:0,combatUnits:0,projectiles:0,
       peakAliveUnits:0,peakBuildings:0,peakProjectiles:0,
@@ -21729,7 +21735,11 @@ let value=Math.max(0,Number(d.flatArmor)||0);
         this.clearAttackWindup(u);
       }
     }
-    if(!found)found=this.pickCombatTarget(u,vision[u.side]);
+    if(!found){
+      const pickStarted=this._perfCollect?performance.now():0;
+      found=this.pickCombatTarget(u,vision[u.side]);
+      if(this._perfCollect){this._perfCollect.combatTargetPickMs+=performance.now()-pickStarted;this._perfCollect.combatTargetPickCalls++}
+    }
 
     combatBehavior?.updatePosture?.(this,u,found,ability);
 
@@ -22059,6 +22069,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   resolveNonAlliedSurfaceMotion(startFx,startFy,radii,maxRadius,maxPasses=4){
     const units=this.units,n=units.length;
     if(!n)return 0;
+    const perf=this._perfCollect;if(perf)perf.collisionSweptCalls++;
     this.ensureCollisionBuffers(n);
     const segX=this.collisionSegmentFx,segY=this.collisionSegmentFy;
     const nextX=this.collisionNextFx,nextY=this.collisionNextFy;
@@ -22090,7 +22101,8 @@ let value=Math.max(0,Number(d.flatArmor)||0);
           if(travel)anyMotion=true;layerTravel.set(layers[i],Math.max(layerTravel.get(layers[i])||0,travel));
         }
       }
-      if(!anyMotion)break; // Every relative cast would reject zero motion.
+      if(!anyMotion){if(perf)perf.collisionSweptZeroMotionCalls++;break} // Every relative cast would reject zero motion.
+      if(perf)perf.collisionSweptActivePasses++;
       grid.reset(units);
       this.collisionSweepGrid.reset(units,motion,radii,segX,segY,grid);
       let pairContacts=0;
@@ -22102,6 +22114,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
         const minCx=grid.cellXFP(Math.min(sx,ex)-reach),maxCx=grid.cellXFP(Math.max(sx,ex)+reach);
         const minCy=grid.cellYFP(Math.min(sy,ey)-reach),maxCy=grid.cellYFP(Math.max(sy,ey)+reach);
         const candidates=this.collisionSweepGrid.query(i,grid,minCx,maxCx,minCy,maxCy);
+        if(perf)perf.collisionSweptPairTests+=candidates.length;
         for(const j of candidates){
             const b=units[j];
             if(!b?.alive||radii[j]<=0||flags[j]||layers[i]!==layers[j]||this.isAlliedCollisionUnit(a,b))continue;
@@ -22111,6 +22124,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
             if(vx===0&&vy===0)continue;
             const hit=SweptCircleContact.cast(motion.sx[i]-motion.sx[j],motion.sy[i]-motion.sy[j],vx,vy,(radii[i]+radii[j])/FP,SweptCircleContact.policies.relative,()=>{const v=this.fallbackNormal(a,b);return{x:v[0]/COLLISION_NORMAL,y:v[1]/COLLISION_NORMAL}});
             if(!hit)continue;
+            if(perf)perf.collisionSweptHits++;
             pairContacts++;
 
             if(hit.t<bestT[i]-1e-9||(Math.abs(hit.t-bestT[i])<=1e-9&&(bestOther[i]<0||j<bestOther[i]))){
@@ -22121,7 +22135,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
             }
         }
       }
-      if(!pairContacts)break;
+      if(!pairContacts){if(perf)perf.collisionSweptEmptyPasses++;break}
 
       let corrected=0;
       for(let i=0;i<n;i++){
@@ -22158,6 +22172,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
         this.navigation.motion.constrain(u);
       }
       totalCorrections+=corrected;
+      if(perf){perf.collisionSweptCorrectionUnits+=corrected;if(!corrected)perf.collisionSweptNoCorrectionPasses++}
       if(!corrected)break;
     }
     return totalCorrections;
@@ -22218,7 +22233,9 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   enforceNonAlliedNoOverlap(radii,maxRadius,maxPasses=4){
     const units=this.units,n=units.length;
     let total=0;
+    const perf=this._perfCollect;if(perf)perf.collisionHardFixCalls++;
     for(let pass=0;pass<maxPasses;pass++){
+      if(perf)perf.collisionHardFixPasses++;
       for(let i=0;i<n;i++){const u=units[i];this.collisionSegmentFx[i]=u?.fx??0;this.collisionSegmentFy[i]=u?.fy??0}
       const eligible=this.hardFixSapEligible;eligible.length=0;
       let sx=0,sy=0,sxx=0,syy=0;
@@ -22237,11 +22254,11 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       this.hardFixSapAxis=axis;
       const coord=i=>axis==="x"?units[i].fx:units[i].fy;
       const otherCoord=i=>axis==="x"?units[i].fy:units[i].fx;
-      let order=this.hardFixSapWorkOrder;order.length=0;
       if(this.hardFixSapMarks.length<n)this.hardFixSapMarks=new Uint32Array(Math.max(n,this.collisionRadii.length||n));
       let epoch=(this.hardFixSapEpoch+2)>>>0;if(epoch<2){this.hardFixSapMarks.fill(0);epoch=2}this.hardFixSapEpoch=epoch;
       const marks=this.hardFixSapMarks;
       for(const i of eligible)marks[i]=epoch;
+      let order=this.hardFixSapWorkOrder;order.length=0;
       if(!axisChanged&&this.hardFixSapOrder.length){
         for(const i of this.hardFixSapOrder)if(marks[i]===epoch){order.push(i);marks[i]=epoch+1}
         for(const i of eligible)if(marks[i]===epoch)order.push(i);
@@ -22265,10 +22282,12 @@ let value=Math.max(0,Number(d.flatArmor)||0);
         for(let k=0;k<active.length;k++){const ai=active[k];if(coord(ai)+radii[ai]>=minB)active[w++]=ai}
         active.length=w;
         for(let k=0;k<active.length;k++){
+          if(perf)perf.collisionHardFixActivePairTests++;
           const ai=active[k],a=units[ai],bb=units[bi];
           if(this.isAlliedCollisionUnit(a,bb)||this.unitLayer(a.type)!==this.unitLayer(bb.type))continue;
           const min=radii[ai]+radii[bi];
           if(Math.abs(otherCoord(ai)-otherCoord(bi))>=min)continue;
+          if(perf)perf.collisionHardFixCandidates++;
           const owner=this.nonAlliedPenetrationOwner(ai,bi);
           pairs.push(owner*(n+1)+(owner===ai?bi:ai));
         }
@@ -22433,6 +22452,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       mark=perf?now():0;
       const hardFixes=this.enforceNonAlliedNoOverlap(radii,maxRadius,4);
       if(perf)perf.collisionHardFixMs+=now()-mark;
+      if(perf){perf.collisionHardFixCorrections+=hardFixes;if(!hardFixes)perf.collisionHardFixNoOpCalls++}
       if(hardFixes){
         overlaps+=hardFixes;if(perf)perf.collisionOverlaps+=hardFixes;
         for(let i=0;i<n;i++)if(units[i]?.alive)this.syncUnitSpatial(units[i]);
@@ -22560,7 +22580,9 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     const now=profile?()=>performance.now():null;
     const stepStart=profile?now():0;
     this._perfCollect=profile?{spatialQueries:0,spatialCandidates:0,targetQueries:0,targetVisibilityRejects:0,sideSpatialQueries:0,visibilityChecks:0,visionCandidateChecks:0,visibilityCacheHits:0,
-      collisionPairs:0,collisionOverlaps:0,collisionIterations:0,buildingCollisionCandidates:0,collisionPrepMs:0,collisionGridBuildMs:0,collisionPairScanMs:0,collisionPbdApplyMs:0,collisionSweptMotionMs:0,collisionTerrainMs:0,collisionHardFixMs:0,collisionPbdContacts:0,collisionPbdMaxNeighbors:0,collisionPbdNeighborOccurrences:0,collisionPbdNeighborSum:0}:null;
+      collisionPairs:0,collisionOverlaps:0,collisionIterations:0,buildingCollisionCandidates:0,collisionPrepMs:0,collisionGridBuildMs:0,collisionPairScanMs:0,collisionPbdApplyMs:0,collisionSweptMotionMs:0,collisionTerrainMs:0,collisionHardFixMs:0,collisionPbdContacts:0,collisionPbdMaxNeighbors:0,collisionPbdNeighborOccurrences:0,collisionPbdNeighborSum:0,
+      collisionSweptCalls:0,collisionSweptActivePasses:0,collisionSweptZeroMotionCalls:0,collisionSweptEmptyPasses:0,collisionSweptPairTests:0,collisionSweptHits:0,collisionSweptCorrectionUnits:0,collisionSweptNoCorrectionPasses:0,
+      collisionHardFixCalls:0,collisionHardFixPasses:0,collisionHardFixActivePairTests:0,collisionHardFixCandidates:0,collisionHardFixCorrections:0,collisionHardFixNoOpCalls:0,combatTargetPickMs:0,combatTargetPickCalls:0}:null;
 
     this.tick++;
     this.events=[];
@@ -22661,6 +22683,9 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       p.collisionPbdNeighborObservations=(p.collisionPbdNeighborObservations||0)+c.collisionPbdNeighborOccurrences;
       p.collisionPbdNeighborTotal=(p.collisionPbdNeighborTotal||0)+c.collisionPbdNeighborSum;
       p.collisionPbdDetailedSamples=(p.collisionPbdDetailedSamples||0)+1;
+      for(const key of ["collisionSweptCalls","collisionSweptActivePasses","collisionSweptZeroMotionCalls","collisionSweptEmptyPasses","collisionSweptPairTests","collisionSweptHits","collisionSweptCorrectionUnits","collisionSweptNoCorrectionPasses",
+        "collisionHardFixCalls","collisionHardFixPasses","collisionHardFixActivePairTests","collisionHardFixCandidates","collisionHardFixCorrections","collisionHardFixNoOpCalls","combatTargetPickMs","combatTargetPickCalls"])p[key]=c[key];
+      p.combatOtherMs=Math.max(0,combatMs-c.combatTargetPickMs);
       p.aliveUnits=aliveUnits;p.workers=workers;p.combatUnits=combatUnits;p.projectiles=this.projectiles.length;
       p.peakAliveUnits=Math.max(p.peakAliveUnits||0,aliveUnits);
       p.peakBuildings=Math.max(p.peakBuildings||0,this.buildings.length);
@@ -33296,6 +33321,7 @@ UiRegistry.refs.dbgCoreBytes=DomUtil.byId("dbgCoreBytes");
 UiRegistry.refs.dbgPerfStep=DomUtil.byId("dbgPerfStep");UiRegistry.refs.dbgPerfPeerStep=DomUtil.byId("dbgPerfPeerStep");UiRegistry.refs.dbgPerfCore=DomUtil.byId("dbgPerfCore");UiRegistry.refs.dbgPerfCombat=DomUtil.byId("dbgPerfCombat");UiRegistry.refs.dbgPerfTail=DomUtil.byId("dbgPerfTail");
 UiRegistry.refs.dbgPerfSnapshot=DomUtil.byId("dbgPerfSnapshot");UiRegistry.refs.dbgPerfEntities=DomUtil.byId("dbgPerfEntities");UiRegistry.refs.dbgPerfSpatial=DomUtil.byId("dbgPerfSpatial");UiRegistry.refs.dbgPerfTarget=DomUtil.byId("dbgPerfTarget");UiRegistry.refs.dbgPerfCollision=DomUtil.byId("dbgPerfCollision");UiRegistry.refs.dbgPerfRender=DomUtil.byId("dbgPerfRender");UiRegistry.refs.dbgPerfAllowanceLabel=DomUtil.byId("dbgPerfAllowanceLabel");UiRegistry.refs.dbgPerfAllowance=DomUtil.byId("dbgPerfAllowance");UiRegistry.refs.dbgPerfUsedLabel=DomUtil.byId("dbgPerfUsedLabel");UiRegistry.refs.dbgPerfUsed=DomUtil.byId("dbgPerfUsed");UiRegistry.refs.dbgPerfBudgetLabel=DomUtil.byId("dbgPerfBudgetLabel");UiRegistry.refs.dbgPerfBudget=DomUtil.byId("dbgPerfBudget");
 UiRegistry.refs.dbgPerfCollisionCore=DomUtil.byId("dbgPerfCollisionCore");UiRegistry.refs.dbgPerfCollisionTail=DomUtil.byId("dbgPerfCollisionTail");
+UiRegistry.refs.dbgPerfCombatSplit=DomUtil.byId("dbgPerfCombatSplit");UiRegistry.refs.dbgPerfCollisionSweepFlow=DomUtil.byId("dbgPerfCollisionSweepFlow");UiRegistry.refs.dbgPerfCollisionHardFixFlow=DomUtil.byId("dbgPerfCollisionHardFixFlow");
 UiRegistry.refs.dbgEnduranceMismatchRate=DomUtil.byId("dbgEnduranceMismatchRate");UiRegistry.refs.dbgEnduranceCorrectionRate=DomUtil.byId("dbgEnduranceCorrectionRate");UiRegistry.refs.dbgEndurancePeaks=DomUtil.byId("dbgEndurancePeaks");
 UiRegistry.refs.dbgBalanceTime=DomUtil.byId("dbgBalanceTime");UiRegistry.refs.dbgBalanceT2=DomUtil.byId("dbgBalanceT2");UiRegistry.refs.dbgBalanceT3=DomUtil.byId("dbgBalanceT3");UiRegistry.refs.dbgBalanceTech=DomUtil.byId("dbgBalanceTech");UiRegistry.refs.dbgBalanceCombat=DomUtil.byId("dbgBalanceCombat");UiRegistry.refs.dbgBalanceCapture=DomUtil.byId("dbgBalanceCapture");
 UiRegistry.refs.dbgBalanceMineral=DomUtil.byId("dbgBalanceMineral");UiRegistry.refs.dbgBalanceGas=DomUtil.byId("dbgBalanceGas");UiRegistry.refs.dbgBalanceArmy=DomUtil.byId("dbgBalanceArmy");UiRegistry.refs.dbgBalanceAir=DomUtil.byId("dbgBalanceAir");UiRegistry.refs.dbgBalanceAA=DomUtil.byId("dbgBalanceAA");UiRegistry.refs.dbgBalanceExhaust=DomUtil.byId("dbgBalanceExhaust");UiRegistry.refs.dbgBalanceLosses=DomUtil.byId("dbgBalanceLosses");
@@ -34659,10 +34685,13 @@ class ConnectionPresentation{
   UiRegistry.refs.dbgPerfEntities.textContent=`${perf.aliveUnits||0} / ${perf.combatUnits||0} / ${perf.workers||0} / ${perf.projectiles||0}`;
   UiRegistry.refs.dbgPerfSpatial.textContent=`${perf.spatialQueries||0} / ${perf.spatialCandidates||0} (${avgCandidates.toFixed(1)})`;
   UiRegistry.refs.dbgPerfTarget.textContent=`target ${perf.targetQueries||0} · reject ${perf.targetVisibilityRejects||0} / vis ${perf.visibilityChecks||0} · sideQ ${perf.sideSpatialQueries||0}`;
+  UiRegistry.refs.dbgPerfCombatSplit.textContent=`${fmtMs(perf.combatTargetPickMs)} / ${fmtMs(perf.combatOtherMs)} · ${perf.combatTargetPickCalls||0} target calls`;
   const meanPbdNeighbors=perf.collisionPbdNeighborObservations?perf.collisionPbdNeighborTotal/perf.collisionPbdNeighborObservations:0;
   UiRegistry.refs.dbgPerfCollision.textContent=`${perf.collisionPairs||0} / ${perf.collisionPbdContacts||0} / ${perf.collisionPbdPeakNeighbors||0} (${meanPbdNeighbors.toFixed(1)} avg) / ${perf.collisionIterations||0}`;
   UiRegistry.refs.dbgPerfCollisionCore.textContent=`${fmtMs(perf.collisionPrepMs)} / ${fmtMs(perf.collisionGridBuildMs)} / ${fmtMs(perf.collisionPairScanMs)} / ${fmtMs(perf.collisionPbdApplyMs)}`;
   UiRegistry.refs.dbgPerfCollisionTail.textContent=`${fmtMs(perf.collisionSweptMotionMs)} / ${fmtMs(perf.collisionTerrainMs)} / ${fmtMs(perf.collisionHardFixMs)} / ${fmtMs(perf.collisionOtherMs)}`;
+  UiRegistry.refs.dbgPerfCollisionSweepFlow.textContent=`${perf.collisionSweptCalls||0} / ${perf.collisionSweptActivePasses||0} / ${perf.collisionSweptPairTests||0} / ${perf.collisionSweptHits||0} / ${perf.collisionSweptCorrectionUnits||0} / ${perf.collisionSweptNoCorrectionPasses||0}`;
+  UiRegistry.refs.dbgPerfCollisionHardFixFlow.textContent=`${perf.collisionHardFixCalls||0} / ${perf.collisionHardFixPasses||0} / ${perf.collisionHardFixActivePairTests||0} / ${perf.collisionHardFixCandidates||0} / ${perf.collisionHardFixCorrections||0} / ${perf.collisionHardFixNoOpCalls||0}`;
   const rp=ActiveViewState.renderer?.perfStats;
   UiRegistry.refs.dbgPerfRender.textContent=rp?`${(rp.fps||0).toFixed(1)} FPS / ${fmtMs(rp.ewmaFrameWorkMs)} (max ${fmtMs(rp.maxFrameWorkMs)})`:"-";
   const stats=active.performanceStats,t=stats.timings,m=PerformanceTelemetry.runtimeMonitor;
@@ -34894,14 +34923,22 @@ const performanceBenchmark={
             workerMs:Number(p.workerMs)||0,
             visionMs:Number(p.visionMs)||0,
             combatMs:Number(p.combatMs)||0,
+            combatTargetPickMs:Number(p.combatTargetPickMs)||0,
+            combatOtherMs:Number(p.combatOtherMs)||0,
             projectileMs:Number(p.projectileMs)||0,
             collisionMs:Number(p.collisionMs)||0,
             collisionDetails:{sampleTick:Number(p.sampleTick)||0,detailedSamples:Number(p.collisionPbdDetailedSamples)||0,
               gridCandidateVisits:Number(p.collisionPairs)||0,pbdContacts:Number(p.collisionPbdContacts)||0,
               pbdMaxNeighborsThisSample:Number(p.collisionPbdMaxNeighbors)||0,pbdPeakNeighborsAcrossSamples:Number(p.collisionPbdPeakNeighbors)||0,
               meanNeighborsAmongContactingUnits:Number(p.collisionPbdNeighborObservations)?Number(p.collisionPbdNeighborTotal)/Number(p.collisionPbdNeighborObservations):0,
+              combatTargetPickMs:Number(p.combatTargetPickMs)||0,combatOtherMs:Number(p.combatOtherMs)||0,combatTargetPickCalls:Number(p.combatTargetPickCalls)||0,
               pairScanMs:Number(p.collisionPairScanMs)||0,sweptMotionMs:Number(p.collisionSweptMotionMs)||0,
-              terrainMs:Number(p.collisionTerrainMs)||0,finalSapMs:Number(p.collisionHardFixMs)||0},
+              terrainMs:Number(p.collisionTerrainMs)||0,finalSapMs:Number(p.collisionHardFixMs)||0,
+              sweptCalls:Number(p.collisionSweptCalls)||0,sweptPasses:Number(p.collisionSweptActivePasses)||0,sweptPairTests:Number(p.collisionSweptPairTests)||0,
+              sweptHits:Number(p.collisionSweptHits)||0,sweptCorrectionUnits:Number(p.collisionSweptCorrectionUnits)||0,sweptNoCorrectionPasses:Number(p.collisionSweptNoCorrectionPasses)||0,
+              sweptZeroMotionCalls:Number(p.collisionSweptZeroMotionCalls)||0,sweptEmptyPasses:Number(p.collisionSweptEmptyPasses)||0,
+              sapCalls:Number(p.collisionHardFixCalls)||0,sapPasses:Number(p.collisionHardFixPasses)||0,sapActivePairTests:Number(p.collisionHardFixActivePairTests)||0,
+              sapCandidates:Number(p.collisionHardFixCandidates)||0,sapCorrections:Number(p.collisionHardFixCorrections)||0,sapNoOpCalls:Number(p.collisionHardFixNoOpCalls)||0},
             postMs:Number(p.postMs)||0,
             snapshotMs:Number(p.snapshotMs)||0,
             checksumMs:Number(p.checksumMs)||0
@@ -34948,6 +34985,14 @@ const performanceBenchmark={
           collisionPbdPeakNeighbors:Math.max(0,...collisionDetails.map(x=>x.pbdPeakNeighborsAcrossSamples)),
           collisionPbdMeanNeighborsAmongContactingUnits:collisionDetails.at(-1)?.meanNeighborsAmongContactingUnits||0,
           collisionStagesMs:Object.fromEntries(["pairScanMs","sweptMotionMs","terrainMs","finalSapMs"].map(key=>[key,summary(collisionDetails.map(x=>Number(x[key])).filter(Number.isFinite))])),
+          combatTargetPickMs:summary(collisionDetails.map(x=>Number(x.combatTargetPickMs)).filter(Number.isFinite)),
+          combatOtherMs:summary(collisionDetails.map(x=>Number(x.combatOtherMs)).filter(Number.isFinite)),
+          targetPickCalls:collisionDetails.reduce((sum,x)=>sum+x.combatTargetPickCalls,0),
+          sweptCalls:collisionDetails.reduce((sum,x)=>sum+x.sweptCalls,0),sweptActivePasses:collisionDetails.reduce((sum,x)=>sum+x.sweptPasses,0),
+          sweptEmptyPasses:collisionDetails.reduce((sum,x)=>sum+x.sweptEmptyPasses,0),sweptZeroMotionCalls:collisionDetails.reduce((sum,x)=>sum+x.sweptZeroMotionCalls,0),
+          sweptHits:collisionDetails.reduce((sum,x)=>sum+x.sweptHits,0),sweptCorrectionUnits:collisionDetails.reduce((sum,x)=>sum+x.sweptCorrectionUnits,0),sweptNoCorrectionPasses:collisionDetails.reduce((sum,x)=>sum+x.sweptNoCorrectionPasses,0),
+          hardFixCalls:collisionDetails.reduce((sum,x)=>sum+x.sapCalls,0),hardFixPasses:collisionDetails.reduce((sum,x)=>sum+x.sapPasses,0),hardFixNoOpCalls:collisionDetails.reduce((sum,x)=>sum+x.sapNoOpCalls,0),
+          hardFixPairTests:collisionDetails.reduce((sum,x)=>sum+x.sapActivePairTests,0),hardFixCandidates:collisionDetails.reduce((sum,x)=>sum+x.sapCandidates,0),hardFixCorrections:collisionDetails.reduce((sum,x)=>sum+x.sapCorrections,0),
           workerMs:summary(nums(["sessions",r,"workerMs"])),
           visionMs:summary(nums(["sessions",r,"visionMs"])),
           projectileMs:summary(nums(["sessions",r,"projectileMs"])),
