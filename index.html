@@ -9809,10 +9809,12 @@ body.campaign-mode #p2pHealthText {
 
   <section id="performanceTimingPanel" aria-labelledby="performanceTimingTitle">
     <h3 id="performanceTimingTitle">성능 시간 지표 · ms</h3>
-    <p class="performance-timing-note">현재 / 평균(EWMA) / 최대. 서로 포함되는 구간은 합산하지 않습니다. RTT에는 양쪽 브라우저의 메시지 처리 대기가 포함됩니다.</p>
+    <p class="performance-timing-note">현재 / 평균(EWMA) / 최대. Step 전체는 매 틱, 세부 단계는 1초 주기 표본입니다. 서로 포함되는 구간은 합산하지 않습니다. RTT에는 양쪽 브라우저의 메시지 처리 대기가 포함됩니다.</p>
     <div class="lockstep-debug-table performance-timing-table">
       <div><span>게임 메시지 RTT / 지터</span><b id="dbgCoreLatency">-</b></div>
       <div><span>입력 지연 설정 · 틱 → ms</span><b id="dbgPerfInputDelay">-</b></div>
+      <div><span>명령 접수 → 확정 · 실측</span><b id="dbgPerfCommandConfirm">입력 없음</b></div>
+      <div><span>미확정 명령 · 최장 대기</span><b id="dbgPerfCommandPending">-</b></div>
       <div><span>WebRTC 연결 RTT · ICE</span><b id="dbgPerfIceRtt">표본 수집 중</b></div>
       <div><span>메인 스레드 timer 지연</span><b id="dbgPerfEventLoop">-</b></div>
       <div><span>긴 작업 · 50ms 이상</span><b id="dbgPerfLongTask">-</b></div>
@@ -9840,7 +9842,7 @@ body.campaign-mode #p2pHealthText {
       <div><span id="dbgPerfUsedLabel">사용시간 · step EWMA</span><b id="dbgPerfUsed">-</b></div>
       <div><span id="dbgPerfBudgetLabel">남은 틱 여유 · 추정</span><b id="dbgPerfBudget">-</b></div>
     </div>
-    <p class="performance-timing-note">틱 여유는 게임 step만 계산합니다. 저장·Core·렌더를 함께 확인하세요. Core 내부 해시 시간은 공개 계측이 없어 전체 처리에 포함합니다. GPU 시작 시간은 CPU 호출 대기입니다.</p>
+    <p class="performance-timing-note">틱 여유는 게임 step만 계산합니다. 저장·Core·렌더를 함께 확인하세요. 충돌 내부 시간과 이웃 수는 초당 상세 표본 틱에서 측정합니다. Core 내부 해시 시간은 공개 계측이 없어 전체 처리에 포함합니다. GPU 시작 시간은 CPU 호출 대기입니다.</p>
     <button id="performanceTimingExportBtn" class="lockstep-debug-reset" type="button">성능 시간 지표 JSON 저장</button>
   </section>
 
@@ -9870,7 +9872,12 @@ body.campaign-mode #p2pHealthText {
     <div><span>유닛 생존 / 전투 / 일꾼 / 투사체</span><b id="dbgPerfEntities">-</b></div>
     <div><span>Spatial query / 후보(평균)</span><b id="dbgPerfSpatial">-</b></div>
     <div><span>Target / Visibility 검사</span><b id="dbgPerfTarget">-</b></div>
-    <div><span>Collision 후보 / overlap / 반복</span><b id="dbgPerfCollision">-</b></div>
+    <div><span>Grid 후보 / PBD 접촉합 / 최대 이웃(접촉 평균) / 반복</span><b id="dbgPerfCollision">-</b></div>
+    <div><span>충돌 ms · 준비 / grid / pair scan / PBD 보정</span><b id="dbgPerfCollisionCore">-</b></div>
+    <div><span>충돌 ms · 이동 sweep / 지형 / 최종 SAP / 기타</span><b id="dbgPerfCollisionTail">-</b></div>
+    <div><span>전투 ms · 주 대상 선택 / 기타 · 대상 선택 calls</span><b id="dbgPerfCombatSplit">-</b></div>
+    <div><span>Swept 호출 / 활성 pass / 후보 / hit / 보정 유닛 / 무보정 pass</span><b id="dbgPerfCollisionSweepFlow">-</b></div>
+    <div><span>Hard-fix 호출 / pass / SAP pair 검사 / 후보 / 보정 / 무보정</span><b id="dbgPerfCollisionHardFixFlow">-</b></div>
     <div><span>Render draw calls / 업로드 bytes</span><b id="dbgPerfDrawCalls">-</b></div>
     <div><span>엔티티 peak 유닛 / 건물 / 투사체</span><b id="dbgEndurancePeaks">-</b></div>
   </div>
@@ -10869,6 +10876,10 @@ const RENDER_TRACKS=Object.freeze({
 
 // wall-clock driver 한 pulse의 bounded catch-up. 논리 dt와 tick sequence는 Core가 유지한다.
 const MAX_CATCHUP_STEPS_PER_PULSE=3;
+const SIM_PULSE_BUDGET_MS=12;
+const SIM_SUSPENSION_THRESHOLD_MS=3000;
+const LOCKSTEP_INPUT_DELAY_BASE_MS=100;
+const LOCKSTEP_INPUT_DELAY_MAX_MS=300;
 
 // DataChannel reconnection / authoritative session recovery.
 const P2P_RECONNECT_MIN_MS=350;
@@ -12082,8 +12093,8 @@ class InteractionGeometry{
     return this.unitRadius(st)+(BuildingDefinition.get(tt)?.size||35)+NAV_BUILDING_MARGIN;
   }
   static contact(source,target){
-    const st=typeof source==='string'?source:source?.type,tt=typeof target==='string'?target:target?.type,sd=UnitDefinition.get(st)||{};
-    if(BuildingDefinition.get(tt))return source?.side===NEUTRAL_SIDE?this.unitRadius(st)+(BuildingDefinition.get(tt)?.size||35):((sd.size||10)+(BuildingDefinition.get(tt)?.size||30))*COLLISION_RADIUS_SCALE;
+    const st=typeof source==='string'?source:source?.type,tt=typeof target==='string'?target:target?.type,building=BuildingDefinition.get(tt);
+    if(building)return source?.side===NEUTRAL_SIDE?this.unitRadius(st)+(building.size||35):(((UnitDefinition.get(st)||{}).size||10)+(building.size||30))*COLLISION_RADIUS_SCALE;
     return this.unitRadius(st)+this.unitRadius(tt);
   }
   static requiresTerrainLine(source,kind,extra=0){
@@ -12125,7 +12136,7 @@ class SweptCircleContact{
   });
   static cast(rx,ry,vx,vy,r,policy,fallback=null){
     const aa=vx*vx+vy*vy,radial=rx*vx+ry*vy,c=rx*rx+ry*ry-r*r;
-    const length=Math.hypot(rx,ry),distancePolicy=policy.contactDistanceEpsilon!=null;
+    const distancePolicy=policy.contactDistanceEpsilon!=null,length=distancePolicy?Math.hypot(rx,ry):0;
     if(distancePolicy&&aa<policy.minSpeed2)return null;
     const contact=distancePolicy?length<=r+policy.contactDistanceEpsilon:c<=policy.contactSquaredEpsilon;
     let t=0;
@@ -12983,7 +12994,7 @@ class PerformanceTelemetry{
     const sessions=SinglePlayerModeUtil.isSinglePlayer()?MatchLifecycle.singleMatch.sessions:{[active.role]:active};
     const m=this.runtimeMonitor;
     const payload={exportedAt:new Date().toISOString(),build:BUILD_META.id,simVersion:SIM_VERSION,visibility:document.visibilityState,
-      note:'Local timings only. Nested timings overlap. App RTT includes browser message handling; ICE RTT is a separate sample. GPU begin time is CPU API cost.',
+      note:'Local timings only. Nested timings overlap. App RTT includes browser message handling; ICE RTT is a separate sample. GPU begin time is CPU API cost. Collision details are sampled every second; PBD neighbor peak is the maximum over sampled ticks in this match.',
       mainThread:m?{timings:m.timings,longTasks:m.longTasks,lastLongTaskMs:m.longTaskMs,maxLongTaskMs:m.maxLongTaskMs}:null,
       renderer:ActiveViewState.renderer?.perfStats||null,
       sessions:Object.fromEntries(Object.entries(sessions).map(([role,s])=>[role,{tick:s.sim?.tick,mode:s.netcodeMode,status:s.netcodeSession?.status,
@@ -13032,7 +13043,13 @@ class PerformanceTelemetry{
   static createLocalPerfStats(){
     return{
       sampleTick:0,totalMs:0,indexMs:0,worldMs:0,economyMs:0,workerMs:0,visionMs:0,combatMs:0,
-      projectileMs:0,collisionMs:0,postMs:0,snapshotMs:0,maxSnapshotMs:0,snapshotSamples:0,maxStepMs:0,ewmaStepMs:0,
+      projectileMs:0,collisionMs:0,collisionPrepMs:0,collisionGridBuildMs:0,collisionPairScanMs:0,collisionPbdApplyMs:0,collisionSweptMotionMs:0,collisionTerrainMs:0,collisionHardFixMs:0,collisionOtherMs:0,
+      collisionPbdContacts:0,collisionPbdMaxNeighbors:0,collisionPbdNeighborOccurrences:0,collisionPbdNeighborSum:0,
+      collisionPbdPeakNeighbors:0,collisionPbdContactTotal:0,collisionPbdNeighborObservations:0,collisionPbdNeighborTotal:0,collisionPbdDetailedSamples:0,
+      collisionSweptCalls:0,collisionSweptActivePasses:0,collisionSweptZeroMotionCalls:0,collisionSweptEmptyPasses:0,collisionSweptPairTests:0,collisionSweptHits:0,collisionSweptCorrectionUnits:0,collisionSweptNoCorrectionPasses:0,
+      collisionHardFixCalls:0,collisionHardFixPasses:0,collisionHardFixActivePairTests:0,collisionHardFixCandidates:0,collisionHardFixCorrections:0,collisionHardFixNoOpCalls:0,
+      combatTargetPickMs:0,combatTargetPickCalls:0,combatOtherMs:0,
+      postMs:0,snapshotMs:0,maxSnapshotMs:0,snapshotSamples:0,lastStepMs:0,stepSamples:0,maxStepMs:0,ewmaStepMs:0,
       aliveUnits:0,workers:0,combatUnits:0,projectiles:0,
       peakAliveUnits:0,peakBuildings:0,peakProjectiles:0,
       spatialQueries:0,spatialCandidates:0,
@@ -16245,6 +16262,69 @@ class DeterministicCollisionGrid{
   }
 }
 
+// Each circle's own swept bounds prune false candidates. Ordered bucket streams
+// preserve the old coarse-grid traversal, including epsilon contact ties.
+class DeterministicSweptCollisionGrid{
+  static MAX_CELLS=16;
+  constructor(world){
+    this.cellFP=64*FP;this.cols=Math.ceil(world.width/64);this.rows=Math.ceil(world.height/64);
+    this.buckets=new Array(this.cols*this.rows);this.used=[];
+    this.ordered=[];this.overflow=[];this.lists=[];this.cursors=new Int32Array(DeterministicSweptCollisionGrid.MAX_CELLS+1);this.out=[];
+    this.capacity=0;this.bounds=null;
+  }
+  cellX(x){return RangeUtil.clamp(Math.floor(x/this.cellFP),0,this.cols-1)}
+  cellY(y){return RangeUtil.clamp(Math.floor(y/this.cellFP),0,this.rows-1)}
+  reset(units,motion,radii,segX,segY,coarse){
+    for(const key of this.used)this.buckets[key].length=0;
+    this.used.length=0;this.ordered.length=0;this.overflow.length=0;
+    if(units.length>this.capacity){
+      this.capacity=Math.max(units.length,this.capacity*2,64);
+      this.bounds=Object.fromEntries(['minX','minY','maxX','maxY'].map(key=>[key,new Float64Array(this.capacity)]));
+      this.rank=new Int32Array(this.capacity);this.endCell=new Int32Array(this.capacity);
+    }
+    const b=this.bounds;
+    for(let key=0;key<coarse.buckets.length;key++)for(const i of coarse.buckets[key]){
+      const u=units[i];if(!u?.alive||radii[i]<=0||motion.flags[i])continue;
+      this.rank[i]=this.ordered.length;this.endCell[i]=key;this.ordered.push(i);
+      b.minX[i]=Math.min(segX[i],u.fx)-radii[i]-1;b.maxX[i]=Math.max(segX[i],u.fx)+radii[i]+1;
+      b.minY[i]=Math.min(segY[i],u.fy)-radii[i]-1;b.maxY[i]=Math.max(segY[i],u.fy)+radii[i]+1;
+      const x0=this.cellX(b.minX[i]),x1=this.cellX(b.maxX[i]),y0=this.cellY(b.minY[i]),y1=this.cellY(b.maxY[i]);
+      if((x1-x0+1)*(y1-y0+1)>DeterministicSweptCollisionGrid.MAX_CELLS){this.overflow.push(i);continue}
+      for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+        const cell=y*this.cols+x,bucket=this.buckets[cell]||(this.buckets[cell]=[]);
+        if(!bucket.length)this.used.push(cell);bucket.push(i);
+      }
+    }
+  }
+  query(i,coarse,minCx,maxCx,minCy,maxCy){
+    const b=this.bounds,out=this.out;out.length=0;
+    const accept=j=>{
+      if(j<=i)return;
+      const key=this.endCell[j],x=key%coarse.cols,y=Math.floor(key/coarse.cols);
+      if(x<minCx||x>maxCx||y<minCy||y>maxCy)return;
+      if(b.maxX[i]<b.minX[j]||b.maxX[j]<b.minX[i]||b.maxY[i]<b.minY[j]||b.maxY[j]<b.minY[i])return;
+      out.push(j);
+    };
+    const x0=this.cellX(b.minX[i]),x1=this.cellX(b.maxX[i]),y0=this.cellY(b.minY[i]),y1=this.cellY(b.maxY[i]);
+    // Large sweeps inspect every eligible unit once, including ordinary bins.
+    if((x1-x0+1)*(y1-y0+1)>DeterministicSweptCollisionGrid.MAX_CELLS){for(const j of this.ordered)accept(j);return out}
+    const lists=this.lists;lists.length=0;
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const bucket=this.buckets[y*this.cols+x];if(bucket?.length)lists.push(bucket)}
+    if(this.overflow.length)lists.push(this.overflow);
+    this.cursors.fill(0,0,lists.length);
+    // At most 17 streams, already sorted by old (end-cell, unit-index) order.
+    // Consume equal heads together: no duplicate pair and no per-query sort.
+    for(;;){
+      let next=-1,rank=Infinity;
+      for(let k=0;k<lists.length;k++){const cursor=this.cursors[k];if(cursor>=lists[k].length)continue;const j=lists[k][cursor];if(this.rank[j]<rank){rank=this.rank[j];next=j}}
+      if(next<0)break;
+      for(let k=0;k<lists.length;k++)if(lists[k][this.cursors[k]]===next)this.cursors[k]++;
+      accept(next);
+    }
+    return out;
+  }
+}
+
 /* Runtime-only deterministic unit spatial grid.
  * Dense fixed arrays replace Map lookup + per-query sorting in the combat hot path.
  * Each cell also keeps side-specific buckets, so enemy/ally queries do not scan
@@ -17402,12 +17482,15 @@ class NavigationTopology{
 class SimulationRuntimeState{
   static collision(sim){
     sim.collisionGrid=new DeterministicCollisionGrid(COLLISION_SPATIAL_CELL,sim.world);
+    sim.collisionSweepGrid=new DeterministicSweptCollisionGrid(sim.world);
+    sim.collisionMotion=null;
     for(const key of ["collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther"])sim[key]=new Int32Array(0);
     sim.collisionCnt=new Uint16Array(0);
     for(const key of ["collisionBestT","collisionBestNx","collisionBestNy"])sim[key]=new Float64Array(0);
     sim.collisionStartCount=0;
     sim.hardFixSapAxis="x";
     for(const key of ["hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs"])sim[key]=[];
+    sim.hardFixSapSideHeads=new Int32Array([-1,-1,-1]);sim.hardFixSapSideNext=new Int32Array(0);sim.hardFixSapSidePrev=new Int32Array(0);sim.hardFixSapSideHeaps=[[],[],[]];
     sim.hardFixSapMarks=new Uint32Array(0);sim.hardFixSapEpoch=1;
   }
   static spatial(sim){
@@ -17437,6 +17520,7 @@ class SimulationRuntimeState{
     this.visibility(sim);this.economy(sim);
     sim.runtimeIndexTick=-1;sim.spatialQueryCursor=0;sim.buildingSpatialQueryCursor=0;sim.buildingSpatialDirty=true;
     sim.collisionStartCount=0;sim.hardFixSapOrder.length=0;sim.hardFixSapEligible.length=0;sim.hardFixSapEpoch=1;sim.hardFixSapMarks.fill(0);
+    sim.hardFixSapSideHeads.fill(-1);for(const heap of sim.hardFixSapSideHeaps)heap.length=0;
     sim.navigation.motion=new SurfaceMotion(sim.navigation);
     sim.rebuildRuntimeIndexes();
   }
@@ -17448,8 +17532,8 @@ class StrategySim{
   // their existing StateContracts and serialization.
   static stateContract=new StateContract({}, {presentation:["events","perfStats","balanceStats","_perfCollect"],derived:[
     "navigationDemandScope","world","tps","campaignScriptRuntime","campaignTechCap","disposed","runtimeEpoch","commandReceipts",
-    "collisionGrid","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
-    "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapMarks","hardFixSapEpoch",
+    "collisionGrid","collisionSweepGrid","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
+    "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapSideHeads","hardFixSapSideNext","hardFixSapSidePrev","hardFixSapSideHeaps","hardFixSapMarks","hardFixSapEpoch",
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","maxUnitRadius",
     "cloakCacheTick","auraCloakedIds","tickVisibilityCache","tickVisibilityCacheTick","economyCacheTick","workerGasAssignments","validGasExtractorsBySide","navigationRevision","navigation"
   ],children:{delayedEffects:DelayedEffectState}});
@@ -17687,6 +17771,7 @@ class StrategySim{
     this.collisionNextFx=new Int32Array(cap);this.collisionNextFy=new Int32Array(cap);
     this.collisionBestT=new Float64Array(cap);this.collisionBestNx=new Float64Array(cap);this.collisionBestNy=new Float64Array(cap);
     this.collisionBestOther=new Int32Array(cap);
+    this.collisionMotion={flags:new Uint8Array(cap),layers:[],sx:new Float64Array(cap),sy:new Float64Array(cap),ex:new Float64Array(cap),ey:new Float64Array(cap),vx:new Float64Array(cap),vy:new Float64Array(cap)};
   }
   captureCollisionStepStarts(){
     const n=this.units.length;this.ensureCollisionBuffers(n);
@@ -20068,7 +20153,7 @@ class StrategySim{
   canSeeCombatTarget(attackerSide,target,sources){
     if(!target||target.alive===false||target.side===attackerSide||this.neutralObjectFriendlyToSide(target,attackerSide))return false;
     const side=attackerSide===1?1:0,cache=this.tickVisibilityCache?.[side],key=target.id;
-    if(cache&&key!=null&&cache.has(key)){if(this._perfCollect)this._perfCollect.visibilityCacheHits=(this._perfCollect.visibilityCacheHits||0)+1;return cache.get(key)}
+    if(cache&&key!=null){const cached=cache.get(key);if(cached!==undefined){if(this._perfCollect)this._perfCollect.visibilityCacheHits=(this._perfCollect.visibilityCacheHits||0)+1;return cached}}
     const stealth=this.isStealthed(target),targetAir=this.unitLayer(target.type)==="AIR",targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(target.x,target.y);
     const candidates=this.visionSourceCandidates(sources,target.x,target.y);
     if(this._perfCollect){this._perfCollect.visibilityChecks++;this._perfCollect.visionCandidateChecks+=candidates?candidates.length:(sources?.length||0)}
@@ -20110,6 +20195,7 @@ class StrategySim{
     // a fireable combatant. Only acquire a chase target when nothing can be hit.
     if(this._perfCollect)this._perfCollect.targetQueries++;
     const d=UnitDefinition.get(u.type),attackRange=this.basicAttackRange(u);
+    const attackNeedsTerrainLine=InteractionGeometry.requiresTerrainLine(u,'attack',attackRange);
     const aggro=Number(d.aggroRange)||(d.role==="artillery"?560:d.role==="assassin"?430:390);
     const queryRange=Math.max(aggro,attackRange+this.unitRadius(u.type)+Math.max(this.maxUnitRadius,this.maxBuildingRadius));
     let taunt=null,tauntD2=Infinity,currentInRange=null;
@@ -20117,9 +20203,14 @@ class StrategySim{
     let acquireBest=null,acquireD2=Infinity,currentAcquire=null,currentAcquireD2=Infinity;
     let closeFallback=null,closeFallbackD2=Infinity;
     const consider=(entity,isBuilding,def,d2)=>{
-      const dist=Math.sqrt(d2),max=this.interactionDistance(u,entity,"attack",attackRange);
+      const dist=Math.sqrt(d2);
+      // Preserve visibility memo seeding above. The source's terrain policy is
+      // constant for this selection; AIR/ranged reach needs no per-target ray gate.
+      const rawReach=!attackNeedsTerrainLine||dist>aggro?InteractionGeometry.reach(u,entity,'attack',attackRange):null;
+      if(dist>aggro&&dist>rawReach)return;
+      const max=attackNeedsTerrainLine?this.interactionDistance(u,entity,"attack",attackRange):rawReach;
       if(dist>aggro&&dist>max)return;
-      const min=d.minRange?this.interactionDistance(u,entity,"combat-contact")+d.minRange:0;
+      const min=d.minRange?InteractionGeometry.contact(u,entity)+d.minRange:0;
       const candidate={entity,isBuilding,def};
       if(min&&dist<min){
         if(this.targetChoiceBetter(d2,entity.id,closeFallbackD2,closeFallback)){closeFallback=candidate;closeFallbackD2=d2}
@@ -21646,7 +21737,11 @@ let value=Math.max(0,Number(d.flatArmor)||0);
         this.clearAttackWindup(u);
       }
     }
-    if(!found)found=this.pickCombatTarget(u,vision[u.side]);
+    if(!found){
+      const pickStarted=this._perfCollect?performance.now():0;
+      found=this.pickCombatTarget(u,vision[u.side]);
+      if(this._perfCollect){this._perfCollect.combatTargetPickMs+=performance.now()-pickStarted;this._perfCollect.combatTargetPickCalls++}
+    }
 
     combatBehavior?.updatePosture?.(this,u,found,ability);
 
@@ -21973,58 +22068,65 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     const ai=String(a?.id||""),bi=String(b?.id||""),lo=ai<bi?ai:bi,hi=ai<bi?bi:ai,v=ds[HashUtil.hash(lo+"|"+hi)&7];
     return ai===lo?v:[-v[0],-v[1]];
   }
-  sweptSolidContactFrom(i,j,radii,asx,asy,bsx,bsy,aex,aey,bex,bey){
-    const a=this.units[i],b=this.units[j];if(!a?.alive||!b?.alive)return null;
-    return SweptCircleContact.cast(asx-bsx,asy-bsy,(aex-asx)-(bex-bsx),(aey-asy)-(bey-bsy),(radii[i]+radii[j])/FP,SweptCircleContact.policies.relative,()=>{const n=this.fallbackNormal(a,b);return{x:n[0]/COLLISION_NORMAL,y:n[1]/COLLISION_NORMAL}});
-  }
-
   resolveNonAlliedSurfaceMotion(startFx,startFy,radii,maxRadius,maxPasses=4){
     const units=this.units,n=units.length;
     if(!n)return 0;
+    const perf=this._perfCollect;if(perf)perf.collisionSweptCalls++;
+    this.ensureCollisionBuffers(n);
     const segX=this.collisionSegmentFx,segY=this.collisionSegmentFy;
     const nextX=this.collisionNextFx,nextY=this.collisionNextFy;
     const bestT=this.collisionBestT,bestNx=this.collisionBestNx,bestNy=this.collisionBestNy,bestOther=this.collisionBestOther;
     const grid=this.collisionGrid,buckets=grid.buckets,cols=grid.cols;
+    const motion=this.collisionMotion,{flags,layers}=motion;
+    const layerRadii=new Map();
 
     for(let i=0;i<n;i++){
       const u=units[i];
       segX[i]=i<startFx.length?startFx[i]:(u?.fx??0);
       segY[i]=i<startFy.length?startFy[i]:(u?.fy??0);
+      // Capabilities/layers do not change during a contact sweep. Positions do.
+      flags[i]=(!!u?.capability(BurrowableMixin.KEY)?.isActive()?1:0)|(!!u?.capability(LeapableMixin.KEY)?.isActive(this)?2:0)|(u?.objectiveChargeActive?4:0);
+      layers[i]=this.unitLayer(u?.type);
+      if(u?.alive&&radii[i]>0&&!flags[i])layerRadii.set(layers[i],Math.max(layerRadii.get(layers[i])||0,radii[i]));
     }
 
     let totalCorrections=0;
     for(let pass=0;pass<maxPasses;pass++){
       bestT.fill(Infinity,0,n);bestOther.fill(-1,0,n);
-      let maxTravel=0;
+      const layerTravel=new Map();let anyMotion=false;
       for(let i=0;i<n;i++){
         const u=units[i];if(!u?.alive)continue;
-        maxTravel=Math.max(maxTravel,Math.ceil(Math.hypot(u.fx-segX[i],u.fy-segY[i])));
+        motion.sx[i]=segX[i]/FP;motion.sy[i]=segY[i]/FP;motion.ex[i]=u.fx/FP;motion.ey[i]=u.fy/FP;
+        motion.vx[i]=motion.ex[i]-motion.sx[i];motion.vy[i]=motion.ey[i]-motion.sy[i];
+        if(radii[i]>0&&!flags[i]){
+          const travel=Math.ceil(Math.hypot(u.fx-segX[i],u.fy-segY[i]));
+          if(travel)anyMotion=true;layerTravel.set(layers[i],Math.max(layerTravel.get(layers[i])||0,travel));
+        }
       }
-
+      if(!anyMotion){if(perf)perf.collisionSweptZeroMotionCalls++;break} // Every relative cast would reject zero motion.
+      if(perf)perf.collisionSweptActivePasses++;
       grid.reset(units);
+      this.collisionSweepGrid.reset(units,motion,radii,segX,segY,grid);
       let pairContacts=0;
       for(let i=0;i<n;i++){
         const a=units[i];
-        if(!a?.alive||radii[i]<=0||!!a?.capability(BurrowableMixin.KEY)?.isActive()||!!a?.capability(LeapableMixin.KEY)?.isActive(this)||a.objectiveChargeActive)continue;
+        if(!a?.alive||radii[i]<=0||flags[i]||!layerTravel.get(layers[i]))continue;
         const sx=segX[i],sy=segY[i],ex=a.fx,ey=a.fy;
-        const reach=radii[i]+maxRadius+maxTravel;
+        const reach=radii[i]+layerRadii.get(layers[i])+layerTravel.get(layers[i]);
         const minCx=grid.cellXFP(Math.min(sx,ex)-reach),maxCx=grid.cellXFP(Math.max(sx,ex)+reach);
         const minCy=grid.cellYFP(Math.min(sy,ey)-reach),maxCy=grid.cellYFP(Math.max(sy,ey)+reach);
-        for(let cy=minCy;cy<=maxCy;cy++)for(let cx=minCx;cx<=maxCx;cx++){
-          const bucket=buckets[cy*cols+cx];
-          for(let k=0;k<bucket.length;k++){
-            const j=bucket[k];if(j<=i)continue;
+        const candidates=this.collisionSweepGrid.query(i,grid,minCx,maxCx,minCy,maxCy);
+        if(perf)perf.collisionSweptPairTests+=candidates.length;
+        for(const j of candidates){
             const b=units[j];
-            if(!b?.alive||radii[j]<=0||this.isAlliedCollisionUnit(a,b))continue;
-            if(!!b?.capability(BurrowableMixin.KEY)?.isActive()||!!b?.capability(LeapableMixin.KEY)?.isActive(this)||b.objectiveChargeActive)continue;
-            if(this.unitLayer(a.type)!==this.unitLayer(b.type))continue;
-
-            const hit=this.sweptSolidContactFrom(
-              i,j,radii,
-              segX[i]/FP,segY[i]/FP,segX[j]/FP,segY[j]/FP,
-              a.fx/FP,a.fy/FP,b.fx/FP,b.fy/FP
-            );
+            if(!b?.alive||radii[j]<=0||flags[j]||layers[i]!==layers[j]||this.isAlliedCollisionUnit(a,b))continue;
+            // Keep the original floating-point subtraction order. Equal relative
+            // motion has no inward contact, including a stationary overlap.
+            const vx=motion.vx[i]-motion.vx[j],vy=motion.vy[i]-motion.vy[j];
+            if(vx===0&&vy===0)continue;
+            const hit=SweptCircleContact.cast(motion.sx[i]-motion.sx[j],motion.sy[i]-motion.sy[j],vx,vy,(radii[i]+radii[j])/FP,SweptCircleContact.policies.relative,()=>{const v=this.fallbackNormal(a,b);return{x:v[0]/COLLISION_NORMAL,y:v[1]/COLLISION_NORMAL}});
             if(!hit)continue;
+            if(perf)perf.collisionSweptHits++;
             pairContacts++;
 
             if(hit.t<bestT[i]-1e-9||(Math.abs(hit.t-bestT[i])<=1e-9&&(bestOther[i]<0||j<bestOther[i]))){
@@ -22033,10 +22135,9 @@ let value=Math.max(0,Number(d.flatArmor)||0);
             if(hit.t<bestT[j]-1e-9||(Math.abs(hit.t-bestT[j])<=1e-9&&(bestOther[j]<0||i<bestOther[j]))){
               bestT[j]=hit.t;bestNx[j]=-hit.nx;bestNy[j]=-hit.ny;bestOther[j]=i;
             }
-          }
         }
       }
-      if(!pairContacts)break;
+      if(!pairContacts){if(perf)perf.collisionSweptEmptyPasses++;break}
 
       let corrected=0;
       for(let i=0;i<n;i++){
@@ -22073,6 +22174,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
         this.navigation.motion.constrain(u);
       }
       totalCorrections+=corrected;
+      if(perf){perf.collisionSweptCorrectionUnits+=corrected;if(!corrected)perf.collisionSweptNoCorrectionPasses++}
       if(!corrected)break;
     }
     return totalCorrections;
@@ -22133,7 +22235,9 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   enforceNonAlliedNoOverlap(radii,maxRadius,maxPasses=4){
     const units=this.units,n=units.length;
     let total=0;
+    const perf=this._perfCollect;if(perf)perf.collisionHardFixCalls++;
     for(let pass=0;pass<maxPasses;pass++){
+      if(perf)perf.collisionHardFixPasses++;
       for(let i=0;i<n;i++){const u=units[i];this.collisionSegmentFx[i]=u?.fx??0;this.collisionSegmentFy[i]=u?.fy??0}
       const eligible=this.hardFixSapEligible;eligible.length=0;
       let sx=0,sy=0,sxx=0,syy=0;
@@ -22152,11 +22256,11 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       this.hardFixSapAxis=axis;
       const coord=i=>axis==="x"?units[i].fx:units[i].fy;
       const otherCoord=i=>axis==="x"?units[i].fy:units[i].fx;
-      let order=this.hardFixSapWorkOrder;order.length=0;
       if(this.hardFixSapMarks.length<n)this.hardFixSapMarks=new Uint32Array(Math.max(n,this.collisionRadii.length||n));
       let epoch=(this.hardFixSapEpoch+2)>>>0;if(epoch<2){this.hardFixSapMarks.fill(0);epoch=2}this.hardFixSapEpoch=epoch;
       const marks=this.hardFixSapMarks;
       for(const i of eligible)marks[i]=epoch;
+      let order=this.hardFixSapWorkOrder;order.length=0;
       if(!axisChanged&&this.hardFixSapOrder.length){
         for(const i of this.hardFixSapOrder)if(marks[i]===epoch){order.push(i);marks[i]=epoch+1}
         for(const i of eligible)if(marks[i]===epoch)order.push(i);
@@ -22174,20 +22278,50 @@ let value=Math.max(0,Number(d.flatArmor)||0);
         order.sort((ia,ib)=>(coord(ia)-radii[ia])-(coord(ib)-radii[ib])||ia-ib);
       }
       const saved=this.hardFixSapOrder;saved.length=order.length;for(let q=0;q<order.length;q++)saved[q]=order[q];
-      const active=this.hardFixSapSweepActive,pairs=this.hardFixSapPairs;active.length=0;pairs.length=0;
+      const pairs=this.hardFixSapPairs;pairs.length=0;
+      if(this.hardFixSapSideNext.length<n){this.hardFixSapSideNext=new Int32Array(n);this.hardFixSapSidePrev=new Int32Array(n)}
+      const heads=this.hardFixSapSideHeads,next=this.hardFixSapSideNext,prev=this.hardFixSapSidePrev,heaps=this.hardFixSapSideHeaps;
+      heads.fill(-1);for(const heap of heaps)heap.length=0;
+      const heapLess=(ia,ib)=>{const ea=coord(ia)+radii[ia],eb=coord(ib)+radii[ib];return ea<eb||(ea===eb&&ia<ib)};
+      const heapPush=(heap,value)=>{
+        let i=heap.length;heap.push(value);
+        while(i>0){const p=(i-1)>>1;if(!heapLess(value,heap[p]))break;heap[i]=heap[p];i=p}
+        heap[i]=value;
+      };
+      const heapPop=heap=>{
+        const root=heap[0],last=heap.pop();
+        if(heap.length){let i=0;while(true){const left=i*2+1;if(left>=heap.length)break;const right=left+1,child=right<heap.length&&heapLess(heap[right],heap[left])?right:left;if(!heapLess(heap[child],last))break;heap[i]=heap[child];i=child}heap[i]=last}
+        return root;
+      };
+      const sideIndex=side=>side===0?0:side===1?1:2;
+      const unlink=(group,index)=>{
+        const p=prev[index],q=next[index];
+        if(p>=0)next[p]=q;else heads[group]=q;
+        if(q>=0)prev[q]=p;
+        prev[index]=next[index]=-1;
+      };
       for(const bi of order){
-        const minB=coord(bi)-radii[bi];let w=0;
-        for(let k=0;k<active.length;k++){const ai=active[k];if(coord(ai)+radii[ai]>=minB)active[w++]=ai}
-        active.length=w;
-        for(let k=0;k<active.length;k++){
-          const ai=active[k],a=units[ai],bb=units[bi];
-          if(this.isAlliedCollisionUnit(a,bb)||this.unitLayer(a.type)!==this.unitLayer(bb.type))continue;
-          const min=radii[ai]+radii[bi];
-          if(Math.abs(otherCoord(ai)-otherCoord(bi))>=min)continue;
-          const owner=this.nonAlliedPenetrationOwner(ai,bi);
-          pairs.push(owner*(n+1)+(owner===ai?bi:ai));
+        const minB=coord(bi)-radii[bi],biGroup=sideIndex(units[bi].side);
+        for(let group=0;group<3;group++){
+          // Player units on the same side are always allied; neutral/other-side
+          // units retain the existing isAlliedCollisionUnit semantics.
+          if(group===biGroup&&biGroup!==2)continue;
+          const heap=heaps[group];
+          while(heap.length&&coord(heap[0])+radii[heap[0]]<minB)unlink(group,heapPop(heap));
+          for(let ai=heads[group];ai>=0;ai=next[ai]){
+            if(perf)perf.collisionHardFixActivePairTests++;
+            const a=units[ai],bb=units[bi];
+            if(this.isAlliedCollisionUnit(a,bb)||this.unitLayer(a.type)!==this.unitLayer(bb.type))continue;
+            const min=radii[ai]+radii[bi];
+            if(Math.abs(otherCoord(ai)-otherCoord(bi))>=min)continue;
+            if(perf)perf.collisionHardFixCandidates++;
+            const owner=this.nonAlliedPenetrationOwner(ai,bi);
+            pairs.push(owner*(n+1)+(owner===ai?bi:ai));
+          }
         }
-        active.push(bi);
+        const groupHeap=heaps[biGroup],head=heads[biGroup];
+        prev[bi]=-1;next[bi]=head;if(head>=0)prev[head]=bi;heads[biGroup]=bi;
+        heapPush(groupHeap,bi);
       }
       pairs.sort((a,b)=>a-b);
       let changed=0;
@@ -22225,7 +22359,8 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     // maximum possible contact radius. No candidate sort/Map/quadtree traversal.
     const units=this.units,n=units.length;
     if(!n)return;
-    const perf=this._perfCollect;
+    const perf=this._perfCollect,now=perf?()=>performance.now():null;
+    let mark=perf?now():0;
     this.constrainSurfaceContacts();
 
     this.ensureCollisionBuffers(n);
@@ -22238,23 +22373,31 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       radii[i]=this.radiusFP(u);masses[i]=this.mass(u);
       if(radii[i]>maxRadius)maxRadius=radii[i];
     }
+    if(perf)perf.collisionPrepMs+=now()-mark;
 
     const grid=this.collisionGrid,buckets=grid.buckets,cols=grid.cols;
     const dxA=this.collisionDx,dyA=this.collisionDy,cnt=this.collisionCnt;
 
     // First resolve the actual movement/impulse path for this tick against dynamic
     // non-allied solids. This is where normal movement becomes surface sliding.
+    mark=perf?now():0;
     this.resolveNonAlliedSurfaceMotion(this.collisionStartFx,this.collisionStartFy,radii,maxRadius,4);
+    if(perf)perf.collisionSweptMotionMs+=now()-mark;
 
     for(let iter=0;iter<COLLISION_ITERS;iter++){
       if(perf)perf.collisionIterations++;
+      mark=perf?now():0;
       grid.reset(units);
+      if(perf)perf.collisionGridBuildMs+=now()-mark;
+      mark=perf?now():0;
       dxA.fill(0,0,n);dyA.fill(0,0,n);cnt.fill(0,0,n);
       for(let i=0;i<n;i++){
         const u=units[i];this.collisionSegmentFx[i]=u?.fx??0;this.collisionSegmentFy[i]=u?.fy??0;
       }
+      if(perf)perf.collisionPrepMs+=now()-mark;
       let overlaps=0;
 
+      mark=perf?now():0;
       for(let i=0;i<n;i++){
         const a=units[i];if(!a.alive||radii[i]<=0)continue;
         const reach=radii[i]+maxRadius;
@@ -22267,9 +22410,10 @@ let value=Math.max(0,Number(d.flatArmor)||0);
             const j=bucket[k];if(j<=i)continue;
             const b=units[j];
             if(radii[j]<=0)continue;
-            const aBurrow=!!a?.capability(BurrowableMixin.KEY)?.isActive(),bBurrow=!!b?.capability(BurrowableMixin.KEY)?.isActive();
-            if(!b.alive||aBurrow!==bBurrow||!!a?.capability(LeapableMixin.KEY)?.isActive(this)||!!b?.capability(LeapableMixin.KEY)?.isActive(this)||a.objectiveChargeActive||b.objectiveChargeActive||this.unitLayer(a.type)!==this.unitLayer(b.type))continue;
+            const flags=this.collisionMotion.flags,layers=this.collisionMotion.layers;
+            if(!b.alive||(flags[i]&1)!==(flags[j]&1)||(flags[i]&6)||(flags[j]&6)||layers[i]!==layers[j])continue;
             if(perf)perf.collisionPairs++;
+            if(!this.isAlliedCollisionUnit(a,b))continue;
             const min=radii[i]+radii[j];
             let dx=b.fx-a.fx,dy=b.fy-a.fy;const d2=dx*dx+dy*dy;
             if(d2>=min*min)continue;
@@ -22277,7 +22421,6 @@ let value=Math.max(0,Number(d.flatArmor)||0);
             if(d2===0){[nx,ny]=this.fallbackNormal(a,b);dist=0}
             else{dist=Math.max(1,Math.floor(Math.sqrt(d2)));nx=Math.trunc(dx*COLLISION_NORMAL/dist);ny=Math.trunc(dy*COLLISION_NORMAL/dist)}
             const pen=min-dist;if(pen<=0)continue;
-            if(!this.isAlliedCollisionUnit(a,b))continue;
             overlaps++;if(perf)perf.collisionOverlaps++;
             const ma=masses[i],mb=masses[j],tot=ma+mb;
             const pa=Math.max(1,Math.floor(pen*mb/tot)),pb=Math.max(1,pen-pa);
@@ -22287,10 +22430,20 @@ let value=Math.max(0,Number(d.flatArmor)||0);
           }
         }
       }
+      if(perf){
+        perf.collisionPairScanMs+=now()-mark;
+        perf.collisionPbdContacts+=overlaps;
+        for(let i=0;i<n;i++)if(cnt[i]){
+          perf.collisionPbdNeighborOccurrences++;
+          perf.collisionPbdNeighborSum+=cnt[i];
+          if(cnt[i]>perf.collisionPbdMaxNeighbors)perf.collisionPbdMaxNeighbors=cnt[i];
+        }
+      }
 
       // First apply Jacobi unit-unit corrections. Static buildings are infinite-mass
       // constraints, so their correction must NOT be diluted by cnt[i] when a unit
       // is simultaneously pressed by several neighbors.
+      mark=perf?now():0;
       for(let i=0;i<n;i++){
         const u=units[i];if(!u.alive||!cnt[i])continue;
         const r=radii[i];
@@ -22305,23 +22458,31 @@ let value=Math.max(0,Number(d.flatArmor)||0);
         u.fy=RangeUtil.clamp(u.fy+cy,r,this.world.height*FP-r);
         u.x=u.fx/FP;u.y=u.fy/FP;
       }
+      if(perf)perf.collisionPbdApplyMs+=now()-mark;
 
       // Allied crowd correction is also not allowed to push through a non-ally.
       // Treat this iteration's PBD correction as its own short motion segment and
       // surface-slide that correction without modifying the obstacle.
+      mark=perf?now():0;
       const solidCorrections=this.resolveNonAlliedSurfaceMotion(
         this.collisionSegmentFx,this.collisionSegmentFy,radii,maxRadius,3
       );
+      if(perf)perf.collisionSweptMotionMs+=now()-mark;
       if(solidCorrections){overlaps+=solidCorrections;if(perf)perf.collisionOverlaps+=solidCorrections}
 
       // Buildings and cliffs constrain this correction, not the whole tick chord.
+      mark=perf?now():0;
       const surfaceCorrections=this.constrainSurfaceContacts();
+      if(perf)perf.collisionTerrainMs+=now()-mark;
       if(surfaceCorrections){overlaps+=surfaceCorrections;if(perf)perf.collisionOverlaps+=surfaceCorrections}
 
       // Final invariant: no ordinary ground non-allied pair may remain overlapped.
       // Cross-team pressure is never transferred: recovery moves the semantic intruder
       // selected from this tick's motion. Emerge/knockback/pull remain explicit forces.
+      mark=perf?now():0;
       const hardFixes=this.enforceNonAlliedNoOverlap(radii,maxRadius,4);
+      if(perf)perf.collisionHardFixMs+=now()-mark;
+      if(perf){perf.collisionHardFixCorrections+=hardFixes;if(!hardFixes)perf.collisionHardFixNoOpCalls++}
       if(hardFixes){
         overlaps+=hardFixes;if(perf)perf.collisionOverlaps+=hardFixes;
         for(let i=0;i<n;i++)if(units[i]?.alive)this.syncUnitSpatial(units[i]);
@@ -22431,14 +22592,27 @@ let value=Math.max(0,Number(d.flatArmor)||0);
 
   step(){
     if(this.disposed)throw new Error("종료된 StrategySim은 다시 진행할 수 없습니다.");
+    const started=typeof performance!=="undefined"?performance.now():null;
     AdaptiveNavigationDemand.begin(this);
-    try{return this.stepSimulation()}finally{AdaptiveNavigationDemand.end(this)}
+    try{return this.stepSimulation()}finally{
+      AdaptiveNavigationDemand.end(this);
+      // Coarse timing covers every tick, including one-off commands and cold paths.
+      // The detailed stage/candidate counters below remain sampled once per second.
+      if(started!==null){
+        const ms=performance.now()-started,p=this.perfStats;
+        p.lastStepMs=ms;p.stepSamples=(p.stepSamples||0)+1;p.maxStepMs=Math.max(p.maxStepMs||0,ms);
+        p.ewmaStepMs=p.stepSamples>1?p.ewmaStepMs*.8+ms*.2:ms;
+      }
+    }
   }
   stepSimulation(){
     const profile=((this.tick+1)%this.msTicks(PERF_SAMPLE_EVERY_MS)===0)&&typeof performance!=="undefined";
     const now=profile?()=>performance.now():null;
     const stepStart=profile?now():0;
-    this._perfCollect=profile?{spatialQueries:0,spatialCandidates:0,targetQueries:0,targetVisibilityRejects:0,sideSpatialQueries:0,visibilityChecks:0,visionCandidateChecks:0,visibilityCacheHits:0,collisionPairs:0,collisionOverlaps:0,collisionIterations:0,buildingCollisionCandidates:0}:null;
+    this._perfCollect=profile?{spatialQueries:0,spatialCandidates:0,targetQueries:0,targetVisibilityRejects:0,sideSpatialQueries:0,visibilityChecks:0,visionCandidateChecks:0,visibilityCacheHits:0,
+      collisionPairs:0,collisionOverlaps:0,collisionIterations:0,buildingCollisionCandidates:0,collisionPrepMs:0,collisionGridBuildMs:0,collisionPairScanMs:0,collisionPbdApplyMs:0,collisionSweptMotionMs:0,collisionTerrainMs:0,collisionHardFixMs:0,collisionPbdContacts:0,collisionPbdMaxNeighbors:0,collisionPbdNeighborOccurrences:0,collisionPbdNeighborSum:0,
+      collisionSweptCalls:0,collisionSweptActivePasses:0,collisionSweptZeroMotionCalls:0,collisionSweptEmptyPasses:0,collisionSweptPairTests:0,collisionSweptHits:0,collisionSweptCorrectionUnits:0,collisionSweptNoCorrectionPasses:0,
+      collisionHardFixCalls:0,collisionHardFixPasses:0,collisionHardFixActivePairTests:0,collisionHardFixCandidates:0,collisionHardFixCorrections:0,collisionHardFixNoOpCalls:0,combatTargetPickMs:0,combatTargetPickCalls:0}:null;
 
     this.tick++;
     this.events=[];
@@ -22530,7 +22704,18 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       for(const u of this.units)if(u.alive){aliveUnits++;if(!!UnitDefinition.get(u.type)?.economyWorker)workers++;else combatUnits++}
       p.sampleTick=this.tick;p.totalMs=total;p.indexMs=indexMs;p.worldMs=worldMs;p.economyMs=economyMs;p.workerMs=workerMs;p.visionMs=visionMs;
       p.combatMs=combatMs;p.projectileMs=projectileMs;p.collisionMs=collisionMs;p.postMs=postMs;
-      p.maxStepMs=Math.max(p.maxStepMs||0,total);p.ewmaStepMs=p.ewmaStepMs?((p.ewmaStepMs*.8)+(total*.2)):total;
+      p.collisionPrepMs=c.collisionPrepMs;p.collisionGridBuildMs=c.collisionGridBuildMs;p.collisionPairScanMs=c.collisionPairScanMs;p.collisionPbdApplyMs=c.collisionPbdApplyMs;
+      p.collisionSweptMotionMs=c.collisionSweptMotionMs;p.collisionTerrainMs=c.collisionTerrainMs;p.collisionHardFixMs=c.collisionHardFixMs;
+      p.collisionOtherMs=Math.max(0,collisionMs-(c.collisionPrepMs+c.collisionGridBuildMs+c.collisionPairScanMs+c.collisionPbdApplyMs+c.collisionSweptMotionMs+c.collisionTerrainMs+c.collisionHardFixMs));
+      p.collisionPbdContacts=c.collisionPbdContacts;p.collisionPbdMaxNeighbors=c.collisionPbdMaxNeighbors;p.collisionPbdNeighborOccurrences=c.collisionPbdNeighborOccurrences;p.collisionPbdNeighborSum=c.collisionPbdNeighborSum;
+      p.collisionPbdPeakNeighbors=Math.max(p.collisionPbdPeakNeighbors||0,c.collisionPbdMaxNeighbors);
+      p.collisionPbdContactTotal=(p.collisionPbdContactTotal||0)+c.collisionPbdContacts;
+      p.collisionPbdNeighborObservations=(p.collisionPbdNeighborObservations||0)+c.collisionPbdNeighborOccurrences;
+      p.collisionPbdNeighborTotal=(p.collisionPbdNeighborTotal||0)+c.collisionPbdNeighborSum;
+      p.collisionPbdDetailedSamples=(p.collisionPbdDetailedSamples||0)+1;
+      for(const key of ["collisionSweptCalls","collisionSweptActivePasses","collisionSweptZeroMotionCalls","collisionSweptEmptyPasses","collisionSweptPairTests","collisionSweptHits","collisionSweptCorrectionUnits","collisionSweptNoCorrectionPasses",
+        "collisionHardFixCalls","collisionHardFixPasses","collisionHardFixActivePairTests","collisionHardFixCandidates","collisionHardFixCorrections","collisionHardFixNoOpCalls","combatTargetPickMs","combatTargetPickCalls"])p[key]=c[key];
+      p.combatOtherMs=Math.max(0,combatMs-c.combatTargetPickMs);
       p.aliveUnits=aliveUnits;p.workers=workers;p.combatUnits=combatUnits;p.projectiles=this.projectiles.length;
       p.peakAliveUnits=Math.max(p.peakAliveUnits||0,aliveUnits);
       p.peakBuildings=Math.max(p.peakBuildings||0,this.buildings.length);
@@ -23389,7 +23574,7 @@ class GameSession{
     if(!this.inputAvailable()||!this.sim||!this.netcodeSession||this.netcodeSession.resimulating||this.pendingNetcodeCommands.size>=128)return false;
     try{
       const sequence=this.netcodeSession.queueCommand(RallyCommandCodec.encode(action));
-      const ticket={sequence,actor:this.role,key:StableSerializationUtil.stableStringify(action),submittedTick:this.sim.tick,action:StateValue.copy(action)};
+      const ticket={sequence,actor:this.role,key:StableSerializationUtil.stableStringify(action),submittedTick:this.sim.tick,submittedAt:performance.now(),action:StateValue.copy(action)};
       this.lastCommandTicket=ticket;this.pendingNetcodeCommands.set(sequence,ticket);return true;
     }catch(error){this.onLog('명령 접수 실패 · '+error.message);return false}
   }
@@ -23523,11 +23708,15 @@ class GameSession{
     this.simEnded=false;this.matchResult=null;this.publishedGameTick=0;this.netcodeLoop?.resetTiming();
     this.emitSnapshot(this.sim.snapshot());this.emitRenderTargets(this.sim,true);
     this.netcodeNow=performance.now();
-    // Keep the existing RTS delay/pacing. One Core owns both configured modes;
-    // lockstep waits for actual inputs and only serializes periodic/on-demand checkpoints.
+    // Express Rally's lockstep command lead in milliseconds across the TPS choices.
+    // Core adapts within these bounds and waits for late inputs; no missing input is predicted.
+    const baseInputDelay=Math.max(1,Math.ceil(LOCKSTEP_INPUT_DELAY_BASE_MS*this.sim.tps/1000));
+    const inputDelayProfile=this.netcodeMode==='lockstep'?{baseInputDelayTicks:baseInputDelay,minInputDelayTicks:baseInputDelay,maxInputDelayTicks:Math.floor(LOCKSTEP_INPUT_DELAY_MAX_MS*this.sim.tps/1000)}:{};
     this.netcodeSession=RallyNetcode.createSession({players:['host','guest'],localPlayerId:this.role,authorityPlayerId:'host',
       sessionId:String(this.roomCode),simulationVersion:String(SIM_VERSION),seed:seed>>>0,inputSize:1,
-      profile:{...RallyNetcode.profiles.rts,mode:this.netcodeMode,rollbackWindowTicks:this.netcodeMode==='lockstep'?0:RallyNetcode.profiles.rts.rollbackWindowTicks,tickRate:this.sim.tps,maxCatchupSteps:MAX_CATCHUP_STEPS_PER_PULSE,checksumInterval:20,maxCommandBytes:12*1024,maxHistoryBytes:64*1024*1024,maxSnapshotBytes:RallyStateCodec.maxBytes},
+      profile:{...RallyNetcode.profiles.rts,mode:this.netcodeMode,rollbackWindowTicks:this.netcodeMode==='lockstep'?0:RallyNetcode.profiles.rts.rollbackWindowTicks,
+        ...inputDelayProfile,
+        tickRate:this.sim.tps,maxCatchupSteps:MAX_CATCHUP_STEPS_PER_PULSE,checksumInterval:20,maxCommandBytes:12*1024,maxHistoryBytes:64*1024*1024,maxSnapshotBytes:RallyStateCodec.maxBytes},
       adapter:this.simulationAdapter,clock:()=>this.netcodeNow,onEvent:event=>this.onNetcodeEvent(event)});
     const statusTransport=this.transport;
     this.detachNetcodeTransport=this.netcodeSession.attachTransport(this.role==='host'?'guest':'host',{
@@ -23537,11 +23726,16 @@ class GameSession{
     });
     this.netcodeNow=performance.now();this.lastDriverPulseAt=this.netcodeNow;this.lastSnapshotEmitAt=this.netcodeNow;
     this.stopHeartbeat(false);
-    this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,maxBacklogTicks:MAX_CATCHUP_STEPS_PER_PULSE,
+    let pulseStartedAt=0,pulseAdvances=0;
+    // A slow ongoing battle is not a suspended page. The loop still caps elapsed
+    // accumulation and catch-up work independently of this suspension threshold.
+    this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,maxBacklogTicks:Math.ceil(SIM_SUSPENSION_THRESHOLD_MS*this.sim.tps/1000),
       onBacklogDrop:event=>this.onBacklogDrop(event),
-      beforeFrame:now=>{this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now)},
-      canAdvance:()=>!this.simEnded&&!this.simulationFatal&&!this.pendingTerminalFrame&&!this.syncHold&&!this.frameOutputs.get(this.sim.tick)?.winner,
-      onAdvance:()=>this.reconcileNetcodePresentation(),render:()=>this.reconcileNetcodePresentation(),
+      beforeFrame:now=>{pulseStartedAt=performance.now();pulseAdvances=0;this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now)},
+      // Always allow one ordinary attempt. Expensive ticks yield before additional
+      // catch-up; Core still owns dt, polling, pacing and synchronous rollback.
+      canAdvance:()=>!this.simEnded&&!this.simulationFatal&&!this.pendingTerminalFrame&&!this.syncHold&&!this.frameOutputs.get(this.sim.tick)?.winner&&(!pulseAdvances||performance.now()-pulseStartedAt<SIM_PULSE_BUDGET_MS),
+      onAdvance:()=>{pulseAdvances++;this.reconcileNetcodePresentation()},render:()=>this.reconcileNetcodePresentation(),
       onError:error=>this.enterSimulationFatal(error,{source:'netcode-loop'})});
     this.syncHold=!this.transportConnected;AppLifecycle.registerBackgroundSession(this);return true;
   }
@@ -23604,7 +23798,11 @@ class GameSession{
         // 기존 replay 파일의 command schema에만 변환한다. 이 메시지는 네트워크로 보내지 않는다.
         this.replayRecorder?.recordCommand({type:'RUNTIME_COMMIT',...command,authorityTick:frame.frameTick});
         this.runtimeSeq++;
-        if(command.actor===this.role)this.pendingNetcodeCommands.delete(command.netcodeSequence);
+        if(command.actor===this.role){
+          const ticket=this.pendingNetcodeCommands.get(command.netcodeSequence);
+          if(Number.isFinite(ticket?.submittedAt))PerformanceTelemetry.recordTiming(this.performanceStats.timings,'commandConfirm',performance.now()-ticket.submittedAt);
+          this.pendingNetcodeCommands.delete(command.netcodeSequence);
+        }
       }
       this.presentationJournal.update(performance.now());
       // Recovery may republish the authoritative journal, but already heard timeline
@@ -23693,7 +23891,11 @@ class GameSession{
   }
   emitSnapshot(snapshot){
     const started=performance.now();
-    try{return this.onSnapshot(snapshot)}finally{PerformanceTelemetry.recordTiming(this.performanceStats.timings,'snapshotUi',performance.now()-started)}
+    try{
+      const result=this.onSnapshot(snapshot);
+      this.lastSnapshotPublication={sim:this.sim,tick:this.sim?.tick,epoch:this.sim?.runtimeEpoch,publishedTick:this.publishedGameTick,confirmed:this.latestConfirmedSnapshot};
+      return result;
+    }finally{PerformanceTelemetry.recordTiming(this.performanceStats.timings,'snapshotUi',performance.now()-started)}
   }
   emitRenderTargets(sim,snap){
     const started=performance.now();
@@ -23701,11 +23903,11 @@ class GameSession{
   }
   advanceSimulation(now=performance.now()){
     if(!this.sim||this.simEnded||this.simulationFatal)return;
-    const gap=Math.max(0,now-this.lastDriverPulseAt),maxGap=1000/this.sim.tps*MAX_CATCHUP_STEPS_PER_PULSE;
-    if(gap>maxGap){this.netcodeLoop?.resetTiming();this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now);this.onBacklogDrop({elapsedMs:gap,droppedTicks:Math.floor(gap/(1000/this.sim.tps)),timestamp:now});return}
     // Library owns pacing, accumulation, bounded catchup, and polling during holds.
     this.netcodeLoop.pulse(now);
-    if(!this.netcodeSession.resimulating&&now-this.lastSnapshotEmitAt>=SNAPSHOT_EMIT_INTERVAL_MS){
+    const previous=this.lastSnapshotPublication;
+    const presentationChanged=!previous||previous.sim!==this.sim||previous.tick!==this.sim.tick||previous.epoch!==this.sim.runtimeEpoch||previous.publishedTick!==this.publishedGameTick||this.presentationEventBuffer.length>0||(this.publishConfirmedSnapshots&&previous.confirmed!==this.latestConfirmedSnapshot);
+    if(presentationChanged&&!this.netcodeSession.resimulating&&now-this.lastSnapshotEmitAt>=SNAPSHOT_EMIT_INTERVAL_MS){
       this.lastSnapshotEmitAt=now;
       const snapshot=this.publishConfirmedSnapshots?this.latestConfirmedSnapshot:this.sim.snapshot();
       if(snapshot){snapshot.events=StateValue.copy(this.presentationEventBuffer.splice(0));this.presentationEventsPublished+=snapshot.events.length;this.emitSnapshot(snapshot)}
@@ -28002,6 +28204,66 @@ class TerrainPresentation{
   }
 }
 
+class FogVisibilityGrid{
+  constructor(renderer,step){
+    this.atlas=renderer.world.terrain.surfaces;this.width=renderer.world.width;this.height=renderer.world.height;
+    this.step=step;this.w=Math.max(2,Math.ceil(this.width/step)+1);this.h=Math.max(2,Math.ceil(this.height/step)+1);
+    this.x=Float64Array.from({length:this.w},(_,i)=>i/(this.w-1)*this.width);
+    this.y=Float64Array.from({length:this.h},(_,j)=>j/(this.h-1)*this.height);
+    this.ceilings=new Float64Array(this.w*this.h);this.groundLevels=null;this.guestGroundLevels=null;
+    this.masks=new Map();this.groundMasks=new Map();this.generation=0;
+  }
+  sameGeometry(renderer,step){return this.atlas===renderer.world.terrain.surfaces&&this.width===renderer.world.width&&this.height===renderer.world.height&&this.step===step}
+  update(renderer){
+    const sides=renderer.replayVisionSides(),sideKey=sides.join(',');
+    if(this.snapshot===renderer.snapshot&&this.tick===renderer.snapshot.tick&&this.grid===renderer.visionGridBySide&&this.sideKey===sideKey&&this.observer===renderer.replayObserverAll)return this;
+    this.snapshot=renderer.snapshot;this.tick=renderer.snapshot.tick;this.grid=renderer.visionGridBySide;
+    this.sideKey=sideKey;this.sides=sides;this.observer=renderer.replayObserverAll;this.cellSize=renderer.visionCellSize;
+    // Published mask arrays remain immutable while the GPU transition retains them.
+    this.masks.clear();this.groundMasks.clear();this.generation++;
+    for(let j=0;j<this.h;j++)for(let i=0;i<this.w;i++)this.ceilings[j*this.w+i]=this.ceilingAt(this.x[i],this.y[j]);
+    return this;
+  }
+  ceilingAt(x,y){
+    if(this.observer)return Infinity;
+    const key=Math.floor(x/this.cellSize)+','+Math.floor(y/this.cellSize);let best=-Infinity;
+    for(const side of this.sides){const bucket=this.grid[side].get(key);if(!bucket)continue;
+      for(const src of bucket){
+        const level=Number(src.level||0),ceiling=src.air||src.ignoresTerrainVision||!Number.isFinite(level)?Infinity:level;
+        if(ceiling<=best)continue;
+        if(VisibilityPolicy.sourceCanSeePoint(this.snapshot,src,x,y,{targetAir:false,targetLevel:level})){
+          best=ceiling;if(best>=this.atlas.maxLevel)return best;
+        }
+      }
+    }
+    return best;
+  }
+  atLevel(level){
+    let mask=this.masks.get(level);if(mask)return mask;
+    mask=Uint8Array.from(this.ceilings,ceiling=>ceiling>=level?255:0);this.masks.set(level,mask);return mask;
+  }
+  atGround(renderer){
+    const role=renderer.orientationRole();let mask=this.groundMasks.get(role);if(mask)return mask;
+    if(!this.groundLevels)this.groundLevels=Float64Array.from(this.ceilings,(_,k)=>this.atlas.levelAt(this.x[k%this.w],this.y[Math.floor(k/this.w)]));
+    mask=new Uint8Array(this.w*this.h);
+    if(role!=='guest')for(let k=0;k<mask.length;k++)mask[k]=this.ceilings[k]>=this.groundLevels[k]?255:0;
+    else{
+      if(!this.guestGroundLevels)this.guestGroundLevels=new Float64Array(mask.length);
+      const buildLevels=!this.guestLevelsReady;
+      for(let j=0;j<this.h;j++)for(let i=0;i<this.w;i++){
+        const k=j*this.w+i,ri=this.w-1-i,rj=this.h-1-j,rk=rj*this.w+ri,x=renderer.viewX(this.x[i]),y=renderer.viewY(this.y[j]);
+        // Keep the old reflected-coordinate arithmetic at exact geometry boundaries.
+        const canonical=x===this.x[ri]&&y===this.y[rj];
+        if(buildLevels)this.guestGroundLevels[k]=canonical?this.groundLevels[rk]:this.atlas.levelAt(x,y);
+        const ceiling=canonical?this.ceilings[rk]:this.ceilingAt(x,y);
+        mask[k]=ceiling>=this.guestGroundLevels[k]?255:0;
+      }
+      this.guestLevelsReady=true;
+    }
+    this.groundMasks.set(role,mask);return mask;
+  }
+}
+
 class GLRenderer{
   static DEPTH_PROJECTION=Object.freeze({offset:.88,viewSpan:1.72,min:-.94,max:.94});
   constructor(canvas){
@@ -28036,9 +28298,10 @@ class GLRenderer{
     // Render-only visibility spatial cache.
     this.visionCellSize=320;
     this.visionSourcesBySide=[[],[]];
+    this.detectionGridBySide=[new Map(),new Map()];
     this.visionGridBySide=[new Map(),new Map()];
     this.snapshotCloakedIds=new Set();
-    this.lastMinimapDrawAt=0;
+    this.fogVisibilityGrids=new Map();
     this.visibleUnitFrame=[];
 
     // High-frequency renderer pools. They are presentation-only and deliberately
@@ -28666,7 +28929,7 @@ class GLRenderer{
   }
 
   rebuildVisibilityCache(){
-    this.visionSourcesBySide=[[],[]];this.visionGridBySide=[new Map(),new Map()];this.snapshotCloakedIds.clear();
+    this.visionSourcesBySide=[[],[]];this.visionGridBySide=[new Map(),new Map()];this.detectionGridBySide=[new Map(),new Map()];this.snapshotCloakedIds.clear();
     if(!this.snapshot)return;
     const cell=this.visionCellSize;
     for(const side of [0,1]){
@@ -28674,6 +28937,12 @@ class GLRenderer{
       for(const src of sources){const r=Math.max(src.r,src.detect);
         for(let cy=Math.floor((src.y-r)/cell);cy<=Math.floor((src.y+r)/cell);cy++)for(let cx=Math.floor((src.x-r)/cell);cx<=Math.floor((src.x+r)/cell);cx++){
           const key=cx+","+cy;let bin=grid.get(key);if(!bin)grid.set(key,bin=[]);bin.push(src);
+        }
+        // Zero-radius sources still detect their exact point in the existing
+        // predicate. Index them too; one fixed-point quantum pads float boundaries.
+        const detect=Math.max(0,Number(src.detect)||0)+1/FP,detection=this.detectionGridBySide[side];
+        for(let y=Math.floor((src.y-detect)/64);y<=Math.floor((src.y+detect)/64);y++)for(let x=Math.floor((src.x-detect)/64);x<=Math.floor((src.x+detect)/64);x++){
+          const key=x+','+y;let bin=detection.get(key);if(!bin)detection.set(key,bin=[]);bin.push(src);
         }
       }
     }
@@ -28831,10 +29100,9 @@ class GLRenderer{
       const af=s?.flags?.[mySide];
       if(af&&af.forced===this.predictedFlag.forced&&Math.hypot(af.x-this.predictedFlag.x,af.y-this.predictedFlag.y)<3){
         this.predictedFlag=null;
-      }else if(now-this.predictedFlag.start>PREDICTED_BUILD_GHOST_TTL_MS){
-        this.predictedFlag=null;
       }
     }
+    this.prunePredictedFlag(now);
     if(this.latencySpellFx?.length)this.latencySpellFx=this.latencySpellFx.filter(f=>now-f.start<PREDICTED_COMMAND_FX_TTL_MS);
 
     this.rebuildVisibilityCache();
@@ -28879,6 +29147,9 @@ class GLRenderer{
       x:action.x,y:action.y,start:performance.now()
     });
     if(this.pendingBuildGhosts.length>12)this.pendingBuildGhosts.splice(0,this.pendingBuildGhosts.length-12);
+  }
+  prunePredictedFlag(now=performance.now()){
+    if(this.predictedFlag&&now-this.predictedFlag.start>PREDICTED_BUILD_GHOST_TTL_MS)this.predictedFlag=null;
   }
   predictFlag(x,y,forced=false){
     const now=performance.now(),side=this.mySide();
@@ -30622,7 +30893,11 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
     if(this.replayObserverAll||this.replayVisionMode==="union")return true;
     if(!this.snapshot)return false;
     const targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(x,y);
-    for(const side of this.replayVisionSides())for(const src of this.visionSourcesBySide[side]||[])if(VisibilityPolicy.sourceCanDetectPoint(this.snapshot,src,x,y,{targetAir,targetLevel}))return true;
+    const finite=Number.isFinite(x)&&Number.isFinite(y),key=finite?Math.floor(x/64)+','+Math.floor(y/64):null;
+    for(const side of this.replayVisionSides()){
+      const sources=finite?(this.detectionGridBySide[side].get(key)||[]):this.visionSourcesBySide[side]||[];
+      for(const src of sources)if(VisibilityPolicy.sourceCanDetectPoint(this.snapshot,src,x,y,{targetAir,targetLevel}))return true;
+    }
     return false;
   }
   snapshotStealthed(u){
@@ -32054,6 +32329,13 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
   fogTransitionAmount(now=performance.now()){
     return this._fogTransitionStartedAt==null?1:RangeUtil.clamp((now-this._fogTransitionStartedAt)/this.fogTransitionDurationMs,0,1);
   }
+  fogVisibilityGrid(step=this.fogMaskStep||64){
+    const activeStep=this.fogMaskStep||64;
+    for(const key of this.fogVisibilityGrids.keys())if(key!==64&&key!==activeStep)this.fogVisibilityGrids.delete(key);
+    let field=this.fogVisibilityGrids.get(step);
+    if(!field||!field.sameGeometry(this,step)){field=new FogVisibilityGrid(this,step);this.fogVisibilityGrids.set(step,field)}
+    return field.update(this);
+  }
   ensureFogTextures(){
     if(!this.snapshot)return null;
     const gl=this.gl,atlas=this.world.terrain.surfaces,step=this.fogMaskStep||64,w=Math.max(2,Math.ceil(this.world.width/step)+1),h=Math.max(2,Math.ceil(this.world.height/step)+1),
@@ -32070,11 +32352,10 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       if(!tex){tex=this.device.createTexture({width:w,height:h,data},{format:'luminance',filter:'linear'});textures.set(id,tex)}
       else this.device.updateTexture(tex,{width:w,height:h,data});return tex;
     };
-    const make=level=>{const a=new Uint8Array(w*h);for(let j=0;j<h;j++){const y=j/(h-1)*this.world.height;for(let i=0;i<w;i++){const x=i/(w-1)*this.world.width;
-      a[j*w+i]=this.visibleRawAtLevel(x,y,level)?255:0}}return a};
+    const visibility=this.fogVisibilityGrid(step);
     // Levels need not be contiguous: only surfaces that exist need a texture.
     for(const level of this.fogSurfaces.keys()){
-      const id=`level:${level}`,target=make(level),record=this.fogMaskRecords.get(id);
+      const id=`level:${level}`,target=visibility.atLevel(level),record=this.fogMaskRecords.get(id);
       // Blend only the presentation mask. Exact entity visibility continues to use
       // VisibilityPolicy against the current snapshot, never these texture values.
       let from=target;
@@ -32371,12 +32652,13 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
 
   renderMinimapPass(){
     const now=performance.now();
-    if(ActiveViewState.minimap&&now-this.lastMinimapDrawAt>=100){this.lastMinimapDrawAt=now;ActiveViewState.minimap.draw()}
+    if(ActiveViewState.minimap&&now-ActiveViewState.minimap.lastDrawAt>=100)ActiveViewState.minimap.draw();
   }
 
   loop(){
     try{
     const frameStarted=performance.now();this._framePresentationAt=frameStarted;
+    this.prunePredictedFlag(frameStarted);
     this.resize();
     // DOM viewport synchronization is once per frame, not once per terrain/Fog vertex.
     // All math still uses the shared camera; input and standalone passes refresh on demand.
@@ -32455,6 +32737,7 @@ class MiniMap{
     this.ctx=canvas.getContext("2d");
     this.renderer=null;
     this.snapshot=null;
+    this.lastDrawAt=0;this.fogMaskTarget=null;this.fogMaskDarkKey='';
     this.dragging=false;
     this.pointerId=null;
     this.bind();
@@ -32537,15 +32820,19 @@ e.stopPropagation();
     c.fill();
   }
   drawFog(){
-    const r=this.renderer;if(!r||r.replayObserverAll)return;const w=this.canvas.width,h=this.canvas.height,step=64,mw=Math.max(2,Math.ceil(r.world.width/step)+1),mh=Math.max(2,Math.ceil(r.world.height/step)+1),
+    const r=this.renderer;if(!r||r.replayObserverAll)return;const w=this.canvas.width,h=this.canvas.height,field=r.fogVisibilityGrid(64),mw=field.w,mh=field.h,
       mask=this.fogMask||(this.fogMask=document.createElement('canvas'));if(mask.width!==mw||mask.height!==mh){mask.width=mw;mask.height=mh}
-    const c=mask.getContext('2d'),img=c.createImageData(mw,mh),dark=r.replayVisionMode?[2,4,6,245]:[7,12,13,224];
-    // Mask texels are in minimap view coordinates; visibility uses authoritative world coordinates.
-    for(let j=0;j<mh;j++){const y=r.viewY(j/(mh-1)*r.world.height);for(let i=0;i<mw;i++){const x=r.viewX(i/(mw-1)*r.world.width),k=(j*mw+i)*4,visible=r.visibleRaw(x,y,false);img.data[k]=dark[0];img.data[k+1]=dark[1];img.data[k+2]=dark[2];img.data[k+3]=visible?0:dark[3]}}
-    c.putImageData(img,0,0);const out=this.ctx;out.save();out.imageSmoothingEnabled=true;out.imageSmoothingQuality='high';out.drawImage(mask,0,0,mw,mh,0,0,w,h);out.restore();
+    const target=field.atGround(r),dark=r.replayVisionMode?[2,4,6,245]:[7,12,13,224],darkKey=dark.join(',');
+    if(this.fogMaskTarget!==target||this.fogMaskDarkKey!==darkKey){
+      const c=mask.getContext('2d'),img=c.createImageData(mw,mh);
+      for(let k=0;k<target.length;k++){const p=k*4;img.data[p]=dark[0];img.data[p+1]=dark[1];img.data[p+2]=dark[2];img.data[p+3]=target[k]?0:dark[3]}
+      c.putImageData(img,0,0);this.fogMaskTarget=target;this.fogMaskDarkKey=darkKey;
+    }
+    const out=this.ctx;out.save();out.imageSmoothingEnabled=true;out.imageSmoothingQuality='high';out.drawImage(mask,0,0,mw,mh,0,0,w,h);out.restore();
   }
   draw(){
     if(!this.renderer||!this.snapshot)return;
+    this.lastDrawAt=performance.now();
     this.resize();
 
     const c=this.ctx,w=this.canvas.width,h=this.canvas.height,s=this.snapshot,r=this.renderer;
@@ -33053,7 +33340,7 @@ UiRegistry.refs.dbgSyncBytes=DomUtil.byId("dbgSyncBytes");
 UiRegistry.refs.dbgSyncCost=DomUtil.byId("dbgSyncCost");
 UiRegistry.refs.dbgSyncFailure=DomUtil.byId("dbgSyncFailure");
 UiRegistry.refs.dbgCoreLatency=DomUtil.byId("dbgCoreLatency");
-for(const id of ['dbgPerfInputDelay','dbgPerfIceRtt','dbgPerfEventLoop','dbgPerfLongTask','dbgPerfPulseGap','dbgPerfPulse','dbgPerfStateSave','dbgPerfResimulation','dbgPerfPresentation','dbgPerfFrameInterval','dbgPerfDeviceBegin','dbgPerfRenderPasses','dbgPerfRenderEffects','dbgPerfRenderTail','dbgPerfNavigation','dbgPerfProjection','dbgPerfDrawCalls','performanceTimingExportBtn'])UiRegistry.refs[id]=DomUtil.byId(id);
+for(const id of ['dbgPerfInputDelay','dbgPerfCommandConfirm','dbgPerfCommandPending','dbgPerfIceRtt','dbgPerfEventLoop','dbgPerfLongTask','dbgPerfPulseGap','dbgPerfPulse','dbgPerfStateSave','dbgPerfResimulation','dbgPerfPresentation','dbgPerfFrameInterval','dbgPerfDeviceBegin','dbgPerfRenderPasses','dbgPerfRenderEffects','dbgPerfRenderTail','dbgPerfNavigation','dbgPerfProjection','dbgPerfDrawCalls','performanceTimingExportBtn'])UiRegistry.refs[id]=DomUtil.byId(id);
 UiRegistry.refs.dbgCorePacing=DomUtil.byId("dbgCorePacing");
 UiRegistry.refs.dbgCorePrediction=DomUtil.byId("dbgCorePrediction");
 UiRegistry.refs.dbgCoreHistory=DomUtil.byId("dbgCoreHistory");
@@ -33063,6 +33350,8 @@ UiRegistry.refs.dbgCoreRecovery=DomUtil.byId("dbgCoreRecovery");
 UiRegistry.refs.dbgCoreBytes=DomUtil.byId("dbgCoreBytes");
 UiRegistry.refs.dbgPerfStep=DomUtil.byId("dbgPerfStep");UiRegistry.refs.dbgPerfPeerStep=DomUtil.byId("dbgPerfPeerStep");UiRegistry.refs.dbgPerfCore=DomUtil.byId("dbgPerfCore");UiRegistry.refs.dbgPerfCombat=DomUtil.byId("dbgPerfCombat");UiRegistry.refs.dbgPerfTail=DomUtil.byId("dbgPerfTail");
 UiRegistry.refs.dbgPerfSnapshot=DomUtil.byId("dbgPerfSnapshot");UiRegistry.refs.dbgPerfEntities=DomUtil.byId("dbgPerfEntities");UiRegistry.refs.dbgPerfSpatial=DomUtil.byId("dbgPerfSpatial");UiRegistry.refs.dbgPerfTarget=DomUtil.byId("dbgPerfTarget");UiRegistry.refs.dbgPerfCollision=DomUtil.byId("dbgPerfCollision");UiRegistry.refs.dbgPerfRender=DomUtil.byId("dbgPerfRender");UiRegistry.refs.dbgPerfAllowanceLabel=DomUtil.byId("dbgPerfAllowanceLabel");UiRegistry.refs.dbgPerfAllowance=DomUtil.byId("dbgPerfAllowance");UiRegistry.refs.dbgPerfUsedLabel=DomUtil.byId("dbgPerfUsedLabel");UiRegistry.refs.dbgPerfUsed=DomUtil.byId("dbgPerfUsed");UiRegistry.refs.dbgPerfBudgetLabel=DomUtil.byId("dbgPerfBudgetLabel");UiRegistry.refs.dbgPerfBudget=DomUtil.byId("dbgPerfBudget");
+UiRegistry.refs.dbgPerfCollisionCore=DomUtil.byId("dbgPerfCollisionCore");UiRegistry.refs.dbgPerfCollisionTail=DomUtil.byId("dbgPerfCollisionTail");
+UiRegistry.refs.dbgPerfCombatSplit=DomUtil.byId("dbgPerfCombatSplit");UiRegistry.refs.dbgPerfCollisionSweepFlow=DomUtil.byId("dbgPerfCollisionSweepFlow");UiRegistry.refs.dbgPerfCollisionHardFixFlow=DomUtil.byId("dbgPerfCollisionHardFixFlow");
 UiRegistry.refs.dbgEnduranceMismatchRate=DomUtil.byId("dbgEnduranceMismatchRate");UiRegistry.refs.dbgEnduranceCorrectionRate=DomUtil.byId("dbgEnduranceCorrectionRate");UiRegistry.refs.dbgEndurancePeaks=DomUtil.byId("dbgEndurancePeaks");
 UiRegistry.refs.dbgBalanceTime=DomUtil.byId("dbgBalanceTime");UiRegistry.refs.dbgBalanceT2=DomUtil.byId("dbgBalanceT2");UiRegistry.refs.dbgBalanceT3=DomUtil.byId("dbgBalanceT3");UiRegistry.refs.dbgBalanceTech=DomUtil.byId("dbgBalanceTech");UiRegistry.refs.dbgBalanceCombat=DomUtil.byId("dbgBalanceCombat");UiRegistry.refs.dbgBalanceCapture=DomUtil.byId("dbgBalanceCapture");
 UiRegistry.refs.dbgBalanceMineral=DomUtil.byId("dbgBalanceMineral");UiRegistry.refs.dbgBalanceGas=DomUtil.byId("dbgBalanceGas");UiRegistry.refs.dbgBalanceArmy=DomUtil.byId("dbgBalanceArmy");UiRegistry.refs.dbgBalanceAir=DomUtil.byId("dbgBalanceAir");UiRegistry.refs.dbgBalanceAA=DomUtil.byId("dbgBalanceAA");UiRegistry.refs.dbgBalanceExhaust=DomUtil.byId("dbgBalanceExhaust");UiRegistry.refs.dbgBalanceLosses=DomUtil.byId("dbgBalanceLosses");
@@ -34417,8 +34706,8 @@ class ConnectionPresentation{
   const peerRole=active.role==="host"?"guest":"host";
   const peerPerf=SinglePlayerModeUtil.isSinglePlayer()?MatchLifecycle.singleMatch?.sessions?.[peerRole]?.sim?.perfStats:null;
   const avgCandidates=perf.spatialQueries?perf.spatialCandidates/perf.spatialQueries:0;
-  UiRegistry.refs.dbgPerfStep.textContent=`${fmtMs(perf.totalMs)} / ${fmtMs(perf.ewmaStepMs)} / ${fmtMs(perf.maxStepMs)}`;
-  UiRegistry.refs.dbgPerfPeerStep.textContent=peerPerf?`${peerRole} ${fmtMs(peerPerf.totalMs)} / EWMA ${fmtMs(peerPerf.ewmaStepMs)}`:"-";
+  UiRegistry.refs.dbgPerfStep.textContent=`${fmtMs(perf.lastStepMs)} / ${fmtMs(perf.ewmaStepMs)} / ${fmtMs(perf.maxStepMs)}`;
+  UiRegistry.refs.dbgPerfPeerStep.textContent=peerPerf?`${peerRole} ${fmtMs(peerPerf.lastStepMs)} / EWMA ${fmtMs(peerPerf.ewmaStepMs)}`:"-";
   UiRegistry.refs.dbgPerfCore.textContent=`${fmtMs(perf.indexMs)} / ${fmtMs(perf.worldMs)} / ${fmtMs(perf.economyMs)}`;
   UiRegistry.refs.dbgPerfCombat.textContent=`${fmtMs(perf.workerMs)} / ${fmtMs(perf.visionMs)} / ${fmtMs(perf.combatMs)}`;
   UiRegistry.refs.dbgPerfTail.textContent=`${fmtMs(perf.projectileMs)} / ${fmtMs(perf.collisionMs)} / ${fmtMs(perf.postMs)}`;
@@ -34426,13 +34715,23 @@ class ConnectionPresentation{
   UiRegistry.refs.dbgPerfEntities.textContent=`${perf.aliveUnits||0} / ${perf.combatUnits||0} / ${perf.workers||0} / ${perf.projectiles||0}`;
   UiRegistry.refs.dbgPerfSpatial.textContent=`${perf.spatialQueries||0} / ${perf.spatialCandidates||0} (${avgCandidates.toFixed(1)})`;
   UiRegistry.refs.dbgPerfTarget.textContent=`target ${perf.targetQueries||0} · reject ${perf.targetVisibilityRejects||0} / vis ${perf.visibilityChecks||0} · sideQ ${perf.sideSpatialQueries||0}`;
-  UiRegistry.refs.dbgPerfCollision.textContent=`${perf.collisionPairs||0} / ${perf.collisionOverlaps||0} / ${perf.collisionIterations||0}`;
+  UiRegistry.refs.dbgPerfCombatSplit.textContent=`${fmtMs(perf.combatTargetPickMs)} / ${fmtMs(perf.combatOtherMs)} · ${perf.combatTargetPickCalls||0} target calls`;
+  const meanPbdNeighbors=perf.collisionPbdNeighborObservations?perf.collisionPbdNeighborTotal/perf.collisionPbdNeighborObservations:0;
+  UiRegistry.refs.dbgPerfCollision.textContent=`${perf.collisionPairs||0} / ${perf.collisionPbdContacts||0} / ${perf.collisionPbdPeakNeighbors||0} (${meanPbdNeighbors.toFixed(1)} avg) / ${perf.collisionIterations||0}`;
+  UiRegistry.refs.dbgPerfCollisionCore.textContent=`${fmtMs(perf.collisionPrepMs)} / ${fmtMs(perf.collisionGridBuildMs)} / ${fmtMs(perf.collisionPairScanMs)} / ${fmtMs(perf.collisionPbdApplyMs)}`;
+  UiRegistry.refs.dbgPerfCollisionTail.textContent=`${fmtMs(perf.collisionSweptMotionMs)} / ${fmtMs(perf.collisionTerrainMs)} / ${fmtMs(perf.collisionHardFixMs)} / ${fmtMs(perf.collisionOtherMs)}`;
+  UiRegistry.refs.dbgPerfCollisionSweepFlow.textContent=`${perf.collisionSweptCalls||0} / ${perf.collisionSweptActivePasses||0} / ${perf.collisionSweptPairTests||0} / ${perf.collisionSweptHits||0} / ${perf.collisionSweptCorrectionUnits||0} / ${perf.collisionSweptNoCorrectionPasses||0}`;
+  UiRegistry.refs.dbgPerfCollisionHardFixFlow.textContent=`${perf.collisionHardFixCalls||0} / ${perf.collisionHardFixPasses||0} / ${perf.collisionHardFixActivePairTests||0} / ${perf.collisionHardFixCandidates||0} / ${perf.collisionHardFixCorrections||0} / ${perf.collisionHardFixNoOpCalls||0}`;
   const rp=ActiveViewState.renderer?.perfStats;
   UiRegistry.refs.dbgPerfRender.textContent=rp?`${(rp.fps||0).toFixed(1)} FPS / ${fmtMs(rp.ewmaFrameWorkMs)} (max ${fmtMs(rp.maxFrameWorkMs)})`:"-";
   const stats=active.performanceStats,t=stats.timings,m=PerformanceTelemetry.runtimeMonitor;
   const timing=row=>row?.samples?`${fmtMs(row.currentMs)} / ${fmtMs(row.ewmaMs)} / ${fmtMs(row.maxMs)}`:'표본 수집 중';
   PerformanceTelemetry.sampleConnection(active);
   text('dbgPerfInputDelay',`${metrics.inputDelay}t · ${fmtMs(metrics.inputDelay*1000/active.sim.tps)}`);
+  text('dbgPerfCommandConfirm',t.commandConfirm?.samples?timing(t.commandConfirm):'입력 없음');
+  const commandNow=performance.now();let pendingCommandMs=0;
+  for(const ticket of active.pendingNetcodeCommands.values())if(Number.isFinite(ticket.submittedAt))pendingCommandMs=Math.max(pendingCommandMs,commandNow-ticket.submittedAt);
+  text('dbgPerfCommandPending',`${active.pendingNetcodeCommands.size}개 · ${fmtMs(pendingCommandMs)}`);
   const iceAge=stats.iceFetchedAt===null?null:performance.now()-stats.iceFetchedAt;
   text('dbgPerfIceRtt',!active.transport?.pc?.getStats?'지원 안 됨':stats.iceError?'조회 실패':stats.iceRttMs===null?'ICE RTT 표본 없음':`${fmtMs(stats.iceRttMs)} · ${fmtMs(iceAge)} 전 조회`);
   text('dbgPerfEventLoop',timing(m?.timings.eventLoop)+(document.hidden?' · 백그라운드':''));
@@ -34454,7 +34753,7 @@ class ConnectionPresentation{
   UiRegistry.refs.dbgPerfAllowanceLabel.textContent=activeTps+" TPS 틱 허용시간";
   UiRegistry.refs.dbgPerfAllowance.textContent=fmtMs(allowanceMs);
   UiRegistry.refs.dbgPerfUsedLabel.textContent=isSingle?"사용시간 · 싱글 두 세션 step EWMA":"사용시간 · 현재 세션 step EWMA";
-  const sampled=perf.sampleTick>0&&(!isSingle||peerPerf?.sampleTick>0);
+  const sampled=perf.stepSamples>0&&(!isSingle||peerPerf?.stepSamples>0);
   if(!sampled){UiRegistry.refs.dbgPerfUsed.textContent=UiRegistry.refs.dbgPerfBudget.textContent="표본 수집 중"}
   else{
     const usedMs=perf.ewmaStepMs+(isSingle?peerPerf.ewmaStepMs:0),remainingMs=Math.max(0,allowanceMs-usedMs),overrunMs=Math.max(0,usedMs-allowanceMs);
@@ -34654,8 +34953,22 @@ const performanceBenchmark={
             workerMs:Number(p.workerMs)||0,
             visionMs:Number(p.visionMs)||0,
             combatMs:Number(p.combatMs)||0,
+            combatTargetPickMs:Number(p.combatTargetPickMs)||0,
+            combatOtherMs:Number(p.combatOtherMs)||0,
             projectileMs:Number(p.projectileMs)||0,
             collisionMs:Number(p.collisionMs)||0,
+            collisionDetails:{sampleTick:Number(p.sampleTick)||0,detailedSamples:Number(p.collisionPbdDetailedSamples)||0,
+              gridCandidateVisits:Number(p.collisionPairs)||0,pbdContacts:Number(p.collisionPbdContacts)||0,
+              pbdMaxNeighborsThisSample:Number(p.collisionPbdMaxNeighbors)||0,pbdPeakNeighborsAcrossSamples:Number(p.collisionPbdPeakNeighbors)||0,
+              meanNeighborsAmongContactingUnits:Number(p.collisionPbdNeighborObservations)?Number(p.collisionPbdNeighborTotal)/Number(p.collisionPbdNeighborObservations):0,
+              combatTargetPickMs:Number(p.combatTargetPickMs)||0,combatOtherMs:Number(p.combatOtherMs)||0,combatTargetPickCalls:Number(p.combatTargetPickCalls)||0,
+              pairScanMs:Number(p.collisionPairScanMs)||0,sweptMotionMs:Number(p.collisionSweptMotionMs)||0,
+              terrainMs:Number(p.collisionTerrainMs)||0,finalSapMs:Number(p.collisionHardFixMs)||0,
+              sweptCalls:Number(p.collisionSweptCalls)||0,sweptPasses:Number(p.collisionSweptActivePasses)||0,sweptPairTests:Number(p.collisionSweptPairTests)||0,
+              sweptHits:Number(p.collisionSweptHits)||0,sweptCorrectionUnits:Number(p.collisionSweptCorrectionUnits)||0,sweptNoCorrectionPasses:Number(p.collisionSweptNoCorrectionPasses)||0,
+              sweptZeroMotionCalls:Number(p.collisionSweptZeroMotionCalls)||0,sweptEmptyPasses:Number(p.collisionSweptEmptyPasses)||0,
+              sapCalls:Number(p.collisionHardFixCalls)||0,sapPasses:Number(p.collisionHardFixPasses)||0,sapActivePairTests:Number(p.collisionHardFixActivePairTests)||0,
+              sapCandidates:Number(p.collisionHardFixCandidates)||0,sapCorrections:Number(p.collisionHardFixCorrections)||0,sapNoOpCalls:Number(p.collisionHardFixNoOpCalls)||0},
             postMs:Number(p.postMs)||0,
             snapshotMs:Number(p.snapshotMs)||0,
             checksumMs:Number(p.checksumMs)||0
@@ -34693,10 +35006,23 @@ const performanceBenchmark={
       const roles=[...new Set(samples.flatMap(x=>Object.keys(x.sessions||{})))];
       const roleSummary={};
       for(const r of roles){
+        const collisionDetails=[...new Map(samples.map(x=>x.sessions?.[r]?.collisionDetails).filter(x=>x?.sampleTick).map(x=>[x.sampleTick,x])).values()];
         roleSummary[r]={
           stepMs:summary(nums(["sessions",r,"stepMs"])),
           combatMs:summary(nums(["sessions",r,"combatMs"])),
           collisionMs:summary(nums(["sessions",r,"collisionMs"])),
+          collisionDetailedSamples:collisionDetails.length,
+          collisionPbdPeakNeighbors:Math.max(0,...collisionDetails.map(x=>x.pbdPeakNeighborsAcrossSamples)),
+          collisionPbdMeanNeighborsAmongContactingUnits:collisionDetails.at(-1)?.meanNeighborsAmongContactingUnits||0,
+          collisionStagesMs:Object.fromEntries(["pairScanMs","sweptMotionMs","terrainMs","finalSapMs"].map(key=>[key,summary(collisionDetails.map(x=>Number(x[key])).filter(Number.isFinite))])),
+          combatTargetPickMs:summary(collisionDetails.map(x=>Number(x.combatTargetPickMs)).filter(Number.isFinite)),
+          combatOtherMs:summary(collisionDetails.map(x=>Number(x.combatOtherMs)).filter(Number.isFinite)),
+          targetPickCalls:collisionDetails.reduce((sum,x)=>sum+x.combatTargetPickCalls,0),
+          sweptCalls:collisionDetails.reduce((sum,x)=>sum+x.sweptCalls,0),sweptActivePasses:collisionDetails.reduce((sum,x)=>sum+x.sweptPasses,0),
+          sweptEmptyPasses:collisionDetails.reduce((sum,x)=>sum+x.sweptEmptyPasses,0),sweptZeroMotionCalls:collisionDetails.reduce((sum,x)=>sum+x.sweptZeroMotionCalls,0),
+          sweptHits:collisionDetails.reduce((sum,x)=>sum+x.sweptHits,0),sweptCorrectionUnits:collisionDetails.reduce((sum,x)=>sum+x.sweptCorrectionUnits,0),sweptNoCorrectionPasses:collisionDetails.reduce((sum,x)=>sum+x.sweptNoCorrectionPasses,0),
+          hardFixCalls:collisionDetails.reduce((sum,x)=>sum+x.sapCalls,0),hardFixPasses:collisionDetails.reduce((sum,x)=>sum+x.sapPasses,0),hardFixNoOpCalls:collisionDetails.reduce((sum,x)=>sum+x.sapNoOpCalls,0),
+          hardFixPairTests:collisionDetails.reduce((sum,x)=>sum+x.sapActivePairTests,0),hardFixCandidates:collisionDetails.reduce((sum,x)=>sum+x.sapCandidates,0),hardFixCorrections:collisionDetails.reduce((sum,x)=>sum+x.sapCorrections,0),
           workerMs:summary(nums(["sessions",r,"workerMs"])),
           visionMs:summary(nums(["sessions",r,"visionMs"])),
           projectileMs:summary(nums(["sessions",r,"projectileMs"])),
@@ -36211,13 +36537,15 @@ class AppLifecycle{
   if(typeof Worker==="function"&&typeof Blob==="function"&&typeof URL!=="undefined"){
     try{
       const source=`
-        let timer=0;
+        let timer=0,pending=false;
         function start(){
           if(timer)return;
-          timer=setInterval(()=>postMessage(1),${BACKGROUND_TICK_PULSE_MS});
+          // A busy page must not accumulate Worker tasks ahead of RTC/input events.
+          timer=setInterval(()=>{if(!pending){pending=true;postMessage(1)}},${BACKGROUND_TICK_PULSE_MS});
         }
         onmessage=e=>{
           if(e.data==="stop"){if(timer){clearInterval(timer);timer=0}return}
+          if(e.data==="ack"){pending=false;return}
           start();
         };
         start();
@@ -36227,7 +36555,11 @@ class AppLifecycle{
       const worker=new Worker(url);
       URL.revokeObjectURL(url);
       AppLifecycle.backgroundTickWorker=worker;
-      worker.onmessage=()=>AppLifecycle.pulseBackgroundSessions(performance.now());
+      worker.onmessage=()=>{
+        if(AppLifecycle.backgroundTickWorker!==worker)return;
+        try{AppLifecycle.pulseBackgroundSessions(performance.now())}
+        finally{if(AppLifecycle.backgroundTickWorker===worker)worker.postMessage("ack")}
+      };
       worker.onerror=()=>{
         if(AppLifecycle.backgroundTickWorker!==worker)return;
         try{worker.onmessage=null;worker.onerror=null;worker.terminate()}catch{}
