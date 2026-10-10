@@ -17490,6 +17490,7 @@ class SimulationRuntimeState{
     sim.collisionStartCount=0;
     sim.hardFixSapAxis="x";
     for(const key of ["hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs"])sim[key]=[];
+    sim.hardFixSapSideHeads=new Int32Array([-1,-1,-1]);sim.hardFixSapSideNext=new Int32Array(0);sim.hardFixSapSidePrev=new Int32Array(0);sim.hardFixSapSideHeaps=[[],[],[]];
     sim.hardFixSapMarks=new Uint32Array(0);sim.hardFixSapEpoch=1;
   }
   static spatial(sim){
@@ -17519,6 +17520,7 @@ class SimulationRuntimeState{
     this.visibility(sim);this.economy(sim);
     sim.runtimeIndexTick=-1;sim.spatialQueryCursor=0;sim.buildingSpatialQueryCursor=0;sim.buildingSpatialDirty=true;
     sim.collisionStartCount=0;sim.hardFixSapOrder.length=0;sim.hardFixSapEligible.length=0;sim.hardFixSapEpoch=1;sim.hardFixSapMarks.fill(0);
+    sim.hardFixSapSideHeads.fill(-1);for(const heap of sim.hardFixSapSideHeaps)heap.length=0;
     sim.navigation.motion=new SurfaceMotion(sim.navigation);
     sim.rebuildRuntimeIndexes();
   }
@@ -17531,7 +17533,7 @@ class StrategySim{
   static stateContract=new StateContract({}, {presentation:["events","perfStats","balanceStats","_perfCollect"],derived:[
     "navigationDemandScope","world","tps","campaignScriptRuntime","campaignTechCap","disposed","runtimeEpoch","commandReceipts",
     "collisionGrid","collisionSweepGrid","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
-    "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapMarks","hardFixSapEpoch",
+    "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapSideHeads","hardFixSapSideNext","hardFixSapSidePrev","hardFixSapSideHeaps","hardFixSapMarks","hardFixSapEpoch",
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","maxUnitRadius",
     "cloakCacheTick","auraCloakedIds","tickVisibilityCache","tickVisibilityCacheTick","economyCacheTick","workerGasAssignments","validGasExtractorsBySide","navigationRevision","navigation"
   ],children:{delayedEffects:DelayedEffectState}});
@@ -22276,22 +22278,50 @@ let value=Math.max(0,Number(d.flatArmor)||0);
         order.sort((ia,ib)=>(coord(ia)-radii[ia])-(coord(ib)-radii[ib])||ia-ib);
       }
       const saved=this.hardFixSapOrder;saved.length=order.length;for(let q=0;q<order.length;q++)saved[q]=order[q];
-      const active=this.hardFixSapSweepActive,pairs=this.hardFixSapPairs;active.length=0;pairs.length=0;
+      const pairs=this.hardFixSapPairs;pairs.length=0;
+      if(this.hardFixSapSideNext.length<n){this.hardFixSapSideNext=new Int32Array(n);this.hardFixSapSidePrev=new Int32Array(n)}
+      const heads=this.hardFixSapSideHeads,next=this.hardFixSapSideNext,prev=this.hardFixSapSidePrev,heaps=this.hardFixSapSideHeaps;
+      heads.fill(-1);for(const heap of heaps)heap.length=0;
+      const heapLess=(ia,ib)=>{const ea=coord(ia)+radii[ia],eb=coord(ib)+radii[ib];return ea<eb||(ea===eb&&ia<ib)};
+      const heapPush=(heap,value)=>{
+        let i=heap.length;heap.push(value);
+        while(i>0){const p=(i-1)>>1;if(!heapLess(value,heap[p]))break;heap[i]=heap[p];i=p}
+        heap[i]=value;
+      };
+      const heapPop=heap=>{
+        const root=heap[0],last=heap.pop();
+        if(heap.length){let i=0;while(true){const left=i*2+1;if(left>=heap.length)break;const right=left+1,child=right<heap.length&&heapLess(heap[right],heap[left])?right:left;if(!heapLess(heap[child],last))break;heap[i]=heap[child];i=child}heap[i]=last}
+        return root;
+      };
+      const sideIndex=side=>side===0?0:side===1?1:2;
+      const unlink=(group,index)=>{
+        const p=prev[index],q=next[index];
+        if(p>=0)next[p]=q;else heads[group]=q;
+        if(q>=0)prev[q]=p;
+        prev[index]=next[index]=-1;
+      };
       for(const bi of order){
-        const minB=coord(bi)-radii[bi];let w=0;
-        for(let k=0;k<active.length;k++){const ai=active[k];if(coord(ai)+radii[ai]>=minB)active[w++]=ai}
-        active.length=w;
-        for(let k=0;k<active.length;k++){
-          if(perf)perf.collisionHardFixActivePairTests++;
-          const ai=active[k],a=units[ai],bb=units[bi];
-          if(this.isAlliedCollisionUnit(a,bb)||this.unitLayer(a.type)!==this.unitLayer(bb.type))continue;
-          const min=radii[ai]+radii[bi];
-          if(Math.abs(otherCoord(ai)-otherCoord(bi))>=min)continue;
-          if(perf)perf.collisionHardFixCandidates++;
-          const owner=this.nonAlliedPenetrationOwner(ai,bi);
-          pairs.push(owner*(n+1)+(owner===ai?bi:ai));
+        const minB=coord(bi)-radii[bi],biGroup=sideIndex(units[bi].side);
+        for(let group=0;group<3;group++){
+          // Player units on the same side are always allied; neutral/other-side
+          // units retain the existing isAlliedCollisionUnit semantics.
+          if(group===biGroup&&biGroup!==2)continue;
+          const heap=heaps[group];
+          while(heap.length&&coord(heap[0])+radii[heap[0]]<minB)unlink(group,heapPop(heap));
+          for(let ai=heads[group];ai>=0;ai=next[ai]){
+            if(perf)perf.collisionHardFixActivePairTests++;
+            const a=units[ai],bb=units[bi];
+            if(this.isAlliedCollisionUnit(a,bb)||this.unitLayer(a.type)!==this.unitLayer(bb.type))continue;
+            const min=radii[ai]+radii[bi];
+            if(Math.abs(otherCoord(ai)-otherCoord(bi))>=min)continue;
+            if(perf)perf.collisionHardFixCandidates++;
+            const owner=this.nonAlliedPenetrationOwner(ai,bi);
+            pairs.push(owner*(n+1)+(owner===ai?bi:ai));
+          }
         }
-        active.push(bi);
+        const groupHeap=heaps[biGroup],head=heads[biGroup];
+        prev[bi]=-1;next[bi]=head;if(head>=0)prev[head]=bi;heads[biGroup]=bi;
+        heapPush(groupHeap,bi);
       }
       pairs.sort((a,b)=>a-b);
       let changed=0;
