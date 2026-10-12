@@ -36569,7 +36569,7 @@ class BuildingPresentation{
     const pct=Math.max(0,Math.min(100,Math.floor((b.progress/Math.max(1,SimulationTiming.msToTicks(bd.buildTimeMs,SimulationTiming.tps())))*100)));
     const remain=Math.max(0,Math.ceil((Math.max(0,SimulationTiming.msToTicks(bd.buildTimeMs,SimulationTiming.tps())-b.progress))/SimulationTiming.tps()));
     const refund=(Number.isFinite(Number(b.constructionMineralCost))?Number(b.constructionMineralCost):BuildingDefinition.mineralCost(b.type,b.produceType||null))*.5;
-    const gasRefund=Math.floor((Number(b.constructionGasCost)||0)*.5);
+    const gasRefund=(Number(b.constructionGasCost)||0)*.5;
 
     const builder=liveSim&&b.builderUnitId?(liveSim.unitById.get(b.builderUnitId)||liveSim.units.find(u=>u.id===b.builderUnitId)):null;
     const buildState=b.constructionState==="building"
