@@ -1,28 +1,28 @@
 {
   "repository": "byh-playground/bloom-gamekit",
-  "sourceCommit": "059d6babf344efbf54867a342fecdd64f70a6a86",
-  "distCommit": "17ef4c9340c8d8760ed8f648f1358430dca9c71f",
+  "sourceCommit": "fbecfb6c06a5be98af9f6f556b322e7247df57ca",
+  "distCommit": "7cf67c33451848d1af4a7b003cbe1b81ffef8b53",
   "upstreamRollbackCommit": "c3173914519a78834360430071e7a125736d86d5",
   "modules": {
     "rollback": {
       "file": "rollback.js",
-      "sha256": "5a5032e7492195c63f15eed431eb122049e1e053677b342a639765c25f154c43"
+      "sha256": "ec914ba35407859cefee4be25ab517373d9a02be8c998e5bd2da6400ee779ce4"
     },
     "deterministic": {
       "file": "deterministic.js",
-      "sha256": "00ef12c8300fa6eda38d7a814bb136ecd6787d5f5cfbe620a123663528467654"
+      "sha256": "688178b889e7bd3f19c1bc504c91c03f896a9a7bd832fd2c0fc958b2feadce55"
     },
     "simloop": {
       "file": "simloop.js",
-      "sha256": "8a89d888ffaf164be37200d250d6939cc221dcd651aabeb5810a659669e4225c"
+      "sha256": "a6491227f2bd3126ee18531321bf4e59c11dd687bc5d4d02ea12ae9d994dad70"
     },
     "transport": {
       "file": "transport.js",
-      "sha256": "d0f815926ca740371981a80bd03c1f24e909fcce45e98496eb7d85187eca8942"
+      "sha256": "3bded746222c0aa1769697442b579922d406e67d79e3dbf65df5580dd387c007"
     },
     "interpolation": {
       "file": "interpolation.js",
-      "sha256": "23c90f377beb1fd2389023f42d11137c3c6e63ea148e07eb938882aeb9e9c45f"
+      "sha256": "d1f1c9c4502b97154c524fbdd4c1feb3d69d4dffb477a8585f51e124a9821ffe"
     },
     "input": {
       "file": "input.js",
@@ -30,7 +30,7 @@
     },
     "rendering": {
       "file": "rendering.js",
-      "sha256": "b6030b90345a31f7aad9cb832d3c47f775fff43f0990c7b925768a55a1a0017e"
+      "sha256": "5fed746a9797fab4e7c8b99239d00026b913b66f1956c8d6955b7eb4cdf426ef"
     },
     "camera": {
       "file": "camera.js",
@@ -38,7 +38,7 @@
     },
     "events": {
       "file": "presentation-events.js",
-      "sha256": "30a1c9fd62f223998bba34e299b6f6baf0a789a4f09d468b62df87c8193930c5"
+      "sha256": "469a820e22730cdff9a0e4cd37fcbbfa4ffc9af3e39eab6d9a784e1d544caf84"
     },
     "hud": {
       "file": "hud.js",
@@ -46,8 +46,8 @@
     },
     "debug": {
       "file": "debug-tools.js",
-      "sha256": "2081257b357e16442d245ea7242a188a24235864a7991e2164376a7d8eee4b1d"
+      "sha256": "72260336a6c3f2ee0357a303fa8943dd8cfa4f7deea5d9517d311d4cd8796a71"
     }
   },
-  "distManifestSha256": "951712c6bcc4af2e86ac20358e9b7b11d3c7fbb3e9b3b1423789ab8e052ad997"
+  "distManifestSha256": "66b94ae83f5b657a7113a15086ccb49a6ec2dc06b6b6259b2144f5aba071264b"
 }
