@@ -1,6 +1,6 @@
 # RALLY FRONTIER
 
-현재 호환 식별자는 **SIM_VERSION 188**입니다. GameKit source `fbecfb6c06a5be98af9f6f556b322e7247df57ca` / dist `7cf67c33451848d1af4a7b003cbe1b81ffef8b53` 및 manifest v2를 사용하며, `gamekit.lock.json`의 SHA-256으로 빌드 bytes를 검증합니다. protocol 3 세션에 참여하는 모든 클라이언트는 같은 배포본으로 갱신해야 합니다. 기본 lockstep, 선택 가능한 rollback 및 기존 TPS/게임 규칙은 유지합니다. `queueCommand`의 즉시 예약 전에 현재 clock을 갱신하며 rollback 완료 이벤트에서 교정된 표시를 반영합니다. Rally는 `LocalInputPreview`를 연결하지 않으므로 이번 갱신을 로컬 예측 개선으로 표현하지 않습니다.
+현재 호환 식별자는 **SIM_VERSION 189**입니다. GameKit source `cdb03088828a42b89f5683124bc47722ae2bb0a7` / dist `2c063bd6ab7af7798229ebaa1c061a4dd04059bc` 및 manifest v2를 사용하며, `gamekit.lock.json`의 SHA-256으로 빌드 bytes를 검증합니다. protocol 3 세션에 참여하는 모든 클라이언트는 같은 배포본으로 갱신해야 합니다. 기본 lockstep, 선택 가능한 rollback 및 기존 TPS/게임 규칙은 유지합니다. `queueCommand`의 즉시 예약 전에 현재 clock을 갱신하며 rollback 완료 이벤트에서 교정된 표시를 반영합니다. Rally는 `LocalInputPreview`를 연결하지 않으므로 이번 갱신을 로컬 예측 개선으로 표현하지 않습니다.
 
 기존 실제 RTC UI 흐름은 `QA_NETCODE_MODE=lockstep|rollback QA_ROLES=host node scripts/netcode-ui-e2e.cjs _site/index.html`로 모드를 선택해 확인합니다(PowerShell에서는 `$env:`로 설정). 결과는 `.qa/netcode-ui-e2e-<mode>/`에 생성됩니다. 기본 명령의 모드는 lockstep입니다.
 
@@ -102,7 +102,7 @@ rally-frontier/
 
 공통 모듈 원본은 [bloom-gamekit](https://github.com/byh-playground/bloom-gamekit)에서만 관리합니다. Rally는 코드 복사본 대신 `gamekit.lock.json`에 source/dist의 전체 커밋 SHA와 manifest·사용 모듈별 SHA-256을 기록합니다. `npm run setup:gamekit`은 정확한 불변 dist 커밋의 `manifest.json`과 필요한 파일을 받아 모든 hash를 확인하고 Git 제외 `.cache/gamekit/`에 원본 bytes 그대로 저장합니다. 빌드는 같은 lock으로 cache를 다시 검증해 단일 HTML에 포함합니다. 새 checkout의 최초 setup에는 GitHub 접근이 필요하며, 검증한 cache가 있으면 오프라인 빌드가 가능합니다. 업그레이드는 upstream dist 검증 후 lock을 변경하는 작업이고 Rally에서 모듈 사본을 수정하는 방식으로 하지 않습니다. 모듈 로드 실패는 오류로 표시하며 CDN/다른 버전 fallback은 없습니다.
 
-`rollback`, `deterministic`, `simloop`, `transport`의 조합이 기존 `GameSession` 실행 경로를 담당합니다. `interpolation`이 단위·투사체·깃발의 목표 보간을 소유하고 게임 어댑터는 식별자·TPS·불연속 정책만 제공합니다. `rendering.WebGLDevice`가 shader/program/buffer/texture 수명주기와 실제 GPU 제출을 소유합니다. 게임에는 아트 기하 생성, 지형 깊이, Fog 마스크, 알파 패스·스텐실 실루엣 및 최종 화면 흔들림 정책이 남습니다. `camera`는 안정 화면/월드 평면 변환, `input`은 포인터 capture·document fallback·취소·blur 정리를 담당합니다. `presentation-events`는 확정 효과 중복 제거, `hud`는 절대 고도 anchor, `debug-tools`는 오류 기록·리플레이 탐색 UI를 담당합니다.
+`rollback`, `deterministic`, `simloop`, `transport`의 조합이 기존 `GameSession` 실행 경로를 담당합니다. `interpolation.PresentationRuntime`의 한 표시 프레임이 유닛·투사체·깃발의 위치와 생성·제거 시점을 샘플링합니다. 선택 TPS의 한 tick을 표시 버퍼로 사용하며 도약 높이·잔상과 추적 표적도 같은 모델을 읽습니다. 신규 투사체는 launchX/Y에서 첫 구간을 시작합니다. 게임은 도약 곡선·lockedPoint/trackingTarget 의미·식별자·스냅거리 정책을 소유합니다. 시야 판정은 권위 좌표를 유지합니다. `rendering.WebGLDevice`가 shader/program/buffer/texture 수명주기와 실제 GPU 제출을 소유합니다. 게임에는 아트 기하 생성, 지형 깊이, Fog 마스크, 알파 패스·스텐실 실루엣 및 최종 화면 흔들림 정책이 남습니다. `camera`는 안정 화면/월드 평면 변환, `input`은 포인터 capture·document fallback·취소·blur 정리를 담당합니다. `presentation-events`는 확정 효과 중복 제거, `hud`는 절대 고도 anchor, `debug-tools`는 오류 기록·리플레이 탐색 UI를 담당합니다.
 
 Rally의 적응형 A*/공유 A*/Flow-field, 게임 규칙과 체크포인트 리플레이 포맷은 변경하지 않습니다. 공통 `playReplay`는 SDK의 연속 frame 파일을 위한 API이므로 기존 Rally의 독립 체크포인트·캠페인 저장 포맷을 억지로 변환하지 않습니다. 체크포인트 검증/복원은 게임 소유이고 공통 `ReplayTimeline`이 탐색 범위·재생 조작을 담당합니다.
 

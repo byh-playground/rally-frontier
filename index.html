@@ -10691,7 +10691,7 @@ try{
   RallyNetcode=Object.freeze({...namespaces.rollback,...namespaces.deterministic,...namespaces.simloop,...namespaces.transport});
   RallyGamekit=Object.freeze(Object.assign({},...modules.map(([,module])=>module)));
   window.RallyGamekit=RallyGamekit;
-  for(const name of ['InterpolationTimeline','WebGLDevice','createDOMInput','CameraViewport','PresentationEventQueue','resolveAnchorInto','DiagnosticRing','ReplayTimeline'])if(typeof RallyGamekit[name]!=='function')throw new Error('Gamekit module API missing: '+name);
+  for(const name of ['PresentationRuntime','RenderObject','WebGLDevice','createDOMInput','CameraViewport','PresentationEventQueue','resolveAnchorInto','DiagnosticRing','ReplayTimeline'])if(typeof RallyGamekit[name]!=='function')throw new Error('Gamekit module API missing: '+name);
   for(const name of ["createSession","hashBytes","createValueCodec","WebRTCTransport","createNostrSignaler","createLoop","runSyncTestAsync"]){
     if(typeof RallyNetcode[name]!=="function")throw new Error("공개 라이브러리에 필수 API "+name+"가 없습니다. 라이브러리 배포 상태를 확인해 주세요.");
   }
@@ -10726,7 +10726,7 @@ const BUILD_META=Object.freeze({
 /* =========================
    1. Definitions
    ========================= */
-const SIM_TPS=20,FP=100,SIM_VERSION=188;
+const SIM_TPS=20,FP=100,SIM_VERSION=189;
 // Local session policy, deliberately outside canonical gameplay/save rules.
 // A session captures this setting once; changing it only affects the next match.
 const CONFIG={netcode:{mode:'lockstep'}};
@@ -10845,25 +10845,26 @@ const STATE_PUBLISH_HZ=10;
 const STATE_PUBLISH_INTERVAL_MS=1000/STATE_PUBLISH_HZ;
 // Full UI snapshots stay at 10 Hz. Presentation targets are fed directly from the
 // local authoritative sim at the selected SIM TPS without cloning sim.snapshot().
-const SNAPSHOT_PRESENTATION_INTERVAL_MS=STATE_PUBLISH_INTERVAL_MS;
-const RENDER_TARGET_DEFAULT_HZ=10;
-const RENDER_TARGET_DEFAULT_INTERVAL_MS=1000/RENDER_TARGET_DEFAULT_HZ;
-// Add future continuous render-only fields here. StrategySim/checksum/export/recovery
-// never store these presentation values. "shortest-angle" is supported for a future
-// rotation field, but only x/y are registered until a real visual need appears.
+// Game-owned visual fields; the SDK owns sampling and display lifetime.
+const RenderField=RallyGamekit.RenderObject;
+class UnitRenderObject extends RenderField{
+  static renderSchema={tick:RenderField.LINEAR,"delta.x":RenderField.STEP,"delta.y":RenderField.STEP,
+    "entity.x":RenderField.POSITION_X,"entity.y":RenderField.POSITION_Y,
+    ...Object.fromEntries(["leapActive","leapStartTick","leapEndTick","leapStartX","leapStartY","leapEndX","leapEndY",
+      "status.airborneUntil","status.airborneStartTick","status.airborneDurationTicks","status.airborneHeight",
+      "target","attackFlash","combat.attackArcTargetId","combat.attackArcUntilTick","combat.attackWindupUntil","combat.cooldownUntil"].map(k=>["entity."+k,RenderField.STEP]))};
+}
+class ProjectileRenderObject extends RenderField{
+  static renderSchema={tick:RenderField.LINEAR,
+    "entity.x":RenderField.POSITION_X,"entity.y":RenderField.POSITION_Y,
+    ...Object.fromEntries(["launchX","launchY","lockedAimX","lockedAimY","trajectoryPolicy","impactAtAimPoint",
+      "target","targetLost","aimOffsetX","aimOffsetY","arcHeight"].map(k=>["entity."+k,RenderField.STEP]))};
+}
+class FlagRenderObject extends RenderField{
+  static renderSchema={tick:RenderField.LINEAR,"entity.x":RenderField.POSITION_X,"entity.y":RenderField.POSITION_Y,"entity.forced":RenderField.STEP};
+}
 const RENDER_TRACKS=Object.freeze({
-  unit:Object.freeze({snapDistance:120,fields:Object.freeze({
-    x:Object.freeze({mode:"linear",durationMs:RENDER_TARGET_DEFAULT_INTERVAL_MS}),
-    y:Object.freeze({mode:"linear",durationMs:RENDER_TARGET_DEFAULT_INTERVAL_MS})
-  })}),
-  projectile:Object.freeze({snapDistance:180,fields:Object.freeze({
-    x:Object.freeze({mode:"linear",durationMs:RENDER_TARGET_DEFAULT_INTERVAL_MS}),
-    y:Object.freeze({mode:"linear",durationMs:RENDER_TARGET_DEFAULT_INTERVAL_MS})
-  })}),
-  flag:Object.freeze({snapDistance:80,fields:Object.freeze({
-    x:Object.freeze({mode:"linear",durationMs:RENDER_TARGET_DEFAULT_INTERVAL_MS}),
-    y:Object.freeze({mode:"linear",durationMs:RENDER_TARGET_DEFAULT_INTERVAL_MS})
-  })})
+  unit:{type:UnitRenderObject,snapDistance:120},projectile:{type:ProjectileRenderObject,snapDistance:180},flag:{type:FlagRenderObject,snapDistance:80}
 });
 
 
@@ -25812,69 +25813,62 @@ class ReusableFloat32Buffer{
    because the unit body itself is hidden. */
 // Game-owned identity/discontinuity policy; the gamekit timeline owns interpolation.
 class RenderStateStore{
-  constructor(definitions){this.definitions=definitions;this.kinds=Object.create(null);this.clock=0;this.zeroDelta=Object.freeze({x:0,y:0})}
-  state(kind){
-    if(!this.kinds[kind]){
-      const def=this.definitions[kind],schema=Object.fromEntries(Object.entries(def.fields).map(([name,cfg])=>[name,cfg.mode==="shortest-angle"?"angle":"number"]));
-      this.kinds[kind]={def,schema,fields:Object.keys(schema),entries:new Map(),seeds:new Map(),pending:[],epoch:0,sequence:0,revision:0,generation:0,duration:0,timeline:null};
-    }
-    return this.kinds[kind];
-  }
+  constructor(definitions){this.definitions=definitions;this.records=new Map();this.generation=0;this.revision=0;this.sequence=0;this.clock=0;this.zeroDelta=Object.freeze({x:0,y:0});this.lists={unit:[],projectile:[],flag:[]}}
   time(now){return this.clock=Math.max(this.clock,Number(now)||0)}
-  begin(kind){const k=this.state(kind);k.pending.length=0;return ++k.epoch}
-  sample(k,e,at){
-    if(e.sampleAt!==at){
-      // Each identity owns its borrowed, read-only pose. Never share one global scratch
-      // object: callers can hold two positions while computing an endpoint/direction.
-      if(!k.timeline?.sampleInto(e.id,e.generation,at,e.pose))Object.assign(e.pose,e.values);
-      e.sampleAt=at;
+  capture(source,now,snap,stepMs){
+    const at=this.time(now),tick=Number(source.tick)||0;
+    if(!this.runtime||this.stepMs!==stepMs){this.stepMs=stepMs;this.runtime=new RallyGamekit.PresentationRuntime({stepMs,delayMs:stepMs});snap=true}
+    if(snap){this.revision++;this.records.clear()}
+    const entities=[],seen=new Set();
+    const add=(kind,id,value)=>{
+      const key=kind+":"+id,def=this.definitions[kind];let record=this.records.get(key);
+      const previous=record?.live?record:null;
+      if(!previous){
+        // One detached visual identity at birth. Ordinary metadata is refreshed by
+        // the existing UI snapshot cadence, never by cloning the sim each frame.
+        record={kind,id,generation:++this.generation,entity:value.toState?value.toState():structuredClone(value),delta:{x:0,y:0}};
+        this.records.set(key,record);
+      }
+      const teleport=!!previous&&Math.hypot(value.x-record.x,value.y-record.y)>def.snapDistance*Math.max(1,tick-record.tick);
+      record.delta.x=snap||teleport||!previous?0:value.x-record.x;record.delta.y=snap||teleport||!previous?0:value.y-record.y;
+      record.x=value.x;record.y=value.y;record.tick=tick;record.live=true;seen.add(key);
+      const packet={id:key,generation:record.generation,type:def.type,source:{entity:value,tick,delta:record.delta},teleport};
+      if(kind==="projectile"&&!previous&&!snap&&Number.isFinite(value.launchX)&&Number.isFinite(value.launchY)){
+        packet.initialSource={entity:{...value,x:value.launchX,y:value.launchY},tick:tick-1};packet.initialTimeMs=(tick-1)*stepMs;
+      }
+      entities.push(packet);
+    };
+    for(const unit of source.units||[])if(unit.alive!==false)add("unit",unit.id,unit);
+    for(const projectile of source.projectiles||[])if(projectile.alive!==false)add("projectile",projectile.id,projectile);
+    for(let side=0;side<(source.flags||[]).length;side++)if(source.flags[side])add("flag",side,source.flags[side]);
+    for(const [key,record]of this.records)if(!seen.has(key))record.live=false;
+    this.runtime.capture({revision:this.revision,sequence:++this.sequence,timeMs:tick*stepMs,mode:snap?"reset":"continuous",entities},at);
+    this.frameAt=NaN;
+  }
+  updateMetadata(snapshot){
+    for(const kind of ["unit","projectile"]){
+      for(const entity of snapshot[kind==="unit"?"units":"projectiles"]||[]){
+        const record=this.records.get(kind+":"+entity.id);if(record&&entity.alive!==false)record.entity=entity;
+      }
     }
-    return e.pose;
   }
-  entry(k,key,source,at){
-    const values={};for(const name of k.fields){const v=Number(source[name]);values[name]=Number.isFinite(v)?v:0}
-    return {id:key,generation:++k.generation,values,pose:{...values},sampleAt:NaN,initialValues:undefined,teleport:false,epoch:0,at,delta:{x:0,y:0}};
+  frame(now){
+    const at=this.time(now);if(this.frameAt===at)return this.currentFrame;
+    this.frameAt=at;for(const list of Object.values(this.lists))list.length=0;
+    this.currentFrame=this.runtime?.frame(at);const displayed=new Set();
+    this.currentFrame?.forEach((model,key)=>{const record=this.records.get(key);if(record){displayed.add(key);record.model=model;this.lists[record.kind].push(record.entity)}});
+    for(const [key,record]of this.records){if(!displayed.has(key)){record.model=null;if(!record.live)this.records.delete(key)}}
+    return this.currentFrame;
   }
-  track(kind,id,source,now,epoch,snap=false,durationMs=1){
-    const k=this.state(kind),key=String(id),at=this.time(now),duration=Math.max(1,Number(durationMs)||1);
-    if(k.duration!==duration){k.duration=duration;k.timeline=new RallyGamekit.InterpolationTimeline({schema:k.schema,stepMs:duration});k.entries.clear();k.sequence=0;k.revision++}
-    const previous=k.entries.get(key)||k.seeds.get(key),e=previous||this.entry(k,key,source,at);
-    const pose=previous?this.sample(k,e,at):e.pose;
-    const x=Number.isFinite(Number(source.x))?Number(source.x):0,y=Number.isFinite(Number(source.y))?Number(source.y):0;
-    const allowance=k.def.snapDistance*Math.max(1,Math.max(duration,at-e.at)/duration);
-    const teleport=!!snap||!!previous&&Math.hypot(x-e.values.x,y-e.values.y)>allowance;
-    e.delta.x=teleport?0:x-(pose.x??x);e.delta.y=teleport?0:y-(pose.y??y);
-    // Initial seeds are copied once. Timeline.accept copies packet values, so the
-    // entry, delta and target storage can be reused on each authoritative snapshot.
-    e.initialValues=k.seeds.has(key)?{...e.values}:undefined;
-    for(const name of k.fields){const v=Number(source[name]);e.values[name]=Number.isFinite(v)?v:0}
-    e.teleport=teleport;e.epoch=epoch;e.at=at;e.sampleAt=NaN;
-    k.pending.push(e);k.entries.set(key,e);return e;
-  }
-  end(kind,epoch){
-    const k=this.state(kind);if(!k.timeline)return;
-    for(const [id,e]of k.entries)if(e.epoch!==epoch)k.entries.delete(id);
-    k.seeds.clear();
-    k.timeline.accept({revision:k.revision,sequence:++k.sequence,timeMs:this.clock,entities:k.pending},this.clock);
-    // Acceptance can change the pose at the same timestamp (teleport/rollback).
-    for(const e of k.pending)e.sampleAt=NaN;
-  }
-  ensure(kind,id,source,now){
-    const k=this.state(kind),key=String(id);if(k.entries.has(key)||k.seeds.has(key))return;
-    k.seeds.set(key,this.entry(k,key,source,this.time(now)));
-  }
-  has(kind,id){const k=this.kinds[kind],key=String(id);return !!k&&(k.entries.has(key)||k.seeds.has(key))}
+  model(kind,id,now=performance.now()){this.frame(now);return this.records.get(kind+":"+id)?.model||null}
+  has(kind,id,now=performance.now()){return !!this.model(kind,id,now)}
   position(kind,id,source,now=performance.now()){
-    const k=this.kinds[kind],key=String(id),e=k?.entries.get(key)||k?.seeds.get(key);
-    if(e)return this.sample(k,e,this.time(now));
-    return {x:Number(source?.x)||0,y:Number(source?.y)||0};
+    return this.model(kind,id,now)?.entity||{x:Number(source?.x)||0,y:Number(source?.y)||0};
   }
-  value(kind,id,field,fallback,now=performance.now()){
-    const k=this.kinds[kind],key=String(id),e=k?.entries.get(key)||k?.seeds.get(key);
-    return e?(this.sample(k,e,this.time(now))[field]??(Number(fallback)||0)):(Number(fallback)||0);
-  }
-  delta(kind,id){return this.kinds[kind]?.entries.get(String(id))?.delta||this.zeroDelta}
-  clear(){this.kinds=Object.create(null)}
+  displayed(kind,now){this.frame(now);return this.lists[kind]}
+  entity(kind,id){return this.records.get(kind+":"+id)?.entity||null}
+  delta(kind,id){return this.records.get(kind+":"+id)?.model?.delta||this.zeroDelta}
+  clear(){this.records.clear();this.runtime=null;this.frameAt=NaN;for(const list of Object.values(this.lists))list.length=0}
 }
 class FloatingTextPresentationDefinition{
   static presets=Object.freeze({
@@ -28048,8 +28042,6 @@ class GLRenderer{
     // excluded from deterministic state. Sizes are bounded to prevent hidden growth.
     this.renderState=new RenderStateStore(RENDER_TRACKS);
     this.liveRenderTargets=false;
-    this.renderTargetTick=0;
-    this.renderTargetReceivedAt=0;
     this.combatFxPool=new ReusableObjectPool(EffectObjectFactory.makeCombatFx,EffectObjectFactory.resetCombatFx,256);
     this.floatFxPool=new ReusableObjectPool(EffectObjectFactory.makeFloatFx,EffectObjectFactory.resetFloatFx,96);
     this.shakeFxPool=new ReusableObjectPool(EffectObjectFactory.makeShakeFx,EffectObjectFactory.resetShakeFx,16);
@@ -28060,8 +28052,6 @@ class GLRenderer{
 
     // Presentation timing is render-only. Full UI snapshots remain 10 Hz, while
     // registered Render State targets can be refreshed every authoritative simulation tick.
-    this.snapshotReceivedAt=0;
-    this.renderAlpha=1;
     this.perfStats={frameWorkMs:0,ewmaFrameWorkMs:0,maxFrameWorkMs:0,fps:0,frames:0,fpsWindowAt:performance.now(),lastFrameAt:performance.now(),frameIntervalMs:0,ewmaFrameIntervalMs:0,maxFrameIntervalMs:0,frameIntervalWindowAt:performance.now(),cpuDepthSortMs:0,drawCalls:0,bufferUploadBytes:0};
     this.renderStage="init";this.renderEntity=null;this.renderFatalReported=false;
 
@@ -28366,34 +28356,13 @@ class GLRenderer{
     const units=source.units||[],projectiles=source.projectiles||[],flags=source.flags||[];
     const targetIntervalMs=this.presentationTargetIntervalMs(source);
 
-    let epoch=this.renderState.begin("unit");
-    const liveFacingIds=new Set();
-    for(const u of units)if(u?.alive!==false){this.renderState.track("unit",u.id,u,now,epoch,snap,targetIntervalMs);liveFacingIds.add(u.id)}
-    this.renderState.end("unit",epoch);
-    for(const id of this.unitFacingStates.keys())if(!liveFacingIds.has(id))this.unitFacingStates.delete(id);for(const id of this.artilleryFacingStates.keys())if(!liveFacingIds.has(id))this.artilleryFacingStates.delete(id);
-
-    epoch=this.renderState.begin("projectile");
-    for(const p of projectiles)if(p?.alive!==false)this.renderState.track("projectile",p.id,p,now,epoch,snap,targetIntervalMs);
-    this.renderState.end("projectile",epoch);
+    this.renderState.capture(source,now,snap,targetIntervalMs);
+    const liveFacingIds=new Set(units.filter(u=>u?.alive!==false).map(u=>u.id));
+    for(const id of this.unitFacingStates.keys())if(!liveFacingIds.has(id))this.unitFacingStates.delete(id);
+    for(const id of this.artilleryFacingStates.keys())if(!liveFacingIds.has(id))this.artilleryFacingStates.delete(id);
     const liveProjectileIds=new Set(projectiles.filter(p=>p?.alive!==false).map(p=>p.id));
     for(const id of this.projectileScreenMotionStates.keys())if(!liveProjectileIds.has(id))this.projectileScreenMotionStates.delete(id);
-
-    epoch=this.renderState.begin("flag");
-    for(let side=0;side<flags.length;side++)if(flags[side])this.renderState.track("flag",side,flags[side],now,epoch,snap,targetIntervalMs);
-    this.renderState.end("flag",epoch);
-
-    this.renderTargetTick=Number(source.tick)||this.renderTargetTick||0;
-    this.renderTargetReceivedAt=now;
   }
-  seedMissingPresentationTargets(snapshot){
-    if(!snapshot)return;
-    const now=performance.now();
-    for(const u of snapshot.units||[])if(u?.alive!==false)this.renderState.ensure("unit",u.id,u,now);
-    for(const p of snapshot.projectiles||[])if(p?.alive!==false)this.renderState.ensure("projectile",p.id,p,now);
-    for(let side=0;side<(snapshot.flags||[]).length;side++)if(snapshot.flags[side])this.renderState.ensure("flag",side,snapshot.flags[side],now);
-  }
-
-  
 
   presentationNow(now=performance.now()){return this._framePresentationAt??now}
   renderTrackedPosition(entity,kind="unit"){
@@ -28422,15 +28391,18 @@ class GLRenderer{
       const x=Number(u.objectiveBreathDirX)||0,y=Number(u.objectiveBreathDirY)||0;
       if(Math.hypot(x,y)>.001)return{x,y,attack:true};
     }
-    const tick=this.snapshot?.tick||0;
+    const model=this.renderState.model("unit",u.id,this.presentationNow()),pose=model?.entity;
+    const tick=model?.tick??(this.snapshot?.tick||0);
+    const combat=pose?.combat||u.combat,target=pose?pose.target:u.target,attackFlash=pose?pose.attackFlash:u.attackFlash;
     let targetId=null;
-    if(u.combat.attackArcTargetId&&tick<(u.combat.attackArcUntilTick||0))targetId=u.combat.attackArcTargetId;
-    else if(u.target&&(((u.combat.attackWindupUntil||0)>tick)||u.attackFlash>0||((u.combat.cooldownUntil||0)>tick)||(this.attackPresentationUntil.get(u.id)||0)>performance.now()))targetId=u.target;
+    if(combat.attackArcTargetId&&tick<(combat.attackArcUntilTick||0))targetId=combat.attackArcTargetId;
+    else if(target&&(((combat.attackWindupUntil||0)>tick)||attackFlash>0||((combat.cooldownUntil||0)>tick)||(this.attackPresentationUntil.get(u.id)||0)>performance.now()))targetId=target;
     if(targetId){
-      const target=(this.snapshot?.units||[]).find(e=>e.id===targetId&&e.alive)||
+      const target=(this.renderState.model("unit",targetId,this.presentationNow())&&this.renderState.entity("unit",targetId))||
         (this.snapshot?.buildings||[]).find(e=>e.id===targetId&&e.alive!==false);
       if(target){
-        const x=target.x-u.x,y=target.y-u.y;
+        const targetPose=this.renderState.model("unit",target.id,this.presentationNow())?.entity||target,pose=this.renderTrackedPosition(u);
+        const x=targetPose.x-pose.x,y=targetPose.y-pose.y;
         if(Math.hypot(x,y)>.001)return{x,y,attack:true};
       }
     }
@@ -28511,7 +28483,7 @@ class GLRenderer{
   }
 
   presentationEntityActive(kind,id){
-    return !this.liveRenderTargets||this.renderState.has(kind,id);
+    return this.renderState.has(kind,id,this.presentationNow());
   }
 
   
@@ -28534,8 +28506,9 @@ class GLRenderer{
       :this.renderTrackedPosition(entity,kind);
     const atlas=this.world.terrain.surfaces;
     let groundY=atlas.heightAt(planar.x,planar.y),height=0,motion="ground",progress=0;
-    const tick=(this.snapshot?.tick||0);
-    const renderTick=tick+this.renderAlpha;
+    const model=useEntityPlanar?null:this.renderState.model(kind,entity.id,this.presentationNow());
+    const motionState=model?.entity||entity;
+    const renderTick=model?.tick??(this.snapshot?.tick||0);
 
     if(kind==="unit"){
       const d=UnitDefinition.get(entity.type)||{};
@@ -28543,38 +28516,38 @@ class GLRenderer{
         const bob=Math.sin(this.presentationNow()*.004+(HashUtil.hash(entity.id)%997)*.019)*2.4;
         height=atlas.maxHeight-groundY+(d.airHeight||36)+bob;
         motion="air";
-      }else if(entity.leapActive&&tick<(entity.leapEndTick||0)){
-        const duration=Math.max(1,(entity.leapEndTick||0)-(entity.leapStartTick||0));
-        progress=RangeUtil.clamp((renderTick-(entity.leapStartTick||0))/duration,0,1);
-        const startHeight=atlas.heightAt(entity.leapStartX??entity.x,entity.leapStartY??entity.y),endHeight=atlas.heightAt(entity.leapEndX??entity.x,entity.leapEndY??entity.y);
+      }else if(motionState.leapActive&&renderTick<(motionState.leapEndTick||0)){
+        const duration=Math.max(1,(motionState.leapEndTick||0)-(motionState.leapStartTick||0));
+        progress=RangeUtil.clamp((renderTick-(motionState.leapStartTick||0))/duration,0,1);
+        const startHeight=atlas.heightAt(motionState.leapStartX??entity.x,motionState.leapStartY??entity.y),endHeight=atlas.heightAt(motionState.leapEndX??entity.x,motionState.leapEndY??entity.y);
         groundY=startHeight+(endHeight-startHeight)*progress;
         height=Math.sin(progress*Math.PI)*(ROGUE_LEAP_ARC_HEIGHT+atlas.maxHeight);
         motion="leap";
-      }else if(tick<(entity.status.airborneUntil||0)){
-        const duration=Math.max(1,entity.status.airborneDurationTicks||((entity.status.airborneUntil||0)-(entity.status.airborneStartTick||0))||1);
-        progress=RangeUtil.clamp((renderTick-(entity.status.airborneStartTick||0))/duration,0,1);
-        height=Math.sin(progress*Math.PI)*(entity.status.airborneHeight||42);
+      }else if(renderTick<(motionState.status.airborneUntil||0)){
+        const duration=Math.max(1,motionState.status.airborneDurationTicks||((motionState.status.airborneUntil||0)-(motionState.status.airborneStartTick||0))||1);
+        progress=RangeUtil.clamp((renderTick-(motionState.status.airborneStartTick||0))/duration,0,1);
+        height=Math.sin(progress*Math.PI)*(motionState.status.airborneHeight||42);
         motion="airborne";
       }
     }else if(kind==="projectile"){
-      if(entity.launchX!=null&&entity.launchY!=null){
+      if(motionState.launchX!=null&&motionState.launchY!=null){
         // Arc presentation must use the same trajectory destination as simulation.
         // In particular lockedPoint artillery must never recompute its arc from a
         // living target that can move/separate after launch.
-        const policy=entity.trajectoryPolicy||(entity.impactAtAimPoint?"lockedPoint":"trackingTarget");
-        let aimX=Number(entity.lockedAimX),aimY=Number(entity.lockedAimY),toElevation=null;
+        const policy=motionState.trajectoryPolicy||(motionState.impactAtAimPoint?"lockedPoint":"trackingTarget");
+        let aimX=Number(motionState.lockedAimX),aimY=Number(motionState.lockedAimY),toElevation=null;
         const source=UnitDefinition.get(entity.type),fromElevation=source?.layer==="AIR"?atlas.maxHeight+(source.airHeight||36):null;
-        if(policy==="trackingTarget"&&!entity.targetLost){
-          const target=(this.snapshot?.units||[]).find(u=>u.id===entity.target&&u.alive)||
-            (this.snapshot?.buildings||[]).find(b=>b.id===entity.target&&b.alive!==false);
-          if(target){aimX=target.x+(Number(entity.aimOffsetX)||0);aimY=target.y+(Number(entity.aimOffsetY)||0);const td=UnitDefinition.get(target.type);if(td?.layer==="AIR")toElevation=atlas.maxHeight+(td.airHeight||36)}
+        if(policy==="trackingTarget"&&!motionState.targetLost){
+          const target=(this.renderState.model("unit",motionState.target,this.presentationNow())&&this.renderState.entity("unit",motionState.target))||
+            (this.snapshot?.buildings||[]).find(b=>b.id===motionState.target&&b.alive!==false);
+          if(target){const targetPose=this.renderState.model("unit",target.id,this.presentationNow())?.entity||target;aimX=targetPose.x+(Number(motionState.aimOffsetX)||0);aimY=targetPose.y+(Number(motionState.aimOffsetY)||0);const td=UnitDefinition.get(target.type);if(td?.layer==="AIR")toElevation=atlas.maxHeight+(td.airHeight||36)}
         }
         if(Number.isFinite(aimX)&&Number.isFinite(aimY)){
           // All consumers use the shared arc-travel primitive; projectile code owns
           // endpoint policy only, never the trajectory formula.
           const arc=this.resolveArcTravelPresentation({
-            fromX:entity.launchX,fromY:entity.launchY,toX:aimX,toY:aimY,
-            planarX:planar.x,planarY:planar.y,arcHeight:entity.arcHeight,fromElevation,toElevation
+            fromX:motionState.launchX,fromY:motionState.launchY,toX:aimX,toY:aimY,
+            planarX:planar.x,planarY:planar.y,arcHeight:motionState.arcHeight,fromElevation,toElevation
           });
           groundY=arc.groundHeight;height=arc.height;progress=arc.progress;motion=arc.motion;
         }
@@ -28623,11 +28596,12 @@ class GLRenderer{
   resolveLeapTrailWorldPositions(entity,count=3){
     const cur=this.resolveRenderWorldPosition(entity,"unit");
     if(cur.motion!=="leap")return[];
+    entity=this.renderState.model("unit",entity.id,this.presentationNow())?.entity||entity;
     const out=[];
     for(let k=1;k<=count;k++){
       const t=RangeUtil.clamp(cur.progress-k*.10,0,1);
-      const x=(entity.leapStartX||entity.x)+((entity.leapEndX||entity.x)-(entity.leapStartX||entity.x))*t;
-      const z=(entity.leapStartY||entity.y)+((entity.leapEndY||entity.y)-(entity.leapStartY||entity.y))*t;
+      const x=(entity.leapStartX??entity.x)+((entity.leapEndX??entity.x)-(entity.leapStartX??entity.x))*t;
+      const z=(entity.leapStartY??entity.y)+((entity.leapEndY??entity.y)-(entity.leapStartY??entity.y))*t;
       const atlas=this.world.terrain.surfaces,groundY=atlas.heightAt(entity.leapStartX??entity.x,entity.leapStartY??entity.y)*(1-t)+atlas.heightAt(entity.leapEndX??entity.x,entity.leapEndY??entity.y)*t;
       out.push({x,y:groundY+Math.sin(t*Math.PI)*(ROGUE_LEAP_ARC_HEIGHT+atlas.maxHeight),z,groundY,motion:"leapTrail",progress:t});
     }
@@ -28643,7 +28617,7 @@ class GLRenderer{
   }
   prepareVisibleUnitFrame(){
     const out=this.visibleUnitFrame;out.length=0;
-    for(const u of this.snapshot?.units||[])if(this.unitVisibleForRender(u))out.push(u);
+    for(const u of this.renderState.displayed("unit",this.presentationNow()))if(this.unitVisibleForRender(u))out.push(u);
     return out;
   }
 
@@ -28665,7 +28639,7 @@ class GLRenderer{
     const current=this.snapshot?.flags?.[side];
     if(!current)return null;
     const p=this.renderState.position("flag",side,current,this.presentationNow());
-    return{x:p.x,y:p.y,forced:!!current.forced};
+    return{x:p.x,y:p.y,forced:!!p.forced};
   }
 
   rebuildVisibilityCache(){
@@ -28800,14 +28774,12 @@ class GLRenderer{
     if(snapTargets||!old)this.resetFogTransition();
     this.world=WorldContext.forState(s);
     this.snapshot=s;
-    this.snapshotReceivedAt=performance.now();
-    this.renderAlpha=old?0:1;
 
     if(liveTargets){
-      // First live snapshot seeds spawn positions. After that, simulation bridge updates
-      // registered targets; 10 Hz UI snapshots only seed IDs not seen by the bridge yet.
+      // The sim bridge owns motion and lifetime. UI snapshots only refresh ordinary
+      // visual metadata; they cannot introduce an identity ahead of its display time.
       if(!this.liveRenderTargets||!old||snapTargets)this.updatePresentationTargets(s,true);
-      else this.seedMissingPresentationTargets(s);
+      else this.renderState.updateMetadata(s);
       this.liveRenderTargets=true;
     }else{
       // Replay/snapshot-only consumers do not have the simulation bridge, so each
@@ -29933,7 +29905,7 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
         const source=(this.snapshot?.units||[]).find(u=>u.id===fx.sourceId&&u.alive)||(this.snapshot?.buildings||[]).find(b=>b.id===fx.sourceId&&b.alive!==false);
         let impactA=(fx.seed%6283)/1000;
         if(source){
-          const sp=source.id&&this.renderState.has("unit",source.id)
+          const sp=source.id&&this.renderState.has("unit",source.id,this.presentationNow())
             ?this.renderTrackedScreenPosition(source,"unit")
             :{x:this.worldToPx(this.viewX(source.x),this.viewY(source.y))[0],y:this.worldToPx(this.viewX(source.x),this.viewY(source.y))[1]};
           impactA=Math.atan2(sp.y-y,sp.x-x);
@@ -32244,7 +32216,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     for(const g of this.snapshot.gasNodes||[])if(this.onScreenAuth(g.x,g.y,90))add("gas",g,{x:g.x,y:0,z:g.y});
     for(const b of this.snapshot.buildings||[])if(b.alive!==false&&b.hp>0&&this.onScreenAuth(b.x,b.y,(BuildingDefinition.get(b.type)?.size||40)+100))add("building",b,{x:b.x,y:0,z:b.y});
     for(const u of visibleUnits)add("unit",u,this.resolveRenderWorldPosition(u,"unit"));
-    for(const p of this.snapshot.projectiles||[]){
+    for(const p of this.renderState.displayed("projectile",this.presentationNow())){
       if(!this.presentationEntityActive("projectile",p.id))continue;
       const world=this.resolveRenderWorldPosition(p,"projectile");
       const screen=this.projectRenderWorldPosition(world),pad=90*this.sc();
@@ -32393,11 +32365,6 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       if(this.device.beginFrame())this.device.endFrame();
       requestAnimationFrame(this.loop);
       return;
-    }
-
-    if(this.snapshot){
-      const presentationMs=this.liveRenderTargets?this.presentationTargetIntervalMs(this.snapshot):SNAPSHOT_PRESENTATION_INTERVAL_MS;
-      this.renderAlpha=RangeUtil.clamp((performance.now()-this.snapshotReceivedAt)/presentationMs,0,1);
     }
 
     const rp=this.perfStats;
