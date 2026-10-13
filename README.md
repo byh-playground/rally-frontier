@@ -54,6 +54,8 @@ PR에서는 동일한 빌드 검사와 생성만 수행하고 배포하지 않�
 
 캠페인 메뉴를 열 때 native ES import로 데이터를 읽습니다. 기본 게임 부팅은 캠페인 모듈 로드에 의존하지 않으며, 각 미션은 자체 시작 상태를 선언합니다. 개발용 신뢰 Mission JS의 파일/URL Preview도 유지합니다.
 
+덱 편집의 작업 사본·카드 변경·저장 결과는 `DeckBuilderState`가 소유합니다. `DeckPresentation`은 입력과 화면 표시를 조정하고, 저장 형식과 브라우저 저장소 접근은 기존 `DeckRecord`가 담당합니다.
+
 ```text
 rally-frontier/
 ├── index.html             # 게임 엔진·UI 소스 (development 빌드)

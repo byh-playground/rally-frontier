@@ -38095,8 +38095,40 @@ const UI_MODAL_DIALOG_KEYS=Object.freeze({"game-start":"gameStartDialog",campaig
 
 class DeckBuilderState{
   constructor(){this.slot=0;this.filter="all";this.working=null;this.saveFailed=false}
-  open(slot,working){this.slot=RangeUtil.clamp(Math.trunc(Number(slot)||0),0,DECK_SLOT_COUNT-1);this.working=working;this.filter="all";this.saveFailed=false}
+  open(slot){
+    this.slot=RangeUtil.clamp(Math.trunc(Number(slot)||0),0,DECK_SLOT_COUNT-1);
+    const existing=DeckRecord.loadDeckStore().decks[this.slot],v=DeckRecord.validateDeckRecord(existing);
+    this.working=existing&&v.compatible
+      ?{id:existing.id||`deck-${this.slot+1}`,name:existing.name||`덱 ${this.slot+1}`,formatVersion:DECK_FORMAT_VERSION,rulesetVersion:DECK_RULESET_VERSION,createdWithSimVersion:SIM_VERSION,cards:(existing.cards||[]).slice(0,DECK_TOTAL_CARD_COUNT).map(c=>({...c})),updatedAt:existing.updatedAt||new Date().toISOString()}
+      :{id:`deck-${this.slot+1}`,name:`덱 ${this.slot+1}`,formatVersion:DECK_FORMAT_VERSION,rulesetVersion:DECK_RULESET_VERSION,createdWithSimVersion:SIM_VERSION,cards:[],updatedAt:new Date().toISOString()};
+    this.filter="all";this.saveFailed=false;
+  }
   setFilter(filter){this.filter=DeckCardRuleDefinition.filters.some(f=>f.id===filter)?filter:"all"}
+  removeCardAt(index){
+    if(!this.working)return false;
+    const cards=this.working.cards||(this.working.cards=[]),i=Math.trunc(Number(index));
+    if(!Number.isInteger(i)||i<0||i>=cards.length)return false;
+    cards.splice(i,1);this.working.cards=cards.slice(0,DECK_TOTAL_CARD_COUNT);
+    return true;
+  }
+  toggleCard(cardType,cardId){
+    if(!this.working)return null;
+    const card=DeckCardRuleDefinition.card(cardType,cardId);if(!card)return null;
+    const cards=this.working.cards||(this.working.cards=[]),key=DeckCardRuleDefinition.key(card);
+    const selectedIndex=cards.findIndex(c=>DeckCardRuleDefinition.key(c)===key);
+    if(selectedIndex>=0){cards.splice(selectedIndex,1);return{status:"removed",card}}
+    if(cards.length>=DECK_TOTAL_CARD_COUNT)return{status:"full",card};
+    if(!DeckCardRuleDefinition.canPlace(cards,cards.length,card))return{status:"limit",card};
+    cards.push(card);return{status:"added",card};
+  }
+  clearCards(){if(!this.working)return false;this.working.cards=[];return true}
+  persist(){
+    if(!this.working)return false;
+    this.working.formatVersion=DECK_FORMAT_VERSION;this.working.rulesetVersion=DECK_RULESET_VERSION;
+    this.working.createdWithSimVersion=SIM_VERSION;this.working.updatedAt=new Date().toISOString();
+    const store=DeckRecord.loadDeckStore();store.decks[this.slot]=CloneUtil.clone(this.working);
+    const saved=DeckRecord.saveDeckStore(store);this.saveFailed=!saved;return saved;
+  }
 }
 const deckBuilderState=new DeckBuilderState();
 
@@ -38226,10 +38258,6 @@ class DeckPresentation{
   // No parallel preview UI is maintained.
   DraftPresentation.renderDraftFinale(state,"deck");
 }
-  static editableDeckForSlot(index){
-  const store=DeckPresentation.deckStore(),existing=store.decks[index],v=DeckRecord.validateDeckRecord(existing);if(existing&&v.compatible)return {id:existing.id||`deck-${index+1}`,name:existing.name||`덱 ${index+1}`,formatVersion:DECK_FORMAT_VERSION,rulesetVersion:DECK_RULESET_VERSION,createdWithSimVersion:SIM_VERSION,cards:(existing.cards||[]).slice(0,DECK_TOTAL_CARD_COUNT).map(c=>({...c})),updatedAt:existing.updatedAt||new Date().toISOString()};
-  return {id:`deck-${index+1}`,name:`덱 ${index+1}`,formatVersion:DECK_FORMAT_VERSION,rulesetVersion:DECK_RULESET_VERSION,createdWithSimVersion:SIM_VERSION,cards:[],updatedAt:new Date().toISOString()};
-}
   static renderDeckBuilder(){
   if(!deckBuilderState.working)return;const store=DeckPresentation.deckStore();UiRegistry.refs.deckBuilderTabs.innerHTML=store.decks.map((deck,i)=>{const v=DeckRecord.validateDeckRecord(deck);return `<button type="button" class="deck-slot-tab ${i===deckBuilderState.slot?"active":""} ${deck&&!v.compatible?"incompatible":""}" data-deck-builder-tab="${i}">${DeckPresentation.deckSlotLabel(deck,i)}</button>`}).join("");
   const cards=deckBuilderState.working.cards||[];UiRegistry.refs.deckBuilderSlots.innerHTML=Array.from({length:DECK_TOTAL_CARD_COUNT},(_,i)=>{const card=cards[i],d=DeckCardRuleDefinition.def(card);return `<button type="button" class="deck-builder-slot ${card?"filled":""}" data-deck-unit-slot="${i}"><div class="icon">${card?DeckCardRuleDefinition.icon(card):"＋"}</div><div class="name">${card?(d?.name||card.id):"빈 슬롯"}</div><div class="tier">${card?`${d?.kindLabel||card.type} · 탭하면 즉시 제거`:"하단 카드를 누르면 자동으로 채워집니다"}</div></button>`}).join("");
@@ -38240,10 +38268,10 @@ class DeckPresentation{
   static openDeckBuilder(slot=DeckPresentation.selectedDeckSlot){
   if(ActiveViewState.session?.draft?.phase==="deck-select"&&ActiveViewState.session.draft.deckReady?.[ActiveViewState.role])return false;
   const nextSlot=RangeUtil.clamp(Math.trunc(Number(slot)||0),0,DECK_SLOT_COUNT-1);
-  DeckPresentation.selectedDeckSlot=nextSlot;deckBuilderState.open(nextSlot,DeckPresentation.editableDeckForSlot(nextSlot));
+  DeckPresentation.selectedDeckSlot=nextSlot;deckBuilderState.open(nextSlot);
   DeckPresentation.renderDeckBuilder();UiController.openUiModal("deck-builder");return true
 }
-  static persistDeckBuilderWorking(){if(!deckBuilderState.working)return false;deckBuilderState.working.formatVersion=DECK_FORMAT_VERSION;deckBuilderState.working.rulesetVersion=DECK_RULESET_VERSION;deckBuilderState.working.createdWithSimVersion=SIM_VERSION;deckBuilderState.working.updatedAt=new Date().toISOString();const store=DeckPresentation.deckStore();store.decks[deckBuilderState.slot]=CloneUtil.clone(deckBuilderState.working);const saved=DeckRecord.saveDeckStore(store);deckBuilderState.saveFailed=!saved;if(saved)DeckPresentation.selectedDeckSlot=deckBuilderState.slot;return saved}
+  static persistDeckBuilderWorking(){const saved=deckBuilderState.persist();if(saved)DeckPresentation.selectedDeckSlot=deckBuilderState.slot;return saved}
   static saveDeckBuilder(){if(!deckBuilderState.working)return false;const saved=DeckPresentation.persistDeckBuilderWorking();DeckPresentation.renderDeckBuilder();if(saved&&ActiveViewState.session?.draft?.phase==="deck-select")DeckPresentation.renderDeckSelect(ActiveViewState.session.draft);return saved}
   static applyDeckSelectSlot(index){
   DeckPresentation.selectedDeckSlot=Math.max(0,Math.min(DECK_SLOT_COUNT-1,Number(index)||0));
@@ -38253,17 +38281,12 @@ class DeckPresentation{
   if(!DeckPresentation.persistDeckBuilderWorking()){DeckPresentation.renderDeckBuilder();return false}
   const nextSlot=RangeUtil.clamp(Math.trunc(Number(index)||0),0,DECK_SLOT_COUNT-1);
   DeckPresentation.selectedDeckSlot=nextSlot;
-  deckBuilderState.open(nextSlot,DeckPresentation.editableDeckForSlot(nextSlot));
+  deckBuilderState.open(nextSlot);
   DeckPresentation.renderDeckBuilder();
   return true;
 }
   static applyDeckBuilderSlot(index){
-  if(!deckBuilderState.working)return false;
-  const cards=deckBuilderState.working.cards||(deckBuilderState.working.cards=[]);
-  const i=Math.trunc(Number(index));
-  if(!Number.isInteger(i)||i<0||i>=cards.length)return false;
-  cards.splice(i,1);
-  deckBuilderState.working.cards=cards.slice(0,DECK_TOTAL_CARD_COUNT);
+  if(!deckBuilderState.removeCardAt(index))return false;
   DeckPresentation.persistDeckBuilderWorking();
   DeckPresentation.renderDeckBuilder();
   return true;
@@ -38273,31 +38296,19 @@ class DeckPresentation{
   DeckPresentation.renderDeckBuilder();
 }
   static applyDeckCollectionCard(cardType,cardId){
-  if(!deckBuilderState.working)return false;
-  const card=DeckCardRuleDefinition.card(cardType,cardId);
-  if(!card)return false;
-  const cards=deckBuilderState.working.cards||(deckBuilderState.working.cards=[]),key=DeckCardRuleDefinition.key(card);
-  const selectedIndex=cards.findIndex(c=>DeckCardRuleDefinition.key(c)===key);
-  if(selectedIndex>=0){
-    cards.splice(selectedIndex,1);
-    UiRegistry.refs.deckBuilderMessage.textContent=`${DeckCardRuleDefinition.name(card)} 제거`;
-    DeckPresentation.persistDeckBuilderWorking();
-    DeckPresentation.renderDeckBuilder();
-    return true;
-  }
-  if(cards.length>=DECK_TOTAL_CARD_COUNT){
+  const result=deckBuilderState.toggleCard(cardType,cardId);if(!result)return false;
+  const {status,card}=result;
+  if(status==="full"){
     UiRegistry.refs.deckBuilderMessage.textContent="덱이 가득 찼습니다. 상단 카드 또는 아래의 선택된 카드를 탭해 먼저 빼세요.";
     return false;
   }
-  const slot=cards.length;
-  if(!DeckCardRuleDefinition.canPlace(cards,slot,card)){
+  if(status==="limit"){
     UiRegistry.refs.deckBuilderMessage.textContent=card.type==="defense"
       ?`현재 방어 건물은 최대 ${DeckCardRuleDefinition.rules.defense.max}개까지 선택할 수 있습니다.`
       :`현재 유닛은 최대 ${DeckCardRuleDefinition.rules.unit.max}개까지 선택할 수 있습니다.`;
     return false;
   }
-  cards.push(card);
-  UiRegistry.refs.deckBuilderMessage.textContent=`${DeckCardRuleDefinition.name(card)} 추가`;
+  UiRegistry.refs.deckBuilderMessage.textContent=`${DeckCardRuleDefinition.name(card)} ${status==="removed"?"제거":"추가"}`;
   DeckPresentation.persistDeckBuilderWorking();
   DeckPresentation.renderDeckBuilder();
   return true;
@@ -38396,8 +38407,7 @@ UiRegistry.refs.deckConfirmBtn.onclick=()=>{
 UiRegistry.refs.deckBuilderCloseBtn.onclick=()=>{DeckPresentation.persistDeckBuilderWorking();UiController.closeUiModal("deck-builder");if(ActiveViewState.session?.draft?.phase==="deck-select")DeckPresentation.renderDeckSelect(ActiveViewState.session.draft)};
 UiRegistry.refs.deckBuilderDialog.addEventListener("click",e=>{if(e.target===UiRegistry.refs.deckBuilderDialog){DeckPresentation.persistDeckBuilderWorking();UiController.closeUiModal("deck-builder");if(ActiveViewState.session?.draft?.phase==="deck-select")DeckPresentation.renderDeckSelect(ActiveViewState.session.draft)}});
 UiRegistry.refs.deckBuilderClearBtn.onclick=()=>{
-  if(!deckBuilderState.working)return;
-  deckBuilderState.working.cards=[];
+  if(!deckBuilderState.clearCards())return;
   DeckPresentation.persistDeckBuilderWorking();
   DeckPresentation.renderDeckBuilder();
 };
