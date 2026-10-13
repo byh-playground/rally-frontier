@@ -27,7 +27,7 @@ function readLock(root) {
 function validateManifest(bytes, lock) {
   if (sha256(bytes) !== lock.distManifestSha256) throw Error('Gamekit dist manifest integrity mismatch');
   const manifest = JSON.parse(bytes);
-  if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.modules)) throw Error('Invalid Gamekit dist manifest');
+  if (manifest.schemaVersion !== 2 || !Array.isArray(manifest.modules)) throw Error('Invalid Gamekit dist manifest');
   for (const entry of Object.values(lock.modules)) {
     const matches = manifest.modules.filter(item => item.file === entry.file);
     if (matches.length !== 1 || matches[0].sha256 !== entry.sha256) throw Error(`Gamekit dist manifest module mismatch: ${entry.file}`);

@@ -8,7 +8,9 @@ const chromium = require('./netcode-qa-module.cjs').wrapChromium(nativeChromium)
 // Only the observer is injected. All match, deck, command, result, and replay
 // actions below enter through native production UI controls.
 const htmlPath = path.resolve(process.argv[2] || path.join(__dirname, '..', 'index.html'));
-const output = path.resolve(__dirname, '..', '.qa', 'netcode-ui-e2e');
+const selectedMode=process.env.QA_NETCODE_MODE||'lockstep';
+assert(['lockstep','rollback'].includes(selectedMode),'Supported UI netcode mode');
+const output = path.resolve(__dirname, '..', '.qa', 'netcode-ui-e2e-'+selectedMode);
 const observer = `
 window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntimeState,
   BuildingPresentation,BuildingDefinition,UnitDefinition,SIM_VERSION,BUILD_ID,
@@ -196,6 +198,7 @@ async function runRole(browser, html, humanRole) {
     assert(await page.locator('[data-netcode-mode="rollback"]').evaluate(b=>b.classList.contains('active')),'Rollback selector responds');
     await page.locator('[data-netcode-mode="lockstep"]').click();
     assert(await page.locator('[data-netcode-mode="lockstep"]').evaluate(b=>b.classList.contains('active')),'Switching back selects lockstep');
+    if(selectedMode==='rollback')await page.locator('[data-netcode-mode="rollback"]').click();
     await page.screenshot({path:path.join(output,`${humanRole}-mode-settings.png`)});
     await page.locator('#singleBtn').click();
     await page.locator(humanRole==='host'?'#singleHostBtn':'#singleGuestBtn').click();
@@ -208,7 +211,7 @@ async function runRole(browser, html, humanRole) {
     assert.equal(initial.sdkVersion,'0.2.0-dev','The URL imported SDK actually runs');
     assert.ok(initial.sdkRevision.startsWith('gamekit:'),'Pinned shared SDK provenance');
     assert.equal(initial.renderer.backend,'WebGL');
-    assert(Object.values(initial.sessions).every(s=>s.profile.mode==='lockstep'&&s.tps===20),'UI selection preserves chosen TPS and creates both lockstep peers');
+    assert(Object.values(initial.sessions).every(s=>s.profile.mode===selectedMode&&s.tps===20),'UI selection preserves chosen TPS and selected mode on both peers');
     assert.equal(initial.role,humanRole);
     assert.deepEqual(Object.keys(initial.sessions).sort(),['guest','host']);
     for(const role of ['host','guest']){

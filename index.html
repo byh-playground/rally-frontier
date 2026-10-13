@@ -10726,7 +10726,7 @@ const BUILD_META=Object.freeze({
 /* =========================
    1. Definitions
    ========================= */
-const SIM_TPS=20,FP=100,SIM_VERSION=187;
+const SIM_TPS=20,FP=100,SIM_VERSION=188;
 // Local session policy, deliberately outside canonical gameplay/save rules.
 // A session captures this setting once; changing it only affects the next match.
 const CONFIG={netcode:{mode:'lockstep'}};
@@ -23388,6 +23388,7 @@ class GameSession{
   command(action){
     if(!this.inputAvailable()||!this.sim||!this.netcodeSession||this.netcodeSession.resimulating||this.pendingNetcodeCommands.size>=128)return false;
     try{
+      this.netcodeNow=Math.max(this.netcodeNow,performance.now());
       const sequence=this.netcodeSession.queueCommand(RallyCommandCodec.encode(action));
       const ticket={sequence,actor:this.role,key:StableSerializationUtil.stableStringify(action),submittedTick:this.sim.tick,action:StateValue.copy(action)};
       this.lastCommandTicket=ticket;this.pendingNetcodeCommands.set(sequence,ticket);return true;
@@ -23568,6 +23569,8 @@ class GameSession{
     }else if(event.type==='rollback'){
       for(const tick of this.frameOutputs.keys())if(tick>event.from)this.frameOutputs.delete(tick);
       this.renderTimelineChanged=true;
+    }else if(event.type==='reconciled'){
+      this.renderTimelineChanged=true;this.reconcileNetcodePresentation();
     }else if(event.type==='desync'){
       this.onLog('상태 해시 불일치 · 공통 코어의 과거 snapshot 검증/재실행');
     }else if(event.type==='recovered'){
