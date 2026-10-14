@@ -12626,6 +12626,10 @@ class TerrainNavigation{
         layer.sharedPaths??=new Map();cache=layer.sharedPaths.get(regions.key);
         if(!cache){cache=new Map();if(layer.sharedPaths.size>=TerrainNavigation.SHARED_ASTAR_GOALS)layer.sharedPaths.delete(layer.sharedPaths.keys().next().value);layer.sharedPaths.set(regions.key,cache)}
       }
+      // Repeated goals reuse the same integer suffix metric as terminal/edge costs.
+      // Keep A*'s complete-path tie selection; the field supplies only its lower bound.
+      if(shared&&cache.firstQueryTick===undefined)cache.firstQueryTick=this.sim.tick;
+      const distanceField=shared&&this.sim.tick>cache.firstQueryTick?this.field(regions,layer):null;
       let reach=goal.radius;
       if(goal.radius===0)for(const a of regions.areas)reach=Math.max(reach,Math.hypot(a.point.x-goal.x,a.point.y-goal.y));
       const scratch=(layer.astarScratch||(layer.astarScratch=new NavigationAStarScratch(layer))).begin(layer.fieldNodes.length),epoch=scratch.epoch,heap=scratch.heap;
@@ -12636,7 +12640,7 @@ class TerrainNavigation{
           if(previous<0||prev<0||NavigationGraphOrder.node(layer.fieldNodes[previous],layer.fieldNodes[prev])>=0)return;
           scratch.previous[id]=previous;scratch.via[id]=via;return;
         }
-        if(fresh){scratch.stamp[id]=epoch;scratch.estimate[id]=NavigationAStarScratch.heuristic(layer.fieldNodes[id],goal,reach)}
+        if(fresh){scratch.stamp[id]=epoch;scratch.estimate[id]=distanceField?distanceField.cost[id]:NavigationAStarScratch.heuristic(layer.fieldNodes[id],goal,reach)}
         const cost=whole+fraction;scratch.whole[id]=whole;scratch.fraction[id]=fraction;
         scratch.cost[id]=cost;scratch.previous[id]=previous;scratch.via[id]=via;scratch.closed[id]=0;
         const priority=cost+scratch.estimate[id];if(priority<=best)heap.push(id,priority);
@@ -23474,11 +23478,18 @@ class GameSession{
     const ok=this.role==='host'?this.transport.prepareRecoveryHost?.(reason):this.transport.rebuildRecoveryGuest?.(reason);
     if(!ok){this.simpleRecoveryNeedsManual=true;this.recoveryPhase='needs-manual'}return !!ok;
   }
-  setLocalVisibility(visible){this.localVisible=!!visible;if(!visible)this.netcodeSession?.releaseInput()}
+  setLocalVisibility(visible){
+    const resumed=!this.localVisible&&!!visible;this.localVisible=!!visible;
+    if(!visible)this.netcodeSession?.releaseInput();
+    else if(resumed&&this.sim?.tick>0)this.renderTimelineChanged=true;
+  }
   onBacklogDrop({elapsedMs=0,droppedTicks=0,timestamp=performance.now()}={}){
     // Dropping scheduler debt does not invalidate the confirmed tick timeline.
     // State divergence and recovery remain owned by the Core.
     this.lastDriverPulseAt=timestamp;this.netcodeNow=Math.max(this.netcodeNow,timestamp);
+    // The authoritative tick is unchanged, but the delayed display clock must
+    // rebase after discarded wall time instead of remaining ahead of every target.
+    if(this.sim?.tick>0)this.renderTimelineChanged=true;
     const activeSession=!!this.netcodeSession?.ready&&this.transportConnected&&this.sim?.tick>0&&this.confirmedGameTick>0;
     RecoveryTelemetry.recordRecovery('simulation.backlog-drop',this,this.transport,{elapsedMs,droppedTicks,phase:activeSession?'timing-rebase':'bootstrap'});
   }
@@ -29182,6 +29193,8 @@ class GLRenderer{
       }else if(e.type==="chargeImpact"){
         this.addClientFx("chargeBurst",e,snapshot,index);
         this.triggerClientShake(2.8,150,HashUtil.hash(`${snapshot.tick}|charge|${index}`));
+      }else if(e.type==="chargedSkillRelease"){
+        this.addClientFx("chargedSkillLaunch",e,snapshot,index);
       }else if(e.type==="pillbugBurst"){
         this.addClientFx("pillbugBurst",e,snapshot,index);
         this.triggerClientShake(6.5,260,HashUtil.hash(`${snapshot.tick}|pillbug|${index}`));
@@ -29605,6 +29618,7 @@ class GLRenderer{
         fx.kind==="burrowDive"?420:
         fx.kind==="burrowTrail"?300:
         fx.kind==="objectiveBearChargeTrail"?260:
+        fx.kind==="chargedSkillLaunch"?420:
         fx.kind==="objectiveCaptured"?720:
         fx.kind==="objectiveRespawned"?760:
         fx.kind==="burrowEmerge"?720:
@@ -29888,6 +29902,14 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
       }else if(fx.kind==="chargeBurst"){
         ring(x,y,(8+48*ease)*sc,4*sc,"#ffc34e",.82*(1-t));
         burst(fx,x,y,t,9,"#ffb638",68,2.8,.52);
+      }else if(fx.kind==="chargedSkillLaunch"){
+        const end=this.worldToPx(this.viewX(fx.x2),this.viewY(fx.y2));
+        const dx=end[0]-x,dy=end[1]-y,len=Math.hypot(dx,dy),nx=len?dx/len:0,ny=len?dy/len:0;
+        const tipX=x+nx*Math.min(len,90*sc),tipY=y+ny*Math.min(len,90*sc);
+        ctx.globalAlpha=.72*(1-t);ctx.strokeStyle="#b7ddff";ctx.lineWidth=Math.max(1.5,3*sc);
+        ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(tipX,tipY);
+        ctx.moveTo(tipX-nx*10*sc-ny*6*sc,tipY-ny*10*sc+nx*6*sc);ctx.lineTo(tipX,tipY);ctx.lineTo(tipX-nx*10*sc+ny*6*sc,tipY-ny*10*sc-nx*6*sc);ctx.stroke();
+        ring(x,y,(5+20*ease)*sc,Math.max(1.5,2*sc),"#c9e8ff",.65*(1-t));
       }else if(fx.kind==="objectiveBearChargeTrail"){
         const rr=(8+18*ease)*sc;
         ring(x,y,rr,Math.max(1.6,2.5*sc),"#a47a45",.28*(1-t));
@@ -31600,6 +31622,19 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     // All body geometry shares one GPU depth derived from the render-world coordinate.
     this.setRenderDepth(this.spriteDepthForWorld(worldPos));
 
+    // Only an actual bodily cast draws momentum. Use the common interpolated pose
+    // and current movement delta; no predicted bodies or retained per-unit trails.
+    if(u.behaviorState?.chargedExecution){
+      const delta=this.renderTrackedDelta(u,"unit"),distance=Math.hypot(delta.x,delta.y);
+      if(distance>.01){
+        for(let k=1;k<=3;k++){
+          const back=k*.55,trailWorld={...worldPos,x:worldPos.x-delta.x*back,z:worldPos.z-delta.y*back};
+          const tp=this.projectRenderWorldPosition(trailWorld);
+          this.withRenderDepth(tp.depth+.001,()=>this.circle(tp.x,tp.y,r*(.65-k*.10),[.35,.64,1,.14*(4-k)/3],10));
+        }
+      }
+    }
+
     // Leap trail samples the exact same 3D trajectory instead of rebuilding a
     // screen-space lift. r is defined before this branch.
     if(worldPos.motion==="leap"){
@@ -32077,9 +32112,21 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
   }
   drawChargedSkillPreview(){
     const side=ConnectionSideUtil.roleSide(this.orientationRole()),cast=this.snapshot?.chargedCasts?.[side],sc=this.sc();
+    const pointer=this.chargedSkillGesture;
+    // White intent follows input immediately. Gold landing points below always
+    // come from confirmed membership, readiness and the authoritative cast aim.
+    if(pointer&&Number.isFinite(pointer.aimX)&&Number.isFinite(pointer.aimY)){
+      const [px,py]=this.worldToPx(this.viewX(pointer.aimX),this.viewY(pointer.aimY));
+      this.outlineCircle(px,py,5,1.3,[.92,.96,1,.8],12,1);
+      if(pointer.pointerType==='touch'){
+        this.line(px,py,px,py-48,1,[.92,.96,1,.5]);
+        this.outlineCircle(px,py-48,8,1.5,[.92,.96,1,.85],12,1);
+      }
+    }
     if(!cast||!['gathering','charging'].includes(cast.phase)){
       const pending=this.chargedSkillGesture;
       if(pending){const [x,y]=this.worldToPx(pending.x,pending.y);this.outlineCircle(x,y,Math.max(12,20*sc),1.5,[.75,.83,.84,.7],16,1)}
+      if(pending&&!ReplayPresentation.replayPlayer&&UiRuntimeState.value.target.type==='flag')UiRegistry.refs.hint.textContent='집결 지시 중 · 흰색: 내 조준 · 확정된 참가 병력을 기다립니다.';
       if(!pending&&!ReplayPresentation.replayPlayer&&UiRuntimeState.value.target.type==='flag'){
         const hint='탭: 자동전투 깃발 · 정지 홀드: 집결·충전 · 홀드 전 드래그: 맵 이동 · 이후 드래그: 조준 · 놓기: 발사';
         if(UiRegistry.refs.hint.textContent!==hint)UiRegistry.refs.hint.textContent=hint;
@@ -32089,11 +32136,11 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     const [x,y]=this.worldToPx(this.viewX(cast.originX),this.viewY(cast.originY));
     this.outlineCircle(x,y,ChargedSkillGeometry.gatheringR*sc,Math.max(1,2*sc),[.40,.87,.73,.55],48,1);
     const members=this.chargedMemberIds(side),unavailable=new Set(cast.unavailableIds);
-    let ready=0,progress=0,unavailableCount=unavailable.size;
+    let ready=0,progress=0,unavailableCount=unavailable.size,centerX=0,centerY=0,targetX=0,targetY=0;
     for(const id of [...cast.memberIds,...cast.unavailableIds]){
       const unit=this.renderState.entity('unit',id);
       if(!unit?.alive)continue;
-      const [ux,uy]=this.worldToPx(this.viewX(unit.x),this.viewY(unit.y)),r=Math.max(5,this.unitRenderRadius(unit));
+      const pose=this.renderTrackedScreenPosition(unit,"unit"),ux=pose.x,uy=pose.y,r=Math.max(5,this.unitRenderRadius(unit));
       if(!members.has(unit.id)||!ChargedSkillMixin.stateReady(unit,this.snapshot.tick)){
         if(members.has(unit.id))unavailableCount++;
         this.outlineCircle(ux,uy,r+4,1,[.60,.62,.64,.65],12,1);continue;
@@ -32102,16 +32149,34 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       const target=ChargedSkillGeometry.aimPoint(unit,cast,this.snapshot.tick,this.snapshot.tps||SimulationTiming.tps(),this.world);
       progress=Math.max(progress,target.progress);
       const [tx,ty]=this.worldToPx(this.viewX(target.x),this.viewY(target.y));
+      centerX+=pose.x;centerY+=pose.y;targetX+=tx;targetY+=ty;
       this.outlineCircle(ux,uy,r+4,Math.max(1,2*sc),[.72,.93,.57,.9],12,1);
       this.line(ux,uy,tx,ty,Math.max(1,1.5*sc),[.83,.92,.55,.36]);
       this.outlineCircle(tx,ty,Math.max(7,11*sc),Math.max(1.3,2*sc),[1,.85,.38,.9],16,1);
       this.line(tx-5,ty,tx+5,ty,1.5,[1,.95,.73,.95]);this.line(tx,ty-5,tx,ty+5,1.5,[1,.95,.73,.95]);
     }
+    if(ready){
+      const radius=ChargedSkillGeometry.gatheringR*sc,segments=48,filled=Math.floor(progress*segments);
+      for(let i=0;i<filled;i++){
+        const a=-Math.PI/2+i/segments*Math.PI*2,b=a+.8/segments*Math.PI*2;
+        this.line(x+Math.cos(a)*radius,y+Math.sin(a)*radius,x+Math.cos(b)*radius,y+Math.sin(b)*radius,Math.max(2,3*sc),progress>=1?[.78,.95,1,.95]:[.45,.69,1,.85]);
+      }
+      if(progress>=1)this.outlineCircle(x,y,radius+4,Math.max(1,2*sc),[.78,.95,1,.5],48,1);
+      const cx=centerX/ready,cy=centerY/ready,tx=targetX/ready,ty=targetY/ready,dx=tx-cx,dy=ty-cy,len=Math.hypot(dx,dy);
+      if(pointer&&Number.isFinite(pointer.aimX)&&Number.isFinite(pointer.aimY)){
+        const [px,py]=this.worldToPx(this.viewX(pointer.aimX),this.viewY(pointer.aimY)),ix=px-cx,iy=py-cy;
+        if(Math.hypot(px-tx,py-ty)>4&&Math.hypot(ix,iy)>8){this.line(cx,cy,px,py,1.2,[.92,.96,1,.32]);this.crestTriangle(px,py,6,[.92,.96,1,.65],Math.atan2(iy,ix))}
+      }
+      if(len>8){
+        this.line(cx,cy,tx,ty,Math.max(2,3*sc),[.45,.69,1,.65]);
+        this.crestTriangle(tx,ty,Math.max(8,12*sc),[.67,.84,1,.95],Math.atan2(dy,dx));
+      }
+    }
     const [ax,ay]=this.worldToPx(this.viewX(cast.aimX),this.viewY(cast.aimY));
     // A connected offset indicator keeps the aim readable above a mobile finger.
-    if(this.chargedSkillGesture?.pointerType==='touch'){this.line(ax,ay,ax,ay-48,1,[1,.88,.48,.6]);this.outlineCircle(ax,ay-48,8,2,[1,.88,.48,.9],12,1)}
+    if(pointer?.pointerType==='touch'){this.line(ax,ay,ax,ay-32,1,[1,.88,.48,.6]);this.outlineCircle(ax,ay-32,6,2,[1,.88,.48,.9],12,1)}
     if(!ReplayPresentation.replayPlayer&&UiRuntimeState.value.target.type==='flag'){
-      const message=`${cast.phase==='gathering'?'집결':'충전 '+Math.round(progress*100)+'%'} · 준비 ${ready} · 사용 불가 ${unavailableCount} · 드래그 조준, 놓으면 발사 · 가까운 착탄점은 지나치지 않습니다`;
+      const message=`${cast.phase==='gathering'?'집결':'충전 '+Math.round(progress*100)+'%'} · 준비 ${ready} · 사용 불가 ${unavailableCount} · 흰 점: 포인터 · 금색: 확정 착탄 · 드래그 조준, 놓으면 발사`;
       if(UiRegistry.refs.hint.textContent!==message)UiRegistry.refs.hint.textContent=message;
     }
   }
@@ -37047,6 +37112,8 @@ class BattlePresentation{
   const cancelChargedSkillHold=(cancelCast=true)=>{
     const hold=ActiveViewState.drag?.chargedSkillHold;
     if(hold?.timer){clearTimeout(hold.timer);hold.timer=0}
+    if(hold?.aimTimer){clearTimeout(hold.aimTimer);hold.aimTimer=0}
+    if(hold)hold.aimDirty=false;
     if(cancelCast&&hold?.accepted){
       if(!hold.session.command({type:'CHARGE_CANCEL',castId:hold.castId})){
         pendingChargeCancels.set(hold.castId,hold);
@@ -37055,6 +37122,20 @@ class BattlePresentation{
       hold.accepted=false;
     }
     if(ActiveViewState.renderer)ActiveViewState.renderer.chargedSkillGesture=null;
+  };
+
+  const flushChargedAim=hold=>{
+    hold.aimTimer=0;
+    if(ActiveViewState.drag?.chargedSkillHold!==hold||!hold.accepted||hold.session!==MatchLifecycle.activeSession()||hold.session.disposed||hold.session.simEnded||UiRuntimeState.value.target.type!=='flag'){
+      hold.aimDirty=false;return;
+    }
+    const tick=hold.session.sim?.tick;
+    if(hold.aimDirty&&tick!==hold.lastAimTick&&hold.session.command({type:'CHARGE_AIM',castId:hold.castId,x:hold.aimX,y:hold.aimY})){
+      hold.lastAimTick=tick;hold.aimDirty=false;
+    }
+    // At most one queued callback for the active pointer. A final point that arrived
+    // after this tick's first move survives until the next simulation tick.
+    if(hold.aimDirty)hold.aimTimer=setTimeout(()=>flushChargedAim(hold),25);
   };
 
   const armChargedSkillHold=e=>{
@@ -37066,7 +37147,7 @@ class BattlePresentation{
     // Long press on an own building remains building selection, never a rally order.
     if(BuildingPresentation.ownBuildingAt(a.x,a.y))return;
     const session=MatchLifecycle.activeSession(),side=ConnectionSideUtil.roleSide(ActiveViewState.role);
-    const hold={x:vx,y:vy,authX:a.x,authY:a.y,session,side,castId:0,triggered:false,accepted:false,timer:0,lastAimTick:-1,pointerType:e.pointerType};
+    const hold={x:vx,y:vy,authX:a.x,authY:a.y,session,side,castId:0,triggered:false,accepted:false,timer:0,aimTimer:0,aimDirty:false,lastAimTick:-1,pointerType:e.pointerType};
     ActiveViewState.drag.chargedSkillHold=hold;
     hold.timer=setTimeout(()=>{
       if(!ActiveViewState.drag||ActiveViewState.drag.id!==e.pointerId||ActiveViewState.drag.moved||UiRuntimeState.value.target.type!=="flag")return;
@@ -37079,7 +37160,7 @@ class BattlePresentation{
       hold.castId=nextChargedCastId=Math.max(nextChargedCastId,sess.sim.chargedCastSerial?.[side]||0)+1;
       hold.accepted=sess.command({type:'CHARGE_BEGIN',castId:hold.castId,x:hold.authX,y:hold.authY});
       if(hold.accepted){
-        ActiveViewState.renderer.chargedSkillGesture={castId:hold.castId,side,x:vx,y:vy,pointerType:e.pointerType};
+        ActiveViewState.renderer.chargedSkillGesture={castId:hold.castId,side,x:vx,y:vy,aimX:hold.authX,aimY:hold.authY,pointerType:e.pointerType};
         if(navigator.vibrate)navigator.vibrate(18);
         LogUtil.log('집결·충전 명령 접수 · 전장에 확정된 준비 상태와 착탄점 표시');
       }else LogUtil.log('현재 스킬 명령을 접수할 수 없습니다.');
@@ -37088,6 +37169,7 @@ class BattlePresentation{
 
   const battlefieldPointerDown=e=>{
     if(ActiveViewState.drag&&ActiveViewState.drag.id!==e.pointerId)return;
+    if(ActiveViewState.drag)cancelChargedSkillHold(true);
     audioSystem.unlock();
     e.preventDefault();
     if(!ActiveViewState.renderer)return;
@@ -37128,10 +37210,11 @@ class BattlePresentation{
     const hold=ActiveViewState.drag.chargedSkillHold;
     if(hold?.triggered){
       if(hold.accepted&&UiRuntimeState.value.target.type==='flag'){
-        const [vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY),a=UiController.viewToAuth(vx,vy),tick=hold.session.sim?.tick;
-        hold.aimX=a.x;hold.aimY=a.y;
-        // Aim updates have a bounded command rate; release always sends the final point.
-        if(tick!==hold.lastAimTick&&hold.session.command({type:'CHARGE_AIM',castId:hold.castId,x:a.x,y:a.y}))hold.lastAimTick=tick;
+        const [vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY),a=UiController.viewToAuth(vx,vy);
+        hold.aimX=a.x;hold.aimY=a.y;hold.aimDirty=true;
+        const gesture=ActiveViewState.renderer.chargedSkillGesture;
+        if(gesture?.castId===hold.castId){gesture.aimX=a.x;gesture.aimY=a.y}
+        if(!hold.aimTimer)flushChargedAim(hold);
       }else cancelChargedSkillHold(true);
       ActiveViewState.drag.lastX=e.clientX;ActiveViewState.drag.lastY=e.clientY;return;
     }
@@ -37173,6 +37256,8 @@ class BattlePresentation{
     const moved=ActiveViewState.drag.moved||Math.hypot(e.clientX-ActiveViewState.drag.x,e.clientY-ActiveViewState.drag.y)>CHARGED_SKILL_DRAG_PX;
     const hold=ActiveViewState.drag.chargedSkillHold||null;
     if(hold?.timer)clearTimeout(hold.timer);
+    if(hold?.aimTimer){clearTimeout(hold.aimTimer);hold.aimTimer=0}
+    if(hold)hold.aimDirty=false;
     if(hold?.triggered){
       if(hold.accepted){
         const [vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY),a=UiController.viewToAuth(vx,vy);
