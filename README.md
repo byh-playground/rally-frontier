@@ -1,8 +1,12 @@
 # RALLY FRONTIER
 
-현재 호환 식별자는 **SIM_VERSION 190**입니다. GameKit v0.3.1 source `baa96876876a08013ad28b5a71c83bfadd285fab` / dist `72b09b260edf9650353017acb49c06873fe9f5a1` 및 manifest v2를 사용하며, `gamekit.lock.json`의 SHA-256으로 빌드 bytes를 검증합니다. protocol 3 세션에 참여하는 모든 클라이언트는 같은 배포본으로 갱신해야 합니다. 기본 lockstep, 선택 가능한 rollback 및 기존 TPS/게임 규칙은 유지합니다. `queueCommand`의 즉시 예약 전에 현재 clock을 갱신하며 rollback 완료 이벤트에서 교정된 표시를 반영합니다. Rally는 `LocalInputPreview`를 연결하지 않으므로 이번 갱신을 로컬 예측 개선으로 표현하지 않습니다.
+현재 호환 식별자는 **SIM_VERSION 191**입니다. GameKit v0.3.1 source `baa96876876a08013ad28b5a71c83bfadd285fab` / dist `72b09b260edf9650353017acb49c06873fe9f5a1` 및 manifest v2를 사용하며, `gamekit.lock.json`의 SHA-256으로 빌드 bytes를 검증합니다. protocol 3 세션에 참여하는 모든 클라이언트는 같은 배포본으로 갱신해야 합니다. 기본 lockstep, 선택 가능한 rollback 및 기존 TPS/게임 규칙은 유지합니다. `queueCommand`의 즉시 예약 전에 현재 clock을 갱신하며 rollback 완료 이벤트에서 교정된 표시를 반영합니다. Rally는 `LocalInputPreview`를 연결하지 않으므로 이번 갱신을 로컬 예측 개선으로 표현하지 않습니다.
+
+전장 탭은 기존 깃발 지시와 자동전투를 유지합니다. 정지한 채 250ms 홀드하면 시작 원 안의 준비된 왕사슴 돌격대·씨앗궁수·철갑씨앗포가 고정 멤버로 집결·충전합니다. 홀드 전 드래그는 카메라 이동, 홀드 뒤 드래그는 조준, 놓기는 발사입니다. 충전은 최대 도달 거리를 늘리고 실제 착탄점은 가까운 포인터 위치를 넘지 않습니다. 돌격대는 몸체로 접촉한 적을 밀어내며, 두 원거리 병종은 기존 곡사 투사체로 착탄합니다. 지원과 다른 병종은 기존 자동 행동을 유지합니다. 취소·포인터 손실 또는 장시간 입력 중단은 충전을 해제하고 자동전투로 돌아갑니다. 준비 수·사용 불가 표시와 착탄점은 권위 cast 상태 및 실제 발사 가능 판정을 읽습니다.
 
 기존 실제 RTC UI 흐름은 `QA_NETCODE_MODE=lockstep|rollback QA_ROLES=host node scripts/netcode-ui-e2e.cjs _site/index.html`로 모드를 선택해 확인합니다(PowerShell에서는 `$env:`로 설정). 결과는 `.qa/netcode-ui-e2e-<mode>/`에 생성됩니다. 기본 명령의 모드는 lockstep입니다.
+
+충전 기술의 실제 Edge 회귀 검사는 `node scripts/charged-skills-regression.cjs`로 실행합니다. 고정 멤버, 취소, 근거리 착탄, 몸체 접촉·연쇄 밀림, 곡사 충돌, 복구·리플레이 체크섬, 잠복·동맹 대상 제외 및 변조된 스냅샷 참조를 검사합니다. 결과와 24·96·192개 유닛의 전체 시뮬레이션 틱 비용은 `.qa/charged-skills-regression/report.json`에 저장합니다. 이 비용은 GPU 프레임 시간이나 RTC 지연 측정과 구분합니다.
 
 RALLY FRONTIER는 브라우저에서 바로 실행할 수 있는 실시간 전략 게임(RTS) 프로젝트입니다.
 
