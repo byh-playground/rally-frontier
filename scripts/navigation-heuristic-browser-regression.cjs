@@ -2,14 +2,15 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {chromium}=require('playwright');
 async function run(){
   const root=path.resolve(__dirname,'..'),source=fs.readFileSync(path.join(root,'index.html'),'utf8'),end=source.lastIndexOf('})();');
-  const method=source.slice(source.indexOf('  astarPlan(x,y,goal,'),source.indexOf('  astarTrace(layer,')).trim().replace(/^astarPlan/,'function').replace(/const distanceField=shared&&[^;]+;/,'const distanceField=null;');
-  const injected=source.slice(0,end)+`window.__heuristicQA={StrategySim,GameRuleDefinition,TerrainNavigation,NavigationGoal,WorldContext,UnitDefinition,RallyStateCodec,oracleAstar:(${method})};`+source.slice(end);
+  const reference=require('node:child_process').execFileSync('git',['show','a8648f8ce4ed7a7eaafce47705428bdf03723cb7:index.html'],{cwd:root,encoding:'utf8',maxBuffer:20*1024*1024});
+  const original=reference.slice(reference.indexOf('class TerrainNavigation{'),reference.indexOf('class WorldContext{'));
+  const injected=source.slice(0,end)+`const PublishedNavigation=(${original});window.__heuristicQA={StrategySim,GameRuleDefinition,TerrainNavigation,PublishedNavigation,NavigationGoal,WorldContext,UnitDefinition,RallyStateCodec};`+source.slice(end);
   require('./setup-gamekit.cjs').readGamekit(root);
   const browser=await chromium.launch({channel:process.env.QA_BROWSER_CHANNEL||'msedge',headless:true});
   try{
     const page=await browser.newPage();await page.route('http://nav-heuristic.test/**',r=>{const file=decodeURIComponent(new URL(r.request().url()).pathname);if(file==='/')return r.fulfill({contentType:'text/html',body:injected});if(file==='/gamekit.lock.json'||/^\/\.cache\/gamekit\/[\w-]+\.js$/.test(file))return r.fulfill({contentType:file.endsWith('.json')?'application/json':'text/javascript',body:fs.readFileSync(path.join(root,file))});return r.abort()});await page.goto('http://nav-heuristic.test/');await page.waitForFunction(()=>window.__heuristicQA);
     const result=await page.evaluate(()=>{
-      const {StrategySim,GameRuleDefinition,TerrainNavigation,NavigationGoal,WorldContext,UnitDefinition,RallyStateCodec,oracleAstar}=window.__heuristicQA;
+      const {StrategySim,GameRuleDefinition,TerrainNavigation,PublishedNavigation,NavigationGoal,WorldContext,UnitDefinition,RallyStateCodec}=window.__heuristicQA;
       const ensure=(ok,message)=>{if(!ok)throw Error(message)},projection=p=>p&&({path:p.path,endpoint:p.goal.point,length:p.length,graphCost:p.graphCost});
       const sim=new StrategySim({decks:{host:['archer'],guest:['archer']},defenseCards:{host:[],guest:[]}},20261014,GameRuleDefinition.resolve({overrides:{simulation:{tps:10}}}));
       const saved=Array.from(RallyStateCodec.encode(sim.exportState()));
@@ -18,7 +19,7 @@ async function run(){
       const descriptor={width:3072,height:4096,terrain:{blockers:[rect('wall',1450,600,150,2900),rect('island',900,1800,200,250)],layers:[],ramps:[],bridges:[]}};
       for(const radius of [4,12,32]){
         const state=()=>({world:WorldContext.fromMap(descriptor),buildings:[],tick:0,navigationRevision:0,unitRadius:()=>radius});
-        const a=new TerrainNavigation(state()),b=new TerrainNavigation(state());b.astarPlan=oracleAstar;
+        const a=new TerrainNavigation(state()),b=new PublishedNavigation(state());
         const goals=[NavigationGoal.point(2500,2000),NavigationGoal.range(2500,2000,150),NavigationGoal.range(2500,2000,200,100,true),NavigationGoal.point(1500,2000)];
         for(let pass=0;pass<3;pass++)for(const goal of goals)for(let i=0;i<12;i++){
           a.sim.tick=b.sim.tick=pass;

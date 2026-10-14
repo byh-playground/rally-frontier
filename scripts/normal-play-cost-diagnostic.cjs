@@ -97,6 +97,7 @@ MatchLifecycle.singleRoomToken=()=>"AIPERFBENCH20261003";window.__netcodeE2E={Ac
       sessions,transports};
   }
 };
+const renderCapture=RenderStateStore.prototype.capture;RenderStateStore.prototype.capture=function(...args){if(__netcodeE2E.observeGap&&args[2])(__netcodeE2E.gapResets??=[]).push({tick:args[0].tick,at:performance.now()});return renderCapture.apply(this,args)};
 const costStep=StrategySim.prototype.step;StrategySim.prototype.step=function(...args){const started=performance.now(),result=costStep.apply(this,args);const m=MatchLifecycle.singleMatch,role=Object.entries(m?.sessions||{}).find(([,s])=>s.sim===this)?.[0];if(role)__netcodeE2E.steps.push({at:started,role,tick:this.tick,units:this.units.length,ms:performance.now()-started,nav:{...this.navigation.metrics}});return result};let lastFrame=0;const frameCost=()=>{const at=performance.now(),r=ActiveViewState.renderer;if(r)__netcodeE2E.frames.push({at,interval:lastFrame?at-lastFrame:0,workMs:r.perfStats.frameWorkMs,tick:MatchLifecycle.activeSession()?.sim?.tick});lastFrame=at;requestAnimationFrame(frameCost)};requestAnimationFrame(frameCost);
 `;
 
@@ -267,6 +268,18 @@ async function runRole(browser, html, humanRole) {
     assert.ok(battle.aiHistory.some(c=>c.status==='applied'&&c.netcodeSequence>0&&c.seq>0),'AI receipt retains SDK identity and canonical game sequence');
     assert.ok(battle.sessions[humanRole].recordedCommands.some(c=>c.actor===humanRole&&c.action==='BUILD'));
     assert.ok(battle.sessions[humanRole].recordedCommands.some(c=>c.actor===humanRole&&c.action==='SET_FLAG'));
+
+    if(process.env.QA_DRIVER_GAP_MS){
+      const gap=await page.evaluate(async ms=>{
+        const q=__netcodeE2E;q.observeGap=true;q.gapResets=[];
+        const stopped=performance.now()+ms;while(performance.now()<stopped){}
+        const rows=[],end=performance.now()+1200;
+        await new Promise(resolve=>{const sample=()=>{const now=performance.now(),s=q.MatchLifecycle.activeSession(),r=q.ActiveViewState.renderer;for(const u of s.sim.units){if(!u.alive||q.UnitDefinition.get(u.type)?.layer==='AIR')continue;const m=r.renderState.model('unit',u.id,now);if(m&&Math.abs(m.tick-Math.round(m.tick))>.01&&Math.hypot(m.entity.x-u.x,m.entity.y-u.y)>.01)rows.push({id:u.id,type:u.type,tick:s.sim.tick,modelTick:m.tick,x:m.entity.x,y:m.entity.y,authorityX:u.x,authorityY:u.y});}if(now<end)requestAnimationFrame(sample);else resolve()};requestAnimationFrame(sample)});q.observeGap=false;return{gapMs:ms,resets:q.gapResets,intermediateSamples:rows.slice(0,12),sampleCount:rows.length};
+      },Number(process.env.QA_DRIVER_GAP_MS));
+      fs.writeFileSync(path.join(output,'cpu-gap-interpolation.json'),JSON.stringify(gap,null,2));
+      assert(gap.resets.length,'CPU gap resets actual render timeline');assert(gap.sampleCount,'Actual renderer resumes intermediate moving poses');
+      await page.screenshot({path:path.join(output,'post-cpu-gap.png')});
+    }
     await page.locator('#matchMenuBtnGame').click();
     await page.locator('#matchMenuSurrenderBtn').click();
     await page.locator('#result').waitFor({state:'visible',timeout:15000});

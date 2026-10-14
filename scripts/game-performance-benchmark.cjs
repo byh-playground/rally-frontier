@@ -33,6 +33,7 @@ const config = {
   canonicalMap: option('canonical-map', null),
   profile: option('profile', '0') !== '0',
   traceCosts: option('trace-costs', '0') !== '0',
+  recordInputs: option('record-inputs', '0') !== '0',
   count: Number(option('count', 30)),
   unit: option('unit', 'shelltitan'),
   role: option('role', 'host'),
@@ -79,11 +80,13 @@ function profileSummary(profile, inclusive = false) {
     .sort((a, b) => (b.inclusiveMs ?? b.selfMs) - (a.inclusiveMs ?? a.selfMs)).slice(0, inclusive ? 70 : 35);
 }
 
-function instrumentation({ roomToken, canonicalMap, traceCosts }) {
+function instrumentation({ roomToken, canonicalMap, traceCosts, recordInputs }) {
   window.__perfBench = { ActiveViewState, MatchLifecycle, BUILD_META, StrategySim, TerrainNavigation,
     frames: [], steps: [], longTasks: [], packets: [], commands: [], measuring: false };
   const b = window.__perfBench;
   b.costs={};
+  b.simCommands=[];
+  if(recordInputs){const apply=StrategySim.prototype.applyCommand;StrategySim.prototype.applyCommand=function(actor,action){const result=apply.call(this,actor,action);const role=Object.entries(MatchLifecycle.singleMatch?.sessions||{}).find(([,s])=>s.sim===this)?.[0];if(role)b.simCommands.push({role,tick:this.tick,actor,action:JSON.parse(JSON.stringify(action)),accepted:result});return result};}
   const measureMethod=(owner,name,label)=>{
     const original=owner?.[name];if(typeof original!=='function')return;
     owner[name]=function(...args){if(!b.measuring)return original.apply(this,args);const start=performance.now();try{return original.apply(this,args)}finally{const ms=performance.now()-start,row=b.costs[label]||(b.costs[label]={calls:0,ms:0,maxMs:0});row.calls++;row.ms+=ms;row.maxMs=Math.max(row.maxMs,ms)}};
@@ -159,7 +162,7 @@ function instrumentation({ roomToken, canonicalMap, traceCosts }) {
   };
   b.end = () => {
     b.measuring = false; clearInterval(b.commandTimer);
-    return { durationMs: performance.now() - b.startedAt, costs:b.costs, frames: b.frames, steps: b.steps,
+    return { simCommands:b.simCommands, durationMs: performance.now() - b.startedAt, costs:b.costs, frames: b.frames, steps: b.steps,
       longTasks: b.longTasks, packets: b.packets, commands: b.commands, startTicks: b.startTicks,
       endTicks: Object.fromEntries(Object.entries(MatchLifecycle.singleMatch.sessions).map(([role, s]) => [role, s.sim.tick])),
       rendererFatalReported: !!ActiveViewState.renderer?.renderFatalReported,
@@ -203,7 +206,7 @@ async function runOne(browser, revision, condition, repetition, canonicalMap) {
   await page.route('https://byh-playground.github.io/rollback-netcode/rollback-netcode.js',route=>route.fulfill({contentType:'text/javascript',headers:{'access-control-allow-origin':'*'},body:baselineSDK}));
   const tail = source.lastIndexOf('})();');
   assert.ok(tail >= 0, 'App IIFE injection boundary is present');
-  source = source.slice(0, tail) + `\n(${instrumentation.toString()})(${JSON.stringify({ roomToken: config.roomToken, canonicalMap,traceCosts:config.traceCosts })});\n` + source.slice(tail);
+  source = source.slice(0, tail) + `\n(${instrumentation.toString()})(${JSON.stringify({ roomToken: config.roomToken, canonicalMap,traceCosts:config.traceCosts,recordInputs:config.recordInputs })});\n` + source.slice(tail);
   await page.route('http://127.0.0.1:32119/**', route => {
     const requested = new URL(route.request().url()).pathname;
     if (requested === '/') return route.fulfill({ contentType: 'text/html', body: source });

@@ -12606,6 +12606,19 @@ class TerrainNavigation{
     if(planner==='flow-field')return this.fieldPlan(x,y,goal,radius,ignoreBuildings);
     throw new Error('Unknown navigation planner: '+planner);
   }
+  goalPotential(layer,regions,shared=false){
+    const ready=layer.fields.get(regions.key);
+    if(ready)this.metrics.fieldHits++;
+    // Goal lifetime survives local graph replacement, but graph costs never do.
+    // Radius/interaction layer belong to the containing navigation layer.
+    const lifetimes=layer.goalLifetimes??=new Map();
+    let lifetime=lifetimes.get(regions.goal.key);
+    if(!lifetime&&(shared||ready)){
+      if(lifetimes.size>=48)lifetimes.delete(lifetimes.keys().next().value);
+      lifetime={firstTick:this.sim.tick};lifetimes.set(regions.goal.key,lifetime);
+    }
+    return ready||(lifetime&&this.sim.tick>lifetime.firstTick?this.field(regions,layer):null);
+  }
   astarPlan(x,y,goal,radius,ignoreBuildings=false,shared=false){
     const begun=performance.now();this.metrics.astarQueries++;
     if(shared)this.metrics.sharedAstarQueries=(this.metrics.sharedAstarQueries||0)+1;
@@ -12628,8 +12641,7 @@ class TerrainNavigation{
       }
       // Repeated goals reuse the same integer suffix metric as terminal/edge costs.
       // Keep A*'s complete-path tie selection; the field supplies only its lower bound.
-      if(shared&&cache.firstQueryTick===undefined)cache.firstQueryTick=this.sim.tick;
-      const distanceField=shared&&this.sim.tick>cache.firstQueryTick?this.field(regions,layer):null;
+      const distanceField=this.goalPotential(layer,regions,shared);
       let reach=goal.radius;
       if(goal.radius===0)for(const a of regions.areas)reach=Math.max(reach,Math.hypot(a.point.x-goal.x,a.point.y-goal.y));
       const scratch=(layer.astarScratch||(layer.astarScratch=new NavigationAStarScratch(layer))).begin(layer.fieldNodes.length),epoch=scratch.epoch,heap=scratch.heap;
@@ -12778,21 +12790,29 @@ class TerrainNavigation{
     const p=goal.closest(x,y);if(!p||!this.acceptsGoalPoint(goal,p.x,p.y))return null;
     return this.segmentClear(x,y,p.x,p.y,radius,ignoreBuildings?'*':null,true,0)?p:null;
   }
-  nextPoint(u,goal){
+  movementPlan(u,goal){
     let planner=TerrainNavigation.planner(u.type);
-    if(UnitDefinition.get(u.type)?.layer==='AIR')return goal.closest(u.x,u.y);
+    if(UnitDefinition.get(u.type)?.layer==='AIR')return {point:goal.closest(u.x,u.y),goal,fromX:u.x,fromY:u.y,type:u.type,revision:this.sim.navigationRevision};
     this.sync();const ignore=TerrainNavigation.ignoresBuildings(u),r=this.sim.unitRadius(u.type);this.metrics.routeQueries++;
     const direct=this.directGoal(u.x,u.y,goal,r,ignore);
-    if(direct){this.metrics.directQueries++;return direct}
+    if(direct){this.metrics.directQueries++;return {point:direct,goal,fromX:u.x,fromY:u.y,type:u.type,revision:this.sim.navigationRevision}}
     if(planner==='adaptive')planner=AdaptiveNavigationDemand.select(this,u,goal,r+.12,ignore);
     if(planner!=='flow-field')this.metrics.astarMoveQueries++;
     const plan=this.plan(u.x,u.y,goal,r+.12,ignore,planner);
     if(!plan){this.metrics.unreachable++;return null}
+    return {route:plan,radius:r,ignoreBuildings:ignore,goal,fromX:u.x,fromY:u.y,type:u.type,revision:this.sim.navigationRevision};
+  }
+  nextPlanPoint(u,record){
+    if(!record)return null;
+    if(u.x!==record.fromX||u.y!==record.fromY||u.type!==record.type||this.sim.navigationRevision!==record.revision)return this.nextPoint(u,record.goal);
+    if(record.point!==undefined)return record.point;
+    const plan=record.route,r=record.radius,ignore=record.ignoreBuildings;
     // Recheck the farthest physically visible corner, without changing the goal.
     for(let i=plan.path.length-1;i>1;i--)if(this.segmentClear(u.x,u.y,plan.path[i].x,plan.path[i].y,r,ignore?'*':null,true,0))return plan.path[i];
     for(let i=1;i<plan.path.length;i++)if(Math.hypot(plan.path[i].x-u.x,plan.path[i].y-u.y)>.001)return plan.path[i];
     return {x:u.x,y:u.y};
   }
+  nextPoint(u,goal){return this.nextPlanPoint(u,this.movementPlan(u,goal))}
   connected(x,y,tx,ty,type='worker',ignoreBuildings=false){
     return Number.isFinite(this.distance(x,y,NavigationGoal.point(tx,ty,false),type,ignoreBuildings));
   }
@@ -23664,11 +23684,30 @@ class GameSession{
     });
     this.netcodeNow=performance.now();this.lastDriverPulseAt=this.netcodeNow;this.lastSnapshotEmitAt=this.netcodeNow;
     this.stopHeartbeat(false);
-    this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,maxBacklogTicks:MAX_CATCHUP_STEPS_PER_PULSE,
+    // A slow CPU pulse is not a suspended page. Core keeps at most three due
+    // ticks; only a gap longer than three seconds discards wall-clock debt.
+    this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,maxBacklogTicks:Math.ceil(this.sim.tps*3),
       onBacklogDrop:event=>this.onBacklogDrop(event),
-      beforeFrame:now=>{this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now)},
-      canAdvance:()=>!this.simEnded&&!this.simulationFatal&&!this.pendingTerminalFrame&&!this.syncHold&&!this.frameOutputs.get(this.sim.tick)?.winner,
-      onAdvance:()=>this.reconcileNetcodePresentation(),render:()=>this.reconcileNetcodePresentation(),
+      beforeFrame:now=>{
+        // Core's ordinary catchup cap also discards short wall-clock debt. Rebase
+        // presentation only; polling and the first due gameplay tick still run.
+        const gap=Math.max(0,now-this.lastDriverPulseAt),quantum=1000/this.sim.tps,alpha=this.driverLastAlpha||0;
+        // Public alpha reports sub-tick residue; at 1 it is clipped, so the
+        // remaining backlog is unknown. Conservatively rebase on the next gap.
+        if(this.sim.tick>0&&(gap>250||Math.min(250,gap)+alpha*quantum>quantum*MAX_CATCHUP_STEPS_PER_PULSE+1e-7||alpha>=1&&gap>0))this.renderTimelineChanged=true;
+        this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now);this.driverPulseStartedAt=performance.now();this.driverPulseAdvances=0;
+      },
+      // Poll/rollback remains synchronous and atomic inside Core. Always permit
+      // the first due ordinary step, then yield catchup after 12 ms of CPU work.
+      canAdvance:()=>{
+        if(this.simEnded||this.simulationFatal||this.pendingTerminalFrame||this.syncHold||this.frameOutputs.get(this.sim.tick)?.winner)return false;
+        if(this.driverPulseAdvances>0&&performance.now()-this.driverPulseStartedAt>=12){
+          if(this.sim.tick>0)this.renderTimelineChanged=true;
+          return false;
+        }
+        return true;
+      },
+      onAdvance:()=>{this.driverPulseAdvances++;this.reconcileNetcodePresentation()},render:frame=>{this.driverLastAlpha=frame.alpha;this.reconcileNetcodePresentation()},
       onError:error=>this.enterSimulationFatal(error,{source:'netcode-loop'})});
     this.syncHold=!this.transportConnected;AppLifecycle.registerBackgroundSession(this);return true;
   }
@@ -23830,8 +23869,6 @@ class GameSession{
   }
   advanceSimulation(now=performance.now()){
     if(!this.sim||this.simEnded||this.simulationFatal)return;
-    const gap=Math.max(0,now-this.lastDriverPulseAt),maxGap=1000/this.sim.tps*MAX_CATCHUP_STEPS_PER_PULSE;
-    if(gap>maxGap){this.netcodeLoop?.resetTiming();this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now);this.onBacklogDrop({elapsedMs:gap,droppedTicks:Math.floor(gap/(1000/this.sim.tps)),timestamp:now});return}
     // Library owns pacing, accumulation, bounded catchup, and polling during holds.
     this.netcodeLoop.pulse(now);
     if(!this.netcodeSession.resimulating&&now-this.lastSnapshotEmitAt>=SNAPSHOT_EMIT_INTERVAL_MS){
@@ -36366,13 +36403,43 @@ class AppLifecycle{
   const worker=AppLifecycle.backgroundTickWorker;
   AppLifecycle.backgroundTickWorker=null;
   if(worker){
-    try{worker.onmessage=null;worker.onerror=null;worker.postMessage("stop")}catch{}
+    try{worker.onmessage=null;worker.onerror=null;worker.onmessageerror=null;worker.postMessage("stop")}catch{}
     try{worker.terminate()}catch{}
   }
   if(AppLifecycle.backgroundTickFallback){
-    clearInterval(AppLifecycle.backgroundTickFallback);
+    clearTimeout(AppLifecycle.backgroundTickFallback);
     AppLifecycle.backgroundTickFallback=0;
   }
+}
+  static backgroundWorkerSource(){
+  return `
+    let timer=0,running=false,pending=0,sequence=0,postedAt=0;
+    function arm(){
+      if(!running||timer||pending)return;
+      timer=setTimeout(()=>{
+        timer=0;if(!running||pending)return;
+        postedAt=performance.now();pending=++sequence;postMessage({type:"tick",sequence:pending});
+      },Math.max(1,${BACKGROUND_TICK_PULSE_MS}-(performance.now()-postedAt)));
+    }
+    onmessage=e=>{
+      if(e.data==="stop"){
+        running=false;pending=0;if(timer)clearTimeout(timer);timer=0;return;
+      }
+      if(e.data==="start"){if(!running)postedAt=performance.now();running=true;arm();return;}
+      if(e.data?.type==="ack"&&e.data.sequence===pending&&pending){pending=0;arm();}
+    };
+  `;
+}
+  static startBackgroundTickFallback(delayMs=BACKGROUND_TICK_PULSE_MS){
+  if(!BACKGROUND_TICK_SESSIONS.size||AppLifecycle.backgroundTickWorker||AppLifecycle.backgroundTickFallback)return;
+  // A single timeout is armed only after the previous main-thread pulse returns.
+  // CPU work therefore never leaves a queue of overdue timer callbacks.
+  AppLifecycle.backgroundTickFallback=setTimeout(()=>{
+    AppLifecycle.backgroundTickFallback=0;
+    const started=performance.now();
+    try{AppLifecycle.pulseBackgroundSessions(performance.now())}
+    finally{AppLifecycle.startBackgroundTickFallback(Math.max(1,BACKGROUND_TICK_PULSE_MS-(performance.now()-started)))}
+  },delayMs);
 }
   static ensureBackgroundTicker(){
   if(!BACKGROUND_TICK_SESSIONS.size||AppLifecycle.backgroundTickWorker||AppLifecycle.backgroundTickFallback)return;
@@ -36382,45 +36449,30 @@ class AppLifecycle{
   // page process; elapsed-time catch-up below handles that on wake.
   if(typeof Worker==="function"&&typeof Blob==="function"&&typeof URL!=="undefined"){
     try{
-      const source=`
-        let timer=0;
-        function start(){
-          if(timer)return;
-          timer=setInterval(()=>postMessage(1),${BACKGROUND_TICK_PULSE_MS});
-        }
-        onmessage=e=>{
-          if(e.data==="stop"){if(timer){clearInterval(timer);timer=0}return}
-          start();
-        };
-        start();
-      `;
+      const source=AppLifecycle.backgroundWorkerSource();
       const blob=new Blob([source],{type:"text/javascript"});
       const url=URL.createObjectURL(blob);
-      const worker=new Worker(url);
-      URL.revokeObjectURL(url);
+      let worker;
+      try{worker=new Worker(url)}finally{URL.revokeObjectURL(url)}
       AppLifecycle.backgroundTickWorker=worker;
-      worker.onmessage=()=>AppLifecycle.pulseBackgroundSessions(performance.now());
-      worker.onerror=()=>{
-        if(AppLifecycle.backgroundTickWorker!==worker)return;
-        try{worker.onmessage=null;worker.onerror=null;worker.terminate()}catch{}
-        AppLifecycle.backgroundTickWorker=null;
-        if(BACKGROUND_TICK_SESSIONS.size&&!AppLifecycle.backgroundTickFallback){
-          AppLifecycle.backgroundTickFallback=setInterval(
-            ()=>AppLifecycle.pulseBackgroundSessions(performance.now()),
-            BACKGROUND_TICK_PULSE_MS
-          );
-        }
+      worker.onmessage=e=>{
+        if(AppLifecycle.backgroundTickWorker!==worker||e.data?.type!=="tick"||!Number.isSafeInteger(e.data.sequence))return;
+        try{AppLifecycle.pulseBackgroundSessions(performance.now())}
+        finally{if(AppLifecycle.backgroundTickWorker===worker)try{worker.postMessage({type:"ack",sequence:e.data.sequence})}catch{fallback()}}
       };
+      const fallback=()=>{
+        if(AppLifecycle.backgroundTickWorker!==worker)return;
+        try{worker.onmessage=null;worker.onerror=null;worker.onmessageerror=null;worker.terminate()}catch{}
+        AppLifecycle.backgroundTickWorker=null;
+        AppLifecycle.startBackgroundTickFallback();
+      };
+      worker.onerror=fallback;worker.onmessageerror=fallback;
+      worker.postMessage("start");
       return;
-    }catch{}
+    }catch{AppLifecycle.stopBackgroundTicker()}
   }
 
-  if(BACKGROUND_TICK_SESSIONS.size){
-    AppLifecycle.backgroundTickFallback=setInterval(
-      ()=>AppLifecycle.pulseBackgroundSessions(performance.now()),
-      BACKGROUND_TICK_PULSE_MS
-    );
-  }
+  AppLifecycle.startBackgroundTickFallback();
 }
 }
 

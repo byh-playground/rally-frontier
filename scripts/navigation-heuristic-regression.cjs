@@ -3,8 +3,9 @@ const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const section=(a,b)=>html.slice(html.indexOf(a),html.indexOf(b));
 const common=section('class NavigationMinHeap{','class PolygonTriangulation{')+section('class NavigationGraphOrder{','class NavigationGraphSlots{')+section('class NavigationFunnel{','class NavigationGoalVisibility{');
 const current=section('class TerrainNavigation{','class WorldContext{');
-const previous=current.replace(/const distanceField=shared&&[^;]+;/,'const distanceField=null;');
-assert.notEqual(previous,current,'Differential oracle disables only the new heuristic');
+const reference=require('node:child_process').execFileSync('git',['show','a8648f8ce4ed7a7eaafce47705428bdf03723cb7:index.html'],{cwd:path.join(__dirname,'..'),encoding:'utf8',maxBuffer:20*1024*1024});
+const previous=reference.slice(reference.indexOf('class TerrainNavigation{'),reference.indexOf('class WorldContext{'));
+assert.notEqual(previous,current,'Differential oracle is the unchanged published navigation implementation');
 function load(source){return new Function('performance',`const FP=100;const RangeUtil={clamp:(x,a,b)=>Math.max(a,Math.min(b,x))};const NavigationMeshBuilder={cross:(a,b,c)=>(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x)};${common}${source};return {TerrainNavigation,NavigationGoal};`)(performance)}
 const candidate=load(current),oracle=load(previous);
 function fixture(api,seed){
@@ -43,7 +44,7 @@ for(let seed=0;seed<24;seed++){
   assert(A.nav.metrics.fieldsBuilt>0,'Repeated shared goals construct reverse fields');
   for(const field of A.layer.fields.values())for(const node of A.layer.fieldNodes)for(const edge of node.links)assert(field.cost[node.id]<=edge.cost+field.cost[edge.to],'Heuristic remains consistent on every graph edge');
   A.layer.fields.clear();A.layer.goals.clear();A.layer.sharedPaths.clear();
-  const goal=A.Goal.point(650,250);A.nav.astarPlan(25.125,125.375,goal,10,false,true);assert.equal(A.layer.fields.size,0,'Invalidation resets repeated-goal guard');
+  const goal=A.Goal.point(650,250);A.nav.astarPlan(25.125,125.375,goal,10,false,true);assert.equal(A.layer.fields.size,1,'Persistent goal rebuilds potential after invalidation');
 }
 const churn=fixture(candidate,0);for(let i=0;i<60;i++){churn.nav.sim.tick=i;for(let unit=0;unit<4;unit++)churn.nav.astarPlan(25+unit,125,churn.Goal.point(640+i*.1,250),10,false,true)}assert.equal(churn.layer.fields.size,0,'Multiple units querying each moving exact goal in one tick do not build fields');
 const stationary=fixture(candidate,0),fixed=stationary.Goal.point(650,250);for(let i=0;i<4;i++)stationary.nav.astarPlan(25+i,125,fixed,10,false,true);assert.equal(stationary.layer.fields.size,0,'First stationary-goal tick stays Euclidean for all units');stationary.nav.sim.tick++;stationary.nav.astarPlan(25,125,fixed,10,false,true);assert.equal(stationary.layer.fields.size,1,'Stationary goal starts reusing distance field on a later tick');
