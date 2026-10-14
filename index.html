@@ -10726,7 +10726,7 @@ const BUILD_META=Object.freeze({
 /* =========================
    1. Definitions
    ========================= */
-const SIM_TPS=20,FP=100,SIM_VERSION=190;
+const SIM_TPS=20,FP=100,SIM_VERSION=191;
 // Local session policy, deliberately outside canonical gameplay/save rules.
 // A session captures this setting once; changing it only affects the next match.
 const CONFIG={netcode:{mode:'lockstep'}};
@@ -10833,7 +10833,8 @@ GameRuleDefinition.current=GameRuleDefinition.resolve();
 // - command apply / heavy UI snapshot publish: 10 Hz
 // - deterministic simulation + lightweight Render State targets: selected SIM TPS
 // - WebGL presentation: requestAnimationFrame (typically 60 Hz+)
-const FORCE_RALLY_HOLD_MS=650;
+const CHARGED_SKILL_HOLD_MS=250;
+const CHARGED_SKILL_DRAG_PX=10;
 const GAS_WORKER_UI_DEBOUNCE_MS=280;
 const PREDICTED_BUILD_GHOST_TTL_MS=5000;
 const PREDICTED_COMMAND_FX_TTL_MS=1200;
@@ -13694,7 +13695,7 @@ class UnitDefinition{
   // T1 - 단순하고 읽기 쉬운 기본병. 전체 풀 중 매 판 일부만 드래프트
   swordsman:{requiresContactTerrain:true,name:"칼잎 전사",production:{totalUnits:15,batchSize:3,productionSeconds:10,mineral:100,gas:0},tier:1,mineralCost:0,supply:2,buildTimeMs:3250,hp:125,atk:20,range:25,speed:50,cooldownMs:1000,size:15,sizeClass:"medium",role:"bruiser",attackVisual:{sourceMotion:"slash",travel:"none",impact:"light"},sight:275,counter:"고체력 기본 전열 · 원거리 사격을 버티며 접근해 전선을 밀어냄"},
   pikeman:{requiresContactTerrain:true,name:"가시창풀",production:{totalUnits:10,batchSize:2,productionSeconds:10,mineral:100,gas:0},abilityResearchGrade:"light",tier:1,mineralCost:0,supply:2,buildTimeMs:3500,hp:75,atk:20,range:100,speed:50,cooldownMs:750,size:15,sizeClass:"medium",attackVisual:{sourceMotion:"thrust",travel:"none",impact:"pierce"},role:"pikeman",sight:300,counter:"근중거리 접근 차단 · 매 공격 약한 넉백"},
-  archer:{name:"씨앗궁수",production:{totalUnits:10,batchSize:2,productionSeconds:15,mineral:125,gas:25},tier:1,mineralCost:0,supply:2,buildTimeMs:3750,hp:75,atk:20,range:175,speed:50,cooldownMs:750,size:15,sizeClass:"light",attackVisual:{sourceMotion:null,travel:"projectile",impact:"pierce"},role:"ranged",sight:350,projectile:250,counter:"안정 원거리",canAttackAir:true},
+  archer:{chargedSkill:{kind:"lob",minReach:100,maxReach:440,speed:300,damage:34,radius:35,arcHeight:100,recoveryMs:1000},name:"씨앗궁수",production:{totalUnits:10,batchSize:2,productionSeconds:15,mineral:125,gas:25},tier:1,mineralCost:0,supply:2,buildTimeMs:3750,hp:75,atk:20,range:175,speed:50,cooldownMs:750,size:15,sizeClass:"light",attackVisual:{sourceMotion:null,travel:"projectile",impact:"pierce"},role:"ranged",sight:350,projectile:250,counter:"안정 원거리",canAttackAir:true},
   fireant:{name:"불개미",production:{totalUnits:8,batchSize:2,productionSeconds:15,mineral:125,gas:50},projectileVisualTag:"fireAntEmber",tier:1,mineralCost:0,supply:2,buildTimeMs:4000,hp:75,atk:30,range:100,speed:50,cooldownMs:1000,size:10,sizeClass:"light",attackVisual:{sourceMotion:null,travel:"projectile",impact:"pierce"},role:"ranged",sight:325,projectile:300,canAttackGround:true,canAttackAir:false,counter:"소형 특화 원거리",damageClass:"smallSpecialist",basicAttack:{variants:[{id:"acidBreath",priority:100,requires:{research:"fireantBreath"},trigger:{type:"chance",chance:0.35},attack:{type:"breath",range:150,angleDeg:30,damageClass:"smallSpecialist",continuous:{dps:60,damageIntervalMs:250,durationMs:1000},vfxPreset:"fireAntBreath"}}]}},
   skirmisher:{name:"포자사수",production:{totalUnits:6,batchSize:3,productionSeconds:20,mineral:100,gas:25},vfxMuzzle:"gun",vfxImpact:"bullet",abilityResearchGrade:"standard",tier:1,mineralCost:0,supply:2,buildTimeMs:4000,hp:75,atk:15,range:125,speed:75,cooldownMs:750,attackWindupMs:150,attackMoveRecoveryMs:250,size:10,sizeClass:"light",attackVisual:{sourceMotion:null,travel:"projectile",impact:"pierce"},role:"skirmisher",sight:400,projectile:275,retreatRange:75,idealRange:100,maintainIdealRange:true,abilityImpactKnockback:true,counter:"짧은 사거리 기동사격 · 거리 조절",canAttackAir:true},
   shellbug:{requiresContactTerrain:true,name:"껍질딱정벌레",production:{totalUnits:16,batchSize:4,productionSeconds:10,mineral:100,gas:0},abilityResearchGrade:"light",tier:1,mineralCost:0,supply:2,buildTimeMs:3500,hp:100,atk:15,range:25,speed:50,cooldownMs:750,size:15,sizeClass:"medium",role:"bruiser",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:275,counter:"저가 전열",rangedReduction:50,abilityFlatArmor:5,abilityFlatArmorCondition:"crouched",crouchPrepMs:1500},
@@ -13707,7 +13708,7 @@ class UnitDefinition{
   tank:{requiresContactTerrain:true,name:"껍질수호자",production:{totalUnits:5,batchSize:1,productionSeconds:10,mineral:200,gas:0},abilityResearchGrade:"advanced",tier:2,mineralCost:0,supply:5,buildTimeMs:6000,hp:600,atk:30,range:25,speed:25,cooldownMs:750,size:20,sizeClass:"heavy",role:"guardian",attackVisual:{sourceMotion:"smash",travel:"none",impact:"heavy"},sight:250,taunt:true,tauntRadius:175,rangedReduction:50,abilityRangedReduction:25,counter:"초고내구 전열 고정"},
   rogue:{requiresContactTerrain:true,name:"그림자벼룩",production:{totalUnits:10,batchSize:5,productionSeconds:15,mineral:100,gas:0},abilityResearchGrade:"advanced",tier:2,mineralCost:0,supply:3,buildTimeMs:4750,hp:75,atk:60,range:25,speed:50,cooldownMs:500,attackWindupMs:150,size:10,sizeClass:"light",role:"assassin",attackVisual:{sourceMotion:"slash",travel:"none",impact:"light"},sight:425,leapRange:ROGUE_BLINK_RANGE,leapCooldownMs:ROGUE_BLINK_COOLDOWN_MS,leapAutoPolicy:"always",leapTargetRoles:"rogueBackline",leapLandingTargetDamageMultiplier:ROGUE_LANDING_TARGET_DAMAGE_MULTIPLIER,leapLandingAirborneRadius:ROGUE_LANDING_AIRBORNE_RADIUS,leapLandingAirborneMs:ROGUE_LANDING_AIRBORNE_MS,leapLandingAirborneHeight:ROGUE_LANDING_AIRBORNE_HEIGHT,counter:"소형 후열 암살",priority:{artillery:340,ranged:260,caster:300,skirmisher:275,support:360,controller:250,worker:150},damageClass:"smallSpecialist"},
   mage:{name:"폭발꽃",production:{totalUnits:5,batchSize:1,productionSeconds:15,mineral:75,gas:100},abilityResearchGrade:"standard",tier:2,mineralCost:0,supply:3,buildTimeMs:5250,hp:75,atk:35,range:150,speed:25,cooldownMs:1000,attackWindupMs:300,size:15,sizeClass:"light",attackVisual:{sourceMotion:null,travel:"projectile",impact:"arcane"},role:"caster",sight:325,projectile:200,splash:75,counter:"밀집·중장갑 폭발 집중",damageClass:"area",abilitySplashFalloff:"100-75-50",canAttackAir:true},
-  lancer:{requiresContactTerrain:true,name:"왕사슴 돌격대",production:{totalUnits:8,batchSize:2,productionSeconds:10,mineral:125,gas:25},abilityResearchGrade:"standard",tier:2,mineralCost:0,supply:4,buildTimeMs:5500,hp:225,atk:35,range:25,speed:50,cooldownMs:750,attackWindupMs:250,size:15,sizeClass:"medium",role:"charger",attackVisual:{sourceMotion:"thrust",travel:"none",impact:"pierce"},sight:300,momentumCharge:true,counter:"사슴벌레 탑승 가속 돌진 · 축적 이속 비례 첫타",priority:{skirmisher:195,ranged:165,artillery:155,support:170},outOfCombatRampMs:4000,outOfCombatMaxSpeedPct:200,outOfCombatWriteMomentum:true,outOfCombatHoldOnCombat:true},
+  lancer:{chargedSkill:{kind:"momentum",minReach:100,maxReach:460,speed:400,damage:55,recoveryMs:1200},requiresContactTerrain:true,name:"왕사슴 돌격대",production:{totalUnits:8,batchSize:2,productionSeconds:10,mineral:125,gas:25},abilityResearchGrade:"standard",tier:2,mineralCost:0,supply:4,buildTimeMs:5500,hp:225,atk:35,range:25,speed:50,cooldownMs:750,attackWindupMs:250,size:15,sizeClass:"medium",role:"charger",attackVisual:{sourceMotion:"thrust",travel:"none",impact:"pierce"},sight:300,momentumCharge:true,counter:"사슴벌레 탑승 가속 돌진 · 축적 이속 비례 첫타",priority:{skirmisher:195,ranged:165,artillery:155,support:170},outOfCombatRampMs:4000,outOfCombatMaxSpeedPct:200,outOfCombatWriteMomentum:true,outOfCombatHoldOnCombat:true},
   medic:{name:"이슬치유사",production:{totalUnits:4,batchSize:1,productionSeconds:5,mineral:75,gas:75},abilityResearchGrade:"light",tier:2,mineralCost:0,supply:3,buildTimeMs:5000,hp:100,atk:5,range:100,speed:25,cooldownMs:1000,size:10,sizeClass:"light",attackVisual:{sourceMotion:null,travel:"projectile",impact:"light"},role:"support",sight:350,detectRadius:175,projectile:200,healRange:150,healAmount:5,healCooldownMs:250,counter:"치유와 은신 탐지를 지원하며 연구로 전투력을 보강하는 의무병",usesMana:true,manaMax:250,manaRegenPerSecond:10,healManaPerPacket:5,healPerManaPacket:5,canAttackAir:true,basicAttack:{variants:[{id:"medicShockShot",priority:100,requires:{ability:"medic"},trigger:{type:"chance",chance:.35},attack:{type:"projectile",knockbackDistance:50,arcHeight:75,vfxPreset:"medicShock"}}]}},
   mantis:{requiresContactTerrain:true,name:"베일 사마귀",production:{totalUnits:4,batchSize:1,productionSeconds:5,mineral:25,gas:125},tier:2,mineralCost:0,supply:2,buildTimeMs:5000,hp:75,atk:25,range:25,speed:75,cooldownMs:750,attackWindupMs:150,size:10,sizeClass:"light",role:"scout",attackVisual:{sourceMotion:"slash",travel:"none",impact:"light"},sight:475,counter:"은신 정찰 · 매복 첫타 · 디텍터에 약함",stealth:true,ambushDamage:1.50,priority:{ranged:145,caster:150,support:165,artillery:140,worker:120}},
   pillbug:{requiresContactTerrain:true,name:"폭낭 콩벌레",production:{totalUnits:15,batchSize:1,productionSeconds:5,mineral:50,gas:100},abilityResearchGrade:"standard",tier:2,mineralCost:0,supply:2,buildTimeMs:4750,hp:100,atk:50,range:25,speed:75,cooldownMs:1000,size:15,sizeClass:"medium",attackVisual:{sourceMotion:null,travel:"none",impact:"explosive"},role:"controller",sight:325,counter:"콩벌레 자폭 돌진 · 연구 시 도약 접근",selfDestruct:true,attackSplash:100,deathSplash:75,deathDamageScale:.65,leapAutoPolicy:"ability",leapTargetRoles:"backline",leapRange:ROGUE_BLINK_RANGE,leapCooldownMs:ROGUE_BLINK_COOLDOWN_MS,priority:{ranged:150,skirmisher:155,support:150,caster:145,worker:120},damageClass:"area"},
@@ -13719,7 +13720,7 @@ class UnitDefinition{
   sporeling:{requiresContactTerrain:true,name:"포자병",tier:0,mineralCost:0,supply:0,buildTimeMs:0,hp:25,atk:10,range:25,speed:75,cooldownMs:750,size:5,sizeClass:"light",role:"summon",attackVisual:{sourceMotion:"bite",travel:"none",impact:"light"},sight:225,leapAutoPolicy:"parentAbility:sporeherd",leapTargetRoles:"sporeling",leapRange:ROGUE_BLINK_RANGE,leapCooldownMs:ROGUE_BLINK_COOLDOWN_MS},
 
   // T3 - 적은 수로도 전투 규칙을 바꾸는 최종 테크
-  siege:{name:"철갑씨앗포",production:{totalUnits:4,batchSize:1,productionSeconds:10,mineral:75,gas:100},vfxHeavy:true,abilityResearchGrade:"standard",tier:3,mineralCost:0,supply:7,buildTimeMs:8250,hp:250,atk:100,range:600,minRange:150,speed:25,cooldownMs:2500,attackWindupMs:350,size:20,sizeClass:"heavy",attackVisual:{sourceMotion:null,travel:"projectile",impact:"explosive"},role:"artillery",sight:650,projectile:250,splash:50,counter:"전개 후 초장거리 집중포격 · 좁고 강한 착탄",abilityImpactAreaKnockback:true,impactKnockbackRadius:50,impactKnockbackDistance:25,projectileArc:24,projectileRadius:5,projectileVisualTag:"armorSeed",deployment:{deployMs:900,undeployMs:450,stance:"siege"},damageClass:"area"},
+  siege:{chargedSkill:{kind:"lob",minReach:160,maxReach:760,speed:260,damage:140,radius:95,arcHeight:150,recoveryMs:2200},name:"철갑씨앗포",production:{totalUnits:4,batchSize:1,productionSeconds:10,mineral:75,gas:100},vfxHeavy:true,abilityResearchGrade:"standard",tier:3,mineralCost:0,supply:7,buildTimeMs:8250,hp:250,atk:100,range:600,minRange:150,speed:25,cooldownMs:2500,attackWindupMs:350,size:20,sizeClass:"heavy",attackVisual:{sourceMotion:null,travel:"projectile",impact:"explosive"},role:"artillery",sight:650,projectile:250,splash:50,counter:"전개 후 초장거리 집중포격 · 좁고 강한 착탄",abilityImpactAreaKnockback:true,impactKnockbackRadius:50,impactKnockbackDistance:25,projectileArc:24,projectileRadius:5,projectileVisualTag:"armorSeed",deployment:{deployMs:900,undeployMs:450,stance:"siege"},damageClass:"area"},
   rocket:{name:"다연발 봉선화",production:{totalUnits:3,batchSize:1,productionSeconds:10,mineral:100,gas:175},vfxHeavy:true,abilityResearchGrade:"advanced",tier:3,mineralCost:0,supply:7,buildTimeMs:8250,hp:200,atk:60,range:425,minRange:125,speed:25,cooldownMs:2500,attackWindupMs:250,size:20,sizeClass:"medium",attackVisual:{sourceMotion:null,travel:"projectile",impact:"explosive"},role:"artillery",sight:475,projectile:200,splash:0,counter:"적 밀집 지점에 연속 곡사탄을 퍼붓는 장거리 포대",aoeScoreRadius:200,projectileVisualTag:"balsamRocket",projectilePattern:{count:4,intervalMs:150,damagePerShot:15,impactRadius:105,spreadRadius:78,arcHeights:[88,96,100,92],splashScale:1,impactAtAimPoint:true},projectileRadius:5,damageClass:"area"},
   shelltitan:{requiresContactTerrain:true,name:"고대껍질 거신",production:{totalUnits:3,batchSize:1,productionSeconds:10,mineral:250,gas:50},vfxHeavy:true,abilityResearchGrade:"advanced",tier:3,mineralCost:0,supply:9,buildTimeMs:9250,hp:900,atk:70,range:25,speed:25,cooldownMs:1250,size:35,sizeClass:"heavy",role:"guardian",attackVisual:{sourceMotion:"smash",travel:"none",impact:"heavy"},sight:300,counter:"초대형 광역 전열 붕괴 · 연구 시 충격파 넉백+에어본",slamRadius:100,slamScale:.60,slamKnockbackDistance:25,slamAirborneMs:200,slamAirborneHeight:24,damageClass:"area"},
   swarmbug:{requiresContactTerrain:true,name:"군락벌레",production:{totalUnits:30,batchSize:6,productionSeconds:15,mineral:300,gas:0},abilityResearchGrade:"advanced",tier:3,mineralCost:0,supply:1,buildTimeMs:3250,hp:150,atk:15,range:25,speed:75,cooldownMs:500,size:10,sizeClass:"light",role:"swarm",attackVisual:{sourceMotion:"bite",travel:"none",impact:"light"},sight:275,counter:"이동 중 지하 접근 · 연구 시 밀집 광분/포위 + 사체 섭취",burrowWhileMoving:true,burrowUntargetable:true,burrowTrail:true,formationProfile:"surround",formationRequiresAbility:true,carcassConsumeRadius:150,carcassPieces:5},
@@ -16729,6 +16730,57 @@ class ChargerMixin extends UnitCapability{
     return {active:true,winner};
   }
 }
+// One authoritative cast owns membership and timing; capabilities own execution only.
+class ChargedSkillGeometry{
+  static gatheringR=180;static gatherMs=350;static chargeMs=1400;static maxHoldMs=6000;
+  static aimPoint(unit,cast,tick,tps,world){
+    const d=UnitDefinition.get(unit.type)?.chargedSkill;if(!d)return null;
+    const progress=RangeUtil.clamp((tick-cast.gatherUntil)/Math.max(1,SimulationTiming.msToTicks(this.chargeMs,tps)),0,1);
+    const reach=d.minReach+(d.maxReach-d.minReach)*progress,dx=cast.aimX-unit.x,dy=cast.aimY-unit.y,distance=Math.hypot(dx,dy),scale=distance>0?Math.min(distance,reach)/distance:0;
+    return {x:RangeUtil.clamp(unit.x+dx*scale,20,world.width-20),y:RangeUtil.clamp(unit.y+dy*scale,20,world.height-20),reach,progress};
+  }
+}
+class ChargedSkillMixin extends UnitCapability{
+  static KEY="chargedSkill";static supports(_u,d){return !!d.chargedSkill}
+  static stateDefaults={behavior:{chargedExecution:null,chargedRecoveryUntil:0}};
+  constructor(owner){super(owner,ChargedSkillMixin.KEY)}
+  static stateReady(u,tick){return !!u?.alive&&!!UnitDefinition.get(u.type)?.chargedSkill&&tick>=(u.status?.airborneUntil||0)&&tick>=(u.movement?.impulseUntil||0)&&!u.behaviorState?.chargedExecution&&tick>=(u.behaviorState?.chargedRecoveryUntil||0)}
+  ready(sim){return ChargedSkillMixin.stateReady(this.owner,sim.tick)}
+  release(sim,cast){
+    const u=this.owner;if(!this.ready(sim))return false;
+    const d=UnitDefinition.get(u.type).chargedSkill,point=ChargedSkillGeometry.aimPoint(u,cast,sim.tick,sim.tps,sim.world);
+    sim.clearAttackWindup(u);u.target=null;u.behaviorState.chargedRecoveryUntil=sim.tick+sim.msTicks(d.recoveryMs);
+    if(d.kind==="momentum"){
+      const dx=point.x-u.x,dy=point.y-u.y,len=Math.hypot(dx,dy);
+      u.behaviorState.chargedExecution={castId:cast.id,dirX:len?dx/len:0,dirY:len?dy/len:0,remaining:len,hitIds:[],endTick:sim.tick+sim.msTicks(2000)};
+    }else{
+      sim.spawnProjectile({id:"p"+(++sim.seq),owner:u.id,side:u.side,type:u.type,x:u.x,y:u.y,target:null,isBuilding:false,speed:d.speed,damage:d.damage,splash:d.radius,damageClass:"area",trajectoryPolicy:"lockedPoint",lockedAimX:point.x,lockedAimY:point.y,arcHeight:d.arcHeight,chargedCastId:cast.id});
+      u.attackFlash=sim.msTicks(150);
+    }
+    sim.events.push({type:"chargedSkillRelease",side:u.side,sourceId:u.id,sourceType:u.type,x:u.x,y:u.y,x2:point.x,y2:point.y,castId:cast.id});return true;
+  }
+  update(sim){
+    const u=this.owner,e=u.behaviorState.chargedExecution;if(!e)return sim.tick<u.behaviorState.chargedRecoveryUntil;
+    if(sim.isAirborneStatus(u)||sim.tick>=e.endTick){u.behaviorState.chargedExecution=null;return true}
+    const d=UnitDefinition.get(u.type).chargedSkill,step=Math.min(e.remaining,d.speed/sim.tps),oldX=u.x,oldY=u.y;
+    const motion=sim.navigation.motion.move(u,u.x+e.dirX*step,u.y+e.dirY*step,'stop');sim.syncUnitSpatial(u);
+    const moved=Math.hypot(u.x-oldX,u.y-oldY);e.remaining=Math.max(0,e.remaining-moved);u.movement.lastMoveTick=sim.tick;
+    const r=sim.unitRadius(u.type),hitIds=new Set(e.hitIds);
+    // Existing grid broadphase + existing impulses/PBD transfer readable momentum
+    // through contacts. Each enemy receives damage once per bodily charge.
+    for(const i of sim.nearbyUnits(u.x,u.y,r+step+sim.maxUnitRadius)){
+      const target=sim.units[i];if(!sim.isHostileCombatUnit(u.side,target)||!sim.canAttackEntity(u.type,target,false)||sim.unitLayer(target.type)!=="GROUND"||hitIds.has(target.id))continue;
+      const vx=u.x-oldX,vy=u.y-oldY,len2=vx*vx+vy*vy,t=len2?RangeUtil.clamp(((target.x-oldX)*vx+(target.y-oldY)*vy)/len2,0,1):0;
+      if(Math.hypot(target.x-oldX-vx*t,target.y-oldY-vy*t)>r+sim.unitRadius(target.type)+3)continue;
+      hitIds.add(target.id);sim.applyDamage(u.side,u.type,target,false,d.damage,u.id,{damageClass:UnitDefinition.damageClass(u.type)});
+      if(target.alive)sim.addUnitImpulse(target,target.x+e.dirX*100,target.y+e.dirY*100,70,sim.msTicks(400),850);
+      sim.events.push({type:"chargeImpact",side:u.side,x:target.x,y:target.y,multiplier:1.6,sourceId:u.id,sourceType:u.type});
+    }
+    e.hitIds=[...hitIds].sort();
+    if(motion.hit||e.remaining<.5||moved<.01){u.behaviorState.chargedExecution=null;u.behaviorState.chargedRecoveryUntil=Math.max(u.behaviorState.chargedRecoveryUntil,sim.tick+sim.msTicks(450))}
+    return true;
+  }
+}
 class PullerMixin extends UnitCapability{
   static KEY="puller";static supports(_u,d){return Number(d.hookRange)>0}static stateDefaults={"behavior":{"hookCooldownUntil":0}};
   constructor(owner){super(owner,PullerMixin.KEY)}
@@ -17118,7 +17170,7 @@ const OBJECTIVE_BEHAVIORS=Object.freeze({
     }
   })
 });
-const UNIT_CAPABILITY_MIXINS=Object.freeze([BurrowableMixin,LeapableMixin,TurnLimitedFlightMixin,HealerMixin,SummonerMixin,InterceptorMixin,ChargerMixin,PullerMixin,StealthMixin,CloakAuraMixin,ShieldProviderMixin,DeployableCombatMixin,WorkerMixin,ObjectiveMixin]);
+const UNIT_CAPABILITY_MIXINS=Object.freeze([ChargedSkillMixin,BurrowableMixin,LeapableMixin,TurnLimitedFlightMixin,HealerMixin,SummonerMixin,InterceptorMixin,ChargerMixin,PullerMixin,StealthMixin,CloakAuraMixin,ShieldProviderMixin,DeployableCombatMixin,WorkerMixin,ObjectiveMixin]);
 class DefaultUnitLogicController{
   constructor(owner,state={}){this.owner=owner;this.kind="default";this.state={...state}}
   update(sim,vision){return sim.updateCombat(this.owner,vision)}
@@ -17227,7 +17279,7 @@ class Projectile{
     const pattern=def.projectilePattern;
     const patternArc=pattern?(Array.isArray(pattern.arcHeights)?pattern.arcHeights[(Math.max(1,this.burstIndex||1)-1)%pattern.arcHeights.length]:pattern.arcHeight):null;
     const specialArc=this.impactEventKind==="shockwave"?def.basicAttack?.variants?.find(v=>v.attack?.vfxPreset==="medicShock")?.attack?.arcHeight:this.impactEventKind==="retaliation"?(def.guardRetaliationArcHeight||35):null;
-    this.arcHeight=state.arcHeight??patternArc??specialArc??def.projectileArc??0;
+    this.arcHeight=state.arcHeight??(state.chargedCastId?def.chargedSkill?.arcHeight:null)??patternArc??specialArc??def.projectileArc??0;
     this.drawRadius=state.drawRadius??def.projectileRadius??0;
   }toState(mode="snapshot"){return Projectile.stateContract.capture(this,mode)}
   writeChecksum(h){Projectile.stateContract.hash(h,this)}toJSON(){return this.toState("save")}static fromState(state){return new Projectile(state||{})}
@@ -17448,7 +17500,7 @@ class StrategySim{
   // Runtime owners declare only the local/derived exclusions; entity owners keep
   // their existing StateContracts and serialization.
   static stateContract=new StateContract({}, {presentation:["events","perfStats","balanceStats","_perfCollect"],derived:[
-    "navigationDemandScope","world","tps","campaignScriptRuntime","campaignTechCap","disposed","runtimeEpoch","commandReceipts",
+    "chargedHeldIds","navigationDemandScope","world","tps","campaignScriptRuntime","campaignTechCap","disposed","runtimeEpoch","commandReceipts",
     "collisionGrid","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
     "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapMarks","hardFixSapEpoch",
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","maxUnitRadius",
@@ -17463,7 +17515,7 @@ class StrategySim{
     this.seed=seed>>>0;this.rules=rules||GameRuleDefinition.current;this.tps=RangeUtil.clamp(Math.round(Number(this.rules?.simulation?.tps)||SIM_TPS),10,30);const campaignHumanRole=campaignScenario?.playerRole||"host",campaignHumanSide=campaignHumanRole==="host"?0:1;this.mapDescriptor=campaignScenario?.map?CampaignMapDefinition.build(campaignScenario.map,this.rules,this.seed,campaignHumanSide):MapGeneration.generateMapDescriptor({rules:this.rules,seed:this.seed,roundNumber:this.rules?.roundNumber||1});StateValue.freeze(this.mapDescriptor);this.world=WorldContext.fromMap(this.mapDescriptor);this.tick=0;this.seq=0;this.units=[];this.buildings=[];this.constructionOrders=[];this.navigationAdmissions=[];this.projectiles=[];this.events=[];this.scheduled=new Map();
     this.wallet=[0,1].map(()=>Math.max(0,Number(this.rules?.economy?.startingResources?.minerals)||0));
     this.gasWallet=[0,1].map(()=>Math.max(0,Number(this.rules?.economy?.startingResources?.gas)||0));
-    this.tech=[1,1];this.productionPaused=[false,false];
+    this.tech=[1,1];this.productionPaused=[false,false];this.chargedCasts=[null,null];this.chargedCastSerial=[0,0];
     this.attackUpgrade=[0,0];
     this.armorUpgrade=[0,0];
     this.abilities=[{},{}];
@@ -19268,6 +19320,51 @@ class StrategySim{
     if(this.isAirborneStatus(u))return false;
     return this.navigation.acceptsGoalPoint(InteractionGeometry.region(u,b,"worker-build"),u.x,u.y);
   }
+  chargedSkillPreview(side){
+    const cast=this.chargedCasts[side];if(!cast||cast.phase==="released")return null;
+    return {...StateValue.copy(cast),targets:cast.memberIds.map(id=>this.unitById.get(id)).filter(u=>u?.alive&&ChargedSkillMixin.stateReady(u,this.tick)).map(u=>({unitId:u.id,type:u.type,...ChargedSkillGeometry.aimPoint(u,cast,this.tick,this.tps,this.world)}))};
+  }
+  applyChargedCommand(side,action){
+    const id=action.castId;if(!Number.isSafeInteger(id)||id<=0)return false;
+    if(action.type==="CHARGE_BEGIN"){
+      if(id<=this.chargedCastSerial[side])return false;
+      const current=this.chargedCasts[side];if(current&&current.phase!=="released")return false;
+      const x=RangeUtil.clamp(action.x,20,this.world.width-20),y=RangeUtil.clamp(action.y,20,this.world.height-20),memberIds=[],unavailableIds=[];
+      for(const i of this.nearbyUnits(x,y,ChargedSkillGeometry.gatheringR)){
+        const u=this.units[i],cap=u?.capability(ChargedSkillMixin.KEY);if(!u?.alive||u.side!==side||!cap||Math.hypot(u.x-x,u.y-y)>ChargedSkillGeometry.gatheringR)continue;
+        (cap.ready(this)?memberIds:unavailableIds).push(u.id);
+      }
+      this.chargedCastSerial[side]=id;this.chargedCasts[side]={id,side,phase:"gathering",originX:x,originY:y,aimX:x,aimY:y,startTick:this.tick,gatherUntil:this.tick+this.msTicks(ChargedSkillGeometry.gatherMs),releaseTick:0,memberIds:memberIds.sort(),unavailableIds:unavailableIds.sort()};
+      return true;
+    }
+    const cast=this.chargedCasts[side];if(!cast||cast.id!==id||cast.phase==="released")return false;
+    if(action.type==="CHARGE_CANCEL"){this.chargedCasts[side]=null;return true}
+    cast.aimX=RangeUtil.clamp(action.x,20,this.world.width-20);cast.aimY=RangeUtil.clamp(action.y,20,this.world.height-20);
+    if(action.type==="CHARGE_AIM")return true;
+    if(action.type!=="CHARGE_RELEASE")return false;
+    if(this.tick<cast.gatherUntil){this.chargedCasts[side]=null;return true}
+    cast.phase="released";cast.releaseTick=this.tick;
+    for(const id of cast.memberIds)this.unitById.get(id)?.capability(ChargedSkillMixin.KEY)?.release(this,cast);
+    return true;
+  }
+  updateChargedCasts(){
+    this.chargedHeldIds=new Set();
+    for(const side of [0,1]){
+      const cast=this.chargedCasts[side];if(!cast)continue;
+      if(cast.phase==="released"){
+        if(!cast.memberIds.some(id=>{const u=this.unitById.get(id);return u?.alive&&(u.behaviorState.chargedExecution||this.tick<u.behaviorState.chargedRecoveryUntil)}))this.chargedCasts[side]=null;
+      }else if(this.tick>=cast.startTick+this.msTicks(ChargedSkillGeometry.maxHoldMs))this.chargedCasts[side]=null;
+      else if(this.tick>=cast.gatherUntil)cast.phase="charging";
+      if(this.chargedCasts[side]&&cast.phase!=="released")for(const id of cast.memberIds)this.chargedHeldIds.add(id);
+    }
+  }
+  chargedUnitHeld(u){
+    const cast=this.chargedCasts[u.side];if(!cast||cast.phase==="released"||!this.chargedHeldIds?.has(u.id))return false;
+    if(!UnitDefinition.get(u.type)?.chargedSkill||this.isAirborneStatus(u)||u.movement.impulseActive(this))return false;
+    this.clearAttackWindup(u);u.target=null;
+    if(cast.phase==="gathering"&&Math.hypot(u.x-cast.originX,u.y-cast.originY)>45)this.moveToward(u,cast.originX,cast.originY,UnitDefinition.get(u.type).speed);
+    return true;
+  }
   applyCommand(actor,action){
     if(!["host","guest"].includes(actor))return false;
     if(action?.type==="MATCH_SURRENDER"){
@@ -19275,6 +19372,7 @@ class StrategySim{
       this.netcodeMatchResult={winner:actor==="host"?"guest":"host",reason:"surrender",tick:this.tick};return true;
     }
     const side=ConnectionSideUtil.roleSide(actor);
+    if(action.type.startsWith("CHARGE_"))return this.applyChargedCommand(side,action);
     if(action.type==="SET_FLAG"){this.flags[side]={x:RangeUtil.clamp(action.x,40,this.world.width-40),y:RangeUtil.clamp(action.y,40,this.world.height-40),forced:!!action.forced};this.events.push({type:"flag",side,x:this.flags[side].x,y:this.flags[side].y,forced:!!action.forced});return true;}
     if(action.type==="TOGGLE_PRODUCTION"){this.productionPaused[side]=!this.productionPaused[side];return true;}
     if(action.type==="TRAIN_WORKER"){
@@ -22492,12 +22590,14 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     const workerMs=profile?now()-mark:0;
 
     mark=profile?now():0;
+    this.updateChargedCasts();
     const vision=[this.visionSources(0),this.visionSources(1)];
     const visionMs=profile?now()-mark:0;
 
     mark=profile?now():0;
     for(const u of this.units){
       if(!u.alive||!!UnitDefinition.get(u.type)?.economyWorker)continue;
+      if(this.chargedUnitHeld(u)||u.capability(ChargedSkillMixin.KEY)?.update(this))continue;
       winner=u.logicController.update(this,vision)||winner;
     }
     const combatMs=profile?now()-mark:0;
@@ -22710,7 +22810,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   }
   snapshot(){
     const started=performance.now();
-    try{return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState()),buildings:this.buildings.map(b=>b.toState()),constructionOrders:StateValue.copy(this.constructionOrders),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
+    try{return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),chargedCasts:StateValue.copy(this.chargedCasts),chargedCastSerial:this.chargedCastSerial.slice(),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState()),buildings:this.buildings.map(b=>b.toState()),constructionOrders:StateValue.copy(this.constructionOrders),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
     finally{const perf=this.perfStats;perf.snapshotMs=performance.now()-started;perf.maxSnapshotMs=Math.max(perf.maxSnapshotMs,perf.snapshotMs);perf.snapshotSamples++}
   }
 }
@@ -23084,6 +23184,7 @@ class RallyStateCodec{
 class RallyCommandCodec{
   static maxBytes=16*1024;
   static fields=Object.freeze({
+    CHARGE_BEGIN:["castId","x","y"],CHARGE_AIM:["castId","x","y"],CHARGE_RELEASE:["castId","x","y"],CHARGE_CANCEL:["castId"],
     MATCH_SURRENDER:[],SET_FLAG:["x","y","forced"],TOGGLE_PRODUCTION:[],
     TRAIN_WORKER:["buildingId"],SET_GAS_WORKERS:["buildingId","target"],OPEN_TACTICAL_CHEST:[],
     CHOOSE_TACTICAL_REWARD:["offerId","rewardId"],REPLACE_SPELL:["offerId","oldSpellId"],CANCEL_SPELL_REPLACEMENT:["offerId"],
@@ -23098,8 +23199,9 @@ class RallyCommandCodec{
     for(const key of fields){
       if(!Object.prototype.hasOwnProperty.call(action,key))continue;
       const value=action[key];
-      if(["x","y","entryX","entryY","exitX","exitY","target"].includes(key)?!Number.isFinite(value):key==="forced"?typeof value!=="boolean":value!==null&&typeof value!=="string")throw new Error("게임 명령 필드의 형식이 잘못되었습니다.");
+      if(key==="castId"?!Number.isSafeInteger(value)||value<=0:["x","y","entryX","entryY","exitX","exitY","target"].includes(key)?!Number.isFinite(value):key==="forced"?typeof value!=="boolean":value!==null&&typeof value!=="string")throw new Error("게임 명령 필드의 형식이 잘못되었습니다.");
     }
+    if(action.type.startsWith("CHARGE_")&&(!Number.isSafeInteger(action.castId)||action.castId<=0||action.type!=="CHARGE_CANCEL"&&(!Number.isFinite(action.x)||!Number.isFinite(action.y))))throw new Error("Invalid charged skill command");
     const required={TRAIN_WORKER:["buildingId"],SET_GAS_WORKERS:["buildingId","target"],CHOOSE_TACTICAL_REWARD:["offerId","rewardId"],REPLACE_SPELL:["offerId","oldSpellId"],CANCEL_SPELL_REPLACEMENT:["offerId"],CAST_SPELL:["spellId"],START_RESEARCH:["research"],CANCEL_BUILDING:["buildingId"],BUILD:["building"]}[action.type]||[];
     if(required.some(key=>action[key]===undefined||action[key]===null||action[key]===""))throw new Error("게임 명령의 필수 필드가 없습니다.");
     if(["SET_FLAG","BUILD","CAST_SPELL"].includes(action.type)){
@@ -23126,7 +23228,7 @@ class RallySimulationAdapter{
     const state=this.stateData();
     // Required root fields come from the authoritative owner, not another save list.
     const kind=value=>value===null?"null":Array.isArray(value)?"array":typeof value;
-    this.rootShape=Object.fromEntries(Object.entries(state).map(([key,value])=>[key,{kind:kind(value),items:Array.isArray(value)&&value.length===2&&!['units','buildings','constructionOrders','projectiles','resources','gasNodes','camps','capturePoints','activeSpells','delayedEffects','scheduled'].includes(key)?value.map(kind):null}]));
+    this.rootShape=Object.fromEntries(Object.entries(state).map(([key,value])=>[key,{kind:kind(value),items:Array.isArray(value)&&value.length===2&&!['units','buildings','constructionOrders','projectiles','resources','gasNodes','camps','capturePoints','activeSpells','delayedEffects','scheduled','chargedCasts'].includes(key)?value.map(kind):null}]));
   }
   stateData(){
     const sim=this.session.sim;
@@ -23148,6 +23250,12 @@ class RallySimulationAdapter{
       if(shape.kind!=="null"&&kind!==shape.kind||shape.items&&(value.length!==2||shape.items.some((type,i)=>type!=="null"&&(type==="array"?!Array.isArray(value[i]):type==="object"?!value[i]||Array.isArray(value[i])||typeof value[i]!=="object":typeof value[i]!==type))))throw new Error(`게임 snapshot의 ${key} 형식이 잘못되었습니다.`);
     }
     for(const key of Object.keys(state))if(StrategySim.stateContract.derived.has(key)||StrategySim.stateContract.presentation.has(key)||Object.prototype.hasOwnProperty.call(this.identity,key)&&key!=="seed")throw new Error(`게임 snapshot에 runtime 필드 ${key}가 있습니다.`);
+    if(!Array.isArray(state.chargedCastSerial)||state.chargedCastSerial.length!==2||state.chargedCastSerial.some(id=>!Number.isSafeInteger(id)||id<0))throw new Error("Invalid charged cast serial");
+    if(!Array.isArray(state.chargedCasts)||state.chargedCasts.length!==2)throw new Error("Invalid charged casts");
+    for(const [side,cast]of state.chargedCasts.entries()){
+      if(cast===null)continue;
+      if(!cast||cast.side!==side||!Number.isSafeInteger(cast.id)||cast.id<1||cast.id!==state.chargedCastSerial[side]||!["gathering","charging","released"].includes(cast.phase)||!["originX","originY","aimX","aimY","startTick","gatherUntil","releaseTick"].every(key=>Number.isFinite(cast[key]))||cast.startTick<0||cast.gatherUntil<cast.startTick||cast.startTick>state.tick||!Array.isArray(cast.memberIds)||!Array.isArray(cast.unavailableIds)||[...cast.memberIds,...cast.unavailableIds].some(id=>typeof id!=="string")||new Set([...cast.memberIds,...cast.unavailableIds]).size!==cast.memberIds.length+cast.unavailableIds.length)throw new Error("Invalid charged cast state");
+    }
     for(const key of ["units","buildings","projectiles"]){
       const ids=new Set();
       for(const entity of state[key]){
@@ -23163,6 +23271,12 @@ class RallySimulationAdapter{
           RallyStateCodec.assertContract(entity,Building.stateContract);
         }
       }
+    }
+    const chargedUnitsById=new Map(state.units.map(unit=>[unit.id,unit]));
+    for(const cast of state.chargedCasts)if(cast)for(const id of [...cast.memberIds,...cast.unavailableIds]){
+      const unit=chargedUnitsById.get(id);
+      // Removed/dead members may remain in the fixed capture list until recovery ends.
+      if(unit?.alive&&(unit.side!==cast.side||!UnitDefinition.get(unit.type)?.chargedSkill))throw new Error("Invalid charged cast member");
     }
     AdaptiveNavigationDemand.validate(state.navigationAdmissions);
     const orderIds=new Set(state.buildings.map(b=>b.id)),builderIds=new Set();
@@ -28103,7 +28217,7 @@ class GLRenderer{
     this.projectileScreenMotionStates=new Map();
     this._unitFacingTransform=null;
     // Client-only long-press feedback. Never enters StrategySim/checksum/export.
-    this.rallyHoldPreview=null;
+    this.chargedSkillGesture=null;
     this.last=performance.now();
     this.particles=[];
 
@@ -28385,8 +28499,21 @@ class GLRenderer{
     return this.renderState.delta(kind,entity.id);
   }
 
+  chargedMemberIds(side){
+    this.chargedMemberCache??=[null,null];
+    const cast=this.snapshot?.chargedCasts?.[side],cached=this.chargedMemberCache[side];
+    if(cached?.cast===cast)return cached.ids;
+    const ids=new Set(cast?.memberIds||[]);this.chargedMemberCache[side]={cast,ids};return ids;
+  }
   unitFacingIntentWorld(u){
     if(!u)return{x:0,y:0,attack:false};
+    const execution=u.behaviorState?.chargedExecution;
+    if(execution)return{x:execution.dirX,y:execution.dirY,attack:true};
+    const cast=this.snapshot?.chargedCasts?.[u.side];
+    if(cast&&cast.phase!=='released'&&this.chargedMemberIds(u.side).has(u.id)&&ChargedSkillMixin.stateReady(u,this.snapshot.tick)){
+      const aim=ChargedSkillGeometry.aimPoint(u,cast,this.snapshot.tick,this.snapshot.tps,this.world);
+      return{x:aim.x-u.x,y:aim.y-u.y,attack:true};
+    }
     if(u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.TELL||u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.ACTIVE){
       const x=Number(u.objectiveBreathDirX)||0,y=Number(u.objectiveBreathDirY)||0;
       if(Math.hypot(x,y)>.001)return{x,y,attack:true};
@@ -28833,12 +28960,6 @@ class GLRenderer{
           // 최신 지휘 명령만 강하게 보이도록 오래된 효과는 정리.
           while(this.flagFx.length>3)this.flagFxPool.release(this.flagFx.shift());
         }
-      }
-    }
-    if(this.rallyHoldPreview?.completed){
-      const f=s?.flags?.[side];
-      if(f?.forced&&Math.hypot(f.x-this.rallyHoldPreview.authX,f.y-this.rallyHoldPreview.authY)<3){
-        this.rallyHoldPreview=null;
       }
     }
     this.processFloatingEvents(s);
@@ -31954,29 +32075,45 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       this.flagFx.length=write;
     }
   }
-  drawRallyHoldPreview(){
-    const p=this.rallyHoldPreview;
-    if(!p)return;
-    const now=performance.now();
-    const elapsed=Math.max(0,now-p.start);
-    const progress=p.completed?1:Math.min(1,elapsed/(p.duration||FORCE_RALLY_HOLD_MS));
-    const [x,y]=this.worldToPx(p.x,p.y),sc=this.sc();
-    const r=Math.max(22,38*sc);
-    this.circle(x,y,r,[1,.62,.12,.08+.08*progress],32);
-    const seg=32,filled=Math.floor(seg*progress);
-    for(let i=0;i<seg;i++){
-      const a0=-Math.PI/2+i/seg*Math.PI*2;
-      const a1=-Math.PI/2+(i+0.72)/seg*Math.PI*2;
-      const col=i<filled?[1,.72,.18,.92]:[1,1,1,.18];
-      this.line(
-        x+Math.cos(a0)*r,y+Math.sin(a0)*r,
-        x+Math.cos(a1)*r,y+Math.sin(a1)*r,
-        Math.max(1.5,3*sc),col
-      );
+  drawChargedSkillPreview(){
+    const side=ConnectionSideUtil.roleSide(this.orientationRole()),cast=this.snapshot?.chargedCasts?.[side],sc=this.sc();
+    if(!cast||!['gathering','charging'].includes(cast.phase)){
+      const pending=this.chargedSkillGesture;
+      if(pending){const [x,y]=this.worldToPx(pending.x,pending.y);this.outlineCircle(x,y,Math.max(12,20*sc),1.5,[.75,.83,.84,.7],16,1)}
+      if(!pending&&!ReplayPresentation.replayPlayer&&UiRuntimeState.value.target.type==='flag'){
+        const hint='탭: 자동전투 깃발 · 정지 홀드: 집결·충전 · 홀드 전 드래그: 맵 이동 · 이후 드래그: 조준 · 놓기: 발사';
+        if(UiRegistry.refs.hint.textContent!==hint)UiRegistry.refs.hint.textContent=hint;
+      }
+      return;
     }
-    const inner=r*(.52-.10*progress);
-    this.outlineCircle(x,y,inner,Math.max(1.2,2*sc),[1,.87,.45,.55+.35*progress],22,1);
-    if(p.completed)this.circle(x,y,Math.max(5,8*sc),[1,.74,.16,.88],12);
+    const [x,y]=this.worldToPx(this.viewX(cast.originX),this.viewY(cast.originY));
+    this.outlineCircle(x,y,ChargedSkillGeometry.gatheringR*sc,Math.max(1,2*sc),[.40,.87,.73,.55],48,1);
+    const members=this.chargedMemberIds(side),unavailable=new Set(cast.unavailableIds);
+    let ready=0,progress=0,unavailableCount=unavailable.size;
+    for(const id of [...cast.memberIds,...cast.unavailableIds]){
+      const unit=this.renderState.entity('unit',id);
+      if(!unit?.alive)continue;
+      const [ux,uy]=this.worldToPx(this.viewX(unit.x),this.viewY(unit.y)),r=Math.max(5,this.unitRenderRadius(unit));
+      if(!members.has(unit.id)||!ChargedSkillMixin.stateReady(unit,this.snapshot.tick)){
+        if(members.has(unit.id))unavailableCount++;
+        this.outlineCircle(ux,uy,r+4,1,[.60,.62,.64,.65],12,1);continue;
+      }
+      ready++;
+      const target=ChargedSkillGeometry.aimPoint(unit,cast,this.snapshot.tick,this.snapshot.tps||SimulationTiming.tps(),this.world);
+      progress=Math.max(progress,target.progress);
+      const [tx,ty]=this.worldToPx(this.viewX(target.x),this.viewY(target.y));
+      this.outlineCircle(ux,uy,r+4,Math.max(1,2*sc),[.72,.93,.57,.9],12,1);
+      this.line(ux,uy,tx,ty,Math.max(1,1.5*sc),[.83,.92,.55,.36]);
+      this.outlineCircle(tx,ty,Math.max(7,11*sc),Math.max(1.3,2*sc),[1,.85,.38,.9],16,1);
+      this.line(tx-5,ty,tx+5,ty,1.5,[1,.95,.73,.95]);this.line(tx,ty-5,tx,ty+5,1.5,[1,.95,.73,.95]);
+    }
+    const [ax,ay]=this.worldToPx(this.viewX(cast.aimX),this.viewY(cast.aimY));
+    // A connected offset indicator keeps the aim readable above a mobile finger.
+    if(this.chargedSkillGesture?.pointerType==='touch'){this.line(ax,ay,ax,ay-48,1,[1,.88,.48,.6]);this.outlineCircle(ax,ay-48,8,2,[1,.88,.48,.9],12,1)}
+    if(!ReplayPresentation.replayPlayer&&UiRuntimeState.value.target.type==='flag'){
+      const message=`${cast.phase==='gathering'?'집결':'충전 '+Math.round(progress*100)+'%'} · 준비 ${ready} · 사용 불가 ${unavailableCount} · 드래그 조준, 놓으면 발사 · 가까운 착탄점은 지나치지 않습니다`;
+      if(UiRegistry.refs.hint.textContent!==message)UiRegistry.refs.hint.textContent=message;
+    }
   }
   drawBuildPreview(){
     const p=this.buildPreview;
@@ -32300,7 +32437,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.drawFog();
     this.begin();this.setRenderDepth(0);
     this.drawSharedShieldsOverlay();this.drawFogLandmarks();this.drawActiveSpells();this.flush();
-    this.begin();this.drawFlag();this.drawRallyHoldPreview();this.flush();
+    this.begin();this.drawFlag();this.drawChargedSkillPreview();this.flush();
   }
   renderUiFxPass(){
     if(this.spellPreview){this.begin();this.drawSpellPreview();this.flush()}
@@ -33541,8 +33678,8 @@ class UiController{
   if(m.type==="flag"){
     const forced=!!ActiveViewState.snap?.flags?.[ConnectionSideUtil.roleSide(ActiveViewState.role)]?.forced;
     UiRegistry.refs.modeTip.textContent=forced
-      ? "⚡ 강제 이동 깃발 · 탭: 일반 깃발 · 꾹 누르기: 강제 위치 변경 · 드래그: 맵 이동"
-      : "🚩 깃발 모드 · 탭: 일반 집결 · 꾹 누르기: 강제 이동 · 드래그: 맵 이동";
+      ? "⚡ 강제 이동 깃발 · 탭: 일반 집결 · 정지 홀드: 집결·충전 · 이후 드래그: 조준 · 놓기: 발사"
+      : "🚩 탭: 자동전투 깃발 · 정지 홀드: 집결·충전 · 홀드 전 드래그: 맵 이동 · 이후 드래그: 조준 · 놓기: 발사";
     CommandPresentation.syncCommandDock();
     if(!silent)LogUtil.log("🚩 깃발 이동 모드");
     return;
@@ -34833,7 +34970,7 @@ class ReplayPresentation{
   ActiveViewState.renderer.buildPreview=null;
   ActiveViewState.renderer.spellPreview=null;
   ActiveViewState.renderer.pendingBuildGhosts=[];
-  ActiveViewState.renderer.rallyHoldPreview=null;
+  ActiveViewState.renderer.chargedSkillGesture=null;
   ActiveViewState.renderer.predictedFlag=null;
   ActiveViewState.renderer.selectedBuildingId=null;
 
@@ -34858,7 +34995,7 @@ class ReplayPresentation{
   ActiveViewState.renderer.buildPreview=null;
   ActiveViewState.renderer.spellPreview=null;
   ActiveViewState.renderer.pendingBuildGhosts=[];
-  ActiveViewState.renderer.rallyHoldPreview=null;
+  ActiveViewState.renderer.chargedSkillGesture=null;
   ActiveViewState.renderer.predictedFlag=null;
   ActiveViewState.renderer.selectedBuildingId=null;
   ActiveViewState.renderer.setSnapshot(s,{liveTargets:false});ActiveViewState.minimap?.set(ActiveViewState.renderer,s);
@@ -34905,7 +35042,7 @@ class ReplayPresentation{
   if(UiRuntimeState.value.modal==="spell-choice")UiController.closeUiModal("spell-choice");SpellPresentation.setSpellChoicePhase("idle");
   UiController.invalidatePanelHtmlCaches({unit:true,reinforcement:true});
   if(ActiveViewState.renderer){
-    ActiveViewState.renderer.pendingBuildGhosts=[];ActiveViewState.renderer.predictedFlag=null;ActiveViewState.renderer.latencySpellFx=[];ActiveViewState.renderer.buildPreview=null;ActiveViewState.renderer.spellPreview=null;ActiveViewState.renderer.rallyHoldPreview=null;
+    ActiveViewState.renderer.pendingBuildGhosts=[];ActiveViewState.renderer.predictedFlag=null;ActiveViewState.renderer.latencySpellFx=[];ActiveViewState.renderer.buildPreview=null;ActiveViewState.renderer.spellPreview=null;ActiveViewState.renderer.chargedSkillGesture=null;
   }
   UiController.closeUiModal("create");UiController.closeUiModal("join");
   
@@ -36897,15 +37034,30 @@ class BattlePresentation{
     }
   };
 
-  const cancelForcedRallyHold=(clearPreview=true)=>{
-    if(ActiveViewState.drag?.forceRallyHold?.timer){
-      clearTimeout(ActiveViewState.drag.forceRallyHold.timer);
-      ActiveViewState.drag.forceRallyHold.timer=0;
+  let nextChargedCastId=0;
+  const pendingChargeCancels=new Map();
+  let chargeCancelRetry=0;
+  const retryChargeCancels=()=>{
+    chargeCancelRetry=0;
+    for(const [key,hold] of pendingChargeCancels){
+      if(hold.session!==MatchLifecycle.activeSession()||hold.session.disposed||hold.session.simEnded||hold.session.command({type:'CHARGE_CANCEL',castId:hold.castId}))pendingChargeCancels.delete(key);
     }
-    if(clearPreview&&ActiveViewState.renderer&&!ActiveViewState.renderer.rallyHoldPreview?.completed)ActiveViewState.renderer.rallyHoldPreview=null;
+    if(pendingChargeCancels.size)chargeCancelRetry=setTimeout(retryChargeCancels,100);
+  };
+  const cancelChargedSkillHold=(cancelCast=true)=>{
+    const hold=ActiveViewState.drag?.chargedSkillHold;
+    if(hold?.timer){clearTimeout(hold.timer);hold.timer=0}
+    if(cancelCast&&hold?.accepted){
+      if(!hold.session.command({type:'CHARGE_CANCEL',castId:hold.castId})){
+        pendingChargeCancels.set(hold.castId,hold);
+        if(!chargeCancelRetry)chargeCancelRetry=setTimeout(retryChargeCancels,100);
+      }
+      hold.accepted=false;
+    }
+    if(ActiveViewState.renderer)ActiveViewState.renderer.chargedSkillGesture=null;
   };
 
-  const armForcedRallyHold=e=>{
+  const armChargedSkillHold=e=>{
     // Replay canvas is camera-only. Never arm any gameplay target/long-press state.
     if(ReplayPresentation.replayPlayer)return;
     if(UiRuntimeState.value.target.type!=="flag"||!ActiveViewState.renderer||!ActiveViewState.snap||!ActiveViewState.drag)return;
@@ -36913,26 +37065,25 @@ class BattlePresentation{
     const a=UiController.viewToAuth(vx,vy);
     // Long press on an own building remains building selection, never a rally order.
     if(BuildingPresentation.ownBuildingAt(a.x,a.y))return;
-    const hold={
-      x:vx,y:vy,authX:a.x,authY:a.y,start:performance.now(),
-      duration:FORCE_RALLY_HOLD_MS,triggered:false,timer:0
-    };
-    ActiveViewState.drag.forceRallyHold=hold;
-    ActiveViewState.renderer.rallyHoldPreview={...hold,completed:false};
+    const session=MatchLifecycle.activeSession(),side=ConnectionSideUtil.roleSide(ActiveViewState.role);
+    const hold={x:vx,y:vy,authX:a.x,authY:a.y,session,side,castId:0,triggered:false,accepted:false,timer:0,lastAimTick:-1,pointerType:e.pointerType};
+    ActiveViewState.drag.chargedSkillHold=hold;
     hold.timer=setTimeout(()=>{
       if(!ActiveViewState.drag||ActiveViewState.drag.id!==e.pointerId||ActiveViewState.drag.moved||UiRuntimeState.value.target.type!=="flag")return;
-      const live=ActiveViewState.drag.forceRallyHold;
+      const live=ActiveViewState.drag.chargedSkillHold;
       if(!live||live!==hold||live.triggered)return;
       const sess=MatchLifecycle.activeSession();
-      if(!sess?.sim)return;
+      if(!sess?.sim||sess!==session)return;
       live.triggered=true;
       live.timer=0;
-      ActiveViewState.renderer.rallyHoldPreview={...hold,completed:true};
-      ActiveViewState.renderer.predictFlag(hold.authX,hold.authY,true);
-      sess.command({type:"SET_FLAG",x:hold.authX,y:hold.authY,forced:true});
-      if(navigator.vibrate)navigator.vibrate([22,32,35]);
-      LogUtil.log("⚡ 강제 이동 깃발 명령 접수 · 교전 무시");
-    },FORCE_RALLY_HOLD_MS);
+      hold.castId=nextChargedCastId=Math.max(nextChargedCastId,sess.sim.chargedCastSerial?.[side]||0)+1;
+      hold.accepted=sess.command({type:'CHARGE_BEGIN',castId:hold.castId,x:hold.authX,y:hold.authY});
+      if(hold.accepted){
+        ActiveViewState.renderer.chargedSkillGesture={castId:hold.castId,side,x:vx,y:vy,pointerType:e.pointerType};
+        if(navigator.vibrate)navigator.vibrate(18);
+        LogUtil.log('집결·충전 명령 접수 · 전장에 확정된 준비 상태와 착탄점 표시');
+      }else LogUtil.log('현재 스킬 명령을 접수할 수 없습니다.');
+    },CHARGED_SKILL_HOLD_MS);
   };
 
   const battlefieldPointerDown=e=>{
@@ -36947,7 +37098,7 @@ class BattlePresentation{
     else{
       ActiveViewState.renderer.buildPreview=null;
       ActiveViewState.renderer.spellPreview=null;
-      ActiveViewState.renderer.rallyHoldPreview=null;
+      ActiveViewState.renderer.chargedSkillGesture=null;
       ActiveViewState.renderer.predictedFlag=null;
       ActiveViewState.renderer.pendingBuildGhosts=[];
       ActiveViewState.renderer.selectedBuildingId=null;
@@ -36964,7 +37115,7 @@ class BattlePresentation{
       moved:false,
       started:performance.now()
     };
-    armForcedRallyHold(e);
+    armChargedSkillHold(e);
   };
 
   const battlefieldPointerMove=e=>{
@@ -36974,9 +37125,19 @@ class BattlePresentation{
     e.preventDefault();
 
     const total=Math.hypot(e.clientX-ActiveViewState.drag.x,e.clientY-ActiveViewState.drag.y);
-    if(total>12&&!ActiveViewState.drag.moved){
+    const hold=ActiveViewState.drag.chargedSkillHold;
+    if(hold?.triggered){
+      if(hold.accepted&&UiRuntimeState.value.target.type==='flag'){
+        const [vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY),a=UiController.viewToAuth(vx,vy),tick=hold.session.sim?.tick;
+        hold.aimX=a.x;hold.aimY=a.y;
+        // Aim updates have a bounded command rate; release always sends the final point.
+        if(tick!==hold.lastAimTick&&hold.session.command({type:'CHARGE_AIM',castId:hold.castId,x:a.x,y:a.y}))hold.lastAimTick=tick;
+      }else cancelChargedSkillHold(true);
+      ActiveViewState.drag.lastX=e.clientX;ActiveViewState.drag.lastY=e.clientY;return;
+    }
+    if(total>CHARGED_SKILL_DRAG_PX&&!ActiveViewState.drag.moved){
       ActiveViewState.drag.moved=true;
-      cancelForcedRallyHold(true);
+      cancelChargedSkillHold(true);
     }
 
     // 건설 모드에서는 짧은 손가락 흔들림을 카메라 드래그로 오인하지 않는다.
@@ -36999,7 +37160,7 @@ class BattlePresentation{
 
   const battlefieldPointerCancel=e=>{
     if(ActiveViewState.drag&&ActiveViewState.drag.id===e.pointerId){
-      cancelForcedRallyHold(true);
+      cancelChargedSkillHold(true);
       ActiveViewState.drag=null;
     }
   };
@@ -37009,13 +37170,24 @@ class BattlePresentation{
     e.preventDefault();
     if(!ActiveViewState.drag||ActiveViewState.drag.id!==e.pointerId)return;
 
-    const moved=ActiveViewState.drag.moved||Math.hypot(e.clientX-ActiveViewState.drag.x,e.clientY-ActiveViewState.drag.y)>14;
-    const forceHold=ActiveViewState.drag.forceRallyHold||null;
-    if(forceHold?.timer)clearTimeout(forceHold.timer);
-    if(ActiveViewState.renderer&&!forceHold?.triggered)ActiveViewState.renderer.rallyHoldPreview=null;
+    const moved=ActiveViewState.drag.moved||Math.hypot(e.clientX-ActiveViewState.drag.x,e.clientY-ActiveViewState.drag.y)>CHARGED_SKILL_DRAG_PX;
+    const hold=ActiveViewState.drag.chargedSkillHold||null;
+    if(hold?.timer)clearTimeout(hold.timer);
+    if(hold?.triggered){
+      if(hold.accepted){
+        const [vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY),a=UiController.viewToAuth(vx,vy);
+        if(UiRuntimeState.value.target.type==='flag'){
+          if(!hold.session.command({type:'CHARGE_RELEASE',castId:hold.castId,x:a.x,y:a.y})){
+            cancelChargedSkillHold(true);LogUtil.log('발사 명령을 접수할 수 없어 충전을 취소합니다.');
+          }
+        }else cancelChargedSkillHold(true);
+      }
+      if(ActiveViewState.renderer)ActiveViewState.renderer.chargedSkillGesture=null;
+      ActiveViewState.drag=null;return;
+    }
     ActiveViewState.drag=null;
     if(!ReplayPresentation.replayPlayer)pointerPreview(e);
-    if(moved||forceHold?.triggered)return;
+    if(moved)return;
     if(ReplayPresentation.replayPlayer)return;
 
     const[vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY);
@@ -37081,7 +37253,7 @@ class BattlePresentation{
     if(UiRuntimeState.value.target.type==="flag"){
       ActiveViewState.renderer?.predictFlag(a.x,a.y,false);
       sess.command({type:"SET_FLAG",x:a.x,y:a.y,forced:false});
-      if(ActiveViewState.renderer)ActiveViewState.renderer.rallyHoldPreview=null;
+      if(ActiveViewState.renderer)ActiveViewState.renderer.chargedSkillGesture=null;
       if(navigator.vibrate)navigator.vibrate(18);
       LogUtil.log("✓ 일반 집결 깃발 명령 접수");
       return;
@@ -37127,9 +37299,9 @@ class BattlePresentation{
       else if(point.type==='move')battlefieldPointerMove(event);
       else{
         try{if(point.type==='up')battlefieldPointerUp(event);else battlefieldPointerCancel(event)}
-        finally{if(ActiveViewState.drag?.id===point.pointerId){cancelForcedRallyHold(true);ActiveViewState.drag=null}}
+        finally{if(ActiveViewState.drag?.id===point.pointerId){cancelChargedSkillHold(true);ActiveViewState.drag=null}}
       }
-    },onRelease:()=>{cancelForcedRallyHold(true);ActiveViewState.drag=null;pointerInteractions.cancelActive()}
+    },onRelease:()=>{cancelChargedSkillHold(true);ActiveViewState.drag=null;pointerInteractions.cancelActive()}
   });
 
 }
@@ -37502,7 +37674,7 @@ class BattlePresentation{
     const forced=!!ActiveViewState.snap?.flags?.[ConnectionSideUtil.roleSide(ActiveViewState.role)]?.forced;
     UiRegistry.refs.hint.textContent=forced
       ? `⚡ 강제 이동 깃발 활성 · 아군 전투 유닛은 교전을 무시하고 깃발로 이동합니다. 전장을 짧게 탭하면 일반 깃발로 전환됩니다.`
-      : `깃발로 주력 전선을 지휘하세요. 전장 탭은 일반 집결, 꾹 누르기는 강제 이동 깃발입니다.`;
+      : `깃발로 주력 전선을 지휘하세요. 탭은 기존 자동전투 집결입니다. 0.25초 정지 홀드는 그때 원 안의 준비된 병력만 집결·충전합니다. 이후 드래그로 조준하고 놓으면 발사하며, 홀드 전 드래그는 맵을 이동합니다. 가까운 포인터보다 멀리 발사하지 않습니다.`;
   }else if(UiRuntimeState.value.target.type==="spell"){
     const d=SpellDefinition.get(UiRuntimeState.value.target.spellId);
     UiRegistry.refs.hint.innerHTML=`${d?.icon||"✦"} <b>${d?.name||"스펠"}</b> · ${UiRuntimeState.value.target.spellId==="tunnel"?(UiRuntimeState.value.target.stage==="entry"?"입구는 실제 시야 안에서 지정":"출구는 시야 경계 밖 추가 범위까지 지정 가능"):"현재 시야 + 추가 투사 범위 안을 탭"}`;

@@ -10,6 +10,8 @@ const chromium = require('./netcode-qa-module.cjs').wrapChromium(nativeChromium)
 const htmlPath = path.resolve(process.argv[2] || path.join(__dirname, '..', 'index.html'));
 const selectedMode=process.env.QA_NETCODE_MODE||'lockstep';
 assert(['lockstep','rollback'].includes(selectedMode),'Supported UI netcode mode');
+const pinnedSdkVersion=require('./setup-gamekit.cjs').readGamekit(path.resolve(__dirname,'..')).modules.rollback.toString('utf8').match(/\b(?:var|const)\s+VERSION\s*=\s*["']([^"']+)["']/)?.[1];
+assert(pinnedSdkVersion,'Pinned rollback module declares its version');
 const output = path.resolve(__dirname, '..', '.qa', 'netcode-ui-e2e-'+selectedMode);
 const observer = `
 window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntimeState,
@@ -208,7 +210,7 @@ async function runRole(browser, html, humanRole) {
       .every(s=>s.netcodeSession?.ready&&s.sim?.tick>=4),null,{timeout:15000});
     const initial=await page.evaluate(()=>window.__netcodeE2E.inspect());
     fs.writeFileSync(path.join(output,humanRole+'-initial.json'),JSON.stringify(initial,null,2));
-    assert.equal(initial.sdkVersion,'0.2.0-dev','The URL imported SDK actually runs');
+    assert.equal(initial.sdkVersion,pinnedSdkVersion,'The pinned SDK actually runs');
     assert.ok(initial.sdkRevision.startsWith('gamekit:'),'Pinned shared SDK provenance');
     assert.equal(initial.renderer.backend,'WebGL');
     assert(Object.values(initial.sessions).every(s=>s.profile.mode===selectedMode&&s.tps===20),'UI selection preserves chosen TPS and selected mode on both peers');

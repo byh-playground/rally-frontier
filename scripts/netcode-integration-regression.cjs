@@ -8,6 +8,8 @@ const chromium = require('./netcode-qa-module.cjs').wrapChromium(nativeChromium)
 const mode=process.env.QA_NETCODE_MODE||'lockstep';
 assert(['lockstep','rollback'].includes(mode));
 const htmlPath = path.resolve(process.argv[2] || path.join(__dirname, '..', 'index.html'));
+const pinnedSdkVersion=require('./setup-gamekit.cjs').readGamekit(path.resolve(__dirname,'..')).modules.rollback.toString('utf8').match(/\b(?:var|const)\s+VERSION\s*=\s*["']([^"']+)["']/)?.[1];
+assert(pinnedSdkVersion,'Pinned rollback module declares its version');
 const output = path.resolve(__dirname, '..', '.qa', 'netcode-integration-'+mode);
 const source = fs.readFileSync(htmlPath, 'utf8').replace('economy:{startingResources:{minerals:0,gas:0}}','economy:{startingResources:{minerals:10000,gas:10000}}'); // Equal pre-game resource fixture on both peers.
 const consumer = source;
@@ -30,7 +32,7 @@ window.__netcodeIntegration={GameSession,LoopbackTransport,AppLifecycle,
   CONFIG,RallyStateCodec,RallyCommandCodec,StrategySim,BuildingDefinition,BuildingPresentation,SIM_VERSION,BUILD_ID};
 ` + source.slice(end);
 
-async function integration() {
+async function integration(expectedSdkVersion) {
   const q=window.__netcodeIntegration,sdk=window.RallyNetcode,mode=q.CONFIG.netcode.mode;
   const check=(yes,message)=>{if(!yes)throw Error(message);};
   const equal=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
@@ -42,7 +44,7 @@ async function integration() {
       await sleep(10);
     }
   };
-  check(sdk?.VERSION==='0.2.0-dev','URL imported SDK is available');
+  check(sdk?.VERSION===expectedSdkVersion,'Pinned imported SDK is available');
   check(window.RallyNetcodeSource?.pinned===true&&window.RallyNetcodeSource?.repository==='byh-playground/bloom-gamekit',
     'SDK uses the pinned shared gamekit modules');
   const hostTransport=new q.LoopbackTransport('host','NETCODE-INTEGRATION');
@@ -66,6 +68,11 @@ async function integration() {
       send(value){
         check(value instanceof Uint8Array,'SDK-selected carrier receives actual typed frames');
         const bytes=value.slice();packets.push({role:s.role,carrier,bytes:bytes.length});
+        // Reservations now travel reliably. Delay them with the input in rollback
+        // mode to exercise a truly unannounced late command rather than a reserved hold.
+        if(s.role==='guest'&&carrier==='control'&&faults.mode==='inputs'&&mode==='rollback'){
+          faults.held.push(bytes);return;
+        }
         if(s.role==='guest'&&carrier==='inputs'&&faults.mode==='inputs'){
           faults.count++;
           if(faults.count<=2){faults.dropped++;return;}
@@ -94,7 +101,9 @@ async function integration() {
   const step=async(n=1)=>{
     for(let i=0;i<n;i++){
       noFatal();
-      runtimeNow+=50;
+      // GameSession.command refreshes its public clock from performance.now().
+      // Keep the harness clock current when a real large RTS step takes >50ms.
+      runtimeNow=Math.max(runtimeNow+50,performance.now());
       for(const s of sessions)if(!s.simEnded)s.stepSimulationOnce(runtimeNow);
       await poll();
       maxGameTickDrift=Math.max(maxGameTickDrift,Math.abs(host.sim.tick-guest.sim.tick));
@@ -174,7 +183,7 @@ async function integration() {
     else check(rollback.rollbacks===0&&rollback.resimulatedTicks===0&&rollback.predictedTicks===0,'Lockstep fault recovery never predicts or rolls back gameplay');
     check(rollback.maxRollbackDepth<=host.netcodeSession.profile.rollbackWindowTicks,
       'The actual game rollback respects the SDK prediction/history limit');
-    check(rollback.holds+rollback.stalls>0,'Faults exercised real SDK hold/stall pacing');
+    check(rollback.holds+rollback.stalls>0||mode==='rollback'&&rollback.rollbacks>0,'Faults exercised real SDK stall or bounded rollback pacing');
     check(maxGameTickDrift<=host.netcodeSession.profile.rollbackWindowTicks+
       host.netcodeSession.profile.tickDriftThreshold+1,'Actual game peer drift stays within SDK pacing and rollback bounds');
     const afterFaults=confirmedEquality('After packet loss/delay/reordering');
@@ -255,7 +264,7 @@ async function integration() {
     await page.route('http://netcode-integration.local/**',route=>route.fulfill({contentType:'text/html',body:html}));
     await page.goto('http://netcode-integration.local/',{waitUntil:'domcontentloaded'});
     await page.waitForFunction(()=>window.__netcodeIntegration);
-    const result=await page.evaluate(integration);
+    const result=await page.evaluate(integration,pinnedSdkVersion);
     assert.deepEqual(errors,[],'No uncaught application errors');
     fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({htmlPath,result,pageErrors:errors},null,2));
     console.log(JSON.stringify({htmlPath,result:{...result,events:result.events.filter(e=>e.kind!=='log')},pageErrors:errors},null,2));
