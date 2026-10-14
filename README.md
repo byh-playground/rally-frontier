@@ -1,6 +1,6 @@
 # RALLY FRONTIER
 
-현재 호환 식별자는 **SIM_VERSION 190**입니다. GameKit source `2712703c83923f16bb70454ea60e2ac533489ef8` / dist `e108fe481aa7314974c39974a169b549500bf12c` 및 manifest v2를 사용하며, `gamekit.lock.json`의 SHA-256으로 빌드 bytes를 검증합니다. protocol 3 세션에 참여하는 모든 클라이언트는 같은 배포본으로 갱신해야 합니다. 기본 lockstep, 선택 가능한 rollback 및 기존 TPS/게임 규칙은 유지합니다. `queueCommand`의 즉시 예약 전에 현재 clock을 갱신하며 rollback 완료 이벤트에서 교정된 표시를 반영합니다. Rally는 `LocalInputPreview`를 연결하지 않으므로 이번 갱신을 로컬 예측 개선으로 표현하지 않습니다.
+현재 호환 식별자는 **SIM_VERSION 190**입니다. GameKit v0.3.1 source `baa96876876a08013ad28b5a71c83bfadd285fab` / dist `72b09b260edf9650353017acb49c06873fe9f5a1` 및 manifest v2를 사용하며, `gamekit.lock.json`의 SHA-256으로 빌드 bytes를 검증합니다. protocol 3 세션에 참여하는 모든 클라이언트는 같은 배포본으로 갱신해야 합니다. 기본 lockstep, 선택 가능한 rollback 및 기존 TPS/게임 규칙은 유지합니다. `queueCommand`의 즉시 예약 전에 현재 clock을 갱신하며 rollback 완료 이벤트에서 교정된 표시를 반영합니다. Rally는 `LocalInputPreview`를 연결하지 않으므로 이번 갱신을 로컬 예측 개선으로 표현하지 않습니다.
 
 기존 실제 RTC UI 흐름은 `QA_NETCODE_MODE=lockstep|rollback QA_ROLES=host node scripts/netcode-ui-e2e.cjs _site/index.html`로 모드를 선택해 확인합니다(PowerShell에서는 `$env:`로 설정). 결과는 `.qa/netcode-ui-e2e-<mode>/`에 생성됩니다. 기본 명령의 모드는 lockstep입니다.
 
