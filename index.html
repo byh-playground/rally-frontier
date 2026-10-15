@@ -5241,6 +5241,14 @@ body.result-mode .result-card {
   font-size: 9px;
   font-weight: 850;
 }
+.single-status[data-tone="error"] {
+  border-color: #d47b75;
+  background: #fff3f1;
+  color: #7c2924;
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: left;
+}
 
 /* 명령 패널 */
 .battle-command-dock {
@@ -35217,14 +35225,34 @@ class ReplayPresentation{
   if(UiRegistry.refs.replaySpeed)UiRegistry.refs.replaySpeed.value=String(ReplayPresentation.replayPlayer.speed);
   if(UiRegistry.refs.replayZoomValue)UiRegistry.refs.replayZoomValue.textContent=`${Math.round((ReplayPresentation.replayPlayer.zoom||1)*100)}%`;
 }
-  static startReplay(data){
+  static replayImportFailureMessage(error){
+  const detail=String(error?.message||error||"");
+  let reason="파일을 읽거나 검증하지 못했습니다. JSON 형식과 필수 데이터가 올바른지 확인하세요.";
+  if(error instanceof SyntaxError||/json|unexpected token|unexpected end/i.test(detail))reason="JSON으로 읽을 수 없습니다. 파일이 잘렸거나 JSON 형식이 아닙니다.";
+  else if(/version|sim_version|버전/i.test(detail))reason="다른 게임 버전에서 저장한 리플레이입니다. 현재 게임 버전과 맞는 파일을 선택하세요.";
+  else if(/checksum|check.?point|체크포인트|체크섬/i.test(detail))reason="시작 상태 체크포인트 검증에 실패했습니다. 파일이 손상되었을 수 있습니다.";
+  else if(/protocol|rally frontier|형식/i.test(detail))reason="지원하지 않는 형식입니다. RALLY FRONTIER에서 저장한 리플레이 JSON을 선택하세요.";
+  else if(/command|payload|초기 상태|리플레이 데이터|손상/i.test(detail))reason="리플레이의 명령 기록이나 초기 상태가 없거나 손상되었습니다.";
+  return `리플레이를 열지 못했습니다. ${reason} 현재 화면은 유지했습니다. 정상 파일을 선택해 다시 시도하세요.`;
+}
+  static showReplayImportError(error){
+  const status=UiRegistry.refs.singleStatus;if(!status)return;
+  status.textContent="";status.dataset.tone="error";status.setAttribute("role","alert");status.setAttribute("aria-live","assertive");
+  UiController.setElementVisible(status,true);status.textContent=this.replayImportFailureMessage(error);
+}
+  static clearReplayImportError(){
+  const status=UiRegistry.refs.singleStatus;if(!status)return;
+  status.textContent="";delete status.dataset.tone;status.removeAttribute("role");status.setAttribute("aria-live","polite");
+  UiController.setElementVisible(status,false);
+}
+  static startReplay(data,{onError=null}={}){
   let loadedData,player,snapshot;
   try{
     ReplayPolicy.validateReplayPayload(data);
     loadedData=CloneUtil.clone(data);
     player=new ReplayPlayer(loadedData);
     snapshot=player.sim.snapshot();
-  }catch(e){player?.stop();LogUtil.log(`⚠ 리플레이 열기 실패 · ${e.message||e}`);return false}
+  }catch(e){player?.stop();LogUtil.log(`⚠ 리플레이 열기 실패 · ${e.message||e}`);onError?.(e);return false}
   CampaignPresentation.clear();CampaignRuntime.clear();
   MatchLifecycle.disposeMatches("replay-start");
   ReplayPresentation.replayPlayer?.stop();
@@ -39486,8 +39514,13 @@ UiRegistry.refs.replayWatchBtn?.addEventListener("click",()=>{
 UiRegistry.refs.replayOpenBtn?.addEventListener("click",()=>UiRegistry.refs.replayFileInput?.click());
 UiRegistry.refs.replayFileInput?.addEventListener("change",async()=>{
   const file=UiRegistry.refs.replayFileInput.files?.[0];if(!file)return;
-  try{const data=JSON.parse(await file.text());ReplayPresentation.startReplay(data)}catch(e){LogUtil.log(`⚠ 리플레이 열기 실패 · ${e.message||e}`)}
-  UiRegistry.refs.replayFileInput.value="";
+  ReplayPresentation.clearReplayImportError();
+  try{
+    const data=JSON.parse(await file.text());
+    const started=ReplayPresentation.startReplay(data,{onError:error=>ReplayPresentation.showReplayImportError(error)});
+    if(started)ReplayPresentation.clearReplayImportError();
+  }catch(e){LogUtil.log(`⚠ 리플레이 열기 실패 · ${e.message||e}`);ReplayPresentation.showReplayImportError(e)}
+  finally{UiRegistry.refs.replayFileInput.value=""}
 });
 UiRegistry.refs.replayPlayPauseBtn?.addEventListener("click",()=>ReplayPresentation.replayPlayer?.setPlaying(!ReplayPresentation.replayPlayer.playing));
 UiRegistry.refs.replaySpeed?.addEventListener("change",()=>ReplayPresentation.replayPlayer?.setSpeed(UiRegistry.refs.replaySpeed.value));
