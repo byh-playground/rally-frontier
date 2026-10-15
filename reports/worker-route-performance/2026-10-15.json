@@ -1,0 +1,1566 @@
+{
+  "before": "18ebc60474d75ea9ec7ae9c8e21281433b5e4da6",
+  "after": "94cf1fabe3d0f7e48b08e0803fc70ef51f6197b0",
+  "controlled": {
+    "rows": [
+      {
+        "sha": "18ebc60474d75ea9ec7ae9c8e21281433b5e4da6",
+        "count": 1,
+        "run": 0,
+        "sourceHash": "cc44e62e1aa17d1550787d7def296c8ee2d6329c63c0bfc1aab014f60ba4b33e",
+        "browser": "155.0.4283.45",
+        "data": {
+          "elapsedMs": 292.30000000447035,
+          "income": 3,
+          "units": 1,
+          "seed": 3919536611,
+          "mapHash": 1323913035,
+          "inputs": [],
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "isolated": false
+        },
+        "summary": {
+          "initial": {
+            "stepMs": {
+              "n": 100,
+              "mean": 2.1079999999701977,
+              "median": 0.29999999701976776,
+              "p95": 1.7999999970197678,
+              "max": 155.5
+            },
+            "nav": {
+              "routeQueries": 83,
+              "directQueries": 35,
+              "astarQueries": 76,
+              "astarExpanded": 16037,
+              "funnelQueries": 76,
+              "regionHits": 74,
+              "fieldsBuilt": 0,
+              "fieldHits": 0,
+              "sharedAstarHits": 0,
+              "layersBuilt": 1,
+              "meshBuildMs": 142.10000000149012,
+              "fieldBuildMs": 0,
+              "workerRouteBuilds": 0,
+              "workerRouteReuses": 0,
+              "workerRouteShared": 0,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 0
+            },
+            "snapshotMs": {
+              "n": 10,
+              "mean": 0.7100000001490117,
+              "median": 0.3999999985098839,
+              "p95": 1.0999999940395355,
+              "max": 2.5
+            },
+            "snapshotBytes": {
+              "n": 10,
+              "mean": 4613.6,
+              "median": 4613,
+              "p95": 4617,
+              "max": 4617
+            }
+          },
+          "steady": {
+            "stepMs": {
+              "n": 200,
+              "mean": 0.298999999910593,
+              "median": 0.20000000298023224,
+              "p95": 0.7000000029802322,
+              "max": 1.0999999940395355
+            },
+            "nav": {
+              "routeQueries": 166,
+              "directQueries": 70,
+              "astarQueries": 152,
+              "astarExpanded": 31902,
+              "funnelQueries": 152,
+              "regionHits": 152,
+              "fieldsBuilt": 0,
+              "fieldHits": 0,
+              "sharedAstarHits": 0,
+              "layersBuilt": 0,
+              "meshBuildMs": 0,
+              "fieldBuildMs": 0,
+              "workerRouteBuilds": 0,
+              "workerRouteReuses": 0,
+              "workerRouteShared": 0,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 0
+            },
+            "snapshotMs": {
+              "n": 20,
+              "mean": 0.3300000000745058,
+              "median": 0.29999999701976776,
+              "p95": 0.5,
+              "max": 0.6999999955296516
+            },
+            "snapshotBytes": {
+              "n": 20,
+              "mean": 4615.05,
+              "median": 4614,
+              "p95": 4617,
+              "max": 4617
+            }
+          }
+        },
+        "errors": []
+      },
+      {
+        "sha": "94cf1fabe3d0f7e48b08e0803fc70ef51f6197b0",
+        "count": 1,
+        "run": 1,
+        "sourceHash": "a6c183d16fbe7d03f2207345f31318699b4c57ccfb83337cda134d49f641f2f8",
+        "browser": "155.0.4283.45",
+        "data": {
+          "elapsedMs": 208,
+          "income": 3,
+          "units": 1,
+          "seed": 3919536611,
+          "mapHash": 1323913035,
+          "inputs": [],
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "isolated": false
+        },
+        "summary": {
+          "initial": {
+            "stepMs": {
+              "n": 100,
+              "mean": 1.6020000001043082,
+              "median": 0.19999999552965164,
+              "p95": 0.6000000014901161,
+              "max": 137.30000000447035
+            },
+            "nav": {
+              "routeQueries": 2,
+              "directQueries": 0,
+              "astarQueries": 2,
+              "astarExpanded": 619,
+              "funnelQueries": 2,
+              "regionHits": 0,
+              "fieldsBuilt": 0,
+              "fieldHits": 0,
+              "sharedAstarHits": 0,
+              "layersBuilt": 1,
+              "meshBuildMs": 123.20000000298023,
+              "fieldBuildMs": 0,
+              "workerRouteBuilds": 2,
+              "workerRouteReuses": 81,
+              "workerRouteShared": 0,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 0
+            },
+            "snapshotMs": {
+              "n": 10,
+              "mean": 0.5899999998509884,
+              "median": 0.3999999985098839,
+              "p95": 0.7000000029802322,
+              "max": 1.6000000014901161
+            },
+            "snapshotBytes": {
+              "n": 10,
+              "mean": 5349.9,
+              "median": 5172,
+              "p95": 5533,
+              "max": 5533
+            }
+          },
+          "steady": {
+            "stepMs": {
+              "n": 200,
+              "mean": 0.13099999994039535,
+              "median": 0.10000000149011612,
+              "p95": 0.20000000298023224,
+              "max": 0.30000000447034836
+            },
+            "nav": {
+              "routeQueries": 0,
+              "directQueries": 0,
+              "astarQueries": 0,
+              "astarExpanded": 0,
+              "funnelQueries": 0,
+              "regionHits": 0,
+              "fieldsBuilt": 0,
+              "fieldHits": 0,
+              "sharedAstarHits": 0,
+              "layersBuilt": 0,
+              "meshBuildMs": 0,
+              "fieldBuildMs": 0,
+              "workerRouteBuilds": 0,
+              "workerRouteReuses": 166,
+              "workerRouteShared": 0,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 0
+            },
+            "snapshotMs": {
+              "n": 20,
+              "mean": 0.37500000074505807,
+              "median": 0.3999999985098839,
+              "p95": 0.5,
+              "max": 0.6000000014901161
+            },
+            "snapshotBytes": {
+              "n": 20,
+              "mean": 5531.05,
+              "median": 5530,
+              "p95": 5533,
+              "max": 5533
+            }
+          }
+        },
+        "errors": []
+      },
+      {
+        "sha": "94cf1fabe3d0f7e48b08e0803fc70ef51f6197b0",
+        "count": 1,
+        "run": 2,
+        "sourceHash": "a6c183d16fbe7d03f2207345f31318699b4c57ccfb83337cda134d49f641f2f8",
+        "browser": "155.0.4283.45",
+        "data": {
+          "elapsedMs": 235.29999999701977,
+          "income": 3,
+          "units": 1,
+          "seed": 3919536611,
+          "mapHash": 1323913035,
+          "inputs": [],
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "isolated": false
+        },
+        "summary": {
+          "initial": {
+            "stepMs": {
+              "n": 100,
+              "mean": 1.9029999999701976,
+              "median": 0.20000000298023224,
+              "p95": 0.5,
+              "max": 166.20000000298023
+            },
+            "nav": {
+              "routeQueries": 2,
+              "directQueries": 0,
+              "astarQueries": 2,
+              "astarExpanded": 619,
+              "funnelQueries": 2,
+              "regionHits": 0,
+              "fieldsBuilt": 0,
+              "fieldHits": 0,
+              "sharedAstarHits": 0,
+              "layersBuilt": 1,
+              "meshBuildMs": 151.79999999701977,
+              "fieldBuildMs": 0,
+              "workerRouteBuilds": 2,
+              "workerRouteReuses": 81,
+              "workerRouteShared": 0,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 0
+            },
+            "snapshotMs": {
+              "n": 10,
+              "mean": 0.5600000001490116,
+              "median": 0.4000000059604645,
+              "p95": 0.6999999955296516,
+              "max": 1.6000000014901161
+            },
+            "snapshotBytes": {
+              "n": 10,
+              "mean": 5349.9,
+              "median": 5172,
+              "p95": 5533,
+              "max": 5533
+            }
+          },
+          "steady": {
+            "stepMs": {
+              "n": 200,
+              "mean": 0.12849999994039535,
+              "median": 0.10000000149011612,
+              "p95": 0.20000000298023224,
+              "max": 0.4000000059604645
+            },
+            "nav": {
+              "routeQueries": 0,
+              "directQueries": 0,
+              "astarQueries": 0,
+              "astarExpanded": 0,
+              "funnelQueries": 0,
+              "regionHits": 0,
+              "fieldsBuilt": 0,
+              "fieldHits": 0,
+              "sharedAstarHits": 0,
+              "layersBuilt": 0,
+              "meshBuildMs": 0,
+              "fieldBuildMs": 0,
+              "workerRouteBuilds": 0,
+              "workerRouteReuses": 166,
+              "workerRouteShared": 0,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 0
+            },
+            "snapshotMs": {
+              "n": 20,
+              "mean": 0.3400000002235174,
+              "median": 0.30000000447034836,
+              "p95": 0.3999999985098839,
+              "max": 0.4000000059604645
+            },
+            "snapshotBytes": {
+              "n": 20,
+              "mean": 5531.05,
+              "median": 5530,
+              "p95": 5533,
+              "max": 5533
+            }
+          }
+        },
+        "errors": []
+      },
+      {
+        "sha": "18ebc60474d75ea9ec7ae9c8e21281433b5e4da6",
+        "count": 1,
+        "run": 3,
+        "sourceHash": "cc44e62e1aa17d1550787d7def296c8ee2d6329c63c0bfc1aab014f60ba4b33e",
+        "browser": "155.0.4283.45",
+        "data": {
+          "elapsedMs": 286.6000000014901,
+          "income": 3,
+          "units": 1,
+          "seed": 3919536611,
+          "mapHash": 1323913035,
+          "inputs": [],
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "isolated": false
+        },
+        "summary": {
+          "initial": {
+            "stepMs": {
+              "n": 100,
+              "mean": 2.0570000000298023,
+              "median": 0.29999999701976776,
+              "p95": 1.7000000029802322,
+              "max": 153
+            },
+            "nav": {
+              "routeQueries": 83,
+              "directQueries": 35,
+              "astarQueries": 76,
+              "astarExpanded": 16037,
+              "funnelQueries": 76,
+              "regionHits": 74,
+              "fieldsBuilt": 0,
+              "fieldHits": 0,
+              "sharedAstarHits": 0,
+              "layersBuilt": 1,
+              "meshBuildMs": 138.89999999850988,
+              "fieldBuildMs": 0,
+              "workerRouteBuilds": 0,
+              "workerRouteReuses": 0,
+              "workerRouteShared": 0,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 0
+            },
+            "snapshotMs": {
+              "n": 10,
+              "mean": 0.5600000008940696,
+              "median": 0.3999999985098839,
+              "p95": 0.6000000014901161,
+              "max": 2.100000001490116
+            },
+            "snapshotBytes": {
+              "n": 10,
+              "mean": 4613.6,
+              "median": 4613,
+              "p95": 4617,
+              "max": 4617
+            }
+          },
+          "steady": {
+            "stepMs": {
+              "n": 200,
+              "mean": 0.30900000002235173,
+              "median": 0.20000000298023224,
+              "p95": 0.7999999970197678,
+              "max": 1.3000000044703484
+            },
+            "nav": {
+              "routeQueries": 166,
+              "directQueries": 70,
+              "astarQueries": 152,
+              "astarExpanded": 31902,
+              "funnelQueries": 152,
+              "regionHits": 152,
+              "fieldsBuilt": 0,
+              "fieldHits": 0,
+              "sharedAstarHits": 0,
+              "layersBuilt": 0,
+              "meshBuildMs": 0,
+              "fieldBuildMs": 0,
+              "workerRouteBuilds": 0,
+              "workerRouteReuses": 0,
+              "workerRouteShared": 0,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 0
+            },
+            "snapshotMs": {
+              "n": 20,
+              "mean": 0.31999999955296515,
+              "median": 0.29999999701976776,
+              "p95": 0.3999999985098839,
+              "max": 0.4000000059604645
+            },
+            "snapshotBytes": {
+              "n": 20,
+              "mean": 4615.05,
+              "median": 4614,
+              "p95": 4617,
+              "max": 4617
+            }
+          }
+        },
+        "errors": []
+      },
+      {
+        "sha": "18ebc60474d75ea9ec7ae9c8e21281433b5e4da6",
+        "count": 20,
+        "run": 0,
+        "sourceHash": "cc44e62e1aa17d1550787d7def296c8ee2d6329c63c0bfc1aab014f60ba4b33e",
+        "browser": "155.0.4283.45",
+        "data": {
+          "elapsedMs": 542.2999999970198,
+          "income": 19,
+          "units": 20,
+          "seed": 3919536611,
+          "mapHash": 1323913035,
+          "inputs": [],
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "isolated": false
+        },
+        "summary": {
+          "initial": {
+            "stepMs": {
+              "n": 100,
+              "mean": 3.1269999999552964,
+              "median": 1.2000000029802322,
+              "p95": 3.5,
+              "max": 146.29999999701977
+            },
+            "nav": {
+              "routeQueries": 1851,
+              "directQueries": 1194,
+              "astarQueries": 934,
+              "astarExpanded": 18898,
+              "funnelQueries": 934,
+              "regionHits": 932,
+              "fieldsBuilt": 2,
+              "fieldHits": 900,
+              "sharedAstarHits": 1031,
+              "layersBuilt": 1,
+              "meshBuildMs": 114.5,
+              "fieldBuildMs": 17.899999998509884,
+              "workerRouteBuilds": 0,
+              "workerRouteReuses": 0,
+              "workerRouteShared": 0,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 0
+            },
+            "snapshotMs": {
+              "n": 10,
+              "mean": 1.3800000004470347,
+              "median": 1.1999999955296516,
+              "p95": 1.7000000029802322,
+              "max": 2.8000000044703484
+            },
+            "snapshotBytes": {
+              "n": 10,
+              "mean": 12209,
+              "median": 12209,
+              "p95": 12233,
+              "max": 12238
+            }
+          },
+          "steady": {
+            "stepMs": {
+              "n": 200,
+              "mean": 0.9150000001117587,
+              "median": 0.8000000044703484,
+              "p95": 1.5,
+              "max": 1.7000000029802322
+            },
+            "nav": {
+              "routeQueries": 3741,
+              "directQueries": 2943,
+              "astarQueries": 1328,
+              "astarExpanded": 18911,
+              "funnelQueries": 1328,
+              "regionHits": 1328,
+              "fieldsBuilt": 0,
+              "fieldHits": 1328,
+              "sharedAstarHits": 550,
+              "layersBuilt": 0,
+              "meshBuildMs": 0,
+              "fieldBuildMs": 0,
+              "workerRouteBuilds": 0,
+              "workerRouteReuses": 0,
+              "workerRouteShared": 0,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 0
+            },
+            "snapshotMs": {
+              "n": 20,
+              "mean": 1.225,
+              "median": 1,
+              "p95": 2.1999999955296516,
+              "max": 3
+            },
+            "snapshotBytes": {
+              "n": 20,
+              "mean": 12226.95,
+              "median": 12229,
+              "p95": 12241,
+              "max": 12242
+            }
+          }
+        },
+        "errors": []
+      },
+      {
+        "sha": "94cf1fabe3d0f7e48b08e0803fc70ef51f6197b0",
+        "count": 20,
+        "run": 1,
+        "sourceHash": "a6c183d16fbe7d03f2207345f31318699b4c57ccfb83337cda134d49f641f2f8",
+        "browser": "155.0.4283.45",
+        "data": {
+          "elapsedMs": 448.29999999701977,
+          "income": 31,
+          "units": 20,
+          "seed": 3919536611,
+          "mapHash": 1323913035,
+          "inputs": [],
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "isolated": false
+        },
+        "summary": {
+          "initial": {
+            "stepMs": {
+              "n": 100,
+              "mean": 2.6209999998658895,
+              "median": 1,
+              "p95": 2.2999999970197678,
+              "max": 137.19999999552965
+            },
+            "nav": {
+              "routeQueries": 21,
+              "directQueries": 9,
+              "astarQueries": 12,
+              "astarExpanded": 2436,
+              "funnelQueries": 12,
+              "regionHits": 10,
+              "fieldsBuilt": 1,
+              "fieldHits": 3,
+              "sharedAstarHits": 22,
+              "layersBuilt": 1,
+              "meshBuildMs": 115.20000000298023,
+              "fieldBuildMs": 12.600000001490116,
+              "workerRouteBuilds": 21,
+              "workerRouteReuses": 1683,
+              "workerRouteShared": 63,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 50
+            },
+            "snapshotMs": {
+              "n": 10,
+              "mean": 1.7600000008940697,
+              "median": 1.5,
+              "p95": 2,
+              "max": 3.4000000059604645
+            },
+            "snapshotBytes": {
+              "n": 10,
+              "mean": 19146.2,
+              "median": 18414,
+              "p95": 20480,
+              "max": 20856
+            }
+          },
+          "steady": {
+            "stepMs": {
+              "n": 200,
+              "mean": 0.6605000001192093,
+              "median": 0.6000000014901161,
+              "p95": 0.8999999985098839,
+              "max": 1.6999999955296516
+            },
+            "nav": {
+              "routeQueries": 8,
+              "directQueries": 5,
+              "astarQueries": 3,
+              "astarExpanded": 808,
+              "funnelQueries": 3,
+              "regionHits": 3,
+              "fieldsBuilt": 0,
+              "fieldHits": 0,
+              "sharedAstarHits": 0,
+              "layersBuilt": 0,
+              "meshBuildMs": 0,
+              "fieldBuildMs": 0,
+              "workerRouteBuilds": 8,
+              "workerRouteReuses": 3483,
+              "workerRouteShared": 76,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 81
+            },
+            "snapshotMs": {
+              "n": 20,
+              "mean": 1.474999998882413,
+              "median": 1.3999999985098839,
+              "p95": 1.5999999940395355,
+              "max": 2.399999998509884
+            },
+            "snapshotBytes": {
+              "n": 20,
+              "mean": 23487.35,
+              "median": 23909,
+              "p95": 24636,
+              "max": 24639
+            }
+          }
+        },
+        "errors": []
+      },
+      {
+        "sha": "94cf1fabe3d0f7e48b08e0803fc70ef51f6197b0",
+        "count": 20,
+        "run": 2,
+        "sourceHash": "a6c183d16fbe7d03f2207345f31318699b4c57ccfb83337cda134d49f641f2f8",
+        "browser": "155.0.4283.45",
+        "data": {
+          "elapsedMs": 448.6000000014901,
+          "income": 31,
+          "units": 20,
+          "seed": 3919536611,
+          "mapHash": 1323913035,
+          "inputs": [],
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "isolated": false
+        },
+        "summary": {
+          "initial": {
+            "stepMs": {
+              "n": 100,
+              "mean": 2.627000000029802,
+              "median": 1,
+              "p95": 2.5,
+              "max": 138.30000000447035
+            },
+            "nav": {
+              "routeQueries": 21,
+              "directQueries": 9,
+              "astarQueries": 12,
+              "astarExpanded": 2436,
+              "funnelQueries": 12,
+              "regionHits": 10,
+              "fieldsBuilt": 1,
+              "fieldHits": 3,
+              "sharedAstarHits": 22,
+              "layersBuilt": 1,
+              "meshBuildMs": 116.29999999701977,
+              "fieldBuildMs": 12.5,
+              "workerRouteBuilds": 21,
+              "workerRouteReuses": 1683,
+              "workerRouteShared": 63,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 50
+            },
+            "snapshotMs": {
+              "n": 10,
+              "mean": 1.7099999994039536,
+              "median": 1.5,
+              "p95": 2.0999999940395355,
+              "max": 2.6999999955296516
+            },
+            "snapshotBytes": {
+              "n": 10,
+              "mean": 19146.2,
+              "median": 18414,
+              "p95": 20480,
+              "max": 20856
+            }
+          },
+          "steady": {
+            "stepMs": {
+              "n": 200,
+              "mean": 0.661499999910593,
+              "median": 0.6000000014901161,
+              "p95": 0.8999999985098839,
+              "max": 1.2000000029802322
+            },
+            "nav": {
+              "routeQueries": 8,
+              "directQueries": 5,
+              "astarQueries": 3,
+              "astarExpanded": 808,
+              "funnelQueries": 3,
+              "regionHits": 3,
+              "fieldsBuilt": 0,
+              "fieldHits": 0,
+              "sharedAstarHits": 0,
+              "layersBuilt": 0,
+              "meshBuildMs": 0,
+              "fieldBuildMs": 0,
+              "workerRouteBuilds": 8,
+              "workerRouteReuses": 3483,
+              "workerRouteShared": 76,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 81
+            },
+            "snapshotMs": {
+              "n": 20,
+              "mean": 1.475000000372529,
+              "median": 1.3999999985098839,
+              "p95": 1.8000000044703484,
+              "max": 2.2000000029802322
+            },
+            "snapshotBytes": {
+              "n": 20,
+              "mean": 23487.35,
+              "median": 23909,
+              "p95": 24636,
+              "max": 24639
+            }
+          }
+        },
+        "errors": []
+      },
+      {
+        "sha": "18ebc60474d75ea9ec7ae9c8e21281433b5e4da6",
+        "count": 20,
+        "run": 3,
+        "sourceHash": "cc44e62e1aa17d1550787d7def296c8ee2d6329c63c0bfc1aab014f60ba4b33e",
+        "browser": "155.0.4283.45",
+        "data": {
+          "elapsedMs": 600.1000000014901,
+          "income": 19,
+          "units": 20,
+          "seed": 3919536611,
+          "mapHash": 1323913035,
+          "inputs": [],
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "isolated": false
+        },
+        "summary": {
+          "initial": {
+            "stepMs": {
+              "n": 100,
+              "mean": 3.477999999895692,
+              "median": 1.3999999985098839,
+              "p95": 4.399999998509884,
+              "max": 161.90000000596046
+            },
+            "nav": {
+              "routeQueries": 1851,
+              "directQueries": 1194,
+              "astarQueries": 934,
+              "astarExpanded": 18898,
+              "funnelQueries": 934,
+              "regionHits": 932,
+              "fieldsBuilt": 2,
+              "fieldHits": 900,
+              "sharedAstarHits": 1031,
+              "layersBuilt": 1,
+              "meshBuildMs": 125.89999999850988,
+              "fieldBuildMs": 22.799999997019768,
+              "workerRouteBuilds": 0,
+              "workerRouteReuses": 0,
+              "workerRouteShared": 0,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 0
+            },
+            "snapshotMs": {
+              "n": 10,
+              "mean": 1.6100000001490116,
+              "median": 1.2000000029802322,
+              "p95": 2.600000001490116,
+              "max": 2.6999999955296516
+            },
+            "snapshotBytes": {
+              "n": 10,
+              "mean": 12209,
+              "median": 12209,
+              "p95": 12233,
+              "max": 12238
+            }
+          },
+          "steady": {
+            "stepMs": {
+              "n": 200,
+              "mean": 1.0074999999627472,
+              "median": 0.9000000059604645,
+              "p95": 1.5,
+              "max": 2.100000001490116
+            },
+            "nav": {
+              "routeQueries": 3741,
+              "directQueries": 2943,
+              "astarQueries": 1328,
+              "astarExpanded": 18911,
+              "funnelQueries": 1328,
+              "regionHits": 1328,
+              "fieldsBuilt": 0,
+              "fieldHits": 1328,
+              "sharedAstarHits": 550,
+              "layersBuilt": 0,
+              "meshBuildMs": 0,
+              "fieldBuildMs": 0,
+              "workerRouteBuilds": 0,
+              "workerRouteReuses": 0,
+              "workerRouteShared": 0,
+              "workerRouteInvalid_topology": 0,
+              "workerRouteInvalid_deviation": 0
+            },
+            "snapshotMs": {
+              "n": 20,
+              "mean": 1.350000000372529,
+              "median": 1.1000000014901161,
+              "p95": 2.3000000044703484,
+              "max": 2.600000001490116
+            },
+            "snapshotBytes": {
+              "n": 20,
+              "mean": 12226.95,
+              "median": 12229,
+              "p95": 12241,
+              "max": 12242
+            }
+          }
+        },
+        "errors": []
+      }
+    ],
+    "scenarioElapsedMs": 3061.5,
+    "suiteWallMs": 26724,
+    "fixture": "same canonical map/seed/input[]/fixed mineral,barracks,workers; full sim.step 300 logical ticks; snapshots every10; initial1..100 vs steady101..300; ABBA order; single Edge, no game renderer/RTC",
+    "timerPrecisionNote": "Observed step times are quantized around0.1ms; crossOriginIsolated=false. Previous hardcoded .005 field is removed; do not infer clock precision from headers."
+  },
+  "rtc": {
+    "rows": [
+      {
+        "fixture": "280supply-pilot",
+        "variant": "before",
+        "role": "host",
+        "seed": 2617977013,
+        "mapHash": 1323913035,
+        "supply": 280,
+        "steps": {
+          "n": 122,
+          "mean": 24.039344262026372,
+          "p50": 21.200000002980232,
+          "p95": 41.5,
+          "max": 52.79999999701977
+        },
+        "render": {
+          "n": 389,
+          "mean": 17.560411311188055,
+          "p50": 15,
+          "p95": 32.100000001490116,
+          "max": 41.600000001490116
+        },
+        "interval": {
+          "n": 389,
+          "mean": 31.088946015427997,
+          "p50": 26.5,
+          "p95": 70.19999999552965,
+          "max": 123.89999999850988
+        },
+        "snap": {
+          "n": 6,
+          "mean": 6.366666665921609,
+          "p50": 5.600000001490116,
+          "p95": 7.5,
+          "max": 9.599999994039536
+        },
+        "bytes": {
+          "n": 6,
+          "mean": 68324.16666666667,
+          "p50": 65521,
+          "p95": 73556,
+          "max": 79523
+        },
+        "ticks": [
+          23,
+          144
+        ],
+        "nav": {
+          "astarQueries": 382,
+          "funnelQueries": 382,
+          "fieldHits": 55,
+          "regionHits": 144,
+          "sharedAstarHits": 62,
+          "workerRouteReuses": 0,
+          "workerRouteBuilds": 0,
+          "workerRouteShared": 0,
+          "workerRouteInvalid_topology": 0,
+          "workerRouteInvalid_deviation": 0,
+          "layersBuilt": 0,
+          "meshBuildMs": 0
+        },
+        "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "workers": [
+          40,
+          40
+        ],
+        "units": [
+          198,
+          126
+        ],
+        "actualTps": 9.993310263376179,
+        "errors": {
+          "hash": 0,
+          "recoveries": 0
+        },
+        "measuredMs": 12108.10000000149
+      },
+      {
+        "fixture": "280supply-pilot",
+        "variant": "before",
+        "role": "guest",
+        "seed": 2617977013,
+        "mapHash": 1323913035,
+        "supply": 280,
+        "steps": {
+          "n": 120,
+          "mean": 23.740000000037252,
+          "p50": 21.5,
+          "p95": 45.899999998509884,
+          "max": 56.5
+        },
+        "render": {
+          "n": 378,
+          "mean": 18.246031745874063,
+          "p50": 16.799999997019768,
+          "p95": 31.600000001490116,
+          "max": 43.5
+        },
+        "interval": {
+          "n": 378,
+          "mean": 31.799470899478784,
+          "p50": 25.900000005960464,
+          "p95": 74.30000000447035,
+          "max": 127.10000000149012
+        },
+        "snap": {
+          "n": 6,
+          "mean": 6.483333333084981,
+          "p50": 6.600000001490116,
+          "p95": 7.199999995529652,
+          "max": 8.5
+        },
+        "bytes": {
+          "n": 6,
+          "mean": 68324.16666666667,
+          "p50": 65521,
+          "p95": 73556,
+          "max": 79523
+        },
+        "ticks": [
+          24,
+          143
+        ],
+        "nav": {
+          "astarQueries": 373,
+          "funnelQueries": 373,
+          "fieldHits": 52,
+          "regionHits": 138,
+          "sharedAstarHits": 61,
+          "workerRouteReuses": 0,
+          "workerRouteBuilds": 0,
+          "workerRouteShared": 0,
+          "workerRouteInvalid_topology": 0,
+          "workerRouteInvalid_deviation": 0,
+          "layersBuilt": 0,
+          "meshBuildMs": 0
+        },
+        "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "workers": [
+          40,
+          40
+        ],
+        "units": [
+          198,
+          126
+        ],
+        "actualTps": 9.899013426058092,
+        "errors": {
+          "hash": 0,
+          "recoveries": 0
+        },
+        "measuredMs": 12021.39999999851
+      },
+      {
+        "fixture": "280supply-pilot",
+        "variant": "after",
+        "role": "host",
+        "seed": 2617977013,
+        "mapHash": 1323913035,
+        "supply": 280,
+        "steps": {
+          "n": 122,
+          "mean": 24.192622951125024,
+          "p50": 20.899999998509884,
+          "p95": 42.80000000447035,
+          "max": 56.30000000447035
+        },
+        "render": {
+          "n": 382,
+          "mean": 17.924083769731027,
+          "p50": 15.900000005960464,
+          "p95": 30.599999994039536,
+          "max": 44.600000001490116
+        },
+        "interval": {
+          "n": 382,
+          "mean": 31.736910994764397,
+          "p50": 27.30000000447035,
+          "p95": 67.60000000149012,
+          "max": 132.89999999850988
+        },
+        "snap": {
+          "n": 6,
+          "mean": 8.233333334326744,
+          "p50": 6.300000004470348,
+          "p95": 11,
+          "max": 11.399999998509884
+        },
+        "bytes": {
+          "n": 6,
+          "mean": 81376,
+          "p50": 78930,
+          "p95": 86422,
+          "max": 91529
+        },
+        "ticks": [
+          24,
+          145
+        ],
+        "nav": {
+          "astarQueries": 375,
+          "funnelQueries": 375,
+          "fieldHits": 52,
+          "regionHits": 138,
+          "sharedAstarHits": 61,
+          "workerRouteReuses": 3286,
+          "workerRouteBuilds": 12,
+          "workerRouteShared": 36,
+          "workerRouteInvalid_topology": 0,
+          "workerRouteInvalid_deviation": 16,
+          "layersBuilt": 0,
+          "meshBuildMs": 0
+        },
+        "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "workers": [
+          40,
+          40
+        ],
+        "units": [
+          198,
+          125
+        ],
+        "actualTps": 9.966312217382143,
+        "errors": {
+          "hash": 0,
+          "recoveries": 0
+        },
+        "measuredMs": 12140.89999999851
+      },
+      {
+        "fixture": "280supply-pilot",
+        "variant": "after",
+        "role": "guest",
+        "seed": 2617977013,
+        "mapHash": 1323913035,
+        "supply": 280,
+        "steps": {
+          "n": 121,
+          "mean": 23.742148760244373,
+          "p50": 21.299999997019768,
+          "p95": 42.899999998509884,
+          "max": 55.80000000447035
+        },
+        "render": {
+          "n": 360,
+          "mean": 18.880833333006336,
+          "p50": 17.80000000447035,
+          "p95": 29.799999997019768,
+          "max": 44.19999999552965
+        },
+        "interval": {
+          "n": 360,
+          "mean": 33.391666666666666,
+          "p50": 30.099999994039536,
+          "p95": 73.20000000298023,
+          "max": 132.19999999552965
+        },
+        "snap": {
+          "n": 6,
+          "mean": 7.350000001490116,
+          "p50": 6.299999997019768,
+          "p95": 9.400000005960464,
+          "max": 10.799999997019768
+        },
+        "bytes": {
+          "n": 6,
+          "mean": 81376,
+          "p50": 78930,
+          "p95": 86422,
+          "max": 91529
+        },
+        "ticks": [
+          25,
+          145
+        ],
+        "nav": {
+          "astarQueries": 367,
+          "funnelQueries": 367,
+          "fieldHits": 49,
+          "regionHits": 132,
+          "sharedAstarHits": 60,
+          "workerRouteReuses": 3266,
+          "workerRouteBuilds": 10,
+          "workerRouteShared": 35,
+          "workerRouteInvalid_topology": 0,
+          "workerRouteInvalid_deviation": 15,
+          "layersBuilt": 0,
+          "meshBuildMs": 0
+        },
+        "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "workers": [
+          40,
+          40
+        ],
+        "units": [
+          198,
+          125
+        ],
+        "actualTps": 9.964460092333631,
+        "errors": {
+          "hash": 0,
+          "recoveries": 0
+        },
+        "measuredMs": 12042.80000000447
+      },
+      {
+        "fixture": "400supply-exact",
+        "variant": "before",
+        "role": "host",
+        "seed": 2617977013,
+        "mapHash": 1323913035,
+        "supply": 400,
+        "steps": {
+          "n": 109,
+          "mean": 47.73761467833858,
+          "p50": 45.29999999701977,
+          "p95": 76.89999999850988,
+          "max": 95.5
+        },
+        "render": {
+          "n": 188,
+          "mean": 24.196276595697125,
+          "p50": 23.200000002980232,
+          "p95": 38.20000000298023,
+          "max": 46.5
+        },
+        "interval": {
+          "n": 188,
+          "mean": 64.6712765957209,
+          "p50": 61.600000001490116,
+          "p95": 138.5,
+          "max": 177.69999999552965
+        },
+        "snap": {
+          "n": 5,
+          "mean": 8.779999999701976,
+          "p50": 8.299999997019768,
+          "p95": 8.5,
+          "max": 13.900000005960464
+        },
+        "bytes": {
+          "n": 5,
+          "mean": 86087.2,
+          "p50": 84816,
+          "p95": 89742,
+          "max": 97682
+        },
+        "ticks": [
+          27,
+          135
+        ],
+        "nav": {
+          "astarQueries": 1481,
+          "funnelQueries": 1481,
+          "fieldHits": 8,
+          "regionHits": 669,
+          "sharedAstarHits": 2346,
+          "workerRouteReuses": 0,
+          "workerRouteBuilds": 0,
+          "workerRouteShared": 0,
+          "workerRouteInvalid_topology": 0,
+          "workerRouteInvalid_deviation": 0,
+          "layersBuilt": 0,
+          "meshBuildMs": 0
+        },
+        "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "workers": [
+          40,
+          40
+        ],
+        "units": [
+          249,
+          163
+        ],
+        "actualTps": 8.882017204797378,
+        "errors": {
+          "hash": 0,
+          "recoveries": 0
+        },
+        "measuredMs": 12159.39999999851
+      },
+      {
+        "fixture": "400supply-exact",
+        "variant": "before",
+        "role": "guest",
+        "seed": 2617977013,
+        "mapHash": 1323913035,
+        "supply": 400,
+        "steps": {
+          "n": 109,
+          "mean": 49.152293577858615,
+          "p50": 46.80000000447035,
+          "p95": 78.79999999701977,
+          "max": 101.70000000298023
+        },
+        "render": {
+          "n": 160,
+          "mean": 26.471250000223517,
+          "p50": 25.5,
+          "p95": 41.600000001490116,
+          "max": 54.5
+        },
+        "interval": {
+          "n": 160,
+          "mean": 75.153125,
+          "p50": 72.60000000149012,
+          "p95": 148.30000000447035,
+          "max": 178.19999999552965
+        },
+        "snap": {
+          "n": 5,
+          "mean": 9.240000002086163,
+          "p50": 9.399999998509884,
+          "p95": 9.800000004470348,
+          "max": 13.800000004470348
+        },
+        "bytes": {
+          "n": 5,
+          "mean": 86087.2,
+          "p50": 84816,
+          "p95": 89742,
+          "max": 97682
+        },
+        "ticks": [
+          26,
+          134
+        ],
+        "nav": {
+          "astarQueries": 1490,
+          "funnelQueries": 1490,
+          "fieldHits": 8,
+          "regionHits": 676,
+          "sharedAstarHits": 2437,
+          "workerRouteReuses": 0,
+          "workerRouteBuilds": 0,
+          "workerRouteShared": 0,
+          "workerRouteInvalid_topology": 0,
+          "workerRouteInvalid_deviation": 0,
+          "layersBuilt": 0,
+          "meshBuildMs": 0
+        },
+        "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "workers": [
+          40,
+          40
+        ],
+        "units": [
+          254,
+          164
+        ],
+        "actualTps": 8.980542158656245,
+        "errors": {
+          "hash": 0,
+          "recoveries": 0
+        },
+        "measuredMs": 12026
+      },
+      {
+        "fixture": "400supply-exact",
+        "variant": "after",
+        "role": "host",
+        "seed": 2617977013,
+        "mapHash": 1323913035,
+        "supply": 400,
+        "steps": {
+          "n": 114,
+          "mean": 49.56754385967527,
+          "p50": 46.79999999701977,
+          "p95": 84.30000000447035,
+          "max": 103.70000000298023
+        },
+        "render": {
+          "n": 165,
+          "mean": 25.10303030284968,
+          "p50": 23.399999998509884,
+          "p95": 39.5,
+          "max": 45.399999998509884
+        },
+        "interval": {
+          "n": 165,
+          "mean": 74.16848484846679,
+          "p50": 72.5,
+          "p95": 145.79999999701977,
+          "max": 180.39999999850988
+        },
+        "snap": {
+          "n": 5,
+          "mean": 10.499999998509884,
+          "p50": 8.799999997019768,
+          "p95": 14.100000001490116,
+          "max": 14.299999997019768
+        },
+        "bytes": {
+          "n": 5,
+          "mean": 99070,
+          "p50": 98025,
+          "p95": 102608,
+          "max": 109688
+        },
+        "ticks": [
+          25,
+          138
+        ],
+        "nav": {
+          "astarQueries": 1549,
+          "funnelQueries": 1549,
+          "fieldHits": 8,
+          "regionHits": 698,
+          "sharedAstarHits": 2539,
+          "workerRouteReuses": 3083,
+          "workerRouteBuilds": 10,
+          "workerRouteShared": 35,
+          "workerRouteInvalid_topology": 0,
+          "workerRouteInvalid_deviation": 15,
+          "layersBuilt": 0,
+          "meshBuildMs": 0
+        },
+        "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "workers": [
+          40,
+          40
+        ],
+        "units": [
+          254,
+          160
+        ],
+        "actualTps": 9.2327804559196,
+        "errors": {
+          "hash": 0,
+          "recoveries": 0
+        },
+        "measuredMs": 12239
+      },
+      {
+        "fixture": "400supply-exact",
+        "variant": "after",
+        "role": "guest",
+        "seed": 2617977013,
+        "mapHash": 1323913035,
+        "supply": 400,
+        "steps": {
+          "n": 112,
+          "mean": 48.816964285847334,
+          "p50": 44.70000000298023,
+          "p95": 79.20000000298023,
+          "max": 90.79999999701977
+        },
+        "render": {
+          "n": 158,
+          "mean": 26.466455696079926,
+          "p50": 26.100000001490116,
+          "p95": 40.399999998509884,
+          "max": 51.900000005960464
+        },
+        "interval": {
+          "n": 158,
+          "mean": 76.03291139242393,
+          "p50": 73.20000000298023,
+          "p95": 151.89999999850988,
+          "max": 187
+        },
+        "snap": {
+          "n": 5,
+          "mean": 12.979999999701977,
+          "p50": 12.600000001490116,
+          "p95": 15.5,
+          "max": 17.399999998509884
+        },
+        "bytes": {
+          "n": 5,
+          "mean": 99070,
+          "p50": 98025,
+          "p95": 102608,
+          "max": 109688
+        },
+        "ticks": [
+          26,
+          137
+        ],
+        "nav": {
+          "astarQueries": 1520,
+          "funnelQueries": 1520,
+          "fieldHits": 8,
+          "regionHits": 685,
+          "sharedAstarHits": 2437,
+          "workerRouteReuses": 3033,
+          "workerRouteBuilds": 9,
+          "workerRouteShared": 33,
+          "workerRouteInvalid_topology": 0,
+          "workerRouteInvalid_deviation": 15,
+          "layersBuilt": 0,
+          "meshBuildMs": 0
+        },
+        "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "workers": [
+          40,
+          40
+        ],
+        "units": [
+          254,
+          161
+        ],
+        "actualTps": 9.22639580406564,
+        "errors": {
+          "hash": 0,
+          "recoveries": 0
+        },
+        "measuredMs": 12030.70000000298
+      }
+    ],
+    "activeScenarioMs": 48647.39999999851,
+    "setup": "independent native Edge processes; actual RTC; GPU GTX1660Ti; rate1; same canonical map andseed perfixture; nocommands; warmup20ticks;12swallmeasurement"
+  },
+  "matched": {
+    "matched": [
+      {
+        "id": "before-host",
+        "start": 27,
+        "end": 134,
+        "step": {
+          "n": 108,
+          "mean": 47.84259259197171,
+          "p50": 45.29999999701977,
+          "p95": 76.89999999850988,
+          "max": 95.5
+        },
+        "nav": {
+          "astarQueries": 1471,
+          "workerRouteReuses": 0,
+          "layersBuilt": 0,
+          "meshBuildMs": 0
+        }
+      },
+      {
+        "id": "before-guest",
+        "start": 27,
+        "end": 134,
+        "step": {
+          "n": 108,
+          "mean": 48.81574074061656,
+          "p50": 46.80000000447035,
+          "p95": 76.39999999850988,
+          "max": 101.70000000298023
+        },
+        "nav": {
+          "astarQueries": 1471,
+          "workerRouteReuses": 0,
+          "layersBuilt": 0,
+          "meshBuildMs": 0
+        }
+      },
+      {
+        "id": "after-host",
+        "start": 27,
+        "end": 134,
+        "step": {
+          "n": 108,
+          "mean": 49.40092592589833,
+          "p50": 46.80000000447035,
+          "p95": 80.30000000447035,
+          "max": 91.39999999850988
+        },
+        "nav": {
+          "astarQueries": 1471,
+          "workerRouteReuses": 2926,
+          "layersBuilt": 0,
+          "meshBuildMs": 0
+        }
+      },
+      {
+        "id": "after-guest",
+        "start": 27,
+        "end": 134,
+        "step": {
+          "n": 108,
+          "mean": 49.01018518533696,
+          "p50": 45,
+          "p95": 79.20000000298023,
+          "max": 90.79999999701977
+        },
+        "nav": {
+          "astarQueries": 1471,
+          "workerRouteReuses": 2926,
+          "layersBuilt": 0,
+          "meshBuildMs": 0
+        }
+      }
+    ],
+    "aliveCountEqual": 216,
+    "total": 216,
+    "comparison": "same initial setup/input[] and commonlogical ticks, versions use different authoritative worker paths; not byte identical old/new"
+  },
+  "activeMeasuredScenarioMs": 51708.89999999851,
+  "budgetLimitMs": 180000,
+  "budgetNote": "Actual measured execution time, excludes authoring/tool approval wait. Controlled suite executes 2400 logical ticks synchronously (not a real-time wait); whole suite wall26.724s. RTC4 cases measure12s each after20tick warmup. No concurrent browsers across suites; both peers run concurrently only within RTC case. Official thread command durations total136.577s including benchmark setup/shutdown; within180s.",
+  "constraints": "No product source change, no replay/physics/network rule change; performance measurements completed, do not rerun as CI checks",
+  "activePathContract": {
+    "status": "partial, not complete",
+    "singleWorkerSteadyTicks": 200,
+    "goalRegionAndFieldLookups": 0,
+    "astarAndFunnel": 0,
+    "workerPathCacheReuseLookups": 166,
+    "requestedWorkerPathCacheLookups": 0,
+    "remainingCall": "workerNextPoint -> workerRoute (key/find/validate) -> workerRoutePoint on each movement",
+    "recommendation": "shared authoritative execution path pool, active route handle/cursor, query only on request/topology/target/deviation/blockage; no extra product change"
+  },
+  "scenarioCommandWallMs": 136577,
+  "scenarioCommandWallProof": [
+    {
+      "kind": "controlled",
+      "durationMs": 29136
+    },
+    {
+      "kind": "280 RTC",
+      "durationMs": 54029
+    },
+    {
+      "kind": "400 RTC",
+      "durationMs": 53412
+    }
+  ]
+}
