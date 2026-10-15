@@ -24342,29 +24342,29 @@ class GameSession{
       subscribe:listener=>this.transport.subscribeNetcode(listener),
       ...(typeof statusTransport.subscribeNetcodeStatus==="function"?{subscribeStatus:listener=>statusTransport.subscribeNetcodeStatus(listener),get state(){return statusTransport.netcodeState}}:{})
     });
-    this.netcodeNow=performance.now();this.lastDriverPulseAt=this.netcodeNow;this.lastSnapshotEmitAt=this.netcodeNow;
+    this.netcodeNow=performance.now();this.lastDriverPulseAt=this.netcodeNow;this.lastSnapshotEmitAt=this.netcodeNow;this.driverPulseBudgetYielded=false;
     this.stopHeartbeat(false);
     // A slow CPU pulse is not a suspended page. Core keeps at most three due
     // ticks; only a gap longer than three seconds discards wall-clock debt.
     this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,maxBacklogTicks:Math.ceil(this.sim.tps*3),
       onBacklogDrop:event=>this.onBacklogDrop(event),
       beforeFrame:now=>{
-        // Core's ordinary catchup cap also discards short wall-clock debt. Rebase
-        // presentation only; polling and the first due gameplay tick still run.
+        // Rebase presentation for real wall-clock gaps/backlog overflow; polling
+        // and the first due gameplay tick still run.
         const gap=Math.max(0,now-this.lastDriverPulseAt),quantum=1000/this.sim.tps,alpha=this.driverLastAlpha||0;
+        const budgetYielded=!!this.driverPulseBudgetYielded;this.driverPulseBudgetYielded=false;
         // Public alpha reports sub-tick residue; at 1 it is clipped, so the
-        // remaining backlog is unknown. Conservatively rebase on the next gap.
-        if(this.sim.tick>0&&(gap>250||Math.min(250,gap)+alpha*quantum>quantum*MAX_CATCHUP_STEPS_PER_PULSE+1e-7||alpha>=1&&gap>0))this.renderTimelineChanged=true;
+        // remaining backlog is unknown. A CPU-budget yield also clips it, but the
+        // fixed-tick timeline remains continuous; only rebase for actual clock debt.
+        if(this.sim.tick>0&&(gap>250||Math.min(250,gap)+alpha*quantum>quantum*MAX_CATCHUP_STEPS_PER_PULSE+1e-7||(alpha>=1&&gap>0&&!budgetYielded)))this.renderTimelineChanged=true;
         this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now);this.driverPulseStartedAt=performance.now();this.driverPulseAdvances=0;
       },
       // Poll/rollback remains synchronous and atomic inside Core. Always permit
       // the first due ordinary step, then yield catchup after 12 ms of CPU work.
       canAdvance:()=>{
         if(this.simEnded||this.simulationFatal||this.pendingTerminalFrame||this.syncHold||this.frameOutputs.get(this.sim.tick)?.winner)return false;
-        if(this.driverPulseAdvances>0&&performance.now()-this.driverPulseStartedAt>=12){
-          if(this.sim.tick>0)this.renderTimelineChanged=true;
-          return false;
-        }
+        // Yielding ordinary catchup defers a fixed tick; it does not reset presentation history.
+        if(this.driverPulseAdvances>0&&performance.now()-this.driverPulseStartedAt>=12){this.driverPulseBudgetYielded=true;return false}
         return true;
       },
       onAdvance:()=>{this.driverPulseAdvances++;this.reconcileNetcodePresentation()},render:frame=>{this.driverLastAlpha=frame.alpha;this.reconcileNetcodePresentation()},
