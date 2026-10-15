@@ -1,14 +1,14 @@
 // Controlled full StrategySim.step costs. No rendering/RTC claims from this suite.
 const fs=require('fs'),path=require('path'),cp=require('child_process'),assert=require('assert/strict'),crypto=require('crypto');
 const {chromium}=require('playwright'),root=path.resolve(__dirname,'..');
-const before='94cf1fabe3d0f7e48b08e0803fc70ef51f6197b0',after=process.argv[3]||'working-tree';
+const before=process.argv[4]||'94cf1fabe3d0f7e48b08e0803fc70ef51f6197b0',after=process.argv[3]||'working-tree';
 const out=path.join(root,'.qa/worker-route-performance');fs.mkdirSync(out,{recursive:true});
 const map=JSON.parse(fs.readFileSync(process.argv[2]||path.join(root,'benchmarks/common-route-map.json'),'utf8'));
 const stats=a=>{const s=a.slice().sort((x,y)=>x-y);return{n:s.length,mean:s.reduce((n,x)=>n+x,0)/s.length,median:s[Math.floor((s.length-1)*.5)],p95:s[Math.floor((s.length-1)*.95)],max:s.at(-1)}};
 (async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});const rows=[],started=Date.now();try{
   for(const count of [1,20])for(const [run,sha]of [before,after,after,before].entries()){
     assert(Date.now()-started<140000,'Controlled scenarios leave budget for RTC suite');
-    const source=sha==='working-tree'?fs.readFileSync(path.join(root,'index.html'),'utf8'):cp.execFileSync('git',['show',sha+':index.html'],{cwd:root,encoding:'utf8',maxBuffer:20e6});
+    const sourceRaw=sha==='working-tree'?fs.readFileSync(path.join(root,'index.html'),'utf8'):cp.execFileSync('git',['show',sha+':index.html'],{cwd:root,encoding:'utf8',maxBuffer:20e6}),source=sourceRaw.replace(/\r?\n/g,'\r\n');
     let html=require('./bundle-gamekit.cjs').bundleGame(root,source);const end=html.lastIndexOf('})();');html=html.slice(0,end)+';window.__workerPerf={StrategySim,GameRuleDefinition,MapGeneration,UnitDefinition,Building,BuildingDefinition,RallySimulationAdapter};'+html.slice(end);
     const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
     await page.route('http://worker-perf.local/**',r=>r.fulfill({contentType:'text/html',headers:{'Cross-Origin-Opener-Policy':'same-origin','Cross-Origin-Embedder-Policy':'require-corp'},body:html}));await page.goto('http://worker-perf.local/');await page.waitForFunction(()=>window.__workerPerf&&window.RallyGamekit);
