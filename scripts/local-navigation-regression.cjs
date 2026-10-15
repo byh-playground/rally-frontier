@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
 
 async function run() {
   const root = path.resolve(__dirname, '..');
-  let source = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  let source = fs.readFileSync(process.argv[2]?path.resolve(process.argv[2]):path.join(root, 'index.html'), 'utf8');
   if(process.env.NAV_TILE_SIZE)source=source.replace(/static SIZE=\d+;/, 'static SIZE='+Number(process.env.NAV_TILE_SIZE)+';');
   const end = source.lastIndexOf('})();');
   const html = source.slice(0, end) + 'window.__navQA={WorldContext,TerrainNavigation,NavigationMeshBuilder,NavigationMeshTiles,NavigationGoal,BuildingDefinition,MapGeneration,GameRuleDefinition,StrategySim,RallyStateCodec};' + source.slice(end);

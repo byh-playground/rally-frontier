@@ -198,7 +198,7 @@ async function integration(expectedSdkVersion) {
     check(host.replayRecorder.commands.filter(c=>c.action?.type==='BUILD').length===1,'Rollback records the construction command exactly once');
     check(sessions.every(s=>[...s.sim.buildings,...s.sim.constructionOrders].filter(b=>b.side===1&&b.produceType==='swordsman'&&Math.hypot(b.x-buildAction.x,b.y-buildAction.y)<1).length===1),'Delayed construction produces exactly one order or real building on each peer: '+JSON.stringify(sessions.map(s=>({role:s.role,receipts:s.sim.commandReceipts,workers:s.sim.units.filter(u=>u.type==='worker').length,wallet:s.sim.wallet,orders:s.sim.constructionOrders,buildings:s.sim.buildings.map(b=>({id:b.id,type:b.type,side:b.side,produceType:b.produceType,x:b.x,y:b.y}))}))));
     const firstRing=host.netcodeSession.profile.stateHistorySize;
-    await step(firstRing*3);
+    await step(firstRing*3+2);
     const wrapped=confirmedEquality('After three state-ring wraps');
     check(Math.min(...core().map(c=>c.tick))>firstRing*3,'Actual game exceeds three bounded state-ring lengths');
     check(core().every(c=>c.getStateHash(0)===undefined),'Public state history confirms the old ring slot was evicted');

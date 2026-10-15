@@ -1,0 +1,4348 @@
+{
+  "status": "blocked-performance-regression",
+  "before": "94cf1fabe3d0f7e48b08e0803fc70ef51f6197b0",
+  "after": "91802433e6f7f335d1e9036dc6266b869fd07e06",
+  "simVersion": 194,
+  "sourceHash": {
+    "git": "fc249dadc088e804c9520c60d3ac8607c899207d295a10898da491d3ea7a8d5d",
+    "served": "8c148d1767a1f01c296aabcbcbbfd9e2f84c524337aacd708011a7e6d759de2b",
+    "equivalentAfterEolNormalization": true
+  },
+  "tools": {
+    "worker": "25b17a2308d6c84ae012f8e5857bd6eda1dcac3e5de0a0a838f779cd46d1a88d",
+    "rtc": "cbe1224c22e353af232407f308d122046ca6af42a383841cc4ab21887ae04855",
+    "map": "1c3ba97d634bd6a79058d8c5e07a7d99d8fe4f409a40fa1d255579837cea7485"
+  },
+  "worker": [
+    {
+      "count": 1,
+      "variant": "before",
+      "source": "94cf1fabe3d0f7e48b08e0803fc70ef51f6197b0",
+      "sourceHash": "a6c183d16fbe7d03f2207345f31318699b4c57ccfb83337cda134d49f641f2f8",
+      "incomes": [
+        3,
+        3
+      ],
+      "initialMeanMs": {
+        "n": 2,
+        "mean": 2.028999999947846,
+        "median": 1.5099999998509883,
+        "p95": 1.5099999998509883,
+        "max": 2.5480000000447034
+      },
+      "steadyMeanMs": {
+        "n": 2,
+        "mean": 0.13050000000745057,
+        "median": 0.12600000008940695,
+        "p95": 0.12600000008940695,
+        "max": 0.1349999999254942
+      },
+      "steadySnapshotBytes": {
+        "n": 2,
+        "mean": 5531.05,
+        "median": 5531.05,
+        "p95": 5531.05,
+        "max": 5531.05
+      },
+      "steadySnapshotMs": {
+        "n": 2,
+        "mean": 0.3899999996647239,
+        "median": 0.375000000372529,
+        "p95": 0.375000000372529,
+        "max": 0.40499999895691874
+      },
+      "runs": [
+        {
+          "run": 0,
+          "summary": {
+            "initial": {
+              "stepMs": {
+                "n": 100,
+                "mean": 2.5480000000447034,
+                "median": 0.20000000298023224,
+                "p95": 0.7000000029802322,
+                "max": 228.10000000149012
+              },
+              "nav": {
+                "routeQueries": 2,
+                "directQueries": 0,
+                "astarQueries": 2,
+                "astarExpanded": 619,
+                "funnelQueries": 2,
+                "regionHits": 0,
+                "fieldsBuilt": 0,
+                "fieldHits": 0,
+                "sharedAstarHits": 0,
+                "layersBuilt": 1,
+                "meshBuildMs": 212.5,
+                "fieldBuildMs": 0,
+                "workerRouteBuilds": 2,
+                "workerRouteReuses": 81,
+                "workerRouteShared": 0,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 0,
+                "routeBuilds": 0,
+                "routeCacheLookups": 0,
+                "routeJoins": 0,
+                "routeFollowSteps": 0,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 0,
+                "routeInvalid_first": 0,
+                "routeInvalid_target": 0
+              },
+              "snapshotMs": {
+                "n": 10,
+                "mean": 0.5899999991059304,
+                "median": 0.3999999985098839,
+                "p95": 0.7999999970197678,
+                "max": 1.8000000044703484
+              },
+              "snapshotBytes": {
+                "n": 10,
+                "mean": 5349.9,
+                "median": 5172,
+                "p95": 5533,
+                "max": 5533
+              }
+            },
+            "steady": {
+              "stepMs": {
+                "n": 200,
+                "mean": 0.1349999999254942,
+                "median": 0.10000000149011612,
+                "p95": 0.20000000298023224,
+                "max": 0.5
+              },
+              "nav": {
+                "routeQueries": 0,
+                "directQueries": 0,
+                "astarQueries": 0,
+                "astarExpanded": 0,
+                "funnelQueries": 0,
+                "regionHits": 0,
+                "fieldsBuilt": 0,
+                "fieldHits": 0,
+                "sharedAstarHits": 0,
+                "layersBuilt": 0,
+                "meshBuildMs": 0,
+                "fieldBuildMs": 0,
+                "workerRouteBuilds": 0,
+                "workerRouteReuses": 166,
+                "workerRouteShared": 0,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 0,
+                "routeBuilds": 0,
+                "routeCacheLookups": 0,
+                "routeJoins": 0,
+                "routeFollowSteps": 0,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 0,
+                "routeInvalid_first": 0,
+                "routeInvalid_target": 0
+              },
+              "snapshotMs": {
+                "n": 20,
+                "mean": 0.375000000372529,
+                "median": 0.3999999985098839,
+                "p95": 0.4000000059604645,
+                "max": 0.5
+              },
+              "snapshotBytes": {
+                "n": 20,
+                "mean": 5531.05,
+                "median": 5530,
+                "p95": 5533,
+                "max": 5533
+              }
+            }
+          },
+          "metadata": {
+            "elapsedMs": 303.8999999985099,
+            "income": 3,
+            "units": 1,
+            "seed": 3919536611,
+            "mapHash": 1323913035,
+            "inputs": [],
+            "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "isolated": false,
+            "clockResolutionMs": 0.09999999403953552
+          },
+          "errors": []
+        },
+        {
+          "run": 3,
+          "summary": {
+            "initial": {
+              "stepMs": {
+                "n": 100,
+                "mean": 1.5099999998509883,
+                "median": 0.19999999552965164,
+                "p95": 0.3999999985098839,
+                "max": 130.5
+              },
+              "nav": {
+                "routeQueries": 2,
+                "directQueries": 0,
+                "astarQueries": 2,
+                "astarExpanded": 619,
+                "funnelQueries": 2,
+                "regionHits": 0,
+                "fieldsBuilt": 0,
+                "fieldHits": 0,
+                "sharedAstarHits": 0,
+                "layersBuilt": 1,
+                "meshBuildMs": 117.90000000596046,
+                "fieldBuildMs": 0,
+                "workerRouteBuilds": 2,
+                "workerRouteReuses": 81,
+                "workerRouteShared": 0,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 0,
+                "routeBuilds": 0,
+                "routeCacheLookups": 0,
+                "routeJoins": 0,
+                "routeFollowSteps": 0,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 0,
+                "routeInvalid_first": 0,
+                "routeInvalid_target": 0
+              },
+              "snapshotMs": {
+                "n": 10,
+                "mean": 0.55,
+                "median": 0.3999999985098839,
+                "p95": 0.6999999955296516,
+                "max": 1.6000000014901161
+              },
+              "snapshotBytes": {
+                "n": 10,
+                "mean": 5349.9,
+                "median": 5172,
+                "p95": 5533,
+                "max": 5533
+              }
+            },
+            "steady": {
+              "stepMs": {
+                "n": 200,
+                "mean": 0.12600000008940695,
+                "median": 0.10000000149011612,
+                "p95": 0.20000000298023224,
+                "max": 0.30000000447034836
+              },
+              "nav": {
+                "routeQueries": 0,
+                "directQueries": 0,
+                "astarQueries": 0,
+                "astarExpanded": 0,
+                "funnelQueries": 0,
+                "regionHits": 0,
+                "fieldsBuilt": 0,
+                "fieldHits": 0,
+                "sharedAstarHits": 0,
+                "layersBuilt": 0,
+                "meshBuildMs": 0,
+                "fieldBuildMs": 0,
+                "workerRouteBuilds": 0,
+                "workerRouteReuses": 166,
+                "workerRouteShared": 0,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 0,
+                "routeBuilds": 0,
+                "routeCacheLookups": 0,
+                "routeJoins": 0,
+                "routeFollowSteps": 0,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 0,
+                "routeInvalid_first": 0,
+                "routeInvalid_target": 0
+              },
+              "snapshotMs": {
+                "n": 20,
+                "mean": 0.40499999895691874,
+                "median": 0.3999999985098839,
+                "p95": 0.5999999940395355,
+                "max": 1.3000000044703484
+              },
+              "snapshotBytes": {
+                "n": 20,
+                "mean": 5531.05,
+                "median": 5530,
+                "p95": 5533,
+                "max": 5533
+              }
+            }
+          },
+          "metadata": {
+            "elapsedMs": 198.60000000149012,
+            "income": 3,
+            "units": 1,
+            "seed": 3919536611,
+            "mapHash": 1323913035,
+            "inputs": [],
+            "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "isolated": false,
+            "clockResolutionMs": 0.09999999403953552
+          },
+          "errors": []
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "variant": "after",
+      "source": "91802433e6f7f335d1e9036dc6266b869fd07e06",
+      "sourceHash": "fc249dadc088e804c9520c60d3ac8607c899207d295a10898da491d3ea7a8d5d",
+      "incomes": [
+        3,
+        3
+      ],
+      "initialMeanMs": {
+        "n": 2,
+        "mean": 1.6549999998882412,
+        "median": 1.6499999999254942,
+        "p95": 1.6499999999254942,
+        "max": 1.6599999998509885
+      },
+      "steadyMeanMs": {
+        "n": 2,
+        "mean": 0.13975000001490118,
+        "median": 0.13950000006705524,
+        "p95": 0.13950000006705524,
+        "max": 0.1399999999627471
+      },
+      "steadySnapshotBytes": {
+        "n": 2,
+        "mean": 5297.15,
+        "median": 5297.15,
+        "p95": 5297.15,
+        "max": 5297.15
+      },
+      "steadySnapshotMs": {
+        "n": 2,
+        "mean": 0.37000000029802327,
+        "median": 0.3600000001490116,
+        "p95": 0.3600000001490116,
+        "max": 0.38000000044703486
+      },
+      "runs": [
+        {
+          "run": 1,
+          "summary": {
+            "initial": {
+              "stepMs": {
+                "n": 100,
+                "mean": 1.6499999999254942,
+                "median": 0.19999999552965164,
+                "p95": 0.5,
+                "max": 142.89999999850988
+              },
+              "nav": {
+                "routeQueries": 2,
+                "directQueries": 0,
+                "astarQueries": 2,
+                "astarExpanded": 628,
+                "funnelQueries": 2,
+                "regionHits": 0,
+                "fieldsBuilt": 0,
+                "fieldHits": 0,
+                "sharedAstarHits": 0,
+                "layersBuilt": 1,
+                "meshBuildMs": 129.09999999403954,
+                "fieldBuildMs": 0,
+                "workerRouteBuilds": 0,
+                "workerRouteReuses": 0,
+                "workerRouteShared": 0,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 0,
+                "routeBuilds": 2,
+                "routeCacheLookups": 3,
+                "routeJoins": 1,
+                "routeFollowSteps": 83,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 0,
+                "routeInvalid_first": 1,
+                "routeInvalid_target": 2
+              },
+              "snapshotMs": {
+                "n": 10,
+                "mean": 0.599999999254942,
+                "median": 0.3999999985098839,
+                "p95": 0.7999999970197678,
+                "max": 1.8000000044703484
+              },
+              "snapshotBytes": {
+                "n": 10,
+                "mean": 5210.1,
+                "median": 5094,
+                "p95": 5341,
+                "max": 5341
+              }
+            },
+            "steady": {
+              "stepMs": {
+                "n": 200,
+                "mean": 0.1399999999627471,
+                "median": 0.10000000149011612,
+                "p95": 0.20000000298023224,
+                "max": 0.30000000447034836
+              },
+              "nav": {
+                "routeQueries": 0,
+                "directQueries": 0,
+                "astarQueries": 0,
+                "astarExpanded": 0,
+                "funnelQueries": 0,
+                "regionHits": 0,
+                "fieldsBuilt": 0,
+                "fieldHits": 0,
+                "sharedAstarHits": 0,
+                "layersBuilt": 0,
+                "meshBuildMs": 0,
+                "fieldBuildMs": 0,
+                "workerRouteBuilds": 0,
+                "workerRouteReuses": 0,
+                "workerRouteShared": 0,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 0,
+                "routeBuilds": 0,
+                "routeCacheLookups": 4,
+                "routeJoins": 4,
+                "routeFollowSteps": 166,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 0,
+                "routeInvalid_first": 0,
+                "routeInvalid_target": 4
+              },
+              "snapshotMs": {
+                "n": 20,
+                "mean": 0.38000000044703486,
+                "median": 0.3999999985098839,
+                "p95": 0.5,
+                "max": 0.5
+              },
+              "snapshotBytes": {
+                "n": 20,
+                "mean": 5297.15,
+                "median": 5298,
+                "p95": 5299,
+                "max": 5299
+              }
+            }
+          },
+          "metadata": {
+            "elapsedMs": 214.79999999701977,
+            "income": 3,
+            "units": 1,
+            "seed": 3919536611,
+            "mapHash": 1323913035,
+            "inputs": [],
+            "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "isolated": false,
+            "clockResolutionMs": 0.09999999403953552
+          },
+          "errors": []
+        },
+        {
+          "run": 2,
+          "summary": {
+            "initial": {
+              "stepMs": {
+                "n": 100,
+                "mean": 1.6599999998509885,
+                "median": 0.19999999552965164,
+                "p95": 0.5,
+                "max": 143
+              },
+              "nav": {
+                "routeQueries": 2,
+                "directQueries": 0,
+                "astarQueries": 2,
+                "astarExpanded": 628,
+                "funnelQueries": 2,
+                "regionHits": 0,
+                "fieldsBuilt": 0,
+                "fieldHits": 0,
+                "sharedAstarHits": 0,
+                "layersBuilt": 1,
+                "meshBuildMs": 129,
+                "fieldBuildMs": 0,
+                "workerRouteBuilds": 0,
+                "workerRouteReuses": 0,
+                "workerRouteShared": 0,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 0,
+                "routeBuilds": 2,
+                "routeCacheLookups": 3,
+                "routeJoins": 1,
+                "routeFollowSteps": 83,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 0,
+                "routeInvalid_first": 1,
+                "routeInvalid_target": 2
+              },
+              "snapshotMs": {
+                "n": 10,
+                "mean": 0.5600000016391278,
+                "median": 0.3999999985098839,
+                "p95": 0.7000000029802322,
+                "max": 1.8000000044703484
+              },
+              "snapshotBytes": {
+                "n": 10,
+                "mean": 5210.1,
+                "median": 5094,
+                "p95": 5341,
+                "max": 5341
+              }
+            },
+            "steady": {
+              "stepMs": {
+                "n": 200,
+                "mean": 0.13950000006705524,
+                "median": 0.10000000149011612,
+                "p95": 0.20000000298023224,
+                "max": 0.3999999985098839
+              },
+              "nav": {
+                "routeQueries": 0,
+                "directQueries": 0,
+                "astarQueries": 0,
+                "astarExpanded": 0,
+                "funnelQueries": 0,
+                "regionHits": 0,
+                "fieldsBuilt": 0,
+                "fieldHits": 0,
+                "sharedAstarHits": 0,
+                "layersBuilt": 0,
+                "meshBuildMs": 0,
+                "fieldBuildMs": 0,
+                "workerRouteBuilds": 0,
+                "workerRouteReuses": 0,
+                "workerRouteShared": 0,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 0,
+                "routeBuilds": 0,
+                "routeCacheLookups": 4,
+                "routeJoins": 4,
+                "routeFollowSteps": 166,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 0,
+                "routeInvalid_first": 0,
+                "routeInvalid_target": 4
+              },
+              "snapshotMs": {
+                "n": 20,
+                "mean": 0.3600000001490116,
+                "median": 0.3999999985098839,
+                "p95": 0.4000000059604645,
+                "max": 0.4000000059604645
+              },
+              "snapshotBytes": {
+                "n": 20,
+                "mean": 5297.15,
+                "median": 5298,
+                "p95": 5299,
+                "max": 5299
+              }
+            }
+          },
+          "metadata": {
+            "elapsedMs": 215.60000000149012,
+            "income": 3,
+            "units": 1,
+            "seed": 3919536611,
+            "mapHash": 1323913035,
+            "inputs": [],
+            "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "isolated": false,
+            "clockResolutionMs": 0.09999999403953552
+          },
+          "errors": []
+        }
+      ]
+    },
+    {
+      "count": 20,
+      "variant": "before",
+      "source": "94cf1fabe3d0f7e48b08e0803fc70ef51f6197b0",
+      "sourceHash": "a6c183d16fbe7d03f2207345f31318699b4c57ccfb83337cda134d49f641f2f8",
+      "incomes": [
+        31,
+        31
+      ],
+      "initialMeanMs": {
+        "n": 2,
+        "mean": 3.755,
+        "median": 3.132000000178814,
+        "p95": 3.132000000178814,
+        "max": 4.377999999821186
+      },
+      "steadyMeanMs": {
+        "n": 2,
+        "mean": 0.9227499998547137,
+        "median": 0.876999999806285,
+        "p95": 0.876999999806285,
+        "max": 0.9684999999031425
+      },
+      "steadySnapshotBytes": {
+        "n": 2,
+        "mean": 23487.35,
+        "median": 23487.35,
+        "p95": 23487.35,
+        "max": 23487.35
+      },
+      "steadySnapshotMs": {
+        "n": 2,
+        "mean": 2.1150000009685757,
+        "median": 2.085000001266599,
+        "p95": 2.085000001266599,
+        "max": 2.145000000670552
+      },
+      "runs": [
+        {
+          "run": 0,
+          "summary": {
+            "initial": {
+              "stepMs": {
+                "n": 100,
+                "mean": 3.132000000178814,
+                "median": 1.2999999970197678,
+                "p95": 2.399999998509884,
+                "max": 162.10000000149012
+              },
+              "nav": {
+                "routeQueries": 21,
+                "directQueries": 9,
+                "astarQueries": 12,
+                "astarExpanded": 2436,
+                "funnelQueries": 12,
+                "regionHits": 10,
+                "fieldsBuilt": 1,
+                "fieldHits": 3,
+                "sharedAstarHits": 22,
+                "layersBuilt": 1,
+                "meshBuildMs": 136.89999999850988,
+                "fieldBuildMs": 14,
+                "workerRouteBuilds": 21,
+                "workerRouteReuses": 1683,
+                "workerRouteShared": 63,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 50,
+                "routeBuilds": 0,
+                "routeCacheLookups": 0,
+                "routeJoins": 0,
+                "routeFollowSteps": 0,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 0,
+                "routeInvalid_first": 0,
+                "routeInvalid_target": 0
+              },
+              "snapshotMs": {
+                "n": 10,
+                "mean": 2.219999998807907,
+                "median": 1.7999999970197678,
+                "p95": 3,
+                "max": 3.5
+              },
+              "snapshotBytes": {
+                "n": 10,
+                "mean": 19146.2,
+                "median": 18414,
+                "p95": 20480,
+                "max": 20856
+              }
+            },
+            "steady": {
+              "stepMs": {
+                "n": 200,
+                "mean": 0.876999999806285,
+                "median": 0.7999999970197678,
+                "p95": 1.5,
+                "max": 2.100000001490116
+              },
+              "nav": {
+                "routeQueries": 8,
+                "directQueries": 5,
+                "astarQueries": 3,
+                "astarExpanded": 808,
+                "funnelQueries": 3,
+                "regionHits": 3,
+                "fieldsBuilt": 0,
+                "fieldHits": 0,
+                "sharedAstarHits": 0,
+                "layersBuilt": 0,
+                "meshBuildMs": 0,
+                "fieldBuildMs": 0,
+                "workerRouteBuilds": 8,
+                "workerRouteReuses": 3483,
+                "workerRouteShared": 76,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 81,
+                "routeBuilds": 0,
+                "routeCacheLookups": 0,
+                "routeJoins": 0,
+                "routeFollowSteps": 0,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 0,
+                "routeInvalid_first": 0,
+                "routeInvalid_target": 0
+              },
+              "snapshotMs": {
+                "n": 20,
+                "mean": 2.085000001266599,
+                "median": 1.7000000029802322,
+                "p95": 3.3000000044703484,
+                "max": 3.5
+              },
+              "snapshotBytes": {
+                "n": 20,
+                "mean": 23487.35,
+                "median": 23909,
+                "p95": 24636,
+                "max": 24639
+              }
+            }
+          },
+          "metadata": {
+            "elapsedMs": 561.5,
+            "income": 31,
+            "units": 20,
+            "seed": 3919536611,
+            "mapHash": 1323913035,
+            "inputs": [],
+            "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "isolated": false,
+            "clockResolutionMs": 0.09999999403953552
+          },
+          "errors": []
+        },
+        {
+          "run": 3,
+          "summary": {
+            "initial": {
+              "stepMs": {
+                "n": 100,
+                "mean": 4.377999999821186,
+                "median": 1.7000000029802322,
+                "p95": 5.100000001490116,
+                "max": 215
+              },
+              "nav": {
+                "routeQueries": 21,
+                "directQueries": 9,
+                "astarQueries": 12,
+                "astarExpanded": 2436,
+                "funnelQueries": 12,
+                "regionHits": 10,
+                "fieldsBuilt": 1,
+                "fieldHits": 3,
+                "sharedAstarHits": 22,
+                "layersBuilt": 1,
+                "meshBuildMs": 181,
+                "fieldBuildMs": 19.19999999552965,
+                "workerRouteBuilds": 21,
+                "workerRouteReuses": 1683,
+                "workerRouteShared": 63,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 50,
+                "routeBuilds": 0,
+                "routeCacheLookups": 0,
+                "routeJoins": 0,
+                "routeFollowSteps": 0,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 0,
+                "routeInvalid_first": 0,
+                "routeInvalid_target": 0
+              },
+              "snapshotMs": {
+                "n": 10,
+                "mean": 3.0200000002980234,
+                "median": 2.600000001490116,
+                "p95": 3.3000000044703484,
+                "max": 7
+              },
+              "snapshotBytes": {
+                "n": 10,
+                "mean": 19146.2,
+                "median": 18414,
+                "p95": 20480,
+                "max": 20856
+              }
+            },
+            "steady": {
+              "stepMs": {
+                "n": 200,
+                "mean": 0.9684999999031425,
+                "median": 0.8999999985098839,
+                "p95": 1.5,
+                "max": 2
+              },
+              "nav": {
+                "routeQueries": 8,
+                "directQueries": 5,
+                "astarQueries": 3,
+                "astarExpanded": 808,
+                "funnelQueries": 3,
+                "regionHits": 3,
+                "fieldsBuilt": 0,
+                "fieldHits": 0,
+                "sharedAstarHits": 0,
+                "layersBuilt": 0,
+                "meshBuildMs": 0,
+                "fieldBuildMs": 0,
+                "workerRouteBuilds": 8,
+                "workerRouteReuses": 3483,
+                "workerRouteShared": 76,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 81,
+                "routeBuilds": 0,
+                "routeCacheLookups": 0,
+                "routeJoins": 0,
+                "routeFollowSteps": 0,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 0,
+                "routeInvalid_first": 0,
+                "routeInvalid_target": 0
+              },
+              "snapshotMs": {
+                "n": 20,
+                "mean": 2.145000000670552,
+                "median": 1.8000000044703484,
+                "p95": 3.600000001490116,
+                "max": 3.899999998509884
+              },
+              "snapshotBytes": {
+                "n": 20,
+                "mean": 23487.35,
+                "median": 23909,
+                "p95": 24636,
+                "max": 24639
+              }
+            }
+          },
+          "metadata": {
+            "elapsedMs": 717.1000000014901,
+            "income": 31,
+            "units": 20,
+            "seed": 3919536611,
+            "mapHash": 1323913035,
+            "inputs": [],
+            "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "isolated": false,
+            "clockResolutionMs": 0.09999999403953552
+          },
+          "errors": []
+        }
+      ]
+    },
+    {
+      "count": 20,
+      "variant": "after",
+      "source": "91802433e6f7f335d1e9036dc6266b869fd07e06",
+      "sourceHash": "fc249dadc088e804c9520c60d3ac8607c899207d295a10898da491d3ea7a8d5d",
+      "incomes": [
+        40,
+        40
+      ],
+      "initialMeanMs": {
+        "n": 2,
+        "mean": 3.131499999947846,
+        "median": 2.763999999985099,
+        "p95": 2.763999999985099,
+        "max": 3.498999999910593
+      },
+      "steadyMeanMs": {
+        "n": 2,
+        "mean": 1.0055000000819563,
+        "median": 0.7680000000447035,
+        "p95": 0.7680000000447035,
+        "max": 1.2430000001192092
+      },
+      "steadySnapshotBytes": {
+        "n": 2,
+        "mean": 19811.9,
+        "median": 19811.9,
+        "p95": 19811.9,
+        "max": 19811.9
+      },
+      "steadySnapshotMs": {
+        "n": 2,
+        "mean": 2.162499999627471,
+        "median": 1.6399999998509884,
+        "p95": 1.6399999998509884,
+        "max": 2.6849999994039537
+      },
+      "runs": [
+        {
+          "run": 1,
+          "summary": {
+            "initial": {
+              "stepMs": {
+                "n": 100,
+                "mean": 2.763999999985099,
+                "median": 1.1000000014901161,
+                "p95": 2.5,
+                "max": 148.20000000298023
+              },
+              "nav": {
+                "routeQueries": 2,
+                "directQueries": 0,
+                "astarQueries": 2,
+                "astarExpanded": 640,
+                "funnelQueries": 2,
+                "regionHits": 0,
+                "fieldsBuilt": 0,
+                "fieldHits": 0,
+                "sharedAstarHits": 0,
+                "layersBuilt": 1,
+                "meshBuildMs": 126.39999999850988,
+                "fieldBuildMs": 0,
+                "workerRouteBuilds": 0,
+                "workerRouteReuses": 0,
+                "workerRouteShared": 0,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 0,
+                "routeBuilds": 2,
+                "routeCacheLookups": 70,
+                "routeJoins": 68,
+                "routeFollowSteps": 1751,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 27,
+                "routeInvalid_first": 20,
+                "routeInvalid_target": 23
+              },
+              "snapshotMs": {
+                "n": 10,
+                "mean": 2.0899999998509884,
+                "median": 1.7000000029802322,
+                "p95": 2.600000001490116,
+                "max": 3.5
+              },
+              "snapshotBytes": {
+                "n": 10,
+                "mean": 17693.4,
+                "median": 16634,
+                "p95": 19461,
+                "max": 19469
+              }
+            },
+            "steady": {
+              "stepMs": {
+                "n": 200,
+                "mean": 0.7680000000447035,
+                "median": 0.7000000029802322,
+                "p95": 1,
+                "max": 1.8999999985098839
+              },
+              "nav": {
+                "routeQueries": 0,
+                "directQueries": 0,
+                "astarQueries": 0,
+                "astarExpanded": 0,
+                "funnelQueries": 0,
+                "regionHits": 0,
+                "fieldsBuilt": 0,
+                "fieldHits": 0,
+                "sharedAstarHits": 0,
+                "layersBuilt": 0,
+                "meshBuildMs": 0,
+                "fieldBuildMs": 0,
+                "workerRouteBuilds": 0,
+                "workerRouteReuses": 0,
+                "workerRouteShared": 0,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 0,
+                "routeBuilds": 0,
+                "routeCacheLookups": 140,
+                "routeJoins": 140,
+                "routeFollowSteps": 3443,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 66,
+                "routeInvalid_first": 0,
+                "routeInvalid_target": 74
+              },
+              "snapshotMs": {
+                "n": 20,
+                "mean": 1.6399999998509884,
+                "median": 1.5,
+                "p95": 2,
+                "max": 2.600000001490116
+              },
+              "snapshotBytes": {
+                "n": 20,
+                "mean": 19811.9,
+                "median": 19775,
+                "p95": 20434,
+                "max": 20466
+              }
+            }
+          },
+          "metadata": {
+            "elapsedMs": 493.40000000596046,
+            "income": 40,
+            "units": 20,
+            "seed": 3919536611,
+            "mapHash": 1323913035,
+            "inputs": [],
+            "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "isolated": false,
+            "clockResolutionMs": 0.09999999403953552
+          },
+          "errors": []
+        },
+        {
+          "run": 2,
+          "summary": {
+            "initial": {
+              "stepMs": {
+                "n": 100,
+                "mean": 3.498999999910593,
+                "median": 1.7000000029802322,
+                "p95": 3.100000001490116,
+                "max": 174
+              },
+              "nav": {
+                "routeQueries": 2,
+                "directQueries": 0,
+                "astarQueries": 2,
+                "astarExpanded": 640,
+                "funnelQueries": 2,
+                "regionHits": 0,
+                "fieldsBuilt": 0,
+                "fieldHits": 0,
+                "sharedAstarHits": 0,
+                "layersBuilt": 1,
+                "meshBuildMs": 152.70000000298023,
+                "fieldBuildMs": 0,
+                "workerRouteBuilds": 0,
+                "workerRouteReuses": 0,
+                "workerRouteShared": 0,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 0,
+                "routeBuilds": 2,
+                "routeCacheLookups": 70,
+                "routeJoins": 68,
+                "routeFollowSteps": 1751,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 27,
+                "routeInvalid_first": 20,
+                "routeInvalid_target": 23
+              },
+              "snapshotMs": {
+                "n": 10,
+                "mean": 2.6300000004470347,
+                "median": 2.2000000029802322,
+                "p95": 3.5999999940395355,
+                "max": 4.200000002980232
+              },
+              "snapshotBytes": {
+                "n": 10,
+                "mean": 17693.4,
+                "median": 16634,
+                "p95": 19461,
+                "max": 19469
+              }
+            },
+            "steady": {
+              "stepMs": {
+                "n": 200,
+                "mean": 1.2430000001192092,
+                "median": 1.2999999970197678,
+                "p95": 1.8000000044703484,
+                "max": 2.2000000029802322
+              },
+              "nav": {
+                "routeQueries": 0,
+                "directQueries": 0,
+                "astarQueries": 0,
+                "astarExpanded": 0,
+                "funnelQueries": 0,
+                "regionHits": 0,
+                "fieldsBuilt": 0,
+                "fieldHits": 0,
+                "sharedAstarHits": 0,
+                "layersBuilt": 0,
+                "meshBuildMs": 0,
+                "fieldBuildMs": 0,
+                "workerRouteBuilds": 0,
+                "workerRouteReuses": 0,
+                "workerRouteShared": 0,
+                "workerRouteInvalid_topology": 0,
+                "workerRouteInvalid_deviation": 0,
+                "routeBuilds": 0,
+                "routeCacheLookups": 140,
+                "routeJoins": 140,
+                "routeFollowSteps": 3443,
+                "routeInvalid_topology": 0,
+                "routeInvalid_deviation": 66,
+                "routeInvalid_first": 0,
+                "routeInvalid_target": 74
+              },
+              "snapshotMs": {
+                "n": 20,
+                "mean": 2.6849999994039537,
+                "median": 2.8000000044703484,
+                "p95": 3.1999999955296516,
+                "max": 3.399999998509884
+              },
+              "snapshotBytes": {
+                "n": 20,
+                "mean": 19811.9,
+                "median": 19775,
+                "p95": 20434,
+                "max": 20466
+              }
+            }
+          },
+          "metadata": {
+            "elapsedMs": 694.3999999985099,
+            "income": 40,
+            "units": 20,
+            "seed": 3919536611,
+            "mapHash": 1323913035,
+            "inputs": [],
+            "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "isolated": false,
+            "clockResolutionMs": 0.09999999403953552
+          },
+          "errors": []
+        }
+      ]
+    }
+  ],
+  "rtc": [
+    {
+      "variant": "before",
+      "source": {
+        "sourcePath": "C:\\projects\\rally-frontier\\.worktrees\\common-route-reuse\\.qa\\baseline.html",
+        "sourceSha256": "a6c183d16fbe7d03f2207345f31318699b4c57ccfb83337cda134d49f641f2f8",
+        "browser": "155.0.4283.45",
+        "node": "v25.9.0",
+        "os": "10.0.26200",
+        "durationMs": 12000,
+        "case": {
+          "name": "sword400",
+          "type": "swordsman",
+          "count": 90,
+          "rate": 1,
+          "workers": 20,
+          "exactCombatCount": 90,
+          "expectedSupply": 400,
+          "warmupTick": 20,
+          "quiet": true
+        }
+      },
+      "peerRuns": 4,
+      "stepMs": {
+        "n": 384,
+        "mean": 63.989322916662786,
+        "median": 57.69999999552965,
+        "p95": 111.19999999552965,
+        "max": 170.89999999850988
+      },
+      "fixedTickStepMs": {
+        "n": 200,
+        "mean": 68.56999999985099,
+        "median": 64.30000000447035,
+        "p95": 99.5,
+        "max": 170.89999999850988
+      },
+      "snapshotBytes": {
+        "n": 18,
+        "mean": 100107.33333333333,
+        "median": 98025,
+        "p95": 109688,
+        "max": 109688
+      },
+      "snapshotMs": {
+        "n": 18,
+        "mean": 12.761111110862759,
+        "median": 12.799999997019768,
+        "p95": 17,
+        "max": 17.600000001490116
+      },
+      "fixedTickSnapshotBytes": {
+        "n": 12,
+        "mean": 103440.33333333333,
+        "median": 102608,
+        "p95": 109688,
+        "max": 109688
+      },
+      "fixedTickSnapshotMs": {
+        "n": 12,
+        "mean": 13.283333333830038,
+        "median": 12.799999997019768,
+        "p95": 17,
+        "max": 17.600000001490116
+      },
+      "frameIntervalMs": {
+        "n": 678,
+        "mean": 71.32640117992563,
+        "median": 58.5,
+        "p95": 165.39999999850988,
+        "max": 329.70000000298023
+      },
+      "frameWorkMs": {
+        "n": 678,
+        "mean": 17.63023598811927,
+        "median": 16.799999997019768,
+        "p95": 31.100000001490116,
+        "max": 108
+      },
+      "nav": {
+        "astarQueries": 5553,
+        "funnelQueries": 5553,
+        "fieldHits": 26,
+        "regionHits": 2620,
+        "sharedAstarHits": 10818,
+        "workerRouteReuses": 10312,
+        "workerRouteBuilds": 57,
+        "workerRouteShared": 141,
+        "workerRouteInvalid_topology": 0,
+        "workerRouteInvalid_deviation": 64,
+        "routeBuilds": 0,
+        "routeCacheLookups": 0,
+        "routeJoins": 0,
+        "routeFollowSteps": 0,
+        "routeInvalid_topology": 0,
+        "routeInvalid_deviation": 0,
+        "routeInvalid_first": 0,
+        "routeInvalid_target": 0,
+        "routeQueries": 28695,
+        "directQueries": 23142,
+        "layersBuilt": 0,
+        "meshBuildMs": 0
+      },
+      "runs": [
+        {
+          "run": 1,
+          "role": "host",
+          "source": {
+            "sourcePath": "C:\\projects\\rally-frontier\\.worktrees\\common-route-reuse\\.qa\\baseline.html",
+            "sourceSha256": "a6c183d16fbe7d03f2207345f31318699b4c57ccfb83337cda134d49f641f2f8",
+            "browser": "155.0.4283.45",
+            "node": "v25.9.0",
+            "os": "10.0.26200",
+            "durationMs": 12000,
+            "case": {
+              "name": "sword400",
+              "type": "swordsman",
+              "count": 90,
+              "rate": 1,
+              "workers": 20,
+              "exactCombatCount": 90,
+              "expectedSupply": 400,
+              "warmupTick": 20,
+              "quiet": true
+            }
+          },
+          "stepMs": {
+            "n": 108,
+            "mean": 57.229629629464064,
+            "median": 52.69999999552965,
+            "p95": 93.39999999850988,
+            "max": 115.30000000447035
+          },
+          "snapshotBytes": {
+            "n": 5,
+            "mean": 99070,
+            "median": 98025,
+            "p95": 102608,
+            "max": 109688
+          },
+          "snapshotMs": {
+            "n": 5,
+            "mean": 11.93999999910593,
+            "median": 14.299999997019768,
+            "p95": 14.700000002980232,
+            "max": 15.600000001490116
+          },
+          "initialSupply": 400,
+          "seed": 2617977013,
+          "mapHash": 1323913035,
+          "tick": 130,
+          "units": 166,
+          "metrics": {
+            "rollbacks": 0,
+            "resimulatedTicks": 0,
+            "maxRollbackDepth": 0,
+            "stalls": 13,
+            "holds": 0,
+            "recoveries": 0,
+            "rejectedSnapshots": 0,
+            "rejectedPackets": 0,
+            "sentBytes": 13659,
+            "receivedBytes": 12772,
+            "predictedTicks": 0,
+            "hashMismatches": 0,
+            "latestResimulationMs": 0,
+            "smoothedRTT": 17.78952611311893,
+            "jitter": 25.228715709072567,
+            "lateInputRate": 0,
+            "rollbackFrequency": 0,
+            "stallFrequency": 0.687509839930855,
+            "resimulationCostMs": 0,
+            "stateHashComputations": 7,
+            "hashedStateBytes": 717870,
+            "snapshotSaves": 7,
+            "serializedSnapshotBytes": 717870,
+            "inputReservations": 0,
+            "inputReservationSentBytes": 0,
+            "inputReservationReceivedBytes": 0,
+            "inputDelay": 3,
+            "requestedInputDelay": 3,
+            "confirmedTick": 130,
+            "tick": 130,
+            "pace": 1,
+            "retainedSnapshotBytes": 283054
+          },
+          "commands": 0,
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "errors": []
+        },
+        {
+          "run": 1,
+          "role": "guest",
+          "source": {
+            "sourcePath": "C:\\projects\\rally-frontier\\.worktrees\\common-route-reuse\\.qa\\baseline.html",
+            "sourceSha256": "a6c183d16fbe7d03f2207345f31318699b4c57ccfb83337cda134d49f641f2f8",
+            "browser": "155.0.4283.45",
+            "node": "v25.9.0",
+            "os": "10.0.26200",
+            "durationMs": 12000,
+            "case": {
+              "name": "sword400",
+              "type": "swordsman",
+              "count": 90,
+              "rate": 1,
+              "workers": 20,
+              "exactCombatCount": 90,
+              "expectedSupply": 400,
+              "warmupTick": 20,
+              "quiet": true
+            }
+          },
+          "stepMs": {
+            "n": 108,
+            "mean": 56.54074074045099,
+            "median": 49.899999998509884,
+            "p95": 89.70000000298023,
+            "max": 127.10000000149012
+          },
+          "snapshotBytes": {
+            "n": 5,
+            "mean": 99070,
+            "median": 98025,
+            "p95": 102608,
+            "max": 109688
+          },
+          "snapshotMs": {
+            "n": 5,
+            "mean": 11.440000000596047,
+            "median": 11.399999998509884,
+            "p95": 14,
+            "max": 14.299999997019768
+          },
+          "initialSupply": 400,
+          "seed": 2617977013,
+          "mapHash": 1323913035,
+          "tick": 130,
+          "units": 166,
+          "metrics": {
+            "rollbacks": 0,
+            "resimulatedTicks": 0,
+            "maxRollbackDepth": 0,
+            "stalls": 0,
+            "holds": 0,
+            "recoveries": 0,
+            "rejectedSnapshots": 0,
+            "rejectedPackets": 0,
+            "sentBytes": 12801,
+            "receivedBytes": 13659,
+            "predictedTicks": 0,
+            "hashMismatches": 0,
+            "latestResimulationMs": 0,
+            "smoothedRTT": 31.05408231503958,
+            "jitter": 30.28111765699386,
+            "lateInputRate": 0,
+            "rollbackFrequency": 0,
+            "stallFrequency": 0,
+            "resimulationCostMs": 0,
+            "stateHashComputations": 7,
+            "hashedStateBytes": 717870,
+            "snapshotSaves": 7,
+            "serializedSnapshotBytes": 717870,
+            "inputReservations": 0,
+            "inputReservationSentBytes": 0,
+            "inputReservationReceivedBytes": 0,
+            "inputDelay": 1,
+            "requestedInputDelay": 1,
+            "confirmedTick": 130,
+            "tick": 130,
+            "pace": 1,
+            "retainedSnapshotBytes": 283054
+          },
+          "commands": 0,
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "errors": []
+        },
+        {
+          "run": 2,
+          "role": "host",
+          "source": {
+            "sourcePath": "C:\\projects\\rally-frontier\\.worktrees\\common-route-reuse\\.qa\\baseline.html",
+            "sourceSha256": "a6c183d16fbe7d03f2207345f31318699b4c57ccfb83337cda134d49f641f2f8",
+            "browser": "155.0.4283.45",
+            "node": "v25.9.0",
+            "os": "10.0.26200",
+            "durationMs": 12000,
+            "case": {
+              "name": "sword400",
+              "type": "swordsman",
+              "count": 90,
+              "rate": 1,
+              "workers": 20,
+              "exactCombatCount": 90,
+              "expectedSupply": 400,
+              "warmupTick": 20,
+              "quiet": true
+            }
+          },
+          "stepMs": {
+            "n": 84,
+            "mean": 71.9416666667731,
+            "median": 62.900000005960464,
+            "p95": 126.70000000298023,
+            "max": 170.89999999850988
+          },
+          "snapshotBytes": {
+            "n": 4,
+            "mean": 101404,
+            "median": 98025,
+            "p95": 102608,
+            "max": 109688
+          },
+          "snapshotMs": {
+            "n": 4,
+            "mean": 13.549999998882413,
+            "median": 12.799999997019768,
+            "p95": 13.5,
+            "max": 17
+          },
+          "initialSupply": 400,
+          "seed": 2617977013,
+          "mapHash": 1323913035,
+          "tick": 107,
+          "units": 187,
+          "metrics": {
+            "rollbacks": 0,
+            "resimulatedTicks": 0,
+            "maxRollbackDepth": 0,
+            "stalls": 48,
+            "holds": 6,
+            "recoveries": 0,
+            "rejectedSnapshots": 0,
+            "rejectedPackets": 0,
+            "sentBytes": 14127,
+            "receivedBytes": 10963,
+            "predictedTicks": 0,
+            "hashMismatches": 0,
+            "latestResimulationMs": 0,
+            "smoothedRTT": 84.6012149453958,
+            "jitter": 37.589694468928194,
+            "lateInputRate": 0,
+            "rollbackFrequency": 0,
+            "stallFrequency": 6.754385092212283,
+            "resimulationCostMs": 0,
+            "stateHashComputations": 6,
+            "hashedStateBytes": 628136,
+            "snapshotSaves": 6,
+            "serializedSnapshotBytes": 628136,
+            "inputReservations": 0,
+            "inputReservationSentBytes": 0,
+            "inputReservationReceivedBytes": 0,
+            "inputDelay": 8,
+            "requestedInputDelay": 8,
+            "confirmedTick": 106,
+            "tick": 107,
+            "pace": 1,
+            "retainedSnapshotBytes": 295928
+          },
+          "commands": 0,
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "errors": []
+        },
+        {
+          "run": 2,
+          "role": "guest",
+          "source": {
+            "sourcePath": "C:\\projects\\rally-frontier\\.worktrees\\common-route-reuse\\.qa\\baseline.html",
+            "sourceSha256": "a6c183d16fbe7d03f2207345f31318699b4c57ccfb83337cda134d49f641f2f8",
+            "browser": "155.0.4283.45",
+            "node": "v25.9.0",
+            "os": "10.0.26200",
+            "durationMs": 12000,
+            "case": {
+              "name": "sword400",
+              "type": "swordsman",
+              "count": 90,
+              "rate": 1,
+              "workers": 20,
+              "exactCombatCount": 90,
+              "expectedSupply": 400,
+              "warmupTick": 20,
+              "quiet": true
+            }
+          },
+          "stepMs": {
+            "n": 84,
+            "mean": 74.30476190522313,
+            "median": 64.69999999552965,
+            "p95": 119.60000000149012,
+            "max": 166.60000000149012
+          },
+          "snapshotBytes": {
+            "n": 4,
+            "mean": 101404,
+            "median": 98025,
+            "p95": 102608,
+            "max": 109688
+          },
+          "snapshotMs": {
+            "n": 4,
+            "mean": 14.650000000372529,
+            "median": 12.600000001490116,
+            "p95": 16,
+            "max": 17.600000001490116
+          },
+          "initialSupply": 400,
+          "seed": 2617977013,
+          "mapHash": 1323913035,
+          "tick": 106,
+          "units": 187,
+          "metrics": {
+            "rollbacks": 0,
+            "resimulatedTicks": 0,
+            "maxRollbackDepth": 0,
+            "stalls": 0,
+            "holds": 0,
+            "recoveries": 0,
+            "rejectedSnapshots": 0,
+            "rejectedPackets": 0,
+            "sentBytes": 10992,
+            "receivedBytes": 14127,
+            "predictedTicks": 0,
+            "hashMismatches": 0,
+            "latestResimulationMs": 0,
+            "smoothedRTT": 0.020166010413119224,
+            "jitter": 0.040330878744271166,
+            "lateInputRate": 0,
+            "rollbackFrequency": 0,
+            "stallFrequency": 0,
+            "resimulationCostMs": 0,
+            "stateHashComputations": 6,
+            "hashedStateBytes": 628136,
+            "snapshotSaves": 6,
+            "serializedSnapshotBytes": 628136,
+            "inputReservations": 0,
+            "inputReservationSentBytes": 0,
+            "inputReservationReceivedBytes": 0,
+            "inputDelay": 1,
+            "requestedInputDelay": 1,
+            "confirmedTick": 106,
+            "tick": 106,
+            "pace": 1,
+            "retainedSnapshotBytes": 295928
+          },
+          "commands": 0,
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "errors": []
+        }
+      ]
+    },
+    {
+      "variant": "after",
+      "source": {
+        "sourcePath": "C:\\projects\\rally-frontier\\.worktrees\\common-route-reuse\\index.html",
+        "sourceSha256": "8c148d1767a1f01c296aabcbcbbfd9e2f84c524337aacd708011a7e6d759de2b",
+        "browser": "155.0.4283.45",
+        "node": "v25.9.0",
+        "os": "10.0.26200",
+        "durationMs": 12000,
+        "case": {
+          "name": "sword400",
+          "type": "swordsman",
+          "count": 90,
+          "rate": 1,
+          "workers": 20,
+          "exactCombatCount": 90,
+          "expectedSupply": 400,
+          "warmupTick": 20,
+          "quiet": true
+        }
+      },
+      "peerRuns": 4,
+      "stepMs": {
+        "n": 332,
+        "mean": 74.65903614470399,
+        "median": 64.20000000298023,
+        "p95": 131.39999999850988,
+        "max": 184.90000000596046
+      },
+      "fixedTickStepMs": {
+        "n": 200,
+        "mean": 69.18750000003725,
+        "median": 61.80000000447035,
+        "p95": 109.10000000149012,
+        "max": 169.80000000447035
+      },
+      "snapshotBytes": {
+        "n": 16,
+        "mean": 134252.5,
+        "median": 133041,
+        "p95": 138030,
+        "max": 138030
+      },
+      "snapshotMs": {
+        "n": 16,
+        "mean": 17.87499999953434,
+        "median": 17.899999998509884,
+        "p95": 21.799999997019768,
+        "max": 24.200000002980232
+      },
+      "fixedTickSnapshotBytes": {
+        "n": 12,
+        "mean": 135804,
+        "median": 136341,
+        "p95": 138030,
+        "max": 138030
+      },
+      "fixedTickSnapshotMs": {
+        "n": 12,
+        "mean": 17.300000000124175,
+        "median": 17.700000002980232,
+        "p95": 21.5,
+        "max": 24.200000002980232
+      },
+      "frameIntervalMs": {
+        "n": 415,
+        "mean": 117.6433734939759,
+        "median": 116.10000000149012,
+        "p95": 240.5,
+        "max": 356.6000000014901
+      },
+      "frameWorkMs": {
+        "n": 415,
+        "mean": 26.57903614451727,
+        "median": 25.400000005960464,
+        "p95": 54.20000000298023,
+        "max": 133.39999999850988
+      },
+      "nav": {
+        "astarQueries": 2349,
+        "funnelQueries": 2349,
+        "fieldHits": 0,
+        "regionHits": 399,
+        "sharedAstarHits": 0,
+        "workerRouteReuses": 0,
+        "workerRouteBuilds": 0,
+        "workerRouteShared": 0,
+        "workerRouteInvalid_topology": 0,
+        "workerRouteInvalid_deviation": 0,
+        "routeBuilds": 5906,
+        "routeCacheLookups": 20678,
+        "routeJoins": 14772,
+        "routeFollowSteps": 33047,
+        "routeInvalid_topology": 0,
+        "routeInvalid_deviation": 237,
+        "routeInvalid_first": 130,
+        "routeInvalid_target": 20311,
+        "routeQueries": 5906,
+        "directQueries": 3557,
+        "layersBuilt": 0,
+        "meshBuildMs": 0
+      },
+      "runs": [
+        {
+          "run": 1,
+          "role": "host",
+          "source": {
+            "sourcePath": "C:\\projects\\rally-frontier\\.worktrees\\common-route-reuse\\index.html",
+            "sourceSha256": "8c148d1767a1f01c296aabcbcbbfd9e2f84c524337aacd708011a7e6d759de2b",
+            "browser": "155.0.4283.45",
+            "node": "v25.9.0",
+            "os": "10.0.26200",
+            "durationMs": 12000,
+            "case": {
+              "name": "sword400",
+              "type": "swordsman",
+              "count": 90,
+              "rate": 1,
+              "workers": 20,
+              "exactCombatCount": 90,
+              "expectedSupply": 400,
+              "warmupTick": 20,
+              "quiet": true
+            }
+          },
+          "stepMs": {
+            "n": 87,
+            "mean": 68.60000000063373,
+            "median": 59.30000000447035,
+            "p95": 121.80000000447035,
+            "max": 183.89999999850988
+          },
+          "snapshotBytes": {
+            "n": 4,
+            "mean": 134252.5,
+            "median": 133041,
+            "p95": 136341,
+            "max": 138030
+          },
+          "snapshotMs": {
+            "n": 4,
+            "mean": 18.274999998509884,
+            "median": 19.799999997019768,
+            "p95": 20.600000001490116,
+            "max": 21.799999997019768
+          },
+          "initialSupply": 400,
+          "seed": 2617977013,
+          "mapHash": 1323913035,
+          "tick": 109,
+          "units": 188,
+          "metrics": {
+            "rollbacks": 0,
+            "resimulatedTicks": 0,
+            "maxRollbackDepth": 0,
+            "stalls": 7,
+            "holds": 0,
+            "recoveries": 0,
+            "rejectedSnapshots": 0,
+            "rejectedPackets": 0,
+            "sentBytes": 11222,
+            "receivedBytes": 10826,
+            "predictedTicks": 0,
+            "hashMismatches": 0,
+            "latestResimulationMs": 0,
+            "smoothedRTT": 76.46963359983913,
+            "jitter": 107.27337659520525,
+            "lateInputRate": 0,
+            "rollbackFrequency": 0,
+            "stallFrequency": 0.9090284111277586,
+            "resimulationCostMs": 0,
+            "stateHashComputations": 6,
+            "hashedStateBytes": 788911,
+            "snapshotSaves": 6,
+            "serializedSnapshotBytes": 788911,
+            "inputReservations": 0,
+            "inputReservationSentBytes": 0,
+            "inputReservationReceivedBytes": 0,
+            "inputDelay": 2,
+            "requestedInputDelay": 2,
+            "confirmedTick": 110,
+            "tick": 109,
+            "pace": 1,
+            "retainedSnapshotBytes": 398980
+          },
+          "commands": 0,
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "errors": []
+        },
+        {
+          "run": 1,
+          "role": "guest",
+          "source": {
+            "sourcePath": "C:\\projects\\rally-frontier\\.worktrees\\common-route-reuse\\index.html",
+            "sourceSha256": "8c148d1767a1f01c296aabcbcbbfd9e2f84c524337aacd708011a7e6d759de2b",
+            "browser": "155.0.4283.45",
+            "node": "v25.9.0",
+            "os": "10.0.26200",
+            "durationMs": 12000,
+            "case": {
+              "name": "sword400",
+              "type": "swordsman",
+              "count": 90,
+              "rate": 1,
+              "workers": 20,
+              "exactCombatCount": 90,
+              "expectedSupply": 400,
+              "warmupTick": 20,
+              "quiet": true
+            }
+          },
+          "stepMs": {
+            "n": 87,
+            "mean": 71.98850574695516,
+            "median": 60.70000000298023,
+            "p95": 134.60000000149012,
+            "max": 184.90000000596046
+          },
+          "snapshotBytes": {
+            "n": 4,
+            "mean": 134252.5,
+            "median": 133041,
+            "p95": 136341,
+            "max": 138030
+          },
+          "snapshotMs": {
+            "n": 4,
+            "mean": 16.300000000745058,
+            "median": 14.800000004470348,
+            "p95": 17.700000002980232,
+            "max": 19.19999999552965
+          },
+          "initialSupply": 400,
+          "seed": 2617977013,
+          "mapHash": 1323913035,
+          "tick": 110,
+          "units": 179,
+          "metrics": {
+            "rollbacks": 0,
+            "resimulatedTicks": 0,
+            "maxRollbackDepth": 0,
+            "stalls": 5,
+            "holds": 0,
+            "recoveries": 0,
+            "rejectedSnapshots": 0,
+            "rejectedPackets": 0,
+            "sentBytes": 10826,
+            "receivedBytes": 11193,
+            "predictedTicks": 0,
+            "hashMismatches": 0,
+            "latestResimulationMs": 0,
+            "smoothedRTT": 68.9418927760442,
+            "jitter": 102.20888637712424,
+            "lateInputRate": 0,
+            "rollbackFrequency": 0,
+            "stallFrequency": 0.021195693773309165,
+            "resimulationCostMs": 0,
+            "stateHashComputations": 6,
+            "hashedStateBytes": 788911,
+            "snapshotSaves": 6,
+            "serializedSnapshotBytes": 788911,
+            "inputReservations": 0,
+            "inputReservationSentBytes": 0,
+            "inputReservationReceivedBytes": 0,
+            "inputDelay": 3,
+            "requestedInputDelay": 3,
+            "confirmedTick": 110,
+            "tick": 110,
+            "pace": 1,
+            "retainedSnapshotBytes": 398980
+          },
+          "commands": 0,
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "errors": []
+        },
+        {
+          "run": 2,
+          "role": "host",
+          "source": {
+            "sourcePath": "C:\\projects\\rally-frontier\\.worktrees\\common-route-reuse\\index.html",
+            "sourceSha256": "8c148d1767a1f01c296aabcbcbbfd9e2f84c524337aacd708011a7e6d759de2b",
+            "browser": "155.0.4283.45",
+            "node": "v25.9.0",
+            "os": "10.0.26200",
+            "durationMs": 12000,
+            "case": {
+              "name": "sword400",
+              "type": "swordsman",
+              "count": 90,
+              "rate": 1,
+              "workers": 20,
+              "exactCombatCount": 90,
+              "expectedSupply": 400,
+              "warmupTick": 20,
+              "quiet": true
+            }
+          },
+          "stepMs": {
+            "n": 80,
+            "mean": 78.98375000013039,
+            "median": 70.10000000149012,
+            "p95": 130.80000000447035,
+            "max": 169.80000000447035
+          },
+          "snapshotBytes": {
+            "n": 4,
+            "mean": 134252.5,
+            "median": 133041,
+            "p95": 136341,
+            "max": 138030
+          },
+          "snapshotMs": {
+            "n": 4,
+            "mean": 20.324999999254942,
+            "median": 17.899999998509884,
+            "p95": 21.5,
+            "max": 24.200000002980232
+          },
+          "initialSupply": 400,
+          "seed": 2617977013,
+          "mapHash": 1323913035,
+          "tick": 102,
+          "units": 188,
+          "metrics": {
+            "rollbacks": 0,
+            "resimulatedTicks": 0,
+            "maxRollbackDepth": 0,
+            "stalls": 2,
+            "holds": 0,
+            "recoveries": 0,
+            "rejectedSnapshots": 0,
+            "rejectedPackets": 0,
+            "sentBytes": 11844,
+            "receivedBytes": 11494,
+            "predictedTicks": 0,
+            "hashMismatches": 0,
+            "latestResimulationMs": 0,
+            "smoothedRTT": 37.05610267792947,
+            "jitter": 45.844599068398,
+            "lateInputRate": 0,
+            "rollbackFrequency": 0,
+            "stallFrequency": 0.2275830678197542,
+            "resimulationCostMs": 0,
+            "stateHashComputations": 6,
+            "hashedStateBytes": 788911,
+            "snapshotSaves": 6,
+            "serializedSnapshotBytes": 788911,
+            "inputReservations": 0,
+            "inputReservationSentBytes": 0,
+            "inputReservationReceivedBytes": 0,
+            "inputDelay": 2,
+            "requestedInputDelay": 2,
+            "confirmedTick": 101,
+            "tick": 102,
+            "pace": 1,
+            "retainedSnapshotBytes": 398980
+          },
+          "commands": 0,
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "errors": []
+        },
+        {
+          "run": 2,
+          "role": "guest",
+          "source": {
+            "sourcePath": "C:\\projects\\rally-frontier\\.worktrees\\common-route-reuse\\index.html",
+            "sourceSha256": "8c148d1767a1f01c296aabcbcbbfd9e2f84c524337aacd708011a7e6d759de2b",
+            "browser": "155.0.4283.45",
+            "node": "v25.9.0",
+            "os": "10.0.26200",
+            "durationMs": 12000,
+            "case": {
+              "name": "sword400",
+              "type": "swordsman",
+              "count": 90,
+              "rate": 1,
+              "workers": 20,
+              "exactCombatCount": 90,
+              "expectedSupply": 400,
+              "warmupTick": 20,
+              "quiet": true
+            }
+          },
+          "stepMs": {
+            "n": 78,
+            "mean": 79.96025641014178,
+            "median": 69.5,
+            "p95": 125.89999999850988,
+            "max": 147.39999999850988
+          },
+          "snapshotBytes": {
+            "n": 4,
+            "mean": 134252.5,
+            "median": 133041,
+            "p95": 136341,
+            "max": 138030
+          },
+          "snapshotMs": {
+            "n": 4,
+            "mean": 16.59999999962747,
+            "median": 15,
+            "p95": 18.100000001490116,
+            "max": 19.700000002980232
+          },
+          "initialSupply": 400,
+          "seed": 2617977013,
+          "mapHash": 1323913035,
+          "tick": 100,
+          "units": 188,
+          "metrics": {
+            "rollbacks": 0,
+            "resimulatedTicks": 0,
+            "maxRollbackDepth": 0,
+            "stalls": 0,
+            "holds": 0,
+            "recoveries": 0,
+            "rejectedSnapshots": 0,
+            "rejectedPackets": 0,
+            "sentBytes": 11523,
+            "receivedBytes": 11844,
+            "predictedTicks": 0,
+            "hashMismatches": 0,
+            "latestResimulationMs": 0,
+            "smoothedRTT": 22.969250844414983,
+            "jitter": 38.87573880018759,
+            "lateInputRate": 0,
+            "rollbackFrequency": 0,
+            "stallFrequency": 0,
+            "resimulationCostMs": 0,
+            "stateHashComputations": 6,
+            "hashedStateBytes": 788911,
+            "snapshotSaves": 6,
+            "serializedSnapshotBytes": 788911,
+            "inputReservations": 0,
+            "inputReservationSentBytes": 0,
+            "inputReservationReceivedBytes": 0,
+            "inputDelay": 2,
+            "requestedInputDelay": 2,
+            "confirmedTick": 101,
+            "tick": 100,
+            "pace": 1,
+            "retainedSnapshotBytes": 398980
+          },
+          "commands": 0,
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "errors": []
+        }
+      ]
+    }
+  ],
+  "commonRtcTicks": [
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78,
+    79,
+    80
+  ],
+  "validation": {
+    "common": {
+      "pass": true,
+      "ticks": 98,
+      "initialAstar": 1,
+      "joinAstar": 0,
+      "joinFunnel": 0,
+      "normalRequests": 0,
+      "normalCacheLookups": 0,
+      "normalFullRouteScans": 0,
+      "normalLocalSegmentChecks": 3,
+      "metrics": {
+        "backend": "navmesh",
+        "fieldsBuilt": 0,
+        "fieldHits": 0,
+        "layersBuilt": 2,
+        "routeQueries": 3,
+        "directQueries": 1,
+        "unreachable": 0,
+        "funnelQueries": 2,
+        "meshCells": 34,
+        "meshPortals": 38,
+        "meshBuildMs": 6.799999997019768,
+        "meshBuildMaxMs": 5.399999998509884,
+        "meshGeometryMs": 3.2000000029802322,
+        "meshConnectMs": 2.3000000044703484,
+        "meshTilesBuilt": 18,
+        "projectionQueries": 0,
+        "projectionTilesBuilt": 0,
+        "projectionBuildMs": 0,
+        "fieldBuildMs": 0,
+        "astarQueries": 2,
+        "astarExpanded": 82,
+        "astarCostMs": 9.099999994039536,
+        "astarMoveQueries": 2,
+        "astarDistanceQueries": 0,
+        "sharedAstarQueries": 0,
+        "sharedAstarHits": 0,
+        "sharedAstarCachedNodes": 0,
+        "invalidations": 1,
+        "endpointProjections": 0,
+        "regionsBuilt": 2,
+        "regionHits": 0,
+        "routeInvalid_first": 5,
+        "routeCacheLookups": 7,
+        "routeBuilds": 4,
+        "routeFollowSteps": 115,
+        "routeJoins": 3,
+        "routeInvalid_target": 1,
+        "routeInvalid_deviation": 1
+      },
+      "errors": []
+    },
+    "worker1": {
+      "edgeMetrics": {
+        "backend": "navmesh",
+        "fieldsBuilt": 0,
+        "fieldHits": 0,
+        "layersBuilt": 2,
+        "routeQueries": 7,
+        "directQueries": 3,
+        "unreachable": 0,
+        "funnelQueries": 4,
+        "meshCells": 1600,
+        "meshPortals": 3001,
+        "meshBuildMs": 158.2999999895692,
+        "meshBuildMaxMs": 146.09999999403954,
+        "meshGeometryMs": 72.79999999701977,
+        "meshConnectMs": 78.99999999254942,
+        "meshTilesBuilt": 27,
+        "projectionQueries": 0,
+        "projectionTilesBuilt": 0,
+        "projectionBuildMs": 0,
+        "fieldBuildMs": 0,
+        "astarQueries": 4,
+        "astarExpanded": 1262,
+        "astarCostMs": 13.299999997019768,
+        "astarMoveQueries": 4,
+        "astarDistanceQueries": 0,
+        "sharedAstarQueries": 0,
+        "sharedAstarHits": 0,
+        "sharedAstarCachedNodes": 0,
+        "invalidations": 4,
+        "endpointProjections": 0,
+        "regionsBuilt": 4,
+        "regionHits": 0,
+        "routeInvalid_first": 1,
+        "routeCacheLookups": 14,
+        "adaptiveAstarQueries": 4,
+        "routeBuilds": 7,
+        "routeFollowSteps": 475,
+        "routeInvalid_target": 12,
+        "routeJoins": 7,
+        "routeInvalid_deviation": 1
+      },
+      "beforeEdge": {
+        "backend": "navmesh",
+        "fieldsBuilt": 0,
+        "fieldHits": 0,
+        "layersBuilt": 2,
+        "routeQueries": 6,
+        "directQueries": 2,
+        "unreachable": 0,
+        "funnelQueries": 4,
+        "meshCells": 1600,
+        "meshPortals": 3001,
+        "meshBuildMs": 158.2999999895692,
+        "meshBuildMaxMs": 146.09999999403954,
+        "meshGeometryMs": 72.79999999701977,
+        "meshConnectMs": 78.99999999254942,
+        "meshTilesBuilt": 27,
+        "projectionQueries": 0,
+        "projectionTilesBuilt": 0,
+        "projectionBuildMs": 0,
+        "fieldBuildMs": 0,
+        "astarQueries": 4,
+        "astarExpanded": 1262,
+        "astarCostMs": 13.299999997019768,
+        "astarMoveQueries": 4,
+        "astarDistanceQueries": 0,
+        "sharedAstarQueries": 0,
+        "sharedAstarHits": 0,
+        "sharedAstarCachedNodes": 0,
+        "invalidations": 4,
+        "endpointProjections": 0,
+        "regionsBuilt": 4,
+        "regionHits": 0,
+        "routeInvalid_first": 1,
+        "routeCacheLookups": 12,
+        "adaptiveAstarQueries": 4,
+        "routeBuilds": 6,
+        "routeFollowSteps": 473,
+        "routeInvalid_target": 11,
+        "routeJoins": 6
+      },
+      "deviations": [],
+      "comparedTicks": 495,
+      "snapshotBytes": 8366,
+      "routeBytes": 412,
+      "source": "candidate",
+      "fixture": "controlled one/two actual workers with actual AdaptiveNavigationDemand.begin/end movement scope; existing canonical terrain; one relocated fixed mineral + barracks circle blocker; actual updateWorker/SurfaceMotion; isolated synchronous functional calls, not timing benchmark",
+      "worker": {
+        "id": "u1",
+        "type": "worker"
+      },
+      "base": {
+        "x": 525,
+        "y": 4285
+      },
+      "resource": {
+        "x": 1235,
+        "y": 4285
+      },
+      "blocker": {
+        "x": 890,
+        "y": 4285,
+        "type": "barracks"
+      },
+      "stages": {
+        "obstacle/seek": {
+          "updates": 75,
+          "routeQueries": 1,
+          "directQueries": 0,
+          "astarQueries": 1,
+          "astarMoveQueries": 1,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 1,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "obstacle/mine": {
+          "updates": 16,
+          "routeQueries": 0,
+          "directQueries": 0,
+          "astarQueries": 0,
+          "astarMoveQueries": 0,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 0,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "obstacle/return": {
+          "updates": 104,
+          "routeQueries": 1,
+          "directQueries": 0,
+          "astarQueries": 1,
+          "astarMoveQueries": 1,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 1,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "moved-obstacle/seek": {
+          "updates": 72,
+          "routeQueries": 1,
+          "directQueries": 0,
+          "astarQueries": 1,
+          "astarMoveQueries": 1,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 1,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "moved-obstacle/mine": {
+          "updates": 16,
+          "routeQueries": 0,
+          "directQueries": 0,
+          "astarQueries": 0,
+          "astarMoveQueries": 0,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 0,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "moved-obstacle/return": {
+          "updates": 104,
+          "routeQueries": 1,
+          "directQueries": 0,
+          "astarQueries": 1,
+          "astarMoveQueries": 1,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 1,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "removed-obstacle/seek": {
+          "updates": 70,
+          "routeQueries": 1,
+          "directQueries": 1,
+          "astarQueries": 0,
+          "astarMoveQueries": 0,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 0,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "removed-obstacle/mine": {
+          "updates": 16,
+          "routeQueries": 0,
+          "directQueries": 0,
+          "astarQueries": 0,
+          "astarMoveQueries": 0,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 0,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "removed-obstacle/return": {
+          "updates": 102,
+          "routeQueries": 1,
+          "directQueries": 1,
+          "astarQueries": 0,
+          "astarMoveQueries": 0,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 0,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        }
+      },
+      "incomes": [
+        {
+          "tick": 99,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 195,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 291,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 387,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 481,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 575,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        }
+      ],
+      "queries": [
+        {
+          "tick": 1,
+          "phase": "obstacle",
+          "method": "movementPlan",
+          "workerId": "u1",
+          "state": "seek",
+          "key": "1175:4285:37.95:0:1:0",
+          "x": 602,
+          "y": 4333,
+          "mineId": "m1",
+          "nav": {
+            "routeQueries": 1,
+            "directQueries": 0,
+            "astarQueries": 1,
+            "astarMoveQueries": 1,
+            "astarDistanceQueries": 0,
+            "funnelQueries": 1,
+            "regionHits": 0,
+            "regionsBuilt": 1,
+            "fieldHits": 0,
+            "fieldsBuilt": 0,
+            "sharedAstarHits": 0,
+            "astarExpanded": 344
+          }
+        },
+        {
+          "tick": 56,
+          "phase": "obstacle",
+          "method": "movementPlan",
+          "workerId": "u1",
+          "state": "return",
+          "key": "525:4285:99.95:74.55:1:0",
+          "x": 1150.41,
+          "y": 4280.78,
+          "mineId": "m1",
+          "nav": {
+            "routeQueries": 1,
+            "directQueries": 0,
+            "astarQueries": 1,
+            "astarMoveQueries": 1,
+            "astarDistanceQueries": 0,
+            "funnelQueries": 1,
+            "regionHits": 0,
+            "regionsBuilt": 1,
+            "fieldHits": 0,
+            "fieldsBuilt": 0,
+            "sharedAstarHits": 0,
+            "astarExpanded": 284
+          }
+        },
+        {
+          "tick": 196,
+          "phase": "moved-obstacle",
+          "method": "movementPlan",
+          "workerId": "u1",
+          "state": "seek",
+          "key": "1175:4285:37.95:0:1:0",
+          "x": 623.49,
+          "y": 4268.11,
+          "mineId": "m1",
+          "nav": {
+            "routeQueries": 1,
+            "directQueries": 0,
+            "astarQueries": 1,
+            "astarMoveQueries": 1,
+            "astarDistanceQueries": 0,
+            "funnelQueries": 1,
+            "regionHits": 0,
+            "regionsBuilt": 1,
+            "fieldHits": 0,
+            "fieldsBuilt": 0,
+            "sharedAstarHits": 0,
+            "astarExpanded": 344
+          }
+        },
+        {
+          "tick": 248,
+          "phase": "moved-obstacle",
+          "method": "movementPlan",
+          "workerId": "u1",
+          "state": "return",
+          "key": "525:4285:99.95:74.55:1:0",
+          "x": 1139.81,
+          "y": 4278.07,
+          "mineId": "m1",
+          "nav": {
+            "routeQueries": 1,
+            "directQueries": 0,
+            "astarQueries": 1,
+            "astarMoveQueries": 1,
+            "astarDistanceQueries": 0,
+            "funnelQueries": 1,
+            "regionHits": 0,
+            "regionsBuilt": 1,
+            "fieldHits": 0,
+            "fieldsBuilt": 0,
+            "sharedAstarHits": 0,
+            "astarExpanded": 290
+          }
+        },
+        {
+          "tick": 388,
+          "phase": "removed-obstacle",
+          "method": "movementPlan",
+          "workerId": "u1",
+          "state": "seek",
+          "key": "1175:4285:37.95:0:1:0",
+          "x": 618.25,
+          "y": 4270.82,
+          "mineId": "m1",
+          "nav": {
+            "routeQueries": 1,
+            "directQueries": 1,
+            "astarQueries": 0,
+            "astarMoveQueries": 0,
+            "astarDistanceQueries": 0,
+            "funnelQueries": 0,
+            "regionHits": 0,
+            "regionsBuilt": 0,
+            "fieldHits": 0,
+            "fieldsBuilt": 0,
+            "sharedAstarHits": 0,
+            "astarExpanded": 0
+          }
+        },
+        {
+          "tick": 439,
+          "phase": "removed-obstacle",
+          "method": "movementPlan",
+          "workerId": "u1",
+          "state": "return",
+          "key": "525:4285:99.95:74.55:1:0",
+          "x": 1143.25,
+          "y": 4284.18,
+          "mineId": "m1",
+          "nav": {
+            "routeQueries": 1,
+            "directQueries": 1,
+            "astarQueries": 0,
+            "astarMoveQueries": 0,
+            "astarDistanceQueries": 0,
+            "funnelQueries": 0,
+            "regionHits": 0,
+            "regionsBuilt": 0,
+            "fieldHits": 0,
+            "fieldsBuilt": 0,
+            "sharedAstarHits": 0,
+            "astarExpanded": 0
+          }
+        },
+        {
+          "tick": 576,
+          "phase": "removed-obstacle",
+          "method": "movementPlan",
+          "workerId": "u1",
+          "state": "seek",
+          "key": "1235:4285:37.95:0:1:0",
+          "x": 613,
+          "y": 4284.99,
+          "mineId": "m1",
+          "nav": {
+            "routeQueries": 1,
+            "directQueries": 1,
+            "astarQueries": 0,
+            "astarMoveQueries": 0,
+            "astarDistanceQueries": 0,
+            "funnelQueries": 0,
+            "regionHits": 0,
+            "regionsBuilt": 0,
+            "fieldHits": 0,
+            "fieldsBuilt": 0,
+            "sharedAstarHits": 0,
+            "astarExpanded": 0
+          }
+        }
+      ],
+      "potentials": [
+        {
+          "tick": 1,
+          "phase": "obstacle",
+          "key": "1175:4285:37.95:0:1:0:0",
+          "goalKey": "1175:4285:37.95:0:1:0",
+          "shared": false,
+          "ready": false,
+          "lifetimeBefore": false,
+          "result": false,
+          "readyId": null,
+          "resultId": null,
+          "sameObject": false
+        },
+        {
+          "tick": 56,
+          "phase": "obstacle",
+          "key": "525:4285:99.95:74.55:1:0:0",
+          "goalKey": "525:4285:99.95:74.55:1:0",
+          "shared": false,
+          "ready": false,
+          "lifetimeBefore": false,
+          "result": false,
+          "readyId": null,
+          "resultId": null,
+          "sameObject": false
+        },
+        {
+          "tick": 196,
+          "phase": "moved-obstacle",
+          "key": "1175:4285:37.95:0:1:0:0",
+          "goalKey": "1175:4285:37.95:0:1:0",
+          "shared": false,
+          "ready": false,
+          "lifetimeBefore": false,
+          "result": false,
+          "readyId": null,
+          "resultId": null,
+          "sameObject": false
+        },
+        {
+          "tick": 248,
+          "phase": "moved-obstacle",
+          "key": "525:4285:99.95:74.55:1:0:0",
+          "goalKey": "525:4285:99.95:74.55:1:0",
+          "shared": false,
+          "ready": false,
+          "lifetimeBefore": false,
+          "result": false,
+          "readyId": null,
+          "resultId": null,
+          "sameObject": false
+        }
+      ],
+      "positions": [
+        {
+          "tick": 10,
+          "phase": "obstacle",
+          "x": 739.5,
+          "y": 4273,
+          "state": "seek"
+        },
+        {
+          "tick": 20,
+          "phase": "obstacle",
+          "x": 869.59,
+          "y": 4232.55,
+          "state": "seek"
+        },
+        {
+          "tick": 30,
+          "phase": "obstacle",
+          "x": 1017.39,
+          "y": 4257.95,
+          "state": "seek"
+        },
+        {
+          "tick": 40,
+          "phase": "obstacle",
+          "x": 1150.41,
+          "y": 4280.78,
+          "state": "mine"
+        },
+        {
+          "tick": 50,
+          "phase": "obstacle",
+          "x": 1150.41,
+          "y": 4280.78,
+          "state": "mine"
+        },
+        {
+          "tick": 60,
+          "phase": "obstacle",
+          "x": 1080.93,
+          "y": 4268.84,
+          "state": "return"
+        },
+        {
+          "tick": 70,
+          "phase": "obstacle",
+          "x": 981.87,
+          "y": 4251.81,
+          "state": "return"
+        },
+        {
+          "tick": 80,
+          "phase": "obstacle",
+          "x": 885.8,
+          "y": 4235.33,
+          "state": "return"
+        },
+        {
+          "tick": 90,
+          "phase": "obstacle",
+          "x": 741.73,
+          "y": 4247.79,
+          "state": "return"
+        },
+        {
+          "tick": 100,
+          "phase": "obstacle",
+          "x": 638.27,
+          "y": 4265.57,
+          "state": "seek"
+        },
+        {
+          "tick": 110,
+          "phase": "obstacle",
+          "x": 786.07,
+          "y": 4240.17,
+          "state": "seek"
+        },
+        {
+          "tick": 120,
+          "phase": "obstacle",
+          "x": 928.71,
+          "y": 4242.71,
+          "state": "seek"
+        },
+        {
+          "tick": 130,
+          "phase": "obstacle",
+          "x": 1076.51,
+          "y": 4268.11,
+          "state": "seek"
+        },
+        {
+          "tick": 140,
+          "phase": "obstacle",
+          "x": 1150.41,
+          "y": 4280.78,
+          "state": "mine"
+        },
+        {
+          "tick": 150,
+          "phase": "obstacle",
+          "x": 1150.41,
+          "y": 4280.78,
+          "state": "mine"
+        },
+        {
+          "tick": 160,
+          "phase": "obstacle",
+          "x": 1035.09,
+          "y": 4260.96,
+          "state": "return"
+        },
+        {
+          "tick": 170,
+          "phase": "obstacle",
+          "x": 952.31,
+          "y": 4246.73,
+          "state": "return"
+        },
+        {
+          "tick": 180,
+          "phase": "obstacle",
+          "x": 830.41,
+          "y": 4232.55,
+          "state": "return"
+        },
+        {
+          "tick": 190,
+          "phase": "obstacle",
+          "x": 682.61,
+          "y": 4257.95,
+          "state": "return"
+        },
+        {
+          "tick": 200,
+          "phase": "moved-obstacle",
+          "x": 697.69,
+          "y": 4257.31,
+          "state": "seek"
+        },
+        {
+          "tick": 210,
+          "phase": "moved-obstacle",
+          "x": 846.09,
+          "y": 4235.71,
+          "state": "seek"
+        },
+        {
+          "tick": 220,
+          "phase": "moved-obstacle",
+          "x": 977.89,
+          "y": 4246.19,
+          "state": "seek"
+        },
+        {
+          "tick": 230,
+          "phase": "moved-obstacle",
+          "x": 1125.09,
+          "y": 4275.17,
+          "state": "seek"
+        },
+        {
+          "tick": 240,
+          "phase": "moved-obstacle",
+          "x": 1139.81,
+          "y": 4278.07,
+          "state": "mine"
+        },
+        {
+          "tick": 250,
+          "phase": "moved-obstacle",
+          "x": 1097.86,
+          "y": 4269.81,
+          "state": "return"
+        },
+        {
+          "tick": 260,
+          "phase": "moved-obstacle",
+          "x": 988.96,
+          "y": 4248.37,
+          "state": "return"
+        },
+        {
+          "tick": 270,
+          "phase": "moved-obstacle",
+          "x": 900.62,
+          "y": 4231.13,
+          "state": "return"
+        },
+        {
+          "tick": 280,
+          "phase": "moved-obstacle",
+          "x": 766.55,
+          "y": 4248.17,
+          "state": "return"
+        },
+        {
+          "tick": 290,
+          "phase": "moved-obstacle",
+          "x": 618.25,
+          "y": 4270.82,
+          "state": "return"
+        },
+        {
+          "tick": 300,
+          "phase": "moved-obstacle",
+          "x": 751.72,
+          "y": 4250.4,
+          "state": "seek"
+        },
+        {
+          "tick": 310,
+          "phase": "moved-obstacle",
+          "x": 894.81,
+          "y": 4230.01,
+          "state": "seek"
+        },
+        {
+          "tick": 320,
+          "phase": "moved-obstacle",
+          "x": 1036.77,
+          "y": 4257.79,
+          "state": "seek"
+        },
+        {
+          "tick": 330,
+          "phase": "moved-obstacle",
+          "x": 1139.81,
+          "y": 4278.07,
+          "state": "mine"
+        },
+        {
+          "tick": 340,
+          "phase": "moved-obstacle",
+          "x": 1139.81,
+          "y": 4278.07,
+          "state": "mine"
+        },
+        {
+          "tick": 350,
+          "phase": "moved-obstacle",
+          "x": 1047.82,
+          "y": 4260.04,
+          "state": "return"
+        },
+        {
+          "tick": 360,
+          "phase": "moved-obstacle",
+          "x": 959.52,
+          "y": 4242.72,
+          "state": "return"
+        },
+        {
+          "tick": 370,
+          "phase": "moved-obstacle",
+          "x": 855.53,
+          "y": 4234.55,
+          "state": "return"
+        },
+        {
+          "tick": 380,
+          "phase": "moved-obstacle",
+          "x": 707.23,
+          "y": 4257.24,
+          "state": "return"
+        },
+        {
+          "tick": 390,
+          "phase": "removed-obstacle",
+          "x": 663.25,
+          "y": 4271.96,
+          "state": "seek"
+        },
+        {
+          "tick": 400,
+          "phase": "removed-obstacle",
+          "x": 813.25,
+          "y": 4275.76,
+          "state": "seek"
+        },
+        {
+          "tick": 410,
+          "phase": "removed-obstacle",
+          "x": 963.25,
+          "y": 4279.57,
+          "state": "seek"
+        },
+        {
+          "tick": 420,
+          "phase": "removed-obstacle",
+          "x": 1113.25,
+          "y": 4283.42,
+          "state": "seek"
+        },
+        {
+          "tick": 430,
+          "phase": "removed-obstacle",
+          "x": 1143.25,
+          "y": 4284.18,
+          "state": "mine"
+        },
+        {
+          "tick": 440,
+          "phase": "removed-obstacle",
+          "x": 1113.25,
+          "y": 4284.22,
+          "state": "return"
+        },
+        {
+          "tick": 450,
+          "phase": "removed-obstacle",
+          "x": 997,
+          "y": 4284.37,
+          "state": "return"
+        },
+        {
+          "tick": 460,
+          "phase": "removed-obstacle",
+          "x": 914.5,
+          "y": 4284.48,
+          "state": "return"
+        },
+        {
+          "tick": 470,
+          "phase": "removed-obstacle",
+          "x": 764.5,
+          "y": 4284.68,
+          "state": "return"
+        },
+        {
+          "tick": 480,
+          "phase": "removed-obstacle",
+          "x": 614.5,
+          "y": 4284.88,
+          "state": "return"
+        },
+        {
+          "tick": 490,
+          "phase": "removed-obstacle",
+          "x": 749.5,
+          "y": 4284.88,
+          "state": "seek"
+        },
+        {
+          "tick": 500,
+          "phase": "removed-obstacle",
+          "x": 899.5,
+          "y": 4284.91,
+          "state": "seek"
+        },
+        {
+          "tick": 510,
+          "phase": "removed-obstacle",
+          "x": 1049.5,
+          "y": 4284.96,
+          "state": "seek"
+        },
+        {
+          "tick": 520,
+          "phase": "removed-obstacle",
+          "x": 1139.5,
+          "y": 4284.99,
+          "state": "mine"
+        },
+        {
+          "tick": 530,
+          "phase": "removed-obstacle",
+          "x": 1139.5,
+          "y": 4284.99,
+          "state": "mine"
+        },
+        {
+          "tick": 540,
+          "phase": "removed-obstacle",
+          "x": 1037.5,
+          "y": 4284.99,
+          "state": "return"
+        },
+        {
+          "tick": 550,
+          "phase": "removed-obstacle",
+          "x": 950.5,
+          "y": 4284.99,
+          "state": "return"
+        },
+        {
+          "tick": 560,
+          "phase": "removed-obstacle",
+          "x": 823,
+          "y": 4284.99,
+          "state": "return"
+        },
+        {
+          "tick": 570,
+          "phase": "removed-obstacle",
+          "x": 673,
+          "y": 4284.99,
+          "state": "return"
+        }
+      ],
+      "changes": [
+        {
+          "tick": 195,
+          "oldFieldCount": 0,
+          "oldLifetimeCount": 0
+        },
+        {
+          "tick": 387,
+          "removed": true
+        }
+      ],
+      "metrics": {
+        "backend": "navmesh",
+        "fieldsBuilt": 0,
+        "fieldHits": 0,
+        "layersBuilt": 2,
+        "routeQueries": 7,
+        "directQueries": 3,
+        "unreachable": 0,
+        "funnelQueries": 4,
+        "meshCells": 1600,
+        "meshPortals": 3001,
+        "meshBuildMs": 158.2999999895692,
+        "meshBuildMaxMs": 146.09999999403954,
+        "meshGeometryMs": 72.79999999701977,
+        "meshConnectMs": 78.99999999254942,
+        "meshTilesBuilt": 27,
+        "projectionQueries": 0,
+        "projectionTilesBuilt": 0,
+        "projectionBuildMs": 0,
+        "fieldBuildMs": 0,
+        "astarQueries": 4,
+        "astarExpanded": 1262,
+        "astarCostMs": 13.299999997019768,
+        "astarMoveQueries": 4,
+        "astarDistanceQueries": 0,
+        "sharedAstarQueries": 0,
+        "sharedAstarHits": 0,
+        "sharedAstarCachedNodes": 0,
+        "invalidations": 4,
+        "endpointProjections": 0,
+        "regionsBuilt": 4,
+        "regionHits": 0,
+        "routeInvalid_first": 2,
+        "routeCacheLookups": 15,
+        "adaptiveAstarQueries": 4,
+        "routeBuilds": 8,
+        "routeFollowSteps": 475,
+        "routeInvalid_target": 12,
+        "routeJoins": 7,
+        "routeInvalid_deviation": 1
+      },
+      "final": {
+        "tick": 577,
+        "x": 641.45,
+        "y": 3991.64,
+        "state": "seek",
+        "carry": 0
+      },
+      "errors": []
+    },
+    "worker2": {
+      "edgeMetrics": {
+        "backend": "navmesh",
+        "fieldsBuilt": 0,
+        "fieldHits": 0,
+        "layersBuilt": 2,
+        "routeQueries": 7,
+        "directQueries": 3,
+        "unreachable": 0,
+        "funnelQueries": 4,
+        "meshCells": 1600,
+        "meshPortals": 3001,
+        "meshBuildMs": 144.90000000596046,
+        "meshBuildMaxMs": 135.10000000149012,
+        "meshGeometryMs": 66.70000000298023,
+        "meshConnectMs": 71.80000000447035,
+        "meshTilesBuilt": 27,
+        "projectionQueries": 0,
+        "projectionTilesBuilt": 0,
+        "projectionBuildMs": 0,
+        "fieldBuildMs": 0,
+        "astarQueries": 4,
+        "astarExpanded": 1220,
+        "astarCostMs": 11.700000002980232,
+        "astarMoveQueries": 4,
+        "astarDistanceQueries": 0,
+        "sharedAstarQueries": 0,
+        "sharedAstarHits": 0,
+        "sharedAstarCachedNodes": 0,
+        "invalidations": 4,
+        "endpointProjections": 0,
+        "regionsBuilt": 4,
+        "regionHits": 0,
+        "routeInvalid_first": 2,
+        "routeCacheLookups": 29,
+        "adaptiveAstarQueries": 4,
+        "routeBuilds": 7,
+        "routeFollowSteps": 954,
+        "routeJoins": 22,
+        "routeInvalid_target": 24,
+        "routeInvalid_topology": 2,
+        "routeInvalid_deviation": 1
+      },
+      "beforeEdge": {
+        "backend": "navmesh",
+        "fieldsBuilt": 0,
+        "fieldHits": 0,
+        "layersBuilt": 2,
+        "routeQueries": 6,
+        "directQueries": 2,
+        "unreachable": 0,
+        "funnelQueries": 4,
+        "meshCells": 1600,
+        "meshPortals": 3001,
+        "meshBuildMs": 144.90000000596046,
+        "meshBuildMaxMs": 135.10000000149012,
+        "meshGeometryMs": 66.70000000298023,
+        "meshConnectMs": 71.80000000447035,
+        "meshTilesBuilt": 27,
+        "projectionQueries": 0,
+        "projectionTilesBuilt": 0,
+        "projectionBuildMs": 0,
+        "fieldBuildMs": 0,
+        "astarQueries": 4,
+        "astarExpanded": 1220,
+        "astarCostMs": 11.700000002980232,
+        "astarMoveQueries": 4,
+        "astarDistanceQueries": 0,
+        "sharedAstarQueries": 0,
+        "sharedAstarHits": 0,
+        "sharedAstarCachedNodes": 0,
+        "invalidations": 4,
+        "endpointProjections": 0,
+        "regionsBuilt": 4,
+        "regionHits": 0,
+        "routeInvalid_first": 2,
+        "routeCacheLookups": 27,
+        "adaptiveAstarQueries": 4,
+        "routeBuilds": 6,
+        "routeFollowSteps": 952,
+        "routeJoins": 21,
+        "routeInvalid_target": 23,
+        "routeInvalid_topology": 2
+      },
+      "deviations": [],
+      "comparedTicks": 498,
+      "snapshotBytes": 9129,
+      "routeBytes": 922,
+      "source": "candidate",
+      "fixture": "controlled one/two actual workers with actual AdaptiveNavigationDemand.begin/end movement scope; existing canonical terrain; one relocated fixed mineral + barracks circle blocker; actual updateWorker/SurfaceMotion; isolated synchronous functional calls, not timing benchmark",
+      "worker": {
+        "id": "u1",
+        "type": "worker"
+      },
+      "base": {
+        "x": 525,
+        "y": 4285
+      },
+      "resource": {
+        "x": 1235,
+        "y": 4285
+      },
+      "blocker": {
+        "x": 890,
+        "y": 4285,
+        "type": "barracks"
+      },
+      "stages": {
+        "obstacle/seek": {
+          "updates": 78,
+          "routeQueries": 1,
+          "directQueries": 0,
+          "astarQueries": 1,
+          "astarMoveQueries": 1,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 1,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "obstacle/mine": {
+          "updates": 16,
+          "routeQueries": 0,
+          "directQueries": 0,
+          "astarQueries": 0,
+          "astarMoveQueries": 0,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 0,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "obstacle/return": {
+          "updates": 104,
+          "routeQueries": 1,
+          "directQueries": 0,
+          "astarQueries": 1,
+          "astarMoveQueries": 1,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 1,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "moved-obstacle/seek": {
+          "updates": 72,
+          "routeQueries": 1,
+          "directQueries": 0,
+          "astarQueries": 1,
+          "astarMoveQueries": 1,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 1,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "moved-obstacle/mine": {
+          "updates": 16,
+          "routeQueries": 0,
+          "directQueries": 0,
+          "astarQueries": 0,
+          "astarMoveQueries": 0,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 0,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "moved-obstacle/return": {
+          "updates": 104,
+          "routeQueries": 1,
+          "directQueries": 0,
+          "astarQueries": 1,
+          "astarMoveQueries": 1,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 1,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "removed-obstacle/seek": {
+          "updates": 71,
+          "routeQueries": 1,
+          "directQueries": 1,
+          "astarQueries": 0,
+          "astarMoveQueries": 0,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 0,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "removed-obstacle/mine": {
+          "updates": 16,
+          "routeQueries": 0,
+          "directQueries": 0,
+          "astarQueries": 0,
+          "astarMoveQueries": 0,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 0,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        },
+        "removed-obstacle/return": {
+          "updates": 101,
+          "routeQueries": 1,
+          "directQueries": 1,
+          "astarQueries": 0,
+          "astarMoveQueries": 0,
+          "astarDistanceQueries": 0,
+          "funnelQueries": 0,
+          "fieldHits": 0,
+          "fieldsBuilt": 0,
+          "sharedAstarHits": 0
+        }
+      },
+      "incomes": [
+        {
+          "tick": 99,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 102,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 195,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 198,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 291,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 294,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 387,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 390,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 481,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 484,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 574,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        },
+        {
+          "tick": 578,
+          "type": "income",
+          "side": 0,
+          "x": 525,
+          "y": 4285,
+          "amount": 8,
+          "reason": "worker",
+          "resourceType": "mineral"
+        }
+      ],
+      "queries": [
+        {
+          "tick": 1,
+          "phase": "obstacle",
+          "method": "movementPlan",
+          "workerId": "u1",
+          "state": "seek",
+          "key": "1175:4285:37.95:0:1:0",
+          "x": 602,
+          "y": 4333,
+          "mineId": "m1",
+          "nav": {
+            "routeQueries": 1,
+            "directQueries": 0,
+            "astarQueries": 1,
+            "astarMoveQueries": 1,
+            "astarDistanceQueries": 0,
+            "funnelQueries": 1,
+            "regionHits": 0,
+            "regionsBuilt": 1,
+            "fieldHits": 0,
+            "fieldsBuilt": 0,
+            "sharedAstarHits": 0,
+            "astarExpanded": 344
+          }
+        },
+        {
+          "tick": 56,
+          "phase": "obstacle",
+          "method": "movementPlan",
+          "workerId": "u1",
+          "state": "return",
+          "key": "525:4285:99.95:74.55:1:0",
+          "x": 1150.41,
+          "y": 4280.78,
+          "mineId": "m1",
+          "nav": {
+            "routeQueries": 1,
+            "directQueries": 0,
+            "astarQueries": 1,
+            "astarMoveQueries": 1,
+            "astarDistanceQueries": 0,
+            "funnelQueries": 1,
+            "regionHits": 0,
+            "regionsBuilt": 1,
+            "fieldHits": 0,
+            "fieldsBuilt": 0,
+            "sharedAstarHits": 0,
+            "astarExpanded": 284
+          }
+        },
+        {
+          "tick": 199,
+          "phase": "moved-obstacle",
+          "method": "movementPlan",
+          "workerId": "u1",
+          "state": "seek",
+          "key": "1175:4285:37.95:0:1:0",
+          "x": 667.83,
+          "y": 4260.49,
+          "mineId": "m1",
+          "nav": {
+            "routeQueries": 1,
+            "directQueries": 0,
+            "astarQueries": 1,
+            "astarMoveQueries": 1,
+            "astarDistanceQueries": 0,
+            "funnelQueries": 1,
+            "regionHits": 0,
+            "regionsBuilt": 1,
+            "fieldHits": 0,
+            "fieldsBuilt": 0,
+            "sharedAstarHits": 0,
+            "astarExpanded": 302
+          }
+        },
+        {
+          "tick": 248,
+          "phase": "moved-obstacle",
+          "method": "movementPlan",
+          "workerId": "u1",
+          "state": "return",
+          "key": "525:4285:99.95:74.55:1:0",
+          "x": 1139.81,
+          "y": 4278.07,
+          "mineId": "m1",
+          "nav": {
+            "routeQueries": 1,
+            "directQueries": 0,
+            "astarQueries": 1,
+            "astarMoveQueries": 1,
+            "astarDistanceQueries": 0,
+            "funnelQueries": 1,
+            "regionHits": 0,
+            "regionsBuilt": 1,
+            "fieldHits": 0,
+            "fieldsBuilt": 0,
+            "sharedAstarHits": 0,
+            "astarExpanded": 290
+          }
+        },
+        {
+          "tick": 391,
+          "phase": "removed-obstacle",
+          "method": "movementPlan",
+          "workerId": "u1",
+          "state": "seek",
+          "key": "1175:4285:37.95:0:1:0",
+          "x": 662.74,
+          "y": 4264.01,
+          "mineId": "m1",
+          "nav": {
+            "routeQueries": 1,
+            "directQueries": 1,
+            "astarQueries": 0,
+            "astarMoveQueries": 0,
+            "astarDistanceQueries": 0,
+            "funnelQueries": 0,
+            "regionHits": 0,
+            "regionsBuilt": 0,
+            "fieldHits": 0,
+            "fieldsBuilt": 0,
+            "sharedAstarHits": 0,
+            "astarExpanded": 0
+          }
+        },
+        {
+          "tick": 439,
+          "phase": "removed-obstacle",
+          "method": "movementPlan",
+          "workerId": "u1",
+          "state": "return",
+          "key": "525:4285:99.95:74.55:1:0",
+          "x": 1142.42,
+          "y": 4283.66,
+          "mineId": "m1",
+          "nav": {
+            "routeQueries": 1,
+            "directQueries": 1,
+            "astarQueries": 0,
+            "astarMoveQueries": 0,
+            "astarDistanceQueries": 0,
+            "funnelQueries": 0,
+            "regionHits": 0,
+            "regionsBuilt": 0,
+            "fieldHits": 0,
+            "fieldsBuilt": 0,
+            "sharedAstarHits": 0,
+            "astarExpanded": 0
+          }
+        },
+        {
+          "tick": 579,
+          "phase": "removed-obstacle",
+          "method": "movementPlan",
+          "workerId": "u1",
+          "state": "seek",
+          "key": "1235:4285:37.95:0:1:0",
+          "x": 679.67,
+          "y": 4284.99,
+          "mineId": "m1",
+          "nav": {
+            "routeQueries": 1,
+            "directQueries": 1,
+            "astarQueries": 0,
+            "astarMoveQueries": 0,
+            "astarDistanceQueries": 0,
+            "funnelQueries": 0,
+            "regionHits": 0,
+            "regionsBuilt": 0,
+            "fieldHits": 0,
+            "fieldsBuilt": 0,
+            "sharedAstarHits": 0,
+            "astarExpanded": 0
+          }
+        }
+      ],
+      "potentials": [
+        {
+          "tick": 1,
+          "phase": "obstacle",
+          "key": "1175:4285:37.95:0:1:0:0",
+          "goalKey": "1175:4285:37.95:0:1:0",
+          "shared": false,
+          "ready": false,
+          "lifetimeBefore": false,
+          "result": false,
+          "readyId": null,
+          "resultId": null,
+          "sameObject": false
+        },
+        {
+          "tick": 56,
+          "phase": "obstacle",
+          "key": "525:4285:99.95:74.55:1:0:0",
+          "goalKey": "525:4285:99.95:74.55:1:0",
+          "shared": false,
+          "ready": false,
+          "lifetimeBefore": false,
+          "result": false,
+          "readyId": null,
+          "resultId": null,
+          "sameObject": false
+        },
+        {
+          "tick": 199,
+          "phase": "moved-obstacle",
+          "key": "1175:4285:37.95:0:1:0:0",
+          "goalKey": "1175:4285:37.95:0:1:0",
+          "shared": false,
+          "ready": false,
+          "lifetimeBefore": false,
+          "result": false,
+          "readyId": null,
+          "resultId": null,
+          "sameObject": false
+        },
+        {
+          "tick": 248,
+          "phase": "moved-obstacle",
+          "key": "525:4285:99.95:74.55:1:0:0",
+          "goalKey": "525:4285:99.95:74.55:1:0",
+          "shared": false,
+          "ready": false,
+          "lifetimeBefore": false,
+          "result": false,
+          "readyId": null,
+          "resultId": null,
+          "sameObject": false
+        }
+      ],
+      "positions": [
+        {
+          "tick": 10,
+          "phase": "obstacle",
+          "x": 739.5,
+          "y": 4273,
+          "state": "seek"
+        },
+        {
+          "tick": 20,
+          "phase": "obstacle",
+          "x": 869.59,
+          "y": 4232.55,
+          "state": "seek"
+        },
+        {
+          "tick": 30,
+          "phase": "obstacle",
+          "x": 1017.39,
+          "y": 4257.95,
+          "state": "seek"
+        },
+        {
+          "tick": 40,
+          "phase": "obstacle",
+          "x": 1150.41,
+          "y": 4280.78,
+          "state": "mine"
+        },
+        {
+          "tick": 50,
+          "phase": "obstacle",
+          "x": 1150.41,
+          "y": 4280.78,
+          "state": "mine"
+        },
+        {
+          "tick": 60,
+          "phase": "obstacle",
+          "x": 1080.93,
+          "y": 4268.84,
+          "state": "return"
+        },
+        {
+          "tick": 70,
+          "phase": "obstacle",
+          "x": 981.87,
+          "y": 4251.81,
+          "state": "return"
+        },
+        {
+          "tick": 80,
+          "phase": "obstacle",
+          "x": 885.8,
+          "y": 4235.33,
+          "state": "return"
+        },
+        {
+          "tick": 90,
+          "phase": "obstacle",
+          "x": 741.73,
+          "y": 4247.79,
+          "state": "return"
+        },
+        {
+          "tick": 100,
+          "phase": "obstacle",
+          "x": 638.27,
+          "y": 4265.57,
+          "state": "seek"
+        },
+        {
+          "tick": 110,
+          "phase": "obstacle",
+          "x": 786.07,
+          "y": 4240.17,
+          "state": "seek"
+        },
+        {
+          "tick": 120,
+          "phase": "obstacle",
+          "x": 928.71,
+          "y": 4242.71,
+          "state": "seek"
+        },
+        {
+          "tick": 130,
+          "phase": "obstacle",
+          "x": 1076.51,
+          "y": 4268.11,
+          "state": "seek"
+        },
+        {
+          "tick": 140,
+          "phase": "obstacle",
+          "x": 1150.41,
+          "y": 4280.78,
+          "state": "mine"
+        },
+        {
+          "tick": 150,
+          "phase": "obstacle",
+          "x": 1150.41,
+          "y": 4280.78,
+          "state": "mine"
+        },
+        {
+          "tick": 160,
+          "phase": "obstacle",
+          "x": 1035.09,
+          "y": 4260.96,
+          "state": "return"
+        },
+        {
+          "tick": 170,
+          "phase": "obstacle",
+          "x": 952.31,
+          "y": 4246.73,
+          "state": "return"
+        },
+        {
+          "tick": 180,
+          "phase": "obstacle",
+          "x": 830.41,
+          "y": 4232.55,
+          "state": "return"
+        },
+        {
+          "tick": 190,
+          "phase": "obstacle",
+          "x": 682.61,
+          "y": 4257.95,
+          "state": "return"
+        },
+        {
+          "tick": 200,
+          "phase": "moved-obstacle",
+          "x": 697.53,
+          "y": 4256.33,
+          "state": "seek"
+        },
+        {
+          "tick": 210,
+          "phase": "moved-obstacle",
+          "x": 846.03,
+          "y": 4235.51,
+          "state": "seek"
+        },
+        {
+          "tick": 220,
+          "phase": "moved-obstacle",
+          "x": 977.89,
+          "y": 4246.19,
+          "state": "seek"
+        },
+        {
+          "tick": 230,
+          "phase": "moved-obstacle",
+          "x": 1125.09,
+          "y": 4275.17,
+          "state": "seek"
+        },
+        {
+          "tick": 240,
+          "phase": "moved-obstacle",
+          "x": 1139.81,
+          "y": 4278.07,
+          "state": "mine"
+        },
+        {
+          "tick": 250,
+          "phase": "moved-obstacle",
+          "x": 1097.86,
+          "y": 4269.81,
+          "state": "return"
+        },
+        {
+          "tick": 260,
+          "phase": "moved-obstacle",
+          "x": 988.96,
+          "y": 4248.37,
+          "state": "return"
+        },
+        {
+          "tick": 270,
+          "phase": "moved-obstacle",
+          "x": 900.62,
+          "y": 4231.13,
+          "state": "return"
+        },
+        {
+          "tick": 280,
+          "phase": "moved-obstacle",
+          "x": 766.55,
+          "y": 4248.17,
+          "state": "return"
+        },
+        {
+          "tick": 290,
+          "phase": "moved-obstacle",
+          "x": 618.25,
+          "y": 4270.82,
+          "state": "return"
+        },
+        {
+          "tick": 300,
+          "phase": "moved-obstacle",
+          "x": 751.72,
+          "y": 4250.4,
+          "state": "seek"
+        },
+        {
+          "tick": 310,
+          "phase": "moved-obstacle",
+          "x": 894.81,
+          "y": 4230.01,
+          "state": "seek"
+        },
+        {
+          "tick": 320,
+          "phase": "moved-obstacle",
+          "x": 1036.77,
+          "y": 4257.79,
+          "state": "seek"
+        },
+        {
+          "tick": 330,
+          "phase": "moved-obstacle",
+          "x": 1139.81,
+          "y": 4278.07,
+          "state": "mine"
+        },
+        {
+          "tick": 340,
+          "phase": "moved-obstacle",
+          "x": 1139.81,
+          "y": 4278.07,
+          "state": "mine"
+        },
+        {
+          "tick": 350,
+          "phase": "moved-obstacle",
+          "x": 1047.82,
+          "y": 4260.04,
+          "state": "return"
+        },
+        {
+          "tick": 360,
+          "phase": "moved-obstacle",
+          "x": 959.52,
+          "y": 4242.72,
+          "state": "return"
+        },
+        {
+          "tick": 370,
+          "phase": "moved-obstacle",
+          "x": 855.53,
+          "y": 4234.55,
+          "state": "return"
+        },
+        {
+          "tick": 380,
+          "phase": "moved-obstacle",
+          "x": 707.23,
+          "y": 4257.24,
+          "state": "return"
+        },
+        {
+          "tick": 390,
+          "phase": "moved-obstacle",
+          "x": 662.74,
+          "y": 4264.01,
+          "state": "seek"
+        },
+        {
+          "tick": 400,
+          "phase": "removed-obstacle",
+          "x": 812.64,
+          "y": 4270.13,
+          "state": "seek"
+        },
+        {
+          "tick": 410,
+          "phase": "removed-obstacle",
+          "x": 962.54,
+          "y": 4276.28,
+          "state": "seek"
+        },
+        {
+          "tick": 420,
+          "phase": "removed-obstacle",
+          "x": 1112.44,
+          "y": 4282.44,
+          "state": "seek"
+        },
+        {
+          "tick": 430,
+          "phase": "removed-obstacle",
+          "x": 1142.42,
+          "y": 4283.66,
+          "state": "mine"
+        },
+        {
+          "tick": 440,
+          "phase": "removed-obstacle",
+          "x": 1112.42,
+          "y": 4283.72,
+          "state": "return"
+        },
+        {
+          "tick": 450,
+          "phase": "removed-obstacle",
+          "x": 996.17,
+          "y": 4283.97,
+          "state": "return"
+        },
+        {
+          "tick": 460,
+          "phase": "removed-obstacle",
+          "x": 913.67,
+          "y": 4284.18,
+          "state": "return"
+        },
+        {
+          "tick": 470,
+          "phase": "removed-obstacle",
+          "x": 763.67,
+          "y": 4284.48,
+          "state": "return"
+        },
+        {
+          "tick": 480,
+          "phase": "removed-obstacle",
+          "x": 613.67,
+          "y": 4284.8,
+          "state": "return"
+        },
+        {
+          "tick": 490,
+          "phase": "removed-obstacle",
+          "x": 748.67,
+          "y": 4284.86,
+          "state": "seek"
+        },
+        {
+          "tick": 500,
+          "phase": "removed-obstacle",
+          "x": 898.67,
+          "y": 4284.91,
+          "state": "seek"
+        },
+        {
+          "tick": 510,
+          "phase": "removed-obstacle",
+          "x": 1048.67,
+          "y": 4284.96,
+          "state": "seek"
+        },
+        {
+          "tick": 520,
+          "phase": "removed-obstacle",
+          "x": 1138.67,
+          "y": 4284.99,
+          "state": "mine"
+        },
+        {
+          "tick": 530,
+          "phase": "removed-obstacle",
+          "x": 1138.67,
+          "y": 4284.99,
+          "state": "mine"
+        },
+        {
+          "tick": 540,
+          "phase": "removed-obstacle",
+          "x": 1036.67,
+          "y": 4284.99,
+          "state": "return"
+        },
+        {
+          "tick": 550,
+          "phase": "removed-obstacle",
+          "x": 949.67,
+          "y": 4284.99,
+          "state": "return"
+        },
+        {
+          "tick": 560,
+          "phase": "removed-obstacle",
+          "x": 814.67,
+          "y": 4284.99,
+          "state": "return"
+        },
+        {
+          "tick": 570,
+          "phase": "removed-obstacle",
+          "x": 664.67,
+          "y": 4284.99,
+          "state": "return"
+        }
+      ],
+      "changes": [
+        {
+          "tick": 198,
+          "oldFieldCount": 0,
+          "oldLifetimeCount": 0
+        },
+        {
+          "tick": 390,
+          "removed": true
+        }
+      ],
+      "metrics": {
+        "backend": "navmesh",
+        "fieldsBuilt": 0,
+        "fieldHits": 0,
+        "layersBuilt": 2,
+        "routeQueries": 7,
+        "directQueries": 3,
+        "unreachable": 0,
+        "funnelQueries": 4,
+        "meshCells": 1600,
+        "meshPortals": 3001,
+        "meshBuildMs": 144.90000000596046,
+        "meshBuildMaxMs": 135.10000000149012,
+        "meshGeometryMs": 66.70000000298023,
+        "meshConnectMs": 71.80000000447035,
+        "meshTilesBuilt": 27,
+        "projectionQueries": 0,
+        "projectionTilesBuilt": 0,
+        "projectionBuildMs": 0,
+        "fieldBuildMs": 0,
+        "astarQueries": 4,
+        "astarExpanded": 1220,
+        "astarCostMs": 11.700000002980232,
+        "astarMoveQueries": 4,
+        "astarDistanceQueries": 0,
+        "sharedAstarQueries": 0,
+        "sharedAstarHits": 0,
+        "sharedAstarCachedNodes": 0,
+        "invalidations": 4,
+        "endpointProjections": 0,
+        "regionsBuilt": 4,
+        "regionHits": 0,
+        "routeInvalid_first": 3,
+        "routeCacheLookups": 30,
+        "adaptiveAstarQueries": 4,
+        "routeBuilds": 8,
+        "routeFollowSteps": 954,
+        "routeJoins": 22,
+        "routeInvalid_target": 24,
+        "routeInvalid_topology": 2,
+        "routeInvalid_deviation": 1
+      },
+      "final": {
+        "tick": 580,
+        "x": 707.78,
+        "y": 3992.27,
+        "state": "seek",
+        "carry": 0
+      },
+      "errors": []
+    },
+    "stateCases": [
+      {
+        "name": "Canonical bytes preserve action precision and authoritative array order",
+        "status": "PASS",
+        "evidence": {
+          "commandBytes": 72,
+          "x": 107.12345678901235,
+          "y": 201.00000000000003
+        }
+      },
+      {
+        "name": "Every command rejects fields outside its authoritative contract",
+        "status": "PASS",
+        "evidence": {
+          "commandContracts": 14,
+          "rejected": 14
+        }
+      },
+      {
+        "name": "Projectile presentation never changes saved state, checksums or recovered impact events",
+        "status": "PASS",
+        "evidence": {
+          "projectiles": 1,
+          "reserved": 3,
+          "rendererMutationExcluded": true,
+          "impactEventPreserved": true
+        }
+      },
+      {
+        "name": "Both role-local sequence 1 commands execute once in resolved SDK order",
+        "status": "PASS",
+        "evidence": {
+          "gameTick": 1,
+          "receipts": [
+            {
+              "seq": 1,
+              "netcodeSequence": 1,
+              "actor": "guest",
+              "tick": 1,
+              "type": "TOGGLE_PRODUCTION",
+              "key": "{\"type\":\"TOGGLE_PRODUCTION\"}",
+              "applied": true
+            },
+            {
+              "seq": 2,
+              "netcodeSequence": 1,
+              "actor": "host",
+              "tick": 1,
+              "type": "TOGGLE_PRODUCTION",
+              "key": "{\"type\":\"TOGGLE_PRODUCTION\"}",
+              "applied": true
+            }
+          ]
+        }
+      },
+      {
+        "name": "Save/load exact bytes and next-step equivalence with real StrategySim",
+        "status": "PASS",
+        "evidence": {
+          "checkpointBytes": 38354,
+          "finalBytes": 39764,
+          "gameTick": 50
+        }
+      },
+      {
+        "name": "Candidate validation rejects malformed bytes before any live mutation",
+        "status": "PASS",
+        "evidence": {
+          "invalidSnapshots": 17,
+          "epoch": 1
+        }
+      },
+      {
+        "name": "Surrender is an authoritative action shared by adapter and direct replay",
+        "status": "PASS",
+        "evidence": {
+          "result": {
+            "winner": "host",
+            "reason": "surrender",
+            "tick": 1
+          },
+          "gameTick": 1
+        }
+      },
+      {
+        "name": "Snapshot isolation and same-tick rollback navigation epoch boundary",
+        "status": "PASS",
+        "evidence": {
+          "epochBefore": 1,
+          "epochAfter": 2,
+          "sameTick": 0
+        }
+      },
+      {
+        "name": "Procedural layered-map rollback reuses only verified topology and preserves exact bytes",
+        "status": "PASS",
+        "evidence": {
+          "units": 158,
+          "checkpointBytes": 76503,
+          "oldSaveMedianMs": 9.9,
+          "saveMedianMs": 11.2,
+          "loadMedianMs": 10.3,
+          "regeneratedStepMs": [
+            172.3,
+            142.4,
+            111.2,
+            136.1
+          ],
+          "retainedStepMs": [
+            36.8,
+            32.4,
+            32.3,
+            37.9
+          ],
+          "regeneratedMeshBuildMs": [
+            83.3,
+            96.8,
+            71.3,
+            90.1
+          ]
+        }
+      },
+      {
+        "name": "Campaign rollback keeps compiled module and resets complete script/root state",
+        "status": "PASS",
+        "evidence": {
+          "checkpointBytes": 1712,
+          "compilesBeforeRewind": 3,
+          "disposalsAfterDefaultImport": 1,
+          "calls": 12
+        }
+      },
+      {
+        "name": "Replay checksum covers added root state and terminal outcome without compiling a shadow",
+        "status": "PASS",
+        "evidence": {
+          "checksumScope": "complete-state-without-scheduled-v2",
+          "rejected": 2
+        }
+      }
+    ],
+    "ui": [
+      {
+        "humanRole": "host",
+        "initial": {
+          "build": "20261015T040405+0000-rf-91802433e6f7",
+          "simVersion": 194,
+          "sdkVersion": "0.3.1",
+          "sdkRevision": "gamekit:72b09b260edf9650353017acb49c06873fe9f5a1",
+          "role": "host",
+          "renderer": {
+            "backend": "WebGL",
+            "tick": 3,
+            "canvasWidth": 396,
+            "canvasHeight": 659,
+            "gpuVendor": "Google Inc. (NVIDIA)",
+            "gpuRenderer": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+          }
+        },
+        "battleTick": 957,
+        "aiStats": {
+          "offered": 12,
+          "submitted": 12,
+          "applied": 12,
+          "rejected": 0,
+          "budgetRejected": 0,
+          "duplicateRejected": 0,
+          "cancelled": 0
+        },
+        "result": {
+          "winner": "guest",
+          "reason": "surrender",
+          "endTick": 973,
+          "checksum": "7066c994"
+        },
+        "replay": {
+          "tick": 973,
+          "endTick": 973,
+          "checksum": "7066c994",
+          "backend": "WebGL"
+        },
+        "pageErrors": []
+      },
+      {
+        "humanRole": "guest",
+        "initial": {
+          "build": "20261015T040405+0000-rf-91802433e6f7",
+          "simVersion": 194,
+          "sdkVersion": "0.3.1",
+          "sdkRevision": "gamekit:72b09b260edf9650353017acb49c06873fe9f5a1",
+          "role": "guest",
+          "renderer": {
+            "backend": "WebGL",
+            "tick": 4,
+            "canvasWidth": 396,
+            "canvasHeight": 659,
+            "gpuVendor": "Google Inc. (NVIDIA)",
+            "gpuRenderer": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti (0x00002191) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+          }
+        },
+        "battleTick": 1321,
+        "aiStats": {
+          "offered": 18,
+          "submitted": 18,
+          "applied": 18,
+          "rejected": 0,
+          "budgetRejected": 0,
+          "duplicateRejected": 0,
+          "cancelled": 0
+        },
+        "result": {
+          "winner": "host",
+          "reason": "surrender",
+          "endTick": 1343,
+          "checksum": "b4d317e0"
+        },
+        "replay": {
+          "tick": 1343,
+          "endTick": 1343,
+          "checksum": "b4d317e0",
+          "backend": "WebGL"
+        },
+        "pageErrors": []
+      }
+    ]
+  }
+}

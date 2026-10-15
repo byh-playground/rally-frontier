@@ -1,0 +1,136 @@
+{
+  "report": "SIM198 integrated retest after PR46 merge",
+  "baseline": {
+    "commit": "4dadd30744e4b3b2fc4040c0da18355d31aaf5c6",
+    "indexHtmlBlob": "6b88d095938f914436849fa1570dfe432fa00ea8",
+    "crlfSha256": "1fec5c457b9127f65b9f18d6d12a12dceda602537edb1a460efbb4d86e297e57"
+  },
+  "candidateCodeCommit": "9c66912a0350ea8fe19cc492ada157dc587b2e77",
+  "candidate": {
+    "indexHtmlBlob": "0d8cacb9951adae41d9b0fb244d04d8b08a3b033",
+    "crlfSha256": "0aad614325140cb6333bfe45ceacd93de5d13c9fc8d9239d6397bfcf244d33fc"
+  },
+  "workerBenchmark": {
+    "fixture": "same canonical map seed 3919536611, empty input, one obstacle, Edge, 300 ticks, snapshot every 10 ticks, steady ticks 101-300, ABBA, two repetitions; matched CRLF sources",
+    "oneWorker": {
+      "baselineStepMsPerTick": 0.1415,
+      "candidateStepMsPerTick": 0.18825,
+      "stepDeltaPercent": 33.0,
+      "baselineSnapshotSaveMs": 0.395,
+      "candidateSnapshotSaveMs": 0.4225,
+      "snapshotSaveDeltaPercent": 7.0,
+      "baselineSnapshotBytes": 5531.05,
+      "candidateSnapshotBytes": 5467.65,
+      "snapshotBytesDeltaPercent": -1.1,
+      "baselineIncome": 3,
+      "candidateIncome": 3
+    },
+    "twentyWorkers": {
+      "baselineStepMsPerTick": 0.84375,
+      "candidateStepMsPerTick": 0.9145,
+      "stepDeltaPercent": 8.4,
+      "baselineSnapshotSaveMs": 1.73,
+      "candidateSnapshotSaveMs": 1.19,
+      "snapshotSaveDeltaPercent": -31.2,
+      "baselineSnapshotBytes": 23487.35,
+      "candidateSnapshotBytes": 16948.05,
+      "snapshotBytesDeltaPercent": -27.8,
+      "baselineIncome": 31,
+      "candidateIncome": 40,
+      "baselineSteadyRouteQueries": 8,
+      "baselineSteadyAstarQueries": 3,
+      "candidateSteadyRouteBuilds": 0,
+      "candidateSteadyAstarQueries": 0,
+      "candidateSteadyCacheLookups": 140,
+      "candidateSteadyJoins": 140,
+      "candidateTargetInvalidations": 74,
+      "candidateDeviationInvalidations": 66
+    }
+  },
+  "normalFollowRegression": {
+    "passed": true,
+    "ticks": 98,
+    "routeRequests": 0,
+    "routeCacheLookups": 0,
+    "fullRouteScans": 0,
+    "localSegmentChecks": 3
+  },
+  "rtcCrowdedCombat": {
+    "fixture": "map seed 2617977013, map hash 1323913035, swordsman count 90, 400 supply, Edge, 12s/run, quiet input, ABBA, two repetitions, matched CRLF sources",
+    "peerTicksByRun": {
+      "main1": [
+        118,
+        119
+      ],
+      "main2": [
+        119,
+        119
+      ],
+      "candidate1": [
+        113,
+        114
+      ],
+      "candidate2": [
+        120,
+        119
+      ]
+    },
+    "baselineAstarPerPeerMean": 1498.5,
+    "candidateAstarPerPeerMean": 498.5,
+    "candidateRouteBuildsPerPeerMean": 1848,
+    "candidateRouteLookupsPerPeerMean": 6187,
+    "candidateJoinsPerPeerMean": 4339,
+    "candidateTargetInvalidationsPerPeerMean": 6072.5,
+    "candidateDeviationInvalidationsPerPeerMean": 106.5,
+    "snapshotBytesMean": {
+      "tick40": {
+        "baseline": 111108,
+        "candidate": 125098,
+        "deltaPercent": 12.6
+      },
+      "tick60": {
+        "baseline": 101126,
+        "candidate": 119694,
+        "deltaPercent": 18.4
+      },
+      "tick80": {
+        "baseline": 96529,
+        "candidate": 112539,
+        "deltaPercent": 16.6
+      }
+    },
+    "allPeerHashesMatched": true,
+    "hashMismatches": 0,
+    "recoveries": 0,
+    "pageErrors": 0,
+    "inputCommandLatencyMeasured": false
+  },
+  "validation": {
+    "build": "PASS",
+    "buildTests": "32/32 PASS",
+    "contactDifferentialPrimitiveComparisons": {
+      "count": 20000,
+      "identical": true
+    },
+    "contactCandidateTickDeterministic": true,
+    "legacyOracleDifference": {
+      "scenario": "shelltitan",
+      "tick": 47,
+      "byteIndex": 69393
+    },
+    "commonRouteRegression": "PASS; 98 ticks; no normal-follow requests/lookups/scans; target/deviation/join paths exercised",
+    "checkpoint": "PASS; 4013 root points and 3813 shared suffix points restored exactly; 22 malformed/limit cases rejected; 500000-node budget retained; 105081 bytes",
+    "workerColdRestore": "PASS; 495 and 498 compared ticks; 6 and 12 incomes; no errors",
+    "workerNavigation": "PASS on standalone build; 36 A* oracle cases; 8 churn phases; 152 economy ticks; 78 mine hits; 26 returns; warm/cold bytes equal",
+    "netcodeState": "PASS; 11 cases; 17 malformed snapshots rejected transactionally",
+    "rtcLockstep": "PASS; snapshot/replay recovery hash matched; zero peer hash mismatches/page errors",
+    "rtcRollback": "PASS; both peers rolled back/resimulated and recovered to matching hash; zero peer hash mismatches/page errors",
+    "browserUiE2E": "PASS; host and guest completed match and replay with matching checksums; pageErrors 0; build provenance 20261015T065239+0000-rf-9c66912a0350"
+  },
+  "evidenceDirectory": ".qa/sim198-pr46-integration/",
+  "productRecommendation": {
+    "decision": "defer merge",
+    "rationale": "workload별 손익: worker 1기 step +33.0% 및 snapshot 저장 +7.0%; worker 20기 step +8.4%, 저장 -31.2%, bytes -27.8%; RTC throughput 불명확, checkpoint +12.6%~+18.4%. step 및 RTC checkpoint 비용을 분석/축소하거나 이 손익을 제품 담당자가 명시적으로 수용한 뒤 재검토.",
+    "commandLatencyGoalEstablished": false
+  }
+}
