@@ -1,0 +1,12 @@
+const fs=require('node:fs'),path=require('node:path'),{spawnSync}=require('node:child_process');
+const {inject}=require('./inject.cjs');
+const root=path.resolve(__dirname,'../..');
+const args=process.argv.slice(2),i=args.indexOf('--variant'),variant=i<0?'original':args[i+1];
+if(i>=0)args.splice(i,2);
+if(!/^(original|(?:matter|rapier)-(?:full-[16]|guarded(?:-lite)?))$/.test(variant))throw Error('Invalid variant');
+const folder=path.join(root,'.qa/physics-controller-20261011');fs.mkdirSync(folder,{recursive:true});
+const file=path.join(folder,variant+'.html');fs.writeFileSync(file,inject(root,{variant}));
+if(!args.includes('--run'))args.push('--run','physics-'+variant);
+args.push('--html',file);
+const result=spawnSync(process.execPath,[path.join(root,'scripts/target-refresh-rtc-benchmark.cjs'),...args],{cwd:root,stdio:'inherit',timeout:240000});
+if(result.error)throw result.error;process.exitCode=result.status??1;

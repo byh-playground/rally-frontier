@@ -152,7 +152,7 @@ async function integration(expectedSdkVersion) {
       estimatedRingBytes:saved.length*profile.stateHistorySize,historyBudgetBytes:profile.maxHistoryBytes,
       pureValidation:true,canonicalRoundtrip:true};
     await step(5);
-    for(const s of sessions)s.netcodeSession.setInputDelay(0);
+    for(const s of sessions)s.netcodeSession.setInputDelay(s.netcodeSession.profile.minInputDelayTicks);
     await step(5); // Drain immutable frames captured before public delay reduction.
     faults.mode='inputs';
     const faultStartTick=host.sim.tick,faultStartStalls=host.netcodeSession.metrics.stalls;
@@ -269,4 +269,4 @@ async function integration(expectedSdkVersion) {
     fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({htmlPath,result,pageErrors:errors},null,2));
     console.log(JSON.stringify({htmlPath,result:{...result,events:result.events.filter(e=>e.kind!=='log')},pageErrors:errors},null,2));
   }finally{await browser.close();}
-})().catch(error=>{console.error(error.stack);process.exitCode=1;});
+})().catch(error=>{console.error(String(error.stack).replace(/data:text\/javascript;base64,[A-Za-z0-9+/=]+/g,'[bundled gamekit]'));process.exitCode=1;});
