@@ -86,7 +86,7 @@ function fixture(t) {
   const os = require('node:os');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rally-bundle-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  for (const asset of ['gamekit.lock.json', '.cache/gamekit', 'campaign', 'icons', 'manifest.webmanifest']) fs.cpSync(path.join(root, asset), path.join(dir, asset), { recursive: true });
+  for (const asset of ['gamekit.lock.json', '.cache/gamekit', '.cache/vector-assets.compiled.js', 'campaign', 'icons', 'manifest.webmanifest']) fs.cpSync(path.join(root, asset), path.join(dir, asset), { recursive: true });
   return dir;
 }
 function changeLock(dir, change) {
@@ -149,12 +149,13 @@ test('bundled module bytes and embedded revision exactly match provenance', () =
   const modules = JSON.parse(html.match(/const RALLY_GAMEKIT_MODULES=Object\.freeze\((\{[^\n]+\})\);/)[1]);
   const provenance = JSON.parse(html.match(/const RALLY_GAMEKIT_SOURCE=Object\.freeze\((\{[^\n]+\})\);/)[1]);
   assert.deepEqual(provenance, { repository: lock.repository, sourceCommit: lock.sourceCommit, distCommit: lock.distCommit });
-  assert.deepEqual(Object.keys(modules).sort(), Object.keys(lock.modules).sort());
+  assert.deepEqual(Object.keys(modules).sort(), [...Object.keys(lock.modules), 'vectorAssetsData'].sort());
   for (const [name, entry] of Object.entries(lock.modules)) {
     const bytes = Buffer.from(modules[name].split(',')[1], 'base64');
     assert.equal(require('node:crypto').createHash('sha256').update(bytes).digest('hex'), entry.sha256);
     assert.deepEqual(bytes, fs.readFileSync(path.join(root, '.cache/gamekit', entry.file)));
   }
+  assert.deepEqual(Buffer.from(modules.vectorAssetsData.split(',')[1], 'base64'), fs.readFileSync(path.join(root, '.cache/vector-assets.compiled.js')));
 });
 
 test('native source metadata reads the dependency lock instead of duplicating revision values', () => {

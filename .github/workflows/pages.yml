@@ -24,6 +24,8 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: '22'
+      - name: Install Node dependencies
+        run: npm ci
       - name: Fetch and verify pinned Gamekit dependency
         run: npm run setup:gamekit
       - name: Test build metadata and output

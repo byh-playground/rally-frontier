@@ -59,6 +59,9 @@ function bundleGame(root,source){
     checkModule(bytes.toString('utf8'),entry.file);
     modules[name]=dataURL('text/javascript',bytes);
   }
+  const vectorAssetBytes=fs.readFileSync(path.join(root,'.cache','vector-assets.compiled.js'));
+  checkModule(vectorAssetBytes.toString('utf8'),'compiled unit vector assets');
+  modules.vectorAssetsData=dataURL('text/javascript',vectorAssetBytes);
   let html=replaceOnce(source,/const RALLY_GAMEKIT_MODULES=Object\.freeze\(\{[^\n]+\}\);/,`const RALLY_GAMEKIT_MODULES=Object.freeze(${JSON.stringify(modules)});`,'Gamekit module map');
   html=replaceOnce(html,/const RALLY_GAMEKIT_SOURCE=Object\.freeze\(\{[^\n]+\}\);/,`const RALLY_GAMEKIT_SOURCE=Object.freeze(${JSON.stringify({repository:lock.repository,sourceCommit:lock.sourceCommit,distCommit:lock.distCommit})});`,'Gamekit provenance');
   const campaignBytes=fs.readFileSync(path.join(root,'campaign/campaigns.js'));

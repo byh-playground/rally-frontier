@@ -10687,7 +10687,7 @@ body.campaign-mode #p2pHealthText {
 <script>
 (async function(){
 "use strict";
-const RALLY_GAMEKIT_MODULES=Object.freeze({rollback:'./.cache/gamekit/rollback.js',deterministic:'./.cache/gamekit/deterministic.js',simloop:'./.cache/gamekit/simloop.js',transport:'./.cache/gamekit/transport.js',interpolation:'./.cache/gamekit/interpolation.js',rendering:'./.cache/gamekit/rendering.js',input:'./.cache/gamekit/input.js',camera:'./.cache/gamekit/camera.js',events:'./.cache/gamekit/presentation-events.js',hud:'./.cache/gamekit/hud.js',debug:'./.cache/gamekit/debug-tools.js'});
+const RALLY_GAMEKIT_MODULES=Object.freeze({rollback:'./.cache/gamekit/rollback.js',deterministic:'./.cache/gamekit/deterministic.js',simloop:'./.cache/gamekit/simloop.js',transport:'./.cache/gamekit/transport.js',interpolation:'./.cache/gamekit/interpolation.js',rendering:'./.cache/gamekit/rendering.js',input:'./.cache/gamekit/input.js',camera:'./.cache/gamekit/camera.js',events:'./.cache/gamekit/presentation-events.js',hud:'./.cache/gamekit/hud.js',debug:'./.cache/gamekit/debug-tools.js',vectorAssets:'./.cache/gamekit/vector-assets.js',vectorAssetsData:'./.cache/vector-assets.compiled.js'});
 const RALLY_GAMEKIT_SOURCE=Object.freeze({lock:'./gamekit.lock.json'});
 let RALLY_NETCODE_URL=RALLY_GAMEKIT_SOURCE.lock||'gamekit:'+RALLY_GAMEKIT_SOURCE.distCommit;
 let RallyNetcode,RallyGamekit;
@@ -10706,7 +10706,8 @@ try{
   RallyNetcode=Object.freeze({...namespaces.rollback,...namespaces.deterministic,...namespaces.simloop,...namespaces.transport});
   RallyGamekit=Object.freeze(Object.assign({},...modules.map(([,module])=>module)));
   window.RallyGamekit=RallyGamekit;
-  for(const name of ['PresentationRuntime','RenderObject','WebGLDevice','createDOMInput','CameraViewport','PresentationEventQueue','resolveAnchorInto','DiagnosticRing','ReplayTimeline'])if(typeof RallyGamekit[name]!=='function')throw new Error('Gamekit module API missing: '+name);
+  window.RallyVectorAssets=namespaces.vectorAssetsData?.compiledVectorAssets||Object.freeze({});
+  for(const name of ['PresentationRuntime','RenderObject','WebGLDevice','createDOMInput','CameraViewport','PresentationEventQueue','resolveAnchorInto','DiagnosticRing','ReplayTimeline','MeshRenderer','MeshBuilder','createVectorAsset'])if(typeof RallyGamekit[name]!=='function')throw new Error('Gamekit module API missing: '+name);
   for(const name of ["createSession","hashBytes","createValueCodec","WebRTCTransport","createNostrSignaler","createLoop","runSyncTestAsync"]){
     if(typeof RallyNetcode[name]!=="function")throw new Error("공개 라이브러리에 필수 API "+name+"가 없습니다. 라이브러리 배포 상태를 확인해 주세요.");
   }
@@ -28921,11 +28922,18 @@ class GLRenderer{
       alpha:false,
       antialias:true,
       stencil:true,
+      depth:true,
       preserveDrawingBuffer:false,
       powerPreference:"high-performance",
       failIfMajorPerformanceCaveat:false
     };
     this.device=new RallyGamekit.WebGLDevice(canvas,this.webglAttrs);
+    this.vectorMeshRenderer=new RallyGamekit.MeshRenderer(this.device);
+    this.vectorUnitAssetCache=new Map();
+    this._vectorProjection=new Float32Array(9);this._vectorProjectionWidth=0;this._vectorProjectionHeight=0;
+    this._vectorUnitMatrix=new Float32Array(6);
+    this._vectorOcclusionCoords=new Float32Array(0);
+    this._vectorWhite=[1,1,1,1];
     this.gl=this.device.gl;
     this.passState={depthEnabled:true,depthWrite:true,depthFunc:"lequal",stencil:false,colorMask:[true,true,true,true]};
     if(!this.gl)throw new Error("RALLY FRONTIER requires WebGL for battlefield rendering.");
@@ -28978,8 +28986,8 @@ class GLRenderer{
       this._fogTransitionStartedAt=null;this._fogMaskContext=null;
 
 
-    // Reusable CPU staging buffer + persistent GPU allocation. This removes the
-    // previous per-flush `new Float32Array(frame)` allocation and repeated GPU orphaning.
+    // Reusable CPU staging buffer + persistent GPU allocation. This removes per-flush
+    // frame copies and repeated GPU buffer orphaning.
     this.frame=new ReusableFloat32Buffer(7*16384);
     this.worldSpriteFrame=[];this.worldSpritePool=[];
     this.terrainOccludedBodyFrame=new ReusableFloat32Buffer(7*4096);
@@ -32267,6 +32275,123 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     }
     throw new Error(`Missing AIR visual renderer for ${u.type}`);
   }
+  drawAirUnitTransientEffects(ctx){
+    const {u,x,y,r,sc}=ctx,pose=this.resolveAirFacingScreen(u),pt=(forward=0,side=0)=>[x+pose.fx*forward*r+pose.sx*side*r,y+pose.fy*forward*r+pose.sy*side*r],linePts=(a,b,w,c)=>this.line(a[0],a[1],b[0],b[1],w,c);
+    const delta=this.renderTrackedDelta(u,"unit");let hasEffect=false;
+    if(u.type==="sailwing"&&Math.hypot(delta.x,delta.y)>.001){
+      hasEffect=true;
+    }else if(u.type==="gustmayfly"){
+      const ramp=RangeUtil.clamp(Math.max(0,(Number(this.snapshot?.tick)||0)-(Number(u.movement?.outOfCombatStartedAt)||0)+1)/Math.max(1,SimulationTiming.msToTicks(Number(UnitDefinition.get(u.type)?.outOfCombatRampMs)||3000,this.snapshot?.tps||SIM_TPS)),0,1);
+      hasEffect=ramp>.12;
+    }
+    if(!hasEffect)return;
+    this.vectorMeshRenderer.flush();
+    if(this.frame.length){this.flush(this.frame,true);this.begin()}
+    if(u.type==="sailwing"){
+      for(const side of [-.35,.35])linePts(pt(-.72,side),pt(-1.34,side*.72),Math.max(1,1.3*sc),[.42,.92,.78,.20]);
+    }else if(u.type==="gustmayfly"){
+      const ramp=RangeUtil.clamp(Math.max(0,(Number(this.snapshot?.tick)||0)-(Number(u.movement?.outOfCombatStartedAt)||0)+1)/Math.max(1,SimulationTiming.msToTicks(Number(UnitDefinition.get(u.type)?.outOfCombatRampMs)||3000,this.snapshot?.tps||SIM_TPS)),0,1);
+      if(ramp>.12)for(let k=0;k<3;k++){const side=(k-1)*.20,a=pt(-.85-k*.14,side),b=pt(-1.45-k*.28,side);linePts(a,b,Math.max(1,1.3*sc),[.48,.92,1,.10+.22*ramp])}
+    }
+  }
+  shouldUseVectorUnitArt(u){
+    const definition=UnitDefinition.get(u?.type);
+    return !!window.RallyVectorAssets?.[u?.type]&&!(definition?.economyWorker&&u.workState==="building"&&u.buildTargetId);
+  }
+  unitVectorAssetRecord(type,relation){
+    const key=type+"|"+relation;
+    let record=this.vectorUnitAssetCache.get(key);if(record)return record;
+    const source=window.RallyVectorAssets?.[type];if(!source)return null;
+    const palette=UnitFactionPalette.get(relation);if(!palette)throw new Error("Missing vector faction palette: "+relation);
+    const vertices=source.geometry.vertices.slice();
+    const markers={"254,254,254":palette.body,"85,85,85":palette.dark,"191,191,191":palette.light,"153,153,153":palette.ring};
+    for(let i=0;i<vertices.length;i+=11){
+      const target=markers[[2,3,4].map(offset=>Math.round(vertices[i+offset]*255)).join(",")];
+      if(target){vertices[i+2]=target[0];vertices[i+3]=target[1];vertices[i+4]=target[2]}
+    }
+    const compiled={...source,geometry:{...source.geometry,vertices}};
+    const asset=RallyGamekit.createVectorAsset(this.vectorMeshRenderer,compiled);
+    const player=asset.createPlayer({clip:"idle",startedAtMs:0});player.setExpression("default");player.seek(0);
+    record={asset,player,compiled,relation,isAir:UnitDefinition.get(type)?.layer==="AIR",partIds:new Set(asset.metadata.parts.map(part=>part.id)),expressionPoses:new Map()};this.vectorUnitAssetCache.set(key,record);return record;
+  }
+  vectorProjection(){
+    const width=Math.max(1,this.canvas.width|0),height=Math.max(1,this.canvas.height|0);
+    if(width!==this._vectorProjectionWidth||height!==this._vectorProjectionHeight){
+      this._vectorProjection.set([2/width,0,0,0,-2/height,0,-1,1,1]);
+      this._vectorProjectionWidth=width;this._vectorProjectionHeight=height;
+    }
+    return this._vectorProjection;
+  }
+  vectorUnitMatrix(ctx){
+    const scale=ctx.r/40,tr=this._unitFacingTransform,airFacing=ctx.airUnit?this.resolveAirFacingScreen(ctx.u):null,cos=airFacing?.fx??tr?.cos??1,sin=airFacing?.fy??tr?.sin??0;
+    const a=scale*cos,b=scale*sin,c=-scale*sin,d=scale*cos;
+    const matrix=this._vectorUnitMatrix;
+    matrix[0]=a;matrix[1]=b;matrix[2]=c;matrix[3]=d;
+    matrix[4]=ctx.x-a*128-c*128;matrix[5]=ctx.y-b*128-d*128;
+    return matrix;
+  }
+  drawVectorUnitBody(ctx){
+    const relation=this.factionRelation(ctx.u.side),record=this.unitVectorAssetRecord(ctx.u.type,relation);
+    if(!record)return null;
+    if(this.frame.length){
+      this.vectorMeshRenderer.flush();
+      this.flush(this.frame,true);this.begin();
+    }
+    const expression=ctx.hit?(ctx.attack?"hit-attack":"hit"):(ctx.attack?"attack":"default");
+    let pose;
+    if(record.isAir){
+      const hash=HashUtil.hash(ctx.u.id),phase=(hash%997)*17;
+      record.player.seek(this.presentationNow(performance.now())+phase).setExpression(expression);
+      const breathTell=ctx.u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.TELL,breathActive=ctx.u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.ACTIVE;
+      const extras={attackFx:!!ctx.attack,breathTell,breathActive};
+      for(const [part,visible] of Object.entries(extras))if(record.partIds.has(part))record.player.setPartVisible(part,visible);
+      if(record.partIds.has("sac"))record.player.setBasePose("sac",{scaleX:ctx.attack?1.22:1,scaleY:ctx.attack?1.22:1});
+      if(record.partIds.has("jaw"))record.player.setBasePose("jaw",{opacity:breathTell||breathActive||ctx.attack?1:.15});
+      const parts=record.player.partPoses();
+      pose={parts:parts.map(({transform,opacity,visible})=>({transform,opacity,visible})),morph:parts[0]?.morph||[0,0]};
+    }else{
+      pose=record.expressionPoses.get(expression);
+    }
+    if(!pose){
+      record.player.setExpression(expression);
+      const parts=record.player.partPoses();
+      pose={parts:parts.map(({transform,opacity,visible})=>({transform,opacity,visible})),morph:parts[0]?.morph||[0,0]};
+      record.expressionPoses.set(expression,pose);
+    }
+    this.vectorMeshRenderer.drawMesh(record.asset.mesh,{projection:this.vectorProjection(),matrix:this.vectorUnitMatrix(ctx),parts:pose.parts,morph:pose.morph,alpha:ctx.ownStealthAlpha,
+      color:this._vectorWhite,depth:this._renderDepth??0,depthTest:!!this.passState.depthEnabled,depthWrite:true,depthWriteAlphaThreshold:.999,depthFunc:this.passState.depthFunc||"lequal"});
+    this.vectorAssetDrawnInstances=(this.vectorAssetDrawnInstances||0)+1;
+    return record;
+  }
+  appendVectorTerrainOccludedBody(record,ctx,world){
+    this.vectorTerrainOcclusionTests=(this.vectorTerrainOcclusionTests||0)+1;
+    if(!record||!world)return;
+    const deck=this.renderBridgeAt(world.x,world.z);if(deck&&world.y<deck.elevation-.01)return;
+    const geometry=record.compiled.geometry,vertices=geometry.vertices,indices=geometry.indices;
+    const vertexCount=vertices.length/11,count=indices?indices.length:vertexCount,matrix=this.vectorUnitMatrix(ctx);
+    let coords=this._vectorOcclusionCoords;if(coords.length<vertexCount*2){coords=new Float32Array(Math.max(vertexCount*2,coords.length*2,128));this._vectorOcclusionCoords=coords}
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for(let vertex=0;vertex<vertices.length/11;vertex++){
+      const offset=vertex*11;if(vertices[offset+10]!==0)continue;
+      const lx=vertices[offset],ly=vertices[offset+1],x=matrix[0]*lx+matrix[2]*ly+matrix[4],y=matrix[1]*lx+matrix[3]*ly+matrix[5];
+      coords[vertex*2]=x;coords[vertex*2+1]=y;minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+    }
+    if(!Number.isFinite(minX))return;
+    const a=this.projectedCoordinatesAtScreen(minX,minY),b=this.projectedCoordinatesAtScreen(maxX,maxY);
+    const projected=TerrainSurfaceProjection.forAtlas(this.world.terrain.surfaces).projectedSurfaceMesh(this.orientationRole()==="guest");
+    const transitions=projected.transitionIndex.query(a.x,a.y,b.x,b.y);if(!transitions.length)return;this.vectorTerrainOcclusionRegions=(this.vectorTerrainOcclusionRegions||0)+1;
+    const destination=this.terrainOccludedBodyFrame;destination.ensure(count*7);let writtenTriangles=0;
+    for(let at=0;at+2<count;at+=3){
+      const a=indices?indices[at]:at,b=indices?indices[at+1]:at+1,c=indices?indices[at+2]:at+2;
+      const oa=a*11,ob=b*11,oc=c*11;
+      if(vertices[oa+10]!==0||vertices[ob+10]!==0||vertices[oc+10]!==0||vertices[oa+5]<.5||vertices[ob+5]<.5||vertices[oc+5]<.5)continue;
+      destination.push7(coords[a*2],coords[a*2+1],this._renderDepth??0,.34,.68,1,.34);
+      destination.push7(coords[b*2],coords[b*2+1],this._renderDepth??0,.34,.68,1,.34);
+      destination.push7(coords[c*2],coords[c*2+1],this._renderDepth??0,.34,.68,1,.34);
+      writtenTriangles++;
+    }
+    this.vectorTerrainOcclusionTriangles=(this.vectorTerrainOcclusionTriangles||0)+writtenTriangles;
+  }
   unitBodyMeshKey(ctx){
     const {u,own,neutral,ownStealthAlpha,attack,sc}=ctx;
     return [
@@ -32512,17 +32637,25 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     // HAS-A common body + IS-A species visual. Immutable bodies use a local-space
     // mesh cache; CAN-BE dynamic species keep the procedural path.
     const bodyStart=this.frame.length;
-    if(airUnit&&(AIR_UNIT_VISUAL_RENDER_FNS[u.type]||UnitDefinition.get(u.type)?.targetLeashToSummoner)){
+    let vectorBody=null;
+    if(airUnit&&this.shouldUseVectorUnitArt(u)){
+      vectorBody=this.drawVectorUnitBody(unitRenderCtx);
+      this.drawAirUnitTransientEffects(unitRenderCtx);
+    }else if(airUnit&&(AIR_UNIT_VISUAL_RENDER_FNS[u.type]||UnitDefinition.get(u.type)?.targetLeashToSummoner)){
       this.drawAirUnitSilhouette(u,x,y,presentationR,team,teamDark,teamLight,accent,attack,sc);
     }else{
       const unitVisual={type:u.type,cachePolicy:UnitVisualLookup.cachePolicy(u.type),render:UnitVisualLookup.renderer(u.type)};
       if(!unitVisual.render)throw new Error(`Missing unit visual renderer for ${u.type}`);
-      this.drawUnitBodyComposed(unitRenderCtx,unitVisual);
+      if(!workerBuildAnim&&this.shouldUseVectorUnitArt(u))vectorBody=this.drawVectorUnitBody(unitRenderCtx);
+      if(!vectorBody)this.drawUnitBodyComposed(unitRenderCtx,unitVisual);
     }
-    if(own&&!cloaked&&!airUnit&&this.world.terrain.surfaces.layers.length)this.appendTerrainOccludedBody(bodyStart,this.frame.length,worldPos);
-
-    // CAN-BE hit/attack presentation layer.
-    this.drawUnitStateFeedback(unitRenderCtx);
+    if(vectorBody){
+      if(own&&!cloaked&&!airUnit&&this.world.terrain.surfaces.layers.length)this.appendVectorTerrainOccludedBody(vectorBody,unitRenderCtx,worldPos);
+    }else{
+      if(own&&!cloaked&&!airUnit&&this.world.terrain.surfaces.layers.length)this.appendTerrainOccludedBody(bodyStart,this.frame.length,worldPos);
+      // CAN-BE hit/attack presentation layer stays in the existing dynamic path.
+      this.drawUnitStateFeedback(unitRenderCtx);
+    }
 
     this.restoreUnitFacingTransform(previousFacingTransform);
     // HUD는 은신 상태에서도 읽혀야 하므로 전역 alpha multiplier를 복구한다.
@@ -33274,8 +33407,15 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     const gl=this.gl;this.renderTerrainOcclusionDepth();this.terrainOccludedBodyFrame.reset();this.begin();
     // Terrain alone owns the depth buffer. Each billboard's authored painter
     // order must never compete with its own coplanar component triangles.
+    let lastPainter=null;
     for(const entry of this.prepareWorldSpriteFrame(visibleUnits)){
       const {kind,entity,world}=entry;this.renderEntity=entity;this.renderStage=kind;
+      const nextPainter=kind==="unit"&&this.shouldUseVectorUnitArt(entity)?"vector":"frame";
+      if(lastPainter&&nextPainter!==lastPainter){
+        if(lastPainter==="vector")this.vectorMeshRenderer.flush();
+        else if(this.frame.length){this.flush(this.frame,true);this.begin()}
+      }
+      lastPainter=nextPainter;
       this.withWorldSpriteDepth(world,()=>{
         if(kind==="unit")this.drawUnitSafely(entity,{skipShadow:true,visibilityChecked:true,worldPosition:world});
         else if(kind==="building")this.drawBuildingSafely(entity);
@@ -33284,6 +33424,8 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
         else this.drawGasNode(entity);
       });
     }
+    this.vectorMeshRenderer.flush();
+    if(this.frame.length){this.flush(this.frame,true);this.begin()}
     this.passState.depthWrite=false;
     try{
       // Behind-terrain friendly bodies are faint, and foreground sprites paint
@@ -33377,6 +33519,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     Object.assign(this.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
 
     this.passProfiler.measure("ground",()=>this.renderGroundPass());
+    this.vectorMeshRenderer.beginFrame();this.vectorAssetDrawnInstances=0;this.vectorTerrainOcclusionTests=0;this.vectorTerrainOcclusionRegions=0;this.vectorTerrainOcclusionTriangles=0;
     this.passProfiler.measure("world",()=>this.renderWorldPass(visibleUnits));
     this.passProfiler.measure("shadow",()=>this.renderShadowPass(visibleUnits));
     this.passProfiler.measure("overlay",()=>this.renderOverlayPass());
@@ -33384,6 +33527,11 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.passProfiler.measure("camera-compose",()=>this.renderCameraShakePass());
     this.passProfiler.measure("minimap",()=>this.renderMinimapPass());
 
+    const vectorStats=this.vectorMeshRenderer.stats();
+    rp.vectorAssetDraws=this.vectorAssetDrawnInstances;rp.vectorAssetInstances=vectorStats.instances;rp.vectorAssetDrawCalls=vectorStats.draws;
+    rp.vectorTerrainOcclusionTests=this.vectorTerrainOcclusionTests;rp.vectorTerrainOcclusionRegions=this.vectorTerrainOcclusionRegions;rp.vectorTerrainOcclusionTriangles=this.vectorTerrainOcclusionTriangles;
+    rp.vectorAssetGeometryBytes=vectorStats.geometryBytesUploaded;rp.vectorAssetInstanceBytes=vectorStats.instanceBytesUploaded;rp.vectorAssetRetainedBytes=vectorStats.retainedBytes;rp.vectorAssetMeshes=vectorStats.meshCount;
+    rp.drawCalls+=vectorStats.draws;rp.bufferUploadBytes+=vectorStats.geometryBytesUploaded+vectorStats.instanceBytesUploaded;
     rp.geometryTemplateHits=this.geometryTemplateHits;
     rp.unitBodyMeshCacheHits=this.unitBodyMeshCacheHits;
     rp.unitBodyMeshCacheMisses=this.unitBodyMeshCacheMisses;
