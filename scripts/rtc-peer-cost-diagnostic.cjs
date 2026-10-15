@@ -13,8 +13,8 @@ const output=path.join(root,'.qa/netcode-starvation',runId);fs.mkdirSync(output,
 const write=(name,data)=>fs.writeFileSync(path.join(output,name),JSON.stringify(data,null,2)+'\n');
 const bounded=(promise,ms,label)=>Promise.race([promise,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error(label+' timed out')),ms);timer.unref()})]);
 function observer(){
-  const q=window.__starvation={GameSession,NostrRtcTransport,MatchLifecycle,ActiveViewState,MapGeneration,LocalRtcSignalBus,DebugScenarioHarness,CONFIG,RALLY_RTC_SIGNAL_PROTOCOL,
-    samples:[],commands:[],ice:[],longTasks:[],running:false};
+  const q=window.__starvation={GameSession,NostrRtcTransport,MatchLifecycle,ActiveViewState,MapGeneration,LocalRtcSignalBus,DebugScenarioHarness,CONFIG,RALLY_RTC_SIGNAL_PROTOCOL,StrategySim,UnitDefinition,RallySimulationAdapter,
+    samples:[],steps:[],frames:[],snapshots:[],commands:[],ice:[],longTasks:[],running:false};
   const emit=(kind,row)=>console.info('__starvation__'+JSON.stringify({kind,...row}));
   const advance=GameSession.prototype.advanceSimulation;
   GameSession.prototype.advanceSimulation=function(...args){
@@ -26,8 +26,10 @@ function observer(){
     }
     return result;
   };
+  const step=StrategySim.prototype.step;StrategySim.prototype.step=function(...args){if(!q.running)return step.apply(this,args);const before={...this.navigation.metrics},at=performance.now(),result=step.apply(this,args),nav={};for(const key of ['astarQueries','funnelQueries','fieldHits','regionHits','sharedAstarHits','workerRouteReuses','workerRouteBuilds','workerRouteShared','workerRouteInvalid_topology','workerRouteInvalid_deviation','layersBuilt','meshBuildMs'])nav[key]=(this.navigation.metrics[key]||0)-(before[key]||0);q.steps.push({tick:this.tick,ms:performance.now()-at,nav,alive:this.units.filter(u=>u.alive).length,workers:this.units.filter(u=>u.alive&&UnitDefinition.get(u.type)?.economyWorker).length});return result};
+  const save=RallySimulationAdapter.prototype.save;RallySimulationAdapter.prototype.save=function(...args){const at=performance.now(),bytes=save.apply(this,args);if(q.running)q.snapshots.push({tick:this.session.sim.tick,ms:performance.now()-at,bytes:bytes.length});return bytes};
   q.start=()=>{
-    q.started=performance.now();q.running=true;
+    q.started=performance.now();q.running=true;let last=q.started;const frame=()=>{if(!q.running)return;const now=performance.now(),r=ActiveViewState.renderer;q.frames.push({at:now,tick:ActiveViewState.session.sim.tick,intervalMs:now-last,workMs:r.perfStats.frameWorkMs,passes:r.perfStats.passes});last=now;requestAnimationFrame(frame)};requestAnimationFrame(frame);
     const observer=new PerformanceObserver(list=>{if(q.running)for(const t of list.getEntries())q.longTasks.push({at:t.startTime,ms:t.duration})});observer.observe({type:'longtask',buffered:false});q.observer=observer;
     q.heartbeat=setInterval(()=>{
       const s=ActiveViewState.session,m=s.netcodeSession.metrics,at=performance.now();
@@ -46,17 +48,18 @@ function observer(){
   q.stop=()=>{
     q.running=false;clearInterval(q.heartbeat);clearInterval(q.commandTimer);q.observer.disconnect();
     const s=ActiveViewState.session;
-    return {started:q.started,stopped:performance.now(),samples:q.samples,commands:q.commands,ice:q.ice,longTasks:q.longTasks,
+    return {started:q.started,stopped:performance.now(),samples:q.samples,steps:q.steps,frames:q.frames,snapshots:q.snapshots,commands:q.commands,ice:q.ice,longTasks:q.longTasks,
       tick:s.sim.tick,seed:s.sim.seed,mapHash:s.sim.mapFingerprint(),units:s.sim.units.length,
       fatal:s.simulationFatal,renderFatal:ActiveViewState.renderer.renderFatalReported,metrics:s.netcodeSession.metrics,profile:s.netcodeSession.profile,
-      timings:s.performanceStats.timings,hashes:Object.fromEntries([0,1,2].map(i=>Math.floor(s.sim.tick/s.netcodeSession.profile.checksumInterval)*s.netcodeSession.profile.checksumInterval-i*s.netcodeSession.profile.checksumInterval).filter(t=>t>=0).map(t=>[t,s.netcodeSession.getStateHash(t)]))};
+      timings:s.performanceStats.timings,gpu:(()=>{const gl=ActiveViewState.renderer.gl,e=gl?.getExtension('WEBGL_debug_renderer_info');return e?gl.getParameter(e.UNMASKED_RENDERER_WEBGL):null})(),initialSupply:q.initialSupply,hashes:Object.fromEntries([0,1,2].map(i=>Math.floor(s.sim.tick/s.netcodeSession.profile.checksumInterval)*s.netcodeSession.profile.checksumInterval-i*s.netcodeSession.profile.checksumInterval).filter(t=>t>=0).map(t=>[t,s.netcodeSession.getStateHash(t)]))};
   };
 }
 function connect({role,c,canonical}){
-  const q=window.__starvation;q.quiet=!!c.quiet; q.MatchLifecycle.disposeMatches('starvation-start');q.CONFIG.netcode.mode='lockstep';
+  const q=window.__starvation;q.quiet=!!c.quiet;q.warmupTick=c.warmupTick||4; q.MatchLifecycle.disposeMatches('starvation-start');q.CONFIG.netcode.mode='lockstep';
   if(canonical)q.MapGeneration.generateMapDescriptor=()=>JSON.parse(JSON.stringify(canonical));
   q.LocalRtcSignalBus.prototype.open=function(){this.opened=true;window.__signalBridge=this;queueMicrotask(()=>this.owner.onSignalingReady())};
   q.LocalRtcSignalBus.prototype.publish=function(payload){if(!this.opened)return false;window.__emitSignal({...payload,from:this.owner.signalId,roomCode:this.owner.roomCode,protocol:q.RALLY_RTC_SIGNAL_PROTOCOL});return true};
+  if(c.workers){const debug=q.StrategySim.prototype.applyDebugScenario;q.StrategySim.prototype.applyDebugScenario=function(raw){const workers=this.units.filter(u=>q.UnitDefinition.get(u.type)?.economyWorker);const result=debug.call(this,raw);for(const side of [0,1]){const own=workers.filter(u=>u.side===side),base=this.base(side);while(own.length<c.workers)own.push(this.spawnUnit(side,'worker',base.x+90+(own.length%4)*8,base.y-70+Math.floor(own.length/4)*8));this.units.push(...own.slice(0,c.workers).filter(u=>!this.units.includes(u)));if(c.exactCombatCount){let current=this.units.filter(u=>u.side===side&&u.type===c.type).length;const cx=this.world.width*.5,cy=this.world.height*.5+(side===0?95:-95),spacing=Math.max(24,this.unitRadius(c.type)*2+8);while(current<c.exactCombatCount){this.spawnUnit(side,c.type,cx+((current%10)-4.5)*spacing,cy+(Math.floor(current/10)-3.5)*spacing);current++}}}this.rebuildRuntimeIndexes();q.initialSupply=this.units.filter(u=>u.side===0||u.side===1).reduce((n,u)=>n+(q.UnitDefinition.get(u.type)?.supply||0),0);return result};}
   const room='AIPERFBENCH20261003',t=new q.NostrRtcTransport(role,room,{signalMode:'local'});
   const config=role==='host'?{selectionMode:'deck',presetId:'standard',simulationTps:10,debugScenario:q.DebugScenarioHarness.normalize({kind:'unit-combat',allyType:c.type,enemyType:c.type,allyCount:c.count,enemyCount:c.count,research:false,humanRole:'host'})}:null;
   const s=new q.GameSession(role,t,room,config);
@@ -80,7 +83,8 @@ function connect({role,c,canonical}){
       }
       for(let i=0;i<2;i++)await pages[i].exposeBinding('__emitSignal',async(_,payload)=>bounded(pages[1-i].evaluate(p=>window.__signalBridge?.onSignal(p),payload),10000,'signaling'));
       await pages[0].evaluate(connect,{role:'host',c,canonical});await pages[1].evaluate(connect,{role:'guest',c,canonical});
-      await Promise.all(pages.map(p=>p.waitForFunction(()=>window.__starvation.ActiveViewState.session?.sim?.tick>=4&&window.__starvation.ActiveViewState.session.netcodeSession.ready,null,{timeout:45000})));
+      await Promise.all(pages.map(p=>p.waitForFunction(()=>window.__starvation.ActiveViewState.session?.sim?.tick>=(window.__starvation.warmupTick||4)&&window.__starvation.ActiveViewState.session.netcodeSession.ready,null,{timeout:45000})));
+      if(c.expectedSupply)for(const p of pages)assert.equal(await p.evaluate(()=>window.__starvation.initialSupply),c.expectedSupply,'Requested fixture supply must be exact');
       if(c.center)for(const p of pages){
         const point=await p.evaluate(()=>{const rect=window.__starvation.ActiveViewState.minimap.contentRect();return{x:rect.left+rect.width*.5,y:rect.top+rect.height*.5}});
         await p.mouse.click(point.x,point.y);
