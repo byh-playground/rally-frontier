@@ -9,6 +9,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, '_site', 'index
 const outDir = path.resolve(process.argv[3] || path.join(root, '.qa', 'render-interpolation'));
 const source = fs.readFileSync(htmlPath, 'utf8');
 const appUrl = process.env.QA_DIAG_URL || 'https://byh-playground.github.io/rally-frontier/';
+const liveMode = process.env.QA_DIAG_LIVE === '1';
 for (const [index, match] of [...source.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].entries()) {
   if (!match[2].trim() || /type\s*=\s*["']application\/json/i.test(match[1])) continue;
   new vm.Script(match[2], { filename: `inline-script-${index}.js` });
@@ -20,7 +21,7 @@ const observer = `
 window.__motionQA={
   BUILD_META, MatchLifecycle, ActiveViewState, RenderStateStore, GLRenderer,
   StrategySim, GameSession, MapGeneration, UnitDefinition,
-  cases:[], captures:[], draws:[], frames:[], longTasks:[], commands:[], timelineEdges:[],gpuSamples:[],gpuPending:[],gpuFrame:0,
+  cases:[], captures:[], draws:[], frames:[], startupFrames:[], longTasks:[], startupLongTasks:[], commands:[], timelineEdges:[],gpuSamples:[],gpuPending:[],gpuFrame:0,
   caseName:null, side:null, ids:null, requestedCount:null, startedAt:null,
 };
 MapGeneration.mapRuleSeed=()=>20261015;
@@ -31,14 +32,14 @@ Object.defineProperty(GameSession.prototype,'renderTimelineChanged',{configurabl
   if(next&&!previous&&q.startedAt!==null){
     const stack=String(new Error().stack||'').split('\\n').slice(2);
     q.timelineEdges.push({at:performance.now(),role:this.role,tick:this.sim?.tick,advances:this.driverPulseAdvances,
-      cause:stack.some(x=>x.includes('canAdvance'))?'cpu-budget-yield':stack.some(x=>x.includes('beforeFrame'))?'clock-gap':'other',
+      cause:stack.some(x=>x.includes('onBacklogDrop'))?'backlog-drop':stack.some(x=>x.includes('canAdvance'))?'cpu-budget-yield':stack.some(x=>x.includes('beforeFrame'))?'clock-gap':stack.some(x=>x.includes('rollback'))?'rollback':stack.some(x=>x.includes('reconcileNetcodePresentation'))?'reconcile':'other',
       frames:stack.filter(x=>/index\\.html|canAdvance|beforeFrame/.test(x)).slice(0,3).map(x=>x.slice(0,180))});
   }
 }});
 const originalCapture=RenderStateStore.prototype.capture;
 RenderStateStore.prototype.capture=function(source,now,snap,stepMs){
   if(q.startedAt!==null){
-    q.captures.push({at:performance.now(),tick:source.tick,stepMs,snap,flag:source.flags?.[q.side]||null,unitCount:(source.units||[]).filter(u=>u.alive!==false&&u.side===q.side).length,
+    q.captures.push({at:performance.now(),tick:source.tick,sourceTimeMs:(Number(source.tick)||0)*stepMs,stepMs,snap,snapStack:snap?String(new Error().stack||'').split('\\n').slice(2,7):[],flag:source.flags?.[q.side]||null,unitCount:(source.units||[]).filter(u=>u.alive!==false&&u.side===q.side).length,
       authority:(source.units||[]).filter(u=>u.alive!==false&&u.side===q.side&&q.ids?.has(u.id)).map(u=>({id:u.id,x:u.x,y:u.y}))});
   }
   return originalCapture.call(this,source,now,snap,stepMs);
@@ -50,7 +51,7 @@ GLRenderer.prototype.drawUnitSafely=function(unit,options){
     const projected=this.projectRenderWorldPosition(world);
     q.draws.push({at:performance.now(),frameAt:now,id:unit.id,simTick:this.snapshot?.tick,
       authority:{x:unit.x,y:unit.y},model:model?{x:model.entity?.x,y:model.entity?.y,tick:model.tick,delta:model.delta}:null,interpolationAlpha:model&&Number.isFinite(model.tick)?model.tick-Math.floor(model.tick):null,presentationTimeMs:this.renderState.currentFrame?.timeMs,presentationNowMs:this.renderState.currentFrame?.nowMs,
-      world:{x:world.x,y:world.y,groundY:world.groundY},screen:{x:projected.x,y:projected.y},
+      world:{x:world.x,y:world.y,z:world.z,groundY:world.groundY},screen:{x:projected.x,y:projected.y},
       camera:{left:this.cameraLeft,top:this.cameraTop},frameWorkMs:this.perfStats?.frameWorkMs,
       frameIntervalMs:this.perfStats?.frameIntervalMs});
   }
@@ -77,11 +78,12 @@ GameSession.prototype.command=function(action,...args){
   if(q.startedAt!==null&&action?.type==='SET_FLAG')q.commands.push({at:performance.now(),role:this.role,action:{...action},accepted:result});
   return result;
 };
-try{new PerformanceObserver(list=>{for(const e of list.getEntries())if(q.startedAt!==null)q.longTasks.push({at:e.startTime,duration:e.duration})}).observe({type:'longtask',buffered:true})}catch{}
-let last=0;function sample(){const now=performance.now(),r=ActiveViewState.renderer;
-  if(q.startedAt!==null){q.frames.push({at:now,rafInterval:last?now-last:0,renderWorkMs:r?.perfStats?.frameWorkMs,
-    renderIntervalMs:r?.perfStats?.frameIntervalMs,simTick:MatchLifecycle.activeSession()?.sim?.tick,
-    tps:MatchLifecycle.activeSession()?.sim?.tps,hidden:document.hidden});}
+try{new PerformanceObserver(list=>{for(const e of list.getEntries()){const row={at:e.startTime,duration:e.duration};(q.startedAt===null?q.startupLongTasks:q.longTasks).push(row)}}).observe({type:'longtask',buffered:true})}catch{}
+let last=0;function sample(){const now=performance.now(),r=ActiveViewState.renderer,session=MatchLifecycle.activeSession();
+  const row={at:now,rafInterval:last?now-last:0,renderWorkMs:r?.perfStats?.frameWorkMs,renderIntervalMs:r?.perfStats?.frameIntervalMs,
+    simTick:session?.sim?.tick,tps:session?.sim?.tps,driverPulseAdvances:session?.driverPulseAdvances??0,
+    confirmedGameTick:session?.confirmedGameTick??0,netcodeNow:session?.netcodeNow??null,lastDriverPulseAt:session?.lastDriverPulseAt??null,hidden:document.hidden};
+  if(q.startedAt!==null)q.frames.push(row);else if(q.startupFrames.length<600)q.startupFrames.push(row);
   last=now;requestAnimationFrame(sample);
 }requestAnimationFrame(sample);
 `;
@@ -99,9 +101,17 @@ async function runCase(browser, role, count, trackedCount=count) {
   page.on('pageerror',e=>errors.push(e.stack||e.message));
   page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
   page.on('dialog',d=>d.accept());
-  await page.route(`${appUrl}**`,r=>r.request().isNavigationRequest()?r.fulfill({status:200,contentType:'text/html',body:html}):r.continue());
+await page.route(`${appUrl}**`,async route=>{
+    if(!route.request().isNavigationRequest())return route.continue();
+    if(!liveMode)return route.fulfill({status:200,contentType:'text/html',body:html});
+    const response=await route.fetch(),liveSource=await response.text(),liveEnd=liveSource.lastIndexOf('})();');
+    assert.ok(liveEnd>0,'Live Pages app IIFE exists');
+    const headers={...response.headers()};delete headers['content-length'];delete headers['content-encoding'];delete headers['transfer-encoding'];
+    return route.fulfill({status:response.status(),headers,body:liveSource.slice(0,liveEnd)+observer+liveSource.slice(liveEnd)});
+  });
   try {
     await page.goto(appUrl,{waitUntil:'domcontentloaded'});
+    await page.screenshot({path:path.join(outDir,name+'-start.png')});
     await page.locator('#gameStartBtn').click();
     await page.locator('#advancedTestSettings summary').click();
     await page.locator('#unitTestAllyType').selectOption('swordsman');
@@ -117,6 +127,7 @@ async function runCase(browser, role, count, trackedCount=count) {
       const q=window.__motionQA,m=q.MatchLifecycle.singleMatch;
       return m&&Object.values(m.sessions||{}).length===2&&Object.values(m.sessions).every(s=>s.netcodeSession?.ready&&s.sim?.tick>=8);
     },null,{timeout:45000});
+    await page.screenshot({path:path.join(outDir,name+'-battle-start.png')});
     await page.evaluate(count=>{window.__motionQA.requestedCount=count},trackedCount);
     const initial=await page.evaluate(()=>{
       const q=window.__motionQA,s=q.MatchLifecycle.activeSession(),r=q.ActiveViewState.renderer;
@@ -136,56 +147,63 @@ async function runCase(browser, role, count, trackedCount=count) {
     });
     assert.equal(initial.role,role);assert.equal(initial.tps,10);assert.equal(initial.trackedCount,trackedCount);
     await page.evaluate(name=>{window.__motionQA.caseName=name},name);
-    const focus=await page.evaluate(()=>{
-      const q=window.__motionQA,r=q.ActiveViewState.renderer,m=q.ActiveViewState.minimap,rect=m.contentRect();
-      return {x:rect.left+rect.width*.5,y:rect.top+rect.height*.5,canvas:r.canvas.getBoundingClientRect().toJSON()};
-    });
+    const focus=await page.evaluate(()=>{const q=window.__motionQA,m=q.ActiveViewState.minimap,rect=m.contentRect();return{x:rect.left+rect.width*.5,y:rect.top+rect.height*.5}});
     await page.mouse.click(focus.x,focus.y);
-    const target=await page.evaluate(role=>{
-      const r=window.__motionQA.ActiveViewState.renderer,rect=r.canvas.getBoundingClientRect();
-      const fy=role==='host' ? .93 : .07;
-      for(const fx of [.50,.57,.43]){
-        const x=rect.left+rect.width*fx,y=rect.top+rect.height*fy;
-        if(document.elementFromPoint(x,y)?.id==='glCanvas')return{x,y};
-      }
-      throw Error('No clear battlefield target point');
-    },role);
-    await page.evaluate(()=>{const q=window.__motionQA;q.startedAt=performance.now();});
+    await page.waitForTimeout(300);
+    await page.screenshot({path:path.join(outDir,name+'-before.png')});
+    const target=await page.evaluate(()=>{
+      const q=window.__motionQA,s=q.MatchLifecycle.activeSession(),r=q.ActiveViewState.renderer,side=s.role==='host'?0:1;
+      const unit=s.sim.units.find(u=>u.alive&&u.side===side&&u.type==='swordsman'&&q.ids.has(u.id));
+      if(!unit)throw Error('No live tracked swordsman for movement command');
+      const x=2100,y=side===0?2200:2590,screen=r.projectRenderWorldPosition({x,y:0,z:y,groundY:0});
+      if(document.elementFromPoint(screen.x,screen.y)?.id!=='glCanvas')throw Error('Short movement target is outside the battlefield canvas');
+      q.startedAt=performance.now();q.movementTarget={id:unit.id,start:{x:unit.x,y:unit.y},target:{x,y}};
+      return {x:screen.x,y:screen.y,world:q.movementTarget};    });
     await page.mouse.click(target.x,target.y);
     await page.waitForFunction(()=>window.__motionQA.commands.some(c=>c.accepted),null,{timeout:8000});
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(2500);
+    await page.screenshot({path:path.join(outDir,name+'-moving.png')});
+    await page.waitForTimeout(2500);
+    await page.screenshot({path:path.join(outDir,name+'-combat.png')});
     const result=await page.evaluate(()=>{
       const finiteStats=values=>{const sorted=values.filter(Number.isFinite).sort((a,b)=>a-b);return sorted.length?{n:sorted.length,mean:sorted.reduce((s,x)=>s+x,0)/sorted.length,p50:sorted[Math.floor((sorted.length-1)*.5)],p95:sorted[Math.floor((sorted.length-1)*.95)],max:sorted.at(-1)}:null};
       const q=window.__motionQA,draws=q.draws,frames=q.frames,captures=q.captures;
       const moving=draws.filter(x=>x.model&&x.model.tick%1>.01&&x.model.tick%1<.99);
       const idRows=new Map();for(const d of draws){let rows=idRows.get(d.id);if(!rows)idRows.set(d.id,rows=[]);rows.push(d)}
       const perUnit=[...idRows].map(([id,rows])=>{
-        const valid=rows.filter(x=>Number.isFinite(x.world.x)&&Number.isFinite(x.world.y));
-        const distances=valid.slice(1).map((x,i)=>Math.hypot(x.world.x-valid[i].world.x,x.world.y-valid[i].world.y));
+        const valid=rows.filter(x=>Number.isFinite(x.world.x)&&Number.isFinite(x.world.z)&&x.model);
+        const distances=valid.slice(1).map((x,i)=>Math.hypot(x.world.x-valid[i].world.x,x.world.z-valid[i].world.z));
         const fallback=rows.filter(x=>!x.model).length;
         const nonmonotone=valid.slice(1).filter((x,i)=>x.frameAt<=valid[i].frameAt).length;
+        const movedFrames=distances.filter(x=>x>.01).length;
+        const tickFractions=rows.filter(x=>x.model&&Math.abs(x.model.tick-Math.round(x.model.tick))>.02&&Math.abs(x.model.tick-Math.round(x.model.tick))<.98).length;
+        const endpointError=valid.map(x=>Math.hypot(x.world.x-x.model.x,x.world.z-x.model.y));
         const maxWorldStep=Math.max(0,...distances);
         const maxAuthorityDelta=Math.max(0,...valid.slice(1).map((x,i)=>Math.hypot(x.authority.x-valid[i].authority.x,x.authority.y-valid[i].authority.y)));
-        return{id,samples:rows.length,intermediate:rows.filter(x=>x.model&&Math.abs(x.model.x-x.authority.x)>.01||x.model&&Math.abs(x.model.y-x.authority.y)>.01).length,
-          missingModel:fallback,nonmonotoneFrameClock:nonmonotone,maxWorldStep,maxAuthorityDelta,
+        return{id,samples:rows.length,movedFrames,tickFractions,drawPoseSamples:valid.length,
+          maxDrawPoseError:Math.max(0,...endpointError),missingModel:fallback,nonmonotoneFrameClock:nonmonotone,maxWorldStep,maxAuthorityDelta,
           first:rows[0],last:rows.at(-1)};
       });
-      const raf=frames.map(f=>f.rafInterval).filter(x=>x>0),work=frames.map(f=>f.renderWorkMs),gaps=raf.filter(x=>x>50);
+
+      const raf=frames.map(f=>f.rafInterval).filter(x=>x>0),work=frames.map(f=>f.renderWorkMs).filter(Number.isFinite),gaps50=raf.filter(x=>x>50),gaps33=raf.filter(x=>x>33.3),overBudget=work.filter(x=>x>1000/60);
       return {caseName:q.caseName,startedAt:q.startedAt,endedAt:performance.now(),commands:q.commands,initial:q.initial,
-        captures,frames,draws,perUnit,longTasks:q.longTasks,timelineEdges:q.timelineEdges,gpuSamples:q.gpuSamples,
+        captures,frames,startupFrames:q.startupFrames,draws,perUnit,longTasks:q.longTasks,startupLongTasks:q.startupLongTasks,timelineEdges:q.timelineEdges,gpuSamples:q.gpuSamples,
         finalState:(()=>{const s=q.MatchLifecycle.activeSession();return{flags:s.sim.flags.map(f=>f?{...f}:null),units:s.sim.units.filter(u=>q.ids.has(u.id)).map(u=>({id:u.id,alive:u.alive,x:u.x,y:u.y,target:u.target,routeIndex:u.movement?.routeIndex})),tick:s.sim.tick,stepMs:s.sim.perfStats?.lastStepMs,botEnabled:q.MatchLifecycle.singleMatch?.bot?.enabled}})(),
         summary:{captureCount:captures.length,captureTicks:captures.map(x=>x.tick),resetCaptures:captures.filter(x=>x.snap).length,
           unitCounts:[...new Set(captures.map(x=>x.unitCount))],drawCount:draws.length,unitIds:[...idRows.keys()],
-          modelMissing:draws.filter(x=>!x.model).length,modelPresent:draws.filter(x=>x.model).length,intermediateModelSamples:moving.length,
+          modelMissing:draws.filter(x=>!x.model).length,modelPresent:draws.filter(x=>x.model).length,interpolatedTickSamples:moving.length,
           frameInterval:finiteStats(raf),rendererWork:finiteStats(work),gpuTime:finiteStats(q.gpuSamples.map(x=>x.ms)),longTaskCount:q.longTasks.length,longTaskMs:q.longTasks.reduce((s,x)=>s+x.duration,0),
-          rafGapOver50Ms:gaps.length,maxRafGapMs:Math.max(0,...raf),maxWorldStep:Math.max(0,...perUnit.map(x=>x.maxWorldStep)),
+          rafGapOver33Ms:gaps33.length,rafGapOver50Ms:gaps50.length,rendererWorkOver16_7Ms:overBudget.length,maxRafGapMs:Math.max(0,...raf),
+          movingDrawFrames:perUnit.reduce((s,x)=>s+x.movedFrames,0),interpolatedTickFrames:perUnit.reduce((s,x)=>s+x.tickFractions,0),maxDrawPoseError:Math.max(0,...perUnit.map(x=>x.maxDrawPoseError)),maxWorldStep:Math.max(0,...perUnit.map(x=>x.maxWorldStep)),
           gpuTimer:q.initial.gpuTimer}};
     });
-    result.initial=initial;result.commandTargetScreen=target;result.pageErrors=errors;
+    result.initial=initial;result.movementTarget=target.world;result.pageErrors=errors;
+    fs.writeFileSync(path.join(outDir,name+'.json'),JSON.stringify(result,null,2));
     assert.deepEqual(errors,[]);
-    assert.equal(result.commands.length,1,'Exactly one native UI flag command was accepted');
+    assert.equal(result.commands.length,1,'Exactly one native GameSession flag command was accepted');
     assert.equal(result.timelineEdges.filter(e=>e.cause==='cpu-budget-yield').length,0,'CPU catchup yields must preserve interpolation history');
-    assert.ok(result.perUnit.some(unit=>unit.intermediate>0),'Tracked final draw coordinates must show movement between fixed ticks');
+    assert.ok(result.perUnit.some(unit=>unit.movedFrames>5),'Tracked final draw coordinates must move across rendered frames');
+    assert.ok(result.summary.maxDrawPoseError<0.001,'The final draw world pose must consume the interpolated model');
     await page.screenshot({path:path.join(outDir,`${name}.png`)});
     fs.writeFileSync(path.join(outDir,`${name}.json`),JSON.stringify(result,null,2));
     return result;
@@ -202,7 +220,7 @@ async function runCase(browser, role, count, trackedCount=count) {
       cases.push(await runCase(browser,role,count,trackedCount));
     }
     const report={sourceCommit:require('node:child_process').execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),sourceSha256:hash,
-      browser:browser.version(),createdAt:new Date().toISOString(),cases:cases.map(({caseName,initial,summary,perUnit,timelineEdges,pageErrors})=>({caseName,initial:{role:initial.role,tps:initial.tps,unitCount:initial.unitCount,trackedCount:initial.trackedCount},summary,perUnit:perUnit.map(({id,samples,intermediate,missingModel,nonmonotoneFrameClock,maxWorldStep,maxAuthorityDelta})=>({id,samples,intermediate,missingModel,nonmonotoneFrameClock,maxWorldStep,maxAuthorityDelta})),timelineEdges:timelineEdges.map(({tick,cause})=>({tick,cause})),pageErrors}))};
+      browser:browser.version(),createdAt:new Date().toISOString(),cases:cases.map(({caseName,initial,summary,perUnit,movementTarget,timelineEdges,pageErrors})=>({caseName,initial:{role:initial.role,tps:initial.tps,unitCount:initial.unitCount,rosterTypeCount:initial.rosterTypeCount,trackedCount:initial.trackedCount},movementTarget,summary,perUnit:perUnit.map(({id,samples,movedFrames,tickFractions,maxDrawPoseError,missingModel,nonmonotoneFrameClock,maxWorldStep,maxAuthorityDelta})=>({id,samples,movedFrames,tickFractions,maxDrawPoseError,missingModel,nonmonotoneFrameClock,maxWorldStep,maxAuthorityDelta})),timelineEdges:timelineEdges.map(({tick,cause})=>({tick,cause})),pageErrors}))};
     fs.writeFileSync(path.join(outDir,'summary.json'),JSON.stringify(report,null,2));
     console.log(JSON.stringify({...report,cases:report.cases.map(({caseName,initial,summary,timelineEdges,pageErrors})=>{const{captureTicks,unitCounts,unitIds,...metrics}=summary;return{caseName,initial,summary:metrics,timelineEdges,pageErrors}})},null,2));
   } finally { await browser.close(); }

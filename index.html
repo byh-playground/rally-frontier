@@ -26649,7 +26649,12 @@ class RenderStateStore{
   time(now){return this.clock=Math.max(this.clock,Number(now)||0)}
   capture(source,now,snap,stepMs){
     const at=this.time(now),tick=Number(source.tick)||0;
-    if(!this.runtime||this.stepMs!==stepMs){this.stepMs=stepMs;this.runtime=new RallyGamekit.PresentationRuntime({stepMs,delayMs:stepMs});snap=true}
+    if(!this.runtime||this.stepMs!==stepMs){
+      this.stepMs=stepMs;
+      // Keep two fixed samples buffered, matching GameKit's 10 TPS / 200 ms frame example.
+      this.runtime=new RallyGamekit.PresentationRuntime({stepMs,delayMs:stepMs*2});
+      snap=true;
+    }
     if(snap){this.revision++;this.records.clear()}
     const entities=[],seen=new Set();
     const add=(kind,id,value)=>{
