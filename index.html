@@ -24050,7 +24050,7 @@ class GameSession{
     this.recoveryAttempt=0;this.fullConnectionResetCount=0;this.postRecoveryResumeAt=0;this.postRecoveryTimer=0;
     this.pendingResumeProbeToken='';this.lastResumeProbeAckAt=0;
     this.localVisible=true;this.netcodeLoop=null;this.last=0;this.raf=0;
-    this.lastDriverPulseAt=performance.now();this.lastSnapshotEmitAt=0;this.lastRenderedSimulationTick=-1;
+    this.lastDriverPulseAt=performance.now();this.lastSnapshotEmitAt=0;this.lastRenderedSimulationTick=-1;this.presentationStartPending=true;
     this.performanceStats={timings:{},lastPulseAt:null,icePending:false,iceRequestedAt:-1000,iceRttMs:null,iceFetchedAt:null,iceError:null};
     this.presentationEventBuffer=[];this.presentationEventsBuffered=0;this.presentationEventsPublished=0;
     this.presentationJournal=new RallyGamekit.PresentationEventQueue({adapters:{frame:{start:record=>{
@@ -24389,7 +24389,10 @@ class GameSession{
       this.onLog('공통 코어 연결 끊김 · 60초 안에 재접속 필요');
     }else if(event.type==='peer-resumed'){
       this.transportConnected=true;this.simpleRecoveryNeedsManual=false;this.recoveryPhase='idle';this.clearDisconnectGrace();
-      this.syncHold=!!this.pendingTerminalFrame||this.simEnded||this.simulationFatal;this.netcodeLoop?.resetTiming();
+      this.syncHold=!!this.pendingTerminalFrame||this.simEnded||this.simulationFatal;
+      // Rebase if the presentation clock advanced while simulation was held.
+      if(this.sim?.tick>0)this.renderTimelineChanged=true;
+      this.netcodeLoop?.resetTiming();
       this.emitNetworkHealth('connected');this.flushDeferredActions();
     }else if(event.type==='rollback'){
       for(const tick of this.frameOutputs.keys())if(tick>event.from)this.frameOutputs.delete(tick);
@@ -24511,7 +24514,12 @@ class GameSession{
     this.publishConfirmedFrames();
     if(this.pendingTerminalFrame&&this.netcodeNow-this.lastTerminalReceiptAt>=500)this.sendTerminalReceipt();
     this.tryFinishTerminalBarrier();
-    if(!this.netcodeSession.resimulating&&!this.simEnded&&(this.renderTimelineChanged||this.lastRenderedSimulationTick!==this.sim.tick)){this.emitRenderTargets(this.sim,!!this.renderTimelineChanged);this.lastRenderedSimulationTick=this.sim.tick;this.renderTimelineChanged=false}
+    // The first capture can predate peer readiness, so reanchor on the first advancing tick.
+    const startPresentationTimeline=this.presentationStartPending&&this.sim.tick>0;
+    if(!this.netcodeSession.resimulating&&!this.simEnded&&(this.renderTimelineChanged||this.lastRenderedSimulationTick!==this.sim.tick||startPresentationTimeline)){
+      this.emitRenderTargets(this.sim,!!this.renderTimelineChanged||startPresentationTimeline);this.lastRenderedSimulationTick=this.sim.tick;this.renderTimelineChanged=false;
+      if(startPresentationTimeline)this.presentationStartPending=false;
+    }
   }
   stepSimulationOnce(now=this.netcodeNow){
     if(!this.sim||this.simEnded||this.simulationFatal)return null;
