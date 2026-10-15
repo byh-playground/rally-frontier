@@ -78,7 +78,7 @@ GameSession.prototype.command=function(action,...args){
   if(q.startedAt!==null&&action?.type==='SET_FLAG')q.commands.push({at:performance.now(),role:this.role,action:{...action},accepted:result});
   return result;
 };
-try{new PerformanceObserver(list=>{for(const e of list.getEntries()){const row={at:e.startTime,duration:e.duration};(q.startedAt===null?q.startupLongTasks:q.longTasks).push(row)}}).observe({type:'longtask',buffered:true})}catch{}
+try{new PerformanceObserver(list=>{for(const e of list.getEntries()){const row={at:e.startTime,duration:e.duration};(q.startedAt===null||e.startTime<q.startedAt?q.startupLongTasks:q.longTasks).push(row)}}).observe({type:'longtask',buffered:true})}catch{}
 let last=0;function sample(){const now=performance.now(),r=ActiveViewState.renderer,session=MatchLifecycle.activeSession();
   const row={at:now,rafInterval:last?now-last:0,renderWorkMs:r?.perfStats?.frameWorkMs,renderIntervalMs:r?.perfStats?.frameIntervalMs,
     simTick:session?.sim?.tick,tps:session?.sim?.tps,driverPulseAdvances:session?.driverPulseAdvances??0,
@@ -161,6 +161,11 @@ await page.route(`${appUrl}**`,async route=>{
       return {x:screen.x,y:screen.y,world:q.movementTarget};    });
     await page.mouse.click(target.x,target.y);
     await page.waitForFunction(()=>window.__motionQA.commands.some(c=>c.accepted),null,{timeout:8000});
+    const injectedStallMs=Math.min(1500,Math.max(0,Number(process.env.QA_DIAG_STALL_MS)||0));
+    if(injectedStallMs>0){
+      await page.waitForTimeout(250);
+      await page.evaluate(ms=>{const until=performance.now()+ms;while(performance.now()<until){}},injectedStallMs);
+    }
     await page.waitForTimeout(2500);
     await page.screenshot({path:path.join(outDir,name+'-moving.png')});
     await page.waitForTimeout(2500);
@@ -197,11 +202,16 @@ await page.route(`${appUrl}**`,async route=>{
           movingDrawFrames:perUnit.reduce((s,x)=>s+x.movedFrames,0),interpolatedTickFrames:perUnit.reduce((s,x)=>s+x.tickFractions,0),maxDrawPoseError:Math.max(0,...perUnit.map(x=>x.maxDrawPoseError)),maxWorldStep:Math.max(0,...perUnit.map(x=>x.maxWorldStep)),
           gpuTimer:q.initial.gpuTimer}};
     });
-    result.initial=initial;result.movementTarget=target.world;result.pageErrors=errors;
+    result.initial=initial;result.movementTarget=target.world;result.pageErrors=errors;result.injectedStallMs=injectedStallMs;
     fs.writeFileSync(path.join(outDir,name+'.json'),JSON.stringify(result,null,2));
     assert.deepEqual(errors,[]);
     assert.equal(result.commands.length,1,'Exactly one native GameSession flag command was accepted');
     assert.equal(result.timelineEdges.filter(e=>e.cause==='cpu-budget-yield').length,0,'CPU catchup yields must preserve interpolation history');
+    if(injectedStallMs>0&&process.env.QA_DIAG_ASSERT_STALL_PRESERVED==='1'){
+      assert.ok(result.summary.maxRafGapMs>=injectedStallMs*.75,'The injected main-thread stall must appear as a missed-rAF interval');
+      assert.equal(result.timelineEdges.filter(e=>e.cause==='clock-gap').length,0,'A recoverable main-thread stall must preserve buffered presentation history');
+      assert.equal(result.summary.resetCaptures,0,'A recoverable main-thread stall must not snap the presentation timeline');
+    }
     assert.ok(result.perUnit.some(unit=>unit.movedFrames>5),'Tracked final draw coordinates must move across rendered frames');
     assert.ok(result.summary.maxDrawPoseError<0.001,'The final draw world pose must consume the interpolated model');
     await page.screenshot({path:path.join(outDir,`${name}.png`)});
