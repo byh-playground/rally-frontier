@@ -12428,8 +12428,24 @@ class TerrainNavigation{
   static MAX_LAYERS=12;
   static SHARED_ASTAR_GOALS=16;
   static SHARED_ASTAR_NODES=2048;
+  static preparationQueue=[];
+  static preparationScheduled=false;
   static stateCache=new WeakMap();
   static snapshotOwners=new WeakMap();
+  static schedulePreparationStep(callback){
+    this.preparationQueue.push(callback);
+    this.dispatchPreparationStep();
+  }
+  static dispatchPreparationStep(){
+    if(this.preparationScheduled||!this.preparationQueue.length)return;
+    this.preparationScheduled=true;
+    const run=()=>{
+      this.preparationScheduled=false;
+      const next=this.preparationQueue.shift();
+      try{next?.()}finally{this.dispatchPreparationStep()}
+    };
+    if(document.visibilityState==='visible'&&typeof requestAnimationFrame==='function')requestAnimationFrame(run);else setTimeout(run,0);
+  }
   static bindSnapshot(snapshot,sim){
     // A same-tick, same-topology read may share the live derived navigation cache.
     // A retained snapshot never reads a later simulation's obstacle layout.
@@ -12503,8 +12519,8 @@ class TerrainNavigation{
   }
   departureClear(x,y,tx,ty,r,ignoreId=null){return this.segmentClear(x,y,tx,ty,r,ignoreId,true)}
   static layerProfile(radius,ignoreBuildings){const r=Math.ceil((radius+.10)*100)/100;return {r,key:r+':'+ignoreBuildings}}
-  prepareLayers(units=[],types=[]){
-    const begun=performance.now(),before=this.metrics.layersBuilt,present=new Map(),available=new Map();
+  layerPreparationPlan(units=[],types=[]){
+    const present=new Map(),available=new Map();
     const add=(type,ignoreBuildings,destination)=>{
       const definition=UnitDefinition.get(type);if(!definition||definition.layer==='AIR')return;
       const radius=this.sim.unitRadius(type)+.12,profile=TerrainNavigation.layerProfile(radius,ignoreBuildings);
@@ -12514,17 +12530,46 @@ class TerrainNavigation{
     for(const type of types)add(type,TerrainNavigation.ignoresBuildings({type}),available);
     const order=(a,b)=>a.r-b.r||Number(a.ignoreBuildings)-Number(b.ignoreBuildings);
     const profiles=[...present.values()].sort(order).concat([...available.values()].filter(p=>!present.has(p.key)).sort(order));
-    const selected=profiles.slice(0,TerrainNavigation.MAX_LAYERS),keys=new Set(selected.map(p=>p.key));
-    const missing=selected.filter(p=>!this.layers.has(p.key)).length;
+    const selected=profiles.slice(0,TerrainNavigation.MAX_LAYERS);
+    return {profiles:selected,keys:new Set(selected.map(p=>p.key)),skipped:profiles.length-selected.length};
+  }
+  reservePreparedLayers(plan){
+    const missing=plan.profiles.filter(p=>!this.layers.has(p.key)).length;
     // Reserve only the missing slots, preserving both selected cached layers
     // and unrelated layers whenever the capacity can hold them together.
-    for(const key of this.layers.keys())if(this.layers.size+missing>TerrainNavigation.MAX_LAYERS&&!keys.has(key))this.layers.delete(key);
-    for(const profile of selected)this.layer(profile.radius,profile.ignoreBuildings);
-    const elapsed=performance.now()-begun;
-    this.metrics.preparationMs=(this.metrics.preparationMs||0)+elapsed;
-    this.metrics.preparationLayersBuilt=(this.metrics.preparationLayersBuilt||0)+this.metrics.layersBuilt-before;
-    this.metrics.preparationProfiles=selected.length;this.metrics.preparationSkippedProfiles=profiles.length-selected.length;
-    return {profiles:selected.map(p=>p.key),skipped:profiles.length-selected.length,elapsedMs:elapsed,layersBuilt:this.metrics.layersBuilt-before};
+    for(const key of this.layers.keys())if(this.layers.size+missing>TerrainNavigation.MAX_LAYERS&&!plan.keys.has(key))this.layers.delete(key);
+  }
+  recordLayerPreparation(plan,before,workMs){
+    const built=this.metrics.layersBuilt-before;
+    this.metrics.preparationMs=(this.metrics.preparationMs||0)+workMs;
+    this.metrics.preparationWorkMs=(this.metrics.preparationWorkMs||0)+workMs;
+    this.metrics.preparationLayersBuilt=(this.metrics.preparationLayersBuilt||0)+built;
+    this.metrics.preparationProfiles=plan.profiles.length;this.metrics.preparationSkippedProfiles=plan.skipped;
+    return {profiles:plan.profiles.map(p=>p.key),skipped:plan.skipped,elapsedMs:workMs,layersBuilt:built};
+  }
+  prepareLayers(units=[],types=[]){
+    const plan=this.layerPreparationPlan(units,types),before=this.metrics.layersBuilt,begun=performance.now();
+    this.reservePreparedLayers(plan);
+    for(const profile of plan.profiles)this.layer(profile.radius,profile.ignoreBuildings);
+    return this.recordLayerPreparation(plan,before,performance.now()-begun);
+  }
+  prepareLayersInSlices(units=[],types=[],{schedule,shouldContinue=()=>true,onError=()=>{}}={}){
+    if(typeof schedule!=='function')throw new TypeError('A navigation preparation scheduler is required');
+    const plan=this.layerPreparationPlan(units,types),before=this.metrics.layersBuilt;
+    this.reservePreparedLayers(plan);
+    let index=0,workMs=0,active=true;
+    const cancel=()=>{active=false};
+    const step=()=>{
+      if(!active||!shouldContinue()){active=false;return}
+      if(index>=plan.profiles.length){active=false;this.recordLayerPreparation(plan,before,workMs);return}
+      const profile=plan.profiles[index++],begun=performance.now();
+      try{this.layer(profile.radius,profile.ignoreBuildings);workMs+=performance.now()-begun}
+      catch(error){active=false;onError(error);return}
+      if(active&&index<plan.profiles.length)schedule(step);
+      else if(active){active=false;this.recordLayerPreparation(plan,before,workMs)}
+    };
+    schedule(step);
+    return cancel;
   }
   nearestExterior(x,y,radius,ignoreBuildings=false){
     this.sync();this.metrics.projectionQueries++;
@@ -15115,6 +15160,7 @@ class FrontierTerrainLayout{
 }
 
 class MapGeneration{
+  static descriptorCache=null;
   static mapRuleSeed(baseSeed,rules=GameRuleDefinition.current,roundNumber=1){
   const m=rules?.map||{};
   const salt=m.generation?.seedSalt||"map";
@@ -15611,9 +15657,12 @@ const resources=[];let mid=0;
 }
   static generateMapDescriptor({rules=GameRuleDefinition.current,seed=0,roundNumber=1}={}){
   const id=rules?.map?.generator||"fixed-standard";
+  const key=JSON.stringify([id,seed>>>0,roundNumber||1,rules]);
+  if(this.descriptorCache?.key===key)return this.descriptorCache.descriptor;
   const generator=MAP_GENERATORS[id]||MAP_GENERATORS["fixed-standard"];
   const out=generator(rules,seed,roundNumber);
   out.generator=id in MAP_GENERATORS?id:"fixed-standard";
+  this.descriptorCache={key,descriptor:out};
   return out;
 }
   static generateProceduralBridges(ctx,laneControlPoints,terrain){
@@ -24016,6 +24065,7 @@ class GameSession{
   get confirmedGameTick(){return this.netcodeSession?Math.min(this.sim?.tick||0,this.netcodeSession.confirmedTick+1):0}
   getPendingCommandTickets(){return [...this.pendingNetcodeCommands.values()].map(ticket=>StateValue.copy(ticket))}
   cancelScheduledWork(){
+    this.navigationPreparationCancel?.();this.navigationPreparationCancel=null;
     this.clearDisconnectGrace();this.clearPostRecoveryCountdown();this.clearDraftPickTimer();this.clearDeckSelectTimer();
     for(const key of ['draftGameStartTimer','campaignOutroTimer']){if(this[key])clearTimeout(this[key]);this[key]=0}
     this.stopHeartbeat(false);this.netcodeLoop?.stop();AppLifecycle.unregisterBackgroundSession(this);
@@ -24245,10 +24295,14 @@ class GameSession{
     }
 
   }
+  static matchSeed(draft,roomCode,matchConfig={}){
+    if(matchConfig?.campaignScenario)return matchConfig.campaignScenario.seed;
+    return HashUtil.hash(`${roomCode}|${matchConfig?.selectionMode||'draft'}|${JSON.stringify(draft?.decks||{host:[],guest:[]})}|${JSON.stringify(draft?.defenseCards||{host:[],guest:[]})}`);
+  }
   beginGame(){
     if(this.sim)return false;
     if(this.draftGameStartTimer){clearTimeout(this.draftGameStartTimer);this.draftGameStartTimer=0}
-    const seed=this.matchConfig.campaignScenario?this.matchConfig.campaignScenario.seed:HashUtil.hash(this.roomCode+'|'+this.matchConfig.selectionMode+'|'+JSON.stringify(this.draft.decks)+'|'+JSON.stringify(this.draft.defenseCards));
+    const seed=GameSession.matchSeed(this.draft,this.roomCode,this.matchConfig);
     this.transport.send({type:'GAME_START',simVersion:SIM_VERSION,seed,draft:this.draft,matchConfig:this.matchConfig,roundRules:this.roundRules});
     this.startSim(seed);return true;
   }
@@ -24257,7 +24311,15 @@ class GameSession{
     if(!globalThis.RallyNetcode)throw new Error('URL Netcode가 로딩되지 않았습니다.');
     this.clearDisconnectGrace();this.clearPostRecoveryCountdown();
     this.sim=StrategySim.createForMatch({draft:this.draft,seed,rules:this.roundRules,campaignScenario:this.matchConfig?.campaignScenario||null,debugScenario:this.matchConfig?.debugScenario||null});
-    try{this.sim.navigation.prepareLayers(this.sim.units,this.sim.decks.flat())}
+    try{
+      const sim=this.sim;
+      const startingUnits=sim.units.filter(unit=>unit&&unit.alive!==false&&unit.hp>0&&(unit.side===0||unit.side===1));
+      this.navigationPreparationCancel=sim.navigation.prepareLayersInSlices(startingUnits,[],{
+        schedule:callback=>TerrainNavigation.schedulePreparationStep(callback),
+        shouldContinue:()=>!this.disposed&&this.sim===sim&&!sim.disposed,
+        onError:error=>this.enterSimulationFatal(error,{source:'navigation-preparation'})
+      });
+    }
     catch(error){try{this.sim.dispose('initialization-failed')}finally{this.sim=null}throw error}
     this.simulationAdapter=new RallySimulationAdapter(this);
     this.replayRecorder=new ReplayRecorder({seed,draft:this.draft,roomCode:this.roomCode,sim:this.sim,rules:this.roundRules});
@@ -34832,8 +34894,13 @@ class DraftPresentation{
   const active=MatchLifecycle.activeSession?.();
   const rules=active?.roundRules||GameRuleDefinition.current;
   const roomCode=active?.roomCode||ActiveViewState.session?.roomCode||"";
-  const decks=s?.decks||active?.draft?.decks||{host:[],guest:[]};
-  const seed=HashUtil.hash(roomCode+"|"+JSON.stringify(decks));
+  const matchConfig=active?.matchConfig?.campaignScenario?active.matchConfig:MatchLifecycle.currentMatchConfig();
+  const draft=s||active?.draft||{decks:{host:[],guest:[]},defenseCards:{host:[],guest:[]}};
+  const seed=GameSession.matchSeed(draft,roomCode,matchConfig);
+  if(matchConfig?.campaignScenario?.map){
+    const role=matchConfig.campaignScenario.playerRole||active?.role||"host";
+    return CampaignMapDefinition.build(matchConfig.campaignScenario.map,rules,seed,role==="host"?0:1);
+  }
   return MapGeneration.generateMapDescriptor({rules,seed,roundNumber:rules?.roundNumber||1});
 }
   static draftMapPreviewFitBox(canvas,worldW,worldH){
