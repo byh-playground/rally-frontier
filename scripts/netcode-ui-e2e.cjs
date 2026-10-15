@@ -134,6 +134,8 @@ async function confirmDeck(page) {
 async function placeProduction(page) {
   await page.locator('#militaryTreeBtn').click();
   await page.locator('#militaryT1Btn').click();
+  // Standard games start at zero minerals; wait for actual worker income.
+  await page.waitForFunction(()=>!document.querySelector('[data-produce-unit="swordsman"]')?.disabled,null,{timeout:120000});
   await page.locator('[data-produce-unit="swordsman"]').click();
   const point = await page.evaluate(() => {
     const q=window.__netcodeE2E,r=q.ActiveViewState.renderer,s=q.MatchLifecycle.activeSession();

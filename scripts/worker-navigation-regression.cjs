@@ -3,7 +3,7 @@ const path=require('node:path');
 const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 async function run(){
-  const root=path.resolve(__dirname,'..'),source=fs.readFileSync(path.join(root,'index.html'),'utf8'),end=source.lastIndexOf('})();');
+  const root=path.resolve(__dirname,'..'),source=fs.readFileSync(process.argv[2]?path.resolve(process.argv[2]):path.join(root,'index.html'),'utf8'),end=source.lastIndexOf('})();');
   const html=source.slice(0,end)+'window.__plannerQA={WorldContext,TerrainNavigation,NavigationGoal,NavigationMinHeap,NavigationAStarScratch,UnitDefinition,BuildingDefinition,StrategySim,GameRuleDefinition,RallyStateCodec,InteractionGeometry};'+source.slice(end);
   const browser=await chromium.launch({channel:process.env.QA_BROWSER_CHANNEL||'msedge',headless:true});
   try{
@@ -110,7 +110,7 @@ async function run(){
       const game=new StrategySim(draft,831047,rules);
       game.units=game.units.filter(u=>UnitDefinition.get(u.type)?.economyWorker);game.rebuildRuntimeIndexes();
       game.applyCommand('host',{type:'TOGGLE_PRODUCTION'});game.applyCommand('guest',{type:'TOGGLE_PRODUCTION'});
-      game.navigation.field=()=>{throw Error('Economy worker called a reverse field')};
+      game.navigation.fieldPlan=()=>{throw Error('Economy worker selected the flow-field planner')};
       let targetChecks=0;
       for(const u of game.units.filter(u=>UnitDefinition.get(u.type)?.economyWorker)){
         const targets=game.resources.filter(m=>m.amount>0);
@@ -126,7 +126,7 @@ async function run(){
       }
       check(built&&built.builderUnitId,'Worker construction assignment succeeds without a reverse field');
       const builtId=built.id;
-      const coldGame=new StrategySim(draft,831047,rules);coldGame.importState(game.exportState());coldGame.navigation.field=()=>{throw Error('Cold economy worker called a reverse field')};
+      const coldGame=new StrategySim(draft,831047,rules);coldGame.importState(game.exportState());coldGame.navigation.fieldPlan=()=>{throw Error('Cold economy worker selected the flow-field planner')};
       const coldSearch=coldGame.navigation.astarPlan;coldGame.navigation.astarPlan=function(...args){for(const layer of this.layers.values())layer.sharedPaths?.clear();return coldSearch.apply(this,args)};
       let mineHits=0,returns=0,builderTravel=false,constructing=false;
       for(let tick=0;tick<1000;tick++){
@@ -135,9 +135,9 @@ async function run(){
         builderTravel||=game.units.some(u=>u.workState==='buildTravel');constructing||=game.units.some(u=>u.workState==='building');
         if(built.complete&&mineHits&&returns&&tick>150)break;
       }
-      check(built.complete&&mineHits>0&&returns>0&&builderTravel&&constructing,'Real workers travel, construct, mine, and return cargo');
-      check(game.navigation.metrics.astarQueries>0&&game.navigation.metrics.fieldsBuilt===0,'Actual economy work uses A* without creating shared fields');
-      check(game.navigation.metrics.sharedAstarHits>0,'Actual workers use shared suffixes');
+      check(built.complete&&mineHits>0&&returns>0&&builderTravel&&constructing,'Real workers travel, construct, mine, and return cargo '+JSON.stringify({built,mineHits,returns,builderTravel,constructing,tick:game.tick}));
+      check(game.navigation.metrics.astarQueries>0,'Actual economy work uses A*; its reusable heuristic may use a reverse potential');
+      check(game.navigation.metrics.sharedAstarHits>0||game.navigation.metrics.routeJoins>0,'Actual workers reuse common routes or graph suffixes');
       results.push({economyTicks:game.tick,constructionComplete:built.complete,mineHits,returns,astarQueries:game.navigation.metrics.astarQueries,sharedHits:game.navigation.metrics.sharedAstarHits,fieldsBuilt:game.navigation.metrics.fieldsBuilt,warmColdGameBytesEqual:true});game.dispose('qa-finished');coldGame.dispose('qa-finished');worker.navigationPlanner=oldWorker;
       return results;
     });

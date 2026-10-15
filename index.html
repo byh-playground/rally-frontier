@@ -61,7 +61,7 @@ PURPOSE
 - 일반 절차맵도 같은 지형 시스템을 사용한다. 전투 공간·연결 통로·고지대·경사로의 배치는 MapGeneration이 소유하고, 본진·점령지·자원·중립의 유효한 배치와 접근성을 공통 geometry로 검증한다. 지형 높이는 level 하나만 SSOT로 사용하며 특정 버전의 벽 개수나 배치 레시피를 장기 계약에 고정하지 않는다.
 - level은 부호 있는 정수이며 기본 지면은 0이다. 음수·양수에 임의의 게임상 상한/하한을 두지 않고 높이는 공통 변환으로 파생하며 양수는 레벨당 48, 음수는 그 절반인 24를 사용한다. 중첩 지형은 가장 안쪽 영역이 표면을 소유한다. 기본 지면도 함몰면·섬·경사로를 제외한 실제 mesh로 만들고 렌더·Fog·클릭이 같은 표면을 사용한다.
 - 이동 명령의 점 목표와 공격·채집·반납·건설·치유의 상호작용 영역 목표를 구분한다. 실제 사거리·최소 사거리·지형 접촉 규칙은 InteractionGeometry가 한 번 정의하며 판정과 NavigationGoal이 공유한다. 건물 중심 투영이나 고정 각도 접근점을 작업 목표로 사용하지 않는다.
-- 지상 경로 탐색은 유닛 정의의 navigationPlanner 설정(adaptive, astar, shared-astar 또는 flow-field)으로 선택한다. 모든 종류의 기본값은 adaptive다. adaptive는 직선이 막힌 실제 이동의 동일 목표·반경·연결 성분 요청을 집계해 A*/공유 A*/Flow를 선택하며 직전 틱의 Flow 사용 자격은 권위 상태로 저장한다. 거리·도달 가능성 검사는 adaptive에서 A*를 쓰고 집계에 참여하지 않는다. 명시한 세 알고리즘은 이동·거리 검사에 같은 설정을 사용한다. 세 탐색기는 같은 NavMesh·포털·연속 목표 영역·funnel·충돌 규칙을 공유한다. 직선이 열리면 즉시 직진한다. 경로 cache는 결과를 바꾸지 않는 파생 상태이며 저장/체크섬에서 제외한다.
+- 지상 경로 탐색은 유닛 정의의 navigationPlanner 설정(adaptive, astar, shared-astar 또는 flow-field)으로 선택한다. 모든 종류의 기본값은 adaptive다. adaptive는 직선이 막힌 실제 이동의 동일 목표·반경·연결 성분 요청을 집계해 A*/공유 A*/Flow를 선택하며 직전 틱의 Flow 사용 자격은 권위 상태로 저장한다. 거리·도달 가능성 검사는 adaptive에서 A*를 쓰고 집계에 참여하지 않는다. 명시한 세 알고리즘은 이동·거리 검사에 같은 설정을 사용한다. 세 탐색기는 같은 NavMesh·포털·연속 목표 영역·funnel·충돌 규칙을 공유한다. 경로 획득 시 직선이 열리면 바로 연결한다. 거리표·탐색 scratch와 후보 인덱스는 결과를 바꾸지 않는 파생 상태이며 저장/체크섬에서 제외한다. 받은 실행 경로와 활성 cursor·목표 이력은 공통 MovementComponent의 권위 상태다. 정상 이동은 이 handle을 따르며 매 틱 길찾기·경로 cache 재조회·전체 경로 검사를 하지 않는다. 가까운 corner의 인접 연결과 연속 목표 영역의 도착은 국소 sweep으로 확인하고, 새 명령·목표 변경·실제 이탈·관련 통행 조건 변경 때만 다시 획득한다.
 - NavMesh는 경로를 선택하고 SurfaceMotion은 그 경로의 이동·외력·군중 보정을 동일한 건물/지형 접촉으로 처리한다. 검증된 부분 이동을 틱 시작점부터의 직선으로 다시 잘라내지 않는다. 접선 투영은 공통화하되 외력에 자발적인 우회 속도를 추가하지 않는다.
 - 건설 명령은 비용을 선결제하고 constructionOrders에 예약한다. 예약은 위치 중복만 막고 물리·전투·시야·보급·기술에 참여하지 않는다. 일꾼 도착 시 같은 ID의 실제 건물을 생성한다. 착공 전 취소·위치 무효화는 전액 환불하며 실제 착공 후 기존 환불 규칙을 따른다. 예약은 권위 상태로 복원하고 UI·AI도 동일한 예약을 조회한다.
 - 건설 미리보기는 위치·겹침·자원·시야만 검사하며 NavMesh를 생성하지 않는다. 일꾼 접근성은 BUILD 실행 시 권위 시뮬레이션이 검증한다. 건물 변경은 영향받는 고정 영역의 메쉬만 다시 만들며, 캐시 준비 순서나 롤백 이력과 무관하게 같은 토폴로지에서 같은 경로를 선택해야 한다.
@@ -10741,7 +10741,7 @@ const BUILD_META=Object.freeze({
 /* =========================
    1. Definitions
    ========================= */
-const SIM_TPS=20,FP=100,SIM_VERSION=192;
+const SIM_TPS=20,FP=100,SIM_VERSION=198;
 // Local session policy, deliberately outside canonical gameplay/save rules.
 // A session captures this setting once; changing it only affects the next match.
 const CONFIG={netcode:{mode:'lockstep'}};
@@ -11999,6 +11999,10 @@ class NavigationGoal{
     return new NavigationGoal(x,y,Math.max(0,radius-inset),innerRadius>0?innerRadius+inset:0,terrainLine,false);
   }
   contains(x,y){const d=Math.hypot(x-this.x,y-this.y);return d<=this.radius+NavigationGoal.EPS&&d>=this.innerRadius-NavigationGoal.EPS}
+  interior(x,y){
+    const dx=x-this.x,dy=y-this.y,d=Math.hypot(dx,dy)||1,r=this.innerRadius>0?(this.innerRadius+this.radius)/2:0;
+    return{x:this.x+(dx||(!dy?1:0))/d*r,y:this.y+dy/d*r};
+  }
   static polygonContains(points,x,y){
     if(points.length<3)return false;
     for(let i=0;i<points.length;i++)if(NavigationMeshBuilder.cross(points[i],points[(i+1)%points.length],{x,y})<-this.EPS)return false;
@@ -12134,7 +12138,10 @@ class InteractionGeometry{
     return inset?NavigationGoal.range(target.x,target.y,outer,inner,terrainLine):new NavigationGoal(target.x,target.y,outer,inner,terrainLine);
   }
   static goal(source,target,kind,extra=0,minRange=null){
-    return this.region(source,target,kind,extra,minRange,true);
+    const goal=this.region(source,target,kind,extra,minRange,true);
+    // A unit's old position stops being a reusable destination when it moves.
+    // Keep the active handle, but do not retain its obsolete pursuit positions.
+    goal.retainHistory=!UnitDefinition.get(target?.type);return goal;
   }
 }
 
@@ -12831,76 +12838,158 @@ class TerrainNavigation{
     for(let i=1;i<plan.path.length;i++)if(Math.hypot(plan.path[i].x-u.x,plan.path[i].y-u.y)>.001)return plan.path[i];
     return {x:u.x,y:u.y};
   }
-  nextPoint(u,goal){return this.nextPlanPoint(u,this.movementPlan(u,goal))}
-  workerRouteTopology(route){
-    this.sync();const checks=this.workerRouteChecks??=new WeakMap(),checked=checks.get(route);
-    if(checked?.records===this.circles)return checked.key;
-    const found=new Map(),points=route.points,padding=route.radius+.55;
-    if(!points.length)for(const c of this.circles)if(!route.ignore||c.terrainBarrier)found.set(c.id,c);
-    for(let i=1;i<points.length;i++){
-      const a=points[i-1],b=points[i];
+  nextPoint(u,goal){
+    if(!u.movement||UnitDefinition.get(u.type)?.layer==='AIR')return this.nextPlanPoint(u,this.movementPlan(u,goal));
+    this.sync();
+    const state=u.movement,radius=this.sim.unitRadius(u.type),ignore=TerrainNavigation.ignoresBuildings(u);
+    const key=goal.key,active=state.routes[state.routeIndex],activePath=active&&this.sim.routePathStore.get(active.pathId);
+    let reason=!active||!activePath?'first':activePath.key!==key||activePath.radius!==radius||activePath.ignore!==ignore?'target':activePath.topology!==this.routeTopology(activePath)?'topology':null;
+    if(!reason){
+      const point=this.followRoute(u,active,goal);
+      if(point||!activePath.length&&Math.hypot(u.x-active.legX,u.y-active.legY)<=Math.max(2*radius,.5)){active.retained=goal.retainHistory!==false;return point}
+      reason='deviation';
+    }
+    this.metrics['routeInvalid_'+reason]=(this.metrics['routeInvalid_'+reason]||0)+1;
+    const route=this.acquireRoute(u,goal,key,radius,ignore);
+    return route?.transient?this.nextPlanPoint(u,route.transient):route?this.followRoute(u,route,goal):null;
+  }
+  routeTopology(route,{force=false}={}){
+    const checks=this.routeChecks??=new WeakMap(),checked=checks.get(route);
+    if(!force&&checked?.records===this.circles)return checked.key;
+    // Include the accepted 2r deviation corridor plus the physical disc.
+    const found=new Map(),padding=3*route.radius+.55,length=route.length??(Number.isFinite(route.points?.[0])?route.points.length/2:route.points.length);
+    if(!length)for(const c of this.circles)if(!route.ignore||c.terrainBarrier)found.set(c.id,c);
+    for(let i=1;i<length;i++){
+      const a=this.routePoint(route,i-1),b=this.routePoint(route,i);
       for(const c of this.circleIndex.query(a.x,a.y,b.x,b.y,padding+100)){
         if(route.ignore&&!c.terrainBarrier)continue;
-        if(MapGeometry.pointSegDist(c.x,c.y,a.x,a.y,b.x,b.y)<=c.r+padding||i===1&&Math.hypot(c.x-route.entry.x,c.y-route.entry.y)<=c.r+padding+route.entry.r)found.set(c.id,c);
+        if(MapGeometry.pointSegDist(c.x,c.y,a.x,a.y,b.x,b.y)<=c.r+padding)found.set(c.id,c);
       }
     }
     const key=JSON.stringify([...found.values()].sort((a,b)=>String(a.id)<String(b.id)?-1:String(a.id)>String(b.id)?1:0).map(c=>[c.id,c.type,c.x,c.y,c.r,c.terrainBarrier]));
     checks.set(route,{records:this.circles,key});return key;
   }
-  workerRoutePoint(u,route,{execute=false,template=false}={}){
-    const points=route.points,r=route.radius,active=!template&&u.behaviorState.workerRouteActive===route.key&&route.cursor>0;
-    if(!points.length)return null;
-    let segment=1;
-    if(active){
-      const end=points[route.cursor];
-      if(MapGeometry.pointSegDist(u.x,u.y,route.legX,route.legY,end.x,end.y)>Math.max(2*r,.5))return null;
-      segment=route.cursor;
-    }else{
-      let nearest=Infinity;
-      for(let i=1;i<points.length;i++){const d=MapGeometry.pointSegDist(u.x,u.y,points[i-1].x,points[i-1].y,points[i].x,points[i].y);if(d<=nearest){nearest=d;segment=i}}
-      if(nearest>Math.max(2*r,.5)&&Math.hypot(u.x-route.entry.x,u.y-route.entry.y)>route.entry.r)return null;
+  followRoute(u,route,goal){
+    const path=this.sim.routePathStore.get(route.pathId);if(!path)return null;
+    const length=path.length,r=path.radius;
+    if(!length)return null;
+    let end=this.routePoint(path,route.cursor);if(!end)return null;
+    // Only the active leg is checked. SurfaceMotion still owns physical sweeps.
+    if(MapGeometry.pointSegDist(u.x,u.y,route.legX,route.legY,end.x,end.y)>Math.max(2*r,.5))return null;
+    if(route.cursor<length-1){
+      const distance=Math.hypot(end.x-u.x,end.y-u.y),next=this.routePoint(path,route.cursor+1);
+      // A displaced unit can advance locally without occupying the exact
+      // corner. Only one adjacent connection is considered, never the suffix.
+      if(distance<=.02||distance<=2*r&&this.segmentClear(u.x,u.y,next.x,next.y,r,route.ignore?'*':null,true,0)){
+        route.legX=u.x;route.legY=u.y;end=this.routePoint(path,++route.cursor);
+      }
     }
-    for(let i=points.length-1;i>=segment;i--){const p=points[i];
-      if(Math.hypot(p.x-u.x,p.y-u.y)<=.02)continue;
-      if(!this.segmentClear(u.x,u.y,p.x,p.y,r,route.ignore?'*':null,true,0))continue;
-      if(execute){if(!active||route.cursor!==i){route.legX=u.x;route.legY=u.y}route.cursor=i;u.behaviorState.workerRouteActive=route.key}
-      return p;
+    this.metrics.routeFollowSteps=(this.metrics.routeFollowSteps||0)+1;
+    if(goal?.contains(u.x,u.y)&&this.acceptsGoalPoint(goal,u.x,u.y))return{x:u.x,y:u.y};
+    // An interaction is a continuous terminal region. Nearby units must not
+    // queue for one shared boundary point after physical separation displaces
+    // them. This is a local terminal sweep, never a route/cache query or scan.
+    if(goal?.radius>0&&route.cursor===length-1&&Math.hypot(end.x-u.x,end.y-u.y)<=2*r){
+      const inside=goal.interior(u.x,u.y);
+      if(this.acceptsGoalPoint(goal,inside.x,inside.y)&&this.segmentClear(u.x,u.y,inside.x,inside.y,r,route.ignore?'*':null,true,0))return inside;
+      const terminal=this.directGoal(u.x,u.y,goal,r,route.ignore);if(terminal)return terminal;
     }
-    // A different dropoff entry pose can make the first corner temporarily
-    // invisible. Join the saved departure point instead of planning again.
-    const start=points[0];
-    if(!active&&Math.hypot(u.x-route.entry.x,u.y-route.entry.y)<=route.entry.r&&Math.hypot(start.x-u.x,start.y-u.y)>.02&&this.segmentClear(u.x,u.y,start.x,start.y,r,route.ignore?'*':null,true,0)){
-      if(execute){route.cursor=0;route.legX=u.x;route.legY=u.y;u.behaviorState.workerRouteActive=route.key}return start;
-    }
-    const end=points.at(-1);return Math.hypot(end.x-u.x,end.y-u.y)<=.02?end:null;
+    return end;
   }
-  workerRoute(u,target,kind,goal=InteractionGeometry.goal(u,target,kind)){
-    this.sync();const radius=this.sim.unitRadius(u.type),ignore=TerrainNavigation.ignoresBuildings(u),key=JSON.stringify([target.id,goal.key,radius,ignore]);
-    const routes=u.behaviorState.workerRoutes,own=routes.find(r=>r.kind===kind);let reason='first';
-    const usable=route=>route.key===key&&route.topology===this.workerRouteTopology(route)&&!!this.workerRoutePoint(u,route,{template:true});
-    if(own){
-      reason=own.key!==key?'target':own.topology!==this.workerRouteTopology(own)?'topology':own.points.length&&!this.workerRoutePoint(u,own)?'deviation':null;
-      if(!reason){this.metrics.workerRouteReuses=(this.metrics.workerRouteReuses||0)+1;return own}
-      this.metrics['workerRouteInvalid_'+reason]=(this.metrics['workerRouteInvalid_'+reason]||0)+1;
+  joinRoute(u,route,goal){
+    const source=this.sim.routePathStore.get(route.pathId);if(!source||source.topology!==this.routeTopology(source)||source.length<2)return null;
+    const direct=goal&&this.directGoal(u.x,u.y,goal,source.radius,source.ignore);
+    if(direct)return this.makeRouteHandle(source.key,source.radius,source.ignore,[{x:u.x,y:u.y},{x:direct.x,y:direct.y}],null,0,u.x,u.y);
+    const candidates=[];
+    for(let i=1;i<source.length;i++){
+      const a=this.routePoint(source,i-1),b=this.routePoint(source,i),dx=b.x-a.x,dy=b.y-a.y,length=dx*dx+dy*dy;
+      const t=length?RangeUtil.clamp(((u.x-a.x)*dx+(u.y-a.y)*dy)/length,0,1):1;
+      const p={x:a.x+dx*t,y:a.y+dy*t};
+      candidates.push({i,p,d:Math.hypot(p.x-u.x,p.y-u.y)});
     }
-    let route=null;
-    // Templates are authoritative worker state, not a warm-only runtime cache.
-    for(const v of this.sim.units){if(v===u||!v.alive||v.side!==u.side||v.type!==u.type)continue;
-      const shared=v.behaviorState.workerRoutes?.find(r=>r.kind===kind);if(shared&&usable(shared)){route=StateValue.copy(shared);route.cursor=0;route.legX=u.x;route.legY=u.y;this.metrics.workerRouteShared=(this.metrics.workerRouteShared||0)+1;break}
+    candidates.sort((a,b)=>a.d-b.d||b.i-a.i);
+    for(const {i,p}of candidates){
+      if(!this.segmentClear(u.x,u.y,p.x,p.y,source.radius,source.ignore?'*':null,true,0))continue;
+      const prefix=[{x:u.x,y:u.y}];
+      let first=i;
+      // Joining is a connection, not another mandatory crowd rendezvous.
+      // Remove visible prefix poses once, during acquisition only.
+      for(let j=source.length-1;j>=i;j--){const point=this.routePoint(source,j);if(this.segmentClear(u.x,u.y,point.x,point.y,source.radius,source.ignore?'*':null,true,0)){first=j;break}}
+      const firstPoint=this.routePoint(source,first);
+      if(first===i&&!this.segmentClear(u.x,u.y,firstPoint.x,firstPoint.y,source.radius,source.ignore?'*':null,true,0)&&Math.hypot(p.x-u.x,p.y-u.y)>.02)prefix.push(p);
+      let tailId,tailStart;
+      if(source.tailId===null){tailId=source.id;tailStart=first}
+      else if(first<source.points.length/2){
+        for(let j=first;j<source.points.length/2;j++){const point=this.routePoint(source,j);if(Math.hypot(prefix.at(-1).x-point.x,prefix.at(-1).y-point.y)>.02)prefix.push(point)}
+        tailId=source.tailId;tailStart=source.tailStart;
+      }else{tailId=source.tailId;tailStart=source.tailStart+first-source.points.length/2}
+      const root=this.sim.routePathStore.get(tailId);
+      while(tailStart<root.length&&Math.hypot(prefix.at(-1).x-this.routePoint(root,tailStart).x,prefix.at(-1).y-this.routePoint(root,tailStart).y)<=.02)tailStart++;
+      if(tailStart>=root.length){
+        if(prefix.length===1)prefix.push({...prefix[0]});
+        if(prefix.length>RallyStateCodec.MAX_ARRAY)continue;
+        return this.makeRouteHandle(source.key,source.radius,source.ignore,prefix,null,0,u.x,u.y);
+      }
+      if(prefix.length+root.length-tailStart>RallyStateCodec.MAX_ARRAY)continue;
+      return this.makeRouteHandle(source.key,source.radius,source.ignore,prefix,root.id,tailStart,u.x,u.y);
     }
+    return null;
+  }
+  routePoint(path,index){
+    if(!path||!Number.isSafeInteger(index)||index<0||index>=(path.length??(Number.isFinite(path.points?.[0])?path.points.length/2:path.points.length)))return null;
+    const flat=Number.isFinite(path.points?.[0])||Number.isSafeInteger(path.topologyId),localLength=flat?path.points.length/2:path.points.length;
+    if(index<localLength)return flat?{x:path.points[index*2],y:path.points[index*2+1]}:path.points[index];
+    const root=this.sim.routePathStore.get(path.tailId);return root?this.routePoint(root,path.tailStart+index-localLength):null;
+  }
+  makeRouteHandle(key,radius,ignore,points,tailId,tailStart,x,y){
+    const root=tailId===null?null:this.sim.routePathStore.get(tailId);
+    const draft={key,radius,ignore,points,tailId,tailStart,length:points.length+(root?root.length-tailStart:0)};
+    const topology=this.routeTopology(draft),pathId=this.sim.internRoutePath({key,radius,ignore,points,tailId,tailStart,topology});
+    this.routeChecks.set(this.sim.routePathStore.get(pathId),{records:this.circles,key:topology});
+    return{pathId,cursor:1,legX:x,legY:y,retained:false};
+  }
+  static routeKey(key,radius,ignore){return radius+(ignore?':1|':':0|')+key}
+  acquireRoute(u,goal,key,radius,ignore){
+    this.metrics.routeCacheLookups=(this.metrics.routeCacheLookups||0)+1;
+    const state=u.movement,profile=TerrainNavigation.routeKey(key,radius,ignore),matches=saved=>{const path=this.sim.routePathStore.get(saved.pathId);return path?.key===key&&path.radius===radius&&path.ignore===ignore};let route=null;
+    // The index only accelerates acquisition. Its order is reconstructed from
+    // authoritative IDs, independent of cache warmth or insertion history.
+    if(this.routeTemplates?.tick!==this.sim.tick||this.routeTemplates.epoch!==this.sim.runtimeEpoch||this.routeTemplates.units!==this.sim.units){
+      const byKey=new Map();
+      for(const v of this.sim.units)for(const saved of v.movement?.routes||[]){
+        const path=this.sim.routePathStore.get(saved.pathId);if(!path)continue;
+        const profile=TerrainNavigation.routeKey(path.key,path.radius,path.ignore);let list=byKey.get(profile);if(!list)byKey.set(profile,list=[]);list.push({unit:v,route:saved});
+      }
+      this.routeTemplates={tick:this.sim.tick,epoch:this.sim.runtimeEpoch,units:this.sim.units,byKey};
+    }
+    const own=state.routes.find(matches);
+    if(own)route=this.joinRoute(u,own,goal);
+    const candidates=this.routeTemplates.byKey.get(profile)||[];
+    candidates.sort((a,b)=>String(a.unit.id)<String(b.unit.id)?-1:String(a.unit.id)>String(b.unit.id)?1:0);
+    if(!route)for(const candidate of candidates){
+      const v=candidate.unit,saved=candidate.route;
+      if(v===u||!v.alive||v.side!==u.side||!v.movement.routes.includes(saved))continue;
+      route=this.joinRoute(u,saved,goal);if(route)break;
+    }
+    if(route)this.metrics.routeJoins=(this.metrics.routeJoins||0)+1;
     if(!route){
       const record=this.movementPlan(u,goal);
-      const points=!record?[]:record.route?record.route.path.map(p=>({x:p.x,y:p.y})):[{x:u.x,y:u.y},{x:record.point.x,y:record.point.y}];
-      if(points.length>512)return {transient:record};
-      const source=kind==='worker-dropoff'?this.sim.resources.find(p=>p.id===u.mineId)||this.sim.buildings.find(b=>b.id===u.mineId):this.sim.buildings.filter(b=>b.alive!==false&&b.complete&&b.side===u.side&&BuildingDefinition.get(b.type)?.isDropoff).sort((a,b)=>Math.hypot(a.x-u.x,a.y-u.y)-Math.hypot(b.x-u.x,b.y-u.y)||(String(a.id)<String(b.id)?-1:String(a.id)>String(b.id)?1:0))[0];
-      const entry=source?{x:source.x,y:source.y,r:InteractionGeometry.reach(u,source,kind==='worker-dropoff'?(u.workResourceType==='gas'?'worker-gas':'worker-mineral'):'worker-dropoff')+2*radius}:{x:u.x,y:u.y,r:2*radius};
-      route={kind,key,radius,ignore,points,entry,topology:'',cursor:0,legX:u.x,legY:u.y};route.topology=this.workerRouteTopology(route);
-      this.metrics.workerRouteBuilds=(this.metrics.workerRouteBuilds||0)+1;
+      const points=!record?[]:record.route?record.route.path:[{x:u.x,y:u.y},{x:record.point.x,y:record.point.y}];
+      // Only paths outside the shared checkpoint data budget are transient.
+      if(points.length>RallyStateCodec.MAX_ARRAY){state.routeIndex=-1;return {transient:record}}
+      route=this.makeRouteHandle(key,radius,ignore,points,null,0,u.x,u.y);if(points.length<2)route.cursor=0;
+      this.metrics.routeBuilds=(this.metrics.routeBuilds||0)+1;
     }
-    const index=routes.findIndex(r=>r.kind===kind);if(index>=0)routes[index]=route;else routes.push(route);
+    // Uncontinued goals and obsolete positions of moving unit targets do not
+    // enter history. Their current active routes remain available to join.
+    state.routes=state.routes.filter(saved=>saved.retained||matches(saved));
+    const index=state.routes.findIndex(matches);
+    if(index>=0){state.routes[index]=route;state.routeIndex=index}
+    else{if(state.routes.length>=3)state.routes.shift();state.routes.push(route);state.routeIndex=state.routes.length-1}
+    let list=this.routeTemplates.byKey.get(profile);if(!list)this.routeTemplates.byKey.set(profile,list=[]);
+    const previous=list.find(entry=>entry.unit===u);if(previous)previous.route=route;else list.push({unit:u,route});
     return route;
   }
-  workerNextPoint(u,target,kind,goal){const route=this.workerRoute(u,target,kind,goal);return route?.transient?this.nextPlanPoint(u,route.transient):route?this.workerRoutePoint(u,route,{execute:true}):null}
   connected(x,y,tx,ty,type='worker',ignoreBuildings=false){
     return Number.isFinite(this.distance(x,y,NavigationGoal.point(tx,ty,false),type,ignoreBuildings));
   }
@@ -16641,8 +16730,74 @@ class ResourceComponent{
   constructor(state={}){Object.assign(this,ResourceComponent.stateContract.create(state))}
 }
 class MovementComponent{
-  static stateContract=new StateContract({impulseFx:0,impulseFy:0,impulseUntil:0,impulseDecay:0,lastMoveTick:-999999,outOfCombatStartedAt:-1,chargeMomentum:1000,crouchStartedAt:-1,crouched:false},{});
+  static stateContract=new StateContract({routes:[],routeIndex:-1,impulseFx:0,impulseFy:0,impulseUntil:0,impulseDecay:0,lastMoveTick:-999999,outOfCombatStartedAt:-1,chargeMomentum:1000,crouchStartedAt:-1,crouched:false},{});
   constructor(state={}){Object.assign(this,MovementComponent.stateContract.create(state))}
+  static validatePathTable(chunks,nextId,profileChunks,nextProfileId,topologyChunks,nextTopologyId,units,world,budget=null){
+    const validChunks=chunks=>Array.isArray(chunks)&&chunks.every((chunk,i)=>Array.isArray(chunk)&&chunk.length>0&&chunk.length<=RallyStateCodec.MAX_ARRAY&&(i===chunks.length-1||chunk.length===RallyStateCodec.MAX_ARRAY));
+    if(!validChunks(chunks)||!Number.isSafeInteger(nextId)||nextId<1||!validChunks(profileChunks)||!Number.isSafeInteger(nextProfileId)||nextProfileId<1||!validChunks(topologyChunks)||!Number.isSafeInteger(nextTopologyId)||nextTopologyId<1)throw new Error('Invalid route path table');
+    const profiles=new Map(),profileIds=new Set(),profileKeys=new Set();let previousProfileId=0;
+    for(const chunk of profileChunks)for(const row of chunk){
+      if(!Array.isArray(row)||row.length!==4||!Number.isSafeInteger(row[0])||row[0]<=previousProfileId||row[0]>=nextProfileId||typeof row[1]!=='string'||row[1].length>1024||!Number.isFinite(row[2])||row[2]<=0||row[2]>1024||typeof row[3]!=='boolean')throw new Error('Invalid route profile record');
+      const values=row[1].split(':').map(Number);
+      if(values.length!==6||!values.every(Number.isFinite)||values[2]<0||values[3]<0||values[3]>values[2]||![0,1].includes(values[4])||![0,1].includes(values[5])||values.join(':')!==row[1])throw new Error('Invalid route profile geometry');
+      const signature=StableSerializationUtil.stableStringify([row[1],row[2],row[3]]);if(profileKeys.has(signature))throw new Error('Duplicate canonical route profile');
+      previousProfileId=row[0];profileIds.add(row[0]);profileKeys.add(signature);profiles.set(row[0],{id:row[0],key:row[1],radius:row[2],ignore:row[3]});
+    }
+    const topologies=new Map(),topologyIds=new Set(),topologyKeys=new Set();let previousTopologyId=0;
+    for(const chunk of topologyChunks)for(const row of chunk){
+      if(!Array.isArray(row)||row.length!==2||!Number.isSafeInteger(row[0])||row[0]<=previousTopologyId||row[0]>=nextTopologyId||typeof row[1]!=='string'||row[1].length>65536)throw new Error('Invalid route topology record');
+      let records;try{records=JSON.parse(row[1])}catch{throw new Error('Invalid route topology geometry')}
+      if(!Array.isArray(records)||JSON.stringify(records)!==row[1]||records.some(c=>!Array.isArray(c)||c.length!==6||typeof c[0]!=='string'||typeof c[1]!=='string'||!c.slice(2,5).every(Number.isFinite)||typeof c[5]!=='boolean')||records.some((c,i)=>i>0&&String(records[i-1][0])>=String(c[0])))throw new Error('Invalid route topology geometry');
+      if(topologyKeys.has(row[1]))throw new Error('Duplicate canonical route topology');
+      previousTopologyId=row[0];topologyIds.add(row[0]);topologyKeys.add(row[1]);topologies.set(row[0],row[1]);
+    }
+    const paths=new Map();let previousId=0;
+    // Path row: [id, profileId, topologyId, flatExactPoints, tailId, tailStart].
+    for(const chunk of chunks)for(const row of chunk){
+      if(!Array.isArray(row)||row.length!==6||!Number.isSafeInteger(row[0])||row[0]<=previousId||row[0]>=nextId||!Number.isSafeInteger(row[1])||!profiles.has(row[1])||!Number.isSafeInteger(row[2])||!topologies.has(row[2])||!Array.isArray(row[3])||row[3].length>RallyStateCodec.MAX_ARRAY*2||row[3].length%2!==0||row[4]!==null&&!Number.isSafeInteger(row[4])||!Number.isSafeInteger(row[5])||row[5]<0)throw new Error('Invalid route path record');
+      const profile=profiles.get(row[1]),path={id:row[0],profileId:row[1],topologyId:row[2],points:row[3],tailId:row[4],tailStart:row[5],key:profile.key,radius:profile.radius,ignore:profile.ignore};previousId=path.id;
+      for(let i=0;i<path.points.length;i+=2)if(!Number.isFinite(path.points[i])||!Number.isFinite(path.points[i+1])||path.points[i]<0||path.points[i+1]<0||path.points[i]>world.width||path.points[i+1]>world.height)throw new Error('Invalid route path waypoint');
+      let length=path.points.length/2;
+      if(path.tailId===null){if(path.tailStart!==0)throw new Error('Noncanonical route path root')}
+      else{
+        const tail=paths.get(path.tailId);
+        if(!tail||tail.tailId!==null||tail.profileId!==path.profileId||path.tailStart>=tail.length||path.points.length===0)throw new Error('Invalid route path tail');
+        length+=tail.length-path.tailStart;
+      }
+      if(length>RallyStateCodec.MAX_ARRAY)throw new Error('Route path exceeds array budget');
+      path.topology=topologies.get(path.topologyId);path.length=length;paths.set(path.id,path);
+    }
+    if(!Array.isArray(units)||budget&&budget.nodes>budget.maxNodes)throw new Error('Invalid route path units');
+    const reachable=new Set(),usedTopologies=new Set(),usedProfiles=new Set();
+    for(const unit of units){
+      const movement=unit?.movement;
+      if(!movement||!Array.isArray(movement.routes)||movement.routes.length>3||!Number.isSafeInteger(movement.routeIndex)||movement.routeIndex< -1||movement.routeIndex>=movement.routes.length)throw new Error('Invalid movement route state');
+      const seen=new Set();
+      for(const route of movement.routes){
+        if(!route||Array.isArray(route)||Object.keys(route).sort().join(',')!=='cursor,legX,legY,pathId,retained'||typeof route.retained!=='boolean'||!Number.isSafeInteger(route.pathId)||!Number.isSafeInteger(route.cursor)||route.cursor<0||!Number.isFinite(route.legX)||!Number.isFinite(route.legY)||route.legX<0||route.legY<0||route.legX>world.width||route.legY>world.height)throw new Error('Invalid movement route reference');
+        const path=paths.get(route.pathId);
+        if(!path||route.cursor>=Math.max(1,path.length))throw new Error('Invalid movement route cursor');
+        const key=TerrainNavigation.routeKey(path.key,path.radius,path.ignore);
+        if(seen.has(key))throw new Error('Duplicate movement route');
+        seen.add(key);reachable.add(path.id);if(path.tailId!==null)reachable.add(path.tailId);
+      }
+    }
+    if(reachable.size!==paths.size)throw new Error('Unused route path record');
+    for(const id of reachable){const path=paths.get(id);usedTopologies.add(path.topologyId);usedProfiles.add(path.profileId)}
+    if(usedTopologies.size!==topologyIds.size)throw new Error('Unused route topology record');
+    if(usedProfiles.size!==profileIds.size)throw new Error('Unused route profile record');
+    return{paths,profiles,topologies};
+  }
+  static validateRoutes(state,world,paths){
+    if(!state||!Array.isArray(state.routes)||state.routes.length>3||!Number.isSafeInteger(state.routeIndex)||state.routeIndex< -1||state.routeIndex>=state.routes.length)throw new Error('Invalid movement route state');
+    const keys=new Set();
+    for(const route of state.routes){
+      if(!route||Object.keys(route).sort().join(',')!=='cursor,legX,legY,pathId,retained'||typeof route.retained!=='boolean'||!Number.isSafeInteger(route.pathId)||!Number.isSafeInteger(route.cursor)||route.cursor<0||!Number.isFinite(route.legX)||!Number.isFinite(route.legY)||route.legX<0||route.legY<0||route.legX>world.width||route.legY>world.height)throw new Error('Invalid movement route reference');
+      const path=paths.get(route.pathId);
+      if(!path||route.cursor>=Math.max(1,path.length))throw new Error('Invalid movement route cursor');
+      const key=TerrainNavigation.routeKey(path.key,path.radius,path.ignore);if(keys.has(key))throw new Error('Duplicate movement route');keys.add(key);
+    }
+  }
   impulseActive(sim){return sim.tick<(Number(this.impulseUntil)||0)}
   impulseCompletesAfterCurrentTick(sim){return this.impulseActive(sim)&&sim.tick+1>=(Number(this.impulseUntil)||0)}
   clearImpulse(){this.impulseFx=0;this.impulseFy=0;this.impulseUntil=0;this.impulseDecay=0}
@@ -17046,29 +17201,29 @@ class DeployableCombatMixin extends UnitCapability{
 class WorkerMixin extends UnitCapability{
   static KEY="worker";
   static supports(u){return !!UnitDefinition.get(u.type)?.economyWorker}
-  static stateDefaults={"root":{"carry":0,"carryType":null,"workResourceType":"mineral","workState":"seek","buildTargetId":null,"mineId":null,"mineStartedAt":-1},"behavior":{"workerRoutes":[],"workerDropoffKey":"","workerDropoffId":null,"workerRouteActive":""}};
+  static stateDefaults={"root":{"carry":0,"carryType":null,"workResourceType":"mineral","workState":"seek","buildTargetId":null,"mineId":null,"mineStartedAt":-1},"behavior":{"workerDropoffKey":"","workerDropoffId":null}};
   constructor(owner){super(owner,WorkerMixin.KEY)}
   mineElapsedTicks(sim){const u=this.owner;if((u.mineStartedAt??-1)<0)u.mineStartedAt=sim.tick;return Math.max(1,sim.tick-u.mineStartedAt+1)}
   resetMine(){this.owner.mineStartedAt=-1}
-  static validateRoutes(state,world){
-    const routes=state.workerRoutes,kinds=new Set();
-    if(!Array.isArray(routes)||routes.length>3||typeof state.workerRouteActive!=='string'||state.workerRouteActive.length>1024||typeof state.workerDropoffKey!=='string'||state.workerDropoffKey.length>65536||state.workerDropoffId!==null&&(typeof state.workerDropoffId!=='string'||state.workerDropoffId.length>256))throw new Error('Invalid worker route state');
-    for(const route of routes){
-      if(!route||Object.keys(route).sort().join(',')!=='cursor,entry,ignore,key,kind,legX,legY,points,radius,topology'||!['worker-mineral','worker-gas','worker-dropoff'].includes(route.kind)||kinds.has(route.kind)||typeof route.key!=='string'||route.key.length>1024||typeof route.topology!=='string'||route.topology.length>65536||typeof route.ignore!=='boolean'||!Number.isFinite(route.radius)||route.radius<=0||route.radius>1024||!Array.isArray(route.points)||route.points.length>512)throw new Error('Invalid worker route');
-      if(!route.entry||Object.keys(route.entry).sort().join(',')!=='r,x,y'||![route.entry.x,route.entry.y,route.entry.r].every(Number.isFinite)||route.entry.x<0||route.entry.x>world.width||route.entry.y<0||route.entry.y>world.height||route.entry.r<0||route.entry.r>2048)throw new Error('Invalid worker route entry');
-      if(!Number.isSafeInteger(route.cursor)||route.cursor<0||route.cursor>=Math.max(1,route.points.length)||!Number.isFinite(route.legX)||!Number.isFinite(route.legY)||route.legX<0||route.legY<0||route.legX>world.width||route.legY>world.height)throw new Error('Invalid worker route cursor');
-      kinds.add(route.kind);
-      for(const p of route.points)if(!p||Object.keys(p).sort().join(',')!=='x,y'||!Number.isFinite(p.x)||!Number.isFinite(p.y)||p.x<0||p.y<0||p.x>world.width||p.y>world.height)throw new Error('Invalid worker waypoint');
-      let key,topology;try{key=JSON.parse(route.key);topology=JSON.parse(route.topology)}catch{throw new Error('Invalid worker route key')}
-      if(!Array.isArray(key)||key.length!==4||typeof key[0]!=='string'||typeof key[1]!=='string'||key[2]!==route.radius||key[3]!==route.ignore||!Array.isArray(topology)||topology.some(c=>!Array.isArray(c)||c.length!==6||typeof c[0]!=='string'||typeof c[1]!=='string'||!c.slice(2,5).every(Number.isFinite)||typeof c[5]!=='boolean'))throw new Error('Invalid worker route geometry');
-    }
+  static validateDropoff(state){
+    if(typeof state.workerDropoffKey!=='string'||state.workerDropoffKey.length>65536||state.workerDropoffId!==null&&(typeof state.workerDropoffId!=='string'||state.workerDropoffId.length>256))throw new Error('Invalid worker dropoff state');
   }
   dropoff(sim){
     sim.navigation.sync();
     const u=this.owner,targets=sim.buildings.filter(b=>b.alive!==false&&b.complete&&b.side===u.side&&BuildingDefinition.get(b.type)?.isDropoff);
     const key=JSON.stringify([u.mineId,targets.map(b=>[b.id,b.type,b.x,b.y]).sort((a,b)=>String(a[0])<String(b[0])?-1:String(a[0])>String(b[0])?1:0)]),state=u.behaviorState;
     if(state.workerDropoffId===null&&state.workerDropoffKey===key+'|'+JSON.stringify(sim.navigation.topology.records))return null;
-    if(state.workerDropoffKey===key){const found=targets.find(b=>b.id===state.workerDropoffId),route=state.workerRoutes.find(r=>r.kind==='worker-dropoff');if(found&&(!route||route.points.length&&route.topology===sim.navigation.workerRouteTopology(route)))return found}
+    if(state.workerDropoffKey===key){
+      const found=targets.find(b=>b.id===state.workerDropoffId);
+      if(found){
+        const routeKey=InteractionGeometry.goal(u,found,'worker-dropoff').key,radius=sim.unitRadius(u.type),ignore=TerrainNavigation.ignoresBuildings(u),active=u.movement.routes[u.movement.routeIndex];
+        // Normal return movement already has a handle. Search history only at
+        // the transition from a different goal, before acquiring its handle.
+        const matches=route=>{const path=sim.routePathStore.get(route.pathId);return path?.key===routeKey&&path.radius===radius&&path.ignore===ignore};
+        const route=active&&matches(active)?active:u.movement.routes.find(matches),path=route&&sim.routePathStore.get(route.pathId);
+        if(!route||path.length&&path.topology===sim.navigation.routeTopology(path))return found;
+      }
+    }
     const found=targets.length===1?targets[0]:sim.nearestInteractionTarget(u,targets,'worker-dropoff');
     state.workerDropoffKey=found?key:key+'|'+JSON.stringify(sim.navigation.topology.records);state.workerDropoffId=found?.id??null;return found;
   }
@@ -17732,7 +17887,7 @@ class StrategySim{
     "collisionGrid","collisionSweepGrid","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
     "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapSideHeads","hardFixSapSideNext","hardFixSapSidePrev","hardFixSapSideHeaps","hardFixSapMarks","hardFixSapEpoch",
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","maxUnitRadius",
-    "cloakCacheTick","auraCloakedIds","tickVisibilityCache","tickVisibilityCacheTick","economyCacheTick","workerGasAssignments","validGasExtractorsBySide","navigationRevision","navigation"
+    "cloakCacheTick","auraCloakedIds","tickVisibilityCache","tickVisibilityCacheTick","economyCacheTick","workerGasAssignments","validGasExtractorsBySide","navigationRevision","navigation","routePathStore","routePathIndex","routePathExportCache","routePathExportRevision","routeProfileStore","routeProfileIndex","routeProfileExportCache","routeProfileExportRevision","routeTopologyStore","routeTopologyIndex","routeTopologyExportCache","routeTopologyExportRevision"
   ],children:{delayedEffects:DelayedEffectState}});
   static createForMatch({draft,seed,rules=GameRuleDefinition.current,campaignScenario=null,debugScenario=null}={}){
     const sim=new StrategySim(draft,seed,rules,campaignScenario);
@@ -17741,6 +17896,9 @@ class StrategySim{
   }
   constructor(draftState,seed,rules=GameRuleDefinition.current,campaignScenario=null){
     this.seed=seed>>>0;this.rules=rules||GameRuleDefinition.current;this.tps=RangeUtil.clamp(Math.round(Number(this.rules?.simulation?.tps)||SIM_TPS),10,30);const campaignHumanRole=campaignScenario?.playerRole||"host",campaignHumanSide=campaignHumanRole==="host"?0:1;this.mapDescriptor=campaignScenario?.map?CampaignMapDefinition.build(campaignScenario.map,this.rules,this.seed,campaignHumanSide):MapGeneration.generateMapDescriptor({rules:this.rules,seed:this.seed,roundNumber:this.rules?.roundNumber||1});StateValue.freeze(this.mapDescriptor);this.world=WorldContext.fromMap(this.mapDescriptor);this.tick=0;this.seq=0;this.units=[];this.buildings=[];this.constructionOrders=[];this.navigationAdmissions=[];this.projectiles=[];this.events=[];this.scheduled=new Map();
+    this.nextRoutePathId=1;this.routePathStore=new Map();this.routePathIndex=new Map();this.routePathExportCache=null;this.routePathExportRevision=0;
+    this.nextRouteProfileId=1;this.routeProfileStore=new Map();this.routeProfileIndex=new Map();this.routeProfileExportCache=null;this.routeProfileExportRevision=0;
+    this.nextRouteTopologyId=1;this.routeTopologyStore=new Map();this.routeTopologyIndex=new Map();this.routeTopologyExportCache=null;this.routeTopologyExportRevision=0;
     this.wallet=[0,1].map(()=>Math.max(0,Number(this.rules?.economy?.startingResources?.minerals)||0));
     this.gasWallet=[0,1].map(()=>Math.max(0,Number(this.rules?.economy?.startingResources?.gas)||0));
     this.tech=[1,1];this.productionPaused=[false,false];this.chargedCasts=[null,null];this.chargedCastSerial=[0,0];
@@ -19602,7 +19760,11 @@ class StrategySim{
     }
     const side=ConnectionSideUtil.roleSide(actor);
     if(action.type.startsWith("CHARGE_"))return this.applyChargedCommand(side,action);
-    if(action.type==="SET_FLAG"){this.flags[side]={x:RangeUtil.clamp(action.x,40,this.world.width-40),y:RangeUtil.clamp(action.y,40,this.world.height-40),forced:!!action.forced};this.events.push({type:"flag",side,x:this.flags[side].x,y:this.flags[side].y,forced:!!action.forced});return true;}
+    if(action.type==="SET_FLAG"){
+      this.flags[side]={x:RangeUtil.clamp(action.x,40,this.world.width-40),y:RangeUtil.clamp(action.y,40,this.world.height-40),forced:!!action.forced};
+      for(const u of this.units)if(u.side===side&&!UnitDefinition.get(u.type)?.economyWorker)u.movement.routeIndex=-1;
+      this.events.push({type:"flag",side,x:this.flags[side].x,y:this.flags[side].y,forced:!!action.forced});return true;
+    }
     if(action.type==="TOGGLE_PRODUCTION"){this.productionPaused[side]=!this.productionPaused[side];return true;}
     if(action.type==="TRAIN_WORKER"){
       const base=this.buildings.find(b=>
@@ -20102,8 +20264,8 @@ class StrategySim{
   
 
   moveToward(u,tx,ty,speed){return this.moveToGoal(u,NavigationGoal.point(tx,ty),speed)}
-  moveToInteraction(u,target,kind,speed,extra=0,minRange=null){return this.moveToGoal(u,InteractionGeometry.goal(u,target,kind,extra,minRange),speed,['worker-mineral','worker-gas','worker-dropoff'].includes(kind)?{target,kind}:null)}
-  moveToGoal(u,goal,speed,workerRoute=null){
+  moveToInteraction(u,target,kind,speed,extra=0,minRange=null){return this.moveToGoal(u,InteractionGeometry.goal(u,target,kind,extra,minRange),speed)}
+  moveToGoal(u,goal,speed){
     let tx=goal.x,ty=goal.y;
     const deployable=u.capability(DeployableCombatMixin.KEY);
     if(deployable&&!deployable.requestMovement(this))return false;
@@ -20134,7 +20296,7 @@ class StrategySim{
 
     if(u.status.isSlowed(this))speed*=.55;
 
-    const waypoint=workerRoute?this.navigation.workerNextPoint(u,workerRoute.target,workerRoute.kind,goal):this.navigation.nextPoint(u,goal);
+    const waypoint=this.navigation.nextPoint(u,goal);
     if(!waypoint||Math.hypot(waypoint.x-u.x,waypoint.y-u.y)<.001)return false;
     tx=waypoint.x;ty=waypoint.y;
     const dx=tx-u.x,dy=ty-u.y;
@@ -22963,6 +23125,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     winner=this.netcodeMatchResult?.winner||CampaignOutcomeRules.resolve(this)?.winner||null;
     this.updateBalanceTelemetry(winner);
     this.cleanupDeadEntities();
+    this.collectUnusedRoutePaths();
     const postMs=profile?now()-mark:0;
 
     if(profile){
@@ -22992,6 +23155,102 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     }
     this._perfCollect=null;
     return winner;
+  }
+  routePathSignature(path){return StableSerializationUtil.stableStringify({profileId:path.profileId,topologyId:path.topologyId,points:path.points,tailId:path.tailId,tailStart:path.tailStart})}
+  routePathBody(data,id,{copy=true}={}){
+    const body=copy?StateValue.copy({...data,id}):data;body.id=id;
+    const root=body.tailId===null?null:this.routePathStore.get(body.tailId);
+    if(body.tailId!==null&&!root)throw new Error('Missing shared route root');
+    const profile=this.routeProfileStore.get(body.profileId);if(!profile)throw new Error('Missing shared route profile');
+    const topology=this.routeTopologyStore.get(body.topologyId);if(!topology)throw new Error('Missing shared route topology');
+    Object.defineProperties(body,{key:{value:profile.key,enumerable:false},radius:{value:profile.radius,enumerable:false},ignore:{value:profile.ignore,enumerable:false}});
+    Object.defineProperty(body,'topology',{value:topology,enumerable:false});
+    Object.defineProperty(body,'length',{value:body.points.length/2+(root?root.length-body.tailStart:0),enumerable:false});
+    return StateValue.freeze(body);
+  }
+  internRouteProfile(key,radius,ignore){
+    if(typeof key!=='string'||key.length>1024||!Number.isFinite(radius)||radius<=0||radius>1024||typeof ignore!=='boolean')throw new Error('Invalid route profile');
+    const signature=StableSerializationUtil.stableStringify([key,radius,ignore]),existing=this.routeProfileIndex.get(signature);if(existing!==undefined)return existing;
+    const id=this.nextRouteProfileId;if(!Number.isSafeInteger(id)||id<1||id>=Number.MAX_SAFE_INTEGER)throw new Error('Route profile ID space exhausted');this.nextRouteProfileId=id+1;
+    this.routeProfileStore.set(id,Object.freeze({id,key,radius,ignore}));this.routeProfileIndex.set(signature,id);this.routeProfileExportCache=null;this.routeProfileExportRevision++;return id;
+  }
+  exportRouteProfileTable(){
+    if(this.routeProfileExportCache)return this.routeProfileExportCache;
+    const rows=[...this.routeProfileStore.values()].sort((a,b)=>a.id-b.id).map(p=>Object.freeze([p.id,p.key,p.radius,p.ignore])),chunks=[];
+    for(let i=0;i<rows.length;i+=RallyStateCodec.MAX_ARRAY)chunks.push(Object.freeze(rows.slice(i,i+RallyStateCodec.MAX_ARRAY)));
+    this.routeProfileExportCache=Object.freeze(chunks);return this.routeProfileExportCache;
+  }
+  restoreRouteProfileTable(chunks){
+    this.routeProfileStore=new Map();this.routeProfileIndex=new Map();this.routeProfileExportCache=null;
+    for(const chunk of chunks||[])for(const row of chunk){
+      const [id,key,radius,ignore]=row,signature=StableSerializationUtil.stableStringify([key,radius,ignore]);
+      if(this.routeProfileStore.has(id)||this.routeProfileIndex.has(signature))throw new Error('Duplicate canonical route profile');
+      const profile=Object.freeze({id,key,radius,ignore});this.routeProfileStore.set(id,profile);this.routeProfileIndex.set(signature,id);
+    }
+    this.routeProfileExportRevision++;
+  }
+  internRouteTopology(key){
+    if(typeof key!=='string'||key.length>65536)throw new Error('Invalid route topology');
+    const existing=this.routeTopologyIndex.get(key);if(existing!==undefined)return existing;
+    const id=this.nextRouteTopologyId;if(!Number.isSafeInteger(id)||id<1||id>=Number.MAX_SAFE_INTEGER)throw new Error('Route topology ID space exhausted');this.nextRouteTopologyId=id+1;
+    this.routeTopologyStore.set(id,key);this.routeTopologyIndex.set(key,id);this.routeTopologyExportCache=null;this.routeTopologyExportRevision++;return id;
+  }
+  exportRouteTopologyTable(){
+    if(this.routeTopologyExportCache)return this.routeTopologyExportCache;
+    const rows=[...this.routeTopologyStore].sort((a,b)=>a[0]-b[0]).map(([id,key])=>Object.freeze([id,key])),chunks=[];
+    for(let i=0;i<rows.length;i+=RallyStateCodec.MAX_ARRAY)chunks.push(Object.freeze(rows.slice(i,i+RallyStateCodec.MAX_ARRAY)));
+    this.routeTopologyExportCache=Object.freeze(chunks);return this.routeTopologyExportCache;
+  }
+  restoreRouteTopologyTable(chunks){
+    this.routeTopologyStore=new Map();this.routeTopologyIndex=new Map();this.routeTopologyExportCache=null;
+    for(const chunk of chunks||[])for(const row of chunk){
+      if(this.routeTopologyStore.has(row[0])||this.routeTopologyIndex.has(row[1]))throw new Error('Duplicate canonical route topology');
+      this.routeTopologyStore.set(row[0],row[1]);this.routeTopologyIndex.set(row[1],row[0]);
+    }
+    this.routeTopologyExportRevision++;
+  }
+  internRoutePath(data){
+    if(!data||!Array.isArray(data.points)||data.points.length>RallyStateCodec.MAX_ARRAY||data.tailId!==null&&!this.routePathStore.has(data.tailId))throw new Error('Invalid route path body');
+    const profileId=this.internRouteProfile(data.key,data.radius,data.ignore),topologyId=this.internRouteTopology(data.topology),points=[];for(const point of data.points)points.push(point.x,point.y);
+    const normalized={profileId,topologyId,points,tailId:data.tailId,tailStart:data.tailStart};
+    const root=data.tailId===null?null:this.routePathStore.get(data.tailId);
+    if(data.tailId===null?data.tailStart!==0:!root||root.tailId!==null||!Number.isSafeInteger(data.tailStart)||data.tailStart<0||data.tailStart>=root.length||root.profileId!==profileId)throw new Error('Invalid shared route root');
+    if(normalized.points.length/2+(root?root.length-data.tailStart:0)>RallyStateCodec.MAX_ARRAY)throw new Error('Route path exceeds array budget');
+    const signature=this.routePathSignature(normalized),existing=this.routePathIndex.get(signature);
+    if(existing!==undefined)return existing;
+    const id=this.nextRoutePathId;if(!Number.isSafeInteger(id)||id<1||id>=Number.MAX_SAFE_INTEGER)throw new Error('Route path id space exhausted');this.nextRoutePathId=id+1;
+    const path=this.routePathBody(normalized,id,{copy:false});
+    this.routePathStore.set(id,path);this.routePathIndex.set(signature,id);this.routePathExportCache=null;this.routePathExportRevision++;
+    return id;
+  }
+  exportRoutePathTable(){
+    if(this.routePathExportCache)return this.routePathExportCache;
+    const rows=[...this.routePathStore.values()].sort((a,b)=>a.id-b.id).map(path=>Object.freeze([path.id,path.profileId,path.topologyId,path.points,path.tailId,path.tailStart])),chunks=[];
+    for(let i=0;i<rows.length;i+=RallyStateCodec.MAX_ARRAY)chunks.push(Object.freeze(rows.slice(i,i+RallyStateCodec.MAX_ARRAY)));
+    this.routePathExportCache=Object.freeze(chunks);return this.routePathExportCache;
+  }
+  restoreRoutePathTable(chunks){
+    this.routePathStore=new Map();this.routePathIndex=new Map();this.routePathExportCache=null;
+    for(const chunk of chunks||[])for(const row of chunk){
+      const data={id:row[0],profileId:row[1],topologyId:row[2],points:row[3],tailId:row[4],tailStart:row[5]};
+      const path=this.routePathBody(data,data.id,{copy:false}),signature=this.routePathSignature(path);
+      if(this.routePathIndex.has(signature))throw new Error('Duplicate canonical route path');
+      this.routePathStore.set(path.id,path);this.routePathIndex.set(signature,path.id);
+    }
+    this.routePathExportRevision++;
+  }
+  collectUnusedRoutePaths(){
+    const used=new Set();
+    for(const unit of this.units)for(const route of unit.movement?.routes||[]){const path=this.routePathStore.get(route.pathId);if(path){used.add(path.id);if(path.tailId!==null)used.add(path.tailId)}}
+    let changed=false;
+    for(const id of this.routePathStore.keys())if(!used.has(id)){this.routePathStore.delete(id);changed=true}
+    if(changed){this.routePathIndex.clear();for(const path of this.routePathStore.values())this.routePathIndex.set(this.routePathSignature(path),path.id);this.routePathExportCache=null;this.routePathExportRevision++}
+    const usedProfiles=new Set([...this.routePathStore.values()].map(path=>path.profileId));let profileChanged=false;
+    for(const id of this.routeProfileStore.keys())if(!usedProfiles.has(id)){this.routeProfileStore.delete(id);profileChanged=true}
+    if(profileChanged){this.routeProfileIndex.clear();for(const [id,p]of this.routeProfileStore)this.routeProfileIndex.set(StableSerializationUtil.stableStringify([p.key,p.radius,p.ignore]),id);this.routeProfileExportCache=null;this.routeProfileExportRevision++}
+    const usedTopologies=new Set([...this.routePathStore.values()].map(path=>path.topologyId));let topologyChanged=false;
+    for(const id of this.routeTopologyStore.keys())if(!usedTopologies.has(id)){this.routeTopologyStore.delete(id);topologyChanged=true}
+    if(topologyChanged){this.routeTopologyIndex.clear();for(const [id,key]of this.routeTopologyStore)this.routeTopologyIndex.set(key,id);this.routeTopologyExportCache=null;this.routeTopologyExportRevision++}
   }
   mapFingerprint(){return HashUtil.hash(StableSerializationUtil.stableStringify(this.mapDescriptor))}
   checksum(){return RallyNetcode.hashBytes(RallyStateCodec.encode(this.exportState())).toString(16).padStart(8,"0")}
@@ -23097,11 +23356,16 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   }
   exportState({includeIdentity=true}={}){
     const source={...this,campaignScenario:this.campaignScenario||null,campaignScriptState:this.campaignScriptRuntime?.state||null,
-      units:this.units.map(u=>u.toState("save")),buildings:this.buildings.map(b=>b.toState("save")),projectiles:this.projectiles.map(p=>p.toState("save")),scheduled:[...this.scheduled.entries()]};
+      scheduled:[...this.scheduled.entries()],routePaths:this.exportRoutePathTable(),routeProfiles:this.exportRouteProfileTable(),routeTopologies:this.exportRouteTopologyTable()};
+    // Entity contracts already return detached data. Capture the remaining root
+    // first, so route histories and points are not deeply copied a second time.
+    delete source.units;delete source.buildings;delete source.projectiles;
     // SDK mementos reference these immutable definitions by match identity. Omit
     // them before capture/clone, rather than copying then discarding a large map.
     if(!includeIdentity){delete source.rules;delete source.mapDescriptor;delete source.campaignScenario}
-    return StrategySim.stateContract.capture(source,"save");
+    const state=StrategySim.stateContract.capture(source,"save");
+    state.units=this.units.map(u=>u.toState("save"));state.buildings=this.buildings.map(b=>b.toState("save"));state.projectiles=this.projectiles.map(p=>p.toState("save"));
+    return state;
   }
   restoreCampaignState(mission,state,{rollback=false}={}){
     const runtime=this.campaignScriptRuntime;
@@ -23123,7 +23387,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       this.campaignTechCap=[3,3];this.campaignTechCap[h]=this.campaignScenario.player.techCap;this.campaignTechCap[1-h]=this.campaignScenario.enemy.techCap;
     }else{this.campaignScenario=null;this.campaignScriptRuntime=null;delete this.campaignTechCap}
   }
-  importState(s,{rollback=false}={}){
+  importState(s,{rollback=false,routeTopologyVerifiedPaths=null}={}){
     const retained={mapDescriptor:this.mapDescriptor,rules:this.rules,campaignScenario:this.campaignScenario||null};
     const retainedNavigation=rollback&&this.navigation instanceof TerrainNavigation?this.navigation:null;
     if(rollback){
@@ -23135,12 +23399,13 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     this.disposed=false;
     const source={...s};
     if(rollback)for(const key of Object.keys(retained))delete source[key];
-    const copy=StateValue.copy(source),scheduled=copy.scheduled||[];delete copy.scheduled;
+    const copy=StateValue.copy(source),scheduled=copy.scheduled||[],routePaths=copy.routePaths||[],routeProfiles=copy.routeProfiles||[],routeTopologies=copy.routeTopologies||[];delete copy.scheduled;delete copy.routePaths;delete copy.routeProfiles;delete copy.routeTopologies;
     if(rollback){
       Object.assign(copy,retained);
       for(const key of StrategySim.stateContract.keys(this,"save"))if(!Object.prototype.hasOwnProperty.call(copy,key)&&key!=="scheduled")delete this[key];
     }
     Object.assign(this,copy);
+    this.restoreRouteProfileTable(routeProfiles);this.restoreRouteTopologyTable(routeTopologies);this.restoreRoutePathTable(routePaths);
     StateValue.freeze(this.mapDescriptor);this.world=WorldContext.fromMap(this.mapDescriptor);
     this.restoreCampaignState(copy.campaignScenario,copy.campaignScriptState,{rollback});
     delete this.campaignScriptState;
@@ -23149,6 +23414,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     this.scheduled=new Map(scheduled);
     this.events=[];
     SimulationRuntimeState.initialize(this);
+    this.navigation.sceneTick=-1;this.navigation.sceneRevision=undefined;
     if(retainedNavigation&&retainedNavigation.geometry===this.world.terrain){
       this.navigation=retainedNavigation;
       this.navigation.sceneTick=-1;this.navigation.sceneRevision=undefined;
@@ -23156,12 +23422,13 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       // sync compares the complete authoritative building obstacle layout. Same
       // topology retains mesh/goal fields; changed layout marks affected tiles dirty.
       this.navigation.sync();
-    }
+    }else this.navigation.sync();
+    if(routeTopologyVerifiedPaths){const checks=this.navigation.routeChecks??=new WeakMap();for(const path of this.routePathStore.values())if(routeTopologyVerifiedPaths.has(path.id))checks.set(path,{records:this.navigation.circles,key:path.topology})}
     this.rebuildRuntimeIndexes();
   }
   snapshot(){
     const started=performance.now();
-    try{return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),chargedCasts:StateValue.copy(this.chargedCasts),chargedCastSerial:this.chargedCastSerial.slice(),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState()),buildings:this.buildings.map(b=>b.toState()),constructionOrders:StateValue.copy(this.constructionOrders),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
+    try{return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,nextRoutePathId:this.nextRoutePathId,routePaths:this.exportRoutePathTable(),nextRouteProfileId:this.nextRouteProfileId,routeProfiles:this.exportRouteProfileTable(),nextRouteTopologyId:this.nextRouteTopologyId,routeTopologies:this.exportRouteTopologyTable(),decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),chargedCasts:StateValue.copy(this.chargedCasts),chargedCastSerial:this.chargedCastSerial.slice(),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState()),buildings:this.buildings.map(b=>b.toState()),constructionOrders:StateValue.copy(this.constructionOrders),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
     finally{const perf=this.perfStats;perf.snapshotMs=performance.now()-started;perf.maxSnapshotMs=Math.max(perf.maxSnapshotMs,perf.snapshotMs);perf.snapshotSamples++}
   }
 }
@@ -23498,10 +23765,11 @@ class ReplayPlayer{
 // The SDK owns command resolution and rollback timelines. These codecs expose
 // only opaque game data; they never inspect SDK queues, checkpoints or internals.
 class RallyStateCodec{
-  static schemaVersion=2;
+  static schemaVersion=3;
+  static MAX_ARRAY=20000;
   static maxBytes=8*1024*1024;
   static codec=RallyNetcode.createValueCodec({format:"binary",maxBytes:8*1024*1024,maxDepth:64,maxEntries:500000});
-  static assertData(value,{maxNodes=500000,maxArray=20000,maxString=1024*1024}={}){
+  static assertData(value,{maxNodes=500000,maxArray=RallyStateCodec.MAX_ARRAY,maxString=1024*1024,budget=null}={}){
     let count=0;const seen=new Set();
     const visit=(v,depth)=>{
       if(++count>maxNodes||depth>64)throw new Error("게임 데이터의 크기 제한을 넘었습니다.");
@@ -23518,12 +23786,12 @@ class RallyStateCodec{
       }
       seen.delete(v);
     };
-    visit(value,0);return value;
+    visit(value,0);if(budget){budget.nodes=count;budget.maxNodes=maxNodes}return value;
   }
   static encode(value){
     return this.codec.encode(value);
   }
-  static decode(bytes){return this.assertData(this.codec.decode(bytes))}
+  static decode(bytes,options){return this.assertData(this.codec.decode(bytes),options)}
   static assertContract(value,contract){
     if(!value||Array.isArray(value)||typeof value!=="object")throw new Error("상태 소유자의 객체가 필요합니다.");
     for(const [key,initial]of Object.entries(contract.capture(contract.defaults,"save"))){
@@ -23569,7 +23837,7 @@ class RallySimulationAdapter{
   static maxFrameTick=Math.floor(Number.MAX_SAFE_INTEGER/this.commandsPerFrame)-1;
   constructor(session){
     if(!(session?.sim instanceof StrategySim))throw new Error("StrategySim 경기 session이 필요합니다.");
-    this.session=session;const sim=session.sim;
+    this.session=session;this.verifiedRoutePathIds=new WeakMap();const sim=session.sim;
     this.identity={seed:sim.seed,rules:sim.rules,mapDescriptor:sim.mapDescriptor,campaignScenario:sim.campaignScenario||null};
     StateValue.freeze(this.identity.rules);
     for(const value of Object.values(this.identity.campaignScenario||{}))StateValue.freeze(value);
@@ -23579,7 +23847,7 @@ class RallySimulationAdapter{
     const state=this.stateData();
     // Required root fields come from the authoritative owner, not another save list.
     const kind=value=>value===null?"null":Array.isArray(value)?"array":typeof value;
-    this.rootShape=Object.fromEntries(Object.entries(state).map(([key,value])=>[key,{kind:kind(value),items:Array.isArray(value)&&value.length===2&&!['units','buildings','constructionOrders','projectiles','resources','gasNodes','camps','capturePoints','activeSpells','delayedEffects','scheduled','chargedCasts'].includes(key)?value.map(kind):null}]));
+    this.rootShape=Object.fromEntries(Object.entries(state).map(([key,value])=>[key,{kind:kind(value),items:Array.isArray(value)&&value.length===2&&!['units','buildings','constructionOrders','projectiles','resources','gasNodes','camps','capturePoints','activeSpells','delayedEffects','scheduled','chargedCasts','routePaths','routeProfiles','routeTopologies'].includes(key)?value.map(kind):null}]));
   }
   stateData(){
     const sim=this.session.sim;
@@ -23588,12 +23856,13 @@ class RallySimulationAdapter{
   }
   save(){
     const started=performance.now();
-    try{return RallyStateCodec.encode({schemaVersion:RallyStateCodec.schemaVersion,simVersion:SIM_VERSION,matchId:this.matchId,mapFingerprint:this.mapFingerprint,state:this.stateData()})}
+    try{const state=this.stateData();return RallyStateCodec.encode({schemaVersion:RallyStateCodec.schemaVersion,simVersion:SIM_VERSION,matchId:this.matchId,mapFingerprint:this.mapFingerprint,state})}
     finally{if(this.session.performanceStats)PerformanceTelemetry.recordTiming(this.session.performanceStats.timings,'save',performance.now()-started)}
   }
   readSnapshot(bytes,{tick}={}){
-    const envelope=RallyStateCodec.decode(bytes),state=envelope?.state;
+    const budget={},envelope=RallyStateCodec.decode(bytes,{budget}),state=envelope?.state;
     if(envelope.schemaVersion!==RallyStateCodec.schemaVersion||envelope.simVersion!==SIM_VERSION||envelope.matchId!==this.matchId||envelope.mapFingerprint!==this.mapFingerprint||!state||Array.isArray(state)||typeof state!=="object")throw new Error("게임 snapshot의 경기 정의가 다릅니다.");
+    const {paths,profiles,topologies}=MovementComponent.validatePathTable(state.routePaths,state.nextRoutePathId,state.routeProfiles,state.nextRouteProfileId,state.routeTopologies,state.nextRouteTopologyId,state.units,this.identity.mapDescriptor,budget);
     if(!Number.isSafeInteger(state.tick)||state.tick<0||state.tick>RallySimulationAdapter.maxFrameTick||tick!==undefined&&state.tick!==tick||!Number.isSafeInteger(state.seq)||state.seq<0||state.seed!==this.identity.seed)throw new Error("게임 snapshot의 tick/seed가 잘못되었습니다.");
     for(const [key,shape]of Object.entries(this.rootShape)){
       if(!Object.prototype.hasOwnProperty.call(state,key))throw new Error(`게임 snapshot의 ${key} 필드가 없습니다.`);
@@ -23615,7 +23884,8 @@ class RallySimulationAdapter{
         if(key==="units"){
           if(!Object.prototype.hasOwnProperty.call(UnitDefinition.all,entity.type)||!Number.isFinite(entity.fx)||!Number.isFinite(entity.fy)||!Number.isFinite(entity.hp)||!Number.isFinite(entity.maxHp)||!entity.logic||!["default","neutral-object"].includes(entity.logic.type)||!entity.logic.state||Array.isArray(entity.logic.state)||typeof entity.logic.state!=="object")throw new Error("게임 snapshot의 유닛 정의가 잘못되었습니다.");
           RallyStateCodec.assertContract(entity,UnitStateContracts.forType(entity.type).root);
-          if(UnitDefinition.get(entity.type)?.economyWorker)WorkerMixin.validateRoutes(entity.behaviorState,this.identity.mapDescriptor);
+          MovementComponent.validateRoutes(entity.movement,this.identity.mapDescriptor,paths);
+          if(UnitDefinition.get(entity.type)?.economyWorker)WorkerMixin.validateDropoff(entity.behaviorState);
         }
         if(key==="projectiles"&&[...Projectile.stateContract.presentation].some(field=>Object.prototype.hasOwnProperty.call(entity,field)))throw new Error("게임 projectile snapshot에 렌더 필드가 있습니다.");
         if(key==="buildings"){
@@ -23624,6 +23894,8 @@ class RallySimulationAdapter{
         }
       }
     }
+    const routeWorld=WorldContext.fromMap(this.identity.mapDescriptor),routeScene={world:routeWorld,buildings:state.buildings,tick:state.tick,navigationRevision:0,routePathStore:paths,unitRadius:StrategySim.prototype.unitRadius},routeNav=new TerrainNavigation(routeScene),verifiedRoutePathIds=new Set();
+    routeNav.sync();for(const path of paths.values())if(routeNav.routeTopology(path,{force:true})===path.topology)verifiedRoutePathIds.add(path.id);
     const chargedUnitsById=new Map(state.units.map(unit=>[unit.id,unit]));
     for(const cast of state.chargedCasts)if(cast)for(const id of [...cast.memberIds,...cast.unavailableIds]){
       const unit=chargedUnitsById.get(id);
@@ -23655,10 +23927,10 @@ class RallySimulationAdapter{
         RallyCommandCodec.validate(command.action);
       }
     }
-    return {...state,...this.identity};
+    const restored={...state,...this.identity};this.verifiedRoutePathIds.set(restored,verifiedRoutePathIds);return restored;
   }
   validateSnapshot(bytes,context){try{this.readSnapshot(bytes,context);return true}catch{return false}}
-  load(bytes){const state=this.readSnapshot(bytes);this.session.sim.importState(state,{rollback:true})}
+  load(bytes){const state=this.readSnapshot(bytes);this.session.sim.importState(state,{rollback:true,routeTopologyVerifiedPaths:this.verifiedRoutePathIds.get(state)})}
   step({tick,tickRate,inputs=[],resimulating=false,recovering=false,synctesting=false}){
     const sim=this.session.sim;
     if(!Number.isSafeInteger(tick)||tick<0||tick>RallySimulationAdapter.maxFrameTick||sim.tick!==tick||tickRate!==sim.tps||!Array.isArray(inputs))throw new Error("SDK frame과 게임 simulation tick이 다릅니다.");
