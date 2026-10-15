@@ -46,6 +46,8 @@ async function run() {
       const index = changed[0], { w, h } = renderer.fogMaskSize;
       const u = (index % w) / (w - 1), v = Math.floor(index / w) / (h - 1);
       function pixel() {
+        if(renderer.device.active)renderer.device.endFrame();
+        renderer.device.beginFrame({width:canvas.width,height:canvas.height,clearColor:[1,1,1,1]});
         gl.viewport(0, 0, canvas.width, canvas.height);
         gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
         gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
