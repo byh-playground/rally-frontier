@@ -10726,7 +10726,7 @@ const BUILD_META=Object.freeze({
 /* =========================
    1. Definitions
    ========================= */
-const SIM_TPS=20,FP=100,SIM_VERSION=191;
+const SIM_TPS=20,FP=100,SIM_VERSION=192;
 // Local session policy, deliberately outside canonical gameplay/save rules.
 // A session captures this setting once; changing it only affects the next match.
 const CONFIG={netcode:{mode:'lockstep'}};
@@ -12813,6 +12813,75 @@ class TerrainNavigation{
     return {x:u.x,y:u.y};
   }
   nextPoint(u,goal){return this.nextPlanPoint(u,this.movementPlan(u,goal))}
+  workerRouteTopology(route){
+    this.sync();const checks=this.workerRouteChecks??=new WeakMap(),checked=checks.get(route);
+    if(checked?.records===this.circles)return checked.key;
+    const found=new Map(),points=route.points,padding=route.radius+.55;
+    if(!points.length)for(const c of this.circles)if(!route.ignore||c.terrainBarrier)found.set(c.id,c);
+    for(let i=1;i<points.length;i++){
+      const a=points[i-1],b=points[i];
+      for(const c of this.circleIndex.query(a.x,a.y,b.x,b.y,padding+100)){
+        if(route.ignore&&!c.terrainBarrier)continue;
+        if(MapGeometry.pointSegDist(c.x,c.y,a.x,a.y,b.x,b.y)<=c.r+padding||i===1&&Math.hypot(c.x-route.entry.x,c.y-route.entry.y)<=c.r+padding+route.entry.r)found.set(c.id,c);
+      }
+    }
+    const key=JSON.stringify([...found.values()].sort((a,b)=>String(a.id)<String(b.id)?-1:String(a.id)>String(b.id)?1:0).map(c=>[c.id,c.type,c.x,c.y,c.r,c.terrainBarrier]));
+    checks.set(route,{records:this.circles,key});return key;
+  }
+  workerRoutePoint(u,route,{execute=false,template=false}={}){
+    const points=route.points,r=route.radius,active=!template&&u.behaviorState.workerRouteActive===route.key&&route.cursor>0;
+    if(!points.length)return null;
+    let segment=1;
+    if(active){
+      const end=points[route.cursor];
+      if(MapGeometry.pointSegDist(u.x,u.y,route.legX,route.legY,end.x,end.y)>Math.max(2*r,.5))return null;
+      segment=route.cursor;
+    }else{
+      let nearest=Infinity;
+      for(let i=1;i<points.length;i++){const d=MapGeometry.pointSegDist(u.x,u.y,points[i-1].x,points[i-1].y,points[i].x,points[i].y);if(d<=nearest){nearest=d;segment=i}}
+      if(nearest>Math.max(2*r,.5)&&Math.hypot(u.x-route.entry.x,u.y-route.entry.y)>route.entry.r)return null;
+    }
+    for(let i=points.length-1;i>=segment;i--){const p=points[i];
+      if(Math.hypot(p.x-u.x,p.y-u.y)<=.02)continue;
+      if(!this.segmentClear(u.x,u.y,p.x,p.y,r,route.ignore?'*':null,true,0))continue;
+      if(execute){if(!active||route.cursor!==i){route.legX=u.x;route.legY=u.y}route.cursor=i;u.behaviorState.workerRouteActive=route.key}
+      return p;
+    }
+    // A different dropoff entry pose can make the first corner temporarily
+    // invisible. Join the saved departure point instead of planning again.
+    const start=points[0];
+    if(!active&&Math.hypot(u.x-route.entry.x,u.y-route.entry.y)<=route.entry.r&&Math.hypot(start.x-u.x,start.y-u.y)>.02&&this.segmentClear(u.x,u.y,start.x,start.y,r,route.ignore?'*':null,true,0)){
+      if(execute){route.cursor=0;route.legX=u.x;route.legY=u.y;u.behaviorState.workerRouteActive=route.key}return start;
+    }
+    const end=points.at(-1);return Math.hypot(end.x-u.x,end.y-u.y)<=.02?end:null;
+  }
+  workerRoute(u,target,kind,goal=InteractionGeometry.goal(u,target,kind)){
+    this.sync();const radius=this.sim.unitRadius(u.type),ignore=TerrainNavigation.ignoresBuildings(u),key=JSON.stringify([target.id,goal.key,radius,ignore]);
+    const routes=u.behaviorState.workerRoutes,own=routes.find(r=>r.kind===kind);let reason='first';
+    const usable=route=>route.key===key&&route.topology===this.workerRouteTopology(route)&&!!this.workerRoutePoint(u,route,{template:true});
+    if(own){
+      reason=own.key!==key?'target':own.topology!==this.workerRouteTopology(own)?'topology':own.points.length&&!this.workerRoutePoint(u,own)?'deviation':null;
+      if(!reason){this.metrics.workerRouteReuses=(this.metrics.workerRouteReuses||0)+1;return own}
+      this.metrics['workerRouteInvalid_'+reason]=(this.metrics['workerRouteInvalid_'+reason]||0)+1;
+    }
+    let route=null;
+    // Templates are authoritative worker state, not a warm-only runtime cache.
+    for(const v of this.sim.units){if(v===u||!v.alive||v.side!==u.side||v.type!==u.type)continue;
+      const shared=v.behaviorState.workerRoutes?.find(r=>r.kind===kind);if(shared&&usable(shared)){route=StateValue.copy(shared);route.cursor=0;route.legX=u.x;route.legY=u.y;this.metrics.workerRouteShared=(this.metrics.workerRouteShared||0)+1;break}
+    }
+    if(!route){
+      const record=this.movementPlan(u,goal);
+      const points=!record?[]:record.route?record.route.path.map(p=>({x:p.x,y:p.y})):[{x:u.x,y:u.y},{x:record.point.x,y:record.point.y}];
+      if(points.length>512)return {transient:record};
+      const source=kind==='worker-dropoff'?this.sim.resources.find(p=>p.id===u.mineId)||this.sim.buildings.find(b=>b.id===u.mineId):this.sim.buildings.filter(b=>b.alive!==false&&b.complete&&b.side===u.side&&BuildingDefinition.get(b.type)?.isDropoff).sort((a,b)=>Math.hypot(a.x-u.x,a.y-u.y)-Math.hypot(b.x-u.x,b.y-u.y)||(String(a.id)<String(b.id)?-1:String(a.id)>String(b.id)?1:0))[0];
+      const entry=source?{x:source.x,y:source.y,r:InteractionGeometry.reach(u,source,kind==='worker-dropoff'?(u.workResourceType==='gas'?'worker-gas':'worker-mineral'):'worker-dropoff')+2*radius}:{x:u.x,y:u.y,r:2*radius};
+      route={kind,key,radius,ignore,points,entry,topology:'',cursor:0,legX:u.x,legY:u.y};route.topology=this.workerRouteTopology(route);
+      this.metrics.workerRouteBuilds=(this.metrics.workerRouteBuilds||0)+1;
+    }
+    const index=routes.findIndex(r=>r.kind===kind);if(index>=0)routes[index]=route;else routes.push(route);
+    return route;
+  }
+  workerNextPoint(u,target,kind,goal){const route=this.workerRoute(u,target,kind,goal);return route?.transient?this.nextPlanPoint(u,route.transient):route?this.workerRoutePoint(u,route,{execute:true}):null}
   connected(x,y,tx,ty,type='worker',ignoreBuildings=false){
     return Number.isFinite(this.distance(x,y,NavigationGoal.point(tx,ty,false),type,ignoreBuildings));
   }
@@ -16868,10 +16937,32 @@ class DeployableCombatMixin extends UnitCapability{
 class WorkerMixin extends UnitCapability{
   static KEY="worker";
   static supports(u){return !!UnitDefinition.get(u.type)?.economyWorker}
-  static stateDefaults={"root":{"carry":0,"carryType":null,"workResourceType":"mineral","workState":"seek","buildTargetId":null,"mineId":null,"mineStartedAt":-1}};
+  static stateDefaults={"root":{"carry":0,"carryType":null,"workResourceType":"mineral","workState":"seek","buildTargetId":null,"mineId":null,"mineStartedAt":-1},"behavior":{"workerRoutes":[],"workerDropoffKey":"","workerDropoffId":null,"workerRouteActive":""}};
   constructor(owner){super(owner,WorkerMixin.KEY)}
   mineElapsedTicks(sim){const u=this.owner;if((u.mineStartedAt??-1)<0)u.mineStartedAt=sim.tick;return Math.max(1,sim.tick-u.mineStartedAt+1)}
   resetMine(){this.owner.mineStartedAt=-1}
+  static validateRoutes(state,world){
+    const routes=state.workerRoutes,kinds=new Set();
+    if(!Array.isArray(routes)||routes.length>3||typeof state.workerRouteActive!=='string'||state.workerRouteActive.length>1024||typeof state.workerDropoffKey!=='string'||state.workerDropoffKey.length>65536||state.workerDropoffId!==null&&(typeof state.workerDropoffId!=='string'||state.workerDropoffId.length>256))throw new Error('Invalid worker route state');
+    for(const route of routes){
+      if(!route||Object.keys(route).sort().join(',')!=='cursor,entry,ignore,key,kind,legX,legY,points,radius,topology'||!['worker-mineral','worker-gas','worker-dropoff'].includes(route.kind)||kinds.has(route.kind)||typeof route.key!=='string'||route.key.length>1024||typeof route.topology!=='string'||route.topology.length>65536||typeof route.ignore!=='boolean'||!Number.isFinite(route.radius)||route.radius<=0||route.radius>1024||!Array.isArray(route.points)||route.points.length>512)throw new Error('Invalid worker route');
+      if(!route.entry||Object.keys(route.entry).sort().join(',')!=='r,x,y'||![route.entry.x,route.entry.y,route.entry.r].every(Number.isFinite)||route.entry.x<0||route.entry.x>world.width||route.entry.y<0||route.entry.y>world.height||route.entry.r<0||route.entry.r>2048)throw new Error('Invalid worker route entry');
+      if(!Number.isSafeInteger(route.cursor)||route.cursor<0||route.cursor>=Math.max(1,route.points.length)||!Number.isFinite(route.legX)||!Number.isFinite(route.legY)||route.legX<0||route.legY<0||route.legX>world.width||route.legY>world.height)throw new Error('Invalid worker route cursor');
+      kinds.add(route.kind);
+      for(const p of route.points)if(!p||Object.keys(p).sort().join(',')!=='x,y'||!Number.isFinite(p.x)||!Number.isFinite(p.y)||p.x<0||p.y<0||p.x>world.width||p.y>world.height)throw new Error('Invalid worker waypoint');
+      let key,topology;try{key=JSON.parse(route.key);topology=JSON.parse(route.topology)}catch{throw new Error('Invalid worker route key')}
+      if(!Array.isArray(key)||key.length!==4||typeof key[0]!=='string'||typeof key[1]!=='string'||key[2]!==route.radius||key[3]!==route.ignore||!Array.isArray(topology)||topology.some(c=>!Array.isArray(c)||c.length!==6||typeof c[0]!=='string'||typeof c[1]!=='string'||!c.slice(2,5).every(Number.isFinite)||typeof c[5]!=='boolean'))throw new Error('Invalid worker route geometry');
+    }
+  }
+  dropoff(sim){
+    sim.navigation.sync();
+    const u=this.owner,targets=sim.buildings.filter(b=>b.alive!==false&&b.complete&&b.side===u.side&&BuildingDefinition.get(b.type)?.isDropoff);
+    const key=JSON.stringify([u.mineId,targets.map(b=>[b.id,b.type,b.x,b.y]).sort((a,b)=>String(a[0])<String(b[0])?-1:String(a[0])>String(b[0])?1:0)]),state=u.behaviorState;
+    if(state.workerDropoffId===null&&state.workerDropoffKey===key+'|'+JSON.stringify(sim.navigation.topology.records))return null;
+    if(state.workerDropoffKey===key){const found=targets.find(b=>b.id===state.workerDropoffId),route=state.workerRoutes.find(r=>r.kind==='worker-dropoff');if(found&&(!route||route.points.length&&route.topology===sim.navigation.workerRouteTopology(route)))return found}
+    const found=targets.length===1?targets[0]:sim.nearestInteractionTarget(u,targets,'worker-dropoff');
+    state.workerDropoffKey=found?key:key+'|'+JSON.stringify(sim.navigation.topology.records);state.workerDropoffId=found?.id??null;return found;
+  }
 }
 class ObjectiveMixin extends UnitCapability{
   static KEY="objective";static supports(_u,d){return !!d.objectiveKind}static stateDefaults={"root":{"objectiveCaptured":false,"objectiveCapturedScale":0,"objectiveLane":null,"objectiveLaneT":0,"objectiveAttackCount":0,"objectiveChargePending":false,"objectiveChargeActive":false,"objectiveChargeRemaining":0,"objectiveChargeHitIds":[],"objectiveBreathPhase":"idle","objectiveBreathTellUntil":0,"objectiveBreathUntil":0,"objectiveBreathNextTick":0,"objectiveBreathTargetId":null,"objectiveBreathDirX":1,"objectiveBreathDirY":0},"behavior":{"objectiveCampId":null,"objectiveAirCooldownUntil":0,"objectiveChargeDirX":0,"objectiveChargeDirY":0}};
@@ -19897,8 +19988,8 @@ class StrategySim{
   
 
   moveToward(u,tx,ty,speed){return this.moveToGoal(u,NavigationGoal.point(tx,ty),speed)}
-  moveToInteraction(u,target,kind,speed,extra=0,minRange=null){return this.moveToGoal(u,InteractionGeometry.goal(u,target,kind,extra,minRange),speed)}
-  moveToGoal(u,goal,speed){
+  moveToInteraction(u,target,kind,speed,extra=0,minRange=null){return this.moveToGoal(u,InteractionGeometry.goal(u,target,kind,extra,minRange),speed,['worker-mineral','worker-gas','worker-dropoff'].includes(kind)?{target,kind}:null)}
+  moveToGoal(u,goal,speed,workerRoute=null){
     let tx=goal.x,ty=goal.y;
     const deployable=u.capability(DeployableCombatMixin.KEY);
     if(deployable&&!deployable.requestMovement(this))return false;
@@ -19929,7 +20020,7 @@ class StrategySim{
 
     if(u.status.isSlowed(this))speed*=.55;
 
-    const waypoint=this.navigation.nextPoint(u,goal);
+    const waypoint=workerRoute?this.navigation.workerNextPoint(u,workerRoute.target,workerRoute.kind,goal):this.navigation.nextPoint(u,goal);
     if(!waypoint||Math.hypot(waypoint.x-u.x,waypoint.y-u.y)<.001)return false;
     tx=waypoint.x;ty=waypoint.y;
     const dx=tx-u.x,dy=ty-u.y;
@@ -19983,7 +20074,7 @@ class StrategySim{
 
     // Return cargo first. Mineral and gas use the exact same dropoff routing.
     if(u.carry>=carryCap||u.workState==="return"){
-      const base=this.nearestInteractionTarget(u,this.buildings.filter(b=>b.alive!==false&&b.complete&&b.side===u.side&&BuildingDefinition.get(b.type)?.isDropoff),"worker-dropoff");
+      const base=u.worker.dropoff(this);
       if(!base)return;
 
       u.workState="return";
@@ -20004,8 +20095,7 @@ class StrategySim{
         u.carry=0;
         u.carryType=null;
         u.workState="seek";
-        u.mineId=null;
-        u.workResourceType="mineral";
+        u.workResourceType=kind;
       }else{
         this.moveToInteraction(u,base,"worker-dropoff",d.speed);
       }
@@ -20014,7 +20104,7 @@ class StrategySim{
 
     const gasAssigned=this.workerShouldMineGas(u);
     const gasExtractor=gasAssigned
-      ?this.nearestInteractionTarget(u,this.economyCacheTick===this.tick?this.validGasExtractorsBySide[u.side]:this.validGasExtractors(u.side),"worker-gas")
+      ?this.validGasExtractors(u.side).find(b=>b.id===u.mineId&&u.workResourceType==='gas')||this.nearestInteractionTarget(u,this.economyCacheTick===this.tick?this.validGasExtractorsBySide[u.side]:this.validGasExtractors(u.side),"worker-gas")
       :null;
 
     // If assigned gas workers have no valid extractor, they automatically
@@ -23288,6 +23378,7 @@ class RallySimulationAdapter{
         if(key==="units"){
           if(!Object.prototype.hasOwnProperty.call(UnitDefinition.all,entity.type)||!Number.isFinite(entity.fx)||!Number.isFinite(entity.fy)||!Number.isFinite(entity.hp)||!Number.isFinite(entity.maxHp)||!entity.logic||!["default","neutral-object"].includes(entity.logic.type)||!entity.logic.state||Array.isArray(entity.logic.state)||typeof entity.logic.state!=="object")throw new Error("게임 snapshot의 유닛 정의가 잘못되었습니다.");
           RallyStateCodec.assertContract(entity,UnitStateContracts.forType(entity.type).root);
+          if(UnitDefinition.get(entity.type)?.economyWorker)WorkerMixin.validateRoutes(entity.behaviorState,this.identity.mapDescriptor);
         }
         if(key==="projectiles"&&[...Projectile.stateContract.presentation].some(field=>Object.prototype.hasOwnProperty.call(entity,field)))throw new Error("게임 projectile snapshot에 렌더 필드가 있습니다.");
         if(key==="buildings"){
