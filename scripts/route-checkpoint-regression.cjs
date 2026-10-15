@@ -1,70 +1,96 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require('playwright'),root=path.resolve(__dirname,'..');
 let html=require('./bundle-gamekit.cjs').bundleGame(root,fs.readFileSync(path.join(root,'index.html'),'utf8'));
-const end=html.lastIndexOf('})();');html=html.slice(0,end)+';window.__checkpoint={StrategySim,GameRuleDefinition,MovementComponent,RallySimulationAdapter,RallyStateCodec,NavigationGoal,UnitDefinition,SIM_VERSION};'+html.slice(end);
+const end=html.lastIndexOf('})();');html=html.slice(0,end)+';window.__checkpoint={StrategySim,GameRuleDefinition,MovementComponent,RallySimulationAdapter,RallyStateCodec,NavigationGoal,UnitDefinition,WorldContext,TerrainNavigation,StateValue,SIM_VERSION};'+html.slice(end);
 (async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
   const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route('http://route-checkpoint.test/**',r=>r.fulfill({contentType:'text/html',body:html}));await page.goto('http://route-checkpoint.test/');await page.waitForFunction(()=>window.__checkpoint);
   const result=await page.evaluate(()=>{
-    const q=__checkpoint,check=(v,m)=>{if(!v)throw Error(m)},sim=new q.StrategySim({decks:{host:['swordsman'],guest:['swordsman']},defenseCards:{host:[],guest:[]}},20261015,q.GameRuleDefinition.current),workers=sim.units.filter(u=>q.UnitDefinition.get(u.type)?.economyWorker),worker=workers[0];
-    check(q.SIM_VERSION===198&&q.RallyStateCodec.schemaVersion===3,'SIM and checkpoint schemas must advance');
-    const goal=q.NavigationGoal.point(worker.x+45,worker.y+15),radius=sim.unitRadius(worker.type),points=[];
-    for(let i=0;i<4013;i++)points.push({x:worker.x-5+(i%100)*.1,y:worker.y-3+Math.floor(i/100)*.01+(i%7)/997});
-    sim.navigation.sync();const key=goal.key,rootDraft={key,radius,ignore:false,points,tailId:null,tailStart:0,length:points.length},rootTopology=sim.navigation.routeTopology(rootDraft),rootId=sim.internRoutePath({...rootDraft,topology:rootTopology});
-    const duplicateId=sim.internRoutePath({...rootDraft,topology:rootTopology});
-    check(rootId===duplicateId,'Identical immutable roots must intern to one path ID');
-    const childPoints=[{x:worker.x,y:worker.y},{x:worker.x+1,y:worker.y+1}],childDraft={key,radius,ignore:false,points:childPoints,tailId:rootId,tailStart:200,length:childPoints.length+points.length-200},childTopology=sim.navigation.routeTopology(childDraft),childId=sim.internRoutePath({...childDraft,topology:childTopology});
-    const makeRef=(pathId,cursor,x,y)=>({pathId,cursor,legX:x,legY:y,retained:true});
-    for(const [i,u]of workers.entries()){u.movement.routes=[makeRef(i===0?childId:rootId,i===0?2:i+1,worker.x+i/7,worker.y+i/11)];u.movement.routeIndex=0}
-    const adapter=new q.RallySimulationAdapter({sim}),before=JSON.stringify(sim.exportState()),bytes=adapter.save(),wire=q.RallyStateCodec.decode(bytes),decoded=adapter.readSnapshot(bytes);
-    const tables=wire.state.routePaths.flat(),body=id=>tables.find(row=>row[0]===id);
-    check(tables.length===2,'Root and joined prefix must be saved once in the path table');
-check(body(childId)[3].length===4&&body(childId)[4]===rootId&&body(childId)[5]===200,'Joined path must store only its prefix and root ID/offset');
-check(wire.state.routeProfiles.flat().length===1&&body(rootId)[1]===body(childId)[1],'Identical movement profiles must be stored once and referenced by ID');
-check(wire.state.routeTopologies.flat().length===1&&body(rootId)[2]===body(childId)[2],'Identical exact obstacle topology must be stored once and referenced by ID');
-    check(workers.every(u=>u.movement.routes[0].pathId===rootId||u.movement.routes[0].pathId===childId),'Units must reference shared bodies');
-    check(workers.every(u=>Object.keys(u.movement.routes[0]).sort().join(',')==='cursor,legX,legY,pathId,retained'),'Unit route state must contain only a handle and cursor');
-    check(BufferLikeEqual(q.RallyStateCodec.encode(decoded.units),q.RallyStateCodec.encode(sim.exportState().units)),'Decoded units must preserve every route reference and Number');
-    check(BufferLikeEqual(q.RallyStateCodec.encode(decoded.routePaths),q.RallyStateCodec.encode(sim.exportState().routePaths)),'Decoded immutable path table must preserve every waypoint');
-check(BufferLikeEqual(q.RallyStateCodec.encode(decoded.routeProfiles),q.RallyStateCodec.encode(sim.exportState().routeProfiles)),'Decoded profile table must preserve exact route requirements');
-check(BufferLikeEqual(q.RallyStateCodec.encode(decoded.routeTopologies),q.RallyStateCodec.encode(sim.exportState().routeTopologies)),'Decoded exact topology table must preserve every obstacle signature');
-    check(JSON.stringify(sim.exportState())===before,'Saving must not mutate or alias live route state');
-    const rawBytes=q.RallyStateCodec.encode({schemaVersion:3,simVersion:wire.simVersion,matchId:wire.matchId,mapFingerprint:wire.mapFingerprint,state:sim.exportState({includeIdentity:false})}).length;
-    const cases=[];for(const [name,mutate]of [
-      ['missing path table',s=>delete s.state.routePaths],
-      ['missing profile table',s=>delete s.state.routeProfiles],
-      ['missing topology table',s=>delete s.state.routeTopologies],
-      ['unknown path reference',s=>s.state.units.find(u=>u.id===worker.id).movement.routes[0].pathId=999999],
-      ['invalid cursor',s=>s.state.units.find(u=>u.id===worker.id).movement.routes[0].cursor=99999],
-      ['invalid leg',s=>s.state.units.find(u=>u.id===worker.id).movement.routes[0].legX=-1],
-      ['invalid allocator',s=>s.state.nextRoutePathId=rootId],
-['unknown topology reference',s=>bodyIn(s,rootId)[2]=999999],
-['invalid topology allocator',s=>s.state.nextRouteTopologyId=bodyIn(s,rootId)[2]],
-['unknown profile reference',s=>bodyIn(s,rootId)[1]=999999],
-['invalid profile allocator',s=>s.state.nextRouteProfileId=wire.state.routeProfiles.flat()[0][0]],
-['unused profile record',s=>{const row=[s.state.nextRouteProfileId++,q.NavigationGoal.point(1220,1190).key,radius,false];s.state.routeProfiles.at(-1).push(row)}],
-      ['unknown tail root',s=>bodyIn(s,childId)[4]=999999],
-      ['nested tail',s=>bodyIn(s,childId)[4]=childId],
-      ['tail offset',s=>bodyIn(s,childId)[5]=4013],
-['invalid waypoint',s=>bodyIn(s,rootId)[3][0]=-1],
-['noncanonical waypoint',s=>bodyIn(s,rootId)[3].push(0)],
-      ['noncanonical handle',s=>s.state.units.find(u=>u.id===worker.id).movement.routes[0].points=[]],
-      ['unused path body',s=>{const row=structuredClone(bodyIn(s,rootId));row[0]=s.state.nextRoutePathId++;s.state.routePaths.at(-1).push(row)}],
-['unused topology body',s=>{s.state.routeTopologies[0].push([s.state.nextRouteTopologyId++,'[["unused","building",1,2,3,false]]'])}],
-      ['bad route index',s=>s.state.units.find(u=>u.id===worker.id).movement.routeIndex=1]
-    ]){const copy=structuredClone(wire);mutate(copy);let rejected=false;try{adapter.readSnapshot(q.RallyStateCodec.encode(copy))}catch{rejected=true}check(rejected,name+' must be rejected before state mutation');check(JSON.stringify(sim.exportState())===before,'Rejected bytes must leave live route state intact');cases.push(name)}
-const oversized=structuredClone(wire),oversizePoints=Array.from({length:38000},(_,i)=>i%2?1+Math.floor(i/2)/3070|0:1+Math.floor(i/2)%3070),largePaths=[],largeProfiles=[];
-for(let i=0;i<14;i++){const key=q.NavigationGoal.point(1000+i*10,1000).key;largeProfiles.push([i+1,key,radius,false]);largePaths.push([i+1,i+1,1,oversizePoints.slice(),null,0])}
-oversized.state.routePaths=[largePaths];oversized.state.nextRoutePathId=15;oversized.state.routeProfiles=[largeProfiles];oversized.state.nextRouteProfileId=15;oversized.state.routeTopologies=[[[1,'[]']]];oversized.state.nextRouteTopologyId=2;
-for(const u of oversized.state.units){u.movement.routes=[];u.movement.routeIndex=-1}
-for(let i=0;i<largePaths.length;i++){const u=oversized.state.units.find(x=>x.id===workers[Math.floor(i/3)].id);u.movement.routes.push({pathId:i+1,cursor:1,legX:worker.x,legY:worker.y,retained:true});u.movement.routeIndex=0}
-let budgetRejected=false;try{q.RallyStateCodec.assertData(oversized)}catch{budgetRejected=true}check(budgetRejected,'The original 500000-node codec ceiling must remain enforced');cases.push('500000-node codec budget');
-    adapter.load(bytes);check(BufferLikeEqual(adapter.save(),bytes),'Save-load-save must produce identical bytes');
-    const detached=sim.exportState();detached.units[0].movement.routes.length=0;detached.routePaths[0][0][3][0]=-100;
-check(sim.units[0].movement.routes.length===1&&sim.routePathStore.get(rootId).points[0]!==-100,'Export must detach both handles and common path bodies');
-const snapshot=sim.snapshot();check(snapshot.nextRoutePathId===sim.nextRoutePathId&&snapshot.routePaths.length===1&&snapshot.nextRouteProfileId===sim.nextRouteProfileId&&snapshot.routeProfiles.length===1&&snapshot.nextRouteTopologyId===sim.nextRouteTopologyId&&snapshot.routeTopologies.length===1,'UI snapshot must carry complete route, profile, and topology tables with allocators');
-    function bodyIn(snapshot,id){return snapshot.state.routePaths.flat().find(row=>row[0]===id)}
-    function BufferLikeEqual(a,b){return a.length===b.length&&a.every((v,i)=>v===b[i])}
-return{pass:true,simVersion:q.SIM_VERSION,routeBodies:tables.length,routeProfiles:wire.state.routeProfiles.flat().length,units:workers.length,rootPoints:points.length,sharedSuffixPoints:points.length-200,childPrefixPoints:body(childId)[3].length/2,cases,rawBytes,checkpointBytes:bytes.length,snapshotPaths:snapshot.routePaths.flat().length,snapshotProfiles:snapshot.routeProfiles.flat().length,snapshotTopologies:snapshot.routeTopologies.flat().length};
-  });assert.deepEqual(errors,[]);const out=path.join(root,'.qa/route-checkpoint');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({...result,errors},null,2));console.log(JSON.stringify(result,null,2));
+    const q=__checkpoint,check=(v,m)=>{if(!v)throw Error(m)},equal=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
+    const seed=20261015,rules=q.GameRuleDefinition.current;
+    const rect=(id,x0,y0,x1,y1)=>({id,points:[{x:x0,y:y0},{x:x1,y:y0},{x:x1,y:y1},{x:x0,y:y1}]});
+    const map=q.StateValue.freeze({width:3072,height:3072,terrain:{blockers:[rect('route-checkpoint-wall',1250,200,1350,2300)]}});
+    const createSim=()=>{
+      const sim=new q.StrategySim({decks:{host:['swordsman'],guest:['swordsman']},defenseCards:{host:[],guest:[]}},seed,rules);
+      sim.mapDescriptor=map;sim.world=q.WorldContext.fromMap(map);sim.buildings=[];sim.navigationRevision=0;sim.navigation=new q.TerrainNavigation(sim);
+      let workers=sim.units.filter(u=>q.UnitDefinition.get(u.type)?.economyWorker);
+      while(workers.length<20)workers.push(sim.spawnUnit(0,'worker',830+(workers.length%4)*8,1390+Math.floor(workers.length/4)*8));
+      workers=workers.slice(0,20);sim.units=workers;sim.rebuildRuntimeIndexes();
+      workers.forEach((u,i)=>{u.x=830+(i%4)*8;u.y=1390+Math.floor(i/4)*8;u.fx=Math.round(u.x*100);u.fy=Math.round(u.y*100);u.movement.routes=[];u.movement.routeIndex=-1});
+      return{sim,workers};
+    };
+    check(q.SIM_VERSION===199&&q.RallyStateCodec.schemaVersion===4,'SIM and checkpoint schemas must advance');
+    const {sim,workers}=createSim(),goal=q.NavigationGoal.point(1800,1500);sim.navigation.sync();
+    const originSim=createSim().sim;originSim.navigation.sync();
+    const routeFrom=(x,y)=>originSim.navigation.movementPlan({type:'worker',x,y},goal),northStart={x:900,y:1500},southStart={x:900,y:2500};
+    const northPlan=routeFrom(northStart.x,northStart.y),southPlan=routeFrom(southStart.x,southStart.y),northReplay=routeFrom(northStart.x,northStart.y);
+    const pathPoints=plan=>plan?.route?.path?.map(p=>[p.x,p.y])||[];
+    check(northPlan?.route&&southPlan?.route,'same-goal counterexample must produce two blocked routes');
+    check(equal(q.RallyStateCodec.encode(pathPoints(northPlan)),q.RallyStateCodec.encode(pathPoints(northReplay))),'same route origin, goal, planner, and topology must deterministically reconstruct the selected path');
+    check(northPlan.planner===southPlan.planner&&JSON.stringify(pathPoints(northPlan))!==JSON.stringify(pathPoints(southPlan)),'goal alone cannot reproduce the selected path from another start');
+    const routeOriginProof={goalKey:goal.key,profile:{unitType:'worker',radius:originSim.unitRadius('worker'),ignoreBuildings:false},northStart,southStart,planner:northPlan.planner,northWaypoints:pathPoints(northPlan),southWaypoints:pathPoints(southPlan),sameOriginReplayIdentical:true,goalOnlyReplayDiffers:true};
+    const joinsBefore=sim.navigation.metrics.routeJoins||0;
+    for(const worker of workers)check(sim.navigation.nextPoint(worker,goal),'every worker must acquire a route or join an existing one');
+    const joins=(sim.navigation.metrics.routeJoins||0)-joinsBefore;
+    check(joins>0,'same-goal workers must join a shared route');
+    const joined=workers.map(u=>u.movement.routes[u.movement.routeIndex]).find(r=>r?.routeRecipe?.kind==='join');
+    check(joined,'fixture must produce a semantic join recipe');
+    const joinedPath=sim.routePathStore.get(joined.pathId),rootPath=sim.routePathStore.get(joinedPath.rootPathId);
+    check(rootPath&&joinedPath.tailId===rootPath.id&&joinedPath.length>joinedPath.points.length/2,'joined runtime route must reuse its root suffix');
+    const adapter=new q.RallySimulationAdapter({sim}),state=sim.exportState(),bytes=adapter.save(),wire=q.RallyStateCodec.decode(bytes);
+    check(!['routePaths','routeProfiles','routeTopologies','nextRoutePathId','nextRouteProfileId','nextRouteTopologyId'].some(k=>Object.hasOwn(wire.state,k)),'checkpoints must omit runtime route tables and allocators');
+    check(!['routePaths','routeProfiles','routeTopologies','nextRoutePathId','routePathStore','routePathIndex'].some(k=>Object.hasOwn(state,k)),'state export must omit runtime route cache');
+    const savedWorkers=wire.state.units.filter(u=>q.UnitDefinition.get(u.type)?.economyWorker),savedRoutes=savedWorkers.flatMap(u=>u.movement.routes);
+    check(savedWorkers.length===20&&savedRoutes.length===20,'fixture must checkpoint all twenty workers');
+    check(savedRoutes.every(r=>Object.keys(r).sort().join(',')==='cursor,legX,legY,recipe,retained'),'unit state must contain only semantic route acquisition data and follow state');
+    const decodedRecipes=savedRoutes.map(r=>q.MovementComponent.decodeRouteRecipe(r.recipe));
+    check(decodedRecipes.some(r=>r.kind==='join')&&decodedRecipes.some(r=>r.kind==='plan'),'checkpoint must retain both root and joined route recipes');
+    check(savedRoutes.every(r=>!Object.hasOwn(r,'pathId')),'runtime path IDs must not cross the checkpoint boundary');
+    check(equal(q.RallyStateCodec.encode(state.units),q.RallyStateCodec.encode(wire.state.units)),'state export and decoded unit state must agree');
+    const snapshot=sim.snapshot();check(!Object.hasOwn(snapshot,'routePaths')&&!Object.hasOwn(snapshot,'nextRoutePathId'),'UI snapshot must omit runtime route bodies and allocators');
+    const beforeBody=adapter.save();
+    const extraPoints=Array.from({length:4013},(_,i)=>({x:300+(i%100),y:300+Math.floor(i/100)}));
+    const extraGoal=q.NavigationGoal.point(2000,2000),radius=sim.unitRadius(workers[0].type),extraRecipe={kind:'plan',key:extraGoal.key,radius,ignore:false,fromX:300,fromY:300,revision:sim.navigationRevision,planner:'flow-field'};
+    sim.internRoutePath({key:extraGoal.key,radius,ignore:false,points:extraPoints,tailId:null,tailStart:0,topology:'[]',recipe:extraRecipe});
+    check(equal(beforeBody,adapter.save()),'unused runtime path body length must not change checkpoint bytes');
+    check(JSON.stringify(sim.exportState())===JSON.stringify(state),'saving and runtime cache growth must not mutate authoritative state');
+
+    const baselineState=JSON.stringify(sim.exportState()),badCases=[];
+    const joinedUnit=savedWorkers.find(u=>u.movement.routes.some(r=>q.MovementComponent.decodeRouteRecipe(r.recipe).kind==='join')),routeAt=(copy,id)=>copy.state.units.find(u=>u.id===id).movement.routes[0];
+    const cases=[
+      ['legacy route paths',s=>s.state.routePaths=[]],['legacy profiles',s=>s.state.routeProfiles=[]],['legacy topologies',s=>s.state.routeTopologies=[]],
+      ['path ID allocator',s=>s.state.nextRoutePathId=1],['profile allocator',s=>s.state.nextRouteProfileId=1],['topology allocator',s=>s.state.nextRouteTopologyId=1],
+      ['invalid cursor',s=>routeAt(s,workers[0].id).cursor=99999],['invalid leg',s=>routeAt(s,workers[0].id).legX=-1],
+      ['invalid goal key',s=>routeAt(s,workers[0].id).recipe[1]='1:2:3:4:1'],
+      ['unsupported recipe tag',s=>routeAt(s,workers[0].id).recipe.push(99)],
+      ['extra runtime path ID',s=>routeAt(s,workers[0].id).pathId=1],
+      ['invalid join root planner',s=>routeAt(s,joinedUnit.id).recipe[8]=99],
+      ['invalid route index',s=>s.state.units.find(u=>u.id===workers[0].id).movement.routeIndex=3]
+    ];
+    for(const [name,mutate]of cases){const copy=structuredClone(wire);mutate(copy);let rejected=false;try{adapter.readSnapshot(q.RallyStateCodec.encode(copy))}catch{rejected=true}check(rejected,name+' must be rejected');check(JSON.stringify(sim.exportState())===baselineState,'rejected snapshot must not mutate live simulation');badCases.push(name)}
+    const huge=Array.from({length:25},()=>new Array(20000).fill(0));let budgetRejected=false;try{q.RallyStateCodec.assertData(huge)}catch{budgetRejected=true}
+    check(budgetRejected,'the 500000-node codec ceiling must remain enforced');badCases.push('500000-node codec budget');
+
+    adapter.load(bytes);check(equal(adapter.save(),bytes),'warm save-load-save must produce identical bytes');
+    const cold=createSim(),coldAdapter=new q.RallySimulationAdapter({sim:cold.sim});coldAdapter.load(bytes);
+    check(equal(coldAdapter.save(),bytes),'cold save-load-save must produce identical bytes');
+    check(cold.sim.navigationRevision===sim.navigationRevision,'cold restore must preserve the authoritative obstacle revision');
+    const restoredWorkers=sim.units.filter(u=>q.UnitDefinition.get(u.type)?.economyWorker),coldWorkers=cold.sim.units.filter(u=>q.UnitDefinition.get(u.type)?.economyWorker);
+    check(coldWorkers.every(u=>u.movement.routes.every(r=>Number.isSafeInteger(r.pathId))),'cold restore must bind runtime-only handles');
+    const coldHandles={store:cold.sim.routePathStore.size,routeIndex:coldWorkers.map(u=>u.movement.routeIndex),paths:coldWorkers.map(u=>u.movement.routes.map(r=>[r.pathId,cold.sim.routePathStore.has(r.pathId)]))};
+    const warmLookups=sim.navigation.metrics.routeCacheLookups||0,coldLookups=cold.sim.navigation.metrics.routeCacheLookups||0;
+    for(let tick=0;tick<18;tick++){
+      sim.tick++;cold.sim.tick++;
+      for(let i=0;i<restoredWorkers.length;i++){
+        const a=restoredWorkers[i],b=coldWorkers[i],pa=sim.navigation.nextPoint(a,goal),pb=cold.sim.navigation.nextPoint(b,goal);
+        check(pa&&pb&&pa.x===pb.x&&pa.y===pb.y,'warm and cold route following must choose the same point');
+        const distance=Math.hypot(pa.x-a.x,pa.y-a.y),step=Math.min(distance,7);if(step){a.x+=(pa.x-a.x)/distance*step;a.y+=(pa.y-a.y)/distance*step;a.fx=Math.round(a.x*100);a.fy=Math.round(a.y*100);b.x=a.x;b.y=a.y;b.fx=a.fx;b.fy=a.fy}
+        check(a.movement.routes[a.movement.routeIndex].cursor===b.movement.routes[b.movement.routeIndex].cursor,'warm and cold cursors must match');
+      }
+      check(sim.checksum()===cold.sim.checksum(),'warm and cold authoritative state must remain deterministic');
+    }
+    check((sim.navigation.metrics.routeCacheLookups||0)===warmLookups&&(cold.sim.navigation.metrics.routeCacheLookups||0)===coldLookups,`normal following after restore must not reacquire routes: warm ${warmLookups}->${sim.navigation.metrics.routeCacheLookups||0}, cold ${coldLookups}->${cold.sim.navigation.metrics.routeCacheLookups||0}, handles ${JSON.stringify(coldHandles)}, invalid ${JSON.stringify(Object.fromEntries(Object.entries(cold.sim.navigation.metrics).filter(([k])=>k.startsWith('routeInvalid_'))))}`);
+    return{pass:true,simVersion:q.SIM_VERSION,schemaVersion:q.RallyStateCodec.schemaVersion,workers:savedWorkers.length,joinedWorkers:decodedRecipes.filter(r=>r.kind==='join').length,rootRecipeWorkers:decodedRecipes.filter(r=>r.kind==='plan').length,joinAcquisitions:joins,rootPoints:rootPath.length,joinedPrefixPoints:joinedPath.points.length/2,sharedSuffixPoints:joinedPath.length-joinedPath.points.length/2,routeOriginProof,checkpointBytes:bytes.length,badCases,coldRestore:'save-load-save identical; runtime handles rebound; 18 ticks checksum-identical',normalFollowAcquisitions:0};
+  });
+  assert.deepEqual(errors,[]);const out=path.join(root,'.qa/route-checkpoint');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({...result,errors},null,2));console.log(JSON.stringify(result,null,2));
 }finally{await browser.close()}})().catch(error=>{console.error(error);process.exitCode=1});

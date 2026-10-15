@@ -10,7 +10,7 @@ const end=html.lastIndexOf('})();');html=html.slice(0,end)+';window.__routes={St
     const q=__routes,check=(v,m)=>{if(!v)throw Error(m)};
     const rect=(id,x0,y0,x1,y1)=>({id,points:[{x:x0,y:y0},{x:x1,y:y0},{x:x1,y:y1},{x:x0,y:y1}]});
     const map={width:3072,height:3072,terrain:{blockers:[rect('wall',1250,200,1350,2300)]}};
-const sim={world:q.WorldContext.fromMap(map),buildings:[],units:[],tick:1,navigationRevision:0,nextRoutePathId:1,routePathStore:new Map(),routePathIndex:new Map(),routePathExportCache:null,routePathExportRevision:0,nextRouteProfileId:1,routeProfileStore:new Map(),routeProfileIndex:new Map(),routeProfileExportCache:null,routeProfileExportRevision:0,nextRouteTopologyId:1,routeTopologyStore:new Map(),routeTopologyIndex:new Map(),routeTopologyExportCache:null,routeTopologyExportRevision:0,unitRadius:()=>12,routePathSignature:q.StrategySim.prototype.routePathSignature,routePathBody:q.StrategySim.prototype.routePathBody,internRouteProfile:q.StrategySim.prototype.internRouteProfile,internRoutePath:q.StrategySim.prototype.internRoutePath,internRouteTopology:q.StrategySim.prototype.internRouteTopology},nav=new q.TerrainNavigation(sim),goal=q.NavigationGoal.point(1800,1500);
+const sim={world:q.WorldContext.fromMap(map),buildings:[],units:[],tick:1,navigationRevision:0,runtimeEpoch:0,nextRoutePathId:1,routePathStore:new Map(),routePathIndex:new Map(),unitRadius:()=>12,routePathSignature:q.StrategySim.prototype.routePathSignature,routePathBody:q.StrategySim.prototype.routePathBody,internRoutePath:q.StrategySim.prototype.internRoutePath},nav=new q.TerrainNavigation(sim),goal=q.NavigationGoal.point(1800,1500);
     const unit=(id,x,y)=>({id,type:'worker',side:0,alive:true,x,y,movement:new q.MovementComponent()});
     const a=unit('a',900,1500);sim.units.push(a);nav.nextPoint(a,goal);
     check(nav.metrics.astarQueries===1,'fixture must run real A* around terrain wall');
@@ -54,7 +54,7 @@ const sim={world:q.WorldContext.fromMap(map),buildings:[],units:[],tick:1,naviga
     check(soldier.movement.routes.length===1&&real.routePathStore.get(soldier.movement.routes[0].pathId).key!==pursuit.key,'obsolete pursuit positions must not accumulate in route history');
     check(q.InteractionGeometry.goal(worker,base,'worker-dropoff').retainHistory,'static destinations retain recurring route history');
     const long=unit('long',300,300),longGoal=q.NavigationGoal.point(900,300),planner=nav.movementPlan;sim.units.push(long);sim.tick++;
-    let longRequests=0;nav.movementPlan=()=>{longRequests++;return{route:{path:Array.from({length:600},(_,i)=>({x:300+i*600/599,y:300}))}}};
+    let longRequests=0;nav.movementPlan=()=>{longRequests++;return{route:{path:Array.from({length:600},(_,i)=>({x:300+i*600/599,y:300}))},planner:'flow-field'}};
     nav.nextPoint(long,longGoal);for(let i=0;i<10;i++){sim.tick++;long.x+=1;nav.nextPoint(long,longGoal)}nav.movementPlan=planner;
     check(longRequests===1&&sim.routePathStore.get(long.movement.routes[0].pathId).length===600,'checkpoint-supported long paths must retain their handle instead of planning every update');q.MovementComponent.validateRoutes(long.movement,map,sim.routePathStore);
     return{pass:true,ticks,initialAstar:1,joinAstar:0,joinFunnel:0,normalRequests,normalCacheLookups:0,normalFullRouteScans:0,normalLocalSegmentChecks:fullChecks,metrics:nav.metrics};
