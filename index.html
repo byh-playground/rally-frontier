@@ -17036,7 +17036,9 @@ class BurrowableMixin extends UnitCapability{
     // intersecting that space are moved only far enough to clear the new solid.
     sim.resolveSolidEmergence(u);
     this.setPhase("none");sim.events.push({type:"burrowEmerge",side:u.side,x:u.x,y:u.y,radius,damage,sourceId:u.id,sourceType:u.type});let winner=null;
-    for(const idx of sim.nearbyUnits(u.x,u.y,radius+sim.maxUnitRadius)){const e=sim.units[idx];if(!e?.alive||e.side===u.side||e.id===u.id||sim.unitLayer(e.type)!=="GROUND")continue;if(Math.hypot(e.x-u.x,e.y-u.y)>radius+sim.unitRadius(e.type))continue;const r=sim.applyDamage(u.side,u.type,e,false,damage,u.id,{damageClass:"area"});if(r)winner=r;sim.applyAirborne(e,{durationTicks:airborneTicks,height:airborneHeight,sourceSide:u.side,sourceType:u.type})}
+    sim.withNearbyUnits(u.x,u.y,radius+sim.maxUnitRadius,indices=>{
+      for(const idx of indices){const e=sim.units[idx];if(!e?.alive||e.side===u.side||e.id===u.id||sim.unitLayer(e.type)!=="GROUND")continue;if(Math.hypot(e.x-u.x,e.y-u.y)>radius+sim.unitRadius(e.type))continue;const r=sim.applyDamage(u.side,u.type,e,false,damage,u.id,{damageClass:"area"});if(r)winner=r;sim.applyAirborne(e,{durationTicks:airborneTicks,height:airborneHeight,sourceSide:u.side,sourceType:u.type})}
+    });
     return winner;
   }
   update(sim){
@@ -17241,7 +17243,9 @@ class ChargerMixin extends UnitCapability{
     u.x=nx;u.y=ny;u.fx=Math.round(nx*FP);u.fy=Math.round(ny*FP);u.movement.lastMoveTick=sim.tick;sim.syncUnitSpatial(u);const moved=Math.hypot(nx-oldX,ny-oldY);u.objectiveChargeRemaining=Math.max(0,(u.objectiveChargeRemaining||0)-moved);
     const hitIds=new Set(u.objectiveChargeHitIds||[]),hitRadius=sim.unitRadius(u.type)+34;let winner=null;
     if(buildingHit&&!hitIds.has(buildingHit.id)){hitIds.add(buildingHit.id);const r=sim.applyDamage(u.side,u.type,buildingHit,true,d.chargeDamage||75,u.id,{damageClass:"area"});if(r)winner=r;u.objectiveChargeActive=false;u.objectiveChargeRemaining=0;u.objectiveChargeHitIds=[...hitIds].sort();const w=sim.objectiveBearShockwave(u,u.x,u.y,buildingHit.id,d.shockDamage||50);if(w)winner=w;sim.events.push({type:"objectiveBearChargeEnd",side:u.side,x:u.x,y:u.y,radius:d.shockRadius||90,sourceId:u.id,sourceType:u.type,targetId:buildingHit.id,targetType:buildingHit.type,isBuilding:true});return {active:false,winner}}
-    for(const idx of sim.nearbyUnits(u.x,u.y,hitRadius+sim.maxUnitRadius)){const e=sim.units[idx];if(!sim.objectiveIsEnemy(u,e)||hitIds.has(e.id)||sim.unitLayer(e.type)!=="GROUND")continue;if(Math.hypot(e.x-u.x,e.y-u.y)>hitRadius+sim.unitRadius(e.type))continue;hitIds.add(e.id);const r=sim.applyDamage(u.side,u.type,e,false,d.chargeDamage||75,u.id,{damageClass:"area"});if(r)winner=r;sim.applyKnockbackFromPoint(u,e,oldX,oldY,{distance:46,lockTicks:sim.msTicks(300),sizeMultiplier:{light:1,medium:.82,heavy:.62}})}
+    sim.withNearbyUnits(u.x,u.y,hitRadius+sim.maxUnitRadius,indices=>{
+      for(const idx of indices){const e=sim.units[idx];if(!sim.objectiveIsEnemy(u,e)||hitIds.has(e.id)||sim.unitLayer(e.type)!=="GROUND")continue;if(Math.hypot(e.x-u.x,e.y-u.y)>hitRadius+sim.unitRadius(e.type))continue;hitIds.add(e.id);const r=sim.applyDamage(u.side,u.type,e,false,d.chargeDamage||75,u.id,{damageClass:"area"});if(r)winner=r;sim.applyKnockbackFromPoint(u,e,oldX,oldY,{distance:46,lockTicks:sim.msTicks(300),sizeMultiplier:{light:1,medium:.82,heavy:.62}})}
+    });
     u.objectiveChargeHitIds=[...hitIds].sort();sim.events.push({type:"objectiveBearChargeTrail",side:u.side,x:u.x,y:u.y,sourceId:u.id,sourceType:u.type});
     if(blocked||u.objectiveChargeRemaining<=.5||moved<.001){u.objectiveChargeActive=false;u.objectiveChargeRemaining=0;const w=sim.objectiveBearShockwave(u,u.x,u.y,null,d.shockDamage||50);if(w)winner=w;sim.events.push({type:"objectiveBearChargeEnd",side:u.side,x:u.x,y:u.y,radius:d.shockRadius||90,sourceId:u.id,sourceType:u.type});return {active:false,winner}}
     return {active:true,winner};
@@ -17285,14 +17289,16 @@ class ChargedSkillMixin extends UnitCapability{
     const r=sim.unitRadius(u.type),hitIds=new Set(e.hitIds);
     // Existing grid broadphase + existing impulses/PBD transfer readable momentum
     // through contacts. Each enemy receives damage once per bodily charge.
-    for(const i of sim.nearbyUnits(u.x,u.y,r+step+sim.maxUnitRadius)){
-      const target=sim.units[i];if(!sim.isHostileCombatUnit(u.side,target)||!sim.canAttackEntity(u.type,target,false)||sim.unitLayer(target.type)!=="GROUND"||hitIds.has(target.id))continue;
-      const vx=u.x-oldX,vy=u.y-oldY,len2=vx*vx+vy*vy,t=len2?RangeUtil.clamp(((target.x-oldX)*vx+(target.y-oldY)*vy)/len2,0,1):0;
-      if(Math.hypot(target.x-oldX-vx*t,target.y-oldY-vy*t)>r+sim.unitRadius(target.type)+3)continue;
-      hitIds.add(target.id);sim.applyDamage(u.side,u.type,target,false,d.damage,u.id,{damageClass:UnitDefinition.damageClass(u.type)});
-      if(target.alive)sim.addUnitImpulse(target,target.x+e.dirX*100,target.y+e.dirY*100,70,sim.msTicks(400),850);
-      sim.events.push({type:"chargeImpact",side:u.side,x:target.x,y:target.y,multiplier:1.6,sourceId:u.id,sourceType:u.type});
-    }
+    sim.withNearbyUnits(u.x,u.y,r+step+sim.maxUnitRadius,indices=>{
+      for(const i of indices){
+        const target=sim.units[i];if(!sim.isHostileCombatUnit(u.side,target)||!sim.canAttackEntity(u.type,target,false)||sim.unitLayer(target.type)!=="GROUND"||hitIds.has(target.id))continue;
+        const vx=u.x-oldX,vy=u.y-oldY,len2=vx*vx+vy*vy,t=len2?RangeUtil.clamp(((target.x-oldX)*vx+(target.y-oldY)*vy)/len2,0,1):0;
+        if(Math.hypot(target.x-oldX-vx*t,target.y-oldY-vy*t)>r+sim.unitRadius(target.type)+3)continue;
+        hitIds.add(target.id);sim.applyDamage(u.side,u.type,target,false,d.damage,u.id,{damageClass:UnitDefinition.damageClass(u.type)});
+        if(target.alive)sim.addUnitImpulse(target,target.x+e.dirX*100,target.y+e.dirY*100,70,sim.msTicks(400),850);
+        sim.events.push({type:"chargeImpact",side:u.side,x:target.x,y:target.y,multiplier:1.6,sourceId:u.id,sourceType:u.type});
+      }
+    });
     e.hitIds=[...hitIds].sort();
     if(motion.hit||e.remaining<.5||moved<.01){u.behaviorState.chargedExecution=null;u.behaviorState.chargedRecoveryUntil=Math.max(u.behaviorState.chargedRecoveryUntil,sim.tick+sim.msTicks(450))}
     return true;
@@ -17395,7 +17401,17 @@ class ObjectiveMixin extends UnitCapability{
   cancelCharge(){const u=this.owner;u.objectiveChargePending=false;u.objectiveChargeActive=false;u.objectiveChargeRemaining=0;u.objectiveChargeHitIds=[]}
   pickBurrowTarget(sim){
     const u=this.owner,d=UnitDefinition.get(u.type)||{},range=Math.max(260,d.sight||500),clusterRadius=92;let best=null,bestCount=-1,bestD=Infinity;
-    for(const idx of sim.nearbyUnits(u.x,u.y,range)){const e=sim.units[idx];if(!sim.objectiveIsEnemy(u,e)||Math.hypot(e.x-u.x,e.y-u.y)>range)continue;let count=0;for(const j of sim.nearbyUnits(e.x,e.y,clusterRadius,e.side)){const q=sim.units[j];if(q?.alive&&q.side===e.side&&Math.hypot(q.x-e.x,q.y-e.y)<=clusterRadius)count++}const dist=Math.hypot(e.x-u.x,e.y-u.y);if(count>bestCount||(count===bestCount&&dist<bestD)||(count===bestCount&&dist===bestD&&best&&String(e.id)<String(best.id))){best=e;bestCount=count;bestD=dist}}
+    sim.withNearbyUnits(u.x,u.y,range,null,candidates=>{
+      for(const idx of candidates){
+        const e=sim.units[idx];if(!sim.objectiveIsEnemy(u,e)||Math.hypot(e.x-u.x,e.y-u.y)>range)continue;
+        let count=0;
+        sim.withNearbyUnits(e.x,e.y,clusterRadius,e.side,neighbors=>{
+          for(const j of neighbors){const q=sim.units[j];if(q?.alive&&q.side===e.side&&Math.hypot(q.x-e.x,q.y-e.y)<=clusterRadius)count++}
+        });
+        const dist=Math.hypot(e.x-u.x,e.y-u.y);
+        if(count>bestCount||(count===bestCount&&dist<bestD)||(count===bestCount&&dist===bestD&&best&&String(e.id)<String(best.id))){best=e;bestCount=count;bestD=dist}
+      }
+    });
     return best;
   }
 }
@@ -17603,7 +17619,7 @@ const UNIT_COMBAT_BEHAVIORS=Object.freeze({
     afterMeleeHit(sim,u,target,attackValue,mult){
       const d=UnitDefinition.get(u.type),radius=d.meleeSplashRadius||64,scale=d.meleeSplashScale||.48;
       sim.events.push({type:"burrowMelee",side:u.side,x:target.x,y:target.y,radius,sourceId:u.id});
-      for(const idx of sim.nearbyUnits(target.x,target.y,radius)){const e=sim.units[idx];if(!e?.alive||e.id===target.id||e.side===u.side||!sim.canAttackEntity(u.type,e,false))continue;if(Math.hypot(e.x-target.x,e.y-target.y)<=radius)sim.applyDamage(u.side,u.type,e,false,Math.floor(attackValue*mult*scale),u.id,{damageClass:"area"})}
+      sim.withNearbyUnits(target.x,target.y,radius,indices=>{for(const idx of indices){const e=sim.units[idx];if(!e?.alive||e.id===target.id||e.side===u.side||!sim.canAttackEntity(u.type,e,false))continue;if(Math.hypot(e.x-target.x,e.y-target.y)<=radius)sim.applyDamage(u.side,u.type,e,false,Math.floor(attackValue*mult*scale),u.id,{damageClass:"area"})}});
     }
   }),
   kickhopper:Object.freeze({
@@ -17612,7 +17628,7 @@ const UNIT_COMBAT_BEHAVIORS=Object.freeze({
       sim.applyAirborne(target,{durationTicks:airborneTicks,height:airborneHeight,sourceSide:u.side,sourceType:u.type});
       if(!ability)return;
       const radius=d.abilitySplashRadius||55,scale=d.abilitySplashScale||.45;
-      for(const idx of sim.nearbyUnits(target.x,target.y,radius)){const e=sim.units[idx];if(!e?.alive||e.id===target.id||e.side===u.side||!sim.canAttackEntity(u.type,e,false))continue;if(Math.hypot(e.x-target.x,e.y-target.y)<=radius)sim.applyDamage(u.side,u.type,e,false,Math.max(1,Math.floor(attackValue*mult*scale)),u.id,{damageClass:"area"})}
+      sim.withNearbyUnits(target.x,target.y,radius,indices=>{for(const idx of indices){const e=sim.units[idx];if(!e?.alive||e.id===target.id||e.side===u.side||!sim.canAttackEntity(u.type,e,false))continue;if(Math.hypot(e.x-target.x,e.y-target.y)<=radius)sim.applyDamage(u.side,u.type,e,false,Math.max(1,Math.floor(attackValue*mult*scale)),u.id,{damageClass:"area"})}});
       sim.events.push({type:"kickhopperSplash",side:u.side,x:target.x,y:target.y,radius,sourceId:u.id,targetId:target.id});
     }
   }),
@@ -17622,7 +17638,7 @@ const UNIT_COMBAT_BEHAVIORS=Object.freeze({
   shelltitan:Object.freeze({
     afterMeleeHit(sim,u,target,attackValue){
       const d=UnitDefinition.get(u.type),ability=sim.hasAbility(u.side,u.type),radius=d.slamRadius||92,scale=d.slamScale||.48;
-      for(const idx of sim.nearbyUnits(target.x,target.y,radius)){const e=sim.units[idx];if(!e?.alive||e.side===u.side||e.id===target.id)continue;if(Math.hypot(e.x-target.x,e.y-target.y)<=radius)sim.applyDamage(u.side,u.type,e,false,Math.floor(attackValue*scale),u.id,{damageClass:"area"})}
+      sim.withNearbyUnits(target.x,target.y,radius,indices=>{for(const idx of indices){const e=sim.units[idx];if(!e?.alive||e.side===u.side||e.id===target.id)continue;if(Math.hypot(e.x-target.x,e.y-target.y)<=radius)sim.applyDamage(u.side,u.type,e,false,Math.floor(attackValue*scale),u.id,{damageClass:"area"})}});
       if(ability){sim.applyAreaKnockback({sourceSide:u.side,sourceType:u.type,sourceEntityId:u.id,x:target.x,y:target.y,radius,distance:d.slamKnockbackDistance||28,lockTicks:sim.msTicks(250)});sim.applyAreaAirborne({sourceSide:u.side,sourceType:u.type,x:target.x,y:target.y,radius,durationTicks:sim.msTicks(d.slamAirborneMs||300),height:d.slamAirborneHeight||24})}
       sim.events.push({type:"titanSlam",side:u.side,x:target.x,y:target.y,radius,sourceId:u.id,targetId:target.id});
     }
@@ -17631,7 +17647,7 @@ const UNIT_COMBAT_BEHAVIORS=Object.freeze({
     onDeath(sim,target,sourceSide){
       if(!target.summonerId||!(sourceSide===0||sourceSide===1))return null;
       const d=UnitDefinition.get(target.type),radius=d.deathExplosionRadius||75,damage=Math.max(1,Math.round((d.atk||1)*(d.deathExplosionDamagePct||300)/100));
-      for(const idx of sim.nearbyUnits(target.x,target.y,radius+sim.maxUnitRadius)){const e=sim.units[idx];if(!e?.alive||e.side!==sourceSide)continue;if(Math.hypot(e.x-target.x,e.y-target.y)>radius+sim.unitRadius(e.type))continue;sim.applyDamage(NEUTRAL_SIDE,target.type,e,false,damage,target.id,{damageClass:"area"})}
+      sim.withNearbyUnits(target.x,target.y,radius+sim.maxUnitRadius,indices=>{for(const idx of indices){const e=sim.units[idx];if(!e?.alive||e.side!==sourceSide)continue;if(Math.hypot(e.x-target.x,e.y-target.y)>radius+sim.unitRadius(e.type))continue;sim.applyDamage(NEUTRAL_SIDE,target.type,e,false,damage,target.id,{damageClass:"area"})}});
       sim.events.push({type:"seedWaspDeathExplosion",side:NEUTRAL_SIDE,x:target.x,y:target.y,radius,damage,sourceId:target.id,sourceType:target.type});return null;
     }
   }),
@@ -18013,6 +18029,10 @@ class SimulationRuntimeState{
     sim.maxBuildingRadius=Math.max(...Object.values(BuildingDefinition.all).map(d=>Number(d?.size)||35))+NAV_BUILDING_MARGIN;
     sim.unitById=new Map();sim.buildingById=new Map();sim.unitIndexById=new Map();sim.runtimeIndexTick=-1;
     sim.spatialQueryBuffers=Array.from({length:64},()=>[]);sim.spatialQueryCursor=0;
+    // Scoped results are owned by the active query caller. Nested traversals
+    // use a separate stack so they never alias a live rotating-ring result.
+    sim.spatialQueryScopeBuffers=[];sim.spatialQueryScopeDepth=0;
+    sim.aoeCandidateSpatialScratch=[];sim.aoeCandidateSpatialDepth=0;
     sim.maxUnitRadius=Math.max(...Object.values(UnitDefinition.all).map(d=>(d?.size||10)*COLLISION_RADIUS_SCALE));
   }
   static visibility(sim){
@@ -18031,7 +18051,7 @@ class SimulationRuntimeState{
   static invalidate(sim){
     sim.runtimeEpoch=(sim.runtimeEpoch||0)+1;
     this.visibility(sim);this.economy(sim);
-    sim.runtimeIndexTick=-1;sim.spatialQueryCursor=0;sim.buildingSpatialQueryCursor=0;sim.buildingSpatialDirty=true;
+    sim.runtimeIndexTick=-1;sim.spatialQueryCursor=0;sim.spatialQueryScopeDepth=0;sim.aoeCandidateSpatialDepth=0;sim.buildingSpatialQueryCursor=0;sim.buildingSpatialDirty=true;
     sim.collisionStartCount=0;sim.hardFixSapOrder.length=0;sim.hardFixSapEligible.length=0;sim.hardFixSapEpoch=1;sim.hardFixSapMarks.fill(0);
     sim.hardFixSapSideHeads.fill(-1);for(const heap of sim.hardFixSapSideHeaps)heap.length=0;
     sim.navigation.motion=new SurfaceMotion(sim.navigation);
@@ -18047,7 +18067,7 @@ class StrategySim{
     "chargedHeldIds","navigationDemandScope","world","tps","campaignScriptRuntime","campaignTechCap","disposed","runtimeEpoch","commandReceipts",
     "collisionGrid","collisionSweepGrid","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCandidateBuffer","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
     "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapSideHeads","hardFixSapSideNext","hardFixSapSidePrev","hardFixSapSideHeaps","hardFixSapMarks","hardFixSapEpoch",
-    "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","maxUnitRadius",
+    "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","spatialQueryScopeBuffers","spatialQueryScopeDepth","aoeCandidateSpatialScratch","aoeCandidateSpatialDepth","maxUnitRadius",
     "cloakCacheTick","auraCloakedIds","tickVisibilityCache","tickVisibilityCacheTick","economyCacheTick","workerGasAssignments","validGasExtractorsBySide","navigation","nextRoutePathId","routePathStore","routePathIndex"
   ],children:{delayedEffects:DelayedEffectState}});
   static createForMatch({draft,seed,rules=GameRuleDefinition.current,campaignScenario=null,debugScenario=null}={}){
@@ -18248,12 +18268,25 @@ class StrategySim{
     if(this.runtimeIndexTick!==this.tick||!u)return;
     const index=this.units.length-1;this.unitById.set(u.id,u);this.unitIndexById.set(u.id,index);this.unitSpatial.add(u,index);
   }
-  nearbyUnits(x,y,r,side=null){
+  nearbyUnits(x,y,r,side=null,out=null){
     if(this.runtimeIndexTick!==this.tick)this.rebuildRuntimeIndexes();
-    const out=this.spatialQueryBuffers[this.spatialQueryCursor++&63];
-    const result=this.unitSpatial.query(x,y,r,out,side);
+    if(out!==null&&!Array.isArray(out))throw new TypeError("nearbyUnits result buffer must be an array");
+    const result=this.unitSpatial.query(x,y,r,out||this.spatialQueryBuffers[this.spatialQueryCursor++&63],side);
     if(this._perfCollect){this._perfCollect.spatialQueries++;this._perfCollect.spatialCandidates+=result.length;if(side!=null)this._perfCollect.sideSpatialQueries++}
     return result;
+  }
+  withNearbyUnits(x,y,r,side,visit){
+    if(typeof side==="function"){visit=side;side=null}
+    if(typeof visit!=="function")throw new TypeError("nearbyUnits visitor must be a function");
+    if(this.runtimeIndexTick!==this.tick)this.rebuildRuntimeIndexes();
+    const depth=this.spatialQueryScopeDepth||0;
+    const out=this.spatialQueryScopeBuffers[depth]||(this.spatialQueryScopeBuffers[depth]=[]);
+    this.spatialQueryScopeDepth=depth+1;
+    try{
+      const result=this.unitSpatial.query(x,y,r,out,side);
+      if(this._perfCollect){this._perfCollect.spatialQueries++;this._perfCollect.spatialCandidates+=result.length;if(side!=null)this._perfCollect.sideSpatialQueries++}
+      return visit(result);
+    }finally{this.spatialQueryScopeDepth=depth}
   }
   prepareVisionSources(sources){
     const cell=VISION_SPATIAL_CELL,cols=Math.ceil(this.world.width/cell),rows=Math.ceil(this.world.height/cell),grid=new Map();
@@ -18910,17 +18943,19 @@ class StrategySim{
     let winner=null;
     const radius=spell.radius||SpellDefinition.statsAt("meteor",0).radius;
 
-    for(const idx of this.nearbyUnits(spell.x,spell.y,radius)){
-      const u=this.units[idx];
-      if(!u?.alive||u.side===spell.side||u.side===NEUTRAL_SIDE)continue;
-      const dist=Math.hypot(u.x-spell.x,u.y-spell.y);
-      if(dist>radius)continue;
+    this.withNearbyUnits(spell.x,spell.y,radius,indices=>{
+      for(const idx of indices){
+        const u=this.units[idx];
+        if(!u?.alive||u.side===spell.side||u.side===NEUTRAL_SIDE)continue;
+        const dist=Math.hypot(u.x-spell.x,u.y-spell.y);
+        if(dist>radius)continue;
 
-      const falloff=.45+.55*(1-dist/radius);
-      const raw=Math.max(1,Math.floor((spell.unitDamage||165)*falloff));
-      const r=this.applyDamage(spell.side,"meteor",u,false,raw,null,{damageClass:"area"});
-      if(r)winner=r;
-    }
+        const falloff=.45+.55*(1-dist/radius);
+        const raw=Math.max(1,Math.floor((spell.unitDamage||165)*falloff));
+        const r=this.applyDamage(spell.side,"meteor",u,false,raw,null,{damageClass:"area"});
+        if(r)winner=r;
+      }
+    });
 
     for(const b of this.buildings){
       if(!b.complete||b.alive===false||b.side===spell.side)continue;
@@ -19066,13 +19101,15 @@ class StrategySim{
             const continuous=this.continuousDamageProfile(sp.continuous);if(!continuous){keep.push(sp);continue}
             sp.nextPulseTick=this.tick+Math.max(1,this.msTicks(continuous.damageIntervalMs));
             const pulseDamage=continuous.damagePerTick;
-            for(const idx of this.nearbyUnits(sp.x,sp.y,sp.radius||0)){
-              const u=this.units[idx];
-              if(!u?.alive||u.side===sp.side||u.side===NEUTRAL_SIDE)continue;
-              if(sp.type==="thornwall"&&this.unitLayer(u.type)!=="GROUND")continue;
-              if(Math.hypot(u.x-sp.x,u.y-sp.y)>(sp.radius||0))continue;
-              this.applyDamage(sp.side,sp.type,u,false,pulseDamage,null,{damageClass:"area",damageDelivery:"continuous",deliverySeconds:continuous.deliverySeconds});
-            }
+            this.withNearbyUnits(sp.x,sp.y,sp.radius||0,indices=>{
+              for(const idx of indices){
+                const u=this.units[idx];
+                if(!u?.alive||u.side===sp.side||u.side===NEUTRAL_SIDE)continue;
+                if(sp.type==="thornwall"&&this.unitLayer(u.type)!=="GROUND")continue;
+                if(Math.hypot(u.x-sp.x,u.y-sp.y)>(sp.radius||0))continue;
+                this.applyDamage(sp.side,sp.type,u,false,pulseDamage,null,{damageClass:"area",damageDelivery:"continuous",deliverySeconds:continuous.deliverySeconds});
+              }
+            });
           }
         }
         keep.push(sp);continue;
@@ -19428,14 +19465,16 @@ class StrategySim{
   }
   breathVariantPulse({side,sourceType,sourceId,x,y,dirX,dirY,range,angleDeg,damage,damageClass,damageDelivery="hit",deliverySeconds=0}){
     let winner=null;
-    for(const idx of this.nearbyUnits(x,y,range+this.maxUnitRadius)){
-      const e=this.units[idx];
-      if(!e?.alive||e.side===side||this.unitLayer(e.type)!=="GROUND")continue;
-      const ex=e.x-x,ey=e.y-y,dist=Math.hypot(ex,ey)||1,radius=this.unitRadius(e.type);
-      const angularPad=Math.asin(Math.min(1,radius/dist));
-      if(dist>range||(ex*dirX+ey*dirY)/dist<Math.cos(angleDeg*Math.PI/360+angularPad))continue;
-      const w=this.applyDamage(side,sourceType,e,false,damage,sourceId,{damageClass,damageDelivery,deliverySeconds});if(w)winner=w;
-    }
+    this.withNearbyUnits(x,y,range+this.maxUnitRadius,indices=>{
+      for(const idx of indices){
+        const e=this.units[idx];
+        if(!e?.alive||e.side===side||this.unitLayer(e.type)!=="GROUND")continue;
+        const ex=e.x-x,ey=e.y-y,dist=Math.hypot(ex,ey)||1,radius=this.unitRadius(e.type);
+        const angularPad=Math.asin(Math.min(1,radius/dist));
+        if(dist>range||(ex*dirX+ey*dirY)/dist<Math.cos(angleDeg*Math.PI/360+angularPad))continue;
+        const w=this.applyDamage(side,sourceType,e,false,damage,sourceId,{damageClass,damageDelivery,deliverySeconds});if(w)winner=w;
+      }
+    });
     for(const b of this.buildings){
       if(!b||b.alive===false||b.side===side)continue;
       const ex=b.x-x,ey=b.y-y,dist=Math.hypot(ex,ey)||1,radius=BuildingDefinition.get(b.type)?.size||0;
@@ -20200,16 +20239,18 @@ class StrategySim{
   pickTowerTarget(b,range,sources){
     const d=BuildingDefinition.get(b.type);
     let best=null,bestScore=null;
-    for(const idx of this.nearbyUnits(b.x,b.y,range)){
-      const e=this.units[idx];
-      if(!this.towerTargetValid(b,e,range,sources))continue;
-      const dist=Math.hypot(e.x-b.x,e.y-b.y);
-      const distScore=d.targetMode==="farthest"?-dist:dist;
-      const score=distScore;
-      if(bestScore===null||score<bestScore||(score===bestScore&&best&&String(e.id)<String(best.id))){
-        best=e;bestScore=score;
+    this.withNearbyUnits(b.x,b.y,range,indices=>{
+      for(const idx of indices){
+        const e=this.units[idx];
+        if(!this.towerTargetValid(b,e,range,sources))continue;
+        const dist=Math.hypot(e.x-b.x,e.y-b.y);
+        const distScore=d.targetMode==="farthest"?-dist:dist;
+        const score=distScore;
+        if(bestScore===null||score<bestScore||(score===bestScore&&best&&String(e.id)<String(best.id))){
+          best=e;bestScore=score;
+        }
       }
-    }
+    });
     return best;
   }
   updateSunvineTower(b){
@@ -21168,14 +21209,16 @@ class StrategySim{
       radius,damage:base,sourceType:"pillbug"
     });
     let win=null;
-    for(const idx of this.nearbyUnits(unit.x,unit.y,radius)){
-      const e=this.units[idx];
-      if(!e?.alive||e.id===unit.id||e.side===unit.side)continue;
-      if(Math.hypot(e.x-unit.x,e.y-unit.y)<=radius){
-        const r=this.applyDamage(unit.side,unit.type,e,false,base,unit.id,{damageClass:"area"});
-        if(r)win=r;
+    this.withNearbyUnits(unit.x,unit.y,radius,indices=>{
+      for(const idx of indices){
+        const e=this.units[idx];
+        if(!e?.alive||e.id===unit.id||e.side===unit.side)continue;
+        if(Math.hypot(e.x-unit.x,e.y-unit.y)<=radius){
+          const r=this.applyDamage(unit.side,unit.type,e,false,base,unit.id,{damageClass:"area"});
+          if(r)win=r;
+        }
       }
-    }
+    });
     for(const b of this.buildings){
       if(!b.alive||b.side===unit.side)continue;
       if(Math.hypot(b.x-unit.x,b.y-unit.y)<=Math.max(30,radius*.7)){
@@ -21348,17 +21391,19 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   applyAreaDamage({sourceSide,sourceType,sourceEntityId=null,x,y,radius,damage,damageClass="area",radialFalloff=null,excludeIds=null,onHit=null,suppressImpactFx=false,sourceDamageResolved=false,sourceFriendlySide=null}={}){
     let winner=null;
     const excluded=excludeIds instanceof Set?excludeIds:new Set(excludeIds||[]);
-    for(const idx of this.nearbyUnits(x,y,radius+this.maxUnitRadius)){
-      const e=this.units[idx];
-      if(!e?.alive||e.side===sourceSide||excluded.has(e.id))continue;
-      const dist=Math.hypot(e.x-x,e.y-y);
-      if(dist>radius+this.unitRadius(e.type))continue;
-      const scale=radialFalloff?this.radialFalloffMultiplier(Math.max(0,dist-this.unitRadius(e.type)),radius,radialFalloff):1;
-      const capture={dealt:0,blocked:false,damageClass};
-      const result=this.applyDamage(sourceSide,sourceType,e,false,Math.max(1,Math.floor(damage*scale)),sourceEntityId,{damageClass,capture,suppressImpactFx,sourceDamageResolved,sourceFriendlySide});
-      if(typeof result==="string")winner=result;
-      if(onHit)onHit(e,capture);
-    }
+    this.withNearbyUnits(x,y,radius+this.maxUnitRadius,indices=>{
+      for(const idx of indices){
+        const e=this.units[idx];
+        if(!e?.alive||e.side===sourceSide||excluded.has(e.id))continue;
+        const dist=Math.hypot(e.x-x,e.y-y);
+        if(dist>radius+this.unitRadius(e.type))continue;
+        const scale=radialFalloff?this.radialFalloffMultiplier(Math.max(0,dist-this.unitRadius(e.type)),radius,radialFalloff):1;
+        const capture={dealt:0,blocked:false,damageClass};
+        const result=this.applyDamage(sourceSide,sourceType,e,false,Math.max(1,Math.floor(damage*scale)),sourceEntityId,{damageClass,capture,suppressImpactFx,sourceDamageResolved,sourceFriendlySide});
+        if(typeof result==="string")winner=result;
+        if(onHit)onHit(e,capture);
+      }
+    });
     return winner;
   }
   setTimedModifier(u,key,{until=null,durationTicks=0,movePct=100,attackSpeedPct=100,maxStacks=1,refresh=true,persistent=false,resetOnMove=false}={}){
@@ -21633,10 +21678,12 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   forEachNearbyHostileUnit(attackerSide,x,y,radius,visit){
     if(attackerSide!==0&&attackerSide!==1)return;
     for(const side of [1-attackerSide,NEUTRAL_SIDE]){
-      for(const idx of this.nearbyUnits(x,y,radius,side)){
-        const e=this.units[idx];
-        if(this.isHostileCombatUnit(attackerSide,e))visit(e);
-      }
+      this.withNearbyUnits(x,y,radius,side,indices=>{
+        for(const idx of indices){
+          const e=this.units[idx];
+          if(this.isHostileCombatUnit(attackerSide,e))visit(e);
+        }
+      });
     }
   }
   nearbyEnemyScaling(u,{radius=320,steps=null}={}){
@@ -21657,20 +21704,43 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   }
   pickAoeTargetInRange(u,visibleSources,attackRange,splashRadius){
     const d=UnitDefinition.get(u.type);let best=null,bestHits=-1,bestD2=Infinity;
-    const query=attackRange+this.maxUnitRadius+40;
-    this.forEachNearbyHostileUnit(u.side,u.x,u.y,query,e=>{
-      if(!this.canAttackEntity(u.type,e,false))return;
-      if(e.side===NEUTRAL_SIDE){if(!this.isVisible(u.side,e.x,e.y,visibleSources,this.unitLayer(e.type)==="AIR"))return}
-      else if(!this.canSeeCombatTarget(u.side,e,visibleSources))return;
-      const dx=e.x-u.x,dy=e.y-u.y,d2=dx*dx+dy*dy,dist=Math.sqrt(d2);
-      const max=this.interactionDistance(u,e,"attack",attackRange),min=this.interactionDistance(u,e,"combat-contact")+(d.minRange||0);
-      if(dist>max||(d.minRange&&dist<min))return;
-      let hits=0;
-      this.forEachNearbyHostileUnit(u.side,e.x,e.y,splashRadius,v=>{
-        if(Math.hypot(v.x-e.x,v.y-e.y)<=splashRadius)hits++;
-      });
-      if(hits>bestHits||(hits===bestHits&&d2<bestD2)||(hits===bestHits&&d2===bestD2&&best&&String(e.id)<String(best.id))){best=e;bestHits=hits;bestD2=d2}
-    });
+    const candidateQuery=attackRange+this.maxUnitRadius+40;
+    // One broad query covers legal attack candidates and their possible splash
+    // neighbors. Bin its hostile candidates once, then inspect only nearby bins
+    // for each legal target. Keep the original candidate cell rectangle/geometry.
+    const query=candidateQuery+splashRadius+this.unitSpatial.cellSize;
+    const minCellX=this.unitSpatial.cellX(u.x-candidateQuery),maxCellX=this.unitSpatial.cellX(u.x+candidateQuery);
+    const minCellY=this.unitSpatial.cellY(u.y-candidateQuery),maxCellY=this.unitSpatial.cellY(u.y+candidateQuery);
+    const depth=this.aoeCandidateSpatialDepth||0,scratch=this.aoeCandidateSpatialScratch[depth]||(this.aoeCandidateSpatialScratch[depth]={bins:new Map(),touched:[]});
+    this.aoeCandidateSpatialDepth=depth+1;scratch.touched.length=0;
+    try{this.withNearbyUnits(u.x,u.y,query,null,candidates=>{
+      for(const idx of candidates){
+        const e=this.units[idx];if(!this.isHostileCombatUnit(u.side,e))continue;
+        const key=this.unitSpatial.keyFor(e.x,e.y);let bucket=scratch.bins.get(key);
+        if(!bucket){bucket=[];scratch.bins.set(key,bucket)}
+        if(!bucket.length)scratch.touched.push(bucket);
+        bucket.push(idx);
+      }
+      for(const idx of candidates){
+        const e=this.units[idx];if(!this.isHostileCombatUnit(u.side,e))continue;
+        const cellX=this.unitSpatial.cellX(e.x),cellY=this.unitSpatial.cellY(e.y);
+        if(cellX<minCellX||cellX>maxCellX||cellY<minCellY||cellY>maxCellY)continue;
+        if(!this.canAttackEntity(u.type,e,false))continue;
+        if(e.side===NEUTRAL_SIDE){if(!this.isVisible(u.side,e.x,e.y,visibleSources,this.unitLayer(e.type)==="AIR"))continue}
+        else if(!this.canSeeCombatTarget(u.side,e,visibleSources))continue;
+        const dx=e.x-u.x,dy=e.y-u.y,d2=dx*dx+dy*dy,dist=Math.sqrt(d2);
+        const max=this.interactionDistance(u,e,"attack",attackRange),min=this.interactionDistance(u,e,"combat-contact")+(d.minRange||0);
+        if(dist>max||(d.minRange&&dist<min))continue;
+        let hits=0;
+        const minX=this.unitSpatial.cellX(e.x-splashRadius),maxX=this.unitSpatial.cellX(e.x+splashRadius);
+        const minY=this.unitSpatial.cellY(e.y-splashRadius),maxY=this.unitSpatial.cellY(e.y+splashRadius);
+        for(let cy=minY;cy<=maxY;cy++)for(let cx=minX;cx<=maxX;cx++){
+          const bucket=scratch.bins.get(this.unitSpatial.keyXY(cx,cy));if(!bucket)continue;
+          for(const neighborIdx of bucket){const v=this.units[neighborIdx];if(Math.hypot(v.x-e.x,v.y-e.y)<=splashRadius)hits++}
+        }
+        if(hits>bestHits||(hits===bestHits&&d2<bestD2)||(hits===bestHits&&d2===bestD2&&best&&String(e.id)<String(best.id))){best=e;bestHits=hits;bestD2=d2}
+      }
+    })}finally{for(const bucket of scratch.touched)bucket.length=0;scratch.touched.length=0;this.aoeCandidateSpatialDepth=depth}
     return best?{entity:best,isBuilding:false,def:UnitDefinition.get(best.type),aoeHits:bestHits}:null;
   }
   formationJoinMovePct(u,tx,ty){
@@ -21836,14 +21906,16 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     let win=this.applyDamage(u.side,u.type,target,isBuilding,damage,u.id,{damageClass:"area"});
     const hitIds=new Set(isBuilding?[]:[target.id]);
     if(!isBuilding)this.applyAirborne(target,{durationTicks:airborneTicks,height:airborneHeight,sourceSide:u.side,sourceType:u.type});
-    for(const idx of this.nearbyUnits(x,y,radius+this.maxUnitRadius)){
-      const e=this.units[idx];
-      if(!e?.alive||e.side===u.side||hitIds.has(e.id)||this.unitLayer(e.type)!=="GROUND")continue;
-      if(Math.hypot(e.x-x,e.y-y)>radius+UnitDefinition.get(e.type).size)continue;
-      const r=this.applyDamage(u.side,u.type,e,false,Math.max(1,Math.floor(damage*(UnitDefinition.get(u.type)?.spikeSplashScale||.58))),u.id,{damageClass:"area"});
-      if(r)win=r;
-      this.applyAirborne(e,{durationTicks:airborneTicks,height:airborneHeight,sourceSide:u.side,sourceType:u.type});
-    }
+    this.withNearbyUnits(x,y,radius+this.maxUnitRadius,indices=>{
+      for(const idx of indices){
+        const e=this.units[idx];
+        if(!e?.alive||e.side===u.side||hitIds.has(e.id)||this.unitLayer(e.type)!=="GROUND")continue;
+        if(Math.hypot(e.x-x,e.y-y)>radius+UnitDefinition.get(e.type).size)continue;
+        const r=this.applyDamage(u.side,u.type,e,false,Math.max(1,Math.floor(damage*(UnitDefinition.get(u.type)?.spikeSplashScale||.58))),u.id,{damageClass:"area"});
+        if(r)win=r;
+        this.applyAirborne(e,{durationTicks:airborneTicks,height:airborneHeight,sourceSide:u.side,sourceType:u.type});
+      }
+    });
     this.events.push({
       type:"deepThornSpike",side:u.side,x,y,
       x2:u.x,y2:u.y,
@@ -21861,12 +21933,14 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       const r=this.applyDamage(u.side,u.type,current,false,Math.max(1,Math.floor(damage*scale)),u.id,{damageClass:"area"});if(r)win=r;
       if(i>=bounces)break;
       let next=null,best=Infinity;
-      for(const idx of this.nearbyUnits(current.x,current.y,chainRange)){
-        const e=this.units[idx];if(!this.isHostileCombatUnit(u.side,e)||hit.includes(e)||!this.canAttackEntity(u.type,e,false))continue;
-        if(e.side!==NEUTRAL_SIDE&&!this.canTargetUnit(u.side,e,sources))continue;
-        const dist=Math.hypot(e.x-current.x,e.y-current.y);if(dist>chainRange)continue;
-        if(dist<best||(dist===best&&next&&String(e.id)<String(next.id))){next=e;best=dist}
-      }
+      this.withNearbyUnits(current.x,current.y,chainRange,indices=>{
+        for(const idx of indices){
+          const e=this.units[idx];if(!this.isHostileCombatUnit(u.side,e)||hit.includes(e)||!this.canAttackEntity(u.type,e,false))continue;
+          if(e.side!==NEUTRAL_SIDE&&!this.canTargetUnit(u.side,e,sources))continue;
+          const dist=Math.hypot(e.x-current.x,e.y-current.y);if(dist>chainRange)continue;
+          if(dist<best||(dist===best&&next&&String(e.id)<String(next.id))){next=e;best=dist}
+        }
+      });
       current=next;scale*=.65;
     }
     if(this.hasAbility(u.side,"chainflower")&&hit.length===bounces+1){
@@ -21884,7 +21958,8 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     if(!u||u.alive===false)return null;
     const enemy=u.side===0?1:u.side===1?0:null;if(enemy==null)return null;
     const r2=range*range;let best=null,bestD2=Infinity;
-    for(const b of this.buildings){
+    for(const index of this.nearbyBuildingIndices(u.x,u.y,range)){
+      const b=this.buildings[index];
       if(!b||b.alive===false||b.side!==enemy||!this.canAttackEntity(u.type,b,true))continue;
       const dx=b.x-u.x,dy=b.y-u.y,d2=dx*dx+dy*dy;
       if(d2>r2||!this.isVisible(u.side,b.x,b.y,visibleSources))continue;
@@ -21994,13 +22069,13 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       const e=camp?this.findCampTarget(camp,u):null;
       return e?{entity:e,isBuilding:!!BuildingDefinition.get(e.type)}:null;
     }
-    const d=UnitDefinition.get(u.type)||{},enemy=1-u.side;
+    const d=UnitDefinition.get(u.type)||{},enemy=1-u.side,sources=visionSources||this.visionSources(u.side);
     const search=Math.max(Number(d.sight)||0,(Number(d.range)||0)+160,520);
     let best=null,bestScore=Infinity;
     const consider=(e,isBuilding=false)=>{
       if(!e||!this.objectiveIsEnemy(u,e))return;
       if(!isBuilding&&!this.canAttackEntity(u.type,e,false))return;
-      if(!isBuilding&&!this.canSeeCombatTarget(u.side,e,visionSources||this.visionSources(u.side)))return;
+      if(!isBuilding&&!this.canSeeCombatTarget(u.side,e,sources))return;
       const edge=isBuilding?(BuildingDefinition.get(e.type)?.size||0):this.unitRadius(e.type);
       const dist=Math.max(0,Math.hypot(e.x-u.x,e.y-u.y)-edge);
       if(dist>search)return;
@@ -22009,7 +22084,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     };
     const current=this.unitById.get(u.target)||this.buildingById.get(u.target);
     if(current&&this.objectiveIsEnemy(u,current))consider(current,!!BuildingDefinition.get(current.type));
-    for(const idx of this.nearbyUnits(u.x,u.y,search,enemy))consider(this.units[idx],false);
+    this.withNearbyUnits(u.x,u.y,search,enemy,indices=>{for(const idx of indices)consider(this.units[idx],false)});
     for(const b of this.buildings)if(b.side===enemy&&b.alive!==false)consider(b,true);
     return best;
   }
@@ -22038,14 +22113,16 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   objectiveBearShockwave(u,x,y,primaryId=null,damage=null){
     const d=UnitDefinition.get(u.type),radius=d.shockRadius||90,amount=Math.max(1,Number(damage??d.shockDamage)||50);
     let winner=null;
-    for(const idx of this.nearbyUnits(x,y,radius+this.maxUnitRadius)){
-      const e=this.units[idx];
-      if(!this.objectiveIsEnemy(u,e)||e.id===primaryId||this.unitLayer(e.type)!=="GROUND")continue;
-      if(Math.hypot(e.x-x,e.y-y)>radius+this.unitRadius(e.type))continue;
-      const r=this.applyDamage(u.side,u.type,e,false,amount,u.id,{damageClass:"area"});if(r)winner=r;
-      this.applyKnockbackFromPoint(u,e,x,y,{distance:38,lockTicks:this.msTicks(250),sizeMultiplier:{light:1,medium:.82,heavy:.62}});
-      this.applyAirborne(e,{durationTicks:this.msTicks(d.shockAirborneMs||3000),height:d.shockAirborneHeight||72,sourceSide:u.side,sourceType:u.type});
-    }
+    this.withNearbyUnits(x,y,radius+this.maxUnitRadius,indices=>{
+      for(const idx of indices){
+        const e=this.units[idx];
+        if(!this.objectiveIsEnemy(u,e)||e.id===primaryId||this.unitLayer(e.type)!=="GROUND")continue;
+        if(Math.hypot(e.x-x,e.y-y)>radius+this.unitRadius(e.type))continue;
+        const r=this.applyDamage(u.side,u.type,e,false,amount,u.id,{damageClass:"area"});if(r)winner=r;
+        this.applyKnockbackFromPoint(u,e,x,y,{distance:38,lockTicks:this.msTicks(250),sizeMultiplier:{light:1,medium:.82,heavy:.62}});
+        this.applyAirborne(e,{durationTicks:this.msTicks(d.shockAirborneMs||3000),height:d.shockAirborneHeight||72,sourceSide:u.side,sourceType:u.type});
+      }
+    });
     for(const b of this.buildings){
       if(!this.objectiveIsEnemy(u,b)||b.id===primaryId)continue;
       if(Math.hypot(b.x-x,b.y-y)>radius+(BuildingDefinition.get(b.type)?.size||30))continue;
@@ -22096,10 +22173,12 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       const continuous=this.continuousDamageProfile(d.breathContinuous);if(!continuous)return {active:false,winner:null};
       u.objectiveBreathNextTick+=Math.max(1,this.msTicks(continuous.damageIntervalMs));
       const pulseDamage=continuous.damagePerTick,range=d.breathRange||300,cosHalf=Math.cos((d.breathAngleDeg||70)*Math.PI/360),dx=u.objectiveBreathDirX||1,dy=u.objectiveBreathDirY||0;
-      for(const idx of this.nearbyUnits(u.x,u.y,range+this.maxUnitRadius)){
-        const e=this.units[idx];if(!this.objectiveDragonConeHit(u,e,range,cosHalf,dx,dy,false))continue;
-        const r=this.applyDamage(u.side,u.type,e,false,pulseDamage,u.id,{damageClass:"area",damageDelivery:"continuous",deliverySeconds:continuous.deliverySeconds});if(r)winner=r;
-      }
+      this.withNearbyUnits(u.x,u.y,range+this.maxUnitRadius,indices=>{
+        for(const idx of indices){
+          const e=this.units[idx];if(!this.objectiveDragonConeHit(u,e,range,cosHalf,dx,dy,false))continue;
+          const r=this.applyDamage(u.side,u.type,e,false,pulseDamage,u.id,{damageClass:"area",damageDelivery:"continuous",deliverySeconds:continuous.deliverySeconds});if(r)winner=r;
+        }
+      });
       for(const b of this.buildings){
         if(!this.objectiveDragonConeHit(u,b,range,cosHalf,dx,dy,true))continue;
         const r=this.applyDamage(u.side,u.type,b,true,pulseDamage,u.id,{damageClass:"area",damageDelivery:"continuous",deliverySeconds:continuous.deliverySeconds});if(r)winner=r;
@@ -22127,11 +22206,13 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   }
   neutralAreaHit(u,x,y,radius,damage){
     let winner=null;
-    for(const idx of this.nearbyUnits(x,y,radius+this.maxUnitRadius)){
-      const e=this.units[idx];if(!e?.alive||(e.side!==0&&e.side!==1))continue;
-      if(Math.hypot(e.x-x,e.y-y)>radius+this.unitRadius(e.type))continue;
-      const w=this.applyDamage(NEUTRAL_SIDE,u.type,e,false,damage,u.id,{damageClass:"area"});if(w)winner=w;
-    }
+    this.withNearbyUnits(x,y,radius+this.maxUnitRadius,indices=>{
+      for(const idx of indices){
+        const e=this.units[idx];if(!e?.alive||(e.side!==0&&e.side!==1))continue;
+        if(Math.hypot(e.x-x,e.y-y)>radius+this.unitRadius(e.type))continue;
+        const w=this.applyDamage(NEUTRAL_SIDE,u.type,e,false,damage,u.id,{damageClass:"area"});if(w)winner=w;
+      }
+    });
     return winner;
   }
   updateNeutralQueen(u){
@@ -22171,7 +22252,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     let winner=null;
     if(this.tick>=u.objectiveBreathNextTick){
       const continuous=this.continuousDamageProfile(d.breathContinuous);if(!continuous)return {active:false,winner:null};u.objectiveBreathNextTick+=this.msTicks(continuous.damageIntervalMs);const pulseDamage=continuous.damagePerTick,range=d.breathRange||150,cos=Math.cos((d.breathAngleDeg||30)*Math.PI/360),dx=u.objectiveBreathDirX,dy=u.objectiveBreathDirY;
-      for(const idx of this.nearbyUnits(u.x,u.y,range+this.maxUnitRadius)){const e=this.units[idx];if(!e?.alive||(e.side!==0&&e.side!==1))continue;const ex=e.x-u.x,ey=e.y-u.y,dist=Math.hypot(ex,ey)||1;if(dist>range+this.unitRadius(e.type)||(ex*dx+ey*dy)/dist<cos)continue;const w=this.applyDamage(NEUTRAL_SIDE,u.type,e,false,pulseDamage,u.id,{damageClass:"area",damageDelivery:"continuous",deliverySeconds:continuous.deliverySeconds});if(w)winner=w}
+      this.withNearbyUnits(u.x,u.y,range+this.maxUnitRadius,indices=>{for(const idx of indices){const e=this.units[idx];if(!e?.alive||(e.side!==0&&e.side!==1))continue;const ex=e.x-u.x,ey=e.y-u.y,dist=Math.hypot(ex,ey)||1;if(dist>range+this.unitRadius(e.type)||(ex*dx+ey*dy)/dist<cos)continue;const w=this.applyDamage(NEUTRAL_SIDE,u.type,e,false,pulseDamage,u.id,{damageClass:"area",damageDelivery:"continuous",deliverySeconds:continuous.deliverySeconds});if(w)winner=w}});
       this.events.push({type:"objectiveDragonBreathPulse",side:u.side,x:u.x,y:u.y,dirX:dx,dirY:dy,range,angleDeg:d.breathAngleDeg||30,sourceId:u.id,sourceType:u.type,poison:true});
     }
     return {active:true,winner};
@@ -22623,16 +22704,18 @@ let value=Math.max(0,Number(d.flatArmor)||0);
           const splashScale=Number.isFinite(Number(p.splashScale))?Number(p.splashScale):.55;
           const unitSplashPayload=Math.max(1,Number(p.splashUnitDamage??p.damage)||1);
           const buildingSplashPayload=Math.max(1,Number(p.splashBuildingDamage??p.damage)||1);
-          for(const idx of this.nearbyUnits(t.x,t.y,p.splash+this.maxUnitRadius)){
-            const e=this.units[idx];
-            if(!e?.alive||e.side===p.side||e.id===t.id)continue;
-            if(ignoreNeutralSplash&&e.side===NEUTRAL_SIDE)continue;
-            const dd=Math.hypot(e.x-t.x,e.y-t.y);
-            if(dd<=p.splash+this.unitRadius(e.type)){
-              const scale=radial?this.radialFalloffMultiplier(Math.max(0,dd-this.unitRadius(e.type)),p.splash,radial):splashScale;
-              this.applyDamage(p.side,p.type,e,false,Math.max(1,Math.floor(unitSplashPayload*scale)),p.owner||null,{damageClass:"area",sourceDamageResolved:true,sourceFriendlySide:p.sourceFriendlySide});
+          this.withNearbyUnits(t.x,t.y,p.splash+this.maxUnitRadius,indices=>{
+            for(const idx of indices){
+              const e=this.units[idx];
+              if(!e?.alive||e.side===p.side||e.id===t.id)continue;
+              if(ignoreNeutralSplash&&e.side===NEUTRAL_SIDE)continue;
+              const dd=Math.hypot(e.x-t.x,e.y-t.y);
+              if(dd<=p.splash+this.unitRadius(e.type)){
+                const scale=radial?this.radialFalloffMultiplier(Math.max(0,dd-this.unitRadius(e.type)),p.splash,radial):splashScale;
+                this.applyDamage(p.side,p.type,e,false,Math.max(1,Math.floor(unitSplashPayload*scale)),p.owner||null,{damageClass:"area",sourceDamageResolved:true,sourceFriendlySide:p.sourceFriendlySide});
+              }
             }
-          }
+          });
           if(p.splashBuildings){
             for(const b of this.buildings){
               if(!b||b.alive===false||b.side===p.side||b.id===t.id)continue;
@@ -24219,15 +24302,15 @@ class GameSession{
     if(!visible)this.netcodeSession?.releaseInput();
     else if(resumed&&this.sim?.tick>0)this.renderTimelineChanged=true;
   }
-  onBacklogDrop({elapsedMs=0,droppedTicks=0,timestamp=performance.now()}={}){
-    // Dropping scheduler debt does not invalidate the confirmed tick timeline.
-    // State divergence and recovery remain owned by the Core.
+  onBacklogDrop({elapsedMs=0,droppedMs=0,droppedTicks=0,timestamp=performance.now(),reason='backlog-overflow'}={}){
+    // This discards wall-clock debt, not confirmed simulation ticks. The Core's
+    // authoritative tick sequence and recovery history remain untouched.
     this.lastDriverPulseAt=timestamp;this.netcodeNow=Math.max(this.netcodeNow,timestamp);
     // The authoritative tick is unchanged, but the delayed display clock must
     // rebase after discarded wall time instead of remaining ahead of every target.
     if(this.sim?.tick>0)this.renderTimelineChanged=true;
     const activeSession=!!this.netcodeSession?.ready&&this.transportConnected&&this.sim?.tick>0&&this.confirmedGameTick>0;
-    RecoveryTelemetry.recordRecovery('simulation.backlog-drop',this,this.transport,{elapsedMs,droppedTicks,phase:activeSession?'timing-rebase':'bootstrap'});
+    RecoveryTelemetry.recordRecovery('simulation.backlog-drop',this,this.transport,{elapsedMs,droppedMs,droppedTicks,reason,phase:activeSession?'timing-rebase':'bootstrap'});
   }
   emitNetworkHealth(state=this.networkState){
     if(this.simulationFatal)state='fatal';this.networkState=state;
@@ -24423,9 +24506,9 @@ class GameSession{
     });
     this.netcodeNow=performance.now();this.lastDriverPulseAt=this.netcodeNow;this.lastSnapshotEmitAt=this.netcodeNow;
     this.stopHeartbeat(false);
-    // A slow CPU pulse is not a suspended page. Core keeps at most three due
-    // ticks; only a gap longer than three seconds discards wall-clock debt.
-    this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,maxBacklogTicks:Math.ceil(this.sim.tps*3),
+    // A slow CPU pulse is not a suspended page. Core runs fixed ticks in order,
+    // within the per-pulse budget, and retains at most three seconds of debt.
+    this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,backlogPolicy:'defer',maxBacklogTicks:Math.ceil(this.sim.tps*3),
       onBacklogDrop:event=>this.onBacklogDrop(event),
       beforeFrame:now=>{
         // Keep presentation history through recoverable rAF/CPU gaps. Core's
@@ -24443,7 +24526,10 @@ class GameSession{
         if(this.driverPulseAdvances>0&&performance.now()-this.driverPulseStartedAt>=12)return false;
         return true;
       },
-      onAdvance:()=>{this.driverPulseAdvances++;this.reconcileNetcodePresentation()},render:frame=>{this.driverLastAlpha=frame.alpha;this.reconcileNetcodePresentation()},
+      onAdvance:()=>{this.driverPulseAdvances++;this.reconcileNetcodeProgress()},render:frame=>{
+        this.driverLastAlpha=frame.alpha;this.reconcileNetcodeProgress();
+        this.reconcileNetcodePresentation();this.publishNetcodeSnapshot(this.netcodeNow);
+      },
       onError:error=>this.enterSimulationFatal(error,{source:'netcode-loop'})});
     this.syncHold=!this.transportConnected;AppLifecycle.registerBackgroundSession(this);return true;
   }
@@ -24474,7 +24560,7 @@ class GameSession{
       for(const tick of this.frameOutputs.keys())if(tick>event.from)this.frameOutputs.delete(tick);
       this.renderTimelineChanged=true;
     }else if(event.type==='reconciled'){
-      this.renderTimelineChanged=true;this.reconcileNetcodePresentation();
+      this.renderTimelineChanged=true;this.reconcileNetcodeProgress();
     }else if(event.type==='desync'){
       this.onLog('상태 해시 불일치 · 공통 코어의 과거 snapshot 검증/재실행');
     }else if(event.type==='recovered'){
@@ -24585,11 +24671,14 @@ class GameSession{
       else this.campaignOutroTimer=setTimeout(finish,CampaignPresentation.outroDuration(campaign.presentation.outro));
     }else finish();
   }
-  reconcileNetcodePresentation(){
+  reconcileNetcodeProgress(){
     if(this.simEnded||this.simulationFatal)return;
     this.publishConfirmedFrames();
     if(this.pendingTerminalFrame&&this.netcodeNow-this.lastTerminalReceiptAt>=500)this.sendTerminalReceipt();
     this.tryFinishTerminalBarrier();
+  }
+  reconcileNetcodePresentation(){
+    if(this.simEnded||this.simulationFatal)return;
     // The first capture can predate peer readiness, so reanchor on the first advancing tick.
     const startPresentationTimeline=this.presentationStartPending&&this.sim.tick>0;
     if(!this.netcodeSession.resimulating&&!this.simEnded&&(this.renderTimelineChanged||this.lastRenderedSimulationTick!==this.sim.tick||startPresentationTimeline)){
@@ -24605,7 +24694,7 @@ class GameSession{
     const result=this.pendingTerminalFrame?{status:'terminal-barrier',tick:this.netcodeSession.tick}:
       terminal&&!this.netcodeSession.resimulating?{status:'terminal',tick:this.netcodeSession.tick}:
       this.syncHold?{status:this.netcodeSession.status,tick:this.netcodeSession.tick}:this.netcodeSession.advance(this.neutralInput);
-    this.reconcileNetcodePresentation();return result;
+    this.reconcileNetcodeProgress();return result;
   }
   emitSnapshot(snapshot){
     const started=performance.now();
@@ -24619,10 +24708,7 @@ class GameSession{
     const started=performance.now();
     try{return this.onRenderTargets(sim,snap)}finally{PerformanceTelemetry.recordTiming(this.performanceStats.timings,'renderTargets',performance.now()-started)}
   }
-  advanceSimulation(now=performance.now()){
-    if(!this.sim||this.simEnded||this.simulationFatal)return;
-    // Library owns pacing, accumulation, bounded catchup, and polling during holds.
-    this.netcodeLoop.pulse(now);
+  publishNetcodeSnapshot(now=this.netcodeNow){
     const previous=this.lastSnapshotPublication;
     const presentationChanged=!previous||previous.sim!==this.sim||previous.tick!==this.sim.tick||previous.epoch!==this.sim.runtimeEpoch||previous.publishedTick!==this.publishedGameTick||this.presentationEventBuffer.length>0||(this.publishConfirmedSnapshots&&previous.confirmed!==this.latestConfirmedSnapshot);
     if(presentationChanged&&!this.netcodeSession.resimulating&&now-this.lastSnapshotEmitAt>=SNAPSHOT_EMIT_INTERVAL_MS){
@@ -24630,6 +24716,11 @@ class GameSession{
       const snapshot=this.publishConfirmedSnapshots?this.latestConfirmedSnapshot:this.sim.snapshot();
       if(snapshot){snapshot.events=StateValue.copy(this.presentationEventBuffer.splice(0));this.presentationEventsPublished+=snapshot.events.length;this.emitSnapshot(snapshot)}
     }
+  }
+  advanceSimulation(now=performance.now()){
+    if(!this.sim||this.simEnded||this.simulationFatal)return;
+    // Library owns pacing, accumulation, bounded catchup, and polling during holds.
+    this.netcodeLoop.pulse(now);
   }
 enterSimulationFatal(err,{source="simulation",notifyPeer=true,remoteInfo=null}={}){
     if(this.simulationFatal)return false;

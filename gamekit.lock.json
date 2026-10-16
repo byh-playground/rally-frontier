@@ -1,12 +1,12 @@
 {
   "repository": "byh-playground/bloom-gamekit",
-  "sourceCommit": "8033ccd60cf5b11f49d2f4792072a38c64217e0d",
-  "distCommit": "149413a19b8507b80dc1ee7face9ef610850e6e3",
+  "sourceCommit": "e310b6092e93a5b934ebd5c31588700589a04043",
+  "distCommit": "b6d0f1f78a9fa604163759017f32fcfa3e13aa98",
   "upstreamRollbackCommit": "c3173914519a78834360430071e7a125736d86d5",
   "modules": {
     "rollback": {
       "file": "rollback.js",
-      "sha256": "e2c062b437bd51fc6e50fe31fe3a1880cd51dc642a50d90f649b5b187f1186f5"
+      "sha256": "e238d836a5f594c8a56f58dcd564807b865113250af10df976662cabad188c52"
     },
     "deterministic": {
       "file": "deterministic.js",
@@ -14,7 +14,7 @@
     },
     "simloop": {
       "file": "simloop.js",
-      "sha256": "1be543dc7e15ef7c87043af98a1fb49a0a45a779098bfa085dc7509709f1ea9c"
+      "sha256": "f1d348b2f6a80b69c867b9bd45fc359f6d0b238885d85edfe0e9b73d03f043f4"
     },
     "transport": {
       "file": "transport.js",
@@ -22,7 +22,7 @@
     },
     "interpolation": {
       "file": "interpolation.js",
-      "sha256": "64d1297162f07e78904954628a5c9595e1eddf576b8612a58f41ed594638c37c"
+      "sha256": "193c0e00bd60b89ea59a74be5badb898420ffbd350eb9cd3b7f6b56600d33a74"
     },
     "input": {
       "file": "input.js",
@@ -30,7 +30,7 @@
     },
     "rendering": {
       "file": "rendering.js",
-      "sha256": "1a0951b975917e442be091cefd74eb43724245bc713b44839edf35874804b9be"
+      "sha256": "fd254f4f8b91ab74dae294abbe3f2d76736648e797ccc370abf35aec8ea41f94"
     },
     "vectorAssets": {
       "file": "vector-assets.js",
@@ -53,5 +53,5 @@
       "sha256": "72260336a6c3f2ee0357a303fa8943dd8cfa4f7deea5d9517d311d4cd8796a71"
     }
   },
-  "distManifestSha256": "7d79e07842991ea272392bafc919adf5143a323aba93136753e26ae3baa4da4e"
+  "distManifestSha256": "8629d5b41aa7d96cd1a0d56da376e048fb6d80296f117c32d3f95a395808ef7e"
 }
