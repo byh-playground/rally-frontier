@@ -13293,7 +13293,7 @@ const COLLISION_ITERS=8,COLLISION_RADIUS_SCALE=1.35,COLLISION_NORMAL=4096;
 // Combat, range queries and collision broadphase share the same deterministic unit grid.
 // Final distance/contact tests remain exact, so the grid changes candidate discovery only.
 const SIM_SPATIAL_CELL=256;
-const COLLISION_SPATIAL_CELL=128;
+const COLLISION_SPATIAL_CELL=64;
 const VISION_SPATIAL_CELL=256;
 const UNIT_CHECKSUM_BUCKETS=8;
 const NEUTRAL_CHECKSUM_BUCKETS=4;
@@ -16614,12 +16614,17 @@ class DeterministicCollisionGrid{
     this.rows=Math.ceil(world.height/cellSize);
     this.buckets=Array.from({length:this.cols*this.rows},()=>[]);
     this.used=[];
+    this.maxIndexedRadiusFP=0;
   }
+  // World coordinates are zero-origin; positions outside the world clamp to its edge cells.
   cellXFP(fx){return RangeUtil.clamp(Math.floor(fx/this.cellSizeFP),0,this.cols-1)}
   cellYFP(fy){return RangeUtil.clamp(Math.floor(fy/this.cellSizeFP),0,this.rows-1)}
-  reset(units){
+  // Rebuild after indexed centers move; `maxIndexedRadiusFP` bounds every target.
+  reset(units,maxIndexedRadiusFP=0){
+    // Clear only cells touched by the previous build, retaining each array bucket.
     for(const key of this.used)this.buckets[key].length=0;
     this.used.length=0;
+    this.maxIndexedRadiusFP=Math.max(0,Math.trunc(Number(maxIndexedRadiusFP)||0));
     for(let i=0;i<units.length;i++){
       const u=units[i];if(!u.alive)continue;
       const key=this.cellYFP(u.fy)*this.cols+this.cellXFP(u.fx);
@@ -16627,6 +16632,23 @@ class DeterministicCollisionGrid{
       if(!bucket.length)this.used.push(key);
       bucket.push(i);
     }
+  }
+  // Radius arguments use fixed-point world units, not diameters. Each live unit
+  // has one center cell; this query expands by the largest indexed radius so a
+  // small query circle still discovers a large possible contact partner. It scans
+  // y/x cells in order and reads buckets at y*columns+x. The caller owns `out` and
+  // may reuse it; each reuse clears/overwrites the old result, while a different
+  // array is safe for nested calls. Copy the result before reusing its buffer.
+  queryCandidatesFP(fx,fy,radiusFP,out){
+    out.length=0;
+    const reach=Math.max(0,Math.trunc(Number(radiusFP)||0))+this.maxIndexedRadiusFP;
+    const minCx=this.cellXFP(fx-reach),maxCx=this.cellXFP(fx+reach);
+    const minCy=this.cellYFP(fy-reach),maxCy=this.cellYFP(fy+reach);
+    for(let cy=minCy;cy<=maxCy;cy++)for(let cx=minCx;cx<=maxCx;cx++){
+      const bucket=this.buckets[cy*this.cols+cx];
+      for(let k=0;k<bucket.length;k++)out.push(bucket[k]);
+    }
+    return out;
   }
 }
 
@@ -17972,6 +17994,7 @@ class NavigationTopology{
 class SimulationRuntimeState{
   static collision(sim){
     sim.collisionGrid=new DeterministicCollisionGrid(COLLISION_SPATIAL_CELL,sim.world);
+    sim.collisionCandidateBuffer=[];
     sim.collisionSweepGrid=new DeterministicSweptCollisionGrid(sim.world);
     sim.collisionMotion=null;
     for(const key of ["collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther"])sim[key]=new Int32Array(0);
@@ -18022,7 +18045,7 @@ class StrategySim{
   // their existing StateContracts and serialization.
   static stateContract=new StateContract({}, {presentation:["events","perfStats","balanceStats","_perfCollect"],derived:[
     "chargedHeldIds","navigationDemandScope","world","tps","campaignScriptRuntime","campaignTechCap","disposed","runtimeEpoch","commandReceipts",
-    "collisionGrid","collisionSweepGrid","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
+    "collisionGrid","collisionSweepGrid","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCandidateBuffer","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
     "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapSideHeads","hardFixSapSideNext","hardFixSapSidePrev","hardFixSapSideHeaps","hardFixSapMarks","hardFixSapEpoch",
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","maxUnitRadius",
     "cloakCacheTick","auraCloakedIds","tickVisibilityCache","tickVisibilityCacheTick","economyCacheTick","workerGasAssignments","validGasExtractorsBySide","navigation","nextRoutePathId","routePathStore","routePathIndex"
@@ -22945,7 +22968,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     }
     if(perf)perf.collisionPrepMs+=now()-mark;
 
-    const grid=this.collisionGrid,buckets=grid.buckets,cols=grid.cols;
+    const grid=this.collisionGrid,candidates=this.collisionCandidateBuffer;
     const dxA=this.collisionDx,dyA=this.collisionDy,cnt=this.collisionCnt;
 
     // First resolve the actual movement/impulse path for this tick against dynamic
@@ -22957,7 +22980,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     for(let iter=0;iter<COLLISION_ITERS;iter++){
       if(perf)perf.collisionIterations++;
       mark=perf?now():0;
-      grid.reset(units);
+      grid.reset(units,maxRadius);
       if(perf)perf.collisionGridBuildMs+=now()-mark;
       mark=perf?now():0;
       dxA.fill(0,0,n);dyA.fill(0,0,n);cnt.fill(0,0,n);
@@ -22975,34 +22998,28 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       for(let i=0;i<n;i++){
         const a=units[i];if(!a.alive||radii[i]<=0)continue;
         const aFlags=motionFlags[i],aLayer=motionLayers[i];
-        const reach=radii[i]+maxRadius;
-        const minCx=grid.cellXFP(a.fx-reach),maxCx=grid.cellXFP(a.fx+reach);
-        const minCy=grid.cellYFP(a.fy-reach),maxCy=grid.cellYFP(a.fy+reach);
-
-        for(let cy=minCy;cy<=maxCy;cy++)for(let cx=minCx;cx<=maxCx;cx++){
-          const bucket=buckets[cy*cols+cx];
-          for(let k=0;k<bucket.length;k++){
-            const j=bucket[k];if(j<=i)continue;
-            const b=units[j];
-            if(radii[j]<=0)continue;
-            const bFlags=motionFlags[j];
-            if(!b.alive||(aFlags&1)!==(bFlags&1)||(aFlags&6)||(bFlags&6)||aLayer!==motionLayers[j])continue;
-            if(perf)perf.collisionPairs++;
-            if(!this.isAlliedCollisionUnit(a,b))continue;
-            const min=radii[i]+radii[j];
-            let dx=b.fx-a.fx,dy=b.fy-a.fy;const d2=dx*dx+dy*dy;
-            if(d2>=min*min)continue;
-            let nx,ny,dist;
-            if(d2===0){[nx,ny]=this.fallbackNormal(a,b);dist=0}
-            else{dist=Math.max(1,Math.floor(Math.sqrt(d2)));nx=Math.trunc(dx*COLLISION_NORMAL/dist);ny=Math.trunc(dy*COLLISION_NORMAL/dist)}
-            const pen=min-dist;if(pen<=0)continue;
-            overlaps++;if(perf)perf.collisionOverlaps++;
-            const ma=masses[i],mb=masses[j],tot=ma+mb;
-            const pa=Math.max(1,Math.floor(pen*mb/tot)),pb=Math.max(1,pen-pa);
-            dxA[i]-=Math.trunc(nx*pa/COLLISION_NORMAL);dyA[i]-=Math.trunc(ny*pa/COLLISION_NORMAL);
-            dxA[j]+=Math.trunc(nx*pb/COLLISION_NORMAL);dyA[j]+=Math.trunc(ny*pb/COLLISION_NORMAL);
-            cnt[i]++;cnt[j]++;
-          }
+        grid.queryCandidatesFP(a.fx,a.fy,radii[i],candidates);
+        for(let k=0;k<candidates.length;k++){
+          const j=candidates[k];if(j<=i)continue;
+          const b=units[j];
+          if(radii[j]<=0)continue;
+          const bFlags=motionFlags[j];
+          if(!b.alive||(aFlags&1)!==(bFlags&1)||(aFlags&6)||(bFlags&6)||aLayer!==motionLayers[j])continue;
+          if(perf)perf.collisionPairs++;
+          if(!this.isAlliedCollisionUnit(a,b))continue;
+          const min=radii[i]+radii[j];
+          let dx=b.fx-a.fx,dy=b.fy-a.fy;const d2=dx*dx+dy*dy;
+          if(d2>=min*min)continue;
+          let nx,ny,dist;
+          if(d2===0){[nx,ny]=this.fallbackNormal(a,b);dist=0}
+          else{dist=Math.max(1,Math.floor(Math.sqrt(d2)));nx=Math.trunc(dx*COLLISION_NORMAL/dist);ny=Math.trunc(dy*COLLISION_NORMAL/dist)}
+          const pen=min-dist;if(pen<=0)continue;
+          overlaps++;if(perf)perf.collisionOverlaps++;
+          const ma=masses[i],mb=masses[j],tot=ma+mb;
+          const pa=Math.max(1,Math.floor(pen*mb/tot)),pb=Math.max(1,pen-pa);
+          dxA[i]-=Math.trunc(nx*pa/COLLISION_NORMAL);dyA[i]-=Math.trunc(ny*pa/COLLISION_NORMAL);
+          dxA[j]+=Math.trunc(nx*pb/COLLISION_NORMAL);dyA[j]+=Math.trunc(ny*pb/COLLISION_NORMAL);
+          cnt[i]++;cnt[j]++;
         }
       }
       if(perf){

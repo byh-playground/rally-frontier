@@ -4,7 +4,7 @@
   "scripts": {
     "setup:gamekit": "node scripts/setup-gamekit.cjs",
     "build": "npm run setup:gamekit && npm run vector-assets:compile && node scripts/build-pages.cjs",
-    "test:build": "npm run setup:gamekit && npm run vector-assets:compile && node --test scripts/setup-gamekit.test.cjs scripts/build-pages.test.cjs scripts/netcode-qa-module.test.cjs scripts/mobile-battle-export.test.cjs",
+    "test:build": "npm run setup:gamekit && npm run vector-assets:compile && node --test scripts/setup-gamekit.test.cjs scripts/build-pages.test.cjs scripts/netcode-qa-module.test.cjs scripts/mobile-battle-export.test.cjs scripts/collision-grid-candidates.test.cjs",
     "vector-assets:compile": "node scripts/compile-vector-assets.cjs"
   },
   "engines": {
