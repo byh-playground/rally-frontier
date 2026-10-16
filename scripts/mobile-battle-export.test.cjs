@@ -17,12 +17,12 @@ function stats(p50 = 0, p95 = 0, max = 0, mean = p50) {
 }
 
 function peer(offset = 0) {
-  const stageKeys = ["totalMs", "indexMs", "worldMs", "economyMs", "workerMs", "visionMs", "combatMs", "projectileMs", "collisionMs", "collisionSoftApplyMs", "postMs"];
+  const stageKeys = ["totalMs", "indexMs", "worldMs", "economyMs", "workerMs", "visionMs", "combatMs", "combatTargetPickMs", "combatOtherMs", "projectileMs", "collisionMs", "collisionSoftApplyMs", "postMs"];
   const sampledStages = Array.from({ length: 15 }, (_, index) => ({
     sampleTick: index * 10 + offset,
     stageMs: Object.fromEntries(stageKeys.map((key, stageIndex) => [key, index + stageIndex + offset])),
     workCounters: {
-      spatialQueries: index + offset, spatialCandidates: index * 4 + offset, collisionPairs: index * 2 + offset,
+      spatialQueries: index + offset, spatialCandidates: index * 4 + offset, targetQueries: index * 3 + offset, combatTargetPickCalls: index + 2, collisionPairs: index * 2 + offset,
       collisionSoftPasses: 1, collisionSoftContacts: index + offset, collisionSoftMovedUnits: index,
       collisionSoftCappedUnits: index % 2, collisionSweptCalls: 2, collisionSweptActivePasses: 1,
       collisionHardFixCalls: 1, collisionHardFixPasses: 1, collisionHardFixCorrections: 0,
@@ -34,8 +34,10 @@ function peer(offset = 0) {
     available: true,
     sampleCadenceMs: 1000,
     sampledStages,
-    step: { ticksDuringSample: 97, lastStepMs: 11.25, ewmaStepMs: 16.4, maxObservedStepMs: 54.4, lifetimeMaxStepMs: 75.2 },
+    step: { ticksDuringSample: 97, totalCpuMsDuringSample: 945.7, lastStepMs: 11.25, ewmaStepMs: 16.4, maxObservedStepMs: 54.4, lifetimeMaxStepMs: 75.2 },
     snapshot: { samplesDuringSample: 77, totalMsDuringSample: 543, averageMsDuringSample: 7.05, latestSnapshotMs: 5.5, lifetimeMaxSnapshotMs: 22.9 },
+    snapshotUi: { samplesDuringSample: 14, totalMsDuringSample: 23.5 },
+    sessionPulse: { samplesDuringSample: 101, totalMsDuringSample: 1120.25, averageMsDuringSample: 11.09 },
   };
 }
 
@@ -47,7 +49,7 @@ function reportFixture() {
     build: { id: "20261016T033522+0000-rf-0c5866d65800", commit: "0123456789abcdef" }, collisionModel: "ally-soft-one-pass",
     device: { userAgent: "Headless browser details are omitted from summary", platform: "Win32", hardwareConcurrency: 12, viewport: { width: 844, height: 390, devicePixelRatio: 2, orientation: "landscape-primary" } },
     condition: { seed: 20261015, totalCombatUnits: 400, unitsPerSide: 200, composition: "mixed", rosters: { host: ["swordsman", "archer"], guest: ["swordsman", "archer"] }, tps: 10, warmupSeconds: 5, requestedSampleSeconds: 15 },
-    measurement: { collector: "completed renderer frame hook", perFrameCounters: ["frameIntervalMs", "rendererCpuWorkMs", "alphaRunCacheHits"] },
+    measurement: { collector: "completed renderer frame hook", perFrameCounters: ["frameIntervalMs", "frameWindowMs", "rendererCpuWorkMs", "hostStepCpuMs", "guestSessionPulseCpuMs", "unattributedElapsedMs"], vectorAssetDrawCallMeaning: "MeshRenderer device.draw() calls dispatched as WebGL draws (instanced when the instancing extension is active).", nestedCpuAccounting: "sessionPulse includes StrategySim step and snapshot work" },
     sample: {
       status: "complete", durationMs: 15000, frameCount: 180, fps: 7.31,
       frameIntervalMs: stats(135.7, 179.1, 220, 145), rendererCpuWorkMs: stats(12, 30.4, 48, 15),
@@ -58,10 +60,15 @@ function reportFixture() {
       alphaRunCacheHits: stats(4, 8, 10, 5), alphaRunCacheMisses: stats(1, 2, 4, 1.2),
       metricAvailability: { vectorAssetDraws: { available: true, vectorPathUsed: true } },
       pairedSlowFrames: { frameCount: 9, selection: { metric: "frameIntervalMs", operator: ">=", thresholdMs: 139 }, metrics: {
-        rendererCpuWorkMs: stats(20, 37, 48, 25), drawCalls: stats(690, 710, 730, 700), bufferUploadBytes: stats(110000, 135000, 140000, 120000),
+        frameWindowMs: stats(140, 180, 220, 150), rendererCpuWorkMs: stats(20, 37, 48, 25), hostSessionPulseCpuMs: stats(3, 4, 5, 3.5), guestSessionPulseCpuMs: stats(2, 3, 4, 2.5), unattributedElapsedMs: stats(90, 120, 160, 100),
+        hostStepCpuMs: stats(1, 2, 3, 1.5), hostStepCount: stats(1, 2, 3, 1.5), guestStepCpuMs: stats(1, 2, 3, 1.5), guestStepCount: stats(1, 2, 3, 1.5),
+        hostSnapshotCpuMs: stats(0.2, 0.5, 1, 0.4), hostSnapshotCount: stats(0, 1, 2, 0.5), guestSnapshotCpuMs: stats(0.2, 0.5, 1, 0.4), guestSnapshotCount: stats(0, 1, 2, 0.5),
+        hostSnapshotUiCpuMs: stats(0.1, 0.2, 0.5, 0.2), hostSnapshotUiCount: stats(0, 1, 2, 0.5), guestSnapshotUiCpuMs: stats(0.1, 0.2, 0.5, 0.2), guestSnapshotUiCount: stats(0, 1, 2, 0.5),
+        drawCalls: stats(690, 710, 730, 700), bufferUploadBytes: stats(110000, 135000, 140000, 120000),
         alphaRunCacheHits: stats(3, 7, 9, 5), alphaRunCacheMisses: stats(1, 3, 4, 2),
       } },
-      gpuTime: { measured: false, timeMs: null }, simulationCpuTimeMs: null, gcTimeMs: null, transportSerializationMs: null,
+      frameAlignedSimulation: { accounting: "pulse includes nested step and snapshot work; residual is not GPU time or idle time" },
+      gpuTime: { measured: false, timeMs: null }, simulationCpuTimeMs: 1900, simulationCpuTimeSource: "sum of Host and Guest StrategySim step cumulative CPU", gcTimeMs: null, transportSerializationMs: null,
       rawFrameSamples: Array.from({ length: 180 }, (_, index) => ({ index, frameMs: index })),
     },
     visibility: { visibilityStateAtStart: "visible", visibilityStateAtSampleStart: "visible", visibilityStateAtFinish: "visible", sampleValid: true, hiddenEvents: 0, unpausedHiddenEvents: 0, hiddenWhilePausedEvents: 0, pagehideEvents: 0, invalidated: false },
@@ -125,8 +132,12 @@ test("summary copy keeps key diagnostics concise and excludes raw sample arrays"
   assert.match(summary, /paired slow frames=9/);
   assert.match(summary, /Ticks 31→138 \(\+107\)/);
   assert.match(summary, /snapshot n\/avg\/max=77\/7\.05\/22\.9ms/);
+  assert.match(summary, /step ticks\/cpu\/last\/ewma\/max=97\/945\.7\/11\.25/);
   assert.match(summary, /Alpha cache avg hits\/misses per frame=5\/1\.2/);
-  assert.match(summary, /stage p95ms/);
+  assert.match(summary, /stage p95ms .*target-pick=20\/combat-other=21/);
+  assert.match(summary, /nearby-return\/targetQueries\/collisions=56\/42\/28 target-pick calls=135/);
+  assert.match(summary, /Paired slow-frame p95 ms window\/render\/Host pulse\/Guest pulse\/unattributed=180\/37\/4\/3\/120/);
+  assert.match(summary, /pulse includes nested sim work/);
   assert.match(summary, /collision sum soft pass\/contact\/moved\/capped=15\/105\/105\/7 sweep call\/pass=30\/15 hardfix call\/pass\/correction=15\/15\/0/);
   assert.match(summary, /GPU timer not measured; GC timing not collected/);
   assert.doesNotMatch(summary, /rawFrameSamples|sampleTick|Headless browser details/);
@@ -183,10 +194,42 @@ test("download requests the complete JSON with the correct Blob type and filenam
   const downloaded = JSON.parse(await urlApi.createdBlob.text());
   assert.equal(downloaded.sample.rawFrameSamples.length, 180);
   assert.equal(downloaded.sample.pairedSlowFrames.metrics.rendererCpuWorkMs.p95, 37);
+  assert.match(downloaded.measurement.vectorAssetDrawCallMeaning, /device\.draw\(\).*WebGL draws/);
+  assert.match(downloaded.sample.frameAlignedSimulation.accounting, /not GPU time or idle time/);
   assert.equal(downloaded.simulation.peers.host.sampledStages.length, 15);
   assert.match(status.textContent, /다운로드를 요청했습니다/);
   assert.doesNotMatch(status.textContent, /저장 완료|다운로드 완료/);
   assert.equal(revokedUrls.length, 0);
   assert.equal(timers[0].delay, 60000);
   assert.ok(eventListeners.has("pagehide"));
+});
+
+test("frame-aligned peer deltas keep pulse as the non-overlapping CPU total", () => {
+  const { MobileBattleTestMode } = makeHarness();
+  const mode = MobileBattleTestMode;
+  mode.sampleBuffers = Object.fromEntries(mode.sampleMetricKeys.map(key => [key, new Float32Array(2)]));
+  const makeSession = (stepSamples, stepCumulativeMs, snapshotSamples, snapshotCumulativeMs, pulseSamples, pulseCumulativeMs, snapshotUiSamples, snapshotUiCumulativeMs) => {
+    const sim = { perfStats: { stepSamples, stepCumulativeMs, snapshotSamples, snapshotCumulativeMs } };
+    return { sim, performanceStats: { timings: { pulse: { samples: pulseSamples, cumulativeMs: pulseCumulativeMs }, snapshotUi: { samples: snapshotUiSamples, cumulativeMs: snapshotUiCumulativeMs } } } };
+  };
+  const host = makeSession(102, 11.2, 8, 4.4, 22, 35, 9, 3.1);
+  const guest = makeSession(202, 21.7, 18, 7.2, 32, 57, 19, 5.4);
+  mode.peerFrameBaseline = {
+    host: { session: host, sim: host.sim, stepCount: 100, stepCpuMs: 10, snapshotCount: 6, snapshotCpuMs: 3.8, pulseCount: 20, sessionPulseCpuMs: 32, snapshotUiCount: 7, snapshotUiCpuMs: 2.9 },
+    guest: { session: guest, sim: guest.sim, stepCount: 200, stepCpuMs: 20, snapshotCount: 16, snapshotCpuMs: 6.8, pulseCount: 30, sessionPulseCpuMs: 52, snapshotUiCount: 17, snapshotUiCpuMs: 5.2 },
+  };
+
+  mode.capturePeerFrameMetrics({ sessions: { host, guest } }, 0, true, 20, 4);
+
+  assert.equal(mode.sampleBuffers.hostStepCount[0], 2);
+  assert.ok(Math.abs(mode.sampleBuffers.hostStepCpuMs[0] - 1.2) < 1e-5);
+  assert.equal(mode.sampleBuffers.hostSnapshotCount[0], 2);
+  assert.ok(Math.abs(mode.sampleBuffers.hostSnapshotCpuMs[0] - 0.6) < 1e-5);
+  assert.equal(mode.sampleBuffers.hostSnapshotUiCount[0], 2);
+  assert.ok(Math.abs(mode.sampleBuffers.hostSessionPulseCpuMs[0] - 3) < 1e-5);
+  assert.equal(mode.sampleBuffers.guestStepCount[0], 2);
+  assert.ok(Math.abs(mode.sampleBuffers.guestStepCpuMs[0] - 1.7) < 1e-5);
+  assert.equal(mode.sampleBuffers.guestSessionPulseCpuMs[0], 5);
+  assert.equal(mode.sampleBuffers.unattributedElapsedMs[0], 8);
+  assert.equal(mode.sampleBuffers.frameWindowMs[0], 20);
 });

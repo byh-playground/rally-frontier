@@ -13309,8 +13309,8 @@ const BALANCE_HISTORY_MAX=160;
 class PerformanceTelemetry{
   static runtimeMonitor=null;
   static recordTiming(stats,key,ms){
-    const row=stats[key]||(stats[key]={samples:0,currentMs:0,ewmaMs:0,maxMs:0});
-    row.currentMs=Math.max(0,ms);row.ewmaMs=row.samples?row.ewmaMs*.85+row.currentMs*.15:row.currentMs;
+    const row=stats[key]||(stats[key]={samples:0,currentMs:0,cumulativeMs:0,ewmaMs:0,maxMs:0});
+    row.currentMs=Math.max(0,ms);row.cumulativeMs=(row.cumulativeMs||0)+row.currentMs;row.ewmaMs=row.samples?row.ewmaMs*.85+row.currentMs*.15:row.currentMs;
     row.maxMs=Math.max(row.maxMs,row.currentMs);row.samples++;
   }
   static measureSessionPulse(session,now){
@@ -13410,7 +13410,7 @@ class PerformanceTelemetry{
       collisionSweptCalls:0,collisionSweptActivePasses:0,collisionSweptZeroMotionCalls:0,collisionSweptEmptyPasses:0,collisionSweptPairTests:0,collisionSweptHits:0,collisionSweptCorrectionUnits:0,collisionSweptNoCorrectionPasses:0,
       collisionHardFixCalls:0,collisionHardFixPasses:0,collisionHardFixActivePairTests:0,collisionHardFixCandidates:0,collisionHardFixCorrections:0,collisionHardFixNoOpCalls:0,
       combatTargetPickMs:0,combatTargetPickCalls:0,combatOtherMs:0,
-      postMs:0,snapshotMs:0,snapshotCumulativeMs:0,maxSnapshotMs:0,snapshotSamples:0,lastStepMs:0,stepSamples:0,maxStepMs:0,ewmaStepMs:0,
+      postMs:0,snapshotMs:0,snapshotCumulativeMs:0,maxSnapshotMs:0,snapshotSamples:0,lastStepMs:0,stepSamples:0,stepCumulativeMs:0,maxStepMs:0,ewmaStepMs:0,
       aliveUnits:0,workers:0,combatUnits:0,projectiles:0,
       peakAliveUnits:0,peakBuildings:0,peakProjectiles:0,
       spatialQueries:0,spatialCandidates:0,
@@ -23174,7 +23174,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       // The detailed stage/candidate counters below remain sampled once per second.
       if(started!==null){
         const ms=performance.now()-started,p=this.perfStats;
-        p.lastStepMs=ms;p.stepSamples=(p.stepSamples||0)+1;p.maxStepMs=Math.max(p.maxStepMs||0,ms);
+        p.lastStepMs=ms;p.stepSamples=(p.stepSamples||0)+1;p.stepCumulativeMs=(p.stepCumulativeMs||0)+ms;p.maxStepMs=Math.max(p.maxStepMs||0,ms);
         p.ewmaStepMs=p.stepSamples>1?p.ewmaStepMs*.8+ms*.2:ms;
       }
     }
@@ -29113,6 +29113,7 @@ class GLRenderer{
     this.bodyPulsePresentation=new BodyPulsePresentation();
     this.frameShakeX=0;
     this.frameShakeY=0;
+    this.cameraShakePresentationMoved=false;
 
     // 깃발 명령 VFX는 시뮬레이션 상태와 분리된 로컬 렌더 효과다.
     this.flagFx=[];
@@ -33541,13 +33542,21 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     // Translate the resolved, antialiased scene once; geometry, visibility and Fog
     // have already rendered with the same stable projection as spatial inference.
     const gl=this.gl,w=this.canvas.width,h=this.canvas.height,{x:sx,y:sy}=this.displayCoordinatesAtScene(0,0);
-    const rect=this.canvas.getBoundingClientRect(),cssX=sx*rect.width/w,cssY=sy*rect.height/h;
-    if(this.fxCanvas)this.fxCanvas.style.transform=`translate(${cssX}px,${cssY}px)`;
-    for(const el of document.querySelectorAll('.campaign-world-ping'))el.style.translate=`${cssX}px ${cssY}px`;
     // Prime the program and sized texture with an identity copy on first use or
     // resize, so the first impact never pays the cold composition setup cost.
     const needsWarmup=!this.frameComposition||this.frameComposition.width!==w||this.frameComposition.height!==h;
-    if(!sx&&!sy&&!needsWarmup)return;
+    if(!sx&&!sy&&!needsWarmup){
+      if(this.cameraShakePresentationMoved){
+        if(this.fxCanvas)this.fxCanvas.style.transform='translate(0px,0px)';
+        for(const el of document.querySelectorAll('.campaign-world-ping'))el.style.translate='0px 0px';
+        this.cameraShakePresentationMoved=false;
+      }
+      return;
+    }
+    const rect=this.canvas.getBoundingClientRect(),cssX=sx*rect.width/w,cssY=sy*rect.height/h;
+    if(this.fxCanvas)this.fxCanvas.style.transform=`translate(${cssX}px,${cssY}px)`;
+    for(const el of document.querySelectorAll('.campaign-world-ping'))el.style.translate=`${cssX}px ${cssY}px`;
+    this.cameraShakePresentationMoved=!!sx||!!sy;
     if(!this.frameComposition){
       const precision=gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER,gl.HIGH_FLOAT)?.precision?'highp':'mediump';
       const program=this.device.createPipeline({vertex:'attribute vec2 position;void main(){gl_Position=vec4(position,0.0,1.0);}',
@@ -36298,9 +36307,9 @@ class DebugScenarioHarness{
 class MobileBattleTestMode{
   static phase="idle";static config=null;static report=null;static frameHandle=0;static phaseStartedAt=0;static connectStartedAt=0;static lastFrameAt=0;static lastHudAt=0;
   static paused=false;static pausedAt=0;static sampleStartedAt=0;static sampleCount=0;static overflowFrames=0;static capacity=16384;
-  static sampleMetricKeys=Object.freeze(["frameIntervalMs","rendererCpuWorkMs","drawCalls","vectorAssetDrawCalls","vectorAssetDraws","bufferUploadBytes","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances"]);
-  static sampleBuffers=Object.create(null);static lastCapturedRendererFrameSequence=0;
-  static peerSamples={host:[],guest:[]};static peerSampleTicks={host:0,guest:0};static peerSnapshotBaseline={};static peerStepSampleCounts={host:0,guest:0};static peerStepSampleCountsAtStart={host:0,guest:0};static peerMaxStepMs={host:0,guest:0};
+  static sampleMetricKeys=Object.freeze(["frameIntervalMs","frameWindowMs","rendererCpuWorkMs","drawCalls","vectorAssetDrawCalls","vectorAssetDraws","bufferUploadBytes","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances","hostStepCpuMs","hostStepCount","hostSnapshotCpuMs","hostSnapshotCount","hostSnapshotUiCpuMs","hostSnapshotUiCount","hostSessionPulseCpuMs","hostSessionPulseCount","guestStepCpuMs","guestStepCount","guestSnapshotCpuMs","guestSnapshotCount","guestSnapshotUiCpuMs","guestSnapshotUiCount","guestSessionPulseCpuMs","guestSessionPulseCount","unattributedElapsedMs"]);
+  static sampleBuffers=Object.create(null);static lastCapturedRendererFrameSequence=0;static sampleFrameWindowStartedAt=0;
+  static peerSamples={host:[],guest:[]};static peerSampleTicks={host:0,guest:0};static peerSnapshotBaseline={};static peerFrameBaseline={};static peerStepSampleCounts={host:0,guest:0};static peerStepSampleCountsAtStart={host:0,guest:0};static peerMaxStepMs={host:0,guest:0};
   static visibilityStats={visibilityStateAtStart:"visible",visibilityStateAtSampleStart:null,hiddenEvents:0,unpausedHiddenEvents:0,hiddenWhilePausedEvents:0,pagehideEvents:0,invalidated:false};
   static lastSampleState=null;static sampleStartState=null;static lastIntervalMs=0;static savedSettings=null;
   static savedCampaignPending=null;static savedDebugPending=null;
@@ -36318,8 +36327,8 @@ class MobileBattleTestMode{
   static beginRun(){
     this.phase="connecting";this.paused=false;this.pausedAt=0;this.report=null;this.connectStartedAt=performance.now();this.phaseStartedAt=0;this.sampleStartedAt=0;this.lastFrameAt=0;this.lastHudAt=0;this.lastSampleState=null;this.sampleStartState=null;this.sampleCount=0;this.overflowFrames=0;this.lastIntervalMs=0;
     this.resetCopyFallback();
-    this.sampleBuffers=Object.fromEntries(this.sampleMetricKeys.map(key=>[key,new Float32Array(this.capacity)]));this.lastCapturedRendererFrameSequence=0;
-    this.peerSamples={host:[],guest:[]};this.peerSampleTicks={host:0,guest:0};this.peerSnapshotBaseline={};this.peerStepSampleCounts={host:0,guest:0};this.peerStepSampleCountsAtStart={host:0,guest:0};this.peerMaxStepMs={host:0,guest:0};
+    this.sampleBuffers=Object.fromEntries(this.sampleMetricKeys.map(key=>[key,new Float32Array(this.capacity)]));this.lastCapturedRendererFrameSequence=0;this.sampleFrameWindowStartedAt=0;
+    this.peerSamples={host:[],guest:[]};this.peerSampleTicks={host:0,guest:0};this.peerSnapshotBaseline={};this.peerFrameBaseline={};this.peerStepSampleCounts={host:0,guest:0};this.peerStepSampleCountsAtStart={host:0,guest:0};this.peerMaxStepMs={host:0,guest:0};
     this.visibilityStats={visibilityStateAtStart:document.visibilityState||"unknown",visibilityStateAtSampleStart:null,hiddenEvents:0,unpausedHiddenEvents:0,hiddenWhilePausedEvents:0,pagehideEvents:0,invalidated:false};
   }
   static activePhase(){return["connecting","warmup","sampling"].includes(this.phase)}
@@ -36341,15 +36350,20 @@ class MobileBattleTestMode{
   }
   static beginSampling(now,live){
     this.phase="sampling";this.phaseStartedAt=now;this.sampleStartedAt=now;this.sampleCount=0;this.overflowFrames=0;
+    this.sampleFrameWindowStartedAt=now;
     this.sampleStartState=this.stateSnapshot(live);this.lastSampleState=this.sampleStartState;
     this.visibilityStats.visibilityStateAtSampleStart=document.visibilityState||"unknown";
     this.lastCapturedRendererFrameSequence=Number(live.renderer?.perfStats?.frameSequence)||0;
     const match=live.match;
     for(const role of ["host","guest"]){
-      const perf=match.sessions?.[role]?.sim?.perfStats||{};
+      const session=match.sessions?.[role],sim=session?.sim,perf=sim?.perfStats||{},timings=session?.performanceStats?.timings||{};
+      const pulse=timings.pulse||{},snapshotUi=timings.snapshotUi||{};
       this.peerSampleTicks[role]=Number(perf.sampleTick)||0;
       this.peerStepSampleCounts[role]=Number(perf.stepSamples)||0;this.peerStepSampleCountsAtStart[role]=Number(perf.stepSamples)||0;this.peerMaxStepMs[role]=0;
-      this.peerSnapshotBaseline[role]={count:Number(perf.snapshotSamples)||0,totalMs:Number(perf.snapshotCumulativeMs)||0};
+      const stepCount=Number(perf.stepSamples)||0,stepCpuMs=Number(perf.stepCumulativeMs)||0,snapshotCount=Number(perf.snapshotSamples)||0,snapshotCpuMs=Number(perf.snapshotCumulativeMs)||0;
+      const pulseCount=Number(pulse.samples)||0,pulseCpuMs=Number(pulse.cumulativeMs)||0,snapshotUiCount=Number(snapshotUi.samples)||0,snapshotUiCpuMs=Number(snapshotUi.cumulativeMs)||0;
+      this.peerSnapshotBaseline[role]={count:snapshotCount,totalMs:snapshotCpuMs,stepCount,stepTotalMs:stepCpuMs,pulseCount,pulseTotalMs:pulseCpuMs,snapshotUiCount,snapshotUiTotalMs:snapshotUiCpuMs};
+      this.peerFrameBaseline[role]={session,sim,stepCount,stepCpuMs,snapshotCount,snapshotCpuMs,pulseCount,pulseCpuMs,snapshotUiCount,snapshotUiCpuMs};
     }
   }
   static start(){
@@ -36420,17 +36434,49 @@ class MobileBattleTestMode{
     if(sequence&&sequence<=this.lastCapturedRendererFrameSequence)return;
     if(sequence)this.lastCapturedRendererFrameSequence=sequence;
     this.lastIntervalMs=Number(rp.frameIntervalMs)||0;
-    if(this.sampleCount>=this.capacity)this.overflowFrames++;
-    else{
-      const values={frameIntervalMs:rp.frameIntervalMs,rendererCpuWorkMs:rp.frameWorkMs,drawCalls:rp.drawCalls,vectorAssetDrawCalls:rp.vectorAssetDrawCalls,
+    const sampleIndex=this.sampleCount,storeSample=sampleIndex<this.capacity;
+    const windowStartedAt=Number(this.sampleFrameWindowStartedAt)||this.sampleStartedAt||frameEnded;
+    const frameWindowMs=Math.max(0,frameEnded-windowStartedAt);
+    if(storeSample){
+      const values={frameIntervalMs:rp.frameIntervalMs,frameWindowMs,rendererCpuWorkMs:rp.frameWorkMs,drawCalls:rp.drawCalls,vectorAssetDrawCalls:rp.vectorAssetDrawCalls,
         vectorAssetDraws:rp.vectorAssetDraws,bufferUploadBytes:rp.bufferUploadBytes,vectorAssetGeometryBytes:rp.vectorAssetGeometryBytes,vectorAssetInstanceBytes:rp.vectorAssetInstanceBytes,
         alphaRunCacheHits:rp.vectorAlphaRunCacheHits,alphaRunCacheMisses:rp.vectorAlphaRunCacheMisses,vectorGeometryUploads:rp.vectorGeometryUploads,
         partUniformBytesSubmitted:rp.vectorPartUniformBytesSubmitted,vectorStagingBytes:rp.vectorStagingBytes,vectorInstances:rp.vectorAssetInstances};
-      const index=this.sampleCount++;
-      for(const key of this.sampleMetricKeys){const value=Number(values[key]);this.sampleBuffers[key][index]=Number.isFinite(value)?value:NaN}
+      for(const key of this.sampleMetricKeys){const value=Number(values[key]);this.sampleBuffers[key][sampleIndex]=Number.isFinite(value)?value:NaN}
     }
     const match=MatchLifecycle.singleMatch;
+    this.capturePeerFrameMetrics(match,sampleIndex,storeSample,frameWindowMs,Number(rp.frameWorkMs));
     if(match?.sessions)this.capturePeerSimulation(match);
+    this.sampleFrameWindowStartedAt=frameEnded;
+    if(storeSample)this.sampleCount++;else this.overflowFrames++;
+  }
+  static capturePeerFrameMetrics(match,index,storeSample,frameWindowMs,rendererCpuWorkMs){
+    let pulseCpuMs=0,accountingComplete=true;
+    const delta=(current,previous)=>Number.isFinite(current)&&Number.isFinite(previous)&&current>=previous?current-previous:NaN;
+    const write=(key,value)=>{if(storeSample)this.sampleBuffers[key][index]=Number.isFinite(value)?value:NaN};
+    for(const role of ["host","guest"]){
+      const session=match?.sessions?.[role],sim=session?.sim,perf=sim?.perfStats,timings=session?.performanceStats?.timings||{},pulse=timings.pulse||{},snapshotUi=timings.snapshotUi||{};
+      const prefix=role==="host"?"host":"guest",previous=this.peerFrameBaseline[role];
+      const stepCount=Number(perf?.stepSamples),stepCpuMs=Number(perf?.stepCumulativeMs),snapshotCount=Number(perf?.snapshotSamples),snapshotCpuMs=Number(perf?.snapshotCumulativeMs);
+      const pulseCount=Number(pulse.samples),sessionPulseCpuMs=Number(pulse.cumulativeMs),snapshotUiCount=Number(snapshotUi.samples),snapshotUiCpuMs=Number(snapshotUi.cumulativeMs);
+      if(!session||!sim||!perf||!previous||previous.session!==session||previous.sim!==sim){
+        for(const key of ["StepCpuMs","StepCount","SnapshotCpuMs","SnapshotCount","SnapshotUiCpuMs","SnapshotUiCount","SessionPulseCpuMs","SessionPulseCount"])write(prefix+key,NaN);
+        if(session&&sim&&perf)this.peerFrameBaseline[role]={session,sim,stepCount,stepCpuMs,snapshotCount,snapshotCpuMs,pulseCount,sessionPulseCpuMs,snapshotUiCount,snapshotUiCpuMs};
+        else this.peerFrameBaseline[role]=null;
+        accountingComplete=false;
+        continue;
+      }
+      const stepCpuDelta=delta(stepCpuMs,previous.stepCpuMs),pulseCpuDelta=delta(sessionPulseCpuMs,previous.sessionPulseCpuMs);
+      write(prefix+"StepCpuMs",stepCpuDelta);write(prefix+"StepCount",delta(stepCount,previous.stepCount));
+      write(prefix+"SnapshotCpuMs",delta(snapshotCpuMs,previous.snapshotCpuMs));write(prefix+"SnapshotCount",delta(snapshotCount,previous.snapshotCount));
+      write(prefix+"SnapshotUiCpuMs",delta(snapshotUiCpuMs,previous.snapshotUiCpuMs));write(prefix+"SnapshotUiCount",delta(snapshotUiCount,previous.snapshotUiCount));
+      write(prefix+"SessionPulseCpuMs",pulseCpuDelta);write(prefix+"SessionPulseCount",delta(pulseCount,previous.pulseCount));
+      if(Number.isFinite(pulseCpuDelta))pulseCpuMs+=pulseCpuDelta;else accountingComplete=false;
+      previous.stepCount=stepCount;previous.stepCpuMs=stepCpuMs;previous.snapshotCount=snapshotCount;previous.snapshotCpuMs=snapshotCpuMs;
+      previous.pulseCount=pulseCount;previous.sessionPulseCpuMs=sessionPulseCpuMs;previous.snapshotUiCount=snapshotUiCount;previous.snapshotUiCpuMs=snapshotUiCpuMs;
+    }
+    write("frameWindowMs",frameWindowMs);
+    write("unattributedElapsedMs",accountingComplete&&Number.isFinite(rendererCpuWorkMs)?frameWindowMs-rendererCpuWorkMs-pulseCpuMs:NaN);
   }
   static capturePeerSimulation(match){
     const stageKeys=["totalMs","indexMs","worldMs","economyMs","workerMs","visionMs","combatMs","combatTargetPickMs","projectileMs","collisionMs","collisionPrepMs","collisionGridBuildMs","collisionPairScanMs","collisionSoftApplyMs","collisionSweptMotionMs","collisionTerrainMs","collisionHardFixMs","collisionOtherMs","postMs"];
@@ -36462,19 +36508,25 @@ class MobileBattleTestMode{
   static pairedSlowFrameSummary(frameIntervals){
     const threshold=frameIntervals.p95;if(threshold===null)return{frameCount:0,selection:{metric:"frameIntervalMs",operator:">=",thresholdMs:null},metrics:null};
     const indexes=[];for(let i=0;i<this.sampleCount;i++)if(Number.isFinite(this.sampleBuffers.frameIntervalMs[i])&&this.sampleBuffers.frameIntervalMs[i]>=threshold)indexes.push(i);
-    const keys=["frameIntervalMs","rendererCpuWorkMs","drawCalls","vectorAssetDrawCalls","vectorAssetDraws","bufferUploadBytes","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances"];
+    const keys=["frameIntervalMs","frameWindowMs","rendererCpuWorkMs","drawCalls","vectorAssetDrawCalls","vectorAssetDraws","bufferUploadBytes","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances","hostStepCpuMs","hostStepCount","hostSnapshotCpuMs","hostSnapshotCount","hostSnapshotUiCpuMs","hostSnapshotUiCount","hostSessionPulseCpuMs","hostSessionPulseCount","guestStepCpuMs","guestStepCount","guestSnapshotCpuMs","guestSnapshotCount","guestSnapshotUiCpuMs","guestSnapshotUiCount","guestSessionPulseCpuMs","guestSessionPulseCount","unattributedElapsedMs"];
     const metrics=Object.fromEntries(keys.map(key=>[key,this.indexedStats(this.sampleBuffers[key],indexes)]));
     return{frameCount:indexes.length,selection:{metric:"frameIntervalMs",operator:">=",thresholdMs:threshold},metrics};
   }
   static peerSimulationSummary(match){
     const peers={};
     for(const role of ["host","guest"]){
-      const perf=match?.sessions?.[role]?.sim?.perfStats,baseline=this.peerSnapshotBaseline[role]||{count:0,totalMs:0};
+      const session=match?.sessions?.[role],perf=session?.sim?.perfStats,baseline=this.peerSnapshotBaseline[role]||{count:0,totalMs:0,stepCount:0,stepTotalMs:0,pulseCount:0,pulseTotalMs:0,snapshotUiCount:0,snapshotUiTotalMs:0};
       if(!perf){peers[role]={available:false,reason:"해당 역할의 StrategySim.perfStats를 읽을 수 없음",sampledStages:[],snapshot:null,step:null};continue}
       const snapshotCount=Math.max(0,(Number(perf.snapshotSamples)||0)-baseline.count),snapshotTotalMs=Math.max(0,(Number(perf.snapshotCumulativeMs)||0)-baseline.totalMs);
+      const pulse=session?.performanceStats?.timings?.pulse||{},snapshotUi=session?.performanceStats?.timings?.snapshotUi||{};
+      const pulseCount=Math.max(0,(Number(pulse.samples)||0)-baseline.pulseCount),pulseTotalMs=Math.max(0,(Number(pulse.cumulativeMs)||0)-baseline.pulseTotalMs);
+      const snapshotUiCount=Math.max(0,(Number(snapshotUi.samples)||0)-baseline.snapshotUiCount),snapshotUiTotalMs=Math.max(0,(Number(snapshotUi.cumulativeMs)||0)-baseline.snapshotUiTotalMs);
+      const stepTotalMs=Math.max(0,(Number(perf.stepCumulativeMs)||0)-baseline.stepTotalMs);
       peers[role]={available:true,sampleCadenceMs:1000,sampledStages:this.peerSamples[role],
-        step:{ticksDuringSample:Math.max(0,(Number(perf.stepSamples)||0)-this.peerStepSampleCountsAtStart[role]),lastStepMs:Number(perf.lastStepMs)||0,ewmaStepMs:Number(perf.ewmaStepMs)||0,maxObservedStepMs:this.peerMaxStepMs[role],lifetimeMaxStepMs:Number(perf.maxStepMs)||0},
-        snapshot:{samplesDuringSample:snapshotCount,totalMsDuringSample:Math.round(snapshotTotalMs*100)/100,averageMsDuringSample:snapshotCount?Math.round(snapshotTotalMs/snapshotCount*100)/100:null,latestSnapshotMs:Number(perf.snapshotMs)||0,lifetimeMaxSnapshotMs:Number(perf.maxSnapshotMs)||0}};
+        step:{ticksDuringSample:Math.max(0,(Number(perf.stepSamples)||0)-this.peerStepSampleCountsAtStart[role]),totalCpuMsDuringSample:Math.round(stepTotalMs*100)/100,lastStepMs:Number(perf.lastStepMs)||0,ewmaStepMs:Number(perf.ewmaStepMs)||0,maxObservedStepMs:this.peerMaxStepMs[role],lifetimeMaxStepMs:Number(perf.maxStepMs)||0},
+        snapshot:{samplesDuringSample:snapshotCount,totalMsDuringSample:Math.round(snapshotTotalMs*100)/100,averageMsDuringSample:snapshotCount?Math.round(snapshotTotalMs/snapshotCount*100)/100:null,latestSnapshotMs:Number(perf.snapshotMs)||0,lifetimeMaxSnapshotMs:Number(perf.maxSnapshotMs)||0},
+        snapshotUi:{samplesDuringSample:snapshotUiCount,totalMsDuringSample:Math.round(snapshotUiTotalMs*100)/100},
+        sessionPulse:{samplesDuringSample:pulseCount,totalMsDuringSample:Math.round(pulseTotalMs*100)/100,averageMsDuringSample:pulseCount?Math.round(pulseTotalMs/pulseCount*100)/100:null}};
     }
     return peers;
   }
@@ -36487,21 +36539,32 @@ class MobileBattleTestMode{
       const available=(sampleMetrics[key]?.count||0)>0,vectorPathUsed=(sampleMetrics.vectorAssetDraws?.max||0)>0;
       return[key,available?{available:true,vectorPathUsed,reason:vectorPathUsed?null:"No vector draw occurred in this sample; zero counters mean no calls."}:{available:false,value:null,reason:"No finite MeshRenderer statistic was exposed for this metric during the sample."}];
     }));
-    const match=MatchLifecycle.singleMatch,renderer=ActiveViewState.renderer,unitsPerSide=this.config.totalUnits/2;
+    const match=MatchLifecycle.singleMatch,renderer=ActiveViewState.renderer,unitsPerSide=this.config.totalUnits/2,peers=this.peerSimulationSummary(match);
+    const peerStepCpuMs=["host","guest"].map(role=>peers[role]?.available?Number(peers[role].step?.totalCpuMsDuringSample):NaN);
+    const simulationCpuTimeMs=peerStepCpuMs.every(Number.isFinite)?Math.round(peerStepCpuMs.reduce((sum,value)=>sum+value,0)*100)/100:null;
+    const frameAlignedPeers=Object.fromEntries(["host","guest"].map(role=>{
+      const prefix=role==="host"?"host":"guest",metric=suffix=>sampleMetrics[prefix+suffix];
+      return[role,{step:{cpuMs:metric("StepCpuMs"),count:metric("StepCount")},snapshot:{cpuMs:metric("SnapshotCpuMs"),count:metric("SnapshotCount")},
+        snapshotUi:{cpuMs:metric("SnapshotUiCpuMs"),count:metric("SnapshotUiCount")},sessionPulse:{cpuMs:metric("SessionPulseCpuMs"),count:metric("SessionPulseCount")}}];
+    }));
+    const frameAlignedSimulation={frameWindowMs:sampleMetrics.frameWindowMs,rendererCpuWorkMs:sampleMetrics.rendererCpuWorkMs,peers:frameAlignedPeers,unattributedElapsedMs:sampleMetrics.unattributedElapsedMs,
+      accounting:"Per-frame deltas between completed renderer frames. Session pulse CPU includes StrategySim step and snapshot work; component values are nested details and must not be added again. Unattributed elapsed is window minus renderer and host/guest pulse CPU; it is not GPU time or idle time."};
+    const vectorAssetDrawCallMeaning="MeshRenderer device.draw() calls dispatched as WebGL draws (instanced when the instancing extension is active).";
     this.report={schemaVersion:2,testMode:"mobile-battle",capturedAt:new Date().toISOString(),build:{id:BUILD_META.id,commit:BUILD_META.commit||null},collisionModel:"ally-soft-one-pass",
       device:{userAgent:navigator.userAgent||"",platform:navigator.platform||"",hardwareConcurrency:navigator.hardwareConcurrency||null,viewport:{width:innerWidth,height:innerHeight,devicePixelRatio:devicePixelRatio,orientation:screen.orientation?.type||""}},
       condition:{seed:this.config.fixedSeed,totalCombatUnits:this.config.totalUnits,unitsPerSide,composition:this.config.composition,rosters:{host:DebugScenarioHarness.unitRoster(this.config,0),guest:DebugScenarioHarness.unitRoster(this.config,1)},tps:live?.sim?.tps||match?.sessions?.host?.sim?.tps||10,warmupSeconds:this.config.warmupSeconds,requestedSampleSeconds:this.config.sampleSeconds,selectionMode:"deck",presetId:"standard"},
       measurement:{collector:"completed renderer frame hook",observer:"preallocated numeric sample buffers; no CDP profiler",perFrameCounters:this.sampleMetricKeys,overheadMs:null,overheadUnavailableReason:"Observer cost is not isolated; rendererCpuWorkMs is captured before the diagnostic hook runs.",
-        pairing:"all renderer metrics at each recorded completed renderer frame; slow-frame subset selects by that same frame's frameIntervalMs p95"},
+        pairing:"all renderer and host/guest counter deltas share each completed-render-frame window; slow-frame subset selects by that same frame's frameIntervalMs p95",
+        nestedCpuAccounting:"host/guest sessionPulseCpuMs includes StrategySim step and snapshot work; step/snapshot/snapshotUi are reported as nested components, not additive totals",vectorAssetDrawCallMeaning},
       sample:{status:interrupted?"interrupted":"complete",durationMs:Math.round(elapsed),frameCount:intervals.count,fps:elapsed>0?Math.round(intervals.count*100000/elapsed)/100:null,
         frameIntervalMs:intervals,rendererCpuWorkMs:render,drawCalls:draws,vectorAssetDrawCalls:vectorDraws,bufferUploadBytes:sampleMetrics.bufferUploadBytes,
         vectorAssetGeometryBytes:sampleMetrics.vectorAssetGeometryBytes,vectorAssetInstanceBytes:sampleMetrics.vectorAssetInstanceBytes,alphaRunCacheHits:sampleMetrics.alphaRunCacheHits,alphaRunCacheMisses:sampleMetrics.alphaRunCacheMisses,
         vectorGeometryUploads:sampleMetrics.vectorGeometryUploads,partUniformBytesSubmitted:sampleMetrics.partUniformBytesSubmitted,vectorStagingBytes:sampleMetrics.vectorStagingBytes,
-        vectorAssetDraws:sampleMetrics.vectorAssetDraws,vectorInstances:sampleMetrics.vectorInstances,metricAvailability:rendererMetricAvailability,pairedSlowFrames:paired,capacityExceededFrames:this.overflowFrames,
-        gpuTime:{measured:false,timeMs:null,reason:"렌더러에서 GPU 타이머 질의를 수집하지 않음"},simulationCpuTimeMs:null,simulationCpuTimeUnavailableReason:"브라우저 CPU profiler 없이 StrategySim stage/step 및 snapshot의 계측된 벽시계 구간만 제공함",
+        vectorAssetDraws:sampleMetrics.vectorAssetDraws,vectorInstances:sampleMetrics.vectorInstances,metricAvailability:rendererMetricAvailability,pairedSlowFrames:paired,frameAlignedSimulation,capacityExceededFrames:this.overflowFrames,
+        gpuTime:{measured:false,timeMs:null,reason:"렌더러에서 GPU 타이머 질의를 수집하지 않음"},simulationCpuTimeMs,simulationCpuTimeSource:simulationCpuTimeMs===null?null:"sum of Host and Guest StrategySim step cumulative CPU",simulationCpuTimeUnavailableReason:simulationCpuTimeMs===null?"StrategySim step cumulative CPU was unavailable for one or both peers":null,
         gcTimeMs:null,gcTimeUnavailableReason:"이 테스트 모드는 GC PerformanceEntry를 등록하지 않음",transportSerializationMs:null,transportSerializationUnavailableReason:"GameSession snapshot 복사 시간은 측정하지만 WebRTC 전송 직렬화 시간은 계측하지 않음"},
       visibility:{...this.visibilityStats,visibilityStateAtFinish:document.visibilityState||"unknown",sampleValid:this.visibilityStats.visibilityStateAtSampleStart==="visible"&&!this.visibilityStats.invalidated&&this.visibilityStats.unpausedHiddenEvents===0},
-      simulation:{startTick:start?.tick??null,endTick:end.tick,ticksAdvanced:start?.tick!=null&&end.tick!=null?end.tick-start.tick:null,peerStartTick:start?.peerTick??null,peerEndTick:end.peerTick,aliveUnitsStart:start?.units||null,aliveUnitsEnd:end.units,peers:this.peerSimulationSummary(match)},
+      simulation:{startTick:start?.tick??null,endTick:end.tick,ticksAdvanced:start?.tick!=null&&end.tick!=null?end.tick-start.tick:null,peerStartTick:start?.peerTick??null,peerEndTick:end.peerTick,aliveUnitsStart:start?.units||null,aliveUnitsEnd:end.units,peers},
       renderer:{backend:renderer?.backend||null,canvas:{width:renderer?.canvas?.width||null,height:renderer?.canvas?.height||null},vectorAssets:!!window.RallyVectorAssets,vectorMeshes:renderer?.perfStats?.vectorAssetMeshes??null,
         lastFrameSequence:renderer?.perfStats?.frameSequence??null,alphaRunCache:{hits:sampleMetrics.alphaRunCacheHits,misses:sampleMetrics.alphaRunCacheMisses},
         instancing:{enabled:typeof renderer?.vectorMeshRenderer?.instanced==="boolean"?renderer.vectorMeshRenderer.instanced:null,reason:typeof renderer?.vectorMeshRenderer?.instanced==="boolean"?null:"Pinned MeshRenderer did not expose its instancing flag",
@@ -36569,7 +36632,7 @@ class MobileBattleTestMode{
     const vectorAvailability=sample.metricAvailability?.vectorAssetDraws;
     const vectorPath=vectorAvailability?.available===false?"metrics unavailable":vectorAvailability?.vectorPathUsed===false?"unused in sample":vectorAvailability?.vectorPathUsed===true||p95(sample.vectorAssetDraws)!=="n/a"?"used":"status unknown";
     const aliveStart=sim.aliveUnitsStart||{},aliveEnd=sim.aliveUnitsEnd||{};
-    const stageKeys=[["total","totalMs"],["index","indexMs"],["world","worldMs"],["economy","economyMs"],["worker","workerMs"],["vision","visionMs"],["combat","combatMs"],["projectile","projectileMs"],["collision","collisionMs"],["post","postMs"]];
+    const stageKeys=[["total","totalMs"],["index","indexMs"],["world","worldMs"],["economy","economyMs"],["worker","workerMs"],["vision","visionMs"],["combat","combatMs"],["target-pick","combatTargetPickMs"],["combat-other","combatOtherMs"],["projectile","projectileMs"],["collision","collisionMs"],["post","postMs"]];
     const peerLine=(role,label)=>{
       const peer=sim.peers?.[role];if(!peer?.available)return`${label}: unavailable`;
       const rows=Array.isArray(peer.sampledStages)?peer.sampledStages:[];
@@ -36583,13 +36646,13 @@ class MobileBattleTestMode{
       };
       const total=key=>rows.reduce((sum,row)=>sum+(Number(row?.workCounters?.[key])||0),0);
       const step=peer.step||{},snapshot=peer.snapshot||{};
-      return`${label}: step ticks/last/ewma/max=${n(step.ticksDuringSample)}/${n(step.lastStepMs)}/${n(step.ewmaStepMs)}/${n(step.maxObservedStepMs)}ms; snapshot n/avg/max=${n(snapshot.samplesDuringSample)}/${n(snapshot.averageMsDuringSample)}/${n(snapshot.lifetimeMaxSnapshotMs)}ms; stage p95ms ${stages}; work max spatial/candidates/collisions=${work("spatialQueries")}/${work("spatialCandidates")}/${work("collisionPairs")}; collision sum soft pass/contact/moved/capped=${total("collisionSoftPasses")}/${total("collisionSoftContacts")}/${total("collisionSoftMovedUnits")}/${total("collisionSoftCappedUnits")} sweep call/pass=${total("collisionSweptCalls")}/${total("collisionSweptActivePasses")} hardfix call/pass/correction=${total("collisionHardFixCalls")}/${total("collisionHardFixPasses")}/${total("collisionHardFixCorrections")}`;
+      return`${label}: step ticks/cpu/last/ewma/max=${n(step.ticksDuringSample)}/${n(step.totalCpuMsDuringSample)}/${n(step.lastStepMs)}/${n(step.ewmaStepMs)}/${n(step.maxObservedStepMs)}ms; snapshot n/avg/max=${n(snapshot.samplesDuringSample)}/${n(snapshot.averageMsDuringSample)}/${n(snapshot.lifetimeMaxSnapshotMs)}ms; stage p95ms ${stages}; work max nearby-return/targetQueries/collisions=${work("spatialCandidates")}/${work("targetQueries")}/${work("collisionPairs")} target-pick calls=${total("combatTargetPickCalls")}; collision sum soft pass/contact/moved/capped=${total("collisionSoftPasses")}/${total("collisionSoftContacts")}/${total("collisionSoftMovedUnits")}/${total("collisionSoftCappedUnits")} sweep call/pass=${total("collisionSweptCalls")}/${total("collisionSweptActivePasses")} hardfix call/pass/correction=${total("collisionHardFixCalls")}/${total("collisionHardFixPasses")}/${total("collisionHardFixCorrections")}`;
     };
     const unavailable=[];
     if(sample.gpuTime?.measured!==true)unavailable.push("GPU timer not measured");
     if(sample.gcTimeMs==null)unavailable.push("GC timing not collected");
     if(sample.transportSerializationMs==null)unavailable.push("transport serialization not measured");
-    if(sample.simulationCpuTimeMs==null)unavailable.push("isolated simulation CPU profiler unavailable (peer step/stage/snapshot timings shown)");
+    if(sample.simulationCpuTimeMs==null)unavailable.push("Host/Guest StrategySim step CPU totals unavailable");
     const lines=[
       `RALLY FRONTIER · mobile battle diagnostics`,
       `Build ${safe(report.build?.id)} / commit ${safe(report.build?.commit,48)} / collision=${safe(report.collisionModel,32)}`,
@@ -36597,6 +36660,7 @@ class MobileBattleTestMode{
       `Run ${safe(sample.status,24)} ${n(sample.durationMs)}ms/${n(sample.frameCount)} frames FPS=${n(sample.fps)} viewport=${n(viewport.width)}x${n(viewport.height)}@${n(viewport.devicePixelRatio)} ${safe(viewport.orientation,24)}`,
       `Visibility valid=${visibility.sampleValid===true?"yes":visibility.sampleValid===false?"no":"unknown"} sample/finish=${safe(visibility.visibilityStateAtSampleStart,16)}/${safe(visibility.visibilityStateAtFinish,16)} hidden=${n(visibility.hiddenEvents)} unpaused=${n(visibility.unpausedHiddenEvents)} paused=${n(visibility.hiddenWhilePausedEvents)} pagehide=${n(visibility.pagehideEvents)} invalidated=${n(visibility.invalidated===true?1:visibility.invalidated===false?0:null)}`,
       `Frame ms p50/p95/max=${triplet(sample.frameIntervalMs)}; renderer CPU ms p50/p95/max=${triplet(sample.rendererCpuWorkMs)}; draw/vector p95=${p95(sample.drawCalls)}/${p95(sample.vectorAssetDrawCalls)}; vector path=${vectorPath}`,
+      `Paired slow-frame p95 ms window/render/Host pulse/Guest pulse/unattributed=${p95(pairedMetrics.frameWindowMs)}/${p95(pairedMetrics.rendererCpuWorkMs)}/${p95(pairedMetrics.hostSessionPulseCpuMs)}/${p95(pairedMetrics.guestSessionPulseCpuMs)}/${p95(pairedMetrics.unattributedElapsedMs)}; nested step CPU/count H/G=${p95(pairedMetrics.hostStepCpuMs)}/${p95(pairedMetrics.hostStepCount)} / ${p95(pairedMetrics.guestStepCpuMs)}/${p95(pairedMetrics.guestStepCount)}; snapshot CPU/count H/G=${p95(pairedMetrics.hostSnapshotCpuMs)}/${p95(pairedMetrics.hostSnapshotCount)} / ${p95(pairedMetrics.guestSnapshotCpuMs)}/${p95(pairedMetrics.guestSnapshotCount)}; pulse includes nested sim work`,
       `Uploads p95 bytes buffer/geometry/instance/staging/partUniform=${p95(sample.bufferUploadBytes)}/${p95(sample.vectorAssetGeometryBytes)}/${p95(sample.vectorAssetInstanceBytes)}/${p95(sample.vectorStagingBytes)}/${p95(sample.partUniformBytesSubmitted)}; geometry uploads p95=${p95(sample.vectorGeometryUploads)}; vector instances p95=${p95(sample.vectorInstances)}`,
       `Alpha cache avg hits/misses per frame=${n(sample.alphaRunCacheHits?.mean)}/${n(sample.alphaRunCacheMisses?.mean)}; paired slow frames=${n(paired.frameCount)} at >=${n(paired.selection?.thresholdMs)}ms, renderer CPU/draw/upload p95=${p95(pairedMetrics.rendererCpuWorkMs)}/${p95(pairedMetrics.drawCalls)}/${p95(pairedMetrics.bufferUploadBytes)}, cache hits/misses p95=${p95(pairedMetrics.alphaRunCacheHits)}/${p95(pairedMetrics.alphaRunCacheMisses)}`,
       `Ticks ${n(sim.startTick)}→${n(sim.endTick)} (+${n(sim.ticksAdvanced)}); alive H/G ${n(aliveStart.host)}/${n(aliveStart.guest)}→${n(aliveEnd.host)}/${n(aliveEnd.guest)} (total ${n(aliveStart.total)}→${n(aliveEnd.total)})`,

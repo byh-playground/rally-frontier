@@ -109,10 +109,22 @@ async function run() {
       if (i === 20 || i === 80) await page.screenshot({ path: path.join(output, `combat-${i}.png`) });
     }
     await page.mouse.move(start.x, start.y); await page.mouse.up();
+    const idleCameraShakeDom = await page.evaluate(() => {
+      const r=window.__shakeE2E.ActiveViewState.renderer,original=Document.prototype.querySelectorAll;
+      let pingQueries=0;
+      Document.prototype.querySelectorAll=function(selector){if(selector===".campaign-world-ping")pingQueries++;return original.call(this,selector)};
+      try{
+        r.frameShakeX=0;r.frameShakeY=0;r.cameraShakePresentationMoved=true;
+        r.renderCameraShakePass();
+        const resetQueries=pingQueries,resetTransform=r.fxCanvas?.style.transform||"";
+        for(let i=0;i<8;i++)r.renderCameraShakePass();
+        return{resetQueries,idleQueryDelta:pingQueries-resetQueries,resetTransform,moved:r.cameraShakePresentationMoved};
+      }finally{Document.prototype.querySelectorAll=original}
+    });
     const frames = await page.evaluate(() => window.__shakeFrames);
     const active = frames.filter(f => Math.abs(f.shakeX) + Math.abs(f.shakeY) > .1);
     const geometryError = Math.max(...frames.map(f => f.geometryError));
-    const summary = { initial, frames: frames.length, activeShakeFrames: active.length,
+    const summary = { initial, frames: frames.length, activeShakeFrames: active.length, idleCameraShakeDom,
       draggedFrames:frames.filter(f=>f.dragMoved).length,
       cameraTravel:Math.max(...frames.map(f=>f.left))-Math.min(...frames.map(f=>f.left)),
       shakeMaxX: Math.max(...frames.map(f => Math.abs(f.shakeX))),
@@ -127,6 +139,9 @@ async function run() {
     assert.ok(summary.draggedFrames>10&&summary.cameraTravel>10,'Native pointer really dragged the live camera');
     assert.ok(geometryError < 1e-7, 'Active shake never changes stable scene geometry during actual drag');
     assert.ok(summary.compositionMaxMs > 0, 'Live frames executed the final camera composition stage');
+    assert.equal(idleCameraShakeDom.resetQueries,1,'The frame that ends a shake resets world-ping presentation once');
+    assert.equal(idleCameraShakeDom.idleQueryDelta,0,'Subsequent idle camera frames skip the world-ping DOM query');
+    assert.equal(idleCameraShakeDom.moved,false,'World-ping presentation state is marked settled after reset');
     assert.deepEqual(errors, []);
   } finally { await browser.close(); }
 }
