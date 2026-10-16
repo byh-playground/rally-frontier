@@ -20,7 +20,7 @@ const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 function exposeVisualHarness(html, label) {
   const marker = 'DebugScenarioHarness.populateUi();';
   assert.equal(html.split(marker).length - 1, 1, `${label} must expose the Rally renderer at the expected startup point`);
-  const expose = `window.__rallyVectorVisualQA={MatchLifecycle,DebugScenarioHarness,ActiveViewState,UiRuntimeState,GameSession,BattlefieldProjection};\n`;
+  const expose = `window.__rallyVectorVisualQA={MatchLifecycle,DebugScenarioHarness,ActiveViewState,UiRuntimeState,ViewRuntimeState,GameSession,BattlefieldProjection};\n`;
   return html.replace(marker, `${expose}${marker}`);
 }
 
@@ -57,6 +57,8 @@ async function createBrowserPage(browser, url, label) {
           const x=units.reduce((sum,u)=>sum+u.x,0)/units.length, y=units.reduce((sum,u)=>sum+u.y,0)/units.length;
           r.cameraLeft=Math.max(0,Math.min(r.world.width-r.viewWorldW(),r.viewX(x)-r.viewWorldW()/2));
           r.cameraTop=r.clampCameraTop(q.BattlefieldProjection.planarY(r.viewY(y),r.world.terrain.surfaces.heightAt(x,y))-r.viewWorldH()/2);
+          q.ViewRuntimeState.byRole.host.cameraLeft=r.cameraLeft;
+          q.ViewRuntimeState.byRole.host.cameraTop=r.cameraTop;
         }
       }
       return result;
@@ -67,6 +69,17 @@ async function createBrowserPage(browser, url, label) {
     });
     q.MatchLifecycle.startLocalTest();
   }, { seed: sceneSeed, targetTick: pauseTick });
+
+  await page.waitForFunction(() => window.__rallyVectorVisualQA?.ActiveViewState?.snap?.tick >= 5,
+    undefined, {timeout: 90_000});
+  await page.evaluate(() => {
+    const q=window.__rallyVectorVisualQA,r=q.ActiveViewState.renderer;
+    const units=q.ActiveViewState.session.sim.units.filter(u=>u.hp>0);
+    const x=units.reduce((sum,u)=>sum+u.x,0)/units.length,y=units.reduce((sum,u)=>sum+u.y,0)/units.length;
+    r.cameraLeft=Math.max(0,Math.min(r.world.width-r.viewWorldW(),r.viewX(x)-r.viewWorldW()/2));
+    r.cameraTop=r.clampCameraTop(q.BattlefieldProjection.planarY(r.viewY(y),r.world.terrain.surfaces.heightAt(x,y))-r.viewWorldH()/2);
+    Object.assign(q.ViewRuntimeState.byRole.host,{cameraLeft:r.cameraLeft,cameraTop:r.cameraTop});
+  });
 
   try { await page.waitForFunction(() => {
     const q = window.__rallyVectorVisualQA;
@@ -82,6 +95,7 @@ async function createBrowserPage(browser, url, label) {
         backend: q?.ActiveViewState?.renderer?.backend,
         vectorRecords: q?.ActiveViewState?.renderer?.vectorUnitAssetCache?.size,
         vectorDrawInstances: q?.ActiveViewState?.renderer?.vectorAssetDrawnInstances,
+        camera: {left:q?.ActiveViewState?.renderer?.cameraLeft,top:q?.ActiveViewState?.renderer?.cameraTop},
         peers: Object.fromEntries(Object.entries(q?.MatchLifecycle.localTest?.sessions || {}).map(([id, s]) =>
           [id, { tick: s.sim?.tick, paused: s.testModePaused, fatal: s.simulationFatal, scenario: s.matchConfig?.debugScenario }])) };
     });
