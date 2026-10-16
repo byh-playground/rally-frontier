@@ -3,16 +3,13 @@
   "private": true,
   "scripts": {
     "setup:gamekit": "node scripts/setup-gamekit.cjs",
-    "build": "npm run setup:gamekit && npm run vector-assets:compile && node scripts/build-pages.cjs",
-    "test:build": "npm run setup:gamekit && npm run vector-assets:compile && node --test scripts/setup-gamekit.test.cjs scripts/build-pages.test.cjs scripts/netcode-qa-module.test.cjs scripts/mobile-battle-export.test.cjs scripts/collision-grid-candidates.test.cjs",
-    "vector-assets:compile": "node scripts/compile-vector-assets.cjs"
+    "build": "npm run setup:gamekit && node scripts/build-pages.cjs",
+    "test:build": "npm run setup:gamekit && node --test scripts/setup-gamekit.test.cjs scripts/build-pages.test.cjs scripts/netcode-qa-module.test.cjs scripts/mobile-battle-export.test.cjs scripts/collision-grid-candidates.test.cjs scripts/vector-assets-loader-regression.cjs"
   },
   "engines": {
     "node": ">=22"
   },
   "devDependencies": {
-    "@xmldom/xmldom": "0.9.12",
-    "playwright": "1.63.0",
-    "three": "0.186.1"
+    "playwright": "1.63.0"
   }
 }

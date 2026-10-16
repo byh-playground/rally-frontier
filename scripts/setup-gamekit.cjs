@@ -3,7 +3,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 // Rally consumes only these dependency-free dist entry points.
-const moduleFiles = Object.freeze({ rollback: 'rollback.js', deterministic: 'deterministic.js', simloop: 'simloop.js', transport: 'transport.js', interpolation: 'interpolation.js', input: 'input.js', rendering: 'rendering.js', vectorAssets: 'vector-assets.js', camera: 'camera.js', events: 'presentation-events.js', hud: 'hud.js', debug: 'debug-tools.js' });
+const moduleFiles = Object.freeze({ rollback: 'rollback.js', deterministic: 'deterministic.js', simloop: 'simloop.js', transport: 'transport.js', interpolation: 'interpolation.js', input: 'input.js', rendering: 'rendering.js', vectorAssets: 'vector-assets.js', vectorAssetsLoader: 'vector-assets-loader.js', camera: 'camera.js', events: 'presentation-events.js', hud: 'hud.js', debug: 'debug-tools.js' });
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const cacheDirectory = root => path.join(root, '.cache', 'gamekit');
 
