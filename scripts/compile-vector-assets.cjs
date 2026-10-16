@@ -2,10 +2,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const sourceCommit = '4150109c7732a734e155b6d1e2cd83c13c1f1d0c';
+const sourceCommit = '8033ccd60cf5b11f49d2f4792072a38c64217e0d';
 const compilerFiles = Object.freeze({
-  'compiler.js': '1dfa99e9ce11afb9a9de18290ec049cbaecc3c720e3f6bd6ec7a7eb5913775cb',
-  'schema.js': '989bb4eee231b973adcc2c0744c63055692399c3dfb592bd46457dadb2b3b1fd',
+  'compiler.js': 'dc57bec50d0f46e6b004840722843f91904b8e3d37e3e7ade2a74f0e92e99f68',
+  'schema.js': '9fc5dc0a20ce005b338f013dbb4da4af50cddb72c1832f94bd4d882e438c4019',
 });
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const maximumSourceBytes = 2 * 1024 * 1024;
