@@ -120,6 +120,10 @@ async function createBrowserPage(browser, url, label) {
       mapHash: session.sim.mapFingerprint(),
       units: session.sim.units.length,
       vectorRecords: renderer.vectorUnitAssetCache.size,
+      vectorAssetSignatures: Object.fromEntries(Object.entries(window.RallyVectorAssets || {}).map(([key,asset]) => {
+        const hash = value => { const text=JSON.stringify(value); let h=2166136261; for(let i=0;i<text.length;i++)h=Math.imul(h^text.charCodeAt(i),16777619); return (h>>>0).toString(16); };
+        return [key,{geometry:hash(asset.geometry),metadata:hash(asset.metadata),vertices:asset.geometry.vertices.length,indices:asset.geometry.indices.length}];
+      })),
       vectorDrawInstances: renderer.vectorAssetDrawnInstances,
       canvas: { width: canvas.width, height: canvas.height },
     };
