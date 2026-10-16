@@ -20,7 +20,7 @@ const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 function exposeVisualHarness(html, label) {
   const marker = 'DebugScenarioHarness.populateUi();';
   assert.equal(html.split(marker).length - 1, 1, `${label} must expose the Rally renderer at the expected startup point`);
-  const expose = `window.__rallyVectorVisualQA={MatchLifecycle,DebugScenarioHarness,ActiveViewState,UiRuntimeState,GameSession};\n`;
+  const expose = `window.__rallyVectorVisualQA={MatchLifecycle,DebugScenarioHarness,ActiveViewState,UiRuntimeState,GameSession,BattlefieldProjection};\n`;
   return html.replace(marker, `${expose}${marker}`);
 }
 
@@ -51,7 +51,13 @@ async function createBrowserPage(browser, url, label) {
       // Stop each peer at the fixed tick, before a pulse can catch up again.
       if (this.sim?.tick >= targetTick) {
         this.setTestModePaused(true);
-        if (this.role === 'host') q.frozenAtTick = this.sim.tick;
+        if (this.role === 'host') {
+          q.frozenAtTick = this.sim.tick;
+          const r=q.ActiveViewState.renderer, units=this.sim.units.filter(u=>u.hp>0);
+          const x=units.reduce((sum,u)=>sum+u.x,0)/units.length, y=units.reduce((sum,u)=>sum+u.y,0)/units.length;
+          r.cameraLeft=Math.max(0,Math.min(r.world.width-r.viewWorldW(),r.viewX(x)-r.viewWorldW()/2));
+          r.cameraTop=r.clampCameraTop(q.BattlefieldProjection.planarY(r.viewY(y),r.world.terrain.surfaces.heightAt(x,y))-r.viewWorldH()/2);
+        }
       }
       return result;
     };
