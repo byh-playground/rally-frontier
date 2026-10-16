@@ -9678,6 +9678,8 @@ body.campaign-mode #p2pHealthText {
 .battle-test-hud-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .battle-test-hud button{min-height:44px;min-width:76px;padding:8px 10px;border:1px solid #a5c69e;border-radius:9px;background:#365d43;color:#fff;font:inherit;font-weight:900;touch-action:manipulation}
 .battle-test-hud button:disabled{opacity:.45}
+.battle-test-copy-fallback{display:block;width:100%;min-height:132px;margin-top:8px;padding:8px;box-sizing:border-box;border:1px solid #91aa91;border-radius:8px;background:#0d1813;color:#f4f7ee;font:11px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;resize:vertical}
+.battle-test-copy-fallback:focus{outline:2px solid #b9dc9e;outline-offset:1px}
 .battle-test-hud .battle-test-hud-note{margin-top:6px;color:#b7c7b7;font-size:10px;line-height:1.3}
 body.battle-test-mode{overflow:hidden}
 body.playing.battle-test-mode #battleCommandDock{display:none!important}
@@ -10293,9 +10295,10 @@ body.playing.battle-test-mode #battleCommandDock{display:none!important}
               <button id="battleTestPauseBtn" type="button">일시정지</button>
               <button id="battleTestResetBtn" type="button">같은 조건으로 리셋</button>
               <button id="battleTestExitBtn" type="button">테스트 종료</button>
-              <button id="battleTestCopyBtn" type="button" class="hidden">결과 복사</button>
-              <button id="battleTestDownloadBtn" type="button" class="hidden">JSON 저장</button>
+              <button id="battleTestCopyBtn" type="button" class="hidden">요약 복사</button>
+              <button id="battleTestDownloadBtn" type="button" class="hidden">상세 JSON 다운로드</button>
             </div>
+            <textarea id="battleTestCopyFallback" class="battle-test-copy-fallback hidden" readonly spellcheck="false" rows="7" aria-label="복사할 진단 요약"></textarea>
             <div class="battle-test-hud-note">프레임 간격은 이 브라우저의 화면 프레임 간격입니다. GPU 시간은 측정되지 않습니다.</div>
           </section>
           <div class="resource-bar">
@@ -36313,6 +36316,7 @@ class MobileBattleTestMode{
   }
   static beginRun(){
     this.phase="connecting";this.paused=false;this.pausedAt=0;this.report=null;this.connectStartedAt=performance.now();this.phaseStartedAt=0;this.sampleStartedAt=0;this.lastFrameAt=0;this.lastHudAt=0;this.lastSampleState=null;this.sampleStartState=null;this.sampleCount=0;this.overflowFrames=0;this.lastIntervalMs=0;
+    this.resetCopyFallback();
     this.sampleBuffers=Object.fromEntries(this.sampleMetricKeys.map(key=>[key,new Float32Array(this.capacity)]));this.lastCapturedRendererFrameSequence=0;
     this.peerSamples={host:[],guest:[]};this.peerSampleTicks={host:0,guest:0};this.peerSnapshotBaseline={};this.peerStepSampleCounts={host:0,guest:0};this.peerStepSampleCountsAtStart={host:0,guest:0};this.peerMaxStepMs={host:0,guest:0};
     this.visibilityStats={visibilityStateAtStart:document.visibilityState||"unknown",visibilityStateAtSampleStart:null,hiddenEvents:0,unpausedHiddenEvents:0,hiddenWhilePausedEvents:0,pagehideEvents:0,invalidated:false};
@@ -36549,13 +36553,83 @@ class MobileBattleTestMode{
     this.ref("battleTestResetBtn")?.toggleAttribute("disabled",this.phase==="connecting");
     copy?.classList.toggle("hidden",!this.report);download?.classList.toggle("hidden",!this.report);
   }
+  static resetCopyFallback(){
+    const area=this.ref("battleTestCopyFallback");if(!area)return;area.value="";area.classList.add("hidden");
+  }
+  static summaryReportText(report=this.report){
+    if(!report)return"";
+    const n=value=>value==null||!Number.isFinite(Number(value))?"n/a":Number.isInteger(Number(value))?String(Number(value)):String(Number(Number(value).toFixed(2)));
+    const safe=(value,max=72)=>String(value??"n/a").replace(/[\r\n\t]+/g," ").slice(0,max);
+    const triplet=metric=>`${n(metric?.p50)}/${n(metric?.p95)}/${n(metric?.max)}`;
+    const p95=metric=>n(metric?.p95);
+    const sample=report.sample||{},condition=report.condition||{},visibility=report.visibility||{},sim=report.simulation||{},renderer=report.renderer||{};
+    const rosters=condition.rosters||{},roster=role=>Array.isArray(rosters[role])?rosters[role].slice(0,5).map(type=>safe(type,28)).join("+")||"n/a":"n/a";
+    const viewport=report.device?.viewport||{},paired=sample.pairedSlowFrames||{},pairedMetrics=paired.metrics||{};
+    const vectorAvailability=sample.metricAvailability?.vectorAssetDraws;
+    const vectorPath=vectorAvailability?.available===false?"metrics unavailable":vectorAvailability?.vectorPathUsed===false?"unused in sample":vectorAvailability?.vectorPathUsed===true||p95(sample.vectorAssetDraws)!=="n/a"?"used":"status unknown";
+    const aliveStart=sim.aliveUnitsStart||{},aliveEnd=sim.aliveUnitsEnd||{};
+    const stageKeys=[["total","totalMs"],["index","indexMs"],["world","worldMs"],["economy","economyMs"],["worker","workerMs"],["vision","visionMs"],["combat","combatMs"],["projectile","projectileMs"],["collision","collisionMs"],["post","postMs"]];
+    const peerLine=(role,label)=>{
+      const peer=sim.peers?.[role];if(!peer?.available)return`${label}: unavailable`;
+      const rows=Array.isArray(peer.sampledStages)?peer.sampledStages:[];
+      const stages=stageKeys.map(([name,key])=>{
+        const values=rows.map(row=>row?.stageMs?.[key]).filter(value=>Number.isFinite(value)).sort((a,b)=>a-b);
+        const value=values.length?values[Math.floor((values.length-1)*.95)]:null;return`${name}=${n(value)}`;
+      }).join("/");
+      const work=key=>{
+        const values=rows.map(row=>row?.workCounters?.[key]).filter(value=>Number.isFinite(value));
+        return values.length?n(Math.max(...values)):"n/a";
+      };
+      const step=peer.step||{},snapshot=peer.snapshot||{};
+      return`${label}: step ticks/last/ewma/max=${n(step.ticksDuringSample)}/${n(step.lastStepMs)}/${n(step.ewmaStepMs)}/${n(step.maxObservedStepMs)}ms; snapshot n/avg/max=${n(snapshot.samplesDuringSample)}/${n(snapshot.averageMsDuringSample)}/${n(snapshot.lifetimeMaxSnapshotMs)}ms; stage p95ms ${stages}; work max spatial/candidates/collisions=${work("spatialQueries")}/${work("spatialCandidates")}/${work("collisionPairs")}`;
+    };
+    const unavailable=[];
+    if(sample.gpuTime?.measured!==true)unavailable.push("GPU timer not measured");
+    if(sample.gcTimeMs==null)unavailable.push("GC timing not collected");
+    if(sample.transportSerializationMs==null)unavailable.push("transport serialization not measured");
+    if(sample.simulationCpuTimeMs==null)unavailable.push("isolated simulation CPU profiler unavailable (peer step/stage/snapshot timings shown)");
+    const lines=[
+      `RALLY FRONTIER · mobile battle diagnostics`,
+      `Build ${safe(report.build?.id)} / commit ${safe(report.build?.commit,48)}`,
+      `Condition seed=${n(condition.seed)} units=${n(condition.totalCombatUnits)} (${n(condition.unitsPerSide)}/side) roster H=${roster("host")} G=${roster("guest")} TPS=${n(condition.tps)} warmup/sample=${n(condition.warmupSeconds)}/${n(condition.requestedSampleSeconds)}s`,
+      `Run ${safe(sample.status,24)} ${n(sample.durationMs)}ms/${n(sample.frameCount)} frames FPS=${n(sample.fps)} viewport=${n(viewport.width)}x${n(viewport.height)}@${n(viewport.devicePixelRatio)} ${safe(viewport.orientation,24)}`,
+      `Visibility valid=${visibility.sampleValid===true?"yes":visibility.sampleValid===false?"no":"unknown"} sample/finish=${safe(visibility.visibilityStateAtSampleStart,16)}/${safe(visibility.visibilityStateAtFinish,16)} hidden=${n(visibility.hiddenEvents)} unpaused=${n(visibility.unpausedHiddenEvents)} paused=${n(visibility.hiddenWhilePausedEvents)} pagehide=${n(visibility.pagehideEvents)} invalidated=${n(visibility.invalidated===true?1:visibility.invalidated===false?0:null)}`,
+      `Frame ms p50/p95/max=${triplet(sample.frameIntervalMs)}; renderer CPU ms p50/p95/max=${triplet(sample.rendererCpuWorkMs)}; draw/vector p95=${p95(sample.drawCalls)}/${p95(sample.vectorAssetDrawCalls)}; vector path=${vectorPath}`,
+      `Uploads p95 bytes buffer/geometry/instance/staging/partUniform=${p95(sample.bufferUploadBytes)}/${p95(sample.vectorAssetGeometryBytes)}/${p95(sample.vectorAssetInstanceBytes)}/${p95(sample.vectorStagingBytes)}/${p95(sample.partUniformBytesSubmitted)}; geometry uploads p95=${p95(sample.vectorGeometryUploads)}; vector instances p95=${p95(sample.vectorInstances)}`,
+      `Alpha cache avg hits/misses per frame=${n(sample.alphaRunCacheHits?.mean)}/${n(sample.alphaRunCacheMisses?.mean)}; paired slow frames=${n(paired.frameCount)} at >=${n(paired.selection?.thresholdMs)}ms, renderer CPU/draw/upload p95=${p95(pairedMetrics.rendererCpuWorkMs)}/${p95(pairedMetrics.drawCalls)}/${p95(pairedMetrics.bufferUploadBytes)}, cache hits/misses p95=${p95(pairedMetrics.alphaRunCacheHits)}/${p95(pairedMetrics.alphaRunCacheMisses)}`,
+      `Ticks ${n(sim.startTick)}→${n(sim.endTick)} (+${n(sim.ticksAdvanced)}); alive H/G ${n(aliveStart.host)}/${n(aliveStart.guest)}→${n(aliveEnd.host)}/${n(aliveEnd.guest)} (total ${n(aliveStart.total)}→${n(aliveEnd.total)})`,
+      peerLine("host","Host"),peerLine("guest","Guest"),
+      `Renderer ${safe(renderer.backend)} canvas=${n(renderer.canvas?.width)}x${n(renderer.canvas?.height)} vectorAssets=${renderer.vectorAssets===true?"yes":renderer.vectorAssets===false?"no":"unknown"}; unavailable: ${unavailable.join("; ")||"none"}`
+    ];
+    return lines.join("\n");
+  }
+  static revealCopyFallback(text){
+    const area=this.ref("battleTestCopyFallback");if(!area)return;
+    area.value=text;area.classList.remove("hidden");area.focus({preventScroll:true});area.select();area.setSelectionRange(0,area.value.length);area.scrollIntoView?.({block:"nearest"});
+  }
   static async copyReport(){
-    if(!this.report)return;const text=JSON.stringify(this.report,null,2);
-    try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(text);else{const area=document.createElement("textarea");area.value=text;area.setAttribute("readonly","");area.style.cssText="position:fixed;opacity:0";document.body.appendChild(area);area.select();const copied=document.execCommand("copy");area.remove();if(!copied)throw new Error("clipboard unavailable")};const status=this.ref("battleTestHudStatus");if(status)status.textContent="결과 JSON을 복사했습니다."}
-    catch{const status=this.ref("battleTestHudStatus");if(status)status.textContent="복사 권한이 없습니다. JSON 저장을 사용하세요."}
+    if(!this.report)return;const text=this.summaryReportText(this.report),status=this.ref("battleTestHudStatus");let copied=false;
+    try{if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);copied=true}}catch{}
+    if(!copied){
+      const area=document.createElement("textarea");area.value=text;area.setAttribute("readonly","");area.style.cssText="position:fixed;left:-9999px;top:0";
+      try{document.body.appendChild(area);area.select();copied=!!document.execCommand?.("copy")}catch{}finally{area.remove()}
+    }
+    if(copied){this.resetCopyFallback();if(status)status.textContent="진단 요약을 복사했습니다."}
+    else{this.revealCopyFallback(text);if(status)status.textContent="자동 복사에 실패했습니다. 아래 요약을 선택해 복사하세요."}
+  }
+  static deferDownloadUrlRevoke(url){
+    let timer=0;const revoke=()=>{if(timer)clearTimeout(timer);window.removeEventListener("pagehide",revoke);URL.revokeObjectURL(url)};
+    window.addEventListener("pagehide",revoke,{once:true});timer=setTimeout(revoke,60000);
   }
   static downloadReport(){
-    if(!this.report)return;const blob=new Blob([JSON.stringify(this.report,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=`rally-mobile-battle-${this.config.fixedSeed}-${this.config.totalUnits}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    if(!this.report)return;const status=this.ref("battleTestHudStatus");let url=null,anchor=null,requested=false;
+    try{
+      const blob=new Blob([JSON.stringify(this.report,null,2)],{type:"application/json"});url=URL.createObjectURL(blob);
+      anchor=document.createElement("a");anchor.href=url;anchor.download=`rally-mobile-battle-${this.report.condition?.seed??this.config?.fixedSeed??"unknown"}-${this.report.condition?.totalCombatUnits??this.config?.totalUnits??"unknown"}.json`;
+      document.body.appendChild(anchor);anchor.click();requested=true;
+      if(status)status.textContent="상세 JSON 다운로드를 요청했습니다. 완료 여부는 브라우저 다운로드에서 확인하세요.";
+    }catch{if(status)status.textContent="상세 JSON 다운로드 요청을 시작하지 못했습니다."}
+    finally{anchor?.remove();if(url){if(requested)this.deferDownloadUrlRevoke(url);else URL.revokeObjectURL(url)}}
   }
   static exit(){
     if(["idle","stopped"].includes(this.phase))return;
