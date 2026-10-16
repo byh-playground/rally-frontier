@@ -22968,8 +22968,13 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       let overlaps=0;
 
       mark=perf?now():0;
+      // resolveNonAlliedSurfaceMotion refreshes these arrays before each solver
+      // iteration. Keep their references and each source unit's values out of the
+      // inner candidate loop; the arrays are unchanged during this pair scan.
+      const motionFlags=this.collisionMotion.flags,motionLayers=this.collisionMotion.layers;
       for(let i=0;i<n;i++){
         const a=units[i];if(!a.alive||radii[i]<=0)continue;
+        const aFlags=motionFlags[i],aLayer=motionLayers[i];
         const reach=radii[i]+maxRadius;
         const minCx=grid.cellXFP(a.fx-reach),maxCx=grid.cellXFP(a.fx+reach);
         const minCy=grid.cellYFP(a.fy-reach),maxCy=grid.cellYFP(a.fy+reach);
@@ -22980,8 +22985,8 @@ let value=Math.max(0,Number(d.flatArmor)||0);
             const j=bucket[k];if(j<=i)continue;
             const b=units[j];
             if(radii[j]<=0)continue;
-            const flags=this.collisionMotion.flags,layers=this.collisionMotion.layers;
-            if(!b.alive||(flags[i]&1)!==(flags[j]&1)||(flags[i]&6)||(flags[j]&6)||layers[i]!==layers[j])continue;
+            const bFlags=motionFlags[j];
+            if(!b.alive||(aFlags&1)!==(bFlags&1)||(aFlags&6)||(bFlags&6)||aLayer!==motionLayers[j])continue;
             if(perf)perf.collisionPairs++;
             if(!this.isAlliedCollisionUnit(a,b))continue;
             const min=radii[i]+radii[j];
