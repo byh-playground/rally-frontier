@@ -9663,6 +9663,29 @@ body.campaign-mode #p2pHealthText {
 }
 @keyframes campaignPingPulse{0%{opacity:0;transform:translate(-50%,-50%) scale(.45)}25%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.55)}}
 @keyframes campaignEdgePulse{0%,100%{opacity:.35}50%{opacity:1}}
+.battle-test-config{margin-top:14px;padding:12px;border:1px solid #8aa987;border-radius:12px;background:#e9f1e7}
+.battle-test-config h3{margin:0 0 5px;font-size:14px;color:#243b2d}
+.battle-test-config-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:10px}
+.battle-test-config label{display:grid;gap:5px;font-size:11px;font-weight:850;color:#314638}
+.battle-test-config select,.battle-test-config input{width:100%;min-height:44px;padding:8px 10px;border:1px solid #a7bda3;border-radius:9px;background:#fff;color:#23362c;font:inherit;font-size:14px}
+.battle-test-config .battle-test-copy{margin:8px 0 0;font-size:11px;line-height:1.4;color:#526454}
+#battleTestStartBtn{width:100%;min-height:48px;margin-top:10px;font-size:14px;touch-action:manipulation}
+.battle-test-hud{position:fixed;z-index:180;top:calc(8px + env(safe-area-inset-top));left:calc(8px + env(safe-area-inset-left));width:min(460px,calc(100vw - 24px));max-height:calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto;padding:10px;border:1px solid #d7e6cc;border-radius:12px;background:#14251eef;color:#f4f7ee;box-shadow:0 8px 24px #0006;font-size:12px;overscroll-behavior:contain}
+.battle-test-hud-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
+.battle-test-hud-title{font-size:13px;font-weight:950;letter-spacing:.02em}
+.battle-test-hud-status{min-height:18px;color:#e6dfaa;font-weight:800}
+.battle-test-hud-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 10px;margin-top:6px;color:#dae8d8;font-variant-numeric:tabular-nums}
+.battle-test-hud-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.battle-test-hud button{min-height:44px;min-width:76px;padding:8px 10px;border:1px solid #a5c69e;border-radius:9px;background:#365d43;color:#fff;font:inherit;font-weight:900;touch-action:manipulation}
+.battle-test-hud button:disabled{opacity:.45}
+.battle-test-hud .battle-test-hud-note{margin-top:6px;color:#b7c7b7;font-size:10px;line-height:1.3}
+body.battle-test-mode{overflow:hidden}
+body.playing.battle-test-mode #battleCommandDock{display:none!important}
+@media(max-width:639px){.battle-test-config{padding:10px}.battle-test-config-grid{gap:8px}.battle-test-config label{font-size:10px}}
+@media(orientation:landscape) and (max-height:560px){
+  .battle-test-hud{top:calc(6px + env(safe-area-inset-top));left:calc(6px + env(safe-area-inset-left));width:min(440px,56vw);max-height:calc(100% - 12px - env(safe-area-inset-top) - env(safe-area-inset-bottom));padding:8px}
+  .battle-test-hud-head{margin-bottom:4px}.battle-test-hud-actions{gap:5px;margin-top:5px}.battle-test-hud button{min-height:44px;padding:6px 8px}
+}
 </style>
 
 
@@ -10041,6 +10064,26 @@ body.campaign-mode #p2pHealthText {
           선택 유닛 테스트 시작
           <span class="single-entry-sub">실제 싱글 WebRTC/GameSession/Simulation 사용 · 초기 병력만 교체</span>
         </button>
+        <section class="battle-test-config" aria-labelledby="battleTestHeading">
+          <h3 id="battleTestHeading">모바일 대규모 전투 테스트</h3>
+          <p class="battle-test-copy">일반 싱글플레이와 같은 시뮬레이션·렌더러로 로컬 AI 전투를 실행합니다. 설정한 전투 병력만 배치하며 캠페인 진행과 저장 데이터는 사용하지 않습니다.</p>
+          <div class="battle-test-config-grid">
+            <label for="battleTestUnitCount">전투 유닛 수 (양 팀 합계)
+              <select id="battleTestUnitCount"><option value="100">100</option><option value="200">200</option><option value="400">400</option></select>
+            </label>
+            <label for="battleTestComposition">편성
+              <select id="battleTestComposition"><option value="melee">근접</option><option value="ranged">원거리</option><option value="mixed" selected>혼합 (근접 + 원거리)</option></select>
+            </label>
+            <label for="battleTestSeed">고정 시드
+              <input id="battleTestSeed" type="number" min="0" max="4294967295" step="1" value="20261015" inputmode="numeric">
+            </label>
+            <label for="battleTestSampleSeconds">측정 구간 (워밍업 5초)
+              <select id="battleTestSampleSeconds"><option value="10">10초</option><option value="15" selected>15초</option><option value="30">30초</option></select>
+            </label>
+          </div>
+          <p class="battle-test-copy">시작 후 5초 워밍업, 선택한 시간 동안 측정합니다. 일시정지 구간은 제외합니다. GPU 시간은 렌더러가 측정하지 않습니다.</p>
+          <button id="battleTestStartBtn" type="button" class="dialog-action primary">전투 테스트 시작</button>
+        </section>
       </details>
     </form>
   </dialog>
@@ -10237,6 +10280,24 @@ body.campaign-mode #p2pHealthText {
           <canvas id="glCanvas"></canvas>
           <canvas id="fxCanvas" class="fx-canvas" aria-hidden="true"></canvas>
           <button id="matchMenuBtnGame" class="match-menu-chip" type="button" aria-label="경기 메뉴 열기">☰</button>
+          <section id="battleTestHud" class="battle-test-hud hidden" aria-label="전투 테스트 측정 상태">
+            <div class="battle-test-hud-head">
+              <div>
+                <div class="battle-test-hud-title">모바일 전투 테스트</div>
+                <div id="battleTestHudStatus" class="battle-test-hud-status" role="status" aria-live="polite">연결 대기</div>
+              </div>
+              <b id="battleTestHudRoster" aria-label="전투 구성"></b>
+            </div>
+            <div id="battleTestHudMetrics" class="battle-test-hud-metrics"></div>
+            <div class="battle-test-hud-actions">
+              <button id="battleTestPauseBtn" type="button">일시정지</button>
+              <button id="battleTestResetBtn" type="button">같은 조건으로 리셋</button>
+              <button id="battleTestExitBtn" type="button">테스트 종료</button>
+              <button id="battleTestCopyBtn" type="button" class="hidden">결과 복사</button>
+              <button id="battleTestDownloadBtn" type="button" class="hidden">JSON 저장</button>
+            </div>
+            <div class="battle-test-hud-note">프레임 간격은 이 브라우저의 화면 프레임 간격입니다. GPU 시간은 측정되지 않습니다.</div>
+          </section>
           <div class="resource-bar">
             <div class="resource-chip resource-mineral">◆ <span class="resource-label">미네랄</span> <b id="minerals">0</b></div>
             <div class="resource-chip resource-gas">⬡ <span class="resource-label">가스</span> <b id="gas">0</b></div>
@@ -19076,19 +19137,26 @@ class StrategySim{
     const humanSide=cfg.humanRole==="host"?0:1,enemySide=1-humanSide;
     // The scenario is the roster SSOT for this debug match too. This prevents normal
     // generated deck consumers (production UI / bot strategy) from reintroducing unrelated units.
-    this.decks=[[],[]];this.decks[humanSide]=[cfg.allyType];this.decks[enemySide]=[cfg.enemyType];
-    if(cfg.research){this.abilities[humanSide][cfg.allyType]=true;this.abilities[enemySide][cfg.enemyType]=true}
-    const cx=this.world.width*.5,cy=this.world.height*.5,gap=190;
-    const spawnGroup=(side,type,count,centerX,centerY)=>{
-      const cols=Math.max(1,Math.ceil(Math.sqrt(count))),spacing=Math.max(24,(this.unitRadius(type)*2)+8),rows=Math.ceil(count/cols);
-      for(let i=0;i<count;i++){
-        const row=Math.floor(i/cols),col=i%cols;
-        this.spawnUnit(side,type,RangeUtil.clamp(centerX+(col-(cols-1)/2)*spacing,30,this.world.width-30),RangeUtil.clamp(centerY+(row-(rows-1)/2)*spacing,30,this.world.height-30));
-      }
+    const humanRoster=DebugScenarioHarness.unitRoster(cfg,humanSide),enemyRoster=DebugScenarioHarness.unitRoster(cfg,enemySide);
+    this.decks=[[],[]];this.decks[humanSide]=humanRoster.slice();this.decks[enemySide]=enemyRoster.slice();
+    if(cfg.research){for(const type of humanRoster)this.abilities[humanSide][type]=true;for(const type of enemyRoster)this.abilities[enemySide][type]=true}
+    const cx=this.world.width*.5,cy=this.world.height*.5;
+    const formation=(roster,count)=>{
+      const cols=Math.max(1,Math.ceil(Math.sqrt(count))),rows=Math.ceil(count/cols),spacing=Math.max(24,...roster.map(type=>(this.unitRadius(type)*2)+8));
+      return{cols,rows,spacing,halfHeight:Math.ceil(rows/2)*spacing};
     };
-    // Side 0 advances upward in world-space and side 1 downward; place each group on its own approach side.
-    spawnGroup(humanSide,cfg.allyType,cfg.allyCount,cx,humanSide===0?cy+gap/2:cy-gap/2);
-    spawnGroup(enemySide,cfg.enemyType,cfg.enemyCount,cx,enemySide===0?cy+gap/2:cy-gap/2);
+    const spawnGroup=(side,roster,count,centerX,centerY)=>{
+      const layout=formation(roster,count);
+      for(let i=0;i<count;i++){
+        const row=Math.floor(i/layout.cols),col=i%layout.cols,type=roster[i%roster.length];
+        this.spawnUnit(side,type,RangeUtil.clamp(centerX+(col-(layout.cols-1)/2)*layout.spacing,30,this.world.width-30),RangeUtil.clamp(centerY+(row-(layout.rows-1)/2)*layout.spacing,30,this.world.height-30));
+      }
+      return layout;
+    };
+    const humanFormation=formation(humanRoster,cfg.allyCount),enemyFormation=formation(enemyRoster,cfg.enemyCount),gap=cfg.testMode==="mobile-battle"?humanFormation.halfHeight+enemyFormation.halfHeight+80:190;
+    // Keep opposing rows separated by a small central lane at every supported roster size.
+    spawnGroup(humanSide,humanRoster,cfg.allyCount,cx,humanSide===0?cy+gap/2:cy-gap/2);
+    spawnGroup(enemySide,enemyRoster,cfg.enemyCount,cx,enemySide===0?cy+gap/2:cy-gap/2);
     this.flags[humanSide]={...this.flags[humanSide],x:cx,y:humanSide===0?cy-gap:cy+gap,forced:false};
     this.flags[enemySide]={...this.flags[enemySide],x:cx,y:enemySide===0?cy-gap:cy+gap,forced:false};
     this.rebuildRuntimeIndexes();
@@ -24046,7 +24114,7 @@ class GameSession{
     this.pendingNetcodeCommands=new Map();this.lastCommandTicket=null;this.frameOutputs=new Map();this.candidateFrameOutputs=new Map();this.publishedGameTick=0;
     this.publishConfirmedSnapshots=false;this.latestConfirmedSnapshot=null;
     this.pendingTerminalFrame=null;this.remoteTerminalReceipt=null;this.lastTerminalReceiptAt=0;this.terminalRecoveryKey='';this.recoveredJournalFrom=null;
-    this.transportConnected=false;this.everTransportOpened=false;this.syncHold=true;this.deferredActions=[];
+    this.transportConnected=false;this.everTransportOpened=false;this.syncHold=true;this.testModePaused=false;this.deferredActions=[];
     this.recoveryPhase='idle';this.simpleRecoveryNeedsManual=false;this.simpleRecoveryToken='';this.simpleRecoverySeq=0;
     this.recoveryAttempt=0;this.fullConnectionResetCount=0;this.postRecoveryResumeAt=0;this.postRecoveryTimer=0;
     this.pendingResumeProbeToken='';this.lastResumeProbeAckAt=0;
@@ -24175,7 +24243,13 @@ class GameSession{
       if(Date.now()-this.lastPingAt>=1000){this.lastPingAt=Date.now();this.transport.send({type:'LOBBY_PING',ts:this.lastPingAt})}
     },NETWORK_HEALTH_POLL_MS);
   }
-  inputAvailable(){return !this.disposed&&!this.simEnded&&!this.simulationFatal&&!this.pendingTerminalFrame&&this.transportConnected&&!this.syncHold}
+  setTestModePaused(paused){
+    if(this.matchConfig?.debugScenario?.testMode!=="mobile-battle"||!this.netcodeSession||this.disposed||this.simEnded)return false;
+    const next=!!paused;if(this.testModePaused===next)return true;
+    this.testModePaused=next;if(next)this.netcodeSession.releaseInput();
+    this.netcodeLoop?.resetTiming();this.renderTimelineChanged=true;return true;
+  }
+  inputAvailable(){return !this.disposed&&!this.simEnded&&!this.simulationFatal&&!this.pendingTerminalFrame&&!this.testModePaused&&this.transportConnected&&!this.syncHold}
   command(action){
     if(!this.inputAvailable()||!this.sim||!this.netcodeSession||this.netcodeSession.resimulating||this.pendingNetcodeCommands.size>=128)return false;
     try{
@@ -24298,6 +24372,7 @@ class GameSession{
   }
   static matchSeed(draft,roomCode,matchConfig={}){
     if(matchConfig?.campaignScenario)return matchConfig.campaignScenario.seed;
+    if(matchConfig?.debugScenario?.testMode==="mobile-battle"&&Number.isSafeInteger(matchConfig.debugScenario.fixedSeed))return matchConfig.debugScenario.fixedSeed>>>0;
     return HashUtil.hash(`${roomCode}|${matchConfig?.selectionMode||'draft'}|${JSON.stringify(draft?.decks||{host:[],guest:[]})}|${JSON.stringify(draft?.defenseCards||{host:[],guest:[]})}`);
   }
   beginGame(){
@@ -24360,7 +24435,7 @@ class GameSession{
       // Poll/rollback remains synchronous and atomic inside Core. Always permit
       // the first due ordinary step, then yield catchup after 12 ms of CPU work.
       canAdvance:()=>{
-        if(this.simEnded||this.simulationFatal||this.pendingTerminalFrame||this.syncHold||this.frameOutputs.get(this.sim.tick)?.winner)return false;
+        if(this.simEnded||this.simulationFatal||this.pendingTerminalFrame||this.syncHold||this.testModePaused||this.frameOutputs.get(this.sim.tick)?.winner)return false;
         // Yielding ordinary catchup defers a fixed tick; it does not reset presentation history.
         if(this.driverPulseAdvances>0&&performance.now()-this.driverPulseStartedAt>=12)return false;
         return true;
@@ -24744,8 +24819,8 @@ prepareDebugScenarioLiveDraft(){
       decks:{host:[],guest:[]},defenseCards:{host:[],guest:[]},
       deckReady:{host:true,guest:true},deckSelectDeadlineAt:0,winner:null
     };
-    this.draft.decks[humanRole]=[cfg.allyType];
-    this.draft.decks[enemyRole]=[cfg.enemyType];
+    this.draft.decks[humanRole]=DebugScenarioHarness.unitRoster(cfg,humanRole==="host"?0:1);
+    this.draft.decks[enemyRole]=DebugScenarioHarness.unitRoster(cfg,enemyRole==="host"?0:1);
     return true;
   }
 start(){
@@ -32343,8 +32418,9 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       const hash=HashUtil.hash(ctx.u.id),phase=(hash%997)*17;
       record.player.seek(this.presentationNow(performance.now())+phase).setExpression(expression);
       const breathTell=ctx.u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.TELL,breathActive=ctx.u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.ACTIVE;
-      const extras={attackFx:!!ctx.attack,breathTell,breathActive};
-      for(const [part,visible] of Object.entries(extras))if(record.partIds.has(part))record.player.setPartVisible(part,visible);
+      if(record.partIds.has("attackFx"))record.player.setPartVisible("attackFx",!!ctx.attack);
+      if(record.partIds.has("breathTell"))record.player.setPartVisible("breathTell",breathTell);
+      if(record.partIds.has("breathActive"))record.player.setPartVisible("breathActive",breathActive);
       if(record.partIds.has("sac"))record.player.setBasePose("sac",{scaleX:ctx.attack?1.22:1,scaleY:ctx.attack?1.22:1});
       if(record.partIds.has("jaw"))record.player.setBasePose("jaw",{opacity:breathTell||breathActive||ctx.attack?1:.15});
       const parts=record.player.partPoses();
@@ -36180,13 +36256,190 @@ class DebugScenarioHarness{
     const valid=new Set(this.unitOptions().map(([id])=>id));
     const allyType=valid.has(raw?.allyType)?raw.allyType:"swarmbug";
     const enemyType=valid.has(raw?.enemyType)?raw.enemyType:"shelltitan";
-    return{kind:"unit-combat",allyType,enemyType,allyCount:RangeUtil.clamp(Math.round(Number(raw?.allyCount)||10),1,60),enemyCount:RangeUtil.clamp(Math.round(Number(raw?.enemyCount)||5),1,60),research:raw?.research!==false,humanRole:raw?.humanRole==="host"?"host":"guest"};
+    const testMode=raw?.testMode==="mobile-battle";
+    const totalUnits=testMode&&[100,200,400].includes(Number(raw?.totalUnits))?Number(raw.totalUnits):100;
+    const composition=testMode&&["melee","ranged","mixed"].includes(raw?.composition)?raw.composition:"mixed";
+    const requestedSeed=Number(raw?.fixedSeed),fixedSeed=testMode&&Number.isFinite(requestedSeed)?Math.trunc(RangeUtil.clamp(requestedSeed,0,0xffffffff))>>>0:20261015;
+    const sampleSeconds=testMode&&[10,15,30].includes(Number(raw?.sampleSeconds))?Number(raw.sampleSeconds):15;
+    return{kind:"unit-combat",testMode:testMode?"mobile-battle":null,composition:testMode?composition:"single",fixedSeed:testMode?fixedSeed:null,totalUnits:testMode?totalUnits:null,warmupSeconds:testMode?5:null,sampleSeconds:testMode?sampleSeconds:null,allyType,enemyType,allyCount:testMode?totalUnits/2:RangeUtil.clamp(Math.round(Number(raw?.allyCount)||10),1,60),enemyCount:testMode?totalUnits/2:RangeUtil.clamp(Math.round(Number(raw?.enemyCount)||5),1,60),research:raw?.research!==false,humanRole:raw?.humanRole==="host"?"host":"guest"};
+  }
+  static unitRoster(config,side){
+    const humanSide=config?.humanRole==="host"?0:1;
+    if(config?.testMode==="mobile-battle"){
+      if(config.composition==="melee")return["swordsman"];
+      if(config.composition==="ranged")return["archer"];
+      return["swordsman","archer"];
+    }
+    return[side===humanSide?config?.allyType:config?.enemyType].filter(Boolean);
+  }
+  static readBattleTestUi(){
+    return this.normalize({testMode:"mobile-battle",totalUnits:document.getElementById("battleTestUnitCount")?.value,composition:document.getElementById("battleTestComposition")?.value,fixedSeed:document.getElementById("battleTestSeed")?.value,sampleSeconds:document.getElementById("battleTestSampleSeconds")?.value,humanRole:"host",research:false});
   }
   static readUi(){return this.normalize({allyType:UiRegistry.refs.unitTestAllyType?.value,allyCount:UiRegistry.refs.unitTestAllyCount?.value,enemyType:UiRegistry.refs.unitTestEnemyType?.value,enemyCount:UiRegistry.refs.unitTestEnemyCount?.value,research:!!UiRegistry.refs.unitTestResearch?.checked})}
   static populateUi(){
     const options=this.unitOptions().map(([id,d])=>`<option value="${id}">T${d.tier} · ${d.name||id}</option>`).join("");
     if(UiRegistry.refs.unitTestAllyType){UiRegistry.refs.unitTestAllyType.innerHTML=options;UiRegistry.refs.unitTestAllyType.value="swarmbug"}
     if(UiRegistry.refs.unitTestEnemyType){UiRegistry.refs.unitTestEnemyType.innerHTML=options;UiRegistry.refs.unitTestEnemyType.value="shelltitan"}
+  }
+}
+
+class MobileBattleTestMode{
+  static phase="idle";static config=null;static report=null;static frameHandle=0;static phaseStartedAt=0;static connectStartedAt=0;static lastFrameAt=0;static lastHudAt=0;
+  static paused=false;static pausedAt=0;static sampleStartedAt=0;static sampleCount=0;static overflowFrames=0;static capacity=16384;
+  static frameIntervals=new Float32Array(this.capacity);static renderWork=new Float32Array(this.capacity);static drawCalls=new Float32Array(this.capacity);static vectorDrawCalls=new Float32Array(this.capacity);
+  static lastSampleState=null;static sampleStartState=null;static lastIntervalMs=0;static savedSettings=null;
+  static savedCampaignPending=null;static savedDebugPending=null;
+  static ref(id){return document.getElementById(id)}
+  static bindUi(){
+    this.ref("battleTestStartBtn")?.addEventListener("click",()=>this.start());
+    this.ref("battleTestPauseBtn")?.addEventListener("click",()=>this.paused?this.resume():this.pause());
+    this.ref("battleTestResetBtn")?.addEventListener("click",()=>this.reset());
+    this.ref("battleTestExitBtn")?.addEventListener("click",()=>this.exit());
+    this.ref("battleTestCopyBtn")?.addEventListener("click",()=>this.copyReport());
+    this.ref("battleTestDownloadBtn")?.addEventListener("click",()=>this.downloadReport());
+  }
+  static beginRun(){
+    this.phase="connecting";this.paused=false;this.pausedAt=0;this.report=null;this.connectStartedAt=performance.now();this.phaseStartedAt=0;this.sampleStartedAt=0;this.lastFrameAt=0;this.lastHudAt=0;this.lastSampleState=null;this.sampleStartState=null;this.sampleCount=0;this.overflowFrames=0;this.lastIntervalMs=0;
+    this.frameIntervals=new Float32Array(this.capacity);this.renderWork=new Float32Array(this.capacity);this.drawCalls=new Float32Array(this.capacity);this.vectorDrawCalls=new Float32Array(this.capacity);
+  }
+  static start(){
+    if(!["idle","stopped"].includes(this.phase))return;
+    this.config=DebugScenarioHarness.readBattleTestUi();this.savedSettings={selectionMode:UiRuntimeState.value.settings.selectionMode,presetId:UiRuntimeState.value.settings.presetId,simulationTps:UiRuntimeState.value.settings.simulationTps,netcodeMode:CONFIG.netcode.mode};
+    this.savedCampaignPending=CampaignRuntime.pending;this.savedDebugPending=DebugScenarioHarness.pending;
+    DebugScenarioHarness.pending=this.config;CampaignRuntime.pending=null;CampaignPresentation.clear();this.beginRun();
+    document.body.classList.add("battle-test-mode");
+    const hud=this.ref("battleTestHud");if(hud&&hud.parentElement!==document.body)document.body.appendChild(hud);hud?.classList.remove("hidden");
+    UiController.setStartSelectionMode("deck");UiRuntimeState.value.settings.presetId="standard";UiController.setStartSimulationTps(10);UiController.setStartNetcodeMode("lockstep");
+    UiController.closeUiModal("game-start");audioSystem.unlock();this.renderHud();
+    try{MatchLifecycle.startSinglePlayerWebRTC("host");this.scheduleFrame()}
+    catch(error){this.fail(`매치 시작 실패: ${String(error?.message||error)}`)}
+  }
+  static liveState(){
+    const match=MatchLifecycle.singleMatch;if(!match)return null;
+    const session=match.sessions?.[match.humanRole],peer=match.sessions?.[match.botRole],sim=session?.sim;
+    if(UiRuntimeState.value.screen!=="game"||!sim||!peer?.sim||!session?.netcodeSession?.ready||!peer.netcodeSession?.ready)return null;
+    return{match,session,peer,sim,renderer:ActiveViewState.renderer};
+  }
+  static readCounts(sim){
+    let total=0,host=0,guest=0,workers=0;
+    for(const unit of sim?.units||[]){if(!unit||unit.alive===false||unit.hp<=0||(unit.side!==0&&unit.side!==1))continue;total++;if(unit.side===0)host++;else guest++;if(UnitDefinition.get(unit.type)?.economyWorker)workers++}
+    return{total,host,guest,workers};
+  }
+  static stateSnapshot(live){
+    const counts=this.readCounts(live?.sim);
+    return{tick:live?.session?.sim?.tick??null,peerTick:live?.peer?.sim?.tick??null,units:counts};
+  }
+  static scheduleFrame(){
+    if(this.frameHandle||this.paused||!["connecting","warmup","sampling"].includes(this.phase))return;
+    this.frameHandle=requestAnimationFrame(timestamp=>{this.frameHandle=0;this.frame(timestamp);this.scheduleFrame()});
+  }
+  static frame(timestamp){
+    const now=Number.isFinite(timestamp)?timestamp:performance.now();
+    if(this.phase==="connecting"){
+      const live=this.liveState();
+      if(live){this.phase="warmup";this.phaseStartedAt=now;this.lastFrameAt=now;this.lastSampleState=this.stateSnapshot(live);this.renderHud(now)}
+      else if(now-this.connectStartedAt>30000)this.fail("매치 연결 시간이 초과됐습니다. 종료 후 다시 시작하세요.");
+      if(this.phase==="connecting"&&now-this.lastHudAt>500){this.lastHudAt=now;this.renderHud(now)}
+      return;
+    }
+    if(this.paused)return;
+    if(UiRuntimeState.value.screen==="result"){
+      if(this.phase==="sampling")this.finishSample(now,true);else this.fail("측정 구간 전에 매치가 종료됐습니다.");
+      return;
+    }
+    const live=this.liveState();
+    if(!live){if(this.phase==="sampling")this.finishSample(now,true);return}
+    if(this.phase==="warmup"&&now-this.phaseStartedAt>=this.config.warmupSeconds*1000){
+      this.phase="sampling";this.phaseStartedAt=now;this.sampleStartedAt=now;this.lastFrameAt=now;this.sampleCount=0;this.sampleStartState=this.stateSnapshot(live);this.lastSampleState=this.sampleStartState;this.renderHud(now);return;
+    }
+    if(this.phase==="sampling"){
+      const interval=now-this.lastFrameAt;this.lastFrameAt=now;this.lastIntervalMs=interval;
+      if(interval>0&&this.sampleCount<this.capacity){
+        const n=this.sampleCount++,stats=live.renderer?.perfStats||{};
+        this.frameIntervals[n]=interval;this.renderWork[n]=Number(stats.frameWorkMs)||0;this.drawCalls[n]=Number(stats.drawCalls)||0;this.vectorDrawCalls[n]=Number(stats.vectorAssetDrawCalls)||0;
+      }else if(this.sampleCount>=this.capacity)this.overflowFrames++;
+      if(now-this.phaseStartedAt>=this.config.sampleSeconds*1000){this.finishSample(now,false);return}
+    }
+    if(now-this.lastHudAt>=1000){this.lastHudAt=now;this.lastSampleState=this.stateSnapshot(live);this.renderHud(now)}
+  }
+  static stats(values,count){
+    if(!count)return{count:0,p50:null,p95:null,max:null,mean:null};
+    const sorted=Array.from(values.subarray(0,count)).sort((a,b)=>a-b),sum=sorted.reduce((a,b)=>a+b,0),round=n=>Math.round(n*100)/100;
+    return{count,p50:round(sorted[Math.floor((count-1)*.5)]),p95:round(sorted[Math.floor((count-1)*.95)]),max:round(sorted[count-1]),mean:round(sum/count)};
+  }
+  static finishSample(now,interrupted){
+    if(this.phase!=="sampling")return;
+    const live=this.liveState(),start=this.sampleStartState||this.lastSampleState,end=this.stateSnapshot(live||{}),elapsed=Math.max(0,now-this.sampleStartedAt),intervals=this.stats(this.frameIntervals,this.sampleCount),render=this.stats(this.renderWork,this.sampleCount),draws=this.stats(this.drawCalls,this.sampleCount),vectorDraws=this.stats(this.vectorDrawCalls,this.sampleCount);
+    const match=MatchLifecycle.singleMatch,renderer=ActiveViewState.renderer,unitsPerSide=this.config.totalUnits/2;
+    this.report={schemaVersion:1,testMode:"mobile-battle",capturedAt:new Date().toISOString(),build:{id:BUILD_META.id,commit:BUILD_META.commit||null},
+      device:{userAgent:navigator.userAgent||"",platform:navigator.platform||"",hardwareConcurrency:navigator.hardwareConcurrency||null,viewport:{width:innerWidth,height:innerHeight,devicePixelRatio:devicePixelRatio,orientation:screen.orientation?.type||""}},
+      condition:{seed:this.config.fixedSeed,totalCombatUnits:this.config.totalUnits,unitsPerSide,composition:this.config.composition,rosters:{host:DebugScenarioHarness.unitRoster(this.config,0),guest:DebugScenarioHarness.unitRoster(this.config,1)},tps:live?.sim?.tps||match?.sessions?.host?.sim?.tps||10,warmupSeconds:this.config.warmupSeconds,requestedSampleSeconds:this.config.sampleSeconds,selectionMode:"deck",presetId:"standard"},
+      measurement:{collector:"requestAnimationFrame",observer:"preallocated numeric sample buffers; no CDP profiler",perFrameCounters:["frame interval","renderer CPU work","draw calls","vector draw calls"],overheadMs:null},
+      sample:{status:interrupted?"interrupted":"complete",durationMs:Math.round(elapsed),frameCount:intervals.count,fps:elapsed>0?Math.round(intervals.count*100000/elapsed)/100:null,frameIntervalMs:intervals,rendererCpuWorkMs:render,drawCalls:draws,vectorAssetDrawCalls:vectorDraws,capacityExceededFrames:this.overflowFrames,
+        gpuTime:{measured:false,reason:"렌더러에서 GPU 타이머 질의를 수집하지 않음"},simulationCpuTimeMs:null},
+      simulation:{startTick:start?.tick??null,endTick:end.tick,ticksAdvanced:start?.tick!=null&&end.tick!=null?end.tick-start.tick:null,peerStartTick:start?.peerTick??null,peerEndTick:end.peerTick,aliveUnitsStart:start?.units||null,aliveUnitsEnd:end.units},
+      renderer:{backend:renderer?.backend||null,canvas:{width:renderer?.canvas?.width||null,height:renderer?.canvas?.height||null},vectorAssets:!!window.RallyVectorAssets,vectorMeshes:renderer?.perfStats?.vectorAssetMeshes??null}};
+    this.phase="complete";this.pause();this.renderHud(now);
+  }
+  static pause(){
+    if(this.paused||!MatchLifecycle.singleMatch)return;
+    let applied=0;for(const session of Object.values(MatchLifecycle.singleMatch.sessions||{}))if(session.setTestModePaused(true))applied++;
+    if(!applied)return;
+    this.paused=true;this.pausedAt=performance.now();if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;this.renderHud();
+  }
+  static resume(){
+    if(!this.paused||!MatchLifecycle.singleMatch)return;
+    let applied=0;for(const session of Object.values(MatchLifecycle.singleMatch.sessions||{}))if(session.setTestModePaused(false))applied++;
+    if(!applied)return;
+    const now=performance.now(),pauseMs=now-this.pausedAt;if(this.phase==="warmup"||this.phase==="sampling")this.phaseStartedAt+=pauseMs;if(this.phase==="sampling")this.sampleStartedAt+=pauseMs;
+    this.lastFrameAt=now;this.paused=false;this.pausedAt=0;this.renderHud(now);this.scheduleFrame();
+  }
+  static pauseButton(){if(this.paused)this.resume();else this.pause()}
+  static reset(){
+    if(!this.config||!["connecting","warmup","sampling","complete","error"].includes(this.phase))return;
+    if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;MatchLifecycle.stopSinglePlayer();
+    DebugScenarioHarness.pending=this.config;this.beginRun();this.renderHud();
+    try{MatchLifecycle.startSinglePlayerWebRTC("host");this.scheduleFrame()}
+    catch(error){this.fail(`매치 다시 시작 실패: ${String(error?.message||error)}`)}
+  }
+  static fail(message){this.phase="error";if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;const status=this.ref("battleTestHudStatus");if(status)status.textContent=message;this.renderHud()}
+  static renderHud(now=performance.now()){
+    const hud=this.ref("battleTestHud");if(!hud)return;
+    hud.classList.toggle("hidden",!["connecting","warmup","sampling","complete","error"].includes(this.phase));
+    const status=this.ref("battleTestHudStatus"),roster=this.ref("battleTestHudRoster"),metrics=this.ref("battleTestHudMetrics");
+    if(roster&&this.config)roster.textContent=`${this.config.totalUnits} · ${this.config.composition} · ${this.config.fixedSeed}`;
+    if(status){
+      const left=this.phase==="warmup"?Math.max(0,Math.ceil((this.config.warmupSeconds*1000-(now-this.phaseStartedAt))/1000)):this.phase==="sampling"?Math.max(0,Math.ceil((this.config.sampleSeconds*1000-(now-this.phaseStartedAt))/1000)):0;
+      status.textContent=this.phase==="connecting"?"로컬 AI 매치 연결 중…":this.phase==="warmup"?`워밍업 ${left}초`:this.phase==="sampling"?`측정 ${this.config.sampleSeconds-left} / ${this.config.sampleSeconds}초`:this.phase==="complete"?"측정 완료 · 전투는 일시정지됨":this.phase==="error"?(status.textContent||"매치 시작 실패"):"";
+    }
+    const snapshot=this.lastSampleState,live=this.liveState(),current=live?this.stateSnapshot(live):snapshot;
+    if(metrics){
+      if(this.report){const s=this.report.sample,m=this.report.simulation;metrics.innerHTML=`<span>FPS <b>${s.fps??"—"}</b></span><span>프레임 p50/p95 <b>${s.frameIntervalMs.p50??"—"}/${s.frameIntervalMs.p95??"—"} ms</b></span><span>전투 유닛 <b>${this.config.totalUnits}</b> · 전체 생존 <b>${m.aliveUnitsEnd?.total??"—"}</b></span><span>드로우 p95 <b>${s.drawCalls.p95??"—"}</b> calls · 벡터 p95 <b>${s.vectorAssetDrawCalls.p95??"—"}</b></span><span>틱 <b>${m.startTick??"—"} → ${m.endTick??"—"}</b></span><span>렌더 CPU p95 <b>${s.rendererCpuWorkMs.p95??"—"} ms</b></span>`}
+      else if(current){const stats=live?.renderer?.perfStats||{};metrics.innerHTML=`<span>전투 유닛 <b>${this.config?.totalUnits||0}</b> · 생존 <b>${current.units.total}</b></span><span>Host / Guest <b>${current.units.host} / ${current.units.guest}</b></span><span>시뮬레이션 틱 <b>${current.tick??"—"}</b></span><span>렌더 드로우 <b>${stats.drawCalls??"—"}</b> · 벡터 <b>${stats.vectorAssetDrawCalls??"—"}</b></span><span>마지막 프레임 간격 <b>${Math.round(this.lastIntervalMs*100)/100} ms</b></span><span>워밍업/측정 <b>5초 / ${this.config?.sampleSeconds||15}초</b></span>`}
+      else metrics.textContent="시뮬레이션 준비 중";
+    }
+    const pause=this.ref("battleTestPauseBtn"),copy=this.ref("battleTestCopyBtn"),download=this.ref("battleTestDownloadBtn");
+    if(pause){pause.textContent=this.paused?"재개":"일시정지";pause.disabled=["connecting","error","complete"].includes(this.phase)}
+    this.ref("battleTestResetBtn")?.toggleAttribute("disabled",this.phase==="connecting");
+    copy?.classList.toggle("hidden",!this.report);download?.classList.toggle("hidden",!this.report);
+  }
+  static async copyReport(){
+    if(!this.report)return;const text=JSON.stringify(this.report,null,2);
+    try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(text);else{const area=document.createElement("textarea");area.value=text;area.setAttribute("readonly","");area.style.cssText="position:fixed;opacity:0";document.body.appendChild(area);area.select();const copied=document.execCommand("copy");area.remove();if(!copied)throw new Error("clipboard unavailable")};const status=this.ref("battleTestHudStatus");if(status)status.textContent="결과 JSON을 복사했습니다."}
+    catch{const status=this.ref("battleTestHudStatus");if(status)status.textContent="복사 권한이 없습니다. JSON 저장을 사용하세요."}
+  }
+  static downloadReport(){
+    if(!this.report)return;const blob=new Blob([JSON.stringify(this.report,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=`rally-mobile-battle-${this.config.fixedSeed}-${this.config.totalUnits}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  static exit(){
+    if(["idle","stopped"].includes(this.phase))return;
+    if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;this.phase="stopped";this.paused=false;
+    MatchLifecycle.stopSinglePlayer();DebugScenarioHarness.pending=this.savedDebugPending;CampaignRuntime.pending=this.savedCampaignPending;CampaignPresentation.clear();document.body.classList.remove("battle-test-mode");this.ref("battleTestHud")?.classList.add("hidden");
+    const button=UiRegistry.refs.singleBtn;if(button){button.disabled=false;button.innerHTML=`싱글 플레이<span class="single-entry-sub">AI와 대결 · Host / Guest 역할 선택</span>`}
+    UiController.setElementVisible(UiRegistry.refs.singleStatus,false);
+    if(this.savedSettings){UiController.setStartSelectionMode(this.savedSettings.selectionMode);UiRuntimeState.value.settings.presetId=this.savedSettings.presetId;UiController.setStartSimulationTps(this.savedSettings.simulationTps);UiController.setStartNetcodeMode(this.savedSettings.netcodeMode)}
+    UiController.setUiScreen("lobby");UiController.openUiModal("game-start");
+    this.phase="idle";this.config=null;this.report=null;this.savedSettings=null;this.savedCampaignPending=null;this.savedDebugPending=null;
   }
 }
 
@@ -39745,6 +39998,7 @@ UiRegistry.refs.unitTestBtn.onclick=()=>{
   UiController.closeUiModal("game-start");
   UiController.openUiModal("single-role");
 };
+MobileBattleTestMode.bindUi();
 UiRegistry.refs.singleRoleCloseBtn.onclick=()=>UiController.closeUiModal("single-role");
 UiRegistry.refs.singleHostBtn.onclick=()=>{
   audioSystem.unlock();
