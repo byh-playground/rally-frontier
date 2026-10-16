@@ -42,6 +42,13 @@ function peer(offset = 0) {
 }
 
 function reportFixture() {
+  const slowFrame = {
+    frameIndex: 8, rendererFrameSequence: 108, frameIntervalMs: 180, elapsedWindowMs: 180, rendererCpuMs: 37,
+    host: { step: { count: 2, cpuMs: 2 }, snapshot: { count: 1, cpuMs: 0.5 }, sessionPulse: { cpuMs: 4 } },
+    guest: { step: { count: 1, cpuMs: 1.3 }, snapshot: { count: 1, cpuMs: 0.4 }, sessionPulse: { cpuMs: 3 } },
+    unattributedElapsedMs: 120, vector: { drawMeshSubmissions: 285, meshInstances: 300, webglDrawDispatches: 572, alphaRunDispatches: 80 },
+    vectorFlushes: { calls: 6, pendingCalls: 4, emptyCalls: 2, pendingInstancesFlushed: 14, alphaRunInstances: 3, reasons: { "mixed-alpha-runs": 4, "world-pass-end": 1, "internal-compatibility": 1 } },
+  };
   return {
     schemaVersion: 2,
     testMode: "mobile-battle",
@@ -49,17 +56,17 @@ function reportFixture() {
     build: { id: "20261016T033522+0000-rf-0c5866d65800", commit: "0123456789abcdef" }, collisionModel: "ally-soft-one-pass",
     device: { userAgent: "Headless browser details are omitted from summary", platform: "Win32", hardwareConcurrency: 12, viewport: { width: 844, height: 390, devicePixelRatio: 2, orientation: "landscape-primary" } },
     condition: { seed: 20261015, totalCombatUnits: 400, unitsPerSide: 200, composition: "mixed", rosters: { host: ["swordsman", "archer"], guest: ["swordsman", "archer"] }, tps: 10, warmupSeconds: 5, requestedSampleSeconds: 15 },
-    measurement: { collector: "completed renderer frame hook", perFrameCounters: ["frameIntervalMs", "frameWindowMs", "rendererCpuWorkMs", "hostStepCpuMs", "guestSessionPulseCpuMs", "unattributedElapsedMs"], vectorAssetDrawCallMeaning: "MeshRenderer device.draw() calls dispatched as WebGL draws (instanced when the instancing extension is active).", nestedCpuAccounting: "sessionPulse includes StrategySim step and snapshot work" },
+    measurement: { collector: "completed renderer frame hook", perFrameCounters: ["frameIntervalMs", "frameWindowMs", "rendererCpuWorkMs", "hostStepCpuMs", "guestSessionPulseCpuMs", "unattributedElapsedMs"], vectorAssetDrawCallMeaning: "MeshRenderer metrics.draws: WebGL device.draw() dispatches; not measured GPU execution time.", nestedCpuAccounting: "sessionPulse includes StrategySim step and snapshot work" },
     sample: {
       status: "complete", durationMs: 15000, frameCount: 180, fps: 7.31,
       frameIntervalMs: stats(135.7, 179.1, 220, 145), rendererCpuWorkMs: stats(12, 30.4, 48, 15),
-      drawCalls: stats(620, 705, 730, 640), vectorAssetDrawCalls: stats(480, 572, 600, 510),
+      drawCalls: stats(620, 705, 730, 640), vectorAssetDrawCalls: stats(480, 572, 600, 510), vectorAssetDraws: stats(200, 285, 300, 240),
       bufferUploadBytes: stats(80000, 120000, 140000, 85000), vectorAssetGeometryBytes: stats(256, 512, 768, 300),
       vectorAssetInstanceBytes: stats(1024, 2048, 3072, 1200), vectorStagingBytes: stats(12000, 16000, 20000, 14000),
       partUniformBytesSubmitted: stats(500, 700, 900, 600), vectorGeometryUploads: stats(0, 1, 2, 0.2), vectorInstances: stats(300, 400, 450, 340),
       alphaRunCacheHits: stats(4, 8, 10, 5), alphaRunCacheMisses: stats(1, 2, 4, 1.2),
       metricAvailability: { vectorAssetDraws: { available: true, vectorPathUsed: true } },
-      pairedSlowFrames: { frameCount: 9, selection: { metric: "frameIntervalMs", operator: ">=", thresholdMs: 139 }, metrics: {
+      pairedSlowFrames: { frameCount: 9, selection: { metric: "frameIntervalMs", operator: ">=", thresholdMs: 139 }, frames: [slowFrame], metrics: {
         frameWindowMs: stats(140, 180, 220, 150), rendererCpuWorkMs: stats(20, 37, 48, 25), hostSessionPulseCpuMs: stats(3, 4, 5, 3.5), guestSessionPulseCpuMs: stats(2, 3, 4, 2.5), unattributedElapsedMs: stats(90, 120, 160, 100),
         hostStepCpuMs: stats(1, 2, 3, 1.5), hostStepCount: stats(1, 2, 3, 1.5), guestStepCpuMs: stats(1, 2, 3, 1.5), guestStepCount: stats(1, 2, 3, 1.5),
         hostSnapshotCpuMs: stats(0.2, 0.5, 1, 0.4), hostSnapshotCount: stats(0, 1, 2, 0.5), guestSnapshotCpuMs: stats(0.2, 0.5, 1, 0.4), guestSnapshotCount: stats(0, 1, 2, 0.5),
@@ -128,6 +135,7 @@ test("summary copy keeps key diagnostics concise and excludes raw sample arrays"
   assert.match(summary, /seed=20261015 units=400/);
   assert.match(summary, /FPS=7\.31/);
   assert.match(summary, /Frame ms p50\/p95\/max=135\.7\/179\.1\/220/);
+  assert.match(summary, /all\/WebGL-vector draws p95=705\/572; vector unit submissions p95=285/);
   assert.match(summary, /renderer CPU ms p50\/p95\/max=12\/30\.4\/48/);
   assert.match(summary, /paired slow frames=9/);
   assert.match(summary, /Ticks 31→138 \(\+107\)/);
@@ -137,6 +145,7 @@ test("summary copy keeps key diagnostics concise and excludes raw sample arrays"
   assert.match(summary, /stage p95ms .*target-pick=20\/combat-other=21/);
   assert.match(summary, /nearby-return\/targetQueries\/collisions=56\/42\/28 target-pick calls=135/);
   assert.match(summary, /Paired slow-frame p95 ms window\/render\/Host pulse\/Guest pulse\/unattributed=180\/37\/4\/3\/120/);
+  assert.match(summary, /Same frame #108 elapsed\/render=180\/37ms; H step 2\/2ms snap 1\/0\.5ms pulse 4ms; G step 1\/1\.3ms snap 1\/0\.4ms pulse 3ms; vector submit\/WebGL\/alpha-run=285\/572\/80; flush 6 \(mixed-alpha-runs:4,world-pass-end:1\); unattributed=120ms/);
   assert.match(summary, /pulse includes nested sim work/);
   assert.match(summary, /collision sum soft pass\/contact\/moved\/capped=15\/105\/105\/7 sweep call\/pass=30\/15 hardfix call\/pass\/correction=15\/15\/0/);
   assert.match(summary, /GPU timer not measured; GC timing not collected/);
@@ -194,8 +203,10 @@ test("download requests the complete JSON with the correct Blob type and filenam
   const downloaded = JSON.parse(await urlApi.createdBlob.text());
   assert.equal(downloaded.sample.rawFrameSamples.length, 180);
   assert.equal(downloaded.sample.pairedSlowFrames.metrics.rendererCpuWorkMs.p95, 37);
-  assert.match(downloaded.measurement.vectorAssetDrawCallMeaning, /device\.draw\(\).*WebGL draws/);
+  assert.match(downloaded.measurement.vectorAssetDrawCallMeaning, /device\.draw\(\).*not measured GPU execution time/);
   assert.match(downloaded.sample.frameAlignedSimulation.accounting, /not GPU time or idle time/);
+  assert.equal(downloaded.sample.pairedSlowFrames.frames[0].rendererFrameSequence, 108);
+  assert.equal(downloaded.sample.pairedSlowFrames.frames[0].vectorFlushes.reasons["mixed-alpha-runs"], 4);
   assert.equal(downloaded.simulation.peers.host.sampledStages.length, 15);
   assert.match(status.textContent, /다운로드를 요청했습니다/);
   assert.doesNotMatch(status.textContent, /저장 완료|다운로드 완료/);
@@ -232,4 +243,61 @@ test("frame-aligned peer deltas keep pulse as the non-overlapping CPU total", ()
   assert.equal(mode.sampleBuffers.guestSessionPulseCpuMs[0], 5);
   assert.equal(mode.sampleBuffers.unattributedElapsedMs[0], 8);
   assert.equal(mode.sampleBuffers.frameWindowMs[0], 20);
+});
+
+test("same-frame slow rows join elapsed, renderer, Host/Guest simulation, vector submits and draw dispatches", () => {
+  const { MobileBattleTestMode: mode } = makeHarness();
+  mode.sampleBuffers = Object.fromEntries(mode.sampleMetricKeys.map(key => [key, new Float32Array(4).fill(NaN)]));
+  mode.sampleCount = 4;
+  const set = (key, values) => values.forEach((value, index) => { mode.sampleBuffers[key][index] = value; });
+  set("frameIntervalMs", [20, 60, 30, 80]); set("frameWindowMs", [19, 59, 29, 79]); set("rendererCpuWorkMs", [4, 15, 5, 22]); set("rendererFrameSequence", [1, 2, 3, 4]);
+  set("hostStepCount", [1, 2, 1, 4]); set("hostStepCpuMs", [0.5, 2, 0.3, 4]); set("hostSnapshotCount", [0, 1, 0, 2]); set("hostSnapshotCpuMs", [0, 0.8, 0, 1.2]); set("hostSessionPulseCpuMs", [1, 4, 1, 8]);
+  set("guestStepCount", [1, 1, 2, 3]); set("guestStepCpuMs", [0.6, 1, 1.2, 3]); set("guestSnapshotCount", [0, 1, 1, 1]); set("guestSnapshotCpuMs", [0, 0.4, 0.5, 0.6]); set("guestSessionPulseCpuMs", [1.2, 3, 3.4, 6]);
+  set("unattributedElapsedMs", [10, 37, 17, 43]); set("vectorAssetDraws", [10, 15, 20, 25]); set("vectorAssetDrawCalls", [20, 30, 40, 50]); set("vectorInstances", [10, 15, 20, 25]);
+  set("vectorFlushCalls", [1, 2, 3, 4]); set("vectorFlushPendingCalls", [1, 1, 2, 3]); set("vectorFlushEmptyCalls", [0, 1, 1, 1]); set("vectorFlushInstances", [10, 15, 20, 25]); set("vectorAlphaRunDrawCalls", [5, 8, 9, 12]); set("vectorAlphaRunInstances", [2, 3, 3, 4]);
+  set("vectorFlushMixedAlphaRuns", [0, 1, 2, 3]); set("vectorFlushWorldPassEnd", [1, 1, 1, 1]);
+
+  const result = mode.pairedSlowFrameSummary(mode.stats(mode.sampleBuffers.frameIntervalMs, mode.sampleCount));
+  assert.deepEqual(Array.from(result.frames, row => row.frameIndex), [3, 1]);
+  assert.equal(result.frames[0].rendererFrameSequence, 4);
+  assert.equal(result.frames[0].elapsedWindowMs, 79);
+  assert.equal(result.frames[0].host.step.count, 4);
+  assert.equal(result.frames[0].host.snapshot.cpuMs, 1.2);
+  assert.equal(result.frames[0].guest.sessionPulse.cpuMs, 6);
+  assert.equal(result.frames[0].vector.drawMeshSubmissions, 25);
+  assert.equal(result.frames[0].vector.webglDrawDispatches, 50);
+  assert.equal(result.frames[0].vectorFlushes.reasons["mixed-alpha-runs"], 3);
+  assert.equal(result.metrics.vectorFlushMixedAlphaRuns.count, 2);
+});
+
+test("sampling-only vector flush hooks count explicit causes and alpha-run dispatches, then restore methods", () => {
+  const { MobileBattleTestMode: mode } = makeHarness();
+  mode.phase = "sampling";
+  const mesh = { partCount: 1 }, originalFlush = function () { this.flushCalls++; this.count = 0; this.pending = null; },
+    originalCollect = function () { return [0, 3, true, 3, 3, false]; }, originalDrawAlpha = function () {};
+  const meshRenderer = { flush: originalFlush, _collectAlphaDepthRuns: originalCollect, _drawAlphaDepthRuns: originalDrawAlpha, count: 2, maxInstances: 2048, flushCalls: 0,
+    pending: { mesh, indexVariant: null, clip: { key: "" }, projection: new Float32Array([1, 2, 3, 4, 5, 6, 7, 8, 9]), depthStateKey: "1:1:lequal", parts: new Float32Array(0) }, partScratch: new Float32Array(12) };
+  const renderer = { vectorMeshRenderer: meshRenderer, _vectorFlushDiagnosticFrame: { flushCalls: 0, pendingCalls: 0, emptyCalls: 0, pendingInstancesFlushed: 0, alphaRunDrawCalls: 0, alphaRunInstances: 0, reasons: {} },
+    _vectorDiagnosticSubmission: { mesh, indexVariant: null, clips: [], projection: new Float32Array([1, 2, 3, 4, 5, 6, 7, 8, 9]), depthTest: true, depthWrite: true, depthFunc: "lequal", runCount: null, runWrite: null } };
+  assert.equal(mode.startVectorFlushDiagnostics(renderer), true);
+  meshRenderer._collectAlphaDepthRuns();
+  meshRenderer.flush();
+  meshRenderer._drawAlphaDepthRuns(mesh, null, null, null, null, [0, 3, true, 3, 3, false]);
+  renderer._vectorDiagnosticExplicitFlushReason = "world-pass-end";
+  meshRenderer.flush();
+
+  assert.equal(renderer._vectorFlushDiagnosticFrame.flushCalls, 2);
+  assert.equal(renderer._vectorFlushDiagnosticFrame.pendingCalls, 1);
+  assert.equal(renderer._vectorFlushDiagnosticFrame.emptyCalls, 1);
+  assert.equal(renderer._vectorFlushDiagnosticFrame.pendingInstancesFlushed, 2);
+  assert.equal(renderer._vectorFlushDiagnosticFrame.reasons["mixed-alpha-runs"], 1);
+  assert.equal(renderer._vectorFlushDiagnosticFrame.reasons["world-pass-end"], 1);
+  assert.equal(renderer._vectorFlushDiagnosticFrame.alphaRunDrawCalls, 2);
+  assert.equal(renderer._vectorFlushDiagnosticFrame.alphaRunInstances, 1);
+
+  mode.stopVectorFlushDiagnostics(renderer);
+  assert.equal(meshRenderer.flush, originalFlush);
+  assert.equal(meshRenderer._collectAlphaDepthRuns, originalCollect);
+  assert.equal(meshRenderer._drawAlphaDepthRuns, originalDrawAlpha);
+  mode.phase = "complete";
 });

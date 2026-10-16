@@ -32364,7 +32364,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       hasEffect=ramp>.12;
     }
     if(!hasEffect)return;
-    this.vectorMeshRenderer.flush();
+    this.flushVectorMesh("air-transient-effects");
     if(this.frame.length){this.flush(this.frame,true);this.begin()}
     if(u.type==="sailwing"){
       for(const side of [-.35,.35])linePts(pt(-.72,side),pt(-1.34,side*.72),Math.max(1,1.3*sc),[.42,.92,.78,.20]);
@@ -32409,11 +32409,17 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     matrix[4]=ctx.x-a*128-c*128;matrix[5]=ctx.y-b*128-d*128;
     return matrix;
   }
+  flushVectorMesh(reason){
+    if(MobileBattleTestMode.phase!=="sampling")return this.vectorMeshRenderer.flush();
+    const previous=this._vectorDiagnosticExplicitFlushReason;
+    this._vectorDiagnosticExplicitFlushReason=reason;
+    try{return this.vectorMeshRenderer.flush()}finally{this._vectorDiagnosticExplicitFlushReason=previous}
+  }
   drawVectorUnitBody(ctx){
     const relation=this.factionRelation(ctx.u.side),record=this.unitVectorAssetRecord(ctx.u.type,relation);
     if(!record)return null;
     if(this.frame.length){
-      this.vectorMeshRenderer.flush();
+      this.flushVectorMesh("frame-to-vector-switch");
       this.flush(this.frame,true);this.begin();
     }
     const expression=ctx.hit?(ctx.attack?"hit-attack":"hit"):(ctx.attack?"attack":"default");
@@ -32438,8 +32444,12 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       pose={parts:parts.map(({transform,opacity,visible})=>({transform,opacity,visible})),morph:parts[0]?.morph||[0,0]};
       record.expressionPoses.set(expression,pose);
     }
-    this.vectorMeshRenderer.drawMesh(record.asset.mesh,{projection:this.vectorProjection(),matrix:this.vectorUnitMatrix(ctx),parts:pose.parts,morph:pose.morph,alpha:ctx.ownStealthAlpha,
-      color:this._vectorWhite,depth:this._renderDepth??0,depthTest:!!this.passState.depthEnabled,depthWrite:true,depthWriteAlphaThreshold:.999,depthFunc:this.passState.depthFunc||"lequal"});
+    const meshOptions={projection:this.vectorProjection(),matrix:this.vectorUnitMatrix(ctx),parts:pose.parts,morph:pose.morph,alpha:ctx.ownStealthAlpha,
+      color:this._vectorWhite,depth:this._renderDepth??0,depthTest:!!this.passState.depthEnabled,depthWrite:true,depthWriteAlphaThreshold:.999,depthFunc:this.passState.depthFunc||"lequal"};
+    if(MobileBattleTestMode.phase==="sampling"&&MobileBattleTestMode.vectorFlushDiagnosticsAvailable){
+      this._vectorDiagnosticSubmission={mesh:record.asset.mesh,...meshOptions,runCount:null,runWrite:null};
+      try{this.vectorMeshRenderer.drawMesh(record.asset.mesh,meshOptions)}finally{this._vectorDiagnosticSubmission=null}
+    }else this.vectorMeshRenderer.drawMesh(record.asset.mesh,meshOptions);
     this.vectorAssetDrawnInstances=(this.vectorAssetDrawnInstances||0)+1;
     return record;
   }
@@ -33492,7 +33502,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       const {kind,entity,world}=entry;this.renderEntity=entity;this.renderStage=kind;
       const nextPainter=kind==="unit"&&this.shouldUseVectorUnitArt(entity)?"vector":"frame";
       if(lastPainter&&nextPainter!==lastPainter){
-        if(lastPainter==="vector")this.vectorMeshRenderer.flush();
+        if(lastPainter==="vector")this.flushVectorMesh("vector-to-frame-painter-switch");
         else if(this.frame.length){this.flush(this.frame,true);this.begin()}
       }
       lastPainter=nextPainter;
@@ -33504,7 +33514,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
         else this.drawGasNode(entity);
       });
     }
-    this.vectorMeshRenderer.flush();
+    this.flushVectorMesh("world-pass-end");
     if(this.frame.length){this.flush(this.frame,true);this.begin()}
     this.passState.depthWrite=false;
     try{
@@ -33607,7 +33617,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     Object.assign(this.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
 
     this.passProfiler.measure("ground",()=>this.renderGroundPass());
-    this.vectorMeshRenderer.beginFrame();this.vectorAssetDrawnInstances=0;this.vectorTerrainOcclusionTests=0;this.vectorTerrainOcclusionRegions=0;this.vectorTerrainOcclusionTriangles=0;
+    this.vectorMeshRenderer.beginFrame();this._vectorFlushDiagnosticFrame=MobileBattleTestMode.phase==="sampling"&&MobileBattleTestMode.vectorFlushDiagnosticsAvailable?{flushCalls:0,pendingCalls:0,emptyCalls:0,pendingInstancesFlushed:0,alphaRunDrawCalls:0,alphaRunInstances:0,reasons:Object.create(null)}:null;this.vectorAssetDrawnInstances=0;this.vectorTerrainOcclusionTests=0;this.vectorTerrainOcclusionRegions=0;this.vectorTerrainOcclusionTriangles=0;
     this.passProfiler.measure("world",()=>this.renderWorldPass(visibleUnits));
     this.passProfiler.measure("shadow",()=>this.renderShadowPass(visibleUnits));
     this.passProfiler.measure("overlay",()=>this.renderOverlayPass());
@@ -33617,6 +33627,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
 
     const vectorStats=this.vectorMeshRenderer.stats();
     rp.vectorAssetDraws=this.vectorAssetDrawnInstances;rp.vectorAssetInstances=vectorStats.instances;rp.vectorAssetDrawCalls=vectorStats.draws;
+    rp.vectorFlushDiagnostics=this._vectorFlushDiagnosticFrame?{...this._vectorFlushDiagnosticFrame,reasons:{...this._vectorFlushDiagnosticFrame.reasons}}:null;
     rp.vectorTerrainOcclusionTests=this.vectorTerrainOcclusionTests;rp.vectorTerrainOcclusionRegions=this.vectorTerrainOcclusionRegions;rp.vectorTerrainOcclusionTriangles=this.vectorTerrainOcclusionTriangles;
     rp.vectorAssetGeometryBytes=vectorStats.geometryBytesUploaded;rp.vectorAssetInstanceBytes=vectorStats.instanceBytesUploaded;rp.vectorAssetRetainedBytes=vectorStats.retainedBytes;rp.vectorAssetMeshes=vectorStats.meshCount;
     if(MobileBattleTestMode.phase==="sampling"){
@@ -36307,7 +36318,16 @@ class DebugScenarioHarness{
 class MobileBattleTestMode{
   static phase="idle";static config=null;static report=null;static frameHandle=0;static phaseStartedAt=0;static connectStartedAt=0;static lastFrameAt=0;static lastHudAt=0;
   static paused=false;static pausedAt=0;static sampleStartedAt=0;static sampleCount=0;static overflowFrames=0;static capacity=16384;
-  static sampleMetricKeys=Object.freeze(["frameIntervalMs","frameWindowMs","rendererCpuWorkMs","drawCalls","vectorAssetDrawCalls","vectorAssetDraws","bufferUploadBytes","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances","hostStepCpuMs","hostStepCount","hostSnapshotCpuMs","hostSnapshotCount","hostSnapshotUiCpuMs","hostSnapshotUiCount","hostSessionPulseCpuMs","hostSessionPulseCount","guestStepCpuMs","guestStepCount","guestSnapshotCpuMs","guestSnapshotCount","guestSnapshotUiCpuMs","guestSnapshotUiCount","guestSessionPulseCpuMs","guestSessionPulseCount","unattributedElapsedMs"]);
+  static vectorFlushReasonMetricKeys=Object.freeze({
+    "frame-to-vector-switch":"vectorFlushFrameToVectorSwitch","air-transient-effects":"vectorFlushAirTransientEffects",
+    "vector-to-frame-painter-switch":"vectorFlushVectorToFramePainterSwitch","world-pass-end":"vectorFlushWorldPassEnd",
+    "mixed-alpha-runs":"vectorFlushMixedAlphaRuns","mesh-change":"vectorFlushMeshChange","index-variant-change":"vectorFlushIndexVariantChange",
+    "clip-state-change":"vectorFlushClipStateChange","projection-change":"vectorFlushProjectionChange","parts-change":"vectorFlushPartsChange",
+    "depth-state-or-alpha-change":"vectorFlushDepthStateOrAlphaChange","instance-capacity":"vectorFlushInstanceCapacity",
+    "internal-compatibility":"vectorFlushInternalCompatibility","internal-unattributed":"vectorFlushInternalUnattributed"
+  });
+  static vectorFlushDiagnosticHooks=null;static vectorFlushDiagnosticsAvailable=false;
+  static sampleMetricKeys=Object.freeze(["rendererFrameSequence","frameIntervalMs","frameWindowMs","rendererCpuWorkMs","drawCalls","vectorAssetDrawCalls","vectorAssetDraws","bufferUploadBytes","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances","vectorFlushCalls","vectorFlushPendingCalls","vectorFlushEmptyCalls","vectorFlushInstances","vectorAlphaRunDrawCalls","vectorAlphaRunInstances",...Object.values(this.vectorFlushReasonMetricKeys),"hostStepCpuMs","hostStepCount","hostSnapshotCpuMs","hostSnapshotCount","hostSnapshotUiCpuMs","hostSnapshotUiCount","hostSessionPulseCpuMs","hostSessionPulseCount","guestStepCpuMs","guestStepCount","guestSnapshotCpuMs","guestSnapshotCount","guestSnapshotUiCpuMs","guestSnapshotUiCount","guestSessionPulseCpuMs","guestSessionPulseCount","unattributedElapsedMs"]);
   static sampleBuffers=Object.create(null);static lastCapturedRendererFrameSequence=0;static sampleFrameWindowStartedAt=0;
   static peerSamples={host:[],guest:[]};static peerSampleTicks={host:0,guest:0};static peerSnapshotBaseline={};static peerFrameBaseline={};static peerStepSampleCounts={host:0,guest:0};static peerStepSampleCountsAtStart={host:0,guest:0};static peerMaxStepMs={host:0,guest:0};
   static visibilityStats={visibilityStateAtStart:"visible",visibilityStateAtSampleStart:null,hiddenEvents:0,unpausedHiddenEvents:0,hiddenWhilePausedEvents:0,pagehideEvents:0,invalidated:false};
@@ -36325,6 +36345,7 @@ class MobileBattleTestMode{
     window.addEventListener("pagehide",()=>this.onPageHide());
   }
   static beginRun(){
+    this.stopVectorFlushDiagnostics();this.vectorFlushDiagnosticsAvailable=false;
     this.phase="connecting";this.paused=false;this.pausedAt=0;this.report=null;this.connectStartedAt=performance.now();this.phaseStartedAt=0;this.sampleStartedAt=0;this.lastFrameAt=0;this.lastHudAt=0;this.lastSampleState=null;this.sampleStartState=null;this.sampleCount=0;this.overflowFrames=0;this.lastIntervalMs=0;
     this.resetCopyFallback();
     this.sampleBuffers=Object.fromEntries(this.sampleMetricKeys.map(key=>[key,new Float32Array(this.capacity)]));this.lastCapturedRendererFrameSequence=0;this.sampleFrameWindowStartedAt=0;
@@ -36365,6 +36386,59 @@ class MobileBattleTestMode{
       this.peerSnapshotBaseline[role]={count:snapshotCount,totalMs:snapshotCpuMs,stepCount,stepTotalMs:stepCpuMs,pulseCount,pulseTotalMs:pulseCpuMs,snapshotUiCount,snapshotUiTotalMs:snapshotUiCpuMs};
       this.peerFrameBaseline[role]={session,sim,stepCount,stepCpuMs,snapshotCount,snapshotCpuMs,pulseCount,pulseCpuMs,snapshotUiCount,snapshotUiCpuMs};
     }
+    this.vectorFlushDiagnosticsAvailable=this.startVectorFlushDiagnostics(live.renderer);
+  }
+  static startVectorFlushDiagnostics(renderer){
+    this.stopVectorFlushDiagnostics();
+    const meshRenderer=renderer?.vectorMeshRenderer;
+    if(!renderer||!meshRenderer||typeof meshRenderer.flush!=="function"||typeof meshRenderer._collectAlphaDepthRuns!=="function"||typeof meshRenderer._drawAlphaDepthRuns!=="function")return false;
+    const mode=this,originals={flush:meshRenderer.flush,_collectAlphaDepthRuns:meshRenderer._collectAlphaDepthRuns,_drawAlphaDepthRuns:meshRenderer._drawAlphaDepthRuns},wrappers={};
+    wrappers.flush=function(...args){
+      const frame=renderer._vectorFlushDiagnosticFrame;
+      if(mode.phase==="sampling"&&frame){
+        const reason=renderer._vectorDiagnosticExplicitFlushReason||mode.classifyVectorFlushReason(renderer,this);
+        frame.flushCalls++;frame.reasons[reason]=(frame.reasons[reason]||0)+1;
+        if(this.count>0){frame.pendingCalls++;frame.pendingInstancesFlushed+=this.count}else frame.emptyCalls++;
+      }
+      return originals.flush.apply(this,args);
+    };
+    if(typeof originals._collectAlphaDepthRuns==="function")wrappers._collectAlphaDepthRuns=function(...args){
+      const runs=originals._collectAlphaDepthRuns.apply(this,args),submission=renderer._vectorDiagnosticSubmission;
+      if(mode.phase==="sampling"&&submission){submission.runCount=runs.length/3;submission.runWrite=runs.length?!!runs[runs.length-1]:null}
+      return runs;
+    };
+    if(typeof originals._drawAlphaDepthRuns==="function")wrappers._drawAlphaDepthRuns=function(...args){
+      const frame=renderer._vectorFlushDiagnosticFrame,runs=args[5];
+      if(mode.phase==="sampling"&&frame&&Array.isArray(runs)){frame.alphaRunDrawCalls+=runs.length/3;frame.alphaRunInstances++}
+      return originals._drawAlphaDepthRuns.apply(this,args);
+    };
+    meshRenderer.flush=wrappers.flush;
+    if(wrappers._collectAlphaDepthRuns)meshRenderer._collectAlphaDepthRuns=wrappers._collectAlphaDepthRuns;
+    if(wrappers._drawAlphaDepthRuns)meshRenderer._drawAlphaDepthRuns=wrappers._drawAlphaDepthRuns;
+    this.vectorFlushDiagnosticHooks={renderer,meshRenderer,originals,wrappers};
+    return true;
+  }
+  static stopVectorFlushDiagnostics(renderer=null){
+    const hooks=this.vectorFlushDiagnosticHooks;
+    if(!hooks||renderer&&hooks.renderer!==renderer)return;
+    for(const key of Object.keys(hooks.wrappers))if(hooks.meshRenderer[key]===hooks.wrappers[key])hooks.meshRenderer[key]=hooks.originals[key];
+    hooks.renderer._vectorDiagnosticSubmission=null;hooks.renderer._vectorFlushDiagnosticFrame=null;hooks.renderer._vectorDiagnosticExplicitFlushReason=null;
+    this.vectorFlushDiagnosticHooks=null;
+  }
+  static classifyVectorFlushReason(renderer,meshRenderer){
+    const submission=renderer._vectorDiagnosticSubmission,pending=meshRenderer.pending;
+    if(submission?.runCount>1)return"mixed-alpha-runs";
+    if(!submission||!pending)return"internal-unattributed";
+    if(pending.mesh!==submission.mesh)return"mesh-change";
+    if(pending.indexVariant!==(submission.indexVariant??null))return"index-variant-change";
+    if((submission.clips?.length||0)>0||(pending.clip?.key??"")!=="")return"clip-state-change";
+    if(submission.projection&&pending.projection.some((n,i)=>Math.fround(submission.projection[i])!==n))return"projection-change";
+    if(submission.mesh.partCount>1&&pending.parts.some((n,i)=>n!==meshRenderer.partScratch[i]))return"parts-change";
+    const write=submission.runWrite===null?submission.depthWrite:submission.runWrite;
+    const depthStateKey=Number(submission.depthTest)+":"+Number(write)+":"+(submission.depthFunc||"lequal");
+    if(pending.depthStateKey!==depthStateKey)return"depth-state-or-alpha-change";
+    if(meshRenderer.count===meshRenderer.maxInstances)return"instance-capacity";
+    return"internal-compatibility";
   }
   static start(){
     if(!["idle","stopped"].includes(this.phase))return;
@@ -36438,10 +36512,14 @@ class MobileBattleTestMode{
     const windowStartedAt=Number(this.sampleFrameWindowStartedAt)||this.sampleStartedAt||frameEnded;
     const frameWindowMs=Math.max(0,frameEnded-windowStartedAt);
     if(storeSample){
+      const flush=rp.vectorFlushDiagnostics;
       const values={frameIntervalMs:rp.frameIntervalMs,frameWindowMs,rendererCpuWorkMs:rp.frameWorkMs,drawCalls:rp.drawCalls,vectorAssetDrawCalls:rp.vectorAssetDrawCalls,
         vectorAssetDraws:rp.vectorAssetDraws,bufferUploadBytes:rp.bufferUploadBytes,vectorAssetGeometryBytes:rp.vectorAssetGeometryBytes,vectorAssetInstanceBytes:rp.vectorAssetInstanceBytes,
         alphaRunCacheHits:rp.vectorAlphaRunCacheHits,alphaRunCacheMisses:rp.vectorAlphaRunCacheMisses,vectorGeometryUploads:rp.vectorGeometryUploads,
-        partUniformBytesSubmitted:rp.vectorPartUniformBytesSubmitted,vectorStagingBytes:rp.vectorStagingBytes,vectorInstances:rp.vectorAssetInstances};
+        partUniformBytesSubmitted:rp.vectorPartUniformBytesSubmitted,vectorStagingBytes:rp.vectorStagingBytes,vectorInstances:rp.vectorAssetInstances,
+        rendererFrameSequence:sequence,vectorFlushCalls:flush?.flushCalls,vectorFlushPendingCalls:flush?.pendingCalls,vectorFlushEmptyCalls:flush?.emptyCalls,
+        vectorFlushInstances:flush?.pendingInstancesFlushed,vectorAlphaRunDrawCalls:flush?.alphaRunDrawCalls,vectorAlphaRunInstances:flush?.alphaRunInstances};
+      for(const [reason,key] of Object.entries(this.vectorFlushReasonMetricKeys))values[key]=flush?Number(flush.reasons?.[reason])||0:NaN;
       for(const key of this.sampleMetricKeys){const value=Number(values[key]);this.sampleBuffers[key][sampleIndex]=Number.isFinite(value)?value:NaN}
     }
     const match=MatchLifecycle.singleMatch;
@@ -36505,12 +36583,23 @@ class MobileBattleTestMode{
     const selected=new Float32Array(indexes.length);for(let i=0;i<indexes.length;i++)selected[i]=values[indexes[i]];
     return this.stats(selected,selected.length);
   }
+  static pairedSlowFrameRows(indexes,limit=20){
+    const value=(key,index)=>{const n=Number(this.sampleBuffers[key]?.[index]);return Number.isFinite(n)?Math.round(n*100)/100:null};
+    return indexes.slice().sort((a,b)=>(value("frameIntervalMs",b)||0)-(value("frameIntervalMs",a)||0)||a-b).slice(0,limit).map(index=>{
+      const peer=role=>{const p=role==="host"?"host":"guest";return{step:{count:value(p+"StepCount",index),cpuMs:value(p+"StepCpuMs",index)},snapshot:{count:value(p+"SnapshotCount",index),cpuMs:value(p+"SnapshotCpuMs",index)},snapshotUi:{count:value(p+"SnapshotUiCount",index),cpuMs:value(p+"SnapshotUiCpuMs",index)},sessionPulse:{count:value(p+"SessionPulseCount",index),cpuMs:value(p+"SessionPulseCpuMs",index)}}};
+      const reasons=Object.fromEntries(Object.entries(this.vectorFlushReasonMetricKeys).map(([reason,key])=>[reason,value(key,index)]));
+      return{frameIndex:index,rendererFrameSequence:value("rendererFrameSequence",index),frameIntervalMs:value("frameIntervalMs",index),elapsedWindowMs:value("frameWindowMs",index),rendererCpuMs:value("rendererCpuWorkMs",index),
+        host:peer("host"),guest:peer("guest"),unattributedElapsedMs:value("unattributedElapsedMs",index),
+        vector:{drawMeshSubmissions:value("vectorAssetDraws",index),meshInstances:value("vectorInstances",index),webglDrawDispatches:value("vectorAssetDrawCalls",index),alphaRunDispatches:value("vectorAlphaRunDrawCalls",index)},
+        vectorFlushes:{calls:value("vectorFlushCalls",index),pendingCalls:value("vectorFlushPendingCalls",index),emptyCalls:value("vectorFlushEmptyCalls",index),pendingInstancesFlushed:value("vectorFlushInstances",index),alphaRunInstances:value("vectorAlphaRunInstances",index),reasons}};
+    });
+  }
   static pairedSlowFrameSummary(frameIntervals){
-    const threshold=frameIntervals.p95;if(threshold===null)return{frameCount:0,selection:{metric:"frameIntervalMs",operator:">=",thresholdMs:null},metrics:null};
+    const threshold=frameIntervals.p95;if(threshold===null)return{frameCount:0,selection:{metric:"frameIntervalMs",operator:">=",thresholdMs:null},metrics:null,frames:[]};
     const indexes=[];for(let i=0;i<this.sampleCount;i++)if(Number.isFinite(this.sampleBuffers.frameIntervalMs[i])&&this.sampleBuffers.frameIntervalMs[i]>=threshold)indexes.push(i);
-    const keys=["frameIntervalMs","frameWindowMs","rendererCpuWorkMs","drawCalls","vectorAssetDrawCalls","vectorAssetDraws","bufferUploadBytes","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances","hostStepCpuMs","hostStepCount","hostSnapshotCpuMs","hostSnapshotCount","hostSnapshotUiCpuMs","hostSnapshotUiCount","hostSessionPulseCpuMs","hostSessionPulseCount","guestStepCpuMs","guestStepCount","guestSnapshotCpuMs","guestSnapshotCount","guestSnapshotUiCpuMs","guestSnapshotUiCount","guestSessionPulseCpuMs","guestSessionPulseCount","unattributedElapsedMs"];
+    const keys=["frameIntervalMs","frameWindowMs","rendererCpuWorkMs","drawCalls","vectorAssetDrawCalls","vectorAssetDraws","bufferUploadBytes","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances","vectorFlushCalls","vectorFlushPendingCalls","vectorFlushEmptyCalls","vectorFlushInstances","vectorAlphaRunDrawCalls","vectorAlphaRunInstances",...Object.values(this.vectorFlushReasonMetricKeys),"hostStepCpuMs","hostStepCount","hostSnapshotCpuMs","hostSnapshotCount","hostSnapshotUiCpuMs","hostSnapshotUiCount","hostSessionPulseCpuMs","hostSessionPulseCount","guestStepCpuMs","guestStepCount","guestSnapshotCpuMs","guestSnapshotCount","guestSnapshotUiCpuMs","guestSnapshotUiCount","guestSessionPulseCpuMs","guestSessionPulseCount","unattributedElapsedMs"];
     const metrics=Object.fromEntries(keys.map(key=>[key,this.indexedStats(this.sampleBuffers[key],indexes)]));
-    return{frameCount:indexes.length,selection:{metric:"frameIntervalMs",operator:">=",thresholdMs:threshold},metrics};
+    return{frameCount:indexes.length,selection:{metric:"frameIntervalMs",operator:">=",thresholdMs:threshold,detailLimit:20},metrics,frames:this.pairedSlowFrameRows(indexes,20)};
   }
   static peerSimulationSummary(match){
     const peers={};
@@ -36535,7 +36624,7 @@ class MobileBattleTestMode{
     const live=this.liveState(),start=this.sampleStartState||this.lastSampleState,end=this.stateSnapshot(live||{}),elapsed=Math.max(0,now-this.sampleStartedAt);
     const summary=key=>this.stats(this.sampleBuffers[key],this.sampleCount),intervals=summary("frameIntervalMs"),render=summary("rendererCpuWorkMs"),draws=summary("drawCalls"),vectorDraws=summary("vectorAssetDrawCalls");
     const paired=this.pairedSlowFrameSummary(intervals),sampleMetrics=Object.fromEntries(this.sampleMetricKeys.map(key=>[key,summary(key)]));
-    const rendererMetricAvailability=Object.fromEntries(["vectorAssetDrawCalls","vectorAssetDraws","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances"].map(key=>{
+    const rendererMetricAvailability=Object.fromEntries(["vectorAssetDrawCalls","vectorAssetDraws","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances","vectorFlushCalls","vectorAlphaRunDrawCalls"].map(key=>{
       const available=(sampleMetrics[key]?.count||0)>0,vectorPathUsed=(sampleMetrics.vectorAssetDraws?.max||0)>0;
       return[key,available?{available:true,vectorPathUsed,reason:vectorPathUsed?null:"No vector draw occurred in this sample; zero counters mean no calls."}:{available:false,value:null,reason:"No finite MeshRenderer statistic was exposed for this metric during the sample."}];
     }));
@@ -36549,13 +36638,15 @@ class MobileBattleTestMode{
     }));
     const frameAlignedSimulation={frameWindowMs:sampleMetrics.frameWindowMs,rendererCpuWorkMs:sampleMetrics.rendererCpuWorkMs,peers:frameAlignedPeers,unattributedElapsedMs:sampleMetrics.unattributedElapsedMs,
       accounting:"Per-frame deltas between completed renderer frames. Session pulse CPU includes StrategySim step and snapshot work; component values are nested details and must not be added again. Unattributed elapsed is window minus renderer and host/guest pulse CPU; it is not GPU time or idle time."};
-    const vectorAssetDrawCallMeaning="MeshRenderer device.draw() calls dispatched as WebGL draws (instanced when the instancing extension is active).";
+    const vectorAssetDrawCallMeaning="MeshRenderer metrics.draws: WebGL device.draw() dispatches, instanced where supported; this counts API draw dispatches, not measured GPU execution time.";
+    const vectorAssetDrawsMeaning="Rally vector unit-body submissions to MeshRenderer.drawMesh(), counted once per submitted unit body; distinct from WebGL draw dispatches.";
     this.report={schemaVersion:2,testMode:"mobile-battle",capturedAt:new Date().toISOString(),build:{id:BUILD_META.id,commit:BUILD_META.commit||null},collisionModel:"ally-soft-one-pass",
       device:{userAgent:navigator.userAgent||"",platform:navigator.platform||"",hardwareConcurrency:navigator.hardwareConcurrency||null,viewport:{width:innerWidth,height:innerHeight,devicePixelRatio:devicePixelRatio,orientation:screen.orientation?.type||""}},
       condition:{seed:this.config.fixedSeed,totalCombatUnits:this.config.totalUnits,unitsPerSide,composition:this.config.composition,rosters:{host:DebugScenarioHarness.unitRoster(this.config,0),guest:DebugScenarioHarness.unitRoster(this.config,1)},tps:live?.sim?.tps||match?.sessions?.host?.sim?.tps||10,warmupSeconds:this.config.warmupSeconds,requestedSampleSeconds:this.config.sampleSeconds,selectionMode:"deck",presetId:"standard"},
       measurement:{collector:"completed renderer frame hook",observer:"preallocated numeric sample buffers; no CDP profiler",perFrameCounters:this.sampleMetricKeys,overheadMs:null,overheadUnavailableReason:"Observer cost is not isolated; rendererCpuWorkMs is captured before the diagnostic hook runs.",
         pairing:"all renderer and host/guest counter deltas share each completed-render-frame window; slow-frame subset selects by that same frame's frameIntervalMs p95",
-        nestedCpuAccounting:"host/guest sessionPulseCpuMs includes StrategySim step and snapshot work; step/snapshot/snapshotUi are reported as nested components, not additive totals",vectorAssetDrawCallMeaning},
+        nestedCpuAccounting:"host/guest sessionPulseCpuMs includes StrategySim step and snapshot work; step/snapshot/snapshotUi are reported as nested components, not additive totals",vectorAssetDrawCallMeaning,vectorAssetDrawsMeaning,
+        vectorFlushDiagnostics:{available:this.vectorFlushDiagnosticsAvailable,scope:"sampling only; wraps the pinned MeshRenderer instance and restores original methods at sample end",originMeaning:"Rally pass boundaries are labeled explicitly; internal submit flushes are classified from pending mesh, variant, clip, projection, parts, depth state, alpha runs, or capacity."}},
       sample:{status:interrupted?"interrupted":"complete",durationMs:Math.round(elapsed),frameCount:intervals.count,fps:elapsed>0?Math.round(intervals.count*100000/elapsed)/100:null,
         frameIntervalMs:intervals,rendererCpuWorkMs:render,drawCalls:draws,vectorAssetDrawCalls:vectorDraws,bufferUploadBytes:sampleMetrics.bufferUploadBytes,
         vectorAssetGeometryBytes:sampleMetrics.vectorAssetGeometryBytes,vectorAssetInstanceBytes:sampleMetrics.vectorAssetInstanceBytes,alphaRunCacheHits:sampleMetrics.alphaRunCacheHits,alphaRunCacheMisses:sampleMetrics.alphaRunCacheMisses,
@@ -36567,9 +36658,10 @@ class MobileBattleTestMode{
       simulation:{startTick:start?.tick??null,endTick:end.tick,ticksAdvanced:start?.tick!=null&&end.tick!=null?end.tick-start.tick:null,peerStartTick:start?.peerTick??null,peerEndTick:end.peerTick,aliveUnitsStart:start?.units||null,aliveUnitsEnd:end.units,peers},
       renderer:{backend:renderer?.backend||null,canvas:{width:renderer?.canvas?.width||null,height:renderer?.canvas?.height||null},vectorAssets:!!window.RallyVectorAssets,vectorMeshes:renderer?.perfStats?.vectorAssetMeshes??null,
         lastFrameSequence:renderer?.perfStats?.frameSequence??null,alphaRunCache:{hits:sampleMetrics.alphaRunCacheHits,misses:sampleMetrics.alphaRunCacheMisses},
+        vectorFlushDiagnostics:{available:this.vectorFlushDiagnosticsAvailable,reason:this.vectorFlushDiagnosticsAvailable?null:"Pinned MeshRenderer flush hooks were unavailable for this sample."},
         instancing:{enabled:typeof renderer?.vectorMeshRenderer?.instanced==="boolean"?renderer.vectorMeshRenderer.instanced:null,reason:typeof renderer?.vectorMeshRenderer?.instanced==="boolean"?null:"Pinned MeshRenderer did not expose its instancing flag",
           usedInSample:(sampleMetrics.vectorAssetDraws?.max||0)>0?null:false,usageReason:(sampleMetrics.vectorAssetDraws?.max||0)>0?"Pinned stats expose renderer instancing capability, but not per-frame instanced-draw activity.":"No vector draw occurred in this sample."}}};
-    this.phase="complete";this.pause();this.renderHud(now);
+    this.phase="complete";this.stopVectorFlushDiagnostics(renderer);this.pause();this.renderHud(now);
   }
   static pause(){
     if(this.paused||!MatchLifecycle.singleMatch)return;
@@ -36587,12 +36679,14 @@ class MobileBattleTestMode{
   static pauseButton(){if(this.paused)this.resume();else this.pause()}
   static reset(){
     if(!this.config||!["connecting","warmup","sampling","complete","error"].includes(this.phase))return;
+    this.stopVectorFlushDiagnostics(ActiveViewState.renderer);
     if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;MatchLifecycle.stopSinglePlayer();
     DebugScenarioHarness.pending=this.config;this.beginRun();this.renderHud();
     try{MatchLifecycle.startSinglePlayerWebRTC("host");this.scheduleFrame()}
     catch(error){this.fail(`매치 다시 시작 실패: ${String(error?.message||error)}`)}
   }
   static fail(message,pauseSessions=false){
+    this.stopVectorFlushDiagnostics(ActiveViewState.renderer);
     this.phase="error";if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;
     if(pauseSessions){let applied=0;for(const session of Object.values(MatchLifecycle.singleMatch?.sessions||{}))if(session.setTestModePaused(true))applied++;if(applied){this.paused=true;this.pausedAt=performance.now()}}
     const status=this.ref("battleTestHudStatus");if(status)status.textContent=message;this.renderHud();
@@ -36631,6 +36725,8 @@ class MobileBattleTestMode{
     const viewport=report.device?.viewport||{},paired=sample.pairedSlowFrames||{},pairedMetrics=paired.metrics||{};
     const vectorAvailability=sample.metricAvailability?.vectorAssetDraws;
     const vectorPath=vectorAvailability?.available===false?"metrics unavailable":vectorAvailability?.vectorPathUsed===false?"unused in sample":vectorAvailability?.vectorPathUsed===true||p95(sample.vectorAssetDraws)!=="n/a"?"used":"status unknown";
+    const worstFrame=paired.frames?.[0]||null;
+    const sameFrameLine=worstFrame?(()=>{const reasons=Object.entries(worstFrame.vectorFlushes?.reasons||{}).filter(([,count])=>Number(count)>0).sort((a,b)=>Number(b[1])-Number(a[1])).slice(0,2).map(([reason,count])=>`${reason}:${n(count)}`).join(",")||"none",peer=row=>`step ${n(row?.step?.count)}/${n(row?.step?.cpuMs)}ms snap ${n(row?.snapshot?.count)}/${n(row?.snapshot?.cpuMs)}ms pulse ${n(row?.sessionPulse?.cpuMs)}ms`;return`Same frame #${n(worstFrame.rendererFrameSequence??worstFrame.frameIndex)} elapsed/render=${n(worstFrame.elapsedWindowMs)}/${n(worstFrame.rendererCpuMs)}ms; H ${peer(worstFrame.host)}; G ${peer(worstFrame.guest)}; vector submit/WebGL/alpha-run=${n(worstFrame.vector?.drawMeshSubmissions)}/${n(worstFrame.vector?.webglDrawDispatches)}/${n(worstFrame.vector?.alphaRunDispatches)}; flush ${n(worstFrame.vectorFlushes?.calls)} (${reasons}); unattributed=${n(worstFrame.unattributedElapsedMs)}ms`})():"Same-frame rows unavailable";
     const aliveStart=sim.aliveUnitsStart||{},aliveEnd=sim.aliveUnitsEnd||{};
     const stageKeys=[["total","totalMs"],["index","indexMs"],["world","worldMs"],["economy","economyMs"],["worker","workerMs"],["vision","visionMs"],["combat","combatMs"],["target-pick","combatTargetPickMs"],["combat-other","combatOtherMs"],["projectile","projectileMs"],["collision","collisionMs"],["post","postMs"]];
     const peerLine=(role,label)=>{
@@ -36659,8 +36755,9 @@ class MobileBattleTestMode{
       `Condition seed=${n(condition.seed)} units=${n(condition.totalCombatUnits)} (${n(condition.unitsPerSide)}/side) roster H=${roster("host")} G=${roster("guest")} TPS=${n(condition.tps)} warmup/sample=${n(condition.warmupSeconds)}/${n(condition.requestedSampleSeconds)}s`,
       `Run ${safe(sample.status,24)} ${n(sample.durationMs)}ms/${n(sample.frameCount)} frames FPS=${n(sample.fps)} viewport=${n(viewport.width)}x${n(viewport.height)}@${n(viewport.devicePixelRatio)} ${safe(viewport.orientation,24)}`,
       `Visibility valid=${visibility.sampleValid===true?"yes":visibility.sampleValid===false?"no":"unknown"} sample/finish=${safe(visibility.visibilityStateAtSampleStart,16)}/${safe(visibility.visibilityStateAtFinish,16)} hidden=${n(visibility.hiddenEvents)} unpaused=${n(visibility.unpausedHiddenEvents)} paused=${n(visibility.hiddenWhilePausedEvents)} pagehide=${n(visibility.pagehideEvents)} invalidated=${n(visibility.invalidated===true?1:visibility.invalidated===false?0:null)}`,
-      `Frame ms p50/p95/max=${triplet(sample.frameIntervalMs)}; renderer CPU ms p50/p95/max=${triplet(sample.rendererCpuWorkMs)}; draw/vector p95=${p95(sample.drawCalls)}/${p95(sample.vectorAssetDrawCalls)}; vector path=${vectorPath}`,
+      `Frame ms p50/p95/max=${triplet(sample.frameIntervalMs)}; renderer CPU ms p50/p95/max=${triplet(sample.rendererCpuWorkMs)}; all/WebGL-vector draws p95=${p95(sample.drawCalls)}/${p95(sample.vectorAssetDrawCalls)}; vector unit submissions p95=${p95(sample.vectorAssetDraws)}; vector path=${vectorPath}`,
       `Paired slow-frame p95 ms window/render/Host pulse/Guest pulse/unattributed=${p95(pairedMetrics.frameWindowMs)}/${p95(pairedMetrics.rendererCpuWorkMs)}/${p95(pairedMetrics.hostSessionPulseCpuMs)}/${p95(pairedMetrics.guestSessionPulseCpuMs)}/${p95(pairedMetrics.unattributedElapsedMs)}; nested step CPU/count H/G=${p95(pairedMetrics.hostStepCpuMs)}/${p95(pairedMetrics.hostStepCount)} / ${p95(pairedMetrics.guestStepCpuMs)}/${p95(pairedMetrics.guestStepCount)}; snapshot CPU/count H/G=${p95(pairedMetrics.hostSnapshotCpuMs)}/${p95(pairedMetrics.hostSnapshotCount)} / ${p95(pairedMetrics.guestSnapshotCpuMs)}/${p95(pairedMetrics.guestSnapshotCount)}; pulse includes nested sim work`,
+      sameFrameLine,
       `Uploads p95 bytes buffer/geometry/instance/staging/partUniform=${p95(sample.bufferUploadBytes)}/${p95(sample.vectorAssetGeometryBytes)}/${p95(sample.vectorAssetInstanceBytes)}/${p95(sample.vectorStagingBytes)}/${p95(sample.partUniformBytesSubmitted)}; geometry uploads p95=${p95(sample.vectorGeometryUploads)}; vector instances p95=${p95(sample.vectorInstances)}`,
       `Alpha cache avg hits/misses per frame=${n(sample.alphaRunCacheHits?.mean)}/${n(sample.alphaRunCacheMisses?.mean)}; paired slow frames=${n(paired.frameCount)} at >=${n(paired.selection?.thresholdMs)}ms, renderer CPU/draw/upload p95=${p95(pairedMetrics.rendererCpuWorkMs)}/${p95(pairedMetrics.drawCalls)}/${p95(pairedMetrics.bufferUploadBytes)}, cache hits/misses p95=${p95(pairedMetrics.alphaRunCacheHits)}/${p95(pairedMetrics.alphaRunCacheMisses)}`,
       `Ticks ${n(sim.startTick)}→${n(sim.endTick)} (+${n(sim.ticksAdvanced)}); alive H/G ${n(aliveStart.host)}/${n(aliveStart.guest)}→${n(aliveEnd.host)}/${n(aliveEnd.guest)} (total ${n(aliveStart.total)}→${n(aliveEnd.total)})`,
@@ -36699,6 +36796,7 @@ class MobileBattleTestMode{
   }
   static exit(){
     if(["idle","stopped"].includes(this.phase))return;
+    this.stopVectorFlushDiagnostics(ActiveViewState.renderer);
     if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;this.phase="stopped";this.paused=false;
     MatchLifecycle.stopSinglePlayer();DebugScenarioHarness.pending=this.savedDebugPending;CampaignRuntime.pending=this.savedCampaignPending;CampaignPresentation.clear();document.body.classList.remove("battle-test-mode");this.ref("battleTestHud")?.classList.add("hidden");
     const button=UiRegistry.refs.singleBtn;if(button){button.disabled=false;button.innerHTML=`싱글 플레이<span class="single-entry-sub">AI와 대결 · Host / Guest 역할 선택</span>`}
