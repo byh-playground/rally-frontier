@@ -26,12 +26,16 @@ jobs:
           node-version: '22'
       - name: Install Node dependencies
         run: npm ci
+      - name: Install Chromium for startup verification
+        run: npx playwright install --with-deps chromium
       - name: Fetch and verify pinned Gamekit dependency
         run: npm run setup:gamekit
       - name: Test build metadata and output
         run: npm run test:build
       - name: Build deployment artifact
         run: node scripts/build-pages.cjs
+      - name: Verify standalone startup compilation in Chromium
+        run: node scripts/vector-assets-startup-e2e.cjs _site/index.html
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v4

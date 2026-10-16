@@ -1,6 +1,6 @@
 # RALLY FRONTIER
 
-현재 호환 식별자는 **SIM_VERSION 191**입니다. GameKit v0.6.0 source `bc4472c65138e1edbca247e6be9ac6dae5cb1de1` / dist `d1775f2b5337523632b5415d86ad23ece4393d5f` 및 manifest v2를 사용하며, `gamekit.lock.json`의 SHA-256으로 빌드 bytes를 검증합니다. protocol 3 세션에 참여하는 모든 클라이언트는 같은 배포본으로 갱신해야 합니다. 기본 lockstep, 선택 가능한 rollback 및 기존 TPS/게임 규칙은 유지합니다. `queueCommand`의 즉시 예약 전에 현재 clock을 갱신하며 rollback 완료 이벤트에서 교정된 표시를 반영합니다. Rally는 `LocalInputPreview`를 연결하지 않으므로 이번 갱신을 로컬 예측 개선으로 표현하지 않습니다.
+현재 호환 식별자는 **SIM_VERSION 200**입니다. GameKit v0.10.4 source `0abe586967704e1935a85b6b0c598e58bbf193b` / dist `95d8676e3eaaa9f80aeed2e3361e258381511c77` 및 manifest v2를 사용하며, `gamekit.lock.json`의 SHA-256으로 빌드 bytes를 검증합니다. protocol 3 세션에 참여하는 모든 클라이언트는 같은 배포본으로 갱신해야 합니다. 기본 lockstep, 선택 가능한 rollback 및 기존 TPS/게임 규칙은 유지합니다. `queueCommand`의 즉시 예약 전에 현재 clock을 갱신하며 rollback 완료 이벤트에서 교정된 표시를 반영합니다. Rally는 `LocalInputPreview`를 연결하지 않으므로 이번 갱신을 로컬 예측 개선으로 표현하지 않습니다.
 
 전장 탭은 기존 깃발 지시와 자동전투를 유지합니다. 정지한 채 250ms 홀드하면 시작 원 안의 준비된 왕사슴 돌격대·씨앗궁수·철갑씨앗포가 고정 멤버로 집결·충전합니다. 홀드 전 드래그는 카메라 이동, 홀드 뒤 드래그는 조준, 놓기는 발사입니다. 충전은 최대 도달 거리를 늘리고 실제 착탄점은 가까운 포인터 위치를 넘지 않습니다. 돌격대는 몸체로 접촉한 적을 밀어내며, 두 원거리 병종은 기존 곡사 투사체로 착탄합니다. 지원과 다른 병종은 기존 자동 행동을 유지합니다. 취소·포인터 손실 또는 장시간 입력 중단은 충전을 해제하고 자동전투로 돌아갑니다. 준비 수·사용 불가 표시와 착탄점은 권위 cast 상태 및 실제 발사 가능 판정을 읽습니다.
 
@@ -56,6 +56,8 @@ PR에서는 동일한 빌드 검사와 생성만 수행하고 배포하지 않�
 
 게임 엔진과 UI는 `index.html` 안에 유지하고, 현재 캠페인 데이터 전체는 `campaign/campaigns.js` 한 JavaScript 모듈에 둡니다.
 
+유닛 벡터 아트의 원본은 `assets/units/*.svg`에 두고, `assets/units/manifest.json`에서 각 파일의 크기와 SHA-256을 고정합니다. 부팅 시 고정된 GameKit `vector-assets-loader.js`가 원본 bytes의 SHA-256을 확인한 뒤 한 번만 geometry를 만들고, loader의 bounded cache를 재사용합니다. source checkout은 manifest와 SVG 파일을 읽으며, standalone Pages HTML에는 변환된 geometry 대신 SHA-256이 검증되는 원본 SVG bytes만 data URL로 포함합니다. 이 경로는 프레임 렌더링 중 SVG를 다시 읽거나 변환하지 않습니다.
+
 캠페인 메뉴를 열 때 native ES import로 데이터를 읽습니다. 기본 게임 부팅은 캠페인 모듈 로드에 의존하지 않으며, 각 미션은 자체 시작 상태를 선언합니다. 개발용 신뢰 Mission JS의 파일/URL Preview도 유지합니다.
 
 덱 편집의 작업 사본·카드 변경·저장 결과는 `DeckBuilderState`가 소유합니다. `DeckPresentation`은 입력과 화면 표시를 조정하고, 저장 형식과 브라우저 저장소 접근은 기존 `DeckRecord`가 담당합니다.
@@ -64,9 +66,11 @@ PR에서는 동일한 빌드 검사와 생성만 수행하고 배포하지 않�
 rally-frontier/
 ├── index.html             # 게임 엔진·UI 소스 (development 빌드)
 ├── gamekit.lock.json      # 공통 모듈의 고정 source/dist 커밋·SHA-256
+├── assets/units/          # 원본 유닛 SVG와 크기·SHA-256 manifest
 ├── campaign/
 │   └── campaigns.js       # 현재 정식 캠페인 데이터 전체 (default manifest)
 ├── scripts/setup-gamekit.cjs # 불변 dist 다운로드·무결성 검증
+├── scripts/vector-assets-manifest.cjs # 원본 SVG 목록·무결성 검사
 ├── scripts/build-pages.cjs # 배포 HTML·메타데이터·정적 리소스 생성
 ├── .github/workflows/pages.yml # PR 빌드 검사 및 main Pages 배포
 ├── .cache/gamekit/        # setup이 가져온 원본 dist bytes (Git 제외)

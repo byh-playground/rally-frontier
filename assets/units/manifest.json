@@ -1,0 +1,362 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "aegisbeetle",
+      "url": "./assets/units/aegisbeetle.svg",
+      "sourcePath": "assets/units/aegisbeetle.svg",
+      "sha256": "e4d204578f5b08fe907390acab206970fc732042fa2f7cf5c10b6e1a22437e7b",
+      "bytes": 6007
+    },
+    {
+      "id": "ancientbear",
+      "url": "./assets/units/ancientbear.svg",
+      "sourcePath": "assets/units/ancientbear.svg",
+      "sha256": "95e9eaa760cf6ea3e1c3bd1914c876b8c084aa8a4254fe1e3a456f178992be6a",
+      "bytes": 8605
+    },
+    {
+      "id": "ancientmistray",
+      "url": "./assets/units/ancientmistray.svg",
+      "sourcePath": "assets/units/ancientmistray.svg",
+      "sha256": "86725cdaa16b28e0c389b13d5070f55a0e4fe7619e50d21aaef7325779f7c23b",
+      "bytes": 3277
+    },
+    {
+      "id": "archer",
+      "url": "./assets/units/archer.svg",
+      "sourcePath": "assets/units/archer.svg",
+      "sha256": "1ac2bbecf53e600932e023b9f28b6f90e941f58801f3c82de553cc94decab33f",
+      "bytes": 2780
+    },
+    {
+      "id": "boar",
+      "url": "./assets/units/boar.svg",
+      "sourcePath": "assets/units/boar.svg",
+      "sha256": "d09c252d1734741968a0e95d41b568bd78ef2f0a7e5da6279a683006a1594524",
+      "bytes": 2472
+    },
+    {
+      "id": "burrowbeast",
+      "url": "./assets/units/burrowbeast.svg",
+      "sourcePath": "assets/units/burrowbeast.svg",
+      "sha256": "d53a71a4b4c101776775054814b0194cdbb9cce8c9ff6ea91775bbd2ef9c9e1d",
+      "bytes": 5390
+    },
+    {
+      "id": "carriermite",
+      "url": "./assets/units/carriermite.svg",
+      "sourcePath": "assets/units/carriermite.svg",
+      "sha256": "dcc14bb55287260293e9d8c2d6b0bc582375cac3ff5ae2edb3fb6597ef60d0d2",
+      "bytes": 2675
+    },
+    {
+      "id": "chainflower",
+      "url": "./assets/units/chainflower.svg",
+      "sourcePath": "assets/units/chainflower.svg",
+      "sha256": "9cb8778f971b59cae29c88365b91a5f58940b9e34403614100b88f9773925ddb",
+      "bytes": 3739
+    },
+    {
+      "id": "clawhunter",
+      "url": "./assets/units/clawhunter.svg",
+      "sourcePath": "assets/units/clawhunter.svg",
+      "sha256": "458b40992ceec8488aa1a9aa0829554863432bd23437c344951ef771fbaeee3e",
+      "bytes": 3342
+    },
+    {
+      "id": "dandelion",
+      "url": "./assets/units/dandelion.svg",
+      "sourcePath": "assets/units/dandelion.svg",
+      "sha256": "36e56766b1bae8bb91052a55431f2587a1ff79e1a26861b59f17c8fac17f90f7",
+      "bytes": 3781
+    },
+    {
+      "id": "deathworm",
+      "url": "./assets/units/deathworm.svg",
+      "sourcePath": "assets/units/deathworm.svg",
+      "sha256": "0aeb28194330c703bb0ec537d5556c2d9911c0233080fcc40ea0bd7d29c962df",
+      "bytes": 20433
+    },
+    {
+      "id": "deepthorn",
+      "url": "./assets/units/deepthorn.svg",
+      "sourcePath": "assets/units/deepthorn.svg",
+      "sha256": "4d984ddafe09b049602597a2f66c133b405e848b4bb948d8680b040cfe884f0e",
+      "bytes": 5186
+    },
+    {
+      "id": "dragon",
+      "url": "./assets/units/dragon.svg",
+      "sourcePath": "assets/units/dragon.svg",
+      "sha256": "fd0c37a8fe924f6ac483467e9cd31f59f9fcf10f169f75043a0cc97ec6d8c215",
+      "bytes": 8557
+    },
+    {
+      "id": "fireant",
+      "url": "./assets/units/fireant.svg",
+      "sourcePath": "assets/units/fireant.svg",
+      "sha256": "1b3efeb5842b2723a4926e139d0896762694f19914157d2b361e9214393dde59",
+      "bytes": 5911
+    },
+    {
+      "id": "flowerbee",
+      "url": "./assets/units/flowerbee.svg",
+      "sourcePath": "assets/units/flowerbee.svg",
+      "sha256": "ef6218a8ac6727896a72498e3e9eaa4da5a5c7ee7d0284f76b16f7a437272798",
+      "bytes": 3043
+    },
+    {
+      "id": "greatbear",
+      "url": "./assets/units/greatbear.svg",
+      "sourcePath": "assets/units/greatbear.svg",
+      "sha256": "6365eed8f4f632ad4c3420941b2cc45aefecb99427238e4a0a8b0eb987567c02",
+      "bytes": 5255
+    },
+    {
+      "id": "guardshroom",
+      "url": "./assets/units/guardshroom.svg",
+      "sourcePath": "assets/units/guardshroom.svg",
+      "sha256": "2e3d626ed3a687e0d3788c17a25ea64a5c36f12c08f0d3494ac1ea6b8fb5e37a",
+      "bytes": 3821
+    },
+    {
+      "id": "gustmayfly",
+      "url": "./assets/units/gustmayfly.svg",
+      "sourcePath": "assets/units/gustmayfly.svg",
+      "sha256": "93d19993ec5ef66909c9d2a3d5e8bfba0d8bb53e9c54e3623e110e64dbc78342",
+      "bytes": 2358
+    },
+    {
+      "id": "hivecarrier",
+      "url": "./assets/units/hivecarrier.svg",
+      "sourcePath": "assets/units/hivecarrier.svg",
+      "sha256": "6f48a50e3bbd8f9bd549a78a397cf79868f0e4d41c102b80b2e0dd10be4adfd1",
+      "bytes": 3212
+    },
+    {
+      "id": "hunterwasp",
+      "url": "./assets/units/hunterwasp.svg",
+      "sourcePath": "assets/units/hunterwasp.svg",
+      "sha256": "1de8aff23671fa0fa0a43fd13e4880901fd7d502017eab0bbc70f52433052d1b",
+      "bytes": 3349
+    },
+    {
+      "id": "kickhopper",
+      "url": "./assets/units/kickhopper.svg",
+      "sourcePath": "assets/units/kickhopper.svg",
+      "sha256": "a6b348be5b3216b20e872b4a7c3c7289d6b6c9ac9076bf80e0694d871dd57ce3",
+      "bytes": 4217
+    },
+    {
+      "id": "lancer",
+      "url": "./assets/units/lancer.svg",
+      "sourcePath": "assets/units/lancer.svg",
+      "sha256": "5280567ba6ce39cb6b05db99089bb2c98d94b46024854f7033b94db43f3201c0",
+      "bytes": 3877
+    },
+    {
+      "id": "lanternmoth",
+      "url": "./assets/units/lanternmoth.svg",
+      "sourcePath": "assets/units/lanternmoth.svg",
+      "sha256": "74820fac7ab2ee87b1b590c17f69d069245d55048acdfc232f6ef2649138e32c",
+      "bytes": 3288
+    },
+    {
+      "id": "mage",
+      "url": "./assets/units/mage.svg",
+      "sourcePath": "assets/units/mage.svg",
+      "sha256": "11b43b52ac2fd6a4e1b3afaff3e71b7ecfaf43fb65a81a16604d39284b3870ae",
+      "bytes": 5288
+    },
+    {
+      "id": "mantis",
+      "url": "./assets/units/mantis.svg",
+      "sourcePath": "assets/units/mantis.svg",
+      "sha256": "3103ee9982e7c5aef24832fa1c60b593e2b7a206c0b1f3fbc881267f8f35a464",
+      "bytes": 2709
+    },
+    {
+      "id": "medic",
+      "url": "./assets/units/medic.svg",
+      "sourcePath": "assets/units/medic.svg",
+      "sha256": "f64089249af267c05ac9fdb114d28cc7c8780b564e10b04fdf07a41674b92562",
+      "bytes": 4074
+    },
+    {
+      "id": "pikeman",
+      "url": "./assets/units/pikeman.svg",
+      "sourcePath": "assets/units/pikeman.svg",
+      "sha256": "6846b253d167730121191bb35d13f1f4cdfc1222b6adf922380eccf1351fdb57",
+      "bytes": 2522
+    },
+    {
+      "id": "pillbug",
+      "url": "./assets/units/pillbug.svg",
+      "sourcePath": "assets/units/pillbug.svg",
+      "sha256": "2ed22733ad6090d7ebadb1d378a86af63dd1cf966ac89a1793e6c7e4b631d3a9",
+      "bytes": 4566
+    },
+    {
+      "id": "queenwasp",
+      "url": "./assets/units/queenwasp.svg",
+      "sourcePath": "assets/units/queenwasp.svg",
+      "sha256": "fbfccf88f59cdcaf1e90e063c133f8d9a61d102b34dab50f830e97ccac5dbfc3",
+      "bytes": 2646
+    },
+    {
+      "id": "rocket",
+      "url": "./assets/units/rocket.svg",
+      "sourcePath": "assets/units/rocket.svg",
+      "sha256": "a504b90fe3f01e0e422d13a9d0ab82a0d6d9d1ec5042e0e22711f26a51cd8a5a",
+      "bytes": 8010
+    },
+    {
+      "id": "rogue",
+      "url": "./assets/units/rogue.svg",
+      "sourcePath": "assets/units/rogue.svg",
+      "sha256": "a57aa1f25c4a0688f8ff00318adb86310ed4c9bd8dccbd1cd6025d93cd5c1faf",
+      "bytes": 3768
+    },
+    {
+      "id": "rootstalker",
+      "url": "./assets/units/rootstalker.svg",
+      "sourcePath": "assets/units/rootstalker.svg",
+      "sha256": "4f4163548d191fd9858ac6fb80fa918f686f0e8c5ce36d7126ef4178433c5c02",
+      "bytes": 3635
+    },
+    {
+      "id": "sailwing",
+      "url": "./assets/units/sailwing.svg",
+      "sourcePath": "assets/units/sailwing.svg",
+      "sha256": "a0a0012ea1cb918ce7a762e1a979db7b917d233ac9effedc5f2e272071f8ebfb",
+      "bytes": 2271
+    },
+    {
+      "id": "seedwasp",
+      "url": "./assets/units/seedwasp.svg",
+      "sourcePath": "assets/units/seedwasp.svg",
+      "sha256": "3bc3ec4afd7a673ea53724eac0a048825f712018b64afdcd16b8cc443d026100",
+      "bytes": 2064
+    },
+    {
+      "id": "shellbug",
+      "url": "./assets/units/shellbug.svg",
+      "sourcePath": "assets/units/shellbug.svg",
+      "sha256": "c0fb2ab1414cab1de82e703afacdb78a0f9d29837f90842493bcf308d9deb777",
+      "bytes": 3396
+    },
+    {
+      "id": "shellcrab",
+      "url": "./assets/units/shellcrab.svg",
+      "sourcePath": "assets/units/shellcrab.svg",
+      "sha256": "69a49ec58a912241d18e37aed5f7edf2ae17a5c3984e72a83978ca7daf520b7c",
+      "bytes": 3512
+    },
+    {
+      "id": "shelltitan",
+      "url": "./assets/units/shelltitan.svg",
+      "sourcePath": "assets/units/shelltitan.svg",
+      "sha256": "866b196187aaa4e241dc51cbb80103d28c97228895efa3faa4ca1477f79e7230",
+      "bytes": 5569
+    },
+    {
+      "id": "siege",
+      "url": "./assets/units/siege.svg",
+      "sourcePath": "assets/units/siege.svg",
+      "sha256": "5ca2414f696fc285e7cc457d5fa0133f6106c3b919393aaeb33f050df0e51f2f",
+      "bytes": 7520
+    },
+    {
+      "id": "skirmisher",
+      "url": "./assets/units/skirmisher.svg",
+      "sourcePath": "assets/units/skirmisher.svg",
+      "sha256": "9622cfa3216d37c6cbdeb9b22905a9f84f573eec339b71ede93247912689f241",
+      "bytes": 3548
+    },
+    {
+      "id": "sporefly",
+      "url": "./assets/units/sporefly.svg",
+      "sourcePath": "assets/units/sporefly.svg",
+      "sha256": "4b3cddc98c11a3f2763b5c341cc655026248bbfc835e7820a279b8b558fbfaf7",
+      "bytes": 2658
+    },
+    {
+      "id": "sporeherd",
+      "url": "./assets/units/sporeherd.svg",
+      "sourcePath": "assets/units/sporeherd.svg",
+      "sha256": "f31e11a566f2443ab7c5d3bd23f1fa4e3dddb9b4fd8921552031d6dbfe8089b0",
+      "bytes": 4247
+    },
+    {
+      "id": "sporeling",
+      "url": "./assets/units/sporeling.svg",
+      "sourcePath": "assets/units/sporeling.svg",
+      "sha256": "ca5e0042b0cd1957624a0f95d71eec1fe1fa355ffab7b727d75d76870146213d",
+      "bytes": 2877
+    },
+    {
+      "id": "sporemoth",
+      "url": "./assets/units/sporemoth.svg",
+      "sourcePath": "assets/units/sporemoth.svg",
+      "sha256": "be297f62d7d9b2b0bb1166fd8a169221eb73bf6a6a219f3a9116fe50d4f27cfc",
+      "bytes": 2561
+    },
+    {
+      "id": "sporetoad",
+      "url": "./assets/units/sporetoad.svg",
+      "sourcePath": "assets/units/sporetoad.svg",
+      "sha256": "b493fae87f54e80cb8001c435bb0dcefb537ffcf16c930f17825c384c0cb862a",
+      "bytes": 7755
+    },
+    {
+      "id": "stingbug",
+      "url": "./assets/units/stingbug.svg",
+      "sourcePath": "assets/units/stingbug.svg",
+      "sha256": "2a4ca9e001b83fad930596e16d9f976aba1718a70d7fcdfc64a5903c07656c4b",
+      "bytes": 3372
+    },
+    {
+      "id": "swarmbug",
+      "url": "./assets/units/swarmbug.svg",
+      "sourcePath": "assets/units/swarmbug.svg",
+      "sha256": "1ea750e3da47b4afe55ca98f21cf7d6f616c79553b48825f2008e033d4c7b8a9",
+      "bytes": 3489
+    },
+    {
+      "id": "swordsman",
+      "url": "./assets/units/swordsman.svg",
+      "sourcePath": "assets/units/swordsman.svg",
+      "sha256": "37e61124e0a7318b097370bff38ed483b8f0e7671e7a3959453a935ba4a00722",
+      "bytes": 2830
+    },
+    {
+      "id": "tank",
+      "url": "./assets/units/tank.svg",
+      "sourcePath": "assets/units/tank.svg",
+      "sha256": "403fcdf911faf23ff2faf278137ef64ae463144c949a2f15bb58d08720359000",
+      "bytes": 3955
+    },
+    {
+      "id": "thornfruit",
+      "url": "./assets/units/thornfruit.svg",
+      "sourcePath": "assets/units/thornfruit.svg",
+      "sha256": "bd05f59a22ebfa1bc46c762413d0ac83d6fe3e0f40ca687ddb3d57d7b16243e7",
+      "bytes": 3492
+    },
+    {
+      "id": "wildhound",
+      "url": "./assets/units/wildhound.svg",
+      "sourcePath": "assets/units/wildhound.svg",
+      "sha256": "318087a609f30a489c40584ca3e2e2bec00b70883380ad695453735700e61986",
+      "bytes": 2689
+    },
+    {
+      "id": "worker",
+      "url": "./assets/units/worker.svg",
+      "sourcePath": "assets/units/worker.svg",
+      "sha256": "c83052e6770e4f3cc1663463fb589bab456fd53b2153fe6611d775a493c67aca",
+      "bytes": 6048
+    }
+  ]
+}

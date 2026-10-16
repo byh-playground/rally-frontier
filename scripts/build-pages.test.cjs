@@ -43,6 +43,7 @@ test('standalone build bundles verified modules, campaign and visual assets',()=
   const {bundleGame}=require('./bundle-gamekit.cjs');const root=path.resolve(__dirname,'..'),html=bundleGame(root,source);
   assert(html.includes('data:text/javascript;base64,'));assert(!html.includes('import(this.importAttempt?'));
   assert(!html.includes('href="./icons/'));assert(!html.includes('href="./manifest.webmanifest"'));
+  assert(!html.includes('compiledVectorAssets'));assert(!html.includes('vectorAssetsData'));assert(!html.includes('.cache/vector-assets.compiled.js'));
   for(const [,attrs,js]of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi))if(!/type=["'](?:module|application\/json)/i.test(attrs))new vm.Script(js);
 });
 
@@ -51,6 +52,8 @@ const root = path.resolve(__dirname, '..');
 const bundleMarkers = [
   ['module map', source.match(/const RALLY_GAMEKIT_MODULES=Object\.freeze\(\{[^\n]+\}\);/)[0]],
   ['provenance', source.match(/const RALLY_GAMEKIT_SOURCE=Object\.freeze\(\{[^\n]+\}\);/)[0]],
+  ['unit SVG manifest', 'const RALLY_VECTOR_ASSET_MANIFEST_INLINE=null;'],
+  ['unit SVG manifest URL', "const RALLY_VECTOR_ASSET_MANIFEST_URL='./assets/units/manifest.json';"],
   ['campaign import', 'import(this.importAttempt?`./campaign/campaigns.js?retry=${this.importAttempt}`:"./campaign/campaigns.js")'],
   ['touch icon', 'href="./icons/rally-180.png"'],
   ['manifest link', '<link rel="manifest" href="./manifest.webmanifest">'],
@@ -86,7 +89,7 @@ function fixture(t) {
   const os = require('node:os');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rally-bundle-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  for (const asset of ['gamekit.lock.json', '.cache/gamekit', '.cache/vector-assets.compiled.js', 'campaign', 'icons', 'manifest.webmanifest']) fs.cpSync(path.join(root, asset), path.join(dir, asset), { recursive: true });
+  for (const asset of ['gamekit.lock.json', '.cache/gamekit', 'assets/units', 'campaign', 'icons', 'manifest.webmanifest']) fs.cpSync(path.join(root, asset), path.join(dir, asset), { recursive: true });
   return dir;
 }
 function changeLock(dir, change) {
@@ -149,13 +152,29 @@ test('bundled module bytes and embedded revision exactly match provenance', () =
   const modules = JSON.parse(html.match(/const RALLY_GAMEKIT_MODULES=Object\.freeze\((\{[^\n]+\})\);/)[1]);
   const provenance = JSON.parse(html.match(/const RALLY_GAMEKIT_SOURCE=Object\.freeze\((\{[^\n]+\})\);/)[1]);
   assert.deepEqual(provenance, { repository: lock.repository, sourceCommit: lock.sourceCommit, distCommit: lock.distCommit });
-  assert.deepEqual(Object.keys(modules).sort(), [...Object.keys(lock.modules), 'vectorAssetsData'].sort());
+  assert.deepEqual(Object.keys(modules).sort(), Object.keys(lock.modules).sort());
   for (const [name, entry] of Object.entries(lock.modules)) {
     const bytes = Buffer.from(modules[name].split(',')[1], 'base64');
     assert.equal(require('node:crypto').createHash('sha256').update(bytes).digest('hex'), entry.sha256);
     assert.deepEqual(bytes, fs.readFileSync(path.join(root, '.cache/gamekit', entry.file)));
   }
-  assert.deepEqual(Buffer.from(modules.vectorAssetsData.split(',')[1], 'base64'), fs.readFileSync(path.join(root, '.cache/vector-assets.compiled.js')));
+  assert.equal(Object.keys(modules).includes('vectorAssetsLoader'), true);
+  const inline = JSON.parse(html.match(/const RALLY_VECTOR_ASSET_MANIFEST_INLINE=(\{[^\n]+\});/)[1]);
+  const sourceManifest = JSON.parse(fs.readFileSync(path.join(root, 'assets/units/manifest.json'), 'utf8'));
+  assert.equal(inline.schemaVersion, sourceManifest.schemaVersion);
+  assert.equal(inline.assets.length, sourceManifest.assets.length);
+  for (let i = 0; i < inline.assets.length; i++) {
+    const embedded = inline.assets[i], original = sourceManifest.assets[i];
+    assert.equal(embedded.id, original.id);
+    assert.equal(embedded.sourcePath, original.sourcePath);
+    assert.equal(embedded.sha256, original.sha256);
+    assert.equal(embedded.bytes, original.bytes);
+    assert.equal(embedded.url.startsWith('data:image/svg+xml;base64,'), true);
+    const svg = Buffer.from(embedded.url.slice(embedded.url.indexOf(',') + 1), 'base64');
+    assert.equal(svg.byteLength, original.bytes);
+    assert.equal(require('node:crypto').createHash('sha256').update(svg).digest('hex'), original.sha256);
+    assert.deepEqual(svg, fs.readFileSync(path.join(root, original.sourcePath)));
+  }
 });
 
 test('native source metadata reads the dependency lock instead of duplicating revision values', () => {
@@ -176,4 +195,21 @@ test('distribution manifest digest and per-module provenance must agree',t=>{
  fs.appendFileSync(file,' ');assert.throws(()=>bundleGame(dir,source),/dist manifest integrity mismatch/);
  fs.writeFileSync(file,bytes);changeLock(dir,lock=>{lock.modules.camera.sha256='0'.repeat(64)});
  assert.throws(()=>bundleGame(dir,source),/dist manifest module mismatch: camera.js/);
+});
+
+test('standalone build rejects tampered or incomplete original SVG inputs',t=>{
+ const dir=fixture(t),manifestPath=path.join(dir,'assets/units/manifest.json'),manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));
+ manifest.assets[0].sha256='0'.repeat(64);fs.writeFileSync(manifestPath,JSON.stringify(manifest));
+ assert.throws(()=>bundleGame(dir,source),/Unit SVG SHA-256 mismatch/);
+});
+
+test('standalone contains original SVG resources and compiles them only at startup',()=>{
+ const html=bundleGame(root,source);
+ const inline=JSON.parse(html.match(/const RALLY_VECTOR_ASSET_MANIFEST_INLINE=(\{[^\n]+\});/)[1]);
+ assert.equal(inline.assets.length,51);
+ assert.match(html,/loadRallyVectorAssets\(namespaces\.vectorAssetsLoader\)/);
+ assert.match(html,/expectedSha256:entry\.sha256/);
+ assert.match(html,/includeSourcePaths:false/);
+ assert.doesNotMatch(html,/\.\/assets\/units\/manifest\.json/);
+ assert.doesNotMatch(html,/compiledVectorAssets|vectorAssetsData|\.cache\/vector-assets\.compiled\.js/);
 });

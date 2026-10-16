@@ -1,6 +1,7 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const {readGamekit}=require('./setup-gamekit.cjs');
+const {readVectorAssetManifest}=require('./vector-assets-manifest.cjs');
 const dataURL=(mime,bytes)=>`data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
 function replaceOnce(source,marker,replacement,label){
   const matches=typeof marker==='string'?source.split(marker).length-1:[...source.matchAll(new RegExp(marker.source,'g'))].length;
@@ -23,10 +24,15 @@ function checkResources(source,label,css=false){
   }
 }
 function checkModule(source,label){
-  const code=withoutBlockComments(source);
+  let code=withoutBlockComments(source);
+  if(label==='vector-assets-loader.js'){
+    const exportMarker='export {\n  createVectorAssetLoader\n};';
+    if(code.split(exportMarker).length!==2)throw Error('Unexpected vector-assets-loader.js export surface');
+    code=code.replace(exportMarker,'');
+  }
   // Pinned dist entry points and authored campaign data are dependency-free. Even an
   // absolute import must be reviewed rather than silently added to a data module.
-  if(/\bimport\s*(?:\(|['"{*]|[\w$]+\s*(?:,|from\b))|\bexport\s+(?:\*|\{[^}]*\})\s*from\b/.test(code))throw Error(`Unresolved runtime import in ${label}`);
+  if(/\bimport(?:\s*\(|\s+['"{*]|\s+[\w$]+\s*(?:,|from\b))|\bexport\s+(?:\*|\{[^}]*\})\s*from\b/.test(code))throw Error(`Unresolved runtime import in ${label}`);
   checkResources(code,label);
 }
 function checkHTML(html){
@@ -38,7 +44,7 @@ function checkHTML(html){
       if(match[1]==='url')moduleLoads++;else campaignLoads++;
       if(match[1]!=='url'&&!/^"data:text\/javascript;base64,[A-Za-z0-9+/=]+"$/.test(match[1]))throw Error('Unresolved runtime import in standalone HTML');
     }
-    if(/\bimport\s+(?:['"{*]|[\w$]+\s*(?:,|from\b))|\bexport\s+(?:\*|\{[^}]*\})\s*from\b/.test(code))throw Error('Unresolved static import in standalone HTML');
+    if(/\bimport(?:\s+['"{*]|\s+[\w$]+\s*(?:,|from\b))|\bexport\s+(?:\*|\{[^}]*\})\s*from\b/.test(code))throw Error('Unresolved static import in standalone HTML');
     checkResources(code,'standalone HTML');
   }
   if(moduleLoads!==1||campaignLoads!==1)throw Error('Unexpected runtime import count in standalone HTML');
@@ -59,11 +65,12 @@ function bundleGame(root,source){
     checkModule(bytes.toString('utf8'),entry.file);
     modules[name]=dataURL('text/javascript',bytes);
   }
-  const vectorAssetBytes=fs.readFileSync(path.join(root,'.cache','vector-assets.compiled.js'));
-  checkModule(vectorAssetBytes.toString('utf8'),'compiled unit vector assets');
-  modules.vectorAssetsData=dataURL('text/javascript',vectorAssetBytes);
   let html=replaceOnce(source,/const RALLY_GAMEKIT_MODULES=Object\.freeze\(\{[^\n]+\}\);/,`const RALLY_GAMEKIT_MODULES=Object.freeze(${JSON.stringify(modules)});`,'Gamekit module map');
   html=replaceOnce(html,/const RALLY_GAMEKIT_SOURCE=Object\.freeze\(\{[^\n]+\}\);/,`const RALLY_GAMEKIT_SOURCE=Object.freeze(${JSON.stringify({repository:lock.repository,sourceCommit:lock.sourceCommit,distCommit:lock.distCommit})});`,'Gamekit provenance');
+  const {manifest:sourceManifest,assets}=readVectorAssetManifest(root);
+  const inlineManifest={schemaVersion:sourceManifest.schemaVersion,assets:assets.map(({sourceBytes,...entry})=>({...entry,url:dataURL('image/svg+xml',sourceBytes)}))};
+  html=replaceOnce(html,'const RALLY_VECTOR_ASSET_MANIFEST_INLINE=null;',`const RALLY_VECTOR_ASSET_MANIFEST_INLINE=${JSON.stringify(inlineManifest)};`,'unit SVG manifest');
+  html=replaceOnce(html,"const RALLY_VECTOR_ASSET_MANIFEST_URL='./assets/units/manifest.json';",'const RALLY_VECTOR_ASSET_MANIFEST_URL=null;','unit SVG manifest URL');
   const campaignBytes=fs.readFileSync(path.join(root,'campaign/campaigns.js'));
   checkModule(campaignBytes.toString('utf8'),'campaign/campaigns.js');
   const campaign=dataURL('text/javascript',campaignBytes);
@@ -80,6 +87,8 @@ function bundleGame(root,source){
   // Validate before adding the deliberately relative install-identity calculation.
   html=replaceOnce(html,'<link rel="manifest" href="./manifest.webmanifest">','<!-- RALLY_RELEASE_MANIFEST -->','manifest link');
   checkHTML(html);
-  return replaceOnce(html,'<!-- RALLY_RELEASE_MANIFEST -->',manifestScript,'release manifest');
+  html=replaceOnce(html,'<!-- RALLY_RELEASE_MANIFEST -->',manifestScript,'release manifest');
+  if(/compiledVectorAssets|vectorAssetsData|\.cache\/vector-assets\.compiled\.js/.test(html))throw Error('Standalone output contains a precompiled unit vector asset module');
+  return html;
 }
 module.exports={bundleGame};
