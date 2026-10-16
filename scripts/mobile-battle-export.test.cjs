@@ -17,11 +17,16 @@ function stats(p50 = 0, p95 = 0, max = 0, mean = p50) {
 }
 
 function peer(offset = 0) {
-  const stageKeys = ["totalMs", "indexMs", "worldMs", "economyMs", "workerMs", "visionMs", "combatMs", "projectileMs", "collisionMs", "postMs"];
+  const stageKeys = ["totalMs", "indexMs", "worldMs", "economyMs", "workerMs", "visionMs", "combatMs", "projectileMs", "collisionMs", "collisionSoftApplyMs", "postMs"];
   const sampledStages = Array.from({ length: 15 }, (_, index) => ({
     sampleTick: index * 10 + offset,
     stageMs: Object.fromEntries(stageKeys.map((key, stageIndex) => [key, index + stageIndex + offset])),
-    workCounters: { spatialQueries: index + offset, spatialCandidates: index * 4 + offset, collisionPairs: index * 2 + offset },
+    workCounters: {
+      spatialQueries: index + offset, spatialCandidates: index * 4 + offset, collisionPairs: index * 2 + offset,
+      collisionSoftPasses: 1, collisionSoftContacts: index + offset, collisionSoftMovedUnits: index,
+      collisionSoftCappedUnits: index % 2, collisionSweptCalls: 2, collisionSweptActivePasses: 1,
+      collisionHardFixCalls: 1, collisionHardFixPasses: 1, collisionHardFixCorrections: 0,
+    },
     step: { lastMs: index, ewmaMs: index + 0.5, samples: index + 1 },
     snapshot: { latestMs: index / 2, samplesAtCapture: index + 1, totalMsAtCapture: index * 2 },
   }));
@@ -39,7 +44,7 @@ function reportFixture() {
     schemaVersion: 2,
     testMode: "mobile-battle",
     capturedAt: "2026-10-16T03:35:57.594Z",
-    build: { id: "20261016T033522+0000-rf-0c5866d65800", commit: "0123456789abcdef" },
+    build: { id: "20261016T033522+0000-rf-0c5866d65800", commit: "0123456789abcdef" }, collisionModel: "ally-soft-one-pass",
     device: { userAgent: "Headless browser details are omitted from summary", platform: "Win32", hardwareConcurrency: 12, viewport: { width: 844, height: 390, devicePixelRatio: 2, orientation: "landscape-primary" } },
     condition: { seed: 20261015, totalCombatUnits: 400, unitsPerSide: 200, composition: "mixed", rosters: { host: ["swordsman", "archer"], guest: ["swordsman", "archer"] }, tps: 10, warmupSeconds: 5, requestedSampleSeconds: 15 },
     measurement: { collector: "completed renderer frame hook", perFrameCounters: ["frameIntervalMs", "rendererCpuWorkMs", "alphaRunCacheHits"] },
@@ -112,6 +117,7 @@ test("summary copy keeps key diagnostics concise and excludes raw sample arrays"
   const summary = MobileBattleTestMode.summaryReportText(report);
 
   assert.match(summary, /Build 20261016T033522\+0000-rf-0c5866d65800/);
+  assert.match(summary, /collision=ally-soft-one-pass/);
   assert.match(summary, /seed=20261015 units=400/);
   assert.match(summary, /FPS=7\.31/);
   assert.match(summary, /Frame ms p50\/p95\/max=135\.7\/179\.1\/220/);
@@ -121,6 +127,7 @@ test("summary copy keeps key diagnostics concise and excludes raw sample arrays"
   assert.match(summary, /snapshot n\/avg\/max=77\/7\.05\/22\.9ms/);
   assert.match(summary, /Alpha cache avg hits\/misses per frame=5\/1\.2/);
   assert.match(summary, /stage p95ms/);
+  assert.match(summary, /collision sum soft pass\/contact\/moved\/capped=15\/105\/105\/7 sweep call\/pass=30\/15 hardfix call\/pass\/correction=15\/15\/0/);
   assert.match(summary, /GPU timer not measured; GC timing not collected/);
   assert.doesNotMatch(summary, /rawFrameSamples|sampleTick|Headless browser details/);
   assert.ok(Buffer.byteLength(summary, "utf8") <= 4096, `summary is ${Buffer.byteLength(summary, "utf8")} UTF-8 bytes`);

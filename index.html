@@ -9905,8 +9905,8 @@ body.playing.battle-test-mode #battleCommandDock{display:none!important}
     <div><span>유닛 생존 / 전투 / 일꾼 / 투사체</span><b id="dbgPerfEntities">-</b></div>
     <div><span>Spatial query / 후보(평균)</span><b id="dbgPerfSpatial">-</b></div>
     <div><span>Target / Visibility 검사</span><b id="dbgPerfTarget">-</b></div>
-    <div><span>Grid 후보 / PBD 접촉합 / 최대 이웃(접촉 평균) / 반복</span><b id="dbgPerfCollision">-</b></div>
-    <div><span>충돌 ms · 준비 / grid / pair scan / PBD 보정</span><b id="dbgPerfCollisionCore">-</b></div>
+    <div><span>Grid candidates / ally soft contacts / moved units / capped units / passes</span><b id="dbgPerfCollision">-</b></div>
+    <div><span>Collision ms / prep / grid / pair scan / soft apply</span><b id="dbgPerfCollisionCore">-</b></div>
     <div><span>충돌 ms · 이동 sweep / 지형 / 최종 SAP / 기타</span><b id="dbgPerfCollisionTail">-</b></div>
     <div><span>전투 ms · 주 대상 선택 / 기타 · 대상 선택 calls</span><b id="dbgPerfCombatSplit">-</b></div>
     <div><span>Swept 호출 / 활성 pass / 후보 / hit / 보정 유닛 / 무보정 pass</span><b id="dbgPerfCollisionSweepFlow">-</b></div>
@@ -10806,7 +10806,7 @@ const BUILD_META=Object.freeze({
 /* =========================
    1. Definitions
    ========================= */
-const SIM_TPS=20,FP=100,SIM_VERSION=199;
+const SIM_TPS=20,FP=100,SIM_VERSION=200;
 // Local session policy, deliberately outside canonical gameplay/save rules.
 // A session captures this setting once; changing it only affects the next match.
 const CONFIG={netcode:{mode:'lockstep'}};
@@ -13288,7 +13288,8 @@ FormationDefinition.validateFormationProfiles();
 const DETECT_BASE_RADIUS=325;
 const DETECT_OUTPOST_RADIUS=250;
 const BASE_SUPPLY=20;
-const COLLISION_ITERS=8,COLLISION_RADIUS_SCALE=1.35,COLLISION_NORMAL=4096;
+const COLLISION_RADIUS_SCALE=1.35,COLLISION_NORMAL=4096;
+const ALLY_SOFT_CORRECTION_FRACTION=.5,ALLY_SOFT_IDLE_RADIUS_FRACTION=.08,ALLY_SOFT_MAX_RADIUS_FRACTION=.25,ALLY_SOFT_SPEED_FRACTION=.75;
 // Runtime-only fixed-cell spatial indexes. They never enter checksum/exportState.
 // Combat, range queries and collision broadphase share the same deterministic unit grid.
 // Final distance/contact tests remain exact, so the grid changes candidate discovery only.
@@ -13355,7 +13356,7 @@ class PerformanceTelemetry{
     const sessions=SinglePlayerModeUtil.isSinglePlayer()?MatchLifecycle.singleMatch.sessions:{[active.role]:active};
     const m=this.runtimeMonitor;
     const payload={exportedAt:new Date().toISOString(),build:BUILD_META.id,simVersion:SIM_VERSION,visibility:document.visibilityState,
-      note:'Local timings only. Nested timings overlap. App RTT includes browser message handling; ICE RTT is a separate sample. GPU begin time is CPU API cost. Collision details are sampled every second; PBD neighbor peak is the maximum over sampled ticks in this match.',
+      note:'Local timings only. Nested timings overlap. App RTT includes browser message handling; ICE RTT is a separate sample. GPU begin time is CPU API cost. Collision details are sampled once per second; allied soft-contact counters describe that sampled tick.',
       mainThread:m?{timings:m.timings,longTasks:m.longTasks,lastLongTaskMs:m.longTaskMs,maxLongTaskMs:m.maxLongTaskMs}:null,
       renderer:ActiveViewState.renderer?.perfStats||null,
       sessions:Object.fromEntries(Object.entries(sessions).map(([role,s])=>[role,{tick:s.sim?.tick,mode:s.netcodeMode,status:s.netcodeSession?.status,
@@ -13404,9 +13405,8 @@ class PerformanceTelemetry{
   static createLocalPerfStats(){
     return{
       sampleTick:0,totalMs:0,indexMs:0,worldMs:0,economyMs:0,workerMs:0,visionMs:0,combatMs:0,
-      projectileMs:0,collisionMs:0,collisionPrepMs:0,collisionGridBuildMs:0,collisionPairScanMs:0,collisionPbdApplyMs:0,collisionSweptMotionMs:0,collisionTerrainMs:0,collisionHardFixMs:0,collisionOtherMs:0,
-      collisionPbdContacts:0,collisionPbdMaxNeighbors:0,collisionPbdNeighborOccurrences:0,collisionPbdNeighborSum:0,
-      collisionPbdPeakNeighbors:0,collisionPbdContactTotal:0,collisionPbdNeighborObservations:0,collisionPbdNeighborTotal:0,collisionPbdDetailedSamples:0,
+      projectileMs:0,collisionMs:0,collisionPrepMs:0,collisionGridBuildMs:0,collisionPairScanMs:0,collisionSoftApplyMs:0,collisionSweptMotionMs:0,collisionTerrainMs:0,collisionHardFixMs:0,collisionOtherMs:0,
+      collisionSoftPasses:0,collisionSoftContacts:0,collisionSoftMovedUnits:0,collisionSoftCappedUnits:0,collisionSoftDetailedSamples:0,
       collisionSweptCalls:0,collisionSweptActivePasses:0,collisionSweptZeroMotionCalls:0,collisionSweptEmptyPasses:0,collisionSweptPairTests:0,collisionSweptHits:0,collisionSweptCorrectionUnits:0,collisionSweptNoCorrectionPasses:0,
       collisionHardFixCalls:0,collisionHardFixPasses:0,collisionHardFixActivePairTests:0,collisionHardFixCandidates:0,collisionHardFixCorrections:0,collisionHardFixNoOpCalls:0,
       combatTargetPickMs:0,combatTargetPickCalls:0,combatOtherMs:0,
@@ -13414,7 +13414,7 @@ class PerformanceTelemetry{
       aliveUnits:0,workers:0,combatUnits:0,projectiles:0,
       peakAliveUnits:0,peakBuildings:0,peakProjectiles:0,
       spatialQueries:0,spatialCandidates:0,
-      targetQueries:0,targetVisibilityRejects:0,sideSpatialQueries:0,visibilityChecks:0,visionCandidateChecks:0,visibilityCacheHits:0,collisionPairs:0,collisionOverlaps:0,collisionIterations:0,buildingCollisionCandidates:0
+      targetQueries:0,targetVisibilityRejects:0,sideSpatialQueries:0,visibilityChecks:0,visionCandidateChecks:0,visibilityCacheHits:0,collisionPairs:0,collisionOverlaps:0,buildingCollisionCandidates:0
     };
   }
   static createLocalBalanceStats(){
@@ -16604,8 +16604,8 @@ class LoopbackTransport{
 
 /* Runtime-only deterministic fixed-cell collision broadphase.
  * Dense numeric bucket arrays avoid Map lookup, candidate sorting and quadtree
- * node traversal in the selected-TPS × 8 PBD hot path. Buckets store authoritative
- * unit-array indexes; final contact checks remain exact integer PBD math. */
+ * traversal in the one-pass allied soft-separation hot path. Buckets store unit-array
+ * indexes; exact overlap and correction math stays in fixed-point coordinates. */
 class DeterministicCollisionGrid{
   constructor(cellSize=COLLISION_SPATIAL_CELL,world){
     this.cellSize=cellSize;
@@ -22946,10 +22946,77 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     for(const u of this.units)if(u?.alive&&this.navigation.motion.constrain(u))changed++;
     return changed;
   }
+  resolveAlliedSoftSeparation(radii,maxRadius){
+    const units=this.units,n=units.length;
+    if(!n)return 0;
+    const perf=this._perfCollect,now=perf?()=>performance.now():null;
+    const grid=this.collisionGrid,candidates=this.collisionCandidateBuffer;
+    const masses=this.collisionMasses;
+    const dxA=this.collisionDx,dyA=this.collisionDy,cnt=this.collisionCnt;
+    const motionFlags=this.collisionMotion.flags,motionLayers=this.collisionMotion.layers;
+    let mark=perf?now():0;
+    grid.reset(units,maxRadius);
+    dxA.fill(0,0,n);dyA.fill(0,0,n);cnt.fill(0,0,n);
+    for(let i=0;i<n;i++){
+      const u=units[i];this.collisionSegmentFx[i]=u?.fx??0;this.collisionSegmentFy[i]=u?.fy??0;
+    }
+    if(perf){perf.collisionGridBuildMs+=now()-mark;perf.collisionSoftPasses++}
+
+    mark=perf?now():0;
+    for(let i=0;i<n;i++){
+      const a=units[i];if(!a?.alive||radii[i]<=0)continue;
+      const aFlags=motionFlags[i],aLayer=motionLayers[i];
+      grid.queryCandidatesFP(a.fx,a.fy,radii[i],candidates);
+      for(let k=0;k<candidates.length;k++){
+        const j=candidates[k];if(j<=i)continue;
+        const b=units[j];if(radii[j]<=0)continue;
+        const bFlags=motionFlags[j];
+        if(!b?.alive||(aFlags&1)!==(bFlags&1)||(aFlags&6)||(bFlags&6)||aLayer!==motionLayers[j])continue;
+        if(perf)perf.collisionPairs++;
+        if(!this.isAlliedCollisionUnit(a,b))continue;
+        const min=radii[i]+radii[j];
+        let dx=b.fx-a.fx,dy=b.fy-a.fy;const d2=dx*dx+dy*dy;
+        if(d2>=min*min)continue;
+        let nx,ny,dist;
+        if(d2===0){[nx,ny]=this.fallbackNormal(a,b);dist=0}
+        else{dist=Math.max(1,Math.floor(Math.sqrt(d2)));nx=Math.trunc(dx*COLLISION_NORMAL/dist);ny=Math.trunc(dy*COLLISION_NORMAL/dist)}
+        const pen=min-dist;if(pen<=0)continue;
+        const softPen=Math.max(1,Math.trunc(pen*ALLY_SOFT_CORRECTION_FRACTION));
+        const ma=masses[i],mb=masses[j],total=Math.max(1,ma+mb);
+        const pa=Math.trunc(softPen*mb/total),pb=softPen-pa;
+        dxA[i]-=Math.trunc(nx*pa/COLLISION_NORMAL);dyA[i]-=Math.trunc(ny*pa/COLLISION_NORMAL);
+        dxA[j]+=Math.trunc(nx*pb/COLLISION_NORMAL);dyA[j]+=Math.trunc(ny*pb/COLLISION_NORMAL);
+        cnt[i]++;cnt[j]++;
+        if(perf){perf.collisionSoftContacts++;perf.collisionOverlaps++}
+      }
+    }
+    if(perf)perf.collisionPairScanMs+=now()-mark;
+
+    mark=perf?now():0;
+    let moved=0,capped=0;
+    for(let i=0;i<n;i++){
+      const u=units[i];if(!u?.alive||!cnt[i])continue;
+      let cx=Math.trunc(dxA[i]/cnt[i]),cy=Math.trunc(dyA[i]/cnt[i]);
+      const radius=radii[i],speed=Math.max(0,Number(UnitDefinition.get(u.type)?.speed)||0);
+      const idleAllowance=Math.round(radius*ALLY_SOFT_IDLE_RADIUS_FRACTION);
+      const speedAllowance=Math.round(speed/this.tps*FP*ALLY_SOFT_SPEED_FRACTION);
+      const maxCorrection=Math.max(1,Math.min(Math.round(radius*ALLY_SOFT_MAX_RADIUS_FRACTION),Math.max(idleAllowance,speedAllowance)));
+      const len2=cx*cx+cy*cy;
+      if(len2>maxCorrection*maxCorrection){
+        const len=Math.max(1,Math.sqrt(len2)),scale=maxCorrection/len;
+        cx=Math.trunc(cx*scale);cy=Math.trunc(cy*scale);capped++;
+      }
+      if(cx===0&&cy===0)continue;
+      const oldFx=u.fx,oldFy=u.fy;
+      u.fx=RangeUtil.clamp(u.fx+cx,radius,this.world.width*FP-radius);
+      u.fy=RangeUtil.clamp(u.fy+cy,radius,this.world.height*FP-radius);
+      u.x=u.fx/FP;u.y=u.fy/FP;
+      if(u.fx!==oldFx||u.fy!==oldFy)moved++;
+    }
+    if(perf){perf.collisionSoftApplyMs+=now()-mark;perf.collisionSoftMovedUnits=moved;perf.collisionSoftCappedUnits=capped}
+    return moved;
+  }
   solveContacts(){
-    // Fixed-cell grid broadphase + unchanged Jacobi/PBD narrowphase.
-    // Rebuild is O(N) per iteration; each unit only scans cells intersecting its
-    // maximum possible contact radius. No candidate sort/Map/quadtree traversal.
     const units=this.units,n=units.length;
     if(!n)return;
     const perf=this._perfCollect,now=perf?()=>performance.now():null;
@@ -22960,127 +23027,42 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     const radii=this.collisionRadii,masses=this.collisionMasses;
     let maxRadius=FP;
     for(let i=0;i<n;i++){
-      const u=units[i];
-      const ud=UnitDefinition.get(u.type);
+      const u=units[i],ud=UnitDefinition.get(u.type);
       if(!u.alive||ud?.crowdCollision===false||!!u?.capability(LeapableMixin.KEY)?.isActive(this)||u.objectiveChargeActive){radii[i]=0;masses[i]=0;continue}
       radii[i]=this.radiusFP(u);masses[i]=this.mass(u);
       if(radii[i]>maxRadius)maxRadius=radii[i];
     }
     if(perf)perf.collisionPrepMs+=now()-mark;
 
-    const grid=this.collisionGrid,candidates=this.collisionCandidateBuffer;
-    const dxA=this.collisionDx,dyA=this.collisionDy,cnt=this.collisionCnt;
-
-    // First resolve the actual movement/impulse path for this tick against dynamic
-    // non-allied solids. This is where normal movement becomes surface sliding.
+    // Keep the full movement/impulse sweep for hostile nonpenetration and tangent sliding.
     mark=perf?now():0;
     this.resolveNonAlliedSurfaceMotion(this.collisionStartFx,this.collisionStartFy,radii,maxRadius,4);
     if(perf)perf.collisionSweptMotionMs+=now()-mark;
 
-    for(let iter=0;iter<COLLISION_ITERS;iter++){
-      if(perf)perf.collisionIterations++;
+    // One Jacobi-style ally pass per tick. It also nudges idle and in-range attackers,
+    // but correction is deliberately softer and bounded by radius and normal tick speed.
+    const softMoved=this.resolveAlliedSoftSeparation(radii,maxRadius);
+    if(softMoved){
+      // Keep the one-pass nudge from crossing a hostile solid or a terrain boundary.
       mark=perf?now():0;
-      grid.reset(units,maxRadius);
-      if(perf)perf.collisionGridBuildMs+=now()-mark;
-      mark=perf?now():0;
-      dxA.fill(0,0,n);dyA.fill(0,0,n);cnt.fill(0,0,n);
-      for(let i=0;i<n;i++){
-        const u=units[i];this.collisionSegmentFx[i]=u?.fx??0;this.collisionSegmentFy[i]=u?.fy??0;
-      }
-      if(perf)perf.collisionPrepMs+=now()-mark;
-      let overlaps=0;
-
-      mark=perf?now():0;
-      // resolveNonAlliedSurfaceMotion refreshes these arrays before each solver
-      // iteration. Keep their references and each source unit's values out of the
-      // inner candidate loop; the arrays are unchanged during this pair scan.
-      const motionFlags=this.collisionMotion.flags,motionLayers=this.collisionMotion.layers;
-      for(let i=0;i<n;i++){
-        const a=units[i];if(!a.alive||radii[i]<=0)continue;
-        const aFlags=motionFlags[i],aLayer=motionLayers[i];
-        grid.queryCandidatesFP(a.fx,a.fy,radii[i],candidates);
-        for(let k=0;k<candidates.length;k++){
-          const j=candidates[k];if(j<=i)continue;
-          const b=units[j];
-          if(radii[j]<=0)continue;
-          const bFlags=motionFlags[j];
-          if(!b.alive||(aFlags&1)!==(bFlags&1)||(aFlags&6)||(bFlags&6)||aLayer!==motionLayers[j])continue;
-          if(perf)perf.collisionPairs++;
-          if(!this.isAlliedCollisionUnit(a,b))continue;
-          const min=radii[i]+radii[j];
-          let dx=b.fx-a.fx,dy=b.fy-a.fy;const d2=dx*dx+dy*dy;
-          if(d2>=min*min)continue;
-          let nx,ny,dist;
-          if(d2===0){[nx,ny]=this.fallbackNormal(a,b);dist=0}
-          else{dist=Math.max(1,Math.floor(Math.sqrt(d2)));nx=Math.trunc(dx*COLLISION_NORMAL/dist);ny=Math.trunc(dy*COLLISION_NORMAL/dist)}
-          const pen=min-dist;if(pen<=0)continue;
-          overlaps++;if(perf)perf.collisionOverlaps++;
-          const ma=masses[i],mb=masses[j],tot=ma+mb;
-          const pa=Math.max(1,Math.floor(pen*mb/tot)),pb=Math.max(1,pen-pa);
-          dxA[i]-=Math.trunc(nx*pa/COLLISION_NORMAL);dyA[i]-=Math.trunc(ny*pa/COLLISION_NORMAL);
-          dxA[j]+=Math.trunc(nx*pb/COLLISION_NORMAL);dyA[j]+=Math.trunc(ny*pb/COLLISION_NORMAL);
-          cnt[i]++;cnt[j]++;
-        }
-      }
-      if(perf){
-        perf.collisionPairScanMs+=now()-mark;
-        perf.collisionPbdContacts+=overlaps;
-        for(let i=0;i<n;i++)if(cnt[i]){
-          perf.collisionPbdNeighborOccurrences++;
-          perf.collisionPbdNeighborSum+=cnt[i];
-          if(cnt[i]>perf.collisionPbdMaxNeighbors)perf.collisionPbdMaxNeighbors=cnt[i];
-        }
-      }
-
-      // First apply Jacobi unit-unit corrections. Static buildings are infinite-mass
-      // constraints, so their correction must NOT be diluted by cnt[i] when a unit
-      // is simultaneously pressed by several neighbors.
-      mark=perf?now():0;
-      for(let i=0;i<n;i++){
-        const u=units[i];if(!u.alive||!cnt[i])continue;
-        const r=radii[i];
-        let cx=Math.trunc(dxA[i]/cnt[i]),cy=Math.trunc(dyA[i]/cnt[i]);
-        // PBD safety bound: a dense/singular overlap may generate many simultaneous
-        // constraints, but one solver iteration must never teleport a unit farther
-        // than its own collision radius. Remaining penetration converges over later
-        // iterations/ticks instead of overshooting.
-        const len2=cx*cx+cy*cy,maxCorrection=Math.max(FP,Math.round(r));
-        if(len2>maxCorrection*maxCorrection){const len=Math.max(1,Math.sqrt(len2)),scale=maxCorrection/len;cx=Math.trunc(cx*scale);cy=Math.trunc(cy*scale)}
-        u.fx=RangeUtil.clamp(u.fx+cx,r,this.world.width*FP-r);
-        u.fy=RangeUtil.clamp(u.fy+cy,r,this.world.height*FP-r);
-        u.x=u.fx/FP;u.y=u.fy/FP;
-      }
-      if(perf)perf.collisionPbdApplyMs+=now()-mark;
-
-      // Allied crowd correction is also not allowed to push through a non-ally.
-      // Treat this iteration's PBD correction as its own short motion segment and
-      // surface-slide that correction without modifying the obstacle.
-      mark=perf?now():0;
-      const solidCorrections=this.resolveNonAlliedSurfaceMotion(
-        this.collisionSegmentFx,this.collisionSegmentFy,radii,maxRadius,3
-      );
+      this.resolveNonAlliedSurfaceMotion(this.collisionSegmentFx,this.collisionSegmentFy,radii,maxRadius,3);
       if(perf)perf.collisionSweptMotionMs+=now()-mark;
-      if(solidCorrections){overlaps+=solidCorrections;if(perf)perf.collisionOverlaps+=solidCorrections}
-
-      // Buildings and cliffs constrain this correction, not the whole tick chord.
       mark=perf?now():0;
       const surfaceCorrections=this.constrainSurfaceContacts();
-      if(perf)perf.collisionTerrainMs+=now()-mark;
-      if(surfaceCorrections){overlaps+=surfaceCorrections;if(perf)perf.collisionOverlaps+=surfaceCorrections}
+      if(perf){perf.collisionTerrainMs+=now()-mark;perf.collisionOverlaps+=surfaceCorrections}
+    }
 
-      // Final invariant: no ordinary ground non-allied pair may remain overlapped.
-      // Cross-team pressure is never transferred: recovery moves the semantic intruder
-      // selected from this tick's motion. Emerge/knockback/pull remain explicit forces.
+    // This single final SAP call retains zero-motion hostile overlap recovery. It is
+    // no longer repeated once per allied convergence iteration.
+    mark=perf?now():0;
+    const hardFixes=this.enforceNonAlliedNoOverlap(radii,maxRadius,4);
+    if(perf){perf.collisionHardFixMs+=now()-mark;perf.collisionHardFixCorrections+=hardFixes;if(!hardFixes)perf.collisionHardFixNoOpCalls++}
+    if(hardFixes){
+      if(perf)perf.collisionOverlaps+=hardFixes;
+      for(let i=0;i<n;i++)if(units[i]?.alive)this.syncUnitSpatial(units[i]);
       mark=perf?now():0;
-      const hardFixes=this.enforceNonAlliedNoOverlap(radii,maxRadius,4);
-      if(perf)perf.collisionHardFixMs+=now()-mark;
-      if(perf){perf.collisionHardFixCorrections+=hardFixes;if(!hardFixes)perf.collisionHardFixNoOpCalls++}
-      if(hardFixes){
-        overlaps+=hardFixes;if(perf)perf.collisionOverlaps+=hardFixes;
-        for(let i=0;i<n;i++)if(units[i]?.alive)this.syncUnitSpatial(units[i]);
-        this.constrainSurfaceContacts();
-      }
-      if(!overlaps)break;
+      this.constrainSurfaceContacts();
+      if(perf)perf.collisionTerrainMs+=now()-mark;
     }
   }
 
@@ -23202,7 +23184,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     const now=profile?()=>performance.now():null;
     const stepStart=profile?now():0;
     this._perfCollect=profile?{spatialQueries:0,spatialCandidates:0,targetQueries:0,targetVisibilityRejects:0,sideSpatialQueries:0,visibilityChecks:0,visionCandidateChecks:0,visibilityCacheHits:0,
-      collisionPairs:0,collisionOverlaps:0,collisionIterations:0,buildingCollisionCandidates:0,collisionPrepMs:0,collisionGridBuildMs:0,collisionPairScanMs:0,collisionPbdApplyMs:0,collisionSweptMotionMs:0,collisionTerrainMs:0,collisionHardFixMs:0,collisionPbdContacts:0,collisionPbdMaxNeighbors:0,collisionPbdNeighborOccurrences:0,collisionPbdNeighborSum:0,
+      collisionPairs:0,collisionOverlaps:0,collisionSoftPasses:0,collisionSoftContacts:0,collisionSoftMovedUnits:0,collisionSoftCappedUnits:0,buildingCollisionCandidates:0,collisionPrepMs:0,collisionGridBuildMs:0,collisionPairScanMs:0,collisionSoftApplyMs:0,collisionSweptMotionMs:0,collisionTerrainMs:0,collisionHardFixMs:0,
       collisionSweptCalls:0,collisionSweptActivePasses:0,collisionSweptZeroMotionCalls:0,collisionSweptEmptyPasses:0,collisionSweptPairTests:0,collisionSweptHits:0,collisionSweptCorrectionUnits:0,collisionSweptNoCorrectionPasses:0,
       collisionHardFixCalls:0,collisionHardFixPasses:0,collisionHardFixActivePairTests:0,collisionHardFixCandidates:0,collisionHardFixCorrections:0,collisionHardFixNoOpCalls:0,combatTargetPickMs:0,combatTargetPickCalls:0}:null;
 
@@ -23270,7 +23252,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     const combatMs=profile?now()-mark:0;
 
     // Hook/knock-style external forces are resolved as deterministic velocity impulses
-    // after normal unit intent, then the existing PBD solver resolves chain contacts.
+    // after normal unit intent, then one bounded ally pass and hostile safety solve run.
     this.updateUnitImpulses();
 
     mark=profile?now():0;
@@ -23299,15 +23281,11 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       for(const u of this.units)if(u.alive){aliveUnits++;if(!!UnitDefinition.get(u.type)?.economyWorker)workers++;else combatUnits++}
       p.sampleTick=this.tick;p.totalMs=total;p.indexMs=indexMs;p.worldMs=worldMs;p.economyMs=economyMs;p.workerMs=workerMs;p.visionMs=visionMs;
       p.combatMs=combatMs;p.projectileMs=projectileMs;p.collisionMs=collisionMs;p.postMs=postMs;
-      p.collisionPrepMs=c.collisionPrepMs;p.collisionGridBuildMs=c.collisionGridBuildMs;p.collisionPairScanMs=c.collisionPairScanMs;p.collisionPbdApplyMs=c.collisionPbdApplyMs;
+      p.collisionPrepMs=c.collisionPrepMs;p.collisionGridBuildMs=c.collisionGridBuildMs;p.collisionPairScanMs=c.collisionPairScanMs;p.collisionSoftApplyMs=c.collisionSoftApplyMs;
       p.collisionSweptMotionMs=c.collisionSweptMotionMs;p.collisionTerrainMs=c.collisionTerrainMs;p.collisionHardFixMs=c.collisionHardFixMs;
-      p.collisionOtherMs=Math.max(0,collisionMs-(c.collisionPrepMs+c.collisionGridBuildMs+c.collisionPairScanMs+c.collisionPbdApplyMs+c.collisionSweptMotionMs+c.collisionTerrainMs+c.collisionHardFixMs));
-      p.collisionPbdContacts=c.collisionPbdContacts;p.collisionPbdMaxNeighbors=c.collisionPbdMaxNeighbors;p.collisionPbdNeighborOccurrences=c.collisionPbdNeighborOccurrences;p.collisionPbdNeighborSum=c.collisionPbdNeighborSum;
-      p.collisionPbdPeakNeighbors=Math.max(p.collisionPbdPeakNeighbors||0,c.collisionPbdMaxNeighbors);
-      p.collisionPbdContactTotal=(p.collisionPbdContactTotal||0)+c.collisionPbdContacts;
-      p.collisionPbdNeighborObservations=(p.collisionPbdNeighborObservations||0)+c.collisionPbdNeighborOccurrences;
-      p.collisionPbdNeighborTotal=(p.collisionPbdNeighborTotal||0)+c.collisionPbdNeighborSum;
-      p.collisionPbdDetailedSamples=(p.collisionPbdDetailedSamples||0)+1;
+      p.collisionOtherMs=Math.max(0,collisionMs-(c.collisionPrepMs+c.collisionGridBuildMs+c.collisionPairScanMs+c.collisionSoftApplyMs+c.collisionSweptMotionMs+c.collisionTerrainMs+c.collisionHardFixMs));
+      p.collisionSoftPasses=c.collisionSoftPasses;p.collisionSoftContacts=c.collisionSoftContacts;p.collisionSoftMovedUnits=c.collisionSoftMovedUnits;p.collisionSoftCappedUnits=c.collisionSoftCappedUnits;
+      p.collisionSoftDetailedSamples=(p.collisionSoftDetailedSamples||0)+1;
       for(const key of ["collisionSweptCalls","collisionSweptActivePasses","collisionSweptZeroMotionCalls","collisionSweptEmptyPasses","collisionSweptPairTests","collisionSweptHits","collisionSweptCorrectionUnits","collisionSweptNoCorrectionPasses",
         "collisionHardFixCalls","collisionHardFixPasses","collisionHardFixActivePairTests","collisionHardFixCandidates","collisionHardFixCorrections","collisionHardFixNoOpCalls","combatTargetPickMs","combatTargetPickCalls"])p[key]=c[key];
       p.combatOtherMs=Math.max(0,combatMs-c.combatTargetPickMs);
@@ -23316,7 +23294,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       p.peakBuildings=Math.max(p.peakBuildings||0,this.buildings.length);
       p.peakProjectiles=Math.max(p.peakProjectiles||0,this.projectiles.length);
       p.spatialQueries=c.spatialQueries;p.spatialCandidates=c.spatialCandidates;p.targetQueries=c.targetQueries;p.targetVisibilityRejects=c.targetVisibilityRejects;p.sideSpatialQueries=c.sideSpatialQueries;p.visibilityChecks=c.visibilityChecks;p.visionCandidateChecks=c.visionCandidateChecks;p.visibilityCacheHits=c.visibilityCacheHits||0;
-      p.collisionPairs=c.collisionPairs;p.collisionOverlaps=c.collisionOverlaps;p.collisionIterations=c.collisionIterations;p.buildingCollisionCandidates=c.buildingCollisionCandidates||0;
+      p.collisionPairs=c.collisionPairs;p.collisionOverlaps=c.collisionOverlaps;p.buildingCollisionCandidates=c.buildingCollisionCandidates||0;
     }
     this._perfCollect=null;
     return winner;
@@ -35665,9 +35643,8 @@ class ConnectionPresentation{
   UiRegistry.refs.dbgPerfSpatial.textContent=`${perf.spatialQueries||0} / ${perf.spatialCandidates||0} (${avgCandidates.toFixed(1)})`;
   UiRegistry.refs.dbgPerfTarget.textContent=`target ${perf.targetQueries||0} · reject ${perf.targetVisibilityRejects||0} / vis ${perf.visibilityChecks||0} · sideQ ${perf.sideSpatialQueries||0}`;
   UiRegistry.refs.dbgPerfCombatSplit.textContent=`${fmtMs(perf.combatTargetPickMs)} / ${fmtMs(perf.combatOtherMs)} · ${perf.combatTargetPickCalls||0} target calls`;
-  const meanPbdNeighbors=perf.collisionPbdNeighborObservations?perf.collisionPbdNeighborTotal/perf.collisionPbdNeighborObservations:0;
-  UiRegistry.refs.dbgPerfCollision.textContent=`${perf.collisionPairs||0} / ${perf.collisionPbdContacts||0} / ${perf.collisionPbdPeakNeighbors||0} (${meanPbdNeighbors.toFixed(1)} avg) / ${perf.collisionIterations||0}`;
-  UiRegistry.refs.dbgPerfCollisionCore.textContent=`${fmtMs(perf.collisionPrepMs)} / ${fmtMs(perf.collisionGridBuildMs)} / ${fmtMs(perf.collisionPairScanMs)} / ${fmtMs(perf.collisionPbdApplyMs)}`;
+  UiRegistry.refs.dbgPerfCollision.textContent=`${perf.collisionPairs||0} / ${perf.collisionSoftContacts||0} / ${perf.collisionSoftMovedUnits||0} / ${perf.collisionSoftCappedUnits||0} / ${perf.collisionSoftPasses||0}`;
+  UiRegistry.refs.dbgPerfCollisionCore.textContent=`${fmtMs(perf.collisionPrepMs)} / ${fmtMs(perf.collisionGridBuildMs)} / ${fmtMs(perf.collisionPairScanMs)} / ${fmtMs(perf.collisionSoftApplyMs)}`;
   UiRegistry.refs.dbgPerfCollisionTail.textContent=`${fmtMs(perf.collisionSweptMotionMs)} / ${fmtMs(perf.collisionTerrainMs)} / ${fmtMs(perf.collisionHardFixMs)} / ${fmtMs(perf.collisionOtherMs)}`;
   UiRegistry.refs.dbgPerfCollisionSweepFlow.textContent=`${perf.collisionSweptCalls||0} / ${perf.collisionSweptActivePasses||0} / ${perf.collisionSweptPairTests||0} / ${perf.collisionSweptHits||0} / ${perf.collisionSweptCorrectionUnits||0} / ${perf.collisionSweptNoCorrectionPasses||0}`;
   UiRegistry.refs.dbgPerfCollisionHardFixFlow.textContent=`${perf.collisionHardFixCalls||0} / ${perf.collisionHardFixPasses||0} / ${perf.collisionHardFixActivePairTests||0} / ${perf.collisionHardFixCandidates||0} / ${perf.collisionHardFixCorrections||0} / ${perf.collisionHardFixNoOpCalls||0}`;
@@ -35906,12 +35883,12 @@ const performanceBenchmark={
             combatOtherMs:Number(p.combatOtherMs)||0,
             projectileMs:Number(p.projectileMs)||0,
             collisionMs:Number(p.collisionMs)||0,
-            collisionDetails:{sampleTick:Number(p.sampleTick)||0,detailedSamples:Number(p.collisionPbdDetailedSamples)||0,
-              gridCandidateVisits:Number(p.collisionPairs)||0,pbdContacts:Number(p.collisionPbdContacts)||0,
-              pbdMaxNeighborsThisSample:Number(p.collisionPbdMaxNeighbors)||0,pbdPeakNeighborsAcrossSamples:Number(p.collisionPbdPeakNeighbors)||0,
-              meanNeighborsAmongContactingUnits:Number(p.collisionPbdNeighborObservations)?Number(p.collisionPbdNeighborTotal)/Number(p.collisionPbdNeighborObservations):0,
+            collisionDetails:{sampleTick:Number(p.sampleTick)||0,detailedSamples:Number(p.collisionSoftDetailedSamples)||0,
+              gridCandidateVisits:Number(p.collisionPairs)||0,allySoftPasses:Number(p.collisionSoftPasses)||0,
+              allySoftContacts:Number(p.collisionSoftContacts)||0,allySoftMovedUnits:Number(p.collisionSoftMovedUnits)||0,
+              allySoftCappedUnits:Number(p.collisionSoftCappedUnits)||0,
               combatTargetPickMs:Number(p.combatTargetPickMs)||0,combatOtherMs:Number(p.combatOtherMs)||0,combatTargetPickCalls:Number(p.combatTargetPickCalls)||0,
-              pairScanMs:Number(p.collisionPairScanMs)||0,sweptMotionMs:Number(p.collisionSweptMotionMs)||0,
+              pairScanMs:Number(p.collisionPairScanMs)||0,softApplyMs:Number(p.collisionSoftApplyMs)||0,sweptMotionMs:Number(p.collisionSweptMotionMs)||0,
               terrainMs:Number(p.collisionTerrainMs)||0,finalSapMs:Number(p.collisionHardFixMs)||0,
               sweptCalls:Number(p.collisionSweptCalls)||0,sweptPasses:Number(p.collisionSweptActivePasses)||0,sweptPairTests:Number(p.collisionSweptPairTests)||0,
               sweptHits:Number(p.collisionSweptHits)||0,sweptCorrectionUnits:Number(p.collisionSweptCorrectionUnits)||0,sweptNoCorrectionPasses:Number(p.collisionSweptNoCorrectionPasses)||0,
@@ -35961,9 +35938,11 @@ const performanceBenchmark={
           combatMs:summary(nums(["sessions",r,"combatMs"])),
           collisionMs:summary(nums(["sessions",r,"collisionMs"])),
           collisionDetailedSamples:collisionDetails.length,
-          collisionPbdPeakNeighbors:Math.max(0,...collisionDetails.map(x=>x.pbdPeakNeighborsAcrossSamples)),
-          collisionPbdMeanNeighborsAmongContactingUnits:collisionDetails.at(-1)?.meanNeighborsAmongContactingUnits||0,
-          collisionStagesMs:Object.fromEntries(["pairScanMs","sweptMotionMs","terrainMs","finalSapMs"].map(key=>[key,summary(collisionDetails.map(x=>Number(x[key])).filter(Number.isFinite))])),
+          alliedSoftPasses:collisionDetails.reduce((sum,x)=>sum+x.allySoftPasses,0),
+          alliedSoftContacts:collisionDetails.reduce((sum,x)=>sum+x.allySoftContacts,0),
+          alliedSoftMovedUnits:collisionDetails.reduce((sum,x)=>sum+x.allySoftMovedUnits,0),
+          alliedSoftCappedUnits:collisionDetails.reduce((sum,x)=>sum+x.allySoftCappedUnits,0),
+          collisionStagesMs:Object.fromEntries(["pairScanMs","softApplyMs","sweptMotionMs","terrainMs","finalSapMs"].map(key=>[key,summary(collisionDetails.map(x=>Number(x[key])).filter(Number.isFinite))])),
           combatTargetPickMs:summary(collisionDetails.map(x=>Number(x.combatTargetPickMs)).filter(Number.isFinite)),
           combatOtherMs:summary(collisionDetails.map(x=>Number(x.combatOtherMs)).filter(Number.isFinite)),
           targetPickCalls:collisionDetails.reduce((sum,x)=>sum+x.combatTargetPickCalls,0),
@@ -36454,8 +36433,8 @@ class MobileBattleTestMode{
     if(match?.sessions)this.capturePeerSimulation(match);
   }
   static capturePeerSimulation(match){
-    const stageKeys=["totalMs","indexMs","worldMs","economyMs","workerMs","visionMs","combatMs","combatTargetPickMs","projectileMs","collisionMs","collisionPrepMs","collisionGridBuildMs","collisionPairScanMs","collisionPbdApplyMs","collisionSweptMotionMs","collisionTerrainMs","collisionHardFixMs","collisionOtherMs","postMs"];
-    const counterKeys=["spatialQueries","spatialCandidates","targetQueries","collisionPairs","collisionOverlaps","collisionIterations","collisionPbdContacts","collisionPbdMaxNeighbors","combatTargetPickCalls","aliveUnits","workers","projectiles"];
+    const stageKeys=["totalMs","indexMs","worldMs","economyMs","workerMs","visionMs","combatMs","combatTargetPickMs","projectileMs","collisionMs","collisionPrepMs","collisionGridBuildMs","collisionPairScanMs","collisionSoftApplyMs","collisionSweptMotionMs","collisionTerrainMs","collisionHardFixMs","collisionOtherMs","postMs"];
+    const counterKeys=["spatialQueries","spatialCandidates","targetQueries","collisionPairs","collisionOverlaps","collisionSoftPasses","collisionSoftContacts","collisionSoftMovedUnits","collisionSoftCappedUnits","collisionSweptCalls","collisionSweptActivePasses","collisionHardFixCalls","collisionHardFixPasses","collisionHardFixCorrections","combatTargetPickCalls","aliveUnits","workers","projectiles"];
     for(const role of ["host","guest"]){
       const perf=match.sessions?.[role]?.sim?.perfStats;if(!perf)continue;
       const stepSamples=Number(perf.stepSamples)||0;
@@ -36509,7 +36488,7 @@ class MobileBattleTestMode{
       return[key,available?{available:true,vectorPathUsed,reason:vectorPathUsed?null:"No vector draw occurred in this sample; zero counters mean no calls."}:{available:false,value:null,reason:"No finite MeshRenderer statistic was exposed for this metric during the sample."}];
     }));
     const match=MatchLifecycle.singleMatch,renderer=ActiveViewState.renderer,unitsPerSide=this.config.totalUnits/2;
-    this.report={schemaVersion:2,testMode:"mobile-battle",capturedAt:new Date().toISOString(),build:{id:BUILD_META.id,commit:BUILD_META.commit||null},
+    this.report={schemaVersion:2,testMode:"mobile-battle",capturedAt:new Date().toISOString(),build:{id:BUILD_META.id,commit:BUILD_META.commit||null},collisionModel:"ally-soft-one-pass",
       device:{userAgent:navigator.userAgent||"",platform:navigator.platform||"",hardwareConcurrency:navigator.hardwareConcurrency||null,viewport:{width:innerWidth,height:innerHeight,devicePixelRatio:devicePixelRatio,orientation:screen.orientation?.type||""}},
       condition:{seed:this.config.fixedSeed,totalCombatUnits:this.config.totalUnits,unitsPerSide,composition:this.config.composition,rosters:{host:DebugScenarioHarness.unitRoster(this.config,0),guest:DebugScenarioHarness.unitRoster(this.config,1)},tps:live?.sim?.tps||match?.sessions?.host?.sim?.tps||10,warmupSeconds:this.config.warmupSeconds,requestedSampleSeconds:this.config.sampleSeconds,selectionMode:"deck",presetId:"standard"},
       measurement:{collector:"completed renderer frame hook",observer:"preallocated numeric sample buffers; no CDP profiler",perFrameCounters:this.sampleMetricKeys,overheadMs:null,overheadUnavailableReason:"Observer cost is not isolated; rendererCpuWorkMs is captured before the diagnostic hook runs.",
@@ -36602,8 +36581,9 @@ class MobileBattleTestMode{
         const values=rows.map(row=>row?.workCounters?.[key]).filter(value=>Number.isFinite(value));
         return values.length?n(Math.max(...values)):"n/a";
       };
+      const total=key=>rows.reduce((sum,row)=>sum+(Number(row?.workCounters?.[key])||0),0);
       const step=peer.step||{},snapshot=peer.snapshot||{};
-      return`${label}: step ticks/last/ewma/max=${n(step.ticksDuringSample)}/${n(step.lastStepMs)}/${n(step.ewmaStepMs)}/${n(step.maxObservedStepMs)}ms; snapshot n/avg/max=${n(snapshot.samplesDuringSample)}/${n(snapshot.averageMsDuringSample)}/${n(snapshot.lifetimeMaxSnapshotMs)}ms; stage p95ms ${stages}; work max spatial/candidates/collisions=${work("spatialQueries")}/${work("spatialCandidates")}/${work("collisionPairs")}`;
+      return`${label}: step ticks/last/ewma/max=${n(step.ticksDuringSample)}/${n(step.lastStepMs)}/${n(step.ewmaStepMs)}/${n(step.maxObservedStepMs)}ms; snapshot n/avg/max=${n(snapshot.samplesDuringSample)}/${n(snapshot.averageMsDuringSample)}/${n(snapshot.lifetimeMaxSnapshotMs)}ms; stage p95ms ${stages}; work max spatial/candidates/collisions=${work("spatialQueries")}/${work("spatialCandidates")}/${work("collisionPairs")}; collision sum soft pass/contact/moved/capped=${total("collisionSoftPasses")}/${total("collisionSoftContacts")}/${total("collisionSoftMovedUnits")}/${total("collisionSoftCappedUnits")} sweep call/pass=${total("collisionSweptCalls")}/${total("collisionSweptActivePasses")} hardfix call/pass/correction=${total("collisionHardFixCalls")}/${total("collisionHardFixPasses")}/${total("collisionHardFixCorrections")}`;
     };
     const unavailable=[];
     if(sample.gpuTime?.measured!==true)unavailable.push("GPU timer not measured");
@@ -36612,7 +36592,7 @@ class MobileBattleTestMode{
     if(sample.simulationCpuTimeMs==null)unavailable.push("isolated simulation CPU profiler unavailable (peer step/stage/snapshot timings shown)");
     const lines=[
       `RALLY FRONTIER · mobile battle diagnostics`,
-      `Build ${safe(report.build?.id)} / commit ${safe(report.build?.commit,48)}`,
+      `Build ${safe(report.build?.id)} / commit ${safe(report.build?.commit,48)} / collision=${safe(report.collisionModel,32)}`,
       `Condition seed=${n(condition.seed)} units=${n(condition.totalCombatUnits)} (${n(condition.unitsPerSide)}/side) roster H=${roster("host")} G=${roster("guest")} TPS=${n(condition.tps)} warmup/sample=${n(condition.warmupSeconds)}/${n(condition.requestedSampleSeconds)}s`,
       `Run ${safe(sample.status,24)} ${n(sample.durationMs)}ms/${n(sample.frameCount)} frames FPS=${n(sample.fps)} viewport=${n(viewport.width)}x${n(viewport.height)}@${n(viewport.devicePixelRatio)} ${safe(viewport.orientation,24)}`,
       `Visibility valid=${visibility.sampleValid===true?"yes":visibility.sampleValid===false?"no":"unknown"} sample/finish=${safe(visibility.visibilityStateAtSampleStart,16)}/${safe(visibility.visibilityStateAtFinish,16)} hidden=${n(visibility.hiddenEvents)} unpaused=${n(visibility.unpausedHiddenEvents)} paused=${n(visibility.hiddenWhilePausedEvents)} pagehide=${n(visibility.pagehideEvents)} invalidated=${n(visibility.invalidated===true?1:visibility.invalidated===false?0:null)}`,
