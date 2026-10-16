@@ -13407,7 +13407,7 @@ class PerformanceTelemetry{
       collisionSweptCalls:0,collisionSweptActivePasses:0,collisionSweptZeroMotionCalls:0,collisionSweptEmptyPasses:0,collisionSweptPairTests:0,collisionSweptHits:0,collisionSweptCorrectionUnits:0,collisionSweptNoCorrectionPasses:0,
       collisionHardFixCalls:0,collisionHardFixPasses:0,collisionHardFixActivePairTests:0,collisionHardFixCandidates:0,collisionHardFixCorrections:0,collisionHardFixNoOpCalls:0,
       combatTargetPickMs:0,combatTargetPickCalls:0,combatOtherMs:0,
-      postMs:0,snapshotMs:0,maxSnapshotMs:0,snapshotSamples:0,lastStepMs:0,stepSamples:0,maxStepMs:0,ewmaStepMs:0,
+      postMs:0,snapshotMs:0,snapshotCumulativeMs:0,maxSnapshotMs:0,snapshotSamples:0,lastStepMs:0,stepSamples:0,maxStepMs:0,ewmaStepMs:0,
       aliveUnits:0,workers:0,combatUnits:0,projectiles:0,
       peakAliveUnits:0,peakBuildings:0,peakProjectiles:0,
       spatialQueries:0,spatialCandidates:0,
@@ -23543,7 +23543,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   snapshot(){
     const started=performance.now();
     try{this.navigation?.sync();return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,navigationRevision:this.navigationRevision,decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),chargedCasts:StateValue.copy(this.chargedCasts),chargedCastSerial:this.chargedCastSerial.slice(),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState()),buildings:this.buildings.map(b=>b.toState()),constructionOrders:StateValue.copy(this.constructionOrders),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
-    finally{const perf=this.perfStats;perf.snapshotMs=performance.now()-started;perf.maxSnapshotMs=Math.max(perf.maxSnapshotMs,perf.snapshotMs);perf.snapshotSamples++}
+    finally{const perf=this.perfStats;perf.snapshotMs=performance.now()-started;perf.snapshotCumulativeMs=(perf.snapshotCumulativeMs||0)+perf.snapshotMs;perf.maxSnapshotMs=Math.max(perf.maxSnapshotMs,perf.snapshotMs);perf.snapshotSamples++}
   }
 }
 
@@ -33607,6 +33607,10 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     rp.vectorAssetDraws=this.vectorAssetDrawnInstances;rp.vectorAssetInstances=vectorStats.instances;rp.vectorAssetDrawCalls=vectorStats.draws;
     rp.vectorTerrainOcclusionTests=this.vectorTerrainOcclusionTests;rp.vectorTerrainOcclusionRegions=this.vectorTerrainOcclusionRegions;rp.vectorTerrainOcclusionTriangles=this.vectorTerrainOcclusionTriangles;
     rp.vectorAssetGeometryBytes=vectorStats.geometryBytesUploaded;rp.vectorAssetInstanceBytes=vectorStats.instanceBytesUploaded;rp.vectorAssetRetainedBytes=vectorStats.retainedBytes;rp.vectorAssetMeshes=vectorStats.meshCount;
+    if(MobileBattleTestMode.phase==="sampling"){
+      rp.vectorAlphaRunCacheHits=vectorStats.alphaRunCacheHits;rp.vectorAlphaRunCacheMisses=vectorStats.alphaRunCacheMisses;
+      rp.vectorGeometryUploads=vectorStats.geometryUploads;rp.vectorPartUniformBytesSubmitted=vectorStats.partUniformBytesSubmitted;rp.vectorStagingBytes=vectorStats.stagingBytes;
+    }
     rp.drawCalls+=vectorStats.draws;rp.bufferUploadBytes+=vectorStats.geometryBytesUploaded+vectorStats.instanceBytesUploaded;
     rp.geometryTemplateHits=this.geometryTemplateHits;
     rp.unitBodyMeshCacheHits=this.unitBodyMeshCacheHits;
@@ -33622,6 +33626,10 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       rp.frameIntervalMs=frameInterval;
       rp.ewmaFrameIntervalMs=rp.ewmaFrameIntervalMs?rp.ewmaFrameIntervalMs*.85+frameInterval*.15:frameInterval;
       rp.maxFrameIntervalMs=Math.max(rp.maxFrameIntervalMs||0,frameInterval);
+    }
+    if(MobileBattleTestMode.phase==="sampling"){
+      rp.frameSequence=(rp.frameSequence||0)+1;
+      MobileBattleTestMode.captureRendererFrame(frameEnded,rp);
     }
     rp.frames++;
     const fpsSpan=frameEnded-rp.fpsWindowAt;
@@ -36286,7 +36294,10 @@ class DebugScenarioHarness{
 class MobileBattleTestMode{
   static phase="idle";static config=null;static report=null;static frameHandle=0;static phaseStartedAt=0;static connectStartedAt=0;static lastFrameAt=0;static lastHudAt=0;
   static paused=false;static pausedAt=0;static sampleStartedAt=0;static sampleCount=0;static overflowFrames=0;static capacity=16384;
-  static frameIntervals=new Float32Array(this.capacity);static renderWork=new Float32Array(this.capacity);static drawCalls=new Float32Array(this.capacity);static vectorDrawCalls=new Float32Array(this.capacity);
+  static sampleMetricKeys=Object.freeze(["frameIntervalMs","rendererCpuWorkMs","drawCalls","vectorAssetDrawCalls","vectorAssetDraws","bufferUploadBytes","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances"]);
+  static sampleBuffers=Object.create(null);static lastCapturedRendererFrameSequence=0;
+  static peerSamples={host:[],guest:[]};static peerSampleTicks={host:0,guest:0};static peerSnapshotBaseline={};static peerStepSampleCounts={host:0,guest:0};static peerStepSampleCountsAtStart={host:0,guest:0};static peerMaxStepMs={host:0,guest:0};
+  static visibilityStats={visibilityStateAtStart:"visible",visibilityStateAtSampleStart:null,hiddenEvents:0,unpausedHiddenEvents:0,hiddenWhilePausedEvents:0,pagehideEvents:0,invalidated:false};
   static lastSampleState=null;static sampleStartState=null;static lastIntervalMs=0;static savedSettings=null;
   static savedCampaignPending=null;static savedDebugPending=null;
   static ref(id){return document.getElementById(id)}
@@ -36297,10 +36308,44 @@ class MobileBattleTestMode{
     this.ref("battleTestExitBtn")?.addEventListener("click",()=>this.exit());
     this.ref("battleTestCopyBtn")?.addEventListener("click",()=>this.copyReport());
     this.ref("battleTestDownloadBtn")?.addEventListener("click",()=>this.downloadReport());
+    document.addEventListener("visibilitychange",()=>this.onVisibilityChange());
+    window.addEventListener("pagehide",()=>this.onPageHide());
   }
   static beginRun(){
     this.phase="connecting";this.paused=false;this.pausedAt=0;this.report=null;this.connectStartedAt=performance.now();this.phaseStartedAt=0;this.sampleStartedAt=0;this.lastFrameAt=0;this.lastHudAt=0;this.lastSampleState=null;this.sampleStartState=null;this.sampleCount=0;this.overflowFrames=0;this.lastIntervalMs=0;
-    this.frameIntervals=new Float32Array(this.capacity);this.renderWork=new Float32Array(this.capacity);this.drawCalls=new Float32Array(this.capacity);this.vectorDrawCalls=new Float32Array(this.capacity);
+    this.sampleBuffers=Object.fromEntries(this.sampleMetricKeys.map(key=>[key,new Float32Array(this.capacity)]));this.lastCapturedRendererFrameSequence=0;
+    this.peerSamples={host:[],guest:[]};this.peerSampleTicks={host:0,guest:0};this.peerSnapshotBaseline={};this.peerStepSampleCounts={host:0,guest:0};this.peerStepSampleCountsAtStart={host:0,guest:0};this.peerMaxStepMs={host:0,guest:0};
+    this.visibilityStats={visibilityStateAtStart:document.visibilityState||"unknown",visibilityStateAtSampleStart:null,hiddenEvents:0,unpausedHiddenEvents:0,hiddenWhilePausedEvents:0,pagehideEvents:0,invalidated:false};
+  }
+  static activePhase(){return["connecting","warmup","sampling"].includes(this.phase)}
+  static onVisibilityChange(){
+    if(document.visibilityState==="visible"||!this.activePhase())return;
+    if(this.paused){this.visibilityStats.hiddenEvents++;this.visibilityStats.hiddenWhilePausedEvents++;return}
+    this.invalidateForVisibility("앱이 백그라운드로 전환되어 측정을 무효화했습니다. 화면을 켜 둔 상태에서 다시 시작하세요.",true);
+  }
+  static onPageHide(){
+    if(!this.activePhase())return;
+    this.visibilityStats.pagehideEvents++;
+    if(this.paused)return;
+    this.invalidateForVisibility("페이지가 숨겨지거나 닫혀 측정을 무효화했습니다. 다시 시작하세요.",true);
+  }
+  static invalidateForVisibility(message,countHidden){
+    if(this.visibilityStats.invalidated)return;
+    this.visibilityStats.invalidated=true;if(countHidden)this.visibilityStats.unpausedHiddenEvents++;
+    this.fail(message,true);
+  }
+  static beginSampling(now,live){
+    this.phase="sampling";this.phaseStartedAt=now;this.sampleStartedAt=now;this.sampleCount=0;this.overflowFrames=0;
+    this.sampleStartState=this.stateSnapshot(live);this.lastSampleState=this.sampleStartState;
+    this.visibilityStats.visibilityStateAtSampleStart=document.visibilityState||"unknown";
+    this.lastCapturedRendererFrameSequence=Number(live.renderer?.perfStats?.frameSequence)||0;
+    const match=live.match;
+    for(const role of ["host","guest"]){
+      const perf=match.sessions?.[role]?.sim?.perfStats||{};
+      this.peerSampleTicks[role]=Number(perf.sampleTick)||0;
+      this.peerStepSampleCounts[role]=Number(perf.stepSamples)||0;this.peerStepSampleCountsAtStart[role]=Number(perf.stepSamples)||0;this.peerMaxStepMs[role]=0;
+      this.peerSnapshotBaseline[role]={count:Number(perf.snapshotSamples)||0,totalMs:Number(perf.snapshotCumulativeMs)||0};
+    }
   }
   static start(){
     if(!["idle","stopped"].includes(this.phase))return;
@@ -36331,10 +36376,14 @@ class MobileBattleTestMode{
   }
   static scheduleFrame(){
     if(this.frameHandle||this.paused||!["connecting","warmup","sampling"].includes(this.phase))return;
+    if(document.visibilityState!=="visible"){this.invalidateForVisibility("앱이 백그라운드로 전환되어 측정을 무효화했습니다. 화면을 켜 둔 상태에서 다시 시작하세요.",true);return}
     this.frameHandle=requestAnimationFrame(timestamp=>{this.frameHandle=0;this.frame(timestamp);this.scheduleFrame()});
   }
   static frame(timestamp){
     const now=Number.isFinite(timestamp)?timestamp:performance.now();
+    if(this.activePhase()&&!this.paused&&document.visibilityState!=="visible"){
+      this.invalidateForVisibility("앱이 백그라운드로 전환되어 측정을 무효화했습니다. 화면을 켜 둔 상태에서 다시 시작하세요.",true);return;
+    }
     if(this.phase==="connecting"){
       const live=this.liveState();
       if(live){this.phase="warmup";this.phaseStartedAt=now;this.lastFrameAt=now;this.lastSampleState=this.stateSnapshot(live);this.renderHud(now)}
@@ -36350,35 +36399,108 @@ class MobileBattleTestMode{
     const live=this.liveState();
     if(!live){if(this.phase==="sampling")this.finishSample(now,true);return}
     if(this.phase==="warmup"&&now-this.phaseStartedAt>=this.config.warmupSeconds*1000){
-      this.phase="sampling";this.phaseStartedAt=now;this.sampleStartedAt=now;this.lastFrameAt=now;this.sampleCount=0;this.sampleStartState=this.stateSnapshot(live);this.lastSampleState=this.sampleStartState;this.renderHud(now);return;
+      this.beginSampling(now,live);this.renderHud(now);return;
     }
     if(this.phase==="sampling"){
-      const interval=now-this.lastFrameAt;this.lastFrameAt=now;this.lastIntervalMs=interval;
-      if(interval>0&&this.sampleCount<this.capacity){
-        const n=this.sampleCount++,stats=live.renderer?.perfStats||{};
-        this.frameIntervals[n]=interval;this.renderWork[n]=Number(stats.frameWorkMs)||0;this.drawCalls[n]=Number(stats.drawCalls)||0;this.vectorDrawCalls[n]=Number(stats.vectorAssetDrawCalls)||0;
-      }else if(this.sampleCount>=this.capacity)this.overflowFrames++;
       if(now-this.phaseStartedAt>=this.config.sampleSeconds*1000){this.finishSample(now,false);return}
     }
     if(now-this.lastHudAt>=1000){this.lastHudAt=now;this.lastSampleState=this.stateSnapshot(live);this.renderHud(now)}
   }
+  static captureRendererFrame(frameEnded,rp){
+    if(this.phase!=="sampling"||this.paused)return;
+    if(document.visibilityState!=="visible"){
+      this.invalidateForVisibility("앱이 백그라운드로 전환되어 측정을 무효화했습니다. 화면을 켜 둔 상태에서 다시 시작하세요.",true);return;
+    }
+    const sequence=Number(rp.frameSequence)||0;
+    if(sequence&&sequence<=this.lastCapturedRendererFrameSequence)return;
+    if(sequence)this.lastCapturedRendererFrameSequence=sequence;
+    this.lastIntervalMs=Number(rp.frameIntervalMs)||0;
+    if(this.sampleCount>=this.capacity)this.overflowFrames++;
+    else{
+      const values={frameIntervalMs:rp.frameIntervalMs,rendererCpuWorkMs:rp.frameWorkMs,drawCalls:rp.drawCalls,vectorAssetDrawCalls:rp.vectorAssetDrawCalls,
+        vectorAssetDraws:rp.vectorAssetDraws,bufferUploadBytes:rp.bufferUploadBytes,vectorAssetGeometryBytes:rp.vectorAssetGeometryBytes,vectorAssetInstanceBytes:rp.vectorAssetInstanceBytes,
+        alphaRunCacheHits:rp.vectorAlphaRunCacheHits,alphaRunCacheMisses:rp.vectorAlphaRunCacheMisses,vectorGeometryUploads:rp.vectorGeometryUploads,
+        partUniformBytesSubmitted:rp.vectorPartUniformBytesSubmitted,vectorStagingBytes:rp.vectorStagingBytes,vectorInstances:rp.vectorAssetInstances};
+      const index=this.sampleCount++;
+      for(const key of this.sampleMetricKeys){const value=Number(values[key]);this.sampleBuffers[key][index]=Number.isFinite(value)?value:NaN}
+    }
+    const match=MatchLifecycle.singleMatch;
+    if(match?.sessions)this.capturePeerSimulation(match);
+  }
+  static capturePeerSimulation(match){
+    const stageKeys=["totalMs","indexMs","worldMs","economyMs","workerMs","visionMs","combatMs","combatTargetPickMs","projectileMs","collisionMs","collisionPrepMs","collisionGridBuildMs","collisionPairScanMs","collisionPbdApplyMs","collisionSweptMotionMs","collisionTerrainMs","collisionHardFixMs","collisionOtherMs","postMs"];
+    const counterKeys=["spatialQueries","spatialCandidates","targetQueries","collisionPairs","collisionOverlaps","collisionIterations","collisionPbdContacts","collisionPbdMaxNeighbors","combatTargetPickCalls","aliveUnits","workers","projectiles"];
+    for(const role of ["host","guest"]){
+      const perf=match.sessions?.[role]?.sim?.perfStats;if(!perf)continue;
+      const stepSamples=Number(perf.stepSamples)||0;
+      if(stepSamples>this.peerStepSampleCounts[role])this.peerMaxStepMs[role]=Math.max(this.peerMaxStepMs[role],Number(perf.lastStepMs)||0);
+      this.peerStepSampleCounts[role]=stepSamples;
+      const sampleTick=Number(perf.sampleTick)||0;
+      if(sampleTick<=this.peerSampleTicks[role])continue;
+      this.peerSampleTicks[role]=sampleTick;
+      const project=keys=>Object.fromEntries(keys.map(key=>[key,Number.isFinite(Number(perf[key]))?Number(perf[key]):null]));
+      this.peerSamples[role].push({sampleTick,stageMs:project(stageKeys),workCounters:project(counterKeys),
+        step:{lastMs:Number(perf.lastStepMs)||0,ewmaMs:Number(perf.ewmaStepMs)||0,samples:Number(perf.stepSamples)||0},
+        snapshot:{latestMs:Number(perf.snapshotMs)||0,samplesAtCapture:Number(perf.snapshotSamples)||0,totalMsAtCapture:Number(perf.snapshotCumulativeMs)||0}});
+    }
+  }
   static stats(values,count){
-    if(!count)return{count:0,p50:null,p95:null,max:null,mean:null};
-    const sorted=Array.from(values.subarray(0,count)).sort((a,b)=>a-b),sum=sorted.reduce((a,b)=>a+b,0),round=n=>Math.round(n*100)/100;
-    return{count,p50:round(sorted[Math.floor((count-1)*.5)]),p95:round(sorted[Math.floor((count-1)*.95)]),max:round(sorted[count-1]),mean:round(sum/count)};
+    const rows=[];for(let i=0;i<count;i++)if(Number.isFinite(values[i]))rows.push(values[i]);
+    if(!rows.length)return{count:0,p50:null,p95:null,max:null,mean:null};
+    const sorted=rows.sort((a,b)=>a-b),n=sorted.length,sum=sorted.reduce((a,b)=>a+b,0),round=value=>Math.round(value*100)/100;
+    return{count:n,p50:round(sorted[Math.floor((n-1)*.5)]),p95:round(sorted[Math.floor((n-1)*.95)]),max:round(sorted[n-1]),mean:round(sum/n)};
+  }
+  static indexedStats(values,indexes){
+    const selected=new Float32Array(indexes.length);for(let i=0;i<indexes.length;i++)selected[i]=values[indexes[i]];
+    return this.stats(selected,selected.length);
+  }
+  static pairedSlowFrameSummary(frameIntervals){
+    const threshold=frameIntervals.p95;if(threshold===null)return{frameCount:0,selection:{metric:"frameIntervalMs",operator:">=",thresholdMs:null},metrics:null};
+    const indexes=[];for(let i=0;i<this.sampleCount;i++)if(Number.isFinite(this.sampleBuffers.frameIntervalMs[i])&&this.sampleBuffers.frameIntervalMs[i]>=threshold)indexes.push(i);
+    const keys=["frameIntervalMs","rendererCpuWorkMs","drawCalls","vectorAssetDrawCalls","vectorAssetDraws","bufferUploadBytes","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances"];
+    const metrics=Object.fromEntries(keys.map(key=>[key,this.indexedStats(this.sampleBuffers[key],indexes)]));
+    return{frameCount:indexes.length,selection:{metric:"frameIntervalMs",operator:">=",thresholdMs:threshold},metrics};
+  }
+  static peerSimulationSummary(match){
+    const peers={};
+    for(const role of ["host","guest"]){
+      const perf=match?.sessions?.[role]?.sim?.perfStats,baseline=this.peerSnapshotBaseline[role]||{count:0,totalMs:0};
+      if(!perf){peers[role]={available:false,reason:"해당 역할의 StrategySim.perfStats를 읽을 수 없음",sampledStages:[],snapshot:null,step:null};continue}
+      const snapshotCount=Math.max(0,(Number(perf.snapshotSamples)||0)-baseline.count),snapshotTotalMs=Math.max(0,(Number(perf.snapshotCumulativeMs)||0)-baseline.totalMs);
+      peers[role]={available:true,sampleCadenceMs:1000,sampledStages:this.peerSamples[role],
+        step:{ticksDuringSample:Math.max(0,(Number(perf.stepSamples)||0)-this.peerStepSampleCountsAtStart[role]),lastStepMs:Number(perf.lastStepMs)||0,ewmaStepMs:Number(perf.ewmaStepMs)||0,maxObservedStepMs:this.peerMaxStepMs[role],lifetimeMaxStepMs:Number(perf.maxStepMs)||0},
+        snapshot:{samplesDuringSample:snapshotCount,totalMsDuringSample:Math.round(snapshotTotalMs*100)/100,averageMsDuringSample:snapshotCount?Math.round(snapshotTotalMs/snapshotCount*100)/100:null,latestSnapshotMs:Number(perf.snapshotMs)||0,lifetimeMaxSnapshotMs:Number(perf.maxSnapshotMs)||0}};
+    }
+    return peers;
   }
   static finishSample(now,interrupted){
     if(this.phase!=="sampling")return;
-    const live=this.liveState(),start=this.sampleStartState||this.lastSampleState,end=this.stateSnapshot(live||{}),elapsed=Math.max(0,now-this.sampleStartedAt),intervals=this.stats(this.frameIntervals,this.sampleCount),render=this.stats(this.renderWork,this.sampleCount),draws=this.stats(this.drawCalls,this.sampleCount),vectorDraws=this.stats(this.vectorDrawCalls,this.sampleCount);
+    const live=this.liveState(),start=this.sampleStartState||this.lastSampleState,end=this.stateSnapshot(live||{}),elapsed=Math.max(0,now-this.sampleStartedAt);
+    const summary=key=>this.stats(this.sampleBuffers[key],this.sampleCount),intervals=summary("frameIntervalMs"),render=summary("rendererCpuWorkMs"),draws=summary("drawCalls"),vectorDraws=summary("vectorAssetDrawCalls");
+    const paired=this.pairedSlowFrameSummary(intervals),sampleMetrics=Object.fromEntries(this.sampleMetricKeys.map(key=>[key,summary(key)]));
+    const rendererMetricAvailability=Object.fromEntries(["vectorAssetDrawCalls","vectorAssetDraws","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances"].map(key=>{
+      const available=(sampleMetrics[key]?.count||0)>0,vectorPathUsed=(sampleMetrics.vectorAssetDraws?.max||0)>0;
+      return[key,available?{available:true,vectorPathUsed,reason:vectorPathUsed?null:"No vector draw occurred in this sample; zero counters mean no calls."}:{available:false,value:null,reason:"No finite MeshRenderer statistic was exposed for this metric during the sample."}];
+    }));
     const match=MatchLifecycle.singleMatch,renderer=ActiveViewState.renderer,unitsPerSide=this.config.totalUnits/2;
-    this.report={schemaVersion:1,testMode:"mobile-battle",capturedAt:new Date().toISOString(),build:{id:BUILD_META.id,commit:BUILD_META.commit||null},
+    this.report={schemaVersion:2,testMode:"mobile-battle",capturedAt:new Date().toISOString(),build:{id:BUILD_META.id,commit:BUILD_META.commit||null},
       device:{userAgent:navigator.userAgent||"",platform:navigator.platform||"",hardwareConcurrency:navigator.hardwareConcurrency||null,viewport:{width:innerWidth,height:innerHeight,devicePixelRatio:devicePixelRatio,orientation:screen.orientation?.type||""}},
       condition:{seed:this.config.fixedSeed,totalCombatUnits:this.config.totalUnits,unitsPerSide,composition:this.config.composition,rosters:{host:DebugScenarioHarness.unitRoster(this.config,0),guest:DebugScenarioHarness.unitRoster(this.config,1)},tps:live?.sim?.tps||match?.sessions?.host?.sim?.tps||10,warmupSeconds:this.config.warmupSeconds,requestedSampleSeconds:this.config.sampleSeconds,selectionMode:"deck",presetId:"standard"},
-      measurement:{collector:"requestAnimationFrame",observer:"preallocated numeric sample buffers; no CDP profiler",perFrameCounters:["frame interval","renderer CPU work","draw calls","vector draw calls"],overheadMs:null},
-      sample:{status:interrupted?"interrupted":"complete",durationMs:Math.round(elapsed),frameCount:intervals.count,fps:elapsed>0?Math.round(intervals.count*100000/elapsed)/100:null,frameIntervalMs:intervals,rendererCpuWorkMs:render,drawCalls:draws,vectorAssetDrawCalls:vectorDraws,capacityExceededFrames:this.overflowFrames,
-        gpuTime:{measured:false,reason:"렌더러에서 GPU 타이머 질의를 수집하지 않음"},simulationCpuTimeMs:null},
-      simulation:{startTick:start?.tick??null,endTick:end.tick,ticksAdvanced:start?.tick!=null&&end.tick!=null?end.tick-start.tick:null,peerStartTick:start?.peerTick??null,peerEndTick:end.peerTick,aliveUnitsStart:start?.units||null,aliveUnitsEnd:end.units},
-      renderer:{backend:renderer?.backend||null,canvas:{width:renderer?.canvas?.width||null,height:renderer?.canvas?.height||null},vectorAssets:!!window.RallyVectorAssets,vectorMeshes:renderer?.perfStats?.vectorAssetMeshes??null}};
+      measurement:{collector:"completed renderer frame hook",observer:"preallocated numeric sample buffers; no CDP profiler",perFrameCounters:this.sampleMetricKeys,overheadMs:null,overheadUnavailableReason:"Observer cost is not isolated; rendererCpuWorkMs is captured before the diagnostic hook runs.",
+        pairing:"all renderer metrics at each recorded completed renderer frame; slow-frame subset selects by that same frame's frameIntervalMs p95"},
+      sample:{status:interrupted?"interrupted":"complete",durationMs:Math.round(elapsed),frameCount:intervals.count,fps:elapsed>0?Math.round(intervals.count*100000/elapsed)/100:null,
+        frameIntervalMs:intervals,rendererCpuWorkMs:render,drawCalls:draws,vectorAssetDrawCalls:vectorDraws,bufferUploadBytes:sampleMetrics.bufferUploadBytes,
+        vectorAssetGeometryBytes:sampleMetrics.vectorAssetGeometryBytes,vectorAssetInstanceBytes:sampleMetrics.vectorAssetInstanceBytes,alphaRunCacheHits:sampleMetrics.alphaRunCacheHits,alphaRunCacheMisses:sampleMetrics.alphaRunCacheMisses,
+        vectorGeometryUploads:sampleMetrics.vectorGeometryUploads,partUniformBytesSubmitted:sampleMetrics.partUniformBytesSubmitted,vectorStagingBytes:sampleMetrics.vectorStagingBytes,
+        vectorAssetDraws:sampleMetrics.vectorAssetDraws,vectorInstances:sampleMetrics.vectorInstances,metricAvailability:rendererMetricAvailability,pairedSlowFrames:paired,capacityExceededFrames:this.overflowFrames,
+        gpuTime:{measured:false,timeMs:null,reason:"렌더러에서 GPU 타이머 질의를 수집하지 않음"},simulationCpuTimeMs:null,simulationCpuTimeUnavailableReason:"브라우저 CPU profiler 없이 StrategySim stage/step 및 snapshot의 계측된 벽시계 구간만 제공함",
+        gcTimeMs:null,gcTimeUnavailableReason:"이 테스트 모드는 GC PerformanceEntry를 등록하지 않음",transportSerializationMs:null,transportSerializationUnavailableReason:"GameSession snapshot 복사 시간은 측정하지만 WebRTC 전송 직렬화 시간은 계측하지 않음"},
+      visibility:{...this.visibilityStats,visibilityStateAtFinish:document.visibilityState||"unknown",sampleValid:this.visibilityStats.visibilityStateAtSampleStart==="visible"&&!this.visibilityStats.invalidated&&this.visibilityStats.unpausedHiddenEvents===0},
+      simulation:{startTick:start?.tick??null,endTick:end.tick,ticksAdvanced:start?.tick!=null&&end.tick!=null?end.tick-start.tick:null,peerStartTick:start?.peerTick??null,peerEndTick:end.peerTick,aliveUnitsStart:start?.units||null,aliveUnitsEnd:end.units,peers:this.peerSimulationSummary(match)},
+      renderer:{backend:renderer?.backend||null,canvas:{width:renderer?.canvas?.width||null,height:renderer?.canvas?.height||null},vectorAssets:!!window.RallyVectorAssets,vectorMeshes:renderer?.perfStats?.vectorAssetMeshes??null,
+        lastFrameSequence:renderer?.perfStats?.frameSequence??null,alphaRunCache:{hits:sampleMetrics.alphaRunCacheHits,misses:sampleMetrics.alphaRunCacheMisses},
+        instancing:{enabled:typeof renderer?.vectorMeshRenderer?.instanced==="boolean"?renderer.vectorMeshRenderer.instanced:null,reason:typeof renderer?.vectorMeshRenderer?.instanced==="boolean"?null:"Pinned MeshRenderer did not expose its instancing flag",
+          usedInSample:(sampleMetrics.vectorAssetDraws?.max||0)>0?null:false,usageReason:(sampleMetrics.vectorAssetDraws?.max||0)>0?"Pinned stats expose renderer instancing capability, but not per-frame instanced-draw activity.":"No vector draw occurred in this sample."}}};
     this.phase="complete";this.pause();this.renderHud(now);
   }
   static pause(){
@@ -36402,7 +36524,11 @@ class MobileBattleTestMode{
     try{MatchLifecycle.startSinglePlayerWebRTC("host");this.scheduleFrame()}
     catch(error){this.fail(`매치 다시 시작 실패: ${String(error?.message||error)}`)}
   }
-  static fail(message){this.phase="error";if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;const status=this.ref("battleTestHudStatus");if(status)status.textContent=message;this.renderHud()}
+  static fail(message,pauseSessions=false){
+    this.phase="error";if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;
+    if(pauseSessions){let applied=0;for(const session of Object.values(MatchLifecycle.singleMatch?.sessions||{}))if(session.setTestModePaused(true))applied++;if(applied){this.paused=true;this.pausedAt=performance.now()}}
+    const status=this.ref("battleTestHudStatus");if(status)status.textContent=message;this.renderHud();
+  }
   static renderHud(now=performance.now()){
     const hud=this.ref("battleTestHud");if(!hud)return;
     hud.classList.toggle("hidden",!["connecting","warmup","sampling","complete","error"].includes(this.phase));
