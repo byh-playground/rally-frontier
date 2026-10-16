@@ -45,13 +45,13 @@ async function createBrowserPage(browser, url, label) {
     q.UiRuntimeState.value.settings.presetId = 'standard';
     q.freezeAtTick = targetTick;
     q.frozenAtTick = null;
-    const originalAdvance = q.GameSession.prototype.advanceSimulation;
-    q.GameSession.prototype.advanceSimulation = function (...args) {
-      const result = originalAdvance.apply(this, args);
-      if (q.freezeAtTick && this.role === 'host' && this.sim?.tick >= q.freezeAtTick) {
-        q.frozenAtTick = this.sim.tick;
-        q.freezeAtTick = null;
-        for (const session of Object.values(q.MatchLifecycle.localTest?.sessions || {})) session.setTestModePaused(true);
+    const originalFrameApplied = q.GameSession.prototype.onNetcodeFrameApplied;
+    q.GameSession.prototype.onNetcodeFrameApplied = function (...args) {
+      const result = originalFrameApplied.apply(this, args);
+      // Stop each peer at the fixed tick, before a pulse can catch up again.
+      if (this.sim?.tick >= targetTick) {
+        this.setTestModePaused(true);
+        if (this.role === 'host') q.frozenAtTick = this.sim.tick;
       }
       return result;
     };
@@ -62,13 +62,27 @@ async function createBrowserPage(browser, url, label) {
     q.MatchLifecycle.startLocalTest();
   }, { seed: sceneSeed, targetTick: pauseTick });
 
-  await page.waitForFunction(() => {
+  try { await page.waitForFunction(() => {
     const q = window.__rallyVectorVisualQA;
     const renderer = q?.ActiveViewState?.renderer;
     const snap = q?.ActiveViewState?.snap;
     return q?.frozenAtTick === 5 && snap?.tick >= 5 && renderer?.backend === 'WebGL' &&
       renderer?.vectorUnitAssetCache?.size > 0 && renderer?.vectorAssetDrawnInstances > 0;
-  }, undefined, { timeout: 90_000 });
+  }, undefined, { timeout: 90_000 }); } catch (error) {
+    fs.mkdirSync(outputDirectory, { recursive: true });
+    const diagnostic = await page.evaluate(() => {
+      const q = window.__rallyVectorVisualQA;
+      return { frozenAtTick: q?.frozenAtTick, snapTick: q?.ActiveViewState?.snap?.tick,
+        backend: q?.ActiveViewState?.renderer?.backend,
+        vectorRecords: q?.ActiveViewState?.renderer?.vectorUnitAssetCache?.size,
+        vectorDrawInstances: q?.ActiveViewState?.renderer?.vectorAssetDrawnInstances,
+        peers: Object.fromEntries(Object.entries(q?.MatchLifecycle.localTest?.sessions || {}).map(([id, s]) =>
+          [id, { tick: s.sim?.tick, paused: s.testModePaused, fatal: s.simulationFatal, scenario: s.matchConfig?.debugScenario }])) };
+    });
+    fs.writeFileSync(path.join(outputDirectory, 'startup-failure.json'), JSON.stringify({label, errors, diagnostic}, null, 2));
+    await page.screenshot({ path: path.join(outputDirectory, 'startup-failure.png') });
+    throw error;
+  }
 
   const info = await page.evaluate(() => {
     const q = window.__rallyVectorVisualQA;
