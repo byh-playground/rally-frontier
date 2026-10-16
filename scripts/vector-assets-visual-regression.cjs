@@ -21,7 +21,11 @@ function exposeVisualHarness(html, label) {
   const marker = 'DebugScenarioHarness.populateUi();';
   assert.equal(html.split(marker).length - 1, 1, `${label} must expose the Rally renderer at the expected startup point`);
   const expose = `window.__rallyVectorVisualQA={MatchLifecycle,DebugScenarioHarness,ActiveViewState,UiRuntimeState,ViewRuntimeState,GameSession,BattlefieldProjection};\n`;
-  return html.replace(marker, `${expose}${marker}`);
+  // Freeze cosmetic air-unit animation time in both builds; simulation tick alone
+  // does not freeze player.seek() or presentation bobbing driven by wall time.
+  return html.replace(marker, `${expose}${marker}`)
+    .replace('record.player.seek(this.presentationNow(performance.now())+phase)', 'record.player.seek(500+phase)')
+    .replace('Math.sin(this.presentationNow()*.004+', 'Math.sin(500*.004+');
 }
 
 const baselineHtml = exposeVisualHarness(fs.readFileSync(baselinePath, 'utf8'), 'pre-migration build');
@@ -197,7 +201,7 @@ async function main() {
       status: diff.visibleChangedRatio <= maximumVisibleDiffRatio ? 'passed' : 'failed',
       comparison: 'pre-migration PR #76 standalone build vs SDK startup-loader standalone build',
       renderer: 'real LOCAL 2P battlefield WebGL canvas',
-      condition: { fixedSeed: sceneSeed, pausedAtTick: pauseTick, viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 },
+      condition: { fixedSeed: sceneSeed, pausedAtTick: pauseTick, cosmeticAnimationTimeMs: 500, viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 },
       tolerance: { perPixelChannelDelta: visiblePixelTolerance, maximumVisibleChangedRatio: maximumVisibleDiffRatio },
       baseline: { ...baseline.info, pngSha256: sha256(baseline.png) },
       migrated: { ...migrated.info, pngSha256: sha256(migrated.png) },
