@@ -108,6 +108,8 @@ async function createBrowserPage(browser, url, label) {
     throw error;
   }
 
+  // Facing interpolation is wall-clock based and must settle after the final snapshot.
+  await page.waitForTimeout(1500);
   const info = await page.evaluate(() => {
     const q = window.__rallyVectorVisualQA;
     const session = q.ActiveViewState.session;
