@@ -28,7 +28,7 @@ test('SDK startup compilation preserves every PR #76 vector geometry fingerprint
         sourcePath: entry.sourcePath,
         expectedSha256: entry.sha256,
         maxBytes: entry.bytes,
-        curveSegments: 16,
+        curveSegments: 16, strokeArcDivisions: 12,
         includeSourcePaths: false,
       });
       assert.equal(asset.sourceSha256, entry.sha256, `${entry.id} source hash`);
@@ -51,7 +51,7 @@ test('SDK loader checks source bytes before compilation and does not cache failu
     sourcePath: entry.sourcePath,
     expectedSha256: '0'.repeat(64),
     maxBytes: entry.bytes,
-    curveSegments: 16,
+    curveSegments: 16, strokeArcDivisions: 12,
     includeSourcePaths: false,
   }), /SHA-256 mismatch/);
   assert.equal(fetches, 1);
@@ -68,7 +68,7 @@ test('SDK loader deduplicates concurrent requests and returns the cached compila
     fetches++;
     return new Promise(resolve => { finish = () => resolve(new Response(entry.sourceBytes)); });
   } });
-  const options = { sourcePath: entry.sourcePath, expectedSha256: entry.sha256, maxBytes: entry.bytes, curveSegments: 16, includeSourcePaths: false };
+  const options = { sourcePath: entry.sourcePath, expectedSha256: entry.sha256, maxBytes: entry.bytes, curveSegments: 16, strokeArcDivisions: 12, includeSourcePaths: false };
   const first = loader.load('https://rally.invalid/unit.svg', options);
   const second = loader.load('https://rally.invalid/unit.svg', options);
   assert.equal(fetches, 1);
