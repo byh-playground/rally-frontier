@@ -26,7 +26,7 @@ function checkResources(source,label,css=false){
 function checkModule(source,label){
   let code=withoutBlockComments(source);
   if(label==='vector-assets-loader.js'){
-    const exportMarker='export {\n  createVectorAssetLoader\n};';
+    const exportMarker='export {\n  VECTOR_ASSET_QUALITY_PRESETS,\n  createVectorAssetLoader\n};';
     if(code.split(exportMarker).length!==2)throw Error('Unexpected vector-assets-loader.js export surface');
     code=code.replace(exportMarker,'');
   }

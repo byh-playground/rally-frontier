@@ -10751,7 +10751,7 @@ body.playing.battle-test-mode #battleCommandDock{display:none!important}
 <script>
 (async function(){
 "use strict";
-const RALLY_GAMEKIT_MODULES=Object.freeze({rollback:'./.cache/gamekit/rollback.js',deterministic:'./.cache/gamekit/deterministic.js',simloop:'./.cache/gamekit/simloop.js',transport:'./.cache/gamekit/transport.js',interpolation:'./.cache/gamekit/interpolation.js',rendering:'./.cache/gamekit/rendering.js',input:'./.cache/gamekit/input.js',camera:'./.cache/gamekit/camera.js',events:'./.cache/gamekit/presentation-events.js',hud:'./.cache/gamekit/hud.js',debug:'./.cache/gamekit/debug-tools.js',vectorAssets:'./.cache/gamekit/vector-assets.js',vectorAssetsLoader:'./.cache/gamekit/vector-assets-loader.js'});
+const RALLY_GAMEKIT_MODULES=Object.freeze({rollback:'./.cache/gamekit/rollback.js',deterministic:'./.cache/gamekit/deterministic.js',simloop:'./.cache/gamekit/simloop.js',transport:'./.cache/gamekit/transport.js',interpolation:'./.cache/gamekit/interpolation.js',rendering:'./.cache/gamekit/rendering.js',input:'./.cache/gamekit/input.js',camera:'./.cache/gamekit/camera.js',events:'./.cache/gamekit/presentation-events.js',hud:'./.cache/gamekit/hud.js',debug:'./.cache/gamekit/debug-tools.js',vectorAssets:'./.cache/gamekit/vector-assets.js',vectorAssetsLoader:'./.cache/gamekit/vector-assets-loader.js',objectPool:'./.cache/gamekit/object-pool.js'});
 const RALLY_GAMEKIT_SOURCE=Object.freeze({lock:'./gamekit.lock.json'});
 const RALLY_VECTOR_ASSET_MANIFEST_URL='./assets/units/manifest.json';
 const RALLY_VECTOR_ASSET_MANIFEST_INLINE=null;
@@ -10778,8 +10778,9 @@ async function loadRallyVectorAssets(loaderModule){
   }
   if(typeof loaderModule?.createVectorAssetLoader!=='function')throw new Error('Gamekit vector asset loader API가 없습니다.');
   const loader=loaderModule.createVectorAssetLoader({maxEntries:manifest.assets.length});
+  // Preserve the pre-upgrade SVG geometry: curve16 and round-stroke arc12.
   const loaded=await Promise.all(manifest.assets.map(async entry=>{
-    const asset=await loader.load(entry.url,{sourcePath:entry.sourcePath,expectedSha256:entry.sha256,maxBytes:entry.bytes,curveSegments:16,includeSourcePaths:false});
+    const asset=await loader.load(entry.url,{sourcePath:entry.sourcePath,expectedSha256:entry.sha256,maxBytes:entry.bytes,curveSegments:16,strokeArcDivisions:12,includeSourcePaths:false});
     if(asset.sourceSha256!==entry.sha256||Object.hasOwn(asset,'sourcePaths'))throw new Error('Unit SVG 무결성 또는 compiler output 검증에 실패했습니다: '+entry.id);
     return [entry.id,asset];
   }));
@@ -10804,7 +10805,7 @@ try{
   RallyNetcode=Object.freeze({...namespaces.rollback,...namespaces.deterministic,...namespaces.simloop,...namespaces.transport});
   RallyGamekit=Object.freeze(Object.assign({},...modules.map(([,module])=>module)));
   window.RallyGamekit=RallyGamekit;
-  for(const name of ['PresentationRuntime','RenderObject','WebGLDevice','createDOMInput','CameraViewport','PresentationEventQueue','resolveAnchorInto','DiagnosticRing','ReplayTimeline','MeshRenderer','MeshBuilder','createVectorAsset','createVectorAssetLoader'])if(typeof RallyGamekit[name]!=='function')throw new Error('Gamekit module API missing: '+name);
+  for(const name of ['PresentationRuntime','RenderObject','WebGLDevice','createDOMInput','CameraViewport','PresentationEventQueue','resolveAnchorInto','DiagnosticRing','ReplayTimeline','MeshRenderer','MeshBuilder','createVectorAsset','createVectorAssetLoader','ObjectPool'])if(typeof RallyGamekit[name]!=='function')throw new Error('Gamekit module API missing: '+name);
   for(const name of ["createSession","hashBytes","createValueCodec","WebRTCTransport","createNostrSignaler","createLoop","runSyncTestAsync"]){
     if(typeof RallyNetcode[name]!=="function")throw new Error("공개 라이브러리에 필수 API "+name+"가 없습니다. 라이브러리 배포 상태를 확인해 주세요.");
   }
@@ -26802,24 +26803,6 @@ class ArcTetherPresentation{
   }
 }
 
-class ReusableObjectPool{
-  constructor(create,reset,max=256){
-    this.create=create;this.reset=reset;this.max=Math.max(0,max|0);this.free=[];
-    this.created=0;this.reused=0;this.released=0;this.dropped=0;
-  }
-  acquire(){
-    const item=this.free.pop();
-    if(item!==undefined){this.reused++;return item}
-    this.created++;return this.create();
-  }
-  release(item){
-    if(item==null)return;
-    if(this.reset)this.reset(item);
-    this.released++;
-    if(this.free.length<this.max)this.free.push(item);else this.dropped++;
-  }
-}
-
 class ReusableFloat32Buffer{
   constructor(initialCapacity=65536){
     let cap=1;while(cap<initialCapacity)cap<<=1;
@@ -26984,9 +26967,9 @@ class CommonEffectObjectFactory{
 class CommonEffectPool{
   constructor(renderer){
     this.renderer=renderer;
-    this.fireParticlePool=new ReusableObjectPool(CommonEffectObjectFactory.makeCommonFireParticle,CommonEffectObjectFactory.resetCommonFireParticle,640);
-    this.emitterPool=new ReusableObjectPool(CommonEffectObjectFactory.makeCommonEmitter,CommonEffectObjectFactory.resetCommonEmitter,32);
-    this.electricArcScratchPool=new ReusableObjectPool(CommonEffectObjectFactory.makeElectricArcScratch,CommonEffectObjectFactory.resetElectricArcScratch,24);
+    this.fireParticlePool=new RallyGamekit.ObjectPool(CommonEffectObjectFactory.makeCommonFireParticle,CommonEffectObjectFactory.resetCommonFireParticle,640);
+    this.emitterPool=new RallyGamekit.ObjectPool(CommonEffectObjectFactory.makeCommonEmitter,CommonEffectObjectFactory.resetCommonEmitter,32);
+    this.electricArcScratchPool=new RallyGamekit.ObjectPool(CommonEffectObjectFactory.makeElectricArcScratch,CommonEffectObjectFactory.resetElectricArcScratch,24);
     this.emitters=new Map();
     this.lastFrameAt=performance.now();
     this.now=this.lastFrameAt;
@@ -29155,10 +29138,10 @@ class GLRenderer{
     // excluded from deterministic state. Sizes are bounded to prevent hidden growth.
     this.renderState=new RenderStateStore(RENDER_TRACKS);
     this.liveRenderTargets=false;
-    this.combatFxPool=new ReusableObjectPool(EffectObjectFactory.makeCombatFx,EffectObjectFactory.resetCombatFx,256);
-    this.floatFxPool=new ReusableObjectPool(EffectObjectFactory.makeFloatFx,EffectObjectFactory.resetFloatFx,96);
-    this.shakeFxPool=new ReusableObjectPool(EffectObjectFactory.makeShakeFx,EffectObjectFactory.resetShakeFx,16);
-    this.flagFxPool=new ReusableObjectPool(EffectObjectFactory.makeFlagFx,EffectObjectFactory.resetFlagFx,8);
+    this.combatFxPool=new RallyGamekit.ObjectPool(EffectObjectFactory.makeCombatFx,EffectObjectFactory.resetCombatFx,256);
+    this.floatFxPool=new RallyGamekit.ObjectPool(EffectObjectFactory.makeFloatFx,EffectObjectFactory.resetFloatFx,96);
+    this.shakeFxPool=new RallyGamekit.ObjectPool(EffectObjectFactory.makeShakeFx,EffectObjectFactory.resetShakeFx,16);
+    this.flagFxPool=new RallyGamekit.ObjectPool(EffectObjectFactory.makeFlagFx,EffectObjectFactory.resetFlagFx,8);
     this.commonEffectPool=new CommonEffectPool(this);
     // Presentation-only shared hitGuard shield state. All shield sources use the same visual language.
     this.shieldVisualStates=new Map();
