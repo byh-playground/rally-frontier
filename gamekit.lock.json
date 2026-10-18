@@ -1,65 +1,65 @@
 {
   "repository": "byh-playground/bloom-gamekit",
-  "sourceCommit": "55338e6591b8a0d60a106d21a2bd3d06c1c2cfe6",
-  "distCommit": "fd95f8be720f0e8e159fa78c4d65e87d064a2b01",
+  "sourceCommit": "dd59a57fcf66409cef16632ffb433c0b760324fa",
+  "distCommit": "418e17c455db56d6ed073d82d115191d9dd8bf04",
   "upstreamRollbackCommit": "c3173914519a78834360430071e7a125736d86d5",
   "modules": {
     "rollback": {
       "file": "rollback.js",
-      "sha256": "d2a8604df751e096b89f0f4b998f3ecc4c9dc72c47a18577cfd1beacfd58afe0"
+      "sha256": "071fb0f82521d212d00f112abd90fc149616d80b79d4628db0008637ce102596"
     },
     "deterministic": {
       "file": "deterministic.js",
-      "sha256": "688178b889e7bd3f19c1bc504c91c03f896a9a7bd832fd2c0fc958b2feadce55"
+      "sha256": "1917d9766f1a1a2bbd4eab3bf214205979e7881c8cfb34cd1183f462a47ba62f"
     },
     "simloop": {
       "file": "simloop.js",
-      "sha256": "f1d348b2f6a80b69c867b9bd45fc359f6d0b238885d85edfe0e9b73d03f043f4"
+      "sha256": "c25a8f7f4999e4fe8beb6b08167fa4d0934c34098db2bf912335e81db53c4ef8"
     },
     "transport": {
       "file": "transport.js",
-      "sha256": "3bded746222c0aa1769697442b579922d406e67d79e3dbf65df5580dd387c007"
+      "sha256": "cb509226a9644e86857f12e137943bf0cc04c5f4bace4dbdf4137efa6240fc3a"
     },
     "interpolation": {
       "file": "interpolation.js",
-      "sha256": "193c0e00bd60b89ea59a74be5badb898420ffbd350eb9cd3b7f6b56600d33a74"
+      "sha256": "061960f311ad57894914186baa01f6b257269637353056ac93f86d34265a4ef8"
     },
     "input": {
       "file": "input.js",
-      "sha256": "ae84399953c7e54c8d96408c97208f42b2246a8ac27ef5265053cb0beb306168"
+      "sha256": "a969755a39702723b35b6a1503e9b2e53a431ea91845017474c979752fdfb51f"
     },
     "rendering": {
       "file": "rendering.js",
-      "sha256": "5ec22f1b4c3689b11cd0d4c14acc017b94ce5c11afc859df399898645976e227"
+      "sha256": "021b11f83b49be3e94cfe0a67769dcd248b9463325b6dcc55ea4943a0ea6c18b"
     },
     "vectorAssets": {
       "file": "vector-assets.js",
-      "sha256": "d5f4f51b8695dee6c9d7bf4993912bc07890486c0535f3dbaacca55ef35a276e"
+      "sha256": "288eadf3830df2836f0b103dc513a906b5b9dbd58660885c18b2a0941d0e877a"
     },
     "camera": {
       "file": "camera.js",
-      "sha256": "3fd1c8a61b49e22b50606dbf472495775419640a8487f3a0ec079cb4d3522cb7"
+      "sha256": "c9d6f59a49e7ca0640b4f55fbe9aab2d1e5362d99ad0bb3871596a66fd3859c0"
     },
     "events": {
       "file": "presentation-events.js",
-      "sha256": "469a820e22730cdff9a0e4cd37fcbbfa4ffc9af3e39eab6d9a784e1d544caf84"
+      "sha256": "f7ef72116be78d348a6e45a5e47a23aad8d2f0be8c1401c69b9dea7e51d4ea55"
     },
     "hud": {
       "file": "hud.js",
-      "sha256": "acec30fdab522ef151ab582113f26058aabb48a1d8d11cfe0ea640e1b61c86df"
+      "sha256": "bff21389e30f4c89b096977a5bf06988e0c6a1a5e58b51fea69779c50def33c2"
     },
     "debug": {
       "file": "debug-tools.js",
-      "sha256": "72260336a6c3f2ee0357a303fa8943dd8cfa4f7deea5d9517d311d4cd8796a71"
+      "sha256": "b2abc40a6e5ca59b0b24b6c7fefa7492ea13b17686da86f61a8fff16be146ac5"
     },
     "vectorAssetsLoader": {
       "file": "vector-assets-loader.js",
-      "sha256": "c400c60c1fd52c96e02f445347a7a2596d8cda6073c069bf7e69c8edb78eb371"
+      "sha256": "56042179b1b669d69d4791c5a1ad7bbd1927d8686fa4e9192504fb248c2170e2"
     },
     "objectPool": {
       "file": "object-pool.js",
-      "sha256": "ec7fb6d4ac5dc3e6079014e81d966780e424343839e69b94315da96329bccaab"
+      "sha256": "4291d6d90f23b47024153e2d2db9e1af7f8b78586c8c0ee279621d42dc54f10b"
     }
   },
-  "distManifestSha256": "3dd359a8e0b284a49280c3c91bff475fcb8466e34f455f678b6a98ec5a3e73da"
+  "distManifestSha256": "20244c2beeee33719f407a9baa92c55a4bd55a0e4eb9f094590bb0eed652296e"
 }
