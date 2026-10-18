@@ -1,6 +1,6 @@
 # RALLY FRONTIER
 
-현재 호환 식별자는 **SIM_VERSION 200**입니다. GameKit v0.11.3의 source/dist 및 manifest v2를 사용하며, `gamekit.lock.json`의 SHA-256으로 빌드 bytes를 검증합니다. protocol 3 세션에 참여하는 모든 클라이언트는 같은 배포본으로 갱신해야 합니다. 기본 lockstep, 선택 가능한 rollback 및 기존 TPS/게임 규칙은 유지합니다. `queueCommand`의 즉시 예약 전에 현재 clock을 갱신하며 rollback 완료 이벤트에서 교정된 표시를 반영합니다. Rally는 `LocalInputPreview`를 연결하지 않으므로 이번 갱신을 로컬 예측 개선으로 표현하지 않습니다.
+현재 호환 식별자는 **SIM_VERSION 200**입니다. GameKit v0.14.3 source `dd59a57fcf66409cef16632ffb433c0b760324fa` / dist `418e17c455db56d6ed073d82d115191d9dd8bf04` 및 manifest v2를 사용하며, `gamekit.lock.json`의 SHA-256으로 빌드 bytes를 검증합니다. protocol 3 세션에 참여하는 모든 클라이언트는 같은 배포본으로 갱신해야 합니다. 기본 lockstep, 선택 가능한 rollback 및 기존 TPS/게임 규칙은 유지합니다. `queueCommand`의 즉시 예약 전에 현재 clock을 갱신하며 rollback 완료 이벤트에서 교정된 표시를 반영합니다. Rally는 `LocalInputPreview`를 연결하지 않으므로 이번 갱신을 로컬 예측 개선으로 표현하지 않습니다.
 
 범용 풀 구현은 GameKit `ObjectPool`로 이관했으며 불꽃·emitter·전기 arc scratch·전투·문자·흔들림·깃발의 기존 factory/reset과 유휴 상한을 유지합니다. 반납은 각 표시 수명이 끝난 뒤 정확히 한 번 수행하고 시뮬레이션·snapshot·보간 이력 객체에는 적용하지 않습니다. SDK 갱신에 따른 SVG 기본값 변화는 `curveSegments:16, strokeArcDivisions:12`로 명시해 기존 렌더 출력을 보존합니다. 51개 SVG의 기존 geometry/animation metadata 및 일곱 실제 풀의 reset·LIFO·상한 대조가 일치했습니다. `ReusableFloat32Buffer`는 별도 수명이므로 그대로 둡니다.
 
