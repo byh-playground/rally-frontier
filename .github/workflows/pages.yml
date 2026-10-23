@@ -1,77 +1,52 @@
-name: Build and deploy Pages
-
+name: Verify source and deploy Pages
 on:
   pull_request:
     branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-
-concurrency:
-  group: pages-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out source
-        uses: actions/checkout@v6
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - name: Install Node dependencies
-        run: npm ci
-      - name: Install Chromium for startup verification
-        run: npx playwright install --with-deps chromium
-      - name: Fetch and verify pinned Gamekit dependency
-        run: npm run setup:gamekit
-      - name: Test build metadata and output
-        run: npm run test:build
-      - name: Build deployment artifact
-        run: node scripts/build-pages.cjs
-      - name: Verify standalone startup compilation in Chromium
-        run: node scripts/vector-assets-startup-e2e.cjs _site/index.html
-      - name: Fetch pre-migration visual baseline
-        if: github.event_name == 'pull_request'
-        env:
-          VISUAL_BASELINE_SHA: 624a112b11008a099c2a5cb3119ef12e5cdb7f4e
-          VISUAL_BASELINE_DIR: ${{ runner.temp }}/rally-frontier-pre-svg-loader
+      - name: Check browser source syntax and assets
         run: |
-          git fetch --no-tags origin "$VISUAL_BASELINE_SHA"
-          git worktree add --detach "$VISUAL_BASELINE_DIR" "$VISUAL_BASELINE_SHA"
-      - name: Build pre-migration visual baseline
-        if: github.event_name == 'pull_request'
-        env:
-          VISUAL_BASELINE_DIR: ${{ runner.temp }}/rally-frontier-pre-svg-loader
-        run: |
-          npm ci --prefix "$VISUAL_BASELINE_DIR"
-          npm --prefix "$VISUAL_BASELINE_DIR" run build
-      - name: Compare pre-migration and startup-loader visuals in Chromium
-        if: github.event_name == 'pull_request'
-        env:
-          VISUAL_BASELINE_HTML: ${{ runner.temp }}/rally-frontier-pre-svg-loader/_site/index.html
-        run: npm run test:vector-assets-visual -- "$VISUAL_BASELINE_HTML" _site/index.html
-      - name: Upload vector visual comparison images
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v4
-        with:
-          name: rally-vector-assets-visual-comparison
-          path: .qa/vector-assets-visual-comparison/
-          if-no-files-found: ignore
-      - name: Upload Pages artifact
+          node --check src/main.js
+          node --check src/core/game-rules.js
+          node --check src/core/build-metadata.js
+          node --check campaign/campaigns.js
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const html = fs.readFileSync('index.html','utf8');
+          if (!html.includes('src="./src/main.js"') || !html.includes('href="./src/styles/main.css"')) throw Error('Original entrypoint missing');
+          const lock=JSON.parse(fs.readFileSync('gamekit.lock.json','utf8'));
+          const main=fs.readFileSync('src/main.js','utf8');
+          if(!lock.distCommit||!lock.sourceCommit||Object.keys(lock.modules).length!==14||!main.includes("Gamekit module SHA-256 mismatch"))throw Error('Pinned SDK source contract missing');
+          for(const path of ['src/styles/main.css','assets/units/manifest.json','campaign/campaigns.js','icons/rally-180.png','manifest.webmanifest']){
+            if(!fs.statSync(path).size)throw Error('Missing source asset '+path);
+          }
+          NODE
+          git diff --check
+      - name: Copy original source without bundling
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v4
+        run: |
+          mkdir -p _site
+          cp index.html gamekit.lock.json manifest.webmanifest _site/
+          cp -R src assets campaign icons _site/
+          touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@v4
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         with:
           path: _site
-
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: build
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -80,8 +55,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-      - name: Deploy Pages artifact
-        id: deployment
+      - uses: actions/configure-pages@v5
+      - id: deployment
         uses: actions/deploy-pages@v4

@@ -1,3 +1,9 @@
+## 2026-10-24 · 원본 HTML + 브라우저 ESM 직접 배포
+
+게임 실행 진입점은 저장소 루트 `index.html`이며, `src/main.js`, `src/core/*.js` 및 `src/styles/main.css`를 원본 그대로 로드합니다. 캠페인/벡터 SVG/아이콘은 같은 태그의 `campaign/`·`assets/`·`icons/`에서 읽습니다. GameKit은 `gamekit.lock.json`에 고정된 SHA-256을 브라우저에서 검증한 후 공식 불변 dist ESM을 불러옵니다. `npm run build`는 더 이상 Pages의 필수 단계가 아니며, Actions는 문법/정적 경로만 확인하고 파일을 복사해 게시합니다.
+
+이번 이관은 게임·네트워크·저장 규칙을 변경하지 않습니다. 과거의 단일 HTML 생성기와 `_site/build.json` 설명은 이전 배포 방식에 관한 기록이며 신규 정본은 아닙니다. 실기기·실제 2인 RTC 및 플레이 검증은 정적 CI 성공과 별도로 확인합니다.
+
 # RALLY FRONTIER
 
 현재 호환 식별자는 **SIM_VERSION 200**입니다. GameKit v0.14.3 source `dd59a57fcf66409cef16632ffb433c0b760324fa` / dist `418e17c455db56d6ed073d82d115191d9dd8bf04` 및 manifest v2를 사용하며, `gamekit.lock.json`의 SHA-256으로 빌드 bytes를 검증합니다. protocol 3 세션에 참여하는 모든 클라이언트는 같은 배포본으로 갱신해야 합니다. 기본 lockstep, 선택 가능한 rollback 및 기존 TPS/게임 규칙은 유지합니다. `queueCommand`의 즉시 예약 전에 현재 clock을 갱신하며 rollback 완료 이벤트에서 교정된 표시를 반영합니다. Rally는 `LocalInputPreview`를 연결하지 않으므로 이번 갱신을 로컬 예측 개선으로 표현하지 않습니다.
