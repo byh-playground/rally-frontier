@@ -13,7 +13,7 @@ USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES 
 
 - 대상 저장소는 `byh-playground/rally-frontier`, 통합 브랜치와 PR 대상은 `main`이다.
 - 작업 브랜치는 `codex/` 접두사를 사용하고 커밋 메시지는 한글로 작성한다.
-- 게임 개발 방향과 품질·검증 기준은 `index.html` 상단 Development Contract를 따른다. 게임 변경의 실제 UI E2E와 시각 확인을 정적 검사만으로 대체하지 않는다. 미검증 게임 버전을 VALIDATED 또는 Stable로 표시하지 않는다.
+- 게임 개발 방향과 품질·검증 기준은 `index.html` 상단 Development Contract를 따른다. 원본 코드 정본은 `index.html` + `src/main.js` + `src/core/` + `src/styles/`이며 배포용 번들을 만들지 않는다. 게임 변경의 실제 UI E2E와 시각 확인을 정적 검사만으로 대체하지 않는다. 미검증 게임 버전을 VALIDATED 또는 Stable로 표시하지 않는다.
 - 단일 `index.html` 안의 병렬 작업은 수정 함수·Definition·상태 소유자·공통 mechanic과 호출 관계로 겹침을 판단한다.
 - 머지 기본 방식은 작업 커밋을 하나로 squash한 뒤 Merge commit을 만드는 방식이다. `main`에 통합 작업 커밋 하나와 머지 커밋을 남긴다. 머지 후 로컬 `main`을 동기화하고 해당 PR 및 남아 있는 머지 완료 로컬 작업 브랜치를 정리한다. 미반영 변경과 다른 worktree에서 사용하는 브랜치는 보존한다. 세부 절차는 프로젝트 리뷰·머지 스킬을 따른다.
 - 공개 배포 변경은 별도 사용자 지시에 따른다.
