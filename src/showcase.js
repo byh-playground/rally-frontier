@@ -17,23 +17,23 @@ const SHOWCASE = installShowcase({
     "caption": "병종을 구성하고 자동 전투를 지휘하는 실시간 전략 게임입니다."
   },
   {
-    "atMs": 650,
+    "atMs": 120,
     "action": "click",
     "selector": "#gameStartBtn"
   },
   {
-    "atMs": 1400,
+    "atMs": 380,
     "action": "click",
     "selector": "#advancedTestSettings > summary"
   },
   {
-    "atMs": 1900,
+    "atMs": 650,
     "action": "select",
     "selector": "#battleTestUnitCount",
     "value": "100"
   },
   {
-    "atMs": 2600,
+    "atMs": 930,
     "action": "click",
     "selector": "#battleTestStartBtn"
   },
