@@ -271,7 +271,23 @@ END OF DEVELOPMENT CONTRACT
 
 <script>
 // Showcase frames are disposable: normal game saves and preferences remain untouched.
+// A direct intro URL is owned by the showcase host, not by the gameplay router.
+if (new URLSearchParams(location.search).get('showcaseDemo') !== '1' && location.hash === '#/showcase') {
+  window.__BLOOM_SHOWCASE_DEEPLINK = true;
+  history.replaceState(null, '', location.pathname + location.search);
+}
 if (new URLSearchParams(location.search).get('showcaseDemo') === '1') {
+  // Demonstration inputs are scheduled rather than browser-trusted gestures.
+  // Suppress autoplay prompts while preserving the same game simulation.
+  const Context = window.AudioContext || window.webkitAudioContext;
+  if (Context) Context.prototype.resume = function () { return Promise.resolve(); };
+  const nativeSet = Element.prototype.setPointerCapture;
+  const nativeRelease = Element.prototype.releasePointerCapture;
+  const nativeHas = Element.prototype.hasPointerCapture;
+  Element.prototype.setPointerCapture = function (id) { if (id !== 71) return nativeSet.call(this, id); };
+  Element.prototype.releasePointerCapture = function (id) { if (id !== 71) return nativeRelease.call(this, id); };
+  Element.prototype.hasPointerCapture = function (id) { return id === 71 || nativeHas.call(this, id); };
+
   const stores = new WeakMap();
   const storage = self => { if (!stores.has(self)) stores.set(self, new Map()); return stores.get(self); };
   Storage.prototype.getItem = function(key) { return storage(this).get(String(key)) ?? null; };
