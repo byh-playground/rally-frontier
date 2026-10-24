@@ -1,5 +1,5 @@
 import { installShowcase } from 'https://cdn.jsdelivr.net/gh/byh-playground/bloom-gamekit@566306b49bf205c908839ad8527c4a72d778a45f/scenario.js';
-installShowcase({
+const SHOWCASE = installShowcase({
     title:'랠리 프론티어',
     launcher:'#gameStartBtn',
     playSelector:'#gameStartBtn',
@@ -53,3 +53,8 @@ installShowcase({
   }
 ]
 });
+
+// Restore direct introduction links after the game's own menu router has booted.
+if (window.__BLOOM_SHOWCASE_DEEPLINK && SHOWCASE) {
+    window.addEventListener('load', () => SHOWCASE.open(), { once: true });
+}
