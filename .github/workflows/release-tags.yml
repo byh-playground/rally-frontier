@@ -1,0 +1,31 @@
+name: Publish immutable Stable and Nightly tags
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable version (e.g. 0.19.0)
+        type: string
+        required: true
+      commit_sha:
+        description: Full SHA of the validated game snapshot (main ancestry)
+        type: string
+        required: true
+      validated:
+        description: I verified and approved this Stable release
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: write
+jobs:
+  tag:
+    uses: byh-playground/bloom-reference/.github/workflows/game-release-tags.yml@2f9f28b0d029fab92cbeddb35983aa65051674d2
+    permissions:
+      contents: write
+    with:
+      channel: ${{ github.event_name == 'workflow_dispatch' && 'stable' || 'nightly' }}
+      commit_sha: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.sha }}
+      stable_version: ${{ inputs.version || '' }}
+      stable_approved: ${{ inputs.validated == true }}
