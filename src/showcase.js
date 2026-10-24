@@ -1,4 +1,4 @@
-import { installShowcase } from 'https://cdn.jsdelivr.net/gh/byh-playground/bloom-gamekit@18fdaaf4454be715795fb94f40d8a38aa65e6c41/modules/scenario/showcase-host.js';
+import { installShowcase } from 'https://cdn.jsdelivr.net/gh/byh-playground/bloom-gamekit@566306b49bf205c908839ad8527c4a72d778a45f/scenario.js';
 installShowcase({
     title:'랠리 프론티어',
     launcher:'#gameStartBtn',
