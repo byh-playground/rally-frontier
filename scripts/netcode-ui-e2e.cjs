@@ -1,7 +1,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
 const { chromium: nativeChromium } = require('playwright');
 const chromium = require('./netcode-qa-module.cjs').wrapChromium(nativeChromium);
 
@@ -98,16 +97,6 @@ window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntime
   }
 };`;
 
-function loadHTML() {
-  const source = fs.readFileSync(htmlPath, 'utf8');
-  for (const [i, match] of [...source.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].entries()) {
-    if (!match[2].trim() || /type\s*=\s*["']application\/json/i.test(match[1])) continue;
-    new vm.Script(match[2], { filename: `inline-script-${i}.js` });
-  }
-  const end = source.lastIndexOf('})();');
-  assert.ok(end > 0, 'Production app IIFE exists');
-  return source.slice(0, end) + observer + source.slice(end);
-}
 
 async function confirmDeck(page) {
   await page.locator('#deckConfirmBtn').waitFor({ state: 'visible', timeout: 35000 });
@@ -183,7 +172,7 @@ async function focusBattle(page) {
   await page.mouse.click(target.x,target.y);
 }
 
-async function runRole(browser, html, humanRole) {
+async function runRole(browser, url, humanRole) {
   const context=await browser.newContext({viewport:{width:412,height:915},deviceScaleFactor:1});
   const page=await context.newPage(),errors=[],consoleErrors=[];
   let progressTimer=null;
@@ -191,8 +180,8 @@ async function runRole(browser, html, humanRole) {
   page.on('console',m=>{if(m.type()==='error')consoleErrors.push(m.text());});
   page.on('dialog',d=>d.accept());
   try {
-    await page.route('http://netcode-qa.local/**',route=>route.fulfill({contentType:'text/html',body:html}));
-    await page.goto('http://netcode-qa.local/',{waitUntil:'domcontentloaded'});
+    await require('./netcode-qa-module.cjs').routePinnedSDK(page);
+    await page.goto(url,{waitUntil:'domcontentloaded'});
     await page.locator('#gameStartBtn').click();
     await page.locator('#selectionDeckBtn').click();
     await page.locator('#advancedTestSettings summary').click();
@@ -299,6 +288,8 @@ async function runRole(browser, html, humanRole) {
     await page.screenshot({path:path.join(output,`${humanRole}-replay.png`)});
     await page.locator('#replayExitBtn').click();
     await page.locator('#lobby').waitFor({state:'visible',timeout:10000});
+    // Exiting replay reloads the document; wait for async ESM boot before inspecting the new scope.
+    await page.waitForFunction(()=>window.__netcodeE2E, null, {timeout:35000});
     assert.equal(await page.evaluate(()=>!!window.__netcodeE2E.ReplayPresentation.replayPlayer),false);
     assert.deepEqual(errors,[],'No uncaught exceptions across normal match and replay');
     assert.ok(!consoleErrors.some(m=>/simulation fatal|CONTRACT_FATAL/i.test(m)),consoleErrors.join('\n'));
@@ -316,16 +307,18 @@ async function runRole(browser, html, humanRole) {
 
 (async()=>{
   fs.mkdirSync(output,{recursive:true});
-  const html=loadHTML(),browser=await chromium.launch({channel:process.env.QA_BROWSER_CHANNEL||'msedge',
-    headless:process.env.QA_HEADED!=='1',args:process.env.QA_SOFTWARE_GPU==='1'
-      ?['--use-angle=swiftshader','--enable-unsafe-swiftshader']:[]});
+  const server=await require('./netcode-qa-module.cjs').serveSource(htmlPath,{observer});
+  let browser;
   try{
+    browser=await chromium.launch({channel:process.env.QA_BROWSER_CHANNEL||'msedge',
+      headless:process.env.QA_HEADED!=='1',args:process.env.QA_SOFTWARE_GPU==='1'
+        ?['--use-angle=swiftshader','--enable-unsafe-swiftshader']:[]});
     const results=[];
-    for(const role of (process.env.QA_ROLES||'host,guest').split(','))results.push(await runRole(browser,html,role));
+    for(const role of (process.env.QA_ROLES||'host,guest').split(','))results.push(await runRole(browser,server.url,role));
     fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({htmlPath,results},null,2));
     console.log(JSON.stringify({htmlPath,results:results.map(r=>({humanRole:r.humanRole,
       build:r.initial.build,sdkVersion:r.initial.sdkVersion,renderer:r.initial.renderer,
       battleTick:r.battle.sessions[r.humanRole].tick,aiStats:r.battle.aiStats,
       result:r.ended.sessions[r.humanRole].replayResult,replay:r.replay,pageErrors:r.pageErrors}))},null,2));
-  }finally{await browser.close();}
+  }finally{try{await browser?.close();}finally{await server.close();}}
 })().catch(error=>{console.error(error.stack);process.exitCode=1;});

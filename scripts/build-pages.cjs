@@ -1,39 +1,49 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { bundleGame } = require('./bundle-gamekit.cjs');
+const { readLock } = require('./setup-gamekit.cjs');
+const { readVectorAssetManifest } = require('./vector-assets-manifest.cjs');
+const sourcePaths = ['index.html', 'gamekit.lock.json', 'manifest.webmanifest', 'src', 'assets', 'campaign', 'icons'];
 
-function stampHtml(html, { commit, builtAt = new Date().toISOString() }) {
-  if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('Invalid build commit');
-  const date = new Date(builtAt);
-  if (!Number.isFinite(date.getTime())) throw new Error('Invalid build timestamp');
-  date.setUTCMilliseconds(0);
-  const iso = date.toISOString();
-  const stamp = iso.slice(0, 19).replace(/[-:]/g, '') + '+0000';
-  const id = `${stamp}-rf-${commit.slice(0, 12)}`;
-  const marker = 'const BUILD_ID="development";';
-  if (html.split(marker).length !== 2) throw new Error('Expected one development BUILD_ID marker');
-  return { html: html.replace(marker, `const BUILD_ID=${JSON.stringify(id)};`),
-    metadata: { id, commit, builtAt: iso } };
+function verifySource(root = path.resolve(__dirname, '..')) {
+  const lock = readLock(root);
+  readVectorAssetManifest(root);
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const main = fs.readFileSync(path.join(root, 'src/main.js'), 'utf8');
+  if (!html.includes('src="./src/main.js"') || !html.includes('href="./src/styles/main.css"')) throw Error('Original entrypoint missing');
+  const moduleMap = JSON.parse(main.match(/const RALLY_GAMEKIT_MODULES=Object\.freeze\((\{[^\n]+\})\);/)?.[1] || 'null');
+  if (!moduleMap || JSON.stringify(Object.keys(moduleMap).sort()) !== JSON.stringify(Object.keys(lock.modules).sort())) throw Error('Pinned SDK module map mismatch');
+  for (const [name, entry] of Object.entries(lock.modules)) if (moduleMap[name] !== entry.file) throw Error('Pinned SDK module map mismatch: ' + name);
+  if (!/const RALLY_GAMEKIT_SOURCE=Object\.freeze\(\{lock:['"]\.\/gamekit\.lock\.json['"]\}\);/.test(main)) throw Error('Pinned SDK lock descriptor mismatch');
+  if (!main.includes('Gamekit module SHA-256 mismatch') || !main.includes("fetch(gamekitSource.lock")) throw Error('Pinned SDK source verification missing');
+  const modules = ['src', 'campaign'].flatMap(folder => fs.readdirSync(path.join(root, folder), { recursive: true }).filter(file => file.endsWith('.js')).map(file => path.join(folder, file)));
+  for (const file of modules) {
+    execFileSync(process.execPath, ['--check', path.join(root, file)], { stdio: 'pipe' });
+  }
+  for (const file of ['src/styles/main.css', 'icons/rally-180.png', 'manifest.webmanifest']) if (!fs.statSync(path.join(root, file)).size) throw Error('Missing source asset: ' + file);
+  return lock;
 }
 
 function buildPages(root = path.resolve(__dirname, '..')) {
-  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-  const source = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const result = stampHtml(bundleGame(root,source), { commit });
-  // The only deleted directory is this fixed, ignored build output inside the checkout.
+  root = path.resolve(root);
+  // Remove the fixed checkout-local output first: a failed run cannot leave a stale PASS candidate.
   const out = path.resolve(root, '_site');
-  if (path.dirname(out) !== path.resolve(root) || path.basename(out) !== '_site') throw new Error('Invalid output directory');
+  if (path.dirname(out) !== root || path.basename(out) !== '_site') throw Error('Invalid output directory');
   fs.rmSync(out, { recursive: true, force: true });
-  fs.mkdirSync(out);
-  for (const asset of ['campaign', 'icons', 'manifest.webmanifest']) {
-    fs.cpSync(path.join(root, asset), path.join(out, asset), { recursive: true });
+  const lock = verifySource(root);
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+  if (!/^[a-f0-9]{40}$/.test(commit)) throw Error('Invalid source commit');
+  const metadata = { format: 'source-esm', commit, builtAt: new Date().toISOString(), gamekit: { repository: lock.repository, sourceCommit: lock.sourceCommit, distCommit: lock.distCommit } };
+  try {
+    fs.mkdirSync(out);
+    for (const asset of sourcePaths) fs.cpSync(path.join(root, asset), path.join(out, asset), { recursive: true });
+    fs.writeFileSync(path.join(out, 'build.json'), JSON.stringify(metadata, null, 2) + '\n');
+    fs.writeFileSync(path.join(out, '.nojekyll'), '');
+  } catch (error) {
+    fs.rmSync(out, { recursive: true, force: true });
+    throw error;
   }
-  fs.writeFileSync(path.join(out, 'index.html'), result.html);
-  fs.writeFileSync(path.join(out, 'build.json'), JSON.stringify(result.metadata, null, 2) + '\n');
-  fs.writeFileSync(path.join(out, '.nojekyll'), '');
-  return result.metadata;
+  return metadata;
 }
-
-module.exports = { stampHtml, buildPages };
+module.exports = { verifySource, buildPages, sourcePaths };
 if (require.main === module) console.log(JSON.stringify(buildPages(), null, 2));

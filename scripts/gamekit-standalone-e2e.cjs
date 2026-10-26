@@ -3,7 +3,9 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {pathToFileURL}=require('node:url');const {chromium}=require('playwright');
 (async()=>{
  const input=path.resolve(process.argv[2]||'_site/index.html'),output=path.resolve('.qa/gamekit-standalone');fs.mkdirSync(output,{recursive:true});
- const source=fs.readFileSync(input,'utf8'),tail=source.lastIndexOf('})();');assert(tail>0);
+ const source=fs.readFileSync(input,'utf8');
+ if(source.includes('src="./src/main.js"'))throw Error('Standalone file execution is retired for source ESM. Run npm run test:ui and npm run test:startup over loopback HTTP.');
+ const tail=source.lastIndexOf('})();');assert(tail>0);
  const file=path.join(output,'standalone.html');fs.writeFileSync(file,source.slice(0,tail)+'window.__gamekitOffline={ActiveViewState,MatchLifecycle,UiRuntimeState};'+source.slice(tail));
  const browser=await chromium.launch({channel:process.env.QA_BROWSER_CHANNEL||'chromium',headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader','--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE *.local']});
  try{

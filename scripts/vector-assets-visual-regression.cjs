@@ -19,6 +19,7 @@ const maximumVisibleDiffRatio = 0.001;
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 
 function exposeVisualHarness(html, label) {
+  if (html.includes('src="./src/main.js"')) throw Error('Historical standalone visual comparison requires historical bundled HTML. Current source validation uses npm run test:startup and npm run test:ui.');
   const marker = 'DebugScenarioHarness.populateUi();';
   assert.equal(html.split(marker).length - 1, 1, `${label} must expose the Rally renderer at the expected startup point`);
   const expose = `window.__rallyVectorVisualQA={MatchLifecycle,DebugScenarioHarness,ActiveViewState,UiRuntimeState,ViewRuntimeState,GameSession,BattlefieldProjection};\n`;

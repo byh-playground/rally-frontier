@@ -1,8 +1,8 @@
 ## 2026-10-24 · 원본 HTML + 브라우저 ESM 직접 배포
 
-게임 실행 진입점은 저장소 루트 `index.html`이며, `src/main.js`, `src/core/*.js` 및 `src/styles/main.css`를 원본 그대로 로드합니다. 캠페인/벡터 SVG/아이콘은 같은 태그의 `campaign/`·`assets/`·`icons/`에서 읽습니다. GameKit은 `gamekit.lock.json`에 고정된 SHA-256을 브라우저에서 검증한 후 공식 불변 dist ESM을 불러옵니다. `npm run build`는 더 이상 Pages의 필수 단계가 아니며, Actions는 문법/정적 경로만 확인하고 파일을 복사해 게시합니다.
+게임 실행 진입점은 저장소 루트 `index.html`이며, `src/main.js`, `src/core/*.js` 및 `src/styles/main.css`를 원본 그대로 로드합니다. 캠페인/벡터 SVG/아이콘은 같은 태그의 `campaign/`·`assets/`·`icons/`에서 읽습니다. GameKit은 `gamekit.lock.json`에 고정된 SHA-256을 브라우저에서 검증한 후 공식 불변 dist ESM을 불러옵니다. `npm run build`는 번들 변환 없이 원본 디렉터리를 `_site/`에 복사하고 별도 `build.json`에 소스 커밋·SDK 출처를 기록합니다. Actions도 같은 원본 검사·복사·브라우저 부팅 검사를 사용합니다.
 
-이번 이관은 게임·네트워크·저장 규칙을 변경하지 않습니다. 과거의 단일 HTML 생성기와 `_site/build.json` 설명은 이전 배포 방식에 관한 기록이며 신규 정본은 아닙니다. 실기기·실제 2인 RTC 및 플레이 검증은 정적 CI 성공과 별도로 확인합니다.
+이번 이관은 게임·네트워크·저장 규칙을 변경하지 않습니다. 과거 단일 HTML 생성·file:// standalone 검사는 현재 원본 ESM 실행 경로에 적용하지 않습니다. 배포 원본의 `BUILD_ID`는 그대로이며 `build.json`은 화면의 검증/Stable 상태를 변경하지 않습니다. 실기기·실제 2인 RTC 및 플레이 검증은 정적 CI 성공과 별도로 확인합니다.
 
 # RALLY FRONTIER
 
@@ -14,7 +14,7 @@
 
 기존 실제 RTC UI 흐름은 `QA_NETCODE_MODE=lockstep|rollback QA_ROLES=host node scripts/netcode-ui-e2e.cjs _site/index.html`로 모드를 선택해 확인합니다(PowerShell에서는 `$env:`로 설정). 결과는 `.qa/netcode-ui-e2e-<mode>/`에 생성됩니다. 기본 명령의 모드는 lockstep입니다.
 
-충전 기술의 실제 Edge 회귀 검사는 `node scripts/charged-skills-regression.cjs`로 실행합니다. 고정 멤버, 취소, 근거리 착탄, 몸체 접촉·연쇄 밀림, 곡사 충돌, 복구·리플레이 체크섬, 잠복·동맹 대상 제외 및 변조된 스냅샷 참조를 검사합니다. 결과와 24·96·192개 유닛의 전체 시뮬레이션 틱 비용은 `.qa/charged-skills-regression/report.json`에 저장합니다. 이 비용은 GPU 프레임 시간이나 RTC 지연 측정과 구분합니다.
+충전 기술의 과거 단일 HTML 검사(`scripts/charged-skills-regression.cjs`)는 고정 멤버·취소·근거리 착탄·몸체 접촉·복구/리플레이 등을 확인했던 진단 도구입니다. 해당 추출형 도구를 현재 원본 ESM용 명령으로 안내하지 않습니다. 현재 공식 검사 명령은 `build`, `test:build`, `test:startup`, `test:ui`이며, 그 밖의 과거 `scripts/*-regression.cjs` 전체를 이번 정비에서 이관한 것은 아닙니다. `test:vector-assets-visual:legacy`도 과거 단일 HTML 두 실행물 비교 전용이며 현재 ESM 입력은 명시적으로 거부합니다. 과거 보고서의 측정값과 실행 명령은 당시 조건의 기록으로 읽습니다.
 
 RALLY FRONTIER는 브라우저에서 바로 실행할 수 있는 실시간 전략 게임(RTS) 프로젝트입니다.
 
@@ -45,7 +45,7 @@ VALIDATED
     ↓
 GitHub main 소스
     ↓
-Actions 빌드 (업데이트 시각·소스 커밋 자동 주입)
+Actions 원본 검사·복사 (별도 소스 커밋 메타데이터)
     ↓
 GitHub Pages (Stable)
 ```
@@ -54,17 +54,17 @@ GitHub Pages (Stable)
 
 ## 업데이트 시각과 배포
 
-업데이트 시각은 수동으로 수정하지 않습니다. `.github/workflows/pages.yml`이 `main` 변경 또는 `main` 대상 수동 실행마다 `scripts/build-pages.cjs`를 실행하여 빌드 시각과 전체 Git 커밋 SHA를 `_site/build.json`에 기록하고, 같은 빌드 식별자를 `_site/index.html`에 주입합니다. 공개 화면의 업데이트 표시는 이 실행물의 빌드 정보를 사용합니다. 생성된 `_site`만 Pages artifact로 배포하며 소스 `index.html`에는 `BUILD_ID = 'development'`를 유지합니다.
+`.github/workflows/pages.yml`과 `npm run build`는 동일한 원본 검사·복사 도구를 사용합니다. `index.html`·`src/`·`gamekit.lock.json`·`assets/`·`campaign/`·아이콘·manifest를 그대로 `_site/`에 복사하며 게임 소스와 `BUILD_ID`를 변경하지 않습니다. `_site/build.json`은 복사한 소스의 Git 커밋·복사 시각·고정 SDK 출처를 기록하는 별도 진단 정보입니다. 실행 화면의 업데이트/검증 상태와 별개이며, 검사 또는 복사 실패 시 이전 `_site`를 남겨 새 결과로 오인하지 않게 제거합니다.
 
-PR에서는 동일한 빌드 검사와 생성만 수행하고 배포하지 않습니다. Pages 게시 소스는 저장소 **Settings → Pages → Build and deployment → GitHub Actions**를 사용해야 합니다. 브랜치의 원본 HTML을 직접 게시하면 이 자동 빌드 과정이 적용되지 않습니다. 빌드·배포가 실패하면 기존 공개 실행물이 유지되므로 업데이트 표시도 바뀌지 않습니다.
+PR에서는 검사·복사·원본 ESM/SVG 부팅 검사를 수행하고 공개 배포하지 않습니다. main 게시 경로는 기존 GitHub Actions Pages 정책을 유지합니다. 로컬 원본 확인은 `npm ci`, `npm run test:build`, `npm run build`, `npm run test:startup -- _site/index.html`, `npm run test:ui -- _site/index.html` 순서로 실행합니다. 원본 복사 명령 자체는 다운로드/SDK 번들링을 하지 않습니다. `test:build`, `test:startup`, `test:ui`는 최초에 `setup:gamekit`으로 불변 dist와 manifest의 SHA-256을 검증하며 정상 cache는 재사용합니다.
 
-로컬에서 배포 실행물을 확인하려면 `npm run setup:gamekit`, `npm run test:build`, `npm run build`를 실행하고 `_site`를 정적 HTTP 서버로 제공합니다. setup은 고정된 공통 모듈을 가져와 검증하며 이미 검증한 cache가 있으면 네트워크 없이 재사용합니다. 개별 테스트와 `node scripts/build-pages.cjs`는 네트워크 요청을 하지 않으며 cache가 없으면 setup 안내와 함께 실패합니다. 시각·커밋 정보는 빌드 시점에 고정되며 브라우저 접속 시각으로 바뀌지 않습니다. 게임 검증 기록의 날짜와 결과는 실제 검증 근거로 별도 관리합니다.
+UI 검사는 127.0.0.1 HTTP 서버에서 실제 ESM·CSS·SVG·캠페인을 제공하고 `src/main.js`의 실제 app scope에 관찰자만 주입합니다. 게임 조작은 기존 UI를 통합니다. 재현 가능한 검사를 위해 게임의 정확한 고정 jsDelivr SDK URL만 검증한 cache bytes로 응답하며 브라우저의 SHA-256 검사는 그대로 실행합니다. `QA_SDK_PATH` 후보는 과거 SDK URL용으로만 유지하고 현재 고정 SDK를 덮어쓰지 않습니다. 따라서 이 검사는 SDK CDN 가용성·외부 NAT·소개영상 CDN의 오프라인 실행을 보증하지 않습니다. 실제 제품 부팅은 계속 공식 CDN에 접속해야 하며 `file://` 또는 단일 HTML 오프라인 실행을 지원한다고 표시하지 않습니다.
 
 ## 프로젝트 구조
 
-게임 엔진과 UI는 `index.html` 안에 유지하고, 현재 캠페인 데이터 전체는 `campaign/campaigns.js` 한 JavaScript 모듈에 둡니다.
+게임 엔진과 UI의 실행 코드는 `src/main.js`에, 공통 게임 규칙/메타데이터는 `src/core/`에, 스타일은 `src/styles/`에 두며, 현재 캠페인 데이터 전체는 `campaign/campaigns.js` 한 JavaScript 모듈에 둡니다.
 
-유닛 벡터 아트의 원본은 `assets/units/*.svg`에 두고, `assets/units/manifest.json`에서 각 파일의 크기와 SHA-256을 고정합니다. 부팅 시 고정된 GameKit `vector-assets-loader.js`가 원본 bytes의 SHA-256을 확인한 뒤 한 번만 geometry를 만들고, loader의 bounded cache를 재사용합니다. source checkout은 manifest와 SVG 파일을 읽으며, standalone Pages HTML에는 변환된 geometry 대신 SHA-256이 검증되는 원본 SVG bytes만 data URL로 포함합니다. 이 경로는 프레임 렌더링 중 SVG를 다시 읽거나 변환하지 않습니다.
+유닛 벡터 아트의 원본은 `assets/units/*.svg`에 두고, `assets/units/manifest.json`에서 각 파일의 크기와 SHA-256을 고정합니다. 부팅 시 고정된 GameKit `vector-assets-loader.js`가 원본 bytes의 SHA-256을 확인한 뒤 한 번만 geometry를 만들고, loader의 bounded cache를 재사용합니다. source checkout과 Pages 복사본 모두 원본 manifest와 SVG 파일을 읽습니다. 이 경로는 프레임 렌더링 중 SVG를 다시 읽거나 변환하지 않습니다.
 
 캠페인 메뉴를 열 때 native ES import로 데이터를 읽습니다. 기본 게임 부팅은 캠페인 모듈 로드에 의존하지 않으며, 각 미션은 자체 시작 상태를 선언합니다. 개발용 신뢰 Mission JS의 파일/URL Preview도 유지합니다.
 
@@ -72,14 +72,15 @@ PR에서는 동일한 빌드 검사와 생성만 수행하고 배포하지 않�
 
 ```text
 rally-frontier/
-├── index.html             # 게임 엔진·UI 소스 (development 빌드)
+├── index.html             # 원본 ESM 진입점과 UI 마크업
+├── src/                   # main.js, core/, styles/, 소개영상
 ├── gamekit.lock.json      # 공통 모듈의 고정 source/dist 커밋·SHA-256
 ├── assets/units/          # 원본 유닛 SVG와 크기·SHA-256 manifest
 ├── campaign/
 │   └── campaigns.js       # 현재 정식 캠페인 데이터 전체 (default manifest)
 ├── scripts/setup-gamekit.cjs # 불변 dist 다운로드·무결성 검증
 ├── scripts/vector-assets-manifest.cjs # 원본 SVG 목록·무결성 검사
-├── scripts/build-pages.cjs # 배포 HTML·메타데이터·정적 리소스 생성
+├── scripts/build-pages.cjs # 원본 검사·동일 bytes 복사·별도 출처 정보
 ├── .github/workflows/pages.yml # PR 빌드 검사 및 main Pages 배포
 ├── .cache/gamekit/        # setup이 가져온 원본 dist bytes (Git 제외)
 └── _site/                 # 자동 생성한 배포 실행물 (Git 제외)
@@ -98,7 +99,7 @@ rally-frontier/
 * 다양한 유닛과 특수 능력
 * 중립 오브젝트 및 점령 시스템
 * 리플레이 지원
-* HTML 안의 게임 엔진과 하나의 캠페인 데이터 모듈
+* 원본 브라우저 ESM 엔진과 하나의 캠페인 데이터 모듈
 
 ## 공통 동기화 라이브러리 적용
 
@@ -116,17 +117,18 @@ rally-frontier/
 
 전송은 `send(Uint8Array)`와 `subscribe(listener)` capability로 연결합니다. Nostr는 방 발견·RTC 협상에만 사용하고, 게임 입력·시계·해시·복구는 SDK의 `WebRTCTransport`가 실제 입력·제어 DataChannel로 전송합니다. 게임은 SDK의 바이너리 헤더나 내부 필드를 해석하지 않습니다.
 
-공통 모듈 원본은 [bloom-gamekit](https://github.com/byh-playground/bloom-gamekit)에서만 관리합니다. Rally는 코드 복사본 대신 `gamekit.lock.json`에 source/dist의 전체 커밋 SHA와 manifest·사용 모듈별 SHA-256을 기록합니다. `npm run setup:gamekit`은 정확한 불변 dist 커밋의 `manifest.json`과 필요한 파일을 받아 모든 hash를 확인하고 Git 제외 `.cache/gamekit/`에 원본 bytes 그대로 저장합니다. 빌드는 같은 lock으로 cache를 다시 검증해 단일 HTML에 포함합니다. 새 checkout의 최초 setup에는 GitHub 접근이 필요하며, 검증한 cache가 있으면 오프라인 빌드가 가능합니다. 업그레이드는 upstream dist 검증 후 lock을 변경하는 작업이고 Rally에서 모듈 사본을 수정하는 방식으로 하지 않습니다. 모듈 로드 실패는 오류로 표시하며 CDN/다른 버전 fallback은 없습니다.
+공통 모듈 원본은 [bloom-gamekit](https://github.com/byh-playground/bloom-gamekit)에서만 관리합니다. Rally는 코드 복사본 대신 `gamekit.lock.json`에 source/dist의 전체 커밋 SHA와 manifest·사용 모듈별 SHA-256을 기록합니다. `npm run setup:gamekit`은 정확한 불변 dist 커밋의 `manifest.json`과 필요한 파일을 받아 모든 hash를 확인하고 Git 제외 `.cache/gamekit/`에 원본 bytes 그대로 저장합니다. QA는 같은 lock으로 cache를 다시 검증합니다. 새 checkout의 최초 QA setup에는 GitHub 접근이 필요하며, 검증한 cache가 있으면 QA의 게임 SDK 요청을 로컬 응답할 수 있습니다. 원본 복사는 SDK를 포함하지 않고, 실제 제품 부팅에는 고정 CDN 접근이 필요합니다. 업그레이드는 upstream dist 검증 후 lock을 변경하는 작업이고 Rally에서 모듈 사본을 수정하는 방식으로 하지 않습니다. 모듈 로드 실패는 오류로 표시하며 CDN/다른 버전 fallback은 없습니다.
 
 `rollback`, `deterministic`, `simloop`, `transport`의 조합이 기존 `GameSession` 실행 경로를 담당합니다. `interpolation.PresentationRuntime`의 한 표시 프레임이 유닛·투사체·깃발의 위치와 생성·제거 시점을 샘플링합니다. 선택 TPS의 한 tick을 표시 버퍼로 사용하며 도약 높이·잔상과 추적 표적도 같은 모델을 읽습니다. 신규 투사체는 launchX/Y에서 첫 구간을 시작합니다. 게임은 도약 곡선·lockedPoint/trackingTarget 의미·식별자·스냅거리 정책을 소유합니다. 시야 판정은 권위 좌표를 유지합니다. `rendering.WebGLDevice`가 shader/program/buffer/texture 수명주기와 실제 GPU 제출을 소유합니다. 게임에는 아트 기하 생성, 지형 깊이, Fog 마스크, 알파 패스·스텐실 실루엣 및 최종 화면 흔들림 정책이 남습니다. `camera`는 안정 화면/월드 평면 변환, `input`은 포인터 capture·document fallback·취소·blur 정리를 담당합니다. `presentation-events`는 확정 효과 중복 제거, `hud`는 절대 고도 anchor, `debug-tools`는 오류 기록·리플레이 탐색 UI를 담당합니다.
 
 Rally의 적응형 A*/공유 A*/Flow-field, 게임 규칙과 체크포인트 리플레이 포맷은 변경하지 않습니다. 공통 `playReplay`는 SDK의 연속 frame 파일을 위한 API이므로 기존 Rally의 독립 체크포인트·캠페인 저장 포맷을 억지로 변환하지 않습니다. 체크포인트 검증/복원은 게임 소유이고 공통 `ReplayTimeline`이 탐색 범위·재생 조작을 담당합니다.
 
-배포 빌드는 검증한 모듈, 캠페인 JS, 아이콘과 manifest를 `_site/index.html`에 넣습니다. 실제 file://에서 HTTP/WebSocket과 외부 DNS를 차단하고 STUN/TURN 없이 같은 기기의 실제 RTC host 후보로 캠페인 시작·종료를 검사합니다. 이는 외부 네트워크 없는 단일 HTML 실행 검증이며 브라우저 전체 Network.offline 또는 네트워크 어댑터가 꺼진 상태의 RTC 시작 성공을 뜻하지 않습니다. 엄격한 Network.offline 진단 모드는 유지하며 해당 모드에서는 ICE 연결이 대기하는 것이 관측됐습니다. 소스 `index.html` 개발 실행은 setup 후 저장소 루트를 제공하는 HTTP 서버가 필요하며 `.cache/gamekit/`와 `gamekit.lock.json`도 함께 제공합니다. source의 모듈 출처 정보는 lock에서 읽고 배포 HTML은 빌드 때 같은 출처를 포함합니다. PWA 설치 주소는 기존 Pages 주소로 유지하며 멀티플레이는 여전히 네트워크가 필요합니다.
+배포 복사본은 원본 ESM·캠페인·SVG·manifest와 아이콘을 상대 경로로 제공합니다. 실제 UI 검사는 원본 ESM의 로컬 HTTP 실행과 같은 기기의 RTC host 연결을 확인합니다. 과거 `gamekit-standalone-e2e.cjs`와 `bundle-gamekit.cjs`는 이전 단일 HTML 증거를 위한 도구이며 현재 원본 ESM 입력은 명시적으로 거부합니다. 외부 네트워크 없는 단일 파일 실행 결과를 현재 제품 검증으로 재사용하지 않습니다. SDK 출처는 런타임이 같은 lock에서 읽고 검증합니다. PWA 설치 주소는 기존 Pages 주소로 유지합니다.
+
 공통 createValueCodec의 기본 바이너리 코덱을 상태와 명령에 조합하고 Core에는 opaque bytes만 전달합니다. 선택 JSON 코덱은 비교·진단용입니다.
 
 ```text
-index.html
+src/main.js
   RallyNetcode                 고정 gamekit rollback/deterministic/simloop/transport 조합
   GameSession                  경기 Coordinator
   RallySimulationAdapter       게임 상태와 명령을 SDK 계약에 연결
@@ -145,7 +147,7 @@ scripts/netcode-ui-e2e.cjs      실제 UI·RTC·WebGL·종료·리플레이 검�
 
 별도의 환경에서 충분히 검증된 버전만 Stable 버전으로 승격하며, `main/index.html`은 항상 플레이 가능한 검증 완료 상태를 유지하는 것을 원칙으로 합니다.
 
-공개 배포는 빌드가 생성한 `_site` 전체를 사용하며 게임 HTML, 캠페인, PWA manifest와 아이콘을 함께 배포합니다. 개발할 때는 빌드 없이 저장소 폴더를 정적 HTTP 서버로 제공해 실행할 수 있습니다(예: `python -m http.server 8000` 후 `http://localhost:8000/`). 이때 업데이트 표시는 개발 소스임을 나타냅니다. 개발 소스를 `file://`로 직접 열면 상대 ES module 보안 제한을 받습니다. 파일 하나로 실행하려면 빌드한 `_site/index.html`을 사용합니다.
+공개 배포는 빌드가 생성한 `_site` 전체를 사용하며 게임 HTML, 캠페인, PWA manifest와 아이콘을 함께 배포합니다. 개발할 때는 빌드 없이 저장소 폴더를 정적 HTTP 서버로 제공해 실행할 수 있습니다(예: `python -m http.server 8000` 후 `http://localhost:8000/`). 이때 업데이트 표시는 개발 소스임을 나타냅니다. 개발 소스를 `file://`로 직접 열면 상대 ES module 보안 제한을 받습니다. 복사한 `_site` 역시 같은 원본 ESM이므로 HTTP 서버가 필요합니다.
 
 ## 커밋 메시지
 

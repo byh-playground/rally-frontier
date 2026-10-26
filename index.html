@@ -15,9 +15,10 @@ PURPOSE
   관점과 품질 기준을 이어갈 수 있어야 한다.
 - 이 Contract는 파일 상단 한 곳에서만 관리한다. 함수 주변에 동일한 계약을 복제하지 않는다.
 
-1. INLINE ENGINE / SELF-DESCRIBING
-- index.html은 엔진 실행물이며 최신 개발 베이스다. 캠페인 데이터는 campaign/campaigns.js 한 모듈에 둔다. 과거 파일/중간 후보본으로 되돌아가지 않는다.
-- 게임 규칙·아트 코드는 HTML 안에 유지하며 공통 실행 기반은 gamekit 모듈로 조합한다. 공통 코드 원본은 bloom-gamekit 저장소에서만 관리하며 이 저장소는 gamekit.lock.json에 고정 버전·SHA-256만 기록한다. 명시적 setup으로 검증한 원본 dist bytes를 Git 제외 .cache/gamekit에 가져온다. 개발 소스는 HTTP(S)에서 이 cache·lock 및 campaign/campaigns.js를 함께 제공하고 배포 HTML은 해당 모듈과 데이터를 포함하여 외부 파일 다운로드 없이 부팅·싱글·캠페인을 실행한다. 싱글은 기존의 실제 WebRTC 로컬 연결을 유지하며 네트워크 어댑터 전체 차단 상태의 연결은 별도 검증 범위다. 멀티플레이 발견·연결에는 네트워크가 필요하다.
+1. SOURCE ENGINE / SELF-DESCRIBING
+- index.html은 원본 브라우저 ESM 진입점이며 최신 개발 베이스다. 게임 실행 코드는 src/main.js, 공통 규칙·메타데이터는 src/core/, 스타일은 src/styles/에 두고 캠페인은 campaign/campaigns.js 한 모듈에 둔다. 과거 파일/중간 후보본으로 되돌아가지 않는다.
+- 공통 코드 원본은 bloom-gamekit 저장소에서 관리하고 gamekit.lock.json에 고정 source/dist 커밋·SHA-256을 기록한다. 브라우저는 공식 불변 dist ESM bytes를 검증한 후 로드한다. 개발과 배포는 동일한 원본 파일을 HTTP(S)에서 제공하며 배포용 번들을 만들지 않는다. 실제 제품의 최초 부팅에는 고정 CDN 접근이 필요하다.
+- setup:gamekit은 QA용 불변 dist bytes·manifest를 검증하여 Git 제외 .cache/gamekit에 보관한다. QA의 로컬 SDK 응답과 실제 제품의 CDN 접근을 구별한다. 원본 복사는 SDK를 포함하거나 단일 HTML 오프라인 실행을 보장하지 않는다. 싱글은 기존 실제 WebRTC 로컬 연결을 유지하며 외부 NAT·네트워크 어댑터 전체 차단 연결은 별도 검증 범위다.
 - 구체적인 현재 구현 상태는 실행 코드가 SSOT이며, 제품 설명/수치는 인게임 위키와 Definition이 담당한다.
 
 2. STRUCTURE — IS-A / HAS-A / CAN-BE
@@ -82,7 +83,7 @@ PURPOSE
 - Authoritative는 StrategySim과 StateContract, Runtime은 Core·캐시·명령 영수증 추적, Presentation은 Render State·확정 효과 journal이 소유한다. 재실행은 외부 AI 결정·VFX·결과·replay 기록을 중복 실행하지 않는다.
 - 롤백은 제한된 prediction 범위 안에서 과거 상태를 복원한 호출 안에 현재 틱까지 동기 재실행한다. 시뮬레이션은 렌더링·DOM과 분리하며 재실행 중 소리·알림을 중복 발생시키지 않는다.
 - Core frame t는 게임의 step 이전 S[t]다. UI·AI 명령은 player-local sequence로 제출하며 확정 frame의 정렬된 입력만 게임 명령과 replay로 변환한다. Gameplay 시간은 Simulation Tick, scheduler와 지연 정책은 Runtime이다.
-- Nostr는 Discovery/Signaling만 사용하며 Gameplay는 raw RTCDataChannel의 바이너리로 전송한다. 개발자 소유 서버·TURN fallback은 사용하지 않는다. SDK는 gamekit.lock.json의 고정 source/dist 커밋·manifest 및 모듈 SHA-256으로 검증한 공통 gamekit 분리 모듈을 사용한다. setup은 정확한 불변 dist 커밋에서 bytes를 가져오고 배포 빌드는 모든 모듈·정식 캠페인을 단일 HTML에 포함한다. source 출처도 같은 lock에서 읽는다. 로딩과 필수 API 확인 후 초기화하며 실패 시 오류를 표시한다. 다른 버전·CDN·내장 대체 Core fallback은 사용하지 않는다.
+- Nostr는 Discovery/Signaling만 사용하며 Gameplay는 raw RTCDataChannel의 바이너리로 전송한다. 개발자 소유 서버·TURN fallback은 사용하지 않는다. SDK는 gamekit.lock.json의 고정 source/dist 커밋·manifest 및 모듈 SHA-256으로 검증한 공통 gamekit 분리 모듈을 사용한다. setup은 정확한 불변 dist 커밋에서 QA용 bytes를 가져온다. 배포는 원본 ESM·정식 캠페인·원본 자원을 그대로 복사하며 브라우저가 고정 SDK bytes를 SHA-256으로 검증한다. source 출처도 같은 lock에서 읽는다. 로딩과 필수 API 확인 후 초기화하며 실패 시 오류를 표시한다. 다른 버전·CDN·내장 대체 Core fallback은 사용하지 않는다.
 
 7. ONE MEANING, ONE COMMON MECHANIC
 - projectile, continuous damage, targeting, VFX 등 같은 의미의 기능은 하나의 공통 계약을 사용한다.

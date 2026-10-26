@@ -2,214 +2,80 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
-const { stampHtml } = require('./build-pages.cjs');
-const source = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-const commit = 'a'.repeat(40);
-const builtAt = '2026-10-03T04:10:20.000Z';
-
-test('each deployment embeds its time and source revision without changing game code', () => {
-  const first = stampHtml(source, { commit, builtAt });
-  const later = stampHtml(source, { commit: 'b'.repeat(40), builtAt: '2026-10-04T00:00:00Z' });
-  assert.equal(first.metadata.id, '20261003T041020+0000-rf-aaaaaaaaaaaa');
-  assert.notEqual(first.metadata.id, later.metadata.id);
-  assert.notEqual(first.metadata.id, stampHtml(source, { commit, builtAt: '2026-10-03T04:10:21Z' }).metadata.id);
-  assert.equal(first.html.replace(`const BUILD_ID="${first.metadata.id}";`, 'const BUILD_ID="development";'), source);
-  const declaration = first.html.match(/class BuildMetadata\{[\s\S]*?const BUILD_META=Object.freeze\([\s\S]*?\);/)[0];
-  const sandbox = { BUILD_ID: first.metadata.id };
-  vm.runInNewContext(declaration + ';globalThis.metadata=BUILD_META;', sandbox);
-  assert.equal(new Date(sandbox.metadata.updatedAt).toISOString(), builtAt);
-  for (const [, attrs, js] of first.html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
-    if (!/type=["'](?:module|application\/json)/i.test(attrs)) new vm.Script(js);
-  }
-});
-
-test('missing/duplicate marker and invalid provenance fail the build', () => {
-  for (const html of ['', source.replace('const BUILD_ID="development";', 'const BUILD_ID="old";'), source + 'const BUILD_ID="development";']) {
-    assert.throws(() => stampHtml(html, { commit, builtAt }), /marker/);
-  }
-  assert.throws(() => stampHtml(source, { commit: 'unknown', builtAt }), /commit/);
-  assert.throws(() => stampHtml(source, { commit, builtAt: 'not-a-date' }), /timestamp/);
-});
-
-test('source checkout identifies itself as development rather than a stale release', () => {
-  const declaration = source.match(/class BuildMetadata\{[\s\S]*?const BUILD_META=Object.freeze\([\s\S]*?\);/)[0];
-  const sandbox = { BUILD_ID: 'development' };
-  vm.runInNewContext(declaration + ';globalThis.metadata=BUILD_META;', sandbox);
-  assert.equal(sandbox.metadata.updatedAt, null);
-});
-
-test('standalone build bundles verified modules, campaign and visual assets',()=>{
-  const {bundleGame}=require('./bundle-gamekit.cjs');const root=path.resolve(__dirname,'..'),html=bundleGame(root,source);
-  assert(html.includes('data:text/javascript;base64,'));assert(!html.includes('import(this.importAttempt?'));
-  assert(!html.includes('href="./icons/'));assert(!html.includes('href="./manifest.webmanifest"'));
-  assert(!html.includes('compiledVectorAssets'));assert(!html.includes('vectorAssetsData'));assert(!html.includes('.cache/vector-assets.compiled.js'));
-  for(const [,attrs,js]of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi))if(!/type=["'](?:module|application\/json)/i.test(attrs))new vm.Script(js);
-});
-
-const { bundleGame } = require('./bundle-gamekit.cjs');
+const os = require('node:os');
+const { execFileSync } = require('node:child_process');
+const { verifySource, buildPages, sourcePaths } = require('./build-pages.cjs');
 const root = path.resolve(__dirname, '..');
-const bundleMarkers = [
-  ['module map', source.match(/const RALLY_GAMEKIT_MODULES=Object\.freeze\(\{[^\n]+\}\);/)[0]],
-  ['provenance', source.match(/const RALLY_GAMEKIT_SOURCE=Object\.freeze\(\{[^\n]+\}\);/)[0]],
-  ['unit SVG manifest', 'const RALLY_VECTOR_ASSET_MANIFEST_INLINE=null;'],
-  ['unit SVG manifest URL', "const RALLY_VECTOR_ASSET_MANIFEST_URL='./assets/units/manifest.json';"],
-  ['campaign import', 'import(this.importAttempt?`./campaign/campaigns.js?retry=${this.importAttempt}`:"./campaign/campaigns.js")'],
-  ['touch icon', 'href="./icons/rally-180.png"'],
-  ['manifest link', '<link rel="manifest" href="./manifest.webmanifest">'],
-];
-for (const [name, marker] of bundleMarkers) {
-  test(`standalone rejects missing, duplicate and unsupported-format ${name} markers`, () => {
-    for (const html of [source.replace(marker, ''), source + marker, source.replace(marker, marker.replace(/([=(])/, '$1 '))]) {
-      assert.throws(() => bundleGame(root, html), /Expected exactly one .* marker/);
-    }
-  });
-}
-
-test('standalone rejects newly introduced relative runtime dependencies', () => {
-  for (const extra of [
-    '<script>import("./extra.js")</script>',
-    '<script>import ("extra.js")</script>',
-    '<script>import x from "./extra.js"</script>',
-    '<script>export {x} from "./extra.js"</script>',
-    '<script>fetch("data/missions.json")</script>',
-    '<script>new Worker("./worker.js")</script>',
-    '<script>new URL("./texture.png", import.meta.url)</script>',
-    '<script src="./extra.js"></script>',
-    '<img src="images/extra.png">',
-    '<script>image.src="./texture.png"</script>',
-    '<div style="background: url(./extra.png)"></div>',
-    '<style>@import "extra.css";</style>',
-    '<link href="styles/extra.css" rel="stylesheet">',
-    '<style>body { background: url(./extra.png) }</style>',
-  ]) assert.throws(() => bundleGame(root, source + extra), /Unresolved .* (?:import|resource)/);
-});
-
 function fixture(t) {
-  const os = require('node:os');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rally-bundle-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  for (const asset of ['gamekit.lock.json', '.cache/gamekit', 'assets/units', 'campaign', 'icons', 'manifest.webmanifest']) fs.cpSync(path.join(root, asset), path.join(dir, asset), { recursive: true });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rally-source-'));
+  t.after(() => {
+    assert.equal(path.dirname(dir), path.resolve(os.tmpdir()));
+    assert(path.basename(dir).startsWith('rally-source-'));
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  for (const asset of sourcePaths) fs.cpSync(path.join(root, asset), path.join(dir, asset), { recursive: true });
+  execFileSync('git', ['init', '--quiet', dir]);
+  execFileSync('git', ['-c', 'user.name=QA', '-c', 'user.email=qa@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'source fixture'], { cwd: dir });
   return dir;
 }
-function changeLock(dir, change) {
-  const filename = path.join(dir, 'gamekit.lock.json');
-  const lock = JSON.parse(fs.readFileSync(filename, 'utf8'));
-  change(lock);
-  fs.writeFileSync(filename, JSON.stringify(lock));
+function compareTree(original, copied) {
+  if (fs.statSync(original).isDirectory()) {
+    assert.deepEqual(fs.readdirSync(copied), fs.readdirSync(original));
+    for (const name of fs.readdirSync(original)) compareTree(path.join(original, name), path.join(copied, name));
+  } else assert.deepEqual(fs.readFileSync(copied), fs.readFileSync(original), original);
 }
-
-test('standalone detects modified module bytes', t => {
+test('Pages artifact preserves every source byte and records separate revision provenance', t => {
+  const dir = fixture(t), metadata = buildPages(dir);
+  for (const asset of sourcePaths) compareTree(path.join(dir, asset), path.join(dir, '_site', asset));
+  assert.equal(metadata.format, 'source-esm');
+  assert.equal(metadata.commit, execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim());
+  assert(Number.isFinite(Date.parse(metadata.builtAt)));
+  const lock = JSON.parse(fs.readFileSync(path.join(dir, 'gamekit.lock.json')));
+  assert.deepEqual(metadata.gamekit, { repository: lock.repository, sourceCommit: lock.sourceCommit, distCommit: lock.distCommit });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, '_site/build.json'))), metadata);
+  assert(!fs.existsSync(path.join(dir, '_site/.cache')));
+  assert(fs.readFileSync(path.join(dir, '_site/src/main.js'), 'utf8').includes('const BUILD_ID="development";'));
+  fs.writeFileSync(path.join(dir, '_site/stale.html'), 'old');
+  buildPages(dir);
+  assert(!fs.existsSync(path.join(dir, '_site/stale.html')));
+});
+test('missing source entrypoint fails and removes stale artifact before verification', t => {
   const dir = fixture(t);
-  fs.appendFileSync(path.join(dir, '.cache/gamekit/camera.js'), '\n// modified\n');
-  assert.throws(() => bundleGame(dir, source), /integrity mismatch: camera.js/);
+  buildPages(dir);
+  fs.writeFileSync(path.join(dir, 'index.html'), '<html>old executable</html>');
+  assert.throws(() => buildPages(dir), /Original entrypoint/);
+  assert(!fs.existsSync(path.join(dir, '_site')));
+});
+test('source SDK module map must exactly match validated lock provenance', t => {
+  const dir = fixture(t), main = path.join(dir, 'src/main.js');
+  fs.writeFileSync(main, fs.readFileSync(main, 'utf8').replace('"camera":"camera.js"', '"camera":"extra.js"'));
+  assert.throws(() => verifySource(dir), /module map mismatch: camera/);
+});
+test('source packaging rejects tampered original SVGs', t => {
+  const dir = fixture(t), manifest = JSON.parse(fs.readFileSync(path.join(dir, 'assets/units/manifest.json')));
+  fs.writeFileSync(path.join(dir, manifest.assets[0].sourcePath), 'tampered');
+  assert.throws(() => buildPages(dir), /Unit SVG (?:byte length|SHA-256) mismatch/);
+});
+test('current source cannot accidentally enter the retired standalone bundler', () => {
+  assert.throws(() => require('./bundle-gamekit.cjs').bundleGame(root, fs.readFileSync(path.join(root, 'index.html'), 'utf8')), /Standalone bundling is retired/);
 });
 
 for (const [name, change] of [
-  ['repository', lock => { lock.repository = 'unexpected/repository'; }],
-  ['source commit', lock => { lock.sourceCommit = 'unknown'; }],
-  ['dist commit', lock => { lock.distCommit = null; }],
-  ['manifest digest', lock => { lock.distManifestSha256 = 'bad'; }],
-  ['missing module', lock => { delete lock.modules.camera; }],
-  ['extra module', lock => { lock.modules.extra = lock.modules.camera; }],
-  ['path traversal', lock => { lock.modules.camera.file = '../../camera.js'; }],
-  ['invalid hash', lock => { lock.modules.camera.sha256 = 'bad'; }],
-]) test(`standalone rejects invalid provenance: ${name}`, t => {
-  const dir = fixture(t);
-  changeLock(dir, change);
-  assert.throws(() => bundleGame(dir, source), /Invalid Gamekit lock/);
+ ['repository', lock => { lock.repository = 'unexpected/repository'; }],
+ ['source commit', lock => { lock.sourceCommit = 'unknown'; }],
+ ['dist commit', lock => { lock.distCommit = null; }],
+ ['manifest digest', lock => { lock.distManifestSha256 = 'bad'; }],
+ ['missing module', lock => { delete lock.modules.camera; }],
+ ['extra module', lock => { lock.modules.extra = lock.modules.camera; }],
+ ['path traversal', lock => { lock.modules.camera.file = '../../camera.js'; }],
+ ['invalid hash', lock => { lock.modules.camera.sha256 = 'bad'; }],
+]) test(`source packaging rejects invalid provenance: ${name}`, t => {
+ const dir=fixture(t), file=path.join(dir,'gamekit.lock.json'), lock=JSON.parse(fs.readFileSync(file));
+ change(lock);fs.writeFileSync(file,JSON.stringify(lock));assert.throws(()=>buildPages(dir),/Invalid Gamekit lock/);
 });
 
-test('a new dependency fails even when its module hash is updated', t => {
-  const dir = fixture(t);
-  const filename = path.join(dir, '.cache/gamekit/camera.js');
-  fs.appendFileSync(filename, '\nimport "./extra.js";\n');
-  changeLock(dir, lock => { lock.modules.camera.sha256 = require('node:crypto').createHash('sha256').update(fs.readFileSync(filename)).digest('hex'); });
-  const manifestPath=path.join(dir,'.cache/gamekit/manifest.json'), manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));
-  manifest.modules.find(entry=>entry.file==='camera.js').sha256=require('node:crypto').createHash('sha256').update(fs.readFileSync(filename)).digest('hex');
-  fs.writeFileSync(manifestPath,JSON.stringify(manifest));
-  changeLock(dir,lock=>{lock.distManifestSha256=require('node:crypto').createHash('sha256').update(fs.readFileSync(manifestPath)).digest('hex')});
-  assert.throws(() => bundleGame(dir, source), /Unresolved runtime import in camera.js/);
-});
-
-test('authored campaigns cannot introduce hidden data-module dependencies', t => {
-  const dir = fixture(t);
-  fs.appendFileSync(path.join(dir, 'campaign/campaigns.js'), '\nexport {mission} from "./extra.js";\n');
-  assert.throws(() => bundleGame(dir, source), /Unresolved runtime import in campaign/);
-});
-
-test('source checkout URL customization is untouched and standalone uses verified assets', () => {
-  const customized = source.replace('./.cache/gamekit/camera.js', './custom/camera.js');
-  const html = bundleGame(root, customized);
-  assert(customized.includes('./custom/camera.js'));
-  assert(!html.includes('./custom/camera.js'));
-  assert.equal(fs.readFileSync(path.join(root, 'index.html'), 'utf8'), source);
-});
-
-test('bundled module bytes and embedded revision exactly match provenance', () => {
-  const html = bundleGame(root, source);
-  const lock = JSON.parse(fs.readFileSync(path.join(root, 'gamekit.lock.json'), 'utf8'));
-  const modules = JSON.parse(html.match(/const RALLY_GAMEKIT_MODULES=Object\.freeze\((\{[^\n]+\})\);/)[1]);
-  const provenance = JSON.parse(html.match(/const RALLY_GAMEKIT_SOURCE=Object\.freeze\((\{[^\n]+\})\);/)[1]);
-  assert.deepEqual(provenance, { repository: lock.repository, sourceCommit: lock.sourceCommit, distCommit: lock.distCommit });
-  assert.deepEqual(Object.keys(modules).sort(), Object.keys(lock.modules).sort());
-  for (const [name, entry] of Object.entries(lock.modules)) {
-    const bytes = Buffer.from(modules[name].split(',')[1], 'base64');
-    assert.equal(require('node:crypto').createHash('sha256').update(bytes).digest('hex'), entry.sha256);
-    assert.deepEqual(bytes, fs.readFileSync(path.join(root, '.cache/gamekit', entry.file)));
-  }
-  assert.equal(Object.keys(modules).includes('vectorAssetsLoader'), true);
-  const inline = JSON.parse(html.match(/const RALLY_VECTOR_ASSET_MANIFEST_INLINE=(\{[^\n]+\});/)[1]);
-  const sourceManifest = JSON.parse(fs.readFileSync(path.join(root, 'assets/units/manifest.json'), 'utf8'));
-  assert.equal(inline.schemaVersion, sourceManifest.schemaVersion);
-  assert.equal(inline.assets.length, sourceManifest.assets.length);
-  for (let i = 0; i < inline.assets.length; i++) {
-    const embedded = inline.assets[i], original = sourceManifest.assets[i];
-    assert.equal(embedded.id, original.id);
-    assert.equal(embedded.sourcePath, original.sourcePath);
-    assert.equal(embedded.sha256, original.sha256);
-    assert.equal(embedded.bytes, original.bytes);
-    assert.equal(embedded.url.startsWith('data:image/svg+xml;base64,'), true);
-    const svg = Buffer.from(embedded.url.slice(embedded.url.indexOf(',') + 1), 'base64');
-    assert.equal(svg.byteLength, original.bytes);
-    assert.equal(require('node:crypto').createHash('sha256').update(svg).digest('hex'), original.sha256);
-    assert.deepEqual(svg, fs.readFileSync(path.join(root, original.sourcePath)));
-  }
-});
-
-test('native source metadata reads the dependency lock instead of duplicating revision values', () => {
-  const descriptor = source.match(/const RALLY_GAMEKIT_SOURCE=Object\.freeze\((\{[^\n]+\})\);/)[1];
-  const sandbox = {};
-  vm.runInNewContext('globalThis.descriptor=' + descriptor, sandbox);
-  assert.equal(sandbox.descriptor.lock, './gamekit.lock.json');
-  assert.deepEqual(Object.keys(sandbox.descriptor), ['lock']);
-  const html = bundleGame(root, source);
-  assert.ok(!html.includes('./gamekit.lock.json'));
-  const modules = JSON.parse(html.match(/const RALLY_GAMEKIT_MODULES=Object\.freeze\((\{[^\n]+\})\);/)[1]);
-  assert.ok(Object.values(modules).every(url => url.startsWith('data:text/javascript;base64,')));
-});
-
-
-test('distribution manifest digest and per-module provenance must agree',t=>{
- const dir=fixture(t),file=path.join(dir,'.cache/gamekit/manifest.json'),bytes=fs.readFileSync(file);
- fs.appendFileSync(file,' ');assert.throws(()=>bundleGame(dir,source),/dist manifest integrity mismatch/);
- fs.writeFileSync(file,bytes);changeLock(dir,lock=>{lock.modules.camera.sha256='0'.repeat(64)});
- assert.throws(()=>bundleGame(dir,source),/dist manifest module mismatch: camera.js/);
-});
-
-test('standalone build rejects tampered or incomplete original SVG inputs',t=>{
- const dir=fixture(t),manifestPath=path.join(dir,'assets/units/manifest.json'),manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));
- manifest.assets[0].sha256='0'.repeat(64);fs.writeFileSync(manifestPath,JSON.stringify(manifest));
- assert.throws(()=>bundleGame(dir,source),/Unit SVG SHA-256 mismatch/);
-});
-
-test('standalone contains original SVG resources and compiles them only at startup',()=>{
- const html=bundleGame(root,source);
- const inline=JSON.parse(html.match(/const RALLY_VECTOR_ASSET_MANIFEST_INLINE=(\{[^\n]+\});/)[1]);
- assert.equal(inline.assets.length,51);
- assert.match(html,/loadRallyVectorAssets\(namespaces\.vectorAssetsLoader\)/);
- assert.match(html,/expectedSha256:entry\.sha256/);
- assert.match(html,/includeSourcePaths:false/);
- assert.doesNotMatch(html,/\.\/assets\/units\/manifest\.json/);
- assert.doesNotMatch(html,/compiledVectorAssets|vectorAssetsData|\.cache\/vector-assets\.compiled\.js/);
+test('native source provenance reads only the canonical dependency lock', t => {
+ const dir=fixture(t), file=path.join(dir,'src/main.js');
+ fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace("lock:'./gamekit.lock.json'","lock:'./other-lock.json'"));
+ assert.throws(()=>verifySource(dir),/lock descriptor mismatch/);
 });
