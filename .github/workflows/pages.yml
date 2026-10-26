@@ -15,31 +15,19 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - name: Check browser source syntax and assets
+      - name: Install QA dependencies
+        run: npm ci
+      - name: Install Chromium for source startup verification
+        run: npx playwright install --with-deps chromium
+      - name: Verify pinned dependencies and source packaging
         run: |
-          node --check src/main.js
-          node --check src/core/game-rules.js
-          node --check src/core/build-metadata.js
-          node --check campaign/campaigns.js
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const html = fs.readFileSync('index.html','utf8');
-          if (!html.includes('src="./src/main.js"') || !html.includes('href="./src/styles/main.css"')) throw Error('Original entrypoint missing');
-          const lock=JSON.parse(fs.readFileSync('gamekit.lock.json','utf8'));
-          const main=fs.readFileSync('src/main.js','utf8');
-          if(!lock.distCommit||!lock.sourceCommit||Object.keys(lock.modules).length!==14||!main.includes("Gamekit module SHA-256 mismatch"))throw Error('Pinned SDK source contract missing');
-          for(const path of ['src/styles/main.css','assets/units/manifest.json','campaign/campaigns.js','icons/rally-180.png','manifest.webmanifest']){
-            if(!fs.statSync(path).size)throw Error('Missing source asset '+path);
-          }
-          NODE
+          npm run test:build
+          npm run build
           git diff --check
-      - name: Copy original source without bundling
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        run: |
-          mkdir -p _site
-          cp index.html gamekit.lock.json manifest.webmanifest _site/
-          cp -R src assets campaign icons _site/
-          touch _site/.nojekyll
+      - name: Verify original ESM and SVG startup in Chromium
+        env:
+          QA_BROWSER_CHANNEL: chromium
+        run: npm run test:startup -- _site/index.html
       - uses: actions/upload-pages-artifact@v4
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         with:

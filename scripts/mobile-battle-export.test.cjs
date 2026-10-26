@@ -6,7 +6,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const test = require("node:test");
 
-const html = readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+const html = readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
 const classStart = html.indexOf("class MobileBattleTestMode{");
 const classEnd = html.indexOf("\nconst CAMPAIGN_MISSION_SCHEMA_VERSION=", classStart);
 assert.ok(classStart >= 0 && classEnd > classStart, "MobileBattleTestMode class boundary should be present");

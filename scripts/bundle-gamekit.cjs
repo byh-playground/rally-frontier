@@ -58,6 +58,7 @@ function checkHTML(html){
   for(const [,css]of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi))checkResources(css,'standalone stylesheet',true);
 }
 function bundleGame(root,source){
+  if (/src=["']\.\/src\/main\.js["']/.test(source)) throw Error('Standalone bundling is retired for source ESM. Use npm run build and serve _site over HTTP.');
   const {lock,modules:moduleBytes}=readGamekit(root);
   const modules={};
   for(const [name,entry] of Object.entries(lock.modules)){

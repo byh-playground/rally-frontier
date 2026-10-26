@@ -3,9 +3,11 @@
   "private": true,
   "scripts": {
     "setup:gamekit": "node scripts/setup-gamekit.cjs",
-    "build": "npm run setup:gamekit && node scripts/build-pages.cjs",
+    "build": "node scripts/build-pages.cjs",
     "test:build": "npm run setup:gamekit && node --test scripts/setup-gamekit.test.cjs scripts/build-pages.test.cjs scripts/netcode-qa-module.test.cjs scripts/mobile-battle-export.test.cjs scripts/collision-grid-candidates.test.cjs scripts/vector-assets-loader-regression.cjs",
-    "test:vector-assets-visual": "node scripts/vector-assets-visual-regression.cjs"
+    "test:ui": "npm run setup:gamekit && node scripts/netcode-ui-e2e.cjs",
+    "test:startup": "npm run setup:gamekit && node scripts/vector-assets-startup-e2e.cjs",
+    "test:vector-assets-visual:legacy": "node scripts/vector-assets-visual-regression.cjs"
   },
   "engines": {
     "node": ">=22"

@@ -1,24 +1,16 @@
 const fs = require('node:fs');
-const http = require('node:http');
 const path = require('node:path');
 const { chromium } = require('playwright');
 
 async function main(htmlPath = path.resolve(process.argv[2] || '_site/index.html')) {
-  const html = fs.readFileSync(htmlPath);
-  const expected = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets/units/manifest.json'), 'utf8'));
-  const server = http.createServer((request, response) => {
-    if (request.url === '/' || request.url === '/index.html') {
-      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-      response.end(html);
-    } else {
-      response.writeHead(404);
-      response.end('standalone output must not request relative resources');
-    }
-  });
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-  const browser = await chromium.launch({ headless: true });
+  const { serveSource, routePinnedSDK } = require('./netcode-qa-module.cjs');
+  const expected = JSON.parse(fs.readFileSync(path.join(path.dirname(htmlPath), 'assets/units/manifest.json'), 'utf8'));
+  const server = await serveSource(htmlPath);
+  let browser;
   try {
+    browser = await chromium.launch({ headless: true, channel: process.env.QA_BROWSER_CHANNEL || 'msedge' });
     const page = await browser.newPage();
+    await routePinnedSDK(page);
     const pageErrors = [];
     const relativeRequests = [];
     page.on('pageerror', error => pageErrors.push(error.message));
@@ -26,7 +18,7 @@ async function main(htmlPath = path.resolve(process.argv[2] || '_site/index.html
       const pathname = new URL(request.url()).pathname;
       if (request.url().startsWith('http://127.0.0.1:') && pathname !== '/' && pathname !== '/index.html' && pathname !== '/favicon.ico') relativeRequests.push(request.url());
     });
-    await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(server.url, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => Object.keys(window.RallyVectorAssets || {}).length > 0 && typeof window.RallyGamekit?.createVectorAssetLoader === 'function' && window.RallyVectorAssetLoader, undefined, { timeout: 90_000 });
     const result = await page.evaluate(expected => {
       const assets = window.RallyVectorAssets || {};
@@ -49,12 +41,12 @@ async function main(htmlPath = path.resolve(process.argv[2] || '_site/index.html
     if (!result.omittedSourcePaths) throw new Error('Compiled unit SVGs unexpectedly include sourcePaths');
     if (result.cacheSize !== result.ids.length || result.pendingLoads !== 0) throw new Error('SDK startup loader cache does not contain every completed unit compilation');
     if (result.moduleAPI !== 'function') throw new Error('Pinned GameKit loader API is missing from the runtime');
-    if (relativeRequests.length) throw new Error(`Standalone output requested relative resources: ${relativeRequests.join(', ')}`);
+    if (!relativeRequests.some(url => new URL(url).pathname === '/src/main.js')) throw new Error('Original source entrypoint was not requested');
+    if (!relativeRequests.some(url => new URL(url).pathname === '/assets/units/manifest.json')) throw new Error('Original SVG manifest was not requested');
     if (pageErrors.length) throw new Error(`Browser page errors during startup: ${pageErrors.join('; ')}`);
     console.log(JSON.stringify({ status: 'passed', assetCount: result.ids.length, relativeRequests, pageErrors }, null, 2));
   } finally {
-    await browser.close();
-    await new Promise(resolve => server.close(resolve));
+    try { await browser?.close(); } finally { await server.close(); }
   }
 }
 

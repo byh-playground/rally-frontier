@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '../src/main.js'), 'utf8');
 const start = html.indexOf('class DeterministicCollisionGrid{');
 const end = html.indexOf('// Each circle\'s own swept bounds', start);
 assert(start >= 0 && end > start, 'Collision grid class markers must exist');
