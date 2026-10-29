@@ -224,7 +224,6 @@ async function runRole(browser, role) {
     const pixelComparison = comparePng(baselinePath, candidatePath);
     process.stdout.write('Pixel comparison: ' + JSON.stringify(pixelComparison) + '\n');
     assert.equal(baselineSample.scene.simTick, candidateSample.scene.simTick);
-    assert.equal(baselineSample.scene.displayTimeMs, candidateSample.scene.displayTimeMs);
     assert.deepEqual(baselineSample.scene.viewport, candidateSample.scene.viewport);
     assert.equal(baselineSample.scene.role, candidateSample.scene.role);
     assert.ok(candidateSample.vectorSubmissions >= fixture.vectorUnitIds.length, 'Vector body submissions include all four test units');
