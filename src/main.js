@@ -72,7 +72,7 @@ try{
   RallyNetcode=Object.freeze({...namespaces.rollback,...namespaces.deterministic,...namespaces.simloop,...namespaces.transport});
   RallyGamekit=Object.freeze(Object.assign({},...modules.map(([,module])=>module)));
   window.RallyGamekit=RallyGamekit;
-  for(const name of ['PresentationRuntime','RenderObject','WebGLDevice','createDOMInput','CameraViewport','PresentationEventQueue','resolveAnchorInto','DiagnosticRing','ReplayTimeline','MeshRenderer','MeshBuilder','createVectorAsset','createVectorAssetLoader','ObjectPool'])if(typeof RallyGamekit[name]!=='function')throw new Error('Gamekit module API missing: '+name);
+  for(const name of ['PresentationRuntime','RenderObject','WebGLDevice','createDOMInput','CameraViewport','PresentationEventQueue','resolveAnchorInto','DiagnosticRing','ReplayTimeline','VectorContext','createVectorActor','createVectorAssetLoader','ObjectPool'])if(typeof RallyGamekit[name]!=='function')throw new Error('Gamekit module API missing: '+name);
   for(const name of ["createSession","hashBytes","createValueCodec","WebRTCTransport","createNostrSignaler","createLoop","runSyncTestAsync"]){
     if(typeof RallyNetcode[name]!=="function")throw new Error("공개 라이브러리에 필수 API "+name+"가 없습니다. 라이브러리 배포 상태를 확인해 주세요.");
   }
@@ -18292,12 +18292,10 @@ class GLRenderer{
       failIfMajorPerformanceCaveat:false
     };
     this.device=new RallyGamekit.WebGLDevice(canvas,this.webglAttrs);
-    this.vectorMeshRenderer=new RallyGamekit.MeshRenderer(this.device,{safeAlphaRunBatching:true});
+    this.vectorContext=new RallyGamekit.VectorContext(this.device,{safeAlphaRunBatching:true});this.vectorContext.acquireMeshRenderer();// 메시 통계가 첫 유닛 그리기 전에도 null이 아니도록 미리 만든다.
     this.vectorUnitAssetCache=new Map();
-    this._vectorProjection=new Float32Array(9);this._vectorProjectionWidth=0;this._vectorProjectionHeight=0;
     this._vectorUnitMatrix=new Float32Array(6);
     this._vectorOcclusionCoords=new Float32Array(0);
-    this._vectorWhite=[1,1,1,1];
     this.gl=this.device.gl;
     this.passState={depthEnabled:true,depthWrite:true,depthFunc:"lequal",stencil:false,colorMask:[true,true,true,true]};
     if(!this.gl)throw new Error("RALLY FRONTIER requires WebGL for battlefield rendering.");
@@ -18580,7 +18578,7 @@ class GLRenderer{
   }
   drawBatch(pipeline,buffer,first,count,uniforms,textures=[]){
     // Direct regression renders can submit a pass without starting the animation loop.
-    if(!this.device.active&&!this.device.beginFrame())return;
+    if(!this.vectorContext.active&&!this.vectorContext.beginFrame())return;
     const state=this.passState;
     this.device.draw({pipeline,buffer,first,count,uniforms,textures,blend:'straight-alpha',
       depth:state.depthEnabled?{func:state.depthFunc,write:state.depthWrite}:false,
@@ -21675,17 +21673,8 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       if(target){vertices[i+2]=target[0];vertices[i+3]=target[1];vertices[i+4]=target[2]}
     }
     const compiled={...source,geometry:{...source.geometry,vertices}};
-    const asset=RallyGamekit.createVectorAsset(this.vectorMeshRenderer,compiled);
-    const player=asset.createPlayer({clip:"idle",startedAtMs:0});player.setExpression("default");player.seek(0);
-    record={asset,player,compiled,relation,isAir:UnitDefinition.get(type)?.layer==="AIR",partIds:new Set(asset.metadata.parts.map(part=>part.id)),expressionPoses:new Map()};this.vectorUnitAssetCache.set(key,record);return record;
-  }
-  vectorProjection(){
-    const width=Math.max(1,this.canvas.width|0),height=Math.max(1,this.canvas.height|0);
-    if(width!==this._vectorProjectionWidth||height!==this._vectorProjectionHeight){
-      this._vectorProjection.set([2/width,0,0,0,-2/height,0,-1,1,1]);
-      this._vectorProjectionWidth=width;this._vectorProjectionHeight=height;
-    }
-    return this._vectorProjection;
+    const actor=RallyGamekit.createVectorActor(this.vectorContext,compiled,{clip:"idle",startedAtMs:0});actor.setExpression("default").seek(0);
+    record={actor,compiled,relation,isAir:UnitDefinition.get(type)?.layer==="AIR",partIds:new Set(compiled.metadata.parts.map(part=>part.id))};this.vectorUnitAssetCache.set(key,record);return record;
   }
   vectorUnitMatrix(ctx){
     const scale=ctx.r/40,tr=this._unitFacingTransform,airFacing=ctx.airUnit?this.resolveAirFacingScreen(ctx.u):null,cos=airFacing?.fx??tr?.cos??1,sin=airFacing?.fy??tr?.sin??0;
@@ -21696,7 +21685,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     return matrix;
   }
   flushVectorMesh(reason){
-    return this.vectorMeshRenderer.flush(reason);
+    return this.vectorContext.active?this.vectorContext.flush(reason):undefined;
   }
   drawVectorUnitBody(ctx){
     const relation=this.factionRelation(ctx.u.side),record=this.unitVectorAssetRecord(ctx.u.type,relation);
@@ -21706,30 +21695,19 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       this.flush(this.frame,true);this.begin();
     }
     const expression=ctx.hit?(ctx.attack?"hit-attack":"hit"):(ctx.attack?"attack":"default");
-    let pose;
+    const actor=record.actor;
     if(record.isAir){
       const hash=HashUtil.hash(ctx.u.id),phase=(hash%997)*17;
-      record.player.seek(this.presentationNow(performance.now())+phase).setExpression(expression);
+      actor.seek(this.presentationNow(performance.now())+phase).setExpression(expression);
       const breathTell=ctx.u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.TELL,breathActive=ctx.u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.ACTIVE;
-      if(record.partIds.has("attackFx"))record.player.setPartVisible("attackFx",!!ctx.attack);
-      if(record.partIds.has("breathTell"))record.player.setPartVisible("breathTell",breathTell);
-      if(record.partIds.has("breathActive"))record.player.setPartVisible("breathActive",breathActive);
-      if(record.partIds.has("sac"))record.player.setBasePose("sac",{scaleX:ctx.attack?1.22:1,scaleY:ctx.attack?1.22:1});
-      if(record.partIds.has("jaw"))record.player.setBasePose("jaw",{opacity:breathTell||breathActive||ctx.attack?1:.15});
-      const parts=record.player.partPoses();
-      pose={parts:parts.map(({transform,opacity,visible})=>({transform,opacity,visible})),morph:parts[0]?.morph||[0,0]};
-    }else{
-      pose=record.expressionPoses.get(expression);
-    }
-    if(!pose){
-      record.player.setExpression(expression);
-      const parts=record.player.partPoses();
-      pose={parts:parts.map(({transform,opacity,visible})=>({transform,opacity,visible})),morph:parts[0]?.morph||[0,0]};
-      record.expressionPoses.set(expression,pose);
-    }
-    const meshOptions={projection:this.vectorProjection(),matrix:this.vectorUnitMatrix(ctx),parts:pose.parts,morph:pose.morph,alpha:ctx.ownStealthAlpha,
-      color:this._vectorWhite,depth:this._renderDepth??0,depthTest:!!this.passState.depthEnabled,depthWrite:true,depthWriteAlphaThreshold:.999,depthFunc:this.passState.depthFunc||"lequal"};
-    this.vectorMeshRenderer.drawMesh(record.asset.mesh,meshOptions);
+      if(record.partIds.has("attackFx"))actor.setPartVisible("attackFx",!!ctx.attack);
+      if(record.partIds.has("breathTell"))actor.setPartVisible("breathTell",breathTell);
+      if(record.partIds.has("breathActive"))actor.setPartVisible("breathActive",breathActive);
+      if(record.partIds.has("sac"))actor.setBasePose("sac",{scaleX:ctx.attack?1.22:1,scaleY:ctx.attack?1.22:1});
+      if(record.partIds.has("jaw"))actor.setBasePose("jaw",{opacity:breathTell||breathActive||ctx.attack?1:.15});
+    }else actor.setExpression(expression);
+    this.vectorContext.drawVectorActor(actor,{matrix:this.vectorUnitMatrix(ctx),alpha:ctx.ownStealthAlpha,depth:this._renderDepth??0,
+      depthTest:!!this.passState.depthEnabled,depthWrite:true,depthWriteAlphaThreshold:.999,depthFunc:this.passState.depthFunc||"lequal"});
     this.vectorAssetDrawnInstances=(this.vectorAssetDrawnInstances||0)+1;
     return record;
   }
@@ -22880,8 +22858,8 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     // Result/lobby UI owns the screen after a match ends. Do not continue sampling
     // presentation state from an ended match (especially the delayed sample buffer).
     if(UiRuntimeState.value.screen!=="game"&&UiRuntimeState.value.screen!=="replay"){
-      if(this.device.active)this.device.endFrame();
-      if(this.device.beginFrame())this.device.endFrame();
+      if(this.vectorContext.active)this.vectorContext.endFrame();
+      if(this.vectorContext.beginFrame())this.vectorContext.endFrame();
       requestAnimationFrame(this.loop);
       return;
     }
@@ -22892,12 +22870,12 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
 
     this.passProfiler.beginFrame();
     const visibleUnits=this.passProfiler.measure("prepare",()=>this.snapshot?this.prepareVisibleUnitFrame():this.visibleUnitFrame);
-    if(this.device.active)this.device.endFrame();
-    if(!this.passProfiler.measure("device-begin",()=>this.device.beginFrame())){requestAnimationFrame(this.loop);return}
+    if(this.vectorContext.active)this.vectorContext.endFrame();
+    if(!this.passProfiler.measure("device-begin",()=>this.vectorContext.beginFrame())){requestAnimationFrame(this.loop);return}
     Object.assign(this.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
 
     this.passProfiler.measure("ground",()=>this.renderGroundPass());
-    this.vectorMeshRenderer.beginFrame();this.vectorAssetDrawnInstances=0;this.vectorTerrainOcclusionTests=0;this.vectorTerrainOcclusionRegions=0;this.vectorTerrainOcclusionTriangles=0;
+    this.vectorAssetDrawnInstances=0;this.vectorTerrainOcclusionTests=0;this.vectorTerrainOcclusionRegions=0;this.vectorTerrainOcclusionTriangles=0;
     this.passProfiler.measure("world",()=>this.renderWorldPass(visibleUnits));
     this.passProfiler.measure("shadow",()=>this.renderShadowPass(visibleUnits));
     this.passProfiler.measure("overlay",()=>this.renderOverlayPass());
@@ -22905,7 +22883,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.passProfiler.measure("camera-compose",()=>this.renderCameraShakePass());
     this.passProfiler.measure("minimap",()=>this.renderMinimapPass());
 
-    const vectorStats=this.vectorMeshRenderer.stats();
+    const vectorStats=this.vectorContext.stats().mesh;
     rp.vectorAssetDraws=this.vectorAssetDrawnInstances;rp.vectorAssetInstances=vectorStats.instances;rp.vectorAssetDrawCalls=vectorStats.draws;
     rp.vectorFlushDiagnostics=MobileBattleTestMode.phase==="sampling"&&MobileBattleTestMode.vectorFlushDiagnosticsAvailable?{
       safeAlphaRunBatching:vectorStats.safeAlphaRunBatching===true,
@@ -22956,7 +22934,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       // above; a remaining frame-level failure keeps the diagnostic visible and retries so
       // recovery/correction or a later valid snapshot can restore presentation.
       requestAnimationFrame(this.loop);
-    }finally{if(this.device.active)this.device.endFrame();this._framePresentationAt=null;this._frameCamera=null}
+    }finally{if(this.vectorContext.active)this.vectorContext.endFrame();this._framePresentationAt=null;this._frameCamera=null}
 
   }
 }
@@ -25673,7 +25651,7 @@ class MobileBattleTestMode{
       this.peerSnapshotBaseline[role]={count:snapshotCount,totalMs:snapshotCpuMs,stepCount,stepTotalMs:stepCpuMs,pulseCount,pulseTotalMs:pulseCpuMs,snapshotUiCount,snapshotUiTotalMs:snapshotUiCpuMs};
       this.peerFrameBaseline[role]={session,sim,stepCount,stepCpuMs,snapshotCount,snapshotCpuMs,pulseCount,pulseCpuMs,snapshotUiCount,snapshotUiCpuMs};
     }
-    const stats=live.renderer?.vectorMeshRenderer?.stats?.();
+    const stats=live.renderer?.vectorContext?.stats?.().mesh;
     this.vectorFlushDiagnosticsAvailable=!!stats&&!!stats.flushReasons&&!!stats.drawDispatchReasons&&typeof stats.safeAlphaRunBatching==="boolean";
     this.vectorSafeAlphaRunBatching=this.vectorFlushDiagnosticsAvailable?stats.safeAlphaRunBatching:null;
   }
@@ -25876,7 +25854,7 @@ class MobileBattleTestMode{
     const paired=this.pairedSlowFrameSummary(intervals),sampleMetrics=Object.fromEntries(this.sampleMetricKeys.map(key=>[key,summary(key)]));
     const rendererMetricAvailability=Object.fromEntries(["vectorAssetDrawCalls","vectorAssetDraws","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances","vectorFlushEvents","vectorAlphaRunDrawCalls","vectorAlphaRunSafeBatches","vectorAlphaRunBatchedInstances","vectorAlphaRunDrawsSaved"].map(key=>{
       const available=(sampleMetrics[key]?.count||0)>0,vectorPathUsed=(sampleMetrics.vectorAssetDraws?.max||0)>0;
-      return[key,available?{available:true,vectorPathUsed,reason:vectorPathUsed?null:"No vector draw occurred in this sample; zero counters mean no calls."}:{available:false,value:null,reason:"No finite MeshRenderer statistic was exposed for this metric during the sample."}];
+      return[key,available?{available:true,vectorPathUsed,reason:vectorPathUsed?null:"No vector draw occurred in this sample; zero counters mean no calls."}:{available:false,value:null,reason:"No finite VectorContext mesh statistic was exposed for this metric during the sample."}];
     }));
     const match=MatchLifecycle.singleMatch,renderer=ActiveViewState.renderer,unitsPerSide=this.config.totalUnits/2,peers=this.peerSimulationSummary(match);
     const peerStepCpuMs=["host","guest"].map(role=>peers[role]?.available?Number(peers[role].step?.totalCpuMsDuringSample):NaN);
@@ -25888,8 +25866,8 @@ class MobileBattleTestMode{
     }));
     const frameAlignedSimulation={frameWindowMs:sampleMetrics.frameWindowMs,rendererCpuWorkMs:sampleMetrics.rendererCpuWorkMs,peers:frameAlignedPeers,unattributedElapsedMs:sampleMetrics.unattributedElapsedMs,
       accounting:"Per-frame deltas between completed renderer frames. Session pulse CPU includes StrategySim step and snapshot work; component values are nested details and must not be added again. Unattributed elapsed is window minus renderer and host/guest pulse CPU; it is not GPU time or idle time."};
-    const vectorAssetDrawCallMeaning="MeshRenderer metrics.draws: WebGL device.draw() dispatches, instanced where supported; this counts API draw dispatches, not measured GPU execution time.";
-    const vectorAssetDrawsMeaning="Rally vector unit-body submissions to MeshRenderer.drawMesh(), counted once per submitted unit body; distinct from WebGL draw dispatches.";
+    const vectorAssetDrawCallMeaning="VectorContext mesh stats draws: WebGL device.draw() dispatches, instanced where supported; this counts API draw dispatches, not measured GPU execution time.";
+    const vectorAssetDrawsMeaning="Rally vector unit-body submissions to VectorContext.drawVectorActor(), counted once per submitted unit body; distinct from WebGL draw dispatches.";
     const sampleIndexes=Array.from({length:this.sampleCount},(_,index)=>index),vectorFlushReasons=this.aggregateVectorReasonCounts(sampleIndexes,"flushReasons"),vectorDrawDispatchReasons=this.aggregateVectorReasonCounts(sampleIndexes,"drawDispatchReasons");
     const vectorDrawDispatchReasonTotal=Object.values(vectorDrawDispatchReasons).reduce((sum,count)=>sum+(Number(count)||0),0);
     this.report={schemaVersion:3,testMode:"mobile-battle",capturedAt:new Date().toISOString(),build:{id:BUILD_META.id,commit:BUILD_META.commit||null},collisionModel:"ally-soft-one-pass",
@@ -25898,8 +25876,8 @@ class MobileBattleTestMode{
       measurement:{collector:"completed renderer frame hook",observer:"preallocated numeric sample buffers; no CDP profiler",perFrameCounters:this.sampleMetricKeys,overheadMs:null,overheadUnavailableReason:"Observer cost is not isolated; rendererCpuWorkMs is captured before the diagnostic hook runs.",
         pairing:"all renderer and host/guest counter deltas share each completed-render-frame window; slow-frame subset selects by that same frame's frameIntervalMs p95",
         nestedCpuAccounting:"host/guest sessionPulseCpuMs includes StrategySim step and snapshot work; step/snapshot/snapshotUi are reported as nested components, not additive totals",vectorAssetDrawCallMeaning,vectorAssetDrawsMeaning,
-        vectorFlushDiagnostics:{available:this.vectorFlushDiagnosticsAvailable,safeAlphaRunBatching:this.vectorSafeAlphaRunBatching,scope:"reads native MeshRenderer.stats() during sampling; does not wrap or replace renderer methods",
-          flushReasonsMeaning:"Pinned GameKit flushReasons counts non-empty queue flush boundaries by reason; empty flush() no-ops are not counted.",drawDispatchReasonsMeaning:"Pinned GameKit drawDispatchReasons classifies every MeshRenderer device.draw() dispatch; the reason total should equal metrics.draws. These are submission counters, not GPU execution timing."}},
+        vectorFlushDiagnostics:{available:this.vectorFlushDiagnosticsAvailable,safeAlphaRunBatching:this.vectorSafeAlphaRunBatching,scope:"reads native VectorContext.stats().mesh during sampling; does not wrap or replace renderer methods",
+          flushReasonsMeaning:"Pinned GameKit flushReasons counts non-empty queue flush boundaries by reason; empty flush() no-ops are not counted.",drawDispatchReasonsMeaning:"Pinned GameKit drawDispatchReasons classifies every VectorContext mesh device.draw() dispatch; the reason total should equal metrics.draws. These are submission counters, not GPU execution timing."}},
       sample:{status:interrupted?"interrupted":"complete",durationMs:Math.round(elapsed),frameCount:intervals.count,fps:elapsed>0?Math.round(intervals.count*100000/elapsed)/100:null,
         frameIntervalMs:intervals,rendererCpuWorkMs:render,drawCalls:draws,vectorAssetDrawCalls:vectorDraws,bufferUploadBytes:sampleMetrics.bufferUploadBytes,
         vectorAssetGeometryBytes:sampleMetrics.vectorAssetGeometryBytes,vectorAssetInstanceBytes:sampleMetrics.vectorAssetInstanceBytes,alphaRunCacheHits:sampleMetrics.alphaRunCacheHits,alphaRunCacheMisses:sampleMetrics.alphaRunCacheMisses,
@@ -25915,8 +25893,8 @@ class MobileBattleTestMode{
       simulation:{startTick:start?.tick??null,endTick:end.tick,ticksAdvanced:start?.tick!=null&&end.tick!=null?end.tick-start.tick:null,peerStartTick:start?.peerTick??null,peerEndTick:end.peerTick,aliveUnitsStart:start?.units||null,aliveUnitsEnd:end.units,peers},
       renderer:{backend:renderer?.backend||null,canvas:{width:renderer?.canvas?.width||null,height:renderer?.canvas?.height||null},vectorAssets:!!window.RallyVectorAssets,vectorMeshes:renderer?.perfStats?.vectorAssetMeshes??null,
         lastFrameSequence:renderer?.perfStats?.frameSequence??null,alphaRunCache:{hits:sampleMetrics.alphaRunCacheHits,misses:sampleMetrics.alphaRunCacheMisses},
-        vectorFlushDiagnostics:{available:this.vectorFlushDiagnosticsAvailable,safeAlphaRunBatching:this.vectorSafeAlphaRunBatching,reason:this.vectorFlushDiagnosticsAvailable?null:"Pinned MeshRenderer.stats() did not expose native flush and draw dispatch reason maps."},
-        instancing:{enabled:typeof renderer?.vectorMeshRenderer?.instanced==="boolean"?renderer.vectorMeshRenderer.instanced:null,reason:typeof renderer?.vectorMeshRenderer?.instanced==="boolean"?null:"Pinned MeshRenderer did not expose its instancing flag",
+        vectorFlushDiagnostics:{available:this.vectorFlushDiagnosticsAvailable,safeAlphaRunBatching:this.vectorSafeAlphaRunBatching,reason:this.vectorFlushDiagnosticsAvailable?null:"Pinned VectorContext.stats().mesh did not expose native flush and draw dispatch reason maps."},
+        instancing:{enabled:typeof renderer?.vectorContext?.stats?.().mesh?.instanced==="boolean"?renderer.vectorContext.stats().mesh.instanced:null,reason:typeof renderer?.vectorContext?.stats?.().mesh?.instanced==="boolean"?null:"Pinned VectorContext.stats().mesh did not expose its instancing flag",
           usedInSample:(sampleMetrics.vectorAssetDraws?.max||0)>0?null:false,usageReason:(sampleMetrics.vectorAssetDraws?.max||0)>0?"Pinned stats expose renderer instancing capability, but not per-frame instanced-draw activity.":"No vector draw occurred in this sample."}}};
     this.phase="complete";this.pause();this.renderHud(now);
   }
