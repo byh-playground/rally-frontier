@@ -1,12 +1,12 @@
 {
   "repository": "byh-playground/bloom-gamekit",
-  "sourceCommit": "dd59a57fcf66409cef16632ffb433c0b760324fa",
-  "distCommit": "418e17c455db56d6ed073d82d115191d9dd8bf04",
+  "sourceCommit": "32e4301ac1296c39a14145e356889f75ce787813",
+  "distCommit": "ed3bbafc0440ec6ea01f775df3f92d05a7947bb5",
   "upstreamRollbackCommit": "c3173914519a78834360430071e7a125736d86d5",
   "modules": {
     "rollback": {
       "file": "rollback.js",
-      "sha256": "071fb0f82521d212d00f112abd90fc149616d80b79d4628db0008637ce102596"
+      "sha256": "44adba334af2e138e4de9fb06b4e73164e1f0ad692e70e3fafa69f4850d0baf6"
     },
     "deterministic": {
       "file": "deterministic.js",
@@ -22,7 +22,7 @@
     },
     "interpolation": {
       "file": "interpolation.js",
-      "sha256": "061960f311ad57894914186baa01f6b257269637353056ac93f86d34265a4ef8"
+      "sha256": "acad7ad93615633609a62e484bff918980fc84282840db9b5cd108e8f5bb133a"
     },
     "input": {
       "file": "input.js",
@@ -30,15 +30,15 @@
     },
     "rendering": {
       "file": "rendering.js",
-      "sha256": "021b11f83b49be3e94cfe0a67769dcd248b9463325b6dcc55ea4943a0ea6c18b"
+      "sha256": "d4d7dd153ce9d1b7111f9f4727b39eb539905f789d4b2d89f3b5f0ef59814092"
     },
     "vectorAssets": {
       "file": "vector-assets.js",
-      "sha256": "288eadf3830df2836f0b103dc513a906b5b9dbd58660885c18b2a0941d0e877a"
+      "sha256": "f5026e18cdc45b1888a2f7c62f5c36c4e828ef4f6cf9a473fbb7d4c83b7a41f7"
     },
     "camera": {
       "file": "camera.js",
-      "sha256": "c9d6f59a49e7ca0640b4f55fbe9aab2d1e5362d99ad0bb3871596a66fd3859c0"
+      "sha256": "99c1be43b6a38945028d029a5ecc594f7ff6dfc71075305264930748cafe88b6"
     },
     "events": {
       "file": "presentation-events.js",
@@ -54,12 +54,12 @@
     },
     "vectorAssetsLoader": {
       "file": "vector-assets-loader.js",
-      "sha256": "56042179b1b669d69d4791c5a1ad7bbd1927d8686fa4e9192504fb248c2170e2"
+      "sha256": "a9d9eaa61d891fb1dd9d7d8ac9d9781fe2545cc2a7f8ede6202556c2a7a2f48f"
     },
     "objectPool": {
       "file": "object-pool.js",
       "sha256": "4291d6d90f23b47024153e2d2db9e1af7f8b78586c8c0ee279621d42dc54f10b"
     }
   },
-  "distManifestSha256": "20244c2beeee33719f407a9baa92c55a4bd55a0e4eb9f094590bb0eed652296e"
+  "distManifestSha256": "df8532a6504aa0e39578ab16f109b75c946fae3bb9cb02ec854dd7fa9f2a6d60"
 }

@@ -282,7 +282,7 @@ await page.route(`${appUrl}**`,async route=>{
         roster:roster.map(u=>({id:u.id,type:u.type,x:u.x,y:u.y})),
         simTick:s.sim.tick,seed:s.sim.seed,mapSeed:s.sim.mapDescriptor?.seed,renderer:r?.backend,vectorAssetCount:Object.keys(window.RallyVectorAssets||{}).length,
         vectorUnitCoverage:{ground:groundTypes.length,withAssets:groundTypes.filter(type=>window.RallyVectorAssets?.[type]).length,missing:groundTypes.filter(type=>!window.RallyVectorAssets?.[type]),air:unitTypes.filter(type=>q.UnitDefinition.get(type)?.layer==='AIR')},
-        vectorCacheSize:r?.vectorUnitAssetCache?.size||0,vectorMesh:r?.vectorMeshRenderer?.stats?.()||null,
+        vectorCacheSize:r?.vectorUnitAssetCache?.size||0,vectorMesh:r?.vectorContext?.stats?.().mesh||null,
         screenshot:window.__motionQA.battleSnapshot,vectorClipTimeMs:0,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio,canvasWidth:r?.canvas?.width,canvasHeight:r?.canvas?.height},
         terrain:(()=>{const a=s.sim.world.terrain.surfaces,bounds=points=>{const xs=points.map(p=>Array.isArray(p)?p[0]:p.x),ys=points.map(p=>Array.isArray(p)?p[1]:(p.z??p.y));return{minX:Math.min(...xs),maxX:Math.max(...xs),minY:Math.min(...ys),maxY:Math.max(...ys)}};return{world:{width:s.sim.world.width,height:s.sim.world.height},bridges:(a.bridges||[]).map(b=>({id:b.id,elevation:b.elevation,points:b.points,bounds:bounds(b.points)})),cliffs:a.renderSurfaceMesh.filter(p=>p.kind==="cliff").map(p=>({id:p.id,kind:p.kind,bounds:bounds(p.vertices)}))}})(),
         gpu:r?.gl?(debugInfo?r.gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL):r.gl.getParameter(r.gl.RENDERER)):null,

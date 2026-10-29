@@ -57,7 +57,7 @@ function reportFixture() {
     build: { id: "20261016T033522+0000-rf-0c5866d65800", commit: "0123456789abcdef" }, collisionModel: "ally-soft-one-pass",
     device: { userAgent: "Headless browser details are omitted from summary", platform: "Win32", hardwareConcurrency: 12, viewport: { width: 844, height: 390, devicePixelRatio: 2, orientation: "landscape-primary" } },
     condition: { seed: 20261015, totalCombatUnits: 400, unitsPerSide: 200, composition: "mixed", rosters: { host: ["swordsman", "archer"], guest: ["swordsman", "archer"] }, tps: 10, warmupSeconds: 5, requestedSampleSeconds: 15 },
-    measurement: { collector: "completed renderer frame hook", perFrameCounters: ["frameIntervalMs", "frameWindowMs", "rendererCpuWorkMs", "hostStepCpuMs", "guestSessionPulseCpuMs", "unattributedElapsedMs"], vectorAssetDrawCallMeaning: "MeshRenderer metrics.draws: WebGL device.draw() dispatches; not measured GPU execution time.", nestedCpuAccounting: "sessionPulse includes StrategySim step and snapshot work", vectorFlushDiagnostics: { available: true, safeAlphaRunBatching: true, scope: "native stats" } },
+    measurement: { collector: "completed renderer frame hook", perFrameCounters: ["frameIntervalMs", "frameWindowMs", "rendererCpuWorkMs", "hostStepCpuMs", "guestSessionPulseCpuMs", "unattributedElapsedMs"], vectorAssetDrawCallMeaning: "VectorContext mesh stats draws: WebGL device.draw() dispatches; not measured GPU execution time.", nestedCpuAccounting: "sessionPulse includes StrategySim step and snapshot work", vectorFlushDiagnostics: { available: true, safeAlphaRunBatching: true, scope: "native stats" } },
     sample: {
       status: "complete", durationMs: 15000, frameCount: 180, fps: 7.31,
       frameIntervalMs: stats(135.7, 179.1, 220, 145), rendererCpuWorkMs: stats(12, 30.4, 48, 15),
@@ -288,12 +288,12 @@ test("same-frame slow rows join elapsed, renderer, Host/Guest simulation, vector
   assert.equal(result.flushReasons.alphaOverlap, 4);
 });
 
-test("sampling reads native MeshRenderer reason stats without wrapping renderer methods", () => {
+test("sampling reads native VectorContext mesh reason stats without wrapping renderer methods", () => {
   const { MobileBattleTestMode: mode } = makeHarness();
-  const originalFlush = function () {}, originalDrawMesh = function () {};
-  const renderer = { perfStats: { frameSequence: 11 }, vectorMeshRenderer: { flush: originalFlush, drawMesh: originalDrawMesh, stats: () => ({
+  const originalFlush = function () {}, originalDrawVectorActor = function () {};
+  const renderer = { perfStats: { frameSequence: 11 }, vectorContext: { flush: originalFlush, drawVectorActor: originalDrawVectorActor, stats: () => ({ mesh: {
     safeAlphaRunBatching: true, flushReasons: { alphaOverlap: 3 }, drawDispatchReasons: { alphaOverlap: 12 },
-  }) } };
+  } }) } };
   const makeSession = role => {
     const sim = { tick: 24, units: [], perfStats: { stepSamples: 0, stepCumulativeMs: 0, snapshotSamples: 0, snapshotCumulativeMs: 0, sampleTick: 0 } };
     return { role, sim, performanceStats: { timings: { pulse: { samples: 0, cumulativeMs: 0 }, snapshotUi: { samples: 0, cumulativeMs: 0 } } } };
@@ -302,6 +302,6 @@ test("sampling reads native MeshRenderer reason stats without wrapping renderer 
   mode.beginSampling(100, { renderer, match, sim: host.sim });
   assert.equal(mode.vectorFlushDiagnosticsAvailable, true);
   assert.equal(mode.vectorSafeAlphaRunBatching, true);
-  assert.equal(renderer.vectorMeshRenderer.flush, originalFlush);
-  assert.equal(renderer.vectorMeshRenderer.drawMesh, originalDrawMesh);
+  assert.equal(renderer.vectorContext.flush, originalFlush);
+  assert.equal(renderer.vectorContext.drawVectorActor, originalDrawVectorActor);
 });
