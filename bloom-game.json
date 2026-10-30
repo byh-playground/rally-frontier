@@ -1,0 +1,15 @@
+{
+  "$schema": "https://byh-playground.github.io/bloom-world/playground/bloom-game.schema.json",
+  "schemaVersion": 1,
+  "title": "랠리 프론티어",
+  "en": "RALLY FRONTIER",
+  "genre": "strategy",
+  "tags": ["실시간 전략", "군체전", "멀티플레이"],
+  "desc": "다수의 유닛과 병종을 지휘하는 실시간 전략 게임입니다.",
+  "points": [
+    "다양한 병종을 배치하고 전투 흐름에 개입",
+    "싱글·멀티플레이 군체전",
+    "BLOOM 세계관의 문명과 병종"
+  ],
+  "showcase": "https://byh-playground.github.io/rally-frontier/#/showcase"
+}
