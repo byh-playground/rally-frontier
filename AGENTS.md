@@ -16,7 +16,7 @@ USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES 
 - 게임 개발 방향과 품질·검증 기준은 `index.html` 상단 Development Contract를 따른다. 원본 코드 정본은 `index.html` + `src/main.js` + `src/core/` + `src/styles/`이며 배포용 번들을 만들지 않는다. 게임 변경의 실제 UI E2E와 시각 확인을 정적 검사만으로 대체하지 않는다. 미검증 게임 버전을 VALIDATED 또는 Stable로 표시하지 않는다.
 - 단일 `index.html` 안의 병렬 작업은 수정 함수·Definition·상태 소유자·공통 mechanic과 호출 관계로 겹침을 판단한다.
 - 머지 기본 방식은 작업 커밋을 하나로 squash한 뒤 Merge commit을 만드는 방식이다. `main`에 통합 작업 커밋 하나와 머지 커밋을 남긴다. 머지 후 로컬 `main`을 동기화하고 해당 PR 및 남아 있는 머지 완료 로컬 작업 브랜치를 정리한다. 미반영 변경과 다른 worktree에서 사용하는 브랜치는 보존한다. 세부 절차는 프로젝트 리뷰·머지 스킬을 따른다.
-- 공개 배포 변경은 별도 사용자 지시에 따른다.
+- 검증을 마친 PR은 별도 승인을 묻지 않고 머지한다. `main` 푸시는 Pages가 공개 주소에 자동 배포하므로 머지가 곧 리모트 확인용 배포다. Stable은 검증·승인한 커밋에 불변 태그로 명시 승격할 때만 만들며 Pages 배포만으로 Stable로 간주하지 않는다.
 
 ## 임시 프로젝트
 
@@ -30,4 +30,4 @@ USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES 
 
 - 개선 인벤토리 등록, 관리 대화 운영, 개발 대화의 업무 배정·인계 요청에는 [.agents/skills/pr-task-manager/SKILL.md](.agents/skills/pr-task-manager/SKILL.md)를 읽고 적용한다. 스킬은 공통 절차를 제공하며 저장소 설정은 이 파일에서 읽는다.
 - PR 리뷰·머지 요청에는 [.agents/skills/rally-review-merge/SKILL.md](.agents/skills/rally-review-merge/SKILL.md)를 읽고 적용한다.
-- “머지해줘” 또는 “리뷰하고 문제 없으면 머지해줘”라는 명시적 지시가 있으면 해당 스킬로 처리하고 같은 머지에 대한 확인을 반복해서 요청하지 않는다.
+- 검증을 마친 PR의 머지는 “머지해줘” 같은 지시가 없어도 해당 스킬로 처리하고, 같은 머지에 대한 확인을 반복해서 요청하지 않는다.
