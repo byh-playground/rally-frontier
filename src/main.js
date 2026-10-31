@@ -6,17 +6,12 @@ import { RangeUtil, GameRuleDefinition, GameRuleRuntime, SIM_TPS } from './core/
 const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","objectPool":"object-pool.js"});
 const RALLY_GAMEKIT_SOURCE=Object.freeze({lock:'./gamekit.lock.json'});
 const RALLY_VECTOR_ASSET_MANIFEST_URL='./assets/units/manifest.json';
-const RALLY_VECTOR_ASSET_MANIFEST_INLINE=null;
-let RALLY_NETCODE_URL=RALLY_GAMEKIT_SOURCE.lock||'gamekit:'+RALLY_GAMEKIT_SOURCE.distCommit;
+let RALLY_NETCODE_URL=RALLY_GAMEKIT_SOURCE.lock;
 let RallyNetcode,RallyGamekit;
 async function loadRallyVectorAssets(loaderModule){
-  let manifest=RALLY_VECTOR_ASSET_MANIFEST_INLINE;
-  if(!manifest){
-    if(!RALLY_VECTOR_ASSET_MANIFEST_URL)throw new Error('Standalone unit SVG manifest is missing.');
-    const response=await fetch(RALLY_VECTOR_ASSET_MANIFEST_URL,{cache:'no-store'});
-    if(!response.ok)throw new Error('Unit SVG manifest를 불러오지 못했습니다.');
-    manifest=await response.json();
-  }
+  const response=await fetch(RALLY_VECTOR_ASSET_MANIFEST_URL,{cache:'no-store'});
+  if(!response.ok)throw new Error('Unit SVG manifest를 불러오지 못했습니다.');
+  const manifest=await response.json();
   if(!manifest||manifest.schemaVersion!==1||!Array.isArray(manifest.assets)||!manifest.assets.length||manifest.assets.length>1024)throw new Error('Unit SVG manifest 형식이 올바르지 않습니다.');
   const ids=new Set();
   for(const entry of manifest.assets){
@@ -24,9 +19,7 @@ async function loadRallyVectorAssets(loaderModule){
     ids.add(entry.id);
     const sourcePath=`assets/units/${entry.id}.svg`;
     if(entry.sourcePath!==sourcePath||!Number.isSafeInteger(entry.bytes)||entry.bytes<1||entry.bytes>524288||!/^[a-f0-9]{64}$/.test(entry.sha256||''))throw new Error('Unit SVG manifest entry가 올바르지 않습니다: '+entry.id);
-    const isSourceUrl=entry.url===`./${sourcePath}`;
-    const isInlineUrl=typeof entry.url==='string'&&/^data:image\/svg\+xml;base64,(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(entry.url);
-    if(!isSourceUrl&&!isInlineUrl)throw new Error('Unit SVG URL이 허용되지 않습니다: '+entry.id);
+    if(entry.url!==`./${sourcePath}`)throw new Error('Unit SVG URL이 허용되지 않습니다: '+entry.id);
   }
   if(typeof loaderModule?.createVectorAssetLoader!=='function')throw new Error('Gamekit vector asset loader API가 없습니다.');
   const loader=loaderModule.createVectorAssetLoader({maxEntries:manifest.assets.length});
@@ -40,20 +33,15 @@ async function loadRallyVectorAssets(loaderModule){
   return {assets:Object.freeze(Object.fromEntries(loaded)),loader};
 }
 try{
-  let gamekitSource=RALLY_GAMEKIT_SOURCE;
-  let gamekitLock=null;
-  if(gamekitSource.lock){
-    const response=await fetch(gamekitSource.lock,{cache:'no-store'});
-    if(!response.ok)throw new Error('Gamekit lock를 불러오지 못했습니다. npm run setup:gamekit 후 HTTP 서버를 실행해 주세요.');
-    const lock=await response.json();
-    if(lock.repository!=='byh-playground/bloom-gamekit'||!/^[a-f0-9]{40}$/.test(lock.sourceCommit||'')||!/^[a-f0-9]{40}$/.test(lock.distCommit||''))throw new Error('Gamekit lock 출처가 올바르지 않습니다.');
-    gamekitLock=lock;
-    gamekitSource=Object.freeze({repository:lock.repository,sourceCommit:lock.sourceCommit,distCommit:lock.distCommit});
-  }
+  const lockResponse=await fetch(RALLY_GAMEKIT_SOURCE.lock,{cache:'no-store'});
+  if(!lockResponse.ok)throw new Error('Gamekit lock를 불러오지 못했습니다. npm run setup:gamekit 후 HTTP 서버를 실행해 주세요.');
+  const gamekitLock=await lockResponse.json();
+  if(gamekitLock.repository!=='byh-playground/bloom-gamekit'||!/^[a-f0-9]{40}$/.test(gamekitLock.sourceCommit||'')||!/^[a-f0-9]{40}$/.test(gamekitLock.distCommit||''))throw new Error('Gamekit lock 출처가 올바르지 않습니다.');
+  const gamekitSource=Object.freeze({repository:gamekitLock.repository,sourceCommit:gamekitLock.sourceCommit,distCommit:gamekitLock.distCommit});
   RALLY_NETCODE_URL='gamekit:'+gamekitSource.distCommit;
   // Import only immutable official ESM bytes from the pinned dist; keep source files unchanged.
   const modules=await Promise.all(Object.entries(RALLY_GAMEKIT_MODULES).map(async([name,file])=>{
-    const entry=gamekitLock?.modules?.[name];
+    const entry=gamekitLock.modules[name];
     if(!entry||entry.file!==file||!/^[a-f0-9]{64}$/.test(entry.sha256||''))throw new Error('Gamekit lock entry mismatch: '+name);
     const url='https://cdn.jsdelivr.net/gh/'+gamekitSource.repository+'@'+gamekitSource.distCommit+'/'+file;
     const response=await fetch(url);
@@ -13927,14 +13915,7 @@ prepareCampaignLiveDraft(){if(this.role!=="host"||!this.matchConfig?.campaignSce
 prepareDebugScenarioLiveDraft(){
     if(this.role!=="host"||!this.matchConfig?.debugScenario)return false;
     const cfg=DebugScenarioHarness.normalize(this.matchConfig.debugScenario);
-    const humanRole=cfg.humanRole==="host"?"host":"guest",enemyRole=humanRole==="host"?"guest":"host";
-    this.draft={
-      phase:"live",roomCode:this.roomCode,selectionMode:"deck",
-      decks:{host:[],guest:[]},defenseCards:{host:[],guest:[]},
-      deckReady:{host:true,guest:true},deckSelectDeadlineAt:0,winner:null
-    };
-    this.draft.decks[humanRole]=DebugScenarioHarness.unitRoster(cfg,humanRole==="host"?0:1);
-    this.draft.decks[enemyRole]=DebugScenarioHarness.unitRoster(cfg,enemyRole==="host"?0:1);
+    this.draft=DebugScenarioHarness.liveDraft(cfg,this.roomCode);
     return true;
   }
 start(){
@@ -25207,9 +25188,12 @@ class ReplayPresentation{
   const oldW=ActiveViewState.renderer.viewWorldW(),oldH=ActiveViewState.renderer.viewWorldH();
   const centerX=ActiveViewState.renderer.cameraLeft+oldW/2,centerY=ActiveViewState.renderer.cameraTop+oldH/2;
   ActiveViewState.renderer.replayZoom=RangeUtil.clamp(Number(value)||1,.6,1.8);
-  const vw=ActiveViewState.renderer.viewWorldW(),vh=ActiveViewState.renderer.viewWorldH();
-  ActiveViewState.renderer.cameraLeft=RangeUtil.clamp(centerX-vw/2,0,Math.max(0,(ActiveViewState.renderer?.world||WorldContext.standard).width-vw));
-  ActiveViewState.renderer.cameraTop=ActiveViewState.renderer.clampCameraTop(centerY-vh/2);
+  ReplayPresentation.centerReplayCamera(centerX,centerY);
+}
+  static centerReplayCamera(x,y){
+  const renderer=ActiveViewState.renderer,vw=renderer.viewWorldW(),vh=renderer.viewWorldH();
+  renderer.cameraLeft=RangeUtil.clamp(x-vw/2,0,Math.max(0,(renderer.world||WorldContext.standard).width-vw));
+  renderer.cameraTop=renderer.clampCameraTop(y-vh/2);
   ActiveViewState.minimap?.draw();
 }
   static renderReplaySnapshot(s){
@@ -25340,6 +25324,7 @@ class RoomCodeUtil{static randomCode(){return String(Math.floor(Math.random()*10
 class LocalEnvironmentUtil{static isLocalTest(){return !!MatchLifecycle.localTest}}
 class SinglePlayerModeUtil{static isSinglePlayer(){return !!MatchLifecycle.singleMatch}}
 
+const DEBUG_BATTLE_TIMELINE_MS=600000;
 class DebugScenarioHarness{
   static pending=null;
   static unitOptions(){
@@ -25366,6 +25351,33 @@ class DebugScenarioHarness{
       return["swordsman","archer"];
     }
     return[side===humanSide?config?.allyType:config?.enemyType].filter(Boolean);
+  }
+  static liveDraft(cfg,roomCode){
+    const draft={
+      phase:"live",roomCode,selectionMode:"deck",
+      decks:{host:[],guest:[]},defenseCards:{host:[],guest:[]},
+      deckReady:{host:true,guest:true},deckSelectDeadlineAt:0,winner:null
+    };
+    for(const role of ["host","guest"])draft.decks[role]=this.unitRoster(cfg,role==="host"?0:1);
+    return draft;
+  }
+  // The debug scene starts from the same match factory as a real debug match and plays it
+  // through the real replay player, so only the network is absent.
+  static openReplayBattle({seed,allyType,enemyType,allyCount,enemyCount}){
+    const valid=new Set(this.unitOptions().map(([id])=>id));
+    for(const type of [allyType,enemyType])if(!valid.has(type))throw new Error(`battle needs a combat unit type: ${type}`);
+    for(const count of [allyCount,enemyCount])if(!Number.isInteger(count)||count<1||count>60)throw new Error(`battle needs a unit count from 1 to 60: ${count}`);
+    const cfg=this.normalize({allyType,enemyType,allyCount,enemyCount,humanRole:"host"});
+    const draft=this.liveDraft(cfg,null),sim=StrategySim.createForMatch({draft,seed,debugScenario:cfg});
+    const recorder=new ReplayRecorder({seed,draft,roomCode:null,sim});
+    sim.dispose("debug-scene-recorded");
+    // The scene has no recorded end; stepping past this timeline fails instead of stretching it.
+    const payload={...recorder.payload(),result:{winner:null,reason:"debug-scene",endTick:SimulationTiming.msToTicks(DEBUG_BATTLE_TIMELINE_MS,sim.tps),checksum:null}};
+    if(!ReplayPresentation.startReplay(payload))throw new Error("battle replay failed to start");
+    const player=ReplayPresentation.replayPlayer;
+    player.setPlaying(false);
+    ReplayPresentation.centerReplayCamera(player.sim.world.width*.5,player.sim.world.height*.5);
+    return player;
   }
   static readBattleTestUi(){
     return this.normalize({testMode:"mobile-battle",totalUnits:document.getElementById("battleTestUnitCount")?.value,composition:document.getElementById("battleTestComposition")?.value,fixedSeed:document.getElementById("battleTestSeed")?.value,sampleSeconds:document.getElementById("battleTestSampleSeconds")?.value,humanRole:"host",research:false});
@@ -30254,6 +30266,10 @@ BuildingPresentation.renderBuildMetadata();
 if(UiRegistry.refs.bootRetryBtn)UiController.bindImmediateButton(UiRegistry.refs.bootRetryBtn,AppLifecycle.runBootAndStartApp);
 UnitVisualLookup.validateCoverage();
 AppLifecycle.runBootAndStartApp();
+if(new URLSearchParams(location.search).has("debug")){
+  const {createDebugScenes}=await import("./debug-scenes.js");
+  RallyGamekit.installDebugHost({scenes:createDebugScenes({openBattle:params=>DebugScenarioHarness.openReplayBattle(params)})});
+}
 
 
 

@@ -9,7 +9,7 @@ const cacheDirectory = root => path.join(root, '.cache', 'gamekit');
 
 function validateLock(lock) {
   if (!lock || lock.repository !== 'byh-playground/bloom-gamekit') throw Error('Invalid Gamekit lock repository');
-  for (const key of ['sourceCommit', 'distCommit', 'upstreamRollbackCommit']) if (!/^[a-f0-9]{40}$/.test(lock[key] || '')) throw Error(`Invalid Gamekit lock ${key}`);
+  for (const key of ['sourceCommit', 'distCommit']) if (!/^[a-f0-9]{40}$/.test(lock[key] || '')) throw Error(`Invalid Gamekit lock ${key}`);
   if (!/^[a-f0-9]{64}$/.test(lock.distManifestSha256 || '')) throw Error('Invalid Gamekit lock distManifestSha256');
   if (!lock.modules || Object.keys(lock.modules).sort().join(',') !== Object.keys(moduleFiles).sort().join(',')) throw Error('Invalid Gamekit lock module set');
   for (const [name, file] of Object.entries(moduleFiles)) {
