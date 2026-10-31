@@ -6053,15 +6053,22 @@ class StateValue{
   }
 }
 class StateContract{
-  constructor(defaults={}, {presentation=[],derived=[],children={}}={}){
-    this.defaults=Object.freeze(defaults);this.presentation=new Set(presentation);this.derived=new Set(derived);this.children=children;
+  // mode "save" is the canonical sorted state; "snapshot" adds presentation fields;
+  // "view" is what UI/renderer/bot read. A contract with a view list copies only
+  // those keys there, so view snapshots skip simulation-only internals.
+  constructor(defaults={}, {presentation=[],derived=[],children={},view=null}={}){
+    this.defaults=Object.freeze(defaults);this.presentation=new Set(presentation);this.derived=new Set(derived);this.children=children;this.view=view&&Object.freeze([...view]);
   }
   create(state={}){
     const out=StateValue.copy(this.defaults);
     for(const key of Object.keys(state||{}))if(!this.derived.has(key))out[key]=StateValue.copy(state[key]);
     return out;
   }
-  keys(value,mode){return Object.keys(value).filter(k=>!this.derived.has(k)&&(mode==="snapshot"||!this.presentation.has(k))&&typeof value[k]!=="function").sort()}
+  keys(value,mode){
+    if(mode==="view"&&this.view)return this.view.filter(k=>k in value);
+    const keys=Object.keys(value).filter(k=>!this.derived.has(k)&&(mode!=="save"||!this.presentation.has(k))&&typeof value[k]!=="function");
+    return mode==="save"?keys.sort():keys;
+  }
   capture(value,mode="snapshot"){
     const out={};for(const key of this.keys(value,mode)){const child=this.children[key];out[key]=child?child.capture(value[key],mode):StateValue.copy(value[key])}return out;
   }
@@ -6072,7 +6079,7 @@ class StateContract{
 }
 
 class SimTimerComponent{
-  static stateContract=new StateContract({deadlines:{},periodicPhase:{}},{children:{deadlines:new StateContract({}, {presentation:["burrowTrail","neutralRecoverFx"]}),periodicPhase:new StateContract({}, {presentation:["burrowTrail","neutralRecoverFx"]})}});
+  static stateContract=new StateContract({deadlines:{},periodicPhase:{}},{view:[],children:{deadlines:new StateContract({}, {presentation:["burrowTrail","neutralRecoverFx"]}),periodicPhase:new StateContract({}, {presentation:["burrowTrail","neutralRecoverFx"]})}});
   constructor(state={}){Object.assign(this,SimTimerComponent.stateContract.create(state))}
   start(sim,key,durationMs,{min=0}={}){const ticks=sim.msTicks(durationMs,{min});this.deadlines[key]=sim.tick+ticks;return this.deadlines[key]}
   clear(key){delete this.deadlines[key];delete this.periodicPhase[key]}
@@ -6088,17 +6095,17 @@ class SimTimerComponent{
   }
 }
 class StatusComponent{
-  static stateContract=new StateContract({slowUntil:0,knockbackImmuneUntil:0,timedModifiers:{},airborneStartTick:0,airborneUntil:0,airborneDurationTicks:0,airborneHeight:0,airborneSourceType:null,impulseCompleteEffect:null,terrainRevealUntil0:0,terrainRevealUntil1:0},{});
+  static stateContract=new StateContract({slowUntil:0,knockbackImmuneUntil:0,timedModifiers:{},airborneStartTick:0,airborneUntil:0,airborneDurationTicks:0,airborneHeight:0,airborneSourceType:null,impulseCompleteEffect:null,terrainRevealUntil0:0,terrainRevealUntil1:0},{view:["airborneStartTick","airborneUntil","airborneDurationTicks","airborneHeight","terrainRevealUntil0","terrainRevealUntil1"]});
   constructor(state={}){Object.assign(this,StatusComponent.stateContract.create(state))}
   applySlowUntil(untilTick){this.slowUntil=Math.max(Number(this.slowUntil)||0,Math.max(0,Math.round(Number(untilTick)||0)));return this.slowUntil}
   isSlowed(sim){return sim.tick<(Number(this.slowUntil)||0)}
 }
 class ResourceComponent{
-  static stateContract=new StateContract({manaMax:0,mana:0,nextManaRegenTick:0},{});
+  static stateContract=new StateContract({manaMax:0,mana:0,nextManaRegenTick:0},{view:["manaMax","mana"]});
   constructor(state={}){Object.assign(this,ResourceComponent.stateContract.create(state))}
 }
 class MovementComponent{
-  static stateContract=new StateContract({routes:[],routeIndex:-1,impulseFx:0,impulseFy:0,impulseUntil:0,impulseDecay:0,lastMoveTick:-999999,outOfCombatStartedAt:-1,chargeMomentum:1000,crouchStartedAt:-1,crouched:false},{});
+  static stateContract=new StateContract({routes:[],routeIndex:-1,impulseFx:0,impulseFy:0,impulseUntil:0,impulseDecay:0,lastMoveTick:-999999,outOfCombatStartedAt:-1,chargeMomentum:1000,crouchStartedAt:-1,crouched:false},{view:["lastMoveTick","outOfCombatStartedAt","chargeMomentum"]});
   constructor(state={}){Object.assign(this,MovementComponent.stateContract.create(state))}
   static plannerCodes=Object.freeze({direct:0,astar:1,'shared-astar':2,'flow-field':3});
   static planners=Object.freeze(['direct','astar','shared-astar','flow-field']);
@@ -6136,7 +6143,7 @@ class MovementComponent{
   clearImpulse(){this.impulseFx=0;this.impulseFy=0;this.impulseUntil=0;this.impulseDecay=0}
 }
 class CombatComponent{
-  static stateContract=new StateContract({cooldownUntil:0,attackCooldownPhase:0,attackArcTargetId:null,attackArcUntilTick:0,attackWindupUntil:0,attackWindupStartedAt:0,attackWindupTargetId:null,attackWindupIsBuilding:false,moveRecoveryUntil:0,hitBurstCooldownUntil:0,recentImpactUntil:0},{presentation:["attackArcTargetId","attackArcUntilTick"],derived:["lastTimerTick"]});
+  static stateContract=new StateContract({cooldownUntil:0,attackCooldownPhase:0,attackArcTargetId:null,attackArcUntilTick:0,attackWindupUntil:0,attackWindupStartedAt:0,attackWindupTargetId:null,attackWindupIsBuilding:false,moveRecoveryUntil:0,hitBurstCooldownUntil:0,recentImpactUntil:0},{presentation:["attackArcTargetId","attackArcUntilTick"],derived:["lastTimerTick"],view:["attackArcTargetId","attackArcUntilTick"]});
   constructor(state={}){Object.assign(this,CombatComponent.stateContract.create(state))}
   cooldownActive(sim){return sim.tick<(Number(this.cooldownUntil)||0)}
   windupPending(){return (Number(this.attackWindupUntil)||0)>0}
@@ -6931,7 +6938,7 @@ class UnitStateContracts{
     const d=UnitDefinition.get(type)||{};
     for(const Feature of UNIT_CAPABILITY_MIXINS)if(Feature.supports({type},d))merge(Feature.stateDefaults);
     merge(UNIT_COMBAT_BEHAVIORS[type]?.stateDefaults);merge(NEUTRAL_BEHAVIORS[type]?.stateDefaults);
-    const behaviorContract=new StateContract(behavior,{presentation});
+    const behaviorContract=new StateContract(behavior,{presentation,view:["chargedExecution","deploymentState","deploymentUntil","rootSetupTicks"]});
     const rootContract=new StateContract(root,{presentation:["hitFlash","attackFlash"],derived:["logicController","collisionIntentTick","collisionIntentTx","collisionIntentTy","collisionMoveTick","collisionMoveStartFx","collisionMoveStartFy"],children:{timers:SimTimerComponent.stateContract,status:StatusComponent.stateContract,resources:ResourceComponent.stateContract,movement:MovementComponent.stateContract,combat:CombatComponent.stateContract,behaviorState:behaviorContract}});
     result={root:rootContract,behavior:behaviorContract};this.cache.set(type,result);return result;
   }
@@ -7093,21 +7100,28 @@ class VisibilityPolicy{
     const level=Math.max(0,Number(state.passiveCards?.[side]?.vision)||0),def=PassiveCardDefinition.get("vision");
     return level>0&&def?Number(def.values[Math.min(def.values.length,level)-1])||0:0;
   }
-  static auraPct(state,u,query=this.unitQuery(state),maxRadius=Math.max(0,...Object.values(UnitDefinition.all).map(d=>Number(d.sightAuraRadius)||0))){
-    if(!u?.alive||(u.side!==0&&u.side!==1))return 100;
+  // Aura providers are rare and ability-gated: collect them once per side
+  // instead of a neighbour query for every vision source.
+  static auraSources(state,side){
+    const out=[];
+    for(const u of state.units||[]){
+      if(!u?.alive||u.side!==side||!state.abilities?.[side]?.[u.type])continue;
+      const d=UnitDefinition.get(u.type),r=Number(d?.sightAuraRadius)||0;
+      if(r>0)out.push({x:u.x,y:u.y,r,pct:d.sightAuraPct||125});
+    }
+    return out;
+  }
+  static auraPct(u,auras){
     let pct=100;
-    if(maxRadius>0)query(u.x,u.y,maxRadius,source=>{
-      if(!source?.alive||source.side!==u.side||!state.abilities?.[source.side]?.[source.type])return;
-      const d=UnitDefinition.get(source.type),r=Number(d?.sightAuraRadius)||0;
-      if(r>0&&Math.hypot(source.x-u.x,source.y-u.y)<=r)pct=Math.max(pct,d.sightAuraPct||125);
-    });return pct;
+    for(const a of auras)if(Math.hypot(a.x-u.x,a.y-u.y)<=a.r)pct=Math.max(pct,a.pct);
+    return pct;
   }
   static terrainLevel(state,x,y){return WorldContext.forState(state).terrain.surfaces.levelAt(x,y)}
   static revealUntil(unit,side){return Number(side===0?unit?.status?.terrainRevealUntil0:unit?.status?.terrainRevealUntil1)||0}
   static sources(state,side){
-    const out=[],query=this.unitQuery(state),passive=this.passivePct(state,side),maxRadius=Math.max(0,...Object.values(UnitDefinition.all).map(d=>Number(d.sightAuraRadius)||0)),world=WorldContext.forState(state);
+    const out=[],auras=this.auraSources(state,side),passive=this.passivePct(state,side),world=WorldContext.forState(state);
     for(const u of state.units||[])if(u.alive&&u.side===side){const d=UnitDefinition.get(u.type)||{},air=d.layer==="AIR";
-      out.push({x:u.x,y:u.y,r:Math.round((Number(d.sight)||0)*(100+passive)/100*this.auraPct(state,u,query,maxRadius)/100),detect:Number(d.detectRadius)||0,level:world.terrain.surfaces.levelAt(u.x,u.y),air,ignoresTerrainVision:false,sourceId:u.id});
+      out.push({x:u.x,y:u.y,r:Math.round((Number(d.sight)||0)*(100+passive)/100*(auras.length?this.auraPct(u,auras):100)/100),detect:Number(d.detectRadius)||0,level:world.terrain.surfaces.levelAt(u.x,u.y),air,ignoresTerrainVision:false,sourceId:u.id});
     }
     for(const b of state.buildings||[])if(b.alive!==false&&b.side===side&&b.complete){const d=BuildingDefinition.get(b.type)||{};out.push({x:b.x,y:b.y,r:Number(d.sight)||0,detect:Number(d.detectRadius)||0,level:world.terrain.surfaces.levelAt(b.x,b.y),air:false,ignoresTerrainVision:false,sourceId:b.id})}
     for(const sp of state.activeSpells||[])if(sp.type==="flare"&&sp.side===side&&state.tick<sp.expireTick){const r=sp.vision||SpellDefinition.statsAt("flare",0).vision;out.push({x:sp.x,y:sp.y,r,detect:r,level:world.terrain.surfaces.levelAt(sp.x,sp.y),air:true,ignoresTerrainVision:true,sourceId:sp.id||"flare"})}
@@ -10026,10 +10040,15 @@ class StrategySim{
         if(entity.id===u.target){currentAcquire=candidate;currentAcquireD2=d2}
       }
     };
+    // The grid returns whole cells. queryRange covers aggro and every attack reach,
+    // so a farther candidate is rejected by consider(); skip its visibility rays.
+    const queryRange2=queryRange*queryRange;
     this.forEachNearbyHostileUnit(u.side,u.x,u.y,queryRange,e=>{
+      const d2=(e.x-u.x)**2+(e.y-u.y)**2;
+      if(d2>queryRange2)return;
       if(!this.canAttackEntity(u.type,e,false)||!this.canTargetUnit(u.side,e,visibleSources))return;
       if(!this.canSeeCombatTarget(u.side,e,visibleSources)){if(this._perfCollect)this._perfCollect.targetVisibilityRejects++;return}
-      consider(e,false,UnitDefinition.get(e.type),(e.x-u.x)**2+(e.y-u.y)**2);
+      consider(e,false,UnitDefinition.get(e.type),d2);
     });
     for(const i of this.nearbyBuildingIndices(u.x,u.y,queryRange)){
       const b=this.buildings[i];
@@ -12671,7 +12690,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   }
   snapshot(){
     const started=performance.now();
-    try{this.navigation?.sync();return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,navigationRevision:this.navigationRevision,decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),chargedCasts:StateValue.copy(this.chargedCasts),chargedCastSerial:this.chargedCastSerial.slice(),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState()),buildings:this.buildings.map(b=>b.toState()),constructionOrders:StateValue.copy(this.constructionOrders),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
+    try{this.navigation?.sync();return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,navigationRevision:this.navigationRevision,decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),chargedCasts:StateValue.copy(this.chargedCasts),chargedCastSerial:this.chargedCastSerial.slice(),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState("view")),buildings:this.buildings.map(b=>b.toState()),constructionOrders:StateValue.copy(this.constructionOrders),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
     finally{const perf=this.perfStats;perf.snapshotMs=performance.now()-started;perf.snapshotCumulativeMs=(perf.snapshotCumulativeMs||0)+perf.snapshotMs;perf.maxSnapshotMs=Math.max(perf.maxSnapshotMs,perf.snapshotMs);perf.snapshotSamples++}
   }
 }
@@ -15837,7 +15856,9 @@ class RenderStateStore{
       this.runtime=new RallyGamekit.PresentationRuntime({stepMs,delayMs:stepMs*2});
       snap=true;
     }
-    if(snap){this.revision++;this.records.clear()}
+    // A reset rebases the timeline only. Live identities and their metadata copies
+    // stay; re-cloning every entity here made an overloaded frame heavier still.
+    if(snap)this.revision++;
     const entities=[],seen=new Set();
     const add=(kind,id,value)=>{
       const key=kind+":"+id,def=this.definitions[kind];let record=this.records.get(key);
@@ -15845,9 +15866,9 @@ class RenderStateStore{
       if(!previous){
         // One detached visual identity at birth. Ordinary metadata is refreshed by
         // the existing UI snapshot cadence, never by cloning the sim each frame.
-        record={kind,id,generation:++this.generation,entity:value.toState?value.toState():structuredClone(value),delta:{x:0,y:0}};
+        record={kind,id,generation:++this.generation,entity:value.toState?value.toState("view"):structuredClone(value),delta:{x:0,y:0}};
         this.records.set(key,record);
-      }
+      }else if(snap&&!value.toState)record.entity=structuredClone(value);
       const teleport=!!previous&&Math.hypot(value.x-record.x,value.y-record.y)>def.snapDistance*Math.max(1,tick-record.tick);
       record.delta.x=snap||teleport||!previous?0:value.x-record.x;record.delta.y=snap||teleport||!previous?0:value.y-record.y;
       record.x=value.x;record.y=value.y;record.tick=tick;record.live=true;seen.add(key);
