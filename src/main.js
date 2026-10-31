@@ -164,7 +164,6 @@ const RENDER_TRACKS=Object.freeze({
 
 // wall-clock driver 한 pulse의 bounded catch-up. 논리 dt와 tick sequence는 Core가 유지한다.
 const MAX_CATCHUP_STEPS_PER_PULSE=3;
-const SIM_PULSE_BUDGET_MS=12;
 const SIM_SUSPENSION_THRESHOLD_MS=3000;
 const LOCKSTEP_INPUT_DELAY_BASE_MS=100;
 const LOCKSTEP_INPUT_DELAY_MAX_MS=300;
@@ -172,7 +171,6 @@ const LOCKSTEP_INPUT_DELAY_MAX_MS=300;
 // DataChannel reconnection / authoritative session recovery.
 const P2P_RECONNECT_MIN_MS=350;
 const P2P_CONNECT_ATTEMPT_TIMEOUT_MS=4500;
-const P2P_STALL_RECYCLE_MS=5000;
 const DISCONNECT_GRACE_MS=60*1000;
 
 const NETWORK_HEALTH_POLL_MS=100;
@@ -872,11 +870,6 @@ class TerrainSurfaceAtlas{
     const r=a.ramp||b.ramp,flat=a.ramp?b:a,t=this.rampProgress(r,x,y);
     if(Math.abs(t)<1e-4)return flat.level===r.lowLevel&&(r.lowSurfaceId==='low-ground'||flat.id===r.lowSurfaceId);
     if(Math.abs(t-1)<1e-4)return flat.level===r.highLevel&&(r.highSurfaceId==='low-ground'||flat.id===r.highSurfaceId);
-    return false;
-  }
-  segmentCrossesLayer(layer,x0,y0,x1,y1){
-    if(MapGeometry.pointInSimplePolygon(x0,y0,layer.points)||MapGeometry.pointInSimplePolygon(x1,y1,layer.points))return true;
-    for(let i=0;i<layer.points.length;i++){const a=layer.points[i],b=layer.points[(i+1)%layer.points.length];if(TerrainGeometry.segmentsIntersect(x0,y0,x1,y1,a.x,a.y,b.x,b.y))return true}
     return false;
   }
   higherLevelBlocksVision(sourceLevel,x0,y0,x1,y1){
@@ -1825,12 +1818,6 @@ class TerrainNavigation{
     this.metrics.preparationProfiles=plan.profiles.length;this.metrics.preparationSkippedProfiles=plan.skipped;
     return {profiles:plan.profiles.map(p=>p.key),skipped:plan.skipped,elapsedMs:workMs,layersBuilt:built};
   }
-  prepareLayers(units=[],types=[]){
-    const plan=this.layerPreparationPlan(units,types),before=this.metrics.layersBuilt,begun=performance.now();
-    this.reservePreparedLayers(plan);
-    for(const profile of plan.profiles)this.layer(profile.radius,profile.ignoreBuildings);
-    return this.recordLayerPreparation(plan,before,performance.now()-begun);
-  }
   prepareLayersInSlices(units=[],types=[],{schedule,shouldContinue=()=>true,onError=()=>{}}={}){
     if(typeof schedule!=='function')throw new TypeError('A navigation preparation scheduler is required');
     const plan=this.layerPreparationPlan(units,types),before=this.metrics.layersBuilt;
@@ -2509,8 +2496,6 @@ const ALLY_SOFT_CORRECTION_FRACTION=.5,ALLY_SOFT_IDLE_RADIUS_FRACTION=.08,ALLY_S
 const SIM_SPATIAL_CELL=256;
 const COLLISION_SPATIAL_CELL=64;
 const VISION_SPATIAL_CELL=256;
-const UNIT_CHECKSUM_BUCKETS=8;
-const NEUTRAL_CHECKSUM_BUCKETS=4;
 const ROGUE_BACKLINE_ROLES=new Set(["ranged","skirmisher","caster","support","controller","artillery"]);
 const SPORELING_LEAP_ROLES=new Set();
 const DIVE_BACKLINE_ROLES=new Set(["ranged","skirmisher","caster","support","artillery","scout"]);
@@ -2850,14 +2835,6 @@ class MapGeometry{
   }
   out.push({...points[points.length-1]});
   return out;
-}
-  static pointInPolygon(x,y,points){
-  let inside=false;
-  for(let i=0,j=points.length-1;i<points.length;j=i++){
-    const a=points[i],b=points[j];
-    if(((a.y>y)!==(b.y>y))&&(x<(b.x-a.x)*(y-a.y)/((b.y-a.y)||1e-9)+a.x))inside=!inside;
-  }
-  return inside;
 }
   static insetPolygonTowardCenter(points,factor){
   if(!Array.isArray(points)||points.length<3)return points||[];
@@ -4449,7 +4426,6 @@ class MapGeneration{
   const width=Number(m.width)||3600,height=Number(m.height)||4200;
   const sx=width/3600,sy=height/4200;
   const scalePoint=p=>({x:Math.round(p.x*sx),y:Math.round(p.y*sy)});
-  const scaleEllipse=h=>({...h,x:Math.round(h.x*sx),y:Math.round(h.y*sy),rx:Math.round(h.rx*sx),ry:Math.round(h.ry*sy)});
   const cps=CapturePointDefinition.all.map(cp=>({...cp,...scalePoint(cp)}));
   const laneNormals=CloneUtil.clone(LANE_NORMALS);
   const resources=[];let mid=0;
@@ -5108,7 +5084,6 @@ class RecoveryTelemetry{
     ...extra
   });
 }
-  static recordCorrection(kind,sess,data={}){return correctionFlightRecorder.record(kind,sess,data)}
   static startSingleManualSnapshotRecovery(reason="manual-single-reconnect"){
   const match=MatchLifecycle.singleMatch,host=match?.sessions?.host,guest=match?.sessions?.guest;
   if(!host?.sim||!guest?.sim||host.simEnded||guest.simEnded)return false;
@@ -5709,9 +5684,6 @@ class NostrRtcTransport{
   rebuildRecoveryGuest(reason="manual-host-snapshot"){
     return this.role==="guest"&&this.resetRtcNegotiation(reason,{guestHello:true});
   }
-  hardResetConnection(reason="recovery-hard-reset"){
-    return this.resetRtcNegotiation(reason,{guestHello:this.role==="guest"});
-  }
   
   queueFrame(frame){
     const bytes=frame.byteLength||0;if(this.sendQueueBytes+bytes>RTC_SEND_MAX_QUEUE_BYTES){this.onError({type:"rtc-send-queue-overflow",message:"RTC send queue overflow"});return false}
@@ -6179,7 +6151,6 @@ class CombatComponent{
   static stateContract=new StateContract({cooldownUntil:0,attackCooldownPhase:0,attackArcTargetId:null,attackArcUntilTick:0,attackWindupUntil:0,attackWindupStartedAt:0,attackWindupTargetId:null,attackWindupIsBuilding:false,moveRecoveryUntil:0,hitBurstCooldownUntil:0,recentImpactUntil:0},{presentation:["attackArcTargetId","attackArcUntilTick"],derived:["lastTimerTick"]});
   constructor(state={}){Object.assign(this,CombatComponent.stateContract.create(state))}
   cooldownActive(sim){return sim.tick<(Number(this.cooldownUntil)||0)}
-  windupActive(sim){return sim.tick<(Number(this.attackWindupUntil)||0)}
   windupPending(){return (Number(this.attackWindupUntil)||0)>0}
   moveRecoveryActive(sim){return sim.tick<(Number(this.moveRecoveryUntil)||0)}
   recordImpact(sim,ticks){this.recentImpactUntil=sim.tick+Math.max(0,ticks)-(this.lastTimerTick===sim.tick?0:1)}
@@ -6197,7 +6168,6 @@ class CapabilityHost{
     Object.defineProperty(this,capability.key,{value:capability,enumerable:false,configurable:false,writable:false});
     return capability;
   }
-  hasCapability(key){return this.available.has(key)}
   capability(key){return this.capabilityMap.get(key)||null}
 }
 class UnitCapability{
@@ -6610,7 +6580,6 @@ class WorkerMixin extends UnitCapability{
 class ObjectiveMixin extends UnitCapability{
   static KEY="objective";static supports(_u,d){return !!d.objectiveKind}static stateDefaults={"root":{"objectiveCaptured":false,"objectiveCapturedScale":0,"objectiveLane":null,"objectiveLaneT":0,"objectiveAttackCount":0,"objectiveChargePending":false,"objectiveChargeActive":false,"objectiveChargeRemaining":0,"objectiveChargeHitIds":[],"objectiveBreathPhase":"idle","objectiveBreathTellUntil":0,"objectiveBreathUntil":0,"objectiveBreathNextTick":0,"objectiveBreathTargetId":null,"objectiveBreathDirX":1,"objectiveBreathDirY":0},"behavior":{"objectiveCampId":null,"objectiveAirCooldownUntil":0,"objectiveChargeDirX":0,"objectiveChargeDirY":0}};
   constructor(owner){super(owner,ObjectiveMixin.KEY)}
-  isCaptured(){return !!this.owner?.objectiveCaptured}
   cancelCharge(){const u=this.owner;u.objectiveChargePending=false;u.objectiveChargeActive=false;u.objectiveChargeRemaining=0;u.objectiveChargeHitIds=[]}
   pickBurrowTarget(sim){
     const u=this.owner,d=UnitDefinition.get(u.type)||{},range=Math.max(260,d.sight||500),clusterRadius=92;let best=null,bestCount=-1,bestD=Infinity;
@@ -7433,9 +7402,6 @@ class StrategySim{
     if(progress<.75)return .70;
     return .50;
   }
-  terrainSpeedMultiplierAt(x,y,nextX=x,nextY=y){
-    return this.terrainMovementMultiplier(x,y,nextX,nextY);
-  }
 
   rebuildRuntimeIndexes(){
     for(let i=0;i<(this.units||[]).length;i++)if(!(this.units[i] instanceof Unit))this.units[i]=Unit.fromState(this.units[i]);
@@ -7542,7 +7508,6 @@ class StrategySim{
     }
     this.collisionStartCount=n;this.navigation.motion.beginStep();
   }
-  projectileVisualDef(type){return BuildingDefinition.get(type)||UnitDefinition.get(type)||null}
 
   resolveProjectileLaunchDamage({source=null,sourceSide=null,sourceType=null,target=null,isBuilding=false,baseDamage=0,damageClass=null}={}){
     const type=sourceType||source?.type||"";
@@ -7813,9 +7778,6 @@ class StrategySim{
   }
   passiveAttackPct(side,type){
     return this.isPlayerCombatUnit(side,type)?this.passiveEffectValue(side,"attackPct"):0;
-  }
-  passiveVisionPct(side,type){
-    return (side===0||side===1)&&!!UnitDefinition.get(type)?this.passiveEffectValue(side,"visionPct"):0;
   }
   passiveTowerRangePct(side){
     return (side===0||side===1)?this.passiveEffectValue(side,"towerRangePct"):0;
@@ -8093,9 +8055,6 @@ class StrategySim{
     return index>=0&&index<target;
   }
 
-  gasWorkerInteractionRange(u,extractor=null){
-    return this.interactionDistance(u,extractor||{type:"gasExtractor"},"worker-gas");
-  }
 
   releaseCaptureForOutpost(outpostId){
     const cp=this.capturePoints.find(p=>p.outpostId===outpostId);
@@ -8529,7 +8488,6 @@ class StrategySim{
   }
   
 
-  combatContactDistance(source,target){return InteractionGeometry.contact(source,target)}
   interactionDistance(source,target,kind,extra=0){
     if(source&&target&&Number.isFinite(source.x)&&Number.isFinite(target.x)&&InteractionGeometry.requiresTerrainLine(source,kind,extra)&&!this.world.terrain.segmentClear(source.x,source.y,target.x,target.y,0))return -1;
     return InteractionGeometry.reach(source,target,kind,extra);
@@ -8945,7 +8903,6 @@ class StrategySim{
     }
     return false;
   }
-  deckHas(side,type){return this.decks[side].includes(type)}
   unitUnlocked(side,type){return !BuildPrerequisitePolicy.unitReason(this,side,type)}
   hasAbility(side,type){return !!this.abilities[side]?.[type]}
   hasSpecialResearch(side,id){return !!this.specialResearch?.[side]?.[id]}
@@ -8957,19 +8914,8 @@ class StrategySim{
   stationaryAttackRampResearch(side,type){
     return UnitSpecialResearchDefinition.forUnit(type).find(d=>this.hasSpecialResearch(side,d.id)&&Number(d.effects?.stationaryAttackSpeedPerStack)>0)||null;
   }
-  specialResearchNumericBonus(side,type,key){
-    let total=0;for(const r of UnitSpecialResearchDefinition.forUnit(type))if(this.hasSpecialResearch(side,r.id))total+=Number(r.effects?.[key])||0;return total;
-  }
   specialResearchNumericMultiplier(side,type,key){
     let mult=1;for(const r of UnitSpecialResearchDefinition.forUnit(type))if(this.hasSpecialResearch(side,r.id)&&Number(r.effects?.[key])>0)mult*=Number(r.effects[key]);return mult;
-  }
-  researchBuildingExists(side,type,produceType=null){
-    return this.buildings.some(b=>b.alive!==false&&b.side===side&&b.type===type&&(produceType==null||b.produceType===produceType));
-  }
-  defenseBuildingUnlocked(side,type){
-    if(!BuildingDefinition.isDefenseTower(type))return false;
-    const cards=DefenseCardDefinition.list(this.defenseCards?.[side]);
-    return cards.some(card=>DefenseCardDefinition.get(card)?.building===type);
   }
   nearbyDefenseTowerCount(side,x,y,excludeId=null){
     let count=0;
@@ -9025,9 +8971,6 @@ class StrategySim{
     if(!b||!BuildingDefinition.isProduction(b.type))return 100;
     const near=this.nearbyProductionCount(b.side,b.x,b.y,b.id);
     return PRODUCTION_CLUSTER_SPEED_PCT[Math.min(near,PRODUCTION_CLUSTER_SPEED_PCT.length-1)];
-  }
-  productionPenaltyPct(b){
-    return 100-this.productionSpeedPct(b);
   }
   resolveConstructionTarget(id){return this.constructionOrders.find(order=>order.id===id)||this.buildingById.get(id)||this.buildings.find(b=>b.id===id)||null}
   cancelConstructionOrder(order,reason="cancelled"){
@@ -9124,10 +9067,6 @@ class StrategySim{
     if(!u||!u.alive||!b||b.alive===false||b.complete||u.buildTargetId!==b.id)return false;
     if(this.isAirborneStatus(u))return false;
     return this.navigation.acceptsGoalPoint(InteractionGeometry.region(u,b,"worker-build"),u.x,u.y);
-  }
-  chargedSkillPreview(side){
-    const cast=this.chargedCasts[side];if(!cast||cast.phase==="released")return null;
-    return {...StateValue.copy(cast),targets:cast.memberIds.map(id=>this.unitById.get(id)).filter(u=>u?.alive&&ChargedSkillMixin.stateReady(u,this.tick)).map(u=>({unitId:u.id,type:u.type,...ChargedSkillGeometry.aimPoint(u,cast,this.tick,this.tps,this.world)}))};
   }
   applyChargedCommand(side,action){
     const id=action.castId;if(!Number.isSafeInteger(id)||id<=0)return false;
@@ -10120,10 +10059,6 @@ class StrategySim{
     });
   }
 
-  resetCampAggro(camp){
-    // Existing explicit reset call sites use the same shared return transition.
-    this.beginCampReset(camp);
-  }
 
   campMembers(camp){
     return this.units.filter(
@@ -10199,11 +10134,6 @@ class StrategySim{
     if(!campId||(side!==0&&side!==1))return false;
     const camp=this.camps.find(c=>c.id===campId);
     return this.campFriendlySide(camp)===side;
-  }
-  campsFriendly(a,b){
-    if(!a||!b)return false;
-    const as=this.campFriendlySide(a),bs=this.campFriendlySide(b);
-    return as!=null&&as===bs;
   }
 
   updateCampAggroGauge(camp,cd){
@@ -10899,15 +10829,6 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       });
     }
   }
-  nearbyEnemyScaling(u,{radius=320,steps=null}={}){
-    let count=0;
-    this.forEachNearbyHostileUnit(u.side,u.x,u.y,radius,e=>{
-      if(Math.hypot(e.x-u.x,e.y-u.y)<=radius)count++;
-    });
-    let scale=1;
-    if(Array.isArray(steps))for(const s of steps)if(count>=s.count)scale=s.scale;
-    return{count,scale};
-  }
   combatTargetInAttackRange(u,found,attackRange=null){
     if(!u||!found?.entity)return false;
     const d=UnitDefinition.get(u.type),t=found.entity;
@@ -10968,7 +10889,6 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     }
     return count>=profile.minCluster?profile.pct:100;
   }
-  sightAuraPctFor(u){return VisibilityPolicy.auraPct(this,u)}
   adaptiveFormationProfile(u){
     const d=UnitDefinition.get(u.type),baseRange=d.range||0,baseSpeed=d.speed||0;
     if(!Number(d.adaptiveFormationCacheMs)||!this.hasAbility(u.side,u.type))return{preferredRange:baseRange,moveSpeed:baseSpeed};
@@ -11258,9 +11178,6 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   applyKnockback(attacker,target,effect={}){
     if(!attacker)return false;
     return this.applyKnockbackFromPoint(attacker,target,attacker.x,attacker.y,effect);
-  }
-  applyDeterministicKnockback(attacker,target,distance){
-    return this.applyKnockback(attacker,target,{distance,lockTicks:this.msTicks(PIKE_KNOCKBACK_LOCK_MS)});
   }
 
   abilityRangeModifier(side,type,kind,base){
@@ -12669,106 +12586,6 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   }
   mapFingerprint(){return HashUtil.hash(StableSerializationUtil.stableStringify(this.mapDescriptor))}
   checksum(){return RallyNetcode.hashBytes(RallyStateCodec.encode(this.exportState())).toString(16).padStart(8,"0")}
-  checksumBundle({includeScheduled=true}={}){
-    const makeHasher=()=>{
-      let h=2166136261>>>0;
-      const m=n=>{h^=(Number(n)||0)>>>0;h=Math.imul(h,16777619)>>>0};
-      const ms=v=>m(HashUtil.hash(String(v??"")));
-      const mf=v=>m(Math.round((Number(v)||0)*100));
-      return{m,ms,mf,done:()=>h.toString(16).padStart(8,"0")};
-    };
-    const core=makeHasher(),economy=makeHasher(),resources=makeHasher(),camps=makeHasher();
-    const buildings=[makeHasher(),makeHasher()];
-    const units=[Array.from({length:UNIT_CHECKSUM_BUCKETS},makeHasher),Array.from({length:UNIT_CHECKSUM_BUCKETS},makeHasher)];
-    const neutral=Array.from({length:NEUTRAL_CHECKSUM_BUCKETS},makeHasher);
-    const projectiles=makeHasher(),capture=makeHasher(),spells=makeHasher(),scheduledH=makeHasher();
-
-    for(const order of this.constructionOrders)buildings[order.side].ms(StableSerializationUtil.stableStringify(order));
-    core.ms(StableSerializationUtil.stableStringify(this.navigationAdmissions));core.m(this.navigationRevision||0);
-    core.m(this.mapFingerprint());core.m(this.tick);core.m(this.seq);core.m(this.spellRewardSeq||0);
-    for(const f of this.flags){core.mf(f.x);core.mf(f.y);core.m(f.forced?1:0)}
-    core.ms(StableSerializationUtil.stableStringify(this.campaignScriptRuntime?.state||null));
-    if(this.campaignScenario){core.m(this.campaignScriptRuntime?.definitionHash||0);core.ms(this.campaignScenario.playerRole);core.ms(StableSerializationUtil.stableStringify(this.campaignScenario.victory))}
-
-    economy.m(this.wallet[0]);economy.m(this.wallet[1]);economy.m(this.gasWallet[0]);economy.m(this.gasWallet[1]);
-    economy.m(this.tech[0]);economy.m(this.tech[1]);economy.m(this.productionPaused[0]?1:0);economy.m(this.productionPaused[1]?1:0);
-    economy.m(this.attackUpgrade[0]);economy.m(this.attackUpgrade[1]);economy.m(this.armorUpgrade[0]);economy.m(this.armorUpgrade[1]);
-    for(const side of [0,1])for(const channel of ["attack","armor","ability"]){const q=this.researchQueues?.[side]?.[channel];economy.ms(channel);economy.m(q?1:0);if(q){economy.ms(q.research||"");economy.ms(q.unit||"");economy.ms(q.researchId||"");economy.m(q.level||0);economy.m(q.readyTick||0);economy.m(q.total||0)}}
-    for(const side of [0,1]){
-      for(const type of COMBAT_UNITS)economy.m(this.abilities[side][type]?1:0);
-      for(const id of UnitSpecialResearchDefinition.ids)economy.m(this.specialResearch?.[side]?.[id]?1:0);
-      for(const id of this.decks[side]||[])economy.ms(id);
-      for(const card of DefenseCardDefinition.list(this.defenseCards?.[side]))economy.ms(card);
-    }
-
-    for(const r of this.resources){resources.ms(r.id);resources.mf(r.x);resources.mf(r.y);resources.m(r.amount);resources.m(r.max||0)}
-    for(const g of this.gasNodes||[]){resources.ms(g.id);resources.mf(g.x);resources.mf(g.y);resources.m(g.amount);resources.m(g.max||0)}
-
-    for(const c of this.camps){
-      const authoredRole=c.kind==="unitNeutralObject"?"garrison":c.kind==="scenarioUnitGroup"?"attack-force":"";
-      camps.ms(StableSerializationUtil.stableStringify(c.memberHomes||{}));camps.m(c.friendlySide??-1);camps.ms(authoredRole);
-      camps.ms(c.id);camps.ms(c.kind);if(authoredRole){camps.m(c.friendlySide??-1);camps.mf(c.guardRadius||0)}if(authoredRole||c.order){camps.ms(c.control||"");camps.ms(StableSerializationUtil.stableStringify(c.order||null))}camps.mf(c.x);camps.mf(c.y);camps.ms(c.state);camps.m(c.respawnAt||0);
-      camps.m(c.lastHitSide==null?9:c.lastHitSide);camps.m(c.spawnNo||0);camps.ms(c.aggroTargetId||"");camps.m(c.aggroGauge||0);
-      camps.m(c.insideAggroStartedAt??-1);camps.m(c.resetting?1:0);camps.m(c.engaged?1:0);camps.m(c.lastAggroGaugeTick||0);
-      camps.ms(StableSerializationUtil.stableStringify(UnitCompositionDefinition.normalize(c.composition||[])));camps.ms(c.laneKey||"");camps.ms(c.capturedUnitId||"");camps.m(c.capturedOwner==null?9:c.capturedOwner);camps.mf(c.lastDeathX||0);camps.mf(c.lastDeathY||0);
-    }
-
-    for(const b of this.buildings)b.writeChecksum(buildings[b.side===1?1:0]);
-
-    for(const u of this.units){
-      const bucketCount=u.side===NEUTRAL_SIDE?NEUTRAL_CHECKSUM_BUCKETS:UNIT_CHECKSUM_BUCKETS;
-      const bucket=HashUtil.hash(String(u.id))%bucketCount;
-      const h=u.side===NEUTRAL_SIDE?neutral[bucket]:units[u.side===1?1:0][bucket];
-      u.writeChecksum(h);
-    }
-
-    for(const p of this.projectiles)p.writeChecksum(projectiles);
-    for(const cp of this.capturePoints){capture.ms(cp.id);capture.ms(cp.lane||"");capture.mf(cp.x);capture.mf(cp.y);capture.m(cp.owner==null?9:cp.owner);capture.m(cp.progress||0);capture.m(cp.progressSide==null?9:cp.progressSide);capture.m(cp.enabled?1:0);capture.ms(cp.outpostId||"")}
-    for(const side of [0,1]){
-      for(const id of SpellDefinition.ids){const e=this.spellBooks[side][id]||{unlocked:false,cooldownUntil:0,mastery:0};spells.m(e.unlocked?1:0);spells.m(e.cooldownUntil||0);spells.m(e.mastery||0)}
-      for(const id of PassiveCardDefinition.ids){spells.ms(id);spells.m(this.passiveLevel(side,id))}
-      spells.m(this.spellChests?.[side]||0);
-      for(const id of this.equippedSpells?.[side]||[])spells.ms(id);
-      const offer=this.pendingChestOffers?.[side];spells.m(offer?1:0);if(offer){spells.ms(offer.id);spells.m(offer.seq||0);spells.m(offer.createdTick||0);for(const r of offer.options||[])spells.ms(StableSerializationUtil.stableStringify(r))}
-      const rep=this.pendingSpellReplacement?.[side];spells.m(rep?1:0);if(rep){spells.ms(rep.offerId||"");spells.ms(StableSerializationUtil.stableStringify(rep.reward||{}));spells.m(rep.createdTick||0)}
-    }
-    for(const fx of this.delayedEffects||[]){spells.ms(fx.id||"");spells.ms(StableSerializationUtil.stableStringify(DelayedEffectState.contract.capture(fx,"save")))}
-    for(const sp of this.activeSpells){spells.ms(sp.id);spells.ms(sp.type);spells.m(sp.side);spells.m(sp.startTick||0);spells.m(sp.expireTick||0);spells.m(sp.executeTick||0);spells.m(sp.activateTick||0);spells.mf(sp.x||0);spells.mf(sp.y||0);spells.mf(sp.entryX||0);spells.mf(sp.entryY||0);spells.mf(sp.exitX||0);spells.mf(sp.exitY||0);spells.mf(sp.radius||0);spells.m(sp.nextTransitTick||0);spells.m(sp.nextPulseTick||0);spells.m(sp.resolved?1:0);spells.m(sp.level||0);spells.m(sp.vision||0);spells.m(sp.speedPct||0);spells.m(sp.unitDamage||0);spells.m(sp.buildingPct||0);spells.m(sp.healPerSecond||0);spells.ms(sp.continuous?StableSerializationUtil.stableStringify(sp.continuous):"");spells.m(sp.entryRadius||0);spells.m(sp.throughputSupplyPerSec||0)}
-    const scheduled=[...this.scheduled.entries()].sort((a,b)=>a[0]-b[0]);
-    for(const [tick,cmds] of scheduled){scheduledH.m(tick);for(const cmd of cmds.slice().sort((a,b)=>a.seq-b.seq)){scheduledH.m(cmd.seq||0);scheduledH.ms(cmd.actor||"");scheduledH.ms(StableSerializationUtil.stableStringify(cmd.action||{}))}}
-
-    const domains={
-      core:core.done(),economy:economy.done(),resources:resources.done(),camps:camps.done(),
-      buildings:{host:buildings[0].done(),guest:buildings[1].done()},
-      units:{host:units[0].map(h=>h.done()),guest:units[1].map(h=>h.done()),neutral:neutral.map(h=>h.done())},
-      projectiles:projectiles.done(),capture:capture.done(),spells:spells.done(),scheduled:scheduledH.done()
-    };
-    if(!includeScheduled)delete domains.scheduled;
-    const root=makeHasher();
-    const fold=(name,value)=>{root.ms(name);root.ms(value)};
-    fold("core",domains.core);fold("economy",domains.economy);fold("resources",domains.resources);fold("camps",domains.camps);
-    fold("buildings.host",domains.buildings.host);fold("buildings.guest",domains.buildings.guest);
-    domains.units.host.forEach((v,i)=>fold(`units.host.${i}`,v));domains.units.guest.forEach((v,i)=>fold(`units.guest.${i}`,v));domains.units.neutral.forEach((v,i)=>fold(`units.neutral.${i}`,v));
-    fold("projectiles",domains.projectiles);fold("capture",domains.capture);fold("spells",domains.spells);if(includeScheduled)fold("scheduled",domains.scheduled);
-    return{root:root.done(),domains};
-  }
-  correctionGroupsForPaths(paths=[]){
-    const groups=new Set();
-    for(const raw of paths||[]){
-      const p=String(raw||"");
-      if(p.startsWith("buildings.")||p.startsWith("constructionOrders")){groups.add("buildings");groups.add("units")}
-      else if(p.startsWith("units.")){groups.add("units");groups.add("buildings")}
-      else if(p.startsWith("core"))groups.add("core");
-      else if(p.startsWith("economy"))groups.add("economy");
-      else if(p.startsWith("resources"))groups.add("resources");
-      else if(p.startsWith("camps"))groups.add("camps");
-      else if(p.startsWith("projectiles"))groups.add("projectiles");
-      else if(p.startsWith("capture"))groups.add("capture");
-      else if(p.startsWith("spells"))groups.add("spells");
-      else if(p.startsWith("scheduled"))groups.add("scheduled");
-    }
-    return [...groups].sort();
-  }
   exportState({includeIdentity=true}={}){
     this.navigation?.sync();
     const source={...this,campaignScenario:this.campaignScenario||null,campaignScriptState:this.campaignScriptRuntime?.state||null,scheduled:[...this.scheduled.entries()]};
@@ -13899,16 +13716,6 @@ class GameSession{
       if(startPresentationTimeline)this.presentationStartPending=false;
     }
   }
-  stepSimulationOnce(now=this.netcodeNow){
-    if(!this.sim||this.simEnded||this.simulationFatal)return null;
-    this.netcodeNow=Math.max(this.netcodeNow,Number(now)||0);
-    this.netcodeSession.poll(this.netcodeNow);
-    const terminal=this.frameOutputs.get(this.sim.tick)?.winner;
-    const result=this.pendingTerminalFrame?{status:'terminal-barrier',tick:this.netcodeSession.tick}:
-      terminal&&!this.netcodeSession.resimulating?{status:'terminal',tick:this.netcodeSession.tick}:
-      this.syncHold?{status:this.netcodeSession.status,tick:this.netcodeSession.tick}:this.netcodeSession.advance(this.neutralInput);
-    this.reconcileNetcodeProgress();return result;
-  }
   emitSnapshot(snapshot){
     const started=performance.now();
     try{
@@ -14267,7 +14074,6 @@ stopHeartbeat(markDisconnected=true){
     if(markDisconnected&&hadConnection)this.emitNetworkHealth("disconnected");
   }
 simulationTps(){return RangeUtil.clamp(Math.round(Number(this.sim?.tps||this.roundRules?.simulation?.tps||this.matchConfig?.simulationTps)||SIM_TPS),10,30)}
-simulationTickMs(){return 1000/this.simulationTps()}
 msTicks(ms,options){return SimulationTiming.msToTicks(ms,this.simulationTps(),options)}
 ticksMs(ticks){return SimulationTiming.ticksToMs(ticks,this.simulationTps())}
 }
@@ -20885,14 +20691,6 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
     }
     return false;
   }
-  visibleRawAtLevel(x,y,targetLevel){
-    if(this.replayObserverAll)return true;if(!this.snapshot)return false;
-    const cell=this.visionCellSize,key=Math.floor(x/cell)+","+Math.floor(y/cell);
-    for(const side of this.replayVisionSides()){const bucket=this.visionGridBySide[side].get(key);if(!bucket)continue;
-      for(const src of bucket)if(VisibilityPolicy.sourceCanSeePoint(this.snapshot,src,x,y,{targetAir:false,targetLevel}))return true;
-    }
-    return false;
-  }
   detectedRaw(x,y,targetAir=false){
     if(this.replayObserverAll||this.replayVisionMode==="union")return true;
     if(!this.snapshot)return false;
@@ -25911,7 +25709,6 @@ class MobileBattleTestMode{
     const now=performance.now(),pauseMs=now-this.pausedAt;if(this.phase==="warmup"||this.phase==="sampling")this.phaseStartedAt+=pauseMs;if(this.phase==="sampling")this.sampleStartedAt+=pauseMs;
     this.lastFrameAt=now;this.paused=false;this.pausedAt=0;this.renderHud(now);this.scheduleFrame();
   }
-  static pauseButton(){if(this.paused)this.resume();else this.pause()}
   static reset(){
     if(!this.config||!["connecting","warmup","sampling","complete","error"].includes(this.phase))return;
     if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;MatchLifecycle.stopSinglePlayer();

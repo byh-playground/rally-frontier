@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '..');
 const { modules } = readGamekit(root);
 const moduleURL = `data:text/javascript;base64,${modules.vectorAssetsLoader.toString('base64')}`;
 const loaderAPI = import(moduleURL);
-const fingerprintFile = path.join(__dirname, 'fixtures/vector-assets-legacy-fingerprints.json');
+const fingerprintFile = path.join(__dirname, 'fixtures/vector-assets-geometry-fingerprints.json');
 const fingerprints = JSON.parse(fs.readFileSync(fingerprintFile, 'utf8'));
 const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const sourceManifest = readVectorAssetManifest(root);

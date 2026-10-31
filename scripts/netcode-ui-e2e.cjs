@@ -1,8 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { chromium: nativeChromium } = require('playwright');
-const chromium = require('./netcode-qa-module.cjs').wrapChromium(nativeChromium);
+const { chromium } = require('playwright');
 
 // Only the observer is injected. All match, deck, command, result, and replay
 // actions below enter through native production UI controls.

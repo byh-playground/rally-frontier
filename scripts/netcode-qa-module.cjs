@@ -1,29 +1,6 @@
-// Historical HTML can still request the former SDK URL. Intercept it locally;
-// never depend on the retired repository or its Pages hosting during QA.
-// The current game uses the pinned Gamekit build dependency, never this fixture.
 const fs=require('node:fs');
 const path=require('node:path');
 const {readGamekit}=require('./setup-gamekit.cjs');
-const legacyFixtureURL='https://byh-playground.github.io/rollback-netcode/rollback-netcode.js';
-function fixtureSource(){
-  if(process.env.QA_SDK_PATH)return fs.readFileSync(process.env.QA_SDK_PATH,'utf8');
-  const {modules}=readGamekit(path.join(__dirname,'..'));
-  return ['rollback','deterministic','simloop','transport'].map(name=>{
-    const bytes=modules[name];
-    return `export * from ${JSON.stringify('data:text/javascript;base64,'+bytes.toString('base64'))};`;
-  }).join('\n');
-}
-async function routeCandidate(page){
-  await page.route(legacyFixtureURL,r=>r.fulfill({contentType:'text/javascript',headers:{'access-control-allow-origin':'*'},body:fixtureSource()}));
-  return page;
-}
-exports.wrapChromium=chromium=>({launch:async options=>{
-  const browser=await chromium.launch(options);
-  const newPage=browser.newPage.bind(browser),newContext=browser.newContext.bind(browser);
-  browser.newPage=async(...args)=>routeCandidate(await newPage(...args));
-  browser.newContext=async(...args)=>{const context=await newContext(...args),create=context.newPage.bind(context);context.newPage=async(...p)=>routeCandidate(await create(...p));return context;};
-  return browser;
-}});
 
 // Current source QA uses the real ESM graph and original assets. The optional
 // observer is appended inside main.js's app scope, without changing game code.
@@ -32,7 +9,7 @@ exports.serveSource = async function(htmlPath, { observer = '' } = {}) {
   const root = path.dirname(path.resolve(htmlPath));
   const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png' };
   const html = fs.readFileSync(htmlPath, 'utf8');
-  if (!html.includes('src="./src/main.js"')) throw Error('Expected source ESM entrypoint. Historical standalone files need their historical tooling.');
+  if (!html.includes('src="./src/main.js"')) throw Error('Expected source ESM entrypoint.');
   const server = http.createServer((request, response) => {
     try {
       const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
