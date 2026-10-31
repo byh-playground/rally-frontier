@@ -20,7 +20,7 @@ const UnitGrid = new Function('SIM_SPATIAL_CELL', 'RangeUtil',
 const BuildingGrid = new Function('SIM_SPATIAL_CELL', 'RangeUtil',
   `${html.slice(buildingGridStart, simulationStart)}; return DeterministicBuildingSpatialGrid;`)(64, RangeUtil);
 const queryMethodsStart = html.indexOf('  nearbyUnits(x,y,r,side=null,out=null){');
-const queryMethodsEnd = html.indexOf('\n  prepareVisionSources(', queryMethodsStart);
+const queryMethodsEnd = html.indexOf('\n  ensureCollisionBuffers(', queryMethodsStart);
 assert(queryMethodsStart >= 0 && queryMethodsEnd > queryMethodsStart,
   'StrategySim caller-owned and scoped query methods must exist');
 const QueryApi = new Function(`return class {${html.slice(queryMethodsStart, queryMethodsEnd)}};`)();
