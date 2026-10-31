@@ -3,9 +3,15 @@ import { RangeUtil, GameRuleDefinition, GameRuleRuntime, SIM_TPS } from './core/
 
 (async function(){
 "use strict";
+// The Worker realm has no window; GameKit modules must still see it as non-browser.
+const window=globalThis;
 const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","objectPool":"object-pool.js"});
-const RALLY_GAMEKIT_SOURCE=Object.freeze({lock:'./gamekit.lock.json'});
-const RALLY_VECTOR_ASSET_MANIFEST_URL='./assets/units/manifest.json';
+// A dedicated Worker hosts only a simulation session (src/sim-worker.js): no UI boot.
+const SIM_WORKER=typeof WorkerGlobalScope!=='undefined';
+// Resolve from this module so the page and the Worker realm load the same files.
+const RALLY_ASSET_ROOT=new URL('../',import.meta.url);
+const RALLY_GAMEKIT_SOURCE=Object.freeze({lock:new URL('gamekit.lock.json',RALLY_ASSET_ROOT).href});
+const RALLY_VECTOR_ASSET_MANIFEST_URL=new URL('assets/units/manifest.json',RALLY_ASSET_ROOT).href;
 let RALLY_NETCODE_URL=RALLY_GAMEKIT_SOURCE.lock;
 let RallyNetcode,RallyGamekit;
 async function loadRallyVectorAssets(loaderModule){
@@ -25,7 +31,7 @@ async function loadRallyVectorAssets(loaderModule){
   const loader=loaderModule.createVectorAssetLoader({maxEntries:manifest.assets.length});
   // Preserve the pre-upgrade SVG geometry: curve16 and round-stroke arc12.
   const loaded=await Promise.all(manifest.assets.map(async entry=>{
-    const asset=await loader.load(entry.url,{sourcePath:entry.sourcePath,expectedSha256:entry.sha256,maxBytes:entry.bytes,curveSegments:16,strokeArcDivisions:12,includeSourcePaths:false});
+    const asset=await loader.load(new URL(entry.sourcePath,RALLY_ASSET_ROOT).href,{sourcePath:entry.sourcePath,expectedSha256:entry.sha256,maxBytes:entry.bytes,curveSegments:16,strokeArcDivisions:12,includeSourcePaths:false});
     if(asset.sourceSha256!==entry.sha256||Object.hasOwn(asset,'sourcePaths'))throw new Error('Unit SVG 무결성 또는 compiler output 검증에 실패했습니다: '+entry.id);
     return [entry.id,asset];
   }));
@@ -54,7 +60,7 @@ try{
     finally{URL.revokeObjectURL(objectURL);}
   }));
   const namespaces=Object.fromEntries(modules);
-  const loadedVectorAssets=await loadRallyVectorAssets(namespaces.vectorAssetsLoader);
+  const loadedVectorAssets=SIM_WORKER?{assets:Object.freeze({}),loader:null}:await loadRallyVectorAssets(namespaces.vectorAssetsLoader);
   window.RallyVectorAssets=loadedVectorAssets.assets;
   window.RallyVectorAssetLoader=loadedVectorAssets.loader;
   RallyNetcode=Object.freeze({...namespaces.rollback,...namespaces.deterministic,...namespaces.simloop,...namespaces.transport});
@@ -89,7 +95,8 @@ const BUILD_META=Object.freeze({
 const FP=100,SIM_VERSION=200;
 // Local session policy, deliberately outside canonical gameplay/save rules.
 // A session captures this setting once; changing it only affects the next match.
-const CONFIG={netcode:{mode:'lockstep'}};
+// single.botWorker runs the AI peer's whole session in src/sim-worker.js.
+const CONFIG={netcode:{mode:'lockstep'},single:{botWorker:true}};
 function netcodeMode(value=CONFIG.netcode.mode){
   if(value!=='lockstep'&&value!=='rollback')throw new Error('지원하지 않는 동기화 모드: '+value);
   return value;
@@ -5772,6 +5779,68 @@ class LoopbackTransport{
       other.connected=false;other.emitNetcodeStatus();
       queueMicrotask(()=>other.onClose());
     }
+  }
+}
+
+// LoopbackTransport's contract over a MessagePort, so a peer session can live in
+// a Worker. postMessage already copies; netcode packets move their buffer.
+class PortTransport{
+  constructor(role,roomCode,port){
+    this.role=role;this.roomCode=roomCode;this.port=port;this.opened=false;this.peerOpened=false;this.connected=false;
+    this.netcodeListeners=new Set();this.netcodeStatusListeners=new Set();
+    this.onMessage=()=>{};this.onPeerReady=()=>{};this.onOpen=()=>{};this.onClose=()=>{};this.onError=()=>{};
+    port.onmessage=e=>this.receive(e.data);
+  }
+  open(){
+    this.opened=true;this.port.postMessage({k:"open"});
+    queueMicrotask(()=>{if(!this.opened)return;if(this.role==="host")this.onPeerReady();this.tryConnect()});
+  }
+  tryConnect(){
+    if(!this.opened||!this.peerOpened||this.connected)return;
+    this.connected=true;this.emitNetcodeStatus();queueMicrotask(()=>{if(this.connected)this.onOpen()});
+  }
+  receive(data){
+    if(data?.k==="open"){this.peerOpened=true;if(this.opened&&!this.connected){this.port.postMessage({k:"open"});this.tryConnect()}return}
+    if(data?.k==="close"){this.peerOpened=false;this.dropConnection();return}
+    if(!this.isOpen())return;
+    if(data?.k==="m")this.onMessage(data.d);
+    else if(data?.k==="n")for(const listener of this.netcodeListeners){try{listener(data.d)}catch(error){this.onError(error)}}
+  }
+  isOpen(){return this.connected}
+  send(message){
+    if(!this.isOpen())return false;
+    try{this.port.postMessage({k:"m",d:message})}catch(error){this.onError(error);return false}
+    return true;
+  }
+  get netcodeState(){return this.isOpen()?'open':'closed'}
+  subscribeNetcodeStatus(listener){
+    if(typeof listener!=='function')throw new TypeError('netcode status subscriber');
+    this.netcodeStatusListeners.add(listener);return ()=>this.netcodeStatusListeners.delete(listener);
+  }
+  emitNetcodeStatus(){for(const listener of this.netcodeStatusListeners)listener(this.netcodeState)}
+  get netcodeBufferedAmount(){return 0}
+  isNetcodeOpen(){return this.isOpen()}
+  subscribeNetcode(listener){
+    if(typeof listener!=="function")throw new TypeError("넷코드 수신 함수가 필요합니다.");
+    this.netcodeListeners.add(listener);return ()=>this.netcodeListeners.delete(listener);
+  }
+  sendNetcode(packet){
+    if(!(packet instanceof Uint8Array)||packet.byteLength>(window.RallyNetcode?.CHUNK_SIZE??0)||!this.isOpen())return false;
+    const copy=packet.slice();this.port.postMessage({k:"n",d:copy},[copy.buffer]);
+    return true;
+  }
+  forceReconnect(){
+    if(!this.connected)return false;
+    this.close();return true;
+  }
+  dropConnection(){
+    if(!this.connected)return;
+    this.connected=false;this.emitNetcodeStatus();queueMicrotask(()=>this.onClose());
+  }
+  close(){
+    if(!this.opened&&!this.connected)return;
+    this.opened=false;try{this.port.postMessage({k:"close"})}catch{}
+    this.dropConnection();
   }
 }
 
@@ -26776,6 +26845,7 @@ class MatchLifecycle{
   UiRegistry.refs.singleStatus.textContent=`${humanRole.toUpperCase()} 테스트용 실제 WebRTC 양쪽 피어를 준비하고 있습니다…`;
   UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
 
+  if(CONFIG.single.botWorker&&typeof Worker==="function")return MatchLifecycle.startSinglePlayerWorker(humanRole,botRole,token);
   const hostTransport=new NostrRtcTransport("host",token,{signalMode:"local"});
   const guestTransport=new NostrRtcTransport("guest",token,{signalMode:"local"});
   const hostSession=new GameSession("host",hostTransport,token,MatchLifecycle.currentMatchConfig());
@@ -26843,6 +26913,20 @@ class MatchLifecycle{
   };
 
   hostTransport.open();
+}
+  static startSinglePlayerWorker(humanRole,botRole,token){
+  // The AI peer is a full GameSession in a Worker; only lockstep packets cross the port.
+  const config=MatchLifecycle.currentMatchConfig(),channel=new MessageChannel();
+  const humanTransport=new PortTransport(humanRole,token,channel.port1);
+  const humanSession=new GameSession(humanRole,humanTransport,token,humanRole==="host"?config:undefined);
+  const botSession=new WorkerSessionProxy(botRole,{token,config:botRole==="host"?config:null,port:channel.port2,visible:document.visibilityState==="visible"});
+  botSession.onFatal=e=>MatchLifecycle.failSinglePlayer(`AI ${botRole.toUpperCase()} Worker 오류 · ${e.message}`);
+  MatchLifecycle.singleMatch={roomCode:token,humanRole,botRole,recoveryInitiatorRole:humanRole,
+    transports:{[humanRole]:humanTransport},sessions:{[humanRole]:humanSession,[botRole]:botSession},bot:{stop(){}}};
+  ActiveViewState.session=humanSession;
+  ActiveViewState.transport=humanTransport;
+  MatchLifecycle.wireSessionForView(humanRole,humanSession,humanTransport);
+  humanTransport.open();
 }
   static beginCreateRoom(){
   const c=RoomCodeUtil.randomCode();
@@ -26953,6 +27037,70 @@ UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
 
 
 
+// Worker side of a single-player AI peer: the same GameSession + BotController
+// wiring as the in-page path, connected to the human session by a MessagePort.
+class SimWorkerHost{
+  static STATUS_MS=250;
+  static session=null;static bot=null;static statusTimer=0;
+  static install(){
+    self.onmessage=e=>{
+      const m=e.data;
+      if(m?.type==="start")this.start(m);
+      else if(m?.type==="paused")this.session?.setTestModePaused(m.paused);
+      else if(m?.type==="visible")this.session?.setLocalVisibility(m.visible);
+      else if(m?.type==="dispose")this.dispose(m.reason);
+    };
+    self.postMessage({type:"ready"});
+  }
+  static start({role,token,config,port,visible}){
+    const transport=new PortTransport(role,token,port),session=new GameSession(role,transport,token,config??undefined),bot=new BotController(session,{role});
+    session.publishConfirmedSnapshots=true;
+    session.onDraft=state=>{session.draft=state;bot.handleDraft(state)};
+    session.onSnapshot=state=>bot.handleSnapshot(state);
+    session.onLog=()=>{};session.onResult=()=>bot.stop();session.onNetworkHealth=()=>{};
+    transport.onOpen=()=>{session.localVisible=visible;session.onTransportOpen()};
+    transport.onClose=()=>session.onTransportClosed();
+    transport.onError=e=>self.postMessage({type:"error",message:String(e?.type||e?.message||e)});
+    this.session=session;this.bot=bot;
+    this.statusTimer=setInterval(()=>this.publishStatus(),this.STATUS_MS);
+    transport.open();
+  }
+  static publishStatus(){
+    const s=this.session;if(!s)return;
+    self.postMessage({type:"status",tick:s.sim?.tick??0,simEnded:!!s.simEnded,perfStats:s.sim?.perfStats||null,timings:s.performanceStats?.timings||{}});
+  }
+  static dispose(reason){
+    clearInterval(this.statusTimer);this.bot?.stop();
+    try{this.session?.dispose(reason)}finally{this.session=null;this.bot=null;self.close()}
+  }
+}
+// Main-thread stand-in for a session in SimWorkerHost. It mirrors the diagnostics
+// the UI reads and forwards lifecycle calls; manual recovery is not supported.
+class WorkerSessionProxy{
+  constructor(role,{token,config,port,visible}){
+    this.role=role;this.sim={tick:0,perfStats:null};this.performanceStats={timings:{}};this.transport={};
+    this.simEnded=false;this.disposed=false;this.transportConnected=false;this.simpleRecoverySeq=0;this.onFatal=()=>{};
+    this.worker=new Worker(new URL("./sim-worker.js",import.meta.url),{type:"module"});
+    this.worker.onmessage=e=>{
+      const m=e.data;
+      if(m?.type==="ready")this.worker.postMessage({type:"start",role,token,config,port,visible},[port]);
+      else if(m?.type==="status"){this.sim.tick=m.tick;this.sim.perfStats=m.perfStats;this.performanceStats.timings=m.timings;this.simEnded=m.simEnded}
+      else if(m?.type==="fatal"||m?.type==="error")this.onFatal(m);
+    };
+    this.worker.onerror=e=>this.onFatal({message:e.message||"worker error"});
+  }
+  setTestModePaused(paused){if(this.disposed)return false;this.worker.postMessage({type:"paused",paused:!!paused});return true}
+  setLocalVisibility(visible){if(!this.disposed)this.worker.postMessage({type:"visible",visible:!!visible})}
+  markManualRecoveryNeeded(){return false}
+  prepareSimpleRecovery(){return false}
+  startSimpleRecovery(){return false}
+  dispose(reason){
+    if(this.disposed)return false;
+    this.disposed=true;this.worker.postMessage({type:"dispose",reason});
+    // The Worker closes itself after disposing; terminate covers a stuck one.
+    setTimeout(()=>this.worker.terminate(),1000);return true;
+  }
+}
 class AppLifecycle{
   static async requestScreenWakeLock(){
   if(document.visibilityState!=="visible")return;
@@ -30175,7 +30323,7 @@ UiRegistry.refs.replayZoomInBtn?.addEventListener("click",()=>ReplayPresentation
 UiRegistry.refs.replayExitBtn?.addEventListener("click",ReplayPresentation.stopReplay);
 
 UiController.bindImmediateButton(UiRegistry.refs.rematch,()=>location.reload());
-BattlePresentation.setupCanvas();
+if(!SIM_WORKER)BattlePresentation.setupCanvas();
 
 
 
@@ -30226,7 +30374,7 @@ window.addEventListener("blur",()=>{
 });
 
 // 페이지가 실제로 사용자에게 보여지는 동안 화면 자동 꺼짐을 최대한 방지한다.
-AppLifecycle.requestScreenWakeLock();
+if(!SIM_WORKER)AppLifecycle.requestScreenWakeLock();
 
 
 
@@ -30235,7 +30383,7 @@ AppLifecycle.requestScreenWakeLock();
 
 /* Title-screen procedural scene. Pure presentation: fixed local paths, no StrategySim state. */
 (function initTitleScene(){
-  const canvas=document.getElementById("titleSceneCanvas");
+  const canvas=SIM_WORKER?null:document.getElementById("titleSceneCanvas");
   if(!canvas)return;
   const ctx=canvas.getContext("2d");
   if(!ctx)return;
@@ -30329,6 +30477,7 @@ BuildingPresentation.renderBuildMetadata();
 
 
 if(UiRegistry.refs.bootRetryBtn)UiController.bindImmediateButton(UiRegistry.refs.bootRetryBtn,AppLifecycle.runBootAndStartApp);
+if(SIM_WORKER){SimWorkerHost.install();return}
 UnitVisualLookup.validateCoverage();
 AppLifecycle.runBootAndStartApp();
 if(new URLSearchParams(location.search).has("debug")){
