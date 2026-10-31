@@ -15,7 +15,7 @@ function verifySource(root = path.resolve(__dirname, '..')) {
   if (!moduleMap || JSON.stringify(Object.keys(moduleMap).sort()) !== JSON.stringify(Object.keys(lock.modules).sort())) throw Error('Pinned SDK module map mismatch');
   for (const [name, entry] of Object.entries(lock.modules)) if (moduleMap[name] !== entry.file) throw Error('Pinned SDK module map mismatch: ' + name);
   if (!/const RALLY_GAMEKIT_SOURCE=Object\.freeze\(\{lock:['"]\.\/gamekit\.lock\.json['"]\}\);/.test(main)) throw Error('Pinned SDK lock descriptor mismatch');
-  if (!main.includes('Gamekit module SHA-256 mismatch') || !main.includes("fetch(gamekitSource.lock")) throw Error('Pinned SDK source verification missing');
+  if (!main.includes('Gamekit module SHA-256 mismatch') || !main.includes("fetch(RALLY_GAMEKIT_SOURCE.lock")) throw Error('Pinned SDK source verification missing');
   const modules = ['src', 'campaign'].flatMap(folder => fs.readdirSync(path.join(root, folder), { recursive: true }).filter(file => file.endsWith('.js')).map(file => path.join(folder, file)));
   for (const file of modules) {
     execFileSync(process.execPath, ['--check', path.join(root, file)], { stdio: 'pipe' });

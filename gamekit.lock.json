@@ -1,12 +1,11 @@
 {
   "repository": "byh-playground/bloom-gamekit",
-  "sourceCommit": "88630ef4dea7fd3a7fd7aad22090fe74cb3a6fbc",
-  "distCommit": "b83464e445efaf86d66499859d3d05463df2b22a",
-  "upstreamRollbackCommit": "c3173914519a78834360430071e7a125736d86d5",
+  "sourceCommit": "9beed252a85e3dc0a121203aee5559bfbdee3288",
+  "distCommit": "53361a10c66cec705a15e7857831a4c21537e592",
   "modules": {
     "rollback": {
       "file": "rollback.js",
-      "sha256": "6d94dda8f9e8b975029de972562531d8329ef3c93034c64e832e0f89ea740c52"
+      "sha256": "3c809a24e62cbf58d0ac30c680f222f720d50c3d8620c5746bcf9bee6d8f9076"
     },
     "deterministic": {
       "file": "deterministic.js",
@@ -30,7 +29,7 @@
     },
     "rendering": {
       "file": "rendering.js",
-      "sha256": "dac868f1efd9eb8e12b5ae9874813e9944fe3e106eb2d6044856cc09f83c8835"
+      "sha256": "cf39f38e1644e2fdca168ee17ce556f09bddb05bfa4e8e89c310ce116d62d97e"
     },
     "vectorAssets": {
       "file": "vector-assets.js",
@@ -50,16 +49,16 @@
     },
     "debug": {
       "file": "debug-tools.js",
-      "sha256": "b2abc40a6e5ca59b0b24b6c7fefa7492ea13b17686da86f61a8fff16be146ac5"
+      "sha256": "bd077de55035f4e258d341318108b32613de5153d09aa5f6edca6ad31eedb4a4"
     },
     "vectorAssetsLoader": {
       "file": "vector-assets-loader.js",
-      "sha256": "a9d9eaa61d891fb1dd9d7d8ac9d9781fe2545cc2a7f8ede6202556c2a7a2f48f"
+      "sha256": "277a44071e6c7294a14081cfcf2f8cf0e8f9fc72c7c67b40be20bbfb14966e03"
     },
     "objectPool": {
       "file": "object-pool.js",
       "sha256": "4291d6d90f23b47024153e2d2db9e1af7f8b78586c8c0ee279621d42dc54f10b"
     }
   },
-  "distManifestSha256": "bb92d60e2f7f84397d9055f990ba99d6a4d61da2bf0c053acf90bf42dc379e53"
+  "distManifestSha256": "168b283150cb0db4aecfa3227f47b72df7dd781756b49d550b29891f1c1d0417"
 }

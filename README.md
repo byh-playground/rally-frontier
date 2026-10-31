@@ -109,3 +109,15 @@ scripts/netcode-qa-module.cjs   원본 ESM 서버와 고정 SDK 로컬 응답
 개발할 때는 빌드 없이 저장소 폴더를 정적 HTTP 서버로 제공해 실행할 수 있습니다(예: `python -m http.server 8000` 후 `http://localhost:8000/`). 개발 소스를 `file://`로 직접 열면 상대 ES module 보안 제한을 받습니다. 복사한 `_site` 역시 같은 원본 ESM이므로 HTTP 서버가 필요합니다.
 
 기존 실제 RTC UI 흐름은 `QA_NETCODE_MODE=lockstep|rollback QA_ROLES=host node scripts/netcode-ui-e2e.cjs _site/index.html`로 모드를 선택해 확인합니다(PowerShell에서는 `$env:`로 설정). 결과는 `.qa/netcode-ui-e2e-<mode>/`에 생성됩니다. 기본 모드는 lockstep입니다.
+
+### 주소로 여는 확인용 장면
+
+`?debug=1`이 있으면 GameKit `debug-tools.installDebugHost`가 `src/debug-scenes.js`의 장면을 엽니다. 일반 플레이에서는 이 파일을 불러오지 않습니다. `battle` 장면은 실제 경기 생성(`StrategySim.createForMatch`)과 리플레이 재생기로 두 병종의 전투를 열고 `tick`만큼 진행한 화면을 그립니다. 표시 시계도 틱에서 나오므로 같은 주소는 같은 화면을 만듭니다.
+
+```text
+?debug=1&scene=battle&seed=7&ally=swarmbug&enemy=shelltitan&allyCount=10&enemyCount=5&tick=60
+```
+
+`ally`·`enemy`는 디버그 전투 설정의 1~3티어 전투 병종 id, 수는 1~60입니다. 값이 틀리면 기본값으로 대체하지 않고 장면이 실패하며 `window.__bloomDebug.error`에 남습니다. `window.__bloomDebug.state()`는 `simTick`, 양측 생존 수, `checksum`을 돌려줍니다.
+
+픽셀 단위로 전후를 비교할 때는 소프트웨어 GL(`--use-angle=swiftshader`)에서 캡처합니다. 실제 GPU에서는 시계를 멈춘 같은 화면도 프레임마다 지형 경계의 몇 픽셀이 1~5 단계 달라집니다.
