@@ -8363,29 +8363,54 @@ class StrategySim{
     const humanRoster=DebugScenarioHarness.unitRoster(cfg,humanSide),enemyRoster=DebugScenarioHarness.unitRoster(cfg,enemySide);
     this.decks=[[],[]];this.decks[humanSide]=humanRoster.slice();this.decks[enemySide]=enemyRoster.slice();
     if(cfg.research){for(const type of humanRoster)this.abilities[humanSide][type]=true;for(const type of enemyRoster)this.abilities[enemySide][type]=true}
-    const cx=this.world.width*.5,cy=this.world.height*.5;
     const formation=(roster,count)=>{
       const cols=Math.max(1,Math.ceil(Math.sqrt(count))),rows=Math.ceil(count/cols),spacing=Math.max(24,...roster.map(type=>(this.unitRadius(type)*2)+8));
       return{cols,rows,spacing,halfHeight:Math.ceil(rows/2)*spacing};
     };
-    const spawnGroup=(side,roster,count,centerX,centerY)=>{
-      const layout=formation(roster,count);
+    const placeGroup=(side,roster,count,centerX,centerY)=>{
+      const layout=formation(roster,count),out=[];
       for(let i=0;i<count;i++){
         const row=Math.floor(i/layout.cols),col=i%layout.cols,type=roster[i%roster.length];
-        this.spawnUnit(side,type,RangeUtil.clamp(centerX+(col-(layout.cols-1)/2)*layout.spacing,30,this.world.width-30),RangeUtil.clamp(centerY+(row-(layout.rows-1)/2)*layout.spacing,30,this.world.height-30));
+        out.push({side,type,x:centerX+(col-(layout.cols-1)/2)*layout.spacing,y:centerY+(row-(layout.rows-1)/2)*layout.spacing});
       }
-      return layout;
+      return out;
     };
     const humanFormation=formation(humanRoster,cfg.allyCount),enemyFormation=formation(enemyRoster,cfg.enemyCount),gap=cfg.testMode==="mobile-battle"?humanFormation.halfHeight+enemyFormation.halfHeight+80:190;
     // Keep opposing rows separated by a small central lane at every supported roster size.
-    spawnGroup(humanSide,humanRoster,cfg.allyCount,cx,humanSide===0?cy+gap/2:cy-gap/2);
-    spawnGroup(enemySide,enemyRoster,cfg.enemyCount,cx,enemySide===0?cy+gap/2:cy-gap/2);
+    const placeBattle=(cx,cy)=>[
+      ...placeGroup(humanSide,humanRoster,cfg.allyCount,cx,humanSide===0?cy+gap/2:cy-gap/2),
+      ...placeGroup(enemySide,enemyRoster,cfg.enemyCount,cx,enemySide===0?cy+gap/2:cy-gap/2)
+    ];
+    // The mobile battle test is a performance benchmark: it keeps the map-center start so
+    // measurements stay comparable, and its largest rosters do not fit between camps anyway.
+    const {x:cx,y:cy,placements}=cfg.testMode==="mobile-battle"
+      ?{x:this.world.width*.5,y:this.world.height*.5,placements:placeBattle(this.world.width*.5,this.world.height*.5).map(p=>({...p,x:RangeUtil.clamp(p.x,30,this.world.width-30),y:RangeUtil.clamp(p.y,30,this.world.height-30)}))}
+      :this.debugBattleSite(placeBattle);
+    for(const p of placements)this.spawnUnit(p.side,p.type,p.x,p.y);
     this.flags[humanSide]={...this.flags[humanSide],x:cx,y:humanSide===0?cy-gap:cy+gap,forced:false};
     this.flags[enemySide]={...this.flags[enemySide],x:cx,y:enemySide===0?cy-gap:cy+gap,forced:false};
     this.rebuildRuntimeIndexes();
     return cfg;
   }
 
+  // The debug battle opens on the open ground nearest the map center. Camps stay on the map,
+  // so the battle must start outside every camp's aggro area on open, flat ground.
+  debugBattleSite(placeBattle){
+    const step=50,maxRing=Math.ceil(Math.max(this.world.width,this.world.height)/step);
+    const midX=this.world.width*.5,midY=this.world.height*.5;
+    const clear=p=>{
+      const r=this.unitRadius(p.type);
+      if(!this.world.terrain.circleClear(p.x,p.y,r)||!this.world.terrain.surfaces.buildable(p.x,p.y,r))return false;
+      for(const c of this.camps){const d=CampDefinition.get(c.kind);if(Math.hypot(p.x-c.x,p.y-c.y)<(d?.aggroRadius||0)+(d?.homeSpread||0)+r)return false}
+      for(const b of this.buildings)if(b.alive!==false&&Math.hypot(p.x-b.x,p.y-b.y)<(BuildingDefinition.get(b.type)?.size||0)+r+SPAWN_CLEARANCE)return false;
+      return true;
+    };
+    for(let ring=0;ring<=maxRing;ring++)for(let i=-ring;i<=ring;i++)for(const [dx,dy] of ring?[[i,-ring],[i,ring],[-ring,i],[ring,i]]:[[0,0]]){
+      const x=midX+dx*step,y=midY+dy*step,placements=placeBattle(x,y);
+      if(placements.every(clear))return{x,y,placements};
+    }
+    throw new Error("debug battle has no open ground outside neutral camps");
+  }
   setUnitControlMode(u,{side=u?.side,logicProfile=null,logicState={}}={}){
     if(!u)return null;
     const nextSide=side===0||side===1||side===NEUTRAL_SIDE?side:u.side;
@@ -25363,21 +25388,40 @@ class DebugScenarioHarness{
   }
   // The debug scene starts from the same match factory as a real debug match and plays it
   // through the real replay player, so only the network is absent.
-  static openReplayBattle({seed,allyType,enemyType,allyCount,enemyCount}){
+  static openReplayBattle({seed,allyType,enemyType,allyCount,enemyCount,commands=null}){
     const valid=new Set(this.unitOptions().map(([id])=>id));
     for(const type of [allyType,enemyType])if(!valid.has(type))throw new Error(`battle needs a combat unit type: ${type}`);
     for(const count of [allyCount,enemyCount])if(!Number.isInteger(count)||count<1||count>60)throw new Error(`battle needs a unit count from 1 to 60: ${count}`);
     const cfg=this.normalize({allyType,enemyType,allyCount,enemyCount,humanRole:"host"});
     const draft=this.liveDraft(cfg,null),sim=StrategySim.createForMatch({draft,seed,debugScenario:cfg});
     const recorder=new ReplayRecorder({seed,draft,roomCode:null,sim});
+    // A scene may script host commands from the spawned state; they replay like recorded commits.
+    const scripted=(commands?.(sim)||[]).map((c,i)=>({type:"RUNTIME_COMMIT",seq:i+1,tick:c.tick,actor:"host",action:c.action,proposalId:null,authorityTick:null}));
+    const fighters=sim.units.filter(u=>u.side===0&&u.type===allyType||u.side===1&&u.type===enemyType);
+    const focusX=fighters.reduce((a,u)=>a+u.x,0)/fighters.length,focusY=fighters.reduce((a,u)=>a+u.y,0)/fighters.length;
     sim.dispose("debug-scene-recorded");
     // The scene has no recorded end; stepping past this timeline fails instead of stretching it.
-    const payload={...recorder.payload(),result:{winner:null,reason:"debug-scene",endTick:SimulationTiming.msToTicks(DEBUG_BATTLE_TIMELINE_MS,sim.tps),checksum:null}};
+    const payload={...recorder.payload(),commands:scripted,result:{winner:null,reason:"debug-scene",endTick:SimulationTiming.msToTicks(DEBUG_BATTLE_TIMELINE_MS,sim.tps),checksum:null}};
     if(!ReplayPresentation.startReplay(payload))throw new Error("battle replay failed to start");
     const player=ReplayPresentation.replayPlayer;
     player.setPlaying(false);
-    ReplayPresentation.centerReplayCamera(player.sim.world.width*.5,player.sim.world.height*.5);
+    ReplayPresentation.centerReplayCamera(focusX,focusY);
     return player;
+  }
+  static openChargeReplay({seed,unitType,enemyType,count,enemyCount}){
+    if(!UnitDefinition.get(unitType)?.chargedSkill)throw new Error(`charge needs a charged-skill unit type: ${unitType}`);
+    // Hold on the own group, aim at the enemy group once gathered, release at full charge:
+    // the same commands the battlefield gesture submits.
+    return this.openReplayBattle({seed,allyType:unitType,enemyType,allyCount:count,enemyCount,commands:sim=>{
+      const centroid=(side,type)=>{const list=sim.units.filter(u=>u.side===side&&u.type===type);return{x:list.reduce((a,u)=>a+u.x,0)/list.length,y:list.reduce((a,u)=>a+u.y,0)/list.length}};
+      const own=centroid(0,unitType),foe=centroid(1,enemyType),castId=1,begin=1;
+      const aim=begin+sim.msTicks(ChargedSkillGeometry.gatherMs),release=begin+sim.msTicks(ChargedSkillGeometry.gatherMs+ChargedSkillGeometry.chargeMs);
+      return [
+        {tick:begin,action:{type:"CHARGE_BEGIN",castId,x:own.x,y:own.y}},
+        {tick:aim,action:{type:"CHARGE_AIM",castId,x:foe.x,y:foe.y}},
+        {tick:release,action:{type:"CHARGE_RELEASE",castId,x:foe.x,y:foe.y}}
+      ];
+    }});
   }
   static readBattleTestUi(){
     return this.normalize({testMode:"mobile-battle",totalUnits:document.getElementById("battleTestUnitCount")?.value,composition:document.getElementById("battleTestComposition")?.value,fixedSeed:document.getElementById("battleTestSeed")?.value,sampleSeconds:document.getElementById("battleTestSampleSeconds")?.value,humanRole:"host",research:false});
@@ -30268,7 +30312,7 @@ UnitVisualLookup.validateCoverage();
 AppLifecycle.runBootAndStartApp();
 if(new URLSearchParams(location.search).has("debug")){
   const {createDebugScenes}=await import("./debug-scenes.js");
-  RallyGamekit.installDebugHost({scenes:createDebugScenes({openBattle:params=>DebugScenarioHarness.openReplayBattle(params)})});
+  RallyGamekit.installDebugHost({scenes:createDebugScenes({openBattle:params=>DebugScenarioHarness.openReplayBattle(params),openCharge:params=>DebugScenarioHarness.openChargeReplay(params)})});
 }
 
 

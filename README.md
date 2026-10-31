@@ -120,4 +120,12 @@ scripts/netcode-qa-module.cjs   원본 ESM 서버와 고정 SDK 로컬 응답
 
 `ally`·`enemy`는 디버그 전투 설정의 1~3티어 전투 병종 id, 수는 1~60입니다. 값이 틀리면 기본값으로 대체하지 않고 장면이 실패하며 `window.__bloomDebug.error`에 남습니다. `window.__bloomDebug.state()`는 `simTick`, 양측 생존 수, `checksum`을 돌려줍니다.
 
+`charge` 장면은 충전 병종(씨앗궁수 `archer`·왕사슴 돌격대 `lancer`·철갑씨앗포 `siege`) 무리에 전장 제스처와 같은 명령을 정해진 틱에 넣습니다. 1틱에 아군 무리 위에서 집결(`CHARGE_BEGIN`), 다 모인 틱에 적 무리로 조준(`CHARGE_AIM`), 최대 충전 틱에 발사(`CHARGE_RELEASE`)합니다. `state()`는 집결 상태(`cast`)와 충전 명령의 적용 결과(`receipts`)를 더 돌려줍니다.
+
+```text
+?debug=1&scene=charge&seed=7&unit=archer&enemy=swordsman&count=6&enemyCount=6&tick=16
+```
+
+두 장면과 시작 화면의 "선택 유닛 테스트"는 맵 중앙에서 가장 가까운, 모든 중립 캠프의 어그로 범위 밖 평지에 양측을 배치합니다. 그런 자리가 없으면 경기를 열지 않고 실패합니다. 성능 측정용 "모바일 대규모 전투 테스트"는 이전 측정과 비교할 수 있도록 맵 중앙 배치를 유지합니다.
+
 픽셀 단위로 전후를 비교할 때는 소프트웨어 GL(`--use-angle=swiftshader`)에서 캡처합니다. 실제 GPU에서는 시계를 멈춘 같은 화면도 프레임마다 지형 경계의 몇 픽셀이 1~5 단계 달라집니다.
