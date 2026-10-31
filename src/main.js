@@ -273,12 +273,6 @@ class TerrainGeometry{
     if(Math.min(x0,x1)<r||Math.min(y0,y1)<r||Math.max(x0,x1)>this.width-r||Math.max(y0,y1)>this.height-r)return false;
     return !this.segmentBlockedBy(this.index,x0,y0,x1,y1,r);
   }
-  visionSegmentClear(x0,y0,x1,y1,sourceLevel=0,{air=false,ignoreTerrain=false}={}){
-    if(ignoreTerrain)return true;
-    if(!air&&this.surfaces.higherLevelBlocksVision(sourceLevel,x0,y0,x1,y1))return false;
-    const index=air?this.airVisionIndex:this.visionIndex;
-    return !this.segmentBlockedBy(index,x0,y0,x1,y1,0);
-  }
   projectileSegmentClear(x0,y0,x1,y1){return !this.segmentBlockedBy(this.projectileIndex,x0,y0,x1,y1,0)}
   nearestOpen(x,y,r,maxDistance=768,accept=null){
     if(this.circleClear(x,y,r)&&(!accept||accept(x,y)))return {x,y};
@@ -420,7 +414,6 @@ class TerrainSurfaceAtlas{
   static levelForElevation(elevation){return elevation/(elevation<0?TERRAIN_NEGATIVE_LEVEL_DEPTH:TERRAIN_LEVEL_HEIGHT)}
   static cache=new WeakMap();
   static rampPlaneCache=new WeakMap();
-  static rampVisionCache=new WeakMap();
   static fromMap(map){let value=this.cache.get(map);if(!value){value=new TerrainSurfaceAtlas(map);this.cache.set(map,value)}return value}
   static bounds(item){const p=item.points;return Object.assign(item,{minX:Math.min(...p.map(v=>v.x)),maxX:Math.max(...p.map(v=>v.x)),minY:Math.min(...p.map(v=>v.y)),maxY:Math.max(...p.map(v=>v.y))})}
   static lerp(a,b,t){return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t}}
@@ -584,12 +577,6 @@ class TerrainSurfaceAtlas{
       return out;
     });
     return this._presentationSurfaceMesh;
-  }
-  static rampVisionPolygons(r){
-    let cached=this.rampVisionCache.get(r);if(cached)return cached;
-    const patch={lowLevel:r.lowLevel,highLevel:r.highLevel,vertices:[{x:r.lowA.x,y:r.lowElevation,z:r.lowA.y},{x:r.lowB.x,y:r.lowElevation,z:r.lowB.y},{x:r.highB.x,y:r.highElevation,z:r.highB.y},{x:r.highA.x,y:r.highElevation,z:r.highA.y}],triangles:[[0,1,2],[0,2,3]]},split=this.splitRampAtLevelTransition(patch);
-    cached=[];for(const part of [split.low,split.high])for(const tri of part.triangles)cached.push({points:tri.map(i=>({x:part.vertices[i].x,y:part.vertices[i].z}))});
-    this.rampVisionCache.set(r,cached);return cached;
   }
   static segmentCuts(x0,y0,x1,y1,polygons){
     const dx=x1-x0,dy=y1-y0,cuts=[0,1];
@@ -858,14 +845,6 @@ class TerrainSurfaceAtlas{
     const r=a.ramp||b.ramp,flat=a.ramp?b:a,t=this.rampProgress(r,x,y);
     if(Math.abs(t)<1e-4)return flat.level===r.lowLevel&&(r.lowSurfaceId==='low-ground'||flat.id===r.lowSurfaceId);
     if(Math.abs(t-1)<1e-4)return flat.level===r.highLevel&&(r.highSurfaceId==='low-ground'||flat.id===r.highSurfaceId);
-    return false;
-  }
-  higherLevelBlocksVision(sourceLevel,x0,y0,x1,y1){
-    if(sourceLevel>=this.maxLevel)return false;
-    const dx=x1-x0,dy=y1-y0,ramps=this.rampIndex.query(x0,y0,x1,y1),polygons=[...this.layerIndex.query(x0,y0,x1,y1),...ramps,...this.bridgeIndex.query(x0,y0,x1,y1)];
-    for(const r of ramps)polygons.push(...TerrainSurfaceAtlas.rampVisionPolygons(r));
-    const cuts=TerrainSurfaceAtlas.segmentCuts(x0,y0,x1,y1,polygons);
-    for(let i=1;i<cuts.length;i++){const t=(cuts[i-1]+cuts[i])/2;if(this.levelAt(x0+dx*t,y0+dy*t)>sourceLevel)return true}
     return false;
   }
 }
@@ -1744,16 +1723,6 @@ class TerrainNavigation{
     if(affected||revisionChanged)this.sim.clearRuntimeRouteCache?.({clearHandles:!preserveRevision});
   }
   obstacles(x,y,tx,ty,r,ignoreId){const found=this.circleIndex.query(x,y,tx,ty,r);return ignoreId==='*'?found.filter(b=>b.terrainBarrier):found}
-  visionSegmentClear(x,y,tx,ty,sourceLevel=0,{air=false,ignoreTerrain=false}={}){
-    this.sync();
-    if(!this.geometry.visionSegmentClear(x,y,tx,ty,sourceLevel,{air,ignoreTerrain}))return false;
-    for(const b of this.circleIndex.query(x,y,tx,ty,0)){
-      const blocks=air?b.blocksAirVision:b.blocksVision;if(!blocks)continue;
-      if(Math.hypot(x-b.x,y-b.y)<b.r+.001||Math.hypot(tx-b.x,ty-b.y)<b.r+.001)continue;
-      if(MapGeometry.pointSegDist(b.x,b.y,x,y,tx,ty)<b.r-.001)return false;
-    }
-    return true;
-  }
   projectileSegmentClear(x,y,tx,ty){
     this.sync();
     if(!this.geometry.projectileSegmentClear(x,y,tx,ty))return false;
@@ -2600,7 +2569,7 @@ class PerformanceTelemetry{
       aliveUnits:0,workers:0,combatUnits:0,projectiles:0,
       peakAliveUnits:0,peakBuildings:0,peakProjectiles:0,
       spatialQueries:0,spatialCandidates:0,
-      targetQueries:0,targetVisibilityRejects:0,sideSpatialQueries:0,visibilityChecks:0,visionCandidateChecks:0,visibilityCacheHits:0,collisionPairs:0,collisionOverlaps:0,buildingCollisionCandidates:0
+      targetQueries:0,targetVisibilityRejects:0,sideSpatialQueries:0,visibilityChecks:0,collisionPairs:0,collisionOverlaps:0,buildingCollisionCandidates:0
     };
   }
   static createLocalBalanceStats(){
@@ -7116,7 +7085,6 @@ class VisibilityPolicy{
     for(const a of auras)if(Math.hypot(a.x-u.x,a.y-u.y)<=a.r)pct=Math.max(pct,a.pct);
     return pct;
   }
-  static terrainLevel(state,x,y){return WorldContext.forState(state).terrain.surfaces.levelAt(x,y)}
   static revealUntil(unit,side){return Number(side===0?unit?.status?.terrainRevealUntil0:unit?.status?.terrainRevealUntil1)||0}
   static sources(state,side){
     const out=[],auras=this.auraSources(state,side),passive=this.passivePct(state,side),world=WorldContext.forState(state);
@@ -7130,24 +7098,143 @@ class VisibilityPolicy{
     for(const b of state.buildings||[])if(b?.alive!==false&&b.side!==side&&b.side!==NEUTRAL_SIDE&&Number(side===0?b.terrainRevealUntil0:b.terrainRevealUntil1)>Number(state.tick||0))out.push({x:b.x,y:b.y,r:TERRAIN_ATTACK_REVEAL_RADIUS,detect:0,level:world.terrain.surfaces.levelAt(b.x,b.y),air:true,ignoresTerrainVision:true,reveal:true,sourceId:`reveal:${b.id}`});
     return out;
   }
-  static sourceCanReach(state,src,x,y,range,{targetAir=false,targetLevel=null}={}){
-    const rr=Math.max(0,Number(range)||0),dx=src.x-x,dy=src.y-y;if(dx*dx+dy*dy>rr*rr)return false;
-    if(src.ignoresTerrainVision)return true;
-    const world=WorldContext.forState(state),level=targetAir?null:(targetLevel==null?world.terrain.surfaces.levelAt(x,y):targetLevel);
-    if(!src.air&&!targetAir&&level>Number(src.level||0))return false;
-    return TerrainNavigation.forState(state).visionSegmentClear(src.x,src.y,x,y,Number(src.level||0),{air:!!src.air,ignoreTerrain:false});
+}
+// Per-side visibility on a fixed cell grid: the one answer for combat targeting,
+// AI, entity rendering and fog. A source lights the cells it can see by walking
+// outward from its own cell; each cell inherits sight from the neighbour one step
+// closer (0 A.D./OpenRA-style cells instead of a ray per target). Cells count the
+// sources per sight ceiling, so "visible to a target on level L" is a lookup, and
+// only sources whose cell, radius, level or mode changed are repainted.
+class VisionField{
+  static CELL=32;
+  static AIR_CEILING=127; // air sources and terrain-ignoring reveals see every level
+  static MODE_GROUND=0;static MODE_AIR=1;static MODE_IGNORE=2;
+  static rasters=new WeakMap();
+  static offsetTable=null;
+  static of(owner,side,state){
+    const terrain=WorldContext.forState(state).terrain,fields=owner.visionFields||=[null,null];
+    let field=fields[side];if(field?.terrain!==terrain)field=fields[side]=new VisionField(terrain);
+    return field.update(VisibilityPolicy.sources(state,side),state);
   }
-  static sourceCanSeePoint(state,src,x,y,opts={}){return this.sourceCanReach(state,src,x,y,Number(src.r)||0,opts)}
-  static sourceCanDetectPoint(state,src,x,y,opts={}){return this.sourceCanReach(state,src,x,y,Number(src.detect)||0,opts)}
-  static pointVisible(state,side,x,y,sources=null,{targetAir=false,extra=0}={}){
-    const src=sources||this.sources(state,side),targetLevel=targetAir?null:this.terrainLevel(state,x,y);
-    for(const s of src)if(this.sourceCanReach(state,s,x,y,(Number(s.r)||0)+Math.max(0,Number(extra)||0),{targetAir,targetLevel}))return true;
+  // Static terrain at cell centres: surface level and vision obstacle membership.
+  static raster(terrain){
+    let raster=this.rasters.get(terrain);if(raster)return raster;
+    const cell=this.CELL,cols=Math.ceil(terrain.width/cell),rows=Math.ceil(terrain.height/cell),n=cols*rows;
+    const level=new Int8Array(n),ground=new Uint8Array(n),air=new Uint8Array(n);
+    const inside=(index,x,y)=>{for(const b of index.query(x,y,x,y,0))if(MapGeometry.pointInSimplePolygon(x,y,b.points))return true;return false};
+    for(let cy=0;cy<rows;cy++)for(let cx=0;cx<cols;cx++){
+      const x=Math.min(terrain.width,(cx+.5)*cell),y=Math.min(terrain.height,(cy+.5)*cell),c=cy*cols+cx;
+      level[c]=terrain.surfaces.levelAt(x,y);ground[c]=inside(terrain.visionIndex,x,y)?1:0;air[c]=inside(terrain.airVisionIndex,x,y)?1:0;
+    }
+    raster={cols,rows,level,ground,air};this.rasters.set(terrain,raster);return raster;
+  }
+  // Cell offsets sorted by distance; parent is the neighbour one step toward the origin.
+  static offsets(radius){
+    if(this.offsetTable?.radius>=radius)return this.offsetTable;
+    const R=Math.max(radius,2*(this.offsetTable?.radius||8)),span=2*R+1,list=[];
+    for(let dy=-R;dy<=R;dy++)for(let dx=-R;dx<=R;dx++)if(dx*dx+dy*dy<=R*R)list.push([dx,dy,dx*dx+dy*dy]);
+    list.sort((a,b)=>a[2]-b[2]||a[1]-b[1]||a[0]-b[0]);
+    const n=list.length,dx=new Int16Array(n),dy=new Int16Array(n),d2=new Int32Array(n),parent=new Int32Array(n),at=new Int32Array(span*span);
+    list.forEach(([x,y,d],i)=>{dx[i]=x;dy[i]=y;d2[i]=d;at[(y+R)*span+x+R]=i});
+    for(let i=0;i<n;i++){
+      const x=dx[i],y=dy[i],ax=Math.abs(x),ay=Math.abs(y);let px,py;
+      if(!ax&&!ay){parent[i]=-1;continue}
+      if(ax>=ay){px=x-Math.sign(x);py=Math.sign(y)*Math.round(ay*(ax-1)/ax)}
+      else{py=y-Math.sign(y);px=Math.sign(x)*Math.round(ax*(ay-1)/ay)}
+      parent[i]=at[(py+R)*span+px+R];
+    }
+    return this.offsetTable={radius:R,dx,dy,d2,parent};
+  }
+  constructor(terrain){
+    this.terrain=terrain;this.raster=VisionField.raster(terrain);this.size=this.raster.cols*this.raster.rows;
+    this.visionAny=new Uint16Array(this.size);this.detectAny=new Uint16Array(this.size);
+    this.vision=new Map();this.detection=new Map();this.records=new Map();this.duplicates=new Map();
+    this.buildingGround=new Int32Array(this.size);this.buildingAir=new Int32Array(this.size);this.blockers=[];this.blockerKey="";
+    this.pass=new Uint8Array(0);this.scratch=new Int32Array(0);this.epoch=0;this.revision=0;this.sources=[];
+  }
+  cellAt(x,y){
+    const {cols,rows}=this.raster,cell=VisionField.CELL;
+    return RangeUtil.clamp(Math.floor(y/cell),0,rows-1)*cols+RangeUtil.clamp(Math.floor(x/cell),0,cols-1);
+  }
+  update(sources,state){
+    this.sources=sources;this.syncBlockers(state);
+    const epoch=++this.epoch;let changed=false;this.duplicates.clear();
+    for(const s of sources){
+      let id=String(s.sourceId);const seen=this.duplicates.get(id)||0;this.duplicates.set(id,seen+1);if(seen)id+="#"+seen;
+      const mode=s.ignoresTerrainVision?VisionField.MODE_IGNORE:s.air?VisionField.MODE_AIR:VisionField.MODE_GROUND,cell=this.cellAt(s.x,s.y);
+      const key=`${cell}|${Number(s.r)||0}|${Number(s.detect)||0}|${mode}|${Number(s.level)||0}`,record=this.records.get(id);
+      if(record?.key===key){record.epoch=epoch;continue}
+      if(record)this.apply(record,-1);
+      const next=this.paint(s,key,mode,cell);next.epoch=epoch;this.records.set(id,next);this.apply(next,1);changed=true;
+    }
+    for(const [id,record] of this.records)if(record.epoch!==epoch){this.apply(record,-1);this.records.delete(id);changed=true}
+    if(changed)this.revision++;
+    return this;
+  }
+  // Vision-blocking buildings occlude cells behind them, never themselves or
+  // the source inside them. A change repaints every source.
+  syncBlockers(state){
+    const blockers=[];
+    for(const b of state.buildings||[]){
+      if(b.alive===false||!(b.hp>0))continue;
+      const d=BuildingDefinition.get(b.type);if(!d?.blocksVision&&!d?.blocksAirVision)continue;
+      blockers.push({x:b.x,y:b.y,r:(d.size||35)+NAV_BUILDING_MARGIN,ground:!!d.blocksVision,air:!!d.blocksAirVision});
+    }
+    const key=blockers.map(b=>`${b.x},${b.y},${b.r},${b.ground?1:0}${b.air?1:0}`).join(";");
+    if(key===this.blockerKey)return;
+    this.blockerKey=key;this.blockers=blockers;this.buildingGround.fill(0);this.buildingAir.fill(0);
+    const {cols,rows}=this.raster,cell=VisionField.CELL;
+    blockers.forEach((b,i)=>{
+      for(let cy=Math.max(0,Math.floor((b.y-b.r)/cell));cy<=Math.min(rows-1,Math.floor((b.y+b.r)/cell));cy++)
+        for(let cx=Math.max(0,Math.floor((b.x-b.r)/cell));cx<=Math.min(cols-1,Math.floor((b.x+b.r)/cell));cx++){
+          if(Math.hypot((cx+.5)*cell-b.x,(cy+.5)*cell-b.y)>=b.r)continue;
+          const c=cy*cols+cx;if(b.ground)this.buildingGround[c]=i+1;if(b.air)this.buildingAir[c]=i+1;
+        }
+    });
+    for(const record of this.records.values())this.apply(record,-1);
+    this.records.clear();this.revision++;
+  }
+  paint(s,key,mode,origin){
+    const cell=VisionField.CELL,{cols,rows,level,ground,air}=this.raster,sight=Math.max(0,Number(s.r)||0),detect=Math.max(0,Number(s.detect)||0);
+    const reach=Math.max(sight,detect)/cell,sight2=(sight/cell)**2,detect2=(detect/cell)**2,reach2=reach*reach,table=VisionField.offsets(Math.ceil(reach));
+    if(this.pass.length<table.d2.length)this.pass=new Uint8Array(table.d2.length);
+    if(this.scratch.length<table.d2.length)this.scratch=new Int32Array(table.d2.length);
+    const pass=this.pass,cells=this.scratch,ox=origin%cols,oy=(origin-ox)/cols,sourceLevel=Number(s.level)||0;
+    const own=this.blockers.findIndex(b=>Math.hypot(s.x-b.x,s.y-b.y)<b.r)+1,occluder=mode===VisionField.MODE_AIR?this.buildingAir:this.buildingGround;
+    // A zero radius sees nothing, not its own cell.
+    let count=0,visionCount=0,detectCount=0;
+    for(let i=0;i<table.d2.length;i++){
+      const d2=table.d2[i];if(d2>reach2)break;
+      const x=ox+table.dx[i],y=oy+table.dy[i],parent=table.parent[i];
+      if(x<0||y<0||x>=cols||y>=rows||(parent>=0&&!pass[parent])){pass[i]=0;continue}
+      const c=y*cols+x;let seen=true;
+      if(mode===VisionField.MODE_AIR)seen=!air[c];
+      else if(mode===VisionField.MODE_GROUND)seen=!ground[c]&&(parent<0||level[c]<=sourceLevel);
+      pass[i]=seen&&(mode===VisionField.MODE_IGNORE||!occluder[c]||occluder[c]===own)?1:0;
+      if(!seen)continue;
+      cells[count++]=c;if(sight>0&&d2<=sight2)visionCount=count;if(detect>0&&d2<=detect2)detectCount=count;
+    }
+    const ceiling=mode===VisionField.MODE_GROUND?sourceLevel:VisionField.AIR_CEILING;
+    return{key,ceiling,cells:cells.slice(0,Math.max(visionCount,detectCount)),visionCount,detectCount,epoch:0};
+  }
+  counts(map,ceiling){let counts=map.get(ceiling);if(!counts)map.set(ceiling,counts=new Uint16Array(this.size));return counts}
+  apply(record,delta){
+    const {cells,visionCount,detectCount,ceiling}=record;
+    if(visionCount){const counts=this.counts(this.vision,ceiling);for(let i=0;i<visionCount;i++){counts[cells[i]]+=delta;this.visionAny[cells[i]]+=delta}}
+    if(detectCount){const counts=this.counts(this.detection,ceiling);for(let i=0;i<detectCount;i++){counts[cells[i]]+=delta;this.detectAny[cells[i]]+=delta}}
+  }
+  lit(map,any,x,y,targetAir,targetLevel){
+    const c=this.cellAt(x,y);if(!any[c])return false;if(targetAir)return true;
+    for(const [ceiling,counts] of map)if(ceiling>=targetLevel&&counts[c])return true;
     return false;
   }
-  static pointDetected(state,side,x,y,sources=null,{targetAir=false}={}){
-    const src=sources||this.sources(state,side),targetLevel=targetAir?null:this.terrainLevel(state,x,y);
-    for(const s of src)if(Number(s.detect)>0&&this.sourceCanDetectPoint(state,s,x,y,{targetAir,targetLevel}))return true;
-    return false;
+  visibleAt(x,y,targetAir=false,targetLevel=targetAir?null:this.terrain.surfaces.levelAt(x,y)){return this.lit(this.vision,this.visionAny,x,y,targetAir,targetLevel)}
+  detectedAt(x,y,targetAir=false,targetLevel=targetAir?null:this.terrain.surfaces.levelAt(x,y)){return this.lit(this.detection,this.detectAny,x,y,targetAir,targetLevel)}
+  // Highest ground level seen at a point: Infinity for air sight, -Infinity for none.
+  ceilingAt(x,y){
+    const c=this.cellAt(x,y);if(!this.visionAny[c])return -Infinity;
+    let best=-Infinity;for(const [ceiling,counts] of this.vision)if(counts[c]&&ceiling>best)best=ceiling;
+    return best>=VisionField.AIR_CEILING?Infinity:best;
   }
 }
 class TerrainQuery{
@@ -7221,7 +7308,7 @@ class SimulationRuntimeState{
   }
   static visibility(sim){
     sim.cloakCacheTick=-1;sim.auraCloakedIds=new Set();
-    sim.tickVisibilityCache=[new Map(),new Map()];sim.tickVisibilityCacheTick=-1;
+    sim.visionFields=[null,null];
   }
   static economy(sim){sim.economyCacheTick=-1;sim.workerGasAssignments=new Set();sim.validGasExtractorsBySide=[[],[]]}
   static initialize(sim,{newMatch=false}={}){
@@ -7252,7 +7339,7 @@ class StrategySim{
     "collisionGrid","collisionSweepGrid","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCandidateBuffer","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
     "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapSideHeads","hardFixSapSideNext","hardFixSapSidePrev","hardFixSapSideHeaps","hardFixSapMarks","hardFixSapEpoch",
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","spatialQueryScopeBuffers","spatialQueryScopeDepth","aoeCandidateSpatialScratch","aoeCandidateSpatialDepth","maxUnitRadius",
-    "cloakCacheTick","auraCloakedIds","tickVisibilityCache","tickVisibilityCacheTick","economyCacheTick","workerGasAssignments","validGasExtractorsBySide","navigation","nextRoutePathId","routePathStore","routePathIndex"
+    "cloakCacheTick","auraCloakedIds","visionFields","economyCacheTick","workerGasAssignments","validGasExtractorsBySide","navigation","nextRoutePathId","routePathStore","routePathIndex"
   ],children:{delayedEffects:DelayedEffectState}});
   static createForMatch({draft,seed,rules=GameRuleDefinition.current,campaignScenario=null,debugScenario=null}={}){
     const sim=new StrategySim(draft,seed,rules,campaignScenario);
@@ -7468,24 +7555,6 @@ class StrategySim{
       if(this._perfCollect){this._perfCollect.spatialQueries++;this._perfCollect.spatialCandidates+=result.length;if(side!=null)this._perfCollect.sideSpatialQueries++}
       return visit(result);
     }finally{this.spatialQueryScopeDepth=depth}
-  }
-  prepareVisionSources(sources){
-    const cell=VISION_SPATIAL_CELL,cols=Math.ceil(this.world.width/cell),rows=Math.ceil(this.world.height/cell),grid=new Map();
-    const cx=x=>RangeUtil.clamp(Math.floor(x/cell),0,cols-1),cy=y=>RangeUtil.clamp(Math.floor(y/cell),0,rows-1);
-    for(let i=0;i<sources.length;i++){
-      const src=sources[i],rr=Math.max(Number(src.r)||0,Number(src.detect)||0);
-      const x0=cx(src.x-rr),x1=cx(src.x+rr),y0=cy(src.y-rr),y1=cy(src.y+rr);
-      for(let yy=y0;yy<=y1;yy++)for(let xx=x0;xx<=x1;xx++){
-        const key=yy*cols+xx;let bucket=grid.get(key);if(!bucket){bucket=[];grid.set(key,bucket)}bucket.push(i);
-      }
-    }
-    Object.defineProperties(sources,{_spatialGrid:{value:grid,configurable:true},_spatialCell:{value:cell,configurable:true},_spatialCols:{value:cols,configurable:true},_spatialRows:{value:rows,configurable:true}});
-    return sources;
-  }
-  visionSourceCandidates(sources,x,y){
-    if(!sources?._spatialGrid)return null;
-    const cx=RangeUtil.clamp(Math.floor(x/sources._spatialCell),0,sources._spatialCols-1),cy=RangeUtil.clamp(Math.floor(y/sources._spatialCell),0,sources._spatialRows-1);
-    return sources._spatialGrid.get(cy*sources._spatialCols+cx)||[];
   }
   ensureCollisionBuffers(n){
     if(this.collisionRadii.length>=n)return;
@@ -7946,7 +8015,7 @@ class StrategySim{
 
   spellTargetAllowed(side,x,y,margin=SPELL_CAST_MARGIN){
     x=RangeUtil.clamp(x,0,this.world.width);y=RangeUtil.clamp(y,0,this.world.height);
-    for(const src of this.visionSources(side)){
+    for(const src of this.visionSources(side).sources){
       const r=src.r+margin,dx=src.x-x,dy=src.y-y;
       if(dx*dx+dy*dy<=r*r)return true;
     }
@@ -9895,15 +9964,11 @@ class StrategySim{
       if(u.carry>=carryCap||m.amount<=0)u.workState="return";
     }
   }
-  visionSources(side){return this.prepareVisionSources(VisibilityPolicy.sources(this,side))}
-  isVisible(side,x,y,sources,targetAir=false){
+  // The side's VisionField, current for this state; pass it to the checks below.
+  visionSources(side){return VisionField.of(this,side,this)}
+  isVisible(side,x,y,field,targetAir=false){
     if(this._perfCollect)this._perfCollect.visibilityChecks++;
-    const candidates=this.visionSourceCandidates(sources,x,y);
-    if(this._perfCollect)this._perfCollect.visionCandidateChecks+=candidates?candidates.length:(sources?.length||0);
-    const targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(x,y);
-    if(candidates){for(const idx of candidates)if(VisibilityPolicy.sourceCanSeePoint(this,sources[idx],x,y,{targetAir,targetLevel}))return true;return false}
-    for(const src of sources)if(VisibilityPolicy.sourceCanSeePoint(this,src,x,y,{targetAir,targetLevel}))return true;
-    return false;
+    return field.visibleAt(x,y,targetAir);
   }
   isStealthed(u){
     if(!u?.alive)return false;
@@ -9914,15 +9979,10 @@ class StrategySim{
     this.prepareCloakCache();
     return this.auraCloakedIds.has(u.id);
   }
-  isDetected(side,u,sources){
+  isDetected(side,u,field){
     if(!this.isStealthed(u))return true;
     if(this._perfCollect)this._perfCollect.visibilityChecks++;
-    const candidates=this.visionSourceCandidates(sources,u.x,u.y);
-    if(this._perfCollect)this._perfCollect.visionCandidateChecks+=candidates?candidates.length:(sources?.length||0);
-    const targetAir=this.unitLayer(u.type)==="AIR",targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(u.x,u.y);
-    if(candidates){for(const idx of candidates)if(VisibilityPolicy.sourceCanDetectPoint(this,sources[idx],u.x,u.y,{targetAir,targetLevel}))return true;return false}
-    for(const src of sources)if(VisibilityPolicy.sourceCanDetectPoint(this,src,u.x,u.y,{targetAir,targetLevel}))return true;
-    return false;
+    return field.detectedAt(u.x,u.y,this.unitLayer(u.type)==="AIR");
   }
 
   canTargetUnit(attackerSide,target,sources=null){
@@ -9942,19 +10002,9 @@ class StrategySim{
 
   canSeeCombatTarget(attackerSide,target,sources){
     if(!target||target.alive===false||target.side===attackerSide||this.neutralObjectFriendlyToSide(target,attackerSide))return false;
-    const side=attackerSide===1?1:0,cache=this.tickVisibilityCache?.[side],key=target.id;
-    if(cache&&key!=null){const cached=cache.get(key);if(cached!==undefined){if(this._perfCollect)this._perfCollect.visibilityCacheHits=(this._perfCollect.visibilityCacheHits||0)+1;return cached}}
-    const stealth=this.isStealthed(target),targetAir=this.unitLayer(target.type)==="AIR",targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(target.x,target.y);
-    const candidates=this.visionSourceCandidates(sources,target.x,target.y);
-    if(this._perfCollect){this._perfCollect.visibilityChecks++;this._perfCollect.visionCandidateChecks+=candidates?candidates.length:(sources?.length||0)}
-    let visible=false,detected=!stealth;
-    const test=src=>{
-      if(VisibilityPolicy.sourceCanSeePoint(this,src,target.x,target.y,{targetAir,targetLevel}))visible=true;
-      if(stealth&&VisibilityPolicy.sourceCanDetectPoint(this,src,target.x,target.y,{targetAir,targetLevel}))detected=true;
-      return visible&&detected;
-    };
-    if(candidates){for(const idx of candidates)if(test(sources[idx]))break}else for(const src of sources)if(test(src))break;
-    const result=visible&&detected;if(cache&&key!=null)cache.set(key,result);return result;
+    const targetAir=this.unitLayer(target.type)==="AIR",targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(target.x,target.y);
+    if(this._perfCollect)this._perfCollect.visibilityChecks++;
+    return sources.visibleAt(target.x,target.y,targetAir,targetLevel)&&(!this.isStealthed(target)||sources.detectedAt(target.x,target.y,targetAir,targetLevel));
   }
 
   targetPriorityFactor(attacker,targetDef){
@@ -12428,7 +12478,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     const profile=((this.tick+1)%this.msTicks(PERF_SAMPLE_EVERY_MS)===0)&&typeof performance!=="undefined";
     const now=profile?()=>performance.now():null;
     const stepStart=profile?now():0;
-    this._perfCollect=profile?{spatialQueries:0,spatialCandidates:0,targetQueries:0,targetVisibilityRejects:0,sideSpatialQueries:0,visibilityChecks:0,visionCandidateChecks:0,visibilityCacheHits:0,
+    this._perfCollect=profile?{spatialQueries:0,spatialCandidates:0,targetQueries:0,targetVisibilityRejects:0,sideSpatialQueries:0,visibilityChecks:0,
       collisionPairs:0,collisionOverlaps:0,collisionSoftPasses:0,collisionSoftContacts:0,collisionSoftMovedUnits:0,collisionSoftCappedUnits:0,buildingCollisionCandidates:0,collisionPrepMs:0,collisionGridBuildMs:0,collisionPairScanMs:0,collisionSoftApplyMs:0,collisionSweptMotionMs:0,collisionTerrainMs:0,collisionHardFixMs:0,
       collisionSweptCalls:0,collisionSweptActivePasses:0,collisionSweptZeroMotionCalls:0,collisionSweptEmptyPasses:0,collisionSweptPairTests:0,collisionSweptHits:0,collisionSweptCorrectionUnits:0,collisionSweptNoCorrectionPasses:0,
       collisionHardFixCalls:0,collisionHardFixPasses:0,collisionHardFixActivePairTests:0,collisionHardFixCandidates:0,collisionHardFixCorrections:0,collisionHardFixNoOpCalls:0,combatTargetPickMs:0,combatTargetPickCalls:0}:null;
@@ -12436,10 +12486,6 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     this.tick++;
     this.events=[];
     this.campaignScriptRuntime?.tick();
-    if(this.tickVisibilityCacheTick!==this.tick){
-      this.tickVisibilityCache[0].clear();this.tickVisibilityCache[1].clear();
-      this.tickVisibilityCacheTick=this.tick;
-    }
 
     const cmds=this.scheduled.get(this.tick)||[];
     for(const c of cmds){
@@ -12538,7 +12584,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       p.peakAliveUnits=Math.max(p.peakAliveUnits||0,aliveUnits);
       p.peakBuildings=Math.max(p.peakBuildings||0,this.buildings.length);
       p.peakProjectiles=Math.max(p.peakProjectiles||0,this.projectiles.length);
-      p.spatialQueries=c.spatialQueries;p.spatialCandidates=c.spatialCandidates;p.targetQueries=c.targetQueries;p.targetVisibilityRejects=c.targetVisibilityRejects;p.sideSpatialQueries=c.sideSpatialQueries;p.visibilityChecks=c.visibilityChecks;p.visionCandidateChecks=c.visionCandidateChecks;p.visibilityCacheHits=c.visibilityCacheHits||0;
+      p.spatialQueries=c.spatialQueries;p.spatialCandidates=c.spatialCandidates;p.targetQueries=c.targetQueries;p.targetVisibilityRejects=c.targetVisibilityRejects;p.sideSpatialQueries=c.sideSpatialQueries;p.visibilityChecks=c.visibilityChecks;
       p.collisionPairs=c.collisionPairs;p.collisionOverlaps=c.collisionOverlaps;p.buildingCollisionCandidates=c.buildingCollisionCandidates||0;
     }
     this._perfCollect=null;
@@ -14707,13 +14753,13 @@ class BotController{
 
   visionSources(state){return VisibilityPolicy.sources(state,this.side)}
 
-  pointVisible(x,y,sources,extra=0){
-    const sim=this.session?.sim;if(sim)return VisibilityPolicy.pointVisible(sim,this.side,x,y,sources,{extra});
-    return sources.some(s=>{const r=(Number(s.r)||0)+extra,dx=s.x-x,dy=s.y-y;return dx*dx+dy*dy<=r*r});
+  pointVisible(x,y,sources){
+    const sim=this.session?.sim;if(sim)return sim.visionSources(this.side).visibleAt(x,y);
+    return sources.some(s=>{const r=Number(s.r)||0,dx=s.x-x,dy=s.y-y;return dx*dx+dy*dy<=r*r});
   }
 
   pointDetected(x,y,sources){
-    const sim=this.session?.sim;if(sim)return VisibilityPolicy.pointDetected(sim,this.side,x,y,sources);
+    const sim=this.session?.sim;if(sim)return sim.visionSources(this.side).detectedAt(x,y);
     return sources.some(s=>{const r=Number(s.detect)||0,dx=s.x-x,dy=s.y-y;return r>0&&dx*dx+dy*dy<=r*r});
   }
 
@@ -15403,7 +15449,7 @@ return threat;
       );
       const candidates=(state.gasNodes||[])
         .filter(g=>!occupied.has(g.id)&&!this.commandExecutor.conflictsBuilding(type,g.x,g.y))
-        .filter(g=>this.pointVisible(g.x,g.y,p.sources,0))
+        .filter(g=>this.pointVisible(g.x,g.y,p.sources))
         // 실제 BUILD 커밋과 같은 미네랄 충돌 규칙을 미리 적용한다.
         .filter(g=>!liveSim||!liveSim.buildingOverlapsMineral("gasExtractor",g.x,g.y))
         .sort((a,b)=>{
@@ -15455,7 +15501,7 @@ return threat;
           if(!buildingPlacementInsideWorld(type,x,y,WorldContext.forState(state))||!buildingHasBuilderApproach(state,type,x,y)||!buildingHasReachableBuilder(state,this.side,type,x,y))continue;
 
           // 실제로 아군 시야 안이어야 BUILD 커밋이 유효하다.
-          if(!this.pointVisible(x,y,p.sources,0))continue;
+          if(!this.pointVisible(x,y,p.sources))continue;
 
           // 최신 절차맵/자원 판정을 그대로 사용한다.
           // 예전 고정 지형 상수를 보면 현재 맵과 다른 좌표를 검사하게 되고,
@@ -15624,7 +15670,8 @@ return threat;
   }
 
   spellPointAllowed(p,x,y,margin){
-    return this.pointVisible(x,y,p.sources,margin||0);
+    const sim=this.session?.sim;if(sim)return sim.spellTargetAllowed(this.side,x,y,margin||0);
+    return p.sources.some(s=>{const r=(Number(s.r)||0)+(margin||0),dx=s.x-x,dy=s.y-y;return dx*dx+dy*dy<=r*r});
   }
 
   bestEnemyClusterPoint(p,radius,{groundOnly=false}={}){
@@ -15702,7 +15749,7 @@ return threat;
     // 신호탄: 목표 지역이 현재 시야 밖이면 사용.
     if(
       target&&this.spellReady(state,"flare")&&
-      !this.pointVisible(target.x,target.y,p.sources,0)&&
+      !this.pointVisible(target.x,target.y,p.sources)&&
       this.spellPointAllowed(p,target.x,target.y,SpellDefinition.all.flare.castMargin)
     ){
       this.issueCommand({
@@ -15744,7 +15791,7 @@ return threat;
     if(
       center&&target&&p.ownArmy.length>=7&&
       this.spellReady(state,"tunnel")&&
-      this.pointVisible(center.x,center.y,p.sources,0)
+      this.pointVisible(center.x,center.y,p.sources)
     ){
       const dx=target.x-center.x,dy=target.y-center.y;
       const dist=Math.hypot(dx,dy);
@@ -18051,9 +18098,10 @@ class FogVisibilityGrid{
   sameGeometry(renderer,step){return this.atlas===renderer.world.terrain.surfaces&&this.width===renderer.world.width&&this.height===renderer.world.height&&this.step===step}
   update(renderer){
     const sides=renderer.replayVisionSides(),sideKey=sides.join(',');
-    if(this.snapshot===renderer.snapshot&&this.tick===renderer.snapshot.tick&&this.grid===renderer.visionGridBySide&&this.sideKey===sideKey&&this.observer===renderer.replayObserverAll)return this;
-    this.snapshot=renderer.snapshot;this.tick=renderer.snapshot.tick;this.grid=renderer.visionGridBySide;
-    this.sideKey=sideKey;this.sides=sides;this.observer=renderer.replayObserverAll;this.cellSize=renderer.visionCellSize;
+    const revisionKey=sides.map(side=>renderer.visionFields[side]?.revision??-1).join(',');
+    if(this.snapshot===renderer.snapshot&&this.tick===renderer.snapshot.tick&&this.revisionKey===revisionKey&&this.sideKey===sideKey&&this.observer===renderer.replayObserverAll)return this;
+    this.snapshot=renderer.snapshot;this.tick=renderer.snapshot.tick;this.revisionKey=revisionKey;this.fields=renderer.visionFields;
+    this.sideKey=sideKey;this.sides=sides;this.observer=renderer.replayObserverAll;
     // Published mask arrays remain immutable while the GPU transition retains them.
     this.masks.clear();this.groundMasks.clear();this.generation++;
     for(let j=0;j<this.h;j++)for(let i=0;i<this.w;i++)this.ceilings[j*this.w+i]=this.ceilingAt(this.x[i],this.y[j]);
@@ -18061,16 +18109,7 @@ class FogVisibilityGrid{
   }
   ceilingAt(x,y){
     if(this.observer)return Infinity;
-    const key=Math.floor(x/this.cellSize)+','+Math.floor(y/this.cellSize);let best=-Infinity;
-    for(const side of this.sides){const bucket=this.grid[side].get(key);if(!bucket)continue;
-      for(const src of bucket){
-        const level=Number(src.level||0),ceiling=src.air||src.ignoresTerrainVision||!Number.isFinite(level)?Infinity:level;
-        if(ceiling<=best)continue;
-        if(VisibilityPolicy.sourceCanSeePoint(this.snapshot,src,x,y,{targetAir:false,targetLevel:level})){
-          best=ceiling;if(best>=this.atlas.maxLevel)return best;
-        }
-      }
-    }
+    let best=-Infinity;for(const side of this.sides)best=Math.max(best,this.fields[side]?.ceilingAt(x,y)??-Infinity);
     return best;
   }
   atLevel(level){
@@ -18136,10 +18175,7 @@ class GLRenderer{
     this.canvas.dataset.rendererBackend=this.backend;
 
     // Render-only visibility spatial cache.
-    this.visionCellSize=320;
-    this.visionSourcesBySide=[[],[]];
-    this.detectionGridBySide=[new Map(),new Map()];
-    this.visionGridBySide=[new Map(),new Map()];
+    this.visionFields=[null,null];
     this.snapshotCloakedIds=new Set();
     this.fogVisibilityGrids=new Map();
     this.visibleUnitFrame=[];
@@ -18763,23 +18799,9 @@ class GLRenderer{
   }
 
   rebuildVisibilityCache(){
-    this.visionSourcesBySide=[[],[]];this.visionGridBySide=[new Map(),new Map()];this.detectionGridBySide=[new Map(),new Map()];this.snapshotCloakedIds.clear();
+    this.snapshotCloakedIds.clear();
     if(!this.snapshot)return;
-    const cell=this.visionCellSize;
-    for(const side of [0,1]){
-      const sources=VisibilityPolicy.sources(this.snapshot,side);this.visionSourcesBySide[side]=sources;const grid=this.visionGridBySide[side];
-      for(const src of sources){const r=Math.max(src.r,src.detect);
-        for(let cy=Math.floor((src.y-r)/cell);cy<=Math.floor((src.y+r)/cell);cy++)for(let cx=Math.floor((src.x-r)/cell);cx<=Math.floor((src.x+r)/cell);cx++){
-          const key=cx+","+cy;let bin=grid.get(key);if(!bin)grid.set(key,bin=[]);bin.push(src);
-        }
-        // Zero-radius sources still detect their exact point in the existing
-        // predicate. Index them too; one fixed-point quantum pads float boundaries.
-        const detect=Math.max(0,Number(src.detect)||0)+1/FP,detection=this.detectionGridBySide[side];
-        for(let y=Math.floor((src.y-detect)/64);y<=Math.floor((src.y+detect)/64);y++)for(let x=Math.floor((src.x-detect)/64);x<=Math.floor((src.x+detect)/64);x++){
-          const key=x+','+y;let bin=detection.get(key);if(!bin)detection.set(key,bin=[]);bin.push(src);
-        }
-      }
-    }
+    for(const side of [0,1])VisionField.of(this,side,this.snapshot);
     const query=VisibilityPolicy.unitQuery(this.snapshot);
     for(const source of this.snapshot.units){
       const radius=Number(UnitDefinition.get(source.type)?.cloakAuraRadius)||0;if(!source.alive||radius<=0)continue;
@@ -20711,24 +20733,18 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
   visibleRaw(x,y,targetAir=false){
     if(this.replayObserverAll)return true;
     if(!this.snapshot)return false;
-    const cell=this.visionCellSize,key=Math.floor(x/cell)+","+Math.floor(y/cell),targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(x,y);
-    for(const side of this.replayVisionSides()){
-      const bucket=this.visionGridBySide[side].get(key);if(!bucket)continue;
-      for(const src of bucket)if(VisibilityPolicy.sourceCanSeePoint(this.snapshot,src,x,y,{targetAir,targetLevel}))return true;
-    }
+    const targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(x,y);
+    for(const side of this.replayVisionSides())if(this.visionFields[side]?.visibleAt(x,y,targetAir,targetLevel))return true;
     return false;
   }
   detectedRaw(x,y,targetAir=false){
     if(this.replayObserverAll||this.replayVisionMode==="union")return true;
     if(!this.snapshot)return false;
     const targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(x,y);
-    const finite=Number.isFinite(x)&&Number.isFinite(y),key=finite?Math.floor(x/64)+','+Math.floor(y/64):null;
-    for(const side of this.replayVisionSides()){
-      const sources=finite?(this.detectionGridBySide[side].get(key)||[]):this.visionSourcesBySide[side]||[];
-      for(const src of sources)if(VisibilityPolicy.sourceCanDetectPoint(this.snapshot,src,x,y,{targetAir,targetLevel}))return true;
-    }
+    for(const side of this.replayVisionSides())if(this.visionFields[side]?.detectedAt(x,y,targetAir,targetLevel))return true;
     return false;
   }
+
   snapshotStealthed(u){
     return !!u&&u.alive!==false&&(
       BurrowableMixin.stateActive(u)||
@@ -22334,12 +22350,13 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     if(!field||!field.sameGeometry(this,step)){field=new FogVisibilityGrid(this,step);this.fogVisibilityGrids.set(step,field)}
     return field.update(this);
   }
+  fogVisionRevision(){return this.visionFields.map(field=>field?.revision??-1).join(",")}
   ensureFogTextures(){
     if(!this.snapshot)return null;
     const gl=this.gl,atlas=this.world.terrain.surfaces,step=this.fogMaskStep||64,w=Math.max(2,Math.ceil(this.world.width/step)+1),h=Math.max(2,Math.ceil(this.world.height/step)+1),
       key=`${this.snapshot.tick}|${this.replayVisionMode||this.mySide()}|${this.replayObserverAll?1:0}|${this.world.width}x${this.world.height}|${atlas.maxLevel}|${w}x${h}`;
     this.prepareFogSurfaces(atlas);
-    if(this._fogTextureKey===key&&this._fogVisionGrid===this.visionGridBySide)return this.fogMaskSize;
+    if(this._fogTextureKey===key&&this._fogVisionRevision===this.fogVisionRevision())return this.fogMaskSize;
     const now=performance.now(),perspective=`${this.orientationRole()}|${this.replayVisionMode||this.mySide()}|${this.replayObserverAll?1:0}`,
       previous=this._fogMaskContext,delta=Number(this.snapshot.tick)-Number(previous?.tick),
       continuous=previous?.atlas===atlas&&previous.perspective===perspective&&previous.w===w&&previous.h===h&&delta>0&&delta<=Math.ceil((Number(this.snapshot.rules?.simulation?.tps)||SIM_TPS)*.25),
@@ -22367,7 +22384,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this._fogTransitionStartedAt=continuous?now:null;
     this._fogMaskContext={atlas,perspective,tick:this.snapshot.tick,w,h};
     this.fogMaskSize={w,h};
-    this._fogTextureKey=key;this._fogVisionGrid=this.visionGridBySide;return this.fogMaskSize;
+    this._fogTextureKey=key;this._fogVisionRevision=this.fogVisionRevision();return this.fogMaskSize;
   }
   fogVertex(world,bridgeId=null){
     const q=this.projectRenderWorldPosition(world),u=RangeUtil.clamp(world.x/this.world.width,0,1),v=RangeUtil.clamp(world.z/this.world.height,0,1);
