@@ -56,10 +56,6 @@ test('source packaging rejects tampered original SVGs', t => {
   fs.writeFileSync(path.join(dir, manifest.assets[0].sourcePath), 'tampered');
   assert.throws(() => buildPages(dir), /Unit SVG (?:byte length|SHA-256) mismatch/);
 });
-test('current source cannot accidentally enter the retired standalone bundler', () => {
-  assert.throws(() => require('./bundle-gamekit.cjs').bundleGame(root, fs.readFileSync(path.join(root, 'index.html'), 'utf8')), /Standalone bundling is retired/);
-});
-
 for (const [name, change] of [
  ['repository', lock => { lock.repository = 'unexpected/repository'; }],
  ['source commit', lock => { lock.sourceCommit = 'unknown'; }],

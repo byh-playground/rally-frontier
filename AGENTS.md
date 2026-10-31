@@ -12,11 +12,11 @@ USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES 
 ## 프로젝트 설정
 
 - 대상 저장소는 `byh-playground/rally-frontier`, 통합 브랜치와 PR 대상은 `main`이다.
-- 작업 브랜치는 `codex/` 접두사를 사용하고 커밋 메시지는 한글로 작성한다.
+- 작업 브랜치는 `codex/` 접두사를 사용한다. 커밋 메시지는 공통 규칙 PM-007(한국어, 첫 줄 `[bug-fix]`·`[feature]`·`[refactor]`·`[performance]`·`[docs]`·`[test]`·`[build]` prefix + 변경 목적)을 따른다.
 - 게임 개발 방향과 품질·검증 기준은 `index.html` 상단 Development Contract를 따른다. 원본 코드 정본은 `index.html` + `src/main.js` + `src/core/` + `src/styles/`이며 배포용 번들을 만들지 않는다. 게임 변경의 실제 UI E2E와 시각 확인을 정적 검사만으로 대체하지 않는다. 미검증 게임 버전을 VALIDATED 또는 Stable로 표시하지 않는다.
 - 단일 `index.html` 안의 병렬 작업은 수정 함수·Definition·상태 소유자·공통 mechanic과 호출 관계로 겹침을 판단한다.
 - 머지 기본 방식은 작업 커밋을 하나로 squash한 뒤 Merge commit을 만드는 방식이다. `main`에 통합 작업 커밋 하나와 머지 커밋을 남긴다. 머지 후 로컬 `main`을 동기화하고 해당 PR 및 남아 있는 머지 완료 로컬 작업 브랜치를 정리한다. 미반영 변경과 다른 worktree에서 사용하는 브랜치는 보존한다. 세부 절차는 프로젝트 리뷰·머지 스킬을 따른다.
-- 검증을 마친 PR은 별도 승인을 묻지 않고 머지한다. `main` 푸시는 Pages가 공개 주소에 자동 배포하므로 머지가 곧 리모트 확인용 배포다. Stable은 검증·승인한 커밋에 불변 태그로 명시 승격할 때만 만들며 Pages 배포만으로 Stable로 간주하지 않는다.
+- `main` 푸시는 Pages가 공개 주소에 자동 배포하므로 머지가 곧 리모트 확인용 배포다. Stable은 검증·승인한 커밋에 불변 태그로 명시 승격할 때만 만들며 Pages 배포만으로 Stable로 간주하지 않는다.
 
 ## 임시 프로젝트
 
