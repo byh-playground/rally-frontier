@@ -5,7 +5,8 @@ const { chromium } = require('playwright');
 const { serveSource, routePinnedSDK } = require('./netcode-qa-module.cjs');
 
 // Single-player AI hosted in src/sim-worker.js: the human session runs in the page,
-// the AI session in a Worker, linked by PortTransport. Checks connection, the
+// the AI session in a Worker; the AI's real WebRTC transport stays in the page and
+// WorkerSessionProxy relays it. Checks connection, the
 // lockstep cores' own state-hash comparison, manual recovery while connected and
 // after the link is invalidated, balance telemetry from the Worker, and port traffic.
 const root = path.resolve(__dirname, '..');
@@ -16,7 +17,7 @@ const observer = `window.__simWorkerE2E={MatchLifecycle,MobileBattleTestMode,Rec
     return Object.fromEntries(Object.entries(m?.sessions||{}).map(([role,s])=>[role,{kind:s.constructor.name,tick:s.sim?.tick??null,
       connected:!!s.transportConnected,phase:s.recoveryPhase,ready:!!s.netcodeSession?.ready,
       hashMismatches:s.netcodeSession?.metrics?.hashMismatches??null,stateHashes:s.netcodeSession?.metrics?.stateHashComputations??null,
-      traffic:s.transport?.traffic?{...s.transport.traffic}:null}]));
+      traffic:s.traffic?{...s.traffic}:null}]));
   }};`;
 
 (async () => {
@@ -72,9 +73,11 @@ const observer = `window.__simWorkerE2E={MatchLifecycle,MobileBattleTestMode,Rec
       assert.equal(recovered[role].hashMismatches, 0, `${role} lockstep core saw no state hash mismatch`);
       assert.ok(recovered[role].stateHashes > 0, `${role} lockstep core compared state hashes`);
     }
-    const traffic = recovered.host.traffic, ticks = recovered.host.tick;
-    const perTick = (traffic.sentPacketBytes + traffic.receivedPacketBytes) / ticks;
-    assert.ok(perTick > 0 && perTick < 1024, `Port traffic stays small (${perTick.toFixed(1)} B/tick)`);
+    // Steady play only: the window before any recovery, which resends a snapshot.
+    const { before, after } = steps[0], traffic = recovered.guest.traffic;
+    const bytes = role => after.guest.traffic[role + 'PacketBytes'] - before.guest.traffic[role + 'PacketBytes'];
+    const perTick = (bytes('sent') + bytes('received')) / (after.guest.tick - before.guest.tick);
+    assert.ok(perTick > 0 && perTick < 512, `Relayed traffic stays small in steady play (${perTick.toFixed(1)} B/tick)`);
 
     const [download] = await Promise.all([page.waitForEvent('download', { timeout: 10_000 }), page.evaluate(() => window.__simWorkerE2E.PerformanceTelemetry.exportBalanceTelemetry())]);
     const balance = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));

@@ -170,6 +170,7 @@ PURPOSE
 - 테스트 편의를 위해 싱글 전용 gameplay shortcut, 별도 simulation 규칙, GameSession 아래 직접 진입 경로를 만들지 않는다.
 - Single/Multiplayer 공통 경로가 갈라지면 싱글을 별도 보정하기보다 공통 실행 경로를 복구하는 것을 우선한다.
 - Single E2E는 같은 기기의 실제 WebRTC negotiation/DataChannel을 검증한다. 외부 NAT를 건너는 2-peer 연결로 범위를 확대하지 않는다.
+- 싱글 AI 세션은 src/sim-worker.js Worker에서 같은 GameSession·BotController로 실행한다. AI의 실제 WebRTC transport는 메인 스레드에 남고 WorkerSessionProxy가 메시지·넷코드 패킷·open/close·복구 호출을 중계한다. 양쪽 세션 내부를 들여다보는 test:ui는 AI 세션을 페이지 안에 두고(CONFIG.single.botWorker=false), Worker 경로는 test:worker가 검증한다.
 
 16. VERIFY EVERYTHING THE CURRENT ENVIRONMENT CAN VERIFY
 - 권장 완료 순서:

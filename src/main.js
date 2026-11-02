@@ -5770,79 +5770,6 @@ class LoopbackTransport{
   }
 }
 
-// LoopbackTransport's contract over a MessagePort, so a peer session can live in
-// a Worker. postMessage already copies; netcode packets move their buffer.
-class PortTransport{
-  constructor(role,roomCode,port){
-    this.role=role;this.roomCode=roomCode;this.port=port;this.opened=false;this.peerOpened=false;this.connected=false;
-    // Port traffic for diagnostics: control messages are structured-cloned, netcode packets are moved.
-    this.traffic={sentMessages:0,sentPackets:0,sentPacketBytes:0,receivedMessages:0,receivedPackets:0,receivedPacketBytes:0};
-    this.netcodeListeners=new Set();this.netcodeStatusListeners=new Set();
-    this.onMessage=()=>{};this.onPeerReady=()=>{};this.onOpen=()=>{};this.onClose=()=>{};this.onError=()=>{};
-    port.onmessage=e=>this.receive(e.data);
-  }
-  open(){
-    this.opened=true;this.port.postMessage({k:"open"});
-    queueMicrotask(()=>{if(!this.opened)return;if(this.role==="host")this.onPeerReady();this.tryConnect()});
-  }
-  // Manual recovery: drop and re-handshake. Each side reopens once; an open that
-  // is not an answer is answered, so the link returns whichever side goes first.
-  reopen(){
-    this.dropConnection();this.opened=true;this.peerOpened=false;this.port.postMessage({k:"open"});return true;
-  }
-  prepareRecoveryHost(){return this.role==="host"&&this.reopen()}
-  rebuildRecoveryGuest(){return this.role==="guest"&&this.reopen()}
-  tryConnect(){
-    if(!this.opened||!this.peerOpened||this.connected)return;
-    this.connected=true;this.emitNetcodeStatus();queueMicrotask(()=>{if(this.connected)this.onOpen()});
-  }
-  receive(data){
-    // A fresh open while connected means the peer reopened: drop so both sides see close → open.
-    if(data?.k==="open"){this.peerOpened=true;if(!data.answer){this.dropConnection();if(this.opened)this.port.postMessage({k:"open",answer:true})}this.tryConnect();return}
-    if(data?.k==="close"){this.peerOpened=false;this.dropConnection();return}
-    if(!this.isOpen())return;
-    if(data?.k==="m"){this.traffic.receivedMessages++;this.onMessage(data.d)}
-    else if(data?.k==="n"&&++this.traffic.receivedPackets&&(this.traffic.receivedPacketBytes+=data.d.byteLength))for(const listener of this.netcodeListeners){try{listener(data.d)}catch(error){this.onError(error)}}
-  }
-  isOpen(){return this.connected}
-  send(message){
-    if(!this.isOpen())return false;
-    try{this.port.postMessage({k:"m",d:message})}catch(error){this.onError(error);return false}
-    this.traffic.sentMessages++;return true;
-  }
-  get netcodeState(){return this.isOpen()?'open':'closed'}
-  subscribeNetcodeStatus(listener){
-    if(typeof listener!=='function')throw new TypeError('netcode status subscriber');
-    this.netcodeStatusListeners.add(listener);return ()=>this.netcodeStatusListeners.delete(listener);
-  }
-  emitNetcodeStatus(){for(const listener of this.netcodeStatusListeners)listener(this.netcodeState)}
-  get netcodeBufferedAmount(){return 0}
-  isNetcodeOpen(){return this.isOpen()}
-  subscribeNetcode(listener){
-    if(typeof listener!=="function")throw new TypeError("넷코드 수신 함수가 필요합니다.");
-    this.netcodeListeners.add(listener);return ()=>this.netcodeListeners.delete(listener);
-  }
-  sendNetcode(packet){
-    if(!(packet instanceof Uint8Array)||packet.byteLength>(window.RallyNetcode?.CHUNK_SIZE??0)||!this.isOpen())return false;
-    const copy=packet.slice();this.port.postMessage({k:"n",d:copy},[copy.buffer]);
-    this.traffic.sentPackets++;this.traffic.sentPacketBytes+=copy.byteLength;
-    return true;
-  }
-  forceReconnect(){
-    if(!this.connected)return false;
-    this.close();return true;
-  }
-  dropConnection(){
-    if(!this.connected)return;
-    this.connected=false;this.emitNetcodeStatus();queueMicrotask(()=>this.onClose());
-  }
-  close(){
-    if(!this.opened&&!this.connected)return;
-    this.opened=false;try{this.port.postMessage({k:"close"})}catch{}
-    this.dropConnection();
-  }
-}
-
 /* Runtime-only deterministic fixed-cell collision broadphase.
  * Dense numeric bucket arrays avoid Map lookup, candidate sorting and quadtree
  * traversal in the one-pass allied soft-separation hot path. Buckets store unit-array
@@ -14721,6 +14648,15 @@ class AiCommandExecutor{
 }
 
 class BotController{
+  // AI도 역할과 무관하게 동일한 GameSession 명령 인터페이스만 사용한다(페이지 안이든 sim-worker.js 안이든).
+  static attach(session,role){
+    const bot=new BotController(session,{role});
+    session.publishConfirmedSnapshots=true;
+    session.onDraft=state=>{session.draft=state;bot.handleDraft(state)};
+    session.onSnapshot=state=>bot.handleSnapshot(state);
+    session.onLog=()=>{};session.onResult=()=>bot.stop();session.onNetworkHealth=()=>{};
+    return bot;
+  }
   constructor(session,options={}){
     this.session=session;this.commandExecutor=new AiCommandExecutor(this);
     this.role=options.role||session.role||"guest";
@@ -26900,20 +26836,20 @@ class MatchLifecycle{
   UiRegistry.refs.singleStatus.textContent=`${humanRole.toUpperCase()} 테스트용 실제 WebRTC 양쪽 피어를 준비하고 있습니다…`;
   UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
 
-  if(CONFIG.single.botWorker&&typeof Worker==="function")return MatchLifecycle.startSinglePlayerWorker(humanRole,botRole,token);
   const hostTransport=new NostrRtcTransport("host",token,{signalMode:"local"});
   const guestTransport=new NostrRtcTransport("guest",token,{signalMode:"local"});
-  const hostSession=new GameSession("host",hostTransport,token,MatchLifecycle.currentMatchConfig());
-  const guestSession=new GameSession("guest",guestTransport,token);
-  const sessions={host:hostSession,guest:guestSession};
   const transports={host:hostTransport,guest:guestTransport};
-  const humanSession=sessions[humanRole];
   const humanTransport=transports[humanRole];
-  const botSession=sessions[botRole];
   const botTransport=transports[botRole];
-
-  botSession.publishConfirmedSnapshots=true;
-  const bot=new BotController(botSession,{role:botRole});
+  const config=MatchLifecycle.currentMatchConfig(),configFor=role=>role==="host"?config:undefined;
+  const humanSession=new GameSession(humanRole,humanTransport,token,configFor(humanRole));
+  // CONFIG.single.botWorker runs the AI session in src/sim-worker.js; its WebRTC transport stays here.
+  const botSession=CONFIG.single.botWorker
+    ?new WorkerSessionProxy(botRole,botTransport,token,configFor(botRole))
+    :new GameSession(botRole,botTransport,token,configFor(botRole));
+  const sessions={[humanRole]:humanSession,[botRole]:botSession};
+  const bot=CONFIG.single.botWorker?null:BotController.attach(botSession,botRole);
+  if(CONFIG.single.botWorker)botSession.onFatal=e=>MatchLifecycle.failSinglePlayer(`AI ${botRole.toUpperCase()} Worker 오류 · ${e.message}`);
 
   MatchLifecycle.singleMatch={
     roomCode:token,
@@ -26928,16 +26864,6 @@ class MatchLifecycle{
   ActiveViewState.session=humanSession;
   ActiveViewState.transport=humanTransport;
   MatchLifecycle.wireSessionForView(humanRole,humanSession,humanTransport);
-
-  // AI도 역할과 무관하게 동일한 GameSession 명령 인터페이스만 사용한다.
-  botSession.onDraft=state=>{
-    botSession.draft=state;
-    bot.handleDraft(state);
-  };
-  botSession.onSnapshot=state=>bot.handleSnapshot(state);
-  botSession.onLog=()=>{};
-  botSession.onResult=()=>bot.stop();
-  botSession.onNetworkHealth=()=>{};
 
   botTransport.onOpen=()=>{
     botSession.localVisible=document.visibilityState==="visible";
@@ -26967,21 +26893,10 @@ class MatchLifecycle{
     guestTransport.open();
   };
 
-  hostTransport.open();
-}
-  static startSinglePlayerWorker(humanRole,botRole,token){
-  // The AI peer is a full GameSession in a Worker; only lockstep packets cross the port.
-  const config=MatchLifecycle.currentMatchConfig(),channel=new MessageChannel();
-  const humanTransport=new PortTransport(humanRole,token,channel.port1);
-  const humanSession=new GameSession(humanRole,humanTransport,token,humanRole==="host"?config:undefined);
-  const botSession=new WorkerSessionProxy(botRole,{token,config:botRole==="host"?config:null,port:channel.port2,visible:document.visibilityState==="visible"});
-  botSession.onFatal=e=>MatchLifecycle.failSinglePlayer(`AI ${botRole.toUpperCase()} Worker 오류 · ${e.message}`);
-  MatchLifecycle.singleMatch={roomCode:token,humanRole,botRole,recoveryInitiatorRole:humanRole,
-    transports:{[humanRole]:humanTransport},sessions:{[humanRole]:humanSession,[botRole]:botSession},bot:{stop(){}}};
-  ActiveViewState.session=humanSession;
-  ActiveViewState.transport=humanTransport;
-  MatchLifecycle.wireSessionForView(humanRole,humanSession,humanTransport);
-  humanTransport.open();
+  // A Worker-hosted AI loads main.js first; open the link once it can answer, or the
+  // human's core reads the load time as an interrupted peer.
+  if(CONFIG.single.botWorker)void botSession.ready.then(()=>{if(!botSession.disposed)hostTransport.open()});
+  else hostTransport.open();
 }
   static beginCreateRoom(){
   const c=RoomCodeUtil.randomCode();
@@ -27093,39 +27008,33 @@ UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
 
 
 // Worker side of a single-player AI peer: the same GameSession + BotController
-// wiring as the in-page path, connected to the human session by a MessagePort.
+// as the in-page path. Its transport is a mirror of the AI's real WebRTC
+// transport, which stays on the main thread (Workers have no RTCPeerConnection).
 class SimWorkerHost{
   static STATUS_MS=250;
-  // Calls the main thread may forward; each runs on the Worker's session or transport.
+  // Session calls the main thread may forward.
   static SESSION_CALLS=new Set(["setTestModePaused","setLocalVisibility","markManualRecoveryNeeded","prepareSimpleRecovery","startSimpleRecovery","balanceTelemetry"]);
-  static TRANSPORT_CALLS=new Set(["prepareRecoveryHost","rebuildRecoveryGuest"]);
-  static session=null;static bot=null;static statusTimer=0;
+  static session=null;static bot=null;static transport=null;static statusTimer=0;
   static install(){
     self.onmessage=e=>{
       const m=e.data;
       if(m?.type==="start")this.start(m);
+      else if(m?.type==="transport")this.transport?.receive(m);
       else if(m?.type==="call")this.call(m);
       else if(m?.type==="dispose")this.dispose(m.reason);
     };
     self.postMessage({type:"ready"});
   }
-  static start({role,token,config,port,visible}){
-    const transport=new PortTransport(role,token,port),session=new GameSession(role,transport,token,config??undefined),bot=new BotController(session,{role});
-    session.publishConfirmedSnapshots=true;
-    session.onDraft=state=>{session.draft=state;bot.handleDraft(state)};
-    session.onSnapshot=state=>bot.handleSnapshot(state);
-    session.onLog=()=>{};session.onResult=()=>bot.stop();session.onNetworkHealth=()=>{};
-    transport.onOpen=()=>{session.localVisible=visible;session.onTransportOpen()};
+  static start({role,token,config,netcodeState}){
+    const transport=new WorkerRelayTransport(role,token,netcodeState),session=new GameSession(role,transport,token,config??undefined);
+    this.transport=transport;this.session=session;this.bot=BotController.attach(session,role);
+    transport.onOpen=visible=>{session.localVisible=visible;session.onTransportOpen()};
     transport.onClose=()=>session.onTransportClosed();
-    transport.onError=e=>self.postMessage({type:"error",message:String(e?.type||e?.message||e)});
-    this.session=session;this.bot=bot;
     this.statusTimer=setInterval(()=>this.publishStatus(),this.STATUS_MS);
-    transport.open();
   }
-  static call({id,target,method,args}){
-    const owner=target==="transport"?this.session?.transport:this.session,allowed=target==="transport"?this.TRANSPORT_CALLS:this.SESSION_CALLS;
+  static call({id,method,args}){
     let result=null;
-    if(owner&&allowed.has(method))try{result=owner[method](...(args||[]))}catch(error){self.postMessage({type:"error",message:String(error?.message||error)})}
+    if(this.session&&this.SESSION_CALLS.has(method))try{result=this.session[method](...(args||[]))}catch(error){self.postMessage({type:"error",message:String(error?.message||error)})}
     if(id)self.postMessage({type:"result",id,result:result??null});
     this.publishStatus();
   }
@@ -27133,61 +27042,119 @@ class SimWorkerHost{
     const s=this.session;if(!s)return;
     const core=s.netcodeSession;
     self.postMessage({type:"status",tick:s.sim?.tick??0,simEnded:!!s.simEnded,transportConnected:!!s.transportConnected,perfStats:s.sim?.perfStats||null,timings:s.performanceStats?.timings||{},
-      netcode:core?{ready:!!core.ready,status:core.status,metrics:core.metrics}:null,traffic:s.transport?.traffic||null,
+      netcode:core?{ready:!!core.ready,status:core.status,metrics:core.metrics}:null,
       recovery:{phase:s.recoveryPhase||"idle",needsManual:!!s.simpleRecoveryNeedsManual,token:s.simpleRecoveryToken||"",syncHold:!!s.syncHold}});
   }
   static dispose(reason){
     clearInterval(this.statusTimer);this.bot?.stop();
-    try{this.session?.dispose(reason)}finally{this.session=null;this.bot=null;self.close()}
+    try{this.session?.dispose(reason)}finally{this.session=null;this.bot=null;this.transport=null;self.close()}
   }
 }
-// Main-thread stand-in for a session in SimWorkerHost. It mirrors the state the UI
-// and recovery read (every STATUS_MS and after each call) and forwards calls.
-// Forwarded calls answer true once sent; the Worker's outcome arrives as status.
+// The Worker session's view of the AI's main-thread WebRTC transport: state is
+// mirrored from WorkerSessionProxy, sends and recovery calls are relayed to it.
+class WorkerRelayTransport{
+  constructor(role,roomCode,netcodeState){
+    this.role=role;this.roomCode=roomCode;this.connected=false;this.netcodeState=netcodeState||"closed";
+    this.netcodeListeners=new Set();this.netcodeStatusListeners=new Set();
+    this.onMessage=()=>{};this.onPeerReady=()=>{};this.onOpen=()=>{};this.onClose=()=>{};this.onError=()=>{};
+  }
+  receive({event,data,state,visible}){
+    if(event==="open"){this.connected=true;this.onOpen(visible)}
+    else if(event==="close"){this.connected=false;this.onClose()}
+    else if(event==="message")this.onMessage(data);
+    else if(event==="packet")for(const listener of this.netcodeListeners){try{listener(data)}catch(error){this.onError(error)}}
+    else if(event==="netcode-state"){this.netcodeState=state;for(const listener of this.netcodeStatusListeners)listener(state)}
+  }
+  relay(op,payload,transfer){self.postMessage({type:"transport",op,...payload},transfer||[])}
+  isOpen(){return this.connected}
+  isNetcodeOpen(){return this.netcodeState==="open"}
+  get netcodeBufferedAmount(){return 0}
+  send(message){if(!this.connected)return false;this.relay("send",{data:message});return true}
+  sendNetcode(packet){
+    if(!(packet instanceof Uint8Array)||!this.isNetcodeOpen())return false;
+    const copy=packet.slice();this.relay("send-netcode",{data:copy},[copy.buffer]);return true;
+  }
+  subscribeNetcode(listener){this.netcodeListeners.add(listener);return ()=>this.netcodeListeners.delete(listener)}
+  subscribeNetcodeStatus(listener){this.netcodeStatusListeners.add(listener);return ()=>this.netcodeStatusListeners.delete(listener)}
+  prepareRecoveryHost(reason){this.relay("call",{method:"prepareRecoveryHost",args:[reason]});return this.role==="host"}
+  rebuildRecoveryGuest(reason){this.relay("call",{method:"rebuildRecoveryGuest",args:[reason]});return this.role==="guest"}
+  forceReconnect(reason){this.relay("call",{method:"forceReconnect",args:[reason]});return true}
+  // The main thread owns the WebRTC transport and closes it with the proxy.
+  close(){this.netcodeListeners.clear();this.netcodeStatusListeners.clear()}
+}
+// Main-thread stand-in for the AI GameSession in SimWorkerHost. It keeps the AI's
+// real WebRTC transport here, relays its traffic to the Worker, mirrors the state
+// the UI and recovery read (every STATUS_MS and after each call) and forwards
+// session calls. Forwarded calls answer true once sent; the outcome arrives as status.
 class WorkerSessionProxy{
-  constructor(role,{token,config,port,visible}){
-    this.role=role;this.roomCode=token;this.sim=null;this.netcodeSession=null;this.performanceStats={timings:{}};this.statusMessages=0;
-    this.simEnded=false;this.disposed=false;this.transportConnected=false;this.syncHold=true;this.simpleRecoverySeq=0;
+  static TRANSPORT_CALLS=new Set(["prepareRecoveryHost","rebuildRecoveryGuest","forceReconnect"]);
+  constructor(role,transport,token,config){
+    this.role=role;this.roomCode=token;this.transport=transport;this.sim=null;this.netcodeSession=null;this.performanceStats={timings:{}};this.statusMessages=0;
+    this.simEnded=false;this.disposed=false;this.transportConnected=false;this.syncHold=true;this.simpleRecoverySeq=0;this.localVisible=true;
     this.recoveryPhase="idle";this.simpleRecoveryNeedsManual=false;this.simpleRecoveryToken="";this.onFatal=()=>{};
-    this.pending=new Map();this.nextCallId=0;
-    const forward=method=>(...args)=>this.forward("transport",method,args);
-    this.transport={traffic:null,isNetcodeOpen:()=>this.transportConnected,prepareRecoveryHost:forward("prepareRecoveryHost"),rebuildRecoveryGuest:forward("rebuildRecoveryGuest")};
+    this.pending=new Map();this.nextCallId=0;this.started=false;this.outbox=[];
+    this.ready=new Promise(resolve=>this.resolveReady=resolve);
+    // Relay traffic for diagnostics: control messages are structured-cloned, netcode packets are moved.
+    this.traffic={sentMessages:0,sentPackets:0,sentPacketBytes:0,receivedMessages:0,receivedPackets:0,receivedPacketBytes:0};
+    transport.onMessage=data=>{this.traffic.receivedMessages++;this.toTransport("message",{data})};
+    this.detachTransport=[
+      transport.subscribeNetcode(packet=>{const copy=packet.slice();this.traffic.receivedPackets++;this.traffic.receivedPacketBytes+=copy.byteLength;this.toTransport("packet",{data:copy},[copy.buffer])}),
+      transport.subscribeNetcodeStatus(state=>this.toTransport("netcode-state",{state}))
+    ];
     this.worker=new Worker(new URL("./sim-worker.js",import.meta.url),{type:"module"});
     this.worker.onmessage=e=>{
       const m=e.data;
-      if(m?.type==="ready")this.worker.postMessage({type:"start",role,token,config,port,visible},[port]);
+      if(m?.type==="ready"){
+        // The WebRTC link may open before the Worker has loaded main.js; hold what it sent until then.
+        this.worker.postMessage({type:"start",role,token,config,netcodeState:transport.netcodeState});this.started=true;
+        for(const [message,transfer] of this.outbox)this.worker.postMessage(message,transfer);this.outbox.length=0;this.resolveReady();
+      }
+      else if(m?.type==="transport")this.fromTransport(m);
       else if(m?.type==="status")this.applyStatus(m);
       else if(m?.type==="result"){this.pending.get(m.id)?.(m.result);this.pending.delete(m.id)}
       else if(m?.type==="fatal"||m?.type==="error")this.onFatal(m);
     };
     this.worker.onerror=e=>this.onFatal({message:e.message||"worker error"});
   }
+  post(message,transfer=[]){if(this.started)this.worker.postMessage(message,transfer);else this.outbox.push([message,transfer])}
+  toTransport(event,payload,transfer){if(!this.disposed)this.post({type:"transport",event,...payload},transfer)}
+  fromTransport({op,data,method,args}){
+    if(this.disposed)return;
+    if(op==="send"){if(this.transport.send(data))this.traffic.sentMessages++}
+    else if(op==="send-netcode"){if(this.transport.sendNetcode(data)){this.traffic.sentPackets++;this.traffic.sentPacketBytes+=data.byteLength}}
+    else if(op==="call"&&WorkerSessionProxy.TRANSPORT_CALLS.has(method))this.transport[method]?.(...(args||[]));
+  }
+  // The single-player wiring calls these from the AI transport's onOpen/onClose, as for a GameSession.
+  onTransportOpen(){this.toTransport("open",{visible:this.localVisible})}
+  onTransportClosed(){this.toTransport("close")}
   applyStatus(m){
-    this.statusMessages++;this.simEnded=m.simEnded;this.transportConnected=m.transportConnected;this.performanceStats.timings=m.timings;this.transport.traffic=m.traffic;
+    this.statusMessages++;this.simEnded=m.simEnded;this.transportConnected=m.transportConnected;this.performanceStats.timings=m.timings;
     this.recoveryPhase=m.recovery.phase;this.simpleRecoveryNeedsManual=m.recovery.needsManual;this.simpleRecoveryToken=m.recovery.token;this.syncHold=m.recovery.syncHold;
     // Readers test sim/netcodeSession presence and identity the way they do for an in-page session.
     if(m.tick>0||m.perfStats){this.sim||={tick:0,perfStats:null};this.sim.tick=m.tick;this.sim.perfStats=m.perfStats}
     this.netcodeSession=m.netcode;
   }
-  forward(target,method,args=[]){
+  forward(method,args=[]){
     if(this.disposed)return false;
-    this.worker.postMessage({type:"call",target,method,args});return true;
+    this.post({type:"call",method,args});return true;
   }
   request(method,args=[]){
     if(this.disposed)return Promise.resolve(null);
     const id=++this.nextCallId;
-    return new Promise(resolve=>{this.pending.set(id,resolve);this.worker.postMessage({type:"call",id,target:"session",method,args})});
+    return new Promise(resolve=>{this.pending.set(id,resolve);this.post({type:"call",id,method,args})});
   }
-  setTestModePaused(paused){return this.forward("session","setTestModePaused",[!!paused])}
-  setLocalVisibility(visible){this.forward("session","setLocalVisibility",[!!visible])}
-  markManualRecoveryNeeded(reason){return !!this.sim&&!this.simEnded&&this.forward("session","markManualRecoveryNeeded",[reason])}
-  prepareSimpleRecovery(token,reason){return !!this.sim&&!this.simEnded&&this.forward("session","prepareSimpleRecovery",[token,reason])}
-  startSimpleRecovery(reason){return !!this.sim&&!this.simEnded&&this.forward("session","startSimpleRecovery",[reason])}
+  setTestModePaused(paused){return this.forward("setTestModePaused",[!!paused])}
+  setLocalVisibility(visible){this.localVisible=!!visible;this.forward("setLocalVisibility",[!!visible])}
+  markManualRecoveryNeeded(reason){return !!this.sim&&!this.simEnded&&this.forward("markManualRecoveryNeeded",[reason])}
+  prepareSimpleRecovery(token,reason){return !!this.sim&&!this.simEnded&&this.forward("prepareSimpleRecovery",[token,reason])}
+  startSimpleRecovery(reason){return !!this.sim&&!this.simEnded&&this.forward("startSimpleRecovery",[reason])}
   balanceTelemetry(){return this.request("balanceTelemetry")}
   dispose(reason){
     if(this.disposed)return false;
     this.disposed=true;this.worker.postMessage({type:"dispose",reason});
     for(const resolve of this.pending.values())resolve(null);this.pending.clear();
+    for(const detach of this.detachTransport)detach();
+    const t=this.transport;t.onMessage=()=>{};t.onOpen=()=>{};t.onClose=()=>{};t.onPeerReady=()=>{};t.onError=()=>{};t.close();
     // The Worker closes itself after disposing; terminate covers a stuck one.
     setTimeout(()=>this.worker.terminate(),1000);return true;
   }

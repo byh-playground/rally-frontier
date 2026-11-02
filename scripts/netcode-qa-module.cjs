@@ -28,9 +28,11 @@ exports.serveSource = async function(htmlPath, { observer = '' } = {}) {
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   return { url: `http://127.0.0.1:${server.address().port}/`, close: () => new Promise(resolve => server.close(resolve)) };
 };
+// Routes on the page's context so a single-player AI Worker (src/sim-worker.js),
+// which loads GameKit itself, also gets the pinned local bytes instead of the CDN.
 exports.routePinnedSDK = async function(page) {
   const { lock, modules } = readGamekit(path.join(__dirname, '..'));
   for (const [name, entry] of Object.entries(lock.modules)) {
-    await page.route(`https://cdn.jsdelivr.net/gh/${lock.repository}@${lock.distCommit}/${entry.file}`, route => route.fulfill({ contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' }, body: modules[name] }));
+    await page.context().route(`https://cdn.jsdelivr.net/gh/${lock.repository}@${lock.distCommit}/${entry.file}`, route => route.fulfill({ contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' }, body: modules[name] }));
   }
 };
