@@ -5774,6 +5774,8 @@ class LoopbackTransport{
 class PortTransport{
   constructor(role,roomCode,port){
     this.role=role;this.roomCode=roomCode;this.port=port;this.opened=false;this.peerOpened=false;this.connected=false;
+    // Port traffic for diagnostics: control messages are structured-cloned, netcode packets are moved.
+    this.traffic={sentMessages:0,sentPackets:0,sentPacketBytes:0,receivedMessages:0,receivedPackets:0,receivedPacketBytes:0};
     this.netcodeListeners=new Set();this.netcodeStatusListeners=new Set();
     this.onMessage=()=>{};this.onPeerReady=()=>{};this.onOpen=()=>{};this.onClose=()=>{};this.onError=()=>{};
     port.onmessage=e=>this.receive(e.data);
@@ -5790,14 +5792,14 @@ class PortTransport{
     if(data?.k==="open"){this.peerOpened=true;if(this.opened&&!this.connected){this.port.postMessage({k:"open"});this.tryConnect()}return}
     if(data?.k==="close"){this.peerOpened=false;this.dropConnection();return}
     if(!this.isOpen())return;
-    if(data?.k==="m")this.onMessage(data.d);
-    else if(data?.k==="n")for(const listener of this.netcodeListeners){try{listener(data.d)}catch(error){this.onError(error)}}
+    if(data?.k==="m"){this.traffic.receivedMessages++;this.onMessage(data.d)}
+    else if(data?.k==="n"&&++this.traffic.receivedPackets&&(this.traffic.receivedPacketBytes+=data.d.byteLength))for(const listener of this.netcodeListeners){try{listener(data.d)}catch(error){this.onError(error)}}
   }
   isOpen(){return this.connected}
   send(message){
     if(!this.isOpen())return false;
     try{this.port.postMessage({k:"m",d:message})}catch(error){this.onError(error);return false}
-    return true;
+    this.traffic.sentMessages++;return true;
   }
   get netcodeState(){return this.isOpen()?'open':'closed'}
   subscribeNetcodeStatus(listener){
@@ -5814,6 +5816,7 @@ class PortTransport{
   sendNetcode(packet){
     if(!(packet instanceof Uint8Array)||packet.byteLength>(window.RallyNetcode?.CHUNK_SIZE??0)||!this.isOpen())return false;
     const copy=packet.slice();this.port.postMessage({k:"n",d:copy},[copy.buffer]);
+    this.traffic.sentPackets++;this.traffic.sentPacketBytes+=copy.byteLength;
     return true;
   }
   forceReconnect(){
@@ -27109,7 +27112,9 @@ class SimWorkerHost{
   }
   static publishStatus(){
     const s=this.session;if(!s)return;
-    self.postMessage({type:"status",tick:s.sim?.tick??0,simEnded:!!s.simEnded,perfStats:s.sim?.perfStats||null,timings:s.performanceStats?.timings||{}});
+    const core=s.netcodeSession;
+    self.postMessage({type:"status",tick:s.sim?.tick??0,simEnded:!!s.simEnded,transportConnected:!!s.transportConnected,perfStats:s.sim?.perfStats||null,timings:s.performanceStats?.timings||{},
+      netcode:core?{ready:!!core.ready,status:core.status,metrics:core.metrics}:null,traffic:s.transport?.traffic||null});
   }
   static dispose(reason){
     clearInterval(this.statusTimer);this.bot?.stop();
@@ -27120,16 +27125,21 @@ class SimWorkerHost{
 // the UI reads and forwards lifecycle calls; manual recovery is not supported.
 class WorkerSessionProxy{
   constructor(role,{token,config,port,visible}){
-    this.role=role;this.sim={tick:0,perfStats:null};this.performanceStats={timings:{}};this.transport={};
+    this.role=role;this.sim=null;this.netcodeSession=null;this.performanceStats={timings:{}};this.transport={traffic:null};this.statusMessages=0;
     this.simEnded=false;this.disposed=false;this.transportConnected=false;this.simpleRecoverySeq=0;this.onFatal=()=>{};
     this.worker=new Worker(new URL("./sim-worker.js",import.meta.url),{type:"module"});
     this.worker.onmessage=e=>{
       const m=e.data;
       if(m?.type==="ready")this.worker.postMessage({type:"start",role,token,config,port,visible},[port]);
-      else if(m?.type==="status"){this.sim.tick=m.tick;this.sim.perfStats=m.perfStats;this.performanceStats.timings=m.timings;this.simEnded=m.simEnded}
+      else if(m?.type==="status")this.applyStatus(m);
       else if(m?.type==="fatal"||m?.type==="error")this.onFatal(m);
     };
     this.worker.onerror=e=>this.onFatal({message:e.message||"worker error"});
+  }
+  applyStatus(m){
+    this.statusMessages++;this.simEnded=m.simEnded;this.transportConnected=m.transportConnected;this.performanceStats.timings=m.timings;this.transport.traffic=m.traffic;
+    // Readers test sim/netcodeSession presence the way they do for an in-page session.
+    this.sim=m.tick>0||m.perfStats?{tick:m.tick,perfStats:m.perfStats}:null;this.netcodeSession=m.netcode;
   }
   setTestModePaused(paused){if(this.disposed)return false;this.worker.postMessage({type:"paused",paused:!!paused});return true}
   setLocalVisibility(visible){if(!this.disposed)this.worker.postMessage({type:"visible",visible:!!visible})}
