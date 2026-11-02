@@ -72,6 +72,6 @@ for (const [name, change] of [
 
 test('native source provenance reads only the canonical dependency lock', t => {
  const dir=fixture(t), file=path.join(dir,'src/main.js');
- fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace("lock:'./gamekit.lock.json'","lock:'./other-lock.json'"));
+ fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace("lock:new URL('gamekit.lock.json'","lock:new URL('other-lock.json'"));
  assert.throws(()=>verifySource(dir),/lock descriptor mismatch/);
 });

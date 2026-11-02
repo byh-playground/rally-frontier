@@ -1,5 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
-const fakePage=()=>({routes:[],async route(url,handler){this.routes.push({url,handler});}});
+// routePinnedSDK routes on the page's context so a sim Worker shares the pinned bytes.
+const fakePage=()=>{const context={routes:[],async route(url,handler){this.routes.push({url,handler});}};return {routes:context.routes,context:()=>context};};
 
 test('current ESM server serves real dependencies and puts observer only inside main scope', async t => {
  const {serveSource}=require('./netcode-qa-module.cjs');
