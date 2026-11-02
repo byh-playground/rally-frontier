@@ -11,7 +11,10 @@ assert(['lockstep','rollback'].includes(selectedMode),'Supported UI netcode mode
 const pinnedSdkVersion=require('./setup-gamekit.cjs').readGamekit(path.resolve(__dirname,'..')).modules.rollback.toString('utf8').match(/\b(?:var|const)\s+VERSION\s*=\s*["']([^"']+)["']/)?.[1];
 assert(pinnedSdkVersion,'Pinned rollback module declares its version');
 const output = path.resolve(__dirname, '..', '.qa', 'netcode-ui-e2e-'+selectedMode);
+// This run inspects both peers in the page, so the AI keeps the in-page real WebRTC
+// session; scripts/sim-worker-e2e.cjs covers the Worker-hosted AI path.
 const observer = `
+CONFIG.single.botWorker=false;
 window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntimeState,
   BuildingPresentation,BuildingDefinition,UnitDefinition,SIM_VERSION,BUILD_ID,
   observedHits:[],observedHitKeys:new Set(),
