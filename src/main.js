@@ -74,14 +74,9 @@ try{
 }
 
 
-// scripts/build-pages.cjs stamps only the deployment artifact with its time and Git SHA.
-// Source checkouts stay explicitly development builds; never author a release date here.
+// Keep the source/protocol marker stable; diagnostics read the separately served deployment record.
 const BUILD_ID="development";
-
-const BUILD_META=Object.freeze({
-  id:BUILD_ID,
-  updatedAt:BuildMetadata.buildUpdatedAtFromId(BUILD_ID)
-});
+const BUILD_META=BuildMetadata;
 
 /* =========================
    1. Definitions
@@ -2510,7 +2505,7 @@ class PerformanceTelemetry{
     const active=MatchLifecycle.activeSession?.();if(!active?.sim)return;
     const sessions=SinglePlayerModeUtil.isSinglePlayer()?MatchLifecycle.singleMatch.sessions:{[active.role]:active};
     const m=this.runtimeMonitor;
-    const payload={exportedAt:new Date().toISOString(),build:BUILD_META.id,simVersion:SIM_VERSION,visibility:document.visibilityState,
+    const payload={exportedAt:new Date().toISOString(),build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),simVersion:SIM_VERSION,visibility:document.visibilityState,
       note:'Local timings only. Nested timings overlap. App RTT includes browser message handling; ICE RTT is a separate sample. GPU begin time is CPU API cost. Collision details are sampled once per second; allied soft-contact counters describe that sampled tick.',
       mainThread:m?{timings:m.timings,longTasks:m.longTasks,lastLongTaskMs:m.longTaskMs,maxLongTaskMs:m.maxLongTaskMs}:null,
       renderer:ActiveViewState.renderer?.perfStats||null,
@@ -2532,7 +2527,7 @@ class PerformanceTelemetry{
     sessions[active.role||ActiveViewState.role||"local"]=PerformanceTelemetry.balanceTelemetrySnapshot(active.sim);
   }
   const payload={
-    exportedAt:new Date().toISOString(),build:BUILD_META.id,simVersion:SIM_VERSION,roomCode:active.roomCode||null,
+    exportedAt:new Date().toISOString(),build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),simVersion:SIM_VERSION,roomCode:active.roomCode||null,
     localOnly:true,note:"Balance telemetry is diagnostics-only and excluded from checksum/exportState/recovery authority.",
     sessions
   };
@@ -5053,7 +5048,7 @@ class RecoveryTelemetry{
 }
   static exportCorrectionFlightLog(){
   const events=correctionFlightRecorder.all(),active=MatchLifecycle.activeSession?.();
-  const payload={exportedAt:new Date().toISOString(),build:BUILD_META.id,role:active?.role||null,tps:active?.sim?.tps??null,currentTick:active?.sim?.tick??null,runtimeSeq:active?.runtimeSeq??null,events};
+  const payload={exportedAt:new Date().toISOString(),build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),role:active?.role||null,tps:active?.sim?.tps??null,currentTick:active?.sim?.tick??null,runtimeSeq:active?.runtimeSeq??null,events};
   const blob=new Blob([JSON.stringify(payload)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");
   a.href=url;a.download=`rally-frontier-corrections-${Date.now()}.json`;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);LogUtil.log(`보정 로그 ${events.length}개 JSON 저장`);
@@ -5382,7 +5377,7 @@ class NostrRtcTransport{
   stopHelloLoop(){if(this.helloTimer){clearTimeout(this.helloTimer);this.helloTimer=0}}
   sendSignal(type,data={},to=this.remoteSignalId||null){
     if(!this.signaler)return false;
-    return this.signaler.publish({type,to,role:this.role,simVersion:SIM_VERSION,buildId:BUILD_META.id,...data});
+    return this.signaler.publish({type,to,role:this.role,simVersion:SIM_VERSION,buildId:BUILD_ID,...data});
   }
   async handleSignal(m){
     if(this.intentionalClose||!m||m.protocol!==RALLY_RTC_SIGNAL_PROTOCOL)return;
@@ -13870,7 +13865,7 @@ enterSimulationFatal(err,{source="simulation",notifyPeer=true,remoteInfo=null}={
     if(typeof DiagnosticPresentation!=="undefined"){
       DiagnosticPresentation.presentFatalDiagnostic({
         kind:"RALLY_FRONTIER_SIMULATION_FATAL",
-        build:typeof BUILD_ID!=="undefined"?BUILD_ID:(typeof BUILD_META!=="undefined"?BUILD_META.id:null),
+        build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),
         at:info.at,
         source:info.source,
         role:info.role,
@@ -16168,10 +16163,10 @@ class CommonEffectPool{
    - renderer fatal catch
    Heuristic "nothing happened for N seconds" presentation errors are forbidden. */
 class DiagnosticPresentation{
-  static journal=new RallyGamekit.DiagnosticRing({capacity:20,release:BUILD_ID});
+  static journal=new RallyGamekit.DiagnosticRing({capacity:20,release:BUILD_META.id});
   static presentFatalDiagnostic(diag){
     this.journal.report(new Error(diag.message||diag.kind),{kind:diag.kind||'fatal',fatal:true,origin:diag.stage||'game'});
-    diag={...diag,gamekitDiagnostic:this.journal.snapshot()};
+    diag={...diag,build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),gamekitDiagnostic:this.journal.snapshot()};
     const sink=window.__RALLY_PRESENT_FATAL__;
     if(typeof sink==="function"){sink(diag);return}
     window.__RALLY_FATAL_DIAGNOSTIC__=diag;
@@ -22492,7 +22487,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     const s=this.snapshot||{},entity=this.renderEntity||null;
     const diag={
       kind:"RALLY_FRONTIER_RENDER_FATAL",
-      build:typeof BUILD_ID!=="undefined"?BUILD_ID:null,
+      build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),
       at:new Date().toISOString(),
       renderer:this.backend||null,
       tick:Number(s.tick)||0,tps:Number(s.tps)||0,
@@ -25094,7 +25089,7 @@ const performanceBenchmark={
       }
       const payload={
         kind:"RALLY_FRONTIER_PERFORMANCE_BENCHMARK",
-        build:BUILD_META.id,
+        build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),
         startedAt,
         durationMs:Math.round(performance.now()-startWall),
         mode:SinglePlayerModeUtil.isSinglePlayer()?"single":LocalEnvironmentUtil.isLocalTest()?"local-test":"p2p",
@@ -25769,7 +25764,7 @@ class MobileBattleTestMode{
     const vectorAssetDrawsMeaning="Rally vector unit-body submissions to VectorContext.drawVectorActor(), counted once per submitted unit body; distinct from WebGL draw dispatches.";
     const sampleIndexes=Array.from({length:this.sampleCount},(_,index)=>index),vectorFlushReasons=this.aggregateVectorReasonCounts(sampleIndexes,"flushReasons"),vectorDrawDispatchReasons=this.aggregateVectorReasonCounts(sampleIndexes,"drawDispatchReasons");
     const vectorDrawDispatchReasonTotal=Object.values(vectorDrawDispatchReasons).reduce((sum,count)=>sum+(Number(count)||0),0);
-    this.report={schemaVersion:3,testMode:"mobile-battle",capturedAt:new Date().toISOString(),build:{id:BUILD_META.id,commit:BUILD_META.commit||null},collisionModel:"ally-soft-one-pass",
+    this.report={schemaVersion:3,testMode:"mobile-battle",capturedAt:new Date().toISOString(),build:BUILD_META.snapshot(),collisionModel:"ally-soft-one-pass",
       device:{userAgent:navigator.userAgent||"",platform:navigator.platform||"",hardwareConcurrency:navigator.hardwareConcurrency||null,viewport:{width:innerWidth,height:innerHeight,devicePixelRatio:devicePixelRatio,orientation:screen.orientation?.type||""}},
       condition:{seed:this.config.fixedSeed,totalCombatUnits:this.config.totalUnits,unitsPerSide,composition:this.config.composition,rosters:{host:DebugScenarioHarness.unitRoster(this.config,0),guest:DebugScenarioHarness.unitRoster(this.config,1)},tps:live?.sim?.tps||match?.sessions?.host?.sim?.tps||10,warmupSeconds:this.config.warmupSeconds,requestedSampleSeconds:this.config.sampleSeconds,selectionMode:"deck",presetId:"standard"},
       measurement:{collector:"completed renderer frame hook",observer:"preallocated numeric sample buffers; no CDP profiler",perFrameCounters:this.sampleMetricKeys,overheadMs:null,overheadUnavailableReason:"Observer cost is not isolated; rendererCpuWorkMs is captured before the diagnostic hook runs.",
@@ -27103,7 +27098,7 @@ class AppLifecycle{
   if(UiRegistry.refs.bootTitle)UiRegistry.refs.bootTitle.textContent=title;
   if(UiRegistry.refs.bootStatus)UiRegistry.refs.bootStatus.textContent=status;
   if(UiRegistry.refs.bootProgressBar)UiRegistry.refs.bootProgressBar.style.width=Math.max(4,Math.min(100,progress))+"%";
-  if(UiRegistry.refs.bootBuild)UiRegistry.refs.bootBuild.textContent=`BUILD ${BUILD_META.id}`;
+  if(UiRegistry.refs.bootBuild)UiRegistry.refs.bootBuild.textContent=BUILD_META.commit?`BUILD ${BUILD_META.commit.slice(0,12)}`:`BUILD · 배포 정보 ${BUILD_META.status==="pending"?"확인 중":"확인 불가"}`;
   if(UiRegistry.refs.bootRetryBtn)UiRegistry.refs.bootRetryBtn.classList.toggle("hidden",!retry);
 }
   static finishBootGate(){
@@ -27726,7 +27721,9 @@ class BuildingPresentation{
   return null;
 }
   static renderBuildMetadata(){
-  document.documentElement.dataset.build=BUILD_ID;
+  document.documentElement.dataset.build=BUILD_META.id;
+  document.documentElement.dataset.buildStatus=BUILD_META.status;
+  document.documentElement.dataset.buildCommit=BUILD_META.commit||"";
   const buildTag=document.querySelector('meta[name="rally-frontier-build"]');
   const updatedTag=document.querySelector('meta[name="rally-frontier-updated-at"]');
   if(buildTag)buildTag.setAttribute("content",BUILD_META.id);
@@ -27743,15 +27740,16 @@ class BuildingPresentation{
     const buildTimeZone="Asia/Seoul";
     const hm=validUpdated?new Intl.DateTimeFormat("ko-KR",{timeZone:buildTimeZone,hour:"2-digit",minute:"2-digit",hour12:false}).format(updated):"시간 미상";
     let label;
-    if(BUILD_META.id==="development")label="개발 빌드 · 미배포";
+    if(BUILD_META.status==="pending")label="배포 정보 확인 중";
+    else if(BUILD_META.status!=="available")label="배포 정보 확인 불가";
     else if(!validUpdated)label="업데이트 시간 미상";
     else if(dayDiff===0)label=`오늘 ${hm}`;
     else if(dayDiff===1)label=`어제 ${hm}`;
     else label=new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",year:"numeric",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).format(updated);
-    el.textContent=`최근 업데이트 · ${label}`;
-    el.title=BUILD_META.updatedAt?`BUILD ${BUILD_META.id} · ${BUILD_META.updatedAt} · Asia/Seoul`:`BUILD ${BUILD_META.id} · 미배포`;
+    el.textContent=`최근 업데이트 · ${label}${BUILD_META.commit?` · ${BUILD_META.commit.slice(0,12)}`:""}`;
+    el.title=BUILD_META.updatedAt?`배포 기록 ${BUILD_META.commit} · 복사 시각 ${BUILD_META.updatedAt} · build.json`:`배포 정보 ${BUILD_META.status==="pending"?"확인 중":"확인 불가"}`;
   }
-  if(UiRegistry.refs.bootBuild)UiRegistry.refs.bootBuild.textContent=`BUILD ${BUILD_META.id}`;
+  if(UiRegistry.refs.bootBuild)UiRegistry.refs.bootBuild.textContent=BUILD_META.commit?`BUILD ${BUILD_META.commit.slice(0,12)}`:`BUILD · 배포 정보 ${BUILD_META.status==="pending"?"확인 중":"확인 불가"}`;
 }
 }
 
@@ -28267,7 +28265,7 @@ class BattlePresentation{
   if(!liveSession?.sim||deck===null){
     DiagnosticPresentation.presentFatalDiagnostic({
       kind:"RALLY_FRONTIER_PRESENTATION_CONTRACT_FATAL",
-      build:BUILD_ID,at:new Date().toISOString(),source:"BattlePresentation.renderGame",
+      build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),at:new Date().toISOString(),source:"BattlePresentation.renderGame",
       role:ActiveViewState.role,tick:Number(s?.tick)||0,
       message:!liveSession?.sim
         ?"Live snapshot reached game presentation without an active simulation."
@@ -30341,13 +30339,14 @@ const g=ctx.createLinearGradient(0,0,w,h);g.addColorStop(0,"#b9dba6");g.addColor
   requestAnimationFrame(frame);
 })();
 
-// Deployment BUILD_ID is generated by the Pages build; updatedAt is derived from it.
+// Deployment metadata is optional diagnostics. Its fetch never gates game startup.
 
 
 if(UiRegistry.refs.infoDetailCloseBtn)UiRegistry.refs.infoDetailCloseBtn.onclick=BattlePresentation.closeInfoDetail;
 if(UiRegistry.refs.infoDetailDialog)UiRegistry.refs.infoDetailDialog.addEventListener("click",e=>{if(e.target===UiRegistry.refs.infoDetailDialog)BattlePresentation.closeInfoDetail()});
 BattlePresentation.installLongPressDetails();
 BuildingPresentation.renderBuildMetadata();
+void BUILD_META.load().then(()=>BuildingPresentation.renderBuildMetadata());
 
 
 
