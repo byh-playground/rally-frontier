@@ -33,6 +33,8 @@ UI 검사는 127.0.0.1 HTTP 서버에서 실제 ESM·CSS·SVG·캠페인을 제�
 
 유닛 벡터 아트의 원본은 `assets/units/*.svg`에 두고, `assets/units/manifest.json`에서 각 파일의 크기와 SHA-256을 고정합니다. 부팅 시 고정된 GameKit `vector-assets-loader.js`가 원본 bytes의 SHA-256을 확인한 뒤 한 번만 geometry를 만들고, loader의 bounded cache를 재사용합니다. source checkout과 Pages 복사본 모두 원본 manifest와 SVG 파일을 읽습니다. 이 경로는 프레임 렌더링 중 SVG를 다시 읽거나 변환하지 않습니다.
 
+공중 유닛의 공격·브레스 부위는 현재 표현식이 이미 같은 가시성을 선언했다면 `setPartVisible`로 다시 지정하지 않습니다. 따라서 숨긴 효과를 제외한 원본 expression 인덱스를 유지합니다. 공격·브레스 활성화처럼 실제로 다른 가시성이 필요한 경우에는 기존 override를 사용하며, 알파·깊이 기록·부위 포즈·그리기 순서는 바꾸지 않습니다.
+
 캠페인 메뉴를 열 때 native ES import로 데이터를 읽습니다. 기본 게임 부팅은 캠페인 모듈 로드에 의존하지 않으며, 각 미션은 자체 시작 상태를 선언합니다. 개발용 신뢰 Mission JS의 파일/URL Preview도 유지합니다.
 
 덱 편집의 작업 사본·카드 변경·저장 결과는 `DeckBuilderState`가 소유합니다. `DeckPresentation`은 입력과 화면 표시를 조정하고, 저장 형식과 브라우저 저장소 접근은 기존 `DeckRecord`가 담당합니다.
