@@ -2521,17 +2521,18 @@ class PerformanceTelemetry{
     const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));
     const a=document.createElement('a');a.href=url;a.download=`rally-frontier-performance-${Date.now()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
-  static exportBalanceTelemetry(){
+  static async exportBalanceTelemetry(){
   const active=MatchLifecycle.activeSession?.();
   if(!active?.sim)return;
   const sessions={};
   if(SinglePlayerModeUtil.isSinglePlayer()&&MatchLifecycle.singleMatch?.sessions){
+    // A Worker-hosted AI session answers asynchronously.
     for(const r of ["host","guest"]){
       const sess=MatchLifecycle.singleMatch.sessions[r];
-      if(sess?.sim)sessions[r]=PerformanceTelemetry.balanceTelemetrySnapshot(sess.sim);
+      if(sess?.sim)sessions[r]=await sess.balanceTelemetry();
     }
   }else{
-    sessions[active.role||ActiveViewState.role||"local"]=PerformanceTelemetry.balanceTelemetrySnapshot(active.sim);
+    sessions[active.role||ActiveViewState.role||"local"]=active.balanceTelemetry();
   }
   const payload={
     exportedAt:new Date().toISOString(),build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),simVersion:SIM_VERSION,roomCode:active.roomCode||null,
@@ -5784,12 +5785,20 @@ class PortTransport{
     this.opened=true;this.port.postMessage({k:"open"});
     queueMicrotask(()=>{if(!this.opened)return;if(this.role==="host")this.onPeerReady();this.tryConnect()});
   }
+  // Manual recovery: drop and re-handshake. Each side reopens once; an open that
+  // is not an answer is answered, so the link returns whichever side goes first.
+  reopen(){
+    this.dropConnection();this.opened=true;this.peerOpened=false;this.port.postMessage({k:"open"});return true;
+  }
+  prepareRecoveryHost(){return this.role==="host"&&this.reopen()}
+  rebuildRecoveryGuest(){return this.role==="guest"&&this.reopen()}
   tryConnect(){
     if(!this.opened||!this.peerOpened||this.connected)return;
     this.connected=true;this.emitNetcodeStatus();queueMicrotask(()=>{if(this.connected)this.onOpen()});
   }
   receive(data){
-    if(data?.k==="open"){this.peerOpened=true;if(this.opened&&!this.connected){this.port.postMessage({k:"open"});this.tryConnect()}return}
+    // A fresh open while connected means the peer reopened: drop so both sides see close → open.
+    if(data?.k==="open"){this.peerOpened=true;if(!data.answer){this.dropConnection();if(this.opened)this.port.postMessage({k:"open",answer:true})}this.tryConnect();return}
     if(data?.k==="close"){this.peerOpened=false;this.dropConnection();return}
     if(!this.isOpen())return;
     if(data?.k==="m"){this.traffic.receivedMessages++;this.onMessage(data.d)}
@@ -13495,6 +13504,7 @@ class GameSession{
     const ok=this.role==='host'?this.transport.prepareRecoveryHost?.(reason):this.transport.rebuildRecoveryGuest?.(reason);
     if(!ok){this.simpleRecoveryNeedsManual=true;this.recoveryPhase='needs-manual'}return !!ok;
   }
+  balanceTelemetry(){return PerformanceTelemetry.balanceTelemetrySnapshot(this.sim)}
   setLocalVisibility(visible){
     const resumed=!this.localVisible&&!!visible;this.localVisible=!!visible;
     if(!visible)this.netcodeSession?.releaseInput();
@@ -27086,13 +27096,15 @@ UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
 // wiring as the in-page path, connected to the human session by a MessagePort.
 class SimWorkerHost{
   static STATUS_MS=250;
+  // Calls the main thread may forward; each runs on the Worker's session or transport.
+  static SESSION_CALLS=new Set(["setTestModePaused","setLocalVisibility","markManualRecoveryNeeded","prepareSimpleRecovery","startSimpleRecovery","balanceTelemetry"]);
+  static TRANSPORT_CALLS=new Set(["prepareRecoveryHost","rebuildRecoveryGuest"]);
   static session=null;static bot=null;static statusTimer=0;
   static install(){
     self.onmessage=e=>{
       const m=e.data;
       if(m?.type==="start")this.start(m);
-      else if(m?.type==="paused")this.session?.setTestModePaused(m.paused);
-      else if(m?.type==="visible")this.session?.setLocalVisibility(m.visible);
+      else if(m?.type==="call")this.call(m);
       else if(m?.type==="dispose")this.dispose(m.reason);
     };
     self.postMessage({type:"ready"});
@@ -27110,45 +27122,72 @@ class SimWorkerHost{
     this.statusTimer=setInterval(()=>this.publishStatus(),this.STATUS_MS);
     transport.open();
   }
+  static call({id,target,method,args}){
+    const owner=target==="transport"?this.session?.transport:this.session,allowed=target==="transport"?this.TRANSPORT_CALLS:this.SESSION_CALLS;
+    let result=null;
+    if(owner&&allowed.has(method))try{result=owner[method](...(args||[]))}catch(error){self.postMessage({type:"error",message:String(error?.message||error)})}
+    if(id)self.postMessage({type:"result",id,result:result??null});
+    this.publishStatus();
+  }
   static publishStatus(){
     const s=this.session;if(!s)return;
     const core=s.netcodeSession;
     self.postMessage({type:"status",tick:s.sim?.tick??0,simEnded:!!s.simEnded,transportConnected:!!s.transportConnected,perfStats:s.sim?.perfStats||null,timings:s.performanceStats?.timings||{},
-      netcode:core?{ready:!!core.ready,status:core.status,metrics:core.metrics}:null,traffic:s.transport?.traffic||null});
+      netcode:core?{ready:!!core.ready,status:core.status,metrics:core.metrics}:null,traffic:s.transport?.traffic||null,
+      recovery:{phase:s.recoveryPhase||"idle",needsManual:!!s.simpleRecoveryNeedsManual,token:s.simpleRecoveryToken||"",syncHold:!!s.syncHold}});
   }
   static dispose(reason){
     clearInterval(this.statusTimer);this.bot?.stop();
     try{this.session?.dispose(reason)}finally{this.session=null;this.bot=null;self.close()}
   }
 }
-// Main-thread stand-in for a session in SimWorkerHost. It mirrors the diagnostics
-// the UI reads and forwards lifecycle calls; manual recovery is not supported.
+// Main-thread stand-in for a session in SimWorkerHost. It mirrors the state the UI
+// and recovery read (every STATUS_MS and after each call) and forwards calls.
+// Forwarded calls answer true once sent; the Worker's outcome arrives as status.
 class WorkerSessionProxy{
   constructor(role,{token,config,port,visible}){
-    this.role=role;this.sim=null;this.netcodeSession=null;this.performanceStats={timings:{}};this.transport={traffic:null};this.statusMessages=0;
-    this.simEnded=false;this.disposed=false;this.transportConnected=false;this.simpleRecoverySeq=0;this.onFatal=()=>{};
+    this.role=role;this.roomCode=token;this.sim=null;this.netcodeSession=null;this.performanceStats={timings:{}};this.statusMessages=0;
+    this.simEnded=false;this.disposed=false;this.transportConnected=false;this.syncHold=true;this.simpleRecoverySeq=0;
+    this.recoveryPhase="idle";this.simpleRecoveryNeedsManual=false;this.simpleRecoveryToken="";this.onFatal=()=>{};
+    this.pending=new Map();this.nextCallId=0;
+    const forward=method=>(...args)=>this.forward("transport",method,args);
+    this.transport={traffic:null,isNetcodeOpen:()=>this.transportConnected,prepareRecoveryHost:forward("prepareRecoveryHost"),rebuildRecoveryGuest:forward("rebuildRecoveryGuest")};
     this.worker=new Worker(new URL("./sim-worker.js",import.meta.url),{type:"module"});
     this.worker.onmessage=e=>{
       const m=e.data;
       if(m?.type==="ready")this.worker.postMessage({type:"start",role,token,config,port,visible},[port]);
       else if(m?.type==="status")this.applyStatus(m);
+      else if(m?.type==="result"){this.pending.get(m.id)?.(m.result);this.pending.delete(m.id)}
       else if(m?.type==="fatal"||m?.type==="error")this.onFatal(m);
     };
     this.worker.onerror=e=>this.onFatal({message:e.message||"worker error"});
   }
   applyStatus(m){
     this.statusMessages++;this.simEnded=m.simEnded;this.transportConnected=m.transportConnected;this.performanceStats.timings=m.timings;this.transport.traffic=m.traffic;
-    // Readers test sim/netcodeSession presence the way they do for an in-page session.
-    this.sim=m.tick>0||m.perfStats?{tick:m.tick,perfStats:m.perfStats}:null;this.netcodeSession=m.netcode;
+    this.recoveryPhase=m.recovery.phase;this.simpleRecoveryNeedsManual=m.recovery.needsManual;this.simpleRecoveryToken=m.recovery.token;this.syncHold=m.recovery.syncHold;
+    // Readers test sim/netcodeSession presence and identity the way they do for an in-page session.
+    if(m.tick>0||m.perfStats){this.sim||={tick:0,perfStats:null};this.sim.tick=m.tick;this.sim.perfStats=m.perfStats}
+    this.netcodeSession=m.netcode;
   }
-  setTestModePaused(paused){if(this.disposed)return false;this.worker.postMessage({type:"paused",paused:!!paused});return true}
-  setLocalVisibility(visible){if(!this.disposed)this.worker.postMessage({type:"visible",visible:!!visible})}
-  markManualRecoveryNeeded(){return false}
-  prepareSimpleRecovery(){return false}
-  startSimpleRecovery(){return false}
+  forward(target,method,args=[]){
+    if(this.disposed)return false;
+    this.worker.postMessage({type:"call",target,method,args});return true;
+  }
+  request(method,args=[]){
+    if(this.disposed)return Promise.resolve(null);
+    const id=++this.nextCallId;
+    return new Promise(resolve=>{this.pending.set(id,resolve);this.worker.postMessage({type:"call",id,target:"session",method,args})});
+  }
+  setTestModePaused(paused){return this.forward("session","setTestModePaused",[!!paused])}
+  setLocalVisibility(visible){this.forward("session","setLocalVisibility",[!!visible])}
+  markManualRecoveryNeeded(reason){return !!this.sim&&!this.simEnded&&this.forward("session","markManualRecoveryNeeded",[reason])}
+  prepareSimpleRecovery(token,reason){return !!this.sim&&!this.simEnded&&this.forward("session","prepareSimpleRecovery",[token,reason])}
+  startSimpleRecovery(reason){return !!this.sim&&!this.simEnded&&this.forward("session","startSimpleRecovery",[reason])}
+  balanceTelemetry(){return this.request("balanceTelemetry")}
   dispose(reason){
     if(this.disposed)return false;
     this.disposed=true;this.worker.postMessage({type:"dispose",reason});
+    for(const resolve of this.pending.values())resolve(null);this.pending.clear();
     // The Worker closes itself after disposing; terminate covers a stuck one.
     setTimeout(()=>this.worker.terminate(),1000);return true;
   }

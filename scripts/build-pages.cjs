@@ -14,7 +14,8 @@ function verifySource(root = path.resolve(__dirname, '..')) {
   const moduleMap = JSON.parse(main.match(/const RALLY_GAMEKIT_MODULES=Object\.freeze\((\{[^\n]+\})\);/)?.[1] || 'null');
   if (!moduleMap || JSON.stringify(Object.keys(moduleMap).sort()) !== JSON.stringify(Object.keys(lock.modules).sort())) throw Error('Pinned SDK module map mismatch');
   for (const [name, entry] of Object.entries(lock.modules)) if (moduleMap[name] !== entry.file) throw Error('Pinned SDK module map mismatch: ' + name);
-  if (!/const RALLY_GAMEKIT_SOURCE=Object\.freeze\(\{lock:['"]\.\/gamekit\.lock\.json['"]\}\);/.test(main)) throw Error('Pinned SDK lock descriptor mismatch');
+  // The lock resolves from the repository root next to src/, so the page and the simulation Worker read the same file.
+  if (!main.includes("const RALLY_ASSET_ROOT=new URL('../',import.meta.url);") || !/const RALLY_GAMEKIT_SOURCE=Object\.freeze\(\{lock:new URL\(['"]gamekit\.lock\.json['"],RALLY_ASSET_ROOT\)\.href\}\);/.test(main)) throw Error('Pinned SDK lock descriptor mismatch');
   if (!main.includes('Gamekit module SHA-256 mismatch') || !main.includes("fetch(RALLY_GAMEKIT_SOURCE.lock")) throw Error('Pinned SDK source verification missing');
   const modules = ['src', 'campaign'].flatMap(folder => fs.readdirSync(path.join(root, folder), { recursive: true }).filter(file => file.endsWith('.js')).map(file => path.join(folder, file)));
   for (const file of modules) {
