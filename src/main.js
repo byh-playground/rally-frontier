@@ -21528,6 +21528,13 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
   flushVectorMesh(reason){
     return this.vectorContext.active?this.vectorContext.flush(reason):undefined;
   }
+  setVectorUnitPartVisible(record,expression,id,visible){
+    if(!record.partIds.has(id))return;
+    const variant=record.compiled.metadata.expressions[expression];
+    // setExpression already restores authored visibility; redundant overrides discard its index variant.
+    if((visible?variant.show:variant.hide).includes(id))return;
+    record.actor.setPartVisible(id,visible);
+  }
   drawVectorUnitBody(ctx){
     const relation=this.factionRelation(ctx.u.side),record=this.unitVectorAssetRecord(ctx.u.type,relation);
     if(!record)return null;
@@ -21541,9 +21548,9 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       const hash=HashUtil.hash(ctx.u.id),phase=(hash%997)*17;
       actor.seek(this.presentationNow(performance.now())+phase).setExpression(expression);
       const breathTell=ctx.u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.TELL,breathActive=ctx.u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.ACTIVE;
-      if(record.partIds.has("attackFx"))actor.setPartVisible("attackFx",!!ctx.attack);
-      if(record.partIds.has("breathTell"))actor.setPartVisible("breathTell",breathTell);
-      if(record.partIds.has("breathActive"))actor.setPartVisible("breathActive",breathActive);
+      this.setVectorUnitPartVisible(record,expression,"attackFx",!!ctx.attack);
+      this.setVectorUnitPartVisible(record,expression,"breathTell",breathTell);
+      this.setVectorUnitPartVisible(record,expression,"breathActive",breathActive);
       if(record.partIds.has("sac"))actor.setBasePose("sac",{scaleX:ctx.attack?1.22:1,scaleY:ctx.attack?1.22:1});
       if(record.partIds.has("jaw"))actor.setBasePose("jaw",{opacity:breathTell||breathActive||ctx.attack?1:.15});
     }else actor.setExpression(expression);
