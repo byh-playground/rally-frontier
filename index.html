@@ -785,6 +785,14 @@ if (new URLSearchParams(location.search).get('showcaseDemo') === '1') {
     <div id="deckSelectTabs" class="deck-slot-row" aria-label="저장 덱 슬롯"></div>
     <div id="deckSelectPreview" class="deck-preview-card"></div>
     <div id="deckSelectError" class="deck-error hidden"></div>
+    <div id="deckSelectStorageNotice" class="deck-error deck-storage-notice hidden" role="status">
+      <p data-deck-storage-message></p>
+      <div class="deck-select-actions">
+        <button type="button" class="dialog-action" data-deck-storage-action="retry">다시 읽기</button>
+        <button type="button" class="dialog-action" data-deck-storage-action="backup">원본 내려받기</button>
+        <button type="button" class="dialog-action" data-deck-storage-action="reset">기록 초기화</button>
+      </div>
+    </div>
     <div class="deck-select-actions">
       <button id="deckEditBtn" type="button" class="dialog-action">덱 편집</button>
       <button id="deckConfirmBtn" type="button" class="dialog-action primary">이 덱으로 확정</button>
@@ -826,6 +834,14 @@ if (new URLSearchParams(location.search).get('showcaseDemo') === '1') {
           <div id="deckCollection" class="deck-collection"></div>
         </div>
         <div id="deckBuilderMessage" class="deck-screen-status"></div>
+        <div id="deckBuilderStorageNotice" class="deck-error deck-storage-notice hidden" role="status">
+          <p data-deck-storage-message></p>
+          <div class="deck-select-actions">
+            <button type="button" class="dialog-action" data-deck-storage-action="retry">다시 읽기</button>
+            <button type="button" class="dialog-action" data-deck-storage-action="backup">원본 내려받기</button>
+            <button type="button" class="dialog-action" data-deck-storage-action="reset">기록 초기화</button>
+          </div>
+        </div>
         <div class="deck-builder-foot">
           <button id="deckBuilderClearBtn" type="button" class="dialog-action">초기화</button>
           <button id="deckBuilderSaveBtn" type="button" class="dialog-action primary">완료</button>

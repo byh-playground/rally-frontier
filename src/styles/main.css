@@ -2862,6 +2862,13 @@ button.mode-selected {
   font-size: 9px;
   font-weight: 900;
 }
+.deck-storage-notice {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.deck-storage-notice [data-deck-storage-action="reset"] {
+  grid-column: 1 / -1;
+}
 
 /* 명령 패널 */
 .defense-card-choices {

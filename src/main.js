@@ -3607,6 +3607,7 @@ const DECK_TOTAL_CARD_COUNT=10;
 
 
 class DeckRecord{
+  static storageFailure=null;
   static makeStarterDeck(slot=0){
     return {
       id:`deck-${slot+1}`,name:`덱 ${slot+1}`,formatVersion:DECK_FORMAT_VERSION,rulesetVersion:DECK_RULESET_VERSION,createdWithSimVersion:SIM_VERSION,
@@ -3618,15 +3619,37 @@ class DeckRecord{
     };
   }
   static normalizeDeckStore(raw=null){
-    if(raw!=null&&(!raw||typeof raw!=="object"||Number(raw.storageVersion)!==DECK_STORAGE_VERSION))throw new Error("지원하지 않는 덱 저장 형식입니다.");
+    if(raw!==null){
+      if(typeof raw!=="object"||Array.isArray(raw)||Number(raw.storageVersion)!==DECK_STORAGE_VERSION||!Array.isArray(raw.decks)||raw.decks.length>DECK_SLOT_COUNT)throw new Error("지원하지 않는 덱 저장 형식입니다.");
+      if(raw.decks.some(deck=>deck!==null&&(!deck||typeof deck!=="object"||Array.isArray(deck)||!DeckRecord.validateDeckRecord(deck).compatible)))throw new Error("호환되지 않는 덱 기록입니다.");
+    }
     const decks=Array.isArray(raw?.decks)?raw.decks.slice(0,DECK_SLOT_COUNT):[];
     while(decks.length<DECK_SLOT_COUNT)decks.push(null);if(!decks.some(Boolean))decks[0]=DeckRecord.makeStarterDeck(0);return {storageVersion:DECK_STORAGE_VERSION,decks};
   }
   static loadDeckStore(){
-    try{const raw=localStorage.getItem(DECK_STORAGE_KEY);return DeckRecord.normalizeDeckStore(raw?JSON.parse(raw):null)}
-    catch(_){const fresh=DeckRecord.normalizeDeckStore(null);try{localStorage.setItem(DECK_STORAGE_KEY,JSON.stringify(fresh))}catch{}return fresh}
+    let raw;
+    try{
+      raw=localStorage.getItem(DECK_STORAGE_KEY);
+      const parsed=raw===null?null:JSON.parse(raw);
+      if(raw!==null&&parsed===null)throw new Error("덱 기록이 비어 있습니다.");
+      const store=DeckRecord.normalizeDeckStore(parsed);DeckRecord.storageFailure=null;return store;
+    }catch(_){
+      DeckRecord.storageFailure={raw,message:raw===undefined?"이 브라우저에서 덱 기록을 읽을 수 없습니다. 저장소 접근을 허용한 뒤 다시 읽어 주세요.":"덱 기록이 손상되었거나 현재 버전과 호환되지 않습니다. 원본은 보존했으며 덱 저장을 중단했습니다."};
+      return{storageVersion:DECK_STORAGE_VERSION,decks:Array(DECK_SLOT_COUNT).fill(null)};
+    }
   }
-  static saveDeckStore(store){try{localStorage.setItem(DECK_STORAGE_KEY,JSON.stringify(DeckRecord.normalizeDeckStore(store)));return true}catch(_){return false}}
+  static saveDeckStore(store){
+    DeckRecord.loadDeckStore();if(DeckRecord.storageFailure)return false;
+    try{localStorage.setItem(DECK_STORAGE_KEY,JSON.stringify(DeckRecord.normalizeDeckStore(store)));return true}catch(_){return false}
+  }
+  static resetDeckStore(expectedRaw){
+    if(typeof expectedRaw!=="string")return false;
+    try{
+      if(localStorage.getItem(DECK_STORAGE_KEY)!==expectedRaw){DeckRecord.loadDeckStore();return false}
+      localStorage.setItem(DECK_STORAGE_KEY,JSON.stringify(DeckRecord.normalizeDeckStore(null)));
+      DeckRecord.storageFailure=null;return true;
+    }catch(_){return false}
+  }
   static validateDeckRecord(deck){
     if(!deck)return {compatible:true,complete:false,reason:"비어 있는 덱입니다."};
     if(Number(deck.formatVersion)!==DECK_FORMAT_VERSION||Number(deck.rulesetVersion)!==DECK_RULESET_VERSION)return {compatible:false,complete:false,reason:"호환되지 않는 덱입니다"};
@@ -29097,10 +29120,11 @@ class DeckBuilderState{
   open(slot){
     this.slot=RangeUtil.clamp(Math.trunc(Number(slot)||0),0,DECK_SLOT_COUNT-1);
     const existing=DeckRecord.loadDeckStore().decks[this.slot],v=DeckRecord.validateDeckRecord(existing);
+    if(DeckRecord.storageFailure){this.working=null;return false}
     this.working=existing&&v.compatible
       ?{id:existing.id||`deck-${this.slot+1}`,name:existing.name||`덱 ${this.slot+1}`,formatVersion:DECK_FORMAT_VERSION,rulesetVersion:DECK_RULESET_VERSION,createdWithSimVersion:SIM_VERSION,cards:(existing.cards||[]).slice(0,DECK_TOTAL_CARD_COUNT).map(c=>({...c})),updatedAt:existing.updatedAt||new Date().toISOString()}
       :{id:`deck-${this.slot+1}`,name:`덱 ${this.slot+1}`,formatVersion:DECK_FORMAT_VERSION,rulesetVersion:DECK_RULESET_VERSION,createdWithSimVersion:SIM_VERSION,cards:[],updatedAt:new Date().toISOString()};
-    this.filter="all";this.saveFailed=false;
+    this.filter="all";this.saveFailed=false;return true;
   }
   setFilter(filter){this.filter=DeckCardRuleDefinition.filters.some(f=>f.id===filter)?filter:"all"}
   removeCardAt(index){
@@ -29125,7 +29149,7 @@ class DeckBuilderState{
     if(!this.working)return false;
     this.working.formatVersion=DECK_FORMAT_VERSION;this.working.rulesetVersion=DECK_RULESET_VERSION;
     this.working.createdWithSimVersion=SIM_VERSION;this.working.updatedAt=new Date().toISOString();
-    const store=DeckRecord.loadDeckStore();store.decks[this.slot]=CloneUtil.clone(this.working);
+    const store=DeckRecord.loadDeckStore();if(DeckRecord.storageFailure){this.saveFailed=true;return false}store.decks[this.slot]=CloneUtil.clone(this.working);
     const saved=DeckRecord.saveDeckStore(store);this.saveFailed=!saved;return saved;
   }
 }
@@ -29203,6 +29227,46 @@ class DeckPresentation{
   static deckStore(){
   return DeckRecord.loadDeckStore();
 }
+  static renderDeckStorageNotice(id){
+  const notice=document.getElementById(id);if(!notice)return;
+  const failure=DeckRecord.storageFailure;notice.classList.toggle("hidden",!failure);
+  if(!failure)return;
+  notice.querySelector("[data-deck-storage-message]").textContent=failure.message;
+  for(const button of notice.querySelectorAll("[data-deck-storage-action]"))button.disabled=button.dataset.deckStorageAction!=="retry"&&typeof failure.raw!=="string";
+}
+  static refreshDeckStorageUi(){
+  if(UiRegistry.refs.deckBuilderDialog?.open)DeckPresentation.renderDeckBuilder();
+  if(ActiveViewState.session?.draft?.phase==="deck-select")DeckPresentation.renderDeckSelect(ActiveViewState.session.draft);
+}
+  static async handleDeckStorageAction(action){
+  let resetFailed=false;
+  if(action==="backup"){
+    const raw=DeckRecord.storageFailure?.raw;if(typeof raw!=="string")return;
+    let url=null,anchor=null;
+    try{
+      url=URL.createObjectURL(new Blob([raw],{type:"text/plain;charset=utf-8"}));anchor=document.createElement("a");anchor.href=url;anchor.download=`rally-frontier-decks-backup-${Date.now()}.txt`;document.body.appendChild(anchor);anchor.click();
+    }catch(_){
+      for(const notice of document.querySelectorAll("[data-deck-storage-message]"))notice.textContent="원본 내려받기를 시작하지 못했습니다. 다시 시도해 주세요.";
+    }finally{anchor?.remove();if(url)setTimeout(()=>URL.revokeObjectURL(url),1000)}
+    return;
+  }
+  if(action==="reset"){
+    if(!DeckRecord.storageFailure||typeof DeckRecord.storageFailure.raw!=="string")return;
+    const expectedRaw=DeckRecord.storageFailure.raw;
+    if(!confirm("저장된 덱 기록 전체를 초기화합니다. 이 작업은 되돌릴 수 없습니다. 먼저 원본을 내려받아 보관하세요. 계속할까요?"))return;
+    // Native confirmation can leave this task's storage view stale after another tab writes.
+    await new Promise(resolve=>setTimeout(resolve,0));
+    if(DeckRecord.resetDeckStore(expectedRaw)){
+      DeckPresentation.selectedDeckSlot=0;
+      if(UiRegistry.refs.deckBuilderDialog?.open)deckBuilderState.open(0);
+    }else resetFailed=true;
+  }else if(action==="retry")DeckRecord.loadDeckStore();
+  DeckPresentation.refreshDeckStorageUi();
+  if(resetFailed&&DeckRecord.storageFailure){
+    DeckRecord.storageFailure.message="덱 기록이 바뀌었거나 초기화하지 못했습니다. 원본은 덮어쓰지 않았습니다. 다시 읽어 확인해 주세요.";
+    DeckPresentation.renderDeckStorageNotice("deckSelectStorageNotice");DeckPresentation.renderDeckStorageNotice("deckBuilderStorageNotice");
+  }
+}
   static deckSlotLabel(deck,index){
   if(!deck)return `덱 ${index+1} · 비어 있음`;const v=DeckRecord.validateDeckRecord(deck);if(!v.compatible)return `덱 ${index+1} · 호환 불가`;
   return `${deck.name||`덱 ${index+1}`} · ${(deck.cards||[]).length}/${DECK_TOTAL_CARD_COUNT}`;
@@ -29233,14 +29297,15 @@ class DeckPresentation{
   BattlePresentation.closeTransientBattleUi();
   DeckPresentation.syncDeckBuilderLifecycle(state);
   DraftPresentation.clearDraftFinalePresentation();draftPointerLocked=false;UiController.closeUiModal("create");UiController.closeUiModal("join");
-  const store=DeckPresentation.deckStore();DeckPresentation.selectedDeckSlot=Math.max(0,Math.min(DECK_SLOT_COUNT-1,DeckPresentation.selectedDeckSlot));
+  const store=DeckPresentation.deckStore();DeckPresentation.renderDeckStorageNotice("deckSelectStorageNotice");DeckPresentation.selectedDeckSlot=Math.max(0,Math.min(DECK_SLOT_COUNT-1,DeckPresentation.selectedDeckSlot));
   UiRegistry.refs.deckSelectTabs.innerHTML=store.decks.map((deck,i)=>{const v=DeckRecord.validateDeckRecord(deck);return `<button type="button" class="deck-slot-tab ${i===DeckPresentation.selectedDeckSlot?"active":""} ${deck&&!v.compatible?"incompatible":""}" data-deck-select-slot="${i}">${DeckPresentation.deckSlotLabel(deck,i)}</button>`}).join("");
   const deck=store.decks[DeckPresentation.selectedDeckSlot],v=DeckRecord.validateDeckRecord(deck),alreadyReady=!!state?.deckReady?.[ActiveViewState.role],enemyRole=ActiveViewState.role==="host"?"guest":"host",enemyReady=!!state?.deckReady?.[enemyRole];
   if(!deck)UiRegistry.refs.deckSelectPreview.innerHTML=`<div class="deck-preview-head"><div class="deck-preview-name">덱 ${DeckPresentation.selectedDeckSlot+1}</div><div class="deck-preview-meta">비어 있음</div></div><div class="deck-preview-meta" style="margin-top:9px">덱 편집에서 카드를 구성하세요.</div>`;
   else if(!v.compatible)UiRegistry.refs.deckSelectPreview.innerHTML=`<div class="deck-preview-head"><div class="deck-preview-name">${deck.name||`덱 ${DeckPresentation.selectedDeckSlot+1}`}</div><div class="deck-preview-meta">사용 불가</div></div>`;
   else{const cards=(deck.cards||[]).map(card=>DeckPresentation.deckCardMiniHtml(card)).join("");UiRegistry.refs.deckSelectPreview.innerHTML=`<div class="deck-preview-head"><div class="deck-preview-name">${deck.name||`덱 ${DeckPresentation.selectedDeckSlot+1}`}</div><div class="deck-preview-meta">${DeckCardRuleDefinition.countText(deck.cards||[])}</div></div><div class="deck-preview-units">${cards}</div>`}
   UiRegistry.refs.deckSelectError.classList.toggle("hidden",v.compatible);UiRegistry.refs.deckSelectError.textContent=v.compatible?"":v.reason;if(v.compatible&&!v.complete){UiRegistry.refs.deckSelectError.classList.remove("hidden");UiRegistry.refs.deckSelectError.textContent=v.reason}
-  UiRegistry.refs.deckEditBtn.disabled=alreadyReady;UiRegistry.refs.deckConfirmBtn.disabled=alreadyReady||!v.compatible||!v.complete;UiRegistry.refs.deckEditBtn.textContent=deck&&!v.compatible?"새 덱 만들기":"덱 편집";UiRegistry.refs.deckConfirmBtn.textContent=alreadyReady?"확정 완료":"이 덱으로 확정";UiRegistry.refs.deckSelectStatus.textContent=alreadyReady?(enemyReady?"양쪽 덱 준비 완료 · 전투를 시작합니다.":"내 덱 확정 완료 · 상대 덱 선택 대기"):`최대 1분 안에 덱을 확정하세요.`;
+  if(DeckRecord.storageFailure)UiRegistry.refs.deckSelectError.classList.add("hidden");
+  UiRegistry.refs.deckEditBtn.disabled=alreadyReady||!!DeckRecord.storageFailure;UiRegistry.refs.deckConfirmBtn.disabled=alreadyReady||!!DeckRecord.storageFailure||!v.compatible||!v.complete;UiRegistry.refs.deckEditBtn.textContent=deck&&!v.compatible?"새 덱 만들기":"덱 편집";UiRegistry.refs.deckConfirmBtn.textContent=alreadyReady?"확정 완료":"이 덱으로 확정";UiRegistry.refs.deckSelectStatus.textContent=alreadyReady?(enemyReady?"양쪽 덱 준비 완료 · 전투를 시작합니다.":"내 덱 확정 완료 · 상대 덱 선택 대기"):`최대 1분 안에 덱을 확정하세요.`;
   if(UiRegistry.refs.deckReadyMine){
     UiRegistry.refs.deckReadyMine.textContent=alreadyReady?"✓ 나 · 선택 완료":"● 나 · 선택 중";
     UiRegistry.refs.deckReadyMine.classList.toggle("ready",alreadyReady);UiRegistry.refs.deckReadyMine.classList.toggle("waiting",!alreadyReady);
@@ -29263,11 +29328,13 @@ class DeckPresentation{
   UiRegistry.refs.deckBuilderDefense.innerHTML="";UiRegistry.refs.deckBuilderFilters.innerHTML=DeckCardRuleDefinition.filters.map(f=>`<button type="button" class="deck-filter-btn ${deckBuilderState.filter===f.id?"active":""}" data-deck-filter="${f.id}">${f.label}</button>`).join("");
   UiRegistry.refs.deckCollection.innerHTML=DeckCardRuleDefinition.allCards().filter(card=>DeckCardRuleDefinition.filterAccepts(card,deckBuilderState.filter)).map(card=>{const d=DeckCardRuleDefinition.def(card),selected=cards.some(c=>DeckCardRuleDefinition.key(c)===DeckCardRuleDefinition.key(card));const meta=card.type==="unit"?`T${d.tier} · ${d.layer==="AIR"?"AIR · ":""}${d.role}`:"방어 건물";return `<button type="button" class="deck-collection-card longpress-info-target ${selected?"selected":""}" data-deck-card-type="${card.type}" data-deck-card-id="${card.id}"><div class="icon">${DeckCardRuleDefinition.icon(card)}</div><div class="name">${DeckCardRuleDefinition.name(card)}</div><div class="meta">${meta}</div></button>`}).join("");
   const v=DeckRecord.validateDeckRecord(deckBuilderState.working);UiRegistry.refs.deckBuilderMessage.textContent=deckBuilderState.saveFailed?"덱을 저장하지 못했습니다. 완료 또는 덱 탭을 다시 눌러 저장을 재시도하세요. 닫거나 경기가 시작되면 저장하지 못한 변경을 잃을 수 있습니다.":v.compatible?(v.complete?`덱 완성 · ${DeckCardRuleDefinition.countText(cards)}`:v.reason):v.reason;
+  DeckPresentation.renderDeckStorageNotice("deckBuilderStorageNotice");
+  for(const button of UiRegistry.refs.deckBuilderDialog.querySelectorAll("[data-deck-builder-tab],[data-deck-unit-slot],[data-deck-card-type],#deckBuilderClearBtn,#deckBuilderSaveBtn"))button.disabled=!!DeckRecord.storageFailure;
 }
   static openDeckBuilder(slot=DeckPresentation.selectedDeckSlot){
   if(ActiveViewState.session?.draft?.phase==="deck-select"&&ActiveViewState.session.draft.deckReady?.[ActiveViewState.role])return false;
   const nextSlot=RangeUtil.clamp(Math.trunc(Number(slot)||0),0,DECK_SLOT_COUNT-1);
-  DeckPresentation.selectedDeckSlot=nextSlot;deckBuilderState.open(nextSlot);
+  DeckPresentation.selectedDeckSlot=nextSlot;if(!deckBuilderState.open(nextSlot)){DeckPresentation.refreshDeckStorageUi();return false}
   DeckPresentation.renderDeckBuilder();UiController.openUiModal("deck-builder");return true
 }
   static persistDeckBuilderWorking(){const saved=deckBuilderState.persist();if(saved)DeckPresentation.selectedDeckSlot=deckBuilderState.slot;return saved}
@@ -29392,6 +29459,7 @@ UiRegistry.refs.deckEditBtn.onclick=()=>DeckPresentation.openDeckBuilder(DeckPre
 UiRegistry.refs.deckConfirmBtn.onclick=()=>{
   const sess=MatchLifecycle.activeSession();if(!sess||sess.draft?.phase!=="deck-select")return;
   const store=DeckPresentation.deckStore(),deck=store.decks[DeckPresentation.selectedDeckSlot],payload=DeckRecord.deckPayloadFromRecord(deck);
+  if(DeckRecord.storageFailure){DeckPresentation.renderDeckSelect(sess.draft);return}
   const v=DeckRecord.validateDeckRecord(deck);
   if(!v.compatible||!v.complete||!payload){
     UiRegistry.refs.deckSelectError.classList.remove("hidden");
@@ -29413,6 +29481,7 @@ UiRegistry.refs.deckBuilderClearBtn.onclick=()=>{
 UiRegistry.refs.deckBuilderSaveBtn.onclick=()=>{
   if(DeckPresentation.saveDeckBuilder())UiController.closeUiModal("deck-builder");
 };
+for(const button of document.querySelectorAll("[data-deck-storage-action]"))button.onclick=()=>DeckPresentation.handleDeckStorageAction(button.dataset.deckStorageAction);
 
 DebugScenarioHarness.populateUi();
 
