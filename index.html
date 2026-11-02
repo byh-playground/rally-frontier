@@ -1240,7 +1240,9 @@ if (new URLSearchParams(location.search).get('showcaseDemo') === '1') {
     try{return typeof v==="string"?v:JSON.stringify(v,null,2)}
     catch(_){return String(v)}
   };
+  const buildMetadata=()=>window.__RALLY_BUILD_METADATA__||{id:"unknown",commit:null,updatedAt:null,status:"pending",source:"build.json",executedSourceVerified:false,reason:null};
   const present=diag=>{
+    const metadata=buildMetadata();diag={...diag,build:metadata.id,buildMetadata:metadata};
     state.last=diag;state.errors.push(diag);state.sources.diagnostic++;
     window.__RALLY_FATAL_DIAGNOSTIC__=diag;
     const show=()=>{
@@ -1259,6 +1261,13 @@ if (new URLSearchParams(location.search).get('showcaseDemo') === '1') {
     };
     show();
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",show,{once:true});
+  };
+  state.refreshBuildMetadata=()=>{
+    if(!state.last)return;
+    const metadata=buildMetadata();
+    for(const diag of state.errors){diag.build=metadata.id;diag.buildMetadata=metadata}
+    const summary=document.getElementById("renderFatalSummary");
+    if(summary)summary.textContent=text(state.last);
   };
   window.__RALLY_PRESENT_FATAL__=present;
   window.addEventListener("error",e=>{
@@ -1307,6 +1316,14 @@ if (new URLSearchParams(location.search).get('showcaseDemo') === '1') {
 })();
 </script>
 
+<script type="module">
+import { BuildMetadata } from './src/core/build-metadata.js';
+window.__RALLY_BUILD_METADATA__=BuildMetadata.snapshot();
+void BuildMetadata.load().then(metadata=>{
+  window.__RALLY_BUILD_METADATA__=metadata;
+  window.__RALLY_GLOBAL_ERROR_HANDLER__?.refreshBuildMetadata?.();
+});
+</script>
 <script type="module" src="./src/main.js"></script>
 <script type="module" src="./src/showcase.js"></script>
 </body>

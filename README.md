@@ -21,7 +21,9 @@ GitHub Pages로 현재 배포본(`main`의 Nightly)을 바로 실행할 수 있�
 
 ## 업데이트 시각과 배포
 
-`.github/workflows/pages.yml`과 `npm run build`는 동일한 원본 검사·복사 도구를 사용합니다. `index.html`·`src/`·`gamekit.lock.json`·`assets/`·`campaign/`·아이콘·manifest를 그대로 `_site/`에 복사하며 게임 소스와 `BUILD_ID`를 변경하지 않습니다. `_site/build.json`은 복사한 소스의 Git 커밋·복사 시각·고정 SDK 출처를 기록하는 별도 진단 정보입니다. 실행 화면의 업데이트/검증 상태와 별개이며, 검사 또는 복사 실패 시 이전 `_site`를 남겨 새 결과로 오인하지 않게 제거합니다.
+`.github/workflows/pages.yml`과 `npm run build`는 동일한 원본 검사·복사 도구를 사용합니다. `index.html`·`src/`·`gamekit.lock.json`·`assets/`·`campaign/`·아이콘·manifest를 그대로 `_site/`에 복사하며 게임 소스와 `BUILD_ID`를 변경하지 않습니다. `_site/build.json`은 복사한 소스의 Git 커밋·복사 시각·고정 SDK 출처를 기록하는 별도 진단 정보입니다. 화면은 이 기록의 커밋과 복사 시각을 보여 주며 오류·성능·모바일 전투 보고서도 동일한 배포 메타데이터 스냅샷을 포함합니다. 검사 또는 복사 실패 시 이전 `_site`를 남겨 새 결과로 오인하지 않게 제거합니다.
+
+배포 기록은 페이지당 한 번만 `cache: no-store`, 3초 제한으로 가져오며 게임 시작을 기다리게 하지 않습니다. 원본 checkout의 기록 없음, HTTP/JSON/형식 오류, 시간 초과는 `unavailable`로 보고하고 화면에 `배포 정보 확인 불가`를 표시합니다. 조회 중은 `pending`, 정상 기록은 `available`입니다. 기록이 없다는 이유로 공개 게임을 미배포 개발본이라고 판단하지 않습니다. `source: build.json`은 현재 주소의 배포 기록이라는 뜻이며 실제 실행 중인 모듈 바이트의 일치 검증이나 Stable 승격을 의미하지 않습니다(`executedSourceVerified: false`). 초기 SDK 로딩 실패 진단도 기록 조회가 끝나면 같은 메타데이터로 갱신합니다. 네트워크용 기존 소스 식별자 `BUILD_ID`와 시뮬레이션 계약은 바꾸지 않습니다.
 
 PR에서는 검사·복사·원본 ESM/SVG 부팅 검사를 수행하고 공개 배포하지 않습니다. main 게시 경로는 기존 GitHub Actions Pages 정책을 유지합니다. 로컬 원본 확인은 `npm ci`, `npm run test:build`, `npm run build`, `npm run test:startup -- _site/index.html`, `npm run test:ui -- _site/index.html` 순서로 실행합니다. 원본 복사 명령 자체는 다운로드/SDK 번들링을 하지 않습니다. `test:build`, `test:startup`, `test:ui`는 최초에 `setup:gamekit`으로 불변 dist와 manifest의 SHA-256을 검증하며 정상 cache는 재사용합니다.
 

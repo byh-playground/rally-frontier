@@ -2,9 +2,62 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 
+async function deploymentState(page) {
+  await page.waitForFunction(() => window.__RALLY_BUILD_METADATA__ && window.__RALLY_BUILD_METADATA__.status !== 'pending', undefined, { timeout: 10_000 });
+  return page.evaluate(() => ({
+    metadata: window.__RALLY_BUILD_METADATA__,
+    build: document.documentElement.dataset.build,
+    label: document.getElementById('titleUpdateStamp')?.textContent,
+  }));
+}
+
+async function verifyOptionalMetadata(browser, server, routePinnedSDK, record) {
+  const results = [];
+  for (const scenario of ['missing', 'malformed', 'invalid-record', 'network-failure', 'timeout']) {
+    const page = await browser.newPage(), errors = [];
+    let requests = 0;
+    page.on('pageerror', error => errors.push(error.message));
+    await routePinnedSDK(page);
+    await page.route('**/build.json', route => {
+      requests++;
+      if (scenario === 'timeout') return;
+      if (scenario === 'network-failure') return route.abort('failed');
+      return route.fulfill({ status: scenario === 'missing' ? 404 : 200, contentType: 'application/json', body: scenario === 'malformed' ? '{' : '{}' });
+    });
+    try {
+      await page.goto(server.url, { waitUntil: 'domcontentloaded' });
+      await page.locator('#gameStartBtn').click();
+      await page.locator('#gameStartDialog').waitFor({ state: 'visible' });
+      const state = await deploymentState(page);
+      if (state.metadata.status !== 'unavailable' || state.metadata.commit !== null) throw new Error(`Invalid ${scenario} deployment status`);
+      if (!state.label.includes('배포 정보 확인 불가') || state.label.includes('미배포')) throw new Error(`${scenario}: source availability was mislabeled`);
+      if (requests !== 1 || errors.length) throw new Error(`${scenario}: metadata requests/errors ${requests}/${errors.join('; ')}`);
+      results.push({ scenario, status: state.metadata.status, requests, pageErrors: errors });
+    } finally { await page.close(); }
+  }
+  const page = await browser.newPage();
+  try {
+    await routePinnedSDK(page);
+    let metadataRoute;
+    await page.route('**/build.json', route => { metadataRoute = route; });
+    await page.route('**/rollback.js', route => route.fulfill({ contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' }, body: 'throw new Error("expected SDK failure fixture")' }));
+    await page.goto(server.url, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => window.__RALLY_FATAL_DIAGNOSTIC__?.kind === 'RALLY_NETCODE_LOAD_FAILED' && window.__RALLY_FATAL_DIAGNOSTIC__?.buildMetadata?.status === 'pending');
+    if (!metadataRoute) throw new Error('Early SDK failure did not independently request deployment metadata');
+    await metadataRoute.fulfill({ contentType: 'application/json', body: JSON.stringify(record) });
+    await page.waitForFunction(commit => window.__RALLY_FATAL_DIAGNOSTIC__?.kind === 'RALLY_NETCODE_LOAD_FAILED' && window.__RALLY_FATAL_DIAGNOSTIC__?.buildMetadata?.commit === commit, record.commit);
+    const diagnostic = await page.evaluate(() => window.__RALLY_FATAL_DIAGNOSTIC__);
+    if (diagnostic.build !== record.commit || diagnostic.buildMetadata.source !== 'build.json') throw new Error('Early SDK failure omitted deployment identity');
+    results.push({ scenario: 'early-sdk-failure', commit: diagnostic.buildMetadata.commit });
+  } finally { await page.close(); }
+  return results;
+}
+
 async function main(htmlPath = path.resolve(process.argv[2] || '_site/index.html')) {
   const { serveSource, routePinnedSDK } = require('./netcode-qa-module.cjs');
   const expected = JSON.parse(fs.readFileSync(path.join(path.dirname(htmlPath), 'assets/units/manifest.json'), 'utf8'));
+  const metadataFile = path.join(path.dirname(htmlPath), 'build.json');
+  const expectedBuild = fs.existsSync(metadataFile) ? JSON.parse(fs.readFileSync(metadataFile, 'utf8')) : null;
   const server = await serveSource(htmlPath);
   let browser;
   try {
@@ -43,8 +96,14 @@ async function main(htmlPath = path.resolve(process.argv[2] || '_site/index.html
     if (result.moduleAPI !== 'function') throw new Error('Pinned GameKit loader API is missing from the runtime');
     if (!relativeRequests.some(url => new URL(url).pathname === '/src/main.js')) throw new Error('Original source entrypoint was not requested');
     if (!relativeRequests.some(url => new URL(url).pathname === '/assets/units/manifest.json')) throw new Error('Original SVG manifest was not requested');
+    const deployment = await deploymentState(page);
+    if (expectedBuild && (deployment.metadata.status !== 'available' || deployment.metadata.commit !== expectedBuild.commit || deployment.build !== expectedBuild.commit || !deployment.label.includes(expectedBuild.commit.slice(0, 12)))) throw new Error('Deployment identity does not match the copied source revision');
+    if (!expectedBuild && (deployment.metadata.status !== 'unavailable' || deployment.metadata.commit !== null || deployment.label.includes('미배포'))) throw new Error('Source checkout metadata status was fabricated');
+    if (relativeRequests.filter(url => new URL(url).pathname === '/build.json').length !== 1) throw new Error('Deployment metadata must be requested exactly once per page');
     if (pageErrors.length) throw new Error(`Browser page errors during startup: ${pageErrors.join('; ')}`);
-    console.log(JSON.stringify({ status: 'passed', assetCount: result.ids.length, relativeRequests, pageErrors }, null, 2));
+    await page.close();
+    const metadataScenarios = await verifyOptionalMetadata(browser, server, routePinnedSDK, expectedBuild || { format: 'source-esm', commit: 'a'.repeat(40), builtAt: '2026-11-02T00:00:00.000Z' });
+    console.log(JSON.stringify({ status: 'passed', assetCount: result.ids.length, deployment, metadataScenarios, relativeRequests, pageErrors }, null, 2));
   } finally {
     try { await browser?.close(); } finally { await server.close(); }
   }
