@@ -1,5 +1,6 @@
 import { BuildMetadata } from './core/build-metadata.js';
 import { RangeUtil, GameRuleDefinition, GameRuleRuntime, SIM_TPS } from './core/game-rules.js';
+import { GrainFaceOverlay } from './core/grain-face-overlay.js';
 
 (async function(){
 "use strict";
@@ -3161,6 +3162,9 @@ class UnitDefinition{
   static tierPool(tier){return Object.keys(this.all).filter(id=>this.get(id)?.tier===tier&&!this.get(id)?.economyWorker)}
 
   static cardInfo={
+  rice:{icon:"🌾",desc:"볏단에 묶여 가장 멀리 날아가 넓게 흩어져 내리는 작은 쌀알 병사입니다. 먼 거점을 먼저 차지합니다."},
+  soybean:{icon:"🫛",desc:"콩깍지에 담겨 날아가 깍지가 벌어지면 한 줄로 쏟아지는 기본 근접병입니다."},
+  redbean:{icon:"🔴",desc:"꼬투리 다발로 날아가 착지하자마자 2초 동안 빠르게 돌격하는 팥알 병사입니다."},
   swordsman:{icon:"❯",desc:"단단한 씨앗 몸에서 자란 큰 칼잎으로 정면 전선을 밀어붙이는 기본 근접병입니다."},
   pikeman:{icon:"▲",desc:"긴 가시줄기를 뻗어 근중거리에서 적을 밀어내고 돌진 접근을 끊습니다."},
   archer:{icon:"❖",desc:"탄성 잎활에서 단단한 씨앗탄을 날려 후방에서 안정적으로 화력을 누적합니다."},
@@ -3222,6 +3226,9 @@ class UnitDefinition{
   dragon:{name:"드래곤",tier:0,mineralCost:0,supply:0,buildTimeMs:0,hp:500,atk:75,range:450,speed:25,cooldownMs:1500,size:55,sizeClass:"medium",flatArmor:5,attackVisual:{sourceMotion:null,travel:"projectile",impact:"explosive"},role:"mainobjective",sight:600,layer:"AIR",airHeight:80,canAttackGround:true,canAttackAir:true,objectiveKind:"dragon",projectile:250,projectileArc:40,projectileRadius:10,splash:100,breathEvery:5,breathRange:300,breathAngleDeg:45,breathContinuous:{dps:60,damageIntervalMs:250,durationMs:2000},damageClass:"area"},
 
   // T1 - 단순하고 읽기 쉬운 기본병. 전체 풀 중 매 판 일부만 드래프트
+  rice:{requiresContactTerrain:true,name:"쌀",launchGrain:true,tier:0,mineralCost:0,supply:1,buildTimeMs:3000,hp:25,atk:5,range:25,speed:75,cooldownMs:1000,size:10,sizeClass:"light",role:"bruiser",attackVisual:{sourceMotion:"slash",travel:"none",impact:"light"},sight:275,counter:"먼 거점 선점 · 넓게 흩어지는 물량"},
+  soybean:{requiresContactTerrain:true,name:"콩",launchGrain:true,tier:0,mineralCost:0,supply:1,buildTimeMs:3000,hp:75,atk:10,range:25,speed:50,cooldownMs:1000,size:15,sizeClass:"medium",role:"bruiser",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:275,counter:"기본 근접 전열"},
+  redbean:{requiresContactTerrain:true,name:"팥",launchGrain:true,tier:0,mineralCost:0,supply:1,buildTimeMs:3000,hp:50,atk:15,range:25,speed:50,cooldownMs:1000,size:10,sizeClass:"light",role:"bruiser",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:275,counter:"착지 직후 돌격 · 돌파"},
   swordsman:{requiresContactTerrain:true,name:"칼잎 전사",production:{totalUnits:15,batchSize:3,productionSeconds:10,mineral:100,gas:0},tier:1,mineralCost:0,supply:2,buildTimeMs:3250,hp:125,atk:20,range:25,speed:50,cooldownMs:1000,size:15,sizeClass:"medium",role:"bruiser",attackVisual:{sourceMotion:"slash",travel:"none",impact:"light"},sight:275,counter:"고체력 기본 전열 · 원거리 사격을 버티며 접근해 전선을 밀어냄"},
   pikeman:{requiresContactTerrain:true,name:"가시창풀",production:{totalUnits:10,batchSize:2,productionSeconds:10,mineral:100,gas:0},abilityResearchGrade:"light",tier:1,mineralCost:0,supply:2,buildTimeMs:3500,hp:75,atk:20,range:100,speed:50,cooldownMs:750,size:15,sizeClass:"medium",attackVisual:{sourceMotion:"thrust",travel:"none",impact:"pierce"},role:"pikeman",sight:300,counter:"근중거리 접근 차단 · 매 공격 약한 넉백"},
   archer:{chargedSkill:{kind:"lob",minReach:100,maxReach:440,speed:300,damage:34,radius:35,arcHeight:100,recoveryMs:1000},name:"씨앗궁수",production:{totalUnits:10,batchSize:2,productionSeconds:15,mineral:125,gas:25},tier:1,mineralCost:0,supply:2,buildTimeMs:3750,hp:75,atk:20,range:175,speed:50,cooldownMs:750,size:15,sizeClass:"light",attackVisual:{sourceMotion:null,travel:"projectile",impact:"pierce"},role:"ranged",sight:350,projectile:250,counter:"안정 원거리",canAttackAir:true},
@@ -3382,6 +3389,9 @@ class UnitVisualDefinition{
     family:"worker",shape:"round",crest:"helmet",weapon:"pickaxe",
     accent:[.96,.70,.20,1],fx:"gather"
   },
+  rice:{family:"grain",billboard:true,visualScale:.85,accent:[.96,.94,.86,1],fx:"melee"},
+  soybean:{family:"grain",billboard:true,visualScale:1,accent:[.50,.69,.27,1],fx:"melee"},
+  redbean:{family:"grain",billboard:true,visualScale:.9,accent:[.66,.20,.23,1],fx:"melee"},
   swordsman:{
     family:"leafblade",shape:"seed",crest:"leaf",weapon:"leafblade",
     accent:[.52,.82,.31,1],fx:"melee"
@@ -6439,21 +6449,27 @@ class LaunchRules{
   static incomePerSecond=40;static walletCap=600;static startingWallet=200;
   static minReach=250;static maxReach=2200;static chargeMs=1500;static overheatGraceMs=180;
   static overheatMs=2000;static reloadMs=400;static speed=750;
-  static impactDamage=40;static landingMarkMs=1500;static captureHoldRadius=400;
-  static payload(type){
-    const p=UnitDefinition.get(type)?.production;if(!p)return null;
-    return {count:Math.max(1,Math.round(Number(p.totalUnits)||1)),cost:Math.max(0,Math.round((Number(p.mineral)||0)+(Number(p.gas)||0)))};
-  }
+  static landingMarkMs=1500;static captureHoldRadius=400;
+  static grains=Object.freeze({
+    rice:Object.freeze({cost:100,count:20,reach:1,speed:600,impact:10,splash:180,land:"scatter",spread:260}),
+    soybean:Object.freeze({cost:100,count:12,reach:.85,speed:750,impact:40,splash:100,land:"line",spacing:22}),
+    redbean:Object.freeze({cost:150,count:10,reach:.75,speed:750,impact:25,splash:120,land:"rush",rushMs:2000,rushPct:150}),
+  });
+  static deck=Object.freeze(Object.keys(LaunchRules.grains));
+  static grain(type){return Object.hasOwn(this.grains,type)?this.grains[type]:null}
+  static payload(type){const g=this.grain(type);return g?{count:g.count,cost:g.cost}:null}
   static overheated(holdMs){return holdMs>this.chargeMs+this.overheatGraceMs}
   static power(holdMs){return RangeUtil.clamp(holdMs/this.chargeMs,0,1)}
-  static reach(holdMs){return Math.round(this.minReach+(this.maxReach-this.minReach)*this.power(holdMs))}
-  static splash(count){return Math.min(140,60+4*count)}
+  static maxReachOf(type){return Math.round(this.maxReach*(this.grain(type)?.reach??1))}
+  static reach(holdMs,type){return Math.round(this.minReach+(this.maxReachOf(type)-this.minReach)*this.power(holdMs))}
+  // Inverse of reach(): the hold that lands a grain at this distance.
+  static holdFor(distance,type){return RangeUtil.clamp((distance-this.minReach)/Math.max(1,this.maxReachOf(type)-this.minReach),0,1)*this.chargeMs}
   static arcHeight(distance){return RangeUtil.clamp(Math.round(distance*.3),80,600)}
   // Direction comes from the press point; distance comes only from hold time.
-  static target(cannon,x,y,holdMs,world,fallback){
+  static target(cannon,x,y,holdMs,world,fallback,type){
     let dx=x-cannon.x,dy=y-cannon.y,len=Math.hypot(dx,dy);
     if(len<1){dx=fallback.x-cannon.x;dy=fallback.y-cannon.y;len=Math.hypot(dx,dy)||1}
-    const reach=this.reach(holdMs);
+    const reach=this.reach(holdMs,type);
     return {x:Math.round(RangeUtil.clamp(cannon.x+dx/len*reach,40,world.width-40)),y:Math.round(RangeUtil.clamp(cannon.y+dy/len*reach,40,world.height-40)),reach};
   }
 }
@@ -7032,7 +7048,7 @@ class Projectile{
     this.arcHeight=state.arcHeight??(state.chargedCastId?def.chargedSkill?.arcHeight:null)??patternArc??specialArc??def.projectileArc??0;
     this.drawRadius=state.drawRadius??def.projectileRadius??0;
     if(this.payload){
-      this.visualTag="launchPod";
+      this.visualTag="launchAmmo";
       this.arcHeight=LaunchRules.arcHeight(Math.hypot((Number(this.lockedAimX)||0)-(Number(this.launchX)||0),(Number(this.lockedAimY)||0)-(Number(this.launchY)||0)));
       this.drawRadius=8+Math.min(10,this.payload.count/3);
     }
@@ -9274,23 +9290,22 @@ class StrategySim{
     if(!this.launchMode)return false;
     const cannon=this.launchCannons(side).find(b=>b.id===action.cannonId);
     if(!cannon||this.tick<(Number(cannon.launchReadyTick)||0))return false;
-    if(!(this.decks[side]||[]).includes(action.unitType))return false;
-    const payload=LaunchRules.payload(action.unitType);if(!payload||this.wallet[side]<payload.cost)return false;
+    const grain=LaunchRules.grain(action.unitType);if(!grain||this.wallet[side]<grain.cost)return false;
     const holdMs=Math.max(0,Math.round(action.holdMs));
     if(LaunchRules.overheated(holdMs)){
       cannon.launchReadyTick=this.tick+this.msTicks(LaunchRules.overheatMs);
       this.events.push({type:"launchOverheat",side,cannonId:cannon.id,x:cannon.x,y:cannon.y});
       return true;
     }
-    const aim=LaunchRules.target(cannon,action.x,action.y,holdMs,this.world,this.flags[side]);
-    this.wallet[side]-=payload.cost;
+    const aim=LaunchRules.target(cannon,action.x,action.y,holdMs,this.world,this.flags[side],action.unitType);
+    this.wallet[side]-=grain.cost;
     cannon.launchReadyTick=this.tick+this.msTicks(LaunchRules.reloadMs);
     const id="p"+(++this.seq);
     this.spawnProjectile({
       id,owner:cannon.id,side,type:action.unitType,x:cannon.x,y:cannon.y,target:null,isBuilding:false,
-      trajectoryPolicy:"lockedPoint",lockedAimX:aim.x,lockedAimY:aim.y,speed:LaunchRules.speed,
-      damage:LaunchRules.impactDamage,splash:LaunchRules.splash(payload.count),splashUnitDamage:LaunchRules.impactDamage,splashBuildingDamage:LaunchRules.impactDamage,
-      damageClass:"area",sourceDamageResolved:true,payload:{type:action.unitType,count:payload.count}
+      trajectoryPolicy:"lockedPoint",lockedAimX:aim.x,lockedAimY:aim.y,speed:grain.speed,
+      damage:grain.impact,splash:grain.splash,splashUnitDamage:grain.impact,splashBuildingDamage:grain.impact,
+      damageClass:"area",sourceDamageResolved:true,payload:{type:action.unitType,count:grain.count}
     });
     this.events.push({type:"launchFire",side,cannonId:cannon.id,projectileId:id,x:cannon.x,y:cannon.y,holdMs,power:LaunchRules.power(holdMs)});
     return true;
@@ -9299,12 +9314,24 @@ class StrategySim{
     const {type,count}=p.payload,reserved=[];
     let hold=null,best=LaunchRules.captureHoldRadius,landed=0;
     for(const cp of this.capturePoints){if(cp.owner!=null||!cp.enabled)continue;const d=Math.hypot(cp.x-x,cp.y-y);if(d<best){best=d;hold=cp}}
-    const anchor={x,y};
+    const grain=LaunchRules.grain(type),anchor={x,y};
+    // The line opens toward the enemy base, centred on the landing point.
+    const enemy=this.buildings.find(b=>b.side===1-p.side&&b.alive!==false&&BuildingDefinition.get(b.type)?.isMainBase)||{x,y:y-1};
+    const ex=enemy.x-x,ey=enemy.y-y,el=Math.hypot(ex,ey)||1,dirX=ex/el,dirY=ey/el;
     for(let i=0;i<count;i++){
-      const spot=this.findOpenSpawnAround(anchor,type,{baseRadius:0,maxRadius:LaunchRules.splash(count)+60,angleSlots:12,radialStep:10,seedKey:`${p.id}|${i}`,reserved})||anchor;
+      let seed=anchor,opts={baseRadius:0,maxRadius:grain.splash+60,angleSlots:12,radialStep:10};
+      if(grain.land==="scatter"){
+        const a=HashUtil.hash(`${p.id}|a|${i}`)%3600/3600*Math.PI*2,rr=grain.spread*Math.sqrt((HashUtil.hash(`${p.id}|r|${i}`)%1000)/1000);
+        seed={x:Math.round(x+Math.cos(a)*rr),y:Math.round(y+Math.sin(a)*rr)};opts={baseRadius:0,maxRadius:60,angleSlots:8,radialStep:10};
+      }else if(grain.land==="line"){
+        const k=(i-(count-1)/2)*grain.spacing;
+        seed={x:Math.round(x+dirX*k),y:Math.round(y+dirY*k)};opts={baseRadius:0,maxRadius:50,angleSlots:8,radialStep:10};
+      }
+      const spot=this.findOpenSpawnAround(seed,type,{...opts,seedKey:`${p.id}|${i}`,reserved})||seed;
       let u=null;try{u=this.spawnUnit(p.side,type,spot.x,spot.y)}catch{continue}
       reserved.push({x:u.x,y:u.y,type});
       if(hold)u.launchHoldPointId=hold.id;
+      if(grain.land==="rush")this.setTimedModifier(u,"launchRush",{durationTicks:this.msTicks(grain.rushMs),movePct:grain.rushPct,attackSpeedPct:grain.rushPct});
       landed++;
     }
     this.events.push({type:"launchLand",side:p.side,unit:type,count:landed,x,y,holdPointId:hold?.id||null});
@@ -14928,15 +14955,14 @@ class BotController{
     const side=this.side,main=BuildingDefinition.forRole("mainBase"),outpost=BuildingDefinition.forRole("outpost");
     const busy=new Set(this.commandExecutor.reservations().filter(p=>p.action.type==="LAUNCH").map(p=>p.action.cannonId));
     const cannons=state.buildings.filter(b=>b.side===side&&b.alive!==false&&(b.type===main||b.type===outpost)&&state.tick>=(Number(b.launchReadyTick)||0)&&!busy.has(b.id));
-    const deck=(state.decks?.[side]||[]).filter(t=>LaunchRules.payload(t));
     for(const cannon of cannons){
-      const affordable=deck.filter(t=>LaunchRules.payload(t).cost<=state.wallet[side]);if(!affordable.length)return;
-      const unitType=affordable[HashUtil.hash(`${state.tick}|${cannon.id}`)%affordable.length];
+      const affordable=LaunchRules.deck.filter(t=>LaunchRules.grain(t).cost<=state.wallet[side]);if(!affordable.length)return;
       const target=this.launchTarget(state,cannon);if(!target)return;
       const distance=Math.hypot(target.x-cannon.x,target.y-cannon.y);
-      const power=RangeUtil.clamp((distance-LaunchRules.minReach)/(LaunchRules.maxReach-LaunchRules.minReach),0,1);
+      const reaching=affordable.filter(t=>LaunchRules.maxReachOf(t)>=distance),pool=reaching.length?reaching:affordable;
+      const unitType=pool[HashUtil.hash(`${state.tick}|${cannon.id}`)%pool.length];
       const error=1+((HashUtil.hash(`${state.tick}|${cannon.id}|err`)%241)-120)/1000;
-      const holdMs=Math.round(RangeUtil.clamp(power*error,0,1)*LaunchRules.chargeMs);
+      const holdMs=Math.round(RangeUtil.clamp(LaunchRules.holdFor(distance,unitType)*error,0,LaunchRules.chargeMs));
       this.issueCommand({type:"LAUNCH",cannonId:cannon.id,x:Math.round(target.x),y:Math.round(target.y),holdMs,unitType});
     }
   }
@@ -16375,6 +16401,10 @@ class DiagnosticPresentation{
 // IS-A UnitVisual. Shared pipeline is HAS-A. Runtime state remains CAN-BE.
 // ============================================================
 const UNIT_VISUAL_RENDER_FNS=Object.freeze({
+  // Grain soldiers always draw their budmori SVG; this circle only shows if that asset is missing.
+  "rice":(rdr,ctx)=>rdr.circle(ctx.x,ctx.y,ctx.r*.8,UnitVisualDefinition.get("rice").accent,12),
+  "soybean":(rdr,ctx)=>rdr.circle(ctx.x,ctx.y,ctx.r*.8,UnitVisualDefinition.get("soybean").accent,12),
+  "redbean":(rdr,ctx)=>rdr.circle(ctx.x,ctx.y,ctx.r*.8,UnitVisualDefinition.get("redbean").accent,12),
   "fireant":(rdr,ctx)=>{
     const {sc,x,y,r,ownStealthAlpha,teamDark,teamLight,dir}=ctx;
     {
@@ -17647,14 +17677,12 @@ const PROJECTILE_ORIGIN_ADJUSTERS=Object.freeze({
     ;return{x,y}}
 });
 const PROJECTILE_VISUAL_RENDER_FNS=Object.freeze({
-  "launchPod":(rdr,c)=>{const {p,sc,screenMotion}=c;let {x,y}=c;
-    // Launched clump: a green pod of three peas along the flight direction, ringed in the owner's color.
-    const rr=Math.max(5,(p.drawRadius||10)*sc*.55);let dx=screenMotion?.valid?screenMotion.dx:1,dy=screenMotion?.valid?screenMotion.dy:0;const dl=Math.hypot(dx,dy)||1;dx/=dl;dy/=dl;
-    const team=rdr.factionRelation(p.side)==="friendly"?[.30,.55,1,1]:[1,.36,.32,1];
-    for(const k of [-1,0,1])rdr.circle(x+dx*rr*1.1*k,y+dy*rr*1.1*k,rr*1.45,[.16,.22,.10,1],12);
-    for(const k of [-1,0,1])rdr.circle(x+dx*rr*1.1*k,y+dy*rr*1.1*k,rr*1.25,[.47,.72,.25,1],12);
-    for(const k of [-1,0,1])rdr.circle(x+dx*rr*1.1*k,y+dy*rr*1.1*k,rr*.62,[.66,.88,.38,1],10);
-    rdr.circle(x,y,rr*.38,team,8);
+  "launchAmmo":(rdr,c)=>{const {p,sc,screenMotion,x,y}=c;
+    // Each grain flies as its own bundle SVG, nose along the screen-space flight direction.
+    const dx=screenMotion?.valid?screenMotion.dx:1,dy=screenMotion?.valid?screenMotion.dy:0,length=Math.max(30,58*sc);
+    const record=rdr.launchAmmoRecord(p.payload?.type);if(!record)return;
+    rdr.drawVectorBillboard(record,x,y,Math.atan2(dy,dx),length/200);
+    rdr.circle(x,y,Math.max(2,3*sc),rdr.factionRelation(p.side)==="friendly"?[.30,.55,1,1]:[1,.36,.32,1],8);
   },
   "guardRetaliation":(rdr,c)=>{const {p,sc,wp}=c;let {x,y}=c;
     // Guardshroom retaliation: chunky spore pod, visibly distinct from the normal light projectile.
@@ -18363,7 +18391,7 @@ class GLRenderer{
       failIfMajorPerformanceCaveat:false
     };
     this.device=new RallyGamekit.WebGLDevice(canvas,this.webglAttrs);
-    this.vectorContext=new RallyGamekit.VectorContext(this.device,{safeAlphaRunBatching:true});this.vectorContext.acquireMeshRenderer();// 메시 통계가 첫 유닛 그리기 전에도 null이 아니도록 미리 만든다.
+    this.vectorContext=new RallyGamekit.VectorContext(this.device,{safeAlphaRunBatching:true});this.vectorContext.acquireMeshRenderer();this.grainFaces=new GrainFaceOverlay(this.vectorContext);// 메시 통계가 첫 유닛 그리기 전에도 null이 아니도록 미리 만든다.
     this.vectorUnitAssetCache=new Map();
     this._vectorUnitMatrix=new Float32Array(6);
     this._vectorOcclusionCoords=new Float32Array(0);
@@ -18984,6 +19012,12 @@ class GLRenderer{
     const groundWorld=this.resolveGroundShadowPosition(u,"unit"),ground=this.projectRenderWorldPosition(groundWorld);
     const sc=this.sc(),r=this.unitRenderRadius(u);
     const height=Math.max(0,body.y-body.groundY),shrink=1/(1+height/220),alpha=RangeUtil.clamp(.17-height/850,.06,.17);
+    if(UnitVisualDefinition.get(u.type)?.billboard){
+      const team=UnitFactionPalette.get(this.factionRelation(u.side)).body,rx=r*1.05*shrink,ry=r*.42*shrink,pts=[];
+      for(let i=0;i<14;i++){const a=i/14*Math.PI*2;pts.push([ground.x+Math.cos(a)*rx,ground.y+r*.55+Math.sin(a)*ry])}
+      this.withWorldSpriteDepth(groundWorld,()=>this.poly(pts,[team[0],team[1],team[2],.85]),.0003);
+      return;
+    }
     this.withWorldSpriteDepth(groundWorld,()=>{
       this.circle(ground.x+2*sc,ground.y+Math.max(1,2*sc),r*.96*shrink,own&&cloaked?[.05,.12,.08,alpha*.42]:[.04,.06,.08,alpha],12);
       this.circle(ground.x,ground.y,r*.52*shrink,[.04,.06,.08,alpha*.50],10);
@@ -21716,6 +21750,47 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     const actor=RallyGamekit.createVectorActor(this.vectorContext,compiled,{clip:"idle",startedAtMs:0});actor.setExpression("default").seek(0);
     record={actor,compiled,relation,isAir:UnitDefinition.get(type)?.layer==="AIR",partIds:new Set(compiled.metadata.parts.map(part=>part.id))};this.vectorUnitAssetCache.set(key,record);return record;
   }
+  launchAmmoRecord(type){
+    if(!LaunchRules.grain(type))return null;
+    const key="ammo|"+type;let record=this.vectorUnitAssetCache.get(key);if(record)return record;
+    const source=window.RallyVectorAssets?.["ammo-"+type];if(!source)return null;
+    const actor=RallyGamekit.createVectorActor(this.vectorContext,source,{clip:"idle",startedAtMs:0});actor.setExpression("default").seek(0);
+    record={actor,compiled:source};this.vectorUnitAssetCache.set(key,record);return record;
+  }
+  // Draws a 256-canvas asset centred at (x,y), rotated and scaled, between frame batches.
+  drawVectorBillboard(record,x,y,angle,scale){
+    if(this.frame.length){this.flushVectorMesh("frame-to-vector-switch");this.flush(this.frame,true);this.begin()}
+    const cos=Math.cos(angle)*scale,sin=Math.sin(angle)*scale,m=this._vectorUnitMatrix;
+    m[0]=cos;m[1]=sin;m[2]=-sin;m[3]=cos;m[4]=x-cos*128+sin*128;m[5]=y-sin*128-cos*128;
+    this.vectorContext.drawVectorActor(record.actor,{matrix:m,alpha:1,depth:this._renderDepth??0,depthTest:false,depthWrite:false});
+    this.flushVectorMesh("vector-billboard");
+  }
+  grainUnitRecord(type){
+    const key="grain|"+type;let record=this.vectorUnitAssetCache.get(key);if(record)return record;
+    const source=window.RallyVectorAssets?.[type];if(!source)return null;
+    const sockets=source.metadata.sockets,point=id=>{const s=sockets[id];if(!s)throw new Error(`Grain body is missing socket ${id}`);return s.point};
+    const actor=RallyGamekit.createVectorActor(this.vectorContext,source,{clip:"idle",startedAtMs:0});
+    record={actor,compiled:source,ground:point("ground")};this.vectorUnitAssetCache.set(key,record);return record;
+  }
+  // Budmori bodies are front-facing: no rotation, ground socket on the unit's ground point.
+  drawGrainUnitBody(ctx){
+    const record=this.grainUnitRecord(ctx.u.type);if(!record)return null;
+    if(this.frame.length){this.flushVectorMesh("frame-to-vector-switch");this.flush(this.frame,true);this.begin()}
+    const u=ctx.u,actor=record.actor,now=this.presentationNow(performance.now()),phase=(HashUtil.hash(u.id)%997)*7;
+    const delta=this.renderTrackedDelta(u,"unit"),moving=Math.hypot(delta.x,delta.y)>.01;
+    const clip=ctx.attack?"fire":ctx.hit?"hit":moving?"walk":"idle";
+    if(actor.currentClip!==clip)actor.play(clip,0);
+    actor.seek(now+phase);
+    const scale=ctx.r*2.7/260*(UnitVisualDefinition.get(u.type)?.visualScale||1),m=this._vectorUnitMatrix;
+    const gx=ctx.x,gy=ctx.y+ctx.r*.55;
+    m[0]=scale;m[1]=0;m[2]=0;m[3]=scale;m[4]=gx-scale*record.ground[0];m[5]=gy-scale*record.ground[1];
+    this.vectorContext.drawVectorActor(actor,{matrix:m,alpha:ctx.ownStealthAlpha,depth:this._renderDepth??0,
+      depthTest:!!this.passState.depthEnabled,depthWrite:true,depthWriteAlphaThreshold:.999,depthFunc:this.passState.depthFunc||"lequal"});
+    // Budmori faces: shared eye/mouth/cheek atlas parts placed on this body's posed face sockets.
+    this.grainFaces.draw(record.compiled,actor,ctx.hit?"hurt":ctx.attack?"attack":"neutral",m,ctx.ownStealthAlpha);
+    this.vectorAssetDrawnInstances=(this.vectorAssetDrawnInstances||0)+1;
+    return record;
+  }
   vectorUnitMatrix(ctx){
     const scale=ctx.r/40,tr=this._unitFacingTransform,airFacing=ctx.airUnit?this.resolveAirFacingScreen(ctx.u):null,cos=airFacing?.fx??tr?.cos??1,sin=airFacing?.fy??tr?.sin??0;
     const a=scale*cos,b=scale*sin,c=-scale*sin,d=scale*cos;
@@ -22041,11 +22116,13 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     }else{
       const unitVisual={type:u.type,cachePolicy:UnitVisualLookup.cachePolicy(u.type),render:UnitVisualLookup.renderer(u.type)};
       if(!unitVisual.render)throw new Error(`Missing unit visual renderer for ${u.type}`);
-      if(!workerBuildAnim&&this.shouldUseVectorUnitArt(u))vectorBody=this.drawVectorUnitBody(unitRenderCtx);
+      if(UnitVisualDefinition.get(u.type)?.billboard)vectorBody=this.drawGrainUnitBody(unitRenderCtx);
+      else if(!workerBuildAnim&&this.shouldUseVectorUnitArt(u))vectorBody=this.drawVectorUnitBody(unitRenderCtx);
       if(!vectorBody)this.drawUnitBodyComposed(unitRenderCtx,unitVisual);
     }
     if(vectorBody){
-      if(own&&!cloaked&&!airUnit&&this.world.terrain.surfaces.layers.length)this.appendVectorTerrainOccludedBody(vectorBody,unitRenderCtx,worldPos);
+      // Upright grain bodies have no top-down silhouette to project under terrain.
+      if(own&&!cloaked&&!airUnit&&!UnitVisualDefinition.get(u.type)?.billboard&&this.world.terrain.surfaces.layers.length)this.appendVectorTerrainOccludedBody(vectorBody,unitRenderCtx,worldPos);
     }else{
       if(own&&!cloaked&&!airUnit&&this.world.terrain.surfaces.layers.length)this.appendTerrainOccludedBody(bodyStart,this.frame.length,worldPos);
       // CAN-BE hit/attack presentation layer stays in the existing dynamic path.
@@ -22963,6 +23040,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.passProfiler.beginFrame();
     const visibleUnits=this.passProfiler.measure("prepare",()=>this.snapshot?this.prepareVisibleUnitFrame():this.visibleUnitFrame);
     if(this.vectorContext.active)this.vectorContext.endFrame();
+    this.grainFaces.prepare();
     if(!this.passProfiler.measure("device-begin",()=>this.vectorContext.beginFrame())){requestAnimationFrame(this.loop);return}
     Object.assign(this.passState,{depthEnabled:true,depthWrite:true,depthFunc:'lequal',stencil:false,colorMask:[true,true,true,true]});
 
@@ -28238,7 +28316,7 @@ class LaunchPresentation{
     const on=!!s?.launchMode;document.body.classList.toggle("launch-mode",on);
     UiRegistry.refs.launchHand?.classList.toggle("hidden",!on);
     if(!on)return;
-    const deck=(s.decks?.[side]||[]).filter(t=>LaunchRules.payload(t)),wallet=Math.floor(s.wallet?.[side]||0);
+    const deck=LaunchRules.deck,wallet=Math.floor(s.wallet?.[side]||0);
     if(!deck.includes(this.card))this.card=deck[0]||null;
     const key=deck.join("|");
     if(key!==this.deckKey){
