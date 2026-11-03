@@ -7331,6 +7331,8 @@ class SimulationRuntimeState{
     sim.spatialQueryScopeBuffers=[];sim.spatialQueryScopeDepth=0;
     sim.aoeCandidateSpatialScratch=[];sim.aoeCandidateSpatialDepth=0;
     sim.maxUnitRadius=Math.max(...Object.values(UnitDefinition.all).map(d=>(d?.size||10)*COLLISION_RADIUS_SCALE));
+    sim.targetLevelMemo=new WeakMap();
+    sim.maxTauntRadius=Math.max(0,...Object.values(UnitDefinition.all).map(d=>d?.taunt?Number(d.tauntRadius)||0:0));
   }
   static visibility(sim){
     sim.cloakCacheTick=-1;sim.auraCloakedIds=new Set();
@@ -7364,7 +7366,7 @@ class StrategySim{
     "chargedHeldIds","navigationDemandScope","world","tps","campaignScriptRuntime","campaignTechCap","disposed","runtimeEpoch","commandReceipts",
     "collisionGrid","collisionSweepGrid","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCandidateBuffer","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
     "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapSideHeads","hardFixSapSideNext","hardFixSapSidePrev","hardFixSapSideHeaps","hardFixSapMarks","hardFixSapEpoch",
-    "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","spatialQueryScopeBuffers","spatialQueryScopeDepth","aoeCandidateSpatialScratch","aoeCandidateSpatialDepth","maxUnitRadius",
+    "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","spatialQueryScopeBuffers","spatialQueryScopeDepth","aoeCandidateSpatialScratch","aoeCandidateSpatialDepth","maxUnitRadius","maxTauntRadius","targetLevelMemo",
     "cloakCacheTick","auraCloakedIds","visionFields","economyCacheTick","workerGasAssignments","validGasExtractorsBySide","navigation","nextRoutePathId","routePathStore","routePathIndex"
   ],children:{delayedEffects:DelayedEffectState}});
   static createForMatch({draft,seed,rules=GameRuleDefinition.current,campaignScenario=null,debugScenario=null}={}){
@@ -10026,9 +10028,17 @@ class StrategySim{
     return this.isDetected(attackerSide,target,src);
   }
 
+  // Many attackers test the same target in one tick; reuse its ground level until it moves.
+  targetLevel(target){
+    const memo=this.targetLevelMemo.get(target);
+    if(memo&&memo.tick===this.tick&&memo.x===target.x&&memo.y===target.y)return memo.level;
+    const level=this.world.terrain.surfaces.levelAt(target.x,target.y);
+    this.targetLevelMemo.set(target,{tick:this.tick,x:target.x,y:target.y,level});
+    return level;
+  }
   canSeeCombatTarget(attackerSide,target,sources){
     if(!target||target.alive===false||target.side===attackerSide||this.neutralObjectFriendlyToSide(target,attackerSide))return false;
-    const targetAir=this.unitLayer(target.type)==="AIR",targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(target.x,target.y);
+    const targetAir=this.unitLayer(target.type)==="AIR",targetLevel=targetAir?null:this.targetLevel(target);
     if(this._perfCollect)this._perfCollect.visibilityChecks++;
     return sources.visibleAt(target.x,target.y,targetAir,targetLevel)&&(!this.isStealthed(target)||sources.detectedAt(target.x,target.y,targetAir,targetLevel));
   }
@@ -10118,20 +10128,27 @@ class StrategySim{
     };
     // The grid returns whole cells. queryRange covers aggro and every attack reach,
     // so a farther candidate is rejected by consider(); skip its visibility rays.
+    // Units are scanned in two bands. The near band holds every unit that can be in
+    // attack reach or taunt this attacker; only those decide the result when one is
+    // found, so the aggro band is scanned only when the attacker must chase.
     const queryRange2=queryRange*queryRange;
-    this.forEachNearbyHostileUnit(u.side,u.x,u.y,queryRange,e=>{
+    const tauntReach=d.role!=="assassin"&&d.role!=="artillery"?this.maxTauntRadius:0;
+    const nearRange=Math.min(queryRange,Math.max(attackRange+this.unitRadius(u.type)+this.maxUnitRadius,tauntReach)),nearRange2=nearRange*nearRange;
+    const scan=(range,minD2,maxD2)=>this.forEachNearbyHostileUnit(u.side,u.x,u.y,range,e=>{
       const d2=(e.x-u.x)**2+(e.y-u.y)**2;
-      if(d2>queryRange2)return;
+      if(d2<=minD2||d2>maxD2)return;
       if(!this.canAttackEntity(u.type,e,false)||!this.canTargetUnit(u.side,e,visibleSources))return;
       if(!this.canSeeCombatTarget(u.side,e,visibleSources)){if(this._perfCollect)this._perfCollect.targetVisibilityRejects++;return}
       consider(e,false,UnitDefinition.get(e.type),d2);
     });
+    scan(nearRange,-1,nearRange2);
     for(const i of this.nearbyBuildingIndices(u.x,u.y,queryRange)){
       const b=this.buildings[i];
       if(!this.isHostileCombatBuilding(u.side,b)||!this.canAttackEntity(u.type,b,true)||!this.isVisible(u.side,b.x,b.y,visibleSources))continue;
       const bd=BuildingDefinition.get(b.type);
       consider(b,true,{role:bd.isMainBase?"base":"building",sizeClass:"heavy",size:bd.size},(b.x-u.x)**2+(b.y-u.y)**2);
     }
+    if(!taunt&&!inRangeBest&&nearRange<queryRange)scan(queryRange,nearRange2,queryRange2);
     if(taunt)return taunt;
     if(currentInRange&&currentInRange.rank<=inRangeRank)return currentInRange.candidate;
     if(inRangeBest)return inRangeBest;
