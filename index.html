@@ -909,6 +909,10 @@ if (new URLSearchParams(location.search).get('showcaseDemo') === '1') {
         기존 건설/스펠/생산 개별 상단 버튼은 제거하고 트리 내부 노드로 이동한다.
       -->
       <div id="battleCommandDock" class="panel battle-command-dock tech-command-dock">
+        <div id="launchHand" class="launch-hand hidden" aria-label="발사 카드">
+          <div class="launch-energy"><div id="launchEnergyFill" class="launch-energy-fill"></div><b id="launchEnergyText">◆ 0</b></div>
+          <div id="launchCards" class="launch-cards"></div>
+        </div>
         <div class="quick-command-row tech-root-tabs" role="tablist" aria-label="테크 트리">
           <button id="economyTreeBtn" class="quick-command tech-root-btn" type="button" data-tech-root="economy">
             <span class="quick-command-icon">◆</span>
