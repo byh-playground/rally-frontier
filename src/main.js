@@ -13653,7 +13653,8 @@ class GameSession{
     const statusTransport=this.transport;
     this.detachNetcodeTransport=this.netcodeSession.attachTransport(this.role==='host'?'guest':'host',{
       send:bytes=>this.transport.sendNetcode(bytes),
-      subscribe:listener=>this.transport.subscribeNetcode(listener),
+      // Stamp arrivals with the current time; the loop's frame clock may not have run yet.
+      subscribe:listener=>this.transport.subscribeNetcode(bytes=>{this.netcodeNow=Math.max(this.netcodeNow,performance.now());listener(bytes)}),
       ...(typeof statusTransport.subscribeNetcodeStatus==="function"?{subscribeStatus:listener=>statusTransport.subscribeNetcodeStatus(listener),get state(){return statusTransport.netcodeState}}:{})
     });
     this.netcodeNow=performance.now();this.lastDriverPulseAt=this.netcodeNow;this.lastSnapshotEmitAt=this.netcodeNow;
@@ -26637,7 +26638,7 @@ class MatchLifecycle{
         :"공통 코어 재연결 완료 · 연결됨";
 
       if(SinglePlayerModeUtil.isSinglePlayer()){
-        UiRegistry.refs.singleStatus.textContent="복구 완료 · AI Host 권위 상태와 일치 · 게임 재개";
+        UiRegistry.refs.singleStatus.textContent=`복구 완료 · ${r==="host"?"내":"AI"} Host 권위 상태와 일치 · 게임 재개`;
         UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
       }
     }
