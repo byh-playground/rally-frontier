@@ -6434,6 +6434,29 @@ class ChargedSkillGeometry{
     return {x:RangeUtil.clamp(unit.x+dx*scale,20,world.width-20),y:RangeUtil.clamp(unit.y+dy*scale,20,world.height-20),reach,progress};
   }
 }
+// 발사전: 대포가 유닛 뭉치를 쏜다. 착탄점은 표시하지 않고, 누른 시간만으로 거리가 정해진다.
+class LaunchRules{
+  static incomePerSecond=40;static walletCap=600;static startingWallet=200;
+  static minReach=250;static maxReach=2200;static chargeMs=1500;static overheatGraceMs=180;
+  static overheatMs=2000;static reloadMs=400;static speed=750;
+  static impactDamage=40;static landingMarkMs=1500;static captureHoldRadius=400;
+  static payload(type){
+    const p=UnitDefinition.get(type)?.production;if(!p)return null;
+    return {count:Math.max(1,Math.round(Number(p.totalUnits)||1)),cost:Math.max(0,Math.round((Number(p.mineral)||0)+(Number(p.gas)||0)))};
+  }
+  static overheated(holdMs){return holdMs>this.chargeMs+this.overheatGraceMs}
+  static power(holdMs){return RangeUtil.clamp(holdMs/this.chargeMs,0,1)}
+  static reach(holdMs){return Math.round(this.minReach+(this.maxReach-this.minReach)*this.power(holdMs))}
+  static splash(count){return Math.min(140,60+4*count)}
+  static arcHeight(distance){return RangeUtil.clamp(Math.round(distance*.3),80,600)}
+  // Direction comes from the press point; distance comes only from hold time.
+  static target(cannon,x,y,holdMs,world,fallback){
+    let dx=x-cannon.x,dy=y-cannon.y,len=Math.hypot(dx,dy);
+    if(len<1){dx=fallback.x-cannon.x;dy=fallback.y-cannon.y;len=Math.hypot(dx,dy)||1}
+    const reach=this.reach(holdMs);
+    return {x:Math.round(RangeUtil.clamp(cannon.x+dx/len*reach,40,world.width-40)),y:Math.round(RangeUtil.clamp(cannon.y+dy/len*reach,40,world.height-40)),reach};
+  }
+}
 class ChargedSkillMixin extends UnitCapability{
   static KEY="chargedSkill";static supports(_u,d){return !!d.chargedSkill}
   static stateDefaults={behavior:{chargedExecution:null,chargedRecoveryUntil:0}};
@@ -7008,6 +7031,11 @@ class Projectile{
     const specialArc=this.impactEventKind==="shockwave"?def.basicAttack?.variants?.find(v=>v.attack?.vfxPreset==="medicShock")?.attack?.arcHeight:this.impactEventKind==="retaliation"?(def.guardRetaliationArcHeight||35):null;
     this.arcHeight=state.arcHeight??(state.chargedCastId?def.chargedSkill?.arcHeight:null)??patternArc??specialArc??def.projectileArc??0;
     this.drawRadius=state.drawRadius??def.projectileRadius??0;
+    if(this.payload){
+      this.visualTag="launchPod";
+      this.arcHeight=LaunchRules.arcHeight(Math.hypot((Number(this.lockedAimX)||0)-(Number(this.launchX)||0),(Number(this.lockedAimY)||0)-(Number(this.launchY)||0)));
+      this.drawRadius=8+Math.min(10,this.payload.count/3);
+    }
   }toState(mode="snapshot"){return Projectile.stateContract.capture(this,mode)}
   writeChecksum(h){Projectile.stateContract.hash(h,this)}toJSON(){return this.toState("save")}static fromState(state){return new Projectile(state||{})}
 }
@@ -7370,14 +7398,16 @@ class StrategySim{
     "cloakCacheTick","auraCloakedIds","visionFields","economyCacheTick","workerGasAssignments","validGasExtractorsBySide","navigation","nextRoutePathId","routePathStore","routePathIndex"
   ],children:{delayedEffects:DelayedEffectState}});
   static createForMatch({draft,seed,rules=GameRuleDefinition.current,campaignScenario=null,debugScenario=null}={}){
-    const sim=new StrategySim(draft,seed,rules,campaignScenario);
+    const sim=new StrategySim(draft,seed,rules,campaignScenario,{launchMode:!campaignScenario&&!debugScenario});
     try{if(debugScenario)sim.applyDebugScenario(debugScenario);if(campaignScenario)sim.applyCampaignScenario(campaignScenario);return sim}
     catch(error){sim.dispose("initialization-failed");throw error}
   }
-  constructor(draftState,seed,rules=GameRuleDefinition.current,campaignScenario=null){
+  constructor(draftState,seed,rules=GameRuleDefinition.current,campaignScenario=null,{launchMode=!campaignScenario}={}){
+    this.launchMode=!!launchMode;
     this.seed=seed>>>0;this.rules=rules||GameRuleDefinition.current;this.tps=RangeUtil.clamp(Math.round(Number(this.rules?.simulation?.tps)||SIM_TPS),10,30);const campaignHumanRole=campaignScenario?.playerRole||"host",campaignHumanSide=campaignHumanRole==="host"?0:1;this.mapDescriptor=campaignScenario?.map?CampaignMapDefinition.build(campaignScenario.map,this.rules,this.seed,campaignHumanSide):MapGeneration.generateMapDescriptor({rules:this.rules,seed:this.seed,roundNumber:this.rules?.roundNumber||1});StateValue.freeze(this.mapDescriptor);this.world=WorldContext.fromMap(this.mapDescriptor);this.tick=0;this.seq=0;this.units=[];this.buildings=[];this.constructionOrders=[];this.navigationAdmissions=[];this.projectiles=[];this.events=[];this.scheduled=new Map();
     this.nextRoutePathId=1;this.routePathStore=new Map();this.routePathIndex=new Map();
-    this.wallet=[0,1].map(()=>Math.max(0,Number(this.rules?.economy?.startingResources?.minerals)||0));
+    this.wallet=[0,1].map(()=>this.launchMode?LaunchRules.startingWallet:Math.max(0,Number(this.rules?.economy?.startingResources?.minerals)||0));
+    this.launchIncomeCarry=[0,0];
     this.gasWallet=[0,1].map(()=>Math.max(0,Number(this.rules?.economy?.startingResources?.gas)||0));
     this.tech=[1,1];this.productionPaused=[false,false];this.chargedCasts=[null,null];this.chargedCastSerial=[0,0];
     this.attackUpgrade=[0,0];
@@ -7409,10 +7439,12 @@ class StrategySim{
 
     this.flags=CloneUtil.clone(this.mapDescriptor.flags);this.decks=[draftState.decks.host.slice(),draftState.decks.guest.slice()];
     this.defenseCards=[DefenseCardDefinition.list(draftState.defenseCards?.host),DefenseCardDefinition.list(draftState.defenseCards?.guest)];
-    this.resources=this.makeMinerals();
-    this.gasNodes=this.makeGasNodes();
-    this.camps=this.makeNeutralCamps();
+    this.resources=this.launchMode?[]:this.makeMinerals();
+    this.gasNodes=this.launchMode?[]:this.makeGasNodes();
+    this.camps=this.launchMode?[]:this.makeNeutralCamps();
     this.createBaseAndWorkers(0);this.createBaseAndWorkers(1);
+    // Landed units march straight to the enemy main base.
+    if(this.launchMode)for(const side of [0,1]){const enemy=this.buildings.find(b=>b.id==="base"+(1-side));this.flags[side]={x:enemy.x,y:enemy.y,forced:false}}
     this.spawnAuthoredMapStructures();
     this.applyStartingSetupPreset();
     for(const camp of this.camps)if(camp.spawnOnStart!==false)this.spawnCamp(camp);
@@ -8444,6 +8476,7 @@ class StrategySim{
     this.buildings.push(base);
     this.markBuildingSpatialDirty();
 
+    if(this.launchMode)return;
     // 시작 일꾼도 건물 collider 밖의 안전한 SpawnPort를 사용한다.
     for(let i=0;i<STARTING_WORKER_COUNT;i++){
       const u=this.spawnFromBuilding(base,ECONOMY_WORKER_TYPE);
@@ -9233,6 +9266,59 @@ class StrategySim{
     if(cast.phase==="gathering"&&Math.hypot(u.x-cast.originX,u.y-cast.originY)>45)this.moveToward(u,cast.originX,cast.originY,UnitDefinition.get(u.type).speed);
     return true;
   }
+  launchCannons(side){
+    const main=BuildingDefinition.forRole("mainBase"),outpost=BuildingDefinition.forRole("outpost");
+    return this.buildings.filter(b=>b.side===side&&b.alive!==false&&b.complete!==false&&(b.type===main||b.type===outpost));
+  }
+  applyLaunchCommand(side,action){
+    if(!this.launchMode)return false;
+    const cannon=this.launchCannons(side).find(b=>b.id===action.cannonId);
+    if(!cannon||this.tick<(Number(cannon.launchReadyTick)||0))return false;
+    if(!(this.decks[side]||[]).includes(action.unitType))return false;
+    const payload=LaunchRules.payload(action.unitType);if(!payload||this.wallet[side]<payload.cost)return false;
+    const holdMs=Math.max(0,Math.round(action.holdMs));
+    if(LaunchRules.overheated(holdMs)){
+      cannon.launchReadyTick=this.tick+this.msTicks(LaunchRules.overheatMs);
+      this.events.push({type:"launchOverheat",side,cannonId:cannon.id,x:cannon.x,y:cannon.y});
+      return true;
+    }
+    const aim=LaunchRules.target(cannon,action.x,action.y,holdMs,this.world,this.flags[side]);
+    this.wallet[side]-=payload.cost;
+    cannon.launchReadyTick=this.tick+this.msTicks(LaunchRules.reloadMs);
+    const id="p"+(++this.seq);
+    this.spawnProjectile({
+      id,owner:cannon.id,side,type:action.unitType,x:cannon.x,y:cannon.y,target:null,isBuilding:false,
+      trajectoryPolicy:"lockedPoint",lockedAimX:aim.x,lockedAimY:aim.y,speed:LaunchRules.speed,
+      damage:LaunchRules.impactDamage,splash:LaunchRules.splash(payload.count),splashUnitDamage:LaunchRules.impactDamage,splashBuildingDamage:LaunchRules.impactDamage,
+      damageClass:"area",sourceDamageResolved:true,payload:{type:action.unitType,count:payload.count}
+    });
+    this.events.push({type:"launchFire",side,cannonId:cannon.id,projectileId:id,x:cannon.x,y:cannon.y,holdMs,power:LaunchRules.power(holdMs)});
+    return true;
+  }
+  landLaunchPayload(p,x,y){
+    const {type,count}=p.payload,reserved=[];
+    let hold=null,best=LaunchRules.captureHoldRadius,landed=0;
+    for(const cp of this.capturePoints){if(cp.owner!=null||!cp.enabled)continue;const d=Math.hypot(cp.x-x,cp.y-y);if(d<best){best=d;hold=cp}}
+    const anchor={x,y};
+    for(let i=0;i<count;i++){
+      const spot=this.findOpenSpawnAround(anchor,type,{baseRadius:0,maxRadius:LaunchRules.splash(count)+60,angleSlots:12,radialStep:10,seedKey:`${p.id}|${i}`,reserved})||anchor;
+      let u=null;try{u=this.spawnUnit(p.side,type,spot.x,spot.y)}catch{continue}
+      reserved.push({x:u.x,y:u.y,type});
+      if(hold)u.launchHoldPointId=hold.id;
+      landed++;
+    }
+    this.events.push({type:"launchLand",side:p.side,unit:type,count:landed,x,y,holdPointId:hold?.id||null});
+  }
+  updateLaunchEconomy(){
+    if(!this.launchMode)return;
+    // Integer carry keeps income per second independent of tps.
+    for(const side of [0,1]){
+      this.launchIncomeCarry[side]+=LaunchRules.incomePerSecond;
+      const gained=Math.floor(this.launchIncomeCarry[side]/this.tps);
+      this.launchIncomeCarry[side]-=gained*this.tps;
+      this.wallet[side]=Math.min(LaunchRules.walletCap,this.wallet[side]+gained);
+    }
+  }
   applyCommand(actor,action){
     if(!["host","guest"].includes(actor))return false;
     if(action?.type==="MATCH_SURRENDER"){
@@ -9241,6 +9327,7 @@ class StrategySim{
     }
     const side=ConnectionSideUtil.roleSide(actor);
     if(action.type.startsWith("CHARGE_"))return this.applyChargedCommand(side,action);
+    if(action.type==="LAUNCH")return this.applyLaunchCommand(side,action);
     if(action.type==="SET_FLAG"){
       this.flags[side]={x:RangeUtil.clamp(action.x,40,this.world.width-40),y:RangeUtil.clamp(action.y,40,this.world.height-40),forced:!!action.forced};
       for(const u of this.units)if(u.side===side&&!UnitDefinition.get(u.type)?.economyWorker)u.movement.routeIndex=-1;
@@ -11608,6 +11695,11 @@ let value=Math.max(0,Number(d.flatArmor)||0);
       }
       if(group.control==="guard")return {x:group.x,y:group.y,forced:false};
     }
+    if(u.launchHoldPointId){
+      const cp=this.capturePoints.find(p=>p.id===u.launchHoldPointId);
+      if(cp&&cp.owner==null&&cp.enabled)return {x:cp.x,y:cp.y,forced:false};
+      u.launchHoldPointId=null;
+    }
     return this.flags[u.side];
   }
   updateCombat(u,vision){
@@ -11880,7 +11972,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     for(const p of this.projectiles){
       if(!p.alive)continue;
 
-      if(p.side===0||p.side===1){
+      if((p.side===0||p.side===1)&&!p.payload){
         if(p.interceptById){
           const interceptor=this.unitById.get(p.interceptById),d=UnitDefinition.get(interceptor?.type)||{},up=interceptor?.alive&&this.hasAbility(interceptor.side,interceptor.type),radius=up?(d.abilityInterceptRadius||225):(d.interceptRadius||175);
           if(!interceptor?.alive||Math.hypot(interceptor.x-p.x,p.y-interceptor.y)>radius){
@@ -11927,6 +12019,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
         if(p.impactEventKind==="rocketBurst")this.events.push({type:"balsamRocketImpact",x:impactX,y:impactY,side:p.side,sourceType:p.type,sourceId:p.owner,burstShot:p.burstIndex||1,burstCount:p.burstCount||4});
         if(p.terrainMiss){this.events.push({type:"dodge",reason:"uphill",side:t?.side??null,x:impactX,y:impactY,sourceSide:p.side,sourceType:p.type,sourceId:p.owner,targetId:p.target});continue}
         const capture={dealt:0,blocked:false};
+        if(p.payload)this.landLaunchPayload(p,impactX,impactY);
         if(trajectoryPolicy==="lockedPoint"){
           this.applyAreaDamage({sourceSide:p.side,sourceType:p.type,sourceEntityId:p.owner||null,x:impactX,y:impactY,radius:p.splash||1,damage:p.splashUnitDamage??p.damage,damageClass:p.damageClass||"area",suppressImpactFx:true,sourceDamageResolved:true,sourceFriendlySide:p.sourceFriendlySide});
           for(const b of this.buildings){if(!b||b.alive===false||b.side===p.side)continue;const br=BuildingDefinition.get(b.type)?.size||30;if(Math.hypot(b.x-impactX,b.y-impactY)<=Math.max(1,p.splash||1)+br){this.applyDamage(p.side,p.type,b,true,p.splashBuildingDamage??p.damage,p.owner||null,{damageClass:p.damageClass||"area",sourceDamageResolved:true,sourceFriendlySide:p.sourceFriendlySide,suppressImpactFx:true})}}
@@ -11983,7 +12076,8 @@ let value=Math.max(0,Number(d.flatArmor)||0);
         continue
       }
       const travel=Math.min(step,dist),nextX=p.x+dx/dist*travel,nextY=p.y+dy/dist*travel;
-      if(!this.navigation.projectileSegmentClear(p.x,p.y,nextX,nextY)){
+      // Launched payloads fly over walls; only the landing point meets terrain.
+      if(!p.payload&&!this.navigation.projectileSegmentClear(p.x,p.y,nextX,nextY)){
         p.alive=false;this.events.push({type:"projectileBlocked",projectileId:p.id,x:p.x,y:p.y,side:p.side,sourceType:p.type,sourceId:p.owner});
         this.events.push({type:"projectileRetire",projectileId:p.id,x:p.x,y:p.y,side:p.side,sourceType:p.type});continue;
       }
@@ -12548,6 +12642,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
     this.updateResearchQueues();
     this.updateCamps();
     this.updateCapturePoints();
+    this.updateLaunchEconomy();
     let winner=this.updateActiveSpells();
     winner=this.updateDelayedEffects()||winner;
     const worldMs=profile?now()-mark:0;
@@ -12779,7 +12874,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   }
   snapshot(){
     const started=performance.now();
-    try{this.navigation?.sync();return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,navigationRevision:this.navigationRevision,decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),chargedCasts:StateValue.copy(this.chargedCasts),chargedCastSerial:this.chargedCastSerial.slice(),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState("view")),buildings:this.buildings.map(b=>b.toState()),constructionOrders:StateValue.copy(this.constructionOrders),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
+    try{this.navigation?.sync();return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,launchMode:this.launchMode,navigationRevision:this.navigationRevision,decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),chargedCasts:StateValue.copy(this.chargedCasts),chargedCastSerial:this.chargedCastSerial.slice(),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState("view")),buildings:this.buildings.map(b=>b.toState()),constructionOrders:StateValue.copy(this.constructionOrders),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
     finally{const perf=this.perfStats;perf.snapshotMs=performance.now()-started;perf.snapshotCumulativeMs=(perf.snapshotCumulativeMs||0)+perf.snapshotMs;perf.maxSnapshotMs=Math.max(perf.maxSnapshotMs,perf.snapshotMs);perf.snapshotSamples++}
   }
 }
@@ -13155,7 +13250,7 @@ class RallyCommandCodec{
   static maxBytes=16*1024;
   static fields=Object.freeze({
     CHARGE_BEGIN:["castId","x","y"],CHARGE_AIM:["castId","x","y"],CHARGE_RELEASE:["castId","x","y"],CHARGE_CANCEL:["castId"],
-    MATCH_SURRENDER:[],SET_FLAG:["x","y","forced"],TOGGLE_PRODUCTION:[],
+    MATCH_SURRENDER:[],SET_FLAG:["x","y","forced"],TOGGLE_PRODUCTION:[],LAUNCH:["cannonId","x","y","holdMs","unitType"],
     TRAIN_WORKER:["buildingId"],SET_GAS_WORKERS:["buildingId","target"],OPEN_TACTICAL_CHEST:[],
     CHOOSE_TACTICAL_REWARD:["offerId","rewardId"],REPLACE_SPELL:["offerId","oldSpellId"],CANCEL_SPELL_REPLACEMENT:["offerId"],
     CAST_SPELL:["spellId","x","y"],START_RESEARCH:["research","unit","researchId"],CANCEL_BUILDING:["buildingId"],BUILD:["building","produceType","x","y"]
@@ -13169,11 +13264,12 @@ class RallyCommandCodec{
     for(const key of fields){
       if(!Object.prototype.hasOwnProperty.call(action,key))continue;
       const value=action[key];
-      if(key==="castId"?!Number.isSafeInteger(value)||value<=0:["x","y","entryX","entryY","exitX","exitY","target"].includes(key)?!Number.isFinite(value):key==="forced"?typeof value!=="boolean":value!==null&&typeof value!=="string")throw new Error("게임 명령 필드의 형식이 잘못되었습니다.");
+      if(key==="castId"?!Number.isSafeInteger(value)||value<=0:["x","y","entryX","entryY","exitX","exitY","target","holdMs"].includes(key)?!Number.isFinite(value):key==="forced"?typeof value!=="boolean":value!==null&&typeof value!=="string")throw new Error("게임 명령 필드의 형식이 잘못되었습니다.");
     }
     if(action.type.startsWith("CHARGE_")&&(!Number.isSafeInteger(action.castId)||action.castId<=0||action.type!=="CHARGE_CANCEL"&&(!Number.isFinite(action.x)||!Number.isFinite(action.y))))throw new Error("Invalid charged skill command");
     const required={TRAIN_WORKER:["buildingId"],SET_GAS_WORKERS:["buildingId","target"],CHOOSE_TACTICAL_REWARD:["offerId","rewardId"],REPLACE_SPELL:["offerId","oldSpellId"],CANCEL_SPELL_REPLACEMENT:["offerId"],CAST_SPELL:["spellId"],START_RESEARCH:["research"],CANCEL_BUILDING:["buildingId"],BUILD:["building"]}[action.type]||[];
     if(required.some(key=>action[key]===undefined||action[key]===null||action[key]===""))throw new Error("게임 명령의 필수 필드가 없습니다.");
+    if(action.type==="LAUNCH"&&(["cannonId","unitType"].some(key=>typeof action[key]!=="string"||!action[key])||["x","y","holdMs"].some(key=>!Number.isFinite(action[key]))))throw new Error("발사 명령의 필드가 잘못되었습니다.");
     if(["SET_FLAG","BUILD","CAST_SPELL"].includes(action.type)){
       const coordinates=action.type==="CAST_SPELL"&&action.spellId==="tunnel"?["entryX","entryY","exitX","exitY"]:["x","y"];
       if(coordinates.some(key=>!Number.isFinite(action[key])))throw new Error("게임 action의 좌표가 잘못되었습니다.");
@@ -14597,6 +14693,7 @@ class AiCommandExecutor{
   quote(state,action){
     if(action.type==="BUILD")return BuildingDefinition.get(action.building)?BuildingDefinition.resourceCost(action.building,action.produceType):null;
     if(action.type==="TRAIN_WORKER")return{mineral:WORKER_COST,gas:0};
+    if(action.type==="LAUNCH"){const payload=LaunchRules.payload(action.unitType);return payload?{mineral:payload.cost,gas:0}:null}
     if(action.type==="START_RESEARCH"){const def=ResearchDefinition.resolveAction(state,this.bot.side,action).def;return def?{mineral:Number(def.cost)||0,gas:Number(def.gasCost)||0}:null}
     return{mineral:0,gas:0};
   }
@@ -14684,6 +14781,7 @@ class BotController{
     this.lastDraftKey="";
     this.lastSnapshot=null;
     this.lastEconomyTick=-99999;
+    this.lastLaunchTick=-99999;
     this.lastPlannerTick=-99999;
     this.lastResponsePlan=null;
     this.lastExecutedMacro=null;
@@ -14786,6 +14884,12 @@ class BotController{
     const campaign=this.session.matchConfig?.campaignScenario,humanRole=campaign?.playerRole||"host";
     if(campaign?.enemy?.aiProfile==="scripted"&&this.role!==humanRole)return;
     const state=this.commandExecutor.begin(snapshot);this.lastSnapshot=state;
+    if(state.launchMode){
+      try{
+        if(state.tick-this.lastLaunchTick>=SimulationTiming.msToTicks(1200,state.tps||SIM_TPS)){this.lastLaunchTick=state.tick;this.commandExecutor.withChannel("launch",()=>this.runLaunch(state))}
+      }finally{this.commandExecutor.flush()}
+      return;
+    }
     try{
       const p=this.perceive(state);this.rememberEnemies(p,state.tick);
       if(this.commandExecutor.withChannel("reward",()=>this.handleTacticalChest(state,p)))return;
@@ -14804,6 +14908,38 @@ class BotController{
     }finally{this.commandExecutor.flush()}
   }
   issueCommand(action){return this.commandExecutor.offer(action)}
+  // Launch bot: defend the base first, then empty capture points, then enemy groups.
+  // Hold time carries a deterministic +-12% error and never overheats.
+  launchTarget(state,cannon){
+    const side=this.side,mine=state.buildings.find(b=>b.id==="base"+side),enemyBase=state.buildings.find(b=>b.id==="base"+(1-side));
+    const enemies=state.units.filter(u=>u.alive&&u.side===1-side);
+    const centroid=list=>({x:list.reduce((a,u)=>a+u.x,0)/list.length,y:list.reduce((a,u)=>a+u.y,0)/list.length});
+    const threat=mine?enemies.filter(u=>Math.hypot(u.x-mine.x,u.y-mine.y)<900):[];
+    if(threat.length)return centroid(threat);
+    const open=(state.capturePoints||[]).filter(cp=>cp.owner==null&&cp.enabled!==false).sort((a,b)=>Math.hypot(a.x-cannon.x,a.y-cannon.y)-Math.hypot(b.x-cannon.x,b.y-cannon.y));
+    if(open.length&&Math.hypot(open[0].x-cannon.x,open[0].y-cannon.y)<=LaunchRules.maxReach)return open[0];
+    if(enemies.length){
+      const near=enemies.slice().sort((a,b)=>Math.hypot(a.x-cannon.x,a.y-cannon.y)-Math.hypot(b.x-cannon.x,b.y-cannon.y)).slice(0,12);
+      return centroid(near);
+    }
+    return enemyBase||null;
+  }
+  runLaunch(state){
+    const side=this.side,main=BuildingDefinition.forRole("mainBase"),outpost=BuildingDefinition.forRole("outpost");
+    const busy=new Set(this.commandExecutor.reservations().filter(p=>p.action.type==="LAUNCH").map(p=>p.action.cannonId));
+    const cannons=state.buildings.filter(b=>b.side===side&&b.alive!==false&&(b.type===main||b.type===outpost)&&state.tick>=(Number(b.launchReadyTick)||0)&&!busy.has(b.id));
+    const deck=(state.decks?.[side]||[]).filter(t=>LaunchRules.payload(t));
+    for(const cannon of cannons){
+      const affordable=deck.filter(t=>LaunchRules.payload(t).cost<=state.wallet[side]);if(!affordable.length)return;
+      const unitType=affordable[HashUtil.hash(`${state.tick}|${cannon.id}`)%affordable.length];
+      const target=this.launchTarget(state,cannon);if(!target)return;
+      const distance=Math.hypot(target.x-cannon.x,target.y-cannon.y);
+      const power=RangeUtil.clamp((distance-LaunchRules.minReach)/(LaunchRules.maxReach-LaunchRules.minReach),0,1);
+      const error=1+((HashUtil.hash(`${state.tick}|${cannon.id}|err`)%241)-120)/1000;
+      const holdMs=Math.round(RangeUtil.clamp(power*error,0,1)*LaunchRules.chargeMs);
+      this.issueCommand({type:"LAUNCH",cannonId:cannon.id,x:Math.round(target.x),y:Math.round(target.y),holdMs,unitType});
+    }
+  }
 
   visionSources(state){return VisibilityPolicy.sources(state,this.side)}
 
@@ -17511,6 +17647,15 @@ const PROJECTILE_ORIGIN_ADJUSTERS=Object.freeze({
     ;return{x,y}}
 });
 const PROJECTILE_VISUAL_RENDER_FNS=Object.freeze({
+  "launchPod":(rdr,c)=>{const {p,sc,screenMotion}=c;let {x,y}=c;
+    // Launched clump: a green pod of three peas along the flight direction, ringed in the owner's color.
+    const rr=Math.max(5,(p.drawRadius||10)*sc*.55);let dx=screenMotion?.valid?screenMotion.dx:1,dy=screenMotion?.valid?screenMotion.dy:0;const dl=Math.hypot(dx,dy)||1;dx/=dl;dy/=dl;
+    const team=rdr.factionRelation(p.side)==="friendly"?[.30,.55,1,1]:[1,.36,.32,1];
+    for(const k of [-1,0,1])rdr.circle(x+dx*rr*1.1*k,y+dy*rr*1.1*k,rr*1.45,[.16,.22,.10,1],12);
+    for(const k of [-1,0,1])rdr.circle(x+dx*rr*1.1*k,y+dy*rr*1.1*k,rr*1.25,[.47,.72,.25,1],12);
+    for(const k of [-1,0,1])rdr.circle(x+dx*rr*1.1*k,y+dy*rr*1.1*k,rr*.62,[.66,.88,.38,1],10);
+    rdr.circle(x,y,rr*.38,team,8);
+  },
   "guardRetaliation":(rdr,c)=>{const {p,sc,wp}=c;let {x,y}=c;
     // Guardshroom retaliation: chunky spore pod, visibly distinct from the normal light projectile.
     const rr=Math.max(3.4,(p.drawRadius||5)*sc);
@@ -22691,7 +22836,51 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.drawFog();
     this.begin();this.setRenderDepth(0);
     this.drawSharedShieldsOverlay();this.drawFogLandmarks();this.drawActiveSpells();this.flush();
-    this.begin();this.drawFlag();this.drawChargedSkillPreview();this.flush();
+    this.begin();if(this.snapshot?.launchMode)this.drawLaunchOverlay();else{this.drawFlag();this.drawChargedSkillPreview()}this.flush();
+  }
+  drawLaunchOverlay(){
+    const s=this.snapshot,side=ConnectionSideUtil.roleSide(this.orientationRole()),sc=this.sc(),now=performance.now();
+    const main=BuildingDefinition.forRole("mainBase"),outpost=BuildingDefinition.forRole("outpost"),reloadTicks=SimulationTiming.msToTicks(LaunchRules.reloadMs,s.tps||SimulationTiming.tps());
+    // Overheated cannons glow red; reloading ones show a thin ring.
+    for(const b of s.buildings||[]){
+      if(b.side!==side||b.alive===false||(b.type!==main&&b.type!==outpost))continue;
+      const wait=(Number(b.launchReadyTick)||0)-s.tick;if(wait<=0)continue;
+      const [x,y]=this.worldToPx(this.viewX(b.x),this.viewY(b.y)),r=Math.max(18,((BuildingDefinition.get(b.type)?.size||40)+10)*sc),hot=wait>reloadTicks;
+      this.outlineCircle(x,y,r,Math.max(2,3*sc),hot?[1,.3,.2,.5+.4*(Math.floor(now/160)%2)]:[.92,.92,.92,.45],32);
+    }
+    const hold=LaunchPresentation.hold;
+    if(hold){
+      const [cx,cy]=this.worldToPx(this.viewX(hold.cannonX),this.viewY(hold.cannonY)),[ax,ay]=this.worldToPx(this.viewX(hold.aimX),this.viewY(hold.aimY));
+      let dx=ax-cx,dy=ay-cy;const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
+      const held=now-hold.armedAt,power=LaunchRules.power(held),burnt=LaunchRules.overheated(held),over=held>LaunchRules.chargeMs;
+      const color=burnt?[1,.22,.16,1]:over?[1,.5,.18,(Math.floor(now/90)%2)?1:.45]:[1,.9,.5,.95],w=Math.max(2,3*sc);
+      // Direction only: a fixed-length arrow from the cannon, never the landing point.
+      const L=Math.max(60,90*sc),tx=cx+dx*L,ty=cy+dy*L,head=Math.max(9,13*sc);
+      this.line(cx,cy,tx,ty,w,color);
+      this.line(tx,ty,tx-dx*head+dy*head*.65,ty-dy*head-dx*head*.65,w,color);
+      this.line(tx,ty,tx-dx*head-dy*head*.65,ty-dy*head+dx*head*.65,w,color);
+      // Power gauge with the previous shot's tick.
+      const W=Math.max(120,170*sc),H=Math.max(9,12*sc),gx=cx-W/2,gy=cy+Math.max(34,58*sc);
+      this.rect(gx-2,gy-2,W+4,H+4,[.05,.06,.08,.78]);
+      this.rect(gx,gy,W*power,H,color);
+      if(hold.lastPower!=null)this.rect(gx+W*hold.lastPower-1.5,gy-5,3,H+10,[1,1,1,.95]);
+    }
+    const W=this.canvas.width,H=this.canvas.height,pad=Math.max(18,26*sc);
+    for(const m of LaunchPresentation.marks){
+      const age=RangeUtil.clamp((now-m.at)/LaunchRules.landingMarkMs,0,1),alpha=1-age,col=[1,.9,.5,alpha];
+      const [x,y]=this.worldToPx(this.viewX(m.x),this.viewY(m.y));
+      if(x>=0&&x<=W&&y>=0&&y<=H){
+        this.outlineCircle(x,y,Math.max(14,(30+40*age)*sc),Math.max(2,3*sc),col,32);
+        this.line(x-8,y,x+8,y,2,[1,1,1,alpha]);this.line(x,y-8,x,y+8,2,[1,1,1,alpha]);
+        continue;
+      }
+      // Off-screen landing: an arrow on the screen edge points at it.
+      let dx=x-W/2,dy=y-H/2;const k=Math.min((W/2-pad)/Math.max(1e-6,Math.abs(dx)),(H/2-pad)/Math.max(1e-6,Math.abs(dy)));
+      const ex=W/2+dx*k,ey=H/2+dy*k,len=Math.hypot(dx,dy)||1,a=Math.max(16,26*sc);dx/=len;dy/=len;
+      this.line(ex,ey,ex-dx*a+dy*a*.65,ey-dy*a-dx*a*.65,4,col);
+      this.line(ex,ey,ex-dx*a-dy*a*.65,ey-dy*a+dx*a*.65,4,col);
+      this.circle(ex-dx*a*.45,ey-dy*a*.45,4,col,10);
+    }
   }
   renderUiFxPass(){
     if(this.spellPreview){this.begin();this.drawSpellPreview();this.flush()}
@@ -22995,6 +23184,14 @@ e.stopPropagation();
       this.dot(p[0],p[1],3.2,col);
       c.strokeStyle=col;c.lineWidth=1;
       c.beginPath();c.arc(p[0],p[1],5.2,0,Math.PI*2);c.stroke();
+    }
+
+    if(s.launchMode){
+      const now=performance.now();
+      for(const m of LaunchPresentation.marks){
+        const p=this.point(m.x,m.y),age=RangeUtil.clamp((now-m.at)/LaunchRules.landingMarkMs,0,1);
+        c.strokeStyle=`rgba(255,228,128,${1-age})`;c.lineWidth=2;c.beginPath();c.arc(p[0],p[1],4+8*age,0,Math.PI*2);c.stroke();
+      }
     }
 
     // 미네랄은 알려진 전략 자원 위치로 항상 표시한다.
@@ -23543,6 +23740,9 @@ UiRegistry.refs.tacticalChestFeedback=DomUtil.byId("tacticalChestFeedback");
 UiRegistry.refs.tacticalChestFeedbackText=DomUtil.byId("tacticalChestFeedbackText");
 
 UiRegistry.refs.battleCommandDock=DomUtil.byId("battleCommandDock");
+UiRegistry.refs.launchHand=DomUtil.byId("launchHand");UiRegistry.refs.launchCards=DomUtil.byId("launchCards");
+UiRegistry.refs.launchEnergyFill=DomUtil.byId("launchEnergyFill");UiRegistry.refs.launchEnergyText=DomUtil.byId("launchEnergyText");
+UiRegistry.refs.launchCards?.addEventListener("click",e=>{const b=e.target.closest("[data-launch-card]");if(b)LaunchPresentation.selectCard(b.dataset.launchCard)});
 UiRegistry.refs.commandDrawer=DomUtil.byId("commandDrawer");
 UiRegistry.refs.buildTree=DomUtil.byId("buildTree");
 UiRegistry.refs.buildDrawerCloseBtn=DomUtil.byId("buildDrawerCloseBtn");
@@ -28029,6 +28229,66 @@ class HtmlAttributeUtil{
   }
 }
 
+// 발사전 화면: 카드 패, 자원 게이지, 착탄 흔적. 착탄 예정 지점은 절대 그리지 않는다.
+class LaunchPresentation{
+  static card=null;static deckKey="";static lastPower=null;static marks=[];static pods=new Map();static hold=null;
+  static active(s=ActiveViewState.snap){return !!s?.launchMode&&!ReplayPresentation.replayPlayer}
+  static reset(){this.card=null;this.deckKey="";this.lastPower=null;this.marks=[];this.pods=new Map();this.hold=null}
+  static render(s,side){
+    const on=!!s?.launchMode;document.body.classList.toggle("launch-mode",on);
+    UiRegistry.refs.launchHand?.classList.toggle("hidden",!on);
+    if(!on)return;
+    const deck=(s.decks?.[side]||[]).filter(t=>LaunchRules.payload(t)),wallet=Math.floor(s.wallet?.[side]||0);
+    if(!deck.includes(this.card))this.card=deck[0]||null;
+    const key=deck.join("|");
+    if(key!==this.deckKey){
+      this.deckKey=key;
+      UiRegistry.refs.launchCards.innerHTML=deck.map(t=>{const d=UnitDefinition.get(t),p=LaunchRules.payload(t),info=UnitDefinition.cardInfo?.[t];
+        return `<button type="button" class="launch-card" data-launch-card="${t}"><span class="launch-card-icon">${info?.icon||"●"}</span><b>${d?.name||t}</b><small>×${p.count}</small><em>◆${p.cost}</em></button>`}).join("");
+    }
+    for(const el of UiRegistry.refs.launchCards.querySelectorAll("[data-launch-card]")){
+      const t=el.dataset.launchCard;el.classList.toggle("selected",t===this.card);el.classList.toggle("unaffordable",LaunchRules.payload(t).cost>wallet);
+    }
+    UiRegistry.refs.launchEnergyFill.style.width=`${Math.round(100*wallet/LaunchRules.walletCap)}%`;
+    UiRegistry.refs.launchEnergyText.textContent=`◆ ${wallet} / ${LaunchRules.walletCap}`;
+    // A pod that left the snapshot has landed: leave a short mark at its point.
+    const now=performance.now(),seen=new Set();
+    for(const p of s.projectiles||[]){if(!p.payload||p.side!==side)continue;seen.add(p.id);this.pods.set(p.id,{x:p.lockedAimX,y:p.lockedAimY})}
+    for(const [id,p] of this.pods)if(!seen.has(id)){this.pods.delete(id);this.marks.push({x:p.x,y:p.y,at:now})}
+    this.marks=this.marks.filter(m=>now-m.at<LaunchRules.landingMarkMs);
+    if(!this.hold&&UiRegistry.refs.hint){const hint="카드 고르기 · 길게 눌러 충전 · 손가락 방향으로 조준 · 놓으면 발사 · 너무 오래 누르면 과열";if(UiRegistry.refs.hint.textContent!==hint)UiRegistry.refs.hint.textContent=hint}
+  }
+  static selectCard(type){this.card=type;const s=ActiveViewState.snap;if(s)this.render(s,ConnectionSideUtil.roleSide(ActiveViewState.role))}
+  static nearestCannon(s,side,x,y){
+    const main=BuildingDefinition.forRole("mainBase"),outpost=BuildingDefinition.forRole("outpost");
+    let best=null,bestD=Infinity;
+    for(const b of s.buildings||[]){if(b.side!==side||b.alive===false||(b.type!==main&&b.type!==outpost))continue;const d=Math.hypot(b.x-x,b.y-y);if(d<bestD){bestD=d;best=b}}
+    return best;
+  }
+  static begin(a,pointerId){
+    const s=ActiveViewState.snap,side=ConnectionSideUtil.roleSide(ActiveViewState.role),cannon=s&&this.nearestCannon(s,side,a.x,a.y);
+    if(!cannon||!this.card)return null;
+    const wait=Math.max(0,(Number(cannon.launchReadyTick)||0)-s.tick);
+    if(wait>0){LogUtil.log(`⏳ ${BuildingDefinition.get(cannon.type)?.name||"대포"} 재장전 중 · ${(wait/(s.tps||SimulationTiming.tps())).toFixed(1)}초`);return null}
+    if(LaunchRules.payload(this.card).cost>Math.floor(s.wallet[side]))LogUtil.log("◆ 자원이 모자랍니다. 게이지가 차면 다시 누르세요.");
+    this.hold={pointerId,cannonId:cannon.id,cannonX:cannon.x,cannonY:cannon.y,aimX:a.x,aimY:a.y,armedAt:performance.now(),card:this.card,lastPower:this.lastPower};
+    if(navigator.vibrate)navigator.vibrate(12);
+    return this.hold;
+  }
+  static aim(a){if(this.hold){this.hold.aimX=a.x;this.hold.aimY=a.y}}
+  static cancel(){this.hold=null}
+  static release(a){
+    const hold=this.hold;this.hold=null;if(!hold)return;
+    if(a){hold.aimX=a.x;hold.aimY=a.y}
+    const holdMs=Math.round(performance.now()-hold.armedAt),sess=MatchLifecycle.activeSession();
+    if(!sess?.sim)return;
+    const accepted=sess.command({type:"LAUNCH",cannonId:hold.cannonId,x:Math.round(hold.aimX),y:Math.round(hold.aimY),holdMs,unitType:hold.card});
+    if(!accepted){LogUtil.log("⚠ 발사 명령을 접수할 수 없습니다.");return}
+    if(LaunchRules.overheated(holdMs)){LogUtil.log(`🔥 과열! 대포가 ${LaunchRules.overheatMs/1000}초 멈춥니다 · 자원은 그대로`);if(navigator.vibrate)navigator.vibrate([30,40,30]);return}
+    this.lastPower=LaunchRules.power(holdMs);
+    if(navigator.vibrate)navigator.vibrate(20);
+  }
+}
 class BattlePresentation{
   static tacticalChestModalIsOpen(){return UiRuntimeState.value.modal==="spell-choice"}
   static tacticalChestModalAwaitingOffer(){return UiRuntimeState.value.modalState.spellChoice==="requesting"}
@@ -28147,9 +28407,24 @@ class BattlePresentation{
     },CHARGED_SKILL_HOLD_MS);
   };
 
+  // Launch: a still press arms charging; dragging before that pans the camera.
+  const armLaunchHold=e=>{
+    const drag=ActiveViewState.drag;
+    drag.launchTimer=setTimeout(()=>{
+      drag.launchTimer=0;
+      if(ActiveViewState.drag!==drag||drag.moved||!ActiveViewState.renderer)return;
+      const [vx,vy]=ActiveViewState.renderer.pxToWorld(drag.lastX,drag.lastY);
+      drag.launchHold=LaunchPresentation.begin(UiController.viewToAuth(vx,vy),drag.id);
+    },CHARGED_SKILL_HOLD_MS);
+  };
+  const cancelLaunchHold=()=>{
+    const drag=ActiveViewState.drag;if(drag?.launchTimer){clearTimeout(drag.launchTimer);drag.launchTimer=0}
+    if(drag)drag.launchHold=null;LaunchPresentation.cancel();
+  };
+
   const battlefieldPointerDown=e=>{
     if(ActiveViewState.drag&&ActiveViewState.drag.id!==e.pointerId)return;
-    if(ActiveViewState.drag)cancelChargedSkillHold(true);
+    if(ActiveViewState.drag){cancelChargedSkillHold(true);cancelLaunchHold()}
     audioSystem.unlock();
     e.preventDefault();
     if(!ActiveViewState.renderer)return;
@@ -28177,7 +28452,7 @@ class BattlePresentation{
       moved:false,
       started:performance.now()
     };
-    armChargedSkillHold(e);
+    if(LaunchPresentation.active())armLaunchHold(e);else armChargedSkillHold(e);
   };
 
   const battlefieldPointerMove=e=>{
@@ -28187,6 +28462,10 @@ class BattlePresentation{
     e.preventDefault();
 
     const total=Math.hypot(e.clientX-ActiveViewState.drag.x,e.clientY-ActiveViewState.drag.y);
+    if(ActiveViewState.drag.launchHold){
+      const [vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY);LaunchPresentation.aim(UiController.viewToAuth(vx,vy));
+      ActiveViewState.drag.lastX=e.clientX;ActiveViewState.drag.lastY=e.clientY;return;
+    }
     const hold=ActiveViewState.drag.chargedSkillHold;
     if(hold?.triggered){
       if(hold.accepted&&UiRuntimeState.value.target.type==='flag'){
@@ -28200,7 +28479,7 @@ class BattlePresentation{
     }
     if(total>CHARGED_SKILL_DRAG_PX&&!ActiveViewState.drag.moved){
       ActiveViewState.drag.moved=true;
-      cancelChargedSkillHold(true);
+      cancelChargedSkillHold(true);cancelLaunchHold();
     }
 
     // 건설 모드에서는 짧은 손가락 흔들림을 카메라 드래그로 오인하지 않는다.
@@ -28223,7 +28502,7 @@ class BattlePresentation{
 
   const battlefieldPointerCancel=e=>{
     if(ActiveViewState.drag&&ActiveViewState.drag.id===e.pointerId){
-      cancelChargedSkillHold(true);
+      cancelChargedSkillHold(true);cancelLaunchHold();
       ActiveViewState.drag=null;
     }
   };
@@ -28234,6 +28513,11 @@ class BattlePresentation{
     if(!ActiveViewState.drag||ActiveViewState.drag.id!==e.pointerId)return;
 
     const moved=ActiveViewState.drag.moved||Math.hypot(e.clientX-ActiveViewState.drag.x,e.clientY-ActiveViewState.drag.y)>CHARGED_SKILL_DRAG_PX;
+    if(ActiveViewState.drag.launchTimer){clearTimeout(ActiveViewState.drag.launchTimer);ActiveViewState.drag.launchTimer=0}
+    if(ActiveViewState.drag.launchHold){
+      const [vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY);
+      ActiveViewState.drag=null;LaunchPresentation.release(UiController.viewToAuth(vx,vy));return;
+    }
     const hold=ActiveViewState.drag.chargedSkillHold||null;
     if(hold?.timer)clearTimeout(hold.timer);
     if(hold?.aimTimer){clearTimeout(hold.aimTimer);hold.aimTimer=0}
@@ -28254,6 +28538,8 @@ class BattlePresentation{
     if(!ReplayPresentation.replayPlayer)pointerPreview(e);
     if(moved)return;
     if(ReplayPresentation.replayPlayer)return;
+    // Launch mode has no tap commands: a short tap neither flags nor selects.
+    if(LaunchPresentation.active())return;
 
     const[vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY);
     const a=UiController.viewToAuth(vx,vy);
@@ -28527,6 +28813,7 @@ class BattlePresentation{
   ActiveViewState.minimap.set(ActiveViewState.renderer,s);
   ActiveViewState.minimap.draw();
   audioSystem.processSnapshot(s,ActiveViewState.renderer);
+  LaunchPresentation.render(s,side);
 
   const unlocked=deck.filter(t=>UnitDefinition.get(t)?.tier<=s.tech[side]);
 

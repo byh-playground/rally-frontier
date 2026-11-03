@@ -122,56 +122,30 @@ async function confirmDeck(page) {
   await page.locator('#deckConfirmBtn').click();
 }
 
-async function placeProduction(page) {
-  await page.locator('#militaryTreeBtn').click();
-  await page.locator('#militaryT1Btn').click();
-  // Standard games start at zero minerals; wait for actual worker income.
-  await page.waitForFunction(()=>!document.querySelector('[data-produce-unit="swordsman"]')?.disabled,null,{timeout:120000});
-  await page.locator('[data-produce-unit="swordsman"]').click();
-  const point = await page.evaluate(() => {
-    const q=window.__netcodeE2E,r=q.ActiveViewState.renderer,s=q.MatchLifecycle.activeSession();
-    const side=s.role==='host'?0:1,state=q.ActiveViewState.snap;
-    const base=s.sim.buildings.find(b=>b.side===side&&q.BuildingDefinition.get(b.type)?.isMainBase);
-    if(!base)throw Error('Actual main base is missing');
-    const rect=r.canvas.getBoundingClientRect();
-    for(let radius=150;radius<=650;radius+=40)for(let i=0;i<32;i++){
-      const x=Math.round(base.x+Math.cos(i*Math.PI/16)*radius),y=Math.round(base.y+Math.sin(i*Math.PI/16)*radius);
-      const action={type:'BUILD',building:'barracks',produceType:'swordsman',x,y};
-      if(q.BuildingPresentation.buildValidation(state,side,{...action}))continue;
-      const p=r.projectRenderWorldPosition({x,y:r.world.terrain.surfaces.heightAt(x,y),z:y,groundY:0});
-      const cx=rect.left+(p.x+(r.frameShakeX||0))/r.canvas.width*rect.width;
-      const cy=rect.top+(p.y+(r.frameShakeY||0))/r.canvas.height*rect.height;
-      if(cx<rect.left+30||cx>rect.right-30||cy<rect.top+80||cy>rect.bottom-40)continue;
-      if(document.elementFromPoint(cx,cy)?.id!=='glCanvas')continue;
-      return {x:cx,y:cy,world:{x,y}};
-    }
-    throw Error('No visible valid production site for native canvas placement');
-  });
-  await page.mouse.click(point.x, point.y);
-  await page.waitForFunction(() => {
-    const q=window.__netcodeE2E,s=q.MatchLifecycle.activeSession(),side=s.role==='host'?0:1;
-    return s.sim.buildings.some(b=>b.alive!==false&&b.side===side&&b.produceType==='swordsman');
-  }, null, { timeout: 15000 });
-  await page.locator('#buildFinishBtn').click();
-  return point.world;
-}
-
-async function focusBattle(page) {
-  const point = await page.evaluate(() => {
-    const q=window.__netcodeE2E,r=q.ActiveViewState.renderer,m=q.ActiveViewState.minimap;
-    const rect=m.contentRect();
-    return {x:rect.left+rect.width*.5,y:rect.top+rect.height*.5};
-  });
-  await page.mouse.click(point.x, point.y);
-  const target = await page.evaluate(() => {
+async function launchFromHand(page) {
+  // The launch game has no build step: pick a real hand card, hold on the field, aim, release.
+  const card=page.locator('[data-launch-card]').first();
+  await card.click();
+  await page.waitForFunction(()=>document.querySelector('.launch-card.selected:not(.unaffordable)'),null,{timeout:30000});
+  const type=await card.getAttribute('data-launch-card');
+  const point=await page.evaluate(()=>{
     const r=window.__netcodeE2E.ActiveViewState.renderer,rect=r.canvas.getBoundingClientRect();
-    for(const fy of [.55,.65,.45])for(const fx of [.5,.4,.6]){
+    for(const fy of [.4,.5,.3])for(const fx of [.5,.6,.4]){
       const x=rect.left+rect.width*fx,y=rect.top+rect.height*fy;
       if(document.elementFromPoint(x,y)?.id==='glCanvas')return {x,y};
     }
-    throw Error('Unobstructed native flag target missing');
+    throw Error('Unobstructed native launch hold point missing');
   });
-  await page.mouse.click(target.x,target.y);
+  await page.mouse.move(point.x,point.y);
+  await page.mouse.down();
+  await page.waitForTimeout(250+800);
+  await page.mouse.move(point.x+8,point.y-24,{steps:4});
+  await page.mouse.up();
+  await page.waitForFunction(()=>{
+    const s=window.__netcodeE2E.MatchLifecycle.activeSession();
+    return s.replayRecorder?.commands?.some(c=>c.actor===s.role&&c.action?.type==='LAUNCH');
+  },null,{timeout:15000});
+  return {type,point};
 }
 
 async function runRole(browser, url, humanRole) {
@@ -219,8 +193,7 @@ async function runRole(browser, url, humanRole) {
       assert.ok(channels.some(c=>!c.ordered&&c.maxRetransmits===0),`${role}: unreliable input carrier open`);
       assert.ok(channels.filter(c=>c.ordered&&c.maxRetransmits===null).length>=2,`${role}: reliable lobby/control carriers open`);
     }
-    const productionPoint=await placeProduction(page);
-    await focusBattle(page);
+    const launch=await launchFromHand(page);
     progressTimer=setInterval(async()=>{
       const telemetry=await page.evaluate(()=>window.__netcodeE2E.telemetry()).catch(()=>null);
       if(!telemetry)return;
@@ -231,9 +204,9 @@ async function runRole(browser, url, humanRole) {
       const q=window.__netcodeE2E,match=q.MatchLifecycle.singleMatch;
       if(Object.values(match.sessions).some(s=>s.simulationFatal))throw Error('Simulation fatal in actual UI match');
       const human=match.sessions[match.humanRole],side=human.role==='host'?0:1;
-      return human.sim.units.some(u=>u.alive&&u.side===side&&u.type==='swordsman')
+      return human.sim.units.some(u=>u.alive&&u.side===side)
         &&(match.bot.commandExecutor.stats.applied||0)>0
-        &&human.sim.buildings.some(b=>b.alive!==false&&b.side===1-side&&b.produceType)
+        &&human.sim.units.some(u=>u.alive&&u.side===1-side)
         &&q.observeCombat().length>0;
     },null,{timeout:Number(process.env.QA_BATTLE_TIMEOUT_MS)||180000});
     clearInterval(progressTimer);progressTimer=null;
@@ -241,8 +214,8 @@ async function runRole(browser, url, humanRole) {
     const combatFocus=await page.evaluate(()=>{
       const q=window.__netcodeE2E,s=q.MatchLifecycle.activeSession(),r=q.ActiveViewState.renderer,m=q.ActiveViewState.minimap;
       const side=s.role==='host'?0:1;
-      const unit=s.sim.units.find(u=>u.alive&&u.side===side&&!q.UnitDefinition.get(u.type)?.economyWorker&&u.target!=null)
-        ||s.sim.units.find(u=>u.alive&&u.side===side&&u.type==='swordsman');
+      const unit=s.sim.units.find(u=>u.alive&&u.side===side&&u.target!=null)
+        ||s.sim.units.find(u=>u.alive&&u.side===side);
       const rect=m.contentRect();
       return {x:rect.left+r.viewX(unit.x)/r.world.width*rect.width,
         y:rect.top+r.viewY(unit.y)/r.world.height*rect.height};
@@ -255,8 +228,8 @@ async function runRole(browser, url, humanRole) {
       'Live peers agree on an actual public SDK confirmed state hash');
     assert.ok(Number.isInteger(battle.sessions.host.confirmedStateHash));
     assert.ok(battle.aiHistory.some(c=>c.status==='applied'&&c.netcodeSequence>0&&c.seq>0),'AI receipt retains SDK identity and canonical game sequence');
-    assert.ok(battle.sessions[humanRole].recordedCommands.some(c=>c.actor===humanRole&&c.action==='BUILD'));
-    assert.ok(battle.sessions[humanRole].recordedCommands.some(c=>c.actor===humanRole&&c.action==='SET_FLAG'));
+    assert.ok(battle.sessions[humanRole].recordedCommands.some(c=>c.actor===humanRole&&c.action==='LAUNCH'));
+    assert.ok(battle.aiHistory.some(c=>c.status==='applied'&&c.action==='LAUNCH'),'AI launches through the same command');
     await page.locator('#matchMenuBtnGame').click();
     await page.locator('#matchMenuSurrenderBtn').click();
     await page.locator('#result').waitFor({state:'visible',timeout:15000});
@@ -295,7 +268,7 @@ async function runRole(browser, url, humanRole) {
     assert.equal(await page.evaluate(()=>!!window.__netcodeE2E.ReplayPresentation.replayPlayer),false);
     assert.deepEqual(errors,[],'No uncaught exceptions across normal match and replay');
     assert.ok(!consoleErrors.some(m=>/simulation fatal|CONTRACT_FATAL/i.test(m)),consoleErrors.join('\n'));
-    const result={humanRole,initial,productionPoint,battle,ended,replay,pageErrors:errors,consoleErrors};
+    const result={humanRole,initial,launch,battle,ended,replay,pageErrors:errors,consoleErrors};
     fs.writeFileSync(path.join(output,humanRole+'-result.json'),JSON.stringify(result,null,2));
     return result;
   } catch(error) {
