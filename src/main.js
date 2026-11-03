@@ -18574,6 +18574,8 @@ class GLRenderer{
     const p=this.projectedCoordinatesAtScreen(px,py);
     return TerrainSurfaceProjection.forAtlas(this.world.terrain.surfaces).pickSurface(p.x,p.y,this.orientationRole()==='guest');
   }
+  // A hidden battlefield (result screen, closed tab) has no layout box, so its screen points map nowhere.
+  hasDisplayArea(){const rect=this.canvas.getBoundingClientRect();return rect.width>0&&rect.height>0}
   pxToWorld(cx,cy){
     const rect=this.canvas.getBoundingClientRect();
     const stable=this.sceneCoordinatesAtDisplay((cx-rect.left)/rect.width*this.canvas.width,(cy-rect.top)/rect.height*this.canvas.height,{sampled:true});
@@ -28724,6 +28726,11 @@ class BattlePresentation{
     pointerButtons:{0:'battlefield'},touchAction:'none',
     onPointer:point=>{
       const event=point.originalEvent||point;
+      // Points on a hidden battlefield cannot aim: a press there is ignored and a release cancels the hold.
+      if(point.type!=='cancel'&&ActiveViewState.renderer&&!ActiveViewState.renderer.hasDisplayArea()){
+        if(point.type==='up')battlefieldPointerCancel(event);
+        return;
+      }
       if(point.type==='down')battlefieldPointerDown(event);
       else if(point.type==='move')battlefieldPointerMove(event);
       else{
