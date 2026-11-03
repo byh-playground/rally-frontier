@@ -34,7 +34,7 @@ test('Pages artifact preserves every source byte and records separate revision p
   assert.deepEqual(metadata.gamekit, { repository: lock.repository, sourceCommit: lock.sourceCommit, distCommit: lock.distCommit });
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, '_site/build.json'))), metadata);
   assert(!fs.existsSync(path.join(dir, '_site/.cache')));
-  assert(fs.readFileSync(path.join(dir, '_site/src/main.js'), 'utf8').includes('const BUILD_ID="development";'));
+  assert(fs.readFileSync(path.join(dir, '_site/src/core/build-info.js'), 'utf8').includes('const BUILD_ID="development";'));
   fs.writeFileSync(path.join(dir, '_site/stale.html'), 'old');
   buildPages(dir);
   assert(!fs.existsSync(path.join(dir, '_site/stale.html')));
@@ -47,7 +47,7 @@ test('missing source entrypoint fails and removes stale artifact before verifica
   assert(!fs.existsSync(path.join(dir, '_site')));
 });
 test('source SDK module map must exactly match validated lock provenance', t => {
-  const dir = fixture(t), main = path.join(dir, 'src/main.js');
+  const dir = fixture(t), main = path.join(dir, 'src/core/gamekit.js');
   fs.writeFileSync(main, fs.readFileSync(main, 'utf8').replace('"camera":"camera.js"', '"camera":"extra.js"'));
   assert.throws(() => verifySource(dir), /module map mismatch: camera/);
 });
@@ -71,7 +71,7 @@ for (const [name, change] of [
 });
 
 test('native source provenance reads only the canonical dependency lock', t => {
- const dir=fixture(t), file=path.join(dir,'src/main.js');
+ const dir=fixture(t), file=path.join(dir,'src/core/gamekit.js');
  fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace("lock:new URL('gamekit.lock.json'","lock:new URL('other-lock.json'"));
  assert.throws(()=>verifySource(dir),/lock descriptor mismatch/);
 });

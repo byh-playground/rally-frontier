@@ -3,7 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-const html = fs.readFileSync(path.join(__dirname, '../src/main.js'), 'utf8');
+// The grids and the StrategySim query methods are sliced from their own modules.
+const html = ['../src/sim/spatial-grids.js', '../src/sim/strategy-sim.js'].map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n');
 const start = html.indexOf('class DeterministicCollisionGrid{');
 const end = html.indexOf('// Each circle\'s own swept bounds', start);
 assert(start >= 0 && end > start, 'Collision grid class markers must exist');
@@ -12,7 +13,7 @@ const RangeUtil = { clamp: (value, min, max) => Math.max(min, Math.min(max, valu
 const CollisionGrid = new Function('FP', 'RangeUtil', 'COLLISION_SPATIAL_CELL', `${html.slice(start, end)}; return DeterministicCollisionGrid;`)(FP, RangeUtil, 64);
 const unitGridStart = html.indexOf('class DeterministicUnitSpatialGrid{');
 const buildingGridStart = html.indexOf('class DeterministicBuildingSpatialGrid{', unitGridStart);
-const simulationStart = html.indexOf('class StateValue{', buildingGridStart);
+const simulationStart = html.indexOf('\nexport {', buildingGridStart);
 assert(unitGridStart >= 0 && buildingGridStart > unitGridStart && simulationStart > buildingGridStart,
   'Unit and building target grid markers must exist');
 const UnitGrid = new Function('SIM_SPATIAL_CELL', 'RangeUtil',
@@ -49,7 +50,7 @@ function queryFixture(units) {
 }
 
 test('collision grid defaults to 64-world-unit cells and accepts variable query ranges', () => {
-  assert.match(html, /const COLLISION_SPATIAL_CELL=64;/);
+  assert.match(fs.readFileSync(path.join(__dirname, '../src/definitions/world-rules.js'), 'utf8'), /const COLLISION_SPATIAL_CELL=64;/);
   const gridSource = html.slice(start, end);
   assert.match(gridSource, /this\.cellYFP\(u\.fy\)\*this\.cols\+this\.cellXFP\(u\.fx\)/,
     'center insertion uses the integer y*columns+x bucket index');
