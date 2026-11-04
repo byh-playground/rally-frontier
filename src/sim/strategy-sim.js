@@ -1,7 +1,7 @@
 // The deterministic lockstep strategy simulation.
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { Building, Projectile, TerrainQuery, Unit, VisionField } from './entities.js';
-import { MovementComponent, StateContract, StateValue } from './components.js';
+import { StateContract, StateValue } from './components.js';
 import { RallyStateCodec } from '../session/game-session.js';
 import { LaunchRules } from './launch-rules.js';
 import { DeterministicBuildingSpatialGrid, DeterministicCollisionGrid, DeterministicSweptCollisionGrid, DeterministicUnitSpatialGrid } from './spatial-grids.js';
@@ -13,7 +13,7 @@ import { DAMAGE_CLASS_MATRIX, CAPTURE_DECAY_PER_TICK, CAPTURE_DURATION_MS, CAPTU
 import { PerformanceTelemetry } from '../diagnostics/performance-telemetry.js';
 import { ALLY_SOFT_CORRECTION_FRACTION, ALLY_SOFT_IDLE_RADIUS_FRACTION, ALLY_SOFT_MAX_RADIUS_FRACTION, ALLY_SOFT_ITERATIONS, ALLY_SOFT_SPEED_FRACTION, BALANCE_HISTORY_EVERY_MS, BALANCE_HISTORY_MAX, BALANCE_SAMPLE_EVERY_MS, COLLISION_NORMAL, COLLISION_RADIUS_SCALE, COLLISION_SPATIAL_CELL, PERF_SAMPLE_EVERY_MS, SIM_SPATIAL_CELL, TERRAIN_ATTACK_REVEAL_MS } from '../definitions/world-rules.js';
 import { WorldContext } from './world-context.js';
-import { AdaptiveNavigationDemand, InteractionGeometry, NavigationGoal, SurfaceContactGeometry, SurfaceMotion, SweptCircleContact, TerrainNavigation } from './navigation.js';
+import { InteractionGeometry, NavigationGoal, SurfaceContactGeometry, SurfaceMotion, SweptCircleContact, TerrainNavigation } from './navigation.js';
 import { FP } from '../core/config.js';
 import { RallyNetcode } from '../core/gamekit.js';
 import { SimulationTiming } from '../main.js';
@@ -50,7 +50,7 @@ class SimulationRuntimeState{
   static initialize(sim,{newMatch=false}={}){
     sim.runtimeEpoch=(sim.runtimeEpoch||0)+1;
     this.collision(sim);this.spatial(sim);this.visibility(sim);
-    sim.navigationDemandScope=null;sim.navigationRevision=newMatch?0:(Number.isSafeInteger(sim.navigationRevision)&&sim.navigationRevision>=0?sim.navigationRevision:0);sim.navigation=new TerrainNavigation(sim);
+    sim.navigation=new TerrainNavigation(sim);
     sim.perfStats=PerformanceTelemetry.createLocalPerfStats();sim._perfCollect=null;
     if(newMatch||!sim.balanceStats)sim.balanceStats=PerformanceTelemetry.createLocalBalanceStats();
     sim.commandReceipts=[];
@@ -71,16 +71,15 @@ class StrategySim{
   // Runtime owners declare only the local/derived exclusions; entity owners keep
   // their existing StateContracts and serialization.
   static stateContract=new StateContract({}, {presentation:["events","perfStats","balanceStats","_perfCollect"],derived:[
-    "chargedHeldIds","navigationDemandScope","world","tps","disposed","runtimeEpoch","commandReceipts",
+    "chargedHeldIds","world","tps","disposed","runtimeEpoch","commandReceipts",
     "collisionGrid","collisionSweepGrid","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCandidateBuffer","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
     "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapSideHeads","hardFixSapSideNext","hardFixSapSidePrev","hardFixSapSideHeaps","hardFixSapMarks","hardFixSapEpoch",
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","spatialQueryScopeBuffers","spatialQueryScopeDepth","maxUnitRadius","targetLevelMemo",
-    "visionFields","navigation","nextRoutePathId","routePathStore","routePathIndex"
+    "visionFields","navigation"
   ]});
   static createForMatch({draft,seed,rules=GameRuleDefinition.current}={}){return new StrategySim(draft,seed,rules)}
   constructor(draftState,seed,rules=GameRuleDefinition.current){
     this.seed=seed>>>0;this.rules=rules||GameRuleDefinition.current;this.tps=RangeUtil.clamp(Math.round(Number(this.rules?.simulation?.tps)||SIM_TPS),10,30);this.mapDescriptor=MapGeneration.generateMapDescriptor({rules:this.rules,seed:this.seed,roundNumber:this.rules?.roundNumber||1});StateValue.freeze(this.mapDescriptor);this.world=WorldContext.fromMap(this.mapDescriptor);this.tick=0;this.seq=0;this.units=[];this.buildings=[];this.constructionOrders=[];this.navigationAdmissions=[];this.projectiles=[];this.events=[];this.scheduled=new Map();
-    this.nextRoutePathId=1;this.routePathStore=new Map();this.routePathIndex=new Map();
     this.wallet=[0,1].map(()=>LaunchRules.startingWallet);
     this.launchIncomeCarry=[0,0];
     // Per-side match totals for the result screen: shots fired, grains sent, enemy units killed.
@@ -147,7 +146,7 @@ class StrategySim{
     const alive=ref.isBuilding?ref.entity.alive!==false:!!ref.entity.alive;
     return alive?ref:null;
   }
-  markBuildingSpatialDirty(){this.buildingSpatialDirty=true;if(this.navigation){this.navigation.sceneTick=-1;this.navigation.sceneRevision=undefined}AdaptiveNavigationDemand.invalidate(this)}
+  markBuildingSpatialDirty(){this.buildingSpatialDirty=true;if(this.navigation)this.navigation.sceneTick=-1}
   ensureBuildingSpatial(){
     if(!this.buildingSpatial)this.buildingSpatial=new DeterministicBuildingSpatialGrid(SIM_SPATIAL_CELL,this.world);
     if(this.buildingSpatialDirty){this.buildingSpatial.reset(this.buildings);this.buildingSpatialDirty=false}
@@ -1402,9 +1401,7 @@ class StrategySim{
   step(){
     if(this.disposed)throw new Error("종료된 StrategySim은 다시 진행할 수 없습니다.");
     const started=typeof performance!=="undefined"?performance.now():null;
-    AdaptiveNavigationDemand.begin(this);
     try{return this.stepSimulation()}finally{
-      AdaptiveNavigationDemand.end(this);
       // Coarse timing covers every tick, including one-off commands and cold paths.
       // The detailed stage/candidate counters below remain sampled once per second.
       if(started!==null){
@@ -1474,7 +1471,6 @@ class StrategySim{
     winner=this.netcodeMatchResult?.winner||this.baseOutcome();
     this.updateBalanceTelemetry(winner);
     this.cleanupDeadEntities();
-    this.collectUnusedRoutePaths();
     const postMs=profile?now()-mark:0;
 
     if(profile){
@@ -1501,79 +1497,6 @@ class StrategySim{
     this._perfCollect=null;
     return winner;
   }
-  routePathSignature(recipe){return StableSerializationUtil.stableStringify(recipe)}
-  routePathBody(data,id){
-    const root=data.tailId===null?null:this.routePathStore.get(data.tailId);if(data.tailId!==null&&!root)throw new Error('Missing shared route root');
-    const recipe=StateValue.freeze(StateValue.copy(data.recipe)),points=StateValue.freeze(data.points.slice());
-    const body={id,key:data.key,radius:data.radius,ignore:data.ignore,topology:data.topology,points,tailId:data.tailId,tailStart:data.tailStart,recipe};
-    Object.defineProperties(body,{length:{value:points.length/2+(root?root.length-data.tailStart:0)},rootPathId:{value:root?.rootPathId??root?.id??data.rootPathId??id}});
-    return StateValue.freeze(body);
-  }
-  internRoutePath(data){
-    if(!data||!Array.isArray(data.points)||data.points.length>RallyStateCodec.MAX_ARRAY||!data.recipe||typeof data.key!=='string'||!Number.isFinite(data.radius)||typeof data.ignore!=='boolean'||typeof data.topology!=='string'||data.tailId!==null&&!this.routePathStore.has(data.tailId))throw new Error('Invalid runtime route path');
-    const points=[];for(const point of data.points){if(!point||!Number.isFinite(point.x)||!Number.isFinite(point.y))throw new Error('Invalid runtime route waypoint');points.push(point.x,point.y)}
-    const root=data.tailId===null?null:this.routePathStore.get(data.tailId);
-    if(data.tailId===null?data.tailStart!==0:!root||root.tailId!==null||!Number.isSafeInteger(data.tailStart)||data.tailStart<0||data.tailStart>=root.length||root.key!==data.key||root.radius!==data.radius||root.ignore!==data.ignore)throw new Error('Invalid runtime shared route root');
-    if(points.length/2+(root?root.length-data.tailStart:0)>RallyStateCodec.MAX_ARRAY)throw new Error('Runtime route path exceeds array budget');
-    const signature=this.routePathSignature(data.recipe),existing=this.routePathIndex.get(signature);if(existing!==undefined)return existing;
-    const id=this.nextRoutePathId;if(!Number.isSafeInteger(id)||id<1||id>=Number.MAX_SAFE_INTEGER)throw new Error('Runtime route ID space exhausted');this.nextRoutePathId=id+1;
-    const path=this.routePathBody({...data,points},id);this.routePathStore.set(id,path);this.routePathIndex.set(signature,id);return id;
-  }
-  collectUnusedRoutePaths(){
-    const used=new Set();
-    for(const unit of this.units)for(const route of unit.movement?.routes||[]){const path=this.routePathStore.get(route.pathId);if(path){used.add(path.id);used.add(path.rootPathId??path.id)}}
-    let changed=false;
-    for(const id of this.routePathStore.keys())if(!used.has(id)){this.routePathStore.delete(id);changed=true}
-    if(changed){this.routePathIndex.clear();for(const path of this.routePathStore.values())this.routePathIndex.set(this.routePathSignature(path.recipe),path.id);if(this.navigation)this.navigation.routeTemplates=null}
-  }
-  clearRuntimeRouteCache({resetIds=false,clearHandles=true}={}){
-    this.routePathStore?.clear();this.routePathIndex?.clear();if(resetIds)this.nextRoutePathId=1;
-    if(clearHandles)for(const unit of this.units||[])if(unit.movement){unit.movement.routes=[];unit.movement.routeIndex=-1}
-    if(this.navigation){this.navigation.routeTemplates=null;this.navigation.routeChecks=new WeakMap()}
-  }
-  static routeObstacleSignature(buildings=[]){
-    const records=[];for(const b of buildings||[])if(b&&b.alive!==false&&b.hp>0){const d=BuildingDefinition.get(b.type),r=(d?.size||35)+NAV_BUILDING_MARGIN;records.push([String(b.id),b.type,b.x,b.y,r,!!d?.isTerrainBarrier])}
-    records.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0);return JSON.stringify(records);
-  }
-  runtimeRouteCacheForState(state,mapDescriptor){
-    this.navigation?.sync();
-    const handles=[];for(const unit of state.units||[])for(const route of unit?.movement?.routes||[])handles.push(route);
-    const targetRevision=state.navigationRevision,signature=StrategySim.routeObstacleSignature(state.buildings);
-    const currentRevision=this.navigationRevision;
-    const currentSignature=this.navigation?.topology?.records?JSON.stringify(this.navigation.topology.records.map(c=>[String(c.id),c.type,c.x,c.y,c.r,c.terrainBarrier])):StrategySim.routeObstacleSignature(this.buildings);
-    const sameMap=mapDescriptor===this.mapDescriptor||StableSerializationUtil.stableStringify(mapDescriptor)===StableSerializationUtil.stableStringify(this.mapDescriptor);
-    const reusable=this.routePathStore instanceof Map&&this.routePathIndex instanceof Map&&sameMap&&currentRevision===targetRevision&&this.navigationRevision===targetRevision&&currentSignature===signature&&handles.every(route=>{
-      const recipe=MovementComponent.decodeRouteRecipe(route?.recipe);
-      const pathId=this.routePathIndex.get(this.routePathSignature(recipe)),path=this.routePathStore.get(pathId);
-      if(!path||route.cursor>=Math.max(1,path.length))return false;
-      if(recipe.kind!=='join')return true;
-      const root={kind:recipe.root.kind,key:recipe.key,radius:recipe.radius,ignore:recipe.ignore,fromX:recipe.root.fromX,fromY:recipe.root.fromY,planner:recipe.root.planner};
-      return this.routePathIndex.has(this.routePathSignature(root));
-    });
-    if(reusable)return{routePathStore:this.routePathStore,routePathIndex:this.routePathIndex,nextRoutePathId:this.nextRoutePathId};
-    const staged=Object.create(StrategySim.prototype);
-    Object.assign(staged,{mapDescriptor,world:WorldContext.fromMap(mapDescriptor),buildings:(state.buildings||[]).map(Building.fromState),units:(state.units||[]).map(Unit.fromState),tick:state.tick||0,navigationRevision:targetRevision,nextRoutePathId:1,routePathStore:new Map(),routePathIndex:new Map(),runtimeEpoch:0});
-    staged.navigation=new TerrainNavigation(staged);staged.navigation.sync();staged.rebuildRuntimeRouteCache();
-    return{routePathStore:staged.routePathStore,routePathIndex:staged.routePathIndex,nextRoutePathId:staged.nextRoutePathId};
-  }
-  rebuildRuntimeRouteCache(){
-    for(const unit of this.units||[])for(const route of unit.movement?.routes||[]){
-      const recipe=MovementComponent.decodeRouteRecipe(route.recipe),pathId=this.navigation.materializeRouteRecipe(recipe);if(pathId===null)continue;
-      const path=this.routePathStore.get(pathId);if(!path||route.cursor>=Math.max(1,path.length))throw new Error('Runtime route recipe cursor is invalid');
-      Object.defineProperty(route,'pathId',{value:pathId,writable:true,enumerable:false,configurable:true});
-      Object.defineProperty(route,'routeRecipe',{value:recipe,writable:true,enumerable:false,configurable:true});
-    }
-  }
-  bindRuntimeRouteHandles(){
-    for(const unit of this.units||[])for(const route of unit.movement?.routes||[]){
-      const recipe=MovementComponent.decodeRouteRecipe(route.recipe),pathId=this.routePathIndex.get(this.routePathSignature(recipe)),path=this.routePathStore.get(pathId);
-      if(pathId===undefined||!path||route.cursor>=Math.max(1,path.length))throw new Error('Runtime route cache is incomplete');
-      Object.defineProperty(route,'pathId',{value:pathId,writable:true,enumerable:false,configurable:true});
-      Object.defineProperty(route,'routeRecipe',{value:recipe,writable:true,enumerable:false,configurable:true});
-      this.navigation.routeChecks.set(path,{records:this.navigation.circles,key:path.topology});
-    }
-  }
-  // The side whose main base still stands wins; both falling on one tick is a draw.
   baseOutcome(){
     const alive=side=>this.buildings.some(b=>b.alive!==false&&b.hp>0&&b.side===side&&BuildingDefinition.isMainBase(b.type));
     const host=alive(0),guest=alive(1);
@@ -1584,8 +1507,6 @@ class StrategySim{
   exportState({includeIdentity=true}={}){
     this.navigation?.sync();
     const source={...this,scheduled:[...this.scheduled.entries()]};
-    // Runtime path bodies stay in the local route cache. Unit handles capture
-    // only the goal, movement profile, route origin, and deterministic recipe.
     delete source.units;delete source.buildings;delete source.projectiles;
     // SDK mementos reference these immutable definitions by match identity. Omit
     // them before capture/clone, rather than copying then discarding a large map.
@@ -1600,7 +1521,6 @@ class StrategySim{
     if(rollback){
       for(const key of Object.keys(retained))if(s[key]!==retained[key]&&StableSerializationUtil.stableStringify(s[key]??null)!==StableSerializationUtil.stableStringify(retained[key]))throw new Error(`롤백의 ${key} 정의가 현재 경기와 다릅니다.`);
     }
-    const routeMapDescriptor=s.mapDescriptor??retained.mapDescriptor,routeCache=this.runtimeRouteCacheForState(s,routeMapDescriptor);
     this.disposed=false;
     const source={...s};
     if(rollback)for(const key of Object.keys(retained))delete source[key];
@@ -1616,26 +1536,22 @@ class StrategySim{
     this.scheduled=new Map(scheduled);
     this.events=[];
     SimulationRuntimeState.initialize(this);
-    this.navigation.sceneTick=-1;this.navigation.sceneRevision=undefined;
     if(retainedNavigation&&retainedNavigation.geometry===this.world.terrain){
       this.navigation=retainedNavigation;
-      this.navigation.sceneTick=-1;this.navigation.sceneRevision=undefined;
       this.navigation.motion=new SurfaceMotion(this.navigation);
-      this.navigation.sync({preserveRevision:true});
-    }else this.navigation.sync({preserveRevision:true});
-    this.routePathStore=routeCache.routePathStore;this.routePathIndex=routeCache.routePathIndex;this.nextRoutePathId=routeCache.nextRoutePathId;
-    this.navigation.routeChecks=new WeakMap();this.navigation.routeTemplates=null;this.bindRuntimeRouteHandles();
+    }
+    this.navigation.sceneTick=-1;this.navigation.sync();
     this.rebuildRuntimeIndexes();
   }
   snapshot(){
     const started=performance.now();
     try{
       this.navigation?.sync();
-      return TerrainNavigation.bindSnapshot({
-        tick:this.tick,tps:this.tps,navigationRevision:this.navigationRevision,decks:this.decks.map(d=>d.slice()),mapDescriptor:this.mapDescriptor,
+      return ({
+        tick:this.tick,tps:this.tps,decks:this.decks.map(d=>d.slice()),mapDescriptor:this.mapDescriptor,
         wallet:this.wallet.slice(),launchStats:StateValue.copy(this.launchStats),flags:CloneUtil.clone(this.flags),capturePoints:CloneUtil.clone(this.capturePoints),
         units:this.units.map(u=>u.toState("view")),buildings:this.buildings.map(b=>b.toState()),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)
-      },this);
+      });
     }finally{const perf=this.perfStats;perf.snapshotMs=performance.now()-started;perf.snapshotCumulativeMs=(perf.snapshotCumulativeMs||0)+perf.snapshotMs;perf.maxSnapshotMs=Math.max(perf.maxSnapshotMs,perf.snapshotMs);perf.snapshotSamples++}
   }
 }

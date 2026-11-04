@@ -1,7 +1,7 @@
 // Terrain geometry, battlefield projection and the terrain surface atlas.
 import { RangeUtil } from '../core/game-rules.js';
 import { MapGeometry } from './map-geometry.js';
-import { NavigationGoal, NavigationGraphOrder } from './navigation.js';
+import { NavigationGoal } from './navigation.js';
 import { FP } from '../core/config.js';
 
 // Derived, immutable world geometry. Each simulation and renderer owns a context;
@@ -120,42 +120,6 @@ class TerrainGeometry{
       if(best)return best;
     }
     return null;
-  }
-}
-class NavigationMinHeap{
-  constructor(compare=(a,b)=>a-b){this.ids=[];this.costs=[];this.compare=compare}
-  get length(){return this.ids.length}
-  push(id,cost){let i=this.ids.length;this.ids.push(id);this.costs.push(cost);
-    while(i){const p=(i-1)>>1;if(this.costs[p]<cost||(this.costs[p]===cost&&this.compare(this.ids[p],id)<=0))break;this.ids[i]=this.ids[p];this.costs[i]=this.costs[p];i=p}
-    this.ids[i]=id;this.costs[i]=cost;
-  }
-  pop(){const id=this.ids[0],cost=this.costs[0],lastId=this.ids.pop(),lastCost=this.costs.pop();
-    if(this.ids.length){let i=0;while(true){let c=i*2+1;if(c>=this.ids.length)break;const r=c+1;
-      if(r<this.ids.length&&(this.costs[r]<this.costs[c]||(this.costs[r]===this.costs[c]&&this.compare(this.ids[r],this.ids[c])<0)))c=r;
-      if(this.costs[c]>lastCost||(this.costs[c]===lastCost&&this.compare(this.ids[c],lastId)>=0))break;
-      this.ids[i]=this.ids[c];this.costs[i]=this.costs[c];i=c;
-    }this.ids[i]=lastId;this.costs[i]=lastCost}
-    return{id,cost};
-  }
-}
-class NavigationAStarScratch{
-  constructor(layer){this.layer=layer;this.capacity=0;this.epoch=0;this.heap=new NavigationMinHeap((a,b)=>NavigationGraphOrder.node(layer.fieldNodes[a],layer.fieldNodes[b]))}
-  begin(size){
-    if(size>this.capacity){
-      this.capacity=Math.max(size,this.capacity*2,64);
-      this.stamp=new Uint32Array(this.capacity);this.closed=new Uint32Array(this.capacity);
-      this.cost=new Float64Array(this.capacity);this.estimate=new Float64Array(this.capacity);
-      this.whole=new Float64Array(this.capacity);this.fraction=new Float64Array(this.capacity);
-      this.previous=new Int32Array(this.capacity);this.via=new Int32Array(this.capacity);this.epoch=0;
-    }
-    if(++this.epoch===0xffffffff){this.stamp.fill(0);this.closed.fill(0);this.epoch=1}
-    this.heap.ids.length=0;this.heap.costs.length=0;return this;
-  }
-  static heuristic(node,goal,radius){
-    // round(d) with a minimum edge cost of 1 is >= d/2; the final
-    // round(d) may be zero, so subtract .5 once. This is a consistent
-    // lower bound even for tiny graph edges and continuous terminal regions.
-    return Math.max(0,(Math.hypot(node.x-goal.x,node.y-goal.y)-radius)*512-.5);
   }
 }
 class PolygonTriangulation{
@@ -710,4 +674,4 @@ class TerrainSurfaceAtlas{
   }
 }
 
-export { BattlefieldProjection, NavigationAStarScratch, NavigationMinHeap, NavigationObstacleIndex, PolygonTriangulation, TerrainGeometry, TerrainSurfaceAtlas, TerrainSurfaceProjection };
+export { BattlefieldProjection, NavigationObstacleIndex, PolygonTriangulation, TerrainGeometry, TerrainSurfaceAtlas, TerrainSurfaceProjection };
