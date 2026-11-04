@@ -10,7 +10,7 @@ import { HashUtil } from '../sim/map-generation.js';
 import { ABILITY_INFO } from '../definitions/balance.js';
 import { ResearchDefinition, UnitSpecialResearchDefinition } from '../definitions/research.js';
 import { BuildingDefinition, buildingHasBuilderApproach, buildingHasReachableBuilder, buildingPlacementEdgeMargin, buildingPlacementInsideWorld, buildingPlacementSeparation } from '../definitions/buildings.js';
-import { DeckRecord, DefenseCardDefinition } from '../definitions/decks.js';
+import { DefenseCardDefinition } from '../definitions/decks.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { NEUTRAL_SIDE, NeutralCampPolicy, SpellDefinition } from '../definitions/cards.js';
 import { DEFENSE_CLUSTER_RADIUS, MINERAL_BUILD_MARGIN, PRODUCTION_CLUSTER_RADIUS } from '../definitions/combat-rules.js';
@@ -23,7 +23,7 @@ class BotController{
   static attach(session,role){
     const bot=new BotController(session,{role});
     session.publishConfirmedSnapshots=true;
-    session.onDraft=state=>{session.draft=state;bot.handleDraft(state)};
+    session.onDraft=state=>{session.draft=state};
     session.onSnapshot=state=>bot.handleSnapshot(state);
     session.onLog=()=>{};session.onResult=()=>bot.stop();session.onNetworkHealth=()=>{};
     return bot;
@@ -53,84 +53,6 @@ class BotController{
   }
 
   stop(){this.enabled=false;this.commandExecutor.dispose("bot-stopped")}
-
-  handleDraft(state){
-    if(!this.enabled||!state)return;
-    if(this.session.matchConfig?.debugScenario||this.session.matchConfig?.campaignScenario)return;
-    if(state.phase==="deck-select"){
-      if(state.deckReady?.[this.role])return;
-      const key=`deck|${state.roomCode}|${this.role}`;
-      if(key===this.lastDraftKey)return;
-      this.lastDraftKey=key;
-      const payload=DeckRecord.defaultBotDeckPayload(`${state.roomCode}|${this.role}`);
-      const commit=()=>{
-        if(!this.enabled)return;
-        const live=this.session.draft;
-        if(live?.phase==="deck-select"&&!live.deckReady?.[this.role]){
-          if(!this.session.deckAct(payload))this.lastDraftKey="";
-        }
-      };
-      if(this.session.matchConfig?.debugScenario)queueMicrotask(commit);else setTimeout(commit,220);
-      return;
-    }
-    if(state.phase!=="draft")return;
-    if(state.draft.chooser!==this.role)return;
-
-    const pair=state.draft.pairs[state.draft.round];
-    if(!pair||pair.length!==2)return;
-
-    const key=`${state.draft.round}|${pair.join("|")}`;
-    if(key===this.lastDraftKey)return;
-    this.lastDraftKey=key;
-
-    const chosen=this.chooseDraftCard(state,pair);
-    setTimeout(()=>{
-      if(!this.enabled)return;
-      const live=this.session.draft;
-      if(live?.phase==="draft"&&live.draft.chooser===this.role){
-        this.session.draftAct({type:"DRAFT_PICK",card:chosen});
-      }
-    },260);
-  }
-
-  chooseDraftCard(state,pair){
-    if(pair.every(id=>!!DefenseCardDefinition.get(id))){
-      return pair[HashUtil.hash(`${state.roomCode}|defense|${this.role}`)%pair.length];
-    }
-    const mine=state.decks[this.role]||[];
-    const roleCounts={};
-    for(const id of mine){
-      const role=UnitDefinition.get(id)?.role||"";
-      roleCounts[role]=(roleCounts[role]||0)+1;
-    }
-
-    const desired={
-      guardian:30,bruiser:18,pikeman:18,
-      ranged:24,skirmisher:20,
-      caster:24,controller:18,support:22,
-      assassin:18,charger:18,artillery:24
-    };
-
-    const score=id=>{
-      const d=UnitDefinition.get(id);
-      let value=desired[d.role]||15;
-      value-=Math.min(2,roleCounts[d.role]||0)*14;
-
-      // 조합 커버리지
-      const hasFront=mine.some(x=>["guardian","bruiser","pikeman"].includes(UnitDefinition.get(x)?.role));
-      const hasRange=mine.some(x=>["ranged","skirmisher","caster","artillery","controller"].includes(UnitDefinition.get(x)?.role));
-      const hasSupport=mine.some(x=>UnitDefinition.get(x)?.role==="support");
-      if(!hasFront&&["guardian","bruiser","pikeman"].includes(d.role))value+=28;
-      if(!hasRange&&["ranged","skirmisher","caster","artillery","controller"].includes(d.role))value+=24;
-      if(!hasSupport&&d.role==="support")value+=18;
-
-      // 동일 점수는 hash로 결정해 매 판 완전히 같은 선택만 반복하지 않음.
-      value+=(HashUtil.hash(`${state.roomCode}|${state.draft.round}|${id}`)%11)/10;
-      return value;
-    };
-
-    return score(pair[0])>=score(pair[1])?pair[0]:pair[1];
-  }
 
   handleSnapshot(snapshot){
     if(!this.enabled||!snapshot||this.session.netcodeSession?.resimulating)return;

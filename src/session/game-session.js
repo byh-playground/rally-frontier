@@ -8,21 +8,19 @@ import { WorkerMixin } from '../sim/unit-mixins.js';
 import { MovementComponent, StateValue } from '../sim/components.js';
 import { ReplayRecorder } from './replay.js';
 import { ActiveViewState } from './runtime-state.js';
-import { DeckGame, DraftGame } from '../sim/match-modes.js';
 import { RecoveryTelemetry } from '../diagnostics/recovery-telemetry.js';
 import { StableSerializationUtil } from '../net/lobby-codec.js';
-import { CloneUtil, HashUtil } from '../sim/map-generation.js';
+import { HashUtil } from '../sim/map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
-import { DeckRecord } from '../definitions/decks.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { NEUTRAL_SIDE } from '../definitions/cards.js';
 import { PerformanceTelemetry } from '../diagnostics/performance-telemetry.js';
 import { AdaptiveNavigationDemand, TerrainNavigation } from '../sim/navigation.js';
 import { DISCONNECT_GRACE_MS, LOCKSTEP_INPUT_DELAY_BASE_MS, LOCKSTEP_INPUT_DELAY_MAX_MS, MAX_CATCHUP_STEPS_PER_PULSE, NETWORK_HEALTH_POLL_MS, SIM_SUSPENSION_THRESHOLD_MS, SNAPSHOT_EMIT_INTERVAL_MS } from '../core/session-timing.js';
-import { DECK_SELECT_TIMEOUT_MS, DRAFT_FINAL_GAME_START_DELAY_MS, DRAFT_PICK_TIMEOUT_MS, SIM_VERSION, netcodeMode } from '../core/config.js';
+import { SIM_VERSION, netcodeMode } from '../core/config.js';
 import { BUILD_META } from '../core/build-info.js';
 import { RallyGamekit, RallyNetcode } from '../core/gamekit.js';
-import { AppLifecycle, CampaignMissionDefinition, CampaignOutcomeRules, CampaignPresentation, ConnectionPresentation, DebugScenarioHarness, DiagnosticPresentation, DraftPresentation, MatchLifecycle, SimulationTiming } from '../main.js';
+import { AppLifecycle, CampaignMissionDefinition, CampaignOutcomeRules, CampaignPresentation, ConnectionPresentation, DebugScenarioHarness, DiagnosticPresentation, MatchLifecycle, SimulationTiming } from '../main.js';
 
 /* =========================
    4. Session / command lockstep
@@ -257,10 +255,9 @@ class GameSession{
     this.matchConfig=GameRuleRuntime.normalizeMatchConfig(matchConfig);
     this.matchPresetId=this.matchConfig.presetId;this.matchRuleOverrides=this.matchConfig.overrides;
     this.roundRules=GameRuleRuntime.resolveMatchRules({presetId:this.matchPresetId,matchOverrides:GameRuleRuntime.mergeGameRules(this.matchRuleOverrides||{},{simulation:{tps:this.matchConfig.simulationTps}})});
-    this.draft=role==='host'?(this.matchConfig.selectionMode==='deck'?DeckGame.initial(roomCode):DraftGame.initial(roomCode)):null;
-    this.commitSeq=0;this.runtimeSeq=0;this.draftProposalSeq=0;this.pendingDraftProposal=null;
-    this.draftGameStartTimer=0;this.draftPickTimer=0;this.deckSelectTimer=0;this.draftPickRound=-1;
-    this.draftPickRemainingMs=Math.max(250,Number(this.roundRules?.draft?.pickTimeoutMs)||DRAFT_PICK_TIMEOUT_MS);this.draftPickLastActiveAt=0;
+    // The live match setup (both sides' cards): Host builds it, Guest receives it with GAME_START.
+    this.draft=null;
+    this.commitSeq=0;this.runtimeSeq=0;
     this.sim=null;this.simulationAdapter=null;this.netcodeSession=null;this.detachNetcodeTransport=null;
     this.netcodeNow=performance.now();this.neutralInput=new Uint8Array(1);this.replayRecorder=null;
     this.pendingNetcodeCommands=new Map();this.lastCommandTicket=null;this.frameOutputs=new Map();this.candidateFrameOutputs=new Map();this.publishedGameTick=0;
@@ -287,8 +284,8 @@ class GameSession{
   getPendingCommandTickets(){return [...this.pendingNetcodeCommands.values()].map(ticket=>StateValue.copy(ticket))}
   cancelScheduledWork(){
     this.navigationPreparationCancel?.();this.navigationPreparationCancel=null;
-    this.clearDisconnectGrace();this.clearPostRecoveryCountdown();this.clearDraftPickTimer();this.clearDeckSelectTimer();
-    for(const key of ['draftGameStartTimer','campaignOutroTimer']){if(this[key])clearTimeout(this[key]);this[key]=0}
+    this.clearDisconnectGrace();this.clearPostRecoveryCountdown();
+    for(const key of ['campaignOutroTimer']){if(this[key])clearTimeout(this[key]);this[key]=0}
     this.stopHeartbeat(false);this.netcodeLoop?.stop();AppLifecycle.unregisterBackgroundSession(this);
   }
   dispose(reason='session-replaced'){
@@ -331,7 +328,7 @@ class GameSession{
     this.simpleRecoveryNeedsManual=false;this.recoveryPhase='idle';this.clearDisconnectGrace();
     this.netcodeLoop?.resetTiming();this.startHeartbeat();
     if(!reconnect)this.start();
-    else if(!this.sim){if(this.role==='guest')this.start();else this.armDraftPickTimer(false)}
+    else if(!this.sim){if(this.role==='guest')this.start()}
     else this.onLog('P2P 재연결 · 공통 코어의 입력 이력으로 재개');
     this.flushDeferredActions();
   }
@@ -439,84 +436,15 @@ class GameSession{
       if(m.matchConfig)this.applyMatchConfig(m.matchConfig,{authoritative:true});
       this.draft=m.state;
       this.commitSeq=m.seq;
-      this.pendingDraftProposal=null;
       this.onDraft(this.draft);
       return
-    }
-    if(m.type==="DRAFT_COMMIT"&&this.role!=="host"){
-      if(m.seq!==this.commitSeq+1){
-        this.pendingDraftProposal=null;
-        this.transport.send({type:"HELLO",simVersion:SIM_VERSION});
-        return
-      }
-
-      this.draft=DraftGame.apply(this.draft,m.actor,m.action);
-      this.commitSeq=m.seq;
-
-      if(
-        this.pendingDraftProposal &&
-        (m.proposalId===this.pendingDraftProposal.proposalId || m.actor===this.role)
-      ){
-        this.pendingDraftProposal=null;
-      }
-
-      this.onDraft(this.draft);
-      return
-    }
-    if(m.type==="DECK_COMMIT"&&this.role!=="host"){
-      if(!this.draft||this.draft.phase!=="deck-select"||m.seq!==this.commitSeq+1){
-        this.pendingDraftProposal=null;
-        this.transport.send({type:"HELLO",simVersion:SIM_VERSION});
-        return;
-      }
-      this.draft=DeckGame.apply(this.draft,m.actor,m.payload);
-      this.commitSeq=m.seq;
-      if(this.pendingDraftProposal&&(m.proposalId===this.pendingDraftProposal.proposalId||m.actor===this.role))this.pendingDraftProposal=null;
-      this.onDraft(this.draft);
-      return;
     }
 
     if(this.role==="host"){
       if(m.type==="HELLO"){
-        if(this.directLiveMatch()){
-          if(!this.draft||this.draft.phase!=="live")this.prepareDirectLiveDraft();
-          if(!this.sim)this.beginGame();
-          else this.transport.send({type:"DRAFT_SYNC",simVersion:SIM_VERSION,seq:this.commitSeq,state:this.draft,matchConfig:this.matchConfig});
-          return;
-        }
-        this.transport.send({type:"DRAFT_SYNC",simVersion:SIM_VERSION,seq:this.commitSeq,state:this.draft,matchConfig:this.matchConfig});return
-      }
-      if(m.type==="DRAFT_PROPOSE"){
-        if(!this.inputAvailable()){
-          return
-        }
-        // stale UI / 중복 제안은 현재 Host 권위 상태로 다시 동기화한다.
-        if(
-          !this.draft ||
-          this.draft.phase!=="draft" ||
-          this.draft.draft.chooser!=="guest" ||
-          Number(m.round)!==this.draft.draft.round ||
-          Number(m.expectedSeq)!==this.commitSeq
-        ){
-          this.transport.send({
-            type:"DRAFT_SYNC",simVersion:SIM_VERSION,
-            seq:this.commitSeq,
-            state:this.draft,
-            matchConfig:this.matchConfig
-          });
-          return
-        }
-
-        this.commitDraft("guest",m.action,m.proposalId);
-        return
-      }
-      if(m.type==="DECK_PROPOSE"){
-        if(!this.inputAvailable())return;
-        if(!this.draft||this.draft.phase!=="deck-select"||this.draft.deckReady?.guest||Number(m.expectedSeq)!==this.commitSeq){
-          this.transport.send({type:"DRAFT_SYNC",simVersion:SIM_VERSION,seq:this.commitSeq,state:this.draft,matchConfig:this.matchConfig});
-          return;
-        }
-        this.commitDeck("guest",m.payload,m.proposalId);
+        if(!this.draft)this.prepareLiveDraft();
+        if(!this.sim)this.beginGame();
+        else this.transport.send({type:"DRAFT_SYNC",simVersion:SIM_VERSION,seq:this.commitSeq,state:this.draft,matchConfig:this.matchConfig});
         return;
       }
     }
@@ -525,11 +453,10 @@ class GameSession{
   static matchSeed(draft,roomCode,matchConfig={}){
     if(matchConfig?.campaignScenario)return matchConfig.campaignScenario.seed;
     if(matchConfig?.debugScenario?.testMode==="mobile-battle"&&Number.isSafeInteger(matchConfig.debugScenario.fixedSeed))return matchConfig.debugScenario.fixedSeed>>>0;
-    return HashUtil.hash(`${roomCode}|${matchConfig?.selectionMode||'draft'}|${JSON.stringify(draft?.decks||{host:[],guest:[]})}|${JSON.stringify(draft?.defenseCards||{host:[],guest:[]})}`);
+    return HashUtil.hash(`${roomCode}|launch|${JSON.stringify(draft?.decks||{host:[],guest:[]})}|${JSON.stringify(draft?.defenseCards||{host:[],guest:[]})}`);
   }
   beginGame(){
     if(this.sim)return false;
-    if(this.draftGameStartTimer){clearTimeout(this.draftGameStartTimer);this.draftGameStartTimer=0}
     const seed=GameSession.matchSeed(this.draft,this.roomCode,this.matchConfig);
     this.transport.send({type:'GAME_START',simVersion:SIM_VERSION,seed,draft:this.draft,matchConfig:this.matchConfig,roundRules:this.roundRules});
     this.startSim(seed);return true;
@@ -872,84 +799,6 @@ enterSimulationFatal(err,{source="simulation",notifyPeer=true,remoteInfo=null}={
     }
     return true;
   }
-clearDeckSelectTimer(){
-    if(this.deckSelectTimer){clearTimeout(this.deckSelectTimer);this.deckSelectTimer=0}
-  }
-deckTimeoutPayload(actor){
-    if(actor!=="host"&&actor!=="guest")return null;
-    return DeckRecord.defaultBotDeckPayload(`${this.roomCode}|deck-timeout|${actor}`);
-  }
-armDeckSelectTimer(reset=false){
-    if(this.role!=="host"){return false}
-    if(!this.draft||this.draft.phase!=="deck-select"){this.clearDeckSelectTimer();return false}
-    const now=Date.now();
-    if(reset||!Number(this.draft.deckSelectDeadlineAt)){
-      this.draft.deckSelectDeadlineAt=now+DECK_SELECT_TIMEOUT_MS;
-      this.onDraft(this.draft);
-      if(this.transportConnected)this.transport.send({type:"DRAFT_SYNC",simVersion:SIM_VERSION,seq:this.commitSeq,state:this.draft,matchConfig:this.matchConfig});
-    }
-    if(this.deckSelectTimer)clearTimeout(this.deckSelectTimer);
-    const pulse=()=>{
-      this.deckSelectTimer=0;
-      if(this.role!=="host"||!this.draft||this.draft.phase!=="deck-select"||this.simEnded){this.clearDeckSelectTimer();return}
-      if(Date.now()>=(Number(this.draft.deckSelectDeadlineAt)||0)){
-        for(const actor of ["host","guest"]){
-          if(this.draft.phase!=="deck-select")break;
-          if(this.draft.deckReady?.[actor])continue;
-          const payload=this.deckTimeoutPayload(actor);
-          if(payload)this.commitDeck(actor,payload,null);
-        }
-        return;
-      }
-      this.deckSelectTimer=setTimeout(pulse,200);
-    };
-    this.deckSelectTimer=setTimeout(pulse,200);
-    return true;
-  }
-clearDraftPickTimer(){
-    if(this.draftPickTimer){clearTimeout(this.draftPickTimer);this.draftPickTimer=0}
-    this.draftPickRound=-1;
-    this.draftPickRemainingMs=Math.max(250,Number(this.roundRules?.draft?.pickTimeoutMs)||DRAFT_PICK_TIMEOUT_MS);
-    this.draftPickLastActiveAt=0;
-  }
-armDraftPickTimer(reset=false){
-    if(this.role!=="host"){return false}
-    if(!this.draft||this.draft.phase!=="draft"){this.clearDraftPickTimer();return false}
-    const round=Number(this.draft.draft?.round);
-    if(reset||round!==this.draftPickRound){
-      this.draftPickRound=round;
-      this.draftPickRemainingMs=Math.max(250,Number(this.roundRules?.draft?.pickTimeoutMs)||DRAFT_PICK_TIMEOUT_MS);
-      this.draftPickLastActiveAt=performance.now();
-    }else if(!this.draftPickLastActiveAt){
-      this.draftPickLastActiveAt=performance.now();
-    }
-    if(this.draftPickTimer)clearTimeout(this.draftPickTimer);
-    const pulse=()=>{
-      this.draftPickTimer=0;
-      if(this.role!=="host"||!this.draft||this.draft.phase!=="draft"||this.simEnded){this.clearDraftPickTimer();return}
-      const currentRound=Number(this.draft.draft?.round);
-      if(currentRound!==this.draftPickRound){this.armDraftPickTimer(true);return}
-      const now=performance.now();
-      if(this.transportConnected&&!this.syncHold){
-        const elapsed=Math.max(0,now-(this.draftPickLastActiveAt||now));
-        this.draftPickRemainingMs=Math.max(0,this.draftPickRemainingMs-elapsed);
-      }
-      this.draftPickLastActiveAt=now;
-      if(this.draftPickRemainingMs<=0){
-        const pair=this.draft.draft?.pairs?.[currentRound];
-        const chooser=this.draft.draft?.chooser;
-        const card=Array.isArray(pair)&&pair.length?pair[HashUtil.hash(`${this.roomCode}|draft-timeout|${currentRound}|${chooser}`)%pair.length]:null;
-        if(card&&(chooser==="host"||chooser==="guest")){
-          this.onLog(`${chooser.toUpperCase()} 드래프트 제한시간 종료 · ${DraftPresentation.draftCardName(card)} 자동 선택`);
-          this.commitDraft(chooser,{type:"DRAFT_PICK",card,auto:true},null);
-          return;
-        }
-      }
-      this.draftPickTimer=setTimeout(pulse,100);
-    };
-    this.draftPickTimer=setTimeout(pulse,100);
-    return true;
-  }
 applyMatchConfig(config,{authoritative=false}={}){
     if(this.sim)return false;
     if(this.role==="host"&&!authoritative&&config==null)return false;
@@ -957,20 +806,18 @@ applyMatchConfig(config,{authoritative=false}={}){
     this.matchPresetId=this.matchConfig.presetId;
     this.matchRuleOverrides=this.matchConfig.overrides;
     this.roundRules=GameRuleRuntime.resolveMatchRules({presetId:this.matchPresetId,matchOverrides:GameRuleRuntime.mergeGameRules(this.matchRuleOverrides||{},{simulation:{tps:this.matchConfig.simulationTps}})});
-    this.draftPickRemainingMs=Math.max(250,Number(this.roundRules?.draft?.pickTimeoutMs)||DRAFT_PICK_TIMEOUT_MS);
     return true;
   }
-prepareCampaignLiveDraft(){if(this.role!=="host"||!this.matchConfig?.campaignScenario)return false;const cfg=CampaignMissionDefinition.normalize(this.matchConfig.campaignScenario),humanRole=cfg.playerRole,enemyRole=humanRole==="host"?"guest":"host";this.draft={phase:"live",roomCode:this.roomCode,selectionMode:"deck",decks:{host:[],guest:[]},defenseCards:{host:[],guest:[]},deckReady:{host:true,guest:true},deckSelectDeadlineAt:0,winner:null};this.draft.decks[humanRole]=cfg.player.availableUnits.slice();this.draft.decks[enemyRole]=cfg.enemy.availableUnits.slice();return true}
-// Launch matches have no unit selection: both sides fire the fixed grain deck.
+prepareCampaignLiveDraft(){if(this.role!=="host"||!this.matchConfig?.campaignScenario)return false;const cfg=CampaignMissionDefinition.normalize(this.matchConfig.campaignScenario),humanRole=cfg.playerRole,enemyRole=humanRole==="host"?"guest":"host";this.draft={phase:"live",roomCode:this.roomCode,decks:{host:[],guest:[]},defenseCards:{host:[],guest:[]},winner:null};this.draft.decks[humanRole]=cfg.player.availableUnits.slice();this.draft.decks[enemyRole]=cfg.enemy.availableUnits.slice();return true}
+// A launch match has no unit selection: both sides fire the fixed grain deck.
 prepareLaunchLiveDraft(){
-    if(this.role!=="host"||this.matchConfig?.selectionMode!=="launch")return false;
+    if(this.role!=="host")return false;
     const deck=()=>LaunchRules.deck.slice();
-    this.draft={phase:"live",roomCode:this.roomCode,selectionMode:"launch",decks:{host:deck(),guest:deck()},defenseCards:{host:[],guest:[]},deckReady:{host:true,guest:true},deckSelectDeadlineAt:0,winner:null};
+    this.draft={phase:"live",roomCode:this.roomCode,decks:{host:deck(),guest:deck()},defenseCards:{host:[],guest:[]},winner:null};
     return true;
   }
-// Campaign, debug and launch matches skip selection: Host builds the live draft itself.
-directLiveMatch(){return !!(this.matchConfig?.campaignScenario||this.matchConfig?.debugScenario||this.matchConfig?.selectionMode==="launch")}
-prepareDirectLiveDraft(){return this.prepareCampaignLiveDraft()||this.prepareDebugScenarioLiveDraft()||this.prepareLaunchLiveDraft()}
+// Host builds the live setup itself: a campaign or debug scenario when the match asks for one, else the launch deck.
+prepareLiveDraft(){return this.prepareCampaignLiveDraft()||this.prepareDebugScenarioLiveDraft()||this.prepareLaunchLiveDraft()}
 prepareDebugScenarioLiveDraft(){
     if(this.role!=="host"||!this.matchConfig?.debugScenario)return false;
     const cfg=DebugScenarioHarness.normalize(this.matchConfig.debugScenario);
@@ -979,100 +826,9 @@ prepareDebugScenarioLiveDraft(){
   }
 start(){
     if(this.role==="host"){
-      // A direct live match waits for the real Guest HELLO, then Host starts it from a deterministic live initial state.
-      if(this.directLiveMatch()){this.prepareDirectLiveDraft();return;}
-      this.onDraft(this.draft);
-      if(this.draft?.phase==="deck-select")this.armDeckSelectTimer(true);else this.armDraftPickTimer(true);
+      // Host waits for the real Guest HELLO, then starts the match from a deterministic live initial state.
+      this.prepareLiveDraft();
     }else this.transport.send({type:"HELLO",simVersion:SIM_VERSION})
-  }
-deckAct(payload){
-    if(!this.inputAvailable())return false;
-    if(!this.draft||this.draft.phase!=="deck-select"||!DeckRecord.validateDeckPayload(payload))return false;
-    if(this.draft.deckReady?.[this.role])return false;
-    if(this.role==="host")return this.commitDeck("host",payload,null);
-    if(this.pendingDraftProposal)return false;
-    const proposalId=++this.draftProposalSeq;
-    this.pendingDraftProposal={proposalId,phase:"deck-select",commitSeq:this.commitSeq,payload:CloneUtil.clone(payload)};
-    this.transport.send({type:"DECK_PROPOSE",proposalId,expectedSeq:this.commitSeq,payload});
-    return true;
-  }
-commitDeck(actor,payload,proposalId=null){
-    const next=DeckGame.apply(this.draft,actor,payload);
-    if(next===this.draft)return false;
-    this.draft=next;
-    this.commitSeq++;
-    this.onDraft(this.draft);
-    this.transport.send({type:"DECK_COMMIT",seq:this.commitSeq,actor,payload,proposalId});
-    if(this.draft.phase==="live"){
-      this.clearDeckSelectTimer();
-      this.clearDraftPickTimer();
-      // Deck and draft modes share the same pre-battle preview/countdown window.
-      this.scheduleDraftGameStart();
-    }
-    return true;
-  }
-draftAct(action){
-    if(!this.inputAvailable())return false;
-    if(!this.draft||this.draft.phase!=="draft")return false;
-    if(this.draft.draft.chooser!==this.role)return false;
-
-    if(this.role==="host"){
-      return this.commitDraft("host",action,null);
-    }
-
-    // Guest는 같은 라운드에서 두 번 전송하지 않는다.
-    if(this.pendingDraftProposal)return false;
-
-    const proposalId=++this.draftProposalSeq;
-    this.pendingDraftProposal={
-      proposalId,
-      round:this.draft.draft.round,
-      commitSeq:this.commitSeq,
-      action
-    };
-
-    this.transport.send({
-      type:"DRAFT_PROPOSE",
-      proposalId,
-      round:this.draft.draft.round,
-      expectedSeq:this.commitSeq,
-      action
-    });
-    return true;
-  }
-commitDraft(actor,action,proposalId=null){
-    const next=DraftGame.apply(this.draft,actor,action);
-    if(next===this.draft)return false;
-
-    this.draft=next;
-    this.commitSeq++;
-
-    this.onDraft(this.draft);
-
-    this.transport.send({
-      type:"DRAFT_COMMIT",
-      seq:this.commitSeq,
-      actor,
-      action,
-      proposalId
-    });
-
-    if(this.draft.phase==="live"){
-      this.clearDraftPickTimer();
-      this.scheduleDraftGameStart();
-    }else{
-      this.armDraftPickTimer(true);
-    }
-    return true;
-  }
-scheduleDraftGameStart(){
-    if(this.disposed||this.simEnded||this.role!=="host"||this.sim||this.draftGameStartTimer)return false;
-    const delay=(this.matchConfig?.debugScenario||this.matchConfig?.campaignScenario)?0:DRAFT_FINAL_GAME_START_DELAY_MS;
-    this.draftGameStartTimer=setTimeout(()=>{
-      this.draftGameStartTimer=0;
-      if(!this.disposed&&!this.simEnded&&this.role==="host"&&!this.sim&&this.draft?.phase==="live")this.beginGame();
-    },delay);
-    return true;
   }
 simulationChecksumSafe(){
     try{return this.sim?.checksum?.()??null}catch{return null}
