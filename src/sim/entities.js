@@ -1,55 +1,31 @@
-// Units, buildings, projectiles, supply/vision policies and terrain queries.
+// Units, buildings, projectiles, the vision policy and terrain queries.
 import { RangeUtil } from '../core/game-rules.js';
-import { UNIT_CAPABILITY_MIXINS, UnitLogicControllerFactory, UnitStateContracts } from './unit-behaviors.js';
-import { CapabilityHost, CombatComponent, MovementComponent, ResourceComponent, SimTimerComponent, StateContract, StateValue, StatusComponent } from './components.js';
+import { CombatComponent, MovementComponent, StateContract, StatusComponent } from './components.js';
 import { LaunchRules } from './launch-rules.js';
 import { MapGeneration } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
-import { DefenseCardDefinition } from '../definitions/decks.js';
-import { ECONOMY_WORKER_TYPE, UnitDefinition } from '../definitions/units.js';
-import { NEUTRAL_SIDE, PassiveCardDefinition, SpellDefinition } from '../definitions/cards.js';
+import { UnitDefinition } from '../definitions/units.js';
 import { MapGeometry } from './map-geometry.js';
 import { NAV_BUILDING_MARGIN } from '../definitions/combat-rules.js';
 import { TERRAIN_ATTACK_REVEAL_RADIUS, VISION_SPATIAL_CELL } from '../definitions/world-rules.js';
 import { WorldContext } from './world-context.js';
 import { TerrainSurfaceAtlas } from './terrain.js';
 
-class Unit extends CapabilityHost{
+class Unit{
+  static stateContract=new StateContract({hitFlash:0,attackFlash:0,target:null},{
+    presentation:["hitFlash","attackFlash"],
+    derived:["collisionIntentTick","collisionIntentTx","collisionIntentTy","collisionMoveTick","collisionMoveStartFx","collisionMoveStartFy"],
+    children:{status:StatusComponent.stateContract,movement:MovementComponent.stateContract,combat:CombatComponent.stateContract}
+  });
   constructor(spec={}){
-    super();const contracts=UnitStateContracts.forType(spec.type),data=contracts.root.create(spec),logic=data.logic||null;delete data.logic;
-    this.behaviorState=contracts.behavior.create(data.behaviorState||{});delete data.behaviorState;
-    this.timers=new SimTimerComponent(data.timers||{});delete data.timers;
+    const data=Unit.stateContract.create(spec);
     this.status=new StatusComponent(data.status||{});delete data.status;
-    this.resources=new ResourceComponent(data.resources||{});delete data.resources;
     this.movement=new MovementComponent(data.movement||{});delete data.movement;
     this.combat=new CombatComponent(data.combat||{});delete data.combat;
-    Object.assign(this,data);this.attachCapabilities();
-    const profile=logic?.type||null,state=logic?.state||{};
-    this.logicController=UnitLogicControllerFactory.create(this,profile,state);
+    Object.assign(this,data);
   }
-  get logicProfile(){return this.logicController?.kind||UnitLogicControllerFactory.normalizeProfile(null,this.side)}
-  static neutralStateOf(entity){
-    const logic=entity?.logicController||entity?.logic;
-    return (logic?.kind||logic?.type)==="neutral-object"?logic.state:null;
-  }
-  neutralObjectState(){return Unit.neutralStateOf(this)}
-  get campId(){return this.neutralObjectState()?.campId??null}
-  set campId(v){const st=this.neutralObjectState();if(st)st.campId=v??null}
-  get aggroed(){return !!this.neutralObjectState()?.aggroed}
-  set aggroed(v){const st=this.neutralObjectState();if(st)st.aggroed=!!v}
-  get returningHome(){return !!this.neutralObjectState()?.returningHome}
-  set returningHome(v){const st=this.neutralObjectState();if(st)st.returningHome=!!v}
-  setLogicProfile(profile,state={}){
-    this.logicController=UnitLogicControllerFactory.create(this,profile,state);
-    return this.logicController;
-  }
-  attachCapabilities(){const d=UnitDefinition.get(this.type)||{};for(const Mixin of UNIT_CAPABILITY_MIXINS)if(Mixin.supports(this,d))new Mixin(this)}
-  toState(mode="snapshot"){
-    const out=UnitStateContracts.forType(this.type).root.capture(this,mode);
-    out.logic={type:this.logicController?.kind||"default",state:StateValue.copy(this.logicController?.toState?.()||{})};
-    return out;
-  }
-  writeChecksum(h){UnitStateContracts.forType(this.type).root.hash(h,this);StateValue.hash(h,{type:this.logicProfile,state:this.logicController.toState()})}
+  toState(mode="snapshot"){return Unit.stateContract.capture(this,mode)}
+  writeChecksum(h){Unit.stateContract.hash(h,this)}
   toJSON(){return this.toState("save")}
   static fromState(state){return new Unit(state||{})}
 }
@@ -63,101 +39,15 @@ class Building{
   toState(mode="snapshot"){return Building.stateContract.capture(this,mode)}
   writeChecksum(h){Building.stateContract.hash(h,this)}toJSON(){return this.toState("save")}static fromState(state){return new Building(state||{})}
 }
-class DelayedEffectState{
-  static contract=new StateContract({}, {presentation:["arcHeight","drawRadius","visualTag"]});
-  static capture(value,mode="snapshot"){return (value||[]).map(effect=>this.contract.capture(effect,mode))}
-  static hash(h,value){StateValue.hash(h,this.capture(value,"save"))}
-}
 class Projectile{
   static stateContract=new StateContract({}, {presentation:["arcHeight","drawRadius","visualTag"]});
   constructor(state={}){
     Object.assign(this,Projectile.stateContract.create(state));
-    // Impact events are game outputs. Their identity survives recovery independently
-    // of the renderer's preset, radius and arc, which come from definitions.
-    this.impactEventKind=state.impactEventKind||null;
-    const def=BuildingDefinition.get(this.type)||UnitDefinition.get(this.type)||{};
-    const eventVisual={rocketBurst:"balsamRocket",shockwave:"medicShock",retaliation:"guardRetaliation"}[this.impactEventKind];
-    this.visualTag=state.visualTag??eventVisual??def.projectileVisualTag??({bear:"bearRock",dragon:"dragonFireball"}[this.type])??(this.type==="deathworm"?(this.splash?"rupture":"needle"):null);
-    const pattern=def.projectilePattern;
-    const patternArc=pattern?(Array.isArray(pattern.arcHeights)?pattern.arcHeights[(Math.max(1,this.burstIndex||1)-1)%pattern.arcHeights.length]:pattern.arcHeight):null;
-    const specialArc=this.impactEventKind==="shockwave"?def.basicAttack?.variants?.find(v=>v.attack?.vfxPreset==="medicShock")?.attack?.arcHeight:this.impactEventKind==="retaliation"?(def.guardRetaliationArcHeight||35):null;
-    this.arcHeight=state.arcHeight??(state.chargedCastId?def.chargedSkill?.arcHeight:null)??patternArc??specialArc??def.projectileArc??0;
-    this.drawRadius=state.drawRadius??def.projectileRadius??0;
-    if(this.payload){
-      this.visualTag="launchAmmo";
-      this.arcHeight=LaunchRules.arcHeight(Math.hypot((Number(this.lockedAimX)||0)-(Number(this.launchX)||0),(Number(this.lockedAimY)||0)-(Number(this.launchY)||0)));
-      this.drawRadius=8+Math.min(10,this.payload.count/3);
-    }
+    this.visualTag="launchAmmo";
+    this.arcHeight=LaunchRules.arcHeight(Math.hypot((Number(this.lockedAimX)||0)-(Number(this.launchX)||0),(Number(this.lockedAimY)||0)-(Number(this.launchY)||0)));
+    this.drawRadius=8+Math.min(10,(this.payload?.count||0)/3);
   }toState(mode="snapshot"){return Projectile.stateContract.capture(this,mode)}
   writeChecksum(h){Projectile.stateContract.hash(h,this)}toJSON(){return this.toState("save")}static fromState(state){return new Projectile(state||{})}
-}
-
-/* Combat targeting contract:
-   Basic attacks never abandon an attackable in-range enemy to walk toward a preferred role.
-   Role priority may only choose among already-fireable basic-attack targets.
-   Out-of-range acquisition is nearest-target based.
-   Leap / hook / burrow / other explicit abilities own independent targeting policies. */
-// Shared, read-only legality over either a simulation or its published snapshot.
-// Costs/placement are separate checks; this policy never mutates gameplay state.
-class BuildPrerequisitePolicy{
-  static completed(state,side,type){
-    return (state.buildings||[]).some(b=>b.alive!==false&&b.hp>0&&b.complete&&b.side===side&&b.type===type);
-  }
-  static infrastructureForTier(tier){
-    return tier===2?BuildingDefinition.forRole("academy"):tier===3?BuildingDefinition.forRole("lab"):null;
-  }
-  static unitReason(state,side,type){
-    const d=UnitDefinition.get(type);
-    if(!d)return "알 수 없는 병종입니다.";
-    if(!(state.decks?.[side]||[]).includes(type))return "선택하지 않은 병종입니다.";
-    const cap=state.campaignTechCap?.[side];
-    if(Number.isFinite(cap)&&d.tier>cap)return "이 미션에서 해금되지 않은 테크입니다.";
-    if(d.tier>(state.tech?.[side]||1))return `T${d.tier} 테크가 필요합니다.`;
-    const infra=this.infrastructureForTier(d.tier);
-    if(infra&&!this.completed(state,side,infra))return `${BuildingDefinition.get(infra).name} 완공/재건이 필요합니다.`;
-    if(d.layer==="AIR"&&!this.completed(state,side,BuildingDefinition.forRole("airTech")))return "공중 배양소 완공/재건이 필요합니다.";
-    return null;
-  }
-  static buildingReason(state,side,type,produceType=null){
-    if(BuildingDefinition.get(type)?.scenarioOnly)return "시나리오 전용 지형 오브젝트입니다.";
-    const d=BuildingDefinition.get(type);
-    if(!d)return "알 수 없는 건물입니다.";
-    const cap=state.campaignTechCap?.[side];
-    if(Number.isFinite(cap)&&Number(d.tech||0)>cap)return "이 미션에서 해금되지 않은 테크입니다.";
-    if(d.singleton&&((state.buildings||[]).some(b=>b.alive!==false&&b.hp>0&&b.side===side&&b.type===type)||(state.constructionOrders||[]).some(b=>b.side===side&&b.type===type)))return `${d.name}은(는) 하나만 건설할 수 있습니다.`;
-    if(Number(d.requiresTech)>0&&(state.tech?.[side]||1)<d.requiresTech)return `T${d.requiresTech} 테크가 필요합니다.`;
-    for(const dependency of d.requiresBuildings||[]){
-      if(!this.completed(state,side,dependency))return `${BuildingDefinition.get(dependency)?.name||dependency} 완공/재건이 필요합니다.`;
-    }
-    if(d.isDefenseTower&&!DefenseCardDefinition.list(state.defenseCards?.[side]).some(id=>DefenseCardDefinition.get(id)?.building===type))return "선택하지 않은 방어 건물 카드입니다.";
-    if(d.productionFacility){
-      if(!produceType)return "먼저 생산할 병종을 선택하세요.";
-      const reason=this.unitReason(state,side,produceType);if(reason)return reason;
-      const tier=UnitDefinition.get(produceType).tier;
-      if((Number(d.requiresTech)>0&&tier!==d.requiresTech)||(Number(d.requiresTech||0)<3&&tier>=3))return "이 생산시설에 맞는 병종을 선택하세요.";
-    }
-    return null;
-  }
-}
-
-class SupplyPolicy{
-  static cap(state,side){
-    let total=0;
-    for(const b of state.buildings||[])if(b.alive!==false&&b.side===side&&b.complete)total+=BuildingDefinition.get(b.type)?.supplyPlus||0;
-    return total;
-  }
-  static used(state,side){
-    let total=0;
-    for(const u of state.units||[])if(u.alive&&u.side===side)total+=UnitDefinition.get(u.type)?.supply||0;
-    for(const b of state.buildings||[]){
-      if(b.alive===false||b.side!==side)continue;
-      for(const q of b.queue||[]){
-        const type=q.kind==="workerProduction"?ECONOMY_WORKER_TYPE:q.type;
-        if(type)total+=(UnitDefinition.get(type)?.supply||0)*Math.max(1,q.count||1);
-      }
-    }
-    return total;
-  }
 }
 
 class VisibilityPolicy{
@@ -171,37 +61,16 @@ class VisibilityPolicy{
     const query=(x,y,r,visit)=>{for(let cy=Math.floor((y-r)/cell);cy<=Math.floor((y+r)/cell);cy++)for(let cx=Math.floor((x-r)/cell);cx<=Math.floor((x+r)/cell);cx++){const bin=bins.get(cx+","+cy);if(bin)for(const u of bin)visit(u)}};
     this.snapshotQueries.set(state,{tick:state.tick,units:state.units,query});return query;
   }
-  static passivePct(state,side){
-    const level=Math.max(0,Number(state.passiveCards?.[side]?.vision)||0),def=PassiveCardDefinition.get("vision");
-    return level>0&&def?Number(def.values[Math.min(def.values.length,level)-1])||0:0;
-  }
-  // Aura providers are rare and ability-gated: collect them once per side
-  // instead of a neighbour query for every vision source.
-  static auraSources(state,side){
-    const out=[];
-    for(const u of state.units||[]){
-      if(!u?.alive||u.side!==side||!state.abilities?.[side]?.[u.type])continue;
-      const d=UnitDefinition.get(u.type),r=Number(d?.sightAuraRadius)||0;
-      if(r>0)out.push({x:u.x,y:u.y,r,pct:d.sightAuraPct||125});
-    }
-    return out;
-  }
-  static auraPct(u,auras){
-    let pct=100;
-    for(const a of auras)if(Math.hypot(a.x-u.x,a.y-u.y)<=a.r)pct=Math.max(pct,a.pct);
-    return pct;
-  }
   static revealUntil(unit,side){return Number(side===0?unit?.status?.terrainRevealUntil0:unit?.status?.terrainRevealUntil1)||0}
   static sources(state,side){
-    const out=[],auras=this.auraSources(state,side),passive=this.passivePct(state,side),world=WorldContext.forState(state);
+    const out=[],world=WorldContext.forState(state);
     for(const u of state.units||[])if(u.alive&&u.side===side){const d=UnitDefinition.get(u.type)||{},air=d.layer==="AIR";
-      out.push({x:u.x,y:u.y,r:Math.round((Number(d.sight)||0)*(100+passive)/100*(auras.length?this.auraPct(u,auras):100)/100),detect:Number(d.detectRadius)||0,level:world.terrain.surfaces.levelAt(u.x,u.y),air,ignoresTerrainVision:false,sourceId:u.id});
+      out.push({x:u.x,y:u.y,r:Number(d.sight)||0,detect:Number(d.detectRadius)||0,level:world.terrain.surfaces.levelAt(u.x,u.y),air,ignoresTerrainVision:false,sourceId:u.id});
     }
     for(const b of state.buildings||[])if(b.alive!==false&&b.side===side&&b.complete){const d=BuildingDefinition.get(b.type)||{};out.push({x:b.x,y:b.y,r:Number(d.sight)||0,detect:Number(d.detectRadius)||0,level:world.terrain.surfaces.levelAt(b.x,b.y),air:false,ignoresTerrainVision:false,sourceId:b.id})}
-    for(const sp of state.activeSpells||[])if(sp.type==="flare"&&sp.side===side&&state.tick<sp.expireTick){const r=sp.vision||SpellDefinition.statsAt("flare",0).vision;out.push({x:sp.x,y:sp.y,r,detect:r,level:world.terrain.surfaces.levelAt(sp.x,sp.y),air:true,ignoresTerrainVision:true,sourceId:sp.id||"flare"})}
     // High-ground attackers briefly reveal their own tile to the side they attacked.
-    for(const u of state.units||[])if(u?.alive&&u.side!==side&&u.side!==NEUTRAL_SIDE&&this.revealUntil(u,side)>Number(state.tick||0))out.push({x:u.x,y:u.y,r:TERRAIN_ATTACK_REVEAL_RADIUS,detect:0,level:world.terrain.surfaces.levelAt(u.x,u.y),air:true,ignoresTerrainVision:true,reveal:true,sourceId:`reveal:${u.id}`});
-    for(const b of state.buildings||[])if(b?.alive!==false&&b.side!==side&&b.side!==NEUTRAL_SIDE&&Number(side===0?b.terrainRevealUntil0:b.terrainRevealUntil1)>Number(state.tick||0))out.push({x:b.x,y:b.y,r:TERRAIN_ATTACK_REVEAL_RADIUS,detect:0,level:world.terrain.surfaces.levelAt(b.x,b.y),air:true,ignoresTerrainVision:true,reveal:true,sourceId:`reveal:${b.id}`});
+    for(const u of state.units||[])if(u?.alive&&u.side!==side&&this.revealUntil(u,side)>Number(state.tick||0))out.push({x:u.x,y:u.y,r:TERRAIN_ATTACK_REVEAL_RADIUS,detect:0,level:world.terrain.surfaces.levelAt(u.x,u.y),air:true,ignoresTerrainVision:true,reveal:true,sourceId:`reveal:${u.id}`});
+    for(const b of state.buildings||[])if(b?.alive!==false&&b.side!==side&&Number(side===0?b.terrainRevealUntil0:b.terrainRevealUntil1)>Number(state.tick||0))out.push({x:b.x,y:b.y,r:TERRAIN_ATTACK_REVEAL_RADIUS,detect:0,level:world.terrain.surfaces.levelAt(b.x,b.y),air:true,ignoresTerrainVision:true,reveal:true,sourceId:`reveal:${b.id}`});
     return out;
   }
 }
@@ -384,4 +253,4 @@ class NavigationTopology{
   }
 }
 
-export { BuildPrerequisitePolicy, Building, DelayedEffectState, NavigationTopology, Projectile, SupplyPolicy, TerrainQuery, Unit, VisibilityPolicy, VisionField };
+export { Building, NavigationTopology, Projectile, TerrainQuery, Unit, VisibilityPolicy, VisionField };

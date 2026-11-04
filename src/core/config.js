@@ -27,12 +27,10 @@ function netcodeMode(value=CONFIG.netcode.mode){
 // - command apply / heavy UI snapshot publish: 10 Hz
 // - deterministic simulation + lightweight Render State targets: selected SIM TPS
 // - WebGL presentation: requestAnimationFrame (typically 60 Hz+)
-const CHARGED_SKILL_HOLD_MS=250;
-const CHARGED_SKILL_DRAG_PX=10;
-const GAS_WORKER_UI_DEBOUNCE_MS=280;
-const PREDICTED_BUILD_GHOST_TTL_MS=5000;
-const PREDICTED_COMMAND_FX_TTL_MS=1200;
+// A launch press arms after this hold; dragging farther first cancels it.
+const LAUNCH_HOLD_ARM_MS=250;
+const LAUNCH_HOLD_DRAG_PX=10;
 const STATE_PUBLISH_HZ=10;
 const STATE_PUBLISH_INTERVAL_MS=1000/STATE_PUBLISH_HZ;
 
-export { CHARGED_SKILL_DRAG_PX, CHARGED_SKILL_HOLD_MS, CONFIG, FP, GAS_WORKER_UI_DEBOUNCE_MS, PREDICTED_BUILD_GHOST_TTL_MS, PREDICTED_COMMAND_FX_TTL_MS, SIM_VERSION, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode };
+export { CONFIG, FP, LAUNCH_HOLD_ARM_MS, LAUNCH_HOLD_DRAG_PX, SIM_VERSION, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode };

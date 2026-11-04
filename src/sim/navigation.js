@@ -2,12 +2,11 @@
 import { RangeUtil } from '../core/game-rules.js';
 import { StrategySim } from './strategy-sim.js';
 import { NavigationTopology } from './entities.js';
-import { BurrowableMixin, LeapableMixin, MovementComponent, StateValue } from './components.js';
+import { MovementComponent, StateValue } from './components.js';
 import { RallyStateCodec } from '../session/game-session.js';
 import { HashUtil } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UNIT_RUNTIME_GEOMETRY, UnitDefinition } from '../definitions/units.js';
-import { NEUTRAL_SIDE } from '../definitions/cards.js';
 import { MapGeometry } from './map-geometry.js';
 import { BUILDER_INTERACTION_PADDING, NAV_BUILDING_MARGIN } from '../definitions/combat-rules.js';
 import { COLLISION_RADIUS_SCALE, GAS_WORKER_INTERACTION_PADDING, WORKER_DROPOFF_INTERACTION_RADIUS, WORKER_MINERAL_INTERACTION_PADDING } from '../definitions/world-rules.js';
@@ -518,7 +517,7 @@ class InteractionGeometry{
   }
   static contact(source,target){
     const st=typeof source==='string'?source:source?.type,tt=typeof target==='string'?target:target?.type,building=BuildingDefinition.get(tt);
-    if(building)return source?.side===NEUTRAL_SIDE?this.unitRadius(st)+(building.size||35):(((UnitDefinition.get(st)||{}).size||10)+(building.size||30))*COLLISION_RADIUS_SCALE;
+    if(building)return (((UnitDefinition.get(st)||{}).size||10)+(building.size||30))*COLLISION_RADIUS_SCALE;
     return this.unitRadius(st)+this.unitRadius(tt);
   }
   static requiresTerrainLine(source,kind,extra=0){
@@ -662,7 +661,7 @@ class SurfaceMotion{
   constructor(navigation){this.navigation=navigation;this.checkpoints=new WeakMap()}
   beginStep(){this.checkpoints=new WeakMap();for(const u of this.navigation.sim.units||[])this.remember(u,false)}
   remember(u,verified=true){this.checkpoints.set(u,{x:u.fx/FP,y:u.fy/FP,verified,ignoreId:this.policy(u),signature:this.navigation.topology.version})}
-  policy(u){return TerrainNavigation.ignoresBuildings(u)?'*':null}
+  policy(){return null}
   clear(x,y,tx,ty,r,ignoreId=null){return this.navigation.segmentClear(x,y,tx,ty,r,ignoreId,x!==tx||y!==ty,0)}
   contacts(x,y,r,ignoreId=null,epsilon=2/FP){
     const nav=this.navigation,g=nav.geometry,out=[];
@@ -764,12 +763,12 @@ class SurfaceMotion{
   }
   move(u,tx,ty,mode='steer'){
     const sim=this.navigation.sim;
-    if(sim.unitLayer(u.type)==='AIR'||u.capability(LeapableMixin.KEY)?.isActive(sim))return this.commit(u,{x:tx,y:ty,hit:null});
+    if(sim.unitLayer(u.type)==='AIR')return this.commit(u,{x:tx,y:ty,hit:null});
     return this.commit(u,this.solve(u.x,u.y,tx,ty,sim.unitRadius(u.type),this.policy(u),mode,String(u.id)));
   }
   constrain(u){
     const sim=this.navigation.sim,oldX=u.fx,oldY=u.fy;
-    if(sim.unitLayer(u.type)==='AIR'||u.capability(LeapableMixin.KEY)?.isActive(sim)){this.remember(u);return false}
+    if(sim.unitLayer(u.type)==='AIR'){this.remember(u);return false}
     this.navigation.sync();const s=this.checkpoints.get(u)||{x:u.x,y:u.y,verified:false};
     if(s.verified&&s.ignoreId===this.policy(u)&&s.signature===this.navigation.topology.version&&s.x===u.x&&s.y===u.y)return false;
     this.commit(u,this.solve(s.x,s.y,u.x,u.y,sim.unitRadius(u.type),this.policy(u),'project',String(u.id)));
@@ -920,8 +919,8 @@ class TerrainNavigation{
       const radius=this.sim.unitRadius(type)+.12,profile=TerrainNavigation.layerProfile(radius,ignoreBuildings);
       destination.set(profile.key,{...profile,radius,ignoreBuildings});
     };
-    for(const u of units)if(u&&u.alive!==false&&u.hp>0)add(u.type,TerrainNavigation.ignoresBuildings(u),present);
-    for(const type of types)add(type,TerrainNavigation.ignoresBuildings({type}),available);
+    for(const u of units)if(u&&u.alive!==false&&u.hp>0)add(u.type,false,present);
+    for(const type of types)add(type,false,available);
     const order=(a,b)=>a.r-b.r||Number(a.ignoreBuildings)-Number(b.ignoreBuildings);
     const profiles=[...present.values()].sort(order).concat([...available.values()].filter(p=>!present.has(p.key)).sort(order));
     const selected=profiles.slice(0,TerrainNavigation.MAX_LAYERS);
@@ -1008,7 +1007,6 @@ class TerrainNavigation{
     }
     return null;
   }
-  static ignoresBuildings(u){return !!UnitDefinition.get(u.type)?.burrowWhileMoving||!!u.capability?.(BurrowableMixin.KEY)?.isActive()}
   acceptsGoalPoint(goal,x,y){return goal.contains(x,y)&&(!goal.terrainLine||this.geometry.segmentClear(x,y,goal.x,goal.y,0))}
   regionPoint(area,goal,x,y){
     if(area.point)return {...area.point,d2:(area.point.x-x)**2+(area.point.y-y)**2};
@@ -1269,7 +1267,7 @@ class TerrainNavigation{
   movementPlan(u,goal){
     let planner=TerrainNavigation.planner(u.type);
     if(UnitDefinition.get(u.type)?.layer==='AIR')return {point:goal.closest(u.x,u.y),goal,fromX:u.x,fromY:u.y,type:u.type,revision:this.sim.navigationRevision};
-    this.sync();const ignore=TerrainNavigation.ignoresBuildings(u),r=this.sim.unitRadius(u.type);this.metrics.routeQueries++;
+    this.sync();const ignore=false,r=this.sim.unitRadius(u.type);this.metrics.routeQueries++;
     const direct=this.directGoal(u.x,u.y,goal,r,ignore);
     if(direct){this.metrics.directQueries++;return {point:direct,goal,fromX:u.x,fromY:u.y,type:u.type,revision:this.sim.navigationRevision,planner:'direct'}}
     if(planner==='adaptive')planner=AdaptiveNavigationDemand.select(this,u,goal,r+.12,ignore);
@@ -1291,7 +1289,7 @@ class TerrainNavigation{
   nextPoint(u,goal){
     if(!u.movement||UnitDefinition.get(u.type)?.layer==='AIR')return this.nextPlanPoint(u,this.movementPlan(u,goal));
     this.sync();
-    const state=u.movement,radius=this.sim.unitRadius(u.type),ignore=TerrainNavigation.ignoresBuildings(u);
+    const state=u.movement,radius=this.sim.unitRadius(u.type),ignore=false;
     const key=goal.key,active=state.routes[state.routeIndex],activePath=active&&this.sim.routePathStore.get(active.pathId);
     let reason=!active||!activePath?'first':activePath.key!==key||activePath.radius!==radius||activePath.ignore!==ignore?'target':activePath.topology!==this.routeTopology(activePath)?'topology':null;
     if(!reason){

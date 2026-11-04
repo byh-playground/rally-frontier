@@ -1,26 +1,22 @@
 // Command lockstep session around the simulation.
 import { GameRuleRuntime, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { StrategySim } from '../sim/strategy-sim.js';
-import { Building, DelayedEffectState, Projectile } from '../sim/entities.js';
+import { Building, Projectile, Unit } from '../sim/entities.js';
 import { LaunchRules } from '../sim/launch-rules.js';
-import { UnitStateContracts } from '../sim/unit-behaviors.js';
-import { WorkerMixin } from '../sim/unit-mixins.js';
 import { MovementComponent, StateValue } from '../sim/components.js';
 import { ReplayRecorder } from './replay.js';
-import { ActiveViewState } from './runtime-state.js';
 import { RecoveryTelemetry } from '../diagnostics/recovery-telemetry.js';
 import { StableSerializationUtil } from '../net/lobby-codec.js';
 import { HashUtil } from '../sim/map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
-import { NEUTRAL_SIDE } from '../definitions/cards.js';
 import { PerformanceTelemetry } from '../diagnostics/performance-telemetry.js';
 import { AdaptiveNavigationDemand, TerrainNavigation } from '../sim/navigation.js';
 import { DISCONNECT_GRACE_MS, LOCKSTEP_INPUT_DELAY_BASE_MS, LOCKSTEP_INPUT_DELAY_MAX_MS, MAX_CATCHUP_STEPS_PER_PULSE, NETWORK_HEALTH_POLL_MS, SIM_SUSPENSION_THRESHOLD_MS, SNAPSHOT_EMIT_INTERVAL_MS } from '../core/session-timing.js';
 import { SIM_VERSION, netcodeMode } from '../core/config.js';
 import { BUILD_META } from '../core/build-info.js';
 import { RallyGamekit, RallyNetcode } from '../core/gamekit.js';
-import { AppLifecycle, CampaignMissionDefinition, CampaignOutcomeRules, CampaignPresentation, ConnectionPresentation, DiagnosticPresentation, MatchLifecycle, SimulationTiming } from '../main.js';
+import { AppLifecycle, ConnectionPresentation, DiagnosticPresentation, MatchLifecycle, SimulationTiming } from '../main.js';
 
 /* =========================
    4. Session / command lockstep
@@ -28,7 +24,7 @@ import { AppLifecycle, CampaignMissionDefinition, CampaignOutcomeRules, Campaign
 // The SDK owns command resolution and rollback timelines. These codecs expose
 // only opaque game data; they never inspect SDK queues, checkpoints or internals.
 class RallyStateCodec{
-  static schemaVersion=4;
+  static schemaVersion=5;
   static MAX_ARRAY=20000;
   static maxBytes=8*1024*1024;
   static codec=RallyNetcode.createValueCodec({format:"binary",maxBytes:8*1024*1024,maxDepth:64,maxEntries:500000});
@@ -102,20 +98,19 @@ class RallySimulationAdapter{
   constructor(session){
     if(!(session?.sim instanceof StrategySim))throw new Error("StrategySim 경기 session이 필요합니다.");
     this.session=session;const sim=session.sim;
-    this.identity={seed:sim.seed,rules:sim.rules,mapDescriptor:sim.mapDescriptor,campaignScenario:sim.campaignScenario||null};
+    this.identity={seed:sim.seed,rules:sim.rules,mapDescriptor:sim.mapDescriptor};
     StateValue.freeze(this.identity.rules);
-    for(const value of Object.values(this.identity.campaignScenario||{}))StateValue.freeze(value);
     const encoded=StableSerializationUtil.stableStringify(this.identity);
     this.matchId=`${SIM_VERSION}:${encoded.length}:${HashUtil.hash(encoded)}:${HashUtil.hash("rally-state|"+encoded)}`;
     this.mapFingerprint=sim.mapFingerprint();
     const state=this.stateData();
     // Required root fields come from the authoritative owner, not another save list.
     const kind=value=>value===null?"null":Array.isArray(value)?"array":typeof value;
-    this.rootShape=Object.fromEntries(Object.entries(state).map(([key,value])=>[key,{kind:kind(value),items:Array.isArray(value)&&value.length===2&&!['units','buildings','constructionOrders','projectiles','resources','gasNodes','camps','capturePoints','activeSpells','delayedEffects','scheduled','chargedCasts'].includes(key)?value.map(kind):null}]));
+    this.rootShape=Object.fromEntries(Object.entries(state).map(([key,value])=>[key,{kind:kind(value),items:Array.isArray(value)&&value.length===2&&!['units','buildings','projectiles','capturePoints','scheduled'].includes(key)?value.map(kind):null}]));
   }
   stateData(){
     const sim=this.session.sim;
-    if(sim.seed!==this.identity.seed||sim.rules!==this.identity.rules||sim.mapDescriptor!==this.identity.mapDescriptor||(sim.campaignScenario||null)!==this.identity.campaignScenario)throw new Error("경기 정의가 변경되면 새 simulation Adapter가 필요합니다.");
+    if(sim.seed!==this.identity.seed||sim.rules!==this.identity.rules||sim.mapDescriptor!==this.identity.mapDescriptor)throw new Error("경기 정의가 변경되면 새 simulation Adapter가 필요합니다.");
     return sim.exportState({includeIdentity:false});
   }
   save(){
@@ -134,22 +129,15 @@ class RallySimulationAdapter{
       if(shape.kind!=="null"&&kind!==shape.kind||shape.items&&(value.length!==2||shape.items.some((type,i)=>type!=="null"&&(type==="array"?!Array.isArray(value[i]):type==="object"?!value[i]||Array.isArray(value[i])||typeof value[i]!=="object":typeof value[i]!==type))))throw new Error(`게임 snapshot의 ${key} 형식이 잘못되었습니다.`);
     }
     for(const key of Object.keys(state))if(StrategySim.stateContract.derived.has(key)||StrategySim.stateContract.presentation.has(key)||Object.prototype.hasOwnProperty.call(this.identity,key)&&key!=="seed")throw new Error(`게임 snapshot에 runtime 필드 ${key}가 있습니다.`);
-    if(!Array.isArray(state.chargedCastSerial)||state.chargedCastSerial.length!==2||state.chargedCastSerial.some(id=>!Number.isSafeInteger(id)||id<0))throw new Error("Invalid charged cast serial");
-    if(!Array.isArray(state.chargedCasts)||state.chargedCasts.length!==2)throw new Error("Invalid charged casts");
-    for(const [side,cast]of state.chargedCasts.entries()){
-      if(cast===null)continue;
-      if(!cast||cast.side!==side||!Number.isSafeInteger(cast.id)||cast.id<1||cast.id!==state.chargedCastSerial[side]||!["gathering","charging","released"].includes(cast.phase)||!["originX","originY","aimX","aimY","startTick","gatherUntil","releaseTick"].every(key=>Number.isFinite(cast[key]))||cast.startTick<0||cast.gatherUntil<cast.startTick||cast.startTick>state.tick||!Array.isArray(cast.memberIds)||!Array.isArray(cast.unavailableIds)||[...cast.memberIds,...cast.unavailableIds].some(id=>typeof id!=="string")||new Set([...cast.memberIds,...cast.unavailableIds]).size!==cast.memberIds.length+cast.unavailableIds.length)throw new Error("Invalid charged cast state");
-    }
     for(const key of ["units","buildings","projectiles"]){
       const ids=new Set();
       for(const entity of state[key]){
-        if(!entity||Array.isArray(entity)||typeof entity!=="object"||typeof entity.id!=="string"||!entity.id||entity.id.length>256||ids.has(entity.id)||![0,1,NEUTRAL_SIDE].includes(entity.side)||typeof entity.type!=="string"||!Number.isFinite(entity.x)||!Number.isFinite(entity.y)||typeof entity.alive!=="boolean"&&!(key==="buildings"&&entity.alive===undefined))throw new Error(`게임 snapshot의 ${key} 엔티티가 잘못되었습니다.`);
+        if(!entity||Array.isArray(entity)||typeof entity!=="object"||typeof entity.id!=="string"||!entity.id||entity.id.length>256||ids.has(entity.id)||![0,1].includes(entity.side)||typeof entity.type!=="string"||!Number.isFinite(entity.x)||!Number.isFinite(entity.y)||typeof entity.alive!=="boolean"&&!(key==="buildings"&&entity.alive===undefined))throw new Error(`게임 snapshot의 ${key} 엔티티가 잘못되었습니다.`);
         ids.add(entity.id);
         if(key==="units"){
-          if(!Object.prototype.hasOwnProperty.call(UnitDefinition.all,entity.type)||!Number.isFinite(entity.fx)||!Number.isFinite(entity.fy)||!Number.isFinite(entity.hp)||!Number.isFinite(entity.maxHp)||!entity.logic||!["default","neutral-object"].includes(entity.logic.type)||!entity.logic.state||Array.isArray(entity.logic.state)||typeof entity.logic.state!=="object")throw new Error("게임 snapshot의 유닛 정의가 잘못되었습니다.");
-          RallyStateCodec.assertContract(entity,UnitStateContracts.forType(entity.type).root);
+          if(!Object.prototype.hasOwnProperty.call(UnitDefinition.all,entity.type)||!Number.isFinite(entity.fx)||!Number.isFinite(entity.fy)||!Number.isFinite(entity.hp)||!Number.isFinite(entity.maxHp))throw new Error("게임 snapshot의 유닛 정의가 잘못되었습니다.");
+          RallyStateCodec.assertContract(entity,Unit.stateContract);
           MovementComponent.validateRoutes(entity.movement,this.identity.mapDescriptor,entity.type,state.navigationRevision);
-          if(UnitDefinition.get(entity.type)?.economyWorker)WorkerMixin.validateDropoff(entity.behaviorState);
         }
         if(key==="projectiles"&&[...Projectile.stateContract.presentation].some(field=>Object.prototype.hasOwnProperty.call(entity,field)))throw new Error("게임 projectile snapshot에 렌더 필드가 있습니다.");
         if(key==="buildings"){
@@ -158,28 +146,8 @@ class RallySimulationAdapter{
         }
       }
     }
-    const chargedUnitsById=new Map(state.units.map(unit=>[unit.id,unit]));
-    for(const cast of state.chargedCasts)if(cast)for(const id of [...cast.memberIds,...cast.unavailableIds]){
-      const unit=chargedUnitsById.get(id);
-      // Removed/dead members may remain in the fixed capture list until recovery ends.
-      if(unit?.alive&&(unit.side!==cast.side||!UnitDefinition.get(unit.type)?.chargedSkill))throw new Error("Invalid charged cast member");
-    }
     AdaptiveNavigationDemand.validate(state.navigationAdmissions);
-    const orderIds=new Set(state.buildings.map(b=>b.id)),builderIds=new Set();
-    const orderFields=new Set(["id","type","side","x","y","produceType","gasNodeId","createdTick","builderUnitId","paidMineral","paidGas","constructionState"]);
-    for(const order of state.constructionOrders){
-      if(!order||Array.isArray(order)||typeof order!=="object"||Object.keys(order).some(key=>!orderFields.has(key))||Object.keys(order).length!==orderFields.size||typeof order.id!=="string"||!order.id||order.id.length>256||orderIds.has(order.id)||![0,1].includes(order.side)||!Object.prototype.hasOwnProperty.call(BuildingDefinition.all,order.type)||!Number.isFinite(order.x)||!Number.isFinite(order.y)||!Number.isSafeInteger(order.createdTick)||order.createdTick<0||order.createdTick>state.tick||!Number.isFinite(order.paidMineral)||order.paidMineral<0||!Number.isFinite(order.paidGas)||order.paidGas<0||!["waitingWorker","building"].includes(order.constructionState))throw new Error("게임 snapshot의 건설 예약이 잘못되었습니다.");
-      orderIds.add(order.id);
-      if(order.produceType!==null&&!Object.prototype.hasOwnProperty.call(UnitDefinition.all,order.produceType)||order.gasNodeId!==null&&!state.gasNodes.some(g=>g.id===order.gasNodeId))throw new Error("게임 snapshot의 건설 예약 정의가 잘못되었습니다.");
-      if(order.builderUnitId!==null){
-        const worker=state.units.find(u=>u.id===order.builderUnitId);
-        if(builderIds.has(order.builderUnitId)||!worker||!worker.alive||worker.side!==order.side||!UnitDefinition.get(worker.type)?.economyWorker||worker.buildTargetId!==order.id)throw new Error("게임 snapshot의 예약 일꾼이 잘못되었습니다.");
-        builderIds.add(order.builderUnitId);
-      }
-    }
-    if(state.campaignScriptState!==null&&(typeof state.campaignScriptState!=="object"||Array.isArray(state.campaignScriptState))||!this.identity.campaignScenario&&state.campaignScriptState!==null)throw new Error("게임 snapshot의 캠페인 state가 잘못되었습니다.");
     if(state.netcodeMatchResult!==undefined&&(!state.netcodeMatchResult||!["host","guest"].includes(state.netcodeMatchResult.winner)||state.netcodeMatchResult.reason!=="surrender"||!Number.isSafeInteger(state.netcodeMatchResult.tick)||state.netcodeMatchResult.tick<0||state.netcodeMatchResult.tick>state.tick))throw new Error("게임 snapshot의 경기 결과가 잘못되었습니다.");
-    for(const effect of state.delayedEffects)if(effect&&[...DelayedEffectState.contract.presentation].some(field=>Object.prototype.hasOwnProperty.call(effect,field)))throw new Error("게임 예약 효과 snapshot에 렌더 필드가 있습니다.");
     const scheduledTicks=new Set();
     for(const entry of state.scheduled){
       if(!Array.isArray(entry)||entry.length!==2||!Number.isSafeInteger(entry[0])||entry[0]<=state.tick||scheduledTicks.has(entry[0])||!Array.isArray(entry[1])||entry[1].length>RallySimulationAdapter.commandsPerFrame)throw new Error("게임 snapshot의 예약 명령이 잘못되었습니다.");
@@ -225,7 +193,7 @@ class RallySynctestDiagnostics{
     const record={status:"running",metrics:null,controller:new AbortController()};this.reports.set(session,record);
     let sim,report;
     try{
-      sim=StrategySim.createForMatch({draft:session.draft,seed:session.sim.seed,rules:session.sim.rules,campaignScenario:session.sim.campaignScenario||null});
+      sim=StrategySim.createForMatch({draft:session.draft,seed:session.sim.seed,rules:session.sim.rules});
       const adapter=new RallySimulationAdapter({sim});adapter.load(replay.initialState);
       const result=await RallyNetcode.runSyncTestAsync({adapter,players:replay.players,inputSize:replay.inputSize,tickRate:replay.tickRate,initialTick:0,
         checkDistance:Math.max(1,Math.min(6,core.profile.rollbackWindowTicks)),maxSnapshotBytes:RallyStateCodec.maxBytes,maxHistoryBytes:core.profile.maxHistoryBytes,frames,signal:record.controller.signal});
@@ -285,7 +253,6 @@ class GameSession{
   cancelScheduledWork(){
     this.navigationPreparationCancel?.();this.navigationPreparationCancel=null;
     this.clearDisconnectGrace();this.clearPostRecoveryCountdown();
-    for(const key of ['campaignOutroTimer']){if(this[key])clearTimeout(this[key]);this[key]=0}
     this.stopHeartbeat(false);this.netcodeLoop?.stop();AppLifecycle.unregisterBackgroundSession(this);
   }
   dispose(reason='session-replaced'){
@@ -445,7 +412,6 @@ class GameSession{
 
   }
   static matchSeed(draft,roomCode,matchConfig={}){
-    if(matchConfig?.campaignScenario)return matchConfig.campaignScenario.seed;
     return HashUtil.hash(`${roomCode}|launch|${JSON.stringify(draft?.decks||{host:[],guest:[]})}|${JSON.stringify(draft?.defenseCards||{host:[],guest:[]})}`);
   }
   beginGame(){
@@ -458,7 +424,7 @@ class GameSession{
     if(this.disposed||this.sim)return false;
     if(!globalThis.RallyNetcode)throw new Error('URL Netcode가 로딩되지 않았습니다.');
     this.clearDisconnectGrace();this.clearPostRecoveryCountdown();
-    this.sim=StrategySim.createForMatch({draft:this.draft,seed,rules:this.roundRules,campaignScenario:this.matchConfig?.campaignScenario||null});
+    this.sim=StrategySim.createForMatch({draft:this.draft,seed,rules:this.roundRules});
     try{
       const sim=this.sim;
       const startingUnits=sim.units.filter(unit=>unit&&unit.alive!==false&&unit.hp>0&&(unit.side===0||unit.side===1));
@@ -524,7 +490,7 @@ class GameSession{
     // Candidate resimulation은 commit 전까지 UI/AI/replay/VFX에 공개하지 않는다.
     if(frame.winner){
       frame.terminalState=this.simulationAdapter.save();
-      frame.reason=this.sim.netcodeMatchResult?.reason||CampaignOutcomeRules.resolve(this.sim)?.reason||(frame.winner==='draw'?'draw':'base-destroyed');
+      frame.reason=this.sim.netcodeMatchResult?.reason||(frame.winner==='draw'?'draw':'base-destroyed');
     }
     if(this.publishConfirmedSnapshots&&frame.gameTick%Math.max(1,Math.round(this.sim.tps*SNAPSHOT_EMIT_INTERVAL_MS/1000))===0)frame.snapshot=this.sim.snapshot();
     (frame.recovering?this.candidateFrameOutputs:this.frameOutputs).set(frame.gameTick,frame);
@@ -643,20 +609,13 @@ class GameSession{
     }
   }
   finishConfirmedOutcome(frame){
-    if(this.simEnded||this.campaignResultPending)return;
+    if(this.simEnded)return;
     // 늦은 실제 입력의 승패가 rollback target보다 이른 경우에도 양쪽 모두
     // 동일한 종료 frame을 보존한다. Core를 종료한 뒤에만 terminal state를 복원한다.
     this.netcodeSession.close();
     this.simulationAdapter.load(frame.terminalState);
     this.emitRenderTargets(this.sim,true);this.emitSnapshot(this.sim.snapshot());
-    const winner=frame.winner,campaign=this.sim.campaignScenario,viewRole=campaign?.playerRole||'host';
-    const reason=frame.reason;
-    const finish=()=>{if(!this.simEnded)this.endMatch(winner==='draw'?null:winner,reason)};
-    if(campaign&&winner===viewRole&&Array.isArray(campaign.presentation?.outro)&&campaign.presentation.outro.length){
-      this.campaignResultPending=true;this.syncHold=true;this.netcodeLoop?.resetTiming();
-      if(this.role===ActiveViewState.role)CampaignPresentation.playOutro(campaign.presentation.outro,finish);
-      else this.campaignOutroTimer=setTimeout(finish,CampaignPresentation.outroDuration(campaign.presentation.outro));
-    }else finish();
+    this.endMatch(frame.winner==='draw'?null:frame.winner,frame.reason);
   }
   reconcileNetcodeProgress(){
     if(this.simEnded||this.simulationFatal)return;
@@ -801,7 +760,6 @@ applyMatchConfig(config,{authoritative=false}={}){
     this.roundRules=GameRuleRuntime.resolveMatchRules({presetId:this.matchPresetId,matchOverrides:GameRuleRuntime.mergeGameRules(this.matchRuleOverrides||{},{simulation:{tps:this.matchConfig.simulationTps}})});
     return true;
   }
-prepareCampaignLiveDraft(){if(this.role!=="host"||!this.matchConfig?.campaignScenario)return false;const cfg=CampaignMissionDefinition.normalize(this.matchConfig.campaignScenario),humanRole=cfg.playerRole,enemyRole=humanRole==="host"?"guest":"host";this.draft={phase:"live",roomCode:this.roomCode,decks:{host:[],guest:[]},defenseCards:{host:[],guest:[]},winner:null};this.draft.decks[humanRole]=cfg.player.availableUnits.slice();this.draft.decks[enemyRole]=cfg.enemy.availableUnits.slice();return true}
 // A launch match has no unit selection: both sides fire the fixed grain deck.
 prepareLaunchLiveDraft(){
     if(this.role!=="host")return false;
@@ -809,8 +767,8 @@ prepareLaunchLiveDraft(){
     this.draft={phase:"live",roomCode:this.roomCode,decks:{host:deck(),guest:deck()},defenseCards:{host:[],guest:[]},winner:null};
     return true;
   }
-// Host builds the live setup itself: a campaign when the match asks for one, else the launch deck.
-prepareLiveDraft(){return this.prepareCampaignLiveDraft()||this.prepareLaunchLiveDraft()}
+// Host builds the live setup itself: the launch deck.
+prepareLiveDraft(){return this.prepareLaunchLiveDraft()}
 start(){
     if(this.role==="host"){
       // Host waits for the real Guest HELLO, then starts the match from a deterministic live initial state.

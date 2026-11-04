@@ -25,15 +25,6 @@ const queryMethodsEnd = html.indexOf('\n  ensureCollisionBuffers(', queryMethods
 assert(queryMethodsStart >= 0 && queryMethodsEnd > queryMethodsStart,
   'StrategySim caller-owned and scoped query methods must exist');
 const QueryApi = new Function(`return class {${html.slice(queryMethodsStart, queryMethodsEnd)}};`)();
-const aoeStart = html.indexOf('  pickAoeTargetInRange(');
-const aoeEnd = html.indexOf('\n  formationJoinMovePct(', aoeStart);
-assert(aoeStart >= 0 && aoeEnd > aoeStart, 'AOE target query must exist');
-const AoeApi = new Function('UnitDefinition', 'NEUTRAL_SIDE',
-  `return class {${html.slice(aoeStart, aoeEnd)}};`)({ get: () => ({}) }, 2);
-const mobilityStart = html.indexOf('  findOffensiveMobilityTarget(');
-const mobilityEnd = html.indexOf('\n  findBacklineAbilityTarget(', mobilityStart);
-assert(mobilityStart >= 0 && mobilityEnd > mobilityStart, 'offensive mobility target scan must exist');
-const MobilityApi = new Function(`return class {${html.slice(mobilityStart, mobilityEnd)}};`)();
 const world = { width: 512, height: 512 };
 
 function queryFixture(units) {
@@ -44,7 +35,6 @@ function queryFixture(units) {
     units, unitSpatial, tick: 0, runtimeIndexTick: 0, maxUnitRadius: 24,
     spatialQueryBuffers: Array.from({ length: 64 }, () => []), spatialQueryCursor: 0,
     spatialQueryScopeBuffers: [], spatialQueryScopeDepth: 0,
-    aoeCandidateSpatialScratch: [], aoeCandidateSpatialDepth: 0,
     rebuildRuntimeIndexes() { this.runtimeIndexTick = this.tick; },
   });
 }
@@ -210,73 +200,6 @@ test('StrategySim scoped unit queries survive 64 intervening borrowed queries an
     assert.deepEqual(outer, expected, 'scope depth is restored after nested traversal');
   });
   assert.equal(sim.spatialQueryScopeDepth, 0);
-});
-
-test('single-broadphase AOE target selection matches exhaustive attack and splash scoring', () => {
-  let seed = 0x7c3a41;
-  const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 0x100000000);
-  const units = Array.from({ length: 180 }, (_, index) => ({
-    id: `unit-${index}`, x: Math.round(random() * world.width), y: Math.round(random() * world.height),
-    alive: index % 19 !== 0, side: index % 5 === 0 ? 2 : index % 2,
-  }));
-  const sim = Object.assign(queryFixture(units), {
-    canAttackEntity: () => true, canSeeCombatTarget: () => true, isVisible: () => true,
-    unitLayer: () => 'GROUND', interactionDistance: (_unit, _target, _kind, range) => range,
-    isHostileCombatUnit(side, target) { return !!target?.alive && target.side !== side; },
-  });
-  const source = { id: 'source', type: 'ranged', side: 0, x: 248, y: 251 };
-  const attackRange = 190, splashRadius = 82;
-  const actual = AoeApi.prototype.pickAoeTargetInRange.call(sim, source, [], attackRange, splashRadius);
-  const d = { minRange: 0 };
-  const candidateQuery = attackRange + sim.maxUnitRadius + 40;
-  const minCellX = sim.unitSpatial.cellX(source.x - candidateQuery), maxCellX = sim.unitSpatial.cellX(source.x + candidateQuery);
-  const minCellY = sim.unitSpatial.cellY(source.y - candidateQuery), maxCellY = sim.unitSpatial.cellY(source.y + candidateQuery);
-  let expected = null, bestHits = -1, bestD2 = Infinity;
-  for (const e of units) {
-    if (!sim.isHostileCombatUnit(source.side, e)) continue;
-    const cx = sim.unitSpatial.cellX(e.x), cy = sim.unitSpatial.cellY(e.y);
-    if (cx < minCellX || cx > maxCellX || cy < minCellY || cy > maxCellY) continue;
-    const dx = e.x - source.x, dy = e.y - source.y, d2 = dx * dx + dy * dy, dist = Math.sqrt(d2);
-    if (dist > attackRange || (d.minRange && dist < d.minRange)) continue;
-    const hits = units.filter(v => sim.isHostileCombatUnit(source.side, v) && Math.hypot(v.x - e.x, v.y - e.y) <= splashRadius).length;
-    if (hits > bestHits || (hits === bestHits && d2 < bestD2) ||
-        (hits === bestHits && d2 === bestD2 && expected && String(e.id) < String(expected.id))) {
-      expected = e; bestHits = hits; bestD2 = d2;
-    }
-  }
-  assert.equal(actual?.entity?.id ?? null, expected?.id ?? null);
-  assert.equal(actual?.aoeHits ?? null, expected ? bestHits : null);
-});
-
-test('offensive mobility building grid returns the same in-range enemy and stable tie-break as a full scan', () => {
-  let seed = 0x4f10a92;
-  const random = () => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 0x100000000);
-  const buildings = Array.from({ length: 220 }, (_, index) => ({
-    id: `building-${index}`, x: Math.round(random() * world.width), y: Math.round(random() * world.height),
-    alive: index % 23 !== 0, side: index % 3,
-  }));
-  const grid = new BuildingGrid(64, world);
-  grid.reset(buildings);
-  const sim = Object.assign(Object.create(MobilityApi.prototype), {
-    buildings,
-    findBacklineAbilityTarget: () => null,
-    nearbyBuildingIndices: (x, y, radius) => grid.query(x, y, radius, []),
-    canAttackEntity: () => true, isVisible: () => true,
-  });
-  const source = { id: 'mobility', type: 'charger', side: 0, x: 251, y: 247 };
-  const range = 245, range2 = range * range;
-  const actual = MobilityApi.prototype.findOffensiveMobilityTarget.call(sim, source, range, new Set(), []);
-  let expected = null, bestD2 = Infinity;
-  for (const building of buildings) {
-    if (!building || building.alive === false || building.side !== 1) continue;
-    const dx = building.x - source.x, dy = building.y - source.y, d2 = dx * dx + dy * dy;
-    if (d2 > range2) continue;
-    if (d2 < bestD2 || (d2 === bestD2 && expected && String(building.id) < String(expected.id))) {
-      expected = building; bestD2 = d2;
-    }
-  }
-  assert.equal(actual?.entity?.id ?? null, expected?.id ?? null);
-  assert.equal(actual?.isBuilding ?? null, expected ? true : null);
 });
 
 test('unit and building target grids keep direct array buckets and visit each cell once', () => {

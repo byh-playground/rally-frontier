@@ -41,13 +41,10 @@ window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntime
         resimulating:s.netcodeSession?.resimulating,pendingTickets:s.getPendingCommandTickets?.().length,
         fatal:s.simulationFatal,metrics:s.netcodeSession?.metrics,
         perf:{stepEwmaMs:s.sim?.perfStats?.ewmaStepMs,snapshotMs:s.sim?.perfStats?.snapshotMs},
-        army:s.sim?.units?.filter(u=>u.alive&&u.side===(role==='host'?0:1)&&!UnitDefinition.get(u.type)?.economyWorker).length
+        army:s.sim?.units?.filter(u=>u.alive&&u.side===(role==='host'?0:1)).length
       }])),
-      ai:{enabled:b?.enabled,role:b?.role,lastSnapshotTick:b?.lastSnapshot?.tick,
-        confirmedSnapshotTick:b?.session?.latestConfirmedSnapshot?.tick,
-        stats:b?.commandExecutor?.stats,lastEconomyTick:b?.lastEconomyTick,
-        lastPlannerTick:b?.lastPlannerTick,lastResponsePlan:b?.lastResponsePlan,
-        lastExecutedMacro:b?.lastExecutedMacro,lastAiDecision:b?.lastAiDecision},
+      ai:{enabled:b?.enabled,role:b?.role,lastLaunchTick:b?.lastLaunchTick,
+        confirmedSnapshotTick:b?.session?.latestConfirmedSnapshot?.tick,pending:b?.commandExecutor?.pending.length},
       renderer:{fps:r?.perfStats?.fps,frameEwmaMs:r?.perfStats?.ewmaFrameWorkMs,
         frameIntervalEwmaMs:r?.perfStats?.ewmaFrameIntervalMs}};
   },
@@ -82,6 +79,7 @@ window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntime
         control:t.netcodeControlChannel?{label:t.netcodeControlChannel.label,state:t.netcodeControlChannel.readyState}:null,
         allChannels:Object.values(t).filter(v=>v instanceof RTCDataChannel).map(c=>({label:c.label,
           state:c.readyState,ordered:c.ordered,maxRetransmits:c.maxRetransmits}))}]));
+    const aiReceipts=(match?.sessions?.[match?.humanRole]?.sim?.commandReceipts||[]).filter(c=>c.actor===match?.bot?.role);
     return {build:BUILD_ID,simVersion:SIM_VERSION,sdkVersion:window.RallyNetcode?.VERSION,
       sdkRevision:window.RallyNetcodeSource?.url,
       role:ActiveViewState.role,screen:UiRuntimeState.value.screen,
@@ -91,10 +89,11 @@ window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntime
         gpuRenderer:gpuInfo?gl.getParameter(gpuInfo.UNMASKED_RENDERER_WEBGL):null},
       humanRole:match?.humanRole,botRole:match?.botRole,
       confirmedTick,stateHashTick,
-      aiStats:match?.bot?.commandExecutor?.stats,
+      aiStats:{submitted:aiReceipts.length,applied:aiReceipts.filter(c=>c.applied).length},
       combatHits:this.observeCombat(),telemetry:this.telemetry(),
-      aiHistory:match?.bot?.commandExecutor?.history?.map(c=>({actor:c.actor,
-        netcodeSequence:c.netcodeSequence,seq:c.seq,status:c.status,action:c.action?.type})),
+      // The AI's commands as the human session's sim applied them.
+      aiHistory:aiReceipts.map(c=>({actor:c.actor,netcodeSequence:c.netcodeSequence,seq:c.seq,
+        status:c.applied?'applied':'rejected',action:c.type})),
       sessions,transports};
   }
 };`;
@@ -174,7 +173,7 @@ async function runRole(browser, url, humanRole) {
       if(Object.values(match.sessions).some(s=>s.simulationFatal))throw Error('Simulation fatal in actual UI match');
       const human=match.sessions[match.humanRole],side=human.role==='host'?0:1;
       return human.sim.units.some(u=>u.alive&&u.side===side)
-        &&(match.bot.commandExecutor.stats.applied||0)>0
+        &&human.sim.commandReceipts.some(r=>r.actor===match.bot.role&&r.type==='LAUNCH'&&r.applied)
         &&human.sim.units.some(u=>u.alive&&u.side===1-side)
         &&q.observeCombat().length>0;
     },null,{timeout:Number(process.env.QA_BATTLE_TIMEOUT_MS)||180000});
