@@ -1,5 +1,4 @@
 import { RangeUtil, SIM_TPS } from './core/game-rules.js';
-import { GrainFaceOverlay } from './core/grain-face-overlay.js';
 import './sim/strategy-sim.js';
 import { TerrainQuery, VisionField } from './sim/entities.js';
 import { BotController } from './ai/bot-controller.js';
@@ -13,7 +12,7 @@ import { ConnectionSideUtil } from './net/lobby-codec.js';
 import { CloneUtil, HashUtil, MapGeneration } from './sim/map-generation.js';
 import { AttackPresentationDefinition } from './definitions/attack-presentation.js';
 import { BuildingDefinition } from './definitions/buildings.js';
-import { UnitDefinition, UnitFactionPalette, UnitVisualDefinition } from './definitions/units.js';
+import { GRAIN_FACE_IDS, UnitDefinition, UnitFactionPalette, UnitVisualDefinition } from './definitions/units.js';
 import { MapGeometry } from './sim/map-geometry.js';
 import { CAPTURE_DURATION_MS, CAPTURE_RADIUS, LANE_CONTROL_POINTS } from './definitions/combat-rules.js';
 import { PerformanceTelemetry } from './diagnostics/performance-telemetry.js';
@@ -614,7 +613,7 @@ class GLRenderer{
       failIfMajorPerformanceCaveat:false
     };
     this.device=new RallyGamekit.WebGLDevice(canvas,this.webglAttrs);
-    this.vectorContext=new RallyGamekit.VectorContext(this.device,{safeAlphaRunBatching:true});this.vectorContext.acquireMeshRenderer();this.grainFaces=new GrainFaceOverlay(this.vectorContext);// 메시 통계가 첫 유닛 그리기 전에도 null이 아니도록 미리 만든다.
+    this.vectorContext=new RallyGamekit.VectorContext(this.device,{safeAlphaRunBatching:true});this.vectorContext.acquireMeshRenderer();this.grainFaces=new RallyGamekit.FaceOverlay(this.vectorContext,{faces:GRAIN_FACE_IDS});// 메시 통계가 첫 유닛 그리기 전에도 null이 아니도록 미리 만든다.
     this.vectorUnitAssetCache=new Map();
     // One actor per grain: a shared actor re-seeked per grain rewrites its pose row and splits the instanced batch.
     this.grainActors=new Map();this.grainActorFrame=0;this.grainBodyGroups=new Map();this.grainOpaqueCoverage=new Map();
