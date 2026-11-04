@@ -680,7 +680,7 @@ class GLRenderer{
     this.cameraTop=this.world.height-VIEW_H;
     this.attackVariantBreathFx=[];
     // Presentation-only facing: never enters StrategySim/checksum/export/recovery.
-    this.unitFacingStates=new Map();
+    this.unitFacingStates=new Map();this.launchRecoil=new Map();this.projectileTrails=new Map();
     this.projectileScreenMotionStates=new Map();
     this.last=performance.now();
     this.particles=[];
@@ -911,6 +911,7 @@ class GLRenderer{
     for(const id of this.unitFacingStates.keys())if(!liveFacingIds.has(id))this.unitFacingStates.delete(id);
     const liveProjectileIds=new Set(projectiles.filter(p=>p?.alive!==false).map(p=>p.id));
     for(const id of this.projectileScreenMotionStates.keys())if(!liveProjectileIds.has(id))this.projectileScreenMotionStates.delete(id);
+    for(const id of this.projectileTrails.keys())if(!liveProjectileIds.has(id))this.projectileTrails.delete(id);
   }
 
   presentationNow(now=performance.now()){return this._framePresentationAt??now}
@@ -1164,9 +1165,41 @@ class GLRenderer{
       }else if(e.type==="buildingDeath"){
         this.addClientFx("buildingBurst",e,snapshot,index);
         this.triggerClientShake(3.5,180,HashUtil.hash(`${snapshot.tick}|building|${index}`));
+      }else if(e.type==="launchFire"){
+        this.launchFireFx(e,snapshot,index);
+      }else if(e.type==="launchImpact"){
+        this.launchImpactFx(e,snapshot,index);
+      }else if(e.type==="launchOverheat"){
+        this.addClientFx("launchMuzzle",e,snapshot,index,{power:0,mode:"overheat",shot:0});
       }
       index++;
     }
+  }
+  // The firing moment: muzzle flash and smoke at the cannon, a kick on the cannon itself, and a
+  // camera shake that grows with the charge. Later shells of a burst are lighter; a shotgun flashes once.
+  launchFireFx(e,snapshot,index){
+    const power=RangeUtil.clamp(Number(e.power)||0,0,1),mode=e.mode||"single",first=!(e.shot>0);
+    const dx=Number(e.aimX)-e.x,dy=Number(e.aimY)-e.y,len=Math.hypot(dx,dy)||1;
+    this.launchRecoil.set(e.cannonId,{at:performance.now(),dx:dx/len,dy:dy/len,power});
+    if(mode!=="shotgun"||first)this.addClientFx("launchMuzzle",{...e,x2:e.aimX,y2:e.aimY},snapshot,index,{power,mode,shot:e.shot||0});
+    if(mode==="shotgun"&&!first)return;
+    const weight=(first?1:.55)*(mode==="shotgun"?1.25:1);
+    this.triggerClientShake((1.2+3.8*power)*weight,110+150*power,HashUtil.hash(`${snapshot.tick}|fire|${index}`));
+  }
+  // The landing: a shock ring the size of the blast, dust, and a flash that grows when the strike was near the middle.
+  launchImpactFx(e,snapshot,index){
+    const peak=Number(e.peak)||1,hits=Number(e.hits)||0;
+    this.addClientFx("launchBlast",e,snapshot,index,{peak,hits});
+    const shake=hits>0?.7+.9*peak:.5;
+    this.triggerClientShake(shake,hits>0?130+70*(peak-1):80,HashUtil.hash(`${snapshot.tick}|blast|${index}`));
+  }
+  // The cannon's kick: a quick snap back along its firing line that eases home, as a screen-space offset.
+  launchRecoilOffset(b,x,y,sc){
+    const k=this.launchRecoil.get(b.id);if(!k)return null;
+    const age=performance.now()-k.at;if(age>360){this.launchRecoil.delete(b.id);return null}
+    const ease=age<45?age/45:Math.pow(1-(age-45)/315,2),[x1,y1]=this.worldToPx(this.viewX(b.x+k.dx*100),this.viewY(b.y+k.dy*100));
+    const dx=x1-x,dy=y1-y,len=Math.hypot(dx,dy)||1,kick=ease*(5+8*k.power)*sc;
+    return{x:-dx/len*kick,y:-dy/len*kick};
   }
   processFloatingEvents(snapshot){
     if(!snapshot||!this.fxCtx)return;
@@ -1319,6 +1352,8 @@ class GLRenderer{
       const age=now-fx.start;
       const life=
         fx.kind==="buildingBurst"?620:
+        fx.kind==="launchMuzzle"?900:
+        fx.kind==="launchBlast"?820:
         fx.kind==="deathBurst"?480:
         fx.kind==="meleeSourceMotion"?(AttackPresentationDefinition.sourceMotions[fx.motion]?.lifeMs||220):
         360;
@@ -1420,6 +1455,47 @@ class GLRenderer{
         burst(fx,x,y,t,13,"#6a6259",72,4.8,.48);
         burst(fx,x,y,t,7,"#d2aa63",58,3.3,.52);
         ring(x,y,(15+72*ease)*sc,3*sc,"#b98c54",.35*(1-t));
+      }else if(fx.kind==="launchMuzzle"){
+        // Muzzle flash on the barrel's end, then smoke that drifts up and spreads.
+        const power=Number(fx.power)||0,overheat=fx.mode==="overheat",size=(BuildingDefinition.get(BuildingDefinition.forRole("mainBase"))?.size||40)*sc;
+        let dx=0,dy=-1;
+        if(!overheat&&(fx.x2||fx.y2)){const p=this.worldToPx(this.viewX(fx.x2),this.viewY(fx.y2));const l=Math.hypot(p[0]-x,p[1]-y);if(l>.001){dx=(p[0]-x)/l;dy=(p[1]-y)/l}}
+        const mx=x+dx*size*.9,my=y+dy*size*.9;
+        if(!overheat&&t<.2){
+          const k=1-t/.2,len=(46+62*power)*sc*(fx.shot>0?.75:1),wide=fx.mode==="shotgun"?[-.5,-.25,0,.25,.5]:[-.22,0,.22];
+          ctx.globalAlpha=k;ctx.lineCap="round";
+          for(const [i,spread] of wide.entries()){
+            const a=Math.atan2(dy,dx)+spread,l=len*(i%2?.75:1);
+            ctx.strokeStyle=spread===0?"#fff6c8":"#ffb347";ctx.lineWidth=Math.max(3,(spread===0?13:8)*sc*k);
+            ctx.beginPath();ctx.moveTo(mx,my);ctx.lineTo(mx+Math.cos(a)*l,my+Math.sin(a)*l);ctx.stroke();
+          }
+          dot(mx,my,(26+20*power)*sc*k,"#ffe9a0",.55*k);dot(mx,my,(20+14*power)*sc*k,"#fff3b0",k);dot(mx,my,(11+9*power)*sc*k,"#ff8a2a",.9*k);
+          ring(mx,my,(16+60*(1-k))*sc,3.4*sc,"#ffd37a",.75*k);
+        }
+        const smoke=overheat?"#7a4a44":"#cfc7b8";
+        for(let i=0;i<(overheat?9:8);i++){
+          const h=HashUtil.hash(`${fx.seed}|smoke|${i}`),a=(h%4096)/4096*Math.PI*2,spread=.35+((h>>>12)%1000)/1600;
+          const rise=(26+52*t)*sc*spread,out=(16+40*ease)*sc*spread;
+          dot(mx+dx*out*.8+Math.cos(a)*out*.6,my+dy*out*.8-rise*.5+Math.sin(a)*out*.3,(9+15*ease)*sc*(.6+spread*.5),smoke,Math.max(0,.6*(1-t)));
+        }
+      }else if(fx.kind==="launchBlast"){
+        // Landing: shock ring the size of the blast, dust thrown outward and, near the middle, a hard white flash.
+        const radius=Math.max(30,Number(fx.radius)||100)*sc,peak=Number(fx.peak)||1,hits=Number(fx.hits)||0,strong=peak>=2;
+        if(t<.35){const k=1-t/.35;dot(x,y,radius*(strong?.5:.3)*(1-.4*t/.35),strong?"#ffffff":"#fff0b8",(strong?.95:.7)*k)}
+        ring(x,y,radius*(.18+.82*ease),(8-5*t)*sc*(strong?1.6:1),strong?"#fff3c8":"#ffcf6a",.9*(1-t));
+        ring(x,y,radius*(.1+.55*ease),2.4*sc,"#ff9a3a",.6*(1-t));
+        if(strong&&t<.55)ring(x,y,radius*(.5+1.1*ease),3*sc,"#ffffff",.5*(1-t/.55));
+        burst(fx,x,y,t,hits>0?22:12,"#a9895c",radius/sc*1.05,8,.62);
+        burst(fx,x,y,t,10,"#e9dcc0",radius/sc*.8,5,.58,fx.seed^0x51f1);
+        if(strong&&hits>0){
+          if(t<.22){ctx.globalAlpha=.2*(1-t/.22);ctx.fillStyle="#ffffff";ctx.fillRect(0,0,this.fxCanvas.width,this.fxCanvas.height)}
+          // The return on a good throw, in numbers: the strongest multiplier any enemy took.
+          ctx.globalAlpha=Math.min(1,(1-t)*2);ctx.textAlign="center";ctx.textBaseline="middle";
+          ctx.font=`900 ${Math.round(Math.max(18,30*sc*(1+.25*Math.min(2,peak-2))))}px system-ui,sans-serif`;
+          ctx.lineWidth=Math.max(3,5*sc);ctx.strokeStyle="rgba(60,20,0,.9)";ctx.fillStyle="#ffe27a";
+          const text=`강타 ×${peak.toFixed(1)}`,ty=y-radius*.55-26*sc*ease;
+          ctx.strokeText(text,x,ty);ctx.fillText(text,x,ty);
+        }
       }
 
       ctx.restore();
@@ -1679,7 +1755,8 @@ class GLRenderer{
     if(BuildingDefinition.get(b.type)?.isTerrainBarrier)return TerrainPresentation.drawBarrier(this,b);
     const own=this.isFriendlySide(b.side);
     if(!own&&!this.visibleRaw(b.x,b.y))return;
-    const[x,y]=this.worldToPx(this.viewX(b.x),this.viewY(b.y)),sc=this.sc(),d=BuildingDefinition.get(b.type);
+    let[x,y]=this.worldToPx(this.viewX(b.x),this.viewY(b.y));const sc=this.sc(),d=BuildingDefinition.get(b.type);
+    const kick=this.launchRecoilOffset(b,x,y,sc);if(kick){x+=kick.x;y+=kick.y}
     const r=d.size*sc;
     const shell=[.12,.16,.20,1];
     const stone=[.72,.74,.73,1];
@@ -1903,6 +1980,23 @@ class GLRenderer{
     // Health/status bars are drawn by drawWorldHudOverlay(), never in the unit pass.
     this.drawGrainUnit(u);
   }
+  // A fading smoke ribbon behind a launched pod, following its real arc (kept in world space so camera moves don't smear it).
+  drawLaunchTrail(p,wp,sc){
+    const now=performance.now();let trail=this.projectileTrails.get(p.id);
+    if(!trail)this.projectileTrails.set(p.id,trail=[]);
+    const last=trail[trail.length-1];
+    if(!last||now-last.t>=24)trail.push({x:wp.x,y:wp.y,z:wp.z,groundY:wp.groundY,t:now});
+    while(trail.length&&now-trail[0].t>520)trail.shift();
+    const friendly=this.factionRelation(p.side)==="friendly";let prev=null;
+    for(const point of trail){
+      const q=this.projectRenderWorldPosition(point),age=(now-point.t)/520,fade=1-age;
+      if(prev){
+        this.line(prev.x,prev.y,q.x,q.y,Math.max(2,(13-9*age)*sc),friendly?[.86,.92,1,.55*fade]:[1,.88,.84,.55*fade]);
+        this.line(prev.x,prev.y,q.x,q.y,Math.max(1.5,(5-3*age)*sc),[1,.96,.78,.9*fade]);
+      }
+      prev=q;
+    }
+  }
   projectileScreenMotion(p,screenX,screenY){
     let st=this.projectileScreenMotionStates.get(p.id),dx=0,dy=0,valid=false;
     if(st){dx=screenX-st.x;dy=screenY-st.y;const len=Math.hypot(dx,dy);if(len>.01){dx/=len;dy/=len;valid=true}else if(st.valid){dx=st.dx;dy=st.dy;valid=true}st.x=screenX;st.y=screenY;if(valid){st.dx=dx;st.dy=dy;st.valid=true}}
@@ -1928,6 +2022,7 @@ class GLRenderer{
       });
       if((gy-y)>2.5)this.line(gx,gy-sr*.25,gx,y+sr*.3,Math.max(1,1.25*sc),[.95,.92,.80,.16]);
     }
+    if(p.payload)this.drawLaunchTrail(p,wp,sc);
     const projectileCtx={p,sc,target,gx,gy,wp,pp,gp,x,y};
     // Direction is sampled after interpolation/camera projection/z-height, but before
     // transient hit/camera shake.
