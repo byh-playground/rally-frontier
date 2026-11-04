@@ -1697,23 +1697,6 @@ class GLRenderer{
     this.circle(x,y+r*.02,r*.63,stone,12);
     this.circle(x,y-r*.05,r*.48,teamCap,12);
     this.circle(x-r*.14,y-r*.20,r*.16,teamHi,10);
-    if(!b.complete&&(b.progress||0)===0){
-      // Reserved foundation exists immediately, but does not masquerade as a completed building.
-      this.circle(x,y-r*.02,r*.46,[.18,.22,.24,1],12);
-      this.line(x-r*.42,y-r*.34,x+r*.42,y+r*.34,Math.max(1.2,2*sc),teamHi);
-      this.line(x+r*.42,y-r*.34,x-r*.42,y+r*.34,Math.max(1.2,2*sc),teamHi);
-      this.circle(x,y,r*.14,[1,.74,.25,.92],10);
-      if(own&&this.selectedBuildingId===b.id){
-        const rr=r*1.28,m=Math.max(3,7*sc),lw=Math.max(1.5,2.5*sc),ec=[1,.78,.26,.95];
-        this.circle(x,y,rr,[1,.72,.20,.20],24);
-        this.line(x-r,y-r,x-r+m,y-r,lw,ec);this.line(x-r,y-r,x-r,y-r+m,lw,ec);
-        this.line(x+r,y-r,x+r-m,y-r,lw,ec);this.line(x+r,y-r,x+r,y-r+m,lw,ec);
-        this.line(x-r,y+r,x-r+m,y+r,lw,ec);this.line(x-r,y+r,x-r,y+r-m,lw,ec);
-        this.line(x+r,y+r,x+r-m,y+r,lw,ec);this.line(x+r,y+r,x+r,y+r-m,lw,ec);
-      }
-      this.rect(x-r,y+r+3*sc,r*2,4*sc,[.12,.16,.18,.3]);
-      return;
-    }
     const buildingVisual=BUILDING_VISUAL_RENDER_FNS[d.visualCategory];
     if(!buildingVisual)throw new Error(`Missing building visual renderer for ${b.type}`);
     buildingVisual(this,{b,x,y,r,own,teamCap,teamHi,shell,stone,sc,d});
@@ -1733,10 +1716,9 @@ class GLRenderer{
 
     if(own&&this.selectedBuildingId===b.id){
       const rr=r*1.28;
-      const col=b.complete?[.25,.88,.57,.18]:[1,.72,.20,.20];
-      this.circle(x,y,rr,col,24);
+      this.circle(x,y,rr,[.25,.88,.57,.18],24);
       // 네 귀퉁이 선택 마커
-      const m=Math.max(3,7*sc),lw=Math.max(1.5,2.5*sc),ec=b.complete?[.34,1,.68,.95]:[1,.78,.26,.95];
+      const m=Math.max(3,7*sc),lw=Math.max(1.5,2.5*sc),ec=[.34,1,.68,.95];
       this.line(x-r,y-r,x-r+m,y-r,lw,ec);this.line(x-r,y-r,x-r,y-r+m,lw,ec);
       this.line(x+r,y-r,x+r-m,y-r,lw,ec);this.line(x+r,y-r,x+r,y-r+m,lw,ec);
       this.line(x-r,y+r,x-r+m,y+r,lw,ec);this.line(x-r,y+r,x-r,y+r-m,lw,ec);

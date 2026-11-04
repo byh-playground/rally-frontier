@@ -31,8 +31,8 @@ class Unit{
 }
 
 class Building{
-  static stateContract=new StateContract({cooldownUntil:0,attackCooldownPhase:0,queue:[],terrainRevealUntil0:0,terrainRevealUntil1:0},{presentation:["hitFlash","attackFlash"]});
-  constructor(state={}){Object.assign(this,Building.stateContract.create(state));if(!Array.isArray(this.queue))this.queue=[]}
+  static stateContract=new StateContract({cooldownUntil:0,attackCooldownPhase:0,terrainRevealUntil0:0,terrainRevealUntil1:0},{presentation:["hitFlash","attackFlash"]});
+  constructor(state={}){Object.assign(this,Building.stateContract.create(state))}
   cooldownActive(sim){return sim.tick<(Number(this.cooldownUntil)||0)}
   clearCooldown(){this.cooldownUntil=0}
   startCooldownUntil(tick){this.cooldownUntil=Math.max(0,Math.round(Number(tick)||0));return this.cooldownUntil}
@@ -67,7 +67,7 @@ class VisibilityPolicy{
     for(const u of state.units||[])if(u.alive&&u.side===side){const d=UnitDefinition.get(u.type)||{};
       out.push({x:u.x,y:u.y,r:Number(d.sight)||0,level:world.terrain.surfaces.levelAt(u.x,u.y),ignoresTerrainVision:false,sourceId:u.id});
     }
-    for(const b of state.buildings||[])if(b.alive!==false&&b.side===side&&b.complete){const d=BuildingDefinition.get(b.type)||{};out.push({x:b.x,y:b.y,r:Number(d.sight)||0,level:world.terrain.surfaces.levelAt(b.x,b.y),ignoresTerrainVision:false,sourceId:b.id})}
+    for(const b of state.buildings||[])if(b.alive!==false&&b.side===side){const d=BuildingDefinition.get(b.type)||{};out.push({x:b.x,y:b.y,r:Number(d.sight)||0,level:world.terrain.surfaces.levelAt(b.x,b.y),ignoresTerrainVision:false,sourceId:b.id})}
     // High-ground attackers briefly reveal their own tile to the side they attacked.
     for(const u of state.units||[])if(u?.alive&&u.side!==side&&this.revealUntil(u,side)>Number(state.tick||0))out.push({x:u.x,y:u.y,r:TERRAIN_ATTACK_REVEAL_RADIUS,level:world.terrain.surfaces.levelAt(u.x,u.y),ignoresTerrainVision:true,reveal:true,sourceId:`reveal:${u.id}`});
     for(const b of state.buildings||[])if(b?.alive!==false&&b.side!==side&&Number(side===0?b.terrainRevealUntil0:b.terrainRevealUntil1)>Number(state.tick||0))out.push({x:b.x,y:b.y,r:TERRAIN_ATTACK_REVEAL_RADIUS,level:world.terrain.surfaces.levelAt(b.x,b.y),ignoresTerrainVision:true,reveal:true,sourceId:`reveal:${b.id}`});

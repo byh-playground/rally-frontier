@@ -77,8 +77,8 @@ class StrategySim{
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","spatialQueryScopeBuffers","spatialQueryScopeDepth","maxUnitRadius","targetLevelMemo",
     "visionFields","navigation"
   ]});
-  static createForMatch({draft,seed,rules=GameRuleDefinition.current}={}){return new StrategySim(draft,seed,rules)}
-  constructor(draftState,seed,rules=GameRuleDefinition.current){
+  static createForMatch({seed,rules=GameRuleDefinition.current}={}){return new StrategySim(seed,rules)}
+  constructor(seed,rules=GameRuleDefinition.current){
     this.seed=seed>>>0;this.rules=rules||GameRuleDefinition.current;this.tps=RangeUtil.clamp(Math.round(Number(this.rules?.simulation?.tps)||SIM_TPS),10,30);this.mapDescriptor=MapGeneration.generateMapDescriptor({rules:this.rules,seed:this.seed,roundNumber:this.rules?.roundNumber||1});StateValue.freeze(this.mapDescriptor);this.world=WorldContext.fromMap(this.mapDescriptor);this.tick=0;this.seq=0;this.units=[];this.buildings=[];this.constructionOrders=[];this.navigationAdmissions=[];this.projectiles=[];this.events=[];this.scheduled=new Map();
     this.wallet=[0,1].map(()=>LaunchRules.startingWallet);
     this.launchIncomeCarry=[0,0];
@@ -90,7 +90,7 @@ class StrategySim{
 
     SimulationRuntimeState.initialize(this,{newMatch:true});
 
-    this.flags=CloneUtil.clone(this.mapDescriptor.flags);this.decks=[draftState.decks.host.slice(),draftState.decks.guest.slice()];
+    this.flags=CloneUtil.clone(this.mapDescriptor.flags);
     this.createBase(0);this.createBase(1);
     // Landed units march straight to the enemy main base.
     for(const side of [0,1]){const enemy=this.buildings.find(b=>b.id==="base"+(1-side));this.flags[side]={x:enemy.x,y:enemy.y,forced:false}}
@@ -259,8 +259,7 @@ class StrategySim{
     const id="outpost-"+cp.id+"-"+(++this.seq);
     this.buildings.push(new Building({
       id,type:BuildingDefinition.forRole("outpost"),side,x:cp.x,y:cp.y,
-      hp:d.hp,maxHp:d.hp,complete:true,progress:0,queue:[],captureId:cp.id,
-      gasWorkerTarget:0
+      hp:d.hp,maxHp:d.hp,captureId:cp.id
     }));
     this.markBuildingSpatialDirty();
     cp.owner=side;cp.outpostId=id;cp.enabled=false;cp.progress=0;cp.progressSide=null;
@@ -304,7 +303,7 @@ class StrategySim{
   createBase(side){
     const bp=side===0?(this.mapDescriptor?.spawns?.host||this.world.bases[0]):(this.mapDescriptor?.spawns?.guest||this.world.bases[1]);
     const type=BuildingDefinition.forRole("mainBase"),hp=BuildingDefinition.get(type).hp;
-    this.buildings.push(new Building({id:"base"+side,type,side,x:bp.x,y:bp.y,hp,maxHp:hp,complete:true,progress:0,queue:[],gasWorkerTarget:0}));
+    this.buildings.push(new Building({id:"base"+side,type,side,x:bp.x,y:bp.y,hp,maxHp:hp}));
     this.markBuildingSpatialDirty();
   }
 
@@ -477,7 +476,7 @@ class StrategySim{
   queueCommand(cmd){let arr=this.scheduled.get(cmd.tick);if(!arr){arr=[];this.scheduled.set(cmd.tick,arr)}arr.push(cmd);arr.sort((a,b)=>a.seq-b.seq)}
   launchCannons(side){
     const main=BuildingDefinition.forRole("mainBase"),outpost=BuildingDefinition.forRole("outpost");
-    return this.buildings.filter(b=>b.side===side&&b.alive!==false&&b.complete!==false&&(b.type===main||b.type===outpost));
+    return this.buildings.filter(b=>b.side===side&&b.alive!==false&&(b.type===main||b.type===outpost));
   }
   applyLaunchCommand(side,action){
     const cannon=this.launchCannons(side).find(b=>b.id===action.cannonId);
@@ -1548,7 +1547,7 @@ class StrategySim{
     try{
       this.navigation?.sync();
       return ({
-        tick:this.tick,tps:this.tps,decks:this.decks.map(d=>d.slice()),mapDescriptor:this.mapDescriptor,
+        tick:this.tick,tps:this.tps,mapDescriptor:this.mapDescriptor,
         wallet:this.wallet.slice(),launchStats:StateValue.copy(this.launchStats),flags:CloneUtil.clone(this.flags),capturePoints:CloneUtil.clone(this.capturePoints),
         units:this.units.map(u=>u.toState("view")),buildings:this.buildings.map(b=>b.toState()),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)
       });
