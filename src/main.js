@@ -1,40 +1,40 @@
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from './core/game-rules.js';
 import { GrainFaceOverlay } from './core/grain-face-overlay.js';
-import { StrategySim } from './sim/strategy-sim.js';
-import { BuildPrerequisitePolicy, TerrainQuery, Unit, VisibilityPolicy, VisionField } from './sim/entities.js';
+import './sim/strategy-sim.js';
+import { TerrainQuery, Unit, VisibilityPolicy, VisionField } from './sim/entities.js';
 import './sim/unit-behaviors.js';
 import { ChargedSkillMixin, CloakAuraMixin } from './sim/unit-mixins.js';
 import { BurrowableMixin, ChargedSkillGeometry } from './sim/components.js';
 import { BotController } from './ai/bot-controller.js';
 import './ai/ai-policy.js';
 import { GameSession, RallySynctestDiagnostics } from './session/game-session.js';
-import { ReplayPlayer, ReplayPolicy, ReplayRecorder } from './session/replay.js';
-import { ActiveViewState, BACKGROUND_TICK_SESSIONS, BattlePresentationCache, NetworkModuleLoader } from './session/runtime-state.js';
+import { ReplayPlayer, ReplayPolicy } from './session/replay.js';
+import { ActiveViewState, BACKGROUND_TICK_SESSIONS, NetworkModuleLoader } from './session/runtime-state.js';
 import { LaunchRules } from './sim/launch-rules.js';
 import './sim/spatial-grids.js';
-import { LoopbackTransport, NostrRtcTransport } from './net/rtc-transport.js';
+import { NostrRtcTransport } from './net/rtc-transport.js';
 import { RecoveryTelemetry } from './diagnostics/recovery-telemetry.js';
 import { ConnectionRoleUtil, ConnectionSideUtil, StableSerializationUtil } from './net/lobby-codec.js';
 import { CloneUtil, HashUtil, MapGeneration } from './sim/map-generation.js';
-import { ABILITY_INFO } from './definitions/balance.js';
-import { ABILITY_RESEARCH_COSTS, ARMOR_REDUCTION_PCT_PER_LEVEL, ATTACK_UPGRADE_PCT_PER_LEVEL, AttackPresentationDefinition, BodyPulsePresentation, ResearchDefinition, UnitSpecialResearchDefinition } from './definitions/research.js';
-import { BuildingDefinition, buildingPlacementInsideWorld, buildingPlacementSeparation } from './definitions/buildings.js';
-import { DAMAGE_CLASS_LABEL, DAMAGE_CLASS_MATRIX, DECK_SLOT_COUNT, DECK_TOTAL_CARD_COUNT, DeckCardRuleDefinition, DefenseCardDefinition, SIZE_CLASS_LABEL } from './definitions/decks.js';
-import { COMBAT_UNITS, ECONOMY_WORKER_DEF, UnitDefinition, UnitFactionPalette, UnitVisualDefinition } from './definitions/units.js';
-import { CampDefinition, MAIN_OBJECTIVE_RESPAWN_MS, NEUTRAL_SIDE, NeutralCampPolicy, OBJECTIVE_DRAGON_BREATH_PHASE, PassiveCardDefinition, SpellDefinition, UnitCompositionDefinition } from './definitions/cards.js';
+import './definitions/balance.js';
+import { AttackPresentationDefinition, BodyPulsePresentation, UnitSpecialResearchDefinition } from './definitions/research.js';
+import { BuildingDefinition } from './definitions/buildings.js';
+import { DefenseCardDefinition } from './definitions/decks.js';
+import { UnitDefinition, UnitFactionPalette, UnitVisualDefinition } from './definitions/units.js';
+import { CampDefinition, NEUTRAL_SIDE, NeutralCampPolicy, OBJECTIVE_DRAGON_BREATH_PHASE, SpellDefinition, UnitCompositionDefinition } from './definitions/cards.js';
 import { MapGeometry } from './sim/map-geometry.js';
-import { CAPTURE_DURATION_MS, CAPTURE_RADIUS, DEFENSE_CLUSTER_RADIUS, LANE_CONTROL_POINTS, MINERAL_BUILD_MARGIN, PRODUCTION_CLUSTER_RADIUS, PRODUCTION_CLUSTER_SPEED_PCT, SPELL_MASTERY_MAX, SPELL_SLOT_MAX, TACTICAL_CHEST_OPTION_COUNT } from './definitions/combat-rules.js';
+import { CAPTURE_DURATION_MS, CAPTURE_RADIUS, DEFENSE_CLUSTER_RADIUS, LANE_CONTROL_POINTS, PRODUCTION_CLUSTER_RADIUS } from './definitions/combat-rules.js';
 import { PerformanceTelemetry } from './diagnostics/performance-telemetry.js';
 import './definitions/formations.js';
-import { BASE_SUPPLY, GAS_ASSIGNMENT_MAX, GAS_DEPLETED_MINE_AMOUNT, GAS_MINE_AMOUNT, ROGUE_LEAP_ARC_HEIGHT, STARTING_WORKER_COUNT, VIEW_H, VIEW_W, WORKER_CARRY_CAP, WORKER_COST, WORKER_QUEUE_LIMIT } from './definitions/world-rules.js';
+import { ROGUE_LEAP_ARC_HEIGHT, STARTING_WORKER_COUNT, VIEW_H, VIEW_W } from './definitions/world-rules.js';
 import { WorldContext } from './sim/world-context.js';
 import { NavigationGoal, NavigationMeshBuilder } from './sim/navigation.js';
 import { BattlefieldProjection, PolygonTriangulation, TerrainGeometry, TerrainSurfaceAtlas, TerrainSurfaceProjection } from './sim/terrain.js';
-import { BACKGROUND_TICK_PULSE_MS, DISCONNECT_GRACE_MS } from './core/session-timing.js';
+import { BACKGROUND_TICK_PULSE_MS } from './core/session-timing.js';
 import { RENDER_TRACKS } from './render/render-tracks.js';
-import { CHARGED_SKILL_DRAG_PX, CHARGED_SKILL_HOLD_MS, CONFIG, GAS_WORKER_UI_DEBOUNCE_MS, PREDICTED_BUILD_GHOST_TTL_MS, PREDICTED_COMMAND_FX_TTL_MS, SIM_VERSION, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode } from './core/config.js';
+import { CHARGED_SKILL_DRAG_PX, CHARGED_SKILL_HOLD_MS, CONFIG, PREDICTED_BUILD_GHOST_TTL_MS, PREDICTED_COMMAND_FX_TTL_MS, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode } from './core/config.js';
 import { BUILD_META } from './core/build-info.js';
-import { RallyGamekit, RallyNetcode, SIM_WORKER } from './core/gamekit.js';
+import { RallyGamekit, SIM_WORKER } from './core/gamekit.js';
 import { LaunchScreens } from './ui/launch-screens.js';
 import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
@@ -6519,23 +6519,17 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     if(!cast||!['gathering','charging'].includes(cast.phase)){
       const pending=this.chargedSkillGesture;
       if(pending){const [x,y]=this.worldToPx(pending.x,pending.y);this.outlineCircle(x,y,Math.max(12,20*sc),1.5,[.75,.83,.84,.7],16,1)}
-      if(pending&&!ReplayPresentation.replayPlayer&&UiRuntimeState.value.target.type==='flag')UiRegistry.refs.hint.textContent='집결 지시 중 · 흰색: 내 조준 · 확정된 참가 병력을 기다립니다.';
-      if(!pending&&!ReplayPresentation.replayPlayer&&UiRuntimeState.value.target.type==='flag'){
-        const hint='탭: 자동전투 깃발 · 정지 홀드: 집결·충전 · 홀드 전 드래그: 맵 이동 · 이후 드래그: 조준 · 놓기: 발사';
-        if(UiRegistry.refs.hint.textContent!==hint)UiRegistry.refs.hint.textContent=hint;
-      }
       return;
     }
     const [x,y]=this.worldToPx(this.viewX(cast.originX),this.viewY(cast.originY));
     this.outlineCircle(x,y,ChargedSkillGeometry.gatheringR*sc,Math.max(1,2*sc),[.40,.87,.73,.55],48,1);
-    const members=this.chargedMemberIds(side),unavailable=new Set(cast.unavailableIds);
-    let ready=0,progress=0,unavailableCount=unavailable.size,centerX=0,centerY=0,targetX=0,targetY=0;
+    const members=this.chargedMemberIds(side);
+    let ready=0,progress=0,centerX=0,centerY=0,targetX=0,targetY=0;
     for(const id of [...cast.memberIds,...cast.unavailableIds]){
       const unit=this.renderState.entity('unit',id);
       if(!unit?.alive)continue;
       const pose=this.renderTrackedScreenPosition(unit,"unit"),ux=pose.x,uy=pose.y,r=Math.max(5,this.unitRenderRadius(unit));
       if(!members.has(unit.id)||!ChargedSkillMixin.stateReady(unit,this.snapshot.tick)){
-        if(members.has(unit.id))unavailableCount++;
         this.outlineCircle(ux,uy,r+4,1,[.60,.62,.64,.65],12,1);continue;
       }
       ready++;
@@ -6568,10 +6562,6 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     const [ax,ay]=this.worldToPx(this.viewX(cast.aimX),this.viewY(cast.aimY));
     // A connected offset indicator keeps the aim readable above a mobile finger.
     if(pointer?.pointerType==='touch'){this.line(ax,ay,ax,ay-32,1,[1,.88,.48,.6]);this.outlineCircle(ax,ay-32,6,2,[1,.88,.48,.9],12,1)}
-    if(!ReplayPresentation.replayPlayer&&UiRuntimeState.value.target.type==='flag'){
-      const message=`${cast.phase==='gathering'?'집결':'충전 '+Math.round(progress*100)+'%'} · 준비 ${ready} · 사용 불가 ${unavailableCount} · 흰 점: 포인터 · 금색: 확정 착탄 · 드래그 조준, 놓으면 발사`;
-      if(UiRegistry.refs.hint.textContent!==message)UiRegistry.refs.hint.textContent=message;
-    }
   }
   drawBuildPreview(){
     const p=this.buildPreview;
@@ -7055,20 +7045,8 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
 
     const vectorStats=this.vectorContext.stats().mesh;
     rp.vectorAssetDraws=this.vectorAssetDrawnInstances;rp.vectorAssetInstances=vectorStats.instances;rp.vectorAssetDrawCalls=vectorStats.draws;
-    rp.vectorFlushDiagnostics=MobileBattleTestMode.phase==="sampling"&&MobileBattleTestMode.vectorFlushDiagnosticsAvailable?{
-      safeAlphaRunBatching:vectorStats.safeAlphaRunBatching===true,
-      flushReasons:{...vectorStats.flushReasons},drawDispatchReasons:{...vectorStats.drawDispatchReasons},
-      alphaRunSafeBatches:vectorStats.alphaRunSafeBatches,alphaRunBatchedInstances:vectorStats.alphaRunBatchedInstances,alphaRunDrawsSaved:vectorStats.alphaRunDrawsSaved,
-      alphaRunSafeRunDraws:vectorStats.alphaRunSafeRunDraws,alphaRunImmediateRunDraws:vectorStats.alphaRunImmediateRunDraws,
-      alphaRunOverlapBoundaries:vectorStats.alphaRunOverlapBoundaries,alphaRunSignatureBoundaries:vectorStats.alphaRunSignatureBoundaries,
-      alphaRunUnbatchableBounds:vectorStats.alphaRunUnbatchableBounds,alphaRunImmediateInstances:vectorStats.alphaRunImmediateInstances
-    }:null;
     rp.vectorTerrainOcclusionTests=this.vectorTerrainOcclusionTests;rp.vectorTerrainOcclusionRegions=this.vectorTerrainOcclusionRegions;rp.vectorTerrainOcclusionTriangles=this.vectorTerrainOcclusionTriangles;
     rp.vectorAssetGeometryBytes=vectorStats.geometryBytesUploaded;rp.vectorAssetInstanceBytes=vectorStats.instanceBytesUploaded;rp.vectorAssetRetainedBytes=vectorStats.retainedBytes;rp.vectorAssetMeshes=vectorStats.meshCount;
-    if(MobileBattleTestMode.phase==="sampling"){
-      rp.vectorAlphaRunCacheHits=vectorStats.alphaRunCacheHits;rp.vectorAlphaRunCacheMisses=vectorStats.alphaRunCacheMisses;
-      rp.vectorGeometryUploads=vectorStats.geometryUploads;rp.vectorPartUniformBytesSubmitted=vectorStats.partUniformBytesSubmitted;rp.vectorStagingBytes=vectorStats.stagingBytes;
-    }
     rp.drawCalls+=vectorStats.draws;rp.bufferUploadBytes+=vectorStats.geometryBytesUploaded+vectorStats.instanceBytesUploaded;
     rp.geometryTemplateHits=this.geometryTemplateHits;
     rp.unitBodyMeshCacheHits=this.unitBodyMeshCacheHits;
@@ -7084,10 +7062,6 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       rp.frameIntervalMs=frameInterval;
       rp.ewmaFrameIntervalMs=rp.ewmaFrameIntervalMs?rp.ewmaFrameIntervalMs*.85+frameInterval*.15:frameInterval;
       rp.maxFrameIntervalMs=Math.max(rp.maxFrameIntervalMs||0,frameInterval);
-    }
-    if(MobileBattleTestMode.phase==="sampling"){
-      rp.frameSequence=(rp.frameSequence||0)+1;
-      MobileBattleTestMode.captureRendererFrame(frameEnded,rp);
     }
     rp.frames++;
     const fpsSpan=frameEnded-rp.fpsWindowAt;
@@ -7139,10 +7113,6 @@ e.stopPropagation();
       const elevation=this.renderer.world.terrain.surfaces.heightAt(this.renderer.viewX(viewWorldX),this.renderer.viewY(viewWorldY));
       this.renderer.cameraTop=this.renderer.clampCameraTop(BattlefieldProjection.planarY(viewWorldY,elevation)-vh/2);
 
-      if(LocalEnvironmentUtil.isLocalTest()&&ActiveViewState.role){
-        ViewRuntimeState.byRole[ActiveViewState.role].cameraLeft=this.renderer.cameraLeft;
-        ViewRuntimeState.byRole[ActiveViewState.role].cameraTop=this.renderer.cameraTop;
-      }
       this.draw();
     };
 
@@ -7677,38 +7647,16 @@ const audioSystem=new AudioSystem();
    7. UI wiring
    ========================= */
 class DomUtil{static byId(id){return document.getElementById(id)}}
-class UiRegistry{static refs={p2pHealth:DomUtil.byId("p2pHealth"),p2pHealthText:DomUtil.byId("p2pHealthText"),lobby:DomUtil.byId("lobby"),game:DomUtil.byId("gameScreen"),net:DomUtil.byId("netStatus"),createDialog:DomUtil.byId("createDialog"),joinDialog:DomUtil.byId("joinDialog"),createClose:DomUtil.byId("createCloseBtn"),joinClose:DomUtil.byId("joinCloseBtn"),createStatus:DomUtil.byId("createStatus"),createRetry:DomUtil.byId("createRetryBtn"),joinConfirm:DomUtil.byId("joinConfirmBtn"),room:DomUtil.byId("roomInput"),codeArea:DomUtil.byId("hostCodeArea"),code:DomUtil.byId("hostCode"),joinError:DomUtil.byId("joinError"),localTest:DomUtil.byId("localTestBtn"),testSwitcher:DomUtil.byId("testSwitcher"),hostView:DomUtil.byId("hostViewBtn"),guestView:DomUtil.byId("guestViewBtn"),canvas:DomUtil.byId("glCanvas"),minimapCanvas:DomUtil.byId("minimapCanvas"),minimapExpandBtn:DomUtil.byId("minimapExpandBtn"),minerals:DomUtil.byId("minerals"),gas:DomUtil.byId("gas"),workers:DomUtil.byId("workers"),supply:DomUtil.byId("supply"),supplyChip:DomUtil.byId("supplyChip"),supplyWarning:DomUtil.byId("supplyWarning"),reinforcementOverview:DomUtil.byId("reinforcementOverview"),reinforcementGrid:DomUtil.byId("reinforcementGrid"),tier:DomUtil.byId("tier"),soundBtn:DomUtil.byId("soundBtn"),modeTip:DomUtil.byId("modeTip"),buildFinishBtn:DomUtil.byId("buildFinishBtn"),spellCancelBtn:DomUtil.byId("spellCancelBtn"),productionEfficiencySummary:DomUtil.byId("productionEfficiencySummary"),unitGrid:DomUtil.byId("unitGrid"),spellCloseBtn:DomUtil.byId("spellCloseBtn"),spellChoiceArea:DomUtil.byId("spellChoiceArea"),spellInventory:DomUtil.byId("spellInventory"),tacticalChestArea:DomUtil.byId("tacticalChestArea"),flagBtn:DomUtil.byId("flagBtn"),pauseBtn:DomUtil.byId("pauseBtn"),cancelModeBtn:DomUtil.byId("cancelModeBtn"),supplyBtn:DomUtil.byId("supplyBtn"),gasExtractorBtn:DomUtil.byId("gasExtractorBtn"),defenseCardChoices:DomUtil.byId("defenseCardChoices"),academyBtn:DomUtil.byId("academyBtn"),airIncubatorBtn:DomUtil.byId("airIncubatorBtn"),labBtn:DomUtil.byId("labBtn"),buildingPanel:DomUtil.byId("buildingPanel"),buildingPanelTitle:DomUtil.byId("buildingPanelTitle"),buildingPanelStatus:DomUtil.byId("buildingPanelStatus"),buildingPanelActions:DomUtil.byId("buildingPanelActions"),buildingDeselectBtn:DomUtil.byId("buildingDeselectBtn"),tech2:DomUtil.byId("tech2Line"),tech3:DomUtil.byId("tech3Line"),attackUpgradeTag:DomUtil.byId("attackUpgradeTag"),armorUpgradeTag:DomUtil.byId("armorUpgradeTag"),hint:DomUtil.byId("selectionHint"),log:DomUtil.byId("eventLog"),result:DomUtil.byId("result"),resultTitle:DomUtil.byId("resultTitle"),resultText:DomUtil.byId("resultText"),rematch:DomUtil.byId("rematchBtn")}}
-UiRegistry.refs.infoDetailDialog=DomUtil.byId("infoDetailDialog");
-UiRegistry.refs.infoDetailCloseBtn=DomUtil.byId("infoDetailCloseBtn");
-UiRegistry.refs.infoDetailIcon=DomUtil.byId("infoDetailIcon");
-UiRegistry.refs.infoDetailTitle=DomUtil.byId("infoDetailTitle");
-UiRegistry.refs.infoDetailKicker=DomUtil.byId("infoDetailKicker");
-UiRegistry.refs.infoDetailBody=DomUtil.byId("infoDetailBody");
-UiRegistry.refs.infoDetailMeta=DomUtil.byId("infoDetailMeta");
+class UiRegistry{static refs={p2pHealth:DomUtil.byId("p2pHealth"),p2pHealthText:DomUtil.byId("p2pHealthText"),lobby:DomUtil.byId("lobby"),game:DomUtil.byId("gameScreen"),createDialog:DomUtil.byId("createDialog"),joinDialog:DomUtil.byId("joinDialog"),createClose:DomUtil.byId("createCloseBtn"),joinClose:DomUtil.byId("joinCloseBtn"),createStatus:DomUtil.byId("createStatus"),createRetry:DomUtil.byId("createRetryBtn"),joinConfirm:DomUtil.byId("joinConfirmBtn"),room:DomUtil.byId("roomInput"),codeArea:DomUtil.byId("hostCodeArea"),code:DomUtil.byId("hostCode"),joinError:DomUtil.byId("joinError"),canvas:DomUtil.byId("glCanvas"),minimapCanvas:DomUtil.byId("minimapCanvas"),result:DomUtil.byId("result"),resultTitle:DomUtil.byId("resultTitle"),resultText:DomUtil.byId("resultText"),rematch:DomUtil.byId("rematchBtn")}}
 
-class MinimapPresentation{
-  static setMinimapExpanded(expanded){
-  UiRuntimeState.value.options.minimapExpanded=!!expanded;
-  UiController.renderUiState();
-  if(ActiveViewState.minimap)requestAnimationFrame(()=>ActiveViewState.minimap.draw());
-}
-}
 
-UiRegistry.refs.minimapExpandBtn?.addEventListener("click",e=>{
-  e.preventDefault();e.stopPropagation();
-  MinimapPresentation.setMinimapExpanded(!UiRuntimeState.value.options.minimapExpanded);
-});
-document.addEventListener("keydown",e=>{
-  if(e.key==="Escape"&&UiRuntimeState.value.options.minimapExpanded)MinimapPresentation.setMinimapExpanded(false);
-});
 UiRegistry.refs.lockstepDebugPanel=DomUtil.byId("lockstepDebugPanel");
 UiRegistry.refs.lockstepDebugCloseBtn=DomUtil.byId("lockstepDebugCloseBtn");
 UiRegistry.refs.manualRecoveryBtn=DomUtil.byId("manualRecoveryBtn");
 UiRegistry.refs.fullConnectionResetBtn=DomUtil.byId("fullConnectionResetBtn");
 UiRegistry.refs.lockstepDebugResetBtn=DomUtil.byId("lockstepDebugResetBtn");
 UiRegistry.refs.recoveryLogExportBtn=DomUtil.byId("recoveryLogExportBtn");
-UiRegistry.refs.balanceTelemetryExportBtn=DomUtil.byId("balanceTelemetryExportBtn");UiRegistry.refs.performanceBenchmarkBtn=DomUtil.byId("performanceBenchmarkBtn");
-UiRegistry.refs.lockstepDebugSummary=DomUtil.byId("lockstepDebugSummary");
+UiRegistry.refs.balanceTelemetryExportBtn=DomUtil.byId("balanceTelemetryExportBtn");UiRegistry.refs.lockstepDebugSummary=DomUtil.byId("lockstepDebugSummary");
 UiRegistry.refs.lockstepDebugVerdict=DomUtil.byId("lockstepDebugVerdict");
 UiRegistry.refs.synctestRunBtn=DomUtil.byId("synctestRunBtn");
 UiRegistry.refs.dbgSyncStatus=DomUtil.byId("dbgSyncStatus");
@@ -7732,15 +7680,12 @@ UiRegistry.refs.dbgPerfStep=DomUtil.byId("dbgPerfStep");UiRegistry.refs.dbgPerfP
 UiRegistry.refs.dbgPerfSnapshot=DomUtil.byId("dbgPerfSnapshot");UiRegistry.refs.dbgPerfEntities=DomUtil.byId("dbgPerfEntities");UiRegistry.refs.dbgPerfSpatial=DomUtil.byId("dbgPerfSpatial");UiRegistry.refs.dbgPerfTarget=DomUtil.byId("dbgPerfTarget");UiRegistry.refs.dbgPerfCollision=DomUtil.byId("dbgPerfCollision");UiRegistry.refs.dbgPerfRender=DomUtil.byId("dbgPerfRender");UiRegistry.refs.dbgPerfAllowanceLabel=DomUtil.byId("dbgPerfAllowanceLabel");UiRegistry.refs.dbgPerfAllowance=DomUtil.byId("dbgPerfAllowance");UiRegistry.refs.dbgPerfUsedLabel=DomUtil.byId("dbgPerfUsedLabel");UiRegistry.refs.dbgPerfUsed=DomUtil.byId("dbgPerfUsed");UiRegistry.refs.dbgPerfBudgetLabel=DomUtil.byId("dbgPerfBudgetLabel");UiRegistry.refs.dbgPerfBudget=DomUtil.byId("dbgPerfBudget");
 UiRegistry.refs.dbgPerfCollisionCore=DomUtil.byId("dbgPerfCollisionCore");UiRegistry.refs.dbgPerfCollisionTail=DomUtil.byId("dbgPerfCollisionTail");
 UiRegistry.refs.dbgPerfCombatSplit=DomUtil.byId("dbgPerfCombatSplit");UiRegistry.refs.dbgPerfCollisionSweepFlow=DomUtil.byId("dbgPerfCollisionSweepFlow");UiRegistry.refs.dbgPerfCollisionHardFixFlow=DomUtil.byId("dbgPerfCollisionHardFixFlow");
-UiRegistry.refs.dbgEnduranceMismatchRate=DomUtil.byId("dbgEnduranceMismatchRate");UiRegistry.refs.dbgEnduranceCorrectionRate=DomUtil.byId("dbgEnduranceCorrectionRate");UiRegistry.refs.dbgEndurancePeaks=DomUtil.byId("dbgEndurancePeaks");
+UiRegistry.refs.dbgEndurancePeaks=DomUtil.byId("dbgEndurancePeaks");
 UiRegistry.refs.dbgBalanceTime=DomUtil.byId("dbgBalanceTime");UiRegistry.refs.dbgBalanceT2=DomUtil.byId("dbgBalanceT2");UiRegistry.refs.dbgBalanceT3=DomUtil.byId("dbgBalanceT3");UiRegistry.refs.dbgBalanceTech=DomUtil.byId("dbgBalanceTech");UiRegistry.refs.dbgBalanceCombat=DomUtil.byId("dbgBalanceCombat");UiRegistry.refs.dbgBalanceCapture=DomUtil.byId("dbgBalanceCapture");
 UiRegistry.refs.dbgBalanceMineral=DomUtil.byId("dbgBalanceMineral");UiRegistry.refs.dbgBalanceGas=DomUtil.byId("dbgBalanceGas");UiRegistry.refs.dbgBalanceArmy=DomUtil.byId("dbgBalanceArmy");UiRegistry.refs.dbgBalanceAir=DomUtil.byId("dbgBalanceAir");UiRegistry.refs.dbgBalanceAA=DomUtil.byId("dbgBalanceAA");UiRegistry.refs.dbgBalanceExhaust=DomUtil.byId("dbgBalanceExhaust");UiRegistry.refs.dbgBalanceLosses=DomUtil.byId("dbgBalanceLosses");
 
 UiRegistry.refs.gameStartBtn=DomUtil.byId("gameStartBtn");
-UiRegistry.refs.campaignRepositoryList=DomUtil.byId("campaignRepositoryList");UiRegistry.refs.campaignRefreshBtn=DomUtil.byId("campaignRefreshBtn");UiRegistry.refs.campaignDialog=DomUtil.byId("campaignDialog");UiRegistry.refs.campaignCloseBtn=DomUtil.byId("campaignCloseBtn");UiRegistry.refs.campaignUrlInput=DomUtil.byId("campaignUrlInput");UiRegistry.refs.campaignLoadUrlBtn=DomUtil.byId("campaignLoadUrlBtn");UiRegistry.refs.campaignFileInput=DomUtil.byId("campaignFileInput");UiRegistry.refs.campaignLoadFileBtn=DomUtil.byId("campaignLoadFileBtn");UiRegistry.refs.campaignStartBtn=DomUtil.byId("campaignStartBtn");UiRegistry.refs.campaignStatus=DomUtil.byId("campaignStatus");UiRegistry.refs.campaignMissionTitle=DomUtil.byId("campaignMissionTitle");UiRegistry.refs.campaignMissionBrief=DomUtil.byId("campaignMissionBrief");
 UiRegistry.refs.singleStatus=DomUtil.byId("singleStatus");
-UiRegistry.refs.deckEditBtn=DomUtil.byId("deckEditBtn");
-UiRegistry.refs.deckConfirmBtn=DomUtil.byId("deckConfirmBtn");
 
 UiRegistry.refs.installPwaBtn=DomUtil.byId("installPwaBtn");
 UiRegistry.refs.installPwaMeta=DomUtil.byId("installPwaMeta");
@@ -7756,245 +7701,16 @@ UiRegistry.refs.bootProgressBar=DomUtil.byId("bootProgressBar");
 UiRegistry.refs.bootBuild=DomUtil.byId("bootBuild");
 UiRegistry.refs.bootRetryBtn=DomUtil.byId("bootRetryBtn");
 
-UiRegistry.refs.helpBtn=DomUtil.byId("helpBtn");
-UiRegistry.refs.helpModal=DomUtil.byId("helpModal");
-UiRegistry.refs.helpBackdrop=DomUtil.byId("helpBackdrop");
-UiRegistry.refs.helpCloseBtn=DomUtil.byId("helpCloseBtn");
-UiRegistry.refs.helpBody=DomUtil.byId("helpBody");
-UiRegistry.refs.helpUnitTable=DomUtil.byId("helpUnitTable");
-UiRegistry.refs.helpSpellTable=DomUtil.byId("helpSpellTable");
 UiRegistry.refs.replayOpenBtn=DomUtil.byId("replayOpenBtn");UiRegistry.refs.replayFileInput=DomUtil.byId("replayFileInput");UiRegistry.refs.replayWatchBtn=DomUtil.byId("replayWatchBtn");UiRegistry.refs.replaySaveBtn=DomUtil.byId("replaySaveBtn");
 UiRegistry.refs.replayDock=DomUtil.byId("replayDock");UiRegistry.refs.replayPlayPauseBtn=DomUtil.byId("replayPlayPauseBtn");UiRegistry.refs.replayStepBackBtn=DomUtil.byId("replayStepBackBtn");UiRegistry.refs.replayStepForwardBtn=DomUtil.byId("replayStepForwardBtn");UiRegistry.refs.replayStepBack30Btn=DomUtil.byId("replayStepBack30Btn");UiRegistry.refs.replayStepForward30Btn=DomUtil.byId("replayStepForward30Btn");UiRegistry.refs.replayTimeline=DomUtil.byId("replayTimeline");UiRegistry.refs.replayTime=DomUtil.byId("replayTime");UiRegistry.refs.replayTimeInput=DomUtil.byId("replayTimeInput");UiRegistry.refs.replayTimeGoBtn=DomUtil.byId("replayTimeGoBtn");UiRegistry.refs.replaySpeed=DomUtil.byId("replaySpeed");UiRegistry.refs.replayExitBtn=DomUtil.byId("replayExitBtn");
 UiRegistry.refs.replayHostViewBtn=DomUtil.byId("replayHostViewBtn");UiRegistry.refs.replayGuestViewBtn=DomUtil.byId("replayGuestViewBtn");UiRegistry.refs.replayAllViewBtn=DomUtil.byId("replayAllViewBtn");UiRegistry.refs.replayHostOrientationBtn=DomUtil.byId("replayHostOrientationBtn");UiRegistry.refs.replayGuestOrientationBtn=DomUtil.byId("replayGuestOrientationBtn");UiRegistry.refs.replayZoomOutBtn=DomUtil.byId("replayZoomOutBtn");UiRegistry.refs.replayZoomInBtn=DomUtil.byId("replayZoomInBtn");UiRegistry.refs.replayZoomValue=DomUtil.byId("replayZoomValue");UiRegistry.refs.replayStats=DomUtil.byId("replayStats");
 UiRegistry.refs.matchMenuBtnGame=DomUtil.byId("matchMenuBtnGame");UiRegistry.refs.matchMenuModal=DomUtil.byId("matchMenuModal");UiRegistry.refs.matchMenuBackdrop=DomUtil.byId("matchMenuBackdrop");UiRegistry.refs.matchMenuCloseBtn=DomUtil.byId("matchMenuCloseBtn");UiRegistry.refs.matchMenuContinueBtn=DomUtil.byId("matchMenuContinueBtn");UiRegistry.refs.matchMenuReplaySaveBtn=DomUtil.byId("matchMenuReplaySaveBtn");UiRegistry.refs.matchMenuHelpBtn=DomUtil.byId("matchMenuHelpBtn");UiRegistry.refs.matchMenuSurrenderBtn=DomUtil.byId("matchMenuSurrenderBtn");UiRegistry.refs.matchMenuLeaveBtn=DomUtil.byId("matchMenuLeaveBtn");UiRegistry.refs.matchMenuWarning=DomUtil.byId("matchMenuWarning");
 UiRegistry.refs.disconnectGate=DomUtil.byId("disconnectGate");UiRegistry.refs.disconnectGateTitle=DomUtil.byId("disconnectGateTitle");UiRegistry.refs.disconnectGateCount=DomUtil.byId("disconnectGateCount");UiRegistry.refs.disconnectGateCopy=DomUtil.byId("disconnectGateCopy");UiRegistry.refs.disconnectGateActions=DomUtil.byId("disconnectGateActions");UiRegistry.refs.disconnectReconnectBtn=DomUtil.byId("disconnectReconnectBtn");UiRegistry.refs.disconnectSurrenderBtn=DomUtil.byId("disconnectSurrenderBtn");
 
-UiRegistry.refs.spellChoiceModal=DomUtil.byId("spellChoiceModal");
-UiRegistry.refs.spellChoiceModalBackdrop=DomUtil.byId("spellChoiceModalBackdrop");
-UiRegistry.refs.spellChoiceModalTitle=DomUtil.byId("spellChoiceModalTitle");
-UiRegistry.refs.spellChoiceModalSub=DomUtil.byId("spellChoiceModalSub");
-UiRegistry.refs.spellChoiceModalClose=DomUtil.byId("spellChoiceModalClose");
-UiRegistry.refs.spellChoiceModalContent=DomUtil.byId("spellChoiceModalContent");
-UiRegistry.refs.tacticalChestFeedback=DomUtil.byId("tacticalChestFeedback");
-UiRegistry.refs.tacticalChestFeedbackText=DomUtil.byId("tacticalChestFeedbackText");
 
-UiRegistry.refs.battleCommandDock=DomUtil.byId("battleCommandDock");
 UiRegistry.refs.launchHand=DomUtil.byId("launchHand");UiRegistry.refs.launchCards=DomUtil.byId("launchCards");
 UiRegistry.refs.launchEnergyFill=DomUtil.byId("launchEnergyFill");UiRegistry.refs.launchEnergyText=DomUtil.byId("launchEnergyText");
 UiRegistry.refs.launchCards?.addEventListener("click",e=>{const b=e.target.closest("[data-launch-card]");if(b)LaunchPresentation.selectCard(b.dataset.launchCard)});
-UiRegistry.refs.commandDrawer=DomUtil.byId("commandDrawer");
-UiRegistry.refs.buildTree=DomUtil.byId("buildTree");
-UiRegistry.refs.buildDrawerCloseBtn=DomUtil.byId("buildDrawerCloseBtn");
-UiRegistry.refs.commandBackBtn=DomUtil.byId("commandBackBtn");
-UiRegistry.refs.economyTreeBtn=DomUtil.byId("economyTreeBtn");
-UiRegistry.refs.militaryTreeBtn=DomUtil.byId("militaryTreeBtn");
-UiRegistry.refs.researchTreeBtn=DomUtil.byId("researchTreeBtn");
-UiRegistry.refs.tacticsTreeBtn=DomUtil.byId("tacticsTreeBtn");
-UiRegistry.refs.techTreeTitle=DomUtil.byId("techTreeTitle");
-UiRegistry.refs.techTreePathLabel=DomUtil.byId("techTreePathLabel");
-UiRegistry.refs.economyTreePane=DomUtil.byId("economyTreePane");
-UiRegistry.refs.militaryTreePane=DomUtil.byId("militaryTreePane");
-UiRegistry.refs.researchTreePane=DomUtil.byId("researchTreePane");
-UiRegistry.refs.tacticsTreePane=DomUtil.byId("tacticsTreePane");
-UiRegistry.refs.militaryHomePage=DomUtil.byId("militaryHomePage");
-UiRegistry.refs.militaryTierPage=DomUtil.byId("militaryTierPage");
-UiRegistry.refs.militaryTierMeta=DomUtil.byId("militaryTierMeta");
-UiRegistry.refs.militaryT1Btn=DomUtil.byId("militaryT1Btn");
-UiRegistry.refs.militaryT2Btn=DomUtil.byId("militaryT2Btn");
-UiRegistry.refs.militaryT3Btn=DomUtil.byId("militaryT3Btn");
-UiRegistry.refs.researchHomePage=DomUtil.byId("researchHomePage");
-UiRegistry.refs.researchTechPage=DomUtil.byId("researchTechPage");
-UiRegistry.refs.researchUpgradePage=DomUtil.byId("researchUpgradePage");
-UiRegistry.refs.researchAbilityPage=DomUtil.byId("researchAbilityPage");
-UiRegistry.refs.researchAbilityGrid=DomUtil.byId("researchAbilityGrid");
-UiRegistry.refs.researchUpgradeGrid=DomUtil.byId("researchUpgradeGrid");
-UiRegistry.refs.researchTechBtn=DomUtil.byId("researchTechBtn");
-UiRegistry.refs.researchUpgradeBtn=DomUtil.byId("researchUpgradeBtn");
-UiRegistry.refs.researchAbilityBtn=DomUtil.byId("researchAbilityBtn");
-UiRegistry.refs.tacticsHomePage=DomUtil.byId("tacticsHomePage");
-UiRegistry.refs.tacticsDefensePage=DomUtil.byId("tacticsDefensePage");
-UiRegistry.refs.tacticsSpellPage=DomUtil.byId("tacticsSpellPage");
-UiRegistry.refs.tacticsDefenseBtn=DomUtil.byId("tacticsDefenseBtn");
-UiRegistry.refs.tacticsSpellBtn=DomUtil.byId("tacticsSpellBtn");
-UiRegistry.refs.tacticsChestBtn=DomUtil.byId("tacticsChestBtn");
-UiRegistry.refs.tacticsChestPage=DomUtil.byId("tacticsChestPage");
-UiRegistry.refs.passiveStatusHome=DomUtil.byId("passiveStatusHome");
-UiRegistry.refs.passiveStatusChest=DomUtil.byId("passiveStatusChest");
-
-/*
- * Command-panel layout contract:
- * - horizontal N columns (currently 4), wrapping by rendered rows
- * - rows 1..3 expand naturally with no vertical scroller
- * - row 4+ keeps the first 3 rendered rows visible and scrolls this grid only
- * Card heights intentionally remain content-driven, so the 3-row cutoff is measured
- * from the real DOM instead of hard-coding pixels.
- */
-const COMMAND_CHOICE_GRID_SELECTOR=[
-  ".command-card-grid",
-  ".command-unit-grid",
-  ".quick-unit-grid",
-  ".quick-special-grid",
-  ".spell-inventory.quick-spell-grid",
-  "#researchUpgradeGrid",
-  "#researchAbilityGrid",
-  ".defense-card-choices"
-].join(",");
-const COMMAND_CHOICE_MAX_VISIBLE_ROWS=3;
-
-class CommandPresentation{
-  static commandGridLayoutRaf=0;
-
-  static commandGridChoiceChildren(grid){
-  return [...grid.children].filter(el=>{
-    if(!(el instanceof HTMLElement)||el.hidden)return false;
-    const cs=getComputedStyle(el);
-    if(cs.display==="none"||cs.visibility==="hidden")return false;
-    // Full-width copy is context, not a command-choice row, but its height is
-    // naturally included in offsetTop when calculating the third card row.
-    if(el.classList.contains("command-pane-copy"))return false;
-    return true;
-  });
-}
-  static syncCommandChoiceGrid(grid){
-  if(!(grid instanceof HTMLElement))return;
-  grid.classList.add("command-choice-scroll-grid");
-  if(grid.offsetParent===null)return;
-  const cards=CommandPresentation.commandGridChoiceChildren(grid);
-  if(!cards.length){
-    grid.classList.remove("command-grid-overflow");
-    grid.style.maxHeight="";
-    grid.style.overflowY="";
-    grid.scrollTop=0;
-    return;
-  }
-  const rows=[];
-  for(const el of cards){
-    const top=Math.round(el.offsetTop);
-    if(!rows.some(v=>Math.abs(v-top)<=1))rows.push(top);
-  }
-  rows.sort((a,b)=>a-b);
-  if(rows.length<=COMMAND_CHOICE_MAX_VISIBLE_ROWS){
-    grid.classList.remove("command-grid-overflow");
-    grid.style.maxHeight="";
-    grid.style.overflowY="";
-    grid.scrollTop=0;
-    return;
-  }
-  const cutoffTop=rows[COMMAND_CHOICE_MAX_VISIBLE_ROWS-1];
-  const thirdRow=cards.filter(el=>Math.abs(Math.round(el.offsetTop)-cutoffTop)<=1);
-  const rowBottom=Math.max(...thirdRow.map(el=>el.offsetTop+el.offsetHeight));
-  const cs=getComputedStyle(grid);
-  const padBottom=parseFloat(cs.paddingBottom)||0;
-  const maxHeight=Math.ceil(rowBottom+padBottom);
-  const next=`${maxHeight}px`;
-  if(grid.style.maxHeight!==next)grid.style.maxHeight=next;
-  grid.style.overflowY="auto";
-  grid.style.overflowX="hidden";
-  grid.classList.add("command-grid-overflow");
-}
-  static syncAllCommandChoiceGrids(){
-  CommandPresentation.commandGridLayoutRaf=0;
-  document.querySelectorAll(COMMAND_CHOICE_GRID_SELECTOR).forEach(CommandPresentation.syncCommandChoiceGrid);
-}
-  static scheduleCommandChoiceGridSync(){
-  if(CommandPresentation.commandGridLayoutRaf)return;
-  CommandPresentation.commandGridLayoutRaf=requestAnimationFrame(CommandPresentation.syncAllCommandChoiceGrids);
-}
-  
-  static commandSubpageLabel(){
-  const labels={
-    "military-t1":"T1 병종","military-t2":"T2 병종","military-t3":"T3 병종",
-    "research-tech":"테크 건설","research-upgrade":"전투 강화","research-ability":"병종 특수 연구",
-    "tactics-defense":"방어 카드","tactics-chest":"전술상자","tactics-spell":"전술 스펠"
-  };
-  return labels[UiRuntimeState.value.command.page]||null;
-}
-  static activeMilitaryTier(){
-  const page=UiRuntimeState.value.command.page;
-  return page==="military-t1"?1:page==="military-t2"?2:page==="military-t3"?3:0;
-}
-  static applyCommandSubpage(){
-  const page=UiRuntimeState.value.command.page,categoryKey=UiRuntimeState.value.command.category,branch=UiRuntimeState.value.command.branch;
-  const militaryTier=CommandPresentation.activeMilitaryTier();
-  UiRegistry.refs.militaryHomePage?.classList.toggle("hidden",!!militaryTier);
-  UiRegistry.refs.militaryTierPage?.classList.toggle("hidden",!militaryTier);
-  const researchChild=page==="research-tech"||page==="research-upgrade"||page==="research-ability";
-  UiRegistry.refs.researchHomePage?.classList.toggle("hidden",researchChild);
-  UiRegistry.refs.researchTechPage?.classList.toggle("hidden",page!=="research-tech");
-  UiRegistry.refs.researchUpgradePage?.classList.toggle("hidden",page!=="research-upgrade");
-  UiRegistry.refs.researchAbilityPage?.classList.toggle("hidden",page!=="research-ability");
-  const tacticsChild=page==="tactics-defense"||page==="tactics-chest"||page==="tactics-spell";
-  UiRegistry.refs.tacticsHomePage?.classList.toggle("hidden",tacticsChild);
-  UiRegistry.refs.tacticsDefensePage?.classList.toggle("hidden",page!=="tactics-defense");
-  UiRegistry.refs.tacticsChestPage?.classList.toggle("hidden",page!=="tactics-chest");
-  UiRegistry.refs.tacticsSpellPage?.classList.toggle("hidden",page!=="tactics-spell");
-  const sub=CommandPresentation.commandSubpageLabel();
-  UiRegistry.refs.commandBackBtn?.classList.toggle("hidden",!sub);
-  const categoryLabels={economy:"경제",military:"군사",research:"연구",tactics:"전술"};
-  const category=categoryLabels[categoryKey]||"경제";
-  if(UiRegistry.refs.techTreeTitle)UiRegistry.refs.techTreeTitle.textContent=sub||category;
-  if(UiRegistry.refs.techTreePathLabel)UiRegistry.refs.techTreePathLabel.textContent=sub?`${category} › ${sub}`:category;
-  const spellOpen=branch==="tree"&&categoryKey==="tactics"&&page==="tactics-spell";
-  if(categoryKey==="tactics"&&ActiveViewState.snap)BattlePresentation.renderPassiveStatus(ActiveViewState.snap);
-  if(spellOpen&&ActiveViewState.snap)SpellPresentation.renderSpellPanel(ActiveViewState.snap);
-  if(page==="tactics-chest"&&ActiveViewState.snap)BattlePresentation.renderTacticalChest(ActiveViewState.snap);
-  if((page==="research-upgrade"||page==="research-ability")&&ActiveViewState.snap)ResearchPresentation.renderResearchCommandPanels(ActiveViewState.snap);
-}
-  static applyTechTreeCategory(category,{resetSubpage=false}={}){
-  const allowed=["economy","military","research","tactics"];
-  const next=allowed.includes(category)?category:"economy";
-  const page=(resetSubpage||next!==UiRuntimeState.value.command.category)?null:UiRuntimeState.value.command.page;
-  UiController.setUiCommand({category:next,page});
-  const paneMap={economy:UiRegistry.refs.economyTreePane,military:UiRegistry.refs.militaryTreePane,research:UiRegistry.refs.researchTreePane,tactics:UiRegistry.refs.tacticsTreePane};
-  const buttonMap={economy:UiRegistry.refs.economyTreeBtn,military:UiRegistry.refs.militaryTreeBtn,research:UiRegistry.refs.researchTreeBtn,tactics:UiRegistry.refs.tacticsTreeBtn};
-  for(const key of allowed){
-    paneMap[key]?.classList.toggle("hidden",key!==UiRuntimeState.value.command.category);
-    buttonMap[key]?.classList.toggle("mode-selected",UiRuntimeState.value.command.branch==="tree"&&key===UiRuntimeState.value.command.category);
-  }
-  CommandPresentation.applyCommandSubpage();
-}
-  static openCommandSubpage(page){
-  if(UiRuntimeState.value.command.page===page)return;
-  UiController.setUiCommand({page});BattlePresentationCache.lastUnitGridHtml=null;CommandPresentation.applyCommandSubpage();
-}
-  static commandBack(){
-  if(UiRuntimeState.value.command.page){
-    if(UiRuntimeState.value.target.type==="spell")UiController.cancelTargetMode(true);
-    UiController.setUiCommand({page:null});BattlePresentationCache.lastUnitGridHtml=null;CommandPresentation.applyCommandSubpage();return;
-  }
-  CommandPresentation.closeCommandDrawer();
-}
-  static openTechTree(category){
-  const sameRoot=UiRuntimeState.value.command.branch==="tree"&&UiRuntimeState.value.command.category===category&&!UiRuntimeState.value.command.page;
-  if(sameRoot){CommandPresentation.closeCommandDrawer();return}
-  UiController.setUiCommand({branch:"tree",category,page:null});
-  CommandPresentation.applyTechTreeCategory(category,{resetSubpage:true});CommandPresentation.syncCommandDock();
-}
-  static syncCommandDock(){
-  UiController.renderUiState();
-  const buttonMap={economy:UiRegistry.refs.economyTreeBtn,military:UiRegistry.refs.militaryTreeBtn,research:UiRegistry.refs.researchTreeBtn,tactics:UiRegistry.refs.tacticsTreeBtn};
-  for(const [key,btn] of Object.entries(buttonMap))btn?.classList.toggle("mode-selected",UiRuntimeState.value.command.branch==="tree"&&UiRuntimeState.value.command.category===key);
-  UiRegistry.refs.flagBtn?.classList.toggle("mode-selected",UiRuntimeState.value.target.type==="flag");
-  CommandPresentation.applyTechTreeCategory(UiRuntimeState.value.command.category);
-}
-  static setCommandDrawerMode(next){
-  UiController.setUiCommand({branch:next||"closed"});CommandPresentation.syncCommandDock();
-  if(UiRuntimeState.value.command.branch==="building"&&ActiveViewState.snap)BuildingPresentation.renderSelectedBuildingPanel(ActiveViewState.snap);
-}
-  static closeCommandDrawer({cancelTarget=true}={}){
-  if(cancelTarget&&(UiRuntimeState.value.target.type==="build"||UiRuntimeState.value.target.type==="spell"))UiController.cancelTargetMode(true);
-  CommandPresentation.setCommandDrawerMode(null);
-}
-}
-
-const commandGridMutationObserver=new MutationObserver(()=>CommandPresentation.scheduleCommandChoiceGridSync());
-if(UiRegistry.refs.commandDrawer){
-  commandGridMutationObserver.observe(UiRegistry.refs.commandDrawer,{childList:true,subtree:true});
-  // Navigation changes hidden pages through click handlers; measure after the same event.
-  UiRegistry.refs.commandDrawer.addEventListener("click",()=>CommandPresentation.scheduleCommandChoiceGridSync(),{passive:true});
-}
-window.addEventListener("resize",CommandPresentation.scheduleCommandChoiceGridSync,{passive:true});
-CommandPresentation.scheduleCommandChoiceGridSync();
 
 const UI_RADIO=Object.freeze({
   screen:new Set(["lobby","game","replay","result"]),
@@ -8013,42 +7729,10 @@ class UiRuntimeState{static value={screen:"lobby",modal:"none",modalState:{spell
    CSS owns layout/appearance, never application visibility; component display rules must
    not override the shared hidden state. */
 class UiController{
-  static switchTestView(nextRole,auto=false){
-  if(!MatchLifecycle.localTest||!MatchLifecycle.localTest.sessions[nextRole])return;
-  if(ActiveViewState.role===nextRole&&!auto)return;
-  BattlePresentationCache.lastUnitGridHtml=null;
-  UiController.invalidatePanelHtmlCaches({unit:true,reinforcement:true});
-
-  AppLifecycle.saveActiveViewState();
-  ActiveViewState.role=nextRole;
-  MatchLifecycle.setActiveSession();
-
-  UiRuntimeState.value.selection.unit=ViewRuntimeState.byRole[ActiveViewState.role].selection.unit;
-  UiRuntimeState.value.selection.buildingId=ViewRuntimeState.byRole[ActiveViewState.role].selection.buildingId||null;
-  UiRuntimeState.value.target=CloneUtil.clone(ViewRuntimeState.byRole[ActiveViewState.role].target||{type:"flag"});
-
-  UiController.setRoleSwitcherActive(ActiveViewState.role);
-  UiRegistry.refs.net.textContent="로컬 테스트 · "+ActiveViewState.role.toUpperCase()+" 화면";
-  if(ActiveViewState.session?.networkOpened)ConnectionPresentation.renderP2PHealth({state:ActiveViewState.session.networkState,rtt:ActiveViewState.session.lastRtt},true);
-
-  if(ActiveViewState.renderer){
-    ActiveViewState.renderer.role=ActiveViewState.role;
-    ActiveViewState.renderer.cameraLeft=ViewRuntimeState.byRole[ActiveViewState.role].cameraLeft==null?0:ViewRuntimeState.byRole[ActiveViewState.role].cameraLeft;
-    ActiveViewState.renderer.cameraTop=ViewRuntimeState.byRole[ActiveViewState.role].cameraTop==null?(ActiveViewState.renderer?.world||WorldContext.standard).height-VIEW_H:ViewRuntimeState.byRole[ActiveViewState.role].cameraTop;
-  }
-
-  const liveState=ViewRuntimeState.byRole[ActiveViewState.role].snapshot;
-  if(liveState)BattlePresentation.renderGame(liveState);
-}
-
   static setElementVisible(ref,visible){
   if(!ref)return false;
   ref.classList.toggle("hidden",!visible);
   return !!visible;
-}
-  static setRoleSwitcherActive(role){
-  UiRegistry.refs.hostView?.classList.toggle("active",role==="host");
-  UiRegistry.refs.guestView?.classList.toggle("active",role==="guest");
 }
   static setUiRadio(group,value){const allowed=UI_RADIO[group];if(!allowed?.has(value))throw new Error(`Invalid UI ${group}: ${value}`);UiRuntimeState.value[group]=value;return value}
   static setUiScreen(value){UiController.setUiRadio("screen",value);UiController.renderUiState();LaunchScreens.syncScreen(value);return value}
@@ -8057,17 +7741,6 @@ class UiController{
   if(prev==="spell-choice"&&value!=="spell-choice")UiRuntimeState.value.modalState.spellChoice="idle";
   if(prev==="disconnect"&&value!=="disconnect")UiRuntimeState.value.modalState.disconnect="hidden";
   return value;
-}
-  static setUiCommand({branch=UiRuntimeState.value.command.branch,category=UiRuntimeState.value.command.category,page=UiRuntimeState.value.command.page}={}){
-  if(!UI_RADIO.command.has(branch))throw new Error(`Invalid UI command branch: ${branch}`);
-  if(!["economy","military","research","tactics"].includes(category))category="economy";
-  if(branch!=="tree")page=null;
-  UiRuntimeState.value.command={branch,category,page};if(typeof UiRegistry.refs!=="undefined")UiController.renderUiState();return UiRuntimeState.value.command;
-}
-  
-  static interactivePointerHeldInside(container){
-  const el=pointerInteractions.active?.el;
-  return !!(container&&el&&container.contains(el));
 }
   static openDialog(d){
   if(typeof d.showModal==="function"){
@@ -8083,8 +7756,6 @@ class UiController{
   static syncModalState(){
   for(const [kind,key] of Object.entries(UI_MODAL_DIALOG_KEYS)){const el=UiRegistry.refs[key],should=UiRuntimeState.value.modal===kind;if(!el)continue;if(should){if(!el.open)UiController.openDialog(el)}else if(el.open)UiController.closeDialog(el)}
   UiRegistry.refs.matchMenuModal?.classList.toggle("hidden",UiRuntimeState.value.modal!=="match-menu");
-  UiRegistry.refs.helpModal?.classList.toggle("active",UiRuntimeState.value.modal==="help");
-  UiRegistry.refs.spellChoiceModal?.classList.toggle("active",UiRuntimeState.value.modal==="spell-choice");
   UiRegistry.refs.disconnectGate?.classList.toggle("hidden",UiRuntimeState.value.modal!=="disconnect");
 }
   static openUiModal(kind){UiController.setUiModal(kind);UiController.syncModalState();return kind}
@@ -8103,12 +7774,6 @@ class UiController{
   // 모바일에서는 다이얼로그를 연 직후 입력칸을 강제 focus하지 않는다.
   // 사용자가 입력칸을 탭했을 때 키보드가 열리는 일반적인 동작을 따른다.
 }
-  static clearTransientTargetModeForUiAction(target){
-  if(UiRuntimeState.value.target.type!=="build"&&UiRuntimeState.value.target.type!=="spell")return;
-  const btn=target?.closest?.("button");
-  if(!btn||btn.disabled||UiController.shouldKeepTargetModeForButton(btn))return;
-  UiController.cancelTargetMode(true);
-}
   static renderUiState(){
   const screen=UiRuntimeState.value.screen;
   UiRegistry.refs.lobby?.classList.toggle("hidden",screen!=="lobby");
@@ -8120,147 +7785,13 @@ class UiController{
   document.body.classList.toggle("result-mode",screen==="result");
   UiRegistry.refs.result?.classList.toggle("hidden",screen!=="result");
   if(typeof UiController.syncModalState==="function")UiController.syncModalState();
-  document.body.classList.toggle("minimap-expanded",!!UiRuntimeState.value.options.minimapExpanded);
   UiRegistry.refs.lockstepDebugPanel?.classList.toggle("hidden",!UiRuntimeState.value.options.lockstepDebugOpen);
   UiRegistry.refs.p2pHealth?.setAttribute("aria-expanded",UiRuntimeState.value.options.lockstepDebugOpen?"true":"false");
-  if(UiRegistry.refs.minimapExpandBtn){
-    UiRegistry.refs.minimapExpandBtn.setAttribute("aria-pressed",UiRuntimeState.value.options.minimapExpanded?"true":"false");
-    UiRegistry.refs.minimapExpandBtn.textContent=UiRuntimeState.value.options.minimapExpanded?"↙":"⛶";
-  }
-  const branch=UiRuntimeState.value.command.branch;
-  UiRegistry.refs.commandDrawer?.classList.toggle("hidden",branch==="closed");
-  if(UiRegistry.refs.commandDrawer){
-    if(branch==="closed")delete UiRegistry.refs.commandDrawer.dataset.popupMode;
-    else UiRegistry.refs.commandDrawer.dataset.popupMode=branch;
-  }
-  UiRegistry.refs.buildTree?.classList.toggle("hidden",branch!=="tree");
-  UiRegistry.refs.buildingPanel?.classList.toggle("hidden",branch!=="building"||!BuildingPresentation.selectedOwnBuilding());
-}
-  static invalidatePanelHtmlCaches({unit=false,reinforcement=false,clearDom=true}={}){
-  // Cache invalidation uses null rather than an empty string. Some panels can
-  // legitimately render an empty string, so using "" as both "invalid" and
-  // "currently empty" lets stale DOM survive a context switch.
-  if(unit)BattlePresentationCache.lastUnitGridHtml=null;
-  BattlePresentationCache.lastSpellInventoryHtml=null;
-  BattlePresentationCache.lastSpellChoiceAreaHtml=null;
-  BattlePresentationCache.lastSpellChoiceModalHtml=null;
-  BattlePresentationCache.lastBuildingActionsHtml=null;
-  if(reinforcement)BattlePresentationCache.lastReinforcementOverviewHtml=null;
-
-  if(!clearDom)return;
-  if(unit&&UiRegistry.refs.unitGrid)UiRegistry.refs.unitGrid.innerHTML="";
-  if(UiRegistry.refs.spellInventory)UiRegistry.refs.spellInventory.innerHTML="";
-  if(UiRegistry.refs.spellChoiceArea)UiRegistry.refs.spellChoiceArea.innerHTML="";
-  if(UiRegistry.refs.buildingPanelActions)UiRegistry.refs.buildingPanelActions.innerHTML="";
-  if(reinforcement&&UiRegistry.refs.reinforcementGrid)UiRegistry.refs.reinforcementGrid.innerHTML="";
-  if(UiRegistry.refs.spellChoiceModalContent&&!BattlePresentation.tacticalChestModalIsOpen())UiRegistry.refs.spellChoiceModalContent.innerHTML="";
-}
-  static setMode(m,{silent=false}={}){
-  UiRuntimeState.value.target=m;
-  if(LocalEnvironmentUtil.isLocalTest())ViewRuntimeState.byRole[ActiveViewState.role].target=CloneUtil.clone(m);
-
-  const isBuild=m.type==="build",isSpell=m.type==="spell";
-  document.body.classList.toggle("build-mode-active",isBuild);
-  document.body.classList.toggle("spell-mode-active",isSpell);
-  UiRegistry.refs.flagBtn.classList.toggle("active",m.type==="flag");
-  // 건설 종료 UX는 전장 하단의 전용 「건설 마침」 영역 하나로만 표시한다.
-  // 기존 modeTip 건설 안내는 중복/겹침을 피하기 위해 항상 숨긴다.
-  UiRegistry.refs.modeTip.classList.toggle("build-mode",false);
-  UiRegistry.refs.modeTip.classList.add("hidden");
-  UiRegistry.refs.modeTip.setAttribute("aria-hidden","true");
-
-  BuildingPresentation.syncBuildPlacementSelectionUi();
-
-  if(ActiveViewState.renderer){
-    if(!isBuild)ActiveViewState.renderer.buildPreview=null;
-    if(!isSpell)ActiveViewState.renderer.spellPreview=null;
-  }
-
-  if(m.type==="flag"){
-    const forced=!!ActiveViewState.snap?.flags?.[ConnectionSideUtil.roleSide(ActiveViewState.role)]?.forced;
-    UiRegistry.refs.modeTip.textContent=forced
-      ? "⚡ 강제 이동 깃발 · 탭: 일반 집결 · 정지 홀드: 집결·충전 · 이후 드래그: 조준 · 놓기: 발사"
-      : "🚩 탭: 자동전투 깃발 · 정지 홀드: 집결·충전 · 홀드 전 드래그: 맵 이동 · 이후 드래그: 조준 · 놓기: 발사";
-    CommandPresentation.syncCommandDock();
-    if(!silent)LogUtil.log("🚩 깃발 이동 모드");
-    return;
-  }
-
-  if(isSpell){
-    const d=SpellDefinition.get(m.spellId);
-    const stage=m.spellId==="tunnel"?(m.stage==="exit"?"출구":"입구"):"목표";
-    UiRegistry.refs.modeTip.textContent=`${d?.icon||"✦"} ${d?.name||"스펠"} · ${stage} 지정`;
-    CommandPresentation.syncCommandDock();
-    return;
-  }
-
-  const bd=BuildingDefinition.get(m.building);
-
-  if(ActiveViewState.renderer){
-    // 건설 모드 진입은 카메라 위치를 절대 변경하지 않는다.
-    // 미리보기만 현재 보이는 화면 중앙에서 시작하고,
-    // 사용자가 드래그/탭해서 원하는 위치를 직접 선택한다.
-    const previewX=RangeUtil.clamp(ActiveViewState.renderer.cameraLeft+VIEW_W*.5,80,(ActiveViewState.renderer?.world||WorldContext.standard).width-80);
-    const previewY=RangeUtil.clamp(ActiveViewState.renderer.cameraTop+VIEW_H*.5,80,(ActiveViewState.renderer?.world||WorldContext.standard).height-80);
-
-    const auth=UiController.viewToAuth(previewX,previewY);
-    const action={type:"BUILD",building:m.building,produceType:m.produceType||null,x:auth.x,y:auth.y};
-    const err=ActiveViewState.snap?BuildingPresentation.buildValidation(ActiveViewState.snap,ConnectionSideUtil.roleSide(ActiveViewState.role),action):"상태 준비 중";
-    ActiveViewState.renderer.buildPreview={
-      x:previewX,
-      y:previewY,
-      building:m.building,
-      valid:!err,
-      error:err,
-      density:BuildingPresentation.previewBuildDensity(ConnectionSideUtil.roleSide(ActiveViewState.role),action)
-    };
-  }
-
-  const label=m.produceType
-    ? `${UnitDefinition.get(m.produceType).name} ${BuildingDefinition.get(m.building)?.productionLabel||BuildingDefinition.get(m.building)?.name||"생산시설"}`
-    : (bd?.name||"건물");
-  // 전장 내 건설 종료 표시는 buildFinishBtn 하나만 사용한다.
-  CommandPresentation.syncCommandDock();
-  if(silent)return;
-  LogUtil.log(ActiveViewState.renderer?.buildPreview?.valid
-    ? `🏗️ ${label} 건설 모드 · 초록 미리보기 위치를 클릭하세요`
-    : `⚠ ${label} 건설 모드 · ${ActiveViewState.renderer?.buildPreview?.error||"건설 가능한 위치로 이동하세요"}`);
 }
   static viewToAuth(x,y){
   return ActiveViewState.role==="guest"
     ? {x:(ActiveViewState.renderer?.world||WorldContext.standard).width-x,y:(ActiveViewState.renderer?.world||WorldContext.standard).height-y}
     : {x,y};
-}
-  static cancelTargetMode(silent=false){if(UiRuntimeState.value.target.type!=="flag")UiController.setMode({type:"flag"},{silent})}
-  static interactionActionKeyFromElement(el){
-  if(!el)return null;
-  if(el.dataset.deckCardType&&el.dataset.deckCardId)return `deck-card:${el.dataset.deckCardType}:${el.dataset.deckCardId}`;
-  if(el.dataset.deckUnitSlot!=null)return `deck-builder-slot:${el.dataset.deckUnitSlot}`;
-  if(el.dataset.deckFilter!=null)return `deck-filter:${el.dataset.deckFilter}`;
-  if(el.dataset.globalResearch)return `research-global:${el.dataset.globalResearch}:${el.dataset.unit||""}:${el.dataset.researchId||""}`;
-  if(el.dataset.research)return `research:${el.dataset.research}:${el.dataset.unit||""}`;
-  if(el.dataset.produceUnit)return `produce:${el.dataset.produceUnit}`;
-  if(el.dataset.defenseBuild)return `defense:${el.dataset.defenseBuild}`;
-  if(el.id)return `id:${el.id}`;
-  // Generic delegated cards/buttons: derive a rerender-stable identity from data-*.
-  // This keeps trailing native click suppression working even when the pressed DOM
-  // node is replaced between pointerup and click.
-  const dataKeys=Object.keys(el.dataset||{}).sort();
-  if(dataKeys.length){
-    const signature=dataKeys.map(k=>`${k}=${String(el.dataset[k])}`).join("&");
-    return `data:${el.tagName||"el"}:${signature}`;
-  }
-  return null;
-}
-  static shouldKeepTargetModeForButton(btn){
-  if(!btn)return false;
-  // These controls either finish/cancel the current target explicitly or
-  // immediately replace it with another build/spell target. Their own handlers
-  // own the transition semantics.
-  return btn===UiRegistry.refs.buildFinishBtn ||
-    btn===UiRegistry.refs.spellCancelBtn ||
-    !!btn.closest?.("[data-produce-unit],[data-defense-build],[data-cast-spell]") ||
-    [UiRegistry.refs.supplyBtn,UiRegistry.refs.gasExtractorBtn,UiRegistry.refs.academyBtn,UiRegistry.refs.airIncubatorBtn,UiRegistry.refs.labBtn].includes(btn);
 }
   static bindImmediateButton(btn,handler){
   if(!btn)return;
@@ -8271,172 +7802,6 @@ class UiController{
   });
 }
 }
-
-class SpellPresentation{
-  static setSpellChoicePhase(phase){if(!["idle","requesting","choosing","replacing"].includes(phase))throw new Error(`Invalid spell-choice phase: ${phase}`);UiRuntimeState.value.modalState.spellChoice=phase;return phase}
-  
-  static formatSpellRows(rows){
-  return rows.map(([label,value])=>`<div class="spell-stat-row"><span>${label}</span><b>${value}</b></div>`).join("");
-}
-  static formatSpellUpgradeRows(rows){
-  return rows.map(([label,from,to])=>`<div class="spell-stat-row spell-stat-change"><span>${label}</span><b>${from} → ${to}</b></div>`).join("");
-}
-  static spellCooldownProgress(id,mastery,remaining){
-  const total=Math.max(1,Number(SpellDefinition.statsAt(id,mastery)?.cooldown)||1);
-  const left=Math.max(0,Number(remaining)||0);
-  const ready=left<=0;
-  // Cooldown UX is normalized to readiness: cast = 0%, ready = 100%.
-  const pct=ready?100:RangeUtil.clamp(Math.floor((1-Math.min(left,total)/total)*100),0,99);
-  return {total,left,ready,pct};
-}
-  static spellCooldownBarHtml(id,mastery,remaining){
-  const p=SpellPresentation.spellCooldownProgress(id,mastery,remaining);
-  return `<div class="cooldown-progress ${p.ready?"ready":""}" role="progressbar" aria-label="${p.ready?"사용 가능":"재사용 대기"}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.pct}"><span style="width:${p.pct}%"></span></div><div class="cooldown-progress-label ${p.ready?"ready":""}"><span>${p.ready?"READY":"재사용 대기"}</span><b>${p.pct}%</b></div>`;
-}
-  static renderSpellChoiceModal(state){
-  if(!UiRegistry.refs.spellChoiceModal||!UiRegistry.refs.spellChoiceModalContent||!ActiveViewState.role)return;
-  if(!BattlePresentation.tacticalChestModalIsOpen()){
-    return;
-  }
-  const side=ConnectionSideUtil.roleSide(ActiveViewState.role),count=Number(state?.spellChests?.[side])||0;
-  const offer=state?.pendingChestOffers?.[side]||null;
-  const replacement=state?.pendingSpellReplacement?.[side]||null;
-  const books=state?.spellBooks?.[side]||{},equipped=state?.equippedSpells?.[side]||[];
-
-  if(!offer){
-    if(BattlePresentation.tacticalChestModalAwaitingOffer()&&count>0){
-      UiRegistry.refs.spellChoiceModalTitle.textContent="📦 전술상자";
-      UiRegistry.refs.spellChoiceModalSub.textContent=`보유 ${count}개 · 보상 후보를 생성하고 있습니다.`;
-      const html=`<div class="spell-choice-inline-hint">잠시 후 현재 게임 상태에서 유효한 보상 3개가 고정됩니다. 지금 취소해도 상자는 차감되지 않습니다.</div>`;
-      if(BattlePresentationCache.lastSpellChoiceModalHtml!==html){UiRegistry.refs.spellChoiceModalContent.innerHTML=html;BattlePresentationCache.lastSpellChoiceModalHtml=html}
-      return;
-    }
-    if(UiRuntimeState.value.modal==="spell-choice")UiController.closeUiModal("spell-choice");
-    SpellPresentation.setSpellChoicePhase("idle");
-    return;
-  }
-
-  SpellPresentation.setSpellChoicePhase(replacement?"replacing":"choosing");
-  let html="";
-  if(replacement){
-    const d=SpellDefinition.get(replacement.reward.spellId);
-    UiRegistry.refs.spellChoiceModalTitle.textContent="스펠 빼기";
-    UiRegistry.refs.spellChoiceModalSub.textContent=`${d?.name||"새 스펠"}을 장착할 슬롯을 선택하세요. 취소하면 동일한 전술상자 3택이 그대로 남습니다.`;
-    html=`<div class="spell-choice-modal-grid">${equipped.map(id=>{const old=SpellDefinition.get(id),e=books[id]||{mastery:0};return `<button type="button" class="spell-card ready" data-replace-spell="${id}" data-offer-id="${replacement.offerId}"><div class="spell-icon">${old.icon}</div><div class="spell-name">${old.name} Lv.${SpellDefinition.masteryLevel(e.mastery||0)}</div><div class="spell-desc">이 스펠을 빼고 ${d?.name||"새 스펠"} 장착</div></button>`}).join("")}</div>`;
-  }else{
-    UiRegistry.refs.spellChoiceModalTitle.textContent="📦 전술상자 보상";
-    UiRegistry.refs.spellChoiceModalSub.textContent=`보유 ${count}개 · 하나를 최종 선택할 때만 상자 1개가 차감됩니다. 취소해도 이 3택은 그대로 유지됩니다.`;
-    html=`<div class="spell-choice-modal-grid" data-offer-id="${offer.id}">${offer.options.map(r=>BattlePresentation.renderTacticalRewardCard(r,books)).join("")}</div>`;
-  }
-  if(BattlePresentationCache.lastSpellChoiceModalHtml!==html){UiRegistry.refs.spellChoiceModalContent.innerHTML=html;BattlePresentationCache.lastSpellChoiceModalHtml=html}
-}
-  static renderSpellPanel(state){
-  if(!state||!ActiveViewState.role)return;
-  BattlePresentation.renderPassiveStatus(state);
-  const side=ConnectionSideUtil.roleSide(ActiveViewState.role),books=state.spellBooks?.[side]||{},equipped=state.equippedSpells?.[side]||[];
-  const choiceAreaHtml=`<div class="spell-choice-inline-hint">장착 ${equipped.length}/${SPELL_SLOT_MAX} · 비장착 보유 스펠은 전술상자 보상으로 다시 장착할 수 있습니다.</div>`;
-  if(choiceAreaHtml!==BattlePresentationCache.lastSpellChoiceAreaHtml){UiRegistry.refs.spellChoiceArea.innerHTML=choiceAreaHtml;BattlePresentationCache.lastSpellChoiceAreaHtml=choiceAreaHtml}
-  BattlePresentation.updateTacticalChestBadge(state);
-  SpellPresentation.renderSpellChoiceModal(state);
-  const inventoryHtml=!equipped.length
-    ? `<div class="small" style="grid-column:1/-1">전술상자를 열어 스펠을 획득하세요. 동시에 최대 3개까지 장착됩니다.</div>`
-    : equipped.map(id=>{
-        const d=SpellDefinition.get(id),e=books[id]||{mastery:0,cooldownUntil:0};
-        const remaining=Math.max(0,(e.cooldownUntil||0)-state.tick),cooldown=SpellPresentation.spellCooldownProgress(id,e.mastery||0,remaining),ready=cooldown.ready,level=SpellDefinition.masteryLevel(e.mastery||0);
-        return `<button type="button" class="spell-card ${ready?"ready":"cooldown"}" data-cast-spell="${id}" ${ready?"":"disabled"}><div class="spell-icon">${d.icon}</div><div class="spell-name">${d.name} · Lv.${level}</div><div class="spell-desc">${d.desc}</div>${SpellPresentation.formatSpellRows(SpellDefinition.statRows(id,e.mastery||0))}${SpellPresentation.spellCooldownBarHtml(id,e.mastery||0,remaining)}</button>`;
-      }).join("");
-  if(inventoryHtml!==BattlePresentationCache.lastSpellInventoryHtml){UiRegistry.refs.spellInventory.innerHTML=inventoryHtml;BattlePresentationCache.lastSpellInventoryHtml=inventoryHtml}
-  const readyCount=equipped.filter(id=>Math.max(0,(books[id]?.cooldownUntil||0)-state.tick)<=0).length;
-  const meta=UiRegistry.refs.tacticsSpellBtn?.querySelector("small");if(meta)meta.textContent=equipped.length?`${readyCount}/${equipped.length} READY · ${equipped.length}/${SPELL_SLOT_MAX}`:`0/${SPELL_SLOT_MAX} 장착`;
-  if(UiRuntimeState.value.command.page==="tactics-chest")BattlePresentation.renderTacticalChest(state);
-}
-  static beginSpellTarget(id){
-  const side=ConnectionSideUtil.roleSide(ActiveViewState.role);
-  const d=SpellDefinition.get(id);
-  if(!d)return;
-
-  const entry=ActiveViewState.snap?.spellBooks?.[side]?.[id];
-  const tick=ActiveViewState.snap?.tick||0;
-  if(!entry?.unlocked||!(ActiveViewState.snap?.equippedSpells?.[side]||[]).includes(id)){
-    LogUtil.log("⚠ 현재 장착된 스펠이 아닙니다.");
-    return;
-  }
-  if(tick<(entry.cooldownUntil||0)){
-    const progress=SpellPresentation.spellCooldownProgress(id,entry.mastery||0,(entry.cooldownUntil||0)-tick);
-    LogUtil.log(`⚠ ${d.name} 재사용 대기 중 · 게이지 ${progress.pct}%`);
-    return;
-  }
-
-  
-  CommandPresentation.closeCommandDrawer();
-  if(id==="tunnel"){
-    UiController.setMode({type:"spell",spellId:id,stage:"entry"});
-    LogUtil.log(`⛏ ${d.name} 입구를 현재 시야 안에서 지정하세요.`);
-  }else{
-    UiController.setMode({type:"spell",spellId:id,stage:"point"});
-    LogUtil.log(`${d.icon} ${d.name} 시전 위치를 지정하세요.`);
-  }
-}
-}
-
-/* Draft presentation invariant:
-   FINAL ROSTER is finale-only. Draft entry/round screens must keep draftCountdown hidden;
-   mobile/desktop layout CSS must never override the shared visibility state. */
-// Native mouse click requires the same DOM node to survive from pointerdown through pointerup.
-// Dynamic command/research panels can refresh from selected-TPS simulation / 10 Hz snapshots, so hold their DOM stable
-// while any primary pointer is actively pressing an interactive target inside them.
-
-// Local-only debounced gas assignment UI. Authoritative target changes only after the user pauses input.
-const pendingGasWorkerTargets=new Map();
-
-class GasWorkerAssignmentPolicy{
-  static clearPendingGasWorkerTargets(){
-  for(const p of pendingGasWorkerTargets.values()){
-    if(p?.timer)clearTimeout(p.timer);
-    if(p?.expireTimer)clearTimeout(p.expireTimer);
-  }
-  pendingGasWorkerTargets.clear();
-}
-  static pendingGasTargetFor(building){
-  const p=building?pendingGasWorkerTargets.get(building.id):null;
-  if(!p||p.session!==MatchLifecycle.activeSession())return Math.max(0,Number(building?.gasWorkerTarget)||0);
-  const authoritative=Math.max(0,Number(building?.gasWorkerTarget)||0);
-  if(p.sent&&authoritative===p.target){
-    if(p.timer)clearTimeout(p.timer);
-    if(p.expireTimer)clearTimeout(p.expireTimer);
-    pendingGasWorkerTargets.delete(building.id);
-    return authoritative;
-  }
-  return p.target;
-}
-  static stageGasWorkerTarget(buildingId,target){
-  const sess=MatchLifecycle.activeSession();
-  if(!sess?.sim)return false;
-  target=RangeUtil.clamp(Math.round(Number(target)||0),0,GAS_ASSIGNMENT_MAX);
-  const prev=pendingGasWorkerTargets.get(buildingId);
-  if(prev?.timer)clearTimeout(prev.timer);
-  if(prev?.expireTimer)clearTimeout(prev.expireTimer);
-  const state={session:sess,target,sent:false,timer:0,expireTimer:0};
-  state.timer=setTimeout(()=>{
-    state.timer=0;
-    if(sess.disposed||sess.simEnded||pendingGasWorkerTargets.get(buildingId)!==state){
-      if(pendingGasWorkerTargets.get(buildingId)===state)pendingGasWorkerTargets.delete(buildingId);return;
-    }
-    state.sent=true;sess.command({type:"SET_GAS_WORKERS",buildingId,target:state.target});
-    // Never let a rejected/stale optimistic target poison later +/- input forever.
-    state.expireTimer=setTimeout(()=>{
-      if(pendingGasWorkerTargets.get(buildingId)===state)pendingGasWorkerTargets.delete(buildingId);
-    },2000);
-  },GAS_WORKER_UI_DEBOUNCE_MS);
-  pendingGasWorkerTargets.set(buildingId,state);
-  return true;
-}
-}
-
-class ViewRuntimeState{static byRole={
-  host:{draft:null,snapshot:null,cameraLeft:null,cameraTop:null,selection:{unit:null,buildingId:null},target:{type:"flag"}},
-  guest:{draft:null,snapshot:null,cameraLeft:null,cameraTop:null,selection:{unit:null,buildingId:null},target:{type:"flag"}}
-}}
 
 window.addEventListener("resize",()=>requestAnimationFrame(()=>ConnectionPresentation.positionP2PHealthNextToMenu()));
 window.addEventListener("orientationchange",()=>setTimeout(()=>ConnectionPresentation.positionP2PHealthNextToMenu(),80));
@@ -8453,7 +7818,7 @@ class DebugFormatUtil{
 class ConnectionPresentation{
   static showVersionMismatch(info,role){
     const message=String(info.message||"게임 버전이 다릅니다. 양쪽 모두 같은 최신 HTML을 사용하세요.");
-    UiRegistry.refs.net.textContent=message;
+    LogUtil.status(message);
     if(SinglePlayerModeUtil.isSinglePlayer()){
       UiRegistry.refs.singleStatus.textContent=message;
       UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
@@ -8464,7 +7829,7 @@ class ConnectionPresentation{
       UiRegistry.refs.joinError.textContent=message;
       UiRegistry.refs.joinConfirm.disabled=false;UiRegistry.refs.joinConfirm.textContent="참가하기";
     }
-    if(UiRegistry.refs.log)UiRegistry.refs.log.textContent=message;
+    LogUtil.log(message);
   }
 
   static lastP2PHealthInfo=null;
@@ -8725,159 +8090,6 @@ UiRegistry.refs.fullConnectionResetBtn?.addEventListener("click",e=>{
   ConnectionPresentation.requestFullConnectionResetFromUi();
 });
 
-const performanceBenchmark={
-  running:false,
-  async run(){
-    if(this.running)return;
-    const active=MatchLifecycle.activeSession?.();
-    if(!active?.sim||UiRuntimeState.value.screen!=="game"){LogUtil.log("⚠ 게임 중에만 성능 벤치를 실행할 수 있습니다.");return}
-    this.running=true;
-    const btn=UiRegistry.refs.performanceBenchmarkBtn;
-    if(btn){btn.disabled=true;btn.textContent="벤치 실행 중…"}
-    const samples=[];
-    const startedAt=new Date().toISOString();
-    const startWall=performance.now();
-    const durationMs=12000;
-    const sampleEveryMs=100;
-    let nextSample=startWall;
-    try{
-      LogUtil.log("성능 벤치 시작 · 12초 · 현재 유닛/실제 Host+Guest+WebGL 경로");
-      while(performance.now()-startWall<durationMs){
-        await new Promise(requestAnimationFrame);
-        const now=performance.now();
-        if(now<nextSample)continue;
-        nextSample=now+sampleEveryMs;
-        const sessions=SinglePlayerModeUtil.isSinglePlayer()?Object.values(MatchLifecycle.singleMatch?.sessions||{}):LocalEnvironmentUtil.isLocalTest()?Object.values(MatchLifecycle.localTest?.sessions||{}):[ActiveViewState.session].filter(Boolean);
-        const sessionStats={};
-        for(const sess of sessions){
-          const p=sess?.sim?.perfStats||{};
-          sessionStats[sess?.role||"unknown"]={
-            tick:sess?.sim?.tick??null,
-            units:sess?.sim?.units?.filter?.(u=>u?.alive!==false)?.length||0,
-            projectiles:sess?.sim?.projectiles?.filter?.(x=>x?.alive!==false)?.length||0,
-            stepMs:Number(p.totalMs)||0,
-            stepEwmaMs:Number(p.ewmaStepMs)||0,
-            stepMaxMs:Number(p.maxStepMs)||0,
-            indexMs:Number(p.indexMs)||0,
-            worldMs:Number(p.worldMs)||0,
-            economyMs:Number(p.economyMs)||0,
-            workerMs:Number(p.workerMs)||0,
-            visionMs:Number(p.visionMs)||0,
-            combatMs:Number(p.combatMs)||0,
-            combatTargetPickMs:Number(p.combatTargetPickMs)||0,
-            combatOtherMs:Number(p.combatOtherMs)||0,
-            projectileMs:Number(p.projectileMs)||0,
-            collisionMs:Number(p.collisionMs)||0,
-            collisionDetails:{sampleTick:Number(p.sampleTick)||0,detailedSamples:Number(p.collisionSoftDetailedSamples)||0,
-              gridCandidateVisits:Number(p.collisionPairs)||0,allySoftPasses:Number(p.collisionSoftPasses)||0,
-              allySoftContacts:Number(p.collisionSoftContacts)||0,allySoftMovedUnits:Number(p.collisionSoftMovedUnits)||0,
-              allySoftCappedUnits:Number(p.collisionSoftCappedUnits)||0,
-              combatTargetPickMs:Number(p.combatTargetPickMs)||0,combatOtherMs:Number(p.combatOtherMs)||0,combatTargetPickCalls:Number(p.combatTargetPickCalls)||0,
-              pairScanMs:Number(p.collisionPairScanMs)||0,softApplyMs:Number(p.collisionSoftApplyMs)||0,sweptMotionMs:Number(p.collisionSweptMotionMs)||0,
-              terrainMs:Number(p.collisionTerrainMs)||0,finalSapMs:Number(p.collisionHardFixMs)||0,
-              sweptCalls:Number(p.collisionSweptCalls)||0,sweptPasses:Number(p.collisionSweptActivePasses)||0,sweptPairTests:Number(p.collisionSweptPairTests)||0,
-              sweptHits:Number(p.collisionSweptHits)||0,sweptCorrectionUnits:Number(p.collisionSweptCorrectionUnits)||0,sweptNoCorrectionPasses:Number(p.collisionSweptNoCorrectionPasses)||0,
-              sweptZeroMotionCalls:Number(p.collisionSweptZeroMotionCalls)||0,sweptEmptyPasses:Number(p.collisionSweptEmptyPasses)||0,
-              sapCalls:Number(p.collisionHardFixCalls)||0,sapPasses:Number(p.collisionHardFixPasses)||0,sapActivePairTests:Number(p.collisionHardFixActivePairTests)||0,
-              sapCandidates:Number(p.collisionHardFixCandidates)||0,sapCorrections:Number(p.collisionHardFixCorrections)||0,sapNoOpCalls:Number(p.collisionHardFixNoOpCalls)||0},
-            postMs:Number(p.postMs)||0,
-            snapshotMs:Number(p.snapshotMs)||0,
-            checksumMs:Number(p.checksumMs)||0
-          };
-        }
-        const rp=ActiveViewState.renderer?.perfStats||{};
-        samples.push({
-          atMs:Math.round(now-startWall),
-          frameMs:Number(rp.frameWorkMs)||0,
-          frameEwmaMs:Number(rp.ewmaFrameWorkMs)||0,
-          frameMaxMs:Number(rp.maxFrameWorkMs)||0,
-          frameIntervalMs:Number(rp.frameIntervalMs)||0,
-          fps:Number(rp.fps)||0,
-          drawCalls:Number(rp.drawCalls)||0,
-          uploadBytes:Number(rp.bufferUploadBytes)||0,
-          vertexBufferGrows:Number(rp.vertexBufferGrows)||0,
-          geometryTemplateHits:Number(rp.geometryTemplateHits)||0,
-          unitBodyMeshCacheHits:Number(rp.unitBodyMeshCacheHits)||0,
-          unitBodyMeshCacheMisses:Number(rp.unitBodyMeshCacheMisses)||0,
-          unitBodyMeshCacheSize:Number(rp.unitBodyMeshCacheSize)||0,
-          passes:rp.passes||null,
-          sessions:sessionStats
-        });
-      }
-      const nums=(path)=>{
-        const out=[];
-        for(const x of samples){let v=x;for(const k of path)v=v?.[k];if(Number.isFinite(v))out.push(v)}
-        return out;
-      };
-      const summary=a=>{
-        if(!a.length)return null;
-        const b=a.slice().sort((x,y)=>x-y),avg=a.reduce((x,y)=>x+y,0)/a.length;
-        return {avg:+avg.toFixed(3),p95:+b[Math.min(b.length-1,Math.floor(b.length*.95))].toFixed(3),max:+Math.max(...a).toFixed(3)};
-      };
-      const roles=[...new Set(samples.flatMap(x=>Object.keys(x.sessions||{})))];
-      const roleSummary={};
-      for(const r of roles){
-        const collisionDetails=[...new Map(samples.map(x=>x.sessions?.[r]?.collisionDetails).filter(x=>x?.sampleTick).map(x=>[x.sampleTick,x])).values()];
-        roleSummary[r]={
-          stepMs:summary(nums(["sessions",r,"stepMs"])),
-          combatMs:summary(nums(["sessions",r,"combatMs"])),
-          collisionMs:summary(nums(["sessions",r,"collisionMs"])),
-          collisionDetailedSamples:collisionDetails.length,
-          alliedSoftPasses:collisionDetails.reduce((sum,x)=>sum+x.allySoftPasses,0),
-          alliedSoftContacts:collisionDetails.reduce((sum,x)=>sum+x.allySoftContacts,0),
-          alliedSoftMovedUnits:collisionDetails.reduce((sum,x)=>sum+x.allySoftMovedUnits,0),
-          alliedSoftCappedUnits:collisionDetails.reduce((sum,x)=>sum+x.allySoftCappedUnits,0),
-          collisionStagesMs:Object.fromEntries(["pairScanMs","softApplyMs","sweptMotionMs","terrainMs","finalSapMs"].map(key=>[key,summary(collisionDetails.map(x=>Number(x[key])).filter(Number.isFinite))])),
-          combatTargetPickMs:summary(collisionDetails.map(x=>Number(x.combatTargetPickMs)).filter(Number.isFinite)),
-          combatOtherMs:summary(collisionDetails.map(x=>Number(x.combatOtherMs)).filter(Number.isFinite)),
-          targetPickCalls:collisionDetails.reduce((sum,x)=>sum+x.combatTargetPickCalls,0),
-          sweptCalls:collisionDetails.reduce((sum,x)=>sum+x.sweptCalls,0),sweptActivePasses:collisionDetails.reduce((sum,x)=>sum+x.sweptPasses,0),
-          sweptEmptyPasses:collisionDetails.reduce((sum,x)=>sum+x.sweptEmptyPasses,0),sweptZeroMotionCalls:collisionDetails.reduce((sum,x)=>sum+x.sweptZeroMotionCalls,0),
-          sweptHits:collisionDetails.reduce((sum,x)=>sum+x.sweptHits,0),sweptCorrectionUnits:collisionDetails.reduce((sum,x)=>sum+x.sweptCorrectionUnits,0),sweptNoCorrectionPasses:collisionDetails.reduce((sum,x)=>sum+x.sweptNoCorrectionPasses,0),
-          hardFixCalls:collisionDetails.reduce((sum,x)=>sum+x.sapCalls,0),hardFixPasses:collisionDetails.reduce((sum,x)=>sum+x.sapPasses,0),hardFixNoOpCalls:collisionDetails.reduce((sum,x)=>sum+x.sapNoOpCalls,0),
-          hardFixPairTests:collisionDetails.reduce((sum,x)=>sum+x.sapActivePairTests,0),hardFixCandidates:collisionDetails.reduce((sum,x)=>sum+x.sapCandidates,0),hardFixCorrections:collisionDetails.reduce((sum,x)=>sum+x.sapCorrections,0),
-          workerMs:summary(nums(["sessions",r,"workerMs"])),
-          visionMs:summary(nums(["sessions",r,"visionMs"])),
-          projectileMs:summary(nums(["sessions",r,"projectileMs"])),
-          snapshotMs:summary(nums(["sessions",r,"snapshotMs"])),
-          checksumMs:summary(nums(["sessions",r,"checksumMs"]))
-        };
-      }
-      const payload={
-        kind:"RALLY_FRONTIER_PERFORMANCE_BENCHMARK",
-        build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),
-        startedAt,
-        durationMs:Math.round(performance.now()-startWall),
-        mode:SinglePlayerModeUtil.isSinglePlayer()?"single":LocalEnvironmentUtil.isLocalTest()?"local-test":"p2p",
-        tps:active.sim?.tps??null,
-        sampleCount:samples.length,
-        render:{
-          fps:summary(nums(["fps"])),
-          frameWorkMs:summary(nums(["frameMs"])),
-          frameIntervalMs:summary(nums(["frameIntervalMs"])),
-          drawCalls:summary(nums(["drawCalls"])),
-          uploadBytes:summary(nums(["uploadBytes"])),
-          passes:Object.fromEntries(["prepare","ground","shadow","world","overlay","ui-fx","camera-compose","minimap"].map(name=>[
-            name,summary(samples.map(x=>Number(x.passes?.[name]?.ms)).filter(Number.isFinite))
-          ]))
-        },
-        sessions:roleSummary,
-        samples
-      };
-      const blob=new Blob([JSON.stringify(payload)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");
-      a.href=url;a.download=`rally-frontier-performance-${Date.now()}.json`;document.body.appendChild(a);a.click();a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),1000);
-      LogUtil.log(`성능 벤치 완료 · ${samples.length} samples · JSON 저장`);
-    }catch(err){
-      LogUtil.log(`⚠ 성능 벤치 실패 · ${err?.message||err}`);
-    }finally{
-      this.running=false;
-      if(btn){btn.disabled=false;btn.textContent="600 유닛 성능 벤치"}
-    }
-  }
-};
-UiRegistry.refs.performanceBenchmarkBtn?.addEventListener("click",e=>{e.preventDefault();performanceBenchmark.run()});
-
 UiRegistry.refs.recoveryLogExportBtn?.addEventListener("click",e=>{
   e.preventDefault();
   RecoveryTelemetry.exportCorrectionFlightLog();
@@ -8918,7 +8130,7 @@ class ReplayPresentation{
 }
   static replaySourceSession(){
   if(ReplayPresentation.replayPlayer)return null;
-  const active=LocalEnvironmentUtil.isLocalTest()?MatchLifecycle.localTest?.sessions?.[ActiveViewState.role]:ActiveViewState.session;
+  const active=ActiveViewState.session;
   if(active?.replayRecorder?.result)return active;
   if(SinglePlayerModeUtil.isSinglePlayer()){
     if(MatchLifecycle.singleMatch?.sessions?.host?.replayRecorder?.result)return MatchLifecycle.singleMatch.sessions.host;
@@ -9025,17 +8237,10 @@ class ReplayPresentation{
   ActiveViewState.renderer.predictedFlag=null;
   ActiveViewState.renderer.selectedBuildingId=null;
   ActiveViewState.renderer.setSnapshot(s,{liveTargets:false});ActiveViewState.minimap?.set(ActiveViewState.renderer,s);
-  const side=ConnectionSideUtil.roleSide(ReplayPresentation.replayPlayer.orientationRole||"host");
-  UiRegistry.refs.minerals.textContent=Math.floor(s.wallet?.[side]||0);
-  UiRegistry.refs.gas.textContent=Math.floor(s.gasWallet?.[side]||0);
-  UiRegistry.refs.workers.textContent=(s.units||[]).filter(u=>u.alive&&u.side===side&&!!UnitDefinition.get(u.type)?.economyWorker).length;
-  UiRegistry.refs.supply.textContent=`${ReplayPresentation.replayPlayer.sim.supplyUsed(side)}/${ReplayPresentation.replayPlayer.sim.supplyCap(side)}`;
-  UiRegistry.refs.tier.textContent=`T${s.tech?.[side]||1}`;
-  UiRegistry.refs.supplyChip?.classList.remove("supply-blocked");UiRegistry.refs.supplyWarning?.classList.add("hidden");
   audioSystem.processSnapshot(s,ActiveViewState.renderer);
   UiRegistry.refs.replayDock?.classList.remove("hidden");UiRegistry.refs.replayStats?.classList.remove("hidden");
   if(UiRegistry.refs.replayStats)UiRegistry.refs.replayStats.innerHTML=ReplayPresentation.replayStatsHtml(s,ReplayPresentation.replayPlayer.sim);
-  UiRegistry.refs.net.textContent="리플레이 · 네트워크 시뮬레이션 없음";
+  LogUtil.status("리플레이 · 네트워크 시뮬레이션 없음");
   UiRegistry.refs.p2pHealth?.classList.add("hidden");
 }
   static syncReplayControls(){
@@ -9078,15 +8283,11 @@ class ReplayPresentation{
     player=new ReplayPlayer(loadedData);
     snapshot=player.sim.snapshot();
   }catch(e){player?.stop();LogUtil.log(`⚠ 리플레이 열기 실패 · ${e.message||e}`);onError?.(e);return false}
-  CampaignPresentation.clear();CampaignRuntime.clear();
+  CampaignPresentation.clear();
   MatchLifecycle.disposeMatches("replay-start");
   ReplayPresentation.replayPlayer?.stop();
   ReplayPresentation.replayLoadedData=loadedData;
   ReplayPresentation.replayPlayer=player;
-  UiRuntimeState.value.target={type:"flag"};UiRuntimeState.value.selection.buildingId=null;UiRuntimeState.value.selection.unit=null;
-  UiController.setUiCommand({branch:"closed",page:null});
-  if(UiRuntimeState.value.modal==="spell-choice")UiController.closeUiModal("spell-choice");SpellPresentation.setSpellChoicePhase("idle");
-  UiController.invalidatePanelHtmlCaches({unit:true,reinforcement:true});
   if(ActiveViewState.renderer){
     ActiveViewState.renderer.pendingBuildGhosts=[];ActiveViewState.renderer.predictedFlag=null;ActiveViewState.renderer.latencySpellFx=[];ActiveViewState.renderer.buildPreview=null;ActiveViewState.renderer.spellPreview=null;ActiveViewState.renderer.chargedSkillGesture=null;
   }
@@ -9095,7 +8296,6 @@ class ReplayPresentation{
   ReplayPresentation.renderReplaySnapshot(snapshot);
   ReplayPresentation.applyReplayPerspective();ReplayPresentation.syncReplayControls();
   ReplayPresentation.replayPlayer.start();
-  UiRegistry.refs.log.style.removeProperty("display");
   LogUtil.log(`▶ 리플레이 시작 · ${ReplayPresentation.formatReplayTime(ReplayPresentation.replayPlayer.endTick)} · 명령 ${data.commands.length}개`);
   return true;
 }
@@ -9106,549 +8306,16 @@ class ReplayPresentation{
 }
 }
 
-class LogUtil{static log(t){UiRegistry.refs.log.textContent=t}}
+// The game screen has no log or status line; the last messages stay readable from the console for diagnostics.
+class LogUtil{
+  static last="";static lastStatus="";
+  static log(t){LogUtil.last=String(t)}
+  static status(t){LogUtil.lastStatus=String(t)}
+}
 class RoomCodeUtil{static randomCode(){return String(Math.floor(Math.random()*10000)).padStart(4,"0")}}
-class LocalEnvironmentUtil{static isLocalTest(){return !!MatchLifecycle.localTest}}
 class SinglePlayerModeUtil{static isSinglePlayer(){return !!MatchLifecycle.singleMatch}}
 
-const DEBUG_BATTLE_TIMELINE_MS=600000;
-class DebugScenarioHarness{
-  static pending=null;
-  static unitOptions(){
-    return Object.entries(UnitDefinition.all)
-      .filter(([id,d])=>d&&d.tier>=1&&d.tier<=3&&!d.economyWorker&&!d.carrierSummon)
-      .sort((a,b)=>(a[1].tier-b[1].tier)||String(a[1].name||a[0]).localeCompare(String(b[1].name||b[0])));
-  }
-  static normalize(raw){
-    const valid=new Set(this.unitOptions().map(([id])=>id));
-    const allyType=valid.has(raw?.allyType)?raw.allyType:"swarmbug";
-    const enemyType=valid.has(raw?.enemyType)?raw.enemyType:"shelltitan";
-    const testMode=raw?.testMode==="mobile-battle";
-    const totalUnits=testMode&&[100,200,400].includes(Number(raw?.totalUnits))?Number(raw.totalUnits):100;
-    const composition=testMode&&["melee","ranged","mixed"].includes(raw?.composition)?raw.composition:"mixed";
-    const requestedSeed=Number(raw?.fixedSeed),fixedSeed=testMode&&Number.isFinite(requestedSeed)?Math.trunc(RangeUtil.clamp(requestedSeed,0,0xffffffff))>>>0:20261015;
-    const sampleSeconds=testMode&&[10,15,30].includes(Number(raw?.sampleSeconds))?Number(raw.sampleSeconds):15;
-    return{kind:"unit-combat",testMode:testMode?"mobile-battle":null,composition:testMode?composition:"single",fixedSeed:testMode?fixedSeed:null,totalUnits:testMode?totalUnits:null,warmupSeconds:testMode?5:null,sampleSeconds:testMode?sampleSeconds:null,allyType,enemyType,allyCount:testMode?totalUnits/2:RangeUtil.clamp(Math.round(Number(raw?.allyCount)||10),1,60),enemyCount:testMode?totalUnits/2:RangeUtil.clamp(Math.round(Number(raw?.enemyCount)||5),1,60),research:raw?.research!==false,humanRole:raw?.humanRole==="host"?"host":"guest"};
-  }
-  static unitRoster(config,side){
-    const humanSide=config?.humanRole==="host"?0:1;
-    if(config?.testMode==="mobile-battle"){
-      if(config.composition==="melee")return["swordsman"];
-      if(config.composition==="ranged")return["archer"];
-      return["swordsman","archer"];
-    }
-    return[side===humanSide?config?.allyType:config?.enemyType].filter(Boolean);
-  }
-  static liveDraft(cfg,roomCode){
-    const draft={
-      phase:"live",roomCode,
-      decks:{host:[],guest:[]},defenseCards:{host:[],guest:[]},
-      winner:null
-    };
-    for(const role of ["host","guest"])draft.decks[role]=this.unitRoster(cfg,role==="host"?0:1);
-    return draft;
-  }
-  // The debug scene starts from the same match factory as a real debug match and plays it
-  // through the real replay player, so only the network is absent.
-  static openReplayBattle({seed,allyType,enemyType,allyCount,enemyCount,commands=null}){
-    const valid=new Set(this.unitOptions().map(([id])=>id));
-    for(const type of [allyType,enemyType])if(!valid.has(type))throw new Error(`battle needs a combat unit type: ${type}`);
-    for(const count of [allyCount,enemyCount])if(!Number.isInteger(count)||count<1||count>60)throw new Error(`battle needs a unit count from 1 to 60: ${count}`);
-    const cfg=this.normalize({allyType,enemyType,allyCount,enemyCount,humanRole:"host"});
-    const draft=this.liveDraft(cfg,null),sim=StrategySim.createForMatch({draft,seed,debugScenario:cfg});
-    const recorder=new ReplayRecorder({seed,draft,roomCode:null,sim});
-    // A scene may script host commands from the spawned state; they replay like recorded commits.
-    const scripted=(commands?.(sim)||[]).map((c,i)=>({type:"RUNTIME_COMMIT",seq:i+1,tick:c.tick,actor:"host",action:c.action,proposalId:null,authorityTick:null}));
-    const fighters=sim.units.filter(u=>u.side===0&&u.type===allyType||u.side===1&&u.type===enemyType);
-    const focusX=fighters.reduce((a,u)=>a+u.x,0)/fighters.length,focusY=fighters.reduce((a,u)=>a+u.y,0)/fighters.length;
-    sim.dispose("debug-scene-recorded");
-    // The scene has no recorded end; stepping past this timeline fails instead of stretching it.
-    const payload={...recorder.payload(),commands:scripted,result:{winner:null,reason:"debug-scene",endTick:SimulationTiming.msToTicks(DEBUG_BATTLE_TIMELINE_MS,sim.tps),checksum:null}};
-    if(!ReplayPresentation.startReplay(payload))throw new Error("battle replay failed to start");
-    const player=ReplayPresentation.replayPlayer;
-    player.setPlaying(false);
-    ReplayPresentation.centerReplayCamera(focusX,focusY);
-    return player;
-  }
-  static openChargeReplay({seed,unitType,enemyType,count,enemyCount}){
-    if(!UnitDefinition.get(unitType)?.chargedSkill)throw new Error(`charge needs a charged-skill unit type: ${unitType}`);
-    // Hold on the own group, aim at the enemy group once gathered, release at full charge:
-    // the same commands the battlefield gesture submits.
-    return this.openReplayBattle({seed,allyType:unitType,enemyType,allyCount:count,enemyCount,commands:sim=>{
-      const centroid=(side,type)=>{const list=sim.units.filter(u=>u.side===side&&u.type===type);return{x:list.reduce((a,u)=>a+u.x,0)/list.length,y:list.reduce((a,u)=>a+u.y,0)/list.length}};
-      const own=centroid(0,unitType),foe=centroid(1,enemyType),castId=1,begin=1;
-      const aim=begin+sim.msTicks(ChargedSkillGeometry.gatherMs),release=begin+sim.msTicks(ChargedSkillGeometry.gatherMs+ChargedSkillGeometry.chargeMs);
-      return [
-        {tick:begin,action:{type:"CHARGE_BEGIN",castId,x:own.x,y:own.y}},
-        {tick:aim,action:{type:"CHARGE_AIM",castId,x:foe.x,y:foe.y}},
-        {tick:release,action:{type:"CHARGE_RELEASE",castId,x:foe.x,y:foe.y}}
-      ];
-    }});
-  }
-  // Address settings (src/ui/dev-query.js) checked against the playable units; a typo fails instead of falling back.
-  static fromQuery(params){
-    const valid=new Set(this.unitOptions().map(([id])=>id));
-    for(const key of ["allyType","enemyType"])if(params[key]!=null&&!valid.has(params[key]))throw new Error(`Unknown unit for ${key}: ${params[key]}`);
-    return this.normalize(params);
-  }
-}
 
-class MobileBattleTestMode{
-  static phase="idle";static config=null;static report=null;static frameHandle=0;static phaseStartedAt=0;static connectStartedAt=0;static lastFrameAt=0;static lastHudAt=0;
-  static paused=false;static pausedAt=0;static sampleStartedAt=0;static sampleCount=0;static overflowFrames=0;static capacity=16384;
-  static vectorFlushReasonMetricKeys=Object.freeze({
-    "frame-to-vector-switch":"vectorFlushFrameToVectorSwitch","air-transient-effects":"vectorFlushAirTransientEffects",
-    "vector-to-frame-painter-switch":"vectorFlushVectorToFramePainterSwitch","world-pass-end":"vectorFlushWorldPassEnd",
-    explicit:"vectorFlushExplicit",mesh:"vectorFlushMesh",indexVariant:"vectorFlushIndexVariant",clip:"vectorFlushClip",stencil:"vectorFlushStencil",
-    depthState:"vectorFlushDepthState",projection:"vectorFlushProjection",strokeViewport:"vectorFlushStrokeViewport",parts:"vectorFlushParts",capacity:"vectorFlushCapacity",
-    alphaDepthBoundary:"vectorFlushAlphaDepthBoundary",alphaOverlap:"vectorFlushAlphaOverlap",alphaSignature:"vectorFlushAlphaSignature",
-    alphaUnsupportedBoundary:"vectorFlushAlphaUnsupportedBoundary",alphaImmediateBoundary:"vectorFlushAlphaImmediateBoundary"
-  });
-  static vectorFlushDiagnosticsAvailable=false;static vectorSafeAlphaRunBatching=null;static sampleVectorDiagnostics=[];
-  static sampleMetricKeys=Object.freeze(["rendererFrameSequence","frameIntervalMs","frameWindowMs","rendererCpuWorkMs","drawCalls","vectorAssetDrawCalls","vectorAssetDraws","bufferUploadBytes","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances","vectorFlushEvents","vectorAlphaRunDrawCalls","vectorAlphaRunSafeBatches","vectorAlphaRunBatchedInstances","vectorAlphaRunDrawsSaved","vectorAlphaRunSafeRunDraws","vectorAlphaRunImmediateRunDraws","vectorAlphaRunOverlapBoundaries","vectorAlphaRunSignatureBoundaries","vectorAlphaRunUnbatchableBounds","vectorAlphaRunImmediateInstances",...Object.values(this.vectorFlushReasonMetricKeys),"hostStepCpuMs","hostStepCount","hostSnapshotCpuMs","hostSnapshotCount","hostSnapshotUiCpuMs","hostSnapshotUiCount","hostSessionPulseCpuMs","hostSessionPulseCount","guestStepCpuMs","guestStepCount","guestSnapshotCpuMs","guestSnapshotCount","guestSnapshotUiCpuMs","guestSnapshotUiCount","guestSessionPulseCpuMs","guestSessionPulseCount","unattributedElapsedMs"]);
-  static sampleBuffers=Object.create(null);static lastCapturedRendererFrameSequence=0;static sampleFrameWindowStartedAt=0;
-  static peerSamples={host:[],guest:[]};static peerSampleTicks={host:0,guest:0};static peerSnapshotBaseline={};static peerFrameBaseline={};static peerStepSampleCounts={host:0,guest:0};static peerStepSampleCountsAtStart={host:0,guest:0};static peerMaxStepMs={host:0,guest:0};
-  static visibilityStats={visibilityStateAtStart:"visible",visibilityStateAtSampleStart:null,hiddenEvents:0,unpausedHiddenEvents:0,hiddenWhilePausedEvents:0,pagehideEvents:0,invalidated:false};
-  static lastSampleState=null;static sampleStartState=null;static lastIntervalMs=0;static savedSettings=null;
-  static savedCampaignPending=null;static savedDebugPending=null;
-  static ref(id){return document.getElementById(id)}
-  static bindUi(){
-    this.ref("battleTestPauseBtn")?.addEventListener("click",()=>this.paused?this.resume():this.pause());
-    this.ref("battleTestResetBtn")?.addEventListener("click",()=>this.reset());
-    this.ref("battleTestExitBtn")?.addEventListener("click",()=>this.exit());
-    this.ref("battleTestCopyBtn")?.addEventListener("click",()=>this.copyReport());
-    this.ref("battleTestDownloadBtn")?.addEventListener("click",()=>this.downloadReport());
-    document.addEventListener("visibilitychange",()=>this.onVisibilityChange());
-    window.addEventListener("pagehide",()=>this.onPageHide());
-  }
-  static beginRun(){
-    this.vectorFlushDiagnosticsAvailable=false;this.vectorSafeAlphaRunBatching=null;
-    this.phase="connecting";this.paused=false;this.pausedAt=0;this.report=null;this.connectStartedAt=performance.now();this.phaseStartedAt=0;this.sampleStartedAt=0;this.lastFrameAt=0;this.lastHudAt=0;this.lastSampleState=null;this.sampleStartState=null;this.sampleCount=0;this.overflowFrames=0;this.lastIntervalMs=0;
-    this.resetCopyFallback();
-    this.sampleBuffers=Object.fromEntries(this.sampleMetricKeys.map(key=>[key,new Float32Array(this.capacity)]));this.sampleVectorDiagnostics=new Array(this.capacity);this.lastCapturedRendererFrameSequence=0;this.sampleFrameWindowStartedAt=0;
-    this.peerSamples={host:[],guest:[]};this.peerSampleTicks={host:0,guest:0};this.peerSnapshotBaseline={};this.peerFrameBaseline={};this.peerStepSampleCounts={host:0,guest:0};this.peerStepSampleCountsAtStart={host:0,guest:0};this.peerMaxStepMs={host:0,guest:0};
-    this.visibilityStats={visibilityStateAtStart:document.visibilityState||"unknown",visibilityStateAtSampleStart:null,hiddenEvents:0,unpausedHiddenEvents:0,hiddenWhilePausedEvents:0,pagehideEvents:0,invalidated:false};
-  }
-  static activePhase(){return["connecting","warmup","sampling"].includes(this.phase)}
-  static onVisibilityChange(){
-    if(document.visibilityState==="visible"||!this.activePhase())return;
-    if(this.paused){this.visibilityStats.hiddenEvents++;this.visibilityStats.hiddenWhilePausedEvents++;return}
-    this.invalidateForVisibility("앱이 백그라운드로 전환되어 측정을 무효화했습니다. 화면을 켜 둔 상태에서 다시 시작하세요.",true);
-  }
-  static onPageHide(){
-    if(!this.activePhase())return;
-    this.visibilityStats.pagehideEvents++;
-    if(this.paused)return;
-    this.invalidateForVisibility("페이지가 숨겨지거나 닫혀 측정을 무효화했습니다. 다시 시작하세요.",true);
-  }
-  static invalidateForVisibility(message,countHidden){
-    if(this.visibilityStats.invalidated)return;
-    this.visibilityStats.invalidated=true;if(countHidden)this.visibilityStats.unpausedHiddenEvents++;
-    this.fail(message,true);
-  }
-  static beginSampling(now,live){
-    this.phase="sampling";this.phaseStartedAt=now;this.sampleStartedAt=now;this.sampleCount=0;this.overflowFrames=0;
-    this.sampleFrameWindowStartedAt=now;
-    this.sampleStartState=this.stateSnapshot(live);this.lastSampleState=this.sampleStartState;
-    this.visibilityStats.visibilityStateAtSampleStart=document.visibilityState||"unknown";
-    this.lastCapturedRendererFrameSequence=Number(live.renderer?.perfStats?.frameSequence)||0;
-    const match=live.match;
-    for(const role of ["host","guest"]){
-      const session=match.sessions?.[role],sim=session?.sim,perf=sim?.perfStats||{},timings=session?.performanceStats?.timings||{};
-      const pulse=timings.pulse||{},snapshotUi=timings.snapshotUi||{};
-      this.peerSampleTicks[role]=Number(perf.sampleTick)||0;
-      this.peerStepSampleCounts[role]=Number(perf.stepSamples)||0;this.peerStepSampleCountsAtStart[role]=Number(perf.stepSamples)||0;this.peerMaxStepMs[role]=0;
-      const stepCount=Number(perf.stepSamples)||0,stepCpuMs=Number(perf.stepCumulativeMs)||0,snapshotCount=Number(perf.snapshotSamples)||0,snapshotCpuMs=Number(perf.snapshotCumulativeMs)||0;
-      const pulseCount=Number(pulse.samples)||0,pulseCpuMs=Number(pulse.cumulativeMs)||0,snapshotUiCount=Number(snapshotUi.samples)||0,snapshotUiCpuMs=Number(snapshotUi.cumulativeMs)||0;
-      this.peerSnapshotBaseline[role]={count:snapshotCount,totalMs:snapshotCpuMs,stepCount,stepTotalMs:stepCpuMs,pulseCount,pulseTotalMs:pulseCpuMs,snapshotUiCount,snapshotUiTotalMs:snapshotUiCpuMs};
-      this.peerFrameBaseline[role]={session,sim,stepCount,stepCpuMs,snapshotCount,snapshotCpuMs,pulseCount,pulseCpuMs,snapshotUiCount,snapshotUiCpuMs};
-    }
-    const stats=live.renderer?.vectorContext?.stats?.().mesh;
-    this.vectorFlushDiagnosticsAvailable=!!stats&&!!stats.flushReasons&&!!stats.drawDispatchReasons&&typeof stats.safeAlphaRunBatching==="boolean";
-    this.vectorSafeAlphaRunBatching=this.vectorFlushDiagnosticsAvailable?stats.safeAlphaRunBatching:null;
-  }
-  static start(params){
-    if(!["idle","stopped"].includes(this.phase))return;
-    this.config=DebugScenarioHarness.normalize({testMode:"mobile-battle",...params,humanRole:"host",research:false});this.savedSettings={presetId:UiRuntimeState.value.settings.presetId,simulationTps:UiRuntimeState.value.settings.simulationTps,netcodeMode:CONFIG.netcode.mode};
-    this.savedCampaignPending=CampaignRuntime.pending;this.savedDebugPending=DebugScenarioHarness.pending;
-    DebugScenarioHarness.pending=this.config;CampaignRuntime.pending=null;CampaignPresentation.clear();this.beginRun();
-    document.body.classList.add("battle-test-mode");
-    const hud=this.ref("battleTestHud");if(hud&&hud.parentElement!==document.body)document.body.appendChild(hud);hud?.classList.remove("hidden");
-    UiRuntimeState.value.settings.presetId="standard";UiController.setStartSimulationTps(10);UiController.setStartNetcodeMode("lockstep");
-    audioSystem.unlock();this.renderHud();
-    try{MatchLifecycle.startSinglePlayerWebRTC("host");this.scheduleFrame()}
-    catch(error){this.fail(`매치 시작 실패: ${String(error?.message||error)}`)}
-  }
-  static liveState(){
-    const match=MatchLifecycle.singleMatch;if(!match)return null;
-    const session=match.sessions?.[match.humanRole],peer=match.sessions?.[match.botRole],sim=session?.sim;
-    if(UiRuntimeState.value.screen!=="game"||!sim||!peer?.sim||!session?.netcodeSession?.ready||!peer.netcodeSession?.ready)return null;
-    return{match,session,peer,sim,renderer:ActiveViewState.renderer};
-  }
-  static readCounts(sim){
-    let total=0,host=0,guest=0,workers=0;
-    for(const unit of sim?.units||[]){if(!unit||unit.alive===false||unit.hp<=0||(unit.side!==0&&unit.side!==1))continue;total++;if(unit.side===0)host++;else guest++;if(UnitDefinition.get(unit.type)?.economyWorker)workers++}
-    return{total,host,guest,workers};
-  }
-  static stateSnapshot(live){
-    const counts=this.readCounts(live?.sim);
-    return{tick:live?.session?.sim?.tick??null,peerTick:live?.peer?.sim?.tick??null,units:counts};
-  }
-  static scheduleFrame(){
-    if(this.frameHandle||this.paused||!["connecting","warmup","sampling"].includes(this.phase))return;
-    if(document.visibilityState!=="visible"){this.invalidateForVisibility("앱이 백그라운드로 전환되어 측정을 무효화했습니다. 화면을 켜 둔 상태에서 다시 시작하세요.",true);return}
-    this.frameHandle=requestAnimationFrame(timestamp=>{this.frameHandle=0;this.frame(timestamp);this.scheduleFrame()});
-  }
-  static frame(timestamp){
-    const now=Number.isFinite(timestamp)?timestamp:performance.now();
-    if(this.activePhase()&&!this.paused&&document.visibilityState!=="visible"){
-      this.invalidateForVisibility("앱이 백그라운드로 전환되어 측정을 무효화했습니다. 화면을 켜 둔 상태에서 다시 시작하세요.",true);return;
-    }
-    if(this.phase==="connecting"){
-      const live=this.liveState();
-      if(live){this.phase="warmup";this.phaseStartedAt=now;this.lastFrameAt=now;this.lastSampleState=this.stateSnapshot(live);this.renderHud(now)}
-      else if(now-this.connectStartedAt>30000)this.fail("매치 연결 시간이 초과됐습니다. 종료 후 다시 시작하세요.");
-      if(this.phase==="connecting"&&now-this.lastHudAt>500){this.lastHudAt=now;this.renderHud(now)}
-      return;
-    }
-    if(this.paused)return;
-    if(UiRuntimeState.value.screen==="result"){
-      if(this.phase==="sampling")this.finishSample(now,true);else this.fail("측정 구간 전에 매치가 종료됐습니다.");
-      return;
-    }
-    const live=this.liveState();
-    if(!live){if(this.phase==="sampling")this.finishSample(now,true);return}
-    if(this.phase==="warmup"&&now-this.phaseStartedAt>=this.config.warmupSeconds*1000){
-      this.beginSampling(now,live);this.renderHud(now);return;
-    }
-    if(this.phase==="sampling"){
-      if(now-this.phaseStartedAt>=this.config.sampleSeconds*1000){this.finishSample(now,false);return}
-    }
-    if(now-this.lastHudAt>=1000){this.lastHudAt=now;this.lastSampleState=this.stateSnapshot(live);this.renderHud(now)}
-  }
-  static captureRendererFrame(frameEnded,rp){
-    if(this.phase!=="sampling"||this.paused)return;
-    if(document.visibilityState!=="visible"){
-      this.invalidateForVisibility("앱이 백그라운드로 전환되어 측정을 무효화했습니다. 화면을 켜 둔 상태에서 다시 시작하세요.",true);return;
-    }
-    const sequence=Number(rp.frameSequence)||0;
-    if(sequence&&sequence<=this.lastCapturedRendererFrameSequence)return;
-    if(sequence)this.lastCapturedRendererFrameSequence=sequence;
-    this.lastIntervalMs=Number(rp.frameIntervalMs)||0;
-    const sampleIndex=this.sampleCount,storeSample=sampleIndex<this.capacity;
-    const windowStartedAt=Number(this.sampleFrameWindowStartedAt)||this.sampleStartedAt||frameEnded;
-    const frameWindowMs=Math.max(0,frameEnded-windowStartedAt);
-    if(storeSample){
-      const flush=rp.vectorFlushDiagnostics,flushReasons=flush?.flushReasons||null;
-      const sumCounts=counts=>counts?Object.values(counts).reduce((sum,count)=>sum+(Number(count)||0),0):NaN;
-      const values={frameIntervalMs:rp.frameIntervalMs,frameWindowMs,rendererCpuWorkMs:rp.frameWorkMs,drawCalls:rp.drawCalls,vectorAssetDrawCalls:rp.vectorAssetDrawCalls,
-        vectorAssetDraws:rp.vectorAssetDraws,bufferUploadBytes:rp.bufferUploadBytes,vectorAssetGeometryBytes:rp.vectorAssetGeometryBytes,vectorAssetInstanceBytes:rp.vectorAssetInstanceBytes,
-        alphaRunCacheHits:rp.vectorAlphaRunCacheHits,alphaRunCacheMisses:rp.vectorAlphaRunCacheMisses,vectorGeometryUploads:rp.vectorGeometryUploads,
-        partUniformBytesSubmitted:rp.vectorPartUniformBytesSubmitted,vectorStagingBytes:rp.vectorStagingBytes,vectorInstances:rp.vectorAssetInstances,
-        rendererFrameSequence:sequence,vectorFlushEvents:sumCounts(flushReasons),
-        vectorAlphaRunDrawCalls:flush?(Number(flush.alphaRunSafeRunDraws)||0)+(Number(flush.alphaRunImmediateRunDraws)||0):NaN,
-        vectorAlphaRunSafeBatches:flush?.alphaRunSafeBatches,vectorAlphaRunBatchedInstances:flush?.alphaRunBatchedInstances,vectorAlphaRunDrawsSaved:flush?.alphaRunDrawsSaved,
-        vectorAlphaRunSafeRunDraws:flush?.alphaRunSafeRunDraws,vectorAlphaRunImmediateRunDraws:flush?.alphaRunImmediateRunDraws,
-        vectorAlphaRunOverlapBoundaries:flush?.alphaRunOverlapBoundaries,vectorAlphaRunSignatureBoundaries:flush?.alphaRunSignatureBoundaries,
-        vectorAlphaRunUnbatchableBounds:flush?.alphaRunUnbatchableBounds,vectorAlphaRunImmediateInstances:flush?.alphaRunImmediateInstances};
-      for(const [reason,key] of Object.entries(this.vectorFlushReasonMetricKeys))values[key]=flush?Number(flushReasons?.[reason])||0:NaN;
-      for(const key of this.sampleMetricKeys){const value=Number(values[key]);this.sampleBuffers[key][sampleIndex]=Number.isFinite(value)?value:NaN}
-      this.sampleVectorDiagnostics[sampleIndex]=flush?{safeAlphaRunBatching:flush.safeAlphaRunBatching,flushReasons:{...flush.flushReasons},drawDispatchReasons:{...flush.drawDispatchReasons}}:null;
-    }
-    const match=MatchLifecycle.singleMatch;
-    this.capturePeerFrameMetrics(match,sampleIndex,storeSample,frameWindowMs,Number(rp.frameWorkMs));
-    if(match?.sessions)this.capturePeerSimulation(match);
-    this.sampleFrameWindowStartedAt=frameEnded;
-    if(storeSample)this.sampleCount++;else this.overflowFrames++;
-  }
-  static capturePeerFrameMetrics(match,index,storeSample,frameWindowMs,rendererCpuWorkMs){
-    let pulseCpuMs=0,accountingComplete=true;
-    const delta=(current,previous)=>Number.isFinite(current)&&Number.isFinite(previous)&&current>=previous?current-previous:NaN;
-    const write=(key,value)=>{if(storeSample)this.sampleBuffers[key][index]=Number.isFinite(value)?value:NaN};
-    for(const role of ["host","guest"]){
-      const session=match?.sessions?.[role],sim=session?.sim,perf=sim?.perfStats,timings=session?.performanceStats?.timings||{},pulse=timings.pulse||{},snapshotUi=timings.snapshotUi||{};
-      const prefix=role==="host"?"host":"guest",previous=this.peerFrameBaseline[role];
-      const stepCount=Number(perf?.stepSamples),stepCpuMs=Number(perf?.stepCumulativeMs),snapshotCount=Number(perf?.snapshotSamples),snapshotCpuMs=Number(perf?.snapshotCumulativeMs);
-      const pulseCount=Number(pulse.samples),sessionPulseCpuMs=Number(pulse.cumulativeMs),snapshotUiCount=Number(snapshotUi.samples),snapshotUiCpuMs=Number(snapshotUi.cumulativeMs);
-      if(!session||!sim||!perf||!previous||previous.session!==session||previous.sim!==sim){
-        for(const key of ["StepCpuMs","StepCount","SnapshotCpuMs","SnapshotCount","SnapshotUiCpuMs","SnapshotUiCount","SessionPulseCpuMs","SessionPulseCount"])write(prefix+key,NaN);
-        if(session&&sim&&perf)this.peerFrameBaseline[role]={session,sim,stepCount,stepCpuMs,snapshotCount,snapshotCpuMs,pulseCount,sessionPulseCpuMs,snapshotUiCount,snapshotUiCpuMs};
-        else this.peerFrameBaseline[role]=null;
-        accountingComplete=false;
-        continue;
-      }
-      const stepCpuDelta=delta(stepCpuMs,previous.stepCpuMs),pulseCpuDelta=delta(sessionPulseCpuMs,previous.sessionPulseCpuMs);
-      write(prefix+"StepCpuMs",stepCpuDelta);write(prefix+"StepCount",delta(stepCount,previous.stepCount));
-      write(prefix+"SnapshotCpuMs",delta(snapshotCpuMs,previous.snapshotCpuMs));write(prefix+"SnapshotCount",delta(snapshotCount,previous.snapshotCount));
-      write(prefix+"SnapshotUiCpuMs",delta(snapshotUiCpuMs,previous.snapshotUiCpuMs));write(prefix+"SnapshotUiCount",delta(snapshotUiCount,previous.snapshotUiCount));
-      write(prefix+"SessionPulseCpuMs",pulseCpuDelta);write(prefix+"SessionPulseCount",delta(pulseCount,previous.pulseCount));
-      if(Number.isFinite(pulseCpuDelta))pulseCpuMs+=pulseCpuDelta;else accountingComplete=false;
-      previous.stepCount=stepCount;previous.stepCpuMs=stepCpuMs;previous.snapshotCount=snapshotCount;previous.snapshotCpuMs=snapshotCpuMs;
-      previous.pulseCount=pulseCount;previous.sessionPulseCpuMs=sessionPulseCpuMs;previous.snapshotUiCount=snapshotUiCount;previous.snapshotUiCpuMs=snapshotUiCpuMs;
-    }
-    write("frameWindowMs",frameWindowMs);
-    write("unattributedElapsedMs",accountingComplete&&Number.isFinite(rendererCpuWorkMs)?frameWindowMs-rendererCpuWorkMs-pulseCpuMs:NaN);
-  }
-  static capturePeerSimulation(match){
-    const stageKeys=["totalMs","indexMs","worldMs","economyMs","workerMs","visionMs","combatMs","combatTargetPickMs","projectileMs","collisionMs","collisionPrepMs","collisionGridBuildMs","collisionPairScanMs","collisionSoftApplyMs","collisionSweptMotionMs","collisionTerrainMs","collisionHardFixMs","collisionOtherMs","postMs"];
-    const counterKeys=["spatialQueries","spatialCandidates","targetQueries","collisionPairs","collisionOverlaps","collisionSoftPasses","collisionSoftContacts","collisionSoftMovedUnits","collisionSoftCappedUnits","collisionSweptCalls","collisionSweptActivePasses","collisionHardFixCalls","collisionHardFixPasses","collisionHardFixCorrections","combatTargetPickCalls","aliveUnits","workers","projectiles"];
-    for(const role of ["host","guest"]){
-      const perf=match.sessions?.[role]?.sim?.perfStats;if(!perf)continue;
-      const stepSamples=Number(perf.stepSamples)||0;
-      if(stepSamples>this.peerStepSampleCounts[role])this.peerMaxStepMs[role]=Math.max(this.peerMaxStepMs[role],Number(perf.lastStepMs)||0);
-      this.peerStepSampleCounts[role]=stepSamples;
-      const sampleTick=Number(perf.sampleTick)||0;
-      if(sampleTick<=this.peerSampleTicks[role])continue;
-      this.peerSampleTicks[role]=sampleTick;
-      const project=keys=>Object.fromEntries(keys.map(key=>[key,Number.isFinite(Number(perf[key]))?Number(perf[key]):null]));
-      this.peerSamples[role].push({sampleTick,stageMs:project(stageKeys),workCounters:project(counterKeys),
-        step:{lastMs:Number(perf.lastStepMs)||0,ewmaMs:Number(perf.ewmaStepMs)||0,samples:Number(perf.stepSamples)||0},
-        snapshot:{latestMs:Number(perf.snapshotMs)||0,samplesAtCapture:Number(perf.snapshotSamples)||0,totalMsAtCapture:Number(perf.snapshotCumulativeMs)||0}});
-    }
-  }
-  static stats(values,count){
-    const rows=[];for(let i=0;i<count;i++)if(Number.isFinite(values[i]))rows.push(values[i]);
-    if(!rows.length)return{count:0,p50:null,p95:null,max:null,mean:null};
-    const sorted=rows.sort((a,b)=>a-b),n=sorted.length,sum=sorted.reduce((a,b)=>a+b,0),round=value=>Math.round(value*100)/100;
-    return{count:n,p50:round(sorted[Math.floor((n-1)*.5)]),p95:round(sorted[Math.floor((n-1)*.95)]),max:round(sorted[n-1]),mean:round(sum/n)};
-  }
-  static indexedStats(values,indexes){
-    const selected=new Float32Array(indexes.length);for(let i=0;i<indexes.length;i++)selected[i]=values[indexes[i]];
-    return this.stats(selected,selected.length);
-  }
-  static pairedSlowFrameRows(indexes,limit=20){
-    const value=(key,index)=>{const n=Number(this.sampleBuffers[key]?.[index]);return Number.isFinite(n)?Math.round(n*100)/100:null};
-    return indexes.slice().sort((a,b)=>(value("frameIntervalMs",b)||0)-(value("frameIntervalMs",a)||0)||a-b).slice(0,limit).map(index=>{
-      const peer=role=>{const p=role==="host"?"host":"guest";return{step:{count:value(p+"StepCount",index),cpuMs:value(p+"StepCpuMs",index)},snapshot:{count:value(p+"SnapshotCount",index),cpuMs:value(p+"SnapshotCpuMs",index)},snapshotUi:{count:value(p+"SnapshotUiCount",index),cpuMs:value(p+"SnapshotUiCpuMs",index)},sessionPulse:{count:value(p+"SessionPulseCount",index),cpuMs:value(p+"SessionPulseCpuMs",index)}}};
-      const vectorDiagnostics=this.sampleVectorDiagnostics[index]||null;
-      return{frameIndex:index,rendererFrameSequence:value("rendererFrameSequence",index),frameIntervalMs:value("frameIntervalMs",index),elapsedWindowMs:value("frameWindowMs",index),rendererCpuMs:value("rendererCpuWorkMs",index),
-        host:peer("host"),guest:peer("guest"),unattributedElapsedMs:value("unattributedElapsedMs",index),
-        vector:{drawMeshSubmissions:value("vectorAssetDraws",index),meshInstances:value("vectorInstances",index),webglDrawDispatches:value("vectorAssetDrawCalls",index),alphaRunDispatches:value("vectorAlphaRunDrawCalls",index),
-          alphaRunSafeBatches:value("vectorAlphaRunSafeBatches",index),alphaRunBatchedInstances:value("vectorAlphaRunBatchedInstances",index),alphaRunDrawsSaved:value("vectorAlphaRunDrawsSaved",index),
-          alphaRunOverlapBoundaries:value("vectorAlphaRunOverlapBoundaries",index),alphaRunSignatureBoundaries:value("vectorAlphaRunSignatureBoundaries",index),alphaRunUnbatchableBounds:value("vectorAlphaRunUnbatchableBounds",index)},
-        vectorFlushes:{events:value("vectorFlushEvents",index),reasons:vectorDiagnostics?.flushReasons||null},vectorDrawDispatchReasons:vectorDiagnostics?.drawDispatchReasons||null};
-    });
-  }
-  static aggregateVectorReasonCounts(indexes,field){
-    const totals=Object.create(null);
-    for(const index of indexes)for(const [reason,count] of Object.entries(this.sampleVectorDiagnostics[index]?.[field]||{}))totals[reason]=(totals[reason]||0)+(Number(count)||0);
-    return totals;
-  }
-  static pairedSlowFrameSummary(frameIntervals){
-    const threshold=frameIntervals.p95;if(threshold===null)return{frameCount:0,selection:{metric:"frameIntervalMs",operator:">=",thresholdMs:null},metrics:null,frames:[]};
-    const indexes=[];for(let i=0;i<this.sampleCount;i++)if(Number.isFinite(this.sampleBuffers.frameIntervalMs[i])&&this.sampleBuffers.frameIntervalMs[i]>=threshold)indexes.push(i);
-    const keys=["frameIntervalMs","frameWindowMs","rendererCpuWorkMs","drawCalls","vectorAssetDrawCalls","vectorAssetDraws","bufferUploadBytes","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances","vectorFlushEvents","vectorAlphaRunDrawCalls","vectorAlphaRunSafeBatches","vectorAlphaRunBatchedInstances","vectorAlphaRunDrawsSaved","vectorAlphaRunSafeRunDraws","vectorAlphaRunImmediateRunDraws","vectorAlphaRunOverlapBoundaries","vectorAlphaRunSignatureBoundaries","vectorAlphaRunUnbatchableBounds","vectorAlphaRunImmediateInstances",...Object.values(this.vectorFlushReasonMetricKeys),"hostStepCpuMs","hostStepCount","hostSnapshotCpuMs","hostSnapshotCount","hostSnapshotUiCpuMs","hostSnapshotUiCount","hostSessionPulseCpuMs","hostSessionPulseCount","guestStepCpuMs","guestStepCount","guestSnapshotCpuMs","guestSnapshotCount","guestSnapshotUiCpuMs","guestSnapshotUiCount","guestSessionPulseCpuMs","guestSessionPulseCount","unattributedElapsedMs"];
-    const metrics=Object.fromEntries(keys.map(key=>[key,this.indexedStats(this.sampleBuffers[key],indexes)]));
-    return{frameCount:indexes.length,selection:{metric:"frameIntervalMs",operator:">=",thresholdMs:threshold,detailLimit:20},metrics,flushReasons:this.aggregateVectorReasonCounts(indexes,"flushReasons"),drawDispatchReasons:this.aggregateVectorReasonCounts(indexes,"drawDispatchReasons"),frames:this.pairedSlowFrameRows(indexes,20)};
-  }
-  static peerSimulationSummary(match){
-    const peers={};
-    for(const role of ["host","guest"]){
-      const session=match?.sessions?.[role],perf=session?.sim?.perfStats,baseline=this.peerSnapshotBaseline[role]||{count:0,totalMs:0,stepCount:0,stepTotalMs:0,pulseCount:0,pulseTotalMs:0,snapshotUiCount:0,snapshotUiTotalMs:0};
-      if(!perf){peers[role]={available:false,reason:"해당 역할의 StrategySim.perfStats를 읽을 수 없음",sampledStages:[],snapshot:null,step:null};continue}
-      const snapshotCount=Math.max(0,(Number(perf.snapshotSamples)||0)-baseline.count),snapshotTotalMs=Math.max(0,(Number(perf.snapshotCumulativeMs)||0)-baseline.totalMs);
-      const pulse=session?.performanceStats?.timings?.pulse||{},snapshotUi=session?.performanceStats?.timings?.snapshotUi||{};
-      const pulseCount=Math.max(0,(Number(pulse.samples)||0)-baseline.pulseCount),pulseTotalMs=Math.max(0,(Number(pulse.cumulativeMs)||0)-baseline.pulseTotalMs);
-      const snapshotUiCount=Math.max(0,(Number(snapshotUi.samples)||0)-baseline.snapshotUiCount),snapshotUiTotalMs=Math.max(0,(Number(snapshotUi.cumulativeMs)||0)-baseline.snapshotUiTotalMs);
-      const stepTotalMs=Math.max(0,(Number(perf.stepCumulativeMs)||0)-baseline.stepTotalMs);
-      peers[role]={available:true,sampleCadenceMs:1000,sampledStages:this.peerSamples[role],
-        step:{ticksDuringSample:Math.max(0,(Number(perf.stepSamples)||0)-this.peerStepSampleCountsAtStart[role]),totalCpuMsDuringSample:Math.round(stepTotalMs*100)/100,lastStepMs:Number(perf.lastStepMs)||0,ewmaStepMs:Number(perf.ewmaStepMs)||0,maxObservedStepMs:this.peerMaxStepMs[role],lifetimeMaxStepMs:Number(perf.maxStepMs)||0},
-        snapshot:{samplesDuringSample:snapshotCount,totalMsDuringSample:Math.round(snapshotTotalMs*100)/100,averageMsDuringSample:snapshotCount?Math.round(snapshotTotalMs/snapshotCount*100)/100:null,latestSnapshotMs:Number(perf.snapshotMs)||0,lifetimeMaxSnapshotMs:Number(perf.maxSnapshotMs)||0},
-        snapshotUi:{samplesDuringSample:snapshotUiCount,totalMsDuringSample:Math.round(snapshotUiTotalMs*100)/100},
-        sessionPulse:{samplesDuringSample:pulseCount,totalMsDuringSample:Math.round(pulseTotalMs*100)/100,averageMsDuringSample:pulseCount?Math.round(pulseTotalMs/pulseCount*100)/100:null}};
-    }
-    return peers;
-  }
-  static finishSample(now,interrupted){
-    if(this.phase!=="sampling")return;
-    const live=this.liveState(),start=this.sampleStartState||this.lastSampleState,end=this.stateSnapshot(live||{}),elapsed=Math.max(0,now-this.sampleStartedAt);
-    const summary=key=>this.stats(this.sampleBuffers[key],this.sampleCount),intervals=summary("frameIntervalMs"),render=summary("rendererCpuWorkMs"),draws=summary("drawCalls"),vectorDraws=summary("vectorAssetDrawCalls");
-    const paired=this.pairedSlowFrameSummary(intervals),sampleMetrics=Object.fromEntries(this.sampleMetricKeys.map(key=>[key,summary(key)]));
-    const rendererMetricAvailability=Object.fromEntries(["vectorAssetDrawCalls","vectorAssetDraws","vectorAssetGeometryBytes","vectorAssetInstanceBytes","alphaRunCacheHits","alphaRunCacheMisses","vectorGeometryUploads","partUniformBytesSubmitted","vectorStagingBytes","vectorInstances","vectorFlushEvents","vectorAlphaRunDrawCalls","vectorAlphaRunSafeBatches","vectorAlphaRunBatchedInstances","vectorAlphaRunDrawsSaved"].map(key=>{
-      const available=(sampleMetrics[key]?.count||0)>0,vectorPathUsed=(sampleMetrics.vectorAssetDraws?.max||0)>0;
-      return[key,available?{available:true,vectorPathUsed,reason:vectorPathUsed?null:"No vector draw occurred in this sample; zero counters mean no calls."}:{available:false,value:null,reason:"No finite VectorContext mesh statistic was exposed for this metric during the sample."}];
-    }));
-    const match=MatchLifecycle.singleMatch,renderer=ActiveViewState.renderer,unitsPerSide=this.config.totalUnits/2,peers=this.peerSimulationSummary(match);
-    const peerStepCpuMs=["host","guest"].map(role=>peers[role]?.available?Number(peers[role].step?.totalCpuMsDuringSample):NaN);
-    const simulationCpuTimeMs=peerStepCpuMs.every(Number.isFinite)?Math.round(peerStepCpuMs.reduce((sum,value)=>sum+value,0)*100)/100:null;
-    const frameAlignedPeers=Object.fromEntries(["host","guest"].map(role=>{
-      const prefix=role==="host"?"host":"guest",metric=suffix=>sampleMetrics[prefix+suffix];
-      return[role,{step:{cpuMs:metric("StepCpuMs"),count:metric("StepCount")},snapshot:{cpuMs:metric("SnapshotCpuMs"),count:metric("SnapshotCount")},
-        snapshotUi:{cpuMs:metric("SnapshotUiCpuMs"),count:metric("SnapshotUiCount")},sessionPulse:{cpuMs:metric("SessionPulseCpuMs"),count:metric("SessionPulseCount")}}];
-    }));
-    const frameAlignedSimulation={frameWindowMs:sampleMetrics.frameWindowMs,rendererCpuWorkMs:sampleMetrics.rendererCpuWorkMs,peers:frameAlignedPeers,unattributedElapsedMs:sampleMetrics.unattributedElapsedMs,
-      accounting:"Per-frame deltas between completed renderer frames. Session pulse CPU includes StrategySim step and snapshot work; component values are nested details and must not be added again. Unattributed elapsed is window minus renderer and host/guest pulse CPU; it is not GPU time or idle time."};
-    const vectorAssetDrawCallMeaning="VectorContext mesh stats draws: WebGL device.draw() dispatches, instanced where supported; this counts API draw dispatches, not measured GPU execution time.";
-    const vectorAssetDrawsMeaning="Rally vector unit-body submissions to VectorContext.drawVectorActor(), counted once per submitted unit body; distinct from WebGL draw dispatches.";
-    const sampleIndexes=Array.from({length:this.sampleCount},(_,index)=>index),vectorFlushReasons=this.aggregateVectorReasonCounts(sampleIndexes,"flushReasons"),vectorDrawDispatchReasons=this.aggregateVectorReasonCounts(sampleIndexes,"drawDispatchReasons");
-    const vectorDrawDispatchReasonTotal=Object.values(vectorDrawDispatchReasons).reduce((sum,count)=>sum+(Number(count)||0),0);
-    this.report={schemaVersion:3,testMode:"mobile-battle",capturedAt:new Date().toISOString(),build:BUILD_META.snapshot(),collisionModel:"ally-soft-one-pass",
-      device:{userAgent:navigator.userAgent||"",platform:navigator.platform||"",hardwareConcurrency:navigator.hardwareConcurrency||null,viewport:{width:innerWidth,height:innerHeight,devicePixelRatio:devicePixelRatio,orientation:screen.orientation?.type||""}},
-      condition:{seed:this.config.fixedSeed,totalCombatUnits:this.config.totalUnits,unitsPerSide,composition:this.config.composition,rosters:{host:DebugScenarioHarness.unitRoster(this.config,0),guest:DebugScenarioHarness.unitRoster(this.config,1)},tps:live?.sim?.tps||match?.sessions?.host?.sim?.tps||10,warmupSeconds:this.config.warmupSeconds,requestedSampleSeconds:this.config.sampleSeconds,selectionMode:"deck",presetId:"standard"},
-      measurement:{collector:"completed renderer frame hook",observer:"preallocated numeric sample buffers; no CDP profiler",perFrameCounters:this.sampleMetricKeys,overheadMs:null,overheadUnavailableReason:"Observer cost is not isolated; rendererCpuWorkMs is captured before the diagnostic hook runs.",
-        pairing:"all renderer and host/guest counter deltas share each completed-render-frame window; slow-frame subset selects by that same frame's frameIntervalMs p95",
-        nestedCpuAccounting:"host/guest sessionPulseCpuMs includes StrategySim step and snapshot work; step/snapshot/snapshotUi are reported as nested components, not additive totals",vectorAssetDrawCallMeaning,vectorAssetDrawsMeaning,
-        vectorFlushDiagnostics:{available:this.vectorFlushDiagnosticsAvailable,safeAlphaRunBatching:this.vectorSafeAlphaRunBatching,scope:"reads native VectorContext.stats().mesh during sampling; does not wrap or replace renderer methods",
-          flushReasonsMeaning:"Pinned GameKit flushReasons counts non-empty queue flush boundaries by reason; empty flush() no-ops are not counted.",drawDispatchReasonsMeaning:"Pinned GameKit drawDispatchReasons classifies every VectorContext mesh device.draw() dispatch; the reason total should equal metrics.draws. These are submission counters, not GPU execution timing."}},
-      sample:{status:interrupted?"interrupted":"complete",durationMs:Math.round(elapsed),frameCount:intervals.count,fps:elapsed>0?Math.round(intervals.count*100000/elapsed)/100:null,
-        frameIntervalMs:intervals,rendererCpuWorkMs:render,drawCalls:draws,vectorAssetDrawCalls:vectorDraws,bufferUploadBytes:sampleMetrics.bufferUploadBytes,
-        vectorAssetGeometryBytes:sampleMetrics.vectorAssetGeometryBytes,vectorAssetInstanceBytes:sampleMetrics.vectorAssetInstanceBytes,alphaRunCacheHits:sampleMetrics.alphaRunCacheHits,alphaRunCacheMisses:sampleMetrics.alphaRunCacheMisses,
-        vectorGeometryUploads:sampleMetrics.vectorGeometryUploads,partUniformBytesSubmitted:sampleMetrics.partUniformBytesSubmitted,vectorStagingBytes:sampleMetrics.vectorStagingBytes,
-        vectorAssetDraws:sampleMetrics.vectorAssetDraws,vectorInstances:sampleMetrics.vectorInstances,metricAvailability:rendererMetricAvailability,pairedSlowFrames:paired,frameAlignedSimulation,capacityExceededFrames:this.overflowFrames,
-        vectorFlushReasons,vectorDrawDispatchReasons,vectorDrawDispatchReasonTotal,vectorDrawDispatchReasonsMatchDrawCalls:Number.isFinite(sampleMetrics.vectorAssetDrawCalls?.sum)?vectorDrawDispatchReasonTotal===sampleMetrics.vectorAssetDrawCalls.sum:null,
-        vectorAlphaRunBatching:{enabled:this.vectorSafeAlphaRunBatching,safeBatches:sampleMetrics.vectorAlphaRunSafeBatches,batchedInstances:sampleMetrics.vectorAlphaRunBatchedInstances,drawsSaved:sampleMetrics.vectorAlphaRunDrawsSaved,
-          safeRunDraws:sampleMetrics.vectorAlphaRunSafeRunDraws,immediateRunDraws:sampleMetrics.vectorAlphaRunImmediateRunDraws,overlapBoundaries:sampleMetrics.vectorAlphaRunOverlapBoundaries,
-          signatureBoundaries:sampleMetrics.vectorAlphaRunSignatureBoundaries,unbatchableBounds:sampleMetrics.vectorAlphaRunUnbatchableBounds,immediateInstances:sampleMetrics.vectorAlphaRunImmediateInstances},
-        gpuTime:{measured:false,timeMs:null,reason:"렌더러에서 GPU 타이머 질의를 수집하지 않음"},simulationCpuTimeMs,simulationCpuTimeSource:simulationCpuTimeMs===null?null:"sum of Host and Guest StrategySim step cumulative CPU",simulationCpuTimeUnavailableReason:simulationCpuTimeMs===null?"StrategySim step cumulative CPU was unavailable for one or both peers":null,
-        gcTimeMs:null,gcTimeUnavailableReason:"이 테스트 모드는 GC PerformanceEntry를 등록하지 않음",transportSerializationMs:null,transportSerializationUnavailableReason:"GameSession snapshot 복사 시간은 측정하지만 WebRTC 전송 직렬화 시간은 계측하지 않음"},
-      visibility:{...this.visibilityStats,visibilityStateAtFinish:document.visibilityState||"unknown",sampleValid:this.visibilityStats.visibilityStateAtSampleStart==="visible"&&!this.visibilityStats.invalidated&&this.visibilityStats.unpausedHiddenEvents===0},
-      simulation:{startTick:start?.tick??null,endTick:end.tick,ticksAdvanced:start?.tick!=null&&end.tick!=null?end.tick-start.tick:null,peerStartTick:start?.peerTick??null,peerEndTick:end.peerTick,aliveUnitsStart:start?.units||null,aliveUnitsEnd:end.units,peers},
-      renderer:{backend:renderer?.backend||null,canvas:{width:renderer?.canvas?.width||null,height:renderer?.canvas?.height||null},vectorAssets:!!window.RallyVectorAssets,vectorMeshes:renderer?.perfStats?.vectorAssetMeshes??null,
-        lastFrameSequence:renderer?.perfStats?.frameSequence??null,alphaRunCache:{hits:sampleMetrics.alphaRunCacheHits,misses:sampleMetrics.alphaRunCacheMisses},
-        vectorFlushDiagnostics:{available:this.vectorFlushDiagnosticsAvailable,safeAlphaRunBatching:this.vectorSafeAlphaRunBatching,reason:this.vectorFlushDiagnosticsAvailable?null:"Pinned VectorContext.stats().mesh did not expose native flush and draw dispatch reason maps."},
-        instancing:{enabled:typeof renderer?.vectorContext?.stats?.().mesh?.instanced==="boolean"?renderer.vectorContext.stats().mesh.instanced:null,reason:typeof renderer?.vectorContext?.stats?.().mesh?.instanced==="boolean"?null:"Pinned VectorContext.stats().mesh did not expose its instancing flag",
-          usedInSample:(sampleMetrics.vectorAssetDraws?.max||0)>0?null:false,usageReason:(sampleMetrics.vectorAssetDraws?.max||0)>0?"Pinned stats expose renderer instancing capability, but not per-frame instanced-draw activity.":"No vector draw occurred in this sample."}}};
-    this.phase="complete";this.pause();this.renderHud(now);
-  }
-  static pause(){
-    if(this.paused||!MatchLifecycle.singleMatch)return;
-    let applied=0;for(const session of Object.values(MatchLifecycle.singleMatch.sessions||{}))if(session.setTestModePaused(true))applied++;
-    if(!applied)return;
-    this.paused=true;this.pausedAt=performance.now();if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;this.renderHud();
-  }
-  static resume(){
-    if(!this.paused||!MatchLifecycle.singleMatch)return;
-    let applied=0;for(const session of Object.values(MatchLifecycle.singleMatch.sessions||{}))if(session.setTestModePaused(false))applied++;
-    if(!applied)return;
-    const now=performance.now(),pauseMs=now-this.pausedAt;if(this.phase==="warmup"||this.phase==="sampling")this.phaseStartedAt+=pauseMs;if(this.phase==="sampling")this.sampleStartedAt+=pauseMs;
-    this.lastFrameAt=now;this.paused=false;this.pausedAt=0;this.renderHud(now);this.scheduleFrame();
-  }
-  static reset(){
-    if(!this.config||!["connecting","warmup","sampling","complete","error"].includes(this.phase))return;
-    if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;MatchLifecycle.stopSinglePlayer();
-    DebugScenarioHarness.pending=this.config;this.beginRun();this.renderHud();
-    try{MatchLifecycle.startSinglePlayerWebRTC("host");this.scheduleFrame()}
-    catch(error){this.fail(`매치 다시 시작 실패: ${String(error?.message||error)}`)}
-  }
-  static fail(message,pauseSessions=false){
-    this.phase="error";if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;
-    if(pauseSessions){let applied=0;for(const session of Object.values(MatchLifecycle.singleMatch?.sessions||{}))if(session.setTestModePaused(true))applied++;if(applied){this.paused=true;this.pausedAt=performance.now()}}
-    const status=this.ref("battleTestHudStatus");if(status)status.textContent=message;this.renderHud();
-  }
-  static renderHud(now=performance.now()){
-    const hud=this.ref("battleTestHud");if(!hud)return;
-    hud.classList.toggle("hidden",!["connecting","warmup","sampling","complete","error"].includes(this.phase));
-    const status=this.ref("battleTestHudStatus"),roster=this.ref("battleTestHudRoster"),metrics=this.ref("battleTestHudMetrics");
-    if(roster&&this.config)roster.textContent=`${this.config.totalUnits} · ${this.config.composition} · ${this.config.fixedSeed}`;
-    if(status){
-      const left=this.phase==="warmup"?Math.max(0,Math.ceil((this.config.warmupSeconds*1000-(now-this.phaseStartedAt))/1000)):this.phase==="sampling"?Math.max(0,Math.ceil((this.config.sampleSeconds*1000-(now-this.phaseStartedAt))/1000)):0;
-      status.textContent=this.phase==="connecting"?"로컬 AI 매치 연결 중…":this.phase==="warmup"?`워밍업 ${left}초`:this.phase==="sampling"?`측정 ${this.config.sampleSeconds-left} / ${this.config.sampleSeconds}초`:this.phase==="complete"?"측정 완료 · 전투는 일시정지됨":this.phase==="error"?(status.textContent||"매치 시작 실패"):"";
-    }
-    const snapshot=this.lastSampleState,live=this.liveState(),current=live?this.stateSnapshot(live):snapshot;
-    if(metrics){
-      if(this.report){const s=this.report.sample,m=this.report.simulation;metrics.innerHTML=`<span>FPS <b>${s.fps??"—"}</b></span><span>프레임 p50/p95 <b>${s.frameIntervalMs.p50??"—"}/${s.frameIntervalMs.p95??"—"} ms</b></span><span>전투 유닛 <b>${this.config.totalUnits}</b> · 전체 생존 <b>${m.aliveUnitsEnd?.total??"—"}</b></span><span>드로우 p95 <b>${s.drawCalls.p95??"—"}</b> calls · 벡터 p95 <b>${s.vectorAssetDrawCalls.p95??"—"}</b></span><span>틱 <b>${m.startTick??"—"} → ${m.endTick??"—"}</b></span><span>렌더 CPU p95 <b>${s.rendererCpuWorkMs.p95??"—"} ms</b></span>`}
-      else if(current){const stats=live?.renderer?.perfStats||{};metrics.innerHTML=`<span>전투 유닛 <b>${this.config?.totalUnits||0}</b> · 생존 <b>${current.units.total}</b></span><span>Host / Guest <b>${current.units.host} / ${current.units.guest}</b></span><span>시뮬레이션 틱 <b>${current.tick??"—"}</b></span><span>렌더 드로우 <b>${stats.drawCalls??"—"}</b> · 벡터 <b>${stats.vectorAssetDrawCalls??"—"}</b></span><span>마지막 프레임 간격 <b>${Math.round(this.lastIntervalMs*100)/100} ms</b></span><span>워밍업/측정 <b>5초 / ${this.config?.sampleSeconds||15}초</b></span>`}
-      else metrics.textContent="시뮬레이션 준비 중";
-    }
-    const pause=this.ref("battleTestPauseBtn"),copy=this.ref("battleTestCopyBtn"),download=this.ref("battleTestDownloadBtn");
-    if(pause){pause.textContent=this.paused?"재개":"일시정지";pause.disabled=["connecting","error","complete"].includes(this.phase)}
-    this.ref("battleTestResetBtn")?.toggleAttribute("disabled",this.phase==="connecting");
-    copy?.classList.toggle("hidden",!this.report);download?.classList.toggle("hidden",!this.report);
-  }
-  static resetCopyFallback(){
-    const area=this.ref("battleTestCopyFallback");if(!area)return;area.value="";area.classList.add("hidden");
-  }
-  static summaryReportText(report=this.report){
-    if(!report)return"";
-    const n=value=>value==null||!Number.isFinite(Number(value))?"n/a":Number.isInteger(Number(value))?String(Number(value)):String(Number(Number(value).toFixed(2)));
-    const safe=(value,max=72)=>String(value??"n/a").replace(/[\r\n\t]+/g," ").slice(0,max);
-    const triplet=metric=>`${n(metric?.p50)}/${n(metric?.p95)}/${n(metric?.max)}`;
-    const p95=metric=>n(metric?.p95);
-    const sample=report.sample||{},condition=report.condition||{},visibility=report.visibility||{},sim=report.simulation||{},renderer=report.renderer||{};
-    const rosters=condition.rosters||{},roster=role=>Array.isArray(rosters[role])?rosters[role].slice(0,5).map(type=>safe(type,28)).join("+")||"n/a":"n/a";
-    const viewport=report.device?.viewport||{},paired=sample.pairedSlowFrames||{},pairedMetrics=paired.metrics||{};
-    const vectorAvailability=sample.metricAvailability?.vectorAssetDraws;
-    const vectorPath=vectorAvailability?.available===false?"metrics unavailable":vectorAvailability?.vectorPathUsed===false?"unused in sample":vectorAvailability?.vectorPathUsed===true||p95(sample.vectorAssetDraws)!=="n/a"?"used":"status unknown";
-    const worstFrame=paired.frames?.[0]||null;
-    const sameFrameLine=worstFrame?(()=>{const topReasons=map=>Object.entries(map||{}).filter(([,count])=>Number(count)>0).sort((a,b)=>Number(b[1])-Number(a[1])).slice(0,2).map(([reason,count])=>`${reason}:${n(count)}`).join(",")||"none",reasons=topReasons(worstFrame.vectorFlushes?.reasons),dispatches=topReasons(worstFrame.vectorDrawDispatchReasons),peer=row=>`step ${n(row?.step?.count)}/${n(row?.step?.cpuMs)}ms snap ${n(row?.snapshot?.count)}/${n(row?.snapshot?.cpuMs)}ms pulse ${n(row?.sessionPulse?.cpuMs)}ms`;return`Same frame #${n(worstFrame.rendererFrameSequence??worstFrame.frameIndex)} elapsed/render=${n(worstFrame.elapsedWindowMs)}/${n(worstFrame.rendererCpuMs)}ms; H ${peer(worstFrame.host)}; G ${peer(worstFrame.guest)}; vector submit/WebGL/alpha-run=${n(worstFrame.vector?.drawMeshSubmissions)}/${n(worstFrame.vector?.webglDrawDispatches)}/${n(worstFrame.vector?.alphaRunDispatches)}; safe alpha batches/instances saved=${n(worstFrame.vector?.alphaRunSafeBatches)}/${n(worstFrame.vector?.alphaRunBatchedInstances)}/${n(worstFrame.vector?.alphaRunDrawsSaved)}; flush events=${n(worstFrame.vectorFlushes?.events)} (${reasons}); dispatch reasons=${dispatches}; unattributed=${n(worstFrame.unattributedElapsedMs)}ms`})():"Same-frame rows unavailable";
-    const aliveStart=sim.aliveUnitsStart||{},aliveEnd=sim.aliveUnitsEnd||{};
-    const stageKeys=[["total","totalMs"],["index","indexMs"],["world","worldMs"],["economy","economyMs"],["worker","workerMs"],["vision","visionMs"],["combat","combatMs"],["target-pick","combatTargetPickMs"],["combat-other","combatOtherMs"],["projectile","projectileMs"],["collision","collisionMs"],["post","postMs"]];
-    const peerLine=(role,label)=>{
-      const peer=sim.peers?.[role];if(!peer?.available)return`${label}: unavailable`;
-      const rows=Array.isArray(peer.sampledStages)?peer.sampledStages:[];
-      const stages=stageKeys.map(([name,key])=>{
-        const values=rows.map(row=>row?.stageMs?.[key]).filter(value=>Number.isFinite(value)).sort((a,b)=>a-b);
-        const value=values.length?values[Math.floor((values.length-1)*.95)]:null;return`${name}=${n(value)}`;
-      }).join("/");
-      const work=key=>{
-        const values=rows.map(row=>row?.workCounters?.[key]).filter(value=>Number.isFinite(value));
-        return values.length?n(Math.max(...values)):"n/a";
-      };
-      const total=key=>rows.reduce((sum,row)=>sum+(Number(row?.workCounters?.[key])||0),0);
-      const step=peer.step||{},snapshot=peer.snapshot||{};
-      return`${label}: step ticks/cpu/last/ewma/max=${n(step.ticksDuringSample)}/${n(step.totalCpuMsDuringSample)}/${n(step.lastStepMs)}/${n(step.ewmaStepMs)}/${n(step.maxObservedStepMs)}ms; snapshot n/avg/max=${n(snapshot.samplesDuringSample)}/${n(snapshot.averageMsDuringSample)}/${n(snapshot.lifetimeMaxSnapshotMs)}ms; stage p95ms ${stages}; work max nearby-return/targetQueries/collisions=${work("spatialCandidates")}/${work("targetQueries")}/${work("collisionPairs")} target-pick calls=${total("combatTargetPickCalls")}; collision sum soft pass/contact/moved/capped=${total("collisionSoftPasses")}/${total("collisionSoftContacts")}/${total("collisionSoftMovedUnits")}/${total("collisionSoftCappedUnits")} sweep call/pass=${total("collisionSweptCalls")}/${total("collisionSweptActivePasses")} hardfix call/pass/correction=${total("collisionHardFixCalls")}/${total("collisionHardFixPasses")}/${total("collisionHardFixCorrections")}`;
-    };
-    const unavailable=[];
-    if(sample.gpuTime?.measured!==true)unavailable.push("GPU timer not measured");
-    if(sample.gcTimeMs==null)unavailable.push("GC timing not collected");
-    if(sample.transportSerializationMs==null)unavailable.push("transport serialization not measured");
-    if(sample.simulationCpuTimeMs==null)unavailable.push("Host/Guest StrategySim step CPU totals unavailable");
-    const lines=[
-      `RALLY FRONTIER · mobile battle diagnostics`,
-      `Build ${safe(report.build?.id)} / commit ${safe(report.build?.commit,48)} / collision=${safe(report.collisionModel,32)}`,
-      `Condition seed=${n(condition.seed)} units=${n(condition.totalCombatUnits)} (${n(condition.unitsPerSide)}/side) roster H=${roster("host")} G=${roster("guest")} TPS=${n(condition.tps)} warmup/sample=${n(condition.warmupSeconds)}/${n(condition.requestedSampleSeconds)}s`,
-      `Run ${safe(sample.status,24)} ${n(sample.durationMs)}ms/${n(sample.frameCount)} frames FPS=${n(sample.fps)} viewport=${n(viewport.width)}x${n(viewport.height)}@${n(viewport.devicePixelRatio)} ${safe(viewport.orientation,24)}`,
-      `Visibility valid=${visibility.sampleValid===true?"yes":visibility.sampleValid===false?"no":"unknown"} sample/finish=${safe(visibility.visibilityStateAtSampleStart,16)}/${safe(visibility.visibilityStateAtFinish,16)} hidden=${n(visibility.hiddenEvents)} unpaused=${n(visibility.unpausedHiddenEvents)} paused=${n(visibility.hiddenWhilePausedEvents)} pagehide=${n(visibility.pagehideEvents)} invalidated=${n(visibility.invalidated===true?1:visibility.invalidated===false?0:null)}`,
-      `Frame ms p50/p95/max=${triplet(sample.frameIntervalMs)}; renderer CPU ms p50/p95/max=${triplet(sample.rendererCpuWorkMs)}; all/WebGL-vector draws p95=${p95(sample.drawCalls)}/${p95(sample.vectorAssetDrawCalls)}; vector unit submissions p95=${p95(sample.vectorAssetDraws)}; vector path=${vectorPath}`,
-      `Paired slow-frame p95 ms window/render/Host pulse/Guest pulse/unattributed=${p95(pairedMetrics.frameWindowMs)}/${p95(pairedMetrics.rendererCpuWorkMs)}/${p95(pairedMetrics.hostSessionPulseCpuMs)}/${p95(pairedMetrics.guestSessionPulseCpuMs)}/${p95(pairedMetrics.unattributedElapsedMs)}; nested step CPU/count H/G=${p95(pairedMetrics.hostStepCpuMs)}/${p95(pairedMetrics.hostStepCount)} / ${p95(pairedMetrics.guestStepCpuMs)}/${p95(pairedMetrics.guestStepCount)}; snapshot CPU/count H/G=${p95(pairedMetrics.hostSnapshotCpuMs)}/${p95(pairedMetrics.hostSnapshotCount)} / ${p95(pairedMetrics.guestSnapshotCpuMs)}/${p95(pairedMetrics.guestSnapshotCount)}; pulse includes nested sim work`,
-      sameFrameLine,
-      `Alpha-run batching enabled=${sample.vectorAlphaRunBatching?.enabled===true?"yes":sample.vectorAlphaRunBatching?.enabled===false?"no":"unknown"}; safe batches/batched instances/draws saved p50/p95/max=${triplet(sample.vectorAlphaRunBatching?.safeBatches)}/${triplet(sample.vectorAlphaRunBatching?.batchedInstances)}/${triplet(sample.vectorAlphaRunBatching?.drawsSaved)}; overlap boundaries p95=${p95(sample.vectorAlphaRunBatching?.overlapBoundaries)}`,
-      `Uploads p95 bytes buffer/geometry/instance/staging/partUniform=${p95(sample.bufferUploadBytes)}/${p95(sample.vectorAssetGeometryBytes)}/${p95(sample.vectorAssetInstanceBytes)}/${p95(sample.vectorStagingBytes)}/${p95(sample.partUniformBytesSubmitted)}; geometry uploads p95=${p95(sample.vectorGeometryUploads)}; vector instances p95=${p95(sample.vectorInstances)}`,
-      `Alpha cache avg hits/misses per frame=${n(sample.alphaRunCacheHits?.mean)}/${n(sample.alphaRunCacheMisses?.mean)}; paired slow frames=${n(paired.frameCount)} at >=${n(paired.selection?.thresholdMs)}ms, renderer CPU/draw/upload p95=${p95(pairedMetrics.rendererCpuWorkMs)}/${p95(pairedMetrics.drawCalls)}/${p95(pairedMetrics.bufferUploadBytes)}, cache hits/misses p95=${p95(pairedMetrics.alphaRunCacheHits)}/${p95(pairedMetrics.alphaRunCacheMisses)}`,
-      `Ticks ${n(sim.startTick)}→${n(sim.endTick)} (+${n(sim.ticksAdvanced)}); alive H/G ${n(aliveStart.host)}/${n(aliveStart.guest)}→${n(aliveEnd.host)}/${n(aliveEnd.guest)} (total ${n(aliveStart.total)}→${n(aliveEnd.total)})`,
-      peerLine("host","Host"),peerLine("guest","Guest"),
-      `Renderer ${safe(renderer.backend)} canvas=${n(renderer.canvas?.width)}x${n(renderer.canvas?.height)} vectorAssets=${renderer.vectorAssets===true?"yes":renderer.vectorAssets===false?"no":"unknown"}; unavailable: ${unavailable.join("; ")||"none"}`
-    ];
-    return lines.join("\n");
-  }
-  static revealCopyFallback(text){
-    const area=this.ref("battleTestCopyFallback");if(!area)return;
-    area.value=text;area.classList.remove("hidden");area.focus({preventScroll:true});area.select();area.setSelectionRange(0,area.value.length);area.scrollIntoView?.({block:"nearest"});
-  }
-  static async copyReport(){
-    if(!this.report)return;const text=this.summaryReportText(this.report),status=this.ref("battleTestHudStatus");let copied=false;
-    try{if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);copied=true}}catch{}
-    if(!copied){
-      const area=document.createElement("textarea");area.value=text;area.setAttribute("readonly","");area.style.cssText="position:fixed;left:-9999px;top:0";
-      try{document.body.appendChild(area);area.select();copied=!!document.execCommand?.("copy")}catch{}finally{area.remove()}
-    }
-    if(copied){this.resetCopyFallback();if(status)status.textContent="진단 요약을 복사했습니다."}
-    else{this.revealCopyFallback(text);if(status)status.textContent="자동 복사에 실패했습니다. 아래 요약을 선택해 복사하세요."}
-  }
-  static deferDownloadUrlRevoke(url){
-    let timer=0;const revoke=()=>{if(timer)clearTimeout(timer);window.removeEventListener("pagehide",revoke);URL.revokeObjectURL(url)};
-    window.addEventListener("pagehide",revoke,{once:true});timer=setTimeout(revoke,60000);
-  }
-  static downloadReport(){
-    if(!this.report)return;const status=this.ref("battleTestHudStatus");let url=null,anchor=null,requested=false;
-    try{
-      const blob=new Blob([JSON.stringify(this.report,null,2)],{type:"application/json"});url=URL.createObjectURL(blob);
-      anchor=document.createElement("a");anchor.href=url;anchor.download=`rally-mobile-battle-${this.report.condition?.seed??this.config?.fixedSeed??"unknown"}-${this.report.condition?.totalCombatUnits??this.config?.totalUnits??"unknown"}.json`;
-      document.body.appendChild(anchor);anchor.click();requested=true;
-      if(status)status.textContent="상세 JSON 다운로드를 요청했습니다. 완료 여부는 브라우저 다운로드에서 확인하세요.";
-    }catch{if(status)status.textContent="상세 JSON 다운로드 요청을 시작하지 못했습니다."}
-    finally{anchor?.remove();if(url){if(requested)this.deferDownloadUrlRevoke(url);else URL.revokeObjectURL(url)}}
-  }
-  static exit(){
-    if(["idle","stopped"].includes(this.phase))return;
-    if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;this.phase="stopped";this.paused=false;
-    MatchLifecycle.stopSinglePlayer();DebugScenarioHarness.pending=this.savedDebugPending;CampaignRuntime.pending=this.savedCampaignPending;CampaignPresentation.clear();document.body.classList.remove("battle-test-mode");this.ref("battleTestHud")?.classList.add("hidden");
-    UiController.setElementVisible(UiRegistry.refs.singleStatus,false);
-    if(this.savedSettings){UiRuntimeState.value.settings.presetId=this.savedSettings.presetId;UiController.setStartSimulationTps(this.savedSettings.simulationTps);UiController.setStartNetcodeMode(this.savedSettings.netcodeMode)}
-    UiController.setUiScreen("lobby");
-    this.phase="idle";this.config=null;this.report=null;this.savedSettings=null;this.savedCampaignPending=null;this.savedDebugPending=null;
-  }
-}
 
 const CAMPAIGN_MISSION_SCHEMA_VERSION=7;
 const CAMPAIGN_MANIFEST_SCHEMA_VERSION=2;
@@ -10202,50 +8869,24 @@ class CampaignPresentation{
    this.runAction(e.action);
   }
  }
- static onGameEnter(){const sim=MatchLifecycle.activeSession?.()?.sim,m=sim?.campaignScenario;if(!m){this.clear();return}if(this.shownSim===sim)return;this.clear();this.shownMissionId=m.missionId;this.shownSim=sim;document.body.classList.add("campaign-mode");if(UiRegistry.refs.reinforcementOverview){UiRegistry.refs.reinforcementOverview.style.left="auto";UiRegistry.refs.reinforcementOverview.style.right="7px";UiRegistry.refs.reinforcementOverview.style.top="62px"}this.flags={...(m.flags||{})};for(const o of m.objectives||[])this.objectives.set(String(o.id),{id:String(o.id),text:String(o.text||o.label||o.id),state:String(o.state||"active")});this.renderObjectives();this.renderAtmosphere();this.hudTimer=setInterval(()=>{this.renderObjectives();this.renderAtmosphere()},250);const humanRole=MatchLifecycle.singleMatch?.humanRole||ActiveViewState.role||"host",spawn=m.map?.spawns?.[humanRole];if(Array.isArray(spawn)){const focus=()=>{const renderer=ActiveViewState.renderer;if(!renderer)return;const x=(Number(spawn[0])||0)*sim.world.width,y=(Number(spawn[1])||0)*sim.world.height,vx=renderer.viewX(x),vy=renderer.viewY(y),left=RangeUtil.clamp(vx-renderer.viewWorldW()/2,0,Math.max(0,sim.world.width-renderer.viewWorldW())),top=renderer.clampCameraTop(BattlefieldProjection.planarY(vy,sim.world.terrain.surfaces.heightAt(x,y))-renderer.viewWorldH()/2);renderer.cameraLeft=left;renderer.cameraTop=top;if(ViewRuntimeState.byRole?.[ActiveViewState.role]){ViewRuntimeState.byRole[ActiveViewState.role].cameraLeft=left;ViewRuntimeState.byRole[ActiveViewState.role].cameraTop=top}};focus();this.after(focus,120)}const lines=m.presentation?.opening||[],el=this.ensureBubble();lines.forEach((line,i)=>this.after(()=>{el.textContent=line;el.style.opacity="1"},i*3200));if(lines.length)this.after(()=>{el.style.opacity="0"},lines.length*3200+2600);}
  static outroDuration(lines){const n=Array.isArray(lines)?lines.filter(Boolean).length:0;return n? n*3200+350:0}
  static playOutro(lines,onDone){const seq=Array.isArray(lines)?lines.filter(Boolean):[];if(!seq.length){onDone?.();return 0}const el=this.ensureBubble();let total=0;for(const line of seq){this.after(()=>{el.textContent=String(line);el.style.opacity="1"},total);total+=3200}this.after(()=>{el.style.opacity="0"},Math.max(0,total-350));this.after(()=>onDone?.(),total+350);return total+350}
 }
 
-class CampaignBuiltinCatalog{
- static importPromise=null; static importAttempt=0;
- static async manifest(){
-  if(!this.importPromise)this.importPromise=import(this.importAttempt?`../campaign/campaigns.js?retry=${this.importAttempt}`:"../campaign/campaigns.js").then(({default:manifest})=>{
-   if(manifest?.schemaVersion!==CAMPAIGN_MANIFEST_SCHEMA_VERSION||!Array.isArray(manifest.campaigns))throw new Error("지원하지 않는 정식 캠페인 목록입니다.");
-   return manifest;
-  }).catch(error=>{this.importPromise=null;this.importAttempt++;throw error});
-  return this.importPromise;
- }
-}
 class CampaignRuntime{
  static pending=null; static loadRevision=0; static setMission(raw,source=""){if(source&&raw&&typeof raw==="object")Object.defineProperty(raw,"__moduleSource",{value:String(source),enumerable:false,configurable:true});this.pending=CampaignMissionDefinition.normalize(raw);return this.pending} static clear(){this.pending=null;this.loadRevision++}
  static matchConfig(){const m=this.pending;if(!m)return null;return {presetId:"standard",simulationTps:UiRuntimeState.value.settings.simulationTps,campaignScenario:m}}
 }
 class MatchLifecycle{
-  static localTest=null;
   static singleMatch=null;
 
-  static activeSession(){if(ReplayPresentation.replayPlayer)return ReplayPresentation.replayPlayer;return LocalEnvironmentUtil.isLocalTest()?MatchLifecycle.localTest.sessions[ActiveViewState.role]:ActiveViewState.session}
-  static setActiveSession(){
-  if(LocalEnvironmentUtil.isLocalTest()){ActiveViewState.session=MatchLifecycle.localTest.sessions[ActiveViewState.role];ActiveViewState.transport=MatchLifecycle.localTest.transports[ActiveViewState.role]}
-}
+  static activeSession(){return ReplayPresentation.replayPlayer||ActiveViewState.session}
   static currentMatchConfig(){
-  if(CampaignRuntime.pending)return CampaignRuntime.matchConfig();
-  return {presetId:UiRuntimeState.value.settings.presetId,simulationTps:UiRuntimeState.value.settings.simulationTps,debugScenario:DebugScenarioHarness.pending?DebugScenarioHarness.normalize(DebugScenarioHarness.pending):null};
+  return {presetId:UiRuntimeState.value.settings.presetId,simulationTps:UiRuntimeState.value.settings.simulationTps};
 }
   static wireSessionForView(r,sess,trans){
-  sess.onDraft=state=>{
-    sess.draft=state;
-    const debugScenario=!!sess.matchConfig?.debugScenario;
-    if(LocalEnvironmentUtil.isLocalTest())ViewRuntimeState.byRole[r].draft=state;
-    if(ActiveViewState.role===r&&debugScenario&&!sess.sim){
-      UiRegistry.refs.singleStatus.textContent=state?.phase==="live"?"테스트 전투 시작 중…":"테스트 초기조건 준비 중…";
-      UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
-    }
-
-  };
+  sess.onDraft=state=>{sess.draft=state};
   sess.onSnapshot=state=>{
-    if(LocalEnvironmentUtil.isLocalTest())ViewRuntimeState.byRole[r].snapshot=state;
     if(ActiveViewState.role===r)BattlePresentation.renderGame(state);
   };
   sess.onRenderTargets=(sim,snapNow=false)=>{
@@ -10253,14 +8894,12 @@ class MatchLifecycle{
   };
   sess.onLog=text=>{if(ActiveViewState.role===r)LogUtil.log(text)};
   sess.onNetworkHealth=info=>{
-    const visibleForRole=ActiveViewState.role===r;
-    if(!visibleForRole&&!LocalEnvironmentUtil.isLocalTest())return;
-
-    if(visibleForRole)ConnectionPresentation.renderP2PHealth(info,LocalEnvironmentUtil.isLocalTest());
+    if(ActiveViewState.role!==r)return;
+    ConnectionPresentation.renderP2PHealth(info,false);
 
     if(info?.state==="fatal"){
       const fatal=info.simulationFatalInfo||{};
-      UiRegistry.refs.net.textContent="시뮬레이션 오류로 일시 중단됨";
+      LogUtil.status("시뮬레이션 오류로 일시 중단됨");
       if(SinglePlayerModeUtil.isSinglePlayer()){
         UiRegistry.refs.singleStatus.textContent="시뮬레이션 오류 · 안전을 위해 경기를 중단했습니다.";
         UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
@@ -10269,7 +8908,6 @@ class MatchLifecycle{
       return;
     }
 
-    if(!visibleForRole)return;
 
     if(
       info?.state==="connected" &&
@@ -10277,9 +8915,9 @@ class MatchLifecycle{
       !sess.syncHold &&
       sess.recoveryPhase==="idle"
     ){
-      UiRegistry.refs.net.textContent=SinglePlayerModeUtil.isSinglePlayer()
+      LogUtil.status(SinglePlayerModeUtil.isSinglePlayer()
         ?"싱글 · 공통 코어 재연결 완료 · 게임 재개"
-        :"공통 코어 재연결 완료 · 연결됨";
+        :"공통 코어 재연결 완료 · 연결됨");
 
       if(SinglePlayerModeUtil.isSinglePlayer()){
         UiRegistry.refs.singleStatus.textContent=`복구 완료 · ${r==="host"?"내":"AI"} Host 권위 상태와 일치 · 게임 재개`;
@@ -10295,11 +8933,11 @@ class MatchLifecycle{
   trans.onPeerReady=()=>{
     if(ActiveViewState.role!==r)return;
     if(SinglePlayerModeUtil.isSinglePlayer()){
-      UiRegistry.refs.net.textContent="싱글 · AI WebRTC 연결 준비";
+      LogUtil.status("싱글 · AI WebRTC 연결 준비");
       UiRegistry.refs.singleStatus.textContent="AI용 WebRTC 피어를 연결하고 있습니다…";
       UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
-    }else if(!LocalEnvironmentUtil.isLocalTest()){
-      UiRegistry.refs.net.textContent="방 "+ActiveViewState.roomCode+" · 상대 대기";
+    }else{
+      LogUtil.status("방 "+ActiveViewState.roomCode+" · 상대 대기");
       if(r==="host")UiRegistry.refs.createStatus.textContent="방이 열렸습니다. 상대 참가를 기다립니다.";
     }
   };
@@ -10315,20 +8953,16 @@ class MatchLifecycle{
         (sess.syncHold||sess.recoveryPhase!=="idle")
       );
 
-      UiRegistry.refs.net.textContent=LocalEnvironmentUtil.isLocalTest()
-        ?"로컬 테스트 · "+r.toUpperCase()+" 화면"
-        :SinglePlayerModeUtil.isSinglePlayer()
+      LogUtil.status(SinglePlayerModeUtil.isSinglePlayer()
           ?recovering
             ?"싱글 · 새 DataChannel 연결됨 · 공통 코어 입력 동기화 중"
             :`싱글 · ${r.toUpperCase()} 테스트 · AI ${(MatchLifecycle.singleMatch?.botRole||"guest").toUpperCase()} 연결됨`
           :recovering
             ?"새 DataChannel 연결됨 · 공통 코어 입력 동기화 중"
-            :"연결됨 · "+ActiveViewState.roomCode;
+            :"연결됨 · "+ActiveViewState.roomCode);
 
-      if(!LocalEnvironmentUtil.isLocalTest()){
-        UiController.closeUiModal("create");
-        UiController.closeUiModal("join");
-      }
+      UiController.closeUiModal("create");
+      UiController.closeUiModal("join");
 
       if(SinglePlayerModeUtil.isSinglePlayer()){
         UiRegistry.refs.singleStatus.textContent=recovering
@@ -10344,7 +8978,7 @@ class MatchLifecycle{
     if(e?.type==="version-mismatch"){ConnectionPresentation.showVersionMismatch(e,r);return}
     if(ActiveViewState.role===r){
       const message=e.message||e.type||"연결 오류";
-      UiRegistry.refs.net.textContent="연결 오류";
+      LogUtil.status("연결 오류");
       if(SinglePlayerModeUtil.isSinglePlayer()){
         if(trans.everOpened){
           UiRegistry.refs.singleStatus.textContent="WebRTC 복구 중 · "+message;
@@ -10368,9 +9002,9 @@ class MatchLifecycle{
   trans.onClose=()=>{
     sess.onTransportClosed();
     if(ActiveViewState.role===r){
-      UiRegistry.refs.net.textContent=SinglePlayerModeUtil.isSinglePlayer()
+      LogUtil.status(SinglePlayerModeUtil.isSinglePlayer()
         ?"싱글 · 연결 끊김 · 게임 정지 · 복구 버튼 필요"
-        :"P2P 연결 끊김 · 게임 정지 · 복구 버튼 필요";
+        :"P2P 연결 끊김 · 게임 정지 · 복구 버튼 필요");
 
       if(SinglePlayerModeUtil.isSinglePlayer()){
         UiRegistry.refs.singleStatus.textContent="연결이 끊겼습니다 · 복구 버튼으로 Host 권위 스냅샷을 기준으로 새 연결을 만드세요.";
@@ -10380,82 +9014,25 @@ class MatchLifecycle{
   };
 }
   static disposeMatches(reason="mode-change"){
-    GasWorkerAssignmentPolicy.clearPendingGasWorkerTargets();
     CampaignPresentation.clear();
-    const sessions=new Set([ActiveViewState.session,
-      ...Object.values(this.localTest?.sessions||{}),...Object.values(this.singleMatch?.sessions||{})].filter(Boolean));
+    const sessions=new Set([ActiveViewState.session,...Object.values(this.singleMatch?.sessions||{})].filter(Boolean));
     this.singleMatch?.bot?.stop();
     const errors=[];
     for(const session of sessions){try{session.dispose(reason)}catch(error){errors.push(error)}}
-    this.localTest=null;this.singleMatch=null;
+    this.singleMatch=null;
     ActiveViewState.session=null;ActiveViewState.transport=null;ActiveViewState.snap=null;
     if(errors.length)throw new AggregateError(errors,"세션 종료 처리 중 오류가 발생했습니다.");
   }
   static connect(r,c){
   MatchLifecycle.disposeMatches("online-start");
-  CampaignRuntime.clear();
-  DebugScenarioHarness.pending=null;
-  CampaignPresentation.clear();
-  MatchLifecycle.localTest=null;
   MatchLifecycle.singleMatch=null;
   ConnectionPresentation.hideP2PHealth();
-  UiRegistry.refs.testSwitcher.classList.add("hidden");
   ActiveViewState.role=r;ActiveViewState.roomCode=c;
-  UiController.invalidatePanelHtmlCaches({reinforcement:true});
-  UiController.setUiCommand({branch:"closed"});
-  UiController.setUiCommand({category:"economy",page:null});
-  UiRegistry.refs.net.textContent="연결 중…";
+  LogUtil.status("연결 중…");
   ActiveViewState.transport=new NostrRtcTransport(r,c);
   ActiveViewState.session=new GameSession(r,ActiveViewState.transport,c,r==="host"?MatchLifecycle.currentMatchConfig():null);
   MatchLifecycle.wireSessionForView(r,ActiveViewState.session,ActiveViewState.transport);
   ActiveViewState.transport.open();
-}
-  static startLocalTest(){
-  if(MatchLifecycle.localTest)return;
-  UiController.closeUiModal();
-  MatchLifecycle.disposeMatches("local-start");
-
-  MatchLifecycle.singleMatch=null;
-  ConnectionPresentation.hideP2PHealth();
-  NetworkModuleLoader.pendingPeerAction=null;
-  UiController.closeUiModal("create");
-  UiController.closeUiModal("join");
-  ActiveViewState.roomCode="TEST";
-  ActiveViewState.role="host";
-  UiRuntimeState.value.selection.unit=null;
-  UiRuntimeState.value.target={type:"flag"};
-  UiController.setUiCommand({branch:"closed"});
-  UiController.setUiCommand({category:"economy",page:null});
-  ActiveViewState.snap=null;
-  UiController.setUiScreen("lobby");
-  UiRegistry.refs.testSwitcher.classList.remove("hidden");
-
-  const hostTransport=new LoopbackTransport("host",ActiveViewState.roomCode);
-  const guestTransport=new LoopbackTransport("guest",ActiveViewState.roomCode);
-  hostTransport.pair(guestTransport);
-  guestTransport.pair(hostTransport);
-
-  const hostSession=new GameSession("host",hostTransport,ActiveViewState.roomCode,MatchLifecycle.currentMatchConfig());
-  const guestSession=new GameSession("guest",guestTransport,ActiveViewState.roomCode);
-
-  MatchLifecycle.localTest={
-    transports:{host:hostTransport,guest:guestTransport},
-    sessions:{host:hostSession,guest:guestSession}
-  };
-
-  ViewRuntimeState.byRole.host={draft:null,snapshot:null,cameraLeft:0,cameraTop:WorldContext.standard.height-VIEW_H,selection:{unit:null,buildingId:null},target:{type:"flag"}};
-  ViewRuntimeState.byRole.guest={draft:null,snapshot:null,cameraLeft:0,cameraTop:WorldContext.standard.height-VIEW_H,selection:{unit:null,buildingId:null},target:{type:"flag"}};
-
-  MatchLifecycle.wireSessionForView("host",hostSession,hostTransport);
-  MatchLifecycle.wireSessionForView("guest",guestSession,guestTransport);
-
-  MatchLifecycle.setActiveSession();
-  UiController.setRoleSwitcherActive("host");
-  UiRegistry.refs.net.textContent="로컬 테스트 연결 중… · "+(ActiveViewState.renderer?.backend||"WebGL");
-
-  // 실전처럼 양쪽 transport가 각각 open 되고 GameSession.start()가 호출된다.
-  hostTransport.open();
-  guestTransport.open();
 }
   static singleRoomToken(){
   return "AI"+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
@@ -10470,11 +9047,9 @@ class MatchLifecycle{
 
   humanRole=humanRole==="host"?"host":"guest";
   const botRole=humanRole==="host"?"guest":"host";
-  if(DebugScenarioHarness.pending)DebugScenarioHarness.pending={...DebugScenarioHarness.pending,humanRole};
 
   ConnectionPresentation.hideP2PHealth();
   NetworkModuleLoader.pendingPeerAction=null;
-  MatchLifecycle.localTest=null;
   UiController.closeUiModal("create");
   UiController.closeUiModal("join");
 
@@ -10485,13 +9060,9 @@ class MatchLifecycle{
   UiRuntimeState.value.selection.unit=null;
   UiRuntimeState.value.selection.buildingId=null;
   UiRuntimeState.value.target={type:"flag"};
-  UiController.setUiCommand({branch:"closed"});
-  UiController.setUiCommand({category:"economy",page:null});
   ActiveViewState.snap=null;
-  UiController.invalidatePanelHtmlCaches({unit:true,reinforcement:true});
 
   UiController.setUiScreen("lobby");
-  UiRegistry.refs.testSwitcher.classList.add("hidden");
   UiRegistry.refs.singleStatus.textContent=`${humanRole.toUpperCase()} 테스트용 실제 WebRTC 양쪽 피어를 준비하고 있습니다…`;
   UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
 
@@ -10847,23 +9418,12 @@ class AppLifecycle{
   static backgroundTickFallback=0;
 
   static sessionsForVisibility(){
-  if(LocalEnvironmentUtil.isLocalTest()){
-    return Object.values(MatchLifecycle.localTest.sessions||{});
-  }
   if(SinglePlayerModeUtil.isSinglePlayer()){
     return Object.values(MatchLifecycle.singleMatch.sessions||{});
   }
   return ActiveViewState.session?[ActiveViewState.session]:[];
 }
 
-  static saveActiveViewState(){
-  if(!LocalEnvironmentUtil.isLocalTest()||!ActiveViewState.role)return;
-  ViewRuntimeState.byRole[ActiveViewState.role].cameraLeft=ActiveViewState.renderer?ActiveViewState.renderer.cameraLeft:ViewRuntimeState.byRole[ActiveViewState.role].cameraLeft;
-  ViewRuntimeState.byRole[ActiveViewState.role].cameraTop=ActiveViewState.renderer?ActiveViewState.renderer.cameraTop:ViewRuntimeState.byRole[ActiveViewState.role].cameraTop;
-  ViewRuntimeState.byRole[ActiveViewState.role].selection.unit=UiRuntimeState.value.selection.unit;
-  ViewRuntimeState.byRole[ActiveViewState.role].selection.buildingId=UiRuntimeState.value.selection.buildingId;
-  ViewRuntimeState.byRole[ActiveViewState.role].target=CloneUtil.clone(UiRuntimeState.value.target);
-}
   static pulseBackgroundSessions(now=performance.now()){
   for(const sess of [...BACKGROUND_TICK_SESSIONS]){
     try{
@@ -10905,7 +9465,7 @@ class AppLifecycle{
   if(!visible){
     AppLifecycle.pageHiddenAtWall=Date.now();
     if(ActiveViewState.session?.sim){
-      UiRegistry.refs.net.textContent="백그라운드 전환 · 연결 이상 시 복구 버튼 사용";
+      LogUtil.status("백그라운드 전환 · 연결 이상 시 복구 버튼 사용");
     }
     return;
   }
@@ -10916,13 +9476,13 @@ class AppLifecycle{
 
   const active=RecoveryTelemetry.localRecoverySession();
   if(active?.simpleRecoveryNeedsManual||active?.recoveryPhase==="needs-manual"){
-    UiRegistry.refs.net.textContent=SinglePlayerModeUtil.isSinglePlayer()
+    LogUtil.status(SinglePlayerModeUtil.isSinglePlayer()
       ?"싱글 연결 복구 필요 · 복구 버튼을 눌러주세요"
-      :"P2P 연결 복구 필요 · 복구 버튼을 눌러주세요";
+      :"P2P 연결 복구 필요 · 복구 버튼을 눌러주세요");
   }else if(ActiveViewState.session?.sim){
-    UiRegistry.refs.net.textContent=SinglePlayerModeUtil.isSinglePlayer()
+    LogUtil.status(SinglePlayerModeUtil.isSinglePlayer()
       ?"싱글 · 게임 계속"
-      :"연결됨 · 게임 계속";
+      :"연결됨 · 게임 계속");
   }
 }
   static invalidateLiveConnectionForLifecycle(reason){
@@ -11043,524 +9603,8 @@ class AppLifecycle{
 }
 }
 
-class BuildingPresentation{
-  static productionCard(t,state){
-  const d=UnitDefinition.get(t),side=ConnectionSideUtil.roleSide(ActiveViewState.role);
-  const isHeavy=d.tier===3,building=isHeavy?"factory":"barracks";
-  const cost=UnitDefinition.productionCost(t),mineralCost=cost.mineral,gasCost=cost.gas;
-  const techLockStatus=BuildPrerequisitePolicy.unitReason(state,side,t)||"";
-  const techLocked=!!techLockStatus;
-  const moneyLocked=state.wallet[side]<mineralCost;
-  const gasLocked=(state.gasWallet?.[side]||0)<gasCost;
-  const resourceShortage=moneyLocked||gasLocked;
-  const locked=techLocked||resourceShortage;
-  const selected=UiRuntimeState.value.target.type==="build"&&UiRuntimeState.value.target.building===building&&UiRuntimeState.value.target.produceType===t;
-  const liveSim=MatchLifecycle.activeSession()?.sim;
-
-  let efficiencyHtml="";
-  if(liveSim){
-    const existing=liveSim.buildings.filter(
-      b=>b.alive!==false&&b.complete&&b.side===side&&b.produceType===t&&BuildingDefinition.get(b.type)?.isProductionBuilding
-    );
-    if(existing.length){
-      const speeds=existing.map(b=>liveSim.productionSpeedPct(b));
-      const avg=Math.round(speeds.reduce((a,b)=>a+b,0)/speeds.length),penalty=100-avg;
-      efficiencyHtml=penalty>0
-        ? `<span class="unit-efficiency warn">생산 효율 ${avg}% · -${penalty}%</span>`
-        : `<span class="unit-efficiency ok">생산 효율 100%</span>`;
-    }
-  }
-
-  const info=UnitDefinition.cardInfo[t]||{icon:"◆",desc:""},pp=UnitDefinition.get(t)?.production;
-  const costText=`<span class="cost-part mineral${moneyLocked?" shortage":""}">◆ ${mineralCost}</span>${gasCost?`<span class="cost-sep">·</span><span class="cost-part gas${gasLocked?" shortage":""}">⬡ ${gasCost}</span>`:""}`;
-  const productionText=pp?`선호 ${pp.batchSize}기씩 · ${pp.productionSeconds}초 간격`:"";
-  const stateClass=techLocked?"tech-locked":resourceShortage?"resource-shortage":"";
-  return `<button class="unit-card production-card ${stateClass} ${selected?"mode-selected":""}" data-produce-unit="${t}" ${locked?"disabled":""}>
-    <div class="row"><span class="name"><span aria-hidden="true">${info.icon}</span> ${d.name}</span><span class="cost">${costText}</span></div>
-    <div class="building-name">${isHeavy?"중화기 공장":"전용 배럭"} · ${productionText}</div>
-    <div class="meta">T${d.tier} · ${d.layer==="AIR"?"AIR":"GROUND"} · 크기 ${SIZE_CLASS_LABEL[d.sizeClass]||"대형"} · 공격 ${DAMAGE_CLASS_LABEL[UnitDefinition.damageClass(t)]||"일반형"} · 특수 연구 ${UnitSpecialResearchDefinition.namesForUnit(t)}<br>${d.canAttackGround?"대지 O":"대지 X"} / ${d.canAttackAir?"대공 O":"대공 X"} · 총 ${pp?.totalUnits||0}기 · 보급 ${d.supply||0}/기</div>
-    ${efficiencyHtml}
-    ${techLockStatus?`<span class="lock" aria-label="${HtmlAttributeUtil.escapeHtmlAttr(techLockStatus)}" title="${HtmlAttributeUtil.escapeHtmlAttr(techLockStatus)}">🔒</span>`:""}
-  </button>`;
-}
-  static productionUiState(b,liveSim){
-  const q=b?.queue?.[0]?.productionBatch?b.queue[0]:null;
-  const remaining=Math.max(0,Number(b?.productionRemaining)||0);
-  const total=Math.max(0,Number(b?.productionTotal)||0);
-  const batch=Math.max(1,Number(b?.productionBatchSize)||1);
-  const efficiency=Math.max(1,Number(liveSim?.productionSpeedPct?.(b))||100);
-  const unit=b?.produceType?UnitDefinition.get(b.produceType):null;
-
-  let progressPct=0;
-  let remainSec=0;
-  let state="idle";
-  let label="다음 증원 준비";
-
-  const productionLock=liveSim&&b?.produceType?BuildPrerequisitePolicy.unitReason(liveSim,b.side,b.produceType):null;
-  if(productionLock){
-    state="paused";label=productionLock;
-    if(q)progressPct=Math.max(0,Math.min(100,Math.round((1-Math.max(0,q.remaining||0)/Math.max(1,q.total||1))*100)));
-  }else if(q){
-    const qTotal=Math.max(1,Number(q.total)||1);
-    const qRemaining=Math.max(0,Number(q.remaining)||0);
-    progressPct=Math.max(0,Math.min(100,Math.round((1-qRemaining/qTotal)*100)));
-
-    if(qRemaining<=0){
-      progressPct=100;
-      state="blocked";
-      label="생산 완료 · 출격 공간 대기";
-    }else{
-      remainSec=Math.max(1,Math.ceil(qRemaining/efficiency/SimulationTiming.tps()));
-      state="active";
-      label=`${q.count||1}기 생산 중`;
-    }
-  }else if(liveSim?.productionPaused?.[b.side]){
-    state="paused";
-    label="자동 생산 일시정지";
-  }else if(remaining<=0){
-    state="done";
-    progressPct=100;
-    label="생산 계약 완료";
-  }else{
-    const preferredCount=Math.min(batch,remaining);
-    const supplyPerUnit=Math.max(0,Number(unit?.supply)||0);
-    const reservable=liveSim?.reservableProductionBatchSize?.(b.side,b)??preferredCount;
-
-    if(preferredCount>0&&reservable<=0){
-      state="blocked";
-      label=`보급 대기 · 유닛당 ${supplyPerUnit} 필요`;
-    }else{
-      state="idle";
-      label=reservable<preferredCount?`보급에 맞춰 ${reservable}기 우선 생산`:`다음 ${preferredCount}기 생산 대기`;
-    }
-  }
-
-  const produced=Math.max(0,total-remaining);
-  const batchesTotal=Math.max(1,Math.ceil(total/batch));
-  const batchesDone=Math.max(0,Number(b?.productionBatchesCompleted)||0);
-  const currentBatch=q?1:0;
-
-  return {
-    q,unit,remaining,total,batch,efficiency,
-    progressPct,remainSec,state,label,produced,
-    batchesTotal,batchesDone,currentBatch
-  };
-}
-  static productionStatusHtml(b,liveSim){
-  const p=BuildingPresentation.productionUiState(b,liveSim);
-  const info=UnitDefinition.cardInfo[b.produceType]||{icon:"◆"};
-  const currentCount=p.q?.count||Math.min(p.batch,p.remaining)||p.batch;
-
-  const pips=Array.from({length:Math.min(12,p.batchesTotal)},(_,i)=>{
-    const cls=i<p.batchesDone
-      ?"filled"
-      :i===p.batchesDone&&p.q
-        ?"current"
-        :"remaining";
-    return `<span class="production-batch-pip ${cls}"></span>`;
-  }).join("");
-
-  const barClass=
-    p.state==="blocked"?" blocked":
-    p.state==="paused"?" paused":"";
-
-  const timeText=
-    p.q&&p.q.remaining>0
-      ?`${p.remainSec}초`
-      :p.state==="blocked"&&p.q
-        ?"출격 대기"
-        :p.state==="blocked"
-          ?"보급 대기"
-          :p.state==="paused"
-            ?"일시정지"
-            :"";
-
-  return `<div class="production-status-card">
-    <div class="production-status-icon" aria-hidden="true">${info.icon}</div>
-    <div class="production-status-main">
-      <div class="production-status-title">
-        <span>${p.unit?.name||"병력"} · ${p.label}</span>
-        <span class="time">${timeText}</span>
-      </div>
-      <div class="production-status-sub">
-        ${p.q?`현재 batch ${currentCount}기 · Supply ${(p.unit?.supply||0)*currentCount} 예약`:`생산효율 ${p.efficiency}%`}
-      </div>
-      <div class="production-progress${barClass}">
-        <span style="width:${p.progressPct}%"></span>
-        <div class="production-progress-label">${p.progressPct}%</div>
-      </div>
-    </div>
-
-    <div class="production-contract-strip">
-      <div class="production-contract-cell">전체 계약<b>${p.produced} / ${p.total} 생산</b></div>
-      <div class="production-contract-cell">남은 병력<b>${p.remaining}기</b></div>
-      <div class="production-contract-cell">증원 단위<b>${p.batch}기씩</b></div>
-    </div>
-    <div class="production-batch-pips" aria-label="생산 batch 진행">${pips}</div>
-  </div>`;
-}
-  static ownBuildingAt(authX,authY){
-  if(!ActiveViewState.snap)return null;
-  const side=ConnectionSideUtil.roleSide(ActiveViewState.role);
-  let best=null,bestD=Infinity;
-  for(const b of [...ActiveViewState.snap.buildings,...(ActiveViewState.snap.constructionOrders||[])]){
-    if(b.alive===false||b.side!==side)continue;
-    const size=BuildingDefinition.get(b.type)?.size||35;
-    const d=Math.hypot(b.x-authX,b.y-authY);
-    if(d<=size+22&&d<bestD){best=b;bestD=d}
-  }
-  return best;
-}
-  static startBuildPlacement(building,produceType=null){
-  if(!building||!BuildingDefinition.get(building))return false;
-
-  // Build selection is an idempotent START action, never a toggle.
-  // Duplicate pointer/click delivery, DOM rerender, or repeated taps must leave
-  // the same build target armed. Build targeting is cancelled only through an
-  // explicit cancel path (건설 마침 / drawer close / another non-build action).
-  const next={type:"build",building,produceType:produceType||null};
-
-  // Commit gameplay UI state first. Closing the drawer afterwards must never be
-  // able to interpret the close itself as a request to cancel the just-selected
-  // build target.
-  UiController.setMode(next);
-  CommandPresentation.closeCommandDrawer({cancelTarget:false});
-
-  return true;
-}
-  static selectBuilding(id){
-  const requested=id||null;
-
-  // Building selection is NOT a toggle.
-  // Re-selecting the same building must be idempotent: mobile browsers can emit
-  // compatibility clicks after pointer release and rerenders can replay the same
-  // semantic selection. Treating the second selection as "toggle off" made the
-  // building panel flash open and immediately close.
-  const changed=UiRuntimeState.value.selection.buildingId!==requested;
-  UiRuntimeState.value.selection.buildingId=requested;
-
-  if(changed){
-    // Building-specific action HTML must be invalidated together with the DOM.
-    // Some buildings intentionally have no actions; clearing only the cache would
-    // make BuildingPresentation.setBuildingActionsHtml("") skip the update and leave previous actions visible.
-    if(UiRegistry.refs.buildingPanelActions)UiRegistry.refs.buildingPanelActions.innerHTML="";
-    BattlePresentationCache.lastBuildingActionsHtml=null;
-  }
-
-  if(UiRuntimeState.value.selection.buildingId){
-    // Building inspection must never leave an accidental build/spell target armed.
-    if(UiRuntimeState.value.target.type!=="flag")UiController.setMode({type:"flag"},{silent:true});
-    CommandPresentation.setCommandDrawerMode("building");
-  }else if(UiRuntimeState.value.command.branch==="building"){
-    CommandPresentation.closeCommandDrawer();
-  }
-
-  if(LocalEnvironmentUtil.isLocalTest()&&ActiveViewState.role)ViewRuntimeState.byRole[ActiveViewState.role].selection.buildingId=UiRuntimeState.value.selection.buildingId;
-  if(ActiveViewState.renderer)ActiveViewState.renderer.selectedBuildingId=UiRuntimeState.value.selection.buildingId;
-  if(ActiveViewState.snap)BuildingPresentation.renderSelectedBuildingPanel(ActiveViewState.snap);
-
-  CommandPresentation.syncCommandDock();
-  return !!UiRuntimeState.value.selection.buildingId;
-}
-  static selectedOwnBuilding(state=ActiveViewState.snap){
-  if(!state||!UiRuntimeState.value.selection.buildingId)return null;
-  const side=ConnectionSideUtil.roleSide(ActiveViewState.role);
-  return [...state.buildings,...(state.constructionOrders||[])].find(b=>b.id===UiRuntimeState.value.selection.buildingId&&b.alive!==false&&b.side===side)||null;
-}
-  static isConstructionOrder(b,state=ActiveViewState.snap){
-    return !!b&&(state?.constructionOrders||[]).some(order=>order.id===b.id);
-  }
-  static detailForDefenseBuilding(buildingType){
-  const bd=BuildingDefinition.get(buildingType);
-  const entry=Object.entries(DefenseCardDefinition.all).find(([,v])=>v?.building===buildingType);
-  const card=entry?.[1];
-  if(!bd&&!card)return null;
-  const gas=BuildingDefinition.gasCost(buildingType);
-  const body=[card?.desc,bd?.desc].filter(Boolean).join("<br><br>")||"방어 건물 카드";
-  return {title:card?.name||bd?.name||buildingType,icon:card?.icon||"✣",kicker:"DEFENSE",body,meta:`◆ ${bd?.cost||0}${gas?` · ⬡ ${gas}`:""} · 사거리 ${bd?.range||0}`};
-}
-  static detailForBuilding(buildingType){
-  const bd=BuildingDefinition.get(buildingType);if(!bd)return null;
-  const gas=BuildingDefinition.gasCost(buildingType);
-  return {title:bd.name||buildingType,icon:bd.detailIcon||"🏗️",kicker:"BUILDING",body:bd.desc||"건설 가능한 구조물",meta:`◆ ${bd.cost||0}${gas?` · ⬡ ${gas}`:""}${bd.buildTimeMs?` · ${Math.ceil(bd.buildTimeMs/1000)}초`:""}`};
-}
-  static buildPlacementActionFromElement(el){
-  if(!el||el.disabled)return null;
-  if(el.dataset.produceUnit){
-    const unit=el.dataset.produceUnit,d=UnitDefinition.get(unit);
-    if(!d)return null;
-    return {building:d.tier===3?"factory":"barracks",produceType:unit};
-  }
-  if(el.dataset.defenseBuild)return {building:el.dataset.defenseBuild,produceType:null};
-  const staticBuild={
-    supplyBtn:"supply",
-    gasExtractorBtn:"gasExtractor",
-    academyBtn:"academy",
-    airIncubatorBtn:"airIncubator",
-    labBtn:"lab"
-  }[el.id];
-  return staticBuild?{building:staticBuild,produceType:null}:null;
-}
-  static commitBuildPlacementElement(el){
-  const action=BuildingPresentation.buildPlacementActionFromElement(el);
-  if(!action)return false;
-  if(action.produceType){
-    UiRuntimeState.value.selection.unit=action.produceType;
-    if(LocalEnvironmentUtil.isLocalTest())ViewRuntimeState.byRole[ActiveViewState.role].selection.unit=UiRuntimeState.value.selection.unit;
-  }
-  return BuildingPresentation.startBuildPlacement(action.building,action.produceType);
-}
-  static setBuildingActionsHtml(html){
-  if(html===BattlePresentationCache.lastBuildingActionsHtml)return;
-  UiRegistry.refs.buildingPanelActions.innerHTML=html;
-  BattlePresentationCache.lastBuildingActionsHtml=html;
-}
-  static renderSelectedBuildingPanel(state){
-  const b=BuildingPresentation.selectedOwnBuilding(state);
-
-  if(!b){
-    UiRuntimeState.value.selection.buildingId=null;
-    if(ActiveViewState.renderer)ActiveViewState.renderer.selectedBuildingId=null;
-    if(UiRuntimeState.value.command.branch==="building")UiController.setUiCommand({branch:"closed"});
-
-    if(BattlePresentationCache.lastBuildingActionsHtml!==null||UiRegistry.refs.buildingPanelActions.innerHTML){
-      UiRegistry.refs.buildingPanelActions.innerHTML="";
-      BattlePresentationCache.lastBuildingActionsHtml=null;
-    }
-
-    UiRegistry.refs.cancelModeBtn.disabled=true;
-    UiRegistry.refs.cancelModeBtn.classList.add("hidden");
-    return;
-  }
-
-  const side=ConnectionSideUtil.roleSide(ActiveViewState.role),bd=BuildingDefinition.get(b.type),liveSim=MatchLifecycle.activeSession()?.sim;
-
-  UiRegistry.refs.buildingPanelTitle.textContent=bd?.name||"건물";
-
-  if(BuildingPresentation.isConstructionOrder(b,state)){
-    const refund=b.paidMineral||0,gasRefund=b.paidGas||0;
-    UiRegistry.refs.buildingPanelStatus.innerHTML=`건설 예약 · <b>${b.builderUnitId?"일꾼 이동 중":"가용 일꾼 대기"}</b>`;
-    BuildingPresentation.setBuildingActionsHtml(
-      `<div class="small">선결제 <b>${refund} 미네랄${gasRefund?` · ${gasRefund} 가스`:""}</b> · 일꾼이 도착하면 착공합니다.<br>착공 전 취소하면 지불한 비용을 전액 돌려받습니다.</div>`
-    );
-    UiRegistry.refs.cancelModeBtn.disabled=false;
-    UiRegistry.refs.cancelModeBtn.classList.remove("hidden");
-    UiRegistry.refs.cancelModeBtn.classList.add("cancel-refund");
-    UiRegistry.refs.cancelModeBtn.innerHTML=`예약 취소 · +${refund} 미네랄${gasRefund?` · +${gasRefund} 가스`:""} 전액 환불`;
-    return;
-  }
-
-  if(!b.complete){
-    const pct=Math.max(0,Math.min(100,Math.floor((b.progress/Math.max(1,SimulationTiming.msToTicks(bd.buildTimeMs,SimulationTiming.tps())))*100)));
-    const remain=Math.max(0,Math.ceil((Math.max(0,SimulationTiming.msToTicks(bd.buildTimeMs,SimulationTiming.tps())-b.progress))/SimulationTiming.tps()));
-    const refund=(Number.isFinite(Number(b.constructionMineralCost))?Number(b.constructionMineralCost):BuildingDefinition.mineralCost(b.type,b.produceType||null))*.5;
-    const gasRefund=(Number(b.constructionGasCost)||0)*.5;
-
-    const builder=liveSim&&b.builderUnitId?(liveSim.unitById.get(b.builderUnitId)||liveSim.units.find(u=>u.id===b.builderUnitId)):null;
-    const buildState=b.constructionState==="building"
-      ? `건설 중 · <b>${pct}%</b> · 약 ${remain}초 남음`
-      : builder?.alive
-        ? `기초 설치 완료 · <b>일꾼 이동 중</b> · HP ${Math.round((b.hp/b.maxHp)*100)}%`
-        : `기초 설치 완료 · <b>가용 일꾼 대기</b> · HP ${Math.round((b.hp/b.maxHp)*100)}%`;
-    UiRegistry.refs.buildingPanelStatus.innerHTML=`${buildState}
-      <div class="research-progress"><span style="width:${pct}%"></span></div>`;
-
-    BuildingPresentation.setBuildingActionsHtml(
-      `<div class="small">이 건물을 취소하면 <b>${refund} 미네랄${gasRefund?` · ${gasRefund} 가스`:""}(건설비 50%)</b>을 돌려받습니다.</div>`
-    );
-
-    UiRegistry.refs.cancelModeBtn.disabled=false;
-    UiRegistry.refs.cancelModeBtn.classList.remove("hidden");
-    UiRegistry.refs.cancelModeBtn.classList.add("cancel-refund");
-    UiRegistry.refs.cancelModeBtn.innerHTML=`건설 취소 · +${refund} 미네랄${gasRefund?` · +${gasRefund} 가스`:""} 환불`;
-    return;
-  }
-
-  const completedPaidMineral=Number.isFinite(Number(b.constructionMineralCost))
-    ?Number(b.constructionMineralCost)
-    :BuildingDefinition.mineralCost(b.type,b.produceType||null);
-  const completedRefund=completedPaidMineral*.5;
-  const completedGasRefund=(Number(b.constructionGasCost)||0)*.5;
-
-  if(BuildingDefinition.get(b.type)?.isDropoff){
-    UiRegistry.refs.cancelModeBtn.disabled=true;
-    UiRegistry.refs.cancelModeBtn.classList.add("hidden");
-    UiRegistry.refs.cancelModeBtn.classList.remove("cancel-refund");
-  }else{
-    UiRegistry.refs.cancelModeBtn.disabled=false;
-    UiRegistry.refs.cancelModeBtn.classList.remove("hidden");
-    UiRegistry.refs.cancelModeBtn.classList.add("cancel-refund");
-    UiRegistry.refs.cancelModeBtn.innerHTML=`건물 철거 · +${completedRefund} 미네랄${completedGasRefund?` · +${completedGasRefund} 가스`:""} 환불`;
-  }
-
-  const q=b.queue?.[0];
-
-  if(q?.kind==="research"){
-    const qRemaining=SimulationTiming.queueRemainingTicks(q,state.tick||0);
-    const pct=Math.max(0,Math.min(100,Math.floor((1-qRemaining/q.total)*100)));
-    const remain=Math.ceil(qRemaining/SimulationTiming.tps());
-    const name=q.research==="attack"?`공격 Lv.${q.level}`:
-      q.research==="armor"?`방어 Lv.${q.level}`:
-`${UnitDefinition.get(q.unit)?.name||""} · ${ABILITY_INFO[q.unit]?.name||"특수능력"}`;
-
-    UiRegistry.refs.buildingPanelStatus.innerHTML=`연구 진행 중 · <b>${name}</b> · ${pct}% · 약 ${remain}초
-      <div class="research-progress"><span style="width:${pct}%"></span></div>`;
-  }else if(BuildingDefinition.get(b.type)?.isProductionBuilding){
-    UiRegistry.refs.buildingPanelStatus.innerHTML=BuildingPresentation.productionStatusHtml(b,liveSim);
-  }else if(BuildingDefinition.get(b.type)?.isGasExtractor){
-    const gasNode=liveSim?.gasNodeForExtractor(b);
-    const remain=Math.max(0,gasNode?.amount||0);
-    const max=Math.max(1,gasNode?.max||1);
-    const pct=Math.round(remain/max*100);
-    UiRegistry.refs.buildingPanelStatus.innerHTML=`가스 추출장 · 내구도 ${Math.round((b.hp/b.maxHp)*100)}% · 가스 <b>${remain}</b> 남음
-      <div class="research-progress"><span style="width:${pct}%"></span></div>
-      <span class="small">${remain>0
-        ?`정상 채취 · 1회 왕복당 <b>${GAS_MINE_AMOUNT}</b> 가스`
-        :`고갈 상태 · 계속 채취 가능 · 1회 왕복당 <b>${GAS_DEPLETED_MINE_AMOUNT}</b> 가스(25%)`
-      }</span>`;
-  }else{
-    const hpPct=Math.round((b.hp/b.maxHp)*100);
-
-    const defenseEff=BuildingDefinition.isDefenseTower(b.type)&&liveSim?` · 발사효율 <b>${liveSim.defenseFireSpeedPct(b)}%</b>`:"";
-    UiRegistry.refs.buildingPanelStatus.innerHTML=`완공 · 내구도 ${hpPct}%${defenseEff}${b.queue?.length?" · 작업 중":""}${
-      !BuildingDefinition.get(b.type)?.isDropoff
-        ? `<br><span class="small">철거 시 건설비 50% 환불${b.queue?.length?" · 진행 중 생산은 취소되며 해당 비용은 환불되지 않음":""}</span>`
-        : (b.queue?.length?`<br><span class="small">일꾼 생산 대기 ${b.queue.filter(q=>q.kind==="workerProduction").length}</span>`:"")
-    }`;
-  }
-
-  let actionsHtml="";
-
-  if(BuildingDefinition.get(b.type)?.isDropoff){
-    const workerQueue=(b.queue||[]).filter(q=>q.kind==="workerProduction");
-    const remaining=workerQueue.length?SimulationTiming.queueRemainingTicks(workerQueue[0],state.tick||0):0;
-    const supplyUsed=liveSim?.supplyUsed(side)||0;
-    const supplyCap=liveSim?.supplyCap(side)||BASE_SUPPLY;
-    const supplyOk=supplyUsed+(ECONOMY_WORKER_DEF.supply||0)<=supplyCap;
-    const moneyOk=state.wallet[side]>=WORKER_COST;
-    const queueOk=workerQueue.length<WORKER_QUEUE_LIMIT;
-
-    const assignedWorkers=liveSim?.workersAssignedToBase(b)||[];
-    const gasTarget=GasWorkerAssignmentPolicy.pendingGasTargetFor(b);
-    const gasAuthoritativeTarget=Math.max(0,Number(b.gasWorkerTarget)||0);
-    const gasPending=gasTarget!==gasAuthoritativeTarget;
-    const gasAssigned=Math.min(gasAuthoritativeTarget,assignedWorkers.length);
-    const validExtractors=liveSim?.validGasExtractors(side)?.length||0;
-
-    actionsHtml=`<div class="research-action">
-      <div class="research-title">⬡ 가스 일꾼 배정</div>
-      <div class="research-desc">이 거점에 속한 가장 가까운 일꾼 중 목표 수만큼 가스를 캐고, 나머지는 미네랄을 캡니다.</div>
-      <div class="research-meta">${gasPending?`조정 중 <b>${gasTarget}명</b> · 입력이 멈추면 확정`:`현재 ${gasAssigned}/${assignedWorkers.length}명 가스 목표`} · 유효 추출장 ${validExtractors}개</div>
-      <div class="gas-worker-stepper">
-        <button class="gas-step-btn" type="button" data-gas-workers-dec="${b.id}" aria-label="가스 일꾼 감소" ${gasTarget<=0?"disabled":""}>−</button>
-        <div class="gas-worker-count"><b>${gasTarget}</b><span>명</span></div>
-        <button class="gas-step-btn" type="button" data-gas-workers-inc="${b.id}" aria-label="가스 일꾼 증가" ${gasTarget>=GAS_ASSIGNMENT_MAX?"disabled":""}>＋</button>
-      </div>
-    </div>
-
-    <button class="research-action ${(!supplyOk||!moneyOk||!queueOk)?"":"ready"}"
-      data-train-worker="${b.id}"
-      ${(!supplyOk||!moneyOk||!queueOk)?"disabled":""}>
-        <div class="research-title">⚒ 일꾼 생산</div>
-        <div class="research-desc">${BuildingDefinition.get(b.type)?.isMainBase?"메인 거점":"전진 거점"}에서 일꾼을 생산합니다. 자원은 가장 가까운 거점으로 귀환합니다.</div>
-        <div class="research-meta">${
-          !supplyOk?"보급 부족":
-          !moneyOk?`미네랄 ${WORKER_COST} 필요`:
-          !queueOk?"대기열 가득":
-          `◆ ${WORKER_COST} · 보급 ${ECONOMY_WORKER_DEF.supply||0} · ${Math.ceil(ECONOMY_WORKER_DEF.buildTimeMs/1000)}초${
-            workerQueue.length?` · 대기 ${workerQueue.length} · ${Math.ceil(remaining/SimulationTiming.tps())}초`:""
-          }`
-        }</div>
-    </button>`;
-  }
-
-  BuildingPresentation.setBuildingActionsHtml(actionsHtml);
-}
-  static syncBuildPlacementSelectionUi(){
-  const isBuild=UiRuntimeState.value.target.type==="build";
-  const building=isBuild?UiRuntimeState.value.target.building:null,produceType=isBuild?(UiRuntimeState.value.target.produceType||null):null;
-
-  for(const b of UiRegistry.refs.unitGrid.querySelectorAll("[data-produce-unit]")){
-    b.classList.toggle("mode-selected",!!produceType&&b.dataset.produceUnit===produceType);
-  }
-  const staticButtons=[
-    [UiRegistry.refs.supplyBtn,"supply"],
-    [UiRegistry.refs.gasExtractorBtn,"gasExtractor"],
-    [UiRegistry.refs.academyBtn,"academy"],
-    [UiRegistry.refs.airIncubatorBtn,"airIncubator"],
-    [UiRegistry.refs.labBtn,"lab"]
-  ];
-  for(const [btn,type] of staticButtons)btn?.classList.toggle("mode-selected",isBuild&&!produceType&&building===type);
-  for(const btn of UiRegistry.refs.defenseCardChoices?[...UiRegistry.refs.defenseCardChoices.querySelectorAll("[data-defense-build]")]:[]){
-    btn.classList.toggle("mode-selected",isBuild&&!produceType&&btn.dataset.defenseBuild===building);
-  }
-}
-  static buildValidation(state,side,action){
-  // Pointer preview checks placement only. Builder reachability is authoritative
-  // simulation work when BUILD executes; never construct a NavMesh for a pointer.
-  const bd=BuildingDefinition.get(action.building);
-  if(!bd)return "알 수 없는 건물입니다.";
-  const ruleReason=BuildPrerequisitePolicy.buildingReason(state,side,action.building,action.produceType);
-  if(ruleReason)return ruleReason;
-  const cost=BuildingDefinition.resourceCost(action.building,action.produceType);
-  if(state.wallet[side]<cost.mineral)return `미네랄이 부족합니다. ${cost.mineral} 필요`;
-
-  const gasCost=cost.gas;
-  if((state.gasWallet?.[side]||0)<gasCost)return `가스가 부족합니다. ${gasCost} 필요`;
-
-  const liveSim=MatchLifecycle.activeSession()?.sim;
-
-  if(!buildingPlacementInsideWorld(action.building,action.x,action.y,WorldContext.forState(state)))return "절벽·뿌리벽·경사로 위에는 건설할 수 없습니다.";
-
-  if(bd.isGasExtractor){
-    const gas=liveSim?.nearestGasNodeAt(action.x,action.y);
-    if(!gas)return "가스 지점 위에 추출장을 건설해야 합니다.";
-    if(liveSim?.gasNodeOccupied(gas.id))return "이미 추출장이 있는 가스 지점입니다.";
-    action.x=gas.x;
-    action.y=gas.y;
-  }
-
-  for(const m of state.resources||[]){
-    const min=bd.size+(m.r||28)+MINERAL_BUILD_MARGIN;
-    if(Math.hypot(m.x-action.x,m.y-action.y)<min){
-      return "미네랄 매장지 위나 바로 옆에는 건설할 수 없습니다.";
-    }
-  }
-
-  if(!bd.isGasExtractor){
-    for(const g of state.gasNodes||[]){
-      const min=bd.size+(g.r||32)+14;
-      if(Math.hypot(g.x-action.x,g.y-action.y)<min){
-        return "가스 지점에는 추출장만 건설할 수 있습니다.";
-      }
-    }
-  }
-
-  if(liveSim&&!liveSim.buildPointVisible(side,action.x,action.y)){
-    return "현재 확보한 시야 안에서만 건설할 수 있습니다.";
-  }
-
-  for(const b of [...state.buildings,...(state.constructionOrders||[])]){
-    if(b.alive===false)continue;
-    if(Math.hypot(b.x-action.x,b.y-action.y)<buildingPlacementSeparation(action.building,b.type))return "다른 건물·건설 예약과 너무 가깝습니다. 일꾼 이동 통로를 확보하세요.";
-  }
-  return null;
-}
-  static previewBuildDensity(side,action){
-  const liveSim=MatchLifecycle.activeSession()?.sim;
-  if(!liveSim)return null;
-  if(BuildingDefinition.get(action.building)?.isProductionBuilding){
-    const near=liveSim.nearbyProductionCount(side,action.x,action.y);
-    const speed=PRODUCTION_CLUSTER_SPEED_PCT[Math.min(near,PRODUCTION_CLUSTER_SPEED_PCT.length-1)];
-    return {kind:"production",near,speed,penalty:100-speed};
-  }
-  if(BuildingDefinition.isDefenseTower(action.building)){
-    const near=liveSim.nearbyDefenseTowerCount(side,action.x,action.y);
-    const speed=PRODUCTION_CLUSTER_SPEED_PCT[Math.min(near,PRODUCTION_CLUSTER_SPEED_PCT.length-1)];
-    return {kind:"defense",near,speed,penalty:100-speed};
-  }
-  return null;
-}
+// Shows which deployed build is running: title stamp, boot card and the document metadata.
+class BuildMetadataPresentation{
   static renderBuildMetadata(){
   document.documentElement.dataset.build=BUILD_META.id;
   document.documentElement.dataset.buildStatus=BUILD_META.status;
@@ -11594,11 +9638,7 @@ class BuildingPresentation{
 }
 }
 
-class HtmlAttributeUtil{
-  static escapeHtmlAttr(value){
-    return String(value??"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  }
-}
+
 
 // 발사전 화면: 카드 패, 자원 게이지, 착탄 흔적. 착탄 예정 지점은 절대 그리지 않는다.
 class LaunchPresentation{
@@ -11628,7 +9668,6 @@ class LaunchPresentation{
     for(const p of s.projectiles||[]){if(!p.payload||p.side!==side)continue;seen.add(p.id);this.pods.set(p.id,{x:p.lockedAimX,y:p.lockedAimY})}
     for(const [id,p] of this.pods)if(!seen.has(id)){this.pods.delete(id);this.marks.push({x:p.x,y:p.y,at:now})}
     this.marks=this.marks.filter(m=>now-m.at<LaunchRules.landingMarkMs);
-    if(!this.hold&&UiRegistry.refs.hint){const hint="카드 고르기 · 길게 눌러 충전 · 손가락 방향으로 조준 · 놓으면 발사 · 너무 오래 누르면 과열";if(UiRegistry.refs.hint.textContent!==hint)UiRegistry.refs.hint.textContent=hint}
   }
   // Both main bases' health, elapsed time, and an edge arrow while the enemy base is off screen.
   static renderHud(s,side){
@@ -11694,125 +9733,9 @@ class LaunchPresentation{
   }
 }
 class BattlePresentation{
-  static tacticalChestModalIsOpen(){return UiRuntimeState.value.modal==="spell-choice"}
-  static tacticalChestModalAwaitingOffer(){return UiRuntimeState.value.modalState.spellChoice==="requesting"}
-
+  // The battlefield takes one gesture: a still press charges a launch, a drag pans the camera. Replay only pans.
   static setupCanvas(){
-  const pointerPreview=e=>{
-    if(!ActiveViewState.renderer||!ActiveViewState.snap)return;
-    const[vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY);
-    const a=UiController.viewToAuth(vx,vy);
-
-    if(UiRuntimeState.value.target.type==="build"){
-      const action={type:"BUILD",building:UiRuntimeState.value.target.building,produceType:UiRuntimeState.value.target.produceType||null,x:a.x,y:a.y};
-      const err=BuildingPresentation.buildValidation(ActiveViewState.snap,ConnectionSideUtil.roleSide(ActiveViewState.role),action);
-      const density=BuildingPresentation.previewBuildDensity(ConnectionSideUtil.roleSide(ActiveViewState.role),action);
-
-      let previewX=vx,previewY=vy;
-      if(BuildingDefinition.get(UiRuntimeState.value.target.building)?.isGasExtractor){
-        const gas=MatchLifecycle.activeSession()?.sim?.nearestGasNodeAt(action.x,action.y);
-        if(gas){
-          previewX=ActiveViewState.renderer.viewX(gas.x);
-          previewY=ActiveViewState.renderer.viewY(gas.y);
-        }
-      }
-
-      ActiveViewState.renderer.buildPreview={x:previewX,y:previewY,building:UiRuntimeState.value.target.building,valid:!err,error:err,density};
-      if(density){
-        const label=UiRuntimeState.value.target.produceType
-          ? `${UnitDefinition.get(UiRuntimeState.value.target.produceType).name} ${BuildingDefinition.get(UiRuntimeState.value.target.building)?.productionLabel||BuildingDefinition.get(UiRuntimeState.value.target.building)?.name||"생산시설"}`
-          : (BuildingDefinition.get(UiRuntimeState.value.target.building)?.name||"건물");
-        const metric=density.kind==="defense"?"발사효율":"생산효율";
-        const group=density.kind==="defense"?"방어건물":"생산건물";
-        UiRegistry.refs.hint.innerHTML=density.penalty>0
-          ? `<span class="build-preview-label">🏗️ <b>${label}</b></span> · <b style="color:#b34818">예상 ${metric} ${density.speed}% (-${density.penalty}%)</b><br>주변 ${group} ${density.near}개 · ${group==="포탑"?DEFENSE_CLUSTER_RADIUS:PRODUCTION_CLUSTER_RADIUS} 이내 밀집`
-          : `<span class="build-preview-label">🏗️ <b>${label}</b></span> · <b style="color:#247343">예상 ${metric} 100%</b><br>주변 ${group} 없음`;
-      }
-      return;
-    }
-
-    if(UiRuntimeState.value.target.type==="spell"){
-      const sim=MatchLifecycle.activeSession()?.sim,d=SpellDefinition.get(UiRuntimeState.value.target.spellId);
-      if(!sim||!d)return;
-      const margin=UiRuntimeState.value.target.spellId==="tunnel"&&UiRuntimeState.value.target.stage==="entry"?0:d.castMargin;
-      const valid=sim.spellTargetAllowed(ConnectionSideUtil.roleSide(ActiveViewState.role),a.x,a.y,margin);
-      ActiveViewState.renderer.spellPreview={
-        spellId:UiRuntimeState.value.target.spellId,x:vx,y:vy,valid,
-        entry:UiRuntimeState.value.target.entryView?{x:UiRuntimeState.value.target.entryView.x,y:UiRuntimeState.value.target.entryView.y}:null
-      };
-    }
-  };
-
-  let nextChargedCastId=0;
-  const pendingChargeCancels=new Map();
-  let chargeCancelRetry=0;
-  const retryChargeCancels=()=>{
-    chargeCancelRetry=0;
-    for(const [key,hold] of pendingChargeCancels){
-      if(hold.session!==MatchLifecycle.activeSession()||hold.session.disposed||hold.session.simEnded||hold.session.command({type:'CHARGE_CANCEL',castId:hold.castId}))pendingChargeCancels.delete(key);
-    }
-    if(pendingChargeCancels.size)chargeCancelRetry=setTimeout(retryChargeCancels,100);
-  };
-  const cancelChargedSkillHold=(cancelCast=true)=>{
-    const hold=ActiveViewState.drag?.chargedSkillHold;
-    if(hold?.timer){clearTimeout(hold.timer);hold.timer=0}
-    if(hold?.aimTimer){clearTimeout(hold.aimTimer);hold.aimTimer=0}
-    if(hold)hold.aimDirty=false;
-    if(cancelCast&&hold?.accepted){
-      if(!hold.session.command({type:'CHARGE_CANCEL',castId:hold.castId})){
-        pendingChargeCancels.set(hold.castId,hold);
-        if(!chargeCancelRetry)chargeCancelRetry=setTimeout(retryChargeCancels,100);
-      }
-      hold.accepted=false;
-    }
-    if(ActiveViewState.renderer)ActiveViewState.renderer.chargedSkillGesture=null;
-  };
-
-  const flushChargedAim=hold=>{
-    hold.aimTimer=0;
-    if(ActiveViewState.drag?.chargedSkillHold!==hold||!hold.accepted||hold.session!==MatchLifecycle.activeSession()||hold.session.disposed||hold.session.simEnded||UiRuntimeState.value.target.type!=='flag'){
-      hold.aimDirty=false;return;
-    }
-    const tick=hold.session.sim?.tick;
-    if(hold.aimDirty&&tick!==hold.lastAimTick&&hold.session.command({type:'CHARGE_AIM',castId:hold.castId,x:hold.aimX,y:hold.aimY})){
-      hold.lastAimTick=tick;hold.aimDirty=false;
-    }
-    // At most one queued callback for the active pointer. A final point that arrived
-    // after this tick's first move survives until the next simulation tick.
-    if(hold.aimDirty)hold.aimTimer=setTimeout(()=>flushChargedAim(hold),25);
-  };
-
-  const armChargedSkillHold=e=>{
-    // Replay canvas is camera-only. Never arm any gameplay target/long-press state.
-    if(ReplayPresentation.replayPlayer)return;
-    if(UiRuntimeState.value.target.type!=="flag"||!ActiveViewState.renderer||!ActiveViewState.snap||!ActiveViewState.drag)return;
-    const [vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY);
-    const a=UiController.viewToAuth(vx,vy);
-    // Long press on an own building remains building selection, never a rally order.
-    if(BuildingPresentation.ownBuildingAt(a.x,a.y))return;
-    const session=MatchLifecycle.activeSession(),side=ConnectionSideUtil.roleSide(ActiveViewState.role);
-    const hold={x:vx,y:vy,authX:a.x,authY:a.y,session,side,castId:0,triggered:false,accepted:false,timer:0,aimTimer:0,aimDirty:false,lastAimTick:-1,pointerType:e.pointerType};
-    ActiveViewState.drag.chargedSkillHold=hold;
-    hold.timer=setTimeout(()=>{
-      if(!ActiveViewState.drag||ActiveViewState.drag.id!==e.pointerId||ActiveViewState.drag.moved||UiRuntimeState.value.target.type!=="flag")return;
-      const live=ActiveViewState.drag.chargedSkillHold;
-      if(!live||live!==hold||live.triggered)return;
-      const sess=MatchLifecycle.activeSession();
-      if(!sess?.sim||sess!==session)return;
-      live.triggered=true;
-      live.timer=0;
-      hold.castId=nextChargedCastId=Math.max(nextChargedCastId,sess.sim.chargedCastSerial?.[side]||0)+1;
-      hold.accepted=sess.command({type:'CHARGE_BEGIN',castId:hold.castId,x:hold.authX,y:hold.authY});
-      if(hold.accepted){
-        ActiveViewState.renderer.chargedSkillGesture={castId:hold.castId,side,x:vx,y:vy,aimX:hold.authX,aimY:hold.authY,pointerType:e.pointerType};
-        if(navigator.vibrate)navigator.vibrate(18);
-        LogUtil.log('집결·충전 명령 접수 · 전장에 확정된 준비 상태와 착탄점 표시');
-      }else LogUtil.log('현재 스킬 명령을 접수할 수 없습니다.');
-    },CHARGED_SKILL_HOLD_MS);
-  };
-
-  // Launch: a still press arms charging; dragging before that pans the camera.
-  const armLaunchHold=e=>{
+  const armLaunchHold=()=>{
     const drag=ActiveViewState.drag;
     drag.launchTimer=setTimeout(()=>{
       drag.launchTimer=0;
@@ -11826,1073 +9749,114 @@ class BattlePresentation{
     if(drag)drag.launchHold=null;LaunchPresentation.cancel();
   };
 
-  const battlefieldPointerDown=e=>{
+  const pointerDown=e=>{
     if(ActiveViewState.drag&&ActiveViewState.drag.id!==e.pointerId)return;
-    if(ActiveViewState.drag){cancelChargedSkillHold(true);cancelLaunchHold()}
+    if(ActiveViewState.drag)cancelLaunchHold();
     audioSystem.unlock();
     e.preventDefault();
     if(!ActiveViewState.renderer)return;
-
-    // Replay accepts only camera drag. Do not create build/spell previews,
-    // selection state, predicted flags, or long-press gameplay feedback.
-    if(!ReplayPresentation.replayPlayer)pointerPreview(e);
-    else{
-      ActiveViewState.renderer.buildPreview=null;
-      ActiveViewState.renderer.spellPreview=null;
-      ActiveViewState.renderer.chargedSkillGesture=null;
-      ActiveViewState.renderer.predictedFlag=null;
-      ActiveViewState.renderer.pendingBuildGhosts=[];
-      ActiveViewState.renderer.selectedBuildingId=null;
-    }
-
-    ActiveViewState.drag={
-      id:e.pointerId,
-      x:e.clientX,
-      y:e.clientY,
-      lastX:e.clientX,
-      lastY:e.clientY,
-      left:ActiveViewState.renderer.cameraLeft,
-      top:ActiveViewState.renderer.cameraTop,
-      moved:false,
-      started:performance.now()
-    };
-    if(LaunchPresentation.active())armLaunchHold(e);else armChargedSkillHold(e);
+    ActiveViewState.drag={id:e.pointerId,x:e.clientX,y:e.clientY,lastX:e.clientX,lastY:e.clientY,
+      left:ActiveViewState.renderer.cameraLeft,top:ActiveViewState.renderer.cameraTop,moved:false};
+    if(LaunchPresentation.active())armLaunchHold();
   };
 
-  const battlefieldPointerMove=e=>{
-    if(!ActiveViewState.renderer)return;
-    if(!ReplayPresentation.replayPlayer&&(UiRuntimeState.value.target.type==="build"||UiRuntimeState.value.target.type==="spell"))pointerPreview(e);
-    if(!ActiveViewState.drag||ActiveViewState.drag.id!==e.pointerId)return;
+  const pointerMove=e=>{
+    const drag=ActiveViewState.drag,r=ActiveViewState.renderer;
+    if(!r||!drag||drag.id!==e.pointerId)return;
     e.preventDefault();
-
-    const total=Math.hypot(e.clientX-ActiveViewState.drag.x,e.clientY-ActiveViewState.drag.y);
-    if(ActiveViewState.drag.launchHold){
-      const [vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY);LaunchPresentation.aim(UiController.viewToAuth(vx,vy));
-      ActiveViewState.drag.lastX=e.clientX;ActiveViewState.drag.lastY=e.clientY;return;
-    }
-    const hold=ActiveViewState.drag.chargedSkillHold;
-    if(hold?.triggered){
-      if(hold.accepted&&UiRuntimeState.value.target.type==='flag'){
-        const [vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY),a=UiController.viewToAuth(vx,vy);
-        hold.aimX=a.x;hold.aimY=a.y;hold.aimDirty=true;
-        const gesture=ActiveViewState.renderer.chargedSkillGesture;
-        if(gesture?.castId===hold.castId){gesture.aimX=a.x;gesture.aimY=a.y}
-        if(!hold.aimTimer)flushChargedAim(hold);
-      }else cancelChargedSkillHold(true);
-      ActiveViewState.drag.lastX=e.clientX;ActiveViewState.drag.lastY=e.clientY;return;
-    }
-    if(total>CHARGED_SKILL_DRAG_PX&&!ActiveViewState.drag.moved){
-      ActiveViewState.drag.moved=true;
-      cancelChargedSkillHold(true);cancelLaunchHold();
-    }
-
-    // 건설 모드에서는 짧은 손가락 흔들림을 카메라 드래그로 오인하지 않는다.
-    if(ActiveViewState.drag.moved){
-      const rect=UiRegistry.refs.canvas.getBoundingClientRect(),
-        dx=(e.clientX-ActiveViewState.drag.x)*UiRegistry.refs.canvas.width/rect.width,
-        dy=(e.clientY-ActiveViewState.drag.y)*UiRegistry.refs.canvas.height/rect.height,
-        scale=ActiveViewState.renderer.sc();
-      ActiveViewState.renderer.cameraLeft=RangeUtil.clamp(ActiveViewState.drag.left-dx/scale,0,Math.max(0,(ActiveViewState.renderer?.world||WorldContext.standard).width-ActiveViewState.renderer.viewWorldW()));
-      ActiveViewState.renderer.cameraTop=ActiveViewState.renderer.clampCameraTop(ActiveViewState.drag.top-dy/scale);
-      if(LocalEnvironmentUtil.isLocalTest()){
-        ViewRuntimeState.byRole[ActiveViewState.role].cameraLeft=ActiveViewState.renderer.cameraLeft;
-        ViewRuntimeState.byRole[ActiveViewState.role].cameraTop=ActiveViewState.renderer.cameraTop;
+    if(drag.launchHold){
+      const [vx,vy]=r.pxToWorld(e.clientX,e.clientY);LaunchPresentation.aim(UiController.viewToAuth(vx,vy));
+    }else{
+      if(!drag.moved&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>CHARGED_SKILL_DRAG_PX){drag.moved=true;cancelLaunchHold()}
+      if(drag.moved){
+        const rect=UiRegistry.refs.canvas.getBoundingClientRect(),
+          dx=(e.clientX-drag.x)*UiRegistry.refs.canvas.width/rect.width,
+          dy=(e.clientY-drag.y)*UiRegistry.refs.canvas.height/rect.height,
+          scale=r.sc();
+        r.cameraLeft=RangeUtil.clamp(drag.left-dx/scale,0,Math.max(0,(r.world||WorldContext.standard).width-r.viewWorldW()));
+        r.cameraTop=r.clampCameraTop(drag.top-dy/scale);
       }
-      pointerPreview(e);
     }
-    ActiveViewState.drag.lastX=e.clientX;
-    ActiveViewState.drag.lastY=e.clientY;
+    drag.lastX=e.clientX;drag.lastY=e.clientY;
   };
 
-  const battlefieldPointerCancel=e=>{
-    if(ActiveViewState.drag&&ActiveViewState.drag.id===e.pointerId){
-      cancelChargedSkillHold(true);cancelLaunchHold();
-      ActiveViewState.drag=null;
-    }
+  const pointerCancel=e=>{
+    if(ActiveViewState.drag?.id!==e.pointerId)return;
+    cancelLaunchHold();ActiveViewState.drag=null;
   };
 
-  const battlefieldPointerUp=e=>{
-    if(!ActiveViewState.renderer||!ActiveViewState.snap)return;
+  const pointerUp=e=>{
+    const drag=ActiveViewState.drag;
+    if(!drag||drag.id!==e.pointerId)return;
     e.preventDefault();
-    if(!ActiveViewState.drag||ActiveViewState.drag.id!==e.pointerId)return;
-
-    const moved=ActiveViewState.drag.moved||Math.hypot(e.clientX-ActiveViewState.drag.x,e.clientY-ActiveViewState.drag.y)>CHARGED_SKILL_DRAG_PX;
-    if(ActiveViewState.drag.launchTimer){clearTimeout(ActiveViewState.drag.launchTimer);ActiveViewState.drag.launchTimer=0}
-    if(ActiveViewState.drag.launchHold){
-      const [vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY);
-      ActiveViewState.drag=null;LaunchPresentation.release(UiController.viewToAuth(vx,vy));return;
-    }
-    const hold=ActiveViewState.drag.chargedSkillHold||null;
-    if(hold?.timer)clearTimeout(hold.timer);
-    if(hold?.aimTimer){clearTimeout(hold.aimTimer);hold.aimTimer=0}
-    if(hold)hold.aimDirty=false;
-    if(hold?.triggered){
-      if(hold.accepted){
-        const [vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY),a=UiController.viewToAuth(vx,vy);
-        if(UiRuntimeState.value.target.type==='flag'){
-          if(!hold.session.command({type:'CHARGE_RELEASE',castId:hold.castId,x:a.x,y:a.y})){
-            cancelChargedSkillHold(true);LogUtil.log('발사 명령을 접수할 수 없어 충전을 취소합니다.');
-          }
-        }else cancelChargedSkillHold(true);
-      }
-      if(ActiveViewState.renderer)ActiveViewState.renderer.chargedSkillGesture=null;
-      ActiveViewState.drag=null;return;
-    }
     ActiveViewState.drag=null;
-    if(!ReplayPresentation.replayPlayer)pointerPreview(e);
-    if(moved)return;
-    if(ReplayPresentation.replayPlayer)return;
-    // Launch mode has no tap commands: a short tap neither flags nor selects.
-    if(LaunchPresentation.active())return;
-
-    const[vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY);
-    const a=UiController.viewToAuth(vx,vy);
-    const sess=MatchLifecycle.activeSession();
-
-    // 스펠 타게팅 모드에서는 건물 선택보다 시전이 우선한다.
-    if(UiRuntimeState.value.target.type==="spell"){
-      if(!sess?.sim)return;
-      const d=SpellDefinition.get(UiRuntimeState.value.target.spellId);
-      const margin=UiRuntimeState.value.target.spellId==="tunnel"&&UiRuntimeState.value.target.stage==="entry"?0:d.castMargin;
-      if(!sess.sim.spellTargetAllowed(ConnectionSideUtil.roleSide(ActiveViewState.role),a.x,a.y,margin)){
-        LogUtil.log("⚠ 현재 시야/전술 투사 범위 밖입니다.");
-        return;
-      }
-
-      if(UiRuntimeState.value.target.spellId==="tunnel"){
-        if(UiRuntimeState.value.target.stage==="entry"){
-          UiController.setMode({
-            type:"spell",spellId:"tunnel",stage:"exit",
-            entryX:a.x,entryY:a.y,entryView:{x:vx,y:vy}
-          });
-          LogUtil.log("⛏ 땅굴 출구를 지정하세요. 입구보다 최소 220 이상 떨어져야 합니다.");
-          return;
-        }
-        if(Math.hypot(a.x-UiRuntimeState.value.target.entryX,a.y-UiRuntimeState.value.target.entryY)<220){
-          LogUtil.log("⚠ 땅굴 출구가 입구와 너무 가깝습니다.");
-          return;
-        }
-        ActiveViewState.renderer?.predictSpellCast("tunnel",{entryX:UiRuntimeState.value.target.entryX,entryY:UiRuntimeState.value.target.entryY,exitX:a.x,exitY:a.y});
-        sess.command({
-          type:"CAST_SPELL",spellId:"tunnel",
-          entryX:UiRuntimeState.value.target.entryX,entryY:UiRuntimeState.value.target.entryY,exitX:a.x,exitY:a.y
-        });
-        {const st=sess.sim.spellStats(ConnectionSideUtil.roleSide(ActiveViewState.role),"tunnel");LogUtil.log(`⛏ 땅굴 굴착 시작 · ${Math.ceil((st?.buildTime||0)/SimulationTiming.tps())}초 후 단방향 통로 활성화`)}
-      }else{
-        ActiveViewState.renderer?.predictSpellCast(UiRuntimeState.value.target.spellId,{x:a.x,y:a.y});
-        sess.command({type:"CAST_SPELL",spellId:UiRuntimeState.value.target.spellId,x:a.x,y:a.y});
-        LogUtil.log(`${d.icon} ${d.name} 시전 명령 접수`);
-      }
-      if(ActiveViewState.renderer)ActiveViewState.renderer.spellPreview=null;
-      UiController.setMode({type:"flag"});
-      return;
-    }
-
-    // 아군 건물을 탭/클릭한 경우 명령 지점이 아니라 "건물 선택"으로 처리한다.
-    // 특히 깃발 모드에서도 건물 위에는 절대 깃발을 꽂지 않는다.
-    const ownBuilding=BuildingPresentation.ownBuildingAt(a.x,a.y);
-    if(ownBuilding){
-      BuildingPresentation.selectBuilding(ownBuilding.id);
-      LogUtil.log(`▣ ${BuildingDefinition.get(ownBuilding.type)?.name||"건물"} 선택`);
-      return;
-    }
-
-    // 빈 전장을 누르면 기존 건물 선택은 해제하고 원래 명령을 수행한다.
-    if(UiRuntimeState.value.selection.buildingId)BuildingPresentation.selectBuilding(null);
-
-    if(!sess||!sess.sim){
-      LogUtil.log("⚠ 게임 시뮬레이션이 아직 준비되지 않았습니다.");
-      return;
-    }
-
-    if(UiRuntimeState.value.target.type==="flag"){
-      ActiveViewState.renderer?.predictFlag(a.x,a.y,false);
-      sess.command({type:"SET_FLAG",x:a.x,y:a.y,forced:false});
-      if(ActiveViewState.renderer)ActiveViewState.renderer.chargedSkillGesture=null;
-      if(navigator.vibrate)navigator.vibrate(18);
-      LogUtil.log("✓ 일반 집결 깃발 명령 접수");
-      return;
-    }
-
-    if(UiRuntimeState.value.target.type==="build"){
-      const action={type:"BUILD",building:UiRuntimeState.value.target.building,produceType:UiRuntimeState.value.target.produceType||null,x:a.x,y:a.y};
-      const err=BuildingPresentation.buildValidation(ActiveViewState.snap,ConnectionSideUtil.roleSide(ActiveViewState.role),action);
-      if(err){
-        LogUtil.log("⚠ "+err);
-        if(ActiveViewState.renderer)ActiveViewState.renderer.buildPreview={
-          x:vx,y:vy,building:UiRuntimeState.value.target.building,valid:false,error:err,
-          density:BuildingPresentation.previewBuildDensity(ConnectionSideUtil.roleSide(ActiveViewState.role),action)
-        };
-        return;
-      }
-
-      const density=BuildingPresentation.previewBuildDensity(ConnectionSideUtil.roleSide(ActiveViewState.role),action);
-      // Latency hiding: show the exact selected building immediately at 30% opacity.
-      // Resource spend / collision / construction progress remain authoritative.
-      ActiveViewState.renderer?.predictBuild(action);
-      sess.command(action);
-      if(BuildingDefinition.get(UiRuntimeState.value.target.building)?.isGasExtractor){
-        LogUtil.log(`✓ 가스 추출장 건설 명령 · ${BuildingDefinition.get(UiRuntimeState.value.target.building)?.cost||0} 미네랄 · 가스 지점 고정`);
-      }else if(density&&density.penalty>0){
-        LogUtil.log(`✓ 건설 접수 · 밀집 생산속도 ${density.speed}% (-${density.penalty}%)`);
-      }else{
-        LogUtil.log(`✓ ${BuildingDefinition.get(UiRuntimeState.value.target.building).name} 건설 명령 접수 · ${((MatchLifecycle.activeSession()?.netcodeSession?.inputDelay||0)/SimulationTiming.tps()).toFixed(2)}초 입력 지연`);
-      }
-
-      // 연속 건설 UX: 전장 안에서는 같은 건설 모드를 계속 유지한다.
-      // 전장 밖 UI를 선택하면 document capture 단계에서 즉시 건설 모드를 해제한다.
-      if(ActiveViewState.renderer)ActiveViewState.renderer.buildPreview=null;
-      // 연속 건설 종료 안내는 전장 하단 buildFinishBtn 하나로 통일.
-      LogUtil.log("↻ 같은 건물 연속 배치 모드 유지");
+    if(drag.launchTimer)clearTimeout(drag.launchTimer);
+    if(drag.launchHold&&ActiveViewState.renderer){
+      const [vx,vy]=ActiveViewState.renderer.pxToWorld(e.clientX,e.clientY);
+      LaunchPresentation.release(UiController.viewToAuth(vx,vy));
     }
   };
-  const battlefieldInput=RallyGamekit.createDOMInput({target:UiRegistry.refs.canvas,
+
+  RallyGamekit.createDOMInput({target:UiRegistry.refs.canvas,
     pointerButtons:{0:'battlefield'},touchAction:'none',
     onPointer:point=>{
       const event=point.originalEvent||point;
       // Points on a hidden battlefield cannot aim: a press there is ignored and a release cancels the hold.
       if(point.type!=='cancel'&&ActiveViewState.renderer&&!ActiveViewState.renderer.hasDisplayArea()){
-        if(point.type==='up')battlefieldPointerCancel(event);
+        if(point.type==='up')pointerCancel(event);
         return;
       }
-      if(point.type==='down')battlefieldPointerDown(event);
-      else if(point.type==='move')battlefieldPointerMove(event);
-      else{
-        try{if(point.type==='up')battlefieldPointerUp(event);else battlefieldPointerCancel(event)}
-        finally{if(ActiveViewState.drag?.id===point.pointerId){cancelChargedSkillHold(true);ActiveViewState.drag=null}}
-      }
-    },onRelease:()=>{cancelChargedSkillHold(true);ActiveViewState.drag=null;pointerInteractions.cancelActive()}
+      if(point.type==='down')pointerDown(event);
+      else if(point.type==='move')pointerMove(event);
+      else if(point.type==='up')pointerUp(event);
+      else pointerCancel(event);
+    },onRelease:()=>{cancelLaunchHold();ActiveViewState.drag=null}
   });
-
 }
 
-  static detailForUnit(id){
-  const d=UnitDefinition.get(id),info=UnitDefinition.cardInfo[id]||{},ability=ABILITY_INFO[id]||{};
-  if(!d)return null;
-  const rows=[
-    `T${d.tier} · ${d.layer||"GROUND"} · ${SIZE_CLASS_LABEL[d.sizeClass]||d.sizeClass||""}`,
-    `HP ${d.hp??"-"} · 공격 ${d.atk??"-"} · 사거리 ${d.range??"-"}`,
-    `대지 ${d.canAttackGround?"O":"X"} · 대공 ${d.canAttackAir?"O":"X"} · 보급 ${d.supply??0}`
-  ];
-  const researchDetails=[];
-  if(ability.name)researchDetails.push(`<b>${ability.name}</b> · ${DefinitionDetails.ability(id)}`);
-  for(const r of UnitSpecialResearchDefinition.forUnit(id))researchDetails.push(`<b>${r.name}</b> · ${DefinitionDetails.special(r)}`);
-  const body=[info.desc,DefinitionDetails.unit(id),...researchDetails].filter(Boolean).join("<br><br>");
-  return {title:d.name,icon:info.icon||"◆",kicker:"UNIT",body:body||"전투 유닛",meta:rows.join(" · ")};
-}
-  static unitRoleLabel(roleName){
-  const labels={
-    bruiser:"근접 전투",
-    pikeman:"대돌격",
-    ranged:"장거리",
-    skirmisher:"기동 사격",
-    guardian:"방어",
-    assassin:"암살",
-    caster:"광역 마법",
-    charger:"돌격",
-    support:"지원",
-    controller:"제어",
-    artillery:"포병"
-  };
-  return labels[roleName]||roleName||"-";
-}
-  static renderTacticalRewardCard(reward,books){
-  if(reward.type==="passive"){
-    const d=PassiveCardDefinition.get(reward.passiveId);
-    const from=Math.max(0,Number(reward.fromLevel)||0),to=Math.max(1,Number(reward.toLevel)||1);
-    const fromValue=from>0?d.values[from-1]:0,toValue=d.values[to-1];
-    const levelText=d.maxLevel===1?"고유 패시브":`Lv.${from} → Lv.${to}`;
-    const valueText=d.maxLevel===1?`${toValue}${d.suffix}`:`+${fromValue}${d.suffix} → +${toValue}${d.suffix}`;
-    return `<button type="button" class="spell-card ready tactical-reward-card tactical-passive" data-tactical-reward="${reward.id}"><div class="tactical-reward-kind">패시브</div><div class="spell-icon">${d.icon}</div><div class="spell-name">${d.name}</div><div class="spell-desc"><b>${levelText}</b> · ${d.desc}</div><div class="spell-stat-row"><span>${d.statLabel}</span><b>${valueText}</b></div><div class="spell-meta">${d.maxLevel===1?"재획득 없음":"같은 카드 재획득 시 강화"} · 상시 발동</div></button>`;
-  }
-  if(reward.type==="economy"){
-    return `<button type="button" class="spell-card ready tactical-reward-card tactical-economy" data-tactical-reward="${reward.id}"><div class="tactical-reward-kind">경제</div><div class="spell-icon">${reward.icon||"📦"}</div><div class="spell-name">${reward.name}</div><div class="spell-desc">${reward.desc||"즉시 자원 획득"}</div><div class="spell-meta">선택 즉시 상자 1개 소비</div></button>`;
-  }
-  const id=reward.spellId,d=SpellDefinition.get(id),e=books[id]||{mastery:0,unlocked:false};
-  if(reward.type==="spell-upgrade"){
-    const from=SpellDefinition.masteryLevel(e.mastery||0),to=Math.min(SPELL_MASTERY_MAX+1,from+1);
-    return `<button type="button" class="spell-card ready tactical-reward-card tactical-spell" data-tactical-reward="${reward.id}"><div class="tactical-reward-kind">스펠</div><div class="spell-icon">${d.icon}</div><div class="spell-name">${d.name} 숙련 강화</div><div class="spell-desc"><b>Lv.${from} → Lv.${to}</b></div>${SpellPresentation.formatSpellUpgradeRows(SpellDefinition.upgradeRows(id,e.mastery||0))}<div class="spell-meta">현재 남은 쿨다운도 30초 단축</div></button>`;
-  }
-  const reEquip=reward.type==="spell-equip";
-  return `<button type="button" class="spell-card ready tactical-reward-card tactical-spell" data-tactical-reward="${reward.id}"><div class="tactical-reward-kind">스펠</div><div class="spell-icon">${d.icon}</div><div class="spell-name">${d.name}</div><div class="spell-desc">${reEquip?`보유 스펠 재장착 · Lv.${SpellDefinition.masteryLevel(e.mastery||0)}`:`신규 스펠 · Lv.1`}</div>${SpellPresentation.formatSpellRows(SpellDefinition.statRows(id,e.mastery||0))}<div class="spell-meta">3슬롯이 가득 찼으면 빼기 선택</div></button>`;
-}
-  static renderPassiveStatus(state){
-  if(!state||!ActiveViewState.role)return;
-  const side=ConnectionSideUtil.roleSide(ActiveViewState.role),owned=state.passiveCards?.[side]||{};
-  const entries=PassiveCardDefinition.ids
-    .map(id=>({id,level:Math.max(0,Number(owned[id])||0),def:PassiveCardDefinition.get(id)}))
-    .filter(x=>x.level>0);
-
-  const levelText=(d,lv)=>d.maxLevel===1?"적용 중":`Lv.${lv}/${d.maxLevel}`;
-  const effectText=(d,lv)=>{
-    const value=Number(d.values?.[Math.min(lv,d.values.length)-1])||0;
-    if(d.formatKind==="blockedHits")return `피해 ${value}회 완전 무효`;
-    return `${d.statLabel} +${value}${d.suffix}`;
-  };
-  const html=entries.length
-    ? `<div class="passive-status-head"><b>상시 패시브</b><span>${entries.length}/${PassiveCardDefinition.ids.length}종 보유 · 슬롯 없음</span></div><div class="passive-status-grid">${entries.map(({def:d,level})=>`<div class="passive-status-card"><div class="passive-name"><span>${d.icon}</span><span>${d.name}</span><span class="passive-level">${levelText(d,level)}</span></div><div class="passive-effect">${effectText(d,level)}</div></div>`).join("")}</div>`
-    : `<div class="passive-status-head"><b>상시 패시브</b><span>0/${PassiveCardDefinition.ids.length}종</span></div><div class="passive-status-empty">아직 획득한 패시브 카드가 없습니다. 전술상자에서 획득하면 즉시 적용됩니다.</div>`;
-
-  if(UiRegistry.refs.passiveStatusHome&&UiRegistry.refs.passiveStatusHome.innerHTML!==html)UiRegistry.refs.passiveStatusHome.innerHTML=html;
-  if(UiRegistry.refs.passiveStatusChest&&UiRegistry.refs.passiveStatusChest.innerHTML!==html)UiRegistry.refs.passiveStatusChest.innerHTML=html;
-}
-  static renderTacticalChest(state){
-  if(!state||!ActiveViewState.role||!UiRegistry.refs.tacticalChestArea)return;
-  BattlePresentation.renderPassiveStatus(state);
-  const side=ConnectionSideUtil.roleSide(ActiveViewState.role),count=Number(state.spellChests?.[side])||0,offer=state.pendingChestOffers?.[side]||null,replacement=state.pendingSpellReplacement?.[side]||null;
-  BattlePresentation.updateTacticalChestBadge(state);
-  let html=`<div class="command-pane-copy"><b>📦 전술상자 ${count}개</b> · 상자는 최종 보상을 선택할 때만 1개 소비됩니다.</div>`;
-  if(count>0){
-    html+=`<button type="button" class="command-card command-card-wide" data-open-tactical-chest="1">📦<b>${offer||replacement?"전술상자 다시 열기":"전술상자 열기"}</b><small>${offer||replacement?"기존 보상 3택 그대로 · 취소 가능":"현재 유효 보상 중 랜덤 3개 · 취소 가능"}</small></button>`;
-  }else{
-    html+=`<div class="small">전술 오브젝트를 정리하면 상자를 획득합니다. 강제 팝업은 뜨지 않습니다.</div>`;
-  }
-  if(offer||replacement)html+=`<div class="spell-choice-inline-hint">선택 대기 중인 상자가 있습니다. 메뉴를 닫거나 팝업 바깥을 눌러도 후보와 상자 개수는 유지됩니다.</div>`;
-  if(UiRegistry.refs.tacticalChestArea.innerHTML!==html)UiRegistry.refs.tacticalChestArea.innerHTML=html;
-  SpellPresentation.renderSpellChoiceModal(state);
-}
-  static productionDeck(state,side){
-    const decks=state?.decks;
-    if(!Array.isArray(decks)||decks.length!==2||!decks.every(deck=>Array.isArray(deck)&&deck.every(id=>typeof id==="string"&&Object.hasOwn(UnitDefinition.all,id))))return null;
-    return decks[side]??null;
-  }
   static renderGame(s){
   // An already queued snapshot must never switch Result back to Game.
   if(UiRuntimeState.value.screen==="result")return;
   const side=ConnectionSideUtil.roleSide(ActiveViewState.role);
-  const liveSession=MatchLifecycle.activeSession();
-  const deck=BattlePresentation.productionDeck(s,side);
-  if(!liveSession?.sim||deck===null){
+  if(!MatchLifecycle.activeSession()?.sim){
     DiagnosticPresentation.presentFatalDiagnostic({
       kind:"RALLY_FRONTIER_PRESENTATION_CONTRACT_FATAL",
       build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),at:new Date().toISOString(),source:"BattlePresentation.renderGame",
       role:ActiveViewState.role,tick:Number(s?.tick)||0,
-      message:!liveSession?.sim
-        ?"Live snapshot reached game presentation without an active simulation."
-        :"Live snapshot reached game presentation without valid authoritative production decks."
+      message:"Live snapshot reached game presentation without an active simulation."
     });
     return;
   }
-
-  // BattlePresentation.renderGame() is also the recurring live-snapshot render path.
-  // Transient battle UI must be reset only when entering the game screen;
-  // otherwise every snapshot closes an open command drawer immediately.
-  const enteringGame=UiRuntimeState.value.screen!=="game";
   UiController.setUiScreen("game");
-  if(enteringGame){BattlePresentation.closeTransientBattleUi();CampaignPresentation.onGameEnter();}
-  if(MatchLifecycle.activeSession?.()?.sim?.campaignScenario)CampaignPresentation.consume(s);
   UiController.closeUiModal("create");UiController.closeUiModal("join");
-  
-  if(LocalEnvironmentUtil.isLocalTest())ViewRuntimeState.byRole[ActiveViewState.role].snapshot=s;
   ActiveViewState.snap=s;
-  
-  
-  
-  
   requestAnimationFrame(()=>ConnectionPresentation.positionP2PHealthNextToMenu());
 
   const rendererRoleChanged=!!ActiveViewState.renderer&&ActiveViewState.renderer.role!==ActiveViewState.role;
   if(!ActiveViewState.renderer){
     ActiveViewState.renderer=new GLRenderer(UiRegistry.refs.canvas);
-    ActiveViewState.renderer.role=ActiveViewState.role;
     LogUtil.log(`렌더러 ${ActiveViewState.renderer.backend} · 입력/UI ${STATE_PUBLISH_HZ}Hz · Render Target ${SimulationTiming.tps()}Hz · 시뮬 ${SimulationTiming.tps()}TPS · 렌더 rAF 60Hz+`);
     ActiveViewState.renderer.cameraLeft=0;
     ActiveViewState.renderer.cameraTop=(ActiveViewState.renderer?.world||WorldContext.standard).height-VIEW_H;
-  }else{
-    ActiveViewState.renderer.role=ActiveViewState.role;
   }
+  ActiveViewState.renderer.role=ActiveViewState.role;
   // Live gameplay owns its faction strictly from role. Replay-only fields must never
   // leak into host/guest colors, FoW ownership or minimap ownership.
-  if(UiRuntimeState.value.screen!=="replay"){
-    ActiveViewState.renderer.replayPerspectiveSide=null;
-    ActiveViewState.renderer.replayOrientationRole=null;
-    ActiveViewState.renderer.replayVisionMode=null;
-    ActiveViewState.renderer.replayObserverAll=false;
-  }
+  ActiveViewState.renderer.replayPerspectiveSide=null;
+  ActiveViewState.renderer.replayOrientationRole=null;
+  ActiveViewState.renderer.replayVisionMode=null;
+  ActiveViewState.renderer.replayObserverAll=false;
   if(!ActiveViewState.minimap)ActiveViewState.minimap=new MiniMap(UiRegistry.refs.minimapCanvas);
-
-  if(LocalEnvironmentUtil.isLocalTest()){
-    if(ViewRuntimeState.byRole[ActiveViewState.role].cameraLeft!=null)ActiveViewState.renderer.cameraLeft=ViewRuntimeState.byRole[ActiveViewState.role].cameraLeft;
-    if(ViewRuntimeState.byRole[ActiveViewState.role].cameraTop!=null)ActiveViewState.renderer.cameraTop=ViewRuntimeState.byRole[ActiveViewState.role].cameraTop;
-  }
   ActiveViewState.renderer.setSnapshot(s,{liveTargets:true,snapTargets:rendererRoleChanged});
-  ActiveViewState.renderer.selectedBuildingId=UiRuntimeState.value.selection.buildingId;
   ActiveViewState.minimap.set(ActiveViewState.renderer,s);
   ActiveViewState.minimap.draw();
   audioSystem.processSnapshot(s,ActiveViewState.renderer);
   LaunchPresentation.render(s,side);
-
-  const unlocked=deck.filter(t=>UnitDefinition.get(t)?.tier<=s.tech[side]);
-
-  // 생산 카드 선택은 UI selection state이며, 생산 가능 여부는 authoritative deck/tech 상태에서 계산한다.
-  if(!UiRuntimeState.value.selection.unit || !deck.includes(UiRuntimeState.value.selection.unit) || UnitDefinition.get(UiRuntimeState.value.selection.unit).tier>s.tech[side]){
-    UiRuntimeState.value.selection.unit=unlocked[0] || deck[0] || null;
-    if(LocalEnvironmentUtil.isLocalTest())ViewRuntimeState.byRole[ActiveViewState.role].selection.unit=UiRuntimeState.value.selection.unit;
-  }
-
-  const workers=s.units.filter(u=>u.alive&&u.side===side&&!!UnitDefinition.get(u.type)?.economyWorker).length;
-  const wallet=Math.floor(s.wallet[side]);
-  const gas=Math.floor(s.gasWallet?.[side]||0);
-  const liveSim=liveSession.sim;
-  const supplyUsed=liveSim.supplyUsed(side);
-  const supplyCap=liveSim.supplyCap(side);
-
-  const aggroEvent=[...(s.events||[])].reverse().find(e=>e.type==="neutralAggro");
-  if(aggroEvent)LogUtil.log("⚠ 중립 캠프가 공격자에게 반격합니다.");
-
-  const cancelEvent=[...(s.events||[])].reverse().find(e=>e.type==="buildCancelled"&&e.side===side);
-  if(cancelEvent)LogUtil.log(`↩ ${cancelEvent.wasComplete?"건물 철거":"건설 취소"} 완료 · +${cancelEvent.refund} 미네랄${cancelEvent.gasRefund?` · +${cancelEvent.gasRefund} 가스`:""} 환불`);
-
-  const exhaustedEvent=[...(s.events||[])].reverse().find(e=>e.type==="productionExhausted"&&e.side===side);
-  if(exhaustedEvent){
-    LogUtil.log(`🏚 ${UnitDefinition.get(exhaustedEvent.produceType)?.name||"병력"} 생산 완료 · 생산건물 소진 · +${exhaustedEvent.refund} 미네랄${exhaustedEvent.gasRefund?` · +${exhaustedEvent.gasRefund} 가스`:""} 환불`);
-  }
-
-    const researchEvent=[...(s.events||[])].reverse().find(e=>e.type==="researchComplete"&&e.side===side);
-  if(researchEvent){
-    LogUtil.log(researchEvent.research==="attack"
-      ? `⚔ 공격 강화 완료 · Lv.${researchEvent.level}`
-      : `🛡 방어 강화 완료 · Lv.${researchEvent.level}`);
-  }
-  const abilityEvent=[...(s.events||[])].reverse().find(e=>e.type==="abilityComplete"&&e.side===side);
-  if(abilityEvent){
-    LogUtil.log(`✦ ${UnitDefinition.get(abilityEvent.unit).name} 특수능력 해금 · ${ABILITY_INFO[abilityEvent.unit]?.name||"특수 전술"}`);
-  }
-  const specialResearchEvent=[...(s.events||[])].reverse().find(e=>e.type==="specialResearchComplete"&&e.side===side);
-  if(specialResearchEvent){
-    const rd=UnitSpecialResearchDefinition.get(specialResearchEvent.researchId);
-    LogUtil.log(`✦ ${UnitDefinition.get(specialResearchEvent.unit)?.name||"병종"} 특수 연구 완료 · ${rd?.name||specialResearchEvent.researchId}`);
-  }
-
-  const campEvent=[...(s.events||[])].reverse().find(e=>e.type==="campClear"&&e.side===side);
-  if(campEvent){
-    const name=CampDefinition.get(campEvent.camp)?.name||"중립 캠프";
-    LogUtil.log(`🐾 ${name} 정리 · 보너스 +${campEvent.bonus} 미네랄`);
-  }
-
-  const captureEvent=[...(s.events||[])].reverse().find(e=>e.type==="captureComplete"&&e.side===side);
-  if(captureEvent)LogUtil.log(`🏳 ${captureEvent.label||captureEvent.lane} 점령 완료 · 전진 거점 확보`);
-
-  const chestEvent=[...(s.events||[])].reverse().find(e=>e.type==="tacticalChestEarned"&&e.side===side);
-  if(chestEvent){
-    LogUtil.log(`📦 전술 오브젝트 확보 · 전술상자 +1 · 보유 ${chestEvent.count}`);
-    BattlePresentation.showTacticalChestFeedback(chestEvent,s.tick);
-  }
-  const masteryEvent=[...(s.events||[])].reverse().find(e=>e.type==="spellMasteryUp"&&e.side===side);
-  if(masteryEvent)LogUtil.log(`✦ ${SpellDefinition.get(masteryEvent.spell)?.name||"스펠"} Lv.${masteryEvent.fromLevel} → Lv.${masteryEvent.toLevel}`);
-  const equipEvent=[...(s.events||[])].reverse().find(e=>e.type==="spellEquipped"&&e.side===side);
-  if(equipEvent)LogUtil.log(`✦ ${SpellDefinition.get(equipEvent.spell)?.name||"스펠"} 장착${equipEvent.replaced?` · ${SpellDefinition.get(equipEvent.replaced)?.name||"스펠"} 빼기`:""}`);
-
-  UiRegistry.refs.minerals.textContent=wallet;
-  UiRegistry.refs.gas.textContent=gas;
-  UiRegistry.refs.workers.textContent=workers;
-  UiRegistry.refs.supply.textContent=supplyUsed+"/"+supplyCap;
-  const supplyBlocked=liveSim?liveSim.productionSupplyBlocked(side):false;
-  UiRegistry.refs.supplyChip.classList.toggle("supply-blocked",supplyBlocked);
-  UiRegistry.refs.supplyWarning.classList.toggle("hidden",!supplyBlocked);
-  UiRegistry.refs.tier.textContent="T"+s.tech[side];
-
-  // Persistent whole-army reinforcement overview. This survives individual
-  // production-building expiration so "why did this unit stop spawning?" is
-  // visible without selecting a building.
-  BattlePresentation.renderReinforcementOverview(s,liveSim,side,deck);
-  UiRegistry.refs.tech2.classList.toggle("locked",s.tech[side]<2);
-  UiRegistry.refs.tech3.classList.toggle("locked",s.tech[side]<3);
-  UiRegistry.refs.attackUpgradeTag.textContent=`Lv.${liveSim?.attackUpgrade[side]||0}`;
-  UiRegistry.refs.armorUpgradeTag.textContent=`Lv.${liveSim?.armorUpgrade[side]||0}`;
-  if(UiRegistry.refs.pauseBtn){
-    UiRegistry.refs.pauseBtn.innerHTML=s.productionPaused[side]
-      ?`▶<b>생산 재개</b><small>눌러서 전체 재개</small>`
-      :`⏸<b>생산 정지</b><small>전체 일시정지</small>`;
-  }
-
-  // 드래프트한 각 병종이 곧 생산건물 버튼이다.
-  // 별도의 "병종 선택 → 배럭" 2단계를 없앤다.
-  // 생산건물 전체 밀집 효율 요약.
-  const prodBuildings=liveSim
-    ? liveSim.buildings.filter(b=>b.alive!==false&&b.complete&&b.side===side&&BuildingDefinition.get(b.type)?.isProductionBuilding)
-    : [];
-  const penalized=prodBuildings.filter(b=>liveSim.productionSpeedPct(b)<100);
-  if(penalized.length){
-    const worst=Math.min(...penalized.map(b=>liveSim.productionSpeedPct(b)));
-    UiRegistry.refs.productionEfficiencySummary.style.display="";
-    UiRegistry.refs.productionEfficiencySummary.style.background="#fff3ed";
-    UiRegistry.refs.productionEfficiencySummary.style.borderColor="#efb08e";
-    UiRegistry.refs.productionEfficiencySummary.style.color="#9c3e17";
-    UiRegistry.refs.productionEfficiencySummary.innerHTML=`⚠ 생산건물 ${penalized.length}개 밀집 패널티 · 최저 효율 <b>${worst}%</b>`;
-  }else{
-    UiRegistry.refs.productionEfficiencySummary.style.display=prodBuildings.length?"":"none";
-    if(prodBuildings.length){
-      UiRegistry.refs.productionEfficiencySummary.style.background="#edf8f0";
-      UiRegistry.refs.productionEfficiencySummary.style.borderColor="#b9ddc4";
-      UiRegistry.refs.productionEfficiencySummary.style.color="#247343";
-      UiRegistry.refs.productionEfficiencySummary.innerHTML=`✓ 생산건물 ${prodBuildings.length}개 · 밀집 패널티 없음 · <b>100%</b>`;
-    }
-  }
-
-  const tier=CommandPresentation.activeMilitaryTier();
-  const tierUnits=tier?deck.filter(t=>UnitDefinition.get(t)?.tier===tier):[];
-  const tierLocked=tier?s.tech[side]<tier:false;
-  const tierLabels={
-    1:"T1 · 기본 병종",
-    2:"T2 · 특수/정예 병종",
-    3:"T3 · 게임체인저"
-  };
-  if(UiRegistry.refs.militaryTierMeta){
-    UiRegistry.refs.militaryTierMeta.innerHTML=tier
-      ? `<b>${tierLabels[tier]}</b> · ${tierLocked?`🔒 T${tier} 해금 필요`:`${tierUnits.length}종 사용 가능`}`
-      : "";
-  }
-  const unitGridHtml=tier
-    ? tierUnits.map(t=>BuildingPresentation.productionCard(t,s)).join("")
-    : "";
-  // 동적 TPS 시뮬레이션 / 10Hz 스냅샷마다 버튼 DOM을 빼기하면 PC에서 mousedown/mouseup 사이에
-  // 요소가 바뀌어 클릭이 사라질 수 있다. 실제 내용이 달라질 때만 갱신한다.
-  if(unitGridHtml!==BattlePresentationCache.lastUnitGridHtml&&!UiController.interactivePointerHeldInside(UiRegistry.refs.unitGrid)){
-    UiRegistry.refs.unitGrid.innerHTML=unitGridHtml;
-    BattlePresentationCache.lastUnitGridHtml=unitGridHtml;
-  }
-
-  const supplyCost=BuildingDefinition.get(BuildingDefinition.forRole("supply")).cost;
-  const gasExtractorCost=BuildingDefinition.get(BuildingDefinition.forRole("gasExtractor")).cost;
-  const academyCost=BuildingDefinition.get(BuildingDefinition.forRole("academy")).cost;
-  const airIncubatorCost=BuildingDefinition.get(BuildingDefinition.forRole("airTech")).cost;
-  const airIncubatorGas=BuildingDefinition.gasCost(BuildingDefinition.forRole("airTech"));
-  const labCost=BuildingDefinition.get(BuildingDefinition.forRole("lab")).cost;
-
-  UiRegistry.refs.supplyBtn.disabled=wallet<supplyCost;
-  UiRegistry.refs.gasExtractorBtn.disabled=wallet<gasExtractorCost;
-  UiRegistry.refs.gasExtractorBtn.innerHTML=`⬡<b>가스 추출장</b><small>${gasExtractorCost} · 가스 지점</small>`;
-
-  const ownTechBuilding=type=>s.buildings.find(b=>b.alive!==false&&b.side===side&&b.type===type)||null;
-  const academyBuilding=ownTechBuilding("academy");
-  const airIncubatorBuilding=ownTechBuilding("airIncubator");
-  const labBuilding=ownTechBuilding("lab");
-
-  // Tech construction cards always show their actual cost/status and mirror the
-  // authoritative buildingAllowed() rules. Knowledge (tech level) survives a
-  // destroyed Academy/Lab, but a replacement building can and must be rebuilt.
-  UiRegistry.refs.academyBtn.disabled=!!BuildPrerequisitePolicy.buildingReason(s,side,"academy")||wallet<academyCost;
-  UiRegistry.refs.academyBtn.innerHTML=academyBuilding
-    ? `Ⅱ<b>아카데미</b><small>${academyCost} · ${academyBuilding.complete?"T2 인프라 가동 중 ✓":"건설 중"}</small>`
-    : `Ⅱ<b>아카데미</b><small>${academyCost} · ${s.tech[side]>=2?"T2 인프라 재건":"T2 인프라"}</small>`;
-
-  if(UiRegistry.refs.airIncubatorBtn){
-    UiRegistry.refs.airIncubatorBtn.disabled=!!BuildPrerequisitePolicy.buildingReason(s,side,"airIncubator")||wallet<airIncubatorCost||gas<airIncubatorGas;
-    UiRegistry.refs.airIncubatorBtn.innerHTML=airIncubatorBuilding
-      ? `☁<b>공중 배양소</b><small>${airIncubatorCost} + ⬡${airIncubatorGas} · ${airIncubatorBuilding.complete?"AIR 가동 중 ✓":"건설 중"}</small>`
-      : `☁<b>공중 배양소</b><small>${airIncubatorCost} + ⬡${airIncubatorGas} · AIR 해금</small>`;
-  }
-
-  const labLockReason=BuildPrerequisitePolicy.buildingReason(s,side,"lab");
-  const labTechLocked=!!labLockReason;
-  UiRegistry.refs.labBtn.disabled=!!labBuilding||labTechLocked||wallet<labCost;
-  UiRegistry.refs.labBtn.innerHTML=labBuilding
-    ? `Ⅲ<b>첨단 전술 연구소</b><small>${labCost} · ${labBuilding.complete?"T3 인프라 가동 중 ✓":"건설 중"}</small>`
-    : `Ⅲ<b>첨단 전술 연구소</b><small>${labCost} · ${labTechLocked?`🔒 ${labLockReason}`:s.tech[side]>=3?"T3 인프라 재건":"T3 인프라"}</small>`;
-
-  if(UiRuntimeState.value.target.type==="build"){
-    const target=UiRuntimeState.value.target;
-    if(BuildPrerequisitePolicy.buildingReason(s,side,target.building,target.produceType))UiController.setMode({type:"flag"},{silent:true});
-  }
-  const defenseCards=DefenseCardDefinition.list(s.defenseCards?.[side]||liveSim?.defenseCards?.[side]);
-  if(UiRegistry.refs.defenseCardChoices){
-    const defenseHtml=!defenseCards.length
-      ? `<button class="command-card command-card-wide" disabled>✣<b>방어 카드</b><small>선택된 카드 없음</small></button>`
-      : defenseCards.map(cardId=>{
-          const card=DefenseCardDefinition.get(cardId),building=BuildingDefinition.get(card?.building),gasCost=card?BuildingDefinition.gasCost(card.building):0;
-          const mineralCost=building?.cost||0;
-          const mineralShortage=!!card&&wallet<mineralCost;
-          const gasShortage=!!card&&gas<gasCost;
-          const resourceShortage=mineralShortage||gasShortage;
-          const disabled=!card||resourceShortage;
-          const costText=`<span class="cost-part mineral${mineralShortage?" shortage":""}">◆ ${mineralCost}</span>${gasCost?`<span class="cost-sep">·</span><span class="cost-part gas${gasShortage?" shortage":""}">⬡ ${gasCost}</span>`:""}`;
-          return `<button class="unit-card production-card defense-production-card longpress-info-target ${resourceShortage?"resource-shortage":""}" data-defense-build="${card?.building||""}" ${disabled?"disabled":""}>
-            <div class="row"><span class="name"><span aria-hidden="true">${card?.icon||"✣"}</span> ${card?.name||"방어 카드"}</span></div>
-            <div class="building-name">방어 건물 · 사거리 ${building?.range||0}</div>
-            <span class="cost">${costText}</span>
-          </button>`;
-        }).join("");
-    if(defenseHtml!==BattlePresentationCache.lastDefenseCardChoicesHtml&&!UiController.interactivePointerHeldInside(UiRegistry.refs.defenseCardChoices)){
-      UiRegistry.refs.defenseCardChoices.innerHTML=defenseHtml;
-      BattlePresentationCache.lastDefenseCardChoicesHtml=defenseHtml;
-    }
-  }
-  UiRegistry.refs.supplyBtn.classList.toggle("danger",supplyBlocked);
-  UiRegistry.refs.supplyBtn.innerHTML=supplyBlocked
-    ? `⚠<b>보급소</b><small>${supplyCost} · +${BuildingDefinition.get(BuildingDefinition.forRole("supply")).supplyPlus} · 생산 재개</small>`
-    : `▣<b>보급소</b><small>${supplyCost} · +${BuildingDefinition.get(BuildingDefinition.forRole("supply")).supplyPlus} 보급</small>`;
-
-  // Build mode has one authoritative state (uiState.target). Whenever the drawer is open,
-  // mirror that state back to the matching card instead of forcibly clearing it.
-  BuildingPresentation.syncBuildPlacementSelectionUi();
-  CommandPresentation.syncCommandDock();
-  UiRegistry.refs.hint.classList.toggle("build-hint",UiRuntimeState.value.target.type==="build");
-
-  if(UiRuntimeState.value.target.type==="flag"){
-    const forced=!!ActiveViewState.snap?.flags?.[ConnectionSideUtil.roleSide(ActiveViewState.role)]?.forced;
-    UiRegistry.refs.hint.textContent=forced
-      ? `⚡ 강제 이동 깃발 활성 · 아군 전투 유닛은 교전을 무시하고 깃발로 이동합니다. 전장을 짧게 탭하면 일반 깃발로 전환됩니다.`
-      : `깃발로 주력 전선을 지휘하세요. 탭은 기존 자동전투 집결입니다. 0.25초 정지 홀드는 그때 원 안의 준비된 병력만 집결·충전합니다. 이후 드래그로 조준하고 놓으면 발사하며, 홀드 전 드래그는 맵을 이동합니다. 가까운 포인터보다 멀리 발사하지 않습니다.`;
-  }else if(UiRuntimeState.value.target.type==="spell"){
-    const d=SpellDefinition.get(UiRuntimeState.value.target.spellId);
-    UiRegistry.refs.hint.innerHTML=`${d?.icon||"✦"} <b>${d?.name||"스펠"}</b> · ${UiRuntimeState.value.target.spellId==="tunnel"?(UiRuntimeState.value.target.stage==="entry"?"입구는 실제 시야 안에서 지정":"출구는 시야 경계 밖 추가 범위까지 지정 가능"):"현재 시야 + 추가 투사 범위 안을 탭"}`;
-  }else{
-    const bd=BuildingDefinition.get(UiRuntimeState.value.target.building);
-    const label=UiRuntimeState.value.target.produceType
-      ? `${UnitDefinition.get(UiRuntimeState.value.target.produceType).name} ${BuildingDefinition.get(UiRuntimeState.value.target.building)?.productionLabel||BuildingDefinition.get(UiRuntimeState.value.target.building)?.name||"생산시설"}`
-      : (bd?.name||"건물");
-    const density=ActiveViewState.renderer?.buildPreview?.density;
-    const densityText=density
-      ? (density.penalty>0
-          ? ` · 주변 ${density.kind==="defense"?"방어":"생산"}건물 ${density.near} · ${density.kind==="defense"?"발사":"생산"} ${density.speed}%`
-          : ` · ${density.kind==="defense"?"발사":"생산"} 100%`)
-      : "";
-    const defenseText=BuildingDefinition.isDefenseTower(UiRuntimeState.value.target.building)
-      ? `<br><b>방어 포탑:</b> 개수/거점 제한 없음 · ${DEFENSE_CLUSTER_RADIUS} 이내 밀집 시 발사효율 ${PRODUCTION_CLUSTER_SPEED_PCT.join("→")}%`
-      : "";
-    const singletonTech=!!BuildingDefinition.get(UiRuntimeState.value.target.building)?.singleton;
-    const buildModeText=singletonTech
-      ? `<br><b>단일 테크 건설:</b> 같은 테크 건물은 하나만 유지할 수 있습니다. 파괴 후에는 재건할 수 있습니다.`
-      : `<br><b>연속 건설:</b> 배치 후에도 같은 건설 모드 유지 · <b>화면 하단 「건설 마침」 터치로 종료</b>`;
-    UiRegistry.refs.hint.innerHTML=`<span class="build-preview-label">🏗️ <b>${label}</b></span>${densityText}${buildModeText}<br>현재 확보한 시야 안에 건설 · 생산건물은 ${PRODUCTION_CLUSTER_RADIUS} 이내 밀집 시 생산속도가 ${PRODUCTION_CLUSTER_SPEED_PCT.join("→")}%로 느려집니다.${defenseText}`;
-  }
-  SpellPresentation.renderSpellPanel(s);
-  if(UiRuntimeState.value.command.page==="tactics-chest")BattlePresentation.renderTacticalChest(s);
-  if(UiRuntimeState.value.command.page==="research-upgrade"||UiRuntimeState.value.command.page==="research-ability")ResearchPresentation.renderResearchCommandPanels(s);
-  BuildingPresentation.renderSelectedBuildingPanel(s);
-  CommandPresentation.syncCommandDock();
-}
-  static longPressDetailFor(el){
-  if(!el)return null;
-  if(el.dataset.detailTitle){return {title:el.dataset.detailTitle,icon:el.dataset.detailIcon||"◆",kicker:el.dataset.detailKicker||"DETAIL",body:el.dataset.detailBody||"",meta:el.dataset.detailMeta||""};}
-  const cardType=el.dataset.deckCardType,cardId=el.dataset.deckCardId;
-  if(cardType==="unit"&&cardId)return BattlePresentation.detailForUnit(cardId);
-  if(cardType==="defense"&&cardId){const c=DefenseCardDefinition.get(cardId);return BuildingPresentation.detailForDefenseBuilding(c?.building);}
-  if(el.dataset.produceUnit)return BattlePresentation.detailForUnit(el.dataset.produceUnit);
-  if(el.dataset.defenseBuild)return BuildingPresentation.detailForDefenseBuilding(el.dataset.defenseBuild);
-  const id=el.id||"";
-  const buildingMap={supplyBtn:"supply",gasExtractorBtn:"gasExtractor",academyBtn:"academy",airIncubatorBtn:"airIncubator",labBtn:"lab"};
-  if(buildingMap[id])return BuildingPresentation.detailForBuilding(buildingMap[id]);
-  const title=el.querySelector("b,.name,.research-title,.spell-name")?.textContent?.trim()||el.textContent?.trim().slice(0,40)||"상세 정보";
-  const visibleMeta=el.querySelector("small,.meta,.research-meta,.spell-meta")?.textContent?.trim()||"";
-  return {title,icon:(el.textContent||"◆").trim().slice(0,2),kicker:"DETAIL",body:visibleMeta||"꾹 눌러 상세 정보를 확인합니다.",meta:""};
-}
-  static showInfoDetail(detail){
-  if(!detail||!UiRegistry.refs.infoDetailDialog)return;
-  UiRegistry.refs.infoDetailIcon.textContent=detail.icon||"◆";
-  UiRegistry.refs.infoDetailTitle.textContent=detail.title||"상세 정보";
-  UiRegistry.refs.infoDetailKicker.textContent=detail.kicker||"DETAIL";
-  UiRegistry.refs.infoDetailBody.innerHTML=detail.body||"";
-  UiRegistry.refs.infoDetailMeta.textContent=detail.meta||"";
-  UiRegistry.refs.infoDetailMeta.classList.toggle("hidden",!detail.meta);
-  UiController.openUiModal("detail");
-}
-  static installLongPressDetails(){
-  // Generic detail-capable controls keep delegated click semantics.
-  pointerInteractions.register({
-    selector:".longpress-info-target,.command-card:not(.command-card-info),.unit-card,.research-action,#buildingPanelActions button",
-    key:el=>UiController.interactionActionKeyFromElement(el),
-    detail:el=>BattlePresentation.longPressDetailFor(el)
-  });
-
-}
-  static closeInfoDetail(){UiController.closeUiModal("detail")}
-  static updateTacticalChestBadge(state){
-  if(!state||!ActiveViewState.role||!UiRegistry.refs.tacticsChestBtn)return;
-  const side=ConnectionSideUtil.roleSide(ActiveViewState.role),count=Number(state.spellChests?.[side])||0;
-  const passiveCount=PassiveCardDefinition.ids.filter(id=>(Number(state.passiveCards?.[side]?.[id])||0)>0).length;
-  const waiting=!!state.pendingChestOffers?.[side]||!!state.pendingSpellReplacement?.[side];
-  const meta=UiRegistry.refs.tacticsChestBtn.querySelector("small");
-  if(meta)meta.textContent=waiting?`📦 ${count} · 패시브 ${passiveCount}종 · 선택 대기`:`📦 ${count} · 패시브 ${passiveCount}종`;
-  UiRegistry.refs.tacticsChestBtn.classList.toggle("chest-ready",count>0);
-}
-  static showTacticalChestFeedback(event,tick){
-  if(!event||!UiRegistry.refs.tacticalChestFeedback)return;
-  const key=`${ActiveViewState.role}|${event.source||""}|${event.count||0}|${tick||0}`;
-  if(key===BattlePresentationCache.lastTacticalChestFeedbackKey)return;
-  BattlePresentationCache.lastTacticalChestFeedbackKey=key;
-  if(BattlePresentationCache.tacticalChestFeedbackTimer)clearTimeout(BattlePresentationCache.tacticalChestFeedbackTimer);
-  UiRegistry.refs.tacticalChestFeedbackText.textContent=`보유 ${event.count||0}개 · 전술 메뉴에서 원하는 순간 열 수 있습니다.`;
-  UiRegistry.refs.tacticalChestFeedback.classList.remove("hidden","pop");
-  void UiRegistry.refs.tacticalChestFeedback.offsetWidth;
-  UiRegistry.refs.tacticalChestFeedback.classList.add("pop");
-  UiRegistry.refs.tacticsChestBtn?.classList.remove("chest-earned-pulse");
-  void UiRegistry.refs.tacticsChestBtn?.offsetWidth;
-  UiRegistry.refs.tacticsChestBtn?.classList.add("chest-earned-pulse");
-  try{if(document.visibilityState==="visible"&&navigator.vibrate)navigator.vibrate([35,35,70])}catch(_){ }
-  BattlePresentationCache.tacticalChestFeedbackTimer=setTimeout(()=>{
-    UiRegistry.refs.tacticalChestFeedback?.classList.add("hidden");
-    UiRegistry.refs.tacticalChestFeedback?.classList.remove("pop");
-  },1950);
-}
-  static closeTacticalChestModal({cancelReplacement=true}={}){
-  const state=ActiveViewState.snap,side=ActiveViewState.role?ConnectionSideUtil.roleSide(ActiveViewState.role):0,replacement=state?.pendingSpellReplacement?.[side];
-  if(cancelReplacement&&replacement){
-    const sess=MatchLifecycle.activeSession();
-    if(sess?.sim)sess.command({type:"CANCEL_SPELL_REPLACEMENT",offerId:replacement.offerId});
-  }
-  if(UiRuntimeState.value.modal==="spell-choice")UiController.closeUiModal("spell-choice");
-  SpellPresentation.setSpellChoicePhase("idle");
-}
-  static openTacticalChestModal(){
-  const state=ActiveViewState.snap,sess=MatchLifecycle.activeSession();
-  if(!state||!ActiveViewState.role||!sess?.sim)return;
-  const side=ConnectionSideUtil.roleSide(ActiveViewState.role),count=Number(state.spellChests?.[side])||0;
-  const offer=state.pendingChestOffers?.[side]||null;
-  if(!offer&&count<=0){LogUtil.log("📦 보유한 전술상자가 없습니다.");return}
-  UiController.openUiModal("spell-choice");
-  if(offer){
-    SpellPresentation.setSpellChoicePhase(state.pendingSpellReplacement?.[side]?"replacing":"choosing");
-    SpellPresentation.renderSpellChoiceModal(state);
-  }else{
-    SpellPresentation.setSpellChoicePhase("requesting");
-    SpellPresentation.renderSpellChoiceModal(state);
-    sess.command({type:"OPEN_TACTICAL_CHEST"});
-    LogUtil.log("📦 전술상자 개봉 · 최종 선택 전에는 차감되지 않습니다.");
-  }
-}
-  static closeTransientBattleUi(){
-  MinimapPresentation.setMinimapExpanded(false);
-  MatchLifecycle.closeMatchMenu();
-  if(UiRegistry.refs.infoDetailDialog?.open)BattlePresentation.closeInfoDetail();
-  UiController.setUiCommand({branch:"closed",page:null});
-  UiController.renderUiState();
-}
-  static renderReinforcementOverview(state,liveSim,side,deck){
-  if(!UiRegistry.refs.reinforcementGrid)return;
-
-  const rows=BattlePresentation.reinforcementOverviewModel(state,liveSim,side,deck);
-  const html=rows.map(r=>`<div class="reinforcement-card ${r.statusClass}" title="${r.name} · ${r.status}">
-    <span class="reinforcement-icon" aria-hidden="true">${r.icon}</span>
-    <span class="reinforcement-name">${r.name}</span>
-    <span class="reinforcement-numbers"><b>${r.field}</b> / ${r.remaining}</span>
-    <span class="reinforcement-mini-status">${r.miniStatus}</span>
-  </div>`).join("");
-
-  if(html!==BattlePresentationCache.lastReinforcementOverviewHtml){
-    UiRegistry.refs.reinforcementGrid.innerHTML=html;
-    BattlePresentationCache.lastReinforcementOverviewHtml=html;
-  }
-}
-  static reinforcementOverviewModel(state,liveSim,side,deck){
-  const buildings=liveSim?.buildings||state.buildings||[];
-  const units=liveSim?.units||state.units||[];
-  const paused=!!(liveSim?.productionPaused?.[side]??state.productionPaused?.[side]);
-
-  return deck.map(type=>{
-    const d=UnitDefinition.get(type);
-    const all=buildings.filter(b=>
-      b.side===side&&
-      b.produceType===type&&
-      BuildingDefinition.get(b.type)?.isProductionBuilding
-    );
-
-    const alive=all.filter(b=>b.alive!==false);
-    const constructing=alive.filter(b=>!b.complete);
-    const active=alive.filter(b=>b.complete);
-    const expired=all.filter(b=>
-      b.alive===false&&
-      (Number(b.productionTotal)||0)>0&&
-      (Number(b.productionRemaining)||0)<=0
-    );
-
-    const field=units.filter(u=>
-      u.alive&&u.side===side&&u.type===type
-    ).length;
-
-    const remaining=alive.reduce(
-      (sum,b)=>sum+Math.max(0,Number(b.productionRemaining)||0),0
-    );
-
-    let producing=0;
-    let nextSec=Infinity;
-    let spawnWaiting=false;
-
-    for(const b of active){
-      const q=b.queue?.[0]?.productionBatch?b.queue[0]:null;
-      if(!q)continue;
-
-      producing+=Math.max(0,Number(q.count)||0);
-
-      if((Number(q.remaining)||0)<=0){
-        spawnWaiting=true;
-        nextSec=0;
-        continue;
-      }
-
-      const speed=Math.max(1,Number(liveSim?.productionSpeedPct?.(b))||100);
-      nextSec=Math.min(
-        nextSec,
-        Math.max(1,Math.ceil((Number(q.remaining)||0)/speed/SimulationTiming.tps()))
-      );
-    }
-
-    let supplyWaiting=false;
-    if(liveSim&&!paused){
-      supplyWaiting=active.some(b=>{
-        if(b.queue?.length||(Number(b.productionRemaining)||0)<=0)return false;
-        const count=liveSim.reservableProductionBatchSize?.(b.side,b)??0;
-        return (Number(b.productionRemaining)||0)>0&&count<=0;
-      });
-    }
-
-    const buildPct=constructing.length
-      ?Math.max(...constructing.map(b=>{
-          const bd=BuildingDefinition.get(b.type);
-          return Math.max(0,Math.min(100,Math.floor(
-            (Number(b.progress)||0)/Math.max(1,SimulationTiming.msToTicks(bd?.buildTimeMs,SimulationTiming.tps()))*100
-          )));
-        }))
-      :0;
-
-    const locked=d.tier>(state.tech?.[side]||1);
-    let status="미건설";
-    let statusClass="unbuilt";
-
-    if(paused&&active.length){
-      status="생산 일시정지";
-      statusClass="paused";
-    }else if(spawnWaiting){
-      status="출격 공간 대기";
-      statusClass="waiting";
-    }else if(producing>0){
-      status=Number.isFinite(nextSec)?`생산중 · ${nextSec}초`:"생산중";
-      statusClass="producing";
-    }else if(supplyWaiting){
-      status="보급 대기";
-      statusClass="waiting";
-    }else if(active.length){
-      status=`시설 ${active.length} · 다음 생산`;
-      statusClass="producing";
-    }else if(constructing.length){
-      status=`건설중 · ${buildPct}%`;
-      statusClass="constructing";
-    }else if(expired.length){
-      status="소진 · 새 배럭 필요";
-      statusClass="expired";
-    }else if(locked){
-      status=`T${d.tier} 잠김`;
-      statusClass="locked";
-    }
-
-    let miniStatus="-";
-    if(paused&&active.length){
-      miniStatus="정지";
-    }else if(spawnWaiting){
-      miniStatus="출격";
-    }else if(producing>0){
-      miniStatus=Number.isFinite(nextSec)
-        ?`+${producing}·${nextSec}s`
-        :`+${producing}`;
-    }else if(supplyWaiting){
-      miniStatus="보급";
-    }else if(active.length){
-      miniStatus="대기";
-    }else if(constructing.length){
-      miniStatus=`${buildPct}%`;
-    }else if(expired.length){
-      miniStatus="소진";
-    }else if(locked){
-      miniStatus=`T${d.tier}`;
-    }
-
-    return {
-      type,name:d.name,icon:(UnitDefinition.cardInfo[type]||{icon:"◆"}).icon,
-      field,producing,remaining,
-      activeBuildings:active.length,
-      constructing:constructing.length,
-      expired:expired.length,
-      status,statusClass,miniStatus
-    };
-  });
 }
 }
 
-const POINTER_INTERACTION_HOLD_MS=450;
-const POINTER_INTERACTION_MOVE_CANCEL_PX=16;
 
-class PointerInteractionController{
-  constructor(){
-    this.bindings=[];
-    this.active=null;
-    this.suppressKey=null;
-    this.suppressElement=null;
-    this.suppressUntil=0;
-    this.installed=false;
-  }
-  register(binding){
-    if(binding?.selector)this.bindings.push(binding);
-  }
-  bindingForTarget(target){
-    for(let i=this.bindings.length-1;i>=0;i--){
-      const binding=this.bindings[i],el=target?.closest?.(binding.selector);
-      if(el)return {binding,el};
-    }
-    return null;
-  }
-  actionKey(binding,el){
-    return binding.key?.(el)||UiController.interactionActionKeyFromElement(el)||null;
-  }
-  clearActive(){
-    if(this.active?.timer)clearTimeout(this.active.timer);
-    this.active=null;
-  }
-  suppressActive(active){
-    if(!active)return;
-    this.suppressKey=active.key;this.suppressElement=active.el;
-    this.suppressUntil=performance.now()+900;
-  }
-  cancelActive(){this.suppressActive(this.active);this.clearActive()}
-  install(){
-    if(this.installed)return;
-    this.installed=true;
 
-    document.addEventListener("pointerdown",e=>{
-      if(!e.isPrimary||(e.pointerType==="mouse"&&e.button!==0))return;
-      const hit=this.bindingForTarget(e.target);if(!hit)return;
-      this.cancelActive();
-      this.suppressKey=null;this.suppressElement=null;this.suppressUntil=0;
-      const {binding,el}=hit,key=this.actionKey(binding,el);
-      const active=this.active={
-        pointerId:e.pointerId,pointerType:e.pointerType||"",
-        startX:e.clientX,startY:e.clientY,binding,el,key,
-        cancelled:false,longPressed:false,timer:0
-      };
-      const allowLong=typeof binding.longPress==="function"?!!binding.longPress(el):binding.longPress!==false;
-      if(allowLong){
-        active.timer=setTimeout(()=>{
-          active.timer=0;
-          if(this.active!==active||active.cancelled||document.hidden||active.el.isConnected===false){if(this.active===active)this.cancelActive();return}
-          active.longPressed=true;
-          if(active.pointerType!=="mouse"&&navigator.vibrate)try{navigator.vibrate(18)}catch(_e){}
-          const detail=typeof binding.detail==="function"?binding.detail(active.el):BattlePresentation.longPressDetailFor(active.el);
-          if(detail)BattlePresentation.showInfoDetail(detail);
-          this.suppressActive(active);
-        },binding.holdMs||POINTER_INTERACTION_HOLD_MS);
-      }
-    },true);
-
-    document.addEventListener("pointermove",e=>{
-      const a=this.active;if(!a||e.pointerId!==a.pointerId)return;
-      const limit=a.binding.moveCancelPx||POINTER_INTERACTION_MOVE_CANCEL_PX;
-      if(Math.hypot(e.clientX-a.startX,e.clientY-a.startY)>limit){
-        a.cancelled=true;
-        if(a.timer)clearTimeout(a.timer);
-        a.timer=0;
-      }
-    },true);
-
-    document.addEventListener("pointerup",e=>{
-      const a=this.active;if(!a||e.pointerId!==a.pointerId)return;
-      if(a.timer)clearTimeout(a.timer);
-      a.timer=0;
-      if(a.cancelled||a.longPressed)this.suppressActive(a);
-      // Native click is the single activation event for normal controls.
-      // Pointer tracking here exists only for long-press detail and drag cancellation.
-      // Never synthesize el.click() from pointerup: W3C defines click as the
-      // device-independent activation event, and pointerup preventDefault does not
-      // guarantee suppressing click.
-      this.active=null;
-    },true);
-
-    document.addEventListener("pointercancel",e=>{if(this.active&&e.pointerId===this.active.pointerId)this.cancelActive()},true);
-    document.addEventListener("lostpointercapture",e=>{if(this.active&&e.pointerId===this.active.pointerId)this.cancelActive()},true);
-    document.addEventListener("contextmenu",e=>{
-      const hit=this.bindingForTarget(e.target);
-      if(hit&&this.active?.longPressed)e.preventDefault();
-    },true);
-    document.addEventListener("selectstart",e=>{
-      const hit=this.bindingForTarget(e.target);
-      if(hit&&this.active)e.preventDefault();
-    },true);
-
-    document.addEventListener("click",e=>{
-      const hit=this.bindingForTarget(e.target);if(!hit)return;
-      const {binding,el}=hit,key=this.actionKey(binding,el);
-      const suppressing=performance.now()<this.suppressUntil&&(el===this.suppressElement||!!this.suppressKey&&key===this.suppressKey)&&e.detail!==0;
-      if(suppressing){
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        this.suppressKey=null;this.suppressElement=null;
-        this.suppressUntil=0;
-        return;
-      }
-      // Registered tap bindings own activation through this single native-click path.
-      // This works for mouse, touch-generated click, and keyboard activation (detail === 0)
-      // without synthesizing a second click from pointerup.
-      if(typeof binding.tap==="function"&&!el.disabled){
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        binding.tap(el,e);
-      }
-    },true);
-  }
-}
-
-const pointerInteractions=new PointerInteractionController();
-
-class ResearchPresentation{
-  static researchAbilityTier=1;
-
-  
-  static globalResearchProgressHtml(q){
-  if(!q)return"";
-  const tick=ActiveViewState.snap?.tick||ActiveViewState.session?.sim?.tick||0,remaining=SimulationTiming.queueRemainingTicks(q,tick);
-  const pct=Math.max(0,Math.min(100,Math.floor((1-remaining/Math.max(1,q.total))*100)));
-  return `<div class="research-progress"><span style="width:${pct}%"></span></div><div class="research-meta">연구 중 · ${pct}% · 약 ${Math.ceil(remaining/SimulationTiming.tps())}초</div>`;
-}
-  static renderResearchCommandPanels(state){
-  if(!state||!ActiveViewState.role)return;
-  const side=ConnectionSideUtil.roleSide(ActiveViewState.role),wallet=state.wallet?.[side]||0,gasWallet=state.gasWallet?.[side]||0,tech=state.tech?.[side]||1;
-  const queues=state.researchQueues?.[side]||{attack:null,armor:null,ability:null};
-  const locked=tech<2;
-  if(UiRegistry.refs.researchUpgradeGrid){
-    const atk=state.attackUpgrade?.[side]||0,arm=state.armorUpgrade?.[side]||0;
-    const adef=ResearchDefinition.all.attack[atk],ddef=ResearchDefinition.all.armor[arm];
-    const combatResearchBusy=!!(queues.attack||queues.armor);
-    const card=(kind,lv,def,q,pct,title)=>{
-      if(lv>=3)return `<button class="research-action longpress-info-target done" data-detail-title="${HtmlAttributeUtil.escapeHtmlAttr(title+" 완료")}" data-detail-body="${HtmlAttributeUtil.escapeHtmlAttr(`최대 Lv.3 · 누적 ${pct*3}%`)}" data-detail-meta="완료 ✓" disabled><div class="research-title">${title} 완료</div><div class="research-meta">완료 ✓</div></button>`;
-      const gasCost=Math.max(0,Number(def?.gasCost)||0);
-      const blocked=locked||combatResearchBusy||wallet<(def?.cost||Infinity)||gasWallet<gasCost;
-      const busyOther=combatResearchBusy&&!q;
-      const detail=`${kind==="attack"?"전군 공격력":"전군 피해 감소"} ${kind==="attack"?"+":"-"}${pct}% · 누적 ${kind==="attack"?"+":"-"}${pct*(lv+1)}%`;const shortMeta=locked?"아카데미 필요":busyOther?"다른 연구 진행 중":`◆ ${def.cost} · ⬡ ${gasCost} · ${Math.ceil((def.timeMs??SimulationTiming.ticksToMs(def.time||0,SimulationTiming.tps()))/1000)}초`;return `<button class="research-action longpress-info-target ${q?"active":""}" data-global-research="${kind}" data-detail-title="${HtmlAttributeUtil.escapeHtmlAttr(title+` Lv.${lv+1}`)}" data-detail-body="${HtmlAttributeUtil.escapeHtmlAttr(detail)}" data-detail-meta="${HtmlAttributeUtil.escapeHtmlAttr(shortMeta)}" ${blocked?"disabled":""}><div class="research-title">${title} Lv.${lv+1}</div>${q?ResearchPresentation.globalResearchProgressHtml(q):`<div class="research-meta">${shortMeta}</div>`}</button>`;
-    };
-    const upgradeHtml=card("attack",atk,adef,queues.attack,ATTACK_UPGRADE_PCT_PER_LEVEL,"⚔ 공격 강화")+card("armor",arm,ddef,queues.armor,ARMOR_REDUCTION_PCT_PER_LEVEL,"⬢ 방어 강화");
-    if(upgradeHtml!==BattlePresentationCache.lastResearchUpgradeHtml&&!UiController.interactivePointerHeldInside(UiRegistry.refs.researchUpgradeGrid)){
-      UiRegistry.refs.researchUpgradeGrid.innerHTML=upgradeHtml;
-      BattlePresentationCache.lastResearchUpgradeHtml=upgradeHtml;
-    }
-  }
-  if(UiRegistry.refs.researchAbilityGrid){
-    const deck=BattlePresentation.productionDeck(state,side)?.filter(id=>UnitDefinition.get(id)?.tier===ResearchPresentation.researchAbilityTier&&UnitSpecialResearchDefinition.hasOptions(id));
-    if(!deck)return;
-    const q=queues.ability;
-    const cards=deck.flatMap(id=>{
-      const out=[];
-      if(ABILITY_INFO[id]){
-        const done=!!state.abilities?.[side]?.[id],active=q?.unit===id&&!q?.researchId,info=ABILITY_INFO[id]||{},def=ResearchDefinition.abilityForUnit(id);
-        const blocked=locked||done||q||wallet<def.cost||gasWallet<def.gasCost;
-        const title=`${UnitDefinition.get(id).name} · ${info.name||"특수 연구"}`,detail=DefinitionDetails.ability(id)||"병종 고유 능력을 강화합니다.",shortMeta=done?"해금 완료 ✓":locked?"아카데미 필요":`${def.label} · ◆ ${def.cost} · ⬡ ${def.gasCost} · ${Math.ceil((def.timeMs??SimulationTiming.ticksToMs(def.time||0,SimulationTiming.tps()))/1000)}초`;
-        out.push(`<button class="research-action longpress-info-target ${done?"done":active?"active":""}" data-global-research="ability" data-unit="${id}" data-detail-title="${HtmlAttributeUtil.escapeHtmlAttr(title)}" data-detail-body="${HtmlAttributeUtil.escapeHtmlAttr(detail)}" data-detail-meta="${HtmlAttributeUtil.escapeHtmlAttr(shortMeta)}" ${blocked?"disabled":""}><div class="research-title">${title}</div>${active?ResearchPresentation.globalResearchProgressHtml(q):`<div class="research-meta">${shortMeta}</div>`}</button>`);
-      }
-      for(const def of UnitSpecialResearchDefinition.forUnit(id)){
-        const done=!!state.specialResearch?.[side]?.[def.id],active=q?.researchId===def.id,prereq=ResearchDefinition.specialResearchPrereqMet(state,side,def);
-        const requiredType=BuildingDefinition.forRole(def.requiredBuildingRole),requirement=requiredType?`${BuildingDefinition.get(requiredType)?.name||"연구 건물"} 필요`:"테크 필요";
-        const blocked=done||q||!prereq||wallet<def.cost||gasWallet<def.gasCost;
-        const title=`${UnitDefinition.get(id).name} · ${def.name}`,shortMeta=done?"해금 완료 ✓":!prereq?requirement:`◆ ${def.cost} · ⬡ ${def.gasCost} · ${Math.ceil((def.timeMs??SimulationTiming.ticksToMs(def.time||0,SimulationTiming.tps()))/1000)}초`;
-        out.push(`<button class="research-action longpress-info-target ${done?"done":active?"active":""}" data-global-research="ability" data-unit="${id}" data-research-id="${def.id}" data-detail-title="${HtmlAttributeUtil.escapeHtmlAttr(title)}" data-detail-body="${HtmlAttributeUtil.escapeHtmlAttr(DefinitionDetails.special(def))}" data-detail-meta="${HtmlAttributeUtil.escapeHtmlAttr(shortMeta)}" ${blocked?"disabled":""}><div class="research-title">${title}</div>${active?ResearchPresentation.globalResearchProgressHtml(q):`<div class="research-meta">${shortMeta}</div>`}</button>`);
-      }
-      return out;
-    }).join("");
-    const abilityHtml=`<div class="command-pane-copy"><b>T${ResearchPresentation.researchAbilityTier} 특수 연구</b></div>${cards||'<div class="command-pane-copy">연구 가능한 병종 없음</div>'}`;
-    if(abilityHtml!==BattlePresentationCache.lastResearchAbilityHtml&&!UiController.interactivePointerHeldInside(UiRegistry.refs.researchAbilityGrid)){
-      UiRegistry.refs.researchAbilityGrid.innerHTML=abilityHtml;
-      BattlePresentationCache.lastResearchAbilityHtml=abilityHtml;
-    }
-  }
-}
-}
 
 const UI_MODAL_DIALOG_KEYS=Object.freeze({campaign:"campaignDialog",create:"createDialog",join:"joinDialog",detail:"infoDetailDialog"});
 
@@ -12957,57 +9921,6 @@ class SimulationTiming{
   
 }
 
-pointerInteractions.install();
-
-
-const renderCampaignLoadedMission=(m,source="preview")=>{UiRegistry.refs.campaignMissionTitle.textContent=m.title;UiRegistry.refs.campaignMissionBrief.textContent=m.briefing||m.missionId;UiRegistry.refs.campaignStatus.textContent=`${source==="builtin"?"내장":"Preview"} · 시작 생산 ${m.player.availableUnits.length}종 · 각 맵 독립 상태 · 현재 Definition 수치 사용`;UiRegistry.refs.campaignStartBtn.disabled=false};
-const loadCampaignSource=async(readSource,label="campaign.js",origin="preview")=>{
- CampaignRuntime.clear();
- const revision=CampaignRuntime.loadRevision;
- UiRegistry.refs.campaignStartBtn.disabled=true;
- UiRegistry.refs.campaignStatus.textContent="미션 JS 불러오는 중…";
- try{
-  const source=await readSource();
-  if(revision!==CampaignRuntime.loadRevision||UiRuntimeState.value.modal!=="campaign")return false;
-  const raw=CampaignModuleLoader.evaluate(source,label);
-  renderCampaignLoadedMission(CampaignRuntime.setMission(raw,source),origin);
-  return true;
- }catch(e){
-  if(revision!==CampaignRuntime.loadRevision||UiRuntimeState.value.modal!=="campaign")return false;
-  CampaignRuntime.clear();UiRegistry.refs.campaignStartBtn.disabled=true;
-  UiRegistry.refs.campaignStatus.textContent="미션 로드 실패 · "+(e?.message||e);
-  return false;
- }
-};
-const renderCampaignRepository=manifest=>{const host=UiRegistry.refs.campaignRepositoryList;if(!host)return;host.replaceChildren();for(const campaign of manifest.campaigns){const head=document.createElement("div");head.textContent=campaign.title;head.style.cssText="font-weight:900;font-size:13px;margin-top:4px";host.appendChild(head);for(const mission of campaign.missions){const b=document.createElement("button");b.type="button";b.className="dialog-action";b.textContent=mission.title;b.dataset.missionId=mission.id;b.onclick=()=>{CampaignRuntime.clear();UiRegistry.refs.campaignStartBtn.disabled=true;try{renderCampaignLoadedMission(CampaignRuntime.setMission(CloneUtil.clone(mission.mission)),"builtin")}catch(e){UiRegistry.refs.campaignStatus.textContent="미션 로드 실패 · "+(e?.message||e)}};host.appendChild(b)}}};
-const refreshCampaignRepository=async()=>{
- const revision=++CampaignRuntime.loadRevision;
- const loadedStatus=CampaignRuntime.pending?UiRegistry.refs.campaignStatus.textContent:null;
- UiRegistry.refs.campaignRepositoryList.replaceChildren();
- UiRegistry.refs.campaignStatus.textContent="정식 캠페인 불러오는 중…";
- try{
-  const manifest=await CampaignBuiltinCatalog.manifest();
-  if(revision!==CampaignRuntime.loadRevision||UiRuntimeState.value.modal!=="campaign")return false;
-  renderCampaignRepository(manifest);
-  if(CampaignRuntime.pending)UiRegistry.refs.campaignStatus.textContent=loadedStatus;
-  else UiRegistry.refs.campaignStatus.textContent=`정식 캠페인 ${manifest.campaigns.reduce((n,c)=>n+c.missions.length,0)}개 미션 · 각 미션 독립 실행`;
-  return true;
- }catch(e){
-  if(revision!==CampaignRuntime.loadRevision||UiRuntimeState.value.modal!=="campaign")return false;
-  UiRegistry.refs.campaignStatus.textContent="캠페인 목록 로드 실패 · "+(e?.message||e)+" · 새로고침으로 다시 시도하세요. HTTP(S)에서 실행해야 합니다.";
-  return false;
- }
-};
-// Opened by ?campaign=1 (src/ui/dev-query.js).
-const openCampaign=()=>{audioSystem.unlock();DebugScenarioHarness.pending=null;CampaignRuntime.clear();UiRegistry.refs.campaignStartBtn.disabled=true;UiRegistry.refs.campaignMissionTitle.textContent="캠페인";UiRegistry.refs.campaignMissionBrief.textContent="각 미션은 자원·병력·테크·생산 가능 병종을 자체 정의하며, 다른 미션의 게임 상태를 요구하지 않습니다. 파일/URL Preview는 개발용입니다.";UiController.openUiModal("campaign");refreshCampaignRepository()};
-UiRegistry.refs.campaignRefreshBtn.onclick=()=>refreshCampaignRepository();
-UiRegistry.refs.campaignCloseBtn.onclick=()=>UiController.closeUiModal("campaign");
-UiRegistry.refs.campaignLoadFileBtn.onclick=()=>UiRegistry.refs.campaignFileInput.click();
-UiRegistry.refs.campaignFileInput.onchange=async()=>{const f=UiRegistry.refs.campaignFileInput.files?.[0];if(!f)return;await loadCampaignSource(()=>f.text(),f.name);UiRegistry.refs.campaignFileInput.value="";};
-UiRegistry.refs.campaignLoadUrlBtn.onclick=()=>{const url=UiRegistry.refs.campaignUrlInput.value.trim();if(!url)return;return loadCampaignSource(async()=>{const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.text()},url)};
-UiRegistry.refs.campaignStartBtn.onclick=()=>{if(!CampaignRuntime.pending)return;audioSystem.unlock();UiController.closeUiModal("campaign");UiRegistry.refs.singleStatus.textContent=`캠페인 · ${CampaignRuntime.pending.title} 준비 중…`;UiController.setElementVisible(UiRegistry.refs.singleStatus,true);NetworkModuleLoader.pendingPeerAction=null;MatchLifecycle.startSinglePlayerWebRTC("host")};
-MobileBattleTestMode.bindUi();
-
 
 
 UiRegistry.refs.joinConfirm.addEventListener("click",e=>{
@@ -13054,246 +9967,6 @@ UiRegistry.refs.joinDialog.addEventListener("click",e=>{
   UiRegistry.refs.joinConfirm.textContent="참가하기";
   UiController.closeUiModal("join");
 });
-UiController.bindImmediateButton(UiRegistry.refs.localTest,MatchLifecycle.startLocalTest);
-UiController.bindImmediateButton(UiRegistry.refs.hostView,()=>UiController.switchTestView("host"));
-UiController.bindImmediateButton(UiRegistry.refs.guestView,()=>UiController.switchTestView("guest"));
-
-class DefinitionDetails{
- static n(v){return HelpPresentation.wikiStatNumber(v,2)}
- static unitFields=Object.freeze([
-  ["healRange","치유 사거리"],["healAmount","치유량"],["healCooldownMs","치유 간격","ms"],["healManaPerPacket","치유 마나 비용"],
-  ["guardChargeRadius","보호막 반경"],["guardPulseIntervalMs","보호막 주기","ms"],["guardTargetsPerPulse","펄스당 대상"],["guardManaCost","대상당 마나"],
-  ["summonMax","소환 한도"],["summonIntervalMs","소환 시도 주기","ms"],["summonManaCost","소환 마나"],["summonLifetimeMs","소환 수명","ms"],
-  ["hookRange","집게 사거리"],["hookCooldownMs","집게 재사용","ms"],["hookImpulseDistance","집게 끌기 거리"],
-  ["interceptRadius","요격 반경"],["interceptManaCost","요격 마나"],["carrierMax","공생충 한도"],["carrierRadius","공생충 작전 반경"],["carrierRespawnMs","공생충 재생 간격","ms"],["carrierRespawnManaCost","공생충 재생 마나"],
-  ["leapRange","도약 거리"],["leapCooldownMs","도약 재사용","ms"],["burrowRange","잠복 돌입 거리"],["burrowCooldownMs","잠복 재사용","ms"],
-  ["burrowAirborneMs","출현 에어본","ms"],["airborneMs","에어본","ms"],["detectRadius","Detection 반경"],
-  ["cloakAuraRadius","은폐 오라 반경"],["mobilityAuraRadius","기동 오라 반경"],["lineWidth","관통 폭"],["splash","광역 반경"]
- ]);
- static abilityFields=Object.freeze([
-  ["abilityGuardPulseIntervalPct","보호막 주기 배율","pct"],["hookAirborneMs","집게 에어본","ms"],
-  ["abilityFlatArmor","연구 후 고정 방어"],["abilityBurrowAirborneMs","연구 후 출현 에어본","ms"],
-  ["abilityRangeMultiplier","사거리 배율","mult"],["secondaryCount","추가 융기 수"],["secondaryDamageScale","추가 피해 배율","ratio"],["secondaryAirborneScale","추가 에어본 배율","ratio"],
-  ["abilityInterceptRadius","연구 후 요격 반경"],["abilityInterceptManaCost","연구 후 요격 마나"],
-  ["abilityAttackCooldownResetChance","공격 쿨다운 초기화 확률","ratio"],["abilityCarrierRespawnMs","연구 후 재생 간격","ms"],["abilityCarrierRespawnManaCostPct","재생 마나 비용 배율","pct"],
-  ["abilityTurnLimitedFlight.engageRadius","교전 비행 범위"],["abilityTurnLimitedFlight.speedPct","교전 비행 속도 배율","pct"],["abilityTurnLimitedFlight.orbitRadius","선회 반경"]
- ]);
- static fields(def,spec){return spec.flatMap(([path,label,unit])=>{const v=path.split('.').reduce((o,k)=>o?.[k],def);if(typeof v!=="number"||!Number.isFinite(v))return [];return [[label,unit==="ms"?`${this.n(v/1000)}초`:unit==="ratio"?`${this.n(v*100)}%`:unit==="pct"?`${this.n(v)}%`:unit==="mult"?`${this.n(v)}배`:this.n(v)]]})}
- static text(rows){return rows.map(([k,v])=>`${k} ${v}`).join(" · ")}
- static unit(type){return this.text(this.fields(UnitDefinition.get(type),this.unitFields))}
- static ability(type){
-  const d=UnitDefinition.get(type),a=ABILITY_INFO[type];if(!a)return "";
-  const rows=this.fields(d,this.abilityFields);
-  for(const v of d?.basicAttack?.variants||[])if(v.requires?.ability===type){
-   if(v.trigger?.type==="chance")rows.push(["발동 확률",`${this.n(v.trigger.chance*100)}%`]);
-   if(v.attack?.knockbackDistance!=null)rows.push(["넉백 거리",this.n(v.attack.knockbackDistance)]);
-  }
-  return [a.desc,this.text(rows)].filter(Boolean).join(" · ");
- }
- static special(def){
-  const e=def.effects||{},rows=[];
-  const labels={attackMultiplier:"공격력 배율",attackRangeMultiplier:"공격 사거리 배율",moveSpeedPct:"이동속도 배율",stationaryAttackSpeedPerStack:"중첩당 공격속도",stationaryAttackSpeedMaxStacks:"최대 중첩"};
-  for(const [k,label]of Object.entries(labels))if(e[k]!=null)rows.push([label,`${this.n(e[k])}${k.endsWith('Multiplier')?'배':k.endsWith('Pct')||k==='stationaryAttackSpeedPerStack'?'%':''}`]);
-  if(e.guardRetaliation)rows.push(...this.fields(UnitDefinition.get(def.unit),[["guardRetaliationManaCost","반격 마나"],["guardRetaliationDamage","반격 피해"],["guardRetaliationSplash","반격 반경"]]));
-  return [def.desc,this.text(rows)].filter(Boolean).join(" · ");
- }
- static requirement(def){const id=BuildingDefinition.forRole(def.requiredBuildingRole);return id?`${BuildingDefinition.get(id).name} 완공`:`T${def.requiredTech||2}`}
-}
-
-class HelpPresentation{
-  static wikiStatNumber(value,digits=1){
-  const n=Number(value);
-  if(!Number.isFinite(n))return "-";
-  const fixed=n.toFixed(digits);
-  return String(Number(fixed));
-}
-  static wikiBaseDps(d){
-  if(d?.continuous?.dps!=null)return Number(d.continuous.dps);
-  if(!d||(Number(d.atk)||0)<=0||d.selfDestruct)return null;
-  const cooldown=Math.max(.01,Number(d.cooldown)||0);
-  return (Number(d.atk)||0)/cooldown;
-}
-  static wikiDefenseSummary(d){
-  const parts=[];
-  const flat=Math.max(0,Number(d?.flatArmor)||0);
-  if(flat>0)parts.push(`고정 ${flat}`);
-  const ranged=Math.max(0,Math.min(100,Number(d?.rangedReduction)||100));
-  if(ranged<100)parts.push(`원거리 ${100-ranged}%↓`);
-  return parts.length?parts.join("<br>"):"0";
-}
-  static wikiAttackTargetSummary(d){
-  return `${d?.canAttackGround?"대지 O":"대지 X"}<br>${d?.canAttackAir?"대공 O":"대공 X"}`;
-}
-  static wikiBaseTraitSummary(id,d){
-  const parts=[];
-  if(d.selfDestruct)parts.push(`자폭 R${d.attackSplash||0}`);
-  else if((d.splash||0)>0)parts.push(`광역 R${d.splash}`);
-  if((d.chainBounces||0)>0)parts.push(`연쇄 ${d.chainBounces}회 · ${d.chainRange||0}`);
-  if((d.lineWidth||0)>0)parts.push(`직선 폭 ${d.lineWidth}`);
-  if(d.taunt)parts.push(`도발 R${d.tauntRadius||0}`);
-  if(d.stealth)parts.push("지속 은신");
-  if(d.usesMana)parts.push(`마나 ${UnitDefinition.manaMax(id)} · +${UnitDefinition.manaRegen(id)}/s`);
-  if(d.healAmount)parts.push(`치유 ${d.healAmount}/${HelpPresentation.wikiStatNumber((d.healCooldownMs||0)/1000,2)}s`);
-  if(d.guardChargeRadius)parts.push(`보호막 R${d.guardChargeRadius}`);
-  if(d.summonMax)parts.push(`소환 최대 ${d.summonMax}`);
-  if(d.hookRange)parts.push(`갈고리 ${d.hookRange}`);
-  if(d.meleeSplashRadius)parts.push(`근접광역 R${d.meleeSplashRadius}`);
-  if(d.spikeRadius)parts.push(`융기 R${d.spikeRadius}`);
-  if(d.burrowWhileMoving)parts.push("이동 중 잠복");
-  else if(d.burrowCapable)parts.push("잠복 돌입");
-  if(d.cloakAuraRadius)parts.push(`은폐오라 R${d.cloakAuraRadius}`);
-  if(d.mobilityAuraRadius)parts.push(`이속오라 R${d.mobilityAuraRadius}`);
-  if(d.carrierMax)parts.push(`공생충 ${d.carrierMax}기`);
-  if(d.detectRadius)parts.push(`Detection R${d.detectRadius}`);
-  return parts.length?parts.join("<br>"):(d.counter||"-");
-}
-  static renderHelpDynamicTables(){
-  HelpPresentation.renderRuleFacts();
-  if(UiRegistry.refs.helpUnitTable){
-    UiRegistry.refs.helpUnitTable.innerHTML=`
-      <div class="wiki-note"><b>밸런스 표 읽기:</b> 스타크래프트 계열 유닛 통계표처럼 HP·방어·공격·공격주기·DPS·사거리·시야·이동속도·보급·가격을 한 표에서 비교한다. <b>기본 DPS</b>는 공격력÷기본 공격주기의 원시 단일 대상 값이며 크기 상성·방어·광역/연쇄·특수능력·연구 효과는 포함하지 않는다. 자폭형은 지속 DPS 대신 1회 공격값으로 판단한다.</div>
-      <div class="wiki-note"><b>계약 합계:</b> 생산건물 하나를 끝까지 유지했을 때의 총 HP·기본 DPS·보급 합계다. 소환체와 연구 효과는 포함하지 않으므로 생산축 자체의 가성비를 비교하는 기준으로 사용한다.</div>
-      <div class="wiki-note"><b>자원 규칙:</b> 모든 미네랄/가스 비용은 25 단위다. 병종별 생산축 가격을 한 번 지불하면 정해진 총량을 batch 단위로 자동 생산하며, 배럭/공장 템플릿 가격은 중복 과금하지 않는다.</div>
-      <div class="wiki-note"><b>크기 상성:</b> 일반형이 기본값이다. ${Object.entries(DAMAGE_CLASS_MATRIX).map(([id,row])=>`${DAMAGE_CLASS_LABEL[id]} = ${Object.entries(row).map(([size,n])=>`${SIZE_CLASS_LABEL[size]} ${n}%`).join(" / ")}`).join(" · ")}. 예외 타입은 명확한 크기 카운터 의도가 있을 때만 지정하며, 범위형은 실제로 여러 대상을 타격하는 splash·chain·line·충격파 등에 사용된다.</div>
-      <div class="wiki-note"><b>특수 연구:</b> ${Object.values(ABILITY_RESEARCH_COSTS).map(d=>`${d.label} ◆${d.cost}/⬡${d.gasCost}`).join(" · ")}. 티어가 아니라 전투 영향도 기준이다.</div>
-      <table class="wiki-table">
-      <thead>
-        <tr>
-          <th>병종</th>
-          <th>T</th>
-          <th>레이어</th>
-          <th>크기</th>
-          <th>공격 유형</th>
-          <th>대상</th>
-          <th>HP</th>
-          <th>방어</th>
-          <th>공격</th>
-          <th>주기</th>
-          <th>기본 DPS</th>
-          <th>사거리</th>
-          <th>시야</th>
-          <th>이속</th>
-          <th>보급</th>
-          <th>생산축 비용</th>
-          <th>생산 계약</th>
-          <th>계약 합계</th>
-          <th>기본 특성</th>
-          <th>특수 연구</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${COMBAT_UNITS.map(id=>{
-          const d=UnitDefinition.get(id);
-          const pp=UnitDefinition.productionProfile(id);
-          const info=UnitDefinition.cardInfo[id]||{icon:"◆",desc:""};
-          const ability=ABILITY_INFO[id];
-          const extraResearch=UnitSpecialResearchDefinition.forUnit(id);
-          const cost=UnitDefinition.get(id)?.carrierSummon?null:UnitDefinition.productionCost(id);
-          const research=ability?ResearchDefinition.abilityForUnit(id):null;
-          const interval=pp?HelpPresentation.wikiStatNumber(pp.productionMs/1000,1):"-";
-          const baseDps=HelpPresentation.wikiBaseDps(d);
-          const contractHp=pp?Math.round((Number(d.hp)||0)*pp.totalUnits):0;
-          const contractDps=pp&&baseDps!=null?baseDps*pp.totalUnits:null;
-          const contractSupply=pp?Math.round((Number(d.supply)||0)*pp.totalUnits):0;
-          return `<tr>
-            <td><span class="wiki-unit-icon">${info.icon}</span><b>${d.name}</b><br><span class="small">${BattlePresentation.unitRoleLabel(d.role)}</span></td>
-            <td>T${d.tier}</td>
-            <td>${d.layer||"GROUND"}</td>
-            <td>${SIZE_CLASS_LABEL[d.sizeClass]||"대형"}</td>
-            <td>${DAMAGE_CLASS_LABEL[UnitDefinition.damageClass(id)]||"일반형"}</td>
-            <td>${HelpPresentation.wikiAttackTargetSummary(d)}</td>
-            <td>${d.hp}</td>
-            <td>${HelpPresentation.wikiDefenseSummary(d)}</td>
-            <td>${d.atk}</td>
-            <td>${(Number(d.atk)||0)>0?`${HelpPresentation.wikiStatNumber(d.cooldown,2)}초`:"-"}</td>
-            <td>${d.selfDestruct?`자폭 ${d.atk}`:(baseDps==null?"-":HelpPresentation.wikiStatNumber(baseDps,1))}</td>
-            <td>${d.range}</td>
-            <td>${d.sight}</td>
-            <td>${d.speed}</td>
-            <td>${d.supply||0}</td>
-            <td>${cost?`◆ ${cost.mineral}<br>⬡ ${cost.gas}`:"소환 전용"}</td>
-            <td>${pp?`총 ${pp.totalUnits}기<br>선호 ${pp.batchSize}기씩<br>${interval}초 간격`:"-"}</td>
-            <td>${pp?`HP ${contractHp}<br>DPS ${d.selfDestruct?"자폭":HelpPresentation.wikiStatNumber(contractDps,1)}<br>보급 ${contractSupply}`:"-"}</td>
-            <td>${HelpPresentation.wikiBaseTraitSummary(id,d)}<br>${DefinitionDetails.unit(id)}<br><span class="small">${info.desc||""}</span></td>
-            <td>${[
-              ability?`<b>${ability.name}</b><br><span class="small">${research.label} · ◆${research.cost}/⬡${research.gasCost}<br>${DefinitionDetails.ability(id)}</span>`:"",
-              ...extraResearch.map(r=>`<b>${r.name}</b><br><span class="small">${DefinitionDetails.requirement(r)} · ◆${r.cost}/⬡${r.gasCost}<br>${DefinitionDetails.special(r)}</span>`)
-            ].filter(Boolean).join("<br><br>")||"없음"}</td>
-          </tr>`;
-        }).join("")}
-      </tbody>
-    </table>`;
-  }
-
-  if(UiRegistry.refs.helpSpellTable){
-    UiRegistry.refs.helpSpellTable.innerHTML=`<table class="wiki-table">
-      <thead>
-        <tr>
-          <th>스펠</th>
-          <th>기본 쿨다운</th>
-          <th>효과</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${SpellDefinition.ids.map(id=>{
-          const d=SpellDefinition.get(id);
-          const s=SpellDefinition.statsAt(id,0);
-          const extra=SpellDefinition.statRows(id,0).map(([k,v])=>`${k} ${v}`).join(" · ");
-          return `<tr>
-            <td><span class="wiki-spell-icon">${d.icon}</span><b>${d.name}</b><br><span class="small">${d.category||"전술"}</span></td>
-            <td>${HelpPresentation.wikiStatNumber(s.cooldownMs/1000,2)}초</td>
-            <td>${d.desc}${extra?`<br><span class="small">Lv.1 · ${extra}</span>`:""}</td>
-          </tr>`;
-        }).join("")}
-      </tbody>
-    </table>`;
-  }
-}
-  static renderRuleFacts(){
-    const sim=MatchLifecycle.activeSession()?.sim,rules=sim?.rules||GameRuleDefinition.defaults,w=sim?.world||WorldContext.standard;
-    const esc=HtmlAttributeUtil.escapeHtmlAttr,n=HelpPresentation.wikiStatNumber;
-    const put=(id,html)=>{const el=document.getElementById(id);if(el)el.innerHTML=html};
-    const table=(headers,rows)=>`<table class="wiki-table"><thead><tr>${headers.map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${esc(String(c??'-'))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-    put('helpWorldFacts',`<b>${sim?'현재 전장':'기본 전장'}:</b> ${w.width} × ${w.height} · ${sim?.tps||SimulationTiming.tps()} TPS`);
-    put('helpEconomyFacts',`<b>${sim?'현재 경기':'기본 규칙'}:</b> 시작 ◆${rules.economy.startingResources.minerals} / ⬡${rules.economy.startingResources.gas} · 시작 일꾼 ${STARTING_WORKER_COUNT}기<br>일꾼 생산 ◆${WORKER_COST} · 보급 ${ECONOMY_WORKER_DEF.supply} · ${n(ECONOMY_WORKER_DEF.buildTimeMs/1000,2)}초<br>미네랄 운반량 ${WORKER_CARRY_CAP} · 가스 채취량 ${GAS_MINE_AMOUNT} / 고갈 후 ${GAS_DEPLETED_MINE_AMOUNT}`);
-    put('helpDeckFacts',`저장 슬롯 ${DECK_SLOT_COUNT}개 · 한 덱 ${DECK_TOTAL_CARD_COUNT}장 · 방어 카드 최대 ${DeckCardRuleDefinition.rules.defense.max}장`);
-    put('helpCaptureFacts',`점령 반경 ${CAPTURE_RADIUS} · 기본 점령시간 ${n(CAPTURE_DURATION_MS/1000)}초 · 획득한 메인 오브젝트 사망 후 재등장 ${n(MAIN_OBJECTIVE_RESPAWN_MS/1000)}초`);
-    put('helpSpellFacts',`스펠 장착 최대 ${SPELL_SLOT_MAX}개 · 전술상자 ${TACTICAL_CHEST_OPTION_COUNT}택 보상`);
-    put('helpNetworkFacts',`현재 SIM_VERSION ${SIM_VERSION} · 상태 청크 ${RallyNetcode.CHUNK_SIZE/1024} KiB · 연결 복구 유예 ${DISCONNECT_GRACE_MS/1000}초<br>시뮬레이션 ${SimulationTiming.tps()} TPS · 입력 명령 이벤트 기반 · 상태 발행 ${STATE_PUBLISH_HZ} Hz · 전장 렌더 WebGL`);
-    put('helpBuildingTable',table(['건물','HP','비용 ◆ / ⬡','건설시간','기능·선행조건'],Object.entries(BuildingDefinition.all).map(([id,d])=>[
-      d.name,d.hp,d.productionFacility?'병종 생산 계약 기준':`${d.cost||0} / ${d.gasCost||0}`,d.productionFacility?'병종 Definition 기준':`${n((d.buildTimeMs||0)/1000,2)}초`,
-      [d.supplyPlus?`보급 +${d.supplyPlus}`:'',d.tech?`T${d.tech} 해금`:'',d.unlocksAir?'공중 해금':'',d.requiresTech?`T${d.requiresTech}`:'',...(d.requiresBuildings||[]).map(t=>`${BuildingDefinition.get(t)?.name||t} 완공`),d.isDefenseTower?`공격 ${d.atk} · 사거리 ${d.range} · 주기 ${n(d.cooldownMs/1000,2)}초`:''].filter(Boolean).join(' · ')
-    ])));
-    put('helpResearchTable',table(['연구','수준','비용 ◆ / ⬡','시간','효과'],['attack','armor'].flatMap(kind=>ResearchDefinition.get(kind).map((d,i)=>[
-      kind==='attack'?'공격 강화':'방어 강화',i+1,`${d.cost} / ${d.gasCost}`,`${n(d.timeMs/1000)}초`,`${kind==='attack'?'+':'-'}${kind==='attack'?ATTACK_UPGRADE_PCT_PER_LEVEL:ARMOR_REDUCTION_PCT_PER_LEVEL}% / 레벨`
-    ])))+`<div class="wiki-note">생산 밀집 반경 ${PRODUCTION_CLUSTER_RADIUS}, 방어 밀집 반경 ${DEFENSE_CLUSTER_RADIUS} · 밀집 효율 ${PRODUCTION_CLUSTER_SPEED_PCT.join(' → ')}%</div>`);
-    put('helpNeutralTable',table(['중립 종','HP','공격','사거리','이속','기본 능력'],Object.entries(UnitDefinition.all).filter(([,d])=>d.tier===0).map(([id,d])=>[d.name,d.hp,d.atk,d.range,d.speed,HelpPresentation.wikiBaseTraitSummary(id,d).replaceAll('<br>',' · ')])));
-  }
-
-  static openHelp(){HelpPresentation.renderHelpDynamicTables();UiController.openUiModal("help");if(UiRegistry.refs.helpBody)UiRegistry.refs.helpBody.scrollTop=0}
-  static closeHelp(){UiController.closeUiModal("help")}
-}
-
-UiController.bindImmediateButton(UiRegistry.refs.helpBtn,HelpPresentation.openHelp);
-UiController.bindImmediateButton(UiRegistry.refs.matchMenuHelpBtn,()=>{UiController.closeUiModal("match-menu");HelpPresentation.openHelp()});
-UiController.bindImmediateButton(UiRegistry.refs.helpCloseBtn,HelpPresentation.closeHelp);
-UiRegistry.refs.helpBackdrop.onclick=HelpPresentation.closeHelp;
-
-document.addEventListener("keydown",e=>{
-  if(e.key==="Escape"&&UiRuntimeState.value.modal==="help"){
-    e.preventDefault();
-    HelpPresentation.closeHelp();
-  }
-});
-
-UiRegistry.refs.helpModal.addEventListener("click",e=>{
-  const link=e.target.closest('.wiki-toc a[href^="#"]');
-  if(!link)return;
-  e.preventDefault();
-  const target=document.querySelector(link.getAttribute("href"));
-  target?.scrollIntoView({behavior:"smooth",block:"start"});
-});
-
 /*
  * 게임 입력 계약
  * 1) 일반 UI 선택/버튼은 click 확정 후 처리한다. 스크롤 시작(pointerdown)은 선택이 아니다.
@@ -13301,198 +9974,6 @@ UiRegistry.refs.helpModal.addEventListener("click",e=>{
  * 3) 동적 TPS 시뮬레이션 렌더는 동일한 인터랙티브 DOM을 재생성하지 않는다.
  * 4) Guest 권위 입력은 proposal → Host commit → ACK/수렴 경로만 사용한다.
  */
-
-// Build placement / spell targeting is a transient battlefield uiState.target.
-// 기본 UI 액션은 모두 click 확정 뒤에만 처리한다. 모바일 스크롤 시작은 UI 선택이 아니다.
-document.addEventListener("click",e=>{
-  UiController.clearTransientTargetModeForUiAction(e.target);
-},true);
-
-UiController.bindImmediateButton(UiRegistry.refs.soundBtn,()=>{
-  audioSystem.setEnabled(!audioSystem.enabled);
-  UiRegistry.refs.soundBtn.textContent=audioSystem.enabled?"🔊":"🔇";
-  UiRegistry.refs.soundBtn.classList.toggle("muted",!audioSystem.enabled);
-});
-
-UiController.bindImmediateButton(UiRegistry.refs.spellCloseBtn,()=>{
-  if(UiRuntimeState.value.target.type==="spell")UiController.cancelTargetMode(true);
-  
-  if(UiRuntimeState.value.command.page==="tactics-spell")CommandPresentation.commandBack();
-  else CommandPresentation.closeCommandDrawer();
-});
-
-UiRegistry.refs.tacticalChestArea?.addEventListener("click",e=>{
-  const open=e.target.closest("[data-open-tactical-chest]");
-  if(!open)return;
-  e.preventDefault();e.stopPropagation();
-  BattlePresentation.openTacticalChestModal();
-});
-
-UiRegistry.refs.spellChoiceModalContent?.addEventListener("click",e=>{
-  const sess=MatchLifecycle.activeSession();if(!sess?.sim||!BattlePresentation.tacticalChestModalIsOpen())return;
-  const reward=e.target.closest("[data-tactical-reward]");
-  const rep=e.target.closest("[data-replace-spell]");
-  if(!reward&&!rep)return;
-  e.preventDefault();e.stopPropagation();
-  if(rep){
-    sess.command({type:"REPLACE_SPELL",offerId:rep.dataset.offerId,oldSpellId:rep.dataset.replaceSpell});
-    return;
-  }
-  const offer=ActiveViewState.snap?.pendingChestOffers?.[ConnectionSideUtil.roleSide(ActiveViewState.role)];if(!offer)return;
-  sess.command({type:"CHOOSE_TACTICAL_REWARD",offerId:offer.id,rewardId:reward.dataset.tacticalReward});
-});
-
-UiController.bindImmediateButton(UiRegistry.refs.spellChoiceModalClose,()=>BattlePresentation.closeTacticalChestModal({cancelReplacement:true}));
-UiRegistry.refs.spellChoiceModalBackdrop?.addEventListener("click",e=>{
-  e.preventDefault();e.stopPropagation();
-  BattlePresentation.closeTacticalChestModal({cancelReplacement:true});
-});
-
-UiRegistry.refs.spellInventory.addEventListener("click",e=>{
-  const btn=e.target.closest("[data-cast-spell]");
-  if(!btn||btn.disabled)return;
-
-  e.preventDefault();
-  e.stopPropagation();
-  SpellPresentation.beginSpellTarget(btn.dataset.castSpell);
-});
-
-// Build-card activation follows the platform button contract: one native `click`
-// (touch, mouse, pen, keyboard) -> one semantic build selection.
-UiRegistry.refs.commandDrawer.addEventListener("click",e=>{
-  const el=e.target.closest("#supplyBtn,#gasExtractorBtn,#academyBtn,#airIncubatorBtn,#labBtn,[data-produce-unit],[data-defense-build]");
-  if(!el||el.disabled)return;
-  e.preventDefault();
-  e.stopPropagation();
-  BuildingPresentation.commitBuildPlacementElement(el);
-});
-
-UiController.bindImmediateButton(UiRegistry.refs.buildingDeselectBtn,()=>BuildingPresentation.selectBuilding(null));
-UiController.bindImmediateButton(UiRegistry.refs.buildFinishBtn,()=>{
-  if(UiRuntimeState.value.target.type!=="build")return;
-  UiController.cancelTargetMode(true);
-  LogUtil.log("✓ 연속 건설 마침");
-});
-
-UiController.bindImmediateButton(UiRegistry.refs.spellCancelBtn,()=>{
-  if(UiRuntimeState.value.target.type!=="spell")return;
-  const d=SpellDefinition.get(UiRuntimeState.value.target.spellId);
-  UiController.cancelTargetMode(true);
-  LogUtil.log(`✕ ${d?.name||"스펠"} 타게팅 취소`);
-});
-
-UiRegistry.refs.buildingPanelActions.addEventListener("click",e=>{
-  const gasDec=e.target.closest("[data-gas-workers-dec]");
-  const gasInc=e.target.closest("[data-gas-workers-inc]");
-  if(gasDec||gasInc){
-    e.preventDefault();
-    const b=BuildingPresentation.selectedOwnBuilding();
-    const sess=MatchLifecycle.activeSession();
-    if(!b||!sess?.sim)return;
-    const delta=gasInc?1:-1;
-    const current=GasWorkerAssignmentPolicy.pendingGasTargetFor(b);
-    const target=RangeUtil.clamp(current+delta,0,GAS_ASSIGNMENT_MAX);
-    if(GasWorkerAssignmentPolicy.stageGasWorkerTarget(b.id,target)){
-      // Keep the pressed stepper DOM stable through this release. Update the visible
-      // count directly; normal snapshot rendering will reconcile the full panel.
-      const count=UiRegistry.refs.buildingPanelActions.querySelector(".gas-worker-count b");
-      if(count)count.textContent=String(target);
-      if(gasDec)gasDec.disabled=target<=0;
-      if(gasInc)gasInc.disabled=target>=GAS_ASSIGNMENT_MAX;
-      const meta=UiRegistry.refs.buildingPanelActions.querySelector(".research-meta");
-      if(meta)meta.innerHTML=`조정 중 <b>${target}명</b> · 입력이 멈추면 확정`;
-      LogUtil.log(`⬡ 가스 일꾼 목표 조정 ${target}명 · 입력 완료 후 확정`);
-    }
-    return;
-  }
-
-  const workerBtn=e.target.closest("[data-train-worker]");
-  if(workerBtn&&!workerBtn.disabled){
-    e.preventDefault();
-    const sess=MatchLifecycle.activeSession();if(!sess?.sim)return;
-    sess.command({type:"TRAIN_WORKER",buildingId:workerBtn.dataset.trainWorker});
-    LogUtil.log(`✓ 일꾼 생산 명령 · ${WORKER_COST} 미네랄 · 보급 ${ECONOMY_WORKER_DEF.supply||0}`);
-    return;
-  }
-});
-
-document.addEventListener("click",e=>{
-  const tier=e.target.closest?.("[data-ability-tier]");
-  if(tier){e.preventDefault();ResearchPresentation.researchAbilityTier=RangeUtil.clamp(Number(tier.dataset.abilityTier)||1,1,3);if(ActiveViewState.snap)ResearchPresentation.renderResearchCommandPanels(ActiveViewState.snap);return}
-  const btn=e.target.closest?.("[data-global-research]");
-  if(!btn||btn.disabled)return;
-  e.preventDefault();
-  const sess=MatchLifecycle.activeSession();if(!sess?.sim)return;
-  const research=btn.dataset.globalResearch,unit=btn.dataset.unit||null,researchId=btn.dataset.researchId||null;
-  sess.command({type:"START_RESEARCH",research,unit,researchId});
-  const label=research==="attack"?"공격 강화":research==="armor"?"방어 강화":researchId?`${UnitDefinition.get(unit)?.name||"병종"} · ${UnitSpecialResearchDefinition.get(researchId)?.name||"특수 연구"}`:`${UnitDefinition.get(unit)?.name||"병종"} 특수 연구`;
-  LogUtil.log(`⌛ ${label} 연구 명령 접수`);
-});
-
-UiController.bindImmediateButton(UiRegistry.refs.flagBtn,()=>{
-  CommandPresentation.closeCommandDrawer();
-  UiController.setMode({type:"flag"});
-});
-
-UiController.bindImmediateButton(UiRegistry.refs.pauseBtn,()=>{
-  const sess=MatchLifecycle.activeSession();
-  if(sess&&sess.sim){
-    sess.command({type:"TOGGLE_PRODUCTION"});
-    LogUtil.log("✓ 자동 병력 생산 상태 변경 명령 접수");
-  }
-});
-
-UiRegistry.refs.cancelModeBtn.disabled=true;
-UiController.bindImmediateButton(UiRegistry.refs.cancelModeBtn,()=>{
-  const b=BuildingPresentation.selectedOwnBuilding();
-  const sess=MatchLifecycle.activeSession();
-
-  if(!b){
-    LogUtil.log("⚠ 철거할 아군 건물을 먼저 선택하세요.");
-    return;
-  }
-  if(!BuildingPresentation.isConstructionOrder(b)&&BuildingDefinition.get(b.type)?.isDropoff){
-    LogUtil.log("⚠ 메인/전진 거점은 직접 철거할 수 없습니다.");
-    return;
-  }
-  if(!sess?.sim){
-    LogUtil.log("⚠ 게임 시뮬레이션이 아직 준비되지 않았습니다.");
-    return;
-  }
-
-  const order=BuildingPresentation.isConstructionOrder(b);
-  const refund=order?(b.paidMineral||0):(Number(b.constructionMineralCost)||BuildingDefinition.mineralCost(b.type,b.produceType||null))*.5;
-  const actionName=order?"예약 취소":b.complete?"철거":"건설 취소";
-  const buildingId=b.id;
-
-  // selectedBuildingId가 다음 동적 TPS 시뮬레이션 렌더에서 변해도 정확한 ID로 이미 명령을 보낸다.
-  sess.command({type:"CANCEL_BUILDING",buildingId});
-
-  // 반복 탭으로 동일 명령이 여러 번 들어가는 것을 막고 즉시 피드백.
-  UiRegistry.refs.cancelModeBtn.disabled=true;
-  UiRegistry.refs.cancelModeBtn.innerHTML=`${actionName} 요청됨 · 처리 중…`;
-
-  LogUtil.log(`✕ ${BuildingDefinition.get(b.type)?.name||"건물"} ${actionName} 명령 · ${refund} 미네랄 환불`);
-});
-
-UiController.bindImmediateButton(UiRegistry.refs.militaryT1Btn,()=>CommandPresentation.openCommandSubpage("military-t1"));
-UiController.bindImmediateButton(UiRegistry.refs.militaryT2Btn,()=>CommandPresentation.openCommandSubpage("military-t2"));
-UiController.bindImmediateButton(UiRegistry.refs.militaryT3Btn,()=>CommandPresentation.openCommandSubpage("military-t3"));
-UiController.bindImmediateButton(UiRegistry.refs.researchTechBtn,()=>CommandPresentation.openCommandSubpage("research-tech"));
-UiController.bindImmediateButton(UiRegistry.refs.researchUpgradeBtn,()=>CommandPresentation.openCommandSubpage("research-upgrade"));
-UiController.bindImmediateButton(UiRegistry.refs.researchAbilityBtn,()=>CommandPresentation.openCommandSubpage("research-ability"));
-UiController.bindImmediateButton(UiRegistry.refs.tacticsDefenseBtn,()=>CommandPresentation.openCommandSubpage("tactics-defense"));
-UiController.bindImmediateButton(UiRegistry.refs.tacticsChestBtn,()=>CommandPresentation.openCommandSubpage("tactics-chest"));
-UiController.bindImmediateButton(UiRegistry.refs.tacticsSpellBtn,()=>CommandPresentation.openCommandSubpage("tactics-spell"));
-UiController.bindImmediateButton(UiRegistry.refs.commandBackBtn,CommandPresentation.commandBack);
-
-UiController.bindImmediateButton(UiRegistry.refs.economyTreeBtn,()=>CommandPresentation.openTechTree("economy"));
-UiController.bindImmediateButton(UiRegistry.refs.militaryTreeBtn,()=>CommandPresentation.openTechTree("military"));
-UiController.bindImmediateButton(UiRegistry.refs.researchTreeBtn,()=>CommandPresentation.openTechTree("research"));
-UiController.bindImmediateButton(UiRegistry.refs.tacticsTreeBtn,()=>CommandPresentation.openTechTree("tactics"));
-UiController.bindImmediateButton(UiRegistry.refs.buildDrawerCloseBtn,()=>{
-  CommandPresentation.closeCommandDrawer();
-});
 
 UiRegistry.refs.matchMenuReplaySaveBtn?.addEventListener("click",()=>{const data=ReplayPresentation.currentReplayPayload();if(data)ReplayPresentation.downloadReplay(data);else LogUtil.log("아직 저장할 전투 리플레이가 없습니다.")});
 UiRegistry.refs.matchMenuSurrenderBtn?.addEventListener("click",()=>MatchLifecycle.requestMatchSurrender());
@@ -13534,10 +10015,8 @@ class ReplayInteraction{
   const shouldResume=resumePlaying==null?!!ReplayPresentation.replayPlayer.playing:!!resumePlaying;
   try{
     if((ReplayPresentation.replayPlayer.sim?.tick||0)!==targetTick)ReplayPresentation.timeline.seek(targetTick);
-    UiRegistry.refs.log.style.removeProperty("display");
   }catch(error){
     LogUtil.log(`⚠ 리플레이 시간 이동 실패 · ${error.message||error}`);
-    UiRegistry.refs.log.style.display="block";
     if(UiRegistry.refs.replayTimeInput)UiRegistry.refs.replayTimeInput.value=ReplayPresentation.formatReplayTime(ReplayPresentation.replayPlayer.sim?.tick||0);
   }
   ReplayPresentation.replayPlayer.setPlaying(shouldResume&&(ReplayPresentation.replayPlayer.sim?.tick||0)<ReplayPresentation.replayPlayer.endTick);
@@ -13723,11 +10202,8 @@ const g=ctx.createLinearGradient(0,0,w,h);g.addColorStop(0,"#b9dba6");g.addColor
 
 // Deployment metadata is optional diagnostics. Its fetch never gates game startup.
 
-if(UiRegistry.refs.infoDetailCloseBtn)UiRegistry.refs.infoDetailCloseBtn.onclick=BattlePresentation.closeInfoDetail;
-if(UiRegistry.refs.infoDetailDialog)UiRegistry.refs.infoDetailDialog.addEventListener("click",e=>{if(e.target===UiRegistry.refs.infoDetailDialog)BattlePresentation.closeInfoDetail()});
-BattlePresentation.installLongPressDetails();
-BuildingPresentation.renderBuildMetadata();
-void BUILD_META.load().then(()=>BuildingPresentation.renderBuildMetadata());
+BuildMetadataPresentation.renderBuildMetadata();
+void BUILD_META.load().then(()=>BuildMetadataPresentation.renderBuildMetadata());
 
 if(UiRegistry.refs.bootRetryBtn)UiController.bindImmediateButton(UiRegistry.refs.bootRetryBtn,AppLifecycle.runBootAndStartApp);
 // The Worker realm hosts only a simulation session; the page boots the app.
@@ -13738,7 +10214,7 @@ else{
   const dev=readDevQuery(location.search);
   if(dev.tps)UiController.setStartSimulationTps(dev.tps);
   if(dev.netcode)UiController.setStartNetcodeMode(dev.netcode);
-  const leaveSetup=()=>{audioSystem.unlock();CampaignRuntime.clear();DebugScenarioHarness.pending=null;CampaignPresentation.clear();UiRuntimeState.value.settings.presetId="standard"};
+  const leaveSetup=()=>{audioSystem.unlock();CampaignPresentation.clear()};
   LaunchScreens.install({createNavigation:RallyGamekit.createNavigation,actions:{
     inMatch:()=>UiRuntimeState.value.screen==="game",
     hasResult:()=>UiRuntimeState.value.screen==="result",
@@ -13755,15 +10231,6 @@ else{
     joinRoom:code=>{leaveSetup();UiController.openJoinDialog();UiRegistry.refs.room.value=code;MatchLifecycle.submitJoinRoom()},
     leaveToTitle:()=>reloadAt("#/")
   }});
-  if(dev.battleTest)MobileBattleTestMode.start(dev.battleTest);
-  else if(dev.unitTest){
-    leaveSetup();DebugScenarioHarness.pending=DebugScenarioHarness.fromQuery(dev.unitTest);UiRuntimeState.value.settings.presetId="unitTest";
-    MatchLifecycle.startSinglePlayerWebRTC(dev.role||"host");
-  }else if(dev.campaign)openCampaign();
-  if(new URLSearchParams(location.search).has("debug")){
-    const {createDebugScenes}=await import("./debug-scenes.js");
-    RallyGamekit.installDebugHost({scenes:createDebugScenes({openBattle:params=>DebugScenarioHarness.openReplayBattle(params),openCharge:params=>DebugScenarioHarness.openChargeReplay(params)})});
-  }
 }
 
-export { AppLifecycle, CampaignMapDefinition, CampaignMissionDefinition, CampaignOutcomeRules, CampaignPresentation, CampaignScriptRuntime, ConnectionPresentation, DebugScenarioHarness, DiagnosticPresentation, LocalEnvironmentUtil, LogUtil, MatchLifecycle, ReplayPresentation, SimulationTiming, SinglePlayerModeUtil, UiController, UiRegistry };
+export { AppLifecycle, CampaignMapDefinition, CampaignMissionDefinition, CampaignOutcomeRules, CampaignPresentation, CampaignScriptRuntime, ConnectionPresentation, DiagnosticPresentation, LogUtil, MatchLifecycle, ReplayPresentation, SimulationTiming, SinglePlayerModeUtil, UiController, UiRegistry };

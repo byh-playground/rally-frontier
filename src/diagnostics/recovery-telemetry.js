@@ -1,7 +1,7 @@
 // Memory-only recovery and correction flight recorders.
 import { ActiveViewState } from '../session/runtime-state.js';
 import { BUILD_META } from '../core/build-info.js';
-import { ConnectionPresentation, LocalEnvironmentUtil, LogUtil, MatchLifecycle, SinglePlayerModeUtil } from '../main.js';
+import { ConnectionPresentation, LogUtil, MatchLifecycle, SinglePlayerModeUtil } from '../main.js';
 
 /* =========================
    Recovery flight recorder — memory only
@@ -94,9 +94,6 @@ class RecoveryTelemetry{
   static localRecoverySession(){
   if(SinglePlayerModeUtil.isSinglePlayer()){
     return MatchLifecycle.singleMatch?.sessions?.[MatchLifecycle.singleMatch.humanRole||"guest"]||ActiveViewState.session||null;
-  }
-  if(LocalEnvironmentUtil.isLocalTest()){
-    return MatchLifecycle.localTest?.sessions?.[ActiveViewState.role]||ActiveViewState.session||null;
   }
   return ActiveViewState.session||null;
 }

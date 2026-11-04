@@ -1,4 +1,4 @@
-import { grainPortrait } from './grain-portrait.js';
+import './grain-portrait.js';
 
 // Launch match screens (title, friend, help, in-game HUD and cards, match menu, result) and their addresses.
 // Routes: #/ title, #/friend, #/help, #/play, #/play/menu, #/play/help, #/play/<grain> card detail, #/result.

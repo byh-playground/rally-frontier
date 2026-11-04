@@ -4,14 +4,14 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 const { serveSource, routePinnedSDK } = require('./netcode-qa-module.cjs');
 
-// Single-player AI hosted in src/sim-worker.js: the human session runs in the page,
+// An AI match started from the title's 대전 시작 button, with the AI hosted in src/sim-worker.js: the human session runs in the page,
 // the AI session in a Worker; the AI's real WebRTC transport stays in the page and
 // WorkerSessionProxy relays it. Checks connection, the
 // lockstep cores' own state-hash comparison, manual recovery while connected and
 // after the link is invalidated, balance telemetry from the Worker, and port traffic.
 const root = path.resolve(__dirname, '..');
 const output = path.join(root, '.qa', 'sim-worker');
-const observer = `window.__simWorkerE2E={MatchLifecycle,MobileBattleTestMode,RecoveryTelemetry,AppLifecycle,PerformanceTelemetry,
+const observer = `window.__simWorkerE2E={MatchLifecycle,RecoveryTelemetry,AppLifecycle,PerformanceTelemetry,
   state(){
     const m=MatchLifecycle.singleMatch;
     return Object.fromEntries(Object.entries(m?.sessions||{}).map(([role,s])=>[role,{kind:s.constructor.name,tick:s.sim?.tick??null,
@@ -32,8 +32,9 @@ const observer = `window.__simWorkerE2E={MatchLifecycle,MobileBattleTestMode,Rec
     page.on('dialog', dialog => dialog.accept());
     page.on('worker', worker => worker.on('console', message => { if (message.type() === 'error') workerErrors.push(message.text()); }));
     await routePinnedSDK(page);
-    await page.goto(`${server.url}?battleTest=100&composition=mixed&sample=30`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => window.__simWorkerE2E?.MobileBattleTestMode.phase === 'warmup', null, { timeout: 60_000 });
+    await page.goto(server.url, { waitUntil: 'domcontentloaded' });
+    await page.locator('#gameStartBtn').click({ timeout: 60_000 });
+    await page.waitForFunction(() => Object.values(window.__simWorkerE2E?.state() || {}).filter(s => s.tick > 0).length === 2, null, { timeout: 60_000 });
 
     const state = () => page.evaluate(() => window.__simWorkerE2E.state());
     const advances = async (label, ms = 3000) => {
@@ -59,8 +60,6 @@ const observer = `window.__simWorkerE2E={MatchLifecycle,MobileBattleTestMode,Rec
     await page.waitForFunction(() => Object.values(window.__simWorkerE2E.state()).every(s => !s.connected && s.phase === 'needs-manual'), null, { timeout: 5000 });
     assert.ok(await page.evaluate(() => window.__simWorkerE2E.RecoveryTelemetry.requestManualRecovery()), 'Manual recovery starts after invalidation');
     await page.waitForFunction(() => Object.values(window.__simWorkerE2E.state()).every(s => s.connected && s.phase === 'idle'), null, { timeout: 5000 });
-    // The battle test ends its sample on the disconnect and pauses both sessions; resume to observe the recovered link.
-    await page.evaluate(() => Object.values(window.__simWorkerE2E.MatchLifecycle.singleMatch.sessions).forEach(s => s.setTestModePaused(false)));
     const recovered = await advances('recovery after invalidation', 5000);
 
     for (const role of ['host', 'guest']) {
