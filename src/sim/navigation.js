@@ -8,8 +8,8 @@ import { HashUtil } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UNIT_RUNTIME_GEOMETRY, UnitDefinition } from '../definitions/units.js';
 import { MapGeometry } from './map-geometry.js';
-import { BUILDER_INTERACTION_PADDING, NAV_BUILDING_MARGIN } from '../definitions/combat-rules.js';
-import { COLLISION_RADIUS_SCALE, GAS_WORKER_INTERACTION_PADDING, WORKER_DROPOFF_INTERACTION_RADIUS, WORKER_MINERAL_INTERACTION_PADDING } from '../definitions/world-rules.js';
+import { NAV_BUILDING_MARGIN } from '../definitions/combat-rules.js';
+import { COLLISION_RADIUS_SCALE } from '../definitions/world-rules.js';
 import { WorldContext } from './world-context.js';
 import { NavigationAStarScratch, NavigationMinHeap, NavigationObstacleIndex, PolygonTriangulation } from './terrain.js';
 import { FP } from '../core/config.js';
@@ -522,14 +522,10 @@ class InteractionGeometry{
   }
   static requiresTerrainLine(source,kind,extra=0){
     const st=typeof source==='string'?source:source?.type,d=UnitDefinition.get(st)||{};
-    return kind.startsWith('worker-')||kind==='attack'&&d.layer!=='AIR'&&!d.projectile&&Number(extra)<=100&&d.requiresContactTerrain===true;
+    return kind==='attack'&&!d.projectile&&Number(extra)<=100&&d.requiresContactTerrain===true;
   }
   static reach(source,target,kind,extra=0){
     if(kind==='building-clearance')return this.buildingClearance(source,target);
-    if(kind==='worker-build')return this.buildingClearance(source,target)+BUILDER_INTERACTION_PADDING+.5;
-    if(kind==='worker-gas')return this.buildingClearance(source,target)+GAS_WORKER_INTERACTION_PADDING;
-    if(kind==='worker-dropoff')return Math.max(WORKER_DROPOFF_INTERACTION_RADIUS,this.buildingClearance(source,target)+GAS_WORKER_INTERACTION_PADDING);
-    if(kind==='worker-mineral')return Math.max(0,Number(target?.r)||0)+WORKER_MINERAL_INTERACTION_PADDING;
     if(kind==='combat-contact')return this.contact(source,target);
     if(kind==='attack'){
       const nominal=this.contact(source,target)+Math.max(0,Number(extra)||0);
@@ -542,7 +538,7 @@ class InteractionGeometry{
     if(kind==='attack'){
       const minimum=minRange??UnitDefinition.get(source.type)?.minRange??0;
       if(minimum>0)inner=this.contact(source,target)+minimum;
-    }else if(kind.startsWith('worker-')&&BuildingDefinition.get(target?.type))inner=this.buildingClearance(source,target);
+    }
     const outer=this.reach(source,target,kind,extra),terrainLine=this.requiresTerrainLine(source,kind,extra);
     return inset?NavigationGoal.range(target.x,target.y,outer,inner,terrainLine):new NavigationGoal(target.x,target.y,outer,inner,terrainLine);
   }
@@ -763,12 +759,10 @@ class SurfaceMotion{
   }
   move(u,tx,ty,mode='steer'){
     const sim=this.navigation.sim;
-    if(sim.unitLayer(u.type)==='AIR')return this.commit(u,{x:tx,y:ty,hit:null});
     return this.commit(u,this.solve(u.x,u.y,tx,ty,sim.unitRadius(u.type),this.policy(u),mode,String(u.id)));
   }
   constrain(u){
     const sim=this.navigation.sim,oldX=u.fx,oldY=u.fy;
-    if(sim.unitLayer(u.type)==='AIR'){this.remember(u);return false}
     this.navigation.sync();const s=this.checkpoints.get(u)||{x:u.x,y:u.y,verified:false};
     if(s.verified&&s.ignoreId===this.policy(u)&&s.signature===this.navigation.topology.version&&s.x===u.x&&s.y===u.y)return false;
     this.commit(u,this.solve(s.x,s.y,u.x,u.y,sim.unitRadius(u.type),this.policy(u),'project',String(u.id)));
@@ -915,7 +909,7 @@ class TerrainNavigation{
   layerPreparationPlan(units=[],types=[]){
     const present=new Map(),available=new Map();
     const add=(type,ignoreBuildings,destination)=>{
-      const definition=UnitDefinition.get(type);if(!definition||definition.layer==='AIR')return;
+      const definition=UnitDefinition.get(type);if(!definition)return;
       const radius=this.sim.unitRadius(type)+.12,profile=TerrainNavigation.layerProfile(radius,ignoreBuildings);
       destination.set(profile.key,{...profile,radius,ignoreBuildings});
     };
@@ -1266,7 +1260,6 @@ class TerrainNavigation{
   }
   movementPlan(u,goal){
     let planner=TerrainNavigation.planner(u.type);
-    if(UnitDefinition.get(u.type)?.layer==='AIR')return {point:goal.closest(u.x,u.y),goal,fromX:u.x,fromY:u.y,type:u.type,revision:this.sim.navigationRevision};
     this.sync();const ignore=false,r=this.sim.unitRadius(u.type);this.metrics.routeQueries++;
     const direct=this.directGoal(u.x,u.y,goal,r,ignore);
     if(direct){this.metrics.directQueries++;return {point:direct,goal,fromX:u.x,fromY:u.y,type:u.type,revision:this.sim.navigationRevision,planner:'direct'}}
@@ -1287,7 +1280,7 @@ class TerrainNavigation{
     return {x:u.x,y:u.y};
   }
   nextPoint(u,goal){
-    if(!u.movement||UnitDefinition.get(u.type)?.layer==='AIR')return this.nextPlanPoint(u,this.movementPlan(u,goal));
+    if(!u.movement)return this.nextPlanPoint(u,this.movementPlan(u,goal));
     this.sync();
     const state=u.movement,radius=this.sim.unitRadius(u.type),ignore=false;
     const key=goal.key,active=state.routes[state.routeIndex],activePath=active&&this.sim.routePathStore.get(active.pathId);
@@ -1480,14 +1473,14 @@ class TerrainNavigation{
     }
     return route;
   }
-  connected(x,y,tx,ty,type='worker',ignoreBuildings=false){
+  connected(x,y,tx,ty,type='rice',ignoreBuildings=false){
     return Number.isFinite(this.distance(x,y,NavigationGoal.point(tx,ty,false),type,ignoreBuildings));
   }
   resolveGroundGoal(u,tx,ty,ignoreBuildings=false){
     this.sync();const r=this.sim.unitRadius(u.type)+1,ignoreId=ignoreBuildings?'*':null;
     const p=this.geometry.nearestOpen(tx,ty,r,256,(x,y)=>this.pointClear(x,y,r,ignoreId));return p&&this.connected(u.x,u.y,p.x,p.y,u.type,ignoreBuildings)?p:null;
   }
-  distance(x,y,goal,type='worker',ignoreBuildings=false){
+  distance(x,y,goal,type='rice',ignoreBuildings=false){
     const configured=TerrainNavigation.planner(type),planner=configured==='adaptive'?'astar':configured;
     this.sync();const r=this.sim.unitRadius(type),direct=this.directGoal(x,y,goal,r,ignoreBuildings);
     if(direct)return Math.sqrt(direct.d2);

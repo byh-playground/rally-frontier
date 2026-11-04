@@ -8,9 +8,7 @@ const RenderField=RallyGamekit.RenderObject;
 class UnitRenderObject extends RenderField{
   static renderSchema={tick:RenderField.LINEAR,"delta.x":RenderField.STEP,"delta.y":RenderField.STEP,
     "entity.x":RenderField.POSITION_X,"entity.y":RenderField.POSITION_Y,
-    ...Object.fromEntries(["leapActive","leapStartTick","leapEndTick","leapStartX","leapStartY","leapEndX","leapEndY",
-      "status.airborneUntil","status.airborneStartTick","status.airborneDurationTicks","status.airborneHeight",
-      "target","attackFlash","combat.attackArcTargetId","combat.attackArcUntilTick","combat.attackWindupUntil","combat.cooldownUntil"].map(k=>["entity."+k,RenderField.STEP]))};
+    ...Object.fromEntries(["target","attackFlash","combat.attackArcTargetId","combat.attackArcUntilTick","combat.attackWindupUntil","combat.cooldownUntil"].map(k=>["entity."+k,RenderField.STEP]))};
 }
 class ProjectileRenderObject extends RenderField{
   static renderSchema={tick:RenderField.LINEAR,

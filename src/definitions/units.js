@@ -4,9 +4,9 @@ import { FP } from '../core/config.js';
 
 class UnitDefinition{
   static all={
-  rice:{requiresContactTerrain:true,name:"쌀",launchGrain:true,tier:0,mineralCost:0,supply:1,buildTimeMs:3000,hp:25,atk:5,range:25,speed:75,cooldownMs:1000,size:10,sizeClass:"light",role:"bruiser",attackVisual:{sourceMotion:"slash",travel:"none",impact:"light"},sight:275,counter:"먼 거점 선점 · 넓게 흩어지는 물량"},
-  soybean:{requiresContactTerrain:true,name:"콩",launchGrain:true,tier:0,mineralCost:0,supply:1,buildTimeMs:3000,hp:75,atk:10,range:25,speed:50,cooldownMs:1000,size:15,sizeClass:"medium",role:"bruiser",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:275,counter:"기본 근접 전열"},
-  redbean:{requiresContactTerrain:true,name:"팥",launchGrain:true,tier:0,mineralCost:0,supply:1,buildTimeMs:3000,hp:50,atk:15,range:25,speed:50,cooldownMs:1000,size:10,sizeClass:"light",role:"bruiser",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:275,counter:"착지 직후 돌격 · 돌파"},
+  rice:{requiresContactTerrain:true,name:"쌀",hp:25,atk:5,range:25,speed:75,cooldownMs:1000,size:10,sizeClass:"light",role:"bruiser",attackVisual:{sourceMotion:"slash",travel:"none",impact:"light"},sight:275},
+  soybean:{requiresContactTerrain:true,name:"콩",hp:75,atk:10,range:25,speed:50,cooldownMs:1000,size:15,sizeClass:"medium",role:"bruiser",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:275},
+  redbean:{requiresContactTerrain:true,name:"팥",hp:50,atk:15,range:25,speed:50,cooldownMs:1000,size:10,sizeClass:"light",role:"bruiser",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:275},
 };
   static get(type){return this.all[type]||null}
   static damageClass(type){
@@ -18,17 +18,14 @@ class UnitDefinition{
 }
 for(const d of Object.values(UnitDefinition.all)){
   if(Number.isFinite(Number(d.cooldownMs)))d.cooldown=Number(d.cooldownMs)/1000;
-  if(!d.layer)d.layer="GROUND";
   if(d.canAttackGround==null)d.canAttackGround=(d.atk||0)>0;
-  if(d.canAttackAir==null)d.canAttackAir=false;
 }
 
 const UNIT_RUNTIME_GEOMETRY=Object.freeze(Object.fromEntries(
   Object.entries(UnitDefinition.all).map(([type,d])=>[type,Object.freeze({
     radius:Math.max(1,(d?.size||10)*COLLISION_RADIUS_SCALE),
     radiusFP:Math.max(FP,Math.round((d?.size||10)*COLLISION_RADIUS_SCALE*FP)),
-    mass:Math.max(1,(d?.size||10)*(d?.size||10)),
-    layer:d?.layer||"GROUND"
+    mass:Math.max(1,(d?.size||10)*(d?.size||10))
   })])
 ));
 

@@ -55,7 +55,6 @@ class TerrainGeometry{
       blocksMovement:raw.blocksMovement!==false,
       blocksVision:raw.blocksVision!==false,
       blocksProjectile:!!raw.blocksProjectile,
-      blocksAirVision:!!raw.blocksAirVision,
       minX:Math.min(...points.map(p=>p.x)),maxX:Math.max(...points.map(p=>p.x)),minY:Math.min(...points.map(p=>p.y)),maxY:Math.max(...points.map(p=>p.y))};
   }
   constructor(map){
@@ -65,12 +64,10 @@ class TerrainGeometry{
     const cliffs=this.surfaces.cliffs.map(TerrainGeometry.blocker);
     this.blocks=[...authored.filter(b=>b.blocksMovement),...cliffs];
     this.visionBlocks=authored.filter(b=>b.blocksVision);
-    this.airVisionBlocks=authored.filter(b=>b.blocksAirVision);
     this.projectileBlocks=authored.filter(b=>b.blocksProjectile);
     this.active=this.blocks.length>0;
     this.index=new NavigationObstacleIndex(this.blocks);
     this.visionIndex=new NavigationObstacleIndex(this.visionBlocks);
-    this.airVisionIndex=new NavigationObstacleIndex(this.airVisionBlocks);
     this.projectileIndex=new NavigationObstacleIndex(this.projectileBlocks);
   }
   static segmentsIntersect(ax,ay,bx,by,cx,cy,dx,dy){

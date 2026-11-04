@@ -9,9 +9,8 @@ import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.
 import { CloneUtil, HashUtil, MapGeneration } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UNIT_RUNTIME_GEOMETRY, UnitDefinition } from '../definitions/units.js';
-import { DAMAGE_CLASS_MATRIX, CAPTURE_DECAY_PER_TICK, CAPTURE_DURATION_MS, CAPTURE_RADIUS, COMBAT_TARGET_REFRESH_MS, COMBAT_TARGET_STICKINESS_PCT, DEAD_ENTITY_CLEANUP_MS, DEFAULT_ARTILLERY_MOVE_RECOVERY_MS, DEFAULT_ATTACK_WINDUP_MS, DEFAULT_MELEE_MOVE_RECOVERY_MS, DEFAULT_RANGED_MOVE_RECOVERY_MS, NAV_BUILDING_MARGIN, SPAWN_UNIT_GAP } from '../definitions/combat-rules.js';
+import { DAMAGE_CLASS_MATRIX, CAPTURE_DECAY_PER_TICK, CAPTURE_DURATION_MS, CAPTURE_RADIUS, COMBAT_TARGET_REFRESH_MS, COMBAT_TARGET_STICKINESS_PCT, DEAD_ENTITY_CLEANUP_MS, DEFAULT_ATTACK_WINDUP_MS, DEFAULT_MELEE_MOVE_RECOVERY_MS, DEFAULT_RANGED_MOVE_RECOVERY_MS, NAV_BUILDING_MARGIN, SPAWN_UNIT_GAP } from '../definitions/combat-rules.js';
 import { PerformanceTelemetry } from '../diagnostics/performance-telemetry.js';
-import { FormationDefinition } from '../definitions/formations.js';
 import { ALLY_SOFT_CORRECTION_FRACTION, ALLY_SOFT_IDLE_RADIUS_FRACTION, ALLY_SOFT_MAX_RADIUS_FRACTION, ALLY_SOFT_ITERATIONS, ALLY_SOFT_SPEED_FRACTION, BALANCE_HISTORY_EVERY_MS, BALANCE_HISTORY_MAX, BALANCE_SAMPLE_EVERY_MS, COLLISION_NORMAL, COLLISION_RADIUS_SCALE, COLLISION_SPATIAL_CELL, PERF_SAMPLE_EVERY_MS, SIM_SPATIAL_CELL, TERRAIN_ATTACK_REVEAL_MS } from '../definitions/world-rules.js';
 import { WorldContext } from './world-context.js';
 import { AdaptiveNavigationDemand, InteractionGeometry, NavigationGoal, SurfaceContactGeometry, SurfaceMotion, SweptCircleContact, TerrainNavigation } from './navigation.js';
@@ -46,7 +45,6 @@ class SimulationRuntimeState{
     sim.spatialQueryScopeBuffers=[];sim.spatialQueryScopeDepth=0;
     sim.maxUnitRadius=Math.max(...Object.values(UnitDefinition.all).map(d=>(d?.size||10)*COLLISION_RADIUS_SCALE));
     sim.targetLevelMemo=new WeakMap();
-    sim.maxTauntRadius=Math.max(0,...Object.values(UnitDefinition.all).map(d=>d?.taunt?Number(d.tauntRadius)||0:0));
   }
   static visibility(sim){sim.visionFields=[null,null]}
   static initialize(sim,{newMatch=false}={}){
@@ -76,7 +74,7 @@ class StrategySim{
     "chargedHeldIds","navigationDemandScope","world","tps","disposed","runtimeEpoch","commandReceipts",
     "collisionGrid","collisionSweepGrid","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCandidateBuffer","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
     "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapSideHeads","hardFixSapSideNext","hardFixSapSidePrev","hardFixSapSideHeaps","hardFixSapMarks","hardFixSapEpoch",
-    "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","spatialQueryScopeBuffers","spatialQueryScopeDepth","maxUnitRadius","maxTauntRadius","targetLevelMemo",
+    "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","spatialQueryScopeBuffers","spatialQueryScopeDepth","maxUnitRadius","targetLevelMemo",
     "visionFields","navigation","nextRoutePathId","routePathStore","routePathIndex"
   ]});
   static createForMatch({draft,seed,rules=GameRuleDefinition.current}={}){return new StrategySim(draft,seed,rules)}
@@ -197,7 +195,7 @@ class StrategySim{
     this.collisionNextFx=new Int32Array(cap);this.collisionNextFy=new Int32Array(cap);
     this.collisionBestT=new Float64Array(cap);this.collisionBestNx=new Float64Array(cap);this.collisionBestNy=new Float64Array(cap);
     this.collisionBestOther=new Int32Array(cap);
-    this.collisionMotion={layers:[],sx:new Float64Array(cap),sy:new Float64Array(cap),ex:new Float64Array(cap),ey:new Float64Array(cap),vx:new Float64Array(cap),vy:new Float64Array(cap)};
+    this.collisionMotion={sx:new Float64Array(cap),sy:new Float64Array(cap),ex:new Float64Array(cap),ey:new Float64Array(cap),vx:new Float64Array(cap),vy:new Float64Array(cap)};
   }
   captureCollisionStepStarts(){
     const n=this.units.length;this.ensureCollisionBuffers(n);
@@ -220,16 +218,9 @@ class StrategySim{
       sourceFriendlySide:null,impactAbility:false,sourceDamageResolved:true
     }));
   }
-  unitLayer(type){return UNIT_RUNTIME_GEOMETRY[type]?.layer||"GROUND"}
-  canAttackLayer(sourceType,layer){
-    const d=UnitDefinition.get(sourceType)||BuildingDefinition.get(sourceType);
-    if(!d)return true;
-    return layer==="AIR"?!!d.canAttackAir:!!d.canAttackGround;
-  }
   canAttackEntity(sourceType,target,isBuilding=false){
     const d=UnitDefinition.get(sourceType)||BuildingDefinition.get(sourceType);
-    if(isBuilding)return !!(d?.canAttackGround||d?.canAttackAir);
-    return this.canAttackLayer(sourceType,this.unitLayer(target?.type));
+    return isBuilding?!!d?.canAttackGround:!d||!!d.canAttackGround;
   }
   terrainLevelAt(x,y){return this.world.terrain.surfaces.levelAt(x,y)}
   terrainRangedSource(sourceType){
@@ -240,9 +231,6 @@ class StrategySim{
     const source=sourceEntityId?(this.unitById.get(sourceEntityId)||this.buildingById.get(sourceEntityId)||this.units.find(u=>u.id===sourceEntityId&&u.alive)||this.buildings.find(b=>b.id===sourceEntityId&&b.alive!==false)):null;
     if(!source||!target)return null;
     const sourceDef=UnitDefinition.get(source.type)||BuildingDefinition.get(source.type)||UnitDefinition.get(sourceType)||BuildingDefinition.get(sourceType)||{};
-    if(sourceDef.layer==="AIR")return null;
-    const targetDef=isBuilding?BuildingDefinition.get(target.type):UnitDefinition.get(target.type);
-    if(!isBuilding&&targetDef?.layer==="AIR")return null;
     return{source,sourceLevel:this.terrainLevelAt(source.x,source.y),targetLevel:this.terrainLevelAt(target.x,target.y)};
   }
   markTerrainAttackReveal(sourceType,sourceEntityId,target,isBuilding=false){
@@ -284,19 +272,18 @@ class StrategySim{
     for(const cp of this.capturePoints){
       if(cp.owner!=null||!cp.enabled)continue;
 
-      let hostGround=0,guestGround=0,hostPresence=0,guestPresence=0;
+      let hostPresence=0,guestPresence=0;
       for(const idx of this.nearbyUnits(cp.x,cp.y,CAPTURE_RADIUS)){
         const u=this.units[idx];
         if(!u?.alive||(u.side!==0&&u.side!==1)||!!UnitDefinition.get(u.type)?.captureExcluded)continue;
         if(Math.hypot(u.x-cp.x,u.y-cp.y)>CAPTURE_RADIUS)continue;
-        if(this.unitLayer(u.type)==="GROUND"&&!this.world.terrain.segmentClear(u.x,u.y,cp.x,cp.y,0))continue;
-        if(u.side===0){hostPresence++;if(this.unitLayer(u.type)==="GROUND")hostGround++}
-        else{guestPresence++;if(this.unitLayer(u.type)==="GROUND")guestGround++}
+        if(!this.world.terrain.segmentClear(u.x,u.y,cp.x,cp.y,0))continue;
+        if(u.side===0)hostPresence++;else guestPresence++;
       }
 
       let side=null;
-      if(hostGround>0&&guestPresence===0)side=0;
-      else if(guestGround>0&&hostPresence===0)side=1;
+      if(hostPresence>0&&guestPresence===0)side=0;
+      else if(guestPresence>0&&hostPresence===0)side=1;
 
       if(side==null){
         cp.progress=Math.max(0,cp.progress-CAPTURE_DECAY_PER_TICK);
@@ -324,7 +311,7 @@ class StrategySim{
 
   spawnUnit(side,type,x,y){
     const d=UnitDefinition.get(type);
-    if(this.unitLayer(type)!=="AIR"&&this.world.terrain.active){
+    if(this.world.terrain.active){
       const q=this.world.terrain.nearestOpen(x,y,this.unitRadius(type)+1,256);
       if(!q)throw new Error(`생성 위치에 지상 공간이 없습니다: ${type} (${x},${y})`);
       x=q.x;y=q.y;
@@ -364,7 +351,6 @@ class StrategySim{
   attackMoveRecoveryDurationTicks(u,d){
     const ms=Number.isFinite(Number(d?.attackMoveRecoveryMs))
       ?Math.max(0,Math.round(Number(d.attackMoveRecoveryMs)))
-      :d?.role==="artillery"?DEFAULT_ARTILLERY_MOVE_RECOVERY_MS
       :d?.projectile?DEFAULT_RANGED_MOVE_RECOVERY_MS
       :DEFAULT_MELEE_MOVE_RECOVERY_MS;
     return SimulationTiming.msToTicks(ms,this.tps,{min:0});
@@ -440,9 +426,8 @@ class StrategySim{
 
     if(x<ur+8||x>this.world.width-ur-8||y<ur+8||y>this.world.height-ur-8)return false;
 
-    const layer=this.unitLayer(type);
-    if(layer!=="AIR"&&!this.world.terrain.circleClear(x,y,ur+1))return false;
-    if(layer!=="AIR")for(const b of this.buildings){
+    if(!this.world.terrain.circleClear(x,y,ur+1))return false;
+    for(const b of this.buildings){
       if(b.alive===false||b.id===ignoreBuildingId)continue;
       const br=BuildingDefinition.get(b.type)?.size||35;
       const clearance=Math.max(this.buildingClearanceDistance(type,b),ur+br+SPAWN_UNIT_GAP);
@@ -455,20 +440,19 @@ class StrategySim{
     if(nearby){
       for(const idx of nearby){
         const u=this.units[idx];
-        if(!u?.alive||this.unitLayer(u.type)!==layer)continue;
+        if(!u?.alive)continue;
         const other=this.unitRadius(u.type);
         if(Math.hypot(x-u.x,y-u.y)<ur+other+SPAWN_UNIT_GAP)return false;
       }
     }else{
       for(const u of this.units){
-        if(!u.alive||this.unitLayer(u.type)!==layer)continue;
+        if(!u.alive)continue;
         const other=this.unitRadius(u.type);
         if(Math.hypot(x-u.x,y-u.y)<ur+other+SPAWN_UNIT_GAP)return false;
       }
     }
 
     for(const p of reserved||[]){
-      if(this.unitLayer(p.type||type)!==layer)continue;
       const other=this.unitRadius(p.type||type);
       if(Math.hypot(x-p.x,y-p.y)<ur+other+SPAWN_UNIT_GAP)return false;
     }
@@ -577,11 +561,8 @@ class StrategySim{
     tx=waypoint.x;ty=waypoint.y;
     const dx=tx-u.x,dy=ty-u.y;
     const dist=Math.hypot(dx,dy)||1;
-    if(this.unitLayer(u.type)!=="AIR"){
-      const rawStep=Math.min(speed/this.tps,dist);
-      const nx=u.x+dx/dist*rawStep,ny=u.y+dy/dist*rawStep;
-      speed*=this.terrainMovementMultiplier(u.x,u.y,nx,ny);
-    }
+    const rawStep=Math.min(speed/this.tps,dist);
+    speed*=this.terrainMovementMultiplier(u.x,u.y,u.x+dx/dist*rawStep,u.y+dy/dist*rawStep);
     const step=Math.min(speed/this.tps,dist);
     const vx=dx/dist*step,vy=dy/dist*step;
 
@@ -600,9 +581,9 @@ class StrategySim{
     return moved;
   }
   visionSources(side){return VisionField.of(this,side,this)}
-  isVisible(side,x,y,field,targetAir=false){
+  isVisible(side,x,y,field){
     if(this._perfCollect)this._perfCollect.visibilityChecks++;
-    return field.visibleAt(x,y,targetAir);
+    return field.visibleAt(x,y);
   }
   canTargetUnit(attackerSide,target){
     return !!target&&target.alive!==false&&target.side!==attackerSide;
@@ -616,9 +597,8 @@ class StrategySim{
   }
   canSeeCombatTarget(attackerSide,target,sources){
     if(!target||target.alive===false||target.side===attackerSide)return false;
-    const targetAir=this.unitLayer(target.type)==="AIR",targetLevel=targetAir?null:this.targetLevel(target);
     if(this._perfCollect)this._perfCollect.visibilityChecks++;
-    return sources.visibleAt(target.x,target.y,targetAir,targetLevel);
+    return sources.visibleAt(target.x,target.y,this.targetLevel(target));
   }
   targetPriorityFactor(attacker,targetDef){
     const p=UnitDefinition.get(attacker.type)?.priority||{};
@@ -635,7 +615,7 @@ class StrategySim{
   }
   combatTargetAggroRange(u){
     const d=UnitDefinition.get(u.type);
-    return Number(d.aggroRange)||(d.role==="artillery"?560:d.role==="assassin"?430:390);
+    return Number(d.aggroRange)||390;
   }
   combatTargetRefreshDue(u){
     const interval=this.msTicks(COMBAT_TARGET_REFRESH_MS);
@@ -663,14 +643,14 @@ class StrategySim{
     const attackNeedsTerrainLine=InteractionGeometry.requiresTerrainLine(u,'attack',attackRange);
     const aggro=this.combatTargetAggroRange(u);
     const queryRange=Math.max(aggro,attackRange+this.unitRadius(u.type)+Math.max(this.maxUnitRadius,this.maxBuildingRadius));
-    let taunt=null,tauntD2=Infinity,currentInRange=null;
+    let currentInRange=null;
     let inRangeBest=null,inRangeScore=Infinity,inRangeRank=Infinity;
     let acquireBest=null,acquireD2=Infinity,currentAcquire=null,currentAcquireD2=Infinity;
     let closeFallback=null,closeFallbackD2=Infinity;
     const consider=(entity,isBuilding,def,d2)=>{
       const dist=Math.sqrt(d2);
       // Preserve visibility memo seeding above. The source's terrain policy is
-      // constant for this selection; AIR/ranged reach needs no per-target ray gate.
+      // constant for this selection; ranged reach needs no per-target ray gate.
       const rawReach=!attackNeedsTerrainLine||dist>aggro?InteractionGeometry.reach(u,entity,'attack',attackRange):null;
       if(dist>aggro&&dist>rawReach)return;
       const max=attackNeedsTerrainLine?this.interactionDistance(u,entity,"attack",attackRange):rawReach;
@@ -680,9 +660,6 @@ class StrategySim{
       if(min&&dist<min){
         if(this.targetChoiceBetter(d2,entity.id,closeFallbackD2,closeFallback)){closeFallback=candidate;closeFallbackD2=d2}
         return;
-      }
-      if(!isBuilding&&d.role!=="assassin"&&d.role!=="artillery"&&def.taunt&&d2<=(def.tauntRadius||0)**2){
-        if(this.targetChoiceBetter(d2,entity.id,tauntD2,taunt)){taunt=candidate;tauntD2=d2}
       }
       if(dist<=max){
         const rank=isBuilding?2:0;
@@ -697,11 +674,10 @@ class StrategySim{
     // The grid returns whole cells. queryRange covers aggro and every attack reach,
     // so a farther candidate is rejected by consider(); skip its visibility rays.
     // Units are scanned in two bands. The near band holds every unit that can be in
-    // attack reach or taunt this attacker; only those decide the result when one is
+    // attack reach of this attacker; only those decide the result when one is
     // found, so the aggro band is scanned only when the attacker must chase.
     const queryRange2=queryRange*queryRange;
-    const tauntReach=d.role!=="assassin"&&d.role!=="artillery"?this.maxTauntRadius:0;
-    const nearRange=Math.min(queryRange,Math.max(attackRange+this.unitRadius(u.type)+this.maxUnitRadius,tauntReach)),nearRange2=nearRange*nearRange;
+    const nearRange=Math.min(queryRange,attackRange+this.unitRadius(u.type)+this.maxUnitRadius),nearRange2=nearRange*nearRange;
     const scan=(range,minD2,maxD2)=>this.forEachNearbyHostileUnit(u.side,u.x,u.y,range,e=>{
       const d2=(e.x-u.x)**2+(e.y-u.y)**2;
       if(d2<=minD2||d2>maxD2)return;
@@ -716,8 +692,7 @@ class StrategySim{
       const bd=BuildingDefinition.get(b.type);
       consider(b,true,{role:bd.isMainBase?"base":"building",sizeClass:"heavy",size:bd.size},(b.x-u.x)**2+(b.y-u.y)**2);
     }
-    if(!taunt&&!inRangeBest&&nearRange<queryRange)scan(queryRange,nearRange2,queryRange2);
-    if(taunt)return taunt;
+    if(!inRangeBest&&nearRange<queryRange)scan(queryRange,nearRange2,queryRange2);
     if(currentInRange&&currentInRange.rank<=inRangeRank)return currentInRange.candidate;
     if(inRangeBest)return inRangeBest;
     if(currentAcquire&&currentAcquireD2*100<=acquireD2*COMBAT_TARGET_STICKINESS_PCT)return currentAcquire;
@@ -763,7 +738,7 @@ class StrategySim{
     const rawAmount=Math.max(0,Number(amount)||0);
 
     let dmg=this.damageAmount(sourceType,td,rawAmount,damageClass);
-    if(!isBuilding&&sourceSide!==target.side&&this.unitLayer(target.type)==="GROUND"){
+    if(!isBuilding&&sourceSide!==target.side){
       const terrain=this.terrainAt(target.x,target.y);
       if(terrain.river)dmg=Math.max(1,Math.floor(dmg*1.5));
     }
@@ -845,137 +820,7 @@ class StrategySim{
     }
     return pct;
   }
-  formationCohortReady(u,target,profile){
-    const cfg=profile?.cohort||{};
-    const min=Math.max(0,Math.round(Number(cfg.min)||0));
-    if(min<=0)return true;
-    let cohort=0;
-    for(const idx of this.nearbyUnits(u.x,u.y,Math.max(1,Number(cfg.selfRadius)||180),u.side)){
-      const a=this.units[idx];
-      if(!a?.alive||a.id===u.id||a.side!==u.side)continue;
-      if(String(a.target||"")===String(target.id||"")){
-        cohort++;
-        if(cohort>=min)return true;
-      }
-    }
-    for(const idx of this.nearbyUnits(target.x,target.y,Math.max(1,Number(cfg.targetRadius)||150),u.side)){
-      const a=this.units[idx];
-      if(!a?.alive||a.id===u.id||a.side!==u.side)continue;
-      cohort++;
-      if(cohort>=min)return true;
-    }
-    return false;
-  }
-  formationPointPassable(u,x,y){
-    if(this.unitLayer(u.type)==='AIR')return true;
-    this.navigation.sync();
-    return this.navigation.segmentClear(u.x,u.y,x,y,this.unitRadius(u.type),null,true,0);
-  }
-  formationBandCounts(bands){
-    const keys=["left","right","center"];
-    const slotCount=Math.max(1,Math.round(Number(bands?.slotCount)||8));
-    const src=bands?.ratios||{};
-    const values=keys.map(k=>Math.max(0,Number(src[k])||0));
-    const sum=values.reduce((a,b)=>a+b,0)||1;
-    const raw=values.map(v=>v/sum*slotCount);
-    const counts=raw.map(Math.floor);
-    let remain=slotCount-counts.reduce((a,b)=>a+b,0);
-    const order=raw.map((v,i)=>({i,frac:v-counts[i]})).sort((a,b)=>b.frac-a.frac||a.i-b.i);
-    for(let i=0;i<remain;i++)counts[order[i%order.length].i]++;
-    return{left:counts[0],right:counts[1],center:counts[2],total:slotCount};
-  }
-  formationFallback(u,target,moveSpeed,profileId,depth){
-    if(!profileId||profileId==="direct")return{x:target.x,y:target.y,mode:"direct"};
-    return this.formationMoveTarget(u,target,moveSpeed,profileId,(depth||0)+1);
-  }
-  formationMoveTarget(u,target,moveSpeed,profileId="direct",depth=0){
-    const direct={x:target?.x??u?.x??0,y:target?.y??u?.y??0,mode:"direct"};
-    if(!u||!target||profileId==="direct"||BuildingDefinition.get(target.type)||depth>4)return direct;
-    const profile=FormationDefinition.profiles[profileId];
-    if(!profile)return direct;
-
-    if(profile.kiteFallbackProfile&&UnitDefinition.get(target.type)?.maintainIdealRange){
-      return this.formationFallback(u,target,moveSpeed,profile.kiteFallbackProfile,depth);
-    }
-
-    const dist=Math.hypot(target.x-u.x,target.y-u.y);
-    const contact=this.interactionDistance(u,target,"combat-contact")+(UnitDefinition.get(u.type)?.range||0);
-    if(dist<=contact+Math.max(0,Number(profile.contactPadding)||0))return direct;
-
-    const activation=profile.activation||null;
-    if(activation&&(Number(activation.enemyClusterMin)||0)>0){
-      const excluded=new Set(activation.excludeTypes||[]);
-      let enemyCluster=0;
-      for(const idx of this.nearbyUnits(target.x,target.y,Math.max(1,Number(activation.enemyClusterRadius)||260),target.side)){
-        const e=this.units[idx];
-        if(!e?.alive||e.side!==target.side||excluded.has(e.type))continue;
-        enemyCluster++;
-      }
-      if(enemyCluster<(Number(activation.enemyClusterMin)||0)){
-        return this.formationFallback(u,target,moveSpeed,profile.fallbackProfile,depth);
-      }
-    }
-
-    if(!this.formationCohortReady(u,target,profile))return direct;
-
-    const dx=target.x-u.x,dy=target.y-u.y,len=Math.hypot(dx,dy)||1;
-    const dirX=dx/len,dirY=dy/len,nx=-dirY,ny=dirX;
-    const directCost=dist;
-
-    if(profile.strategy==="pairedFlank"){
-      const f=profile.flank||{};
-      const sideBias=(HashUtil.hash(`${u.id}|${target.id}|${f.hashSalt||profileId}`)&1)?1:-1;
-      const minOffset=Math.max(0,Number(f.minOffset)||0),maxOffset=Math.max(minOffset,Number(f.maxOffset)||minOffset);
-      const offset=Math.min(maxOffset,Math.max(minOffset,this.unitRadius(target.type)*(Number(f.targetRadiusScale)||0)));
-      for(const side of [sideBias,-sideBias]){
-        const x=RangeUtil.clamp(target.x+nx*offset*side,20,this.world.width-20);
-        const y=RangeUtil.clamp(target.y+ny*offset*side,20,this.world.height-20);
-        if(!this.formationPointPassable(u,x,y))continue;
-        const cost=Math.hypot(x-u.x,y-u.y)+Math.hypot(target.x-x,target.y-y);
-        if(cost>directCost*Math.max(1,Number(f.maxCostMultiplier)||1))continue;
-        return{x,y,mode:"surround"};
-      }
-      return direct;
-    }
-
-    if(profile.strategy==="bands"){
-      const b=profile.bands||{};
-      const counts=this.formationBandCounts(b);
-      const slot=HashUtil.hash(`${u.id}|enemy-side-${target.side}|${b.hashSalt||profileId}`)%counts.total;
-      let band="center",bandIndex=0,bandCount=counts.center;
-      if(slot<counts.left){band="left";bandIndex=slot;bandCount=counts.left}
-      else if(slot<counts.left+counts.right){band="right";bandIndex=slot-counts.left;bandCount=counts.right}
-      else{bandIndex=slot-counts.left-counts.right}
-
-      let lateral=0,back=0,maxCostMultiplier=1;
-      if(band==="left"||band==="right"){
-        const sign=band==="left"?1:-1;
-        const spread=Math.max(0,Number(b.sideSpread)||0);
-        const spreadOffset=bandCount>1?((bandIndex+.5)/bandCount-.5)*spread:0;
-        lateral=sign*(Math.max(0,Number(b.sideOffset)||0)+spreadOffset);
-        back=Math.max(0,Number(b.sideBackOffset)||0);
-        maxCostMultiplier=Math.max(1,Number(b.sideMaxCostMultiplier)||1);
-      }else{
-        if(bandCount<=0)return direct;
-        lateral=(2*bandIndex+1-bandCount)*Math.max(0,Number(b.centerSpread)||0)/(2*bandCount);
-        back=Math.max(0,Number(b.centerBackOffset)||0);
-        maxCostMultiplier=Math.max(1,Number(b.centerMaxCostMultiplier)||1);
-      }
-
-      const x=RangeUtil.clamp(target.x+nx*lateral-dirX*back,20,this.world.width-20);
-      const y=RangeUtil.clamp(target.y+ny*lateral-dirY*back,20,this.world.height-20);
-      if(!this.formationPointPassable(u,x,y))return direct;
-      const cost=Math.hypot(x-u.x,y-u.y)+Math.hypot(target.x-x,target.y-y);
-      if(cost>directCost*maxCostMultiplier)return direct;
-      return{x,y,mode:"surround"};
-    }
-
-    return direct;
-  }
-  engagementGoal(u,target,moveSpeed,profile,attackRange){
-    const point=this.formationMoveTarget(u,target,moveSpeed,profile);
-    return point.mode==="direct"?InteractionGeometry.goal(u,target,"attack",attackRange):NavigationGoal.point(point.x,point.y);
-  }
+  engagementGoal(u,target,attackRange){return InteractionGeometry.goal(u,target,"attack",attackRange)}
   isHostileCombatUnit(attackerSide,e){
     return !!e?.alive&&(attackerSide===0||attackerSide===1)&&e.side===1-attackerSide;
   }
@@ -1058,7 +903,7 @@ class StrategySim{
     if(dist>max){
       // Wind-up is valid only while the target remains in legal attack range.
       if(u.combat.windupPending())this.clearAttackWindup(u);
-      this.moveToGoal(u,this.engagementGoal(u,t,moveSpeed,FormationDefinition.forUnit(u.type,false),attackRange),moveSpeed);
+      this.moveToGoal(u,this.engagementGoal(u,t,attackRange),moveSpeed);
       return null;
     }
 
@@ -1108,48 +953,46 @@ class StrategySim{
     const nextX=this.collisionNextFx,nextY=this.collisionNextFy;
     const bestT=this.collisionBestT,bestNx=this.collisionBestNx,bestNy=this.collisionBestNy,bestOther=this.collisionBestOther;
     const grid=this.collisionGrid;
-    const motion=this.collisionMotion,{layers}=motion;
-    const layerRadii=new Map();
+    const motion=this.collisionMotion;
+    let unitRadiusMax=0;
 
     for(let i=0;i<n;i++){
       const u=units[i];
       segX[i]=i<startFx.length?startFx[i]:(u?.fx??0);
       segY[i]=i<startFy.length?startFy[i]:(u?.fy??0);
-      // Layers do not change during a contact sweep. Positions do.
-      layers[i]=this.unitLayer(u?.type);
-      if(u?.alive&&radii[i]>0)layerRadii.set(layers[i],Math.max(layerRadii.get(layers[i])||0,radii[i]));
+      if(u?.alive&&radii[i]>0)unitRadiusMax=Math.max(unitRadiusMax,radii[i]);
     }
 
     let totalCorrections=0;
     for(let pass=0;pass<maxPasses;pass++){
       bestT.fill(Infinity,0,n);bestOther.fill(-1,0,n);
-      const layerTravel=new Map();let anyMotion=false;
+      let travelMax=0;
       for(let i=0;i<n;i++){
         const u=units[i];if(!u?.alive)continue;
         motion.sx[i]=segX[i]/FP;motion.sy[i]=segY[i]/FP;motion.ex[i]=u.fx/FP;motion.ey[i]=u.fy/FP;
         motion.vx[i]=motion.ex[i]-motion.sx[i];motion.vy[i]=motion.ey[i]-motion.sy[i];
         if(radii[i]>0){
           const travel=Math.ceil(Math.hypot(u.fx-segX[i],u.fy-segY[i]));
-          if(travel)anyMotion=true;layerTravel.set(layers[i],Math.max(layerTravel.get(layers[i])||0,travel));
+          travelMax=Math.max(travelMax,travel);
         }
       }
-      if(!anyMotion){if(perf)perf.collisionSweptZeroMotionCalls++;break} // Every relative cast would reject zero motion.
+      if(!travelMax){if(perf)perf.collisionSweptZeroMotionCalls++;break} // Every relative cast would reject zero motion.
       if(perf)perf.collisionSweptActivePasses++;
       grid.reset(units);
       this.collisionSweepGrid.reset(units,motion,radii,segX,segY,grid);
       let pairContacts=0;
       for(let i=0;i<n;i++){
         const a=units[i];
-        if(!a?.alive||radii[i]<=0||!layerTravel.get(layers[i]))continue;
+        if(!a?.alive||radii[i]<=0)continue;
         const sx=segX[i],sy=segY[i],ex=a.fx,ey=a.fy;
-        const reach=radii[i]+layerRadii.get(layers[i])+layerTravel.get(layers[i]);
+        const reach=radii[i]+unitRadiusMax+travelMax;
         const minCx=grid.cellXFP(Math.min(sx,ex)-reach),maxCx=grid.cellXFP(Math.max(sx,ex)+reach);
         const minCy=grid.cellYFP(Math.min(sy,ey)-reach),maxCy=grid.cellYFP(Math.max(sy,ey)+reach);
         const candidates=this.collisionSweepGrid.query(i,grid,minCx,maxCx,minCy,maxCy,a.side);
         if(perf)perf.collisionSweptPairTests+=candidates.length;
         for(const j of candidates){
             const b=units[j];
-            if(!b?.alive||radii[j]<=0||layers[i]!==layers[j]||this.isAlliedCollisionUnit(a,b))continue;
+            if(!b?.alive||radii[j]<=0||this.isAlliedCollisionUnit(a,b))continue;
             // Keep the original floating-point subtraction order. Equal relative
             // motion has no inward contact, including a stationary overlap.
             const vx=motion.vx[i]-motion.vx[j],vy=motion.vy[i]-motion.vy[j];
@@ -1211,12 +1054,12 @@ class StrategySim{
   }
 
   resolveSolidEmergence(source){
-    if(!source?.alive||this.unitLayer(source.type)!=="GROUND")return 0;
+    if(!source?.alive)return 0;
     const sourceRadius=this.radiusFP(source),reach=(sourceRadius+this.maxUnitRadius+2*FP)/FP;
     const candidates=[];
     for(const idx of this.nearbyUnits(source.x,source.y,reach)){
       const other=this.units[idx];
-      if(!other?.alive||other.id===source.id||this.isAlliedCollisionUnit(source,other)||this.unitLayer(other.type)!=="GROUND")continue;
+      if(!other?.alive||other.id===source.id||this.isAlliedCollisionUnit(source,other))continue;
       candidates.push(idx);
     }
     candidates.sort((ia,ib)=>String(this.units[ia]?.id||"").localeCompare(String(this.units[ib]?.id||""))||ia-ib);
@@ -1270,7 +1113,7 @@ class StrategySim{
       let sx=0,sy=0,sxx=0,syy=0;
       for(let i=0;i<n;i++){
         const u=units[i];
-        if(!u?.alive||radii[i]<=0||this.unitLayer(u.type)==="AIR")continue;
+        if(!u?.alive||radii[i]<=0)continue;
         eligible.push(i);sx+=u.fx;sy+=u.fy;sxx+=u.fx*u.fx;syy+=u.fy*u.fy;
       }
       const count=eligible.length||1,vx=Math.max(0,sxx/count-(sx/count)*(sx/count)),vy=Math.max(0,syy/count-(sy/count)*(sy/count));
@@ -1338,7 +1181,7 @@ class StrategySim{
           for(let ai=heads[group];ai>=0;ai=next[ai]){
             if(perf)perf.collisionHardFixActivePairTests++;
             const a=units[ai],bb=units[bi];
-            if(this.isAlliedCollisionUnit(a,bb)||this.unitLayer(a.type)!==this.unitLayer(bb.type))continue;
+            if(this.isAlliedCollisionUnit(a,bb))continue;
             const min=radii[ai]+radii[bi];
             if(Math.abs(otherCoord(ai)-otherCoord(bi))>=min)continue;
             if(perf)perf.collisionHardFixCandidates++;
@@ -1388,7 +1231,6 @@ class StrategySim{
     const grid=this.collisionGrid,candidates=this.collisionCandidateBuffer;
     const masses=this.collisionMasses;
     const dxA=this.collisionDx,dyA=this.collisionDy,cnt=this.collisionCnt;
-    const motionLayers=this.collisionMotion.layers;
     let mark=perf?now():0;
     grid.reset(units,maxRadius);
     dxA.fill(0,0,n);dyA.fill(0,0,n);cnt.fill(0,0,n);
@@ -1400,12 +1242,11 @@ class StrategySim{
     mark=perf?now():0;
     for(let i=0;i<n;i++){
       const a=units[i];if(!a?.alive||radii[i]<=0)continue;
-      const aLayer=motionLayers[i];
       grid.queryCandidatesFP(a.fx,a.fy,radii[i],candidates);
       for(let k=0;k<candidates.length;k++){
         const j=candidates[k];if(j<=i)continue;
         const b=units[j];if(radii[j]<=0)continue;
-        if(!b?.alive||aLayer!==motionLayers[j])continue;
+        if(!b?.alive)continue;
         if(perf)perf.collisionPairs++;
         if(!this.isAlliedCollisionUnit(a,b))continue;
         const min=radii[i]+radii[j];
