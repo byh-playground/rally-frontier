@@ -23,7 +23,6 @@ class LobbyControlCodec{
     return JSON.parse(rtcTextDecoder.decode(bytes.subarray(5)));
   }
 }
-class ConnectionRoleUtil{static sideRole(side){return side===0?"host":"guest"}}
 class ConnectionSideUtil{static roleSide(role){return role==="host"?0:1}}
 
-export { ConnectionRoleUtil, ConnectionSideUtil, LobbyControlCodec, StableSerializationUtil };
+export { ConnectionSideUtil, LobbyControlCodec, StableSerializationUtil };

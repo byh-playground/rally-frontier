@@ -1,6 +1,6 @@
 // Lane, capture point and river geometry.
 import { RangeUtil } from '../core/game-rules.js';
-import { CampDefinition, NeutralCampPolicy } from '../definitions/cards.js';
+import { CampDefinition, NeutralCampPolicy } from './map-camps.js';
 import { LANE_CONTROL_POINTS } from '../definitions/combat-rules.js';
 
 class MapGeometry{

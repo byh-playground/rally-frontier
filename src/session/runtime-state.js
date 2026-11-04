@@ -21,19 +21,6 @@ class ActiveViewState{
   static snap=null;
   static drag=null;
 }
-class BattlePresentationCache{
-  static lastUnitGridHtml="";
-  static lastDefenseCardChoicesHtml="";
-  static lastResearchUpgradeHtml="";
-  static lastResearchAbilityHtml="";
-  static lastSpellInventoryHtml="";
-  static lastSpellChoiceAreaHtml="";
-  static lastSpellChoiceModalHtml="";
-  static tacticalChestFeedbackTimer=0;
-  static lastTacticalChestFeedbackKey="";
-  static lastBuildingActionsHtml="";
-  static lastReinforcementOverviewHtml="";
-}
 
 class NetworkModuleLoader{
   static async ensureReady(){
@@ -61,4 +48,4 @@ class NetworkModuleLoader{
   static networkLoaderStarted=false;
 }
 
-export { ActiveViewState, BACKGROUND_TICK_SESSIONS, BattlePresentationCache, NetworkModuleLoader };
+export { ActiveViewState, BACKGROUND_TICK_SESSIONS, NetworkModuleLoader };

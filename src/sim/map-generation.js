@@ -1,9 +1,7 @@
 // Seeded frontier map generation.
 import { GameRuleDefinition, GameRuleRuntime, RangeUtil } from '../core/game-rules.js';
 import { TerrainQuery } from './entities.js';
-import { BuildingDefinition } from '../definitions/buildings.js';
-import { UnitDefinition } from '../definitions/units.js';
-import { CampDefinition, NEUTRAL_SIDE, NeutralCampPolicy, UnitCompositionDefinition } from '../definitions/cards.js';
+import { CampDefinition, NEUTRAL_SIDE, NeutralCampPolicy } from './map-camps.js';
 import { CapturePointDefinition, LANE_NORMALS, MapGeometry, RIVER_HALF_WIDTH, RIVER_PATH } from './map-geometry.js';
 import { LANE_CONTROL_POINTS } from '../definitions/combat-rules.js';
 import { COLLISION_RADIUS_SCALE } from '../definitions/world-rules.js';
@@ -15,6 +13,9 @@ class CloneUtil{static clone(v){return JSON.parse(JSON.stringify(v))}}
 class HashUtil{static hash(s){let h=2166136261>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}}
 
 const MAP_DESCRIPTOR_SCHEMA_VERSION=1;
+// Candidate maps are validated against the old RTS roster's largest ground radius
+// (size 60) so seeds keep producing the same maps until the map layout is cleaned up.
+const MAP_VALIDATION_UNIT_RADIUS=60*COLLISION_RADIUS_SCALE;
 
 // Rooms and terrain boundaries are laid out together. Variation changes the same
 // structural template; no post-hoc random walls are placed across a valid route.
@@ -74,10 +75,10 @@ class FrontierTerrainLayout{
     // Validate the actual radius-inflated navigation mesh, including closed gates.
     // Generation-time caches are discarded; no validation state enters gameplay.
     const adapter={world:WorldContext.fromMap(map),tick:0,navigationRevision:0,
-      buildings:(map.authoredStructures||[]).map(b=>({...b,alive:true,hp:BuildingDefinition.get(b.type)?.hp||1})),
+      buildings:[],
       unitRadius:InteractionGeometry.unitRadius};
     const nav=new TerrainNavigation(adapter);
-    const largest=Math.max(...Object.values(UnitDefinition.all).filter(d=>d.layer!=='AIR').map(d=>(d.size||10)*COLLISION_RADIUS_SCALE));
+    const largest=MAP_VALIDATION_UNIT_RADIUS;
     const strategic=[map.spawns.host,map.spawns.guest,...map.capturePoints,...map.camps,
       ...adapter.world.terrain.surfaces.layers.map(l=>l.points.reduce((p,q)=>({x:p.x+q.x/l.points.length,y:p.y+q.y/l.points.length}),{x:0,y:0}))];
     for(const [radius,points] of [[InteractionGeometry.unitRadius('worker')+.12,[...strategic,...map.resources,...map.gasNodes]],[largest+.12,strategic]]){
@@ -358,13 +359,6 @@ const resources=[];let mid=0;
       if(gap>bestGap){best=candidate;bestGap=gap}
       if(gap>=0){best=candidate;break}
     }
-    const relicGroundCompositions=[
-      [{unit:"boar",count:1},{unit:"wildhound",count:2}],
-      [{unit:"sporetoad",count:2},{unit:"shellcrab",count:1}],
-      [{unit:"shellcrab",count:2},{unit:"wildhound",count:1}],
-      [{unit:"sporetoad",count:1},{unit:"wildhound",count:3}]
-    ];
-    best.composition=UnitCompositionDefinition.normalize(relicGroundCompositions[HashUtil.hash(`${ctx.seed}|relic|${cp.id}|${index}`)%relicGroundCompositions.length]);
     addPlaced(best);
   };
   const placePair=(id,kind,preferred)=>{

@@ -1,12 +1,8 @@
-import { GameRuleDefinition, RangeUtil, SIM_TPS } from './core/game-rules.js';
+import { RangeUtil, SIM_TPS } from './core/game-rules.js';
 import { GrainFaceOverlay } from './core/grain-face-overlay.js';
 import './sim/strategy-sim.js';
-import { TerrainQuery, Unit, VisibilityPolicy, VisionField } from './sim/entities.js';
-import './sim/unit-behaviors.js';
-import { ChargedSkillMixin, CloakAuraMixin } from './sim/unit-mixins.js';
-import { BurrowableMixin, ChargedSkillGeometry } from './sim/components.js';
+import { TerrainQuery, VisionField } from './sim/entities.js';
 import { BotController } from './ai/bot-controller.js';
-import './ai/ai-policy.js';
 import { GameSession, RallySynctestDiagnostics } from './session/game-session.js';
 import { ReplayPlayer, ReplayPolicy } from './session/replay.js';
 import { ActiveViewState, BACKGROUND_TICK_SESSIONS, NetworkModuleLoader } from './session/runtime-state.js';
@@ -14,25 +10,22 @@ import { LaunchRules } from './sim/launch-rules.js';
 import './sim/spatial-grids.js';
 import { NostrRtcTransport } from './net/rtc-transport.js';
 import { RecoveryTelemetry } from './diagnostics/recovery-telemetry.js';
-import { ConnectionRoleUtil, ConnectionSideUtil, StableSerializationUtil } from './net/lobby-codec.js';
+import { ConnectionSideUtil } from './net/lobby-codec.js';
 import { CloneUtil, HashUtil, MapGeneration } from './sim/map-generation.js';
-import './definitions/balance.js';
-import { AttackPresentationDefinition, BodyPulsePresentation, UnitSpecialResearchDefinition } from './definitions/research.js';
+import { AttackPresentationDefinition } from './definitions/attack-presentation.js';
 import { BuildingDefinition } from './definitions/buildings.js';
-import { DefenseCardDefinition } from './definitions/decks.js';
 import { UnitDefinition, UnitFactionPalette, UnitVisualDefinition } from './definitions/units.js';
-import { CampDefinition, NEUTRAL_SIDE, NeutralCampPolicy, OBJECTIVE_DRAGON_BREATH_PHASE, SpellDefinition, UnitCompositionDefinition } from './definitions/cards.js';
 import { MapGeometry } from './sim/map-geometry.js';
-import { CAPTURE_DURATION_MS, CAPTURE_RADIUS, DEFENSE_CLUSTER_RADIUS, LANE_CONTROL_POINTS, PRODUCTION_CLUSTER_RADIUS } from './definitions/combat-rules.js';
+import { CAPTURE_DURATION_MS, CAPTURE_RADIUS, LANE_CONTROL_POINTS } from './definitions/combat-rules.js';
 import { PerformanceTelemetry } from './diagnostics/performance-telemetry.js';
 import './definitions/formations.js';
-import { ROGUE_LEAP_ARC_HEIGHT, STARTING_WORKER_COUNT, VIEW_H, VIEW_W } from './definitions/world-rules.js';
+import { ROGUE_LEAP_ARC_HEIGHT, VIEW_H, VIEW_W } from './definitions/world-rules.js';
 import { WorldContext } from './sim/world-context.js';
 import { NavigationGoal, NavigationMeshBuilder } from './sim/navigation.js';
-import { BattlefieldProjection, PolygonTriangulation, TerrainGeometry, TerrainSurfaceAtlas, TerrainSurfaceProjection } from './sim/terrain.js';
+import { BattlefieldProjection, PolygonTriangulation, TerrainSurfaceAtlas, TerrainSurfaceProjection } from './sim/terrain.js';
 import { BACKGROUND_TICK_PULSE_MS } from './core/session-timing.js';
 import { RENDER_TRACKS } from './render/render-tracks.js';
-import { CHARGED_SKILL_DRAG_PX, CHARGED_SKILL_HOLD_MS, CONFIG, PREDICTED_BUILD_GHOST_TTL_MS, PREDICTED_COMMAND_FX_TTL_MS, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode } from './core/config.js';
+import { CONFIG, LAUNCH_HOLD_ARM_MS, LAUNCH_HOLD_DRAG_PX, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode } from './core/config.js';
 import { BUILD_META } from './core/build-info.js';
 import { RallyGamekit, SIM_WORKER } from './core/gamekit.js';
 import { LaunchScreens } from './ui/launch-screens.js';
@@ -48,39 +41,6 @@ const window=globalThis;
 
 // Renderer-only reuse helpers. They never enter StrategySim/checksum/export/recovery.
 // The goal is to remove short-lived allocations from 60 fps geometry/VFX, 20 Hz render targets, and 10 Hz full snapshots.
-class ArcTetherPresentation{
-  static phase({elapsedMs=0,travelMs=0,holdMs=0,retractMs=0,retract=false}={}){
-    const travel=Math.max(1,Number(travelMs)||1),hold=Math.max(0,Number(holdMs)||0),back=Math.max(1,Number(retractMs)||travel);
-    const elapsed=Math.max(0,Number(elapsedMs)||0);
-    if(elapsed<travel)return{kind:"extend",progress:RangeUtil.clamp(elapsed/travel,0,1)};
-    if(!retract)return{kind:"hold",progress:1};
-    if(elapsed<travel+hold)return{kind:"hold",progress:1};
-    return{kind:"retract",progress:1-RangeUtil.clamp((elapsed-travel-hold)/back,0,1)};
-  }
-  static sample({sourceWorld,targetWorld,baseArcHeight=90,referenceDistance=1,samples=12,extent=1}={}){
-    if(!sourceWorld||!targetWorld)return[];
-    const sx=Number(sourceWorld.x)||0,sz=Number(sourceWorld.z)||0,sy=Number(sourceWorld.y)||0;
-    const tx=Number(targetWorld.x)||0,tz=Number(targetWorld.z)||0,ty=Number(targetWorld.y)||0;
-    const distance=Math.hypot(tx-sx,tz-sz),ratio=RangeUtil.clamp(distance/Math.max(1,Number(referenceDistance)||1),0,1);
-    const arc=Math.max(0,Number(baseArcHeight)||0)*ratio,visible=RangeUtil.clamp(Number(extent),0,1);
-    const n=Math.max(3,Math.round(Number(samples)||12)),points=[];
-    for(let i=0;i<n;i++){
-      const q=(i/(n-1))*visible;
-      const x=sx+(tx-sx)*q,z=sz+(tz-sz)*q;
-      const y=sy+(ty-sy)*q+Math.sin(q*Math.PI)*arc;
-      points.push({x,y,z,groundY:0,motion:"arcTether",progress:q});
-    }
-    return points;
-  }
-  // Reusable lifecycle contract:
-  // extend -> optional hold/live tether -> optional retract.
-  // Consumers own only endpoints and timing. Curve/height/retraction stay presentation-only.
-  static resolve({sourceWorld,targetWorld,referenceDistance,baseArcHeight,samples,elapsedMs,travelMs,holdMs=0,retractMs=0,retract=false}={}){
-    const phase=this.phase({elapsedMs,travelMs,holdMs,retractMs,retract});
-    return{phase,points:this.sample({sourceWorld,targetWorld,referenceDistance,baseArcHeight,samples,extent:phase.progress})};
-  }
-}
-
 class ReusableFloat32Buffer{
   constructor(initialCapacity=65536){
     let cap=1;while(cap<initialCapacity)cap<<=1;
@@ -182,11 +142,7 @@ class FloatingTextPresentationDefinition{
   static presets=Object.freeze({
     damageTaken:Object.freeze({lifeMs:600,baseSize:15,minSize:10,rise:30,alpha:.8,strokeAlpha:.8,pop:1}),
     damageDealt:Object.freeze({lifeMs:600,baseSize:15,minSize:10,rise:30,alpha:.8,strokeAlpha:.8,pop:1}),
-    heal:Object.freeze({lifeMs:600,baseSize:15,minSize:10,rise:30,alpha:.8,strokeAlpha:.8,pop:1}),
-    dodge:Object.freeze({lifeMs:750,baseSize:15,minSize:10,rise:30,alpha:.8,strokeAlpha:.8,pop:1}),
-    manaSpend:Object.freeze({lifeMs:750,baseSize:20,minSize:10,rise:40,alpha:.8,strokeAlpha:.8,pop:1}),
-    income:Object.freeze({lifeMs:1000,baseSize:25,minSize:15,rise:60,alpha:.9,strokeAlpha:.9,pop:1.1}),
-    gasIncome:Object.freeze({lifeMs:1000,baseSize:25,minSize:15,rise:60,alpha:.9,strokeAlpha:.9,pop:1.1})
+    dodge:Object.freeze({lifeMs:750,baseSize:15,minSize:10,rise:30,alpha:.8,strokeAlpha:.8,pop:1})
   });
   static get(kind){return this.presets[kind]||this.presets.damageDealt}
 }
@@ -196,8 +152,6 @@ class EffectObjectFactory{
   static resetFloatFx(v){v.x=0;v.y=0;v.kind="";v.text="";v.amount=0;v.start=0;v.jitter=0;v.lane=0}
   static makeShakeFx(){return {start:0,duration:0,intensity:0,seed:0}}
   static resetShakeFx(v){v.start=0;v.duration=0;v.intensity=0;v.seed=0}
-  static makeFlagFx(){return {x:0,y:0,side:0,forced:false,start:0,seed:0}}
-  static resetFlagFx(v){v.x=0;v.y=0;v.side=0;v.forced=false;v.start=0;v.seed=0}
   static makeCombatFx(){return {kind:"",x:0,y:0,x2:0,y2:0,sourceType:"",targetType:"",entity:"",spell:"",amount:0,radius:0,width:0,airborneHeight:0,airborneMs:0,durationTicks:0,remaining:0,sourceId:null,targetId:null,fromX:null,fromY:null,isBuilding:false,points:null,side:null,start:0,seed:0,_extraKeys:null}}
   static resetCombatFx(v){if(v._extraKeys){for(const k of v._extraKeys)delete v[k];v._extraKeys=null}v.kind="";v.x=v.y=v.x2=v.y2=0;v.sourceType=v.targetType=v.entity=v.spell="";v.amount=v.radius=v.width=v.airborneHeight=v.airborneTicks=v.durationTicks=v.remaining=0;v.sourceId=v.targetId=null;v.fromX=v.fromY=null;v.isBuilding=false;v.points=null;v.side=null;v.start=v.seed=0}
 }
@@ -402,1082 +356,6 @@ class DiagnosticPresentation{
 // Unit Visual Registry — species-specific composition boundary.
 // IS-A UnitVisual. Shared pipeline is HAS-A. Runtime state remains CAN-BE.
 // ============================================================
-const UNIT_VISUAL_RENDER_FNS=Object.freeze({
-  // Grain soldiers always draw their budmori SVG; this circle only shows if that asset is missing.
-  "rice":(rdr,ctx)=>rdr.circle(ctx.x,ctx.y,ctx.r*.8,UnitVisualDefinition.get("rice").accent,12),
-  "soybean":(rdr,ctx)=>rdr.circle(ctx.x,ctx.y,ctx.r*.8,UnitVisualDefinition.get("soybean").accent,12),
-  "redbean":(rdr,ctx)=>rdr.circle(ctx.x,ctx.y,ctx.r*.8,UnitVisualDefinition.get("redbean").accent,12),
-  "fireant":(rdr,ctx)=>{
-    const {sc,x,y,r,ownStealthAlpha,teamDark,teamLight,dir}=ctx;
-    {
-      // Distinct ant silhouette: three body segments, six legs, antennae and a hot abdominal gland.
-      // Team identity stays on the thorax rim while the species reads red/orange for both sides.
-      const antDark=[.20,.055,.025,ownStealthAlpha],antBody=[.66,.12,.045,ownStealthAlpha],
-        antHot=[1,.34,.07,ownStealthAlpha],antGlow=[1,.72,.18,.72*ownStealthAlpha];
-      const facing=dir,headY=y+facing*r*.54,thoraxY=y,abdY=y-facing*r*.58;
-      rdr.circle(x,abdY,r*.48,antDark,11);
-      rdr.circle(x,abdY,r*.39,antBody,11);
-      rdr.circle(x,thoraxY,r*.34,teamDark,10);
-      rdr.circle(x,thoraxY,r*.27,antBody,10);
-      rdr.circle(x,headY,r*.31,antDark,10);
-      rdr.circle(x,headY,r*.24,antBody,10);
-      // Six legs angle out from thorax/abdomen.
-      for(const side of [-1,1]){
-        rdr.line(x+side*r*.16,y+facing*r*.18,x+side*r*.72,y+facing*r*.42,Math.max(1,1.45*sc),antDark);
-        rdr.line(x+side*r*.18,y,x+side*r*.78,y-facing*r*.02,Math.max(1,1.45*sc),antDark);
-        rdr.line(x+side*r*.14,y-facing*r*.22,x+side*r*.68,y-facing*r*.48,Math.max(1,1.45*sc),antDark);
-        rdr.line(x+side*r*.12,headY+facing*r*.12,x+side*r*.45,headY+facing*r*.55,Math.max(1,1.15*sc),antDark);
-      }
-      // Acid/fire gland telegraphs the unit's ranged identity without looking like a generic caster.
-      rdr.circle(x,abdY-facing*r*.08,r*.16,antHot,8);
-      rdr.circle(x,abdY-facing*r*.08,r*.08,antGlow,7);
-      rdr.outlineCircle(x,thoraxY,r*.39,Math.max(1,1.5*sc),teamLight,12,1);
-    
-    }
-  },
-  "ancientbear":(rdr,ctx)=>{
-    const {u,sc,x,y,r,factionPalette}=ctx;
-    {
-      // TOP main objective: preserve the established greatbear visual language, scaled up into a boss silhouette.
-      const fur=[.53,.39,.22,1],furDark=[.28,.20,.12,1],furHi=[.68,.53,.30,1],pollen=[.78,.68,.34,1];
-      rdr.circle(x,y+r*.12,r*1.14,furDark,16);
-      rdr.circle(x,y+r*.04,r*1.00,fur,16);
-      rdr.petalRing(x,y-r*.16,r*.72,8,pollen,Math.PI/8,.80);
-      rdr.circle(x,y-r*.64,r*.70,furHi,14);
-      rdr.circle(x-r*.48,y-r*1.05,r*.27,furDark,10);rdr.circle(x+r*.48,y-r*1.05,r*.27,furDark,10);
-      rdr.circle(x-r*.21,y-r*.69,Math.max(1.4,r*.068),[.12,.08,.04,1],7);rdr.circle(x+r*.21,y-r*.69,Math.max(1.4,r*.068),[.12,.08,.04,1],7);
-      rdr.circle(x,y-r*.46,r*.115,[.10,.06,.03,1],8);
-      // Oversized forepaws sell the slam/charge weight without turning the creature into armor.
-      rdr.circle(x-r*.82,y+r*.48,r*.46,furDark,11);rdr.circle(x+r*.82,y+r*.48,r*.46,furDark,11);
-      rdr.circle(x-r*.82,y+r*.52,r*.34,fur,10);rdr.circle(x+r*.82,y+r*.52,r*.34,fur,10);
-      const ownerRing=factionPalette.ring;
-      rdr.outlineCircle(x,y,r*1.32,Math.max(1.6,2.4*sc),ownerRing,22,1);
-      if(u.objectiveChargeActive)rdr.outlineCircle(x,y,r*1.42,Math.max(2,3.4*sc),[1,.68,.28,.52],24,1);
-    
-    }
-  },
-  "deathworm":(rdr,ctx)=>{
-    const {u,sc,groundWorld,groundPos,x,y,r,factionPalette}=ctx;
-    {
-      // MID objective: eyeless flesh worm. The circular maw is the face.
-      const flesh=[.73,.49,.39,1],fleshHi=[.86,.62,.51,1],fleshDark=[.48,.28,.24,1];
-      const mouth=[.12,.045,.035,1],gum=[.48,.16,.13,1],tooth=[1,.88,.67,1];
-      const soil=[.39,.29,.18,1],deep=[.08,.075,.055,1];
-      const buried=BurrowableMixin.stateActive(u),hx=groundPos[0],hy=groundPos[1];
-      rdr.withWorldSpriteDepth(groundWorld,()=>{
-        rdr.circle(hx,hy+r*.46,r*.82,soil,16);
-        rdr.circle(hx,hy+r*.46,r*.64,deep,16);
-        for(let k=0;k<6;k++){
-          const a=(k/6)*Math.PI*2+(HashUtil.hash(u.id)%97)*.013,rr=r*(.72+(k%2)*.18);
-          rdr.circle(hx+Math.cos(a)*rr,hy+r*.46+Math.sin(a)*rr*.36,r*(.10+(k%3)*.018),k%2?[.52,.38,.20,1]:[.34,.25,.15,1],7);
-        }
-      });
-      if(!buried){
-        const baseY=hy+r*.20,topY=y-r*.88;
-        // Segmented soft body: alternating flesh values read as folds, not green armor.
-        for(let k=0;k<5;k++){
-          const q=(k+.10)/4.25,yy=baseY+(topY-baseY)*q,xx=hx+(x-hx)*q;
-          const rad=r*(.64-k*.045);
-          rdr.circle(xx,yy,rad,k%2?flesh:fleshDark,14);
-          rdr.circle(xx-rad*.10,yy-rad*.16,rad*.72,k%2?fleshHi:flesh,12);
-        }
-        // Head has NO eyes. Oversized round mouth is the only facial landmark.
-        const headY=y-r*1.18,headR=r*.70;
-        rdr.circle(x,headY,headR,fleshDark,16);
-        rdr.circle(x-r*.07,headY-r*.07,headR*.88,flesh,15);
-        const mouthR=r*.47;
-        rdr.circle(x,headY-r*.03,mouthR,gum,18);
-        rdr.circle(x,headY-r*.03,mouthR*.72,mouth,18);
-        // Dense inward-facing teeth around the circular maw.
-        const teeth=18;
-        for(let k=0;k<teeth;k++){
-          const a=(k/teeth)*Math.PI*2;
-          const cx=x+Math.cos(a)*mouthR*.77,cy=headY-r*.03+Math.sin(a)*mouthR*.77;
-          const tx=x+Math.cos(a)*mouthR*.45,ty=headY-r*.03+Math.sin(a)*mouthR*.45;
-          rdr.line(cx,cy,tx,ty,Math.max(1.1,1.65*sc),tooth);
-          rdr.circle(cx,cy,Math.max(.9,1.25*sc),tooth,5);
-        }
-        rdr.circle(x,headY-r*.03,mouthR*.29,[.035,.012,.010,1],12);
-        // Subtle wet rim makes the maw readable without adding eyes/horns.
-        rdr.outlineCircle(x,headY-r*.03,mouthR*.96,Math.max(1.2,1.8*sc),[.92,.54,.43,.65],20,1);
-        if((u.objectiveAttackCount||0)%4===3)rdr.outlineCircle(x,headY-r*.03,mouthR*1.18,Math.max(1.5,2.3*sc),[1,.54,.26,.34],20,1);
-      }else{
-        rdr.withWorldSpriteDepth(groundWorld,()=>rdr.circle(hx,hy+r*.40,r*.36,[.72,.43,.34,.18],12));
-      }
-      const ownerRing=factionPalette.ring;
-      rdr.withWorldSpriteDepth(groundWorld,()=>rdr.outlineCircle(hx,hy+r*.12,r*1.18,Math.max(1.6,2.4*sc),ownerRing,22,1));
-    
-    }
-  },
-  "dragon":(rdr,ctx)=>{
-    const {u,sc,x,y,r,attack,factionPalette}=ctx;
-    {
-      // BOT objective: one local facing coordinate drives body, head, mouth, wings and tail.
-      const pose=rdr.resolveDragonRenderPose(u,x,y,r),P=pose.point,fire=[1,.42,.12,1],fireHi=[1,.82,.28,1],wing=[.39,.14,.11,1],wingHi=[.52,.19,.14,1],body=[.58,.24,.15,1],bodyDark=[.42,.16,.11,1],head=[.66,.27,.14,1],ink=[.10,.055,.035,1];
-      // Rounded 3-lobe wings: broad silhouette without sharp triangle-only geometry.
-      for(const side of [-1,1]){
-        let q=P(-.12,side*.72);rdr.circle(q[0],q[1],r*.49,wing,13);
-        q=P(-.30,side*1.02);rdr.circle(q[0],q[1],r*.39,wing,12);
-        q=P(.16,side*.92);rdr.circle(q[0],q[1],r*.34,wingHi,11);
-      }
-      const b0=P(-.10,0),neck=P(.36,0),headP=pose.head,muzzle=pose.muzzle,mouth=pose.mouth;
-      rdr.circle(b0[0],b0[1],r*.74,bodyDark,15);
-      rdr.circle(b0[0]+pose.forwardX*r*.06,b0[1]+pose.forwardY*r*.06,r*.64,body,15);
-      rdr.circle(neck[0],neck[1],r*.43,body,12);
-      rdr.circle(headP[0],headP[1],r*.51,head,13);
-      rdr.circle(muzzle[0],muzzle[1],r*.34,bodyDark,11);
-      rdr.circle(muzzle[0]+pose.forwardX*r*.08,muzzle[1]+pose.forwardY*r*.08,r*.25,head,10);
-      // Mouth/jaw opens slightly during attacks and breath, aligned to the same facing axis.
-      const mouthOpen=(u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.TELL||u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.ACTIVE||attack);
-      if(mouthOpen){const jaw=P(1.12,.12);rdr.line(muzzle[0]+pose.forwardX*r*.12,muzzle[1]+pose.forwardY*r*.12,jaw[0],jaw[1],Math.max(1.4,2.4*sc),ink)}
-      // Horns stay readable, but the eyes are rounder and softer so the dragon reads as cute instead of eerie.
-      for(const side of [-1,1]){
-        const hb=P(.69,side*.36);rdr.crestTriangle(hb[0],hb[1],r*.21,fire,pose.angle+side*.44);
-        const eye=P(.88,side*.19);
-        rdr.circle(eye[0],eye[1],r*.118,[1,.97,.86,1],9);
-        rdr.circle(eye[0]-pose.sideX*side*r*.010,eye[1]-pose.sideY*side*r*.010,r*.088,[1,.93,.70,1],8);
-        const pupilX=eye[0]+pose.forwardX*r*.010+pose.sideX*side*r*.010;
-        const pupilY=eye[1]+pose.forwardY*r*.010+pose.sideY*side*r*.010;
-        rdr.circle(pupilX,pupilY,r*.034,[.18,.13,.10,1],7);
-        rdr.circle(eye[0]-pose.forwardX*r*.030-pose.sideX*side*r*.020,eye[1]-pose.forwardY*r*.030-pose.sideY*side*r*.020,r*.015,[1,1,1,.96],6);
-        const cheek=P(.98,side*.30);rdr.circle(cheek[0],cheek[1],r*.050,[1,.72,.56,.28],7);
-      }
-      rdr.line(pose.tailA[0],pose.tailA[1],pose.tailB[0],pose.tailB[1],Math.max(3,4.8*sc),bodyDark);
-      rdr.line(pose.tailB[0],pose.tailB[1],pose.tailTip[0],pose.tailTip[1],Math.max(2.6,4.0*sc),bodyDark);
-      rdr.circle(pose.tailTip[0],pose.tailTip[1],r*.20,fire,9);rdr.circle(pose.tailTip[0]+pose.forwardX*r*.03,pose.tailTip[1]+pose.forwardY*r*.03,r*.10,fireHi,8);
-      const ownerRing=factionPalette.ring;
-      rdr.outlineCircle(x,y,r*1.48,Math.max(1.6,2.4*sc),ownerRing,24,1);
-      if(u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.TELL){rdr.circle(mouth[0],mouth[1],r*.30,[1,.54,.15,.34],12);rdr.circle(mouth[0],mouth[1],r*.14,fireHi,10)}
-      else if(u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.ACTIVE){rdr.circle(mouth[0],mouth[1],r*.24,[1,.78,.28,.78],10);rdr.circle(mouth[0],mouth[1],r*.11,[1,.96,.62,1],8)}
-      else if(attack){rdr.circle(mouth[0],mouth[1],r*.20,[1,.70,.20,.62],10);rdr.circle(mouth[0],mouth[1],r*.09,[1,.95,.58,.95],8)}
-    
-    }
-  },
-  "wildhound":(rdr,ctx)=>{
-    const {sc,x,y,r,attack}=ctx;
-    {
-      const vd=UnitVisualDefinition.get(ctx.u.type);
-      const body=ctx.team,dark=vd.dark,accent=vd.accent;
-      // Fast runner: low oval body and thorn-leaf mane.
-      rdr.poly([
-        [x-r*.96,y+r*.18],[x-r*.56,y-r*.30],
-        [x+r*.48,y-r*.30],[x+r*.92,y+r*.16],
-        [x+r*.50,y+r*.48],[x-r*.62,y+r*.50]
-      ],body);
-      for(let k=0;k<5;k++){
-        const sx=x-r*.48+k*r*.24;
-        rdr.crestTriangle(
-          sx,y-r*.52-(k%2)*r*.05,
-          r*.18,dark,-Math.PI/2
-        );
-      }
-      rdr.circle(x+r*.58,y-r*.28,r*.36,body,10);
-      rdr.crestTriangle(x+r*.42,y-r*.58,r*.19,dark,-Math.PI/2);
-      rdr.crestTriangle(x+r*.74,y-r*.56,r*.18,dark,-Math.PI/2);
-      rdr.circle(x+r*.68,y-r*.32,Math.max(1,r*.065),accent,7);
-      rdr.circle(x+r*.80,y-r*.12,r*.075,[.10,.08,.05,1],7);
-      rdr.line(x-r*.46,y+r*.34,x-r*.72,y+r*.78,Math.max(1.3,2.2*sc),dark);
-      rdr.line(x+r*.18,y+r*.34,x+r*.42,y+r*.78,Math.max(1.3,2.2*sc),dark);
-      if(attack){
-        rdr.poly([
-          [x+r*.78,y-r*.06],[x+r*1.14,y+r*.02],[x+r*.80,y+r*.14]
-        ],[.96,.91,.68,1]);
-      }
-    
-    }
-  },
-  "boar":(rdr,ctx)=>{
-    const {x,y,r,attack}=ctx;
-    {
-      const vd=UnitVisualDefinition.get(ctx.u.type);
-      const body=ctx.team,dark=vd.dark,accent=vd.accent;
-      // Seed-shell brute: chunky seed armor plates and tusk-like sprouts.
-      rdr.poly([
-        [x-r*.98,y+r*.50],[x-r*.88,y-r*.36],
-        [x+r*.56,y-r*.52],[x+r*.98,y+r*.18],
-        [x+r*.58,y+r*.64],[x-r*.70,y+r*.66]
-      ],body);
-      for(let k=-2;k<=2;k++){
-        const sx=x+k*r*.28;
-        rdr.poly([
-          [sx-r*.16,y-r*.44],[sx,y-r*.70],
-          [sx+r*.16,y-r*.44],[sx+r*.10,y-r*.12],
-          [sx-r*.10,y-r*.12]
-        ],dark);
-      }
-      rdr.circle(x+r*.66,y-r*.10,r*.46,body,10);
-      rdr.circle(x+r*.78,y-r*.20,Math.max(1,r*.055),[.12,.08,.04,1],7);
-      rdr.poly([
-        [x+r*.94,y-r*.02],[x+r*1.34,y-r*.18],[x+r*1.04,y+r*.14]
-      ],[.94,.88,.65,1]);
-      rdr.poly([
-        [x+r*.90,y+r*.10],[x+r*1.26,y+r*.26],[x+r*.98,y+r*.31]
-      ],[.94,.88,.65,1]);
-      if(attack){
-        rdr.circle(x+r*.90,y,r*.74,[accent[0],accent[1],accent[2],.10],12);
-      }
-    
-    }
-  },
-  "sporetoad":(rdr,ctx)=>{
-    const {sc,x,y,r,attack}=ctx;
-    {
-      const vd=UnitVisualDefinition.get(ctx.u.type),body=ctx.team,dark=vd.dark,accent=vd.accent;
-      // Low, broad toad silhouette. Spore sacs sit on the BACK instead of reading as lateral wings.
-      const sacPulse=attack?1.16:1;
-      rdr.circle(x-r*.38,y-r*.52,r*.30*sacPulse,accent,11);
-      rdr.circle(x+r*.34,y-r*.56,r*.34*sacPulse,[.72,.56,.28,1],11);
-      rdr.circle(x+r*.05,y-r*.72,r*.24*sacPulse,[.82,.68,.34,1],10);
-      // Massive rear legs and planted front legs make the quadruped/toad read instantly.
-      rdr.circle(x-r*.72,y+r*.40,r*.46,dark,12);rdr.circle(x+r*.72,y+r*.40,r*.46,dark,12);
-      rdr.circle(x-r*.70,y+r*.40,r*.34,body,11);rdr.circle(x+r*.70,y+r*.40,r*.34,body,11);
-      rdr.circle(x,y+r*.18,r*.86,dark,15);
-      rdr.circle(x,y+r*.08,r*.76,body,15);
-      rdr.circle(x-r*.42,y+r*.44,r*.25,body,10);rdr.circle(x+r*.42,y+r*.44,r*.25,body,10);
-      // Raised toad eyes; no bird-like central beak.
-      rdr.circle(x-r*.34,y-r*.43,r*.25,dark,10);rdr.circle(x+r*.34,y-r*.43,r*.25,dark,10);
-      rdr.circle(x-r*.34,y-r*.47,r*.16,[.92,.71,.20,1],9);rdr.circle(x+r*.34,y-r*.47,r*.16,[.92,.71,.20,1],9);
-      rdr.circle(x-r*.34,y-r*.48,r*.065,[.06,.07,.04,1],7);rdr.circle(x+r*.34,y-r*.48,r*.065,[.06,.07,.04,1],7);
-      // Wide feeding slit is part of the creature anatomy.
-      rdr.line(x-r*.42,y-r*.03,x+r*.42,y-r*.03,Math.max(1.5,2.6*sc),[.13,.15,.08,1]);
-      rdr.line(x-r*.30,y+r*.04,x+r*.30,y+r*.04,Math.max(1,1.5*sc),[.30,.34,.16,1]);
-      if(attack){
-        rdr.circle(x,y-r*.03,r*.26,[.72,.94,.30,.20],10);
-        rdr.circle(x+r*.34,y-r*.56,r*.46,[accent[0],accent[1],accent[2],.10],12);
-      }
-    
-    }
-  },
-  "shellcrab":(rdr,ctx)=>{
-    const {sc,x,y,r,attack}=ctx;
-    {
-      const vd=UnitVisualDefinition.get(ctx.u.type),body=ctx.team,dark=vd.dark,accent=vd.accent;
-      // Very wide low silhouette: seed-shell body plus two oversized claws.
-      rdr.poly([[x-r*.92,y+r*.34],[x-r*.72,y-r*.38],[x,y-r*.62],[x+r*.72,y-r*.38],[x+r*.92,y+r*.34],[x+r*.52,y+r*.62],[x-r*.52,y+r*.62]],dark);
-      rdr.circle(x,y,r*.74,body,14);
-      for(const ox of [-.42,0,.42])rdr.poly([[x+ox*r-r*.18,y-r*.45],[x+ox*r,y-r*.70],[x+ox*r+r*.18,y-r*.45],[x+ox*r+r*.10,y-r*.05],[x+ox*r-r*.10,y-r*.05]],accent);
-      rdr.line(x-r*.55,y+r*.36,x-r*1.02,y+r*.72,Math.max(2,3.4*sc),dark);
-      rdr.line(x+r*.55,y+r*.36,x+r*1.02,y+r*.72,Math.max(2,3.4*sc),dark);
-      rdr.circle(x-r*1.07,y+r*.72,r*.28,body,9);rdr.circle(x+r*1.07,y+r*.72,r*.28,body,9);
-      rdr.crestTriangle(x-r*1.22,y+r*.67,r*.24,accent,Math.PI);rdr.crestTriangle(x+r*1.22,y+r*.67,r*.24,accent,0);
-      rdr.circle(x-r*.20,y-r*.18,r*.065,[.08,.07,.04,1],7);rdr.circle(x+r*.20,y-r*.18,r*.065,[.08,.07,.04,1],7);
-      if(attack){rdr.circle(x-r*1.10,y+r*.69,r*.42,[accent[0],accent[1],accent[2],.10],10);rdr.circle(x+r*1.10,y+r*.69,r*.42,[accent[0],accent[1],accent[2],.10],10)}
-    
-    }
-  },
-  "seedwasp":(rdr,ctx)=>{
-    const {sc,x,y,r,attack}=ctx;
-    {
-      const vd=UnitVisualDefinition.get(ctx.u.type),body=ctx.team,dark=vd.dark,accent=vd.accent;
-      // Seed abdomen + broad leaf wings; common AIR height/shadow handles altitude.
-      rdr.poly([[x-r*.18,y],[x-r*1.10,y-r*.62],[x-r*.78,y+r*.18],[x-r*.16,y+r*.30]],[.72,.88,.58,.72]);
-      rdr.poly([[x+r*.18,y],[x+r*1.10,y-r*.62],[x+r*.78,y+r*.18],[x+r*.16,y+r*.30]],[.72,.88,.58,.72]);
-      rdr.circle(x,y+r*.10,r*.48,body,11);
-      rdr.poly([[x-r*.34,y+r*.24],[x,y+r*.92],[x+r*.34,y+r*.24]],dark);
-      rdr.circle(x,y-r*.42,r*.34,accent,10);
-      rdr.circle(x-r*.12,y-r*.46,r*.055,[.08,.07,.03,1],7);rdr.circle(x+r*.12,y-r*.46,r*.055,[.08,.07,.03,1],7);
-      rdr.line(x-r*.12,y-r*.66,x-r*.34,y-r*.95,Math.max(1,1.6*sc),dark);rdr.line(x+r*.12,y-r*.66,x+r*.34,y-r*.95,Math.max(1,1.6*sc),dark);
-      if(attack)rdr.crestTriangle(x,y+r*1.02,r*.20,[.98,.90,.56,1],Math.PI/2);
-    
-    }
-  },
-  "greatbear":(rdr,ctx)=>{
-    const {u,sc,x,y,r,attack}=ctx;
-    {
-      const vd=UnitVisualDefinition.get(ctx.u.type);
-      const body=ctx.team,dark=vd.dark,accent=vd.accent;
-      // Ancient flower-back bear: huge round mass with established petals/seed plates.
-      rdr.circle(x,y+r*.10,r*1.06,dark,14);
-      rdr.circle(x,y+r*.04,r*.92,body,14);
-      rdr.petalRing(x,y-r*.20,r*.64,7,[.58,.49,.26,1],Math.PI/7,.78);
-      rdr.circle(x,y-r*.60,r*.62,body,12);
-      rdr.circle(x-r*.42,y-r*.98,r*.22,dark,9);
-      rdr.circle(x+r*.42,y-r*.98,r*.22,dark,9);
-      rdr.circle(x-r*.18,y-r*.62,Math.max(1.2,r*.065),[.13,.08,.04,1],7);
-      rdr.circle(x+r*.18,y-r*.62,Math.max(1.2,r*.065),[.13,.08,.04,1],7);
-      rdr.circle(x,y-r*.42,r*.10,[.10,.06,.03,1],7);
-      rdr.line(x-r*.60,y+r*.26,x-r*1.18,y+r*.54,Math.max(2,3.3*sc),dark);
-      rdr.line(x+r*.60,y+r*.26,x+r*1.18,y+r*.54,Math.max(2,3.3*sc),dark);
-      if(attack){
-        for(const ox of [-.30,0,.30]){
-          rdr.line(
-            x+r*.68+ox*r,y-r*.04,
-            x+r*1.24+ox*r,y+r*.26,
-            Math.max(1.2,1.8*sc),
-            [.95,.89,.67,1]
-          );
-        }
-      }
-      // Ancient pollen glow; render-only.
-      const pulse=.5+.5*Math.sin(performance.now()*.003+(HashUtil.hash(u.id)%100)*.1);
-      rdr.circle(x,y-r*.24,r*(.28+.06*pulse),[accent[0],accent[1],accent[2],.08],12);
-    
-    }
-  },
-  "worker":(rdr,ctx)=>{
-    const {u,sc,x,y,r,workerBuildAnim,ownStealthAlpha,team,gold}=ctx;
-    {
-      /*
-       * 일꾼은 전투병과 실루엣부터 다르게 보이게 한다.
-       * - 넓은 안전모
-       * - 작업 조끼/멜빵
-       * - 등에 광물 운반 바구니
-       * - 총처럼 보일 수 있는 수평 장총 형태 금지
-       * - 채광 중에는 양손 곡괭이를 머리 위에서 광물 방향으로 크게 휘두름
-       */
-      const mining=u.workState==="mine";
-      const building=u.workState==="building"&&!!workerBuildAnim;
-      const returning=u.workState==="return"&&u.carry>0;
-
-      // 짧고 넓은 작업자 체형.
-      rdr.poly([
-        [x-r*.72,y+r*.64],
-        [x+r*.72,y+r*.64],
-        [x+r*.58,y-r*.20],
-        [x-r*.58,y-r*.20]
-      ],[team[0]*.82,team[1]*.82,team[2]*.82,1]);
-
-      // 밝은 작업 조끼 + 멜빵. 군복/방탄복 실루엣과 구분.
-      rdr.rect(x-r*.46,y-r*.12,r*.92,r*.60,[.92,.58,.16,1]);
-      rdr.line(x-r*.28,y-r*.10,x-r*.12,y+r*.46,Math.max(1.3,2.2*sc),[.98,.84,.32,1]);
-      rdr.line(x+r*.28,y-r*.10,x+r*.12,y+r*.46,Math.max(1.3,2.2*sc),[.98,.84,.32,1]);
-      rdr.rect(x-r*.28,y+r*.20,r*.56,r*.13,[.28,.31,.34,1]);
-
-      // 작업화.
-      rdr.rect(x-r*.50,y+r*.52,r*.34,r*.20,[.19,.16,.12,1]);
-      rdr.rect(x+r*.16,y+r*.52,r*.34,r*.20,[.19,.16,.12,1]);
-
-      // 콩 생명체의 둥근 머리 + 넓고 명확한 안전모.
-      rdr.circle(x,y-r*.48,r*.52,[.72,.78,.42,1],10);
-      rdr.circle(x-r*.13,y-r*.52,r*.22,[.62,.72,.34,ownStealthAlpha],9);
-      // 안전모 위 작은 새싹: 작업자도 같은 생태 군단이라는 시각 표식.
-      rdr.line(x,y-r*.94,x-r*.10,y-r*1.13,Math.max(1.2,1.8*sc),[.28,.58,.24,1]);
-      rdr.line(x,y-r*.94,x+r*.12,y-r*1.10,Math.max(1.2,1.8*sc),[.28,.58,.24,1]);
-      rdr.circle(x-r*.12,y-r*1.14,r*.10,[.46,.76,.35,1],8);
-      rdr.circle(x+r*.14,y-r*1.11,r*.10,[.46,.76,.35,1],8);
-      rdr.circle(x,y-r*.48,r*.50,[.58,.68,.31,ownStealthAlpha],10);
-      rdr.poly([
-        [x-r*.62,y-r*.58],
-        [x+r*.62,y-r*.58],
-        [x+r*.48,y-r*.92],
-        [x-r*.48,y-r*.92]
-      ],gold);
-      rdr.rect(x-r*.72,y-r*.61,r*1.44,r*.12,[1,.80,.18,1]);
-      rdr.rect(x-r*.10,y-r*.90,r*.20,r*.33,[1,.88,.32,.72]);
-
-      // 얼굴 대신 씨앗형 작업 헬멧의 전면 보호판만 사용한다.
-      rdr.poly([
-        [x-r*.42,y-r*.58],[x-r*.28,y-r*.82],[x,y-r*.94],
-        [x+r*.28,y-r*.82],[x+r*.42,y-r*.58],[x+r*.24,y-r*.42],[x-r*.24,y-r*.42]
-      ],[.34,.25,.12,1]);
-      rdr.rect(x-r*.24,y-r*.66,r*.48,r*.10,[1,.80,.18,.88]);
-
-      // 등에 매단 광물 바구니. 빈 상태에도 프레임이 보이고,
-      // carry가 있으면 청록 광물이 위로 튀어나온다.
-      rdr.poly([
-        [x-r*.80,y-r*.04],
-        [x-r*.46,y-r*.12],
-        [x-r*.38,y+r*.44],
-        [x-r*.86,y+r*.42]
-      ],[.31,.22,.13,1]);
-      rdr.line(x-r*.76,y,x-r*.43,y+r*.04,Math.max(1,1.6*sc),[.67,.46,.22,1]);
-      rdr.line(x-r*.78,y+r*.18,x-r*.40,y+r*.20,Math.max(1,1.6*sc),[.67,.46,.22,1]);
-
-      if(u.carry>0){
-        const load=Math.min(1,u.carry/8);
-        const gasLoad=u.carryType==="gas";
-        const ore=gasLoad?[.35,.92,.42,1]:[.20,.78,.96,1];
-        const ore2=gasLoad?[.57,1,.58,1]:[.34,.90,1,1];
-        rdr.hex(x-r*.70,y-r*.10-r*.16*load,r*.22,ore);
-        if(load>.45)rdr.hex(x-r*.50,y-r*.02-r*.12*load,r*.18,ore2);
-        if(load>.8)rdr.hex(x-r*.82,y-r*.27,r*.16,ore2);
-      }
-
-      // 팔 위치.
-      const handCol=[.94,.70,.53,1];
-
-      if(building){
-        const {target,aimX,aimY,sideX,sideY,motion}=workerBuildAnim;
-        const angleBase=Math.atan2(aimY,aimX);
-        const handCol=[.94,.70,.53,1];
-
-        // Fast rhythmic construction cycle (~0.56 s): crouch -> overhead slam -> root pull -> recoil -> reset.
-        const slam=RangeUtil.clamp(motion.drive+motion.impact*.55,0,1);
-        const pull=motion.pull;
-        const toolAngle=angleBase-Math.PI*(.72-.60*slam+.22*pull);
-        const hx=Math.cos(toolAngle),hy=Math.sin(toolAngle);
-
-        const shoulderX=x+aimX*r*.10,shoulderY=y+aimY*r*.10-r*.05;
-        const grip1X=shoulderX+sideX*r*.18+aimX*r*(.15+.18*slam);
-        const grip1Y=shoulderY+sideY*r*.18+aimY*r*(.15+.18*slam);
-        const grip2X=shoulderX-sideX*r*.16+aimX*r*(.25+.20*slam);
-        const grip2Y=shoulderY-sideY*r*.16+aimY*r*(.25+.20*slam);
-        rdr.line(x-sideX*r*.20,y+r*.38,x+sideX*r*.18,y+r*(.56+.10*motion.crouch),Math.max(1.5,2.4*sc),[.19,.16,.12,1]);
-        rdr.line(x+sideX*r*.18,y+r*.38,x-sideX*r*.20,y+r*(.56-.08*motion.crouch),Math.max(1.5,2.4*sc),[.19,.16,.12,1]);
-        rdr.circle(grip1X,grip1Y,r*.12,handCol,7);rdr.circle(grip2X,grip2Y,r*.12,handCol,7);
-
-        // Oversized pick/root-hook: the downward impact reads clearly at combat zoom,
-        // while the backward phase feels like yanking living roots into place.
-        const handleStartX=x-hx*r*.18,handleStartY=y-hy*r*.18;
-        const toolX=x+hx*r*(1.66+.22*slam-.14*pull),toolY=y+hy*r*(1.66+.22*slam-.14*pull);
-        rdr.line(handleStartX,handleStartY,toolX,toolY,Math.max(2.2,3.4*sc),[.45,.27,.11,1]);
-        const px=-hy,py=hx;
-        rdr.line(toolX-px*r*.48,toolY-py*r*.48,toolX+px*r*.48,toolY+py*r*.48,Math.max(2.2,3.8*sc),[.34,.39,.44,1]);
-        rdr.poly([[toolX+px*r*.48,toolY+py*r*.48],[toolX+px*r*.68+hx*r*.08,toolY+py*r*.68+hy*r*.08],[toolX+px*r*.42-hx*r*.05,toolY+py*r*.42-hy*r*.05]],[.52,.58,.62,1]);
-
-        // Root being pulled toward the worker during the yank half of the cycle.
-        if(pull>.05){
-          const [bx,by]=rdr.worldToPx(rdr.viewX(target.x),rdr.viewY(target.y));
-          const rootX=bx-aimX*BuildingDefinition.get(target.type).size*sc*.48;
-          const rootY=by-aimY*BuildingDefinition.get(target.type).size*sc*.48;
-          const bendX=(rootX+x)*.5+sideX*r*.28*Math.sin(motion.phase*Math.PI*2);
-          const bendY=(rootY+y)*.5+sideY*r*.28*Math.sin(motion.phase*Math.PI*2);
-          rdr.line(rootX,rootY,bendX,bendY,Math.max(1.4,2.2*sc),[.34,.64,.24,.78]);
-          rdr.line(bendX,bendY,x+aimX*r*.34,y+aimY*r*.34,Math.max(1.2,1.9*sc),[.46,.76,.30,.72]);
-          rdr.circle(rootX,rootY,r*(.07+.05*pull),[.58,.86,.36,.72],7);
-        }
-
-        if(motion.impact>0){
-          const [bx,by]=rdr.worldToPx(rdr.viewX(target.x),rdr.viewY(target.y));
-          const rr=BuildingDefinition.get(target.type).size*sc;
-          const contactX=bx-aimX*rr*.56,contactY=by-aimY*rr*.56;
-          const fade=1-motion.impact*.35;
-          rdr.circle(contactX,contactY,r*(.16+.26*motion.impact),[.60,.88,.34,.16*fade],9);
-          for(let k=0;k<5;k++){
-            const h=HashUtil.hash(u.id+"|buildLeaf|"+k);
-            const spread=((h%1000)/1000-.5)*1.55;
-            const aa=angleBase+Math.PI+spread;
-            const dist=r*(.26+.72*motion.impact+((h>>>8)%100)/230);
-            const lx=contactX+Math.cos(aa)*dist,ly=contactY+Math.sin(aa)*dist;
-            const leafR=Math.max(1.1,r*(.055+.01*(k%3))*(1-motion.impact*.30));
-            rdr.poly([[lx,ly-leafR],[lx+leafR*.9,ly],[lx,ly+leafR],[lx-leafR*.55,ly]],[.46,.78,.30,.84*fade]);
-          }
-          for(let k=0;k<3;k++){
-            const h=HashUtil.hash(u.id+"|buildDustWorker|"+k);
-            const aa=angleBase+Math.PI+((h%1000)/1000-.5)*1.2;
-            const dist=r*(.30+.52*motion.impact);
-            rdr.circle(contactX+Math.cos(aa)*dist,contactY+Math.sin(aa)*dist*.55,Math.max(1.2,r*.06*(1-motion.impact*.35)),[.70,.56,.31,.62*fade],7);
-          }
-        }
-      }else if(mining){
-        const mineral=u.workResourceType==="gas"
-          ?rdr.snapshot?.buildings?.find(b=>b.id===u.mineId&&BuildingDefinition.get(b.type)?.isGasExtractor)
-          :rdr.snapshot?.resources?.find(m=>m.id===u.mineId);
-        let aimX=0,aimY=-1;
-
-        if(mineral){
-          const wx=rdr.viewX(u.x),wy=rdr.viewY(u.y);
-          const mx=rdr.viewX(mineral.x),my=rdr.viewY(mineral.y);
-          const dx=mx-wx,dy=my-wy;
-          const len=Math.hypot(dx,dy)||1;
-          aimX=dx/len;
-          aimY=dy/len;
-        }
-
-        // 렌더 전용 반복 스윙. 상태 publish 10Hz와 무관하게 rAF에서 부드럽게 움직인다.
-        const seedPhase=(HashUtil.hash(u.id)%997)/997;
-        const cycle=((performance.now()/720)+seedPhase)%1;
-
-        // 0~0.48: 머리 위로 들어올림, 0.48~0.70: 빠르게 타격, 이후 복귀.
-        let swing;
-        if(cycle<.48){
-          swing=cycle/.48;
-        }else if(cycle<.70){
-          swing=1-(cycle-.48)/.22;
-        }else{
-          swing=0;
-        }
-
-        const sideX=-aimY,sideY=aimX;
-        const lift=(.15+.85*swing);
-
-        // 손 두 개가 도구 손잡이를 잡음.
-        const grip1X=x+sideX*r*.18-aimX*r*.05;
-        const grip1Y=y+sideY*r*.18-aimY*r*.05;
-        const grip2X=x-sideX*r*.12+aimX*r*.12;
-        const grip2Y=y-sideY*r*.12+aimY*r*.12;
-        rdr.circle(grip1X,grip1Y,r*.11,handCol,7);
-        rdr.circle(grip2X,grip2Y,r*.11,handCol,7);
-
-        // 곡괭이 손잡이는 갈색 목재. 총신처럼 읽히지 않도록
-        // 큰 회전각과 명확한 T자 헤드를 가진다.
-        const angleBase=Math.atan2(aimY,aimX);
-        const angle=angleBase-Math.PI*.80*lift-Math.PI*.12;
-        const hx=Math.cos(angle),hy=Math.sin(angle);
-
-        const handleStartX=x-hx*r*.15;
-        const handleStartY=y-hy*r*.15;
-        const toolX=x+hx*r*1.62;
-        const toolY=y+hy*r*1.62;
-
-        rdr.line(
-          handleStartX,handleStartY,
-          toolX,toolY,
-          Math.max(2,3.1*sc),
-          [.45,.27,.11,1]
-        );
-
-        // 곡괭이 T자 금속 헤드.
-        const px=-hy,py=hx;
-        rdr.line(
-          toolX-px*r*.48,toolY-py*r*.48,
-          toolX+px*r*.48,toolY+py*r*.48,
-          Math.max(2,3.5*sc),
-          [.34,.39,.44,1]
-        );
-        rdr.poly([
-          [toolX+px*r*.48,toolY+py*r*.48],
-          [toolX+px*r*.66+hx*r*.08,toolY+py*r*.66+hy*r*.08],
-          [toolX+px*r*.42-hx*r*.05,toolY+py*r*.42-hy*r*.05]
-        ],[.52,.58,.62,1]);
-        rdr.poly([
-          [toolX-px*r*.48,toolY-py*r*.48],
-          [toolX-px*r*.66+hx*r*.08,toolY-py*r*.66+hy*r*.08],
-          [toolX-px*r*.42-hx*r*.05,toolY-py*r*.42-hy*r*.05]
-        ],[.52,.58,.62,1]);
-
-        // 타격 순간 미네랄 표면에 광석 파편/스파크.
-        // 판정과 무관한 순수 WebGL VFX.
-        if(mineral&&cycle>=.48&&cycle<.68){
-          const impactT=(cycle-.48)/.20;
-          const [mx,my]=rdr.worldToPx(rdr.viewX(mineral.x),rdr.viewY(mineral.y));
-          const contactX=mx-aimX*(mineral.r||28)*sc*.55;
-          const contactY=my-aimY*(mineral.r||28)*sc*.55;
-          const fade=1-impactT;
-
-          rdr.circle(contactX,contactY,r*(.18+.24*impactT),[.35,.90,1,.18*fade],8);
-
-          for(let k=0;k<5;k++){
-            const h=HashUtil.hash(u.id+"|mine|"+k);
-            const spread=((h%1000)/1000-.5)*1.45;
-            const aa=angleBase+Math.PI+spread;
-            const dist=(.25+impactT*(.55+((h>>>9)%100)/120))*r;
-            const px2=contactX+Math.cos(aa)*dist;
-            const py2=contactY+Math.sin(aa)*dist;
-            const rr=Math.max(1.2,r*(.07+((h>>>17)%5)*.008)*(1-impactT*.55));
-            rdr.poly([
-              [px2-rr,py2],
-              [px2,py2-rr],
-              [px2+rr,py2],
-              [px2,py2+rr]
-            ],[.31,.84,1,.92*fade]);
-          }
-
-          for(let k=0;k<3;k++){
-            const aa=angleBase+Math.PI+(-.45+k*.45);
-            rdr.line(
-              contactX,contactY,
-              contactX+Math.cos(aa)*r*(.45+.25*impactT),
-              contactY+Math.sin(aa)*r*(.45+.25*impactT),
-              Math.max(1,1.5*sc),
-              [1,.88,.42,.72*fade]
-            );
-          }
-        }
-      }else{
-        // 이동/복귀 중엔 곡괭이를 등에 비스듬히 메고 간다.
-        // 수평으로 앞으로 내밀지 않아 총처럼 보이지 않는다.
-        const hx=.56,hy=-.83;
-        const ax=x+r*.18,ay=y+r*.30;
-        const bx=x+hx*r*1.28,by=y+hy*r*1.28;
-
-        rdr.line(ax,ay,bx,by,Math.max(1.8,2.8*sc),[.45,.27,.11,1]);
-        const px=-hy,py=hx;
-        rdr.line(
-          bx-px*r*.36,by-py*r*.36,
-          bx+px*r*.36,by+py*r*.36,
-          Math.max(1.8,3*sc),
-          [.34,.39,.44,1]
-        );
-
-        // 운반 중에는 한 손으로 바구니 끈을 잡는 느낌.
-        if(returning)rdr.circle(x-r*.46,y+r*.12,r*.11,handCol,7);
-      }
-
-      // 작업자 상태를 작은 도형으로만 표현: 채광=곡괭이 표시, 운반=광물 표시.
-      if(building){
-        rdr.circle(x+r*.70,y+r*.50,r*.11,[.52,.86,.30,.92],7);
-        rdr.line(x+r*.62,y+r*.50,x+r*.78,y+r*.50,Math.max(1,1.4*sc),[.96,.82,.34,.92]);
-      }else if(mining){
-        rdr.circle(x+r*.70,y+r*.50,r*.10,[1,.78,.22,.9],7);
-      }else if(returning){
-        rdr.hex(x+r*.70,y+r*.50,r*.11,[.28,.86,1,.95]);
-      }
-    
-    }
-  },
-  "swordsman":(rdr,ctx)=>{
-    const {sc,x,y,r,attack,dir}=ctx;
-    {
-        // 칼잎 전사: 금속검 대신 몸에서 자란 넓은 칼잎 한 장이 정체성.
-        const slash=attack?r*.32:0;
-        rdr.petalRing(x-r*.48,y+r*.05,r*.26,3,[.38,.68,.28,1],-.3,.58);
-        rdr.poly([
-          [x+r*.28,y+r*.12],[x+r*.70,y+dir*r*.18],
-          [x+r*1.34,y+dir*(r*.82+slash)],[x+r*.92,y+dir*(r*.95+slash)],
-          [x+r*.40,y+dir*r*.22]
-        ],[.48,.80,.32,1]);
-        rdr.line(x+r*.44,y+dir*r*.18,x+r*1.14,y+dir*(r*.72+slash),Math.max(1,1.6*sc),[.24,.52,.20,1]);
-      
-    }
-  },
-  "pikeman":(rdr,ctx)=>{
-    const {sc,x,y,r,accent,attack,dir}=ctx;
-    {
-        // 가시창풀: 길고 유연한 줄기 + 끝가시.
-        const thrust=attack?r*.38:0;
-        rdr.line(x+r*.08,y+r*.12,x+r*.08,y+dir*(r*2.18+thrust),Math.max(2,3.2*sc),[.30,.55,.22,1]);
-        rdr.poly([[x-r*.02,y+dir*r*.86],[x-r*.35,y+dir*r*.58],[x-r*.08,y+dir*r*.42]],accent);
-        rdr.poly([[x+r*.18,y+dir*r*1.28],[x+r*.48,y+dir*r*1.02],[x+r*.18,y+dir*r*.90]],accent);
-        rdr.crestTriangle(x+r*.08,y+dir*(r*2.34+thrust),r*.25,[.78,.88,.55,1],dir<0?-Math.PI/2:Math.PI/2);
-      
-    }
-  },
-  "archer":(rdr,ctx)=>{
-    const {sc,x,y,r,attack,dir}=ctx;
-    {
-        // 씨앗궁수: 두 장의 휘어진 잎과 중앙 씨앗이 활 역할을 한다.
-        rdr.poly([[x+r*.35,y-r*.68],[x+r*.83,y-r*.36],[x+r*.63,y-r*.06],[x+r*.28,y-r*.28]], [.36,.66,.28,1]);
-        rdr.poly([[x+r*.35,y+r*.68],[x+r*.83,y+r*.36],[x+r*.63,y+r*.06],[x+r*.28,y+r*.28]], [.36,.66,.28,1]);
-        rdr.line(x+r*.80,y-r*.34,x+r*.80,y+r*.34,Math.max(1,1.4*sc),[.78,.84,.55,1]);
-        rdr.circle(x+r*.76,y,r*.10,[.74,.58,.25,1],8);
-        if(attack){
-          rdr.line(x+r*.78,y,x+r*1.48,y+dir*r*.06,Math.max(1.1,1.6*sc),[.53,.39,.18,1]);
-          rdr.circle(x+r*1.52,y+dir*r*.06,r*.09,[.82,.65,.30,1],8);
-        }
-      
-    }
-  },
-  "skirmisher":(rdr,ctx)=>{
-    const {x,y,r,accent,attack,dir}=ctx;
-    {
-        // 포자사수: 총/탄창 대신 등에 포자낭과 짧은 분사구를 붙인다.
-        rdr.circle(x-r*.38,y-r*.08,r*.38,[.30,.64,.48,1],11);
-        rdr.circle(x-r*.48,y-r*.20,r*.13,[.68,.92,.60,1],8);
-        rdr.circle(x-r*.28,y+r*.12,r*.11,[.68,.92,.60,1],8);
-        rdr.poly([[x+r*.25,y-r*.15],[x+r*.92,y-r*.22],[x+r*1.18,y],[x+r*.92,y+r*.22],[x+r*.25,y+r*.15]], [.28,.58,.42,1]);
-        rdr.circle(x+r*1.20,y,r*.12,accent,8);
-        if(attack){
-          rdr.circle(x+r*1.50,y+dir*r*.04,r*.14,[.62,1,.72,.50],8);
-          rdr.circle(x+r*1.72,y+dir*r*.06,r*.07,[.82,1,.86,.70],7);
-        }
-      
-    }
-  },
-  "kickhopper":(rdr,ctx)=>{
-    const {sc,x,y,r,teamLight,accent,attack,dir}=ctx;
-    {
-        // 방아깨비: 작은 몸보다 훨씬 큰 탄성 뒷다리가 먼저 읽히는 T1 실루엣.
-        rdr.circle(x,y+r*.02,r*.58,[.46,.62,.20,1],12);
-        rdr.circle(x,y-r*.42,r*.32,teamLight,10);
-        rdr.line(x-r*.20,y+r*.26,x-r*.72,y+r*.74,Math.max(2.0,3.2*sc),[.38,.50,.16,1]);
-        rdr.line(x+r*.20,y+r*.26,x+r*.72,y+r*.74,Math.max(2.0,3.2*sc),[.38,.50,.16,1]);
-        const kick=attack?r*.52:0;
-        rdr.line(x-r*.72,y+r*.74,x-r*1.10,y+dir*(r*.58+kick),Math.max(2.2,3.8*sc),accent);
-        rdr.line(x+r*.72,y+r*.74,x+r*1.10,y+dir*(r*.58+kick),Math.max(2.2,3.8*sc),accent);
-        rdr.circle(x-r*1.12,y+dir*(r*.60+kick),r*.11,[.92,.96,.58,1],8);
-        rdr.circle(x+r*1.12,y+dir*(r*.60+kick),r*.11,[.92,.96,.58,1],8);
-        rdr.line(x-r*.16,y-r*.58,x-r*.42,y-r*.88,Math.max(1,1.5*sc),[.30,.40,.15,1]);
-        rdr.line(x+r*.16,y-r*.58,x+r*.42,y-r*.88,Math.max(1,1.5*sc),[.30,.40,.15,1]);
-      
-    }
-  },
-  "shellbug":(rdr,ctx)=>{
-    const {sc,x,y,r,teamDark,accent}=ctx;
-    {
-        rdr.circle(x,y+r*.10,r*.82,[.34,.45,.22,1],12);
-        rdr.poly([[x-r*.72,y-r*.10],[x-r*.42,y-r*.62],[x,y-r*.78],[x+r*.42,y-r*.62],[x+r*.72,y-r*.10],[x+r*.52,y+r*.40],[x-r*.52,y+r*.40]],teamDark);
-        rdr.line(x,y-r*.68,x,y+r*.30,Math.max(1.3,2*sc),accent);
-        rdr.circle(x-r*.26,y-r*.18,r*.07,[.95,.92,.68,1],7);rdr.circle(x+r*.26,y-r*.18,r*.07,[.95,.92,.68,1],7);
-      
-    }
-  },
-  "stingbug":(rdr,ctx)=>{
-    const {sc,x,y,r,team,teamDark,accent,attack,dir}=ctx;
-    {
-        rdr.circle(x-r*.12,y+r*.10,r*.54,team,11);rdr.circle(x+r*.44,y-r*.04,r*.32,teamDark,9);
-        rdr.line(x-r*.18,y+r*.30,x-r*.78,y+r*.62,Math.max(1.2,1.8*sc),teamDark);
-        rdr.line(x+r*.14,y+r*.30,x+r*.74,y+r*.62,Math.max(1.2,1.8*sc),teamDark);
-        const jab=attack?r*.30:0;
-        rdr.line(x+r*.58,y,x+r*1.38+jab,y+dir*r*.06,Math.max(1.5,2.3*sc),accent);
-        rdr.crestTriangle(x+r*1.46+jab,y+dir*r*.06,r*.18,accent,0);
-      
-    }
-  },
-  "dandelion":(rdr,ctx)=>{
-    const {sc,x,y,r,team,accent}=ctx;
-    {
-        rdr.circle(x,y+r*.16,r*.40,team,10);
-        for(let k=0;k<9;k++){const a=k*Math.PI*2/9+performance.now()*.0005;rdr.line(x,y-r*.30,x+Math.cos(a)*r*.72,y-r*.30+Math.sin(a)*r*.72,Math.max(1,1.3*sc),[.94,.95,.82,.9])}
-        rdr.circle(x,y-r*.30,r*.13,accent,8);
-      
-    }
-  },
-  "thornfruit":(rdr,ctx)=>{
-    const {x,y,r,teamDark,accent}=ctx;
-    {
-        rdr.circle(x,y,r*.62,[.47,.63,.25,1],12);
-        for(let k=0;k<10;k++){const a=k*Math.PI*2/10;rdr.crestTriangle(x+Math.cos(a)*r*.58,y+Math.sin(a)*r*.58,r*.20,accent,a)}
-        rdr.circle(x,y-r*.08,r*.22,teamDark,9);
-      
-    }
-  },
-  "tank":(rdr,ctx)=>{
-    const {x,y,r,team,teamDark}=ctx;
-    {
-        // 껍질수호자: 방패를 든 병사가 아니라 몸 자체가 여러 겹의 씨앗껍질.
-        rdr.circle(x,y+r*.06,r*.92,[.24,.34,.18,1],14);
-        for(let k=-2;k<=2;k++){
-          const ox=k*r*.24;
-          rdr.poly([[x+ox-r*.20,y-r*.66],[x+ox+r*.20,y-r*.66],[x+ox+r*.28,y+r*.46],[x+ox-r*.28,y+r*.46]],k%2?teamDark:[.48,.62,.30,1]);
-        }
-        rdr.circle(x,y-r*.30,r*.28,team,10);
-        rdr.circle(x+r*.08,y-r*.35,r*.07,[.90,.94,.66,1],7);
-      
-    }
-  },
-  "rogue":(rdr,ctx)=>{
-    const {sc,x,y,r,teamDark,accent,attack,dir}=ctx;
-    {
-        // 그림자벼룩: 큰 뒷다리 + 칼날 같은 앞다리, 망토/단검 없음.
-        rdr.circle(x,y+r*.06,r*.50,teamDark,11);
-        rdr.circle(x,y-r*.40,r*.30,[.24,.28,.18,1],9);
-        rdr.line(x-r*.26,y+r*.22,x-r*.92,y+r*.74,Math.max(2,3.2*sc),teamDark);
-        rdr.line(x+r*.26,y+r*.22,x+r*.92,y+r*.74,Math.max(2,3.2*sc),teamDark);
-        const stab=attack?r*.30:0;
-        rdr.line(x-r*.20,y-r*.20,x-r*.90,y+dir*(r*.70+stab),Math.max(1.5,2.4*sc),accent);
-        rdr.line(x+r*.20,y-r*.20,x+r*.90,y+dir*(r*.70+stab),Math.max(1.5,2.4*sc),accent);
-        rdr.circle(x-r*.11,y-r*.44,r*.055,[.90,.82,.28,1],6);
-        rdr.circle(x+r*.11,y-r*.44,r*.055,[.90,.82,.28,1],6);
-      
-    }
-  },
-  "mage":(rdr,ctx)=>{
-    const {x,y,r,team,attack}=ctx;
-    {
-        // 폭발꽃: 지팡이 대신 꽃술 자체가 폭발성 꽃가루를 압축한다.
-        rdr.petalRing(x,y-r*.08,r*.72,8,[.68,.35,.78,1],Math.PI/8,.76);
-        rdr.circle(x,y-r*.08,r*.36,team,12);
-        const orb=r*(attack?.34:.22);
-        rdr.circle(x,y-r*.12,orb,[.92,.62,1,1],10);
-        rdr.circle(x,y-r*.12,orb*1.9,[.86,.46,1,.14],12);
-        for(let k=0;k<4;k++){
-          const a=k*Math.PI/2+performance.now()*.0015;
-          rdr.circle(x+Math.cos(a)*r*.72,y-r*.08+Math.sin(a)*r*.72,r*.07,[.94,.78,1,.6],7);
-        }
-      
-    }
-  },
-  "lancer":(rdr,ctx)=>{
-    const {sc,x,y,r,team,teamDark,accent,attack,dir}=ctx;
-    {
-        // 왕사슴 돌격대: 실제 사슴벌레 몸체와 거대한 집게턱이 실루엣의 대부분.
-        rdr.circle(x,y+r*.14,r*.80,[.20,.16,.12,1],13);
-        rdr.poly([[x-r*.66,y-r*.06],[x,y-r*.58],[x+r*.66,y-r*.06],[x+r*.52,y+r*.48],[x-r*.52,y+r*.48]],teamDark);
-        rdr.circle(x,y-r*.50,r*.34,[.31,.22,.12,1],10);
-        const charge=attack?r*.34:0;
-        rdr.line(x-r*.18,y-r*.66,x-r*.58,y+dir*(r*1.55+charge),Math.max(2,3.4*sc),accent);
-        rdr.line(x+r*.18,y-r*.66,x+r*.58,y+dir*(r*1.55+charge),Math.max(2,3.4*sc),accent);
-        rdr.crestTriangle(x-r*.60,y+dir*(r*1.62+charge),r*.20,accent,dir<0?-Math.PI/2:Math.PI/2);
-        rdr.crestTriangle(x+r*.60,y+dir*(r*1.62+charge),r*.20,accent,dir<0?-Math.PI/2:Math.PI/2);
-        // 작은 씨앗 기수.
-        rdr.circle(x,y-r*.88,r*.22,team,9);
-      
-    }
-  },
-  "medic":(rdr,ctx)=>{
-    const {sc,x,y,r,team}=ctx;
-    {
-        // 이슬치유사: 꽃잎 받침 + 큰 이슬방울. 의료십자/주사기 없음.
-        rdr.petalRing(x,y+r*.04,r*.55,6,[.42,.76,.48,1],Math.PI/6,.70);
-        rdr.circle(x,y-r*.34,r*.38,team,11);
-        rdr.circle(x+r*.56,y-r*.30,r*.25,[.52,.96,.82,.62],10);
-        rdr.circle(x+r*.49,y-r*.39,r*.08,[.90,1,.96,.85],8);
-        rdr.line(x+r*.28,y-r*.12,x+r*.48,y-r*.26,Math.max(1.4,2.1*sc),[.28,.62,.44,1]);
-      
-    }
-  },
-  "mantis":(rdr,ctx)=>{
-    const {own,sc,x,y,r,cloaked,accent,attack,dir}=ctx;
-    {
-        // Veil Mantis: leaf cloak + oversized scythe forelegs.
-        rdr.poly([
-          [x-r*.88,y+r*.42],[x-r*.42,y-r*.38],
-          [x,y-r*.78],[x+r*.42,y-r*.38],[x+r*.88,y+r*.42],
-          [x,y+r*.70]
-        ],[.26,.58,.28,own&&cloaked?.24:1]);
-        const cut=attack?r*.34:0;
-        rdr.line(x-r*.30,y-r*.02,x-r*1.14,y+dir*(r*.70+cut),Math.max(1.8,2.8*sc),accent);
-        rdr.line(x+r*.30,y-r*.02,x+r*1.14,y+dir*(r*.70+cut),Math.max(1.8,2.8*sc),accent);
-        rdr.crestTriangle(x-r*1.20,y+dir*(r*.78+cut),r*.18,accent,dir<0?-Math.PI/2:Math.PI/2);
-        rdr.crestTriangle(x+r*1.20,y+dir*(r*.78+cut),r*.18,accent,dir<0?-Math.PI/2:Math.PI/2);
-
-      
-    }
-  },
-  "pillbug":(rdr,ctx)=>{
-    const {u,sc,x,y,r,team,teamDark,accent,attack,dir}=ctx;
-    {
-        // Rolling Pillbug: segmented round shell + volatile front sac.
-        const roll=performance.now()*.012+(HashUtil.hash(u.id)%997)*.01;
-        rdr.circle(x,y,r*.88,[.13,.16,.18,1],14);
-        rdr.circle(x,y,r*.76,team,14);
-        for(let k=0;k<6;k++){
-          const a=roll+k*Math.PI/3;
-          rdr.line(
-            x+Math.cos(a)*r*.18,y+Math.sin(a)*r*.18,
-            x+Math.cos(a)*r*.72,y+Math.sin(a)*r*.72,
-            Math.max(1.3,2.2*sc),teamDark
-          );
-        }
-        const pulse=.82+.18*Math.sin(performance.now()*.012+(HashUtil.hash(u.id)%17));
-        rdr.circle(x+r*.62,y+dir*r*.14,r*.26* pulse,accent,10);
-        rdr.circle(x+r*.68,y+dir*r*.10,r*.10,[1,.94,.72,1],8);
-        if(attack)rdr.circle(x,y,r*1.08,[1,.66,.22,.12],16);
-      
-    }
-  },
-  "rootstalker":(rdr,ctx)=>{
-    const {sc,x,y,r,ownStealthAlpha,accent}=ctx;
-    {
-        rdr.circle(x,y+r*.14,r*.72,[.43,.31,.18,1],12);
-        for(let k=0;k<5;k++){const a=-Math.PI*.85+k*.42;rdr.line(x,y+r*.15,x+Math.cos(a)*r*.95,y+Math.sin(a)*r*.95,Math.max(1.5,2.2*sc),[.36,.23,.12,1])}
-        rdr.circle(x,y-r*.34,r*.32,[.50,.34,.18,ownStealthAlpha],10);rdr.crestTriangle(x,y-r*.82,r*.20,accent,-Math.PI/2);
-      
-    }
-  },
-  "chainflower":(rdr,ctx)=>{
-    const {x,y,r,team,accent}=ctx;
-    {
-        rdr.petalRing(x,y,r*.58,7,accent,Math.PI/7,.72);rdr.circle(x,y-r*.12,r*.36,team,12);rdr.circle(x,y-r*.12,r*.16,[.86,.96,1,1],10);
-      
-    }
-  },
-  "guardshroom":(rdr,ctx)=>{
-    const {x,y,r,accent}=ctx;
-    {
-        rdr.circle(x,y+r*.28,r*.58,[.72,.67,.54,1],12);rdr.circle(x,y-r*.28,r*.86,accent,14);
-        rdr.circle(x-r*.24,y-r*.42,r*.12,[1,.92,.78,.55],8);rdr.circle(x+r*.18,y-r*.18,r*.10,[1,.92,.78,.45],8);
-      
-    }
-  },
-  "sporeherd":(rdr,ctx)=>{
-    const {x,y,r,team}=ctx;
-    {
-        rdr.circle(x,y+r*.10,r*.74,team,12);rdr.circle(x,y-r*.46,r*.48,[.72,.78,.30,1],12);
-        for(let k=0;k<4;k++){const a=k*Math.PI/2;rdr.circle(x+Math.cos(a)*r*.52,y-r*.44+Math.sin(a)*r*.30,r*.14,[.88,.94,.52,1],9)}
-      
-    }
-  },
-  "clawhunter":(rdr,ctx)=>{
-    const {sc,x,y,r,ownStealthAlpha,team,accent,attack,dir}=ctx;
-    {
-        rdr.circle(x,y+r*.08,r*.72,team,12);rdr.circle(x,y-r*.38,r*.36,[.48,.25,.12,ownStealthAlpha],10);
-        const reach=attack?r*.32:0;
-        rdr.line(x-r*.30,y,x-r*1.15,y+dir*(r*.36+reach),Math.max(2,3.4*sc),accent);
-        rdr.line(x+r*.30,y,x+r*1.15,y+dir*(r*.36+reach),Math.max(2,3.4*sc),accent);
-        rdr.crestTriangle(x-r*1.20,y+dir*(r*.40+reach),r*.24,accent,dir<0?-Math.PI/2:Math.PI/2);
-        rdr.crestTriangle(x+r*1.20,y+dir*(r*.40+reach),r*.24,accent,dir<0?-Math.PI/2:Math.PI/2);
-      
-    }
-  },
-  "sporeling":(rdr,ctx)=>{
-    const {x,y,r}=ctx;
-    {
-        rdr.circle(x,y,r*.62,[.76,.85,.38,1],10);rdr.circle(x,y-r*.34,r*.22,[.92,.96,.62,1],8);
-      
-    }
-  },
-  "shelltitan":(rdr,ctx)=>{
-    const {sc,x,y,r,attack}=ctx;
-    {
-        // Final direction is intentionally close to the approved A prototype:
-        // one massive oval shell + small head + sparse shell studs + antennae.
-        // No eyes, arms or legs. Authored head is -Y; common full-facing rotates the whole silhouette.
-        const shell=[.47,.38,.23,1],shellDark=[.27,.25,.17,1],ridge=[.67,.55,.31,1],head=[.63,.51,.29,1],antenna=[.76,.63,.35,1];
-        rdr.circle(x,y+r*.10,r*1.04,shellDark,18);
-        rdr.poly([[x,y-r*.86],[x-r*.48,y-r*.75],[x-r*.82,y-r*.43],[x-r*.96,y+r*.04],[x-r*.78,y+r*.55],[x-r*.36,y+r*.84],[x,y+r*.92],[x+r*.36,y+r*.84],[x+r*.78,y+r*.55],[x+r*.96,y+r*.04],[x+r*.82,y-r*.43],[x+r*.48,y-r*.75]],shell);
-        // Single central shell seam: strong at actual game scale without clutter.
-        rdr.line(x,y-r*.72,x,y+r*.72,Math.max(1.6,2.6*sc),shellDark);
-        // Six raised shell studs give the ancient carapace a recognizable species pattern.
-        for(const [ox,oy,sz] of [[-.40,-.34,.085],[.40,-.34,.085],[-.46,.02,.095],[.46,.02,.095],[-.36,.40,.075],[.36,.40,.075]]){
-          rdr.circle(x+ox*r,y+oy*r,r*sz,ridge,8);
-        }
-        // Small separate head, visually subordinate to the giant shell.
-        rdr.poly([[x,y-r*.78],[x-r*.20,y-r*.72],[x-r*.25,y-r*.94],[x,y-r*1.16],[x+r*.25,y-r*.94],[x+r*.20,y-r*.72]],head);
-        // Minimal antennae are the only fine biological detail.
-        rdr.line(x-r*.11,y-r*1.02,x-r*.27,y-r*1.24,Math.max(1.1,1.7*sc),antenna);
-        rdr.line(x+r*.11,y-r*1.02,x+r*.27,y-r*1.24,Math.max(1.1,1.7*sc),antenna);
-        rdr.circle(x-r*.28,y-r*1.26,r*.05,antenna,7);
-        rdr.circle(x+r*.28,y-r*1.26,r*.05,antenna,7);
-        if(attack){
-          const phase=Math.sin(Math.min(1,Number(attack.progress)||.5)*Math.PI);
-          rdr.circle(x,y+r*.08,r*(1.02+.13*phase),[1,.76,.30,.09],20);
-        }
-    }
-  },
-  "swarmbug":(rdr,ctx)=>{
-    const {sc,x,y,r,team,teamDark,accent}=ctx;
-    {
-        rdr.circle(x,y,r*.50,team,10);rdr.circle(x+r*.34,y-r*.12,r*.28,teamDark,9);
-        for(let k=-1;k<=1;k++){rdr.line(x-r*.12,y+k*r*.22,x-r*.62,y+k*r*.38,Math.max(1,1.5*sc),accent);rdr.line(x+r*.12,y+k*r*.22,x+r*.62,y+k*r*.38,Math.max(1,1.5*sc),accent)}
-      
-    }
-  },
-  "aegisbeetle":(rdr,ctx)=>{
-    const {u,sc,x,y,r,team,teamDark,accent}=ctx;
-    {
-        // Broad scutellum silhouette: the shell itself reads as the shield.
-        rdr.circle(x,y+r*.16,r*.82,teamDark,16);
-        rdr.poly([[x,y-r*.94],[x-r*.72,y-r*.55],[x-r*.88,y+r*.10],[x-r*.55,y+r*.68],[x,y+r*.84],[x+r*.55,y+r*.68],[x+r*.88,y+r*.10],[x+r*.72,y-r*.55]],team);
-        rdr.poly([[x,y-r*.78],[x-r*.55,y-r*.43],[x-r*.67,y+r*.08],[x-r*.40,y+r*.50],[x,y+r*.64],[x+r*.40,y+r*.50],[x+r*.67,y+r*.08],[x+r*.55,y-r*.43]],teamDark);
-        rdr.line(x,y-r*.70,x,y+r*.58,Math.max(1.2,2.2*sc),accent);
-        const manaRatio=RangeUtil.clamp((Number(u.resources.mana)||0)/Math.max(1,Number(u.resources.manaMax)||250),0,1);
-        const pulse=.65+.35*Math.sin(performance.now()*.005+(HashUtil.hash(u.id)%100)*.1);
-        const nodes=[[-.43,-.30],[.43,-.30],[-.40,.30],[.40,.30]];
-        for(const [nx,ny] of nodes){
-          rdr.circle(x+nx*r,y+ny*r,r*.095,[.08,.20,.26,1],10);
-          rdr.circle(x+nx*r,y+ny*r,r*.055,[.70,.96,1,.42+.50*manaRatio*pulse],8);
-        }
-        if(manaRatio>0)rdr.circle(x,y+r*.05,r*.91,[.45,.88,1,.025+.055*manaRatio*pulse],24);
-    }
-  },
-  "burrowbeast":(rdr,ctx)=>{
-    const {sc,x,y,r,accent,attack}=ctx;
-    {
-        // Authored forward is screen-up, matching the common full-facing contract.
-        // The common facing transform then rotates the whole creature toward movement/target intent.
-        const hide=[.38,.25,.15,1],hideDark=[.20,.13,.09,1],plate=[.50,.34,.18,1],horn=[.76,.58,.30,1];
-        rdr.circle(x,y+r*.18,r*.82,hideDark,14);
-        rdr.circle(x,y+r*.08,r*.72,hide,14);
-        rdr.poly([[x-r*.58,y+r*.42],[x-r*.70,y-r*.12],[x-r*.42,y-r*.58],[x,y-r*.82],[x+r*.42,y-r*.58],[x+r*.70,y-r*.12],[x+r*.58,y+r*.42]],plate);
-        // Dorsal armor plates stay symmetric around the forward axis.
-        for(let k=-1;k<=1;k++){const oy=(.16+k*.25)*r;rdr.line(x-r*.46,y+oy,x+r*.46,y+oy-r*.08,Math.max(1.5,2.5*sc),[.25,.16,.10,1])}
-        // Paired inward-curving digging scythes: broad at the shoulders, flare outward,
-        // then hook back toward the centerline near the tips.
-        const scythe=(side)=>{
-          const sx=side;
-          rdr.poly([
-            [x+sx*r*.28,y-r*.34],
-            [x+sx*r*.58,y-r*.58],
-            [x+sx*r*.88,y-r*.86],
-            [x+sx*r*.96,y-r*1.12],
-            [x+sx*r*.72,y-r*1.34],
-            [x+sx*r*.42,y-r*1.43],
-            [x+sx*r*.52,y-r*1.20],
-            [x+sx*r*.68,y-r*.98],
-            [x+sx*r*.58,y-r*.76],
-            [x+sx*r*.16,y-r*.62]
-          ],horn);
-          // Bright inner cutting edge reinforces the inward hook.
-          rdr.line(x+sx*r*.58,y-r*.76,x+sx*r*.68,y-r*.98,Math.max(1.2,2.0*sc),accent);
-          rdr.line(x+sx*r*.68,y-r*.98,x+sx*r*.42,y-r*1.43,Math.max(1.2,1.8*sc),accent);
-        };
-        scythe(-1);scythe(1);
-        // Four planted legs preserve the creature silhouette.
-        for(const sx of [-.46,.46])for(const oy of [-.12,.38]){
-          rdr.line(x+sx*r,y+oy*r,x+sx*r*1.35,y+(oy+.18)*r,Math.max(1.8,2.8*sc),hideDark);
-        }
-        if(attack)rdr.circle(x,y-r*.38,r*.30,[1,.68,.28,.12],12);
-    }
-  },
-  "deepthorn":(rdr,ctx)=>{
-    const {sc,x,y,r,accent,attack}=ctx;
-    {
-        const root=[.27,.38,.16,1],rootDark=[.15,.23,.10,1],bark=[.38,.50,.20,1],thorn=[.72,.90,.34,1];
-        // Wide rooted base: this creature reads as a living subterranean siege-root, not a generic round monster.
-        rdr.circle(x,y+r*.30,r*1.02,rootDark,16);
-        for(let k=0;k<8;k++){
-          const a=k*Math.PI/4,inner=.42*r,outer=(1.10+(k%2)*.16)*r;
-          rdr.line(x+Math.cos(a)*inner,y+r*.30+Math.sin(a)*inner*.55,x+Math.cos(a)*outer,y+r*.30+Math.sin(a)*outer*.55,Math.max(2.4,3.8*sc),root);
-          rdr.crestTriangle(x+Math.cos(a)*outer,y+r*.30+Math.sin(a)*outer*.55,r*.16,bark,a);
-        }
-        // Layered central root-bulb with a huge upward thorn matching the actual ground eruption.
-        rdr.poly([[x-r*.62,y+r*.34],[x-r*.50,y-r*.26],[x-r*.28,y-r*.58],[x,y-r*.72],[x+r*.28,y-r*.58],[x+r*.50,y-r*.26],[x+r*.62,y+r*.34]],root);
-        rdr.poly([[x-r*.38,y+r*.18],[x-r*.30,y-r*.28],[x,y-r*.56],[x+r*.30,y-r*.28],[x+r*.38,y+r*.18]],bark);
-        rdr.poly([[x-r*.18,y-r*.38],[x-r*.10,y-r*.88],[x,y-r*1.48],[x+r*.10,y-r*.88],[x+r*.18,y-r*.38]],thorn);
-        rdr.poly([[x-r*.07,y-r*.52],[x,y-r*1.28],[x+r*.07,y-r*.52]],accent);
-        // Small lateral buds imply the researched second eruption without adding a hidden effect.
-        rdr.crestTriangle(x-r*.46,y-r*.42,r*.20,thorn,-2.18);
-        rdr.crestTriangle(x+r*.46,y-r*.42,r*.20,thorn,-.96);
-        if(attack){
-          rdr.circle(x,y+r*.04,r*1.18,[.64,.88,.30,.10],20);
-          rdr.circle(x,y-r*.64,r*.34,[.82,1,.42,.18],12);
-        }
-    }
-  },
-  "siege":(rdr,ctx)=>{
-    const {u,sc,x,y,r,teamDark,accent,attack}=ctx;
-    // Cancel the outer generic facing transform: this species owns two independent pivots.
-    const outer=rdr._unitFacingTransform;rdr._unitFacingTransform=null;
-    try{
-      const facing=rdr.artilleryFacingScreen(u),st=facing.deployState,d0=UnitDefinition.get(u.type)?.deployment||{},until=Number(u.behaviorState?.deploymentUntil)||0,nowTick=Number(rdr.snapshot?.tick)||0;
-      let q=st==="deployed"?1:0;
-      if(st==="deploying"){const total=Math.max(1,Math.round((Number(d0.deployMs)||900)/(1000/Math.max(1,Number(rdr.snapshot?.tps)||20))));q=RangeUtil.clamp(1-(until-nowTick)/total,0,1)}
-      else if(st==="undeploying"){const total=Math.max(1,Math.round((Number(d0.undeployMs)||450)/(1000/Math.max(1,Number(rdr.snapshot?.tps)||20))));q=RangeUtil.clamp((until-nowTick)/total,0,1)}
-      const ease=q*q*(3-2*q),drop=r*.30*ease;
-      // HULL: tripod/chassis freezes when deployment begins.
-      rdr.withFacingAngle(facing.hullAngle,u,x,y,()=>{
-        const cannonAngle=-Math.PI/2,anchorBase=cannonAngle+Math.PI/3;
-        for(let i=0;i<3;i++){const a=anchorBase+i*Math.PI*2/3,ca=Math.cos(a),sa=Math.sin(a),rootR=r*(.42+.08*ease),footR=r*(.68+.82*ease),sx=x+ca*rootR,sy=y-drop+sa*rootR*.72,ex=x+ca*footR,ey=y-drop+sa*footR*.72;
-          rdr.line(sx,sy,ex,ey,Math.max(2.8,4.5*sc),[.25,.31,.15,1]);rdr.circle(ex,ey,r*(.12+.17*ease),[.31,.22,.10,1],10);
-          if(ease>.30){const tx=-sa,ty=ca*.72;rdr.line(ex,ey,ex+tx*r*.25,ey+ty*r*.25,Math.max(1.4,2.2*sc),[.38,.25,.11,.88]);rdr.line(ex,ey,ex-tx*r*.25,ey-ty*r*.25,Math.max(1.4,2.2*sc),[.38,.25,.11,.88])}
-        }
-        rdr.circle(x,y+r*.08-drop,r*(.76+.10*ease),[.32,.36,.20,1],14);rdr.circle(x,y-r*.05-drop,r*.54,teamDark,12);
-      });
-      // TURRET ASSEMBLY: the whole upper body rotates around its bearing center.
-      // Keeping every upper-body vertex centered on this pivot prevents the "head turning"
-      // orbit that happened when the barrel and pod used different visual centers.
-      const turretPivotX=x,turretPivotY=y-r*.08-drop;
-      rdr.withFacingPivot(facing.turretAngle,u,turretPivotX,turretPivotY,turretPivotX,turretPivotY,()=>{
-        const cx=turretPivotX,cy=turretPivotY;
-        rdr.circle(cx,cy,r*.60,[.46,.48,.22,1],14);
-        rdr.circle(cx,cy,r*.34,[.30,.34,.17,1],12);
-        rdr.poly([[cx-r*.48,cy+r*.14],[cx-r*.34,cy-r*.40],[cx+r*.34,cy-r*.40],[cx+r*.48,cy+r*.14]],[.39,.43,.20,1]);
-        rdr.circle(cx-r*.34,cy-r*.10,r*.15,[.70,.58,.25,1],9);rdr.circle(cx+r*.34,cy-r*.10,r*.15,[.70,.58,.25,1],9);
-        rdr.poly([[cx-r*.32,cy+r*.16],[cx-r*.25,cy+r*.54],[cx+r*.25,cy+r*.54],[cx+r*.32,cy+r*.16]],[.29,.34,.17,1]);
-        const kick=attack?r*.22:0,barrelLen=r*(1.50+1.05*ease)-kick;
-        rdr.line(cx,cy-r*.12,cx,cy-barrelLen,Math.max(3.2,5.6*sc),[.34,.54,.23,1]);
-        rdr.circle(cx,cy-r*(1.02+1.02*ease),r*.22,[.70,.58,.25,1],10);
-        rdr.circle(cx,cy-barrelLen,r*.20,accent,10);
-      });
-      if(st==="deploying"&&ease>0)rdr.outlineCircle(x,y+r*.22,r*(.70+.78*ease),Math.max(1.4,2.2*sc),[.48,.32,.14,.48],20,1);
-    }finally{rdr._unitFacingTransform=outer}
-  },
-  "rocket":(rdr,ctx)=>{
-    const {sc,x,y,r,teamDark,attack}=ctx;
-    // 다연발 봉선화: four swollen balsam seed pods arranged as a compact launcher.
-    rdr.petalRing(x,y+r*.16,r*.86,7,[.38,.48,.24,1],Math.PI/7,.72);
-    rdr.circle(x,y+r*.12,r*.60,teamDark,12);
-    const pods=[[-.48,-.18],[.48,-.18],[-.28,-.72],[.28,-.72]];
-    for(let i=0;i<4;i++){
-      const [ox,oy]=pods[i],px=x+ox*r,py=y+oy*r;
-      const pulse=attack?(.06+((i+1)*.025)):0;
-      // Pod shell and four split petals make it read as a seed capsule rather than a gun barrel.
-      rdr.circle(px,py,r*(.25+pulse),[.58,.66,.25,1],10);
-      rdr.petalRing(px,py-r*.02,r*(.18+pulse),4,[1,.48,.30,1],Math.PI/4,.48);
-      rdr.circle(px,py-r*.08,r*.09,[1,.86,.38,1],8);
-      // Short launch throat points forward; no long conventional cannon tube.
-      rdr.line(px,py-r*.08,px,py-r*(.42+(attack?.08:0)),Math.max(1.8,2.7*sc),[.42,.58,.24,1]);
-    }
-    if(attack)rdr.circle(x,y-r*.28,r*1.08,[1,.52,.24,.08],16);
-  }
-});
-class UnitVisualLookup{
-  static renderer(type){return UNIT_VISUAL_RENDER_FNS[type]||null}
-  static cachePolicy(type){return UNIT_VISUAL_RENDER_FNS[type]?.cachePolicy==="STATIC"?"STATIC":"DYNAMIC"}
-  static validateCoverage(){
-    const missing=[];
-    for(const id of Object.keys(UnitDefinition.all)){
-      const d=UnitDefinition.get(id);
-      if(d?.layer==="AIR"&&(AIR_UNIT_VISUAL_RENDER_FNS[id]||d?.targetLeashToSummoner))continue;
-      if(!this.renderer(id))missing.push(id);
-    }
-    if(missing.length)throw new Error(`Missing unit visual renderer: ${missing.join(", ")}`);
-    return true;
-  }
-}
-
 class GeometryTemplateCache{
   constructor(){this.regular=new Map();this.outline=new Map();this.petals=new Map()}
   regularPolygon(n=10,rot=0){
@@ -1539,142 +417,6 @@ class RenderPassProfiler{
     return out;
   }
 }
-const AIR_UNIT_VISUAL_RENDER_FNS=Object.freeze({
-  "flowerbee":(rdr,c)=>{const {r,accent,attack,sc,pt,linePts,fastFlap,wingBright,wingSoft,body,bodyDark}=c;
-      // Compact bee: chunky striped abdomen + petal-like double wings.
-      const flap=.78+.28*fastFlap;
-      for(const side of [-1,1]){
-        const root=pt(.02,side*.20),outer=pt(-.08,side*.92*flap),rear=pt(-.42,side*.70*flap);
-        rdr.poly([root,outer,rear,pt(-.28,side*.18)],wingBright);
-        rdr.poly([pt(.15,side*.15),pt(.32,side*.74*flap),pt(.02,side*.62*flap),pt(-.04,side*.13)],wingSoft);
-      }
-      const rear=pt(-.40,0),mid=pt(.02,0),head=pt(.43,0),sting=pt(-.86,0);
-      rdr.circle(rear[0],rear[1],r*.48,[.78,.54,.16,1],11);
-      rdr.circle(mid[0],mid[1],r*.46,body,11);rdr.circle(head[0],head[1],r*.32,bodyDark,9);
-      for(const f of [-.58,-.38,-.18]){const a=pt(f,-.31),b=pt(f,.31);linePts(a,b,Math.max(1.2,1.9*sc),[.22,.16,.08,.92])}
-      linePts(pt(-.62,0),sting,Math.max(1.2,1.8*sc),accent);
-      if(attack){const a=pt(.50,0),b=pt(1.12,0);linePts(a,b,Math.max(1.6,2.5*sc),[1,.86,.34,.88]);rdr.circle(b[0],b[1],r*.11,[1,.93,.54,.72],7)}
-    },
-  "sporefly":(rdr,c)=>{const {r,attack,pt,fastFlap,wingSoft,body,bodyDark}=c;
-      // Tiny fly: bulbous eyes, short translucent wings, unmistakable spore sacs on the rear.
-      const flap=.70+.34*fastFlap;
-      for(const side of [-1,1])rdr.poly([pt(.10,side*.12),pt(.20,side*.86*flap),pt(-.30,side*.68*flap),pt(-.24,side*.10)],wingSoft);
-      const bodyP=pt(-.05,0),head=pt(.38,0);
-      rdr.circle(bodyP[0],bodyP[1],r*.43,body,10);rdr.circle(head[0],head[1],r*.28,bodyDark,9);
-      rdr.circle(...pt(-.42,-.26),r*.18,[.74,.92,.38,.92],8);rdr.circle(...pt(-.50,.04),r*.20,[.64,.86,.30,.92],8);rdr.circle(...pt(-.39,.29),r*.16,[.78,.94,.44,.90],8);
-      rdr.circle(...pt(.45,-.13),r*.09,[.92,1,.76,.92],7);rdr.circle(...pt(.45,.13),r*.09,[.92,1,.76,.92],7);
-      if(attack){for(const side of [-.18,0,.18]){const q=pt(.75,side);rdr.circle(q[0],q[1],r*.075,[.76,1,.50,.58],6)}}
-    },
-  "gustmayfly":(rdr,c)=>{const {u,r,teamLight,sc,pt,linePts,slowFlap,wingBright,body,bodyDark}=c;
-      // Mayfly: long needle body, oversized upright wings and three trailing filaments.
-      const flap=.84+.18*slowFlap;
-      const nose=pt(.72,0),tail=pt(-.76,0);
-      linePts(tail,nose,Math.max(2,3.2*sc),bodyDark);rdr.circle(...pt(.20,0),r*.22,body,9);rdr.circle(nose[0],nose[1],r*.16,teamLight,8);
-      for(const side of [-1,1])rdr.poly([pt(.18,side*.10),pt(.10,side*1.08*flap),pt(-.26,side*.90*flap),pt(-.22,side*.08)],wingBright);
-      for(const side of [-.16,0,.16])linePts(tail,pt(-1.55,side),Math.max(1,1.25*sc),[.72,.94,1,.72]);
-      const ramp=RangeUtil.clamp(Math.max(0,(Number(rdr.snapshot?.tick)||0)-(Number(u.movement.outOfCombatStartedAt)||0)+1)/Math.max(1,SimulationTiming.msToTicks(Number(UnitDefinition.get(u.type)?.outOfCombatRampMs)||3000,rdr.snapshot?.tps||SIM_TPS)),0,1);
-      if(ramp>.12){
-        for(let k=0;k<3;k++){const side=(k-1)*.20,a=pt(-.85-k*.14,side),b=pt(-1.45-k*.28,side);linePts(a,b,Math.max(1,1.3*sc),[.48,.92,1,.10+.22*ramp])}
-      }
-    },
-  "lanternmoth":(rdr,c)=>{const {r,sc,pt,linePts,now,seed,slowFlap,wingBright,wingSoft,body,bodyDark}=c;
-      // Light moth: broad symmetric wings and a central lantern organ.
-      const flap=.90+.12*slowFlap;
-      for(const side of [-1,1]){
-        rdr.poly([pt(.22,side*.10),pt(.18,side*1.18*flap),pt(-.48,side*1.02*flap),pt(-.64,side*.38),pt(-.18,side*.08)],wingBright);
-        rdr.poly([pt(-.10,side*.10),pt(-.48,side*.76),pt(-.72,side*.44),pt(-.38,side*.08)],wingSoft);
-      }
-      rdr.circle(...pt(-.08,0),r*.36,bodyDark,10);rdr.circle(...pt(.34,0),r*.24,body,9);
-      const glow=.78+.22*Math.sin(now*.006+seed),lamp=pt(-.12,0);
-      rdr.circle(lamp[0],lamp[1],r*.24*glow,[1,.86,.30,.95],10);rdr.circle(lamp[0],lamp[1],r*.48*glow,[1,.88,.34,.10],14);
-      for(const side of [-1,1])linePts(pt(.45,side*.08),pt(.78,side*.22),Math.max(1,1.15*sc),[1,.91,.56,.62]);
-    },
-  "sporemoth":(rdr,c)=>{const {r,attack,pt,now,seed,slowFlap,wingSoft,body,bodyDark}=c;
-      // Bomber moth: short thick wings and a conspicuous hanging spore sac.
-      const flap=.86+.15*slowFlap;
-      for(const side of [-1,1])rdr.poly([pt(.18,side*.12),pt(.02,side*.98*flap),pt(-.54,side*.82*flap),pt(-.68,side*.28),pt(-.20,side*.08)],wingSoft);
-      rdr.circle(...pt(-.06,0),r*.48,bodyDark,11);rdr.circle(...pt(.32,0),r*.27,body,9);
-      const swell=attack?1.22:(.94+.08*Math.sin(now*.007+seed)),sac=pt(-.48,0);
-      rdr.circle(sac[0],sac[1],r*.34*swell,[.67,.40,.82,.98],11);rdr.circle(sac[0],sac[1],r*.17*swell,[.88,.72,1,.86],9);
-      if(attack)rdr.circle(sac[0],sac[1],r*.62,[.72,.50,.92,.10],14);
-    },
-  "hunterwasp":(rdr,c)=>{const {u,r,teamLight,accent,attack,sc,fx,fy,pt,linePts,fastFlap,wingBright,body,bodyDark}=c;
-      // Hunter wasp: head is clearly forward; the anatomical stinger belongs to the rear abdomen.
-      // Attack readability comes from a brief abdomen-curl strike trail, never a horn on the head.
-      const flap=.72+.32*fastFlap,attackKick=attack?.10:0;
-      for(const side of [-1,1])rdr.poly([pt(.08,side*.08),pt(.18,side*.84*flap),pt(-.28,side*.69*flap),pt(-.36,side*.08)],wingBright);
-      // Tapered striped abdomen -> narrow waist -> thorax -> small head.
-      rdr.poly([pt(-.12,-.24),pt(-.34,-.40),pt(-.70,-.27),pt(-.82,0),pt(-.70,.27),pt(-.34,.40),pt(-.12,.24)],[.92,.58,.16,1]);
-      for(const f of [-.61,-.45,-.29])linePts(pt(f,-.27),pt(f,.27),Math.max(1.2,1.8*sc),[.18,.12,.08,.90]);
-      rdr.circle(...pt(.02,0),r*.31,body,10);
-      rdr.circle(...pt(.43+attackKick,0),r*.25,bodyDark,9);
-      // Antennae/mandibles establish the front without reading as a weapon spike.
-      for(const side of [-1,1]){
-        linePts(pt(.54,side*.08),pt(.72,side*.24),Math.max(1,1.15*sc),teamLight);
-        linePts(pt(.58,side*.07),pt(.72,side*.10),Math.max(1,1.2*sc),accent);
-      }
-      // Permanent rear stinger: short, dark-rooted and unmistakably attached to the abdomen.
-      linePts(pt(-.76,0),pt(-1.00,0),Math.max(1.3,2.0*sc),[.24,.16,.08,.96]);
-      rdr.crestTriangle(...pt(-1.05,0),r*.12,accent,Math.atan2(-fy,-fx));
-      if(attack){
-        // Fast curled-abdomen sting gesture toward the target side. It is presentation-only.
-        const side=((HashUtil.hash(u.id)+(Number(rdr.snapshot?.tick)||0))&1)?1:-1;
-        const a=pt(-.66,side*.06),b=pt(-.30,side*.50),d=pt(.36,side*.34),tip=pt(.68,side*.12);
-        linePts(a,b,Math.max(1.2,1.8*sc),[1,.70,.22,.36]);
-        linePts(b,d,Math.max(1.5,2.3*sc),[1,.78,.28,.62]);
-        linePts(d,tip,Math.max(1.2,2.0*sc),[1,.92,.58,.82]);
-        rdr.circle(tip[0],tip[1],r*.13,[1,.90,.42,.76],8);
-      }
-    },
-  "sailwing":(rdr,c)=>{const {r,teamLight,sc,delta,pt,linePts,now,seed,bodyDark}=c;
-      // Sail-wing: the wings ARE the silhouette; tiny core, huge leaf-sails, mostly gliding.
-      const breathe=.96+.06*Math.sin(now*.004+seed);
-      for(const side of [-1,1]){
-        rdr.poly([pt(.30,side*.10),pt(.10,side*1.48*breathe),pt(-.62,side*1.18*breathe),pt(-.82,side*.36),pt(-.18,side*.08)],side<0?[.38,.82,.66,.78]:[.48,.90,.74,.78]);
-        linePts(pt(.18,side*.10),pt(-.56,side*1.06*breathe),Math.max(1,1.25*sc),[.20,.54,.38,.55]);
-      }
-      rdr.circle(...pt(-.05,0),r*.28,bodyDark,9);rdr.circle(...pt(.22,0),r*.20,teamLight,8);
-      const moving=Math.hypot(delta.x,delta.y)>.001;
-      if(moving){for(const side of [-.35,.35])linePts(pt(-.72,side),pt(-1.34,side*.72),Math.max(1,1.3*sc),[.42,.92,.78,.20])}
-    },
-  "ancientmistray":(rdr,c)=>{const {r,teamLight,sc,pt,linePts,now,seed}=c;
-      // Ancient mist ray: one continuous manta silhouette, no insect body/paired generic wings.
-      const wave=.12*Math.sin(now*.004+seed),front=pt(.72,0),rear=pt(-.70,0),left=pt(-.06,-1.46-wave),right=pt(-.06,1.46+wave);
-      rdr.poly([front,left,pt(-.74,-.54),rear,pt(-.74,.54),right],[.42,.68,.82,.82]);
-      rdr.poly([pt(.40,0),pt(-.02,-.88-wave*.5),pt(-.40,0),pt(-.02,.88+wave*.5)],[.62,.86,.94,.48]);
-      rdr.circle(...pt(.18,0),r*.28,teamLight,10);linePts(rear,pt(-1.48,0),Math.max(1.2,1.8*sc),[.58,.82,.88,.68]);
-      for(let k=0;k<3;k++){const q=(now*.00025+k/3+seed)%1,p=pt(-.72-q*.70,(k-1)*.34);rdr.circle(p[0],p[1],r*(.10+.06*(1-q)),[.72,.90,.96,.10*(1-q)],9)}
-    },
-  "hivecarrier":(rdr,c)=>{const {r,pt,now,seed,body}=c;
-      // Carrier: massive seed-hive with four visible launch ports and slow lifting petals.
-      const pulse=.5+.5*Math.sin(now*.003+seed),flap=.96+.05*Math.sin(now*.005+seed);
-      for(const side of [-1,1])rdr.poly([pt(.12,side*.18),pt(-.02,side*1.10*flap),pt(-.70,side*.82),pt(-.50,side*.18)], [.66,.58,.30,.72]);
-      rdr.circle(...pt(-.08,0),r*.74,[.34,.30,.17,1],14);rdr.circle(...pt(.20,0),r*.56,body,13);
-      for(const side of [-1,1])for(const f of [-.28,.26]){const port=pt(f,side*.40);rdr.circle(port[0],port[1],r*.13,[.12,.10,.06,1],8);rdr.circle(port[0],port[1],r*(.06+.025*pulse),[.94,.78,.30,.72],7)}
-      rdr.circle(...pt(.22,0),r*.18,[1,.86,.42,.72],9);
-    },
-  "queenwasp":(rdr,c)=>{const {x,y,r,accent,body,bodyDark,pt,linePts,sc,fastFlap}=c;
-    const flap=.82+.18*fastFlap;
-    for(const side of [-1,1])rdr.poly([pt(-.05,side*.12),pt(-.18,side*.92*flap),pt(.34,side*.62*flap),pt(.28,side*.10)],[.92,.82,.42,.42]);
-    rdr.circle(x,y,r*.62,bodyDark,12);rdr.circle(x,y-r*.05,r*.48,body,12);
-    rdr.circle(...pt(.48,0),r*.28,accent,9);for(const side of [-1,1])linePts(pt(.56,side*.08),pt(.92,side*.28),Math.max(1,1.5*sc),accent);
-  },
-  "seedwasp":(rdr,c)=>{const {x,y,r,accent,body,bodyDark,pt,fastFlap}=c;
-    const flap=.78+.22*fastFlap;
-    for(const side of [-1,1])rdr.poly([pt(-.08,side*.06),pt(-.22,side*.72*flap),pt(.22,side*.48*flap),pt(.22,side*.04)],[.94,.84,.48,.38]);
-    rdr.circle(x,y,r*.48,bodyDark,10);rdr.circle(...pt(.30,0),r*.28,body,9);rdr.crestTriangle(...pt(.62,0),r*.18,accent,0);
-  },
-});
-const PROJECTILE_ORIGIN_ADJUSTERS=Object.freeze({
-  dragonFireball:(rdr,c)=>{const {p}=c;let {x,y}=c;
-      const source=(rdr.snapshot?.units||[]).find(u=>u.id===p.owner&&u.alive&&UnitVisualDefinition.get(u.type)?.specialMouthPose);
-      if(source){
-        const sp=rdr.projectEntityScreen(source,"unit"),pose=rdr.resolveDragonRenderPose(source,sp.x,sp.y,rdr.unitRenderRadius(source));
-        const travel=Math.hypot((p.x??0)-(p.launchX??p.x),(p.y??0)-(p.launchY??p.y)),q=RangeUtil.clamp(travel/78,0,1);
-        x=pose.mouth[0]+(x-pose.mouth[0])*q;y=pose.mouth[1]+(y-pose.mouth[1])*q;
-      }
-    ;return{x,y}}
-});
 const PROJECTILE_VISUAL_RENDER_FNS=Object.freeze({
   "launchAmmo":(rdr,c)=>{const {p,sc,screenMotion,x,y}=c;
     // Each grain flies as its own bundle SVG, nose along the screen-space flight direction.
@@ -1683,241 +425,7 @@ const PROJECTILE_VISUAL_RENDER_FNS=Object.freeze({
     rdr.drawVectorBillboard(record,x,y,Math.atan2(dy,dx),length/200);
     rdr.circle(x,y,Math.max(2,3*sc),rdr.factionRelation(p.side)==="friendly"?[.30,.55,1,1]:[1,.36,.32,1],8);
   },
-  "guardRetaliation":(rdr,c)=>{const {p,sc,wp}=c;let {x,y}=c;
-    // Guardshroom retaliation: chunky spore pod, visibly distinct from the normal light projectile.
-    const rr=Math.max(3.4,(p.drawRadius||5)*sc);
-    rdr.circle(x,y,rr*2.15,[.72,.92,.32,.13],12);
-    rdr.circle(x,y,rr*1.30,[.62,.82,.24,.42],10);
-    rdr.circle(x,y,rr,[.86,.96,.46,1],9);
-    for(let k=0;k<3;k++){const a=(k/3)*Math.PI*2+(wp.progress||0)*2.4;rdr.circle(x+Math.cos(a)*rr*1.35,y+Math.sin(a)*rr*1.35,rr*.28,[.94,1,.68,.72],7)}
-  },
-  "medicShock":(rdr,c)=>{const {p,sc,wp}=c;let {x,y}=c;
-    // T3 combat-dew shell: a visibly heavier dew globule travelling on the shared arc path.
-    // The ground shadow/height are owned by resolveArcTravelPresentation; this renderer only owns appearance.
-    const rr=Math.max(3.2,(p.drawRadius||5)*sc);
-    rdr.circle(x,y,rr*2.15,[.38,.92,1,.12],12);
-    rdr.circle(x,y,rr*1.35,[.34,.82,1,.34],10);
-    rdr.circle(x,y,rr,[.66,.95,1,1],9);
-    rdr.circle(x-rr*.22,y-rr*.22,rr*.42,[1,1,1,.92],8);
-    if(wp.y>2){
-      const q=.55+.45*Math.sin((wp.progress||0)*Math.PI);
-      rdr.outlineCircle(x,y,rr*(1.45+.25*q),Math.max(1,1.5*sc),[.72,.96,1,.48],14,1);
-    }
-  },
-  "fireAntEmber":(rdr,c)=>{const {p,sc}=c;let {x,y}=c;
-      // Tiny compressed flame seed: bright core + orange body + faint heat halo.
-      const rr=Math.max(1.8,(p.drawRadius||3)*sc);
-      rdr.circle(x,y,rr*1.9,[1,.28,.04,.10],10);
-      rdr.circle(x,y,rr,[1,.38,.08,1],8);
-      rdr.circle(x,y,rr*.52,[1,.92,.42,1],7);
-      const vx=(p.x??0)-(p.launchX??p.x),vy=(p.y??0)-(p.launchY??p.y),vl=Math.hypot(vx,vy)||1;
-      const nx=vx/vl,ny=vy/vl;
-      // Flame tongue extends both behind and slightly ahead of the projectile core,
-      // so the visible fire reaches the same homing impact point as the simulation projectile.
-      rdr.line(x-nx*rr*3.8,y-ny*rr*3.8,x+nx*rr*.85,y+ny*rr*.85,Math.max(1,rr*.9),[1,.30,.05,.42]);
-      rdr.circle(x+nx*rr*.55,y+ny*rr*.55,rr*.62,[1,.78,.20,.72],7);
-    },
-  "armorSeed":(rdr,c)=>{const {p,sc}=c;let {x,y}=c;const rr=Math.max(3.5,(p.drawRadius||6)*sc);rdr.circle(x,y,rr*1.8,[.20,.12,.06,.18],10);rdr.circle(x,y,rr,[.42,.28,.12,1],9);rdr.circle(x-rr*.18,y-rr*.18,rr*.45,[.92,.76,.38,.9],8);},
-  "balsamRocket":(rdr,c)=>{const {p,sc,target,screenMotion}=c;let {x,y}=c;const rr=Math.max(2.8,(p.drawRadius||4)*sc);let dx=screenMotion?.valid?screenMotion.dx:0,dy=screenMotion?.valid?screenMotion.dy:0;
-    if(!screenMotion?.valid&&target){const tp=rdr.projectRenderWorldPosition({x:target.x+(Number(p.aimOffsetX)||0),y:0,z:target.y+(Number(p.aimOffsetY)||0)});dx=tp.x-x;dy=tp.y-y;const dl=Math.hypot(dx,dy)||1;dx/=dl;dy/=dl}
-    if(Math.hypot(dx,dy)<.001){dx=1;dy=0}
-    const sx=-dy,sy=dx,nose=[x+dx*rr*2.25,y+dy*rr*2.25],rear=[x-dx*rr*1.55,y-dy*rr*1.55];
-    rdr.poly([[nose[0],nose[1]],[x+sx*rr*.72,y+sy*rr*.72],[rear[0]+sx*rr*.52,rear[1]+sy*rr*.52],[rear[0]-sx*rr*.52,rear[1]-sy*rr*.52],[x-sx*rr*.72,y-sy*rr*.72]],[.66,.30,.12,1]);
-    rdr.line(x-dx*rr*1.45,y-dy*rr*1.45,x-dx*rr*5.4,y-dy*rr*5.4,Math.max(1.4,rr*.82),[1,.38,.10,.58]);rdr.circle(nose[0],nose[1],rr*.42,[1,.88,.46,1],7);rdr.circle(x-dx*rr*2.0,y-dy*rr*2.0,rr*.58,[1,.22,.06,.42],8);
-  },
-  "deathworm":(rdr,c)=>{const {p,sc}=c;let {x,y}=c;
-      const rupture=p.visualTag==="rupture";
-      // High-contrast worm spit: pale hot core + red-orange rim + dark silhouette/trail.
-      // It must remain readable over grass, river, dirt and fog.
-      const rr=Math.max(3.6,(rupture?8.2:5.6)*sc);
-      const vx=(p.x??0)-(p.launchX??p.x),vy=(p.y??0)-(p.launchY??p.y),vl=Math.hypot(vx,vy)||1;
-      const nx=vx/vl,ny=vy/vl;
-      rdr.line(x-nx*rr*4.6,y-ny*rr*4.6,x-nx*rr*.35,y-ny*rr*.35,Math.max(2.2,rr*.92),[.16,.045,.025,.62]);
-      rdr.line(x-nx*rr*3.7,y-ny*rr*3.7,x,y,Math.max(1.4,rr*.48),[1,.42,.18,.72]);
-      rdr.circle(x,y,rr*2.15,[.10,.025,.015,.24],12);
-      rdr.circle(x,y,rr*1.55,[1,.30,.10,.20],11);
-      rdr.circle(x,y,rr,[.94,.48,.24,1],10);
-      rdr.circle(x,y,rr*.55,[1,.91,.62,1],9);
-      rdr.circle(x-nx*rr*.18,y-ny*rr*.18,rr*.23,[1,1,.86,.98],7);
-      if(rupture){
-        rdr.outlineCircle(x,y,rr*1.75,Math.max(1.5,2.2*sc),[1,.68,.24,.58],16,1);
-        rdr.circle(x,y,rr*2.8,[1,.22,.06,.10],14);
-      }
-    },
-  "dragon":(rdr,c)=>{const {p,sc}=c;let {x,y}=c;
-      const rr=Math.max(4,(p.drawRadius||9)*sc);
-      rdr.circle(x,y,rr,[1,.35,.08,1],10);rdr.circle(x,y,rr*.58,[1,.86,.28,1],9);rdr.circle(x,y,rr*1.9,[1,.25,.04,.10],12);
-    },
-  "ancientbear":(rdr,c)=>{const {p,sc}=c;let {x,y}=c;
-      const rr=Math.max(3,(p.drawRadius||7)*sc);
-      rdr.circle(x,y,rr,[.48,.34,.20,1],8);rdr.circle(x,y,rr*.48,[.78,.64,.38,1],8);
-    },
-  "thornTower":(rdr,c)=>{const {sc}=c;let {x,y}=c;
-      rdr.circle(x,y,Math.max(2,4*sc),[.72,1,.44,1],6);
-      rdr.circle(x,y,Math.max(1.2,2.1*sc),[.94,1,.72,.72],6);
-    },
-  "acornTower":(rdr,c)=>{const {sc}=c;let {x,y}=c;
-      rdr.circle(x,y,Math.max(2,5*sc),[1,.72,.28,1],6);
-      rdr.circle(x,y,Math.max(1.5,2.4*sc),[1,.88,.58,.78],6);
-    },
-  "sunvineTower":(rdr,c)=>{const {sc}=c;let {x,y}=c;
-      rdr.circle(x,y,Math.max(2.5,5*sc),[1,.82,.22,1],8);
-      rdr.circle(x,y,Math.max(1.5,2.6*sc),[1,.96,.64,.90],8);
-      rdr.circle(x,y,Math.max(4,8*sc),[1,.82,.22,.12],10);
-    },
-  "mortarTower":(rdr,c)=>{const {sc}=c;let {x,y}=c;
-      const r=Math.max(3,5.5*sc);
-      rdr.circle(x,y,r,[.79,.58,.30,1],8);
-      rdr.circle(x,y,r*.55,[.56,.34,.19,1],8);
-      rdr.circle(x,y,r*1.75,[.95,.76,.32,.08],12);
-    },
-  "siege":(rdr,c)=>{const {sc}=c;let {x,y}=c;
-      const r=Math.max(3,5.4*sc);
-      rdr.circle(x,y,r,[.88,.72,.32,1],8);
-      rdr.circle(x,y,r*.62,[.62,.42,.16,1],8);
-      rdr.circle(x,y,r*1.55,[1,.86,.38,.08],12);
-    },
-  "rocket":(rdr,c)=>{const {sc}=c;let {x,y}=c;
-      const r=Math.max(2.8,5.1*sc);
-      rdr.circle(x,y,r,[.99,.42,.24,1],8);
-      rdr.circle(x,y,r*.56,[1,.86,.42,.84],8);
-      rdr.circle(x,y+r*.95,Math.max(1.6,r*.55),[1,.78,.18,.44],8);
-    },
-  "lanternmoth":(rdr,c)=>{const {sc}=c;let {x,y}=c;
-      const rr=Math.max(2.4,4.3*sc);rdr.circle(x,y,rr,[1,.88,.34,1],9);rdr.circle(x,y,rr*.45,[1,1,.78,.95],8);rdr.circle(x,y,rr*2.0,[1,.88,.32,.10],12);
-    },
-  "sporemoth":(rdr,c)=>{const {sc}=c;let {x,y}=c;
-      const rr=Math.max(3,5.2*sc);rdr.circle(x,y,rr,[.68,.42,.82,1],9);rdr.circle(x,y,rr*.52,[.88,.72,1,.92],8);rdr.circle(x,y,rr*1.8,[.62,.86,.34,.10],12);
-    },
-  "sailwing":(rdr,c)=>{const {sc}=c;let {x,y}=c;
-      const rr=Math.max(2.1,3.8*sc);rdr.circle(x,y,rr,[.48,.92,.76,.90],8);rdr.circle(x,y,rr*1.8,[.48,.92,.76,.08],10);
-    },
-  "ancientmistray":(rdr,c)=>{const {sc}=c;let {x,y}=c;
-      const rr=Math.max(2.5,4.5*sc);rdr.circle(x,y,rr,[.65,.86,.96,.88],9);rdr.circle(x,y,rr*2.1,[.62,.84,.94,.09],12);
-    }
 });
-class ProjectileVisualFallback{
-  static render(rdr,c){const {p,sc}=c;let {x,y}=c;
-      const impact=AttackPresentationDefinition.forSource(p.type).impact;
-      // Projectile visual direction must not depend on the target still existing.
-      // Render motion is primary; cache-cold frames fall back only to the
-      // simulation-owned locked aim point from the current projectile contract.
-      let dx=Number(c.screenMotion?.dx)||0,dy=Number(c.screenMotion?.dy)||0;
-      let directionValid=!!c.screenMotion?.valid;
-      if(!directionValid&&Number.isFinite(Number(p.lockedAimX))&&Number.isFinite(Number(p.lockedAimY))){
-        const ap=rdr.worldToPx(rdr.viewX(Number(p.lockedAimX)),rdr.viewY(Number(p.lockedAimY)));
-        dx=ap[0]-x;dy=ap[1]-y;directionValid=Math.hypot(dx,dy)>.01;
-      }
-      if(!directionValid){dx=1;dy=0}
-      const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
-      if(impact==="arcane"){
-        rdr.line(x-dx*12*sc,y-dy*12*sc,x-dx*3*sc,y-dy*3*sc,Math.max(1.2,2.2*sc),[.68,.48,1,.30]);
-        rdr.circle(x,y,Math.max(2.4,4.6*sc),[.72,.53,1,1],8);
-        rdr.circle(x,y,Math.max(4.5,8*sc),[.72,.53,1,.13],10);
-      }else if(impact==="pierce"){
-        rdr.line(x-dx*10*sc,y-dy*10*sc,x+dx*6*sc,y+dy*6*sc,Math.max(1,1.8*sc),[1,.91,.56,.95]);
-        rdr.circle(x+dx*5*sc,y+dy*5*sc,Math.max(1.4,2.5*sc),[1,.97,.75,1],6);
-      }else if(impact==="explosive"){
-        rdr.line(x-dx*12*sc,y-dy*12*sc,x-dx*3*sc,y-dy*3*sc,Math.max(1.4,2.5*sc),[1,.46,.18,.35]);
-        rdr.circle(x,y,Math.max(2.8,5.1*sc),[1,.48,.22,1],8);
-        rdr.circle(x,y,Math.max(5,8.8*sc),[1,.62,.20,.10],10);
-      }else{
-        rdr.line(x-dx*8*sc,y-dy*8*sc,x-dx*2*sc,y-dy*2*sc,Math.max(1,1.5*sc),[.72,.86,.45,.28]);
-        rdr.circle(x,y,Math.max(2.2,4.2*sc),[.78,.88,.48,1],7);
-        rdr.circle(x,y,Math.max(1.1,2.0*sc),[.96,.97,.68,.78],7);
-      }
-    }
-}
-const UNIT_PRODUCTION_TOPPER_RENDER_FNS=Object.freeze({
-  "swordsman":(renderer,c)=>{const {x,y,r,trim}=c;
-        renderer.poly([[x-r*.18,y-r*.34],[x-r*.06,y-r*.72],[x+r*.32,y-r*.84],[x+r*.16,y-r*.40]],trim);
-      },
-  "pikeman":(renderer,c)=>{const {x,y,r,sc,trim}=c;
-        renderer.line(x,y-r*.82,x,y-r*.24,Math.max(2,2.8*sc),[.30,.55,.22,1]);
-        renderer.crestTriangle(x,y-r*.86,r*.14,trim,-Math.PI/2);
-      },
-  "lancer":(renderer,c)=>{const {x,y,r,sc,trim}=c;
-        renderer.line(x-r*.16,y-r*.38,x-r*.34,y-r*.76,Math.max(1.8,2.5*sc),trim);
-        renderer.line(x+r*.16,y-r*.38,x+r*.34,y-r*.76,Math.max(1.8,2.5*sc),trim);
-      },
-  "archer":(renderer,c)=>{const {x,y,r,trim}=c;
-        renderer.circle(x,y-r*.50,r*.10,[.72,.58,.26,1],8);
-        renderer.poly([[x-r*.28,y-r*.66],[x-r*.06,y-r*.50],[x-r*.28,y-r*.34]],trim);
-        renderer.poly([[x+r*.28,y-r*.66],[x+r*.06,y-r*.50],[x+r*.28,y-r*.34]],trim);
-      },
-  "skirmisher":(renderer,c)=>{const {x,y,r,trim}=c;
-        renderer.circle(x-r*.15,y-r*.52,r*.13,trim,8);renderer.circle(x+r*.10,y-r*.60,r*.11,trim,8);renderer.circle(x+r*.22,y-r*.42,r*.09,trim,8);
-      },
-  "shellbug":(renderer,c)=>{const {x,y,r,sc,trim}=c;
-        renderer.circle(x,y-r*.50,r*.24,trim,10);renderer.line(x,y-r*.70,x,y-r*.30,Math.max(1.2,2*sc),[.15,.20,.12,1]);
-      },
-  "stingbug":(renderer,c)=>{const {x,y,r,sc,trim}=c;
-        renderer.line(x-r*.20,y-r*.42,x+r*.22,y-r*.72,Math.max(1.8,2.5*sc),trim);renderer.crestTriangle(x+r*.27,y-r*.76,r*.16,trim,-.6);
-      },
-  "dandelion":(renderer,c)=>{const {x,y,r,sc,trim}=c;
-        renderer.circle(x,y-r*.52,r*.08,trim,8);for(let k=0;k<7;k++){const a=k*Math.PI*2/7;renderer.line(x,y-r*.52,x+Math.cos(a)*r*.26,y-r*.52+Math.sin(a)*r*.26,Math.max(1,1.4*sc),[.94,.95,.82,1])}
-      },
-  "thornfruit":(renderer,c)=>{const {x,y,r,sc,trim}=c;
-        renderer.circle(x,y-r*.50,r*.17,trim,9);for(let k=0;k<6;k++){const a=k*Math.PI/3;renderer.line(x+Math.cos(a)*r*.16,y-r*.50+Math.sin(a)*r*.16,x+Math.cos(a)*r*.31,y-r*.50+Math.sin(a)*r*.31,Math.max(1,1.5*sc),trim)}
-      },
-  "tank":(renderer,c)=>{const {x,y,r,sc,trim}=c;
-        renderer.circle(x,y-r*.50,r*.25,trim,10);renderer.line(x-r*.24,y-r*.50,x+r*.24,y-r*.50,Math.max(1.3,2*sc),[.28,.36,.18,1]);
-      },
-  "rogue":(renderer,c)=>{const {x,y,r,sc,trim}=c;
-        renderer.line(x-r*.12,y-r*.44,x-r*.34,y-r*.72,Math.max(1.5,2.1*sc),trim);renderer.line(x+r*.12,y-r*.44,x+r*.34,y-r*.72,Math.max(1.5,2.1*sc),trim);
-      },
-  "mage":(renderer,c)=>{const {x,y,r,trim}=c;
-        renderer.petalRing(x,y-r*.50,r*.23,6,trim,Math.PI/6,.68);renderer.circle(x,y-r*.50,r*.08,[.94,.75,1,1],7);
-      },
-  "medic":(renderer,c)=>{const {x,y,r,trim}=c;
-        renderer.petalRing(x,y-r*.50,r*.20,5,trim,0,.66);renderer.circle(x+r*.16,y-r*.58,r*.10,[.66,1,.88,.72],8);
-      },
-  "pillbug":(renderer,c)=>{const {x,y,r,sc,trim}=c;
-        renderer.circle(x,y-r*.50,r*.18,trim,10);renderer.line(x-r*.14,y-r*.50,x+r*.14,y-r*.50,Math.max(1.2,2*sc),[.16,.18,.20,1]);renderer.line(x,y-r*.65,x,y-r*.35,Math.max(1.2,2*sc),[.16,.18,.20,1]);
-      },
-  "rootstalker":(renderer,c)=>{const {x,y,r,sc,trim}=c;
-        renderer.line(x,y-r*.72,x,y-r*.32,Math.max(1.8,2.4*sc),trim);renderer.line(x,y-r*.40,x-r*.22,y-r*.24,Math.max(1.2,1.8*sc),trim);renderer.line(x,y-r*.40,x+r*.22,y-r*.24,Math.max(1.2,1.8*sc),trim);
-      },
-  "chainflower":(renderer,c)=>{const {x,y,r,trim}=c;
-        renderer.petalRing(x,y-r*.50,r*.22,5,trim,0,.65);
-      },
-  "guardshroom":(renderer,c)=>{const {x,y,r,trim}=c;
-        renderer.circle(x,y-r*.53,r*.24,trim,10);renderer.rect(x-r*.05,y-r*.53,r*.10,r*.28,[.78,.70,.54,1]);
-      },
-  "sporeherd":(renderer,c)=>{const {x,y,r,trim}=c;
-        renderer.circle(x-r*.16,y-r*.52,r*.10,trim,8);renderer.circle(x+r*.16,y-r*.52,r*.10,trim,8);renderer.circle(x,y-r*.70,r*.11,trim,8);
-      },
-  "clawhunter":(renderer,c)=>{const {x,y,r,sc,trim}=c;
-        renderer.line(x-r*.05,y-r*.42,x-r*.28,y-r*.70,Math.max(1.6,2.2*sc),trim);renderer.line(x+r*.05,y-r*.42,x+r*.28,y-r*.70,Math.max(1.6,2.2*sc),trim);
-      },
-  "mantis":(renderer,c)=>{const {x,y,r,sc,trim}=c;
-        renderer.line(x-r*.05,y-r*.42,x-r*.30,y-r*.68,Math.max(1.5,2.1*sc),trim);renderer.line(x+r*.05,y-r*.42,x+r*.30,y-r*.68,Math.max(1.5,2.1*sc),trim);
-      },
-  "siege":(renderer,c)=>{const {x,y,r,sc}=c;
-        renderer.circle(x,y-r*.42,r*.16,[.68,.56,.25,1],9);renderer.line(x,y-r*.34,x,y-r*.92,Math.max(3,5*sc),[.36,.58,.25,1]);
-      },
-  "rocket":(renderer,c)=>{const {x,y,r,sc,trim}=c;
-        for(let k=-1;k<=1;k++){const sx=x+k*r*.22;renderer.line(sx,y-r*.12,sx,y-r*.68,Math.max(2.2,3.4*sc),[.38,.58,.28,1]);renderer.petalRing(sx,y-r*.74,r*.11,5,trim,0,.60)}
-      },
-  "shelltitan":(renderer,c)=>{const {x,y,r,sc,trim}=c;
-        renderer.circle(x,y-r*.48,r*.30,trim,12);renderer.line(x-r*.30,y-r*.48,x+r*.30,y-r*.48,Math.max(2,3*sc),[.24,.20,.12,1]);
-      },
-  "swarmbug":(renderer,c)=>{const {x,y,r,trim}=c;
-        renderer.circle(x-r*.22,y-r*.52,r*.10,trim,8);renderer.circle(x+r*.22,y-r*.52,r*.10,trim,8);renderer.circle(x,y-r*.72,r*.10,trim,8);renderer.circle(x,y-r*.34,r*.10,trim,8);
-      },
-  "aegisbeetle":(renderer,c)=>{const {x,y,r,trim}=c;
-        renderer.poly([[x,y-r*.78],[x-r*.42,y-r*.50],[x-r*.50,y-r*.08],[x,y+r*.16],[x+r*.50,y-r*.08],[x+r*.42,y-r*.50]],trim);
-        for(const sx of [-.25,.25])renderer.circle(x+sx*r,y-r*.30,r*.07,[.72,.96,1,.85],8);
-      },
-  "burrowbeast":(renderer,c)=>{const {x,y,r,trim}=c;
-        renderer.crestTriangle(x-r*.18,y-r*.52,r*.20,trim,-2.15);renderer.crestTriangle(x+r*.18,y-r*.52,r*.20,trim,-.99);
-      }
-});
-class UnitProductionVisualFallback{
-  static render(renderer,c){const {x,y,r,trim}=c;
-    renderer.circle(x,y-r*.51,r*.14,trim,9);
-  }
-}
 const BUILDING_VISUAL_RENDER_FNS=Object.freeze({
   "base":(renderer,c)=>{const {x,y,r,own,teamCap,sc}=c;
       const dark=own?[.09,.20,.36,1]:[.40,.09,.11,1];
@@ -1945,124 +453,6 @@ const BUILDING_VISUAL_RENDER_FNS=Object.freeze({
       renderer.circle(x,y-r*.05,r*.22,teamHi,10);
       renderer.rect(x-r*.30,y+r*.18,r*.60,r*.34,[.30,.33,.34,1]);
     },
-  "supply":(renderer,c)=>{const {x,y,r,own,teamCap}=c;
-      // Storage pods / seed crates.
-      for(const ox of [-.38,.38]){
-        renderer.circle(x+r*ox,y+r*.12,r*.28,[.88,.90,.82,1],10);
-        renderer.rect(x-r*.12+r*ox,y-r*.16,r*.24,r*.48,[.43,.52,.45,1]);
-      }
-      renderer.circle(x,y-r*.20,r*.24,teamCap,10);
-      renderer.drawTeamMark(x,y-r*.20,r*.12,own);
-    },
-  "gasExtractor":(renderer,c)=>{const {x,y,r,sc}=c;
-      const gas=[.39,.90,.46,1];
-      renderer.circle(x,y+r*.04,r*.58,[.17,.26,.19,1],12);
-      renderer.circle(x,y-r*.05,r*.42,[.22,.44,.27,1],12);
-      renderer.circle(x,y-r*.14,r*.25,gas,10);
-      renderer.circle(x-r*.09,y-r*.23,r*.10,[.72,1,.65,.70],8);
-      for(let k=0;k<4;k++){
-        const a=k*Math.PI/2;
-        renderer.line(
-          x+Math.cos(a)*r*.38,y+Math.sin(a)*r*.38,
-          x+Math.cos(a)*r*.72,y+Math.sin(a)*r*.72,
-          Math.max(1.6,2.4*sc),
-          [.34,.39,.35,1]
-        );
-      }
-    },
-  "barracks":(renderer,c)=>{const {b,x,y,r,teamCap,teamHi,shell,sc}=c;
-      const vd=UnitVisualDefinition.get(b.produceType)||null;
-      const trim=vd?.accent||teamHi;
-
-      renderer.petalRing(x,y-r*.06,r*.42,6,teamCap,Math.PI/6,.72);
-      renderer.circle(x,y-r*.08,r*.40,shell,12);
-      renderer.circle(x,y-r*.08,r*.20,trim,10);
-      renderer.rect(x-r*.38,y+r*.18,r*.76,r*.30,[.30,.32,.33,1]);
-
-      // Topper mirrors the unit's defining weapon.
-      {const render=UNIT_PRODUCTION_TOPPER_RENDER_FNS[b.produceType]||UnitProductionVisualFallback.render;render(renderer,{x,y,r,sc,trim});}
-    },
-  "thornTower":(renderer,c)=>{const {b,x,y,r,teamCap,teamHi,sc}=c;
-      // 가시꽃 초소: 낮은 생체 받침 + 길게 뻗은 가시꽃 총열.
-      renderer.circle(x,y+r*.10,r*.58,[.32,.46,.22,1],12);
-      renderer.petalRing(x,y-r*.18,r*.36,6,teamCap,Math.PI/6,.66);
-      const kick=(b.attackFlash||0)>0?r*.12:0;
-      renderer.line(x,y-r*.18,x,y-r*(1.15-kick),Math.max(2,3.4*sc),[.28,.50,.20,1]);
-      renderer.crestTriangle(x,y-r*(1.26-kick),r*.18,[.88,.94,.50,1],-Math.PI/2);
-      renderer.circle(x,y-r*.18,r*.17,teamHi,10);
-    },
-  "acornTower":(renderer,c)=>{const {b,x,y,r,sc}=c;
-      // 도토리 감시포: 두꺼운 껍질 포좌 + 긴 씨앗포신.
-      renderer.circle(x,y+r*.05,r*.66,[.37,.27,.15,1],12);
-      renderer.circle(x,y-r*.12,r*.44,[.62,.46,.24,1],12);
-      const kick=(b.attackFlash||0)>0?r*.10:0;
-      renderer.line(x,y-r*.18,x,y-r*(1.35-kick),Math.max(3,4.8*sc),[.44,.31,.17,1]);
-      renderer.circle(x,y-r*(1.40-kick),r*.14,[.92,.76,.38,1],9);
-      renderer.poly([[x-r*.36,y-r*.18],[x-r*.18,y-r*.62],[x+r*.18,y-r*.62],[x+r*.36,y-r*.18]],[.49,.34,.19,1]);
-    },
-  "sunvineTower":(renderer,c)=>{const {b,x,y,r,sc}=c;
-      // 태양덩굴 포탑: 해바라기처럼 빛을 모아 위로 세운 꽃심에서 고열 탄을 발사.
-      const pulse=(b.attackFlash||0)>0?1:0;
-      renderer.circle(x,y+r*.10,r*.56,[.29,.45,.18,1],12);
-      renderer.line(x-r*.18,y+r*.18,x-r*.38,y+r*.54,Math.max(1.8,2.6*sc),[.24,.48,.18,1]);
-      renderer.line(x+r*.18,y+r*.18,x+r*.38,y+r*.54,Math.max(1.8,2.6*sc),[.24,.48,.18,1]);
-      renderer.line(x,y+r*.02,x,y-r*.46,Math.max(2.6,4.0*sc),[.30,.58,.20,1]);
-      renderer.petalRing(x,y-r*.64,r*.42,12,[.99,.79,.22,1],Math.PI/12,.84);
-      renderer.circle(x,y-r*.64,r*.24,[.53,.32,.14,1],12);
-      renderer.circle(x,y-r*.64,r*(.18+.05*pulse),[1,.95,.62,.88],10);
-      renderer.circle(x,y-r*.64,r*(.34+.08*pulse),[1,.90,.28,.14],16);
-
-      const beamTarget=b.beamTargetId?renderer.snapshot?.units?.find(u=>u.id===b.beamTargetId&&u.alive):null;
-      if(beamTarget){
-        const rp=renderer.renderTrackedPosition(beamTarget,"unit");
-        const tp=renderer.worldToPx(renderer.viewX(rp.x),renderer.viewY(rp.y));
-        const stage=Math.max(1,Math.min(3,Number(b.beamStage)||1));
-        const beamW=Math.max(1.2,(stage===3?4.8:stage===2?3.5:2.4)*sc);
-        const alpha=stage===3?.92:stage===2?.80:.68;
-        renderer.line(x,y-r*.64,tp[0],tp[1],beamW*2.2,[1,.46,.08,.16*alpha]);
-        renderer.line(x,y-r*.64,tp[0],tp[1],beamW,[1,.82,.24,alpha]);
-        renderer.circle(tp[0],tp[1],Math.max(4,(5+stage*2)*sc),[1,.72,.16,.15+.08*stage],12);
-      }
-    },
-  "mortarTower":(renderer,c)=>{const {b,x,y,r,sc}=c;
-      // 포자 박격 둥지: 낮은 포대 안에 큰 박격 튜브가 위로 들려 있는 곡사 포격 건물.
-      const kick=(b.attackFlash||0)>0?r*.14:0;
-      renderer.circle(x,y+r*.06,r*.68,[.31,.24,.18,1],14);
-      renderer.circle(x,y-r*.02,r*.46,[.54,.42,.24,1],12);
-      renderer.poly([[x-r*.18,y-r*.10],[x-r*.42,y-r*.58],[x-r*.12,y-r*.76],[x+r*.12,y-r*.76],[x+r*.42,y-r*.58],[x+r*.18,y-r*.10]],[.45,.34,.21,1]);
-      renderer.line(x,y-r*.12,x,y-r*(1.12-kick),Math.max(4.2,6.0*sc),[.39,.29,.20,1]);
-      renderer.circle(x,y-r*(1.14-kick),r*.16,[.88,.76,.42,1],9);
-      renderer.circle(x-r*.34,y+r*.18,r*.10,[.66,.58,.34,1],8);
-      renderer.circle(x+r*.34,y+r*.18,r*.10,[.66,.58,.34,1],8);
-    },
-  "academy":(renderer,c)=>{const {x,y,r,sc}=c;
-      renderer.circle(x,y,r*.45,[.85,.75,1,1],8);
-      renderer.line(x-r*.55,y+r*.35,x+r*.55,y-r*.35,Math.max(1.5,3*sc),[.40,.31,.66,.9]);
-    },
-  "airIncubator":(renderer,c)=>{const {b,x,y,r}=c;
-      // 공중 배양소: 가스가 맴도는 부유 씨앗 고치 + 양쪽 날개막.
-      const pulse=.5+.5*Math.sin(performance.now()*.004+(HashUtil.hash(b.id)%997)*.017);
-      renderer.circle(x,y+r*.12,r*.66,[.27,.42,.28,1],12);
-      renderer.circle(x,y-r*.12,r*.42,[.46,.72,.48,1],12);
-      renderer.poly([[x-r*.28,y-r*.10],[x-r*.92,y-r*.50],[x-r*.72,y+r*.20],[x-r*.22,y+r*.12]],[.55,.84,.64,.68]);
-      renderer.poly([[x+r*.28,y-r*.10],[x+r*.92,y-r*.50],[x+r*.72,y+r*.20],[x+r*.22,y+r*.12]],[.55,.84,.64,.68]);
-      renderer.circle(x,y-r*.18,r*(.18+.05*pulse),[.46,1,.62,.78],10);
-      renderer.circle(x,y-r*.18,r*(.40+.07*pulse),[.42,.92,.58,.10],14);
-    },
-  "lab":(renderer,c)=>{const {x,y,r}=c;
-      renderer.circle(x,y,r*.48,[1,.65,.25,1],6);
-      renderer.circle(x,y,r*.18,[1,.91,.48,1],8);
-    },
-  "factory":(renderer,c)=>{const {b,x,y,r,teamCap,teamHi,sc}=c;
-      const vd=UnitVisualDefinition.get(b.produceType)||null;
-      const trim=vd?.accent||teamHi;
-
-      renderer.circle(x,y+r*.02,r*.58,[.16,.20,.24,1],12);
-      renderer.rect(x-r*.66,y-r*.30,r*1.32,r*.62,teamCap);
-      renderer.circle(x,y-r*.06,r*.30,[.14,.17,.20,1],12);
-
-      {const render=UNIT_PRODUCTION_TOPPER_RENDER_FNS[b.produceType]||UnitProductionVisualFallback.render;render(renderer,{x,y,r,sc,trim});}
-    }
 });
 class TerrainPresentation{
   static colors=Object.freeze({
@@ -2402,7 +792,6 @@ class GLRenderer{
 
     // Render-only visibility spatial cache.
     this.visionFields=[null,null];
-    this.snapshotCloakedIds=new Set();
     this.fogVisibilityGrids=new Map();
     this.visibleUnitFrame=[];
 
@@ -2413,10 +802,8 @@ class GLRenderer{
     this.combatFxPool=new RallyGamekit.ObjectPool(EffectObjectFactory.makeCombatFx,EffectObjectFactory.resetCombatFx,256);
     this.floatFxPool=new RallyGamekit.ObjectPool(EffectObjectFactory.makeFloatFx,EffectObjectFactory.resetFloatFx,96);
     this.shakeFxPool=new RallyGamekit.ObjectPool(EffectObjectFactory.makeShakeFx,EffectObjectFactory.resetShakeFx,16);
-    this.flagFxPool=new RallyGamekit.ObjectPool(EffectObjectFactory.makeFlagFx,EffectObjectFactory.resetFlagFx,8);
     this.commonEffectPool=new CommonEffectPool(this);
     // Presentation-only shared hitGuard shield state. All shield sources use the same visual language.
-    this.shieldVisualStates=new Map();
 
     // Presentation timing is render-only. Full UI snapshots remain 10 Hz, while
     // registered Render State targets can be refreshed every authoritative simulation tick.
@@ -2456,20 +843,11 @@ class GLRenderer{
     this.replayZoom=1;
     this.cameraLeft=0;
     this.cameraTop=this.world.height-VIEW_H;
-    this.buildPreview=null;
-    this.spellPreview=null;
-    // Local latency-hiding presentation. These never enter StrategySim/checksum/export/recovery.
-    this.pendingBuildGhosts=[];
-    this.predictedFlag=null;
-    this.latencySpellFx=[];
     this.attackVariantBreathFx=[];
     // Presentation-only facing: never enters StrategySim/checksum/export/recovery.
     this.unitFacingStates=new Map();
     this.artilleryFacingStates=new Map();
     this.projectileScreenMotionStates=new Map();
-    this._unitFacingTransform=null;
-    // Client-only long-press feedback. Never enters StrategySim/checksum/export.
-    this.chargedSkillGesture=null;
     this.last=performance.now();
     this.particles=[];
 
@@ -2487,14 +865,9 @@ class GLRenderer{
     this.lastCombatFxTickByRole={host:-1,guest:-1};
     this.attackPresentationUntil=new Map();
     // HAS-A common source-body pulse presentation. Presets own timing/scale; consumers only trigger them.
-    this.bodyPulsePresentation=new BodyPulsePresentation();
     this.frameShakeX=0;
     this.frameShakeY=0;
     this.cameraShakePresentationMoved=false;
-
-    // 깃발 명령 VFX는 시뮬레이션 상태와 분리된 로컬 렌더 효과다.
-    this.flagFx=[];
-    this.lastFlagFxKey="";
     this.loop=this.loop.bind(this);
     requestAnimationFrame(this.loop);
   }
@@ -2535,19 +908,13 @@ class GLRenderer{
   }
   isFriendlySide(side){return side===this.mySide()}
   factionRelation(side){
-    if(side==null||side===NEUTRAL_SIDE)return "neutral";
+    if(side!==0&&side!==1)return "neutral";
     return this.isFriendlySide(side)?"friendly":"enemy";
   }
   factionColor(side,{alpha=1,neutral=[.95,.73,.25]}={}){
     const relation=this.factionRelation(side);
     const rgb=relation==="friendly"?[.22,.50,1]:relation==="enemy"?[1,.30,.30]:neutral;
     return [rgb[0],rgb[1],rgb[2],alpha];
-  }
-  factionCssColor(side,{alpha=.94,neutral="rgba(214,224,208,.82)"}={}){
-    const relation=this.factionRelation(side);
-    if(relation==="neutral")return neutral;
-    const [r,g,b]=relation==="friendly"?[104,164,255]:[255,104,96];
-    return `rgba(${r},${g},${b},${alpha})`;
   }
   worldToPx(x,y,elevation=null){
     const ax=this.viewX(x),az=this.viewY(y),height=elevation??this.world.terrain.surfaces.heightAt(ax,az);
@@ -2594,14 +961,8 @@ class GLRenderer{
     const height=bridge?world.y+(world.groundY==null?this.world.terrain.surfaces.heightAt(world.x,world.z):0):0;
     return (bridge&&height>=bridge.elevation-.01?this.bridgeDepth(bridge):this.renderDepthForWorld(world))-bias;
   }
-  css(c,alphaMul=1){
-    const r=Math.round(RangeUtil.clamp(c[0],0,1)*255),g=Math.round(RangeUtil.clamp(c[1],0,1)*255),b=Math.round(RangeUtil.clamp(c[2],0,1)*255),a=RangeUtil.clamp((c[3]??1)*alphaMul,0,1);
-    return `rgba(${r},${g},${b},${a})`;
-  }
   v(x,y,c){
-    const alphaMul=this._unitRenderAlphaMul==null?1:this._unitRenderAlphaMul;
-    if(this._unitFacingTransform)[x,y]=this.unitFacingPoint(x,y);
-    this.frame.push7(x,y,this._renderDepth??0,c[0],c[1],c[2],RangeUtil.clamp((c[3]??1)*alphaMul,0,1));
+    this.frame.push7(x,y,this._renderDepth??0,c[0],c[1],c[2],RangeUtil.clamp(c[3]??1,0,1));
   }
   regularPolygon(x,y,r,c,n=10,rot=0){
     if(n<3||r<=0)return;
@@ -2620,7 +981,6 @@ class GLRenderer{
   quad(x1,y1,x2,y2,x3,y3,x4,y4,c){
     this.v(x1,y1,c);this.v(x2,y2,c);this.v(x3,y3,c);this.v(x1,y1,c);this.v(x3,y3,c);this.v(x4,y4,c);
   }
-  hex(x,y,r,c){this.regularPolygon(x,y,r,c,6,Math.PI/6)}
   petalRing(x,y,r,count,c,rot=0,stretch=.62){
     const dirs=this.geometryTemplates.petalRing(count,rot);this.geometryTemplateHits++;
     const ca=Math.cos(Math.PI*.48),sa=Math.sin(Math.PI*.48),rr=r*.42;
@@ -2636,19 +996,6 @@ class GLRenderer{
         c
       );
     }
-  }
-  crestTriangle(x,y,r,c,angle=-Math.PI/2){
-    this.tri(
-      x+Math.cos(angle)*r,y+Math.sin(angle)*r,
-      x+Math.cos(angle+2.35)*r*.72,y+Math.sin(angle+2.35)*r*.72,
-      x+Math.cos(angle-2.35)*r*.72,y+Math.sin(angle-2.35)*r*.72,
-      c
-    );
-  }
-  drawTeamMark(x,y,r,own){
-    const c=own?[.21,.49,.95,1]:[.94,.27,.28,1];
-    this.circle(x,y,r,[.08,.10,.12,1],10);
-    this.circle(x,y,r*.70,c,10);
   }
   poly(p,c){
     for(let i=1;i<p.length-1;i++){this.v(p[0][0],p[0][1],c);this.v(p[i][0],p[i][1],c);this.v(p[i+1][0],p[i+1][1],c)}
@@ -2722,7 +1069,7 @@ class GLRenderer{
   updatePresentationTargets(source,snap=false){
     if(!source)return;
     const now=performance.now();
-    const units=source.units||[],projectiles=source.projectiles||[],flags=source.flags||[];
+    const units=source.units||[],projectiles=source.projectiles||[];
     const targetIntervalMs=this.presentationTargetIntervalMs(source);
 
     this.renderState.capture(source,now,snap,targetIntervalMs);
@@ -2742,126 +1089,8 @@ class GLRenderer{
     const q=this.worldToPx(this.viewX(p.x),this.viewY(p.y));
     return{x:q[0],y:q[1],world:p};
   }
-  renderTrackedDirectionScreen(entity,dx,dy,kind="unit"){
-    const p=this.renderTrackedPosition(entity,kind);
-    const a=this.worldToPx(this.viewX(p.x),this.viewY(p.y));
-    const b=this.worldToPx(this.viewX(p.x+(Number(dx)||0)),this.viewY(p.y+(Number(dy)||0)));
-    const vx=b[0]-a[0],vy=b[1]-a[1],len=Math.hypot(vx,vy)||1;
-    return{x:vx/len,y:vy/len};
-  }
-
   renderTrackedDelta(entity,kind="unit"){
     return this.renderState.delta(kind,entity.id);
-  }
-
-  chargedMemberIds(side){
-    this.chargedMemberCache??=[null,null];
-    const cast=this.snapshot?.chargedCasts?.[side],cached=this.chargedMemberCache[side];
-    if(cached?.cast===cast)return cached.ids;
-    const ids=new Set(cast?.memberIds||[]);this.chargedMemberCache[side]={cast,ids};return ids;
-  }
-  unitFacingIntentWorld(u){
-    if(!u)return{x:0,y:0,attack:false};
-    const execution=u.behaviorState?.chargedExecution;
-    if(execution)return{x:execution.dirX,y:execution.dirY,attack:true};
-    const cast=this.snapshot?.chargedCasts?.[u.side];
-    if(cast&&cast.phase!=='released'&&this.chargedMemberIds(u.side).has(u.id)&&ChargedSkillMixin.stateReady(u,this.snapshot.tick)){
-      const aim=ChargedSkillGeometry.aimPoint(u,cast,this.snapshot.tick,this.snapshot.tps,this.world);
-      return{x:aim.x-u.x,y:aim.y-u.y,attack:true};
-    }
-    if(u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.TELL||u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.ACTIVE){
-      const x=Number(u.objectiveBreathDirX)||0,y=Number(u.objectiveBreathDirY)||0;
-      if(Math.hypot(x,y)>.001)return{x,y,attack:true};
-    }
-    const model=this.renderState.model("unit",u.id,this.presentationNow()),pose=model?.entity;
-    const tick=model?.tick??(this.snapshot?.tick||0);
-    const combat=pose?.combat||u.combat,target=pose?pose.target:u.target,attackFlash=pose?pose.attackFlash:u.attackFlash;
-    let targetId=null;
-    if(combat.attackArcTargetId&&tick<(combat.attackArcUntilTick||0))targetId=combat.attackArcTargetId;
-    else if(target&&(((combat.attackWindupUntil||0)>tick)||attackFlash>0||((combat.cooldownUntil||0)>tick)||(this.attackPresentationUntil.get(u.id)||0)>performance.now()))targetId=target;
-    if(targetId){
-      const target=(this.renderState.model("unit",targetId,this.presentationNow())&&this.renderState.entity("unit",targetId))||
-        (this.snapshot?.buildings||[]).find(e=>e.id===targetId&&e.alive!==false);
-      if(target){
-        const targetPose=this.renderState.model("unit",target.id,this.presentationNow())?.entity||target,pose=this.renderTrackedPosition(u);
-        const x=targetPose.x-pose.x,y=targetPose.y-pose.y;
-        if(Math.hypot(x,y)>.001)return{x,y,attack:true};
-      }
-    }
-    const delta=this.renderTrackedDelta(u,"unit");
-    if(Math.hypot(delta.x,delta.y)>.001)return{x:delta.x,y:delta.y,attack:false};
-    return{x:0,y:0,attack:false};
-  }
-
-  artilleryFacingScreen(u){
-    const now=performance.now(),intent=this.unitFacingIntentWorld(u),delta=this.renderTrackedDelta(u,"unit");
-    const movementIntent=Math.hypot(delta.x,delta.y)>.001?delta:null;
-    const turretIntent=intent.attack?intent:(movementIntent||intent);
-    const angleFor=(v,fallback)=>{
-      if(!v||Math.hypot(v.x,v.y)<.001)return fallback;
-      const q=this.renderTrackedDirectionScreen(u,v.x,v.y,"unit");return Math.atan2(q.y,q.x);
-    };
-    const fallback=this.isFriendlySide(u.side)?-Math.PI/2:Math.PI/2;
-    let st=this.artilleryFacingStates.get(u.id);
-    if(!st){const a=angleFor(movementIntent||turretIntent,fallback);st={hull:a,turret:a,lastAt:now,locked:false};this.artilleryFacingStates.set(u.id,st)}
-    const dt=RangeUtil.clamp((now-(st.lastAt||now))/1000,0,.10);st.lastAt=now;
-    const deployState=u.behaviorState?.deploymentState||"mobile",anchored=deployState==="deploying"||deployState==="deployed";
-    // Hull locks at the instant deployment starts. It remains fixed until fully mobile again.
-    if(anchored&&!st.locked)st.locked=true;
-    if(deployState==="mobile"){
-      st.locked=false;
-      if(movementIntent){const desired=angleFor(movementIntent,st.hull),diff=Math.atan2(Math.sin(desired-st.hull),Math.cos(desired-st.hull));st.hull+=RangeUtil.clamp(diff,-7*dt,7*dt)}
-    }
-    // Turret is independent: target while fighting, otherwise travel direction.
-    if(turretIntent){const desired=angleFor(turretIntent,st.turret),diff=Math.atan2(Math.sin(desired-st.turret),Math.cos(desired-st.turret));st.turret+=RangeUtil.clamp(diff,-14*dt,14*dt)}
-    return{hullAngle:st.hull,turretAngle:st.turret,attack:intent.attack,deployState};
-  }
-  withFacingAngle(angle,u,x,y,fn){return this.withFacingPivot(angle,u,x,y,x,y,fn)}
-  withFacingPivot(angle,u,pivotX,pivotY,baseX,baseY,fn){
-    const authoredForward=-Math.PI/2,a=Math.atan2(Math.sin(angle-authoredForward),Math.cos(angle-authoredForward)),prev=this._unitFacingTransform;
-    this._unitFacingTransform={pivotX,pivotY,cos:Math.cos(a),sin:Math.sin(a)};
-    try{return fn({baseX,baseY})}finally{this._unitFacingTransform=prev}
-  }
-
-  resolveUnitFacingScreen(u){
-    const intent=this.unitFacingIntentWorld(u),now=performance.now();
-    let desired=null;
-    if(Math.hypot(intent.x,intent.y)>.001){
-      const dir=this.renderTrackedDirectionScreen(u,intent.x,intent.y,"unit");
-      if(Math.hypot(dir.x,dir.y)>.001)desired=Math.atan2(dir.y,dir.x);
-    }
-    const fallback=this.isFriendlySide(u.side)?-Math.PI/2:Math.PI/2;
-    let state=this.unitFacingStates.get(u.id);
-    if(!state){state={angle:desired??fallback,lastAt:now};this.unitFacingStates.set(u.id,state)}
-    else{
-      const dt=RangeUtil.clamp((now-(state.lastAt||now))/1000,0,.10);state.lastAt=now;
-      if(desired!=null){
-        let diff=Math.atan2(Math.sin(desired-state.angle),Math.cos(desired-state.angle));
-        const step=(intent.attack?14:9)*dt;diff=RangeUtil.clamp(diff,-step,step);state.angle+=diff;
-      }
-    }
-    const fx=Math.cos(state.angle),fy=Math.sin(state.angle);
-    return{fx,fy,sx:-fy,sy:fx,angle:state.angle,attack:intent.attack};
-  }
-
-  unitFacingEnabled(u){return !!u&&UnitVisualDefinition.get(u.type)?.facing==="full"}
-
-  beginUnitFacingTransform(u,x,y){
-    const facing=this.resolveUnitFacingScreen(u);
-    // Full-facing ground visuals have one authored local forward: screen-up (-Y).
-    // Perspective/side inversion is already resolved by renderTrackedDirectionScreen().
-    // Using own/enemy to choose another base axis double-inverts Guest/enemy visuals.
-    const authoredForward=-Math.PI/2;
-    const a=Math.atan2(Math.sin(facing.angle-authoredForward),Math.cos(facing.angle-authoredForward));
-    const prev=this._unitFacingTransform;
-    this._unitFacingTransform={pivotX:x,pivotY:y,cos:Math.cos(a),sin:Math.sin(a)};
-    return prev;
-  }
-  restoreUnitFacingTransform(prev){this._unitFacingTransform=prev||null}
-  unitFacingPoint(x,y){
-    const tr=this._unitFacingTransform;if(!tr)return[x,y];
-    const dx=x-tr.pivotX,dy=y-tr.pivotY;
-    return[tr.pivotX+dx*tr.cos-dy*tr.sin,tr.pivotY+dx*tr.sin+dy*tr.cos];
   }
 
   presentationEntityActive(kind,id){
@@ -2975,27 +1204,11 @@ class GLRenderer{
   projectEntityScreen(entity,kind="unit"){
     return this.projectRenderWorldPosition(this.resolveRenderWorldPosition(entity,kind));
   }
-  resolveLeapTrailWorldPositions(entity,count=3){
-    const cur=this.resolveRenderWorldPosition(entity,"unit");
-    if(cur.motion!=="leap")return[];
-    entity=this.renderState.model("unit",entity.id,this.presentationNow())?.entity||entity;
-    const out=[];
-    for(let k=1;k<=count;k++){
-      const t=RangeUtil.clamp(cur.progress-k*.10,0,1);
-      const x=(entity.leapStartX??entity.x)+((entity.leapEndX??entity.x)-(entity.leapStartX??entity.x))*t;
-      const z=(entity.leapStartY??entity.y)+((entity.leapEndY??entity.y)-(entity.leapStartY??entity.y))*t;
-      const atlas=this.world.terrain.surfaces,groundY=atlas.heightAt(entity.leapStartX??entity.x,entity.leapStartY??entity.y)*(1-t)+atlas.heightAt(entity.leapEndX??entity.x,entity.leapEndY??entity.y)*t;
-      out.push({x,y:groundY+Math.sin(t*Math.PI)*(ROGUE_LEAP_ARC_HEIGHT+atlas.maxHeight),z,groundY,motion:"leapTrail",progress:t});
-    }
-    return out;
-  }
   unitVisibleForRender(u){
-    if(!u?.alive||BurrowableMixin.stateActive(u)||!this.presentationEntityActive("unit",u.id))return false;
+    if(!u?.alive||!this.presentationEntityActive("unit",u.id))return false;
     const p=this.projectEntityScreen(u,"unit"),pad=((UnitDefinition.get(u.type)?.size||15)+80)*this.sc();
     if(p.x<-pad||p.y<-pad||p.x>this.canvas.width+pad||p.y>this.canvas.height+pad)return false;
-    const own=u.side===this.mySide(),cloaked=this.snapshotStealthed(u);
-    const air=UnitDefinition.get(u.type)?.layer==="AIR",detected=own?true:this.detectedRaw(u.x,u.y,air);
-    return own||(this.visibleRaw(u.x,u.y,air)&&(!cloaked||detected));
+    return u.side===this.mySide()||this.visibleRaw(u.x,u.y);
   }
   prepareVisibleUnitFrame(){
     const out=this.visibleUnitFrame;out.length=0;
@@ -3005,8 +1218,7 @@ class GLRenderer{
 
   drawUnitShadow(u,visibilityChecked=false){
     const own=u.side===this.mySide();
-    const air=UnitDefinition.get(u.type)?.layer==="AIR",cloaked=this.snapshotStealthed(u),detected=own?true:this.detectedRaw(u.x,u.y,air);
-    if(!visibilityChecked&&!own&&(!this.visibleRaw(u.x,u.y,air)||(cloaked&&!detected)))return;
+    if(!visibilityChecked&&!own&&!this.visibleRaw(u.x,u.y))return;
     const body=this.resolveRenderWorldPosition(u,"unit");
     const groundWorld=this.resolveGroundShadowPosition(u,"unit"),ground=this.projectRenderWorldPosition(groundWorld);
     const sc=this.sc(),r=this.unitRenderRadius(u);
@@ -3018,137 +1230,15 @@ class GLRenderer{
       return;
     }
     this.withWorldSpriteDepth(groundWorld,()=>{
-      this.circle(ground.x+2*sc,ground.y+Math.max(1,2*sc),r*.96*shrink,own&&cloaked?[.05,.12,.08,alpha*.42]:[.04,.06,.08,alpha],12);
+      this.circle(ground.x+2*sc,ground.y+Math.max(1,2*sc),r*.96*shrink,[.04,.06,.08,alpha],12);
       this.circle(ground.x,ground.y,r*.52*shrink,[.04,.06,.08,alpha*.50],10);
     },.0003);
   }
 
-  renderTrackedFlag(side){
-    const current=this.snapshot?.flags?.[side];
-    if(!current)return null;
-    const p=this.renderState.position("flag",side,current,this.presentationNow());
-    return{x:p.x,y:p.y,forced:!!p.forced};
-  }
-
   rebuildVisibilityCache(){
-    this.snapshotCloakedIds.clear();
     if(!this.snapshot)return;
     for(const side of [0,1])VisionField.of(this,side,this.snapshot);
-    const query=VisibilityPolicy.unitQuery(this.snapshot);
-    for(const source of this.snapshot.units){
-      const radius=Number(UnitDefinition.get(source.type)?.cloakAuraRadius)||0;if(!source.alive||radius<=0)continue;
-      query(source.x,source.y,radius,u=>{if(CloakAuraMixin.canAffect(source,u)&&(u.x-source.x)**2+(u.y-source.y)**2<=radius*radius)this.snapshotCloakedIds.add(u.id)});
-    }
   }
-
-  reconcileShieldVisualStates(snapshot,animateTransitions=true){
-    const now=performance.now(),seenTick=Number(snapshot?.tick)||0;
-    for(const u of snapshot?.units||[]){
-      if(!u?.id||u.alive===false)continue;
-      const charges=Math.max(0,Number(u.hitGuard)||0);
-      let state=this.shieldVisualStates.get(u.id);
-      if(!state){
-        state={charges,appliedAt:0,lastSeenTick:seenTick,seed:HashUtil.hash(`shield:${u.id}`)};
-        if(animateTransitions&&charges>0)state.appliedAt=now;
-        this.shieldVisualStates.set(u.id,state);
-      }else{
-        if(animateTransitions&&charges>state.charges)state.appliedAt=now;
-        state.charges=charges;state.lastSeenTick=seenTick;
-      }
-    }
-    // Keep the map bounded across long matches/replays.
-    if(this.shieldVisualStates.size>640){
-      for(const[id,state]of this.shieldVisualStates){
-        if(state.lastSeenTick!==seenTick)this.shieldVisualStates.delete(id);
-      }
-    }
-  }
-
-  drawSharedShieldVisual(u,x,y,r){
-    const charges=Math.max(0,Number(u?.hitGuard)||0);
-    if(charges<=0||u.side===NEUTRAL_SIDE)return;
-    const now=performance.now(),state=this.shieldVisualStates.get(u.id);
-    const applyAge=state?.appliedAt?Math.max(0,now-state.appliedAt):9999;
-    const applyT=RangeUtil.clamp(applyAge/240,0,1),ease=1-Math.pow(1-applyT,3);
-    const pulse=.5+.5*Math.sin(now*.0048+(state?.seed||HashUtil.hash(u.id))*.013);
-    const shellR=r*(1.42+(1-ease)*.20+.040*pulse);
-    const innerR=shellR*.74;
-
-    // Protoss-like energy shell: a readable translucent body envelope with broad flat plates.
-    // The broad plates keep the status readable even when combat zoom makes units only a few pixels wide.
-    this.circle(x,y,shellR,[.14,.69,.95,.135+.045*pulse],26);
-    this.circle(x,y,innerR,[.48,.92,1,.035+.018*pulse],22);
-
-    const facetCount=6,span=.39;
-    for(let i=0;i<facetCount;i++){
-      const a=-Math.PI/2+i*Math.PI*2/facetCount+now*.00014;
-      const shimmer=(i===Math.floor((now*.00135+(state?.seed||0)*.01)%facetCount));
-      const a0=a-span,a1=a+span,ri=shellR*.68,ro=shellR*1.025;
-      const pts=[
-        [x+Math.cos(a0)*ri,y+Math.sin(a0)*ri],
-        [x+Math.cos(a0)*ro,y+Math.sin(a0)*ro],
-        [x+Math.cos(a1)*ro,y+Math.sin(a1)*ro],
-        [x+Math.cos(a1)*ri,y+Math.sin(a1)*ri]
-      ];
-      this.poly(pts,shimmer?[.72,.97,1,.38]:[.25,.80,1,.14+(i%2)*.035]);
-    }
-
-    // Two asymmetric surface highlights make it read as a curved bubble rather than a circular status ring.
-    const hiA=-2.28+Math.sin(now*.0012+(state?.seed||0))*.08;
-    for(let j=0;j<3;j++){
-      const a=hiA+j*.25,rr=shellR*(.64+j*.10),len=Math.max(r*.22,2.0*this.sc());
-      const tx=-Math.sin(a),ty=Math.cos(a),cx=x+Math.cos(a)*rr,cy=y+Math.sin(a)*rr;
-      this.line(cx-tx*len,cy-ty*len,cx+tx*len,cy+ty*len,Math.max(1.2,(2.7-j*.35)*this.sc()),[.88,1,1,.58-j*.09]);
-    }
-    const lowA=.56,lowCx=x+Math.cos(lowA)*shellR*.80,lowCy=y+Math.sin(lowA)*shellR*.80;
-    this.poly([[lowCx-r*.13,lowCy],[lowCx,lowCy-r*.16],[lowCx+r*.13,lowCy],[lowCx,lowCy+r*.16]],[.58,.94,1,.28]);
-
-    // Applying a shield briefly expands the whole shell so newly protected units are immediately readable.
-    if(applyT<1){
-      const flash=(1-applyT);
-      this.circle(x,y,shellR*(.74+.28*ease),[.48,.93,1,.12+.12*flash],22);
-      const rr=shellR*(.72+.28*ease);
-      for(let k=0;k<6;k++){
-        const a=k*Math.PI/3+(state?.seed||0)*.01;
-        this.circle(x+Math.cos(a)*rr,y+Math.sin(a)*rr,Math.max(1.8,r*.075),[.82,.98,1,.52*flash],7);
-      }
-    }
-
-    // Multiple hitGuard charges share the same visual; extra charge only strengthens the shell slightly.
-    if(charges>1)this.circle(x,y,shellR*.93,[.42,.90,1,.035*Math.min(3,charges)],22);
-  }
-
-  drawSharedShieldsOverlay(){
-    if(!this.snapshot)return;
-    for(const u of this.snapshot.units||[]){
-      if(!u?.alive||(Number(u.hitGuard)||0)<=0||u.side===NEUTRAL_SIDE||!this.presentationEntityActive("unit",u.id))continue;
-      const own=u.side===this.mySide(),cloaked=this.snapshotStealthed(u),detected=own?true:this.detectedRaw(u.x,u.y);
-      if(!own&&(!this.visibleRaw(u.x,u.y,UnitDefinition.get(u.type)?.layer==="AIR")||(cloaked&&!detected)))continue;
-      const rp=this.renderTrackedPosition(u,"unit");
-      if(!this.onScreenAuth(rp.x,rp.y,(UnitDefinition.get(u.type)?.size||15)+90))continue;
-      const pos=this.projectEntityScreen(u,"unit"),r=this.unitRenderRadius(u);
-      this.drawSharedShieldVisual(u,pos.x,pos.y,r);
-    }
-  }
-
-  reconcileAirPresentationSpawns(previous,snapshot){
-    if(!previous||!snapshot)return;
-    const tickGap=Math.abs((Number(snapshot.tick)||0)-(Number(previous.tick)||0));
-    // Recovery/seek/large correction snapshots must snap, not replay a storm of spawn VFX.
-    if(tickGap>4)return;
-    const oldIds=new Set((previous.units||[]).filter(u=>u?.alive!==false).map(u=>u.id));
-    let seq=0;
-    for(const u of snapshot.units||[]){
-      if(!u?.alive||!UnitDefinition.get(u.type)?.carrierSummon||oldIds.has(u.id)||!u.summonerId)continue;
-      const carrier=(snapshot.units||[]).find(x=>x.id===u.summonerId&&x.alive&&UnitDefinition.get(x.type)?.ownsSummonedUnits);
-      if(!carrier)continue;
-      this.addClientFx("carrierLaunch",{
-        type:"carrierLaunch",side:u.side,sourceType:carrier.type,sourceId:carrier.id,targetId:u.id,
-        x:carrier.x,y:carrier.y,x2:u.x,y2:u.y
-      },snapshot,9000+(seq++));
-    }
-  }
-
   setSnapshot(s,{liveTargets=false,snapTargets=false}={}){
     const old=this.snapshot;
     if(snapTargets||!old)this.resetFogTransition();
@@ -3167,129 +1257,11 @@ class GLRenderer{
       this.liveRenderTargets=false;
       this.updatePresentationTargets(s,!!snapTargets||!old);
     }
-    this.reconcileShieldVisualStates(s,!!old);
-    if(old&&!snapTargets)this.reconcileAirPresentationSpawns(old,s);
-
-    // Reconcile local latency-hiding visuals with authoritative snapshots.
-    const mySide=this.mySide();
-    const now=performance.now();
-    if(this.pendingBuildGhosts?.length){
-      this.pendingBuildGhosts=this.pendingBuildGhosts.filter(g=>{
-        if(now-g.start>PREDICTED_BUILD_GHOST_TTL_MS)return false;
-        return [...(s?.buildings||[]),...(s?.constructionOrders||[])].every(b=>!(
-          b.alive!==false&&b.side===mySide&&b.type===g.building&&
-          Math.hypot((b.x||0)-g.x,(b.y||0)-g.y)<4
-        ));
-      });
-    }
-    if(this.predictedFlag){
-      const af=s?.flags?.[mySide];
-      if(af&&af.forced===this.predictedFlag.forced&&Math.hypot(af.x-this.predictedFlag.x,af.y-this.predictedFlag.y)<3){
-        this.predictedFlag=null;
-      }
-    }
-    this.prunePredictedFlag(now);
-    if(this.latencySpellFx?.length)this.latencySpellFx=this.latencySpellFx.filter(f=>now-f.start<PREDICTED_COMMAND_FX_TTL_MS);
 
     this.rebuildVisibilityCache();
 
-    // SET_FLAG 자체는 lockstep 이벤트로 양쪽이 동일하게 받지만,
-    // 먼지/충격파/천 흔들림은 좌표 동기화가 필요 없는 로컬 VFX다.
-    const side=this.mySide();
-    const ev=[...(s?.events||[])].reverse().find(e=>e.type==="flag"&&e.side===side);
-    if(ev){
-      const key=`${s.tick}:${side}:${Math.round(ev.x)}:${Math.round(ev.y)}`;
-      const locallyPredicted=this.lastPredictedFlagFx&&
-        this.lastPredictedFlagFx.forced===!!ev.forced&&
-        Math.hypot(this.lastPredictedFlagFx.x-ev.x,this.lastPredictedFlagFx.y-ev.y)<3&&
-        performance.now()-this.lastPredictedFlagFx.start<5000;
-      if(key!==this.lastFlagFxKey){
-        this.lastFlagFxKey=key;
-        if(!locallyPredicted){
-          const flagFx=this.flagFxPool.acquire();
-          flagFx.x=ev.x;flagFx.y=ev.y;flagFx.side=side;flagFx.forced=!!ev.forced;flagFx.start=performance.now();flagFx.seed=HashUtil.hash(key);
-          this.flagFx.push(flagFx);
-          // 최신 지휘 명령만 강하게 보이도록 오래된 효과는 정리.
-          while(this.flagFx.length>3)this.flagFxPool.release(this.flagFx.shift());
-        }
-      }
-    }
     this.processFloatingEvents(s);
     this.processClientCombatEffects(s);
-  }
-
-  predictBuild(action){
-    if(!action||action.type!=="BUILD")return;
-    const key=`${action.building}|${Math.round(action.x)}|${Math.round(action.y)}`;
-    this.pendingBuildGhosts=this.pendingBuildGhosts.filter(g=>g.key!==key);
-    this.pendingBuildGhosts.push({
-      key,building:action.building,produceType:action.produceType||null,
-      x:action.x,y:action.y,start:performance.now()
-    });
-    if(this.pendingBuildGhosts.length>12)this.pendingBuildGhosts.splice(0,this.pendingBuildGhosts.length-12);
-  }
-  prunePredictedFlag(now=performance.now()){
-    if(this.predictedFlag&&now-this.predictedFlag.start>PREDICTED_BUILD_GHOST_TTL_MS)this.predictedFlag=null;
-  }
-  predictFlag(x,y,forced=false){
-    const now=performance.now(),side=this.mySide();
-    this.predictedFlag={x,y,forced:!!forced,start:now};
-    this.lastPredictedFlagFx={x,y,forced:!!forced,start:now};
-    const key=`pred:${side}:${Math.round(x)}:${Math.round(y)}:${forced?1:0}:${Math.round(now)}`;
-    const fx=this.flagFxPool.acquire();fx.x=x;fx.y=y;fx.side=side;fx.forced=!!forced;fx.start=now;fx.seed=HashUtil.hash(key);
-    this.flagFx.push(fx);
-    while(this.flagFx.length>3)this.flagFxPool.release(this.flagFx.shift());
-  }
-  predictSpellCast(spellId,payload={}){
-    const now=performance.now();
-    this.latencySpellFx.push({spellId,start:now,...payload});
-    if(this.latencySpellFx.length>8)this.latencySpellFx.splice(0,this.latencySpellFx.length-8);
-  }
-  drawConstructionOrders(){
-    const side=this.mySide(),prev=this._unitRenderAlphaMul;
-    this._unitRenderAlphaMul=.38;
-    try{
-      for(const order of this.snapshot?.constructionOrders||[]){
-        if(order.side!==side)continue;
-        // Presentation DTO only: reservations never enter the entity render/HP pass.
-        this.drawBuildingSafely({...order,complete:true,queue:[]});
-      }
-    }finally{this._unitRenderAlphaMul=prev}
-  }
-  drawPendingBuildGhosts(){
-    if(!this.pendingBuildGhosts?.length)return;
-    const now=performance.now(),side=this.mySide(),prev=this._unitRenderAlphaMul;
-    this.pendingBuildGhosts=this.pendingBuildGhosts.filter(g=>now-g.start<PREDICTED_BUILD_GHOST_TTL_MS);
-    this._unitRenderAlphaMul=.30;
-    for(const g of this.pendingBuildGhosts){
-      this.drawBuilding({
-        id:`pred-${g.key}`,type:g.building,side,x:g.x,y:g.y,
-        hp:BuildingDefinition.get(g.building)?.hp||1,maxHp:BuildingDefinition.get(g.building)?.hp||1,
-        complete:true,progress:0,queue:[],alive:true,produceType:g.produceType||null
-      });
-    }
-    this._unitRenderAlphaMul=prev;
-  }
-  drawLatencySpellFx(){
-    if(!this.latencySpellFx?.length)return;
-    const now=performance.now(),sc=this.sc();
-    this.latencySpellFx=this.latencySpellFx.filter(f=>now-f.start<PREDICTED_COMMAND_FX_TTL_MS);
-    for(const f of this.latencySpellFx){
-      const age=now-f.start,t=RangeUtil.clamp(age/PREDICTED_COMMAND_FX_TTL_MS,0,1),d=SpellDefinition.get(f.spellId);
-      if(!d)continue;
-      const pulse=.5+.5*Math.sin(age*.018);
-      const drawAt=(ax,ay)=>{
-        const p=this.worldToPx(this.viewX(ax),this.viewY(ay));
-        const stats=this.snapshot?.spellBooks?.[this.mySide()]?.[f.spellId];
-        const sd=SpellDefinition.statsAt(f.spellId,stats?.mastery||0);
-        const rr=(sd?.radius||42)*sc;
-        this.circle(p[0],p[1],Math.max(10,rr*(.94+.06*pulse)),[.35,.82,1,.18*(1-t)],32);
-        this.outlineCircle(p[0],p[1],Math.max(12,rr),Math.max(1.5,2.4*sc),[.62,.92,1,.72*(1-t)],32,1);
-      };
-      if(f.spellId==="tunnel"&&f.entryX!=null&&f.exitX!=null){
-        drawAt(f.entryX,f.entryY);drawAt(f.exitX,f.exitY);
-      }else if(f.x!=null)drawAt(f.x,f.y);
-    }
   }
 
   triggerClientShake(intensity=2,duration=140,seed=1){
@@ -3321,13 +1293,6 @@ class GLRenderer{
   }
 
   addClientFx(kind,e,snapshot,index,extra={}){
-    if(kind==="linkedBeam"&&e.sourceId){
-      for(let i=this.combatFx.length-1;i>=0;i--){
-        const old=this.combatFx[i];if(old?.kind!=="linkedBeam"||old.sourceId!==e.sourceId)continue;
-        if(old.targetId===e.targetId){old.start=performance.now();old.durationTicks=Number(e.durationTicks)||old.durationTicks;old.x=Number(e.x)||old.x;old.y=Number(e.y)||old.y;old.x2=Number(e.x2)||old.x2;old.y2=Number(e.y2)||old.y2;return old}
-        this.combatFx.splice(i,1);this.combatFxPool.release(old);
-      }
-    }
     const eventTick=Number.isFinite(Number(e.presentationTick))?Number(e.presentationTick):snapshot.tick;
     const seed=HashUtil.hash(
       `${eventTick}|${index}|${kind}|${e.sourceType||e.unit||e.spell||""}|`+
@@ -3356,21 +1321,6 @@ class GLRenderer{
 
   
 
-  combatImpactFxKind(sourceType){
-    if(UnitDefinition.get(sourceType)?.airAttackFx)return "airImpact";
-    return AttackPresentationDefinition.impactFx(sourceType)||"meleeImpact";
-  }
-
-  combatMuzzleFxKind(sourceType){
-    if(UnitDefinition.get(sourceType)?.airAttackFx)return "airMuzzle";
-    const d=UnitDefinition.get(sourceType)||BuildingDefinition.get(sourceType)||{};
-    if(d.vfxMuzzle==="gun")return "gunMuzzle";
-    const a=AttackPresentationDefinition.forSource(sourceType);
-    if(a.impact==="explosive"||d.vfxHeavy)return "heavyMuzzle";
-    if(a.impact==="arcane")return "magicMuzzle";
-    return "bowMuzzle";
-  }
-
   processClientCombatEffects(snapshot){
     if(!snapshot||!this.fxCtx)return;
 
@@ -3382,192 +1332,29 @@ class GLRenderer{
     let index=0;
 
     for(const e of snapshot.events||[]){
-      if(e.type==="projectileRetire"){index++;continue}
-      const x=Number(e.x);
-      const y=Number(e.y);
-      const visible=
-        e.side===mySide||
-        (Number.isFinite(x)&&Number.isFinite(y)&&this.visibleRaw(x,y));
-
+      const x=Number(e.x),y=Number(e.y);
+      const visible=e.side===mySide||(Number.isFinite(x)&&Number.isFinite(y)&&this.visibleRaw(x,y));
       if(!visible){index++;continue}
 
       if(e.type==="hit"){
-        const sourceType=e.sourceType||"",kind=this.combatImpactFxKind(sourceType);
+        const sourceType=e.sourceType||"";
         const attackVisual=AttackPresentationDefinition.forSource(sourceType),impactPreset=AttackPresentationDefinition.impactPreset(sourceType);
         if(attackVisual.travel==="none"&&attackVisual.sourceMotion&&e.sourceId){
           const source=(snapshot.units||[]).find(u=>u.id===e.sourceId&&u.alive);
           if(source)this.addClientFx("meleeSourceMotion",{...e,x:source.x,y:source.y,x2:e.x,y2:e.y},snapshot,index,{motion:attackVisual.sourceMotion});
           this.attackPresentationUntil.set(e.sourceId,performance.now()+220);
         }
-        if(!e.suppressImpactFx)this.addClientFx(kind,e,snapshot,index,{impactScale:impactPreset.scale});
-
-        // Sunvine is a continuous beam: keep the normal hit VFX/damage-number event,
-        // but never stack camera shake from its frequent damage pulses.
-        const suppressHitShake=!!BuildingDefinition.get(e.sourceType)?.suppressHitShake;
-        if(kind==="heavyImpact"&&!suppressHitShake){
-          this.triggerClientShake(5.5,230,HashUtil.hash(`${snapshot.tick}|heavy|${index}`));
-        }else if(e.side===mySide&&!suppressHitShake){
-          this.triggerClientShake(1.5,90,HashUtil.hash(`${snapshot.tick}|hurt|${index}`));
-        }
-      }else if(e.type==="shoot"||e.type==="towerShot"){
-        const kind=this.combatMuzzleFxKind(e.unit||e.sourceType||"");
-        this.addClientFx(kind,e,snapshot,index);
-        if(e.sourceId)this.attackPresentationUntil.set(e.sourceId,performance.now()+180);
-      }else if(e.type==="balsamRocketImpact"){
-        this.addClientFx("balsamImpact",e,snapshot,index,{burstShot:e.burstShot||1,burstCount:e.burstCount||4});
-      }else if(e.type==="meteorImpact"){
-        this.addClientFx("meteorImpact",e,snapshot,index);
-        this.triggerClientShake(9,480,HashUtil.hash(`${snapshot.tick}|meteor|${index}`));
-      }else if(e.type==="spellCast"&&e.spell==="tunnel"){
-        this.addClientFx("tunnelOpen",e,snapshot,index);
-        if(Number.isFinite(e.x2)&&Number.isFinite(e.y2)){
-          this.addClientFx("tunnelOpen",{...e,x:e.x2,y:e.y2},snapshot,index+1000);
-        }
-      }else if(e.type==="tunnelTransit"){
-        this.addClientFx("tunnelTransit",e,snapshot,index);
-      }else if(e.type==="rogueBlink"){
-        this.addClientFx("blinkBurst",e,snapshot,index);
-      }else if(e.type==="rogueLeapStart"){
-        this.addClientFx("rogueLeapStart",e,snapshot,index);
-      }else if(e.type==="rogueLeapLand"){
-        this.addClientFx("rogueLeapLand",e,snapshot,index);
-        this.triggerClientShake(1.8,110,HashUtil.hash(`${snapshot.tick}|rogue-land|${index}`));
-      }else if(e.type==="healLink"){
-        this.addClientFx("linkedBeam",e,snapshot,index);
-      }else if(e.type==="chargeImpact"){
-        this.addClientFx("chargeBurst",e,snapshot,index);
-        this.triggerClientShake(2.8,150,HashUtil.hash(`${snapshot.tick}|charge|${index}`));
-      }else if(e.type==="chargedSkillRelease"){
-        this.addClientFx("chargedSkillLaunch",e,snapshot,index);
-      }else if(e.type==="pillbugBurst"){
-        this.addClientFx("pillbugBurst",e,snapshot,index);
-        this.triggerClientShake(6.5,260,HashUtil.hash(`${snapshot.tick}|pillbug|${index}`));
-      }else if(e.type==="rootSpike"){
-        this.addClientFx("rootSpike",e,snapshot,index);
-      }else if(e.type==="deepThornCast"){
-        this.addClientFx("deepThornCast",e,snapshot,index);
-      }else if(e.type==="deepThornSpike"){
-        this.addClientFx("deepThornSpike",e,snapshot,index);
-        this.triggerClientShake(6.2,280,HashUtil.hash(`${snapshot.tick}|deepthorn|${index}`));
-      }else if(e.type==="airborne"){
-        this.addClientFx("airborneBurst",e,snapshot,index);
-      }else if(e.type==="chainArc"){
-        this.addClientFx("chainArc",e,snapshot,index,{aegisArc:!!e.aegisArc});
-      }else if(e.type==="hitGuardBreak"){
-        this.addClientFx("hitGuardBreak",e,snapshot,index);
-      }else if(e.type==="guardPulse"||e.type==="guardCharge"){
-        this.addClientFx("guardPulse",e,snapshot,index);
-      }else if(e.type==="attackCooldownReset"){
-        if(e.sourceId){
-          const now=performance.now();
-          this.attackPresentationUntil.set(e.sourceId,now+220);
-          this.bodyPulsePresentation.trigger(e.sourceId,"hunterWaspRapidSting",now);
-          this.addClientFx("hunterWaspCooldownReset",e,snapshot,index);
-        }
-      }else if(e.type==="guardRetaliation"){
-        // Retaliation must read from the mushroom itself, not only from the projectile.
-        this.addClientFx("guardRetaliationBurst",e,snapshot,index);
-        if(e.sourceId){
-          const now=performance.now();
-          this.attackPresentationUntil.set(e.sourceId,now+320);
-          this.bodyPulsePresentation.trigger(e.sourceId,"guardshroomRetaliation",now);
-        }
-      }else if(e.type==="guardRetaliationImpact"){
-        this.addClientFx("guardRetaliationImpact",e,snapshot,index);
-      }else if(e.type==="sporeSpawn"){
-        this.addClientFx("sporeSpawn",e,snapshot,index);
-      }else if(e.type==="clawHookLaunch"){
-        this.addClientFx("arcTether",e,snapshot,index);
-      }else if(e.type==="clawPull"){
-        this.addClientFx("clawPullImpact",e,snapshot,index);
-      }else if(e.type==="thornReflect"){
-        this.addClientFx("thornReflect",e,snapshot,index);
-      }else if(e.type==="thornBurst"){
-        this.addClientFx("thornBurst",e,snapshot,index);
-        this.triggerClientShake(2.8,150,HashUtil.hash(`${snapshot.tick}|thorn-burst|${index}`));
-      }else if(e.type==="kickhopperSplash"){
-        this.addClientFx("kickhopperSplash",e,snapshot,index);
-        this.triggerClientShake(2.2,120,HashUtil.hash(`${snapshot.tick}|kickhopper|${index}`));
-      }else if(e.type==="chainOverload"||e.type==="deepThornSecondary"||e.type==="impactShockwave"||e.type==="pullImpact"||e.type==="allySpeedBurst"){
-        this.addClientFx(e.type,e,snapshot,index);
-      }else if(e.type==="objectiveBearShockwave"){
-        this.addClientFx("titanSlam",e,snapshot,index);
-        this.triggerClientShake(4.6,210,HashUtil.hash(`${snapshot.tick}|objective-bear-shock|${index}`));
-      }else if(e.type==="objectiveBearChargeStart"){
-        this.addClientFx("chargeBurst",e,snapshot,index);
-      }else if(e.type==="objectiveBearChargeTrail"){
-        this.addClientFx("objectiveBearChargeTrail",e,snapshot,index);
-      }else if(e.type==="objectiveBearChargeEnd"){
-        this.addClientFx("titanSlam",e,snapshot,index);
-        this.triggerClientShake(5.4,240,HashUtil.hash(`${snapshot.tick}|objective-bear-charge|${index}`));
-      }else if(e.type==="objectiveDragonBreathTell"){
-        this.addClientFx("dragonMuzzle",e,snapshot,index);
-      }else if(e.type==="objectiveDragonFireball"){
-        this.addClientFx("dragonMuzzle",e,snapshot,index);
-      }else if(e.type==="attackVariantBreath"){
-        this.attackVariantBreathFx.push({
-          id:`${e.sourceId||"unit"}:${e.tick||this.snapshot?.tick||0}:${this.attackVariantBreathFx.length}`,
-          sourceId:e.sourceId,sourceType:e.sourceType,x:e.x,y:e.y,
-          dirX:e.dirX,dirY:e.dirY,range:e.range,angleDeg:e.angleDeg,
-          preset:e.vfxPreset||"fireAntBreath",start:performance.now(),
-          duration:Math.max(100,Number(e.durationMs)||SimulationTiming.ticksToMs(e.durationTicks||(this.snapshot?.tps||SIM_TPS),this.snapshot?.tps||SIM_TPS))
-        });
-      }else if(e.type==="objectiveCaptured"){
-        this.addClientFx("objectiveCaptured",e,snapshot,index,{dirX:Number(e.dirX)||0,dirY:Number(e.dirY)||0});
-        this.triggerClientShake(3.2,170,HashUtil.hash(`${snapshot.tick}|objective-captured|${index}`));
-      }else if(e.type==="objectiveRespawned"){
-        this.addClientFx("objectiveRespawned",e,snapshot,index);
-        this.triggerClientShake(UnitVisualDefinition.get(e.sourceType)?.objectiveFxStyle==="dragon"?2.4:3.8,190,HashUtil.hash(`${snapshot.tick}|objective-respawn|${index}`));
-      }else if(e.type==="titanSlam"){
-        this.addClientFx("titanSlam",e,snapshot,index);
-        this.triggerClientShake(7.5,300,HashUtil.hash(`${snapshot.tick}|titan|${index}`));
-      }else if(e.type==="interceptLock"){
-        this.addClientFx("electricLink",e,snapshot,index);
-      }else if(e.type==="projectileIntercept"){
-        this.addClientFx("projectileIntercept",e,snapshot,index);
-      }else if(e.type==="burrowDive"){
-        this.addClientFx("burrowDive",e,snapshot,index);
-      }else if(e.type==="burrowTravel"||e.type==="burrowTrail"){
-        this.addClientFx("burrowTrail",e,snapshot,index);
-      }else if(e.type==="burrowEmerge"){
-        this.addClientFx("burrowEmerge",e,snapshot,index);
-        this.triggerClientShake(6.5,280,HashUtil.hash(`${snapshot.tick}|burrow-emerge|${index}`));
-      }else if(e.type==="burrowMelee"){
-        this.addClientFx("burrowMelee",e,snapshot,index);
-      }else if(e.type==="ambush"){
-        this.addClientFx("ambushBurst",e,snapshot,index);
-      }else if(e.type==="knockback"){
-        this.addClientFx("knockbackBurst",e,snapshot,index);
+        if(!e.suppressImpactFx)this.addClientFx("meleeImpact",e,snapshot,index,{impactScale:impactPreset.scale});
+        if(e.side===mySide)this.triggerClientShake(1.5,90,HashUtil.hash(`${snapshot.tick}|hurt|${index}`));
       }else if(e.type==="death"){
         this.addClientFx("deathBurst",e,snapshot,index);
       }else if(e.type==="buildingDeath"){
         this.addClientFx("buildingBurst",e,snapshot,index);
         this.triggerClientShake(3.5,180,HashUtil.hash(`${snapshot.tick}|building|${index}`));
-      }else if(e.type==="swarmCarcassConsume"){
-        // Presentation-only reuse of the same arc-travel primitive as artillery.
-        // The consumer declares endpoints/height/preset; it never owns trajectory math.
-        this.addClientFx("arcTravelFx",e,snapshot,index,{
-          fromX:Number(e.x),fromY:Number(e.y),toX:Number(e.targetX),toY:Number(e.targetY),
-          arcHeight:50,preset:"swarmCarcassEnergy",durationMs:600
-        });
-      }else if(e.type==="heal"){
-        this.addClientFx("healBurst",e,snapshot,index);
-      }else if(e.type==="neutralRecover"){
-        this.addClientFx("healBurst",e,snapshot,index);
-      }else if(e.type==="rootBind"){
-        this.addClientFx("rootBindBurst",e,snapshot,index);
-      }else if(e.type==="recall"){
-        this.addClientFx("recallBurst",e,snapshot,index);
-      }else if(e.type==="sporeFade"){
-        this.addClientFx("sporeFadeBurst",e,snapshot,index);
-      }else if(e.type==="projectileLostLock"){
-        this.addClientFx("lostLockBurst",e,snapshot,index);
       }
-
       index++;
     }
   }
-
   processFloatingEvents(snapshot){
     if(!snapshot||!this.fxCtx)return;
     const roleKey=this.role==="guest"?"guest":"host";
@@ -3587,45 +1374,13 @@ class GLRenderer{
         kind=e.side===side?"damageTaken":"damageDealt";
         amount=e.amount;
         text=`-${e.amount}`;
-      }else if(e.type==="heal"&&e.amount>0&&e.side===side){
-        kind="heal";amount=e.amount;text=`+${e.amount}`;
-      }else if(e.type==="swarmCarcassConsume"&&e.amount>0&&e.side===side){
-        kind="heal";amount=e.amount;text=`+${e.amount}`;e.x=Number(e.targetX);e.y=Number(e.targetY);
-      }else if(e.type==="income"&&e.amount>0&&e.side===side){
-        kind=e.resourceType==="gas"?"gasIncome":"income";
-        amount=e.amount;
-        text=e.resourceType==="gas"?`+${e.amount} ⬡`:`+${e.amount} ◆`;
-      }else if(e.type==="campClear"&&e.bonus>0&&e.side===side){
-        kind="income";amount=e.bonus;text=`+${e.bonus} ◆`;
-      }else if(e.type==="buildCancelled"&&e.refund>0&&e.side===side){
-        kind="income";amount=e.refund;text=`+${e.refund} ◆`;
-      }else if(e.type==="interceptLock"&&e.side===side&&e.manaCost>0){
-        kind="manaSpend";amount=e.manaCost;text=`-${e.manaCost} MP`;
-      }else if(e.type==="dodge"||e.type==="graze"){
+      }else if(e.type==="dodge"){      }else if(e.type==="dodge"||e.type==="graze"){
         if(e.side!==side&&!this.visibleRaw(e.x,e.y)){index++;continue}
         kind="dodge";
-        text=e.type==="dodge"?"MISS":"빗맞음";
+        text="MISS";
       }
 
       if(!kind){index++;continue}
-
-      // 일꾼 반납처럼 같은 지점의 돈 숫자는 짧은 시간 동안 합쳐 가독성을 확보.
-      if(kind==="income"||kind==="gasIncome"||kind==="manaSpend"){
-        const existing=[...this.floatFx].reverse().find(f=>
-          f.kind===kind&&now-f.start<160&&Math.hypot(f.x-e.x,f.y-e.y)<65
-        );
-        if(existing){
-          existing.amount+=amount;
-          existing.text=kind==="gasIncome"
-            ?`+${existing.amount} ⬡`
-            :kind==="manaSpend"
-              ?`-${existing.amount} MP`
-              :`+${existing.amount} ◆`;
-          existing.start=now;
-          index++;
-          continue;
-        }
-      }
 
       const eventTick=Number.isFinite(Number(e.presentationTick))?Number(e.presentationTick):snapshot.tick;
       const seed=HashUtil.hash(`${eventTick}|${index}|${kind}|${Math.round(e.x)}|${Math.round(e.y)}|${amount}`);
@@ -3673,90 +1428,6 @@ class GLRenderer{
     ctx.restore();
   }
 
-  drawProductionBuildingEmblems(){
-    const ctx=this.fxCtx;
-    if(!ctx||!this.fxCanvas||!this.snapshot)return;
-
-    const side=this.mySide(),sc=this.sc();
-
-    for(const b of this.snapshot.buildings){
-      if(b.alive===false||!BuildingDefinition.get(b.type)?.isProductionBuilding||!b.produceType)continue;
-
-      const own=b.side===side;
-      if(!own&&!this.visibleRaw(b.x,b.y))continue;
-
-      const info=UnitDefinition.cardInfo[b.produceType]||{icon:"?",desc:""};
-
-      const[x,y]=this.worldToPx(this.viewX(b.x),this.viewY(b.y));
-      const d=BuildingDefinition.get(b.type);
-      const bodyR=d.size*sc;
-
-      // 건물 지붕 한가운데 붙은 병종 엠블럼.
-      // 건설 중에도 보이되 살짝 흐리게 해서 어떤 전용 배럭을 짓는지 알 수 있다.
-      const badgeR=Math.max(13,Math.min(24,bodyR*.48));
-      const alpha=b.complete?1:.62;
-
-      if(x<-badgeR*2||x>this.fxCanvas.width+badgeR*2||
-         y<-badgeR*2||y>this.fxCanvas.height+badgeR*2)continue;
-
-      ctx.save();
-      ctx.globalAlpha=alpha;
-
-      // 그림자
-      ctx.beginPath();
-      ctx.arc(x+1.5*sc,y+1.8*sc,badgeR+2,0,Math.PI*2);
-      ctx.fillStyle="rgba(0,0,0,.28)";
-      ctx.fill();
-
-      // 팀 컬러 배지
-      ctx.beginPath();
-      ctx.arc(x,y,badgeR,0,Math.PI*2);
-      ctx.fillStyle=own?"rgba(232,241,255,.96)":"rgba(255,232,232,.96)";
-      ctx.fill();
-      ctx.lineWidth=Math.max(2,2.6*sc);
-      ctx.strokeStyle=own?"rgba(52,105,214,.98)":"rgba(205,65,70,.98)";
-      ctx.stroke();
-
-      // 내부 얇은 링
-      ctx.beginPath();
-      ctx.arc(x,y,badgeR*.76,0,Math.PI*2);
-      ctx.lineWidth=Math.max(1,1.4*sc);
-      ctx.strokeStyle=own?"rgba(105,145,225,.42)":"rgba(220,105,110,.42)";
-      ctx.stroke();
-
-      // 드래프트 카드와 완전히 같은 아이콘.
-      const fontSize=Math.max(16,Math.min(29,badgeR*1.28));
-      ctx.font=`900 ${fontSize}px system-ui,-apple-system,"Segoe UI Symbol","Segoe UI",sans-serif`;
-      ctx.textAlign="center";
-      ctx.textBaseline="middle";
-      ctx.lineJoin="round";
-      ctx.lineWidth=Math.max(1.5,2*sc);
-      ctx.strokeStyle=own?"rgba(255,255,255,.98)":"rgba(255,255,255,.98)";
-      ctx.strokeText(info.icon,x,y+.5*sc);
-      ctx.fillStyle=own?"#2450a8":"#a62b31";
-      ctx.fillText(info.icon,x,y+.5*sc);
-
-      // 선택된 생산건물은 아이콘 바깥 링도 강하게 표시.
-      if(this.selectedBuildingId===b.id){
-        ctx.beginPath();
-        ctx.arc(x,y,badgeR+5*sc,0,Math.PI*2);
-        ctx.lineWidth=Math.max(2,3*sc);
-        ctx.strokeStyle="#ffd75f";
-        ctx.stroke();
-      }
-
-      ctx.restore();
-    }
-  }
-
-  aegisShellNodeScreen(source,targetX,targetY){
-    const sp=this.renderTrackedScreenPosition(source,"unit"),r=this.unitRenderRadius(source);
-    const nodes=[[-.43,-.30],[.43,-.30],[-.40,.30],[.40,.30]];
-    let best={x:sp.x,y:sp.y},bestDot=-Infinity;
-    const dx=targetX-sp.x,dy=targetY-sp.y,len=Math.hypot(dx,dy)||1,nx=dx/len,ny=dy/len;
-    for(const [ox,oy] of nodes){const dot=ox*nx+oy*ny;if(dot>bestDot){bestDot=dot;best={x:sp.x+ox*r,y:sp.y+oy*r}}}
-    return best;
-  }
   drawClientCombatFx(){
     const ctx=this.fxCtx;
     if(!ctx||!this.fxCanvas)return;
@@ -3834,57 +1505,9 @@ class GLRenderer{
       const fx=this.combatFx[read];
       const age=now-fx.start;
       const life=
-        fx.kind==="meteorImpact"?820:
-        fx.kind==="tunnelOpen"?720:
         fx.kind==="buildingBurst"?620:
         fx.kind==="deathBurst"?480:
-        fx.kind==="pillbugBurst"?540:
-        fx.kind==="rootSpike"?Math.max(560,Number(fx.travelMs)||0):
-        fx.kind==="deepThornCast"?620:
-        fx.kind==="deepThornSpike"?760:
-        fx.kind==="airborneBurst"?300:
-        fx.kind==="chainArc"?(fx.aegisArc?340:300):
-        fx.kind==="hitGuardBreak"?360:
-        fx.kind==="guardPulse"?280:
-        fx.kind==="guardRetaliationBurst"?320:
-        fx.kind==="hunterWaspCooldownReset"?260:
-        fx.kind==="guardRetaliationImpact"?420:
-        fx.kind==="sporeSpawn"?360:
-        fx.kind==="arcTether"?Math.max(650,(fx.travelMs||300)+(fx.pullTicks?SimulationTiming.ticksToMs(fx.pullTicks,this.snapshot?.tps||SIM_TPS):250)+(fx.retractMs||220)+80):
-        fx.kind==="clawPullImpact"?260:
-        fx.kind==="thornReflect"?360:
-        fx.kind==="thornBurst"?700:
-        fx.kind==="kickhopperSplash"?360:
-        fx.kind==="titanSlam"?520:
-        fx.kind==="electricLink"?Math.max(220,(fx.durationTicks?SimulationTiming.ticksToMs(fx.durationTicks,this.snapshot?.tps||SIM_TPS):300)):
-        fx.kind==="chainOverload"||fx.kind==="deepThornSecondary"||fx.kind==="impactShockwave"||fx.kind==="pullImpact"||fx.kind==="allySpeedBurst"?420:
-        fx.kind==="projectileIntercept"?260:
-        fx.kind==="burrowDive"?420:
-        fx.kind==="burrowTrail"?300:
-        fx.kind==="objectiveBearChargeTrail"?260:
-        fx.kind==="chargedSkillLaunch"?420:
-        fx.kind==="objectiveCaptured"?720:
-        fx.kind==="objectiveRespawned"?760:
-        fx.kind==="burrowEmerge"?720:
-        fx.kind==="burrowMelee"?360:
-        fx.kind==="rootBindBurst"?620:
-        fx.kind==="recallBurst"?720:
-        fx.kind==="sporeFadeBurst"?420:
-        fx.kind==="arcTravelFx"?Math.max(120,Number(fx.durationMs)||520):
-        fx.kind==="lostLockBurst"?300:
-        fx.kind==="airMuzzle"?300:
         fx.kind==="meleeSourceMotion"?(AttackPresentationDefinition.sourceMotions[fx.motion]?.lifeMs||220):
-        fx.kind==="airImpact"?420:
-        fx.kind==="carrierLaunch"?520:
-        fx.kind.endsWith("Muzzle")?260:
-        fx.kind==="healBurst"?500:
-        fx.kind==="linkedBeam"?Math.max(300,(fx.durationTicks?SimulationTiming.ticksToMs(fx.durationTicks,this.snapshot?.tps||SIM_TPS):900)):
-        fx.kind==="rogueLeapStart"?360:
-        fx.kind==="rogueLeapLand"?420:
-        fx.kind==="blinkBurst"?420:
-        fx.kind==="chargeBurst"?460:
-        fx.kind==="ambushBurst"?430:
-        fx.kind==="knockbackBurst"?300:
         360;
 
       if(age>=life){this.combatFxPool.release(fx);continue}
@@ -3901,57 +1524,7 @@ class GLRenderer{
       ctx.lineCap="round";
       ctx.lineJoin="round";
 
-      if(fx.kind==="airMuzzle"){
-        const src=resolveFxEntityScreen(fx.sourceId),mx=src?.[0]??x,my=src?.[1]??y;
-        const dir=fxDirection(fx,mx,my,"target")||{x:1,y:0},nx=dir.x,ny=dir.y,sx=-ny,sy=nx;
-        if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="flutter"){
-          ctx.globalAlpha=.88*(1-t);ctx.strokeStyle="#ffd55d";ctx.lineWidth=Math.max(1.4,2.3*sc);ctx.beginPath();ctx.moveTo(mx+nx*3*sc,my+ny*3*sc);ctx.lineTo(mx+nx*(18+8*ease)*sc,my+ny*(18+8*ease)*sc);ctx.stroke();
-          for(let k=-1;k<=1;k++)dot(mx+nx*(8+6*ease)*sc+sx*k*4*sc,my+ny*(8+6*ease)*sc+sy*k*4*sc,Math.max(1.2,2*sc),"#fff0a0",.62*(1-t));
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="swarm"){
-          ring(mx,my,(3+12*ease)*sc,1.5*sc,"#b8e76a",.42*(1-t));burst(fx,mx,my,t,5,"#d6f38b",18,1.5,.72);
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="glide"){
-          for(let k=-1;k<=1;k++){const off=k*3.5*sc;ctx.globalAlpha=.62*(1-t);ctx.strokeStyle="#9defff";ctx.lineWidth=Math.max(1,1.5*sc);ctx.beginPath();ctx.moveTo(mx-nx*8*sc+sx*off,my-ny*8*sc+sy*off);ctx.lineTo(mx+nx*(20+14*ease)*sc+sx*off,my+ny*(20+14*ease)*sc+sy*off);ctx.stroke()}
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="moth"){
-          dot(mx,my,(5+5*(1-t))*sc,"#fff7ad",.92*(1-t));ring(mx,my,(7+18*ease)*sc,2*sc,"#ffd85a",.44*(1-t));
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="heavy-moth"){
-          const dropY=my+(8+16*ease)*sc;ctx.globalAlpha=.55*(1-t);ctx.strokeStyle="#b47ad1";ctx.lineWidth=Math.max(1.2,2*sc);ctx.beginPath();ctx.moveTo(mx,my+2*sc);ctx.lineTo(mx,dropY);ctx.stroke();dot(mx,dropY,(4+3*(1-t))*sc,"#c99be4",.88*(1-t));
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="wasp"){
-          ctx.globalAlpha=.92*(1-t);ctx.strokeStyle="#ff9f2e";ctx.lineWidth=Math.max(1.6,2.7*sc);ctx.beginPath();ctx.moveTo(mx,my);ctx.lineTo(mx+nx*(24+12*ease)*sc,my+ny*(24+12*ease)*sc);ctx.stroke();dot(mx+nx*(24+12*ease)*sc,my+ny*(24+12*ease)*sc,2.2*sc,"#fff0ac",.90*(1-t));
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="sail"){
-          for(let k=-1;k<=1;k++){ctx.globalAlpha=.34*(1-t);ctx.strokeStyle="#83efd1";ctx.lineWidth=Math.max(1,1.5*sc);ctx.beginPath();ctx.arc(mx-sx*k*5*sc,my-sy*k*5*sc,(10+10*ease+Math.abs(k)*4)*sc,Math.atan2(ny,nx)-.7,Math.atan2(ny,nx)+.7);ctx.stroke()}
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="ray"){
-          for(let k=0;k<3;k++){const off=(k-1)*5*sc;ctx.globalAlpha=(.26+.12*k)*(1-t);ctx.strokeStyle="#c2eff7";ctx.lineWidth=Math.max(1.2,2*sc);ctx.beginPath();ctx.moveTo(mx+sx*off,my+sy*off);ctx.quadraticCurveTo(mx+nx*12*sc+sx*(off+5*sc),my+ny*12*sc+sy*(off+5*sc),mx+nx*(30+8*ease)*sc+sx*off,my+ny*(30+8*ease)*sc+sy*off);ctx.stroke()}
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="drone"){
-          ctx.globalAlpha=.82*(1-t);ctx.strokeStyle="#f6d36e";ctx.lineWidth=Math.max(1,1.6*sc);ctx.beginPath();ctx.moveTo(mx,my);ctx.lineTo(mx+nx*(14+6*ease)*sc,my+ny*(14+6*ease)*sc);ctx.stroke();
-        }
-      }else if(fx.kind==="airImpact"){
-        if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="flutter"){
-          dot(x,y,(4+3*(1-t))*sc,"#fff2a0",.9*(1-t));burst(fx,x,y,t,4,"#e9bd42",22,1.6,.65);
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="swarm"){
-          ring(x,y,(3+17*ease)*sc,1.7*sc,"#a9d85c",.42*(1-t));burst(fx,x,y,t,7,"#c9ea75",28,2,.80);
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="glide"){
-          for(let k=-1;k<=1;k++){const a=(fx.seed%6283)/1000+k*.72,len=(7+24*ease)*sc;ctx.globalAlpha=.68*(1-t);ctx.strokeStyle="#9befff";ctx.lineWidth=Math.max(1,1.7*sc);ctx.beginPath();ctx.moveTo(x-Math.cos(a)*len*.45,y-Math.sin(a)*len*.45);ctx.lineTo(x+Math.cos(a)*len,y+Math.sin(a)*len);ctx.stroke()}
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="moth"){
-          dot(x,y,(6+5*(1-t))*sc,"#fffbd0",.95*(1-t));ring(x,y,(6+28*ease)*sc,2.2*sc,"#ffd95b",.55*(1-t));
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="heavy-moth"){
-          const rr=(12+44*ease)*sc;ring(x,y,rr,3*sc,"#a96bc8",.62*(1-t));ring(x,y,rr*.64,1.8*sc,"#a8d85c",.38*(1-t));burst(fx,x,y,t,12,"#c795df",52,3,.78);burst(fx,x,y,t,7,"#b9dc70",38,2.2,.82,fx.seed^0x6611);
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="wasp"){
-          const dir=fxDirection(fx,x,y,"source")||{x:-1,y:0};ctx.globalAlpha=.9*(1-t);ctx.strokeStyle="#ff922a";ctx.lineWidth=Math.max(1.3,2.4*sc);ctx.beginPath();ctx.moveTo(x-dir.x*6*sc,y-dir.y*6*sc);ctx.lineTo(x+dir.x*(16+8*ease)*sc,y+dir.y*(16+8*ease)*sc);ctx.stroke();dot(x,y,3.4*sc,"#ffe19b",.84*(1-t));
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="sail"){
-          ring(x,y,(5+24*ease)*sc,2*sc,"#78ddc5",.40*(1-t));for(let k=0;k<3;k++){const a=(fx.seed%97)*.07+k*2.1;ctx.globalAlpha=.28*(1-t);ctx.strokeStyle="#a5f1df";ctx.lineWidth=Math.max(1,1.4*sc);ctx.beginPath();ctx.arc(x,y,(9+18*ease+k*5)*sc,a,a+1.1);ctx.stroke()}
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="ray"){
-          ring(x,y,(6+30*ease)*sc,2*sc,"#aee3ef",.38*(1-t));burst(fx,x,y,t,7,"#d5f2f7",34,2.2,.88);
-        }else if(UnitDefinition.get(fx.sourceType)?.airVisualMotion==="drone"){
-          dot(x,y,3*sc,"#ffe17a",.84*(1-t));burst(fx,x,y,t,3,"#e8bd52",18,1.3,.60);
-        }else{
-          ring(x,y,(5+20*ease)*sc,1.8*sc,"#cdeef5",.35*(1-t));
-        }
-      }else if(fx.kind==="carrierLaunch"){
-        const a=resolveFxEntityScreen(fx.sourceId)||this.worldToPx(this.viewX(fx.x),this.viewY(fx.y));
-        const b=resolveFxEntityScreen(fx.targetId)||this.worldToPx(this.viewX(fx.x2),this.viewY(fx.y2));
-        const q=RangeUtil.clamp(ease,0,1),px=a[0]+(b[0]-a[0])*q,py=a[1]+(b[1]-a[1])*q;
-        ctx.globalAlpha=.36*(1-t);ctx.strokeStyle="#d9bd63";ctx.lineWidth=Math.max(1.1,1.8*sc);ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(px,py);ctx.stroke();dot(px,py,(3.5+2*(1-t))*sc,"#ffe794",.88*(1-t));ring(b[0],b[1],(4+15*ease)*sc,1.8*sc,"#dfc76f",.36*(1-t));
-      }else if(fx.kind==="meleeSourceMotion"){
+      if(fx.kind==="meleeSourceMotion"){
         const motion=fx.motion||"smash";
         const src=resolveFxEntityScreen(fx.sourceId);
         const sx0=src?.[0]??x,sy0=src?.[1]??y;
@@ -4023,542 +1596,6 @@ class GLRenderer{
           ctx.stroke();
         }
         burst(fx,x,y,t,5,"#ffd26a",34,2.2);
-      }else if(fx.kind==="pierceImpact"){
-        const isc=Number(fx.impactScale)||1,incoming=fxDirection(fx,x,y,"source");
-        const a=incoming?Math.atan2(incoming.y,incoming.x):(fx.seed%360)/180*Math.PI;
-        dot(x,y,6*sc*isc,"#fff9dd",1-t);
-        ctx.globalAlpha=.92*(1-t);ctx.strokeStyle="#ffe78b";ctx.lineWidth=Math.max(1.4,2.5*sc*isc);
-        ctx.beginPath();
-        ctx.moveTo(x-Math.cos(a)*(13+8*ease)*sc*isc,y-Math.sin(a)*(13+8*ease)*sc*isc);
-        ctx.lineTo(x+Math.cos(a)*(10+24*ease)*sc*isc,y+Math.sin(a)*(10+24*ease)*sc*isc);
-        ctx.stroke();
-        for(let i=-1;i<=1;i+=2){
-          const sideA=a+i*.62;
-          ctx.globalAlpha=.58*(1-t);ctx.lineWidth=Math.max(1,1.6*sc*isc);
-          ctx.beginPath();ctx.moveTo(x,y);
-          ctx.lineTo(x+Math.cos(sideA)*(9+14*ease)*sc*isc,y+Math.sin(sideA)*(9+14*ease)*sc*isc);ctx.stroke();
-        }
-      }else if(fx.kind==="bulletImpact"){
-        const isc=Number(fx.impactScale)||1,incoming=fxDirection(fx,x,y,"source");
-        dot(x,y,5.5*sc*isc,"#fff7d8",1-t);
-        if(incoming){
-          ctx.globalAlpha=.7*(1-t);ctx.strokeStyle="#ffe8a3";ctx.lineWidth=Math.max(1,1.8*sc*isc);
-          ctx.beginPath();ctx.moveTo(x-incoming.x*12*sc*isc,y-incoming.y*12*sc*isc);ctx.lineTo(x+incoming.x*9*sc*isc,y+incoming.y*9*sc*isc);ctx.stroke();
-        }
-        burst(fx,x,y,t,7,"#f7bd50",42,1.7,.62);
-        ring(x,y,(6+16*ease)*sc*isc,1.5*sc*isc,"#ffffff",.42*(1-t));
-      }else if(fx.kind==="magicImpact"){
-        const isc=Number(fx.impactScale)||1;
-        ring(x,y,(7+34*ease)*sc*isc,3*sc*isc,"#9a72ff",.85*(1-t));
-        ring(x,y,(4+20*ease)*sc*isc,2*sc*isc,"#d8c6ff",.65*(1-t));
-        burst(fx,x,y,t,8,"#b99aff",48,2.4);
-        dot(x,y,(8*(1-t)+2)*sc*isc,"#f4ecff",.9*(1-t));
-      }else if(fx.kind==="balsamImpact"){
-        // Seed capsule pops open like a balsam pod: flower-like flash, then seeds/petals scatter.
-        const shot=Math.max(1,Number(fx.burstShot)||1),rot=(shot-1)*Math.PI*.31;
-        ring(x,y,(5+28*ease)*sc,2.4*sc,"#ff8a4a",.70*(1-t));
-        for(let k=0;k<6;k++){const a=rot+k*Math.PI/3+(fx.seed%17)*.013,rr=(7+34*ease)*sc,px=x+Math.cos(a)*rr,py=y+Math.sin(a)*rr;dot(px,py,Math.max(1.2,2.8*(1-t))*sc,k%2?"#ffd36a":"#ff7048",.78*(1-t))}
-        // Four opening petals reinforce the 봉선화 identity.
-        for(let k=0;k<4;k++){const a=rot+Math.PI/4+k*Math.PI/2,len=(8+22*ease)*sc;ctx.globalAlpha=.62*(1-t);ctx.strokeStyle="#ff9b62";ctx.lineWidth=Math.max(1.2,2.3*sc);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+Math.cos(a)*len,y+Math.sin(a)*len);ctx.stroke()}
-        dot(x,y,(7*(1-t)+2)*sc,"#fff1a8",.86*(1-t));
-      }else if(fx.kind==="heavyImpact"){
-        const isc=Number(fx.impactScale)||1;
-        ring(x,y,(10+64*ease)*sc*isc,4.5*sc*isc,"#ff8a2c",.88*(1-t));
-        ring(x,y,(6+34*ease)*sc*isc,2.4*sc*isc,"#ffe3a0",.7*(1-t));
-        burst(fx,x,y,t,12,"#ffb14a",78,3.2,.55);
-        burst(fx,x,y,t,7,"#695748",52,4,.45);
-        dot(x,y,(13*(1-t)+3)*sc*isc,"#fff3c2",Math.max(0,.95-t));
-      }else if(fx.kind==="dragonMuzzle"){
-        const source=(this.snapshot?.units||[]).find(u=>u.id===fx.sourceId&&u.alive&&UnitVisualDefinition.get(u.type)?.specialMouthPose);
-        let mx=x,my=y,aim=null;
-        if(source){const sp=this.projectEntityScreen(source,"unit"),pose=this.resolveDragonRenderPose(source,sp.x,sp.y,this.unitRenderRadius(source));mx=pose.mouth[0];my=pose.mouth[1];aim={x:pose.forwardX,y:pose.forwardY}}
-        const ox=aim?.x??1,oy=aim?.y??0;dot(mx,my,(11-5*t)*sc,"#fff0a0",.92*(1-t));ring(mx,my,(6+18*ease)*sc,2.6*sc,"#ff7a20",.70*(1-t));
-        ctx.globalAlpha=.76*(1-t);ctx.strokeStyle="#ffb53b";ctx.lineWidth=Math.max(2,4.5*sc);ctx.beginPath();ctx.moveTo(mx,my);ctx.lineTo(mx+ox*(18+18*ease)*sc,my+oy*(18+18*ease)*sc);ctx.stroke();burst(fx,mx,my,t,6,"#ff8d25",34,2.4,.62);
-      }else if(
-        fx.kind==="bowMuzzle"||
-        fx.kind==="gunMuzzle"||
-        fx.kind==="magicMuzzle"||
-        fx.kind==="heavyMuzzle"
-      ){
-        const col=
-          fx.kind==="magicMuzzle"?"#bb9cff":
-          fx.kind==="heavyMuzzle"?"#ff8b32":
-          fx.kind==="gunMuzzle"?"#ffd56a":
-          "#f3e7b0";
-        const aim=fxDirection(fx,x,y,"target");
-        const ox=aim?aim.x:1,oy=aim?aim.y:0;
-        const tipX=x+ox*(fx.kind==="heavyMuzzle"?18:11)*sc,tipY=y+oy*(fx.kind==="heavyMuzzle"?18:11)*sc;
-        dot(tipX,tipY,(fx.kind==="heavyMuzzle"?11:7)*(1-t*.65)*sc,col,.9*(1-t));
-        ctx.globalAlpha=.78*(1-t);ctx.strokeStyle=col;ctx.lineWidth=Math.max(1.2,(fx.kind==="heavyMuzzle"?4.4:2.4)*sc);
-        ctx.beginPath();ctx.moveTo(x+ox*3*sc,y+oy*3*sc);ctx.lineTo(tipX+ox*(8+14*ease)*sc,tipY+oy*(8+14*ease)*sc);ctx.stroke();
-        if(fx.kind==="heavyMuzzle"){
-          ctx.globalAlpha=.34*(1-t);ctx.strokeStyle="#8d7967";ctx.lineWidth=Math.max(2,5*sc);
-          ctx.beginPath();ctx.moveTo(x-ox*2*sc,y-oy*2*sc);ctx.lineTo(x-ox*(16+22*ease)*sc,y-oy*(16+22*ease)*sc);ctx.stroke();
-        }
-        burst(fx,tipX,tipY,t,fx.kind==="heavyMuzzle"?8:4,col,fx.kind==="heavyMuzzle"?55:28,fx.kind==="heavyMuzzle"?3:1.8,.72,fx.seed^0x7f4a);
-      }else if(fx.kind==="meteorImpact"){
-        const flash=Math.max(0,1-t*2.2);
-        dot(x,y,(28+20*(1-t))*sc,"#fff8df",flash);
-        ring(x,y,(18+145*ease)*sc,8*sc,"#ff6b25",.92*(1-t));
-        ring(x,y,(10+92*ease)*sc,4*sc,"#ffd064",.72*(1-t));
-        burst(fx,x,y,t,18,"#ff9c3b",130,4.5,.52);
-        burst(fx,x,y,t,12,"#4e4338",92,5.5,.40);
-      }else if(fx.kind==="tunnelOpen"){
-        const pulse=.5+.5*Math.sin(age*.035);
-dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
-        ring(x,y,(22+36*ease)*sc,4*sc,"#9a70f4",.85*(1-t));
-        for(let i=0;i<7;i++){
-          const a=i/7*Math.PI*2+age*.0045;
-          const rr=(28+18*ease)*sc;
-          dot(x+Math.cos(a)*rr,y+Math.sin(a)*rr*.62,3.2*sc,i%2?"#c6a8ff":"#7750d8",.8*(1-t));
-        }
-      }else if(fx.kind==="tunnelTransit"){
-        ring(x,y,(8+30*ease)*sc,3*sc,"#b493ff",.72*(1-t));
-        burst(fx,x,y,t,7,"#a27cf1",44,2.8,.6);
-      }else if(fx.kind==="linkedBeam"){
-        const source=(this.snapshot?.units||[]).find(u=>u.id===fx.sourceId&&u.alive);
-        const target=(this.snapshot?.units||[]).find(u=>u.id===fx.targetId&&u.alive);
-        const sd=source?UnitDefinition.get(source.type):null;
-        const researched=source?!!this.snapshot?.abilities?.[source.side]?.[source.type]:false;
-        const linkRange=sd?(researched?(sd.abilityHealRange||sd.healRange||0):(sd.healRange||0)):0;
-        const stillLinked=!!source&&!!target&&Math.hypot(target.x-source.x,target.y-source.y)<=linkRange+6;
-        if(stillLinked){
-          const sp=this.projectEntityScreen(source,"unit");
-          const tp=this.projectEntityScreen(target,"unit");
-          const a=[sp.x,sp.y],b=[tp.x,tp.y];
-          const pulse=.5+.5*Math.sin(age*.020+(fx.seed%31));
-          ctx.globalAlpha=.24*(1-t*.45);ctx.strokeStyle="#67d98d";ctx.lineWidth=Math.max(4,6.5*sc);
-          ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();
-          ctx.globalAlpha=.88*(1-t*.35);ctx.strokeStyle="#b8ffd0";ctx.lineWidth=Math.max(1.4,(2.0+1.1*pulse)*sc);
-          ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();
-          dot(b[0],b[1],Math.max(3.5,(4.5+2*pulse)*sc),"#d9ffe3",.75*(1-t*.4));
-        }
-      }else if(fx.kind==="rogueLeapStart"){
-        ring(x,y,(5+28*ease)*sc,2.4*sc,"#8a6cff",.55*(1-t));
-        burst(fx,x,y,t,7,"#9b8a78",36,2.2,.38);
-      }else if(fx.kind==="rogueLeapLand"){
-        ring(x,y,(7+36*ease)*sc,3*sc,"#b392ff",.72*(1-t));
-        burst(fx,x,y,t,9,"#8e745b",48,2.8,.42);
-        if(fx.radius>0)ring(x,y,Math.max(12,fx.radius*sc)*(.28+.72*ease),2*sc,"#c4a6ff",.35*(1-t));
-      }else if(fx.kind==="blinkBurst"){
-        ring(x,y,(6+42*ease)*sc,3*sc,"#a874ff",.78*(1-t));
-        burst(fx,x,y,t,7,"#d8c0ff",44,2.2,.7);
-      }else if(fx.kind==="chargeBurst"){
-        ring(x,y,(8+48*ease)*sc,4*sc,"#ffc34e",.82*(1-t));
-        burst(fx,x,y,t,9,"#ffb638",68,2.8,.52);
-      }else if(fx.kind==="chargedSkillLaunch"){
-        const end=this.worldToPx(this.viewX(fx.x2),this.viewY(fx.y2));
-        const dx=end[0]-x,dy=end[1]-y,len=Math.hypot(dx,dy),nx=len?dx/len:0,ny=len?dy/len:0;
-        const tipX=x+nx*Math.min(len,90*sc),tipY=y+ny*Math.min(len,90*sc);
-        ctx.globalAlpha=.72*(1-t);ctx.strokeStyle="#b7ddff";ctx.lineWidth=Math.max(1.5,3*sc);
-        ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(tipX,tipY);
-        ctx.moveTo(tipX-nx*10*sc-ny*6*sc,tipY-ny*10*sc+nx*6*sc);ctx.lineTo(tipX,tipY);ctx.lineTo(tipX-nx*10*sc+ny*6*sc,tipY-ny*10*sc-nx*6*sc);ctx.stroke();
-        ring(x,y,(5+20*ease)*sc,Math.max(1.5,2*sc),"#c9e8ff",.65*(1-t));
-      }else if(fx.kind==="objectiveBearChargeTrail"){
-        const rr=(8+18*ease)*sc;
-        ring(x,y,rr,Math.max(1.6,2.5*sc),"#a47a45",.28*(1-t));
-        burst(fx,x,y,t,5,"#8a6840",28,2.3,.30);
-        const seedPhase=(fx.seed%17)*.19;
-        for(let k=0;k<3;k++){
-          const off=(k-1)*7*sc,back=(14+22*t+k*5)*sc;
-          ctx.globalAlpha=.28*(1-t);ctx.strokeStyle=k===1?"#b18a54":"#765638";ctx.lineWidth=Math.max(1.2,(2.3-k*.3)*sc);
-          ctx.beginPath();ctx.moveTo(x+off,y+4*sc);ctx.lineTo(x+off+Math.cos(seedPhase+k)*4*sc,y+back);ctx.stroke();
-        }
-      }else if(fx.kind==="ambushBurst"){
-        ring(x,y,(5+34*ease)*sc,2.5*sc,"#76e96e",.72*(1-t));
-        burst(fx,x,y,t,8,"#a6f58e",50,2.1,.65);
-      }else if(fx.kind==="knockbackBurst"){
-        ring(x,y,(4+24*ease)*sc,2.2*sc,"#fff0a8",.55*(1-t));
-        burst(fx,x,y,t,5,"#f4dc86",28,1.7,.45);
-      }else if(fx.kind==="pillbugBurst"){
-        const rr=Math.max(34,(fx.radius||92)*sc)*(0.22+.78*ease);
-        ring(x,y,rr,4*sc,"#ffb347",.60*(1-t));
-        ring(x,y,rr*.62,3*sc,"#fff0a0",.58*(1-t));
-        burst(fx,x,y,t,14,"#ffbe4f",84,4.2,.66);
-        burst(fx,x,y,t,7,"#fff3b5",54,2.6,.52);
-      }else if(fx.kind==="rootSpike"){
-        const e2=this.worldToPx(this.viewX(fx.x2),this.viewY(fx.y2));
-        const count=Math.max(6,fx.spikeCount||9),dx=e2[0]-x,dy=e2[1]-y;
-        // Rootstalker is a ground-travelling attack, not a normal airborne projectile.
-        // Keep a clearly visible dirt ridge travelling along the authoritative attack line,
-        // then erupt each spike as that ridge reaches it.
-        const head=RangeUtil.clamp(t*1.18,0,1),hx=x+dx*head,hy=y+dy*head;
-        ctx.globalAlpha=.34*(1-t*.45);ctx.strokeStyle="#5a351b";ctx.lineWidth=Math.max(2.0,3.2*sc);
-        ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(hx,hy);ctx.stroke();
-        ring(hx,hy,(5+7*Math.sin(Math.min(1,t*1.5)*Math.PI))*sc,Math.max(1.5,2.4*sc),"#9a6330",.62*(1-t*.35));
-        dot(hx,hy,Math.max(2.2,3.4*sc),"#6b421f",.78*(1-t*.25));
-        for(let i=0;i<count;i++){
-          const along=(i+.55)/count;
-          // A spike starts only after the underground ridge reaches its position.
-          const arrival=along/.92;
-          const local=RangeUtil.clamp((t-arrival)/.28,0,1);
-          if(local<=0||local>=1)continue;
-          const rise=Math.sin(local*Math.PI),px=x+dx*along,py=y+dy*along;
-          const h=(14+18*(i/count))*rise*sc,w=(5+3*rise)*sc;
-          ctx.globalAlpha=.98-.24*local;ctx.fillStyle=i%2?"#75441f":"#9a6330";
-          ctx.beginPath();ctx.moveTo(px-w,py+2*sc);ctx.lineTo(px,py-h);ctx.lineTo(px+w,py+2*sc);ctx.closePath();ctx.fill();
-          ctx.globalAlpha=.78*(1-local*.5);ctx.fillStyle="#d2a66a";
-          ctx.beginPath();ctx.moveTo(px-w*.25,py-h*.72);ctx.lineTo(px,py-h);ctx.lineTo(px+w*.25,py-h*.72);ctx.closePath();ctx.fill();
-          dot(px,py+2*sc,Math.max(1.2,2.2*sc),"#4a2b18",.48*(1-local));
-        }
-      }else if(fx.kind==="deepThornCast"){
-        const to=this.worldToPx(this.viewX(fx.x2),this.viewY(fx.y2));
-        const dx=to[0]-x,dy=to[1]-y,len=Math.hypot(dx,dy)||1,nx=dx/len,ny=dy/len;
-        // Phase 1: the creature drives its crown/root mass into the ground.
-        const plunge=RangeUtil.clamp(t/.34,0,1),impact=Math.sin(plunge*Math.PI);
-        const baseR=(12+24*impact)*sc;
-        ring(x,y,baseR,Math.max(2,4.4*sc),"#8fb84d",.78*(1-plunge*.55));
-        ring(x,y,baseR*.62,Math.max(1.5,2.7*sc),"#d4ed7a",.65*(1-plunge*.65));
-        for(let i=0;i<5;i++){
-          const a=(i-2)*.42+Math.atan2(ny,nx);
-          const d=(10+30*plunge+(i%2)*6)*sc;
-          ctx.globalAlpha=.72*(1-t);ctx.strokeStyle=i%2?"#73953a":"#a9c95c";
-          ctx.lineWidth=Math.max(2,3.4*sc);ctx.beginPath();ctx.moveTo(x,y);
-          ctx.lineTo(x+Math.cos(a)*d,y+Math.sin(a)*d*.55);ctx.stroke();
-        }
-        // A short subterranean pressure trace points toward the eruption site without
-        // pretending that a visible projectile travels above ground.
-        const travel=RangeUtil.clamp((t-.12)/.56,0,1);
-        if(travel>0&&travel<1){
-          const px=x+dx*travel,py=y+dy*travel;
-          dot(px,py,Math.max(2.2,4.2*sc),"#7b5d2f",.38*Math.sin(travel*Math.PI));
-          ring(px,py,(5+7*Math.sin(travel*Math.PI))*sc,1.5*sc,"#9c7b42",.24*Math.sin(travel*Math.PI));
-        }
-      }else if(fx.kind==="deepThornSpike"){
-        const rr=Math.max(42,(fx.radius||58))*sc;
-        // Ground crack/pressure ring first so the eruption reads even under a large airborne body.
-        const crack=RangeUtil.clamp(t/.26,0,1);
-        ring(x,y,rr*(.45+.62*crack),Math.max(2.2,4.0*sc),"#76562c",.58*(1-t));
-        ring(x,y,rr*(.28+.48*crack),Math.max(1.6,2.8*sc),"#b6d862",.52*(1-t));
-        for(let i=0;i<8;i++){
-          const a=i/8*Math.PI*2+(fx.seed%997)/997*.35;
-          const inner=rr*.18,outer=rr*(.65+.18*((i*29)%7)/6);
-          ctx.globalAlpha=.36*(1-t);ctx.strokeStyle=i%2?"#604526":"#866333";
-          ctx.lineWidth=Math.max(1.3,2.3*sc);ctx.beginPath();
-          ctx.moveTo(x+Math.cos(a)*inner,y+Math.sin(a)*inner*.52);
-          ctx.lineTo(x+Math.cos(a)*outer,y+Math.sin(a)*outer*.52);ctx.stroke();
-        }
-        // One unmistakable central spike does the lifting, with smaller roots around it.
-        const mainLocal=RangeUtil.clamp(t/.72,0,1);
-        if(mainLocal>0&&mainLocal<1){
-          const rise=Math.sin(Math.min(1,mainLocal/.62)*Math.PI*.5);
-          const fall=mainLocal>.70?RangeUtil.clamp((1-mainLocal)/.30,0,1):1;
-          const h=(72+Math.min(24,(fx.airborneHeight||52)*.30))*rise*fall*sc;
-          const w=(12+7*rise)*sc;
-          ctx.globalAlpha=.98*fall;ctx.fillStyle="#cfe96b";
-          ctx.beginPath();ctx.moveTo(x-w,y+7*sc);ctx.lineTo(x-w*.25,y-h*.42);ctx.lineTo(x,y-h);ctx.lineTo(x+w*.25,y-h*.42);ctx.lineTo(x+w,y+7*sc);ctx.closePath();ctx.fill();
-          ctx.globalAlpha=.72*fall;ctx.fillStyle="#6e8d36";
-          ctx.beginPath();ctx.moveTo(x-w*.52,y+5*sc);ctx.lineTo(x,y-h*.78);ctx.lineTo(x+w*.52,y+5*sc);ctx.closePath();ctx.fill();
-        }
-        const count=6;
-        for(let i=0;i<count;i++){
-          const a=i/count*Math.PI*2+(fx.seed%1000)/1000;
-          const rad=(.30+.48*((i*37)%100)/100)*rr;
-          const px=x+Math.cos(a)*rad,py=y+Math.sin(a)*rad*.58;
-          const local=RangeUtil.clamp((t-.035-i*.025)/.62,0,1);
-          if(local<=0||local>=1)continue;
-          const rise=Math.sin(local*Math.PI),h=(25+(i%3)*9)*rise*sc,w=(6+(i%2)*2)*sc;
-          ctx.globalAlpha=.90*(1-local*.45);ctx.fillStyle=i%2?"#95bb4a":"#b9d963";
-          ctx.beginPath();ctx.moveTo(px-w,py+3*sc);ctx.lineTo(px,py-h);ctx.lineTo(px+w,py+3*sc);ctx.closePath();ctx.fill();
-        }
-        burst(fx,x,y,Math.min(1,t*1.15),13,"#80653a",52,3.0,.34);
-      }else if(fx.kind==="airborneBurst"){
-        ring(x,y,(5+18*ease)*sc,2.0*sc,"#e8f6b1",.30*(1-t));
-        burst(fx,x,y,t,5,"#b9d86f",26,1.5,.45);
-      }else if(fx.kind==="chainArc"){
-        const pts=fx.points?.length>=2?fx.points:[{x:fx.x,y:fx.y},{x:fx.x2,y:fx.y2}],aegis=!!fx.aegisArc;
-        for(let i=1;i<pts.length;i++){
-          const a=this.worldToPx(this.viewX(pts[i-1].x),this.viewY(pts[i-1].y));
-          const b=this.worldToPx(this.viewX(pts[i].x),this.viewY(pts[i].y));
-          if(aegis){
-            // Aegis attacks are rapid tick damage, so keep a clearly connected luminous cable
-            // between attacker and target instead of a barely-visible one-frame spark.
-            this.commonEffectPool.drawElectricArc(ctx,{x:a[0],y:a[1]},{x:b[0],y:b[1]},{
-              seed:fx.seed+i*131,time:now/1000,color:"#59cfff",alpha:.42*(1-t*.55),scale:sc,width:2.45
-            });
-            this.commonEffectPool.drawElectricArc(ctx,{x:a[0],y:a[1]},{x:b[0],y:b[1]},{
-              seed:fx.seed+i*131,time:now/1000,color:"#e9fcff",alpha:.98*(1-t*.72),scale:sc,width:1.18
-            });
-            dot(a[0],a[1],Math.max(2.4,3.8*sc),"#bff6ff",.86*(1-t*.55));
-            dot(b[0],b[1],Math.max(2.0,3.2*sc),"#ffffff",.88*(1-t*.55));
-          }else{
-            this.commonEffectPool.drawElectricArc(ctx,{x:a[0],y:a[1]},{x:b[0],y:b[1]},{
-              seed:fx.seed+i*131,time:now/1000,color:"#9edfff",alpha:.82*(1-t),scale:sc,width:1.08
-            });
-          }
-        }
-      }else if(fx.kind==="hitGuardBreak"){
-        const t=RangeUtil.clamp(age/320,0,1),aliveShield=fx.remaining>0;
-        const source=(this.snapshot?.units||[]).find(u=>u.id===fx.sourceId&&u.alive)||(this.snapshot?.buildings||[]).find(b=>b.id===fx.sourceId&&b.alive!==false);
-        let impactA=(fx.seed%6283)/1000;
-        if(source){
-          const sp=source.id&&this.renderState.has("unit",source.id,this.presentationNow())
-            ?this.renderTrackedScreenPosition(source,"unit")
-            :{x:this.worldToPx(this.viewX(source.x),this.viewY(source.y))[0],y:this.worldToPx(this.viewX(source.x),this.viewY(source.y))[1]};
-          impactA=Math.atan2(sp.y-y,sp.x-x);
-        }
-        const targetSize=UnitDefinition.get(fx.targetType)?.size||18,baseR=Math.max(9,targetSize*sc*(1.48+.18*(1-t))),impactX=x+Math.cos(impactA)*baseR*.80,impactY=y+Math.sin(impactA)*baseR*.80;
-        // Localized white/cyan flash on the side that was struck: the body itself never flashes.
-        ctx.save();ctx.globalCompositeOperation="source-over";
-        ctx.globalAlpha=(1-t)*.96;ctx.fillStyle="#e8fbff";ctx.beginPath();ctx.arc(impactX,impactY,Math.max(4.5,(10-3*t)*sc),0,Math.PI*2);ctx.fill();
-        ctx.globalAlpha=(1-t)*.48;ctx.strokeStyle="#6fe1ff";ctx.lineWidth=Math.max(1.4,2.8*sc);ctx.beginPath();
-        ctx.arc(x,y,baseR,impactA-.72-t*.20,impactA+.72+t*.20);ctx.stroke();
-        if(!aliveShield){
-          // Full break: flat energy facets fly away from the former shell.
-          for(let k=0;k<10;k++){
-            const a=impactA+(k-4.5)*.34+((fx.seed>>>(k%16))&7)*.018;
-            const dist=(baseR*.72+Math.max(7,(14+42*t+(k%3)*6)*sc));
-            const px=x+Math.cos(a)*dist,py=y+Math.sin(a)*dist;
-            const sz=Math.max(2.8,(6.5-2.8*t+(k%2))*sc);
-            ctx.save();ctx.translate(px,py);ctx.rotate(a+t*(k%2?2.1:-1.8));ctx.globalAlpha=(1-t)*(.58+(k%3)*.09);ctx.fillStyle=k%3===0?"#e8fbff":"#58cfee";
-            ctx.beginPath();ctx.moveTo(sz,0);ctx.lineTo(-sz*.45,-sz*.55);ctx.lineTo(-sz*.75,0);ctx.lineTo(-sz*.45,sz*.55);ctx.closePath();ctx.fill();ctx.restore();
-          }
-        }else{
-          // A charge remains: show a quick surface ripple, not a shatter.
-          ctx.globalAlpha=(1-t)*.30;ctx.fillStyle="#58cfee";ctx.beginPath();ctx.arc(x,y,baseR*.90,0,Math.PI*2);ctx.fill();
-        }
-        ctx.restore();
-      }else if(fx.kind==="guardPulse"){
-        ring(x,y,(8+28*ease)*sc,2.2*sc,"#65d9f6",.28*(1-t));
-      }else if(fx.kind==="hunterWaspCooldownReset"){
-        ring(x,y,(5+13*ease)*sc,Math.max(1.0,1.5*sc),"#ffd05a",.26*(1-t));
-        burst(fx,x,y,t,4,"#fff0a0",18,1.3,.34);
-      }else if(fx.kind==="guardRetaliationBurst"){
-        // Cap activation: quick compression/expansion is represented by concentric cap-centered pulses
-        // plus a short spore burst. Only the retaliation event emits this presentation.
-        const pulse=Math.sin(Math.min(1,t)*Math.PI);
-        ring(x,y,(10+26*ease)*sc,Math.max(1.8,3.2*sc),"#dff58a",.62*(1-t));
-        ring(x,y,(5+14*pulse)*sc,Math.max(1.4,2.4*sc),"#8fca48",.72*(1-t));
-        burst(fx,x,y,t,6,"#eef9ad",30,2.2,.70);
-      }else if(fx.kind==="guardRetaliationImpact"){
-        ring(x,y,(8+Math.max(24,fx.radius||50)*ease)*sc,Math.max(1.5,2.8*sc),"#b8dc62",.48*(1-t));
-        burst(fx,x,y,t,8,"#dff28a",34,2.0,.58);
-      }else if(fx.kind==="sporeSpawn"){
-        ring(x,y,(4+18*ease)*sc,2*sc,"#c8df72",.38*(1-t));
-        burst(fx,x,y,t,5,"#e7f4a2",24,1.8,.42);
-      }else if(fx.kind==="arcTether"){
-        const source=(this.snapshot?.units||[]).find(u=>u.id===fx.sourceId&&u.alive);
-        const target=(this.snapshot?.units||[]).find(u=>u.id===fx.targetId&&u.alive);
-        if(source&&target){
-          const elapsed=Math.max(0,performance.now()-fx.start),travelMs=Math.max(1,fx.travelMs||300);
-          const sourceRender=this.resolveRenderWorldPosition(source,"unit");
-          const liveTargetRender=this.resolveRenderWorldPosition(target,"unit");
-          const initialDistance=Math.max(1,Math.hypot((Number(fx.fromX)||0)-sourceRender.x,(Number(fx.fromY)||0)-sourceRender.z));
-          let targetWorld;
-          if(elapsed<travelMs){
-            // Launch phase: the hook head advances on the shared ArcTravelPresentation path.
-            const q=RangeUtil.clamp(elapsed/travelMs,0,1),px=sourceRender.x+((Number(fx.fromX)||0)-sourceRender.x)*q,pz=sourceRender.z+((Number(fx.fromY)||0)-sourceRender.z)*q;
-            const arc=this.resolveArcTravelPresentation({fromX:sourceRender.x,fromY:sourceRender.z,toX:Number(fx.fromX)||0,toY:Number(fx.fromY)||0,planarX:px,planarY:pz,arcHeight:fx.arcHeight||90});
-            targetWorld={x:px,y:arc.height+arc.groundHeight,z:pz,groundY:0,motion:"arc",progress:q};
-          }else{
-            // Reel phase: target endpoint is the victim's live render position, including airborne height.
-            targetWorld=liveTargetRender;
-          }
-          const pullMs=fx.pullTicks?SimulationTiming.ticksToMs(fx.pullTicks,this.snapshot?.tps||SIM_TPS):250;
-          const retractStart=travelMs+pullMs,retractElapsed=Math.max(0,elapsed-retractStart),retractMs=Math.max(1,fx.retractMs||220);
-          const tether=elapsed<retractStart
-            ?ArcTetherPresentation.resolve({sourceWorld:sourceRender,targetWorld,baseArcHeight:fx.arcHeight||90,referenceDistance:initialDistance,samples:14,elapsedMs:elapsed,travelMs:travelMs,retract:false})
-            :ArcTetherPresentation.resolve({sourceWorld:sourceRender,targetWorld:liveTargetRender,baseArcHeight:fx.arcHeight||90,referenceDistance:initialDistance,samples:14,elapsedMs:travelMs+retractElapsed,travelMs:travelMs,holdMs:0,retractMs:retractMs,retract:true});
-          const worldPoints=tether.points;
-          const pts=worldPoints.map(p=>this.projectRenderWorldPosition(p));
-          ctx.save();ctx.lineJoin="round";ctx.lineCap="round";
-          const drawPath=(color,width,alpha)=>{
-            if(pts.length<2)return;ctx.globalAlpha=alpha;ctx.strokeStyle=color;ctx.lineWidth=Math.max(1,width*sc);ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);
-            for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i].x,pts[i].y);ctx.stroke();
-          };
-          drawPath("#54270d",6.5,.30*(1-t*.55));drawPath("#ffad42",3.0,.92*(1-t*.35));drawPath("#ffe2a5",1.0,.80*(1-t*.25));
-          const head=pts[pts.length-1];if(head){ctx.globalAlpha=.95*(1-t*.35);ctx.fillStyle="#ffd27b";ctx.beginPath();ctx.arc(head.x,head.y,Math.max(2.5,4*sc),0,Math.PI*2);ctx.fill()}
-          ctx.restore();
-        }
-      }else if(fx.kind==="clawPullImpact"){
-        ring(x,y,(4+12*ease)*sc,Math.max(1.4,2.3*sc),"#ffb24c",.62*(1-t));
-        burst(fx,x,y,t,4,"#ffe1a2",20,1.6,.55);
-      }else if(fx.kind==="thornReflect"){
-        // Reflection is directional: the thornfruit visibly fires the damage back
-        // toward the attacker. This intentionally differs from the radial thornBurst.
-        const to=this.worldToPx(this.viewX(Number(fx.x2)||fx.x),this.viewY(Number(fx.y2)||fx.y));
-        let dx=to[0]-x,dy=to[1]-y,len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
-        const travel=RangeUtil.clamp(t/.72,0,1),te=1-Math.pow(1-travel,3);
-        const sx=x+dx*8*sc,sy=y+dy*8*sc;
-        const ex=sx+dx*Math.min(len*.88,(22+38*te)*sc),ey=sy+dy*Math.min(len*.88,(22+38*te)*sc);
-        ctx.globalAlpha=.92*(1-t);ctx.strokeStyle="#dfff76";ctx.lineWidth=Math.max(2,3.8*sc);
-        ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(ex,ey);ctx.stroke();
-        // Arrowhead / thorn tip makes the return direction readable in melee.
-        const px=-dy,py=dx,tip=7*sc,back=10*sc;
-        ctx.fillStyle="#efff9a";ctx.globalAlpha=.92*(1-t);
-        ctx.beginPath();ctx.moveTo(ex+dx*tip,ey+dy*tip);ctx.lineTo(ex-dx*back+px*5*sc,ey-dy*back+py*5*sc);ctx.lineTo(ex-dx*back-px*5*sc,ey-dy*back-py*5*sc);ctx.closePath();ctx.fill();
-        ring(x,y,(4+13*ease)*sc,Math.max(1.4,2.3*sc),"#8ed84a",.48*(1-t));
-        ring(to[0],to[1],(3+8*ease)*sc,Math.max(1.2,2*sc),"#eaff92",.58*(1-t));
-      }else if(fx.kind==="thornBurst"){
-        // Ability VFX must read as an outward thorn detonation, not as another hit spark.
-        // Three staged rings show the authoritative AoE boundary while long radial spikes
-        // give it a unique silhouette even in a dense melee.
-        const radius=Math.max(50,Number(fx.radius)||50),rr=radius*sc;
-        const wave=RangeUtil.clamp(t/.72,0,1),waveEase=1-Math.pow(1-wave,3);
-        ring(x,y,rr*(.18+.82*waveEase),Math.max(2.8,5.2*sc),"#d8ff72",.92*(1-wave));
-        ring(x,y,rr*(.10+.64*waveEase),Math.max(1.8,3.1*sc),"#79d83f",.66*(1-wave));
-        if(t<.32)ring(x,y,rr*(.10+.30*(t/.32)),Math.max(2.2,4*sc),"#fff3a1",.82*(1-t/.32));
-        const spikeAlpha=Math.max(0,1-t/.82);
-        for(let k=0;k<16;k++){
-          const a=(k/16)*Math.PI*2+(fx.seed%31)*.013;
-          const stagger=((k*7)%5)*.025;
-          const q=RangeUtil.clamp((t-stagger)/.58,0,1),qe=1-Math.pow(1-q,3);
-          const inner=rr*(.10+.28*qe),outer=rr*(.24+.76*qe);
-          ctx.globalAlpha=.88*spikeAlpha;
-          ctx.strokeStyle=k%2?"#b9ed5c":"#efff9a";
-          ctx.lineWidth=Math.max(1.6,(k%3?2.8:4.2)*sc);
-          ctx.beginPath();
-          ctx.moveTo(x+Math.cos(a)*inner,y+Math.sin(a)*inner);
-          ctx.lineTo(x+Math.cos(a)*outer,y+Math.sin(a)*outer);
-          ctx.stroke();
-        }
-        burst(fx,x,y,t,18,"#eaff92",Math.max(64,radius*.72),3.4,.72);
-      }else if(fx.kind==="kickhopperSplash"){
-        const rr=(fx.radius||55)*(0.22+.78*ease)*sc;
-        ring(x,y,rr,Math.max(1.6,2.6*sc),"#d9ef72",.44*(1-t));
-        ring(x,y,rr*.62,Math.max(1,1.7*sc),"#fff0a6",.30*(1-t));
-        burst(fx,x,y,t,7,"#9c7b43",36,2.0,.38);
-      }else if(fx.kind==="titanSlam"){
-        const rr=(fx.radius||100)*(0.18+.82*ease)*sc,sourceType=fx.sourceType||"",isTitan=sourceType==="shelltitan";
-        ring(x,y,rr,(isTitan?5.5:3.5)*sc,"#d9b85b",.52*(1-t));
-        ring(x,y,rr*.58,Math.max(1.8,(isTitan?3.4:2.2)*sc),"#f2dc8a",.36*(1-t));
-        if(isTitan){
-          for(let k=0;k<10;k++){
-            const a=k/10*Math.PI*2+(fx.seed%73)*.017,inner=rr*.18,outer=rr*(.68+.22*((k*37)%11)/10);
-            ctx.globalAlpha=.52*(1-t);ctx.strokeStyle=k%2?"#72512c":"#9a743c";ctx.lineWidth=Math.max(1.5,2.8*sc);
-            ctx.beginPath();ctx.moveTo(x+Math.cos(a)*inner,y+Math.sin(a)*inner*.62);ctx.lineTo(x+Math.cos(a)*outer,y+Math.sin(a)*outer*.62);ctx.stroke();
-          }
-          burst(fx,x,y,t,22,"#8a673c",92,5.8,.60);
-          burst(fx,x,y,t,10,"#ead391",58,3.2,.48);
-        }else burst(fx,x,y,t,12,"#d8c089",68,3.5,.50);
-      }else if(fx.kind==="objectiveCaptured"){
-        const col=fx.side===0?"#66a0ff":fx.side===1?"#ff6868":"#d8bb68",rr=(18+82*ease)*sc;
-        ring(x,y,rr,Math.max(2,4.5*sc),col,.76*(1-t));ring(x,y,rr*.58,Math.max(1.4,2.5*sc),"#fff0b0",.42*(1-t));burst(fx,x,y,t,16,col,84,3.4,.55);
-        const dx=Number(fx.dirX)||0,dy=Number(fx.dirY)||0,len=Math.hypot(dx,dy)||1;if(len>.01){const a=this.worldToPx(this.viewX(fx.x),this.viewY(fx.y)),b=this.worldToPx(this.viewX(fx.x+dx/len*1),this.viewY(fx.y+dy/len*1));let vx=b[0]-a[0],vy=b[1]-a[1],vl=Math.hypot(vx,vy)||1;vx/=vl;vy/=vl;for(let k=-1;k<=1;k++){const off=k*9*sc;ctx.globalAlpha=.55*(1-t);ctx.strokeStyle=col;ctx.lineWidth=Math.max(1.4,2.6*sc);ctx.beginPath();ctx.moveTo(x-vy*off,y+vx*off);ctx.lineTo(x+vx*(36+58*ease)*sc-vy*off,y+vy*(36+58*ease)*sc+vx*off);ctx.stroke()}}
-      }else if(fx.kind==="objectiveRespawned"){
-        if(UnitVisualDefinition.get(fx.sourceType)?.objectiveFxStyle==="dragon"){ring(x,y,(16+72*ease)*sc,4*sc,"#ff7c2c",.62*(1-t));ring(x,y,(8+44*ease)*sc,2.2*sc,"#ffd45f",.52*(1-t));for(let k=0;k<7;k++){const a=k/7*Math.PI*2+(fx.seed%31)*.07;ctx.globalAlpha=.48*(1-t);ctx.strokeStyle=k%2?"#ffb538":"#fff0a0";ctx.lineWidth=Math.max(1.3,2.2*sc);ctx.beginPath();ctx.moveTo(x+Math.cos(a)*10*sc,y+Math.sin(a)*6*sc);ctx.lineTo(x+Math.cos(a)*(28+38*ease)*sc,y+Math.sin(a)*(18+24*ease)*sc-22*(1-t)*sc);ctx.stroke()}}
-        else if(UnitVisualDefinition.get(fx.sourceType)?.objectiveFxStyle==="worm"){ring(x,y,(10+66*ease)*sc,4*sc,"#a9bd3f",.66*(1-t));burst(fx,x,y,t,18,"#7d6a36",76,4.6,.58);burst(fx,x,y,t,8,"#d4df59",48,2.4,.46)}
-        else{ring(x,y,(10+58*ease)*sc,4*sc,"#a77a45",.60*(1-t));burst(fx,x,y,t,16,"#84633c",70,4.8,.56);burst(fx,x,y,t,7,"#d5b477",42,2.8,.42)}
-      }else if(fx.kind==="electricLink"){
-        const source=(this.snapshot?.units||[]).find(u=>u.id===fx.sourceId&&u.alive),target=(this.snapshot?.projectiles||[]).find(p=>p.id===fx.targetId&&p.alive);
-        if(source&&target){
-          const sa=this.renderTrackedScreenPosition(source,"unit"),tb=this.renderTrackedScreenPosition(target,"projectile");
-          const node=this.aegisShellNodeScreen(source,tb.x,tb.y),a=[node.x,node.y],b=[tb.x,tb.y];
-          ring(sa.x,sa.y,Math.max(7,this.unitRenderRadius(source)*(.78+.16*ease)),Math.max(1.3,2.2*sc),"#6fe6ff",.30*(1-t));
-          this.commonEffectPool.drawElectricArc(ctx,{x:a[0],y:a[1]},{x:b[0],y:b[1]},{
-            seed:fx.seed,time:now/1000,color:"#b8f4ff",alpha:.94*(1-t*.25),scale:sc,width:1
-          });
-          dot(a[0],a[1],3.5*sc,"#d9fbff",.8);dot(b[0],b[1],3*sc,"#ffffff",.9);
-        }
-      }else if(fx.kind==="chainOverload"||fx.kind==="deepThornSecondary"||fx.kind==="impactShockwave"||fx.kind==="pullImpact"||fx.kind==="allySpeedBurst"){
-        const col=fx.kind==="allySpeedBurst"?"#9be879":fx.kind==="impactShockwave"?"#ffd66a":"#c7a6ff",rr=Math.max(24,(fx.radius||55)*sc)*(.25+.75*ease);ring(x,y,rr,Math.max(1.6,2.8*sc),col,.58*(1-t));burst(fx,x,y,t,7,col,42,2.1,.45);
-      }else if(fx.kind==="projectileIntercept"){
-        ring(x,y,(5+22*ease)*sc,2.6*sc,"#7fdcff",.55*(1-t));
-        burst(fx,x,y,t,6,"#bdeeff",26,1.8,.48);
-        const source=(this.snapshot?.units||[]).find(u=>u.id===fx.sourceId&&u.alive);
-        if(source){const sp=this.renderTrackedScreenPosition(source,"unit"),rr=this.unitRenderRadius(source);ring(sp.x,sp.y,rr*(.80+.25*ease),Math.max(1.2,2.0*sc),"#78e7ff",.26*(1-t))}
-      }else if(fx.kind==="burrowDive"){
-        const worm=UnitVisualDefinition.get(fx.sourceType)?.objectiveFxStyle==="worm",beast=fx.sourceType==="burrowbeast",edge=worm?"#9eb32b":"#7b4a24",soil=worm?"#77812b":"#8a5a31",bright=worm?"#d5df58":"#c29a67";
-        ring(x,y,(8+(beast?46:34)*ease)*sc,(beast?4.4:3.2)*sc,edge,.55*(1-t));
-        burst(fx,x,y,t,12,soil,42,3.2,.58);
-        burst(fx,x,y,t,7,bright,28,2.2,.48);
-      }else if(fx.kind==="burrowTrail"){
-        if(fx.sourceId){
-          const source=(this.snapshot?.units||[]).find(u=>u.id===fx.sourceId&&u.alive);
-          if(source){
-            const rp=this.renderTrackedPosition(source,"unit");
-            const sourcePx=this.worldToPx(this.viewX(rp.x),this.viewY(rp.y));
-            x=sourcePx[0];y=sourcePx[1];
-          }
-        }
-        const worm=UnitVisualDefinition.get(fx.sourceType)?.objectiveFxStyle==="worm";
-        ring(x,y,(5+18*ease)*sc,2.2*sc,worm?"#8b9630":"#6d4527",.32*(1-t));
-        burst(fx,x,y,t,6,worm?"#b1bd43":"#9b7148",24,2.0,.35);
-      }else if(fx.kind==="burrowEmerge"){
-        const beast=fx.sourceType==="burrowbeast",rr=(fx.radius||92)*(0.35+.65*ease)*sc,worm=UnitVisualDefinition.get(fx.sourceType)?.objectiveFxStyle==="worm";
-        ring(x,y,rr,(beast?6.0:4.2)*sc,worm?"#b6c83b":"#9a5d2e",.72*(1-t));
-        burst(fx,x,y,t,beast?26:18,worm?"#7d8330":"#8d623d",beast?112:88,beast?7.0:5.5,.62);
-        burst(fx,x,y,t,beast?16:11,worm?"#d8e35a":"#d1a56d",beast?82:64,beast?4.5:3.5,.52);
-        if(beast)ring(x,y,rr*.66,Math.max(2,3.4*sc),"#d6a063",.44*(1-t));
-      }else if(fx.kind==="burrowMelee"){
-        const rr=(fx.radius||64)*(0.25+.75*ease)*sc;
-        ring(x,y,rr,3*sc,"#b77a3d",.48*(1-t));
-        burst(fx,x,y,t,7,"#d2a06a",38,2.6,.40);
-      }else if(fx.kind==="rootBindBurst"){
-        const rr=(fx.radius||190)*sc;
-        ring(x,y,rr*(.40+.60*ease),3.2*sc,"#7b4b22",.55*(1-t));
-        for(let k=0;k<12;k++){
-          const a=(k/12)*Math.PI*2+(fx.seed%23)*.03;
-          const inner=rr*(.22+.42*ease),outer=rr*(.48+.36*ease);
-          ctx.globalAlpha=.72*(1-t);ctx.strokeStyle=k%2?"#8a5a2b":"#4f6f2b";ctx.lineWidth=Math.max(1.5,2.7*sc);
-          ctx.beginPath();ctx.moveTo(x+Math.cos(a)*inner,y+Math.sin(a)*inner*.70);ctx.lineTo(x+Math.cos(a)*outer,y+Math.sin(a)*outer*.70);ctx.stroke();
-        }
-        burst(fx,x,y,t,9,"#9d7040",46,2.5,.50);
-      }else if(fx.kind==="recallBurst"){
-        const to=this.worldToPx(this.viewX(fx.x2),this.viewY(fx.y2));
-        const rr=(14+34*ease)*sc;
-        ring(x,y,rr,2.8*sc,"#9d7cff",.58*(1-t));
-        ring(to[0],to[1],rr*1.08,3.2*sc,"#c4a6ff",.72*(1-t));
-        burst(fx,x,y,t,8,"#b99aff",42,2.5,.60);
-        burst(fx,to[0],to[1],t,10,"#e0d1ff",48,2.6,.60,fx.seed^0x5a17);
-        ctx.globalAlpha=.18*(1-t);ctx.strokeStyle="#b89aff";ctx.lineWidth=Math.max(1,1.8*sc);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(to[0],to[1]);ctx.stroke();
-      }else if(fx.kind==="sporeFadeBurst"){
-        ring(x,y,(4+20*ease)*sc,1.8*sc,"#a6ce62",.30*(1-t));
-        burst(fx,x,y,t,7,"#b6d86c",30,2.0,.75);
-      }else if(fx.kind==="lostLockBurst"){
-        ring(x,y,(3+14*ease)*sc,1.6*sc,"#9bc5d8",.30*(1-t));
-        burst(fx,x,y,t,4,"#d1e9f2",20,1.5,.80);
-      }else if(fx.kind==="arcTravelFx"){
-        const q=RangeUtil.clamp(t,0,1);
-        const px=fx.fromX+(fx.toX-fx.fromX)*q,py=fx.fromY+(fx.toY-fx.fromY)*q;
-        const arc=this.resolveArcTravelPresentation({
-          fromX:fx.fromX,fromY:fx.fromY,toX:fx.toX,toY:fx.toY,
-          planarX:px,planarY:py,arcHeight:fx.arcHeight
-        });
-        const wp={x:px,y:arc.height+arc.groundHeight,z:py,groundY:0,motion:arc.motion,progress:arc.progress};
-        const pp=this.projectRenderWorldPosition(wp),gp=this.projectRenderWorldPosition({x:px,y:.001+this.world.terrain.surfaces.heightAt(px,py),z:py,groundY:0,motion:"ground"});
-        if(fx.preset==="swarmCarcassEnergy"){
-          const pulse=.85+.15*Math.sin(q*Math.PI*5+fx.seed*.001),fade=Math.min(1,q/.08,(1-q)/.08);
-          const start=this.projectRenderWorldPosition({x:fx.fromX,y:.001+this.world.terrain.surfaces.heightAt(fx.fromX,fx.fromY),z:fx.fromY,groundY:0,motion:"ground"});
-          const end=this.projectRenderWorldPosition({x:fx.toX,y:.001+this.world.terrain.surfaces.heightAt(fx.toX,fx.toY),z:fx.toY,groundY:0,motion:"ground"});
-
-          // Phase 1 — unmistakable source release. All five consume events overlap here,
-          // intentionally making the corpse origin brighter instead of creating five projectile-like muzzle flashes.
-          if(q<.28){
-            const bt=q/.28,be=1-Math.pow(1-bt,3),ba=(1-bt);
-            this.withRenderDepth(start.depth+.006,()=>{
-              ring(start.x,start.y,(5+30*be)*sc,Math.max(2,3*sc),"#d9f06b",.72*ba);
-              ring(start.x,start.y,(2+18*be)*sc,Math.max(1.5,2*sc),"#fff0a0",.58*ba);
-              burst(fx,start.x,start.y,bt,5,"#c7e95c",36,3.2,.78);
-            });
-          }
-
-          // Phase 2 — large organic energy core + halo. Motion itself still comes exclusively
-          // from resolveArcTravelPresentation().
-          this.withRenderDepth(pp.depth,()=>{
-            this.circle(pp.x,pp.y,Math.max(5,8*sc)*pulse,[.91,.98,.48,.98*fade],12);
-            this.circle(pp.x,pp.y,Math.max(8,14*sc)*pulse,[.55,.82,.24,.30*fade],16);
-            this.circle(pp.x,pp.y,Math.max(11,19*sc)*pulse,[.45,.70,.18,.10*fade],18);
-          });
-
-          // Very short dotted afterimage: only the last three arc samples, never a continuous projectile trail.
-          for(let k=1;k<=3;k++){
-            const tq=Math.max(0,q-k*.045),tx=fx.fromX+(fx.toX-fx.fromX)*tq,ty=fx.fromY+(fx.toY-fx.fromY)*tq;
-            const ta=this.resolveArcTravelPresentation({fromX:fx.fromX,fromY:fx.fromY,toX:fx.toX,toY:fx.toY,planarX:tx,planarY:ty,arcHeight:fx.arcHeight});
-            const tp=this.projectRenderWorldPosition({x:tx,y:ta.height+ta.groundHeight,z:ty,groundY:0,motion:ta.motion,progress:ta.progress});
-            this.withRenderDepth(tp.depth,()=>this.circle(tp.x,tp.y,Math.max(2,4.5*sc)*(1-k*.18),[.72,.90,.30,.18*fade*(1-k*.20)],9));
-          }
-          this.withRenderDepth(gp.depth+.002,()=>this.circle(gp.x,gp.y,Math.max(3,5*sc),[.06,.08,.05,.22*fade],10));
-
-          // Phase 3 — absorption, not impact: a bright ring contracts into the recipient.
-          if(q>.70){
-            const at=(q-.70)/.30,ar=(22-17*at)*sc,aa=Math.sin(at*Math.PI);
-            this.withRenderDepth(end.depth+.008,()=>{
-              ring(end.x,end.y,Math.max(4,ar),Math.max(2,3*sc),"#dff56f",.82*aa);
-              this.circle(end.x,end.y,Math.max(3,6*sc)*(1-at*.45),[.86,.96,.42,.24*aa],12);
-            });
-          }
-        }
       }else if(fx.kind==="deathBurst"){
         const vd=UnitVisualDefinition.get(fx.entity)||UnitVisualDefinition.get(fx.targetType)||null;
         const ac=vd?.accent||[.90,.82,.66,1];
@@ -4570,9 +1607,6 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
         burst(fx,x,y,t,13,"#6a6259",72,4.8,.48);
         burst(fx,x,y,t,7,"#d2aa63",58,3.3,.52);
         ring(x,y,(15+72*ease)*sc,3*sc,"#b98c54",.35*(1-t));
-      }else if(fx.kind==="healBurst"){
-        ring(x,y,(5+28*ease)*sc,2.5*sc,"#79e89a",.65*(1-t));
-        burst(fx,x,y,t,5,"#9af0af",32,2.1,.7);
       }
 
       ctx.restore();
@@ -4582,204 +1616,52 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
     this.combatFx.length=write;
   }
 
-  drawCombatReadabilityOverlay(){
-    const ctx=this.fxCtx,snap=this.snapshot;
-    if(!ctx||!snap)return;
-    const side=this.mySide(),sc=this.sc(),flag=snap.flags?.[side],now=performance.now();
-    ctx.save();ctx.lineCap="round";ctx.lineJoin="round";
-    for(const u of snap.units||[]){
-      if(!u.alive||!!UnitDefinition.get(u.type)?.economyWorker||u.side===NEUTRAL_SIDE)continue;
-      const own=u.side===side;
-      if(!own&&!this.visibleRaw(u.x,u.y,UnitDefinition.get(u.type)?.layer==="AIR"))continue;
-      if(!this.onScreenAuth(u.x,u.y,120))continue;
-      const rp=this.renderTrackedScreenPosition(u,"unit"),x=rp.x,y=rp.y;
-      const baseR=Math.max(7,(UnitDefinition.get(u.type)?.size||12)*sc*1.8);
-
-      // Forced rally: tiny chevron means this unit is intentionally ignoring combat.
-      if(own&&flag?.forced){
-        const yy=y-baseR*1.35,pulse=.70+.30*Math.sin(now*.010+(HashUtil.hash(u.id)%31));
-        ctx.globalAlpha=.55+.30*pulse;ctx.strokeStyle="#ffad3d";ctx.lineWidth=Math.max(1.4,2.2*sc);
-        ctx.beginPath();ctx.moveTo(x-baseR*.28,yy-baseR*.12);ctx.lineTo(x,yy+baseR*.12);ctx.lineTo(x+baseR*.28,yy-baseR*.12);ctx.stroke();
-      }
-
-      // Rootstalker setup is strategically important: expose only the active setup progress.
-      if(Number(UnitDefinition.get(u.type)?.rootSetupMs)>0&&(u.behaviorState.rootSetupTicks||0)>0){
-        const need=SimulationTiming.msToTicks(snap.abilities?.[u.side]?.[u.type]?700:(UnitDefinition.get(u.type).rootSetupMs||1050),this.snapshot?.tps||SIM_TPS);
-        const pct=RangeUtil.clamp((u.behaviorState.rootSetupTicks||0)/Math.max(1,need),0,1);
-        ctx.globalAlpha=.78;ctx.strokeStyle="#c7ef72";ctx.lineWidth=Math.max(1.5,2.4*sc);
-        ctx.beginPath();ctx.arc(x,y,baseR*1.18,-Math.PI/2,-Math.PI/2+Math.PI*2*pct);ctx.stroke();
-      }
-
-      // 수호버섯 hitGuard 충전 반경. 실제 보호막은 각 유닛의 공통 에너지 외피로 표시한다.
-      if(Number(UnitDefinition.get(u.type)?.guardChargeRadius)>0&&sc>.18){
-        const gd=UnitDefinition.get(u.type);
-        const radius=(snap.abilities?.[u.side]?.[u.type]?(gd.guardChargeRadius||150):(gd.guardChargeRadius||150))*sc;
-        ctx.globalAlpha=.10;ctx.strokeStyle="#88c9d9";ctx.lineWidth=Math.max(1,1.35*sc);
-        ctx.beginPath();ctx.arc(x,y,radius,0,Math.PI*2);ctx.stroke();
-      }
-
-      // AIR support fields are presentation-only. Use material-like cues instead of one generic aura circle.
-      if(Number(UnitDefinition.get(u.type)?.sightAuraRadius)>0&&sc>.18){
-        const md=UnitDefinition.get(u.type),det=(md.detectRadius||200)*sc,up=!!snap.abilities?.[u.side]?.[u.type],sight=(md.sightAuraRadius||220)*sc;
-        const rp=this.renderTrackedPosition(u,"unit"),q=this.worldToPx(this.viewX(rp.x),this.viewY(rp.y)),cx=q[0],cy=q[1],pulse=.5+.5*Math.sin(now*.004+(HashUtil.hash(u.id)%71));
-        ctx.globalAlpha=.08+.04*pulse;ctx.fillStyle="#ffe98a";ctx.beginPath();ctx.arc(cx,cy,det,0,Math.PI*2);ctx.fill();
-        ctx.globalAlpha=.24;ctx.strokeStyle="#ffe884";ctx.lineWidth=Math.max(1,1.35*sc);ctx.setLineDash([Math.max(3,8*sc),Math.max(3,10*sc)]);ctx.beginPath();ctx.arc(cx,cy,det,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
-        if(up){ctx.globalAlpha=.20;ctx.strokeStyle="#fff4b6";ctx.lineWidth=Math.max(1,1.2*sc);ctx.beginPath();ctx.arc(cx,cy,sight,0,Math.PI*2);ctx.stroke()}
-      }else if(Number(UnitDefinition.get(u.type)?.mobilityAuraRadius)>0&&sc>.18){
-        const sd=UnitDefinition.get(u.type),up=!!snap.abilities?.[u.side]?.[u.type],radius=(up?(sd.abilityMobilityAuraRadius||280):(sd.mobilityAuraRadius||140))*sc;
-        const rp=this.renderTrackedPosition(u,"unit"),q=this.worldToPx(this.viewX(rp.x),this.viewY(rp.y)),cx=q[0],cy=q[1],phase=now*.0012+(HashUtil.hash(u.id)%53);
-        for(let k=0;k<4;k++){const a=phase+k*Math.PI*.5,rr=radius*(.58+.10*(k%2));ctx.globalAlpha=.16+(up?0.05:0);ctx.strokeStyle="#87e6cf";ctx.lineWidth=Math.max(1,1.45*sc);ctx.beginPath();ctx.arc(cx,cy,rr,a,a+1.15);ctx.stroke()}
-      }else if(Number(UnitDefinition.get(u.type)?.cloakAuraRadius)>0&&sc>.18){
-        const md=UnitDefinition.get(u.type),radius=(md.cloakAuraRadius||210)*sc;
-        const rp=this.renderTrackedPosition(u,"unit"),q=this.worldToPx(this.viewX(rp.x),this.viewY(rp.y)),cx=q[0],cy=q[1],phase=now*.0007+(HashUtil.hash(u.id)%79);
-        ctx.globalAlpha=.10;ctx.strokeStyle="#a9dce8";ctx.lineWidth=Math.max(1,1.4*sc);ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);ctx.stroke();
-        for(let k=0;k<5;k++){const a=phase+k*Math.PI*.4,rr=radius*(.48+.09*(k%3));ctx.globalAlpha=.09;ctx.strokeStyle=k%2?"#c4eaf1":"#8fcbd9";ctx.lineWidth=Math.max(2,3.4*sc);ctx.beginPath();ctx.arc(cx,cy,rr,a,a+.9);ctx.stroke()}
-      }else if(Number(UnitDefinition.get(u.type)?.interceptRadius)>0&&sc>.18){
-        const ad=UnitDefinition.get(u.type),up=!!snap.abilities?.[u.side]?.[u.type];
-        const radius=(up?(ad.abilityInterceptRadius||225):(ad.interceptRadius||175))*sc;
-        const cost=up?(ad.abilityInterceptManaCost||100):(ad.interceptManaCost||200),charged=(Number(u.resources.mana)||0)>=cost,manaRatio=RangeUtil.clamp((Number(u.resources.mana)||0)/Math.max(1,Number(u.resources.manaMax)||250),0,1);
-        ctx.globalAlpha=charged?(.18+.16*manaRatio):.08;ctx.strokeStyle=charged?"#6fdcff":"#5f7486";ctx.lineWidth=Math.max(1,1.5*sc);
-        ctx.beginPath();ctx.arc(x,y,radius,0,Math.PI*2);ctx.stroke();
-      }
-    }
-    ctx.restore();
-  }
-
   drawWorldHudOverlay(){
     const ctx=this.fxCtx,snap=this.snapshot;
     if(!ctx||!this.fxCanvas||!snap)return;
-    const side=this.mySide(),sc=this.sc(),now=performance.now();
+    const side=this.mySide(),sc=this.sc();
 
     ctx.save();
     ctx.lineCap="round";
     ctx.lineJoin="round";
 
-    // Single-owner invariant for building status bars:
-    // building HP is drawn ONLY here, never inside drawBuilding(). This pass stays
-    // above combat VFX so explosions/debris can never cover persistent information.
+    // Single-owner invariant for status bars: building and unit HP are drawn ONLY here,
+    // never inside drawBuilding()/drawUnit(). This pass stays above combat VFX so
+    // explosions/debris can never cover persistent information.
     for(const b of snap.buildings||[]){
-      if(b.alive===false)continue;
-      const own=b.side===side;
-      if(!own&&!this.visibleRaw(b.x,b.y))continue;
+      if(b.alive===false||b.hp>=b.maxHp)continue;
+      if(b.side!==side&&!this.visibleRaw(b.x,b.y))continue;
       if(!this.onScreenAuth(b.x,b.y,(BuildingDefinition.get(b.type)?.size||40)+100))continue;
-      const d=BuildingDefinition.get(b.type)||{size:35,buildTime:1};
+      const d=BuildingDefinition.get(b.type)||{size:35};
       const anchor=RallyGamekit.resolveAnchorInto(this.stableCamera(),{space:'world',
         x:this.viewX(b.x),y:this.viewY(b.y),z:this.world.terrain.surfaces.heightAt(b.x,b.y)},{});
       const {x,y}=anchor,r=d.size*sc;
-
-      if(!b.complete){
-        const q=RangeUtil.clamp((b.progress||0)/Math.max(1,SimulationTiming.msToTicks(d.buildTimeMs,this.snapshot?.tps||SIM_TPS)),0,1);
-        const bw=r*2,bh=Math.max(3,4*sc),by=y+r+3*sc;
-        ctx.fillStyle="rgba(18,24,28,.72)";ctx.fillRect(x-r-1*sc,by-1*sc,bw+2*sc,bh+2*sc);
-        ctx.fillStyle=b.constructionState==="building"?"#f2b53b":"#8b97a3";ctx.fillRect(x-r,by,bw*q,bh);
-      }else if(b.hp<b.maxHp){
-        const ratio=RangeUtil.clamp((b.hp||0)/Math.max(1,b.maxHp||1),0,1);
-        const bw=r*2,bh=Math.max(2.4,3.2*sc),by=y+r+3*sc;
-        ctx.fillStyle="rgba(18,24,28,.72)";ctx.fillRect(x-r-1*sc,by-1*sc,bw+2*sc,bh+2*sc);
-        ctx.fillStyle=ratio>.48?"#62c775":"#f04d49";ctx.fillRect(x-r,by,bw*ratio,bh);
-      }
-
-      // Production progress is gameplay information, not decoration. Keep it on the
-      // same stable HUD layer regardless of how many combat effects are active.
-      if(own&&b.complete&&BuildingDefinition.get(b.type)?.isProductionBuilding){
-        const q=b.queue?.[0]?.productionBatch?b.queue[0]:null;
-        if(q){
-          const total=Math.max(1,Number(q.total)||1);
-          const remaining=SimulationTiming.queueRemainingTicks(q,this.snapshot?.tick||0);
-          const prog=RangeUtil.clamp(1-remaining/total,0,1);
-          const bw=Math.max(32,52*sc),bh=Math.max(5,7*sc),by=y+r+9*sc;
-          ctx.fillStyle="rgba(7,10,13,.90)";ctx.fillRect(x-bw/2,by,bw,bh);
-          ctx.fillStyle=remaining<=0?"#ed971e":"#3496ef";ctx.fillRect(x-bw/2+1,by+1,Math.max(0,(bw-2)*prog),Math.max(1,bh-2));
-        }
-      }
+      const ratio=RangeUtil.clamp((b.hp||0)/Math.max(1,b.maxHp||1),0,1);
+      const bw=r*2,bh=Math.max(2.4,3.2*sc),by=y+r+3*sc;
+      ctx.fillStyle="rgba(18,24,28,.72)";ctx.fillRect(x-r-1*sc,by-1*sc,bw+2*sc,bh+2*sc);
+      ctx.fillStyle=ratio>.48?"#62c775":"#f04d49";ctx.fillRect(x-r,by,bw*ratio,bh);
     }
 
-    // Aegis basic attack link: authoritative last-hit target is kept across snapshot boundaries.
-    // This avoids missing the cable when transient attackFlash/u.target changes between 10 Hz snapshots.
     for(const u of snap.units||[]){
-      const arcTargetId=u?.combat.attackArcTargetId;
-      if(!u?.alive||!arcTargetId||(snap.tick||0)>(u.combat.attackArcUntilTick||0))continue;
-      const own=u.side===side;
-      if(!own&&!this.visibleRaw(u.x,u.y,UnitDefinition.get(u.type)?.layer==="AIR"))continue;
-      const targetUnit=(snap.units||[]).find(t=>t.id===arcTargetId&&t.alive);
-      const targetBuilding=targetUnit?null:(snap.buildings||[]).find(b=>b.id===arcTargetId&&b.alive!==false);
-      const target=targetUnit||targetBuilding;if(!target)continue;
-      if(targetUnit){
-        const targetOwn=targetUnit.side===side,cloaked=this.snapshotStealthed(targetUnit),detected=targetOwn||this.detectedRaw(targetUnit.x,targetUnit.y);
-        if(!targetOwn&&(!this.visibleRaw(targetUnit.x,targetUnit.y)||(cloaked&&!detected)))continue;
-      }else if(targetBuilding.side!==side&&!this.visibleRaw(targetBuilding.x,targetBuilding.y))continue;
-      const tp=targetUnit
-        ?this.projectRenderWorldPosition(this.resolveRenderWorldPosition(targetUnit,"unit"))
-        :(()=>{const q=this.worldToPx(this.viewX(targetBuilding.x),this.viewY(targetBuilding.y));return{x:q[0],y:q[1]}})();
-      const pulse=.82+.18*Math.sin(now*.038+(HashUtil.hash(u.id)%97)),node=this.aegisShellNodeScreen(u,tp.x,tp.y);
-      this.commonEffectPool.drawElectricArc(ctx,{x:node.x,y:node.y},{x:tp.x,y:tp.y},{
-        seed:HashUtil.hash(`${u.id}|${arcTargetId}`),time:now/1000,color:"#55d7ff",alpha:.72*pulse,scale:sc,width:2.8
-      });
-      this.commonEffectPool.drawElectricArc(ctx,{x:node.x,y:node.y},{x:tp.x,y:tp.y},{
-        seed:HashUtil.hash(`${u.id}|${arcTargetId}|core`),time:now/1000,color:"#efffff",alpha:.96*pulse,scale:sc,width:1.15
-      });
-    }
-
-    // Single-owner invariant for unit status bars:
-    // HP/Mana are drawn ONLY in this HUD pass, never inside drawUnit().
-    // This keeps one stable information layer across AIR height, leap/airborne motion,
-    // Render State interpolation and future body-render passes.
-    for(const u of snap.units||[]){
-      const hasMana=(Number(u.resources.manaMax)||0)>0;
       const maxHp=Math.max(1,Number(u.maxHp)||1);
-      const showHp=(Number(u.hp)||0)<maxHp;
-      if(!u.alive||(!showHp&&!hasMana))continue;
-      const own=u.side===side,d=UnitDefinition.get(u.type)||{};
-      const cloaked=this.snapshotStealthed(u);
-      const detected=own?true:this.detectedRaw(u.x,u.y);
-      if(!own&&(!this.visibleRaw(u.x,u.y,UnitDefinition.get(u.type)?.layer==="AIR")||(cloaked&&!detected)))continue;
-      if(!this.onScreenAuth(u.x,u.y,(d.size||15)+100))continue;
-
-      const wp=this.resolveRenderWorldPosition(u,"unit");
-      const projected=this.projectRenderWorldPosition(wp);
-      const x=projected.x,y=projected.y;
-      const r=this.unitRenderRadius(u);
-      const bw=r*2.2,bh=Math.max(2.2,3.2*sc);
-      const airUnit=d.layer==="AIR";
-      const barLift=airUnit?1.90:1.58;
-      const baseY=y-r*barLift;
-
-      let nextY=baseY;
-      if(showHp){
-        const ratio=RangeUtil.clamp((Number(u.hp)||0)/maxHp,0,1);
-        ctx.fillStyle="rgba(7,10,12,.72)";
-        ctx.fillRect(x-bw/2-1*sc,nextY-1*sc,bw+2*sc,bh+2*sc);
-        ctx.fillStyle=ratio>.48?"#6fdf63":"#f34d47";
-        ctx.fillRect(x-bw/2,nextY,bw*ratio,bh);
-        nextY+=bh+Math.max(2,2.2*sc);
-      }
-
-      // Mana is a separate blue resource bar. Full-health mana units show only mana,
-      // so a resource bar can never be mistaken for a duplicate green health bar.
-      if(hasMana){
-        const manaRatio=RangeUtil.clamp((Number(u.resources.mana)||0)/Math.max(1,Number(u.resources.manaMax)||1),0,1);
-        const mh=Math.max(1.8,2.5*sc),my=nextY;
-        ctx.fillStyle="rgba(7,10,18,.78)";
-        ctx.fillRect(x-bw/2-1*sc,my-1*sc,bw+2*sc,mh+2*sc);
-        ctx.fillStyle="#3f8cff";
-        ctx.fillRect(x-bw/2,my,bw*manaRatio,mh);
-        if(own&&sc>.22){
-          ctx.font=`800 ${Math.max(7,8.5*sc)}px system-ui,-apple-system,"Segoe UI",sans-serif`;
-          ctx.textAlign="left";ctx.textBaseline="middle";ctx.lineWidth=Math.max(1,1.7*sc);
-          const label=`${Math.round(Number(u.resources.mana)||0)}/${Math.round(Number(u.resources.manaMax)||0)}`;
-          ctx.strokeStyle="rgba(5,18,45,.92)";ctx.strokeText(label,x+bw/2+3*sc,my+mh*.50);
-          ctx.fillStyle="#80b8ff";ctx.fillText(label,x+bw/2+3*sc,my+mh*.50);
-        }
-      }
+      if(!u.alive||(Number(u.hp)||0)>=maxHp)continue;
+      if(u.side!==side&&!this.visibleRaw(u.x,u.y))continue;
+      if(!this.onScreenAuth(u.x,u.y,(UnitDefinition.get(u.type)?.size||15)+100))continue;
+      const projected=this.projectRenderWorldPosition(this.resolveRenderWorldPosition(u,"unit"));
+      const r=this.unitRenderRadius(u),bw=r*2.2,bh=Math.max(2.2,3.2*sc),x=projected.x,y=projected.y-r*1.58;
+      const ratio=RangeUtil.clamp((Number(u.hp)||0)/maxHp,0,1);
+      ctx.fillStyle="rgba(7,10,12,.72)";
+      ctx.fillRect(x-bw/2-1*sc,y-1*sc,bw+2*sc,bh+2*sc);
+      ctx.fillStyle=ratio>.48?"#6fdf63":"#f34d47";
+      ctx.fillRect(x-bw/2,y,bw*ratio,bh);
     }
 
     ctx.restore();
   }
-
   drawSelectedBuildingOverlay(){
     const ctx=this.fxCtx,snap=this.snapshot,id=this.selectedBuildingId;
     if(!ctx||!snap||!id)return;
-    const side=this.mySide(),b=[...(snap.buildings||[]),...(snap.constructionOrders||[])].find(x=>x.id===id&&x.alive!==false&&x.side===side);
+    const side=this.mySide(),b=(snap.buildings||[]).find(x=>x.id===id&&x.alive!==false&&x.side===side);
     if(!b||!this.onScreenAuth(b.x,b.y,(BuildingDefinition.get(b.type)?.size||40)+100))return;
     const sc=this.sc(),[x,y]=this.worldToPx(this.viewX(b.x),this.viewY(b.y));
     const r=(BuildingDefinition.get(b.type)?.size||35)*sc*1.06,m=Math.max(4,8*sc),lw=Math.max(1.8,2.8*sc);
@@ -4792,90 +1674,6 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
     ctx.stroke();ctx.restore();
   }
 
-  drawObjectivePersistentFx(){
-    const ctx=this.fxCtx,snap=this.snapshot;if(!ctx||!snap)return;
-    const sc=this.sc();
-    ctx.save();ctx.lineCap="round";ctx.lineJoin="round";
-
-    // Death Worm normal movement: subtle ground-only dirt pressure, much weaker than burrowTrail.
-    for(const u of snap.units||[]){
-      if(!u?.alive||!UnitVisualDefinition.get(u.type)?.movingGroundDust||u.burrowPhase==="dive"||u.burrowPhase==="travel")continue;
-      if((snap.tick-(Number(u.movement.lastMoveTick)||-999999))>3)continue;
-      if(!this.visibleRaw(u.x,u.y,UnitDefinition.get(u.type)?.layer==="AIR")&&u.side!==this.mySide())continue;
-      const delta=this.renderTrackedDelta(u,"unit");
-      let dx=delta.x,dy=delta.y,len=Math.hypot(dx,dy);if(len<.05)continue;dx/=len;dy/=len;
-      const ground=this.projectRenderWorldPosition(this.resolveGroundShadowPosition(u,"unit"));
-      const dir=this.renderTrackedDirectionScreen(u,dx,dy,"unit");
-      let fx=dir.x,fy=dir.y,fl=Math.hypot(fx,fy)||1;fx/=fl;fy/=fl;const sx=-fy,sy=fx;
-      const phase=(performance.now()*.004+(HashUtil.hash(u.id)%101)*.017)%1;
-      for(let k=0;k<4;k++){
-        const q=(k+phase)/4,back=(10+24*q)*sc,side=((k%2?1:-1)*(5+5*q))*sc;
-        const px=ground.x-fx*back+sx*side,py=ground.y-fy*back+sy*side;
-        ctx.globalAlpha=(1-q)*.18;ctx.fillStyle=k%2?"#8d6b3e":"#6f542f";ctx.beginPath();ctx.arc(px,py,Math.max(1.8,(3.6-1.2*q)*sc),0,Math.PI*2);ctx.fill();
-      }
-      ctx.globalAlpha=.12;ctx.strokeStyle="#9a7a48";ctx.lineWidth=Math.max(1.2,2.2*sc);ctx.beginPath();ctx.arc(ground.x+fx*6*sc,ground.y+fy*6*sc,Math.max(5,10*sc),0,Math.PI);ctx.stroke();
-    }
-
-    for(const u of snap.units||[]){
-      const breathUnit=Number(UnitDefinition.get(u?.type)?.breathRange)>0;
-      if(!u?.alive||!breathUnit||(u.objectiveBreathPhase!==OBJECTIVE_DRAGON_BREATH_PHASE.TELL&&u.objectiveBreathPhase!==OBJECTIVE_DRAGON_BREATH_PHASE.ACTIVE))continue;
-      if(!this.visibleRaw(u.x,u.y,UnitDefinition.get(u.type)?.layer==="AIR")&&u.side!==this.mySide())continue;
-
-      const d=UnitDefinition.get(u.type)||{},bp=this.projectEntityScreen(u,"unit"),r=this.unitRenderRadius(u);
-      const dx=Number(u.objectiveBreathDirX)||0,dy=Number(u.objectiveBreathDirY)||0,len=Math.hypot(dx,dy)||1,nx=dx/len,ny=dy/len;
-      let mouth;
-      if(UnitVisualDefinition.get(u.type)?.breathMouth==="dragon"){
-        mouth=this.resolveDragonRenderPose(u,bp.x,bp.y,r).mouth;
-      }else{
-        const dir=this.renderTrackedDirectionScreen(u,nx,ny,"unit");
-        mouth=[bp.x+dir.x*r*.62,bp.y+dir.y*r*.62];
-      }
-
-      const range=d.breathRange||d.range||150,half=(d.breathAngleDeg||30)*Math.PI/360;
-      const breathVisual=UnitVisualDefinition.get(u.type)||{},breathPreset=breathVisual.breathVfxPreset||"fireBreath",breathTellColor=breathVisual.breathTellColor||"#ffe075";
-
-      if(u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.TELL){
-        // Telegraph only at the mouth. Do not draw a cone/triangle that duplicates
-        // the breath footprint; the active particle VFX itself communicates reach.
-        const pulse=.5+.5*Math.sin(performance.now()*.025+(HashUtil.hash(u.id)%77));
-        ctx.globalAlpha=.85;ctx.fillStyle=breathTellColor;
-        ctx.beginPath();ctx.arc(mouth[0],mouth[1],Math.max(3,(6+4*pulse)*sc),0,Math.PI*2);ctx.fill();
-        continue;
-      }
-
-      this.commonEffectPool.touchFireEmitter(`${breathPreset}-breath:${u.id}`,{
-        preset:breathPreset,
-        centerX:u.x,centerY:u.y,mouthX:mouth[0],mouthY:mouth[1],
-        dirX:nx,dirY:ny,range,halfAngle:half,scale:sc
-      });
-    }
-
-    // Basic-attack breath variants are instantaneous simulation attacks, but their
-    // presentation persists briefly so the shared particle emitter reads as a breath.
-    const breathNow=performance.now();
-    this.attackVariantBreathFx=this.attackVariantBreathFx.filter(f=>breathNow-f.start<f.duration);
-    for(const f of this.attackVariantBreathFx){
-      const source=(snap.units||[]).find(u=>u.id===f.sourceId&&u.alive);
-      const sx=source?.x??f.x,sy=source?.y??f.y;
-      if(!this.visibleRaw(sx,sy)&&source?.side!==this.mySide())continue;
-      const bp=source?this.projectEntityScreen(source,"unit"):null;
-      const rr=source?this.unitRenderRadius(source):8*sc;
-      const dx=Number(f.dirX)||1,dy=Number(f.dirY)||0,len=Math.hypot(dx,dy)||1,nx=dx/len,ny=dy/len;
-      let mouth;
-      if(source){
-        const dir=this.renderTrackedDirectionScreen(source,nx,ny,"unit");
-        mouth=[bp.x+dir.x*rr*.62,bp.y+dir.y*rr*.62];
-      }else{
-        mouth=this.worldToPx(this.viewX(sx),this.viewY(sy));
-      }
-      this.commonEffectPool.touchFireEmitter(`attack-variant-breath:${f.id}`,{
-        preset:f.preset||"fireAntBreath",centerX:sx,centerY:sy,mouthX:mouth[0],mouthY:mouth[1],
-        dirX:nx,dirY:ny,range:f.range||150,halfAngle:(f.angleDeg||30)*Math.PI/360,scale:sc
-      });
-    }
-    ctx.restore();
-  }
-
   drawFloatingFx(){
     const ctx=this.fxCtx;
     if(!ctx||!this.fxCanvas)return;
@@ -4885,17 +1683,14 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
     // Stable presentation order. It never changes with unit count:
     // world annotations -> decorative combat VFX -> persistent world HUD -> numbers -> status/selection.
     this.drawStrategicLabels();
-    this.drawCampRangeLabels();
 
     // Decorative presentation is always below information overlays.
     this.commonEffectPool.beginFrame(performance.now());
     this.drawClientCombatFx();
-    this.drawObjectivePersistentFx();
     this.commonEffectPool.drawFire(ctx);
     this.commonEffectPool.endFrame();
 
     // Persistent information is never hidden by combat density.
-    this.drawProductionBuildingEmblems();
     this.drawWorldHudOverlay();
 
     const now=performance.now();
@@ -4924,12 +1719,9 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
       const pop=t<.12?(0.90+t/.12*(preset.pop-.90)):preset.pop-(t-.12)*.04;
       const fontSize=Math.max(preset.minSize,preset.baseSize*this.sc()*pop);
 
-      let fill="#ffd36a",stroke="#503400";
+      let fill="#d7e9ff",stroke="#1a3d64";
       if(f.kind==="damageTaken"){fill="#ff6b6b";stroke="#4b0909"}
       else if(f.kind==="damageDealt"){fill="#fff0c2";stroke="#6d2c12"}
-      else if(f.kind==="heal"){fill="#74e69a";stroke="#123b21"}
-      else if(f.kind==="manaSpend"){fill="#65a9ff";stroke="#102e63"}
-      else if(f.kind==="dodge"){fill="#d7e9ff";stroke="#1a3d64"}
 
       ctx.save();
       ctx.font=`800 ${fontSize}px system-ui,-apple-system,"Segoe UI",sans-serif`;
@@ -4950,9 +1742,7 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
 
     this.floatFx.length=write;
 
-    // Strategic status and selection are the final world-space UI layer.
-    // They remain readable even when an explosion happens on the same pixel.
-    this.drawCombatReadabilityOverlay();
+    // Selection is the final world-space UI layer, readable over explosions.
     this.drawSelectedBuildingOverlay();
   }
 
@@ -4975,13 +1765,6 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
     const targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(x,y);
     for(const side of this.replayVisionSides())if(this.visionFields[side]?.detectedAt(x,y,targetAir,targetLevel))return true;
     return false;
-  }
-
-  snapshotStealthed(u){
-    return !!u&&u.alive!==false&&(
-      BurrowableMixin.stateActive(u)||
-      !!UnitDefinition.get(u.type)?.stealth||this.snapshotCloakedIds.has(u.id)
-    );
   }
 
   drawStrategicMap(){
@@ -5028,265 +1811,6 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
       }
     }
   }
-  drawNeutralCampMarkers(){
-    if(!this.snapshot)return;
-    const sc=this.sc();
-
-    for(const camp of this.snapshot.camps||[]){
-      const cd=CampDefinition.get(camp.kind);
-      if(!cd)continue;
-      if(!this.onScreenAuth(camp.x,camp.y,NeutralCampPolicy.aggroRadius(camp)+120))continue;
-
-      const[x,y]=this.worldToPx(this.viewX(camp.x),this.viewY(camp.y));
-      const alive=camp.state==="alive";
-      const gauge=RangeUtil.clamp((camp.aggroGauge||0)/(cd.aggroGaugeMax||1000),0,1);
-      const resetting=!!camp.resetting;
-
-      const objectiveKind=!!CampDefinition.get(camp.kind)?.mainObjective;
-      const base=camp.kind==="objectiveBear"?[.55,.36,.16,.18]:
-        camp.kind==="objectiveDeathWorm"?[.48,.58,.12,.18]:
-        camp.kind==="objectiveDragon"?[.66,.20,.12,.18]:
-        camp.kind==="toads"?[.34,.52,.20,.14]:
-        camp.kind==="crabs"?[.52,.34,.20,.14]:
-        camp.kind==="wasps"?[.58,.48,.18,.14]:
-        camp.kind==="relic"?[.46,.31,.68,.13]:
-        [.35,.28,.18,.12];
-      const edge=camp.kind==="objectiveBear"?[.96,.68,.28,.42]:
-        camp.kind==="objectiveDeathWorm"?[.78,.92,.22,.42]:
-        camp.kind==="objectiveDragon"?[1,.42,.18,.42]:
-        camp.kind==="toads"?[.72,.90,.40,.34]:
-        camp.kind==="crabs"?[.92,.62,.30,.34]:
-        camp.kind==="wasps"?[.96,.84,.38,.34]:
-        camp.kind==="relic"?[.72,.50,.95,.30]:
-        [.66,.50,.28,.26];
-      const rr=(objectiveKind?112:camp.kind==="relic"?82:70)*sc;
-
-      // 큰 원 하나: 어그로/활동 범위. 게이지가 찰수록 황금 -> 주황 -> 붉은색으로 강해진다.
-      const aggroRangeCol=resetting
-        ?[.40,.92,.48,.38]
-        :[
-          1,
-          .76-.38*gauge,
-          .22-.06*gauge,
-          alive?(.25+.22*gauge):.10
-        ];
-      this.outlineCircle(
-        x,y,NeutralCampPolicy.aggroRadius(camp)*sc,Math.max(1.2,1.9*sc),
-        aggroRangeCol,72,0
-      );
-
-      // 작은 원: 원위치 복귀 완료 영역.
-      const homeVisual=(cd.homeRadius+NeutralCampPolicy.homeSpread(camp))*sc;
-      this.outlineCircle(
-        x,y,homeVisual,Math.max(1,1.45*sc),
-        resetting?[.38,.96,.52,.34]:[.82,.86,.72,.18],
-        44,2
-      );
-
-      this.circle(x,y,rr,base,24);
-      if(alive)this.circle(x,y,rr*.78,edge,20);
-
-      if(resetting){
-        const pulse=.5+.5*Math.sin(performance.now()*.008+(HashUtil.hash(camp.id)%100)*.1);
-        this.circle(
-          x,y,rr*(1.05+.14*pulse),
-          [.35,.92,.45,.08+.05*pulse],
-          22
-        );
-      }
-
-      // 어그로 게이지를 바닥 레이어에 얇게 표시한다.
-      const bw=Math.max(52,92*sc),bh=Math.max(3,6*sc);
-      const gy=y-rr-18*sc;
-      this.rect(x-bw/2,gy,bw,bh,[.08,.10,.11,.62]);
-      const fill=resetting
-        ?[.36,.92,.45,.85]
-        :[1,.82-.60*gauge,.18-.08*gauge,.86];
-      if(gauge>0)this.rect(x-bw/2,gy,bw*gauge,bh,fill);
-    }
-  }
-
-  drawCampRangeLabels(){
-    const ctx=this.fxCtx;
-    if(!ctx||!this.snapshot)return;
-    const sc=this.sc();
-
-    ctx.save();
-    const label=(text,x,y)=>{
-      ctx.lineWidth=Math.max(2.5,3*sc);
-      ctx.lineJoin="round";
-      ctx.strokeStyle="rgba(12,24,18,.88)";
-      ctx.strokeText(text,x,y);
-      ctx.fillText(text,x,y);
-    };
-    ctx.textAlign="center";
-    ctx.textBaseline="middle";
-    ctx.font=`800 ${Math.max(10,11*sc)}px system-ui,-apple-system,"Segoe UI",sans-serif`;
-
-    for(const camp of this.snapshot.camps||[]){
-      const cd=CampDefinition.get(camp.kind);
-      if(!cd)continue;
-      if(!this.onScreenAuth(camp.x,camp.y,NeutralCampPolicy.aggroRadius(camp)+120))continue;
-
-      const c=this.worldToPx(this.viewX(camp.x),this.viewY(camp.y));
-      const mainObjective=!!CampDefinition.get(camp.kind)?.mainObjective;
-      if(mainObjective&&camp.state==="captured"){
-        ctx.fillStyle=this.factionCssColor(camp.capturedOwner,{alpha:.94});
-        label(`${camp.laneKey?.toUpperCase()||""} 획득 · 해당 라인 자동 전진`,c[0],c[1]+Math.max(20,26*sc));
-        continue;
-      }
-      if(mainObjective&&camp.state==="cooldown"){
-        const sec=Math.max(0,Math.ceil(((camp.respawnAt||0)-(this.snapshot.tick||0))/(this.snapshot?.tps||SIM_TPS)));
-        ctx.fillStyle="rgba(214,224,208,.82)";
-        label(`${camp.laneKey?.toUpperCase()||""} 재생성 · ${sec}초`,c[0],c[1]+Math.max(20,26*sc));
-        continue;
-      }
-      if(camp.state!=="alive")continue;
-      const gauge=RangeUtil.clamp((camp.aggroGauge||0)/(cd.aggroGaugeMax||1000),0,1);
-      const pct=Math.round(gauge*100);
-      const markerRadius=!!CampDefinition.get(camp.kind)?.mainObjective?112:camp.kind==="relic"?82:70;
-      const statusY=c[1]+Math.max(cd.homeRadius+NeutralCampPolicy.homeSpread(camp),markerRadius)*sc+Math.max(14,14*sc);
-
-      ctx.fillStyle="rgba(255,207,84,.70)";
-      label(cd.proactiveAggro?"어그로 범위 · 선공":"어그로 범위 · 피격 반응",c[0],c[1]-NeutralCampPolicy.aggroRadius(camp)*sc);
-
-      ctx.fillStyle="rgba(205,224,190,.58)";
-      label("원위치 · 복귀 완료",c[0],c[1]-(cd.homeRadius+NeutralCampPolicy.homeSpread(camp))*sc);
-
-      if(camp.resetting){
-        ctx.fillStyle="rgba(100,238,122,.90)";
-        label("RESET · 귀환 + 회복",c[0],statusY);
-      }else{
-        ctx.fillStyle=pct>=70
-          ?"rgba(255,91,70,.92)"
-          :"rgba(255,207,84,.90)";
-        label(`${camp.engaged?"교전":"대기"} · 어그로 ${pct}%`,c[0],statusY);
-      }
-      if(camp.spellReward){
-        ctx.fillStyle="rgba(255,238,160,.92)";
-        label("처치 → 전술상자 + 연결 거점 해금",c[0],statusY+Math.max(13,13*sc));
-      }else if(mainObjective){
-        ctx.fillStyle="rgba(255,239,180,.94)";
-        label("막타 진영 합류 · 해당 라인 자동 푸시",c[0],statusY+Math.max(13,13*sc));
-      }
-    }
-
-    ctx.restore();
-  }
-
-  drawActiveSpells(){
-    if(!this.snapshot)return;
-    const sc=this.sc(),nowTick=this.snapshot.tick,side=this.mySide();
-
-    for(const sp of this.snapshot.activeSpells||[]){
-      const own=sp.side===side;
-
-      if(sp.type==="meteor"){
-        const[x,y]=this.worldToPx(this.viewX(sp.x),this.viewY(sp.y));
-        const remain=Math.max(0,(sp.executeTick||0)-nowTick);
-        const ratio=1-Math.min(1,remain/((sp.executeTick||0)-(sp.startTick||0)||1));
-        const pulse=.72+.28*Math.sin(performance.now()*.018);
-
-        this.circle(x,y,(sp.radius||SpellDefinition.statsAt("meteor",0).radius)*sc,[1,.14,.05,.10+.13*ratio],36);
-        this.circle(x,y,Math.max(10,(28+ratio*82)*sc),[1,.34,.08,.16*pulse],28);
-        this.circle(x,y,Math.max(7,(14+ratio*22)*sc),[1,.72,.22,.18+.18*ratio],20);
-
-        if(remain>0){
-          const fall=ratio;
-          const mx=x+(1-fall)*72*sc;
-          const my=y-(1-fall)*260*sc;
-          this.line(mx-62*sc,my-96*sc,mx,my,Math.max(4,13*sc),[1,.34,.08,.20+.38*fall]);
-          this.circle(mx,my,Math.max(7,18*sc),[.95,.23,.06,.96],14);
-          this.circle(mx-3*sc,my-3*sc,Math.max(4,9*sc),[1,.88,.48,.96],12);
-        }
-
-        this.line(x-22*sc,y,x+22*sc,y,Math.max(1.5,2.8*sc),[1,.72,.26,.88]);
-        this.line(x,y-22*sc,x,y+22*sc,Math.max(1.5,2.8*sc),[1,.72,.26,.88]);
-      }else if(sp.type==="tunnel"){
-        const entryVisible=own||this.visibleRaw(sp.entryX,sp.entryY),exitVisible=own||this.visibleRaw(sp.exitX,sp.exitY);
-        if(!entryVisible&&!exitVisible)continue;
-        const a=this.worldToPx(this.viewX(sp.entryX),this.viewY(sp.entryY));
-        const b=this.worldToPx(this.viewX(sp.exitX),this.viewY(sp.exitY));
-        const active=nowTick>=sp.activateTick;
-        const col=own?[.52,.32,.92,.82]:[.92,.28,.42,.78];
-        const spin=performance.now()*.0038;
-
-        const portal=(p,visible)=>{
-          if(!visible)return;
-          const rr=Math.max(12,40*sc);
-          this.circle(p[0],p[1],rr,[.12,.07,.20,active?.58:.30],24);
-          this.circle(p[0],p[1],rr*1.08,[col[0],col[1],col[2],active?.26:.14],24);
-          for(let i=0;i<7;i++){
-            const ang=spin+i/7*Math.PI*2;
-            this.circle(
-              p[0]+Math.cos(ang)*rr*.82,
-              p[1]+Math.sin(ang)*rr*.55,
-              Math.max(2,4*sc),
-              [col[0],col[1],col[2],active?.92:.62],
-              8
-            );
-          }
-        };
-
-        portal(a,entryVisible);
-        portal(b,exitVisible);
-
-        if(own&&entryVisible&&exitVisible){
-          this.line(a[0],a[1],b[0],b[1],Math.max(1.2,2.2*sc),[col[0],col[1],col[2],.18]);
-        }
-      }else if(sp.type==="flare"&&own){
-        const[x,y]=this.worldToPx(this.viewX(sp.x),this.viewY(sp.y));
-        this.circle(x,y,(sp.vision||SpellDefinition.statsAt("flare",0).vision)*sc,[.35,.82,1,.07],40);
-        this.circle(x,y,Math.max(8,30*sc),[.55,.92,1,.32],16);
-      }else if(sp.type==="march"&&own){
-        const[x,y]=this.worldToPx(this.viewX(sp.x),this.viewY(sp.y));
-        this.circle(x,y,(sp.radius||SpellDefinition.statsAt("march",0).radius)*sc,[.35,.85,.45,.08],36);
-      }else if(sp.type==="healspore"&&own){
-        const[x,y]=this.worldToPx(this.viewX(sp.x),this.viewY(sp.y));const pulse=.5+.5*Math.sin(performance.now()*.008);
-        this.circle(x,y,(sp.radius||0)*sc,[.30,.96,.55,.07+.05*pulse],36);this.circle(x,y,Math.max(10,28*sc),[.55,1,.72,.28],18);
-      }else if(sp.type==="rootbind"){
-        // Instant spell has no persistent active object.
-      }else if(sp.type==="sporestorm"){
-        const[x,y]=this.worldToPx(this.viewX(sp.x),this.viewY(sp.y));const pulse=.5+.5*Math.sin(performance.now()*.012);
-        this.circle(x,y,(sp.radius||0)*sc,[.55,.30,.72,.08+.05*pulse],36);
-      }else if(sp.type==="thornwall"){
-        const[x,y]=this.worldToPx(this.viewX(sp.x),this.viewY(sp.y));
-        this.circle(x,y,(sp.radius||0)*sc,[.35,.62,.20,.08],36);this.outlineCircle(x,y,(sp.radius||0)*sc,Math.max(1.5,2.5*sc),[.42,.75,.25,.65],36,1);
-      }
-    }
-  }
-
-  drawSpellPreview(){
-    const p=this.spellPreview;
-    if(!p)return;
-    const sc=this.sc(),d=SpellDefinition.get(p.spellId);
-    if(!d)return;
-    const col=p.valid?[.25,.82,.50,.20]:[.92,.24,.24,.20];
-    const edge=p.valid?[.25,.92,.58,.75]:[1,.26,.26,.78];
-
-    if(p.spellId==="tunnel"){
-      if(p.entry){
-        const a=this.worldToPx(p.entry.x,p.entry.y);
-        this.circle(a[0],a[1],Math.max(10,42*sc),[.48,.30,.90,.24],20);
-        if(p.x!=null){
-          const b=this.worldToPx(p.x,p.y);
-          this.circle(b[0],b[1],Math.max(10,42*sc),col,20);
-          this.line(a[0],a[1],b[0],b[1],Math.max(2,3*sc),edge);
-        }
-      }else if(p.x!=null){
-        const b=this.worldToPx(p.x,p.y);
-        this.circle(b[0],b[1],Math.max(10,42*sc),col,20);
-      }
-      return;
-    }
-
-    const[x,y]=this.worldToPx(p.x,p.y);
-    const side=this.mySide(),entry=this.snapshot?.spellBooks?.[side]?.[p.spellId]||{mastery:0},sd=SpellDefinition.statsAt(p.spellId,entry.mastery||0);
-    const rr=(sd?.radius!=null?sd.radius:70)*sc;
-    this.circle(x,y,rr,col,32);
-    this.circle(x,y,Math.max(8,28*sc),edge,18);
-  }
-
   drawGroundGrid(){
     // The underlay grid belongs to the level-zero world plane. Its height and
     // phase must never come from terrain sampled at a moving viewport edge.
@@ -5348,195 +1872,17 @@ dot(x,y,(22+5*pulse)*sc,"#35205a",.72*(1-t*.5));
     TerrainPresentation.drawRiverSurfaces(this,mapDesc,true);
     TerrainPresentation.drawBridges(this,terrain,true);
   }
-  drawMineral(m){
-    if(m.amount<=0||!this.visibleRaw(m.x,m.y))return;
-    const[x,y]=this.worldToPx(this.viewX(m.x),this.viewY(m.y));
-    const sc=this.sc();
-    const ratio=m.max?RangeUtil.clamp(m.amount/m.max,.15,1):1;
-    const r=15*sc*(.72+.28*ratio);
-    const edge=[.10,.25,.34,1];
-    const blue=[.20,.69,.94,1];
-    const light=[.62,.91,1,1];
-
-    // florr-like readable cluster: dark rocky base + five simple crystals.
-    this.circle(x,y+r*.42,r*.92,[.10,.15,.18,.34],10);
-    this.poly([
-      [x-r*.92,y+r*.44],[x-r*.50,y+r*.14],
-      [x-r*.12,y+r*.34],[x+r*.22,y+r*.06],
-      [x+r*.88,y+r*.40],[x+r*.56,y+r*.70],
-      [x-r*.60,y+r*.70]
-    ],edge);
-
-    const shard=(sx,sy,rr,flip=1)=>{
-      this.poly([
-        [sx,sy-rr],
-        [sx+rr*.54,sy-rr*.10],
-        [sx+rr*.34,sy+rr*.78],
-        [sx-rr*.34,sy+rr*.78],
-        [sx-rr*.54,sy-rr*.10]
-      ],blue);
-      this.poly([
-        [sx,sy-rr*.82],
-        [sx+rr*.25,sy-rr*.08],
-        [sx,sy+rr*.46],
-        [sx-rr*.18,sy-rr*.06]
-      ],light);
-    };
-
-    shard(x-r*.46,y+r*.02,r*.55);
-    shard(x,y-r*.18,r*.78);
-    shard(x+r*.50,y+r*.06,r*.50);
-    shard(x-r*.12,y+r*.27,r*.42);
-    shard(x+r*.28,y+r*.30,r*.34);
-  }
-
-  drawGasNode(g){
-    if(!this.visibleRaw(g.x,g.y))return;
-    const[x,y]=this.worldToPx(this.viewX(g.x),this.viewY(g.y));
-    const sc=this.sc();
-    const ratio=g.max?RangeUtil.clamp(g.amount/g.max,0,1):0;
-    const depleted=ratio<=0;
-    const r=Math.max(7,17*sc);
-    const rock=depleted?[.28,.31,.27,1]:[.24,.28,.25,1];
-    const gas=depleted?[.43,.58,.39,.72]:[.35,.88,.42,.92];
-    const glow=depleted?[.58,.70,.53,.46]:[.70,1,.62,.72];
-
-    this.circle(x,y+r*.40,r*.96,[.08,.12,.09,.30],10);
-    this.poly([
-      [x-r*.94,y+r*.42],[x-r*.62,y-r*.12],
-      [x-r*.18,y-r*.32],[x+r*.20,y-r*.24],
-      [x+r*.78,y-r*.02],[x+r*.96,y+r*.48],
-      [x+r*.42,y+r*.72],[x-r*.58,y+r*.70]
-    ],rock);
-
-    // Big simple gas bubbles are readable at mobile scale.
-    this.circle(x-r*.28,y-r*.22,r*.34,gas,10);
-    this.circle(x+r*.16,y-r*.48,r*.42,gas,10);
-    this.circle(x+r*.45,y-r*.08,r*.27,gas,10);
-    this.circle(x+r*.08,y-r*.52,r*.14,glow,8);
-    this.circle(x-r*.37,y-r*.28,r*.10,glow,8);
-  }
-
-  constructionMotion(id){
-    const seed=(HashUtil.hash(String(id||"construction"))%997)/997;
-    const raw=performance.now()/560+seed;
-    const phase=raw-Math.floor(raw);
-    const cycleIndex=Math.floor(raw);
-    let crouch=0,drive=0,pull=0,recoil=0,impact=0;
-    if(phase<.18)crouch=phase/.18;
-    else if(phase<.34){const t=(phase-.18)/.16;crouch=1-t*.35;drive=t}
-    else if(phase<.46){const t=(phase-.34)/.12;drive=1-t;pull=t;impact=1-Math.abs(t-.28)/.28;impact=RangeUtil.clamp(impact,0,1)}
-    else if(phase<.68){const t=(phase-.46)/.22;pull=1-t*.25;recoil=t}
-    else if(phase<.82){const t=(phase-.68)/.14;recoil=1-t}
-    const lateral=((cycleIndex&1)?1:-1)*(0.45+((HashUtil.hash(String(id)+"|foot|"+cycleIndex)>>>3)%100)/180);
-    return{phase,crouch,drive,pull,recoil,impact,lateral};
-  }
-drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
-    const d=BuildingDefinition.get(b.type);
-    const root=[.30,.55,.22,1],rootHi=[.52,.78,.34,1],wood=[.42,.31,.18,1];
-    const stage=q<.10?0:q<.30?1:q<.70?2:3;
-    const pulse=motion?.impact||0;
-
-    // Every unfinished building starts as a deliberately readable ruin/foundation,
-    // then crosses visually distinct 10 / 30 / 70 percent silhouettes.
-    this.circle(x+2*sc,y+r*.58,r*.96,[.04,.07,.08,.18],12);
-    this.circle(x,y+r*.12,r*.70,[.12,.15,.15,1],12);
-
-    for(let k=0;k<6;k++){
-      const a=(k/6)*Math.PI*2+(HashUtil.hash(b.id)%17)*.03;
-      const rr=r*(.43+(k%2)*.12);
-      const px=x+Math.cos(a)*rr,py=y+r*.18+Math.sin(a)*rr*.50;
-      const s=r*(.10+(k%3)*.025);
-      this.poly([[px-s,py+s*.5],[px-s*.35,py-s],[px+s,py-s*.25],[px+s*.55,py+s*.75]],k%2?wood:stone);
-    }
-
-    if(stage>=1){
-      for(let k=0;k<5;k++){
-        const a=-Math.PI*.88+k*Math.PI*.44;
-        const len=r*(.48+.07*(k%2));
-        this.line(x,y+r*.18,x+Math.cos(a)*len,y+r*.18+Math.sin(a)*len*.52,Math.max(1.3,2.2*sc),root);
-      }
-      this.circle(x,y+r*.03,r*(.24+.03*pulse),[.34,.54,.24,1],10);
-      this.petalRing(x,y-r*.04,r*.18,4,rootHi,Math.PI/4,.62);
-    }
-
-    if(stage>=2){
-      // Mid-build rib/scaffold makes the footprint read as an intentional building,
-      // not rubble. The top marker hints at the future building role.
-      for(const sx of [-.46,-.18,.18,.46]){
-        this.line(x+r*sx,y+r*.36,x+r*sx*.70,y-r*.44,Math.max(1.2,1.9*sc),wood);
-      }
-      this.line(x-r*.52,y-r*.10,x+r*.52,y-r*.10,Math.max(1.4,2.1*sc),wood);
-      this.line(x-r*.40,y-r*.38,x+r*.40,y-r*.38,Math.max(1.4,2.1*sc),wood);
-
-      if(BuildingDefinition.isDefenseTower(b.type)){
-        this.line(x,y-r*.36,x,y-r*.92,Math.max(2.0,3.2*sc),root);
-        this.crestTriangle(x,y-r*1.02,r*.15,teamHi,-Math.PI/2);
-      }else if(BuildingDefinition.get(b.type)?.isGasExtractor){
-        this.circle(x,y-r*.34,r*.22,[.39,.90,.46,1],9);
-      }else if(d.visualCategory==="supply"){
-        this.circle(x-r*.24,y-r*.28,r*.18,teamCap,8);this.circle(x+r*.24,y-r*.28,r*.18,teamCap,8);
-      }else if(d.visualCategory==="airIncubator"){
-        this.poly([[x-r*.18,y-r*.28],[x-r*.58,y-r*.54],[x-r*.46,y-r*.12]],rootHi);
-        this.poly([[x+r*.18,y-r*.28],[x+r*.58,y-r*.54],[x+r*.46,y-r*.12]],rootHi);
-        this.circle(x,y-r*.42,r*.18,[.46,1,.62,.76],9);
-      }else if(Array.isArray(BuildingDefinition.get(b.type)?.constructionCoreColor)){
-        this.circle(x,y-r*.44,r*.20,BuildingDefinition.get(b.type).constructionCoreColor,9);
-      }else{
-        const vd=UnitVisualDefinition.get(b.produceType)||null;
-        this.circle(x,y-r*.44,r*.18,vd?.accent||teamCap,9);
-        this.petalRing(x,y-r*.44,r*.28,5,teamCap,0,.48);
-      }
-    }
-
-    // Worker strike feedback is intentionally presentation-only.
-    if(pulse>0){
-      this.circle(x,y+r*.12,r*(.50+.24*pulse),[.55,.86,.30,.08*(1-pulse*.35)],16);
-      for(let k=0;k<5;k++){
-        const a=-Math.PI*.92+k*Math.PI*.46;
-        const len=r*(.34+.36*pulse);
-        this.line(x,y+r*.22,x+Math.cos(a)*len,y+r*.22+Math.sin(a)*len*.48,Math.max(1,1.6*sc),[.55,.82,.30,.62*(1-pulse*.45)]);
-      }
-      for(let k=0;k<4;k++){
-        const h=HashUtil.hash(b.id+"|buildDust|"+k);
-        const a=Math.PI+((h%1000)/1000-.5)*1.5;
-        const dist=r*(.24+.42*pulse+((h>>>8)%100)/500);
-        const px=x+Math.cos(a)*dist,py=y+r*.30+Math.sin(a)*dist*.44;
-        this.circle(px,py,Math.max(1.2,r*(.045+.02*(k%2))*(1-pulse*.35)),[.72,.58,.32,.64*(1-pulse*.55)],7);
-      }
-    }
-
-    if(own&&this.selectedBuildingId===b.id){
-      const rr=r*1.28,m=Math.max(3,7*sc),lw=Math.max(1.5,2.5*sc),ec=[1,.78,.26,.95];
-      this.circle(x,y,rr,[1,.72,.20,.20],24);
-      this.line(x-r,y-r,x-r+m,y-r,lw,ec);this.line(x-r,y-r,x-r,y-r+m,lw,ec);
-      this.line(x+r,y-r,x+r-m,y-r,lw,ec);this.line(x+r,y-r,x+r,y-r+m,lw,ec);
-      this.line(x-r,y+r,x-r+m,y+r,lw,ec);this.line(x-r,y+r,x-r,y+r-m,lw,ec);
-      this.line(x+r,y+r,x+r-m,y+r,lw,ec);this.line(x+r,y+r,x+r,y+r-m,lw,ec);
-    }
-    this.rect(x-r,y+r+3*sc,r*2,4*sc,[.12,.16,.18,.3]);
-    this.rect(x-r,y+r+3*sc,r*2*q,4*sc,[.95,.70,.23,1]);
-    return stage<3;
-  }
-
   drawBuilding(b){
     if(BuildingDefinition.get(b.type)?.isTerrainBarrier)return TerrainPresentation.drawBarrier(this,b);
     const own=this.isFriendlySide(b.side);
     if(!own&&!this.visibleRaw(b.x,b.y))return;
     const[x,y]=this.worldToPx(this.viewX(b.x),this.viewY(b.y)),sc=this.sc(),d=BuildingDefinition.get(b.type);
-    const buildQ=b.complete?1:RangeUtil.clamp((b.progress||0)/Math.max(1,SimulationTiming.msToTicks(d.buildTimeMs,this.snapshot?.tps||SIM_TPS)),0,1);
-    const builder=b.builderUnitId?this.snapshot?.units?.find(u=>u.id===b.builderUnitId&&u.alive&&u.workState==="building"):null;
-    const buildMotion=builder?this.constructionMotion(builder.id):null;
-    let r=d.size*sc*(1+(!b.complete?(buildMotion?.impact||0)*.045:0));
+    const r=d.size*sc;
     const shell=[.12,.16,.20,1];
     const stone=[.72,.74,.73,1];
     const teamCap=own?[.19,.48,.94,1]:[.94,.27,.27,1];
     const teamHi=own?[.57,.78,1,1]:[1,.62,.60,1];
 
-    if(!b.complete&&this.drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,buildQ,buildMotion))return;
-
-    // 70%부터 실제 완성 실루엣이 드러난다. 남은 공정 동안에는
-    // 뿌리/비계 흔적과 작업 타격 pulse가 겹쳐져 아직 미완성임을 유지한다.
     // Shared florr-like building foundation: chunky, rounded, readable.
     this.circle(x+2*sc,y+r*.55,r*.94,[.04,.07,.08,.18],12);
     this.poly([
@@ -5569,22 +1915,6 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     if(!buildingVisual)throw new Error(`Missing building visual renderer for ${b.type}`);
     buildingVisual(this,{b,x,y,r,own,teamCap,teamHi,shell,stone,sc,d});
 
-    if(!b.complete){
-      const fade=RangeUtil.clamp((1-buildQ)/.30,0,1);
-      for(const sx of [-.48,.48]){
-        this.line(x+r*sx,y+r*.46,x+r*sx*.72,y-r*.58,Math.max(1.1,1.8*sc),[.42,.31,.18,.74*fade]);
-      }
-      this.line(x-r*.48,y-r*.30,x+r*.48,y-r*.30,Math.max(1.1,1.8*sc),[.42,.31,.18,.62*fade]);
-      this.petalRing(x,y+r*.38,r*.28,5,[.42,.72,.28,.42*fade],Math.PI/5,.52);
-      const pulse=buildMotion?.impact||0;
-      if(pulse>0){
-        this.circle(x,y+r*.16,r*(.62+.22*pulse),[.55,.86,.30,.07*(1-pulse*.4)],18);
-        for(let k=0;k<5;k++){
-          const a=-Math.PI*.9+k*Math.PI*.45;
-          this.line(x,y+r*.26,x+Math.cos(a)*r*(.42+.35*pulse),y+r*.26+Math.sin(a)*r*(.34+.22*pulse),Math.max(1,1.5*sc),[.55,.82,.30,.52*(1-pulse*.4)]);
-        }
-      }
-    }
 
     // Shared faction pennant gives every military/economy building the same family language.
     if(d.showsFactionPennant){
@@ -5609,52 +1939,6 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       this.line(x-r,y+r,x-r+m,y+r,lw,ec);this.line(x-r,y+r,x-r,y+r-m,lw,ec);
       this.line(x+r,y+r,x+r-m,y+r,lw,ec);this.line(x+r,y+r,x+r,y+r-m,lw,ec);
     }
-
-    if(!b.complete){
-      const q=Math.min(1,b.progress/Math.max(1,SimulationTiming.msToTicks(d.buildTimeMs,this.snapshot?.tps||SIM_TPS)));
-      this.rect(x-r,y+r+3*sc,r*2,4*sc,[.12,.16,.18,.3]);
-      this.rect(x-r,y+r+3*sc,r*2*q,4*sc,[.95,.70,.23,1]);
-    }
-
-    // 내 생산건물은 생산 상태를 전장에서도 바로 읽을 수 있다.
-    // Star-like rule: selected panel is detailed, battlefield strip is glanceable.
-    if(BuildingDefinition.get(b.type)?.isProductionBuilding&&b.complete&&own){
-      const sim=MatchLifecycle.activeSession()?.sim;
-      if(sim){
-        const pct=sim.productionSpeedPct(b);
-        const q=b.queue?.[0]?.productionBatch?b.queue[0]:null;
-
-        // Current production progress strip.
-        if(q){
-          const total=Math.max(1,Number(q.total)||1);
-          const remaining=SimulationTiming.queueRemainingTicks(q,this.snapshot?.tick||0);
-          const prog=Math.max(0,Math.min(1,1-remaining/total));
-          const bw=Math.max(32,52*sc);
-          const bh=Math.max(5,7*sc);
-          const by=y+r+9*sc;
-
-          this.rect(x-bw/2,by,bw,bh,[.07,.10,.13,.90]);
-          this.rect(
-            x-bw/2+1,
-            by+1,
-            Math.max(0,(bw-2)*prog),
-            Math.max(1,bh-2),
-            remaining<=0?[.93,.59,.16,.98]:[.20,.59,.94,.98]
-          );
-        }
-
-        // Density efficiency stays as a smaller warning above the building.
-        if(pct<100){
-          const bw=Math.max(24,44*sc),bh=Math.max(7,11*sc);
-          this.rect(x-bw/2,y-r-19*sc,bw,bh,[.45,.10,.06,.90]);
-          this.rect(x-bw/2,y-r-19*sc,bw*(pct/100),bh,[.95,.44,.18,.96]);
-          const dots=pct===85?1:pct===70?2:3;
-          for(let i=0;i<dots;i++)this.circle(x-bw/2+5*sc+i*7*sc,y-r-13.5*sc,2.2*sc,[1,.92,.72,1],6);
-        }else if(!q){
-          this.circle(x,y-r-14*sc,Math.max(2.5,4*sc),[.25,.82,.47,.92],8);
-        }
-      }
-    }
   }
   // Identity comes from species silhouette, appendages, equipment and VFX.
 
@@ -5666,88 +1950,8 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     return Math.max(6.2,(d.size||10)*this.sc()*1.56*this.unitRenderVisualScale(u));
   }
   
-  resolveDragonRenderPose(u,bodyX=null,bodyY=null,radius=null){
-    const bp=(bodyX==null||bodyY==null)?this.projectEntityScreen(u,"unit"):null;
-    const x=bodyX==null?bp.x:bodyX,y=bodyY==null?bp.y:bodyY,r=radius||this.unitRenderRadius(u);
-    const facing=this.resolveUnitFacingScreen(u);
-    const fx=facing.fx,fy=facing.fy,sx=facing.sx,sy=facing.sy;
-    const tell=u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.TELL;
-    const recoil=Math.max(0,Math.min(1,(Number(u.attackFlash)||0)/5));
-    const headBack=(tell?.10:0)+recoil*.035;
-    const point=(forward,side=0)=>[x+fx*forward*r+sx*side*r,y+fy*forward*r+sy*side*r];
-    return{x,y,r,worldX:0,worldY:0,forwardX:fx,forwardY:fy,sideX:sx,sideY:sy,angle:facing.angle,point,
-      body:point(-.08,0),neck:point(.38-headBack*.35,0),head:point(.76-headBack,0),muzzle:point(1.08-headBack,0),mouth:point(1.34-headBack,0),
-      tailA:point(-.64,0),tailB:point(-1.12,.07),tailTip:point(-1.48,.02)};
-  }
-
-  resolveAirFacingScreen(u){
-    if(this.unitFacingEnabled(u))return this.resolveUnitFacingScreen(u);
-    const fy=this.isFriendlySide(u.side)?-1:1;
-    return{fx:0,fy,sx:-fy,sy:0,angle:Math.atan2(fy,0),attack:false};
-  }
-
-  drawAirUnitSilhouette(u,x,y,r,team,teamDark,teamLight,accent,attack,sc){
-    const delta=this.renderTrackedDelta(u,"unit");
-    const pose=this.resolveAirFacingScreen(u),{fx,fy,sx,sy}=pose;
-    const pt=(forward=0,side=0)=>[x+fx*forward*r+sx*side*r,y+fy*forward*r+sy*side*r];
-    const linePts=(a,b,w,c)=>this.line(a[0],a[1],b[0],b[1],w,c);
-    const now=performance.now(),seed=(HashUtil.hash(u.id)%997)*.017;
-    const fastFlap=.5+.5*Math.sin(now*.026+seed),slowFlap=.5+.5*Math.sin(now*.010+seed);
-    const wingBright=[Math.min(1,accent[0]+.18),Math.min(1,accent[1]+.18),Math.min(1,accent[2]+.18),.72];
-    const wingSoft=[Math.min(1,accent[0]+.12),Math.min(1,accent[1]+.12),Math.min(1,accent[2]+.12),.42];
-    const body=team,bodyDark=teamDark;
-
-    
-    const ctx={u,x,y,r,team,teamDark,teamLight,accent,attack,sc,delta,fx,fy,sx,sy,pt,linePts,now,seed,fastFlap,slowFlap,wingBright,wingSoft,body,bodyDark};
-    const render=AIR_UNIT_VISUAL_RENDER_FNS[u.type];
-    if(render)return render(this,ctx);
-    if(UnitDefinition.get(u.type)?.targetLeashToSummoner){
-
-      const flap=.72+.30*fastFlap;
-      for(const side of [-1,1])this.poly([pt(.02,side*.06),pt(.06,side*.64*flap),pt(-.32,side*.48*flap),pt(-.28,side*.05)],wingSoft);
-      this.circle(...pt(-.12,0),r*.40,body,9);this.circle(...pt(.30,0),r*.23,bodyDark,8);linePts(pt(.34,0),pt(.82,0),Math.max(1,1.6*sc),accent);
-    
-      return;
-    }
-    throw new Error(`Missing AIR visual renderer for ${u.type}`);
-  }
-  drawAirUnitTransientEffects(ctx){
-    const {u,x,y,r,sc}=ctx,pose=this.resolveAirFacingScreen(u),pt=(forward=0,side=0)=>[x+pose.fx*forward*r+pose.sx*side*r,y+pose.fy*forward*r+pose.sy*side*r],linePts=(a,b,w,c)=>this.line(a[0],a[1],b[0],b[1],w,c);
-    const delta=this.renderTrackedDelta(u,"unit");let hasEffect=false;
-    if(u.type==="sailwing"&&Math.hypot(delta.x,delta.y)>.001){
-      hasEffect=true;
-    }else if(u.type==="gustmayfly"){
-      const ramp=RangeUtil.clamp(Math.max(0,(Number(this.snapshot?.tick)||0)-(Number(u.movement?.outOfCombatStartedAt)||0)+1)/Math.max(1,SimulationTiming.msToTicks(Number(UnitDefinition.get(u.type)?.outOfCombatRampMs)||3000,this.snapshot?.tps||SIM_TPS)),0,1);
-      hasEffect=ramp>.12;
-    }
-    if(!hasEffect)return;
-    this.flushVectorMesh("air-transient-effects");
-    if(this.frame.length){this.flush(this.frame,true);this.begin()}
-    if(u.type==="sailwing"){
-      for(const side of [-.35,.35])linePts(pt(-.72,side),pt(-1.34,side*.72),Math.max(1,1.3*sc),[.42,.92,.78,.20]);
-    }else if(u.type==="gustmayfly"){
-      const ramp=RangeUtil.clamp(Math.max(0,(Number(this.snapshot?.tick)||0)-(Number(u.movement?.outOfCombatStartedAt)||0)+1)/Math.max(1,SimulationTiming.msToTicks(Number(UnitDefinition.get(u.type)?.outOfCombatRampMs)||3000,this.snapshot?.tps||SIM_TPS)),0,1);
-      if(ramp>.12)for(let k=0;k<3;k++){const side=(k-1)*.20,a=pt(-.85-k*.14,side),b=pt(-1.45-k*.28,side);linePts(a,b,Math.max(1,1.3*sc),[.48,.92,1,.10+.22*ramp])}
-    }
-  }
   shouldUseVectorUnitArt(u){
-    const definition=UnitDefinition.get(u?.type);
-    return !!window.RallyVectorAssets?.[u?.type]&&!(definition?.economyWorker&&u.workState==="building"&&u.buildTargetId);
-  }
-  unitVectorAssetRecord(type,relation){
-    const key=type+"|"+relation;
-    let record=this.vectorUnitAssetCache.get(key);if(record)return record;
-    const source=window.RallyVectorAssets?.[type];if(!source)return null;
-    const palette=UnitFactionPalette.get(relation);if(!palette)throw new Error("Missing vector faction palette: "+relation);
-    const vertices=source.geometry.vertices.slice();
-    const markers={"254,254,254":palette.body,"85,85,85":palette.dark,"191,191,191":palette.light,"153,153,153":palette.ring};
-    for(let i=0;i<vertices.length;i+=11){
-      const target=markers[[2,3,4].map(offset=>Math.round(vertices[i+offset]*255)).join(",")];
-      if(target){vertices[i+2]=target[0];vertices[i+3]=target[1];vertices[i+4]=target[2]}
-    }
-    const compiled={...source,geometry:{...source.geometry,vertices}};
-    const actor=RallyGamekit.createVectorActor(this.vectorContext,compiled,{clip:"idle",startedAtMs:0});actor.setExpression("default").seek(0);
-    record={actor,compiled,relation,isAir:UnitDefinition.get(type)?.layer==="AIR",partIds:new Set(compiled.metadata.parts.map(part=>part.id))};this.vectorUnitAssetCache.set(key,record);return record;
+    return !!window.RallyVectorAssets?.[u?.type];
   }
   launchAmmoRecord(type){
     if(!LaunchRules.grain(type))return null;
@@ -5790,157 +1994,19 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.vectorAssetDrawnInstances=(this.vectorAssetDrawnInstances||0)+1;
     return record;
   }
-  vectorUnitMatrix(ctx){
-    const scale=ctx.r/40,tr=this._unitFacingTransform,airFacing=ctx.airUnit?this.resolveAirFacingScreen(ctx.u):null,cos=airFacing?.fx??tr?.cos??1,sin=airFacing?.fy??tr?.sin??0;
-    const a=scale*cos,b=scale*sin,c=-scale*sin,d=scale*cos;
-    const matrix=this._vectorUnitMatrix;
-    matrix[0]=a;matrix[1]=b;matrix[2]=c;matrix[3]=d;
-    matrix[4]=ctx.x-a*128-c*128;matrix[5]=ctx.y-b*128-d*128;
-    return matrix;
-  }
   flushVectorMesh(reason){
     return this.vectorContext.active?this.vectorContext.flush(reason):undefined;
   }
-  setVectorUnitPartVisible(record,expression,id,visible){
-    if(!record.partIds.has(id))return;
-    const variant=record.compiled.metadata.expressions[expression];
-    // setExpression already restores authored visibility; redundant overrides discard its index variant.
-    if((visible?variant.show:variant.hide).includes(id))return;
-    record.actor.setPartVisible(id,visible);
-  }
-  drawVectorUnitBody(ctx){
-    const relation=this.factionRelation(ctx.u.side),record=this.unitVectorAssetRecord(ctx.u.type,relation);
-    if(!record)return null;
-    if(this.frame.length){
-      this.flushVectorMesh("frame-to-vector-switch");
-      this.flush(this.frame,true);this.begin();
-    }
-    const expression=ctx.hit?(ctx.attack?"hit-attack":"hit"):(ctx.attack?"attack":"default");
-    const actor=record.actor;
-    if(record.isAir){
-      const hash=HashUtil.hash(ctx.u.id),phase=(hash%997)*17;
-      actor.seek(this.presentationNow(performance.now())+phase).setExpression(expression);
-      const breathTell=ctx.u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.TELL,breathActive=ctx.u.objectiveBreathPhase===OBJECTIVE_DRAGON_BREATH_PHASE.ACTIVE;
-      this.setVectorUnitPartVisible(record,expression,"attackFx",!!ctx.attack);
-      this.setVectorUnitPartVisible(record,expression,"breathTell",breathTell);
-      this.setVectorUnitPartVisible(record,expression,"breathActive",breathActive);
-      if(record.partIds.has("sac"))actor.setBasePose("sac",{scaleX:ctx.attack?1.22:1,scaleY:ctx.attack?1.22:1});
-      if(record.partIds.has("jaw"))actor.setBasePose("jaw",{opacity:breathTell||breathActive||ctx.attack?1:.15});
-    }else actor.setExpression(expression);
-    this.vectorContext.drawVectorActor(actor,{matrix:this.vectorUnitMatrix(ctx),alpha:ctx.ownStealthAlpha,depth:this._renderDepth??0,
-      depthTest:!!this.passState.depthEnabled,depthWrite:true,depthWriteAlphaThreshold:.999,depthFunc:this.passState.depthFunc||"lequal"});
-    this.vectorAssetDrawnInstances=(this.vectorAssetDrawnInstances||0)+1;
-    return record;
-  }
-  appendVectorTerrainOccludedBody(record,ctx,world){
-    this.vectorTerrainOcclusionTests=(this.vectorTerrainOcclusionTests||0)+1;
-    if(!record||!world)return;
-    const deck=this.renderBridgeAt(world.x,world.z);if(deck&&world.y<deck.elevation-.01)return;
-    const geometry=record.compiled.geometry,vertices=geometry.vertices,indices=geometry.indices;
-    const vertexCount=vertices.length/11,count=indices?indices.length:vertexCount,matrix=this.vectorUnitMatrix(ctx);
-    let coords=this._vectorOcclusionCoords;if(coords.length<vertexCount*2){coords=new Float32Array(Math.max(vertexCount*2,coords.length*2,128));this._vectorOcclusionCoords=coords}
-    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-    for(let vertex=0;vertex<vertices.length/11;vertex++){
-      const offset=vertex*11;if(vertices[offset+10]!==0)continue;
-      const lx=vertices[offset],ly=vertices[offset+1],x=matrix[0]*lx+matrix[2]*ly+matrix[4],y=matrix[1]*lx+matrix[3]*ly+matrix[5];
-      coords[vertex*2]=x;coords[vertex*2+1]=y;minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
-    }
-    if(!Number.isFinite(minX))return;
-    const a=this.projectedCoordinatesAtScreen(minX,minY),b=this.projectedCoordinatesAtScreen(maxX,maxY);
-    const projected=TerrainSurfaceProjection.forAtlas(this.world.terrain.surfaces).projectedSurfaceMesh(this.orientationRole()==="guest");
-    const transitions=projected.transitionIndex.query(a.x,a.y,b.x,b.y);if(!transitions.length)return;this.vectorTerrainOcclusionRegions=(this.vectorTerrainOcclusionRegions||0)+1;
-    const destination=this.terrainOccludedBodyFrame;destination.ensure(count*7);let writtenTriangles=0;
-    for(let at=0;at+2<count;at+=3){
-      const a=indices?indices[at]:at,b=indices?indices[at+1]:at+1,c=indices?indices[at+2]:at+2;
-      const oa=a*11,ob=b*11,oc=c*11;
-      if(vertices[oa+10]!==0||vertices[ob+10]!==0||vertices[oc+10]!==0||vertices[oa+5]<.5||vertices[ob+5]<.5||vertices[oc+5]<.5)continue;
-      destination.push7(coords[a*2],coords[a*2+1],this._renderDepth??0,.34,.68,1,.34);
-      destination.push7(coords[b*2],coords[b*2+1],this._renderDepth??0,.34,.68,1,.34);
-      destination.push7(coords[c*2],coords[c*2+1],this._renderDepth??0,.34,.68,1,.34);
-      writtenTriangles++;
-    }
-    this.vectorTerrainOcclusionTriangles=(this.vectorTerrainOcclusionTriangles||0)+writtenTriangles;
-  }
-  unitBodyMeshKey(ctx){
-    const {u,own,neutral,ownStealthAlpha,attack,sc}=ctx;
-    return [
-      u.type,own?1:0,neutral?1:0,
-      ownStealthAlpha<1?1:0,attack?1:0,
-      Number(sc).toFixed(4)
-    ].join("|");
-  }
-  appendCachedUnitBodyMesh(mesh,ctx,facingTransform){
-    const frame=this.frame,data=mesh.data,n=data.length;
-    frame.ensure(n);
-    const out=frame.data,start=frame.length;
-    const px=ctx.x,py=ctx.y,baseDepth=this._renderDepth??0;
-    const hasFacing=!!facingTransform;
-    const cos=hasFacing?facingTransform.cos:1,sin=hasFacing?facingTransform.sin:0;
-    for(let i=0;i<n;i+=7){
-      let lx=data[i],ly=data[i+1];
-      if(hasFacing){
-        const rx=lx*cos-ly*sin,ry=lx*sin+ly*cos;lx=rx;ly=ry;
-      }
-      const o=start+i;
-      out[o]=px+lx;out[o+1]=py+ly;out[o+2]=baseDepth+data[i+2];
-      out[o+3]=data[i+3];out[o+4]=data[i+4];out[o+5]=data[i+5];out[o+6]=data[i+6];
-    }
-    frame.length=start+n;
-  }
-  drawUnitBodyComposed(ctx,unitVisual){
-    if(!unitVisual)return;
-    const cacheable=unitVisual.cachePolicy==="STATIC";
-    if(!cacheable){
-      this.drawUnitCommonBody(ctx);unitVisual.render(this,ctx);return;
-    }
-    const key=this.unitBodyMeshKey(ctx),cached=this.unitBodyMeshCache.get(key);
-    const facing=this._unitFacingTransform;
-    if(cached){
-      this.unitBodyMeshCacheHits++;
-      this.appendCachedUnitBodyMesh(cached,ctx,facing);
-      return;
-    }
-    this.unitBodyMeshCacheMisses++;
-    // Generate once without entity facing, then store local-space vertices.
-    const start=this.frame.length,baseDepth=this._renderDepth??0;
-    this._unitFacingTransform=null;
-    try{
-      this.drawUnitCommonBody(ctx);unitVisual.render(this,ctx);
-    }finally{
-      this._unitFacingTransform=facing;
-    }
-    const end=this.frame.length,n=end-start,local=new Float32Array(n);
-    const data=this.frame.data;
-    for(let i=0;i<n;i+=7){
-      local[i]=data[start+i]-ctx.x;
-      local[i+1]=data[start+i+1]-ctx.y;
-      local[i+2]=data[start+i+2]-baseDepth;
-      local[i+3]=data[start+i+3];local[i+4]=data[start+i+4];
-      local[i+5]=data[start+i+5];local[i+6]=data[start+i+6];
-    }
-    if(this.unitBodyMeshCache.size>=384)this.unitBodyMeshCache.clear();
-    this.unitBodyMeshCache.set(key,{data:local});
-    // The cache stays local and terrain-independent. Apply facing and the current
-    // supporting plane to every instance, including the first one.
-    for(let i=start;i<end;i+=7){
-      if(facing){const lx=data[i]-ctx.x,ly=data[i+1]-ctx.y;data[i]=ctx.x+lx*facing.cos-ly*facing.sin;data[i+1]=ctx.y+lx*facing.sin+ly*facing.cos}
+  drawUnitSafely(u,renderOptions=null){
+    try{return this.drawUnit(u,renderOptions)}
+    catch(err){
+      this.reportEntityRenderError("unit",u,err);
+      try{
+        const q=this.projectEntityScreen(u,"unit");
+        this.circle(q.x,q.y,Math.max(4,this.unitRenderRadius(u)),u.side===this.mySide()?[.18,.43,.93,1]:[.72,.25,.22,1],10);
+      }catch(fallbackErr){this.reportEntityRenderError("unit-fallback",u,fallbackErr)}
     }
   }
-
-  drawUnitCommonBody(ctx){
-    const {u,airUnit,x,y,r,team,teamLight}=ctx;
-    if(!UnitDefinition.get(u.type)?.objectiveKind&&!airUnit&&UnitVisualDefinition.get(u.type)?.commonGroundBody!==false){
-      this.circle(x,y+r*.12,r*.78,[.07,.10,.13,1],12);
-      this.circle(x,y+r*.08,r*.68,team,12);
-      this.circle(x-r*.18,y-r*.04,r*.25,teamLight,10);
-    }
-  }
-  drawUnitStateFeedback(ctx){
-    const {hit,attack,x,y,r}=ctx;
-    if(hit)this.circle(x,y,r*1.42,[1,.94,.75,.18],12);
-    if(attack)this.circle(x,y,r*1.22,[1,.73,.22,.07],10);
-  }
-
   reportEntityRenderError(kind,entity,err){
     this.entityRenderErrors??=new Set();
     const key=`${kind}:${entity?.type||"unknown"}:${String(err?.message||err)}`;
@@ -5948,20 +2014,22 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.entityRenderErrors.add(key);
     console.error("[RALLY FRONTIER] entity render fallback",kind,entity?.type,err);
   }
-  drawFallbackUnit(u){
-    const p=this.projectEntityScreen(u,"unit"),r=this.unitRenderRadius(u);
-    const palette=UnitFactionPalette.get(this.factionRelation(u.side));
-    const body=palette.body,edge=palette.dark;
-    this.circle(p.x,p.y,r*.78,edge,12);
-    this.circle(p.x,p.y-r*.04,r*.58,body,12);
-    this.circle(p.x+r*.22,p.y-r*.18,r*.12,[.95,.90,.55,1],8);
-  }
-  drawUnitSafely(u,renderOptions=null){
-    try{return this.drawUnit(u,renderOptions)}
-    catch(err){
-      this.reportEntityRenderError("unit",u,err);
-      try{return this.drawFallbackUnit(u)}catch(fallbackErr){this.reportEntityRenderError("unit-fallback",u,fallbackErr)}
-    }
+  reportRenderFatal(err){
+    if(this.renderFatalReported)return;
+    this.renderFatalReported=true;
+    const s=this.snapshot||{},entity=this.renderEntity||null;
+    const diag={
+      kind:"RALLY_FRONTIER_RENDER_FATAL",
+      build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),
+      at:new Date().toISOString(),
+      renderer:this.backend||null,
+      tick:Number(s.tick)||0,tps:Number(s.tps)||0,
+      stage:this.renderStage||"unknown",
+      entity:entity?{id:entity.id||null,type:entity.type||null,side:entity.side??null,x:entity.x??null,y:entity.y??null}:null,
+      projectiles:s.projectiles?.length||0,units:s.units?.length||0,
+      message:String(err?.message||err),stack:String(err?.stack||"")
+    };
+    DiagnosticPresentation.presentFatalDiagnostic(diag);
   }
   drawBuildingSafely(b){
     try{return this.drawBuilding(b)}
@@ -5986,154 +2054,15 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
 
   drawUnit(u,renderOptions=null){
     const own=u.side===this.mySide();
-    const d=UnitDefinition.get(u.type);
-    const cloaked=this.snapshotStealthed(u);
-    const detected=own?true:this.detectedRaw(u.x,u.y);
-    if(!renderOptions?.visibilityChecked&&!own&&(!this.visibleRaw(u.x,u.y,UnitDefinition.get(u.type)?.layer==="AIR")||(cloaked&&!detected)))return;
-
-    const sc=this.sc(),neutral=u.side===NEUTRAL_SIDE;
+    if(!renderOptions?.visibilityChecked&&!own&&!this.visibleRaw(u.x,u.y,false))return;
     const worldPos=renderOptions?.worldPosition||this.resolveRenderWorldPosition(u,"unit");
     const bodyPos=this.projectRenderWorldPosition(worldPos);
-    const groundWorld=this.resolveGroundShadowPosition(u,"unit");
-    const groundProjection=this.projectRenderWorldPosition(groundWorld);
-    const groundPos=[groundProjection.x,groundProjection.y];
-    let x=bodyPos.x,y=bodyPos.y;
-    const airborne=worldPos.y>worldPos.groundY+.01;
-    const airUnit=d?.layer==="AIR";
-    const r=this.unitRenderRadius(u);
-
     // All body geometry shares one GPU depth derived from the render-world coordinate.
     this.setRenderDepth(this.spriteDepthForWorld(worldPos));
-
-    // Only an actual bodily cast draws momentum. Use the common interpolated pose
-    // and current movement delta; no predicted bodies or retained per-unit trails.
-    if(u.behaviorState?.chargedExecution){
-      const delta=this.renderTrackedDelta(u,"unit"),distance=Math.hypot(delta.x,delta.y);
-      if(distance>.01){
-        for(let k=1;k<=3;k++){
-          const back=k*.55,trailWorld={...worldPos,x:worldPos.x-delta.x*back,z:worldPos.z-delta.y*back};
-          const tp=this.projectRenderWorldPosition(trailWorld);
-          this.withRenderDepth(tp.depth+.001,()=>this.circle(tp.x,tp.y,r*(.65-k*.10),[.35,.64,1,.14*(4-k)/3],10));
-        }
-      }
-    }
-
-    // Leap trail samples the exact same 3D trajectory instead of rebuilding a
-    // screen-space lift. r is defined before this branch.
-    if(worldPos.motion==="leap"){
-      const trails=this.resolveLeapTrailWorldPositions(u,3);
-      for(let k=0;k<trails.length;k++){
-        const tp=this.projectRenderWorldPosition(trails[k]),fade=(trails.length-k)/(trails.length+1);
-        this.withRenderDepth(tp.depth+.001,()=>this.circle(tp.x,tp.y,r*(.38-.05*k),[.55,.42,.92,.10*fade],10));
-      }
-      const sp=this.projectRenderWorldPosition({x:u.leapStartX||u.x,y:0,z:u.leapStartY||u.y});
-      this.withRenderDepth(bodyPos.depth+.001,()=>this.line(sp.x,sp.y,x,y,Math.max(1,1.4*sc),[.62,.48,.96,.12]));
-    }
-    let workerBuildAnim=null;
-    if(!!UnitDefinition.get(u.type)?.economyWorker&&u.workState==="building"&&u.buildTargetId){
-      const target=this.snapshot?.buildings?.find(b=>b.id===u.buildTargetId&&b.alive!==false&&!b.complete);
-      if(target){
-        const rp=this.renderTrackedPosition(u,"unit");
-        const wx=this.viewX(rp.x),wy=this.viewY(rp.y),tx=this.viewX(target.x),ty=this.viewY(target.y);
-        const dx=tx-wx,dy=ty-wy,len=Math.hypot(dx,dy)||1;
-        const aimX=dx/len,aimY=dy/len,sideX=-aimY,sideY=aimX;
-        const motion=this.constructionMotion(u.id);
-        const forward=(motion.drive*5.5-motion.pull*4.2-motion.recoil*2.4)*sc;
-        const crouch=(motion.crouch*2.8-motion.recoil*1.8)*sc;
-        const lateral=motion.lateral*1.7*sc;
-        x+=aimX*forward+sideX*lateral;
-        y+=aimY*forward+sideY*lateral+crouch;
-        workerBuildAnim={target,aimX,aimY,sideX,sideY,motion};
-      }
-    }
-
-    // Own cloaked unit remains visible to its owner, but the entire body/equipment
-    // is rendered at 30% opacity. This is applied as a renderer-wide multiplier
-    // below so bespoke hard-coded unit colors cannot accidentally bypass stealth alpha.
-    const ownStealthAlpha=(own&&cloaked)?0.30:1;
-    // 모바일에서도 장비/표정이 보이도록 물리 반경보다 시각 반경을 조금 크게 사용.
-
-    if(UnitDefinition.get(u.type)?.momentumCharge&&(u.movement.chargeMomentum||1000)>1180){
-      const q=RangeUtil.clamp(((u.movement.chargeMomentum||1000)-1000)/1000,0,1),dir=own?-1:1;
-      for(let k=1;k<=3;k++)this.line(x-r*.35*k,y+dir*r*.16*k,x+r*.25-r*.48*k,y+dir*r*.16*k,Math.max(1,(1.4+q)*sc),[.96,.74,.25,.08+.12*q]);
-    }
-
-    if(neutral&&Unit.neutralStateOf(u)?.returningHome){
-      const pulse=.5+.5*Math.sin(performance.now()*.010+(HashUtil.hash(u.id)%100)*.12);
-      this.circle(
-        x,y,r*(1.35+.12*pulse),
-        [.32,.95,.44,.07+.06*pulse],
-        18
-      );
-      const cx=x+r*.92,cy=y-r*.72,w=Math.max(1.4,2.2*sc);
-      this.line(cx-r*.14,cy,cx+r*.14,cy,w,[.65,1,.68,.62]);
-      this.line(cx,cy-r*.14,cx,cy+r*.14,w,[.65,1,.68,.62]);
-    }
-
-    const factionPalette=UnitFactionPalette.get(this.factionRelation(u.side));
-    const team=ownStealthAlpha<1?[...factionPalette.body.slice(0,3),ownStealthAlpha]:factionPalette.body;
-    const teamDark=ownStealthAlpha<1?[...factionPalette.dark.slice(0,3),ownStealthAlpha]:factionPalette.dark;
-    const teamLight=ownStealthAlpha<1?[...factionPalette.light.slice(0,3),ownStealthAlpha]:factionPalette.light;
-    const ink=[.09,.12,.16,ownStealthAlpha],
-      metal=[.23,.28,.34,ownStealthAlpha],
-      gold=[.96,.72,.24,ownStealthAlpha];
-    const hit=u.hitFlash>0;
-    const attack=u.attackFlash>0;
-    const accent=UnitVisualDefinition.get(u.type)?.accent||teamLight;
-    // Ground silhouettes are authored vertically, then rotated by common presentation facing.
-    const dir=-1;
-    const previousFacingTransform=this._unitFacingTransform;
-    if(!airUnit&&this.unitFacingEnabled(u))this.beginUnitFacingTransform(u,x,y);
-
-    // Shadow placement is centralized in drawUnitShadow(), which always uses
-    // the x/z ground projection regardless of AIR/leap/airborne state.
-
-    // Apply cloak opacity to the whole rendered unit body, including bespoke
-    // species geometry that uses hard-coded alpha=1 colors. Shadows stay on the
-    // ground at their own opacity and HUD bars are restored to full opacity later.
-    const prevUnitRenderAlphaMul=this._unitRenderAlphaMul;
-    this._unitRenderAlphaMul=ownStealthAlpha;
-
-    // Presentation-only source-body pulses are composed for every unit through one common contract.
-    // Simulation size/collision remain authoritative and unchanged.
-    const presentationR=r*this.bodyPulsePresentation.scale(u.id,performance.now());
-    const unitRenderCtx={
-      u,own,d,sc,neutral,worldPos,bodyPos,groundWorld,groundProjection,groundPos,
-      x,y,airborne,airUnit,r:presentationR,workerBuildAnim,ownStealthAlpha,cloaked,
-      team,teamDark,teamLight,factionPalette,ink,metal,gold,accent,hit,attack,dir
-    };
-    // HAS-A common body + IS-A species visual. Immutable bodies use a local-space
-    // mesh cache; CAN-BE dynamic species keep the procedural path.
-    const bodyStart=this.frame.length;
-    let vectorBody=null;
-    if(airUnit&&this.shouldUseVectorUnitArt(u)){
-      vectorBody=this.drawVectorUnitBody(unitRenderCtx);
-      this.drawAirUnitTransientEffects(unitRenderCtx);
-    }else if(airUnit&&(AIR_UNIT_VISUAL_RENDER_FNS[u.type]||UnitDefinition.get(u.type)?.targetLeashToSummoner)){
-      this.drawAirUnitSilhouette(u,x,y,presentationR,team,teamDark,teamLight,accent,attack,sc);
-    }else{
-      const unitVisual={type:u.type,cachePolicy:UnitVisualLookup.cachePolicy(u.type),render:UnitVisualLookup.renderer(u.type)};
-      if(!unitVisual.render)throw new Error(`Missing unit visual renderer for ${u.type}`);
-      if(UnitVisualDefinition.get(u.type)?.billboard)vectorBody=this.drawGrainUnitBody(unitRenderCtx);
-      else if(!workerBuildAnim&&this.shouldUseVectorUnitArt(u))vectorBody=this.drawVectorUnitBody(unitRenderCtx);
-      if(!vectorBody)this.drawUnitBodyComposed(unitRenderCtx,unitVisual);
-    }
-    if(vectorBody){
-      // Upright grain bodies have no top-down silhouette to project under terrain.
-      if(own&&!cloaked&&!airUnit&&!UnitVisualDefinition.get(u.type)?.billboard&&this.world.terrain.surfaces.layers.length)this.appendVectorTerrainOccludedBody(vectorBody,unitRenderCtx,worldPos);
-    }else{
-      if(own&&!cloaked&&!airUnit&&this.world.terrain.surfaces.layers.length)this.appendTerrainOccludedBody(bodyStart,this.frame.length,worldPos);
-      // CAN-BE hit/attack presentation layer stays in the existing dynamic path.
-      this.drawUnitStateFeedback(unitRenderCtx);
-    }
-
-    this.restoreUnitFacingTransform(previousFacingTransform);
-    // HUD는 은신 상태에서도 읽혀야 하므로 전역 alpha multiplier를 복구한다.
-    this._unitRenderAlphaMul=prevUnitRenderAlphaMul;
-
-    // Health/status bars are intentionally NOT drawn in the opaque unit pass.
-    // drawWorldHudOverlay() is the single owner so Render State / AIR height / future
-    // presentation passes cannot accidentally render a second health bar.
+    // Presentation-only body pulses; simulation size/collision remain authoritative.
+    const r=this.unitRenderRadius(u);
+    // Health/status bars are drawn by drawWorldHudOverlay(), never in the unit pass.
+    if(!this.drawGrainUnitBody({u,x:bodyPos.x,y:bodyPos.y,r,hit:u.hitFlash>0,attack:u.attackFlash>0,ownStealthAlpha:1}))throw new Error(`Missing grain body for ${u.type}`);
   }
   projectileScreenMotion(p,screenX,screenY){
     let st=this.projectileScreenMotionStates.get(p.id),dx=0,dy=0,valid=false;
@@ -6161,436 +2090,10 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       if((gy-y)>2.5)this.line(gx,gy-sr*.25,gx,y+sr*.3,Math.max(1,1.25*sc),[.95,.92,.80,.16]);
     }
     const projectileCtx={p,sc,target,gx,gy,wp,pp,gp,x,y};
-    const adjust=PROJECTILE_ORIGIN_ADJUSTERS[p.visualTag];
-    if(adjust){const adjusted=adjust(this,projectileCtx);x=adjusted.x;y=adjusted.y;projectileCtx.x=x;projectileCtx.y=y}
     // Direction is sampled after interpolation/camera projection/z-height, but before
-    // transient hit/camera shake. Origin adjusters are converted to the same stable space.
-    const adjustDx=x-pp.x,adjustDy=y-pp.y;
-    projectileCtx.screenMotion=this.projectileScreenMotion(p,stablePp.x+adjustDx,stablePp.y+adjustDy);
-    const visual=PROJECTILE_VISUAL_RENDER_FNS[p.visualTag]||PROJECTILE_VISUAL_RENDER_FNS[p.type];
-    if(visual)visual(this,projectileCtx);else ProjectileVisualFallback.render(this,projectileCtx);
-  }
-  drawRallyGuide(){
-    if(!this.snapshot)return;
-    const side=this.mySide();
-    const flag=this.predictedFlag||this.renderTrackedFlag(side);
-    if(!flag)return;
-
-    const sc=this.sc();
-    const own=side===0;
-
-    const drawDashed=(from,to,{color,glow,dash=15,gap=11,width=2.2,startPad=8,endPad=8}={})=>{
-      if(!from||!to)return;
-      const a=this.worldToPx(this.viewX(from.x),this.viewY(from.y));
-      const b=this.worldToPx(this.viewX(to.x),this.viewY(to.y));
-      const dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy);
-      if(len<4)return;
-      const nx=dx/len,ny=dy/len;
-      const dashPx=Math.max(8,dash*sc);
-      const gapPx=Math.max(6,gap*sc);
-      const step=dashPx+gapPx;
-      const lineW=Math.max(1.15,width*sc);
-      const sPad=Math.max(4,startPad*sc),ePad=Math.max(4,endPad*sc);
-
-      if(glow)this.line(a[0],a[1],b[0],b[1],Math.max(2.5,6*sc),glow);
-      for(let d=sPad;d<len-ePad;d+=step){
-        const e=Math.min(len-ePad,d+dashPx);
-        if(e<=d)break;
-        this.line(a[0]+nx*d,a[1]+ny*d,a[0]+nx*e,a[1]+ny*e,lineW,color);
-      }
-    };
-
-    // ------------------------------------------------------
-    // 1) Combat rally: every production building -> global flag.
-    //    Bases no longer pretend to be combat-rally origins.
-    // ------------------------------------------------------
-    const forced=!!flag.forced;
-    const combatColor=forced?[1,.70,.18,.34]:(own?[.30,.62,1,.22]:[1,.38,.38,.22]);
-    const combatGlow=forced?[1,.62,.12,.075]:(own?[.34,.66,1,.035]:[1,.40,.40,.035]);
-    const producers=(this.snapshot.buildings||[]).filter(b=>
-      b.alive!==false&&b.complete&&b.side===side&&
-      BuildingDefinition.get(b.type)?.isProductionBuilding
-    );
-    for(const b of producers){
-      drawDashed(b,flag,{color:combatColor,glow:combatGlow,dash:15,gap:11,width:2.1,startPad:18,endPad:14});
-    }
-
-    // ------------------------------------------------------
-    // 2) Economy rally: base/outpost -> resource target.
-    //    Prefer the resource actually targeted by workers assigned to that dropoff.
-    //    If no worker has a live target yet, fall back to the nearest valid resource.
-    // ------------------------------------------------------
-    const dropoffs=(this.snapshot.buildings||[]).filter(b=>
-      b.alive!==false&&b.complete&&b.side===side&&
-      BuildingDefinition.get(b.type)?.isDropoff
-    );
-    const minerals=(this.snapshot.resources||[]).filter(m=>m.amount>0);
-    const extractors=(this.snapshot.buildings||[]).filter(b=>
-      b.alive!==false&&b.complete&&b.side===side&&BuildingDefinition.get(b.type)?.isGasExtractor
-    );
-    const workers=(this.snapshot.units||[]).filter(u=>u.alive&&u.side===side&&!!UnitDefinition.get(u.type)?.economyWorker);
-
-    const nearestDropoffFor=worker=>{
-      let best=null,bd=Infinity;
-      for(const b of dropoffs){
-        const d=(worker.x-b.x)*(worker.x-b.x)+(worker.y-b.y)*(worker.y-b.y);
-        if(d<bd||(d===bd&&best&&String(b.id)<String(best.id))){best=b;bd=d}
-      }
-      return best;
-    };
-    const assignedByDropoff=new Map(dropoffs.map(b=>[b.id,[]]));
-    for(const w of workers){
-      const b=nearestDropoffFor(w);
-      if(b)assignedByDropoff.get(b.id)?.push(w);
-    }
-
-    const mostCommonTarget=(list,type)=>{
-      const counts=new Map();
-      for(const w of list||[]){
-        if(w.workResourceType!==type||!w.mineId)continue;
-        counts.set(w.mineId,(counts.get(w.mineId)||0)+1);
-      }
-      let best=null,bestCount=0;
-      for(const [id,count] of counts){
-        if(count>bestCount||(count===bestCount&&best!=null&&String(id)<String(best))){best=id;bestCount=count}
-      }
-      return best;
-    };
-    const nearestTo=(origin,list)=>{
-      let best=null,bd=Infinity;
-      for(const x of list){
-        const d=(x.x-origin.x)*(x.x-origin.x)+(x.y-origin.y)*(x.y-origin.y);
-        if(d<bd||(d===bd&&best&&String(x.id)<String(best.id))){best=x;bd=d}
-      }
-      return best;
-    };
-
-    const mineralColor=[.27,.73,1,.24],mineralGlow=[.25,.70,1,.035];
-    const gasColor=[.37,.90,.42,.25],gasGlow=[.34,.86,.40,.038];
-
-    for(const base of dropoffs){
-      const group=assignedByDropoff.get(base.id)||[];
-
-      const mineralId=mostCommonTarget(group,"mineral");
-      let mineral=minerals.find(m=>m.id===mineralId)||null;
-      if(!mineral)mineral=nearestTo(base,minerals);
-      if(mineral){
-        drawDashed(base,mineral,{color:mineralColor,glow:mineralGlow,dash:11,gap:9,width:1.9,startPad:20,endPad:10});
-      }
-
-      const gasTarget=Math.max(0,Number(base.gasWorkerTarget)||0);
-      if(gasTarget>0&&extractors.length){
-        const extractorId=mostCommonTarget(group,"gas");
-        let extractor=extractors.find(e=>e.id===extractorId)||null;
-        if(!extractor)extractor=nearestTo(base,extractors);
-        if(extractor){
-          drawDashed(base,extractor,{color:gasColor,glow:gasGlow,dash:10,gap:8,width:1.9,startPad:20,endPad:10});
-        }
-      }
-    }
-
-    // Ground target ring below the actual flag and units.
-    const b=this.worldToPx(this.viewX(flag.x),this.viewY(flag.y));
-    const pulse=.5+.5*Math.sin(performance.now()*.0035);
-    this.circle(
-      b[0],b[1],
-      Math.max(14,(25+3*pulse)*sc),
-      forced?[1,.62,.12,.12]:(own?[.24,.55,1,.065]:[1,.32,.34,.065]),
-      24
-    );
-    if(forced){
-      this.outlineCircle(b[0],b[1],Math.max(20,(35+4*pulse)*sc),Math.max(1.4,2.2*sc),[1,.72,.20,.50],28,2);
-    }
-  }
-
-  drawFlag(){
-    if(!this.snapshot)return;
-    const side=this.mySide(),f=this.predictedFlag||this.renderTrackedFlag(side);
-    if(!f)return;
-
-    const now=performance.now(),sc=this.sc();
-    const[x,y]=this.worldToPx(this.viewX(f.x),this.viewY(f.y));
-
-    // 해당 위치의 가장 최근 planting FX.
-    let fx=null;
-    for(let i=this.flagFx.length-1;i>=0;i--){
-      const candidate=this.flagFx[i];
-      if(candidate.side===side&&Math.hypot(candidate.x-f.x,candidate.y-f.y)<2){
-        fx=candidate;
-        break;
-      }
-    }
-
-    const age=fx?now-fx.start:99999;
-    const total=1250;
-    const active=age<total;
-
-    // ease helpers
-    const clamp01=v=>Math.max(0,Math.min(1,v));
-    const outBack=t=>{
-      t=clamp01(t);
-      const c1=1.70158,c3=c1+1;
-      return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2);
-    };
-    const outCubic=t=>1-Math.pow(1-clamp01(t),3);
-
-    // 0~220ms: 위에서 빠르게 내려꽂힘.
-    const dropT=clamp01(age/220);
-    // 220~430ms: 충격/반동.
-    const impactT=clamp01((age-220)/210);
-    // 430~1250ms: 펄럭임 감쇠.
-    const settleT=clamp01((age-430)/820);
-
-    let poleBottomY=y;
-    let poleTopY=y-46*sc;
-    let poleTopX=x;
-
-    if(active&&age<220){
-      const e=outBack(dropT);
-      // 처음에는 말뚝 전체가 위에 떠 있고 살짝 기울어진 채 내려온다.
-      const lift=(1-e)*82*sc;
-      poleBottomY=y-lift;
-      poleTopY=poleBottomY-46*sc;
-      poleTopX=x-(1-e)*20*sc;
-    }else if(active&&age<430){
-      // 지면을 찍은 직후 짧게 눌렸다가 바로 복원.
-      const bounce=Math.sin(impactT*Math.PI)*7*sc*(1-impactT*.45);
-      poleBottomY=y+bounce;
-      poleTopY=poleBottomY-46*sc;
-      poleTopX=x+Math.sin(impactT*Math.PI*2)*2.5*sc*(1-impactT);
-    }
-
-    // 그림자: 내려오는 동안 작아졌다가 충격 순간 넓어짐.
-    const shadowAlpha=active?(.10+.16*outCubic(dropT)):.15;
-    const shadowR=(active&&age<430
-      ? (12+18*outCubic(dropT)+7*Math.sin(impactT*Math.PI))*sc
-      : 25*sc);
-    this.poly([
-      [x-shadowR,y+7*sc],
-      [x,y+12*sc],
-      [x+shadowR,y+7*sc],
-      [x,y+2*sc]
-    ],[.03,.06,.08,shadowAlpha]);
-
-    // 착지 충격파 / 먼지. 220ms 이후에만 발생.
-    if(active&&age>=200&&age<760){
-      const t=clamp01((age-200)/560);
-      const ringR=(18+78*outCubic(t))*sc;
-      const alpha=.32*(1-t);
-      // 둥근 링 대신 polygon ring 느낌으로 두 개의 얇은 다각형 테두리.
-      const seg=24;
-      for(let j=0;j<seg;j++){
-        const a0=j/seg*Math.PI*2;
-        const a1=(j+1)/seg*Math.PI*2;
-        const r0=ringR,r1=ringR+Math.max(1.4,2.5*sc);
-        this.poly([
-          [x+Math.cos(a0)*r0,y+Math.sin(a0)*r0*.42],
-          [x+Math.cos(a1)*r0,y+Math.sin(a1)*r0*.42],
-          [x+Math.cos(a1)*r1,y+Math.sin(a1)*r1*.42],
-          [x+Math.cos(a0)*r1,y+Math.sin(a0)*r1*.42]
-        ],[.72,.57,.34,alpha]);
-      }
-
-      // 결정적인 먼지 조각 8개. random을 사용하지 않아 프레임마다 튀지 않는다.
-      for(let i=0;i<8;i++){
-        const h=HashUtil.hash(String((fx?.seed||1)+i*7919));
-        const ang=((h%1000)/1000)*Math.PI*2;
-        const speed=.55+((h>>>10)%100)/180;
-        const d=(16+62*t*speed)*sc;
-        const rise=Math.sin(t*Math.PI)*(10+((h>>>17)%16))*sc;
-        const dx=Math.cos(ang)*d;
-        const dy=Math.sin(ang)*d*.45-rise;
-        const rr=(2.2+((h>>>22)%4))*sc*(1-t*.55);
-        this.poly([
-          [x+dx-rr,y+dy],
-          [x+dx,y+dy-rr*.75],
-          [x+dx+rr,y+dy],
-          [x+dx,y+dy+rr*.55]
-        ],[.56,.43,.28,.42*(1-t)]);
-      }
-    }
-
-    // 충격 순간 중앙 섬광 / 지면 파편.
-    if(active&&age>=205&&age<390){
-      const t=clamp01((age-205)/185);
-      const a=.28*(1-t);
-      for(let i=0;i<6;i++){
-        const ang=-Math.PI*.88+i*Math.PI*.352;
-        const len=(20+35*outCubic(t))*sc;
-        this.line(
-          x+Math.cos(ang)*8*sc,y+Math.sin(ang)*5*sc,
-          x+Math.cos(ang)*len,y+Math.sin(ang)*len*.42,
-          Math.max(1.2,2.1*sc),
-          [1,.78,.34,a]
-        );
-      }
-    }
-
-    // 깃대: 검은 외곽 + 금속 하이라이트.
-    const poleW=Math.max(2.2,4.0*sc);
-    this.line(x,poleBottomY+5*sc,poleTopX,poleTopY,poleW,[.07,.10,.13,1]);
-    this.line(x-.8*sc,poleBottomY+3*sc,poleTopX-.8*sc,poleTopY,Math.max(1,1.15*sc),[.55,.63,.68,.7]);
-
-    // 바닥에 꽂힌 금속 스파이크.
-    if(!active||age>=205){
-      this.poly([
-        [x-3.6*sc,y-1*sc],
-        [x+3.6*sc,y-1*sc],
-        [x,y+13*sc]
-      ],[.14,.17,.19,1]);
-    }
-
-    // 천 펄럭임:
-    // 충격 직후 크게 흔들리고 1초 동안 감쇠. 평상시에도 아주 미세하게 살아있다.
-    const impactWave=active&&age>=220
-      ? Math.sin((age-220)*.055)*16*sc*(1-settleT)
-      : 0;
-    const idleWave=Math.sin(now*.0045)*2.2*sc;
-    const wave=impactWave+idleWave;
-    const topY=poleTopY+4*sc;
-    const clothH=19*sc;
-    const clothW=34*sc;
-
-    // 3분할 폴리곤 천으로 곡면 느낌.
-    const p0=[poleTopX,topY];
-    const p1=[poleTopX+clothW*.34,topY+3*sc+wave*.25];
-    const p2=[poleTopX+clothW*.70,topY+1*sc-wave*.18];
-    const p3=[poleTopX+clothW,topY+7*sc+wave*.38];
-    const q0=[poleTopX,topY+clothH];
-    const q1=[poleTopX+clothW*.34,topY+clothH-1*sc+wave*.16];
-    const q2=[poleTopX+clothW*.70,topY+clothH+2*sc-wave*.12];
-    const q3=[poleTopX+clothW*.86,topY+clothH-1*sc+wave*.30];
-
-    const forced=!!f.forced;
-    const blue=forced?[.96,.48,.08,1]:[.14,.39,.92,1];
-    const blue2=forced?[1,.68,.12,1]:[.20,.50,1,1];
-    const blue3=forced?[.72,.26,.03,1]:[.10,.29,.72,1];
-    this.poly([p0,p1,q1,q0],blue3);
-    this.poly([p1,p2,q2,q1],blue);
-    this.poly([p2,p3,q3,q2],blue2);
-
-    // 깃발 중앙의 작은 밝은 문장형 삼각 표식.
-    const cx=poleTopX+clothW*.47,cy=topY+clothH*.50+wave*.05;
-    if(forced){
-      // Two inward chevrons identify the no-retaliation forced-move order.
-      this.line(cx-8*sc,cy-3*sc,cx-1*sc,cy,Math.max(1.2,2*sc),[1,.98,.82,.98]);
-      this.line(cx-8*sc,cy+3*sc,cx-1*sc,cy,Math.max(1.2,2*sc),[1,.98,.82,.98]);
-      this.line(cx+8*sc,cy-3*sc,cx+1*sc,cy,Math.max(1.2,2*sc),[1,.98,.82,.98]);
-      this.line(cx+8*sc,cy+3*sc,cx+1*sc,cy,Math.max(1.2,2*sc),[1,.98,.82,.98]);
-    }else{
-      this.poly([
-        [cx-4*sc,cy+3*sc],
-        [cx,cy-5*sc],
-        [cx+5*sc,cy+3*sc]
-      ],[.93,.96,1,.92]);
-    }
-
-    // 명령 확정 후 0.9초 정도 지휘 범위를 한 번 강조.
-    if(active&&age>=300&&age<1100){
-      const t=clamp01((age-300)/800);
-      const rr=(28+35*outCubic(t))*sc;
-      const aa=.16*(1-t);
-      this.circle(x,y,rr,[.18,.43,.93,aa],32);
-    }
-
-    // 끝난 VFX 정리.
-    if(this.flagFx.length){
-      let write=0;
-      for(let i=0;i<this.flagFx.length;i++){
-        const e=this.flagFx[i];
-        if(now-e.start<1600)this.flagFx[write++]=e;else this.flagFxPool.release(e);
-      }
-      this.flagFx.length=write;
-    }
-  }
-  drawChargedSkillPreview(){
-    const side=ConnectionSideUtil.roleSide(this.orientationRole()),cast=this.snapshot?.chargedCasts?.[side],sc=this.sc();
-    const pointer=this.chargedSkillGesture;
-    // White intent follows input immediately. Gold landing points below always
-    // come from confirmed membership, readiness and the authoritative cast aim.
-    if(pointer&&Number.isFinite(pointer.aimX)&&Number.isFinite(pointer.aimY)){
-      const [px,py]=this.worldToPx(this.viewX(pointer.aimX),this.viewY(pointer.aimY));
-      this.outlineCircle(px,py,5,1.3,[.92,.96,1,.8],12,1);
-      if(pointer.pointerType==='touch'){
-        this.line(px,py,px,py-48,1,[.92,.96,1,.5]);
-        this.outlineCircle(px,py-48,8,1.5,[.92,.96,1,.85],12,1);
-      }
-    }
-    if(!cast||!['gathering','charging'].includes(cast.phase)){
-      const pending=this.chargedSkillGesture;
-      if(pending){const [x,y]=this.worldToPx(pending.x,pending.y);this.outlineCircle(x,y,Math.max(12,20*sc),1.5,[.75,.83,.84,.7],16,1)}
-      return;
-    }
-    const [x,y]=this.worldToPx(this.viewX(cast.originX),this.viewY(cast.originY));
-    this.outlineCircle(x,y,ChargedSkillGeometry.gatheringR*sc,Math.max(1,2*sc),[.40,.87,.73,.55],48,1);
-    const members=this.chargedMemberIds(side);
-    let ready=0,progress=0,centerX=0,centerY=0,targetX=0,targetY=0;
-    for(const id of [...cast.memberIds,...cast.unavailableIds]){
-      const unit=this.renderState.entity('unit',id);
-      if(!unit?.alive)continue;
-      const pose=this.renderTrackedScreenPosition(unit,"unit"),ux=pose.x,uy=pose.y,r=Math.max(5,this.unitRenderRadius(unit));
-      if(!members.has(unit.id)||!ChargedSkillMixin.stateReady(unit,this.snapshot.tick)){
-        this.outlineCircle(ux,uy,r+4,1,[.60,.62,.64,.65],12,1);continue;
-      }
-      ready++;
-      const target=ChargedSkillGeometry.aimPoint(unit,cast,this.snapshot.tick,this.snapshot.tps||SimulationTiming.tps(),this.world);
-      progress=Math.max(progress,target.progress);
-      const [tx,ty]=this.worldToPx(this.viewX(target.x),this.viewY(target.y));
-      centerX+=pose.x;centerY+=pose.y;targetX+=tx;targetY+=ty;
-      this.outlineCircle(ux,uy,r+4,Math.max(1,2*sc),[.72,.93,.57,.9],12,1);
-      this.line(ux,uy,tx,ty,Math.max(1,1.5*sc),[.83,.92,.55,.36]);
-      this.outlineCircle(tx,ty,Math.max(7,11*sc),Math.max(1.3,2*sc),[1,.85,.38,.9],16,1);
-      this.line(tx-5,ty,tx+5,ty,1.5,[1,.95,.73,.95]);this.line(tx,ty-5,tx,ty+5,1.5,[1,.95,.73,.95]);
-    }
-    if(ready){
-      const radius=ChargedSkillGeometry.gatheringR*sc,segments=48,filled=Math.floor(progress*segments);
-      for(let i=0;i<filled;i++){
-        const a=-Math.PI/2+i/segments*Math.PI*2,b=a+.8/segments*Math.PI*2;
-        this.line(x+Math.cos(a)*radius,y+Math.sin(a)*radius,x+Math.cos(b)*radius,y+Math.sin(b)*radius,Math.max(2,3*sc),progress>=1?[.78,.95,1,.95]:[.45,.69,1,.85]);
-      }
-      if(progress>=1)this.outlineCircle(x,y,radius+4,Math.max(1,2*sc),[.78,.95,1,.5],48,1);
-      const cx=centerX/ready,cy=centerY/ready,tx=targetX/ready,ty=targetY/ready,dx=tx-cx,dy=ty-cy,len=Math.hypot(dx,dy);
-      if(pointer&&Number.isFinite(pointer.aimX)&&Number.isFinite(pointer.aimY)){
-        const [px,py]=this.worldToPx(this.viewX(pointer.aimX),this.viewY(pointer.aimY)),ix=px-cx,iy=py-cy;
-        if(Math.hypot(px-tx,py-ty)>4&&Math.hypot(ix,iy)>8){this.line(cx,cy,px,py,1.2,[.92,.96,1,.32]);this.crestTriangle(px,py,6,[.92,.96,1,.65],Math.atan2(iy,ix))}
-      }
-      if(len>8){
-        this.line(cx,cy,tx,ty,Math.max(2,3*sc),[.45,.69,1,.65]);
-        this.crestTriangle(tx,ty,Math.max(8,12*sc),[.67,.84,1,.95],Math.atan2(dy,dx));
-      }
-    }
-    const [ax,ay]=this.worldToPx(this.viewX(cast.aimX),this.viewY(cast.aimY));
-    // A connected offset indicator keeps the aim readable above a mobile finger.
-    if(pointer?.pointerType==='touch'){this.line(ax,ay,ax,ay-32,1,[1,.88,.48,.6]);this.outlineCircle(ax,ay-32,6,2,[1,.88,.48,.9],12,1)}
-  }
-  drawBuildPreview(){
-    const p=this.buildPreview;
-    if(!p||!p.building)return;
-    const d=BuildingDefinition.get(p.building);
-    if(!d)return;
-    const[x,y]=this.worldToPx(p.x,p.y),sc=this.sc(),r=d.size*sc;
-
-    const fill=p.valid?[.20,.78,.46,.34]:[.91,.24,.24,.34];
-    const edge=p.valid?[.12,.62,.34,.95]:[.78,.12,.12,.95];
-    this.rect(x-r,y-r,r*2,r*2,fill);
-    this.line(x-r,y-r,x+r,y-r,Math.max(2,3*sc),edge);
-    this.line(x+r,y-r,x+r,y+r,Math.max(2,3*sc),edge);
-    this.line(x+r,y+r,x-r,y+r,Math.max(2,3*sc),edge);
-    this.line(x-r,y+r,x-r,y-r,Math.max(2,3*sc),edge);
-    this.circle(x,y,r*1.25,[edge[0],edge[1],edge[2],.08],18);
-
-    if(p.density){
-      const clusterR=(p.density.kind==="defense"?DEFENSE_CLUSTER_RADIUS:PRODUCTION_CLUSTER_RADIUS)*sc;
-      const col=p.density.penalty>0?[.95,.30,.20,.12]:[.20,.75,.43,.08];
-      this.circle(x,y,clusterR,col,36);
-
-      // 밀집 패널티가 있으면 건물 바로 위에만 짧은 상태 막대를 표시.
-      if(p.density.penalty>0){
-        const bw=Math.max(28,64*sc),bh=Math.max(3,6*sc);
-        this.rect(x-bw/2,y-r-13*sc,bw,bh,[.15,.08,.07,.75]);
-        this.rect(x-bw/2,y-r-13*sc,bw*(p.density.speed/100),bh,[.95,.48,.20,.95]);
-      }
-    }
+    // transient hit/camera shake.
+    projectileCtx.screenMotion=this.projectileScreenMotion(p,stablePp.x,stablePp.y);
+    PROJECTILE_VISUAL_RENDER_FNS.launchAmmo(this,projectileCtx);
   }
   prepareFogSurfaces(atlas){
     if(this._fogSurfaceAtlas===atlas)return;
@@ -6693,44 +2196,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     if(!this.snapshot)return;
     const side=this.mySide(),sc=this.sc();
 
-    // 1) 미네랄: 시야 밖에서도 자원 위치는 항상 알 수 있다.
-    //    남은 양은 정확한 숫자로 노출하지 않고 크기/밝기만 약하게 표현한다.
-    for(const m of this.snapshot.resources){
-      if(m.amount<=0||!this.onScreenAuth(m.x,m.y,80)||this.visibleRaw(m.x,m.y))continue;
-      const[x,y]=this.worldToPx(this.viewX(m.x),this.viewY(m.y));
-      const r=Math.max(5,13*sc);
-      this.circle(x,y,r,[.12,.34,.42,.72],7);
-      this.circle(x,y-r*.10,r*.46,[.28,.55,.62,.50],6);
-      // 암흑 속 고정 랜드마크라는 느낌의 얇은 외곽 링
-      this.circle(x,y,r*1.28,[.12,.34,.42,.12],10);
-    }
-
-    // 가스 지점도 전략 자원 위치로 항상 표시.
-    for(const g of this.snapshot.gasNodes||[]){
-      if(!this.onScreenAuth(g.x,g.y,80)||this.visibleRaw(g.x,g.y))continue;
-      const[x,y]=this.worldToPx(this.viewX(g.x),this.viewY(g.y));
-      const r=Math.max(5,12*sc);
-      this.circle(x,y,r,[.17,.42,.21,.65],9);
-      this.circle(x,y,r*.45,[.32,.72,.36,.42],8);
-    }
-
-    // 2) 중립 캠프 위치: 사냥터 위치는 항상 알려준다.
-    //    암흑에서는 현재 생존/리젠 상태는 표시하지 않아 정찰 가치가 남는다.
-    for(const camp of this.snapshot.camps||[]){
-      if(!this.onScreenAuth(camp.x,camp.y,100)||this.visibleRaw(camp.x,camp.y))continue;
-      const[x,y]=this.worldToPx(this.viewX(camp.x),this.viewY(camp.y));
-      const base=camp.kind==="relic"?16:camp.kind==="boars"?14:11;
-      const r=Math.max(5,base*sc);
-      const campCol=camp.spellReward?[.50,.30,.72,.68]:[.49,.35,.16,.56];
-      this.circle(x,y,r,campCol,9);
-      this.circle(x,y,r*1.45,[.78,.57,.22,.10],12);
-      // 발자국을 연상시키는 작은 점 3개
-      this.circle(x-r*.40,y-r*.82,r*.22,[.62,.45,.22,.65],7);
-      this.circle(x,y-r*.98,r*.22,[.62,.45,.22,.65],7);
-      this.circle(x+r*.40,y-r*.82,r*.22,[.62,.45,.22,.65],7);
-    }
-
-    // 3) 상대 메인 베이스: 위치/존재는 항상 알지만, 시야 밖에서는
+    // 상대 메인 베이스: 위치/존재는 항상 알지만, 시야 밖에서는
     //    HP, 건설 상태, 주변 상황 등의 실시간 정보는 보여주지 않는다.
     const enemyBase=this.snapshot.buildings.find(
       b=>b.alive!==false&&b.side!==side&&BuildingDefinition.get(b.type)?.isMainBase
@@ -6750,44 +2216,13 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       this.circle(x,y,r*.20,[.78,.32,.34,.78],8);
     }
   }
-  reportRenderFatal(err){
-    if(this.renderFatalReported)return;
-    this.renderFatalReported=true;
-    const s=this.snapshot||{},entity=this.renderEntity||null;
-    const diag={
-      kind:"RALLY_FRONTIER_RENDER_FATAL",
-      build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),
-      at:new Date().toISOString(),
-      renderer:this.backend||null,
-      tick:Number(s.tick)||0,tps:Number(s.tps)||0,
-      stage:this.renderStage||"unknown",
-      entity:entity?{id:entity.id||null,type:entity.type||null,side:entity.side??null,x:entity.x??null,y:entity.y??null,burrowPhase:entity.burrowPhase||null,airborneUntil:entity.status?.airborneUntil||0,airborneHeight:entity.status?.airborneHeight||0}:null,
-      projectiles:s.projectiles?.length||0,units:s.units?.length||0,
-      message:String(err?.message||err),stack:String(err?.stack||"")
-    };
-    DiagnosticPresentation.presentFatalDiagnostic(diag);
-  }
-
   renderGroundPass(){
     this.renderStage="ground";this.renderEntity=null;
     const gl=this.gl;this.passState.depthWrite=true;
     this.setRenderDepth(.97);this.begin();this.drawGround();this.flush();
     this.passState.depthWrite=false;
     this.begin();TerrainPresentation.drawSurfaceEdges(this);
-    this.setRenderDepth(.969);this.drawStrategicMap();this.drawNeutralCampMarkers();this.drawRallyGuide();
-    for(const u of this.snapshot?.units||[]){
-      if(!u.alive||!UnitDefinition.get(u.type)?.burrowTrail||!BurrowableMixin.stateActive(u))continue;
-      const own=u.side===this.mySide();
-      if(!own&&!this.visibleRaw(u.x,u.y,UnitDefinition.get(u.type)?.layer==="AIR"))continue;
-      if(UnitDefinition.get(u.type)?.burrowTrailRequiresDetection&&!own&&!this.detectedRaw(u.x,u.y))continue;
-      const rp=this.renderTrackedPosition(u,"unit");
-      const [bx,by]=this.worldToPx(this.viewX(rp.x),this.viewY(rp.y)),sc=this.sc();
-      const pulse=.5+.5*Math.sin(this.presentationNow()*.018+(HashUtil.hash(u.id)%17));
-      this.withWorldSpriteDepth({x:rp.x,y:.001,z:rp.y},()=>{
-        this.circle(bx,by,Math.max(5,(12+4*pulse)*sc),[.34,.22,.12,.38],12);
-        this.circle(bx,by,Math.max(3,(7+2*pulse)*sc),[.58,.39,.22,.34],10);
-      });
-    }
+    this.setRenderDepth(.969);this.drawStrategicMap();
     this.flush();this.passState.depthWrite=true;
   }
   renderShadowPass(visibleUnits){
@@ -6804,8 +2239,6 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       entry.kind=kind;entry.entity=entity;entry.world=world;
       entry.depth=this.spriteDepthForWorld(world);entry.key=kind+":"+entity.id;out.push(entry);
     };
-    for(const m of this.snapshot.resources||[])if(m.amount>0&&this.onScreenAuth(m.x,m.y,90))add("mineral",m,{x:m.x,y:0,z:m.y});
-    for(const g of this.snapshot.gasNodes||[])if(this.onScreenAuth(g.x,g.y,90))add("gas",g,{x:g.x,y:0,z:g.y});
     for(const b of this.snapshot.buildings||[])if(b.alive!==false&&b.hp>0&&this.onScreenAuth(b.x,b.y,(BuildingDefinition.get(b.type)?.size||40)+100))add("building",b,{x:b.x,y:0,z:b.y});
     for(const u of visibleUnits)add("unit",u,this.resolveRenderWorldPosition(u,"unit"));
     for(const p of this.renderState.displayed("projectile",this.presentationNow())){
@@ -6819,24 +2252,6 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.perfStats.cpuDepthSortMs=performance.now()-started;
     this.perfStats.visibleSprites=out.length;
     return out;
-  }
-  appendTerrainOccludedBody(start,end,world=null){
-    if(end<=start)return;
-    const deck=world?this.renderBridgeAt(world.x,world.z):null;
-    if(deck&&world.y<deck.elevation-.01)return;
-    const src=this.frame.data,dst=this.terrainOccludedBodyFrame;
-    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-    for(let i=start;i<end;i+=7){minX=Math.min(minX,src[i]);maxX=Math.max(maxX,src[i]);minY=Math.min(minY,src[i+1]);maxY=Math.max(maxY,src[i+1])}
-    const a=this.projectedCoordinatesAtScreen(minX,minY),b=this.projectedCoordinatesAtScreen(maxX,maxY);
-    const projected=TerrainSurfaceProjection.forAtlas(this.world.terrain.surfaces).projectedSurfaceMesh(this.orientationRole()==='guest');
-    if(!projected.transitionIndex.query(a.x,a.y,b.x,b.y).length)return;
-    dst.ensure(end-start);
-    // Copy the actual body silhouette. A stencil union prevents darker overlaps
-    // where its component triangles meet. No body is generated a second time.
-    for(let i=start;i<end;i+=21){
-      if(Math.min(src[i+6],src[i+13],src[i+20])<.5)continue;
-      for(let j=i;j<i+21;j+=7)dst.push7(src[j],src[j+1],src[j+2],.34,.68,1,.34);
-    }
   }
   renderTerrainOccludedBodies(){
     const frame=this.terrainOccludedBodyFrame;if(!frame.length)return;
@@ -6880,9 +2295,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
       this.withWorldSpriteDepth(world,()=>{
         if(kind==="unit")this.drawUnitSafely(entity,{skipShadow:true,visibilityChecked:true,worldPosition:world});
         else if(kind==="building")this.drawBuildingSafely(entity);
-        else if(kind==="projectile")this.drawProjectileSafely(entity);
-        else if(kind==="mineral")this.drawMineral(entity);
-        else this.drawGasNode(entity);
+        else this.drawProjectileSafely(entity);
       });
     }
     this.flushVectorMesh("world-pass-end");
@@ -6900,8 +2313,8 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.passState.depthEnabled=false;this.passState.depthWrite=false
     this.drawFog();
     this.begin();this.setRenderDepth(0);
-    this.drawSharedShieldsOverlay();this.drawFogLandmarks();this.drawActiveSpells();this.flush();
-    this.begin();if(this.snapshot?.launchMode)this.drawLaunchOverlay();else{this.drawFlag();this.drawChargedSkillPreview()}this.flush();
+    this.drawFogLandmarks();this.flush();
+    this.begin();this.drawLaunchOverlay();this.flush();
   }
   drawLaunchOverlay(){
     const s=this.snapshot,side=ConnectionSideUtil.roleSide(this.orientationRole()),sc=this.sc(),now=performance.now();
@@ -6949,11 +2362,6 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     }
   }
   renderUiFxPass(){
-    if(this.spellPreview){this.begin();this.drawSpellPreview();this.flush()}
-    if(this.buildPreview){this.begin();this.drawBuildPreview();this.flush()}
-    if(this.snapshot?.constructionOrders?.length||this.pendingBuildGhosts?.length||this.latencySpellFx?.length){
-      this.begin();this.drawConstructionOrders();this.drawPendingBuildGhosts();this.drawLatencySpellFx();this.flush();
-    }
     this.drawFloatingFx();
     this.passState.depthWrite=true;this.passState.depthEnabled=true
   }
@@ -6974,14 +2382,12 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     if(!sx&&!sy&&!needsWarmup){
       if(this.cameraShakePresentationMoved){
         if(this.fxCanvas)this.fxCanvas.style.transform='translate(0px,0px)';
-        for(const el of document.querySelectorAll('.campaign-world-ping'))el.style.translate='0px 0px';
         this.cameraShakePresentationMoved=false;
       }
       return;
     }
     const rect=this.canvas.getBoundingClientRect(),cssX=sx*rect.width/w,cssY=sy*rect.height/h;
     if(this.fxCanvas)this.fxCanvas.style.transform=`translate(${cssX}px,${cssY}px)`;
-    for(const el of document.querySelectorAll('.campaign-world-ping'))el.style.translate=`${cssX}px ${cssY}px`;
     this.cameraShakePresentationMoved=!!sx||!!sy;
     if(!this.frameComposition){
       const precision=gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER,gl.HIGH_FLOAT)?.precision?'highp':'mediump';
@@ -7006,7 +2412,6 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
   loop(){
     try{
     const frameStarted=performance.now();this._framePresentationAt=frameStarted;
-    this.prunePredictedFlag(frameStarted);
     this.resize();
     // DOM viewport synchronization is once per frame, not once per terrain/Fog vertex.
     // All math still uses the shared camera; input and standalone passes refresh on demand.
@@ -7234,38 +2639,10 @@ e.stopPropagation();
       c.beginPath();c.arc(p[0],p[1],5.2,0,Math.PI*2);c.stroke();
     }
 
-    if(s.launchMode){
-      const now=performance.now();
-      for(const m of LaunchPresentation.marks){
-        const p=this.point(m.x,m.y),age=RangeUtil.clamp((now-m.at)/LaunchRules.landingMarkMs,0,1);
-        c.strokeStyle=`rgba(255,228,128,${1-age})`;c.lineWidth=2;c.beginPath();c.arc(p[0],p[1],4+8*age,0,Math.PI*2);c.stroke();
-      }
-    }
-
-    // 미네랄은 알려진 전략 자원 위치로 항상 표시한다.
-    for(const m of s.resources||[]){
-      const p=this.point(m.x,m.y);
-      const rr=Math.max(1.7,w*.0085);
-      this.dot(p[0],p[1],rr,m.amount>0?"#55c9ff":"#547582");
-      c.strokeStyle=m.amount>0?"#d6f5ff":"#78909a";c.lineWidth=Math.max(.7,w*.0025);
-      c.beginPath();c.arc(p[0],p[1],rr+1.4,0,Math.PI*2);c.stroke();
-    }
-
-    // 가스도 알려진 전략 자원 위치로 항상 표시.
-    for(const g of s.gasNodes||[]){
-      const p=this.point(g.x,g.y);
-      this.dot(p[0],p[1],1.7,g.amount>0?"#67c96b":"#6f8b6b");
-    }
-
-    // 중립 캠프 위치는 지도 정보로 항상 표시하되, 실제 중립 유닛은 아래 유닛 루프에서 시야가 있을 때만 표시한다.
-    for(const camp of s.camps||[]){
-      const p=this.point(camp.x,camp.y),mainObjective=!!CampDefinition.get(camp.kind)?.mainObjective;
-      const color=camp.kind==="objectiveBear"?"#d08a36":camp.kind==="objectiveDeathWorm"?"#b2cf35":camp.kind==="objectiveDragon"?"#e85d3c":"#a9823c";
-      this.dot(p[0],p[1],mainObjective?3.4:2.15,color);
-      if(mainObjective){
-        c.strokeStyle=camp.state==="captured"?(camp.capturedOwner===r.mySide()?"#65a4ff":"#ff6961"):camp.state==="cooldown"?"#89928a":"#fff0c2";
-        c.lineWidth=Math.max(1,w*.003);c.beginPath();c.arc(p[0],p[1],5.2,0,Math.PI*2);c.stroke();
-      }
+    const now=performance.now();
+    for(const m of LaunchPresentation.marks){
+      const p=this.point(m.x,m.y),age=RangeUtil.clamp((now-m.at)/LaunchRules.landingMarkMs,0,1);
+      c.strokeStyle=`rgba(255,228,128,${1-age})`;c.lineWidth=2;c.beginPath();c.arc(p[0],p[1],4+8*age,0,Math.PI*2);c.stroke();
     }
 
     // 건물: 양쪽 메인 Base는 고정 전략 정보라 항상 표시.
@@ -7287,22 +2664,13 @@ e.stopPropagation();
       c.fillRect(p[0]-size/2,p[1]-size/2,size,size);
     }
 
-    // 유닛: 아군은 항상, 적/중립은 실제 시야 안에서만.
+    // 유닛: 아군은 항상, 적은 실제 시야 안에서만.
     for(const u of s.units){
       if(!u.alive)continue;
-      if(u.side===NEUTRAL_SIDE){
-        if(!r.visibleRaw(u.x,u.y,UnitDefinition.get(u.type)?.layer==="AIR"))continue;
-        const p=this.point(u.x,u.y);
-        this.dot(p[0],p[1],UnitVisualDefinition.get(u.type)?.minimapNeutralRadius||1.7,"#c69543");
-        continue;
-      }
-
       const own=r.isFriendlySide(u.side);
-      if(!own&&!r.visibleRaw(u.x,u.y,UnitDefinition.get(u.type)?.layer==="AIR"))continue;
-      const cloaked=r.snapshotStealthed(u);
-      if(!own&&cloaked&&!r.detectedRaw(u.x,u.y,UnitDefinition.get(u.type)?.layer==="AIR"))continue;
+      if(!own&&!r.visibleRaw(u.x,u.y))continue;
       const p=this.point(u.x,u.y);
-      this.dot(p[0],p[1],!!UnitDefinition.get(u.type)?.economyWorker?1.15:1.55,own?"#64a1ff":"#ff6666");
+      this.dot(p[0],p[1],1.55,own?"#64a1ff":"#ff6666");
     }
 
     // 깃발
@@ -7493,24 +2861,6 @@ class AudioSystem{
     this.tone({freq:105,endFreq:72,type:"sine",gain:.12*g,duration:.075});
   }
 
-  gunShot(g=.5){
-    if(!this.allow("shot"))return;
-    this.noise({gain:.14*g,duration:.055,highpass:500,lowpass:6500});
-    this.tone({freq:220,endFreq:90,type:"square",gain:.07*g,duration:.065});
-  }
-
-  bowShot(g=.5){
-    if(!this.allow("shot"))return;
-    this.noise({gain:.045*g,duration:.07,highpass:1500,lowpass:5000});
-    this.tone({freq:520,endFreq:260,type:"triangle",gain:.035*g,duration:.095});
-  }
-
-  magicShot(g=.5){
-    if(!this.allow("shot"))return;
-    this.tone({freq:330,endFreq:940,type:"sine",gain:.055*g,duration:.14});
-    this.tone({freq:660,endFreq:420,type:"triangle",gain:.035*g,duration:.12,when:.015});
-  }
-
   explosion(g=.6,heavy=false){
     if(!this.allow("explosion"))return;
     const mul=heavy?1.25:1;
@@ -7525,15 +2875,7 @@ class AudioSystem{
     this.noise({gain:.06*g,duration:.13,lowpass:900});
   }
 
-  flagPlant(g=.8){
-    // 지면 충돌 + 금속 깃대 울림.
-    this.tone({freq:88,endFreq:45,type:"sine",gain:.23*g,duration:.16});
-    this.noise({gain:.18*g,duration:.12,lowpass:1200});
-    this.tone({freq:780,endFreq:430,type:"triangle",gain:.065*g,duration:.18,when:.035});
-    this.tone({freq:1170,endFreq:850,type:"sine",gain:.035*g,duration:.11,when:.045});
-  }
-
-  researchComplete(g=.6){
+  captureChime(g=.6){
     this.tone({freq:330,endFreq:440,type:"sine",gain:.06*g,duration:.16});
     this.tone({freq:440,endFreq:660,type:"sine",gain:.055*g,duration:.18,when:.09});
     this.tone({freq:660,endFreq:880,type:"triangle",gain:.045*g,duration:.22,when:.18});
@@ -7545,24 +2887,9 @@ class AudioSystem{
     this.noise({gain:.08*g,duration:.22,highpass:1200,lowpass:3200,when:.08});
   }
 
-  presentationProfile(sourceType){
-    const d=UnitDefinition.get(sourceType)||BuildingDefinition.get(sourceType)||{};
-    const attackVisual=AttackPresentationDefinition.forSource(sourceType);
-    const heavy=!!d.projectileArc||(d.splash||0)>=80||((BuildingDefinition.get(sourceType)||null)&&(d.atk||0)>=70)||!!d.vfxHeavy;
-    return {d,attackVisual,heavy};
-  }
-  playShotForType(sourceType,gain){
-    const p=this.presentationProfile(sourceType),impact=p.attackVisual.impact;
-    if(p.heavy||impact==="explosive")this.explosion(gain*.62,p.heavy);
-    else if(impact==="arcane")this.magicShot(gain);
-    else if(p.d?.vfxMuzzle==="gun")this.gunShot(gain);
-    else this.bowShot(gain*.78);
-  }
   playHitForType(sourceType,gain){
-    const p=this.presentationProfile(sourceType),impact=p.attackVisual.impact;
-    if(p.heavy||impact==="explosive")this.explosion(gain,p.heavy);
-    else if(impact==="arcane")this.magicShot(gain*.58);
-    else if(impact==="pierce")this.metalHit(gain*.78);
+    const d=UnitDefinition.get(sourceType)||BuildingDefinition.get(sourceType)||{};
+    if((d.splash||0)>=80)this.explosion(gain,true);
     else this.fleshHit(gain*.78);
   }
 
@@ -7570,68 +2897,10 @@ class AudioSystem{
     if(!e||!this.enabled||!this.unlocked)return;
     const gain=this.spatialGain(e.x??renderer.world.center.x,e.y??renderer.world.center.y,renderer);
     if(gain<=0)return;
-
-    if(e.type==="flag"){
-      this.flagPlant(Math.max(.55,gain));
-      return;
-    }
-    if(e.type==="meteorImpact"){
-      this.explosion(Math.max(.82,gain),true);
-      this.tone({freq:52,endFreq:26,type:"sine",gain:.24*gain,duration:.48,when:.02});
-      return;
-    }
-    if(e.type==="spellCast"&&e.spell==="tunnel"){
-      this.tone({freq:180,endFreq:62,type:"sine",gain:.09*gain,duration:.28});
-      this.tone({freq:420,endFreq:780,type:"triangle",gain:.045*gain,duration:.20,when:.03});
-      return;
-    }
-    if(e.type==="tunnelTransit"){
-      this.tone({freq:310,endFreq:760,type:"sine",gain:.045*gain,duration:.12});
-      return;
-    }
-    if(e.type==="spellEquipped"||e.type==="spellMasteryUp"||e.type==="tacticalChestEarned"||e.type==="captureComplete"){
-      this.researchComplete(Math.max(.45,gain));
-      return;
-    }
-    if(e.type==="buildCancelled"){
-      this.tone({freq:120,endFreq:65,type:"triangle",gain:.08*gain,duration:.12});
-      return;
-    }
-    if(e.type==="researchComplete"||e.type==="abilityComplete"||e.type==="specialResearchComplete"||e.type==="complete"){
-      this.researchComplete(gain*.75);
-      return;
-    }
-    if(e.type==="buildingDeath"){
-      this.buildingCollapse(gain);
-      return;
-    }
-    if(e.type==="death"){
-      this.death(gain);
-      return;
-    }
-    if(e.type==="pillbugBurst"){
-      this.explosion(Math.max(.78,gain),true);
-      return;
-    }
-    if(e.type==="deepThornSpike"||e.type==="rootSpike"){
-      this.explosion(Math.max(.52,gain),true);
-      return;
-    }
-    if(e.type==="mineHit"){
-      // 짧은 금속성 곡괭이 타격 + 광석 파편음. 총성과 완전히 다른 음색.
-      if(!this.allow("hit"))return;
-      this.tone({freq:690,endFreq:410,type:"triangle",gain:.065*gain,duration:.075});
-      this.tone({freq:1180,endFreq:760,type:"sine",gain:.025*gain,duration:.045,when:.012});
-      return;
-    }
-    if(e.type==="shoot"||e.type==="towerShot"){
-      this.playShotForType(e.unit||e.sourceType||"",gain);
-      return;
-    }
-    if(e.type==="hit"){
-      this.playHitForType(e.sourceType||"",gain);
-      return;
-    }
+    if(e.type==="captureComplete")this.captureChime(Math.max(.45,gain));
+    else if(e.type==="buildingDeath")this.buildingCollapse(gain);
+    else if(e.type==="death")this.death(gain);
+    else if(e.type==="hit")this.playHitForType(e.sourceType||"",gain);
   }
 
   processSnapshot(snapshot,renderer){
@@ -7681,8 +2950,8 @@ UiRegistry.refs.dbgPerfSnapshot=DomUtil.byId("dbgPerfSnapshot");UiRegistry.refs.
 UiRegistry.refs.dbgPerfCollisionCore=DomUtil.byId("dbgPerfCollisionCore");UiRegistry.refs.dbgPerfCollisionTail=DomUtil.byId("dbgPerfCollisionTail");
 UiRegistry.refs.dbgPerfCombatSplit=DomUtil.byId("dbgPerfCombatSplit");UiRegistry.refs.dbgPerfCollisionSweepFlow=DomUtil.byId("dbgPerfCollisionSweepFlow");UiRegistry.refs.dbgPerfCollisionHardFixFlow=DomUtil.byId("dbgPerfCollisionHardFixFlow");
 UiRegistry.refs.dbgEndurancePeaks=DomUtil.byId("dbgEndurancePeaks");
-UiRegistry.refs.dbgBalanceTime=DomUtil.byId("dbgBalanceTime");UiRegistry.refs.dbgBalanceT2=DomUtil.byId("dbgBalanceT2");UiRegistry.refs.dbgBalanceT3=DomUtil.byId("dbgBalanceT3");UiRegistry.refs.dbgBalanceTech=DomUtil.byId("dbgBalanceTech");UiRegistry.refs.dbgBalanceCombat=DomUtil.byId("dbgBalanceCombat");UiRegistry.refs.dbgBalanceCapture=DomUtil.byId("dbgBalanceCapture");
-UiRegistry.refs.dbgBalanceMineral=DomUtil.byId("dbgBalanceMineral");UiRegistry.refs.dbgBalanceGas=DomUtil.byId("dbgBalanceGas");UiRegistry.refs.dbgBalanceArmy=DomUtil.byId("dbgBalanceArmy");UiRegistry.refs.dbgBalanceAir=DomUtil.byId("dbgBalanceAir");UiRegistry.refs.dbgBalanceAA=DomUtil.byId("dbgBalanceAA");UiRegistry.refs.dbgBalanceExhaust=DomUtil.byId("dbgBalanceExhaust");UiRegistry.refs.dbgBalanceLosses=DomUtil.byId("dbgBalanceLosses");
+UiRegistry.refs.dbgBalanceTime=DomUtil.byId("dbgBalanceTime");UiRegistry.refs.dbgBalanceCombat=DomUtil.byId("dbgBalanceCombat");UiRegistry.refs.dbgBalanceCapture=DomUtil.byId("dbgBalanceCapture");
+UiRegistry.refs.dbgBalanceArmy=DomUtil.byId("dbgBalanceArmy");UiRegistry.refs.dbgBalanceLosses=DomUtil.byId("dbgBalanceLosses");
 
 UiRegistry.refs.gameStartBtn=DomUtil.byId("gameStartBtn");
 UiRegistry.refs.singleStatus=DomUtil.byId("singleStatus");
@@ -7714,14 +2983,14 @@ UiRegistry.refs.launchCards?.addEventListener("click",e=>{const b=e.target.close
 
 const UI_RADIO=Object.freeze({
   screen:new Set(["lobby","game","replay","result"]),
-  modal:new Set(["none","campaign","create","join","match-menu","detail","spell-choice","disconnect","help"]),
+  modal:new Set(["none","create","join","match-menu","disconnect"]),
   command:new Set(["closed","tree","building"])
 });
 // UI STATE CONTRACT:
 // Radio: screen/modal/command.branch; Tree: command category/page + modalState phases;
 // Checkbox: only independent options. DOM classes are derived output, never app-state input.
 // Async/transient gesture/network booleans may remain local when simultaneous truth is valid.
-class UiRuntimeState{static value={screen:"lobby",modal:"none",modalState:{spellChoice:"idle",disconnect:"hidden"},command:{branch:"closed",category:"economy",page:null},options:{minimapExpanded:false,lockstepDebugOpen:false},settings:{presetId:"standard",simulationTps:10},target:{type:"flag"},selection:{unit:null,buildingId:null}}}
+class UiRuntimeState{static value={screen:"lobby",modal:"none",modalState:{disconnect:"hidden"},options:{minimapExpanded:false,lockstepDebugOpen:false},settings:{presetId:"standard",simulationTps:10}}}
 
 /* DOM write ownership contract:
    UiController is the sole generic visibility/screen/modal writer.
@@ -7738,7 +3007,6 @@ class UiController{
   static setUiScreen(value){UiController.setUiRadio("screen",value);UiController.renderUiState();LaunchScreens.syncScreen(value);return value}
   static setUiModal(value){
   const prev=UiRuntimeState.value.modal;UiController.setUiRadio("modal",value);
-  if(prev==="spell-choice"&&value!=="spell-choice")UiRuntimeState.value.modalState.spellChoice="idle";
   if(prev==="disconnect"&&value!=="disconnect")UiRuntimeState.value.modalState.disconnect="hidden";
   return value;
 }
@@ -7887,11 +3155,11 @@ class ConnectionPresentation{
   const avgCandidates=perf.spatialQueries?perf.spatialCandidates/perf.spatialQueries:0;
   UiRegistry.refs.dbgPerfStep.textContent=`${fmtMs(perf.lastStepMs)} / ${fmtMs(perf.ewmaStepMs)} / ${fmtMs(perf.maxStepMs)}`;
   UiRegistry.refs.dbgPerfPeerStep.textContent=peerPerf?`${peerRole} ${fmtMs(peerPerf.lastStepMs)} / EWMA ${fmtMs(peerPerf.ewmaStepMs)}`:"-";
-  UiRegistry.refs.dbgPerfCore.textContent=`${fmtMs(perf.indexMs)} / ${fmtMs(perf.worldMs)} / ${fmtMs(perf.economyMs)}`;
-  UiRegistry.refs.dbgPerfCombat.textContent=`${fmtMs(perf.workerMs)} / ${fmtMs(perf.visionMs)} / ${fmtMs(perf.combatMs)}`;
+  UiRegistry.refs.dbgPerfCore.textContent=`${fmtMs(perf.indexMs)} / ${fmtMs(perf.worldMs)}`;
+  UiRegistry.refs.dbgPerfCombat.textContent=`${fmtMs(perf.visionMs)} / ${fmtMs(perf.combatMs)}`;
   UiRegistry.refs.dbgPerfTail.textContent=`${fmtMs(perf.projectileMs)} / ${fmtMs(perf.collisionMs)} / ${fmtMs(perf.postMs)}`;
   UiRegistry.refs.dbgPerfSnapshot.textContent=perf.snapshotSamples?`${fmtMs(perf.snapshotMs)} / ${fmtMs(perf.maxSnapshotMs)}`:'표본 수집 중';
-  UiRegistry.refs.dbgPerfEntities.textContent=`${perf.aliveUnits||0} / ${perf.combatUnits||0} / ${perf.workers||0} / ${perf.projectiles||0}`;
+  UiRegistry.refs.dbgPerfEntities.textContent=`${perf.aliveUnits||0} / ${perf.combatUnits||0} / ${perf.projectiles||0}`;
   UiRegistry.refs.dbgPerfSpatial.textContent=`${perf.spatialQueries||0} / ${perf.spatialCandidates||0} (${avgCandidates.toFixed(1)})`;
   UiRegistry.refs.dbgPerfTarget.textContent=`target ${perf.targetQueries||0} · reject ${perf.targetVisibilityRejects||0} / vis ${perf.visibilityChecks||0} · sideQ ${perf.sideSpatialQueries||0}`;
   UiRegistry.refs.dbgPerfCombatSplit.textContent=`${fmtMs(perf.combatTargetPickMs)} / ${fmtMs(perf.combatOtherMs)} · ${perf.combatTargetPickCalls||0} target calls`;
@@ -7943,24 +3211,11 @@ class ConnectionPresentation{
   const bs=active.sim?.balanceStats||PerformanceTelemetry.createLocalBalanceStats();
 const formatTickTime=t=>t==null?"-":`${SimulationTiming.ticksToSeconds(t).toFixed(1)}s`;
   const pairTicks=a=>`${formatTickTime(a?.[0])} / ${formatTickTime(a?.[1])}`;
-  const pairNums=a=>`${Number(a?.[0])||0} / ${Number(a?.[1])||0}`;
   const avgArmy=[0,1].map(side=>bs.samples?bs.armyTotal[side]/bs.samples:0);
-  const pct=(n,d)=>d?`${Math.round(n/d*100)}%`:"0%";
-  const elapsedMinutes=SimulationTiming.elapsedMinutes(active.sim?.tick);
-  const mineralRate=bs.mineralIncome.map(v=>Math.round((Number(v)||0)/elapsedMinutes));
-  const gasRate=bs.gasIncome.map(v=>Math.round((Number(v)||0)/elapsedMinutes));
   UiRegistry.refs.dbgBalanceTime.textContent=`${formatTickTime(active.sim?.tick)} / ${bs.gameEndTick==null?"진행 중":`${formatTickTime(bs.gameEndTick)} · ${bs.winner||"-"}`}`;
-  UiRegistry.refs.dbgBalanceT2.textContent=pairTicks(bs.firstTier2UnitTick);
-  UiRegistry.refs.dbgBalanceT3.textContent=pairTicks(bs.firstTier3UnitTick);
-  UiRegistry.refs.dbgBalanceTech.textContent=`A ${pairTicks(bs.firstTech2Tick)} · L ${pairTicks(bs.firstTech3Tick)}`;
   UiRegistry.refs.dbgBalanceCombat.textContent=formatTickTime(bs.firstCombatTick);
   UiRegistry.refs.dbgBalanceCapture.textContent=pairTicks(bs.firstCaptureTick);
-  UiRegistry.refs.dbgBalanceMineral.textContent=`${pairNums(bs.mineralIncome)} · 분당 ${mineralRate[0]} / ${mineralRate[1]}`;
-  UiRegistry.refs.dbgBalanceGas.textContent=`${pairNums(bs.gasIncome)} · 분당 ${gasRate[0]} / ${gasRate[1]}`;
   UiRegistry.refs.dbgBalanceArmy.textContent=`${bs.currentArmy[0]}/${avgArmy[0].toFixed(1)}/${bs.armyPeak[0]} · ${bs.currentArmy[1]}/${avgArmy[1].toFixed(1)}/${bs.armyPeak[1]}`;
-  UiRegistry.refs.dbgBalanceAir.textContent=`${pct(bs.currentAir[0],bs.currentArmy[0])} / ${pct(bs.currentAir[1],bs.currentArmy[1])}`;
-  UiRegistry.refs.dbgBalanceAA.textContent=`${pct(bs.currentAntiAir[0],bs.currentArmy[0])} / ${pct(bs.currentAntiAir[1],bs.currentArmy[1])}`;
-  UiRegistry.refs.dbgBalanceExhaust.textContent=pairNums(bs.productionExhausted);
   UiRegistry.refs.dbgBalanceLosses.textContent=`${bs.buildingLosses[0]}/${bs.outpostLosses[0]} · ${bs.buildingLosses[1]}/${bs.outpostLosses[1]}`;
 
   if(UiRegistry.refs.manualRecoveryBtn){
@@ -8163,11 +3418,10 @@ class ReplayPresentation{
   static replayStatsHtml(snapshot,sim){
   if(!snapshot||!sim)return"";
   const card=side=>{
-    const army=(snapshot.units||[]).filter(u=>u.alive&&u.side===side&&!UnitDefinition.get(u.type)?.economyWorker&&!UnitDefinition.get(u.type)?.carrierSummon).length;
-    const workers=(snapshot.units||[]).filter(u=>u.alive&&u.side===side&&!!UnitDefinition.get(u.type)?.economyWorker).length;
+    const army=(snapshot.units||[]).filter(u=>u.alive&&u.side===side).length;
     const buildings=(snapshot.buildings||[]).filter(b=>b.alive!==false&&b.side===side).length;
-    const supply=sim.supplyUsed(side)+"/"+sim.supplyCap(side);
-    return `<div class="replay-side-card ${side===0?"host":"guest"}"><div class="replay-side-name">${side===0?"HOST":"GUEST"}</div><div class="replay-side-line"><span>◆ 미네랄</span><b>${Math.floor(snapshot.wallet?.[side]||0)}</b></div><div class="replay-side-line"><span>⬡ 가스</span><b>${Math.floor(snapshot.gasWallet?.[side]||0)}</b></div><div class="replay-side-line"><span>▣ 보급</span><b>${supply}</b></div><div class="replay-side-line"><span>⚔ 병력 / ⚒ 일꾼</span><b>${army} / ${workers}</b></div><div class="replay-side-line"><span>⌂ 건물 · 테크</span><b>${buildings} · T${snapshot.tech?.[side]||1}</b></div></div>`;
+    const captures=(snapshot.capturePoints||[]).filter(cp=>cp.owner===side).length;
+    return `<div class="replay-side-card ${side===0?"host":"guest"}"><div class="replay-side-name">${side===0?"HOST":"GUEST"}</div><div class="replay-side-line"><span>◆ 자원</span><b>${Math.floor(snapshot.wallet?.[side]||0)}</b></div><div class="replay-side-line"><span>⚔ 병력</span><b>${army}</b></div><div class="replay-side-line"><span>⌂ 건물 · 거점</span><b>${buildings} · ${captures}</b></div></div>`;
   };
   return `<div class="replay-stats-title">REPLAY · 양측 현황</div><div class="replay-stats-grid">${card(0)}${card(1)}</div>`;
 }
@@ -8202,11 +3456,6 @@ class ReplayPresentation{
 
   // Replay zoom is camera presentation only. Transient gameplay/prediction
   // visuals must never be scaled or carried across replay zoom changes.
-  ActiveViewState.renderer.buildPreview=null;
-  ActiveViewState.renderer.spellPreview=null;
-  ActiveViewState.renderer.pendingBuildGhosts=[];
-  ActiveViewState.renderer.chargedSkillGesture=null;
-  ActiveViewState.renderer.predictedFlag=null;
   ActiveViewState.renderer.selectedBuildingId=null;
 
   const oldW=ActiveViewState.renderer.viewWorldW(),oldH=ActiveViewState.renderer.viewWorldH();
@@ -8230,11 +3479,6 @@ class ReplayPresentation{
     ActiveViewState.minimap=new MiniMap(UiRegistry.refs.minimapCanvas);
   }
   ReplayPresentation.applyReplayPerspective();
-  ActiveViewState.renderer.buildPreview=null;
-  ActiveViewState.renderer.spellPreview=null;
-  ActiveViewState.renderer.pendingBuildGhosts=[];
-  ActiveViewState.renderer.chargedSkillGesture=null;
-  ActiveViewState.renderer.predictedFlag=null;
   ActiveViewState.renderer.selectedBuildingId=null;
   ActiveViewState.renderer.setSnapshot(s,{liveTargets:false});ActiveViewState.minimap?.set(ActiveViewState.renderer,s);
   audioSystem.processSnapshot(s,ActiveViewState.renderer);
@@ -8283,13 +3527,11 @@ class ReplayPresentation{
     player=new ReplayPlayer(loadedData);
     snapshot=player.sim.snapshot();
   }catch(e){player?.stop();LogUtil.log(`⚠ 리플레이 열기 실패 · ${e.message||e}`);onError?.(e);return false}
-  CampaignPresentation.clear();
   MatchLifecycle.disposeMatches("replay-start");
   ReplayPresentation.replayPlayer?.stop();
   ReplayPresentation.replayLoadedData=loadedData;
   ReplayPresentation.replayPlayer=player;
   if(ActiveViewState.renderer){
-    ActiveViewState.renderer.pendingBuildGhosts=[];ActiveViewState.renderer.predictedFlag=null;ActiveViewState.renderer.latencySpellFx=[];ActiveViewState.renderer.buildPreview=null;ActiveViewState.renderer.spellPreview=null;ActiveViewState.renderer.chargedSkillGesture=null;
   }
   UiController.closeUiModal("create");UiController.closeUiModal("join");
   
@@ -8317,566 +3559,6 @@ class SinglePlayerModeUtil{static isSinglePlayer(){return !!MatchLifecycle.singl
 
 
 
-const CAMPAIGN_MISSION_SCHEMA_VERSION=7;
-const CAMPAIGN_MANIFEST_SCHEMA_VERSION=2;
-class CampaignFaction{
- static values=Object.freeze({player:"player",enemy:"enemy",neutral:"neutral"});
- static side(faction,humanSide){
-  const key=String(faction||"").trim().toLowerCase();
-  if(!Object.prototype.hasOwnProperty.call(this.values,key))throw new Error(`알 수 없는 캠페인 진영: ${faction}`);
-  return key==="player"?humanSide:key==="enemy"?1-humanSide:NEUTRAL_SIDE;
- }
-}
-class CampaignMapDefinition{
- static normalizeType(raw){
-  const type=String(raw?.type||"").trim().toLowerCase();
-  if(type==="auto"||type==="manual")return type;
-  throw new Error(`지원하지 않는 캠페인 맵 타입: ${type||"미지정"}`);
- }
- static build(raw,rules=GameRuleDefinition.current,seed=0,humanSide=0){
-  const mapType=this.normalizeType(raw);
-  if(mapType==="auto"){
-    const generated=MapGeneration.generateMapDescriptor({rules,seed:seed>>>0,roundNumber:rules?.roundNumber||1});
-    return generated;
-  }
-  const width=Math.max(2400,Math.round(Number(raw?.width)||Number(rules?.map?.width)||GameRuleDefinition.defaults.map.width)),height=Math.max(2400,Math.round(Number(raw?.height)||Number(rules?.map?.height)||GameRuleDefinition.defaults.map.height)),minDim=Math.min(width,height);
-  const point=p=>({x:Math.round(RangeUtil.clamp(Number(p?.[0])||0,0,1)*width),y:Math.round(RangeUtil.clamp(Number(p?.[1])||0,0,1)*height)});
-  const pts=a=>(Array.isArray(a)?a:[]).map(point),radius=v=>Math.max(20,Math.round(RangeUtil.clamp(Number(v)||.05,.005,.4)*minDim));
-  const base=MapGeneration.fixedStandardMapDescriptor(rules,seed,1),sp=raw?.spawns||{};
-  base.generator="campaign-authored";base.generatorVersion=4;base.seed=seed>>>0;base.width=width;base.height=height;
-  // Strict manual-map contract: procedural descriptor contents are never inherited.
-  // The authored JSON is the sole source of terrain/control/resources/scenario objects.
-  base.resources=[];base.gasNodes=[];base.camps=[];base.capturePoints=[];base.biome=String(raw?.biome||"flower-border");base.symmetry="authored";
-  base.spawns={host:point(sp.host||[.14,.84]),guest:point(sp.guest||[.86,.16])};
-  const lanes=raw?.lanes||{};for(const k of ["top","mid","bot"])base.laneControlPoints[k]=Array.isArray(lanes[k])&&lanes[k].length>=2?pts(lanes[k]):[{...base.spawns.host},{...base.spawns.guest}];
-  base.flags=[MapGeometry.pointOnPolyline(base.laneControlPoints.mid,.18),MapGeometry.pointOnPolyline(base.laneControlPoints.mid,.82)].map(p=>({...p,forced:false}));
-  base.capturePoints=(Array.isArray(raw?.capturePoints)?raw.capturePoints:[]).map((c,i)=>({...point(c.position),id:String(c.id||`campaign-cp-${i}`),laneKey:String(c.lane||"mid"),lane:String(c.lane||"mid").toUpperCase(),label:String(c.label||"전선 거점"),stage:Number(c.stage)||1,enabled:c.enabled!==false,owner:c.owner===0||c.owner===1?c.owner:null}));
-  const t=raw?.terrain||{};base.terrain={riverPath:pts(t.river?.points),riverHalfWidth:radius(t.river?.halfWidth||.035),riverBranches:[],riverPolygon:[],riverBranchPolygons:[],bridges:(Array.isArray(t.bridges)?t.bridges:[]).map((b,i)=>({...point(b.position),id:String(b.id||`bridge-${i}`),angle:Number(b.angle)||0,level:Number(b.level??0),halfLength:radius(b.halfLength||.055),halfWidth:radius(b.halfWidth||.018)}))};
-  base.terrain.layers=(t.layers||[]).map(o=>({id:String(o.id),level:Number(o.level),points:pts(o.points),...(o.innerPoints?{innerPoints:pts(o.innerPoints)}:{})}));
-  base.terrain.ramps=(t.ramps||[]).map(o=>({...o,run:radius(o.run)}));
-  base.terrain.blockers=(t.blockers||[]).map(o=>({id:o.id,kind:o.kind||"cliff",points:pts(o.points),blocksMovement:o.blocksMovement!==false,blocksVision:o.blocksVision!==false,blocksProjectile:!!o.blocksProjectile,blocksAirVision:!!o.blocksAirVision}));
-  base.terrain.roads=(t.roads||[]).map(o=>({id:o.id,points:pts(o.points),width:Math.max(32,(Number(o.width)||.04)*minDim)}));
-  // Resource placement is a shared map policy, not a campaign exception.
-  // objective-auto reuses the normal base/capture-point resource generator, so every
-  // expansion resource cluster has a meaningful control point and balance changes flow through automatically.
-  const resourcePlacement=String(raw?.content?.resourcePlacement||rules?.map?.content?.resourcePlacement||"objective-auto");
-  if(resourcePlacement==="objective-auto"){
-    const host=base.spawns.host,guest=base.spawns.guest,axisX=guest.x-host.x,axisY=guest.y-host.y,axisLen=Math.hypot(axisX,axisY)||1;
-    const ux=axisX/axisLen,uy=axisY/axisLen,nx=-uy,ny=ux,margin=150;
-    const ctx={rules,width,height,seed:seed>>>0,host,guest,ux,uy,nx,ny,scale:Math.min(width/3600,height/4200),clampPt:p=>({x:Math.round(RangeUtil.clamp(p.x,margin,width-margin)),y:Math.round(RangeUtil.clamp(p.y,margin,height-margin))})};
-    const amountCfg={...(rules?.map?.content?.resourceAmounts||{}),...(raw?.content?.resourceAmounts||{})};
-    ctx.resourceAmounts=amountCfg;
-    const generated=MapGeneration.generateProceduralResources(ctx,base.capturePoints);
-    base.resources=generated.resources;base.gasNodes=generated.gasNodes;
-  }else if(resourcePlacement==="manual"){
-    base.resources=(Array.isArray(raw?.resources)?raw.resources:[]).map((r,i)=>({...point(r.position),id:String(r.id||`cm${i+1}`),amount:Math.max(1,Math.round(Number(r.amount)||900)),max:Math.max(1,Math.round(Number(r.amount)||900)),r:28}));
-    base.gasNodes=(Array.isArray(raw?.gasNodes)?raw.gasNodes:[]).map((g,i)=>({...point(g.position),id:String(g.id||`cg${i+1}`),amount:Math.max(1,Math.round(Number(g.amount)||1600)),max:Math.max(1,Math.round(Number(g.amount)||1600)),r:32}));
-  }else{base.resources=[];base.gasNodes=[]}
-  if(base.terrain.blockers.length||base.terrain.layers.length){
-    const geometry=TerrainGeometry.fromMap(base);
-    const occupied=[];
-    for(const node of [...base.resources,...base.gasNodes]){
-      const r=base.gasNodes.includes(node)?110:65;
-      if(!geometry.circleClear(node.x,node.y,r)){
-        const origin={x:node.x,y:node.y};let found=null;
-        for(let ring=32;ring<=512&&!found;ring+=32)for(let k=0;k<24;k++){
-          const a=k*Math.PI/12,x=origin.x+Math.cos(a)*ring,y=origin.y+Math.sin(a)*ring;
-          if(!geometry.circleClear(x,y,r)||occupied.some(p=>Math.hypot(x-p.x,y-p.y)<r+p.r)||[base.spawns.host,base.spawns.guest,...base.capturePoints].some(p=>Math.hypot(x-p.x,y-p.y)<130+r))continue;
-          found={x:Math.round(x),y:Math.round(y)};break;
-        }
-        if(!found)throw new Error(`자원권에 접근 가능한 공간이 없습니다: ${node.id}`);
-        Object.assign(node,found);
-      }
-      occupied.push({x:node.x,y:node.y,r});
-    }
-  }
-
-  const authoredForces=[
-    ...(Array.isArray(raw?.garrisons)?raw.garrisons:[]).map(spec=>({spec,kind:"unitNeutralObject",spawnOnStart:spec.spawnOnStart!==false})),
-    ...(Array.isArray(raw?.attackForces)?raw.attackForces:[]).map(spec=>({spec,kind:"scenarioUnitGroup",spawnOnStart:spec.spawnOnStart!==false}))
-  ];
-  base.camps=authoredForces.map(({spec:o,kind,spawnOnStart},i)=>{
-    const anchorId=String(o.capturePoint||"").trim();
-    const anchor=anchorId?base.capturePoints.find(cp=>cp.id===anchorId):null;
-    const rawPos=point(o.position);
-    const offset=Array.isArray(o.offset)?o.offset:[0,0];
-    const pos=anchor?{x:Math.round(anchor.x+(Number(offset[0])||0)*width),y:Math.round(anchor.y+(Number(offset[1])||0)*height)}:rawPos;
-    const composition=UnitCompositionDefinition.normalize(Array.isArray(o.composition)?o.composition:[]);
-    const campSide=CampaignFaction.side(o.faction,humanSide);
-    const neutralObject=kind==="unitNeutralObject";
-    const control=kind==="scenarioUnitGroup"?"guard":["guard","attack"].includes(String(o.control))?String(o.control):"attack";
-    return {id:String(o.id||`authored-force-${i}`),kind,x:pos.x,y:pos.y,state:"ready",respawnAt:0,lastHitSide:null,spawnNo:0,side:neutralObject?NEUTRAL_SIDE:campSide,friendlySide:neutralObject?campSide:null,composition,formation:["cluster","line","spread"].includes(String(o.formation))?String(o.formation):"cluster",control,guardRadius:radius(o.guardRadius||.085),label:String(o.label||"배치 병력"),homeSpread:radius(o.spread||.018),spawnOnStart};
-  }).filter(c=>UnitCompositionDefinition.total(c.composition)>0);
-  base.authoredStructures=(Array.isArray(raw?.structures)?raw.structures:[]).map((o,i)=>{
-    const anchorId=String(o.capturePoint||"").trim();
-    const anchor=anchorId?base.capturePoints.find(cp=>cp.id===anchorId):null;
-    const offset=Array.isArray(o.offset)?o.offset:[0,0],rawPos=point(o.position);
-    const pos=anchor?{x:Math.round(anchor.x+(Number(offset[0])||0)*width),y:Math.round(anchor.y+(Number(offset[1])||0)*height)}:rawPos;
-    const side=CampaignFaction.side(o.faction,humanSide);
-    const type=String(o.building||"");
-    if(!BuildingDefinition.get(type))return null;
-    return {id:String(o.id||`authored-structure-${i}`),type,side,x:pos.x,y:pos.y,label:String(o.label||type),capturePoint:anchorId||null,objectiveGroup:String(o.objectiveGroup||"").trim()||null};
-  }).filter(Boolean);
-  TerrainGeometry.cache.delete(base);
-  if(base.terrain.blockers.length||base.terrain.layers.length){
-    const g=TerrainGeometry.fromMap(base),errors=[];
-    for(const [role,p] of Object.entries(base.spawns))if(!g.circleClear(p.x,p.y,BuildingDefinition.get(BuildingDefinition.forRole("mainBase")).size+40))errors.push(`map.spawns.${role}: 본진과 시작 병력 공간이 막힌 지형과 겹칩니다.`);
-    for(const cp of base.capturePoints)if(!g.circleClear(cp.x,cp.y,BuildingDefinition.get(BuildingDefinition.forRole("outpost")).size+20))errors.push(`map.capturePoints.${cp.id}: 전진 거점 자리가 막힌 지형과 겹칩니다.`);
-    for(const b of base.authoredStructures)if(!g.circleClear(b.x,b.y,(BuildingDefinition.get(b.type)?.size||35)+2))errors.push(`map.structures.${b.id}: 건물이 막힌 지형과 겹칩니다.`);
-    for(const c of base.camps){const ground=c.composition.filter(x=>UnitDefinition.get(x.unit)?.layer!=="AIR");if(ground.length&&!g.circleClear(c.x,c.y,30))errors.push(`map.forces.${c.id}: 병력 배치 중심이 막힌 지형과 겹칩니다.`)}
-    if(errors.length)throw new Error(errors.join("\n"));
-  }
-  return base;
- }
-}
-class CampaignModuleLoader{
- static evaluate(source,label="campaign.js"){
-  const text=String(source||"").trim();if(!text)throw new Error("빈 Mission JS입니다.");
-  let mission;
-  try{mission=(new Function('"use strict";return (\n'+text+'\n);\n//# sourceURL='+String(label).replace(/[^a-zA-Z0-9_./:-]/g,"_") ))()}
-  catch(e){throw new Error(`Mission JS 실행 실패 · ${e?.message||e}`)}
-  if(!mission||typeof mission!=="object"||Array.isArray(mission))throw new Error("Mission JS는 미션 객체를 반환해야 합니다.");
-  Object.defineProperty(mission,"__moduleSource",{value:text,enumerable:false,configurable:true});
-  return mission;
- }
- static sourceOf(raw){return typeof raw?.__moduleSource==="string"?raw.__moduleSource:String(raw?.moduleSource||"")}
-}
-class CampaignScriptRuntime{
- constructor(sim,mission){this.sim=sim;this.mission=mission;this.definitionHash=HashUtil.hash(StableSerializationUtil.stableStringify(mission));this.state=Object.create(null);this.module=null;this.script=null;this.started=false;this.compile()}
- compile(){const source=String(this.mission?.moduleSource||"");if(!source)return;this.module=CampaignModuleLoader.evaluate(source,this.mission?.missionId||"campaign.js");this.script=this.module?.script&&typeof this.module.script==="object"?this.module.script:null}
- ctx(){const sim=this.sim,mission=this.mission,state=this.state,humanSide=this.humanSide(),enemySide=1-humanSide;
-  const group=id=>{id=String(id);if(!sim.camps.some(c=>c.id===id))throw new Error(`알 수 없는 캠페인 그룹: ${id}`);return sim.units.filter(u=>u.alive&&(u.campId||u.scenarioGroupId)===id)};
-  const mainBase=side=>sim.buildings.find(b=>b.alive!==false&&b.hp>0&&b.side===side&&BuildingDefinition.get(b.type)?.isMainBase)||null;
-  return Object.freeze({sim,time:Object.freeze({tick:sim.tick,seconds:sim.ticksMs(sim.tick)/1000,tps:sim.tps}),state,mission,humanSide,enemySide,
-   random:Object.freeze({next:()=>{const n=(state.__randomSeq=(state.__randomSeq||0)+1),v=HashUtil.hash(`${sim.seed}|campaign-script|${mission.missionId}|${sim.tick}|${n}`)>>>0;return v/4294967296},range:(a,b)=>{const n=(state.__randomSeq=(state.__randomSeq||0)+1),v=(HashUtil.hash(`${sim.seed}|campaign-script|${mission.missionId}|${sim.tick}|${n}`)>>>0)/4294967296;return a+v*(b-a)}}),
-   units:Object.freeze({all:()=>sim.units.filter(u=>u.alive),group,side:s=>sim.units.filter(u=>u.alive&&u.side===s),inRegion:(region,side=null)=>{const r=typeof region==="string"?mission.regions?.[region]:region;if(!r)throw new Error(`알 수 없는 캠페인 지역: ${region}`);const x=(Number(r.center?.[0])||0)*sim.world.width,y=(Number(r.center?.[1])||0)*sim.world.height,rr=(Number(r.radius)||.08)*Math.min(sim.world.width,sim.world.height);return sim.units.filter(u=>u.alive&&(side==null||u.side===side)&&Math.hypot(u.x-x,u.y-y)<=rr)}}),
-   buildings:Object.freeze({all:()=>sim.buildings.filter(b=>b.alive!==false&&b.hp>0),side:s=>sim.buildings.filter(b=>b.alive!==false&&b.hp>0&&b.side===s),mainBase}),
-   resources:Object.freeze({minerals:s=>Number(sim.wallet?.[s]||0),gas:s=>Number(sim.gasWallet?.[s]||0)}),
-   groups:Object.freeze({get:group}),regions:Object.freeze({get:id=>{if(!Object.prototype.hasOwnProperty.call(mission.regions,id))throw new Error(`알 수 없는 캠페인 지역: ${id}`);return mission.regions[id]}}),
-   orders:Object.freeze({attack:(id,target="playerBase")=>this.runAction({type:"order",group:id,order:"attack",target}),hold:id=>this.runAction({type:"order",group:id,order:"hold"})}),
-   spawn:Object.freeze({group:id=>{this.runAction({type:"spawnObject",objectId:String(id)});return group(id)}}),
-   flags:Object.freeze({get:id=>this.scenario.flags[String(id)],set:(id,v)=>this.runAction({type:"setFlag",id,value:v})}),
-   ui:Object.freeze({toast:(text,durationMs)=>this.runAction({type:"toast",text,durationMs}),ping:region=>this.runAction({type:"ping",region})}),
-   objectives:Object.freeze({set:(id,text,state="active")=>this.runAction({type:"setObjective",id,text,state}),complete:id=>this.runAction({type:"completeObjective",id})}),
-   action:a=>this.runAction(a),
-   emit:(type,data={})=>sim.events.push({...data,type:String(type)}),raw:Object.freeze({sim})});
- }
- call(name,...args){
-  if(this.disposed)throw new Error(`종료된 캠페인 스크립트 호출: ${name}`);
-  const fn=this.script?.[name];if(typeof fn!=="function")return;
-  try{const result=fn(this.ctx(),...args);if(result&&typeof result.then==="function")throw new Error("시뮬레이션 hook은 동기 함수여야 합니다.");return result}
-  catch(error){throw new Error(`[${this.mission.missionId}] ${name} · tick ${this.sim.tick}: ${error?.message||error}`,{cause:error})}
- }
- start(){if(this.started)return;this.started=true;this.scenario;this.call("onInit");this.call("onStart")}
- tick(){if(!this.started)this.start();this.call("onTick")}
- event(event){this.call("onEvent",event)}
- dispose(reason="disposed"){
-  if(this.disposed)return false;
-  this.disposed=true;
-  const fn=this.script?.onDispose;
-  // Teardown is local, unlike onTick: it may happen on only one peer during seek
-  // or recovery. Supply detached data, never the live sim/command API.
-  try{
-   if(typeof fn==="function"){
-    const result=fn(Object.freeze({reason,missionId:this.mission.missionId,
-     time:Object.freeze({tick:this.sim.tick,seconds:this.sim.ticksMs(this.sim.tick)/1000,tps:this.sim.tps}),
-     state:CloneUtil.clone(this.state)}));
-    if(result&&typeof result.then==="function")throw new Error("onDispose는 동기 함수여야 합니다.");
-   }
-  }finally{this.script=null;this.module=null}
-  return true;
- }
-
- get scenario(){
-  return this.state.__scenario||(this.state.__scenario={
-   flags:CloneUtil.clone(this.mission.flags||{}),
-   objectives:CloneUtil.clone(this.mission.objectives||[]),
-   triggers:{},pending:[],presentationSeq:0,result:null
-  });
- }
- humanSide(){return this.mission.playerRole==="guest"?1:0}
- region(def){return typeof def==="string"?this.mission.regions?.[def]||null:def&&typeof def==="object"?def:null}
- postStep(){
-  for(const e of [...this.sim.events])this.event(e);
-  this.runTriggers();
- }
- runTriggers(){
-  const sim=this.sim,st=this.scenario;
-  const due=st.pending.filter(x=>x.tick<=sim.tick);
-  st.pending=st.pending.filter(x=>x.tick>sim.tick);
-  for(const job of due){const event=this.mission.events.find(e=>e.id===job.id);if(event)for(const a of event.actions)this.runAction(a)}
-  for(const e of this.mission.events||[]){
-   if(e.enabled===false)continue;
-   const f=st.triggers[e.id]||{count:0,lastTick:0};
-   if((e.once!==false&&f.count>0)||(e.repeatCount!=null&&f.count>=e.repeatCount))continue;
-   if(f.count&&sim.tick-f.lastTick<sim.msTicks(e.cooldownMs||0))continue;
-   if(!this.triggerMet(e.when))continue;
-   st.triggers[e.id]={count:f.count+1,lastTick:sim.tick};
-   const delay=sim.msTicks(e.delayMs||0,{minimum:0});
-   if(e.delayMs>0)st.pending.push({id:e.id,tick:sim.tick+delay});
-   else for(const a of e.actions)this.runAction(a);
-  }
- }
- present(action){
-  const id=++this.scenario.presentationSeq;
-  this.sim.events.push({type:"campaignPresentation",campaignEventId:id,action:CloneUtil.clone(action)});
- }
- static actionDefinitions=Object.freeze([
-{types:["toast","ping","cameraFocus"],run(a,sim,st){this.present(a);return}},
-{types:["setFlag"],run(a,sim,st){st.flags[String(a.id||"")]=a.value;return}},
-{types:["setObjective","completeObjective"],run(a,sim,st){const type=String(a.type||"");
-   const id=String(a.id||"objective"),i=st.objectives.findIndex(o=>o.id===id),old=i<0?{id,text:id}:st.objectives[i];
-   const next=type==="completeObjective"?{...old,state:"complete"}:{...old,id,text:String(a.text||old.text||id),state:String(a.state||"active")};
-   if(i<0)st.objectives.push(next);else st.objectives[i]=next;return;
-  }},
-{types:["spawnGroup"],run(a,sim,st){const id=String(a.id||a.group||`campaign-${sim.seq+1}`);let camp=sim.camps.find(c=>c.id===id);if(!camp){const p=a.position||[.5,.5],side=CampaignFaction.side(a.faction||"enemy",this.humanSide());camp={id,kind:"scenarioUnitGroup",x:(Number(p[0])||0)*sim.world.width,y:(Number(p[1])||0)*sim.world.height,state:"ready",respawnAt:0,spawnNo:0,side,composition:UnitCompositionDefinition.normalize(a.composition),formation:String(a.formation||"cluster"),label:String(a.label||id),homeSpread:(Number(a.spread)||.02)*Math.min(sim.world.width,sim.world.height),spawnOnStart:false};sim.camps.push(camp)}if(!sim.units.some(u=>u.alive&&(u.campId||u.scenarioGroupId)===id))sim.spawnCamp(camp);return}},
-{types:["order"],run(a,sim,st){const id=String(a.group||a.objectId||""),members=sim.units.filter(u=>u.alive&&(u.campId||u.scenarioGroupId)===id),camp=sim.camps.find(c=>c.id===id);let target=null;if(a.target==="playerBase")target=sim.buildings.find(b=>b.side===this.humanSide()&&b.alive!==false&&b.hp>0&&BuildingDefinition.get(b.type)?.isMainBase);else if(a.target==="enemyBase")target=sim.buildings.find(b=>b.side!==this.humanSide()&&b.side!==NEUTRAL_SIDE&&b.alive!==false&&b.hp>0&&BuildingDefinition.get(b.type)?.isMainBase);if(!target&&typeof a.target==="string")target=sim.liveEntityRefById(a.target)?.entity||null;if(!target&&Array.isArray(a.position))target={x:Number(a.position[0])*sim.world.width,y:Number(a.position[1])*sim.world.height};const order=String(a.order||"attack");if(camp){camp.control=order==="hold"?"guard":"attack";camp.order={type:order,targetId:target?.id||null,x:target?.x??camp.x,y:target?.y??camp.y};}for(const u of members){if(order==="hold"){u.aggroed=false;u.forcedTargetId=null;u.target=null}else{u.aggroed=true;if(target){u.forcedTargetId=target.id??null;u.target=target.id??null}}}sim.events.push({type:"campaignOrder",groupId:id,order,targetId:target?.id||null});return}},
-{types:["spawnObject","attackWave"],run(a,sim,st){const type=String(a.type||"");const camp=sim.camps?.find(c=>c.id===String(a.objectId||""));if(!camp)return;if(!sim.units.some(u=>u.alive&&(u.campId||u.scenarioGroupId)===camp.id))sim.spawnCamp(camp);if(type==="attackWave")this.runAction({type:"order",group:camp.id,order:"attack",target:a.target||"playerBase"});return}},
-{types:["setCaptureActive"],run(a,sim,st){const cp=sim.capturePoints.find(c=>c.id===String(a.id||a.captureId||""));if(cp)cp.enabled=a.enabled!==false;return}},
-{types:["setFaction"],run(a,sim,st){const id=String(a.group||a.objectId||""),side=CampaignFaction.side(a.faction,this.humanSide()),c=sim.camps.find(x=>x.id===id);if(c)c.side=side;for(const u of sim.units)if((u.campId||u.scenarioGroupId)===id){if(side===NEUTRAL_SIDE){u.scenarioGroupId=null;sim.makeUnitNeutralObject(u,id)}else{sim.enlistNeutralObjectUnit(u,side);u.scenarioGroupId=id}}return}},
-{types:["unlockUnit"],run(a,sim,st){const unit=String(a.unit||""),side=a.side==="enemy"?1-this.humanSide():this.humanSide();if(!CampaignMissionDefinition.validProductionUnit(unit))throw new Error(`생산 해금할 수 없는 병종: ${unit}`);if(!(sim.decks[side]||[]).includes(unit)){sim.decks[side].push(unit);sim.events.push({type:"campaignUnitUnlocked",side,unit})}return}},
-{types:["victory","defeat"],run(a,sim,st){const type=String(a.type||"");
-   st.result={winner:ConnectionRoleUtil.sideRole(type==="victory"?this.humanSide():1-this.humanSide()),reason:"campaign-trigger"};return;
-  }}
-]);
- static actions=new Map(this.actionDefinitions.flatMap(def=>def.types.map(type=>[type,def.run])));
- runAction(a){
-  const type=String(a?.type||""),handler=CampaignScriptRuntime.actions.get(type);
-  if(!handler)throw new Error(`지원하지 않는 캠페인 액션: ${type}`);
-  CampaignContentValidator.validateRuntimeAction(a,this);
-  return handler.call(this,a,this.sim,this.scenario);
- }
- static conditionDefinitions=Object.freeze([
-{types:["time"],run(t,sim,humanSide){return sim.tick>=sim.msTicks((Number(t.seconds)||0)*1000);}},
-{types:["flag"],run(t,sim,humanSide){return this.scenario.flags?.[String(t.id||"")]===t.equals;}},
-{types:["objectAlive","objectDead"],run(t,sim,humanSide){const type=String(t.type||"");const alive=sim.units.some(u=>u.alive&&(u.campId||u.scenarioGroupId)===String(t.objectId||t.id||""));return type==="objectAlive"?alive:!alive}},
-{types:["groupCount"],run(t,sim,humanSide){const n=sim.units.filter(u=>u.alive&&(u.campId||u.scenarioGroupId)===String(t.group||t.objectId||"")).length,v=Math.max(0,Number(t.value)||0),op=String(t.op||"<=");return op===">="?n>=v:op===">"?n>v:op==="="?n===v:op==="<"?n<v:n<=v}},
-{types:["regionCaptured"],run(t,sim,humanSide){const cp=sim.capturePoints.find(c=>c.id===String(t.id||t.captureId||"")),side=t.side==="enemy"?1-humanSide:humanSide;return !!cp&&cp.owner===side}},
-{types:["resource"],run(t,sim,humanSide){const side=t.side==="enemy"?1-humanSide:humanSide,val=String(t.resource||"mineral")==="gas"?sim.gasWallet?.[side]:sim.wallet?.[side];return Number(val||0)>=Number(t.atLeast||t.value||0)}},
-{types:["techReached"],run(t,sim,humanSide){const side=t.side==="enemy"?1-humanSide:humanSide;return Number(sim.tech?.[side]||0)>=Number(t.tier||1)}},
-{types:["enterRegion","unitsInRegion"],run(t,sim,humanSide){const r=this.region(t.region)||{center:t.center||[.5,.5],radius:t.radius||.08},x=(Number(r.center?.[0])||0)*sim.world.width,y=(Number(r.center?.[1])||0)*sim.world.height,rad=(Number(r.radius)||.08)*Math.min(sim.world.width,sim.world.height),side=t.side==="enemy"?1-humanSide:humanSide,n=sim.units.filter(u=>u.alive&&u.side===side&&Math.hypot(u.x-x,u.y-y)<=rad).length;return n>=Math.max(1,Number(t.count)||1)}},
-{types:["discoverObject"],run(t,sim,humanSide){const camp=sim.camps?.find(c=>c.id===String(t.objectId||""));if(!camp)return false;const targets=sim.units.filter(u=>u.alive&&(u.campId||u.scenarioGroupId)===camp.id),r=(Number(t.radius)||.11)*Math.min(sim.world.width,sim.world.height);return targets.length>0&&sim.units.some(a=>a.alive&&a.side===humanSide&&targets.some(x=>Math.hypot(a.x-x.x,a.y-x.y)<=r))}},
-{types:["cyclePhase"],run(t,sim,humanSide){const cycle=Math.max(1,Number(t.cycleSeconds)||1),offset=Number(t.offsetSeconds)||0,elapsed=Math.max(0,sim.ticksMs(sim.tick)/1000-offset);if(sim.ticksMs(sim.tick)/1000<offset)return false;const cycleIndex=Math.floor(elapsed/cycle)+1,within=elapsed%cycle,start=Math.max(0,Number(t.startSeconds)||0),end=Math.min(cycle,Number(t.endSeconds??cycle));if(cycleIndex<Math.max(1,Number(t.cycleAtLeast)||1))return false;if(t.cycleAtMost!=null&&cycleIndex>Number(t.cycleAtMost))return false;return within>=start&&within<end}},
-{types:["unitCount"],run(t,sim,humanSide){const side=t.side==="enemy"?1-humanSide:humanSide,type=t.unit==null?null:String(t.unit),n=sim.units.filter(u=>u.alive&&u.side===side&&(!type||u.type===type)).length,v=Math.max(0,Number(t.value??t.atLeast)||0),op=String(t.op||">=");return op===">="?n>=v:op===">"?n>v:op==="="?n===v:op==="<"?n<v:n<=v}},
-{types:["buildingComplete"],run(t,sim,humanSide){const side=t.side==="enemy"?1-humanSide:humanSide,type=String(t.building||"");return sim.buildings.some(b=>b.alive!==false&&b.complete&&b.side===side&&b.type===type)}},
-{types:["researchCompleted"],run(t,sim,humanSide){const side=t.side==="enemy"?1-humanSide:humanSide;if(t.researchId)return !!sim.specialResearch?.[side]?.[String(t.researchId)];if(t.unit)return !!sim.abilities?.[side]?.[String(t.unit)];if(t.research==="attack")return Number(sim.attackUpgrade?.[side]||0)>=Math.max(1,Number(t.level)||1);if(t.research==="armor")return Number(sim.armorUpgrade?.[side]||0)>=Math.max(1,Number(t.level)||1);return false}},
-{types:["structureCount"],run(t,sim,humanSide){const side=t.side==="enemy"?1-humanSide:t.side==="player"?humanSide:t.side==="neutral"?NEUTRAL_SIDE:null,group=String(t.group||t.objectiveGroup||""),types=Array.isArray(t.types)?new Set(t.types.map(String)):null,r=this.region(t.region),cx=(Number(r?.center?.[0])||0)*sim.world.width,cy=(Number(r?.center?.[1])||0)*sim.world.height,rr=r?(Number(r.radius)||.08)*Math.min(sim.world.width,sim.world.height):0;const n=sim.buildings.filter(b=>b.alive!==false&&b.hp>0&&(side==null||b.side===side)&&(!group||b.campaignObjectiveGroup===group)&&(!types||types.has(String(b.type)))&&(!r||Math.hypot(b.x-cx,b.y-cy)<=rr)).length,v=Math.max(0,Number(t.value)||0),op=String(t.op||"<=");return op===">="?n>=v:op===">"?n>v:op==="="?n===v:op==="<"?n<v:n<=v}}
-]);
- static conditions=new Map(this.conditionDefinitions.flatMap(def=>def.types.map(type=>[type,def.run])));
- triggerMet(t,sim=this.sim,humanSide=this.humanSide()){
-  if(!t||!sim)return false;
-  if(Array.isArray(t.all))return t.all.every(x=>this.triggerMet(x,sim,humanSide));
-  if(Array.isArray(t.any))return t.any.some(x=>this.triggerMet(x,sim,humanSide));
-  if(t.not)return !this.triggerMet(t.not,sim,humanSide);
-  const type=String(t.type||""),handler=CampaignScriptRuntime.conditions.get(type);
-  if(!handler)throw new Error(`지원하지 않는 캠페인 조건: ${type}`);
-  return handler.call(this,t,sim,humanSide);
- }
-}
-class CampaignOutcomeRules{
- static normalize(raw,map){
-  const type=String(raw?.type||"base-destroyed");
-  if(!["base-destroyed","structure-group-destroyed","scripted"].includes(type))throw new Error(`지원하지 않는 미션 승리 조건: ${type}`);
-  if(type==="base-destroyed"||type==="scripted")return {type};
-  const objectiveGroup=String(raw?.objectiveGroup||"").trim();
-  if(!objectiveGroup)throw new Error("구조물 파괴 승리 조건에는 objectiveGroup이 필요합니다.");
-  const targets=(map?.structures||[]).filter(b=>String(b.objectiveGroup||"")===objectiveGroup);
-  if(!targets.length)throw new Error(`승리 목표 구조물이 없습니다: ${objectiveGroup}`);
-  return {type,objectiveGroup};
- }
- static resolve(sim){
-  const alive=side=>sim.buildings.some(b=>b.alive!==false&&b.hp>0&&b.side===side&&BuildingDefinition.isMainBase(b.type));
-  const host=alive(0),guest=alive(1),m=sim.campaignScenario;
-  if(m){
-   const human=m.playerRole==="guest"?1:0,opponent=1-human,role=ConnectionRoleUtil.sideRole;
-   if(m.victory?.type==="scripted"){
-    if(!(human===0?host:guest))return {winner:role(opponent),reason:"base-destroyed"};
-    return sim.campaignScriptRuntime?.scenario.result||null;
-   }
-   if(m.victory?.type==="structure-group-destroyed"){
-    // Losing the defended base wins precedence over clearing the last objective.
-    if(!(human===0?host:guest))return {winner:role(opponent),reason:"base-destroyed"};
-    const requested=sim.campaignScriptRuntime?.scenario.result;
-    if(requested?.winner===role(opponent))return requested;
-    const group=m.victory.objectiveGroup;
-    const defined=(sim.mapDescriptor?.authoredStructures||[]).filter(b=>b.side===opponent&&b.objectiveGroup===group);
-    if(!defined.length)throw new Error(`적 승리 목표 구조물이 없습니다: ${group}`);
-    const remaining=sim.buildings.some(b=>b.alive!==false&&b.hp>0&&b.side===opponent&&b.campaignObjectiveGroup===group);
-    return remaining?null:{winner:role(human),reason:"campaign-objectives"};
-   }
-   const scripted=sim.campaignScriptRuntime?.scenario.result;
-   if(scripted)return scripted;
-  }
-  if(!host&&!guest)return {winner:"draw",reason:"draw"};
-  if(!host)return {winner:"guest",reason:"base-destroyed"};
-  if(!guest)return {winner:"host",reason:"base-destroyed"};
-  return null;
- }
-}
-// Validate authored references before normalization can drop/replace anything.
-// Legal primitive names are derived from the actual runtime dispatch registries.
-class CampaignContentValidator{
- static has(defs,id){return typeof id==="string"&&Object.prototype.hasOwnProperty.call(defs,id)}
- static validate(raw){
-  const errors=[],err=(path,text)=>errors.push(`${path}: ${text}`);
-  if(Number(raw?.schemaVersion)!==CAMPAIGN_MISSION_SCHEMA_VERSION)err("schemaVersion",`현재 스키마 ${CAMPAIGN_MISSION_SCHEMA_VERSION}가 필요합니다.`);
-  const object=(v,path)=>{if(!v||typeof v!=="object"||Array.isArray(v)){err(path,"객체가 필요합니다.");return false}return true};
-  const array=(v,path)=>{if(v==null)return [];if(!Array.isArray(v)){err(path,"배열이 필요합니다.");return []}return v};
-  const name=(id,path)=>{if(typeof id!=="string"||!id.trim()){err(path,"비어 있지 않은 ID가 필요합니다.");return ""}return id};
-  const number=(v,path,min=0,max=Infinity)=>{if(typeof v!=="number"||!Number.isFinite(v)||v<min||v>max)err(path,`${min}~${max===Infinity?"유한값":max} 범위의 숫자가 필요합니다.`)};
-  const position=(v,path,offset=false)=>{if(!Array.isArray(v)||v.length!==2){err(path,"[x,y] 상대좌표가 필요합니다.");return}v.forEach((n,i)=>number(n,`${path}[${i}]`,offset?-1:0,1))};
-  const units=(v,path,roster=false)=>array(v,path).forEach((id,i)=>{
-   if(!this.has(UnitDefinition.all,id))err(`${path}[${i}]`,`알 수 없는 병종 '${id}'`);
-   else if(roster){const d=UnitDefinition.get(id);if(!(d.tier>=1&&d.tier<=3)||d.economyWorker||d.carrierSummon)err(`${path}[${i}]`,`생산 덱에 사용할 수 없는 병종 '${id}'`)}
-  });
-  const composition=(v,path)=>{const rows=array(v,path);if(!rows.length)err(path,"한 종류 이상의 병력이 필요합니다.");rows.forEach((row,i)=>{
-    if(!object(row,`${path}[${i}]`))return;
-    units([row.unit],`${path}[${i}].unit`);
-    if(!Number.isSafeInteger(row.count)||row.count<1)err(`${path}[${i}].count`,"1 이상의 정수가 필요합니다.");
-   })};
-  const faction=(v,path,required=false)=>{const key=String(v??"").trim().toLowerCase();if(!key){if(required)err(path,"player / enemy / neutral 중 하나가 필요합니다.");return}if(!Object.prototype.hasOwnProperty.call(CampaignFaction.values,key))err(path,`알 수 없는 진영 '${v}'`)};
-  const add=(table,id,path)=>{if(table.has(id))err(path,`중복 ID '${id}'`);else table.set(id,path)};
-  const check=(table,id,path)=>{if(!table.has(id))err(path,`존재하지 않는 참조 '${id}'`)};
-  const cps=new Map(),groups=new Map(),structures=new Map(),objectives=new Map(),regions=new Map(),objectiveGroups=new Map(),eventIds=new Map();
-  for(const side of ["player","enemy"]){
-   const d=raw[side]||{};if(!object(d,side))continue;
-   if(Object.prototype.hasOwnProperty.call(d,"units"))err(`${side}.units`,"schema 7에서는 availableUnits를 사용합니다.");
-   units(d.availableUnits,`${side}.availableUnits`,true);
-   const starting=array(d.startingUnits,`${side}.startingUnits`);starting.forEach((row,i)=>{if(!object(row,`${side}.startingUnits[${i}]`))return;units([row.unit],`${side}.startingUnits[${i}].unit`,true);if(!Number.isSafeInteger(row.count)||row.count<1)err(`${side}.startingUnits[${i}].count`,"1 이상의 정수가 필요합니다.")});
-   if(d.startingWorkers!=null)number(d.startingWorkers,`${side}.startingWorkers`,0,30);
-   if(d.startingResources!=null){if(object(d.startingResources,`${side}.startingResources`)){number(Number(d.startingResources.minerals||0),`${side}.startingResources.minerals`,0);number(Number(d.startingResources.gas||0),`${side}.startingResources.gas`,0)}}
-   if(d.startingTech!=null)number(d.startingTech,`${side}.startingTech`,1,3);
-   array(d.startingBuildings,`${side}.startingBuildings`).forEach((spec,i)=>{const path=`${side}.startingBuildings[${i}]`;if(!object(spec,path))return;const building=String(spec.building||"");if(!this.has(BuildingDefinition.all,building)||BuildingDefinition.get(building)?.scenarioOnly)err(`${path}.building`,`시작 건물로 사용할 수 없는 건물 '${building}'`);if(spec.produceType!=null)units([spec.produceType],`${path}.produceType`,true)});
-   array(d.defenseCards,`${side}.defenseCards`).forEach((id,i)=>{if(!this.has(DefenseCardDefinition.all,id))err(`${side}.defenseCards[${i}]`,`알 수 없는 방어 카드 '${id}'`)});
-   if(d.techCap!=null)number(d.techCap,`${side}.techCap`,1,3);
-   if(d.startingTech!=null&&d.techCap!=null&&Number(d.startingTech)>Number(d.techCap))err(`${side}.startingTech`,"techCap보다 높을 수 없습니다.");
-  }
-  if(raw.playerRole!=null&&!["host","guest"].includes(raw.playerRole))err("playerRole","host 또는 guest여야 합니다.");
-  if(raw.enemy?.aiProfile!=null&&!["standard","scripted"].includes(raw.enemy.aiProfile))err("enemy.aiProfile",`알 수 없는 AI profile '${raw.enemy.aiProfile}'`);
-  if(raw.script!=null&&object(raw.script,"script"))for(const [key,fn]of Object.entries(raw.script)){
-   if(!["onInit","onStart","onTick","onEvent","onDispose"].includes(key))err(`script.${key}`,"지원하지 않는 lifecycle hook입니다. 보조 함수는 미션 JS 내부에 선언하세요.");
-   if(typeof fn!=="function")err(`script.${key}`,"함수가 필요합니다.");
-   else if(fn.constructor?.name!=="Function")err(`script.${key}`,"동기 함수가 필요합니다. simulation clock/state를 사용하세요.");
-  }
-  const map=raw.map||{};
-  if(raw.map!=null)object(raw.map,"map");
-  try{CampaignMapDefinition.normalizeType(map)}catch(e){err("map.type",e.message)}
-  for(const key of ["width","height"])if(map[key]!=null)number(map[key],`map.${key}`,2400);
-  for(const [key,p]of Object.entries(map.spawns||{})){if(!["host","guest"].includes(key))err(`map.spawns.${key}`,"host/guest 시작 지점만 지원합니다.");position(p,`map.spawns.${key}`);}
-  for(const [key,lane]of Object.entries(map.lanes||{})){
-   if(!["top","mid","bot"].includes(key))err(`map.lanes.${key}`,"지원하지 않는 레인입니다.");
-   const points=array(lane,`map.lanes.${key}`);if(points.length<2)err(`map.lanes.${key}`,"최소 두 좌표가 필요합니다.");points.forEach((p,i)=>position(p,`map.lanes.${key}[${i}]`));
-  }
-  array(map.capturePoints,"map.capturePoints").forEach((cp,i)=>{
-   if(!object(cp,`map.capturePoints[${i}]`))return;
-   add(cps,cp.id||`campaign-cp-${i}`,`map.capturePoints[${i}].id`);position(cp.position,`map.capturePoints[${i}].position`);
-  });
-  if(raw.enemy?.offense!=null&&object(raw.enemy.offense,"enemy.offense")){
-    const cfg=raw.enemy.offense;
-    if(raw.enemy.aiProfile==="scripted")err("enemy.offense","standard AI에서만 공세 설정을 사용합니다.");
-    for(const key of Object.keys(cfg))if(!["firstAttackMs","regroupMs","attackSize","counterattackPoints","productionLimit"].includes(key))err(`enemy.offense.${key}`,"알 수 없는 공세 설정입니다.");
-    number(cfg.firstAttackMs,"enemy.offense.firstAttackMs",0);number(cfg.regroupMs,"enemy.offense.regroupMs",0);
-    if(!Number.isSafeInteger(cfg.attackSize)||cfg.attackSize<1)err("enemy.offense.attackSize","1 이상의 정수가 필요합니다.");
-    if(cfg.productionLimit!=null&&(!Number.isSafeInteger(cfg.productionLimit)||cfg.productionLimit<1))err("enemy.offense.productionLimit","1 이상의 정수가 필요합니다.");
-    array(cfg.counterattackPoints,"enemy.offense.counterattackPoints").forEach((id,i)=>check(cps,id,`enemy.offense.counterattackPoints[${i}]`));
-  }
-  const anchor=(o,path)=>{const id=o.capturePoint;if(id){check(cps,id,`${path}.capturePoint`);if(o.offset)position(o.offset,`${path}.offset`,true)}else position(o.position,`${path}.position`);faction(o.faction,`${path}.faction`,true)};
-  let forceIndex=0;
-  for(const key of ["garrisons","attackForces"])array(map[key],`map.${key}`).forEach((o,i)=>{
-   const path=`map.${key}[${i}]`,index=forceIndex++;if(!object(o,path))return;
-   add(groups,o.id||`authored-force-${index}`,`${path}.id`);anchor(o,path);composition(o.composition,`${path}.composition`);
-   if(o.control!=null&&!["guard","attack"].includes(o.control))err(`${path}.control`,"지원하지 않는 병력 제어입니다.");
-   if(o.formation!=null&&!["cluster","line","spread"].includes(o.formation))err(`${path}.formation`,`알 수 없는 진형 '${o.formation}'`);
-  });
-  array(map.structures,"map.structures").forEach((o,i)=>{
-   const path=`map.structures[${i}]`;if(!object(o,path))return;
-   const id=o.id||`authored-structure-${i}`;add(structures,id,`${path}.id`);
-   if(["base0","base1"].includes(id))err(`${path}.id`,"기본 본진 ID와 충돌합니다.");
-   const type=o.building;if(!this.has(BuildingDefinition.all,type))err(`${path}.building`,`알 수 없는 건물 '${type}'`);
-   anchor(o,path);const group=o.objectiveGroup;if(group)objectiveGroups.set(group,path);
-  });
-  for(const [id,r]of Object.entries(raw.regions||{})){
-   add(regions,id,`regions.${id}`);if(!object(r,`regions.${id}`))continue;
-   position(r.center,`regions.${id}.center`);if(r.radius!=null)number(r.radius,`regions.${id}.radius`,0.001,1);
-  }
-  array(raw.objectives,"objectives").forEach((o,i)=>{if(object(o,`objectives[${i}]`))add(objectives,name(o.id,`objectives[${i}].id`),`objectives[${i}].id`)});
-  const events=array(raw.events,"events");
-  // Declarations in actions can be referenced by another trigger; execution order
-  // is still checked by runtime APIs for dynamically created groups.
-  events.forEach((e,i)=>{if(!object(e,`events[${i}]`))return;add(eventIds,e.id||`event-${i}`,`events[${i}].id`);
-   array(e.actions,`events[${i}].actions`).forEach(a=>{
-    if(a?.type==="setObjective"&&a.id)objectives.set(a.id,"setObjective");
-    if(a?.type==="spawnGroup"&&(a.id||a.group))groups.set(a.id||a.group,"spawnGroup");
-   });
-  });
-  const region=(v,path)=>{if(typeof v==="string")check(regions,v,path);else if(object(v,path)){position(v.center,`${path}.center`);if(v.radius!=null)number(v.radius,`${path}.radius`,0.001,1)}};
-  const condition=(t,path)=>{
-   if(!object(t,path))return;
-   const branches=["all","any","not"].filter(k=>t[k]!=null);
-   if(branches.length){if(branches.length!==1||t.type)err(path,"all/any/not 또는 type 중 하나만 사용하세요.");for(const key of branches)if(key==="not")condition(t.not,`${path}.not`);else array(t[key],`${path}.${key}`).forEach((v,i)=>condition(v,`${path}.${key}[${i}]`));return}
-   if(!CampaignScriptRuntime.conditions.has(t.type)){err(`${path}.type`,`알 수 없는 조건 '${t.type}'`);return}
-   if(t.region!=null)region(t.region,`${path}.region`);
-   if(["objectAlive","objectDead","discoverObject"].includes(t.type))check(groups,t.objectId||t.id,`${path}.objectId`);
-   if(t.type==="groupCount")check(groups,t.group||t.objectId,`${path}.group`);
-   if(t.type==="regionCaptured")check(cps,t.id||t.captureId,`${path}.id`);
-   if(t.type==="unitCount"&&t.unit!=null)units([t.unit],`${path}.unit`,true);
-   if(t.type==="buildingComplete"){const id=String(t.building||"");if(!this.has(BuildingDefinition.all,id))err(`${path}.building`,`알 수 없는 건물 '${id}'`)}
-   if(t.type==="researchCompleted"){if(t.unit!=null)units([t.unit],`${path}.unit`,true);if(t.researchId!=null&&!UnitSpecialResearchDefinition.get(String(t.researchId)))err(`${path}.researchId`,`알 수 없는 특수 연구 '${t.researchId}'`);if(t.research!=null&&!['attack','armor'].includes(String(t.research)))err(`${path}.research`,`attack 또는 armor여야 합니다.`)}
-   if(t.type==="structureCount"){
-    if(t.group||t.objectiveGroup)check(objectiveGroups,t.group||t.objectiveGroup,`${path}.group`);
-    array(t.types,`${path}.types`).forEach((id,i)=>{if(!this.has(BuildingDefinition.all,id))err(`${path}.types[${i}]`,`알 수 없는 건물 '${id}'`)});
-   }
-   if(["groupCount","structureCount"].includes(t.type)&&t.op!=null&&!["=",">","<",">=","<="].includes(t.op))err(`${path}.op`,"지원하지 않는 비교 연산자입니다.");
-   if(["enterRegion","unitsInRegion"].includes(t.type)&&t.region==null)position(t.center,`${path}.center`);
-   if(t.type==="time")number(t.seconds,`${path}.seconds`);
-   if(t.type==="cyclePhase"){
-    number(t.cycleSeconds,`${path}.cycleSeconds`,0.001);
-    for(const k of ["startSeconds","endSeconds"])if(t[k]!=null)number(t[k],`${path}.${k}`,0,t.cycleSeconds);
-    if((t.endSeconds??t.cycleSeconds)<=(t.startSeconds??0))err(path,"phase 종료가 시작보다 뒤여야 합니다.");
-   }
-  };
-  events.forEach((e,i)=>{
-   if(!e||typeof e!=="object")return;const path=`events[${i}]`;
-   condition(e.when,`${path}.when`);
-   for(const key of ["delayMs","cooldownMs","repeatCount"])if(e[key]!=null)number(e[key],`${path}.${key}`,key==="repeatCount"?1:0);
-   array(e.actions,`${path}.actions`).forEach((a,j)=>{
-    const ap=`${path}.actions[${j}]`;if(!object(a,ap))return;
-    if(!CampaignScriptRuntime.actions.has(a.type)){err(`${ap}.type`,`알 수 없는 액션 '${a.type}'`);return}
-    if(a.region!=null)region(a.region,`${ap}.region`);
-    if(a.position)position(a.position,`${ap}.position`);
-    if(["ping","cameraFocus"].includes(a.type)&&a.region==null&&!a.position)err(ap,"region 또는 position이 필요합니다.");
-    if(["order","setFaction"].includes(a.type))check(groups,a.group||a.objectId,`${ap}.group`);
-    if(["spawnObject","attackWave"].includes(a.type))check(groups,a.objectId,`${ap}.objectId`);
-    if(a.type==="spawnGroup"&&a.composition)composition(a.composition,`${ap}.composition`);
-    if(a.type==="order"){
-     if(a.order!=null&&!["attack","hold"].includes(a.order))err(`${ap}.order`,"지원하지 않는 명령입니다.");
-     if(a.target&&!["playerBase","enemyBase"].includes(a.target))check(structures,a.target,`${ap}.target`);
-    }
-    if(a.type==="setCaptureActive")check(cps,a.id||a.captureId,`${ap}.id`);
-    if(a.type==="unlockUnit")units([a.unit],`${ap}.unit`,true);
-    if(a.type==="completeObjective")check(objectives,a.id,`${ap}.id`);
-    faction(a.faction,`${ap}.faction`);
-   });
-  });
-  const terrain=map.terrain||{};
-  const terrainIds=new Map();
-  const terrainLayers=new Map();
-  array(terrain.layers,'map.terrain.layers').forEach((l,i)=>{
-   const path=`map.terrain.layers[${i}]`;if(!object(l,path))return;
-   name(l.id,path+'.id');add(terrainIds,l.id,path+'.id');terrainLayers.set(l.id,l);
-   if(Object.prototype.hasOwnProperty.call(l,'elevation'))err(path+'.elevation','고도는 level에서 자동 파생됩니다. elevation을 선언하지 마세요.');
-   if(!Number.isSafeInteger(l.level))err(path+'.level','부호 있는 정수가 필요합니다.');
-   const points=array(l.points,path+'.points');if(points.length<3)err(path+'.points','정점 3개 이상이 필요합니다.');
-   points.forEach((p,j)=>position(p,path+`.points[${j}]`));
-   if(l.innerPoints!=null){const inner=array(l.innerPoints,path+'.innerPoints');if(inner.length!==points.length)err(path+'.innerPoints','경사면 안쪽과 바깥쪽 정점 수가 같아야 합니다.');inner.forEach((p,j)=>position(p,path+`.innerPoints[${j}]`));}
-  });
-  array(terrain.ramps,'map.terrain.ramps').forEach((r,i)=>{
-   const path=`map.terrain.ramps[${i}]`;if(!object(r,path))return;
-   name(r.id,path+'.id');add(terrainIds,r.id,path+'.id');check(terrainLayers,r.layerId,path+'.layerId');
-   const layer=terrainLayers.get(r.layerId);
-   if(!Number.isInteger(r.edge)||r.edge<0||r.edge>=(layer?.points?.length||0))err(path+'.edge','고지 다각형의 유효한 변 인덱스가 필요합니다.');
-   number(r.t0,path+'.t0',0,1);number(r.t1,path+'.t1',0,1);if(!(r.t1>r.t0))err(path+'.t1','t0보다 커야 합니다.');
-   number(r.run,path+'.run',.005,.4);
-  });
-  for(const key of ["blockers","roads"])array(terrain[key],`map.terrain.${key}`).forEach((b,i)=>{
-    const path=`map.terrain.${key}[${i}]`;if(!object(b,path))return;
-    name(b.id,path+".id");add(terrainIds,b.id,path+".id");
-    const pts=array(b.points,path+".points");if(pts.length<(key==="blockers"?3:2))err(path+".points","정점 수가 부족합니다.");
-    pts.forEach((p,j)=>position(p,path+`.points[${j}]`));
-    if(key==="roads"){if(b.width!=null)number(b.width,path+".width",.003,.15)}
-    else{
-      if(b.kind!=null&&!["cliff","roots"].includes(b.kind))err(path+".kind","cliff 또는 roots여야 합니다.");
-      for(const flag of ["blocksMovement","blocksVision","blocksProjectile","blocksAirVision"])if(b[flag]!=null&&typeof b[flag]!=="boolean")err(path+"."+flag,"boolean이어야 합니다.");
-      if(pts.every(p=>Array.isArray(p)&&p.length===2&&p.every(Number.isFinite))){
-        let area=0;for(let j=0;j<pts.length;j++){const a=pts[j],c=pts[(j+1)%pts.length];area+=a[0]*c[1]-c[0]*a[1];
-          for(let k=j+2;k<pts.length;k++){if(j===0&&k===pts.length-1)continue;const d=pts[k],e=pts[(k+1)%pts.length];if(TerrainGeometry.segmentsIntersect(...a,...c,...d,...e))err(path+".points","자기 교차 polygon은 사용할 수 없습니다.")}
-        }if(Math.abs(area)<.000001)err(path+".points","면적이 없는 지형입니다.");
-      }
-    }
-  });
-  array(terrain.river?.points,"map.terrain.river.points").forEach((p,i)=>position(p,`map.terrain.river.points[${i}]`));
-  array(terrain.bridges,"map.terrain.bridges").forEach((item,i)=>{if(object(item,`map.terrain.bridges[${i}]`)){position(item.position,`map.terrain.bridges[${i}].position`);if(item.level!=null&&!Number.isSafeInteger(item.level))err(`map.terrain.bridges[${i}].level`,"부호 있는 정수가 필요합니다.")}});
-  if(Array.isArray(terrain.hills)&&terrain.hills.length)err("map.terrain.hills","고지는 terrain.layers의 level로 선언하세요.");
-  if(map.content?.resourcePlacement!=null&&!["objective-auto","manual","none"].includes(map.content.resourcePlacement))err("map.content.resourcePlacement","지원하지 않는 자원 배치 정책입니다.");
-  for(const key of ["resources","gasNodes"])array(map[key],`map.${key}`).forEach((v,i)=>{if(object(v,`map.${key}[${i}]`))position(v.position,`map.${key}[${i}].position`)});
-  const counter=raw.presentation?.hud?.counter;if(counter?.objectiveGroup)check(objectiveGroups,counter.objectiveGroup,"presentation.hud.counter.objectiveGroup");
-  const phase=raw.presentation?.hud?.phaseCycle;if(phase){number(phase.cycleSeconds,"presentation.hud.phaseCycle.cycleSeconds",0.001);number(phase.daySeconds,"presentation.hud.phaseCycle.daySeconds",0,phase.cycleSeconds)}
-  if(errors.length){const error=new Error(`미션 사전검증 실패 (${errors.length}건)\n`+errors.join("\n"));error.name="CampaignValidationError";error.issues=errors;throw error}
-  return true;
- }
- static validateRuntimeAction(a,runtime){
-  const sim=runtime.sim,type=a.type,fail=text=>{throw new Error(`[${runtime.mission.missionId}] ${type} · tick ${sim.tick}: ${text}`)};
-  if(["order","setFaction","spawnObject","attackWave"].includes(type)){
-    const id=a.group||a.objectId;if(!sim.camps.some(c=>c.id===id))fail(`그룹 '${id}'가 없습니다.`);
-  }
-  if(type==="setCaptureActive"&&!sim.capturePoints.some(c=>c.id===(a.id||a.captureId)))fail("점령지 참조가 없습니다.");
-  if(type==="unlockUnit"&&!CampaignMissionDefinition.validProductionUnit(String(a.unit||"")))fail(`생산 해금할 수 없는 병종 '${a.unit}'`);
-  if(["ping","cameraFocus"].includes(type)&&typeof a.region==="string"&&!Object.prototype.hasOwnProperty.call(runtime.mission.regions,a.region))fail(`지역 '${a.region}'가 없습니다.`);
-  if(type==="spawnGroup"&&a.composition){for(const item of a.composition)if(!this.has(UnitDefinition.all,item.unit))fail(`병종 '${item.unit}'가 없습니다.`)}
- }
-}
-
-class CampaignMissionDefinition{
- static validProductionUnit(id){const d=UnitDefinition.get(id);return !!d&&d.tier>=1&&d.tier<=3&&!d.economyWorker&&!d.carrierSummon}
- static cleanUnits(v){return [...new Set((Array.isArray(v)?v:[]).filter(id=>this.validProductionUnit(id)))]}
- static cleanStartingUnits(v){return UnitCompositionDefinition.normalize(Array.isArray(v)?v:[]).filter(row=>this.validProductionUnit(row.unit))}
- static cleanResources(v){return Object.freeze({minerals:Math.max(0,Math.round(Number(v?.minerals)||0)),gas:Math.max(0,Math.round(Number(v?.gas)||0))})}
- static cleanStartingBuildings(v){return (Array.isArray(v)?v:[]).map((spec,i)=>{
-   const o=typeof spec==="string"?{building:spec}:spec&&typeof spec==="object"?spec:null;if(!o)return null;
-   const building=String(o.building||"");if(!BuildingDefinition.get(building)||BuildingDefinition.get(building)?.scenarioOnly)return null;
-   const produceType=o.produceType==null?null:String(o.produceType);if(produceType&&!this.validProductionUnit(produceType))return null;
-   return Object.freeze({id:String(o.id||`start-building-${i}`),building,produceType});
-  }).filter(Boolean)}
- static normalizeSide(rawSide={}){
-  const techCap=RangeUtil.clamp(Math.round(Number(rawSide.techCap)||1),1,3),startingTech=RangeUtil.clamp(Math.round(Number(rawSide.startingTech)||1),1,techCap);
-  return Object.freeze({availableUnits:this.cleanUnits(rawSide.availableUnits),startingUnits:this.cleanStartingUnits(rawSide.startingUnits),startingWorkers:RangeUtil.clamp(Math.round(Number(rawSide.startingWorkers??STARTING_WORKER_COUNT)),0,30),startingResources:this.cleanResources(rawSide.startingResources),startingTech,startingBuildings:this.cleanStartingBuildings(rawSide.startingBuildings),defenseCards:DefenseCardDefinition.list(Array.isArray(rawSide.defenseCards)?rawSide.defenseCards:[]),techCap});
- }
- static normalize(raw){if(!raw||typeof raw!=="object"||Array.isArray(raw))throw new Error("Mission JS가 반환한 객체가 필요합니다.");
- CampaignContentValidator.validate(raw);
- const missionId=String(raw.missionId||"").trim();if(!missionId)throw new Error("missionId가 필요합니다.");
- const player=this.normalizeSide(raw.player),enemyBase=this.normalizeSide(raw.enemy),events=(Array.isArray(raw.events)?raw.events:[]).map((e,i)=>({id:String(e.id||`event-${i}`),enabled:e.enabled!==false,once:e.once!==false,when:e.when&&typeof e.when==="object"?CloneUtil.clone(e.when):null,delayMs:Math.max(0,Number(e.delayMs)||0),cooldownMs:Math.max(0,Number(e.cooldownMs)||0),repeatCount:e.repeatCount==null?null:Math.max(1,Math.round(Number(e.repeatCount)||1)),actions:(Array.isArray(e.actions)?e.actions:[]).map(a=>a&&typeof a==="object"?CloneUtil.clone(a):null).filter(Boolean)}));
- if(new Set(events.map(e=>e.id)).size!==events.length)throw new Error("중복된 캠페인 이벤트 ID입니다.");
- if(raw.map?.terrain?.blockers?.length||raw.map?.terrain?.layers?.length)CampaignMapDefinition.build(raw.map,GameRuleDefinition.resolve(),Number(raw.seed)||HashUtil.hash(missionId),raw.playerRole==="guest"?1:0);
- const offense=raw.enemy?.offense?Object.freeze({firstAttackMs:raw.enemy.offense.firstAttackMs,regroupMs:raw.enemy.offense.regroupMs,attackSize:raw.enemy.offense.attackSize,productionLimit:raw.enemy.offense.productionLimit??null,counterattackPoints:Object.freeze([...(raw.enemy.offense.counterattackPoints||[])])}):null;
- const moduleSource=CampaignModuleLoader.sourceOf(raw),enemy=Object.freeze({...enemyBase,offense,aiProfile:["standard","scripted"].includes(String(raw.enemy?.aiProfile||"standard"))?String(raw.enemy?.aiProfile||"standard"):"standard"});
- return Object.freeze({schemaVersion:CAMPAIGN_MISSION_SCHEMA_VERSION,moduleSource,missionId,playerRole:raw.playerRole==="guest"?"guest":"host",victory:CampaignOutcomeRules.normalize(raw.victory,raw.map),title:String(raw.title||missionId),briefing:String(raw.briefing||""),faction:String(raw.faction||"frontier"),seed:(Number(raw.seed)>>>0)||HashUtil.hash(missionId),map:raw.map&&typeof raw.map==="object"?CloneUtil.clone(raw.map):null,player,enemy,presentation:{opening:Array.isArray(raw.presentation?.opening)?raw.presentation.opening.map(String):[],outro:Array.isArray(raw.presentation?.outro)?raw.presentation.outro.map(String):[],hud:raw.presentation?.hud&&typeof raw.presentation.hud==="object"?CloneUtil.clone(raw.presentation.hud):null},regions:raw.regions&&typeof raw.regions==="object"?CloneUtil.clone(raw.regions):{},objectives:Array.isArray(raw.objectives)?CloneUtil.clone(raw.objectives):[],flags:raw.flags&&typeof raw.flags==="object"?CloneUtil.clone(raw.flags):{},events})}
-}
-
-class CampaignPresentation{
- static after(fn,ms){const id=setTimeout(()=>{this.timers.delete(id);fn()},ms);this.timers.add(id);return id}
- static shownMissionId=null; static shownSim=null; static timers=new Set(); static hudTimer=null; static flags=Object.create(null); static objectives=new Map(); static pingSeq=0; static lastPresentationId=0; static lastPresentationTick=0;
- static ensureBubble(){let el=document.getElementById("campaignStoryBubble");const host=document.querySelector("#gameScreen .canvas-wrap");if(el){if(host&&el.parentElement!==host)host.appendChild(el);return el}el=document.createElement("div");el.id="campaignStoryBubble";el.setAttribute("role","status");el.setAttribute("aria-live","polite");el.style.cssText="position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:30;width:max-content;max-width:min(760px,88%);box-sizing:border-box;padding:12px 16px;border:1px solid rgba(230,240,220,.5);border-radius:14px;background:rgba(15,28,24,.92);color:#f4f7ef;font:600 15px/1.45 system-ui;text-align:center;box-shadow:0 8px 28px rgba(0,0,0,.32);pointer-events:none;opacity:0;transition:opacity .18s ease";(host||document.body).appendChild(el);return el}
- static toast(text,duration=3200){const el=this.ensureBubble();el.textContent=String(text||"");el.style.opacity="1";this.after(()=>{el.style.opacity="0"},Math.max(900,Number(duration)||3200))}
- static clear(){this.shownMissionId=null;this.shownSim=null;for(const t of this.timers)clearTimeout(t);this.timers.clear();if(this.hudTimer){clearInterval(this.hudTimer);this.hudTimer=null}this.lastPresentationId=0;this.lastPresentationTick=0;this.flags=Object.create(null);this.objectives.clear();const el=document.getElementById("campaignStoryBubble");if(el)el.style.opacity="0";const hud=document.getElementById("campaignObjectives");if(hud)hud.remove();const shade=document.getElementById("campaignAtmosphere");if(shade)shade.remove();for(const p of document.querySelectorAll(".campaign-world-ping,.campaign-edge-ping"))p.remove();document.body.classList.remove("campaign-mode");if(UiRegistry.refs.reinforcementOverview){UiRegistry.refs.reinforcementOverview.style.left="";UiRegistry.refs.reinforcementOverview.style.right="";UiRegistry.refs.reinforcementOverview.style.top=""}}
- static region(def){const m=MatchLifecycle.activeSession?.()?.sim?.campaignScenario||CampaignRuntime.pending;if(typeof def==="string")return m?.regions?.[def]||null;return def&&typeof def==="object"?def:null}
- static phaseInfo(sim){const cfg=sim?.campaignScenario?.presentation?.hud?.phaseCycle;if(!cfg||!sim)return null;const cycle=Math.max(1,Number(cfg.cycleSeconds)||1),day=Math.max(0,Math.min(cycle,Number(cfg.daySeconds)||0)),elapsed=Math.max(0,sim.ticksMs(sim.tick)/1000-(Number(cfg.offsetSeconds)||0)),within=((elapsed%cycle)+cycle)%cycle,index=Math.floor(elapsed/cycle)+1,phase=within<day?"day":"night",remaining=phase==="day"?day-within:cycle-within;return{cfg,cycle,day,within,index,phase,remaining}}
- static counterInfo(sim){const cfg=sim?.campaignScenario?.presentation?.hud?.counter;if(!cfg||!sim)return null;const human=this.humanSide(),side=cfg.side==="player"?human:cfg.side==="neutral"?NEUTRAL_SIDE:1-human,group=String(cfg.objectiveGroup||"");const remaining=sim.buildings.filter(b=>b.alive!==false&&b.hp>0&&b.side===side&&(!group||b.campaignObjectiveGroup===group)).length,total=Math.max(remaining,Number(cfg.total)||remaining);return{remaining,total,label:String(cfg.label||"목표")}}
- static ensureAtmosphere(){let el=document.getElementById("campaignAtmosphere"),host=document.querySelector("#gameScreen .canvas-wrap");if(!el){el=document.createElement("div");el.id="campaignAtmosphere";el.style.cssText="position:absolute;inset:0;z-index:4;pointer-events:none;background:rgba(5,10,18,0);transition:background .25s linear";(host||document.body).appendChild(el)}return el}
- static renderAtmosphere(){const sim=MatchLifecycle.activeSession?.()?.sim,info=this.phaseInfo(sim),el=this.ensureAtmosphere();if(!info){el.style.background="rgba(5,10,18,0)";return}const max=RangeUtil.clamp(Number(info.cfg.maxNightOpacity)||.48,0,.72),dusk=Math.max(1,Number(info.cfg.duskSeconds)||25),dawn=Math.max(1,Number(info.cfg.dawnSeconds)||18);let opacity=0;if(info.phase==="night")opacity=max;else if(info.index>1&&info.within<dawn)opacity=max*(1-info.within/dawn);else if(info.within>info.day-dusk)opacity=max*RangeUtil.clamp((info.within-(info.day-dusk))/dusk,0,1);el.style.background=`rgba(5,10,18,${opacity.toFixed(3)})`}
- static renderObjectives(){let el=document.getElementById("campaignObjectives"),host=document.querySelector("#gameScreen .canvas-wrap");if(!el){el=document.createElement("div");el.id="campaignObjectives";el.style.cssText="position:absolute;left:7px;top:48px;z-index:29;width:min(250px,56%);box-sizing:border-box;padding:7px 9px;border-radius:8px;background:rgba(12,22,19,.84);border:1px solid rgba(220,235,215,.28);color:#eef4e8;font:600 10px/1.35 system-ui;pointer-events:none";(host||document.body).appendChild(el)}const sim=MatchLifecycle.activeSession?.()?.sim,phase=this.phaseInfo(sim),counter=this.counterInfo(sim);let head="";if(phase){const icon=phase.phase==="day"?"☀":"☾",label=phase.phase==="day"?String(phase.cfg.dayLabel||"낮"):String(phase.cfg.nightLabel||"밤"),secs=Math.max(0,Math.ceil(phase.remaining)),mm=String(Math.floor(secs/60)).padStart(2,"0"),ss=String(secs%60).padStart(2,"0"),progress=phase.phase==="day"?1-phase.remaining/Math.max(1,phase.day):1-phase.remaining/Math.max(1,phase.cycle-phase.day),accent=phase.phase==="day"?"#d7b65e":"#7ea2d8";head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:7px;font-size:11px;font-weight:950"><span>${icon} ${label} · ${phase.index}주기</span><b>${mm}:${ss}</b></div><div style="height:3px;margin:5px 0 6px;background:#ffffff20;border-radius:999px;overflow:hidden"><i style="display:block;height:100%;width:${Math.round(RangeUtil.clamp(progress,0,1)*100)}%;background:${accent}"></i></div>`}let count="";if(counter)count=`<div style="margin-bottom:5px;color:#dce8d6;font-size:9px"><b>${counter.label}</b> · ${counter.remaining}/${counter.total} 남음</div>`;const obj=(sim?.campaignScriptRuntime?.scenario.objectives||[...this.objectives.values()]).filter(o=>o.state!=="hidden").map(o=>`<div style="margin-top:2px;opacity:${o.state==="complete"?.55:1}">${o.state==="complete"?"✓":"◆"} ${o.text}</div>`).join("");el.innerHTML=head+count+obj;el.style.display=el.innerHTML?"block":"none"}
- static ping(a){const r=ActiveViewState.renderer,host=document.querySelector("#gameScreen .canvas-wrap");if(!r||!host)return;const rg=this.region(a.region),p=rg?.center||a.position;if(!Array.isArray(p))return;const wx=(Number(p[0])||0)*r.world.width,wy=(Number(p[1])||0)*r.world.height,vx=r.viewX(wx),vy=r.viewY(wy),canvas=r.canvas,rect=canvas.getBoundingClientRect(),px=r.worldToPx(vx,vy),cx=px[0]/canvas.width*rect.width,cy=px[1]/canvas.height*rect.height,inside=cx>=8&&cx<=rect.width-8&&cy>=8&&cy<=rect.height-8,id=++this.pingSeq;let el=document.createElement("div");el.className=inside?"campaign-world-ping":"campaign-edge-ping";el.dataset.pingId=String(id);if(inside){el.style.cssText=`position:absolute;z-index:17;left:${cx}px;top:${cy}px;width:42px;height:42px;transform:translate(-50%,-50%);border:3px solid #f0c55b;border-radius:50%;box-shadow:0 0 0 8px #f0c55b24;pointer-events:none;animation:campaignPingPulse .72s ease-out 3`;}else{const ex=RangeUtil.clamp(cx,18,rect.width-18),ey=RangeUtil.clamp(cy,18,rect.height-18),dx=cx-rect.width/2,dy=cy-rect.height/2,angle=Math.atan2(dy,dx)*180/Math.PI;el.textContent="➤";el.style.cssText=`position:absolute;z-index:17;left:${ex}px;top:${ey}px;transform:translate(-50%,-50%) rotate(${angle}deg);color:#f0c55b;font-size:22px;font-weight:1000;text-shadow:0 1px 3px #000;pointer-events:none;animation:campaignEdgePulse .72s ease-in-out 3`;}host.appendChild(el);this.after(()=>el.remove(),2400)}
- static runAction(a){const type=String(a?.type||"");if(type==="ping"){this.ping(a);return}if(type==="toast"){this.toast(a.text,a.durationMs);return}if(type==="setFlag"){this.flags[String(a.id||"")]=a.value;return}if(type==="setObjective"){const id=String(a.id||"objective"),old=this.objectives.get(id)||{};this.objectives.set(id,{...old,id,text:String(a.text||old.text||id),state:String(a.state||"active")});this.renderObjectives();return}if(type==="completeObjective"){const id=String(a.id||""),old=this.objectives.get(id);if(old){this.objectives.set(id,{...old,state:"complete"});this.renderObjectives()}return}
-  if(type==="cameraFocus"){const r=ActiveViewState.renderer;if(!r)return;const rg=this.region(a.region),p=rg?.center||a.position;if(!Array.isArray(p))return;const x=(Number(p[0])||0)*r.world.width,y=(Number(p[1])||0)*r.world.height,vx=r.viewX(x),vy=r.viewY(y);r.cameraLeft=RangeUtil.clamp(vx-r.viewWorldW()/2,0,Math.max(0,r.world.width-r.viewWorldW()));r.cameraTop=r.clampCameraTop(BattlefieldProjection.planarY(vy,r.world.terrain.surfaces.heightAt(x,y))-r.viewWorldH()/2);return}
-  throw new Error(`시뮬레이션 액션은 CampaignScriptRuntime에서 실행해야 합니다: ${type}`);
- }
- static humanSide(){return (MatchLifecycle.activeSession?.()?.sim?.campaignScenario?.playerRole||"host")==="host"?0:1}
- static consume(snapshot){
-  if(snapshot.tick<this.lastPresentationTick)this.lastPresentationId=0;
-  this.lastPresentationTick=snapshot.tick;
-  for(const e of snapshot.events||[]){
-   if(e.type!=="campaignPresentation"||e.campaignEventId<=this.lastPresentationId)continue;
-   this.lastPresentationId=e.campaignEventId;
-   this.runAction(e.action);
-  }
- }
- static outroDuration(lines){const n=Array.isArray(lines)?lines.filter(Boolean).length:0;return n? n*3200+350:0}
- static playOutro(lines,onDone){const seq=Array.isArray(lines)?lines.filter(Boolean):[];if(!seq.length){onDone?.();return 0}const el=this.ensureBubble();let total=0;for(const line of seq){this.after(()=>{el.textContent=String(line);el.style.opacity="1"},total);total+=3200}this.after(()=>{el.style.opacity="0"},Math.max(0,total-350));this.after(()=>onDone?.(),total+350);return total+350}
-}
-
-class CampaignRuntime{
- static pending=null; static loadRevision=0; static setMission(raw,source=""){if(source&&raw&&typeof raw==="object")Object.defineProperty(raw,"__moduleSource",{value:String(source),enumerable:false,configurable:true});this.pending=CampaignMissionDefinition.normalize(raw);return this.pending} static clear(){this.pending=null;this.loadRevision++}
- static matchConfig(){const m=this.pending;if(!m)return null;return {presetId:"standard",simulationTps:UiRuntimeState.value.settings.simulationTps,campaignScenario:m}}
-}
 class MatchLifecycle{
   static singleMatch=null;
 
@@ -9014,7 +3696,6 @@ class MatchLifecycle{
   };
 }
   static disposeMatches(reason="mode-change"){
-    CampaignPresentation.clear();
     const sessions=new Set([ActiveViewState.session,...Object.values(this.singleMatch?.sessions||{})].filter(Boolean));
     this.singleMatch?.bot?.stop();
     const errors=[];
@@ -9057,9 +3738,6 @@ class MatchLifecycle{
   ActiveViewState.roomCode=token;
   ActiveViewState.role=humanRole;
 
-  UiRuntimeState.value.selection.unit=null;
-  UiRuntimeState.value.selection.buildingId=null;
-  UiRuntimeState.value.target={type:"flag"};
   ActiveViewState.snap=null;
 
   UiController.setUiScreen("lobby");
@@ -9198,7 +3876,6 @@ class MatchLifecycle{
   if(reason==="surrender")UiRegistry.refs.resultText.textContent=mine?"상대가 항복했습니다.":"항복했습니다.";
   else if(reason==="disconnect-timeout")UiRegistry.refs.resultText.textContent="연결을 60초 안에 복구하지 못해 경기가 중단되었습니다.";
   else if(reason==="draw")UiRegistry.refs.resultText.textContent="양쪽 메인 거점이 같은 tick에 파괴되었습니다.";
-  else if(reason==="campaign-objectives"||reason==="campaign-trigger")UiRegistry.refs.resultText.textContent=mine?"미션 목표를 모두 완료했습니다.":"미션 방어에 실패했습니다.";
   else UiRegistry.refs.resultText.textContent=mine?"적 메인 거점을 파괴했습니다.":"내 메인 거점이 파괴되었습니다.";
   const end=ActiveViewState.snap,stats=end?.launchStats,mySide=ConnectionSideUtil.roleSide(viewRole);
   if(stats)LaunchScreens.renderResult({durationMs:1000*end.tick/(end.tps||SimulationTiming.tps()),launches:stats.launches[mySide],sent:stats.sent[mySide],kills:stats.kills[mySide]});
@@ -9643,10 +4320,10 @@ class BuildMetadataPresentation{
 // 발사전 화면: 카드 패, 자원 게이지, 착탄 흔적. 착탄 예정 지점은 절대 그리지 않는다.
 class LaunchPresentation{
   static card=null;static deckKey="";static lastPower=null;static marks=[];static pods=new Map();static hold=null;
-  static active(s=ActiveViewState.snap){return !!s?.launchMode&&!ReplayPresentation.replayPlayer}
+  static active(s=ActiveViewState.snap){return !!s&&!ReplayPresentation.replayPlayer}
   static reset(){this.card=null;this.deckKey="";this.lastPower=null;this.marks=[];this.pods=new Map();this.hold=null}
   static render(s,side){
-    const on=!!s?.launchMode;document.body.classList.toggle("launch-mode",on);
+    const on=!!s;document.body.classList.toggle("launch-mode",on);
     UiRegistry.refs.launchHand?.classList.toggle("hidden",!on);
     if(!on)return;
     const deck=LaunchRules.deck,wallet=Math.floor(s.wallet?.[side]||0);
@@ -9742,7 +4419,7 @@ class BattlePresentation{
       if(ActiveViewState.drag!==drag||drag.moved||!ActiveViewState.renderer)return;
       const [vx,vy]=ActiveViewState.renderer.pxToWorld(drag.lastX,drag.lastY);
       drag.launchHold=LaunchPresentation.begin(UiController.viewToAuth(vx,vy),drag.id);
-    },CHARGED_SKILL_HOLD_MS);
+    },LAUNCH_HOLD_ARM_MS);
   };
   const cancelLaunchHold=()=>{
     const drag=ActiveViewState.drag;if(drag?.launchTimer){clearTimeout(drag.launchTimer);drag.launchTimer=0}
@@ -9767,7 +4444,7 @@ class BattlePresentation{
     if(drag.launchHold){
       const [vx,vy]=r.pxToWorld(e.clientX,e.clientY);LaunchPresentation.aim(UiController.viewToAuth(vx,vy));
     }else{
-      if(!drag.moved&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>CHARGED_SKILL_DRAG_PX){drag.moved=true;cancelLaunchHold()}
+      if(!drag.moved&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)>LAUNCH_HOLD_DRAG_PX){drag.moved=true;cancelLaunchHold()}
       if(drag.moved){
         const rect=UiRegistry.refs.canvas.getBoundingClientRect(),
           dx=(e.clientX-drag.x)*UiRegistry.refs.canvas.width/rect.width,
@@ -9858,35 +4535,9 @@ class BattlePresentation{
 
 
 
-const UI_MODAL_DIALOG_KEYS=Object.freeze({campaign:"campaignDialog",create:"createDialog",join:"joinDialog",detail:"infoDetailDialog"});
+const UI_MODAL_DIALOG_KEYS=Object.freeze({create:"createDialog",join:"joinDialog"});
 
 class SimulationTiming{
-  static queueRemainingTicks(q,tick){
-  if(!q)return 0;
-  if(Number.isFinite(Number(q.readyTick)))return Math.max(0,Number(q.readyTick)-(Number(tick)||0));
-  return Math.max(0,Number(q.remaining)||0);
-}
-
-  static periodicTickOffsets(durationMs,intervalMs,tps=SIM_TPS,{fireImmediately=true}={}){
-  durationMs=Math.max(0,Math.round(Number(durationMs)||0));
-  intervalMs=Math.max(1,Math.round(Number(intervalMs)||1));
-  tps=Math.max(1,Math.round(Number(tps)||1));
-  const out=[],threshold=intervalMs*tps;
-  let phase=0;
-  if(fireImmediately&&durationMs>0)out.push(0);
-  // Integer remainder/Bresenham-style scheduler. Each simulation tick contributes
-  // exactly 1000 phase units; one interval costs intervalMs*tps units.
-  const maxTicks=Math.max(0,Math.ceil(durationMs*tps/1000));
-  for(let tick=1;tick<maxTicks;tick++){
-    phase+=1000;
-    while(phase>=threshold){
-      phase-=threshold;
-      out.push(tick);
-    }
-  }
-  return out;
-}
-
   static timerTicksWithPhase(durationMs,tps,phase=0,{min=1}={}){
   const hz=Math.max(1,Math.round(Number(tps)||SIM_TPS));
   const total=Math.max(0,Math.round(Number(durationMs)||0))*hz+Math.max(0,Math.round(Number(phase)||0));
@@ -10209,12 +4860,11 @@ if(UiRegistry.refs.bootRetryBtn)UiController.bindImmediateButton(UiRegistry.refs
 // The Worker realm hosts only a simulation session; the page boots the app.
 if(SIM_WORKER)SimWorkerHost.install();
 else{
-  UnitVisualLookup.validateCoverage();
   AppLifecycle.runBootAndStartApp();
   const dev=readDevQuery(location.search);
   if(dev.tps)UiController.setStartSimulationTps(dev.tps);
   if(dev.netcode)UiController.setStartNetcodeMode(dev.netcode);
-  const leaveSetup=()=>{audioSystem.unlock();CampaignPresentation.clear()};
+  const leaveSetup=()=>{audioSystem.unlock()};
   LaunchScreens.install({createNavigation:RallyGamekit.createNavigation,actions:{
     inMatch:()=>UiRuntimeState.value.screen==="game",
     hasResult:()=>UiRuntimeState.value.screen==="result",
@@ -10233,4 +4883,4 @@ else{
   }});
 }
 
-export { AppLifecycle, CampaignMapDefinition, CampaignMissionDefinition, CampaignOutcomeRules, CampaignPresentation, CampaignScriptRuntime, ConnectionPresentation, DiagnosticPresentation, LogUtil, MatchLifecycle, ReplayPresentation, SimulationTiming, SinglePlayerModeUtil, UiController, UiRegistry };
+export { AppLifecycle, ConnectionPresentation, DiagnosticPresentation, LogUtil, MatchLifecycle, ReplayPresentation, SimulationTiming, SinglePlayerModeUtil, UiController, UiRegistry };

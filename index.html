@@ -11,12 +11,12 @@ PURPOSE
 - 제품 규칙과 플레이 설명은 인게임 도움말/위키와 실제 Definition이 SSOT다.
 - 이 Contract는 "이 파일을 어떻게 개발하고, 구조를 어떻게 판단하며, 언제 완료라고
   판정할 것인가"에 대한 장기 불변 개발 철학의 SSOT다.
-- 새로운 AI/개발자는 과거 대화가 없어도 index.html과 캠페인 데이터 및 이 Contract로 기존 개발
+- 새로운 AI/개발자는 과거 대화가 없어도 index.html과 이 Contract로 기존 개발
   관점과 품질 기준을 이어갈 수 있어야 한다.
 - 이 Contract는 파일 상단 한 곳에서만 관리한다. 함수 주변에 동일한 계약을 복제하지 않는다.
 
 1. SOURCE ENGINE / SELF-DESCRIBING
-- index.html은 원본 브라우저 ESM 진입점이며 최신 개발 베이스다. 게임 실행 코드는 src/main.js, 공통 규칙·메타데이터는 src/core/, 스타일은 src/styles/에 두고 캠페인은 campaign/campaigns.js 한 모듈에 둔다.
+- index.html은 원본 브라우저 ESM 진입점이며 최신 개발 베이스다. 게임 실행 코드는 src/main.js, 공통 규칙·메타데이터는 src/core/, 스타일은 src/styles/에 둔다.
 - 공통 코드 원본은 bloom-gamekit 저장소에서 관리하고 gamekit.lock.json에 고정 source/dist 커밋·SHA-256을 기록한다. 브라우저는 공식 불변 dist ESM bytes를 검증한 후 로드한다. 개발과 배포는 동일한 원본 파일을 HTTP(S)에서 제공하며 배포용 번들을 만들지 않는다. 실제 제품의 최초 부팅에는 고정 CDN 접근이 필요하다.
 - setup:gamekit은 QA용 불변 dist bytes·manifest를 검증하여 Git 제외 .cache/gamekit에 보관한다. QA의 로컬 SDK 응답과 실제 제품의 CDN 접근을 구별한다. 원본 복사는 SDK를 포함하거나 단일 HTML 오프라인 실행을 보장하지 않는다. 싱글은 기존 실제 WebRTC 로컬 연결을 유지하며 외부 NAT·네트워크 어댑터 전체 차단 연결은 별도 검증 범위다.
 - 구체적인 현재 구현 상태는 실행 코드가 SSOT이며, 제품 설명/수치는 인게임 위키와 Definition이 담당한다.
@@ -188,17 +188,7 @@ PURPOSE
 - 폐기된 시행착오나 과거 상태를 누적하지 않고 현재도 유효한 장기 원칙만 유지한다.
 - 이 철학 자체가 바뀌는 경우에만 Contract를 갱신한다.
 
-18. CAMPAIGN SCRIPT EXECUTION CONTRACT
-- 정식 캠페인 데이터는 campaign/campaigns.js의 default manifest가 SSOT이며 메뉴를 열 때 native ES import로 읽는다. 각 미션은 완전한 독립 상태를 선언한다. 개발용 파일/URL Preview는 동일 schema의 객체를 반환하는 JavaScript 표현식/IIFE만 허용한다.
-- 정식 내장 미션은 데이터 이벤트를 우선한다. 사용자가 직접 선택한 개발용 Preview JS의 raw.sim 자유 접근은 샌드박스가 아니므로 신뢰 파일에만 사용한다.
-- 게임 상태는 ctx.state와 시뮬레이션 clock/RNG로 관리한다. 클로저·브라우저 timer·임의 비동기 작업에 gameplay state를 숨기지 않는다.
-- 캠페인 사이에는 이야기만 이어진다. 자원·병력·건물·테크·생산 해금·덱을 이전 미션 저장상태에서 가져오지 않으며, 각 미션의 player/enemy 시작 계약이 해당 맵의 유일한 gameplay 시작 SSOT다.
-- 신규 병종은 가능하면 전장에서 실제 능력을 보여주며 합류하고 unlockUnit으로 현재 미션의 생산 목록에만 편입한다. 영구 병종 해금 플래그는 만들지 않는다.
-- onDispose는 경기 종료·세션 교체·리플레이 seek로 폐기되는 runtime마다 정확히 한 번 호출한다. 같은 경기의 롤백·snapshot 재실행은 compiled runtime을 유지하고 저장된 state만 복원한다. 이 로컬 정리는 gameplay hook이 아니므로 reason·missionId·time·분리 복제된 state만 받고 live sim/command API를 받지 않는다.
-- onDispose는 진행 상태를 바꾸는 수단이 아니다. 게임 진행 결과는 onTick/onEvent에서 결정하고, 외부 클로저로 raw sim을 붙잡아 로컬 종료 시 변경하는 것은 결정론 계약 위반이다. 이 규칙은 신뢰 JS의 보안 격리를 뜻하지 않는다.
-- hook 예외는 숨기지 않는다. onDispose가 실패해도 타이머·전송·다른 세션 정리를 완료하고 오류를 보고한다. 정상 복원은 저장된 state를 재사용하며 onInit/onStart를 중복 실행하지 않는다.
-
-19. STABILITY AUDIT CONTINUITY
+18. STABILITY AUDIT CONTINUITY
 - 현재 안정화 상태는 현재 실행 코드와 해당 PR의 검증 기록을 기준으로 판단한다. 과거 버전의 상세 검증 로그는 현재 PASS의 근거가 아니며 실행물에 누적하지 않는다.
 - 재현/수정/검증 완료와 미검증/설계 부채를 구분한다. 후보 테스트의 성공을 전체 E2E 성공으로 부르지 않는다.
 - 새 발견·내부 회귀·검사 실패도 남긴다. 수정한 뒤 동일 범위를 다시 검사하며, 마지막 검사에서 발견이 없었다는 사실을 모든 가능한 버그의 부재로 확대하지 않는다.
@@ -336,8 +326,8 @@ END OF DEVELOPMENT CONTRACT
       <div><span>Render prepare / ground / world</span><b id="dbgPerfRenderPasses">-</b></div>
       <div><span>Shadow / overlay / UI FX</span><b id="dbgPerfRenderEffects">-</b></div>
       <div><span>Camera compose / minimap / depth sort</span><b id="dbgPerfRenderTail">-</b></div>
-      <div><span>Index / World / Economy</span><b id="dbgPerfCore">-</b></div>
-      <div><span>Worker / Vision / Combat</span><b id="dbgPerfCombat">-</b></div>
+      <div><span>Index / World</span><b id="dbgPerfCore">-</b></div>
+      <div><span>Vision / Combat</span><b id="dbgPerfCombat">-</b></div>
       <div><span>Projectile / Collision / Post</span><b id="dbgPerfTail">-</b></div>
       <div><span>NavMesh / A* / Flow · 누적</span><b id="dbgPerfNavigation">-</b></div>
       <div><span>지형 투영 준비 · 누적</span><b id="dbgPerfProjection">-</b></div>
@@ -372,7 +362,7 @@ END OF DEVELOPMENT CONTRACT
 
   <div class="lockstep-debug-kicker" style="margin-top:12px">LOCAL PERFORMANCE</div>
   <div class="lockstep-debug-table">
-    <div><span>유닛 생존 / 전투 / 일꾼 / 투사체</span><b id="dbgPerfEntities">-</b></div>
+    <div><span>유닛 생존 / 전투 / 투사체</span><b id="dbgPerfEntities">-</b></div>
     <div><span>Spatial query / 후보(평균)</span><b id="dbgPerfSpatial">-</b></div>
     <div><span>Target / Visibility 검사</span><b id="dbgPerfTarget">-</b></div>
     <div><span>Grid candidates / ally soft contacts / moved units / capped units / passes</span><b id="dbgPerfCollision">-</b></div>
@@ -388,17 +378,9 @@ END OF DEVELOPMENT CONTRACT
   <div class="lockstep-debug-kicker" style="margin-top:12px">MATCH BALANCE TELEMETRY · LOCAL ONLY</div>
   <div class="lockstep-debug-table">
     <div><span>경기 시간 / 종료</span><b id="dbgBalanceTime">-</b></div>
-    <div><span>T2 첫 출전 · Host / Guest</span><b id="dbgBalanceT2">-</b></div>
-    <div><span>T3 첫 출전 · Host / Guest</span><b id="dbgBalanceT3">-</b></div>
-    <div><span>Academy / Lab 첫 완공 · H/G</span><b id="dbgBalanceTech">-</b></div>
     <div><span>첫 PvP 교전</span><b id="dbgBalanceCombat">-</b></div>
     <div><span>첫 점령 · Host / Guest</span><b id="dbgBalanceCapture">-</b></div>
-    <div><span>채집 미네랄 · H/G</span><b id="dbgBalanceMineral">-</b></div>
-    <div><span>채집 가스 · H/G</span><b id="dbgBalanceGas">-</b></div>
     <div><span>병력 현재 / 평균 / 최대 · H/G</span><b id="dbgBalanceArmy">-</b></div>
-    <div><span>AIR 비율 · H/G</span><b id="dbgBalanceAir">-</b></div>
-    <div><span>이동식 대공 비율 · H/G</span><b id="dbgBalanceAA">-</b></div>
-    <div><span>생산계약 소진 · H/G</span><b id="dbgBalanceExhaust">-</b></div>
     <div><span>건물 손실 / 전진거점 손실 · H/G</span><b id="dbgBalanceLosses">-</b></div>
   </div>
 

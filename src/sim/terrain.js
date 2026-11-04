@@ -1,6 +1,5 @@
 // Terrain geometry, battlefield projection and the terrain surface atlas.
 import { RangeUtil } from '../core/game-rules.js';
-import { BuildingDefinition } from '../definitions/buildings.js';
 import { MapGeometry } from './map-geometry.js';
 import { NavigationGoal, NavigationGraphOrder } from './navigation.js';
 import { FP } from '../core/config.js';
@@ -68,7 +67,7 @@ class TerrainGeometry{
     this.visionBlocks=authored.filter(b=>b.blocksVision);
     this.airVisionBlocks=authored.filter(b=>b.blocksAirVision);
     this.projectileBlocks=authored.filter(b=>b.blocksProjectile);
-    this.active=this.blocks.length>0||(map.authoredStructures||[]).some(b=>BuildingDefinition.get(b.type)?.isTerrainBarrier);
+    this.active=this.blocks.length>0;
     this.index=new NavigationObstacleIndex(this.blocks);
     this.visionIndex=new NavigationObstacleIndex(this.visionBlocks);
     this.airVisionIndex=new NavigationObstacleIndex(this.airVisionBlocks);

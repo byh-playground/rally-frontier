@@ -6,9 +6,6 @@ class GameRuleDefinition{
   };
   static defaults={
     schemaVersion:2,modeId:"standard",simulation:{tps:10},
-    economy:{startingResources:{minerals:0,gas:0}},
-    production:{trainTimeMultiplier:1,researchTimeMultiplier:1},
-    setup:{preset:"standard",startingTech:1,startingBuildings:[],startingSupplyBuildings:0},
     map:{
       generator:"procedural-frontier",generatorVersion:10,width:4200,height:4800,biome:"frontier",
       topology:"mixed",symmetry:"rotational-180",openness:.5,chokeDensity:.5,obstacleDensity:.5,
@@ -37,8 +34,7 @@ class GameRuleRuntime{
   if(!Object.prototype.hasOwnProperty.call(GameRuleDefinition.presets,presetId))throw new Error(`지원하지 않는 경기 preset: ${presetId}`);
   const overrides=src.overrides&&typeof src.overrides==="object"&&!Array.isArray(src.overrides)?structuredClone(src.overrides):null;
   const simulationTps=RangeUtil.clamp(Math.round(Number(src.simulationTps)||SIM_TPS),10,30);
-  const campaignScenario=src.campaignScenario&&typeof src.campaignScenario==="object"&&!Array.isArray(src.campaignScenario)?structuredClone(src.campaignScenario):null;
-  return {schemaVersion:4,presetId,overrides,simulationTps,campaignScenario};
+  return {schemaVersion:5,presetId,overrides,simulationTps};
 }
   static mergeGameRules(base,override){
   if(!override||typeof override!=="object")return structuredClone(base);

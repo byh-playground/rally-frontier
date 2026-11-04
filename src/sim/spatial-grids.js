@@ -83,7 +83,7 @@ class DeterministicSweptCollisionGrid{
     }
     const b=this.bounds;
     for(let key=0;key<coarse.buckets.length;key++)for(const i of coarse.buckets[key]){
-      const u=units[i];if(!u?.alive||radii[i]<=0||motion.flags[i])continue;
+      const u=units[i];if(!u?.alive||radii[i]<=0)continue;
       this.rank[i]=this.ordered.length;this.endCell[i]=key;this.ordered.push(i);
       const hostile0=u.side!==0,hostile1=u.side!==1;
       if(hostile0)this.hostileOrdered[0].push(i);if(hostile1)this.hostileOrdered[1].push(i);

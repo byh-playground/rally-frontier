@@ -3,7 +3,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { readLock } = require('./setup-gamekit.cjs');
 const { readVectorAssetManifest } = require('./vector-assets-manifest.cjs');
-const sourcePaths = ['index.html', 'gamekit.lock.json', 'manifest.webmanifest', 'src', 'assets', 'campaign', 'icons'];
+const sourcePaths = ['index.html', 'gamekit.lock.json', 'manifest.webmanifest', 'src', 'assets', 'icons'];
 
 function verifySource(root = path.resolve(__dirname, '..')) {
   const lock = readLock(root);
@@ -18,7 +18,7 @@ function verifySource(root = path.resolve(__dirname, '..')) {
   // The lock resolves from the repository root next to src/, so the page and the simulation Worker read the same file.
   if (!main.includes("const RALLY_ASSET_ROOT=new URL('../../',import.meta.url);") || !/const RALLY_GAMEKIT_SOURCE=Object\.freeze\(\{lock:new URL\(['"]gamekit\.lock\.json['"],RALLY_ASSET_ROOT\)\.href\}\);/.test(main)) throw Error('Pinned SDK lock descriptor mismatch');
   if (!main.includes('Gamekit module SHA-256 mismatch') || !main.includes("fetch(RALLY_GAMEKIT_SOURCE.lock")) throw Error('Pinned SDK source verification missing');
-  const modules = ['src', 'campaign'].flatMap(folder => fs.readdirSync(path.join(root, folder), { recursive: true }).filter(file => file.endsWith('.js')).map(file => path.join(folder, file)));
+  const modules = fs.readdirSync(path.join(root, 'src'), { recursive: true }).filter(file => file.endsWith('.js')).map(file => path.join('src', file));
   for (const file of modules) {
     execFileSync(process.execPath, ['--check', path.join(root, file)], { stdio: 'pipe' });
   }

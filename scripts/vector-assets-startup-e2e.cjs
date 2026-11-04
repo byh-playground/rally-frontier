@@ -88,7 +88,7 @@ async function main(htmlPath = path.resolve(process.argv[2] || '_site/index.html
         moduleAPI: typeof window.RallyGamekit?.createVectorAssetLoader,
       };
     }, expected);
-    if (result.ids.length !== 57) throw new Error(`Expected 57 compiled unit SVGs, found ${result.ids.length}`);
+    if (result.ids.length !== 6) throw new Error(`Expected 6 compiled unit SVGs, found ${result.ids.length}`);
     if (JSON.stringify(result.ids) !== JSON.stringify(result.expectedIds)) throw new Error('Compiled unit IDs do not match the SVG manifest');
     if (JSON.stringify(result.sourceHashes) !== JSON.stringify(result.expectedHashes)) throw new Error('Compiled source hashes do not match the SVG manifest');
     if (Object.values(result.geometry).some(value => !value)) throw new Error('A compiled unit SVG has no geometry, metadata, or viewBox');

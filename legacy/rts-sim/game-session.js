@@ -1,0 +1,859 @@
+// Command lockstep session around the simulation.
+import { GameRuleRuntime, RangeUtil, SIM_TPS } from '../core/game-rules.js';
+import { StrategySim } from '../sim/strategy-sim.js';
+import { Building, DelayedEffectState, Projectile } from '../sim/entities.js';
+import { LaunchRules } from '../sim/launch-rules.js';
+import { UnitStateContracts } from '../sim/unit-behaviors.js';
+import { WorkerMixin } from '../sim/unit-mixins.js';
+import { MovementComponent, StateValue } from '../sim/components.js';
+import { ReplayRecorder } from './replay.js';
+import { ActiveViewState } from './runtime-state.js';
+import { RecoveryTelemetry } from '../diagnostics/recovery-telemetry.js';
+import { StableSerializationUtil } from '../net/lobby-codec.js';
+import { HashUtil } from '../sim/map-generation.js';
+import { BuildingDefinition } from '../definitions/buildings.js';
+import { UnitDefinition } from '../definitions/units.js';
+import { NEUTRAL_SIDE } from '../definitions/cards.js';
+import { PerformanceTelemetry } from '../diagnostics/performance-telemetry.js';
+import { AdaptiveNavigationDemand, TerrainNavigation } from '../sim/navigation.js';
+import { DISCONNECT_GRACE_MS, LOCKSTEP_INPUT_DELAY_BASE_MS, LOCKSTEP_INPUT_DELAY_MAX_MS, MAX_CATCHUP_STEPS_PER_PULSE, NETWORK_HEALTH_POLL_MS, SIM_SUSPENSION_THRESHOLD_MS, SNAPSHOT_EMIT_INTERVAL_MS } from '../core/session-timing.js';
+import { SIM_VERSION, netcodeMode } from '../core/config.js';
+import { BUILD_META } from '../core/build-info.js';
+import { RallyGamekit, RallyNetcode } from '../core/gamekit.js';
+import { AppLifecycle, CampaignMissionDefinition, CampaignOutcomeRules, CampaignPresentation, ConnectionPresentation, DiagnosticPresentation, MatchLifecycle, SimulationTiming } from '../main.js';
+
+/* =========================
+   4. Session / command lockstep
+   ========================= */
+// The SDK owns command resolution and rollback timelines. These codecs expose
+// only opaque game data; they never inspect SDK queues, checkpoints or internals.
+class RallyStateCodec{
+  static schemaVersion=4;
+  static MAX_ARRAY=20000;
+  static maxBytes=8*1024*1024;
+  static codec=RallyNetcode.createValueCodec({format:"binary",maxBytes:8*1024*1024,maxDepth:64,maxEntries:500000});
+  static assertData(value,{maxNodes=500000,maxArray=RallyStateCodec.MAX_ARRAY,maxString=1024*1024,budget=null}={}){
+    let count=0;const seen=new Set();
+    const visit=(v,depth)=>{
+      if(++count>maxNodes||depth>64)throw new Error("게임 데이터의 크기 제한을 넘었습니다.");
+      if(v===null||typeof v==="boolean")return;
+      if(typeof v==="number"){if(!Number.isFinite(v))throw new Error("게임 데이터에 유한하지 않은 숫자가 있습니다.");return}
+      if(typeof v==="string"){if(v.length>maxString)throw new Error("게임 문자열이 너무 깁니다.");return}
+      if(typeof v!=="object"||seen.has(v))throw new Error("게임 데이터는 순환 없는 JSON 값이어야 합니다.");
+      seen.add(v);
+      if(Array.isArray(v)){if(v.length>maxArray)throw new Error("게임 배열이 너무 큽니다.");for(const x of v)visit(x,depth+1)}
+      else{
+        const proto=Object.getPrototypeOf(v);if(proto!==Object.prototype&&proto!==null)throw new Error("게임 객체는 일반 데이터여야 합니다.");
+        const keys=Object.keys(v);if(keys.length>4096)throw new Error("게임 객체 필드가 너무 많습니다.");
+        for(const key of keys){if(["__proto__","prototype","constructor"].includes(key))throw new Error("게임 객체에 예약된 필드가 있습니다.");visit(v[key],depth+1)}
+      }
+      seen.delete(v);
+    };
+    visit(value,0);if(budget){budget.nodes=count;budget.maxNodes=maxNodes}return value;
+  }
+  static encode(value){
+    return this.codec.encode(value);
+  }
+  static decode(bytes,options){return this.assertData(this.codec.decode(bytes),options)}
+  static assertContract(value,contract){
+    if(!value||Array.isArray(value)||typeof value!=="object")throw new Error("상태 소유자의 객체가 필요합니다.");
+    for(const [key,initial]of Object.entries(contract.capture(contract.defaults,"save"))){
+      if(!Object.prototype.hasOwnProperty.call(value,key)||initial!==null&&(Array.isArray(initial)?!Array.isArray(value[key]):typeof value[key]!==typeof initial))throw new Error(`상태 소유자의 ${key} 필드가 잘못되었습니다.`);
+    }
+    for(const [key,child]of Object.entries(contract.children))this.assertContract(value[key],child);
+  }
+}
+class RallyCommandCodec{
+  static maxBytes=16*1024;
+  static fields=Object.freeze({
+    CHARGE_BEGIN:["castId","x","y"],CHARGE_AIM:["castId","x","y"],CHARGE_RELEASE:["castId","x","y"],CHARGE_CANCEL:["castId"],
+    MATCH_SURRENDER:[],SET_FLAG:["x","y","forced"],TOGGLE_PRODUCTION:[],LAUNCH:["cannonId","x","y","holdMs","unitType"],
+    TRAIN_WORKER:["buildingId"],SET_GAS_WORKERS:["buildingId","target"],OPEN_TACTICAL_CHEST:[],
+    CHOOSE_TACTICAL_REWARD:["offerId","rewardId"],REPLACE_SPELL:["offerId","oldSpellId"],CANCEL_SPELL_REPLACEMENT:["offerId"],
+    CAST_SPELL:["spellId","x","y"],START_RESEARCH:["research","unit","researchId"],CANCEL_BUILDING:["buildingId"],BUILD:["building","produceType","x","y"]
+  });
+  static validate(action){
+    RallyStateCodec.assertData(action,{maxNodes:2048,maxArray:512,maxString:4096});
+    if(!action||Array.isArray(action)||typeof action!=="object"||typeof action.type!=="string"||!action.type||action.type.length>80)throw new Error("올바른 게임 action이 필요합니다.");
+    const fields=action.type==="CAST_SPELL"&&action.spellId==="tunnel"?["spellId","entryX","entryY","exitX","exitY"]:this.fields[action.type];
+    if(!fields)throw new Error("지원하지 않는 게임 명령입니다.");
+    if(Object.keys(action).some(key=>key!=="type"&&!fields.includes(key)))throw new Error("게임 명령에 권위 계약 밖의 필드가 있습니다.");
+    for(const key of fields){
+      if(!Object.prototype.hasOwnProperty.call(action,key))continue;
+      const value=action[key];
+      if(key==="castId"?!Number.isSafeInteger(value)||value<=0:["x","y","entryX","entryY","exitX","exitY","target","holdMs"].includes(key)?!Number.isFinite(value):key==="forced"?typeof value!=="boolean":value!==null&&typeof value!=="string")throw new Error("게임 명령 필드의 형식이 잘못되었습니다.");
+    }
+    if(action.type.startsWith("CHARGE_")&&(!Number.isSafeInteger(action.castId)||action.castId<=0||action.type!=="CHARGE_CANCEL"&&(!Number.isFinite(action.x)||!Number.isFinite(action.y))))throw new Error("Invalid charged skill command");
+    const required={TRAIN_WORKER:["buildingId"],SET_GAS_WORKERS:["buildingId","target"],CHOOSE_TACTICAL_REWARD:["offerId","rewardId"],REPLACE_SPELL:["offerId","oldSpellId"],CANCEL_SPELL_REPLACEMENT:["offerId"],CAST_SPELL:["spellId"],START_RESEARCH:["research"],CANCEL_BUILDING:["buildingId"],BUILD:["building"]}[action.type]||[];
+    if(required.some(key=>action[key]===undefined||action[key]===null||action[key]===""))throw new Error("게임 명령의 필수 필드가 없습니다.");
+    if(action.type==="LAUNCH"&&(["cannonId","unitType"].some(key=>typeof action[key]!=="string"||!action[key])||["x","y","holdMs"].some(key=>!Number.isFinite(action[key]))))throw new Error("발사 명령의 필드가 잘못되었습니다.");
+    if(["SET_FLAG","BUILD","CAST_SPELL"].includes(action.type)){
+      const coordinates=action.type==="CAST_SPELL"&&action.spellId==="tunnel"?["entryX","entryY","exitX","exitY"]:["x","y"];
+      if(coordinates.some(key=>!Number.isFinite(action[key])))throw new Error("게임 action의 좌표가 잘못되었습니다.");
+    }
+    return action;
+  }
+  static encode(action){const bytes=RallyStateCodec.encode(this.validate(action));if(bytes.byteLength>this.maxBytes)throw new Error("게임 명령이 너무 큽니다.");return bytes}
+  static decode(bytes){if(!(bytes instanceof Uint8Array)||bytes.byteLength>this.maxBytes)throw new Error("올바른 게임 command bytes가 필요합니다.");return this.validate(RallyStateCodec.decode(bytes))}
+}
+class RallySimulationAdapter{
+  static commandsPerFrame=4096;
+  static maxFrameTick=Math.floor(Number.MAX_SAFE_INTEGER/this.commandsPerFrame)-1;
+  constructor(session){
+    if(!(session?.sim instanceof StrategySim))throw new Error("StrategySim 경기 session이 필요합니다.");
+    this.session=session;const sim=session.sim;
+    this.identity={seed:sim.seed,rules:sim.rules,mapDescriptor:sim.mapDescriptor,campaignScenario:sim.campaignScenario||null};
+    StateValue.freeze(this.identity.rules);
+    for(const value of Object.values(this.identity.campaignScenario||{}))StateValue.freeze(value);
+    const encoded=StableSerializationUtil.stableStringify(this.identity);
+    this.matchId=`${SIM_VERSION}:${encoded.length}:${HashUtil.hash(encoded)}:${HashUtil.hash("rally-state|"+encoded)}`;
+    this.mapFingerprint=sim.mapFingerprint();
+    const state=this.stateData();
+    // Required root fields come from the authoritative owner, not another save list.
+    const kind=value=>value===null?"null":Array.isArray(value)?"array":typeof value;
+    this.rootShape=Object.fromEntries(Object.entries(state).map(([key,value])=>[key,{kind:kind(value),items:Array.isArray(value)&&value.length===2&&!['units','buildings','constructionOrders','projectiles','resources','gasNodes','camps','capturePoints','activeSpells','delayedEffects','scheduled','chargedCasts'].includes(key)?value.map(kind):null}]));
+  }
+  stateData(){
+    const sim=this.session.sim;
+    if(sim.seed!==this.identity.seed||sim.rules!==this.identity.rules||sim.mapDescriptor!==this.identity.mapDescriptor||(sim.campaignScenario||null)!==this.identity.campaignScenario)throw new Error("경기 정의가 변경되면 새 simulation Adapter가 필요합니다.");
+    return sim.exportState({includeIdentity:false});
+  }
+  save(){
+    const started=performance.now();
+    try{const state=this.stateData();return RallyStateCodec.encode({schemaVersion:RallyStateCodec.schemaVersion,simVersion:SIM_VERSION,matchId:this.matchId,mapFingerprint:this.mapFingerprint,state})}
+    finally{if(this.session.performanceStats)PerformanceTelemetry.recordTiming(this.session.performanceStats.timings,'save',performance.now()-started)}
+  }
+  readSnapshot(bytes,{tick}={}){
+    const budget={},envelope=RallyStateCodec.decode(bytes,{budget}),state=envelope?.state;
+    if(envelope.schemaVersion!==RallyStateCodec.schemaVersion||envelope.simVersion!==SIM_VERSION||envelope.matchId!==this.matchId||envelope.mapFingerprint!==this.mapFingerprint||!state||Array.isArray(state)||typeof state!=="object")throw new Error("게임 snapshot의 경기 정의가 다릅니다.");
+    if(budget.nodes>budget.maxNodes||['routePaths','routeProfiles','routeTopologies','nextRoutePathId','nextRouteProfileId','nextRouteTopologyId'].some(key=>Object.prototype.hasOwnProperty.call(state,key)))throw new Error('Snapshot contains runtime route-cache data');
+    if(!Number.isSafeInteger(state.tick)||state.tick<0||state.tick>RallySimulationAdapter.maxFrameTick||tick!==undefined&&state.tick!==tick||!Number.isSafeInteger(state.seq)||state.seq<0||state.seed!==this.identity.seed||!Number.isSafeInteger(state.navigationRevision)||state.navigationRevision<0)throw new Error("게임 snapshot의 tick/seed가 잘못되었습니다.");
+    for(const [key,shape]of Object.entries(this.rootShape)){
+      if(!Object.prototype.hasOwnProperty.call(state,key))throw new Error(`게임 snapshot의 ${key} 필드가 없습니다.`);
+      const value=state[key],kind=value===null?"null":Array.isArray(value)?"array":typeof value;
+      if(shape.kind!=="null"&&kind!==shape.kind||shape.items&&(value.length!==2||shape.items.some((type,i)=>type!=="null"&&(type==="array"?!Array.isArray(value[i]):type==="object"?!value[i]||Array.isArray(value[i])||typeof value[i]!=="object":typeof value[i]!==type))))throw new Error(`게임 snapshot의 ${key} 형식이 잘못되었습니다.`);
+    }
+    for(const key of Object.keys(state))if(StrategySim.stateContract.derived.has(key)||StrategySim.stateContract.presentation.has(key)||Object.prototype.hasOwnProperty.call(this.identity,key)&&key!=="seed")throw new Error(`게임 snapshot에 runtime 필드 ${key}가 있습니다.`);
+    if(!Array.isArray(state.chargedCastSerial)||state.chargedCastSerial.length!==2||state.chargedCastSerial.some(id=>!Number.isSafeInteger(id)||id<0))throw new Error("Invalid charged cast serial");
+    if(!Array.isArray(state.chargedCasts)||state.chargedCasts.length!==2)throw new Error("Invalid charged casts");
+    for(const [side,cast]of state.chargedCasts.entries()){
+      if(cast===null)continue;
+      if(!cast||cast.side!==side||!Number.isSafeInteger(cast.id)||cast.id<1||cast.id!==state.chargedCastSerial[side]||!["gathering","charging","released"].includes(cast.phase)||!["originX","originY","aimX","aimY","startTick","gatherUntil","releaseTick"].every(key=>Number.isFinite(cast[key]))||cast.startTick<0||cast.gatherUntil<cast.startTick||cast.startTick>state.tick||!Array.isArray(cast.memberIds)||!Array.isArray(cast.unavailableIds)||[...cast.memberIds,...cast.unavailableIds].some(id=>typeof id!=="string")||new Set([...cast.memberIds,...cast.unavailableIds]).size!==cast.memberIds.length+cast.unavailableIds.length)throw new Error("Invalid charged cast state");
+    }
+    for(const key of ["units","buildings","projectiles"]){
+      const ids=new Set();
+      for(const entity of state[key]){
+        if(!entity||Array.isArray(entity)||typeof entity!=="object"||typeof entity.id!=="string"||!entity.id||entity.id.length>256||ids.has(entity.id)||![0,1,NEUTRAL_SIDE].includes(entity.side)||typeof entity.type!=="string"||!Number.isFinite(entity.x)||!Number.isFinite(entity.y)||typeof entity.alive!=="boolean"&&!(key==="buildings"&&entity.alive===undefined))throw new Error(`게임 snapshot의 ${key} 엔티티가 잘못되었습니다.`);
+        ids.add(entity.id);
+        if(key==="units"){
+          if(!Object.prototype.hasOwnProperty.call(UnitDefinition.all,entity.type)||!Number.isFinite(entity.fx)||!Number.isFinite(entity.fy)||!Number.isFinite(entity.hp)||!Number.isFinite(entity.maxHp)||!entity.logic||!["default","neutral-object"].includes(entity.logic.type)||!entity.logic.state||Array.isArray(entity.logic.state)||typeof entity.logic.state!=="object")throw new Error("게임 snapshot의 유닛 정의가 잘못되었습니다.");
+          RallyStateCodec.assertContract(entity,UnitStateContracts.forType(entity.type).root);
+          MovementComponent.validateRoutes(entity.movement,this.identity.mapDescriptor,entity.type,state.navigationRevision);
+          if(UnitDefinition.get(entity.type)?.economyWorker)WorkerMixin.validateDropoff(entity.behaviorState);
+        }
+        if(key==="projectiles"&&[...Projectile.stateContract.presentation].some(field=>Object.prototype.hasOwnProperty.call(entity,field)))throw new Error("게임 projectile snapshot에 렌더 필드가 있습니다.");
+        if(key==="buildings"){
+          if(!Object.prototype.hasOwnProperty.call(BuildingDefinition.all,entity.type)||!Number.isFinite(entity.hp)||!Number.isFinite(entity.maxHp)||!Array.isArray(entity.queue))throw new Error("게임 snapshot의 건물 정의가 잘못되었습니다.");
+          RallyStateCodec.assertContract(entity,Building.stateContract);
+        }
+      }
+    }
+    const chargedUnitsById=new Map(state.units.map(unit=>[unit.id,unit]));
+    for(const cast of state.chargedCasts)if(cast)for(const id of [...cast.memberIds,...cast.unavailableIds]){
+      const unit=chargedUnitsById.get(id);
+      // Removed/dead members may remain in the fixed capture list until recovery ends.
+      if(unit?.alive&&(unit.side!==cast.side||!UnitDefinition.get(unit.type)?.chargedSkill))throw new Error("Invalid charged cast member");
+    }
+    AdaptiveNavigationDemand.validate(state.navigationAdmissions);
+    const orderIds=new Set(state.buildings.map(b=>b.id)),builderIds=new Set();
+    const orderFields=new Set(["id","type","side","x","y","produceType","gasNodeId","createdTick","builderUnitId","paidMineral","paidGas","constructionState"]);
+    for(const order of state.constructionOrders){
+      if(!order||Array.isArray(order)||typeof order!=="object"||Object.keys(order).some(key=>!orderFields.has(key))||Object.keys(order).length!==orderFields.size||typeof order.id!=="string"||!order.id||order.id.length>256||orderIds.has(order.id)||![0,1].includes(order.side)||!Object.prototype.hasOwnProperty.call(BuildingDefinition.all,order.type)||!Number.isFinite(order.x)||!Number.isFinite(order.y)||!Number.isSafeInteger(order.createdTick)||order.createdTick<0||order.createdTick>state.tick||!Number.isFinite(order.paidMineral)||order.paidMineral<0||!Number.isFinite(order.paidGas)||order.paidGas<0||!["waitingWorker","building"].includes(order.constructionState))throw new Error("게임 snapshot의 건설 예약이 잘못되었습니다.");
+      orderIds.add(order.id);
+      if(order.produceType!==null&&!Object.prototype.hasOwnProperty.call(UnitDefinition.all,order.produceType)||order.gasNodeId!==null&&!state.gasNodes.some(g=>g.id===order.gasNodeId))throw new Error("게임 snapshot의 건설 예약 정의가 잘못되었습니다.");
+      if(order.builderUnitId!==null){
+        const worker=state.units.find(u=>u.id===order.builderUnitId);
+        if(builderIds.has(order.builderUnitId)||!worker||!worker.alive||worker.side!==order.side||!UnitDefinition.get(worker.type)?.economyWorker||worker.buildTargetId!==order.id)throw new Error("게임 snapshot의 예약 일꾼이 잘못되었습니다.");
+        builderIds.add(order.builderUnitId);
+      }
+    }
+    if(state.campaignScriptState!==null&&(typeof state.campaignScriptState!=="object"||Array.isArray(state.campaignScriptState))||!this.identity.campaignScenario&&state.campaignScriptState!==null)throw new Error("게임 snapshot의 캠페인 state가 잘못되었습니다.");
+    if(state.netcodeMatchResult!==undefined&&(!state.netcodeMatchResult||!["host","guest"].includes(state.netcodeMatchResult.winner)||state.netcodeMatchResult.reason!=="surrender"||!Number.isSafeInteger(state.netcodeMatchResult.tick)||state.netcodeMatchResult.tick<0||state.netcodeMatchResult.tick>state.tick))throw new Error("게임 snapshot의 경기 결과가 잘못되었습니다.");
+    for(const effect of state.delayedEffects)if(effect&&[...DelayedEffectState.contract.presentation].some(field=>Object.prototype.hasOwnProperty.call(effect,field)))throw new Error("게임 예약 효과 snapshot에 렌더 필드가 있습니다.");
+    const scheduledTicks=new Set();
+    for(const entry of state.scheduled){
+      if(!Array.isArray(entry)||entry.length!==2||!Number.isSafeInteger(entry[0])||entry[0]<=state.tick||scheduledTicks.has(entry[0])||!Array.isArray(entry[1])||entry[1].length>RallySimulationAdapter.commandsPerFrame)throw new Error("게임 snapshot의 예약 명령이 잘못되었습니다.");
+      scheduledTicks.add(entry[0]);
+      for(const command of entry[1]){
+        if(!command||command.tick!==entry[0]||!Number.isSafeInteger(command.seq)||command.seq<1||!["host","guest"].includes(command.actor)||command.netcodeSequence!==undefined&&(!Number.isSafeInteger(command.netcodeSequence)||command.netcodeSequence<1))throw new Error("게임 snapshot의 command가 잘못되었습니다.");
+        RallyCommandCodec.validate(command.action);
+      }
+    }
+    return{...state,...this.identity};
+  }
+  validateSnapshot(bytes,context){try{this.readSnapshot(bytes,context);return true}catch{return false}}
+  load(bytes){const state=this.readSnapshot(bytes);this.session.sim.importState(state,{rollback:true})}
+  step({tick,tickRate,inputs=[],resimulating=false,recovering=false,synctesting=false}){
+    const sim=this.session.sim;
+    if(!Number.isSafeInteger(tick)||tick<0||tick>RallySimulationAdapter.maxFrameTick||sim.tick!==tick||tickRate!==sim.tps||!Array.isArray(inputs))throw new Error("SDK frame과 게임 simulation tick이 다릅니다.");
+    const commands=[];
+    // Decode the entire resolved frame before mutating the simulation.
+    for(const input of inputs){
+      if(!input||!["host","guest"].includes(input.playerId)||!Array.isArray(input.commands))throw new Error("SDK 플레이어 입력이 잘못되었습니다.");
+      for(const command of input.commands){
+        if(commands.length>=RallySimulationAdapter.commandsPerFrame||!Number.isSafeInteger(command.sequence)||command.sequence<1||!Number.isSafeInteger(command.executeTick)||command.executeTick!==tick)throw new Error("SDK resolved command가 잘못되었습니다.");
+        commands.push({tick:tick+1,seq:tick*RallySimulationAdapter.commandsPerFrame+commands.length+1,netcodeSequence:command.sequence,actor:input.playerId,action:RallyCommandCodec.decode(command.payload)});
+      }
+    }
+    for(const command of commands)sim.queueCommand(command);
+    const winner=sim.step();
+    if(!synctesting)this.session.onNetcodeFrameApplied?.({frameTick:tick,gameTick:sim.tick,commands:StateValue.copy(commands),events:StateValue.copy(sim.events),winner,resimulating,recovering});
+    return winner;
+  }
+}
+
+class RallySynctestDiagnostics{
+  static reports=new WeakMap();
+  static maxFrames=32;
+  static report(session){return this.reports.get(session)||null}
+  static clear(session){const report=this.reports.get(session);report?.controller?.abort();if(session)this.reports.delete(session)}
+  static async run(session){
+    const core=session?.netcodeSession;
+    if(!core||core.resimulating||session.disposed)throw new Error("활성 경기가 안정된 뒤 검사해 주세요.");
+    const replay=core.exportSyncTestFrames({maxFrames:this.maxFrames}),frames=replay.frames;
+    if(!frames.length)throw new Error("검사할 확정 입력이 없습니다.");
+    const record={status:"running",metrics:null,controller:new AbortController()};this.reports.set(session,record);
+    let sim,report;
+    try{
+      sim=StrategySim.createForMatch({draft:session.draft,seed:session.sim.seed,rules:session.sim.rules,campaignScenario:session.sim.campaignScenario||null});
+      const adapter=new RallySimulationAdapter({sim});adapter.load(replay.initialState);
+      const result=await RallyNetcode.runSyncTestAsync({adapter,players:replay.players,inputSize:replay.inputSize,tickRate:replay.tickRate,initialTick:0,
+        checkDistance:Math.max(1,Math.min(6,core.profile.rollbackWindowTicks)),maxSnapshotBytes:RallyStateCodec.maxBytes,maxHistoryBytes:core.profile.maxHistoryBytes,frames,signal:record.controller.signal});
+      report={status:"passed",metrics:result.metrics};
+    }catch(error){report={status:"failed",metrics:error.syncTestMetrics||null,error:String(error.message||error)}}
+    finally{try{sim?.dispose("synctest-complete")}catch(error){report={status:"failed",metrics:report?.metrics||null,error:"진단 시뮬레이션 정리 실패: "+String(error.message||error)}}}
+    if(this.reports.get(session)===record&&!session.disposed)this.reports.set(session,report);return report;
+  }
+  static request(){
+    const session=MatchLifecycle.activeSession?.();if(!session||this.report(session)?.status==="running")return;
+    const queued={status:"running",metrics:null};this.reports.set(session,queued);ConnectionPresentation.renderLockstepDebugPanel();
+    setTimeout(async()=>{
+      if(this.reports.get(session)!==queued||session.disposed)return;
+      try{await this.run(session)}catch(error){if(!session.disposed&&this.reports.get(session)===queued)this.reports.set(session,{status:"failed",metrics:error.syncTestMetrics||null,error:String(error.message||error)})}
+      ConnectionPresentation.renderLockstepDebugPanel();
+    },0);
+  }
+}
+
+class GameSession{
+  // Is-a 경기 Coordinator. Has-a Core/Simulation Adapter/Transport.
+  // tick, command executeTick, prediction, pacing, rollback, recovery는 Core의 책임이다.
+  constructor(role,transport,roomCode,matchConfig=null){
+    if(!['host','guest'].includes(role))throw new Error('경기 플레이어 역할이 잘못되었습니다.');
+    this.role=role;this.transport=transport;this.roomCode=roomCode;
+    this.netcodeMode=netcodeMode();
+    this.matchConfig=GameRuleRuntime.normalizeMatchConfig(matchConfig);
+    this.matchPresetId=this.matchConfig.presetId;this.matchRuleOverrides=this.matchConfig.overrides;
+    this.roundRules=GameRuleRuntime.resolveMatchRules({presetId:this.matchPresetId,matchOverrides:GameRuleRuntime.mergeGameRules(this.matchRuleOverrides||{},{simulation:{tps:this.matchConfig.simulationTps}})});
+    // The live match setup (both sides' cards): Host builds it, Guest receives it with GAME_START.
+    this.draft=null;
+    this.commitSeq=0;this.runtimeSeq=0;
+    this.sim=null;this.simulationAdapter=null;this.netcodeSession=null;this.detachNetcodeTransport=null;
+    this.netcodeNow=performance.now();this.neutralInput=new Uint8Array(1);this.replayRecorder=null;
+    this.pendingNetcodeCommands=new Map();this.lastCommandTicket=null;this.frameOutputs=new Map();this.candidateFrameOutputs=new Map();this.publishedGameTick=0;
+    this.publishConfirmedSnapshots=false;this.latestConfirmedSnapshot=null;
+    this.pendingTerminalFrame=null;this.remoteTerminalReceipt=null;this.lastTerminalReceiptAt=0;this.terminalRecoveryKey='';this.recoveredJournalFrom=null;
+    this.transportConnected=false;this.everTransportOpened=false;this.syncHold=true;this.deferredActions=[];
+    this.recoveryPhase='idle';this.simpleRecoveryNeedsManual=false;this.simpleRecoveryToken='';this.simpleRecoverySeq=0;
+    this.recoveryAttempt=0;this.fullConnectionResetCount=0;this.postRecoveryResumeAt=0;this.postRecoveryTimer=0;
+    this.pendingResumeProbeToken='';this.lastResumeProbeAckAt=0;
+    this.localVisible=true;this.netcodeLoop=null;this.last=0;this.raf=0;
+    this.lastDriverPulseAt=performance.now();this.lastSnapshotEmitAt=0;this.lastRenderedSimulationTick=-1;this.presentationStartPending=true;
+    this.performanceStats={timings:{},lastPulseAt:null,icePending:false,iceRequestedAt:-1000,iceRttMs:null,iceFetchedAt:null,iceError:null};
+    this.presentationEventBuffer=[];this.presentationEventsBuffered=0;this.presentationEventsPublished=0;
+    this.presentationJournal=new RallyGamekit.PresentationEventQueue({adapters:{frame:{start:record=>{
+      this.presentationEventBuffer.push({...record.payload,presentationTick:record.tick});this.presentationEventsBuffered++;
+    }}},retentionTicks:120});
+    this.simEnded=false;this.matchResult=null;this.simulationFatal=false;this.simulationFatalInfo=null;
+    this.disconnectGraceDeadlineAt=0;this.disconnectGraceReason='';this.disconnectGraceTimer=0;
+    this.onDraft=()=>{};this.onSnapshot=()=>{};this.onRenderTargets=()=>{};this.onLog=()=>{};this.onResult=()=>{};this.onNetworkHealth=()=>{};
+    this.networkOpened=false;this.heartbeatTimer=0;this.lastPingAt=0;this.lastPongAt=0;this.lastRtt=null;this.networkState='hidden';
+    transport.onMessage=m=>this.handle(m);
+  }
+  get confirmedGameTick(){return this.netcodeSession?Math.min(this.sim?.tick||0,this.netcodeSession.confirmedTick+1):0}
+  getPendingCommandTickets(){return [...this.pendingNetcodeCommands.values()].map(ticket=>StateValue.copy(ticket))}
+  cancelScheduledWork(){
+    this.navigationPreparationCancel?.();this.navigationPreparationCancel=null;
+    this.clearDisconnectGrace();this.clearPostRecoveryCountdown();
+    for(const key of ['campaignOutroTimer']){if(this[key])clearTimeout(this[key]);this[key]=0}
+    this.stopHeartbeat(false);this.netcodeLoop?.stop();AppLifecycle.unregisterBackgroundSession(this);
+  }
+  dispose(reason='session-replaced'){
+    this.presentationJournal?.dispose();
+    if(this.disposed)return false;
+    this.disposed=true;RallySynctestDiagnostics.clear(this);this.simEnded=true;this.syncHold=true;this.cancelScheduledWork();
+    this.netcodeSession?.close();this.detachNetcodeTransport?.();this.detachNetcodeTransport=null;
+    this.deferredActions.length=0;this.pendingNetcodeCommands.clear();this.frameOutputs.clear();this.candidateFrameOutputs.clear();
+    try{this.sim?.dispose(reason)}finally{
+      this.transport.onMessage=()=>{};this.transport.onOpen=()=>{};this.transport.onClose=()=>{};this.transport.onPeerReady=()=>{};this.transport.onError=()=>{};this.transport.close();
+    }
+    return true;
+  }
+  resolveDisconnectGrace(){
+    if(this.simEnded||!this.disconnectGraceDeadlineAt){this.clearDisconnectGrace();return false}
+    const remain=this.disconnectGraceDeadlineAt-Date.now();
+    if(remain>20){this.disconnectGraceTimer=setTimeout(()=>this.resolveDisconnectGrace(),remain+20);return false}
+    this.clearDisconnectGrace();
+    // 연결 만료는 로컬 경기 중단이다. wall-clock으로 simulation 승자를 만들지 않는다.
+    return this.endMatch(null,'disconnect-timeout');
+  }
+  endMatch(winner,reason='base-destroyed'){
+    if(this.simEnded)return false;
+    this.simEnded=true;this.matchResult={winner:winner||null,reason,tick:this.sim?.tick||0};
+    this.cancelScheduledWork();this.syncHold=true;this.netcodeLoop?.resetTiming();
+    this.replayRecorder?.finalize(winner,this.sim,reason);this.netcodeSession?.close();
+    this.sim?.dispose('match-ended');this.onResult(winner,reason);
+    if(this.leaveAfterResult)setTimeout(()=>location.reload(),0);
+    return true;
+  }
+  surrender(){
+    if(this.simEnded)return false;
+    if(!this.sim){this.transport.send({type:'LOBBY_LEAVE'});return this.endMatch(this.role==='host'?'guest':'host','surrender')}
+    return this.command({type:'MATCH_SURRENDER'});
+  }
+  onTransportOpen(){
+    if(this.disposed)return;
+    const reconnect=this.everTransportOpened;
+    this.transportConnected=true;this.everTransportOpened=true;this.syncHold=this.simEnded||!!this.sim;
+    this.simpleRecoveryNeedsManual=false;this.recoveryPhase='idle';this.clearDisconnectGrace();
+    this.netcodeLoop?.resetTiming();this.startHeartbeat();
+    if(!reconnect)this.start();
+    else if(!this.sim){if(this.role==='guest')this.start()}
+    else this.onLog('P2P 재연결 · 공통 코어의 입력 이력으로 재개');
+    this.flushDeferredActions();
+  }
+  onTransportClosed(){
+    if(this.disposed||this.simulationFatal||!this.everTransportOpened||this.simEnded)return;
+    if(this.netcodeSession)return; // Core transport status events own in-game liveness.
+    this.markManualRecoveryNeeded('transport-close');this.startDisconnectGrace('transport-close');
+    this.onLog('P2P 연결 끊김 · 입력 대기 · 60초 안에 재접속 필요');
+  }
+  markManualRecoveryNeeded(reason='connection-lost'){
+    if(this.simEnded)return false;
+    this.transportConnected=false;this.syncHold=true;this.netcodeLoop?.resetTiming();
+    this.simpleRecoveryReason=reason;this.simpleRecoveryNeedsManual=true;this.recoveryPhase='needs-manual';this.stopHeartbeat(true);
+    RecoveryTelemetry.recordRecovery('netcode.connection-lost',this,this.transport,{reason});return true;
+  }
+  prepareSimpleRecovery(token,reason='manual-reconnect'){
+    if(!this.sim||this.simEnded)return false;
+    this.simpleRecoveryToken=String(token||'');this.simpleRecoveryReason=reason;
+    this.transportConnected=false;this.syncHold=true;this.netcodeLoop?.resetTiming();
+    this.simpleRecoveryNeedsManual=false;this.recoveryPhase='reconnecting';this.stopHeartbeat(false);return true;
+  }
+  startSimpleRecovery(reason='manual-reconnect'){
+    if(!this.sim||this.simEnded)return false;
+    if(this.transportConnected&&this.transport.isNetcodeOpen?.()){
+      if(this.role==='guest')return this.netcodeSession.requestResync(Math.max(0,this.confirmedGameTick-1));
+      return this.transport.send({type:'NETCODE_RESYNC_REQUEST',simVersion:SIM_VERSION});
+    }
+    this.prepareSimpleRecovery(String(++this.simpleRecoverySeq),reason);
+    const ok=this.role==='host'?this.transport.prepareRecoveryHost?.(reason):this.transport.rebuildRecoveryGuest?.(reason);
+    if(!ok){this.simpleRecoveryNeedsManual=true;this.recoveryPhase='needs-manual'}return !!ok;
+  }
+  balanceTelemetry(){return PerformanceTelemetry.balanceTelemetrySnapshot(this.sim)}
+  setLocalVisibility(visible){
+    const resumed=!this.localVisible&&!!visible;this.localVisible=!!visible;
+    if(!visible)this.netcodeSession?.releaseInput();
+    else if(resumed&&this.sim?.tick>0)this.renderTimelineChanged=true;
+  }
+  onBacklogDrop({elapsedMs=0,droppedMs=0,droppedTicks=0,timestamp=performance.now(),reason='backlog-overflow'}={}){
+    // This discards wall-clock debt, not confirmed simulation ticks. The Core's
+    // authoritative tick sequence and recovery history remain untouched.
+    this.lastDriverPulseAt=timestamp;this.netcodeNow=Math.max(this.netcodeNow,timestamp);
+    // The authoritative tick is unchanged, but the delayed display clock must
+    // rebase after discarded wall time instead of remaining ahead of every target.
+    if(this.sim?.tick>0)this.renderTimelineChanged=true;
+    const activeSession=!!this.netcodeSession?.ready&&this.transportConnected&&this.sim?.tick>0&&this.confirmedGameTick>0;
+    RecoveryTelemetry.recordRecovery('simulation.backlog-drop',this,this.transport,{elapsedMs,droppedMs,droppedTicks,reason,phase:activeSession?'timing-rebase':'bootstrap'});
+  }
+  emitNetworkHealth(state=this.networkState){
+    if(this.simulationFatal)state='fatal';this.networkState=state;
+    this.lastRtt=this.netcodeSession?.metrics.smoothedRTT??this.lastRtt;
+    this.onNetworkHealth({state,simulationFatal:this.simulationFatal,simulationFatalInfo:this.simulationFatalInfo,rtt:this.lastRtt,
+      silence:this.sim?0:(this.lastPongAt?Date.now()-this.lastPongAt:0),recoveryPhase:this.recoveryPhase,recoveryAttempt:this.recoveryAttempt,
+      connectionSerial:this.transport?.connectionSerial||0,acceptedConnectionSerial:this.transport?.lastAcceptedConnectionSerial||0,transportLastDataAt:this.transport?.lastDataAt||0});
+  }
+  startHeartbeat(){
+    this.stopHeartbeat(false);if(this.sim)return;this.networkOpened=true;this.lastPongAt=Date.now();this.emitNetworkHealth('connected');
+    this.heartbeatTimer=setInterval(()=>{
+      if(!this.networkOpened||this.simEnded||this.sim)return;
+      const silence=Date.now()-this.lastPongAt;
+      this.emitNetworkHealth(silence>=4000?'unstable':'connected');
+      // 로비 생존 확인일 뿐 simulation clock과 입력 지연은 Core가 측정한다.
+      if(Date.now()-this.lastPingAt>=1000){this.lastPingAt=Date.now();this.transport.send({type:'LOBBY_PING',ts:this.lastPingAt})}
+    },NETWORK_HEALTH_POLL_MS);
+  }
+  inputAvailable(){return !this.disposed&&!this.simEnded&&!this.simulationFatal&&!this.pendingTerminalFrame&&this.transportConnected&&!this.syncHold}
+  command(action){
+    if(!this.inputAvailable()||!this.sim||!this.netcodeSession||this.netcodeSession.resimulating||this.pendingNetcodeCommands.size>=128)return false;
+    try{
+      this.netcodeNow=Math.max(this.netcodeNow,performance.now());
+      const sequence=this.netcodeSession.queueCommand(RallyCommandCodec.encode(action));
+      const ticket={sequence,actor:this.role,key:StableSerializationUtil.stableStringify(action),submittedTick:this.sim.tick,submittedAt:performance.now(),action:StateValue.copy(action)};
+      this.lastCommandTicket=ticket;this.pendingNetcodeCommands.set(sequence,ticket);return true;
+    }catch(error){this.onLog('명령 접수 실패 · '+error.message);return false}
+  }
+  handle(m){
+    if(this.disposed||!m||typeof m!=='object')return;
+    if(m.type==='VERSION_MISMATCH'||['HELLO','GAME_START','DRAFT_SYNC','NETCODE_RESYNC_REQUEST','MATCH_TERMINAL_ACK'].includes(m.type)&&Number(m.simVersion)!==SIM_VERSION){
+      if(m.type!=='VERSION_MISMATCH')this.transport.send({type:'VERSION_MISMATCH',simVersion:SIM_VERSION});
+      this.syncHold=true;this.transport.onError({type:'version-mismatch',nonFatal:true,message:'게임 버전이 다릅니다. 양쪽 모두 같은 HTML로 새로고침하세요.'});return;
+    }
+    if(!this.sim)this.lastPongAt=Date.now();
+    if(m.type==='SIMULATION_FATAL'){this.enterSimulationFatal(new Error(m.message||'상대 simulation 오류'),{source:'peer-simulation-fatal',notifyPeer:false,remoteInfo:m});return}
+    if(m.type==='LOBBY_PING'){this.transport.send({type:'LOBBY_PONG',ts:m.ts});return}
+    if(m.type==='LOBBY_PONG'){if(!this.sim)this.lastRtt=Math.max(0,Date.now()-Number(m.ts));return}
+    if(m.type==='LOBBY_LEAVE'&&!this.sim){this.endMatch(this.role,'surrender');return}
+    if(m.type==='MATCH_TERMINAL_ACK'&&this.sim&&!this.simEnded){
+      if(!Number.isSafeInteger(m.tick)||m.tick<1||!Number.isInteger(m.hash)||m.hash<0||m.hash>0xffffffff||!['host','guest','draw'].includes(m.winner))return;
+      this.remoteTerminalReceipt={tick:m.tick,hash:m.hash,winner:m.winner,reason:String(m.reason||'')};
+      this.tryFinishTerminalBarrier();return;
+    }
+    if(m.type==='NETCODE_RESYNC_REQUEST'&&this.role==='guest'&&this.netcodeSession){this.netcodeSession.requestResync(Math.max(0,this.confirmedGameTick-1));return}
+    if(m.type==='GAME_START'&&this.role==='guest'){
+      if(this.sim||this.simEnded)return;
+      if(m.matchConfig)this.applyMatchConfig(m.matchConfig,{authoritative:true});
+      if(m.roundRules&&typeof m.roundRules==='object')this.roundRules=StateValue.copy(m.roundRules);
+      this.draft=m.draft;this.startSim(m.seed);return;
+    }
+    if(m.type==="DRAFT_SYNC"&&this.role!=="host"){
+      if(m.matchConfig)this.applyMatchConfig(m.matchConfig,{authoritative:true});
+      this.draft=m.state;
+      this.commitSeq=m.seq;
+      this.onDraft(this.draft);
+      return
+    }
+
+    if(this.role==="host"){
+      if(m.type==="HELLO"){
+        if(!this.draft)this.prepareLiveDraft();
+        if(!this.sim)this.beginGame();
+        else this.transport.send({type:"DRAFT_SYNC",simVersion:SIM_VERSION,seq:this.commitSeq,state:this.draft,matchConfig:this.matchConfig});
+        return;
+      }
+    }
+
+  }
+  static matchSeed(draft,roomCode,matchConfig={}){
+    if(matchConfig?.campaignScenario)return matchConfig.campaignScenario.seed;
+    return HashUtil.hash(`${roomCode}|launch|${JSON.stringify(draft?.decks||{host:[],guest:[]})}|${JSON.stringify(draft?.defenseCards||{host:[],guest:[]})}`);
+  }
+  beginGame(){
+    if(this.sim)return false;
+    const seed=GameSession.matchSeed(this.draft,this.roomCode,this.matchConfig);
+    this.transport.send({type:'GAME_START',simVersion:SIM_VERSION,seed,draft:this.draft,matchConfig:this.matchConfig,roundRules:this.roundRules});
+    this.startSim(seed);return true;
+  }
+  startSim(seed){
+    if(this.disposed||this.sim)return false;
+    if(!globalThis.RallyNetcode)throw new Error('URL Netcode가 로딩되지 않았습니다.');
+    this.clearDisconnectGrace();this.clearPostRecoveryCountdown();
+    this.sim=StrategySim.createForMatch({draft:this.draft,seed,rules:this.roundRules,campaignScenario:this.matchConfig?.campaignScenario||null});
+    try{
+      const sim=this.sim;
+      const startingUnits=sim.units.filter(unit=>unit&&unit.alive!==false&&unit.hp>0&&(unit.side===0||unit.side===1));
+      this.navigationPreparationCancel=sim.navigation.prepareLayersInSlices(startingUnits,[],{
+        schedule:callback=>TerrainNavigation.schedulePreparationStep(callback),
+        shouldContinue:()=>!this.disposed&&this.sim===sim&&!sim.disposed,
+        onError:error=>this.enterSimulationFatal(error,{source:'navigation-preparation'})
+      });
+    }
+    catch(error){try{this.sim.dispose('initialization-failed')}finally{this.sim=null}throw error}
+    this.simulationAdapter=new RallySimulationAdapter(this);
+    this.replayRecorder=new ReplayRecorder({seed,draft:this.draft,roomCode:this.roomCode,sim:this.sim,rules:this.roundRules});
+    this.simEnded=false;this.matchResult=null;this.publishedGameTick=0;this.netcodeLoop?.resetTiming();
+    this.emitSnapshot(this.sim.snapshot());this.emitRenderTargets(this.sim,true);
+    this.netcodeNow=performance.now();
+    // Express Rally's lockstep command lead in milliseconds across the TPS choices.
+    // Core adapts within these bounds and waits for late inputs; no missing input is predicted.
+    const baseInputDelay=Math.max(1,Math.ceil(LOCKSTEP_INPUT_DELAY_BASE_MS*this.sim.tps/1000));
+    const inputDelayProfile=this.netcodeMode==='lockstep'?{baseInputDelayTicks:baseInputDelay,minInputDelayTicks:baseInputDelay,maxInputDelayTicks:Math.floor(LOCKSTEP_INPUT_DELAY_MAX_MS*this.sim.tps/1000)}:{};
+    this.netcodeSession=RallyNetcode.createSession({players:['host','guest'],localPlayerId:this.role,authorityPlayerId:'host',
+      sessionId:String(this.roomCode),simulationVersion:String(SIM_VERSION),seed:seed>>>0,inputSize:1,
+      profile:{...RallyNetcode.profiles.rts,mode:this.netcodeMode,rollbackWindowTicks:this.netcodeMode==='lockstep'?0:RallyNetcode.profiles.rts.rollbackWindowTicks,
+        ...inputDelayProfile,
+        tickRate:this.sim.tps,maxCatchupSteps:MAX_CATCHUP_STEPS_PER_PULSE,checksumInterval:20,maxCommandBytes:12*1024,maxHistoryBytes:64*1024*1024,maxSnapshotBytes:RallyStateCodec.maxBytes},
+      adapter:this.simulationAdapter,clock:()=>this.netcodeNow,onEvent:event=>this.onNetcodeEvent(event)});
+    const statusTransport=this.transport;
+    this.detachNetcodeTransport=this.netcodeSession.attachTransport(this.role==='host'?'guest':'host',{
+      send:bytes=>this.transport.sendNetcode(bytes),
+      // Stamp arrivals with the current time; the loop's frame clock may not have run yet.
+      subscribe:listener=>this.transport.subscribeNetcode(bytes=>{this.netcodeNow=Math.max(this.netcodeNow,performance.now());listener(bytes)}),
+      ...(typeof statusTransport.subscribeNetcodeStatus==="function"?{subscribeStatus:listener=>statusTransport.subscribeNetcodeStatus(listener),get state(){return statusTransport.netcodeState}}:{})
+    });
+    this.netcodeNow=performance.now();this.lastDriverPulseAt=this.netcodeNow;this.lastSnapshotEmitAt=this.netcodeNow;
+    this.stopHeartbeat(false);
+    // A slow CPU pulse is not a suspended page. Core runs fixed ticks in order,
+    // within the per-pulse budget, and retains at most three seconds of debt.
+    this.netcodeLoop=RallyNetcode.createLoop({session:this.netcodeSession,getInput:()=>this.neutralInput,backlogPolicy:'defer',maxBacklogTicks:Math.ceil(this.sim.tps*3),
+      onBacklogDrop:event=>this.onBacklogDrop(event),
+      beforeFrame:now=>{
+        // Keep presentation history through recoverable rAF/CPU gaps. Core's
+        // accumulator preserves their ordered fixed ticks; discarded debt is
+        // rebased by onBacklogDrop. Only a real page suspension needs this guard.
+        const gap=Math.max(0,now-this.lastDriverPulseAt);
+        if(this.sim.tick>0&&gap>=SIM_SUSPENSION_THRESHOLD_MS)this.renderTimelineChanged=true;
+        this.lastDriverPulseAt=now;this.netcodeNow=Math.max(this.netcodeNow,now);this.driverPulseStartedAt=performance.now();this.driverPulseAdvances=0;
+      },
+      // Poll/rollback remains synchronous and atomic inside Core. Always permit
+      // the first due ordinary step, then yield catchup after 12 ms of CPU work.
+      canAdvance:()=>{
+        if(this.simEnded||this.simulationFatal||this.pendingTerminalFrame||this.syncHold||this.frameOutputs.get(this.sim.tick)?.winner)return false;
+        // Yielding ordinary catchup defers a fixed tick; it does not reset presentation history.
+        if(this.driverPulseAdvances>0&&performance.now()-this.driverPulseStartedAt>=12)return false;
+        return true;
+      },
+      onAdvance:()=>{this.driverPulseAdvances++;this.reconcileNetcodeProgress()},render:frame=>{
+        this.driverLastAlpha=frame.alpha;this.reconcileNetcodeProgress();
+        this.reconcileNetcodePresentation();this.publishNetcodeSnapshot(this.netcodeNow);
+      },
+      onError:error=>this.enterSimulationFatal(error,{source:'netcode-loop'})});
+    this.syncHold=!this.transportConnected;AppLifecycle.registerBackgroundSession(this);return true;
+  }
+  onNetcodeFrameApplied(frame){
+    // Candidate resimulation은 commit 전까지 UI/AI/replay/VFX에 공개하지 않는다.
+    if(frame.winner){
+      frame.terminalState=this.simulationAdapter.save();
+      frame.reason=this.sim.netcodeMatchResult?.reason||CampaignOutcomeRules.resolve(this.sim)?.reason||(frame.winner==='draw'?'draw':'base-destroyed');
+    }
+    if(this.publishConfirmedSnapshots&&frame.gameTick%Math.max(1,Math.round(this.sim.tps*SNAPSHOT_EMIT_INTERVAL_MS/1000))===0)frame.snapshot=this.sim.snapshot();
+    (frame.recovering?this.candidateFrameOutputs:this.frameOutputs).set(frame.gameTick,frame);
+  }
+  onNetcodeEvent(event){
+    if(event.type==='peer-interrupted'){
+      this.syncHold=true;this.recoveryPhase='interrupted';this.emitNetworkHealth('unstable');
+      this.onLog('공통 코어 입력 통신 중단 · 유효 패킷 수신을 기다립니다.');
+    }else if(['peer-timeout','peer-disconnected'].includes(event.type)){
+      this.markManualRecoveryNeeded(event.type);this.startDisconnectGrace(event.type);
+      this.onLog('공통 코어 연결 끊김 · 60초 안에 재접속 필요');
+    }else if(event.type==='peer-resumed'){
+      this.transportConnected=true;this.simpleRecoveryNeedsManual=false;this.recoveryPhase='idle';this.clearDisconnectGrace();
+      this.syncHold=!!this.pendingTerminalFrame||this.simEnded||this.simulationFatal;
+      // Rebase if the presentation clock advanced while simulation was held.
+      if(this.sim?.tick>0)this.renderTimelineChanged=true;
+      this.netcodeLoop?.resetTiming();
+      this.emitNetworkHealth('connected');this.flushDeferredActions();
+    }else if(event.type==='rollback'){
+      for(const tick of this.frameOutputs.keys())if(tick>event.from)this.frameOutputs.delete(tick);
+      this.renderTimelineChanged=true;
+    }else if(event.type==='reconciled'){
+      this.renderTimelineChanged=true;this.reconcileNetcodeProgress();
+    }else if(event.type==='desync'){
+      this.onLog('상태 해시 불일치 · 공통 코어의 과거 snapshot 검증/재실행');
+    }else if(event.type==='recovered'){
+      const terminal=[...this.candidateFrameOutputs.values()].filter(frame=>frame.winner).sort((a,b)=>a.gameTick-b.gameTick)[0];
+      if(terminal||this.pendingTerminalFrame)this.recoveredJournalFrom=event.from;
+      for(const [tick,frame]of this.candidateFrameOutputs)this.frameOutputs.set(tick,frame);
+      this.candidateFrameOutputs.clear();
+      this.terminalRecoveryKey='';this.recoveryAttempt=0;
+      this.renderTimelineChanged=true;this.recoveryPhase='idle';
+    }else if(['recovery-rejected','recovery-timeout'].includes(event.type)){
+      this.candidateFrameOutputs.clear();this.terminalRecoveryKey='';this.onLog('Snapshot 복구 후보 거부 · '+(event.reason||'시간 초과'));
+    }else if(['version-mismatch','handshake-mismatch'].includes(event.type)||event.type==='protocol-error'&&!this.netcodeSession?.ready){
+      this.enterSimulationFatal(new Error('게임 버전 또는 동기화 설정이 다릅니다. 양쪽 모두 새로고침하고 같은 동기화 모드를 선택하세요. ('+event.type+')'),{source:'netcode-handshake'});
+    }else if(event.type==='desync-unrecoverable')this.enterSimulationFatal(new Error('공통 넷코드 복구 시도를 소진했습니다.'),{source:'netcode-recovery'});
+    else if(event.type==='fatal')this.enterSimulationFatal(event.error,{source:'netcode-adapter'});
+  }
+  publishConfirmedFrames(){
+    if(!this.netcodeSession||this.netcodeSession.resimulating)return;
+    if(this.recoveredJournalFrom!==null){
+      const from=this.recoveredJournalFrom;this.recoveredJournalFrom=null;
+      this.publishedGameTick=Math.min(this.publishedGameTick,from);
+      this.replayRecorder.commands=this.replayRecorder.commands.filter(command=>command.tick<=from);
+      this.replayRecorder.checkpoints=this.replayRecorder.checkpoints.filter(checkpoint=>checkpoint.tick<=from);
+      // 복구가 잘못된 조기 승패를 제거할 수도 있다. 정확한 frame journal을
+      // 다시 확정하며, 승패가 없다면 같은 Core의 정상 진행으로 복귀한다.
+      this.pendingTerminalFrame=null;this.syncHold=!this.transportConnected||this.simulationFatal||this.simEnded;
+    }
+    if(this.pendingTerminalFrame)return;
+    const through=this.confirmedGameTick;
+    while(this.publishedGameTick<through){
+      const tick=this.publishedGameTick+1,frame=this.frameOutputs.get(tick);
+      if(!frame)throw new Error('확정 frame journal 누락: '+tick);
+      for(const command of frame.commands){
+        // 기존 replay 파일의 command schema에만 변환한다. 이 메시지는 네트워크로 보내지 않는다.
+        this.replayRecorder?.recordCommand({type:'RUNTIME_COMMIT',...command,authorityTick:frame.frameTick});
+        this.runtimeSeq++;
+        if(command.actor===this.role){
+          const ticket=this.pendingNetcodeCommands.get(command.netcodeSequence);
+          if(Number.isFinite(ticket?.submittedAt))PerformanceTelemetry.recordTiming(this.performanceStats.timings,'commandConfirm',performance.now()-ticket.submittedAt);
+          this.pendingNetcodeCommands.delete(command.netcodeSequence);
+        }
+      }
+      this.presentationJournal.update(performance.now());
+      // Recovery may republish the authoritative journal, but already heard timeline
+      // intervals must stay silent even when corrected events have different identities.
+      if(tick>this.presentationJournal.confirmedTick){
+        frame.events.forEach((event,sequence)=>this.presentationJournal.emit({tick,sequence,
+          entityId:event.entityId??event.id??event.sourceId??'world',generation:0,kind:'frame',
+          payload:event,policy:'confirmed',durationMs:0}));
+        this.presentationJournal.confirmThrough(tick);
+      }
+      if(frame.snapshot)this.latestConfirmedSnapshot=frame.snapshot;
+      this.publishedGameTick=tick;
+      if(frame.winner){this.beginTerminalBarrier(frame);break}
+    }
+    // History는 Core가 소유한다. 이 작은 journal은 외부 효과 중복 방지용이다.
+    const before=this.publishedGameTick-2;
+    for(const tick of this.frameOutputs.keys())if(tick<before)this.frameOutputs.delete(tick);
+    if(this.sim.tick<=through&&!this.simEnded)this.replayRecorder?.captureCheckpoint(this.sim);
+  }
+  beginTerminalBarrier(frame){
+    // 이 ACK는 상대의 동일한 확정 판정 확인이다. 수신 메시지로 승자를 정하지 않는다.
+    this.pendingTerminalFrame=frame;this.syncHold=true;this.netcodeLoop?.resetTiming();
+    this.sendTerminalReceipt();this.tryFinishTerminalBarrier();
+  }
+  sendTerminalReceipt(){
+    const frame=this.pendingTerminalFrame;if(!frame||this.simEnded)return;
+    if(this.transport.send({type:'MATCH_TERMINAL_ACK',simVersion:SIM_VERSION,tick:frame.gameTick,
+      hash:RallyNetcode.hashBytes(frame.terminalState),winner:frame.winner,reason:frame.reason}))this.lastTerminalReceiptAt=this.netcodeNow;
+  }
+  tryFinishTerminalBarrier(){
+    const frame=this.pendingTerminalFrame,receipt=this.remoteTerminalReceipt;
+    if(!receipt||this.simEnded||this.netcodeSession.resimulating)return;
+    if(!frame){
+      if(this.role==='guest'&&this.confirmedGameTick>=receipt.tick)this.requestTerminalResync(receipt);
+      return;
+    }
+    if(receipt.tick!==frame.gameTick||receipt.hash!==RallyNetcode.hashBytes(frame.terminalState)||receipt.winner!==frame.winner||receipt.reason!==frame.reason){
+      // 종료 경계의 실제 DESYNC도 동일 public snapshot 복구를 사용한다.
+      // Host는 ACK를 계속 전송하며, Guest는 과거 state를 검증·재실행한다.
+      if(this.role==='guest')this.requestTerminalResync(receipt);
+      return;
+    }
+    this.finishConfirmedOutcome(frame);
+  }
+  requestTerminalResync(receipt){
+    const key=receipt.tick+':'+receipt.hash;if(this.terminalRecoveryKey===key)return;
+    if(this.recoveryAttempt>=3){this.enterSimulationFatal(new Error('확정 종료 상태를 복구하지 못했습니다.'),{source:'terminal-recovery-exhausted'});return}
+    const past=Math.max(0,Math.min(receipt.tick-1,this.confirmedGameTick-1));
+    if(this.netcodeSession.requestResync(past)){
+      this.terminalRecoveryKey=key;this.recoveryAttempt++;
+      this.onLog('종료 상태 해시 불일치 · 과거 snapshot 검증/재실행');
+    }
+  }
+  finishConfirmedOutcome(frame){
+    if(this.simEnded||this.campaignResultPending)return;
+    // 늦은 실제 입력의 승패가 rollback target보다 이른 경우에도 양쪽 모두
+    // 동일한 종료 frame을 보존한다. Core를 종료한 뒤에만 terminal state를 복원한다.
+    this.netcodeSession.close();
+    this.simulationAdapter.load(frame.terminalState);
+    this.emitRenderTargets(this.sim,true);this.emitSnapshot(this.sim.snapshot());
+    const winner=frame.winner,campaign=this.sim.campaignScenario,viewRole=campaign?.playerRole||'host';
+    const reason=frame.reason;
+    const finish=()=>{if(!this.simEnded)this.endMatch(winner==='draw'?null:winner,reason)};
+    if(campaign&&winner===viewRole&&Array.isArray(campaign.presentation?.outro)&&campaign.presentation.outro.length){
+      this.campaignResultPending=true;this.syncHold=true;this.netcodeLoop?.resetTiming();
+      if(this.role===ActiveViewState.role)CampaignPresentation.playOutro(campaign.presentation.outro,finish);
+      else this.campaignOutroTimer=setTimeout(finish,CampaignPresentation.outroDuration(campaign.presentation.outro));
+    }else finish();
+  }
+  reconcileNetcodeProgress(){
+    if(this.simEnded||this.simulationFatal)return;
+    this.publishConfirmedFrames();
+    if(this.pendingTerminalFrame&&this.netcodeNow-this.lastTerminalReceiptAt>=500)this.sendTerminalReceipt();
+    this.tryFinishTerminalBarrier();
+  }
+  reconcileNetcodePresentation(){
+    if(this.simEnded||this.simulationFatal)return;
+    // The first capture can predate peer readiness, so reanchor on the first advancing tick.
+    const startPresentationTimeline=this.presentationStartPending&&this.sim.tick>0;
+    if(!this.netcodeSession.resimulating&&!this.simEnded&&(this.renderTimelineChanged||this.lastRenderedSimulationTick!==this.sim.tick||startPresentationTimeline)){
+      this.emitRenderTargets(this.sim,!!this.renderTimelineChanged||startPresentationTimeline);this.lastRenderedSimulationTick=this.sim.tick;this.renderTimelineChanged=false;
+      if(startPresentationTimeline)this.presentationStartPending=false;
+    }
+  }
+  emitSnapshot(snapshot){
+    const started=performance.now();
+    try{
+      const result=this.onSnapshot(snapshot);
+      this.lastSnapshotPublication={sim:this.sim,tick:this.sim?.tick,epoch:this.sim?.runtimeEpoch,publishedTick:this.publishedGameTick,confirmed:this.latestConfirmedSnapshot};
+      return result;
+    }finally{PerformanceTelemetry.recordTiming(this.performanceStats.timings,'snapshotUi',performance.now()-started)}
+  }
+  emitRenderTargets(sim,snap){
+    const started=performance.now();
+    try{return this.onRenderTargets(sim,snap)}finally{PerformanceTelemetry.recordTiming(this.performanceStats.timings,'renderTargets',performance.now()-started)}
+  }
+  publishNetcodeSnapshot(now=this.netcodeNow){
+    const previous=this.lastSnapshotPublication;
+    const presentationChanged=!previous||previous.sim!==this.sim||previous.tick!==this.sim.tick||previous.epoch!==this.sim.runtimeEpoch||previous.publishedTick!==this.publishedGameTick||this.presentationEventBuffer.length>0||(this.publishConfirmedSnapshots&&previous.confirmed!==this.latestConfirmedSnapshot);
+    if(presentationChanged&&!this.netcodeSession.resimulating&&now-this.lastSnapshotEmitAt>=SNAPSHOT_EMIT_INTERVAL_MS){
+      this.lastSnapshotEmitAt=now;
+      const snapshot=this.publishConfirmedSnapshots?this.latestConfirmedSnapshot:this.sim.snapshot();
+      if(snapshot){snapshot.events=StateValue.copy(this.presentationEventBuffer.splice(0));this.presentationEventsPublished+=snapshot.events.length;this.emitSnapshot(snapshot)}
+    }
+  }
+  advanceSimulation(now=performance.now()){
+    if(!this.sim||this.simEnded||this.simulationFatal)return;
+    // Library owns pacing, accumulation, bounded catchup, and polling during holds.
+    this.netcodeLoop.pulse(now);
+  }
+enterSimulationFatal(err,{source="simulation",notifyPeer=true,remoteInfo=null}={}){
+    if(this.simulationFatal)return false;
+
+    const wasConnected=!!this.transportConnected;
+    const localTick=this.sim?.tick??null;
+    const localChecksum=this.simulationChecksumSafe();
+    const message=String(remoteInfo?.message||err?.message||err||"Unknown simulation error");
+    const stack=String(err?.stack||"").slice(0,12000);
+    const info={
+      message,
+      stack,
+      source:String(remoteInfo?.source||source||"simulation"),
+      tick:Number.isFinite(Number(remoteInfo?.tick))?Number(remoteInfo.tick):localTick,
+      localTick,
+      role:this.role,
+      originRole:String(remoteInfo?.originRole||this.role),
+      roomCode:this.roomCode,
+      runtimeSeq:Number.isFinite(Number(remoteInfo?.runtimeSeq))?Number(remoteInfo.runtimeSeq):this.runtimeSeq,
+      localRuntimeSeq:this.runtimeSeq,
+      checksum:remoteInfo?.checksum!=null?String(remoteInfo.checksum):localChecksum,
+      localChecksum,
+      recoveryPhase:this.recoveryPhase,
+      syncHold:!!this.syncHold,
+      transportConnected:wasConnected,
+      remote:!!remoteInfo,
+      at:new Date().toISOString()
+    };
+
+    this.simulationFatal=true;
+    this.simulationFatalInfo=info;
+    this.syncHold=true;
+    this.transportConnected=false;
+    this.netcodeLoop?.resetTiming();
+
+    this.recoveryPhase="simulation-fatal";
+    this.deferredActions.length=0;
+    this.pendingNetcodeCommands.clear();
+    this.clearDisconnectGrace();
+    this.clearPostRecoveryCountdown();
+    this.netcodeSession?.close();
+    this.stopHeartbeat(false);
+    AppLifecycle.unregisterBackgroundSession(this);
+
+    RecoveryTelemetry.recordRecovery("simulation.fatal",this,this.transport,{
+      fatal:{...info,stack:undefined},
+      error:{message,stack}
+    });
+    if(typeof DiagnosticPresentation!=="undefined"){
+      DiagnosticPresentation.presentFatalDiagnostic({
+        kind:"RALLY_FRONTIER_SIMULATION_FATAL",
+        build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),
+        at:info.at,
+        source:info.source,
+        role:info.role,
+        remote:info.remote,
+        tick:info.tick,
+        localTick:info.localTick,
+        runtimeSeq:info.runtimeSeq,
+        checksum:info.checksum,
+        localChecksum:info.localChecksum,
+        tps:Number(this.sim?.tps)||SimulationTiming.tps(),
+        units:this.sim?.units?.filter?.(u=>u?.alive!==false)?.length||0,
+        projectiles:this.sim?.projectiles?.filter?.(p=>p?.alive!==false)?.length||0,
+        message,
+        stack
+      });
+    }
+    console.error("simulation fatal",info,err);
+    this.onLog(`시뮬레이션 오류로 중단 · tick ${localTick??"-"} · ${message}`);
+
+    if(notifyPeer&&wasConnected){
+      try{
+        this.transport.send({
+          type:"SIMULATION_FATAL",
+          source:info.source,
+          message,
+          tick:localTick,
+          runtimeSeq:this.runtimeSeq,
+          checksum:localChecksum,
+          originRole:this.role
+        });
+      }catch{}
+    }
+
+    this.emitNetworkHealth("fatal");
+
+    // Closing the channel is a second safety barrier: even an older peer that does
+    // not understand SIMULATION_FATAL will enter its existing transport sync hold.
+    if(wasConnected){
+      queueMicrotask(()=>{try{this.transport?.close?.()}catch{}});
+    }
+    return true;
+  }
+applyMatchConfig(config,{authoritative=false}={}){
+    if(this.sim)return false;
+    if(this.role==="host"&&!authoritative&&config==null)return false;
+    this.matchConfig=GameRuleRuntime.normalizeMatchConfig(config);
+    this.matchPresetId=this.matchConfig.presetId;
+    this.matchRuleOverrides=this.matchConfig.overrides;
+    this.roundRules=GameRuleRuntime.resolveMatchRules({presetId:this.matchPresetId,matchOverrides:GameRuleRuntime.mergeGameRules(this.matchRuleOverrides||{},{simulation:{tps:this.matchConfig.simulationTps}})});
+    return true;
+  }
+prepareCampaignLiveDraft(){if(this.role!=="host"||!this.matchConfig?.campaignScenario)return false;const cfg=CampaignMissionDefinition.normalize(this.matchConfig.campaignScenario),humanRole=cfg.playerRole,enemyRole=humanRole==="host"?"guest":"host";this.draft={phase:"live",roomCode:this.roomCode,decks:{host:[],guest:[]},defenseCards:{host:[],guest:[]},winner:null};this.draft.decks[humanRole]=cfg.player.availableUnits.slice();this.draft.decks[enemyRole]=cfg.enemy.availableUnits.slice();return true}
+// A launch match has no unit selection: both sides fire the fixed grain deck.
+prepareLaunchLiveDraft(){
+    if(this.role!=="host")return false;
+    const deck=()=>LaunchRules.deck.slice();
+    this.draft={phase:"live",roomCode:this.roomCode,decks:{host:deck(),guest:deck()},defenseCards:{host:[],guest:[]},winner:null};
+    return true;
+  }
+// Host builds the live setup itself: a campaign when the match asks for one, else the launch deck.
+prepareLiveDraft(){return this.prepareCampaignLiveDraft()||this.prepareLaunchLiveDraft()}
+start(){
+    if(this.role==="host"){
+      // Host waits for the real Guest HELLO, then starts the match from a deterministic live initial state.
+      this.prepareLiveDraft();
+    }else this.transport.send({type:"HELLO",simVersion:SIM_VERSION})
+  }
+simulationChecksumSafe(){
+    try{return this.sim?.checksum?.()??null}catch{return null}
+  }
+clearDisconnectGrace(){
+    if(this.disconnectGraceTimer){clearTimeout(this.disconnectGraceTimer);this.disconnectGraceTimer=0}
+    this.disconnectGraceDeadlineAt=0;
+    this.disconnectGraceReason="";
+  }
+startDisconnectGrace(reason="connection-lost"){
+    if(this.simEnded)return false;
+    if(!this.disconnectGraceDeadlineAt)this.disconnectGraceDeadlineAt=Date.now()+DISCONNECT_GRACE_MS;
+    this.disconnectGraceReason=reason;
+    if(this.disconnectGraceTimer)clearTimeout(this.disconnectGraceTimer);
+    const delay=Math.max(0,this.disconnectGraceDeadlineAt-Date.now());
+    this.disconnectGraceTimer=setTimeout(()=>this.resolveDisconnectGrace(),delay+20);
+    this.emitNetworkHealth("disconnected");
+    return true;
+  }
+clearPostRecoveryCountdown(){
+    if(this.postRecoveryTimer){clearTimeout(this.postRecoveryTimer);this.postRecoveryTimer=0}
+    this.postRecoveryResumeAt=0;
+  }
+flushDeferredActions(){
+    if(!this.transportConnected||this.syncHold||!this.sim||!this.deferredActions.length)return;
+
+    const queued=this.deferredActions.splice(0,16);
+    for(const action of queued)this.command(action);
+  }
+stopHeartbeat(markDisconnected=true){
+    if(this.heartbeatTimer){clearInterval(this.heartbeatTimer);this.heartbeatTimer=0}
+    const hadConnection=this.networkOpened;
+    this.networkOpened=false;
+    if(markDisconnected&&hadConnection)this.emitNetworkHealth("disconnected");
+  }
+simulationTps(){return RangeUtil.clamp(Math.round(Number(this.sim?.tps||this.roundRules?.simulation?.tps||this.matchConfig?.simulationTps)||SIM_TPS),10,30)}
+msTicks(ms,options){return SimulationTiming.msToTicks(ms,this.simulationTps(),options)}
+ticksMs(ticks){return SimulationTiming.ticksToMs(ticks,this.simulationTps())}
+}
+
+export { GameSession, RallyStateCodec, RallySynctestDiagnostics };
