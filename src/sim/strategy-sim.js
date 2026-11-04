@@ -4,7 +4,6 @@ import { Building, Projectile, TerrainQuery, Unit, VisionField } from './entitie
 import { StateContract, StateValue } from './components.js';
 import { RallyStateCodec } from '../session/game-session.js';
 import { LaunchRules } from './launch-rules.js';
-import { DeterministicBuildingSpatialGrid, DeterministicCollisionGrid, DeterministicSweptCollisionGrid, DeterministicUnitSpatialGrid } from './spatial-grids.js';
 import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.js';
 import { CloneUtil, HashUtil, MapGeneration } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
@@ -16,14 +15,17 @@ import { WorldContext } from './world-context.js';
 import { InteractionGeometry, NavigationGoal, TerrainNavigation, UnitMotion } from './navigation.js';
 import { FP } from '../core/config.js';
 import { RallyGamekit, RallyNetcode } from '../core/gamekit.js';
-const { SurfaceContactGeometry, SweptCircleContact } = RallyGamekit;
+const { BoundsGrid, SurfaceContactGeometry, SweptCircleContact, UniformGrid } = RallyGamekit;
 import { SimulationTiming } from '../main.js';
 
 class SimulationRuntimeState{
   static collision(sim){
-    sim.collisionGrid=new DeterministicCollisionGrid(COLLISION_SPATIAL_CELL,sim.world);
+    // Fixed-point coordinates: one cell is COLLISION_SPATIAL_CELL world units, positions are the units' fx/fy.
+    sim.collisionGrid=new UniformGrid({cellSize:COLLISION_SPATIAL_CELL*FP,width:sim.world.width*FP,height:sim.world.height*FP,outside:'clamp'});
+    sim.collisionGridMaxRadius=0;
     sim.collisionCandidateBuffer=[];
-    sim.collisionSweepGrid=new DeterministicSweptCollisionGrid(sim.world);
+    sim.collisionSweepGrid=new BoundsGrid({cellSize:COLLISION_SPATIAL_CELL*FP,width:sim.world.width*FP,height:sim.world.height*FP,maxCells:16,views:2});
+    sim.collisionSweepEndCell=new Int32Array(0);
     sim.collisionMotion=null;
     for(const key of ["collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther"])sim[key]=new Int32Array(0);
     sim.collisionCnt=new Uint16Array(0);
@@ -35,8 +37,9 @@ class SimulationRuntimeState{
     sim.hardFixSapMarks=new Uint32Array(0);sim.hardFixSapEpoch=1;
   }
   static spatial(sim){
-    sim.unitSpatial=new DeterministicUnitSpatialGrid(SIM_SPATIAL_CELL,sim.world);
-    sim.buildingSpatial=new DeterministicBuildingSpatialGrid(SIM_SPATIAL_CELL,sim.world);
+    // Units are tracked by array index with one group per side (0, 1, other), so enemy and ally queries skip each other.
+    sim.unitSpatial=new UniformGrid({cellSize:SIM_SPATIAL_CELL,width:sim.world.width,height:sim.world.height,outside:'clamp',groups:3,track:'index'});
+    sim.buildingSpatial=new UniformGrid({cellSize:SIM_SPATIAL_CELL,width:sim.world.width,height:sim.world.height,outside:'clamp'});
     sim.buildingSpatialDirty=true;sim.buildingSpatialQueryBuffers=Array.from({length:16},()=>[]);sim.buildingSpatialQueryCursor=0;
     sim.maxBuildingRadius=Math.max(...Object.values(BuildingDefinition.all).map(d=>Number(d?.size)||35))+NAV_BUILDING_MARGIN;
     sim.unitById=new Map();sim.buildingById=new Map();sim.unitIndexById=new Map();sim.runtimeIndexTick=-1;
@@ -73,7 +76,7 @@ class StrategySim{
   // their existing StateContracts and serialization.
   static stateContract=new StateContract({}, {presentation:["events","perfStats","balanceStats","_perfCollect"],derived:[
     "chargedHeldIds","world","tps","disposed","runtimeEpoch","commandReceipts",
-    "collisionGrid","collisionSweepGrid","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCandidateBuffer","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
+    "collisionGrid","collisionGridMaxRadius","collisionSweepGrid","collisionSweepEndCell","collisionSweepOut","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCandidateBuffer","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
     "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapSideHeads","hardFixSapSideNext","hardFixSapSidePrev","hardFixSapSideHeaps","hardFixSapMarks","hardFixSapEpoch",
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","spatialQueryScopeBuffers","spatialQueryScopeDepth","maxUnitRadius","targetLevelMemo",
     "visionFields","navigation"
@@ -126,7 +129,9 @@ class StrategySim{
       const u=this.units[i];this.unitById.set(u.id,u);this.unitIndexById.set(u.id,i);
     }
     for(const b of this.buildings)this.buildingById.set(b.id,b);
-    this.unitSpatial.reset(this.units,this.unitIndexById);this.runtimeIndexTick=this.tick;
+    this.unitSpatial.clear();
+    for(let i=0;i<this.units.length;i++){const u=this.units[i];if(u.alive)this.unitSpatial.insert(i,u.x,u.y,StrategySim.spatialGroup(u.side))}
+    this.runtimeIndexTick=this.tick;
     this.ensureBuildingSpatial();
   }
   entityRefById(id,kind=null){
@@ -149,24 +154,34 @@ class StrategySim{
   }
   markBuildingSpatialDirty(){this.buildingSpatialDirty=true;if(this.navigation)this.navigation.sceneTick=-1}
   ensureBuildingSpatial(){
-    if(!this.buildingSpatial)this.buildingSpatial=new DeterministicBuildingSpatialGrid(SIM_SPATIAL_CELL,this.world);
-    if(this.buildingSpatialDirty){this.buildingSpatial.reset(this.buildings);this.buildingSpatialDirty=false}
+    if(this.buildingSpatialDirty){
+      this.buildingSpatial.clear();
+      for(let i=0;i<this.buildings.length;i++){const b=this.buildings[i];if(b&&b.alive!==false)this.buildingSpatial.insert(i,b.x,b.y)}
+      this.buildingSpatialDirty=false;
+    }
   }
   nearbyBuildingIndices(x,y,r){
     this.ensureBuildingSpatial();
     const out=this.buildingSpatialQueryBuffers[this.buildingSpatialQueryCursor++&15];
-    return this.buildingSpatial.query(x,y,r,out);
+    return this.buildingSpatial.queryCircle(x,y,r,out);
   }
-  syncUnitSpatial(u){if(this.runtimeIndexTick===this.tick)this.unitSpatial.sync(u)}
+  static spatialGroup(side){return side===0?0:side===1?1:2}
+  // A moved unit changes cell (and so bucket order) only when its cell changes; a dead one leaves the grid.
+  syncUnitSpatial(u){
+    if(this.runtimeIndexTick!==this.tick||!u)return;
+    const index=this.unitIndexById.get(u.id);if(index==null)return;
+    if(u.alive)this.unitSpatial.move(index,u.x,u.y,StrategySim.spatialGroup(u.side));
+    else if(this.unitSpatial.keyOf(index)!==this.unitSpatial.keyAt(u.x,u.y))this.unitSpatial.remove(index);
+  }
   addRuntimeUnit(u){
     if(!u.behaviorState)u.behaviorState={};
     if(this.runtimeIndexTick!==this.tick||!u)return;
-    const index=this.units.length-1;this.unitById.set(u.id,u);this.unitIndexById.set(u.id,index);this.unitSpatial.add(u,index);
+    const index=this.units.length-1;this.unitById.set(u.id,u);this.unitIndexById.set(u.id,index);if(u.alive)this.unitSpatial.insert(index,u.x,u.y,StrategySim.spatialGroup(u.side));
   }
   nearbyUnits(x,y,r,side=null,out=null){
     if(this.runtimeIndexTick!==this.tick)this.rebuildRuntimeIndexes();
     if(out!==null&&!Array.isArray(out))throw new TypeError("nearbyUnits result buffer must be an array");
-    const result=this.unitSpatial.query(x,y,r,out||this.spatialQueryBuffers[this.spatialQueryCursor++&63],side);
+    const result=this.unitSpatial.queryCircle(x,y,r,out||this.spatialQueryBuffers[this.spatialQueryCursor++&63],side==null?-1:StrategySim.spatialGroup(side));
     if(this._perfCollect){this._perfCollect.spatialQueries++;this._perfCollect.spatialCandidates+=result.length;if(side!=null)this._perfCollect.sideSpatialQueries++}
     return result;
   }
@@ -178,7 +193,7 @@ class StrategySim{
     const out=this.spatialQueryScopeBuffers[depth]||(this.spatialQueryScopeBuffers[depth]=[]);
     this.spatialQueryScopeDepth=depth+1;
     try{
-      const result=this.unitSpatial.query(x,y,r,out,side);
+      const result=this.unitSpatial.queryCircle(x,y,r,out,side==null?-1:StrategySim.spatialGroup(side));
       if(this._perfCollect){this._perfCollect.spatialQueries++;this._perfCollect.spatialCandidates+=result.length;if(side!=null)this._perfCollect.sideSpatialQueries++}
       return visit(result);
     }finally{this.spatialQueryScopeDepth=depth}
@@ -1003,17 +1018,17 @@ class StrategySim{
       }
       if(!travelMax){if(perf)perf.collisionSweptZeroMotionCalls++;break} // Every relative cast would reject zero motion.
       if(perf)perf.collisionSweptActivePasses++;
-      grid.reset(units);
-      this.collisionSweepGrid.reset(units,motion,radii,segX,segY,grid);
+      this.rebuildCollisionGrid(units,0);
+      this.rebuildSweepGrid(units,radii,segX,segY,grid);
       let pairContacts=0;
       for(let i=0;i<n;i++){
         const a=units[i];
         if(!a?.alive||radii[i]<=0)continue;
         const sx=segX[i],sy=segY[i],ex=a.fx,ey=a.fy;
         const reach=radii[i]+unitRadiusMax+travelMax;
-        const minCx=grid.cellXFP(Math.min(sx,ex)-reach),maxCx=grid.cellXFP(Math.max(sx,ex)+reach);
-        const minCy=grid.cellYFP(Math.min(sy,ey)-reach),maxCy=grid.cellYFP(Math.max(sy,ey)+reach);
-        const candidates=this.collisionSweepGrid.query(i,grid,minCx,maxCx,minCy,maxCy,a.side);
+        const minCx=grid.cellX(Math.min(sx,ex)-reach),maxCx=grid.cellX(Math.max(sx,ex)+reach);
+        const minCy=grid.cellY(Math.min(sy,ey)-reach),maxCy=grid.cellY(Math.max(sy,ey)+reach);
+        const candidates=this.sweepCandidates(i,grid,minCx,maxCx,minCy,maxCy,a.side);
         if(perf)perf.collisionSweptPairTests+=candidates.length;
         for(const j of candidates){
             const b=units[j];
@@ -1249,6 +1264,36 @@ class StrategySim{
     return changed;
   }
   // segmentStart: record where this pass starts as the segment the hostile/terrain sweep checks afterwards.
+  // Units live in the collision grid by fixed-point centre; `maxRadius` widens soft-separation queries so a
+  // small circle still finds a large possible partner.
+  rebuildCollisionGrid(units,maxRadius){
+    const grid=this.collisionGrid;grid.clear();
+    this.collisionGridMaxRadius=Math.max(0,Math.trunc(Number(maxRadius)||0));
+    for(let i=0;i<units.length;i++){const u=units[i];if(u.alive)grid.insert(i,u.fx,u.fy)}
+  }
+  // Each swept circle is inserted with its own bounds, in the coarse grid's cell order, so a query returns
+  // candidates in the same order the coarse traversal would. Views hold only non-allies of side 0 / side 1.
+  rebuildSweepGrid(units,radii,segX,segY,coarse){
+    const swept=this.collisionSweepGrid;swept.clear();
+    if(this.collisionSweepEndCell.length<units.length)this.collisionSweepEndCell=new Int32Array(Math.max(units.length,this.collisionSweepEndCell.length*2,64));
+    const endCell=this.collisionSweepEndCell;
+    for(let key=0;key<coarse.cellTotal;key++)for(const i of coarse.cellItems(key)){
+      const u=units[i];if(!u?.alive||radii[i]<=0)continue;
+      endCell[i]=key;
+      swept.insert(i,Math.min(segX[i],u.fx)-radii[i]-1,Math.min(segY[i],u.fy)-radii[i]-1,Math.max(segX[i],u.fx)+radii[i]+1,Math.max(segY[i],u.fy)+radii[i]+1,(u.side!==0?1:0)|(u.side!==1?2:0));
+    }
+  }
+  sweepCandidates(i,coarse,minCx,maxCx,minCy,maxCy,attackerSide){
+    const out=this.collisionSweepOut||(this.collisionSweepOut=[]),endCell=this.collisionSweepEndCell;
+    this.collisionSweepGrid.queryOverlaps(i,out,attackerSide===0||attackerSide===1?attackerSide:-1,i);
+    let write=0;
+    for(let k=0;k<out.length;k++){
+      const j=out[k],key=endCell[j],x=key%coarse.cols,y=Math.floor(key/coarse.cols);
+      if(x<minCx||x>maxCx||y<minCy||y>maxCy)continue;
+      out[write++]=j;
+    }
+    out.length=write;return out;
+  }
   resolveAlliedSoftSeparation(radii,maxRadius,segmentStart=true){
     const units=this.units,n=units.length;
     if(!n)return 0;
@@ -1257,7 +1302,7 @@ class StrategySim{
     const masses=this.collisionMasses;
     const dxA=this.collisionDx,dyA=this.collisionDy,cnt=this.collisionCnt;
     let mark=perf?now():0;
-    grid.reset(units,maxRadius);
+    this.rebuildCollisionGrid(units,maxRadius);
     dxA.fill(0,0,n);dyA.fill(0,0,n);cnt.fill(0,0,n);
     if(segmentStart)for(let i=0;i<n;i++){
       const u=units[i];this.collisionSegmentFx[i]=u?.fx??0;this.collisionSegmentFy[i]=u?.fy??0;
@@ -1267,7 +1312,7 @@ class StrategySim{
     mark=perf?now():0;
     for(let i=0;i<n;i++){
       const a=units[i];if(!a?.alive||radii[i]<=0)continue;
-      grid.queryCandidatesFP(a.fx,a.fy,radii[i],candidates);
+      grid.queryCircle(a.fx,a.fy,radii[i]+this.collisionGridMaxRadius,candidates);
       for(let k=0;k<candidates.length;k++){
         const j=candidates[k];if(j<=i)continue;
         const b=units[j];if(radii[j]<=0)continue;

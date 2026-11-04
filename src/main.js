@@ -7,7 +7,6 @@ import { GameSession, RallySynctestDiagnostics } from './session/game-session.js
 import { ReplayPlayer, ReplayPolicy } from './session/replay.js';
 import { ActiveViewState, BACKGROUND_TICK_SESSIONS, NetworkModuleLoader } from './session/runtime-state.js';
 import { LaunchRules } from './sim/launch-rules.js';
-import './sim/spatial-grids.js';
 import { NostrRtcTransport } from './net/rtc-transport.js';
 import { RecoveryTelemetry } from './diagnostics/recovery-telemetry.js';
 import { ConnectionSideUtil } from './net/lobby-codec.js';
