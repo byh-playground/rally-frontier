@@ -13,9 +13,10 @@ import { DAMAGE_CLASS_MATRIX, CAPTURE_DECAY_PER_TICK, CAPTURE_DURATION_MS, CAPTU
 import { PerformanceTelemetry } from '../diagnostics/performance-telemetry.js';
 import { ALLY_SOFT_CORRECTION_FRACTION, ALLY_SOFT_IDLE_RADIUS_FRACTION, ALLY_SOFT_MAX_RADIUS_FRACTION, ALLY_SOFT_ITERATIONS, ALLY_SOFT_SPEED_FRACTION, BALANCE_HISTORY_EVERY_MS, BALANCE_HISTORY_MAX, BALANCE_SAMPLE_EVERY_MS, COLLISION_NORMAL, COLLISION_RADIUS_SCALE, COLLISION_SPATIAL_CELL, PERF_SAMPLE_EVERY_MS, SIM_SPATIAL_CELL, TERRAIN_ATTACK_REVEAL_MS } from '../definitions/world-rules.js';
 import { WorldContext } from './world-context.js';
-import { InteractionGeometry, NavigationGoal, SurfaceContactGeometry, SurfaceMotion, SweptCircleContact, TerrainNavigation } from './navigation.js';
+import { InteractionGeometry, NavigationGoal, TerrainNavigation, UnitMotion } from './navigation.js';
 import { FP } from '../core/config.js';
-import { RallyNetcode } from '../core/gamekit.js';
+import { RallyGamekit, RallyNetcode } from '../core/gamekit.js';
+const { SurfaceContactGeometry, SweptCircleContact } = RallyGamekit;
 import { SimulationTiming } from '../main.js';
 
 class SimulationRuntimeState{
@@ -61,7 +62,7 @@ class SimulationRuntimeState{
     sim.runtimeIndexTick=-1;sim.spatialQueryCursor=0;sim.spatialQueryScopeDepth=0;sim.buildingSpatialQueryCursor=0;sim.buildingSpatialDirty=true;
     sim.collisionStartCount=0;sim.hardFixSapOrder.length=0;sim.hardFixSapEligible.length=0;sim.hardFixSapEpoch=1;sim.hardFixSapMarks.fill(0);
     sim.hardFixSapSideHeads.fill(-1);for(const heap of sim.hardFixSapSideHeaps)heap.length=0;
-    sim.navigation.motion=new SurfaceMotion(sim.navigation);
+    sim.navigation.motion=new UnitMotion(sim.navigation);
     sim.rebuildRuntimeIndexes();
   }
 }
@@ -275,7 +276,7 @@ class StrategySim{
         const u=this.units[idx];
         if(!u?.alive||(u.side!==0&&u.side!==1)||!!UnitDefinition.get(u.type)?.captureExcluded)continue;
         if(Math.hypot(u.x-cp.x,u.y-cp.y)>CAPTURE_RADIUS)continue;
-        if(!this.world.terrain.segmentClear(u.x,u.y,cp.x,cp.y,0))continue;
+        if(!this.world.terrain.field.polygonSegmentClear(u.x,u.y,cp.x,cp.y,0))continue;
         if(u.side===0)hostPresence++;else guestPresence++;
       }
 
@@ -310,7 +311,7 @@ class StrategySim{
   spawnUnit(side,type,x,y){
     const d=UnitDefinition.get(type);
     if(this.world.terrain.active){
-      const q=this.world.terrain.nearestOpen(x,y,this.unitRadius(type)+1,256);
+      const q=this.world.terrain.field.nearestOpen(x,y,this.unitRadius(type)+1,256);
       if(!q)throw new Error(`생성 위치에 지상 공간이 없습니다: ${type} (${x},${y})`);
       x=q.x;y=q.y;
     }
@@ -338,7 +339,7 @@ class StrategySim{
   
 
   interactionDistance(source,target,kind,extra=0){
-    if(source&&target&&Number.isFinite(source.x)&&Number.isFinite(target.x)&&InteractionGeometry.requiresTerrainLine(source,kind,extra)&&!this.world.terrain.segmentClear(source.x,source.y,target.x,target.y,0))return -1;
+    if(source&&target&&Number.isFinite(source.x)&&Number.isFinite(target.x)&&InteractionGeometry.requiresTerrainLine(source,kind,extra)&&!this.world.terrain.field.polygonSegmentClear(source.x,source.y,target.x,target.y,0))return -1;
     return InteractionGeometry.reach(source,target,kind,extra);
   }
 
@@ -424,7 +425,7 @@ class StrategySim{
 
     if(x<ur+8||x>this.world.width-ur-8||y<ur+8||y>this.world.height-ur-8)return false;
 
-    if(!this.world.terrain.circleClear(x,y,ur+1))return false;
+    if(!this.world.terrain.field.polygonCircleClear(x,y,ur+1))return false;
     for(const b of this.buildings){
       if(b.alive===false||b.id===ignoreBuildingId)continue;
       const br=BuildingDefinition.get(b.type)?.size||35;
@@ -1564,7 +1565,7 @@ class StrategySim{
     SimulationRuntimeState.initialize(this);
     if(retainedNavigation&&retainedNavigation.geometry===this.world.terrain){
       this.navigation=retainedNavigation;
-      this.navigation.motion=new SurfaceMotion(this.navigation);
+      this.navigation.motion=new UnitMotion(this.navigation);
     }
     this.navigation.sceneTick=-1;this.navigation.sync();
     this.rebuildRuntimeIndexes();

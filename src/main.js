@@ -21,7 +21,7 @@ import { PerformanceTelemetry } from './diagnostics/performance-telemetry.js';
 import { VIEW_H, VIEW_W } from './definitions/world-rules.js';
 import { WorldContext } from './sim/world-context.js';
 import { NavigationGoal } from './sim/navigation.js';
-import { BattlefieldProjection, PolygonTriangulation, TerrainSurfaceAtlas, TerrainSurfaceProjection } from './sim/terrain.js';
+import { BattlefieldProjection, TerrainSurfaceAtlas, TerrainSurfaceProjection } from './sim/terrain.js';
 import { BACKGROUND_TICK_PULSE_MS } from './core/session-timing.js';
 import { RENDER_TRACKS } from './render/render-tracks.js';
 import { CONFIG, LAUNCH_HOLD_ARM_MS, LAUNCH_HOLD_DRAG_PX, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode } from './core/config.js';
@@ -30,6 +30,7 @@ import { RallyGamekit, SIM_WORKER } from './core/gamekit.js';
 import { LaunchScreens } from './ui/launch-screens.js';
 import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
+const { insetPolygonTowardCenter, pointInSimplePolygon, polylineToRibbonPolygon, triangulatePolygon } = RallyGamekit;
 
 // The Worker realm has no window; GameKit modules must still see it as non-browser.
 const window=globalThis;
@@ -303,12 +304,12 @@ class TerrainPresentation{
       const terrain=MapGeneration.mapTerrainDescriptor(map),sources=[];
       const add=poly=>{if(poly?.length>=3)sources.push(poly)};
       if(terrain.riverPolygon?.length>=3)add(terrain.riverPolygon);
-      else if(terrain.riverPath?.length>1)add(MapGeometry.polylineToRibbonPolygon(terrain.riverPath,terrain.riverHalfWidth));
+      else if(terrain.riverPath?.length>1)add(polylineToRibbonPolygon(terrain.riverPath,terrain.riverHalfWidth));
       for(const poly of terrain.riverBranchPolygons||[])add(poly);
-      if(!terrain.riverBranchPolygons?.length)for(const path of terrain.riverBranches||[])if(path.length>1)add(MapGeometry.polylineToRibbonPolygon(path,terrain.riverHalfWidth*.72));
+      if(!terrain.riverBranchPolygons?.length)for(const path of terrain.riverBranches||[])if(path.length>1)add(polylineToRibbonPolygon(path,terrain.riverHalfWidth*.72));
       const floors=(atlas.renderSurfaceMesh||atlas.surfaceMesh).filter(p=>{if(p.kind!=='plateau'||p.level>0)return false;const layer=atlas.layers.find(l=>l.id===p.id);return !layer||p.level<=(layer.parent?.level??0)});
-      for(const source of sources)for(const [poly,color] of [[source,[.10,.31,.39,.60]],[MapGeometry.insetPolygonTowardCenter(source,.12),[.20,.52,.64,.44]]]){
-        const triangles=PolygonTriangulation.mesh(poly).triangles;
+      for(const source of sources)for(const [poly,color] of [[source,[.10,.31,.39,.60]],[insetPolygonTowardCenter(source,.12),[.20,.52,.64,.44]]]){
+        const triangles=triangulatePolygon(poly).triangles;
         for(const floor of floors)for(const indices of floor.triangles){
           const clip=indices.map(i=>({x:floor.vertices[i].x,y:floor.vertices[i].z}));
           if(NavigationGoal.cross(clip[0],clip[1],clip[2])<0)clip.reverse();
@@ -419,7 +420,7 @@ class TerrainPresentation{
     for(const f of (atlas.renderFaces||atlas.faces)){const a=pt(f.a),b=pt(f.b);c.beginPath();c.moveTo(...a);c.lineTo(...b);c.stroke()}
   }
 
-  static polygonMesh(points){return PolygonTriangulation.mesh(points)}
+  static polygonMesh(points){return triangulatePolygon(points)}
   static fillMesh(r,points,triangles,color){
     for(const [a,b,c] of triangles)r.tri(...points[a],...points[b],...points[c],color);
   }
@@ -1001,7 +1002,7 @@ class GLRenderer{
   renderBridgeAt(x,z){
     const atlas=this.world.terrain.surfaces;
     if(!atlas.bridges.length)return null;
-    return atlas.bridgeIndex.query(x,z).find(b=>MapGeometry.pointInSimplePolygon(x,z,b.points)||atlas.onBoundary(b.points,x,z))||null;
+    return atlas.bridgeIndex.query(x,z).find(b=>pointInSimplePolygon(x,z,b.points)||atlas.onBoundary(b.points,x,z))||null;
   }
   projectRenderWorldPositionStable(p){
     // Same projection as projectRenderWorldPosition, but intentionally before
