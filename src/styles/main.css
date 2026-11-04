@@ -242,32 +242,11 @@ button.mode-selected {
   background: radial-gradient(circle,#a4885530 0 1px,transparent 2px) 0 0/27px 27px !important;
 }
 
-/* 드래프트 */
-.draft {
-  padding: 14px;
-  display: grid;
-  gap: 12px;
-}
-.draft-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.draft-pair {
-  display: grid;
-}
-
 /* 기초·공통 */
 .stats {
   display: grid;
   grid-template-columns: repeat(4,1fr);
   gap: 5px;
-}
-
-/* 드래프트 */
-.draft-card {
-  padding: 13px;
-  text-align: left;
 }
 
 /* 기초·공통 */
@@ -301,59 +280,6 @@ button.mode-selected {
   gap: 7px;
 }
 
-/* 드래프트 */
-.draft-card h3 {
-  margin: 5px 0;
-}
-.draft-transfer-clone.to-mine {
-  border-color: #5d96ee !important;
-  box-shadow: 0 0 0 4px #5592e82b,0 18px 48px #174a9138 !important;
-}
-.draft-transfer-clone.to-enemy {
-  border-color: #e57868 !important;
-  box-shadow: 0 0 0 4px #e5786824,0 18px 48px #87271928 !important;
-}
-.draft-map-preview-head span {
-  color: #dce9d8 !important;
-}
-.draft-map-preview-head b {
-  color: #a9b9a7 !important;
-}
-.draft-card.draft-pick-pressed .draft-unit-icon {
-  box-shadow: none !important;
-}
-.draft-countdown-number {
-  text-shadow: none !important;
-}
-.draft-pick-center-countdown {
-  text-shadow: none !important;
-  -webkit-text-stroke: 0 !important;
-}
-#draftScreen .draft-pick-timer {
-  margin-left: 0;
-}
-@media (max-width:639px) {
-  #draftScreen #draftDecks {
-    min-height: 0;
-    max-height: 26px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-size: 6px;
-    line-height: 1.15;
-  }
-}
-
-/* 덱 */
-#deckBuilderDialog {
-  width: min(calc(100% - 16px),920px);
-  max-width: none;
-}
-@media (pointer:coarse) and (max-width:639px) {
-  .deck-builder-defense button {
-    min-height: 40px !important;
-  }
-}
-
 /* 기초·공통 */
 @media (pointer:coarse) and (max-width:639px) {
   .test-switcher button {
@@ -361,101 +287,9 @@ button.mode-selected {
   }
 }
 
-/* 덱 */
-#deckBuilderDialog {
-  overflow: hidden !important;
-  overscroll-behavior: none !important;
-}
-#deckBuilderSlots .deck-builder-slot .name,
-#deckBuilderSlots .deck-builder-slot .tier {
-  margin-top: 0;
-}
-#deckCollection .deck-collection-card .name,
-#deckCollection .deck-collection-card .meta {
-  margin-top: 0;
-}
-@media (max-width:639px) {
-  #deckBuilderDialog .deck-builder {
-    height: 100% !important;
-    max-height: 100% !important;
-    padding: 10px 9px 8px !important;
-  }
-}
-@media (max-width:639px) {
-  #deckBuilderSlots .deck-builder-slot .icon {
-    font-size: 16px !important;
-    line-height: 1 !important;
-  }
-}
-@media (max-width:639px) {
-  #deckBuilderSlots .deck-builder-slot .name {
-    font-size: 6.2px !important;
-    line-height: 1.05 !important;
-  }
-}
-@media (max-width:639px) {
-  #deckBuilderSlots .deck-builder-slot .tier {
-    font-size: 0 !important;
-    line-height: 1 !important;
-  }
-}
-@media (max-width:639px) {
-  #deckBuilderSlots .deck-builder-slot .tier::after {
-    content: "제거";
-    font-size: 5.5px;
-    font-weight: 900;
-    color: #7b8c98;
-  }
-}
-@media (max-width:639px) {
-  #deckBuilderSlots .deck-builder-slot:not(.filled) .tier::after {
-    content: "빈 슬롯";
-  }
-}
-@media (max-width:639px) {
-  #deckCollection .deck-collection-card .icon {
-    font-size: 18px !important;
-  }
-}
-@media (max-width:639px) {
-  #deckCollection .deck-collection-card .name {
-    font-size: 6.8px !important;
-  }
-}
-@media (max-width:639px) {
-  #deckCollection .deck-collection-card .meta {
-    font-size: 5.7px !important;
-    line-height: 1.1 !important;
-  }
-}
-@media (max-width:639px) {
-  #deckBuilderDialog .deck-pool-head>.small {
-    font-size: 8px !important;
-    line-height: 1.2;
-  }
-}
-
 /* 드래프트 */
-@media (max-width:639px) {
-  #draftScreen .draft-head-copy .small {
-    font-size: 7px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-unit-copy .tag {
-    font-size: 6px;
-    padding: 2px 4px;
-  }
-}
 
 /* 덱 */
-@media (max-width:639px) {
-  #deckBuilderDialog .deck-builder-foot button {
-    min-height: var(--ui-touch-primary) !important;
-    padding: 6px 5px !important;
-    font-size: 9px !important;
-  }
-}
 
 /* 전장·HUD */
 .game {
@@ -930,13 +764,6 @@ body.playing.spell-mode-active .tech-root-btn.mode-selected {
   }
 }
 
-/* 덱 */
-.deck-ready-pill.enemy.ready {
-  border-color: #35a86b;
-  background: #e7f8ee;
-  color: #167044;
-}
-
 /* 기초·공통 */
 .spell-card.cooldown:disabled {
   opacity: 1;
@@ -960,11 +787,6 @@ body.playing.spell-mode-active .tech-root-btn.mode-selected {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* 드래프트 */
-.draft-card:not(:disabled):active {
-  transform: scale(.985);
 }
 
 /* 명령 패널 */
@@ -1102,39 +924,6 @@ body.playing .spell-panel {
   box-shadow: inset 0 0 0 1px #3975d833;
 }
 
-/* 덱 */
-.deck-ready-pill.ready {
-  border-color: #35a86b;
-  background: #e7f8ee;
-  color: #167044;
-  box-shadow: 0 0 0 2px #35a86b22,0 4px 12px #24764a1f;
-  transform: translateY(-1px);
-}
-.deck-ready-pill.waiting {
-  border-color: #d5dee5;
-  background: #f5f7f9;
-  color: #697985;
-}
-.deck-slot-tab.active {
-  border-color: #3975d8;
-  background: #eaf2ff;
-  color: #225ba9;
-}
-.deck-slot-tab.incompatible {
-  border-color: #e19a91;
-  background: #fff0ed;
-  color: #a83f35;
-}
-.deck-builder-slot.filled {
-  border-style: solid;
-  background: #fff;
-}
-.deck-builder-slot.active {
-  border-color: #3975d8;
-  box-shadow: inset 0 0 0 2px #3975d833;
-  background: #eef5ff;
-}
-
 /* 명령 패널 */
 @media (max-width:639px) {
   .unit-card .name {
@@ -1157,102 +946,12 @@ body.playing .spell-panel {
   white-space: nowrap;
 }
 
-/* 덱 */
-.deck-mini-unit .icon {
-  font-size: 18px;
-  line-height: 1;
-}
-.deck-mini-unit .name {
-  margin-top: 3px;
-  font-size: 7px;
-  font-weight: 900;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #425564;
-}
-.deck-builder-slot .icon {
-  font-size: 22px;
-  line-height: 1.1;
-}
-.deck-builder-slot .name {
-  margin-top: 4px;
-  font-size: 7px;
-  font-weight: 900;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.deck-builder-slot .tier {
-  margin-top: 3px;
-  font-size: 7px;
-  font-weight: 950;
-  color: #7b8c98;
-}
-.deck-filter-btn.active {
-  border-color: #3975d8;
-  background: #eaf2ff;
-  color: #225ba9;
-}
-.deck-collection-card.selected {
-  border-color: #4b84df;
-  background: #edf5ff;
-}
-.deck-collection-card .icon {
-  font-size: 22px;
-  line-height: 1;
-}
-.deck-collection-card .name {
-  margin-top: 4px;
-  font-size: 7.5px;
-  font-weight: 950;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.deck-collection-card .meta {
-  margin-top: 3px;
-  font-size: 6.5px;
-  font-weight: 850;
-  color: #84929c;
-}
-
 /* 대화상자 */
 .start-mode-actions .single-entry-sub {
   margin-top: 3px;
 }
 
 /* 덱 */
-@media (max-width:520px) {
-  .deck-builder-slot .icon {
-    font-size: 19px;
-  }
-}
-@media (max-width:520px) {
-  .deck-builder-slot .name {
-    font-size: 6.5px;
-  }
-}
-@media (max-width:520px) {
-  .deck-builder-slot .tier {
-    font-size: 6px;
-  }
-}
-@media (max-width:520px) {
-  .deck-collection-card .icon {
-    font-size: 19px;
-  }
-}
-@media (max-width:520px) {
-  .deck-collection-card .name {
-    font-size: 6.8px;
-  }
-}
-@media (max-width:520px) {
-  .deck-collection-card .meta {
-    font-size: 5.9px;
-  }
-}
 
 /* 명령 패널 */
 @media (max-width:639px) {
@@ -1517,28 +1216,8 @@ body.playing .side .section-title {
 }
 
 /* 덱 */
-@media (max-width:639px) {
-  #deckBuilderDialog .dialog-kicker {
-    font-size: 8px;
-  }
-}
 
 /* 드래프트 */
-@media (max-width:639px) {
-  #draftScreen .draft-vault-head {
-    font-size: 6.8px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-vault-count {
-    font-size: 8px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-status-badge {
-    font-size: 5.5px;
-  }
-}
 
 /* 미니맵·상태 */
 @media (min-width:900px) {
@@ -1552,14 +1231,6 @@ body.playing .side .section-title {
     padding: 14px;
     border-radius: 14px;
   }
-}
-
-/* 덱 */
-.deck-builder-defense button.active {
-  border-color: #3975d8;
-  background: #eaf2ff;
-  color: #225ba9;
-  box-shadow: inset 0 0 0 1px #3975d833;
 }
 
 /* 전장·HUD */
@@ -1616,12 +1287,6 @@ body.playing .battle-command-dock {
 }
 
 /* 덱 */
-@media (max-width:639px) {
-  #deckBuilderDialog .deck-builder>h2 {
-    font-size: 18px;
-    line-height: 1.05;
-  }
-}
 
 /* 미니맵·상태 */
 @media (min-width:1200px) {
@@ -1634,49 +1299,6 @@ body.playing .status-side {
 }
 body.playing #selectionHint {
   margin-top: 0;
-}
-
-/* 덱 */
-#deckBuilderDialog .deck-builder-foot button {
-  margin-top: 0;
-}
-
-/* 드래프트 */
-#draftScreen .draft-head-copy h2 {
-  margin: 3px 0 0;
-  line-height: 1.08;
-}
-@media (max-width:639px) {
-  #draftScreen .draft-head-copy h2 {
-    max-width: 54vw;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 16px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-flow-center b {
-    font-size: 11px;
-    margin-bottom: 1px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-unit-copy h3 {
-    font-size: 10px;
-    margin: 0 0 2px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .stat b {
-    font-size: 8px;
-  }
-}
-@media (max-width:370px) {
-  #draftScreen .draft-head-copy h2 {
-    font-size: 14px;
-    max-width: 48vw;
-  }
 }
 
 /* 미니맵·상태 */
@@ -2315,16 +1937,6 @@ body.playing:not(.replay-mode) .help-fab {
 }
 
 /* 드래프트 */
-@media (min-width:640px) {
-  .draft-pair {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-@media (min-width:900px) {
-  .draft {
-    margin: 0 auto;
-  }
-}
 
 /* 기초·공통 */
 @media (max-width:639px) {
@@ -2394,11 +2006,6 @@ body.playing:not(.replay-mode) .help-fab {
 }
 
 /* 드래프트 */
-@media (min-width:900px) {
-  .draft-pair {
-    grid-template-columns: repeat(2,minmax(0,1fr));
-  }
-}
 
 /* 기초·공통 */
 @media (max-width:639px) {
@@ -2437,15 +2044,6 @@ button.mode-selected {
 .dialog-shell::before,.install-guide-card::before,.match-menu-card::before,.disconnect-gate-card::before {
   height: 3px !important;
   background: #527e50 !important;
-}
-
-/* 드래프트 */
-.draft-card::before {
-  height: 3px !important;
-  background: #527e50 !important;
-}
-.draft-card-defense::before {
-  background: #b78a39 !important;
 }
 
 /* 경제·생산 */
@@ -2606,9 +2204,7 @@ button.mode-selected {
 .longpress-info-target,
 .command-card,
 .unit-card,
-.research-action,
-.deck-collection-card,
-.deck-builder-slot {
+.research-action{
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
@@ -2731,145 +2327,6 @@ button.mode-selected {
   color: #6b7c89;
 }
 
-/* 덱 */
-.deck-screen {
-  max-width: 1040px;
-  padding: 14px;
-}
-.deck-screen-status {
-  font-size: 9px;
-  font-weight: 850;
-  color: #6a7985;
-}
-.deck-ready-status {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 8px !important;
-  align-items: stretch !important;
-  margin-top: 2px !important;
-}
-.deck-ready-pill {
-  min-height: 46px;
-  padding: 8px 10px;
-  border: 2px solid #d5dee5;
-  border-radius: 12px;
-  background: #f5f7f9;
-  color: #697985;
-  font-size: 11px;
-  font-weight: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  transition: background .18s,border-color .18s,box-shadow .18s,transform .18s;
-}
-.deck-ready-timer {
-  min-width: 72px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  background: #263847;
-  color: #fff;
-  font-size: 17px;
-  font-weight: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: .5px;
-}
-@media (max-width:560px) {
-  .deck-ready-status {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-@media (max-width:560px) {
-  .deck-ready-timer {
-    grid-column: 1/-1;
-    min-height: 36px;
-  }
-}
-@media (max-width:560px) {
-  .deck-ready-pill {
-    min-height: 42px;
-    padding: 7px 5px;
-    font-size: 10px;
-  }
-}
-.deck-slot-row {
-  display: grid;
-  grid-template-columns: repeat(5,minmax(0,1fr));
-  gap: 6px;
-}
-.deck-slot-tab {
-  min-width: 0;
-  min-height: 46px;
-  padding: 6px;
-  border: 1px solid #cad5dd;
-  border-radius: 10px;
-  background: #fff;
-  font-size: 9px;
-  font-weight: 950;
-  color: #506271;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.deck-preview-card {
-  padding: 12px;
-  border: 1px solid #d2dce4;
-  border-radius: 14px;
-  background: #f8fafb;
-}
-.deck-preview-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  align-items: center;
-}
-.deck-preview-name {
-  font-size: 15px;
-  font-weight: 1000;
-  color: #223747;
-}
-.deck-preview-meta {
-  font-size: 9px;
-  font-weight: 850;
-  color: #70818e;
-}
-.deck-mini-unit {
-  min-width: 0;
-  padding: 7px 5px;
-  border: 1px solid #d7e0e6;
-  border-radius: 9px;
-  background: white;
-  text-align: center;
-}
-.deck-preview-defense {
-  padding: 7px 9px;
-  border: 1px solid #d7e0e6;
-  border-radius: 9px;
-  background: white;
-  font-size: 8px;
-  font-weight: 900;
-  color: #526472;
-}
-.deck-error {
-  padding: 9px;
-  border: 1px solid #e8aaa1;
-  border-radius: 10px;
-  background: #fff2ef;
-  color: #a84236;
-  font-size: 9px;
-  font-weight: 900;
-}
-.deck-storage-notice {
-  font-size: 12px;
-  line-height: 1.5;
-}
-.deck-storage-notice [data-deck-storage-action="reset"] {
-  grid-column: 1 / -1;
-}
-
 /* 명령 패널 */
 .defense-card-choices {
   display: grid;
@@ -2893,156 +2350,10 @@ button.mode-selected {
   }
 }
 
-/* 덱 */
-.deck-select-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-.deck-builder {
-  width: 100%;
-  max-width: none;
-  height: min(92dvh,900px);
-  max-height: calc(100dvh - 16px);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-.deck-builder-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow: hidden;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-}
-.deck-builder-body>* {
-  min-width: 0;
-  max-width: 100%;
-}
-.deck-builder-slots {
-  display: grid;
-  grid-template-columns: repeat(5,minmax(0,1fr));
-  gap: 5px;
-}
-.deck-builder-slot {
-  position: relative;
-  min-height: 74px;
-  padding: 7px 5px;
-  border: 1px dashed #bdcbd5;
-  border-radius: 10px;
-  background: #f9fbfc;
-  text-align: center;
-  color: #677987;
-}
-.deck-builder-defense {
-  display: none;
-}
-.deck-pool-head {
-  flex: 0 0 auto;
-  min-width: 0;
-}
-.deck-filter-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  overflow: hidden;
-  padding: 3px 0 2px;
-  max-width: 100%;
-}
-.deck-filter-btn {
-  flex: 0 1 auto;
-  min-width: 0;
-  min-height: 30px;
-  padding: 0 8px;
-  border: 1px solid #d2dce4;
-  border-radius: 999px;
-  background: #fff;
-  font-size: 7.5px;
-  font-weight: 950;
-  color: #60717f;
-  white-space: nowrap;
-}
-.deck-pool-scroll {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  max-width: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  padding-right: 2px;
-}
-.deck-collection {
-  display: grid;
-  grid-template-columns: repeat(4,minmax(0,1fr));
-  gap: 6px;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-}
-
 /* 제목·로비 */
 @media (max-width:480px) {
   .title-actions {
     width: 100%;
-  }
-}
-
-/* 덱 */
-.deck-collection-card {
-  min-width: 0;
-  min-height: 82px;
-  padding: 7px 5px;
-  border: 1px solid #d5dfe6;
-  border-radius: 10px;
-  background: #fff;
-  text-align: center;
-}
-.deck-builder-foot {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  flex: 0 0 auto;
-  padding-top: 4px;
-  background: #fff;
-}
-@media (max-width:520px) {
-  .deck-slot-row {
-    grid-template-columns: repeat(5,minmax(0,1fr));
-    gap: 4px;
-    overflow: visible;
-  }
-}
-@media (max-width:520px) {
-  .deck-slot-tab {
-    padding: 5px 3px;
-    font-size: 7.5px;
-  }
-}
-@media (max-width:520px) {
-  .deck-preview-units,.deck-collection {
-    grid-template-columns: repeat(4,minmax(0,1fr));
-  }
-}
-@media (max-width:520px) {
-  .deck-builder-slots {
-    grid-template-columns: repeat(5,minmax(0,1fr));
-    gap: 4px;
-  }
-}
-@media (max-width:520px) {
-  .deck-builder-slot {
-    min-height: 64px;
-    padding: 5px 3px;
-  }
-}
-@media (max-width:520px) {
-  .deck-builder-defense {
-    grid-template-columns: repeat(4,minmax(0,1fr));
-    gap: 3px;
   }
 }
 
@@ -3060,18 +2371,6 @@ button.mode-selected {
 }
 
 /* 덱 */
-@media (max-width:520px) {
-  .deck-screen,.deck-builder-body,.deck-preview-card {
-    min-width: 0;
-    max-width: 100%;
-  }
-}
-@media (max-width:520px) {
-  #deckBuilderDialog,.deck-builder,.deck-builder-body,.deck-pool-head,.deck-pool-scroll,.deck-collection,.deck-builder-slots,.deck-filter-row {
-    max-width: 100%;
-    overflow-x: hidden;
-  }
-}
 
 /* 기초·공통 */
 #infoDetailDialog {
@@ -3092,24 +2391,6 @@ button.mode-selected {
 }
 
 /* 덱 */
-@media (max-width:520px) {
-  .deck-filter-row {
-    flex-wrap: wrap;
-  }
-}
-@media (max-width:520px) {
-  .deck-filter-btn {
-    min-height: 28px;
-    padding: 0 7px;
-    font-size: 6.8px;
-  }
-}
-@media (max-width:520px) {
-  .deck-collection-card {
-    min-height: 72px;
-    padding: 5px 3px;
-  }
-}
 
 /* 기초·공통 */
 @media (max-width:480px) {
@@ -3312,11 +2593,6 @@ button.mode-selected {
   min-width: 0;
 }
 
-/* 드래프트 */
-.draft-unit-copy {
-  min-width: 0;
-}
-
 /* 경제·생산 */
 .production-status-title {
   display: flex;
@@ -3503,20 +2779,6 @@ button.mode-selected {
   }
 }
 
-/* 드래프트 */
-.draft-card-top {
-  display: grid;
-  grid-template-columns: 58px minmax(0,1fr) auto;
-  gap: 10px;
-  align-items: center;
-}
-@media (max-width:639px) {
-  .draft-card-top {
-    grid-template-columns: 48px minmax(0,1fr) auto;
-    gap: 8px;
-  }
-}
-
 /* 전장·HUD */
 .fx-canvas {
   position: absolute;
@@ -3527,49 +2789,6 @@ button.mode-selected {
   z-index: 5;
 }
 
-/* 드래프트 */
-.draft-card {
-  position: relative;
-  overflow: hidden;
-}
-.draft-unit-icon {
-  width: 58px;
-  height: 58px;
-  border-radius: 14px;
-  display: grid;
-  place-items: center;
-  font-size: 29px;
-  font-weight: 950;
-  background: linear-gradient(145deg,#edf3ff,#d9e6ff);
-  border: 1px solid #b8cbed;
-  color: #2450a8;
-  box-shadow: inset 0 0 0 1px #ffffffaa;
-}
-.draft-unit-desc {
-  margin-top: 7px;
-  padding: 8px 9px;
-  border-radius: 9px;
-  background: #f3f6f8;
-  color: #526270;
-  font-size: 10px;
-  line-height: 1.4;
-  font-weight: 700;
-}
-@media (max-width:639px) {
-  .draft-unit-icon {
-    width: 48px;
-    height: 48px;
-    font-size: 24px;
-    border-radius: 12px;
-  }
-}
-@media (max-width:639px) {
-  .draft-unit-desc {
-    font-size: 9px;
-    padding: 7px 8px;
-  }
-}
-
 /* 미니맵·상태 */
 #selectionHint.build-hint {
   color: #345b3a !important;
@@ -3578,38 +2797,6 @@ button.mode-selected {
 }
 
 /* 덱 */
-@media (max-width:639px) {
-  #deckBuilderTabs .deck-slot-tab {
-    min-height: 32px !important;
-    padding: 3px 2px !important;
-    border-radius: var(--ui-radius-sm) !important;
-    font-size: 7px !important;
-  }
-}
-@media (max-width:639px) {
-  #deckBuilderSlots .deck-builder-slot {
-    min-height: 46px !important;
-    padding: 3px 2px !important;
-    border-radius: var(--ui-radius-sm) !important;
-  }
-}
-@media (max-width:639px) {
-  #deckBuilderFilters .deck-filter-btn {
-    min-height: 28px !important;
-    height: 28px !important;
-    padding: 0 8px !important;
-    border-radius: var(--ui-radius-sm) !important;
-    font-size: 7px !important;
-    line-height: 1 !important;
-  }
-}
-@media (max-width:639px) {
-  #deckCollection .deck-collection-card {
-    min-height: 56px !important;
-    padding: 4px 3px !important;
-    border-radius: var(--ui-radius-sm) !important;
-  }
-}
 
 /* 리플레이 */
 .title-screen,.dialog-shell,.install-guide-card,.match-menu-card,.disconnect-gate-card,
@@ -3653,11 +2840,6 @@ button.mode-selected {
   }
 }
 
-/* 덱 */
-.deck-select-actions button {
-  min-height: 48px;
-}
-
 /* 경제·생산 */
 .production-progress>span {
   display: block;
@@ -3688,29 +2870,6 @@ button.mode-selected {
   letter-spacing: -.03em;
 }
 
-/* 덱 */
-.deck-builder-defense button {
-  min-width: 0;
-  min-height: 34px;
-  padding: 4px 3px;
-  border: 1px solid #d0dae2;
-  border-radius: 8px;
-  background: #fff;
-  font-size: 7.5px;
-  font-weight: 900;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-@media (max-width:520px) {
-  .deck-builder-defense button {
-    min-height: 30px;
-    padding: 3px 2px;
-    font-size: 6.8px;
-    border-radius: 7px;
-  }
-}
-
 /* 경제·생산 */
 .production-contract-cell b {
   display: block;
@@ -3732,11 +2891,6 @@ button.mode-selected {
 }
 .spell-stat-change b {
   color: #2567c8;
-}
-
-/* 드래프트 */
-.draft-unit-copy h3 {
-  margin: 0 0 4px;
 }
 
 /* 경제·생산 */
@@ -3956,16 +3110,6 @@ button.mode-selected {
   animation: tacticalChestPop 1.9s ease both;
 }
 
-/* 드래프트 */
-.draft-pick-center-countdown.tick {
-  animation: draftPickCenterTick .34s ease-out;
-}
-.draft-card.draft-pick-pressed {
-  border-color: #4f8d50 !important;
-  filter: saturate(1.06) !important;
-  animation: draftFrontierClaim .28s ease-out;
-}
-
 /* 제목·로비 */
 .title-button.primary {
   border-color: #3f6c45 !important;
@@ -3975,13 +3119,6 @@ button.mode-selected {
 /* 대화상자 */
 .dialog-action.primary {
   border-color: #436c48 !important;
-}
-
-/* 드래프트 */
-.draft-pick-timer.urgent {
-  border-color: #d7a66e !important;
-  background: #fff3df !important;
-  color: #9a5829 !important;
 }
 
 /* 오버레이·결과 */
@@ -4020,36 +3157,6 @@ body.result-mode .result-card {
   overflow: auto;
 }
 
-/* 덱 */
-#deckBuilderDialog .deck-builder {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ui-gap-2);
-  overflow: hidden !important;
-  overscroll-behavior: none !important;
-}
-#deckBuilderDialog .deck-builder-body {
-  display: grid;
-  grid-template-rows: auto auto auto minmax(0,1fr) auto auto;
-  gap: var(--ui-gap-2);
-  min-height: 0;
-  overflow: hidden !important;
-  overscroll-behavior: none !important;
-}
-#deckBuilderTabs.deck-slot-row,
-#deckBuilderSlots.deck-builder-slots {
-  display: grid;
-  grid-template-columns: repeat(5,minmax(0,1fr));
-  gap: var(--ui-gap-1);
-}
-#deckBuilderSlots .deck-builder-slot {
-  display: grid;
-  grid-template-rows: auto auto auto;
-  place-items: center;
-  align-content: center;
-  gap: 2px;
-}
-
 /* 오버레이·결과 */
 #result.result.hidden {
   display: none !important;
@@ -4072,21 +3179,6 @@ body.result-mode .result-card {
     padding-left: 5px;
     padding-right: 5px;
   }
-}
-
-/* 덱 */
-#deckBuilderFilters.deck-filter-row {
-  display: flex;
-  flex-flow: row nowrap;
-  gap: var(--ui-gap-1);
-  padding: 1px 0 3px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  overscroll-behavior-x: contain;
-}
-#deckBuilderFilters .deck-filter-btn {
-  flex: 0 0 auto;
 }
 
 /* 오버레이·결과 */
@@ -4439,38 +3531,6 @@ body.result-mode .result-card {
   overflow: hidden;
   pointer-events: none;
   z-index: 3;
-}
-
-/* 드래프트 */
-.draft-vault.mine .draft-vault-head {
-  color: #2c5d9e;
-}
-.draft-vault.enemy .draft-vault-head {
-  color: #995045;
-}
-.draft-vault.mine .draft-vault-chip {
-  border-color: #b4c9ee;
-  background: #eaf2ff;
-  color: #2450a8;
-}
-.draft-vault.enemy .draft-vault-chip {
-  border-color: #edc3bc;
-  background: #fff0ec;
-  color: #a3473d;
-}
-.draft-roster-side.mine .draft-roster-head {
-  color: #a9caff;
-}
-.draft-roster-side.enemy .draft-roster-head {
-  color: #ffb4aa;
-}
-.draft-card:hover:not(:disabled),
-.draft-card:focus-visible:not(:disabled) {
-  border-color: #6d9c6b;
-  box-shadow: 0 0 0 2px rgba(80,137,76,.10),0 10px 24px rgba(38,83,45,.14);
-}
-.draft-card.draft-pick-pressed .draft-unit-icon {
-  border-color: #68a065;
 }
 
 /* 명령 패널 */
@@ -5955,84 +5015,12 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
   }
 }
 
-/* 드래프트 */
-.draft-status-badge b {
-  font-size: 7.5px;
-  font-weight: 1000;
-  letter-spacing: -.01em;
-}
-.draft-flow-center b {
-  display: block;
-  color: #3d5366;
-  font-size: 16px;
-  line-height: 1;
-  margin-bottom: 2px;
-}
-.draft-map-preview-head span {
-  font-weight: 950;
-  letter-spacing: .08em;
-}
-.draft-map-preview-head b {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 6.8px;
-}
-.draft-map-preview-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-.draft-map-preview-legend i {
-  display: inline-block;
-  width: 7px;
-  height: 3px;
-  border-radius: 999px;
-  background: #fff;
-}
-
 /* 제목·로비 */
 .title-screen::before,.title-screen::after {
   display: none;
 }
 
 /* 드래프트 */
-@media (max-width:639px) {
-  .draft-flow-center b {
-    font-size: 13px;
-  }
-}
-@media (max-width:639px) {
-  .draft-map-preview-head b {
-    font-size: 5.8px;
-  }
-}
-.draft-pick-center-countdown::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  left: 50%;
-  top: 50%;
-  width: 1.05em;
-  height: 1.05em;
-  transform: translate(-50%,-50%) rotate(-8deg);
-  border: 2px solid rgba(63,126,73,.08);
-  border-radius: 46% 54% 50% 42%;
-  background: radial-gradient(circle at 46% 42%,rgba(213,233,194,.09),rgba(77,126,68,.025) 62%,transparent 64%);
-}
-.draft-card::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  opacity: .72;
-  pointer-events: none;
-}
-.draft-pick-center-countdown::before {
-  display: none;
-}
 
 /* 전장·HUD */
 @media (min-width:900px) {
@@ -6111,13 +5099,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
 }
 
 /* 덱 */
-@media (max-width:639px) {
-  #deckBuilderMessage {
-    min-height: 13px;
-    font-size: 7.5px !important;
-    line-height: 1.15;
-  }
-}
 
 /* 오버레이·결과 */
 @media (max-width:700px) {
@@ -6196,14 +5177,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
   }
 }
 
-/* 드래프트 */
-.draft-vault.mine {
-  border-color: #a9c3ef;
-}
-.draft-vault.enemy {
-  border-color: #e7bcb5;
-}
-
 /* 진단 */
 .lockstep-debug-reset {
   width: 100%;
@@ -6245,124 +5218,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
 }
 .lockstep-debug-recovery:disabled {
   opacity: .55;
-}
-
-/* 드래프트 */
-.draft-status-badge .draft-status-label {
-  font-weight: 900;
-  color: inherit;
-  opacity: .9;
-}
-.draft-status-badge.owned {
-  border-color: #9ebeed;
-  background: #eaf3ff;
-  color: #245a9f;
-}
-.draft-status-badge.neutral {
-  border-color: #d4dde5;
-  background: #f4f6f8;
-  color: #76838d;
-}
-.draft-status-badge.needed {
-  border-color: #e59b91;
-  background: #fff0ed;
-  color: #aa3f35;
-  box-shadow: inset 0 0 0 1px #ffffff99;
-}
-.draft-status-badge.observed {
-  border-color: #e5ad83;
-  background: #fff4e9;
-  color: #9a5527;
-}
-.draft-card:disabled {
-  opacity: .82;
-}
-.draft-card[data-draft-side="mine"] {
-  border-color: #8eb3ed;
-}
-.draft-card[data-draft-side="enemy"] {
-  border-color: #e7a99f;
-}
-.draft-transfer-label.mine {
-  background: #356fca;
-}
-.draft-transfer-label.enemy {
-  background: #c45c4f;
-}
-.draft-roster-side.mine {
-  border-color: #679be95c;
-  background: #10264a80;
-}
-.draft-roster-side.enemy {
-  border-color: #dc796c52;
-  background: #431d2280;
-}
-.draft-map-preview-legend .lane {
-  background: #d9c875;
-}
-.draft-map-preview-legend .river {
-  background: #4a96b5;
-}
-.draft-map-preview-legend .bridge {
-  background: #d8b56b;
-}
-.draft-map-preview-legend .hill {
-  background: #4b6250;
-}
-.draft-map-preview-legend .objective {
-  background: #ef873f;
-}
-.draft-map-preview-legend .mineral {
-  background: #5ac9ff;
-}
-.draft-map-preview-legend .gas {
-  background: #64ce75;
-}
-.draft-pick-center-countdown.urgent {
-  color: rgba(164,91,34,.23);
-  -webkit-text-stroke-color: rgba(120,64,26,.12);
-}
-.draft-card .draft-unit-icon {
-  border-color: #aec9a4;
-  color: #356943;
-}
-.draft-card-defense .draft-unit-icon {
-  border-color: #d6bf78;
-  color: #725d28;
-}
-.draft-card .tag {
-  border: 1px solid #c5d4bf;
-  background: #eef6e9;
-  color: #4c6b51;
-}
-.draft-card-defense .draft-tier-chip {
-  border-color: #d7c68e;
-  background: #fff9e9;
-  color: #78602a;
-}
-.draft-resource-chip.mineral {
-  border: 1px solid #9bcde4;
-  background: #eef9ff;
-  color: #27779d;
-}
-.draft-resource-chip.gas {
-  border: 1px solid #9fcea2;
-  background: #eff9ed;
-  color: #3b7a43;
-}
-.draft-card .draft-unit-desc {
-  border: 1px solid rgba(190,205,184,.55);
-  background: rgba(247,250,244,.88);
-  color: #526557;
-}
-.draft-card .stat {
-  border-color: #c7d4c2;
-  background: rgba(250,252,248,.90);
-}
-.draft-card.draft-pick-dimmed {
-  opacity: .66;
-  filter: saturate(.58) brightness(.96);
-  transform: scale(.985);
 }
 
 /* 리플레이 */
@@ -6885,138 +5740,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
   }
 }
 
-/* 드래프트 */
-.draft {
-  position: relative;
-  overflow: hidden;
-}
-.draft-head {
-  position: relative;
-  z-index: 2;
-}
-.draft-pick-timer {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 38px;
-  margin-left: 6px;
-  padding: 3px 7px;
-  border-radius: 999px;
-  border: 1px solid #d7dee6;
-  font-size: 10px;
-  font-weight: 950;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.draft-flow {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  grid-template-columns: minmax(0,1fr) auto minmax(0,1fr);
-  gap: 8px;
-  align-items: stretch;
-}
-.draft-vault {
-  min-width: 0;
-  padding: 9px 10px;
-  border: 1px solid #d4dee6;
-}
-.draft-vault-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 6px;
-  font-size: 8px;
-  font-weight: 950;
-  color: #667783;
-}
-.draft-vault-count {
-  font-size: 10px;
-}
-.draft-status-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 5px;
-  min-height: 17px;
-}
-.draft-status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  border: 1px solid #d4dde5;
-  border-radius: 999px;
-  background: #f4f6f8;
-  color: #687783;
-  font-size: 7px;
-  font-weight: 900;
-  line-height: 1.15;
-  white-space: nowrap;
-}
-.draft-vault-tray {
-  display: flex;
-  gap: 3px;
-  align-items: center;
-  min-height: 22px;
-  margin-top: 6px;
-  overflow: hidden;
-}
-.draft-vault-chip {
-  width: 21px;
-  height: 21px;
-  flex: 0 0 21px;
-  display: grid;
-  place-items: center;
-  border: 1px solid #cbd5dd;
-  background: #fff;
-  font-size: 11px;
-  font-weight: 1000;
-}
-.draft-flow-center {
-  align-self: center;
-  text-align: center;
-  color: #7a8792;
-  font-size: 7.5px;
-  font-weight: 900;
-  line-height: 1.25;
-}
-.draft-pair {
-  position: relative;
-  z-index: 2;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-.draft-card {
-  min-width: 0;
-  border-color: #d6dfe6;
-  transition: transform .13s ease,border-color .13s ease,box-shadow .13s ease,filter .13s ease;
-}
-.draft-choice-hint {
-  position: relative;
-  z-index: 2;
-  margin: -3px 0 1px;
-  text-align: center;
-  font-size: 8px;
-  font-weight: 900;
-}
-.draft-transfer-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 10050;
-  pointer-events: none;
-  overflow: hidden;
-}
-.draft-transfer-clone {
-  position: fixed;
-  margin: 0 !important;
-  z-index: 2;
-  transform-origin: center center;
-  pointer-events: none;
-  box-shadow: 0 18px 48px #0c1c2d3b !important;
-  will-change: transform,opacity,filter;
-}
-
 /* 제목·로비 */
 .title-screen {
   border-color: #aebca7 !important;
@@ -7044,416 +5767,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
 .title-update-stamp {
   border-color: #c5cfbb !important;
   color: #617061 !important;
-}
-
-/* 드래프트 */
-.draft-transfer-burst {
-  position: fixed;
-  z-index: 1;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  pointer-events: none;
-  background: #fff;
-  box-shadow: 0 0 0 10px #ffffff55,0 0 40px #8bb6ff88;
-  animation: draftBurst .48s ease-out both;
-}
-.draft-transfer-label {
-  position: fixed;
-  z-index: 3;
-  padding: 6px 9px;
-  border-radius: 999px;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 1000;
-  box-shadow: 0 7px 19px #0003;
-  animation: draftLabelPop .9s ease both;
-  white-space: nowrap;
-}
-.draft-countdown {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  display: grid;
-  place-items: center;
-  padding: 14px;
-}
-.draft-countdown-card {
-  width: min(96%,760px);
-  padding: 15px 16px 13px;
-  color: #fff;
-  text-align: center;
-}
-.draft-countdown-kicker {
-  font-size: 8px;
-  font-weight: 950;
-  letter-spacing: .18em;
-  color: #9db9df;
-}
-.draft-final-roster {
-  display: grid;
-  grid-template-columns: minmax(0,1fr) 68px minmax(0,1fr);
-  gap: 10px;
-  align-items: stretch;
-  margin-top: 10px;
-}
-.draft-roster-side {
-  min-width: 0;
-  padding: 9px;
-  border: 1px solid #ffffff20;
-  background: #0b1827a8;
-  text-align: left;
-}
-.draft-roster-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  margin-bottom: 7px;
-  font-size: 10px;
-  font-weight: 1000;
-}
-.draft-roster-list {
-  display: grid;
-  grid-template-columns: repeat(2,minmax(0,1fr));
-  gap: 4px;
-}
-.draft-roster-unit {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 20px minmax(0,1fr) auto;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 5px;
-  border: 1px solid #ffffff12;
-  border-radius: 7px;
-  background: #ffffff08;
-}
-.draft-roster-icon {
-  font-size: 13px;
-  line-height: 1;
-  text-align: center;
-}
-.draft-roster-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 8px;
-  font-weight: 900;
-  color: #edf5fb;
-}
-.draft-roster-tier {
-  font-size: 6.5px;
-  font-weight: 950;
-  color: #8299aa;
-}
-.draft-roster-defense {
-  margin-top: 6px;
-  padding-top: 5px;
-  border-top: 1px solid #ffffff12;
-  font-size: 7px;
-  font-weight: 850;
-  color: #8fa2b2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.draft-roster-versus {
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 3px;
-  min-width: 0;
-}
-.draft-roster-vs {
-  font-size: 13px;
-  font-weight: 1000;
-  letter-spacing: .08em;
-  color: #8fa6b9;
-}
-.draft-countdown-number {
-  display: block;
-  margin: 0;
-  font-size: clamp(48px,11vw,76px);
-  line-height: .86;
-  font-weight: 1000;
-  font-variant-numeric: tabular-nums;
-}
-.draft-countdown-copy {
-  margin-top: 9px;
-  font-size: 9px;
-  font-weight: 900;
-  color: #dbe8f4;
-}
-.draft-map-preview-wrap {
-  margin-top: 10px;
-  padding: 8px 9px 7px;
-  border: 1px solid #ffffff18;
-  text-align: left;
-}
-.draft-map-preview-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-  font-size: 7.5px;
-  color: #8fa8bc;
-}
-.draft-map-preview {
-  display: block;
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  margin: 0 auto;
-  aspect-ratio: var(--map-preview-aspect,6/7);
-  border: 1px solid #ffffff14;
-  background: #213637;
-  box-shadow: inset 0 0 0 1px #0005;
-}
-.draft-map-preview-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px 9px;
-  margin-top: 5px;
-  font-size: 5.8px;
-  font-weight: 800;
-  color: #91a6b7;
-}
-.draft-countdown-pop {
-  animation: draftCountdownPop .28s ease-out;
-}
-@media (max-width:639px) {
-  .draft {
-    padding: 10px 10px calc(18px + env(safe-area-inset-bottom));
-    gap: 9px;
-    width: 100%;
-    max-width: 100%;
-    max-height: calc(100dvh - 14px);
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-    align-content: start;
-  }
-}
-@media (max-width:639px) {
-  .draft-head {
-    position: relative;
-  }
-}
-@media (max-width:639px) {
-  .draft-flow {
-    gap: 5px;
-  }
-}
-@media (max-width:639px) {
-  .draft-pair {
-    grid-template-columns: 1fr;
-    gap: 8px;
-    min-height: max-content;
-    overflow: visible;
-  }
-}
-@media (max-width:639px) {
-  .draft-vault {
-    padding: 7px;
-  }
-}
-@media (max-width:639px) {
-  .draft-flow-center {
-    font-size: 6.5px;
-  }
-}
-@media (max-width:639px) {
-  .draft-card {
-    padding: 10px;
-  }
-}
-@media (max-width:639px) {
-  .draft-countdown-card {
-    border-radius: 16px;
-  }
-}
-@media (max-width:639px) {
-  .draft-final-roster {
-    margin-top: 7px;
-  }
-}
-@media (max-width:639px) {
-  .draft-roster-side {
-    padding: 6px 5px;
-    border-radius: 9px;
-  }
-}
-@media (max-width:639px) {
-  .draft-roster-head {
-    font-size: 8px;
-    margin-bottom: 5px;
-  }
-}
-@media (max-width:639px) {
-  .draft-roster-list {
-    grid-template-columns: 1fr;
-    gap: 2px;
-  }
-}
-@media (max-width:639px) {
-  .draft-roster-unit {
-    grid-template-columns: 16px minmax(0,1fr) auto;
-    padding: 2px 3px;
-    gap: 2px;
-    border-radius: 5px;
-  }
-}
-@media (max-width:639px) {
-  .draft-roster-icon {
-    font-size: 10px;
-  }
-}
-@media (max-width:639px) {
-  .draft-roster-name {
-    font-size: 6.7px;
-  }
-}
-@media (max-width:639px) {
-  .draft-roster-tier {
-    font-size: 5.5px;
-  }
-}
-@media (max-width:639px) {
-  .draft-roster-defense {
-    margin-top: 4px;
-    padding-top: 3px;
-    font-size: 5.8px;
-  }
-}
-@media (max-width:639px) {
-  .draft-roster-vs {
-    font-size: 9px;
-  }
-}
-@media (max-width:639px) {
-  .draft-countdown-number {
-    font-size: 46px;
-  }
-}
-@media (max-width:639px) {
-  .draft-countdown-copy {
-    font-size: 7px;
-    margin-top: 6px;
-  }
-}
-@media (max-width:639px) {
-  .draft-map-preview-wrap {
-    margin-top: 7px;
-  }
-}
-@media (max-width:639px) {
-  .draft-map-preview-head {
-    font-size: 6.6px;
-    margin-bottom: 4px;
-  }
-}
-@media (max-width:639px) {
-  .draft-map-preview-legend {
-    gap: 3px 7px;
-    font-size: 5px;
-    margin-top: 4px;
-  }
-}
-.draft-pick-center-countdown {
-  position: absolute;
-  z-index: 6;
-  left: 50%;
-  top: 57%;
-  transform: translate(-50%,-50%);
-  pointer-events: none;
-  user-select: none;
-  font-size: clamp(92px,16vw,184px);
-  line-height: .8;
-  font-weight: 1000;
-  letter-spacing: -.06em;
-  color: rgba(38,102,58,.20);
-}
-.draft-card {
-  border: 1px solid #b9c9b4;
-}
-.draft-tier-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 42px;
-  min-height: 26px;
-  padding: 4px 8px;
-  border: 1px solid #b4c7ad;
-  border-radius: 999px;
-  background: #f7fbf3;
-  color: #45624a;
-  font-size: 9px;
-  font-weight: 1000;
-  white-space: nowrap;
-}
-.draft-resource-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 8px;
-  padding: 6px 8px;
-  border: 1px solid #cbd8c6;
-  border-radius: 10px;
-  background: rgba(244,249,239,.92);
-}
-.draft-resource-label {
-  margin-right: auto;
-  color: #657566;
-  font-size: 8px;
-  font-weight: 950;
-}
-.draft-resource-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  min-height: 22px;
-  padding: 3px 7px;
-  border-radius: 999px;
-  font-size: 9px;
-  font-weight: 1000;
-  font-variant-numeric: tabular-nums;
-}
-@media (max-width:639px) {
-  .draft-pick-center-countdown {
-    top: 58%;
-    font-size: clamp(82px,26vw,132px);
-  }
-}
-@media (max-width:639px) {
-  .draft-resource-row {
-    margin-top: 6px;
-    padding: 5px 6px;
-    gap: 4px;
-  }
-}
-@media (max-width:639px) {
-  .draft-resource-label {
-    font-size: 7px;
-  }
-}
-@media (max-width:639px) {
-  .draft-resource-chip {
-    font-size: 8px;
-    padding: 3px 6px;
-  }
-}
-@media (max-width:639px) {
-  .draft-tier-chip {
-    min-width: 36px;
-    min-height: 23px;
-    font-size: 8px;
-    padding: 3px 6px;
-  }
 }
 
 /* 리플레이 */
@@ -7488,9 +5801,7 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
 /* 덱 */
 .command-drawer button,
 .unit-card,
-.research-action,
-.deck-collection-card,
-.deck-builder-slot {
+.research-action{
   touch-action: manipulation;
 }
 
@@ -7751,19 +6062,7 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
   border: 1px solid #ffffff1f;
   backdrop-filter: blur(6px);
 }
-
-/* 드래프트 */
-.draft-menu-btn {
-  min-height: 34px;
-  padding: 6px 9px;
-  margin-left: 7px;
-  font-size: 10px;
-}
-.hidden,
-.draft-countdown.hidden,
-.draft-pick-center-countdown.hidden,
-[aria-hidden="true"].draft-countdown,
-[aria-hidden="true"].draft-pick-center-countdown {
+.hidden{
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
@@ -7905,15 +6204,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
   border-color: #bdc8b5 !important;
 }
 
-/* 드래프트 */
-.draft-head {
-  padding-bottom: 7px;
-  border-bottom: 1px solid #c8d1c0;
-}
-.draft-vault {
-  box-shadow: 0 5px 14px #283d2d0d !important;
-}
-
 /* 명령 패널 */
 .quick-command-icon {
   color: #4d734e;
@@ -7934,16 +6224,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
 }
 
 /* 드래프트 */
-@media (min-width:900px) {
-  .draft {
-    width: min(calc(100vw - 24px),1040px);
-    max-width: 1040px;
-    height: calc(100dvh - 20px);
-    max-height: calc(100dvh - 20px);
-    min-height: 0;
-    overflow: hidden !important;
-  }
-}
 
 /* 경제·생산 */
 .resource-bar {
@@ -7960,161 +6240,8 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
 }
 
 /* 드래프트 */
-@media (min-width:900px) {
-  .draft-countdown {
-    padding: clamp(7px,1.4vh,14px);
-    overflow: hidden !important;
-  }
-}
-@media (min-width:900px) {
-  .draft-countdown-card {
-    width: min(96%,760px);
-    height: min(92dvh,780px);
-    max-height: calc(100dvh - 34px);
-    min-height: 0;
-    padding: clamp(10px,1.5vh,15px) 16px 10px;
-    display: grid;
-    grid-template-rows: auto auto minmax(clamp(180px,30dvh,340px),1fr) auto;
-    gap: clamp(4px,.8vh,8px);
-    overflow: hidden !important;
-  }
-}
-@media (min-width:900px) {
-  .draft-final-roster {
-    min-width: 0;
-    min-height: 0;
-    margin-top: 0;
-  }
-}
-@media (min-width:900px) {
-  .draft-map-preview-wrap {
-    min-width: 0;
-    min-height: 0 !important;
-    margin-top: 0 !important;
-    overflow: hidden !important;
-    display: grid;
-    grid-template-rows: auto minmax(0,1fr) auto;
-  }
-}
-@media (min-width:900px) {
-  .draft-map-preview-head {
-    min-width: 0;
-  }
-}
-@media (min-width:900px) {
-  #draftMapPreviewCanvas,
-    .draft-map-preview {
-    display: block;
-    min-width: 0 !important;
-    min-height: 0 !important;
-    width: auto !important;
-    height: auto !important;
-    max-width: 100% !important;
-    max-height: 100% !important;
-    align-self: center;
-    justify-self: center;
-    object-fit: contain;
-    margin: 0 auto;
-  }
-}
-@media (min-width:900px) {
-  .draft-map-preview-legend {
-    min-width: 0;
-    margin-top: 4px !important;
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-}
-@media (min-width:900px) {
-  .draft-countdown-copy {
-    margin-top: 0 !important;
-  }
-}
-@media (max-width:639px) {
-  .draft-countdown {
-    position: fixed !important;
-    inset: 0 !important;
-    width: 100vw !important;
-    height: 100dvh !important;
-    padding: max(8px,env(safe-area-inset-top))
-        max(8px,env(safe-area-inset-right))
-        max(8px,env(safe-area-inset-bottom))
-        max(8px,env(safe-area-inset-left)) !important;
-    display: grid;
-    place-items: center !important;
-    overflow: hidden !important;
-    z-index: 12000 !important;
-  }
-}
-@media (max-width:639px) {
-  .draft-countdown-card {
-    box-sizing: border-box !important;
-    width: min(100%,560px) !important;
-    height: auto !important;
-    max-height: calc(100dvh - max(16px,env(safe-area-inset-top)) - max(16px,env(safe-area-inset-bottom))) !important;
-    margin: auto !important;
-    padding: 10px 8px 9px !important;
-    display: grid;
-    grid-template-rows: auto auto minmax(150px,1fr) auto !important;
-    gap: 5px !important;
-    overflow: hidden !important;
-    align-self: center !important;
-    justify-self: center !important;
-  }
-}
-@media (max-width:639px) {
-  .draft-final-roster {
-    width: 100% !important;
-    min-width: 0 !important;
-    margin: 0 !important;
-    grid-template-columns: minmax(0,1fr) 40px minmax(0,1fr) !important;
-    gap: 4px !important;
-  }
-}
-@media (max-width:639px) {
-  .draft-map-preview-wrap {
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    margin: 0 auto !important;
-    padding: 5px !important;
-    overflow: hidden !important;
-    justify-self: center !important;
-  }
-}
-@media (max-width:639px) {
-  #draftMapPreviewCanvas,
-    .draft-map-preview {
-    display: block;
-    width: auto !important;
-    height: auto !important;
-    max-width: 100% !important;
-    max-height: min(34dvh,360px) !important;
-    margin: auto !important;
-    align-self: center !important;
-    justify-self: center !important;
-  }
-}
-@media (max-width:639px) {
-  .draft-map-preview-legend {
-    justify-content: center !important;
-  }
-}
-@media (max-width:639px) {
-  .draft-countdown-copy {
-    margin: 0 !important;
-    text-align: center !important;
-  }
-}
 
 /* 덱 */
-@media (max-width:639px) {
-  #deckBuilderDialog {
-    width: min(calc(100% - 10px),920px) !important;
-    height: calc(100dvh - 10px) !important;
-    max-height: calc(100dvh - 10px) !important;
-  }
-}
 
 /* 미니맵·상태 */
 @media (pointer:coarse) and (max-width:639px) {
@@ -8145,13 +6272,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
 }
 
 /* 덱 */
-@media (pointer:coarse) and (max-width:639px) {
-  .deck-filter-btn {
-    min-height: 38px !important;
-    padding-left: 10px !important;
-    padding-right: 10px !important;
-  }
-}
 
 /* 위키 */
 .dialog-close,.drawer-close,.help-close {
@@ -8165,25 +6285,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
 }
 .room-code {
   color: #386241 !important;
-}
-
-/* 드래프트 */
-.draft {
-  border-color: #aebca7 !important;
-}
-.draft-choice-hint {
-  color: #5f705f !important;
-}
-.draft-pick-timer {
-  border-color: #b8c6b1 !important;
-  background: #f6f9f1 !important;
-  color: #526752 !important;
-}
-.draft-map-preview-wrap {
-  border-color: #50655166 !important;
-}
-.draft-map-preview {
-  border-color: #82927b55 !important;
 }
 
 /* 전장·HUD */
@@ -8317,18 +6418,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
   min-width: 0;
 }
 
-/* 덱 */
-#deckBuilderDialog .deck-pool-scroll {
-  min-width: 0;
-  min-height: 0;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
-  overscroll-behavior-y: contain !important;
-  touch-action: pan-y !important;
-  -webkit-overflow-scrolling: touch;
-  padding-right: 1px;
-}
-
 /* 명령 패널 */
 @media (max-width:639px) {
   .command-card-grid .command-card {
@@ -8400,14 +6489,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
 /* 대화상자 */
 .dialog-action.primary {
   background: #527e50 !important;
-}
-
-/* 드래프트 */
-.draft-vault.mine {
-  background: #edf3fb !important;
-}
-.draft-vault.enemy {
-  background: #fbefec !important;
 }
 
 /* 경제·생산 */
@@ -8488,16 +6569,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
 .replay-btn.active {
   border-color: #668d61 !important;
   color: #315f38 !important;
-}
-
-/* 드래프트 */
-.draft-card .draft-unit-icon {
-  background: #e3eee0 !important;
-  box-shadow: none !important;
-  border-radius: 8px !important;
-}
-.draft-card-defense .draft-unit-icon {
-  background: #f3ead2 !important;
 }
 
 /* 위키 */
@@ -8620,48 +6691,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
   border-radius: 8px !important;
 }
 
-/* 드래프트 */
-.draft {
-  background: #eef3e9 !important;
-  border-radius: 10px !important;
-}
-.draft-vault {
-  background: #f6f8f2 !important;
-  border-radius: 8px !important;
-}
-.draft-vault-chip {
-  box-shadow: none !important;
-  border-radius: 5px !important;
-}
-.draft-card {
-  background: #f5f8f1 !important;
-  border-radius: 8px !important;
-  box-shadow: none !important;
-}
-.draft-card .draft-unit-desc,.draft-card .stat,.draft-resource-row {
-  background: #eef2e9 !important;
-  box-shadow: none !important;
-  border-radius: 7px !important;
-}
-.draft-resource-chip,.draft-tier-chip {
-  border-radius: 6px !important;
-}
-.draft-card.draft-pick-pressed {
-  background: #e6f0e1 !important;
-  box-shadow: none !important;
-  outline: 3px solid #527e5026 !important;
-}
-.draft-transfer-clone,.draft-transfer-label,.draft-transfer-burst {
-  box-shadow: none !important;
-}
-.draft-map-preview-wrap {
-  background: #203129 !important;
-  border-radius: 8px !important;
-}
-.draft-map-preview {
-  border-radius: 6px !important;
-}
-
 /* 전장·HUD */
 .stage {
   background: #14251e !important;
@@ -8697,8 +6726,7 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
 /* 진단 */
 :where(
   .title-screen,.dialog-shell,.install-guide-card,.match-menu-card,.disconnect-gate-card,
-  .result-card,.help-shell,.replay-dock,.side,.status-side,.draft,.draft-vault,
-  .draft-card,.draft-map-preview-wrap,.battle-command-dock,.command-drawer,.building-panel,
+  .result-card,.help-shell,.replay-dock,.side,.status-side,.battle-command-dock,.command-drawer,.building-panel,
   .spell-panel,.spell-card,.research-action,.command-card,.tech-root-btn,.unit-card,
   .metric,.wiki-note,.wiki-warning,.wiki-tip,.wiki-details,.boot-card
 ) {
@@ -8706,7 +6734,7 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
 }
 :where(
   .title-screen,.dialog-shell,.install-guide-card,.match-menu-card,.disconnect-gate-card,
-  .result-card,.help-shell,.draft,.battle-command-dock,.command-drawer,.building-panel,
+  .result-card,.help-shell,.battle-command-dock,.command-drawer,.building-panel,
   .spell-panel,.replay-dock,.boot-card,.resource-bar,.p2p-health,.target-exit-zone
 ) {
   backdrop-filter: none !important;
@@ -8935,23 +6963,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
   background: #583938 !important;
 }
 
-/* 드래프트 */
-.draft-countdown {
-  background: #182720de !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-.draft-countdown-card {
-  background: #15271f !important;
-  border: 1px solid #49604f !important;
-  border-radius: 10px !important;
-  box-shadow: none !important;
-}
-.draft-roster-side {
-  border-radius: 7px !important;
-  box-shadow: none !important;
-}
-
 /* 진단 */
 .boot-progress>span {
   background: #527e50 !important;
@@ -9059,29 +7070,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
   }
 }
 
-/* 덱 */
-.deck-screen {
-  display: grid;
-  grid-template-rows: auto auto minmax(0,1fr);
-  gap: var(--ui-gap-4);
-  margin: 0 auto;
-}
-.deck-screen-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ui-gap-3);
-}
-.deck-preview-units {
-  display: grid;
-  grid-template-columns: repeat(4,minmax(0,1fr));
-  gap: var(--ui-gap-2);
-  margin-top: var(--ui-gap-3);
-}
-.deck-preview-defense {
-  margin-top: var(--ui-gap-2);
-}
-
 /* 대화상자 */
 .start-mode-actions {
   margin-top: 0;
@@ -9094,270 +7082,6 @@ body.replay-mode .status-side>.tech,body.replay-mode #selectionHint,body.replay-
 /* 기초·공통 */
 .info-detail-meta {
   margin-top: var(--ui-gap-3);
-}
-
-/* 덱 */
-#deckBuilderFilters.deck-filter-row::-webkit-scrollbar {
-  display: none;
-}
-#deckCollection.deck-collection {
-  display: grid;
-  grid-template-columns: repeat(4,minmax(0,1fr));
-  gap: 5px;
-}
-#deckCollection .deck-collection-card {
-  display: grid;
-  grid-template-rows: auto auto auto;
-  place-items: center;
-  align-content: center;
-  gap: 2px;
-}
-#deckBuilderDialog .deck-builder-foot {
-  display: grid;
-  grid-template-columns: repeat(2,minmax(0,1fr));
-  gap: var(--ui-gap-2);
-  padding-top: 0;
-}
-@media (max-width:639px) {
-  #deckBuilderDialog .deck-builder-body {
-    gap: 4px;
-  }
-}
-@media (max-width:639px) {
-  #deckCollection.deck-collection {
-    grid-template-columns: repeat(4,minmax(0,1fr));
-    gap: 4px;
-  }
-}
-@media (max-width:639px) {
-  #deckBuilderDialog .deck-builder-foot {
-    gap: 5px;
-  }
-}
-@media (max-width:380px) {
-  #deckCollection.deck-collection {
-    grid-template-columns: repeat(3,minmax(0,1fr));
-  }
-}
-
-/* 드래프트 */
-#draftScreen.draft {
-  display: grid;
-  grid-template-rows: auto auto auto minmax(0,1fr) auto;
-  gap: 8px;
-  min-height: 0;
-}
-#draftScreen .draft-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-#draftScreen .draft-head-copy {
-  min-width: 0;
-}
-#draftScreen .draft-head-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 5px;
-  flex: 0 0 auto;
-}
-#draftScreen .draft-flow {
-  min-width: 0;
-}
-#draftScreen .draft-pair {
-  min-width: 0;
-  min-height: 0;
-}
-#draftScreen .draft-card {
-  min-width: 0;
-  height: 100%;
-}
-@media (max-width:639px) {
-  #draftScreen.draft {
-    width: 100%;
-    max-width: 100%;
-    height: calc(100dvh - 10px);
-    max-height: calc(100dvh - 10px);
-    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
-    gap: 5px;
-    overflow: hidden !important;
-    align-content: stretch;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-head {
-    gap: 5px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-head-actions {
-    gap: 3px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-head-actions .tag,
-    #draftScreen .draft-pick-timer,
-    #draftScreen .draft-menu-btn {
-    min-height: 30px;
-    margin: 0;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-flow {
-    grid-template-columns: minmax(0,1fr) 24px minmax(0,1fr);
-    gap: 4px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-vault {
-    padding: 5px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-status-row {
-    gap: 2px;
-    margin-top: 3px;
-    min-height: 14px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-vault-tray {
-    gap: 2px;
-    margin-top: 3px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-vault-chip {
-    width: 20px;
-    height: 20px;
-    font-size: 10px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-flow-center {
-    font-size: 5.5px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-choice-hint {
-    margin: 0;
-    font-size: 6.5px;
-    line-height: 1.15;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-pair {
-    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
-    gap: 5px;
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-    overscroll-behavior-y: contain;
-    -webkit-overflow-scrolling: touch;
-    align-items: start;
-    padding: 1px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-card {
-    height: auto;
-    min-height: 0;
-    padding: 6px !important;
-    border-radius: 8px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-card-top {
-    grid-template-columns: 38px minmax(0,1fr) auto;
-    gap: 5px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-unit-icon {
-    width: 38px;
-    height: 38px;
-    border-radius: 8px;
-    font-size: 20px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-tier-chip {
-    font-size: 6px;
-    padding: 2px 4px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-resource-row {
-    margin-top: 4px;
-    padding: 4px;
-    gap: 3px;
-    display: flex;
-    flex-wrap: wrap;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-resource-label {
-    flex: 1 0 100%;
-    font-size: 6px;
-    line-height: 1.15;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-resource-chip {
-    font-size: 6px;
-    padding: 2px 4px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-unit-desc {
-    margin-top: 4px;
-    padding: 4px 5px;
-    font-size: 6.5px;
-    line-height: 1.25;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-unit-detail {
-    display: none;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .stats {
-    grid-template-columns: repeat(2,minmax(0,1fr));
-    gap: 3px;
-    margin-top: 4px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .stat {
-    padding: 3px 2px;
-    font-size: 6px;
-  }
-}
-@media (max-width:639px) {
-  #draftScreen .draft-pick-center-countdown {
-    top: 58%;
-    font-size: clamp(72px,22vw,116px);
-  }
-}
-@media (max-width:370px) {
-  #draftScreen .draft-card-top {
-    grid-template-columns: 32px minmax(0,1fr) auto;
-  }
-}
-@media (max-width:370px) {
-  #draftScreen .draft-unit-icon {
-    width: 32px;
-    height: 32px;
-    font-size: 17px;
-  }
-}
-@media (max-width:370px) {
-  #draftScreen .draft-unit-summary {
-    display: none;
-  }
 }
 
 /* 진단 */
@@ -9405,19 +7129,6 @@ body.campaign-mode #p2pHealthText {
 @keyframes commandPopupIn{
   from{opacity:0;transform:translateY(8px) scale(.985)}
   to{opacity:1;transform:translateY(0) scale(1)}
-}
-@keyframes draftBurst{0%{transform:translate(-50%,-50%) scale(.2);opacity:0}35%{opacity:1}100%{transform:translate(-50%,-50%) scale(4.6);opacity:0}}
-@keyframes draftLabelPop{0%{transform:translate(-50%,8px) scale(.8);opacity:0}20%{transform:translate(-50%,0) scale(1.05);opacity:1}72%{opacity:1}100%{transform:translate(-50%,-10px) scale(.96);opacity:0}}
-@keyframes draftCountdownPop{0%{transform:scale(.72);opacity:.15}68%{transform:scale(1.08);opacity:1}100%{transform:scale(1);opacity:1}}
-@keyframes draftPickCenterTick{
-  0%{transform:translate(-50%,-50%) scale(.82);opacity:.15}
-  45%{transform:translate(-50%,-50%) scale(1.07);opacity:1}
-  100%{transform:translate(-50%,-50%) scale(1);opacity:1}
-}
-@keyframes draftFrontierClaim{
-  0%{transform:scale(.985)}
-  55%{transform:scale(1.015)}
-  100%{transform:scale(1)}
 }
 @keyframes campaignPingPulse{0%{opacity:0;transform:translate(-50%,-50%) scale(.45)}25%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.55)}}
 @keyframes campaignEdgePulse{0%,100%{opacity:.35}50%{opacity:1}}

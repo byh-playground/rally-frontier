@@ -13,14 +13,13 @@ import { ActiveViewState, BACKGROUND_TICK_SESSIONS, BattlePresentationCache, Net
 import { LaunchRules } from './sim/launch-rules.js';
 import './sim/spatial-grids.js';
 import { LoopbackTransport, NostrRtcTransport } from './net/rtc-transport.js';
-import './sim/match-modes.js';
 import { RecoveryTelemetry } from './diagnostics/recovery-telemetry.js';
 import { ConnectionRoleUtil, ConnectionSideUtil, StableSerializationUtil } from './net/lobby-codec.js';
 import { CloneUtil, HashUtil, MapGeneration } from './sim/map-generation.js';
 import { ABILITY_INFO } from './definitions/balance.js';
 import { ABILITY_RESEARCH_COSTS, ARMOR_REDUCTION_PCT_PER_LEVEL, ATTACK_UPGRADE_PCT_PER_LEVEL, AttackPresentationDefinition, BodyPulsePresentation, ResearchDefinition, UnitSpecialResearchDefinition } from './definitions/research.js';
 import { BuildingDefinition, buildingPlacementInsideWorld, buildingPlacementSeparation } from './definitions/buildings.js';
-import { DAMAGE_CLASS_LABEL, DAMAGE_CLASS_MATRIX, DECK_FORMAT_VERSION, DECK_RULESET_VERSION, DECK_SLOT_COUNT, DECK_TOTAL_CARD_COUNT, DRAFT_COUNTER_AA, DRAFT_COUNTER_DETECT, DRAFT_TOTAL_ROUNDS, DeckCardRuleDefinition, DeckRecord, DefenseCardDefinition, DraftPolicy, SIZE_CLASS_LABEL } from './definitions/decks.js';
+import { DAMAGE_CLASS_LABEL, DAMAGE_CLASS_MATRIX, DECK_SLOT_COUNT, DECK_TOTAL_CARD_COUNT, DeckCardRuleDefinition, DefenseCardDefinition, SIZE_CLASS_LABEL } from './definitions/decks.js';
 import { COMBAT_UNITS, ECONOMY_WORKER_DEF, UnitDefinition, UnitFactionPalette, UnitVisualDefinition } from './definitions/units.js';
 import { CampDefinition, MAIN_OBJECTIVE_RESPAWN_MS, NEUTRAL_SIDE, NeutralCampPolicy, OBJECTIVE_DRAGON_BREATH_PHASE, PassiveCardDefinition, SpellDefinition, UnitCompositionDefinition } from './definitions/cards.js';
 import { MapGeometry } from './sim/map-geometry.js';
@@ -33,7 +32,7 @@ import { NavigationGoal, NavigationMeshBuilder } from './sim/navigation.js';
 import { BattlefieldProjection, PolygonTriangulation, TerrainGeometry, TerrainSurfaceAtlas, TerrainSurfaceProjection } from './sim/terrain.js';
 import { BACKGROUND_TICK_PULSE_MS, DISCONNECT_GRACE_MS } from './core/session-timing.js';
 import { RENDER_TRACKS } from './render/render-tracks.js';
-import { CHARGED_SKILL_DRAG_PX, CHARGED_SKILL_HOLD_MS, CONFIG, DECK_SELECT_TIMEOUT_MS, DRAFT_FINAL_FX_MS, DRAFT_PICK_TIMEOUT_MS, GAS_WORKER_UI_DEBOUNCE_MS, PREDICTED_BUILD_GHOST_TTL_MS, PREDICTED_COMMAND_FX_TTL_MS, SIM_VERSION, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode } from './core/config.js';
+import { CHARGED_SKILL_DRAG_PX, CHARGED_SKILL_HOLD_MS, CONFIG, GAS_WORKER_UI_DEBOUNCE_MS, PREDICTED_BUILD_GHOST_TTL_MS, PREDICTED_COMMAND_FX_TTL_MS, SIM_VERSION, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode } from './core/config.js';
 import { BUILD_META } from './core/build-info.js';
 import { RallyGamekit, RallyNetcode, SIM_WORKER } from './core/gamekit.js';
 import { LaunchScreens } from './ui/launch-screens.js';
@@ -7678,11 +7677,7 @@ const audioSystem=new AudioSystem();
    7. UI wiring
    ========================= */
 class DomUtil{static byId(id){return document.getElementById(id)}}
-class UiRegistry{static refs={p2pHealth:DomUtil.byId("p2pHealth"),p2pHealthText:DomUtil.byId("p2pHealthText"),lobby:DomUtil.byId("lobby"),draft:DomUtil.byId("draftScreen"),game:DomUtil.byId("gameScreen"),net:DomUtil.byId("netStatus"),createDialog:DomUtil.byId("createDialog"),joinDialog:DomUtil.byId("joinDialog"),createClose:DomUtil.byId("createCloseBtn"),joinClose:DomUtil.byId("joinCloseBtn"),createStatus:DomUtil.byId("createStatus"),createRetry:DomUtil.byId("createRetryBtn"),joinConfirm:DomUtil.byId("joinConfirmBtn"),room:DomUtil.byId("roomInput"),codeArea:DomUtil.byId("hostCodeArea"),code:DomUtil.byId("hostCode"),joinError:DomUtil.byId("joinError"),localTest:DomUtil.byId("localTestBtn"),testSwitcher:DomUtil.byId("testSwitcher"),hostView:DomUtil.byId("hostViewBtn"),guestView:DomUtil.byId("guestViewBtn"),draftPair:DomUtil.byId("draftPair"),draftRound:DomUtil.byId("draftRound"),draftTitle:DomUtil.byId("draftTitle"),draftTurn:DomUtil.byId("draftTurn"),draftPickTimer:DomUtil.byId("draftPickTimer"),draftPickCenterCountdown:DomUtil.byId("draftPickCenterCountdown"),draftDecks:DomUtil.byId("draftDecks"),draftCountdown:DomUtil.byId("draftCountdown"),draftCountdownNumber:DomUtil.byId("draftCountdownNumber"),draftCountdownCopy:DomUtil.byId("draftCountdownCopy"),draftMapPreviewCanvas:DomUtil.byId("draftMapPreviewCanvas"),draftMapPreviewMeta:DomUtil.byId("draftMapPreviewMeta"),draftFinalMineRoster:DomUtil.byId("draftFinalMineRoster"),draftFinalEnemyRoster:DomUtil.byId("draftFinalEnemyRoster"),draftFinalMineDefense:DomUtil.byId("draftFinalMineDefense"),draftFinalEnemyDefense:DomUtil.byId("draftFinalEnemyDefense"),canvas:DomUtil.byId("glCanvas"),minimapCanvas:DomUtil.byId("minimapCanvas"),minimapExpandBtn:DomUtil.byId("minimapExpandBtn"),minerals:DomUtil.byId("minerals"),gas:DomUtil.byId("gas"),workers:DomUtil.byId("workers"),supply:DomUtil.byId("supply"),supplyChip:DomUtil.byId("supplyChip"),supplyWarning:DomUtil.byId("supplyWarning"),reinforcementOverview:DomUtil.byId("reinforcementOverview"),reinforcementGrid:DomUtil.byId("reinforcementGrid"),tier:DomUtil.byId("tier"),soundBtn:DomUtil.byId("soundBtn"),modeTip:DomUtil.byId("modeTip"),buildFinishBtn:DomUtil.byId("buildFinishBtn"),spellCancelBtn:DomUtil.byId("spellCancelBtn"),productionEfficiencySummary:DomUtil.byId("productionEfficiencySummary"),unitGrid:DomUtil.byId("unitGrid"),spellCloseBtn:DomUtil.byId("spellCloseBtn"),spellChoiceArea:DomUtil.byId("spellChoiceArea"),spellInventory:DomUtil.byId("spellInventory"),tacticalChestArea:DomUtil.byId("tacticalChestArea"),flagBtn:DomUtil.byId("flagBtn"),pauseBtn:DomUtil.byId("pauseBtn"),cancelModeBtn:DomUtil.byId("cancelModeBtn"),supplyBtn:DomUtil.byId("supplyBtn"),gasExtractorBtn:DomUtil.byId("gasExtractorBtn"),defenseCardChoices:DomUtil.byId("defenseCardChoices"),academyBtn:DomUtil.byId("academyBtn"),airIncubatorBtn:DomUtil.byId("airIncubatorBtn"),labBtn:DomUtil.byId("labBtn"),buildingPanel:DomUtil.byId("buildingPanel"),buildingPanelTitle:DomUtil.byId("buildingPanelTitle"),buildingPanelStatus:DomUtil.byId("buildingPanelStatus"),buildingPanelActions:DomUtil.byId("buildingPanelActions"),buildingDeselectBtn:DomUtil.byId("buildingDeselectBtn"),tech2:DomUtil.byId("tech2Line"),tech3:DomUtil.byId("tech3Line"),attackUpgradeTag:DomUtil.byId("attackUpgradeTag"),armorUpgradeTag:DomUtil.byId("armorUpgradeTag"),hint:DomUtil.byId("selectionHint"),log:DomUtil.byId("eventLog"),result:DomUtil.byId("result"),resultTitle:DomUtil.byId("resultTitle"),resultText:DomUtil.byId("resultText"),rematch:DomUtil.byId("rematchBtn")}}
-UiRegistry.refs.deckReadyStatus=DomUtil.byId("deckReadyStatus");
-UiRegistry.refs.deckReadyMine=DomUtil.byId("deckReadyMine");
-UiRegistry.refs.deckReadyEnemy=DomUtil.byId("deckReadyEnemy");
-UiRegistry.refs.deckSelectTimer=DomUtil.byId("deckSelectTimer");
+class UiRegistry{static refs={p2pHealth:DomUtil.byId("p2pHealth"),p2pHealthText:DomUtil.byId("p2pHealthText"),lobby:DomUtil.byId("lobby"),game:DomUtil.byId("gameScreen"),net:DomUtil.byId("netStatus"),createDialog:DomUtil.byId("createDialog"),joinDialog:DomUtil.byId("joinDialog"),createClose:DomUtil.byId("createCloseBtn"),joinClose:DomUtil.byId("joinCloseBtn"),createStatus:DomUtil.byId("createStatus"),createRetry:DomUtil.byId("createRetryBtn"),joinConfirm:DomUtil.byId("joinConfirmBtn"),room:DomUtil.byId("roomInput"),codeArea:DomUtil.byId("hostCodeArea"),code:DomUtil.byId("hostCode"),joinError:DomUtil.byId("joinError"),localTest:DomUtil.byId("localTestBtn"),testSwitcher:DomUtil.byId("testSwitcher"),hostView:DomUtil.byId("hostViewBtn"),guestView:DomUtil.byId("guestViewBtn"),canvas:DomUtil.byId("glCanvas"),minimapCanvas:DomUtil.byId("minimapCanvas"),minimapExpandBtn:DomUtil.byId("minimapExpandBtn"),minerals:DomUtil.byId("minerals"),gas:DomUtil.byId("gas"),workers:DomUtil.byId("workers"),supply:DomUtil.byId("supply"),supplyChip:DomUtil.byId("supplyChip"),supplyWarning:DomUtil.byId("supplyWarning"),reinforcementOverview:DomUtil.byId("reinforcementOverview"),reinforcementGrid:DomUtil.byId("reinforcementGrid"),tier:DomUtil.byId("tier"),soundBtn:DomUtil.byId("soundBtn"),modeTip:DomUtil.byId("modeTip"),buildFinishBtn:DomUtil.byId("buildFinishBtn"),spellCancelBtn:DomUtil.byId("spellCancelBtn"),productionEfficiencySummary:DomUtil.byId("productionEfficiencySummary"),unitGrid:DomUtil.byId("unitGrid"),spellCloseBtn:DomUtil.byId("spellCloseBtn"),spellChoiceArea:DomUtil.byId("spellChoiceArea"),spellInventory:DomUtil.byId("spellInventory"),tacticalChestArea:DomUtil.byId("tacticalChestArea"),flagBtn:DomUtil.byId("flagBtn"),pauseBtn:DomUtil.byId("pauseBtn"),cancelModeBtn:DomUtil.byId("cancelModeBtn"),supplyBtn:DomUtil.byId("supplyBtn"),gasExtractorBtn:DomUtil.byId("gasExtractorBtn"),defenseCardChoices:DomUtil.byId("defenseCardChoices"),academyBtn:DomUtil.byId("academyBtn"),airIncubatorBtn:DomUtil.byId("airIncubatorBtn"),labBtn:DomUtil.byId("labBtn"),buildingPanel:DomUtil.byId("buildingPanel"),buildingPanelTitle:DomUtil.byId("buildingPanelTitle"),buildingPanelStatus:DomUtil.byId("buildingPanelStatus"),buildingPanelActions:DomUtil.byId("buildingPanelActions"),buildingDeselectBtn:DomUtil.byId("buildingDeselectBtn"),tech2:DomUtil.byId("tech2Line"),tech3:DomUtil.byId("tech3Line"),attackUpgradeTag:DomUtil.byId("attackUpgradeTag"),armorUpgradeTag:DomUtil.byId("armorUpgradeTag"),hint:DomUtil.byId("selectionHint"),log:DomUtil.byId("eventLog"),result:DomUtil.byId("result"),resultTitle:DomUtil.byId("resultTitle"),resultText:DomUtil.byId("resultText"),rematch:DomUtil.byId("rematchBtn")}}
 UiRegistry.refs.infoDetailDialog=DomUtil.byId("infoDetailDialog");
 UiRegistry.refs.infoDetailCloseBtn=DomUtil.byId("infoDetailCloseBtn");
 UiRegistry.refs.infoDetailIcon=DomUtil.byId("infoDetailIcon");
@@ -7744,24 +7739,8 @@ UiRegistry.refs.dbgBalanceMineral=DomUtil.byId("dbgBalanceMineral");UiRegistry.r
 UiRegistry.refs.gameStartBtn=DomUtil.byId("gameStartBtn");
 UiRegistry.refs.campaignRepositoryList=DomUtil.byId("campaignRepositoryList");UiRegistry.refs.campaignRefreshBtn=DomUtil.byId("campaignRefreshBtn");UiRegistry.refs.campaignDialog=DomUtil.byId("campaignDialog");UiRegistry.refs.campaignCloseBtn=DomUtil.byId("campaignCloseBtn");UiRegistry.refs.campaignUrlInput=DomUtil.byId("campaignUrlInput");UiRegistry.refs.campaignLoadUrlBtn=DomUtil.byId("campaignLoadUrlBtn");UiRegistry.refs.campaignFileInput=DomUtil.byId("campaignFileInput");UiRegistry.refs.campaignLoadFileBtn=DomUtil.byId("campaignLoadFileBtn");UiRegistry.refs.campaignStartBtn=DomUtil.byId("campaignStartBtn");UiRegistry.refs.campaignStatus=DomUtil.byId("campaignStatus");UiRegistry.refs.campaignMissionTitle=DomUtil.byId("campaignMissionTitle");UiRegistry.refs.campaignMissionBrief=DomUtil.byId("campaignMissionBrief");
 UiRegistry.refs.singleStatus=DomUtil.byId("singleStatus");
-UiRegistry.refs.deckSelect=DomUtil.byId("deckSelectScreen");
-UiRegistry.refs.deckSelectStatus=DomUtil.byId("deckSelectStatus");
-UiRegistry.refs.deckSelectTabs=DomUtil.byId("deckSelectTabs");
-UiRegistry.refs.deckSelectPreview=DomUtil.byId("deckSelectPreview");
-UiRegistry.refs.deckSelectError=DomUtil.byId("deckSelectError");
 UiRegistry.refs.deckEditBtn=DomUtil.byId("deckEditBtn");
 UiRegistry.refs.deckConfirmBtn=DomUtil.byId("deckConfirmBtn");
-UiRegistry.refs.deckBuilderDialog=DomUtil.byId("deckBuilderDialog");
-UiRegistry.refs.deckBuilderCloseBtn=DomUtil.byId("deckBuilderCloseBtn");
-UiRegistry.refs.deckBuilderTabs=DomUtil.byId("deckBuilderTabs");
-UiRegistry.refs.deckBuilderSlots=DomUtil.byId("deckBuilderSlots");
-UiRegistry.refs.deckBuilderDefense=DomUtil.byId("deckBuilderDefense");
-UiRegistry.refs.deckBuilderFilters=DomUtil.byId("deckBuilderFilters");
-UiRegistry.refs.deckCollection=DomUtil.byId("deckCollection");
-UiRegistry.refs.deckBuilderMessage=DomUtil.byId("deckBuilderMessage");
-UiRegistry.refs.deckBuilderClearBtn=DomUtil.byId("deckBuilderClearBtn");
-UiRegistry.refs.deckBuilderSaveBtn=DomUtil.byId("deckBuilderSaveBtn");
-UiRegistry.refs.matchMenuBtnDeck=DomUtil.byId("matchMenuBtnDeck");
 
 UiRegistry.refs.installPwaBtn=DomUtil.byId("installPwaBtn");
 UiRegistry.refs.installPwaMeta=DomUtil.byId("installPwaMeta");
@@ -7787,7 +7766,7 @@ UiRegistry.refs.helpSpellTable=DomUtil.byId("helpSpellTable");
 UiRegistry.refs.replayOpenBtn=DomUtil.byId("replayOpenBtn");UiRegistry.refs.replayFileInput=DomUtil.byId("replayFileInput");UiRegistry.refs.replayWatchBtn=DomUtil.byId("replayWatchBtn");UiRegistry.refs.replaySaveBtn=DomUtil.byId("replaySaveBtn");
 UiRegistry.refs.replayDock=DomUtil.byId("replayDock");UiRegistry.refs.replayPlayPauseBtn=DomUtil.byId("replayPlayPauseBtn");UiRegistry.refs.replayStepBackBtn=DomUtil.byId("replayStepBackBtn");UiRegistry.refs.replayStepForwardBtn=DomUtil.byId("replayStepForwardBtn");UiRegistry.refs.replayStepBack30Btn=DomUtil.byId("replayStepBack30Btn");UiRegistry.refs.replayStepForward30Btn=DomUtil.byId("replayStepForward30Btn");UiRegistry.refs.replayTimeline=DomUtil.byId("replayTimeline");UiRegistry.refs.replayTime=DomUtil.byId("replayTime");UiRegistry.refs.replayTimeInput=DomUtil.byId("replayTimeInput");UiRegistry.refs.replayTimeGoBtn=DomUtil.byId("replayTimeGoBtn");UiRegistry.refs.replaySpeed=DomUtil.byId("replaySpeed");UiRegistry.refs.replayExitBtn=DomUtil.byId("replayExitBtn");
 UiRegistry.refs.replayHostViewBtn=DomUtil.byId("replayHostViewBtn");UiRegistry.refs.replayGuestViewBtn=DomUtil.byId("replayGuestViewBtn");UiRegistry.refs.replayAllViewBtn=DomUtil.byId("replayAllViewBtn");UiRegistry.refs.replayHostOrientationBtn=DomUtil.byId("replayHostOrientationBtn");UiRegistry.refs.replayGuestOrientationBtn=DomUtil.byId("replayGuestOrientationBtn");UiRegistry.refs.replayZoomOutBtn=DomUtil.byId("replayZoomOutBtn");UiRegistry.refs.replayZoomInBtn=DomUtil.byId("replayZoomInBtn");UiRegistry.refs.replayZoomValue=DomUtil.byId("replayZoomValue");UiRegistry.refs.replayStats=DomUtil.byId("replayStats");
-UiRegistry.refs.matchMenuBtnDraft=DomUtil.byId("matchMenuBtnDraft");UiRegistry.refs.matchMenuBtnGame=DomUtil.byId("matchMenuBtnGame");UiRegistry.refs.matchMenuModal=DomUtil.byId("matchMenuModal");UiRegistry.refs.matchMenuBackdrop=DomUtil.byId("matchMenuBackdrop");UiRegistry.refs.matchMenuCloseBtn=DomUtil.byId("matchMenuCloseBtn");UiRegistry.refs.matchMenuContinueBtn=DomUtil.byId("matchMenuContinueBtn");UiRegistry.refs.matchMenuReplaySaveBtn=DomUtil.byId("matchMenuReplaySaveBtn");UiRegistry.refs.matchMenuHelpBtn=DomUtil.byId("matchMenuHelpBtn");UiRegistry.refs.matchMenuSurrenderBtn=DomUtil.byId("matchMenuSurrenderBtn");UiRegistry.refs.matchMenuLeaveBtn=DomUtil.byId("matchMenuLeaveBtn");UiRegistry.refs.matchMenuWarning=DomUtil.byId("matchMenuWarning");
+UiRegistry.refs.matchMenuBtnGame=DomUtil.byId("matchMenuBtnGame");UiRegistry.refs.matchMenuModal=DomUtil.byId("matchMenuModal");UiRegistry.refs.matchMenuBackdrop=DomUtil.byId("matchMenuBackdrop");UiRegistry.refs.matchMenuCloseBtn=DomUtil.byId("matchMenuCloseBtn");UiRegistry.refs.matchMenuContinueBtn=DomUtil.byId("matchMenuContinueBtn");UiRegistry.refs.matchMenuReplaySaveBtn=DomUtil.byId("matchMenuReplaySaveBtn");UiRegistry.refs.matchMenuHelpBtn=DomUtil.byId("matchMenuHelpBtn");UiRegistry.refs.matchMenuSurrenderBtn=DomUtil.byId("matchMenuSurrenderBtn");UiRegistry.refs.matchMenuLeaveBtn=DomUtil.byId("matchMenuLeaveBtn");UiRegistry.refs.matchMenuWarning=DomUtil.byId("matchMenuWarning");
 UiRegistry.refs.disconnectGate=DomUtil.byId("disconnectGate");UiRegistry.refs.disconnectGateTitle=DomUtil.byId("disconnectGateTitle");UiRegistry.refs.disconnectGateCount=DomUtil.byId("disconnectGateCount");UiRegistry.refs.disconnectGateCopy=DomUtil.byId("disconnectGateCopy");UiRegistry.refs.disconnectGateActions=DomUtil.byId("disconnectGateActions");UiRegistry.refs.disconnectReconnectBtn=DomUtil.byId("disconnectReconnectBtn");UiRegistry.refs.disconnectSurrenderBtn=DomUtil.byId("disconnectSurrenderBtn");
 
 UiRegistry.refs.spellChoiceModal=DomUtil.byId("spellChoiceModal");
@@ -8018,15 +7997,15 @@ window.addEventListener("resize",CommandPresentation.scheduleCommandChoiceGridSy
 CommandPresentation.scheduleCommandChoiceGridSync();
 
 const UI_RADIO=Object.freeze({
-  screen:new Set(["lobby","draft","deck-select","finale","game","replay","result"]),
-  modal:new Set(["none","campaign","create","join","deck-builder","match-menu","detail","spell-choice","disconnect","help"]),
+  screen:new Set(["lobby","game","replay","result"]),
+  modal:new Set(["none","campaign","create","join","match-menu","detail","spell-choice","disconnect","help"]),
   command:new Set(["closed","tree","building"])
 });
 // UI STATE CONTRACT:
 // Radio: screen/modal/command.branch; Tree: command category/page + modalState phases;
 // Checkbox: only independent options. DOM classes are derived output, never app-state input.
 // Async/transient gesture/network booleans may remain local when simultaneous truth is valid.
-class UiRuntimeState{static value={screen:"lobby",modal:"none",modalState:{spellChoice:"idle",disconnect:"hidden"},command:{branch:"closed",category:"economy",page:null},options:{minimapExpanded:false,lockstepDebugOpen:false},draft:{pointerLocked:false,finaleStep:null,pickCountdownSec:null},settings:{selectionMode:"launch",presetId:"standard",simulationTps:10},target:{type:"flag"},selection:{unit:null,buildingId:null}}}
+class UiRuntimeState{static value={screen:"lobby",modal:"none",modalState:{spellChoice:"idle",disconnect:"hidden"},command:{branch:"closed",category:"economy",page:null},options:{minimapExpanded:false,lockstepDebugOpen:false},settings:{presetId:"standard",simulationTps:10},target:{type:"flag"},selection:{unit:null,buildingId:null}}}
 
 /* DOM write ownership contract:
    UiController is the sole generic visibility/screen/modal writer.
@@ -8058,16 +8037,8 @@ class UiController{
     ActiveViewState.renderer.cameraTop=ViewRuntimeState.byRole[ActiveViewState.role].cameraTop==null?(ActiveViewState.renderer?.world||WorldContext.standard).height-VIEW_H:ViewRuntimeState.byRole[ActiveViewState.role].cameraTop;
   }
 
-  const draftState=ViewRuntimeState.byRole[ActiveViewState.role].draft||ActiveViewState.session.draft;
   const liveState=ViewRuntimeState.byRole[ActiveViewState.role].snapshot;
-  const finaleAlreadyVisible=UiRuntimeState.value.screen==="finale";
-  if(draftState?.phase==="live"&&!liveState&&finaleAlreadyVisible)return;
-  if(draftState&&draftState.phase==="draft")DraftPresentation.renderDraft(draftState);
-  else if(draftState?.phase==="deck-select")DeckPresentation.renderDeckSelect(draftState);
-  else if(draftState?.phase==="live"&&!liveState){
-    if(ActiveViewState.session?.matchConfig?.selectionMode==="deck")DeckPresentation.renderDeckReadyFinale(draftState);
-    else DraftPresentation.renderDraftFinale(draftState);
-  }else if(liveState)BattlePresentation.renderGame(liveState);
+  if(liveState)BattlePresentation.renderGame(liveState);
 }
 
   static setElementVisible(ref,visible){
@@ -8118,7 +8089,6 @@ class UiController{
 }
   static openUiModal(kind){UiController.setUiModal(kind);UiController.syncModalState();return kind}
   static closeUiModal(kind=UiRuntimeState.value.modal){if(UiRuntimeState.value.modal!==kind)return false;UiController.setUiModal("none");UiController.syncModalState();return true}
-  static setStartSelectionMode(mode){UiRuntimeState.value.settings.selectionMode=mode}
   static setStartNetcodeMode(value){CONFIG.netcode.mode=netcodeMode(value)}
   static setStartSimulationTps(value){UiRuntimeState.value.settings.simulationTps=RangeUtil.clamp(Math.round(Number(value)||10),10,30)}
   static openJoinDialog(){
@@ -8142,8 +8112,6 @@ class UiController{
   static renderUiState(){
   const screen=UiRuntimeState.value.screen;
   UiRegistry.refs.lobby?.classList.toggle("hidden",screen!=="lobby");
-  UiRegistry.refs.draft?.classList.toggle("hidden",!(screen==="draft"||screen==="finale"));
-  UiRegistry.refs.deckSelect?.classList.toggle("hidden",screen!=="deck-select");
   // screen state maps 1:1 to sibling DOM screens.
   const gameShellVisible=screen==="game"||screen==="replay";
   UiRegistry.refs.game?.classList.toggle("hidden",!gameShellVisible);
@@ -8159,7 +8127,6 @@ class UiController{
     UiRegistry.refs.minimapExpandBtn.setAttribute("aria-pressed",UiRuntimeState.value.options.minimapExpanded?"true":"false");
     UiRegistry.refs.minimapExpandBtn.textContent=UiRuntimeState.value.options.minimapExpanded?"↙":"⛶";
   }
-  DraftPresentation.renderDraftPresentationState();
   const branch=UiRuntimeState.value.command.branch;
   UiRegistry.refs.commandDrawer?.classList.toggle("hidden",branch==="closed");
   if(UiRegistry.refs.commandDrawer){
@@ -8269,8 +8236,6 @@ class UiController{
   if(!el)return null;
   if(el.dataset.deckCardType&&el.dataset.deckCardId)return `deck-card:${el.dataset.deckCardType}:${el.dataset.deckCardId}`;
   if(el.dataset.deckUnitSlot!=null)return `deck-builder-slot:${el.dataset.deckUnitSlot}`;
-  if(el.dataset.deckBuilderTab!=null)return `deck-builder-tab:${el.dataset.deckBuilderTab}`;
-  if(el.dataset.deckSelectSlot!=null)return `deck-select-slot:${el.dataset.deckSelectSlot}`;
   if(el.dataset.deckFilter!=null)return `deck-filter:${el.dataset.deckFilter}`;
   if(el.dataset.globalResearch)return `research-global:${el.dataset.globalResearch}:${el.dataset.unit||""}:${el.dataset.researchId||""}`;
   if(el.dataset.research)return `research:${el.dataset.research}:${el.dataset.unit||""}`;
@@ -8417,460 +8382,6 @@ class SpellPresentation{
 /* Draft presentation invariant:
    FINAL ROSTER is finale-only. Draft entry/round screens must keep draftCountdown hidden;
    mobile/desktop layout CSS must never override the shared visibility state. */
-class DraftPresentation{
-  static lastRenderedDraftState=null;
-  static draftFinaleToken=0;
-  static draftFinaleTimers=[];
-  static draftUiTimerRound=-1;
-  static draftUiTimerRemainingMs=DRAFT_PICK_TIMEOUT_MS;
-  static draftUiTimerLastAt=0;
-  static draftUiTimerCenterSec=null;
-
-  static renderDraftPresentationState(){
-  const finale=UiRuntimeState.value.screen==="finale"&&UiRuntimeState.value.draft.finaleStep!=null;
-  if(UiRegistry.refs.draftCountdown){UiRegistry.refs.draftCountdown.classList.toggle("hidden",!finale);UiRegistry.refs.draftCountdown.setAttribute("aria-hidden",finale?"false":"true")}
-  const pick=UiRuntimeState.value.screen==="draft"&&Number(UiRuntimeState.value.draft.pickCountdownSec)>0;
-  if(UiRegistry.refs.draftPickCenterCountdown){
-    UiRegistry.refs.draftPickCenterCountdown.classList.toggle("hidden",!pick);UiRegistry.refs.draftPickCenterCountdown.setAttribute("aria-hidden",pick?"false":"true");
-    UiRegistry.refs.draftPickCenterCountdown.classList.toggle("urgent",pick&&UiRuntimeState.value.draft.pickCountdownSec<=2);
-  }
-}
-  static draftCardIcon(id){
-  if(DefenseCardDefinition.get(id))return DefenseCardDefinition.get(id).icon||"✣";
-  return UnitDefinition.cardInfo[id]?.icon||"◆";
-}
-  static draftCardName(id){
-  return DefenseCardDefinition.get(id)?.name||UnitDefinition.get(id)?.name||id||"?";
-}
-  static draftOwnedCards(state,who){
-  const cards=(state?.decks?.[who]||[]).slice();
-  for(const defense of DefenseCardDefinition.list(state?.defenseCards?.[who]))cards.push(defense);
-  return cards;
-}
-  static renderDraftVaults(state){
-  const enemyRole=ActiveViewState.role==="host"?"guest":"host";
-  const mine=DraftPresentation.draftOwnedCards(state,ActiveViewState.role),enemy=DraftPresentation.draftOwnedCards(state,enemyRole);
-  const mineUnits=state?.decks?.[ActiveViewState.role]||[],enemyUnits=state?.decks?.[enemyRole]||[];
-  const mineTray=document.getElementById("draftMineTray"),enemyTray=document.getElementById("draftEnemyTray");
-  const mineCount=document.getElementById("draftMineCount"),enemyCount=document.getElementById("draftEnemyCount");
-  const mineStatus=document.getElementById("draftMineStatus"),enemyStatus=document.getElementById("draftEnemyStatus");
-  const chips=list=>list.map(id=>`<span class="draft-vault-chip" title="${DraftPresentation.draftCardName(id)}" aria-label="${DraftPresentation.draftCardName(id)}">${DraftPresentation.draftCardIcon(id)}</span>`).join("");
-  const badge=(label,state,text)=>`<span class="draft-status-badge ${state}"><span class="draft-status-label">${label}</span><b>${text}</b></span>`;
-  if(mineTray)mineTray.innerHTML=chips(mine);
-  if(enemyTray)enemyTray.innerHTML=chips(enemy);
-  if(mineCount)mineCount.textContent=`${mine.length}/9`;
-  if(enemyCount)enemyCount.textContent=`${enemy.length}/9`;
-  const counters=DraftPolicy.draftDeckCounterMask(mineUnits);
-  const threats=DraftPolicy.draftDeckThreatMask(enemyUnits);
-  const mineBadge=(label,mask)=>{
-    const owned=!!(counters&mask),needed=!!(threats&mask)&&!owned;
-    return owned?badge(label,"owned","보유"):needed?badge(label,"needed","대응 필요"):badge(label,"neutral","없음");
-  };
-  const enemyBadge=(label,mask)=>!!(threats&mask)?badge(label,"observed","확인"):badge(label,"neutral","없음");
-  if(mineStatus){
-    mineStatus.innerHTML=mineBadge("대공",DRAFT_COUNTER_AA)+mineBadge("디텍터",DRAFT_COUNTER_DETECT);
-  }
-  if(enemyStatus){
-    enemyStatus.innerHTML=enemyBadge("공중",DRAFT_COUNTER_AA)+enemyBadge("클로킹",DRAFT_COUNTER_DETECT);
-  }
-}
-  static renderDraftFinalRoster(state){
-  const enemyRole=ActiveViewState.role==="host"?"guest":"host";
-  const ordered=who=>(state?.decks?.[who]||[]).slice().sort((a,b)=>{
-    const da=UnitDefinition.get(a)||{},db=UnitDefinition.get(b)||{};
-    return (da.tier||0)-(db.tier||0)||DraftPresentation.draftCardName(a).localeCompare(DraftPresentation.draftCardName(b),"ko");
-  });
-  const unitHtml=id=>{
-    const d=UnitDefinition.get(id)||{};
-    return `<div class="draft-roster-unit" title="${DraftPresentation.draftCardName(id)}"><span class="draft-roster-icon" aria-hidden="true">${DraftPresentation.draftCardIcon(id)}</span><span class="draft-roster-name">${DraftPresentation.draftCardName(id)}</span><span class="draft-roster-tier">T${d.tier||"?"}</span></div>`;
-  };
-  if(UiRegistry.refs.draftFinalMineRoster)UiRegistry.refs.draftFinalMineRoster.innerHTML=ordered(ActiveViewState.role).map(unitHtml).join("");
-  if(UiRegistry.refs.draftFinalEnemyRoster)UiRegistry.refs.draftFinalEnemyRoster.innerHTML=ordered(enemyRole).map(unitHtml).join("");
-  const mineDefense=DefenseCardDefinition.list(state?.defenseCards?.[ActiveViewState.role]),enemyDefense=DefenseCardDefinition.list(state?.defenseCards?.[enemyRole]);
-  if(UiRegistry.refs.draftFinalMineDefense)UiRegistry.refs.draftFinalMineDefense.textContent=`방어 · ${mineDefense.length?mineDefense.map(id=>`${DraftPresentation.draftCardIcon(id)} ${DraftPresentation.draftCardName(id)}`).join(" · "):"미선택"}`;
-  if(UiRegistry.refs.draftFinalEnemyDefense)UiRegistry.refs.draftFinalEnemyDefense.textContent=`방어 · ${enemyDefense.length?enemyDefense.map(id=>`${DraftPresentation.draftCardIcon(id)} ${DraftPresentation.draftCardName(id)}`).join(" · "):"미선택"}`;
-}
-  static draftNewOwnedCard(prev,next,who){
-  const a=DraftPresentation.draftOwnedCards(prev,who),b=DraftPresentation.draftOwnedCards(next,who);
-  if(b.length<=a.length)return null;
-  const counts=new Map();
-  for(const id of a)counts.set(id,(counts.get(id)||0)+1);
-  for(const id of b){
-    const n=counts.get(id)||0;
-    if(n>0)counts.set(id,n-1);else return id;
-  }
-  return b[b.length-1]||null;
-}
-  static animateDraftClone(card,target,toMine,labelText){
-  if(!card||!target)return;
-  const from=card.getBoundingClientRect(),to=target.getBoundingClientRect();
-  if(!from.width||!from.height||!to.width||!to.height)return;
-  let layer=document.getElementById("draftTransferLayer");
-  if(!layer){layer=document.createElement("div");layer.id="draftTransferLayer";layer.className="draft-transfer-layer";document.body.appendChild(layer)}
-  const clone=card.cloneNode(true);
-  clone.removeAttribute("id");clone.disabled=true;
-  clone.classList.add("draft-transfer-clone",toMine?"to-mine":"to-enemy");
-  Object.assign(clone.style,{left:`${from.left}px`,top:`${from.top}px`,width:`${from.width}px`,height:`${from.height}px`});
-  layer.appendChild(clone);
-  const targetX=to.left+to.width/2,targetY=to.top+to.height/2;
-  const dx=targetX-(from.left+from.width/2),dy=targetY-(from.top+from.height/2);
-  clone.animate([
-    {transform:"translate(0,0) scale(1)",opacity:1,filter:"brightness(1)"},
-    {offset:.24,transform:`translate(${dx*.12}px,${dy*.12-18}px) scale(1.035)`,opacity:1,filter:"brightness(1.1)"},
-    {transform:`translate(${dx}px,${dy}px) scale(.22)`,opacity:.15,filter:"brightness(1.18)"}
-  ],{duration:720,easing:"cubic-bezier(.2,.78,.2,1)",fill:"forwards"});
-  const burst=document.createElement("div");burst.className="draft-transfer-burst";burst.style.left=`${targetX}px`;burst.style.top=`${targetY}px`;layer.appendChild(burst);
-  const label=document.createElement("div");label.className=`draft-transfer-label ${toMine?"mine":"enemy"}`;label.textContent=labelText;label.style.left=`${targetX}px`;label.style.top=`${Math.max(12,targetY-20)}px`;layer.appendChild(label);
-  setTimeout(()=>{clone.remove();burst.remove();label.remove();if(layer&&!layer.children.length)layer.remove()},980);
-}
-  static playDraftCommitFx(prev,next){
-  if(!prev||!next||next.draft?.round!==prev.draft?.round+1)return;
-  const mineId=DraftPresentation.draftNewOwnedCard(prev,next,ActiveViewState.role);
-  const enemyRole=ActiveViewState.role==="host"?"guest":"host";
-  const enemyId=DraftPresentation.draftNewOwnedCard(prev,next,enemyRole);
-  const mineCard=mineId?UiRegistry.refs.draftPair.querySelector(`[data-card="${mineId}"]`):null;
-  const enemyCard=enemyId?UiRegistry.refs.draftPair.querySelector(`[data-card="${enemyId}"]`):null;
-  const mineTarget=document.getElementById("draftMineVault"),enemyTarget=document.getElementById("draftEnemyVault");
-  DraftPresentation.animateDraftClone(mineCard,mineTarget,true,`${DraftPresentation.draftCardName(mineId)} · 내 전력 +1`);
-  DraftPresentation.animateDraftClone(enemyCard,enemyTarget,false,`${DraftPresentation.draftCardName(enemyId)} · 상대 전력 +1`);
-}
-  static clearDraftFinalePresentation(){
-  DraftPresentation.draftFinaleToken++;
-  for(const timer of DraftPresentation.draftFinaleTimers)clearTimeout(timer);
-  DraftPresentation.draftFinaleTimers.length=0;
-  UiRuntimeState.value.draft.finaleStep=null;DraftPresentation.renderDraftPresentationState();
-}
-  static setDraftCountdownValue(value,copy){
-  if(!UiRegistry.refs.draftCountdown||!UiRegistry.refs.draftCountdownNumber)return;
-  const wasHidden=UiRuntimeState.value.draft.finaleStep==null;
-  UiRuntimeState.value.draft.finaleStep=value;DraftPresentation.renderDraftPresentationState();
-  UiRegistry.refs.draftCountdownNumber.textContent=value;
-  if(UiRegistry.refs.draftCountdownCopy&&copy)UiRegistry.refs.draftCountdownCopy.textContent=copy;
-  UiRegistry.refs.draftCountdownNumber.classList.remove("draft-countdown-pop");
-  void UiRegistry.refs.draftCountdownNumber.offsetWidth;
-  UiRegistry.refs.draftCountdownNumber.classList.add("draft-countdown-pop");
-
-  // VS overlay가 hidden일 때 canvas 크기를 계산하면 clientWidth/clientHeight가 0이어서
-  // 1px 프리뷰가 고정될 수 있다. 처음 화면에 표시된 뒤 layout이 확정된 다음 그린다.
-  if(wasHidden&&DraftPresentation.lastRenderedDraftState){
-    requestAnimationFrame(()=>requestAnimationFrame(()=>DraftPresentation.renderDraftMapPreview(DraftPresentation.lastRenderedDraftState)));
-  }
-}
-  static draftFinaleMapDescriptor(s){
-  const active=MatchLifecycle.activeSession?.();
-  const rules=active?.roundRules||GameRuleDefinition.current;
-  const roomCode=active?.roomCode||ActiveViewState.session?.roomCode||"";
-  const matchConfig=active?.matchConfig?.campaignScenario?active.matchConfig:MatchLifecycle.currentMatchConfig();
-  const draft=s||active?.draft||{decks:{host:[],guest:[]},defenseCards:{host:[],guest:[]}};
-  const seed=GameSession.matchSeed(draft,roomCode,matchConfig);
-  if(matchConfig?.campaignScenario?.map){
-    const role=matchConfig.campaignScenario.playerRole||active?.role||"host";
-    return CampaignMapDefinition.build(matchConfig.campaignScenario.map,rules,seed,role==="host"?0:1);
-  }
-  return MapGeneration.generateMapDescriptor({rules,seed,roundNumber:rules?.roundNumber||1});
-}
-  static draftMapPreviewFitBox(canvas,worldW,worldH){
-  const wrap=canvas?.closest?.(".draft-map-preview-wrap");
-  if(!wrap)return null;
-
-  // display:none 상태에서는 치수를 만들지 않는다.
-  // 숨은 상태에서 1x1 inline style을 기록하는 것이 PC 점 프리뷰의 실제 원인이었다.
-  const wrapRect=wrap.getBoundingClientRect();
-  if(wrapRect.width<80||wrapRect.height<80||wrap.getClientRects().length===0)return null;
-
-  const px=v=>Number.parseFloat(v)||0;
-  const wrapStyle=getComputedStyle(wrap);
-  const innerW=Math.max(1,wrap.clientWidth-px(wrapStyle.paddingLeft)-px(wrapStyle.paddingRight));
-
-  // 모바일은 기존 viewport 기반 contain sizing을 유지한다.
-  if(window.innerWidth<900){
-    const maxH=Math.max(160,Math.min(Math.round(window.innerHeight*.38),420));
-    const fit=Math.max(.0001,Math.min(innerW/worldW,maxH/worldH));
-    return {cssW:Math.max(1,Math.floor(worldW*fit)),cssH:Math.max(1,Math.floor(worldH*fit))};
-  }
-
-  // PC finale는 canvas 크기가 wrap 높이를 만들고, 그 wrap 높이로 다시 canvas를
-  // 계산하는 순환 의존을 제거한다. 카드의 확정 높이에서 나머지 고정 행을 빼
-  // 실제 맵에 쓸 수 있는 높이를 직접 계산한다.
-  const card=wrap.closest(".draft-countdown-card");
-  const cardStyle=card?getComputedStyle(card):null;
-  const kicker=card?.querySelector(".draft-countdown-kicker");
-  const roster=card?.querySelector(".draft-final-roster");
-  const copy=card?.querySelector(".draft-countdown-copy");
-  const head=wrap.querySelector(".draft-map-preview-head");
-  const legend=wrap.querySelector(".draft-map-preview-legend");
-  const headStyle=head?getComputedStyle(head):null;
-  const legendStyle=legend?getComputedStyle(legend):null;
-
-  const cardInnerH=card
-    ? Math.max(1,card.clientHeight-px(cardStyle?.paddingTop)-px(cardStyle?.paddingBottom))
-    : Math.max(240,Math.round(window.innerHeight*.62));
-  const rowGap=px(cardStyle?.rowGap||cardStyle?.gap);
-  const fixedOutside=
-    (kicker?.offsetHeight||0)+
-    (roster?.offsetHeight||0)+
-    (copy?.offsetHeight||0)+
-    rowGap*3;
-  const wrapSlotH=Math.max(1,cardInnerH-fixedOutside);
-
-  const fixedInside=
-    px(wrapStyle.paddingTop)+px(wrapStyle.paddingBottom)+
-    (head?.offsetHeight||0)+px(headStyle?.marginTop)+px(headStyle?.marginBottom)+
-    (legend?.offsetHeight||0)+px(legendStyle?.marginTop)+px(legendStyle?.marginBottom);
-  const maxH=Math.max(1,wrapSlotH-fixedInside);
-
-  const fit=Math.max(.0001,Math.min(innerW/worldW,maxH/worldH));
-  return {
-    cssW:Math.max(1,Math.floor(worldW*fit)),
-    cssH:Math.max(1,Math.floor(worldH*fit))
-  };
-}
-  static drawDraftMapPreview(descriptor){
-  const canvas=UiRegistry.refs.draftMapPreviewCanvas;
-  if(!canvas||!descriptor)return;
-  const worldW=descriptor.width||WorldContext.standard.width,worldH=descriptor.height||WorldContext.standard.height;
-  const dpr=Math.min(2,window.devicePixelRatio||1);
-  const fitBox=DraftPresentation.draftMapPreviewFitBox(canvas,worldW,worldH);
-  if(!fitBox)return false;
-  const {cssW,cssH}=fitBox;
-  canvas.style.setProperty("--map-preview-aspect",`${worldW}/${worldH}`);
-  canvas.style.width=`${cssW}px`;
-  canvas.style.height=`${cssH}px`;
-  const w=Math.round(cssW*dpr),h=Math.round(cssH*dpr);
-  if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}
-  const c=canvas.getContext("2d");
-  // VS 프리뷰 방향은 전역 role 캐시가 아니라 실제 활성 GameSession의 role을 따른다.
-  // 인게임 GLRenderer/MiniMap과 동일한 180° 사용자 시점 계약이다.
-  const previewRole=(MatchLifecycle.activeSession?.()?.role||ActiveViewState.role)==="guest"?"guest":"host";
-  const guestView=previewRole==="guest";
-  const pt=(p)=>{
-    const x=guestView?worldW-p.x:p.x,y=guestView?worldH-p.y:p.y;
-    return [x/worldW*w,y/worldH*h];
-  };
-  c.clearRect(0,0,w,h);
-  TerrainPresentation.fillPlanarGround(c,w,h);
-
-  const terrain=MapGeneration.mapTerrainDescriptor(descriptor);
-  const drawPreviewRiverPolygon=(poly,fill)=>{
-    if(!Array.isArray(poly)||poly.length<3)return;
-    const pts=poly.map(pt);c.fillStyle=fill;c.beginPath();c.moveTo(pts[0][0],pts[0][1]);
-    for(let i=1;i<pts.length;i++)c.lineTo(pts[i][0],pts[i][1]);
-    c.closePath();c.fill();
-  };
-  drawPreviewRiverPolygon(terrain.riverPolygon||[],"#3e86a4d6");
-  for(const poly of terrain.riverBranchPolygons||[])drawPreviewRiverPolygon(poly,"#427f96cc");
-  if((!terrain.riverPolygon||terrain.riverPolygon.length<3)&&(terrain.riverPath||[]).length>1){
-const river=terrain.riverPath;
-    c.lineCap="round";c.strokeStyle="#3e86a4";c.lineWidth=Math.max(5,(terrain.riverHalfWidth||80)/worldW*w*2);
-    c.beginPath();let q=pt(river[0]);c.moveTo(q[0],q[1]);for(let i=1;i<river.length;i++){q=pt(river[i]);c.lineTo(q[0],q[1])}c.stroke();
-  }
-  TerrainPresentation.drawMini(c,descriptor,pt,w/worldW,{fill:"#a1804c",stroke:"#d8bd7a",lineWidth:Math.max(.8,dpr*.7)});
-  const laneColors={top:"#9ac7e3aa",mid:"#ead36eaa",bot:"#96d08aaa"};
-  for(const id of ["top","mid","bot"]){
-    const pts=descriptor.laneControlPoints?.[id]||[];
-    if(pts.length<2)continue;
-    c.strokeStyle=laneColors[id];c.lineWidth=Math.max(1.5,w*.0042);c.lineCap="round";c.lineJoin="round";
-    c.beginPath();let q=pt(pts[0]);c.moveTo(q[0],q[1]);for(let i=1;i<pts.length;i++){q=pt(pts[i]);c.lineTo(q[0],q[1])}c.stroke();
-  }
-
-  const dot=(p,r,color,stroke=null)=>{const q=pt(p);c.beginPath();c.arc(q[0],q[1],r,0,Math.PI*2);c.fillStyle=color;c.fill();if(stroke){c.strokeStyle=stroke;c.lineWidth=1;c.stroke()}};
-  for(const m of descriptor.resources||[])dot(m,Math.max(2.1,w*.0045),"#59cbff","#d5f5ff");
-  for(const g of descriptor.gasNodes||[])dot(g,Math.max(2,w*.0042),"#67ce75","#caf4ce");
-  for(const camp of descriptor.camps||[]){
-    const objective=!!CampDefinition.get(camp.kind)?.mainObjective,rr=objective?Math.max(3.2,w*.0062):Math.max(1.5,w*.0033);
-    const col=camp.kind==="objectiveBear"?"#d08a36":camp.kind==="objectiveDeathWorm"?"#b2cf35":camp.kind==="objectiveDragon"?"#e85d3c":"#bc9046";
-    dot(camp,rr,col,objective?"#fff0c2":null);
-  }
-  for(const cp of descriptor.capturePoints||[])dot(cp,Math.max(1.8,w*.0037),"#e7bd4f");
-
-  const host=guestView?descriptor.spawns?.guest:descriptor.spawns?.host;
-  const enemy=guestView?descriptor.spawns?.host:descriptor.spawns?.guest;
-  if(host)dot(host,Math.max(3.5,w*.0065),"#5b9cff","#dceaff");
-  if(enemy)dot(enemy,Math.max(3.5,w*.0065),"#ef6969","#ffdada");
-
-  if(UiRegistry.refs.draftMapPreviewMeta){
-    const topo=String(descriptor.topology||"standard");
-    const topoName={open:"개방형",braided:"교차형",hourglass:"병목형",split:"분산형",wild:"야생형",standard:"표준형"}[topo]||topo;
-    UiRegistry.refs.draftMapPreviewMeta.textContent=`${topoName} · ${descriptor.biome||"frontier"} · 강/다리/고지 · TOP/MID/BOT 메인 오브젝트`;
-  }
-}
-  static renderDraftMapPreview(s){
-  try{DraftPresentation.drawDraftMapPreview(DraftPresentation.draftFinaleMapDescriptor(s))}catch(err){
-    if(UiRegistry.refs.draftMapPreviewMeta)UiRegistry.refs.draftMapPreviewMeta.textContent="맵 미리보기를 표시할 수 없음";
-    console.warn("draft map preview",err);
-  }
-}
-  static renderDraftFinale(s,selectionMode="draft"){
-  UiController.setUiScreen("finale");
-  const deckMode=selectionMode==="deck";
-  DraftPresentation.setDraftCenterCountdown(0,false);
-  MinimapPresentation.setMinimapExpanded(false);
-  const prev=DraftPresentation.lastRenderedDraftState;
-  DraftPresentation.clearDraftFinalePresentation();
-  const token=DraftPresentation.draftFinaleToken;
-  draftPointerLocked=true;
-  UiController.closeUiModal("create");
-  UiController.closeUiModal("join");
-  
-  
-  
-  
-  
-
-  if(!deckMode&&prev?.phase==="draft")DraftPresentation.playDraftCommitFx(prev,s);
-  for(const card of UiRegistry.refs.draftPair.querySelectorAll("[data-card]"))card.disabled=true;
-  UiRegistry.refs.draftRound.textContent=deckMode?"READY":"9";
-  UiRegistry.refs.draftTitle.textContent=deckMode?"덱 확정 완료 · 최종 전력 확인":"드래프트 완료 · 최종 전력 배치 중";
-  UiRegistry.refs.draftTurn.textContent="확정";
-  DraftPresentation.renderDraftVaults(s);
-  const defenseName=DefenseCardDefinition.names(s.defenseCards?.[ActiveViewState.role]);
-  UiRegistry.refs.draftDecks.textContent=
-    `${deckMode?"내 덱":"내 병종"} ${s.decks[ActiveViewState.role].length}/8 · 방어 카드 ${defenseName}: `+
-    (s.decks[ActiveViewState.role].map(x=>UnitDefinition.get(x).name).join(", ")||"없음");
-  DraftPresentation.lastRenderedDraftState=CloneUtil.clone(s);
-  DraftPresentation.renderDraftFinalRoster(s);
-
-  const schedule=(delay,fn)=>{
-    const timer=setTimeout(()=>{if(token===DraftPresentation.draftFinaleToken)fn()},delay);
-    DraftPresentation.draftFinaleTimers.push(timer);
-  };
-  schedule(DRAFT_FINAL_FX_MS,()=>DraftPresentation.setDraftCountdownValue("3",deckMode?"양쪽 덱 확정 · 전투 준비":"최종 로스터 확인 · 전투 준비"));
-  schedule(DRAFT_FINAL_FX_MS+1000,()=>DraftPresentation.setDraftCountdownValue("2",deckMode?"내 덱과 상대 덱을 확인하세요":"내 조합과 상대 조합을 확인하세요"));
-  schedule(DRAFT_FINAL_FX_MS+2000,()=>DraftPresentation.setDraftCountdownValue("1","첫 집결을 준비하세요"));
-  schedule(DRAFT_FINAL_FX_MS+3000,()=>DraftPresentation.setDraftCountdownValue("GO","전투 시작!"));
-}
-  static setDraftCenterCountdown(sec,visible){
-  const el=UiRegistry.refs.draftPickCenterCountdown;if(!el)return;
-  const next=visible&&sec>0?Number(sec):null;
-  const changed=UiRuntimeState.value.draft.pickCountdownSec!==next;UiRuntimeState.value.draft.pickCountdownSec=next;DraftPresentation.renderDraftPresentationState();
-  if(next==null){el.classList.remove("tick");DraftPresentation.draftUiTimerCenterSec=null;return}
-  if(changed){DraftPresentation.draftUiTimerCenterSec=next;el.textContent=String(next);el.classList.remove("tick");void el.offsetWidth;el.classList.add("tick")}
-}
-  static resetDraftUiTimer(round){
-  DraftPresentation.draftUiTimerRound=Number(round);
-  const active=MatchLifecycle.activeSession?.();
-  DraftPresentation.draftUiTimerRemainingMs=Math.max(0,Number(active?.draftPickRemainingMs)||DRAFT_PICK_TIMEOUT_MS);
-  DraftPresentation.draftUiTimerLastAt=performance.now();
-  DraftPresentation.draftUiTimerCenterSec=null;
-  DraftPresentation.updateDraftUiTimer();
-}
-  static updateDraftUiTimer(){
-  if(!UiRegistry.refs.draftPickTimer)return;
-  if(UiRuntimeState.value.screen!=="draft")return;
-  const active=MatchLifecycle.activeSession?.();
-  const state=active?.draft||DraftPresentation.lastRenderedDraftState;
-  if(!state||state.phase!=="draft"){
-    UiRegistry.refs.draftPickTimer.textContent="";
-    UiRegistry.refs.draftPickTimer.classList.remove("urgent");
-    DraftPresentation.setDraftCenterCountdown(0,false);
-    return;
-  }
-  const round=Number(state.draft?.round);
-  if(round!==DraftPresentation.draftUiTimerRound)DraftPresentation.resetDraftUiTimer(round);
-  const now=performance.now();
-  // UI mirrors the authoritative GameSession timer. It does not own a second countdown.
-  if(active)DraftPresentation.draftUiTimerRemainingMs=Math.max(0,Number(active.draftPickRemainingMs)||0);
-  DraftPresentation.draftUiTimerLastAt=now;
-  const sec=Math.max(0,Math.ceil(DraftPresentation.draftUiTimerRemainingMs/1000));
-  UiRegistry.refs.draftPickTimer.textContent=sec>0?`${sec}초`:"자동 선택";
-  UiRegistry.refs.draftPickTimer.classList.toggle("urgent",sec<=2);
-  DraftPresentation.setDraftCenterCountdown(sec,sec>0);
-}
-  static renderDraft(s){
-  UiController.setUiScreen("draft");
-  BattlePresentation.closeTransientBattleUi();
-  DraftPresentation.clearDraftFinalePresentation();
-  const previousDraftState=DraftPresentation.lastRenderedDraftState;
-  if(previousDraftState)DraftPresentation.playDraftCommitFx(previousDraftState,s);
-  draftPointerLocked=false;
-  UiController.closeUiModal("create");
-  UiController.closeUiModal("join");
-  
-
-  if(LocalEnvironmentUtil.isLocalTest())ViewRuntimeState.byRole[ActiveViewState.role].draft=s;
-
-  
-  
-  
-
-  const d=s.draft;
-  const p=d.pairs[d.round];
-  const mine=d.chooser===ActiveViewState.role;
-  if(Number(d.round)!==DraftPresentation.draftUiTimerRound)DraftPresentation.resetDraftUiTimer(d.round);
-
-  UiRegistry.refs.draftRound.textContent=Math.min(DRAFT_TOTAL_ROUNDS,d.round+1);
-  UiRegistry.refs.draftTitle.textContent=mine
-    ?"하나를 선택하세요 · 남은 하나는 상대에게"
-    :"상대 선택 대기";
-  UiRegistry.refs.draftTurn.textContent=mine?"내 선택":"상대 선택";
-
-  UiRegistry.refs.draftPair.dataset.round=String(d.round);
-  UiRegistry.refs.draftPair.dataset.mine=mine?"1":"0";
-
-  const defenseRound=p.every(t=>!!DefenseCardDefinition.get(t));
-  UiRegistry.refs.draftTitle.textContent=mine
-    ?(defenseRound?"방어 건물 카드를 선택하세요 · 남은 카드는 상대에게":"하나를 선택하세요 · 남은 하나는 상대에게")
-    :"상대 선택 대기";
-
-  UiRegistry.refs.draftPair.innerHTML=p.map(t=>{
-    const defense=DefenseCardDefinition.get(t);
-    if(defense){
-      const b=BuildingDefinition.get(defense.building);
-      const gasCost=BuildingDefinition.gasCost(defense.building);
-      return `<button type="button" class="draft-card draft-card-defense" data-card="${t}" data-draft-round="${d.round}" ${mine?"":"disabled"}>
-        <div class="draft-card-top">
-          <div class="draft-unit-icon" aria-hidden="true">${defense.icon}</div>
-          <div class="draft-unit-copy"><h3>${defense.name}</h3><span class="tag">${defense.role}</span></div>
-          <span class="draft-tier-chip">방어</span>
-        </div>
-        <div class="draft-resource-row" aria-label="건설 자원 비용">
-          <span class="draft-resource-label">건설</span>
-          <span class="draft-resource-chip mineral">◆ ${b.cost}</span>
-          ${gasCost?`<span class="draft-resource-chip gas">⬡ ${gasCost}</span>`:""}
-        </div>
-        <div class="draft-unit-desc draft-unit-summary">${defense.desc}</div>
-        <div class="stats">
-          <div class="stat">HP<b>${b.hp}</b></div>
-          <div class="stat">공격<b>${b.atk}</b></div>
-          <div class="stat">사거리<b>${b.range}</b></div>
-          <div class="stat">공속<b>${Number(b.cooldown||0).toFixed(2)}s</b></div>
-        </div>
-      </button>`;
-    }
-    const u=UnitDefinition.get(t);
-    const info=UnitDefinition.cardInfo[t]||{icon:"◆",desc:"전장에서 역할을 수행하는 전투 병종입니다."};
-    const cost=UnitDefinition.productionCost(t),mineralCost=cost.mineral,gasCost=cost.gas,pp=UnitDefinition.get(t)?.production;
-    const batches=Math.max(1,Math.ceil((Number(pp?.totalUnits)||Number(pp?.batchSize)||1)/Math.max(1,Number(pp?.batchSize)||1)));
-    return `<button type="button" class="draft-card draft-card-unit" data-tier="${u.tier}" data-card="${t}" data-draft-round="${d.round}" ${mine?"":"disabled"}>
-        <div class="draft-card-top">
-          <div class="draft-unit-icon" aria-hidden="true">${info.icon}</div>
-          <div class="draft-unit-copy"><h3>${u.name}</h3><span class="tag">${u.layer==="AIR"?"AIR · ":""}${u.role}</span></div>
-          <span class="draft-tier-chip">T${u.tier}</span>
-        </div>
-        <div class="draft-resource-row" aria-label="전용 생산시설 자원 비용">
-          <span class="draft-resource-label">생산축 · ${pp?.batchSize||1}기 × ${batches}회 · ${pp?.productionSeconds||0}초</span>
-          <span class="draft-resource-chip mineral">◆ ${mineralCost}</span>
-          ${gasCost?`<span class="draft-resource-chip gas">⬡ ${gasCost}</span>`:""}
-        </div>
-        <div class="draft-unit-desc draft-unit-summary">${info.desc}</div>
-        <div class="draft-unit-desc draft-unit-detail"><b>운용 팁</b> · ${u.counter||"역할에 맞춰 전선에 배치하세요."}</div>
-        <div class="draft-unit-desc draft-unit-detail"><b>${u.layer==="AIR"?"공중":"지상"}</b> · 크기 <b>${SIZE_CLASS_LABEL[u.sizeClass]||"대형"}</b> · 공격 <b>${DAMAGE_CLASS_LABEL[UnitDefinition.damageClass(t)]||"일반형"}</b></div>
-        <div class="draft-unit-desc draft-unit-detail">특수 연구 · <b>${UnitSpecialResearchDefinition.namesForUnit(t)}</b> · ${u.canAttackGround?"대지 O":"대지 X"} · ${u.canAttackAir?"대공 O":"대공 X"}</div>
-        <div class="stats">
-          <div class="stat">HP<b>${u.hp}</b></div><div class="stat">공격<b>${u.atk}</b></div><div class="stat">사거리<b>${u.range}</b></div><div class="stat">속도<b>${u.speed}</b></div>
-        </div>
-    </button>`;
-  }).join("");
-
-  const defenseName=DefenseCardDefinition.names(s.defenseCards?.[ActiveViewState.role]);
-  UiRegistry.refs.draftDecks.textContent=
-    `내 병종 ${s.decks[ActiveViewState.role].length}/8 · 방어 카드 ${defenseName}: `+
-    (s.decks[ActiveViewState.role].map(x=>UnitDefinition.get(x).name).join(", ")||"없음");
-  DraftPresentation.renderDraftVaults(s);
-  DraftPresentation.lastRenderedDraftState=CloneUtil.clone(s);
-}
-}
-
 // Native mouse click requires the same DOM node to survive from pointerdown through pointerup.
 // Dynamic command/research panels can refresh from selected-TPS simulation / 10 Hz snapshots, so hold their DOM stable
 // while any primary pointer is actively pressing an interactive target inside them.
@@ -9172,8 +8683,8 @@ const formatTickTime=t=>t==null?"-":`${SimulationTiming.ticksToSeconds(t).toFixe
   if(!active||active.simEnded)return false;
   if(active.sim)return RecoveryTelemetry.requestManualRecovery();
   const trans=active.transport;
-  if(active.role==="guest")return !!trans?.rebuildRecoveryGuest?.("draft-disconnect-reconnect");
-  return !!trans?.prepareRecoveryHost?.("draft-disconnect-reconnect");
+  if(active.role==="guest")return !!trans?.rebuildRecoveryGuest?.("pre-start-disconnect-reconnect");
+  return !!trans?.prepareRecoveryHost?.("pre-start-disconnect-reconnect");
 }
   static setDisconnectPhase(phase){if(!["hidden","grace","recovering","resuming"].includes(phase))throw new Error(`Invalid disconnect phase: ${phase}`);UiRuntimeState.value.modalState.disconnect=phase;return phase}
   static runWhenNetworkReady(action,onWaiting){
@@ -9630,9 +9141,9 @@ class DebugScenarioHarness{
   }
   static liveDraft(cfg,roomCode){
     const draft={
-      phase:"live",roomCode,selectionMode:"deck",
+      phase:"live",roomCode,
       decks:{host:[],guest:[]},defenseCards:{host:[],guest:[]},
-      deckReady:{host:true,guest:true},deckSelectDeadlineAt:0,winner:null
+      winner:null
     };
     for(const role of ["host","guest"])draft.decks[role]=this.unitRoster(cfg,role==="host"?0:1);
     return draft;
@@ -9758,12 +9269,12 @@ class MobileBattleTestMode{
   }
   static start(params){
     if(!["idle","stopped"].includes(this.phase))return;
-    this.config=DebugScenarioHarness.normalize({testMode:"mobile-battle",...params,humanRole:"host",research:false});this.savedSettings={selectionMode:UiRuntimeState.value.settings.selectionMode,presetId:UiRuntimeState.value.settings.presetId,simulationTps:UiRuntimeState.value.settings.simulationTps,netcodeMode:CONFIG.netcode.mode};
+    this.config=DebugScenarioHarness.normalize({testMode:"mobile-battle",...params,humanRole:"host",research:false});this.savedSettings={presetId:UiRuntimeState.value.settings.presetId,simulationTps:UiRuntimeState.value.settings.simulationTps,netcodeMode:CONFIG.netcode.mode};
     this.savedCampaignPending=CampaignRuntime.pending;this.savedDebugPending=DebugScenarioHarness.pending;
     DebugScenarioHarness.pending=this.config;CampaignRuntime.pending=null;CampaignPresentation.clear();this.beginRun();
     document.body.classList.add("battle-test-mode");
     const hud=this.ref("battleTestHud");if(hud&&hud.parentElement!==document.body)document.body.appendChild(hud);hud?.classList.remove("hidden");
-    UiController.setStartSelectionMode("deck");UiRuntimeState.value.settings.presetId="standard";UiController.setStartSimulationTps(10);UiController.setStartNetcodeMode("lockstep");
+    UiRuntimeState.value.settings.presetId="standard";UiController.setStartSimulationTps(10);UiController.setStartNetcodeMode("lockstep");
     audioSystem.unlock();this.renderHud();
     try{MatchLifecycle.startSinglePlayerWebRTC("host");this.scheduleFrame()}
     catch(error){this.fail(`매치 시작 실패: ${String(error?.message||error)}`)}
@@ -10133,7 +9644,7 @@ class MobileBattleTestMode{
     if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;this.phase="stopped";this.paused=false;
     MatchLifecycle.stopSinglePlayer();DebugScenarioHarness.pending=this.savedDebugPending;CampaignRuntime.pending=this.savedCampaignPending;CampaignPresentation.clear();document.body.classList.remove("battle-test-mode");this.ref("battleTestHud")?.classList.add("hidden");
     UiController.setElementVisible(UiRegistry.refs.singleStatus,false);
-    if(this.savedSettings){UiController.setStartSelectionMode(this.savedSettings.selectionMode);UiRuntimeState.value.settings.presetId=this.savedSettings.presetId;UiController.setStartSimulationTps(this.savedSettings.simulationTps);UiController.setStartNetcodeMode(this.savedSettings.netcodeMode)}
+    if(this.savedSettings){UiRuntimeState.value.settings.presetId=this.savedSettings.presetId;UiController.setStartSimulationTps(this.savedSettings.simulationTps);UiController.setStartNetcodeMode(this.savedSettings.netcodeMode)}
     UiController.setUiScreen("lobby");
     this.phase="idle";this.config=null;this.report=null;this.savedSettings=null;this.savedCampaignPending=null;this.savedDebugPending=null;
   }
@@ -10708,7 +10219,7 @@ class CampaignBuiltinCatalog{
 }
 class CampaignRuntime{
  static pending=null; static loadRevision=0; static setMission(raw,source=""){if(source&&raw&&typeof raw==="object")Object.defineProperty(raw,"__moduleSource",{value:String(source),enumerable:false,configurable:true});this.pending=CampaignMissionDefinition.normalize(raw);return this.pending} static clear(){this.pending=null;this.loadRevision++}
- static matchConfig(){const m=this.pending;if(!m)return null;return {selectionMode:"deck",presetId:"standard",simulationTps:UiRuntimeState.value.settings.simulationTps,campaignScenario:m}}
+ static matchConfig(){const m=this.pending;if(!m)return null;return {presetId:"standard",simulationTps:UiRuntimeState.value.settings.simulationTps,campaignScenario:m}}
 }
 class MatchLifecycle{
   static localTest=null;
@@ -10720,32 +10231,18 @@ class MatchLifecycle{
 }
   static currentMatchConfig(){
   if(CampaignRuntime.pending)return CampaignRuntime.matchConfig();
-  return {selectionMode:UiRuntimeState.value.settings.selectionMode,presetId:UiRuntimeState.value.settings.presetId,simulationTps:UiRuntimeState.value.settings.simulationTps,debugScenario:DebugScenarioHarness.pending?DebugScenarioHarness.normalize(DebugScenarioHarness.pending):null};
+  return {presetId:UiRuntimeState.value.settings.presetId,simulationTps:UiRuntimeState.value.settings.simulationTps,debugScenario:DebugScenarioHarness.pending?DebugScenarioHarness.normalize(DebugScenarioHarness.pending):null};
 }
   static wireSessionForView(r,sess,trans){
   sess.onDraft=state=>{
     sess.draft=state;
     const debugScenario=!!sess.matchConfig?.debugScenario;
     if(LocalEnvironmentUtil.isLocalTest())ViewRuntimeState.byRole[r].draft=state;
-    if(ActiveViewState.role===r&&!debugScenario){
-      if(state.phase==="draft")DraftPresentation.renderDraft(state);
-      else if(state.phase==="deck-select")DeckPresentation.renderDeckSelect(state);
-      else if(state.phase==="live"&&!sess.sim){
-        if(sess.matchConfig?.selectionMode==="deck")DeckPresentation.renderDeckReadyFinale(state);
-        else DraftPresentation.renderDraftFinale(state);
-      }
-    }else if(ActiveViewState.role===r&&debugScenario&&!sess.sim){
+    if(ActiveViewState.role===r&&debugScenario&&!sess.sim){
       UiRegistry.refs.singleStatus.textContent=state?.phase==="live"?"테스트 전투 시작 중…":"테스트 초기조건 준비 중…";
       UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
     }
 
-    // 한 폰 테스트에서는 다음 드래프트 차례 화면으로 자동 전환.
-    if(LocalEnvironmentUtil.isLocalTest()&&state.phase==="draft"&&state.draft?.chooser&&state.draft.chooser!==ActiveViewState.role){
-      queueMicrotask(()=>{
-        const latest=ViewRuntimeState.byRole[state.draft.chooser]?.draft;
-        if(latest?.phase==="draft"&&latest.draft?.chooser===state.draft.chooser)UiController.switchTestView(state.draft.chooser,true);
-      });
-    }
   };
   sess.onSnapshot=state=>{
     if(LocalEnvironmentUtil.isLocalTest())ViewRuntimeState.byRole[r].snapshot=state;
@@ -12097,8 +11594,6 @@ class BuildingPresentation{
 }
 }
 
-setInterval(DraftPresentation.updateDraftUiTimer,100);
-
 class HtmlAttributeUtil{
   static escapeHtmlAttr(value){
     return String(value??"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -12684,8 +12179,6 @@ class BattlePresentation{
   // otherwise every snapshot closes an open command drawer immediately.
   const enteringGame=UiRuntimeState.value.screen!=="game";
   UiController.setUiScreen("game");
-  DraftPresentation.clearDraftFinalePresentation();
-  draftPointerLocked=false;
   if(enteringGame){BattlePresentation.closeTransientBattleUi();CampaignPresentation.onGameEnter();}
   if(MatchLifecycle.activeSession?.()?.sim?.campaignScenario)CampaignPresentation.consume(s);
   UiController.closeUiModal("create");UiController.closeUiModal("join");
@@ -12998,7 +12491,7 @@ class BattlePresentation{
   static installLongPressDetails(){
   // Generic detail-capable controls keep delegated click semantics.
   pointerInteractions.register({
-    selector:".longpress-info-target:not(.deck-collection-card),.command-card:not(.command-card-info),.unit-card,.research-action,#buildingPanelActions button",
+    selector:".longpress-info-target,.command-card:not(.command-card-info),.unit-card,.research-action,#buildingPanelActions button",
     key:el=>UiController.interactionActionKeyFromElement(el),
     detail:el=>BattlePresentation.longPressDetailFor(el)
   });
@@ -13401,47 +12894,7 @@ class ResearchPresentation{
 }
 }
 
-const UI_MODAL_DIALOG_KEYS=Object.freeze({campaign:"campaignDialog",create:"createDialog",join:"joinDialog","deck-builder":"deckBuilderDialog",detail:"infoDetailDialog"});
-
-class DeckBuilderState{
-  constructor(){this.slot=0;this.filter="all";this.working=null;this.saveFailed=false}
-  open(slot){
-    this.slot=RangeUtil.clamp(Math.trunc(Number(slot)||0),0,DECK_SLOT_COUNT-1);
-    const existing=DeckRecord.loadDeckStore().decks[this.slot],v=DeckRecord.validateDeckRecord(existing);
-    if(DeckRecord.storageFailure){this.working=null;return false}
-    this.working=existing&&v.compatible
-      ?{id:existing.id||`deck-${this.slot+1}`,name:existing.name||`덱 ${this.slot+1}`,formatVersion:DECK_FORMAT_VERSION,rulesetVersion:DECK_RULESET_VERSION,createdWithSimVersion:SIM_VERSION,cards:(existing.cards||[]).slice(0,DECK_TOTAL_CARD_COUNT).map(c=>({...c})),updatedAt:existing.updatedAt||new Date().toISOString()}
-      :{id:`deck-${this.slot+1}`,name:`덱 ${this.slot+1}`,formatVersion:DECK_FORMAT_VERSION,rulesetVersion:DECK_RULESET_VERSION,createdWithSimVersion:SIM_VERSION,cards:[],updatedAt:new Date().toISOString()};
-    this.filter="all";this.saveFailed=false;return true;
-  }
-  setFilter(filter){this.filter=DeckCardRuleDefinition.filters.some(f=>f.id===filter)?filter:"all"}
-  removeCardAt(index){
-    if(!this.working)return false;
-    const cards=this.working.cards||(this.working.cards=[]),i=Math.trunc(Number(index));
-    if(!Number.isInteger(i)||i<0||i>=cards.length)return false;
-    cards.splice(i,1);this.working.cards=cards.slice(0,DECK_TOTAL_CARD_COUNT);
-    return true;
-  }
-  toggleCard(cardType,cardId){
-    if(!this.working)return null;
-    const card=DeckCardRuleDefinition.card(cardType,cardId);if(!card)return null;
-    const cards=this.working.cards||(this.working.cards=[]),key=DeckCardRuleDefinition.key(card);
-    const selectedIndex=cards.findIndex(c=>DeckCardRuleDefinition.key(c)===key);
-    if(selectedIndex>=0){cards.splice(selectedIndex,1);return{status:"removed",card}}
-    if(cards.length>=DECK_TOTAL_CARD_COUNT)return{status:"full",card};
-    if(!DeckCardRuleDefinition.canPlace(cards,cards.length,card))return{status:"limit",card};
-    cards.push(card);return{status:"added",card};
-  }
-  clearCards(){if(!this.working)return false;this.working.cards=[];return true}
-  persist(){
-    if(!this.working)return false;
-    this.working.formatVersion=DECK_FORMAT_VERSION;this.working.rulesetVersion=DECK_RULESET_VERSION;
-    this.working.createdWithSimVersion=SIM_VERSION;this.working.updatedAt=new Date().toISOString();
-    const store=DeckRecord.loadDeckStore();if(DeckRecord.storageFailure){this.saveFailed=true;return false}store.decks[this.slot]=CloneUtil.clone(this.working);
-    const saved=DeckRecord.saveDeckStore(store);this.saveFailed=!saved;return saved;
-  }
-}
-const deckBuilderState=new DeckBuilderState();
+const UI_MODAL_DIALOG_KEYS=Object.freeze({campaign:"campaignDialog",create:"createDialog",join:"joinDialog",detail:"infoDetailDialog"});
 
 class SimulationTiming{
   static queueRemainingTicks(q,tick){
@@ -13504,232 +12957,7 @@ class SimulationTiming{
   
 }
 
-class DeckPresentation{
-  static selectedDeckSlot=0;
-  static deckSelectUiInterval=0;
-  static lastDeckSelectState=null;
-
-  static deckStore(){
-  return DeckRecord.loadDeckStore();
-}
-  static renderDeckStorageNotice(id){
-  const notice=document.getElementById(id);if(!notice)return;
-  const failure=DeckRecord.storageFailure;notice.classList.toggle("hidden",!failure);
-  if(!failure)return;
-  notice.querySelector("[data-deck-storage-message]").textContent=failure.message;
-  for(const button of notice.querySelectorAll("[data-deck-storage-action]"))button.disabled=button.dataset.deckStorageAction!=="retry"&&typeof failure.raw!=="string";
-}
-  static refreshDeckStorageUi(){
-  if(UiRegistry.refs.deckBuilderDialog?.open)DeckPresentation.renderDeckBuilder();
-  if(ActiveViewState.session?.draft?.phase==="deck-select")DeckPresentation.renderDeckSelect(ActiveViewState.session.draft);
-}
-  static async handleDeckStorageAction(action){
-  let resetFailed=false;
-  if(action==="backup"){
-    const raw=DeckRecord.storageFailure?.raw;if(typeof raw!=="string")return;
-    let url=null,anchor=null;
-    try{
-      url=URL.createObjectURL(new Blob([raw],{type:"text/plain;charset=utf-8"}));anchor=document.createElement("a");anchor.href=url;anchor.download=`rally-frontier-decks-backup-${Date.now()}.txt`;document.body.appendChild(anchor);anchor.click();
-    }catch(_){
-      for(const notice of document.querySelectorAll("[data-deck-storage-message]"))notice.textContent="원본 내려받기를 시작하지 못했습니다. 다시 시도해 주세요.";
-    }finally{anchor?.remove();if(url)setTimeout(()=>URL.revokeObjectURL(url),1000)}
-    return;
-  }
-  if(action==="reset"){
-    if(!DeckRecord.storageFailure||typeof DeckRecord.storageFailure.raw!=="string")return;
-    const expectedRaw=DeckRecord.storageFailure.raw;
-    if(!confirm("저장된 덱 기록 전체를 초기화합니다. 이 작업은 되돌릴 수 없습니다. 먼저 원본을 내려받아 보관하세요. 계속할까요?"))return;
-    // Native confirmation can leave this task's storage view stale after another tab writes.
-    await new Promise(resolve=>setTimeout(resolve,0));
-    if(DeckRecord.resetDeckStore(expectedRaw)){
-      DeckPresentation.selectedDeckSlot=0;
-      if(UiRegistry.refs.deckBuilderDialog?.open)deckBuilderState.open(0);
-    }else resetFailed=true;
-  }else if(action==="retry")DeckRecord.loadDeckStore();
-  DeckPresentation.refreshDeckStorageUi();
-  if(resetFailed&&DeckRecord.storageFailure){
-    DeckRecord.storageFailure.message="덱 기록이 바뀌었거나 초기화하지 못했습니다. 원본은 덮어쓰지 않았습니다. 다시 읽어 확인해 주세요.";
-    DeckPresentation.renderDeckStorageNotice("deckSelectStorageNotice");DeckPresentation.renderDeckStorageNotice("deckBuilderStorageNotice");
-  }
-}
-  static deckSlotLabel(deck,index){
-  if(!deck)return `덱 ${index+1} · 비어 있음`;const v=DeckRecord.validateDeckRecord(deck);if(!v.compatible)return `덱 ${index+1} · 호환 불가`;
-  return `${deck.name||`덱 ${index+1}`} · ${(deck.cards||[]).length}/${DECK_TOTAL_CARD_COUNT}`;
-}
-  static deckCardMiniHtml(card){
-  const d=DeckCardRuleDefinition.def(card);if(!d)return "";return `<div class="deck-mini-unit"><div class="icon">${DeckCardRuleDefinition.icon(card)}</div><div class="name">${DeckCardRuleDefinition.name(card)}</div></div>`;
-}
-  static updateDeckSelectCountdown(state=DeckPresentation.lastDeckSelectState){
-  DeckPresentation.lastDeckSelectState=state||DeckPresentation.lastDeckSelectState;
-  if(!UiRegistry.refs.deckSelectTimer)return;
-  const deadline=Number(DeckPresentation.lastDeckSelectState?.deckSelectDeadlineAt)||0;
-  const remain=deadline?Math.max(0,deadline-Date.now()):DECK_SELECT_TIMEOUT_MS;
-  const sec=Math.ceil(remain/1000);
-  UiRegistry.refs.deckSelectTimer.textContent=`${String(Math.floor(sec/60)).padStart(2,"0")}:${String(sec%60).padStart(2,"0")}`;
-}
-  static closeDeckBuilderForMatchTransition({persist=true}={}){
-  if(!UiRegistry.refs.deckBuilderDialog?.open)return false;
-  if(persist)DeckPresentation.persistDeckBuilderWorking();
-  UiController.closeUiModal("deck-builder");
-  return true;
-}
-  static syncDeckBuilderLifecycle(state){
-  const editable=state?.phase==="deck-select"&&!state?.deckReady?.[ActiveViewState.role];
-  if(!editable)DeckPresentation.closeDeckBuilderForMatchTransition({persist:true});
-}
-  static renderDeckSelect(state){
-  UiController.setUiScreen("deck-select");
-  BattlePresentation.closeTransientBattleUi();
-  DeckPresentation.syncDeckBuilderLifecycle(state);
-  DraftPresentation.clearDraftFinalePresentation();draftPointerLocked=false;UiController.closeUiModal("create");UiController.closeUiModal("join");
-  const store=DeckPresentation.deckStore();DeckPresentation.renderDeckStorageNotice("deckSelectStorageNotice");DeckPresentation.selectedDeckSlot=Math.max(0,Math.min(DECK_SLOT_COUNT-1,DeckPresentation.selectedDeckSlot));
-  UiRegistry.refs.deckSelectTabs.innerHTML=store.decks.map((deck,i)=>{const v=DeckRecord.validateDeckRecord(deck);return `<button type="button" class="deck-slot-tab ${i===DeckPresentation.selectedDeckSlot?"active":""} ${deck&&!v.compatible?"incompatible":""}" data-deck-select-slot="${i}">${DeckPresentation.deckSlotLabel(deck,i)}</button>`}).join("");
-  const deck=store.decks[DeckPresentation.selectedDeckSlot],v=DeckRecord.validateDeckRecord(deck),alreadyReady=!!state?.deckReady?.[ActiveViewState.role],enemyRole=ActiveViewState.role==="host"?"guest":"host",enemyReady=!!state?.deckReady?.[enemyRole];
-  if(!deck)UiRegistry.refs.deckSelectPreview.innerHTML=`<div class="deck-preview-head"><div class="deck-preview-name">덱 ${DeckPresentation.selectedDeckSlot+1}</div><div class="deck-preview-meta">비어 있음</div></div><div class="deck-preview-meta" style="margin-top:9px">덱 편집에서 카드를 구성하세요.</div>`;
-  else if(!v.compatible)UiRegistry.refs.deckSelectPreview.innerHTML=`<div class="deck-preview-head"><div class="deck-preview-name">${deck.name||`덱 ${DeckPresentation.selectedDeckSlot+1}`}</div><div class="deck-preview-meta">사용 불가</div></div>`;
-  else{const cards=(deck.cards||[]).map(card=>DeckPresentation.deckCardMiniHtml(card)).join("");UiRegistry.refs.deckSelectPreview.innerHTML=`<div class="deck-preview-head"><div class="deck-preview-name">${deck.name||`덱 ${DeckPresentation.selectedDeckSlot+1}`}</div><div class="deck-preview-meta">${DeckCardRuleDefinition.countText(deck.cards||[])}</div></div><div class="deck-preview-units">${cards}</div>`}
-  UiRegistry.refs.deckSelectError.classList.toggle("hidden",v.compatible);UiRegistry.refs.deckSelectError.textContent=v.compatible?"":v.reason;if(v.compatible&&!v.complete){UiRegistry.refs.deckSelectError.classList.remove("hidden");UiRegistry.refs.deckSelectError.textContent=v.reason}
-  if(DeckRecord.storageFailure)UiRegistry.refs.deckSelectError.classList.add("hidden");
-  UiRegistry.refs.deckEditBtn.disabled=alreadyReady||!!DeckRecord.storageFailure;UiRegistry.refs.deckConfirmBtn.disabled=alreadyReady||!!DeckRecord.storageFailure||!v.compatible||!v.complete;UiRegistry.refs.deckEditBtn.textContent=deck&&!v.compatible?"새 덱 만들기":"덱 편집";UiRegistry.refs.deckConfirmBtn.textContent=alreadyReady?"확정 완료":"이 덱으로 확정";UiRegistry.refs.deckSelectStatus.textContent=alreadyReady?(enemyReady?"양쪽 덱 준비 완료 · 전투를 시작합니다.":"내 덱 확정 완료 · 상대 덱 선택 대기"):`최대 1분 안에 덱을 확정하세요.`;
-  if(UiRegistry.refs.deckReadyMine){
-    UiRegistry.refs.deckReadyMine.textContent=alreadyReady?"✓ 나 · 선택 완료":"● 나 · 선택 중";
-    UiRegistry.refs.deckReadyMine.classList.toggle("ready",alreadyReady);UiRegistry.refs.deckReadyMine.classList.toggle("waiting",!alreadyReady);
-  }
-  if(UiRegistry.refs.deckReadyEnemy){
-    UiRegistry.refs.deckReadyEnemy.textContent=enemyReady?"✓ 상대 · 선택 완료":"● 상대 · 선택 중";
-    UiRegistry.refs.deckReadyEnemy.classList.toggle("ready",enemyReady);UiRegistry.refs.deckReadyEnemy.classList.toggle("waiting",!enemyReady);
-  }
-  DeckPresentation.updateDeckSelectCountdown(state);
-}
-  static renderDeckReadyFinale(state){
-  DeckPresentation.closeDeckBuilderForMatchTransition({persist:true});
-  // Deck mode reuses the exact draft pre-battle VS/roster/map/countdown presentation.
-  // No parallel preview UI is maintained.
-  DraftPresentation.renderDraftFinale(state,"deck");
-}
-  static renderDeckBuilder(){
-  if(!deckBuilderState.working)return;const store=DeckPresentation.deckStore();UiRegistry.refs.deckBuilderTabs.innerHTML=store.decks.map((deck,i)=>{const v=DeckRecord.validateDeckRecord(deck);return `<button type="button" class="deck-slot-tab ${i===deckBuilderState.slot?"active":""} ${deck&&!v.compatible?"incompatible":""}" data-deck-builder-tab="${i}">${DeckPresentation.deckSlotLabel(deck,i)}</button>`}).join("");
-  const cards=deckBuilderState.working.cards||[];UiRegistry.refs.deckBuilderSlots.innerHTML=Array.from({length:DECK_TOTAL_CARD_COUNT},(_,i)=>{const card=cards[i],d=DeckCardRuleDefinition.def(card);return `<button type="button" class="deck-builder-slot ${card?"filled":""}" data-deck-unit-slot="${i}"><div class="icon">${card?DeckCardRuleDefinition.icon(card):"＋"}</div><div class="name">${card?(d?.name||card.id):"빈 슬롯"}</div><div class="tier">${card?`${d?.kindLabel||card.type} · 탭하면 즉시 제거`:"하단 카드를 누르면 자동으로 채워집니다"}</div></button>`}).join("");
-  UiRegistry.refs.deckBuilderDefense.innerHTML="";UiRegistry.refs.deckBuilderFilters.innerHTML=DeckCardRuleDefinition.filters.map(f=>`<button type="button" class="deck-filter-btn ${deckBuilderState.filter===f.id?"active":""}" data-deck-filter="${f.id}">${f.label}</button>`).join("");
-  UiRegistry.refs.deckCollection.innerHTML=DeckCardRuleDefinition.allCards().filter(card=>DeckCardRuleDefinition.filterAccepts(card,deckBuilderState.filter)).map(card=>{const d=DeckCardRuleDefinition.def(card),selected=cards.some(c=>DeckCardRuleDefinition.key(c)===DeckCardRuleDefinition.key(card));const meta=card.type==="unit"?`T${d.tier} · ${d.layer==="AIR"?"AIR · ":""}${d.role}`:"방어 건물";return `<button type="button" class="deck-collection-card longpress-info-target ${selected?"selected":""}" data-deck-card-type="${card.type}" data-deck-card-id="${card.id}"><div class="icon">${DeckCardRuleDefinition.icon(card)}</div><div class="name">${DeckCardRuleDefinition.name(card)}</div><div class="meta">${meta}</div></button>`}).join("");
-  const v=DeckRecord.validateDeckRecord(deckBuilderState.working);UiRegistry.refs.deckBuilderMessage.textContent=deckBuilderState.saveFailed?"덱을 저장하지 못했습니다. 완료 또는 덱 탭을 다시 눌러 저장을 재시도하세요. 닫거나 경기가 시작되면 저장하지 못한 변경을 잃을 수 있습니다.":v.compatible?(v.complete?`덱 완성 · ${DeckCardRuleDefinition.countText(cards)}`:v.reason):v.reason;
-  DeckPresentation.renderDeckStorageNotice("deckBuilderStorageNotice");
-  for(const button of UiRegistry.refs.deckBuilderDialog.querySelectorAll("[data-deck-builder-tab],[data-deck-unit-slot],[data-deck-card-type],#deckBuilderClearBtn,#deckBuilderSaveBtn"))button.disabled=!!DeckRecord.storageFailure;
-}
-  static openDeckBuilder(slot=DeckPresentation.selectedDeckSlot){
-  if(ActiveViewState.session?.draft?.phase==="deck-select"&&ActiveViewState.session.draft.deckReady?.[ActiveViewState.role])return false;
-  const nextSlot=RangeUtil.clamp(Math.trunc(Number(slot)||0),0,DECK_SLOT_COUNT-1);
-  DeckPresentation.selectedDeckSlot=nextSlot;if(!deckBuilderState.open(nextSlot)){DeckPresentation.refreshDeckStorageUi();return false}
-  DeckPresentation.renderDeckBuilder();UiController.openUiModal("deck-builder");return true
-}
-  static persistDeckBuilderWorking(){const saved=deckBuilderState.persist();if(saved)DeckPresentation.selectedDeckSlot=deckBuilderState.slot;return saved}
-  static saveDeckBuilder(){if(!deckBuilderState.working)return false;const saved=DeckPresentation.persistDeckBuilderWorking();DeckPresentation.renderDeckBuilder();if(saved&&ActiveViewState.session?.draft?.phase==="deck-select")DeckPresentation.renderDeckSelect(ActiveViewState.session.draft);return saved}
-  static applyDeckSelectSlot(index){
-  DeckPresentation.selectedDeckSlot=Math.max(0,Math.min(DECK_SLOT_COUNT-1,Number(index)||0));
-  if(ActiveViewState.session?.draft?.phase==="deck-select")DeckPresentation.renderDeckSelect(ActiveViewState.session.draft);
-}
-  static applyDeckBuilderTab(index){
-  if(!DeckPresentation.persistDeckBuilderWorking()){DeckPresentation.renderDeckBuilder();return false}
-  const nextSlot=RangeUtil.clamp(Math.trunc(Number(index)||0),0,DECK_SLOT_COUNT-1);
-  DeckPresentation.selectedDeckSlot=nextSlot;
-  deckBuilderState.open(nextSlot);
-  DeckPresentation.renderDeckBuilder();
-  return true;
-}
-  static applyDeckBuilderSlot(index){
-  if(!deckBuilderState.removeCardAt(index))return false;
-  DeckPresentation.persistDeckBuilderWorking();
-  DeckPresentation.renderDeckBuilder();
-  return true;
-}
-  static applyDeckBuilderFilter(filter){
-  deckBuilderState.setFilter(filter);
-  DeckPresentation.renderDeckBuilder();
-}
-  static applyDeckCollectionCard(cardType,cardId){
-  const result=deckBuilderState.toggleCard(cardType,cardId);if(!result)return false;
-  const {status,card}=result;
-  if(status==="full"){
-    UiRegistry.refs.deckBuilderMessage.textContent="덱이 가득 찼습니다. 상단 카드 또는 아래의 선택된 카드를 탭해 먼저 빼세요.";
-    return false;
-  }
-  if(status==="limit"){
-    UiRegistry.refs.deckBuilderMessage.textContent=card.type==="defense"
-      ?`현재 방어 건물은 최대 ${DeckCardRuleDefinition.rules.defense.max}개까지 선택할 수 있습니다.`
-      :`현재 유닛은 최대 ${DeckCardRuleDefinition.rules.unit.max}개까지 선택할 수 있습니다.`;
-    return false;
-  }
-  UiRegistry.refs.deckBuilderMessage.textContent=`${DeckCardRuleDefinition.name(card)} ${status==="removed"?"제거":"추가"}`;
-  DeckPresentation.persistDeckBuilderWorking();
-  DeckPresentation.renderDeckBuilder();
-  return true;
-}
-  
-  static deckPointerAction(el){
-  if(!el)return null;
-  if(el.dataset.deckCardType&&el.dataset.deckCardId)return{kind:"card",key:`card:${el.dataset.deckCardType}:${el.dataset.deckCardId}`,cardType:el.dataset.deckCardType,cardId:el.dataset.deckCardId,detail:true};
-  if(el.dataset.deckUnitSlot!=null)return{kind:"builderSlot",key:`builder-slot:${el.dataset.deckUnitSlot}`,index:Number(el.dataset.deckUnitSlot),detail:true};
-  if(el.dataset.deckBuilderTab!=null)return{kind:"builderTab",key:`builder-tab:${el.dataset.deckBuilderTab}`,index:Number(el.dataset.deckBuilderTab)};
-  if(el.dataset.deckSelectSlot!=null)return{kind:"selectSlot",key:`select-slot:${el.dataset.deckSelectSlot}`,index:Number(el.dataset.deckSelectSlot)};
-  if(el.dataset.deckFilter!=null)return{kind:"filter",key:`filter:${el.dataset.deckFilter}`,filter:el.dataset.deckFilter};
-  return null;
-}
-  static commitDeckPointerAction(action){
-  if(!action)return false;
-  if(action.kind==="card")return DeckPresentation.applyDeckCollectionCard(action.cardType,action.cardId);
-  if(action.kind==="builderSlot"){DeckPresentation.applyDeckBuilderSlot(action.index);return true}
-  if(action.kind==="builderTab")return DeckPresentation.applyDeckBuilderTab(action.index);
-  if(action.kind==="selectSlot"){DeckPresentation.applyDeckSelectSlot(action.index);return true}
-  if(action.kind==="filter"){DeckPresentation.applyDeckBuilderFilter(action.filter);return true}
-  return false;
-}
-  static installDeckPointerReleaseActions(){
-  pointerInteractions.register({
-    selector:"[data-deck-card-type],[data-deck-unit-slot],[data-deck-builder-tab],[data-deck-select-slot],[data-deck-filter]",
-    key:el=>DeckPresentation.deckPointerAction(el)?.key||UiController.interactionActionKeyFromElement(el),
-    longPress:el=>!!DeckPresentation.deckPointerAction(el)?.detail,
-    detail:el=>BattlePresentation.longPressDetailFor(el),
-    tap:el=>DeckPresentation.commitDeckPointerAction(DeckPresentation.deckPointerAction(el))
-  });
-}
-}
-
-if(typeof window!=="undefined")DeckPresentation.deckSelectUiInterval=setInterval(()=>{if(DeckPresentation.lastDeckSelectState?.phase==="deck-select")DeckPresentation.updateDeckSelectCountdown()},250);
-
-DeckPresentation.installDeckPointerReleaseActions();
-// Deck tabs/slots/cards/filters have exactly one activation owner: PointerInteractionController.
-// Do not add delegated click handlers for the same data-deck-* controls; a physical tap would toggle twice.
 pointerInteractions.install();
-
-
-UiRegistry.refs.deckEditBtn.onclick=()=>DeckPresentation.openDeckBuilder(DeckPresentation.selectedDeckSlot);
-UiRegistry.refs.deckConfirmBtn.onclick=()=>{
-  const sess=MatchLifecycle.activeSession();if(!sess||sess.draft?.phase!=="deck-select")return;
-  const store=DeckPresentation.deckStore(),deck=store.decks[DeckPresentation.selectedDeckSlot],payload=DeckRecord.deckPayloadFromRecord(deck);
-  if(DeckRecord.storageFailure){DeckPresentation.renderDeckSelect(sess.draft);return}
-  const v=DeckRecord.validateDeckRecord(deck);
-  if(!v.compatible||!v.complete||!payload){
-    UiRegistry.refs.deckSelectError.classList.remove("hidden");
-    UiRegistry.refs.deckSelectError.textContent=v.compatible?v.reason:"호환되지 않는 덱입니다";
-    return;
-  }
-  if(!sess.deckAct(payload)){
-    UiRegistry.refs.deckSelectError.classList.remove("hidden");
-    UiRegistry.refs.deckSelectError.textContent="연결 동기화 중입니다. 잠시 후 다시 눌러 주세요.";
-  }
-};
-UiRegistry.refs.deckBuilderCloseBtn.onclick=()=>{DeckPresentation.persistDeckBuilderWorking();UiController.closeUiModal("deck-builder");if(ActiveViewState.session?.draft?.phase==="deck-select")DeckPresentation.renderDeckSelect(ActiveViewState.session.draft)};
-UiRegistry.refs.deckBuilderDialog.addEventListener("click",e=>{if(e.target===UiRegistry.refs.deckBuilderDialog){DeckPresentation.persistDeckBuilderWorking();UiController.closeUiModal("deck-builder");if(ActiveViewState.session?.draft?.phase==="deck-select")DeckPresentation.renderDeckSelect(ActiveViewState.session.draft)}});
-UiRegistry.refs.deckBuilderClearBtn.onclick=()=>{
-  if(!deckBuilderState.clearCards())return;
-  DeckPresentation.persistDeckBuilderWorking();
-  DeckPresentation.renderDeckBuilder();
-};
-UiRegistry.refs.deckBuilderSaveBtn.onclick=()=>{
-  if(DeckPresentation.saveDeckBuilder())UiController.closeUiModal("deck-builder");
-};
-for(const button of document.querySelectorAll("[data-deck-storage-action]"))button.onclick=()=>DeckPresentation.handleDeckStorageAction(button.dataset.deckStorageAction);
-
 
 
 const renderCampaignLoadedMission=(m,source="preview")=>{UiRegistry.refs.campaignMissionTitle.textContent=m.title;UiRegistry.refs.campaignMissionBrief.textContent=m.briefing||m.missionId;UiRegistry.refs.campaignStatus.textContent=`${source==="builtin"?"내장":"Preview"} · 시작 생산 ${m.player.availableUnits.length}종 · 각 맵 독립 상태 · 현재 Definition 수치 사용`;UiRegistry.refs.campaignStartBtn.disabled=false};
@@ -14080,57 +13308,6 @@ document.addEventListener("click",e=>{
   UiController.clearTransientTargetModeForUiAction(e.target);
 },true);
 
-Object.defineProperty(globalThis,"draftPointerLocked",{configurable:true,get(){return UiRuntimeState.value.draft.pointerLocked},set(v){UiRuntimeState.value.draft.pointerLocked=!!v}});
-
-UiRegistry.refs.draftPair.addEventListener("click",e=>{
-  const card=e.target.closest("[data-card]");
-  if(!card||card.disabled)return;
-
-  const sess=MatchLifecycle.activeSession();
-  if(!sess?.draft||sess.draft.phase!=="draft")return;
-  if(sess.draft.draft.chooser!==ActiveViewState.role)return;
-
-  const round=Number(card.dataset.draftRound);
-  if(round!==sess.draft.draft.round)return;
-
-  // 동일 click이 중복되거나 UI가 늦게 갱신되는 동안 재탭해도 1회만 제안.
-  if(draftPointerLocked||sess.pendingDraftProposal)return;
-
-  e.preventDefault();
-  e.stopPropagation();
-
-  const cardId=card.dataset.card;
-  card.classList.add("draft-pick-pressed");
-  for(const other of UiRegistry.refs.draftPair.querySelectorAll("[data-card]")){
-    if(other!==card)other.classList.add("draft-pick-dimmed");
-  }
-  const accepted=sess.draftAct({
-    type:"DRAFT_PICK",
-    card:cardId
-  });
-
-  if(accepted===false){
-    card.classList.remove("draft-pick-pressed");
-    for(const other of UiRegistry.refs.draftPair.querySelectorAll("[data-card]"))other.classList.remove("draft-pick-dimmed");
-    return;
-  }
-
-  draftPointerLocked=true;
-
-  for(const btn of UiRegistry.refs.draftPair.querySelectorAll("[data-card]")){
-    btn.disabled=true;
-  }
-
-  UiRegistry.refs.draftTurn.textContent="선택 전송 중";
-  UiRegistry.refs.draftTitle.textContent=`${DraftPresentation.draftCardName(cardId)} 선택 · 결과 동기화 중`;
-
-  // Host는 commit이 즉시 일어나고 renderDraft가 새 라운드 DOM을 만든다.
-  // Guest는 Host의 DRAFT_COMMIT/DRAFT_SYNC를 기다린다.
-  setTimeout(()=>{
-    draftPointerLocked=false;
-  },1200);
-});
-
 UiController.bindImmediateButton(UiRegistry.refs.soundBtn,()=>{
   audioSystem.setEnabled(!audioSystem.enabled);
   UiRegistry.refs.soundBtn.textContent=audioSystem.enabled?"🔊":"🔇";
@@ -14317,8 +13494,6 @@ UiController.bindImmediateButton(UiRegistry.refs.buildDrawerCloseBtn,()=>{
   CommandPresentation.closeCommandDrawer();
 });
 
-UiRegistry.refs.matchMenuBtnDraft?.addEventListener("click",MatchLifecycle.openMatchMenu);
-UiRegistry.refs.matchMenuBtnDeck?.addEventListener("click",MatchLifecycle.openMatchMenu);
 UiRegistry.refs.matchMenuReplaySaveBtn?.addEventListener("click",()=>{const data=ReplayPresentation.currentReplayPayload();if(data)ReplayPresentation.downloadReplay(data);else LogUtil.log("아직 저장할 전투 리플레이가 없습니다.")});
 UiRegistry.refs.matchMenuSurrenderBtn?.addEventListener("click",()=>MatchLifecycle.requestMatchSurrender());
 UiRegistry.refs.matchMenuLeaveBtn?.addEventListener("click",()=>{if(ReplayPresentation.replayPlayer){MatchLifecycle.closeMatchMenu();ReplayPresentation.stopReplay();return}MatchLifecycle.requestMatchSurrender({leave:true})});
@@ -14563,7 +13738,7 @@ else{
   const dev=readDevQuery(location.search);
   if(dev.tps)UiController.setStartSimulationTps(dev.tps);
   if(dev.netcode)UiController.setStartNetcodeMode(dev.netcode);
-  const leaveSetup=()=>{audioSystem.unlock();CampaignRuntime.clear();DebugScenarioHarness.pending=null;CampaignPresentation.clear();UiRuntimeState.value.settings.presetId="standard";UiController.setStartSelectionMode("launch")};
+  const leaveSetup=()=>{audioSystem.unlock();CampaignRuntime.clear();DebugScenarioHarness.pending=null;CampaignPresentation.clear();UiRuntimeState.value.settings.presetId="standard"};
   LaunchScreens.install({createNavigation:RallyGamekit.createNavigation,actions:{
     inMatch:()=>UiRuntimeState.value.screen==="game",
     hasResult:()=>UiRuntimeState.value.screen==="result",
@@ -14591,4 +13766,4 @@ else{
   }
 }
 
-export { AppLifecycle, CampaignMapDefinition, CampaignMissionDefinition, CampaignOutcomeRules, CampaignPresentation, CampaignScriptRuntime, ConnectionPresentation, DebugScenarioHarness, DiagnosticPresentation, DraftPresentation, LocalEnvironmentUtil, LogUtil, MatchLifecycle, ReplayPresentation, SimulationTiming, SinglePlayerModeUtil, UiController, UiRegistry };
+export { AppLifecycle, CampaignMapDefinition, CampaignMissionDefinition, CampaignOutcomeRules, CampaignPresentation, CampaignScriptRuntime, ConnectionPresentation, DebugScenarioHarness, DiagnosticPresentation, LocalEnvironmentUtil, LogUtil, MatchLifecycle, ReplayPresentation, SimulationTiming, SinglePlayerModeUtil, UiController, UiRegistry };

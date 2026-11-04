@@ -14,7 +14,6 @@ class GameRuleDefinition{
     economy:{startingResources:{minerals:0,gas:0}},
     production:{trainTimeMultiplier:1,researchTimeMultiplier:1},
     setup:{preset:"standard",startingTech:1,startingBuildings:[],startingSupplyBuildings:0},
-    draft:{pickTimeoutMs:5000},
     map:{
       generator:"procedural-frontier",generatorVersion:10,width:4200,height:4800,biome:"frontier",
       topology:"mixed",symmetry:"rotational-180",openness:.5,chokeDensity:.5,obstacleDensity:.5,
@@ -45,7 +44,7 @@ class GameRuleRuntime{
   const simulationTps=RangeUtil.clamp(Math.round(Number(src.simulationTps)||SIM_TPS),10,30);
   const debugScenario=src.debugScenario&&typeof src.debugScenario==="object"&&!Array.isArray(src.debugScenario)?structuredClone(src.debugScenario):null;
   const campaignScenario=src.campaignScenario&&typeof src.campaignScenario==="object"&&!Array.isArray(src.campaignScenario)?structuredClone(src.campaignScenario):null;
-  return {schemaVersion:4,presetId,overrides,selectionMode:["deck","launch"].includes(src.selectionMode)?src.selectionMode:"draft",simulationTps,debugScenario,campaignScenario};
+  return {schemaVersion:4,presetId,overrides,simulationTps,debugScenario,campaignScenario};
 }
   static mergeGameRules(base,override){
   if(!override||typeof override!=="object")return structuredClone(base);

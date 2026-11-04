@@ -14,7 +14,7 @@ import { SimulationTiming } from '../main.js';
 /* =========================
    4.5 Single-player bot
    - 상대 입력 주체만 AI다.
-   - 게임 상태 변경은 반드시 guest GameSession의 draftAct()/command()를 거친다.
+   - 게임 상태 변경은 반드시 guest GameSession의 command()를 거친다.
    - 실제 싱글 연결은 NostrRtcTransport의 raw WebRTC 경로를 그대로 사용하고 signaling만 in-page local bus로 대체한다.
    ========================= */
 
