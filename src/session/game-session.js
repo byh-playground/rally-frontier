@@ -3,7 +3,7 @@ import { GameRuleRuntime, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { StrategySim } from '../sim/strategy-sim.js';
 import { Building, Projectile, Unit } from '../sim/entities.js';
 import { LaunchRules } from '../sim/launch-rules.js';
-import { MovementComponent, StateValue } from '../sim/components.js';
+import { StateValue } from '../sim/components.js';
 import { ReplayRecorder } from './replay.js';
 import { RecoveryTelemetry } from '../diagnostics/recovery-telemetry.js';
 import { StableSerializationUtil } from '../net/lobby-codec.js';
@@ -11,7 +11,6 @@ import { HashUtil } from '../sim/map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { PerformanceTelemetry } from '../diagnostics/performance-telemetry.js';
-import { AdaptiveNavigationDemand, TerrainNavigation } from '../sim/navigation.js';
 import { DISCONNECT_GRACE_MS, LOCKSTEP_INPUT_DELAY_BASE_MS, LOCKSTEP_INPUT_DELAY_MAX_MS, MAX_CATCHUP_STEPS_PER_PULSE, NETWORK_HEALTH_POLL_MS, SIM_SUSPENSION_THRESHOLD_MS, SNAPSHOT_EMIT_INTERVAL_MS } from '../core/session-timing.js';
 import { SIM_VERSION, netcodeMode } from '../core/config.js';
 import { BUILD_META } from '../core/build-info.js';
@@ -103,8 +102,8 @@ class RallySimulationAdapter{
   readSnapshot(bytes,{tick}={}){
     const budget={},envelope=RallyStateCodec.decode(bytes,{budget}),state=envelope?.state;
     if(envelope.schemaVersion!==RallyStateCodec.schemaVersion||envelope.simVersion!==SIM_VERSION||envelope.matchId!==this.matchId||envelope.mapFingerprint!==this.mapFingerprint||!state||Array.isArray(state)||typeof state!=="object")throw new Error("게임 snapshot의 경기 정의가 다릅니다.");
-    if(budget.nodes>budget.maxNodes||['routePaths','routeProfiles','routeTopologies','nextRoutePathId','nextRouteProfileId','nextRouteTopologyId'].some(key=>Object.prototype.hasOwnProperty.call(state,key)))throw new Error('Snapshot contains runtime route-cache data');
-    if(!Number.isSafeInteger(state.tick)||state.tick<0||state.tick>RallySimulationAdapter.maxFrameTick||tick!==undefined&&state.tick!==tick||!Number.isSafeInteger(state.seq)||state.seq<0||state.seed!==this.identity.seed||!Number.isSafeInteger(state.navigationRevision)||state.navigationRevision<0)throw new Error("게임 snapshot의 tick/seed가 잘못되었습니다.");
+    if(budget.nodes>budget.maxNodes)throw new Error('Snapshot exceeds the state budget');
+    if(!Number.isSafeInteger(state.tick)||state.tick<0||state.tick>RallySimulationAdapter.maxFrameTick||tick!==undefined&&state.tick!==tick||!Number.isSafeInteger(state.seq)||state.seq<0||state.seed!==this.identity.seed)throw new Error("게임 snapshot의 tick/seed가 잘못되었습니다.");
     for(const [key,shape]of Object.entries(this.rootShape)){
       if(!Object.prototype.hasOwnProperty.call(state,key))throw new Error(`게임 snapshot의 ${key} 필드가 없습니다.`);
       const value=state[key],kind=value===null?"null":Array.isArray(value)?"array":typeof value;
@@ -119,7 +118,6 @@ class RallySimulationAdapter{
         if(key==="units"){
           if(!Object.prototype.hasOwnProperty.call(UnitDefinition.all,entity.type)||!Number.isFinite(entity.fx)||!Number.isFinite(entity.fy)||!Number.isFinite(entity.hp)||!Number.isFinite(entity.maxHp))throw new Error("게임 snapshot의 유닛 정의가 잘못되었습니다.");
           RallyStateCodec.assertContract(entity,Unit.stateContract);
-          MovementComponent.validateRoutes(entity.movement,this.identity.mapDescriptor,entity.type,state.navigationRevision);
         }
         if(key==="projectiles"&&[...Projectile.stateContract.presentation].some(field=>Object.prototype.hasOwnProperty.call(entity,field)))throw new Error("게임 projectile snapshot에 렌더 필드가 있습니다.");
         if(key==="buildings"){
@@ -128,7 +126,6 @@ class RallySimulationAdapter{
         }
       }
     }
-    AdaptiveNavigationDemand.validate(state.navigationAdmissions);
     if(state.netcodeMatchResult!==undefined&&(!state.netcodeMatchResult||!["host","guest"].includes(state.netcodeMatchResult.winner)||state.netcodeMatchResult.reason!=="surrender"||!Number.isSafeInteger(state.netcodeMatchResult.tick)||state.netcodeMatchResult.tick<0||state.netcodeMatchResult.tick>state.tick))throw new Error("게임 snapshot의 경기 결과가 잘못되었습니다.");
     const scheduledTicks=new Set();
     for(const entry of state.scheduled){
@@ -233,7 +230,6 @@ class GameSession{
   get confirmedGameTick(){return this.netcodeSession?Math.min(this.sim?.tick||0,this.netcodeSession.confirmedTick+1):0}
   getPendingCommandTickets(){return [...this.pendingNetcodeCommands.values()].map(ticket=>StateValue.copy(ticket))}
   cancelScheduledWork(){
-    this.navigationPreparationCancel?.();this.navigationPreparationCancel=null;
     this.clearDisconnectGrace();this.clearPostRecoveryCountdown();
     this.stopHeartbeat(false);this.netcodeLoop?.stop();AppLifecycle.unregisterBackgroundSession(this);
   }
@@ -407,16 +403,6 @@ class GameSession{
     if(!globalThis.RallyNetcode)throw new Error('URL Netcode가 로딩되지 않았습니다.');
     this.clearDisconnectGrace();this.clearPostRecoveryCountdown();
     this.sim=StrategySim.createForMatch({draft:this.draft,seed,rules:this.roundRules});
-    try{
-      const sim=this.sim;
-      const startingUnits=sim.units.filter(unit=>unit&&unit.alive!==false&&unit.hp>0&&(unit.side===0||unit.side===1));
-      this.navigationPreparationCancel=sim.navigation.prepareLayersInSlices(startingUnits,[],{
-        schedule:callback=>TerrainNavigation.schedulePreparationStep(callback),
-        shouldContinue:()=>!this.disposed&&this.sim===sim&&!sim.disposed,
-        onError:error=>this.enterSimulationFatal(error,{source:'navigation-preparation'})
-      });
-    }
-    catch(error){try{this.sim.dispose('initialization-failed')}finally{this.sim=null}throw error}
     this.simulationAdapter=new RallySimulationAdapter(this);
     this.replayRecorder=new ReplayRecorder({seed,draft:this.draft,roomCode:this.roomCode,sim:this.sim,rules:this.roundRules});
     this.simEnded=false;this.matchResult=null;this.publishedGameTick=0;this.netcodeLoop?.resetTiming();

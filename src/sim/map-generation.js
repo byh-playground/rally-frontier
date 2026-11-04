@@ -5,7 +5,7 @@ import { CapturePointDefinition, LANE_NORMALS, MapGeometry, RIVER_HALF_WIDTH, RI
 import { LANE_CONTROL_POINTS } from '../definitions/combat-rules.js';
 import { UNIT_RUNTIME_GEOMETRY } from '../definitions/units.js';
 import { WorldContext } from './world-context.js';
-import { InteractionGeometry, TerrainNavigation } from './navigation.js';
+import { TerrainNavigation } from './navigation.js';
 import { TerrainGeometry, TerrainSurfaceAtlas } from './terrain.js';
 
 class CloneUtil{static clone(v){return JSON.parse(JSON.stringify(v))}}
@@ -72,19 +72,12 @@ class FrontierTerrainLayout{
     return {waterLayerSeparation:waterClear,bridgeRampSeparation:bridgeClear,buildablePads};
   }
   static connectedLayout(map){
-    // Validate the actual radius-inflated navigation mesh, including closed gates.
-    // Generation-time caches are discarded; no validation state enters gameplay.
-    const adapter={world:WorldContext.fromMap(map),tick:0,navigationRevision:0,
-      buildings:[],
-      unitRadius:InteractionGeometry.unitRadius};
-    const nav=new TerrainNavigation(adapter);
-    const largest=MAP_VALIDATION_UNIT_RADIUS;
-    const strategic=[map.spawns.host,map.spawns.guest,...map.capturePoints,
-      ...adapter.world.terrain.surfaces.layers.map(l=>l.points.reduce((p,q)=>({x:p.x+q.x/l.points.length,y:p.y+q.y/l.points.length}),{x:0,y:0}))];
-    const mesh=nav.layer(largest+.12),start=nav.locate(map.spawns.host.x,map.spawns.host.y,mesh);
-    if(!start||start.d2>1)return false;
-    for(const p of strategic){const goal=nav.locate(p.x,p.y,mesh);if(!goal||goal.d2>1||goal.cell.component!==start.cell.component)return false}
-    return true;
+    // Every strategic point must be reachable by the widest grain on the
+    // radius-inflated distance grid. Generation-time caches are discarded.
+    const world=WorldContext.fromMap(map),nav=new TerrainNavigation({world,tick:0,buildings:[]});
+    const strategic=[map.spawns.guest,...map.capturePoints,
+      ...world.terrain.surfaces.layers.map(l=>l.points.reduce((p,q)=>({x:p.x+q.x/l.points.length,y:p.y+q.y/l.points.length}),{x:0,y:0}))];
+    return nav.connected(map.spawns.host,strategic,MAP_VALIDATION_UNIT_RADIUS);
   }
   static water(ctx){
     const {width:w,height:h,seed}=ctx;

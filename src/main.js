@@ -20,7 +20,7 @@ import { CAPTURE_DURATION_MS, CAPTURE_RADIUS, LANE_CONTROL_POINTS } from './defi
 import { PerformanceTelemetry } from './diagnostics/performance-telemetry.js';
 import { VIEW_H, VIEW_W } from './definitions/world-rules.js';
 import { WorldContext } from './sim/world-context.js';
-import { NavigationGoal, NavigationMeshBuilder } from './sim/navigation.js';
+import { NavigationGoal } from './sim/navigation.js';
 import { BattlefieldProjection, PolygonTriangulation, TerrainSurfaceAtlas, TerrainSurfaceProjection } from './sim/terrain.js';
 import { BACKGROUND_TICK_PULSE_MS } from './core/session-timing.js';
 import { RENDER_TRACKS } from './render/render-tracks.js';
@@ -311,7 +311,7 @@ class TerrainPresentation{
         const triangles=PolygonTriangulation.mesh(poly).triangles;
         for(const floor of floors)for(const indices of floor.triangles){
           const clip=indices.map(i=>({x:floor.vertices[i].x,y:floor.vertices[i].z}));
-          if(NavigationMeshBuilder.cross(clip[0],clip[1],clip[2])<0)clip.reverse();
+          if(NavigationGoal.cross(clip[0],clip[1],clip[2])<0)clip.reverse();
           for(const tri of triangles){
             const points=NavigationGoal.clipPolygon(tri.map(i=>poly[i]),clip);
             for(let i=1;i<points.length-1;i++){const tri=[points[0],points[i],points[i+1]],x=tri.reduce((s,p)=>s+p.x,0)/3,y=tri.reduce((s,p)=>s+p.y,0)/3;if(atlas.levelAt(x,y)!==floor.level||!TerrainQuery.at(map,x,y,atlas).river)continue;mesh.push({color,vertices:tri.map(p=>({x:p.x,y:TerrainSurfaceAtlas.elevationForLevel(floor.level),z:p.y,groundY:0}))})}
@@ -3051,8 +3051,8 @@ class ConnectionPresentation{
   text('dbgPerfRenderEffects',`${passMs('shadow')} / ${passMs('overlay')} / ${passMs('ui-fx')}`);
   text('dbgPerfRenderTail',`${passMs('camera-compose')} / ${passMs('minimap')} / ${rp?fmtMs(rp.cpuDepthSortMs):'-'}`);
   const nav=active.sim.navigation?.metrics;
-  text('dbgPerfNavigation',nav?`${fmtMs(nav.meshBuildMs)} / ${fmtMs(nav.astarCostMs)} / ${fmtMs(nav.fieldBuildMs)}`:'-');
-  text('dbgPerfProjection',nav?fmtMs(nav.projectionBuildMs):'-');
+  text('dbgPerfNavigation',nav?`${nav.fieldsBuilt} / ${nav.localFields} / ${fmtMs(nav.fieldBuildMs)}`:'-');
+  text('dbgPerfProjection',nav?`${nav.rayHits} / ${nav.nextCalls}`:'-');
   text('dbgPerfDrawCalls',`${rp?.drawCalls||0} / ${DebugFormatUtil.formatDebugBytes(rp?.bufferUploadBytes||0)} · 전송 대기 ${DebugFormatUtil.formatDebugBytes(active.transport?.netcodeBufferedAmount||0)}`);
   const activeTps=SimulationTiming.tps(),allowanceMs=1000/activeTps,isSingle=SinglePlayerModeUtil.isSinglePlayer();
   UiRegistry.refs.dbgPerfAllowanceLabel.textContent=activeTps+" TPS 틱 허용시간";
