@@ -490,17 +490,33 @@ class StrategySim{
     }
     const aim=LaunchRules.target(cannon,action.x,action.y,holdMs,this.world,this.flags[side],action.unitType);
     this.wallet[side]-=grain.cost;
-    cannon.launchReadyTick=this.tick+this.msTicks(LaunchRules.reloadMs);
-    const id="p"+(++this.seq);
-    this.spawnProjectile({
-      id,owner:cannon.id,side,type:action.unitType,x:cannon.x,y:cannon.y,target:null,isBuilding:false,
-      trajectoryPolicy:"lockedPoint",lockedAimX:aim.x,lockedAimY:aim.y,speed:grain.speed,
-      damage:grain.impact,splash:grain.splash,splashUnitDamage:grain.impact,splashBuildingDamage:grain.impact,
-      damageClass:"area",sourceDamageResolved:true,payload:{type:action.unitType,count:grain.count}
+    // The cannon is busy until the last shell of the volley has left, plus the reload.
+    cannon.launchReadyTick=this.tick+this.msTicks(LaunchRules.volleyMs(action.unitType)+LaunchRules.reloadMs);
+    const power=LaunchRules.power(holdMs),shots=LaunchRules.volley(action.unitType,aim,cannon),mode=grain.fire.mode;
+    shots.forEach((shot,i)=>{
+      const fire={side,cannonId:cannon.id,type:action.unitType,mode,shot:i,shots:shots.length,power,holdMs,...shot};
+      if(shot.delayMs>0)cannon.salvo.push({tick:this.tick+this.msTicks(shot.delayMs),...fire});else this.fireLaunchShell(fire);
     });
     this.launchStats.launches[side]++;this.launchStats.sent[side]+=grain.count;
-    this.events.push({type:"launchFire",side,cannonId:cannon.id,projectileId:id,x:cannon.x,y:cannon.y,holdMs,power:LaunchRules.power(holdMs)});
     return true;
+  }
+  fireLaunchShell({side,cannonId,type,mode,shot,shots,power,holdMs,x,y,count,impact,splash}){
+    const cannon=this.buildingById.get(cannonId)||this.buildings.find(b=>b.id===cannonId),grain=LaunchRules.grain(type),id="p"+(++this.seq);
+    this.spawnProjectile({
+      id,owner:cannonId,side,type,x:cannon.x,y:cannon.y,target:null,isBuilding:false,
+      trajectoryPolicy:"lockedPoint",lockedAimX:x,lockedAimY:y,speed:grain.speed,
+      damage:impact,splash,splashUnitDamage:impact,splashBuildingDamage:impact,
+      damageClass:"area",sourceDamageResolved:true,payload:{type,count}
+    });
+    this.events.push({type:"launchFire",side,cannonId,projectileId:id,x:cannon.x,y:cannon.y,aimX:x,aimY:y,holdMs,power,mode,shot,shots});
+  }
+  // Delayed shells of a burst leave on their scheduled tick, in order.
+  updateLaunchSalvos(){
+    for(const cannon of this.buildings){
+      if(!cannon.salvo.length)continue;
+      if(cannon.alive===false){cannon.salvo.length=0;continue}
+      while(cannon.salvo.length&&cannon.salvo[0].tick<=this.tick)this.fireLaunchShell(cannon.salvo.shift());
+    }
   }
   landLaunchPayload(p,x,y){
     const {type,count}=p.payload,reserved=[];
@@ -781,15 +797,22 @@ class StrategySim{
     }
     return null;
   }
-  applyAreaDamage({sourceSide,sourceType,sourceEntityId=null,x,y,radius,damage,damageClass="area",suppressImpactFx=false}={}){
+  // strikePeak > 1 makes the blast hit harder toward its centre (1 at the edge, strikePeak at the middle).
+  // Returns how many enemies were hit and the strongest multiplier any of them took.
+  applyAreaDamage({sourceSide,sourceType,sourceEntityId=null,x,y,radius,damage,damageClass="area",suppressImpactFx=false,strikePeak=1}={}){
+    const result={hits:0,peak:1};
+    const scale=d=>strikePeak>1?1+(strikePeak-1)*(1-RangeUtil.clamp(d/Math.max(1,radius),0,1))**2:1;
     this.withNearbyUnits(x,y,radius+this.maxUnitRadius,indices=>{
       for(const idx of indices){
         const e=this.units[idx];
         if(!e?.alive||e.side===sourceSide)continue;
-        if(Math.hypot(e.x-x,e.y-y)>radius+this.unitRadius(e.type))continue;
-        this.applyDamage(sourceSide,sourceType,e,false,Math.max(1,Math.floor(damage)),sourceEntityId,{damageClass,suppressImpactFx,sourceDamageResolved:true});
+        const d=Math.hypot(e.x-x,e.y-y);
+        if(d>radius+this.unitRadius(e.type))continue;
+        const mult=scale(d);result.hits++;result.peak=Math.max(result.peak,mult);
+        this.applyDamage(sourceSide,sourceType,e,false,Math.max(1,Math.floor(damage*mult)),sourceEntityId,{damageClass,suppressImpactFx,sourceDamageResolved:true});
       }
     });
+    return result;
   }
   setTimedModifier(u,key,{until=null,durationTicks=0,movePct=100,attackSpeedPct=100,maxStacks=1,refresh=true,persistent=false,resetOnMove=false}={}){
     if(!u)return;
@@ -921,12 +944,15 @@ class StrategySim{
         this.events.push({type:"projectileRetire",projectileId:p.id,x:aimX,y:aimY,side:p.side,sourceType:p.type});
         if(p.payload)this.landLaunchPayload(p,aimX,aimY);
         const radius=Math.max(1,p.splash||1);
-        this.applyAreaDamage({sourceSide:p.side,sourceType:p.type,sourceEntityId:p.owner||null,x:aimX,y:aimY,radius,damage:p.splashUnitDamage??p.damage,damageClass:p.damageClass||"area",suppressImpactFx:true});
+        const blast=this.applyAreaDamage({sourceSide:p.side,sourceType:p.type,sourceEntityId:p.owner||null,x:aimX,y:aimY,radius,damage:p.splashUnitDamage??p.damage,damageClass:p.damageClass||"area",suppressImpactFx:true,strikePeak:LaunchRules.centerPeak});
         for(const b of this.buildings){
           if(!b||b.alive===false||b.side===p.side)continue;
-          const br=BuildingDefinition.get(b.type)?.size||30;
-          if(Math.hypot(b.x-aimX,b.y-aimY)<=radius+br)this.applyDamage(p.side,p.type,b,true,p.splashBuildingDamage??p.damage,p.owner||null,{damageClass:p.damageClass||"area",sourceDamageResolved:true,suppressImpactFx:true});
+          const br=BuildingDefinition.get(b.type)?.size||30,d=Math.hypot(b.x-aimX,b.y-aimY);
+          if(d>radius+br)continue;
+          const mult=LaunchRules.strike(Math.max(0,d-br),radius);blast.hits++;blast.peak=Math.max(blast.peak,mult);
+          this.applyDamage(p.side,p.type,b,true,Math.max(1,Math.floor((p.splashBuildingDamage??p.damage)*mult)),p.owner||null,{damageClass:p.damageClass||"area",sourceDamageResolved:true,suppressImpactFx:true});
         }
+        this.events.push({type:"launchImpact",side:p.side,unit:p.type,x:aimX,y:aimY,radius,hits:blast.hits,peak:Math.round(blast.peak*100)/100});
         continue;
       }
       const travel=Math.min(step,dist);
@@ -1438,6 +1464,7 @@ class StrategySim{
     mark=profile?now():0;
     this.updateCapturePoints();
     this.updateLaunchEconomy();
+    this.updateLaunchSalvos();
     let winner=null;
     const worldMs=profile?now()-mark:0;
 

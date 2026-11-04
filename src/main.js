@@ -2174,9 +2174,16 @@ class GLRenderer{
       const color=burnt?[1,.22,.16,1]:full?[1,.78,.2,(Math.floor(now/90)%2)?1:.55]:[1,.95,.75,.9],w=Math.max(2,3*sc);
       // Landing ring: the point the sim will pick for this hold time and direction, sized by the grain's splash.
       const at=LaunchPresentation.landing(hold,held,this.world);
-      const [lx,ly]=this.worldToPx(this.viewX(at.x),this.viewY(at.y)),splash=Math.max(14,(LaunchRules.grain(hold.card)?.splash||120)*sc);
+      const [lx,ly]=this.worldToPx(this.viewX(at.x),this.viewY(at.y));
       this.line(cx,cy,lx,ly,Math.max(1.5,2*sc),[color[0],color[1],color[2],.45]);
-      this.outlineCircle(lx,ly,splash,w,color,40);
+      // One ring per shell of the volley (a burst lands on one point), each with its strong centre.
+      const seenAt=new Set();
+      for(const shot of LaunchRules.volley(hold.card,at,{x:hold.cannonX,y:hold.cannonY})){
+        const key=shot.x+","+shot.y;if(seenAt.has(key))continue;seenAt.add(key);
+        const [sx,sy]=this.worldToPx(this.viewX(shot.x),this.viewY(shot.y)),ring=Math.max(14,shot.splash*sc);
+        this.outlineCircle(sx,sy,ring,w,color,40);
+        this.outlineCircle(sx,sy,Math.max(6,ring*(1-Math.SQRT1_2)),Math.max(1.5,2*sc),[color[0],color[1],color[2],.6],24);
+      }
       this.line(lx-8,ly,lx+8,ly,2,color);this.line(lx,ly-8,lx,ly+8,2,color);
       // The previous shot's landing distance, as a faint ring at that reach.
       if(hold.lastPower!=null&&!full){

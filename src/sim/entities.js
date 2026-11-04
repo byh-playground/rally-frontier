@@ -31,8 +31,8 @@ class Unit{
 }
 
 class Building{
-  static stateContract=new StateContract({cooldownUntil:0,attackCooldownPhase:0,terrainRevealUntil0:0,terrainRevealUntil1:0},{presentation:["hitFlash","attackFlash"]});
-  constructor(state={}){Object.assign(this,Building.stateContract.create(state))}
+  static stateContract=new StateContract({cooldownUntil:0,attackCooldownPhase:0,salvo:[],terrainRevealUntil0:0,terrainRevealUntil1:0},{presentation:["hitFlash","attackFlash"]});
+  constructor(state={}){Object.assign(this,Building.stateContract.create(state));if(!Array.isArray(this.salvo))this.salvo=[]}
   cooldownActive(sim){return sim.tick<(Number(this.cooldownUntil)||0)}
   clearCooldown(){this.cooldownUntil=0}
   startCooldownUntil(tick){this.cooldownUntil=Math.max(0,Math.round(Number(tick)||0));return this.cooldownUntil}
