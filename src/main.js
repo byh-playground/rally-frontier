@@ -7,7 +7,7 @@ import { GameSession, RallySynctestDiagnostics } from './session/game-session.js
 import { ReplayPlayer, ReplayPolicy } from './session/replay.js';
 import { ActiveViewState, BACKGROUND_TICK_SESSIONS, NetworkModuleLoader } from './session/runtime-state.js';
 import { LaunchRules } from './sim/launch-rules.js';
-import { NostrRtcTransport } from './net/rtc-transport.js';
+import { RoomTransport } from './net/rtc-transport.js';
 import { RecoveryTelemetry } from './diagnostics/recovery-telemetry.js';
 import { ConnectionSideUtil } from './net/lobby-codec.js';
 import { CloneUtil, HashUtil, MapGeneration } from './sim/map-generation.js';
@@ -3653,7 +3653,7 @@ class MatchLifecycle{
   ConnectionPresentation.hideP2PHealth();
   ActiveViewState.role=r;ActiveViewState.roomCode=c;
   LogUtil.status("연결 중…");
-  ActiveViewState.transport=new NostrRtcTransport(r,c);
+  ActiveViewState.transport=new RoomTransport(r,c);
   ActiveViewState.session=new GameSession(r,ActiveViewState.transport,c,r==="host"?MatchLifecycle.currentMatchConfig():null);
   MatchLifecycle.wireSessionForView(r,ActiveViewState.session,ActiveViewState.transport);
   ActiveViewState.transport.open();
@@ -3687,8 +3687,8 @@ class MatchLifecycle{
   UiRegistry.refs.singleStatus.textContent=`${humanRole.toUpperCase()} 테스트용 실제 WebRTC 양쪽 피어를 준비하고 있습니다…`;
   UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
 
-  const hostTransport=new NostrRtcTransport("host",token,{signalMode:"local"});
-  const guestTransport=new NostrRtcTransport("guest",token,{signalMode:"local"});
+  const hostTransport=new RoomTransport("host",token,{signalMode:"local"});
+  const guestTransport=new RoomTransport("guest",token,{signalMode:"local"});
   const transports={host:hostTransport,guest:guestTransport};
   const humanTransport=transports[humanRole];
   const botTransport=transports[botRole];

@@ -10,25 +10,19 @@ const RECOVERY_EVENT_LIMIT=300;
 
 class RecoveryTelemetry{
   static recoveryTransportState(trans){
-  const pc=trans?.conn?.peerConnection||null;
-  const dc=trans?.conn?.dataChannel||null;
+  const room=trans?.room||null,pc=room?.peerConnection||null;
   return {
     role:trans?.role||null,
     roomCode:trans?.roomCode||null,
-    peerId:trans?.peer?.id||null,
-    peerOpen:!!trans?.peer?.open,
-    peerDisconnected:!!trans?.peer?.disconnected,
-    peerDestroyed:!!trans?.peer?.destroyed,
+    peerId:room?.peerId||null,
+    roomState:room?.state||"idle",
+    generation:Number(room?.generation)||0,
     connOpen:!!trans?.isOpen?.(),
-    connState:trans?.connState||"idle",
-    connLabel:trans?.conn?.label||dc?.label||null,
-    connectionSerial:Number(trans?.connectionSerial)||0,
-    acceptedSerial:Number(trans?.lastAcceptedConnectionSerial)||0,
+    netcodeState:trans?.netcodeState||"closed",
     rtcConnectionState:pc?.connectionState||null,
     iceConnectionState:pc?.iceConnectionState||null,
     iceGatheringState:pc?.iceGatheringState||null,
-    signalingState:pc?.signalingState||null,
-    dataChannelReadyState:dc?.readyState||null
+    signalingState:pc?.signalingState||null
   };
 }
   static recoverySessionState(sess){

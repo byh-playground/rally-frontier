@@ -1,5 +1,6 @@
 // Stable serialization and lobby control messages.
-import { rtcTextDecoder, rtcTextEncoder } from './rtc-transport.js';
+const rtcTextEncoder=new TextEncoder();
+const rtcTextDecoder=new TextDecoder();
 
 class StableSerializationUtil{
   static stableStringify(value){
