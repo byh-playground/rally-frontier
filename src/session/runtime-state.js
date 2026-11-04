@@ -1,5 +1,5 @@
 // Background tick sessions, the active view and the network module loader.
-import { UiController, UiRegistry } from '../main.js';
+import { LogUtil, UiController, UiRegistry } from '../main.js';
 
 /* =========================
    Background simulation ticker
@@ -40,13 +40,13 @@ class NetworkModuleLoader{
     NetworkModuleLoader.networkLoaderStarted=true;
     if(typeof globalThis.RallyNetcode?.createNostrSignaler==="function"){
       NetworkModuleLoader.networkLoadState="ready";NetworkModuleLoader.networkLoadError="";
-      UiRegistry.refs.net.textContent="온라인 네트워크 준비됨";
+      LogUtil.status("온라인 네트워크 준비됨");
       const action=NetworkModuleLoader.pendingPeerAction;NetworkModuleLoader.pendingPeerAction=null;if(action)action();
       return true;
     }
     NetworkModuleLoader.networkLoadState="error";
     NetworkModuleLoader.networkLoadError="URL 네트워크 모듈이 준비되지 않았습니다.";
-    UiRegistry.refs.net.textContent="온라인 네트워크 모듈 준비 실패";
+    LogUtil.status("온라인 네트워크 모듈 준비 실패");
     if(UiRegistry.refs.createDialog.open){
       UiRegistry.refs.createStatus.textContent=NetworkModuleLoader.networkLoadError+" 최신 HTML을 다시 열어 주세요.";
       UiController.setElementVisible(UiRegistry.refs.createRetry,true);

@@ -16,7 +16,7 @@ const output = path.resolve(__dirname, '..', '.qa', 'netcode-ui-e2e-'+selectedMo
 const observer = `
 CONFIG.single.botWorker=false;
 window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntimeState,
-  BuildingPresentation,BuildingDefinition,UnitDefinition,SIM_VERSION,BUILD_ID,
+  BuildingDefinition,UnitDefinition,SIM_VERSION,BUILD_ID,
   observedHits:[],observedHitKeys:new Set(),
   observeCombat(){
     for(const s of Object.values(MatchLifecycle.singleMatch?.sessions||{})){

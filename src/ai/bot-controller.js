@@ -58,7 +58,6 @@ class BotController{
     if(!this.enabled||!snapshot||this.session.netcodeSession?.resimulating)return;
     if(snapshot.tick>(this.session.confirmedGameTick??snapshot.tick)){this.commandExecutor.reconcile(snapshot);return}
     this.lastSnapshot=snapshot;
-    if(this.session.matchConfig?.debugScenario)return;
     const campaign=this.session.matchConfig?.campaignScenario,humanRole=campaign?.playerRole||"host";
     if(campaign?.enemy?.aiProfile==="scripted"&&this.role!==humanRole)return;
     const state=this.commandExecutor.begin(snapshot);this.lastSnapshot=state;

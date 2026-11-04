@@ -20,7 +20,7 @@ import { DISCONNECT_GRACE_MS, LOCKSTEP_INPUT_DELAY_BASE_MS, LOCKSTEP_INPUT_DELAY
 import { SIM_VERSION, netcodeMode } from '../core/config.js';
 import { BUILD_META } from '../core/build-info.js';
 import { RallyGamekit, RallyNetcode } from '../core/gamekit.js';
-import { AppLifecycle, CampaignMissionDefinition, CampaignOutcomeRules, CampaignPresentation, ConnectionPresentation, DebugScenarioHarness, DiagnosticPresentation, MatchLifecycle, SimulationTiming } from '../main.js';
+import { AppLifecycle, CampaignMissionDefinition, CampaignOutcomeRules, CampaignPresentation, ConnectionPresentation, DiagnosticPresentation, MatchLifecycle, SimulationTiming } from '../main.js';
 
 /* =========================
    4. Session / command lockstep
@@ -225,7 +225,7 @@ class RallySynctestDiagnostics{
     const record={status:"running",metrics:null,controller:new AbortController()};this.reports.set(session,record);
     let sim,report;
     try{
-      sim=StrategySim.createForMatch({draft:session.draft,seed:session.sim.seed,rules:session.sim.rules,campaignScenario:session.sim.campaignScenario||null,debugScenario:session.matchConfig?.debugScenario||null});
+      sim=StrategySim.createForMatch({draft:session.draft,seed:session.sim.seed,rules:session.sim.rules,campaignScenario:session.sim.campaignScenario||null});
       const adapter=new RallySimulationAdapter({sim});adapter.load(replay.initialState);
       const result=await RallyNetcode.runSyncTestAsync({adapter,players:replay.players,inputSize:replay.inputSize,tickRate:replay.tickRate,initialTick:0,
         checkDistance:Math.max(1,Math.min(6,core.profile.rollbackWindowTicks)),maxSnapshotBytes:RallyStateCodec.maxBytes,maxHistoryBytes:core.profile.maxHistoryBytes,frames,signal:record.controller.signal});
@@ -263,7 +263,7 @@ class GameSession{
     this.pendingNetcodeCommands=new Map();this.lastCommandTicket=null;this.frameOutputs=new Map();this.candidateFrameOutputs=new Map();this.publishedGameTick=0;
     this.publishConfirmedSnapshots=false;this.latestConfirmedSnapshot=null;
     this.pendingTerminalFrame=null;this.remoteTerminalReceipt=null;this.lastTerminalReceiptAt=0;this.terminalRecoveryKey='';this.recoveredJournalFrom=null;
-    this.transportConnected=false;this.everTransportOpened=false;this.syncHold=true;this.testModePaused=false;this.deferredActions=[];
+    this.transportConnected=false;this.everTransportOpened=false;this.syncHold=true;this.deferredActions=[];
     this.recoveryPhase='idle';this.simpleRecoveryNeedsManual=false;this.simpleRecoveryToken='';this.simpleRecoverySeq=0;
     this.recoveryAttempt=0;this.fullConnectionResetCount=0;this.postRecoveryResumeAt=0;this.postRecoveryTimer=0;
     this.pendingResumeProbeToken='';this.lastResumeProbeAckAt=0;
@@ -393,13 +393,7 @@ class GameSession{
       if(Date.now()-this.lastPingAt>=1000){this.lastPingAt=Date.now();this.transport.send({type:'LOBBY_PING',ts:this.lastPingAt})}
     },NETWORK_HEALTH_POLL_MS);
   }
-  setTestModePaused(paused){
-    if(this.matchConfig?.debugScenario?.testMode!=="mobile-battle"||!this.netcodeSession||this.disposed||this.simEnded)return false;
-    const next=!!paused;if(this.testModePaused===next)return true;
-    this.testModePaused=next;if(next)this.netcodeSession.releaseInput();
-    this.netcodeLoop?.resetTiming();this.renderTimelineChanged=true;return true;
-  }
-  inputAvailable(){return !this.disposed&&!this.simEnded&&!this.simulationFatal&&!this.pendingTerminalFrame&&!this.testModePaused&&this.transportConnected&&!this.syncHold}
+  inputAvailable(){return !this.disposed&&!this.simEnded&&!this.simulationFatal&&!this.pendingTerminalFrame&&this.transportConnected&&!this.syncHold}
   command(action){
     if(!this.inputAvailable()||!this.sim||!this.netcodeSession||this.netcodeSession.resimulating||this.pendingNetcodeCommands.size>=128)return false;
     try{
@@ -452,7 +446,6 @@ class GameSession{
   }
   static matchSeed(draft,roomCode,matchConfig={}){
     if(matchConfig?.campaignScenario)return matchConfig.campaignScenario.seed;
-    if(matchConfig?.debugScenario?.testMode==="mobile-battle"&&Number.isSafeInteger(matchConfig.debugScenario.fixedSeed))return matchConfig.debugScenario.fixedSeed>>>0;
     return HashUtil.hash(`${roomCode}|launch|${JSON.stringify(draft?.decks||{host:[],guest:[]})}|${JSON.stringify(draft?.defenseCards||{host:[],guest:[]})}`);
   }
   beginGame(){
@@ -465,7 +458,7 @@ class GameSession{
     if(this.disposed||this.sim)return false;
     if(!globalThis.RallyNetcode)throw new Error('URL Netcode가 로딩되지 않았습니다.');
     this.clearDisconnectGrace();this.clearPostRecoveryCountdown();
-    this.sim=StrategySim.createForMatch({draft:this.draft,seed,rules:this.roundRules,campaignScenario:this.matchConfig?.campaignScenario||null,debugScenario:this.matchConfig?.debugScenario||null});
+    this.sim=StrategySim.createForMatch({draft:this.draft,seed,rules:this.roundRules,campaignScenario:this.matchConfig?.campaignScenario||null});
     try{
       const sim=this.sim;
       const startingUnits=sim.units.filter(unit=>unit&&unit.alive!==false&&unit.hp>0&&(unit.side===0||unit.side===1));
@@ -515,7 +508,7 @@ class GameSession{
       // Poll/rollback remains synchronous and atomic inside Core. Always permit
       // the first due ordinary step, then yield catchup after 12 ms of CPU work.
       canAdvance:()=>{
-        if(this.simEnded||this.simulationFatal||this.pendingTerminalFrame||this.syncHold||this.testModePaused||this.frameOutputs.get(this.sim.tick)?.winner)return false;
+        if(this.simEnded||this.simulationFatal||this.pendingTerminalFrame||this.syncHold||this.frameOutputs.get(this.sim.tick)?.winner)return false;
         // Yielding ordinary catchup defers a fixed tick; it does not reset presentation history.
         if(this.driverPulseAdvances>0&&performance.now()-this.driverPulseStartedAt>=12)return false;
         return true;
@@ -816,14 +809,8 @@ prepareLaunchLiveDraft(){
     this.draft={phase:"live",roomCode:this.roomCode,decks:{host:deck(),guest:deck()},defenseCards:{host:[],guest:[]},winner:null};
     return true;
   }
-// Host builds the live setup itself: a campaign or debug scenario when the match asks for one, else the launch deck.
-prepareLiveDraft(){return this.prepareCampaignLiveDraft()||this.prepareDebugScenarioLiveDraft()||this.prepareLaunchLiveDraft()}
-prepareDebugScenarioLiveDraft(){
-    if(this.role!=="host"||!this.matchConfig?.debugScenario)return false;
-    const cfg=DebugScenarioHarness.normalize(this.matchConfig.debugScenario);
-    this.draft=DebugScenarioHarness.liveDraft(cfg,this.roomCode);
-    return true;
-  }
+// Host builds the live setup itself: a campaign when the match asks for one, else the launch deck.
+prepareLiveDraft(){return this.prepareCampaignLiveDraft()||this.prepareLaunchLiveDraft()}
 start(){
     if(this.role==="host"){
       // Host waits for the real Guest HELLO, then starts the match from a deterministic live initial state.

@@ -2,12 +2,7 @@ const SIM_TPS=20;
 class RangeUtil{static clamp(v,a,b){return Math.max(a,Math.min(b,v))}}
 class GameRuleDefinition{
   static presets={
-    standard:{},
-    unitTest:{
-      economy:{startingResources:{minerals:10000,gas:10000}},
-      production:{trainTimeMultiplier:.05,researchTimeMultiplier:.05},
-      setup:{preset:"unit-test",startingTech:3,startingSupplyBuildings:8,startingBuildings:["academy","airIncubator","lab"]}
-    }
+    standard:{}
   };
   static defaults={
     schemaVersion:2,modeId:"standard",simulation:{tps:10},
@@ -42,9 +37,8 @@ class GameRuleRuntime{
   if(!Object.prototype.hasOwnProperty.call(GameRuleDefinition.presets,presetId))throw new Error(`지원하지 않는 경기 preset: ${presetId}`);
   const overrides=src.overrides&&typeof src.overrides==="object"&&!Array.isArray(src.overrides)?structuredClone(src.overrides):null;
   const simulationTps=RangeUtil.clamp(Math.round(Number(src.simulationTps)||SIM_TPS),10,30);
-  const debugScenario=src.debugScenario&&typeof src.debugScenario==="object"&&!Array.isArray(src.debugScenario)?structuredClone(src.debugScenario):null;
   const campaignScenario=src.campaignScenario&&typeof src.campaignScenario==="object"&&!Array.isArray(src.campaignScenario)?structuredClone(src.campaignScenario):null;
-  return {schemaVersion:4,presetId,overrides,simulationTps,debugScenario,campaignScenario};
+  return {schemaVersion:4,presetId,overrides,simulationTps,campaignScenario};
 }
   static mergeGameRules(base,override){
   if(!override||typeof override!=="object")return structuredClone(base);

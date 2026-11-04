@@ -11,7 +11,7 @@ function verifySource(root = path.resolve(__dirname, '..')) {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   // GameKit provenance lives in the bootstrap module that loads the pinned dist.
   const main = fs.readFileSync(path.join(root, 'src/core/gamekit.js'), 'utf8');
-  if (!html.includes('src="./src/main.js"') || !html.includes('href="./src/styles/main.css"')) throw Error('Original entrypoint missing');
+  if (!html.includes('src="./src/main.js"') || !html.includes('href="./src/styles/game.css"')) throw Error('Original entrypoint missing');
   const moduleMap = JSON.parse(main.match(/const RALLY_GAMEKIT_MODULES=Object\.freeze\((\{[^\n]+\})\);/)?.[1] || 'null');
   if (!moduleMap || JSON.stringify(Object.keys(moduleMap).sort()) !== JSON.stringify(Object.keys(lock.modules).sort())) throw Error('Pinned SDK module map mismatch');
   for (const [name, entry] of Object.entries(lock.modules)) if (moduleMap[name] !== entry.file) throw Error('Pinned SDK module map mismatch: ' + name);
@@ -22,7 +22,7 @@ function verifySource(root = path.resolve(__dirname, '..')) {
   for (const file of modules) {
     execFileSync(process.execPath, ['--check', path.join(root, file)], { stdio: 'pipe' });
   }
-  for (const file of ['src/styles/main.css', 'icons/rally-180.png', 'manifest.webmanifest']) if (!fs.statSync(path.join(root, file)).size) throw Error('Missing source asset: ' + file);
+  for (const file of ['src/styles/game.css', 'icons/rally-180.png', 'manifest.webmanifest']) if (!fs.statSync(path.join(root, file)).size) throw Error('Missing source asset: ' + file);
   return lock;
 }
 

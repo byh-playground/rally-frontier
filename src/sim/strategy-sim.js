@@ -24,7 +24,7 @@ import { WorldContext } from './world-context.js';
 import { AdaptiveNavigationDemand, InteractionGeometry, NavigationGoal, SurfaceContactGeometry, SurfaceMotion, SweptCircleContact, TerrainNavigation } from './navigation.js';
 import { FP } from '../core/config.js';
 import { RallyNetcode } from '../core/gamekit.js';
-import { CampaignMapDefinition, CampaignMissionDefinition, CampaignOutcomeRules, CampaignScriptRuntime, DebugScenarioHarness, SimulationTiming } from '../main.js';
+import { CampaignMapDefinition, CampaignMissionDefinition, CampaignOutcomeRules, CampaignScriptRuntime, SimulationTiming } from '../main.js';
 
 class SimulationRuntimeState{
   static collision(sim){
@@ -91,9 +91,9 @@ class StrategySim{
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","spatialQueryScopeBuffers","spatialQueryScopeDepth","aoeCandidateSpatialScratch","aoeCandidateSpatialDepth","maxUnitRadius","maxTauntRadius","targetLevelMemo",
     "cloakCacheTick","auraCloakedIds","visionFields","economyCacheTick","workerGasAssignments","validGasExtractorsBySide","navigation","nextRoutePathId","routePathStore","routePathIndex"
   ],children:{delayedEffects:DelayedEffectState}});
-  static createForMatch({draft,seed,rules=GameRuleDefinition.current,campaignScenario=null,debugScenario=null}={}){
-    const sim=new StrategySim(draft,seed,rules,campaignScenario,{launchMode:!campaignScenario&&!debugScenario});
-    try{if(debugScenario)sim.applyDebugScenario(debugScenario);if(campaignScenario)sim.applyCampaignScenario(campaignScenario);return sim}
+  static createForMatch({draft,seed,rules=GameRuleDefinition.current,campaignScenario=null}={}){
+    const sim=new StrategySim(draft,seed,rules,campaignScenario,{launchMode:!campaignScenario});
+    try{if(campaignScenario)sim.applyCampaignScenario(campaignScenario);return sim}
     catch(error){sim.dispose("initialization-failed");throw error}
   }
   constructor(draftState,seed,rules=GameRuleDefinition.current,campaignScenario=null,{launchMode=!campaignScenario}={}){
@@ -1188,68 +1188,6 @@ class StrategySim{
     }
   }
 
-  applyDebugScenario(raw){
-    const cfg=DebugScenarioHarness.normalize(raw);
-    // Debug Scenario replaces only player rosters. Generated neutral camps/main objectives
-    // are part of the real map state and must remain intact unless a scenario explicitly owns them.
-    this.units=this.units.filter(u=>u.side===NEUTRAL_SIDE);
-    this.unitById.clear();this.unitIndexById.clear();this.runtimeIndexTick=-1;
-    this.rebuildRuntimeIndexes();
-    this.abilities=[{},{}];this.specialResearch=[{},{}];this.tech=[3,3];
-    const humanSide=cfg.humanRole==="host"?0:1,enemySide=1-humanSide;
-    // The scenario is the roster SSOT for this debug match too. This prevents normal
-    // generated deck consumers (production UI / bot strategy) from reintroducing unrelated units.
-    const humanRoster=DebugScenarioHarness.unitRoster(cfg,humanSide),enemyRoster=DebugScenarioHarness.unitRoster(cfg,enemySide);
-    this.decks=[[],[]];this.decks[humanSide]=humanRoster.slice();this.decks[enemySide]=enemyRoster.slice();
-    if(cfg.research){for(const type of humanRoster)this.abilities[humanSide][type]=true;for(const type of enemyRoster)this.abilities[enemySide][type]=true}
-    const formation=(roster,count)=>{
-      const cols=Math.max(1,Math.ceil(Math.sqrt(count))),rows=Math.ceil(count/cols),spacing=Math.max(24,...roster.map(type=>(this.unitRadius(type)*2)+8));
-      return{cols,rows,spacing,halfHeight:Math.ceil(rows/2)*spacing};
-    };
-    const placeGroup=(side,roster,count,centerX,centerY)=>{
-      const layout=formation(roster,count),out=[];
-      for(let i=0;i<count;i++){
-        const row=Math.floor(i/layout.cols),col=i%layout.cols,type=roster[i%roster.length];
-        out.push({side,type,x:centerX+(col-(layout.cols-1)/2)*layout.spacing,y:centerY+(row-(layout.rows-1)/2)*layout.spacing});
-      }
-      return out;
-    };
-    const humanFormation=formation(humanRoster,cfg.allyCount),enemyFormation=formation(enemyRoster,cfg.enemyCount),gap=cfg.testMode==="mobile-battle"?humanFormation.halfHeight+enemyFormation.halfHeight+80:190;
-    // Keep opposing rows separated by a small central lane at every supported roster size.
-    const placeBattle=(cx,cy)=>[
-      ...placeGroup(humanSide,humanRoster,cfg.allyCount,cx,humanSide===0?cy+gap/2:cy-gap/2),
-      ...placeGroup(enemySide,enemyRoster,cfg.enemyCount,cx,enemySide===0?cy+gap/2:cy-gap/2)
-    ];
-    // The mobile battle test is a performance benchmark: it keeps the map-center start so
-    // measurements stay comparable, and its largest rosters do not fit between camps anyway.
-    const {x:cx,y:cy,placements}=cfg.testMode==="mobile-battle"
-      ?{x:this.world.width*.5,y:this.world.height*.5,placements:placeBattle(this.world.width*.5,this.world.height*.5).map(p=>({...p,x:RangeUtil.clamp(p.x,30,this.world.width-30),y:RangeUtil.clamp(p.y,30,this.world.height-30)}))}
-      :this.debugBattleSite(placeBattle);
-    for(const p of placements)this.spawnUnit(p.side,p.type,p.x,p.y);
-    this.flags[humanSide]={...this.flags[humanSide],x:cx,y:humanSide===0?cy-gap:cy+gap,forced:false};
-    this.flags[enemySide]={...this.flags[enemySide],x:cx,y:enemySide===0?cy-gap:cy+gap,forced:false};
-    this.rebuildRuntimeIndexes();
-    return cfg;
-  }
-
-  // The debug battle opens on the open ground nearest the map center. Camps stay on the map,
-  // so the battle must start outside every camp's aggro area on open, flat ground.
-  debugBattleSite(placeBattle){
-    const step=50,maxRing=Math.ceil(Math.max(this.world.width,this.world.height)/step);
-    const midX=this.world.width*.5,midY=this.world.height*.5;
-    const clear=p=>{
-      const r=this.unitRadius(p.type);
-      if(!this.world.terrain.circleClear(p.x,p.y,r)||!this.world.terrain.surfaces.buildable(p.x,p.y,r))return false;
-      for(const c of this.camps){const d=CampDefinition.get(c.kind);if(Math.hypot(p.x-c.x,p.y-c.y)<(d?.aggroRadius||0)+(d?.homeSpread||0)+r)return false}
-      for(const b of this.buildings)if(b.alive!==false&&Math.hypot(p.x-b.x,p.y-b.y)<(BuildingDefinition.get(b.type)?.size||0)+r+SPAWN_CLEARANCE)return false;
-      return true;
-    };
-    for(let ring=0;ring<=maxRing;ring++)for(let i=-ring;i<=ring;i++)for(const [dx,dy] of ring?[[i,-ring],[i,ring],[-ring,i],[ring,i]]:[[0,0]]){
-      const x=midX+dx*step,y=midY+dy*step,placements=placeBattle(x,y);
-      if(placements.every(clear))return{x,y,placements};
-    }
-    throw new Error("debug battle has no open ground outside neutral camps");
-  }
   setUnitControlMode(u,{side=u?.side,logicProfile=null,logicState={}}={}){
     if(!u)return null;
     const nextSide=side===0||side===1||side===NEUTRAL_SIDE?side:u.side;
