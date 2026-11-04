@@ -12,7 +12,7 @@ import { UNIT_RUNTIME_GEOMETRY, UnitDefinition } from '../definitions/units.js';
 import { DAMAGE_CLASS_MATRIX, CAPTURE_DECAY_PER_TICK, CAPTURE_DURATION_MS, CAPTURE_RADIUS, COMBAT_TARGET_REFRESH_MS, COMBAT_TARGET_STICKINESS_PCT, DEAD_ENTITY_CLEANUP_MS, DEFAULT_ARTILLERY_MOVE_RECOVERY_MS, DEFAULT_ATTACK_WINDUP_MS, DEFAULT_MELEE_MOVE_RECOVERY_MS, DEFAULT_RANGED_MOVE_RECOVERY_MS, NAV_BUILDING_MARGIN, SPAWN_UNIT_GAP } from '../definitions/combat-rules.js';
 import { PerformanceTelemetry } from '../diagnostics/performance-telemetry.js';
 import { FormationDefinition } from '../definitions/formations.js';
-import { ALLY_SOFT_CORRECTION_FRACTION, ALLY_SOFT_IDLE_RADIUS_FRACTION, ALLY_SOFT_MAX_RADIUS_FRACTION, ALLY_SOFT_SPEED_FRACTION, BALANCE_HISTORY_EVERY_MS, BALANCE_HISTORY_MAX, BALANCE_SAMPLE_EVERY_MS, COLLISION_NORMAL, COLLISION_RADIUS_SCALE, COLLISION_SPATIAL_CELL, PERF_SAMPLE_EVERY_MS, SIM_SPATIAL_CELL, TERRAIN_ATTACK_REVEAL_MS } from '../definitions/world-rules.js';
+import { ALLY_SOFT_CORRECTION_FRACTION, ALLY_SOFT_IDLE_RADIUS_FRACTION, ALLY_SOFT_MAX_RADIUS_FRACTION, ALLY_SOFT_ITERATIONS, ALLY_SOFT_SPEED_FRACTION, BALANCE_HISTORY_EVERY_MS, BALANCE_HISTORY_MAX, BALANCE_SAMPLE_EVERY_MS, COLLISION_NORMAL, COLLISION_RADIUS_SCALE, COLLISION_SPATIAL_CELL, PERF_SAMPLE_EVERY_MS, SIM_SPATIAL_CELL, TERRAIN_ATTACK_REVEAL_MS } from '../definitions/world-rules.js';
 import { WorldContext } from './world-context.js';
 import { AdaptiveNavigationDemand, InteractionGeometry, NavigationGoal, SurfaceContactGeometry, SurfaceMotion, SweptCircleContact, TerrainNavigation } from './navigation.js';
 import { FP } from '../core/config.js';
@@ -1380,7 +1380,8 @@ class StrategySim{
     for(const u of this.units)if(u?.alive&&this.navigation.motion.constrain(u))changed++;
     return changed;
   }
-  resolveAlliedSoftSeparation(radii,maxRadius){
+  // segmentStart: record where this pass starts as the segment the hostile/terrain sweep checks afterwards.
+  resolveAlliedSoftSeparation(radii,maxRadius,segmentStart=true){
     const units=this.units,n=units.length;
     if(!n)return 0;
     const perf=this._perfCollect,now=perf?()=>performance.now():null;
@@ -1391,7 +1392,7 @@ class StrategySim{
     let mark=perf?now():0;
     grid.reset(units,maxRadius);
     dxA.fill(0,0,n);dyA.fill(0,0,n);cnt.fill(0,0,n);
-    for(let i=0;i<n;i++){
+    if(segmentStart)for(let i=0;i<n;i++){
       const u=units[i];this.collisionSegmentFx[i]=u?.fx??0;this.collisionSegmentFy[i]=u?.fy??0;
     }
     if(perf){perf.collisionGridBuildMs+=now()-mark;perf.collisionSoftPasses++}
@@ -1472,11 +1473,15 @@ class StrategySim{
     this.resolveNonAlliedSurfaceMotion(this.collisionStartFx,this.collisionStartFy,radii,maxRadius,4);
     if(perf)perf.collisionSweptMotionMs+=now()-mark;
 
-    // One Jacobi-style ally pass per tick. It also nudges idle and in-range attackers,
-    // but correction is deliberately softer and bounded by radius and normal tick speed.
-    const softMoved=this.resolveAlliedSoftSeparation(radii,maxRadius);
+    // Jacobi ally passes (A011·A012, budmori separationIterations): one pass, bounded by radius and tick
+    // speed, loses to a crowd that all walks toward the same front, so repeat until nothing moves.
+    let softMoved=0;
+    for(let pass=0;pass<ALLY_SOFT_ITERATIONS;pass++){
+      const moved=this.resolveAlliedSoftSeparation(radii,maxRadius,pass===0);softMoved+=moved;
+      if(!moved)break;
+    }
     if(softMoved){
-      // Keep the one-pass nudge from crossing a hostile solid or a terrain boundary.
+      // One sweep from the first pass's start keeps the combined nudge from crossing a hostile solid or terrain.
       mark=perf?now():0;
       this.resolveNonAlliedSurfaceMotion(this.collisionSegmentFx,this.collisionSegmentFy,radii,maxRadius,3);
       if(perf)perf.collisionSweptMotionMs+=now()-mark;
