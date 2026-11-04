@@ -4325,16 +4325,21 @@ class LaunchPresentation{
     return LaunchRules.target({x:hold.cannonX,y:hold.cannonY},hold.aimX,hold.aimY,holdMs,world,flag,hold.card);
   }
   // While charging, the camera eases just far enough to keep the landing ring on screen.
+  static FOLLOW_HALF_LIFE_MS=52;static followAt=null;
   static followAim(r){
-    const hold=this.hold;if(!hold||!r.world){if(this.labelShown){this.labelShown=false;LaunchScreens.renderAimLabel(null)}return}
+    const hold=this.hold;if(!hold||!r.world){this.followAt=null;if(this.labelShown){this.labelShown=false;LaunchScreens.renderAimLabel(null)}return}
     const at=this.landing(hold,performance.now()-hold.armedAt,r.world),vx=r.viewX(at.x),vy=r.viewY(at.y);
     const vw=r.viewWorldW(),vh=r.viewWorldH(),margin=(LaunchRules.grain(hold.card)?.splash||120)+80;
     const py=BattlefieldProjection.planarY(vy,r.world.terrain.surfaces.heightAt(at.x,at.y));
     // The top keeps room for the HUD, the enemy arrow and the ring's label (about 120 CSS px).
     const hud=120*vw/Math.max(1,r.canvas.clientWidth);
     const left=RangeUtil.clamp(r.cameraLeft,vx+margin-vw,vx-margin),top=RangeUtil.clamp(r.cameraTop,py+margin-vh,py-margin-hud);
-    r.cameraLeft=RangeUtil.clamp(r.cameraLeft+(left-r.cameraLeft)*.2,0,Math.max(0,r.world.width-vw));
-    r.cameraTop=r.clampCameraTop(r.cameraTop+(top-r.cameraTop)*.2);
+    // The shared camera eases toward that framing by half-life, so the pace does not depend on the frame rate.
+    const camera=r.stableCamera(),halfH=r.canvas.height/r.sc()/2,now=performance.now(),elapsed=Math.min(100,now-(this.followAt??now));
+    this.followAt=now;
+    camera.follow(left+vw/2,top+halfH,elapsed,this.FOLLOW_HALF_LIFE_MS);
+    r.cameraLeft=RangeUtil.clamp(camera.camera.x-vw/2,0,Math.max(0,r.world.width-vw));
+    r.cameraTop=r.clampCameraTop(camera.camera.y-halfH);
     // Canvas pixels to the label's CSS pixels, just above the ring.
     const [lx,ly]=r.worldToPx(vx,vy),k=r.canvas.clientWidth/Math.max(1,r.canvas.width),splash=(LaunchRules.grain(hold.card)?.splash||120)*r.sc();
     this.labelShown=true;LaunchScreens.renderAimLabel({x:lx*k,y:(ly-splash)*k-6},hold.card);
