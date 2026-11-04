@@ -207,13 +207,20 @@ class VisionField{
   }
 }
 class TerrainQuery{
+  static boxes=new WeakMap();
+  // Bounding boxes reject most river polygon tests without changing any answer.
+  static inPolygon(x,y,points){
+    let box=this.boxes.get(points);
+    if(!box){box={minX:Infinity,minY:Infinity,maxX:-Infinity,maxY:-Infinity};for(const p of points){box.minX=Math.min(box.minX,p.x);box.maxX=Math.max(box.maxX,p.x);box.minY=Math.min(box.minY,p.y);box.maxY=Math.max(box.maxY,p.y)}this.boxes.set(points,box)}
+    return x>=box.minX&&x<=box.maxX&&y>=box.minY&&y<=box.maxY&&MapGeometry.pointInSimplePolygon(x,y,points);
+  }
   static at(map,x,y,atlas=null){
     const terrain=MapGeneration.mapTerrainDescriptor(map);
     const bridge=(terrain.bridges||[]).find(b=>MapGeometry.pointInBridgeZone(x,y,b,0))||null;
     let river=false;
     if(!bridge){
-      river=MapGeometry.pointInSimplePolygon(x,y,terrain.riverPolygon||[]);
-      if(!river)for(const poly of terrain.riverBranchPolygons||[])if(MapGeometry.pointInSimplePolygon(x,y,poly)){river=true;break}
+      river=!!terrain.riverPolygon&&this.inPolygon(x,y,terrain.riverPolygon);
+      if(!river)for(const poly of terrain.riverBranchPolygons||[])if(this.inPolygon(x,y,poly)){river=true;break}
       if(!river&&(!terrain.riverPolygon||terrain.riverPolygon.length<3)){
         river=(terrain.riverPath||[]).length>1&&MapGeometry.pointPolylineDist(x,y,terrain.riverPath)<=terrain.riverHalfWidth;
         if(!river)for(const branch of terrain.riverBranches||[])if(branch.length>1&&MapGeometry.pointPolylineDist(x,y,branch)<=terrain.riverHalfWidth*.72){river=true;break}

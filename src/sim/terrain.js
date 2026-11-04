@@ -244,6 +244,7 @@ class TerrainSurfaceProjection{
 const TERRAIN_LEVEL_HEIGHT=48;
 const TERRAIN_NEGATIVE_LEVEL_DEPTH=TERRAIN_LEVEL_HEIGHT*.5;
 class TerrainSurfaceAtlas{
+  static SAMPLE_CELL=32;
   static elevationForLevel(level){return level*(level<0?TERRAIN_NEGATIVE_LEVEL_DEPTH:TERRAIN_LEVEL_HEIGHT)}
   static levelForElevation(elevation){return elevation/(elevation<0?TERRAIN_NEGATIVE_LEVEL_DEPTH:TERRAIN_LEVEL_HEIGHT)}
   static cache=new WeakMap();
@@ -276,6 +277,17 @@ class TerrainSurfaceAtlas{
     }
     if(out.length>2&&Math.hypot(out[0].x-out[out.length-1].x,out[0].y-out[out.length-1].y)<.01)out.pop();
     return out;
+  }
+  // Closed segment/rectangle contact by separating axes; near-touching counts.
+  static segmentTouchesRect(ax,ay,bx,by,x0,y0,x1,y1){
+    if(Math.max(ax,bx)<x0||Math.min(ax,bx)>x1||Math.max(ay,by)<y0||Math.min(ay,by)>y1)return false;
+    const dx=bx-ax,dy=by-ay;let pos=false,neg=false;
+    for(const [x,y] of [[x0,y0],[x1,y0],[x1,y1],[x0,y1]]){const c=dx*(y-ay)-dy*(x-ax);if(c>=-1e-9)pos=true;if(c<=1e-9)neg=true}
+    return pos&&neg;
+  }
+  static polygonTouchesRect(points,x0,y0,x1,y1){
+    for(let i=0;i<points.length;i++){const a=points[i],b=points[(i+1)%points.length];if(this.segmentTouchesRect(a.x,a.y,b.x,b.y,x0,y0,x1,y1))return true}
+    return false;
   }
   static polygonsOverlap(a,b){
     if(a.some(p=>MapGeometry.pointInSimplePolygon(p.x,p.y,b))||b.some(p=>MapGeometry.pointInSimplePolygon(p.x,p.y,a)))return true;
@@ -636,7 +648,22 @@ class TerrainSurfaceAtlas{
   }
   onBoundary(points,x,y){for(let i=0;i<points.length;i++){const a=points[i],b=points[(i+1)%points.length];if(MapGeometry.pointSegDist(x,y,a.x,a.y,b.x,b.y)<1e-6)return true}return false}
   rampProgress(r,x,y){return TerrainSurfaceAtlas.sampleRamp(r,x,y)?.progress??RangeUtil.clamp(((x-r.lowA.x)*r.nx+(y-r.lowA.y)*r.ny)/r.run,0,1)}
+  // A cell that no bridge, ramp or layer edge touches has one sample at every
+  // point inside it, so it is answered from a table; other cells sample exactly.
+  sampleCellTable(){
+    if(this.sampleCells)return this.sampleCells;
+    const cell=TerrainSurfaceAtlas.SAMPLE_CELL,pad=.01,cols=Math.ceil(this.width/cell),rows=Math.ceil(this.height/cell),cells=new Array(cols*rows).fill(null);
+    for(let cy=0;cy<rows;cy++)for(let cx=0;cx<cols;cx++){
+      const x0=cx*cell-pad,y0=cy*cell-pad,x1=(cx+1)*cell+pad,y1=(cy+1)*cell+pad;
+      if(this.bridgeIndex.query(x0,y0,x1,y1).length||this.rampIndex.query(x0,y0,x1,y1).length)continue;
+      if(this.layerIndex.query(x0,y0,x1,y1).some(l=>TerrainSurfaceAtlas.polygonTouchesRect(l.points,x0,y0,x1,y1)))continue;
+      cells[cy*cols+cx]=Object.freeze(this.sampleTerrain((cx+.5)*cell,(cy+.5)*cell));
+    }
+    return this.sampleCells={cell,cols,rows,cells};
+  }
   sample(x,y){
+    const table=this.sampleCells||this.sampleCellTable();
+    if(x>=0&&y>=0){const cx=Math.floor(x/table.cell),cy=Math.floor(y/table.cell);if(cx<table.cols&&cy<table.rows){const hit=table.cells[cy*table.cols+cx];if(hit)return hit}}
     for(const bridge of this.bridgeIndex.query(x,y))if(MapGeometry.pointInSimplePolygon(x,y,bridge.points)||this.onBoundary(bridge.points,x,y))return{id:bridge.id,level:bridge.level,elevation:bridge.elevation,bridge,ramp:null,progress:1,gradient:{x:0,z:0}};
     return this.sampleTerrain(x,y);
   }
