@@ -4,9 +4,9 @@ import './grain-portrait.js';
 // Routes: #/ title, #/friend, #/help, #/play, #/play/menu, #/play/help, #/play/<grain> card detail, #/result.
 // The game owns matches; this module owns which screen and sheet the address shows, and asks the game through `actions`.
 const GRAIN_COPY = Object.freeze({
-    rice: { land: '넓게 흩어짐', desc: '가장 멀리 날아가 넓게 흩어집니다. 먼 곳을 먼저 차지할 때 씁니다.' },
-    soybean: { land: '한 줄로 착지', desc: '착지하면 적 본진 쪽으로 한 줄로 섭니다. 기본 전열입니다.' },
-    redbean: { land: '착지 후 돌격', desc: '착지하자마자 잠깐 빠르게 돌격합니다. 마무리 일격입니다.' },
+    rice: { land: '넓게 흩어짐', fire: '5갈래 산탄', desc: '가장 멀리 날아가 다섯 갈래로 흩어집니다. 넓은 곳을 한 번에 덮습니다.' },
+    soybean: { land: '한 줄로 착지', fire: '단발 · 중심 강타', desc: '한 발이 크게 터집니다. 폭발 중심에 맞힐수록 피해가 커지고, 착지하면 적 본진 쪽으로 한 줄로 섭니다.' },
+    redbean: { land: '착지 후 돌격', fire: '3연사', desc: '같은 곳에 세 번 시간차로 떨어집니다. 착지하자마자 잠깐 빠르게 돌격합니다.' },
 });
 const SCREENS = new Set(['', 'friend', 'help', 'play', 'result']);
 
@@ -164,7 +164,7 @@ export class LaunchScreens {
             COPY = GRAIN_COPY[type] || { land: '', desc: '' },
             HOST = this.$('cardDetail');
         HOST.innerHTML = `<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2><p>${COPY.desc}</p></div></div>
-<div class="launch-stats"><div>비용<b>${STATS.cost}</b></div><div>병사 수<b>${STATS.count}</b></div><div>최대 사거리<b>${STATS.maxReach.toLocaleString('ko-KR')}</b></div><div>착지<b>${COPY.land}</b></div></div>
+<div class="launch-stats"><div>비용<b>${STATS.cost}</b></div><div>병사 수<b>${STATS.count}</b></div><div>최대 사거리<b>${STATS.maxReach.toLocaleString('ko-KR')}</b></div><div>발사<b>${COPY.fire}</b></div><div>착지<b>${COPY.land}</b></div></div>
 <button type="button" class="launch-btn primary" data-sheet-close>닫기</button>`;
         this.fillCardPortraits(HOST);
     }
@@ -191,7 +191,7 @@ export class LaunchScreens {
         if (!at) {
             return;
         }
-        const TEXT = `${this.actions.grainName(type)} ×${this.actions.grainStats(type).count} · ${this.landingLabel(type)}`;
+        const TEXT = `${this.actions.grainName(type)} ×${this.actions.grainStats(type).count} · ${GRAIN_COPY[type]?.fire || this.landingLabel(type)}`;
         if (LABEL.textContent !== TEXT) {
             LABEL.textContent = TEXT;
         }
