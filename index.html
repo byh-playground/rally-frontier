@@ -517,92 +517,6 @@ END OF DEVELOPMENT CONTRACT
     <div id="titleUpdateStamp" class="launch-version" title="이 빌드의 마지막 업데이트 시각">확인 중</div>
   </section>
 
-  <dialog id="gameStartDialog" class="game-dialog">
-    <form method="dialog" class="dialog-shell" onsubmit="return false">
-      <button id="gameStartCloseBtn" type="button" class="dialog-close" aria-label="닫기">×</button>
-      <div class="dialog-kicker">START MATCH</div>
-      <h2>게임 시작</h2>
-      <p class="dialog-copy">플레이 방식을 선택하세요.</p>
-      <div class="selection-mode-block" aria-label="유닛 선택 방식">
-        <div class="selection-mode-label">유닛 선택 방식</div>
-        <div class="selection-mode-toggle">
-          <button id="selectionDraftBtn" type="button" class="selection-mode-btn active">드래프트</button>
-          <button id="selectionDeckBtn" type="button" class="selection-mode-btn">덱 선택</button>
-        </div>
-        <div id="selectionModeCopy" class="selection-mode-copy">서로 번갈아 유닛을 선택해 이번 경기의 조합을 완성합니다.</div>
-      </div>
-      <div class="start-mode-actions">
-        <button id="campaignBtn" type="button" class="dialog-action primary start-mode-option"><b>캠페인</b><span class="single-entry-sub">정식 캠페인 · 기존 전투 시스템 그대로 사용</span></button>
-<button id="singleBtn" type="button" class="dialog-action primary start-mode-option">
-          싱글 플레이
-          <span class="single-entry-sub">AI와 대전 · Host / Guest 역할 선택</span>
-        </button>
-        <button id="createBtn" type="button" class="dialog-action start-mode-option">
-          방 만들기
-          <span class="single-entry-sub">4자리 방 코드를 만들고 상대 초대</span>
-        </button>
-        <button id="joinBtn" type="button" class="dialog-action start-mode-option">
-          방 참가
-          <span class="single-entry-sub">상대의 4자리 방 코드로 참가</span>
-        </button>
-      </div>
-      <details id="advancedTestSettings" class="selection-mode-block">
-        <summary class="selection-mode-label" style="cursor:pointer;user-select:none">고급 테스트 설정</summary>
-        <div class="selection-mode-copy" style="margin-top:8px">개발·밸런스 검증용 설정입니다. 일반 플레이에서는 변경할 필요가 없습니다.</div>
-        <div style="margin-top:10px">
-          <div class="selection-mode-label">시뮬레이션 정밀도 (TPS)</div>
-          <div class="selection-mode-toggle" id="simulationTpsToggle">
-            <button type="button" class="selection-mode-btn active" data-sim-tps="10">10</button>
-            <button type="button" class="selection-mode-btn" data-sim-tps="15">15</button>
-            <button type="button" class="selection-mode-btn" data-sim-tps="20">20</button>
-            <button type="button" class="selection-mode-btn" data-sim-tps="30">30</button>
-          </div>
-          <div id="simulationTpsCopy" class="selection-mode-copy">10 TPS · 현재 기본값</div>
-          <div class="selection-mode-copy">FPS와 무관한 게임 로직 처리 주기입니다. 온라인 경기는 Host가 선택하고 Guest는 동일 설정을 따릅니다.</div>
-        </div>
-        <div style="margin-top:10px">
-          <div class="selection-mode-label">동기화 모드 · 다음 경기부터 적용</div>
-          <div class="selection-mode-toggle" id="netcodeModeToggle">
-            <button type="button" class="selection-mode-btn active" data-netcode-mode="lockstep">락스텝 · 기본</button>
-            <button type="button" class="selection-mode-btn" data-netcode-mode="rollback">롤백</button>
-          </div>
-          <div class="selection-mode-copy">락스텝은 입력을 기다리고, 롤백은 입력을 예측한 뒤 보정합니다. 온라인 양쪽의 선택이 같아야 합니다. TPS·FPS는 바뀌지 않습니다.</div>
-        </div>
-        <div id="unitTestScenario" style="display:grid;grid-template-columns:minmax(0,1fr) 72px;gap:7px;margin-top:12px">
-          <label class="selection-mode-label" style="grid-column:1/-1">빠른 실제 전투 초기조건</label>
-          <select id="unitTestAllyType" class="room-code-input" style="width:100%;font-size:11px;padding:7px"></select>
-          <input id="unitTestAllyCount" class="room-code-input" type="number" min="1" max="60" value="10" aria-label="아군 수량" style="width:100%;font-size:11px;padding:7px">
-          <select id="unitTestEnemyType" class="room-code-input" style="width:100%;font-size:11px;padding:7px"></select>
-          <input id="unitTestEnemyCount" class="room-code-input" type="number" min="1" max="60" value="5" aria-label="적군 수량" style="width:100%;font-size:11px;padding:7px">
-          <label class="selection-mode-copy" style="grid-column:1/-1;display:flex;align-items:center;gap:7px"><input id="unitTestResearch" type="checkbox" checked> 양측 선택 유닛 연구 적용</label>
-        </div>
-        <button id="unitTestBtn" type="button" class="dialog-action start-mode-option" style="width:100%;margin-top:12px">
-          선택 유닛 테스트 시작
-          <span class="single-entry-sub">실제 싱글 WebRTC/GameSession/Simulation 사용 · 초기 병력만 교체</span>
-        </button>
-        <section class="battle-test-config" aria-labelledby="battleTestHeading">
-          <h3 id="battleTestHeading">모바일 대규모 전투 테스트</h3>
-          <p class="battle-test-copy">일반 싱글플레이와 같은 시뮬레이션·렌더러로 로컬 AI 전투를 실행합니다. 설정한 전투 병력만 배치하며 캠페인 진행과 저장 데이터는 사용하지 않습니다.</p>
-          <div class="battle-test-config-grid">
-            <label for="battleTestUnitCount">전투 유닛 수 (양 팀 합계)
-              <select id="battleTestUnitCount"><option value="100">100</option><option value="200">200</option><option value="400">400</option></select>
-            </label>
-            <label for="battleTestComposition">편성
-              <select id="battleTestComposition"><option value="melee">근접</option><option value="ranged">원거리</option><option value="mixed" selected>혼합 (근접 + 원거리)</option></select>
-            </label>
-            <label for="battleTestSeed">고정 시드
-              <input id="battleTestSeed" type="number" min="0" max="4294967295" step="1" value="20261015" inputmode="numeric">
-            </label>
-            <label for="battleTestSampleSeconds">측정 구간 (워밍업 5초)
-              <select id="battleTestSampleSeconds"><option value="10">10초</option><option value="15" selected>15초</option><option value="30">30초</option></select>
-            </label>
-          </div>
-          <p class="battle-test-copy">시작 후 5초 워밍업, 선택한 시간 동안 측정합니다. 일시정지 구간은 제외합니다. GPU 시간은 렌더러가 측정하지 않습니다.</p>
-          <button id="battleTestStartBtn" type="button" class="dialog-action primary">전투 테스트 시작</button>
-        </section>
-      </details>
-    </form>
-  </dialog>
 
   <dialog id="campaignDialog" class="game-dialog"><div class="dialog-shell">
 <button id="campaignCloseBtn" type="button" class="dialog-close">×</button><div class="dialog-kicker">CAMPAIGN · VERTICAL SLICE</div>
@@ -615,24 +529,6 @@ END OF DEVELOPMENT CONTRACT
 <button id="campaignLoadFileBtn" type="button" class="dialog-action">JS 파일 Preview</button></details>
 <button id="campaignStartBtn" type="button" class="dialog-action primary" disabled>미션 시작</button>
 <div id="campaignStatus" class="dialog-error"></div></div></dialog>
-<dialog id="singleRoleDialog" class="game-dialog">
-    <form method="dialog" class="dialog-shell" onsubmit="return false">
-      <button id="singleRoleCloseBtn" type="button" class="dialog-close" aria-label="닫기">×</button>
-      <div class="dialog-kicker">SINGLE TEST ROLE</div>
-      <h2>내 역할 선택</h2>
-      <p class="dialog-copy">AI는 반대 역할을 맡고, 두 쪽 모두 실제 raw WebRTC DataChannel 경로로 실행됩니다.</p>
-      <div style="display:grid;gap:9px;margin-top:12px">
-        <button id="singleHostBtn" type="button" class="dialog-action primary">
-          방장(Host)으로 시작
-          <span class="single-entry-sub">내가 Host · AI Guest · Host 턴 대기/TR 검증</span>
-        </button>
-        <button id="singleGuestBtn" type="button" class="dialog-action">
-          게스트(Guest)로 시작
-          <span class="single-entry-sub">내가 Guest · AI Host · Guest proposal/clock 검증</span>
-        </button>
-      </div>
-    </form>
-  </dialog>
 
   <dialog id="createDialog" class="game-dialog">
     <div class="dialog-shell">

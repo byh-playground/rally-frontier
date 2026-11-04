@@ -38,6 +38,7 @@ import { BUILD_META } from './core/build-info.js';
 import { RallyGamekit, RallyNetcode, SIM_WORKER } from './core/gamekit.js';
 import { LaunchScreens } from './ui/launch-screens.js';
 import { grainPortrait } from './ui/grain-portrait.js';
+import { readDevQuery } from './ui/dev-query.js';
 
 // The Worker realm has no window; GameKit modules must still see it as non-browser.
 const window=globalThis;
@@ -7677,7 +7678,7 @@ const audioSystem=new AudioSystem();
    7. UI wiring
    ========================= */
 class DomUtil{static byId(id){return document.getElementById(id)}}
-class UiRegistry{static refs={p2pHealth:DomUtil.byId("p2pHealth"),p2pHealthText:DomUtil.byId("p2pHealthText"),lobby:DomUtil.byId("lobby"),draft:DomUtil.byId("draftScreen"),game:DomUtil.byId("gameScreen"),net:DomUtil.byId("netStatus"),create:DomUtil.byId("createBtn"),join:DomUtil.byId("joinBtn"),createDialog:DomUtil.byId("createDialog"),joinDialog:DomUtil.byId("joinDialog"),createClose:DomUtil.byId("createCloseBtn"),joinClose:DomUtil.byId("joinCloseBtn"),createStatus:DomUtil.byId("createStatus"),createRetry:DomUtil.byId("createRetryBtn"),joinConfirm:DomUtil.byId("joinConfirmBtn"),room:DomUtil.byId("roomInput"),codeArea:DomUtil.byId("hostCodeArea"),code:DomUtil.byId("hostCode"),joinError:DomUtil.byId("joinError"),localTest:DomUtil.byId("localTestBtn"),testSwitcher:DomUtil.byId("testSwitcher"),hostView:DomUtil.byId("hostViewBtn"),guestView:DomUtil.byId("guestViewBtn"),draftPair:DomUtil.byId("draftPair"),draftRound:DomUtil.byId("draftRound"),draftTitle:DomUtil.byId("draftTitle"),draftTurn:DomUtil.byId("draftTurn"),draftPickTimer:DomUtil.byId("draftPickTimer"),draftPickCenterCountdown:DomUtil.byId("draftPickCenterCountdown"),draftDecks:DomUtil.byId("draftDecks"),draftCountdown:DomUtil.byId("draftCountdown"),draftCountdownNumber:DomUtil.byId("draftCountdownNumber"),draftCountdownCopy:DomUtil.byId("draftCountdownCopy"),draftMapPreviewCanvas:DomUtil.byId("draftMapPreviewCanvas"),draftMapPreviewMeta:DomUtil.byId("draftMapPreviewMeta"),draftFinalMineRoster:DomUtil.byId("draftFinalMineRoster"),draftFinalEnemyRoster:DomUtil.byId("draftFinalEnemyRoster"),draftFinalMineDefense:DomUtil.byId("draftFinalMineDefense"),draftFinalEnemyDefense:DomUtil.byId("draftFinalEnemyDefense"),canvas:DomUtil.byId("glCanvas"),minimapCanvas:DomUtil.byId("minimapCanvas"),minimapExpandBtn:DomUtil.byId("minimapExpandBtn"),minerals:DomUtil.byId("minerals"),gas:DomUtil.byId("gas"),workers:DomUtil.byId("workers"),supply:DomUtil.byId("supply"),supplyChip:DomUtil.byId("supplyChip"),supplyWarning:DomUtil.byId("supplyWarning"),reinforcementOverview:DomUtil.byId("reinforcementOverview"),reinforcementGrid:DomUtil.byId("reinforcementGrid"),tier:DomUtil.byId("tier"),soundBtn:DomUtil.byId("soundBtn"),modeTip:DomUtil.byId("modeTip"),buildFinishBtn:DomUtil.byId("buildFinishBtn"),spellCancelBtn:DomUtil.byId("spellCancelBtn"),productionEfficiencySummary:DomUtil.byId("productionEfficiencySummary"),unitGrid:DomUtil.byId("unitGrid"),spellCloseBtn:DomUtil.byId("spellCloseBtn"),spellChoiceArea:DomUtil.byId("spellChoiceArea"),spellInventory:DomUtil.byId("spellInventory"),tacticalChestArea:DomUtil.byId("tacticalChestArea"),flagBtn:DomUtil.byId("flagBtn"),pauseBtn:DomUtil.byId("pauseBtn"),cancelModeBtn:DomUtil.byId("cancelModeBtn"),supplyBtn:DomUtil.byId("supplyBtn"),gasExtractorBtn:DomUtil.byId("gasExtractorBtn"),defenseCardChoices:DomUtil.byId("defenseCardChoices"),academyBtn:DomUtil.byId("academyBtn"),airIncubatorBtn:DomUtil.byId("airIncubatorBtn"),labBtn:DomUtil.byId("labBtn"),buildingPanel:DomUtil.byId("buildingPanel"),buildingPanelTitle:DomUtil.byId("buildingPanelTitle"),buildingPanelStatus:DomUtil.byId("buildingPanelStatus"),buildingPanelActions:DomUtil.byId("buildingPanelActions"),buildingDeselectBtn:DomUtil.byId("buildingDeselectBtn"),tech2:DomUtil.byId("tech2Line"),tech3:DomUtil.byId("tech3Line"),attackUpgradeTag:DomUtil.byId("attackUpgradeTag"),armorUpgradeTag:DomUtil.byId("armorUpgradeTag"),hint:DomUtil.byId("selectionHint"),log:DomUtil.byId("eventLog"),result:DomUtil.byId("result"),resultTitle:DomUtil.byId("resultTitle"),resultText:DomUtil.byId("resultText"),rematch:DomUtil.byId("rematchBtn")}}
+class UiRegistry{static refs={p2pHealth:DomUtil.byId("p2pHealth"),p2pHealthText:DomUtil.byId("p2pHealthText"),lobby:DomUtil.byId("lobby"),draft:DomUtil.byId("draftScreen"),game:DomUtil.byId("gameScreen"),net:DomUtil.byId("netStatus"),createDialog:DomUtil.byId("createDialog"),joinDialog:DomUtil.byId("joinDialog"),createClose:DomUtil.byId("createCloseBtn"),joinClose:DomUtil.byId("joinCloseBtn"),createStatus:DomUtil.byId("createStatus"),createRetry:DomUtil.byId("createRetryBtn"),joinConfirm:DomUtil.byId("joinConfirmBtn"),room:DomUtil.byId("roomInput"),codeArea:DomUtil.byId("hostCodeArea"),code:DomUtil.byId("hostCode"),joinError:DomUtil.byId("joinError"),localTest:DomUtil.byId("localTestBtn"),testSwitcher:DomUtil.byId("testSwitcher"),hostView:DomUtil.byId("hostViewBtn"),guestView:DomUtil.byId("guestViewBtn"),draftPair:DomUtil.byId("draftPair"),draftRound:DomUtil.byId("draftRound"),draftTitle:DomUtil.byId("draftTitle"),draftTurn:DomUtil.byId("draftTurn"),draftPickTimer:DomUtil.byId("draftPickTimer"),draftPickCenterCountdown:DomUtil.byId("draftPickCenterCountdown"),draftDecks:DomUtil.byId("draftDecks"),draftCountdown:DomUtil.byId("draftCountdown"),draftCountdownNumber:DomUtil.byId("draftCountdownNumber"),draftCountdownCopy:DomUtil.byId("draftCountdownCopy"),draftMapPreviewCanvas:DomUtil.byId("draftMapPreviewCanvas"),draftMapPreviewMeta:DomUtil.byId("draftMapPreviewMeta"),draftFinalMineRoster:DomUtil.byId("draftFinalMineRoster"),draftFinalEnemyRoster:DomUtil.byId("draftFinalEnemyRoster"),draftFinalMineDefense:DomUtil.byId("draftFinalMineDefense"),draftFinalEnemyDefense:DomUtil.byId("draftFinalEnemyDefense"),canvas:DomUtil.byId("glCanvas"),minimapCanvas:DomUtil.byId("minimapCanvas"),minimapExpandBtn:DomUtil.byId("minimapExpandBtn"),minerals:DomUtil.byId("minerals"),gas:DomUtil.byId("gas"),workers:DomUtil.byId("workers"),supply:DomUtil.byId("supply"),supplyChip:DomUtil.byId("supplyChip"),supplyWarning:DomUtil.byId("supplyWarning"),reinforcementOverview:DomUtil.byId("reinforcementOverview"),reinforcementGrid:DomUtil.byId("reinforcementGrid"),tier:DomUtil.byId("tier"),soundBtn:DomUtil.byId("soundBtn"),modeTip:DomUtil.byId("modeTip"),buildFinishBtn:DomUtil.byId("buildFinishBtn"),spellCancelBtn:DomUtil.byId("spellCancelBtn"),productionEfficiencySummary:DomUtil.byId("productionEfficiencySummary"),unitGrid:DomUtil.byId("unitGrid"),spellCloseBtn:DomUtil.byId("spellCloseBtn"),spellChoiceArea:DomUtil.byId("spellChoiceArea"),spellInventory:DomUtil.byId("spellInventory"),tacticalChestArea:DomUtil.byId("tacticalChestArea"),flagBtn:DomUtil.byId("flagBtn"),pauseBtn:DomUtil.byId("pauseBtn"),cancelModeBtn:DomUtil.byId("cancelModeBtn"),supplyBtn:DomUtil.byId("supplyBtn"),gasExtractorBtn:DomUtil.byId("gasExtractorBtn"),defenseCardChoices:DomUtil.byId("defenseCardChoices"),academyBtn:DomUtil.byId("academyBtn"),airIncubatorBtn:DomUtil.byId("airIncubatorBtn"),labBtn:DomUtil.byId("labBtn"),buildingPanel:DomUtil.byId("buildingPanel"),buildingPanelTitle:DomUtil.byId("buildingPanelTitle"),buildingPanelStatus:DomUtil.byId("buildingPanelStatus"),buildingPanelActions:DomUtil.byId("buildingPanelActions"),buildingDeselectBtn:DomUtil.byId("buildingDeselectBtn"),tech2:DomUtil.byId("tech2Line"),tech3:DomUtil.byId("tech3Line"),attackUpgradeTag:DomUtil.byId("attackUpgradeTag"),armorUpgradeTag:DomUtil.byId("armorUpgradeTag"),hint:DomUtil.byId("selectionHint"),log:DomUtil.byId("eventLog"),result:DomUtil.byId("result"),resultTitle:DomUtil.byId("resultTitle"),resultText:DomUtil.byId("resultText"),rematch:DomUtil.byId("rematchBtn")}}
 UiRegistry.refs.deckReadyStatus=DomUtil.byId("deckReadyStatus");
 UiRegistry.refs.deckReadyMine=DomUtil.byId("deckReadyMine");
 UiRegistry.refs.deckReadyEnemy=DomUtil.byId("deckReadyEnemy");
@@ -7741,26 +7742,8 @@ UiRegistry.refs.dbgBalanceTime=DomUtil.byId("dbgBalanceTime");UiRegistry.refs.db
 UiRegistry.refs.dbgBalanceMineral=DomUtil.byId("dbgBalanceMineral");UiRegistry.refs.dbgBalanceGas=DomUtil.byId("dbgBalanceGas");UiRegistry.refs.dbgBalanceArmy=DomUtil.byId("dbgBalanceArmy");UiRegistry.refs.dbgBalanceAir=DomUtil.byId("dbgBalanceAir");UiRegistry.refs.dbgBalanceAA=DomUtil.byId("dbgBalanceAA");UiRegistry.refs.dbgBalanceExhaust=DomUtil.byId("dbgBalanceExhaust");UiRegistry.refs.dbgBalanceLosses=DomUtil.byId("dbgBalanceLosses");
 
 UiRegistry.refs.gameStartBtn=DomUtil.byId("gameStartBtn");
-UiRegistry.refs.gameStartDialog=DomUtil.byId("gameStartDialog");
-UiRegistry.refs.gameStartCloseBtn=DomUtil.byId("gameStartCloseBtn");
-UiRegistry.refs.singleBtn=DomUtil.byId("singleBtn");
-UiRegistry.refs.campaignBtn=DomUtil.byId("campaignBtn");UiRegistry.refs.campaignRepositoryList=DomUtil.byId("campaignRepositoryList");UiRegistry.refs.campaignRefreshBtn=DomUtil.byId("campaignRefreshBtn");UiRegistry.refs.campaignDialog=DomUtil.byId("campaignDialog");UiRegistry.refs.campaignCloseBtn=DomUtil.byId("campaignCloseBtn");UiRegistry.refs.campaignUrlInput=DomUtil.byId("campaignUrlInput");UiRegistry.refs.campaignLoadUrlBtn=DomUtil.byId("campaignLoadUrlBtn");UiRegistry.refs.campaignFileInput=DomUtil.byId("campaignFileInput");UiRegistry.refs.campaignLoadFileBtn=DomUtil.byId("campaignLoadFileBtn");UiRegistry.refs.campaignStartBtn=DomUtil.byId("campaignStartBtn");UiRegistry.refs.campaignStatus=DomUtil.byId("campaignStatus");UiRegistry.refs.campaignMissionTitle=DomUtil.byId("campaignMissionTitle");UiRegistry.refs.campaignMissionBrief=DomUtil.byId("campaignMissionBrief");
-UiRegistry.refs.unitTestBtn=DomUtil.byId("unitTestBtn");
-UiRegistry.refs.unitTestAllyType=DomUtil.byId("unitTestAllyType");
-UiRegistry.refs.unitTestAllyCount=DomUtil.byId("unitTestAllyCount");
-UiRegistry.refs.unitTestEnemyType=DomUtil.byId("unitTestEnemyType");
-UiRegistry.refs.unitTestEnemyCount=DomUtil.byId("unitTestEnemyCount");
-UiRegistry.refs.unitTestResearch=DomUtil.byId("unitTestResearch");
+UiRegistry.refs.campaignRepositoryList=DomUtil.byId("campaignRepositoryList");UiRegistry.refs.campaignRefreshBtn=DomUtil.byId("campaignRefreshBtn");UiRegistry.refs.campaignDialog=DomUtil.byId("campaignDialog");UiRegistry.refs.campaignCloseBtn=DomUtil.byId("campaignCloseBtn");UiRegistry.refs.campaignUrlInput=DomUtil.byId("campaignUrlInput");UiRegistry.refs.campaignLoadUrlBtn=DomUtil.byId("campaignLoadUrlBtn");UiRegistry.refs.campaignFileInput=DomUtil.byId("campaignFileInput");UiRegistry.refs.campaignLoadFileBtn=DomUtil.byId("campaignLoadFileBtn");UiRegistry.refs.campaignStartBtn=DomUtil.byId("campaignStartBtn");UiRegistry.refs.campaignStatus=DomUtil.byId("campaignStatus");UiRegistry.refs.campaignMissionTitle=DomUtil.byId("campaignMissionTitle");UiRegistry.refs.campaignMissionBrief=DomUtil.byId("campaignMissionBrief");
 UiRegistry.refs.singleStatus=DomUtil.byId("singleStatus");
-UiRegistry.refs.singleRoleDialog=DomUtil.byId("singleRoleDialog");
-UiRegistry.refs.singleRoleCloseBtn=DomUtil.byId("singleRoleCloseBtn");
-UiRegistry.refs.singleHostBtn=DomUtil.byId("singleHostBtn");
-UiRegistry.refs.singleGuestBtn=DomUtil.byId("singleGuestBtn");
-UiRegistry.refs.selectionDraftBtn=DomUtil.byId("selectionDraftBtn");
-UiRegistry.refs.selectionDeckBtn=DomUtil.byId("selectionDeckBtn");
-UiRegistry.refs.selectionModeCopy=DomUtil.byId("selectionModeCopy");
-UiRegistry.refs.netcodeModeToggle=DomUtil.byId("netcodeModeToggle");
-UiRegistry.refs.simulationTpsToggle=DomUtil.byId("simulationTpsToggle");UiRegistry.refs.simulationTpsCopy=DomUtil.byId("simulationTpsCopy");UiRegistry.refs.advancedTestSettings=DomUtil.byId("advancedTestSettings");
 UiRegistry.refs.deckSelect=DomUtil.byId("deckSelectScreen");
 UiRegistry.refs.deckSelectStatus=DomUtil.byId("deckSelectStatus");
 UiRegistry.refs.deckSelectTabs=DomUtil.byId("deckSelectTabs");
@@ -8036,7 +8019,7 @@ CommandPresentation.scheduleCommandChoiceGridSync();
 
 const UI_RADIO=Object.freeze({
   screen:new Set(["lobby","draft","deck-select","finale","game","replay","result"]),
-  modal:new Set(["none","game-start","campaign","single-role","create","join","deck-builder","match-menu","detail","spell-choice","disconnect","help"]),
+  modal:new Set(["none","campaign","create","join","deck-builder","match-menu","detail","spell-choice","disconnect","help"]),
   command:new Set(["closed","tree","building"])
 });
 // UI STATE CONTRACT:
@@ -8135,23 +8118,9 @@ class UiController{
 }
   static openUiModal(kind){UiController.setUiModal(kind);UiController.syncModalState();return kind}
   static closeUiModal(kind=UiRuntimeState.value.modal){if(UiRuntimeState.value.modal!==kind)return false;UiController.setUiModal("none");UiController.syncModalState();return true}
-  static setStartSelectionMode(mode){
-  UiRuntimeState.value.settings.selectionMode=mode;
-  UiRegistry.refs.selectionDraftBtn?.classList.toggle("active",UiRuntimeState.value.settings.selectionMode==="draft");
-  UiRegistry.refs.selectionDeckBtn?.classList.toggle("active",UiRuntimeState.value.settings.selectionMode==="deck");
-  if(UiRegistry.refs.selectionModeCopy)UiRegistry.refs.selectionModeCopy.textContent=UiRuntimeState.value.settings.selectionMode==="draft"
-    ?"서로 번갈아 유닛을 선택해 이번 경기의 조합을 완성합니다."
-    :"저장한 카드 덱을 선택해 바로 경기를 준비합니다.";
-}
-  static setStartNetcodeMode(value){
-  CONFIG.netcode.mode=netcodeMode(value);
-  for(const btn of UiRegistry.refs.netcodeModeToggle?.querySelectorAll("[data-netcode-mode]")||[])btn.classList.toggle("active",btn.dataset.netcodeMode===CONFIG.netcode.mode);
-}
-  static setStartSimulationTps(value){
-  UiRuntimeState.value.settings.simulationTps=RangeUtil.clamp(Math.round(Number(value)||10),10,30);
-  for(const btn of UiRegistry.refs.simulationTpsToggle?.querySelectorAll("[data-sim-tps]")||[])btn.classList.toggle("active",Number(btn.dataset.simTps)===UiRuntimeState.value.settings.simulationTps);
-  if(UiRegistry.refs.simulationTpsCopy)UiRegistry.refs.simulationTpsCopy.textContent=UiRuntimeState.value.settings.simulationTps===10?"10 TPS · 현재 기본값":`${UiRuntimeState.value.settings.simulationTps} TPS · 실험 설정`;
-}
+  static setStartSelectionMode(mode){UiRuntimeState.value.settings.selectionMode=mode}
+  static setStartNetcodeMode(value){CONFIG.netcode.mode=netcodeMode(value)}
+  static setStartSimulationTps(value){UiRuntimeState.value.settings.simulationTps=RangeUtil.clamp(Math.round(Number(value)||10),10,30)}
   static openJoinDialog(){
   NetworkModuleLoader.pendingPeerAction=null;
   UiRegistry.refs.joinError.textContent="";
@@ -8978,8 +8947,6 @@ class ConnectionPresentation{
       UiRegistry.refs.singleStatus.textContent=message;
       UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
       MatchLifecycle.stopSinglePlayer();
-      UiRegistry.refs.singleBtn.disabled=false;
-      UiRegistry.refs.singleBtn.innerHTML='싱글 플레이<span class="single-entry-sub">AI와 대전</span>';
     }else if(role==="host"){
       UiRegistry.refs.createStatus.textContent=message+" · 현재 방은 참가 대기를 유지합니다.";
     }else{
@@ -9707,14 +9674,11 @@ class DebugScenarioHarness{
       ];
     }});
   }
-  static readBattleTestUi(){
-    return this.normalize({testMode:"mobile-battle",totalUnits:document.getElementById("battleTestUnitCount")?.value,composition:document.getElementById("battleTestComposition")?.value,fixedSeed:document.getElementById("battleTestSeed")?.value,sampleSeconds:document.getElementById("battleTestSampleSeconds")?.value,humanRole:"host",research:false});
-  }
-  static readUi(){return this.normalize({allyType:UiRegistry.refs.unitTestAllyType?.value,allyCount:UiRegistry.refs.unitTestAllyCount?.value,enemyType:UiRegistry.refs.unitTestEnemyType?.value,enemyCount:UiRegistry.refs.unitTestEnemyCount?.value,research:!!UiRegistry.refs.unitTestResearch?.checked})}
-  static populateUi(){
-    const options=this.unitOptions().map(([id,d])=>`<option value="${id}">T${d.tier} · ${d.name||id}</option>`).join("");
-    if(UiRegistry.refs.unitTestAllyType){UiRegistry.refs.unitTestAllyType.innerHTML=options;UiRegistry.refs.unitTestAllyType.value="swarmbug"}
-    if(UiRegistry.refs.unitTestEnemyType){UiRegistry.refs.unitTestEnemyType.innerHTML=options;UiRegistry.refs.unitTestEnemyType.value="shelltitan"}
+  // Address settings (src/ui/dev-query.js) checked against the playable units; a typo fails instead of falling back.
+  static fromQuery(params){
+    const valid=new Set(this.unitOptions().map(([id])=>id));
+    for(const key of ["allyType","enemyType"])if(params[key]!=null&&!valid.has(params[key]))throw new Error(`Unknown unit for ${key}: ${params[key]}`);
+    return this.normalize(params);
   }
 }
 
@@ -9738,7 +9702,6 @@ class MobileBattleTestMode{
   static savedCampaignPending=null;static savedDebugPending=null;
   static ref(id){return document.getElementById(id)}
   static bindUi(){
-    this.ref("battleTestStartBtn")?.addEventListener("click",()=>this.start());
     this.ref("battleTestPauseBtn")?.addEventListener("click",()=>this.paused?this.resume():this.pause());
     this.ref("battleTestResetBtn")?.addEventListener("click",()=>this.reset());
     this.ref("battleTestExitBtn")?.addEventListener("click",()=>this.exit());
@@ -9793,15 +9756,15 @@ class MobileBattleTestMode{
     this.vectorFlushDiagnosticsAvailable=!!stats&&!!stats.flushReasons&&!!stats.drawDispatchReasons&&typeof stats.safeAlphaRunBatching==="boolean";
     this.vectorSafeAlphaRunBatching=this.vectorFlushDiagnosticsAvailable?stats.safeAlphaRunBatching:null;
   }
-  static start(){
+  static start(params){
     if(!["idle","stopped"].includes(this.phase))return;
-    this.config=DebugScenarioHarness.readBattleTestUi();this.savedSettings={selectionMode:UiRuntimeState.value.settings.selectionMode,presetId:UiRuntimeState.value.settings.presetId,simulationTps:UiRuntimeState.value.settings.simulationTps,netcodeMode:CONFIG.netcode.mode};
+    this.config=DebugScenarioHarness.normalize({testMode:"mobile-battle",...params,humanRole:"host",research:false});this.savedSettings={selectionMode:UiRuntimeState.value.settings.selectionMode,presetId:UiRuntimeState.value.settings.presetId,simulationTps:UiRuntimeState.value.settings.simulationTps,netcodeMode:CONFIG.netcode.mode};
     this.savedCampaignPending=CampaignRuntime.pending;this.savedDebugPending=DebugScenarioHarness.pending;
     DebugScenarioHarness.pending=this.config;CampaignRuntime.pending=null;CampaignPresentation.clear();this.beginRun();
     document.body.classList.add("battle-test-mode");
     const hud=this.ref("battleTestHud");if(hud&&hud.parentElement!==document.body)document.body.appendChild(hud);hud?.classList.remove("hidden");
     UiController.setStartSelectionMode("deck");UiRuntimeState.value.settings.presetId="standard";UiController.setStartSimulationTps(10);UiController.setStartNetcodeMode("lockstep");
-    UiController.closeUiModal("game-start");audioSystem.unlock();this.renderHud();
+    audioSystem.unlock();this.renderHud();
     try{MatchLifecycle.startSinglePlayerWebRTC("host");this.scheduleFrame()}
     catch(error){this.fail(`매치 시작 실패: ${String(error?.message||error)}`)}
   }
@@ -10169,10 +10132,9 @@ class MobileBattleTestMode{
     if(["idle","stopped"].includes(this.phase))return;
     if(this.frameHandle)cancelAnimationFrame(this.frameHandle);this.frameHandle=0;this.phase="stopped";this.paused=false;
     MatchLifecycle.stopSinglePlayer();DebugScenarioHarness.pending=this.savedDebugPending;CampaignRuntime.pending=this.savedCampaignPending;CampaignPresentation.clear();document.body.classList.remove("battle-test-mode");this.ref("battleTestHud")?.classList.add("hidden");
-    const button=UiRegistry.refs.singleBtn;if(button){button.disabled=false;button.innerHTML=`싱글 플레이<span class="single-entry-sub">AI와 대결 · Host / Guest 역할 선택</span>`}
     UiController.setElementVisible(UiRegistry.refs.singleStatus,false);
     if(this.savedSettings){UiController.setStartSelectionMode(this.savedSettings.selectionMode);UiRuntimeState.value.settings.presetId=this.savedSettings.presetId;UiController.setStartSimulationTps(this.savedSettings.simulationTps);UiController.setStartNetcodeMode(this.savedSettings.netcodeMode)}
-    UiController.setUiScreen("lobby");UiController.openUiModal("game-start");
+    UiController.setUiScreen("lobby");
     this.phase="idle";this.config=null;this.report=null;this.savedSettings=null;this.savedCampaignPending=null;this.savedDebugPending=null;
   }
 }
@@ -11016,7 +10978,6 @@ class MatchLifecycle{
   ConnectionPresentation.hideP2PHealth();
   NetworkModuleLoader.pendingPeerAction=null;
   MatchLifecycle.localTest=null;
-  UiController.closeUiModal("single-role");
   UiController.closeUiModal("create");
   UiController.closeUiModal("join");
 
@@ -11034,8 +10995,6 @@ class MatchLifecycle{
 
   UiController.setUiScreen("lobby");
   UiRegistry.refs.testSwitcher.classList.add("hidden");
-  UiRegistry.refs.singleBtn.disabled=true;
-  UiRegistry.refs.singleBtn.innerHTML=`싱글 준비 중…<span class="single-entry-sub">내 역할 ${humanRole.toUpperCase()} · AI ${botRole.toUpperCase()}</span>`;
   UiRegistry.refs.singleStatus.textContent=`${humanRole.toUpperCase()} 테스트용 실제 WebRTC 양쪽 피어를 준비하고 있습니다…`;
   UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
 
@@ -11186,8 +11145,6 @@ class MatchLifecycle{
   UiRuntimeState.value.settings.presetId="standard";
   UiRegistry.refs.singleStatus.textContent=message;
 UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
-  UiRegistry.refs.singleBtn.disabled=false;
-  UiRegistry.refs.singleBtn.innerHTML=`싱글 플레이<span class="single-entry-sub">AI와 대전 · Host / Guest 역할 선택</span>`;
 }
   static openMatchMenu(){
   if(ReplayPresentation.replayPlayer){
@@ -11229,7 +11186,8 @@ class SimWorkerHost{
     };
     self.postMessage({type:"ready"});
   }
-  static start({role,token,config,netcodeState}){
+  static start({role,token,config,netcodeState,netcodeMode}){
+    if(netcodeMode)UiController.setStartNetcodeMode(netcodeMode);
     const transport=new WorkerRelayTransport(role,token,netcodeState),session=new GameSession(role,transport,token,config??undefined);
     this.transport=transport;this.session=session;this.bot=BotController.attach(session,role);
     transport.onOpen=visible=>{session.localVisible=visible;session.onTransportOpen()};
@@ -11310,7 +11268,8 @@ class WorkerSessionProxy{
       const m=e.data;
       if(m?.type==="ready"){
         // The WebRTC link may open before the Worker has loaded main.js; hold what it sent until then.
-        this.worker.postMessage({type:"start",role,token,config,netcodeState:transport.netcodeState});this.started=true;
+        // The Worker realm has its own CONFIG: hand it the page's sync mode, or both peers fail the handshake.
+        this.worker.postMessage({type:"start",role,token,config,netcodeState:transport.netcodeState,netcodeMode:CONFIG.netcode.mode});this.started=true;
         for(const [message,transfer] of this.outbox)this.worker.postMessage(message,transfer);this.outbox.length=0;this.resolveReady();
       }
       else if(m?.type==="transport")this.fromTransport(m);
@@ -13442,7 +13401,7 @@ class ResearchPresentation{
 }
 }
 
-const UI_MODAL_DIALOG_KEYS=Object.freeze({"game-start":"gameStartDialog",campaign:"campaignDialog","single-role":"singleRoleDialog",create:"createDialog",join:"joinDialog","deck-builder":"deckBuilderDialog",detail:"infoDetailDialog"});
+const UI_MODAL_DIALOG_KEYS=Object.freeze({campaign:"campaignDialog",create:"createDialog",join:"joinDialog","deck-builder":"deckBuilderDialog",detail:"infoDetailDialog"});
 
 class DeckBuilderState{
   constructor(){this.slot=0;this.filter="all";this.working=null;this.saveFailed=false}
@@ -13742,13 +13701,6 @@ DeckPresentation.installDeckPointerReleaseActions();
 // Do not add delegated click handlers for the same data-deck-* controls; a physical tap would toggle twice.
 pointerInteractions.install();
 
-UiRegistry.refs.selectionDraftBtn.onclick=()=>UiController.setStartSelectionMode("draft");
-UiController.setStartNetcodeMode(CONFIG.netcode.mode);
-UiRegistry.refs.netcodeModeToggle?.addEventListener("click",e=>{const b=e.target.closest("[data-netcode-mode]");if(b)UiController.setStartNetcodeMode(b.dataset.netcodeMode)});
-UiController.setStartSimulationTps(10);
-UiRegistry.refs.simulationTpsToggle?.addEventListener("click",e=>{const b=e.target.closest("[data-sim-tps]");if(b)UiController.setStartSimulationTps(b.dataset.simTps)});
-UiRegistry.refs.selectionDeckBtn.onclick=()=>UiController.setStartSelectionMode("deck");
-UiController.setStartSelectionMode("draft");
 
 UiRegistry.refs.deckEditBtn.onclick=()=>DeckPresentation.openDeckBuilder(DeckPresentation.selectedDeckSlot);
 UiRegistry.refs.deckConfirmBtn.onclick=()=>{
@@ -13778,12 +13730,7 @@ UiRegistry.refs.deckBuilderSaveBtn.onclick=()=>{
 };
 for(const button of document.querySelectorAll("[data-deck-storage-action]"))button.onclick=()=>DeckPresentation.handleDeckStorageAction(button.dataset.deckStorageAction);
 
-DebugScenarioHarness.populateUi();
 
-UiRegistry.refs.gameStartCloseBtn.onclick=()=>UiController.closeUiModal("game-start");
-UiRegistry.refs.gameStartDialog.addEventListener("click",e=>{
-  if(e.target===UiRegistry.refs.gameStartDialog)UiController.closeUiModal("game-start");
-});
 
 const renderCampaignLoadedMission=(m,source="preview")=>{UiRegistry.refs.campaignMissionTitle.textContent=m.title;UiRegistry.refs.campaignMissionBrief.textContent=m.briefing||m.missionId;UiRegistry.refs.campaignStatus.textContent=`${source==="builtin"?"내장":"Preview"} · 시작 생산 ${m.player.availableUnits.length}종 · 각 맵 독립 상태 · 현재 Definition 수치 사용`;UiRegistry.refs.campaignStartBtn.disabled=false};
 const loadCampaignSource=async(readSource,label="campaign.js",origin="preview")=>{
@@ -13823,69 +13770,17 @@ const refreshCampaignRepository=async()=>{
   return false;
  }
 };
-UiRegistry.refs.campaignBtn.onclick=()=>{audioSystem.unlock();DebugScenarioHarness.pending=null;CampaignRuntime.clear();UiRegistry.refs.campaignStartBtn.disabled=true;UiRegistry.refs.campaignMissionTitle.textContent="캠페인";UiRegistry.refs.campaignMissionBrief.textContent="각 미션은 자원·병력·테크·생산 가능 병종을 자체 정의하며, 다른 미션의 게임 상태를 요구하지 않습니다. 파일/URL Preview는 개발용입니다.";UiController.closeUiModal("game-start");UiController.openUiModal("campaign");refreshCampaignRepository()};
+// Opened by ?campaign=1 (src/ui/dev-query.js).
+const openCampaign=()=>{audioSystem.unlock();DebugScenarioHarness.pending=null;CampaignRuntime.clear();UiRegistry.refs.campaignStartBtn.disabled=true;UiRegistry.refs.campaignMissionTitle.textContent="캠페인";UiRegistry.refs.campaignMissionBrief.textContent="각 미션은 자원·병력·테크·생산 가능 병종을 자체 정의하며, 다른 미션의 게임 상태를 요구하지 않습니다. 파일/URL Preview는 개발용입니다.";UiController.openUiModal("campaign");refreshCampaignRepository()};
 UiRegistry.refs.campaignRefreshBtn.onclick=()=>refreshCampaignRepository();
 UiRegistry.refs.campaignCloseBtn.onclick=()=>UiController.closeUiModal("campaign");
 UiRegistry.refs.campaignLoadFileBtn.onclick=()=>UiRegistry.refs.campaignFileInput.click();
 UiRegistry.refs.campaignFileInput.onchange=async()=>{const f=UiRegistry.refs.campaignFileInput.files?.[0];if(!f)return;await loadCampaignSource(()=>f.text(),f.name);UiRegistry.refs.campaignFileInput.value="";};
 UiRegistry.refs.campaignLoadUrlBtn.onclick=()=>{const url=UiRegistry.refs.campaignUrlInput.value.trim();if(!url)return;return loadCampaignSource(async()=>{const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.text()},url)};
-UiRegistry.refs.campaignStartBtn.onclick=()=>{if(!CampaignRuntime.pending)return;audioSystem.unlock();UiController.closeUiModal("campaign");UiRegistry.refs.singleBtn.disabled=true;UiRegistry.refs.singleStatus.textContent=`캠페인 · ${CampaignRuntime.pending.title} 준비 중…`;UiController.setElementVisible(UiRegistry.refs.singleStatus,true);NetworkModuleLoader.pendingPeerAction=null;MatchLifecycle.startSinglePlayerWebRTC("host")};
-UiRegistry.refs.singleBtn.onclick=()=>{
-  audioSystem.unlock();
-  DebugScenarioHarness.pending=null;
-  CampaignRuntime.clear();CampaignPresentation.clear();
-  UiRuntimeState.value.settings.presetId="standard";
-  UiController.setElementVisible(UiRegistry.refs.singleStatus,false);
-  UiController.closeUiModal("game-start");
-  UiController.openUiModal("single-role");
-};
-UiRegistry.refs.unitTestBtn.onclick=()=>{
-  CampaignRuntime.clear();CampaignPresentation.clear();
-  audioSystem.unlock();
-  DebugScenarioHarness.pending=DebugScenarioHarness.readUi();
-  UiRuntimeState.value.settings.presetId="unitTest";
-  UiRuntimeState.value.settings.selectionMode="deck";
-  UiController.setElementVisible(UiRegistry.refs.singleStatus,false);
-  UiController.closeUiModal("game-start");
-  UiController.openUiModal("single-role");
-};
+UiRegistry.refs.campaignStartBtn.onclick=()=>{if(!CampaignRuntime.pending)return;audioSystem.unlock();UiController.closeUiModal("campaign");UiRegistry.refs.singleStatus.textContent=`캠페인 · ${CampaignRuntime.pending.title} 준비 중…`;UiController.setElementVisible(UiRegistry.refs.singleStatus,true);NetworkModuleLoader.pendingPeerAction=null;MatchLifecycle.startSinglePlayerWebRTC("host")};
 MobileBattleTestMode.bindUi();
-UiRegistry.refs.singleRoleCloseBtn.onclick=()=>UiController.closeUiModal("single-role");
-UiRegistry.refs.singleHostBtn.onclick=()=>{
-  audioSystem.unlock();
-  UiController.closeUiModal("single-role");
-  UiRegistry.refs.singleBtn.disabled=true;
-  UiRegistry.refs.singleStatus.textContent="Host 싱글 테스트를 준비하고 있습니다…";
-  UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
-  NetworkModuleLoader.pendingPeerAction=null; MatchLifecycle.startSinglePlayerWebRTC("host");
-};
-UiRegistry.refs.singleGuestBtn.onclick=()=>{
-  audioSystem.unlock();
-  UiController.closeUiModal("single-role");
-  UiRegistry.refs.singleBtn.disabled=true;
-  UiRegistry.refs.singleStatus.textContent="Guest 싱글 테스트를 준비하고 있습니다…";
-  UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
-  NetworkModuleLoader.pendingPeerAction=null; MatchLifecycle.startSinglePlayerWebRTC("guest");
-};
 
-UiRegistry.refs.create.onclick=()=>{
-  CampaignRuntime.clear();DebugScenarioHarness.pending=null;CampaignPresentation.clear();
-  audioSystem.unlock();
-  UiController.closeUiModal("game-start");
-  UiController.openUiModal("create");
-  MatchLifecycle.beginCreateRoom();
-};
 
-// 일반 UI는 표준 click 흐름을 사용한다.
-// pointerdown에서 다이얼로그를 열면 같은 터치의 pointerup/click이
-// 새 다이얼로그에 전달되어 즉시 닫히는 문제가 생길 수 있다.
-UiRegistry.refs.join.addEventListener("click",e=>{
-  e.preventDefault();
-  CampaignRuntime.clear();DebugScenarioHarness.pending=null;CampaignPresentation.clear();
-  audioSystem.unlock();
-  UiController.closeUiModal("game-start");
-  UiController.openJoinDialog();
-});
 
 UiRegistry.refs.joinConfirm.addEventListener("click",e=>{
   e.preventDefault();
@@ -14665,11 +14560,14 @@ if(SIM_WORKER)SimWorkerHost.install();
 else{
   UnitVisualLookup.validateCoverage();
   AppLifecycle.runBootAndStartApp();
+  const dev=readDevQuery(location.search);
+  if(dev.tps)UiController.setStartSimulationTps(dev.tps);
+  if(dev.netcode)UiController.setStartNetcodeMode(dev.netcode);
   const leaveSetup=()=>{audioSystem.unlock();CampaignRuntime.clear();DebugScenarioHarness.pending=null;CampaignPresentation.clear();UiRuntimeState.value.settings.presetId="standard";UiController.setStartSelectionMode("launch")};
   LaunchScreens.install({createNavigation:RallyGamekit.createNavigation,actions:{
     inMatch:()=>UiRuntimeState.value.screen==="game",
     hasResult:()=>UiRuntimeState.value.screen==="result",
-    startAiMatch:()=>{leaveSetup();MatchLifecycle.startSinglePlayerWebRTC("host")},
+    startAiMatch:()=>{leaveSetup();MatchLifecycle.startSinglePlayerWebRTC(dev.role||"host")},
     openMenu:()=>{if(UiRuntimeState.value.modal!=="match-menu")MatchLifecycle.openMatchMenu()},
     closeMenu:()=>{if(UiRuntimeState.value.modal==="match-menu")MatchLifecycle.closeMatchMenu()},
     grains:()=>LaunchRules.deck,
@@ -14682,6 +14580,11 @@ else{
     joinRoom:code=>{leaveSetup();UiController.openJoinDialog();UiRegistry.refs.room.value=code;MatchLifecycle.submitJoinRoom()},
     leaveToTitle:()=>reloadAt("#/")
   }});
+  if(dev.battleTest)MobileBattleTestMode.start(dev.battleTest);
+  else if(dev.unitTest){
+    leaveSetup();DebugScenarioHarness.pending=DebugScenarioHarness.fromQuery(dev.unitTest);UiRuntimeState.value.settings.presetId="unitTest";
+    MatchLifecycle.startSinglePlayerWebRTC(dev.role||"host");
+  }else if(dev.campaign)openCampaign();
   if(new URLSearchParams(location.search).has("debug")){
     const {createDebugScenes}=await import("./debug-scenes.js");
     RallyGamekit.installDebugHost({scenes:createDebugScenes({openBattle:params=>DebugScenarioHarness.openReplayBattle(params),openCharge:params=>DebugScenarioHarness.openChargeReplay(params)})});

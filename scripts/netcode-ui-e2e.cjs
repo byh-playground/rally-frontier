@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 
-// Only the observer is injected. All match, deck, command, result, and replay
+// Only the observer is injected. All match, command, result, and replay
 // actions below enter through native production UI controls.
 const htmlPath = path.resolve(process.argv[2] || path.join(__dirname, '..', 'index.html'));
 const selectedMode=process.env.QA_NETCODE_MODE||'lockstep';
@@ -15,8 +15,6 @@ const output = path.resolve(__dirname, '..', '.qa', 'netcode-ui-e2e-'+selectedMo
 // session; scripts/sim-worker-e2e.cjs covers the Worker-hosted AI path.
 const observer = `
 CONFIG.single.botWorker=false;
-// The old start dialog keeps the test-only settings; the launch title has no button for it.
-window.__openGameStart=()=>UiController.openUiModal("game-start");
 window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntimeState,
   BuildingPresentation,BuildingDefinition,UnitDefinition,SIM_VERSION,BUILD_ID,
   observedHits:[],observedHitKeys:new Set(),
@@ -102,27 +100,6 @@ window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntime
 };`;
 
 
-async function confirmDeck(page) {
-  await page.locator('#deckConfirmBtn').waitFor({ state: 'visible', timeout: 35000 });
-  // Exercise the actual deck editor even when a fresh storage starter deck exists.
-  await page.locator('#deckEditBtn').click();
-  await page.locator('#deckBuilderClearBtn').click();
-  const cards = ['swordsman', 'archer', 'kickhopper', 'tank', 'medic', 'clawhunter', 'siege', 'aegisbeetle'];
-  for (const id of cards) await page.locator(`[data-deck-card-type="unit"][data-deck-card-id="${id}"]`).click();
-  for (const id of ['thornTowerCard', 'sporeTowerCard']) {
-    const card = page.locator(`[data-deck-card-type="defense"][data-deck-card-id="${id}"]`);
-    if (await card.count()) await card.click();
-  }
-  if (await page.locator('.deck-builder-slot.filled').count() < 10) {
-    for (let i = await page.locator('.deck-builder-slot.filled').count(); i < 10; i++) {
-      await page.locator('[data-deck-card-type="defense"]:not(.selected)').first().click();
-    }
-  }
-  assert.equal(await page.locator('.deck-builder-slot.filled').count(), 10, 'Real deck has ten cards');
-  await page.locator('#deckBuilderSaveBtn').click();
-  await page.waitForFunction(() => !document.querySelector('#deckConfirmBtn').disabled);
-  await page.locator('#deckConfirmBtn').click();
-}
 
 async function launchFromHand(page) {
   // The launch game has no build step: pick a real hand card, hold on the field, aim, release.
@@ -159,21 +136,11 @@ async function runRole(browser, url, humanRole) {
   page.on('dialog',d=>d.accept());
   try {
     await require('./netcode-qa-module.cjs').routePinnedSDK(page);
-    await page.goto(url,{waitUntil:'domcontentloaded'});
-    await page.waitForFunction(() => window.__openGameStart && (window.__openGameStart(), true), undefined, { timeout: 60000 });
-    await page.locator('#selectionDeckBtn').click();
-    await page.locator('#advancedTestSettings summary').click();
-    await page.locator('[data-sim-tps="20"]').click();
-    assert(await page.locator('[data-netcode-mode="lockstep"]').evaluate(b=>b.classList.contains('active')),'Lockstep is selected by default');
-    await page.locator('[data-netcode-mode="rollback"]').click();
-    assert(await page.locator('[data-netcode-mode="rollback"]').evaluate(b=>b.classList.contains('active')),'Rollback selector responds');
-    await page.locator('[data-netcode-mode="lockstep"]').click();
-    assert(await page.locator('[data-netcode-mode="lockstep"]').evaluate(b=>b.classList.contains('active')),'Switching back selects lockstep');
-    if(selectedMode==='rollback')await page.locator('[data-netcode-mode="rollback"]').click();
-    await page.screenshot({path:path.join(output,`${humanRole}-mode-settings.png`)});
-    await page.locator('#singleBtn').click();
-    await page.locator(humanRole==='host'?'#singleHostBtn':'#singleGuestBtn').click();
-    await confirmDeck(page);
+    // Test-only settings come from the address (src/ui/dev-query.js).
+    await page.goto(`${url}?tps=20&netcode=${selectedMode}&role=${humanRole}`,{waitUntil:'domcontentloaded'});
+    // The player presses 대전 시작 once the observer ran, so its CONFIG override (in-page AI) is in place.
+    await page.waitForFunction(()=>window.__netcodeE2E,null,{timeout:60000});
+    await page.locator('#gameStartBtn').click();
     await page.locator('#gameScreen').waitFor({state:'visible',timeout:35000});
     await page.waitForFunction(()=>Object.values(window.__netcodeE2E.MatchLifecycle.singleMatch?.sessions||{})
       .every(s=>s.netcodeSession?.ready&&s.sim?.tick>=4),null,{timeout:15000});
@@ -182,7 +149,7 @@ async function runRole(browser, url, humanRole) {
     assert.equal(initial.sdkVersion,pinnedSdkVersion,'The pinned SDK actually runs');
     assert.ok(initial.sdkRevision.startsWith('gamekit:'),'Pinned shared SDK provenance');
     assert.equal(initial.renderer.backend,'WebGL');
-    assert(Object.values(initial.sessions).every(s=>s.profile.mode===selectedMode&&s.tps===20),'UI selection preserves chosen TPS and selected mode on both peers');
+    assert(Object.values(initial.sessions).every(s=>s.profile.mode===selectedMode&&s.tps===20),'Address settings reach the chosen TPS and mode on both peers');
     assert.equal(initial.role,humanRole);
     assert.deepEqual(Object.keys(initial.sessions).sort(),['guest','host']);
     for(const role of ['host','guest']){
