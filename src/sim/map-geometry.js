@@ -1,6 +1,5 @@
 // Lane, capture point and river geometry.
 import { RangeUtil } from '../core/game-rules.js';
-import { CampDefinition, NeutralCampPolicy } from './map-camps.js';
 import { LANE_CONTROL_POINTS } from '../definitions/combat-rules.js';
 
 class MapGeometry{
@@ -185,25 +184,6 @@ class MapGeometry{
   static minMapPairDistance(items){
   let best=Infinity;
   for(let i=0;i<(items||[]).length;i++)for(let j=i+1;j<items.length;j++)best=Math.min(best,MapGeometry.mapPointDistance(items[i],items[j]));
-  return Number.isFinite(best)?best:99999;
-}
-  static minNeutralCampAreaGap(camps){
-  let best=Infinity;
-  const list=camps||[];
-  for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){
-    const a=list[i],b=list[j],ar=Math.max(0,Number(CampDefinition.get(a.kind)?.aggroRadius)||180),br=Math.max(0,Number(CampDefinition.get(b.kind)?.aggroRadius)||180);
-    best=Math.min(best,MapGeometry.mapPointDistance(a,b)-ar-br);
-  }
-  return Number.isFinite(best)?best:99999;
-}
-  static minNeutralCampAreaMargin(camps,baseGap=40){
-  let best=Infinity;
-  const list=camps||[];
-  for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){
-    const a=list[i],b=list[j],ar=Math.max(0,Number(CampDefinition.get(a.kind)?.aggroRadius)||180),br=Math.max(0,Number(CampDefinition.get(b.kind)?.aggroRadius)||180);
-    const actual=MapGeometry.mapPointDistance(a,b)-ar-br;
-    best=Math.min(best,actual-NeutralCampPolicy.neutralCampRequiredAreaGap(a,b,baseGap));
-  }
   return Number.isFinite(best)?best:99999;
 }
   

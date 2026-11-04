@@ -7,12 +7,11 @@ class GameRuleDefinition{
   static defaults={
     schemaVersion:2,modeId:"standard",simulation:{tps:10},
     map:{
-      generator:"procedural-frontier",generatorVersion:10,width:4200,height:4800,biome:"frontier",
+      generator:"procedural-frontier",generatorVersion:11,width:4200,height:4800,biome:"frontier",
       topology:"mixed",symmetry:"rotational-180",openness:.5,chokeDensity:.5,obstacleDensity:.5,
-      content:{resourcePlacement:"objective-auto",resourceAmounts:{baseMineral:700,baseGas:1600,objectiveMineral:900,objectiveGas:1800}},
       spawns:{host:{x:525,y:4285},guest:{x:3675,y:515}},
       generation:{seedSalt:"map",attempts:40,minSpawnClearance:560,minObjectiveClearance:260,
-        minResourceClearance:90,minNeutralClearance:140,minNeutralAreaGap:40,minLaneSeparationRatio:.07,fairnessTolerance:.08}
+        minLaneSeparationRatio:.07,fairnessTolerance:.08}
     }
   };
   static resolve({presetId="standard",overrides=null}={}){
