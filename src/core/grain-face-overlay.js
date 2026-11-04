@@ -106,6 +106,13 @@ export class GrainFaceOverlay {
     }
 }
 
+// Draws a grain's face with paths on a plain 2D canvas whose transform is the body's SVG canvas (card portraits).
+export function drawGrainFace(ctx, compiled, faceId = 'neutral') {
+    const SOCKETS = compiled.metadata.sockets,
+        ANCHOR = { eyeLeft: SOCKETS[FACE_SOCKETS[0]].point, eyeRight: SOCKETS[FACE_SOCKETS[1]].point, mouth: SOCKETS[FACE_SOCKETS[2]].point };
+    drawOperations(ctx, buildFace(faceId, ANCHOR), 1);
+}
+
 // Maps the rest anchor triangle onto the posed one, so squash, lean and bounce carry the face like the body.
 function posedFace(actor, rest, out) {
     const EL = actor.getSocket(FACE_SOCKETS[0]),

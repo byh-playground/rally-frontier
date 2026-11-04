@@ -15,6 +15,8 @@ const output = path.resolve(__dirname, '..', '.qa', 'netcode-ui-e2e-'+selectedMo
 // session; scripts/sim-worker-e2e.cjs covers the Worker-hosted AI path.
 const observer = `
 CONFIG.single.botWorker=false;
+// The old start dialog keeps the test-only settings; the launch title has no button for it.
+window.__openGameStart=()=>UiController.openUiModal("game-start");
 window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntimeState,
   BuildingPresentation,BuildingDefinition,UnitDefinition,SIM_VERSION,BUILD_ID,
   observedHits:[],observedHitKeys:new Set(),
@@ -158,7 +160,7 @@ async function runRole(browser, url, humanRole) {
   try {
     await require('./netcode-qa-module.cjs').routePinnedSDK(page);
     await page.goto(url,{waitUntil:'domcontentloaded'});
-    await page.locator('#gameStartBtn').click();
+    await page.waitForFunction(() => window.__openGameStart && (window.__openGameStart(), true), undefined, { timeout: 60000 });
     await page.locator('#selectionDeckBtn').click();
     await page.locator('#advancedTestSettings summary').click();
     await page.locator('[data-sim-tps="20"]').click();

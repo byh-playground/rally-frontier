@@ -45,7 +45,7 @@ class GameRuleRuntime{
   const simulationTps=RangeUtil.clamp(Math.round(Number(src.simulationTps)||SIM_TPS),10,30);
   const debugScenario=src.debugScenario&&typeof src.debugScenario==="object"&&!Array.isArray(src.debugScenario)?structuredClone(src.debugScenario):null;
   const campaignScenario=src.campaignScenario&&typeof src.campaignScenario==="object"&&!Array.isArray(src.campaignScenario)?structuredClone(src.campaignScenario):null;
-  return {schemaVersion:4,presetId,overrides,selectionMode:src.selectionMode==="deck"?"deck":"draft",simulationTps,debugScenario,campaignScenario};
+  return {schemaVersion:4,presetId,overrides,selectionMode:["deck","launch"].includes(src.selectionMode)?src.selectionMode:"draft",simulationTps,debugScenario,campaignScenario};
 }
   static mergeGameRules(base,override){
   if(!override||typeof override!=="object")return structuredClone(base);

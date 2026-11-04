@@ -9451,14 +9451,3 @@ body.playing.battle-test-mode #battleCommandDock{display:none!important}
 body.launch-mode .tech-root-tabs,body.launch-mode #commandDrawer,body.launch-mode .resource-gas,body.launch-mode .resource-workers,
 body.launch-mode #supplyChip,body.launch-mode .resource-tier,body.launch-mode #supplyWarning,body.launch-mode #reinforcementOverview,
 body.launch-mode .resource-mineral{display:none!important}
-.launch-hand{display:flex;flex-direction:column;gap:6px;width:100%}
-.launch-hand.hidden{display:none}
-.launch-energy{position:relative;height:18px;border-radius:9px;background:#151a22;border:1px solid #3a4352;overflow:hidden}
-.launch-energy-fill{position:absolute;inset:0 auto 0 0;width:0;background:linear-gradient(90deg,#3aa8ff,#7fe0ff);transition:width .12s linear}
-.launch-energy b{position:relative;display:block;text-align:center;font-size:12px;line-height:18px;color:#fff;text-shadow:0 1px 2px #000}
-.launch-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
-.launch-card{display:flex;flex-direction:column;align-items:center;gap:1px;padding:6px 4px;border-radius:10px;border:2px solid #3a4352;background:#1d2430;color:#e8eef5;font:inherit;cursor:pointer;min-height:64px}
-.launch-card b{font-size:12px}.launch-card small{font-size:11px;color:#b9c6d4}.launch-card em{font-style:normal;font-size:11px;color:#7fd3ff}
-.launch-card-icon{font-size:18px;line-height:1}
-.launch-card.selected{border-color:#ffd35a;background:#2b3240;box-shadow:0 0 0 2px #ffd35a55}
-.launch-card.unaffordable{opacity:.45}

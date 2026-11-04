@@ -4,6 +4,8 @@ const { chromium } = require('playwright');
 
 async function deploymentState(page) {
   await page.waitForFunction(() => window.__RALLY_BUILD_METADATA__ && window.__RALLY_BUILD_METADATA__.status !== 'pending', undefined, { timeout: 10_000 });
+  // The title stamp is redrawn after the metadata settles; read it once it leaves the pending text.
+  await page.waitForFunction(() => document.getElementById('titleUpdateStamp')?.textContent !== '확인 중', undefined, { timeout: 10_000 });
   return page.evaluate(() => ({
     metadata: window.__RALLY_BUILD_METADATA__,
     build: document.documentElement.dataset.build,
@@ -26,8 +28,7 @@ async function verifyOptionalMetadata(browser, server, routePinnedSDK, record) {
     });
     try {
       await page.goto(server.url, { waitUntil: 'domcontentloaded' });
-      await page.locator('#gameStartBtn').click();
-      await page.locator('#gameStartDialog').waitFor({ state: 'visible' });
+      await page.locator('#titleUpdateStamp').waitFor({ state: 'visible' });
       const state = await deploymentState(page);
       if (state.metadata.status !== 'unavailable' || state.metadata.commit !== null) throw new Error(`Invalid ${scenario} deployment status`);
       if (!state.label.includes('배포 정보 확인 불가') || state.label.includes('미배포')) throw new Error(`${scenario}: source availability was mislabeled`);

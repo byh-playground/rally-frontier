@@ -1,0 +1,29 @@
+import { drawGrainFace } from '../core/grain-face-overlay.js';
+
+// Title and card portraits: the grain body SVG with its shared face drawn on top, as an image URL.
+// The body file is the same one the battlefield compiles; only the face is added here.
+const PORTRAITS = new Map();
+
+export function grainPortrait(type, compiled, width = 160) {
+    const KEY = type + ':' + width;
+    if (!PORTRAITS.has(KEY)) {
+        PORTRAITS.set(KEY, renderPortrait(type, compiled, width));
+    }
+    return PORTRAITS.get(KEY);
+}
+
+async function renderPortrait(type, compiled, width) {
+    const [VX, VY, VW, VH] = compiled.viewBox,
+        SCALE = width / VW,
+        BODY = new Image();
+    BODY.src = new URL('../../assets/units/' + type + '.svg', import.meta.url).href;
+    await BODY.decode();
+    const CANVAS = document.createElement('canvas');
+    CANVAS.width = width;
+    CANVAS.height = Math.round(VH * SCALE);
+    const C = CANVAS.getContext('2d');
+    C.drawImage(BODY, 0, 0, CANVAS.width, CANVAS.height);
+    C.setTransform(SCALE, 0, 0, SCALE, -VX * SCALE, -VY * SCALE);
+    drawGrainFace(C, compiled);
+    return CANVAS.toDataURL('image/png');
+}

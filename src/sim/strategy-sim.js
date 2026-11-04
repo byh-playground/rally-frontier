@@ -102,6 +102,8 @@ class StrategySim{
     this.nextRoutePathId=1;this.routePathStore=new Map();this.routePathIndex=new Map();
     this.wallet=[0,1].map(()=>this.launchMode?LaunchRules.startingWallet:Math.max(0,Number(this.rules?.economy?.startingResources?.minerals)||0));
     this.launchIncomeCarry=[0,0];
+    // Per-side match totals for the result screen: shots fired, grains sent, enemy units killed.
+    this.launchStats={launches:[0,0],sent:[0,0],kills:[0,0]};
     this.gasWallet=[0,1].map(()=>Math.max(0,Number(this.rules?.economy?.startingResources?.gas)||0));
     this.tech=[1,1];this.productionPaused=[false,false];this.chargedCasts=[null,null];this.chargedCastSerial=[0,0];
     this.attackUpgrade=[0,0];
@@ -1984,6 +1986,7 @@ class StrategySim{
       damage:grain.impact,splash:grain.splash,splashUnitDamage:grain.impact,splashBuildingDamage:grain.impact,
       damageClass:"area",sourceDamageResolved:true,payload:{type:action.unitType,count:grain.count}
     });
+    this.launchStats.launches[side]++;this.launchStats.sent[side]+=grain.count;
     this.events.push({type:"launchFire",side,cannonId:cannon.id,projectileId:id,x:cannon.x,y:cannon.y,holdMs,power:LaunchRules.power(holdMs)});
     return true;
   }
@@ -3252,6 +3255,7 @@ class StrategySim{
       const camp=this.camps.find(c=>c.id===target.behaviorState.objectiveCampId);
       if(camp){camp.lastDeathX=target.x;camp.lastDeathY=target.y;this.beginObjectiveRespawn(camp,target.x,target.y)}
     }
+    if((sourceSide===0||sourceSide===1)&&target.side===1-sourceSide)this.launchStats.kills[sourceSide]++;
     this.events.push({type:"death",side:target.side,x:target.x,y:target.y,entity:target.type,killerSide:sourceSide,sourceType,objectiveCaptured:!!target.objectiveCaptured});
     return null;
   }
@@ -5569,7 +5573,7 @@ let value=Math.max(0,Number(d.flatArmor)||0);
   }
   snapshot(){
     const started=performance.now();
-    try{this.navigation?.sync();return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,launchMode:this.launchMode,navigationRevision:this.navigationRevision,decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),chargedCasts:StateValue.copy(this.chargedCasts),chargedCastSerial:this.chargedCastSerial.slice(),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState("view")),buildings:this.buildings.map(b=>b.toState()),constructionOrders:StateValue.copy(this.constructionOrders),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
+    try{this.navigation?.sync();return TerrainNavigation.bindSnapshot({tick:this.tick,tps:this.tps,launchMode:this.launchMode,navigationRevision:this.navigationRevision,decks:this.decks.map(d=>d.slice()),campaignTechCap:this.campaignTechCap?.slice()||null,mapDescriptor:this.mapDescriptor,wallet:this.wallet.slice(),launchStats:StateValue.copy(this.launchStats),gasWallet:this.gasWallet.slice(),gasNodes:StateValue.copy(this.gasNodes),tech:this.tech.slice(),attackUpgrade:this.attackUpgrade.slice(),armorUpgrade:this.armorUpgrade.slice(),abilities:CloneUtil.clone(this.abilities),specialResearch:CloneUtil.clone(this.specialResearch),researchQueues:CloneUtil.clone(this.researchQueues),productionPaused:this.productionPaused.slice(),flags:CloneUtil.clone(this.flags),chargedCasts:StateValue.copy(this.chargedCasts),chargedCastSerial:this.chargedCastSerial.slice(),defenseCards:StateValue.copy(this.defenseCards),resources:StateValue.copy(this.resources),camps:StateValue.copy(this.camps),capturePoints:CloneUtil.clone(this.capturePoints),spellBooks:CloneUtil.clone(this.spellBooks),equippedSpells:CloneUtil.clone(this.equippedSpells),passiveCards:CloneUtil.clone(this.passiveCards),spellChests:this.spellChests.slice(),pendingChestOffers:CloneUtil.clone(this.pendingChestOffers),pendingSpellReplacement:CloneUtil.clone(this.pendingSpellReplacement),activeSpells:CloneUtil.clone(this.activeSpells),delayedEffects:CloneUtil.clone(this.delayedEffects),units:this.units.map(u=>u.toState("view")),buildings:this.buildings.map(b=>b.toState()),constructionOrders:StateValue.copy(this.constructionOrders),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)},this)}
     finally{const perf=this.perfStats;perf.snapshotMs=performance.now()-started;perf.snapshotCumulativeMs=(perf.snapshotCumulativeMs||0)+perf.snapshotMs;perf.maxSnapshotMs=Math.max(perf.maxSnapshotMs,perf.snapshotMs);perf.snapshotSamples++}
   }
 }
