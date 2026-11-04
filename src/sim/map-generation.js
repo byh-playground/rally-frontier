@@ -7,6 +7,8 @@ import { UNIT_RUNTIME_GEOMETRY } from '../definitions/units.js';
 import { WorldContext } from './world-context.js';
 import { TerrainNavigation } from './navigation.js';
 import { TerrainGeometry, TerrainSurfaceAtlas } from './terrain.js';
+import { RallyGamekit } from '../core/gamekit.js';
+const { minPairDistance, nearestPointDistance, pointDistance, pointInSimplePolygon, pointPolylineDistance, pointSegmentDistance, polygonsOverlap, polylineTangentAt, polylineToRibbonPolygon, roundedPointOnPolyline, segmentDistance, smoothPolylineCatmull } = RallyGamekit;
 
 class CloneUtil{static clone(v){return JSON.parse(JSON.stringify(v))}}
 class HashUtil{static hash(s){let h=2166136261>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}}
@@ -61,14 +63,14 @@ class FrontierTerrainLayout{
     const dryGeometry=TerrainGeometry.fromMap({...map,terrain:{...terrain,layers:(terrain.layers||[]).filter(l=>!l.innerPoints?.length),bridges:[]}});
     const waterPaths=[terrain.riverPath,...(terrain.riverBranches||[])],banks=atlas.layers.filter(l=>l.innerPoints?.length),elevated=atlas.layers.filter(l=>l.level>0);
     const clearance=(terrain.riverHalfWidth||0)+(terrain.riverBankWidth||0)+20;
-    const waterClear=waterPaths.every(path=>path.every((p,i)=>dryGeometry.circleClear(p.x,p.y,clearance)&&(!i||dryGeometry.segmentClear(path[i-1].x,path[i-1].y,p.x,p.y,clearance))))&&banks.every((b,i)=>b.points.every(p=>p.x>=0&&p.x<=map.width&&p.y>=0&&p.y<=map.height)&&!elevated.some(l=>TerrainSurfaceAtlas.polygonsOverlap(b.points,l.points))&&!banks.slice(i+1).some(l=>TerrainSurfaceAtlas.polygonsOverlap(b.points,l.points)));
+    const waterClear=waterPaths.every(path=>path.every((p,i)=>dryGeometry.field.polygonCircleClear(p.x,p.y,clearance)&&(!i||dryGeometry.field.polygonSegmentClear(path[i-1].x,path[i-1].y,p.x,p.y,clearance))))&&banks.every((b,i)=>b.points.every(p=>p.x>=0&&p.x<=map.width&&p.y>=0&&p.y<=map.height)&&!elevated.some(l=>polygonsOverlap(b.points,l.points))&&!banks.slice(i+1).some(l=>polygonsOverlap(b.points,l.points)));
     const bridgeClear=(terrain.bridges||[]).every(b=>{
       const ca=Math.cos(b.angle),sa=Math.sin(b.angle),p=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([x,y])=>({x:b.x+x*b.halfLength*ca-y*b.halfWidth*sa,y:b.y+x*b.halfLength*sa+y*b.halfWidth*ca}));
-      const groundedEndcaps=[1,3].every(i=>banks.every(bank=>bank.points.every((a,j)=>{const z=bank.points[(j+1)%bank.points.length],v=p[i],q=p[(i+1)%4];return TerrainGeometry.segmentEdgeDistance(v.x,v.y,q.x,q.y,a.x,a.y,z.x,z.y)>=2})));
-      return groundedEndcaps&&p.every((v,i)=>atlas.heightAt(v.x,v.y)===0&&dryGeometry.segmentClear(v.x,v.y,p[(i+1)%4].x,p[(i+1)%4].y,2))&&!elevated.some(l=>TerrainSurfaceAtlas.polygonsOverlap(p,l.points));
+      const groundedEndcaps=[1,3].every(i=>banks.every(bank=>bank.points.every((a,j)=>{const z=bank.points[(j+1)%bank.points.length],v=p[i],q=p[(i+1)%4];return segmentDistance(v.x,v.y,q.x,q.y,a.x,a.y,z.x,z.y)>=2})));
+      return groundedEndcaps&&p.every((v,i)=>atlas.heightAt(v.x,v.y)===0&&dryGeometry.field.polygonSegmentClear(v.x,v.y,p[(i+1)%4].x,p[(i+1)%4].y,2))&&!elevated.some(l=>polygonsOverlap(p,l.points));
     });
     const pads=[map.spawns.host,map.spawns.guest,...map.capturePoints];
-    const buildablePads=pads.every(p=>geometry.circleClear(p.x,p.y,42)&&atlas.buildable(p.x,p.y,42)&&!banks.some(b=>MapGeometry.pointInSimplePolygon(p.x,p.y,b.points)));
+    const buildablePads=pads.every(p=>geometry.field.polygonCircleClear(p.x,p.y,42)&&atlas.buildable(p.x,p.y,42)&&!banks.some(b=>pointInSimplePolygon(p.x,p.y,b.points)));
     return {waterLayerSeparation:waterClear,bridgeRampSeparation:bridgeClear,buildablePads};
   }
   static connectedLayout(map){
@@ -96,14 +98,14 @@ class FrontierTerrainLayout{
     const pads=[ctx.host,ctx.guest,...FrontierTerrainLayout.lanes(ctx).capturePoints],clearance=outerWidth+20;
     for(const coords of templates){
       const controls=coords.map(([x,y])=>({x:x*w,y:y*h}));
-      const riverPath=MapGeometry.smoothPolylineCatmull(controls,5).map(p=>({x:Math.round(p.x),y:Math.round(p.y)}));
+      const riverPath=smoothPolylineCatmull(controls,5).map(p=>({x:Math.round(p.x),y:Math.round(p.y)}));
       const riverBranches=[riverPath.map(p=>({x:w-p.x,y:h-p.y}))],paths=[riverPath,...riverBranches];
-      const riverBankLayers=paths.map((path,i)=>({id:'river-bank-'+i,level:-1,points:MapGeometry.polylineToRibbonPolygon(path,outerWidth),innerPoints:MapGeometry.polylineToRibbonPolygon(path,riverHalfWidth)}));
-      const clear=riverBankLayers.every((b,i)=>b.points.every(p=>p.x>=0&&p.x<=w&&p.y>=0&&p.y<=h)&&![...atlas.layers,...atlas.ramps].some(l=>TerrainSurfaceAtlas.polygonsOverlap(b.points,l.points))&&!riverBankLayers.slice(i+1).some(l=>TerrainSurfaceAtlas.polygonsOverlap(b.points,l.points))&&pads.every(p=>!MapGeometry.pointInSimplePolygon(p.x,p.y,b.points)&&b.points.every((a,j)=>{const z=b.points[(j+1)%b.points.length];return MapGeometry.pointSegDist(p.x,p.y,a.x,a.y,z.x,z.y)>=42})));
-      if(!clear||!paths.every(path=>path.every((p,i)=>geometry.circleClear(p.x,p.y,clearance)&&(!i||geometry.segmentClear(path[i-1].x,path[i-1].y,p.x,p.y,clearance)))))continue;
+      const riverBankLayers=paths.map((path,i)=>({id:'river-bank-'+i,level:-1,points:polylineToRibbonPolygon(path,outerWidth),innerPoints:polylineToRibbonPolygon(path,riverHalfWidth)}));
+      const clear=riverBankLayers.every((b,i)=>b.points.every(p=>p.x>=0&&p.x<=w&&p.y>=0&&p.y<=h)&&![...atlas.layers,...atlas.ramps].some(l=>polygonsOverlap(b.points,l.points))&&!riverBankLayers.slice(i+1).some(l=>polygonsOverlap(b.points,l.points))&&pads.every(p=>!pointInSimplePolygon(p.x,p.y,b.points)&&b.points.every((a,j)=>{const z=b.points[(j+1)%b.points.length];return pointSegmentDistance(p.x,p.y,a.x,a.y,z.x,z.y)>=42})));
+      if(!clear||!paths.every(path=>path.every((p,i)=>geometry.field.polygonCircleClear(p.x,p.y,clearance)&&(!i||geometry.field.polygonSegmentClear(path[i-1].x,path[i-1].y,p.x,p.y,clearance)))))continue;
       return {riverPath,riverHalfWidth,riverBranches,riverBankWidth,riverBankLayers,
-        riverPolygon:MapGeometry.polylineToRibbonPolygon(riverPath,riverHalfWidth),
-        riverBranchPolygons:riverBranches.map(p=>MapGeometry.polylineToRibbonPolygon(p,riverHalfWidth))};
+        riverPolygon:polylineToRibbonPolygon(riverPath,riverHalfWidth),
+        riverBranchPolygons:riverBranches.map(p=>polylineToRibbonPolygon(p,riverHalfWidth))};
     }
     throw new Error('No lowland corridor can fit the physical river banks');
   }
@@ -167,7 +169,7 @@ class MapGeneration{
     terrain.bridges=MapGeneration.generateProceduralBridges(ctx,laneControlPoints,terrain);
     terrain.layers.push(...terrain.riverBankLayers);delete terrain.riverBankLayers;
     const {m,width,height,seed,host,guest,topology,terrainArchetype}=ctx;
-    return {schemaVersion:MAP_DESCRIPTOR_SCHEMA_VERSION,generator:'procedural-frontier',generatorVersion:11,seed,width,height,biome:m.biome||'frontier',topology,terrainArchetype,symmetry:'rotational-terrain',spawns:{host,guest},flags:[MapGeometry.pointOnPolyline(laneControlPoints.mid,.18),MapGeometry.pointOnPolyline(laneControlPoints.mid,.82)].map(p=>({...p,forced:false})),laneControlPoints,laneNormals,capturePoints,terrain,authoredStructures:structures};
+    return {schemaVersion:MAP_DESCRIPTOR_SCHEMA_VERSION,generator:'procedural-frontier',generatorVersion:11,seed,width,height,biome:m.biome||'frontier',topology,terrainArchetype,symmetry:'rotational-terrain',spawns:{host,guest},flags:[roundedPointOnPolyline(laneControlPoints.mid,.18),roundedPointOnPolyline(laneControlPoints.mid,.82)].map(p=>({...p,forced:false})),laneControlPoints,laneNormals,capturePoints,terrain,authoredStructures:structures};
   }
   static mapTerrainDescriptor(mapDescriptor){
   return mapDescriptor?.terrain||{layers:[],ramps:[],blockers:[],riverPath:RIVER_PATH,riverHalfWidth:RIVER_HALF_WIDTH,riverBranches:[],bridges:[]};
@@ -180,7 +182,7 @@ class MapGeneration{
   for(const laneKey of ["top","mid","bot"]){
     const pts=desc.laneControlPoints?.[laneKey]||[];let hit=0,total=0;
     for(let i=0;i<=48;i++){
-      const t=i/48,q=MapGeometry.pointOnPolyline(pts,t),tan=MapGeometry.laneTangentAt(pts,t),nx=-tan.y,ny=tan.x;
+      const t=i/48,q=roundedPointOnPolyline(pts,t),tan=polylineTangentAt(pts,t),nx=-tan.y,ny=tan.x;
       for(const offset of [-180,-90,0,90,180]){
         total++;if(atlas.levelAt(q.x+nx*offset,q.y+ny*offset)>0)hit++;
       }
@@ -203,28 +205,28 @@ class MapGeneration{
   const g=rules?.map?.generation||GameRuleDefinition.defaults.map.generation;
   const host=desc.spawns.host,guest=desc.spawns.guest;
   // A base's own plateau is its buildable starting room, not a spawn hazard.
-  const elevatedCenters=TerrainSurfaceAtlas.fromMap(desc).layers.filter(l=>l.level>0&&!MapGeometry.pointInSimplePolygon(host.x,host.y,l.points)&&!MapGeometry.pointInSimplePolygon(guest.x,guest.y,l.points)).map(l=>({x:l.points.reduce((n,p)=>n+p.x,0)/l.points.length,y:l.points.reduce((n,p)=>n+p.y,0)/l.points.length}));
-  const spawnHazardDistance=Math.min(MapGeometry.nearestMapDistance(host,elevatedCenters),MapGeometry.nearestMapDistance(guest,elevatedCenters));
+  const elevatedCenters=TerrainSurfaceAtlas.fromMap(desc).layers.filter(l=>l.level>0&&!pointInSimplePolygon(host.x,host.y,l.points)&&!pointInSimplePolygon(guest.x,guest.y,l.points)).map(l=>({x:l.points.reduce((n,p)=>n+p.x,0)/l.points.length,y:l.points.reduce((n,p)=>n+p.y,0)/l.points.length}));
+  const spawnHazardDistance=Math.min(nearestPointDistance(host,elevatedCenters),nearestPointDistance(guest,elevatedCenters));
   const objectives=desc.capturePoints||[];
-  const objectiveClearance=MapGeometry.minMapPairDistance(objectives);
-  const laneCenters=Object.values(desc.laneControlPoints||{}).map(pts=>MapGeometry.pointOnPolyline(pts,.5));
-  const laneSeparation=MapGeometry.minMapPairDistance(laneCenters);
+  const objectiveClearance=minPairDistance(objectives,99999);
+  const laneCenters=Object.values(desc.laneControlPoints||{}).map(pts=>roundedPointOnPolyline(pts,.5));
+  const laneSeparation=minPairDistance(laneCenters,99999);
   let maxObjectiveLaneOffset=0,maxLaneEndpointError=0;
   for(const cp of objectives){
     const pts=desc.laneControlPoints?.[cp.laneKey]||[];
-    if(pts.length>1)maxObjectiveLaneOffset=Math.max(maxObjectiveLaneOffset,MapGeometry.pointPolylineDist(cp.x,cp.y,pts));
+    if(pts.length>1)maxObjectiveLaneOffset=Math.max(maxObjectiveLaneOffset,pointPolylineDistance(cp.x,cp.y,pts));
   }
   for(const pts of Object.values(desc.laneControlPoints||{})){
     if(!pts.length)continue;
     maxLaneEndpointError=Math.max(
       maxLaneEndpointError,
-      MapGeometry.mapPointDistance(pts[0],host),
-      MapGeometry.mapPointDistance(pts[pts.length-1],guest)
+      pointDistance(pts[0],host),
+      pointDistance(pts[pts.length-1],guest)
     );
   }
   const hostObjectives=objectives.filter(o=>o.stage===1),guestObjectives=objectives.filter(o=>o.stage===2);
-  const hostObjCost=hostObjectives.reduce((s,o)=>s+MapGeometry.mapPointDistance(host,o),0)/Math.max(1,hostObjectives.length);
-  const guestObjCost=guestObjectives.reduce((s,o)=>s+MapGeometry.mapPointDistance(guest,o),0)/Math.max(1,guestObjectives.length);
+  const hostObjCost=hostObjectives.reduce((s,o)=>s+pointDistance(host,o),0)/Math.max(1,hostObjectives.length);
+  const guestObjCost=guestObjectives.reduce((s,o)=>s+pointDistance(guest,o),0)/Math.max(1,guestObjectives.length);
   const fairnessError=Math.abs(hostObjCost-guestObjCost)/Math.max(1,(hostObjCost+guestObjCost)/2);
   const spawnClearanceTarget=Math.max(220,Number(g.minSpawnClearance)||560)*.7;
   const topology=String(desc.topology||"mixed");
@@ -236,7 +238,7 @@ class MapGeneration{
   const objectiveTerrain=MapGeneration.terrainMapDiagnostics(desc);
   const blockerGeometry=TerrainGeometry.fromMap(desc),blockerCount=(desc.terrain?.blockers||[]).length;
   const blockerSubjects=[...objectives,desc.spawns.host,desc.spawns.guest];
-  const blockerPlacement=blockerCount>=2&&blockerSubjects.every(p=>blockerGeometry.circleClear(p.x,p.y,Math.max(42,Number(p.r)||0)));
+  const blockerPlacement=blockerCount>=2&&blockerSubjects.every(p=>blockerGeometry.field.polygonCircleClear(p.x,p.y,Math.max(42,Number(p.r)||0)));
   const checks={
     ...FrontierTerrainLayout.safety(desc),
     spawnClearance:spawnHazardDistance>=spawnClearanceTarget,
@@ -296,7 +298,7 @@ class MapGeneration{
     const chance=c.laneKey==="mid"?.55:.32;
     const roll=(HashUtil.hash(`${ctx.seed}|bridge|${c.laneKey}|${Math.round(c.t*1000)}`)%10000)/10000;
     if(roll>=chance)continue;
-    const tangent=MapGeometry.laneTangentAt(laneControlPoints[c.laneKey],c.t);
+    const tangent=polylineTangentAt(laneControlPoints[c.laneKey],c.t);
     eligible.push({...c,priority:c.laneKey==="mid"?0:1,roll,tangent});
   }
   eligible.sort((a,b)=>a.priority-b.priority||a.roll-b.roll||a.laneKey.localeCompare(b.laneKey)||a.t-b.t);
@@ -313,7 +315,7 @@ class MapGeneration{
     const endcapsClear=halfLength=>[-1,1].every(sign=>{
       const ex=x+sign*halfLength*Math.cos(angle),ey=y+sign*halfLength*Math.sin(angle);
       const a={x:ex-halfWidth*Math.sin(angle),y:ey+halfWidth*Math.cos(angle)},b={x:ex+halfWidth*Math.sin(angle),y:ey-halfWidth*Math.cos(angle)};
-      return banks.every(bank=>!MapGeometry.pointInSimplePolygon(a.x,a.y,bank.points)&&!MapGeometry.pointInSimplePolygon(b.x,b.y,bank.points)&&bank.points.every((p,j)=>{const q=bank.points[(j+1)%bank.points.length];return TerrainGeometry.segmentEdgeDistance(a.x,a.y,b.x,b.y,p.x,p.y,q.x,q.y)>=bankOverhang}));
+      return banks.every(bank=>!pointInSimplePolygon(a.x,a.y,bank.points)&&!pointInSimplePolygon(b.x,b.y,bank.points)&&bank.points.every((p,j)=>{const q=bank.points[(j+1)%bank.points.length];return segmentDistance(a.x,a.y,b.x,b.y,p.x,p.y,q.x,q.y)>=bankOverhang}));
     });
     let halfLength=Math.max(120,Math.ceil(bankSpan+bankOverhang));
     const extent=Math.ceil(Math.hypot(ctx.width,ctx.height));
@@ -330,7 +332,7 @@ class MapGeneration{
   }).filter(b=>{
     const ca=Math.cos(b.angle),sa=Math.sin(b.angle),points=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([x,y])=>({x:b.x+x*b.halfLength*ca-y*b.halfWidth*sa,y:b.y+x*b.halfLength*sa+y*b.halfWidth*ca}));
     const atlas=TerrainSurfaceAtlas.fromMap({width:ctx.width,height:ctx.height,terrain:ctx.terrainLayout||FrontierTerrainLayout.create(ctx)});
-    return points.every(p=>p.x>=0&&p.x<=ctx.width&&p.y>=0&&p.y<=ctx.height)&&![...atlas.layers,...atlas.ramps].some(l=>TerrainSurfaceAtlas.polygonsOverlap(points,l.points));
+    return points.every(p=>p.x>=0&&p.x<=ctx.width&&p.y>=0&&p.y<=ctx.height)&&![...atlas.layers,...atlas.ramps].some(l=>polygonsOverlap(points,l.points));
   });
 }
 }

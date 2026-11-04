@@ -2,49 +2,15 @@
 import { RangeUtil } from '../core/game-rules.js';
 import { MapGeometry } from './map-geometry.js';
 import { NavigationGoal } from './navigation.js';
+import { RallyGamekit } from '../core/gamekit.js';
 import { FP } from '../core/config.js';
+const { BoundsIndex, ObstacleField, assignBounds, boundariesCross, pointInSimplePolygon, pointSegmentDistance, polygonTouchesRect, polygonsOverlap, segmentDistance, segmentsIntersect, triangulatePolygon } = RallyGamekit;
 
 // Derived, immutable world geometry. Each simulation and renderer owns a context;
 // no active-view switch can change another match's coordinates or spatial grids.
 // Static map geometry is shared by simulation, placement and presentation.
 // Route fields are derived caches, never authoritative unit state or replay data.
-class NavigationObstacleIndex{
-  constructor(items,cell=256){
-    this.items=items;this.cell=cell;this.bins=new Map();this.marks=new Uint32Array(items.length);this.epoch=0;this.out=[];
-    for(let i=0;i<items.length;i++){
-      const b=items[i];
-      for(let y=Math.floor(b.minY/cell);y<=Math.floor(b.maxY/cell);y++)for(let x=Math.floor(b.minX/cell);x<=Math.floor(b.maxX/cell);x++){
-        let row=this.bins.get(y);if(!row)this.bins.set(y,row=new Map());
-        let bin=row.get(x);if(!bin)row.set(x,bin=[]);bin.push(i);
-      }
-    }
-  }
-  query(x0,y0,x1=x0,y1=y0,pad=0){
-    this.out.length=0;if(!this.items.length)return this.out;
-    const minX=Math.min(x0,x1)-pad,maxX=Math.max(x0,x1)+pad,minY=Math.min(y0,y1)-pad,maxY=Math.max(y0,y1)+pad;
-    const bx0=Math.floor(minX/this.cell),bx1=Math.floor(maxX/this.cell),by0=Math.floor(minY/this.cell),by1=Math.floor(maxY/this.cell);
-    if(bx0===bx1&&by0===by1){
-      const bin=this.bins.get(by0)?.get(bx0);
-      if(bin)for(const i of bin){const b=this.items[i];
-        if(b.maxX>=minX&&b.minX<=maxX&&b.maxY>=minY&&b.minY<=maxY)this.out.push(b);
-      }
-      return this.out;
-    }
-    if(++this.epoch===0xffffffff){this.marks.fill(0);this.epoch=1}
-    for(let y=by0;y<=by1;y++){
-      const row=this.bins.get(y);if(!row)continue;
-      for(let x=bx0;x<=bx1;x++){
-        const bin=row.get(x);if(!bin)continue;
-        for(const i of bin){if(this.marks[i]===this.epoch)continue;this.marks[i]=this.epoch;const b=this.items[i];
-          if(b.maxX>=minX&&b.minX<=maxX&&b.maxY>=minY&&b.minY<=maxY)this.out.push(b);
-        }
-      }
-    }
-    return this.out;
-  }
-}
 class TerrainGeometry{
-  static contactThreshold(r){return r>0?Math.max(0,r-1/FP):.001}
   static cache=new WeakMap();
   static fromMap(map){
     let g=this.cache.get(map);if(!g){g=new TerrainGeometry(map);this.cache.set(map,g)}return g;
@@ -54,7 +20,6 @@ class TerrainGeometry{
     return {...raw,points,
       blocksMovement:raw.blocksMovement!==false,
       blocksVision:raw.blocksVision!==false,
-      blocksProjectile:!!raw.blocksProjectile,
       minX:Math.min(...points.map(p=>p.x)),maxX:Math.max(...points.map(p=>p.x)),minY:Math.min(...points.map(p=>p.y)),maxY:Math.max(...points.map(p=>p.y))};
   }
   constructor(map){
@@ -64,86 +29,11 @@ class TerrainGeometry{
     const cliffs=this.surfaces.cliffs.map(TerrainGeometry.blocker);
     this.blocks=[...authored.filter(b=>b.blocksMovement),...cliffs];
     this.visionBlocks=authored.filter(b=>b.blocksVision);
-    this.projectileBlocks=authored.filter(b=>b.blocksProjectile);
     this.active=this.blocks.length>0;
-    this.index=new NavigationObstacleIndex(this.blocks);
-    this.visionIndex=new NavigationObstacleIndex(this.visionBlocks);
-    this.projectileIndex=new NavigationObstacleIndex(this.projectileBlocks);
-  }
-  static segmentsIntersect(ax,ay,bx,by,cx,cy,dx,dy){
-    const ux=bx-ax,uy=by-ay,vx=dx-cx,vy=dy-cy,den=ux*vy-uy*vx;
-    if(Math.abs(den)<1e-10)return false;
-    const qx=cx-ax,qy=cy-ay,t=(qx*vy-qy*vx)/den,s=(qx*uy-qy*ux)/den;
-    return t>=0&&t<=1&&s>=0&&s<=1;
-  }
-  static segmentEdgeDistance(ax,ay,bx,by,cx,cy,dx,dy){
-    if(this.segmentsIntersect(ax,ay,bx,by,cx,cy,dx,dy))return 0;
-    return Math.min(MapGeometry.pointSegDist(ax,ay,cx,cy,dx,dy),MapGeometry.pointSegDist(bx,by,cx,cy,dx,dy),MapGeometry.pointSegDist(cx,cy,ax,ay,bx,by),MapGeometry.pointSegDist(dx,dy,ax,ay,bx,by));
-  }
-  segmentBlockedBy(index,x0,y0,x1,y1,r=0){
-    for(const b of index.query(x0,y0,x1,y1,r)){
-      if(MapGeometry.pointInSimplePolygon(x0,y0,b.points)||MapGeometry.pointInSimplePolygon(x1,y1,b.points))return true;
-      for(let i=0;i<b.points.length;i++){
-        const a=b.points[i],c=b.points[(i+1)%b.points.length];
-        if(TerrainGeometry.segmentEdgeDistance(x0,y0,x1,y1,a.x,a.y,c.x,c.y)<TerrainGeometry.contactThreshold(r))return true;
-      }
-    }
-    return false;
-  }
-  circleClear(x,y,r=0){
-    if(!this.active)return true;
-    if(x<r||y<r||x>this.width-r||y>this.height-r)return false;
-    for(const b of this.index.query(x,y,x,y,r)){
-      if(MapGeometry.pointInSimplePolygon(x,y,b.points))return false;
-      for(let i=0;i<b.points.length;i++){
-        const a=b.points[i],c=b.points[(i+1)%b.points.length];
-        if(MapGeometry.pointSegDist(x,y,a.x,a.y,c.x,c.y)<TerrainGeometry.contactThreshold(r))return false;
-      }
-    }
-    return true;
-  }
-  segmentClear(x0,y0,x1,y1,r=0){
-    if(!this.active)return true;
-    if(Math.min(x0,x1)<r||Math.min(y0,y1)<r||Math.max(x0,x1)>this.width-r||Math.max(y0,y1)>this.height-r)return false;
-    return !this.segmentBlockedBy(this.index,x0,y0,x1,y1,r);
-  }
-  projectileSegmentClear(x0,y0,x1,y1){return !this.segmentBlockedBy(this.projectileIndex,x0,y0,x1,y1,0)}
-  nearestOpen(x,y,r,maxDistance=768,accept=null){
-    if(this.circleClear(x,y,r)&&(!accept||accept(x,y)))return {x,y};
-    let best=null,bestD=Infinity;const step=16;
-    for(let range=step;range<=maxDistance;range+=step){
-      for(let i=0;i<32;i++){
-        const a=i*Math.PI/16,qx=RangeUtil.clamp(x+Math.cos(a)*range,r+1,this.width-r-1),qy=RangeUtil.clamp(y+Math.sin(a)*range,r+1,this.height-r-1);
-        const d=(qx-x)**2+(qy-y)**2;
-        if(d<bestD&&this.circleClear(qx,qy,r)&&(!accept||accept(qx,qy))){best={x:qx,y:qy};bestD=d}
-      }
-      if(best)return best;
-    }
-    return null;
-  }
-}
-class PolygonTriangulation{
-  static polygonCache=new WeakMap();
-  static mesh(points){
-    let cached=this.polygonCache.get(points);if(cached)return cached;
-    const cross=(a,b,c)=>(b.x-a.x)*(c.y-b.y)-(b.y-a.y)*(c.x-b.x);
-    const area=points.reduce((n,p,i)=>{const q=points[(i+1)%points.length];return n+p.x*q.y-q.x*p.y},0),sign=area>=0?1:-1;
-    const convex=points.every((p,i)=>cross(p,points[(i+1)%points.length],points[(i+2)%points.length])*sign>=-1e-7);
-    const indices=points.map((_,i)=>i),triangles=[];
-    while(indices.length>3){
-      let found=false;
-      for(let j=0;j<indices.length;j++){
-        const a=indices[(j+indices.length-1)%indices.length],b=indices[j],c=indices[(j+1)%indices.length],cr=cross(points[a],points[b],points[c])*sign;
-        if(Math.abs(cr)<1e-7){indices.splice(j,1);found=true;break}
-        if(cr<0)continue;
-        const contains=indices.some(i=>i!==a&&i!==b&&i!==c&&cross(points[a],points[b],points[i])*sign>=-1e-7&&cross(points[b],points[c],points[i])*sign>=-1e-7&&cross(points[c],points[a],points[i])*sign>=-1e-7);
-        if(contains)continue;
-        triangles.push([a,b,c]);indices.splice(j,1);found=true;break;
-      }
-      if(!found)throw new Error('지형 다각형을 렌더링할 수 없습니다.');
-    }
-    if(indices.length===3)triangles.push(indices.slice());
-    cached={convex,triangles};this.polygonCache.set(points,cached);return cached;
+    this.index=new BoundsIndex(this.blocks);
+    // Polygon-only clearance for placement, map checks and spawning; buildings live in each navigation's own field.
+    this.field=new ObstacleField({width:this.width,height:this.height,fixedPoint:FP,polygons:this.index,circles:[]});
+    this.visionIndex=new BoundsIndex(this.visionBlocks);
   }
 }
 // A 2.5D surface atlas: horizontal cells plus authored ramp transitions.
@@ -160,8 +50,8 @@ class TerrainSurfaceProjection{
   projectedTriangleMesh(mesh,flipped=false){
     let cache=this.projectedTriangleCaches.get(mesh);if(!cache)this.projectedTriangleCaches.set(mesh,cache=new Map());
     const key=(flipped?1:0)+":"+BattlefieldProjection.heightScale;let value=cache.get(key);if(value)return value;
-    const triangles=mesh.map((tri,order)=>TerrainSurfaceAtlas.bounds({tri,order,points:tri.vertices.map(v=>({x:flipped?this.atlas.width-v.x:v.x,y:BattlefieldProjection.planarY(flipped?this.atlas.height-v.z:v.z,v.y)}))}));
-    value={triangles,index:new NavigationObstacleIndex(triangles)};cache.set(key,value);return value;
+    const triangles=mesh.map((tri,order)=>assignBounds({tri,order,points:tri.vertices.map(v=>({x:flipped?this.atlas.width-v.x:v.x,y:BattlefieldProjection.planarY(flipped?this.atlas.height-v.z:v.z,v.y)}))}));
+    value={triangles,index:new BoundsIndex(triangles)};cache.set(key,value);return value;
   }
   renderProjectedSurfaceMesh(flipped=false){
     const mesh=this.atlas.presentationSurfaceMesh(),key=(flipped?1:0)+":"+BattlefieldProjection.heightScale;
@@ -170,9 +60,9 @@ class TerrainSurfaceProjection{
     for(const patch of mesh){
       if(patch.kind==='cliff'&&patch.outwardY*sign<=1e-8)continue;
       const points=patch.vertices.map(v=>({x:flipped?this.atlas.width-v.x:v.x,y:BattlefieldProjection.planarY(flipped?this.atlas.height-v.z:v.z,v.y)}));
-      for(const indices of patch.triangles)triangles.push(TerrainSurfaceAtlas.bounds({points:indices.map(i=>points[i]),vertices:indices.map(i=>patch.vertices[i]),indices,patch,order:triangles.length}));
+      for(const indices of patch.triangles)triangles.push(assignBounds({points:indices.map(i=>points[i]),vertices:indices.map(i=>patch.vertices[i]),indices,patch,order:triangles.length}));
     }
-    cached={mesh,triangles,index:new NavigationObstacleIndex(triangles)};this.renderProjectedMeshCache.set(key,cached);return cached;
+    cached={mesh,triangles,index:new BoundsIndex(triangles)};this.renderProjectedMeshCache.set(key,cached);return cached;
   }
   projectedSurfaceMesh(flipped=false){
     const key=(flipped?1:0)+":"+BattlefieldProjection.heightScale;let cached=this.projectedMeshCache.get(key);if(cached)return cached;
@@ -184,11 +74,11 @@ class TerrainSurfaceProjection{
         const den=(b.y-c.y)*(a.x-c.x)+(c.x-b.x)*(a.y-c.y);if(Math.abs(den)<1e-8)continue;
         const vertices=tri.map(i=>patch.vertices[i]),[u,v,w]=vertices,worldDen=(v.x-u.x)*(w.z-u.z)-(v.z-u.z)*(w.x-u.x);
         const gradient=Math.abs(worldDen)>1e-8?{x:((v.y-u.y)*(w.z-u.z)-(w.y-u.y)*(v.z-u.z))/worldDen,z:((v.x-u.x)*(w.y-u.y)-(w.x-u.x)*(v.y-u.y))/worldDen}:null;
-        triangles.push(TerrainSurfaceAtlas.bounds({points:p,vertices,kind:patch.kind,id:patch.id,den,gradient}));
+        triangles.push(assignBounds({points:p,vertices,kind:patch.kind,id:patch.id,den,gradient}));
       }
     }
-    const transitions=this.atlas.surfaceMesh.filter(p=>p.kind==='cliff'||p.kind==='ramp').map(p=>TerrainSurfaceAtlas.bounds({points:p.vertices.map(v=>({x:flipped?this.atlas.width-v.x:v.x,y:BattlefieldProjection.planarY(flipped?this.atlas.height-v.z:v.z,v.y)}))}));
-    cached={triangles,index:new NavigationObstacleIndex(triangles),transitionIndex:new NavigationObstacleIndex(transitions)};this.projectedMeshCache.set(key,cached);return cached;
+    const transitions=this.atlas.surfaceMesh.filter(p=>p.kind==='cliff'||p.kind==='ramp').map(p=>assignBounds({points:p.vertices.map(v=>({x:flipped?this.atlas.width-v.x:v.x,y:BattlefieldProjection.planarY(flipped?this.atlas.height-v.z:v.z,v.y)}))}));
+    cached={triangles,index:new BoundsIndex(triangles),transitionIndex:new BoundsIndex(transitions)};this.projectedMeshCache.set(key,cached);return cached;
   }
   pickSurface(viewX,projectedY,flipped=false){
     const ax=flipped?this.atlas.width-viewX:viewX,az=flipped?this.atlas.height-projectedY:projectedY;
@@ -214,7 +104,6 @@ class TerrainSurfaceAtlas{
   static cache=new WeakMap();
   static rampPlaneCache=new WeakMap();
   static fromMap(map){let value=this.cache.get(map);if(!value){value=new TerrainSurfaceAtlas(map);this.cache.set(map,value)}return value}
-  static bounds(item){const p=item.points;return Object.assign(item,{minX:Math.min(...p.map(v=>v.x)),maxX:Math.max(...p.map(v=>v.x)),minY:Math.min(...p.map(v=>v.y)),maxY:Math.max(...p.map(v=>v.y))})}
   static lerp(a,b,t){return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t}}
   static pointKey(p){return `${Math.round(Number(p.x)*1000)/1000},${Math.round(Number(p.y)*1000)/1000}`}
   static directedEdgeKey(a,b){return this.pointKey(a)+">"+this.pointKey(b)}
@@ -243,30 +132,6 @@ class TerrainSurfaceAtlas{
     return out;
   }
   // Closed segment/rectangle contact by separating axes; near-touching counts.
-  static segmentTouchesRect(ax,ay,bx,by,x0,y0,x1,y1){
-    if(Math.max(ax,bx)<x0||Math.min(ax,bx)>x1||Math.max(ay,by)<y0||Math.min(ay,by)>y1)return false;
-    const dx=bx-ax,dy=by-ay;let pos=false,neg=false;
-    for(const [x,y] of [[x0,y0],[x1,y0],[x1,y1],[x0,y1]]){const c=dx*(y-ay)-dy*(x-ax);if(c>=-1e-9)pos=true;if(c<=1e-9)neg=true}
-    return pos&&neg;
-  }
-  static polygonTouchesRect(points,x0,y0,x1,y1){
-    for(let i=0;i<points.length;i++){const a=points[i],b=points[(i+1)%points.length];if(this.segmentTouchesRect(a.x,a.y,b.x,b.y,x0,y0,x1,y1))return true}
-    return false;
-  }
-  static polygonsOverlap(a,b){
-    if(a.some(p=>MapGeometry.pointInSimplePolygon(p.x,p.y,b))||b.some(p=>MapGeometry.pointInSimplePolygon(p.x,p.y,a)))return true;
-    for(let i=0;i<a.length;i++)for(let j=0;j<b.length;j++){
-      const p=a[i],q=a[(i+1)%a.length],r=b[j],t=b[(j+1)%b.length];
-      if(TerrainGeometry.segmentEdgeDistance(p.x,p.y,q.x,q.y,r.x,r.y,t.x,t.y)<.001)return true;
-    }return false;
-  }
-  static boundariesCross(a,b){
-    for(let i=0;i<a.length;i++)for(let j=0;j<b.length;j++){
-      const p=a[i],q=a[(i+1)%a.length],r=b[j],t=b[(j+1)%b.length];
-      if(TerrainGeometry.segmentEdgeDistance(p.x,p.y,q.x,q.y,r.x,r.y,t.x,t.y)<.001)return true;
-    }
-    return false;
-  }
   static wall(a,b,id){const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy);if(len<.01)return null;const x=-dy/len*2,y=dx/len*2;return{id,kind:'cliff',surfaceBoundary:true,blocksMovement:true,blocksVision:false,blocksProjectile:false,points:[{x:a.x+x,y:a.y+y},{x:b.x+x,y:b.y+y},{x:b.x-x,y:b.y-y},{x:a.x-x,y:a.y-y}]}}
   static flatMesh(contour,holes,elevation){
     // WorldContext's empty rectangular map is constructed before geometry helpers.
@@ -292,7 +157,7 @@ class TerrainSurfaceAtlas{
       const active=edges.filter(e=>e.minX<mid&&e.maxX>mid).sort((a,b)=>at(a,mid)-at(b,mid));
       for(let j=1;j<active.length;j++){
         const lower=active[j-1],upper=active[j],y=(at(lower,mid)+at(upper,mid))/2;
-        if(at(upper,mid)-at(lower,mid)<1e-8||!MapGeometry.pointInSimplePolygon(mid,y,contour)||holes.some(p=>MapGeometry.pointInSimplePolygon(mid,y,p)))continue;
+        if(at(upper,mid)-at(lower,mid)<1e-8||!pointInSimplePolygon(mid,y,contour)||holes.some(p=>pointInSimplePolygon(mid,y,p)))continue;
         const start=vertices.length;vertices.push(...[{x:left,y:at(lower,left)},{x:right,y:at(lower,right)},{x:right,y:at(upper,right)},{x:left,y:at(upper,left)}].map(p=>({x:p.x,y:typeof elevation==='function'?elevation(p.x,p.y):elevation,z:p.y,groundY:0})));
         const p=vertices.slice(start),area=(a,b,c)=>Math.abs((b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x));
         if(area(p[0],p[1],p[2])>1e-8)triangles.push([start,start+1,start+2]);
@@ -400,9 +265,9 @@ class TerrainSurfaceAtlas{
   }
   constructor(map){
     this.width=Number(map?.width)||3600;this.height=Number(map?.height)||4200;
-    this.layers=(map?.terrain?.layers||[]).map(p=>TerrainSurfaceAtlas.bounds({...p,level:Number(p.level),elevation:TerrainSurfaceAtlas.elevationForLevel(Number(p.level)),points:p.points.map(q=>({...q})),...(p.innerPoints?{innerPoints:p.innerPoints.map(q=>({...q}))}:{})}));
+    this.layers=(map?.terrain?.layers||[]).map(p=>assignBounds({...p,level:Number(p.level),elevation:TerrainSurfaceAtlas.elevationForLevel(Number(p.level)),points:p.points.map(q=>({...q})),...(p.innerPoints?{innerPoints:p.innerPoints.map(q=>({...q}))}:{})}));
     this.ramps=[];this.cliffs=[];this.faces=[];this.seams=[];
-    this.bridges=(map?.terrain?.bridges||[]).map((b,i)=>{const ca=Math.cos(b.angle||0),sa=Math.sin(b.angle||0),points=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([x,y])=>({x:b.x+x*b.halfLength*ca-y*b.halfWidth*sa,y:b.y+x*b.halfLength*sa+y*b.halfWidth*ca}));return TerrainSurfaceAtlas.bounds({...b,id:String(b.id||'bridge-'+i),level:Number(b.level??0),elevation:TerrainSurfaceAtlas.elevationForLevel(Number(b.level??0)),points})});
+    this.bridges=(map?.terrain?.bridges||[]).map((b,i)=>{const ca=Math.cos(b.angle||0),sa=Math.sin(b.angle||0),points=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([x,y])=>({x:b.x+x*b.halfLength*ca-y*b.halfWidth*sa,y:b.y+x*b.halfLength*sa+y*b.halfWidth*ca}));return assignBounds({...b,id:String(b.id||'bridge-'+i),level:Number(b.level??0),elevation:TerrainSurfaceAtlas.elevationForLevel(Number(b.level??0)),points})});
     this.maxLevel=Math.max(0,...this.layers.map(p=>p.level),...this.bridges.map(p=>p.level));this.maxHeight=TerrainSurfaceAtlas.elevationForLevel(this.maxLevel);
     this.minLevel=Math.min(0,...this.layers.map(p=>p.level),...this.bridges.map(p=>p.level));this.minHeight=TerrainSurfaceAtlas.elevationForLevel(this.minLevel);
     const ids=new Set();
@@ -413,19 +278,19 @@ class TerrainSurfaceAtlas{
       for(let i=0;i<layer.points.length;i++)for(let j=i+2;j<layer.points.length;j++){
         if(i===0&&j===layer.points.length-1)continue;
         const a=layer.points[i],b=layer.points[(i+1)%layer.points.length],c=layer.points[j],d=layer.points[(j+1)%layer.points.length];
-        if(TerrainGeometry.segmentsIntersect(a.x,a.y,b.x,b.y,c.x,c.y,d.x,d.y))throw new Error('Self-intersecting terrain layer: '+layer.id);
+        if(segmentsIntersect(a.x,a.y,b.x,b.y,c.x,c.y,d.x,d.y))throw new Error('Self-intersecting terrain layer: '+layer.id);
       }
-      PolygonTriangulation.mesh(layer.points);
+      triangulatePolygon(layer.points);
       const area=layer.points.reduce((sum,p,i)=>{const q=layer.points[(i+1)%layer.points.length];return sum+p.x*q.y-q.x*p.y},0);
       if(Math.abs(area)<1)throw new Error('Degenerate terrain layer: '+layer.id);
       layer.area=area;layer.topPoints=[];
       if(layer.innerPoints){
-        if(layer.innerPoints.length!==layer.points.length||layer.innerPoints.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)||!MapGeometry.pointInSimplePolygon(p.x,p.y,layer.points))||TerrainSurfaceAtlas.boundariesCross(layer.points,layer.innerPoints))throw new Error('Invalid terrain bank inner contour: '+layer.id);
-        PolygonTriangulation.mesh(layer.innerPoints);
+        if(layer.innerPoints.length!==layer.points.length||layer.innerPoints.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)||!pointInSimplePolygon(p.x,p.y,layer.points))||boundariesCross(layer.points,layer.innerPoints))throw new Error('Invalid terrain bank inner contour: '+layer.id);
+        triangulatePolygon(layer.innerPoints);
         for(let i=0;i<layer.innerPoints.length;i++)for(let j=i+2;j<layer.innerPoints.length;j++){
           if(i===0&&j===layer.innerPoints.length-1)continue;
           const a=layer.innerPoints[i],b=layer.innerPoints[(i+1)%layer.innerPoints.length],c=layer.innerPoints[j],d=layer.innerPoints[(j+1)%layer.innerPoints.length];
-          if(TerrainGeometry.segmentsIntersect(a.x,a.y,b.x,b.y,c.x,c.y,d.x,d.y))throw new Error('Self-intersecting terrain bank: '+layer.id);
+          if(segmentsIntersect(a.x,a.y,b.x,b.y,c.x,c.y,d.x,d.y))throw new Error('Self-intersecting terrain bank: '+layer.id);
         }
       }
     }
@@ -433,25 +298,25 @@ class TerrainSurfaceAtlas{
       if(ids.has(bridge.id)||bridge.id==='low-ground'||!Number.isSafeInteger(bridge.level)||!Number.isFinite(bridge.elevation)||!(bridge.halfLength>0&&bridge.halfWidth>0)||bridge.points.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)||p.x<0||p.y<0||p.x>this.width||p.y>this.height))throw new Error('Invalid terrain bridge: '+bridge.id);
       ids.add(bridge.id);
     }
-    for(let i=0;i<this.bridges.length;i++)for(let j=i+1;j<this.bridges.length;j++)if(TerrainSurfaceAtlas.polygonsOverlap(this.bridges[i].points,this.bridges[j].points))throw new Error('Overlapping terrain bridges: '+this.bridges[i].id+' / '+this.bridges[j].id);
+    for(let i=0;i<this.bridges.length;i++)for(let j=i+1;j<this.bridges.length;j++)if(polygonsOverlap(this.bridges[i].points,this.bridges[j].points))throw new Error('Overlapping terrain bridges: '+this.bridges[i].id+' / '+this.bridges[j].id);
     // Layers may stack only by strict containment. Crossing/partial overlaps are ambiguous.
     for(let i=0;i<this.layers.length;i++)for(let j=i+1;j<this.layers.length;j++){
       const a=this.layers[i],b=this.layers[j];
-      if(TerrainSurfaceAtlas.boundariesCross(a.points,b.points))throw new Error('Terrain layer boundaries cross: '+a.id+' / '+b.id);
-      const aInB=MapGeometry.pointInSimplePolygon(a.points[0].x,a.points[0].y,b.points);
-      const bInA=MapGeometry.pointInSimplePolygon(b.points[0].x,b.points[0].y,a.points);
+      if(boundariesCross(a.points,b.points))throw new Error('Terrain layer boundaries cross: '+a.id+' / '+b.id);
+      const aInB=pointInSimplePolygon(a.points[0].x,a.points[0].y,b.points);
+      const bInA=pointInSimplePolygon(b.points[0].x,b.points[0].y,a.points);
       if(aInB&&bInA)throw new Error('Duplicate terrain layer footprint: '+a.id+' / '+b.id);
     }
     for(const layer of this.layers){
-      const parents=this.layers.filter(p=>p!==layer&&MapGeometry.pointInSimplePolygon(layer.points[0].x,layer.points[0].y,p.points));
+      const parents=this.layers.filter(p=>p!==layer&&pointInSimplePolygon(layer.points[0].x,layer.points[0].y,p.points));
       layer.parent=parents.sort((a,b)=>Math.abs(a.area)-Math.abs(b.area))[0]||null;
-      if(layer.parent?.innerPoints&&(layer.points.some(p=>!MapGeometry.pointInSimplePolygon(p.x,p.y,layer.parent.innerPoints))||TerrainSurfaceAtlas.boundariesCross(layer.points,layer.parent.innerPoints)))throw new Error('Terrain child overlaps its parent bank: '+layer.id);
+      if(layer.parent?.innerPoints&&(layer.points.some(p=>!pointInSimplePolygon(p.x,p.y,layer.parent.innerPoints))||boundariesCross(layer.points,layer.parent.innerPoints)))throw new Error('Terrain child overlaps its parent bank: '+layer.id);
     }
     const underlyingAt=(x,y,excludeId=null)=>{
       let best={id:'low-ground',level:0,elevation:0};
       for(const layer of this.layers){
         if(layer.id===excludeId||best.area!==undefined&&Math.abs(layer.area)>=Math.abs(best.area))continue;
-        if(MapGeometry.pointInSimplePolygon(x,y,layer.points)||this.onBoundary(layer.points,x,y))best={id:layer.id,level:layer.level,elevation:layer.elevation,area:layer.area};
+        if(pointInSimplePolygon(x,y,layer.points)||this.onBoundary(layer.points,x,y))best={id:layer.id,level:layer.level,elevation:layer.elevation,area:layer.area};
       }
       return best;
     };
@@ -463,7 +328,7 @@ class TerrainSurfaceAtlas{
         layer.topPoints=layer.innerPoints;
         for(let i=0;i<layer.points.length;i++){
           const j=(i+1)%layer.points.length,a=layer.points[i],b=layer.points[j],ia=layer.innerPoints[i],ib=layer.innerPoints[j],loA=raised?a:ia,loB=raised?b:ib,hiA=raised?ia:a,hiB=raised?ib:b,dx=(hiA.x+hiB.x-loA.x-loB.x)/2,dy=(hiA.y+hiB.y-loA.y-loB.y)/2,run=Math.hypot(dx,dy);
-          const ramp=TerrainSurfaceAtlas.bounds({id:layer.id+':bank:'+i,bank:true,edge:i,layer,lowLevel:Math.min(layer.level,outer.level),highLevel:Math.max(layer.level,outer.level),lowElevation:Math.min(layer.elevation,outer.elevation),highElevation:Math.max(layer.elevation,outer.elevation),lowSurfaceId:raised?outer.id:layer.id,highSurfaceId:raised?layer.id:outer.id,lowA:loA,lowB:loB,highA:hiA,highB:hiB,nx:dx/run,ny:dy/run,run,points:[loA,loB,hiB,hiA]});
+          const ramp=assignBounds({id:layer.id+':bank:'+i,bank:true,edge:i,layer,lowLevel:Math.min(layer.level,outer.level),highLevel:Math.max(layer.level,outer.level),lowElevation:Math.min(layer.elevation,outer.elevation),highElevation:Math.max(layer.elevation,outer.elevation),lowSurfaceId:raised?outer.id:layer.id,highSurfaceId:raised?layer.id:outer.id,lowA:loA,lowB:loB,highA:hiA,highB:hiB,nx:dx/run,ny:dy/run,run,points:[loA,loB,hiB,hiA]});
           const triangles=[TerrainSurfaceAtlas.rampTriangle(ramp,0),TerrainSurfaceAtlas.rampTriangle(ramp,1)];
           if(!run||triangles.some(t=>!Number.isFinite(t.den)||Math.abs(t.den)<1e-6)||triangles[0].den*triangles[1].den<0)throw new Error('Invalid terrain bank strip: '+ramp.id);
           this.ramps.push(ramp);this.seams.push({a,b},{a:ia,b:ib},{a,b:ia});
@@ -486,9 +351,9 @@ class TerrainSurfaceAtlas{
           if(!spec.id||ids.has(spec.id)||!(spec.t0>=end&&spec.t1>spec.t0&&spec.t1<=1&&spec.run>0))throw new Error('Invalid terrain ramp: '+spec.id);
           ids.add(spec.id);cliff(end,spec.t0);end=spec.t1;
           const p=TerrainSurfaceAtlas.lerp(a,b,spec.t0),q=TerrainSurfaceAtlas.lerp(a,b,spec.t1),ph={x:p.x+nx*spec.run,y:p.y+ny*spec.run},qh={x:q.x+nx*spec.run,y:q.y+ny*spec.run};
-          for(const v of [ph,qh,TerrainSurfaceAtlas.lerp(ph,qh,.5)])if(!MapGeometry.pointInSimplePolygon(v.x-nx*.02,v.y-ny*.02,layer.points))throw new Error('Ramp extends outside its layer: '+spec.id);
+          for(const v of [ph,qh,TerrainSurfaceAtlas.lerp(ph,qh,.5)])if(!pointInSimplePolygon(v.x-nx*.02,v.y-ny*.02,layer.points))throw new Error('Ramp extends outside its layer: '+spec.id);
           if(layer.level===low.level)throw new Error('Ramp must connect different terrain levels: '+spec.id);
-          const ramp=TerrainSurfaceAtlas.bounds({...spec,layer,lowLevel:Math.min(low.level,layer.level),lowSurfaceId:raised?low.id:layer.id,lowElevation:Math.min(low.elevation,layer.elevation),highLevel:Math.max(low.level,layer.level),highSurfaceId:raised?layer.id:low.id,highElevation:Math.max(low.elevation,layer.elevation),lowA:raised?p:ph,lowB:raised?q:qh,highA:raised?ph:p,highB:raised?qh:q,nx:raised?nx:-nx,ny:raised?ny:-ny,points:[p,q,qh,ph]});
+          const ramp=assignBounds({...spec,layer,lowLevel:Math.min(low.level,layer.level),lowSurfaceId:raised?low.id:layer.id,lowElevation:Math.min(low.elevation,layer.elevation),highLevel:Math.max(low.level,layer.level),highSurfaceId:raised?layer.id:low.id,highElevation:Math.max(low.elevation,layer.elevation),lowA:raised?p:ph,lowB:raised?q:qh,highA:raised?ph:p,highB:raised?qh:q,nx:raised?nx:-nx,ny:raised?ny:-ny,points:[p,q,qh,ph]});
           this.ramps.push(ramp);layer.topPoints.push(p,ph,qh,q);
           this.cliffs.push(TerrainSurfaceAtlas.wall(p,ph,spec.id+':left'),TerrainSurfaceAtlas.wall(q,qh,spec.id+':right'));
           this.faces.push({a:p,b:ph,lowA:ramp.lowElevation,lowB:layer.elevation,high:layer.elevation,highA:raised?layer.elevation:low.elevation,highB:layer.elevation,lowLevel:ramp.lowLevel,highLevel:ramp.highLevel,outwardY:dy/len*(raised?1:-1)},{a:qh,b:q,lowA:layer.elevation,lowB:ramp.lowElevation,high:layer.elevation,highA:layer.elevation,highB:raised?layer.elevation:low.elevation,lowLevel:ramp.lowLevel,highLevel:ramp.highLevel,outwardY:-dy/len*(raised?1:-1)});
@@ -499,19 +364,19 @@ class TerrainSurfaceAtlas{
     }
     for(let i=0;i<this.ramps.length;i++)for(let j=i+1;j<this.ramps.length;j++){
       const a=this.ramps[i],b=this.ramps[j];if(a.bank&&b.bank&&a.layer===b.layer&&(Math.abs(a.edge-b.edge)===1||Math.abs(a.edge-b.edge)===a.layer.points.length-1))continue;
-      if(TerrainSurfaceAtlas.polygonsOverlap(a.points,b.points))throw new Error('Overlapping terrain ramps: '+a.id+' / '+b.id);
+      if(polygonsOverlap(a.points,b.points))throw new Error('Overlapping terrain ramps: '+a.id+' / '+b.id);
     }
     for(const ramp of this.ramps)for(const child of this.layers){
       let parent=child.parent;while(parent&&parent!==ramp.layer)parent=parent.parent;
-      if(parent===ramp.layer&&TerrainSurfaceAtlas.polygonsOverlap(ramp.points,child.points))throw new Error('Terrain ramp overlaps a child layer: '+ramp.id+' / '+child.id);
+      if(parent===ramp.layer&&polygonsOverlap(ramp.points,child.points))throw new Error('Terrain ramp overlaps a child layer: '+ramp.id+' / '+child.id);
     }
-    for(const layer of this.layers)PolygonTriangulation.mesh(layer.topPoints);
+    for(const layer of this.layers)triangulatePolygon(layer.topPoints);
     for(const r of map?.terrain?.ramps||[])if(!this.ramps.some(q=>q.id===r.id))throw new Error('Unknown ramp layer/edge: '+r.id);
-    this.cliffs=this.cliffs.filter(Boolean);this.layerIndex=new NavigationObstacleIndex(this.layers);this.rampIndex=new NavigationObstacleIndex(this.ramps);this.bridgeIndex=new NavigationObstacleIndex(this.bridges);
+    this.cliffs=this.cliffs.filter(Boolean);this.layerIndex=new BoundsIndex(this.layers);this.rampIndex=new BoundsIndex(this.ramps);this.bridgeIndex=new BoundsIndex(this.bridges);
     // Hidden terrain contacts are cut by the same deck footprint as the floors.
     // All collision consumers receive these exposed polygons, including motion casts.
     if(this.bridges.length)this.cliffs=this.cliffs.flatMap(wall=>{
-      const bounds=TerrainSurfaceAtlas.bounds(wall),holes=this.bridgeIndex.query(bounds.minX,bounds.minY,bounds.maxX,bounds.maxY).map(b=>b.points);
+      const bounds=assignBounds(wall),holes=this.bridgeIndex.query(bounds.minX,bounds.minY,bounds.maxX,bounds.maxY).map(b=>b.points);
       if(!holes.length)return[wall];
       const mesh=TerrainSurfaceAtlas.flatMesh(wall.points,holes,0);
       return mesh.triangles.map((t,i)=>({...wall,id:wall.id+':exposed:'+i,points:t.map(j=>({x:mesh.vertices[j].x,y:mesh.vertices[j].z}))}));
@@ -610,7 +475,7 @@ class TerrainSurfaceAtlas{
     for(const face of this.renderFaces)this.renderSurfaceMesh.push({kind:'cliff',outwardY:face.outwardY,face,
       vertices:[vertex(face.a,face.lowA),vertex(face.b,face.lowB),vertex(face.b,face.highB??face.high),vertex(face.a,face.highA??face.high)],triangles:[[0,1,2],[0,2,3]]});
   }
-  onBoundary(points,x,y){for(let i=0;i<points.length;i++){const a=points[i],b=points[(i+1)%points.length];if(MapGeometry.pointSegDist(x,y,a.x,a.y,b.x,b.y)<1e-6)return true}return false}
+  onBoundary(points,x,y){for(let i=0;i<points.length;i++){const a=points[i],b=points[(i+1)%points.length];if(pointSegmentDistance(x,y,a.x,a.y,b.x,b.y)<1e-6)return true}return false}
   rampProgress(r,x,y){return TerrainSurfaceAtlas.sampleRamp(r,x,y)?.progress??RangeUtil.clamp(((x-r.lowA.x)*r.nx+(y-r.lowA.y)*r.ny)/r.run,0,1)}
   // A cell that no bridge, ramp or layer edge touches has one sample at every
   // point inside it, so it is answered from a table; other cells sample exactly.
@@ -620,7 +485,7 @@ class TerrainSurfaceAtlas{
     for(let cy=0;cy<rows;cy++)for(let cx=0;cx<cols;cx++){
       const x0=cx*cell-pad,y0=cy*cell-pad,x1=(cx+1)*cell+pad,y1=(cy+1)*cell+pad;
       if(this.bridgeIndex.query(x0,y0,x1,y1).length||this.rampIndex.query(x0,y0,x1,y1).length)continue;
-      if(this.layerIndex.query(x0,y0,x1,y1).some(l=>TerrainSurfaceAtlas.polygonTouchesRect(l.points,x0,y0,x1,y1)))continue;
+      if(this.layerIndex.query(x0,y0,x1,y1).some(l=>polygonTouchesRect(l.points,x0,y0,x1,y1)))continue;
       cells[cy*cols+cx]=Object.freeze(this.sampleTerrain((cx+.5)*cell,(cy+.5)*cell));
     }
     return this.sampleCells={cell,cols,rows,cells};
@@ -628,18 +493,18 @@ class TerrainSurfaceAtlas{
   sample(x,y){
     const table=this.sampleCells||this.sampleCellTable();
     if(x>=0&&y>=0){const cx=Math.floor(x/table.cell),cy=Math.floor(y/table.cell);if(cx<table.cols&&cy<table.rows){const hit=table.cells[cy*table.cols+cx];if(hit)return hit}}
-    for(const bridge of this.bridgeIndex.query(x,y))if(MapGeometry.pointInSimplePolygon(x,y,bridge.points)||this.onBoundary(bridge.points,x,y))return{id:bridge.id,level:bridge.level,elevation:bridge.elevation,bridge,ramp:null,progress:1,gradient:{x:0,z:0}};
+    for(const bridge of this.bridgeIndex.query(x,y))if(pointInSimplePolygon(x,y,bridge.points)||this.onBoundary(bridge.points,x,y))return{id:bridge.id,level:bridge.level,elevation:bridge.elevation,bridge,ramp:null,progress:1,gradient:{x:0,z:0}};
     return this.sampleTerrain(x,y);
   }
   sampleTerrain(x,y){
     let bestRamp=null;
-    for(const r of this.rampIndex.query(x,y))if((MapGeometry.pointInSimplePolygon(x,y,r.points)||this.onBoundary(r.points,x,y))&&(!bestRamp||r.highLevel>bestRamp.highLevel))bestRamp=r;
+    for(const r of this.rampIndex.query(x,y))if((pointInSimplePolygon(x,y,r.points)||this.onBoundary(r.points,x,y))&&(!bestRamp||r.highLevel>bestRamp.highLevel))bestRamp=r;
     if(bestRamp){
       const plane=TerrainSurfaceAtlas.sampleRamp(bestRamp,x,y),t=plane?.progress??this.rampProgress(bestRamp,x,y),elevation=plane?.elevation??bestRamp.lowElevation+(bestRamp.highElevation-bestRamp.lowElevation)*t;
       return{id:bestRamp.id,level:t<.5?bestRamp.lowLevel:bestRamp.highLevel,elevation,ramp:bestRamp,progress:t,gradient:plane?.gradient,triangleIndex:plane?.triangleIndex};
     }
     let best=null;
-    for(const l of this.layerIndex.query(x,y))if((MapGeometry.pointInSimplePolygon(x,y,l.points)||this.onBoundary(l.points,x,y))&&(!best||Math.abs(l.area)<Math.abs(best.area)))best=l;
+    for(const l of this.layerIndex.query(x,y))if((pointInSimplePolygon(x,y,l.points)||this.onBoundary(l.points,x,y))&&(!best||Math.abs(l.area)<Math.abs(best.area)))best=l;
     if(best)return{id:best.id,level:best.level,elevation:best.elevation,layer:best,ramp:null,progress:1};
     return{id:'low-ground',level:0,elevation:0,ramp:null,progress:0};
   }
@@ -649,8 +514,8 @@ class TerrainSurfaceAtlas{
     // A footprint fully supported by the bridge does not touch the hidden bank below.
     for(const bridge of this.bridgeIndex.query(x,y,x,y,r))if(MapGeometry.pointInBridgeZone(x,y,bridge,-r))return true;
     for(const ramp of this.rampIndex.query(x,y,x,y,r)){
-      if(MapGeometry.pointInSimplePolygon(x,y,ramp.points))return false;
-      for(let i=0;i<4;i++){const a=ramp.points[i],b=ramp.points[(i+1)%4];if(MapGeometry.pointSegDist(x,y,a.x,a.y,b.x,b.y)<r+2)return false}
+      if(pointInSimplePolygon(x,y,ramp.points))return false;
+      for(let i=0;i<4;i++){const a=ramp.points[i],b=ramp.points[(i+1)%4];if(pointSegmentDistance(x,y,a.x,a.y,b.x,b.y)<r+2)return false}
     }return true;
   }
   transition(a,b,p,q){
@@ -674,4 +539,4 @@ class TerrainSurfaceAtlas{
   }
 }
 
-export { BattlefieldProjection, NavigationObstacleIndex, PolygonTriangulation, TerrainGeometry, TerrainSurfaceAtlas, TerrainSurfaceProjection };
+export { BattlefieldProjection, TerrainGeometry, TerrainSurfaceAtlas, TerrainSurfaceProjection };

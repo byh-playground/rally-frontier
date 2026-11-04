@@ -163,7 +163,7 @@ class NavigationGrid {
     isOpen(cell) {
         let open = this.open[cell];
         if (open < 0) {
-            open = this.nav.segmentClear(this.centerX(cell), this.centerY(cell), this.centerX(cell), this.centerY(cell), this.radius) ? 1 : 0;
+            open = this.nav.field.segmentClear(this.centerX(cell), this.centerY(cell), this.centerX(cell), this.centerY(cell), this.radius) ? 1 : 0;
             this.open[cell] = open;
         }
         return open === 1;
@@ -224,7 +224,7 @@ class NavigationGrid {
                 if (d > outer || d < inner || !this.isOpen(cell)) {
                     continue;
                 }
-                if (goal.terrainLine && !geometry.segmentClear(x, y, goal.x, goal.y, 0)) {
+                if (goal.terrainLine && !geometry.field.polygonSegmentClear(x, y, goal.x, goal.y, 0)) {
                     continue;
                 }
                 sources.push(cell);
@@ -306,7 +306,7 @@ class NavigationGrid {
         for (let i = path.length - 1; i > 0; i--) {
             const px = this.centerX(path[i]),
                 py = this.centerY(path[i]);
-            if (this.nav.segmentClear(x, y, px, py, this.radius, null, true, 0)) {
+            if (this.nav.field.segmentClear(x, y, px, py, this.radius, null, true, 0)) {
                 return { x: px, y: py };
             }
         }

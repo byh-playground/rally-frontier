@@ -10,6 +10,8 @@ import { NAV_BUILDING_MARGIN } from '../definitions/combat-rules.js';
 import { TERRAIN_ATTACK_REVEAL_RADIUS, VISION_SPATIAL_CELL } from '../definitions/world-rules.js';
 import { WorldContext } from './world-context.js';
 import { TerrainSurfaceAtlas } from './terrain.js';
+import { RallyGamekit } from '../core/gamekit.js';
+const { pointInSimplePolygon, pointPolylineDistance } = RallyGamekit;
 
 class Unit{
   static stateContract=new StateContract({hitFlash:0,attackFlash:0,target:null},{
@@ -95,7 +97,7 @@ class VisionField{
     let raster=this.rasters.get(terrain);if(raster)return raster;
     const cell=this.CELL,cols=Math.ceil(terrain.width/cell),rows=Math.ceil(terrain.height/cell),n=cols*rows;
     const level=new Int8Array(n),ground=new Uint8Array(n);
-    const inside=(index,x,y)=>{for(const b of index.query(x,y,x,y,0))if(MapGeometry.pointInSimplePolygon(x,y,b.points))return true;return false};
+    const inside=(index,x,y)=>{for(const b of index.query(x,y,x,y,0))if(pointInSimplePolygon(x,y,b.points))return true;return false};
     for(let cy=0;cy<rows;cy++)for(let cx=0;cx<cols;cx++){
       const x=Math.min(terrain.width,(cx+.5)*cell),y=Math.min(terrain.height,(cy+.5)*cell),c=cy*cols+cx;
       level[c]=terrain.surfaces.levelAt(x,y);ground[c]=inside(terrain.visionIndex,x,y)?1:0;
@@ -212,7 +214,7 @@ class TerrainQuery{
   static inPolygon(x,y,points){
     let box=this.boxes.get(points);
     if(!box){box={minX:Infinity,minY:Infinity,maxX:-Infinity,maxY:-Infinity};for(const p of points){box.minX=Math.min(box.minX,p.x);box.maxX=Math.max(box.maxX,p.x);box.minY=Math.min(box.minY,p.y);box.maxY=Math.max(box.maxY,p.y)}this.boxes.set(points,box)}
-    return x>=box.minX&&x<=box.maxX&&y>=box.minY&&y<=box.maxY&&MapGeometry.pointInSimplePolygon(x,y,points);
+    return x>=box.minX&&x<=box.maxX&&y>=box.minY&&y<=box.maxY&&pointInSimplePolygon(x,y,points);
   }
   static at(map,x,y,atlas=null){
     const terrain=MapGeneration.mapTerrainDescriptor(map);
@@ -222,8 +224,8 @@ class TerrainQuery{
       river=!!terrain.riverPolygon&&this.inPolygon(x,y,terrain.riverPolygon);
       if(!river)for(const poly of terrain.riverBranchPolygons||[])if(this.inPolygon(x,y,poly)){river=true;break}
       if(!river&&(!terrain.riverPolygon||terrain.riverPolygon.length<3)){
-        river=(terrain.riverPath||[]).length>1&&MapGeometry.pointPolylineDist(x,y,terrain.riverPath)<=terrain.riverHalfWidth;
-        if(!river)for(const branch of terrain.riverBranches||[])if(branch.length>1&&MapGeometry.pointPolylineDist(x,y,branch)<=terrain.riverHalfWidth*.72){river=true;break}
+        river=(terrain.riverPath||[]).length>1&&pointPolylineDistance(x,y,terrain.riverPath)<=terrain.riverHalfWidth;
+        if(!river)for(const branch of terrain.riverBranches||[])if(branch.length>1&&pointPolylineDistance(x,y,branch)<=terrain.riverHalfWidth*.72){river=true;break}
       }
     }
     const surface=(atlas||(map?TerrainSurfaceAtlas.fromMap(map):null))?.sample(x,y)||{elevation:0,level:0,ramp:null};
@@ -238,12 +240,12 @@ class NavigationTopology{
   refresh(buildings){
     this.scans++;let count=0,changed=this.version===0;
     for(const b of buildings)if(b.alive!==false&&b.hp>0){count++;const old=this.byId.get(b.id),d=BuildingDefinition.get(b.type),r=(d?.size||35)+NAV_BUILDING_MARGIN;
-      if(!old||old.type!==b.type||old.x!==b.x||old.y!==b.y||old.r!==r||old.terrainBarrier!==!!d?.isTerrainBarrier||old.blocksVision!==!!d?.blocksVision||old.blocksProjectile!==!!d?.blocksProjectile)changed=true;
+      if(!old||old.type!==b.type||old.x!==b.x||old.y!==b.y||old.r!==r||old.terrainBarrier!==!!d?.isTerrainBarrier||old.blocksVision!==!!d?.blocksVision)changed=true;
     }
     if(!changed&&count===this.records.length)return false;
     const old=new Map(this.byId),records=[],changes=[];
     for(const b of buildings)if(b.alive!==false&&b.hp>0){const d=BuildingDefinition.get(b.type),r=(d?.size||35)+NAV_BUILDING_MARGIN;
-      const next={id:b.id,type:b.type,x:b.x,y:b.y,r,terrainBarrier:!!d?.isTerrainBarrier,blocksVision:!!d?.blocksVision,blocksProjectile:!!d?.blocksProjectile,minX:b.x-r,maxX:b.x+r,minY:b.y-r,maxY:b.y+r},previous=old.get(b.id);
+      const next={id:b.id,type:b.type,x:b.x,y:b.y,r,terrainBarrier:!!d?.isTerrainBarrier,blocksVision:!!d?.blocksVision,minX:b.x-r,maxX:b.x+r,minY:b.y-r,maxY:b.y+r},previous=old.get(b.id);
       if(!previous||Object.keys(next).some(key=>next[key]!==previous[key])){if(previous)changes.push(previous);changes.push(next)}
       records.push(next);old.delete(b.id);
     }
