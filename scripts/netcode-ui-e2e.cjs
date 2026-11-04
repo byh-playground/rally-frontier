@@ -69,7 +69,7 @@ window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntime
         replayResult:s.replayRecorder?.result,
         units:sim?.units?.filter(u=>u.alive).map(u=>({id:u.id,side:u.side,type:u.type})),
         buildings:sim?.buildings?.filter(b=>b.alive!==false).map(b=>({id:b.id,side:b.side,
-          type:b.type,produceType:b.produceType,complete:b.complete,produced:b.productionProduced})),
+          type:b.type})),
         balance:sim?.balanceStats,receipts:sim?.commandReceipts}];
     }));
     const transports=Object.fromEntries(Object.entries(match?.transports||{}).map(([role,t])=>

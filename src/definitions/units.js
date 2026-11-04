@@ -5,7 +5,7 @@ import { FP } from '../core/config.js';
 class UnitDefinition{
   static all={
   rice:{requiresContactTerrain:true,name:"쌀",hp:25,atk:5,range:25,speed:75,cooldownMs:1000,size:10,sizeClass:"light",role:"bruiser",attackVisual:{sourceMotion:"slash",travel:"none",impact:"light"},sight:275},
-  soybean:{requiresContactTerrain:true,name:"콩",hp:75,atk:10,range:25,speed:50,cooldownMs:1000,size:15,sizeClass:"medium",role:"bruiser",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:275},
+  soybean:{requiresContactTerrain:true,name:"콩",mass:225,hp:75,atk:10,range:25,speed:50,cooldownMs:1000,size:10,sizeClass:"medium",role:"bruiser",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:275},
   redbean:{requiresContactTerrain:true,name:"팥",hp:50,atk:15,range:25,speed:50,cooldownMs:1000,size:10,sizeClass:"light",role:"bruiser",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:275},
 };
   static get(type){return this.all[type]||null}
@@ -25,14 +25,14 @@ const UNIT_RUNTIME_GEOMETRY=Object.freeze(Object.fromEntries(
   Object.entries(UnitDefinition.all).map(([type,d])=>[type,Object.freeze({
     radius:Math.max(1,(d?.size||10)*COLLISION_RADIUS_SCALE),
     radiusFP:Math.max(FP,Math.round((d?.size||10)*COLLISION_RADIUS_SCALE*FP)),
-    mass:Math.max(1,(d?.size||10)*(d?.size||10))
+    mass:Math.max(1,Number(d?.mass)||(d?.size||10)*(d?.size||10))
   })])
 ));
 
 class UnitVisualDefinition{
   static all={
   rice:{family:"grain",billboard:true,visualScale:.85,accent:[.96,.94,.86,1],fx:"melee"},
-  soybean:{family:"grain",billboard:true,visualScale:1,accent:[.50,.69,.27,1],fx:"melee"},
+  soybean:{family:"grain",billboard:true,visualScale:.8,accent:[.50,.69,.27,1],fx:"melee"},
   redbean:{family:"grain",billboard:true,visualScale:.9,accent:[.66,.20,.23,1],fx:"melee"}
 };
   static get(id){return this.all[id]||null}

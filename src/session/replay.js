@@ -37,7 +37,7 @@ class ReplayPolicy{
   static validateReplayPayload(data){
     if(!data||data.protocol!==REPLAY_PROTOCOL)throw new Error("RALLY FRONTIER 리플레이 파일이 아닙니다.");
     if(Number(data.simVersion)!==SIM_VERSION)throw new Error(`리플레이 버전이 다릅니다. replay ${data.simVersion} / current ${SIM_VERSION}`);
-    if(!data.finalDraft||!Array.isArray(data.commands)||!Number.isFinite(Number(data.seed)))throw new Error("리플레이 데이터가 손상되었습니다.");
+    if(!Array.isArray(data.commands)||!Number.isFinite(Number(data.seed)))throw new Error("리플레이 데이터가 손상되었습니다.");
     return data;
   }
 }
@@ -48,10 +48,9 @@ class ReplayPolicy{
 // never from the live simulation whose `scheduled` map may still contain future work.
 
 class ReplayRecorder{
-  constructor({seed,draft,roomCode,sim,rules=null}){
+  constructor({seed,roomCode,sim,rules=null}){
     this.seed=seed>>>0;
     this.roomCode=roomCode||null;
-    this.finalDraft=CloneUtil.clone(draft);
     this.rules=CloneUtil.clone(rules||sim?.rules||GameRuleDefinition.current);
     this.commands=[];
     this.checkpoints=[];
@@ -94,7 +93,6 @@ class ReplayRecorder{
       createdAt:new Date().toISOString(),
       roomCode:this.roomCode,
       seed:this.seed,
-      finalDraft:CloneUtil.clone(this.finalDraft),
       rules:CloneUtil.clone(this.rules),
       commands:CloneUtil.clone(this.commands),
       checkpoints:CloneUtil.clone(this.checkpoints),
@@ -128,7 +126,7 @@ class ReplayPlayer{
   validate(){
     if(this.data?.protocol!==REPLAY_PROTOCOL)throw new Error("지원하지 않는 리플레이 형식입니다.");
     if(Number(this.data?.simVersion)!==SIM_VERSION)throw new Error(`SIM_VERSION 불일치 · replay ${this.data?.simVersion} / game ${SIM_VERSION}`);
-    if(!this.data?.finalDraft||!Number.isFinite(Number(this.data?.seed)))throw new Error("리플레이 초기 상태가 없습니다.");
+    if(!Number.isFinite(Number(this.data?.seed)))throw new Error("리플레이 초기 상태가 없습니다.");
     return true;
   }
   queueCommandsAfter(sim,tick){
@@ -172,7 +170,7 @@ class ReplayPlayer{
   seek(targetTick,{render=true}={}){
     targetTick=RangeUtil.clamp(Math.round(Number(targetTick)||0),0,this.endTick||0);
     this.validate();
-    const candidate=new StrategySim(this.data.finalDraft,Number(this.data.seed)>>>0,this.data.rules||GameRuleDefinition.current);
+    const candidate=new StrategySim(Number(this.data.seed)>>>0,this.data.rules||GameRuleDefinition.current);
     try{
       this.resetAtCheckpoint(candidate,targetTick);
       while(candidate.tick<targetTick){

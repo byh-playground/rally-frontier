@@ -121,7 +121,7 @@ class RallySimulationAdapter{
         }
         if(key==="projectiles"&&[...Projectile.stateContract.presentation].some(field=>Object.prototype.hasOwnProperty.call(entity,field)))throw new Error("게임 projectile snapshot에 렌더 필드가 있습니다.");
         if(key==="buildings"){
-          if(!Object.prototype.hasOwnProperty.call(BuildingDefinition.all,entity.type)||!Number.isFinite(entity.hp)||!Number.isFinite(entity.maxHp)||!Array.isArray(entity.queue))throw new Error("게임 snapshot의 건물 정의가 잘못되었습니다.");
+          if(!Object.prototype.hasOwnProperty.call(BuildingDefinition.all,entity.type)||!Number.isFinite(entity.hp)||!Number.isFinite(entity.maxHp))throw new Error("게임 snapshot의 건물 정의가 잘못되었습니다.");
           RallyStateCodec.assertContract(entity,Building.stateContract);
         }
       }
@@ -172,7 +172,7 @@ class RallySynctestDiagnostics{
     const record={status:"running",metrics:null,controller:new AbortController()};this.reports.set(session,record);
     let sim,report;
     try{
-      sim=StrategySim.createForMatch({draft:session.draft,seed:session.sim.seed,rules:session.sim.rules});
+      sim=StrategySim.createForMatch({seed:session.sim.seed,rules:session.sim.rules});
       const adapter=new RallySimulationAdapter({sim});adapter.load(replay.initialState);
       const result=await RallyNetcode.runSyncTestAsync({adapter,players:replay.players,inputSize:replay.inputSize,tickRate:replay.tickRate,initialTick:0,
         checkDistance:Math.max(1,Math.min(6,core.profile.rollbackWindowTicks)),maxSnapshotBytes:RallyStateCodec.maxBytes,maxHistoryBytes:core.profile.maxHistoryBytes,frames,signal:record.controller.signal});
@@ -389,12 +389,12 @@ class GameSession{
     }
 
   }
-  static matchSeed(draft,roomCode,matchConfig={}){
-    return HashUtil.hash(`${roomCode}|launch|${JSON.stringify(draft?.decks||{host:[],guest:[]})}|${JSON.stringify(draft?.defenseCards||{host:[],guest:[]})}`);
+  static matchSeed(roomCode){
+    return HashUtil.hash(`${roomCode}|launch`);
   }
   beginGame(){
     if(this.sim)return false;
-    const seed=GameSession.matchSeed(this.draft,this.roomCode,this.matchConfig);
+    const seed=GameSession.matchSeed(this.roomCode);
     this.transport.send({type:'GAME_START',simVersion:SIM_VERSION,seed,draft:this.draft,matchConfig:this.matchConfig,roundRules:this.roundRules});
     this.startSim(seed);return true;
   }
@@ -402,9 +402,9 @@ class GameSession{
     if(this.disposed||this.sim)return false;
     if(!globalThis.RallyNetcode)throw new Error('URL Netcode가 로딩되지 않았습니다.');
     this.clearDisconnectGrace();this.clearPostRecoveryCountdown();
-    this.sim=StrategySim.createForMatch({draft:this.draft,seed,rules:this.roundRules});
+    this.sim=StrategySim.createForMatch({seed,rules:this.roundRules});
     this.simulationAdapter=new RallySimulationAdapter(this);
-    this.replayRecorder=new ReplayRecorder({seed,draft:this.draft,roomCode:this.roomCode,sim:this.sim,rules:this.roundRules});
+    this.replayRecorder=new ReplayRecorder({seed,roomCode:this.roomCode,sim:this.sim,rules:this.roundRules});
     this.simEnded=false;this.matchResult=null;this.publishedGameTick=0;this.netcodeLoop?.resetTiming();
     this.emitSnapshot(this.sim.snapshot());this.emitRenderTargets(this.sim,true);
     this.netcodeNow=performance.now();
@@ -728,11 +728,10 @@ applyMatchConfig(config,{authoritative=false}={}){
     this.roundRules=GameRuleRuntime.resolveMatchRules({presetId:this.matchPresetId,matchOverrides:GameRuleRuntime.mergeGameRules(this.matchRuleOverrides||{},{simulation:{tps:this.matchConfig.simulationTps}})});
     return true;
   }
-// A launch match has no unit selection: both sides fire the fixed grain deck.
+// A launch match has no unit selection; the draft only marks the match as live.
 prepareLaunchLiveDraft(){
     if(this.role!=="host")return false;
-    const deck=()=>LaunchRules.deck.slice();
-    this.draft={phase:"live",roomCode:this.roomCode,decks:{host:deck(),guest:deck()},defenseCards:{host:[],guest:[]},winner:null};
+    this.draft={phase:"live",roomCode:this.roomCode,winner:null};
     return true;
   }
 // Host builds the live setup itself: the launch deck.
