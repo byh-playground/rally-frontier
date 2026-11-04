@@ -61,32 +61,14 @@ class RallyStateCodec{
 }
 class RallyCommandCodec{
   static maxBytes=16*1024;
-  static fields=Object.freeze({
-    CHARGE_BEGIN:["castId","x","y"],CHARGE_AIM:["castId","x","y"],CHARGE_RELEASE:["castId","x","y"],CHARGE_CANCEL:["castId"],
-    MATCH_SURRENDER:[],SET_FLAG:["x","y","forced"],TOGGLE_PRODUCTION:[],LAUNCH:["cannonId","x","y","holdMs","unitType"],
-    TRAIN_WORKER:["buildingId"],SET_GAS_WORKERS:["buildingId","target"],OPEN_TACTICAL_CHEST:[],
-    CHOOSE_TACTICAL_REWARD:["offerId","rewardId"],REPLACE_SPELL:["offerId","oldSpellId"],CANCEL_SPELL_REPLACEMENT:["offerId"],
-    CAST_SPELL:["spellId","x","y"],START_RESEARCH:["research","unit","researchId"],CANCEL_BUILDING:["buildingId"],BUILD:["building","produceType","x","y"]
-  });
+  static fields=Object.freeze({MATCH_SURRENDER:[],LAUNCH:["cannonId","x","y","holdMs","unitType"]});
   static validate(action){
     RallyStateCodec.assertData(action,{maxNodes:2048,maxArray:512,maxString:4096});
     if(!action||Array.isArray(action)||typeof action!=="object"||typeof action.type!=="string"||!action.type||action.type.length>80)throw new Error("올바른 게임 action이 필요합니다.");
-    const fields=action.type==="CAST_SPELL"&&action.spellId==="tunnel"?["spellId","entryX","entryY","exitX","exitY"]:this.fields[action.type];
+    const fields=this.fields[action.type];
     if(!fields)throw new Error("지원하지 않는 게임 명령입니다.");
     if(Object.keys(action).some(key=>key!=="type"&&!fields.includes(key)))throw new Error("게임 명령에 권위 계약 밖의 필드가 있습니다.");
-    for(const key of fields){
-      if(!Object.prototype.hasOwnProperty.call(action,key))continue;
-      const value=action[key];
-      if(key==="castId"?!Number.isSafeInteger(value)||value<=0:["x","y","entryX","entryY","exitX","exitY","target","holdMs"].includes(key)?!Number.isFinite(value):key==="forced"?typeof value!=="boolean":value!==null&&typeof value!=="string")throw new Error("게임 명령 필드의 형식이 잘못되었습니다.");
-    }
-    if(action.type.startsWith("CHARGE_")&&(!Number.isSafeInteger(action.castId)||action.castId<=0||action.type!=="CHARGE_CANCEL"&&(!Number.isFinite(action.x)||!Number.isFinite(action.y))))throw new Error("Invalid charged skill command");
-    const required={TRAIN_WORKER:["buildingId"],SET_GAS_WORKERS:["buildingId","target"],CHOOSE_TACTICAL_REWARD:["offerId","rewardId"],REPLACE_SPELL:["offerId","oldSpellId"],CANCEL_SPELL_REPLACEMENT:["offerId"],CAST_SPELL:["spellId"],START_RESEARCH:["research"],CANCEL_BUILDING:["buildingId"],BUILD:["building"]}[action.type]||[];
-    if(required.some(key=>action[key]===undefined||action[key]===null||action[key]===""))throw new Error("게임 명령의 필수 필드가 없습니다.");
     if(action.type==="LAUNCH"&&(["cannonId","unitType"].some(key=>typeof action[key]!=="string"||!action[key])||["x","y","holdMs"].some(key=>!Number.isFinite(action[key]))))throw new Error("발사 명령의 필드가 잘못되었습니다.");
-    if(["SET_FLAG","BUILD","CAST_SPELL"].includes(action.type)){
-      const coordinates=action.type==="CAST_SPELL"&&action.spellId==="tunnel"?["entryX","entryY","exitX","exitY"]:["x","y"];
-      if(coordinates.some(key=>!Number.isFinite(action[key])))throw new Error("게임 action의 좌표가 잘못되었습니다.");
-    }
     return action;
   }
   static encode(action){const bytes=RallyStateCodec.encode(this.validate(action));if(bytes.byteLength>this.maxBytes)throw new Error("게임 명령이 너무 큽니다.");return bytes}

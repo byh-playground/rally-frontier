@@ -18,8 +18,7 @@ import { UnitDefinition, UnitFactionPalette, UnitVisualDefinition } from './defi
 import { MapGeometry } from './sim/map-geometry.js';
 import { CAPTURE_DURATION_MS, CAPTURE_RADIUS, LANE_CONTROL_POINTS } from './definitions/combat-rules.js';
 import { PerformanceTelemetry } from './diagnostics/performance-telemetry.js';
-import './definitions/formations.js';
-import { ROGUE_LEAP_ARC_HEIGHT, VIEW_H, VIEW_W } from './definitions/world-rules.js';
+import { VIEW_H, VIEW_W } from './definitions/world-rules.js';
 import { WorldContext } from './sim/world-context.js';
 import { NavigationGoal, NavigationMeshBuilder } from './sim/navigation.js';
 import { BattlefieldProjection, PolygonTriangulation, TerrainSurfaceAtlas, TerrainSurfaceProjection } from './sim/terrain.js';
@@ -152,175 +151,8 @@ class EffectObjectFactory{
   static resetFloatFx(v){v.x=0;v.y=0;v.kind="";v.text="";v.amount=0;v.start=0;v.jitter=0;v.lane=0}
   static makeShakeFx(){return {start:0,duration:0,intensity:0,seed:0}}
   static resetShakeFx(v){v.start=0;v.duration=0;v.intensity=0;v.seed=0}
-  static makeCombatFx(){return {kind:"",x:0,y:0,x2:0,y2:0,sourceType:"",targetType:"",entity:"",spell:"",amount:0,radius:0,width:0,airborneHeight:0,airborneMs:0,durationTicks:0,remaining:0,sourceId:null,targetId:null,fromX:null,fromY:null,isBuilding:false,points:null,side:null,start:0,seed:0,_extraKeys:null}}
-  static resetCombatFx(v){if(v._extraKeys){for(const k of v._extraKeys)delete v[k];v._extraKeys=null}v.kind="";v.x=v.y=v.x2=v.y2=0;v.sourceType=v.targetType=v.entity=v.spell="";v.amount=v.radius=v.width=v.airborneHeight=v.airborneTicks=v.durationTicks=v.remaining=0;v.sourceId=v.targetId=null;v.fromX=v.fromY=null;v.isBuilding=false;v.points=null;v.side=null;v.start=v.seed=0}
-}
-
-// Shared renderer-only elemental VFX pool. Fire and electric effects share one manager,
-// while typed sub-pools keep the hot paths compact and avoid oversized polymorphic objects.
-// Nothing here enters StrategySim/checksum/export/recovery.
-class EffectPresetDefinition{
-  static presets=Object.freeze({
-  fireBreath:Object.freeze({
-    spawnRate:420,maxParticles:260,warmupParticles:8,
-    lifetimeMin:.50,lifetimeMax:.72,visualRangeMul:1.00,travelRangeMin:.62,travelRangeMax:1.00,edgeShare:.24,
-    sizeBase:5.4,sizeWave:8.4,startFade:.08,endFade:.18,
-    hotColor:"#ffe07a",midColor:"#ff8a2b",coolColor:"#df4a1d"
-  }),
-  poisonBreath:Object.freeze({
-    spawnRate:420,maxParticles:260,warmupParticles:8,
-    lifetimeMin:.50,lifetimeMax:.72,visualRangeMul:1.00,travelRangeMin:.62,travelRangeMax:1.00,edgeShare:.24,
-    sizeBase:5.4,sizeWave:8.4,startFade:.08,endFade:.18,
-    hotColor:"#e9ff82",midColor:"#78d83e",coolColor:"#2b8b46"
-  }),
-  // Fire-ant breath: compact, dense orange flame rather than the toad's poison cloud.
-  fireAntBreath:Object.freeze({
-    spawnRate:520,maxParticles:220,warmupParticles:10,
-    lifetimeMin:.30,lifetimeMax:.48,visualRangeMul:1.00,travelRangeMin:.70,travelRangeMax:1.00,edgeShare:.12,
-    sizeBase:3.8,sizeWave:5.8,startFade:.05,endFade:.14,
-    hotColor:"#fff09a",midColor:"#ff9b32",coolColor:"#d94718"
-  }),
-  electricArc:Object.freeze({
-    segmentLength:28,minSegments:4,maxSegments:14,
-    minAmplitude:8,maxAmplitude:26,amplitudeRatio:.085,
-    underColor:"#397b94",coreColor:"#b8efff"
-  })
-});
-}
-
-class CommonEffectObjectFactory{
-  static makeCommonFireParticle(){return {age:0,lifetime:0,seed:0,angleUnit:0,sizeScale:1,driftPhase:0,lateralBias:0,travelRangeFactor:1}}
-  static resetCommonFireParticle(p){p.age=0;p.lifetime=0;p.seed=0;p.angleUnit=0;p.sizeScale=1;p.driftPhase=0;p.lateralBias=0;p.travelRangeFactor=1}
-  static makeCommonEmitter(){return {key:"",preset:"",particles:[],spawnCarry:0,nextSeed:1,touched:false,centerX:0,centerY:0,mouthX:0,mouthY:0,dirX:1,dirY:0,range:0,halfAngle:0,scale:1}}
-  static resetCommonEmitter(e){e.key="";e.preset="";e.particles.length=0;e.spawnCarry=0;e.nextSeed=1;e.touched=false;e.centerX=e.centerY=e.mouthX=e.mouthY=0;e.dirX=1;e.dirY=0;e.range=e.halfAngle=0;e.scale=1}
-  static makeElectricArcScratch(){return {points:new Float32Array(30),count:0}}
-  static resetElectricArcScratch(a){a.count=0}
-}
-
-class CommonEffectPool{
-  constructor(renderer){
-    this.renderer=renderer;
-    this.fireParticlePool=new RallyGamekit.ObjectPool(CommonEffectObjectFactory.makeCommonFireParticle,CommonEffectObjectFactory.resetCommonFireParticle,640);
-    this.emitterPool=new RallyGamekit.ObjectPool(CommonEffectObjectFactory.makeCommonEmitter,CommonEffectObjectFactory.resetCommonEmitter,32);
-    this.electricArcScratchPool=new RallyGamekit.ObjectPool(CommonEffectObjectFactory.makeElectricArcScratch,CommonEffectObjectFactory.resetElectricArcScratch,24);
-    this.emitters=new Map();
-    this.lastFrameAt=performance.now();
-    this.now=this.lastFrameAt;
-    this.deltaSec=0;
-  }
-  rand01(n){
-    n=(n^61)^(n>>>16);n=Math.imul(n,9);n=n^(n>>>4);n=Math.imul(n,0x27d4eb2d);n=n^(n>>>15);
-    return(n>>>0)/4294967295;
-  }
-  beginFrame(now=performance.now()){
-    this.now=now;
-    this.deltaSec=Math.min(1/15,Math.max(0,(now-this.lastFrameAt)/1000));
-    this.lastFrameAt=now;
-    for(const emitter of this.emitters.values()){
-      emitter.touched=false;
-      let write=0;
-      for(let i=0;i<emitter.particles.length;i++){
-        const p=emitter.particles[i];p.age+=this.deltaSec;
-        if(p.age>=p.lifetime){this.fireParticlePool.release(p);continue}
-        emitter.particles[write++]=p;
-      }
-      emitter.particles.length=write;
-    }
-  }
-  _spawnFireParticle(emitter,preset,ageProgress=0){
-    if(emitter.particles.length>=preset.maxParticles)return;
-    const p=this.fireParticlePool.acquire(),seed=HashUtil.hash(`${emitter.key}|${emitter.nextSeed++}`);
-    const a=this.rand01(seed),b=this.rand01(seed^0x9e3779b9),c=this.rand01(seed^0x85ebca6b),d=this.rand01(seed^0xc2b2ae35);
-    const signed=a*2-1;
-    p.angleUnit=b<preset.edgeShare?signed:Math.sign(signed||1)*Math.pow(Math.abs(signed),1.48);
-    p.lifetime=preset.lifetimeMin+(preset.lifetimeMax-preset.lifetimeMin)*c;
-    p.age=Math.min(p.lifetime*.94,Math.max(0,p.lifetime*ageProgress));
-    p.seed=seed;p.sizeScale=.84+.34*d;p.driftPhase=b*Math.PI*2;p.lateralBias=this.rand01(seed^0x27d4eb2d)*2-1;
-    const travelRnd=this.rand01(seed^0x165667b1),travelMin=RangeUtil.clamp(Number(preset.travelRangeMin??1),0,1),travelMax=RangeUtil.clamp(Number(preset.travelRangeMax??1),travelMin,1);
-    p.travelRangeFactor=travelMin+(travelMax-travelMin)*travelRnd;
-    emitter.particles.push(p);
-  }
-  touchFireEmitter(key,{preset="fireBreath",centerX,centerY,mouthX,mouthY,dirX,dirY,range,halfAngle,scale=1}={}){
-    const config=EffectPresetDefinition.presets[preset]||EffectPresetDefinition.presets.fireBreath;
-    let emitter=this.emitters.get(key);
-    if(!emitter){
-      emitter=this.emitterPool.acquire();emitter.key=key;emitter.preset=preset;
-      emitter.nextSeed=(HashUtil.hash(key)%100000)+1;this.emitters.set(key,emitter);
-      for(let i=0;i<config.warmupParticles;i++)this._spawnFireParticle(emitter,config,(i/config.warmupParticles)*.08);
-    }
-    emitter.touched=true;emitter.preset=preset;emitter.centerX=Number(centerX)||0;emitter.centerY=Number(centerY)||0;
-    emitter.mouthX=Number(mouthX)||0;emitter.mouthY=Number(mouthY)||0;
-    const len=Math.hypot(Number(dirX)||0,Number(dirY)||0)||1;emitter.dirX=(Number(dirX)||0)/len;emitter.dirY=(Number(dirY)||0)/len;
-    emitter.range=Math.max(0,Number(range)||0);emitter.halfAngle=Math.max(0,Number(halfAngle)||0);emitter.scale=Math.max(.1,Number(scale)||1);
-    emitter.spawnCarry+=config.spawnRate*this.deltaSec;
-    let spawn=Math.min(32,Math.floor(emitter.spawnCarry));emitter.spawnCarry-=spawn;
-    while(spawn-->0&&emitter.particles.length<config.maxParticles)this._spawnFireParticle(emitter,config,0);
-  }
-  _drawFlatFireParticle(ctx,x,y,size,angle,color,alpha){
-    ctx.save();ctx.translate(x,y);ctx.rotate(angle);ctx.globalAlpha=alpha;ctx.fillStyle=color;
-    // Flat quadrilateral particle, matching the game's existing procedural shape language.
-    ctx.beginPath();ctx.moveTo(size*.78,0);ctx.lineTo(-size*.48,-size*.42);ctx.lineTo(-size*.72,0);ctx.lineTo(-size*.48,size*.42);ctx.closePath();ctx.fill();
-    ctx.restore();
-  }
-  drawFire(ctx){
-    const renderer=this.renderer;
-    for(const emitter of this.emitters.values()){
-      if(!emitter.particles.length)continue;
-      const preset=EffectPresetDefinition.presets[emitter.preset]||EffectPresetDefinition.presets.fireBreath;
-      const maxVisualRange=emitter.range*preset.visualRangeMul;
-      for(const p of emitter.particles){
-        const q=RangeUtil.clamp(p.age/p.lifetime,0,1);
-        const drift=Math.sin(q*Math.PI*2+p.driftPhase+this.now*.006)*emitter.halfAngle*.024*(.2+.8*q);
-        const off=RangeUtil.clamp(p.angleUnit*emitter.halfAngle+drift,-emitter.halfAngle*.995,emitter.halfAngle*.995);
-        const ca=Math.cos(off),sa=Math.sin(off),rdx=emitter.dirX*ca-emitter.dirY*sa,rdy=emitter.dirX*sa+emitter.dirY*ca;
-        // Each flame packet owns a fixed randomized travel distance. The simulation
-        // range is only the outer envelope; particles terminate at different depths.
-        const particleRange=maxVisualRange*RangeUtil.clamp(p.travelRangeFactor||1,0,1);
-        const end=renderer.worldToPx(renderer.viewX(emitter.centerX+rdx*particleRange),renderer.viewY(emitter.centerY+rdy*particleRange));
-        const vx=end[0]-emitter.mouthX,vy=end[1]-emitter.mouthY,len=Math.hypot(vx,vy)||1,px=-vy/len,py=vx/len;
-        const travel=Math.pow(q,.94);
-        const widthEnvelope=Math.sin(Math.PI*travel);
-        const jitter=(p.lateralBias*(2+6.5*travel)+Math.sin(p.seed*.013+q*11)*1.6)*emitter.scale*widthEnvelope;
-        const x=emitter.mouthX+vx*travel+px*jitter,y=emitter.mouthY+vy*travel+py*jitter;
-        const centerBias=1-Math.min(1,Math.abs(off)/(emitter.halfAngle||1));
-        const size=(preset.sizeBase+preset.sizeWave*Math.sin(Math.PI*q))*p.sizeScale*(.70+.30*centerBias)*emitter.scale;
-        const fadeIn=RangeUtil.clamp(q/preset.startFade,0,1),fadeOut=RangeUtil.clamp((1-q)/preset.endFade,0,1);
-        const alpha=(.52+.42*centerBias)*fadeIn*fadeOut;
-        const color=q<.24?preset.hotColor:q<.58?preset.midColor:preset.coolColor;
-        this._drawFlatFireParticle(ctx,x,y,size,Math.atan2(vy,vx),color,alpha);
-      }
-    }
-  }
-  drawElectricArc(ctx,from,to,{seed=1,time=this.now/1000,color=null,alpha=1,scale=1,width=1}={}){
-    const preset=EffectPresetDefinition.presets.electricArc,arc=this.electricArcScratchPool.acquire(),points=arc.points;
-    const dx=to.x-from.x,dy=to.y-from.y,distance=Math.hypot(dx,dy);
-    if(distance<=.001){this.electricArcScratchPool.release(arc);return}
-    const segmentCount=RangeUtil.clamp(Math.ceil(distance/Math.max(4,preset.segmentLength*scale)),preset.minSegments,preset.maxSegments);
-    const perpX=-dy/distance,perpY=dx/distance;
-    const amplitude=RangeUtil.clamp(distance*preset.amplitudeRatio,preset.minAmplitude*scale,preset.maxAmplitude*scale);
-    arc.count=segmentCount+1;points[0]=from.x;points[1]=from.y;
-    for(let i=1;i<segmentCount;i++){
-      const q=i/segmentCount,envelope=Math.sin(q*Math.PI);
-      const rapid=Math.sin(time*34+i*2.71+seed*.013),slow=Math.sin(time*15+i*7.93+seed*.031);
-      const offset=(rapid*.72+slow*.28)*amplitude*envelope;
-      points[i*2]=from.x+dx*q+perpX*offset;points[i*2+1]=from.y+dy*q+perpY*offset;
-    }
-    points[segmentCount*2]=to.x;points[segmentCount*2+1]=to.y;
-    const stroke=(strokeColor,lineWidth,strokeAlpha)=>{
-      ctx.globalAlpha=alpha*strokeAlpha;ctx.strokeStyle=strokeColor;ctx.lineWidth=Math.max(1,lineWidth*scale*width);ctx.lineCap="round";ctx.lineJoin="round";
-      ctx.beginPath();ctx.moveTo(points[0],points[1]);for(let i=1;i<arc.count;i++)ctx.lineTo(points[i*2],points[i*2+1]);ctx.stroke();
-    };
-    ctx.save();ctx.globalCompositeOperation="source-over";
-    stroke(preset.underColor,4.8,.46);stroke(color||preset.coreColor,2.1,.96);stroke("#f3fcff",.72,.88);
-    ctx.restore();this.electricArcScratchPool.release(arc);
-  }
-  endFrame(){
-    for(const[key,emitter]of this.emitters){
-      if(emitter.touched)continue;
-      if(emitter.particles.length)continue;
-      this.emitters.delete(key);this.emitterPool.release(emitter);
-    }
-  }
+  static makeCombatFx(){return {kind:"",x:0,y:0,x2:0,y2:0,sourceType:"",targetType:"",entity:"",amount:0,radius:0,width:0,durationTicks:0,remaining:0,sourceId:null,targetId:null,fromX:null,fromY:null,isBuilding:false,points:null,side:null,start:0,seed:0,_extraKeys:null}}
+  static resetCombatFx(v){if(v._extraKeys){for(const k of v._extraKeys)delete v[k];v._extraKeys=null}v.kind="";v.x=v.y=v.x2=v.y2=0;v.sourceType=v.targetType=v.entity="";v.amount=v.radius=v.width=v.durationTicks=v.remaining=0;v.sourceId=v.targetId=null;v.fromX=v.fromY=null;v.isBuilding=false;v.points=null;v.side=null;v.start=v.seed=0}
 }
 
 /* Developer architecture contract:
@@ -806,7 +638,6 @@ class GLRenderer{
     this.combatFxPool=new RallyGamekit.ObjectPool(EffectObjectFactory.makeCombatFx,EffectObjectFactory.resetCombatFx,256);
     this.floatFxPool=new RallyGamekit.ObjectPool(EffectObjectFactory.makeFloatFx,EffectObjectFactory.resetFloatFx,96);
     this.shakeFxPool=new RallyGamekit.ObjectPool(EffectObjectFactory.makeShakeFx,EffectObjectFactory.resetShakeFx,16);
-    this.commonEffectPool=new CommonEffectPool(this);
     // Presentation-only shared hitGuard shield state. All shield sources use the same visual language.
 
     // Presentation timing is render-only. Full UI snapshots remain 10 Hz, while
@@ -850,7 +681,6 @@ class GLRenderer{
     this.attackVariantBreathFx=[];
     // Presentation-only facing: never enters StrategySim/checksum/export/recovery.
     this.unitFacingStates=new Map();
-    this.artilleryFacingStates=new Map();
     this.projectileScreenMotionStates=new Map();
     this.last=performance.now();
     this.particles=[];
@@ -1079,7 +909,6 @@ class GLRenderer{
     this.renderState.capture(source,now,snap,targetIntervalMs);
     const liveFacingIds=new Set(units.filter(u=>u?.alive!==false).map(u=>u.id));
     for(const id of this.unitFacingStates.keys())if(!liveFacingIds.has(id))this.unitFacingStates.delete(id);
-    for(const id of this.artilleryFacingStates.keys())if(!liveFacingIds.has(id))this.artilleryFacingStates.delete(id);
     const liveProjectileIds=new Set(projectiles.filter(p=>p?.alive!==false).map(p=>p.id));
     for(const id of this.projectileScreenMotionStates.keys())if(!liveProjectileIds.has(id))this.projectileScreenMotionStates.delete(id);
   }
@@ -1103,13 +932,13 @@ class GLRenderer{
 
   
 
-  resolveArcTravelPresentation({fromX,fromY,toX,toY,planarX,planarY,arcHeight=0,fromElevation=null,toElevation=null}={}){
+  resolveArcTravelPresentation({fromX,fromY,toX,toY,planarX,planarY,arcHeight=0}={}){
     const sx=Number(fromX),sy=Number(fromY),tx=Number(toX),ty=Number(toY),px=Number(planarX),py=Number(planarY);
     if(![sx,sy,tx,ty,px,py].every(Number.isFinite))return{height:0,groundHeight:0,progress:0,motion:"ground"};
     const totalDistance=Math.hypot(tx-sx,ty-sy);
     const travelledDistance=Math.hypot(px-sx,py-sy);
     const progress=RangeUtil.clamp(travelledDistance/Math.max(1,totalDistance),0,1);
-    const atlas=this.world.terrain.surfaces,from=Number.isFinite(fromElevation)?fromElevation:atlas.heightAt(sx,sy),to=Number.isFinite(toElevation)?toElevation:atlas.heightAt(tx,ty);
+    const atlas=this.world.terrain.surfaces,from=atlas.heightAt(sx,sy),to=atlas.heightAt(tx,ty);
     const groundHeight=from*(1-progress)+to*progress;
     return{height:Math.sin(progress*Math.PI)*Math.max(0,Number(arcHeight)||0),groundHeight,progress,motion:"arc"};
   }
@@ -1125,44 +954,24 @@ class GLRenderer{
     const motionState=model?.entity||entity;
     const renderTick=model?.tick??(this.snapshot?.tick||0);
 
-    if(kind==="unit"){
-      const d=UnitDefinition.get(entity.type)||{};
-      if(d.layer==="AIR"){
-        const bob=Math.sin(this.presentationNow()*.004+(HashUtil.hash(entity.id)%997)*.019)*2.4;
-        height=atlas.maxHeight-groundY+(d.airHeight||36)+bob;
-        motion="air";
-      }else if(motionState.leapActive&&renderTick<(motionState.leapEndTick||0)){
-        const duration=Math.max(1,(motionState.leapEndTick||0)-(motionState.leapStartTick||0));
-        progress=RangeUtil.clamp((renderTick-(motionState.leapStartTick||0))/duration,0,1);
-        const startHeight=atlas.heightAt(motionState.leapStartX??entity.x,motionState.leapStartY??entity.y),endHeight=atlas.heightAt(motionState.leapEndX??entity.x,motionState.leapEndY??entity.y);
-        groundY=startHeight+(endHeight-startHeight)*progress;
-        height=Math.sin(progress*Math.PI)*(ROGUE_LEAP_ARC_HEIGHT+atlas.maxHeight);
-        motion="leap";
-      }else if(renderTick<(motionState.status.airborneUntil||0)){
-        const duration=Math.max(1,motionState.status.airborneDurationTicks||((motionState.status.airborneUntil||0)-(motionState.status.airborneStartTick||0))||1);
-        progress=RangeUtil.clamp((renderTick-(motionState.status.airborneStartTick||0))/duration,0,1);
-        height=Math.sin(progress*Math.PI)*(motionState.status.airborneHeight||42);
-        motion="airborne";
-      }
-    }else if(kind==="projectile"){
+    if(kind==="projectile"){
       if(motionState.launchX!=null&&motionState.launchY!=null){
         // Arc presentation must use the same trajectory destination as simulation.
         // In particular lockedPoint artillery must never recompute its arc from a
         // living target that can move/separate after launch.
         const policy=motionState.trajectoryPolicy||(motionState.impactAtAimPoint?"lockedPoint":"trackingTarget");
-        let aimX=Number(motionState.lockedAimX),aimY=Number(motionState.lockedAimY),toElevation=null;
-        const source=UnitDefinition.get(entity.type),fromElevation=source?.layer==="AIR"?atlas.maxHeight+(source.airHeight||36):null;
+        let aimX=Number(motionState.lockedAimX),aimY=Number(motionState.lockedAimY);
         if(policy==="trackingTarget"&&!motionState.targetLost){
           const target=(this.renderState.model("unit",motionState.target,this.presentationNow())&&this.renderState.entity("unit",motionState.target))||
             (this.snapshot?.buildings||[]).find(b=>b.id===motionState.target&&b.alive!==false);
-          if(target){const targetPose=this.renderState.model("unit",target.id,this.presentationNow())?.entity||target;aimX=targetPose.x+(Number(motionState.aimOffsetX)||0);aimY=targetPose.y+(Number(motionState.aimOffsetY)||0);const td=UnitDefinition.get(target.type);if(td?.layer==="AIR")toElevation=atlas.maxHeight+(td.airHeight||36)}
+          if(target){const targetPose=this.renderState.model("unit",target.id,this.presentationNow())?.entity||target;aimX=targetPose.x+(Number(motionState.aimOffsetX)||0);aimY=targetPose.y+(Number(motionState.aimOffsetY)||0);}
         }
         if(Number.isFinite(aimX)&&Number.isFinite(aimY)){
           // All consumers use the shared arc-travel primitive; projectile code owns
           // endpoint policy only, never the trajectory formula.
           const arc=this.resolveArcTravelPresentation({
             fromX:motionState.launchX,fromY:motionState.launchY,toX:aimX,toY:aimY,
-            planarX:planar.x,planarY:planar.y,arcHeight:motionState.arcHeight,fromElevation,toElevation
+            planarX:planar.x,planarY:planar.y,arcHeight:motionState.arcHeight
           });
           groundY=arc.groundHeight;height=arc.height;progress=arc.progress;motion=arc.motion;
         }
@@ -1306,9 +1115,9 @@ class GLRenderer{
 
     const fx=this.combatFxPool.acquire();
     fx.kind=kind;fx.x=Number(e.x)||0;fx.y=Number(e.y)||0;fx.x2=Number(e.x2)||0;fx.y2=Number(e.y2)||0;
-    fx.sourceType=e.sourceType||e.unit||"";fx.targetType=e.targetType||e.entity||"";fx.entity=e.entity||"";fx.spell=e.spell||"";
+    fx.sourceType=e.sourceType||e.unit||"";fx.targetType=e.targetType||e.entity||"";fx.entity=e.entity||"";
     fx.amount=Number(e.amount)||0;fx.radius=Number(e.radius)||0;fx.width=Number(e.width)||0;fx.remaining=Math.max(0,Number(e.remaining)||0);fx.spikeCount=Math.max(0,Math.round(Number(e.spikeCount)||0));
-    fx.airborneHeight=Number(e.height??e.status?.airborneHeight)||0;fx.airborneTicks=Number(e.airborneTicks)||0;fx.durationTicks=Number(e.durationTicks)||0;
+    fx.durationTicks=Number(e.durationTicks)||0;
     fx.sourceId=e.sourceId||null;fx.targetId=e.targetId||null;
     fx.travelMs=Number(e.travelMs)||0;fx.arcHeight=Number(e.arcHeight)||0;fx.retractMs=Number(e.retractMs)||0;fx.pullTicks=Number(e.pullTicks)||0;fx.fromX=Number(e.fromX)||0;fx.fromY=Number(e.fromY)||0;
     fx.fromX=Number.isFinite(Number(e.fromX))?Number(e.fromX):null;fx.fromY=Number.isFinite(Number(e.fromY))?Number(e.fromY):null;
@@ -1689,10 +1498,7 @@ class GLRenderer{
     this.drawStrategicLabels();
 
     // Decorative presentation is always below information overlays.
-    this.commonEffectPool.beginFrame(performance.now());
     this.drawClientCombatFx();
-    this.commonEffectPool.drawFire(ctx);
-    this.commonEffectPool.endFrame();
 
     // Persistent information is never hidden by combat density.
     this.drawWorldHudOverlay();
@@ -1756,18 +1562,11 @@ class GLRenderer{
     if(this.replayVisionMode==="host")return[0];
     return[this.mySide()];
   }
-  visibleRaw(x,y,targetAir=false){
+  visibleRaw(x,y){
     if(this.replayObserverAll)return true;
     if(!this.snapshot)return false;
-    const targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(x,y);
-    for(const side of this.replayVisionSides())if(this.visionFields[side]?.visibleAt(x,y,targetAir,targetLevel))return true;
-    return false;
-  }
-  detectedRaw(x,y,targetAir=false){
-    if(this.replayObserverAll||this.replayVisionMode==="union")return true;
-    if(!this.snapshot)return false;
-    const targetLevel=targetAir?null:this.world.terrain.surfaces.levelAt(x,y);
-    for(const side of this.replayVisionSides())if(this.visionFields[side]?.detectedAt(x,y,targetAir,targetLevel))return true;
+    const targetLevel=this.world.terrain.surfaces.levelAt(x,y);
+    for(const side of this.replayVisionSides())if(this.visionFields[side]?.visibleAt(x,y,targetLevel))return true;
     return false;
   }
 
@@ -2118,7 +1917,7 @@ class GLRenderer{
 
   drawUnit(u,renderOptions=null){
     const own=u.side===this.mySide();
-    if(!renderOptions?.visibilityChecked&&!own&&!this.visibleRaw(u.x,u.y,false))return;
+    if(!renderOptions?.visibilityChecked&&!own&&!this.visibleRaw(u.x,u.y))return;
     // Health/status bars are drawn by drawWorldHudOverlay(), never in the unit pass.
     this.drawGrainUnit(u);
   }
