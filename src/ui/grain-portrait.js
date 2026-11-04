@@ -1,4 +1,6 @@
-import { drawGrainFace } from '../core/grain-face-overlay.js';
+import { RallyGamekit } from '../core/gamekit.js';
+
+const { drawFacePaths } = RallyGamekit;
 
 // Title and card portraits: the grain body SVG with its shared face drawn on top, as an image URL.
 // The body file is the same one the battlefield compiles; only the face is added here.
@@ -24,6 +26,6 @@ async function renderPortrait(type, compiled, width) {
     const C = CANVAS.getContext('2d');
     C.drawImage(BODY, 0, 0, CANVAS.width, CANVAS.height);
     C.setTransform(SCALE, 0, 0, SCALE, -VX * SCALE, -VY * SCALE);
-    drawGrainFace(C, compiled);
+    drawFacePaths(C, compiled, 'neutral');
     return CANVAS.toDataURL('image/png');
 }

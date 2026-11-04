@@ -48,4 +48,7 @@ class UnitFactionPalette{
   static get(relation){return this.all[relation]}
 }
 
-export { UNIT_RUNTIME_GEOMETRY, UnitDefinition, UnitFactionPalette, UnitVisualDefinition };
+// Faces baked into the shared face atlas: the grains only ever show these three.
+const GRAIN_FACE_IDS=Object.freeze(['neutral','attack','hurt']);
+
+export { GRAIN_FACE_IDS, UNIT_RUNTIME_GEOMETRY, UnitDefinition, UnitFactionPalette, UnitVisualDefinition };
