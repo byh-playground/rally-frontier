@@ -395,6 +395,8 @@ class GeometryTemplateCache{
   }
 }
 const SHARED_GEOMETRY_TEMPLATES=new GeometryTemplateCache();
+// Depth gap between consecutive grains in painter order: a few 24-bit depth steps, so 500 grains shift terrain occlusion by ~2e-4.
+const GRAIN_DEPTH_RANK_STEP=4e-7;
 
 class RenderPassProfiler{
   constructor(){
@@ -782,6 +784,8 @@ class GLRenderer{
     this.device=new RallyGamekit.WebGLDevice(canvas,this.webglAttrs);
     this.vectorContext=new RallyGamekit.VectorContext(this.device,{safeAlphaRunBatching:true});this.vectorContext.acquireMeshRenderer();this.grainFaces=new GrainFaceOverlay(this.vectorContext);// 메시 통계가 첫 유닛 그리기 전에도 null이 아니도록 미리 만든다.
     this.vectorUnitAssetCache=new Map();
+    // One actor per grain: a shared actor re-seeked per grain rewrites its pose row and splits the instanced batch.
+    this.grainActors=new Map();this.grainActorFrame=0;this.grainBodyGroups=new Map();this.grainOpaqueCoverage=new Map();
     this._vectorUnitMatrix=new Float32Array(6);
     this._vectorOcclusionCoords=new Float32Array(0);
     this.gl=this.device.gl;
@@ -1972,27 +1976,87 @@ class GLRenderer{
     const key="grain|"+type;let record=this.vectorUnitAssetCache.get(key);if(record)return record;
     const source=window.RallyVectorAssets?.[type];if(!source)return null;
     const sockets=source.metadata.sockets,point=id=>{const s=sockets[id];if(!s)throw new Error(`Grain body is missing socket ${id}`);return s.point};
-    const actor=RallyGamekit.createVectorActor(this.vectorContext,source,{clip:"idle",startedAtMs:0});
-    record={actor,compiled:source,ground:point("ground")};this.vectorUnitAssetCache.set(key,record);return record;
+    record={compiled:source,ground:point("ground")};this.vectorUnitAssetCache.set(key,record);return record;
   }
-  // Budmori bodies are front-facing: no rotation, ground socket on the unit's ground point.
-  drawGrainUnitBody(ctx){
-    const record=this.grainUnitRecord(ctx.u.type);if(!record)return null;
+  // Poses every visible grain before any is drawn, so the context evaluates them in one pass
+  // (budmori farm-renderer does the same). Entries arrive far to near; each grain's depth is its
+  // world depth pulled nearer by its rank, so equal world depths still keep painter order.
+  prepareGrainPoses(entries){
+    this.grainActorFrame++;
+    const now=this.presentationNow(performance.now());let rank=0;
+    for(const {kind,entity:u,world,depth} of entries){
+      if(kind!=="unit"||!this.shouldUseVectorUnitArt(u))continue;
+      const record=this.grainUnitRecord(u.type);if(!record)continue;
+      const grain=this.grainActor(u,record),actor=grain.actor,delta=this.renderTrackedDelta(u,"unit"),moving=Math.hypot(delta.x,delta.y)>.01;
+      const clip=u.attackFlash>0?"fire":u.hitFlash>0?"hit":moving?"walk":"idle";
+      if(actor.currentClip!==clip)actor.play(clip,0);
+      actor.seek(now+(HashUtil.hash(u.id)%997)*7);
+      actor.preparePose();
+      // Budmori bodies are front-facing: no rotation, ground socket on the unit's ground point.
+      const p=this.projectRenderWorldPosition(world),r=this.unitRenderRadius(u),scale=r*2.7/260*(UnitVisualDefinition.get(u.type)?.visualScale||1),m=grain.matrix;
+      m[0]=scale;m[1]=0;m[2]=0;m[3]=scale;m[4]=p.x-scale*record.ground[0];m[5]=p.y+r*.55-scale*record.ground[1];
+      grain.depth=RangeUtil.clamp(depth,-.98,.98)-(++rank)*GRAIN_DEPTH_RANK_STEP;
+      grain.face=u.hitFlash>0?"hurt":u.attackFlash>0?"attack":"neutral";grain.bodyDrawn=false;
+    }
+    this.vectorContext.preparePoses();
+  }
+  // Opaque bodies go first, grouped by species, writing depth: the native path draws each species in one
+  // instanced call and the depth buffer, not submission order, settles overlaps. Faces follow in painter order.
+  drawGrainBodies(entries){
+    if(!this.passState.depthEnabled)return;
+    const C=this.vectorContext,groups=this.grainBodyGroups;
+    for(const g of groups.values())g.length=0;
+    for(const {kind,entity:u} of entries){
+      if(kind!=="unit")continue;
+      const grain=this.grainActors.get(u.id);
+      if(!grain||grain.frame!==this.grainActorFrame||!this.grainBodyOpaque(grain))continue;
+      let g=groups.get(grain.compiled);if(!g)groups.set(grain.compiled,g=[]);g.push(grain);
+    }
+    C.depthTest=true;C.depthWrite=true;C.depthFunc=this.passState.depthFunc||"lequal";
+    for(const g of groups.values())for(const grain of g){
+      C.depth=grain.depth;C.drawVectorActor(grain.actor,{matrix:grain.matrix});grain.bodyDrawn=true;
+    }
+    C.depth=0;C.depthTest=false;C.depthWrite=false;C.depthFunc="lequal";
+  }
+  grainBodyOpaque(grain){
+    const expression=grain.actor.currentExpression,cache=this.grainOpaqueCoverage;
+    let byExpression=cache.get(grain.compiled);if(!byExpression)cache.set(grain.compiled,byExpression=new Map());
+    if(!byExpression.has(expression)){
+      const geometry=grain.compiled.geometry;
+      byExpression.set(expression,RallyGamekit.hasOpaqueCoverage(geometry,{indexVariant:geometry.expressionIndices?.[expression]?expression:null}));
+    }
+    return byExpression.get(expression);
+  }
+  // The painter-order part of a grain: its face, and its body too when that was not depth-batched.
+  // The face sits just in front of its own body and behind every nearer grain. The depth policy stays set
+  // until the world pass ends, since changing it closes the vector stream that batches every face.
+  drawGrainUnit(u){
+    const grain=this.grainActors.get(u.id);
+    if(!grain||grain.frame!==this.grainActorFrame)throw new Error(`Grain ${u.id} was drawn without a prepared pose`);
     if(this.frame.length){this.flushVectorMesh("frame-to-vector-switch");this.flush(this.frame,true);this.begin()}
-    const u=ctx.u,actor=record.actor,now=this.presentationNow(performance.now()),phase=(HashUtil.hash(u.id)%997)*7;
-    const delta=this.renderTrackedDelta(u,"unit"),moving=Math.hypot(delta.x,delta.y)>.01;
-    const clip=ctx.attack?"fire":ctx.hit?"hit":moving?"walk":"idle";
-    if(actor.currentClip!==clip)actor.play(clip,0);
-    actor.seek(now+phase);
-    const scale=ctx.r*2.7/260*(UnitVisualDefinition.get(u.type)?.visualScale||1),m=this._vectorUnitMatrix;
-    const gx=ctx.x,gy=ctx.y+ctx.r*.55;
-    m[0]=scale;m[1]=0;m[2]=0;m[3]=scale;m[4]=gx-scale*record.ground[0];m[5]=gy-scale*record.ground[1];
-    this.vectorContext.drawVectorActor(actor,{matrix:m,alpha:ctx.ownStealthAlpha,depth:this._renderDepth??0,
-      depthTest:!!this.passState.depthEnabled,depthWrite:true,depthWriteAlphaThreshold:.999,depthFunc:this.passState.depthFunc||"lequal"});
+    const C=this.vectorContext;
+    C.depthTest=!!this.passState.depthEnabled;C.depthWrite=false;C.depthFunc=this.passState.depthFunc||"lequal";
+    C.depth=grain.depth;
+    if(!grain.bodyDrawn)C.drawVectorActor(grain.actor,{matrix:grain.matrix});
+    C.depth=grain.depth-GRAIN_DEPTH_RANK_STEP/2;
     // Budmori faces: shared eye/mouth/cheek atlas parts placed on this body's posed face sockets.
-    this.grainFaces.draw(record.compiled,actor,ctx.hit?"hurt":ctx.attack?"attack":"neutral",m,ctx.ownStealthAlpha);
+    this.grainFaces.draw(grain.compiled,grain.actor,grain.face,grain.matrix,1);
     this.vectorAssetDrawnInstances=(this.vectorAssetDrawnInstances||0)+1;
-    return record;
+  }
+  grainActor(u,record){
+    let grain=this.grainActors.get(u.id);
+    if(grain?.compiled!==record.compiled){
+      grain?.actor.dispose();
+      grain={actor:RallyGamekit.createVectorActor(this.vectorContext,record.compiled,{clip:"idle",startedAtMs:0}),compiled:record.compiled,
+        ground:record.ground,matrix:new Float64Array(6),depth:0,face:"neutral",bodyDrawn:false,frame:0};
+      this.grainActors.set(u.id,grain);
+    }
+    grain.frame=this.grainActorFrame;
+    return grain;
+  }
+  // Releases actors of grains that were not drawn this frame (dead or out of sight).
+  pruneGrainActors(){
+    for(const [id,grain] of this.grainActors)if(grain.frame!==this.grainActorFrame){grain.actor.dispose();this.grainActors.delete(id)}
   }
   flushVectorMesh(reason){
     return this.vectorContext.active?this.vectorContext.flush(reason):undefined;
@@ -2055,14 +2119,8 @@ class GLRenderer{
   drawUnit(u,renderOptions=null){
     const own=u.side===this.mySide();
     if(!renderOptions?.visibilityChecked&&!own&&!this.visibleRaw(u.x,u.y,false))return;
-    const worldPos=renderOptions?.worldPosition||this.resolveRenderWorldPosition(u,"unit");
-    const bodyPos=this.projectRenderWorldPosition(worldPos);
-    // All body geometry shares one GPU depth derived from the render-world coordinate.
-    this.setRenderDepth(this.spriteDepthForWorld(worldPos));
-    // Presentation-only body pulses; simulation size/collision remain authoritative.
-    const r=this.unitRenderRadius(u);
     // Health/status bars are drawn by drawWorldHudOverlay(), never in the unit pass.
-    if(!this.drawGrainUnitBody({u,x:bodyPos.x,y:bodyPos.y,r,hit:u.hitFlash>0,attack:u.attackFlash>0,ownStealthAlpha:1}))throw new Error(`Missing grain body for ${u.type}`);
+    this.drawGrainUnit(u);
   }
   projectileScreenMotion(p,screenX,screenY){
     let st=this.projectileScreenMotionStates.get(p.id),dx=0,dy=0,valid=false;
@@ -2284,7 +2342,8 @@ class GLRenderer{
     // Terrain alone owns the depth buffer. Each billboard's authored painter
     // order must never compete with its own coplanar component triangles.
     let lastPainter=null;
-    for(const entry of this.prepareWorldSpriteFrame(visibleUnits)){
+    const entries=this.prepareWorldSpriteFrame(visibleUnits);this.prepareGrainPoses(entries);this.drawGrainBodies(entries);
+    for(const entry of entries){
       const {kind,entity,world}=entry;this.renderEntity=entity;this.renderStage=kind;
       const nextPainter=kind==="unit"&&this.shouldUseVectorUnitArt(entity)?"vector":"frame";
       if(lastPainter&&nextPainter!==lastPainter){
@@ -2298,7 +2357,8 @@ class GLRenderer{
         else this.drawProjectileSafely(entity);
       });
     }
-    this.flushVectorMesh("world-pass-end");
+    this.flushVectorMesh("world-pass-end");this.pruneGrainActors();
+    const C=this.vectorContext;C.depth=0;C.depthTest=false;C.depthWrite=false;C.depthFunc="lequal";
     if(this.frame.length){this.flush(this.frame,true);this.begin()}
     this.passState.depthWrite=false;
     try{
