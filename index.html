@@ -222,6 +222,7 @@ END OF DEVELOPMENT CONTRACT
 
 
 <link rel="stylesheet" href="./src/styles/main.css">
+<link rel="stylesheet" href="./src/styles/launch.css">
 
 
 
@@ -243,33 +244,6 @@ END OF DEVELOPMENT CONTRACT
 
 
 
-<script>
-// Showcase frames are disposable: normal game saves and preferences remain untouched.
-// A direct intro URL is owned by the showcase host, not by the gameplay router.
-if (new URLSearchParams(location.search).get('showcaseDemo') !== '1' && location.hash === '#/showcase') {
-  window.__BLOOM_SHOWCASE_DEEPLINK = true;
-  history.replaceState(null, '', location.pathname + location.search);
-}
-if (new URLSearchParams(location.search).get('showcaseDemo') === '1') {
-  // Demonstration inputs are scheduled rather than browser-trusted gestures.
-  // Suppress autoplay prompts while preserving the same game simulation.
-  const Context = window.AudioContext || window.webkitAudioContext;
-  if (Context) Context.prototype.resume = function () { return Promise.resolve(); };
-  const nativeSet = Element.prototype.setPointerCapture;
-  const nativeRelease = Element.prototype.releasePointerCapture;
-  const nativeHas = Element.prototype.hasPointerCapture;
-  Element.prototype.setPointerCapture = function (id) { if (id !== 71) return nativeSet.call(this, id); };
-  Element.prototype.releasePointerCapture = function (id) { if (id !== 71) return nativeRelease.call(this, id); };
-  Element.prototype.hasPointerCapture = function (id) { return id === 71 || nativeHas.call(this, id); };
-
-  const stores = new WeakMap();
-  const storage = self => { if (!stores.has(self)) stores.set(self, new Map()); return stores.get(self); };
-  Storage.prototype.getItem = function(key) { return storage(this).get(String(key)) ?? null; };
-  Storage.prototype.setItem = function(key,value) { storage(this).set(String(key), String(value)); };
-  Storage.prototype.removeItem = function(key) { storage(this).delete(String(key)); };
-  Storage.prototype.clear = function() { storage(this).clear(); };
-}
-</script>
 </head>
 <body class="boot-loading">
 
@@ -298,7 +272,8 @@ if (new URLSearchParams(location.search).get('showcaseDemo') === '1') {
   </div>
 </div>
 
-<button id="helpBtn" class="help-fab" type="button" aria-label="게임 도움말 열기">? 도움말</button>
+<!-- The old wiki help is replaced by #launchHelpSheet and moves to legacy/ with the ops UI. -->
+<button id="helpBtn" class="help-fab" type="button" aria-label="게임 도움말 열기" hidden>? 도움말</button>
 
 <div id="installGuideModal" class="install-guide-modal hidden" role="dialog" aria-modal="true" aria-labelledby="installGuideTitle">
   <div id="installGuideBackdrop" class="install-guide-backdrop"></div>
@@ -518,49 +493,28 @@ if (new URLSearchParams(location.search).get('showcaseDemo') === '1') {
 <div class="wrap">
   <div id="netStatus" class="hidden" aria-live="polite">네트워크 준비 중</div>
 
-  <section id="lobby" class="title-screen">
-    <div class="title-hero">
-      <div class="title-copy">
-        <div class="title-brand-row">
-          <div class="title-emblem" aria-hidden="true">
-            <span class="emblem-flag"></span>
-            <span class="emblem-line"></span>
-          </div>
-          <div class="title-kicker">LIVING FRONTLINE · TACTICAL AUTO-RTS</div>
-        </div>
-        <h1 class="game-title">RALLY<br><span class="frontier-accent">FRONTIER</span></h1>
-        <p class="game-tagline">선택한 생태 군단을, 하나의 깃발로 움직여라.</p>
-        <div id="titleUpdateStamp" class="title-update-stamp" title="이 HTML 빌드의 마지막 업데이트 시각">최근 업데이트 · 확인 중</div>
-        <p class="game-subline">씨앗·꽃·곤충 병종을 고르고 생산망을 뻗으세요. 병사 하나를 직접 조작하지 않아도, 당신의 선택과 집결 깃발이 전장의 흐름을 바꿉니다.</p>
-        <div class="title-feature-row" aria-label="게임 특징">
-          <span class="title-feature-chip">✦ 드래프트 / 덱 선택</span>
-          <span class="title-feature-chip">🚩 자동 전투 지휘</span>
-          <span class="title-feature-chip">◉ 2인 P2P</span>
-          <span class="title-feature-chip">❧ 생태 군단</span>
-        </div>
-
-        <div class="title-actions title-actions-main">
-          <button id="gameStartBtn" class="title-button primary title-main-action" type="button">게임 시작</button>
-          <button id="replayOpenBtn" class="title-button title-main-action" type="button">리플레이</button>
-          <input id="replayFileInput" class="hidden" type="file" accept="application/json,.json">
-        </div>
-        <button id="installPwaBtn" class="pwa-install-button hidden" type="button">
-          <span class="pwa-install-main">⬇ 앱으로 설치</span>
-          <span id="installPwaMeta">설치 가능한 경우 표시됩니다</span>
-        </button>
-        <button id="installGuideBtn" class="install-guide-link hidden" type="button">
-          앱 설치 안내
-        </button>
-        <div id="singleStatus" class="single-status hidden" aria-live="polite"></div>
-        <div class="title-foot">드래프트/덱 선택 → 생산망 → 세 전선 → 거점 확장 → 상대 메인 거점 파괴</div>
-      </div>
-
-      <div class="title-world" aria-hidden="true">
-        <canvas id="titleSceneCanvas"></canvas>
-        <div class="title-world-label">PROCEDURAL FRONTIER</div>
-        <div class="title-world-caption"><i></i><span>병력은 깃발을 향해 스스로 전진합니다</span></div>
-      </div>
+  <section id="lobby" class="title-screen launch-title">
+    <button id="titleHelpBtn" class="launch-icon-btn" type="button" aria-label="하는 법">?</button>
+    <div class="launch-hero">
+      <h1 class="game-title">RALLY<br><span class="frontier-accent">FRONTIER</span></h1>
+      <p class="launch-tagline">곡식 병사를 대포로 쏘아 적 본진을 무너뜨려라</p>
+      <div id="titleGrains" class="launch-grains" aria-hidden="true"></div>
     </div>
+    <div class="launch-title-actions">
+      <div id="singleStatus" class="single-status hidden" aria-live="polite"></div>
+      <button id="gameStartBtn" class="launch-btn primary" type="button">대전 시작</button>
+      <div class="launch-row">
+        <button id="friendMatchBtn" class="launch-btn secondary" type="button">친구와 대전</button>
+        <button id="replayOpenBtn" class="launch-btn secondary" type="button">리플레이</button>
+      </div>
+      <input id="replayFileInput" class="hidden" type="file" accept="application/json,.json">
+      <button id="installPwaBtn" class="pwa-install-button hidden" type="button">
+        <span class="pwa-install-main">⬇ 앱으로 설치</span>
+        <span id="installPwaMeta">설치 가능한 경우 표시됩니다</span>
+      </button>
+      <button id="installGuideBtn" class="install-guide-link hidden" type="button">앱 설치 안내</button>
+    </div>
+    <div id="titleUpdateStamp" class="launch-version" title="이 빌드의 마지막 업데이트 시각">확인 중</div>
   </section>
 
   <dialog id="gameStartDialog" class="game-dialog">
@@ -857,7 +811,15 @@ if (new URLSearchParams(location.search).get('showcaseDemo') === '1') {
         <div class="canvas-wrap">
           <canvas id="glCanvas"></canvas>
           <canvas id="fxCanvas" class="fx-canvas" aria-hidden="true"></canvas>
-          <button id="matchMenuBtnGame" class="match-menu-chip" type="button" aria-label="경기 메뉴 열기">☰</button>
+          <div id="launchHud" class="launch-hud">
+            <button id="matchMenuBtnGame" class="match-menu-chip" type="button" aria-label="경기 메뉴 열기">☰</button>
+            <span id="launchHudMine" class="launch-hud-chip mine">나 ♥ 100%</span>
+            <span id="launchHudEnemy" class="launch-hud-chip enemy">적 ♥ 100%</span>
+            <span class="launch-hud-gap"></span>
+            <span id="launchHudTime" class="launch-hud-chip">0:00</span>
+          </div>
+          <div id="aimLabel" class="aim-label hidden" aria-hidden="true"></div>
+          <div id="enemyBaseArrow" class="enemy-base-arrow hidden" aria-live="off"><i aria-hidden="true"></i><b>적 본진</b></div>
           <section id="battleTestHud" class="battle-test-hud hidden" aria-label="전투 테스트 측정 상태">
             <div class="battle-test-hud-head">
               <div>
@@ -1145,16 +1107,41 @@ if (new URLSearchParams(location.search).get('showcaseDemo') === '1') {
 </div>
 
 <div id="result" class="result hidden" role="dialog" aria-modal="true" aria-labelledby="resultTitle" tabindex="-1">
-            <div class="result-card">
-              <div class="small">BATTLE RESULT</div>
-              <h2 id="resultTitle">승리</h2>
-              <p id="resultText" class="hint"></p>
-              <div class="replay-result-actions">
-                <button id="replayWatchBtn" type="button">▶ 리플레이 보기</button>
-                <button id="replaySaveBtn" type="button">⇩ 리플레이 저장</button>
-              </div>
-              <button id="rematchBtn" class="primary" style="margin-top:7px;width:100%">새 게임</button>
-            </div>
+  <div class="result-card">
+    <p id="resultText" class="result-why"></p>
+    <h2 id="resultTitle">승리</h2>
+    <div id="resultStats" class="launch-stats"></div>
+    <button id="rematchBtn" class="launch-btn primary" type="button">다시 대전</button>
+    <div class="launch-row">
+      <button id="replayWatchBtn" class="launch-btn secondary" type="button">리플레이</button>
+      <button id="resultTitleBtn" class="launch-btn secondary" type="button">타이틀</button>
+    </div>
+    <button id="replaySaveBtn" class="hidden" type="button">⇩ 리플레이 저장</button>
+  </div>
+</div>
+
+<div id="friendSheet" class="launch-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="friendSheetTitle">
+  <div class="launch-sheet-panel">
+    <h2 id="friendSheetTitle">친구와 대전</h2>
+    <p>방을 만들어 코드를 보내거나, 받은 코드를 입력하세요.</p>
+    <button id="friendCreateBtn" class="launch-btn primary" type="button">방 만들기</button>
+    <div class="launch-code">
+      <input id="friendCodeInput" maxlength="4" inputmode="numeric" autocomplete="one-time-code" placeholder="코드" aria-label="4자리 방 코드">
+      <button id="friendJoinBtn" class="launch-btn secondary" type="button">참가</button>
+    </div>
+    <button class="launch-btn secondary" type="button" data-sheet-close>닫기</button>
+  </div>
+</div>
+<div id="launchHelpSheet" class="launch-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="launchHelpTitle">
+  <div class="launch-sheet-panel">
+    <h2 id="launchHelpTitle">하는 법</h2>
+    <p>① 아래 카드를 골라요.<br>② 전장을 길게 누를수록 멀리 날아가요. 흰 원이 착지 범위예요. 너무 오래 누르면 대포가 과열돼요.<br>③ 손을 떼면 발사! 착지한 병사는 알아서 적 본진으로 진격해요.<br>④ 자원은 계속 차올라요. 비용이 모자란 카드는 회색이에요.</p>
+    <button class="launch-btn primary" type="button" data-sheet-close>알겠어요</button>
+  </div>
+</div>
+<div id="cardSheet" class="launch-sheet hidden" role="dialog" aria-modal="true">
+  <div id="cardDetail" class="launch-sheet-panel"></div>
+</div>
           </div>
 
 
@@ -1168,10 +1155,13 @@ if (new URLSearchParams(location.search).get('showcaseDemo') === '1') {
     <div class="match-menu-copy">게임은 메뉴를 열어도 계속 진행됩니다. 연결 복구 중에는 시뮬레이션이 별도로 정지됩니다.</div>
     <div class="match-menu-actions">
       <button id="matchMenuContinueBtn" class="primary" type="button">계속하기</button>
-      <button id="matchMenuReplaySaveBtn" type="button">⇩ 현재까지 리플레이 저장</button>
-      <button id="matchMenuHelpBtn" type="button">? 도움말</button>
+      <div class="launch-row">
+        <button id="matchMenuSoundBtn" type="button">소리 끄기</button>
+        <button id="matchMenuHelpBtn" type="button">도움말</button>
+      </div>
       <button id="matchMenuSurrenderBtn" class="danger" type="button">항복</button>
-      <button id="matchMenuLeaveBtn" class="danger" type="button">게임 나가기</button>
+      <button id="matchMenuReplaySaveBtn" class="hidden" type="button">⇩ 현재까지 리플레이 저장</button>
+      <button id="matchMenuLeaveBtn" class="hidden" type="button">게임 나가기</button>
     </div>
     <div id="matchMenuWarning" class="match-menu-warning">진행 중인 경기에서 항복하거나 나가면 패배 처리됩니다.</div>
   </div>
@@ -1346,6 +1336,5 @@ void BuildMetadata.load().then(metadata=>{
 });
 </script>
 <script type="module" src="./src/main.js"></script>
-<script type="module" src="./src/showcase.js"></script>
 </body>
 </html>

@@ -2,6 +2,7 @@
 import { GameRuleRuntime, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { StrategySim } from '../sim/strategy-sim.js';
 import { Building, DelayedEffectState, Projectile } from '../sim/entities.js';
+import { LaunchRules } from '../sim/launch-rules.js';
 import { UnitStateContracts } from '../sim/unit-behaviors.js';
 import { WorkerMixin } from '../sim/unit-mixins.js';
 import { MovementComponent, StateValue } from '../sim/components.js';
@@ -477,9 +478,8 @@ class GameSession{
 
     if(this.role==="host"){
       if(m.type==="HELLO"){
-        if(this.matchConfig?.campaignScenario){if(!this.draft||this.draft.phase!=="live")this.prepareCampaignLiveDraft();if(!this.sim)this.beginGame();else this.transport.send({type:"DRAFT_SYNC",simVersion:SIM_VERSION,seq:this.commitSeq,state:this.draft,matchConfig:this.matchConfig});return;}
-        if(this.matchConfig?.debugScenario){
-          if(!this.draft||this.draft.phase!=="live")this.prepareDebugScenarioLiveDraft();
+        if(this.directLiveMatch()){
+          if(!this.draft||this.draft.phase!=="live")this.prepareDirectLiveDraft();
           if(!this.sim)this.beginGame();
           else this.transport.send({type:"DRAFT_SYNC",simVersion:SIM_VERSION,seq:this.commitSeq,state:this.draft,matchConfig:this.matchConfig});
           return;
@@ -961,6 +961,16 @@ applyMatchConfig(config,{authoritative=false}={}){
     return true;
   }
 prepareCampaignLiveDraft(){if(this.role!=="host"||!this.matchConfig?.campaignScenario)return false;const cfg=CampaignMissionDefinition.normalize(this.matchConfig.campaignScenario),humanRole=cfg.playerRole,enemyRole=humanRole==="host"?"guest":"host";this.draft={phase:"live",roomCode:this.roomCode,selectionMode:"deck",decks:{host:[],guest:[]},defenseCards:{host:[],guest:[]},deckReady:{host:true,guest:true},deckSelectDeadlineAt:0,winner:null};this.draft.decks[humanRole]=cfg.player.availableUnits.slice();this.draft.decks[enemyRole]=cfg.enemy.availableUnits.slice();return true}
+// Launch matches have no unit selection: both sides fire the fixed grain deck.
+prepareLaunchLiveDraft(){
+    if(this.role!=="host"||this.matchConfig?.selectionMode!=="launch")return false;
+    const deck=()=>LaunchRules.deck.slice();
+    this.draft={phase:"live",roomCode:this.roomCode,selectionMode:"launch",decks:{host:deck(),guest:deck()},defenseCards:{host:[],guest:[]},deckReady:{host:true,guest:true},deckSelectDeadlineAt:0,winner:null};
+    return true;
+  }
+// Campaign, debug and launch matches skip selection: Host builds the live draft itself.
+directLiveMatch(){return !!(this.matchConfig?.campaignScenario||this.matchConfig?.debugScenario||this.matchConfig?.selectionMode==="launch")}
+prepareDirectLiveDraft(){return this.prepareCampaignLiveDraft()||this.prepareDebugScenarioLiveDraft()||this.prepareLaunchLiveDraft()}
 prepareDebugScenarioLiveDraft(){
     if(this.role!=="host"||!this.matchConfig?.debugScenario)return false;
     const cfg=DebugScenarioHarness.normalize(this.matchConfig.debugScenario);
@@ -969,13 +979,8 @@ prepareDebugScenarioLiveDraft(){
   }
 start(){
     if(this.role==="host"){
-      if(this.matchConfig?.campaignScenario){this.prepareCampaignLiveDraft();return;}
-      if(this.matchConfig?.debugScenario){
-        // Debug scenario is not a deck-selection test. Wait for the real Guest HELLO,
-        // then Host starts the real match directly from a deterministic live initial state.
-        this.prepareDebugScenarioLiveDraft();
-        return;
-      }
+      // A direct live match waits for the real Guest HELLO, then Host starts it from a deterministic live initial state.
+      if(this.directLiveMatch()){this.prepareDirectLiveDraft();return;}
       this.onDraft(this.draft);
       if(this.draft?.phase==="deck-select")this.armDeckSelectTimer(true);else this.armDraftPickTimer(true);
     }else this.transport.send({type:"HELLO",simVersion:SIM_VERSION})

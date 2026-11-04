@@ -36,6 +36,8 @@ import { RENDER_TRACKS } from './render/render-tracks.js';
 import { CHARGED_SKILL_DRAG_PX, CHARGED_SKILL_HOLD_MS, CONFIG, DECK_SELECT_TIMEOUT_MS, DRAFT_FINAL_FX_MS, DRAFT_PICK_TIMEOUT_MS, GAS_WORKER_UI_DEBOUNCE_MS, PREDICTED_BUILD_GHOST_TTL_MS, PREDICTED_COMMAND_FX_TTL_MS, SIM_VERSION, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode } from './core/config.js';
 import { BUILD_META } from './core/build-info.js';
 import { RallyGamekit, RallyNetcode, SIM_WORKER } from './core/gamekit.js';
+import { LaunchScreens } from './ui/launch-screens.js';
+import { grainPortrait } from './ui/grain-portrait.js';
 
 // The Worker realm has no window; GameKit modules must still see it as non-browser.
 const window=globalThis;
@@ -6924,19 +6926,20 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     const hold=LaunchPresentation.hold;
     if(hold){
       const [cx,cy]=this.worldToPx(this.viewX(hold.cannonX),this.viewY(hold.cannonY)),[ax,ay]=this.worldToPx(this.viewX(hold.aimX),this.viewY(hold.aimY));
-      let dx=ax-cx,dy=ay-cy;const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;
-      const held=now-hold.armedAt,power=LaunchRules.power(held),burnt=LaunchRules.overheated(held),over=held>LaunchRules.chargeMs;
-      const color=burnt?[1,.22,.16,1]:over?[1,.5,.18,(Math.floor(now/90)%2)?1:.45]:[1,.9,.5,.95],w=Math.max(2,3*sc);
-      // Direction only: a fixed-length arrow from the cannon, never the landing point.
-      const L=Math.max(60,90*sc),tx=cx+dx*L,ty=cy+dy*L,head=Math.max(9,13*sc);
-      this.line(cx,cy,tx,ty,w,color);
-      this.line(tx,ty,tx-dx*head+dy*head*.65,ty-dy*head-dx*head*.65,w,color);
-      this.line(tx,ty,tx-dx*head-dy*head*.65,ty-dy*head+dx*head*.65,w,color);
-      // Power gauge with the previous shot's tick.
-      const W=Math.max(120,170*sc),H=Math.max(9,12*sc),gx=cx-W/2,gy=cy+Math.max(34,58*sc);
-      this.rect(gx-2,gy-2,W+4,H+4,[.05,.06,.08,.78]);
-      this.rect(gx,gy,W*power,H,color);
-      if(hold.lastPower!=null)this.rect(gx+W*hold.lastPower-1.5,gy-5,3,H+10,[1,1,1,.95]);
+      const held=now-hold.armedAt,power=LaunchRules.power(held),burnt=LaunchRules.overheated(held),full=power>=1;
+      const color=burnt?[1,.22,.16,1]:full?[1,.78,.2,(Math.floor(now/90)%2)?1:.55]:[1,.95,.75,.9],w=Math.max(2,3*sc);
+      // Landing ring: the point the sim will pick for this hold time and direction, sized by the grain's splash.
+      const at=LaunchPresentation.landing(hold,held,this.world);
+      const [lx,ly]=this.worldToPx(this.viewX(at.x),this.viewY(at.y)),splash=Math.max(14,(LaunchRules.grain(hold.card)?.splash||120)*sc);
+      this.line(cx,cy,lx,ly,Math.max(1.5,2*sc),[color[0],color[1],color[2],.45]);
+      this.outlineCircle(lx,ly,splash,w,color,40);
+      this.line(lx-8,ly,lx+8,ly,2,color);this.line(lx,ly-8,lx,ly+8,2,color);
+      // The previous shot's landing distance, as a faint ring at that reach.
+      if(hold.lastPower!=null&&!full){
+        const last=LaunchPresentation.landing(hold,hold.lastPower*LaunchRules.chargeMs,this.world);
+        const [px,py]=this.worldToPx(this.viewX(last.x),this.viewY(last.y));
+        this.outlineCircle(px,py,Math.max(8,10*sc),Math.max(1.5,2*sc),[1,1,1,.55],20);
+      }
     }
     const W=this.canvas.width,H=this.canvas.height,pad=Math.max(18,26*sc);
     for(const m of LaunchPresentation.marks){
@@ -7017,6 +7020,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.resize();
     // DOM viewport synchronization is once per frame, not once per terrain/Fog vertex.
     // All math still uses the shared camera; input and standalone passes refresh on demand.
+    LaunchPresentation.followAim(this);
     this._frameCamera=this.stableCamera();
     this.updateClientShake();
 
@@ -8039,7 +8043,7 @@ const UI_RADIO=Object.freeze({
 // Radio: screen/modal/command.branch; Tree: command category/page + modalState phases;
 // Checkbox: only independent options. DOM classes are derived output, never app-state input.
 // Async/transient gesture/network booleans may remain local when simultaneous truth is valid.
-class UiRuntimeState{static value={screen:"lobby",modal:"none",modalState:{spellChoice:"idle",disconnect:"hidden"},command:{branch:"closed",category:"economy",page:null},options:{minimapExpanded:false,lockstepDebugOpen:false},draft:{pointerLocked:false,finaleStep:null,pickCountdownSec:null},settings:{selectionMode:"draft",presetId:"standard",simulationTps:10},target:{type:"flag"},selection:{unit:null,buildingId:null}}}
+class UiRuntimeState{static value={screen:"lobby",modal:"none",modalState:{spellChoice:"idle",disconnect:"hidden"},command:{branch:"closed",category:"economy",page:null},options:{minimapExpanded:false,lockstepDebugOpen:false},draft:{pointerLocked:false,finaleStep:null,pickCountdownSec:null},settings:{selectionMode:"launch",presetId:"standard",simulationTps:10},target:{type:"flag"},selection:{unit:null,buildingId:null}}}
 
 /* DOM write ownership contract:
    UiController is the sole generic visibility/screen/modal writer.
@@ -8093,7 +8097,7 @@ class UiController{
   UiRegistry.refs.guestView?.classList.toggle("active",role==="guest");
 }
   static setUiRadio(group,value){const allowed=UI_RADIO[group];if(!allowed?.has(value))throw new Error(`Invalid UI ${group}: ${value}`);UiRuntimeState.value[group]=value;return value}
-  static setUiScreen(value){UiController.setUiRadio("screen",value);UiController.renderUiState();return value}
+  static setUiScreen(value){UiController.setUiRadio("screen",value);UiController.renderUiState();LaunchScreens.syncScreen(value);return value}
   static setUiModal(value){
   const prev=UiRuntimeState.value.modal;UiController.setUiRadio("modal",value);
   if(prev==="spell-choice"&&value!=="spell-choice")UiRuntimeState.value.modalState.spellChoice="idle";
@@ -11108,7 +11112,7 @@ class MatchLifecycle{
     ()=>{
       NetworkModuleLoader.pendingPeerAction=null;
       UiRegistry.refs.codeArea.classList.remove("hidden");
-      UiRegistry.refs.createStatus.textContent=`방이 열렸습니다 · ${UiRuntimeState.value.settings.selectionMode==="deck"?"덱 선택":"드래프트"} 모드 · 상대 참가를 기다립니다.`;
+      UiRegistry.refs.createStatus.textContent="방이 열렸습니다 · 상대 참가를 기다립니다.";
       MatchLifecycle.connect("host",c);
     },
     (msg,failed)=>{
@@ -11169,6 +11173,8 @@ class MatchLifecycle{
   else if(reason==="draw")UiRegistry.refs.resultText.textContent="양쪽 메인 거점이 같은 tick에 파괴되었습니다.";
   else if(reason==="campaign-objectives"||reason==="campaign-trigger")UiRegistry.refs.resultText.textContent=mine?"미션 목표를 모두 완료했습니다.":"미션 방어에 실패했습니다.";
   else UiRegistry.refs.resultText.textContent=mine?"적 메인 거점을 파괴했습니다.":"내 메인 거점이 파괴되었습니다.";
+  const end=ActiveViewState.snap,stats=end?.launchStats,mySide=ConnectionSideUtil.roleSide(viewRole);
+  if(stats)LaunchScreens.renderResult({durationMs:1000*end.tick/(end.tps||SimulationTiming.tps()),launches:stats.launches[mySide],sent:stats.sent[mySide],kills:stats.kills[mySide]});
   const replayReady=!!ReplayPresentation.replaySourceSession()?.replayRecorder?.result;
   if(UiRegistry.refs.replaySaveBtn)UiRegistry.refs.replaySaveBtn.disabled=!replayReady;
   if(UiRegistry.refs.replayWatchBtn)UiRegistry.refs.replayWatchBtn.disabled=!replayReady;
@@ -11193,7 +11199,8 @@ UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
     return;
   }
   UiRegistry.refs.matchMenuSurrenderBtn?.classList.remove("hidden");
-  if(UiRegistry.refs.matchMenuLeaveBtn){UiRegistry.refs.matchMenuLeaveBtn.classList.remove("hidden");UiRegistry.refs.matchMenuLeaveBtn.textContent="게임 나가기"}
+  // A live launch match leaves only by surrender; the leave button is for ending a replay.
+  UiRegistry.refs.matchMenuLeaveBtn?.classList.add("hidden");
   const active=RecoveryTelemetry.localRecoverySession?.()||MatchLifecycle.activeSession?.();
   if(!active||active.simEnded)return;
   const replayReady=!!active.replayRecorder;
@@ -12153,20 +12160,33 @@ class LaunchPresentation{
     const key=deck.join("|");
     if(key!==this.deckKey){
       this.deckKey=key;
-      UiRegistry.refs.launchCards.innerHTML=deck.map(t=>{const d=UnitDefinition.get(t),p=LaunchRules.payload(t),info=UnitDefinition.cardInfo?.[t];
-        return `<button type="button" class="launch-card" data-launch-card="${t}"><span class="launch-card-icon">${info?.icon||"●"}</span><b>${d?.name||t}</b><small>×${p.count}</small><em>◆${p.cost}</em></button>`}).join("");
+      UiRegistry.refs.launchCards.innerHTML=deck.map(t=>LaunchScreens.cardMarkup(t)).join("");
+      LaunchScreens.fillCardPortraits(UiRegistry.refs.launchCards);
     }
     for(const el of UiRegistry.refs.launchCards.querySelectorAll("[data-launch-card]")){
       const t=el.dataset.launchCard;el.classList.toggle("selected",t===this.card);el.classList.toggle("unaffordable",LaunchRules.payload(t).cost>wallet);
     }
     UiRegistry.refs.launchEnergyFill.style.width=`${Math.round(100*wallet/LaunchRules.walletCap)}%`;
     UiRegistry.refs.launchEnergyText.textContent=`◆ ${wallet} / ${LaunchRules.walletCap}`;
+    this.renderHud(s,side);
     // A pod that left the snapshot has landed: leave a short mark at its point.
     const now=performance.now(),seen=new Set();
     for(const p of s.projectiles||[]){if(!p.payload||p.side!==side)continue;seen.add(p.id);this.pods.set(p.id,{x:p.lockedAimX,y:p.lockedAimY})}
     for(const [id,p] of this.pods)if(!seen.has(id)){this.pods.delete(id);this.marks.push({x:p.x,y:p.y,at:now})}
     this.marks=this.marks.filter(m=>now-m.at<LaunchRules.landingMarkMs);
     if(!this.hold&&UiRegistry.refs.hint){const hint="카드 고르기 · 길게 눌러 충전 · 손가락 방향으로 조준 · 놓으면 발사 · 너무 오래 누르면 과열";if(UiRegistry.refs.hint.textContent!==hint)UiRegistry.refs.hint.textContent=hint}
+  }
+  // Both main bases' health, elapsed time, and an edge arrow while the enemy base is off screen.
+  static renderHud(s,side){
+    const main=BuildingDefinition.forRole("mainBase"),hp=k=>{const b=(s.buildings||[]).find(b=>b.side===k&&b.type===main);return b&&b.alive!==false?Math.ceil(100*Math.max(0,b.hp||0)/Math.max(1,b.maxHp||1)):0};
+    const r=ActiveViewState.renderer,enemy=(s.buildings||[]).find(b=>b.side===1-side&&b.type===main&&b.alive!==false);
+    let enemyDirection=null;
+    if(r&&enemy){
+      // Camera space: x right, y down, in world units, so the distance reads like the map.
+      const vw=r.viewWorldW(),vh=r.viewWorldH(),x=r.viewX(enemy.x)-r.cameraLeft,y=BattlefieldProjection.planarY(r.viewY(enemy.y),r.world.terrain.surfaces.heightAt(enemy.x,enemy.y))-r.cameraTop;
+      if(x<0||x>vw||y<0||y>vh){const dx=x-vw/2,dy=y-vh/2;enemyDirection={angle:Math.atan2(dy,dx)+Math.PI/2,distance:Math.hypot(dx,dy)}}
+    }
+    LaunchScreens.renderHud({myHpPct:hp(side),enemyHpPct:hp(1-side),elapsedMs:1000*s.tick/(s.tps||SimulationTiming.tps()),enemyDirection});
   }
   static selectCard(type){this.card=type;const s=ActiveViewState.snap;if(s)this.render(s,ConnectionSideUtil.roleSide(ActiveViewState.role))}
   static nearestCannon(s,side,x,y){
@@ -12186,6 +12206,26 @@ class LaunchPresentation{
     return this.hold;
   }
   static aim(a){if(this.hold){this.hold.aimX=a.x;this.hold.aimY=a.y}}
+  // Where the sim will land this hold: same rule and fallback direction as the LAUNCH command.
+  static landing(hold,holdMs,world){
+    const flag=ActiveViewState.snap?.flags?.[ConnectionSideUtil.roleSide(ActiveViewState.role)]||{x:hold.cannonX,y:hold.cannonY};
+    return LaunchRules.target({x:hold.cannonX,y:hold.cannonY},hold.aimX,hold.aimY,holdMs,world,flag,hold.card);
+  }
+  // While charging, the camera eases just far enough to keep the landing ring on screen.
+  static followAim(r){
+    const hold=this.hold;if(!hold||!r.world){if(this.labelShown){this.labelShown=false;LaunchScreens.renderAimLabel(null)}return}
+    const at=this.landing(hold,performance.now()-hold.armedAt,r.world),vx=r.viewX(at.x),vy=r.viewY(at.y);
+    const vw=r.viewWorldW(),vh=r.viewWorldH(),margin=(LaunchRules.grain(hold.card)?.splash||120)+80;
+    const py=BattlefieldProjection.planarY(vy,r.world.terrain.surfaces.heightAt(at.x,at.y));
+    // The top keeps room for the HUD, the enemy arrow and the ring's label (about 120 CSS px).
+    const hud=120*vw/Math.max(1,r.canvas.clientWidth);
+    const left=RangeUtil.clamp(r.cameraLeft,vx+margin-vw,vx-margin),top=RangeUtil.clamp(r.cameraTop,py+margin-vh,py-margin-hud);
+    r.cameraLeft=RangeUtil.clamp(r.cameraLeft+(left-r.cameraLeft)*.2,0,Math.max(0,r.world.width-vw));
+    r.cameraTop=r.clampCameraTop(r.cameraTop+(top-r.cameraTop)*.2);
+    // Canvas pixels to the label's CSS pixels, just above the ring.
+    const [lx,ly]=r.worldToPx(vx,vy),k=r.canvas.clientWidth/Math.max(1,r.canvas.width),splash=(LaunchRules.grain(hold.card)?.splash||120)*r.sc();
+    this.labelShown=true;LaunchScreens.renderAimLabel({x:lx*k,y:(ly-splash)*k-6},hold.card);
+  }
   static cancel(){this.hold=null}
   static release(a){
     const hold=this.hold;this.hold=null;if(!hold)return;
@@ -13740,12 +13780,6 @@ for(const button of document.querySelectorAll("[data-deck-storage-action]"))butt
 
 DebugScenarioHarness.populateUi();
 
-UiRegistry.refs.gameStartBtn.onclick=()=>{
-  audioSystem.unlock();
-  UiController.setElementVisible(UiRegistry.refs.singleStatus,false);
-  if(UiRegistry.refs.advancedTestSettings)UiRegistry.refs.advancedTestSettings.open=false;
-  UiController.openUiModal("game-start");
-};
 UiRegistry.refs.gameStartCloseBtn.onclick=()=>UiController.closeUiModal("game-start");
 UiRegistry.refs.gameStartDialog.addEventListener("click",e=>{
   if(e.target===UiRegistry.refs.gameStartDialog)UiController.closeUiModal("game-start");
@@ -14390,10 +14424,6 @@ UiController.bindImmediateButton(UiRegistry.refs.buildDrawerCloseBtn,()=>{
 
 UiRegistry.refs.matchMenuBtnDraft?.addEventListener("click",MatchLifecycle.openMatchMenu);
 UiRegistry.refs.matchMenuBtnDeck?.addEventListener("click",MatchLifecycle.openMatchMenu);
-UiRegistry.refs.matchMenuBtnGame?.addEventListener("click",MatchLifecycle.openMatchMenu);
-UiRegistry.refs.matchMenuBackdrop?.addEventListener("click",MatchLifecycle.closeMatchMenu);
-UiRegistry.refs.matchMenuCloseBtn?.addEventListener("click",MatchLifecycle.closeMatchMenu);
-UiRegistry.refs.matchMenuContinueBtn?.addEventListener("click",MatchLifecycle.closeMatchMenu);
 UiRegistry.refs.matchMenuReplaySaveBtn?.addEventListener("click",()=>{const data=ReplayPresentation.currentReplayPayload();if(data)ReplayPresentation.downloadReplay(data);else LogUtil.log("아직 저장할 전투 리플레이가 없습니다.")});
 UiRegistry.refs.matchMenuSurrenderBtn?.addEventListener("click",()=>MatchLifecycle.requestMatchSurrender());
 UiRegistry.refs.matchMenuLeaveBtn?.addEventListener("click",()=>{if(ReplayPresentation.replayPlayer){MatchLifecycle.closeMatchMenu();ReplayPresentation.stopReplay();return}MatchLifecycle.requestMatchSurrender({leave:true})});
@@ -14494,7 +14524,9 @@ UiRegistry.refs.replayZoomOutBtn?.addEventListener("click",()=>ReplayPresentatio
 UiRegistry.refs.replayZoomInBtn?.addEventListener("click",()=>ReplayPresentation.replayPlayer?.setZoom((ReplayPresentation.replayPlayer.zoom||1)+.2));
 UiRegistry.refs.replayExitBtn?.addEventListener("click",ReplayPresentation.stopReplay);
 
-UiController.bindImmediateButton(UiRegistry.refs.rematch,()=>location.reload());
+// A rematch reloads into a fresh match: the AI starts again from #/play, a friend match goes back to the friend sheet.
+const reloadAt=hash=>{history.replaceState(null,"",location.pathname+location.search+hash);location.reload()};
+UiController.bindImmediateButton(UiRegistry.refs.rematch,()=>reloadAt(MatchLifecycle.singleMatch?"#/play":"#/friend"));
 if(!SIM_WORKER)BattlePresentation.setupCanvas();
 
 // Recovery initiation must mirror a real multiplayer client:
@@ -14633,6 +14665,23 @@ if(SIM_WORKER)SimWorkerHost.install();
 else{
   UnitVisualLookup.validateCoverage();
   AppLifecycle.runBootAndStartApp();
+  const leaveSetup=()=>{audioSystem.unlock();CampaignRuntime.clear();DebugScenarioHarness.pending=null;CampaignPresentation.clear();UiRuntimeState.value.settings.presetId="standard";UiController.setStartSelectionMode("launch")};
+  LaunchScreens.install({createNavigation:RallyGamekit.createNavigation,actions:{
+    inMatch:()=>UiRuntimeState.value.screen==="game",
+    hasResult:()=>UiRuntimeState.value.screen==="result",
+    startAiMatch:()=>{leaveSetup();MatchLifecycle.startSinglePlayerWebRTC("host")},
+    openMenu:()=>{if(UiRuntimeState.value.modal!=="match-menu")MatchLifecycle.openMatchMenu()},
+    closeMenu:()=>{if(UiRuntimeState.value.modal==="match-menu")MatchLifecycle.closeMatchMenu()},
+    grains:()=>LaunchRules.deck,
+    grainName:t=>UnitDefinition.get(t)?.name||t,
+    grainStats:t=>({...LaunchRules.payload(t),maxReach:LaunchRules.maxReachOf(t)}),
+    portraitSource:t=>grainPortrait(t,window.RallyVectorAssets[t]),
+    toggleSound:()=>audioSystem.setEnabled(!audioSystem.enabled),
+    soundOn:()=>!!audioSystem.enabled,
+    createRoom:()=>{leaveSetup();UiController.openUiModal("create");MatchLifecycle.beginCreateRoom()},
+    joinRoom:code=>{leaveSetup();UiController.openJoinDialog();UiRegistry.refs.room.value=code;MatchLifecycle.submitJoinRoom()},
+    leaveToTitle:()=>reloadAt("#/")
+  }});
   if(new URLSearchParams(location.search).has("debug")){
     const {createDebugScenes}=await import("./debug-scenes.js");
     RallyGamekit.installDebugHost({scenes:createDebugScenes({openBattle:params=>DebugScenarioHarness.openReplayBattle(params),openCharge:params=>DebugScenarioHarness.openChargeReplay(params)})});

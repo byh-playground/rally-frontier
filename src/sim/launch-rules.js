@@ -1,7 +1,7 @@
 // Cannon launch rules: income, wallet and grain data.
 import { RangeUtil } from '../core/game-rules.js';
 
-// 발사전: 대포가 유닛 뭉치를 쏜다. 착탄점은 표시하지 않고, 누른 시간만으로 거리가 정해진다.
+// 발사전: 대포가 유닛 뭉치를 쏜다. 거리는 누른 시간만으로 정해지고, 조준 중에는 착지 원으로 미리 보인다(D-196).
 class LaunchRules{
   static incomePerSecond=40;static walletCap=600;static startingWallet=200;
   static minReach=250;static maxReach=2200;static chargeMs=1500;static overheatGraceMs=180;

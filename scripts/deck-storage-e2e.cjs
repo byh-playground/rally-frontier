@@ -11,7 +11,9 @@ const broken = '{"decks": [한글 기록 오류';
 
 (async () => {
   fs.mkdirSync(output, { recursive: true });
-  const server = await serveSource(path.join(root, 'index.html'));
+  const server = await serveSource(path.join(root, 'index.html'), { observer: `// The old start dialog keeps the test-only settings; the launch title has no button for it.
+window.__openGameStart=()=>UiController.openUiModal("game-start");
+` });
   let browser;
   const deadline = setTimeout(() => { console.error('Deck storage E2E exceeded 180 seconds'); browser?.close(); }, 180000);
   try {
@@ -41,7 +43,7 @@ const broken = '{"decks": [한글 기록 오류';
       try {
         await routePinnedSDK(page);
         await page.goto(server.url, { waitUntil: 'domcontentloaded' });
-        await page.locator('#gameStartBtn').click();
+        await page.waitForFunction(() => window.__openGameStart && (window.__openGameStart(), true), undefined, { timeout: 60000 });
         await page.locator('#selectionDeckBtn').click();
         await page.locator('#singleBtn').click();
         await page.locator('#singleHostBtn').click();

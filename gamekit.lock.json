@@ -55,6 +55,10 @@
       "file": "vector-assets-loader.js",
       "sha256": "f53c266c4bff3e79c0a6341b8e1c68525507199a920c7d6a97936ebc84ca6da9"
     },
+    "navigation": {
+      "file": "navigation.js",
+      "sha256": "2c8e12432f6eae5472418d80898c93af32f5b14dce8217f6fa75bd198893b417"
+    },
     "objectPool": {
       "file": "object-pool.js",
       "sha256": "4291d6d90f23b47024153e2d2db9e1af7f8b78586c8c0ee279621d42dc54f10b"

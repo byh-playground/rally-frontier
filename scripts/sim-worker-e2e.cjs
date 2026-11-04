@@ -11,7 +11,9 @@ const { serveSource, routePinnedSDK } = require('./netcode-qa-module.cjs');
 // after the link is invalidated, balance telemetry from the Worker, and port traffic.
 const root = path.resolve(__dirname, '..');
 const output = path.join(root, '.qa', 'sim-worker');
-const observer = `window.__simWorkerE2E={MatchLifecycle,MobileBattleTestMode,RecoveryTelemetry,AppLifecycle,PerformanceTelemetry,
+const observer = `// The old start dialog keeps the test-only settings; the launch title has no button for it.
+window.__openGameStart=()=>UiController.openUiModal("game-start");
+window.__simWorkerE2E={MatchLifecycle,MobileBattleTestMode,RecoveryTelemetry,AppLifecycle,PerformanceTelemetry,
   state(){
     const m=MatchLifecycle.singleMatch;
     return Object.fromEntries(Object.entries(m?.sessions||{}).map(([role,s])=>[role,{kind:s.constructor.name,tick:s.sim?.tick??null,
@@ -33,7 +35,7 @@ const observer = `window.__simWorkerE2E={MatchLifecycle,MobileBattleTestMode,Rec
     page.on('worker', worker => worker.on('console', message => { if (message.type() === 'error') workerErrors.push(message.text()); }));
     await routePinnedSDK(page);
     await page.goto(server.url, { waitUntil: 'domcontentloaded' });
-    await page.locator('#gameStartBtn').click();
+    await page.waitForFunction(() => window.__openGameStart && (window.__openGameStart(), true), undefined, { timeout: 60000 });
     await page.locator('#advancedTestSettings summary').click();
     await page.selectOption('#battleTestUnitCount', '100');
     await page.selectOption('#battleTestComposition', 'mixed');
