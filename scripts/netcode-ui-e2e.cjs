@@ -73,12 +73,8 @@ window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntime
         balance:sim?.balanceStats,receipts:sim?.commandReceipts}];
     }));
     const transports=Object.fromEntries(Object.entries(match?.transports||{}).map(([role,t])=>
-      [role,{name:t.constructor.name,open:t.isOpen(),connectionState:t.pc?.connectionState,
-        lobby:t.dc?{label:t.dc.label,state:t.dc.readyState}:null,
-        inputs:t.netcodeInputChannel?{label:t.netcodeInputChannel.label,state:t.netcodeInputChannel.readyState}:null,
-        control:t.netcodeControlChannel?{label:t.netcodeControlChannel.label,state:t.netcodeControlChannel.readyState}:null,
-        allChannels:Object.values(t).filter(v=>v instanceof RTCDataChannel).map(c=>({label:c.label,
-          state:c.readyState,ordered:c.ordered,maxRetransmits:c.maxRetransmits}))}]));
+      [role,{name:t.constructor.name,open:t.isOpen(),roomState:t.room?.state,netcodeState:t.netcodeState,generation:t.room?.generation,
+        rtcConnectionState:t.room?.peerConnection?.connectionState}]));
     const aiReceipts=(match?.sessions?.[match?.humanRole]?.sim?.commandReceipts||[]).filter(c=>c.actor===match?.bot?.role);
     return {build:BUILD_ID,simVersion:SIM_VERSION,sdkVersion:window.RallyNetcode?.VERSION,
       sdkRevision:window.RallyNetcodeSource?.url,
@@ -154,12 +150,11 @@ async function runRole(browser, url, humanRole) {
     for(const role of ['host','guest']){
       assert.equal(initial.sessions[role].coreName,'RollbackSession');
       assert.equal(initial.sessions[role].tps,20);
-      assert.equal(initial.transports[role].name,'NostrRtcTransport');
-      assert.equal(initial.transports[role].connectionState,'connected');
-      const channels=initial.transports[role].allChannels;
-      assert.ok(channels.length>=3&&channels.every(c=>c.state==='open'),`${role}: real lobby/input/control channels open`);
-      assert.ok(channels.some(c=>!c.ordered&&c.maxRetransmits===0),`${role}: unreliable input carrier open`);
-      assert.ok(channels.filter(c=>c.ordered&&c.maxRetransmits===null).length>=2,`${role}: reliable lobby/control carriers open`);
+      assert.equal(initial.transports[role].name,'RoomTransport');
+      assert.equal(initial.transports[role].roomState,'open','the GameKit room is open');
+      assert.equal(initial.transports[role].netcodeState,'open','the netcode input and control channels are open');
+      assert.equal(initial.transports[role].rtcConnectionState,'connected','a real RTCPeerConnection connected');
+      assert.ok(initial.transports[role].generation>=1,'the room has opened at least once');
     }
     const launch=await launchFromHand(page);
     progressTimer=setInterval(async()=>{
