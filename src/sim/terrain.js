@@ -4,7 +4,8 @@ import { MapGeometry } from './map-geometry.js';
 import { NavigationGoal } from './navigation.js';
 import { RallyGamekit } from '../core/gamekit.js';
 import { FP } from '../core/config.js';
-const { BoundsIndex, ObstacleField, assignBounds, boundariesCross, pointInSimplePolygon, pointSegmentDistance, polygonTouchesRect, polygonsOverlap, segmentDistance, segmentsIntersect, triangulatePolygon } = RallyGamekit;
+import { VISION_CELL } from '../definitions/world-rules.js';
+const { BoundsIndex, ObstacleField, VisionMap, assignBounds, boundariesCross, pointInSimplePolygon, pointSegmentDistance, polygonTouchesRect, polygonsOverlap, segmentDistance, segmentsIntersect, triangulatePolygon } = RallyGamekit;
 
 // Derived, immutable world geometry. Each simulation and renderer owns a context;
 // no active-view switch can change another match's coordinates or spatial grids.
@@ -33,7 +34,17 @@ class TerrainGeometry{
     this.index=new BoundsIndex(this.blocks);
     // Polygon-only clearance for placement, map checks and spawning; buildings live in each navigation's own field.
     this.field=new ObstacleField({width:this.width,height:this.height,fixedPoint:FP,polygons:this.index,circles:[]});
-    this.visionIndex=new BoundsIndex(this.visionBlocks);
+  }
+  // Vision raster of this terrain: surface level and vision-blocker membership at every VISION_CELL cell centre.
+  // Built on first use: map generation checks many candidate maps and never looks.
+  ensureVisionMap(){
+    if(!this.visionMapCache){
+      const index=new BoundsIndex(this.visionBlocks);
+      this.visionMapCache=VisionMap.sample({width:this.width,height:this.height,cellSize:VISION_CELL,
+        levelAt:(x,y)=>this.surfaces.levelAt(x,y),
+        blockedAt:(x,y)=>{for(const b of index.query(x,y,x,y,0))if(pointInSimplePolygon(x,y,b.points))return true;return false}});
+    }
+    return this.visionMapCache;
   }
 }
 // A 2.5D surface atlas: horizontal cells plus authored ramp transitions.

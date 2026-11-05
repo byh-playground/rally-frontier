@@ -1,6 +1,6 @@
 import { RangeUtil, SIM_TPS } from './core/game-rules.js';
 import './sim/strategy-sim.js';
-import { TerrainQuery, VisionField } from './sim/entities.js';
+import { TerrainQuery, VisibilityPolicy } from './sim/entities.js';
 import { BotController } from './ai/bot-controller.js';
 import { GameSession, RallySynctestDiagnostics } from './session/game-session.js';
 import { ReplayPlayer, ReplayPolicy } from './session/replay.js';
@@ -1050,7 +1050,7 @@ class GLRenderer{
 
   rebuildVisibilityCache(){
     if(!this.snapshot)return;
-    for(const side of [0,1])VisionField.of(this,side,this.snapshot);
+    for(const side of [0,1])VisibilityPolicy.field(this,side,this.snapshot);
   }
   setSnapshot(s,{liveTargets=false,snapTargets=false}={}){
     const old=this.snapshot;
