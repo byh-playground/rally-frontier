@@ -25,6 +25,7 @@ import { BattlefieldProjection, TerrainSurfaceAtlas, TerrainSurfaceProjection } 
 import { BACKGROUND_TICK_PULSE_MS } from './core/session-timing.js';
 import { RENDER_TRACKS } from './render/render-tracks.js';
 import { BuildingArt } from './render/building-art.js';
+import { RiceSpriteRenderer } from './render/rice-sprite.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
 import { CONFIG, LAUNCH_HOLD_ARM_MS, LAUNCH_HOLD_DRAG_PX, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode } from './core/config.js';
 import { BUILD_META } from './core/build-info.js';
@@ -607,7 +608,7 @@ class GLRenderer{
     };
     this.device=new RallyGamekit.WebGLDevice(canvas,this.webglAttrs);
     this.vectorContext=new RallyGamekit.VectorContext(this.device,{safeAlphaRunBatching:true});this.vectorContext.acquireMeshRenderer();this.grainFaces=new RallyGamekit.FaceOverlay(this.vectorContext,{faces:GRAIN_FACE_IDS});// 메시 통계가 첫 유닛 그리기 전에도 null이 아니도록 미리 만든다.
-    this.vectorUnitAssetCache=new Map();this.buildingArt=new BuildingArt(this);
+    this.vectorUnitAssetCache=new Map();this.buildingArt=new BuildingArt(this);this.riceSprites=null;this.riceBodyGroup=[];
     // One actor per grain: a shared actor re-seeked per grain rewrites its pose row and splits the instanced batch.
     this.grainActors=new Map();this.grainActorFrame=0;this.grainBodyGroups=new Map();this.grainOpaqueCoverage=new Map();
     this._vectorUnitMatrix=new Float32Array(6);
@@ -723,6 +724,7 @@ class GLRenderer{
     try{
       this.resize();
       this.grainFaces.prepare();
+      if(!this.riceSprites)this.riceSprites=new RiceSpriteRenderer(C,globalThis.RiceSpriteCanvas,RallyGamekit);
       if(!C.beginFrame())throw new Error("그래픽 장치를 준비할 수 없습니다.");
       for(const [id,source] of Object.entries(globalThis.RallyVectorAssets)){
         holds.push(RallyGamekit.holdVectorAsset(C,source));
@@ -738,6 +740,8 @@ class GLRenderer{
       for(const own of [true,false])for(const dy of [-1,1])for(const fireAgeMs of [Infinity,0]){
         this.buildingArt.draw({id:"resource-preparation"},{x:0,y:0,sc:1,aim:{dx:1,dy},own,fireAgeMs});
       }
+      const rice=this.riceSprites.createActor();actors.push(rice);rice.seek(0);rice.preparePose();C.preparePoses();
+      C.depthTest=true;C.depthWrite=true;this.riceSprites.drawBody(rice,matrix,0);C.depthWrite=false;this.riceSprites.drawFace(rice,matrix,0,'neutral');C.flush('rice-resource-preparation');C.depthTest=false;
       this.buildingArt.prune([]);
       C.endFrame();
       this.gl.finish();
@@ -747,6 +751,7 @@ class GLRenderer{
       if(C.active)C.endFrame();
       this.buildingArt.prune([]);
       for(const hold of holds)hold.release();
+      this.riceSprites?.dispose();this.riceSprites=null;
       throw error;
     }finally{for(const actor of actors)actor.dispose()}
   }
@@ -1912,8 +1917,8 @@ class GLRenderer{
     return Math.max(6.2,(d.size||10)*this.sc()*1.56*this.unitRenderVisualScale(u));
   }
   
-  shouldUseVectorUnitArt(u){
-    return !!window.RallyVectorAssets?.[u?.type];
+  hasGrainArt(u){
+    return u?.type==='rice'||!!window.RallyVectorAssets?.[u?.type];
   }
   launchAmmoRecord(type){
     if(!LaunchRules.grain(type))return null;
@@ -1947,6 +1952,7 @@ class GLRenderer{
   }
   grainUnitRecord(type){
     const key="grain|"+type;let record=this.vectorUnitAssetCache.get(key);if(record)return record;
+    if(type==='rice'){record={compiled:this.riceSprites,ground:[0,145],sprite:true};this.vectorUnitAssetCache.set(key,record);return record}
     const source=window.RallyVectorAssets?.[type];if(!source)return null;
     const sockets=source.metadata.sockets,point=id=>{const s=sockets[id];if(!s)throw new Error(`Grain body is missing socket ${id}`);return s.point};
     record={compiled:source,ground:point("ground")};this.vectorUnitAssetCache.set(key,record);return record;
@@ -1972,13 +1978,19 @@ class GLRenderer{
     this.grainActorFrame++;
     const now=this.presentationNow(performance.now());let rank=0;
     for(const {kind,entity:u,world,depth} of entries){
-      if(kind!=="unit"||!this.shouldUseVectorUnitArt(u))continue;
+      if(kind!=="unit"||!this.hasGrainArt(u))continue;
       const record=this.grainUnitRecord(u.type);if(!record)continue;
       const grain=this.grainActor(u,record),actor=grain.actor,delta=this.renderTrackedDelta(u,"unit"),moving=Math.hypot(delta.x,delta.y)>.01;
       const model=this.renderState.model("unit",u.id,now),entity=model?.entity||u,renderTick=model?.tick??this.snapshot.tick,impact=LaunchImpactArt.unitPose(entity,renderTick,this.snapshot.tps||SIM_TPS);
       const work=impact.active?null:this.constructionWorkPose(entity,renderTick);
-      const clip=impact.active?"idle":work?.clip|| (u.attackFlash>0?"fire":u.hitFlash>0?"hit":moving?"walk":"idle");
-      if(actor.currentClip!==clip)actor.play(clip,0);
+      let clip=impact.active?"idle":work?.clip|| (u.attackFlash>0?"fire":u.hitFlash>0?"hit":moving?"walk":"idle"),restart=false;
+      if(record.sprite){
+        const attack=!!u.attackFlash,hit=!!u.hitFlash;
+        if(attack&&!grain.attackLatch){grain.attackUntil=now+425;restart=true}grain.attackLatch=attack;
+        if(hit&&!grain.hitLatch){grain.hitUntil=now+295;grain.attackUntil=0;restart=true}grain.hitLatch=hit;
+        clip=impact.active||work?.active?'idle':grain.hitUntil>now?'hit':grain.attackUntil>now?'fire':moving?'walk':'idle';
+      }
+      if(actor.currentClip!==clip||restart&&record.sprite&&(clip==='fire'||clip==='hit'))actor.play(clip,0);
       actor.seek(work?.active?0:now+(HashUtil.hash(u.id)%997)*7);
       actor.preparePose();
       // Budmori bodies are front-facing: no rotation, ground socket on the unit's ground point.
@@ -1988,7 +2000,7 @@ class GLRenderer{
       const cx=record.ground[0],cy=record.ground[1]-120;
       m[4]=p.x+(work?.offsetX??0)-m[0]*cx-m[2]*cy;m[5]=p.y+(work?.offsetY??0)+r*.55-120*scale-m[1]*cx-m[3]*cy;
       grain.depth=RangeUtil.clamp(depth,-.98,.98)-(++rank)*GRAIN_DEPTH_RANK_STEP;
-      grain.face=impact.expression||(u.hitFlash>0?"hurt":work?.clip||u.attackFlash>0?"attack":"neutral");grain.bodyDrawn=false;
+      grain.face=impact.expression||((record.sprite?clip==='hit':u.hitFlash>0)?"hurt":work?.clip||(record.sprite?clip==='fire':u.attackFlash>0)?"attack":"neutral");grain.bodyDrawn=false;
     }
     this.vectorContext.preparePoses();
   }
@@ -1997,17 +2009,20 @@ class GLRenderer{
   drawGrainBodies(entries){
     if(!this.passState.depthEnabled)return;
     const C=this.vectorContext,groups=this.grainBodyGroups;
-    for(const g of groups.values())g.length=0;
+    for(const g of groups.values())g.length=0;this.riceBodyGroup.length=0;
     for(const {kind,entity:u} of entries){
       if(kind!=="unit")continue;
       const grain=this.grainActors.get(u.id);
-      if(!grain||grain.frame!==this.grainActorFrame||!this.grainBodyOpaque(grain))continue;
+      if(!grain||grain.frame!==this.grainActorFrame)continue;
+      if(grain.compiled===this.riceSprites){this.riceBodyGroup.push(grain);continue}
+      if(!this.grainBodyOpaque(grain))continue;
       let g=groups.get(grain.compiled);if(!g)groups.set(grain.compiled,g=[]);g.push(grain);
     }
     C.depthTest=true;C.depthWrite=true;C.depthFunc=this.passState.depthFunc||"lequal";
     for(const g of groups.values())for(const grain of g){
       C.depth=grain.depth;C.drawVectorActor(grain.actor,{matrix:grain.matrix});grain.bodyDrawn=true;
     }
+    for(const grain of this.riceBodyGroup){this.riceSprites.drawBody(grain.actor,grain.matrix,grain.depth);grain.bodyDrawn=true}
     C.depth=0;C.depthTest=false;C.depthWrite=false;C.depthFunc="lequal";
   }
   grainBodyOpaque(grain){
@@ -2028,6 +2043,11 @@ class GLRenderer{
     if(this.frame.length){this.flushVectorMesh("frame-to-vector-switch");this.flush(this.frame,true);this.begin()}
     const C=this.vectorContext;
     C.depthTest=!!this.passState.depthEnabled;C.depthWrite=false;C.depthFunc=this.passState.depthFunc||"lequal";
+    if(grain.compiled===this.riceSprites){
+      if(!grain.bodyDrawn)this.riceSprites.drawBody(grain.actor,grain.matrix,grain.depth);
+      this.riceSprites.drawFace(grain.actor,grain.matrix,grain.depth-GRAIN_DEPTH_RANK_STEP/2,grain.face);
+      this.vectorAssetDrawnInstances=(this.vectorAssetDrawnInstances||0)+1;return;
+    }
     C.depth=grain.depth;
     if(!grain.bodyDrawn)C.drawVectorActor(grain.actor,{matrix:grain.matrix});
     C.depth=grain.depth-GRAIN_DEPTH_RANK_STEP/2;
@@ -2039,7 +2059,7 @@ class GLRenderer{
     let grain=this.grainActors.get(u.id);
     if(grain?.compiled!==record.compiled){
       grain?.actor.dispose();
-      grain={actor:RallyGamekit.createVectorActor(this.vectorContext,record.compiled,{clip:"idle",startedAtMs:0}),compiled:record.compiled,
+      grain={actor:record.sprite?this.riceSprites.createActor():RallyGamekit.createVectorActor(this.vectorContext,record.compiled,{clip:"idle",startedAtMs:0}),compiled:record.compiled,
         ground:record.ground,matrix:new Float64Array(6),depth:0,face:"neutral",bodyDrawn:false,frame:0};
       this.grainActors.set(u.id,grain);
     }
@@ -2365,7 +2385,7 @@ class GLRenderer{
     const entries=this.prepareWorldSpriteFrame(visibleUnits);this.prepareGrainPoses(entries);this.drawGrainBodies(entries);
     for(const entry of entries){
       const {kind,entity,world}=entry;this.renderEntity=entity;this.renderStage=kind;
-      const nextPainter=kind==="landingBundle"||(kind==="unit"&&this.shouldUseVectorUnitArt(entity))?"vector":"frame";
+      const nextPainter=kind==="landingBundle"||(kind==="unit"&&this.hasGrainArt(entity))?"vector":"frame";
       if(lastPainter&&nextPainter!==lastPainter){
         if(lastPainter==="vector")this.flushVectorMesh("vector-to-frame-painter-switch");
         else if(this.frame.length){this.flush(this.frame,true);this.begin()}

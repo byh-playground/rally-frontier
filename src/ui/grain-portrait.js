@@ -1,9 +1,9 @@
 import { RallyGamekit } from '../core/gamekit.js';
+import { riceSpritePortrait } from '../render/rice-sprite.js';
 
 const { drawFacePaths } = RallyGamekit;
 
-// Title and card portraits: the grain body SVG with its shared face drawn on top, as an image URL.
-// The body file is the same one the battlefield compiles; only the face is added here.
+// Title and card portraits use the same artwork as the battlefield.
 const PORTRAITS = new Map();
 
 export function grainPortrait(type, compiled, width = 160) {
@@ -15,6 +15,7 @@ export function grainPortrait(type, compiled, width = 160) {
 }
 
 async function renderPortrait(type, compiled, width) {
+    if (type === 'rice') return riceSpritePortrait(globalThis.RiceSpriteCanvas, width);
     const [VX, VY, VW, VH] = compiled.viewBox,
         SCALE = width / VW,
         BODY = new Image();
