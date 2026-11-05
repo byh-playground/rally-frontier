@@ -228,7 +228,17 @@ async function runRole(browser, url, humanRole) {
     await page.waitForTimeout(500);
     const middleCanvas=await page.locator('#glCanvas').screenshot();
     await page.locator('#replayTimeInput').fill(String(middle+5));
+    const beforeForwardSeek=await page.evaluate(()=>window.__netcodeE2E.ActiveViewState.renderer.renderState.revision);
     await page.locator('#replayTimeGoBtn').click();
+    assert.ok(await page.evaluate(()=>window.__netcodeE2E.ActiveViewState.renderer.renderState.revision)>beforeForwardSeek,'Forward seek resets the presentation timeline');
+    assert.equal(await page.locator('#launchHudTime').textContent(),`${Math.floor((middle+5)/60)}:${String((middle+5)%60).padStart(2,'0')}`,'HUD follows replay time');
+    await page.locator('#replaySpeed').selectOption('4');
+    assert.equal(await page.evaluate(()=>window.__netcodeE2E.ActiveViewState.renderer.renderState.stepMs),12.5,'4x playback scales the presentation clock');
+    await page.locator('#replayPlayPauseBtn').click();
+    const fastTick=await page.evaluate(()=>window.__netcodeE2E.ReplayPresentation.replayPlayer.sim.tick);
+    await page.waitForFunction(t=>window.__netcodeE2E.ReplayPresentation.replayPlayer.sim.tick>t+20,fastTick,{timeout:5000});
+    await page.locator('#replayPlayPauseBtn').click();
+    await page.locator('#replaySpeed').selectOption('1');
     await page.waitForTimeout(500);
     const laterCanvas=await page.locator('#glCanvas').screenshot();
     assert.notDeepEqual(laterCanvas,middleCanvas,'Replay canvas changes when seeking to another recorded time');
