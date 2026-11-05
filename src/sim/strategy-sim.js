@@ -1,6 +1,6 @@
 // The deterministic lockstep strategy simulation.
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
-import { Building, Projectile, TerrainQuery, Unit, VisionField } from './entities.js';
+import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './entities.js';
 import { StateContract, StateValue } from './components.js';
 import { RallyStateCodec } from '../session/game-session.js';
 import { LaunchRules } from './launch-rules.js';
@@ -610,10 +610,10 @@ class StrategySim{
     }
     return moved;
   }
-  visionSources(side){return VisionField.of(this,side,this)}
+  visionSources(side){return VisibilityPolicy.field(this,side,this)}
   isVisible(side,x,y,field){
     if(this._perfCollect)this._perfCollect.visibilityChecks++;
-    return field.visibleAt(x,y);
+    return field.visibleAt(x,y,this.terrainLevelAt(x,y));
   }
   canTargetUnit(attackerSide,target){
     return !!target&&target.alive!==false&&target.side!==attackerSide;
