@@ -100,7 +100,7 @@ class RenderStateStore{
         // the existing UI snapshot cadence, never by cloning the sim each frame.
         record={kind,id,generation:++this.generation,entity:value.toState?value.toState("view"):structuredClone(value),delta:{x:0,y:0}};
         this.records.set(key,record);
-      }else if((snap||value.retiredTick!=null||kind==="bundle")&&!value.toState)record.entity=structuredClone(value);
+      }else if(!value.toState)record.entity=value;
       const teleport=!!previous&&Math.hypot(value.x-record.x,value.y-record.y)>def.snapDistance*Math.max(1,tick-record.tick);
       record.delta.x=snap||teleport||!previous?0:value.x-record.x;record.delta.y=snap||teleport||!previous?0:value.y-record.y;
       record.x=value.x;record.y=value.y;record.tick=tick;record.live=true;seen.add(key);
@@ -889,7 +889,7 @@ class GLRenderer{
 
   presentationTargetIntervalMs(source=this.snapshot){
     const tps=Math.max(1,Number(source?.tps||this.snapshot?.tps||SIM_TPS)||SIM_TPS);
-    return 1000/tps;
+    return 1000/tps/(ReplayPresentation.replayPlayer?.speed||1);
   }
 
   updatePresentationTargets(source,snap=false){
@@ -3546,7 +3546,7 @@ class ReplayPresentation{
   renderer.cameraTop=renderer.clampCameraTop(y-vh/2);
   ActiveViewState.minimap?.draw();
 }
-  static renderReplaySnapshot(s){
+  static renderReplaySnapshot(s,{snapTargets=false}={}){
   if(!ReplayPresentation.replayPlayer)return;
   UiController.setUiScreen("replay");
   ActiveViewState.snap=s;
@@ -3557,7 +3557,8 @@ class ReplayPresentation{
   }
   ReplayPresentation.applyReplayPerspective();
   ActiveViewState.renderer.selectedBuildingId=null;
-  ActiveViewState.renderer.setSnapshot(s,{liveTargets:false,snapTargets:ActiveViewState.renderer.liveRenderTargets||s.tick<(ActiveViewState.renderer.snapshot?.tick??0)});ActiveViewState.minimap?.set(ActiveViewState.renderer,s);
+  ActiveViewState.renderer.setSnapshot(s,{liveTargets:false,snapTargets:snapTargets||ActiveViewState.renderer.liveRenderTargets||s.tick<(ActiveViewState.renderer.snapshot?.tick??0)});ActiveViewState.minimap?.set(ActiveViewState.renderer,s);
+  LaunchPresentation.render(s,ConnectionSideUtil.roleSide(ReplayPresentation.replayPlayer.orientationRole));
   audioSystem.processSnapshot(s,ActiveViewState.renderer);
   UiRegistry.refs.replayDock?.classList.remove("hidden");UiRegistry.refs.replayStats?.classList.remove("hidden");
   if(UiRegistry.refs.replayStats)UiRegistry.refs.replayStats.innerHTML=ReplayPresentation.replayStatsHtml(s,ReplayPresentation.replayPlayer.sim);

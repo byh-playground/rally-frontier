@@ -183,7 +183,7 @@ class ReplayPlayer{
     this.eventBuffer.length=0;
     this.acc=0;
     this.last=performance.now();
-    if(render){ActiveViewState.renderer?.resetFogTransition?.();this.publish()}
+    if(render){ActiveViewState.renderer?.resetFogTransition?.();this.publish({snapTargets:true})}
     return this.sim.tick;
   }
   stepOnce(){
@@ -196,18 +196,20 @@ class ReplayPlayer{
     if(winner||this.sim.tick>=this.endTick)this.playing=false;
     return true;
   }
-  publish(){
+  publish(options){
     if(!this.sim)return;
     const s=this.sim.snapshot();
     s.events=this.eventBuffer.splice(0);
-    ReplayPresentation.renderReplaySnapshot(s);
+    ReplayPresentation.renderReplaySnapshot(s,options);
   }
   setPlaying(v){
+    const resuming=!!v&&!this.playing;
     this.playing=!!v;
     this.acc=0;this.last=performance.now();
+    if(resuming)this.publish({snapTargets:true});
     ReplayPresentation.syncReplayControls();
   }
-  setSpeed(v){this.speed=RangeUtil.clamp(Number(v)||1,.5,4);this.acc=0;this.last=performance.now()}
+  setSpeed(v){this.speed=RangeUtil.clamp(Number(v)||1,.5,4);this.acc=0;this.last=performance.now();this.publish({snapTargets:true})}
   setViewMode(mode){
     this.viewMode=["host","guest","all"].includes(mode)?mode:"all";
     ReplayPresentation.applyReplayPerspective();
