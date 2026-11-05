@@ -22,6 +22,7 @@ import { NavigationGoal } from './sim/navigation.js';
 import { BattlefieldProjection, TerrainSurfaceAtlas, TerrainSurfaceProjection } from './sim/terrain.js';
 import { BACKGROUND_TICK_PULSE_MS } from './core/session-timing.js';
 import { RENDER_TRACKS } from './render/render-tracks.js';
+import { BuildingArt } from './render/building-art.js';
 import { CONFIG, LAUNCH_HOLD_ARM_MS, LAUNCH_HOLD_DRAG_PX, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode } from './core/config.js';
 import { BUILD_META } from './core/build-info.js';
 import { RallyGamekit, SIM_WORKER } from './core/gamekit.js';
@@ -260,32 +261,8 @@ const PROJECTILE_VISUAL_RENDER_FNS=Object.freeze({
   },
 });
 const BUILDING_VISUAL_RENDER_FNS=Object.freeze({
-  "base":(renderer,c)=>{const {x,y,r,own,teamCap,sc}=c;
-      const dark=own?[.09,.20,.36,1]:[.40,.09,.11,1];
-      const light=own?[.60,.82,1,1]:[1,.66,.64,1];
-
-      renderer.petalRing(x,y-r*.04,r*.52,8,teamCap,Math.PI/8,.82);
-      renderer.circle(x,y-r*.05,r*.50,dark,12);
-      renderer.circle(x,y-r*.10,r*.28,light,12);
-      renderer.circle(x,y-r*.10,r*.12,[.94,.98,1,1],10);
-
-      // short production ramp
-      renderer.poly([
-        [x-r*.34,y+r*.18],[x+r*.34,y+r*.18],
-        [x+r*.46,y+r*.62],[x-r*.46,y+r*.62]
-      ],[.27,.31,.34,1]);
-
-      for(let k=-2;k<=2;k++){
-        const sx=x+k*r*.12;
-        renderer.line(sx,y+r*.28,sx,y+r*.56,Math.max(1.2,2*sc),[.70,.76,.80,1]);
-      }
-    },
-  "outpost":(renderer,c)=>{const {x,y,r,teamCap,teamHi,shell}=c;
-      renderer.petalRing(x,y-r*.02,r*.46,6,teamCap,Math.PI/6,.78);
-      renderer.circle(x,y-r*.04,r*.42,shell,12);
-      renderer.circle(x,y-r*.05,r*.22,teamHi,10);
-      renderer.rect(x-r*.30,y+r*.18,r*.60,r*.34,[.30,.33,.34,1]);
-    },
+  "base":(renderer,{b})=>renderer.buildingArt.draw(b,renderer.cannonArtOptions(b)),
+  "outpost":(renderer,{b})=>renderer.buildingArt.draw(b,renderer.cannonArtOptions(b)),
 });
 class TerrainPresentation{
   static colors=Object.freeze({
@@ -614,7 +591,7 @@ class GLRenderer{
     };
     this.device=new RallyGamekit.WebGLDevice(canvas,this.webglAttrs);
     this.vectorContext=new RallyGamekit.VectorContext(this.device,{safeAlphaRunBatching:true});this.vectorContext.acquireMeshRenderer();this.grainFaces=new RallyGamekit.FaceOverlay(this.vectorContext,{faces:GRAIN_FACE_IDS});// 메시 통계가 첫 유닛 그리기 전에도 null이 아니도록 미리 만든다.
-    this.vectorUnitAssetCache=new Map();
+    this.vectorUnitAssetCache=new Map();this.buildingArt=new BuildingArt(this);
     // One actor per grain: a shared actor re-seeked per grain rewrites its pose row and splits the instanced batch.
     this.grainActors=new Map();this.grainActorFrame=0;this.grainBodyGroups=new Map();this.grainOpaqueCoverage=new Map();
     this._vectorUnitMatrix=new Float32Array(6);
@@ -977,7 +954,17 @@ class GLRenderer{
         }
       }
     }
-    return{x:planar.x,y:groundY+height,z:planar.y,groundY,motion,progress};
+    const position={x:planar.x,y:groundY+height,z:planar.y,groundY,motion,progress};
+    if(kind==="projectile"&&entity.payload&&Number.isFinite(progress)){
+      const dx=motionState.lockedAimX-motionState.launchX,dy=motionState.lockedAimY-motionState.launchY,length=Math.hypot(dx,dy);
+      if(length>.001){
+        const flip=this.orientationRole()==="guest"?-1:1,fade=Math.pow(Math.max(0,1-progress),2);
+        const {muzzle}=BuildingArt.pose({x:0,y:0,sc:1,aim:{dx:dx/length*flip,dy:dy/length*flip},fireAgeMs:0});
+        // Presentation-only launch socket offset fades to zero at the authoritative impact point.
+        position.x+=muzzle.x*flip*fade;position.y-=muzzle.y/BattlefieldProjection.heightScale*fade;
+      }
+    }
+    return position;
   }
   resolveGroundShadowPosition(entity,kind="unit"){
     const p=this.renderTrackedPosition(entity,kind);
@@ -1057,6 +1044,10 @@ class GLRenderer{
     if(snapTargets||!old)this.resetFogTransition();
     this.world=WorldContext.forState(s);
     this.snapshot=s;
+    this.buildingArt.prune(s.buildings);
+    // Aim/recoil is presentation-only. Never carry it across a map or backwards replay seek.
+    if(!old||old.mapDescriptor?.seed!==s.mapDescriptor?.seed||s.tick<old.tick)this.launchRecoil.clear();
+    for(const id of this.launchRecoil.keys())if(!s.buildings.some(b=>b.id===id&&b.alive!==false))this.launchRecoil.delete(id);
 
     if(liveTargets){
       // The sim bridge owns motion and lifetime. UI snapshots only refresh ordinary
@@ -1169,7 +1160,8 @@ class GLRenderer{
       }else if(e.type==="launchImpact"){
         this.launchImpactFx(e,snapshot,index);
       }else if(e.type==="launchOverheat"){
-        this.addClientFx("launchMuzzle",e,snapshot,index,{power:0,mode:"overheat",shot:0});
+        const b=snapshot.buildings.find(b=>b.id===e.cannonId),aim=b?this.cannonAim(b):{dx:0,dy:-1};
+        this.addClientFx("launchMuzzle",e,snapshot,index,{power:0,mode:"overheat",shot:0,cannonId:e.cannonId,aimDx:aim.dx,aimDy:aim.dy});
       }
       index++;
     }
@@ -1179,8 +1171,10 @@ class GLRenderer{
   launchFireFx(e,snapshot,index){
     const power=RangeUtil.clamp(Number(e.power)||0,0,1),mode=e.mode||"single",first=!(e.shot>0);
     const dx=Number(e.aimX)-e.x,dy=Number(e.aimY)-e.y,len=Math.hypot(dx,dy)||1;
-    this.launchRecoil.set(e.cannonId,{at:performance.now(),dx:dx/len,dy:dy/len,power});
-    if(mode!=="shotgun"||first)this.addClientFx("launchMuzzle",{...e,x2:e.aimX,y2:e.aimY},snapshot,index,{power,mode,shot:e.shot||0});
+    const eventTick=Number.isFinite(Number(e.presentationTick))?Number(e.presentationTick):snapshot.tick;
+    const age=Math.max(0,(snapshot.tick-eventTick)*1000/(snapshot.tps||SIM_TPS));
+    this.launchRecoil.set(e.cannonId,{at:this.presentationNow()-age,dx:dx/len,dy:dy/len,power});
+    if(mode!=="shotgun"||first)this.addClientFx("launchMuzzle",{...e,x2:e.aimX,y2:e.aimY},snapshot,index,{power,mode,shot:e.shot||0,cannonId:e.cannonId,aimDx:dx/len,aimDy:dy/len});
     if(mode==="shotgun"&&!first)return;
     const weight=(first?1:.55)*(mode==="shotgun"?1.25:1);
     this.triggerClientShake((1.2+3.8*power)*weight,110+150*power,HashUtil.hash(`${snapshot.tick}|fire|${index}`));
@@ -1192,13 +1186,29 @@ class GLRenderer{
     const shake=hits>0?.7+.9*peak:.5;
     this.triggerClientShake(shake,hits>0?130+70*(peak-1):80,HashUtil.hash(`${snapshot.tick}|blast|${index}`));
   }
-  // The cannon's kick: a quick snap back along its firing line that eases home, as a screen-space offset.
-  launchRecoilOffset(b,x,y,sc){
-    const k=this.launchRecoil.get(b.id);if(!k)return null;
-    const age=performance.now()-k.at;if(age>360){this.launchRecoil.delete(b.id);return null}
-    const ease=age<45?age/45:Math.pow(1-(age-45)/315,2),[x1,y1]=this.worldToPx(this.viewX(b.x+k.dx*100),this.viewY(b.y+k.dy*100));
-    const dx=x1-x,dy=y1-y,len=Math.hypot(dx,dy)||1,kick=ease*(5+8*k.power)*sc;
-    return{x:-dx/len*kick,y:-dy/len*kick};
+  // World-space aim remains outside the deterministic simulation and survives the short recoil clip.
+  cannonAim(b){
+    const hold=LaunchPresentation.hold;
+    if(!ReplayPresentation.replayPlayer&&hold?.cannonId===b.id&&this.isFriendlySide(b.side)){
+      const dx=hold.aimX-b.x,dy=hold.aimY-b.y,length=Math.hypot(dx,dy);
+      if(length>.001)return{dx:dx/length,dy:dy/length};
+    }
+    const shot=this.launchRecoil.get(b.id);
+    if(shot&&this.presentationNow()-shot.at<260)return{dx:shot.dx,dy:shot.dy};
+    // In-flight aim is recoverable from a snapshot, including a replay seek. Idle cannons face the enemy base.
+    const pods=this.snapshot.projectiles;
+    for(let i=pods.length-1;i>=0;i--){const p=pods[i];if(p.owner!==b.id||!p.payload)continue;
+      const dx=p.lockedAimX-p.launchX,dy=p.lockedAimY-p.launchY,length=Math.hypot(dx,dy);
+      if(length>.001)return{dx:dx/length,dy:dy/length};
+    }
+    const enemy=this.snapshot.buildings.find(v=>v.side===1-b.side&&v.alive!==false&&BuildingDefinition.isMainBase(v.type));
+    const dx=enemy?enemy.x-b.x:0,dy=enemy?enemy.y-b.y:(b.side===0?-1:1),length=Math.hypot(dx,dy)||1;
+    return{dx:dx/length,dy:dy/length};
+  }
+  cannonArtOptions(b,{aim=this.cannonAim(b),fireAgeMs,power}={}){
+    const [x,y]=this.worldToPx(this.viewX(b.x),this.viewY(b.y)),shot=this.launchRecoil.get(b.id),flip=this.orientationRole()==="guest"?-1:1;
+    return{x,y,sc:this.sc(),own:this.isFriendlySide(b.side),aim:{dx:aim.dx*flip,dy:aim.dy*flip},
+      fireAgeMs:fireAgeMs??(shot?Math.max(0,this.presentationNow()-shot.at):Infinity),power:power??shot?.power??0};
   }
   processFloatingEvents(snapshot){
     if(!snapshot||!this.fxCtx)return;
@@ -1456,10 +1466,12 @@ class GLRenderer{
         ring(x,y,(15+72*ease)*sc,3*sc,"#b98c54",.35*(1-t));
       }else if(fx.kind==="launchMuzzle"){
         // Muzzle flash on the barrel's end, then smoke that drifts up and spreads.
-        const power=Number(fx.power)||0,overheat=fx.mode==="overheat",size=(BuildingDefinition.get(BuildingDefinition.forRole("mainBase"))?.size||40)*sc;
-        let dx=0,dy=-1;
-        if(!overheat&&(fx.x2||fx.y2)){const p=this.worldToPx(this.viewX(fx.x2),this.viewY(fx.y2));const l=Math.hypot(p[0]-x,p[1]-y);if(l>.001){dx=(p[0]-x)/l;dy=(p[1]-y)/l}}
-        const mx=x+dx*size*.9,my=y+dy*size*.9;
+        const power=Number(fx.power)||0,overheat=fx.mode==="overheat";
+        const cannon={id:fx.cannonId,x:fx.x,y:fx.y,side:fx.side};
+        const pose=BuildingArt.pose(this.cannonArtOptions(cannon,{aim:{dx:fx.aimDx,dy:fx.aimDy},fireAgeMs:0,power}));
+        const {x:smokeX,y:smokeY}=pose.muzzle,{x:dx,y:dy}=pose.muzzleDir;
+        const flash=BuildingArt.pose(this.cannonArtOptions(cannon,{aim:{dx:fx.aimDx,dy:fx.aimDy},fireAgeMs:age,power}));
+        const {x:mx,y:my}=flash.muzzle;
         if(!overheat&&t<.2){
           const k=1-t/.2,len=(46+62*power)*sc*(fx.shot>0?.75:1),wide=fx.mode==="shotgun"?[-.5,-.25,0,.25,.5]:[-.22,0,.22];
           ctx.globalAlpha=k;ctx.lineCap="round";
@@ -1475,7 +1487,7 @@ class GLRenderer{
         for(let i=0;i<(overheat?9:8);i++){
           const h=HashUtil.hash(`${fx.seed}|smoke|${i}`),a=(h%4096)/4096*Math.PI*2,spread=.35+((h>>>12)%1000)/1600;
           const rise=(26+52*t)*sc*spread,out=(16+40*ease)*sc*spread;
-          dot(mx+dx*out*.8+Math.cos(a)*out*.6,my+dy*out*.8-rise*.5+Math.sin(a)*out*.3,(9+15*ease)*sc*(.6+spread*.5),smoke,Math.max(0,.6*(1-t)));
+          dot(smokeX+dx*out*.8+Math.cos(a)*out*.6,smokeY+dy*out*.8-rise*.5+Math.sin(a)*out*.3,(9+15*ease)*sc*(.6+spread*.5),smoke,Math.max(0,.6*(1-t)));
         }
       }else if(fx.kind==="launchBlast"){
         // Landing: shock ring the size of the blast, dust thrown outward and, near the middle, a hard white flash.
@@ -1754,42 +1766,12 @@ class GLRenderer{
     if(BuildingDefinition.get(b.type)?.isTerrainBarrier)return TerrainPresentation.drawBarrier(this,b);
     const own=this.isFriendlySide(b.side);
     if(!own&&!this.visibleRaw(b.x,b.y))return;
-    let[x,y]=this.worldToPx(this.viewX(b.x),this.viewY(b.y));const sc=this.sc(),d=BuildingDefinition.get(b.type);
-    const kick=this.launchRecoilOffset(b,x,y,sc);if(kick){x+=kick.x;y+=kick.y}
-    const r=d.size*sc;
-    const shell=[.12,.16,.20,1];
-    const stone=[.72,.74,.73,1];
-    const teamCap=own?[.19,.48,.94,1]:[.94,.27,.27,1];
-    const teamHi=own?[.57,.78,1,1]:[1,.62,.60,1];
-
-    // Shared florr-like building foundation: chunky, rounded, readable.
-    this.circle(x+2*sc,y+r*.55,r*.94,[.04,.07,.08,.18],12);
-    this.poly([
-      [x-r*.78,y-r*.40],[x-r*.48,y-r*.70],
-      [x+r*.48,y-r*.70],[x+r*.78,y-r*.40],
-      [x+r*.82,y+r*.42],[x+r*.50,y+r*.70],
-      [x-r*.50,y+r*.70],[x-r*.82,y+r*.42]
-    ],shell);
-    this.circle(x,y+r*.02,r*.63,stone,12);
-    this.circle(x,y-r*.05,r*.48,teamCap,12);
-    this.circle(x-r*.14,y-r*.20,r*.16,teamHi,10);
+    const [x,groundY]=this.worldToPx(this.viewX(b.x),this.viewY(b.y)),sc=this.sc(),d=BuildingDefinition.get(b.type),y=groundY-10*sc;
     const buildingVisual=BUILDING_VISUAL_RENDER_FNS[d.visualCategory];
     if(!buildingVisual)throw new Error(`Missing building visual renderer for ${b.type}`);
-    buildingVisual(this,{b,x,y,r,own,teamCap,teamHi,shell,stone,sc,d});
-
-
-    // Shared faction pennant gives every military/economy building the same family language.
-    if(d.showsFactionPennant){
-      const flagX=x+r*.38;
-      const flagTop=y-r*.92;
-      this.line(flagX,y-r*.36,flagX,flagTop,Math.max(1.2,2.1*sc),[.16,.20,.23,1]);
-      this.poly([
-        [flagX,flagTop],
-        [flagX+r*.38,flagTop+r*.10],
-        [flagX,flagTop+r*.26]
-      ],teamCap);
-    }
-
+    buildingVisual(this,{b});
+    // The art owns its base and flag. Selection follows the visual footprint, never the collision radius.
+    const r=40*sc;
     if(own&&this.selectedBuildingId===b.id){
       const rr=r*1.28;
       this.circle(x,y,rr,[.25,.88,.57,.18],24);
