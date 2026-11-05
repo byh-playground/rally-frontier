@@ -71,6 +71,8 @@ button:disabled{cursor:default;opacity:.5}
 .launch-hand{display:flex;flex-direction:column;gap:8px;padding:8px 10px calc(14px + var(--safe-bottom));background:var(--tray)}
 .launch-economy{display:flex;align-items:center;gap:10px}
 .launch-wallet{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.launch-wallet-hints{display:flex;align-items:center;justify-content:space-between;gap:3px;flex-wrap:wrap}
+.launch-reach{font-size:10px;color:#cde4ff;font-weight:800}
 .launch-income{font-size:11px;font-weight:800;color:#d5e9d8;text-align:center}
 .launch-range-btn{min-height:48px;min-width:148px;padding:5px 10px;border:1.5px solid var(--gold);border-radius:10px;background:#344535;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
 .launch-range-btn b{font-size:12px}.launch-range-btn span{font-size:12px;color:var(--gold);font-weight:800}

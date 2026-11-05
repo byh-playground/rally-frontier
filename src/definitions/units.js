@@ -4,9 +4,9 @@ import { FP } from '../core/config.js';
 
 class UnitDefinition{
   static all={
-  rice:{requiresContactTerrain:true,name:"쌀",hp:25,atk:5,range:25,speed:75,cooldownMs:1000,size:10,sizeClass:"light",role:"bruiser",attackVisual:{sourceMotion:"slash",travel:"none",impact:"light"},sight:275},
-  soybean:{requiresContactTerrain:true,name:"콩",mass:225,hp:75,atk:10,range:25,speed:50,cooldownMs:1000,size:10,sizeClass:"medium",role:"bruiser",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:275},
-  redbean:{requiresContactTerrain:true,name:"팥",hp:50,atk:15,range:25,speed:50,cooldownMs:1000,size:10,sizeClass:"light",role:"bruiser",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:275},
+  rice:{requiresContactTerrain:true,construction:{range:1},name:"쌀",hp:25,atk:5,range:25,speed:75,cooldownMs:1000,size:10,sizeClass:"light",role:"bruiser",attackVisual:{sourceMotion:"slash",travel:"none",impact:"light"},sight:275},
+  soybean:{requiresContactTerrain:true,construction:{range:1},name:"콩",mass:225,hp:75,atk:10,range:25,speed:50,cooldownMs:1000,size:10,sizeClass:"medium",role:"bruiser",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:275},
+  redbean:{requiresContactTerrain:true,construction:{range:1},name:"팥",hp:50,atk:15,range:25,speed:50,cooldownMs:1000,size:10,sizeClass:"light",role:"bruiser",attackVisual:{sourceMotion:"smash",travel:"none",impact:"light"},sight:275},
 };
   static get(type){return this.all[type]||null}
   static damageClass(type){

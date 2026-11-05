@@ -1173,6 +1173,10 @@ class GLRenderer{
       }else if(e.type==="buildingDeath"){
         this.addClientFx("buildingBurst",e,snapshot,index);
         this.triggerClientShake(3.5,180,HashUtil.hash(`${snapshot.tick}|building|${index}`));
+      }else if(e.type==="constructionHit"){
+        this.addClientFx("constructionHit",{...e,x:e.contactX??e.x,y:e.contactY??e.y},snapshot,index);
+        const source=(snapshot.units||[]).find(u=>u.id===e.sourceId&&u.alive!==false);
+        if(source)this.addClientFx("meleeSourceMotion",{...e,x:source.x,y:source.y,x2:e.contactX??e.x,y2:e.contactY??e.y},snapshot,index,{motion:AttackPresentationDefinition.forSource(e.sourceType).sourceMotion||"smash"});
       }else if(e.type==="launchFire"){
         this.launchFireFx(e,snapshot,index);
       }else if(e.type==="launchImpact"){
@@ -1230,7 +1234,9 @@ class GLRenderer{
   }
   cannonArtOptions(b,{aim=this.cannonAim(b),fireAgeMs,power}={}){
     const [x,y]=this.worldToPx(this.viewX(b.x),this.viewY(b.y)),shot=this.launchRecoil.get(b.id),flip=this.orientationRole()==="guest"?-1:1;
-    return{x,y,sc:this.sc(),own:this.isFriendlySide(b.side),aim:{dx:aim.dx*flip,dy:aim.dy*flip},
+    const now=this.presentationNow(),workHit=this.combatFx.findLast(fx=>fx.kind==="constructionHit"&&fx.targetId===b.id&&now>=fx.start&&now-fx.start<220);
+    const compression=workHit?Math.sin((now-workHit.start)/220*Math.PI)*.03:0;
+    return{x,y:y+compression*10*this.sc(),sc:this.sc()*(1-compression),own:this.isFriendlySide(b.side),aim:{dx:aim.dx*flip,dy:aim.dy*flip},
       fireAgeMs:fireAgeMs??(shot?Math.max(0,this.presentationNow()-shot.at):Infinity),power:power??shot?.power??0};
   }
   processFloatingEvents(snapshot){
@@ -1292,11 +1298,13 @@ class GLRenderer{
       const text=`${cp.label||cp.lane} · ${owner}`,labelY=y-Math.max(50,64*sc),lineGap=Math.max(14,15*sc);
       ctx.strokeText(text,x,labelY);ctx.fillStyle="#fff";ctx.fillText(text,x,labelY);
       ctx.font=`800 ${Math.max(10,9*sc)}px system-ui,sans-serif`;
+      const workers=visibleConstruction?(this.snapshot.units||[]).filter(u=>u.alive!==false&&u.constructionWork?.targetId===outpost.id&&(this.isFriendlySide(u.side)||this.visibleRaw(u.x,u.y))):[];
+      const workState=!visibleConstruction?"":!workers.length?(outpost.side===side?"작업자 필요":"작업자 미확인"):workers.every(u=>u.constructionWork.phase==="waiting")?"자원 대기":workers.every(u=>u.constructionWork.phase==="approach")?`${workers.length}명 접근 중`:`${workers.length}명 작업 중`;
       const guide=visibleConstruction
-        ? `건설 ${construction.invested}/${LaunchRules.captureCost} ◆ · ${this.snapshot.wallet?.[outpost.side]>=1?"초당 1원 투자":"자원 대기"}`
+        ? `건설 ${construction.invested}/${LaunchRules.captureCost} ◆ · ${workState}`
         : cp.owner!=null
           ? `인컴 +${LaunchRules.captureIncomePerSecond}/초 · 자동 방어`
-          : locked?"연결 전술 오브젝트 처치 필요":`병력이 진입하면 자동 건설 · ${LaunchRules.captureCost}원 / ${LaunchRules.captureCost*LaunchRules.capturePaymentMs/1000}초`;
+          : locked?"연결 전술 오브젝트 처치 필요":`병력이 직접 건설 · ${LaunchRules.captureCost}원 / 1명 ${LaunchRules.captureCost*LaunchRules.captureWorkMs/1000}초`;
       ctx.strokeText(guide,x,labelY+lineGap);ctx.fillStyle=cp.owner===side||visibleConstruction&&outpost.side===side?"#cfe6ff":"#fff3b0";ctx.fillText(guide,x,labelY+lineGap);
       if(visibleConstruction){
         const ratio=construction.invested/LaunchRules.captureCost,w=Math.max(60,76*sc),h=Math.max(4,5*sc),barY=labelY+lineGap+10;
@@ -1385,6 +1393,7 @@ class GLRenderer{
       const age=now-fx.start;
       if(age<0){this.combatFx[write++]=fx;continue}
       const life=
+        fx.kind==="constructionHit"?220:
         fx.kind==="hitscanTravel"?180:
         fx.kind==="buildingBurst"?620:
         fx.kind==="launchMuzzle"?900:
@@ -1491,6 +1500,9 @@ class GLRenderer{
         burst(fx,x,y,t,13,"#6a6259",72,4.8,.48);
         burst(fx,x,y,t,7,"#d2aa63",58,3.3,.52);
         ring(x,y,(15+72*ease)*sc,3*sc,"#b98c54",.35*(1-t));
+      }else if(fx.kind==="constructionHit"){
+        burst(fx,x,y,t,4,"#e7bd75",20,1.8,.5);
+        ring(x,y,(4+8*ease)*sc,Math.max(1,1.5*sc),"#f2d39a",.5*(1-t));
       }else if(fx.kind==="hitscanTravel"){
         const source={id:fx.sourceId,x:fx.x,y:fx.y,side:fx.side};
         const pose=BuildingArt.pose(this.cannonArtOptions(source,{aim:{dx:fx.aimDx,dy:fx.aimDy},fireAgeMs:age,power:0}));
@@ -1796,6 +1808,17 @@ class GLRenderer{
     TerrainPresentation.drawRiverSurfaces(this,mapDesc,true);
     TerrainPresentation.drawBridges(this,terrain,true);
   }
+  drawConstructionScaffold(building){
+    const radius=BuildingDefinition.get(building.type).size,dirs=this.geometryTemplates.outlineCircle(6),points=[];
+    const sc=this.sc();
+    for(let i=0;i<6;i++)points.push(this.worldToPx(this.viewX(building.x+dirs[i*2]*radius),this.viewY(building.y+dirs[i*2+1]*radius)));
+    this.poly(points,[.51,.36,.18,.18]);
+    for(let i=0;i<6;i++){
+      const a=points[i],b=points[(i+1)%6];
+      this.line(a[0],a[1],b[0],b[1],Math.max(1.5,5*sc),[.57,.39,.19,1]);
+      this.line(a[0],a[1]-Math.max(2,7*sc),a[0],a[1]+2*sc,Math.max(1.5,3*sc),[.81,.64,.35,1]);
+    }
+  }
   drawBuilding(b){
     if(BuildingDefinition.get(b.type)?.isTerrainBarrier)return TerrainPresentation.drawBarrier(this,b);
     const own=this.isFriendlySide(b.side);
@@ -1803,6 +1826,7 @@ class GLRenderer{
     const [x,groundY]=this.worldToPx(this.viewX(b.x),this.viewY(b.y)),sc=this.sc(),d=BuildingDefinition.get(b.type),y=groundY-10*sc;
     const buildingVisual=BUILDING_VISUAL_RENDER_FNS[d.visualCategory];
     if(!buildingVisual)throw new Error(`Missing building visual renderer for ${b.type}`);
+    if(b.construction)this.drawConstructionScaffold(b);
     buildingVisual(this,{b});
     // The art owns its base and flag. Selection follows the visual footprint, never the collision radius.
     const r=40*sc;
@@ -1869,6 +1893,16 @@ class GLRenderer{
   // Poses every visible grain before any is drawn, so the context evaluates them in one pass
   // (budmori farm-renderer does the same). Entries arrive far to near; each grain's depth is its
   // world depth pulled nearer by its rank, so equal world depths still keep painter order.
+  constructionWorkPose(unit,renderTick){
+    const work=unit?.constructionWork,target=work&&(this.snapshot.buildings||[]).find(b=>b.id===work.targetId&&b.alive!==false);
+    if(!target)return null;
+    const phase=work.phase,progress=RangeUtil.clamp((renderTick-work.phaseStartedAtTick)/Math.max(1,(work.phaseEndsAtTick??work.phaseStartedAtTick)-work.phaseStartedAtTick),0,1);
+    const to=this.worldToPx(this.viewX(target.x),this.viewY(target.y)),at=this.projectEntityScreen(unit,"unit");
+    const dx=to[0]-at.x,dy=to[1]-at.y,facing=dx<0?-1:1;
+    const lean=phase==="prepare"?-.14*progress:phase==="strike"?-.14+.36*progress:phase==="recover"?.22*(1-progress):0;
+    return{phase,progress,facing,rotation:lean*facing,
+      clip:phase==="prepare"?"windup":phase==="strike"?"fire":phase==="recover"?"recover":null};
+  }
   prepareGrainPoses(entries){
     this.grainActorFrame++;
     const now=this.presentationNow(performance.now());let rank=0;
@@ -1876,19 +1910,20 @@ class GLRenderer{
       if(kind!=="unit"||!this.shouldUseVectorUnitArt(u))continue;
       const record=this.grainUnitRecord(u.type);if(!record)continue;
       const grain=this.grainActor(u,record),actor=grain.actor,delta=this.renderTrackedDelta(u,"unit"),moving=Math.hypot(delta.x,delta.y)>.01;
-      const model=this.renderState.model("unit",u.id,now),impact=LaunchImpactArt.unitPose(model?.entity||u,model?.tick??this.snapshot.tick,this.snapshot.tps||SIM_TPS);
-      const clip=impact.active?"idle":u.attackFlash>0?"fire":u.hitFlash>0?"hit":moving?"walk":"idle";
+      const model=this.renderState.model("unit",u.id,now),entity=model?.entity||u,renderTick=model?.tick??this.snapshot.tick,impact=LaunchImpactArt.unitPose(entity,renderTick,this.snapshot.tps||SIM_TPS);
+      const work=impact.active?null:this.constructionWorkPose(entity,renderTick);
+      const clip=impact.active?"idle":work?.clip|| (u.attackFlash>0?"fire":u.hitFlash>0?"hit":moving?"walk":"idle");
       if(actor.currentClip!==clip)actor.play(clip,0);
-      actor.seek(now+(HashUtil.hash(u.id)%997)*7);
+      actor.seek(work?.clip?work.progress*(record.compiled.metadata.clips[clip]?.durationMs||1):now+(HashUtil.hash(u.id)%997)*7);
       actor.preparePose();
       // Budmori bodies are front-facing: no rotation, ground socket on the unit's ground point.
       const p=this.projectRenderWorldPosition(world),r=this.unitRenderRadius(u),scale=r*2.7/260*(UnitVisualDefinition.get(u.type)?.visualScale||1),m=grain.matrix;
-      const angle=impact.rotation*(this.orientationRole()==="guest"?-1:1),cos=Math.cos(angle),sin=Math.sin(angle),sx=scale*impact.scaleX,sy=scale*impact.scaleY;
+      const angle=work?.rotation??impact.rotation*(this.orientationRole()==="guest"?-1:1),cos=Math.cos(angle),sin=Math.sin(angle),sx=scale*impact.scaleX*(work?.facing??1),sy=scale*impact.scaleY;
       m[0]=cos*sx;m[1]=sin*sx;m[2]=-sin*sy;m[3]=cos*sy;
       const cx=record.ground[0],cy=record.ground[1]-120;
       m[4]=p.x-m[0]*cx-m[2]*cy;m[5]=p.y+r*.55-120*scale-m[1]*cx-m[3]*cy;
       grain.depth=RangeUtil.clamp(depth,-.98,.98)-(++rank)*GRAIN_DEPTH_RANK_STEP;
-      grain.face=impact.expression||(u.hitFlash>0?"hurt":u.attackFlash>0?"attack":"neutral");grain.bodyDrawn=false;
+      grain.face=impact.expression||(u.hitFlash>0?"hurt":work?.clip||u.attackFlash>0?"attack":"neutral");grain.bodyDrawn=false;
     }
     this.vectorContext.preparePoses();
   }
@@ -2297,9 +2332,30 @@ class GLRenderer{
     this.drawFogLandmarks();this.flush();
     this.begin();this.drawLaunchOverlay();this.flush();
   }
+  // Range is measured in simulation XY. Every contour point is projected from its own terrain height.
+  drawLaunchRange(cannon,type,level,active=false){
+    const reach=LaunchRules.maxReachOf(type,level),segments=Math.max(64,Math.ceil(Math.PI*2*reach/48));
+    const directions=this.geometryTemplates.outlineCircle(segments),color=active?[1,.86,.36,.8]:[.63,.84,1,.24];
+    const width=Math.max(1,(active?2:1.2)*this.sc()),atlas=this.world.terrain.surfaces;
+    for(let i=0;i<segments;i++){
+      const j=(i+1)%segments,x0=cannon.x+directions[i*2]*reach,y0=cannon.y+directions[i*2+1]*reach,x1=cannon.x+directions[j*2]*reach,y1=cannon.y+directions[j*2+1]*reach;
+      if(x0<0||y0<0||x0>this.world.width||y0>this.world.height||x1<0||y1<0||x1>this.world.width||y1>this.world.height)continue;
+      const surface0=atlas.sample(x0,y0),surface1=atlas.sample(x1,y1),h0=surface0.elevation,h1=surface1.elevation;
+      // Do not draw a diagonal through a cliff face between two different floor heights.
+      if(!surface0.ramp&&!surface1.ramp&&h0!==h1)continue;
+      const a=this.worldToPx(this.viewX(x0),this.viewY(y0),h0),b=this.worldToPx(this.viewX(x1),this.viewY(y1),h1);
+      this.line(a[0],a[1],b[0],b[1],width,color);
+    }
+  }
   drawLaunchOverlay(){
-    const s=this.snapshot,side=ConnectionSideUtil.roleSide(this.orientationRole()),sc=this.sc(),now=performance.now();
+    const s=this.snapshot,side=this.mySide(),sc=this.sc(),now=performance.now();
     const main=BuildingDefinition.forRole("mainBase"),outpost=BuildingDefinition.forRole("outpost"),reloadTicks=SimulationTiming.msToTicks(LaunchRules.reloadMs,s.tps||SimulationTiming.tps());
+    const hold=LaunchPresentation.hold,card=hold?.card||LaunchPresentation.card||LaunchRules.deck[0],level=s.launchRangeLevel?.[side]??0;
+    // Friendly completed cannons show the selected payload's maximum launch reach.
+    for(const b of s.buildings||[]){
+      if(b.side!==side||b.alive===false||b.construction||(b.type!==main&&b.type!==outpost))continue;
+      this.drawLaunchRange(b,card,level,hold?.cannonId===b.id);
+    }
     // Overheated cannons glow red; reloading ones show a thin ring.
     for(const b of s.buildings||[]){
       if(b.side!==side||b.alive===false||b.construction||(b.type!==main&&b.type!==outpost))continue;
@@ -2307,7 +2363,6 @@ class GLRenderer{
       const [x,y]=this.worldToPx(this.viewX(b.x),this.viewY(b.y)),r=Math.max(18,((BuildingDefinition.get(b.type)?.size||40)+10)*sc),hot=wait>reloadTicks;
       this.outlineCircle(x,y,r,Math.max(2,3*sc),hot?[1,.3,.2,.5+.4*(Math.floor(now/160)%2)]:[.92,.92,.92,.45],32);
     }
-    const hold=LaunchPresentation.hold;
     if(hold){
       const [cx,cy]=this.worldToPx(this.viewX(hold.cannonX),this.viewY(hold.cannonY)),[ax,ay]=this.worldToPx(this.viewX(hold.aimX),this.viewY(hold.aimY));
       const held=now-hold.armedAt,power=LaunchRules.power(held),burnt=LaunchRules.overheated(held),full=power>=1;
@@ -2969,7 +3024,7 @@ UiRegistry.refs.disconnectGate=DomUtil.byId("disconnectGate");UiRegistry.refs.di
 
 UiRegistry.refs.launchHand=DomUtil.byId("launchHand");UiRegistry.refs.launchCards=DomUtil.byId("launchCards");
 UiRegistry.refs.launchEnergyFill=DomUtil.byId("launchEnergyFill");UiRegistry.refs.launchEnergyText=DomUtil.byId("launchEnergyText");
-UiRegistry.refs.launchIncomeText=DomUtil.byId("launchIncomeText");UiRegistry.refs.launchRangeBtn=DomUtil.byId("launchRangeBtn");UiRegistry.refs.launchRangeText=DomUtil.byId("launchRangeText");UiRegistry.refs.launchRangeCost=DomUtil.byId("launchRangeCost");
+UiRegistry.refs.launchIncomeText=DomUtil.byId("launchIncomeText");UiRegistry.refs.launchReachText=DomUtil.byId("launchReachText");UiRegistry.refs.launchRangeBtn=DomUtil.byId("launchRangeBtn");UiRegistry.refs.launchRangeText=DomUtil.byId("launchRangeText");UiRegistry.refs.launchRangeCost=DomUtil.byId("launchRangeCost");
 UiRegistry.refs.launchRangeBtn?.addEventListener("click",()=>LaunchPresentation.upgradeRange());
 UiRegistry.refs.launchCards?.addEventListener("click",e=>{const b=e.target.closest("[data-launch-card]");if(b)LaunchPresentation.selectCard(b.dataset.launchCard)});
 
@@ -4333,6 +4388,7 @@ class LaunchPresentation{
     UiRegistry.refs.launchEnergyText.textContent=`◆ ${wallet} / ${LaunchRules.walletCap}`;
     const level=s.launchRangeLevel?.[side]??0,cost=LaunchRules.upgradeCost(level),maxed=cost==null;
     UiRegistry.refs.launchIncomeText.textContent=`+${LaunchRules.incomePerSecondFor(s.capturePoints||[],side)}/초`;
+    UiRegistry.refs.launchReachText.textContent=`${UnitDefinition.get(this.card)?.name||this.card} 최대 발사 ${LaunchRules.maxReachOf(this.card,level).toLocaleString("ko-KR")}`;
     UiRegistry.refs.launchRangeText.textContent=maxed?`사거리 ×${LaunchRules.rangeMultiplier(level)} · 최대`:`사거리 ×${LaunchRules.rangeMultiplier(level)} → ×${LaunchRules.rangeMultiplier(level+1)}`;
     UiRegistry.refs.launchRangeCost.textContent=maxed?"강화 완료":`강화 ◆ ${cost}`;
     UiRegistry.refs.launchRangeBtn.disabled=maxed||wallet<cost||!!ReplayPresentation.replayPlayer;
@@ -4406,7 +4462,7 @@ class LaunchPresentation{
     r.cameraTop=r.clampCameraTop(camera.camera.y-halfH);
     // Canvas pixels to the label's CSS pixels, just above the ring.
     const [lx,ly]=r.worldToPx(vx,vy),k=r.canvas.clientWidth/Math.max(1,r.canvas.width),splash=(LaunchRules.grain(hold.card)?.splash||120)*r.sc();
-    this.labelShown=true;LaunchScreens.renderAimLabel({x:lx*k,y:(ly-splash)*k-6},hold.card);
+    this.labelShown=true;LaunchScreens.renderAimLabel({x:lx*k,y:(ly-splash)*k-6},hold.card,LaunchRules.maxReachOf(hold.card,ActiveViewState.snap?.launchRangeLevel?.[hold.side]??0));
   }
   static cancel(){this.hold=null}
   static release(a){

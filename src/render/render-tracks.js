@@ -9,7 +9,7 @@ class UnitRenderObject extends RenderField{
   static renderSchema={tick:RenderField.LINEAR,"entity.impactMotion.heightFP":RenderField.LINEAR,
     ...Object.fromEntries(["kind","startTick","endTick","recoverUntilTick","vzFP","vxFP","vyFP","originX","originY","sourceId"].map(k=>["entity.impactMotion."+k,RenderField.STEP])),"delta.x":RenderField.STEP,"delta.y":RenderField.STEP,
     "entity.x":RenderField.POSITION_X,"entity.y":RenderField.POSITION_Y,
-    ...Object.fromEntries(["target","attackFlash","combat.attackArcTargetId","combat.attackArcUntilTick","combat.attackWindupUntil","combat.cooldownUntil"].map(k=>["entity."+k,RenderField.STEP]))};
+    ...Object.fromEntries(["target","attackFlash","combat.attackArcTargetId","combat.attackArcUntilTick","combat.attackWindupUntil","combat.cooldownUntil","constructionWork.targetId","constructionWork.phase","constructionWork.phaseStartedAtTick","constructionWork.phaseEndsAtTick","constructionWork.cycleStartedAtTick","constructionWork.nextHitTick","constructionWork.lastHitTick"].map(k=>["entity."+k,RenderField.STEP]))};
 }
 class ProjectileRenderObject extends RenderField{
   static renderPath={x:"entity.x",y:"entity.y",durationMs:250,maxPoints:32};

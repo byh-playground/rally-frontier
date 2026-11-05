@@ -9,7 +9,8 @@ class LaunchRules{
   static overheatMs=2000;static reloadMs=400;static speed=750;
   static landingMarkMs=1500;static captureHoldRadius=400;
   static rangeMultipliers=Object.freeze([1,2,3]);static rangeUpgradeCosts=Object.freeze([50,75]);
-  static captureCost=15;static capturePaymentMs=1000;static captureInitialHpRatio=.1;static captureIncomePerSecond=1;
+  static captureCost=15;static captureWorkMs=1000;static captureInitialHpRatio=.1;static captureIncomePerSecond=1;
+  static captureWork=Object.freeze({strikeStartRatio:.75,recoverEndRatio:.25});
   static rangeMultiplier(level=0){return this.rangeMultipliers[level]??this.rangeMultipliers[0]}
   static upgradeCost(level){return this.rangeUpgradeCosts[level]??null}
   static incomePerSecondFor(capturePoints,side){return this.incomePerSecond+capturePoints.reduce((n,p)=>n+(p.owner===side?this.captureIncomePerSecond:0),0)}

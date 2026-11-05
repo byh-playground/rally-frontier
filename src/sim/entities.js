@@ -14,7 +14,7 @@ import { RallyGamekit } from '../core/gamekit.js';
 const { VisionField, pointInSimplePolygon, pointPolylineDistance } = RallyGamekit;
 
 class Unit{
-  static stateContract=new StateContract({hitFlash:0,attackFlash:0,target:null,impactMotion:null},{
+  static stateContract=new StateContract({hitFlash:0,attackFlash:0,target:null,impactMotion:null,constructionWork:null},{
     presentation:["hitFlash","attackFlash"],
     derived:["collisionIntentTick","collisionIntentTx","collisionIntentTy","collisionMoveTick","collisionMoveStartFx","collisionMoveStartFy"],
     children:{status:StatusComponent.stateContract,movement:MovementComponent.stateContract,combat:CombatComponent.stateContract}

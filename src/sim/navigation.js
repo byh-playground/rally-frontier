@@ -97,11 +97,14 @@ class InteractionGeometry{
   }
   static requiresTerrainLine(source,kind,extra=0){
     const st=typeof source==='string'?source:source?.type,d=UnitDefinition.get(st)||{};
-    return kind==='attack'&&!d.projectile&&Number(extra)<=100&&d.requiresContactTerrain===true;
+    return kind==='construction'||kind==='attack'&&!d.projectile&&Number(extra)<=100&&d.requiresContactTerrain===true;
   }
   static reach(source,target,kind,extra=0){
     if(kind==='building-clearance')return this.buildingClearance(source,target);
     if(kind==='combat-contact')return this.contact(source,target);
+    // Construction reaches the physical building envelope with only its
+    // configured tool tolerance; combat contact scaling stays attack-only.
+    if(kind==='construction')return this.buildingClearance(source,target)+Math.max(0,Number(extra)||0);
     if(kind==='attack'){
       const nominal=this.contact(source,target)+Math.max(0,Number(extra)||0);
       return BuildingDefinition.get(target?.type)?Math.max(nominal,this.buildingClearance(source,target)):nominal;
