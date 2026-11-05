@@ -563,7 +563,7 @@ class StrategySim{
     let tx=goal.x,ty=goal.y;
     // Post-attack recovery is movement-only: attacks/cooldowns/wind-ups continue
     // normally while voluntary locomotion is temporarily locked.
-    if(u.impactMotion||u.combat.moveRecoveryActive(this))return false;
+    if((u.impactMotion&&this.tick<u.impactMotion.recoverUntilTick)||u.combat.moveRecoveryActive(this))return false;
 
     const waypoint=this.navigation.nextPoint(u,goal);
     if(!waypoint||Math.hypot(waypoint.x-u.x,waypoint.y-u.y)<.001)return false;
@@ -869,7 +869,7 @@ class StrategySim{
   updateCombat(u,vision){
     const d=UnitDefinition.get(u.type);
     this.tickAttackTimers(u);
-    if(u.impactMotion)return null;
+    if(u.impactMotion&&this.tick<u.impactMotion.recoverUntilTick)return null;
 
     let found=null;
     if((u.combat.attackWindupUntil||0)>0){
@@ -1018,6 +1018,7 @@ class StrategySim{
         for(const j of candidates){
             const b=units[j];
             if(!b?.alive||radii[j]<=0||this.isAlliedCollisionUnit(a,b))continue;
+            if(this.navigation.motion.solvedImpulseTick===this.tick&&(a.impactMotion||b.impactMotion))continue;
             // Keep the original floating-point subtraction order. Equal relative
             // motion has no inward contact, including a stationary overlap.
             const vx=motion.vx[i]-motion.vx[j],vy=motion.vy[i]-motion.vy[j];
@@ -1364,7 +1365,9 @@ class StrategySim{
     }
     if(perf)perf.collisionPrepMs+=now()-mark;
 
-    // Keep the full movement/impulse sweep for hostile nonpenetration and tangent sliding.
+    this.navigation.motion.solveImpulseStep(this.collisionStartFx,this.collisionStartFy);
+
+    // Pure steering keeps its existing nonpenetration policy; dynamic pairs have already consumed one common clock.
     mark=perf?now():0;
     this.resolveNonAlliedSurfaceMotion(this.collisionStartFx,this.collisionStartFy,radii,maxRadius,4);
     if(perf)perf.collisionSweptMotionMs+=now()-mark;
@@ -1516,14 +1519,15 @@ class StrategySim{
     const combatMs=profile?now()-mark:0;
 
     mark=profile?now():0;
+    this.solveContacts();
+    for(const u of this.units)this.navigation.motion.finishImpulseStep(u);
+    const collisionMs=profile?now()-mark:0;
+
+    // Projectile hits inject velocity at this boundary. Both horizontal and vertical integration start next tick.
+    mark=profile?now():0;
     winner=this.updateProjectiles()||winner;
     LaunchImpact.deploy(this);
     const projectileMs=profile?now()-mark:0;
-
-    mark=profile?now():0;
-    this.solveContacts();
-
-    const collisionMs=profile?now()-mark:0;
 
     mark=profile?now():0;
     // Combat damage reports are not victory authority. Resolve once from the final world state.

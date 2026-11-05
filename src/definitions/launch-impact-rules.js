@@ -3,6 +3,12 @@ class LaunchImpactRules{
   static launchHeight=60;
   static muzzleReach=38;
   static gravity=1000;
+  static referenceMass=100;
+  static restitution=0;
+  static maxZeroTimeContactIterations=32;
+  static remainderScale=10000;
+  static airDrag=.4;
+  static groundDrag=5;
   static recoveryMs=250;
   static deploymentGapMs=50;
   static deploymentRetryMs=100;

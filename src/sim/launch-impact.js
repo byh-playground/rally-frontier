@@ -11,36 +11,12 @@ class LaunchImpact{
     if(!u?.alive)return;
     let length=Math.hypot(dx,dy);
     if(length<.001){const angle=(HashUtil.hash(u.id+'|'+sourceId)%8)*Math.PI/4;dx=Math.cos(angle);dy=Math.sin(angle);length=1}
-    const old=u.impactMotion,heightFP=Math.max(0,old?.heightFP||0,initialHeightFP),vzFP=initialVzFP??Math.max(old?.vzFP||0,Math.round(lift*FP));
-    const flightSeconds=(vzFP/FP+Math.sqrt((vzFP/FP)**2+2*LaunchImpactRules.gravity*heightFP/FP))/LaunchImpactRules.gravity;
-    const flightMs=Math.max(250,Math.round(flightSeconds*1000));
-    const endTick=sim.tick+sim.msTicks(flightMs);
-    u.impactMotion={kind,startTick:sim.tick,endTick,recoverUntilTick:endTick+sim.msTicks(LaunchImpactRules.recoveryMs),
-      heightFP,vzFP,vxFP:Math.round(dx/length*speed*FP),vyFP:Math.round(dy/length*speed*FP),originX,originY,sourceId};
-    u.combat.attackWindupUntil=0;u.combat.attackWindupStartedAt=0;u.combat.attackWindupTargetId=null;
-    u.combat.attackArcTargetId=null;u.combat.attackArcUntilTick=0;
+    const mass=sim.mass(u),reference=LaunchImpactRules.referenceMass;
+    sim.navigation.motion.applyImpulse(u,{x:dx/length*speed*reference,y:dy/length*speed*reference,
+      z:lift*reference+(initialVzFP==null?0:initialVzFP/FP*mass)},
+      {kind,sourceId,originX,originY,initialHeightFP});
   }
-  static update(sim){
-    for(const u of sim.units){const m=u.impactMotion;if(!m)continue;
-      const flying=m.heightFP>0||m.vzFP>0;
-      if(flying){
-        m.heightFP=Math.max(0,m.heightFP+Math.trunc(m.vzFP/sim.tps));
-        m.vzFP-=Math.round(LaunchImpactRules.gravity*FP/sim.tps);
-        if(m.heightFP===0&&m.vzFP<0){m.vzFP=0;m.endTick=sim.tick;m.recoverUntilTick=sim.tick+sim.msTicks(LaunchImpactRules.recoveryMs);}
-      }
-      const dx=Math.trunc(m.vxFP/sim.tps),dy=Math.trunc(m.vyFP/sim.tps);
-      if(dx||dy){
-        const fx=u.fx,fy=u.fy;
-        sim.navigation.motion.move(u,(u.fx+dx)/FP,(u.fy+dy)/FP,'project');
-        // A blocked normal loses its momentum; the shared contact solver still permits tangent motion.
-        if(Math.abs(u.fx-fx)<Math.abs(dx)/4)m.vxFP=0;
-        if(Math.abs(u.fy-fy)<Math.abs(dy)/4)m.vyFP=0;
-      }
-      const damping=flying?98:75;
-      m.vxFP=Math.trunc(m.vxFP*damping/100);m.vyFP=Math.trunc(m.vyFP*damping/100);
-      if(sim.tick>=m.recoverUntilTick&&m.heightFP===0&&m.vzFP<=0)u.impactMotion=null;
-    }
-  }
+  static update(sim){for(const u of sim.units)sim.navigation.motion.integrateImpulse(u)}
   static distanceToBody(sim,entity,x,y,impactHeightFP,isBuilding=false){
     const radius=isBuilding?(BuildingDefinition.get(entity.type)?.size||30):sim.unitRadius(entity.type);
     const bottom=sim.world.terrain.surfaces.heightAt(entity.x,entity.y)+(isBuilding?0:(entity.impactMotion?.heightFP||0)/FP);
@@ -54,9 +30,9 @@ class LaunchImpact{
       for(const index of indices){const u=sim.units[index];if(!u?.alive||u.side!==1-p.side)continue;
         const dx=u.x-x,dy=u.y-y,body=this.distanceToBody(sim,u,x,y,impactHeightFP),distance=body.falloffDistance,reach=radius+sim.unitRadius(u.type);
         if(body.surfaceDistance>radius)continue;
-        const strength=Math.max(.1,1-distance/reach),mass=Math.sqrt(100/sim.mass(u));
-        this.start(sim,u,{dx,dy,speed:LaunchImpactRules.knockbackSpeed*(.25+.75*strength)*mass,
-          lift:strength>=.5?LaunchImpactRules.knockbackLift*strength*mass:0,sourceId:p.id,originX:x,originY:y});
+        const strength=Math.max(.1,1-distance/reach);
+        this.start(sim,u,{dx,dy,speed:LaunchImpactRules.knockbackSpeed*(.25+.75*strength),
+          lift:strength>=.5?LaunchImpactRules.knockbackLift*strength:0,sourceId:p.id,originX:x,originY:y});
       }
     });
   }
@@ -96,7 +72,7 @@ class LaunchImpact{
       this.start(sim,u,{kind:'deploy',dx,dy,speed:LaunchImpactRules.deploymentSpeed,lift:LaunchImpactRules.deploymentLift,
         sourceId:group.projectileId,originX:group.x,originY:group.y,
         initialHeightFP:Math.max(0,group.heightFP+Math.round((sim.world.terrain.surfaces.heightAt(group.x,group.y)-sim.world.terrain.surfaces.heightAt(u.x,u.y))*FP)),
-        initialVzFP:group.vzFP+LaunchImpactRules.deploymentLift*FP});
+        initialVzFP:group.vzFP});
       sim.events.push({type:'launchLand',side:group.side,unit:group.type,count:1,totalCount:group.count,index:group.index,
         projectileId:group.projectileId,unitIds:[u.id],units:[{id:u.id,x:u.x,y:u.y}],x:group.x,y:group.y,
         impactHeightFP:Math.round(sim.world.terrain.surfaces.heightAt(group.x,group.y)*FP)+group.heightFP,holdPointId:group.holdPointId});
