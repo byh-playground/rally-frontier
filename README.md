@@ -1,157 +1,80 @@
 # RALLY FRONTIER
 
-호환 식별자 `SIM_VERSION`은 `src/core/config.js`에, 고정한 GameKit source/dist는 `gamekit.lock.json`에 있습니다. protocol이 같은 세션에 참여하는 모든 클라이언트는 같은 배포본을 써야 합니다. 게임 규칙·유닛 수치·조작법은 인게임 도움말이 원본입니다.
+쌀·콩·팥 병력을 대포로 투입하고 거점을 건설·점령하는 브라우저 전략 게임입니다. 병력 투입과 진영 공통 발사 사거리 강화에 같은 자원을 사용합니다. 싱글은 AI와, 친구 대전은 실제 WebRTC P2P로 플레이하며 결과·리플레이를 확인할 수 있습니다.
 
-RALLY FRONTIER는 브라우저에서 바로 실행할 수 있는 실시간 전략 게임(RTS) 프로젝트입니다.
+[현재 배포본 실행](https://byh-playground.github.io/rally-frontier/)
 
-별도의 설치 없이 브라우저에서 실행할 수 있으며, WebRTC 기반 P2P 멀티플레이와 싱글 플레이를 지원합니다.
+## 버전과 배포 출처
 
-
-## 플레이
-
-GitHub Pages로 현재 배포본(`main`의 Nightly)을 바로 실행할 수 있습니다. 불변 Stable 태그는 아래 배포 채널을 따릅니다.
-
-**https://byh-playground.github.io/rally-frontier/**
-
-## 배포 채널
-
-* `main`에 푸시하면 Pages가 자동 배포하고 Nightly 태그가 만들어집니다. 이 상태가 곧 검증 완료나 Stable을 뜻하지 않습니다.
-* Stable은 검증·승인한 커밋을 `.github/workflows/release-tags.yml`로 명시 승격할 때만 만들어지는 불변 태그입니다. 과거 태그는 옮기거나 지우지 않습니다.
-* 빌드 성공이나 업데이트 시각 갱신이 게임 검증을 의미하지 않습니다. 실제 모바일 기기와 서로 다른 외부 NAT 사이의 두 기기 플레이는 정적 CI와 별도로 확인합니다.
-
-## 업데이트 시각과 배포
-
-`.github/workflows/pages.yml`과 `npm run build`는 동일한 원본 검사·복사 도구를 사용합니다. `index.html`·`src/`·`gamekit.lock.json`·`assets/`·`campaign/`·아이콘·manifest를 그대로 `_site/`에 복사하며 게임 소스와 `BUILD_ID`를 변경하지 않습니다. `_site/build.json`은 복사한 소스의 Git 커밋·복사 시각·고정 SDK 출처를 기록하는 별도 진단 정보입니다. 화면은 이 기록의 커밋과 복사 시각을 보여 주며 오류·성능·모바일 전투 보고서도 동일한 배포 메타데이터 스냅샷을 포함합니다. 검사 또는 복사 실패 시 이전 `_site`를 남겨 새 결과로 오인하지 않게 제거합니다.
-
-배포 기록은 페이지당 한 번만 `cache: no-store`, 3초 제한으로 가져오며 게임 시작을 기다리게 하지 않습니다. 원본 checkout의 기록 없음, HTTP/JSON/형식 오류, 시간 초과는 `unavailable`로 보고하고 화면에 `배포 정보 확인 불가`를 표시합니다. 조회 중은 `pending`, 정상 기록은 `available`입니다. 기록이 없다는 이유로 공개 게임을 미배포 개발본이라고 판단하지 않습니다. `source: build.json`은 현재 주소의 배포 기록이라는 뜻이며 실제 실행 중인 모듈 바이트의 일치 검증이나 Stable 승격을 의미하지 않습니다(`executedSourceVerified: false`). 초기 SDK 로딩 실패 진단도 기록 조회가 끝나면 같은 메타데이터로 갱신합니다. 네트워크용 기존 소스 식별자 `BUILD_ID`와 시뮬레이션 계약은 바꾸지 않습니다.
-
-PR에서는 검사·복사·원본 ESM/SVG 부팅 검사를 수행하고 공개 배포하지 않습니다. main 게시 경로는 기존 GitHub Actions Pages 정책을 유지합니다. 로컬 원본 확인은 `npm ci`, `npm run test:build`, `npm run build`, `npm run test:startup -- _site/index.html`, `npm run test:ui -- _site/index.html` 순서로 실행합니다. 원본 복사 명령 자체는 다운로드/SDK 번들링을 하지 않습니다. `test:build`, `test:startup`, `test:ui`는 최초에 `setup:gamekit`으로 불변 dist와 manifest의 SHA-256을 검증하며 정상 cache는 재사용합니다.
-
-UI 검사는 127.0.0.1 HTTP 서버에서 실제 ESM·CSS·SVG·캠페인을 제공하고 `src/main.js`의 실제 app scope에 관찰자만 주입합니다. 게임 조작은 기존 UI를 통합니다. 재현 가능한 검사를 위해 게임의 정확한 고정 jsDelivr SDK URL만 검증한 cache bytes로 응답하며 브라우저의 SHA-256 검사는 그대로 실행합니다. 따라서 이 검사는 SDK CDN 가용성·외부 NAT·소개영상 CDN의 오프라인 실행을 보증하지 않습니다. 실제 제품 부팅은 계속 공식 CDN에 접속해야 하며 `file://` 또는 단일 HTML 오프라인 실행을 지원한다고 표시하지 않습니다.
-
-## 프로젝트 구조
-
-게임 엔진과 UI의 실행 코드는 `src/main.js`에, 공통 게임 규칙/메타데이터는 `src/core/`에, 스타일은 `src/styles/`에 두며, 현재 캠페인 데이터 전체는 `campaign/campaigns.js` 한 JavaScript 모듈에 둡니다.
-
-유닛 벡터 아트의 원본은 `assets/units/*.svg`에 두고, `assets/units/manifest.json`에서 각 파일의 크기와 SHA-256을 고정합니다. 부팅 시 고정된 GameKit `vector-assets-loader.js`가 원본 bytes의 SHA-256을 확인한 뒤 한 번만 geometry를 만들고, loader의 bounded cache를 재사용합니다. source checkout과 Pages 복사본 모두 원본 manifest와 SVG 파일을 읽습니다. 이 경로는 프레임 렌더링 중 SVG를 다시 읽거나 변환하지 않습니다.
-
-공중 유닛의 공격·브레스 부위는 현재 표현식이 이미 같은 가시성을 선언했다면 `setPartVisible`로 다시 지정하지 않습니다. 따라서 숨긴 효과를 제외한 원본 expression 인덱스를 유지합니다. 공격·브레스 활성화처럼 실제로 다른 가시성이 필요한 경우에는 기존 override를 사용하며, 알파·깊이 기록·부위 포즈·그리기 순서는 바꾸지 않습니다.
-
-캠페인 메뉴를 열 때 native ES import로 데이터를 읽습니다. 기본 게임 부팅은 캠페인 모듈 로드에 의존하지 않으며, 각 미션은 자체 시작 상태를 선언합니다. 개발용 신뢰 Mission JS의 파일/URL Preview도 유지합니다.
-
-덱 편집의 작업 사본·카드 변경·저장 결과는 `DeckBuilderState`가 소유합니다. `DeckPresentation`은 입력과 화면 표시를 조정하고, 저장 형식과 브라우저 저장소 접근은 기존 `DeckRecord`가 담당합니다.
-
-덱 기록을 읽지 못하거나 저장 형식·덱 내용이 호환되지 않으면 원본을 그대로 보존하고 편집·저장·확정을 잠급니다. 덱 선택·편집 화면에서 원본 텍스트를 내려받거나 저장소 접근을 복구한 뒤 다시 읽을 수 있습니다. 기록 전체 초기화는 사용자가 경고를 확인했을 때만 수행하며, 확인 도중 다른 탭이 기록을 바꿨으면 덮어쓰지 않습니다. 새 사용자에게는 메모리의 기본 덱을 보여주고 실제 편집 저장 전에는 저장소에 쓰지 않습니다. `npm run test:deck-storage`가 실제 브라우저 UI에서 원본 보존·내려받기·초기화 취소/확인·저장소 읽기/쓰기 실패와 재시도를 검사합니다.
-
-```text
-rally-frontier/
-├── index.html             # 원본 ESM 진입점과 UI 마크업
-├── src/                   # main.js, core/, styles/, 소개영상
-├── gamekit.lock.json      # 공통 모듈의 고정 source/dist 커밋·SHA-256
-├── assets/units/          # 원본 유닛 SVG와 크기·SHA-256 manifest
-├── campaign/
-│   └── campaigns.js       # 현재 정식 캠페인 데이터 전체 (default manifest)
-├── scripts/setup-gamekit.cjs # 불변 dist 다운로드·무결성 검증
-├── scripts/vector-assets-manifest.cjs # 원본 SVG 목록·무결성 검사
-├── scripts/build-pages.cjs # 원본 검사·동일 bytes 복사·별도 출처 정보
-├── .github/workflows/pages.yml # PR 빌드 검사 및 main Pages 배포
-├── .cache/gamekit/        # setup이 가져온 원본 dist bytes (Git 제외)
-└── _site/                 # 자동 생성한 배포 실행물 (Git 제외)
-```
-
-## 주요 특징
-
-* 브라우저 기반 실시간 전략 게임
-* 싱글 플레이 지원
-* WebRTC 기반 P2P 멀티플레이
-* 별도 게임 서버 없이 플레이어 간 직접 통신
-* 모바일 및 PC 브라우저 지원
-* 전장의 안개(Fog of War)
-* 건설 및 자원 채취
-* 유닛 생산 및 테크 시스템
-* 다양한 유닛과 특수 능력
-* 중립 오브젝트 및 점령 시스템
-* 리플레이 지원
-* 원본 브라우저 ESM 엔진과 하나의 캠페인 데이터 모듈
-
-## 공통 동기화 라이브러리 적용
-
-게임은 [bloom-gamekit 동기화 모듈](https://github.com/byh-playground/bloom-gamekit)의 공개 계약을 사용합니다. `GameSession`은 경기의 로비·UI·수명주기를 조정하며, Core와 게임 Adapter, Transport를 **Has-a**로 소유합니다.
-
-| 관계 | 구현과 사용 시나리오 |
+| 식별자 | 원본과 의미 |
 | --- | --- |
-| **Is-a** | `GameSession`은 경기 Coordinator, `StrategySim`은 게임 Simulation입니다. 둘을 Netcode 타입별로 상속하지 않습니다. |
-| **Has-a** | Coordinator가 `RollbackSession`, `RallySimulationAdapter`, 전송 capability를 조합합니다. 온라인·싱글 WebRTC·LOCAL 2P가 같은 경로를 사용합니다. |
-| **Can-be** | prediction·hold·resimulation·recovery는 Core의 실행 상태입니다. 별도 게임 모드나 동기화 구현으로 분기하지 않습니다. |
+| 제품 SemVer | [`PRODUCT_VERSION`](src/core/product-version.js). 제품 변경의 호환성을 나타냅니다. 최초 기준선은 `0.1.0`이며 과거 제품 버전 이력을 추정하지 않습니다. |
+| 시뮬레이션 호환성 | [`SIM_VERSION`](src/core/config.js). 동일 입력·상태·리플레이/통신 계약의 호환성 판정용 정수입니다. 제품 버전과 별개이며 기준선 도입 당시의 `209`를 제품 `0.209.0`으로 해석하지 않습니다. |
+| 배포 출처 | `_site/build.json`의 Git 커밋·복사 시각·SDK 출처. 실행 모듈 bytes 일치 검증이나 제품 버전·Stable 승격의 증거가 아닙니다. |
 
-개발자가 새 게임 명령을 추가할 때는 UI와 AI 모두 `GameSession.command(action)`에 제출합니다. SDK의 player-local sequence를 받은 뒤, Core가 결정한 실행 프레임에서 Adapter가 `StrategySim.queueCommand()`와 `step()`을 호출합니다. 입력 지연, 상대 틱 차이, 롤백과 복구를 게임 명령 처리에 다시 구현하지 않습니다.
+제품 버전 판단은 [최신 공통 PM-001·PM-002](https://github.com/byh-playground/bloom-reference/blob/main/AGENTS.md)를 따릅니다. 제품 세대 전환은 MAJOR, 비호환 변경은 MINOR, 호환되는 의미 있는 기능·표현 수정은 PATCH입니다. 외부 동작이 같은 내부 정리와 문서 정리는 버전을 유지합니다. 하드코딩된 유닛·발사 수치 변경이 동일 입력의 결과나 과거 리플레이 해석을 바꾸면 호환되는 밸런스 수정으로 분류하지 않습니다. 제품 MINOR와 별도로 `SIM_VERSION` 변경 필요성을 판단합니다.
 
-`RallySimulationAdapter`는 `save / load / step / validateSnapshot` capability를 제공합니다. Core의 프레임 `t`는 게임의 step 이전 상태 `S[t]`이며, 그 입력으로 게임 틱 `t+1`을 실행합니다. 저장 대상은 `StateContract`가 선언한 전체 Authoritative 상태입니다. 렌더·캐시·AI 명령 예약은 Runtime 또는 Presentation이며, 새 타임라인에서 재생성합니다. 재실행 결과는 확정된 프레임부터 UI 효과와 리플레이에 한 번만 공개합니다.
+`0.1.0`은 기존 SemVer가 없던 제품의 첫 기준선입니다. 도입·규칙 문서 정리 자체로 게임 호환 정수를 올리지 않으며 정식 출시나 Stable 승격을 선언하지 않습니다. 고정 SDK의 버전·source/dist 커밋·해시는 [`gamekit.lock.json`](gamekit.lock.json)이 관리합니다.
 
-전송은 `send(Uint8Array)`와 `subscribe(listener)` capability로 연결합니다. Nostr는 방 발견·RTC 협상에만 사용하고, 게임 입력·시계·해시·복구는 SDK의 `WebRTCTransport`가 실제 입력·제어 DataChannel로 전송합니다. 게임은 SDK의 바이너리 헤더나 내부 필드를 해석하지 않습니다.
+`main` 푸시는 Pages 배포와 Nightly 태그 생성을 유발합니다. Stable은 PM-005에 따라 검증·승인한 커밋을 [release-tags 워크플로](.github/workflows/release-tags.yml)에서 명시 승격한 불변 태그입니다. 제품 버전·빌드 성공·배포 시각·게임 검증·Stable을 서로 구별합니다.
 
-공통 모듈 원본은 [bloom-gamekit](https://github.com/byh-playground/bloom-gamekit)에서만 관리합니다. Rally는 코드 복사본 대신 `gamekit.lock.json`에 source/dist의 전체 커밋 SHA와 manifest·사용 모듈별 SHA-256을 기록합니다. `npm run setup:gamekit`은 정확한 불변 dist 커밋의 `manifest.json`과 필요한 파일을 받아 모든 hash를 확인하고 Git 제외 `.cache/gamekit/`에 원본 bytes 그대로 저장합니다. QA는 같은 lock으로 cache를 다시 검증합니다. 새 checkout의 최초 QA setup에는 GitHub 접근이 필요하며, 검증한 cache가 있으면 QA의 게임 SDK 요청을 로컬 응답할 수 있습니다. 원본 복사는 SDK를 포함하지 않고, 실제 제품 부팅에는 고정 CDN 접근이 필요합니다. 업그레이드는 upstream dist 검증 후 lock을 변경하는 작업이고 Rally에서 모듈 사본을 수정하는 방식으로 하지 않습니다. 모듈 로드 실패는 오류로 표시하며 CDN/다른 버전 fallback은 없습니다.
+## 현재 플레이
 
-현재 고정본은 GameKit **0.46.9**입니다. `pathfield`의 `PathGrid`·`DistanceField`·`FieldCache`가 정수 비용 격자와 거리장 계산을 소유합니다. 게임의 `GoalFields`는 목표 영역, 직선 이동 여부, 캐시 수명과 내려가는 칸 중 실제 이동점을 고르는 정책을 맡습니다. 직선 10·대각 14 비용과 동률 순서를 유지하며, 이관 전후 같은 입력의 시뮬레이션 결과를 비교합니다. `vision`의 `VisionMap`·`VisionField`는 지형 시야 래스터와 진영별 가시 칸을 소유하고, `VisibilityPolicy`는 아군·공격 후 일시 공개 관찰자를 구성합니다. 지형 래스터는 첫 사용 때 한 번 준비하며 교전·AI·표시·안개가 같은 시야 격자를 조회합니다.
+- 쌀은 5갈래 산탄, 콩은 단발 중심 강타, 팥은 같은 지점에 3연사로 병력을 보냅니다. 전장을 길게 눌러 거리를 조절하고 놓으면 발사하며, 너무 오래 누르면 과열됩니다.
+- 기본 인컴은 초당 3원이며 완성한 점령지마다 초당 1원이 더해집니다. 진영 공통 최대 발사 거리는 쌀 기준 500→1,000→1,500, 강화 비용은 50원·75원입니다. 콩 85%·팥 75% 비율을 적용합니다. 완성한 아군 대포의 원은 선택 병종의 최대 발사 거리입니다.
+- 중립 거점에 진입하면 체력 10%로 공사를 시작합니다. 거점은 75원·375작업이 필요하고 일반 유닛은 1초마다 몸통 박치기로 1작업을 더합니다. 비용·필요 작업량·타격당 작업량은 독립 설정입니다. 전체 작업 진행률·투입 자원과 다음 정수 지출까지의 5칸을 구분해 표시합니다.
+- 누적 지출은 `floor(cost * workDone / workRequired)`입니다. 기본 거점은 첫 4작업까지 추가 지출이 없고 5작업마다 1원이 듭니다. 다른 설정도 같은 비례 계산을 사용하며 자원이 허용하는 정수 작업까지만 반영합니다. 여러 작업자는 각자 기여하고 최종 적중은 남은 작업까지만 처리합니다.
+- 작업자가 이탈·사망하거나 교전·공중 이동·충격 회복 중이면 기여하지 않습니다. 누적 공사와 피해는 보존되며 파괴된 투자금은 환불하지 않습니다. 완공하면 소유·인컴·발사와 사거리 250의 단일 기본 공격(피해 10/초)이 활성화됩니다.
 
+조작 설명은 인게임 도움말, 실제 수치는 [`LaunchRules`](src/sim/launch-rules.js)·[`ConstructionRules`](src/sim/construction-rules.js)·[`Definition`](src/definitions/)이 원본입니다.
 
-`rollback`, `deterministic`, `simloop`, `transport`의 조합이 기존 `GameSession` 실행 경로를 담당합니다. `interpolation.PresentationRuntime`의 한 표시 프레임이 유닛·투사체·깃발의 위치와 생성·제거 시점을 샘플링합니다. 선택 TPS의 한 tick을 표시 버퍼로 사용하며 도약 높이·잔상과 추적 표적도 같은 모델을 읽습니다. 신규 투사체는 launchX/Y에서 첫 구간을 시작합니다. 게임은 도약 곡선·lockedPoint/trackingTarget 의미·식별자·스냅거리 정책을 소유합니다. 시야 판정은 권위 좌표를 유지합니다. `rendering.WebGLDevice`가 shader/program/buffer/texture 수명주기와 실제 GPU 제출을 소유합니다. 게임에는 아트 기하 생성, 지형 깊이, Fog 마스크, 알파 패스·스텐실 실루엣 및 최종 화면 흔들림 정책이 남습니다. `camera`는 안정 화면/월드 평면 변환, `input`은 포인터 capture·document fallback·취소·blur 정리를 담당합니다. `presentation-events`는 확정 효과 중복 제거, `hud`는 절대 고도 anchor, `debug-tools`는 오류 기록·리플레이 탐색 UI를 담당합니다.
-
-공통 createValueCodec의 기본 바이너리 코덱을 상태와 명령에 조합하고 Core에는 opaque bytes만 전달합니다. 선택 JSON 코덱은 비교·진단용입니다.
-
-```text
-src/main.js
-  RallyNetcode                 고정 gamekit rollback/deterministic/simloop/transport 조합
-  GameSession                  경기 Coordinator
-  RallySimulationAdapter       게임 상태와 명령을 SDK 계약에 연결
-  RallyStateCodec / CommandCodec
-  StrategySim                  게임 규칙과 Authoritative State
-scripts/netcode-ui-e2e.cjs      실제 UI·RTC·WebGL·종료·리플레이 검사
-scripts/netcode-qa-module.cjs   원본 ESM 서버와 고정 SDK 로컬 응답
-```
-
-대포 접촉·착지 판정은 `src/sim/launch-impact.js`, 수치와 공유 비행 높이는 `src/definitions/launch-impact-rules.js`가 소유합니다. 충격은 `UnitMotion.applyImpulse`에서 `Δv = J / mass`로 기존 속도에 누적합니다. 공통 운동 단계가 속도를 적분하고 접촉 법선·역질량으로 벽과 유닛의 속도를 갱신하며, 충돌 후 남은 시간도 새 속도로 진행합니다. 기존 외력을 덮어쓰거나 목표 좌표로 밀어내지 않습니다. 직접 충돌과 착탄 충격은 실제 이동·높이·회복 상태를 바꾸며, 방출 대기열과 함께 저장·롤백·체크섬에 포함됩니다. 공간이 막히면 남은 병사를 보존해 재시도합니다. `src/render/launch-impact-art.js`는 권위 높이를 읽어 구르기·기립과 묶음 파편을 표현합니다. 이 게임 규칙 변경의 `SIM_VERSION`은 209이며 이전 규칙의 리플레이와 혼용하지 않습니다.
-
-건설 설정은 건물 Definition의 `construction.cost`·`workRequired`·`initialHpRatio`, 유닛 Definition의 `construction.workPerHit`·`range`로 선언하고 `src/sim/construction-rules.js`의 `ConstructionRules`가 진행·지출·체력·다음 지출 계산을 소유합니다. 착공 시 건물별 비용과 필요 작업량을 권위 상태에 보관해 설정 변경·저장 복원과 무관하게 진행 중 공사를 유지합니다. 전진 거점은 75원·375작업이며 일반 유닛은 건설 전용 박치기 쿨타임 1초·적중당 1작업입니다. 새로운 전문 병종은 추가하지 않고, 타격당 작업량 설정으로 확장할 수 있습니다. 병력 투입·업그레이드·인컴·자원 한도의 수치는 이번 변경으로 바꾸지 않습니다.
-
-유닛은 공통 상호작용 영역까지 실제로 접근하고 준비·몸통 박치기·복귀를 반복합니다. 유효한 박치기 적중만 작업량을 더하며 누적 지출은 `floor(cost * workDone / workRequired)`입니다. 기본 거점에서는 첫 4작업까지 추가 지출이 없고 5작업마다 1원이 들지만, 다른 비용·필요 작업량에서는 같은 비례 계산이 적용됩니다. 자원이 부족하면 감당할 수 있는 정수 작업까지만 반영해 부채·초과 결제·미납 자동 진행이 없습니다. 예를 들어 자원 0에서는 기본 거점의 작업 4까지 진행한 뒤 다음 지출을 기다립니다. 작업량이 큰 유닛도 남은 공사량과 자원이 허용하는 범위까지만 기여합니다.
-
-전체 건설 진행률과 투입 자원을 표시하고, 별도의 5칸은 다음 정수 지출까지 진행한 비율을 보여 줍니다. 5칸은 타격 횟수나 건설 규칙이 아니며, 설정에 따라 한 적중이 여러 칸을 채우거나 여러 지출 경계를 넘을 수 있습니다. 체력은 작업 진행 비율을 기준으로 10%에서 증가하고 이전 피격 피해는 남습니다. 작업자가 모두 이탈·사망하거나 적과 교전·공중 이동·충격 회복 중이면 작업하지 않으며, 누적 진행도는 보존합니다. 같은 틱에 자원이 부족하면 먼저 착공한 거점부터 처리하고, 완성 시 소유·인컴·발사·기본 공격이 활성화됩니다. 파괴된 공사에 투입한 자원은 환불하지 않습니다.
-
-작업 목표·단계·시각은 유닛 권위 상태로 저장·복원하며, 건설 타격은 이동·충돌·피격 후 유효한 접촉에서만 확정합니다. 건설 작업 거리는 공통 건물 충돌 여유 거리에서 1px를 더한 영역입니다. 공통 박치기의 몸 당김·내밈·복귀와 목재 틀 반응은 표현 계층에서 처리하고 판정 좌표나 기존 impulse를 바꾸지 않습니다.
-
-기본 인컴은 초당 3원이고 완성한 점령지마다 초당 1원씩 늘어납니다. 진영 공통 발사 사거리는 쌀 기준 500→1,000→1,500이며 업그레이드 비용은 50원·75원입니다. 콩 85%·팥 75% 비율은 유지합니다. 완성 포탑은 사거리 250에서 적 하나에게 1초마다 피해 10을 줍니다. `UPGRADE_LAUNCH_RANGE`는 일반 명령과 같은 Netcode·리플레이 경로를 거치며 진영별 레벨과 건설 투자 상태는 저장·복원·체크섬에 포함됩니다. 봇도 같은 비용으로 업그레이드하고 30초 간격으로 다음 단계 자원을 모으되 본진 방어를 우선합니다.
-
-대포의 최대 발사 범위는 완성한 아군 대포 중심의 원으로 표시합니다. 선택 카드의 사거리 배율과 진영 공통 강화 단계가 즉시 반영되고, 조준 중인 대포의 원을 강조합니다. 원 둘레는 각 지점의 지형 높이와 기존 월드 투영을 사용합니다.
-
-`npm run test:economy -- _site/index.html`은 고정 장면에서 박치기별 작업량·다양한 비용/필요 작업량·다수 작업·다음 지출 5칸·작업자 및 자원 대기·파괴·인컴·사거리 성장과 표시·포탑 공격·중간 저장 복원을 확인합니다.
-
-`npm run test:impact -- _site/index.html`은 고정 임무에서 시간차 방출, 충격 이동·접촉, 아군 정책, 공간 부족, 비행·방출·사망 도중 저장 복원을 확인합니다. 부하·성능 측정은 포함하지 않습니다.
-
-## 개발 흐름
-
-작업 순서, 브랜치·PR·머지, 커밋 메시지 형식은 [AGENTS.md](AGENTS.md)와 [공통 규칙](https://github.com/byh-playground/bloom-reference/blob/main/AGENTS.md)을 따릅니다. 이 문서에 규칙을 복제하지 않습니다.
-
-개발할 때는 빌드 없이 저장소 폴더를 정적 HTTP 서버로 제공해 실행할 수 있습니다(예: `python -m http.server 8000` 후 `http://localhost:8000/`). 개발 소스를 `file://`로 직접 열면 상대 ES module 보안 제한을 받습니다. 복사한 `_site` 역시 같은 원본 ESM이므로 HTTP 서버가 필요합니다.
-
-기존 실제 RTC UI 흐름은 `QA_NETCODE_MODE=lockstep|rollback QA_ROLES=host node scripts/netcode-ui-e2e.cjs _site/index.html`로 모드를 선택해 확인합니다(PowerShell에서는 `$env:`로 설정). 결과는 `.qa/netcode-ui-e2e-<mode>/`에 생성됩니다. 기본 모드는 lockstep입니다.
-
-### 주소로 여는 확인용 장면
-
-`?debug=1`이 있으면 GameKit `debug-tools.installDebugHost`가 `src/debug-scenes.js`의 장면을 엽니다. 일반 플레이에서는 이 파일을 불러오지 않습니다. `battle` 장면은 실제 경기 생성(`StrategySim.createForMatch`)과 리플레이 재생기로 두 병종의 전투를 열고 `tick`만큼 진행한 화면을 그립니다. 표시 시계도 틱에서 나오므로 같은 주소는 같은 화면을 만듭니다.
+## 원본과 실행
 
 ```text
-?debug=1&scene=battle&seed=7&ally=swarmbug&enemy=shelltitan&allyCount=10&enemyCount=5&tick=60
+index.html                 브라우저 ESM 진입점·UI·프로젝트 개발 계약
+src/main.js                화면·입력·실제 WebGL renderer
+src/core/                  제품 버전·호환 식별자·SDK 로딩·배포 정보
+src/definitions/           유닛·건물·전투 수치
+src/sim/                   권위 판정·지형·이동·충격·건설
+src/session/               경기·명령·리플레이 조정
+src/render/                공통 표시 track·곡물 방출·분할 대포 아트
+assets/units/              원본 SVG·크기와 SHA-256 manifest
+scripts/                   SDK 준비·원본 복사·고정 시나리오 검사
+legacy/                    현재 실행·배포에서 제외한 과거 코드 보관소
 ```
 
-`ally`·`enemy`는 디버그 전투 설정의 1~3티어 전투 병종 id, 수는 1~60입니다. 값이 틀리면 기본값으로 대체하지 않고 장면이 실패하며 `window.__bloomDebug.error`에 남습니다. `window.__bloomDebug.state()`는 `simTick`, 양측 생존 수, `checksum`을 돌려줍니다.
+저장소를 정적 HTTP 서버로 제공하면 빌드 없이 실행할 수 있습니다. 예: `python -m http.server 8000` 후 `http://localhost:8000/`. `file://` 실행이나 단일 HTML 오프라인 실행을 보장하지 않습니다. 최초 제품 부팅은 lock으로 고정한 CDN에 접속합니다.
 
-`charge` 장면은 충전 병종(씨앗궁수 `archer`·왕사슴 돌격대 `lancer`·철갑씨앗포 `siege`) 무리에 전장 제스처와 같은 명령을 정해진 틱에 넣습니다. 1틱에 아군 무리 위에서 집결(`CHARGE_BEGIN`), 다 모인 틱에 적 무리로 조준(`CHARGE_AIM`), 최대 충전 틱에 발사(`CHARGE_RELEASE`)합니다. `state()`는 집결 상태(`cast`)와 충전 명령의 적용 결과(`receipts`)를 더 돌려줍니다.
+`npm ci`와 `npm run setup:gamekit`은 Node 22 이상에서 QA 의존성과 검증한 SDK cache를 준비합니다. `setup:gamekit`은 불변 dist·manifest·사용 모듈의 SHA-256을 검사하고 Git 제외 `.cache/gamekit/`에 원본 bytes를 저장합니다. 정상 cache는 재사용합니다.
 
-```text
-?debug=1&scene=charge&seed=7&unit=archer&enemy=swordsman&count=6&enemyCount=6&tick=16
-```
+`npm run build`와 [Pages 워크플로](.github/workflows/pages.yml)는 같은 원본 검사·복사 도구를 사용합니다. 실행 원본과 원본 자산을 `_site/`로 복사하며 SDK를 번들링하거나 소스를 재작성하지 않습니다. 실제 복사 목록은 [`build-pages.cjs`](scripts/build-pages.cjs)가 소유합니다. 검사·복사에 실패하면 이전 `_site`를 새 결과로 오인하지 않도록 제거합니다.
 
-두 장면과 시작 화면의 "선택 유닛 테스트"는 맵 중앙에서 가장 가까운, 모든 중립 캠프의 어그로 범위 밖 평지에 양측을 배치합니다. 그런 자리가 없으면 경기를 열지 않고 실패합니다. 성능 측정용 "모바일 대규모 전투 테스트"는 이전 측정과 비교할 수 있도록 맵 중앙 배치를 유지합니다.
+화면의 배포 기록은 `build.json`을 페이지당 한 번, `cache: no-store`·3초 제한으로 읽습니다. 조회는 게임 시작을 막지 않으며 `pending`·`available`·`unavailable`을 구분합니다. 기록이 없거나 실패했다고 공개 게임을 미배포 개발본이라고 판단하지 않습니다. 제품 버전은 로딩한 원본 `PRODUCT_VERSION`을 유지하며, 배포 기록의 제품 버전이 일치하지 않으면 그 기록을 `unavailable`로 판정합니다. 초기 SDK 실패 진단에도 조회가 끝난 배포 정보를 반영합니다.
 
-픽셀 단위로 전후를 비교할 때는 소프트웨어 GL(`--use-angle=swiftshader`)에서 캡처합니다. 실제 GPU에서는 시계를 멈춘 같은 화면도 프레임마다 지형 경계의 몇 픽셀이 1~5 단계 달라집니다.
+## 판정·표현·네트워크 경계
+
+프로젝트 고유 계약은 [`index.html` 상단](index.html)에 둡니다. `StrategySim`·`StateContract`가 판정·저장·복원·체크섬을 소유하고, UI·렌더·캐시는 판정을 바꾸지 않습니다. 건설의 인스턴스 설정·작업 단계, 충격 운동과 방출 대기열, 진영별 사거리 레벨도 저장·복원합니다.
+
+`UnitMotion.applyImpulse`는 `Δv=J/mass`를 기존 속도에 누적합니다. 실제 접촉 시각에서 법선·역질량으로 속도를 처리하고 남은 시간도 적분합니다. 목표 좌표로 밀어내거나 기존 외력을 덮지 않습니다. 공간이 막힌 병력 방출은 안전한 자리가 생길 때까지 보존합니다. 공통 박치기와 목재 틀·묶음 파편은 권위 상태/사건을 읽는 표현입니다.
+
+SVG는 원본 manifest의 SHA-256 검증 후 고정 GameKit 로더가 시작 시 한 번 컴파일하고 cache를 재사용합니다. 프레임마다 SVG를 읽거나 생성된 메시를 배포하지 않습니다. 공통 표시 시계가 위치·높이·생성/제거·VFX endpoint를 샘플링하며 실제 판정 좌표는 유지합니다.
+
+`GameSession`은 SDK의 Core·게임 Adapter·Transport를 조합합니다. 명령은 UI와 AI 모두 `GameSession.command(action)`에 제출하고, Core가 player-local sequence의 확정 입력을 게임 틱에 적용합니다. Core frame `t`는 step 이전 상태 `S[t]`입니다. 게임이 입력 지연·롤백·해시·복구를 다시 구현하지 않습니다.
+
+기본 netcode는 lockstep이며 `?netcode=lockstep|rollback`은 다음 경기의 모드를 고릅니다. 온라인 양쪽의 설정 불일치는 HELLO에서 거부합니다. Nostr는 발견·협상, gameplay는 실제 RTCDataChannel의 바이너리입니다. 별도 게임 서버나 TURN fallback은 없습니다. 싱글도 같은 실제 WebRTC·Session을 쓰며 AI 세션은 Worker에서 실행합니다. 양쪽 세션 관찰용 UI 검사는 in-page AI를 사용하고 Worker 경로는 별도로 검증합니다.
+
+## 검증과 개발
+
+공통 완료·검증·PR 규칙은 [AGENTS.md](AGENTS.md)와 [최신 BLOOM 규칙](https://github.com/byh-playground/bloom-reference/blob/main/AGENTS.md)을 따릅니다. 게임 동작·시각 변경은 실제 플레이 UI 경로와 렌더 관찰을 포함하고, 문서·메타데이터 변경은 해당 범위의 정합성을 검사합니다. PM-009의 실행당 180초, PM-014의 정합성 게이트를 지키며 성능·부하는 별도 명령·실행으로 측정합니다.
+
+| 명령 | 확인 범위 |
+| --- | --- |
+| `npm run test:build` | SDK·원본 복사·검사 도구의 정합성 |
+| `npm run build` | 원본 ESM과 자산 복사 |
+| `npm run test:startup -- _site/index.html` | 원본 SVG·ESM 부팅과 배포 기록 |
+| `QA_NETCODE_MODE=lockstep QA_ROLES=host npm run test:ui -- _site/index.html` | 실제 UI·RTC·전투·종료·리플레이 (`rollback` 모드도 선택 가능) |
+| `npm run test:worker` | 원본 checkout의 실제 Worker AI 세션·복구 |
+| `npm run test:economy -- _site/index.html` | 고정 시나리오의 건설·비례 지출·다음 지출 표시·인컴·사거리·포탑·저장 복원 |
+| `npm run test:impact -- _site/index.html` | 고정 시나리오의 비행·충격·접촉·병력 방출·저장 복원 |
+
+환경 변수 예시는 Bash 형식이며 PowerShell에서는 `$env:`로 지정합니다. UI 검사는 127.0.0.1에서 실제 ESM·CSS·SVG와 실제 게임 scope의 관찰자를 사용합니다. 고정 SDK URL만 검증한 cache bytes로 응답해 브라우저 hash 검사를 유지합니다. 이 결과는 CDN 가용성·외부 NAT 두 기기 연결·물리 모바일 GPU 성공을 보장하지 않습니다. 소프트웨어 GL과 실제 GPU, 고정 시나리오와 실제 플레이 결과를 구별해 기록합니다.
