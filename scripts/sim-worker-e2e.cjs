@@ -53,11 +53,24 @@ const observer = `window.__simWorkerE2E={MatchLifecycle,RecoveryTelemetry,AppLif
     assert.equal(initial.host.kind, 'GameSession');
     assert.equal(initial.guest.kind, 'WorkerSessionProxy', 'The AI session runs in a Worker');
 
+    const reopen=await page.evaluate(()=>{
+      const live=window.__simWorkerE2E.MatchLifecycle.singleMatch.sessions.host;
+      const fake=Object.create(Object.getPrototypeOf(live));
+      Object.assign(fake,{disposed:false,everTransportOpened:true,sim:{tick:1},simEnded:false,syncHold:true,
+        simpleRecoveryNeedsManual:true,recoveryPhase:'needs-manual',disconnectGraceDeadlineAt:12345,
+        netcodeLoop:null,startHeartbeat(){},onLog(){},flushDeferredActions(){},clearDisconnectGrace(){this.disconnectGraceDeadlineAt=0}});
+      fake.onTransportOpen();
+      return {deadline:fake.disconnectGraceDeadlineAt,phase:fake.recoveryPhase,hold:fake.syncHold};
+    });
+    assert.deepEqual(reopen,{deadline:12345,phase:'needs-manual',hold:true},'An opened channel without a valid peer packet keeps recovery active');
+
     assert.ok(await page.evaluate(() => window.__simWorkerE2E.RecoveryTelemetry.requestManualRecovery()), 'Manual recovery starts while connected');
     await advances('recovery while connected');
 
-    await page.evaluate(() => window.__simWorkerE2E.AppLifecycle.invalidateLiveConnectionForLifecycle('qa-lifecycle'));
+    await page.evaluate(() => document.dispatchEvent(new Event('freeze')));
     await page.waitForFunction(() => Object.values(window.__simWorkerE2E.state()).every(s => !s.connected && s.phase === 'needs-manual'), null, { timeout: 5000 });
+    await page.waitForFunction(() => window.__simWorkerE2E.MatchLifecycle.singleMatch.sessions.host.disconnectGraceDeadlineAt>Date.now(), null, { timeout: 5000 });
+    await page.locator('#disconnectGate').waitFor({state:'visible',timeout:5000});
     assert.ok(await page.evaluate(() => window.__simWorkerE2E.RecoveryTelemetry.requestManualRecovery()), 'Manual recovery starts after invalidation');
     await page.waitForFunction(() => Object.values(window.__simWorkerE2E.state()).every(s => s.connected && s.phase === 'idle'), null, { timeout: 5000 });
     const recovered = await advances('recovery after invalidation', 5000);

@@ -4267,6 +4267,7 @@ class AppLifecycle{
     if(!sess?.sim||sess.simEnded)continue;
     RecoveryTelemetry.recordRecovery("page.lifecycle-invalidates-connection",sess,sess.transport,{reason});
     sess.markManualRecoveryNeeded(reason);
+    sess.startDisconnectGrace?.(reason);
     const trans=sess.transport;
     if(trans&&!seenTrans.has(trans)){
       seenTrans.add(trans);

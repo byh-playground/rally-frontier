@@ -268,7 +268,7 @@ class GameSession{
     if(this.disposed)return;
     const reconnect=this.everTransportOpened;
     this.transportConnected=true;this.everTransportOpened=true;this.syncHold=this.simEnded||!!this.sim;
-    this.simpleRecoveryNeedsManual=false;this.recoveryPhase='idle';this.clearDisconnectGrace();
+    if(!reconnect||!this.sim){this.simpleRecoveryNeedsManual=false;this.recoveryPhase='idle';this.clearDisconnectGrace()}
     this.netcodeLoop?.resetTiming();this.startHeartbeat();
     if(!reconnect)this.start();
     else if(!this.sim){if(this.role==='guest')this.start()}
