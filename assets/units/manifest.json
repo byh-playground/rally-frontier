@@ -23,6 +23,13 @@
       "bytes": 1477
     },
     {
+      "id": "cannon",
+      "url": "./assets/units/cannon.svg",
+      "sourcePath": "assets/units/cannon.svg",
+      "sha256": "aa4736c69843adfaed5779bdbff31440bc158947c762bc5c4e31d62b6435a6f3",
+      "bytes": 7272
+    },
+    {
       "id": "redbean",
       "url": "./assets/units/redbean.svg",
       "sourcePath": "assets/units/redbean.svg",
