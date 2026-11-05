@@ -15,12 +15,13 @@ assert(sdkVersion, 'pinned SDK declares its version');
 const mode = process.env.QA_NETCODE_MODE || 'lockstep';
 assert(['lockstep', 'rollback'].includes(mode));
 const output = path.join(root, '.qa', 'friend-match-' + mode);
-const observer = `window.__friend={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntimeState,PRODUCT_VERSION,
+const observer = `window.__friend={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntimeState,PerformanceTelemetry,PRODUCT_VERSION,
   generatedCodes:[],originalCode:RoomCodeUtil.randomCode,
   inspect(){const s=ActiveViewState.session;return {role:s?.role,room:s?.roomCode,screen:UiRuntimeState.value.screen,
     single:!!MatchLifecycle.singleMatch,mode:s?.netcodeMode,tick:s?.sim?.tick,ready:s?.netcodeSession?.ready,
     state:ActiveViewState.transport?.room?.state,gameVersion:PRODUCT_VERSION,sdkVersion:RallyNetcode.VERSION,
     hashMismatches:s?.netcodeSession?.metrics?.hashMismatches,fatal:s?.simulationFatal,
+    metrics:s?.netcodeSession?.metrics,simPerf:s?.sim?.perfStats,rendererPerf:ActiveViewState.renderer?.perfStats,connectionPerf:s?.performanceStats,
     commands:s?.replayRecorder?.commands,result:s?.replayRecorder?.result,
     armies:[0,1].map(side=>s?.sim?.units.filter(u=>u.alive&&u.side===side).length)}}};
 RoomCodeUtil.randomCode=()=>window.__friend.generatedCodes.shift()||window.__friend.originalCode();`;
@@ -88,6 +89,8 @@ RoomCodeUtil.randomCode=()=>window.__friend.generatedCodes.shift()||window.__fri
       assert.equal(state.mode, mode, 'guest follows the host mode despite a different local setting');
       assert.equal(state.single, false); assert.equal(state.state, 'open'); assert.equal(state.sdkVersion, sdkVersion);
       assert.equal(state.fatal, false);
+      const ice = await page.evaluate(async () => { const {ActiveViewState,PerformanceTelemetry}=window.__friend; const s=ActiveViewState.session; await PerformanceTelemetry.sampleConnection(s); return { fetched:s.performanceStats.iceFetchedAt, error:s.performanceStats.iceError }; });
+      assert.ok(Number.isFinite(ice.fetched) && !ice.error, 'ICE statistics are sampled from the active peer connection');
     }
     assert(relays.some(r => r.player === 0 && r.url.startsWith('wss://')) && relays.some(r => r.player === 1 && r.url.startsWith('wss://')));
     for (const page of pages) {
