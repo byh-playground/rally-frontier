@@ -21,7 +21,7 @@ function recoilAt(age, asset) {
 }
 
 // One compiled SVG, independent ground/mount/shaft projections. The ground never turns or recoils.
-// Shaft direction matches the game's projected aim exactly; only its apparent length is shortened.
+// Shaft direction and reach match the simulation's physical muzzle origin.
 // A near-facing shaft shows its bore, a far-facing shaft shows its closed rear cap instead.
 class BuildingArt {
   constructor(renderer) { this.renderer=renderer; this.actors=new Map(); this.liveIds=new Set(); }
@@ -30,7 +30,7 @@ class BuildingArt {
     if (!asset) throw new Error('Cannon vector asset is missing');
     const sockets=asset.metadata.sockets,GROUND=sockets.ground.point,TRUNNION=sockets.trunnion.point,MUZZLE=sockets.muzzle.point,BACK=sockets.breech.point;
     const length=Math.hypot(aim.dx,aim.dy),dx=length>0?aim.dx/length:1,dy=length>0?aim.dy/length:0;
-    const scale=ART_SCALE*sc,foreshorten=Math.hypot(dx,dy*.55),ax=dx*foreshorten*scale,ay=dy*foreshorten*scale;
+    const scale=ART_SCALE*sc,ax=dx*scale,ay=dy*scale;
     // The cross section stays round while its end face narrows to an edge at a side-on yaw.
     const nx=-dy*scale,ny=dx*scale,faceWidth=Math.abs(dy)*.84;
     const pivot={x:x+(TRUNNION[0]-GROUND[0])*scale,y:y+(TRUNNION[1]-GROUND[1])*scale};

@@ -110,6 +110,10 @@ scripts/netcode-ui-e2e.cjs      실제 UI·RTC·WebGL·종료·리플레이 검�
 scripts/netcode-qa-module.cjs   원본 ESM 서버와 고정 SDK 로컬 응답
 ```
 
+대포 접촉·착지 판정은 `src/sim/launch-impact.js`, 수치와 공유 비행 높이는 `src/definitions/launch-impact-rules.js`가 소유합니다. 직접 충돌과 착탄 충격은 실제 이동·높이·회복 상태를 바꾸며, 방출 대기열과 함께 저장·롤백·체크섬에 포함됩니다. 공간이 막히면 남은 병사를 보존해 재시도합니다. `src/render/launch-impact-art.js`는 권위 높이를 읽어 구르기·기립과 묶음 파편을 표현합니다. 이 게임 규칙 변경의 `SIM_VERSION`은 205이며 이전 규칙의 리플레이와 혼용하지 않습니다.
+
+`npm run test:impact -- _site/index.html`은 고정 임무에서 시간차 방출, 충격 이동·접촉, 아군 정책, 공간 부족, 비행·방출·사망 도중 저장 복원을 확인합니다. 부하·성능 측정은 포함하지 않습니다.
+
 ## 개발 흐름
 
 작업 순서, 브랜치·PR·머지, 커밋 메시지 형식은 [AGENTS.md](AGENTS.md)와 [공통 규칙](https://github.com/byh-playground/bloom-reference/blob/main/AGENTS.md)을 따릅니다. 이 문서에 규칙을 복제하지 않습니다.

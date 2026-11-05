@@ -6,6 +6,7 @@ import { GameSession, RallySynctestDiagnostics } from './session/game-session.js
 import { ReplayPlayer, ReplayPolicy } from './session/replay.js';
 import { ActiveViewState, BACKGROUND_TICK_SESSIONS, NetworkModuleLoader } from './session/runtime-state.js';
 import { LaunchRules } from './sim/launch-rules.js';
+import { LaunchImpactRules } from './definitions/launch-impact-rules.js';
 import { RoomTransport } from './net/rtc-transport.js';
 import { RecoveryTelemetry } from './diagnostics/recovery-telemetry.js';
 import { ConnectionSideUtil } from './net/lobby-codec.js';
@@ -23,6 +24,7 @@ import { BattlefieldProjection, TerrainSurfaceAtlas, TerrainSurfaceProjection } 
 import { BACKGROUND_TICK_PULSE_MS } from './core/session-timing.js';
 import { RENDER_TRACKS } from './render/render-tracks.js';
 import { BuildingArt } from './render/building-art.js';
+import { LaunchImpactArt } from './render/launch-impact-art.js';
 import { CONFIG, LAUNCH_HOLD_ARM_MS, LAUNCH_HOLD_DRAG_PX, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode } from './core/config.js';
 import { BUILD_META } from './core/build-info.js';
 import { RallyGamekit, SIM_WORKER } from './core/gamekit.js';
@@ -73,7 +75,7 @@ class ReusableFloat32Buffer{
    because the unit body itself is hidden. */
 // Game-owned identity/discontinuity policy; the gamekit timeline owns interpolation.
 class RenderStateStore{
-  constructor(definitions){this.definitions=definitions;this.records=new Map();this.generation=0;this.revision=0;this.sequence=0;this.clock=0;this.zeroDelta=Object.freeze({x:0,y:0});this.lists={unit:[],projectile:[],flag:[]}}
+  constructor(definitions){this.definitions=definitions;this.records=new Map();this.generation=0;this.revision=0;this.sequence=0;this.clock=0;this.zeroDelta=Object.freeze({x:0,y:0});this.lists={unit:[],projectile:[],flag:[],bundle:[]}}
   time(now){return this.clock=Math.max(this.clock,Number(now)||0)}
   capture(source,now,snap,stepMs){
     const at=this.time(now),tick=Number(source.tick)||0;
@@ -89,24 +91,36 @@ class RenderStateStore{
     const entities=[],seen=new Set();
     const add=(kind,id,value)=>{
       const key=kind+":"+id,def=this.definitions[kind];let record=this.records.get(key);
-      const previous=record?.live?record:null;
+      const revived=kind==="projectile"&&record?.entity.retiredTick!=null&&value.retiredTick==null;
+      const previous=record?.live&&!revived?record:null;
       if(!previous){
         // One detached visual identity at birth. Ordinary metadata is refreshed by
         // the existing UI snapshot cadence, never by cloning the sim each frame.
         record={kind,id,generation:++this.generation,entity:value.toState?value.toState("view"):structuredClone(value),delta:{x:0,y:0}};
         this.records.set(key,record);
-      }else if(snap&&!value.toState)record.entity=structuredClone(value);
+      }else if((snap||value.retiredTick!=null||kind==="bundle")&&!value.toState)record.entity=structuredClone(value);
       const teleport=!!previous&&Math.hypot(value.x-record.x,value.y-record.y)>def.snapDistance*Math.max(1,tick-record.tick);
       record.delta.x=snap||teleport||!previous?0:value.x-record.x;record.delta.y=snap||teleport||!previous?0:value.y-record.y;
       record.x=value.x;record.y=value.y;record.tick=tick;record.live=true;seen.add(key);
       const packet={id:key,generation:record.generation,type:def.type,source:{entity:value,tick,delta:record.delta},teleport};
-      if(kind==="projectile"&&!previous&&!snap&&Number.isFinite(value.launchX)&&Number.isFinite(value.launchY)){
+      if(value.terminalPath)packet.pathPoints=value.terminalPath;
+      if(kind==="projectile"&&!previous&&!revived&&!snap&&Number.isFinite(value.launchX)&&Number.isFinite(value.launchY)){
         packet.initialSource={entity:{...value,x:value.launchX,y:value.launchY},tick:tick-1};packet.initialTimeMs=(tick-1)*stepMs;
       }
       entities.push(packet);
     };
-    for(const unit of source.units||[])if(unit.alive!==false)add("unit",unit.id,unit);
+    for(const unit of source.units||[])if(unit.alive!==false||unit.impactMotion)add("unit",unit.id,unit);
     for(const projectile of source.projectiles||[])if(projectile.alive!==false)add("projectile",projectile.id,projectile);
+    // Publish the actual final contact sample before retiring the visual track. Interpolation must reach the impact.
+    for(const event of source.events||[])if(event.type==="projectileRetire"){
+      const record=this.records.get("projectile:"+event.projectileId);
+      if(record?.live&&record.entity.retiredTick==null){
+        const retiredTick=Number.isFinite(Number(event.presentationTick))?Number(event.presentationTick):tick;
+        const terminalPath=retiredTick>=record.tick?[{timeMs:retiredTick*stepMs,x:event.x,y:event.y}]:[];
+        add("projectile",event.projectileId,{...record.entity,x:event.x,y:event.y,retiredTick,terminalPath});
+      }
+    }
+    for(const group of source.launchDeployments||[])if(group.index<group.count)add("bundle",group.projectileId,group);
     for(let side=0;side<(source.flags||[]).length;side++)if(source.flags[side])add("flag",side,source.flags[side]);
     for(const [key,record]of this.records)if(!seen.has(key))record.live=false;
     this.runtime.capture({revision:this.revision,sequence:++this.sequence,timeMs:tick*stepMs,mode:snap?"reset":"continuous",entities},at);
@@ -115,7 +129,7 @@ class RenderStateStore{
   updateMetadata(snapshot){
     for(const kind of ["unit","projectile"]){
       for(const entity of snapshot[kind==="unit"?"units":"projectiles"]||[]){
-        const record=this.records.get(kind+":"+entity.id);if(record&&entity.alive!==false)record.entity=entity;
+        const record=this.records.get(kind+":"+entity.id);if(record&&(entity.alive!==false||entity.impactMotion)&&record.entity.retiredTick==null)record.entity=entity;
       }
     }
   }
@@ -931,6 +945,7 @@ class GLRenderer{
     const motionState=model?.entity||entity;
     const renderTick=model?.tick??(this.snapshot?.tick||0);
 
+    if(kind==="unit")height=LaunchImpactArt.unitPose(motionState,renderTick,this.snapshot?.tps||SIM_TPS).height;
     if(kind==="projectile"){
       if(motionState.launchX!=null&&motionState.launchY!=null){
         // Arc presentation must use the same trajectory destination as simulation.
@@ -950,20 +965,11 @@ class GLRenderer{
             fromX:motionState.launchX,fromY:motionState.launchY,toX:aimX,toY:aimY,
             planarX:planar.x,planarY:planar.y,arcHeight:motionState.arcHeight
           });
-          groundY=arc.groundHeight;height=arc.height;progress=arc.progress;motion=arc.motion;
+          groundY=arc.groundHeight;height=entity.payload?LaunchImpactRules.flightHeight(arc.progress,motionState.arcHeight):arc.height;progress=arc.progress;motion=arc.motion;
         }
       }
     }
     const position={x:planar.x,y:groundY+height,z:planar.y,groundY,motion,progress};
-    if(kind==="projectile"&&entity.payload&&Number.isFinite(progress)){
-      const dx=motionState.lockedAimX-motionState.launchX,dy=motionState.lockedAimY-motionState.launchY,length=Math.hypot(dx,dy);
-      if(length>.001){
-        const flip=this.orientationRole()==="guest"?-1:1,fade=Math.pow(Math.max(0,1-progress),2);
-        const {muzzle}=BuildingArt.pose({x:0,y:0,sc:1,aim:{dx:dx/length*flip,dy:dy/length*flip},fireAgeMs:0});
-        // Presentation-only launch socket offset fades to zero at the authoritative impact point.
-        position.x+=muzzle.x*flip*fade;position.y-=muzzle.y/BattlefieldProjection.heightScale*fade;
-      }
-    }
     return position;
   }
   resolveGroundShadowPosition(entity,kind="unit"){
@@ -1005,7 +1011,7 @@ class GLRenderer{
     return this.projectRenderWorldPosition(this.resolveRenderWorldPosition(entity,kind));
   }
   unitVisibleForRender(u){
-    if(!u?.alive||!this.presentationEntityActive("unit",u.id))return false;
+    if((!u?.alive&&!u?.impactMotion)||!this.presentationEntityActive("unit",u.id))return false;
     const p=this.projectEntityScreen(u,"unit"),pad=((UnitDefinition.get(u.type)?.size||15)+80)*this.sc();
     if(p.x<-pad||p.y<-pad||p.x>this.canvas.width+pad||p.y>this.canvas.height+pad)return false;
     return u.side===this.mySide()||this.visibleRaw(u.x,u.y);
@@ -1096,13 +1102,17 @@ class GLRenderer{
     this.frameShakeY=sy;
   }
 
+  presentationEventStart(event,snapshot,now=this.presentationNow()){
+    const eventTick=Number.isFinite(Number(event.presentationTick))?Number(event.presentationTick):snapshot.tick;
+    const displayTime=this.renderState.frame(now)?.timeMs;
+    return Number.isFinite(displayTime)?now+eventTick*1000/(snapshot.tps||SIM_TPS)-displayTime:now;
+  }
   addClientFx(kind,e,snapshot,index,extra={}){
     const eventTick=Number.isFinite(Number(e.presentationTick))?Number(e.presentationTick):snapshot.tick;
     const seed=HashUtil.hash(
       `${eventTick}|${index}|${kind}|${e.sourceType||e.unit||e.spell||""}|`+
       `${Math.round(e.x||0)}|${Math.round(e.y||0)}`
     );
-    const eventAgeMs=Math.max(0,Math.min(250,(snapshot.tick-eventTick)*(1000/(snapshot.tps||SIM_TPS))));
 
     const fx=this.combatFxPool.acquire();
     fx.kind=kind;fx.x=Number(e.x)||0;fx.y=Number(e.y)||0;fx.x2=Number(e.x2)||0;fx.y2=Number(e.y2)||0;
@@ -1115,7 +1125,7 @@ class GLRenderer{
     fx.isBuilding=!!e.isBuilding;fx.points=Array.isArray(e.points)?e.points.map(p=>({...p})):null;fx.side=e.side;
     // Preserve the relative timing of events generated on different simulation ticks
     // inside one 10 Hz snapshot instead of making the whole batch pop at once.
-    fx.start=performance.now()-eventAgeMs;fx.seed=seed;
+    fx.start=this.presentationEventStart(e,snapshot);fx.seed=seed;
     const extraKeys=extra&&Object.keys(extra);
     if(extraKeys?.length){fx._extraKeys=extraKeys;for(const k of extraKeys)fx[k]=extra[k]}
     this.combatFx.push(fx);
@@ -1182,7 +1192,10 @@ class GLRenderer{
   // The landing: a shock ring the size of the blast, dust, and a flash that grows when the strike was near the middle.
   launchImpactFx(e,snapshot,index){
     const peak=Number(e.peak)||1,hits=Number(e.hits)||0;
-    this.addClientFx("launchBlast",e,snapshot,index,{peak,hits});
+    const start=this.presentationEventStart(e,snapshot);
+    const dx=Number(e.dirX),dy=Number(e.dirY),angle=Number.isFinite(dx)&&Number.isFinite(dy)?Math.atan2(dy,dx):0;
+    this.addClientFx("launchBlast",e,snapshot,index,{peak,hits,impactHeightFP:e.impactHeightFP});this.combatFx[this.combatFx.length-1].start=start;
+    this.addClientFx("launchBundleBreak",e,snapshot,index,{id:"bundle:"+e.projectileId,grainType:e.unit,angle,impactHeightFP:e.impactHeightFP});this.combatFx[this.combatFx.length-1].start=start;
     const shake=hits>0?.7+.9*peak:.5;
     this.triggerClientShake(shake,hits>0?130+70*(peak-1):80,HashUtil.hash(`${snapshot.tick}|blast|${index}`));
   }
@@ -1239,9 +1252,8 @@ class GLRenderer{
 
       const eventTick=Number.isFinite(Number(e.presentationTick))?Number(e.presentationTick):snapshot.tick;
       const seed=HashUtil.hash(`${eventTick}|${index}|${kind}|${Math.round(e.x)}|${Math.round(e.y)}|${amount}`);
-      const eventAgeMs=Math.max(0,Math.min(250,(snapshot.tick-eventTick)*(1000/(snapshot.tps||SIM_TPS))));
       const f=this.floatFxPool.acquire();
-      f.x=e.x;f.y=e.y;f.kind=kind;f.text=text;f.amount=amount;f.start=now-eventAgeMs;
+      f.x=e.x;f.y=e.y;f.kind=kind;f.text=text;f.amount=amount;f.start=this.presentationEventStart(e,snapshot,now);
       f.jitter=((seed%1000)/1000-.5)*34;f.lane=(seed>>>10)%4;
       this.floatFx.push(f);
       index++;
@@ -1359,10 +1371,12 @@ class GLRenderer{
     for(let read=0;read<this.combatFx.length;read++){
       const fx=this.combatFx[read];
       const age=now-fx.start;
+      if(age<0){this.combatFx[write++]=fx;continue}
       const life=
         fx.kind==="buildingBurst"?620:
         fx.kind==="launchMuzzle"?900:
         fx.kind==="launchBlast"?820:
+        fx.kind==="launchBundleBreak"?680:
         fx.kind==="deathBurst"?480:
         fx.kind==="meleeSourceMotion"?(AttackPresentationDefinition.sourceMotions[fx.motion]?.lifeMs||220):
         360;
@@ -1370,7 +1384,7 @@ class GLRenderer{
       if(age>=life){this.combatFxPool.release(fx);continue}
       const t=age/life;
       const ease=1-Math.pow(1-t,3);
-      let[x,y]=this.worldToPx(this.viewX(fx.x),this.viewY(fx.y));
+      let[x,y]=this.worldToPx(this.viewX(fx.x),this.viewY(fx.y),Number.isFinite(fx.impactHeightFP)?fx.impactHeightFP/100:null);
 
       if(x<-160||x>this.fxCanvas.width+160||y<-160||y>this.fxCanvas.height+160){
         this.combatFx[write++]=fx;
@@ -1489,17 +1503,19 @@ class GLRenderer{
           const rise=(26+52*t)*sc*spread,out=(16+40*ease)*sc*spread;
           dot(smokeX+dx*out*.8+Math.cos(a)*out*.6,smokeY+dy*out*.8-rise*.5+Math.sin(a)*out*.3,(9+15*ease)*sc*(.6+spread*.5),smoke,Math.max(0,.6*(1-t)));
         }
+      }else if(fx.kind==="launchBundleBreak"){
+        LaunchImpactArt.drawBurst(ctx,{x,y,ageMs:age,scale:sc,seed:fx.seed,grainType:fx.grainType});
       }else if(fx.kind==="launchBlast"){
         // Landing: shock ring the size of the blast, dust thrown outward and, near the middle, a hard white flash.
         const radius=Math.max(30,Number(fx.radius)||100)*sc,peak=Number(fx.peak)||1,hits=Number(fx.hits)||0,strong=peak>=2;
-        if(t<.35){const k=1-t/.35;dot(x,y,radius*(strong?.5:.3)*(1-.4*t/.35),strong?"#ffffff":"#fff0b8",(strong?.95:.7)*k)}
+        if(t<.35){const k=1-t/.35;dot(x,y,radius*(strong?.24:.18)*(1-.4*t/.35),strong?"#ffffff":"#fff0b8",(strong?.38:.28)*k)}
         ring(x,y,radius*(.18+.82*ease),(8-5*t)*sc*(strong?1.6:1),strong?"#fff3c8":"#ffcf6a",.9*(1-t));
         ring(x,y,radius*(.1+.55*ease),2.4*sc,"#ff9a3a",.6*(1-t));
         if(strong&&t<.55)ring(x,y,radius*(.5+1.1*ease),3*sc,"#ffffff",.5*(1-t/.55));
         burst(fx,x,y,t,hits>0?22:12,"#a9895c",radius/sc*1.05,8,.62);
         burst(fx,x,y,t,10,"#e9dcc0",radius/sc*.8,5,.58,fx.seed^0x51f1);
         if(strong&&hits>0){
-          if(t<.22){ctx.globalAlpha=.2*(1-t/.22);ctx.fillStyle="#ffffff";ctx.fillRect(0,0,this.fxCanvas.width,this.fxCanvas.height)}
+          if(t<.12){ctx.globalAlpha=.05*(1-t/.12);ctx.fillStyle="#ffffff";ctx.fillRect(0,0,this.fxCanvas.width,this.fxCanvas.height)}
           // The return on a good throw, in numbers: the strongest multiplier any enemy took.
           ctx.globalAlpha=Math.min(1,(1-t)*2);ctx.textAlign="center";ctx.textBaseline="middle";
           ctx.font=`900 ${Math.round(Math.max(18,30*sc*(1+.25*Math.min(2,peak-2))))}px system-ui,sans-serif`;
@@ -1596,6 +1612,7 @@ class GLRenderer{
     for(let read=0;read<this.floatFx.length;read++){
       const f=this.floatFx[read],age=now-f.start,preset=FloatingTextPresentationDefinition.get(f.kind);
       const life=preset.lifeMs;
+      if(age<0){this.floatFx[write++]=f;continue}
       if(age>=life){this.floatFxPool.release(f);continue}
 
       const t=age/life;
@@ -1804,12 +1821,27 @@ class GLRenderer{
     record={actor,compiled:source};this.vectorUnitAssetCache.set(key,record);return record;
   }
   // Draws a 256-canvas asset centred at (x,y), rotated and scaled, between frame batches.
-  drawVectorBillboard(record,x,y,angle,scale){
+  drawVectorBillboard(record,x,y,angle,scale,{scaleX=1,scaleY=1,depthTest=false}={}){
     if(this.frame.length){this.flushVectorMesh("frame-to-vector-switch");this.flush(this.frame,true);this.begin()}
     const cos=Math.cos(angle)*scale,sin=Math.sin(angle)*scale,m=this._vectorUnitMatrix;
-    m[0]=cos;m[1]=sin;m[2]=-sin;m[3]=cos;m[4]=x-cos*128+sin*128;m[5]=y-sin*128-cos*128;
-    this.vectorContext.drawVectorActor(record.actor,{matrix:m,alpha:1,depth:this._renderDepth??0,depthTest:false,depthWrite:false});
+    m[0]=cos*scaleX;m[1]=sin*scaleX;m[2]=-sin*scaleY;m[3]=cos*scaleY;m[4]=x-m[0]*128-m[2]*128;m[5]=y-m[1]*128-m[3]*128;
+    this.vectorContext.drawVectorActor(record.actor,{matrix:m,alpha:1,depth:this._renderDepth??0,depthTest,depthWrite:false});
     this.flushVectorMesh("vector-billboard");
+  }
+  landingBundlePose(fx){
+    const age=this.presentationNow()-fx.start;if(age<0)return{visible:false};
+    const pending=this.renderState.model("bundle",fx.id.slice(7),this.presentationNow())?.entity;
+    const pose=LaunchImpactArt.bundlePose(pending?Math.min(age,150):age);
+    if(pending){const remaining=(pending.count-pending.index)/pending.count;pose.scaleX*=.5+.5*remaining;pose.scaleY*=.5+.5*remaining}
+    return pose;
+  }
+  drawLandingBundle(fx){
+    const pose=this.landingBundlePose(fx);if(!pose.visible)return;
+    const record=this.launchAmmoRecord(fx.grainType);if(!record)return;
+    const pending=this.renderState.model("bundle",fx.id.slice(7),this.presentationNow())?.entity;
+    const ground=this.world.terrain.surfaces.heightAt(fx.x,fx.y),height=pending?ground+(Number(pending.heightFP)||0)/100:(Number.isFinite(fx.impactHeightFP)?fx.impactHeightFP/100:ground);
+    const [x,y]=this.worldToPx(this.viewX(fx.x),this.viewY(fx.y),height),flip=this.orientationRole()==="guest"?Math.PI:0;
+    this.drawVectorBillboard(record,x,y,(fx.angle||0)+flip+pose.rotation,58*this.sc()/200,{scaleX:pose.scaleX,scaleY:pose.scaleY,depthTest:true});
   }
   grainUnitRecord(type){
     const key="grain|"+type;let record=this.vectorUnitAssetCache.get(key);if(record)return record;
@@ -1827,15 +1859,19 @@ class GLRenderer{
       if(kind!=="unit"||!this.shouldUseVectorUnitArt(u))continue;
       const record=this.grainUnitRecord(u.type);if(!record)continue;
       const grain=this.grainActor(u,record),actor=grain.actor,delta=this.renderTrackedDelta(u,"unit"),moving=Math.hypot(delta.x,delta.y)>.01;
-      const clip=u.attackFlash>0?"fire":u.hitFlash>0?"hit":moving?"walk":"idle";
+      const model=this.renderState.model("unit",u.id,now),impact=LaunchImpactArt.unitPose(model?.entity||u,model?.tick??this.snapshot.tick,this.snapshot.tps||SIM_TPS);
+      const clip=impact.active?"idle":u.attackFlash>0?"fire":u.hitFlash>0?"hit":moving?"walk":"idle";
       if(actor.currentClip!==clip)actor.play(clip,0);
       actor.seek(now+(HashUtil.hash(u.id)%997)*7);
       actor.preparePose();
       // Budmori bodies are front-facing: no rotation, ground socket on the unit's ground point.
       const p=this.projectRenderWorldPosition(world),r=this.unitRenderRadius(u),scale=r*2.7/260*(UnitVisualDefinition.get(u.type)?.visualScale||1),m=grain.matrix;
-      m[0]=scale;m[1]=0;m[2]=0;m[3]=scale;m[4]=p.x-scale*record.ground[0];m[5]=p.y+r*.55-scale*record.ground[1];
+      const angle=impact.rotation*(this.orientationRole()==="guest"?-1:1),cos=Math.cos(angle),sin=Math.sin(angle),sx=scale*impact.scaleX,sy=scale*impact.scaleY;
+      m[0]=cos*sx;m[1]=sin*sx;m[2]=-sin*sy;m[3]=cos*sy;
+      const cx=record.ground[0],cy=record.ground[1]-120;
+      m[4]=p.x-m[0]*cx-m[2]*cy;m[5]=p.y+r*.55-120*scale-m[1]*cx-m[3]*cy;
       grain.depth=RangeUtil.clamp(depth,-.98,.98)-(++rank)*GRAIN_DEPTH_RANK_STEP;
-      grain.face=u.hitFlash>0?"hurt":u.attackFlash>0?"attack":"neutral";grain.bodyDrawn=false;
+      grain.face=impact.expression||(u.hitFlash>0?"hurt":u.attackFlash>0?"attack":"neutral");grain.bodyDrawn=false;
     }
     this.vectorContext.preparePoses();
   }
@@ -2158,9 +2194,19 @@ class GLRenderer{
     for(const u of visibleUnits)add("unit",u,this.resolveRenderWorldPosition(u,"unit"));
     for(const p of this.renderState.displayed("projectile",this.presentationNow())){
       if(!this.presentationEntityActive("projectile",p.id))continue;
+      if(p.retiredTick!=null&&this.renderState.frame(this.presentationNow()).timeMs>=p.retiredTick*1000/(this.snapshot.tps||SIM_TPS))continue;
       const world=this.resolveRenderWorldPosition(p,"projectile");
       const screen=this.projectRenderWorldPosition(world),pad=90*this.sc();
       if(screen.x>=-pad&&screen.y>=-pad&&screen.x<=this.canvas.width+pad&&screen.y<=this.canvas.height+pad)add("projectile",p,world);
+    }
+    const now=this.presentationNow();
+    for(const fx of this.combatFx)if(fx.kind==="launchBundleBreak"&&now>=fx.start&&this.landingBundlePose(fx).visible)
+      add("landingBundle",fx,{x:fx.x,y:this.world.terrain.surfaces.heightAt(fx.x,fx.y),z:fx.y,groundY:0});
+    for(const group of this.renderState.displayed("bundle",now)){
+      if(group.side!==this.mySide()&&!this.visibleRaw(group.x,group.y))continue;
+      if(group.index>=group.count||this.combatFx.some(fx=>fx.kind==="launchBundleBreak"&&fx.id==="bundle:"+group.projectileId))continue;
+      const fx={id:"bundle:"+group.projectileId,x:group.x,y:group.y,start:now-150,grainType:group.type,angle:0};
+      add("landingBundle",fx,{x:fx.x,y:this.world.terrain.surfaces.heightAt(fx.x,fx.y),z:fx.y,groundY:0});
     }
     const started=performance.now();
     out.sort((a,b)=>b.depth-a.depth||(a.key<b.key?-1:a.key>b.key?1:0));
@@ -2202,7 +2248,7 @@ class GLRenderer{
     const entries=this.prepareWorldSpriteFrame(visibleUnits);this.prepareGrainPoses(entries);this.drawGrainBodies(entries);
     for(const entry of entries){
       const {kind,entity,world}=entry;this.renderEntity=entity;this.renderStage=kind;
-      const nextPainter=kind==="unit"&&this.shouldUseVectorUnitArt(entity)?"vector":"frame";
+      const nextPainter=kind==="landingBundle"||(kind==="unit"&&this.shouldUseVectorUnitArt(entity))?"vector":"frame";
       if(lastPainter&&nextPainter!==lastPainter){
         if(lastPainter==="vector")this.flushVectorMesh("vector-to-frame-painter-switch");
         else if(this.frame.length){this.flush(this.frame,true);this.begin()}
@@ -2211,6 +2257,7 @@ class GLRenderer{
       this.withWorldSpriteDepth(world,()=>{
         if(kind==="unit")this.drawUnitSafely(entity,{skipShadow:true,visibilityChecked:true,worldPosition:world});
         else if(kind==="building")this.drawBuildingSafely(entity);
+        else if(kind==="landingBundle")this.drawLandingBundle(entity);
         else this.drawProjectileSafely(entity);
       });
     }
@@ -2270,6 +2317,7 @@ class GLRenderer{
     }
     const W=this.canvas.width,H=this.canvas.height,pad=Math.max(18,26*sc);
     for(const m of LaunchPresentation.marks){
+      if(now<m.at)continue;
       const age=RangeUtil.clamp((now-m.at)/LaunchRules.landingMarkMs,0,1),alpha=1-age,col=[1,.9,.5,alpha];
       const [x,y]=this.worldToPx(this.viewX(m.x),this.viewY(m.y));
       if(x>=0&&x<=W&&y>=0&&y<=H){
@@ -2565,6 +2613,7 @@ e.stopPropagation();
 
     const now=performance.now();
     for(const m of LaunchPresentation.marks){
+      if(now<m.at)continue;
       const p=this.point(m.x,m.y),age=RangeUtil.clamp((now-m.at)/LaunchRules.landingMarkMs,0,1);
       c.strokeStyle=`rgba(255,228,128,${1-age})`;c.lineWidth=2;c.beginPath();c.arc(p[0],p[1],4+8*age,0,Math.PI*2);c.stroke();
     }
@@ -4243,9 +4292,9 @@ class BuildMetadataPresentation{
 
 // 발사전 화면: 카드 패, 자원 게이지, 착탄 흔적. 착탄 예정 지점은 절대 그리지 않는다.
 class LaunchPresentation{
-  static card=null;static deckKey="";static lastPower=null;static marks=[];static pods=new Map();static hold=null;
+  static card=null;static deckKey="";static lastPower=null;static marks=[];static hold=null;
   static active(s=ActiveViewState.snap){return !!s&&!ReplayPresentation.replayPlayer}
-  static reset(){this.card=null;this.deckKey="";this.lastPower=null;this.marks=[];this.pods=new Map();this.hold=null}
+  static reset(){this.card=null;this.deckKey="";this.lastPower=null;this.marks=[];this.hold=null}
   static render(s,side){
     const on=!!s;document.body.classList.toggle("launch-mode",on);
     UiRegistry.refs.launchHand?.classList.toggle("hidden",!on);
@@ -4264,10 +4313,13 @@ class LaunchPresentation{
     UiRegistry.refs.launchEnergyFill.style.width=`${Math.round(100*wallet/LaunchRules.walletCap)}%`;
     UiRegistry.refs.launchEnergyText.textContent=`◆ ${wallet} / ${LaunchRules.walletCap}`;
     this.renderHud(s,side);
-    // A pod that left the snapshot has landed: leave a short mark at its point.
-    const now=performance.now(),seen=new Set();
-    for(const p of s.projectiles||[]){if(!p.payload||p.side!==side)continue;seen.add(p.id);this.pods.set(p.id,{x:p.lockedAimX,y:p.lockedAimY})}
-    for(const [id,p] of this.pods)if(!seen.has(id)){this.pods.delete(id);this.marks.push({x:p.x,y:p.y,at:now})}
+    // Contacts can happen before the aimed point. Only authority impact events place a landing marker.
+    const now=performance.now();
+    for(const event of s.events||[])if(event.type==="launchImpact"&&event.side===side){
+      const mark=this.marks.find(m=>m.projectileId===event.projectileId);
+      if(mark){mark.x=event.x;mark.y=event.y}
+      else this.marks.push({projectileId:event.projectileId,x:event.x,y:event.y,at:ActiveViewState.renderer.presentationEventStart(event,s,now)});
+    }
     this.marks=this.marks.filter(m=>now-m.at<LaunchRules.landingMarkMs);
   }
   // Both main bases' health, elapsed time, and an edge arrow while the enemy base is off screen.

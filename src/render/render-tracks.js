@@ -6,11 +6,13 @@ import { RallyGamekit } from '../core/gamekit.js';
 // Game-owned visual fields; the SDK owns sampling and display lifetime.
 const RenderField=RallyGamekit.RenderObject;
 class UnitRenderObject extends RenderField{
-  static renderSchema={tick:RenderField.LINEAR,"delta.x":RenderField.STEP,"delta.y":RenderField.STEP,
+  static renderSchema={tick:RenderField.LINEAR,"entity.impactMotion.heightFP":RenderField.LINEAR,
+    ...Object.fromEntries(["kind","startTick","endTick","recoverUntilTick","vzFP","vxFP","vyFP","originX","originY","sourceId"].map(k=>["entity.impactMotion."+k,RenderField.STEP])),"delta.x":RenderField.STEP,"delta.y":RenderField.STEP,
     "entity.x":RenderField.POSITION_X,"entity.y":RenderField.POSITION_Y,
     ...Object.fromEntries(["target","attackFlash","combat.attackArcTargetId","combat.attackArcUntilTick","combat.attackWindupUntil","combat.cooldownUntil"].map(k=>["entity."+k,RenderField.STEP]))};
 }
 class ProjectileRenderObject extends RenderField{
+  static renderPath={x:"entity.x",y:"entity.y",durationMs:250,maxPoints:32};
   static renderSchema={tick:RenderField.LINEAR,
     "entity.x":RenderField.POSITION_X,"entity.y":RenderField.POSITION_Y,
     ...Object.fromEntries(["launchX","launchY","lockedAimX","lockedAimY","trajectoryPolicy","impactAtAimPoint",
@@ -19,8 +21,12 @@ class ProjectileRenderObject extends RenderField{
 class FlagRenderObject extends RenderField{
   static renderSchema={tick:RenderField.LINEAR,"entity.x":RenderField.POSITION_X,"entity.y":RenderField.POSITION_Y,"entity.forced":RenderField.STEP};
 }
+class BundleRenderObject extends RenderField{
+  static renderSchema={tick:RenderField.LINEAR,"entity.x":RenderField.POSITION_X,"entity.y":RenderField.POSITION_Y,"entity.heightFP":RenderField.LINEAR,
+    ...Object.fromEntries(["index","count","side","type","vzFP"].map(k=>["entity."+k,RenderField.STEP]))};
+}
 const RENDER_TRACKS=Object.freeze({
-  unit:{type:UnitRenderObject,snapDistance:120},projectile:{type:ProjectileRenderObject,snapDistance:180},flag:{type:FlagRenderObject,snapDistance:80}
+  bundle:{type:BundleRenderObject,snapDistance:180},unit:{type:UnitRenderObject,snapDistance:120},projectile:{type:ProjectileRenderObject,snapDistance:180},flag:{type:FlagRenderObject,snapDistance:80}
 });
 
 export { RENDER_TRACKS };
