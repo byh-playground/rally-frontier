@@ -4,7 +4,7 @@ import { StrategySim } from '../sim/strategy-sim.js';
 import { RallyStateCodec } from './game-session.js';
 import { ActiveViewState } from './runtime-state.js';
 import { CloneUtil } from '../sim/map-generation.js';
-import { SIM_VERSION } from '../core/config.js';
+import { PRODUCT_VERSION } from '../core/product-version.js';
 import { BUILD_META } from '../core/build-info.js';
 import { RallyNetcode } from '../core/gamekit.js';
 import { ReplayPresentation, SimulationTiming } from '../main.js';
@@ -36,7 +36,7 @@ class ReplayPolicy{
   }
   static validateReplayPayload(data){
     if(!data||data.protocol!==REPLAY_PROTOCOL)throw new Error("RALLY FRONTIER 리플레이 파일이 아닙니다.");
-    if(Number(data.simVersion)!==SIM_VERSION)throw new Error(`리플레이 버전이 다릅니다. replay ${data.simVersion} / current ${SIM_VERSION}`);
+    if(data.gameVersion!==PRODUCT_VERSION)throw new Error(`리플레이 게임 버전이 다릅니다. replay ${data.gameVersion??"확인 불가"} / current ${PRODUCT_VERSION}`);
     if(!Array.isArray(data.commands)||!Number.isFinite(Number(data.seed)))throw new Error("리플레이 데이터가 손상되었습니다.");
     return data;
   }
@@ -88,7 +88,7 @@ class ReplayRecorder{
     const result=this.result?CloneUtil.clone(this.result):(liveSim?{winner:null,reason:"in-progress",endTick:liveSim.tick,checksum:liveSim.checksum()}:null);
     return {
       protocol:REPLAY_PROTOCOL,
-      simVersion:SIM_VERSION,
+      gameVersion:PRODUCT_VERSION,
       buildId:BUILD_META.id,
       createdAt:new Date().toISOString(),
       roomCode:this.roomCode,
@@ -124,9 +124,7 @@ class ReplayPlayer{
   command(){return false}
   inputAvailable(){return false}
   validate(){
-    if(this.data?.protocol!==REPLAY_PROTOCOL)throw new Error("지원하지 않는 리플레이 형식입니다.");
-    if(Number(this.data?.simVersion)!==SIM_VERSION)throw new Error(`SIM_VERSION 불일치 · replay ${this.data?.simVersion} / game ${SIM_VERSION}`);
-    if(!Number.isFinite(Number(this.data?.seed)))throw new Error("리플레이 초기 상태가 없습니다.");
+    ReplayPolicy.validateReplayPayload(this.data);
     return true;
   }
   queueCommandsAfter(sim,tick){

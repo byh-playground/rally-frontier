@@ -16,7 +16,7 @@ const output = path.resolve(__dirname, '..', '.qa', 'netcode-ui-e2e-'+selectedMo
 const observer = `
 CONFIG.single.botWorker=false;
 window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntimeState,
-  BuildingDefinition,UnitDefinition,SIM_VERSION,BUILD_META,PRODUCT_VERSION,
+  BuildingDefinition,UnitDefinition,BUILD_META,PRODUCT_VERSION,
   observedHits:[],observedHitKeys:new Set(),
   observeCombat(){
     for(const s of Object.values(MatchLifecycle.singleMatch?.sessions||{})){
@@ -76,7 +76,7 @@ window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntime
       [role,{name:t.constructor.name,open:t.isOpen(),roomState:t.room?.state,netcodeState:t.netcodeState,generation:t.room?.generation,
         rtcConnectionState:t.room?.peerConnection?.connectionState}]));
     const aiReceipts=(match?.sessions?.[match?.humanRole]?.sim?.commandReceipts||[]).filter(c=>c.actor===match?.bot?.role);
-    return {build:BUILD_META.id,productVersion:PRODUCT_VERSION,simVersion:SIM_VERSION,sdkVersion:window.RallyNetcode?.VERSION,
+    return {build:BUILD_META.id,gameVersion:PRODUCT_VERSION,sdkVersion:window.RallyNetcode?.VERSION,
       sdkRevision:window.RallyNetcodeSource?.url,
       role:ActiveViewState.role,screen:UiRuntimeState.value.screen,
       renderer:{backend:renderer?.backend,tick:renderer?.snapshot?.tick,

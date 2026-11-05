@@ -1,7 +1,7 @@
 // Simulation performance sampling.
 import { ActiveViewState } from '../session/runtime-state.js';
 import { CloneUtil } from '../sim/map-generation.js';
-import { SIM_VERSION } from '../core/config.js';
+import { PRODUCT_VERSION } from '../core/product-version.js';
 import { BUILD_META } from '../core/build-info.js';
 import { LogUtil, MatchLifecycle, SinglePlayerModeUtil } from '../main.js';
 
@@ -54,7 +54,7 @@ class PerformanceTelemetry{
     const active=MatchLifecycle.activeSession?.();if(!active?.sim)return;
     const sessions=SinglePlayerModeUtil.isSinglePlayer()?MatchLifecycle.singleMatch.sessions:{[active.role]:active};
     const m=this.runtimeMonitor;
-    const payload={exportedAt:new Date().toISOString(),build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),simVersion:SIM_VERSION,visibility:document.visibilityState,
+    const payload={exportedAt:new Date().toISOString(),build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),gameVersion:PRODUCT_VERSION,visibility:document.visibilityState,
       note:'Local timings only. Nested timings overlap. App RTT includes browser message handling; ICE RTT is a separate sample. GPU begin time is CPU API cost. Collision details are sampled once per second; allied soft-contact counters describe that sampled tick.',
       mainThread:m?{timings:m.timings,longTasks:m.longTasks,lastLongTaskMs:m.longTaskMs,maxLongTaskMs:m.maxLongTaskMs}:null,
       renderer:ActiveViewState.renderer?.perfStats||null,
@@ -77,7 +77,7 @@ class PerformanceTelemetry{
     sessions[active.role||ActiveViewState.role||"local"]=active.balanceTelemetry();
   }
   const payload={
-    exportedAt:new Date().toISOString(),build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),simVersion:SIM_VERSION,roomCode:active.roomCode||null,
+    exportedAt:new Date().toISOString(),build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),gameVersion:PRODUCT_VERSION,roomCode:active.roomCode||null,
     localOnly:true,note:"Balance telemetry is diagnostics-only and excluded from checksum/exportState/recovery authority.",
     sessions
   };

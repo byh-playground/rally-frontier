@@ -12,7 +12,8 @@ import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { PerformanceTelemetry } from '../diagnostics/performance-telemetry.js';
 import { DISCONNECT_GRACE_MS, LOCKSTEP_INPUT_DELAY_BASE_MS, LOCKSTEP_INPUT_DELAY_MAX_MS, MAX_CATCHUP_STEPS_PER_PULSE, NETWORK_HEALTH_POLL_MS, SIM_SUSPENSION_THRESHOLD_MS, SNAPSHOT_EMIT_INTERVAL_MS } from '../core/session-timing.js';
-import { SIM_VERSION, netcodeMode } from '../core/config.js';
+import { netcodeMode } from '../core/config.js';
+import { PRODUCT_VERSION } from '../core/product-version.js';
 import { BUILD_META } from '../core/build-info.js';
 import { RallyGamekit, RallyNetcode } from '../core/gamekit.js';
 import { AppLifecycle, ConnectionPresentation, DiagnosticPresentation, MatchLifecycle, SimulationTiming } from '../main.js';
@@ -23,7 +24,6 @@ import { AppLifecycle, ConnectionPresentation, DiagnosticPresentation, MatchLife
 // The SDK owns command resolution and rollback timelines. These codecs expose
 // only opaque game data; they never inspect SDK queues, checkpoints or internals.
 class RallyStateCodec{
-  static schemaVersion=5;
   static MAX_ARRAY=20000;
   static maxBytes=8*1024*1024;
   static codec=RallyNetcode.createValueCodec({format:"binary",maxBytes:8*1024*1024,maxDepth:64,maxEntries:500000});
@@ -82,7 +82,7 @@ class RallySimulationAdapter{
     this.identity={seed:sim.seed,rules:sim.rules,mapDescriptor:sim.mapDescriptor};
     StateValue.freeze(this.identity.rules);
     const encoded=StableSerializationUtil.stableStringify(this.identity);
-    this.matchId=`${SIM_VERSION}:${encoded.length}:${HashUtil.hash(encoded)}:${HashUtil.hash("rally-state|"+encoded)}`;
+    this.matchId=`${PRODUCT_VERSION}:${encoded.length}:${HashUtil.hash(encoded)}:${HashUtil.hash("rally-state|"+encoded)}`;
     this.mapFingerprint=sim.mapFingerprint();
     const state=this.stateData();
     // Required root fields come from the authoritative owner, not another save list.
@@ -96,12 +96,12 @@ class RallySimulationAdapter{
   }
   save(){
     const started=performance.now();
-    try{const state=this.stateData();return RallyStateCodec.encode({schemaVersion:RallyStateCodec.schemaVersion,simVersion:SIM_VERSION,matchId:this.matchId,mapFingerprint:this.mapFingerprint,state})}
+    try{const state=this.stateData();return RallyStateCodec.encode({gameVersion:PRODUCT_VERSION,matchId:this.matchId,mapFingerprint:this.mapFingerprint,state})}
     finally{if(this.session.performanceStats)PerformanceTelemetry.recordTiming(this.session.performanceStats.timings,'save',performance.now()-started)}
   }
   readSnapshot(bytes,{tick}={}){
     const budget={},envelope=RallyStateCodec.decode(bytes,{budget}),state=envelope?.state;
-    if(envelope.schemaVersion!==RallyStateCodec.schemaVersion||envelope.simVersion!==SIM_VERSION||envelope.matchId!==this.matchId||envelope.mapFingerprint!==this.mapFingerprint||!state||Array.isArray(state)||typeof state!=="object")throw new Error("게임 snapshot의 경기 정의가 다릅니다.");
+    if(envelope.gameVersion!==PRODUCT_VERSION||envelope.matchId!==this.matchId||envelope.mapFingerprint!==this.mapFingerprint||!state||Array.isArray(state)||typeof state!=="object")throw new Error("게임 snapshot의 경기 정의가 다릅니다.");
     if(budget.nodes>budget.maxNodes)throw new Error('Snapshot exceeds the state budget');
     if(!Number.isSafeInteger(state.tick)||state.tick<0||state.tick>RallySimulationAdapter.maxFrameTick||tick!==undefined&&state.tick!==tick||!Number.isSafeInteger(state.seq)||state.seq<0||state.seed!==this.identity.seed)throw new Error("게임 snapshot의 tick/seed가 잘못되었습니다.");
     for(const [key,shape]of Object.entries(this.rootShape)){
@@ -299,7 +299,7 @@ class GameSession{
     if(!this.sim||this.simEnded)return false;
     if(this.transportConnected&&this.transport.isNetcodeOpen?.()){
       if(this.role==='guest')return this.netcodeSession.requestResync(Math.max(0,this.confirmedGameTick-1));
-      return this.transport.send({type:'NETCODE_RESYNC_REQUEST',simVersion:SIM_VERSION});
+      return this.transport.send({type:'NETCODE_RESYNC_REQUEST',gameVersion:PRODUCT_VERSION});
     }
     this.prepareSimpleRecovery(String(++this.simpleRecoverySeq),reason);
     const ok=this.role==='host'?this.transport.prepareRecoveryHost?.(reason):this.transport.rebuildRecoveryGuest?.(reason);
@@ -350,9 +350,10 @@ class GameSession{
   }
   handle(m){
     if(this.disposed||!m||typeof m!=='object')return;
-    if(m.type==='VERSION_MISMATCH'||['HELLO','GAME_START','DRAFT_SYNC','NETCODE_RESYNC_REQUEST','MATCH_TERMINAL_ACK'].includes(m.type)&&Number(m.simVersion)!==SIM_VERSION){
-      if(m.type!=='VERSION_MISMATCH')this.transport.send({type:'VERSION_MISMATCH',simVersion:SIM_VERSION});
-      this.syncHold=true;this.transport.onError({type:'version-mismatch',nonFatal:true,message:'게임 버전이 다릅니다. 양쪽 모두 같은 HTML로 새로고침하세요.'});return;
+    if(m.type==='VERSION_MISMATCH'||['HELLO','GAME_START','DRAFT_SYNC','NETCODE_RESYNC_REQUEST','MATCH_TERMINAL_ACK'].includes(m.type)&&m.gameVersion!==PRODUCT_VERSION){
+      if(m.type!=='VERSION_MISMATCH')this.transport.send({type:'VERSION_MISMATCH',gameVersion:PRODUCT_VERSION});
+      this.syncHold=true;this.transport.onError({type:'version-mismatch',nonFatal:true,expectedVersion:PRODUCT_VERSION,remoteVersion:m.gameVersion,
+        message:`게임 버전이 다릅니다. 내 v${PRODUCT_VERSION} / 상대 ${m.gameVersion??"확인 불가"}. 양쪽 모두 같은 최신 게임으로 새로고침하세요.`});return;
     }
     if(!this.sim)this.lastPongAt=Date.now();
     if(m.type==='SIMULATION_FATAL'){this.enterSimulationFatal(new Error(m.message||'상대 simulation 오류'),{source:'peer-simulation-fatal',notifyPeer:false,remoteInfo:m});return}
@@ -383,7 +384,7 @@ class GameSession{
       if(m.type==="HELLO"){
         if(!this.draft)this.prepareLiveDraft();
         if(!this.sim)this.beginGame();
-        else this.transport.send({type:"DRAFT_SYNC",simVersion:SIM_VERSION,seq:this.commitSeq,state:this.draft,matchConfig:this.matchConfig});
+        else this.transport.send({type:"DRAFT_SYNC",gameVersion:PRODUCT_VERSION,seq:this.commitSeq,state:this.draft,matchConfig:this.matchConfig});
         return;
       }
     }
@@ -395,7 +396,7 @@ class GameSession{
   beginGame(){
     if(this.sim)return false;
     const seed=GameSession.matchSeed(this.roomCode);
-    this.transport.send({type:'GAME_START',simVersion:SIM_VERSION,seed,draft:this.draft,matchConfig:this.matchConfig,roundRules:this.roundRules});
+    this.transport.send({type:'GAME_START',gameVersion:PRODUCT_VERSION,seed,draft:this.draft,matchConfig:this.matchConfig,roundRules:this.roundRules});
     this.startSim(seed);return true;
   }
   startSim(seed){
@@ -413,7 +414,7 @@ class GameSession{
     const baseInputDelay=Math.max(1,Math.ceil(LOCKSTEP_INPUT_DELAY_BASE_MS*this.sim.tps/1000));
     const inputDelayProfile=this.netcodeMode==='lockstep'?{baseInputDelayTicks:baseInputDelay,minInputDelayTicks:baseInputDelay,maxInputDelayTicks:Math.floor(LOCKSTEP_INPUT_DELAY_MAX_MS*this.sim.tps/1000)}:{};
     this.netcodeSession=RallyNetcode.createSession({players:['host','guest'],localPlayerId:this.role,authorityPlayerId:'host',
-      sessionId:String(this.roomCode),simulationVersion:String(SIM_VERSION),seed:seed>>>0,inputSize:1,
+      sessionId:String(this.roomCode),simulationVersion:PRODUCT_VERSION,seed:seed>>>0,inputSize:1,
       profile:{...RallyNetcode.profiles.rts,mode:this.netcodeMode,rollbackWindowTicks:this.netcodeMode==='lockstep'?0:RallyNetcode.profiles.rts.rollbackWindowTicks,
         ...inputDelayProfile,
         tickRate:this.sim.tps,maxCatchupSteps:MAX_CATCHUP_STEPS_PER_PULSE,checksumInterval:20,maxCommandBytes:12*1024,maxHistoryBytes:64*1024*1024,maxSnapshotBytes:RallyStateCodec.maxBytes},
@@ -549,7 +550,7 @@ class GameSession{
   }
   sendTerminalReceipt(){
     const frame=this.pendingTerminalFrame;if(!frame||this.simEnded)return;
-    if(this.transport.send({type:'MATCH_TERMINAL_ACK',simVersion:SIM_VERSION,tick:frame.gameTick,
+    if(this.transport.send({type:'MATCH_TERMINAL_ACK',gameVersion:PRODUCT_VERSION,tick:frame.gameTick,
       hash:RallyNetcode.hashBytes(frame.terminalState),winner:frame.winner,reason:frame.reason}))this.lastTerminalReceiptAt=this.netcodeNow;
   }
   tryFinishTerminalBarrier(){
@@ -740,7 +741,7 @@ start(){
     if(this.role==="host"){
       // Host waits for the real Guest HELLO, then starts the match from a deterministic live initial state.
       this.prepareLiveDraft();
-    }else this.transport.send({type:"HELLO",simVersion:SIM_VERSION})
+    }else this.transport.send({type:"HELLO",gameVersion:PRODUCT_VERSION})
   }
 simulationChecksumSafe(){
     try{return this.sim?.checksum?.()??null}catch{return null}

@@ -3,7 +3,7 @@
 /* =========================
    1. Definitions
    ========================= */
-const FP=100,SIM_VERSION=209;
+const FP=100;
 // Local session policy, deliberately outside canonical gameplay/save rules.
 // A session captures this setting once; changing it only affects the next match.
 // single.botWorker runs the AI peer's whole session in src/sim-worker.js.
@@ -33,4 +33,4 @@ const LAUNCH_HOLD_DRAG_PX=10;
 const STATE_PUBLISH_HZ=10;
 const STATE_PUBLISH_INTERVAL_MS=1000/STATE_PUBLISH_HZ;
 
-export { CONFIG, FP, LAUNCH_HOLD_ARM_MS, LAUNCH_HOLD_DRAG_PX, SIM_VERSION, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode };
+export { CONFIG, FP, LAUNCH_HOLD_ARM_MS, LAUNCH_HOLD_DRAG_PX, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode };
