@@ -6,6 +6,7 @@ import { GameSession, RallySynctestDiagnostics } from './session/game-session.js
 import { ReplayPlayer, ReplayPolicy } from './session/replay.js';
 import { ActiveViewState, BACKGROUND_TICK_SESSIONS, NetworkModuleLoader } from './session/runtime-state.js';
 import { LaunchRules } from './sim/launch-rules.js';
+import { ConstructionRules } from './sim/construction-rules.js';
 import { LaunchImpactRules } from './definitions/launch-impact-rules.js';
 import { RoomTransport } from './net/rtc-transport.js';
 import { RecoveryTelemetry } from './diagnostics/recovery-telemetry.js';
@@ -1174,9 +1175,7 @@ class GLRenderer{
         this.addClientFx("buildingBurst",e,snapshot,index);
         this.triggerClientShake(3.5,180,HashUtil.hash(`${snapshot.tick}|building|${index}`));
       }else if(e.type==="constructionHit"){
-        this.addClientFx("constructionHit",{...e,x:e.contactX??e.x,y:e.contactY??e.y},snapshot,index);
-        const source=(snapshot.units||[]).find(u=>u.id===e.sourceId&&u.alive!==false);
-        if(source)this.addClientFx("meleeSourceMotion",{...e,x:source.x,y:source.y,x2:e.contactX??e.x,y2:e.contactY??e.y},snapshot,index,{motion:AttackPresentationDefinition.forSource(e.sourceType).sourceMotion||"smash"});
+        this.addClientFx("constructionHit",{...e,x:e.contactX??e.x,y:e.contactY??e.y},snapshot,index,{spend:e.spend,workAdded:e.workAdded,eventTick:e.presentationTick??snapshot.tick});
       }else if(e.type==="launchFire"){
         this.launchFireFx(e,snapshot,index);
       }else if(e.type==="launchImpact"){
@@ -1234,8 +1233,7 @@ class GLRenderer{
   }
   cannonArtOptions(b,{aim=this.cannonAim(b),fireAgeMs,power}={}){
     const [x,y]=this.worldToPx(this.viewX(b.x),this.viewY(b.y)),shot=this.launchRecoil.get(b.id),flip=this.orientationRole()==="guest"?-1:1;
-    const now=this.presentationNow(),workHit=this.combatFx.findLast(fx=>fx.kind==="constructionHit"&&fx.targetId===b.id&&now>=fx.start&&now-fx.start<220);
-    const compression=workHit?Math.sin((now-workHit.start)/220*Math.PI)*.03:0;
+    const impact=this.constructionImpact(b),compression=impact?impact.pulse*(impact.fx.spend>0?.06:.025):0;
     return{x,y:y+compression*10*this.sc(),sc:this.sc()*(1-compression),own:this.isFriendlySide(b.side),aim:{dx:aim.dx*flip,dy:aim.dy*flip},
       fireAgeMs:fireAgeMs??(shot?Math.max(0,this.presentationNow()-shot.at):Infinity),power:power??shot?.power??0};
   }
@@ -1279,6 +1277,27 @@ class GLRenderer{
     while(this.floatFx.length>72)this.floatFxPool.release(this.floatFx.shift());
   }
 
+  constructionImpact(building){
+    const now=this.presentationNow(),active=f=>f.kind==="constructionHit"&&f.targetId===building.id&&now>=f.start&&now-f.start<220;
+    const paid=this.combatFx.findLast(f=>active(f)&&f.spend>0),latest=paid||this.combatFx.findLast(active);
+    if(!latest)return null;
+    let spend=0;
+    if(paid)for(const f of this.combatFx)if(f.kind==="constructionHit"&&f.targetId===building.id&&f.eventTick===paid.eventTick)spend+=Math.max(0,Number(f.spend)||0);
+    return{fx:paid?{...paid,spend}:latest,pulse:Math.sin((now-latest.start)/220*Math.PI)};
+  }
+  // Five cells normalize the rule's next expense interval. They do not prescribe five hits.
+  drawConstructionPaymentMeter(ctx,work,x,y,width,height,impact=null){
+    const next=ConstructionRules.nextPayment(work);if(!next)return null;
+    const gap=3,cellWidth=(width-gap*4)/5,spending=impact?.fx.spend>0;
+    for(let i=0;i<5;i++){
+      const left=x-width/2+i*(cellWidth+gap),fill=RangeUtil.clamp(next.progress*5-i,0,1);
+      ctx.fillStyle="rgba(0,0,0,.65)";ctx.fillRect(left,y,cellWidth,height);
+      ctx.fillStyle=spending?"#ffe7a1":"#a6d9ff";
+      ctx.fillRect(left,y,cellWidth*(spending?1:fill),height);
+      if(impact){ctx.strokeStyle=spending?`rgba(255,224,126,${impact.pulse})`:`rgba(190,232,255,${impact.pulse})`;ctx.lineWidth=1;ctx.strokeRect(left-1,y-1,cellWidth+2,height+2)}
+    }
+    return next;
+  }
   drawStrategicLabels(){
     const ctx=this.fxCtx;
     if(!ctx||!this.snapshot)return;
@@ -1295,21 +1314,25 @@ class GLRenderer{
       const owner=visibleConstruction?(outpost.side===side?"아군 건설 중":"적 건설 중"):cp.owner===side?"아군 거점":cp.owner==null?(locked?"오브젝트 잠금":"점령 가능"):"적 거점";
       ctx.font=`900 ${Math.max(9,11*sc)}px system-ui,sans-serif`;
       ctx.lineWidth=Math.max(2,3*sc);ctx.strokeStyle="rgba(0,0,0,.60)";
-      const text=`${cp.label||cp.lane} · ${owner}`,labelY=y-Math.max(50,64*sc),lineGap=Math.max(14,15*sc);
+      const text=`${cp.label||cp.lane} · ${owner}`,labelY=y-Math.max(visibleConstruction?110:50,(visibleConstruction?180:64)*sc),lineGap=Math.max(14,15*sc);
       ctx.strokeText(text,x,labelY);ctx.fillStyle="#fff";ctx.fillText(text,x,labelY);
       ctx.font=`800 ${Math.max(10,9*sc)}px system-ui,sans-serif`;
       const workers=visibleConstruction?(this.snapshot.units||[]).filter(u=>u.alive!==false&&u.constructionWork?.targetId===outpost.id&&(this.isFriendlySide(u.side)||this.visibleRaw(u.x,u.y))):[];
       const workState=!visibleConstruction?"":!workers.length?(outpost.side===side?"작업자 필요":"작업자 미확인"):workers.every(u=>u.constructionWork.phase==="waiting")?"자원 대기":workers.every(u=>u.constructionWork.phase==="approach")?`${workers.length}명 접근 중`:`${workers.length}명 작업 중`;
       const guide=visibleConstruction
-        ? `건설 ${construction.invested}/${LaunchRules.captureCost} ◆ · ${workState}`
+        ? `건설 ${Math.round(ConstructionRules.progress(construction)*1000)/10}% · ◆ ${construction.invested}/${construction.cost}`
         : cp.owner!=null
           ? `인컴 +${LaunchRules.captureIncomePerSecond}/초 · 자동 방어`
-          : locked?"연결 전술 오브젝트 처치 필요":`병력이 직접 건설 · ${LaunchRules.captureCost}원 / 1명 ${LaunchRules.captureCost*LaunchRules.captureWorkMs/1000}초`;
+          : locked?"연결 전술 오브젝트 처치 필요":`병력이 직접 건설 · ${BuildingDefinition.get(BuildingDefinition.forRole("outpost")).construction.cost}원 · ${BuildingDefinition.get(BuildingDefinition.forRole("outpost")).construction.workRequired}작업`;
       ctx.strokeText(guide,x,labelY+lineGap);ctx.fillStyle=cp.owner===side||visibleConstruction&&outpost.side===side?"#cfe6ff":"#fff3b0";ctx.fillText(guide,x,labelY+lineGap);
       if(visibleConstruction){
-        const ratio=construction.invested/LaunchRules.captureCost,w=Math.max(60,76*sc),h=Math.max(4,5*sc),barY=labelY+lineGap+10;
+        const ratio=ConstructionRules.progress(construction),w=Math.max(80,96*sc),h=Math.max(4,5*sc),barY=labelY+lineGap+10,impact=this.constructionImpact(outpost);
         ctx.fillStyle="rgba(0,0,0,.65)";ctx.fillRect(x-w/2,barY,w,h);
         ctx.fillStyle="#ffd36b";ctx.fillRect(x-w/2,barY,w*ratio,h);
+        const next=this.drawConstructionPaymentMeter(ctx,construction,x,barY+11,w,Math.max(5,6*sc),impact);
+        const payment=impact?.fx.spend>0?`자원 -${impact.fx.spend}원`:next?`다음 ${next.amount}원까지`:"추가 지출 없음";
+        ctx.font=`800 ${Math.max(9,9*sc)}px system-ui,sans-serif`;
+        ctx.strokeText(`${payment} · ${workState}`,x,barY+28);ctx.fillStyle=impact?.fx.spend>0?"#ffe1a1":"#d8ebff";ctx.fillText(`${payment} · ${workState}`,x,barY+28);
       }
     }
     ctx.restore();
@@ -1501,8 +1524,9 @@ class GLRenderer{
         burst(fx,x,y,t,7,"#d2aa63",58,3.3,.52);
         ring(x,y,(15+72*ease)*sc,3*sc,"#b98c54",.35*(1-t));
       }else if(fx.kind==="constructionHit"){
-        burst(fx,x,y,t,4,"#e7bd75",20,1.8,.5);
-        ring(x,y,(4+8*ease)*sc,Math.max(1,1.5*sc),"#f2d39a",.5*(1-t));
+        const paid=fx.spend>0;
+        burst(fx,x,y,t,paid?6:3,"#e7bd75",paid?28:16,paid?2:1.5,.5);
+        ring(x,y,(4+(paid?12:6)*ease)*sc,Math.max(1,1.5*sc),paid?"#ffe1a1":"#f2d39a",.5*(1-t));
       }else if(fx.kind==="hitscanTravel"){
         const source={id:fx.sourceId,x:fx.x,y:fx.y,side:fx.side};
         const pose=BuildingArt.pose(this.cannonArtOptions(source,{aim:{dx:fx.aimDx,dy:fx.aimDy},fireAgeMs:age,power:0}));
@@ -1742,7 +1766,7 @@ class GLRenderer{
 
       const outpost=(this.snapshot.buildings||[]).find(b=>b.id===cp.outpostId&&b.alive!==false);
       if(outpost?.construction&&(this.isFriendlySide(outpost.side)||this.visibleRaw(outpost.x,outpost.y))){
-        const ratio=outpost.construction.invested/LaunchRules.captureCost;
+        const ratio=ConstructionRules.progress(outpost.construction);
         this.circle(x,y,Math.max(7,30*sc),this.factionColor(outpost.side,{alpha:.18+ratio*.35}),16);
       }
     }
@@ -1898,10 +1922,14 @@ class GLRenderer{
     if(!target)return null;
     const phase=work.phase,progress=RangeUtil.clamp((renderTick-work.phaseStartedAtTick)/Math.max(1,(work.phaseEndsAtTick??work.phaseStartedAtTick)-work.phaseStartedAtTick),0,1);
     const to=this.worldToPx(this.viewX(target.x),this.viewY(target.y)),at=this.projectEntityScreen(unit,"unit");
-    const dx=to[0]-at.x,dy=to[1]-at.y,facing=dx<0?-1:1;
-    const lean=phase==="prepare"?-.14*progress:phase==="strike"?-.14+.36*progress:phase==="recover"?.22*(1-progress):0;
-    return{phase,progress,facing,rotation:lean*facing,
-      clip:phase==="prepare"?"windup":phase==="strike"?"fire":phase==="recover"?"recover":null};
+    const dx=to[0]-at.x,dy=to[1]-at.y,length=Math.hypot(dx,dy)||1,facing=dx<0?-1:1;
+    const active=phase==="prepare"||phase==="strike"||phase==="recover";
+    const lean=phase==="prepare"?-.16*progress:phase==="strike"?-.16+.42*progress:phase==="recover"?.26*(1-progress):0;
+    const extension=phase==="prepare"?-.25*progress:phase==="strike"?-.25+.9*progress:phase==="recover"?.65*(1-progress):0;
+    const squash=phase==="prepare"?.08*progress:phase==="strike"?.08+.04*progress:phase==="recover"?.12*(1-progress):0;
+    const reach=this.unitRenderRadius(unit)*extension;
+    return{phase,progress,active,facing,rotation:lean*facing,scaleX:1+squash,scaleY:1-squash,offsetX:dx/length*reach,offsetY:dy/length*reach,
+      clip:active?"idle":null};
   }
   prepareGrainPoses(entries){
     this.grainActorFrame++;
@@ -1914,14 +1942,14 @@ class GLRenderer{
       const work=impact.active?null:this.constructionWorkPose(entity,renderTick);
       const clip=impact.active?"idle":work?.clip|| (u.attackFlash>0?"fire":u.hitFlash>0?"hit":moving?"walk":"idle");
       if(actor.currentClip!==clip)actor.play(clip,0);
-      actor.seek(work?.clip?work.progress*(record.compiled.metadata.clips[clip]?.durationMs||1):now+(HashUtil.hash(u.id)%997)*7);
+      actor.seek(work?.active?0:now+(HashUtil.hash(u.id)%997)*7);
       actor.preparePose();
       // Budmori bodies are front-facing: no rotation, ground socket on the unit's ground point.
       const p=this.projectRenderWorldPosition(world),r=this.unitRenderRadius(u),scale=r*2.7/260*(UnitVisualDefinition.get(u.type)?.visualScale||1),m=grain.matrix;
-      const angle=work?.rotation??impact.rotation*(this.orientationRole()==="guest"?-1:1),cos=Math.cos(angle),sin=Math.sin(angle),sx=scale*impact.scaleX*(work?.facing??1),sy=scale*impact.scaleY;
+      const angle=work?.rotation??impact.rotation*(this.orientationRole()==="guest"?-1:1),cos=Math.cos(angle),sin=Math.sin(angle),sx=scale*impact.scaleX*(work?.facing??1)*(work?.scaleX??1),sy=scale*impact.scaleY*(work?.scaleY??1);
       m[0]=cos*sx;m[1]=sin*sx;m[2]=-sin*sy;m[3]=cos*sy;
       const cx=record.ground[0],cy=record.ground[1]-120;
-      m[4]=p.x-m[0]*cx-m[2]*cy;m[5]=p.y+r*.55-120*scale-m[1]*cx-m[3]*cy;
+      m[4]=p.x+(work?.offsetX??0)-m[0]*cx-m[2]*cy;m[5]=p.y+(work?.offsetY??0)+r*.55-120*scale-m[1]*cx-m[3]*cy;
       grain.depth=RangeUtil.clamp(depth,-.98,.98)-(++rank)*GRAIN_DEPTH_RANK_STEP;
       grain.face=impact.expression||(u.hitFlash>0?"hurt":work?.clip||u.attackFlash>0?"attack":"neutral");grain.bodyDrawn=false;
     }
