@@ -69,7 +69,6 @@ class BotController{
   static attach(session,role){
     const bot=new BotController(session,{role});
     session.publishConfirmedSnapshots=true;
-    session.onDraft=state=>{session.draft=state};
     session.onSnapshot=state=>bot.handleSnapshot(state);
     session.onLog=()=>{};session.onResult=()=>bot.stop();session.onNetworkHealth=()=>{};
     return bot;

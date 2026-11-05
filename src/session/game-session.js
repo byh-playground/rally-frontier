@@ -202,9 +202,7 @@ class GameSession{
     this.matchConfig=GameRuleRuntime.normalizeMatchConfig(matchConfig);
     this.matchPresetId=this.matchConfig.presetId;this.matchRuleOverrides=this.matchConfig.overrides;
     this.roundRules=GameRuleRuntime.resolveMatchRules({presetId:this.matchPresetId,matchOverrides:GameRuleRuntime.mergeGameRules(this.matchRuleOverrides||{},{simulation:{tps:this.matchConfig.simulationTps}})});
-    // The live match setup (both sides' cards): Host builds it, Guest receives it with GAME_START.
-    this.draft=null;
-    this.commitSeq=0;this.runtimeSeq=0;
+    this.runtimeSeq=0;
     this.sim=null;this.simulationAdapter=null;this.netcodeSession=null;this.detachNetcodeTransport=null;
     this.netcodeNow=performance.now();this.neutralInput=new Uint8Array(1);this.replayRecorder=null;
     this.pendingNetcodeCommands=new Map();this.lastCommandTicket=null;this.frameOutputs=new Map();this.candidateFrameOutputs=new Map();this.publishedGameTick=0;
@@ -223,7 +221,7 @@ class GameSession{
     }}},retentionTicks:120});
     this.simEnded=false;this.matchResult=null;this.simulationFatal=false;this.simulationFatalInfo=null;
     this.disconnectGraceDeadlineAt=0;this.disconnectGraceReason='';this.disconnectGraceTimer=0;
-    this.onDraft=()=>{};this.onSnapshot=()=>{};this.onRenderTargets=()=>{};this.onLog=()=>{};this.onResult=()=>{};this.onNetworkHealth=()=>{};
+    this.onSnapshot=()=>{};this.onRenderTargets=()=>{};this.onLog=()=>{};this.onResult=()=>{};this.onNetworkHealth=()=>{};
     this.networkOpened=false;this.heartbeatTimer=0;this.lastPingAt=0;this.lastPongAt=0;this.lastRtt=null;this.networkState='hidden';
     transport.onMessage=m=>this.handle(m);
   }
@@ -350,7 +348,7 @@ class GameSession{
   }
   handle(m){
     if(this.disposed||!m||typeof m!=='object')return;
-    if(m.type==='VERSION_MISMATCH'||['HELLO','GAME_START','DRAFT_SYNC','NETCODE_RESYNC_REQUEST','MATCH_TERMINAL_ACK'].includes(m.type)&&m.gameVersion!==PRODUCT_VERSION){
+    if(m.type==='VERSION_MISMATCH'||['HELLO','GAME_START','NETCODE_RESYNC_REQUEST','MATCH_TERMINAL_ACK'].includes(m.type)&&m.gameVersion!==PRODUCT_VERSION){
       if(m.type!=='VERSION_MISMATCH')this.transport.send({type:'VERSION_MISMATCH',gameVersion:PRODUCT_VERSION});
       this.syncHold=true;this.transport.onError({type:'version-mismatch',nonFatal:true,expectedVersion:PRODUCT_VERSION,remoteVersion:m.gameVersion,
         message:`게임 버전이 다릅니다. 내 v${PRODUCT_VERSION} / 상대 ${m.gameVersion??"확인 불가"}. 양쪽 모두 같은 최신 게임으로 새로고침하세요.`});return;
@@ -370,21 +368,13 @@ class GameSession{
       if(this.sim||this.simEnded)return;
       if(m.matchConfig)this.applyMatchConfig(m.matchConfig,{authoritative:true});
       if(m.roundRules&&typeof m.roundRules==='object')this.roundRules=StateValue.copy(m.roundRules);
-      this.draft=m.draft;this.startSim(m.seed);return;
+      this.netcodeMode=netcodeMode(m.netcodeMode);
+      this.startSim(m.seed);return;
     }
-    if(m.type==="DRAFT_SYNC"&&this.role!=="host"){
-      if(m.matchConfig)this.applyMatchConfig(m.matchConfig,{authoritative:true});
-      this.draft=m.state;
-      this.commitSeq=m.seq;
-      this.onDraft(this.draft);
-      return
-    }
-
     if(this.role==="host"){
       if(m.type==="HELLO"){
-        if(!this.draft)this.prepareLiveDraft();
         if(!this.sim)this.beginGame();
-        else this.transport.send({type:"DRAFT_SYNC",gameVersion:PRODUCT_VERSION,seq:this.commitSeq,state:this.draft,matchConfig:this.matchConfig});
+        else this.sendGameStart();
         return;
       }
     }
@@ -393,11 +383,13 @@ class GameSession{
   static matchSeed(roomCode){
     return HashUtil.hash(`${roomCode}|launch`);
   }
+  sendGameStart(){
+    return this.transport.send({type:'GAME_START',gameVersion:PRODUCT_VERSION,seed:GameSession.matchSeed(this.roomCode),
+      matchConfig:this.matchConfig,roundRules:this.roundRules,netcodeMode:this.netcodeMode});
+  }
   beginGame(){
-    if(this.sim)return false;
-    const seed=GameSession.matchSeed(this.roomCode);
-    this.transport.send({type:'GAME_START',gameVersion:PRODUCT_VERSION,seed,draft:this.draft,matchConfig:this.matchConfig,roundRules:this.roundRules});
-    this.startSim(seed);return true;
+    if(this.sim||!this.sendGameStart())return false;
+    this.startSim(GameSession.matchSeed(this.roomCode));return true;
   }
   startSim(seed){
     if(this.disposed||this.sim)return false;
@@ -729,19 +721,10 @@ applyMatchConfig(config,{authoritative=false}={}){
     this.roundRules=GameRuleRuntime.resolveMatchRules({presetId:this.matchPresetId,matchOverrides:GameRuleRuntime.mergeGameRules(this.matchRuleOverrides||{},{simulation:{tps:this.matchConfig.simulationTps}})});
     return true;
   }
-// A launch match has no unit selection; the draft only marks the match as live.
-prepareLaunchLiveDraft(){
-    if(this.role!=="host")return false;
-    this.draft={phase:"live",roomCode:this.roomCode,winner:null};
-    return true;
-  }
-// Host builds the live setup itself: the launch deck.
-prepareLiveDraft(){return this.prepareLaunchLiveDraft()}
+// The host waits for a real guest HELLO; a guest can repeat it after reconnect.
 start(){
-    if(this.role==="host"){
-      // Host waits for the real Guest HELLO, then starts the match from a deterministic live initial state.
-      this.prepareLiveDraft();
-    }else this.transport.send({type:"HELLO",gameVersion:PRODUCT_VERSION})
+    if(this.role==='guest')return this.transport.send({type:'HELLO',gameVersion:PRODUCT_VERSION});
+    return true;
   }
 simulationChecksumSafe(){
     try{return this.sim?.checksum?.()??null}catch{return null}

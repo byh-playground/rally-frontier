@@ -3107,7 +3107,8 @@ class UiController{
   static setStartNetcodeMode(value){CONFIG.netcode.mode=netcodeMode(value)}
   static setStartSimulationTps(value){UiRuntimeState.value.settings.simulationTps=RangeUtil.clamp(Math.round(Number(value)||10),10,30)}
   static openJoinDialog(){
-  NetworkModuleLoader.pendingPeerAction=null;
+  if(MatchLifecycle.singleMatch||ActiveViewState.session?.sim)return false;
+  MatchLifecycle.cancelOnlinePreparation();
   UiRegistry.refs.joinError.textContent="";
   UiRegistry.refs.room.value="";
   UiRegistry.refs.joinConfirm.disabled=false;
@@ -3171,7 +3172,7 @@ class ConnectionPresentation{
       UiRegistry.refs.createStatus.textContent=message+" · 현재 방은 참가 대기를 유지합니다.";
     }else{
       UiRegistry.refs.joinError.textContent=message;
-      UiRegistry.refs.joinConfirm.disabled=false;UiRegistry.refs.joinConfirm.textContent="참가하기";
+      MatchLifecycle.setJoinBusy(false);
     }
     LogUtil.log(message);
   }
@@ -3643,15 +3644,15 @@ class MatchLifecycle{
   return {presetId:UiRuntimeState.value.settings.presetId,simulationTps:UiRuntimeState.value.settings.simulationTps};
 }
   static wireSessionForView(r,sess,trans){
-  sess.onDraft=state=>{sess.draft=state};
-  sess.onSnapshot=state=>{
+  const isCurrent=()=>!sess.disposed&&ActiveViewState.session===sess&&ActiveViewState.transport===trans;
+  sess.onSnapshot=state=>{if(!isCurrent())return;
     if(ActiveViewState.role===r)BattlePresentation.renderGame(state);
   };
-  sess.onRenderTargets=(sim,snapNow=false)=>{
+  sess.onRenderTargets=(sim,snapNow=false)=>{if(!isCurrent())return;
     if(ActiveViewState.role===r&&ActiveViewState.renderer)ActiveViewState.renderer.updatePresentationTargets(sim,!!snapNow);
   };
-  sess.onLog=text=>{if(ActiveViewState.role===r)LogUtil.log(text)};
-  sess.onNetworkHealth=info=>{
+  sess.onLog=text=>{if(isCurrent()&&ActiveViewState.role===r)LogUtil.log(text)};
+  sess.onNetworkHealth=info=>{if(!isCurrent())return;
     if(ActiveViewState.role!==r)return;
     ConnectionPresentation.renderP2PHealth(info,false);
 
@@ -3684,11 +3685,12 @@ class MatchLifecycle{
     }
   };
   sess.onResult=(w,reason="base-destroyed")=>{
+    if(!isCurrent())return;
     // Authoritative result must not depend on which role is currently displayed.
     MatchLifecycle.presentMatchResult(w,reason,r);
   };
 
-  trans.onPeerReady=()=>{
+  trans.onPeerReady=()=>{if(!isCurrent())return;
     if(ActiveViewState.role!==r)return;
     if(SinglePlayerModeUtil.isSinglePlayer()){
       LogUtil.status("싱글 · AI WebRTC 연결 준비");
@@ -3696,10 +3698,13 @@ class MatchLifecycle{
       UiController.setElementVisible(UiRegistry.refs.singleStatus,true);
     }else{
       LogUtil.status("방 "+ActiveViewState.roomCode+" · 상대 대기");
-      if(r==="host")UiRegistry.refs.createStatus.textContent="방이 열렸습니다. 상대 참가를 기다립니다.";
+      if(r==="host"){
+        UiRegistry.refs.codeArea.classList.remove("hidden");
+        UiRegistry.refs.createStatus.textContent="방이 열렸습니다. 상대 참가를 기다립니다.";
+      }
     }
   };
-  trans.onOpen=()=>{
+  trans.onOpen=()=>{if(!isCurrent())return;
     // DataChannel open is only transport readiness. During recovery the match
     // is NOT "connected" until Host snapshot READY/RUN finishes.
     sess.localVisible=document.visibilityState==="visible";
@@ -3719,6 +3724,7 @@ class MatchLifecycle{
             ?"새 DataChannel 연결됨 · 공통 코어 입력 동기화 중"
             :"연결됨 · "+ActiveViewState.roomCode);
 
+      MatchLifecycle.setJoinBusy(false);
       UiController.closeUiModal("create");
       UiController.closeUiModal("join");
 
@@ -3732,7 +3738,7 @@ class MatchLifecycle{
 
     AppLifecycle.requestScreenWakeLock();
   };
-  trans.onError=e=>{
+  trans.onError=e=>{if(!isCurrent())return;
     if(e?.type==="version-mismatch"){ConnectionPresentation.showVersionMismatch(e,r);return}
     if(ActiveViewState.role===r){
       const message=e.message||e.type||"연결 오류";
@@ -3752,12 +3758,11 @@ class MatchLifecycle{
           ?"해당 방을 찾을 수 없습니다. 방 코드와 방장이 아직 접속 중인지 확인해 주세요."
           :"연결에 실패했습니다: "+message;
         UiRegistry.refs.joinError.textContent=friendly;
-        UiRegistry.refs.joinConfirm.disabled=false;
-        UiRegistry.refs.joinConfirm.textContent="참가하기";
+        MatchLifecycle.setJoinBusy(false);
       }
     }
   };
-  trans.onClose=()=>{
+  trans.onClose=()=>{if(!isCurrent())return;
     sess.onTransportClosed();
     if(ActiveViewState.role===r){
       LogUtil.status(SinglePlayerModeUtil.isSinglePlayer()
@@ -3779,6 +3784,21 @@ class MatchLifecycle{
     this.singleMatch=null;
     ActiveViewState.session=null;ActiveViewState.transport=null;ActiveViewState.snap=null;
     if(errors.length)throw new AggregateError(errors,"세션 종료 처리 중 오류가 발생했습니다.");
+  }
+  static setJoinBusy(busy){
+    this.joinBusy=!!busy;
+    UiRegistry.refs.joinConfirm.disabled=this.joinBusy;
+    UiRegistry.refs.joinConfirm.textContent=this.joinBusy?"연결 중…":"참가하기";
+  }
+  static cancelOnlinePreparation(){
+    NetworkModuleLoader.pendingPeerAction=null;
+    if(!this.singleMatch&&!ActiveViewState.session?.sim){
+      this.disposeMatches("online-cancel");
+      ActiveViewState.roomCode="";
+    }
+    this.setJoinBusy(false);
+    UiRegistry.refs.codeArea.classList.add("hidden");
+    UiController.closeUiModal("create");UiController.closeUiModal("join");
   }
   static connect(r,c){
   MatchLifecycle.disposeMatches("online-start");
@@ -3883,6 +3903,9 @@ class MatchLifecycle{
   else hostTransport.open();
 }
   static beginCreateRoom(){
+  if(this.singleMatch||ActiveViewState.session?.sim)return false;
+  this.cancelOnlinePreparation();
+  UiController.openUiModal("create");
   const c=RoomCodeUtil.randomCode();
   UiRegistry.refs.code.textContent=c;
   UiRegistry.refs.codeArea.classList.add("hidden");
@@ -3892,8 +3915,7 @@ class MatchLifecycle{
   ConnectionPresentation.runWhenNetworkReady(
     ()=>{
       NetworkModuleLoader.pendingPeerAction=null;
-      UiRegistry.refs.codeArea.classList.remove("hidden");
-      UiRegistry.refs.createStatus.textContent="방이 열렸습니다 · 상대 참가를 기다립니다.";
+      UiRegistry.refs.createStatus.textContent="방 코드를 확보하고 있습니다…";
       MatchLifecycle.connect("host",c);
     },
     (msg,failed)=>{
@@ -3903,6 +3925,7 @@ class MatchLifecycle{
   );
 }
   static submitJoinRoom(){
+  if(this.joinBusy||this.singleMatch||ActiveViewState.session?.sim)return false;
   const c=UiRegistry.refs.room.value.replace(/\D/g,"").slice(0,4);
   UiRegistry.refs.room.value=c;
 
@@ -3913,19 +3936,15 @@ class MatchLifecycle{
 
   audioSystem.unlock();
   UiRegistry.refs.joinError.textContent="";
-  UiRegistry.refs.joinConfirm.disabled=true;
-  UiRegistry.refs.joinConfirm.textContent="연결 준비 중…";
+  MatchLifecycle.setJoinBusy(true);
 
   ConnectionPresentation.runWhenNetworkReady(
     ()=>{
       NetworkModuleLoader.pendingPeerAction=null;
-      UiRegistry.refs.joinConfirm.disabled=false;
-      UiRegistry.refs.joinConfirm.textContent="참가하기";
       MatchLifecycle.connect("guest",c);
     },
     (msg,failed)=>{
-      UiRegistry.refs.joinConfirm.disabled=false;
-      UiRegistry.refs.joinConfirm.textContent="참가하기";
+      if(failed)MatchLifecycle.setJoinBusy(false);
       UiRegistry.refs.joinError.textContent=msg;
       if(failed)NetworkModuleLoader.networkLoadError=msg;
     }
@@ -4691,33 +4710,13 @@ UiRegistry.refs.room.addEventListener("keydown",e=>{
   }
 });
 
-UiRegistry.refs.createRetry.onclick=()=>{
-  NetworkModuleLoader.networkLoadState="loading";
-  NetworkModuleLoader.networkLoadError="";
-  UiController.setElementVisible(UiRegistry.refs.createRetry,false);
-  UiRegistry.refs.createStatus.textContent="네트워크 모듈을 다시 불러오는 중…";
-  NetworkModuleLoader.networkLoaderStarted=false;NetworkModuleLoader.ensureReady();
-};
-
-UiRegistry.refs.createClose.onclick=()=>{
-  NetworkModuleLoader.pendingPeerAction=null;
-  UiController.closeUiModal("create");
-};
-UiRegistry.refs.joinClose.onclick=()=>{
-  NetworkModuleLoader.pendingPeerAction=null;
-  UiRegistry.refs.joinConfirm.disabled=false;
-  UiRegistry.refs.joinConfirm.textContent="참가하기";
-  UiController.closeUiModal("join");
-};
-UiRegistry.refs.createDialog.addEventListener("click",e=>{if(e.target===UiRegistry.refs.createDialog){NetworkModuleLoader.pendingPeerAction=null;UiController.closeUiModal("create")}});
-UiRegistry.refs.joinDialog.addEventListener("click",e=>{
-  if(e.target!==UiRegistry.refs.joinDialog)return;
-
-  NetworkModuleLoader.pendingPeerAction=null;
-  UiRegistry.refs.joinConfirm.disabled=false;
-  UiRegistry.refs.joinConfirm.textContent="참가하기";
-  UiController.closeUiModal("join");
-});
+UiRegistry.refs.createRetry.onclick=()=>MatchLifecycle.beginCreateRoom();
+UiRegistry.refs.createClose.onclick=()=>MatchLifecycle.cancelOnlinePreparation();
+UiRegistry.refs.joinClose.onclick=()=>MatchLifecycle.cancelOnlinePreparation();
+for(const dialog of [UiRegistry.refs.createDialog,UiRegistry.refs.joinDialog]){
+  dialog.addEventListener("click",e=>{if(e.target===dialog)MatchLifecycle.cancelOnlinePreparation()});
+  dialog.addEventListener("cancel",e=>{e.preventDefault();MatchLifecycle.cancelOnlinePreparation()});
+}
 /*
  * 게임 입력 계약
  * 1) 일반 UI 선택/버튼은 click 확정 후 처리한다. 스크롤 시작(pointerdown)은 선택이 아니다.
