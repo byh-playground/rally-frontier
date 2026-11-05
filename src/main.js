@@ -3557,7 +3557,7 @@ class ReplayPresentation{
   }
   ReplayPresentation.applyReplayPerspective();
   ActiveViewState.renderer.selectedBuildingId=null;
-  ActiveViewState.renderer.setSnapshot(s,{liveTargets:false});ActiveViewState.minimap?.set(ActiveViewState.renderer,s);
+  ActiveViewState.renderer.setSnapshot(s,{liveTargets:false,snapTargets:ActiveViewState.renderer.liveRenderTargets||s.tick<(ActiveViewState.renderer.snapshot?.tick??0)});ActiveViewState.minimap?.set(ActiveViewState.renderer,s);
   audioSystem.processSnapshot(s,ActiveViewState.renderer);
   UiRegistry.refs.replayDock?.classList.remove("hidden");UiRegistry.refs.replayStats?.classList.remove("hidden");
   if(UiRegistry.refs.replayStats)UiRegistry.refs.replayStats.innerHTML=ReplayPresentation.replayStatsHtml(s,ReplayPresentation.replayPlayer.sim);

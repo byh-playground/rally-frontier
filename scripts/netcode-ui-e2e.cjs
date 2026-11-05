@@ -213,8 +213,10 @@ async function runRole(browser, url, humanRole) {
     assert.equal(ended.sessions[humanRole].replayResult.winner,humanRole==='host'?'guest':'host');
     assert.equal(ended.sessions.host.replayResult.endTick,ended.sessions.guest.replayResult.endTick);
     assert.equal(ended.sessions.host.replayResult.checksum,ended.sessions.guest.replayResult.checksum);
+    const liveRevision=await page.evaluate(()=>window.__netcodeE2E.ActiveViewState.renderer.renderState.revision);
     await page.locator('#replayWatchBtn').click();
     await page.locator('#replayDock').waitFor({state:'visible',timeout:15000});
+    assert.ok(await page.evaluate(()=>window.__netcodeE2E.ActiveViewState.renderer.renderState.revision)>liveRevision,'Replay resets the live presentation timeline');
     await page.waitForFunction(()=>window.__netcodeE2E.ReplayPresentation.replayPlayer?.sim?.tick>0);
     const moving=await page.evaluate(()=>window.__netcodeE2E.ReplayPresentation.replayPlayer.sim.tick);
     await page.waitForFunction(t=>window.__netcodeE2E.ReplayPresentation.replayPlayer.sim.tick>t,moving,{timeout:5000});
@@ -223,6 +225,13 @@ async function runRole(browser, url, humanRole) {
     await page.locator('#replayTimeInput').fill(String(middle));
     await page.locator('#replayTimeGoBtn').click();
     await page.waitForFunction(t=>window.__netcodeE2E.ReplayPresentation.replayPlayer.sim.tick===t,middle*20);
+    await page.waitForTimeout(500);
+    const middleCanvas=await page.locator('#glCanvas').screenshot();
+    await page.locator('#replayTimeInput').fill(String(middle+5));
+    await page.locator('#replayTimeGoBtn').click();
+    await page.waitForTimeout(500);
+    const laterCanvas=await page.locator('#glCanvas').screenshot();
+    assert.notDeepEqual(laterCanvas,middleCanvas,'Replay canvas changes when seeking to another recorded time');
     const endSeconds=ended.sessions[humanRole].replayResult.endTick/20;
     await page.locator('#replayTimeInput').fill(String(endSeconds));
     await page.locator('#replayTimeGoBtn').click();
@@ -232,6 +241,10 @@ async function runRole(browser, url, humanRole) {
     });
     assert.equal(replay.tick,ended.sessions[humanRole].replayResult.endTick);
     assert.equal(replay.checksum,ended.sessions[humanRole].replayResult.checksum,'UI recorded replay final checksum is identical');
+    const endRevision=await page.evaluate(()=>window.__netcodeE2E.ActiveViewState.renderer.renderState.revision);
+    await page.locator('#replayTimeInput').fill('0');
+    await page.locator('#replayTimeGoBtn').click();
+    assert.ok(await page.evaluate(()=>window.__netcodeE2E.ActiveViewState.renderer.renderState.revision)>endRevision,'Backward seek resets the presentation timeline');
     await page.screenshot({path:path.join(output,`${humanRole}-replay.png`)});
     await page.locator('#replayExitBtn').click();
     await page.locator('#lobby').waitFor({state:'visible',timeout:10000});
