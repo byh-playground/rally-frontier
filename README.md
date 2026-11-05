@@ -13,7 +13,7 @@
 
 제품 버전 판단은 [최신 공통 PM-001·PM-002](https://github.com/byh-playground/bloom-reference/blob/main/AGENTS.md)를 따릅니다. 제품 세대 전환은 MAJOR, 비호환 변경은 MINOR, 호환되는 의미 있는 기능·표현 수정은 PATCH입니다. 외부 동작이 같은 내부 정리와 문서 정리는 버전을 유지합니다. 하드코딩된 유닛·발사 수치 변경이 동일 입력의 결과나 과거 리플레이 해석을 바꾸면 호환되는 밸런스 수정으로 분류하지 않습니다. 게임 MINOR를 올리며 별도의 시뮬레이션 버전은 관리하지 않습니다.
 
-사용자 지시에 따라 게임 버전 하나를 호환성의 SSOT로 사용합니다. `0.1.0`은 기존 SemVer가 없던 제품의 첫 기준선이며, 현재 `0.2.0`은 게임 규칙·저장 및 통신 계약의 비호환 변경을 반영합니다. 과거 내부 카운터에서 제품 이력을 역산하지 않으며, 버전 갱신이 정식 출시나 Stable 승격을 선언하지 않습니다. 고정 SDK의 버전·source/dist 커밋·해시는 [`gamekit.lock.json`](gamekit.lock.json)이 관리합니다.
+사용자 지시에 따라 게임 버전 하나를 호환성의 SSOT로 사용합니다. `0.1.0`은 기존 SemVer가 없던 제품의 첫 기준선이며, `0.2.0`은 게임 규칙·저장 및 통신 계약의 비호환 변경을 반영합니다. 과거 내부 카운터에서 제품 이력을 역산하지 않으며, 버전 갱신이 정식 출시나 Stable 승격을 선언하지 않습니다. 고정 SDK의 버전·source/dist 커밋·해시는 [`gamekit.lock.json`](gamekit.lock.json)이 관리합니다.
 
 `main` 푸시는 Pages 배포와 Nightly 태그 생성을 유발합니다. Stable은 PM-005에 따라 검증·승인한 커밋을 [release-tags 워크플로](.github/workflows/release-tags.yml)에서 명시 승격한 불변 태그입니다. 제품 버전·빌드 성공·배포 시각·게임 검증·Stable을 서로 구별합니다.
 
@@ -62,7 +62,7 @@ SVG는 원본 manifest의 SHA-256 검증 후 고정 GameKit 로더가 시작 시
 
 현재 게임 버전이 없거나 다르면 연결·snapshot 복원·리플레이 재생을 거부하며 구버전 별칭이나 숫자 변환으로 허용하지 않습니다. 파일 종류·codec 형식의 검증은 게임 호환 버전 관리와 구별합니다.
 
-기본 netcode는 lockstep이며 `?netcode=lockstep|rollback`은 다음 경기의 모드를 고릅니다. 온라인 양쪽의 설정 불일치는 HELLO에서 거부합니다. Nostr는 발견·협상, gameplay는 실제 RTCDataChannel의 바이너리입니다. 별도 게임 서버나 TURN fallback은 없습니다. 싱글도 같은 실제 WebRTC·Session을 쓰며 AI 세션은 Worker에서 실행합니다. 양쪽 세션 관찰용 UI 검사는 in-page AI를 사용하고 Worker 경로는 별도로 검증합니다.
+기본 netcode는 lockstep이며 `?netcode=lockstep|rollback`은 다음 경기의 모드를 고릅니다. 친구 대전의 참가자는 방장이 보낸 동기화 모드를 경기 시작 전에 적용합니다. Nostr는 발견·협상, gameplay는 실제 RTCDataChannel의 바이너리입니다. 별도 게임 서버나 TURN fallback은 없습니다. 방 코드는 실제 Nostr 신호 준비와 코드 확보가 끝난 뒤 표시합니다. 방 준비 취소는 진행 중인 연결도 종료하고, 재시도는 새 방을 만듭니다. 첫 시작 메시지를 보내지 못하면 방장은 시뮬레이션을 시작하지 않으며 재연결한 참가자의 HELLO에 시작 정보를 다시 보냅니다. 싱글도 같은 실제 WebRTC·Session을 쓰며 AI 세션은 Worker에서 실행합니다. 양쪽 세션 관찰용 UI 검사는 in-page AI를 사용하고 Worker 경로는 별도로 검증합니다.
 
 ## 검증과 개발
 
@@ -74,6 +74,7 @@ SVG는 원본 manifest의 SHA-256 검증 후 고정 GameKit 로더가 시작 시
 | `npm run build` | 원본 ESM과 자산 복사 |
 | `npm run test:startup -- _site/index.html` | 원본 SVG·ESM 부팅과 배포 기록 |
 | `QA_NETCODE_MODE=lockstep QA_ROLES=host npm run test:ui -- _site/index.html` | 실제 UI·RTC·전투·종료·리플레이 (`rollback` 모드도 선택 가능) |
+| `npm run test:friend` | 독립된 두 브라우저 context의 실제 공용 Nostr·WebRTC 친구 대전: 취소·코드 충돌·재시도·양쪽 입력·결과·리플레이. 외부 네트워크가 필요하며 CI의 로컬 검사와 분리합니다. |
 | `npm run test:worker` | 원본 checkout의 실제 Worker AI 세션·복구 |
 | `npm run test:economy -- _site/index.html` | 고정 시나리오의 건설·비례 지출·다음 지출 표시·인컴·사거리·포탑·저장 복원 |
 | `npm run test:impact -- _site/index.html` | 고정 시나리오의 비행·충격·접촉·병력 방출·저장 복원 |

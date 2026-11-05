@@ -34,7 +34,7 @@ function localRoomCode(token){
 class RoomTransport{
   constructor(role,roomCode,{signalMode="nostr"}={}){
     this.role=role;this.roomCode=roomCode;this.signalMode=signalMode;
-    this.room=null;this.unsubscribers=[];this.intentionalClose=false;this.lastVersionMismatchKey="";
+    this.room=null;this.unsubscribers=[];this.openController=null;this.intentionalClose=false;this.lastVersionMismatchKey="";
     // Subscribers outlive the room: a Worker-hosted session subscribes before the link exists.
     this.netcodeListeners=new Set();this.netcodeStatusListeners=new Set();
     this.onMessage=()=>{};this.onPeerReady=()=>{};this.onOpen=()=>{};this.onClose=()=>{};this.onError=()=>{};
@@ -44,6 +44,8 @@ class RoomTransport{
 
   // Resolves once discovery is ready (a host also after its room-code check). The link itself opens later.
   async open(){
+    if(this.openController&&!this.openController.signal.aborted)return false;
+    const controller=new AbortController();this.openController=controller;
     this.intentionalClose=false;this.trace("transport.open");
     const netcode=globalThis.RallyNetcode,local=this.signalMode==="local";
     if(typeof netcode?.createNostrRoom!=="function"||(local&&typeof netcode.createLocalSignaler!=="function")){
@@ -52,6 +54,7 @@ class RoomTransport{
     let room;
     try{
       room=await netcode.createNostrRoom({
+        signal:controller.signal,
         role:this.role==="guest"?"join":"host",room:local?localRoomCode(this.roomCode):String(this.roomCode),
         namespace:RALLY_NOSTR_NAMESPACE,version:PRODUCT_VERSION,relays:RALLY_NOSTR_RELAYS,
         rtcConfig:{iceServers:local?[]:RALLY_ICE_SERVERS},signalerFactory:local?netcode.createLocalSignaler:undefined,
@@ -61,10 +64,10 @@ class RoomTransport{
         collisionCheckMs:local?0:undefined,
       });
     }catch(error){
-      if(!this.intentionalClose)this.onError({type:error?.code||"room-create-failed",message:error?.code==="room-in-use"?"이미 사용 중인 방 코드입니다. 다른 코드로 다시 만들어 주세요.":String(error?.message||error)});
+      if(!controller.signal.aborted&&!this.intentionalClose)this.onError({type:error?.code||"room-create-failed",message:error?.code==="room-in-use"?"이미 사용 중인 방 코드입니다. 다른 코드로 다시 만들어 주세요.":String(error?.message||error)});
       return false;
     }
-    if(this.intentionalClose){room.close();return false}
+    if(controller.signal.aborted||this.intentionalClose){room.close();return false}
     this.room=room;
     this.unsubscribers.push(
       room.subscribe(event=>this.handleRoomEvent(event)),
@@ -139,7 +142,7 @@ class RoomTransport{
   rebuildRecoveryGuest(reason="manual-host-snapshot"){return this.role==="guest"&&!!this.room?.reconnect({reason,newPeer:true})}
 
   close(){
-    this.intentionalClose=true;
+    this.intentionalClose=true;this.openController?.abort();
     for(const unsubscribe of this.unsubscribers.splice(0))try{unsubscribe()}catch{}
     this.room?.close();this.netcodeListeners.clear();this.netcodeStatusListeners.clear();
   }

@@ -90,11 +90,13 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
 6. SESSION, VERIFICATION AND RELEASE
 - GameSession은 공통 Core·Simulation Adapter·Transport를 조합한 경기 Coordinator다. Core가
   입력 예측·지연·시계·롤백·확정 해시·복구를 소유한다. 게임은 공개 API를 쓰고 Core 내부를 복제/우회하지 않는다.
-- 기본 netcode는 lockstep이며 경기 생성 시 lockstep/rollback을 고정하고 HELLO에서 불일치를 거부한다.
+- 기본 netcode는 lockstep이며 방장이 보낸 lockstep/rollback 모드를 참가자가 경기 시작 전에 적용한다.
   lockstep은 매 틱 예측 snapshot을 만들지 않고 주기 checkpoint를 유지한다. Core frame t는 step 이전
   S[t]이며 player-local sequence의 확정 입력만 명령·리플레이로 변환한다. Gameplay 시간은 Simulation Tick이다.
 - 롤백은 제한된 범위를 복원 호출 안에서 동기 재실행하고 AI 결정·효과·소리·결과·리플레이를 중복 공개하지 않는다.
 - Nostr는 발견/협상, gameplay는 실제 RTCDataChannel의 바이너리다. 별도 개발자 서버·TURN fallback은 없다.
+  방 코드는 실제 신호 준비·코드 확보 후 공개하고 준비 취소는 진행 중인 연결까지 종료한다.
+  재시도는 새 방을 만들며 첫 시작 정보 송신이 실패하면 방장은 시작하지 않고 Guest HELLO에 시작 정보를 다시 보낸다.
   싱글도 실제 WebRTC와 같은 GameSession을 쓴다. AI는 Worker의 동일 Session/BotController에서 실행하고
   메인 스레드 transport를 Proxy로 중계한다. 두 세션 관찰용 test:ui의 in-page 경로와 test:worker를 구분한다.
 - 게임 동작 변경은 고정 기능 시나리오와 실제 UI에서 시작한 싱글 경기의 전투·종료·결과·리플레이 경로를
