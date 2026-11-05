@@ -93,6 +93,10 @@ RoomCodeUtil.randomCode=()=>window.__friend.generatedCodes.shift()||window.__fri
       assert.ok(Number.isFinite(ice.fetched) && !ice.error, 'ICE statistics are sampled from the active peer connection');
     }
     assert(relays.some(r => r.player === 0 && r.url.startsWith('wss://')) && relays.some(r => r.player === 1 && r.url.startsWith('wss://')));
+    assert(await host.evaluate(()=>window.__friend.ActiveViewState.session.command({type:'LAUNCH',cannonId:'missing-cannon',x:0,y:0,holdMs:400,unitType:'rice'})), 'Invalidated cannon command reaches the authoritative simulation');
+    await host.locator('#launchFeedback').waitFor({state:'visible',timeout:10000});
+    assert.match(await host.locator('#launchFeedback').textContent(),/대포/,'An authoritative rejection is visible to the host');
+    await host.screenshot({path:path.join(output,'launch-rejected.png')});
     for (const page of pages) {
       await page.locator('[data-launch-card="rice"]').click();
       const point = await page.evaluate(() => { const rect = document.querySelector('#glCanvas').getBoundingClientRect(); return { x: rect.left + rect.width / 2, y: rect.top + rect.height * .4 }; });

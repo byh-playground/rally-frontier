@@ -4420,8 +4420,14 @@ class BuildMetadataPresentation{
 // 조준 중 예상 착지와 최대 사거리를 표시하고, 실제 착탄 흔적은 권위 사건을 따른다.
 class LaunchPresentation{
   static card=null;static deckKey="";static lastPower=null;static marks=[];static hold=null;
+  static feedbackTimer=0;
+  static feedback(message){
+    const el=DomUtil.byId("launchFeedback");if(!el)return;
+    clearTimeout(this.feedbackTimer);el.textContent=message;el.classList.remove("hidden");
+    this.feedbackTimer=setTimeout(()=>{el.classList.add("hidden");this.feedbackTimer=0},2500);
+  }
   static active(s=ActiveViewState.snap){return !!s&&!ReplayPresentation.replayPlayer}
-  static reset(){this.card=null;this.deckKey="";this.lastPower=null;this.marks=[];this.hold=null}
+  static reset(){this.card=null;this.deckKey="";this.lastPower=null;this.marks=[];this.hold=null;clearTimeout(this.feedbackTimer);this.feedbackTimer=0;DomUtil.byId("launchFeedback")?.classList.add("hidden")}
   static render(s,side){
     const on=!!s;document.body.classList.toggle("launch-mode",on);
     UiRegistry.refs.launchHand?.classList.toggle("hidden",!on);
@@ -4454,6 +4460,7 @@ class LaunchPresentation{
       if(mark){mark.x=event.x;mark.y=event.y}
       else this.marks.push({projectileId:event.projectileId,x:event.x,y:event.y,at:ActiveViewState.renderer.presentationEventStart(event,s,now)});
     }
+    for(const event of s.events||[])if(event.type==="launchRejected"&&event.side===side)this.feedback(({"reloading":"대포가 재장전 중입니다.","insufficient-resources":"자원이 부족합니다.","cannon-unavailable":"사용할 수 있는 대포가 없습니다.","invalid-unit":"발사할 병종을 확인해 주세요."})[event.reason]||"발사할 수 없습니다.");
     this.marks=this.marks.filter(m=>now-m.at<LaunchRules.landingMarkMs);
   }
   // Both main bases' health, elapsed time, and an edge arrow while the enemy base is off screen.
@@ -4485,8 +4492,8 @@ class LaunchPresentation{
     const s=ActiveViewState.snap,side=ConnectionSideUtil.roleSide(ActiveViewState.role),cannon=s&&this.nearestCannon(s,side,a.x,a.y);
     if(!cannon||!this.card)return null;
     const wait=Math.max(0,(Number(cannon.launchReadyTick)||0)-s.tick);
-    if(wait>0){LogUtil.log(`⏳ ${BuildingDefinition.get(cannon.type)?.name||"대포"} 재장전 중 · ${(wait/(s.tps||SimulationTiming.tps())).toFixed(1)}초`);return null}
-    if(LaunchRules.payload(this.card).cost>Math.floor(s.wallet[side]))LogUtil.log("◆ 자원이 모자랍니다. 게이지가 차면 다시 누르세요.");
+    if(wait>0){this.feedback(`대포 재장전 중 · ${(wait/(s.tps||SimulationTiming.tps())).toFixed(1)}초`);return null}
+    if(LaunchRules.payload(this.card).cost>Math.floor(s.wallet[side]))this.feedback("자원이 부족합니다.");
     this.hold={pointerId,cannonId:cannon.id,cannonX:cannon.x,cannonY:cannon.y,aimX:a.x,aimY:a.y,armedAt:performance.now(),card:this.card,lastPower:this.lastPower,side};
     if(navigator.vibrate)navigator.vibrate(12);
     return this.hold;
@@ -4524,8 +4531,8 @@ class LaunchPresentation{
     const holdMs=Math.round(performance.now()-hold.armedAt),sess=MatchLifecycle.activeSession();
     if(!sess?.sim)return;
     const accepted=sess.command({type:"LAUNCH",cannonId:hold.cannonId,x:Math.round(hold.aimX),y:Math.round(hold.aimY),holdMs,unitType:hold.card});
-    if(!accepted){LogUtil.log("⚠ 발사 명령을 접수할 수 없습니다.");return}
-    if(LaunchRules.overheated(holdMs)){LogUtil.log(`🔥 과열! 대포가 ${LaunchRules.overheatMs/1000}초 멈춥니다 · 자원은 그대로`);if(navigator.vibrate)navigator.vibrate([30,40,30]);return}
+    if(!accepted){this.feedback("연결을 확인한 뒤 다시 발사해 주세요.");return}
+    if(LaunchRules.overheated(holdMs)){this.feedback(`과열! 대포가 ${LaunchRules.overheatMs/1000}초 멈춥니다.`);if(navigator.vibrate)navigator.vibrate([30,40,30]);return}
     this.lastPower=LaunchRules.power(holdMs);
     if(navigator.vibrate)navigator.vibrate(20);
   }
