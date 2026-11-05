@@ -4,7 +4,7 @@
 import { RecoveryTelemetry } from '../diagnostics/recovery-telemetry.js';
 import { LobbyControlCodec } from './lobby-codec.js';
 import { P2P_CONNECT_ATTEMPT_TIMEOUT_MS } from '../core/session-timing.js';
-import { SIM_VERSION } from '../core/config.js';
+import { PRODUCT_VERSION } from '../core/product-version.js';
 
 const RALLY_NOSTR_NAMESPACE="rally-frontier";
 const RALLY_NOSTR_RELAYS=[
@@ -53,7 +53,7 @@ class RoomTransport{
     try{
       room=await netcode.createNostrRoom({
         role:this.role==="guest"?"join":"host",room:local?localRoomCode(this.roomCode):String(this.roomCode),
-        namespace:RALLY_NOSTR_NAMESPACE,version:String(SIM_VERSION),relays:RALLY_NOSTR_RELAYS,
+        namespace:RALLY_NOSTR_NAMESPACE,version:PRODUCT_VERSION,relays:RALLY_NOSTR_RELAYS,
         rtcConfig:{iceServers:local?[]:RALLY_ICE_SERVERS},signalerFactory:local?netcode.createLocalSignaler:undefined,
         timeoutMs:this.role==="host"?HOST_WAIT_MS:GUEST_FIND_MS,reconnectTimeoutMs:RECONNECT_BUDGET_MS,
         peerTimeoutMs:P2P_CONNECT_ATTEMPT_TIMEOUT_MS,disconnectGraceMs:DISCONNECT_GRACE_MS,retryMs:SIGNAL_RETRY_MS,
@@ -100,12 +100,12 @@ class RoomTransport{
     this.onClose({recovering:false,reason:reason||"failed"});
   }
   reportVersionMismatch(event){
-    const remote=Number.isInteger(Number(event.remote))?Number(event.remote):null,key=`${event.peerId}:${remote}`;
+    const remote=typeof event.remote==="string"?event.remote:null,key=`${event.peerId}:${remote}`;
     if(this.lastVersionMismatchKey===key)return;
     this.lastVersionMismatchKey=key;
-    this.trace("signal.version-mismatch",{expectedVersion:SIM_VERSION,remoteVersion:remote,peer:event.peerId});
-    this.onError({type:"version-mismatch",nonFatal:true,expectedVersion:SIM_VERSION,remoteVersion:remote,
-      message:`게임 버전이 다릅니다. 내 SIM ${SIM_VERSION} / 상대 SIM ${remote??"확인 불가"}. 양쪽 모두 같은 최신 HTML로 새로고침하세요.`});
+    this.trace("signal.version-mismatch",{expectedVersion:PRODUCT_VERSION,remoteVersion:remote,peer:event.peerId});
+    this.onError({type:"version-mismatch",nonFatal:true,expectedVersion:PRODUCT_VERSION,remoteVersion:remote,
+      message:`게임 버전이 다릅니다. 내 v${PRODUCT_VERSION} / 상대 ${remote??"확인 불가"}. 양쪽 모두 같은 최신 게임으로 새로고침하세요.`});
   }
 
   isOpen(){return this.room?.state==="open"}

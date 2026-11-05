@@ -121,6 +121,10 @@ class InteractionGeometry{
     return inset?NavigationGoal.range(target.x,target.y,outer,inner,terrainLine):new NavigationGoal(target.x,target.y,outer,inner,terrainLine);
   }
   static goal(source,target,kind,extra=0,minRange=null){
+    // Workers approach the physical building envelope. Their body-charge reach
+    // is a contact allowance, not the stopping boundary: crowd separation can
+    // otherwise keep every worker just outside the work region forever.
+    if(kind==='construction')return NavigationGoal.range(target.x,target.y,this.buildingClearance(source,target)+NavigationGoal.ARRIVAL_INSET,0,true);
     return this.region(source,target,kind,extra,minRange,true);
   }
 }

@@ -2,14 +2,15 @@
 import { RangeUtil } from '../core/game-rules.js';
 
 // 발사전: 대포가 유닛 뭉치를 쏜다. 거리는 누른 시간만으로 정해지고, 조준 중에는 착지 원으로 미리 보인다(D-196).
-// 한 발이 무겁다: 자원 최대 100 기준 비용(D-233·D-235), 폭발 중심일수록 피해가 크다(D-230), 곡물마다 발사 방식이 다르다(D-234).
+// 한 발이 무겁다: 자원 단위는 기존 경제의 5배 환산 기준(D-233·D-235), 폭발 중심일수록 피해가 크다(D-230), 곡물마다 발사 방식이 다르다(D-234).
 class LaunchRules{
-  static incomePerSecond=3;static walletCap=100;static startingWallet=50;
+  static resourceScale=5;
+  static incomePerSecond=3*this.resourceScale;static walletCap=100*this.resourceScale;static startingWallet=50*this.resourceScale;
   static minReach=250;static maxReach=500;static chargeMs=1500;static overheatGraceMs=180;
   static overheatMs=2000;static reloadMs=400;static speed=750;
   static landingMarkMs=1500;static captureHoldRadius=400;
-  static rangeMultipliers=Object.freeze([1,2,3]);static rangeUpgradeCosts=Object.freeze([50,75]);
-  static captureIncomePerSecond=1;
+  static rangeMultipliers=Object.freeze([1,2,3]);static rangeUpgradeCosts=Object.freeze([50,75].map(cost=>cost*this.resourceScale));
+  static captureIncomePerSecond=1*this.resourceScale;
   static rangeMultiplier(level=0){return this.rangeMultipliers[level]??this.rangeMultipliers[0]}
   static upgradeCost(level){return this.rangeUpgradeCosts[level]??null}
   static incomePerSecondFor(capturePoints,side){return this.incomePerSecond+capturePoints.reduce((n,p)=>n+(p.owner===side?this.captureIncomePerSecond:0),0)}
@@ -17,11 +18,11 @@ class LaunchRules{
   static centerPeak=3;
   static grains=Object.freeze({
     // 산탄: 한 번에 여러 갈래, 갈래마다 폭발은 작다.
-    rice:Object.freeze({cost:25,count:20,reach:1,speed:600,impact:10,splash:180,land:"scatter",spread:260,fire:Object.freeze({mode:"shotgun",pellets:5,spread:400,impactScale:.6,splashScale:.7})}),
+    rice:Object.freeze({cost:25*this.resourceScale,count:20,reach:1,speed:600,impact:10,splash:180,land:"scatter",spread:260,fire:Object.freeze({mode:"shotgun",pellets:5,spread:400,impactScale:.6,splashScale:.7})}),
     // 단발: 폭발이 크고 중심 강타가 가장 세다.
-    soybean:Object.freeze({cost:50,count:12,reach:.85,speed:750,impact:40,splash:100,land:"line",spacing:22,fire:Object.freeze({mode:"single"})}),
+    soybean:Object.freeze({cost:50*this.resourceScale,count:12,reach:.85,speed:750,impact:40,splash:100,land:"line",spacing:22,fire:Object.freeze({mode:"single"})}),
     // 연사: 같은 곳에 시간차로 세 번 떨어진다.
-    redbean:Object.freeze({cost:50,count:10,reach:.75,speed:750,impact:25,splash:120,land:"rush",rushMs:2000,rushPct:150,fire:Object.freeze({mode:"burst",shots:3,gapMs:300})}),
+    redbean:Object.freeze({cost:50*this.resourceScale,count:10,reach:.75,speed:750,impact:25,splash:120,land:"rush",rushMs:2000,rushPct:150,fire:Object.freeze({mode:"burst",shots:3,gapMs:300})}),
   });
   static deck=Object.freeze(Object.keys(LaunchRules.grains));
   static strike(distance,radius){const k=RangeUtil.clamp(1-distance/Math.max(1,radius),0,1);return 1+(this.centerPeak-1)*k*k}

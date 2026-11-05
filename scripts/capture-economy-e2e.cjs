@@ -96,17 +96,47 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
         const sim = arena(), base = sim.launchCannons(0)[0];
         check(LaunchRules.maxReachOf('rice', 0) === 500 && LaunchRules.maxReachOf('soybean', 0) === 425 && LaunchRules.maxReachOf('redbean', 0) === 375, 'initial short launch ranges');
         check(!sim.applyCommand('observer', { type: 'UPGRADE_LAUNCH_RANGE' }), 'spectator cannot buy range');
-        check(sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }) && sim.wallet[0] === 0 && sim.launchRangeLevel[0] === 1 && sim.launchRangeLevel[1] === 0, '50 resource purchase upgrades only the buying side');
+        check(sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }) && sim.wallet[0] === 0 && sim.launchRangeLevel[0] === 1 && sim.launchRangeLevel[1] === 0, '250 resource purchase upgrades only the buying side');
         check(!sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }) && sim.wallet[0] === 0, 'insufficient wallet is rejected without spending');
-        sim.wallet[0] = 100;
-        check(sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }) && sim.wallet[0] === 25 && sim.launchRangeLevel[0] === 2, 'second level costs75');
-        check(!sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }) && sim.wallet[0] === 25, 'maximum level rejects further payment');
-        sim.wallet[0] = 100;
+        sim.wallet[0] = 500;
+        check(sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }) && sim.wallet[0] === 125 && sim.launchRangeLevel[0] === 2, 'second level costs375');
+        check(!sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }) && sim.wallet[0] === 125, 'maximum level rejects further payment');
+        sim.wallet[0] = 500;
         const target = { type: 'LAUNCH', cannonId: base.id, unitType: 'soybean', holdMs: 1500, x: base.x, y: base.y + 2000 };
         check(sim.applyCommand('host', target), 'upgraded cannon accepts normal launch');
         const fire = sim.events.find(e => e.type === 'launchFire');
         check(Math.abs(Math.hypot(fire.aimX - base.x, fire.aimY - base.y) - 1275) <= 1, 'authoritative launch consumes the upgraded grain range', fire);
         rows.push({ scenario: 'range purchases and authoritative launch', level: sim.launchRangeLevel, wallet: sim.wallet, reach: 1275 });
+      }
+      // Economy values share one currency scale; construction was already scaled.
+      {
+        const sim = arena();
+        check(sim.wallet[0] === 250 && LaunchRules.walletCap === 500 && LaunchRules.incomePerSecond === 15 && LaunchRules.captureIncomePerSecond === 5, 'complete fivefold resource conversion');
+        check(LaunchRules.grain('rice').cost === 125 && LaunchRules.grain('soybean').cost === 250 && LaunchRules.grain('redbean').cost === 250, 'all launch prices use the same currency');
+        sim.wallet[0] = 495; sim.launchIncomeCarry[0] = 0; step(sim, sim.tps);
+        check(sim.wallet[0] === 500, 'income caps at500 instead of the old100');
+        rows.push({ scenario: 'fivefold currency covers wallet income launches upgrades and existing75-cost construction', cap: LaunchRules.walletCap, start: 250, income: 15, launchCosts: [125,250,250] });
+      }
+      // Start at capture-presence distance. No fixture moves workers into contact:
+      // a symmetric crowd formerly stalled forever just outside the work radius.
+      {
+        const sim = arena(), [tower] = start(sim, { workers: 20, contact: false });
+        sim.wallet[0] = 500;
+        const hits = [], lastHits = new Map(), begun = sim.tick, checkpoint = restore(sim);
+        for (let i = 0; i < 60 * sim.tps && tower.construction; i++) {
+          sim.stepSimulation(); checkpoint.stepSimulation();
+          check(sim.checksum() === checkpoint.checksum(), 'crowd approach and hits restore identical futures');
+          for (const e of sim.events) if (e.type === 'constructionHit') {
+            const worker = sim.unitById.get(e.sourceId);
+            check(!lastHits.has(worker.id) || sim.tick-lastHits.get(worker.id) >= sim.tps, 'crowd contact jitter cannot bypass the one-second hit cooldown');
+            lastHits.set(worker.id,sim.tick);
+            check(sim.constructionContact(worker, tower, UnitDefinition.get(worker.type).construction.range), 'crowd work requires real post-contact reach');
+            check(Math.hypot(worker.x-tower.x,worker.y-tower.y) >= sim.buildingClearanceDistance(worker,tower)-.1, 'crowd worker never enters the building collider');
+            hits.push(e);
+          }
+        }
+        check(tower.construction === null && sim.capturePoints[0].owner === 0 && hits.reduce((n,e)=>n+e.workAdded,0) === 375 && hits.reduce((n,e)=>n+e.spend,0) === 75, 'funded symmetric crowd completes375 work and spends75', { hits: hits.length, work: tower.construction });
+        rows.push({ scenario: 'twenty workers approach through crowd contacts and complete without a funded stall', elapsedTicks: sim.tick-begun, work: 375, spend: 75, checksum: sim.checksum() });
       }
       // One hit adds one work. Payment follows the project ratio independently
       // of the one-second body-charge cadence and the five visual meter cells.
@@ -269,15 +299,15 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
       }
       // Global range, capture income and loss remain part of the worker scenario.
       {
-        const sim = arena(); check(sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }), 'buy shared range before capturing'); sim.wallet[0] = 100;
+        const sim = arena(); check(sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }), 'buy shared range before capturing'); sim.wallet[0] = 500;
         const [tower] = smallProjects(sim, start(sim)); finish(sim, tower);
         check(sim.applyCommand('host', { type: 'LAUNCH', cannonId: tower.id, unitType: 'soybean', holdMs: 1500, x: tower.x, y: tower.y + 2000 }), 'completed worker-built cannon accepts launch');
         const fire = sim.events.find(e => e.type === 'launchFire' && e.cannonId === tower.id), reach = Math.hypot(fire.aimX - tower.x, fire.aimY - tower.y);
         check(Math.abs(reach - 850) <= 1, 'worker-built cannon inherits global range');
         const income = arena(20, 3), towers = smallProjects(income, start(income)); for (const b of towers) finish(income, b);
-        income.wallet[0] = 0; income.launchIncomeCarry[0] = 0; step(income, income.tps); check(income.wallet[0] === 6, 'three completed worker projects give6 income');
+        income.wallet[0] = 0; income.launchIncomeCarry[0] = 0; step(income, income.tps); check(income.wallet[0] === 30, 'three completed worker projects give30 income');
         const clear = income.exportState(); clear.units = []; income.importState(clear); destroy(income, income.buildings.find(b => b.id === towers[0].id)); income.wallet[0] = 0; income.launchIncomeCarry[0] = 0; step(income, income.tps);
-        check(income.wallet[0] === 5, 'destroyed capture stops its income');
+        check(income.wallet[0] === 25, 'destroyed capture stops its income');
         const loss = arena(), [partial] = start(loss); step(loss, 5 * loss.tps); const paid = partial.construction.invested, wallet = loss.wallet[0]; destroy(loss, partial);
         check(paid === 1 && loss.wallet[0] === wallet && loss.capturePoints[0].owner === null, 'destroyed worker project loses invested resources');
         rows.push({ scenario: 'worker-built cannon range, capture income and construction loss', reach, incomeAfterLoss: income.wallet[0], lostInvestment: paid });
@@ -330,11 +360,12 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
     await page.waitForFunction(() => Object.values(window.__economyE2E.MatchLifecycle.singleMatch.sessions).every(s => s.sim?.launchRangeLevel?.[0] === 1), null, { timeout: 15000 });
     const ui = await page.evaluate(() => {
       const q = window.__economyE2E, sessions = Object.values(q.MatchLifecycle.singleMatch.sessions);
-      return { button: document.querySelector('#launchRangeBtn').textContent, income: document.querySelector('#launchIncomeText').textContent,
+      return { button: document.querySelector('#launchRangeBtn').textContent, income: document.querySelector('#launchIncomeText').textContent, wallet: document.querySelector('#launchEnergyText').textContent,
         levels: sessions.map(s => s.sim.launchRangeLevel), recorded: sessions.map(s => s.replayRecorder.commands.filter(c => c.actor === 'host' && c.action.type === 'UPGRADE_LAUNCH_RANGE').length),
         rtc: Object.values(q.MatchLifecycle.singleMatch.transports).map(t => t.room.peerConnection.connectionState),
         ticks: sessions.map(s => s.sim.tick), seeds: sessions.map(s => s.sim.seed), modes: sessions.map(s => s.netcodeSession.profile.mode) };
     });
+    assert(ui.wallet.endsWith('/ 500') && ui.income === '+15/초' && ui.button.includes('375'), 'native HUD displays the converted currency');
     assert(ui.modes.every(value => value === mode), 'selected netcode mode reaches both real peers');
     assert(ui.recorded.every(n => n === 1), 'native purchase reaches both replay recorders exactly once');
     assert(ui.rtc.every(s => s === 'connected'), 'real RTC peers carry the upgrade command');

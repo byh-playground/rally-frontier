@@ -333,9 +333,12 @@ class StrategySim{
     if(!this.constructionWorkerAvailable(u)){u.constructionWork=null;return false}
     const workRange=ability.range;
     if(!this.constructionContact(u,b,workRange)){
-      this.resetConstructionCycle(work,"approach");
+      // Brief crowd separation interrupts contact, not the worker's cooldown.
+      // Recheck after normal movement so reaching the building this tick can
+      // resume a ready strike; only post-physics contact can commit the hit.
+      this.setConstructionPhase(work,"approach");
       this.moveToGoal(u,InteractionGeometry.goal(u,b,"construction",workRange),speed);
-      return true;
+      if(!this.constructionContact(u,b,workRange))return true;
     }
     if(ConstructionRules.project(b.construction,ability.workPerHit,this.wallet[u.side]).workAdded===0){this.resetConstructionCycle(work,"waiting");return true}
     const cycle=this.msTicks(ConstructionRules.cooldownMs),recoverTicks=Math.round(cycle*ConstructionRules.phaseRatios.recoverEnd),strikeTicks=Math.round(cycle*ConstructionRules.phaseRatios.strikeStart);
@@ -360,7 +363,7 @@ class StrategySim{
         const u=this.units[idx],work=u.constructionWork,ability=UnitDefinition.get(u.type)?.construction;
         if(!work||work.targetId!==b.id||work.phase!=="strike"||work.nextHitTick===null||this.tick<work.nextHitTick)continue;
         if(!ability||!this.constructionContact(u,b,ability.range)){
-          this.resetConstructionCycle(work,"approach");continue;
+          this.setConstructionPhase(work,"approach");continue;
         }
         const progress=b.construction,applied=ConstructionRules.project(progress,ability.workPerHit,this.wallet[u.side]);
         if(applied.workAdded===0){this.resetConstructionCycle(work,"waiting");continue}
