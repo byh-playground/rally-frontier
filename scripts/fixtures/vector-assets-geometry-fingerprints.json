@@ -1,12 +1,10 @@
 {
-  "baseline": "PR #76 precompiled output",
-  "curveSegments": 16,
-  "assets": {
-    "ammo-redbean": "c9f88320d312a845d399c7125b09d23f147bbe45f951f559d9b97ed9611bb8d2",
-    "ammo-rice": "137bbac10e13aa500dd3ab3b13397b28bc82faf031c71f94319fb930eb8691d4",
-    "ammo-soybean": "5c0636affdb895330a1d144ce8ef0957301b474a6f7ccf1b68382eb1c6b5bb0a",
-    "redbean": "0c7f99fc59b6b69e51c0c676218893274f046e74fe199e035a770a581cfe5020",
-    "soybean": "0005d7993587f03817b3419711c884af2fb49dab5334cafc0f52cfd258201b42",
-    "cannon": "16f3092fc4e7769e31c6ef0447028298abe3b507d619c86efbe619ac292b62de"
-  }
+    "baseline": "PR #76 precompiled output",
+    "curveSegments": 16,
+    "assets": {
+        "ammo-redbean": "c9f88320d312a845d399c7125b09d23f147bbe45f951f559d9b97ed9611bb8d2",
+        "ammo-rice": "137bbac10e13aa500dd3ab3b13397b28bc82faf031c71f94319fb930eb8691d4",
+        "ammo-soybean": "5c0636affdb895330a1d144ce8ef0957301b474a6f7ccf1b68382eb1c6b5bb0a",
+        "cannon": "16f3092fc4e7769e31c6ef0447028298abe3b507d619c86efbe619ac292b62de"
+    }
 }
