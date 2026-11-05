@@ -12,26 +12,43 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
-      - name: Install QA dependencies
-        run: npm ci
-      - name: Install Chromium for source startup verification
-        run: npx playwright install --with-deps chromium
-      - name: Verify pinned dependencies and source packaging
+      - name: Install formatter
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check changed source syntax
+        shell: bash
         run: |
-          npm run test:build
-          npm run build
-          git diff --check
-      - name: Verify original ESM and SVG startup in Chromium
-        env:
-          QA_BROWSER_CHANNEL: chromium
-        run: npm run test:startup -- _site/index.html
-      - name: Verify artillery contact and deployment scenarios
-        env:
-          QA_BROWSER_CHANNEL: chromium
-        run: timeout 180 npm run test:impact -- _site/index.html
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            base="origin/$GITHUB_BASE_REF"
+          else
+            base="HEAD^"
+          fi
+          git diff --check "$base" HEAD
+          while IFS= read -r -d '' file; do node --check "$file"; done < <(git diff --name-only --diff-filter=ACMR -z "$base" HEAD -- '*.js' '*.cjs' '*.mjs')
+          mapfile -d '' files < <(git diff --name-only --diff-filter=ACMR -z "$base" HEAD -- '*.js' '*.cjs' '*.mjs' '*.html' '*.css' '*.json' '*.md')
+          if (( ${#files[@]} )); then npx --no-install prettier --check --ignore-unknown "${files[@]}"; fi
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Prepare Pages source
+        run: npm run build
       - name: Publish bloom-game.json with the Nightly tag name
         if: hashFiles('_site/index.html') != ''
         run: |
@@ -40,20 +57,8 @@ jobs:
           jq --arg t "nightly-$STAMP-${GITHUB_SHA:0:12}" '. + {nightly:$t}' bloom-game.json > _site/bloom-game.json
           npx --yes ajv-cli@5 validate --spec=draft2020 -s "$RUNNER_TEMP/schema.json" -d _site/bloom-game.json
       - uses: actions/upload-pages-artifact@v4
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         with:
           path: _site
-  deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: verify
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
       - uses: actions/configure-pages@v5
       - id: deployment
         uses: actions/deploy-pages@v4

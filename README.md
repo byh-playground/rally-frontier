@@ -10,10 +10,10 @@
 
 ## 버전과 배포 출처
 
-| 식별자 | 원본과 의미 |
-| --- | --- |
+| 식별자    | 원본과 의미                                                                                                                                                                            |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 게임 버전 | [`PRODUCT_VERSION`](src/core/product-version.js)의 SemVer 한 값이 화면·배포 기록·방 발견·세션·snapshot·리플레이의 공통 원본입니다. 게임 호환성은 이 문자열의 정확한 일치로 판정합니다. |
-| 배포 출처 | `_site/build.json`의 Git 커밋·복사 시각·SDK 출처. 실행 모듈 bytes 일치 검증이나 제품 버전·Stable 승격의 증거가 아닙니다. |
+| 배포 출처 | `_site/build.json`의 Git 커밋·복사 시각·SDK 출처. 실행 모듈 bytes 일치 검증이나 제품 버전·Stable 승격의 증거가 아닙니다.                                                               |
 
 제품 버전 판단은 [최신 공통 PM-001·PM-002](https://github.com/byh-playground/bloom-reference/blob/main/AGENTS.md)를 따릅니다. 제품 세대 전환은 MAJOR, 비호환 변경은 MINOR, 호환되는 의미 있는 기능·표현 수정은 PATCH입니다. 외부 동작이 같은 내부 정리와 문서 정리는 버전을 유지합니다. 하드코딩된 유닛·발사 수치 변경이 동일 입력의 결과나 과거 리플레이 해석을 바꾸면 호환되는 밸런스 수정으로 분류하지 않습니다. 게임 MINOR를 올리며 별도의 시뮬레이션 버전은 관리하지 않습니다.
 
@@ -72,17 +72,19 @@ SVG는 원본 manifest의 SHA-256 검증 후 고정 GameKit 로더가 시작 시
 
 ## 검증과 개발
 
+Prettier 설정은 공통 DEV-028을 따릅니다. `npm ci` 후 `npx prettier --write <파일>`로 수정한 파일을 포맷합니다. PR에서는 변경 파일만 포맷·문법 검사하며 테스트는 CI에서 실행하지 않습니다. `npm run format:check`는 기존 파일을 포함한 전체 점검용입니다.
+
 공통 완료·검증·PR 규칙은 [AGENTS.md](AGENTS.md)와 [최신 BLOOM 규칙](https://github.com/byh-playground/bloom-reference/blob/main/AGENTS.md)을 따릅니다. 게임 동작·시각 변경은 실제 플레이 UI 경로와 렌더 관찰을 포함하고, 문서·메타데이터 변경은 해당 범위의 정합성을 검사합니다. PM-009의 실행당 180초, PM-014의 정합성 게이트를 지키며 성능·부하는 별도 명령·실행으로 측정합니다.
 
-| 명령 | 확인 범위 |
-| --- | --- |
-| `npm run test:build` | SDK·원본 복사·검사 도구의 정합성 |
-| `npm run build` | 원본 ESM과 자산 복사 |
-| `npm run test:startup -- _site/index.html` | 원본 SVG·ESM 부팅과 배포 기록 |
-| `QA_NETCODE_MODE=lockstep QA_ROLES=host npm run test:ui -- _site/index.html` | 실제 UI·RTC·전투·종료·리플레이 (`rollback` 모드도 선택 가능) |
-| `npm run test:friend` | 독립된 두 브라우저 context의 실제 공용 Nostr·WebRTC 친구 대전: 취소·코드 충돌·재시도·양쪽 입력·결과·리플레이. 외부 네트워크가 필요하며 CI의 로컬 검사와 분리합니다. |
-| `npm run test:worker` | 원본 checkout의 실제 Worker AI 세션·복구 |
-| `npm run test:economy -- _site/index.html` | 고정 시나리오의 건설·비례 지출·다음 지출 표시·인컴·사거리·포탑·저장 복원 |
-| `npm run test:impact -- _site/index.html` | 고정 시나리오의 비행·충격·접촉·병력 방출·저장 복원 |
+| 명령                                                                         | 확인 범위                                                                                                                                                           |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run test:build`                                                         | SDK·원본 복사·검사 도구의 정합성                                                                                                                                    |
+| `npm run build`                                                              | 원본 ESM과 자산 복사                                                                                                                                                |
+| `npm run test:startup -- _site/index.html`                                   | 원본 SVG·ESM 부팅과 배포 기록                                                                                                                                       |
+| `QA_NETCODE_MODE=lockstep QA_ROLES=host npm run test:ui -- _site/index.html` | 실제 UI·RTC·전투·종료·리플레이 (`rollback` 모드도 선택 가능)                                                                                                        |
+| `npm run test:friend`                                                        | 독립된 두 브라우저 context의 실제 공용 Nostr·WebRTC 친구 대전: 취소·코드 충돌·재시도·양쪽 입력·결과·리플레이. 외부 네트워크가 필요하며 CI의 로컬 검사와 분리합니다. |
+| `npm run test:worker`                                                        | 원본 checkout의 실제 Worker AI 세션·복구                                                                                                                            |
+| `npm run test:economy -- _site/index.html`                                   | 고정 시나리오의 건설·비례 지출·다음 지출 표시·인컴·사거리·포탑·저장 복원                                                                                            |
+| `npm run test:impact -- _site/index.html`                                    | 고정 시나리오의 비행·충격·접촉·병력 방출·저장 복원                                                                                                                  |
 
 환경 변수 예시는 Bash 형식이며 PowerShell에서는 `$env:`로 지정합니다. UI 검사는 127.0.0.1에서 실제 ESM·CSS·SVG와 실제 게임 scope의 관찰자를 사용합니다. 고정 SDK URL만 검증한 cache bytes로 응답해 브라우저 hash 검사를 유지합니다. 이 결과는 CDN 가용성·외부 NAT 두 기기 연결·물리 모바일 GPU 성공을 보장하지 않습니다. 소프트웨어 GL과 실제 GPU, 고정 시나리오와 실제 플레이 결과를 구별해 기록합니다.
