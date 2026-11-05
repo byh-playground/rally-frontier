@@ -3,7 +3,7 @@
 /* =========================
    1. Definitions
    ========================= */
-const FP=100,SIM_VERSION=207;
+const FP=100,SIM_VERSION=208;
 // Local session policy, deliberately outside canonical gameplay/save rules.
 // A session captures this setting once; changing it only affects the next match.
 // single.botWorker runs the AI peer's whole session in src/sim-worker.js.

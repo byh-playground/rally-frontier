@@ -27,6 +27,9 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
       const { LaunchRules } = await import(new URL('./src/sim/launch-rules.js', location.href));
       const { GameRuleDefinition } = await import(new URL('./src/core/game-rules.js', location.href));
       const { BuildingDefinition } = await import(new URL('./src/definitions/buildings.js', location.href));
+      const { UnitDefinition } = await import(new URL('./src/definitions/units.js', location.href));
+      const { InteractionGeometry } = await import(new URL('./src/sim/navigation.js', location.href));
+      const { FP } = await import(new URL('./src/core/config.js', location.href));
       const check = (value, message, detail) => { if (!value) throw Error(message + (detail ? ': ' + JSON.stringify(detail) : '')); };
       const rows = [], seed = 12345;
       function arena(tps = 20, count = 1) {
@@ -41,12 +44,31 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
         return sim;
       }
       function step(sim, n, visit = () => {}) { for (let i = 0; i < n; i++) { sim.stepSimulation(); visit(sim); } }
-      function start(sim, side = 0) {
-        for (const cp of sim.capturePoints) sim.spawnUnit(side, 'rice', cp.x + 100, cp.y);
+      function start(sim, { workers = 1, contact = true, side = 0 } = {}) {
+        const groups = [];
+        for (const cp of sim.capturePoints) {
+          const ids = [];
+          for (let i = 0; i < Math.max(1, workers); i++) { const a = i * Math.PI * 2 / Math.max(1, workers); ids.push(sim.spawnUnit(side, 'rice', cp.x + Math.cos(a) * (contact ? 100 : 160), cp.y + Math.sin(a) * (contact ? 100 : 160)).id); }
+          groups.push(ids);
+        }
         step(sim, 1);
         check(sim.capturePoints.every(cp => cp.owner === null && cp.outpostId), 'presence immediately starts a building without completed ownership');
-        const state = sim.exportState(); state.units = []; sim.importState(state);
+        const state = sim.exportState();
+        if (!workers) state.units = [];
+        else if (contact) for (const [index, ids] of groups.entries()) {
+          const building = sim.buildings.find(b => b.id === sim.capturePoints[index].outpostId);
+          for (const [i, id] of ids.entries()) {
+            const u = state.units.find(unit => unit.id === id), radius = sim.buildingClearanceDistance(u, building) + .75, a = i * Math.PI * 2 / workers;
+            u.x = building.x + Math.cos(a) * radius; u.y = building.y + Math.sin(a) * radius;
+            u.fx = Math.round(u.x * FP); u.fy = Math.round(u.y * FP); u.constructionWork = null;
+          }
+        }
+        sim.importState(state); step(sim, 1);
         return sim.capturePoints.map(cp => sim.buildings.find(b => b.id === cp.outpostId));
+      }
+      function finish(sim, building, maxSeconds = 20) {
+        for (let i = 0; i < maxSeconds * sim.tps && building.construction; i++) sim.stepSimulation();
+        check(building.construction === null, 'active workers finish their funded tower');
       }
       function restore(sim) { const copy = new StrategySim(seed, sim.rules); copy.importState(sim.exportState()); check(copy.checksum() === sim.checksum(), 'checkpoint restores authoritative checksum'); return copy; }
       function destroy(sim, building) { sim.applyDamage(1 - building.side, 'rice', building, true, 100000, null, { sourceDamageResolved: true }); }
@@ -67,120 +89,170 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
         check(Math.abs(Math.hypot(fire.aimX - base.x, fire.aimY - base.y) - 1275) <= 1, 'authoritative launch consumes the upgraded grain range', fire);
         rows.push({ scenario: 'range purchases and authoritative launch', level: sim.launchRangeLevel, wallet: sim.wallet, reach: 1275 });
       }
-      // Construction has the same 15-second cadence at every supported scenario TPS.
+      // One worker continuously contacting the common construction region needs
+      // fifteen one-second work cycles. Travel time is deliberately excluded.
       for (const tps of [10, 20, 30]) {
         const sim = arena(tps), [building] = start(sim), startTick = sim.tick, wallet = sim.wallet[0];
-        check(building.hp === building.maxHp * .1 && building.construction.invested === 0, 'construction starts at10% with no immediate payment');
+        const worker = sim.units[0];
+        check(worker.constructionWork?.targetId === building.id, 'contacting worker starts a real construction action');
+        check(building.hp === building.maxHp * .1 && building.construction.invested === 0, 'construction starts at10% with no immediate investment');
         check(!sim.launchCannons(0).some(b => b.id === building.id), 'unfinished tower cannot launch');
-        step(sim, tps - 1);
-        check(building.construction.invested === 0, 'no payment before one whole second');
-        step(sim, 1);
-        check(building.construction.invested === 1 && Math.abs(building.hp - building.maxHp * .16) < .001, 'one resource increases health and progress after a second');
+        step(sim, tps - 1); check(building.construction.invested === 0, 'no work hit before a whole second');
+        step(sim, 1); check(building.construction.invested === 1 && Math.abs(building.hp - building.maxHp * .16) < .001, 'one work hit invests1 and increases HP');
         const hpBefore = building.hp; sim.applyDamage(1, 'rice', building, true, 50, null, { sourceDamageResolved: true }); const damage = hpBefore - building.hp;
-        step(sim, 14 * tps - 1);
-        check(sim.capturePoints[0].owner === null && building.construction.invested === 14, 'ownership waits until the fifteenth payment');
+        step(sim, 14 * tps - 1); check(sim.capturePoints[0].owner === null && building.construction.invested === 14, 'ownership waits for the fifteenth work hit');
         step(sim, 1);
-        check(sim.tick - startTick === 15 * tps && building.construction === null && sim.capturePoints[0].owner === 0, 'fifteen seconds completes capture with no troop remaining');
-        check(Math.abs(building.hp - (building.maxHp - damage)) < .001, 'construction preserves prior damage instead of healing it away');
-        check(sim.launchCannons(0).some(b => b.id === building.id), 'completed tower becomes an available cannon');
-        // Basic income is45 over the15 seconds; the15 construction resources are lost from wallet.
-        check(sim.wallet[0] === wallet + 45 - 15, 'exact construction investment costs15', { before: wallet, after: sim.wallet[0], tps });
-        rows.push({ scenario: '15-second construction, proportional health and damage preserved', tps, elapsedTicks: sim.tick - startTick, hp: building.hp, wallet: sim.wallet[0] });
+        check(sim.tick - startTick === 15 * tps && building.construction === null && sim.capturePoints[0].owner === 0, 'one worker completes fifteen seconds of uninterrupted contact work');
+        check(Math.abs(building.hp - (building.maxHp - damage)) < .001, 'work preserves prior damage');
+        check(sim.wallet[0] === wallet + 45 - 15, 'fifteen work hits invest exactly15 resources', { wallet, actual: sim.wallet[0], tps });
+        rows.push({ scenario: 'one worker needs15 seconds, investment and damage remain exact', tps, elapsedTicks: sim.tick - startTick, hp: building.hp, wallet: sim.wallet[0] });
       }
-      // Simultaneous opposing presence cannot choose either side. An unfinished
-      // tower rejects a real launch command before touching the shared wallet.
+      // A building has no autonomous timer. Empty sites, dead workers, and workers
+      // moved away cannot produce work hits even while the wallet has resources.
       {
-        const contested = arena(), cp = contested.capturePoints[0];
-        contested.spawnUnit(0, 'rice', cp.x + 100, cp.y); contested.spawnUnit(1, 'rice', cp.x - 100, cp.y);
-        step(contested, 1);
-        check(cp.owner === null && cp.outpostId === null && cp.enabled, 'contested point cannot start construction for either side');
-        const sim = arena(), [building] = start(sim), wallet = sim.wallet[0];
-        check(!sim.applyCommand('host', { type: 'LAUNCH', cannonId: building.id, unitType: 'rice', holdMs: 1500, x: building.x, y: building.y + 1000 }) && sim.wallet[0] === wallet && sim.projectiles.length === 0, 'unfinished tower launch command rejects without spending');
-        rows.push({ scenario: 'contested capture and unfinished cannon reject without spending', wallet });
+        const sim = arena(), [building] = start(sim, { workers: 0 }); step(sim, 15 * sim.tps);
+        check(building.construction.invested === 0 && building.hp === building.maxHp * .1 && sim.capturePoints[0].owner === null, 'absence cannot autonomously construct a tower');
+        rows.push({ scenario: 'no workers means no autonomous construction', invested: building.construction.invested });
+        for (const leave of [false, true]) {
+          const world = arena(), [tower] = start(world); step(world, 2 * world.tps); const invested = tower.construction.invested;
+          if (leave) { const state = world.exportState(); for (const u of state.units) { u.x += 2000; u.fx = Math.round(u.x * FP); } world.importState(state); }
+          else for (const u of world.units) world.applyDamage(1, 'rice', u, false, 100000, null, { sourceDamageResolved: true });
+          step(world, 3 * world.tps);
+          const current = world.buildings.find(b => b.id === tower.id);
+          check(current.construction.invested === invested, 'work stops after every worker dies or leaves', { leave, invested, actual: current.construction.invested });
+          rows.push({ scenario: leave ? 'workers leaving stops construction' : 'worker death stops construction', invested });
+        }
       }
-      // At the exact due tick an empty wallet pauses the project. A later single
-      // resource is invested immediately, then a fresh full second is required.
+      // Three workers accelerate the same15-resource project to five seconds.
+      // Their synchronized final hits can never overcharge or complete it twice.
+      {
+        const sim = arena(), [tower] = start(sim, { workers: 3 }), started = sim.tick, wallet = sim.wallet[0], hits = [], completed = [];
+        step(sim, 5 * sim.tps, s => { hits.push(...s.events.filter(e => e.type === 'constructionHit')); completed.push(...s.events.filter(e => e.type === 'captureComplete')); });
+        check(tower.construction === null && hits.length === 15 && completed.length === 1 && sim.tick - started === 5 * sim.tps, 'three workers finish exactly15 hits in five seconds', { hits: hits.length, completed: completed.length, tick: sim.tick });
+        check(sim.wallet[0] === wallet + 15 - 15, 'accelerated construction still costs exactly15');
+        const final = arena(), [initial] = start(final, { workers: 3 }), state = final.exportState(), b = state.buildings.find(building => building.id === initial.id);
+        b.construction.invested = 14; b.hp = Math.round(b.maxHp * .94); state.wallet[0] = 50; state.launchIncomeCarry[0] = 0; final.importState(state);
+        const lastHits = [], lastCompletions = []; step(final, final.tps, s => { lastHits.push(...s.events.filter(e => e.type === 'constructionHit')); lastCompletions.push(...s.events.filter(e => e.type === 'captureComplete')); });
+        check(lastHits.length === 1 && lastCompletions.length === 1 && final.wallet[0] === 52, 'three simultaneous final hits charge only the remaining1 resource', { hits: lastHits.length, completed: lastCompletions.length, wallet: final.wallet[0] });
+        rows.push({ scenario: 'multiple workers accelerate without overcharging the final hit', durationTicks: sim.tick - started, hits: hits.length, finalHitCharges: lastHits.length });
+      }
+      // No wallet means no work investment. Once a resource is available a
+      // waiting worker resumes, and cannot bank missed cycles for a burst.
       {
         const sim = arena(), [initial] = start(sim); step(sim, sim.tps - 1);
         const state = sim.exportState(); state.wallet[0] = 0; state.launchIncomeCarry[0] = 0; sim.importState(state);
-        const building = sim.buildings.find(b => b.id === initial.id); step(sim, 1);
-        check(building.construction.invested === 0 && sim.wallet[0] === 0, 'empty wallet at payment deadline cannot grant free progress');
-        sim.wallet[0] = 1; step(sim, 1);
-        check(building.construction.invested === 1 && sim.wallet[0] === 0, 'a newly available resource immediately resumes overdue construction');
-        sim.wallet[0] = 100; step(sim, sim.tps - 1);
-        check(building.construction.invested === 1, 'resumed construction waits a whole second before its next payment');
-        step(sim, 1); check(building.construction.invested === 2, 'new one-second payment cadence starts on actual resumed payment');
-        rows.push({ scenario: 'empty wallet pauses and refill resumes without banked catch-up', invested: building.construction.invested, tick: sim.tick });
+        const tower = sim.buildings.find(b => b.id === initial.id); step(sim, 1);
+        check(tower.construction.invested === 0 && sim.wallet[0] === 0, 'empty wallet blocks a completed work hit');
+        sim.wallet[0] = 1; step(sim, 1); check(tower.construction.invested === 0, 'funded waiting worker begins a fresh work cycle');
+        sim.wallet[0] = 100; step(sim, sim.tps - 1); check(tower.construction.invested === 0, 'a resumed worker cannot bank missed work cycles');
+        step(sim, 1); check(tower.construction.invested === 1, 'new work hit requires a full second after funds return');
+        rows.push({ scenario: 'workers wait for funds without banked free work', invested: tower.construction.invested });
       }
-      // A tower captured after buying the global upgrade inherits the same range.
+      // The approach uses the same physical envelope as movement: no center
+      // teleport or work from175-pixel capture presence distance is allowed.
       {
-        const sim = arena(); check(sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }), 'buy shared range before capturing another cannon');
-        sim.wallet[0] = 100; const [building] = start(sim); step(sim, 15 * sim.tps);
-        check(sim.applyCommand('host', { type: 'LAUNCH', cannonId: building.id, unitType: 'soybean', holdMs: 1500, x: building.x, y: building.y + 2000 }), 'completed outpost accepts launch');
-        const fire = sim.events.find(e => e.type === 'launchFire' && e.cannonId === building.id), reach = Math.hypot(fire.aimX - building.x, fire.aimY - building.y);
-        check(Math.abs(reach - 850) <= 1, 'new outpost uses the previously purchased global range level', { reach });
-        rows.push({ scenario: 'newly captured cannon inherits shared range upgrade', reach });
+        const sim = arena(), [tower] = start(sim, { contact: false }), worker = sim.units[0], before = Math.hypot(worker.x - tower.x, worker.y - tower.y), started = sim.tick;
+        let firstHit = null;
+        step(sim, 4 * sim.tps, s => {
+          const distance = Math.hypot(worker.x - tower.x, worker.y - tower.y);
+          check(distance >= sim.buildingClearanceDistance(worker, tower) - .1, 'construction approach stays outside the building collider', { distance });
+          for (const e of s.events) if (e.type === 'constructionHit' && firstHit === null) { firstHit = s.tick; check(distance <= sim.interactionDistance(worker, tower, 'construction', UnitDefinition.get(worker.type).construction.range) + .1, 'work hit requires common construction contact'); }
+        });
+        check(before > sim.buildingClearanceDistance(worker, tower) && firstHit > started + sim.tps, 'travel precedes the one-second work cycle', { before, started, firstHit });
+        rows.push({ scenario: 'worker approaches the common interaction region before working', before, firstHit });
       }
-      // When five projects compete for the basic3/s, later projects wait rather
-      // than gaining free progress or banking missed payments for a burst later.
+      // Geometric proximity cannot bypass a wall or an unconnected terrain
+      // level. Both fixtures keep the worker and tower outside obstacle interiors.
       {
-        const sim = arena(20, 5), buildings = start(sim); sim.wallet[0] = 0;
-        step(sim, sim.tps);
-        check(JSON.stringify(buildings.map(b => b.construction.invested)) === JSON.stringify([1, 1, 1, 0, 0]), 'simultaneously due projects spend the available3 in oldest-first order');
-        step(sim, 3 * sim.tps);
-        const invested = buildings.map(b => b.construction?.invested || 0);
-        check(invested.reduce((a, b) => a + b, 0) === 12 && invested.every((n, i) => i === 0 || n <= invested[i - 1]) && invested[4] < 4, 'oldest project priority with wallet starvation', invested);
-        const waiting = buildings.find(b => b.construction.invested < 4), before = waiting.construction.invested;
-        sim.wallet[0] = 100; step(sim, 1);
-        check(waiting.construction.invested <= before + 1, 'refill cannot instantly pay missed construction seconds');
-        rows.push({ scenario: 'parallel construction spends income and pauses without catch-up', invested, afterRefill: waiting.construction.invested });
+        const sim = arena(), [initial] = start(sim), state = sim.exportState();
+        state.mapDescriptor = structuredClone(state.mapDescriptor);
+        state.mapDescriptor.terrain.blockers = [{ id: 'construction-wall', kind: 'wall', points: [{ x: initial.x + 49, y: initial.y - 500 }, { x: initial.x + 51, y: initial.y - 500 }, { x: initial.x + 51, y: initial.y + 500 }, { x: initial.x + 49, y: initial.y + 500 }] }];
+        sim.importState(state);
+        let tower = sim.buildings.find(b => b.id === initial.id); const worker = sim.units[0];
+        check(sim.world.terrain.field.polygonCircleClear(worker.x, worker.y, sim.unitRadius(worker.type)), 'wall fixture worker circle starts outside its collider');
+        check(Math.hypot(worker.x - tower.x, worker.y - tower.y) <= InteractionGeometry.reach(worker, tower, 'construction', UnitDefinition.get(worker.type).construction.range), 'wall fixture is geometrically within the actual construction reach');
+        check(!sim.world.terrain.field.polygonSegmentClear(worker.x, worker.y, tower.x, tower.y, 0), 'wall fixture blocks the worker-to-building line');
+        step(sim, 2 * sim.tps); check(tower.construction.invested === 0, 'a nearby worker cannot construct through a wall');
+        const opened = sim.exportState(); opened.mapDescriptor = structuredClone(opened.mapDescriptor); opened.mapDescriptor.terrain.blockers = []; sim.importState(opened);
+        tower = sim.buildings.find(b => b.id === initial.id); step(sim, 4 * sim.tps);
+        check(tower.construction.invested > 0, 'removing the wall permits ordinary approach and construction');
+        rows.push({ scenario: 'wall blocks nearby work, removing it permits contribution', resumedInvestment: tower.construction.invested });
+        const level = arena(), [site] = start(level), raised = level.exportState(); raised.mapDescriptor = structuredClone(raised.mapDescriptor);
+        raised.units[0].x = site.x + 65.5; raised.units[0].fx = Math.round(raised.units[0].x * FP);
+        raised.mapDescriptor.terrain.layers = [{ id: 'construction-opposite-level', level: 2, points: [{ x: site.x + 52, y: site.y - 500 }, { x: site.x + 600, y: site.y - 500 }, { x: site.x + 600, y: site.y + 500 }, { x: site.x + 52, y: site.y + 500 }] }];
+        level.importState(raised);
+        const builder = level.units[0], actual = level.buildings.find(b => b.id === site.id);
+        check(level.terrainLevelAt(builder.x, builder.y) === 2 && level.terrainLevelAt(actual.x, actual.y) === 0, 'level fixture places nearby worker and tower on different levels without a ramp');
+        check(Math.hypot(builder.x - actual.x, builder.y - actual.y) <= InteractionGeometry.reach(builder, actual, 'construction', UnitDefinition.get(builder.type).construction.range), 'opposite-level fixture is geometrically within the actual construction reach');
+        step(level, 2 * level.tps);
+        check(actual.construction.invested === 0, 'a nearby worker cannot construct across an unconnected level boundary');
+        rows.push({ scenario: 'unconnected terrain levels block nearby work', invested: actual.construction.invested });
       }
-      // Completed capture income scales with ownership, and construction loss has no refund.
+      // Contact is insufficient while recovering or airborne from a real impulse.
       {
-        const sim = arena(20, 3), buildings = start(sim); step(sim, 15 * sim.tps);
-        check(sim.capturePoints.every(cp => cp.owner === 0), 'three funded projects complete');
-        sim.wallet[0] = 0; sim.launchIncomeCarry[0] = 0; step(sim, sim.tps);
-        check(sim.wallet[0] === 6, 'three completed points give base3+3 income');
-        destroy(sim, buildings[0]); sim.wallet[0] = 0; sim.launchIncomeCarry[0] = 0; step(sim, sim.tps);
-        check(sim.wallet[0] === 5 && sim.capturePoints[0].owner === null && sim.capturePoints[0].outpostId === null, 'destroyed capture immediately stops its income');
-        rows.push({ scenario: 'capture income grows and stops on loss', incomeBefore: 6, incomeAfter: sim.wallet[0] });
+        const sim = arena(), [tower] = start(sim), worker = sim.units[0];
+        sim.navigation.motion.applyImpulse(worker, { x: 0, y: 0, z: 2000 * sim.mass(worker) }, { sourceId: 'work-airborne', originX: worker.x, originY: worker.y });
+        const recoveryUntil = worker.impactMotion.recoverUntilTick, hits = [];
+        while (sim.tick < recoveryUntil) { sim.stepSimulation(); hits.push(...sim.events.filter(e => e.type === 'constructionHit')); }
+        check(hits.length === 0 && tower.construction.invested === 0, 'airborne and recovery ticks cannot produce work hits');
+        step(sim, 2 * sim.tps); check(tower.construction.invested >= 1, 'grounded recovered worker resumes real work');
+        rows.push({ scenario: 'impulse air and recovery block construction, landing resumes', recoveryUntil, invested: tower.construction.invested });
+      }
+      // The worker must resolve nearby combat before resuming construction.
+      {
+        const sim = arena(), [tower] = start(sim), worker = sim.units[0]; worker.hp = worker.maxHp = 10000;
+        const enemy = sim.spawnUnit(1, 'rice', worker.x + 35, worker.y); enemy.hp = enemy.maxHp = 10000;
+        const invested = tower.construction.invested, hits = [];
+        step(sim, 2 * sim.tps, s => hits.push(...s.events.filter(e => e.type === 'hit' && e.sourceId === worker.id)));
+        check(tower.construction.invested === invested && hits.length > 0, 'nearby enemy combat takes priority over construction');
+        sim.applyDamage(0, 'rice', enemy, false, 100000, null, { sourceDamageResolved: true }); step(sim, 3 * sim.tps);
+        check(tower.construction.invested > invested, 'worker resumes after combat target disappears');
+        rows.push({ scenario: 'combat interrupts construction and workers resume afterwards', combatHits: hits.length, resumedInvestment: tower.construction.invested });
+      }
+      // Contested sites and unfinished cannons preserve their existing contracts.
+      {
+        const contested = arena(), cp = contested.capturePoints[0]; contested.spawnUnit(0, 'rice', cp.x + 100, cp.y); contested.spawnUnit(1, 'rice', cp.x - 100, cp.y); step(contested, 1);
+        check(cp.owner === null && cp.outpostId === null && cp.enabled, 'opposing presence cannot start construction');
+        const sim = arena(), [tower] = start(sim), wallet = sim.wallet[0];
+        check(!sim.applyCommand('host', { type: 'LAUNCH', cannonId: tower.id, unitType: 'rice', holdMs: 1500, x: tower.x, y: tower.y + 1000 }) && sim.wallet[0] === wallet, 'unfinished cannon rejects launch without spending');
+        rows.push({ scenario: 'contested capture and unfinished cannon reject', wallet });
+      }
+      // Global range, capture income and loss remain part of the worker scenario.
+      {
+        const sim = arena(); check(sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }), 'buy shared range before capturing'); sim.wallet[0] = 100;
+        const [tower] = start(sim); finish(sim, tower);
+        check(sim.applyCommand('host', { type: 'LAUNCH', cannonId: tower.id, unitType: 'soybean', holdMs: 1500, x: tower.x, y: tower.y + 2000 }), 'completed worker-built cannon accepts launch');
+        const fire = sim.events.find(e => e.type === 'launchFire' && e.cannonId === tower.id), reach = Math.hypot(fire.aimX - tower.x, fire.aimY - tower.y);
+        check(Math.abs(reach - 850) <= 1, 'worker-built cannon inherits global range');
+        const income = arena(20, 3), towers = start(income); for (const b of towers) finish(income, b);
+        income.wallet[0] = 0; income.launchIncomeCarry[0] = 0; step(income, income.tps); check(income.wallet[0] === 6, 'three completed worker projects give6 income');
+        const clear = income.exportState(); clear.units = []; income.importState(clear); destroy(income, income.buildings.find(b => b.id === towers[0].id)); income.wallet[0] = 0; income.launchIncomeCarry[0] = 0; step(income, income.tps);
+        check(income.wallet[0] === 5, 'destroyed capture stops its income');
         const loss = arena(), [partial] = start(loss); step(loss, 4 * loss.tps); const paid = partial.construction.invested, wallet = loss.wallet[0]; destroy(loss, partial);
-        check(paid === 4 && loss.wallet[0] === wallet && loss.capturePoints[0].owner === null && loss.capturePoints[0].outpostId === null, 'unfinished destruction loses every payment with no refund');
-        rows.push({ scenario: 'destroyed construction loses its investment', paid, wallet });
+        check(paid === 4 && loss.wallet[0] === wallet && loss.capturePoints[0].owner === null, 'destroyed worker project loses invested resources');
+        rows.push({ scenario: 'worker-built cannon range, capture income and construction loss', reach, incomeAfterLoss: income.wallet[0], lostInvestment: paid });
       }
-      // The completed tower chooses one visible enemy, deals10 per second,
-      // and does not attack while it is still being built.
+      // Completed towers retain their single-target basic defense; unfinished
+      // structures do not inherit that attack while their workers are busy.
       {
-        const sim = arena(), [building] = start(sim), cp = sim.capturePoints[0];
-        const first = sim.spawnUnit(1, 'soybean', cp.x + 150, cp.y); first.hp = first.maxHp = 10000;
-        const incompleteHits = []; step(sim, sim.tps, s => incompleteHits.push(...s.events.filter(e => e.type === 'hit' && e.sourceId === building.id)));
-        check(incompleteHits.length === 0, 'construction cannot use its basic attack');
-        const empty = sim.exportState(); empty.units = []; sim.importState(empty);
-        step(sim, 14 * sim.tps);
-        const tower = sim.buildings.find(b => b.id === building.id);
-        check(tower.construction === null, 'funded tower completed before its defense scenario');
-        const one = sim.spawnUnit(1, 'soybean', cp.x + 150, cp.y), two = sim.spawnUnit(1, 'soybean', cp.x + 180, cp.y + 50), friend = sim.spawnUnit(0, 'soybean', cp.x - 150, cp.y);
-        for (const u of [one, two, friend]) u.hp = u.maxHp = 10000;
+        const sim = arena(), [tower] = start(sim); finish(sim, tower);
+        const workerState = sim.exportState(); workerState.units = []; sim.importState(workerState);
+        const one = sim.spawnUnit(1, 'soybean', tower.x + 150, tower.y), two = sim.spawnUnit(1, 'soybean', tower.x + 180, tower.y + 50);
+        for (const u of [one, two]) u.hp = u.maxHp = 10000;
         const hits = []; step(sim, 2 * sim.tps, s => hits.push(...s.events.filter(e => e.type === 'hit' && e.sourceId === tower.id).map(e => ({ tick: s.tick, targetId: e.targetId, amount: e.amount }))));
-        check(hits.length === 2 && hits.every(e => e.amount === 10 && e.targetId !== friend.id), 'single-target tower attacks deal10 every second and exclude friends', hits);
-        check(hits[1].tick - hits[0].tick === sim.tps, 'tower attack interval is one second', hits);
-        check(BuildingDefinition.get(tower.type).range === 250, 'tower range is250');
-        const state = sim.exportState(); state.units = []; sim.importState(state);
-        const far = sim.spawnUnit(1, 'soybean', cp.x + 500, cp.y); far.hp = far.maxHp = 10000;
-        const farHits = []; step(sim, sim.tps, s => farHits.push(...s.events.filter(e => e.type === 'hit' && e.sourceId === tower.id)));
-        check(farHits.length === 0, 'distant enemy is not attacked');
-        rows.push({ scenario: 'finished tower basic defense is single target10 per second', hits, distantHits: farHits.length });
+        check(hits.length === 2 && hits.every(e => e.amount === 10) && hits[1].tick - hits[0].tick === sim.tps, 'finished tower retains10 damage single-target attacks every second', hits);
+        const incomplete = arena(), [site] = start(incomplete, { workers: 0 }); incomplete.spawnUnit(1, 'soybean', site.x + 150, site.y);
+        const forbidden = []; step(incomplete, incomplete.tps, s => forbidden.push(...s.events.filter(e => e.type === 'hit' && e.sourceId === site.id)));
+        check(forbidden.length === 0, 'unfinished structure cannot use its basic attack');
+        rows.push({ scenario: 'completed tower retains its basic defense', hits });
       }
-      // A checkpoint during construction and a purchase must preserve future
-      // payment cadence, HP, ownership, income, and shared range state.
+      // Checkpoints include partial unit work actions and their future hit times.
       {
-        const sim = arena(), [building] = start(sim); step(sim, 3 * sim.tps + 7);
-        check(sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }), 'mid-construction range investment accepted');
-        const copy = restore(sim), before = sim.checksum(), snap = sim.snapshot();
-        snap.buildings.find(b => b.id === building.id).construction.invested = 14; snap.launchRangeLevel[0] = 99;
-        check(sim.checksum() === before, 'snapshot mutation cannot change construction or upgrade authority');
-        for (let i = 0; i < 16 * sim.tps; i++) { sim.stepSimulation(); copy.stepSimulation(); check(sim.checksum() === copy.checksum(), 'restored future construction and range hashes match', { tick: sim.tick }); }
-        rows.push({ scenario: 'construction and upgrade checkpoint restores exact future', checksum: sim.checksum() });
+        const sim = arena(), [tower] = start(sim); step(sim, 3 * sim.tps + 7); check(sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }), 'range investment during worker action');
+        const copy = restore(sim), before = sim.checksum(), snap = sim.snapshot(); snap.buildings.find(b => b.id === tower.id).construction.invested = 14; snap.units[0].constructionWork.nextHitTick = 0;
+        check(sim.checksum() === before, 'snapshot work-action mutation cannot change authority');
+        for (let i = 0; i < 16 * sim.tps; i++) { sim.stepSimulation(); copy.stepSimulation(); check(sim.checksum() === copy.checksum(), 'restored work actions produce identical future hashes', { tick: sim.tick }); }
+        rows.push({ scenario: 'partial worker action checkpoint restores exact future', checksum: sim.checksum() });
       }
       return { seed, viewport: { width: 1280, height: 800 }, rows };
     });
@@ -199,12 +271,50 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
     assert(ui.modes.every(value => value === mode), 'selected netcode mode reaches both real peers');
     assert(ui.recorded.every(n => n === 1), 'native purchase reaches both replay recorders exactly once');
     assert(ui.rtc.every(s => s === 'connected'), 'real RTC peers carry the upgrade command');
+    const ranges = await page.evaluate(async () => {
+      const { StrategySim } = await import(new URL('./src/sim/strategy-sim.js', location.href));
+      const { WorldContext } = await import(new URL('./src/sim/world-context.js', location.href));
+      const { BattlefieldProjection } = await import(new URL('./src/sim/terrain.js', location.href));
+      const r = window.__economyE2E.ActiveViewState.renderer, map = structuredClone(new StrategySim(12345).mapDescriptor);
+      const cx = map.width / 2, cy = map.height / 2;
+      map.terrain = { layers: [{ id: 'range-highground', level: 2, points: [{ x: cx + 100, y: 100 }, { x: map.width - 100, y: 100 }, { x: map.width - 100, y: map.height - 100 }, { x: cx + 100, y: map.height - 100 }] }], ramps: [], blockers: [], riverPath: [], riverBranches: [], riverPolygon: [], riverBranchPolygons: [], riverHalfWidth: 0, bridges: [] };
+      const original = { world: r.world, orientation: r.replayOrientationRole, project: r.worldToPx, line: r.line }, rows = [];
+      const check = (ok, message, details) => { if (!ok) throw Error(message + ': ' + JSON.stringify(details)); };
+      try {
+        r.world = WorldContext.fromMap(map);
+        for (const orientation of ['host', 'guest']) {
+          r.replayOrientationRole = orientation;
+          for (const [type, level, radius] of [['rice', 0, 500], ['soybean', 0, 425], ['redbean', 0, 375], ['rice', 1, 1000], ['rice', 2, 1500]]) {
+            const projected = [], lines = [];
+            // Observe the real geometry producer and forward every call unchanged.
+            // No renderer or projection result is substituted.
+            r.worldToPx = function (x, y, height) {
+              const xy = original.project.call(this, x, y, height), wx = this.viewX(x), wy = this.viewY(y);
+              projected.push({ x: wx, y: wy, height, xy }); return xy;
+            };
+            r.line = function (...args) { lines.push(args); return original.line.apply(this, args); };
+            r.drawLaunchRange({ x: cx, y: cy }, type, level, true);
+            check(lines.length > 30 && projected.length === lines.length * 2, 'actual range helper emits projected contour segments', { orientation, type, level, count: lines.length });
+            for (const p of projected) {
+              check(Math.abs(Math.hypot(p.x - cx, p.y - cy) - radius) < .001, 'contour uses the cannon center and actual maximum reach', { type, level, radius, p });
+              check(p.height === r.world.terrain.surfaces.heightAt(p.x, p.y), 'each contour vertex uses its own canonical terrain height in either orientation', { orientation, p });
+              const flat = original.project.call(r, r.viewX(p.x), r.viewY(p.y), 0);
+              check(Math.abs((flat[1] - p.xy[1]) - p.height * BattlefieldProjection.heightScale * r.sc()) < .001, 'highground contour uses the shared screen projection', { orientation, p, flat });
+            }
+            check(projected.some(p => p.height > 0) && projected.some(p => p.height === 0), 'scenario spans both low and high terrain', { orientation, type });
+            for (const [i, line] of lines.entries()) check(Math.hypot(line[0] - projected[i * 2].xy[0], line[1] - projected[i * 2].xy[1], line[2] - projected[i * 2 + 1].xy[0], line[3] - projected[i * 2 + 1].xy[1]) < .001, 'drawn line endpoints match actual projected contour vertices', { i });
+            rows.push({ orientation, type, level, radius, segments: lines.length });
+          }
+        }
+      } finally { r.world = original.world; r.replayOrientationRole = original.orientation; r.worldToPx = original.project; r.line = original.line; }
+      return { seed: 12345, cannon: { x: cx, y: cy }, rows };
+    });
     fs.mkdirSync(output, { recursive: true });
     await page.screenshot({ path: path.join(output, 'range-upgrade-desktop.png') });
     await page.setViewportSize({ width: 412, height: 915 });
     await page.screenshot({ path: path.join(output, 'range-upgrade-mobile.png') });
     assert.deepEqual(pageErrors, [], 'scenario browser page errors');
-    fs.writeFileSync(path.join(output, 'result.json'), JSON.stringify({ ...result, ui }, null, 2));
-    console.log(JSON.stringify({ pass: true, ...result, ui }, null, 2));
+    fs.writeFileSync(path.join(output, 'result.json'), JSON.stringify({ ...result, ui, ranges }, null, 2));
+    console.log(JSON.stringify({ pass: true, ...result, ui, ranges }, null, 2));
   } finally { await browser.close(); await server.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

@@ -185,13 +185,13 @@ export class LaunchScreens {
         }
     }
     // Label over the landing ring while aiming; at is the ring centre in page pixels, or null when not aiming.
-    static renderAimLabel(at, type) {
+    static renderAimLabel(at, type, maxReach) {
         const LABEL = this.$('aimLabel');
         LABEL.classList.toggle('hidden', !at);
         if (!at) {
             return;
         }
-        const TEXT = `${this.actions.grainName(type)} ×${this.actions.grainStats(type).count} · ${GRAIN_COPY[type]?.fire || this.landingLabel(type)}`;
+        const TEXT = `${this.actions.grainName(type)} ×${this.actions.grainStats(type).count} · ${GRAIN_COPY[type]?.fire || this.landingLabel(type)} · 최대 발사 ${maxReach.toLocaleString('ko-KR')}`;
         if (LABEL.textContent !== TEXT) {
             LABEL.textContent = TEXT;
         }
