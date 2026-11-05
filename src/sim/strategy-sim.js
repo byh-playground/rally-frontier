@@ -4,6 +4,7 @@ import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './en
 import { StateContract, StateValue } from './components.js';
 import { RallyStateCodec } from '../session/game-session.js';
 import { LaunchRules } from './launch-rules.js';
+import { ConstructionRules } from './construction-rules.js';
 import { LaunchImpact } from './launch-impact.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.js';
@@ -276,9 +277,9 @@ class StrategySim{
   spawnOutpost(cp,side){
     const d=BuildingDefinition.get(BuildingDefinition.forRole("outpost"));
     const id="outpost-"+cp.id+"-"+(++this.seq);
-    const construction={invested:0,startedAtTick:this.tick};
+    const construction=ConstructionRules.create(d.construction,this.tick);
     const outpost=new Building({id,type:BuildingDefinition.forRole("outpost"),side,x:cp.x,y:cp.y,
-      hp:Math.round(d.hp*LaunchRules.captureInitialHpRatio),maxHp:d.hp,captureId:cp.id,construction});
+      hp:ConstructionRules.healthAt(construction,d.hp),maxHp:d.hp,captureId:cp.id,construction});
     this.buildings.push(outpost);
     this.buildingById.set(id,outpost);
     this.markBuildingSpatialDirty();
@@ -287,12 +288,12 @@ class StrategySim{
     return outpost;
   }
 
-  completeOutpost(outpost){
-    const cp=this.capturePoints.find(p=>p.outpostId===outpost.id);
+  completeConstruction(building){
+    building.construction=null;
+    const cp=this.capturePoints.find(p=>p.outpostId===building.id);
     if(!cp)return;
-    outpost.construction=null;
-    cp.owner=outpost.side;
-    this.events.push({type:"captureComplete",side:outpost.side,captureId:cp.id,lane:cp.lane,label:cp.label,x:cp.x,y:cp.y,outpostId:outpost.id});
+    cp.owner=building.side;
+    this.events.push({type:"captureComplete",side:building.side,captureId:cp.id,lane:cp.lane,label:cp.label,x:cp.x,y:cp.y,outpostId:building.id});
   }
 
   assignConstructionWorkers(){
@@ -336,8 +337,8 @@ class StrategySim{
       this.moveToGoal(u,InteractionGeometry.goal(u,b,"construction",workRange),speed);
       return true;
     }
-    if(this.wallet[u.side]<1){this.resetConstructionCycle(work,"waiting");return true}
-    const cycle=this.msTicks(LaunchRules.captureWorkMs),recoverTicks=Math.round(cycle*LaunchRules.captureWork.recoverEndRatio),strikeTicks=Math.round(cycle*LaunchRules.captureWork.strikeStartRatio);
+    if(ConstructionRules.project(b.construction,ability.workPerHit,this.wallet[u.side]).workAdded===0){this.resetConstructionCycle(work,"waiting");return true}
+    const cycle=this.msTicks(ConstructionRules.cooldownMs),recoverTicks=Math.round(cycle*ConstructionRules.phaseRatios.recoverEnd),strikeTicks=Math.round(cycle*ConstructionRules.phaseRatios.strikeStart);
     if(work.cycleStartedAtTick===null){work.cycleStartedAtTick=this.tick;work.nextHitTick=this.tick+cycle}
     const start=work.cycleStartedAtTick,elapsed=this.tick-start;
     if(work.lastHitTick===start&&elapsed<recoverTicks)this.setConstructionPhase(work,"recover",start,start+recoverTicks);
@@ -361,16 +362,17 @@ class StrategySim{
         if(!ability||!this.constructionContact(u,b,ability.range)){
           this.resetConstructionCycle(work,"approach");continue;
         }
-        if(this.wallet[u.side]<1){this.resetConstructionCycle(work,"waiting");continue}
-        const progress=b.construction,before=progress.invested++;
-        this.wallet[u.side]--;
-        const initial=Math.round(b.maxHp*LaunchRules.captureInitialHpRatio),remaining=b.maxHp-initial;
-        b.hp+=Math.round(remaining*progress.invested/LaunchRules.captureCost)-Math.round(remaining*before/LaunchRules.captureCost);
-        work.lastHitTick=this.tick;work.cycleStartedAtTick=this.tick;work.nextHitTick=this.tick+this.msTicks(LaunchRules.captureWorkMs);
-        this.setConstructionPhase(work,"recover",this.tick,this.tick+Math.round(this.msTicks(LaunchRules.captureWorkMs)*LaunchRules.captureWork.recoverEndRatio));
+        const progress=b.construction,applied=ConstructionRules.project(progress,ability.workPerHit,this.wallet[u.side]);
+        if(applied.workAdded===0){this.resetConstructionCycle(work,"waiting");continue}
+        const beforeHp=ConstructionRules.healthAt(progress,b.maxHp);
+        progress.workDone=applied.workDone;progress.invested=applied.invested;
+        this.wallet[u.side]-=applied.spend;
+        b.hp+=ConstructionRules.healthAt(progress,b.maxHp)-beforeHp;
+        work.lastHitTick=this.tick;work.cycleStartedAtTick=this.tick;work.nextHitTick=this.tick+this.msTicks(ConstructionRules.cooldownMs);
+        this.setConstructionPhase(work,"recover",this.tick,this.tick+Math.round(this.msTicks(ConstructionRules.cooldownMs)*ConstructionRules.phaseRatios.recoverEnd));
         const dx=u.x-b.x,dy=u.y-b.y,distance=Math.hypot(dx,dy)||1,radius=BuildingDefinition.get(b.type).size;
-        this.events.push({type:"constructionHit",side:u.side,sourceId:u.id,sourceType:u.type,targetId:b.id,x:b.x,y:b.y,contactX:b.x+dx/distance*radius,contactY:b.y+dy/distance*radius,invested:progress.invested});
-        if(progress.invested===LaunchRules.captureCost)this.completeOutpost(b);
+        this.events.push({type:"constructionHit",side:u.side,sourceId:u.id,sourceType:u.type,targetId:b.id,x:b.x,y:b.y,contactX:b.x+dx/distance*radius,contactY:b.y+dy/distance*radius,workAdded:applied.workAdded,spend:applied.spend,workDone:progress.workDone,invested:progress.invested});
+        if(applied.complete)this.completeConstruction(b);
       }
     }
   }

@@ -29,6 +29,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
       const { BuildingDefinition } = await import(new URL('./src/definitions/buildings.js', location.href));
       const { UnitDefinition } = await import(new URL('./src/definitions/units.js', location.href));
       const { InteractionGeometry } = await import(new URL('./src/sim/navigation.js', location.href));
+      const { ConstructionRules } = await import(new URL('./src/sim/construction-rules.js', location.href));
       const { FP } = await import(new URL('./src/core/config.js', location.href));
       const check = (value, message, detail) => { if (!value) throw Error(message + (detail ? ': ' + JSON.stringify(detail) : '')); };
       const rows = [], seed = 12345;
@@ -66,9 +67,27 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
         sim.importState(state); step(sim, 1);
         return sim.capturePoints.map(cp => sim.buildings.find(b => b.id === cp.outpostId));
       }
+      function smallProjects(sim, buildings) {
+        const state = sim.exportState(), ids = buildings.map(b => b.id);
+        for (const b of state.buildings) if (ids.includes(b.id)) { b.construction = ConstructionRules.create({ cost: 3, workRequired: 7, initialHpRatio: .1 }, sim.tick); b.hp = ConstructionRules.healthAt(b.construction, b.maxHp, 0); }
+        sim.importState(state); return ids.map(id => sim.buildings.find(b => b.id === id));
+      }
       function finish(sim, building, maxSeconds = 20) {
         for (let i = 0; i < maxSeconds * sim.tps && building.construction; i++) sim.stepSimulation();
-        check(building.construction === null, 'active workers finish their funded tower');
+        check(building.construction === null, 'active workers finish their funded project');
+      }
+      function nextHitMission({ cost = 75, workRequired = 375, workDone = 0, power = 1, wallet = 50 } = {}) {
+        const original = UnitDefinition.get('rice').construction.workPerHit;
+        UnitDefinition.get('rice').construction.workPerHit = power;
+        try {
+          const sim = arena(), [initial] = start(sim); step(sim, sim.tps - 1);
+          const state = sim.exportState(), b = state.buildings.find(b => b.id === initial.id);
+          b.construction = ConstructionRules.create({ cost, workRequired, initialHpRatio: .1 }, 1);
+          b.construction.workDone = workDone; b.construction.invested = Math.floor(cost * workDone / workRequired);
+          b.hp = ConstructionRules.healthAt(b.construction, b.maxHp, workDone); state.wallet[0] = wallet; state.launchIncomeCarry[0] = 0;
+          sim.importState(state); sim.stepSimulation();
+          return { sim, building: sim.buildings.find(b => b.id === initial.id), events: sim.events.filter(e => e.type === 'constructionHit') };
+        } finally { UnitDefinition.get('rice').construction.workPerHit = original; }
       }
       function restore(sim) { const copy = new StrategySim(seed, sim.rules); copy.importState(sim.exportState()); check(copy.checksum() === sim.checksum(), 'checkpoint restores authoritative checksum'); return copy; }
       function destroy(sim, building) { sim.applyDamage(1 - building.side, 'rice', building, true, 100000, null, { sourceDamageResolved: true }); }
@@ -89,64 +108,95 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
         check(Math.abs(Math.hypot(fire.aimX - base.x, fire.aimY - base.y) - 1275) <= 1, 'authoritative launch consumes the upgraded grain range', fire);
         rows.push({ scenario: 'range purchases and authoritative launch', level: sim.launchRangeLevel, wallet: sim.wallet, reach: 1275 });
       }
-      // One worker continuously contacting the common construction region needs
-      // fifteen one-second work cycles. Travel time is deliberately excluded.
+      // One hit adds one work. Payment follows the project ratio independently
+      // of the one-second body-charge cadence and the five visual meter cells.
       for (const tps of [10, 20, 30]) {
-        const sim = arena(tps), [building] = start(sim), startTick = sim.tick, wallet = sim.wallet[0];
-        const worker = sim.units[0];
-        check(worker.constructionWork?.targetId === building.id, 'contacting worker starts a real construction action');
-        check(building.hp === building.maxHp * .1 && building.construction.invested === 0, 'construction starts at10% with no immediate investment');
-        check(!sim.launchCannons(0).some(b => b.id === building.id), 'unfinished tower cannot launch');
-        step(sim, tps - 1); check(building.construction.invested === 0, 'no work hit before a whole second');
-        step(sim, 1); check(building.construction.invested === 1 && Math.abs(building.hp - building.maxHp * .16) < .001, 'one work hit invests1 and increases HP');
-        const hpBefore = building.hp; sim.applyDamage(1, 'rice', building, true, 50, null, { sourceDamageResolved: true }); const damage = hpBefore - building.hp;
-        step(sim, 14 * tps - 1); check(sim.capturePoints[0].owner === null && building.construction.invested === 14, 'ownership waits for the fifteenth work hit');
-        step(sim, 1);
-        check(sim.tick - startTick === 15 * tps && building.construction === null && sim.capturePoints[0].owner === 0, 'one worker completes fifteen seconds of uninterrupted contact work');
-        check(Math.abs(building.hp - (building.maxHp - damage)) < .001, 'work preserves prior damage');
-        check(sim.wallet[0] === wallet + 45 - 15, 'fifteen work hits invest exactly15 resources', { wallet, actual: sim.wallet[0], tps });
-        rows.push({ scenario: 'one worker needs15 seconds, investment and damage remain exact', tps, elapsedTicks: sim.tick - startTick, hp: building.hp, wallet: sim.wallet[0] });
+        const sim = arena(tps), [building] = start(sim), startTick = sim.tick, hits = [];
+        check(building.construction.cost === 75 && building.construction.workRequired === 375 && building.construction.workDone === 0 && building.hp === 140, 'default project declares75 cost and375 work at10% HP');
+        check(!sim.launchCannons(0).some(b => b.id === building.id), 'unfinished project cannot launch');
+        step(sim, 4 * tps, s => hits.push(...s.events.filter(e => e.type === 'constructionHit')));
+        check(building.construction.workDone === 4 && building.construction.invested === 0 && hits.length === 4 && hits.every(e => e.spend === 0), 'first four actual work hits cost zero', { tps, work: building.construction.workDone, hits });
+        step(sim, tps); check(building.construction.workDone === 5 && building.construction.invested === 1, 'fifth actual hit crosses the first resource threshold');
+        rows.push({ scenario: 'one-second work cadence is independent of money thresholds', tps, elapsedTicks: sim.tick - startTick, workDone: building.construction.workDone, invested: building.construction.invested });
       }
-      // A building has no autonomous timer. Empty sites, dead workers, and workers
-      // moved away cannot produce work hits even while the wallet has resources.
       {
-        const sim = arena(), [building] = start(sim, { workers: 0 }); step(sim, 15 * sim.tps);
-        check(building.construction.invested === 0 && building.hp === building.maxHp * .1 && sim.capturePoints[0].owner === null, 'absence cannot autonomously construct a tower');
-        rows.push({ scenario: 'no workers means no autonomous construction', invested: building.construction.invested });
+        const sim = arena(), [tower] = start(sim), started = sim.tick, hits = [];
+        const hpBefore = tower.hp; sim.applyDamage(1, 'rice', tower, true, 50, null, { sourceDamageResolved: true }); const damage = hpBefore - tower.hp;
+        step(sim, 375 * sim.tps - 1, s => hits.push(...s.events.filter(e => e.type === 'constructionHit')));
+        check(tower.construction.workDone === 374 && tower.construction.invested === 74 && sim.capturePoints[0].owner === null, '374 hits cannot complete375-work project');
+        step(sim, 1, s => hits.push(...s.events.filter(e => e.type === 'constructionHit')));
+        check(tower.construction === null && hits.length === 375 && hits.reduce((n, e) => n + e.spend, 0) === 75 && sim.tick - started === 375 * sim.tps, 'one worker finishes in375 seconds and spends exactly75');
+        check(tower.hp === tower.maxHp - damage, 'work-proportional HP preserves damage through full completion');
+        rows.push({ scenario: 'full375-hit project spends75 and preserves damage', elapsedTicks: sim.tick - started, hits: hits.length, spend: hits.reduce((n, e) => n + e.spend, 0), hp: tower.hp });
+      }
+      // Arbitrary project ratios must use the same actual-hit mechanic; no
+      // five-hit rule may leak from the meter into work or payment resolution.
+      {
+        const cases = [];
+        for (const [cost, workRequired, expected] of [[3, 7, [0, 0, 1, 1, 2, 2, 3]], [75, 150, Array.from({ length: 150 }, (_, i) => Math.floor(75 * (i + 1) / 150))], [8, 3, [2, 5, 8]], [0, 7, [0, 0, 0, 0, 0, 0, 0]]]) {
+          const original = UnitDefinition.get('rice').construction.workPerHit;
+          try {
+            UnitDefinition.get('rice').construction.workPerHit = 1;
+            const sim = arena(), [initial] = start(sim), state = sim.exportState(), b = state.buildings.find(b => b.id === initial.id);
+            b.construction = ConstructionRules.create({ cost, workRequired, initialHpRatio: .1 }, sim.tick); sim.importState(state);
+            const invested = []; step(sim, expected.length * sim.tps, s => invested.push(...s.events.filter(e => e.type === 'constructionHit').map(e => e.invested)));
+            check(JSON.stringify(invested) === JSON.stringify(expected), 'actual hits honor arbitrary cost/work integer boundaries', { cost, workRequired, invested, expected });
+            if (expected.length === workRequired) check(sim.buildings.find(b => b.id === initial.id).construction === null, 'arbitrary ratio completes at its declared work requirement');
+            cases.push({ cost, workRequired, invested });
+          } finally { UnitDefinition.get('rice').construction.workPerHit = original; }
+        }
+        rows.push({ scenario: 'independent project price and required work', cases });
+      }
+      {
+        const cases = [];
+        for (const spec of [
+          { workDone: 0, power: 3, wallet: 0, expectedWork: 3, expectedSpend: 0 },
+          { workDone: 3, power: 3, wallet: 0, expectedWork: 4, expectedSpend: 0 },
+          { workDone: 4, power: 3, wallet: 1, expectedWork: 7, expectedSpend: 1 },
+          { cost: 75, workRequired: 150, workDone: 3, power: 3, wallet: 10, expectedWork: 6, expectedSpend: 2 },
+          { cost: 75, workRequired: 150, workDone: 1, power: 3, wallet: 1, expectedWork: 3, expectedSpend: 1 },
+          { cost: 3, workRequired: 2, workDone: 0, power: 3, wallet: 1, expectedWork: 1, expectedSpend: 1 },
+          { workDone: 374, power: 3, wallet: 1, expectedWork: 375, expectedSpend: 1 }
+        ]) {
+          const { building, events } = nextHitMission(spec), event = events[0];
+          check(events.length === 1 && event.workDone === spec.expectedWork && event.spend === spec.expectedSpend, 'specialist work crosses boundaries, carries partial progress and respects wallet/cap', { spec, events });
+          if (spec.expectedWork === (spec.workRequired || 375)) check(building.construction === null, 'specialist final hit cannot exceed remaining work');
+          cases.push({ power: spec.power, previousWork: spec.workDone, workDone: event.workDone, workAdded: event.workAdded, spend: event.spend });
+        }
+        rows.push({ scenario: 'specialist contribution and partial affordable work use common hits', cases });
+      }
+      {
+        const sim = arena(), [tower] = start(sim, { workers: 3 }), started = sim.tick, hits = [], completed = [];
+        step(sim, 125 * sim.tps, s => { hits.push(...s.events.filter(e => e.type === 'constructionHit')); completed.push(...s.events.filter(e => e.type === 'captureComplete')); });
+        check(tower.construction === null && hits.length === 375 && completed.length === 1 && hits.reduce((n, e) => n + e.spend, 0) === 75, 'three actual workers finish375 work in125 seconds and charge75 once');
+        const last = nextHitMission({ workDone: 374, power: 3, wallet: 1 });
+        check(last.events.length === 1 && last.events[0].workAdded === 1 && last.events[0].spend === 1 && last.building.construction === null, 'final specialist hit caps work and payment');
+        rows.push({ scenario: 'multiple workers accelerate while completion and total payment stay exact', durationTicks: sim.tick - started, spend: hits.reduce((n, e) => n + e.spend, 0), completeEvents: completed.length });
+      }
+      // First four work units remain possible with an empty wallet; the next
+      // threshold waits for resources and then requires a real new body hit.
+      {
+        for (let workDone = 0; workDone < 4; workDone++) { const { events, building } = nextHitMission({ workDone, wallet: 0 }); check(events.length === 1 && events[0].spend === 0 && building.construction.workDone === workDone + 1, 'zero-wallet free work must still require and accept an actual hit'); }
+        const { sim, building: tower, events } = nextHitMission({ workDone: 4, wallet: 0 });
+        check(events.length === 0 && tower.construction.workDone === 4 && tower.construction.invested === 0, 'empty wallet blocks work crossing the next price threshold');
+        sim.wallet[0] = 1; step(sim, 1); check(tower.construction.workDone === 4, 'funding alone cannot create work');
+        step(sim, sim.tps - 1); check(tower.construction.workDone === 4, 'resumed worker still needs a whole work cycle');
+        step(sim, 1); check(tower.construction.workDone === 5 && tower.construction.invested === 1, 'funded worker crosses the threshold on the next actual hit');
+        rows.push({ scenario: 'zero wallet allows only free work and paid progress resumes on a hit', workDone: tower.construction.workDone, invested: tower.construction.invested });
+      }
+      // Without workers the project has no autonomous progress of any kind.
+      {
+        const sim = arena(), [tower] = start(sim, { workers: 0 }); step(sim, 15 * sim.tps);
+        check(tower.construction.workDone === 0 && tower.construction.invested === 0 && tower.hp === 140, 'worker absence cannot grant free work or paid work');
+        rows.push({ scenario: 'no workers means no autonomous construction', workDone: tower.construction.workDone });
         for (const leave of [false, true]) {
-          const world = arena(), [tower] = start(world); step(world, 2 * world.tps); const invested = tower.construction.invested;
+          const world = arena(), [site] = start(world); step(world, 2 * world.tps); const workDone = site.construction.workDone;
           if (leave) { const state = world.exportState(); for (const u of state.units) { u.x += 2000; u.fx = Math.round(u.x * FP); } world.importState(state); }
           else for (const u of world.units) world.applyDamage(1, 'rice', u, false, 100000, null, { sourceDamageResolved: true });
-          step(world, 3 * world.tps);
-          const current = world.buildings.find(b => b.id === tower.id);
-          check(current.construction.invested === invested, 'work stops after every worker dies or leaves', { leave, invested, actual: current.construction.invested });
-          rows.push({ scenario: leave ? 'workers leaving stops construction' : 'worker death stops construction', invested });
+          step(world, 3 * world.tps); const current = world.buildings.find(b => b.id === site.id);
+          check(current.construction.workDone === workDone, 'dead or departing workers cannot add even free work', { leave, workDone, actual: current.construction.workDone });
+          rows.push({ scenario: leave ? 'workers leaving stops construction' : 'worker death stops construction', workDone });
         }
-      }
-      // Three workers accelerate the same15-resource project to five seconds.
-      // Their synchronized final hits can never overcharge or complete it twice.
-      {
-        const sim = arena(), [tower] = start(sim, { workers: 3 }), started = sim.tick, wallet = sim.wallet[0], hits = [], completed = [];
-        step(sim, 5 * sim.tps, s => { hits.push(...s.events.filter(e => e.type === 'constructionHit')); completed.push(...s.events.filter(e => e.type === 'captureComplete')); });
-        check(tower.construction === null && hits.length === 15 && completed.length === 1 && sim.tick - started === 5 * sim.tps, 'three workers finish exactly15 hits in five seconds', { hits: hits.length, completed: completed.length, tick: sim.tick });
-        check(sim.wallet[0] === wallet + 15 - 15, 'accelerated construction still costs exactly15');
-        const final = arena(), [initial] = start(final, { workers: 3 }), state = final.exportState(), b = state.buildings.find(building => building.id === initial.id);
-        b.construction.invested = 14; b.hp = Math.round(b.maxHp * .94); state.wallet[0] = 50; state.launchIncomeCarry[0] = 0; final.importState(state);
-        const lastHits = [], lastCompletions = []; step(final, final.tps, s => { lastHits.push(...s.events.filter(e => e.type === 'constructionHit')); lastCompletions.push(...s.events.filter(e => e.type === 'captureComplete')); });
-        check(lastHits.length === 1 && lastCompletions.length === 1 && final.wallet[0] === 52, 'three simultaneous final hits charge only the remaining1 resource', { hits: lastHits.length, completed: lastCompletions.length, wallet: final.wallet[0] });
-        rows.push({ scenario: 'multiple workers accelerate without overcharging the final hit', durationTicks: sim.tick - started, hits: hits.length, finalHitCharges: lastHits.length });
-      }
-      // No wallet means no work investment. Once a resource is available a
-      // waiting worker resumes, and cannot bank missed cycles for a burst.
-      {
-        const sim = arena(), [initial] = start(sim); step(sim, sim.tps - 1);
-        const state = sim.exportState(); state.wallet[0] = 0; state.launchIncomeCarry[0] = 0; sim.importState(state);
-        const tower = sim.buildings.find(b => b.id === initial.id); step(sim, 1);
-        check(tower.construction.invested === 0 && sim.wallet[0] === 0, 'empty wallet blocks a completed work hit');
-        sim.wallet[0] = 1; step(sim, 1); check(tower.construction.invested === 0, 'funded waiting worker begins a fresh work cycle');
-        sim.wallet[0] = 100; step(sim, sim.tps - 1); check(tower.construction.invested === 0, 'a resumed worker cannot bank missed work cycles');
-        step(sim, 1); check(tower.construction.invested === 1, 'new work hit requires a full second after funds return');
-        rows.push({ scenario: 'workers wait for funds without banked free work', invested: tower.construction.invested });
       }
       // The approach uses the same physical envelope as movement: no center
       // teleport or work from175-pixel capture presence distance is allowed.
@@ -172,11 +222,11 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
         check(sim.world.terrain.field.polygonCircleClear(worker.x, worker.y, sim.unitRadius(worker.type)), 'wall fixture worker circle starts outside its collider');
         check(Math.hypot(worker.x - tower.x, worker.y - tower.y) <= InteractionGeometry.reach(worker, tower, 'construction', UnitDefinition.get(worker.type).construction.range), 'wall fixture is geometrically within the actual construction reach');
         check(!sim.world.terrain.field.polygonSegmentClear(worker.x, worker.y, tower.x, tower.y, 0), 'wall fixture blocks the worker-to-building line');
-        step(sim, 2 * sim.tps); check(tower.construction.invested === 0, 'a nearby worker cannot construct through a wall');
+        step(sim, 2 * sim.tps); check(tower.construction.workDone === 0, 'a nearby worker cannot construct through a wall');
         const opened = sim.exportState(); opened.mapDescriptor = structuredClone(opened.mapDescriptor); opened.mapDescriptor.terrain.blockers = []; sim.importState(opened);
         tower = sim.buildings.find(b => b.id === initial.id); step(sim, 4 * sim.tps);
-        check(tower.construction.invested > 0, 'removing the wall permits ordinary approach and construction');
-        rows.push({ scenario: 'wall blocks nearby work, removing it permits contribution', resumedInvestment: tower.construction.invested });
+        check(tower.construction.workDone > 0, 'removing the wall permits ordinary approach and construction');
+        rows.push({ scenario: 'wall blocks nearby work, removing it permits contribution', resumedWork: tower.construction.workDone });
         const level = arena(), [site] = start(level), raised = level.exportState(); raised.mapDescriptor = structuredClone(raised.mapDescriptor);
         raised.units[0].x = site.x + 65.5; raised.units[0].fx = Math.round(raised.units[0].x * FP);
         raised.mapDescriptor.terrain.layers = [{ id: 'construction-opposite-level', level: 2, points: [{ x: site.x + 52, y: site.y - 500 }, { x: site.x + 600, y: site.y - 500 }, { x: site.x + 600, y: site.y + 500 }, { x: site.x + 52, y: site.y + 500 }] }];
@@ -185,8 +235,8 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
         check(level.terrainLevelAt(builder.x, builder.y) === 2 && level.terrainLevelAt(actual.x, actual.y) === 0, 'level fixture places nearby worker and tower on different levels without a ramp');
         check(Math.hypot(builder.x - actual.x, builder.y - actual.y) <= InteractionGeometry.reach(builder, actual, 'construction', UnitDefinition.get(builder.type).construction.range), 'opposite-level fixture is geometrically within the actual construction reach');
         step(level, 2 * level.tps);
-        check(actual.construction.invested === 0, 'a nearby worker cannot construct across an unconnected level boundary');
-        rows.push({ scenario: 'unconnected terrain levels block nearby work', invested: actual.construction.invested });
+        check(actual.construction.workDone === 0, 'a nearby worker cannot construct across an unconnected level boundary');
+        rows.push({ scenario: 'unconnected terrain levels block nearby work', workDone: actual.construction.workDone });
       }
       // Contact is insufficient while recovering or airborne from a real impulse.
       {
@@ -194,20 +244,20 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
         sim.navigation.motion.applyImpulse(worker, { x: 0, y: 0, z: 2000 * sim.mass(worker) }, { sourceId: 'work-airborne', originX: worker.x, originY: worker.y });
         const recoveryUntil = worker.impactMotion.recoverUntilTick, hits = [];
         while (sim.tick < recoveryUntil) { sim.stepSimulation(); hits.push(...sim.events.filter(e => e.type === 'constructionHit')); }
-        check(hits.length === 0 && tower.construction.invested === 0, 'airborne and recovery ticks cannot produce work hits');
-        step(sim, 2 * sim.tps); check(tower.construction.invested >= 1, 'grounded recovered worker resumes real work');
-        rows.push({ scenario: 'impulse air and recovery block construction, landing resumes', recoveryUntil, invested: tower.construction.invested });
+        check(hits.length === 0 && tower.construction.workDone === 0, 'airborne and recovery ticks cannot produce work hits');
+        step(sim, 2 * sim.tps); check(tower.construction.workDone >= 1, 'grounded recovered worker resumes real work');
+        rows.push({ scenario: 'impulse air and recovery block construction, landing resumes', recoveryUntil, workDone: tower.construction.workDone });
       }
       // The worker must resolve nearby combat before resuming construction.
       {
         const sim = arena(), [tower] = start(sim), worker = sim.units[0]; worker.hp = worker.maxHp = 10000;
         const enemy = sim.spawnUnit(1, 'rice', worker.x + 35, worker.y); enemy.hp = enemy.maxHp = 10000;
-        const invested = tower.construction.invested, hits = [];
+        const workDone = tower.construction.workDone, hits = [];
         step(sim, 2 * sim.tps, s => hits.push(...s.events.filter(e => e.type === 'hit' && e.sourceId === worker.id)));
-        check(tower.construction.invested === invested && hits.length > 0, 'nearby enemy combat takes priority over construction');
+        check(tower.construction.workDone === workDone && hits.length > 0, 'nearby enemy combat takes priority over construction');
         sim.applyDamage(0, 'rice', enemy, false, 100000, null, { sourceDamageResolved: true }); step(sim, 3 * sim.tps);
-        check(tower.construction.invested > invested, 'worker resumes after combat target disappears');
-        rows.push({ scenario: 'combat interrupts construction and workers resume afterwards', combatHits: hits.length, resumedInvestment: tower.construction.invested });
+        check(tower.construction.workDone > workDone, 'worker resumes after combat target disappears');
+        rows.push({ scenario: 'combat interrupts construction and workers resume afterwards', combatHits: hits.length, resumedWork: tower.construction.workDone });
       }
       // Contested sites and unfinished cannons preserve their existing contracts.
       {
@@ -220,22 +270,22 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
       // Global range, capture income and loss remain part of the worker scenario.
       {
         const sim = arena(); check(sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }), 'buy shared range before capturing'); sim.wallet[0] = 100;
-        const [tower] = start(sim); finish(sim, tower);
+        const [tower] = smallProjects(sim, start(sim)); finish(sim, tower);
         check(sim.applyCommand('host', { type: 'LAUNCH', cannonId: tower.id, unitType: 'soybean', holdMs: 1500, x: tower.x, y: tower.y + 2000 }), 'completed worker-built cannon accepts launch');
         const fire = sim.events.find(e => e.type === 'launchFire' && e.cannonId === tower.id), reach = Math.hypot(fire.aimX - tower.x, fire.aimY - tower.y);
         check(Math.abs(reach - 850) <= 1, 'worker-built cannon inherits global range');
-        const income = arena(20, 3), towers = start(income); for (const b of towers) finish(income, b);
+        const income = arena(20, 3), towers = smallProjects(income, start(income)); for (const b of towers) finish(income, b);
         income.wallet[0] = 0; income.launchIncomeCarry[0] = 0; step(income, income.tps); check(income.wallet[0] === 6, 'three completed worker projects give6 income');
         const clear = income.exportState(); clear.units = []; income.importState(clear); destroy(income, income.buildings.find(b => b.id === towers[0].id)); income.wallet[0] = 0; income.launchIncomeCarry[0] = 0; step(income, income.tps);
         check(income.wallet[0] === 5, 'destroyed capture stops its income');
-        const loss = arena(), [partial] = start(loss); step(loss, 4 * loss.tps); const paid = partial.construction.invested, wallet = loss.wallet[0]; destroy(loss, partial);
-        check(paid === 4 && loss.wallet[0] === wallet && loss.capturePoints[0].owner === null, 'destroyed worker project loses invested resources');
+        const loss = arena(), [partial] = start(loss); step(loss, 5 * loss.tps); const paid = partial.construction.invested, wallet = loss.wallet[0]; destroy(loss, partial);
+        check(paid === 1 && loss.wallet[0] === wallet && loss.capturePoints[0].owner === null, 'destroyed worker project loses invested resources');
         rows.push({ scenario: 'worker-built cannon range, capture income and construction loss', reach, incomeAfterLoss: income.wallet[0], lostInvestment: paid });
       }
       // Completed towers retain their single-target basic defense; unfinished
       // structures do not inherit that attack while their workers are busy.
       {
-        const sim = arena(), [tower] = start(sim); finish(sim, tower);
+        const sim = arena(), [tower] = smallProjects(sim, start(sim)); finish(sim, tower);
         const workerState = sim.exportState(); workerState.units = []; sim.importState(workerState);
         const one = sim.spawnUnit(1, 'soybean', tower.x + 150, tower.y), two = sim.spawnUnit(1, 'soybean', tower.x + 180, tower.y + 50);
         for (const u of [one, two]) u.hp = u.maxHp = 10000;
@@ -246,13 +296,30 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
         check(forbidden.length === 0, 'unfinished structure cannot use its basic attack');
         rows.push({ scenario: 'completed tower retains its basic defense', hits });
       }
-      // Checkpoints include partial unit work actions and their future hit times.
+      // Construction also belongs to ordinary buildings without a capture-point
+      // association. A trusted mission configures the existing base capability.
       {
-        const sim = arena(), [tower] = start(sim); step(sim, 3 * sim.tps + 7); check(sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }), 'range investment during worker action');
-        const copy = restore(sim), before = sim.checksum(), snap = sim.snapshot(); snap.buildings.find(b => b.id === tower.id).construction.invested = 14; snap.units[0].constructionWork.nextHitTick = 0;
-        check(sim.checksum() === before, 'snapshot work-action mutation cannot change authority');
-        for (let i = 0; i < 16 * sim.tps; i++) { sim.stepSimulation(); copy.stepSimulation(); check(sim.checksum() === copy.checksum(), 'restored work actions produce identical future hashes', { tick: sim.tick }); }
-        rows.push({ scenario: 'partial worker action checkpoint restores exact future', checksum: sim.checksum() });
+        const sim = arena(), state = sim.exportState(), base = state.buildings.find(b => b.id === 'base0');
+        base.construction = ConstructionRules.create({ cost: 3, workRequired: 7, initialHpRatio: .1 }, sim.tick); base.hp = ConstructionRules.healthAt(base.construction, base.maxHp, 0);
+        sim.importState(state); const building = sim.buildings.find(b => b.id === 'base0');
+        sim.spawnUnit(0, 'rice', building.x + sim.buildingClearanceDistance('rice', building) + .75, building.y); step(sim, 1);
+        const hits = [], captures = []; step(sim, 7 * sim.tps, s => { hits.push(...s.events.filter(e => e.type === 'constructionHit')); captures.push(...s.events.filter(e => e.type === 'captureComplete')); });
+        check(building.construction === null && building.hp === building.maxHp && hits.length === 7 && hits.reduce((n, e) => n + e.spend, 0) === 3 && captures.length === 0, 'ordinary building completes its work and price without requiring a capture point');
+        rows.push({ scenario: 'ordinary building capability completes without capture ownership', workHits: hits.length, spend: hits.reduce((n, e) => n + e.spend, 0), captureEvents: captures.length });
+      }
+      // Snapshots around the first payment must preserve independent work,
+      // invested money, worker phase and future deterministic results.
+      {
+        const sim = arena(), [tower] = start(sim); step(sim, 4 * sim.tps); check(tower.construction.workDone === 4 && tower.construction.invested === 0, 'checkpoint before the first payment has four work and zero spent');
+        check(sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }), 'range investment during worker action');
+        let copy = restore(sim); const before = sim.checksum(), snap = sim.snapshot();
+        snap.buildings.find(b => b.id === tower.id).construction.workDone = 99; snap.units[0].constructionWork.nextHitTick = 0;
+        check(sim.checksum() === before, 'snapshot work and action mutation cannot change authority');
+        for (let i = 0; i < sim.tps; i++) { sim.stepSimulation(); copy.stepSimulation(); check(sim.checksum() === copy.checksum(), 'work4 checkpoint crosses the first payment identically'); }
+        check(tower.construction.workDone === 5 && tower.construction.invested === 1, 'restored checkpoint reaches five work and one payment');
+        copy = restore(sim);
+        for (let i = 0; i < 6 * sim.tps; i++) { sim.stepSimulation(); copy.stepSimulation(); check(sim.checksum() === copy.checksum(), 'post-payment checkpoint preserves work and next boundaries'); }
+        rows.push({ scenario: 'work-before-payment and post-payment checkpoints restore exact future', checksum: sim.checksum() });
       }
       return { seed, viewport: { width: 1280, height: 800 }, rows };
     });
@@ -309,12 +376,51 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
       } finally { r.world = original.world; r.replayOrientationRole = original.orientation; r.worldToPx = original.project; r.line = original.line; }
       return { seed: 12345, cannon: { x: cx, y: cy }, rows };
     });
+    const meters = await page.evaluate(async () => {
+      const { ConstructionRules } = await import(new URL('./src/sim/construction-rules.js', location.href));
+      const r = window.__economyE2E.ActiveViewState.renderer, canvas = document.createElement('canvas');
+      canvas.width = 240; canvas.height = 250; const ctx = canvas.getContext('2d'), rows = [], original = ctx.fillRect;
+      const check = (ok, message, details) => { if (!ok) throw Error(message + ': ' + JSON.stringify(details)); };
+      const cases = [
+        { name: 'one ordinary hit', cost: 75, workRequired: 375, workDone: 1, invested: 0, fill: [1, 0, 0, 0, 0], remaining: 4, amount: 1 },
+        { name: 'three ordinary hits', cost: 75, workRequired: 375, workDone: 3, invested: 0, fill: [1, 1, 1, 0, 0], remaining: 2, amount: 1 },
+        { name: 'one specialist hit adding3', cost: 75, workRequired: 375, workDone: 3, invested: 0, fill: [1, 1, 1, 0, 0], remaining: 2, amount: 1 },
+        { name: 'next interval after spending', cost: 75, workRequired: 375, workDone: 5, invested: 1, fill: [0, 0, 0, 0, 0], remaining: 5, amount: 1 },
+        { name: 'three-cost seven-work project', cost: 3, workRequired: 7, workDone: 1, invested: 0, fill: [1, 2 / 3, 0, 0, 0], remaining: 2, amount: 1 },
+        { name: '75-cost150-work project', cost: 75, workRequired: 150, workDone: 1, invested: 0, fill: [1, 1, .5, 0, 0], remaining: 1, amount: 1 },
+        { name: 'price greater than work', cost: 8, workRequired: 3, workDone: 0, invested: 0, fill: [0, 0, 0, 0, 0], remaining: 1, amount: 2 },
+        { name: 'uneven next payment', cost: 8, workRequired: 3, workDone: 1, invested: 2, fill: [0, 0, 0, 0, 0], remaining: 1, amount: 3 },
+        { name: 'payment flash completes all five cells', cost: 75, workRequired: 375, workDone: 5, invested: 1, fill: [1, 1, 1, 1, 1], remaining: 5, amount: 1, impact: { fx: { spend: 1 }, pulse: 1 } },
+        { name: 'free project has no expense cells', cost: 0, workRequired: 7, workDone: 1, invested: 0, fill: null }
+      ];
+      try {
+        for (const [index, c] of cases.entries()) {
+          const work = ConstructionRules.create({ cost: c.cost, workRequired: c.workRequired, initialHpRatio: .1 }, 0); Object.assign(work, { workDone: c.workDone, invested: c.invested });
+          const calls = []; ctx.fillRect = function (...args) { calls.push({ args, color: this.fillStyle }); return original.apply(this, args); };
+          const y = index * 24 + 6, next = r.drawConstructionPaymentMeter(ctx, work, 120, y, 100, 10, c.impact);
+          if (!c.fill) check(next === null && calls.length === 0, 'free work has no payment meter', c);
+          else {
+            check(next.workRemaining === c.remaining && next.amount === c.amount, 'meter reads the actual next payment threshold', { c, next });
+            const fills = calls.filter((_, i) => i % 2 === 1).map(call => call.args[2] / ((100 - 12) / 5));
+            check(fills.length === 5 && fills.every((n, i) => Math.abs(n - c.fill[i]) < .000001), 'actual canvas fills normalize the expense interval without a five-hit rule', { c, fills });
+            for (let i = 0; i < 5; i++) {
+              const pixel = ctx.getImageData(Math.floor(70 + i * (17.6 + 3) + 8), y + 5, 1, 1).data;
+              if (c.fill[i] > .5) check(pixel[0] > 0 && pixel[2] > 0, 'filled cells reach actual canvas pixels', { name: c.name, i, pixel: [...pixel] });
+              if (c.fill[i] === 0) check(pixel[0] === 0 && pixel[2] === 0, 'empty cells remain empty on the actual canvas', { name: c.name, i, pixel: [...pixel] });
+            }
+          }
+          rows.push({ name: c.name, next, fill: c.fill });
+        }
+      } finally { ctx.fillRect = original; }
+      return { rows, image: canvas.toDataURL('image/png') };
+    });
     fs.mkdirSync(output, { recursive: true });
+    fs.writeFileSync(path.join(output, 'payment-meter.png'), Buffer.from(meters.image.split(',')[1], 'base64')); delete meters.image;
     await page.screenshot({ path: path.join(output, 'range-upgrade-desktop.png') });
     await page.setViewportSize({ width: 412, height: 915 });
     await page.screenshot({ path: path.join(output, 'range-upgrade-mobile.png') });
     assert.deepEqual(pageErrors, [], 'scenario browser page errors');
-    fs.writeFileSync(path.join(output, 'result.json'), JSON.stringify({ ...result, ui, ranges }, null, 2));
-    console.log(JSON.stringify({ pass: true, ...result, ui, ranges }, null, 2));
+    fs.writeFileSync(path.join(output, 'result.json'), JSON.stringify({ ...result, ui, ranges, meters }, null, 2));
+    console.log(JSON.stringify({ pass: true, ...result, ui, ranges, meters }, null, 2));
   } finally { await browser.close(); await server.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });
