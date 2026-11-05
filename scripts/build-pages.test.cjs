@@ -34,7 +34,7 @@ test('Pages artifact preserves every source byte and records separate revision p
   assert.deepEqual(metadata.gamekit, { repository: lock.repository, sourceCommit: lock.sourceCommit, distCommit: lock.distCommit });
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, '_site/build.json'))), metadata);
   assert(!fs.existsSync(path.join(dir, '_site/.cache')));
-  assert(fs.readFileSync(path.join(dir, '_site/src/core/build-info.js'), 'utf8').includes('const BUILD_ID="development";'));
+  assert.equal(metadata.productVersion, require('./product-version.cjs').readProductVersion(dir));
   fs.writeFileSync(path.join(dir, '_site/stale.html'), 'old');
   buildPages(dir);
   assert(!fs.existsSync(path.join(dir, '_site/stale.html')));

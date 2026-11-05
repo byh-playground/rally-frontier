@@ -3,210 +3,106 @@
 <head>
 <!--
 ================================================================================
-RALLY FRONTIER — DEVELOPMENT CONTRACT (SSOT FOR DEVELOPMENT JUDGMENT)
+RALLY FRONTIER — DEVELOPMENT CONTRACT
 ================================================================================
 
-PURPOSE
-- 이 주석은 게임 규칙/유닛 수치/도움말을 복제하는 문서가 아니다.
-- 제품 규칙과 플레이 설명은 인게임 도움말/위키와 실제 Definition이 SSOT다.
-- 이 Contract는 "이 파일을 어떻게 개발하고, 구조를 어떻게 판단하며, 언제 완료라고
-  판정할 것인가"에 대한 장기 불변 개발 철학의 SSOT다.
-- 새로운 AI/개발자는 과거 대화가 없어도 index.html과 이 Contract로 기존 개발
-  관점과 품질 기준을 이어갈 수 있어야 한다.
-- 이 Contract는 파일 상단 한 곳에서만 관리한다. 함수 주변에 동일한 계약을 복제하지 않는다.
+공통 정책은 최신 https://raw.githubusercontent.com/byh-playground/bloom-reference/main/AGENTS.md
+원본을 따른다. AI-013~AI-019(관찰·검증·레퍼런스), DEV-001~DEV-027(소유권·구조),
+PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. 저장소 운영은 AGENTS.md,
+현재 제품 조작·수치는 인게임 도움말과 Definition이 담당한다. 아래는 Rally 고유 계약이다.
 
-1. SOURCE ENGINE / SELF-DESCRIBING
-- index.html은 원본 브라우저 ESM 진입점이며 최신 개발 베이스다. 게임 실행 코드는 src/main.js, 공통 규칙·메타데이터는 src/core/, 스타일은 src/styles/에 둔다.
-- 공통 코드 원본은 bloom-gamekit 저장소에서 관리하고 gamekit.lock.json에 고정 source/dist 커밋·SHA-256을 기록한다. 브라우저는 공식 불변 dist ESM bytes를 검증한 후 로드한다. 개발과 배포는 동일한 원본 파일을 HTTP(S)에서 제공하며 배포용 번들을 만들지 않는다. 실제 제품의 최초 부팅에는 고정 CDN 접근이 필요하다.
-- setup:gamekit은 QA용 불변 dist bytes·manifest를 검증하여 Git 제외 .cache/gamekit에 보관한다. QA의 로컬 SDK 응답과 실제 제품의 CDN 접근을 구별한다. 원본 복사는 SDK를 포함하거나 단일 HTML 오프라인 실행을 보장하지 않는다. 싱글은 기존 실제 WebRTC 로컬 연결을 유지하며 외부 NAT·네트워크 어댑터 전체 차단 연결은 별도 검증 범위다.
-- 구체적인 현재 구현 상태는 실행 코드가 SSOT이며, 제품 설명/수치는 인게임 위키와 Definition이 담당한다.
+1. SOURCE AND STATE OWNERSHIP
+- 실행 원본은 index.html·src/·원본 SVG 및 manifest다. src/main.js는 표현·UI, src/sim/은 판정,
+  src/session/은 경기 조정, src/definitions/는 게임 설정을 소유한다. 배포용 번들을 만들지 않는다.
+- 공통 엔진 원본은 bloom-gamekit에 두고 gamekit.lock.json의 source/dist 커밋·SHA-256으로
+  고정한 공식 ESM bytes만 로드한다. 다른 버전·CDN·내장 대체 Core fallback은 없다.
+- 실제 제품 최초 부팅은 고정 CDN 접근이 필요하다. setup:gamekit의 검증한 QA cache 응답과
+  제품 CDN 가용성을 구별한다. 원본/_site 실행은 HTTP(S)를 쓰며 단일 HTML 오프라인 실행을 보장하지 않는다.
+- StrategySim과 StateContract가 Authoritative 상태·초기화·저장·복원·체크섬을 소유한다.
+  Runtime·Presentation·파생 캐시는 명시적으로 구분한다. 보관 snapshot과 live의 가변 상태는
+  참조를 공유하지 않는다. 새 판정 상태와 신뢰 시나리오 확장 상태도 명시적 제외가 아니면 저장·해시에 포함한다.
+- 각 경기의 WorldContext가 맵 크기·본진·공간 인덱스를 소유한다. 다른 경기의 전역 좌표를 변경하지 않는다.
 
-2. STRUCTURE
-- 구조 판단은 공통 규칙 DEV-003(IS-A/HAS-A/CAN-BE), DEV-004(Capability), DEV-018(YAGNI)을 따른다. 규칙 원본: https://github.com/byh-playground/bloom-reference/blob/main/AGENTS.md
+2. TERRAIN, NAVIGATION AND CONTACT
+- Map Descriptor의 terrain.blockers/layers/ramps/bridges와 TerrainSurfaceAtlas가 표면·경사로·
+  절벽 접촉면·NavMesh seam의 공통 원본이다. 렌더·미니맵·건설·spawn·이동·외력은 같은 geometry를 쓴다.
+- level은 부호 있는 정수이며 임의 상하한을 두지 않는다. 양수 고도는 레벨당 48, 음수는 24의
+  공통 변환을 쓰고 중첩은 가장 안쪽 영역이 소유한다. 기본 지면도 함몰면·섬·경사로를 제외한 실제 mesh다.
+- 경사로 외의 자발적 층 전환과 경사로 위 건설은 금지한다. 점 목표와 공격·건설의 상호작용
+  영역 목표를 구분하고 InteractionGeometry와 NavigationGoal이 같은 사거리·접촉 판정을 공유한다.
+- 지상 navigationPlanner의 기본은 adaptive다. 실제로 막힌 이동의 동일 목표·반경·연결 성분
+  요청으로 A*/공유 A*/Flow를 선택하며 직전 틱 Flow 자격은 권위 상태로 보관한다. 거리·도달 검사는
+  adaptive에서 A*를 쓰고 요청 집계에 참여하지 않는다. 명시한 astar/shared-astar/flow-field도 같은
+  NavMesh·포털·연속 목표 영역·funnel·충돌 규칙을 쓴다. 직선이 열리면 바로 연결한다.
+- 받은 경로 handle·cursor·목표 이력은 MovementComponent의 권위 상태다. 정상 이동은 이를 따르고
+  매 틱 전체 길찾기·캐시 조회·경로 검사를 반복하지 않는다. 인접 corner와 영역 도착은 국소 sweep으로
+  확인하고 명령·목표·실제 이탈·관련 통행 조건이 바뀔 때 재획득한다. 거리표·탐색 scratch·후보 인덱스는 파생 상태다.
+- 건물 변경은 영향 영역과 이웃 경계의 메쉬만 교체하고 나머지 타일·셀·포털 식별자를 유지한다.
+  같은 토폴로지에서는 cache 준비 순서·롤백·메모리 슬롯 재사용 순서가 경로 동률 선택을 바꾸지 않는다.
+- SurfaceMotion은 경로 이동·외력·군중 보정을 같은 지형/건물 접촉으로 처리한다. 검증한 부분 이동을
+  틱 시작점의 직선으로 다시 잘라내거나 외력에 자발적 우회 속도를 더하지 않는다.
 
-3. DECLARATIVE DEFINITIONS FIRST
-- 죽은 코드·구 포맷 호환 계층의 제거는 공통 규칙 DEV-015, DEV-016, PM-004를 따른다.
-- 유닛/건물 간 차이는 가능한 한 Definition/parameter로 선언하고 consumer는 공통화한다.
-- 동일 개념을 서로 다른 필드/시스템에서 중복 표현하지 않는다.
-- 상태 소유자는 초기값과 authoritative/presentation/derived 분류를 선언하고 같은 StateContract로 초기화·저장·복원·체크섬을 처리한다. 신뢰 캠페인의 확장 상태도 명시적 제외가 아니면 저장·해시에 포함한다. 보관한 snapshot의 가변 상태는 live와 참조를 공유하지 않는다.
+3. SIMULATION AND PRESENTATION
+- 연속 이동하는 표현 좌표는 공통 Render State에서 샘플링하고 판정에 되먹이지 않는다. 몸체·높이·전략 표시·잔상·
+  VFX endpoint가 같은 표시 시계와 생명주기를 사용한다. 사건 tick은 보간 표시 시각으로 매핑한다.
+- 고도는 투영에 반영하고 depth는 맵 크기로 정규화한 지면 앞뒤 좌표에서 계산한다. 몸체 정점은
+  같은 기준 depth를 쓰며 지형별로 몸체를 이동·재분할해 잘림을 숨기지 않는다.
+- 평지·고지 윗면·경사로는 몸체를 가리지 않는다. 앞 절벽·경사로 초입·다리 아래의 가림은 depth로
+  처리하며, 다리는 명시적 겹침 레이어 예외다. 불투명 도형만 depth를 기록하고 빌보드 내부 합성 순서를 지킨다.
+- 지형 뒤 아군 실루엣은 시야 필터를 통과한 몸체만 표시하고 다리 아래에는 표시하지 않는다.
+  카메라 흔들림은 완성한 전장의 최종 합성에서 적용한다. 월드 투영·깊이·Fog·공간 조회는 안정 좌표를
+  사용하고 입력은 최종 합성을 한 번 역변환한다. 리플레이의 관전 진영과 카메라 방향은 독립이다.
+- 진영별 VisionField 32px 격자를 교전·AI·개체 표시·안개가 함께 조회한다. 관찰자의 셀·반경·level이
+  바뀔 때 다시 칠하며 대상마다 시야 선분을 검사하지 않는다.
+- 승인된 곡물/대포 원본 SVG와 분리 부위의 실루엣·비율을 유지한다. 실제 게임 크기에서 기능과
+  타격의 원인·결과가 읽혀야 한다. VFX는 실제 source/contact에 연결하고 같은 mechanic의 공식을 복제하지 않는다.
 
-4. SIMULATION / PRESENTATION SEPARATION
-- Simulation State가 게임 판정의 SSOT다. Presentation/Render State가 판정을 역으로 바꾸면 안 된다.
-- 낮은 TPS에서도 자연스러운 렌더를 위해 필요한 값은 공통 Presentation/Render State 계층으로 관리한다.
-- 보간 대상은 위치에 한정하지 않고 필요 시 회전/높이/애니메이션 등을 선언적으로 확장 가능하게 한다.
-- hit shake/camera shake 등 최종 화면 offset을 simulation 또는 안정 좌표가 필요한 계산의 원본으로 쓰지 않는다.
-- 동일한 월드·카메라·표현 상태는 입력 경로와 관계없이 동일하게 그린다. 드래그는 카메라 위치만 변경하며 지형·격자·Fog의 월드 표면과 접합 기하를 바꾸지 않는다.
-- 카메라 흔들림은 완성된 전장 화면의 최종 합성에서만 적용한다. 월드 투영·지형 깊이·Fog 샘플링·공간 조회는 흔들림 없는 좌표를 사용하고 화면 입력은 최종 합성을 한 번 역변환한다.
-- 맵 크기·본진 좌표·공간 인덱스는 각 simulation의 WorldContext를 사용한다. renderer·AI·리플레이는 자기 simulation의 context를 명시적으로 받아 다른 경기의 전역 좌표를 바꾸지 않는다.
+4. ARTILLERY IMPULSE AND DEPLOYMENT
+- 포탄은 권위 포구 위치·높이에서 출발하고 비행 높이 공식은 판정과 표현이 공유한다. 낮은 직격은
+  상대 이동과 높이 구간을 포함한 swept contact로 판정한다. 공중 몸체 아래/위의 탄은 통과하고
+  고지의 정확 경계에서는 실제 접점 고도로 충돌한다.
+- 피격·방출은 기존 속도에 Δv=J/mass를 누적한다. 공통 TOI에서 법선·역질량으로 속도를 갱신하고
+  남은 시간도 새 속도로 적분한다. 목표 좌표로 밀어내거나 재피격 때 속도를 덮지 않는다.
+- 포탄·방출 경계의 새 impulse는 속도에 즉시 반영하고 XY/Z 모두 다음 물리 틱부터 적분한다.
+  접촉 수 때문에 전역 남은 시간을 버리지 않으며 위치 보정은 잔여 침투 안정화에만 쓴다.
+- 충격 속도·적분 잔여량·높이·회복 시각과 방출 대기열은 저장·복원한다. 회복 중 자발 이동·공격을
+  시작하지 않고 기존 외력은 유지한다. 사망자는 전투·군중 충돌에서 즉시 제외하되 진행 중 궤적은 마친다.
+- 묶음은 짧은 시간차로 병사를 방출하며 공간이 막히면 남은 병력을 보존해 재시도한다.
+  아군의 직접 착탄 피해·폭발 impulse는 제외하고 몸체 접촉에 의한 운동량 전달은 공통 물리를 따른다.
 
-5. DETERMINISM FIRST
-- P2P deterministic simulation에서 동일 입력은 동일 결과를 만들어야 한다.
-- 랜덤, iteration order, tie-break, collision, delayed effect, targeting을 수정할 때 결정론을 먼저 검토한다.
-- simulation 랜덤은 peer별 Math.random 소비에 의존하지 않고 deterministic seed/key를 사용한다.
-- 렌더 전용 값은 simulation/checksum을 오염시키지 않는다.
-- 표현용 flash·VFX preset을 게임 판정 입력으로 사용하지 않는다. 판정 필드 변경 감지, snapshot 양방향 격리, 캐시 제거·복원 동등성을 checksum 일치 검사와 별도로 검증한다.
+5. CONSTRUCTION AND LAUNCH RANGE
+- Building Definition의 cost/workRequired/initialHpRatio와 Unit Definition의 workPerHit/range는
+  독립 설정이다. ConstructionRules가 전체 진행·비례 정수 지출·체력·다음 지출 계산을 소유한다.
+  착공 시 설정을 Building.construction에 보관하고 workDone/invested를 저장한다.
+- Unit.constructionWork가 몸통 박치기의 목표·단계·시각을 소유한다. 공통 상호작용 영역까지
+  실제로 접근하고 이동·충돌·피격 후 접촉이 유효할 때만 기여한다. 이탈·사망·교전·공중/회복 중에는
+  기여하지 않으며 미납 작업을 쌓지 않는다. 체력 증가 후에도 기존 피해는 유지한다.
+- 가용 자원이 허용하는 정수 작업까지만 반영하고 마지막 적중은 남은 작업까지만 기여한다.
+  같은 틱에는 착공 순서·동률이면 점령지 순서로 처리하고 완공 뒤 추가 타격을 결제하지 않는다.
+  완성 전에는 소유·추가 인컴·발사·포탑 공격이 활성화되지 않으며 파괴된 투자금은 환불하지 않는다.
+- 전체 작업 진행률·투입 자원·다음 정수 지출까지 비율을 구분한다. 5칸은 표시 정규화이며
+  게임 규칙이 아니다. 박치기·복귀·목재 틀 반응은 권위 상태/사건을 읽는 표현으로, 판정 좌표나 impulse를 바꾸지 않는다.
+- 진영 공통 발사 사거리 레벨은 권위 상태다. 조준·실제 발사·범위 표시·봇은 LaunchRules의
+  같은 배율을 쓴다. 최대 범위는 선택 카드 기준의 완성한 아군 대포만 표시하고 조준 대포를 강조한다.
+  원 둘레는 각 지점의 지형 높이와 기존 월드 투영을 사용한다. 강화 명령과 공사/레벨 상태는 Netcode·저장·리플레이·체크섬을 통과한다.
 
-6. PERFORMANCE BY STRUCTURE
-- 미세 최적화보다 알고리즘/자료구조/호출 빈도를 먼저 본다.
-- 대규모 공간 탐색은 grid-cell broad phase처럼 실제 규모에 맞는 구조를 사용한다.
-- hot path는 Big-O와 실제 호출 횟수를 함께 검토한다.
-- 편의를 이유로 무거운 pathfinding, 범용 프레임워크, 불필요한 추상 계층을 쉽게 추가하지 않는다.
-- 시야는 진영별 VisionField 셀 격자(32px, GameKit vision 모듈) 하나로 판정한다. 교전·AI·개체 표시·안개가 같은 격자를 조회하며, 대상마다 선분을 검사하지 않는다. 관찰자는 셀·반경·level이 바뀔 때만 다시 칠한다.
-
-6.1. TERRAIN NAVIGATION
-- Map Descriptor의 terrain.blockers / layers / ramps가 지형 SSOT다. TerrainSurfaceAtlas가 고지 면·경사로·절벽 접촉면·NavMesh seam을 함께 파생한다. 렌더·미니맵·건설·spawn·일반 이동·외력 제한은 같은 geometry를 사용한다. 경사로 외의 층 전환과 경사로 위 일반 건설은 금지한다.
-- 지형 표면의 삼각형과 정점 높이는 화면 투영·역투영에 사용한다. 고도는 화면 위치에만 반영하며 depth는 맵 크기로 정규화한 지면 앞뒤 좌표에서 계산한다. 유닛·건물의 몸체 정점은 동일한 위치 기준 depth를 사용하며 지형 기울기로 깊이를 변형하거나 몸체를 지형별로 재분할하지 않는다. 논리 XY, 현재 화면 위치·외형·고도 오프셋은 유지하고 몸체를 옮겨 잘림을 보정하지 않는다.
-- 일반 절차맵도 같은 지형 시스템을 사용한다. 전투 공간·연결 통로·고지대·경사로의 배치는 MapGeneration이 소유하고, 본진·점령지·자원·중립의 유효한 배치와 접근성을 공통 geometry로 검증한다. 지형 높이는 level 하나만 SSOT로 사용하며 특정 버전의 벽 개수나 배치 레시피를 장기 계약에 고정하지 않는다.
-- level은 부호 있는 정수이며 기본 지면은 0이다. 음수·양수에 임의의 게임상 상한/하한을 두지 않고 높이는 공통 변환으로 파생하며 양수는 레벨당 48, 음수는 그 절반인 24를 사용한다. 중첩 지형은 가장 안쪽 영역이 표면을 소유한다. 기본 지면도 함몰면·섬·경사로를 제외한 실제 mesh로 만들고 렌더·Fog·클릭이 같은 표면을 사용한다.
-- 이동 명령의 점 목표와 공격·채집·반납·건설·치유의 상호작용 영역 목표를 구분한다. 실제 사거리·최소 사거리·지형 접촉 규칙은 InteractionGeometry가 한 번 정의하며 판정과 NavigationGoal이 공유한다. 건물 중심 투영이나 고정 각도 접근점을 작업 목표로 사용하지 않는다.
-- 지상 경로 탐색은 유닛 정의의 navigationPlanner 설정(adaptive, astar, shared-astar 또는 flow-field)으로 선택한다. 모든 종류의 기본값은 adaptive다. adaptive는 직선이 막힌 실제 이동의 동일 목표·반경·연결 성분 요청을 집계해 A*/공유 A*/Flow를 선택하며 직전 틱의 Flow 사용 자격은 권위 상태로 저장한다. 거리·도달 가능성 검사는 adaptive에서 A*를 쓰고 집계에 참여하지 않는다. 명시한 세 알고리즘은 이동·거리 검사에 같은 설정을 사용한다. 세 탐색기는 같은 NavMesh·포털·연속 목표 영역·funnel·충돌 규칙을 공유한다. 경로 획득 시 직선이 열리면 바로 연결한다. 거리표·탐색 scratch와 후보 인덱스는 결과를 바꾸지 않는 파생 상태이며 저장/체크섬에서 제외한다. 받은 실행 경로와 활성 cursor·목표 이력은 공통 MovementComponent의 권위 상태다. 정상 이동은 이 handle을 따르며 매 틱 길찾기·경로 cache 재조회·전체 경로 검사를 하지 않는다. 가까운 corner의 인접 연결과 연속 목표 영역의 도착은 국소 sweep으로 확인하고, 새 명령·목표 변경·실제 이탈·관련 통행 조건 변경 때만 다시 획득한다.
-- NavMesh는 경로를 선택하고 SurfaceMotion은 그 경로의 이동·외력·군중 보정을 동일한 건물/지형 접촉으로 처리한다. 검증된 부분 이동을 틱 시작점부터의 직선으로 다시 잘라내지 않는다. 접선 투영은 공통화하되 외력에 자발적인 우회 속도를 추가하지 않는다.
-- 건설 명령은 비용을 선결제하고 constructionOrders에 예약한다. 예약은 위치 중복만 막고 물리·전투·시야·보급·기술에 참여하지 않는다. 일꾼 도착 시 같은 ID의 실제 건물을 생성한다. 착공 전 취소·위치 무효화는 전액 환불하며 실제 착공 후 기존 환불 규칙을 따른다. 예약은 권위 상태로 복원하고 UI·AI도 동일한 예약을 조회한다.
-- 건설 미리보기는 위치·겹침·자원·시야만 검사하며 NavMesh를 생성하지 않는다. 일꾼 접근성은 BUILD 실행 시 권위 시뮬레이션이 검증한다. 건물 변경은 영향받는 고정 영역의 메쉬만 다시 만들며, 캐시 준비 순서나 롤백 이력과 무관하게 같은 토폴로지에서 같은 경로를 선택해야 한다.
-- AIR과 명시적 도약은 장벽 상공을 지날 수 있지만 도착은 유효한 위치여야 한다. 지면 잠복·일꾼·주둔군도 같은 지상 경로를 따른다. 통행 불가와 시야/사격 차폐는 동일 의미가 아니다.
-
-- 메쉬 갱신은 변경 없는 타일의 식별자·셀·포털·내부 연결을 보존하고 변경 타일과 이웃 경계의 연결만 교체한다. 메모리 슬롯 재사용 순서를 경로 선택의 동률 기준으로 사용하지 않는다. 전체 연결성 판정과 경로 캐시 무효화는 객체 재생성과 분리한다.
-
-6.2. BURROW OCCUPANCY
-- 잠복은 엔티티 소멸이 아니라 interaction layer 변화다.
-- 잠복 유닛끼리는 기존 공통 allied separation을 그대로 유지한다.
-- 잠복 유닛과 지상 유닛/지상 건물은 물리 충돌하지 않는다.
-- 공통 separation으로 해결 가능한 경우 잠복 전용 packing/separation 알고리즘을 새로 만들지 않는다.
-
-6.3. CONFIGURABLE LOCKSTEP / ROLLBACK NETCODE
-- GameSession은 경기 Coordinator이며 공통 rollback-netcode Session, Simulation Adapter, Transport capability를 Has-a로 소유한다. 게임은 공개 계약에 맞추며 전용 Core fork나 내부 필드 접근을 만들지 않는다.
-- CONFIG.netcode.mode의 기본값은 lockstep이다. 고급 테스트 설정에서 다음 경기의 lockstep/rollback을 선택하며, 생성된 세션의 모드는 바뀌지 않는다. 온라인 양쪽 설정이 다르면 HELLO에서 거부한다.
-- Input Prediction / Adaptive Input Delay / Simulation Clock Synchronization / Rollback / Resimulation / Periodic State Hash / Transactional Snapshot Resync는 한 Core가 소유한다. lockstep은 확정 입력을 기다리며 예측·롤백용 매 틱 snapshot을 만들지 않는다. checksumInterval 주기의 체크포인트와 요청 시 현재 경계의 저장은 유지한다. 기존 RTS 입력 지연·Discrete Tick Hold와 게임 TPS는 그대로다.
-- Authoritative는 StrategySim과 StateContract, Runtime은 Core·캐시·명령 영수증 추적, Presentation은 Render State·확정 효과 journal이 소유한다. 재실행은 외부 AI 결정·VFX·결과·replay 기록을 중복 실행하지 않는다.
-- 롤백은 제한된 prediction 범위 안에서 과거 상태를 복원한 호출 안에 현재 틱까지 동기 재실행한다. 시뮬레이션은 렌더링·DOM과 분리하며 재실행 중 소리·알림을 중복 발생시키지 않는다.
-- Core frame t는 게임의 step 이전 S[t]다. UI·AI 명령은 player-local sequence로 제출하며 확정 frame의 정렬된 입력만 게임 명령과 replay로 변환한다. Gameplay 시간은 Simulation Tick, scheduler와 지연 정책은 Runtime이다.
-- Nostr는 Discovery/Signaling만 사용하며 Gameplay는 raw RTCDataChannel의 바이너리로 전송한다. 개발자 소유 서버·TURN fallback은 사용하지 않는다. SDK는 gamekit.lock.json의 고정 source/dist 커밋·manifest 및 모듈 SHA-256으로 검증한 공통 gamekit 분리 모듈을 사용한다. setup은 정확한 불변 dist 커밋에서 QA용 bytes를 가져온다. 배포는 원본 ESM·정식 캠페인·원본 자원을 그대로 복사하며 브라우저가 고정 SDK bytes를 SHA-256으로 검증한다. source 출처도 같은 lock에서 읽는다. 로딩과 필수 API 확인 후 초기화하며 실패 시 오류를 표시한다. 다른 버전·CDN·내장 대체 Core fallback은 사용하지 않는다.
-
-6.4. ARTILLERY CONTACT AND DEPLOYMENT
-- 포탄은 권위 포구 위치·높이에서 출발하며 비행 높이 공식은 판정과 표현이 공유한다. 낮은 비행의 직격은 상대 이동과 높이 구간을 포함한 swept contact로 판정하고, 공중 유닛의 발밑과 머리 위를 지나는 포탄은 충돌하지 않는다. 고지면의 정확 경계에서 낮은 탄은 실제 접점 고도로 충돌하고 높은 탄은 통과한다.
-- 피격·방출은 충격량을 `Δv=J/mass`로 기존 속도에 누적하며, 충돌의 실제 TOI에서 법선과 역질량으로 속도를 처리한 뒤 남은 시간을 새 속도로 적분한다. 충격으로 목표 좌표를 정하거나 재피격 때 기존 속도를 덮지 않는다. 포탄·방출 단계에서 새로 생긴 충격은 속도에 즉시 반영하고 수평·수직 모두 다음 물리 틱부터 적분하며, 접촉 수 때문에 전역 남은 시간을 폐기하지 않는다. 위치 보정은 잔여 침투 안정화에만 사용한다.
-- 착탄 충격의 속도·적분 잔여량·공중 높이·회복 시간과 병력 방출 대기열은 simulation 권위 상태로 저장·복원한다. 피격자는 밀려난 실제 위치에서 충돌·다음 행동을 판정하며, 회복 중에는 자발 이동·공격을 시작하지 않는다. 사망자는 즉시 전투·군중 충돌에서 제외하되 진행 중 충격 궤적은 마친다.
-- 묶음은 착지 후 짧은 시간차로 병사를 방출한다. 공간이 막혔으면 안전한 자리가 생길 때까지 남은 병력을 보존하며 유실·관통 생성하지 않는다. 아군 피해·폭발 밀림은 없다.
-- 묶음 압축·포장 파편·병사의 회전·기립은 표현 계층이며 판정을 되먹이지 않는다. 접촉 효과와 피해 숫자는 사건 tick을 보간 표시 시각으로 매핑한다.
-
-6.5. CAPTURE CONSTRUCTION AND LAUNCH RANGE
-- Building Definition의 건설 비용·필요 작업량, Unit Definition의 타격당 작업량은 독립 설정이다. ConstructionRules가 진행률·비례 정수 지출·체력·다음 지출을 한 번 계산한다. 착공 시 건물별 설정을 Building.construction에 보관하고 누적 workDone·invested를 저장한다. Unit.constructionWork는 박치기 목표·단계·시각을 소유한다.
-- 공통 건설 박치기는 쿨타임 1초이며 유효한 적중만 작업량을 더한다. 누적 지출은 floor(cost * workDone / workRequired)이고, 자원이 부족하면 감당할 수 있는 정수 작업까지만 반영한다. 마지막 적중은 남은 작업량까지만 기여하며 완공 후 같은 틱의 추가 타격도 결제하지 않는다. 전체 진행률·투입 자원과 다음 정수 지출까지 비율을 5칸으로 표시하며 5칸을 게임 규칙으로 쓰지 않는다.
-- 유닛은 공통 InteractionGeometry·NavigationGoal·SurfaceMotion으로 작업 영역까지 접근한다. 작업 결과는 이동·충돌·피격 후 유효한 접촉에서만 확정한다. 작업자 이탈·사망·교전·공중/회복 중에는 기여하지 않고 미납분을 쌓지 않는다. 체력은 작업 진행 비율에 따라 증가하며 기존 피해를 유지한다.
-- 같은 틱에 자원이 부족하면 착공 순서, 동률이면 점령지 순서로 처리한다. 파괴된 투자금은 환불하지 않는다. 완성 전에는 추가 인컴·발사·포탑 공격이 비활성이다. 공통 몸통 박치기·복귀와 건물의 작업 반응은 권위 상태·사건을 읽는 표현이며 판정 좌표나 impulse를 변경하지 않는다.
-- 발사 사거리 레벨은 진영 공통 권위 상태다. 조준 미리보기·실제 발사·최대 범위 표시·봇은 LaunchRules의 같은 배율을 사용한다. 최대 발사 범위는 완성한 아군 대포의 선택 카드 기준으로 표시하고 조준 중인 대포를 강조한다. 원 둘레는 각 지점의 지형 높이와 기존 월드 투영을 사용한다. 강화는 일반 명령 코덱·Netcode·리플레이로 처리하며 작업·레벨 상태를 저장·복원·체크섬에서 제외하지 않는다.
-
-7. ONE MEANING, ONE COMMON MECHANIC
-- projectile, continuous damage, targeting, VFX 등 같은 의미의 기능은 하나의 공통 계약을 사용한다.
-- 유닛마다 유사 메커니즘을 별도 구현하지 않는다.
-- 예외가 필요하면 먼저 기존 capability/parameter로 표현 가능한지 검토하고, 반복되면 공통 시스템으로 승격한다.
-- 이미 공통화된 mechanic의 consumer는 내부 알고리즘/공식/progress 계산을 복제하거나 재구현하지 않는다.
-  새 사용처는 기존 공통 구현을 먼저 찾아 직접 호출하고, 시작/도착/높이/preset 같은 의미 있는 parameter만 제공한다.
-- 새 consumer를 붙이기 위해 기존 공통 mechanic의 내부 공식을 다시 알아야 한다면 abstraction 경계가 새고 있는 신호다.
-  이 경우 consumer에 공식을 복사하지 말고 공통 primitive/API의 경계를 먼저 보강한다.
-
-8. FORM MUST MATCH FUNCTION
-- 외형에서 사용자가 기대하는 역할과 실제 전투 기능이 일치해야 한다.
-- 이름, 실루엣, 애니메이션, VFX, 실제 mechanic이 같은 개념을 설명해야 한다.
-- 기능과 정체성에 기여하지 않는 눈/팔/다리/장식을 습관적으로 추가하지 않는다.
-- 능력/VFX는 가능하면 그 기능을 담당하는 실제 신체/무기/기관에서 발생하는 것처럼 보여야 한다.
-
-9. RALLY FRONTIER VISUAL LANGUAGE
-- 중립도 하나의 진영이다. 모든 유닛은 병종의 기본 외형·크기·고유 재질에 진영 색상을 적용하며, 소속 변경만으로 몸통 구성이나 크기를 바꾸지 않는다.
-- RALLY FRONTIER의 기본 시각 언어는 florr.io 계열처럼 적은 수의 큰 geometric primitive로
-  개체의 특징과 역할이 즉시 읽히는 방향이다.
-- 디테일의 양보다 실제 인게임 크기와 상면 시점에서 살아남는 실루엣/비율/기능 가독성을 우선한다.
-- 좋은 외부 레퍼런스의 구조적 문법은 적극적으로 참고할 수 있지만, 최종 결과는 현재 게임 renderer의
-  primitive와 표현 한계 안에서 실제로 성립해야 한다.
-
-10. VISUAL ACCEPTANCE GATE — RENDER BEFORE MERGE
-- 그래픽/VFX/UI 시각 변경은 코드를 본게임에 바로 넣고 완료 처리하지 않는다.
-- 가능한 경우 먼저 실제 renderer 또는 동일/유사한 circle/poly/line 등의 저수준 primitive로 후보를 만든다.
-- 승인용 시안은 concept art가 아니라 실제 인게임 결과를 예측할 수 있는 prototype이어야 한다.
-- 승인된 시안이 있으면 구현 단계에서 자의적으로 재해석하지 않고 핵심 실루엣/비율/기능 표현을 보존한다.
-- 후보 코드를 실제로 렌더하고 AI가 결과 이미지를 직접 확인한다. 코드/수치만 보고 시각 품질을 추정하지 않는다.
-- 실제 상면 시점과 실제 인게임 크기에서도 확인한다.
-- 실루엣, 비율, 기능 가독성, 시안 일치, 불필요한 장식 여부, 전체 시각 언어를 확인한다.
-- 조건이 부족하면 수정 -> 재렌더 -> 재확인을 반복한다.
-- 배경 표면·불투명 객체·반투명 효과의 패스 순서는 명시적으로 정하며 지형과 개체를 직접 정렬하는 별도 큐를 만들지 않는다. 배경인 평지·고지 윗면·경사로는 몸체를 가리지 않고, 앞 절벽·경사로 초입의 앞쪽 면 뒤와 다리 아래의 가림은 depth 버퍼로 처리한다. 다리는 같은 지면 좌표에 표면이 겹치는 명시적 depth 레이어 예외다. 빌보드 내부 도형의 합성 순서는 유지하며 불투명 도형만 depth를 기록한다. 지형 뒤 아군 실루엣은 기존 시야·은신·잠복 필터를 통과한 몸체만 사용하되 다리 아래에는 표시하지 않고 판정에는 관여하지 않는다.
-- 시각적으로 납득된 후보만 본게임에 반영한다. 반영 후에도 실제 게임 E2E에서 주변 유닛/지형/VFX와 함께 재확인한다.
-- 코드가 정상 실행되고 에러가 없다는 사실은 Visual Acceptance를 통과했다는 뜻이 아니다.
-
-11. VFX IS AN EXTENSION OF THE MECHANIC
-- VFX를 장식으로 덧붙이지 않는다. 공격/능력의 원인과 결과가 화면에서 연결되어야 한다.
-- 공통 source-motion / travel / impact 계층을 재사용하고 유닛별 차이는 preset/parameter를 우선한다.
-- 공격자 동작은 공격자 근처, 피격/착탄 효과는 실제 target/impact 위치에서 읽혀야 한다.
-- 효과 크기와 위치도 mechanic의 주체/원인에 맞춰야 한다.
-
-12. INTUITIVENESS OVER HIDDEN COMPLEXITY
-- 사용자가 알기 어려운 숨은 배율/순간 버프/특수 예외를 쉽게 추가하지 않는다.
-- 비슷한 결과라면 설명과 화면만 보고 이해할 수 있는 메커니즘을 선택한다.
-- 연구/업그레이드 역시 실제 행동, VFX 또는 명확한 수치 변화로 체감 가능한 방향을 선호한다.
-
-12.1. CROWD CONTROL / EXTERNAL FORCE COMPOSITION
-- Airborne은 대상 자신의 locomotion/행동을 제어하는 상태다. 일반 이동, 추적/접근, 깃발 이동, 공격/선딜처럼 대상이 스스로 수행하는 행동은 Airborne 동안 중단한다.
-- Pull/knockback/충격 impulse처럼 외부에서 가해지는 강제이동은 대상 자신의 locomotion이 아니며 Airborne과 독립적으로 합성한다. Airborne 적용 자체가 이미 진행 중인 외부 impulse를 삭제하거나 취소해서는 안 된다.
-- 따라서 Airborne 중에도 외부 pull/knockback은 정상적으로 위치를 변화시키며, 외력이 끝난 뒤에도 남은 Airborne 시간 동안 대상 자신의 이동/행동만 계속 정지한다.
-- Airborne+knockback, Airborne+pull 등 복합 제어는 유닛별 예외가 아니라 이 공통 계약을 따른다. 새 consumer가 필요하면 이 계약을 복제하지 말고 공통 force/status 계층을 확장한다.
-
-13. NUMBERS
-- 수치 초안과 기준값은 공통 규칙 AI-008(No Magic Number)을 따른다.
-
-13.1. DEBUG / PRESENTATION TEST HARNESS
-- 디버그 테스트는 별도 전투/렌더/VFX 구현을 만들지 않는다. 실제 Single-Player의 WebRTC, GameSession, protocol, StrategySim, renderer를 그대로 사용한다.
-- Harness는 유닛 종류/수량/연구 등 결정론적인 초기 조건만 제공한다. 시작 이후 이동/타겟팅/전투/사망/VFX/승패는 실제 게임 코드가 소유한다.
-- Harness가 전투 roster를 교체하더라도 정상 맵 생성 결과인 중립 캠프/메인 오브젝트와 그 lifecycle state는 보존한다. 특정 테스트가 이를 바꿔야 한다면 scenario 입력으로 명시적으로 선언하며, 암묵적으로 전체 world unit state를 초기화하지 않는다.
-- 유닛 전투 Harness는 드래프트/덱 선택 자체를 테스트하지 않는다. 실제 양쪽 WebRTC 연결과 Guest HELLO 이후 Host가 결정론적 live 초기상태로 실제 GAME_START를 보내며, 중간 선택 UI/자동 덱 commit에 의존하지 않는다.
-- 유닛 목록은 Definition에서 자동 파생하며 새 유닛마다 디버그 UI/분기를 추가하지 않는다.
-- Harness 통과는 고립 관찰 편의이며 최종 Single-Player E2E 완료 기준을 대체하지 않는다.
-- ChatGPT 환경에서 LOCAL 2P Debug Harness로 실제 GameSession + StrategySim + 전장 WebGL renderer까지 실행 가능한 것이 확인되었다. 따라서 일반 Single-Player의 WebRTC/ICE가 환경 제약으로 막히더라도 이를 WebGL 렌더 검증 불가로 확대 해석하지 않는다.
-- 유닛 외형/VFX/facing/Presentation motion/전투 중 시각 상태를 수정한 작업은 LOCAL 2P의 실제 WebGL 전투 화면에서 변경 기능을 발동시키고 직접 확인해야 한다. 정적 코드, 별도 가짜 renderer, StrategySim 수치 벤치, DOM 부팅만으로 시각 작업을 완료 처리하지 않는다.
-- 곡선 연결체/촉수/사슬처럼 발사·유지·회수 수명주기를 공유하는 Presentation은 consumer가 궤적/회수 공식을 복제하지 않는다. 공통 ArcTetherPresentation의 extend -> hold -> retract lifecycle을 사용하고, consumer는 endpoint·timing·style만 선언한다.
-- LOCAL 2P 검증은 실제 게임 renderer를 확인하기 위한 보조 경로이며, 가능한 Single-Player UI E2E를 대체하지 않는다.
-
-14. DEFINITION OF DONE = REAL SINGLE-PLAYER UI E2E
-- 함수 단위 테스트, 문법 검사, simulation 직접 호출 성공만으로 개발 완료라고 판단하지 않는다.
-- 현재 환경에서 가능한 수정 개발의 기본 최종 검증은 "실제 UI에서 시작한 싱글 플레이 한 판 전체"다.
-- 최소 E2E 경로는 다음을 포함한다:
-  HTML 최초 로드 -> 메인 UI -> 게임 시작 -> 싱글 플레이 선택 -> 필요한 덱/설정 선택 -> 실제 게임 시작
-  -> 실제 simulation/AI/생산/전투 진행 -> 승패 조건 -> 정상 게임 종료 -> 결과/종료 UI.
-- 내부 beginGame() 직접 호출, unit 직접 spawn, 특정 mechanic 직접 호출은 단위/통합 테스트일 뿐 E2E 대체물이 아니다.
-- 변경 기능은 가능하면 이 실제 게임 흐름 안에서 발동시켜 확인한다.
-- E2E 중 uncaught exception, simulation fatal, UI dead-end, AI 정지, 승패/종료 실패가 없어야 한다.
-- 시각 변경은 E2E 중 실제 인게임 렌더에서도 다시 확인한다.
-- E2E에서 발견된 회귀는 요청 기능과 직접 관련 없어 보여도 최종 전달 전에 해결한다.
-
-15. WHY SINGLE-PLAYER E2E IS AUTHORITATIVE
-- 싱글 플레이는 멀티플레이와 별개의 간이 simulation 경로가 아니다.
-- 싱글도 멀티와 동일한 Session/Transport interface, message/protocol 처리, deterministic simulation,
-  renderer/UI, 승패/종료 경로를 사용하고 실제 외부 WebRTC 연결만 local/loopback transport로 대체하는 구조를 유지한다.
-- 따라서 Single-Player E2E는 "Multiplayer minus real external network"에 가까운 공통 게임 스택 회귀검증이다.
-- 테스트 편의를 위해 싱글 전용 gameplay shortcut, 별도 simulation 규칙, GameSession 아래 직접 진입 경로를 만들지 않는다.
-- Single/Multiplayer 공통 경로가 갈라지면 싱글을 별도 보정하기보다 공통 실행 경로를 복구하는 것을 우선한다.
-- Single E2E는 같은 기기의 실제 WebRTC negotiation/DataChannel을 검증한다. 외부 NAT를 건너는 2-peer 연결로 범위를 확대하지 않는다.
-- 싱글 AI 세션은 src/sim-worker.js Worker에서 같은 GameSession·BotController로 실행한다. AI의 실제 WebRTC transport는 메인 스레드에 남고 WorkerSessionProxy가 메시지·넷코드 패킷·open/close·복구 호출을 중계한다. 양쪽 세션 내부를 들여다보는 test:ui는 AI 세션을 페이지 안에 두고(CONFIG.single.botWorker=false), Worker 경로는 test:worker가 검증한다.
-
-16. VERIFY EVERYTHING THE CURRENT ENVIRONMENT CAN VERIFY
-- 권장 완료 순서:
-  구현 -> 정적/문법 검증 -> 기능 단위/통합 검증 -> simulation/determinism 검증 -> regression 검증
-  -> 시각 변경 시 Visual Acceptance Gate -> 실제 UI Single-Player E2E -> 한 판 정상 종료 -> FINAL.
-- 현재 실행 환경에서 검증 가능한 항목을 "나중에 테스트"로 미루지 않는다.
-- 실제 물리 모바일 기기, 실제 외부 2-peer 네트워크처럼 현재 환경에서 본질적으로 검증 불가능한 것만 명시적으로 남긴다.
-- 오류를 삼키거나 테스트 경로를 우회해서 PASS를 만들지 않는다.
-
-17. THIS CONTRACT ITSELF IS THE SINGLE SSOT
-- 개발 철학/판단 기준은 이 상단 Contract 한 곳에서만 관리한다.
-- 함수/클래스 주변에 동일한 장기 계약을 복제하지 않는다. 위치가 바뀌며 낡는 연결 주석을 만들지 않는다.
-- "어떻게 구현되어 있는가"는 코드가, "어떤 판단을 해야 하는가/무엇을 깨면 안 되는가"는 이 Contract가 담당한다.
-- 제품 규칙/유닛 설명/현재 수치는 인게임 위키와 Definition에 맡긴다.
-- 폐기된 시행착오나 과거 상태를 누적하지 않고 현재도 유효한 장기 원칙만 유지한다.
-- 이 철학 자체가 바뀌는 경우에만 Contract를 갱신한다.
-
-18. STABILITY AUDIT CONTINUITY
-- 현재 안정화 상태는 현재 실행 코드와 해당 PR의 검증 기록을 기준으로 판단한다. 과거 버전의 상세 검증 로그는 현재 PASS의 근거가 아니며 실행물에 누적하지 않는다.
-- 재현/수정/검증 완료와 미검증/설계 부채를 구분한다. 후보 테스트의 성공을 전체 E2E 성공으로 부르지 않는다.
-- 새 발견·내부 회귀·검사 실패도 남긴다. 수정한 뒤 동일 범위를 다시 검사하며, 마지막 검사에서 발견이 없었다는 사실을 모든 가능한 버그의 부재로 확대하지 않는다.
-- 가속 QA는 simulation TPS/dt·명령·AI 주기를 바꾸지 않고 벽시계 대기만 줄인다. 브라우저 네트워크·heartbeat task를 굶기지 않도록 주기적으로 실제 event loop에 실행권을 반환한다.
+6. SESSION, VERIFICATION AND RELEASE
+- GameSession은 공통 Core·Simulation Adapter·Transport를 조합한 경기 Coordinator다. Core가
+  입력 예측·지연·시계·롤백·확정 해시·복구를 소유한다. 게임은 공개 API를 쓰고 Core 내부를 복제/우회하지 않는다.
+- 기본 netcode는 lockstep이며 경기 생성 시 lockstep/rollback을 고정하고 HELLO에서 불일치를 거부한다.
+  lockstep은 매 틱 예측 snapshot을 만들지 않고 주기 checkpoint를 유지한다. Core frame t는 step 이전
+  S[t]이며 player-local sequence의 확정 입력만 명령·리플레이로 변환한다. Gameplay 시간은 Simulation Tick이다.
+- 롤백은 제한된 범위를 복원 호출 안에서 동기 재실행하고 AI 결정·효과·소리·결과·리플레이를 중복 공개하지 않는다.
+- Nostr는 발견/협상, gameplay는 실제 RTCDataChannel의 바이너리다. 별도 개발자 서버·TURN fallback은 없다.
+  싱글도 실제 WebRTC와 같은 GameSession을 쓴다. AI는 Worker의 동일 Session/BotController에서 실행하고
+  메인 스레드 transport를 Proxy로 중계한다. 두 세션 관찰용 test:ui의 in-page 경로와 test:worker를 구분한다.
+- 게임 동작 변경은 고정 기능 시나리오와 실제 UI에서 시작한 싱글 경기의 전투·종료·결과·리플레이 경로를
+  검증한다. 시각 변경은 실제 renderer의 고정 장면과 플레이 맥락 모두 확인한다. 직접 sim 호출이나
+  정적/부팅 검사만으로 실제 UI E2E를 통과했다고 하지 않는다. 문서·메타데이터 변경은 그 범위에 맞는 검사를 한다.
+- PM-009의 실행당 180초와 PM-014의 정합성 게이트를 따른다. 부하·성능 측정은 별도 실행하고
+  환경 차단·소프트웨어 renderer·고정 SDK 로컬 응답·미실행 범위를 구분한다. 외부 NAT/물리 모바일 검증을 추정하지 않는다.
+- 제품 SemVer, SIM_VERSION 호환성, 배포 Git 커밋은 별개다. 판단 기준·원본 위치는 AGENTS.md를 따른다.
+  Pages/Nightly와 검증 완료·Stable 승격을 구분하며 과거 태그나 공개 이력을 재작성하지 않는다.
 
 END OF DEVELOPMENT CONTRACT
 ================================================================================
@@ -218,6 +114,7 @@ END OF DEVELOPMENT CONTRACT
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="RALLY FRONTIER">
+<meta name="rally-frontier-version" content="">
 <meta name="rally-frontier-build" content="">
 <meta name="rally-frontier-updated-at" content="">
 <title>RALLY FRONTIER</title>

@@ -1,10 +1,8 @@
 # legacy
 
-Code the launch game no longer reaches. Nothing here is imported, built or shipped
-(`scripts/build-pages.cjs` copies only `index.html`, `src`, `assets`, `icons` and the manifests).
+이 폴더는 현재 게임의 실행·빌드·배포에서 제외한 과거 코드 보관소입니다. 하위 코드·문서의 규칙, 버전, 테스트 설명은 당시 기록이며 현행 지침이 아닙니다. 현재 작업에는 루트의 [AGENTS.md](../AGENTS.md), [README.md](../README.md), `index.html`의 Development Contract를 적용합니다.
 
-It is kept only so the parts can be looked up while the launch UI replaces them (D-196, D-197).
-Delete a folder once nothing in the launch game needs to look at it.
+과거 구현을 참고하기 위해 보존합니다. 옛 규칙 정리를 보관 코드의 일괄 삭제 허가로 해석하지 않으며, 보관·삭제 범위는 별도 작업에서 결정합니다. 실제 배포 복사 목록은 [빌드 도구](../scripts/build-pages.cjs)가 소유합니다.
 
 | Folder | What it was | Replaced by |
 | --- | --- | --- |

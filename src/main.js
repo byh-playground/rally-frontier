@@ -28,6 +28,7 @@ import { BuildingArt } from './render/building-art.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
 import { CONFIG, LAUNCH_HOLD_ARM_MS, LAUNCH_HOLD_DRAG_PX, STATE_PUBLISH_HZ, STATE_PUBLISH_INTERVAL_MS, netcodeMode } from './core/config.js';
 import { BUILD_META } from './core/build-info.js';
+import { PRODUCT_VERSION } from './core/product-version.js';
 import { RallyGamekit, SIM_WORKER } from './core/gamekit.js';
 import { LaunchScreens } from './ui/launch-screens.js';
 import { grainPortrait } from './ui/grain-portrait.js';
@@ -174,7 +175,7 @@ class EffectObjectFactory{
    Perspective ownership: domain policy/query/presentation helpers belong to cohesive
    owner classes and consumers call Owner.method() directly. Definition data and its
    interpretation stay with the Definition owner. Do not expose this developer-only
-   architecture contract in player-facing help/deck-selection UI. */
+   architecture contract in player-facing help UI. */
 /* Error ownership invariant:
    window.__RALLY_GLOBAL_ERROR_HANDLER__ / __RALLY_PRESENT_FATAL__ is the single global
    error presentation sink. window error, unhandled rejection, simulation, renderer,
@@ -4257,7 +4258,7 @@ class AppLifecycle{
   if(UiRegistry.refs.bootTitle)UiRegistry.refs.bootTitle.textContent=title;
   if(UiRegistry.refs.bootStatus)UiRegistry.refs.bootStatus.textContent=status;
   if(UiRegistry.refs.bootProgressBar)UiRegistry.refs.bootProgressBar.style.width=Math.max(4,Math.min(100,progress))+"%";
-  if(UiRegistry.refs.bootBuild)UiRegistry.refs.bootBuild.textContent=BUILD_META.commit?`BUILD ${BUILD_META.commit.slice(0,12)}`:`BUILD · 배포 정보 ${BUILD_META.status==="pending"?"확인 중":"확인 불가"}`;
+  if(UiRegistry.refs.bootBuild)UiRegistry.refs.bootBuild.textContent=BUILD_META.commit?`v${PRODUCT_VERSION} · BUILD ${BUILD_META.commit.slice(0,12)}`:`v${PRODUCT_VERSION} · BUILD · 배포 정보 ${BUILD_META.status==="pending"?"확인 중":"확인 불가"}`;
   if(UiRegistry.refs.bootRetryBtn)UiRegistry.refs.bootRetryBtn.classList.toggle("hidden",!retry);
 }
   static finishBootGate(){
@@ -4355,12 +4356,15 @@ class AppLifecycle{
 }
 }
 
-// Shows which deployed build is running: title stamp, boot card and the document metadata.
+// Shows the executed source product version and separately served deployment metadata.
 class BuildMetadataPresentation{
   static renderBuildMetadata(){
+  document.documentElement.dataset.productVersion=PRODUCT_VERSION;
   document.documentElement.dataset.build=BUILD_META.id;
   document.documentElement.dataset.buildStatus=BUILD_META.status;
   document.documentElement.dataset.buildCommit=BUILD_META.commit||"";
+  const versionTag=document.querySelector('meta[name="rally-frontier-version"]');
+  if(versionTag)versionTag.setAttribute("content",PRODUCT_VERSION);
   const buildTag=document.querySelector('meta[name="rally-frontier-build"]');
   const updatedTag=document.querySelector('meta[name="rally-frontier-updated-at"]');
   if(buildTag)buildTag.setAttribute("content",BUILD_META.id);
@@ -4383,16 +4387,16 @@ class BuildMetadataPresentation{
     else if(dayDiff===0)label=`오늘 ${hm}`;
     else if(dayDiff===1)label=`어제 ${hm}`;
     else label=new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",year:"numeric",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).format(updated);
-    el.textContent=`최근 업데이트 · ${label}${BUILD_META.commit?` · ${BUILD_META.commit.slice(0,12)}`:""}`;
-    el.title=BUILD_META.updatedAt?`배포 기록 ${BUILD_META.commit} · 복사 시각 ${BUILD_META.updatedAt} · build.json`:`배포 정보 ${BUILD_META.status==="pending"?"확인 중":"확인 불가"}`;
+    el.textContent=`v${PRODUCT_VERSION} · 최근 업데이트 · ${label}${BUILD_META.commit?` · ${BUILD_META.commit.slice(0,12)}`:""}`;
+    el.title=BUILD_META.updatedAt?`제품 v${PRODUCT_VERSION} · 배포 기록 ${BUILD_META.commit} · 복사 시각 ${BUILD_META.updatedAt} · build.json`:`제품 v${PRODUCT_VERSION} · 배포 정보 ${BUILD_META.status==="pending"?"확인 중":"확인 불가"}`;
   }
-  if(UiRegistry.refs.bootBuild)UiRegistry.refs.bootBuild.textContent=BUILD_META.commit?`BUILD ${BUILD_META.commit.slice(0,12)}`:`BUILD · 배포 정보 ${BUILD_META.status==="pending"?"확인 중":"확인 불가"}`;
+  if(UiRegistry.refs.bootBuild)UiRegistry.refs.bootBuild.textContent=BUILD_META.commit?`v${PRODUCT_VERSION} · BUILD ${BUILD_META.commit.slice(0,12)}`:`v${PRODUCT_VERSION} · BUILD · 배포 정보 ${BUILD_META.status==="pending"?"확인 중":"확인 불가"}`;
 }
 }
 
 
 
-// 발사전 화면: 카드 패, 자원 게이지, 착탄 흔적. 착탄 예정 지점은 절대 그리지 않는다.
+// 조준 중 예상 착지와 최대 사거리를 표시하고, 실제 착탄 흔적은 권위 사건을 따른다.
 class LaunchPresentation{
   static card=null;static deckKey="";static lastPower=null;static marks=[];static hold=null;
   static active(s=ActiveViewState.snap){return !!s&&!ReplayPresentation.replayPlayer}

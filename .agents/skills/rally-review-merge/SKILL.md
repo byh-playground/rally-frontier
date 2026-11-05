@@ -1,11 +1,11 @@
 ---
 name: rally-review-merge
-description: Review and merge GitHub pull requests for the rally-frontier project when the user asks for PR review, review then merge, or merging an identified PR. Merge only when the user explicitly instructs it.
+description: RALLY FRONTIER PR을 검토하고 검증한 구현 PR을 별도 확인 없이 머지한다. 리뷰·등록·푸시만 요청했거나 사용자가 직접 머지할 경우에는 그 요청 범위를 지킨다.
 ---
 
 # RALLY FRONTIER PR 리뷰·머지
 
-이 프로젝트에서 “PR 리뷰해줘”, “리뷰하고 문제 없으면 머지해줘”, “이 PR 머지해줘”를 처리한다. 저장소는 `byh-playground/rally-frontier`이며 기본 대상 브랜치는 `main`이다. 실행 전에 로컬 Git 원격과 PR의 실제 저장소·대상 브랜치를 확인한다.
+이 프로젝트의 PR 리뷰·머지 요청과 검증한 구현 PR의 자동 머지(PM-006)를 처리한다. 저장소는 `byh-playground/rally-frontier`이며 기본 대상 브랜치는 `main`이다. 실행 전에 로컬 Git 원격과 PR의 실제 저장소·대상 브랜치를 확인한다.
 
 ## 요청과 대상
 
@@ -17,7 +17,7 @@ description: Review and merge GitHub pull requests for the rally-frontier projec
 
 ## 리뷰
 
-1. `gh pr view <번호> --repo byh-playground/rally-frontier --json state,isDraft,baseRefName,headRefName,headRefOid,mergeable,mergeStateStatus,statusCheckRollup,url`로 현재 상태와 head SHA를 확인한다.
+1. 사용 가능한 GitHub 연결 도구 또는 CLI로 현재 상태와 head SHA를 확인한다. CLI 예: `gh pr view <번호> --repo byh-playground/rally-frontier --json state,isDraft,baseRefName,headRefName,headRefOid,mergeable,mergeStateStatus,statusCheckRollup,url`.
 2. 변경 내용을 읽고 프로젝트 `AGENTS.md`, README의 Stable 정책, `index.html` 상단 Development Contract에 따라 정확성·회귀와 검증 범위를 평가한다. 정적 검사만으로 실제 플레이 PASS를 주장하지 않는다.
 3. GitHub diff가 크기 제한으로 표시되지 않으면 Git으로 해당 PR의 base/head를 가져와 로컬에서 diff를 확인한다. 사용자에게도 로컬 리뷰 패널 등 실제 전체 diff를 볼 수 있는 경로를 제공한다. PR이 존재한다는 이유만으로 리뷰 가능하다고 보고하지 않는다.
 4. 발견 사항은 파일·줄·재현 조건과 함께 이 대화에 정리한다. GitHub 리뷰/댓글 게시 요청이 없다면 대화에서 보고한다. 결함 없음과 미검증 항목을 구분한다.
@@ -37,7 +37,7 @@ description: Review and merge GitHub pull requests for the rally-frontier projec
   ```
 
 - head가 바뀌면 새 변경을 확인하기 전에는 머지하지 않는다. `--admin`, 보호 설정 변경, 자동 머지 예약, 원격 브랜치 삭제를 기본 흐름에 추가하지 않는다. `gh pr merge --delete-branch`는 원격까지 삭제하므로 사용하지 않는다.
-- Codex 앱 머지 버튼의 일반 오류는 `gh`로 실제 PR 상태·권한·허용 방식·차단 조건을 확인한다. 명시적 머지 지시가 있으면 CLI로 실행하며, diff 크기만으로 머지 실패 원인을 단정하지 않는다.
+- 머지 도구 오류는 현재 사용 가능한 GitHub 연결 도구 또는 CLI로 실제 PR 상태·권한·허용 방식·차단 조건을 확인한다. 이미 정한 머지 권한 범위에서 검토한 head SHA를 지정해 실행하며, diff 크기만으로 실패 원인을 단정하지 않는다.
 - 실패 시 PR 상태를 다시 확인해 서버에서 실제 머지됐는지 확인한다. 여전히 열려 있으면 구체적인 오류와 남은 작업을 보고하고 무한 재시도하지 않는다.
 - main 머지는 기존 GitHub Pages 설정에 따라 배포를 유발할 수 있다. 해당 결과를 설명하되 Pages 소스나 release 브랜치를 이 스킬에서 별도로 변경하지 않는다.
 

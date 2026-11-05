@@ -3,10 +3,12 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { readLock } = require('./setup-gamekit.cjs');
 const { readVectorAssetManifest } = require('./vector-assets-manifest.cjs');
+const { readProductVersion } = require('./product-version.cjs');
 const sourcePaths = ['index.html', 'gamekit.lock.json', 'manifest.webmanifest', 'src', 'assets', 'icons'];
 
 function verifySource(root = path.resolve(__dirname, '..')) {
   const lock = readLock(root);
+  readProductVersion(root);
   readVectorAssetManifest(root);
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   // GameKit provenance lives in the bootstrap module that loads the pinned dist.
@@ -35,7 +37,7 @@ function buildPages(root = path.resolve(__dirname, '..')) {
   const lock = verifySource(root);
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
   if (!/^[a-f0-9]{40}$/.test(commit)) throw Error('Invalid source commit');
-  const metadata = { format: 'source-esm', commit, builtAt: new Date().toISOString(), gamekit: { repository: lock.repository, sourceCommit: lock.sourceCommit, distCommit: lock.distCommit } };
+  const metadata = { format: 'source-esm', productVersion: readProductVersion(root), commit, builtAt: new Date().toISOString(), gamekit: { repository: lock.repository, sourceCommit: lock.sourceCommit, distCommit: lock.distCommit } };
   try {
     fs.mkdirSync(out);
     for (const asset of sourcePaths) fs.cpSync(path.join(root, asset), path.join(out, asset), { recursive: true });

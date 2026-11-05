@@ -3,7 +3,7 @@
   "name": "RALLY FRONTIER",
   "short_name": "RALLY",
   "lang": "ko",
-  "description": "생태 군단과 집결 깃발로 전장을 지휘하는 전략 게임",
+  "description": "쌀·콩·팥 병력을 대포로 투입하고 거점을 건설·점령하는 전략 게임",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -109,7 +109,7 @@ class TerrainQuery{
   }
 }
 // Tracks authoritative obstacle values without per-tick filter/map/string allocation.
-// Direct writes by trusted campaign scripts are still noticed on the next sync.
+// Direct writes by trusted scenario scripts are still noticed on the next sync.
 class NavigationTopology{
   constructor(){this.records=[];this.byId=new Map();this.changes=[];this.version=0;this.scans=0}
   refresh(buildings){

@@ -5,7 +5,7 @@
    ========================= */
 
 // State owners declare defaults and classify non-authoritative fields once.
-// Extra fields in trusted campaign state remain serializable AND hash-visible;
+// Extra fields in trusted scenario state remain serializable AND hash-visible;
 // only explicitly declared presentation/derived fields are excluded.
 class StateValue{
   static freeze(value){

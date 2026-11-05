@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Stable version (e.g. 0.19.0)
+        description: Product version declared by the selected source commit
         type: string
         required: true
       commit_sha:
@@ -20,7 +20,27 @@ on:
 permissions:
   contents: write
 jobs:
+  verify-product-version:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Verify selected snapshot product version
+        env:
+          TARGET_SHA: ${{ inputs.commit_sha }}
+          RELEASE_VERSION: ${{ inputs.version || '' }}
+        run: node scripts/verify-release-version.cjs
   tag:
+    if: ${{ !cancelled() && (github.event_name == 'push' || needs.verify-product-version.result == 'success') }}
+    needs: verify-product-version
     uses: byh-playground/bloom-reference/.github/workflows/game-release-tags.yml@2f9f28b0d029fab92cbeddb35983aa65051674d2
     permissions:
       contents: write

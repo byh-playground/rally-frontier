@@ -1,6 +1,6 @@
 # 작업 지침
 
-작업 전에 [.agents/AGENTS.common.md](.agents/AGENTS.common.md)를 읽고 공통 운영 규칙을 적용한다. 아래는 RALLY FRONTIER 전용 설정이며, 공통 규칙의 프로젝트별 선택을 구체화한다.
+작업 전에 [최신 BLOOM 공통 규칙](https://raw.githubusercontent.com/byh-playground/bloom-reference/main/AGENTS.md) 전체와 [.agents/AGENTS.common.md](.agents/AGENTS.common.md)를 읽는다. 사용자 지시가 우선이며, 버전·검증·운영의 공통 정책은 최신 원본을 따른다. 아래는 그 정책 안에서 정하는 RALLY FRONTIER 전용 설정이다. 보고에는 적용하거나 위반한 AI-/DEV-/PM- 규칙 ID를 명시한다.
 
 <!-- AUTONOMY DIRECTIVE — DO NOT REMOVE -->
 YOU ARE AN AUTONOMOUS CODING AGENT. EXECUTE TASKS TO COMPLETION WITHOUT ASKING FOR PERMISSION.
@@ -9,25 +9,25 @@ IF BLOCKED, TRY AN ALTERNATIVE APPROACH. ONLY ASK WHEN TRULY AMBIGUOUS OR DESTRU
 USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES THROUGHPUT.
 <!-- END AUTONOMY DIRECTIVE -->
 
-## 프로젝트 설정
+## 저장소와 개발 계약
 
-- 대상 저장소는 `byh-playground/rally-frontier`, 통합 브랜치와 PR 대상은 `main`이다.
-- 작업 브랜치는 `codex/` 접두사를 사용한다. 커밋 메시지는 공통 규칙 PM-007(한국어, 첫 줄 `[bug-fix]`·`[feature]`·`[refactor]`·`[performance]`·`[docs]`·`[test]`·`[build]` prefix + 변경 목적)을 따른다.
-- 게임 개발 방향과 품질·검증 기준은 `index.html` 상단 Development Contract를 따른다. 원본 코드 정본은 `index.html` + `src/main.js` + `src/core/` + `src/styles/`이며 배포용 번들을 만들지 않는다. 게임 변경의 실제 UI E2E와 시각 확인을 정적 검사만으로 대체하지 않는다. 미검증 게임 버전을 VALIDATED 또는 Stable로 표시하지 않는다.
-- 단일 `index.html` 안의 병렬 작업은 수정 함수·Definition·상태 소유자·공통 mechanic과 호출 관계로 겹침을 판단한다.
-- 머지 기본 방식은 작업 커밋을 하나로 squash한 뒤 Merge commit을 만드는 방식이다. `main`에 통합 작업 커밋 하나와 머지 커밋을 남긴다. 머지 후 로컬 `main`을 동기화하고 해당 PR 및 남아 있는 머지 완료 로컬 작업 브랜치를 정리한다. 미반영 변경과 다른 worktree에서 사용하는 브랜치는 보존한다. 세부 절차는 프로젝트 리뷰·머지 스킬을 따른다.
-- `main` 푸시는 Pages가 공개 주소에 자동 배포하므로 머지가 곧 리모트 확인용 배포다. Stable은 검증·승인한 커밋에 불변 태그로 명시 승격할 때만 만들며 Pages 배포만으로 Stable로 간주하지 않는다.
+- 저장소는 `byh-playground/rally-frontier`, 통합·PR 대상은 `main`, 작업 브랜치는 `codex/` 접두사다. 커밋 형식은 공통 PM-007을 따른다.
+- 현재 제품은 쌀·콩·팥을 대포로 투입하고 거점을 건설·점령하는 게임이다. 제품 조작·수치는 인게임 도움말과 Definition, 프로젝트별 구조 계약은 `index.html` 상단 Development Contract가 담당한다. 실행 원본은 `index.html`·`src/`·원본 자산이며 배포용 번들을 만들지 않는다.
+- 버전은 PM-001·PM-002를 따른다. 제품 SemVer는 `src/core/product-version.js`의 `PRODUCT_VERSION` 한 곳에서 관리하고, `src/core/config.js`의 `SIM_VERSION`은 게임 상태·결정론·리플레이/통신 호환 식별자다. `build.json`의 Git 커밋·복사 시각은 배포 출처다. 이 세 의미를 혼용하지 않는다.
+- 제품 세대 전환은 MAJOR, 비호환 변경은 MINOR, 호환되는 의미 있는 기능·표현 수정은 PATCH, 외부 동작이 같은 내부 정리·문서 정리는 버전을 유지한다. 하드코딩된 유닛·발사 수치 변경도 동일 입력의 시뮬레이션 결과나 과거 리플레이 해석을 바꾸면 호환 변경으로 간주하지 않는다. 그때는 제품 MINOR와 `SIM_VERSION` 변경 필요성을 함께 판단한다.
+- 최초 제품 버전 `0.1.0`은 기존 SemVer가 없던 저장소의 기준선이다. 과거 `SIM_VERSION`에서 제품 이력을 역산하지 않으며, 기준선 도입 자체는 게임 규칙 변경·정식 출시·Stable 승격이 아니다.
+- 검증은 변경 범위에 맞춰 AI-013~AI-017·PM-009·PM-010·PM-014를 적용한다. 게임 동작·화면 변경은 실제 UI E2E와 실제 렌더 관찰을 정적 검사로 대체하지 않는다. 문서만 바꾸는 작업에 매번 한 판 플레이를 강제하지 않는다. 성능 작업은 AI-019의 레퍼런스·기존 기록을 먼저 읽고 별도 실행으로 측정한다.
 
-## 임시 프로젝트
+## PR·머지·배포
 
-- RALLY FRONTIER는 블룸 세계관의 첫 작품으로, 구현 코드와 참고 자료가 축적된 초기 개발 거점이다. 블룸 세계관의 새 작품·프로토타입과 RALLY FRONTIER에서 파생한 실험·예제는 이 자료를 활용할 수 있도록 주 작업 폴더의 `.temp-projects/<프로젝트명>/`에서 우선 개발한다. 각 작품의 장르·게임 규칙·구조는 해당 프로젝트에서 정한다.
-- 시작 전에 `.temp-projects/README.md`가 있으면 읽고 세계관·공통 라이브러리·기존 작품 등 참조 저장소와 재사용 원칙을 확인한다.
-- 임시 프로젝트의 소스·빌드·검사 도구·참조 라이브러리·실행 결과물을 해당 폴더에 모은다. 다운로드·시스템 임시 폴더를 개발 원본 위치로 쓰지 않으며, 단일 HTML 요청에는 그 폴더 안에 실행 파일 하나를 생성한다.
-- `.temp-projects/` 전체는 Git에서 제외하고 강제로 추가하지 않는다. 임시 프로젝트 내용은 부모 저장소의 PR에 포함하지 않으며, 부모 저장소의 제외 규칙·운영 지침 변경만 별도 작업 브랜치와 PR로 관리한다.
-- 독립적인 개발·배포가 필요해지면 해당 프로젝트 디렉터리를 별도 위치와 새 저장소로 분리한다. 분리 전에는 `.temp-projects/` 안에 중첩 Git 저장소를 만들지 않는다.
+- 브랜치·PR·검증 후 머지는 PM-006과 [.agents/skills/rally-review-merge/SKILL.md](.agents/skills/rally-review-merge/SKILL.md)를 따른다. 검증한 구현 PR은 별도 확인 없이 머지한다. 등록·푸시·리뷰만 요청한 경우나 사용자가 직접 머지하겠다고 한 경우는 그 범위를 지킨다.
+- 이 저장소는 작업 커밋을 하나로 squash한 뒤 **Merge commit**으로 통합한다. 검증한 head SHA를 고정하고, 머지 후 로컬 `main` 동기화와 완료 브랜치 정리를 해당 스킬로 수행한다. 다른 담당자의 worktree와 미반영 변경은 보존한다.
+- `main` 푸시는 Pages 배포와 Nightly 태그 생성을 유발한다. Stable은 PM-005에 따라 검증·승인한 커밋을 불변 태그로 명시 승격할 때만 만든다. 제품 버전·빌드 성공·배포 완료·검증 완료를 Stable과 동일시하지 않는다.
+- 개선 항목 등록·관리·배정·인계 요청은 [.agents/skills/pr-task-manager/SKILL.md](.agents/skills/pr-task-manager/SKILL.md)를 적용한다. 같은 업무의 의도·담당·상태는 PR 본문 하나에서 관리한다.
 
-## 프로젝트 스킬
+## 보존하는 작업 공간
 
-- 개선 인벤토리 등록, 관리 대화 운영, 개발 대화의 업무 배정·인계 요청에는 [.agents/skills/pr-task-manager/SKILL.md](.agents/skills/pr-task-manager/SKILL.md)를 읽고 적용한다. 스킬은 공통 절차를 제공하며 저장소 설정은 이 파일에서 읽는다.
-- PR 리뷰·머지 요청에는 [.agents/skills/rally-review-merge/SKILL.md](.agents/skills/rally-review-merge/SKILL.md)를 읽고 적용한다.
-- 검증을 마친 PR의 머지는 “머지해줘” 같은 지시가 없어도 해당 스킬로 처리하고, 같은 머지에 대한 확인을 반복해서 요청하지 않는다.
+- `docs/handoff/`는 사용자 인계 자료이며 미추적 상태를 유지하고 커밋하지 않는다.
+- `legacy/`는 실행·배포 대상이 아닌 과거 코드 보관소다. 그 안의 규칙·버전·테스트 설명을 현행 지침으로 적용하지 않는다. 옛 규칙 정리가 보관 코드 전체의 삭제 허가를 의미하지 않는다.
+- 블룸 세계관의 새 작품·파생 실험은 주 작업 폴더의 `.temp-projects/<프로젝트명>/`에서 시작한다. `.temp-projects/README.md`가 있으면 먼저 읽고 참고 저장소·재사용 원칙을 확인한다. 원본·도구·실행 결과물을 해당 폴더에 모으고 중첩 Git 저장소를 만들지 않는다.
+- `.temp-projects/`는 Git에서 제외하고 강제로 추가하지 않는다. 독립 개발·배포가 필요할 때 별도 저장소로 분리한다. 이 부모 저장소의 PR에는 실험 내용 대신 요청한 운영 설정 변경만 포함한다.
