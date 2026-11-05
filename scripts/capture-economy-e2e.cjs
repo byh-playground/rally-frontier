@@ -358,6 +358,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
     await page.waitForFunction(() => Object.values(window.__economyE2E.MatchLifecycle.singleMatch?.sessions || {}).length === 2 && Object.values(window.__economyE2E.MatchLifecycle.singleMatch.sessions).every(s => s.netcodeSession?.ready && s.sim?.tick >= 4), null, { timeout: 15000 });
     await page.locator('#launchRangeBtn').click();
     await page.waitForFunction(() => Object.values(window.__economyE2E.MatchLifecycle.singleMatch.sessions).every(s => s.sim?.launchRangeLevel?.[0] === 1), null, { timeout: 15000 });
+    await page.waitForFunction(() => document.querySelector('#launchRangeBtn')?.textContent.includes('375'), null, { timeout: 5000 });
     const ui = await page.evaluate(() => {
       const q = window.__economyE2E, sessions = Object.values(q.MatchLifecycle.singleMatch.sessions);
       return { button: document.querySelector('#launchRangeBtn').textContent, income: document.querySelector('#launchIncomeText').textContent, wallet: document.querySelector('#launchEnergyText').textContent,
