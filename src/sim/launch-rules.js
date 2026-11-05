@@ -5,9 +5,14 @@ import { RangeUtil } from '../core/game-rules.js';
 // 한 발이 무겁다: 자원 최대 100 기준 비용(D-233·D-235), 폭발 중심일수록 피해가 크다(D-230), 곡물마다 발사 방식이 다르다(D-234).
 class LaunchRules{
   static incomePerSecond=3;static walletCap=100;static startingWallet=50;
-  static minReach=250;static maxReach=2200;static chargeMs=1500;static overheatGraceMs=180;
+  static minReach=250;static maxReach=500;static chargeMs=1500;static overheatGraceMs=180;
   static overheatMs=2000;static reloadMs=400;static speed=750;
   static landingMarkMs=1500;static captureHoldRadius=400;
+  static rangeMultipliers=Object.freeze([1,2,3]);static rangeUpgradeCosts=Object.freeze([50,75]);
+  static captureCost=15;static capturePaymentMs=1000;static captureInitialHpRatio=.1;static captureIncomePerSecond=1;
+  static rangeMultiplier(level=0){return this.rangeMultipliers[level]??this.rangeMultipliers[0]}
+  static upgradeCost(level){return this.rangeUpgradeCosts[level]??null}
+  static incomePerSecondFor(capturePoints,side){return this.incomePerSecond+capturePoints.reduce((n,p)=>n+(p.owner===side?this.captureIncomePerSecond:0),0)}
   // 폭발 중심의 피해 배수. 가장자리는 1배, 중심은 centerPeak배이고 거리에 따라 제곱으로 줄어든다.
   static centerPeak=3;
   static grains=Object.freeze({
@@ -24,10 +29,10 @@ class LaunchRules{
   static payload(type){const g=this.grain(type);return g?{count:g.count,cost:g.cost}:null}
   static overheated(holdMs){return holdMs>this.chargeMs+this.overheatGraceMs}
   static power(holdMs){return RangeUtil.clamp(holdMs/this.chargeMs,0,1)}
-  static maxReachOf(type){return Math.round(this.maxReach*(this.grain(type)?.reach??1))}
-  static reach(holdMs,type){return Math.round(this.minReach+(this.maxReachOf(type)-this.minReach)*this.power(holdMs))}
+  static maxReachOf(type,level=0){return Math.round(this.maxReach*this.rangeMultiplier(level)*(this.grain(type)?.reach??1))}
+  static reach(holdMs,type,level=0){return Math.round(this.minReach+(this.maxReachOf(type,level)-this.minReach)*this.power(holdMs))}
   // Inverse of reach(): the hold that lands a grain at this distance.
-  static holdFor(distance,type){return RangeUtil.clamp((distance-this.minReach)/Math.max(1,this.maxReachOf(type)-this.minReach),0,1)*this.chargeMs}
+  static holdFor(distance,type,level=0){return RangeUtil.clamp((distance-this.minReach)/Math.max(1,this.maxReachOf(type,level)-this.minReach),0,1)*this.chargeMs}
   static arcHeight(distance){return RangeUtil.clamp(Math.round(distance*.3),80,600)}
   // 한 번의 발사가 만드는 포탄 목록. 곡물 수는 포탄마다 나눠 담고(앞쪽이 나머지를 받는다),
   // 산탄은 부채꼴로 흩어지고, 연사는 같은 곳에 gapMs 간격으로 떨어진다.
@@ -49,10 +54,10 @@ class LaunchRules{
   }
   static volleyMs(type){const fire=this.grain(type).fire;return fire.mode==="burst"?(fire.shots-1)*fire.gapMs:0}
   // Direction comes from the press point; distance comes only from hold time.
-  static target(cannon,x,y,holdMs,world,fallback,type){
+  static target(cannon,x,y,holdMs,world,fallback,type,level=0){
     let dx=x-cannon.x,dy=y-cannon.y,len=Math.hypot(dx,dy);
     if(len<1){dx=fallback.x-cannon.x;dy=fallback.y-cannon.y;len=Math.hypot(dx,dy)||1}
-    const reach=this.reach(holdMs,type);
+    const reach=this.reach(holdMs,type,level);
     return {x:Math.round(RangeUtil.clamp(cannon.x+dx/len*reach,40,world.width-40)),y:Math.round(RangeUtil.clamp(cannon.y+dy/len*reach,40,world.height-40)),reach};
   }
 }

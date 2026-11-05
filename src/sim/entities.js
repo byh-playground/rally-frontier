@@ -33,7 +33,7 @@ class Unit{
 }
 
 class Building{
-  static stateContract=new StateContract({cooldownUntil:0,attackCooldownPhase:0,salvo:[],terrainRevealUntil0:0,terrainRevealUntil1:0},{presentation:["hitFlash","attackFlash"]});
+  static stateContract=new StateContract({cooldownUntil:0,attackCooldownPhase:0,targetId:null,construction:null,salvo:[],terrainRevealUntil0:0,terrainRevealUntil1:0},{presentation:["hitFlash","attackFlash"]});
   constructor(state={}){Object.assign(this,Building.stateContract.create(state));if(!Array.isArray(this.salvo))this.salvo=[]}
   cooldownActive(sim){return sim.tick<(Number(this.cooldownUntil)||0)}
   clearCooldown(){this.cooldownUntil=0}

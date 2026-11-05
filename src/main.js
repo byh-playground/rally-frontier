@@ -15,7 +15,7 @@ import { AttackPresentationDefinition } from './definitions/attack-presentation.
 import { BuildingDefinition } from './definitions/buildings.js';
 import { GRAIN_FACE_IDS, UnitDefinition, UnitFactionPalette, UnitVisualDefinition } from './definitions/units.js';
 import { MapGeometry } from './sim/map-geometry.js';
-import { CAPTURE_DURATION_MS, CAPTURE_RADIUS, LANE_CONTROL_POINTS } from './definitions/combat-rules.js';
+import { CAPTURE_RADIUS, LANE_CONTROL_POINTS } from './definitions/combat-rules.js';
 import { PerformanceTelemetry } from './diagnostics/performance-telemetry.js';
 import { VIEW_H, VIEW_W } from './definitions/world-rules.js';
 import { WorldContext } from './sim/world-context.js';
@@ -1158,6 +1158,14 @@ class GLRenderer{
           if(source)this.addClientFx("meleeSourceMotion",{...e,x:source.x,y:source.y,x2:e.x,y2:e.y},snapshot,index,{motion:attackVisual.sourceMotion});
           this.attackPresentationUntil.set(e.sourceId,performance.now()+220);
         }
+        if(attackVisual.travel==="hitscan"){
+          const source=(snapshot.buildings||[]).find(b=>b.id===e.sourceId&&b.alive!==false);
+          if(source){
+            const dx=e.x-source.x,dy=e.y-source.y,length=Math.hypot(dx,dy)||1,start=this.presentationEventStart(e,snapshot);
+            this.launchRecoil.set(source.id,{at:start,dx:dx/length,dy:dy/length,power:0});
+            this.addClientFx("hitscanTravel",{...e,x:source.x,y:source.y,x2:e.x,y2:e.y,side:source.side},snapshot,index,{aimDx:dx/length,aimDy:dy/length});
+          }
+        }
         if(!e.suppressImpactFx)this.addClientFx("meleeImpact",e,snapshot,index,{impactScale:impactPreset.scale});
         if(e.side===mySide)this.triggerClientShake(1.5,90,HashUtil.hash(`${snapshot.tick}|hurt|${index}`));
       }else if(e.type==="death"){
@@ -1214,6 +1222,8 @@ class GLRenderer{
       const dx=p.lockedAimX-p.launchX,dy=p.lockedAimY-p.launchY,length=Math.hypot(dx,dy);
       if(length>.001)return{dx:dx/length,dy:dy/length};
     }
+    const target=b.targetId&&((this.snapshot.units||[]).find(u=>u.id===b.targetId&&u.alive!==false)||(this.snapshot.buildings||[]).find(v=>v.id===b.targetId&&v.alive!==false));
+    if(target){const dx=target.x-b.x,dy=target.y-b.y,length=Math.hypot(dx,dy)||1;return{dx:dx/length,dy:dy/length}}
     const enemy=this.snapshot.buildings.find(v=>v.side===1-b.side&&v.alive!==false&&BuildingDefinition.isMainBase(v.type));
     const dx=enemy?enemy.x-b.x:0,dy=enemy?enemy.y-b.y:(b.side===0?-1:1),length=Math.hypot(dx,dy)||1;
     return{dx:dx/length,dy:dy/length};
@@ -1272,24 +1282,26 @@ class GLRenderer{
     for(const cp of this.snapshot.capturePoints||[]){
       const[x,y]=this.worldToPx(this.viewX(cp.x),this.viewY(cp.y));
       if(x<-80||x>this.fxCanvas.width+80||y<-80||y>this.fxCanvas.height+80)continue;
-      const owner=cp.owner===side?"아군 거점":cp.owner==null?(cp.enabled?"점령 가능":"오브젝트 잠금"):"적 거점";
+      const outpost=(this.snapshot.buildings||[]).find(b=>b.id===cp.outpostId&&b.alive!==false);
+      const construction=outpost?.construction;
+      const visibleConstruction=construction&&(this.isFriendlySide(outpost.side)||this.visibleRaw(outpost.x,outpost.y));
+      const locked=!cp.enabled&&!outpost;
+      const owner=visibleConstruction?(outpost.side===side?"아군 건설 중":"적 건설 중"):cp.owner===side?"아군 거점":cp.owner==null?(locked?"오브젝트 잠금":"점령 가능"):"적 거점";
       ctx.font=`900 ${Math.max(9,11*sc)}px system-ui,sans-serif`;
       ctx.lineWidth=Math.max(2,3*sc);ctx.strokeStyle="rgba(0,0,0,.60)";
-      const text=`${cp.label||cp.lane} · ${owner}`;
-      ctx.strokeText(text,x,y-52*sc);ctx.fillStyle="#fff";ctx.fillText(text,x,y-52*sc);
-      ctx.font=`800 ${Math.max(7,8*sc)}px system-ui,sans-serif`;
-      const guide=cp.owner===side
-        ? "시야 · 자원 귀환 · 방어 건설권"
-        : cp.owner==null&&cp.enabled
-          ? "아군 전투 유닛만 유지하면 점령"
-          : cp.owner==null
-            ? "연결 전술 오브젝트 처치 필요"
-            : "파괴 시 다시 점령 가능";
-      ctx.strokeText(guide,x,y-39*sc);ctx.fillStyle=cp.owner===side?"#cfe6ff":"#fff3b0";ctx.fillText(guide,x,y-39*sc);
-      if(cp.owner==null&&cp.enabled&&cp.progress>0){
-        const pct=Math.floor(cp.progress/SimulationTiming.msToTicks(CAPTURE_DURATION_MS,this.snapshot?.tps||SIM_TPS)*100);
-        ctx.font=`800 ${Math.max(8,9*sc)}px system-ui,sans-serif`;
-        ctx.strokeText(`${pct}%`,x,y-27*sc);ctx.fillText(`${pct}%`,x,y-27*sc);
+      const text=`${cp.label||cp.lane} · ${owner}`,labelY=y-Math.max(50,64*sc),lineGap=Math.max(14,15*sc);
+      ctx.strokeText(text,x,labelY);ctx.fillStyle="#fff";ctx.fillText(text,x,labelY);
+      ctx.font=`800 ${Math.max(10,9*sc)}px system-ui,sans-serif`;
+      const guide=visibleConstruction
+        ? `건설 ${construction.invested}/${LaunchRules.captureCost} ◆ · ${this.snapshot.wallet?.[outpost.side]>=1?"초당 1원 투자":"자원 대기"}`
+        : cp.owner!=null
+          ? `인컴 +${LaunchRules.captureIncomePerSecond}/초 · 자동 방어`
+          : locked?"연결 전술 오브젝트 처치 필요":`병력이 진입하면 자동 건설 · ${LaunchRules.captureCost}원 / ${LaunchRules.captureCost*LaunchRules.capturePaymentMs/1000}초`;
+      ctx.strokeText(guide,x,labelY+lineGap);ctx.fillStyle=cp.owner===side||visibleConstruction&&outpost.side===side?"#cfe6ff":"#fff3b0";ctx.fillText(guide,x,labelY+lineGap);
+      if(visibleConstruction){
+        const ratio=construction.invested/LaunchRules.captureCost,w=Math.max(60,76*sc),h=Math.max(4,5*sc),barY=labelY+lineGap+10;
+        ctx.fillStyle="rgba(0,0,0,.65)";ctx.fillRect(x-w/2,barY,w,h);
+        ctx.fillStyle="#ffd36b";ctx.fillRect(x-w/2,barY,w*ratio,h);
       }
     }
     ctx.restore();
@@ -1373,6 +1385,7 @@ class GLRenderer{
       const age=now-fx.start;
       if(age<0){this.combatFx[write++]=fx;continue}
       const life=
+        fx.kind==="hitscanTravel"?180:
         fx.kind==="buildingBurst"?620:
         fx.kind==="launchMuzzle"?900:
         fx.kind==="launchBlast"?820:
@@ -1478,6 +1491,13 @@ class GLRenderer{
         burst(fx,x,y,t,13,"#6a6259",72,4.8,.48);
         burst(fx,x,y,t,7,"#d2aa63",58,3.3,.52);
         ring(x,y,(15+72*ease)*sc,3*sc,"#b98c54",.35*(1-t));
+      }else if(fx.kind==="hitscanTravel"){
+        const source={id:fx.sourceId,x:fx.x,y:fx.y,side:fx.side};
+        const pose=BuildingArt.pose(this.cannonArtOptions(source,{aim:{dx:fx.aimDx,dy:fx.aimDy},fireAgeMs:age,power:0}));
+        const [tx,ty]=this.worldToPx(this.viewX(fx.x2),this.viewY(fx.y2));
+        ctx.globalAlpha=(1-t)*.85;ctx.strokeStyle="#fff2b0";ctx.lineWidth=Math.max(1,2*sc);ctx.lineCap="round";
+        ctx.beginPath();ctx.moveTo(pose.muzzle.x,pose.muzzle.y);ctx.lineTo(tx,ty);ctx.stroke();
+        dot(pose.muzzle.x,pose.muzzle.y,(5+3*(1-t))*sc,"#fff3bf",1-t);
       }else if(fx.kind==="launchMuzzle"){
         // Muzzle flash on the barrel's end, then smoke that drifts up and spreads.
         const power=Number(fx.power)||0,overheat=fx.mode==="overheat";
@@ -1708,13 +1728,10 @@ class GLRenderer{
         16
       );
 
-      if(cp.owner==null&&cp.enabled&&cp.progress>0){
-        const ratio=Math.min(1,cp.progress/SimulationTiming.msToTicks(CAPTURE_DURATION_MS,this.snapshot?.tps||SIM_TPS));
-        this.circle(
-          x,y,Math.max(7,30*sc),
-          this.factionColor(cp.progressSide,{alpha:.18+ratio*.35}),
-          16
-        );
+      const outpost=(this.snapshot.buildings||[]).find(b=>b.id===cp.outpostId&&b.alive!==false);
+      if(outpost?.construction&&(this.isFriendlySide(outpost.side)||this.visibleRaw(outpost.x,outpost.y))){
+        const ratio=outpost.construction.invested/LaunchRules.captureCost;
+        this.circle(x,y,Math.max(7,30*sc),this.factionColor(outpost.side,{alpha:.18+ratio*.35}),16);
       }
     }
   }
@@ -2285,7 +2302,7 @@ class GLRenderer{
     const main=BuildingDefinition.forRole("mainBase"),outpost=BuildingDefinition.forRole("outpost"),reloadTicks=SimulationTiming.msToTicks(LaunchRules.reloadMs,s.tps||SimulationTiming.tps());
     // Overheated cannons glow red; reloading ones show a thin ring.
     for(const b of s.buildings||[]){
-      if(b.side!==side||b.alive===false||(b.type!==main&&b.type!==outpost))continue;
+      if(b.side!==side||b.alive===false||b.construction||(b.type!==main&&b.type!==outpost))continue;
       const wait=(Number(b.launchReadyTick)||0)-s.tick;if(wait<=0)continue;
       const [x,y]=this.worldToPx(this.viewX(b.x),this.viewY(b.y)),r=Math.max(18,((BuildingDefinition.get(b.type)?.size||40)+10)*sc),hot=wait>reloadTicks;
       this.outlineCircle(x,y,r,Math.max(2,3*sc),hot?[1,.3,.2,.5+.4*(Math.floor(now/160)%2)]:[.92,.92,.92,.45],32);
@@ -2952,6 +2969,8 @@ UiRegistry.refs.disconnectGate=DomUtil.byId("disconnectGate");UiRegistry.refs.di
 
 UiRegistry.refs.launchHand=DomUtil.byId("launchHand");UiRegistry.refs.launchCards=DomUtil.byId("launchCards");
 UiRegistry.refs.launchEnergyFill=DomUtil.byId("launchEnergyFill");UiRegistry.refs.launchEnergyText=DomUtil.byId("launchEnergyText");
+UiRegistry.refs.launchIncomeText=DomUtil.byId("launchIncomeText");UiRegistry.refs.launchRangeBtn=DomUtil.byId("launchRangeBtn");UiRegistry.refs.launchRangeText=DomUtil.byId("launchRangeText");UiRegistry.refs.launchRangeCost=DomUtil.byId("launchRangeCost");
+UiRegistry.refs.launchRangeBtn?.addEventListener("click",()=>LaunchPresentation.upgradeRange());
 UiRegistry.refs.launchCards?.addEventListener("click",e=>{const b=e.target.closest("[data-launch-card]");if(b)LaunchPresentation.selectCard(b.dataset.launchCard)});
 
 const UI_RADIO=Object.freeze({
@@ -4312,6 +4331,12 @@ class LaunchPresentation{
     }
     UiRegistry.refs.launchEnergyFill.style.width=`${Math.round(100*wallet/LaunchRules.walletCap)}%`;
     UiRegistry.refs.launchEnergyText.textContent=`◆ ${wallet} / ${LaunchRules.walletCap}`;
+    const level=s.launchRangeLevel?.[side]??0,cost=LaunchRules.upgradeCost(level),maxed=cost==null;
+    UiRegistry.refs.launchIncomeText.textContent=`+${LaunchRules.incomePerSecondFor(s.capturePoints||[],side)}/초`;
+    UiRegistry.refs.launchRangeText.textContent=maxed?`사거리 ×${LaunchRules.rangeMultiplier(level)} · 최대`:`사거리 ×${LaunchRules.rangeMultiplier(level)} → ×${LaunchRules.rangeMultiplier(level+1)}`;
+    UiRegistry.refs.launchRangeCost.textContent=maxed?"강화 완료":`강화 ◆ ${cost}`;
+    UiRegistry.refs.launchRangeBtn.disabled=maxed||wallet<cost||!!ReplayPresentation.replayPlayer;
+    UiRegistry.refs.launchRangeBtn.title=maxed?"모든 대포의 발사 사거리가 최대로 강화됐습니다.":`모든 대포의 최대 발사 사거리 강화 · 쌀 ${LaunchRules.maxReachOf("rice",level)} → ${LaunchRules.maxReachOf("rice",level+1)}`;
     this.renderHud(s,side);
     // Contacts can happen before the aimed point. Only authority impact events place a landing marker.
     const now=performance.now();
@@ -4335,10 +4360,16 @@ class LaunchPresentation{
     LaunchScreens.renderHud({myHpPct:hp(side),enemyHpPct:hp(1-side),elapsedMs:1000*s.tick/(s.tps||SimulationTiming.tps()),enemyDirection});
   }
   static selectCard(type){this.card=type;const s=ActiveViewState.snap;if(s)this.render(s,ConnectionSideUtil.roleSide(ActiveViewState.role))}
+  static upgradeRange(){
+    if(!this.active())return;
+    const s=ActiveViewState.snap,side=ConnectionSideUtil.roleSide(ActiveViewState.role),cost=LaunchRules.upgradeCost(s.launchRangeLevel?.[side]??0);
+    if(cost==null||s.wallet?.[side]<cost)return;
+    if(!MatchLifecycle.activeSession()?.command({type:"UPGRADE_LAUNCH_RANGE"}))LogUtil.log("⚠ 사거리 강화 명령을 접수할 수 없습니다.");
+  }
   static nearestCannon(s,side,x,y){
     const main=BuildingDefinition.forRole("mainBase"),outpost=BuildingDefinition.forRole("outpost");
     let best=null,bestD=Infinity;
-    for(const b of s.buildings||[]){if(b.side!==side||b.alive===false||(b.type!==main&&b.type!==outpost))continue;const d=Math.hypot(b.x-x,b.y-y);if(d<bestD){bestD=d;best=b}}
+    for(const b of s.buildings||[]){if(b.side!==side||b.alive===false||b.construction||(b.type!==main&&b.type!==outpost))continue;const d=Math.hypot(b.x-x,b.y-y);if(d<bestD){bestD=d;best=b}}
     return best;
   }
   static begin(a,pointerId){
@@ -4347,15 +4378,15 @@ class LaunchPresentation{
     const wait=Math.max(0,(Number(cannon.launchReadyTick)||0)-s.tick);
     if(wait>0){LogUtil.log(`⏳ ${BuildingDefinition.get(cannon.type)?.name||"대포"} 재장전 중 · ${(wait/(s.tps||SimulationTiming.tps())).toFixed(1)}초`);return null}
     if(LaunchRules.payload(this.card).cost>Math.floor(s.wallet[side]))LogUtil.log("◆ 자원이 모자랍니다. 게이지가 차면 다시 누르세요.");
-    this.hold={pointerId,cannonId:cannon.id,cannonX:cannon.x,cannonY:cannon.y,aimX:a.x,aimY:a.y,armedAt:performance.now(),card:this.card,lastPower:this.lastPower};
+    this.hold={pointerId,cannonId:cannon.id,cannonX:cannon.x,cannonY:cannon.y,aimX:a.x,aimY:a.y,armedAt:performance.now(),card:this.card,lastPower:this.lastPower,side};
     if(navigator.vibrate)navigator.vibrate(12);
     return this.hold;
   }
   static aim(a){if(this.hold){this.hold.aimX=a.x;this.hold.aimY=a.y}}
   // Where the sim will land this hold: same rule and fallback direction as the LAUNCH command.
   static landing(hold,holdMs,world){
-    const flag=ActiveViewState.snap?.flags?.[ConnectionSideUtil.roleSide(ActiveViewState.role)]||{x:hold.cannonX,y:hold.cannonY};
-    return LaunchRules.target({x:hold.cannonX,y:hold.cannonY},hold.aimX,hold.aimY,holdMs,world,flag,hold.card);
+    const s=ActiveViewState.snap,side=hold.side??ConnectionSideUtil.roleSide(ActiveViewState.role),flag=s?.flags?.[side]||{x:hold.cannonX,y:hold.cannonY};
+    return LaunchRules.target({x:hold.cannonX,y:hold.cannonY},hold.aimX,hold.aimY,holdMs,world,flag,hold.card,s?.launchRangeLevel?.[side]??0);
   }
   // While charging, the camera eases just far enough to keep the landing ring on screen.
   static FOLLOW_HALF_LIFE_MS=52;static followAt=null;
@@ -4854,7 +4885,7 @@ else{
     closeMenu:()=>{if(UiRuntimeState.value.modal==="match-menu")MatchLifecycle.closeMatchMenu()},
     grains:()=>LaunchRules.deck,
     grainName:t=>UnitDefinition.get(t)?.name||t,
-    grainStats:t=>({...LaunchRules.payload(t),maxReach:LaunchRules.maxReachOf(t)}),
+    grainStats:t=>({...LaunchRules.payload(t),maxReach:LaunchRules.maxReachOf(t,ActiveViewState.snap?.launchRangeLevel?.[ConnectionSideUtil.roleSide(ActiveViewState.role)]??0)}),
     portraitSource:t=>grainPortrait(t,window.RallyVectorAssets[t]),
     toggleSound:()=>audioSystem.setEnabled(!audioSystem.enabled),
     soundOn:()=>!!audioSystem.enabled,
