@@ -577,8 +577,11 @@ class StrategySim{
   }
   applyLaunchCommand(side,action){
     const cannon=this.launchCannons(side).find(b=>b.id===action.cannonId);
-    if(!cannon||this.tick<(Number(cannon.launchReadyTick)||0))return false;
-    const grain=LaunchRules.grain(action.unitType);if(!grain||this.wallet[side]<grain.cost)return false;
+    const reject=reason=>{this.events.push({type:"launchRejected",side,reason});return false};
+    if(!cannon)return reject("cannon-unavailable");
+    if(this.tick<(Number(cannon.launchReadyTick)||0))return reject("reloading");
+    const grain=LaunchRules.grain(action.unitType);if(!grain)return reject("invalid-unit");
+    if(this.wallet[side]<grain.cost)return reject("insufficient-resources");
     const holdMs=Math.max(0,Math.round(action.holdMs));
     if(LaunchRules.overheated(holdMs)){
       cannon.launchReadyTick=this.tick+this.msTicks(LaunchRules.overheatMs);
