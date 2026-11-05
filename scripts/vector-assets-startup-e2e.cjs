@@ -65,7 +65,7 @@ async function main(htmlPath = path.resolve(process.argv[2] || '_site/index.html
   const metadataFile = path.join(path.dirname(htmlPath), 'build.json');
   const productVersion = readProductVersion(path.dirname(htmlPath));
   const expectedBuild = fs.existsSync(metadataFile) ? JSON.parse(fs.readFileSync(metadataFile, 'utf8')) : null;
-  const server = await serveSource(htmlPath);
+  const server = await serveSource(htmlPath, { observer: 'window.__startupRenderer = () => ActiveViewState.renderer;' });
   let browser;
   try {
     browser = await chromium.launch({ headless: true, channel: process.env.QA_BROWSER_CHANNEL || 'msedge' });
@@ -79,6 +79,9 @@ async function main(htmlPath = path.resolve(process.argv[2] || '_site/index.html
       if (request.url().startsWith('http://127.0.0.1:') && pathname !== '/' && pathname !== '/index.html' && pathname !== '/favicon.ico') relativeRequests.push(request.url());
     });
     await page.goto(server.url, { waitUntil: 'domcontentloaded' });
+    await page.locator('#bootGate').waitFor({state:'hidden',timeout:90_000});
+    const prepared = await page.evaluate(() => ({holds:window.__startupRenderer()?.gameResourceHolds?.length ?? 0,device:window.__startupRenderer()?.device?.state,loopStarted:window.__startupRenderer()?.loopStarted}));
+    if (prepared.holds !== expected.assets.length || prepared.device !== 'ready' || prepared.loopStarted) throw new Error(`GPU resources were not prepared before the lobby: ${JSON.stringify(prepared)}`);
     await page.waitForFunction(() => Object.keys(window.RallyVectorAssets || {}).length > 0 && typeof window.RallyGamekit?.createVectorAssetLoader === 'function' && window.RallyVectorAssetLoader, undefined, { timeout: 90_000 });
     const result = await page.evaluate(expected => {
       const assets = window.RallyVectorAssets || {};

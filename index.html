@@ -18,6 +18,8 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   고정한 공식 ESM bytes만 로드한다. 다른 버전·CDN·내장 대체 Core fallback은 없다.
 - 실제 제품 최초 부팅은 고정 CDN 접근이 필요하다. setup:gamekit의 검증한 QA cache 응답과
   제품 CDN 가용성을 구별한다. 원본/_site 실행은 HTTP(S)를 쓰며 단일 HTML 오프라인 실행을 보장하지 않는다.
+- 전투에 쓰는 벡터 자산은 시작 화면에서 실제 GPU 그리기 경로까지 준비하고 경기 동안 유지한다.
+  준비가 실패하면 게임 시작을 허용하지 않고 재시도할 수 있게 표시한다.
 - StrategySim과 StateContract가 Authoritative 상태·초기화·저장·복원·체크섬을 소유한다.
   Runtime·Presentation·파생 캐시는 명시적으로 구분한다. 보관 snapshot과 live의 가변 상태는
   참조를 공유하지 않는다. 새 판정 상태와 신뢰 시나리오 확장 상태도 명시적 제외가 아니면 저장·해시에 포함한다.
