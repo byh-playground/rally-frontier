@@ -61,7 +61,7 @@ class PerformanceTelemetry{
       sessions:Object.fromEntries(Object.entries(sessions).map(([role,s])=>[role,{tick:s.sim?.tick,mode:s.netcodeMode,status:s.netcodeSession?.status,
         timings:s.performanceStats,simulation:s.sim?.perfStats,core:s.netcodeSession?.metrics,bufferedBytes:s.transport?.netcodeBufferedAmount||0}]))};
     const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));
-    const a=document.createElement('a');a.href=url;a.download=`rally-frontier-performance-${Date.now()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    const a=document.createElement('a');a.href=url;a.download=`ssalkongpang-performance-${Date.now()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
   static async exportBalanceTelemetry(){
   const active=MatchLifecycle.activeSession?.();
@@ -84,7 +84,7 @@ class PerformanceTelemetry{
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
-  a.href=url;a.download=`rally-frontier-balance-${Date.now()}.json`;
+  a.href=url;a.download=`ssalkongpang-balance-${Date.now()}.json`;
   document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
   LogUtil.log("밸런스 계측 JSON 저장 · authoritative state에는 포함되지 않음");

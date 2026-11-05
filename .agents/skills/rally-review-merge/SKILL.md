@@ -1,9 +1,9 @@
 ---
 name: rally-review-merge
-description: RALLY FRONTIER PR을 검토하고 검증한 구현 PR을 별도 확인 없이 머지한다. 리뷰·등록·푸시만 요청했거나 사용자가 직접 머지할 경우에는 그 요청 범위를 지킨다.
+description: 쌀콩팡! PR을 검토하고 검증한 구현 PR을 별도 확인 없이 머지한다. 리뷰·등록·푸시만 요청했거나 사용자가 직접 머지할 경우에는 그 요청 범위를 지킨다.
 ---
 
-# RALLY FRONTIER PR 리뷰·머지
+# 쌀콩팡! PR 리뷰·머지
 
 이 프로젝트의 PR 리뷰·머지 요청과 검증한 구현 PR의 자동 머지(PM-006)를 처리한다. 저장소는 `byh-playground/rally-frontier`이며 기본 대상 브랜치는 `main`이다. 실행 전에 로컬 Git 원격과 PR의 실제 저장소·대상 브랜치를 확인한다.
 

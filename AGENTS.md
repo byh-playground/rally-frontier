@@ -1,6 +1,6 @@
 # 작업 지침
 
-작업 전에 [최신 BLOOM 공통 규칙](https://raw.githubusercontent.com/byh-playground/bloom-reference/main/AGENTS.md) 전체와 [.agents/AGENTS.common.md](.agents/AGENTS.common.md)를 읽는다. 사용자 지시가 우선이며, 버전·검증·운영의 공통 정책은 최신 원본을 따른다. 아래는 그 정책 안에서 정하는 RALLY FRONTIER 전용 설정이다. 보고에는 적용하거나 위반한 AI-/DEV-/PM- 규칙 ID를 명시한다.
+작업 전에 [최신 BLOOM 공통 규칙](https://raw.githubusercontent.com/byh-playground/bloom-reference/main/AGENTS.md) 전체와 [.agents/AGENTS.common.md](.agents/AGENTS.common.md)를 읽는다. 사용자 지시가 우선이며, 버전·검증·운영의 공통 정책은 최신 원본을 따른다. 아래는 그 정책 안에서 정하는 쌀콩팡! 전용 설정이다. 보고에는 적용하거나 위반한 AI-/DEV-/PM- 규칙 ID를 명시한다.
 
 <!-- AUTONOMY DIRECTIVE — DO NOT REMOVE -->
 YOU ARE AN AUTONOMOUS CODING AGENT. EXECUTE TASKS TO COMPLETION WITHOUT ASKING FOR PERMISSION.
@@ -15,7 +15,7 @@ USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES 
 - 현재 제품은 쌀·콩·팥을 대포로 투입하고 거점을 건설·점령하는 게임이다. 제품 조작·수치는 인게임 도움말과 Definition, 프로젝트별 구조 계약은 `index.html` 상단 Development Contract가 담당한다. 실행 원본은 `index.html`·`src/`·원본 자산이며 배포용 번들을 만들지 않는다.
 - 사용자 지시에 따라 게임 버전은 `src/core/product-version.js`의 SemVer `PRODUCT_VERSION` 한 곳을 SSOT로 사용한다. 화면·배포 기록·방 발견·세션·snapshot·리플레이의 게임 버전이 모두 이 원본을 직접 읽고 정확한 문자열 일치로 호환성을 판정한다. 별도 시뮬레이션 버전 정수나 동의어 상수를 만들지 않는다. `build.json`의 Git 커밋·복사 시각은 버전이 아닌 배포 출처다.
 - 제품 세대 전환은 MAJOR, 비호환 변경은 MINOR, 호환되는 의미 있는 기능·표현 수정은 PATCH, 외부 동작이 같은 내부 정리·문서 정리는 버전을 유지한다. 하드코딩된 유닛·발사 수치 변경도 동일 입력의 시뮬레이션 결과나 과거 리플레이 해석을 바꾸면 호환 변경으로 간주하지 않는다. 그때는 게임 MINOR를 올려 모든 게임 호환 소비자에 같은 버전이 반영되게 한다.
-- 최초 제품 버전 `0.1.0`은 기존 SemVer가 없던 저장소의 기준선이다. 과거 내부 카운터에서 제품 이력을 역산하지 않는다. `0.2.0`은 게임 규칙과 호환 계약의 비호환 변경을 반영한 버전이며, 버전 변경이 정식 출시나 Stable 승격을 뜻하지 않는다.
+- 최초 제품 버전 `0.1.0`은 기존 SemVer가 없던 저장소의 기준선이다. 과거 내부 카운터에서 제품 이력을 역산하지 않는다. `0.2.0`은 게임 규칙과 호환 계약의 비호환 변경, `0.3.0`은 방 발견 및 리플레이 식별자 변경을 반영한다. 버전 변경이 정식 출시나 Stable 승격을 뜻하지 않는다.
 - 검증은 변경 범위에 맞춰 AI-013~AI-017·PM-009·PM-010·PM-014를 적용한다. 게임 동작·화면 변경은 실제 UI E2E와 실제 렌더 관찰을 정적 검사로 대체하지 않는다. 문서만 바꾸는 작업에 매번 한 판 플레이를 강제하지 않는다. 성능 작업은 AI-019의 레퍼런스·기존 기록을 먼저 읽고 별도 실행으로 측정한다.
 
 ## PR·머지·배포

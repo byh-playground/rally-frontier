@@ -1,8 +1,8 @@
 {
   "$schema": "https://byh-playground.github.io/bloom-world/playground/bloom-game.schema.json",
   "schemaVersion": 1,
-  "title": "랠리 프론티어",
-  "en": "RALLY FRONTIER",
+  "title": "쌀콩팡!",
+  "en": "RICE BEANS AND BOOM",
   "genre": "strategy",
   "tags": [
     "실시간 전략",

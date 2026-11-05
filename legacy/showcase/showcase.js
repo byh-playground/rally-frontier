@@ -1,6 +1,6 @@
 import { installShowcase } from 'https://cdn.jsdelivr.net/gh/byh-playground/bloom-gamekit@2c6de8e749d88d00fd8c9825170ec957bdd64d35/scenario.js';
 const SHOWCASE = installShowcase({
-    title:'랠리 프론티어',
+    title:'쌀콩팡!',
     launcher:'#gameStartBtn',
     playSelector:'#gameStartBtn',
     durationMs:28000,

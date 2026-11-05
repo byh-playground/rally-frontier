@@ -1,5 +1,5 @@
 {
-  "name": "rally-frontier-tooling",
+  "name": "ssalkongpang-tooling",
   "private": true,
   "scripts": {
     "setup:gamekit": "node scripts/setup-gamekit.cjs",

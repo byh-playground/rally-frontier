@@ -1,4 +1,4 @@
-/* RALLY FRONTIER launch game (D-196, D-199, D-206).
+/* 쌀콩팡! launch game (D-196, D-199, D-206).
    Every screen lives in one portrait column: full width on a phone, centered 9:16 on a wide screen. */
 :root{
   --col-w:min(100vw,calc(100dvh*9/16));
@@ -34,7 +34,8 @@ button:disabled{cursor:default;opacity:.5}
 #lobby{display:flex;flex-direction:column;overflow:hidden;background:linear-gradient(#dfe8d6,var(--bg) 60%)}
 .launch-hero{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px}
 .game-title{margin:0;font-size:44px;line-height:.9;letter-spacing:-1px;text-align:center;color:var(--ink)}
-.frontier-accent{display:block;color:var(--green)}
+.frontier-accent{color:var(--green)}
+.game-title-en{display:block;margin-top:10px;color:var(--green);font-size:15px;line-height:1.2;letter-spacing:.04em}
 .launch-tagline{margin:0;color:var(--muted);font-size:14px;text-align:center}
 .launch-grains{display:flex;gap:6px;margin:18px 0 6px}
 .launch-grains img{width:84px;height:92px;object-fit:contain}

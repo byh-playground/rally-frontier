@@ -394,7 +394,7 @@ class DiagnosticPresentation{
     const sink=window.__RALLY_PRESENT_FATAL__;
     if(typeof sink==="function"){sink(diag);return}
     window.__RALLY_FATAL_DIAGNOSTIC__=diag;
-    console.error("[RALLY FRONTIER] diagnostic bootstrap unavailable",diag);
+    console.error("[쌀콩팡!] diagnostic bootstrap unavailable",diag);
   }
 }
 
@@ -2396,7 +2396,7 @@ class GLRenderer{
     this._vectorOcclusionCoords=new Float32Array(0);
     this.gl=this.device.gl;
     this.passState={depthEnabled:true,depthWrite:true,depthFunc:"lequal",stencil:false,colorMask:[true,true,true,true]};
-    if(!this.gl)throw new Error("RALLY FRONTIER requires WebGL for battlefield rendering.");
+    if(!this.gl)throw new Error("쌀콩팡! requires WebGL for battlefield rendering.");
     this.backend="WebGL";
     this.canvas.dataset.rendererBackend=this.backend;
 
@@ -5946,7 +5946,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     const key=`${kind}:${entity?.type||"unknown"}:${String(err?.message||err)}`;
     if(this.entityRenderErrors.has(key))return;
     this.entityRenderErrors.add(key);
-    console.error("[RALLY FRONTIER] entity render fallback",kind,entity?.type,err);
+    console.error("[쌀콩팡!] entity render fallback",kind,entity?.type,err);
   }
   drawFallbackUnit(u){
     const p=this.projectEntityScreen(u,"unit"),r=this.unitRenderRadius(u);
@@ -6755,7 +6755,7 @@ drawConstructionStage(b,x,y,r,own,teamCap,teamHi,shell,stone,sc,q,motion){
     this.renderFatalReported=true;
     const s=this.snapshot||{},entity=this.renderEntity||null;
     const diag={
-      kind:"RALLY_FRONTIER_RENDER_FATAL",
+      kind:"SSALKONGPANG_RENDER_FATAL",
       build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),
       at:new Date().toISOString(),
       renderer:this.backend||null,
@@ -8154,7 +8154,7 @@ class ReplayPresentation{
   const blob=new Blob([JSON.stringify(payload)],{type:"application/json"});
   const url=URL.createObjectURL(blob),a=document.createElement("a");
   const stamp=new Date().toISOString().replace(/[:.]/g,"-");
-  a.href=url;a.download=`rally-frontier-replay-${stamp}.json`;
+  a.href=url;a.download=`ssalkongpang-replay-${stamp}.json`;
   document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   const state=payload.result?.reason==="in-progress"?" · 진행 중 저장본":"";
   LogUtil.log(`리플레이 저장 · ${payload.commands?.length||0}개 명령 · ${payload.checkpoints?.length||0}개 체크포인트${state}`);
@@ -8261,7 +8261,7 @@ class ReplayPresentation{
   if(error instanceof SyntaxError||/json|unexpected token|unexpected end/i.test(detail))reason="JSON으로 읽을 수 없습니다. 파일이 잘렸거나 JSON 형식이 아닙니다.";
   else if(/version|sim_version|버전/i.test(detail))reason="다른 게임 버전에서 저장한 리플레이입니다. 현재 게임 버전과 맞는 파일을 선택하세요.";
   else if(/checksum|check.?point|체크포인트|체크섬/i.test(detail))reason="시작 상태 체크포인트 검증에 실패했습니다. 파일이 손상되었을 수 있습니다.";
-  else if(/protocol|rally frontier|형식/i.test(detail))reason="지원하지 않는 형식입니다. RALLY FRONTIER에서 저장한 리플레이 JSON을 선택하세요.";
+  else if(/protocol|쌀콩팡|형식/i.test(detail))reason="지원하지 않는 형식입니다. 쌀콩팡!에서 저장한 리플레이 JSON을 선택하세요.";
   else if(/command|payload|초기 상태|리플레이 데이터|손상/i.test(detail))reason="리플레이의 명령 기록이나 초기 상태가 없거나 손상되었습니다.";
   return `리플레이를 열지 못했습니다. ${reason} 현재 화면은 유지했습니다. 정상 파일을 선택해 다시 시도하세요.`;
 }
@@ -9609,8 +9609,8 @@ class BuildMetadataPresentation{
   document.documentElement.dataset.build=BUILD_META.id;
   document.documentElement.dataset.buildStatus=BUILD_META.status;
   document.documentElement.dataset.buildCommit=BUILD_META.commit||"";
-  const buildTag=document.querySelector('meta[name="rally-frontier-build"]');
-  const updatedTag=document.querySelector('meta[name="rally-frontier-updated-at"]');
+  const buildTag=document.querySelector('meta[name="ssalkongpang-build"]');
+  const updatedTag=document.querySelector('meta[name="ssalkongpang-updated-at"]');
   if(buildTag)buildTag.setAttribute("content",BUILD_META.id);
   if(updatedTag)updatedTag.setAttribute("content",BUILD_META.updatedAt||"");
 
@@ -9820,7 +9820,7 @@ class BattlePresentation{
   const side=ConnectionSideUtil.roleSide(ActiveViewState.role);
   if(!MatchLifecycle.activeSession()?.sim){
     DiagnosticPresentation.presentFatalDiagnostic({
-      kind:"RALLY_FRONTIER_PRESENTATION_CONTRACT_FATAL",
+      kind:"SSALKONGPANG_PRESENTATION_CONTRACT_FATAL",
       build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),at:new Date().toISOString(),source:"BattlePresentation.renderGame",
       role:ActiveViewState.role,tick:Number(s?.tick)||0,
       message:"Live snapshot reached game presentation without an active simulation."

@@ -14,7 +14,7 @@ import { ReplayPresentation, SimulationTiming } from '../main.js';
    - Records only authoritative runtime commits + periodic authoritative checkpoints.
    - Network/recovery/presentation state is deliberately excluded.
    ========================= */
-const REPLAY_PROTOCOL="rally-frontier-replay/1";
+const REPLAY_PROTOCOL="ssalkongpang-replay/1";
 const REPLAY_CHECKPOINT_MS=60000;
 
 class ReplayPolicy{
@@ -35,7 +35,7 @@ class ReplayPolicy{
     };
   }
   static validateReplayPayload(data){
-    if(!data||data.protocol!==REPLAY_PROTOCOL)throw new Error("RALLY FRONTIER 리플레이 파일이 아닙니다.");
+    if(!data||data.protocol!==REPLAY_PROTOCOL)throw new Error("쌀콩팡! 리플레이 파일이 아닙니다.");
     if(data.gameVersion!==PRODUCT_VERSION)throw new Error(`리플레이 게임 버전이 다릅니다. replay ${data.gameVersion??"확인 불가"} / current ${PRODUCT_VERSION}`);
     if(!Array.isArray(data.commands)||!Number.isFinite(Number(data.seed)))throw new Error("리플레이 데이터가 손상되었습니다.");
     return data;

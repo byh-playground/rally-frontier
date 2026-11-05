@@ -1,6 +1,8 @@
-# RALLY FRONTIER
+# 쌀콩팡! · Rice, Beans & Boom!
 
 쌀·콩·팥 병력을 대포로 투입하고 거점을 건설·점령하는 브라우저 전략 게임입니다. 병력 투입과 진영 공통 발사 사거리 강화에 같은 자원을 사용합니다. 싱글은 AI와, 친구 대전은 실제 WebRTC P2P로 플레이하며 결과·리플레이를 확인할 수 있습니다.
+
+영문 표기는 **Rice, Beans & Boom!**입니다. 공유 썸네일 원본은 [`assets/ssalkongpang-thumbnail.png`](assets/ssalkongpang-thumbnail.png)입니다. BLOOM PLAYGROUND 매니페스트의 영문 필드는 해당 스키마의 문자 제한 때문에 `RICE BEANS AND BOOM`으로 표기합니다.
 
 [현재 배포본 실행](https://byh-playground.github.io/rally-frontier/)
 
@@ -14,6 +16,8 @@
 제품 버전 판단은 [최신 공통 PM-001·PM-002](https://github.com/byh-playground/bloom-reference/blob/main/AGENTS.md)를 따릅니다. 제품 세대 전환은 MAJOR, 비호환 변경은 MINOR, 호환되는 의미 있는 기능·표현 수정은 PATCH입니다. 외부 동작이 같은 내부 정리와 문서 정리는 버전을 유지합니다. 하드코딩된 유닛·발사 수치 변경이 동일 입력의 결과나 과거 리플레이 해석을 바꾸면 호환되는 밸런스 수정으로 분류하지 않습니다. 게임 MINOR를 올리며 별도의 시뮬레이션 버전은 관리하지 않습니다.
 
 사용자 지시에 따라 게임 버전 하나를 호환성의 SSOT로 사용합니다. `0.1.0`은 기존 SemVer가 없던 제품의 첫 기준선이며, `0.2.0`은 게임 규칙·저장 및 통신 계약의 비호환 변경을 반영합니다. 과거 내부 카운터에서 제품 이력을 역산하지 않으며, 버전 갱신이 정식 출시나 Stable 승격을 선언하지 않습니다. 고정 SDK의 버전·source/dist 커밋·해시는 [`gamekit.lock.json`](gamekit.lock.json)이 관리합니다.
+
+`0.3.0`부터 방 발견 namespace와 리플레이 프로토콜을 쌀콩팡 이름으로 교체합니다. 이전 버전과는 방을 함께 찾거나 리플레이를 열 수 없으므로 두 플레이어가 모두 최신 버전으로 새로고침해야 합니다.
 
 `main` 푸시는 Pages 배포와 Nightly 태그 생성을 유발합니다. Stable은 PM-005에 따라 검증·승인한 커밋을 [release-tags 워크플로](.github/workflows/release-tags.yml)에서 명시 승격한 불변 태그입니다. 제품 버전·빌드 성공·배포 시각·게임 검증·Stable을 서로 구별합니다.
 

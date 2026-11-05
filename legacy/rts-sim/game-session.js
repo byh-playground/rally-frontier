@@ -106,7 +106,7 @@ class RallySimulationAdapter{
     StateValue.freeze(this.identity.rules);
     for(const value of Object.values(this.identity.campaignScenario||{}))StateValue.freeze(value);
     const encoded=StableSerializationUtil.stableStringify(this.identity);
-    this.matchId=`${SIM_VERSION}:${encoded.length}:${HashUtil.hash(encoded)}:${HashUtil.hash("rally-state|"+encoded)}`;
+    this.matchId=`${SIM_VERSION}:${encoded.length}:${HashUtil.hash(encoded)}:${HashUtil.hash("ssalkongpang-state|"+encoded)}`;
     this.mapFingerprint=sim.mapFingerprint();
     const state=this.stateData();
     // Required root fields come from the authoritative owner, not another save list.
@@ -748,7 +748,7 @@ enterSimulationFatal(err,{source="simulation",notifyPeer=true,remoteInfo=null}={
     });
     if(typeof DiagnosticPresentation!=="undefined"){
       DiagnosticPresentation.presentFatalDiagnostic({
-        kind:"RALLY_FRONTIER_SIMULATION_FATAL",
+        kind:"SSALKONGPANG_SIMULATION_FATAL",
         build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),
         at:info.at,
         source:info.source,

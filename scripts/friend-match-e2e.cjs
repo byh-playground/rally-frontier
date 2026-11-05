@@ -15,7 +15,7 @@ assert(sdkVersion, 'pinned SDK declares its version');
 const mode = process.env.QA_NETCODE_MODE || 'lockstep';
 assert(['lockstep', 'rollback'].includes(mode));
 const output = path.join(root, '.qa', 'friend-match-' + mode);
-const observer = `window.__friend={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntimeState,PerformanceTelemetry,PRODUCT_VERSION,
+const observer = `window.__friend={ActiveViewState,MatchLifecycle,ReplayPresentation,ReplayPolicy,UiRuntimeState,PerformanceTelemetry,PRODUCT_VERSION,
   generatedCodes:[],originalCode:RoomCodeUtil.randomCode,
   inspect(){const s=ActiveViewState.session;return {role:s?.role,room:s?.roomCode,screen:UiRuntimeState.value.screen,
     single:!!MatchLifecycle.singleMatch,mode:s?.netcodeMode,tick:s?.sim?.tick,ready:s?.netcodeSession?.ready,
@@ -115,6 +115,8 @@ RoomCodeUtil.randomCode=()=>window.__friend.generatedCodes.shift()||window.__fri
     for (const page of pages) await page.waitForFunction(() => window.__friend.ActiveViewState.session?.simEnded && window.__friend.ActiveViewState.session?.replayRecorder?.result, null, { timeout: 20000 });
     const ended = await Promise.all(pages.map(page => page.evaluate(() => window.__friend.inspect())));
     assert.deepEqual(ended[0].result, ended[1].result); assert.equal(ended[0].result.winner, 'guest'); assert.equal(ended[0].result.reason, 'surrender');
+    const replayFormats=await host.evaluate(()=>{const q=window.__friend,p=q.ReplayPresentation.currentReplayPayload();let oldRejected=false;try{q.ReplayPolicy.validateReplayPayload({...p,protocol:'rally-frontier-replay/1'})}catch{oldRejected=true}return{protocol:p.protocol,oldRejected}});
+    assert.deepEqual(replayFormats,{protocol:'ssalkongpang-replay/1',oldRejected:true},'New replay format works and the former identifier is rejected');
     for (const [i, page] of pages.entries()) {
       await page.locator('#replayWatchBtn').click(); await page.locator('#replayDock').waitFor({ state: 'visible' });
       await page.locator('#replayPlayPauseBtn').click();
