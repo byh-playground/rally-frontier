@@ -5,7 +5,7 @@ import { BuildingDefinition } from '../definitions/buildings.js';
 import { UNIT_RUNTIME_GEOMETRY, UnitDefinition } from '../definitions/units.js';
 import { NAV_BUILDING_MARGIN } from '../definitions/combat-rules.js';
 import { COLLISION_RADIUS_SCALE } from '../definitions/world-rules.js';
-import { NavigationGrid } from './navigation-field.js';
+import { GoalFields } from './navigation-field.js';
 import { RallyGamekit } from '../core/gamekit.js';
 const { ObstacleField, SurfaceMotion } = RallyGamekit;
 import { FP } from '../core/config.js';
@@ -146,22 +146,22 @@ class TerrainNavigation{
   constructor(sim){
     this.sim=sim;this.geometry=sim.world.terrain;this.topology=new NavigationTopology();this.sceneTick=-1;
     this.field=new ObstacleField({width:this.geometry.width,height:this.geometry.height,fixedPoint:FP,polygons:this.geometry.index,circles:[],ignoreAll:{id:'*',keep:b=>b.terrainBarrier}});
-    this.motion=new UnitMotion(this);this.grids=new Map();
+    this.motion=new UnitMotion(this);this.goalFields=new Map();
     this.metrics={fieldsBuilt:0,fieldBuildMs:0,localFields:0,nextCalls:0,rayHits:0,unreachable:0};
   }
   sync(){
     if(this.sceneTick===this.sim.tick)return;
     this.sceneTick=this.sim.tick;
     if(!this.topology.refresh(this.sim.buildings))return;
-    // A changed obstacle layout makes every grid stale; grid() notices by version.
+    // A changed obstacle layout makes every grid stale; fieldsFor() notices by version.
     this.field.setCircles(this.topology.records);
   }
-  grid(radius){
+  fieldsFor(radius){
     this.sync();
-    const key=Math.ceil((radius+.12)*100)/100;let grid=this.grids.get(key);
-    if(!grid)this.grids.set(key,grid=new NavigationGrid(this,key));
-    else if(grid.version!==this.topology.version)grid.reset();
-    return grid;
+    const key=Math.ceil((radius+.12)*100)/100;let fields=this.goalFields.get(key);
+    if(!fields)this.goalFields.set(key,fields=new GoalFields(this,key));
+    fields.grid.sync(this.topology.version);
+    return fields;
   }
   acceptsGoalPoint(goal,x,y){return goal.contains(x,y)&&(!goal.terrainLine||this.geometry.field.polygonSegmentClear(x,y,goal.x,goal.y,0))}
   directGoal(x,y,goal,radius){
@@ -175,21 +175,17 @@ class TerrainNavigation{
     this.metrics.nextCalls++;
     const radius=this.sim.unitRadius(u.type);
     const near=goal.closest(u.x,u.y);
-    if(near&&Math.hypot(near.x-u.x,near.y-u.y)<=NavigationGrid.RAY_RANGE){
+    if(near&&Math.hypot(near.x-u.x,near.y-u.y)<=GoalFields.RAY_RANGE){
       const direct=this.directGoal(u.x,u.y,goal,radius);
       if(direct){this.metrics.rayHits++;return direct}
     }
-    const grid=this.grid(radius),fixed=goal.radius===0,begun=performance.now(),known=fixed?grid.fields.size:grid.local.fields.size;
-    const point=grid.next(u.x,u.y,goal,fixed);
-    const built=(fixed?grid.fields.size:grid.local.fields.size)>known;
-    if(built){this.metrics[fixed?'fieldsBuilt':'localFields']++;if(fixed)this.metrics.fieldBuildMs+=performance.now()-begun}
+    const point=this.fieldsFor(radius).next(u.x,u.y,goal,goal.radius===0);
     if(!point)this.metrics.unreachable++;
     return point;
   }
   // Whether every strategic point can be reached from `from` by a unit this wide.
   connected(from,points,radius){
-    const grid=this.grid(radius),reached=grid.reachableFrom(from.x,from.y);
-    return points.every(p=>{const cell=grid.nearestOpen(grid.cellAt(p.x,p.y),4);return cell>=0&&reached[cell]===1});
+    return this.fieldsFor(radius).connected(from,points);
   }
 }
 
