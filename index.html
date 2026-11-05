@@ -82,6 +82,12 @@ PURPOSE
 - Core frame t는 게임의 step 이전 S[t]다. UI·AI 명령은 player-local sequence로 제출하며 확정 frame의 정렬된 입력만 게임 명령과 replay로 변환한다. Gameplay 시간은 Simulation Tick, scheduler와 지연 정책은 Runtime이다.
 - Nostr는 Discovery/Signaling만 사용하며 Gameplay는 raw RTCDataChannel의 바이너리로 전송한다. 개발자 소유 서버·TURN fallback은 사용하지 않는다. SDK는 gamekit.lock.json의 고정 source/dist 커밋·manifest 및 모듈 SHA-256으로 검증한 공통 gamekit 분리 모듈을 사용한다. setup은 정확한 불변 dist 커밋에서 QA용 bytes를 가져온다. 배포는 원본 ESM·정식 캠페인·원본 자원을 그대로 복사하며 브라우저가 고정 SDK bytes를 SHA-256으로 검증한다. source 출처도 같은 lock에서 읽는다. 로딩과 필수 API 확인 후 초기화하며 실패 시 오류를 표시한다. 다른 버전·CDN·내장 대체 Core fallback은 사용하지 않는다.
 
+6.4. ARTILLERY CONTACT AND DEPLOYMENT
+- 포탄은 권위 포구 위치·높이에서 출발하며 비행 높이 공식은 판정과 표현이 공유한다. 낮은 비행의 직격은 상대 이동과 높이 구간을 포함한 swept contact로 판정하고, 공중 유닛의 발밑과 머리 위를 지나는 포탄은 충돌하지 않는다. 고지면의 정확 경계에서 낮은 탄은 실제 접점 고도로 충돌하고 높은 탄은 통과한다.
+- 착탄 충격의 수평 외력·공중 높이·회복 시간과 병력 방출 대기열은 simulation 권위 상태로 저장·복원한다. 피격자는 밀려난 실제 위치에서 충돌·다음 행동을 판정하며, 회복 중에는 자발 이동·공격을 시작하지 않는다. 사망자는 즉시 전투·군중 충돌에서 제외하되 진행 중 충격 궤적은 마친다.
+- 묶음은 착지 후 짧은 시간차로 병사를 방출한다. 공간이 막혔으면 안전한 자리가 생길 때까지 남은 병력을 보존하며 유실·관통 생성하지 않는다. 아군 피해·폭발 밀림은 없다.
+- 묶음 압축·포장 파편·병사의 회전·기립은 표현 계층이며 판정을 되먹이지 않는다. 접촉 효과와 피해 숫자는 사건 tick을 보간 표시 시각으로 매핑한다.
+
 7. ONE MEANING, ONE COMMON MECHANIC
 - projectile, continuous damage, targeting, VFX 등 같은 의미의 기능은 하나의 공통 계약을 사용한다.
 - 유닛마다 유사 메커니즘을 별도 구현하지 않는다.
@@ -547,7 +553,7 @@ END OF DEVELOPMENT CONTRACT
 <div id="launchHelpSheet" class="launch-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="launchHelpTitle">
   <div class="launch-sheet-panel">
     <h2 id="launchHelpTitle">하는 법</h2>
-    <p>① 아래 카드를 골라요.<br>② 전장을 길게 누를수록 멀리 날아가요. 흰 원이 착지 범위예요. 너무 오래 누르면 대포가 과열돼요.<br>③ 손을 떼면 발사! 착지한 병사는 알아서 적 본진으로 진격해요.<br>④ 자원은 계속 차올라요. 비용이 모자란 카드는 회색이에요.</p>
+    <p>① 아래 카드를 골라요.<br>② 전장을 길게 누를수록 멀리 날아가요. 흰 원이 착지 범위예요. 너무 오래 누르면 대포가 과열돼요.<br>③ 손을 떼면 발사! 착탄 충격으로 적을 밀어내고, 묶음에서 나온 병사들이 일어나 적 본진으로 진격해요.<br>④ 자원은 계속 차올라요. 비용이 모자란 카드는 회색이에요.</p>
     <button class="launch-btn primary" type="button" data-sheet-close>알겠어요</button>
   </div>
 </div>

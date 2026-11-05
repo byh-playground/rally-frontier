@@ -4,6 +4,8 @@ import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './en
 import { StateContract, StateValue } from './components.js';
 import { RallyStateCodec } from '../session/game-session.js';
 import { LaunchRules } from './launch-rules.js';
+import { LaunchImpact } from './launch-impact.js';
+import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.js';
 import { CloneUtil, HashUtil, MapGeneration } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
@@ -30,7 +32,7 @@ class SimulationRuntimeState{
     for(const key of ["collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther"])sim[key]=new Int32Array(0);
     sim.collisionCnt=new Uint16Array(0);
     for(const key of ["collisionBestT","collisionBestNx","collisionBestNy"])sim[key]=new Float64Array(0);
-    sim.collisionStartCount=0;
+    sim.collisionStartCount=0;sim.collisionMaxStepMovementFP=0;
     sim.hardFixSapAxis="x";
     for(const key of ["hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs"])sim[key]=[];
     sim.hardFixSapSideHeads=new Int32Array([-1,-1,-1]);sim.hardFixSapSideNext=new Int32Array(0);sim.hardFixSapSidePrev=new Int32Array(0);sim.hardFixSapSideHeaps=[[],[],[]];
@@ -76,7 +78,7 @@ class StrategySim{
   // their existing StateContracts and serialization.
   static stateContract=new StateContract({}, {presentation:["events","perfStats","balanceStats","_perfCollect"],derived:[
     "chargedHeldIds","world","tps","disposed","runtimeEpoch","commandReceipts",
-    "collisionGrid","collisionGridMaxRadius","collisionSweepGrid","collisionSweepEndCell","collisionSweepOut","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCandidateBuffer","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount",
+    "collisionGrid","collisionGridMaxRadius","collisionSweepGrid","collisionSweepEndCell","collisionSweepOut","collisionMotion","collisionRadii","collisionMasses","collisionDx","collisionDy","collisionStartFx","collisionStartFy","collisionSegmentFx","collisionSegmentFy","collisionNextFx","collisionNextFy","collisionBestOther","collisionCandidateBuffer","collisionCnt","collisionBestT","collisionBestNx","collisionBestNy","collisionStartCount","collisionMaxStepMovementFP",
     "hardFixSapAxis","hardFixSapOrder","hardFixSapEligible","hardFixSapWorkOrder","hardFixSapSweepActive","hardFixSapPairs","hardFixSapSideHeads","hardFixSapSideNext","hardFixSapSidePrev","hardFixSapSideHeaps","hardFixSapMarks","hardFixSapEpoch",
     "unitSpatial","buildingSpatial","buildingSpatialDirty","buildingSpatialQueryBuffers","buildingSpatialQueryCursor","maxBuildingRadius","unitById","buildingById","unitIndexById","runtimeIndexTick","spatialQueryBuffers","spatialQueryCursor","spatialQueryScopeBuffers","spatialQueryScopeDepth","maxUnitRadius","targetLevelMemo",
     "visionFields","navigation"
@@ -85,7 +87,7 @@ class StrategySim{
   constructor(seed,rules=GameRuleDefinition.current){
     this.seed=seed>>>0;this.rules=rules||GameRuleDefinition.current;this.tps=RangeUtil.clamp(Math.round(Number(this.rules?.simulation?.tps)||SIM_TPS),10,30);this.mapDescriptor=MapGeneration.generateMapDescriptor({rules:this.rules,seed:this.seed,roundNumber:this.rules?.roundNumber||1});StateValue.freeze(this.mapDescriptor);this.world=WorldContext.fromMap(this.mapDescriptor);this.tick=0;this.seq=0;this.units=[];this.buildings=[];this.constructionOrders=[];this.navigationAdmissions=[];this.projectiles=[];this.events=[];this.scheduled=new Map();
     this.wallet=[0,1].map(()=>LaunchRules.startingWallet);
-    this.launchIncomeCarry=[0,0];
+    this.launchIncomeCarry=[0,0];this.launchDeployments=[];
     // Per-side match totals for the result screen: shots fired, grains sent, enemy units killed.
     this.launchStats={launches:[0,0],sent:[0,0],kills:[0,0]};
     this.capturePoints=this.mapDescriptor.capturePoints.map(p=>({
@@ -170,6 +172,7 @@ class StrategySim{
   syncUnitSpatial(u){
     if(this.runtimeIndexTick!==this.tick||!u)return;
     const index=this.unitIndexById.get(u.id);if(index==null)return;
+    if(index<this.collisionStartCount)this.collisionMaxStepMovementFP=Math.max(this.collisionMaxStepMovementFP,Math.hypot(u.fx-this.collisionStartFx[index],u.fy-this.collisionStartFy[index]));
     if(u.alive)this.unitSpatial.move(index,u.x,u.y,StrategySim.spatialGroup(u.side));
     else if(this.unitSpatial.keyOf(index)!==this.unitSpatial.keyAt(u.x,u.y))this.unitSpatial.remove(index);
   }
@@ -219,7 +222,7 @@ class StrategySim{
       this.collisionStartFx[i]=u?.fx??Math.round((u?.x||0)*FP);
       this.collisionStartFy[i]=u?.fy??Math.round((u?.y||0)*FP);
     }
-    this.collisionStartCount=n;this.navigation.motion.beginStep();
+    this.collisionStartCount=n;this.collisionMaxStepMovementFP=0;this.navigation.motion.beginStep();
   }
 
   // Launch shots arrive with their damage already resolved; armor and terrain apply on impact.
@@ -474,7 +477,7 @@ class StrategySim{
     return true;
   }
 
-  findOpenSpawnAround(anchor,type,{baseRadius=null,maxRadius=null,angleSlots=12,radialStep=8,seedKey="spawn",reserved=[]}={}){
+  findOpenSpawnAround(anchor,type,{baseRadius=null,maxRadius=null,angleSlots=12,radialStep=8,seedKey="spawn",reserved=[],maxElevation=Infinity,canReach=null}={}){
     if(!anchor)return null;
     const ur=this.unitRadius(type),ar=anchor.type?this.unitRadius(anchor.type):0;
     const start=Math.max(ur+ar+SPAWN_UNIT_GAP,Number(baseRadius)||0);
@@ -483,7 +486,7 @@ class StrategySim{
     for(let rr=start;rr<=limit+0.001;rr+=step){
       for(let k=0;k<slots;k++){
         const a=phase+k*Math.PI*2/slots,x=RangeUtil.clamp(anchor.x+Math.cos(a)*rr,ur+8,this.world.width-ur-8),y=RangeUtil.clamp(anchor.y+Math.sin(a)*rr,ur+8,this.world.height-ur-8);
-        if(this.pointClearForUnit(type,x,y,null,reserved))return{x,y};
+        if((maxElevation===Infinity||this.world.terrain.surfaces.heightAt(x,y)<=maxElevation)&&this.pointClearForUnit(type,x,y,null,reserved)&&(!canReach||canReach(x,y)))return{x,y};
       }
     }
     return null;
@@ -518,8 +521,9 @@ class StrategySim{
   }
   fireLaunchShell({side,cannonId,type,mode,shot,shots,power,holdMs,x,y,count,impact,splash}){
     const cannon=this.buildingById.get(cannonId)||this.buildings.find(b=>b.id===cannonId),grain=LaunchRules.grain(type),id="p"+(++this.seq);
+    const dx=x-cannon.x,dy=y-cannon.y,length=Math.hypot(dx,dy)||1;
     this.spawnProjectile({
-      id,owner:cannonId,side,type,x:cannon.x,y:cannon.y,target:null,isBuilding:false,
+      id,owner:cannonId,side,type,x:cannon.x+dx/length*LaunchImpactRules.muzzleReach,y:cannon.y+dy/length*LaunchImpactRules.muzzleReach,target:null,isBuilding:false,
       trajectoryPolicy:"lockedPoint",lockedAimX:x,lockedAimY:y,speed:grain.speed,
       damage:impact,splash,splashUnitDamage:impact,splashBuildingDamage:impact,
       damageClass:"area",sourceDamageResolved:true,payload:{type,count}
@@ -534,32 +538,7 @@ class StrategySim{
       while(cannon.salvo.length&&cannon.salvo[0].tick<=this.tick)this.fireLaunchShell(cannon.salvo.shift());
     }
   }
-  landLaunchPayload(p,x,y){
-    const {type,count}=p.payload,reserved=[];
-    let hold=null,best=LaunchRules.captureHoldRadius,landed=0;
-    for(const cp of this.capturePoints){if(cp.owner!=null||!cp.enabled)continue;const d=Math.hypot(cp.x-x,cp.y-y);if(d<best){best=d;hold=cp}}
-    const grain=LaunchRules.grain(type),anchor={x,y};
-    // The line opens toward the enemy base, centred on the landing point.
-    const enemy=this.buildings.find(b=>b.side===1-p.side&&b.alive!==false&&BuildingDefinition.get(b.type)?.isMainBase)||{x,y:y-1};
-    const ex=enemy.x-x,ey=enemy.y-y,el=Math.hypot(ex,ey)||1,dirX=ex/el,dirY=ey/el;
-    for(let i=0;i<count;i++){
-      let seed=anchor,opts={baseRadius:0,maxRadius:grain.splash+60,angleSlots:12,radialStep:10};
-      if(grain.land==="scatter"){
-        const a=HashUtil.hash(`${p.id}|a|${i}`)%3600/3600*Math.PI*2,rr=grain.spread*Math.sqrt((HashUtil.hash(`${p.id}|r|${i}`)%1000)/1000);
-        seed={x:Math.round(x+Math.cos(a)*rr),y:Math.round(y+Math.sin(a)*rr)};opts={baseRadius:0,maxRadius:60,angleSlots:8,radialStep:10};
-      }else if(grain.land==="line"){
-        const k=(i-(count-1)/2)*grain.spacing;
-        seed={x:Math.round(x+dirX*k),y:Math.round(y+dirY*k)};opts={baseRadius:0,maxRadius:50,angleSlots:8,radialStep:10};
-      }
-      const spot=this.findOpenSpawnAround(seed,type,{...opts,seedKey:`${p.id}|${i}`,reserved})||seed;
-      let u=null;try{u=this.spawnUnit(p.side,type,spot.x,spot.y)}catch{continue}
-      reserved.push({x:u.x,y:u.y,type});
-      if(hold)u.launchHoldPointId=hold.id;
-      if(grain.land==="rush")this.setTimedModifier(u,"launchRush",{durationTicks:this.msTicks(grain.rushMs),movePct:grain.rushPct,attackSpeedPct:grain.rushPct});
-      landed++;
-    }
-    this.events.push({type:"launchLand",side:p.side,unit:type,count:landed,x,y,holdPointId:hold?.id||null});
-  }
+  landLaunchPayload(p,x,y,impactHeightFP=null){LaunchImpact.enqueue(this,p,x,y,impactHeightFP)}
   updateLaunchEconomy(){
     // Integer carry keeps income per second independent of tps.
     for(const side of [0,1]){
@@ -584,7 +563,7 @@ class StrategySim{
     let tx=goal.x,ty=goal.y;
     // Post-attack recovery is movement-only: attacks/cooldowns/wind-ups continue
     // normally while voluntary locomotion is temporarily locked.
-    if(u.combat.moveRecoveryActive(this))return false;
+    if(u.impactMotion||u.combat.moveRecoveryActive(this))return false;
 
     const waypoint=this.navigation.nextPoint(u,goal);
     if(!waypoint||Math.hypot(waypoint.x-u.x,waypoint.y-u.y)<.001)return false;
@@ -815,15 +794,16 @@ class StrategySim{
   }
   // strikePeak > 1 makes the blast hit harder toward its centre (1 at the edge, strikePeak at the middle).
   // Returns how many enemies were hit and the strongest multiplier any of them took.
-  applyAreaDamage({sourceSide,sourceType,sourceEntityId=null,x,y,radius,damage,damageClass="area",suppressImpactFx=false,strikePeak=1}={}){
+  applyAreaDamage({sourceSide,sourceType,sourceEntityId=null,x,y,radius,damage,damageClass="area",suppressImpactFx=false,strikePeak=1,impactHeightFP=undefined}={}){
     const result={hits:0,peak:1};
     const scale=d=>strikePeak>1?1+(strikePeak-1)*(1-RangeUtil.clamp(d/Math.max(1,radius),0,1))**2:1;
     this.withNearbyUnits(x,y,radius+this.maxUnitRadius,indices=>{
       for(const idx of indices){
         const e=this.units[idx];
         if(!e?.alive||e.side===sourceSide)continue;
-        const d=Math.hypot(e.x-x,e.y-y);
-        if(d>radius+this.unitRadius(e.type))continue;
+        const body=impactHeightFP===undefined?null:LaunchImpact.distanceToBody(this,e,x,y,impactHeightFP);
+        const d=body?body.falloffDistance:Math.hypot(e.x-x,e.y-y);
+        if(body?body.surfaceDistance>radius:d>radius+this.unitRadius(e.type))continue;
         const mult=scale(d);result.hits++;result.peak=Math.max(result.peak,mult);
         this.applyDamage(sourceSide,sourceType,e,false,Math.max(1,Math.floor(damage*mult)),sourceEntityId,{damageClass,suppressImpactFx,sourceDamageResolved:true});
       }
@@ -889,6 +869,7 @@ class StrategySim{
   updateCombat(u,vision){
     const d=UnitDefinition.get(u.type);
     this.tickAttackTimers(u);
+    if(u.impactMotion)return null;
 
     let found=null;
     if((u.combat.attackWindupUntil||0)>0){
@@ -948,31 +929,35 @@ class StrategySim{
     this.commitAttackTiming(u,d,cooldown);
     return this.applyDamage(u.side,u.type,t,found.isBuilding,Math.floor(d.atk),u.id,{damageClass:UnitDefinition.damageClass(u.type)});
   }
-  // Every projectile is a launched payload: it flies over walls to a locked point,
-  // splashes on landing and drops its grains there.
+  // The shared height curve clears high obstacles; low swept contacts retire a shot early.
+  // Impact damage and queued deployment use that actual contact point.
   updateProjectiles(){
     for(const p of this.projectiles){
       if(!p.alive)continue;
-      const aimX=Number(p.lockedAimX)||p.x,aimY=Number(p.lockedAimY)||p.y;
+      let aimX=Number(p.lockedAimX)||p.x,aimY=Number(p.lockedAimY)||p.y;
       const dx=aimX-p.x,dy=aimY-p.y,dist=Math.hypot(dx,dy)||1,step=p.speed/this.tps;
-      if(dist<20){
+      const travel=Math.min(step,dist),toX=p.x+dx/dist*travel,toY=p.y+dy/dist*travel;
+      const contact=LaunchImpact.firstContact(this,p,toX,toY);
+      if(contact){aimX=contact.x;aimY=contact.y;}
+      if(dist<=Math.max(20,step)||contact){
         p.alive=false;
         this.events.push({type:"projectileRetire",projectileId:p.id,x:aimX,y:aimY,side:p.side,sourceType:p.type});
-        if(p.payload)this.landLaunchPayload(p,aimX,aimY);
+        const impactHeightFP=contact?.impactHeightFP??Math.round(this.world.terrain.surfaces.heightAt(aimX,aimY)*FP);
+        LaunchImpact.blast(this,p,aimX,aimY,Math.max(1,p.splash||1),impactHeightFP);
+        if(p.payload)this.landLaunchPayload(p,aimX,aimY,impactHeightFP);
         const radius=Math.max(1,p.splash||1);
-        const blast=this.applyAreaDamage({sourceSide:p.side,sourceType:p.type,sourceEntityId:p.owner||null,x:aimX,y:aimY,radius,damage:p.splashUnitDamage??p.damage,damageClass:p.damageClass||"area",suppressImpactFx:true,strikePeak:LaunchRules.centerPeak});
+        const blast=this.applyAreaDamage({sourceSide:p.side,sourceType:p.type,sourceEntityId:p.owner||null,x:aimX,y:aimY,radius,damage:p.splashUnitDamage??p.damage,damageClass:p.damageClass||"area",suppressImpactFx:true,strikePeak:LaunchRules.centerPeak,impactHeightFP});
         for(const b of this.buildings){
           if(!b||b.alive===false||b.side===p.side)continue;
-          const br=BuildingDefinition.get(b.type)?.size||30,d=Math.hypot(b.x-aimX,b.y-aimY);
-          if(d>radius+br)continue;
-          const mult=LaunchRules.strike(Math.max(0,d-br),radius);blast.hits++;blast.peak=Math.max(blast.peak,mult);
+          const body=LaunchImpact.distanceToBody(this,b,aimX,aimY,impactHeightFP,true);
+          if(body.surfaceDistance>radius)continue;
+          const mult=LaunchRules.strike(body.falloffDistance,radius);blast.hits++;blast.peak=Math.max(blast.peak,mult);
           this.applyDamage(p.side,p.type,b,true,Math.max(1,Math.floor((p.splashBuildingDamage??p.damage)*mult)),p.owner||null,{damageClass:p.damageClass||"area",sourceDamageResolved:true,suppressImpactFx:true});
         }
-        this.events.push({type:"launchImpact",side:p.side,unit:p.type,x:aimX,y:aimY,radius,hits:blast.hits,peak:Math.round(blast.peak*100)/100});
+        this.events.push({type:"launchImpact",side:p.side,unit:p.type,x:aimX,y:aimY,radius,hits:blast.hits,peak:Math.round(blast.peak*100)/100,projectileId:p.id,directHitId:contact?.id||null,impactHeightFP,dirX:(p.lockedAimX-p.launchX)/(Math.hypot(p.lockedAimX-p.launchX,p.lockedAimY-p.launchY)||1),dirY:(p.lockedAimY-p.launchY)/(Math.hypot(p.lockedAimX-p.launchX,p.lockedAimY-p.launchY)||1)});
         continue;
       }
-      const travel=Math.min(step,dist);
-      p.x+=dx/dist*travel;p.y+=dy/dist*travel;
+      p.x=toX;p.y=toY;
     }
     this.projectiles=this.projectiles.filter(p=>p.alive);
     return null;
@@ -1460,7 +1445,7 @@ class StrategySim{
     // Keeping every corpse forever makes target scans, snapshots and checksums grow without bound.
     if(this.tick%this.msTicks(DEAD_ENTITY_CLEANUP_MS)!==0)return;
 
-    this.units=this.units.filter(u=>u.alive);
+    this.units=this.units.filter(u=>u.alive||u.impactMotion);
 
     // Destroyed ordinary buildings no longer participate in any simulation.
     // Base death ends the match before this matters; outpost capture state is released on death.
@@ -1519,6 +1504,7 @@ class StrategySim{
     this.captureCollisionStepStarts();
 
     mark=profile?now():0;
+    LaunchImpact.update(this);
     const vision=[this.visionSources(0),this.visionSources(1)];
     const visionMs=profile?now()-mark:0;
 
@@ -1531,6 +1517,7 @@ class StrategySim{
 
     mark=profile?now():0;
     winner=this.updateProjectiles()||winner;
+    LaunchImpact.deploy(this);
     const projectileMs=profile?now()-mark:0;
 
     mark=profile?now():0;
@@ -1620,7 +1607,7 @@ class StrategySim{
     try{
       this.navigation?.sync();
       return ({
-        tick:this.tick,tps:this.tps,mapDescriptor:this.mapDescriptor,
+        tick:this.tick,tps:this.tps,mapDescriptor:this.mapDescriptor,launchDeployments:StateValue.copy(this.launchDeployments),
         wallet:this.wallet.slice(),launchStats:StateValue.copy(this.launchStats),flags:CloneUtil.clone(this.flags),capturePoints:CloneUtil.clone(this.capturePoints),
         units:this.units.map(u=>u.toState("view")),buildings:this.buildings.map(b=>b.toState()),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)
       });

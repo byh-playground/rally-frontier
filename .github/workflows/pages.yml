@@ -28,6 +28,10 @@ jobs:
         env:
           QA_BROWSER_CHANNEL: chromium
         run: npm run test:startup -- _site/index.html
+      - name: Verify artillery contact and deployment scenarios
+        env:
+          QA_BROWSER_CHANNEL: chromium
+        run: timeout 180 npm run test:impact -- _site/index.html
       - name: Publish bloom-game.json with the Nightly tag name
         if: hashFiles('_site/index.html') != ''
         run: |
