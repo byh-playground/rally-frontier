@@ -3256,7 +3256,7 @@ class ConnectionPresentation{
   for(const ticket of active.pendingNetcodeCommands.values())if(Number.isFinite(ticket.submittedAt))pendingCommandMs=Math.max(pendingCommandMs,commandNow-ticket.submittedAt);
   text('dbgPerfCommandPending',`${active.pendingNetcodeCommands.size}개 · ${fmtMs(pendingCommandMs)}`);
   const iceAge=stats.iceFetchedAt===null?null:performance.now()-stats.iceFetchedAt;
-  text('dbgPerfIceRtt',!active.transport?.pc?.getStats?'지원 안 됨':stats.iceError?'조회 실패':stats.iceRttMs===null?'ICE RTT 표본 없음':`${fmtMs(stats.iceRttMs)} · ${fmtMs(iceAge)} 전 조회`);
+  text('dbgPerfIceRtt',!active.transport?.room?.peerConnection?.getStats?'지원 안 됨':stats.iceError?'조회 실패':stats.iceRttMs===null?'ICE RTT 표본 없음':`${fmtMs(stats.iceRttMs)} · ${fmtMs(iceAge)} 전 조회`);
   text('dbgPerfEventLoop',timing(m?.timings.eventLoop)+(document.hidden?' · 백그라운드':''));
   text('dbgPerfLongTask',!m?.observer?'지원 안 됨':`${m.longTasks}회 · 최근 ${fmtMs(m.longTaskMs)} / 최대 ${fmtMs(m.maxLongTaskMs)}`);
   text('dbgPerfPulseGap',timing(t.pulseGap));text('dbgPerfPulse',timing(t.pulse));text('dbgPerfStateSave',timing(t.save));

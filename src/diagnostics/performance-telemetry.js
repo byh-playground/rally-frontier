@@ -35,19 +35,19 @@ class PerformanceTelemetry{
     clearInterval(m.timer);m.observer?.disconnect();this.runtimeMonitor=null;
   }
   static async sampleConnection(session){
-    const stats=session.performanceStats,pc=session.transport?.pc,now=performance.now();
+    const stats=session.performanceStats,pc=session.transport?.room?.peerConnection,now=performance.now();
     if(session.performanceIceConnection!==pc){session.performanceIceConnection=pc;stats.iceRttMs=null;stats.iceFetchedAt=null;stats.iceError=null;stats.iceRequestedAt=-1000}
     if(!pc?.getStats||stats.icePending||now-stats.iceRequestedAt<1000||session.disposed)return;
     stats.iceRequestedAt=now;stats.icePending=true;
     try{
       const report=await pc.getStats();
-      if(session.disposed||session.transport?.pc!==pc)return;
+      if(session.disposed||session.transport?.room?.peerConnection!==pc)return;
       let pair=null;
       for(const row of report.values())if(row.type==='transport'&&row.selectedCandidatePairId)pair=report.get(row.selectedCandidatePairId)||pair;
       if(!pair)for(const row of report.values())if(row.type==='candidate-pair'&&row.state==='succeeded'&&row.nominated){pair=row;break}
       stats.iceRttMs=Number.isFinite(pair?.currentRoundTripTime)?pair.currentRoundTripTime*1000:null;
       stats.iceFetchedAt=performance.now();stats.iceError=null;
-    }catch(error){if(!session.disposed&&session.transport?.pc===pc){stats.iceRttMs=null;stats.iceFetchedAt=performance.now();stats.iceError=String(error.message||error)}}
+    }catch(error){if(!session.disposed&&session.transport?.room?.peerConnection===pc){stats.iceRttMs=null;stats.iceFetchedAt=performance.now();stats.iceError=String(error.message||error)}}
     finally{stats.icePending=false}
   }
   static exportTimingTelemetry(){
