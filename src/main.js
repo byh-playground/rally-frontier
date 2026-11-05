@@ -582,7 +582,7 @@ class FogVisibilityGrid{
 
 class GLRenderer{
   static DEPTH_PROJECTION=Object.freeze({offset:.88,viewSpan:1.72,min:-.94,max:.94});
-  constructor(canvas){
+  constructor(canvas,{deferLoop=false}={}){
     this.canvas=canvas;
     // HAS-A immutable topology cache. Unit positions/state stay dynamic; only reusable
     // polygon/circle/petal topology is shared across every instance and frame.
@@ -695,8 +695,10 @@ class GLRenderer{
     this.frameShakeY=0;
     this.cameraShakePresentationMoved=false;
     this.loop=this.loop.bind(this);
-    requestAnimationFrame(this.loop);
+    this.loopStarted=false;
+    if(!deferLoop)this.startLoop();
   }
+  startLoop(){if(!this.loopStarted){this.loopStarted=true;requestAnimationFrame(this.loop)}}
   resize(){
     const dpr=Math.min(1.6,devicePixelRatio||1);
     const cssW=Math.max(1,this.canvas.clientWidth||this.canvas.parentElement?.clientWidth||360);
@@ -713,6 +715,40 @@ class GLRenderer{
       this.fxCanvas.height=h;
     }
 
+  }
+
+  prepareGameResources(){
+    if(this.gameResourceHolds)return;
+    const holds=[],actors=[],C=this.vectorContext,matrix=[1,0,0,1,0,0];
+    try{
+      this.resize();
+      this.grainFaces.prepare();
+      if(!C.beginFrame())throw new Error("그래픽 장치를 준비할 수 없습니다.");
+      for(const [id,source] of Object.entries(globalThis.RallyVectorAssets)){
+        holds.push(RallyGamekit.holdVectorAsset(C,source));
+        const actor=RallyGamekit.createVectorActor(C,source,{clip:"idle",startedAtMs:0});actors.push(actor);
+        actor.seek(0);actor.preparePose();C.preparePoses();
+        for(const depthWrite of [false,true]){
+          C.drawVectorActor(actor,{matrix,depthTest:true,depthWrite});C.flush("resource-preparation");
+        }
+        if(LaunchRules.grain(id)){
+          this.grainFaces.draw(source,actor,"neutral",matrix);C.flush("resource-face-preparation");
+        }
+      }
+      for(const own of [true,false])for(const dy of [-1,1])for(const fireAgeMs of [Infinity,0]){
+        this.buildingArt.draw({id:"resource-preparation"},{x:0,y:0,sc:1,aim:{dx:1,dy},own,fireAgeMs});
+      }
+      this.buildingArt.prune([]);
+      C.endFrame();
+      this.gl.finish();
+      if(this.device.state!=="ready"||this.gl.isContextLost())throw new Error("그래픽 장치 연결이 끊겼습니다.");
+      this.gameResourceHolds=holds;
+    }catch(error){
+      if(C.active)C.endFrame();
+      this.buildingArt.prune([]);
+      for(const hold of holds)hold.release();
+      throw error;
+    }finally{for(const actor of actors)actor.dispose()}
   }
   baseSc(){return Math.min(this.canvas.width/VIEW_W,this.canvas.height/VIEW_H)}
   sc(){return this.baseSc()*(this.replayZoom||1)}
@@ -3553,8 +3589,9 @@ class ReplayPresentation{
   if(!ActiveViewState.renderer){
     ActiveViewState.renderer=new GLRenderer(UiRegistry.refs.canvas);
     ActiveViewState.renderer.cameraLeft=0;ActiveViewState.renderer.cameraTop=(ActiveViewState.renderer?.world||WorldContext.standard).height-VIEW_H;
-    ActiveViewState.minimap=new MiniMap(UiRegistry.refs.minimapCanvas);
   }
+  if(!ActiveViewState.minimap)ActiveViewState.minimap=new MiniMap(UiRegistry.refs.minimapCanvas);
+  ActiveViewState.renderer.startLoop();
   ReplayPresentation.applyReplayPerspective();
   ActiveViewState.renderer.selectedBuildingId=null;
   ActiveViewState.renderer.setSnapshot(s,{liveTargets:false,snapTargets:snapTargets||ActiveViewState.renderer.liveRenderTargets||s.tick<(ActiveViewState.renderer.snapshot?.tick??0)});ActiveViewState.minimap?.set(ActiveViewState.renderer,s);
@@ -4294,11 +4331,20 @@ class AppLifecycle{
     },180);
   });
 }
-  static runBootAndStartApp(){
-  // No version.json fetch, service-worker registration, or external boot gate.
-  // The existing binary Nostr signaling / raw WebRTC connection path remains unchanged.
-  AppLifecycle.finishBootGate();
-  NetworkModuleLoader.ensureReady();
+  static async runBootAndStartApp(){
+  if(AppLifecycle.bootGateFinished||AppLifecycle.bootPreparing)return;
+  AppLifecycle.bootPreparing=true;
+  AppLifecycle.setBootState("게임 준비 중","그래픽 리소스를 준비하고 있습니다.",80,false);
+  try{
+    await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
+    if(!ActiveViewState.renderer)ActiveViewState.renderer=new GLRenderer(UiRegistry.refs.canvas,{deferLoop:true});
+    ActiveViewState.renderer.prepareGameResources();
+    AppLifecycle.finishBootGate();
+    NetworkModuleLoader.ensureReady();
+  }catch(error){
+    AppLifecycle.setBootState("그래픽 준비 실패",String(error?.message||error),80,true);
+    console.error(error);
+  }finally{AppLifecycle.bootPreparing=false}
 }
   static stopBackgroundTicker(){
   const worker=AppLifecycle.backgroundTickWorker;
@@ -4652,6 +4698,7 @@ class BattlePresentation{
   ActiveViewState.renderer.replayVisionMode=null;
   ActiveViewState.renderer.replayObserverAll=false;
   if(!ActiveViewState.minimap)ActiveViewState.minimap=new MiniMap(UiRegistry.refs.minimapCanvas);
+  ActiveViewState.renderer.startLoop();
   ActiveViewState.renderer.setSnapshot(s,{liveTargets:true,snapTargets:rendererRoleChanged});
   ActiveViewState.minimap.set(ActiveViewState.renderer,s);
   ActiveViewState.minimap.draw();
