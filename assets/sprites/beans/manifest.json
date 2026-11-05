@@ -1,0 +1,61 @@
+{
+    "schemaVersion": 1,
+    "assets": {
+        "face-angry.png": {
+            "bytes": 36022,
+            "sha256": "5d51995af21a917d92591032d9f8d3a531e5ea9c2cfbf4add1c246d4707260bb"
+        },
+        "face-happy.png": {
+            "bytes": 36440,
+            "sha256": "dd3cf16454a2e2a10b40e9e433c689abb825b00f4059c2b29c183ecb3de48ede"
+        },
+        "face-hurt.png": {
+            "bytes": 30838,
+            "sha256": "709b04f20570671196e411bc88b6784cbfe2047d3f193fa2a57e37e77ed9983a"
+        },
+        "face-neutral.png": {
+            "bytes": 29642,
+            "sha256": "8688c858078f141598e4883a1d880693e8f787345393004f025932ff2f8fce31"
+        },
+        "red-arm-l.png": {
+            "bytes": 13955,
+            "sha256": "2e7a8435c34572bb7497d82dbb7990eac2e3109db280bc3aa98bb671104b5457"
+        },
+        "red-arm-r.png": {
+            "bytes": 13781,
+            "sha256": "6ce66810e2346c953d12124f6901c837d8d5864e7e5091f365d2ffcf8cc1fd9c"
+        },
+        "red-body.png": {
+            "bytes": 89217,
+            "sha256": "03f4b11329f8fcd94b55c452aacb49fc5351f6b6e39f70e6082138d96c213f6e"
+        },
+        "red-leg-l.png": {
+            "bytes": 12144,
+            "sha256": "60dc6792b7c26f4efe3b858621a8fb0bd7c3007a6b67dfd7db44b9d99ed09099"
+        },
+        "red-leg-r.png": {
+            "bytes": 12229,
+            "sha256": "c5c8eff958e84da8b8db8d09d78555ab2815fba11098e28e46826bf70e961951"
+        },
+        "soy-arm-l.png": {
+            "bytes": 13720,
+            "sha256": "1c7d45066d32f0a72c0a89a648a204457ca2a90771c21ddc740e97285566c7b0"
+        },
+        "soy-arm-r.png": {
+            "bytes": 13897,
+            "sha256": "44cd0e8db47b030391c3f2b9d11197490df4bb202d9c89e6d13efc157d7f86d0"
+        },
+        "soy-body.png": {
+            "bytes": 152040,
+            "sha256": "0b2594830fdba565ce18968afca570f97008cb738b95e40b8986a3c3447f41bb"
+        },
+        "soy-leg-l.png": {
+            "bytes": 11817,
+            "sha256": "35f8ac38d4ac9a4aab2030e03e663e4e3163a87cbf01eb7693524aad4d1e2b1a"
+        },
+        "soy-leg-r.png": {
+            "bytes": 11889,
+            "sha256": "80139f07edf2bc7381e0bcebae0ea768ba9e69d7bf219d7b1f9e1ed30a74d27d"
+        }
+    }
+}

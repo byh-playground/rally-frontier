@@ -1,5 +1,6 @@
 import { RallyGamekit } from '../core/gamekit.js';
 import { riceSpritePortrait } from '../render/rice-sprite.js';
+import { beanSpritePortrait } from '../render/bean-sprite.js';
 
 const { drawFacePaths } = RallyGamekit;
 
@@ -16,6 +17,8 @@ export function grainPortrait(type, compiled, width = 160) {
 
 async function renderPortrait(type, compiled, width) {
     if (type === 'rice') return riceSpritePortrait(globalThis.RiceSpriteCanvas, width);
+    if (globalThis.BeanSpriteCanvases?.[type])
+        return beanSpritePortrait(globalThis.BeanSpriteCanvases[type], type, width);
     const [VX, VY, VW, VH] = compiled.viewBox,
         SCALE = width / VW,
         BODY = new Image();
