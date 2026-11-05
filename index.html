@@ -3,7 +3,7 @@
 <head>
 <!--
 ================================================================================
-RALLY FRONTIER — DEVELOPMENT CONTRACT
+쌀콩팡! / RICE, BEANS & BOOM! — DEVELOPMENT CONTRACT
 ================================================================================
 
 공통 정책은 최신 https://raw.githubusercontent.com/byh-playground/bloom-reference/main/AGENTS.md
@@ -116,14 +116,21 @@ END OF DEVELOPMENT CONTRACT
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#245fd6">
-<meta name="application-name" content="RALLY FRONTIER">
+<meta name="application-name" content="쌀콩팡!">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="RALLY FRONTIER">
-<meta name="rally-frontier-version" content="">
-<meta name="rally-frontier-build" content="">
-<meta name="rally-frontier-updated-at" content="">
-<title>RALLY FRONTIER</title>
+<meta name="apple-mobile-web-app-title" content="쌀콩팡!">
+<meta name="ssalkongpang-version" content="">
+<meta name="ssalkongpang-build" content="">
+<meta name="ssalkongpang-updated-at" content="">
+<meta property="og:title" content="쌀콩팡! | Rice, Beans &amp; Boom!">
+<meta property="og:description" content="쌀·콩·팥 병사를 대포로 쏘아 거점을 차지하는 실시간 전략 게임">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://byh-playground.github.io/rally-frontier/assets/ssalkongpang-thumbnail.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="쌀콩팡! | Rice, Beans &amp; Boom!">
+<meta name="twitter:image" content="https://byh-playground.github.io/rally-frontier/assets/ssalkongpang-thumbnail.png">
+<title>쌀콩팡! | Rice, Beans &amp; Boom!</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="apple-touch-icon" href="./icons/rally-180.png">
 
@@ -147,7 +154,7 @@ END OF DEVELOPMENT CONTRACT
 <div id="bootGate" class="boot-gate" role="status" aria-live="polite" aria-busy="true">
   <div class="boot-card">
     <div class="boot-emblem" aria-hidden="true"><span></span></div>
-    <div class="boot-kicker">RALLY FRONTIER</div>
+    <div class="boot-kicker">쌀콩팡!</div>
     <div id="bootTitle" class="boot-title">게임 준비 중</div>
     <div id="bootStatus" class="boot-status">게임을 준비합니다.</div>
     <div class="boot-progress"><span id="bootProgressBar"></span></div>
@@ -162,7 +169,7 @@ END OF DEVELOPMENT CONTRACT
     <div class="install-guide-head">
       <div>
         <div class="small">ANDROID · CHROME</div>
-        <div id="installGuideTitle" class="install-guide-title">RALLY FRONTIER 앱 설치</div>
+        <div id="installGuideTitle" class="install-guide-title">쌀콩팡! 앱 설치</div>
       </div>
       <button id="installGuideCloseBtn" class="drawer-close" type="button" aria-label="설치 안내 닫기">닫기</button>
     </div>
@@ -180,14 +187,14 @@ END OF DEVELOPMENT CONTRACT
         <b>Chrome 우측 상단의 ⋮ 메뉴를 누릅니다.</b>
       </li>
       <li>
-        <b>「앱 설치」 또는 「RALLY FRONTIER 설치」를 누릅니다.</b>
+        <b>「앱 설치」 또는 「쌀콩팡! 설치」를 누릅니다.</b>
         <small>「홈 화면에 추가」만 보이고 브라우저 링크 아이콘만 생기면 실제 PWA 설치가 아닐 수 있습니다.</small>
       </li>
       <li>
         <b>설치 확인 창에서 「설치」를 누릅니다.</b>
       </li>
       <li>
-        <b>홈 화면의 RALLY 아이콘으로 실행합니다.</b>
+        <b>홈 화면의 쌀콩팡! 아이콘으로 실행합니다.</b>
         <small>주소창 없이 독립 앱 화면으로 열리면 정상 설치된 것입니다.</small>
       </li>
     </ol>
@@ -324,7 +331,7 @@ END OF DEVELOPMENT CONTRACT
   <section id="lobby" class="title-screen launch-title">
     <button id="titleHelpBtn" class="launch-icon-btn" type="button" aria-label="하는 법">?</button>
     <div class="launch-hero">
-      <h1 class="game-title">RALLY<br><span class="frontier-accent">FRONTIER</span></h1>
+      <h1 class="game-title">쌀콩<span class="frontier-accent">팡!</span><span class="game-title-en">Rice, Beans &amp; Boom!</span></h1>
       <p class="launch-tagline">곡식 병사를 대포로 쏘아 적 본진을 무너뜨려라</p>
       <div id="titleGrains" class="launch-grains" aria-hidden="true"></div>
     </div>
@@ -545,11 +552,11 @@ END OF DEVELOPMENT CONTRACT
     if(/iPhone|iPad|iPod/.test(navigator.userAgent)||navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1){
       document.querySelector("#installGuideModal .small").textContent="iOS · Safari";
       document.querySelector(".install-guide-lead").textContent="Safari에서 공유 버튼을 누른 뒤 홈 화면에 추가를 선택하세요.";
-      document.querySelector(".install-guide-steps").innerHTML="<li><b>Safari에서 현재 페이지를 엽니다.</b></li><li><b>공유 → 홈 화면에 추가 → 추가를 누릅니다.</b></li><li><b>홈 화면의 RALLY 아이콘으로 실행합니다.</b></li>";
+      document.querySelector(".install-guide-steps").innerHTML="<li><b>Safari에서 현재 페이지를 엽니다.</b></li><li><b>공유 → 홈 화면에 추가 → 추가를 누릅니다.</b></li><li><b>홈 화면의 쌀콩팡! 아이콘으로 실행합니다.</b></li>";
     }else if(!/Android/.test(navigator.userAgent)){
       document.querySelector("#installGuideModal .small").textContent="Chrome · Edge";
       document.querySelector(".install-guide-lead").textContent="주소창의 설치 아이콘 또는 브라우저 메뉴에서 앱 설치를 선택하세요.";
-      document.querySelector(".install-guide-steps").innerHTML="<li><b>Chrome 또는 Edge에서 현재 게임 페이지를 엽니다.</b></li><li><b>주소창의 설치 아이콘 또는 메뉴에서 앱 설치를 선택합니다.</b></li><li><b>설치된 RALLY 앱으로 실행합니다.</b></li>";
+      document.querySelector(".install-guide-steps").innerHTML="<li><b>Chrome 또는 Edge에서 현재 게임 페이지를 엽니다.</b></li><li><b>주소창의 설치 아이콘 또는 메뉴에서 앱 설치를 선택합니다.</b></li><li><b>설치된 쌀콩팡! 앱으로 실행합니다.</b></li>";
     }
   };
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",bind,{once:true});else bind();
@@ -599,7 +606,7 @@ END OF DEVELOPMENT CONTRACT
   window.addEventListener("error",e=>{
     state.sources.windowError++;
     present({
-      kind:"RALLY_FRONTIER_WINDOW_ERROR",
+      kind:"SSALKONGPANG_WINDOW_ERROR",
       build:document.documentElement.dataset.build||null,
       at:new Date().toISOString(),
       message:String(e?.message||e?.error?.message||"window error"),
@@ -611,7 +618,7 @@ END OF DEVELOPMENT CONTRACT
     state.sources.unhandledRejection++;
     const reason=e?.reason;
     present({
-      kind:"RALLY_FRONTIER_UNHANDLED_REJECTION",
+      kind:"SSALKONGPANG_UNHANDLED_REJECTION",
       build:document.documentElement.dataset.build||null,
       at:new Date().toISOString(),
       message:String(reason?.message||reason||"unhandled rejection"),

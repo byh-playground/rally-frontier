@@ -61,7 +61,7 @@ class RecoveryTelemetry{
   const events=correctionFlightRecorder.all(),active=MatchLifecycle.activeSession?.();
   const payload={exportedAt:new Date().toISOString(),build:BUILD_META.id,buildMetadata:BUILD_META.snapshot(),role:active?.role||null,tps:active?.sim?.tps??null,currentTick:active?.sim?.tick??null,runtimeSeq:active?.runtimeSeq??null,events};
   const blob=new Blob([JSON.stringify(payload)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");
-  a.href=url;a.download=`rally-frontier-corrections-${Date.now()}.json`;document.body.appendChild(a);a.click();a.remove();
+  a.href=url;a.download=`ssalkongpang-corrections-${Date.now()}.json`;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);LogUtil.log(`보정 로그 ${events.length}개 JSON 저장`);
 }
   static requestManualRecovery(){

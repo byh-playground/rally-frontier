@@ -6,7 +6,7 @@ import { LobbyControlCodec } from './lobby-codec.js';
 import { P2P_CONNECT_ATTEMPT_TIMEOUT_MS } from '../core/session-timing.js';
 import { PRODUCT_VERSION } from '../core/product-version.js';
 
-const RALLY_NOSTR_NAMESPACE="rally-frontier";
+const RALLY_NOSTR_NAMESPACE="ssalkongpang";
 const RALLY_NOSTR_RELAYS=[
   "wss://nos.lol",
   "wss://relay.damus.io",
