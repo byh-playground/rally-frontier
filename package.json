@@ -8,6 +8,7 @@
     "test:ui": "npm run setup:gamekit && node scripts/netcode-ui-e2e.cjs",
     "test:worker": "npm run setup:gamekit && node scripts/sim-worker-e2e.cjs",
     "test:startup": "npm run setup:gamekit && node scripts/vector-assets-startup-e2e.cjs",
+    "test:economy": "npm run setup:gamekit && node scripts/capture-economy-e2e.cjs",
     "test:impact": "npm run setup:gamekit && node scripts/launch-impact-e2e.cjs"
   },
   "engines": {

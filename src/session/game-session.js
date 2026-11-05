@@ -60,7 +60,7 @@ class RallyStateCodec{
 }
 class RallyCommandCodec{
   static maxBytes=16*1024;
-  static fields=Object.freeze({MATCH_SURRENDER:[],LAUNCH:["cannonId","x","y","holdMs","unitType"]});
+  static fields=Object.freeze({MATCH_SURRENDER:[],UPGRADE_LAUNCH_RANGE:[],LAUNCH:["cannonId","x","y","holdMs","unitType"]});
   static validate(action){
     RallyStateCodec.assertData(action,{maxNodes:2048,maxArray:512,maxString:4096});
     if(!action||Array.isArray(action)||typeof action!=="object"||typeof action.type!=="string"||!action.type||action.type.length>80)throw new Error("올바른 게임 action이 필요합니다.");

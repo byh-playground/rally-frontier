@@ -112,14 +112,23 @@ async function launchFromHand(page) {
   });
   await page.mouse.move(point.x,point.y);
   await page.mouse.down();
-  await page.waitForTimeout(250+800);
-  await page.mouse.move(point.x+8,point.y-24,{steps:4});
+  await page.waitForTimeout(250+400);
+  await page.mouse.move(point.x+8,point.y-24,{steps:1});
   await page.mouse.up();
   await page.waitForFunction(()=>{
     const s=window.__netcodeE2E.MatchLifecycle.activeSession();
     return s.replayRecorder?.commands?.some(c=>c.actor===s.role&&c.action?.type==='LAUNCH');
   },null,{timeout:15000});
-  return {type,point};
+  const submitted=await page.evaluate(()=>{
+    const s=window.__netcodeE2E.MatchLifecycle.activeSession();
+    return s.replayRecorder.commands.find(c=>c.actor===s.role&&c.action?.type==='LAUNCH').action;
+  });
+  const overheated=await page.evaluate(async holdMs=>{
+    const {LaunchRules}=await import(new URL('./src/sim/launch-rules.js',location.href));
+    return LaunchRules.overheated(holdMs);
+  },submitted.holdMs);
+  assert.equal(overheated,false,`The native gesture must release before overheat (${submitted.holdMs}ms)`);
+  return {type,point,holdMs:submitted.holdMs};
 }
 
 async function runRole(browser, url, humanRole) {

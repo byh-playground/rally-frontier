@@ -89,6 +89,11 @@ PURPOSE
 - 묶음은 착지 후 짧은 시간차로 병사를 방출한다. 공간이 막혔으면 안전한 자리가 생길 때까지 남은 병력을 보존하며 유실·관통 생성하지 않는다. 아군 피해·폭발 밀림은 없다.
 - 묶음 압축·포장 파편·병사의 회전·기립은 표현 계층이며 판정을 되먹이지 않는다. 접촉 효과와 피해 숫자는 사건 tick을 보간 표시 시각으로 매핑한다.
 
+6.5. CAPTURE CONSTRUCTION AND LAUNCH RANGE
+- 점유 시작과 착공은 하나의 동작이다. construction 상태는 Building이 소유하고 점령지 owner는 완료할 때만 설정한다. 초당 1원씩 15회 투자하며 무자원 대기는 미납 결제를 쌓지 않는다. 체력은 10%에서 시작하고 투자마다 남은 90%의 1/15을 더하며 기존 피해를 유지한다.
+- 착공 후 병력 이탈은 공사를 취소하지 않는다. 동시 건설은 각각 투자하되 부족하면 착공 순서, 동률이면 점령지 순서로 처리한다. 파괴된 투자금은 환불하지 않는다. 완성 전에는 추가 인컴·발사·포탑 공격이 비활성이다.
+- 발사 사거리 레벨은 진영 공통 권위 상태다. 조준 미리보기·실제 발사·봇은 LaunchRules의 같은 배율을 사용한다. 강화는 일반 명령 코덱·Netcode·리플레이로 처리하며 건설·레벨 상태를 저장·복원·체크섬에서 제외하지 않는다.
+
 7. ONE MEANING, ONE COMMON MECHANIC
 - projectile, continuous damage, targeting, VFX 등 같은 의미의 기능은 하나의 공통 계약을 사용한다.
 - 유닛마다 유사 메커니즘을 별도 구현하지 않는다.
@@ -479,7 +484,10 @@ END OF DEVELOPMENT CONTRACT
       <div id="replayStats" class="replay-stats hidden"></div>
     </div>
     <div id="launchHand" class="launch-hand hidden" aria-label="발사 카드">
-      <div class="launch-energy"><div id="launchEnergyFill" class="launch-energy-fill"></div><b id="launchEnergyText">◆ 0</b></div>
+      <div class="launch-economy">
+        <div class="launch-wallet"><div class="launch-energy"><div id="launchEnergyFill" class="launch-energy-fill"></div><b id="launchEnergyText">◆ 0</b></div><span id="launchIncomeText" class="launch-income">+3/초</span></div>
+        <button id="launchRangeBtn" class="launch-range-btn" type="button"><b id="launchRangeText">사거리 ×1 → ×2</b><span id="launchRangeCost">강화 ◆ 50</span></button>
+      </div>
       <div id="launchCards" class="launch-cards"></div>
     </div>
     <div id="replayDock" class="panel replay-dock hidden" aria-label="리플레이 조작">
@@ -554,7 +562,7 @@ END OF DEVELOPMENT CONTRACT
 <div id="launchHelpSheet" class="launch-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="launchHelpTitle">
   <div class="launch-sheet-panel">
     <h2 id="launchHelpTitle">하는 법</h2>
-    <p>① 아래 카드를 골라요.<br>② 전장을 길게 누를수록 멀리 날아가요. 흰 원이 착지 범위예요. 너무 오래 누르면 대포가 과열돼요.<br>③ 손을 떼면 발사! 착탄 충격으로 적을 밀어내고, 묶음에서 나온 병사들이 일어나 적 본진으로 진격해요.<br>④ 자원은 계속 차올라요. 비용이 모자란 카드는 회색이에요.</p>
+    <p>① 아래 카드를 골라요.<br>② 전장을 길게 누를수록 멀리 날아가요. 흰 원이 착지 범위예요. 너무 오래 누르면 대포가 과열돼요.<br>③ 손을 떼면 발사! 착탄 충격으로 적을 밀어내고, 묶음에서 나온 병사들이 일어나 적 본진으로 진격해요.<br>④ 자원은 기본 초당 3원, 완성된 거점마다 1원씩 더 들어와요. 병력 투입과 공통 사거리 강화 중 어디에 쓸지 골라요.<br>⑤ 병력이 중립 거점에 진입하면 체력 10%로 건설을 시작해요. 초당 1원씩 총 15원을 투자하며, 돈이 없으면 기다려요. 건설 중 파괴되면 투자한 돈은 사라져요.<br>⑥ 완성된 거점은 점령과 인컴이 시작되고, 사거리 250의 단일 공격으로 자동 방어해요.</p>
     <button class="launch-btn primary" type="button" data-sheet-close>알겠어요</button>
   </div>
 </div>

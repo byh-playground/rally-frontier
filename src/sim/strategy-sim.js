@@ -10,7 +10,7 @@ import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.
 import { CloneUtil, HashUtil, MapGeneration } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UNIT_RUNTIME_GEOMETRY, UnitDefinition } from '../definitions/units.js';
-import { DAMAGE_CLASS_MATRIX, CAPTURE_DECAY_PER_TICK, CAPTURE_DURATION_MS, CAPTURE_RADIUS, COMBAT_TARGET_REFRESH_MS, COMBAT_TARGET_STICKINESS_PCT, DEAD_ENTITY_CLEANUP_MS, DEFAULT_ATTACK_WINDUP_MS, DEFAULT_MELEE_MOVE_RECOVERY_MS, DEFAULT_RANGED_MOVE_RECOVERY_MS, NAV_BUILDING_MARGIN, SPAWN_UNIT_GAP } from '../definitions/combat-rules.js';
+import { DAMAGE_CLASS_MATRIX, CAPTURE_RADIUS, COMBAT_TARGET_REFRESH_MS, COMBAT_TARGET_STICKINESS_PCT, DEAD_ENTITY_CLEANUP_MS, DEFAULT_ATTACK_WINDUP_MS, DEFAULT_MELEE_MOVE_RECOVERY_MS, DEFAULT_RANGED_MOVE_RECOVERY_MS, NAV_BUILDING_MARGIN, SPAWN_UNIT_GAP } from '../definitions/combat-rules.js';
 import { PerformanceTelemetry } from '../diagnostics/performance-telemetry.js';
 import { ALLY_SOFT_CORRECTION_FRACTION, ALLY_SOFT_IDLE_RADIUS_FRACTION, ALLY_SOFT_MAX_RADIUS_FRACTION, ALLY_SOFT_ITERATIONS, ALLY_SOFT_SPEED_FRACTION, BALANCE_HISTORY_EVERY_MS, BALANCE_HISTORY_MAX, BALANCE_SAMPLE_EVERY_MS, COLLISION_NORMAL, COLLISION_RADIUS_SCALE, COLLISION_SPATIAL_CELL, PERF_SAMPLE_EVERY_MS, SIM_SPATIAL_CELL, TERRAIN_ATTACK_REVEAL_MS } from '../definitions/world-rules.js';
 import { WorldContext } from './world-context.js';
@@ -87,11 +87,11 @@ class StrategySim{
   constructor(seed,rules=GameRuleDefinition.current){
     this.seed=seed>>>0;this.rules=rules||GameRuleDefinition.current;this.tps=RangeUtil.clamp(Math.round(Number(this.rules?.simulation?.tps)||SIM_TPS),10,30);this.mapDescriptor=MapGeneration.generateMapDescriptor({rules:this.rules,seed:this.seed,roundNumber:this.rules?.roundNumber||1});StateValue.freeze(this.mapDescriptor);this.world=WorldContext.fromMap(this.mapDescriptor);this.tick=0;this.seq=0;this.units=[];this.buildings=[];this.constructionOrders=[];this.navigationAdmissions=[];this.projectiles=[];this.events=[];this.scheduled=new Map();
     this.wallet=[0,1].map(()=>LaunchRules.startingWallet);
-    this.launchIncomeCarry=[0,0];this.launchDeployments=[];
+    this.launchIncomeCarry=[0,0];this.launchRangeLevel=[0,0];this.launchDeployments=[];
     // Per-side match totals for the result screen: shots fired, grains sent, enemy units killed.
     this.launchStats={launches:[0,0],sent:[0,0],kills:[0,0]};
     this.capturePoints=this.mapDescriptor.capturePoints.map(p=>({
-      ...p,owner:p.owner===0||p.owner===1?p.owner:null,progress:0,progressSide:null,enabled:p.enabled!==false,outpostId:null
+      ...p,owner:p.owner===0||p.owner===1?p.owner:null,enabled:p.enabled!==false,outpostId:null
     }));
 
     SimulationRuntimeState.initialize(this,{newMatch:true});
@@ -269,26 +269,51 @@ class StrategySim{
   releaseCaptureForOutpost(outpostId){
     const cp=this.capturePoints.find(p=>p.outpostId===outpostId);
     if(!cp)return;
-    cp.owner=null;cp.outpostId=null;cp.progress=0;cp.progressSide=null;cp.enabled=true;
+    cp.owner=null;cp.outpostId=null;cp.enabled=true;
     this.events.push({type:"captureLost",captureId:cp.id,x:cp.x,y:cp.y});
   }
 
   spawnOutpost(cp,side){
     const d=BuildingDefinition.get(BuildingDefinition.forRole("outpost"));
     const id="outpost-"+cp.id+"-"+(++this.seq);
-    this.buildings.push(new Building({
-      id,type:BuildingDefinition.forRole("outpost"),side,x:cp.x,y:cp.y,
-      hp:d.hp,maxHp:d.hp,captureId:cp.id
-    }));
+    const construction={invested:0,startedAtTick:this.tick,nextPaymentTick:this.tick+this.msTicks(LaunchRules.capturePaymentMs)};
+    const outpost=new Building({id,type:BuildingDefinition.forRole("outpost"),side,x:cp.x,y:cp.y,
+      hp:Math.round(d.hp*LaunchRules.captureInitialHpRatio),maxHp:d.hp,captureId:cp.id,construction});
+    this.buildings.push(outpost);
     this.markBuildingSpatialDirty();
-    cp.owner=side;cp.outpostId=id;cp.enabled=false;cp.progress=0;cp.progressSide=null;
-    this.events.push({type:"captureComplete",side,captureId:cp.id,lane:cp.lane,label:cp.label,x:cp.x,y:cp.y,outpostId:id});
+    cp.owner=null;cp.outpostId=id;cp.enabled=false;
+    this.events.push({type:"captureStarted",side,captureId:cp.id,x:cp.x,y:cp.y,outpostId:id});
+    return outpost;
+  }
+
+  completeOutpost(outpost){
+    const cp=this.capturePoints.find(p=>p.outpostId===outpost.id);
+    if(!cp)return;
+    outpost.construction=null;
+    cp.owner=outpost.side;
+    this.events.push({type:"captureComplete",side:outpost.side,captureId:cp.id,lane:cp.lane,label:cp.label,x:cp.x,y:cp.y,outpostId:outpost.id});
+  }
+
+  updateOutpostConstruction(){
+    // Building insertion order is authoritative: first started first, map order
+    // breaks ties. Keep no second construction queue or duplicate progress state.
+    for(const b of this.buildings){
+      const work=b.construction;
+      if(b.alive===false||!work||this.tick<work.nextPaymentTick||this.wallet[b.side]<1)continue;
+      this.wallet[b.side]--;
+      const before=work.invested++;
+      const initial=Math.round(b.maxHp*LaunchRules.captureInitialHpRatio),remaining=b.maxHp-initial;
+      // Rounded cumulative grants telescope to the full remaining HP. Damage is
+      // preserved rather than resetting to a construction percentage on payment.
+      b.hp+=Math.round(remaining*work.invested/LaunchRules.captureCost)-Math.round(remaining*before/LaunchRules.captureCost);
+      work.nextPaymentTick=this.tick+this.msTicks(LaunchRules.capturePaymentMs);
+      if(work.invested===LaunchRules.captureCost)this.completeOutpost(b);
+    }
   }
 
   updateCapturePoints(){
     for(const cp of this.capturePoints){
       if(cp.owner!=null||!cp.enabled)continue;
-
       let hostPresence=0,guestPresence=0;
       for(const idx of this.nearbyUnits(cp.x,cp.y,CAPTURE_RADIUS)){
         const u=this.units[idx];
@@ -297,26 +322,10 @@ class StrategySim{
         if(!this.world.terrain.field.polygonSegmentClear(u.x,u.y,cp.x,cp.y,0))continue;
         if(u.side===0)hostPresence++;else guestPresence++;
       }
-
-      let side=null;
-      if(hostPresence>0&&guestPresence===0)side=0;
-      else if(guestPresence>0&&hostPresence===0)side=1;
-
-      if(side==null){
-        cp.progress=Math.max(0,cp.progress-CAPTURE_DECAY_PER_TICK);
-        if(cp.progress===0)cp.progressSide=null;
-        continue;
-      }
-
-      if(cp.progressSide!==side){
-        cp.progress=Math.max(0,cp.progress-CAPTURE_DECAY_PER_TICK*2);
-        if(cp.progress===0)cp.progressSide=side;
-        continue;
-      }
-
-      cp.progress++;
-      if(cp.progress>=this.msTicks(CAPTURE_DURATION_MS))this.spawnOutpost(cp,side);
+      if(hostPresence>0&&guestPresence===0)this.spawnOutpost(cp,0);
+      else if(guestPresence>0&&hostPresence===0)this.spawnOutpost(cp,1);
     }
+    this.updateOutpostConstruction();
   }
 
   createBase(side){
@@ -495,7 +504,7 @@ class StrategySim{
   queueCommand(cmd){let arr=this.scheduled.get(cmd.tick);if(!arr){arr=[];this.scheduled.set(cmd.tick,arr)}arr.push(cmd);arr.sort((a,b)=>a.seq-b.seq)}
   launchCannons(side){
     const main=BuildingDefinition.forRole("mainBase"),outpost=BuildingDefinition.forRole("outpost");
-    return this.buildings.filter(b=>b.side===side&&b.alive!==false&&(b.type===main||b.type===outpost));
+    return this.buildings.filter(b=>b.side===side&&b.alive!==false&&!b.construction&&(b.type===main||b.type===outpost));
   }
   applyLaunchCommand(side,action){
     const cannon=this.launchCannons(side).find(b=>b.id===action.cannonId);
@@ -507,7 +516,7 @@ class StrategySim{
       this.events.push({type:"launchOverheat",side,cannonId:cannon.id,x:cannon.x,y:cannon.y});
       return true;
     }
-    const aim=LaunchRules.target(cannon,action.x,action.y,holdMs,this.world,this.flags[side],action.unitType);
+    const aim=LaunchRules.target(cannon,action.x,action.y,holdMs,this.world,this.flags[side],action.unitType,this.launchRangeLevel[side]);
     this.wallet[side]-=grain.cost;
     // The cannon is busy until the last shell of the volley has left, plus the reload.
     cannon.launchReadyTick=this.tick+this.msTicks(LaunchRules.volleyMs(action.unitType)+LaunchRules.reloadMs);
@@ -542,11 +551,18 @@ class StrategySim{
   updateLaunchEconomy(){
     // Integer carry keeps income per second independent of tps.
     for(const side of [0,1]){
-      this.launchIncomeCarry[side]+=LaunchRules.incomePerSecond;
+      this.launchIncomeCarry[side]+=LaunchRules.incomePerSecondFor(this.capturePoints,side);
       const gained=Math.floor(this.launchIncomeCarry[side]/this.tps);
       this.launchIncomeCarry[side]-=gained*this.tps;
       this.wallet[side]=Math.min(LaunchRules.walletCap,this.wallet[side]+gained);
     }
+  }
+  upgradeLaunchRange(side){
+    const cost=LaunchRules.upgradeCost(this.launchRangeLevel[side]);
+    if(cost===null||this.wallet[side]<cost)return false;
+    this.wallet[side]-=cost;this.launchRangeLevel[side]++;
+    this.events.push({type:"launchRangeUpgraded",side,level:this.launchRangeLevel[side]});
+    return true;
   }
   applyCommand(actor,action){
     if(!["host","guest"].includes(actor))return false;
@@ -556,6 +572,7 @@ class StrategySim{
     }
     const side=ConnectionSideUtil.roleSide(actor);
     if(action.type==="LAUNCH")return this.applyLaunchCommand(side,action);
+    if(action.type==="UPGRADE_LAUNCH_RANGE")return this.upgradeLaunchRange(side);
     return false;
   }
   moveToward(u,tx,ty,speed){return this.moveToGoal(u,NavigationGoal.point(tx,ty),speed)}
@@ -864,6 +881,30 @@ class StrategySim{
       u.launchHoldPointId=null;
     }
     return this.flags[u.side];
+  }
+  updateBuildingCombat(vision){
+    for(const b of this.buildings){
+      const d=BuildingDefinition.get(b.type);
+      if(b.alive===false||b.construction||!(d?.atk>0)||!(d.range>0)||b.cooldownActive(this))continue;
+      let target=null,isBuilding=false,bestDistance=Infinity;
+      const consider=(entity,building)=>{
+        if(!this.canAttackEntity(b.type,entity,building)||!this.canSeeCombatTarget(b.side,entity,vision[b.side]))return;
+        const distance=(entity.x-b.x)**2+(entity.y-b.y)**2;
+        if(distance>d.range*d.range)return;
+        if(this.targetChoiceBetter(distance,entity.id,bestDistance,target)){target=entity;isBuilding=building;bestDistance=distance}
+      };
+      // A defensive tower prefers nearby troops; structures are a fallback.
+      this.forEachNearbyHostileUnit(b.side,b.x,b.y,d.range,e=>{
+        if(this.canTargetUnit(b.side,e,vision[b.side]))consider(e,false);
+      });
+      if(!target)for(const idx of this.nearbyBuildingIndices(b.x,b.y,d.range)){
+        const e=this.buildings[idx];if(this.isHostileCombatBuilding(b.side,e))consider(e,true);
+      }
+      b.targetId=target?.id??null;
+      if(!target)continue;
+      b.startCooldownUntil(this.tick+this.msTicks(d.cooldownMs));
+      this.applyDamage(b.side,b.type,target,isBuilding,d.atk,b.id,{damageClass:d.damageClass});
+    }
   }
   // Grains are melee bruisers: march to the rally point, chase the chosen target, wind up, hit.
   updateCombat(u,vision){
@@ -1496,8 +1537,8 @@ class StrategySim{
     const indexMs=profile?now()-mark:0;
 
     mark=profile?now():0;
-    this.updateCapturePoints();
     this.updateLaunchEconomy();
+    this.updateCapturePoints();
     this.updateLaunchSalvos();
     let winner=null;
     const worldMs=profile?now()-mark:0;
@@ -1512,6 +1553,7 @@ class StrategySim{
     const visionMs=profile?now()-mark:0;
 
     mark=profile?now():0;
+    this.updateBuildingCombat(vision);
     for(const u of this.units){
       if(!u.alive)continue;
       winner=this.updateCombat(u,vision)||winner;
@@ -1612,7 +1654,7 @@ class StrategySim{
       this.navigation?.sync();
       return ({
         tick:this.tick,tps:this.tps,mapDescriptor:this.mapDescriptor,launchDeployments:StateValue.copy(this.launchDeployments),
-        wallet:this.wallet.slice(),launchStats:StateValue.copy(this.launchStats),flags:CloneUtil.clone(this.flags),capturePoints:CloneUtil.clone(this.capturePoints),
+        wallet:this.wallet.slice(),launchRangeLevel:this.launchRangeLevel.slice(),launchStats:StateValue.copy(this.launchStats),flags:CloneUtil.clone(this.flags),capturePoints:CloneUtil.clone(this.capturePoints),
         units:this.units.map(u=>u.toState("view")),buildings:this.buildings.map(b=>b.toState()),projectiles:this.projectiles.map(p=>p.toState()),events:StateValue.copy(this.events)
       });
     }finally{const perf=this.perfStats;perf.snapshotMs=performance.now()-started;perf.snapshotCumulativeMs=(perf.snapshotCumulativeMs||0)+perf.snapshotMs;perf.maxSnapshotMs=Math.max(perf.maxSnapshotMs,perf.snapshotMs);perf.snapshotSamples++}
