@@ -12,13 +12,13 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
 현재 제품 조작·수치는 인게임 도움말과 Definition이 담당한다. 아래는 Rally 고유 계약이다.
 
 1. SOURCE AND STATE OWNERSHIP
-- 실행 원본은 index.html·src/·원본 SVG 및 manifest다. src/main.js는 표현·UI, src/sim/은 판정,
+- 실행 원본은 index.html·src/·원본 SVG·스프라이트 이미지 및 manifest다. src/main.js는 표현·UI, src/sim/은 판정,
   src/session/은 경기 조정, src/definitions/는 게임 설정을 소유한다. 배포용 번들을 만들지 않는다.
 - 공통 엔진 원본은 bloom-gamekit에 두고 gamekit.lock.json의 source/dist 커밋·SHA-256으로
   고정한 공식 ESM bytes만 로드한다. 다른 버전·CDN·내장 대체 Core fallback은 없다.
 - 실제 제품 최초 부팅은 고정 CDN 접근이 필요하다. setup:gamekit의 검증한 QA cache 응답과
   제품 CDN 가용성을 구별한다. 원본/_site 실행은 HTTP(S)를 쓰며 단일 HTML 오프라인 실행을 보장하지 않는다.
-- 전투에 쓰는 벡터 자산은 시작 화면에서 실제 GPU 그리기 경로까지 준비하고 경기 동안 유지한다.
+- 전투에 쓰는 벡터·스프라이트 자산은 시작 화면에서 실제 GPU 그리기 경로까지 준비하고 경기 동안 유지한다.
   준비가 실패하면 게임 시작을 허용하지 않고 재시도할 수 있게 표시한다.
 - StrategySim과 StateContract가 Authoritative 상태·초기화·저장·복원·체크섬을 소유한다.
   Runtime·Presentation·파생 캐시는 명시적으로 구분한다. 보관 snapshot과 live의 가변 상태는
@@ -56,7 +56,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   사용하고 입력은 최종 합성을 한 번 역변환한다. 리플레이의 관전 진영과 카메라 방향은 독립이다.
 - 진영별 VisionField 32px 격자를 교전·AI·개체 표시·안개가 함께 조회한다. 관찰자의 셀·반경·level이
   바뀔 때 다시 칠하며 대상마다 시야 선분을 검사하지 않는다.
-- 승인된 곡물/대포 원본 SVG와 분리 부위의 실루엣·비율을 유지한다. 실제 게임 크기에서 기능과
+- 승인된 곡물/대포 원본 아트와 분리 부위의 실루엣·비율을 유지한다. 실제 게임 크기에서 기능과
   타격의 원인·결과가 읽혀야 한다. VFX는 실제 source/contact에 연결하고 같은 mechanic의 공식을 복제하지 않는다.
 
 4. ARTILLERY IMPULSE AND DEPLOYMENT

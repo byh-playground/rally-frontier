@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "assets": {
+    "body": { "file": "body-hat.png", "bytes": 552057, "sha256": "2bdf345fbc341142c9f40794f4bd15a0ceb00f1dc6b1570368a5929a39a385ed" },
+    "parts": { "file": "parts.png", "bytes": 785245, "sha256": "14098b7f76dc6876d4ad3d79d0677517a11bc5fad3f986996f65a91f8f4f8667" },
+    "expressions": { "file": "expressions.png", "bytes": 1375704, "sha256": "acf30d690366f85c05a2d0820650004d3e0501c84446d1993bda81b862afbeef" }
+  }
+}

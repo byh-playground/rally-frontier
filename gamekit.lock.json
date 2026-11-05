@@ -1,11 +1,11 @@
 {
   "repository": "byh-playground/bloom-gamekit",
-  "sourceCommit": "b17fcd13401614a80a8de31bbf5d5f8abf755a82",
-  "distCommit": "71ff2ac1e334b654a5eb7d05533e91e748a5b94f",
+  "sourceCommit": "1dce209ba9a21e8b8fd9b34fcc6c74ffe56b71ca",
+  "distCommit": "b26823cbf68b787bcfd41112fe753958a19cb9d4",
   "modules": {
     "rollback": {
       "file": "rollback.js",
-      "sha256": "9f8ac6372e56214816267f4dd6e1ee5b4451dd8a0e29a9e5d0838e8bf0c21f55"
+      "sha256": "b0f4f40eff01b8e342354ed244d5735b571da3c887a10f6ddacede27bacf7414"
     },
     "deterministic": {
       "file": "deterministic.js",
@@ -29,11 +29,11 @@
     },
     "rendering": {
       "file": "rendering.js",
-      "sha256": "ca7c0d45f30c699799fbfd249c259aca91fd21b253a14f64502a12d2ad2df584"
+      "sha256": "d2b8f173687ccdfe11d5f0a13b73159ec0552f9a0e9ac3164d5aa1c788758554"
     },
     "vectorAssets": {
       "file": "vector-assets.js",
-      "sha256": "37c458c87ed8eb9bf8e8df9d579cd5739e3de2ab219e4d2043c0e8d607b33147"
+      "sha256": "56e39b7428a29f838b8fc5b432f75075e6cc69be4f28b5ed8553c0c94184bb52"
     },
     "camera": {
       "file": "camera.js",
@@ -84,5 +84,5 @@
       "sha256": "b630ae1678f99f6936422751b6f0bbeaa20a29e2867a1d938333d3d3f0f3e911"
     }
   },
-  "distManifestSha256": "6ca8ac2d78f36ae62c3384bdf0c966265c12241c31a3cda14f08dbb7d5bac290"
+  "distManifestSha256": "d220675285a274a712d2227663b4ffd268f540c5e29e92194ebcd7eac0e2e733"
 }

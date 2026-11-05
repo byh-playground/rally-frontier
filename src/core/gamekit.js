@@ -1,4 +1,5 @@
-// Loads the pinned GameKit dist (SHA-256 checked) and the unit SVG assets; modules that use GameKit evaluate after this resolves.
+// Loads pinned GameKit dist and the battlefield's verified image/vector assets before dependent modules evaluate.
+import { loadRiceSpriteImages, buildRiceSpriteCanvas } from '../render/rice-sprite.js';
 const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","navigation":"navigation.js","objectPool":"object-pool.js","geometry":"geometry.js","spatial":"spatial.js","face":"face.js","pathfield":"pathfield.js","vision":"vision.js"});
 // A dedicated Worker hosts only a simulation session (src/sim-worker.js): no UI boot.
 const SIM_WORKER=typeof WorkerGlobalScope!=='undefined';
@@ -57,10 +58,11 @@ try{
   const loadedVectorAssets=SIM_WORKER?{assets:Object.freeze({}),loader:null}:await loadRallyVectorAssets(namespaces.vectorAssetsLoader);
   globalThis.RallyVectorAssets=loadedVectorAssets.assets;
   globalThis.RallyVectorAssetLoader=loadedVectorAssets.loader;
+  globalThis.RiceSpriteCanvas=SIM_WORKER?null:buildRiceSpriteCanvas(await loadRiceSpriteImages());
   RallyNetcode=Object.freeze({...namespaces.rollback,...namespaces.deterministic,...namespaces.simloop,...namespaces.transport});
   RallyGamekit=Object.freeze(Object.assign({},...modules.map(([,module])=>module)));
   globalThis.RallyGamekit=RallyGamekit;
-  for(const name of ['PresentationRuntime','RenderObject','WebGLDevice','createDOMInput','CameraViewport','PresentationEventQueue','resolveAnchorInto','DiagnosticRing','ReplayTimeline','VectorContext','createVectorActor','holdVectorAsset','createVectorAssetLoader','ObjectPool','createNavigation'])if(typeof RallyGamekit[name]!=='function')throw new Error('Gamekit module API missing: '+name);
+  for(const name of ['PresentationRuntime','RenderObject','WebGLDevice','createDOMInput','CameraViewport','PresentationEventQueue','resolveAnchorInto','DiagnosticRing','ReplayTimeline','VectorContext','createVectorActor','holdVectorAsset','createVectorAssetLoader','compilePoseChannels','ObjectPool','createNavigation'])if(typeof RallyGamekit[name]!=='function')throw new Error('Gamekit module API missing: '+name);
   for(const name of ["createSession","hashBytes","createValueCodec","WebRTCTransport","createNostrSignaler","createLoop","runSyncTestAsync"]){
     if(typeof RallyNetcode[name]!=="function")throw new Error("공개 라이브러리에 필수 API "+name+"가 없습니다. 라이브러리 배포 상태를 확인해 주세요.");
   }

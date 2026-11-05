@@ -37,13 +37,6 @@
       "bytes": 9739
     },
     {
-      "id": "rice",
-      "url": "./assets/units/rice.svg",
-      "sourcePath": "assets/units/rice.svg",
-      "sha256": "6a038ff16eacbfa0e830fb884d5518c83717d0348497635a69b5c5c44d9acb39",
-      "bytes": 21737
-    },
-    {
       "id": "soybean",
       "url": "./assets/units/soybean.svg",
       "sourcePath": "assets/units/soybean.svg",

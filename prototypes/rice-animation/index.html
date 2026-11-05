@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>쌀 캐릭터 · 움직임 목업</title>
+<style>
+:root{color-scheme:light;--ink:#29392b;--muted:#647660;--green:#447749;--cream:#fbf7e9;--line:#dbe4c8}
+*{box-sizing:border-box}body{margin:0;background:#edf4e3;color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif}
+button,select,input{font:inherit}button{cursor:pointer}.page{max-width:1160px;margin:auto;padding:30px 24px 40px}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:22px}.eyebrow{font-size:12px;font-weight:800;letter-spacing:.12em;color:#638362}.top h1{font-size:clamp(27px,4vw,38px);letter-spacing:-.05em;line-height:1.1;margin:8px 0}.top p{color:var(--muted);margin:0;font-size:14px;line-height:1.6}.tag{background:#fff9ea;border:1px solid #e7e8d0;border-radius:999px;padding:8px 13px;color:#61785d;font-size:12px;font-weight:700;white-space:nowrap}
+.layout{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(270px,1fr);gap:18px}.stage,.panel{background:var(--cream);border:1px solid #d9e3cb;border-radius:24px;box-shadow:0 12px 35px #3c61310b;overflow:hidden}.stage{position:relative;min-height:490px;background:radial-gradient(ellipse at 50% 12%,#fffef0,#e3f0cf 72%)}.stage-head{position:absolute;top:20px;left:22px;right:22px;display:flex;justify-content:space-between;align-items:center;z-index:1}.stage-label{font-size:12px;color:#698160;font-weight:800}.state-pill{font-size:12px;border-radius:999px;padding:7px 12px;background:#fff9e4;color:#537349;font-weight:800;border:1px solid #e3e7c5}
+canvas{width:100%;height:490px;display:block}.stage-foot{position:absolute;bottom:18px;left:22px;color:#769070;font-size:12px;pointer-events:none}.panel{padding:24px;display:flex;flex-direction:column;gap:22px}.panel h2{margin:0;font-size:18px}.sub{font-size:13px;color:var(--muted);line-height:1.55;margin:6px 0 0}.actions{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:14px}.action{min-height:47px;border:1px solid #d7e4c9;border-radius:13px;background:#fffdf5;color:#416045;font-weight:700}.action[aria-pressed=true]{background:#477b4c;border-color:#477b4c;color:#fff;box-shadow:0 3px 0 #315b36}.action:last-child{grid-column:span 2}.section{border-top:1px solid #e2e9d6;padding-top:20px}.label{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px;font-weight:750}.label span{color:#76866c;font-weight:600}select{width:100%;height:43px;border-radius:11px;border:1px solid #d3dfc8;background:#fffdf5;padding:0 12px;color:var(--ink)}input[type=range]{width:100%;accent-color:var(--green)}.play-row{display:flex;gap:8px}.play-row button{flex:1;min-height:42px;border-radius:11px;border:1px solid #cbdbc2;background:#fffdf5;color:#345739;font-weight:750}.hint{font-size:12px;color:#77866f;line-height:1.6;margin:0}.error{padding:12px;background:#ffe6db;color:#922e18;border-radius:10px}
+@media(max-width:700px){.page{padding:20px 14px 28px}.top{align-items:flex-start}.tag{display:none}.layout{grid-template-columns:1fr}.stage{min-height:360px}canvas{height:360px}.panel{padding:20px;gap:18px}.actions{grid-template-columns:repeat(3,1fr)}.action:last-child{grid-column:auto}.section{padding-top:16px}}
+</style>
+</head>
+<body><main class="page">
+  <header class="top"><div><div class="eyebrow">쌀콩팡! · 캐릭터 실험실</div><h1>쌀의 움직임</h1><p>만든 쌀 부위를 겹쳐 움직여 보는 첫 번째 목업입니다.</p></div><div class="tag">쌀 캐릭터 · 시안</div></header>
+  <div class="layout"><section class="stage" aria-label="쌀 캐릭터 애니메이션 미리보기"><div class="stage-head"><span class="stage-label">움직임 미리보기</span><span id="stateLabel" class="state-pill">대기</span></div><canvas id="stage" aria-label="조합된 쌀 캐릭터"></canvas><div class="stage-foot">몸체·모자 통합 · 얼굴·팔다리 분리</div></section>
+  <aside class="panel"><div><h2>어떤 동작을 볼까요?</h2><p class="sub">동작을 바꿔 모자, 팔과 다리가 어떻게 움직이는지 확인하세요.</p><div class="actions" id="actions"><button class="action" data-mode="idle" aria-pressed="true">대기</button><button class="action" data-mode="walk" aria-pressed="false">걷기</button><button class="action" data-mode="work" aria-pressed="false">작업</button><button class="action" data-mode="attack" aria-pressed="false">공격</button><button class="action" data-mode="hit" aria-pressed="false">피격</button></div></div>
+  <div class="section"><div class="label"><label for="face">표정</label><span>눈과 입 조합</span></div><select id="face"><option value="auto">동작에 맞게</option><option value="smile">웃음</option><option value="surprise">놀람</option><option value="angry">화남</option></select></div>
+  <div><div class="label"><label for="speed">재생 속도</label><span id="speedValue">1.0×</span></div><input id="speed" type="range" min="0.5" max="2" step="0.1" value="1"></div><div class="play-row"><button id="pause" type="button">일시정지</button><button id="restart" type="button">처음부터</button></div><p class="hint">지금은 움직임과 부위 배치를 살펴보는 목업입니다.</p><div id="error" class="error" hidden></div></aside></div>
+</main>
+<script>
+const canvas=document.querySelector('#stage'),ctx=canvas.getContext('2d'),sheet=new Image(),oldFaces=new Image(),bodyWithHat=new Image();sheet.src='./rice-parts-refined.png';oldFaces.src='./rice-parts.png';bodyWithHat.src='./rice-body-hat.png';
+const sprite={sickle:[1518,486,150,240],armL:[1196,510,110,125],armR:[1362,510,115,125],legL:[1208,658,110,116],legR:[1340,658,115,116],eyeL:[1268,369,52,57],eyeR:[1410,369,52,57],angryEyes:[1150,642,290,110],smile:[1333,412,65,34],surprise:[596,842,112,125],cheekL:[1227,412,63,47],cheekR:[1440,412,63,47]};
+const labels={idle:'대기',walk:'걷기',work:'작업',attack:'공격',hit:'피격'};let mode='idle',face='auto',speed=1,paused=false,elapsed=0,last=performance.now();
+function part(key,x,y,w,h,rotation=0){const s=sprite[key],source=key==='angryEyes'||key==='surprise'?oldFaces:sheet;ctx.save();ctx.translate(x,y);ctx.rotate(rotation);if(key.startsWith('eye')||key.startsWith('cheek')){ctx.beginPath();ctx.ellipse(0,0,w*.49,h*.49,0,0,Math.PI*2);ctx.clip()}ctx.drawImage(source,...s,-w/2,-h/2,w,h);ctx.restore()}
+// Body and sickle poses use the original Budmori rice clip keyframes. Coordinates
+// are scaled from its 320px authored body to this mockup's 192px body.
+const clips={
+ idle:{duration:1.2,keys:[[0,0,2.94,0,1.012,.97,.02],[.6,1.18,-2.94,.012,.985,1.03,-.025],[1.2,0,2.94,0,1.012,.97,.02]]},
+ walk:{duration:.48,keys:[[0,-4.9,5.88,-.05,1.06,.94,-.11],[.12,-1.96,-15.86,-.02,.95,1.07,0],[.24,4.9,5.88,.05,1.06,.94,.11],[.36,1.96,-15.86,.02,.95,1.07,0],[.48,-4.9,5.88,-.05,1.06,.94,-.11]]},
+ attack:{duration:1.3,keys:[[0,0,0,0,1,1,0],[.28,-4,3,-.07,1,1,-.65],[.605,8,3,.09,1,1,.85],[.78,8,3,.09,1,1,.85],[1.03,0,0,0,1,1,0],[1.3,0,0,0,1,1,0]]},
+ work:{duration:1.45,keys:[[0,0,0,0,1,1,0],[.28,0,4,-.055,.96,1.04,-.58],[.58,0,-2,.055,1.04,.96,.42],[.76,0,-1,.015,1.01,.99,-.05],[.94,0,0,0,1,1,0],[1.45,0,0,0,1,1,0]]},
+ hit:{duration:1.25,keys:[[0,0,0,0,1,1,0],[.035,15.61,-17.72,.16,.88,1.14,-.18],[.113,-8.81,9.8,-.09,1.1,.9,.018],[.204,2.94,-1.96,.03,.98,1.02,.105],[.295,0,0,0,1,1,0],[1.25,0,0,0,1,1,0]]}
+};
+function poseFor(kind,time){const clip=clips[kind],at=time%clip.duration,keys=clip.keys;let i=0;while(i<keys.length-2&&at>keys[i+1][0])i++;const a=keys[i],b=keys[i+1],u=Math.max(0,Math.min(1,(at-a[0])/(b[0]-a[0]))),e=kind==='hit'?1-(1-u)*(1-u):(1-Math.cos(Math.PI*u))/2;return a.slice(1).map((v,j)=>v+(b[j+1]-v)*e)}
+function frame(now){const dt=Math.min(0.05,Math.max(0,(now-last)/1000));last=now;if(!paused)elapsed+=dt*speed;
+ const box=canvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2),w=Math.round(box.width*dpr),h=Math.round(box.height*dpr);if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,box.width,box.height);
+ const W=box.width,H=box.height,scale=Math.min(W/470,H/420,1.1);ctx.save();ctx.translate(W/2,H*.56);ctx.scale(scale,scale);
+ const phase=elapsed%clips[mode].duration,smooth=u=>(1-Math.cos(Math.PI*Math.max(0,Math.min(1,u))))/2;
+ const travel=mode==='attack'?(phase<.28?0:phase<.605?42*smooth((phase-.28)/.325):phase<.78?42:phase<1.03?42*(1-smooth((phase-.78)/.25)):0):mode==='work'?(phase<.28?0:phase<.58?24*smooth((phase-.28)/.3):phase<.94?24*(1-smooth((phase-.58)/.36)):0):0;
+ ctx.save();ctx.translate(travel,0);ctx.fillStyle='#c6dba6';ctx.beginPath();ctx.ellipse(0,151,130,22,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#adc994';ctx.beginPath();ctx.ellipse(0,153,91,11,0,0,Math.PI*2);ctx.fill();ctx.restore();
+ const [px,py,rotation,sx,sy,sickle]=poseFor(mode,elapsed),walk=mode==='walk'?Math.sin(elapsed/clips.walk.duration*Math.PI*2):0;
+ ctx.save();ctx.translate(travel+px*.6,py*.6);ctx.rotate(rotation);ctx.scale(sx,sy);
+ part('legL',-43,119,48,55,walk*.2);part('legR',43,119,48,55,-walk*.2);
+ part('armL',-98,42,48,58,-.2-walk*.12);ctx.drawImage(bodyWithHat,338,140,640,900,-114,-197,228,322);
+ let f=face==='auto'?(mode==='hit'?'surprise':mode==='attack'?'angry':'smile'):face;
+ const blink=(mode==='idle'||mode==='walk')&&elapsed%4.6>4.48;
+ ctx.save();ctx.translate(0,-37);ctx.scale(1,blink ? .13 : 1);if(f==='angry')part('angryEyes',0,0,106,38);else{part('eyeL',-36,0,26,29);part('eyeR',36,0,26,29)}ctx.restore();
+ part('cheekL',-54,-18,32,23);part('cheekR',54,-18,32,23);part(f==='surprise'?'surprise':'smile',0,-21,f==='surprise'?25:34,22);
+ ctx.save();ctx.translate(91,35);ctx.rotate(sickle);part('sickle',33,-22,65,94,-.3);part('armR',8,13,48,58,.2);ctx.restore();
+ ctx.restore();ctx.restore();requestAnimationFrame(frame)}
+Promise.all([sheet.decode(),oldFaces.decode(),bodyWithHat.decode()]).then(()=>requestAnimationFrame(frame)).catch(()=>{const e=document.querySelector('#error');e.hidden=false;e.textContent='쌀 부위 이미지를 불러오지 못했습니다. 이미지 파일이 HTML과 같은 폴더에 있는지 확인해 주세요.'});
+document.querySelector('#actions').addEventListener('click',e=>{const b=e.target.closest('[data-mode]');if(!b)return;mode=b.dataset.mode;elapsed=0;document.querySelectorAll('[data-mode]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));document.querySelector('#stateLabel').textContent=labels[mode]});
+document.querySelector('#face').addEventListener('change',e=>face=e.target.value);document.querySelector('#speed').addEventListener('input',e=>{speed=Number(e.target.value);document.querySelector('#speedValue').textContent=speed.toFixed(1)+'×'});document.querySelector('#pause').addEventListener('click',e=>{paused=!paused;e.currentTarget.textContent=paused?'재생':'일시정지'});document.querySelector('#restart').addEventListener('click',()=>{elapsed=0});
+</script></body></html>

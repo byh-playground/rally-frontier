@@ -80,8 +80,8 @@ async function main(htmlPath = path.resolve(process.argv[2] || '_site/index.html
     });
     await page.goto(server.url, { waitUntil: 'domcontentloaded' });
     await page.locator('#bootGate').waitFor({state:'hidden',timeout:90_000});
-    const prepared = await page.evaluate(() => ({holds:window.__startupRenderer()?.gameResourceHolds?.length ?? 0,device:window.__startupRenderer()?.device?.state,loopStarted:window.__startupRenderer()?.loopStarted}));
-    if (prepared.holds !== expected.assets.length || prepared.device !== 'ready' || prepared.loopStarted) throw new Error(`GPU resources were not prepared before the lobby: ${JSON.stringify(prepared)}`);
+    const prepared = await page.evaluate(() => ({holds:window.__startupRenderer()?.gameResourceHolds?.length ?? 0,riceAtlas:!!window.__startupRenderer()?.riceSprites?.atlas?.region,device:window.__startupRenderer()?.device?.state,loopStarted:window.__startupRenderer()?.loopStarted}));
+    if (prepared.holds !== expected.assets.length || !prepared.riceAtlas || prepared.device !== 'ready' || prepared.loopStarted) throw new Error(`GPU resources were not prepared before the lobby: ${JSON.stringify(prepared)}`);
     await page.waitForFunction(() => Object.keys(window.RallyVectorAssets || {}).length > 0 && typeof window.RallyGamekit?.createVectorAssetLoader === 'function' && window.RallyVectorAssetLoader, undefined, { timeout: 90_000 });
     const result = await page.evaluate(expected => {
       const assets = window.RallyVectorAssets || {};
