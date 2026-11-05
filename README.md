@@ -4,6 +4,8 @@
 
 영문 표기는 **Rice, Beans & Boom!**입니다. 공유 썸네일 원본은 [`assets/ssalkongpang-thumbnail.png`](assets/ssalkongpang-thumbnail.png)입니다. BLOOM PLAYGROUND 매니페스트의 영문 필드는 해당 스키마의 문자 제한 때문에 `RICE BEANS AND BOOM`으로 표기합니다.
 
+앱 아이콘은 현재 쌀 몸체·GameKit 공통 얼굴과 대포 원본을 조합합니다. 원본 아트 변경 후 `npm run generate:icons`로 180·192·512px 아이콘을 다시 만듭니다.
+
 [현재 배포본 실행](https://byh-playground.github.io/rally-frontier/)
 
 ## 버전과 배포 출처

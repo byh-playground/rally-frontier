@@ -7,17 +7,17 @@
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#dcebd2",
-  "theme_color": "#245fd6",
+  "background_color": "#edf3da",
+  "theme_color": "#3e7447",
   "icons": [
     {
-      "src": "icons/rally-192.png",
+      "src": "icons/ssalkongpang-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icons/rally-512.png",
+      "src": "icons/ssalkongpang-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"

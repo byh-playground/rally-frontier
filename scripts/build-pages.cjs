@@ -24,7 +24,7 @@ function verifySource(root = path.resolve(__dirname, '..')) {
   for (const file of modules) {
     execFileSync(process.execPath, ['--check', path.join(root, file)], { stdio: 'pipe' });
   }
-  for (const file of ['src/styles/game.css', 'icons/rally-180.png', 'manifest.webmanifest']) if (!fs.statSync(path.join(root, file)).size) throw Error('Missing source asset: ' + file);
+  for (const file of ['src/styles/game.css', 'icons/ssalkongpang-180.png', 'icons/ssalkongpang-192.png', 'icons/ssalkongpang-512.png', 'manifest.webmanifest']) if (!fs.statSync(path.join(root, file)).size) throw Error('Missing source asset: ' + file);
   return lock;
 }
 
