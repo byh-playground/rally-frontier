@@ -5806,31 +5806,82 @@ class GLRenderer {
             if (entry.kind !== 'unit' || entry.entity.type !== 'acorn') continue;
             const model = this.renderState.model('unit', entry.entity.id, now);
             const spin = model?.entity?.spinAttack,
-                tick = model?.tick;
+                tick = model?.tick,
+                radius = UnitDefinition.get(entry.entity.type)?.spinAttack?.radius;
             if (
                 !spin ||
                 !Number.isFinite(tick) ||
-                tick < spin.activeStartTick ||
-                tick >= spin.activeEndTick
+                !Number.isFinite(radius) ||
+                tick < spin.startTick ||
+                tick >= spin.endTick
             )
                 continue;
-            const p = this.projectRenderWorldPosition(entry.world);
+            const active = tick >= spin.activeStartTick && tick < spin.activeEndTick,
+                recovery = tick >= spin.activeEndTick,
+                fadeTicks = Math.max(1, (this.snapshot.tps || SimulationTiming.tps()) * 0.14),
+                fade = recovery ? Math.max(0, 1 - (tick - spin.activeEndTick) / fadeTicks) : 1;
+            if (!fade) continue;
+            const windupProgress = Math.max(
+                0,
+                Math.min(1, (tick - spin.startTick) / (spin.activeStartTick - spin.startTick)),
+            );
+            const ground = this.resolveGroundShadowPosition(entry.entity, 'unit'),
+                project = (angle) =>
+                    this.projectRenderWorldPosition({
+                        x: ground.x + Math.cos(angle) * radius,
+                        y: ground.y,
+                        z: ground.z + Math.sin(angle) * radius,
+                        groundY: 0,
+                    }),
+                p = this.projectRenderWorldPosition(ground),
+                fill = [
+                    0.9,
+                    0.21,
+                    0.27,
+                    (recovery ? 0.38 : active ? 0.25 : 0.08 + 0.18 * windupProgress ** 2) * fade,
+                ],
+                edge = recovery ? [1, 0.45, 0.47, fade] : [0.89, 0.24, 0.29, 0.9];
             const turns =
                 ((tick - spin.activeStartTick) / (spin.activeEndTick - spin.activeStartTick)) *
                 Math.PI *
                 6;
-            const radius = this.unitRenderRadius(entry.entity) * 1.7;
-            this.withWorldSpriteDepth(entry.world, () => {
+            this.withWorldSpriteDepth(ground, () => {
+                // Same world-space reach as the collision query, projected onto the ground.
+                const segments = 32;
+                let previous = project(0);
+                for (let i = 1; i <= segments; i++) {
+                    const next = project((i * Math.PI * 2) / segments);
+                    this.v(p.x, p.y, fill);
+                    this.v(previous.x, previous.y, fill);
+                    this.v(next.x, next.y, fill);
+                    previous = next;
+                }
+                previous = project(0);
+                for (let i = 1; i <= segments; i++) {
+                    const next = project((i * Math.PI * 2) / segments);
+                    this.line(
+                        previous.x,
+                        previous.y,
+                        next.x,
+                        next.y,
+                        Math.max(1, 1.6 * this.sc()),
+                        edge,
+                    );
+                    previous = next;
+                }
+                if (!active) return;
                 for (let arc = 0; arc < 2; arc++) {
                     const start = turns + arc * Math.PI;
                     for (let j = 0; j < 7; j++) {
                         const a = start + ((j / 7) * Math.PI) / 2,
-                            b = start + (((j + 1) / 7) * Math.PI) / 2;
+                            b = start + (((j + 1) / 7) * Math.PI) / 2,
+                            from = project(a),
+                            to = project(b);
                         this.line(
-                            p.x + Math.cos(a) * radius,
-                            p.y + Math.sin(a) * radius * 0.52,
-                            p.x + Math.cos(b) * radius,
-                            p.y + Math.sin(b) * radius * 0.52,
+                            from.x,
+                            from.y,
+                            to.x,
+                            to.y,
                             Math.max(1, 2.5 * this.sc()),
                             [1, 0.78, 0.36, 0.72],
                         );
@@ -5838,9 +5889,10 @@ class GLRenderer {
                 }
                 for (let i = 0; i < 3; i++) {
                     const a = turns * 0.7 + (i * Math.PI * 2) / 3;
+                    const dust = project(a);
                     this.circle(
-                        p.x + Math.cos(a) * radius * 0.85,
-                        p.y + radius * 0.4 + Math.sin(a) * radius * 0.18,
+                        dust.x,
+                        dust.y,
                         Math.max(1, 2.5 * this.sc()),
                         [0.88, 0.75, 0.5, 0.4],
                         6,
