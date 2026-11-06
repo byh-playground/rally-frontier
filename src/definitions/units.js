@@ -1,7 +1,7 @@
 // Launch grain definitions, runtime geometry and visual definitions.
 import { COLLISION_RADIUS_SCALE } from './world-rules.js';
 import { FP } from '../core/config.js';
-import { DEFAULT_ATTACK_WINDUP_MS } from './combat-rules.js';
+import { DEFAULT_ATTACK_WINDUP_MS, DEFAULT_MELEE_MOVE_RECOVERY_MS } from './combat-rules.js';
 const RICE_SIZE = 10;
 const ACORN_SIZE = RICE_SIZE * 3;
 const ACORN_SPIN_RADIUS = ACORN_SIZE * (55 / 20);
@@ -58,7 +58,7 @@ class UnitDefinition {
                 radius: ACORN_SPIN_RADIUS,
                 windupMs: DEFAULT_ATTACK_WINDUP_MS,
                 activeMs: 1000,
-                recoverMs: 1000,
+                recoverMs: DEFAULT_MELEE_MOVE_RECOVERY_MS,
                 pulseMs: 200,
                 knockbackSpeed: 400,
                 knockbackLift: 300,
