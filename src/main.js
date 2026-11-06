@@ -4047,10 +4047,12 @@ class GLRenderer {
         return UnitVisualDefinition.get(u?.type)?.visualScale ?? 1.08;
     }
     unitRenderRadius(u) {
-        const d = UnitDefinition.get(u?.type) || {};
+        const d = UnitDefinition.get(u?.type) || {},
+            baseSize = UnitDefinition.get('rice').size,
+            size = d.size || baseSize;
         return Math.max(
-            6.2 * (this.replayZoom || 1),
-            (d.size || 10) * this.sc() * 1.56 * this.unitRenderVisualScale(u),
+            6.2 * (this.replayZoom || 1) * (size / baseSize),
+            size * this.sc() * 1.56 * this.unitRenderVisualScale(u),
         );
     }
 
