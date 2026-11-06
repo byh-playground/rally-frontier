@@ -162,19 +162,26 @@ class LaunchImpact {
             group.deployAttempt = attempt + 1;
             return false;
         }
+        const radii = spots.map((spot) => Math.hypot(spot.x - group.x, spot.y - group.y)),
+            closest = Math.min(...radii),
+            radiusSpan = Math.max(...radii) - closest;
         for (let i = 0; i < spots.length; i++) {
             const spot = spots[i],
                 u = sim.spawnUnit(group.side, group.type, spot.x, spot.y);
             UnitResultStats.add(sim.unitResultStats, group.side, group.type, 'deployed');
             if (group.holdPointId) u.launchHoldPointId = group.holdPointId;
             // `start` applies a reference-mass impulse. Scale the input by the
-            // new unit's actual mass so small grains keep the common release speed.
+            // new unit's actual mass. Inner positions stay near the impact while
+            // outer positions receive proportionally stronger radial motion.
             const releaseScale = sim.mass(u) / LaunchImpactRules.referenceMass;
             this.start(sim, u, {
                 kind: 'deploy',
                 dx: spot.x - group.x,
                 dy: spot.y - group.y,
-                speed: LaunchImpactRules.deploymentSpeed * releaseScale,
+                speed:
+                    LaunchImpactRules.deploymentSpeed *
+                    releaseScale *
+                    (radiusSpan ? (radii[i] - closest) / radiusSpan : 0),
                 lift: LaunchImpactRules.deploymentLift * releaseScale,
                 sourceId: group.projectileId,
                 originX: group.x,
