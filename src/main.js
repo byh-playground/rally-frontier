@@ -2943,7 +2943,6 @@ class GLRenderer {
                 kind = e.side === side ? 'damageTaken' : 'damageDealt';
                 amount = e.amount;
                 text = `-${e.amount}`;
-            } else if (e.type === 'dodge') {
             } else if (e.type === 'dodge' || e.type === 'graze') {
                 if (e.side !== side && !this.visibleRaw(e.x, e.y)) {
                     index++;
