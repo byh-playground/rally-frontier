@@ -24,14 +24,13 @@ const RICE_MELEE = {
 class UnitDefinition {
     static all = {
         rice: RICE_MELEE,
-        // Approved combat values; other mechanics inherit rice until designed.
-        // No combat animation is selected before the millet artwork is approved.
         millet: {
             ...RICE_MELEE,
             name: '조',
-            hp: 7,
-            atk: 4,
-            size: RICE_MELEE.size / 2,
+            hp: 15,
+            atk: 8,
+            size: RICE_MELEE.size * 0.75,
+            outOfCombatMoveMultiplier: 2,
             contactMelee: true,
             attackVisual: { ...RICE_MELEE.attackVisual, sourceMotion: null },
         },

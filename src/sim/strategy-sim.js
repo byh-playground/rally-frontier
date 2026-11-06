@@ -2102,6 +2102,7 @@ class StrategySim {
         let cooldown = d.cooldown;
         // 공통 전투 이동/공속 보정.
         moveSpeed *= this.timedModifierPct(u, 'movePct') / 100;
+        const nonCombatMoveSpeed = moveSpeed * (d.outOfCombatMoveMultiplier ?? 1);
         const timedAttackPct = this.timedModifierPct(u, 'attackSpeedPct');
         if (timedAttackPct > 100) cooldown *= 100 / timedAttackPct;
 
@@ -2109,9 +2110,9 @@ class StrategySim {
             u.combat.cancelWindup();
             if (d.contactMelee && u.contactAttack?.phase === 'charge') u.contactAttack = null;
             u.target = null;
-            if (this.updateConstructionWork(u, d, moveSpeed)) return null;
+            if (this.updateConstructionWork(u, d, nonCombatMoveSpeed)) return null;
             const f = this.unitRallyPoint(u);
-            this.moveToward(u, f.x, f.y, moveSpeed);
+            this.moveToward(u, f.x, f.y, nonCombatMoveSpeed);
             return null;
         }
 
@@ -2129,7 +2130,7 @@ class StrategySim {
             if (d.contactMelee && u.contactAttack?.phase === 'charge') u.contactAttack = null;
             u.target = null;
             const f = this.unitRallyPoint(u);
-            this.moveToward(u, f.x, f.y, moveSpeed);
+            this.moveToward(u, f.x, f.y, nonCombatMoveSpeed);
             return null;
         }
 
