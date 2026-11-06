@@ -18,6 +18,7 @@ class LaunchRules {
     static resourceScale = 5;
     static incomePerSecond = 3 * this.resourceScale;
     static walletCap = 100 * this.resourceScale;
+    static populationLimit = 300;
     static startingWallet = 50 * this.resourceScale;
     static minReach = 250;
     static maxReach = 500;
@@ -156,6 +157,22 @@ class LaunchRules {
     static payload(type) {
         const g = this.grain(type);
         return g ? { count: g.count, cost: g.cost } : null;
+    }
+    // Live units plus every already-authorized soldier who has not spawned yet.
+    static population(state, side) {
+        let alive = 0,
+            reserved = 0;
+        for (const unit of state?.units || [])
+            if (unit.side === side && unit.alive !== false) alive++;
+        for (const projectile of state?.projectiles || [])
+            if (projectile.side === side && projectile.alive !== false && projectile.payload)
+                reserved += projectile.payload.count;
+        for (const group of state?.launchDeployments || [])
+            if (group.side === side) reserved += Math.max(0, group.count - group.index);
+        for (const cannon of state?.buildings || [])
+            if (cannon.side === side && cannon.alive !== false)
+                for (const shot of cannon.salvo || []) reserved += shot.count;
+        return { alive, reserved, total: alive + reserved };
     }
     static overheated(holdMs) {
         return holdMs > this.chargeMs + this.overheatGraceMs;
