@@ -40,9 +40,11 @@ import { RENDER_TRACKS } from './render/render-tracks.js';
 import { BuildingArt } from './render/building-art.js';
 import { RiceSpriteRenderer } from './render/rice-sprite.js';
 import { BeanSpriteRenderer } from './render/bean-sprite.js';
+import { ChestnutSpriteRenderer } from './render/chestnut-sprite.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
 import {
     CONFIG,
+    FP,
     LAUNCH_HOLD_ARM_MS,
     LAUNCH_HOLD_DRAG_PX,
     STATE_PUBLISH_HZ,
@@ -138,7 +140,7 @@ class RenderStateStore {
         this.sequence = 0;
         this.clock = 0;
         this.zeroDelta = Object.freeze({ x: 0, y: 0 });
-        this.lists = { unit: [], projectile: [], flag: [], bundle: [] };
+        this.lists = { unit: [], projectile: [], thorn: [], flag: [], bundle: [] };
     }
     time(now) {
         return (this.clock = Math.max(this.clock, Number(now) || 0));
@@ -211,12 +213,34 @@ class RenderStateStore {
                 };
                 packet.initialTimeMs = (tick - 1) * stepMs;
             }
+            if (
+                kind === 'thorn' &&
+                !previous &&
+                !snap &&
+                Number.isFinite(value.fromFx) &&
+                Number.isFinite(value.fromFy) &&
+                Number.isFinite(value.fromZFP)
+            ) {
+                const initialTick = Math.min(tick - 1, (Number(value.startTick) || tick) - 1);
+                packet.initialSource = {
+                    entity: {
+                        ...value,
+                        x: value.fromFx / FP,
+                        y: value.fromFy / FP,
+                        zFP: value.fromZFP,
+                    },
+                    tick: initialTick,
+                };
+                packet.initialTimeMs = initialTick * stepMs;
+            }
             entities.push(packet);
         };
         for (const unit of source.units || [])
             if (unit.alive !== false || unit.impactMotion) add('unit', unit.id, unit);
         for (const projectile of source.projectiles || [])
             if (projectile.alive !== false) add('projectile', projectile.id, projectile);
+        for (const thorn of source.unitThornProjectiles || [])
+            if (thorn.startTick <= tick) add('thorn', thorn.id, thorn);
         // Publish the actual final contact sample before retiring the visual track. Interpolation must reach the impact.
         for (const event of source.events || [])
             if (event.type === 'projectileRetire') {
@@ -235,6 +259,22 @@ class RenderStateStore {
                         y: event.y,
                         retiredTick,
                         terminalPath,
+                    });
+                }
+            }
+        for (const event of source.events || [])
+            if (event.type === 'unitThornHit' || event.type === 'unitThornMiss') {
+                const record = this.records.get('thorn:' + event.projectileId);
+                if (record?.live && record.entity.retiredTick == null) {
+                    const retiredTick = Number.isFinite(Number(event.presentationTick))
+                        ? Number(event.presentationTick)
+                        : tick;
+                    add('thorn', event.projectileId, {
+                        ...record.entity,
+                        x: event.x,
+                        y: event.y,
+                        zFP: event.zFP,
+                        retiredTick,
                     });
                 }
             }
@@ -584,6 +624,8 @@ const PROJECTILE_VISUAL_RENDER_FNS = Object.freeze({
         );
     },
 });
+const THORN_TRAIL_COLOR = Object.freeze([151 / 255, 93 / 255, 43 / 255, 1]);
+const THORN_IMPACT_COLOR = Object.freeze([225 / 255, 157 / 255, 65 / 255, 1]);
 const BUILDING_VISUAL_RENDER_FNS = Object.freeze({
     base: (renderer, { b }) => renderer.buildingArt.draw(b, renderer.cannonArtOptions(b)),
     outpost: (renderer, { b }) => renderer.buildingArt.draw(b, renderer.cannonArtOptions(b)),
@@ -1384,6 +1426,7 @@ class GLRenderer {
         this.vectorUnitAssetCache = new Map();
         this.buildingArt = new BuildingArt(this);
         this.riceSprites = null;
+        this.chestnutSprites = null;
         this.beanSprites = {};
         this.riceBodyGroup = [];
         // One actor per grain: a shared actor re-seeked per grain rewrites its pose row and splits the instanced batch.
@@ -1598,6 +1641,12 @@ class GLRenderer {
                     globalThis.RiceSpriteCanvas,
                     RallyGamekit,
                 );
+            if (!this.chestnutSprites)
+                this.chestnutSprites = new ChestnutSpriteRenderer(
+                    C,
+                    globalThis.ChestnutSpriteCanvas,
+                    RallyGamekit,
+                );
             for (const type of ['pea', 'redbean'])
                 if (!this.beanSprites[type])
                     this.beanSprites[type] = new BeanSpriteRenderer(
@@ -1634,7 +1683,11 @@ class GLRenderer {
                             { x: 0, y: 0, sc: 1, aim: { dx: 1, dy }, own, fireAgeMs },
                         );
                     }
-            for (const sprites of [this.riceSprites, ...Object.values(this.beanSprites)]) {
+            for (const sprites of [
+                this.riceSprites,
+                this.chestnutSprites,
+                ...Object.values(this.beanSprites),
+            ]) {
                 const actor = sprites.createActor();
                 actors.push(actor);
                 actor.seek(0);
@@ -1648,6 +1701,10 @@ class GLRenderer {
                 C.flush('grain-resource-preparation');
                 C.depthTest = false;
             }
+            this.chestnutSprites.drawBurr([32, 0, 0, 32, 0, 0], 0);
+            this.chestnutSprites.drawThorn([32, 0, 0, 32, 0, 0], 0);
+            this.chestnutSprites.drawParticle([8, 0, 0, 8, 0, 0], 0, THORN_IMPACT_COLOR);
+            C.flush('chestnut-projectile-resource-preparation');
             this.buildingArt.prune([]);
             C.endFrame();
             this.gl.finish();
@@ -1660,6 +1717,8 @@ class GLRenderer {
             for (const hold of holds) hold.release();
             this.riceSprites?.dispose();
             this.riceSprites = null;
+            this.chestnutSprites?.dispose();
+            this.chestnutSprites = null;
             for (const sprites of Object.values(this.beanSprites)) sprites.dispose();
             this.beanSprites = {};
             throw error;
@@ -2018,6 +2077,31 @@ class GLRenderer {
 
     presentationNow(now = performance.now()) {
         return this._framePresentationAt ?? now;
+    }
+    thornImpactAge(fx, now = this.presentationNow()) {
+        const replay = ReplayPresentation.replayPlayer;
+        if (!replay) return now - fx.start;
+        const interval = this.presentationTargetIntervalMs();
+        const current = replay.sim.tick * interval;
+        const time = Math.min(this.renderState.frame(now)?.timeMs ?? current, current);
+        const raw = ((time / interval - fx.eventTick) * 1000) / (this.snapshot?.tps || SIM_TPS);
+        let state = fx.thornReplayClock;
+        if (!state)
+            state = fx.thornReplayClock = {
+                playing: replay.playing,
+                speed: replay.speed,
+                age: raw,
+                offset: 0,
+            };
+        if (!replay.playing) {
+            state.playing = false;
+            return state.age;
+        }
+        if (!state.playing || state.speed !== replay.speed) state.offset = state.age - raw;
+        state.playing = true;
+        state.speed = replay.speed;
+        state.age = raw + state.offset;
+        return state.age;
     }
     renderTrackedPosition(entity, kind = 'unit') {
         return this.renderState.position(kind, entity.id, entity, this.presentationNow());
@@ -2475,6 +2559,15 @@ class GLRenderer {
                         90,
                         HashUtil.hash(`${snapshot.tick}|hurt|${index}`),
                     );
+            } else if (e.type === 'unitThornHit') {
+                this.addClientFx('thornImpact', e, snapshot, index, {
+                    id: 'thorn-impact:' + e.projectileId,
+                    impactHeightFP: e.zFP,
+                    eventTick: Number.isFinite(Number(e.presentationTick))
+                        ? Number(e.presentationTick)
+                        : snapshot.tick,
+                    thornReplayClock: null,
+                });
             } else if (e.type === 'death') {
                 this.addClientFx('deathBurst', e, snapshot, index);
             } else if (e.type === 'buildingDeath') {
@@ -2959,33 +3052,39 @@ class GLRenderer {
 
         for (let read = 0; read < this.combatFx.length; read++) {
             const fx = this.combatFx[read];
-            const age = now - fx.start;
+            const age = fx.kind === 'thornImpact' ? this.thornImpactAge(fx, now) : now - fx.start;
             if (age < 0) {
                 this.combatFx[write++] = fx;
                 continue;
             }
             const life =
-                fx.kind === 'constructionHit'
-                    ? 220
-                    : fx.kind === 'hitscanTravel'
-                      ? 180
-                      : fx.kind === 'buildingBurst'
-                        ? 620
-                        : fx.kind === 'launchMuzzle'
-                          ? 900
-                          : fx.kind === 'launchBlast'
-                            ? 820
-                            : fx.kind === 'launchBundleBreak'
-                              ? 680
-                              : fx.kind === 'deathBurst'
-                                ? 480
-                                : fx.kind === 'meleeSourceMotion'
-                                  ? AttackPresentationDefinition.sourceMotions[fx.motion]?.lifeMs ||
-                                    220
-                                  : 360;
+                fx.kind === 'thornImpact'
+                    ? 250
+                    : fx.kind === 'constructionHit'
+                      ? 220
+                      : fx.kind === 'hitscanTravel'
+                        ? 180
+                        : fx.kind === 'buildingBurst'
+                          ? 620
+                          : fx.kind === 'launchMuzzle'
+                            ? 900
+                            : fx.kind === 'launchBlast'
+                              ? 820
+                              : fx.kind === 'launchBundleBreak'
+                                ? 680
+                                : fx.kind === 'deathBurst'
+                                  ? 480
+                                  : fx.kind === 'meleeSourceMotion'
+                                    ? AttackPresentationDefinition.sourceMotions[fx.motion]
+                                          ?.lifeMs || 220
+                                    : 360;
 
             if (age >= life) {
                 this.combatFxPool.release(fx);
+                continue;
+            }
+            if (fx.kind === 'thornImpact') {
+                this.combatFx[write++] = fx;
                 continue;
             }
             const t = age / life;
@@ -3809,6 +3908,7 @@ class GLRenderer {
     hasGrainArt(u) {
         return (
             u?.type === 'rice' ||
+            (u?.type === 'chestnut' && !!this.chestnutSprites) ||
             !!this.beanSprites?.[u?.type] ||
             !!window.RallyVectorAssets?.[u?.type]
         );
@@ -3818,6 +3918,11 @@ class GLRenderer {
         const key = 'ammo|' + type;
         let record = this.vectorUnitAssetCache.get(key);
         if (record) return record;
+        if (type === 'chestnut') {
+            record = { sprite: this.chestnutSprites };
+            this.vectorUnitAssetCache.set(key, record);
+            return record;
+        }
         const source = window.RallyVectorAssets?.['ammo-' + type];
         if (!source) return null;
         const actor = RallyGamekit.createVectorActor(this.vectorContext, source, {
@@ -3846,6 +3951,19 @@ class GLRenderer {
         const cos = Math.cos(angle) * scale,
             sin = Math.sin(angle) * scale,
             m = this._vectorUnitMatrix;
+        if (record.sprite) {
+            m[0] = cos * scaleX * 256;
+            m[1] = sin * scaleX * 256;
+            m[2] = -sin * scaleY * 256;
+            m[3] = cos * scaleY * 256;
+            m[4] = x;
+            m[5] = y;
+            this.vectorContext.depthTest = depthTest;
+            this.vectorContext.depthWrite = false;
+            record.sprite.drawBurr(m, this._renderDepth ?? 0);
+            this.flushVectorMesh('burr-billboard');
+            return;
+        }
         m[0] = cos * scaleX;
         m[1] = sin * scaleX;
         m[2] = -sin * scaleY;
@@ -3908,7 +4026,12 @@ class GLRenderer {
         const key = 'grain|' + type;
         let record = this.vectorUnitAssetCache.get(key);
         if (record) return record;
-        const sprites = type === 'rice' ? this.riceSprites : this.beanSprites[type];
+        const sprites =
+            type === 'rice'
+                ? this.riceSprites
+                : type === 'chestnut'
+                  ? this.chestnutSprites
+                  : this.beanSprites[type];
         if (sprites) {
             record = { compiled: sprites, ground: [0, 145], sprite: true };
             this.vectorUnitAssetCache.set(key, record);
@@ -4017,8 +4140,9 @@ class GLRenderer {
                               : 'idle'),
                 restart = false;
             if (record.sprite) {
-                const attack = !!u.attackFlash,
-                    hit = !!u.hitFlash;
+                const chestnut = record.compiled === this.chestnutSprites,
+                    attack = !!(chestnut ? entity.attackFlash : u.attackFlash),
+                    hit = !!(chestnut ? entity.hitFlash : u.hitFlash);
                 if (attack && !grain.attackLatch) {
                     grain.attackUntil = now + 425;
                     restart = true;
@@ -4042,14 +4166,51 @@ class GLRenderer {
                             ? 'walk'
                             : 'idle';
             }
+            let chestnutFireMs = null,
+                chestnutFacing = 1;
+            if (
+                record.compiled === this.chestnutSprites &&
+                !impact.active &&
+                !work?.active &&
+                !entity.hitFlash
+            ) {
+                const combat = entity.combat || {},
+                    start = Number(combat.attackWindupStartedAt) || 0,
+                    end = Number(combat.attackWindupUntil) || 0,
+                    launch = Number(combat.thornLaunchTick) || 0,
+                    sinceLaunch = ((renderTick - launch) * 1000) / (this.snapshot.tps || SIM_TPS);
+                if (end > start && renderTick >= start && renderTick <= end) {
+                    chestnutFireMs =
+                        Math.max(0, Math.min(1, (renderTick - start) / (end - start))) * 550;
+                } else if (
+                    launch &&
+                    sinceLaunch >= -1000 / (this.snapshot.tps || SIM_TPS) &&
+                    sinceLaunch < 850
+                ) {
+                    chestnutFireMs = 550 + Math.max(0, sinceLaunch);
+                }
+                if (chestnutFireMs !== null) {
+                    clip = 'fire';
+                    const target =
+                        this.renderState.entity('unit', entity.target) ||
+                        (this.snapshot.buildings || []).find((b) => b.id === entity.target);
+                    const aimX = end > start && target ? target.x : combat.thornAimX;
+                    if (Number.isFinite(aimX))
+                        chestnutFacing = this.viewX(aimX) < this.viewX(entity.x) ? -1 : 1;
+                }
+            }
             if (
                 actor.currentClip !== clip ||
                 (restart && record.sprite && (clip === 'fire' || clip === 'hit'))
             )
                 actor.play(clip, 0);
-            actor.seek(
-                work?.active && work.clip === 'idle' ? 0 : now + (HashUtil.hash(u.id) % 997) * 7,
-            );
+            if (chestnutFireMs !== null && clip === 'fire') actor.seekElapsed(chestnutFireMs);
+            else
+                actor.seek(
+                    work?.active && work.clip === 'idle'
+                        ? 0
+                        : now + (HashUtil.hash(u.id) % 997) * 7,
+                );
             actor.preparePose();
             // Budmori bodies are front-facing: no rotation, ground socket on the unit's ground point.
             const p = this.projectRenderWorldPosition(world),
@@ -4061,7 +4222,7 @@ class GLRenderer {
                     impact.rotation * (this.orientationRole() === 'guest' ? -1 : 1),
                 cos = Math.cos(angle),
                 sin = Math.sin(angle),
-                sx = scale * impact.scaleX * (work?.facing ?? 1) * (work?.scaleX ?? 1),
+                sx = scale * impact.scaleX * (work?.facing ?? chestnutFacing) * (work?.scaleX ?? 1),
                 sy = scale * impact.scaleY * (work?.scaleY ?? 1);
             m[0] = cos * sx;
             m[1] = sin * sx;
@@ -4377,6 +4538,89 @@ class GLRenderer {
             this.projectileScreenMotionStates.set(p.id, st);
         }
         return { dx, dy, valid };
+    }
+    drawThorn(shot, world) {
+        if (!this.chestnutSprites) return;
+        if (this.frame.length) {
+            this.flushVectorMesh('frame-to-thorn');
+            this.flush(this.frame, true);
+            this.begin();
+        }
+        const from = this.projectRenderWorldPosition({
+                x: shot.fromFx / FP,
+                y: shot.fromZFP / FP,
+                z: shot.fromFy / FP,
+                groundY: 0,
+            }),
+            to = this.projectRenderWorldPosition({
+                x: shot.toFx / FP,
+                y: shot.toZFP / FP,
+                z: shot.toFy / FP,
+                groundY: 0,
+            }),
+            point = this.projectRenderWorldPosition(world),
+            angle = Math.atan2(to.y - from.y, to.x - from.x),
+            length = 32 * this.sc(),
+            directionX = Math.cos(angle),
+            directionY = Math.sin(angle),
+            cosine = directionX * length,
+            sine = directionY * length,
+            context = this.vectorContext;
+        context.depthTest = !!this.passState.depthEnabled;
+        context.depthWrite = false;
+        context.depthFunc = this.passState.depthFunc || 'lequal';
+        // The tail is a separate set of atlas particles, never part of the thorn image.
+        const traveled = Math.hypot(point.x - from.x, point.y - from.y),
+            count = Math.max(
+                0,
+                Math.min(4, Math.floor((traveled - length * 0.5) / (4 * this.sc()))),
+            ),
+            matrix = this._vectorUnitMatrix;
+        matrix[0] = cosine;
+        matrix[1] = sine;
+        matrix[2] = -sine;
+        matrix[3] = cosine;
+        matrix[4] = point.x;
+        matrix[5] = point.y;
+        this.chestnutSprites.drawTrail(
+            matrix,
+            this._renderDepth ?? 0,
+            count,
+            THORN_TRAIL_COLOR,
+            0.25,
+        );
+        this.chestnutSprites.drawThorn(matrix, this._renderDepth ?? 0);
+    }
+    drawThornImpact(fx, world) {
+        if (!this.chestnutSprites) return;
+        if (this.frame.length) {
+            this.flushVectorMesh('frame-to-thorn-impact');
+            this.flush(this.frame, true);
+            this.begin();
+        }
+        const age = this.thornImpactAge(fx),
+            t = RangeUtil.clamp(age / 250, 0, 1),
+            p = this.projectRenderWorldPosition(world),
+            m = this._vectorUnitMatrix,
+            context = this.vectorContext,
+            distance = (5 + 20 * t) * this.sc(),
+            width = 10 * this.sc(),
+            height = Math.max(1, 2.5 * this.sc());
+        context.depthTest = !!this.passState.depthEnabled;
+        context.depthWrite = false;
+        context.depthFunc = this.passState.depthFunc || 'lequal';
+        for (let i = 0; i < 6; i++) {
+            const angle = (i * Math.PI) / 3,
+                cosine = Math.cos(angle),
+                sine = Math.sin(angle);
+            m[0] = cosine * width;
+            m[1] = sine * width;
+            m[2] = -sine * height;
+            m[3] = cosine * height;
+            m[4] = p.x + cosine * distance;
+            m[5] = p.y + sine * distance;
+            this.chestnutSprites.drawParticle(m, this._renderDepth ?? 0, THORN_IMPACT_COLOR, 1 - t);
+        }
     }
     drawProjectile(p) {
         const targetVisible = this.visibleRaw(p.x, p.y) || p.side === this.mySide();
@@ -4719,7 +4963,44 @@ class GLRenderer {
             )
                 add('projectile', p, world);
         }
+        for (const thorn of this.renderState.displayed('thorn', this.presentationNow())) {
+            if (
+                thorn.retiredTick != null &&
+                this.renderState.frame(this.presentationNow()).timeMs >=
+                    (thorn.retiredTick * 1000) / (this.snapshot.tps || SIM_TPS)
+            )
+                continue;
+            if (thorn.side !== this.mySide() && !this.visibleRaw(thorn.x, thorn.y)) continue;
+            const model = this.renderState.model('thorn', thorn.id, this.presentationNow()),
+                entity = model?.entity || thorn,
+                ground = this.world.terrain.surfaces.heightAt(entity.x, entity.y),
+                world = { x: entity.x, y: entity.zFP / FP, z: entity.y, groundY: ground },
+                screen = this.projectRenderWorldPosition(world),
+                pad = 90 * this.sc();
+            if (
+                screen.x >= -pad &&
+                screen.y >= -pad &&
+                screen.x <= this.canvas.width + pad &&
+                screen.y <= this.canvas.height + pad
+            )
+                add('thorn', thorn, world);
+        }
         const now = this.presentationNow();
+        for (const fx of this.combatFx) {
+            if (
+                fx.kind !== 'thornImpact' ||
+                this.thornImpactAge(fx, now) < 0 ||
+                this.thornImpactAge(fx, now) >= 250
+            )
+                continue;
+            const ground = this.world.terrain.surfaces.heightAt(fx.x, fx.y);
+            add('thornImpact', fx, {
+                x: fx.x,
+                y: Number.isFinite(fx.impactHeightFP) ? fx.impactHeightFP / FP : ground,
+                z: fx.y,
+                groundY: ground,
+            });
+        }
         for (const fx of this.combatFx)
             if (
                 fx.kind === 'launchBundleBreak' &&
@@ -4839,7 +5120,10 @@ class GLRenderer {
             this.renderEntity = entity;
             this.renderStage = kind;
             const nextPainter =
-                kind === 'landingBundle' || (kind === 'unit' && this.hasGrainArt(entity))
+                kind === 'landingBundle' ||
+                kind === 'thorn' ||
+                kind === 'thornImpact' ||
+                (kind === 'unit' && this.hasGrainArt(entity))
                     ? 'vector'
                     : 'frame';
             if (lastPainter && nextPainter !== lastPainter) {
@@ -4860,6 +5144,8 @@ class GLRenderer {
                     });
                 else if (kind === 'building') this.drawBuildingSafely(entity);
                 else if (kind === 'landingBundle') this.drawLandingBundle(entity);
+                else if (kind === 'thorn') this.drawThorn(entity, world);
+                else if (kind === 'thornImpact') this.drawThornImpact(entity, world);
                 else this.drawProjectileSafely(entity);
             });
         }

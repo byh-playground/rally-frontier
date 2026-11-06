@@ -1,0 +1,17 @@
+{
+    "schemaVersion": 1,
+    "assets": {
+        "parts.png": {
+            "bytes": 688425,
+            "sha256": "9126859c2abf1d5f9f8b2c30e82d09698a2e2afab7f7d7c53d4adda23adb1b9e"
+        },
+        "thorn.png": {
+            "bytes": 1197467,
+            "sha256": "9fcab29e6c2a6e5b591d8d2837d20b3a118c503dc0ab3a06dff711ce7c6f2026"
+        },
+        "burr.png": {
+            "bytes": 1081277,
+            "sha256": "084f5571441273fbd9fb751cb0869768dfb3337ee2bcb923df658a7b74910826"
+        }
+    }
+}

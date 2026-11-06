@@ -6,6 +6,7 @@ import { RallyStateCodec } from '../session/game-session.js';
 import { LaunchRules } from './launch-rules.js';
 import { ConstructionRules } from './construction-rules.js';
 import { LaunchImpact } from './launch-impact.js';
+import { UnitThornAttack } from './unit-thorn-attack.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.js';
 import { CloneUtil, HashUtil, MapGeneration } from './map-generation.js';
@@ -283,6 +284,7 @@ class StrategySim {
         this.constructionOrders = [];
         this.navigationAdmissions = [];
         this.projectiles = [];
+        this.unitThornProjectiles = [];
         this.events = [];
         this.scheduled = new Map();
         this.wallet = [0, 1].map(() => LaunchRules.startingWallet);
@@ -2102,7 +2104,8 @@ class StrategySim {
 
         const dist = Math.hypot(t.x - u.x, t.y - u.y) || 1;
         const max = this.interactionDistance(u, t, 'attack', attackRange);
-        if (dist > max) {
+        const min = d.minRange ? this.interactionDistance(u, t, 'combat-contact') + d.minRange : 0;
+        if (dist > max || dist < min) {
             // Wind-up is valid only while the target remains in legal attack range.
             if (u.combat.windupPending()) this.clearAttackWindup(u);
             this.moveToGoal(u, this.engagementGoal(u, t, attackRange), moveSpeed);
@@ -2111,6 +2114,13 @@ class StrategySim {
 
         if (!this.attackReadyAfterWindup(u, t, found.isBuilding, d)) return null;
         this.commitAttackTiming(u, d, cooldown);
+        if (d.thornAttack) {
+            UnitThornAttack.launch(this, u, t, found.isBuilding, {
+                ...d.thornAttack,
+                damage: Math.floor(d.atk),
+            });
+            return null;
+        }
         return this.applyDamage(u.side, u.type, t, found.isBuilding, Math.floor(d.atk), u.id, {
             damageClass: UnitDefinition.damageClass(u.type),
         });
@@ -3241,6 +3251,7 @@ class StrategySim {
         // Projectile hits inject velocity at this boundary. Both horizontal and vertical integration start next tick.
         mark = profile ? now() : 0;
         winner = this.updateProjectiles() || winner;
+        UnitThornAttack.update(this);
         LaunchImpact.deploy(this);
         this.resolveConstructionHits();
         const projectileMs = profile ? now() - mark : 0;
@@ -3424,6 +3435,9 @@ class StrategySim {
                 decks: StateValue.copy(this.decks),
                 mapDescriptor: this.mapDescriptor,
                 launchDeployments: StateValue.copy(this.launchDeployments),
+                unitThornProjectiles: StateValue.copy(
+                    this.unitThornProjectiles.filter((p) => p.startTick <= this.tick),
+                ),
                 wallet: this.wallet.slice(),
                 launchRangeLevel: this.launchRangeLevel.slice(),
                 launchStats: StateValue.copy(this.launchStats),

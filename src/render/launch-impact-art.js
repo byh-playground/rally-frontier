@@ -21,6 +21,7 @@ const identity = () => ({
 const HUSK_COLORS = Object.freeze({
     rice: ['#e8c078', '#bd8744'],
     pea: ['#a7c466', '#698b38'],
+    chestnut: ['#a5aa55', '#6f7834'],
     redbean: ['#c76a60', '#8a393a'],
 });
 
