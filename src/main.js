@@ -1474,8 +1474,30 @@ class GLRenderer {
             preserveDrawingBuffer: false,
             powerPreference: 'high-performance',
             failIfMajorPerformanceCaveat: false,
+            // Allow one additional layer for face art, vector gradients, and dynamic atlas regions.
+            // Unique canvases match the actual shared sprite uploads and allocation order.
+            textureAtlas: {
+                width: 2048,
+                height: 1024,
+                gutter: 1,
+                layers:
+                    RallyGamekit.estimateTextureAtlasLayers(
+                        [
+                            ...RallyGamekit.VECTOR_RENDERER_ATLAS_REGIONS,
+                            ...new Set(Object.values(globalThis.RallySpriteCanvases)),
+                        ],
+                        { width: 2048, height: 1024, gutter: 1 },
+                    ) + 1,
+            },
         };
         this.device = new RallyGamekit.WebGLDevice(canvas, this.webglAttrs);
+        if (this.webglAttrs.textureAtlas.layers > this.device.maxArrayTextureLayers) {
+            const limit = this.device.maxArrayTextureLayers;
+            this.device.dispose();
+            throw new Error(
+                `게임 그래픽을 준비하려면 텍스처 레이어 ${this.webglAttrs.textureAtlas.layers}장이 필요하지만 이 기기는 ${limit}장까지 지원합니다.`,
+            );
+        }
         this.vectorContext = new RallyGamekit.VectorContext(this.device, {
             safeAlphaRunBatching: true,
         });
@@ -1702,39 +1724,39 @@ class GLRenderer {
             matrix = [1, 0, 0, 1, 0, 0];
         try {
             this.resize();
-            this.grainFaces.prepare();
             if (!this.riceSprites)
                 this.riceSprites = new RiceSpriteRenderer(
                     C,
-                    globalThis.RiceSpriteCanvas,
+                    globalThis.RallySpriteCanvases.rice,
                     RallyGamekit,
                 );
             if (!this.acornSprites)
                 this.acornSprites = new AcornSpriteRenderer(
                     C,
-                    globalThis.AcornSpriteCanvas,
+                    globalThis.RallySpriteCanvases.acorn,
                     RallyGamekit,
                 );
             if (!this.chestnutSprites)
                 this.chestnutSprites = new ChestnutSpriteRenderer(
                     C,
-                    globalThis.ChestnutSpriteCanvas,
+                    globalThis.RallySpriteCanvases.chestnut,
                     RallyGamekit,
                 );
             for (const type of ['pea', 'redbean'])
                 if (!this.beanSprites[type])
                     this.beanSprites[type] = new BeanSpriteRenderer(
                         C,
-                        globalThis.BeanSpriteCanvases[type],
+                        globalThis.RallySpriteCanvases[type],
                         RallyGamekit,
                         type,
                     );
             if (!this.cornSprites)
                 this.cornSprites = new CornSpriteRenderer(
                     C,
-                    globalThis.CornSpriteCanvas,
+                    globalThis.RallySpriteCanvases.corn,
                     RallyGamekit,
                 );
+            this.grainFaces.prepare();
             if (!C.beginFrame()) throw new Error('그래픽 장치를 준비할 수 없습니다.');
             for (const [id, source] of Object.entries(globalThis.RallyVectorAssets)) {
                 holds.push(RallyGamekit.holdVectorAsset(C, source));

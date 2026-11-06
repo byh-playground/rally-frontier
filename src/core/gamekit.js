@@ -133,13 +133,13 @@ try {
         : await loadRallyVectorAssets(namespaces.vectorAssetsLoader);
     globalThis.RallyVectorAssets = loadedVectorAssets.assets;
     globalThis.RallyVectorAssetLoader = loadedVectorAssets.loader;
-    globalThis.RiceSpriteCanvas = SIM_WORKER
-        ? null
-        : buildRiceSpriteCanvas(await loadRiceSpriteImages());
-    globalThis.BeanSpriteCanvases = SIM_WORKER ? null : await loadBeanSpriteCanvases();
-    globalThis.AcornSpriteCanvas = SIM_WORKER ? null : await loadAcornSpriteCanvas();
-    globalThis.CornSpriteCanvas = SIM_WORKER ? null : await loadCornSpriteCanvas();
-    globalThis.ChestnutSpriteCanvas = SIM_WORKER ? null : await loadChestnutSpriteCanvas();
+    const rice = SIM_WORKER ? null : buildRiceSpriteCanvas(await loadRiceSpriteImages());
+    const beans = SIM_WORKER ? {} : await loadBeanSpriteCanvases();
+    const acorn = SIM_WORKER ? null : await loadAcornSpriteCanvas();
+    const corn = SIM_WORKER ? null : await loadCornSpriteCanvas();
+    const chestnut = SIM_WORKER ? null : await loadChestnutSpriteCanvas();
+    // Allocation order is also the sizing order. Shared canvases are counted only once.
+    globalThis.RallySpriteCanvases = Object.freeze({ rice, acorn, chestnut, ...beans, corn });
     RallyNetcode = Object.freeze({
         ...namespaces.rollback,
         ...namespaces.deterministic,
@@ -152,6 +152,7 @@ try {
         'PresentationRuntime',
         'RenderObject',
         'WebGLDevice',
+        'estimateTextureAtlasLayers',
         'createDOMInput',
         'CameraViewport',
         'PresentationEventQueue',
@@ -168,6 +169,8 @@ try {
     ])
         if (typeof RallyGamekit[name] !== 'function')
             throw new Error('Gamekit module API missing: ' + name);
+    if (!Array.isArray(RallyGamekit.VECTOR_RENDERER_ATLAS_REGIONS))
+        throw new Error('Gamekit vector renderer atlas reservation API가 없습니다.');
     for (const name of [
         'createSession',
         'hashBytes',
