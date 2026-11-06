@@ -5,6 +5,7 @@ const { readLock } = require('./setup-gamekit.cjs');
 const { readVectorAssetManifest } = require('./vector-assets-manifest.cjs');
 const { readRiceSpriteManifest } = require('./rice-sprite-manifest.cjs');
 const { readBeanSpriteManifest } = require('./bean-sprite-manifest.cjs');
+const { readAcornSpriteManifest } = require('./acorn-sprite-manifest.cjs');
 const { readCornSpriteManifest } = require('./corn-sprite-manifest.cjs');
 const { readChestnutSpriteManifest } = require('./chestnut-sprite-manifest.cjs');
 const { readProductVersion } = require('./product-version.cjs');
@@ -23,6 +24,7 @@ function verifySource(root = path.resolve(__dirname, '..')) {
     readVectorAssetManifest(root);
     readRiceSpriteManifest(root);
     readBeanSpriteManifest(root);
+    readAcornSpriteManifest(root);
     readCornSpriteManifest(root);
     readChestnutSpriteManifest(root);
     const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');

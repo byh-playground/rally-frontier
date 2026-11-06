@@ -1,6 +1,8 @@
 // Launch grain definitions, runtime geometry and visual definitions.
 import { COLLISION_RADIUS_SCALE } from './world-rules.js';
 import { FP } from '../core/config.js';
+const ACORN_SIZE = 20;
+const ACORN_SPIN_RADIUS = 55;
 
 class UnitDefinition {
     static all = {
@@ -34,6 +36,32 @@ class UnitDefinition {
             role: 'bruiser',
             attackVisual: { sourceMotion: 'smash', travel: 'none', impact: 'light' },
             sight: 275,
+        },
+        acorn: {
+            requiresContactTerrain: true,
+            construction: { range: 5, workPerHit: 1 },
+            name: '도토리',
+            hp: 50,
+            atk: 1,
+            range: ACORN_SPIN_RADIUS - ACORN_SIZE * COLLISION_RADIUS_SCALE,
+            speed: 50,
+            cooldownMs: 1000,
+            size: ACORN_SIZE,
+            sizeClass: 'heavy',
+            role: 'bruiser',
+            attackVisual: { sourceMotion: null, travel: 'none', impact: 'light' },
+            sight: 275,
+            // Damage, reach and impulse are trial values; cadence follows the reviewed motion.
+            spinAttack: Object.freeze({
+                radius: ACORN_SPIN_RADIUS,
+                windupMs: 1000,
+                activeMs: 2000,
+                recoverMs: 1000,
+                pulseMs: 200,
+                knockbackSpeed: 75,
+                knockbackLift: 0,
+                tangentRatio: 0.5,
+            }),
         },
         // Health is confirmed; remaining combat tuning is provisional.
         corn: {
@@ -141,6 +169,13 @@ const UNIT_RUNTIME_GEOMETRY = Object.freeze(
 
 class UnitVisualDefinition {
     static all = {
+        acorn: {
+            family: 'grain',
+            billboard: true,
+            visualScale: 0.85,
+            accent: [0.62, 0.37, 0.18, 1],
+            fx: 'melee',
+        },
         rice: {
             family: 'grain',
             billboard: true,

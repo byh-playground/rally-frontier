@@ -1,6 +1,7 @@
 import { UnitLobAttack } from './unit-lob-attack.js';
 // The deterministic lockstep strategy simulation.
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
+import { UnitSpinAttack } from './unit-spin-attack.js';
 import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './entities.js';
 import { StateContract, StateValue } from './components.js';
 import { RallyStateCodec } from '../session/game-session.js';
@@ -1702,6 +1703,7 @@ class StrategySim {
     emitUnitDeath(target, sourceSide, sourceType) {
         if (!target || target.alive === false) return null;
 
+        if (target.spinAttack) UnitSpinAttack.cancel(this, target);
         target.hp = 0;
         target.alive = false;
         target.constructionWork = null;
@@ -2038,6 +2040,13 @@ class StrategySim {
     updateCombat(u, vision) {
         const d = UnitDefinition.get(u.type);
         this.tickAttackTimers(u);
+        if (d.spinAttack && u.spinAttack) {
+            const spin = UnitSpinAttack.update(this, u, d.spinAttack, d.atk);
+            if (spin.active) {
+                u.constructionWork = null;
+                return spin.winner;
+            }
+        }
         if (u.impactMotion && this.tick < u.impactMotion.recoverUntilTick) {
             u.constructionWork = null;
             return null;
@@ -2104,6 +2113,11 @@ class StrategySim {
             return null;
         }
 
+        if (d.spinAttack && UnitSpinAttack.start(this, u, d.spinAttack, vision[u.side])) {
+            this.clearAttackWindup(u);
+            u.combat.cooldownUntil = u.spinAttack.endTick + this.msTicks(d.cooldownMs);
+            return UnitSpinAttack.update(this, u, d.spinAttack, d.atk).winner;
+        }
         const dist = Math.hypot(t.x - u.x, t.y - u.y) || 1;
         const max = this.interactionDistance(u, t, 'attack', attackRange);
         const min = d.minRange ? this.interactionDistance(u, t, 'combat-contact') + d.minRange : 0;
@@ -2114,6 +2128,7 @@ class StrategySim {
             return null;
         }
 
+        if (d.spinAttack) return null;
         if (d.lobAttack && d.minRange && dist < InteractionGeometry.contact(u, t) + d.minRange) {
             this.clearAttackWindup(u);
             this.moveToward(

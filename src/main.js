@@ -40,6 +40,7 @@ import { RENDER_TRACKS } from './render/render-tracks.js';
 import { BuildingArt } from './render/building-art.js';
 import { RiceSpriteRenderer } from './render/rice-sprite.js';
 import { BeanSpriteRenderer } from './render/bean-sprite.js';
+import { AcornSpriteRenderer } from './render/acorn-sprite.js';
 import { CornSpriteRenderer } from './render/corn-sprite.js';
 import { ChestnutSpriteRenderer } from './render/chestnut-sprite.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
@@ -1487,6 +1488,7 @@ class GLRenderer {
         this.riceSprites = null;
         this.chestnutSprites = null;
         this.beanSprites = {};
+        this.acornSprites = null;
         this.cornSprites = null;
         this.riceBodyGroup = [];
         // One actor per grain: a shared actor re-seeked per grain rewrites its pose row and splits the instanced batch.
@@ -1707,6 +1709,12 @@ class GLRenderer {
                     globalThis.RiceSpriteCanvas,
                     RallyGamekit,
                 );
+            if (!this.acornSprites)
+                this.acornSprites = new AcornSpriteRenderer(
+                    C,
+                    globalThis.AcornSpriteCanvas,
+                    RallyGamekit,
+                );
             if (!this.chestnutSprites)
                 this.chestnutSprites = new ChestnutSpriteRenderer(
                     C,
@@ -1758,6 +1766,7 @@ class GLRenderer {
             for (const sprites of [
                 this.riceSprites,
                 ...Object.values(this.beanSprites),
+                this.acornSprites,
                 this.cornSprites,
                 this.chestnutSprites,
             ]) {
@@ -1773,9 +1782,27 @@ class GLRenderer {
                 sprites.drawFace(actor, matrix, 0, 'neutral');
                 if (sprites === this.cornSprites) this.cornSprites.drawHeldKernel(actor, matrix, 0);
                 C.flush('grain-resource-preparation');
+                if (sprites === this.acornSprites) {
+                    actor.play('spin');
+                    for (const elapsed of [1250, 1500]) {
+                        actor.seekElapsed(elapsed);
+                        actor.preparePose();
+                        C.preparePoses();
+                        C.depthWrite = true;
+                        sprites.drawBody(actor, matrix, 0);
+                        C.depthWrite = false;
+                        sprites.drawFace(actor, matrix, 0, 'attack');
+                        C.flush('acorn-spin-resource-preparation');
+                    }
+                }
                 C.depthTest = false;
             }
             C.depthTest = true;
+            this.acornSprites.drawAmmo(matrix, 0);
+            this.acornSprites.drawTeamMarker(matrix, 0, true);
+            this.acornSprites.drawTeamMarker(matrix, 0, false);
+            C.flush('acorn-ammo-resource-preparation');
+            C.depthTest = false;
             this.cornSprites.drawKernel(matrix, 0);
             this.cornSprites.drawCone(matrix, 0);
             this.cornSprites.drawTeamMarker(matrix, 0, true);
@@ -1802,6 +1829,8 @@ class GLRenderer {
             this.chestnutSprites = null;
             for (const sprites of Object.values(this.beanSprites)) sprites.dispose();
             this.beanSprites = {};
+            this.acornSprites?.dispose();
+            this.acornSprites = null;
             this.cornSprites?.dispose();
             this.cornSprites = null;
             throw error;
@@ -4047,6 +4076,7 @@ class GLRenderer {
     hasGrainArt(u) {
         return (
             u?.type === 'rice' ||
+            (u?.type === 'acorn' && !!this.acornSprites) ||
             (u?.type === 'corn' && !!this.cornSprites) ||
             (u?.type === 'chestnut' && !!this.chestnutSprites) ||
             !!this.beanSprites?.[u?.type] ||
@@ -4058,6 +4088,11 @@ class GLRenderer {
         const key = 'ammo|' + type;
         let record = this.vectorUnitAssetCache.get(key);
         if (record) return record;
+        if (type === 'acorn') {
+            record = { acornAmmo: true };
+            this.vectorUnitAssetCache.set(key, record);
+            return record;
+        }
         if (type === 'corn') {
             record = { cornCone: true };
             this.vectorUnitAssetCache.set(key, record);
@@ -4093,8 +4128,8 @@ class GLRenderer {
             this.flush(this.frame, true);
             this.begin();
         }
-        const actualAngle = record.cornCone ? angle + Math.PI / 4 : angle,
-            actualScale = record.cornCone ? scale * 200 : scale,
+        const actualAngle = record.acornAmmo || record.cornCone ? angle + Math.PI / 4 : angle,
+            actualScale = record.acornAmmo || record.cornCone ? scale * 200 : scale,
             cos = Math.cos(actualAngle) * actualScale,
             sin = Math.sin(actualAngle) * actualScale,
             m = this._vectorUnitMatrix;
@@ -4115,22 +4150,22 @@ class GLRenderer {
         m[1] = sin * scaleX;
         m[2] = -sin * scaleY;
         m[3] = cos * scaleY;
-        m[4] = record.cornCone ? x : x - m[0] * 128 - m[2] * 128;
-        m[5] = record.cornCone ? y : y - m[1] * 128 - m[3] * 128;
-        if (record.cornCone) {
+        m[4] = record.acornAmmo || record.cornCone ? x : x - m[0] * 128 - m[2] * 128;
+        m[5] = record.acornAmmo || record.cornCone ? y : y - m[1] * 128 - m[3] * 128;
+        if (record.acornAmmo || record.cornCone) {
             this.vectorContext.depthTest = depthTest;
             this.vectorContext.depthWrite = false;
-            this.cornSprites.drawCone(m, this._renderDepth ?? 0);
+            if (record.acornAmmo) this.acornSprites.drawAmmo(m, this._renderDepth ?? 0);
+            else this.cornSprites.drawCone(m, this._renderDepth ?? 0);
             return;
-        } else {
-            this.vectorContext.drawVectorActor(record.actor, {
-                matrix: m,
-                alpha: 1,
-                depth: this._renderDepth ?? 0,
-                depthTest,
-                depthWrite: false,
-            });
         }
+        this.vectorContext.drawVectorActor(record.actor, {
+            matrix: m,
+            alpha: 1,
+            depth: this._renderDepth ?? 0,
+            depthTest,
+            depthWrite: false,
+        });
         this.flushVectorMesh('vector-billboard');
     }
     landingBundlePose(fx) {
@@ -4183,11 +4218,13 @@ class GLRenderer {
         const sprites =
             type === 'rice'
                 ? this.riceSprites
-                : type === 'corn'
-                  ? this.cornSprites
-                  : type === 'chestnut'
-                    ? this.chestnutSprites
-                    : this.beanSprites[type];
+                : type === 'acorn'
+                  ? this.acornSprites
+                  : type === 'corn'
+                    ? this.cornSprites
+                    : type === 'chestnut'
+                      ? this.chestnutSprites
+                      : this.beanSprites[type];
         if (sprites) {
             record = { compiled: sprites, ground: [0, type === 'corn' ? 148 : 145], sprite: true };
             this.vectorUnitAssetCache.set(key, record);
@@ -4396,12 +4433,21 @@ class GLRenderer {
                         chestnutFacing = this.viewX(aimX) < this.viewX(entity.x) ? -1 : 1;
                 }
             }
+            const spin = record.compiled === this.acornSprites ? entity.spinAttack : null;
+            if (spin) clip = 'spin';
             if (
                 actor.currentClip !== clip ||
                 (restart && record.sprite && (clip === 'fire' || clip === 'hit'))
             )
                 actor.play(clip, 0);
-            if (cornElapsed != null) actor.seekElapsed(cornElapsed);
+            if (spin)
+                actor.seekElapsed(
+                    Math.max(
+                        0,
+                        ((renderTick - spin.startTick) * 1000) / (this.snapshot.tps || SIM_TPS),
+                    ),
+                );
+            else if (cornElapsed != null) actor.seekElapsed(cornElapsed);
             else if (chestnutFireMs !== null && clip === 'fire') actor.seekElapsed(chestnutFireMs);
             else
                 actor.seek(
@@ -4440,7 +4486,7 @@ class GLRenderer {
                 impact.expression ||
                 ((record.sprite ? clip === 'hit' : u.hitFlash > 0)
                     ? 'hurt'
-                    : work?.clip || (record.sprite ? clip === 'fire' : u.attackFlash > 0)
+                    : work?.clip || spin || (record.sprite ? clip === 'fire' : u.attackFlash > 0)
                       ? 'attack'
                       : 'neutral');
             grain.bodyDrawn = false;
@@ -4675,6 +4721,44 @@ class GLRenderer {
                 this.reportEntityRenderError('projectile-fallback', p, fallbackErr);
             }
         }
+    }
+
+    drawAcornAmmoProjectile(p, world) {
+        if (p.side !== this.mySide() && !this.visibleRaw(p.x, p.y)) return;
+        const point = this.projectRenderWorldPosition(world);
+        const stable = this.projectRenderWorldPositionStable(world);
+        const motion = this.projectileScreenMotion(p, stable.x, stable.y);
+        let dx = motion.valid ? motion.dx : 1,
+            dy = motion.valid ? motion.dy : 0;
+        if (!motion.valid && Number.isFinite(p.lockedAimX) && Number.isFinite(p.lockedAimY)) {
+            const target = this.worldToPx(this.viewX(p.lockedAimX), this.viewY(p.lockedAimY));
+            dx = target[0] - point.x;
+            dy = target[1] - point.y;
+        }
+        const angle = Math.atan2(dy, dx) + Math.PI / 4,
+            size = Math.max(30, 58 * this.sc());
+        const m = this._vectorUnitMatrix,
+            c = this.vectorContext;
+        m[0] = Math.cos(angle) * size;
+        m[1] = Math.sin(angle) * size;
+        m[2] = -m[1];
+        m[3] = m[0];
+        m[4] = point.x;
+        m[5] = point.y;
+        c.depthTest = !!this.passState.depthEnabled;
+        c.depthWrite = false;
+        c.depthFunc = this.passState.depthFunc || 'lequal';
+        this.acornSprites.drawAmmo(m, this._renderDepth ?? 0);
+        const marker = Math.max(4, 6 * this.sc());
+        m[0] = marker;
+        m[1] = 0;
+        m[2] = 0;
+        m[3] = marker;
+        this.acornSprites.drawTeamMarker(
+            m,
+            this._renderDepth ?? 0,
+            this.factionRelation(p.side) === 'friendly',
+        );
     }
 
     drawUnit(u, renderOptions = null) {
@@ -5344,6 +5428,26 @@ class GLRenderer {
                 this.reportEntityRenderError('unit-shadow', u, err);
             }
         }
+        for (const p of this.renderState.displayed('projectile', this.presentationNow())) {
+            if (p.payload?.type !== 'acorn' || !this.presentationEntityActive('projectile', p.id))
+                continue;
+            if (p.side !== this.mySide() && !this.visibleRaw(p.x, p.y)) continue;
+            if (
+                p.retiredTick != null &&
+                this.renderState.frame(this.presentationNow()).timeMs >=
+                    p.retiredTick * this.presentationTargetIntervalMs()
+            )
+                continue;
+            const world = this.resolveRenderWorldPosition(p, 'projectile');
+            const ground = this.resolveGroundShadowPosition(p, 'projectile');
+            const pt = this.projectRenderWorldPosition(ground),
+                radius = Math.max(2, ((p.drawRadius || 5) - 1) * this.sc());
+            this.withWorldSpriteDepth(ground, () => {
+                this.circle(pt.x, pt.y, radius, [0.06, 0.08, 0.1, 0.22], 8);
+                this.circle(pt.x, pt.y, radius * 1.55, [0.06, 0.08, 0.1, 0.08], 10);
+            });
+            this.withWorldSpriteDepth(world, () => this.drawLaunchTrail(p, world, this.sc()));
+        }
         for (const projectile of this.renderState.displayed('unitLob', this.presentationNow())) {
             if (
                 projectile.retiredAtTick != null &&
@@ -5601,6 +5705,11 @@ class GLRenderer {
         let lastPainter = null;
         const entries = this.prepareWorldSpriteFrame(visibleUnits);
         this.prepareGrainPoses(entries);
+        this.drawAcornSpinEffects(entries);
+        if (this.frame.length) {
+            this.flush(this.frame, true);
+            this.begin();
+        }
         this.drawGrainBodies(entries);
         for (const entry of entries) {
             const { kind, entity, world } = entry;
@@ -5608,6 +5717,7 @@ class GLRenderer {
             this.renderStage = kind;
             const nextPainter =
                 kind === 'landingBundle' ||
+                (kind === 'projectile' && entity.payload?.type === 'acorn') ||
                 (kind === 'projectile' && entity.payload?.type === 'corn') ||
                 kind === 'unitLob' ||
                 kind === 'thorn' ||
@@ -5633,6 +5743,8 @@ class GLRenderer {
                     });
                 else if (kind === 'building') this.drawBuildingSafely(entity);
                 else if (kind === 'landingBundle') this.drawLandingBundle(entity);
+                else if (entity.payload?.type === 'acorn')
+                    this.drawAcornAmmoProjectile(entity, world);
                 else if (kind === 'unitLob') this.drawCornKernel(entity, world);
                 else if (kind === 'projectile' && entity.payload?.type === 'corn')
                     this.drawCornConeProjectile(entity, world);
@@ -5662,6 +5774,57 @@ class GLRenderer {
             this.passState.stencil = false;
             this.passState.depthFunc = 'lequal';
             this.passState.depthWrite = true;
+        }
+    }
+    // Visual arcs and dust share the world's primitive batch; the authoritative
+    // spin interval and contact pulses remain owned by the simulation.
+    drawAcornSpinEffects(entries) {
+        const now = this.presentationNow();
+        for (const entry of entries) {
+            if (entry.kind !== 'unit' || entry.entity.type !== 'acorn') continue;
+            const model = this.renderState.model('unit', entry.entity.id, now);
+            const spin = model?.entity?.spinAttack,
+                tick = model?.tick;
+            if (
+                !spin ||
+                !Number.isFinite(tick) ||
+                tick < spin.activeStartTick ||
+                tick >= spin.activeEndTick
+            )
+                continue;
+            const p = this.projectRenderWorldPosition(entry.world);
+            const turns =
+                ((tick - spin.activeStartTick) / (spin.activeEndTick - spin.activeStartTick)) *
+                Math.PI *
+                6;
+            const radius = this.unitRenderRadius(entry.entity) * 1.7;
+            this.withWorldSpriteDepth(entry.world, () => {
+                for (let arc = 0; arc < 2; arc++) {
+                    const start = turns + arc * Math.PI;
+                    for (let j = 0; j < 7; j++) {
+                        const a = start + ((j / 7) * Math.PI) / 2,
+                            b = start + (((j + 1) / 7) * Math.PI) / 2;
+                        this.line(
+                            p.x + Math.cos(a) * radius,
+                            p.y + Math.sin(a) * radius * 0.52,
+                            p.x + Math.cos(b) * radius,
+                            p.y + Math.sin(b) * radius * 0.52,
+                            Math.max(1, 2.5 * this.sc()),
+                            [1, 0.78, 0.36, 0.72],
+                        );
+                    }
+                }
+                for (let i = 0; i < 3; i++) {
+                    const a = turns * 0.7 + (i * Math.PI * 2) / 3;
+                    this.circle(
+                        p.x + Math.cos(a) * radius * 0.85,
+                        p.y + radius * 0.4 + Math.sin(a) * radius * 0.18,
+                        Math.max(1, 2.5 * this.sc()),
+                        [0.88, 0.75, 0.5, 0.4],
+                        6,
+                    );
+                }
+            });
         }
     }
     renderOverlayPass() {

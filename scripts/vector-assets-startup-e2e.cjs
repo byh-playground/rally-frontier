@@ -167,6 +167,9 @@ async function main(htmlPath = path.resolve(process.argv[2] || '_site/index.html
         const prepared = await page.evaluate(() => ({
             holds: window.__startupRenderer()?.gameResourceHolds?.length ?? 0,
             riceAtlas: !!window.__startupRenderer()?.riceSprites?.atlas?.region,
+            acornAtlas: !!window.__startupRenderer()?.acornSprites?.atlas?.region,
+            cornAtlas: !!window.__startupRenderer()?.cornSprites?.atlas?.region,
+            chestnutAtlas: !!window.__startupRenderer()?.chestnutSprites?.atlas?.region,
             beanAtlases: ['pea', 'redbean'].every(
                 (type) => !!window.__startupRenderer()?.beanSprites?.[type]?.atlas?.region,
             ),
@@ -176,6 +179,9 @@ async function main(htmlPath = path.resolve(process.argv[2] || '_site/index.html
         if (
             prepared.holds !== expected.assets.length ||
             !prepared.riceAtlas ||
+            !prepared.acornAtlas ||
+            !prepared.cornAtlas ||
+            !prepared.chestnutAtlas ||
             !prepared.beanAtlases ||
             prepared.device !== 'ready' ||
             prepared.loopStarted
