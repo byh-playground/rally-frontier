@@ -19,12 +19,13 @@ export function grainPortrait(type, compiled, width = 160) {
 }
 
 async function renderPortrait(type, compiled, width) {
-    if (type === 'rice') return riceSpritePortrait(globalThis.RiceSpriteCanvas, width);
-    if (type === 'acorn') return acornSpritePortrait(globalThis.AcornSpriteCanvas, width);
-    if (type === 'corn') return cornSpritePortrait(globalThis.CornSpriteCanvas, width);
-    if (type === 'chestnut') return chestnutSpritePortrait(globalThis.ChestnutSpriteCanvas, width);
-    if (globalThis.BeanSpriteCanvases?.[type])
-        return beanSpritePortrait(globalThis.BeanSpriteCanvases[type], type, width);
+    if (type === 'rice') return riceSpritePortrait(globalThis.RallySpriteCanvases.rice, width);
+    if (type === 'acorn') return acornSpritePortrait(globalThis.RallySpriteCanvases.acorn, width);
+    if (type === 'corn') return cornSpritePortrait(globalThis.RallySpriteCanvases.corn, width);
+    if (type === 'chestnut')
+        return chestnutSpritePortrait(globalThis.RallySpriteCanvases.chestnut, width);
+    if (globalThis.RallySpriteCanvases?.[type])
+        return beanSpritePortrait(globalThis.RallySpriteCanvases[type], type, width);
     const [VX, VY, VW, VH] = compiled.viewBox,
         SCALE = width / VW,
         BODY = new Image();
