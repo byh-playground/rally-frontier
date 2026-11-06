@@ -17,6 +17,26 @@
             "bytes": 29642,
             "sha256": "8688c858078f141598e4883a1d880693e8f787345393004f025932ff2f8fce31"
         },
+        "pea-arm-l.png": {
+            "bytes": 13720,
+            "sha256": "1c7d45066d32f0a72c0a89a648a204457ca2a90771c21ddc740e97285566c7b0"
+        },
+        "pea-arm-r.png": {
+            "bytes": 13897,
+            "sha256": "44cd0e8db47b030391c3f2b9d11197490df4bb202d9c89e6d13efc157d7f86d0"
+        },
+        "pea-body.png": {
+            "bytes": 152040,
+            "sha256": "0b2594830fdba565ce18968afca570f97008cb738b95e40b8986a3c3447f41bb"
+        },
+        "pea-leg-l.png": {
+            "bytes": 11817,
+            "sha256": "35f8ac38d4ac9a4aab2030e03e663e4e3163a87cbf01eb7693524aad4d1e2b1a"
+        },
+        "pea-leg-r.png": {
+            "bytes": 11889,
+            "sha256": "80139f07edf2bc7381e0bcebae0ea768ba9e69d7bf219d7b1f9e1ed30a74d27d"
+        },
         "red-arm-l.png": {
             "bytes": 13955,
             "sha256": "2e7a8435c34572bb7497d82dbb7990eac2e3109db280bc3aa98bb671104b5457"
@@ -36,26 +56,6 @@
         "red-leg-r.png": {
             "bytes": 12229,
             "sha256": "c5c8eff958e84da8b8db8d09d78555ab2815fba11098e28e46826bf70e961951"
-        },
-        "soy-arm-l.png": {
-            "bytes": 13720,
-            "sha256": "1c7d45066d32f0a72c0a89a648a204457ca2a90771c21ddc740e97285566c7b0"
-        },
-        "soy-arm-r.png": {
-            "bytes": 13897,
-            "sha256": "44cd0e8db47b030391c3f2b9d11197490df4bb202d9c89e6d13efc157d7f86d0"
-        },
-        "soy-body.png": {
-            "bytes": 152040,
-            "sha256": "0b2594830fdba565ce18968afca570f97008cb738b95e40b8986a3c3447f41bb"
-        },
-        "soy-leg-l.png": {
-            "bytes": 11817,
-            "sha256": "35f8ac38d4ac9a4aab2030e03e663e4e3163a87cbf01eb7693524aad4d1e2b1a"
-        },
-        "soy-leg-r.png": {
-            "bytes": 11889,
-            "sha256": "80139f07edf2bc7381e0bcebae0ea768ba9e69d7bf219d7b1f9e1ed30a74d27d"
         }
     }
 }

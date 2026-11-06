@@ -2,9 +2,9 @@
     "baseline": "PR #76 precompiled output",
     "curveSegments": 16,
     "assets": {
+        "ammo-pea": "5c3900e6cb07e4070d2bfcfb2495d3c39c4be402a6dfa35ab39dbb125629bc15",
         "ammo-redbean": "c9f88320d312a845d399c7125b09d23f147bbe45f951f559d9b97ed9611bb8d2",
         "ammo-rice": "137bbac10e13aa500dd3ab3b13397b28bc82faf031c71f94319fb930eb8691d4",
-        "ammo-soybean": "5c0636affdb895330a1d144ce8ef0957301b474a6f7ccf1b68382eb1c6b5bb0a",
         "cannon": "16f3092fc4e7769e31c6ef0447028298abe3b507d619c86efbe619ac292b62de"
     }
 }

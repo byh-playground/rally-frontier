@@ -53,6 +53,7 @@ import { BUILD_META } from './core/build-info.js';
 import { PRODUCT_VERSION } from './core/product-version.js';
 import { RallyGamekit, SIM_WORKER } from './core/gamekit.js';
 import { LaunchScreens } from './ui/launch-screens.js';
+import { DeckEditor } from './ui/deck-editor.js';
 import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
 const {
@@ -1597,7 +1598,7 @@ class GLRenderer {
                     globalThis.RiceSpriteCanvas,
                     RallyGamekit,
                 );
-            for (const type of ['soybean', 'redbean'])
+            for (const type of ['pea', 'redbean'])
                 if (!this.beanSprites[type])
                     this.beanSprites[type] = new BeanSpriteRenderer(
                         C,
@@ -7339,6 +7340,7 @@ class MatchLifecycle {
             ActiveViewState.transport,
             c,
             r === 'host' ? MatchLifecycle.currentMatchConfig() : null,
+            DeckEditor.getDeck(),
         );
         MatchLifecycle.wireSessionForView(r, ActiveViewState.session, ActiveViewState.transport);
         ActiveViewState.transport.open();
@@ -7384,6 +7386,7 @@ class MatchLifecycle {
             humanTransport,
             token,
             configFor(humanRole),
+            DeckEditor.getDeck(),
         );
         // CONFIG.single.botWorker runs the AI session in src/sim-worker.js; its WebRTC transport stays here.
         const botSession = CONFIG.single.botWorker
@@ -8367,7 +8370,7 @@ class LaunchPresentation {
         document.body.classList.toggle('launch-mode', on);
         UiRegistry.refs.launchHand?.classList.toggle('hidden', !on);
         if (!on) return;
-        const deck = LaunchRules.deck,
+        const deck = s.decks?.[side] || LaunchRules.deck,
             wallet = Math.floor(s.wallet?.[side] || 0);
         if (!deck.includes(this.card)) this.card = deck[0] || null;
         const key = deck.join('|');
@@ -9475,6 +9478,12 @@ else {
             },
             leaveToTitle: () => reloadAt('#/'),
         },
+    });
+    DeckEditor.install({
+        types: () => LaunchRules.deck,
+        nameOf: (type) => UnitDefinition.get(type)?.name || type,
+        statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
+        portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
     });
 }
 

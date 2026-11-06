@@ -2,6 +2,13 @@
     "schemaVersion": 1,
     "assets": [
         {
+            "id": "ammo-pea",
+            "url": "./assets/units/ammo-pea.svg",
+            "sourcePath": "assets/units/ammo-pea.svg",
+            "sha256": "cb31bc70b3ca2525827eae3314d36096209a07122b6f19fdd7ad7df35748e1e2",
+            "bytes": 1473
+        },
+        {
             "id": "ammo-redbean",
             "url": "./assets/units/ammo-redbean.svg",
             "sourcePath": "assets/units/ammo-redbean.svg",
@@ -14,13 +21,6 @@
             "sourcePath": "assets/units/ammo-rice.svg",
             "sha256": "f3ae12ad4473e3618ce8b84c6e52d29d6e803dd81e70253ffbbce4ee87935686",
             "bytes": 5104
-        },
-        {
-            "id": "ammo-soybean",
-            "url": "./assets/units/ammo-soybean.svg",
-            "sourcePath": "assets/units/ammo-soybean.svg",
-            "sha256": "3bb76684b5a3128e6b8f1dc6454eaefbc399c73f1d79ac5032fcc806fef59928",
-            "bytes": 1477
         },
         {
             "id": "cannon",

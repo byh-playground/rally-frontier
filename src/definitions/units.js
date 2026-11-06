@@ -19,7 +19,7 @@ class UnitDefinition {
             attackVisual: { sourceMotion: 'slash', travel: 'none', impact: 'light' },
             sight: 275,
         },
-        soybean: {
+        pea: {
             requiresContactTerrain: true,
             construction: { range: 5, workPerHit: 1 },
             name: '콩',
@@ -89,7 +89,7 @@ class UnitVisualDefinition {
             accent: [0.96, 0.94, 0.86, 1],
             fx: 'melee',
         },
-        soybean: {
+        pea: {
             family: 'grain',
             billboard: true,
             visualScale: 0.9,

@@ -12,7 +12,8 @@ async function deploymentState(page) {
     );
     // The title stamp is redrawn after the metadata settles; read it once it leaves the pending text.
     await page.waitForFunction(
-        () => document.getElementById('titleUpdateStamp')?.textContent !== '확인 중',
+        () =>
+            document.getElementById('titleUpdateStamp')?.textContent.includes('확인 중') === false,
         undefined,
         { timeout: 10_000 },
     );
@@ -166,7 +167,7 @@ async function main(htmlPath = path.resolve(process.argv[2] || '_site/index.html
         const prepared = await page.evaluate(() => ({
             holds: window.__startupRenderer()?.gameResourceHolds?.length ?? 0,
             riceAtlas: !!window.__startupRenderer()?.riceSprites?.atlas?.region,
-            beanAtlases: ['soybean', 'redbean'].every(
+            beanAtlases: ['pea', 'redbean'].every(
                 (type) => !!window.__startupRenderer()?.beanSprites?.[type]?.atlas?.region,
             ),
             device: window.__startupRenderer()?.device?.state,

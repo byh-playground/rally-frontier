@@ -4,9 +4,21 @@ import './grain-portrait.js';
 // Routes: #/ title, #/friend, #/help, #/play, #/play/menu, #/play/help, #/play/<grain> card detail, #/result.
 // The game owns matches; this module owns which screen and sheet the address shows, and asks the game through `actions`.
 const GRAIN_COPY = Object.freeze({
-    rice: { land: '넓게 흩어짐', fire: '5갈래 산탄', desc: '가장 멀리 날아가 다섯 갈래로 흩어집니다. 넓은 곳을 한 번에 덮습니다.' },
-    soybean: { land: '한 줄로 착지', fire: '단발 · 중심 강타', desc: '한 발이 크게 터집니다. 폭발 중심에 맞힐수록 피해가 커지고, 착지하면 적 본진 쪽으로 한 줄로 섭니다.' },
-    redbean: { land: '착지 후 돌격', fire: '3연사', desc: '같은 곳에 세 번 시간차로 떨어집니다. 착지하자마자 잠깐 빠르게 돌격합니다.' },
+    rice: {
+        land: '넓게 흩어짐',
+        fire: '5갈래 산탄',
+        desc: '가장 멀리 날아가 다섯 갈래로 흩어집니다. 넓은 곳을 한 번에 덮습니다.',
+    },
+    pea: {
+        land: '한 줄로 착지',
+        fire: '단발 · 중심 강타',
+        desc: '한 발이 크게 터집니다. 폭발 중심에 맞힐수록 피해가 커지고, 착지하면 적 본진 쪽으로 한 줄로 섭니다.',
+    },
+    redbean: {
+        land: '착지 후 돌격',
+        fire: '3연사',
+        desc: '같은 곳에 세 번 시간차로 떨어집니다. 착지하자마자 잠깐 빠르게 돌격합니다.',
+    },
 });
 const SCREENS = new Set(['', 'friend', 'help', 'play', 'result']);
 
@@ -17,7 +29,8 @@ export class LaunchScreens {
         this.actions = actions;
         this.$ = (id) => document.getElementById(id);
         this.navigation = createNavigation({
-            normalize: (route) => (SCREENS.has(route.screen) ? route : { screen: '', item: '', query: '' }),
+            normalize: (route) =>
+                SCREENS.has(route.screen) ? route : { screen: '', item: '', query: '' },
         });
         this.bindButtons();
         this.renderPortraits();
@@ -74,7 +87,10 @@ export class LaunchScreens {
         }
         this.$('matchMenuSoundBtn').textContent = A.soundOn() ? '소리 끄기' : '소리 켜기';
         this.showSheet('friendSheet', SCREEN === 'friend');
-        this.showSheet('launchHelpSheet', SCREEN === 'help' || (SCREEN === 'play' && ITEM === 'help'));
+        this.showSheet(
+            'launchHelpSheet',
+            SCREEN === 'help' || (SCREEN === 'play' && ITEM === 'help'),
+        );
         const CARD = SCREEN === 'play' && A.grains().includes(ITEM) ? ITEM : null;
         if (CARD) {
             this.renderCardDetail(CARD);
@@ -88,7 +104,8 @@ export class LaunchScreens {
         const A = this.actions,
             $ = this.$;
         // A start that failed leaves the address on #/play, so the button starts again without an address change.
-        $('gameStartBtn').onclick = () => (this.navigation.snapshot().screen === 'play' ? A.startAiMatch() : this.go('play'));
+        $('gameStartBtn').onclick = () =>
+            this.navigation.snapshot().screen === 'play' ? A.startAiMatch() : this.go('play');
         $('friendMatchBtn').onclick = () => this.go('friend');
         $('titleHelpBtn').onclick = () => this.go('help');
         $('friendCreateBtn').onclick = () => {
@@ -108,7 +125,8 @@ export class LaunchScreens {
             e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
         };
         // The menu can close without an address change (Esc), so a tap on the same address opens it directly.
-        $('matchMenuBtnGame').onclick = () => (this.navigation.snapshot().item === 'menu' ? A.openMenu() : this.go('play', 'menu'));
+        $('matchMenuBtnGame').onclick = () =>
+            this.navigation.snapshot().item === 'menu' ? A.openMenu() : this.go('play', 'menu');
         $('matchMenuHelpBtn').onclick = () => this.replace('play', 'help');
         $('matchMenuSoundBtn').onclick = () => {
             A.toggleSound();
@@ -124,13 +142,17 @@ export class LaunchScreens {
                 }
             });
         }
-        $('launchCards').addEventListener('click', (e) => {
-            const INFO = e.target.closest('[data-card-info]');
-            if (INFO) {
-                e.stopPropagation();
-                this.go('play', INFO.dataset.cardInfo);
-            }
-        }, true);
+        $('launchCards').addEventListener(
+            'click',
+            (e) => {
+                const INFO = e.target.closest('[data-card-info]');
+                if (INFO) {
+                    e.stopPropagation();
+                    this.go('play', INFO.dataset.cardInfo);
+                }
+            },
+            true,
+        );
         $('resultTitleBtn').onclick = () => A.leaveToTitle();
     }
     static closeSheet() {
@@ -144,7 +166,10 @@ export class LaunchScreens {
             const IMG = document.createElement('img');
             IMG.alt = this.actions.grainName(TYPE);
             HOST.append(IMG);
-            this.actions.portraitSource(TYPE).then((src) => (IMG.src = src), () => IMG.remove());
+            this.actions.portraitSource(TYPE).then(
+                (src) => (IMG.src = src),
+                () => IMG.remove(),
+            );
         }
     }
     // Card buttons with face portraits; the game keeps their selected/unaffordable classes.
@@ -155,7 +180,10 @@ export class LaunchScreens {
     }
     static fillCardPortraits(host) {
         for (const IMG of host.querySelectorAll('img[data-portrait]')) {
-            this.actions.portraitSource(IMG.dataset.portrait).then((src) => (IMG.src = src), () => {});
+            this.actions.portraitSource(IMG.dataset.portrait).then(
+                (src) => (IMG.src = src),
+                () => {},
+            );
         }
     }
     static renderCardDetail(type) {
@@ -181,7 +209,8 @@ export class LaunchScreens {
         ARROW.classList.toggle('hidden', !enemyDirection);
         if (enemyDirection) {
             ARROW.querySelector('i').style.transform = `rotate(${enemyDirection.angle}rad)`;
-            ARROW.querySelector('b').textContent = `적 본진 ${Math.round(enemyDirection.distance).toLocaleString('ko-KR')}`;
+            ARROW.querySelector('b').textContent =
+                `적 본진 ${Math.round(enemyDirection.distance).toLocaleString('ko-KR')}`;
         }
     }
     // Label over the landing ring while aiming; at is the ring centre in page pixels, or null when not aiming.
@@ -199,7 +228,8 @@ export class LaunchScreens {
     }
     static renderResult({ durationMs, launches, sent, kills }) {
         const $ = this.$;
-        $('resultStats').innerHTML = `<div>경기 시간<b>${formatClock(durationMs)}</b></div><div>발사<b>${launches}회</b></div><div>내보낸 병사<b>${sent}</b></div><div>처치<b>${kills}</b></div>`;
+        $('resultStats').innerHTML =
+            `<div>경기 시간<b>${formatClock(durationMs)}</b></div><div>발사<b>${launches}회</b></div><div>내보낸 병사<b>${sent}</b></div><div>처치<b>${kills}</b></div>`;
     }
 }
 
