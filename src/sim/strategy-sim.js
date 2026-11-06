@@ -4,6 +4,7 @@ import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { UnitSpinAttack } from './unit-spin-attack.js';
 import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './entities.js';
 import { StateContract, StateValue } from './components.js';
+import { UnitResultStats } from './unit-result-stats.js';
 import { RallyStateCodec } from '../session/game-session.js';
 import { LaunchRules } from './launch-rules.js';
 import { ConstructionRules } from './construction-rules.js';
@@ -296,6 +297,7 @@ class StrategySim {
         this.launchDeployments = [];
         // Per-side match totals for the result screen: shots fired, grains sent, enemy units killed.
         this.launchStats = { launches: [0, 0], sent: [0, 0], kills: [0, 0] };
+        this.unitResultStats = UnitResultStats.create();
         this.capturePoints = this.mapDescriptor.capturePoints.map((p) => ({
             ...p,
             owner: p.owner === 0 || p.owner === 1 ? p.owner : null,
@@ -1703,6 +1705,8 @@ class StrategySim {
         target.constructionWork = null;
         if ((sourceSide === 0 || sourceSide === 1) && target.side === 1 - sourceSide)
             this.launchStats.kills[sourceSide]++;
+        if ((sourceSide === 0 || sourceSide === 1) && target.side === 1 - sourceSide)
+            UnitResultStats.add(this.unitResultStats, sourceSide, sourceType, 'kills');
         this.events.push({
             type: 'death',
             side: target.side,
@@ -1804,6 +1808,14 @@ class StrategySim {
         const hpBefore = Math.max(0, target.hp || 0);
         target.hp -= dmg;
         const dealt = Math.min(hpBefore, dmg);
+        if ((sourceSide === 0 || sourceSide === 1) && target.side === 1 - sourceSide)
+            UnitResultStats.add(
+                this.unitResultStats,
+                sourceSide,
+                sourceType,
+                isBuilding ? 'buildingDamage' : 'unitDamage',
+                dealt,
+            );
         setCapture(dealt, false, damageClass);
         if (!isBuilding) {
             target.hitFlash = 4;
@@ -3409,6 +3421,7 @@ class StrategySim {
         return state;
     }
     importState(s, { rollback = false } = {}) {
+        UnitResultStats.validate(s.unitResultStats);
         const retained = { mapDescriptor: this.mapDescriptor, rules: this.rules };
         const retainedNavigation =
             rollback && this.navigation instanceof TerrainNavigation ? this.navigation : null;
@@ -3471,6 +3484,7 @@ class StrategySim {
                 wallet: this.wallet.slice(),
                 launchRangeLevel: this.launchRangeLevel.slice(),
                 launchStats: StateValue.copy(this.launchStats),
+                unitResultStats: StateValue.copy(this.unitResultStats),
                 flags: CloneUtil.clone(this.flags),
                 capturePoints: CloneUtil.clone(this.capturePoints),
                 units: this.units.map((u) => u.toState('view')),

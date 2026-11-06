@@ -8584,7 +8584,14 @@ class MatchLifecycle {
                 launches: stats.launches[mySide],
                 sent: stats.sent[mySide],
                 kills: stats.kills[mySide],
+                unitStats: end.unitResultStats?.[mySide],
+                deck: end.decks?.[mySide] || [],
+                partial: reason === 'disconnect-timeout',
             });
+        else {
+            DomUtil.byId('resultStats').replaceChildren();
+            DomUtil.byId('resultByUnit').hidden = true;
+        }
         const replayReady = !!ReplayPresentation.replaySourceSession()?.replayRecorder?.result;
         if (UiRegistry.refs.replaySaveBtn) UiRegistry.refs.replaySaveBtn.disabled = !replayReady;
         if (UiRegistry.refs.replayWatchBtn) UiRegistry.refs.replayWatchBtn.disabled = !replayReady;

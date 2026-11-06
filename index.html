@@ -162,6 +162,7 @@ END OF DEVELOPMENT CONTRACT
 
         <link rel="stylesheet" href="./src/styles/game.css" />
         <link rel="stylesheet" href="./src/styles/deck.css" />
+        <link rel="stylesheet" href="./src/styles/result-stats.css" />
     </head>
     <body class="boot-loading">
         <div
@@ -833,6 +834,31 @@ END OF DEVELOPMENT CONTRACT
                 <p id="resultText" class="result-why"></p>
                 <h2 id="resultTitle">승리</h2>
                 <div id="resultStats" class="launch-stats"></div>
+                <section
+                    id="resultByUnit"
+                    class="result-by-unit"
+                    aria-labelledby="resultByUnitTitle"
+                    hidden
+                >
+                    <h3 id="resultByUnitTitle">병종별 전투 기록</h3>
+                    <p id="resultByUnitNote">
+                        출격은 실제 등장한 병사, 처치는 적 병사 기준입니다. 피해는 실제 감소한
+                        체력이며 병사와 해당 병종의 투입 포탄을 함께 집계합니다. 건물 자체 공격은
+                        제외합니다.
+                    </p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th scope="col">병종</th>
+                                <th scope="col">출격</th>
+                                <th scope="col">처치</th>
+                                <th scope="col">피해</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultByUnitRows"></tbody>
+                    </table>
+                    <p id="resultByUnitPartial" hidden>연결이 끊긴 시점까지 확인된 기록입니다.</p>
+                </section>
                 <button id="rematchBtn" class="launch-btn primary" type="button">다시 대전</button>
                 <div class="launch-row">
                     <button id="replayWatchBtn" class="launch-btn secondary" type="button">
