@@ -163,8 +163,10 @@ class CombatComponent {
             view: [
                 'attackArcTargetId',
                 'attackArcUntilTick',
-                'attackWindupUntil',
                 'attackWindupStartedAt',
+                'attackWindupUntil',
+                'cooldownUntil',
+                'lobLaunchTick',
                 'thornLaunchTick',
                 'thornAimX',
             ],

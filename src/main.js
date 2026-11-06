@@ -40,6 +40,7 @@ import { RENDER_TRACKS } from './render/render-tracks.js';
 import { BuildingArt } from './render/building-art.js';
 import { RiceSpriteRenderer } from './render/rice-sprite.js';
 import { BeanSpriteRenderer } from './render/bean-sprite.js';
+import { CornSpriteRenderer } from './render/corn-sprite.js';
 import { ChestnutSpriteRenderer } from './render/chestnut-sprite.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
 import {
@@ -140,7 +141,7 @@ class RenderStateStore {
         this.sequence = 0;
         this.clock = 0;
         this.zeroDelta = Object.freeze({ x: 0, y: 0 });
-        this.lists = { unit: [], projectile: [], thorn: [], flag: [], bundle: [] };
+        this.lists = { unit: [], projectile: [], unitLob: [], thorn: [], flag: [], bundle: [] };
     }
     time(now) {
         return (this.clock = Math.max(this.clock, Number(now) || 0));
@@ -159,6 +160,10 @@ class RenderStateStore {
         if (snap) this.revision++;
         const entities = [],
             seen = new Set();
+        let lobLaunches = null;
+        for (const event of source.events || [])
+            if (event.type === 'unitLobLaunch')
+                (lobLaunches ||= new Map()).set(event.projectileId, event);
         const add = (kind, id, value) => {
             const key = kind + ':' + id,
                 def = this.definitions[kind];
@@ -213,6 +218,24 @@ class RenderStateStore {
                 };
                 packet.initialTimeMs = (tick - 1) * stepMs;
             }
+            if (kind === 'unitLob' && !previous && !snap) {
+                const launch = lobLaunches?.get(id);
+                if (
+                    launch &&
+                    Number.isFinite(launch.x) &&
+                    Number.isFinite(launch.y) &&
+                    Number.isFinite(launch.zFP)
+                ) {
+                    const launchTick = Number.isFinite(Number(launch.presentationTick))
+                        ? Number(launch.presentationTick)
+                        : tick;
+                    packet.initialSource = {
+                        entity: { ...value, x: launch.x, y: launch.y, zFP: launch.zFP },
+                        tick: launchTick - 1,
+                    };
+                    packet.initialTimeMs = (launchTick - 1) * stepMs;
+                }
+            }
             if (
                 kind === 'thorn' &&
                 !previous &&
@@ -239,6 +262,30 @@ class RenderStateStore {
             if (unit.alive !== false || unit.impactMotion) add('unit', unit.id, unit);
         for (const projectile of source.projectiles || [])
             if (projectile.alive !== false) add('projectile', projectile.id, projectile);
+        for (const projectile of source.unitLobProjectiles || [])
+            if (projectile.startTick == null || projectile.startTick <= tick)
+                add('unitLob', projectile.id, projectile);
+        // Keep the last physical sample until the exact explosion subtick, so
+        // the interpolated kernel and event-driven particles meet without a gap.
+        for (const event of source.events || []) {
+            if (event.type !== 'unitLobExplosion') continue;
+            const key = 'unitLob:' + event.projectileId,
+                record = this.records.get(key);
+            if (!record?.live || seen.has(key)) continue;
+            const eventTick = Number.isFinite(Number(event.presentationTick))
+                ? Number(event.presentationTick)
+                : tick;
+            add('unitLob', event.projectileId, {
+                ...record.entity,
+                x: event.x,
+                y: event.y,
+                zFP: event.zFP,
+                retiredAtTick:
+                    event.subtick == null
+                        ? eventTick
+                        : eventTick - 1 + RangeUtil.clamp(Number(event.subtick) / 1000000, 0, 1),
+            });
+        }
         for (const thorn of source.unitThornProjectiles || [])
             if (thorn.startTick <= tick) add('thorn', thorn.id, thorn);
         // Publish the actual final contact sample before retiring the visual track. Interpolation must reach the impact.
@@ -609,12 +656,24 @@ const PROJECTILE_VISUAL_RENDER_FNS = Object.freeze({
     launchAmmo: (rdr, c) => {
         const { p, sc, screenMotion, x, y } = c;
         // Each grain flies as its own bundle SVG, nose along the screen-space flight direction.
-        const dx = screenMotion?.valid ? screenMotion.dx : 1,
-            dy = screenMotion?.valid ? screenMotion.dy : 0,
-            length = Math.max(30, 58 * sc);
         const record = rdr.launchAmmoRecord(p.payload?.type);
         if (!record) return;
-        rdr.drawVectorBillboard(record, x, y, Math.atan2(dy, dx), length / 200);
+        let dx = screenMotion?.valid ? screenMotion.dx : 1,
+            dy = screenMotion?.valid ? screenMotion.dy : 0;
+        if (
+            record.cornCone &&
+            !screenMotion?.valid &&
+            Number.isFinite(p.lockedAimX) &&
+            Number.isFinite(p.lockedAimY)
+        ) {
+            const target = rdr.worldToPx(rdr.viewX(p.lockedAimX), rdr.viewY(p.lockedAimY));
+            dx = target[0] - x;
+            dy = target[1] - y;
+        }
+        const length = Math.max(30, 58 * sc);
+        rdr.drawVectorBillboard(record, x, y, Math.atan2(dy, dx), length / 200, {
+            depthTest: !!record.cornCone,
+        });
         rdr.circle(
             x,
             y,
@@ -1428,6 +1487,7 @@ class GLRenderer {
         this.riceSprites = null;
         this.chestnutSprites = null;
         this.beanSprites = {};
+        this.cornSprites = null;
         this.riceBodyGroup = [];
         // One actor per grain: a shared actor re-seeked per grain rewrites its pose row and splits the instanced batch.
         this.grainActors = new Map();
@@ -1570,6 +1630,12 @@ class GLRenderer {
         this.unitFacingStates = new Map();
         this.launchRecoil = new Map();
         this.projectileTrails = new Map();
+        // Presentation-only particles are independent of the projectile image and sim state.
+        this.cornTrails = new Map();
+        this.cornTrailAnchors = new Map();
+        this.cornBursts = [];
+        this.cornEventSeen = new Map();
+        this.cornQuadMatrix = new Float32Array(6);
         this.projectileScreenMotionStates = new Map();
         this.last = performance.now();
         this.particles = [];
@@ -1655,6 +1721,12 @@ class GLRenderer {
                         RallyGamekit,
                         type,
                     );
+            if (!this.cornSprites)
+                this.cornSprites = new CornSpriteRenderer(
+                    C,
+                    globalThis.CornSpriteCanvas,
+                    RallyGamekit,
+                );
             if (!C.beginFrame()) throw new Error('그래픽 장치를 준비할 수 없습니다.');
             for (const [id, source] of Object.entries(globalThis.RallyVectorAssets)) {
                 holds.push(RallyGamekit.holdVectorAsset(C, source));
@@ -1685,8 +1757,9 @@ class GLRenderer {
                     }
             for (const sprites of [
                 this.riceSprites,
-                this.chestnutSprites,
                 ...Object.values(this.beanSprites),
+                this.cornSprites,
+                this.chestnutSprites,
             ]) {
                 const actor = sprites.createActor();
                 actors.push(actor);
@@ -1698,9 +1771,17 @@ class GLRenderer {
                 sprites.drawBody(actor, matrix, 0);
                 C.depthWrite = false;
                 sprites.drawFace(actor, matrix, 0, 'neutral');
+                if (sprites === this.cornSprites) this.cornSprites.drawHeldKernel(actor, matrix, 0);
                 C.flush('grain-resource-preparation');
                 C.depthTest = false;
             }
+            C.depthTest = true;
+            this.cornSprites.drawKernel(matrix, 0);
+            this.cornSprites.drawCone(matrix, 0);
+            this.cornSprites.drawTeamMarker(matrix, 0, true);
+            for (let i = 0; i < 3; i++) this.cornSprites.drawPopcorn(i, matrix, 0);
+            C.flush('corn-particle-resource-preparation');
+            C.depthTest = false;
             this.chestnutSprites.drawBurr([32, 0, 0, 32, 0, 0], 0);
             this.chestnutSprites.drawThorn([32, 0, 0, 32, 0, 0], 0);
             this.chestnutSprites.drawParticle([8, 0, 0, 8, 0, 0], 0, THORN_IMPACT_COLOR);
@@ -1721,6 +1802,8 @@ class GLRenderer {
             this.chestnutSprites = null;
             for (const sprites of Object.values(this.beanSprites)) sprites.dispose();
             this.beanSprites = {};
+            this.cornSprites?.dispose();
+            this.cornSprites = null;
             throw error;
         } finally {
             for (const actor of actors) actor.dispose();
@@ -2061,6 +2144,10 @@ class GLRenderer {
         const units = source.units || [],
             projectiles = source.projectiles || [];
         const targetIntervalMs = this.presentationTargetIntervalMs(source);
+        if (this.renderState.stepMs != null && this.renderState.stepMs !== targetIntervalMs) {
+            this.cornTrails.clear();
+            this.cornTrailAnchors.clear();
+        }
 
         this.renderState.capture(source, now, snap, targetIntervalMs);
         const liveFacingIds = new Set(units.filter((u) => u?.alive !== false).map((u) => u.id));
@@ -2077,6 +2164,12 @@ class GLRenderer {
 
     presentationNow(now = performance.now()) {
         return this._framePresentationAt ?? now;
+    }
+    cornPresentationTime() {
+        const time = this.renderState.frame(this.presentationNow())?.timeMs;
+        const replay = ReplayPresentation.replayPlayer;
+        if (replay && !replay.playing) return replay.sim.tick * this.presentationTargetIntervalMs();
+        return time;
     }
     thornImpactAge(fx, now = this.presentationNow()) {
         const replay = ReplayPresentation.replayPlayer;
@@ -2165,6 +2258,11 @@ class GLRenderer {
                 renderTick,
                 this.snapshot?.tps || SIM_TPS,
             ).height;
+        if (kind === 'unitLob') {
+            // zFP is authoritative absolute world altitude, not a visual-only arc.
+            height = (Number(motionState.zFP) || 0) / FP - groundY;
+            motion = 'ballistic';
+        }
         if (kind === 'projectile') {
             if (motionState.launchX != null && motionState.launchY != null) {
                 // Arc presentation must use the same trajectory destination as simulation.
@@ -2357,6 +2455,17 @@ class GLRenderer {
     }
     setSnapshot(s, { liveTargets = false, snapTargets = false } = {}) {
         const old = this.snapshot;
+        if (
+            !old ||
+            old.mapDescriptor?.seed !== s.mapDescriptor?.seed ||
+            s.tick < old.tick ||
+            (snapTargets && s.tick !== old.tick)
+        ) {
+            this.cornTrails.clear();
+            this.cornTrailAnchors.clear();
+            this.cornBursts.length = 0;
+            this.cornEventSeen.clear();
+        }
         if (snapTargets || !old) this.resetFogTransition();
         this.world = WorldContext.forState(s);
         this.snapshot = s;
@@ -2386,6 +2495,7 @@ class GLRenderer {
 
         this.processFloatingEvents(s);
         this.processClientCombatEffects(s);
+        this.processCornEvents(s);
     }
 
     triggerClientShake(intensity = 2, duration = 140, seed = 1) {
@@ -2434,6 +2544,35 @@ class GLRenderer {
         return Number.isFinite(displayTime)
             ? now + (eventTick * 1000) / (snapshot.tps || SIM_TPS) - displayTime
             : now;
+    }
+    processCornEvents(snapshot) {
+        if (!snapshot) return;
+        for (const event of snapshot.events || []) {
+            if (event.type !== 'unitLobExplosion') continue;
+            if (event.side !== this.mySide() && !this.visibleRaw(event.x, event.y)) continue;
+            const tick = Number.isFinite(Number(event.presentationTick))
+                ? Number(event.presentationTick)
+                : snapshot.tick;
+            const key =
+                String(event.projectileId) + '|' + tick + '|' + (Number(event.subtick) || 0);
+            if (this.cornEventSeen.has(key)) continue;
+            if (this.cornEventSeen.size >= 1024)
+                this.cornEventSeen.delete(this.cornEventSeen.keys().next().value);
+            this.cornEventSeen.set(key, tick);
+            this.cornBursts.push({
+                x: event.x,
+                y: event.y,
+                zFP: event.zFP,
+                radius: event.radius,
+                side: event.side,
+                seed: HashUtil.hash(String(event.projectileId || '') + '|' + tick),
+                startTick:
+                    event.subtick == null
+                        ? tick
+                        : tick - 1 + RangeUtil.clamp(Number(event.subtick) / 1000000, 0, 1),
+            });
+        }
+        if (this.cornBursts.length > 220) this.cornBursts.splice(0, this.cornBursts.length - 220);
     }
     addClientFx(kind, e, snapshot, index, extra = {}) {
         const eventTick = Number.isFinite(Number(e.presentationTick))
@@ -3908,6 +4047,7 @@ class GLRenderer {
     hasGrainArt(u) {
         return (
             u?.type === 'rice' ||
+            (u?.type === 'corn' && !!this.cornSprites) ||
             (u?.type === 'chestnut' && !!this.chestnutSprites) ||
             !!this.beanSprites?.[u?.type] ||
             !!window.RallyVectorAssets?.[u?.type]
@@ -3918,6 +4058,11 @@ class GLRenderer {
         const key = 'ammo|' + type;
         let record = this.vectorUnitAssetCache.get(key);
         if (record) return record;
+        if (type === 'corn') {
+            record = { cornCone: true };
+            this.vectorUnitAssetCache.set(key, record);
+            return record;
+        }
         if (type === 'chestnut') {
             record = { sprite: this.chestnutSprites };
             this.vectorUnitAssetCache.set(key, record);
@@ -3948,8 +4093,10 @@ class GLRenderer {
             this.flush(this.frame, true);
             this.begin();
         }
-        const cos = Math.cos(angle) * scale,
-            sin = Math.sin(angle) * scale,
+        const actualAngle = record.cornCone ? angle + Math.PI / 4 : angle,
+            actualScale = record.cornCone ? scale * 200 : scale,
+            cos = Math.cos(actualAngle) * actualScale,
+            sin = Math.sin(actualAngle) * actualScale,
             m = this._vectorUnitMatrix;
         if (record.sprite) {
             m[0] = cos * scaleX * 256;
@@ -3968,15 +4115,22 @@ class GLRenderer {
         m[1] = sin * scaleX;
         m[2] = -sin * scaleY;
         m[3] = cos * scaleY;
-        m[4] = x - m[0] * 128 - m[2] * 128;
-        m[5] = y - m[1] * 128 - m[3] * 128;
-        this.vectorContext.drawVectorActor(record.actor, {
-            matrix: m,
-            alpha: 1,
-            depth: this._renderDepth ?? 0,
-            depthTest,
-            depthWrite: false,
-        });
+        m[4] = record.cornCone ? x : x - m[0] * 128 - m[2] * 128;
+        m[5] = record.cornCone ? y : y - m[1] * 128 - m[3] * 128;
+        if (record.cornCone) {
+            this.vectorContext.depthTest = depthTest;
+            this.vectorContext.depthWrite = false;
+            this.cornSprites.drawCone(m, this._renderDepth ?? 0);
+            return;
+        } else {
+            this.vectorContext.drawVectorActor(record.actor, {
+                matrix: m,
+                alpha: 1,
+                depth: this._renderDepth ?? 0,
+                depthTest,
+                depthWrite: false,
+            });
+        }
         this.flushVectorMesh('vector-billboard');
     }
     landingBundlePose(fx) {
@@ -4029,11 +4183,13 @@ class GLRenderer {
         const sprites =
             type === 'rice'
                 ? this.riceSprites
-                : type === 'chestnut'
-                  ? this.chestnutSprites
-                  : this.beanSprites[type];
+                : type === 'corn'
+                  ? this.cornSprites
+                  : type === 'chestnut'
+                    ? this.chestnutSprites
+                    : this.beanSprites[type];
         if (sprites) {
-            record = { compiled: sprites, ground: [0, 145], sprite: true };
+            record = { compiled: sprites, ground: [0, type === 'corn' ? 148 : 145], sprite: true };
             this.vectorUnitAssetCache.set(key, record);
             return record;
         }
@@ -4166,6 +4322,47 @@ class GLRenderer {
                             ? 'walk'
                             : 'idle';
             }
+            let cornElapsed = null;
+            grain.holdsKernel = false;
+            if (record.compiled === this.cornSprites && !impact.active && !work?.active) {
+                const combat = entity.combat || u.combat || {},
+                    start = Number(combat.attackWindupStartedAt),
+                    end = Number(combat.attackWindupUntil),
+                    launch = combat.lobLaunchTick == null ? null : Number(combat.lobLaunchTick),
+                    tps = this.snapshot.tps || SIM_TPS;
+                if (end > 0 && end > start && renderTick < end) {
+                    cornElapsed = 620 * RangeUtil.clamp((renderTick - start) / (end - start), 0, 1);
+                    grain.holdsKernel = true;
+                } else if (Number.isFinite(launch)) {
+                    // The projectile's first physical step runs during
+                    // (lobLaunchTick - 1, lobLaunchTick], so release is at its start.
+                    const ageMs = ((renderTick - (launch - 1)) * 1000) / tps;
+                    if (ageMs >= -1000 / tps && ageMs < 330) {
+                        cornElapsed = 620 + Math.max(0, ageMs);
+                        grain.holdsKernel = ageMs < 0;
+                    }
+                }
+                // Corn's throw is anchored to authority windup/release, not the
+                // generic melee attackFlash latch (which would restart it later).
+                clip =
+                    cornElapsed != null
+                        ? 'fire'
+                        : grain.hitUntil > now
+                          ? 'hit'
+                          : moving
+                            ? 'walk'
+                            : 'idle';
+                if (cornElapsed != null && entity.target) {
+                    const target =
+                        this.renderState.model('unit', entity.target, now)?.entity ||
+                        (this.snapshot.buildings || []).find((b) => b.id === entity.target);
+                    if (target && Number.isFinite(Number(target.x))) {
+                        const worldDirection = Number(target.x) < Number(entity.x) ? -1 : 1;
+                        grain.cornFacing =
+                            this.orientationRole() === 'guest' ? -worldDirection : worldDirection;
+                    }
+                }
+            }
             let chestnutFireMs = null,
                 chestnutFacing = 1;
             if (
@@ -4204,7 +4401,8 @@ class GLRenderer {
                 (restart && record.sprite && (clip === 'fire' || clip === 'hit'))
             )
                 actor.play(clip, 0);
-            if (chestnutFireMs !== null && clip === 'fire') actor.seekElapsed(chestnutFireMs);
+            if (cornElapsed != null) actor.seekElapsed(cornElapsed);
+            else if (chestnutFireMs !== null && clip === 'fire') actor.seekElapsed(chestnutFireMs);
             else
                 actor.seek(
                     work?.active && work.clip === 'idle'
@@ -4222,7 +4420,12 @@ class GLRenderer {
                     impact.rotation * (this.orientationRole() === 'guest' ? -1 : 1),
                 cos = Math.cos(angle),
                 sin = Math.sin(angle),
-                sx = scale * impact.scaleX * (work?.facing ?? chestnutFacing) * (work?.scaleX ?? 1),
+                sx =
+                    scale *
+                    impact.scaleX *
+                    (work?.facing ??
+                        (cornElapsed != null ? grain.cornFacing || 1 : chestnutFacing)) *
+                    (work?.scaleX ?? 1),
                 sy = scale * impact.scaleY * (work?.scaleY ?? 1);
             m[0] = cos * sx;
             m[1] = sin * sx;
@@ -4323,6 +4526,12 @@ class GLRenderer {
                 grain.depth - GRAIN_DEPTH_RANK_STEP / 2,
                 grain.face,
             );
+            if (grain.compiled === this.cornSprites && grain.holdsKernel)
+                this.cornSprites.drawHeldKernel(
+                    grain.actor,
+                    grain.matrix,
+                    grain.depth - GRAIN_DEPTH_RANK_STEP / 2,
+                );
             this.vectorAssetDrawnInstances = (this.vectorAssetDrawnInstances || 0) + 1;
             return;
         }
@@ -4663,6 +4872,222 @@ class GLRenderer {
         projectileCtx.screenMotion = this.projectileScreenMotion(p, stablePp.x, stablePp.y);
         PROJECTILE_VISUAL_RENDER_FNS.launchAmmo(this, projectileCtx);
     }
+    sampleCornTrail(id, side, world) {
+        const displayMs = this.cornPresentationTime();
+        if (!Number.isFinite(displayMs)) return;
+        const anchor = this.cornTrailAnchors.get(id),
+            speed = ReplayPresentation.replayPlayer?.speed || 1;
+        if (!anchor) {
+            if (this.cornTrailAnchors.size >= 512)
+                this.cornTrailAnchors.delete(this.cornTrailAnchors.keys().next().value);
+            this.cornTrailAnchors.set(id, {
+                x: world.x,
+                y: world.y,
+                z: world.z,
+                groundY: world.groundY,
+                at: displayMs,
+            });
+            return;
+        }
+        const elapsed = displayMs - anchor.at;
+        if (elapsed < 0 || elapsed > 300 / speed) {
+            anchor.x = world.x;
+            anchor.y = world.y;
+            anchor.z = world.z;
+            anchor.groundY = world.groundY;
+            anchor.at = displayMs;
+            return;
+        }
+        if (elapsed < 50 / speed) return;
+        if (Math.hypot(world.x - anchor.x, world.y - anchor.y, world.z - anchor.z) < 0.5) return;
+        let trail = this.cornTrails.get(id);
+        if (!trail) {
+            if (this.cornTrails.size >= 512)
+                this.cornTrails.delete(this.cornTrails.keys().next().value);
+            this.cornTrails.set(id, (trail = []));
+        }
+        trail.push({ ...anchor, at: displayMs, side });
+        if (trail.length > 6) trail.shift();
+        anchor.x = world.x;
+        anchor.y = world.y;
+        anchor.z = world.z;
+        anchor.groundY = world.groundY;
+        anchor.at = displayMs;
+    }
+    drawCornConeProjectile(projectile, world) {
+        if (projectile.side !== this.mySide() && !this.visibleRaw(projectile.x, projectile.y))
+            return;
+        const point = this.projectRenderWorldPosition(world),
+            stable = this.projectRenderWorldPositionStable(world),
+            motion = this.projectileScreenMotion(projectile, stable.x, stable.y);
+        let dx = motion.valid ? motion.dx : 1,
+            dy = motion.valid ? motion.dy : 0;
+        if (
+            !motion.valid &&
+            Number.isFinite(projectile.lockedAimX) &&
+            Number.isFinite(projectile.lockedAimY)
+        ) {
+            const target = this.worldToPx(
+                this.viewX(projectile.lockedAimX),
+                this.viewY(projectile.lockedAimY),
+            );
+            dx = target[0] - point.x;
+            dy = target[1] - point.y;
+        }
+        this.sampleCornTrail('cone:' + projectile.id, projectile.side, world);
+        const angle = Math.atan2(dy, dx) + Math.PI / 4,
+            size = Math.max(30, 58 * this.sc()),
+            a = Math.cos(angle) * size,
+            b = Math.sin(angle) * size,
+            matrix = this.cornQuadMatrix,
+            C = this.vectorContext;
+        matrix[0] = a;
+        matrix[1] = b;
+        matrix[2] = -b;
+        matrix[3] = a;
+        matrix[4] = point.x;
+        matrix[5] = point.y;
+        C.depthTest = !!this.passState.depthEnabled;
+        C.depthWrite = false;
+        C.depthFunc = this.passState.depthFunc || 'lequal';
+        this.cornSprites.drawCone(matrix, this._renderDepth ?? 0);
+        const markerSize = Math.max(4, 6 * this.sc());
+        matrix[0] = markerSize;
+        matrix[1] = 0;
+        matrix[2] = 0;
+        matrix[3] = markerSize;
+        this.cornSprites.drawTeamMarker(
+            matrix,
+            this._renderDepth ?? 0,
+            this.factionRelation(projectile.side) === 'friendly',
+        );
+    }
+    drawCornKernel(projectile, world) {
+        if (!this.cornSprites) throw new Error('옥수수 투사체 자원이 준비되지 않았습니다.');
+        const now = this.presentationNow(),
+            model = this.renderState.model('unitLob', projectile.id, now),
+            sampled = model?.entity || projectile;
+        if (!sampled.grounded && world.y > world.groundY + 1)
+            this.sampleCornTrail('lob:' + projectile.id, projectile.side, world);
+        const point = this.projectRenderWorldPosition(world),
+            radius = Number(UnitDefinition.get(projectile.sourceType)?.lobAttack?.radius) || 5,
+            size = Math.max(3, radius * 2 * this.sc()),
+            matrix = this.cornQuadMatrix,
+            C = this.vectorContext;
+        matrix[0] = size;
+        matrix[1] = 0;
+        matrix[2] = 0;
+        matrix[3] = size;
+        matrix[4] = point.x;
+        matrix[5] = point.y;
+        C.depthTest = !!this.passState.depthEnabled;
+        C.depthWrite = false;
+        C.depthFunc = this.passState.depthFunc || 'lequal';
+        this.cornSprites.drawKernel(matrix, this._renderDepth ?? 0);
+    }
+    renderCornParticles() {
+        if ((!this.cornTrails.size && !this.cornBursts.length) || !this.cornSprites) return;
+        const time = this.cornPresentationTime();
+        if (!Number.isFinite(time)) return;
+        const sc = this.sc(),
+            speed = ReplayPresentation.replayPlayer?.speed || 1,
+            interval = this.presentationTargetIntervalMs(),
+            trailLife = 300 / speed,
+            burstLife = 650 / speed;
+        this.begin();
+        this.passState.depthWrite = false;
+        for (const [id, trail] of this.cornTrails) {
+            let write = 0;
+            for (const p of trail) {
+                const age = time - p.at;
+                if (age >= trailLife) continue;
+                trail[write++] = p;
+                if (age < 0 || (p.side !== this.mySide() && !this.visibleRaw(p.x, p.z))) continue;
+                const point = this.projectRenderWorldPosition(p),
+                    fade = 1 - age / trailLife;
+                this.withWorldSpriteDepth(p, () =>
+                    this.circle(
+                        point.x,
+                        point.y,
+                        Math.max(1, (2 + 2 * fade) * sc),
+                        [1, 0.73, 0.16, 0.55 * fade],
+                        8,
+                    ),
+                );
+            }
+            trail.length = write;
+            if (!write) this.cornTrails.delete(id);
+        }
+        let write = 0;
+        for (const burst of this.cornBursts) {
+            const age = time - burst.startTick * interval;
+            if (age >= burstLife) continue;
+            this.cornBursts[write++] = burst;
+            if (age < 0 || (burst.side !== this.mySide() && !this.visibleRaw(burst.x, burst.y)))
+                continue;
+            const t = age / burstLife;
+            for (let i = 0; i < 3; i++) {
+                const angle = (i * Math.PI * 2) / 3 + ((burst.seed % 360) * Math.PI) / 180;
+                const world = {
+                    x: burst.x + Math.cos(angle) * 15 * t,
+                    z: burst.y + Math.sin(angle) * 10 * t,
+                    y: (Number(burst.zFP) || 0) / FP + 5 + 15 * t,
+                    groundY: 0,
+                };
+                const point = this.projectRenderWorldPosition(world);
+                this.withWorldSpriteDepth(world, () =>
+                    this.circle(
+                        point.x,
+                        point.y,
+                        Math.max(2, (5 + 8 * t) * sc),
+                        [1, 0.92, 0.72, 0.28 * (1 - t)],
+                        8,
+                    ),
+                );
+            }
+        }
+        this.cornBursts.length = write;
+        if (this.frame.length) this.flush(this.frame, true);
+        this.begin();
+        if (!this.cornBursts.length) return;
+        const C = this.vectorContext,
+            matrix = this.cornQuadMatrix;
+        C.depthTest = !!this.passState.depthEnabled;
+        C.depthWrite = false;
+        C.depthFunc = this.passState.depthFunc || 'lequal';
+        for (const burst of this.cornBursts) {
+            const age = time - burst.startTick * interval;
+            if (age < 0 || (burst.side !== this.mySide() && !this.visibleRaw(burst.x, burst.y)))
+                continue;
+            const t = Math.min(1, age / burstLife),
+                distance = Math.min(45, Number(burst.radius) || 45) * t;
+            for (let i = 0; i < 6; i++) {
+                const angle = (i * Math.PI * 2) / 6 + ((burst.seed % 360) * Math.PI) / 180;
+                const world = {
+                    x: burst.x + Math.cos(angle) * distance,
+                    z: burst.y + Math.sin(angle) * distance * 0.6,
+                    y: (Number(burst.zFP) || 0) / FP + Math.sin(Math.PI * t) * (10 + 4 * (i % 3)),
+                    groundY: 0,
+                };
+                const point = this.projectRenderWorldPosition(world),
+                    size = Math.max(3, 13 * sc * (1 - t * 0.35)),
+                    rotation = angle * 0.35 + t * (i % 2 ? -1 : 1);
+                const a = Math.cos(rotation) * size,
+                    b = Math.sin(rotation) * size;
+                matrix[0] = a;
+                matrix[1] = b;
+                matrix[2] = -b;
+                matrix[3] = a;
+                matrix[4] = point.x;
+                matrix[5] = point.y;
+                this.cornSprites.drawPopcorn(i % 3, matrix, this.spriteDepthForWorld(world), 1 - t);
+            }
+        }
+        C.flush('corn-particles');
+        C.depthTest = false;
+        C.depthWrite = false;
+        C.depthFunc = 'lequal';
+    }
     prepareFogSurfaces(atlas) {
         if (this._fogSurfaceAtlas === atlas) return;
         const surfaces = new Map([[0, []]]),
@@ -4919,6 +5344,49 @@ class GLRenderer {
                 this.reportEntityRenderError('unit-shadow', u, err);
             }
         }
+        for (const projectile of this.renderState.displayed('unitLob', this.presentationNow())) {
+            if (
+                projectile.retiredAtTick != null &&
+                this.renderState.frame(this.presentationNow()).timeMs >=
+                    projectile.retiredAtTick * this.presentationTargetIntervalMs()
+            )
+                continue;
+            if (projectile.side !== this.mySide() && !this.visibleRaw(projectile.x, projectile.y))
+                continue;
+            const world = this.resolveRenderWorldPosition(projectile, 'unitLob');
+            if (world.y <= world.groundY + 0.01) continue;
+            const ground = this.resolveGroundShadowPosition(projectile, 'unitLob');
+            const point = this.projectRenderWorldPosition(ground);
+            this.withWorldSpriteDepth(ground, () =>
+                this.circle(
+                    point.x,
+                    point.y,
+                    Math.max(2, 5 * this.sc()),
+                    [0.05, 0.06, 0.03, 0.24],
+                    8,
+                ),
+            );
+        }
+        for (const projectile of this.renderState.displayed('projectile', this.presentationNow())) {
+            if (projectile.payload?.type !== 'corn') continue;
+            if (projectile.side !== this.mySide() && !this.visibleRaw(projectile.x, projectile.y))
+                continue;
+            if (
+                projectile.retiredTick != null &&
+                this.renderState.frame(this.presentationNow()).timeMs >=
+                    projectile.retiredTick * this.presentationTargetIntervalMs()
+            )
+                continue;
+            const world = this.resolveRenderWorldPosition(projectile, 'projectile');
+            if (world.y <= world.groundY + 0.01) continue;
+            const ground = this.resolveGroundShadowPosition(projectile, 'projectile');
+            const point = this.projectRenderWorldPosition(ground),
+                radius = Math.max(2, ((projectile.drawRadius || 5) - 1) * this.sc());
+            this.withWorldSpriteDepth(ground, () => {
+                this.circle(point.x, point.y, radius, [0.06, 0.08, 0.1, 0.22], 8);
+                this.circle(point.x, point.y, radius * 1.55, [0.06, 0.08, 0.1, 0.08], 10);
+            });
+        }
         this.flush();
         this.passState.depthWrite = true;
     }
@@ -4949,7 +5417,7 @@ class GLRenderer {
             if (
                 p.retiredTick != null &&
                 this.renderState.frame(this.presentationNow()).timeMs >=
-                    (p.retiredTick * 1000) / (this.snapshot.tps || SIM_TPS)
+                    p.retiredTick * this.presentationTargetIntervalMs()
             )
                 continue;
             const world = this.resolveRenderWorldPosition(p, 'projectile');
@@ -4962,6 +5430,25 @@ class GLRenderer {
                 screen.y <= this.canvas.height + pad
             )
                 add('projectile', p, world);
+        }
+        for (const p of this.renderState.displayed('unitLob', this.presentationNow())) {
+            if (
+                p.retiredAtTick != null &&
+                this.renderState.frame(this.presentationNow()).timeMs >=
+                    p.retiredAtTick * this.presentationTargetIntervalMs()
+            )
+                continue;
+            if (p.side !== this.mySide() && !this.visibleRaw(p.x, p.y)) continue;
+            const world = this.resolveRenderWorldPosition(p, 'unitLob');
+            const screen = this.projectRenderWorldPosition(world),
+                pad = 90 * this.sc();
+            if (
+                screen.x >= -pad &&
+                screen.y >= -pad &&
+                screen.x <= this.canvas.width + pad &&
+                screen.y <= this.canvas.height + pad
+            )
+                add('unitLob', p, world);
         }
         for (const thorn of this.renderState.displayed('thorn', this.presentationNow())) {
             if (
@@ -5121,6 +5608,8 @@ class GLRenderer {
             this.renderStage = kind;
             const nextPainter =
                 kind === 'landingBundle' ||
+                (kind === 'projectile' && entity.payload?.type === 'corn') ||
+                kind === 'unitLob' ||
                 kind === 'thorn' ||
                 kind === 'thornImpact' ||
                 (kind === 'unit' && this.hasGrainArt(entity))
@@ -5144,6 +5633,9 @@ class GLRenderer {
                     });
                 else if (kind === 'building') this.drawBuildingSafely(entity);
                 else if (kind === 'landingBundle') this.drawLandingBundle(entity);
+                else if (kind === 'unitLob') this.drawCornKernel(entity, world);
+                else if (kind === 'projectile' && entity.payload?.type === 'corn')
+                    this.drawCornConeProjectile(entity, world);
                 else if (kind === 'thorn') this.drawThorn(entity, world);
                 else if (kind === 'thornImpact') this.drawThornImpact(entity, world);
                 else this.drawProjectileSafely(entity);
@@ -5512,7 +6004,10 @@ class GLRenderer {
             this.vectorTerrainOcclusionTests = 0;
             this.vectorTerrainOcclusionRegions = 0;
             this.vectorTerrainOcclusionTriangles = 0;
-            this.passProfiler.measure('world', () => this.renderWorldPass(visibleUnits));
+            this.passProfiler.measure('world', () => {
+                this.renderWorldPass(visibleUnits);
+                this.renderCornParticles();
+            });
             this.passProfiler.measure('shadow', () => this.renderShadowPass(visibleUnits));
             this.passProfiler.measure('overlay', () => this.renderOverlayPass());
             this.passProfiler.measure('ui-fx', () => this.renderUiFxPass());

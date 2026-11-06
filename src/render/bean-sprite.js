@@ -66,7 +66,7 @@ export async function loadBeanSpriteCanvases() {
     );
     const canvas = document.createElement('canvas');
     canvas.width = 1024;
-    canvas.height = 512;
+    canvas.height = 384;
     const context = canvas.getContext('2d');
     for (const [name, image] of images) context.drawImage(image, ...slots[name]);
     return Object.freeze({ pea: canvas, redbean: canvas });
