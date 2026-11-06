@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ko">
-<head>
-<!--
+    <head>
+        <!--
 ================================================================================
 쌀콩팡! / RICE, BEANS & BOOM! — DEVELOPMENT CONTRACT
 ================================================================================
@@ -78,13 +78,14 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   착공 시 설정을 Building.construction에 보관하고 workDone/invested를 저장한다.
 - Unit.constructionWork가 몸통 박치기의 목표·단계·시각을 소유한다. 공통 상호작용 영역까지
   실제로 접근한다. 접근 목표는 공통 물리 충돌 여유 경계까지 잡고 바깥 작업 범위 경계에서 멈추지 않는다.
-  이동·충돌·피격 후 접촉이 유효할 때만 기여한다. 이탈·사망·교전·공중/회복 중에는
+  준비 후 실제 좌표로 돌진하고 충돌 처리 후 건물 경계에 실제로 접촉한 경우에만 기여한다.
+  적중 시 반동으로 복귀하며, 닿지 못한 돌진은 작업량을 더하지 않는다. 이탈·사망·교전·공중/회복 중에는
   기여하지 않으며 미납 작업을 쌓지 않는다. 체력 증가 후에도 기존 피해는 유지한다.
 - 가용 자원이 허용하는 정수 작업까지만 반영하고 마지막 적중은 남은 작업까지만 기여한다.
   같은 틱에는 착공 순서·동률이면 점령지 순서로 처리하고 완공 뒤 추가 타격을 결제하지 않는다.
   완성 전에는 소유·추가 인컴·발사·포탑 공격이 활성화되지 않으며 파괴된 투자금은 환불하지 않는다.
 - 전체 작업 진행률·투입 자원·다음 정수 지출까지 비율을 구분한다. 5칸은 표시 정규화이며
-  게임 규칙이 아니다. 박치기·복귀·목재 틀 반응은 권위 상태/사건을 읽는 표현으로, 판정 좌표나 impulse를 바꾸지 않는다.
+  게임 규칙이 아니다. 박치기 이동과 접촉은 권위 판정이며 목재 틀 반응은 접촉 사건을 읽는 표현이다.
 - 진영 공통 발사 사거리 레벨은 권위 상태다. 조준·실제 발사·범위 표시·봇은 LaunchRules의
   같은 배율을 쓴다. 최대 범위는 선택 카드 기준의 완성한 아군 대포만 표시하고 조준 대포를 강조한다.
   원 둘레는 각 지점의 지형 높이와 기존 월드 투영을 사용한다. 강화 명령과 공사/레벨 상태는 Netcode·저장·리플레이·체크섬을 통과한다.
@@ -113,550 +114,1049 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
 END OF DEVELOPMENT CONTRACT
 ================================================================================
 -->
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#3e7447">
-<meta name="application-name" content="쌀콩팡!">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="쌀콩팡!">
-<meta name="ssalkongpang-version" content="">
-<meta name="ssalkongpang-build" content="">
-<meta name="ssalkongpang-updated-at" content="">
-<meta property="og:title" content="쌀콩팡! | Rice, Beans &amp; Boom!">
-<meta property="og:description" content="쌀·콩·팥 병사를 대포로 쏘아 거점을 차지하는 실시간 전략 게임">
-<meta property="og:type" content="website">
-<meta property="og:image" content="https://byh-playground.github.io/rally-frontier/assets/ssalkongpang-thumbnail.png">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="쌀콩팡! | Rice, Beans &amp; Boom!">
-<meta name="twitter:image" content="https://byh-playground.github.io/rally-frontier/assets/ssalkongpang-thumbnail.png">
-<title>쌀콩팡! | Rice, Beans &amp; Boom!</title>
-<link rel="manifest" href="./manifest.webmanifest">
-<link rel="icon" type="image/png" sizes="192x192" href="./icons/ssalkongpang-192.png">
-<link rel="apple-touch-icon" href="./icons/ssalkongpang-180.png">
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+        <meta name="theme-color" content="#3e7447" />
+        <meta name="application-name" content="쌀콩팡!" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="쌀콩팡!" />
+        <meta name="ssalkongpang-version" content="" />
+        <meta name="ssalkongpang-build" content="" />
+        <meta name="ssalkongpang-updated-at" content="" />
+        <meta property="og:title" content="쌀콩팡! | Rice, Beans &amp; Boom!" />
+        <meta
+            property="og:description"
+            content="쌀·콩·팥 병사를 대포로 쏘아 거점을 차지하는 실시간 전략 게임"
+        />
+        <meta property="og:type" content="website" />
+        <meta
+            property="og:image"
+            content="https://byh-playground.github.io/rally-frontier/assets/ssalkongpang-thumbnail.png"
+        />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="쌀콩팡! | Rice, Beans &amp; Boom!" />
+        <meta
+            name="twitter:image"
+            content="https://byh-playground.github.io/rally-frontier/assets/ssalkongpang-thumbnail.png"
+        />
+        <title>쌀콩팡! | Rice, Beans &amp; Boom!</title>
+        <link rel="manifest" href="./manifest.webmanifest" />
+        <link rel="icon" type="image/png" sizes="192x192" href="./icons/ssalkongpang-192.png" />
+        <link rel="apple-touch-icon" href="./icons/ssalkongpang-180.png" />
 
-<link rel="stylesheet" href="./src/styles/game.css">
-
-</head>
-<body class="boot-loading">
-
-<div id="renderFatalOverlay" class="render-fatal-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="renderFatalTitle">
-  <div class="render-fatal-card">
-    <h2 id="renderFatalTitle">렌더 오류로 화면이 중단됨</h2>
-    <p>시뮬레이션과 별개로 렌더 단계에서 예외가 발생했습니다. 아래 진단 정보를 복사해 전달하면 원인 추적에 사용할 수 있습니다.</p>
-    <div id="renderFatalSummary" class="render-fatal-summary"></div>
-    <div class="render-fatal-actions">
-      <button id="renderFatalCopy" class="primary" type="button">진단 정보 복사</button>
-      <button id="renderFatalSelect" type="button">텍스트 전체 선택</button>
-    </div>
-  </div>
-</div>
-
-<div id="bootGate" class="boot-gate" role="status" aria-live="polite" aria-busy="true">
-  <div class="boot-card">
-    <div class="boot-emblem" aria-hidden="true"><span></span></div>
-    <div class="boot-kicker">쌀콩팡!</div>
-    <div id="bootTitle" class="boot-title">게임 준비 중</div>
-    <div id="bootStatus" class="boot-status">게임을 준비합니다.</div>
-    <div class="boot-progress"><span id="bootProgressBar"></span></div>
-    <div id="bootBuild" class="boot-build">BUILD ···</div>
-    <button id="bootRetryBtn" class="boot-retry hidden" type="button">다시 확인</button>
-  </div>
-</div>
-
-<div id="installGuideModal" class="install-guide-modal hidden" role="dialog" aria-modal="true" aria-labelledby="installGuideTitle">
-  <div id="installGuideBackdrop" class="install-guide-backdrop"></div>
-  <div class="install-guide-card">
-    <div class="install-guide-head">
-      <div>
-        <div class="small">ANDROID · CHROME</div>
-        <div id="installGuideTitle" class="install-guide-title">쌀콩팡! 앱 설치</div>
-      </div>
-      <button id="installGuideCloseBtn" class="drawer-close" type="button" aria-label="설치 안내 닫기">닫기</button>
-    </div>
-
-    <div class="install-guide-lead">
-      설치 버튼이 바로 동작하지 않으면 <b>Chrome 메뉴에서 직접 설치</b>하는 방법이 가장 확실합니다.
-    </div>
-
-    <ol class="install-guide-steps">
-      <li>
-        <b>Chrome에서 현재 게임 페이지를 엽니다.</b>
-        <small>카카오톡·ChatGPT·기타 앱 안의 내장 브라우저가 아니라 Android Chrome에서 여세요.</small>
-      </li>
-      <li>
-        <b>Chrome 우측 상단의 ⋮ 메뉴를 누릅니다.</b>
-      </li>
-      <li>
-        <b>「앱 설치」 또는 「쌀콩팡! 설치」를 누릅니다.</b>
-        <small>「홈 화면에 추가」만 보이고 브라우저 링크 아이콘만 생기면 실제 PWA 설치가 아닐 수 있습니다.</small>
-      </li>
-      <li>
-        <b>설치 확인 창에서 「설치」를 누릅니다.</b>
-      </li>
-      <li>
-        <b>홈 화면의 쌀콩팡! 아이콘으로 실행합니다.</b>
-        <small>주소창 없이 독립 앱 화면으로 열리면 정상 설치된 것입니다.</small>
-      </li>
-    </ol>
-
-    <div class="install-guide-note">
-      <b>팁</b>
-      <span>Chrome 메뉴에 「앱 설치」가 보이면 브라우저가 이 사이트를 PWA로 인식하고 있는 상태입니다.</span>
-    </div>
-
-    <button id="installGuideDoneBtn" class="primary install-guide-done" type="button">확인</button>
-  </div>
-</div>
-
-<div id="p2pHealth" class="p2p-health hidden" aria-live="polite" role="button" tabindex="0" aria-expanded="false" aria-controls="lockstepDebugPanel">
-  <span class="p2p-health-dot" aria-hidden="true"></span>
-  <span id="p2pHealthText">P2P 연결됨</span>
-</div>
-
-<div id="lockstepDebugPanel" class="lockstep-debug-panel hidden" role="dialog" aria-modal="false" aria-labelledby="lockstepDebugTitle">
-  <div class="lockstep-debug-head">
-    <div>
-      <div class="lockstep-debug-kicker">PERFORMANCE · CORE · SYNCTEST</div>
-      <div id="lockstepDebugTitle" class="lockstep-debug-title">성능·동기화 진단</div>
-    </div>
-    <button id="lockstepDebugCloseBtn" class="drawer-close" type="button">닫기</button>
-  </div>
-
-  <div id="lockstepDebugSummary" class="lockstep-debug-summary"></div>
-
-  <section id="performanceTimingPanel" aria-labelledby="performanceTimingTitle">
-    <h3 id="performanceTimingTitle">성능 시간 지표 · ms</h3>
-    <p class="performance-timing-note">현재 / 평균(EWMA) / 최대. Step 전체는 매 틱, 세부 단계는 1초 주기 표본입니다. 서로 포함되는 구간은 합산하지 않습니다. RTT에는 양쪽 브라우저의 메시지 처리 대기가 포함됩니다.</p>
-    <div class="lockstep-debug-table performance-timing-table">
-      <div><span>게임 메시지 RTT / 지터</span><b id="dbgCoreLatency">-</b></div>
-      <div><span>입력 지연 설정 · 틱 → ms</span><b id="dbgPerfInputDelay">-</b></div>
-      <div><span>명령 접수 → 확정 · 실측</span><b id="dbgPerfCommandConfirm">입력 없음</b></div>
-      <div><span>미확정 명령 · 최장 대기</span><b id="dbgPerfCommandPending">-</b></div>
-      <div><span>WebRTC 연결 RTT · ICE</span><b id="dbgPerfIceRtt">표본 수집 중</b></div>
-      <div><span>메인 스레드 timer 지연</span><b id="dbgPerfEventLoop">-</b></div>
-      <div><span>긴 작업 · 50ms 이상</span><b id="dbgPerfLongTask">-</b></div>
-      <div><span>세션 호출 간격</span><b id="dbgPerfPulseGap">-</b></div>
-      <div><span>세션 전체 · 저장 / 해시 / 출력 포함</span><b id="dbgPerfPulse">-</b></div>
-      <div><span>Sim step 현재 / EWMA / 최대</span><b id="dbgPerfStep">-</b></div>
-      <div><span>싱글 반대 역할 Sim step</span><b id="dbgPerfPeerStep">-</b></div>
-      <div><span>상태 저장 · 복제 + encode</span><b id="dbgPerfStateSave">-</b></div>
-      <div><span>Core 재실행 최근 / 평균</span><b id="dbgPerfResimulation">미실행</b></div>
-      <div><span>수동 Synctest 실행 · 양보 제외</span><b id="dbgSyncCost">미실행</b></div>
-      <div><span>표시 Snapshot 현재 / 최대</span><b id="dbgPerfSnapshot">-</b></div>
-      <div><span>표시 갱신 · Render targets / UI</span><b id="dbgPerfPresentation">-</b></div>
-      <div><span>Render FPS / frame CPU · EWMA</span><b id="dbgPerfRender">-</b></div>
-      <div><span>프레임 간격</span><b id="dbgPerfFrameInterval">-</b></div>
-      <div><span>GPU 프레임 시작 · CPU 대기</span><b id="dbgPerfDeviceBegin">-</b></div>
-      <div><span>Render prepare / ground / world</span><b id="dbgPerfRenderPasses">-</b></div>
-      <div><span>Shadow / overlay / UI FX</span><b id="dbgPerfRenderEffects">-</b></div>
-      <div><span>Camera compose / minimap / depth sort</span><b id="dbgPerfRenderTail">-</b></div>
-      <div><span>Index / World</span><b id="dbgPerfCore">-</b></div>
-      <div><span>Vision / Combat</span><b id="dbgPerfCombat">-</b></div>
-      <div><span>Projectile / Collision / Post</span><b id="dbgPerfTail">-</b></div>
-      <div><span>NavMesh / A* / Flow · 누적</span><b id="dbgPerfNavigation">-</b></div>
-      <div><span>지형 투영 준비 · 누적</span><b id="dbgPerfProjection">-</b></div>
-      <div><span id="dbgPerfAllowanceLabel">틱 허용시간</span><b id="dbgPerfAllowance">-</b></div>
-      <div><span id="dbgPerfUsedLabel">사용시간 · step EWMA</span><b id="dbgPerfUsed">-</b></div>
-      <div><span id="dbgPerfBudgetLabel">남은 틱 여유 · 추정</span><b id="dbgPerfBudget">-</b></div>
-    </div>
-    <p class="performance-timing-note">틱 여유는 게임 step만 계산합니다. 저장·Core·렌더를 함께 확인하세요. 충돌 내부 시간과 이웃 수는 초당 상세 표본 틱에서 측정합니다. Core 내부 해시 시간은 공개 계측이 없어 전체 처리에 포함합니다. GPU 시작 시간은 CPU 호출 대기입니다.</p>
-    <button id="performanceTimingExportBtn" class="lockstep-debug-reset" type="button">성능 시간 지표 JSON 저장</button>
-  </section>
-
-  <p>확정된 실제 입력의 시작 구간을 최대 32틱 검사합니다. 공통 Synctest가 같은 Adapter를 별도 시뮬레이션에서 저장·복원·재실행하며, 온라인 동기화와 다른 기기의 결정론까지 보장하지 않습니다. 검사 틱 사이에는 게임과 네트워크 처리를 계속합니다.</p>
-  <button id="synctestRunBtn" class="lockstep-debug-reset" type="button">확정 입력 Synctest 실행</button>
-  <div class="lockstep-debug-grid">
-    <div class="lockstep-debug-card"><span>Synctest 상태</span><b id="dbgSyncStatus">미실행</b></div>
-    <div class="lockstep-debug-card"><span>검사한 틱</span><b id="dbgSyncChecked">미실행</b></div>
-    <div class="lockstep-debug-card"><span>재실행한 틱</span><b id="dbgSyncResimulated">미실행</b></div>
-    <div class="lockstep-debug-card"><span>재실행 거리</span><b id="dbgSyncDistance">미실행</b></div>
-    <div class="lockstep-debug-card"><span>검사 상태 해시</span><b id="dbgSyncHash">미실행</b></div>
-    <div class="lockstep-debug-card"><span>보관 상태 크기</span><b id="dbgSyncBytes">미실행</b></div>
-    <div class="lockstep-debug-card"><span>최초 불일치</span><b id="dbgSyncFailure">미실행</b></div>
-  </div>
-  <div class="lockstep-debug-table">
-    <div><span>hold / stall / pace</span><b id="dbgCorePacing">-</b></div>
-    <div><span>예측 틱 / 늦은 입력 비율(EMA)</span><b id="dbgCorePrediction">-</b></div>
-    <div><span>이력 bytes / 상태 hash 계산</span><b id="dbgCoreHistory">-</b></div>
-    <div><span>Core 상태 / 확정 tick</span><b id="dbgCoreStatus">-</b></div>
-    <div><span>입력 지연 / rollback / 재실행</span><b id="dbgCoreRollback">-</b></div>
-    <div><span>해시 불일치 / 복구 / 후보 거부</span><b id="dbgCoreRecovery">-</b></div>
-    <div><span>송신 / 수신 bytes</span><b id="dbgCoreBytes">-</b></div>
-  </div>
-
-  <div class="lockstep-debug-kicker" style="margin-top:12px">LOCAL PERFORMANCE</div>
-  <div class="lockstep-debug-table">
-    <div><span>유닛 생존 / 전투 / 투사체</span><b id="dbgPerfEntities">-</b></div>
-    <div><span>Spatial query / 후보(평균)</span><b id="dbgPerfSpatial">-</b></div>
-    <div><span>Target / Visibility 검사</span><b id="dbgPerfTarget">-</b></div>
-    <div><span>Grid candidates / ally soft contacts / moved units / capped units / passes</span><b id="dbgPerfCollision">-</b></div>
-    <div><span>Collision ms / prep / grid / pair scan / soft apply</span><b id="dbgPerfCollisionCore">-</b></div>
-    <div><span>충돌 ms · 이동 sweep / 지형 / 최종 SAP / 기타</span><b id="dbgPerfCollisionTail">-</b></div>
-    <div><span>전투 ms · 주 대상 선택 / 기타 · 대상 선택 calls</span><b id="dbgPerfCombatSplit">-</b></div>
-    <div><span>Swept 호출 / 활성 pass / 후보 / hit / 보정 유닛 / 무보정 pass</span><b id="dbgPerfCollisionSweepFlow">-</b></div>
-    <div><span>Hard-fix 호출 / pass / SAP pair 검사 / 후보 / 보정 / 무보정</span><b id="dbgPerfCollisionHardFixFlow">-</b></div>
-    <div><span>Render draw calls / 업로드 bytes</span><b id="dbgPerfDrawCalls">-</b></div>
-    <div><span>엔티티 peak 유닛 / 건물 / 투사체</span><b id="dbgEndurancePeaks">-</b></div>
-  </div>
-
-  <div class="lockstep-debug-kicker" style="margin-top:12px">MATCH BALANCE TELEMETRY · LOCAL ONLY</div>
-  <div class="lockstep-debug-table">
-    <div><span>경기 시간 / 종료</span><b id="dbgBalanceTime">-</b></div>
-    <div><span>첫 PvP 교전</span><b id="dbgBalanceCombat">-</b></div>
-    <div><span>첫 점령 · Host / Guest</span><b id="dbgBalanceCapture">-</b></div>
-    <div><span>병력 현재 / 평균 / 최대 · H/G</span><b id="dbgBalanceArmy">-</b></div>
-    <div><span>건물 손실 / 전진거점 손실 · H/G</span><b id="dbgBalanceLosses">-</b></div>
-  </div>
-
-  <div id="lockstepDebugVerdict" class="lockstep-debug-verdict"></div>
-
-  <div class="lockstep-debug-actions">
-    <button id="manualRecoveryBtn" class="primary lockstep-debug-recovery" type="button">
-      입력 이력으로 연결 복구
-    </button>
-    <button id="fullConnectionResetBtn" class="lockstep-debug-hard-reset hidden" type="button" aria-hidden="true" tabindex="-1">
-      동일 복구
-    </button>
-    <button id="recoveryLogExportBtn" class="lockstep-debug-reset" type="button">
-      보정 로그 JSON 저장
-    </button>
-    <button id="balanceTelemetryExportBtn" class="lockstep-debug-reset" type="button">
-      밸런스 계측 JSON 저장
-    </button>
-    <button id="lockstepDebugResetBtn" class="lockstep-debug-reset" type="button">
-      진단 Synctest 결과 지우기
-    </button>
-  </div>
-</div>
-  <section id="lobby" class="title-screen launch-title">
-    <button id="titleHelpBtn" class="launch-icon-btn" type="button" aria-label="하는 법">?</button>
-    <div class="launch-hero">
-      <h1 class="game-title">쌀콩<span class="frontier-accent">팡!</span><span class="game-title-en">Rice, Beans &amp; Boom!</span></h1>
-      <p class="launch-tagline">곡식 병사를 대포로 쏘아 적 본진을 무너뜨려라</p>
-      <div id="titleGrains" class="launch-grains" aria-hidden="true"></div>
-    </div>
-    <div class="launch-title-actions">
-      <div id="singleStatus" class="single-status hidden" aria-live="polite"></div>
-      <button id="gameStartBtn" class="launch-btn primary" type="button">대전 시작</button>
-      <div class="launch-row">
-        <button id="friendMatchBtn" class="launch-btn secondary" type="button">친구와 대전</button>
-        <button id="replayOpenBtn" class="launch-btn secondary" type="button">리플레이</button>
-      </div>
-      <input id="replayFileInput" class="hidden" type="file" accept="application/json,.json">
-      <button id="installPwaBtn" class="pwa-install-button hidden" type="button">
-        <span class="pwa-install-main">⬇ 앱으로 설치</span>
-        <span id="installPwaMeta">설치 가능한 경우 표시됩니다</span>
-      </button>
-      <button id="installGuideBtn" class="install-guide-link hidden" type="button">앱 설치 안내</button>
-    </div>
-    <div id="titleUpdateStamp" class="launch-version" title="이 빌드의 마지막 업데이트 시각">확인 중</div>
-  </section>
-
-  <dialog id="createDialog" class="game-dialog">
-    <div class="dialog-shell">
-      <button id="createCloseBtn" class="dialog-close" aria-label="닫기">×</button>
-      <div class="dialog-kicker">CREATE MATCH</div>
-      <h2>방 만들기</h2>
-      <p id="createStatus" class="dialog-copy">네트워크를 준비하고 있습니다.</p>
-      <div id="hostCodeArea" class="room-code-box hidden">
-        <div class="small">상대에게 이 코드를 알려주세요</div>
-        <div id="hostCode" class="room-code">----</div>
-        <div class="small">상대가 참가하면 선택한 유닛 선택 방식으로 경기가 준비됩니다.</div>
-      </div>
-      <button id="createRetryBtn" class="dialog-action hidden">다시 시도</button>
-    </div>
-  </dialog>
-
-  <dialog id="joinDialog" class="game-dialog">
-    <form method="dialog" class="dialog-shell" onsubmit="return false">
-      <button id="joinCloseBtn" type="button" class="dialog-close" aria-label="닫기">×</button>
-      <div class="dialog-kicker">JOIN MATCH</div>
-      <h2>방 참가</h2>
-      <p class="dialog-copy">상대가 알려준 4자리 방 코드를 입력하세요.</p>
-      <input id="roomInput" class="room-code-input" maxlength="4" inputmode="numeric" autocomplete="one-time-code" placeholder="0000" aria-label="4자리 방 코드">
-      <div id="joinError" class="dialog-error"></div>
-      <button id="joinConfirmBtn" type="button" class="dialog-action primary">참가하기</button>
-    </form>
-  </dialog>
-
-  <section id="gameScreen" class="game hidden">
-    <div class="canvas-wrap">
-      <canvas id="glCanvas"></canvas>
-      <canvas id="fxCanvas" class="fx-canvas" aria-hidden="true"></canvas>
-      <div id="launchHud" class="launch-hud">
-        <button id="matchMenuBtnGame" class="launch-hud-btn" type="button" aria-label="경기 메뉴 열기">☰</button>
-        <span id="launchHudMine" class="launch-hud-chip mine">나 ♥ 100%</span>
-        <span id="launchHudEnemy" class="launch-hud-chip enemy">적 ♥ 100%</span>
-        <span class="launch-hud-gap"></span>
-        <span id="launchHudTime" class="launch-hud-chip">0:00</span>
-      </div>
-      <div id="minimapWrap" class="minimap"><canvas id="minimapCanvas" aria-label="미니맵"></canvas></div>
-      <div id="aimLabel" class="aim-label hidden" aria-hidden="true"></div>
-      <div id="launchFeedback" class="launch-feedback hidden" role="status" aria-live="polite"></div>
-      <div id="enemyBaseArrow" class="enemy-base-arrow hidden" aria-live="off"><i aria-hidden="true"></i><b>적 본진</b></div>
-      <div id="replayStats" class="replay-stats hidden"></div>
-    </div>
-    <div id="launchHand" class="launch-hand hidden" aria-label="발사 카드">
-      <div class="launch-economy">
-        <div class="launch-wallet"><div class="launch-energy"><div id="launchEnergyFill" class="launch-energy-fill"></div><b id="launchEnergyText">◆ 0</b></div><div class="launch-wallet-hints"><span id="launchIncomeText" class="launch-income">+15/초</span><span id="launchReachText" class="launch-reach">쌀 최대 발사 500</span></div></div>
-        <button id="launchRangeBtn" class="launch-range-btn" type="button"><b id="launchRangeText">사거리 ×1 → ×2</b><span id="launchRangeCost">강화 ◆ 250</span></button>
-      </div>
-      <div id="launchCards" class="launch-cards"></div>
-    </div>
-    <div id="replayDock" class="panel replay-dock hidden" aria-label="리플레이 조작">
-        <div class="replay-timeline-block">
-          <div class="replay-timeline-head">
-            <span id="replayTime" class="replay-time">00:00 / 00:00</span>
-            <div class="replay-time-head-actions">
-              <div class="replay-time-jump">
-                <input id="replayTimeInput" class="replay-time-input" type="text" inputmode="numeric" placeholder="MM:SS" aria-label="이동할 시간">
-                <button id="replayTimeGoBtn" class="replay-btn replay-go-btn" type="button">이동</button>
-              </div>
-              <button id="replayExitBtn" class="replay-btn replay-exit-btn" type="button">종료</button>
+        <link rel="stylesheet" href="./src/styles/game.css" />
+    </head>
+    <body class="boot-loading">
+        <div
+            id="renderFatalOverlay"
+            class="render-fatal-overlay hidden"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="renderFatalTitle"
+        >
+            <div class="render-fatal-card">
+                <h2 id="renderFatalTitle">렌더 오류로 화면이 중단됨</h2>
+                <p>
+                    시뮬레이션과 별개로 렌더 단계에서 예외가 발생했습니다. 아래 진단 정보를 복사해
+                    전달하면 원인 추적에 사용할 수 있습니다.
+                </p>
+                <div id="renderFatalSummary" class="render-fatal-summary"></div>
+                <div class="render-fatal-actions">
+                    <button id="renderFatalCopy" class="primary" type="button">
+                        진단 정보 복사
+                    </button>
+                    <button id="renderFatalSelect" type="button">텍스트 전체 선택</button>
+                </div>
             </div>
-          </div>
-          <input id="replayTimeline" class="replay-timeline" type="range" min="0" max="1" value="0" step="0.1" aria-label="리플레이 타임라인">
         </div>
-        <div class="replay-transport-row" aria-label="재생 조작">
-          <button id="replayStepBack30Btn" class="replay-btn replay-long-jump" type="button">−30s</button>
-          <button id="replayStepBackBtn" class="replay-btn" type="button" aria-label="5초 뒤로">−5s</button>
-          <button id="replayPlayPauseBtn" class="replay-btn replay-play-btn" type="button">⏸ 일시정지</button>
-          <button id="replayStepForwardBtn" class="replay-btn" type="button" aria-label="5초 앞으로">+5s</button>
-          <button id="replayStepForward30Btn" class="replay-btn replay-long-jump" type="button">+30s</button>
-          <select id="replaySpeed" class="replay-speed" aria-label="리플레이 속도">
-            <option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
-          </select>
+
+        <div id="bootGate" class="boot-gate" role="status" aria-live="polite" aria-busy="true">
+            <div class="boot-card">
+                <div class="boot-emblem" aria-hidden="true"><span></span></div>
+                <div class="boot-kicker">쌀콩팡!</div>
+                <div id="bootTitle" class="boot-title">게임 준비 중</div>
+                <div id="bootStatus" class="boot-status">게임을 준비합니다.</div>
+                <div class="boot-progress"><span id="bootProgressBar"></span></div>
+                <div id="bootBuild" class="boot-build">BUILD ···</div>
+                <button id="bootRetryBtn" class="boot-retry hidden" type="button">다시 확인</button>
+            </div>
         </div>
-        <div class="replay-view-row" aria-label="리플레이 시야">
-          <button id="replayHostViewBtn" class="replay-btn" type="button">HOST 시야</button>
-          <button id="replayGuestViewBtn" class="replay-btn" type="button">GUEST 시야</button>
-          <button id="replayAllViewBtn" class="replay-btn active" type="button">양쪽 시야</button>
+
+        <div
+            id="installGuideModal"
+            class="install-guide-modal hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="installGuideTitle"
+        >
+            <div id="installGuideBackdrop" class="install-guide-backdrop"></div>
+            <div class="install-guide-card">
+                <div class="install-guide-head">
+                    <div>
+                        <div class="small">ANDROID · CHROME</div>
+                        <div id="installGuideTitle" class="install-guide-title">
+                            쌀콩팡! 앱 설치
+                        </div>
+                    </div>
+                    <button
+                        id="installGuideCloseBtn"
+                        class="drawer-close"
+                        type="button"
+                        aria-label="설치 안내 닫기"
+                    >
+                        닫기
+                    </button>
+                </div>
+
+                <div class="install-guide-lead">
+                    설치 버튼이 바로 동작하지 않으면 <b>Chrome 메뉴에서 직접 설치</b>하는 방법이
+                    가장 확실합니다.
+                </div>
+
+                <ol class="install-guide-steps">
+                    <li>
+                        <b>Chrome에서 현재 게임 페이지를 엽니다.</b>
+                        <small
+                            >카카오톡·ChatGPT·기타 앱 안의 내장 브라우저가 아니라 Android Chrome에서
+                            여세요.</small
+                        >
+                    </li>
+                    <li>
+                        <b>Chrome 우측 상단의 ⋮ 메뉴를 누릅니다.</b>
+                    </li>
+                    <li>
+                        <b>「앱 설치」 또는 「쌀콩팡! 설치」를 누릅니다.</b>
+                        <small
+                            >「홈 화면에 추가」만 보이고 브라우저 링크 아이콘만 생기면 실제 PWA
+                            설치가 아닐 수 있습니다.</small
+                        >
+                    </li>
+                    <li>
+                        <b>설치 확인 창에서 「설치」를 누릅니다.</b>
+                    </li>
+                    <li>
+                        <b>홈 화면의 쌀콩팡! 아이콘으로 실행합니다.</b>
+                        <small>주소창 없이 독립 앱 화면으로 열리면 정상 설치된 것입니다.</small>
+                    </li>
+                </ol>
+
+                <div class="install-guide-note">
+                    <b>팁</b>
+                    <span
+                        >Chrome 메뉴에 「앱 설치」가 보이면 브라우저가 이 사이트를 PWA로 인식하고
+                        있는 상태입니다.</span
+                    >
+                </div>
+
+                <button id="installGuideDoneBtn" class="primary install-guide-done" type="button">
+                    확인
+                </button>
+            </div>
         </div>
-        <div class="replay-bottom-row">
-          <div class="replay-orientation-group" aria-label="화면 방향">
-            <button id="replayHostOrientationBtn" class="replay-btn" type="button">HOST 방향</button>
-            <button id="replayGuestOrientationBtn" class="replay-btn" type="button">GUEST 방향</button>
-          </div>
-          <div class="replay-zoom-group" aria-label="리플레이 줌">
-            <button id="replayZoomOutBtn" class="replay-btn replay-zoom-btn" type="button" aria-label="리플레이 축소">−</button>
-            <span id="replayZoomValue" class="replay-zoom-value" aria-live="polite">100%</span>
-            <button id="replayZoomInBtn" class="replay-btn replay-zoom-btn" type="button" aria-label="리플레이 확대">＋</button>
-          </div>
+
+        <div
+            id="p2pHealth"
+            class="p2p-health hidden"
+            aria-live="polite"
+            role="button"
+            tabindex="0"
+            aria-expanded="false"
+            aria-controls="lockstepDebugPanel"
+        >
+            <span class="p2p-health-dot" aria-hidden="true"></span>
+            <span id="p2pHealthText">P2P 연결됨</span>
         </div>
-      </div>
-  </section>
 
-<div id="result" class="result hidden" role="dialog" aria-modal="true" aria-labelledby="resultTitle" tabindex="-1">
-  <div class="result-card">
-    <p id="resultText" class="result-why"></p>
-    <h2 id="resultTitle">승리</h2>
-    <div id="resultStats" class="launch-stats"></div>
-    <button id="rematchBtn" class="launch-btn primary" type="button">다시 대전</button>
-    <div class="launch-row">
-      <button id="replayWatchBtn" class="launch-btn secondary" type="button">리플레이</button>
-      <button id="resultTitleBtn" class="launch-btn secondary" type="button">타이틀</button>
-    </div>
-    <button id="replaySaveBtn" class="hidden" type="button">⇩ 리플레이 저장</button>
-  </div>
-</div>
+        <div
+            id="lockstepDebugPanel"
+            class="lockstep-debug-panel hidden"
+            role="dialog"
+            aria-modal="false"
+            aria-labelledby="lockstepDebugTitle"
+        >
+            <div class="lockstep-debug-head">
+                <div>
+                    <div class="lockstep-debug-kicker">PERFORMANCE · CORE · SYNCTEST</div>
+                    <div id="lockstepDebugTitle" class="lockstep-debug-title">성능·동기화 진단</div>
+                </div>
+                <button id="lockstepDebugCloseBtn" class="drawer-close" type="button">닫기</button>
+            </div>
 
-<div id="friendSheet" class="launch-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="friendSheetTitle">
-  <div class="launch-sheet-panel">
-    <h2 id="friendSheetTitle">친구와 대전</h2>
-    <p>방을 만들어 코드를 보내거나, 받은 코드를 입력하세요.</p>
-    <button id="friendCreateBtn" class="launch-btn primary" type="button">방 만들기</button>
-    <div class="launch-code">
-      <input id="friendCodeInput" maxlength="4" inputmode="numeric" autocomplete="one-time-code" placeholder="코드" aria-label="4자리 방 코드">
-      <button id="friendJoinBtn" class="launch-btn secondary" type="button">참가</button>
-    </div>
-    <button class="launch-btn secondary" type="button" data-sheet-close>닫기</button>
-  </div>
-</div>
-<div id="launchHelpSheet" class="launch-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="launchHelpTitle">
-  <div class="launch-sheet-panel">
-    <h2 id="launchHelpTitle">하는 법</h2>
-    <p>① 아래 카드를 골라요.<br>② 전장을 길게 누를수록 멀리 날아가요. 대포 주변의 옅은 원은 고른 병종의 최대 발사 거리, 조준할 때 흰 원은 착지 범위예요. 너무 오래 누르면 대포가 과열돼요.<br>③ 손을 떼면 발사! 착탄 충격으로 적을 밀어내고, 묶음에서 나온 병사들이 일어나 적 본진으로 진격해요.<br>④ 시작 자원은 250원, 한도는 500원이에요. 기본 초당 15원, 완성된 거점마다 5원씩 더 들어와요. 병력 투입과 공통 사거리 강화 중 어디에 쓸지 골라요.<br>⑤ 병력이 중립 거점에 진입하면 체력 10%로 건설을 시작해요. 유닛이 직접 다가가 몸을 당겼다 박치기하며 작업을 쌓아요. 거점 완공에는 375작업과 총 75원이 필요하고, 기본 유닛은 1초마다 1작업을 해요. 여러 명이면 더 빨라져요. 다음 자원 지출까지의 진행은 5칸으로 보여요. 건물 비용·필요 작업과 유닛의 작업량은 각각 달라질 수 있어요. 작업자가 떠나거나 돈이 없으면 기다려요. 건설 중 파괴되면 투자한 돈은 사라져요.<br>⑥ 완성된 거점은 점령과 인컴이 시작되고, 사거리 250의 단일 공격으로 자동 방어해요.</p>
-    <button class="launch-btn primary" type="button" data-sheet-close>알겠어요</button>
-  </div>
-</div>
-<div id="cardSheet" class="launch-sheet hidden" role="dialog" aria-modal="true">
-  <div id="cardDetail" class="launch-sheet-panel"></div>
-</div>
+            <div id="lockstepDebugSummary" class="lockstep-debug-summary"></div>
 
-<div id="matchMenuModal" class="match-menu-modal hidden" role="dialog" aria-modal="true" aria-labelledby="matchMenuTitle">
-  <div id="matchMenuBackdrop" class="match-menu-backdrop"></div>
-  <div class="match-menu-card">
-    <div class="match-menu-head">
-      <div><div class="small">MATCH MENU</div><div id="matchMenuTitle" class="match-menu-title">경기 메뉴</div></div>
-      <button id="matchMenuCloseBtn" class="drawer-close" type="button">닫기</button>
-    </div>
-    <div class="match-menu-copy">게임은 메뉴를 열어도 계속 진행됩니다. 연결 복구 중에는 시뮬레이션이 별도로 정지됩니다.</div>
-    <div class="match-menu-actions">
-      <button id="matchMenuContinueBtn" class="primary" type="button">계속하기</button>
-      <div class="launch-row">
-        <button id="matchMenuSoundBtn" type="button">소리 끄기</button>
-        <button id="matchMenuHelpBtn" type="button">도움말</button>
-      </div>
-      <button id="matchMenuSurrenderBtn" class="danger" type="button">항복</button>
-      <button id="matchMenuReplaySaveBtn" class="hidden" type="button">⇩ 현재까지 리플레이 저장</button>
-      <button id="matchMenuLeaveBtn" class="hidden" type="button">게임 나가기</button>
-    </div>
-    <div id="matchMenuWarning" class="match-menu-warning">진행 중인 경기에서 항복하거나 나가면 패배 처리됩니다.</div>
-  </div>
-</div>
+            <section id="performanceTimingPanel" aria-labelledby="performanceTimingTitle">
+                <h3 id="performanceTimingTitle">성능 시간 지표 · ms</h3>
+                <p class="performance-timing-note">
+                    현재 / 평균(EWMA) / 최대. Step 전체는 매 틱, 세부 단계는 1초 주기 표본입니다.
+                    서로 포함되는 구간은 합산하지 않습니다. RTT에는 양쪽 브라우저의 메시지 처리
+                    대기가 포함됩니다.
+                </p>
+                <div class="lockstep-debug-table performance-timing-table">
+                    <div><span>게임 메시지 RTT / 지터</span><b id="dbgCoreLatency">-</b></div>
+                    <div><span>입력 지연 설정 · 틱 → ms</span><b id="dbgPerfInputDelay">-</b></div>
+                    <div>
+                        <span>명령 접수 → 확정 · 실측</span
+                        ><b id="dbgPerfCommandConfirm">입력 없음</b>
+                    </div>
+                    <div>
+                        <span>미확정 명령 · 최장 대기</span><b id="dbgPerfCommandPending">-</b>
+                    </div>
+                    <div>
+                        <span>WebRTC 연결 RTT · ICE</span><b id="dbgPerfIceRtt">표본 수집 중</b>
+                    </div>
+                    <div><span>메인 스레드 timer 지연</span><b id="dbgPerfEventLoop">-</b></div>
+                    <div><span>긴 작업 · 50ms 이상</span><b id="dbgPerfLongTask">-</b></div>
+                    <div><span>세션 호출 간격</span><b id="dbgPerfPulseGap">-</b></div>
+                    <div>
+                        <span>세션 전체 · 저장 / 해시 / 출력 포함</span><b id="dbgPerfPulse">-</b>
+                    </div>
+                    <div><span>Sim step 현재 / EWMA / 최대</span><b id="dbgPerfStep">-</b></div>
+                    <div><span>싱글 반대 역할 Sim step</span><b id="dbgPerfPeerStep">-</b></div>
+                    <div><span>상태 저장 · 복제 + encode</span><b id="dbgPerfStateSave">-</b></div>
+                    <div>
+                        <span>Core 재실행 최근 / 평균</span><b id="dbgPerfResimulation">미실행</b>
+                    </div>
+                    <div>
+                        <span>수동 Synctest 실행 · 양보 제외</span><b id="dbgSyncCost">미실행</b>
+                    </div>
+                    <div><span>표시 Snapshot 현재 / 최대</span><b id="dbgPerfSnapshot">-</b></div>
+                    <div>
+                        <span>표시 갱신 · Render targets / UI</span
+                        ><b id="dbgPerfPresentation">-</b>
+                    </div>
+                    <div><span>Render FPS / frame CPU · EWMA</span><b id="dbgPerfRender">-</b></div>
+                    <div><span>프레임 간격</span><b id="dbgPerfFrameInterval">-</b></div>
+                    <div>
+                        <span>GPU 프레임 시작 · CPU 대기</span><b id="dbgPerfDeviceBegin">-</b>
+                    </div>
+                    <div>
+                        <span>Render prepare / ground / world</span
+                        ><b id="dbgPerfRenderPasses">-</b>
+                    </div>
+                    <div>
+                        <span>Shadow / overlay / UI FX</span><b id="dbgPerfRenderEffects">-</b>
+                    </div>
+                    <div>
+                        <span>Camera compose / minimap / depth sort</span
+                        ><b id="dbgPerfRenderTail">-</b>
+                    </div>
+                    <div><span>Index / World</span><b id="dbgPerfCore">-</b></div>
+                    <div><span>Vision / Combat</span><b id="dbgPerfCombat">-</b></div>
+                    <div><span>Projectile / Collision / Post</span><b id="dbgPerfTail">-</b></div>
+                    <div>
+                        <span>NavMesh / A* / Flow · 누적</span><b id="dbgPerfNavigation">-</b>
+                    </div>
+                    <div><span>지형 투영 준비 · 누적</span><b id="dbgPerfProjection">-</b></div>
+                    <div>
+                        <span id="dbgPerfAllowanceLabel">틱 허용시간</span
+                        ><b id="dbgPerfAllowance">-</b>
+                    </div>
+                    <div>
+                        <span id="dbgPerfUsedLabel">사용시간 · step EWMA</span
+                        ><b id="dbgPerfUsed">-</b>
+                    </div>
+                    <div>
+                        <span id="dbgPerfBudgetLabel">남은 틱 여유 · 추정</span
+                        ><b id="dbgPerfBudget">-</b>
+                    </div>
+                </div>
+                <p class="performance-timing-note">
+                    틱 여유는 게임 step만 계산합니다. 저장·Core·렌더를 함께 확인하세요. 충돌 내부
+                    시간과 이웃 수는 초당 상세 표본 틱에서 측정합니다. Core 내부 해시 시간은 공개
+                    계측이 없어 전체 처리에 포함합니다. GPU 시작 시간은 CPU 호출 대기입니다.
+                </p>
+                <button id="performanceTimingExportBtn" class="lockstep-debug-reset" type="button">
+                    성능 시간 지표 JSON 저장
+                </button>
+            </section>
 
-<div id="disconnectGate" class="disconnect-gate hidden" role="dialog" aria-modal="true" aria-live="assertive">
-  <div class="disconnect-gate-backdrop"></div>
-  <div class="disconnect-gate-card">
-    <div class="disconnect-gate-kicker">MATCH CONNECTION</div>
-    <div id="disconnectGateTitle" class="disconnect-gate-title">상대와 연결이 끊겼습니다</div>
-    <div id="disconnectGateCount" class="disconnect-gate-count">01:00</div>
-    <div id="disconnectGateCopy" class="disconnect-gate-copy">게임은 현재 정지되어 있습니다. 제한시간 안에 재접속할 수 있습니다.</div>
-    <div id="disconnectGateActions" class="disconnect-gate-actions">
-      <button id="disconnectReconnectBtn" class="primary" type="button">재접속 시도</button>
-      <button id="disconnectSurrenderBtn" class="danger" type="button">항복하고 나가기</button>
-    </div>
-  </div>
-</div>
+            <p>
+                확정된 실제 입력의 시작 구간을 최대 32틱 검사합니다. 공통 Synctest가 같은 Adapter를
+                별도 시뮬레이션에서 저장·복원·재실행하며, 온라인 동기화와 다른 기기의 결정론까지
+                보장하지 않습니다. 검사 틱 사이에는 게임과 네트워크 처리를 계속합니다.
+            </p>
+            <button id="synctestRunBtn" class="lockstep-debug-reset" type="button">
+                확정 입력 Synctest 실행
+            </button>
+            <div class="lockstep-debug-grid">
+                <div class="lockstep-debug-card">
+                    <span>Synctest 상태</span><b id="dbgSyncStatus">미실행</b>
+                </div>
+                <div class="lockstep-debug-card">
+                    <span>검사한 틱</span><b id="dbgSyncChecked">미실행</b>
+                </div>
+                <div class="lockstep-debug-card">
+                    <span>재실행한 틱</span><b id="dbgSyncResimulated">미실행</b>
+                </div>
+                <div class="lockstep-debug-card">
+                    <span>재실행 거리</span><b id="dbgSyncDistance">미실행</b>
+                </div>
+                <div class="lockstep-debug-card">
+                    <span>검사 상태 해시</span><b id="dbgSyncHash">미실행</b>
+                </div>
+                <div class="lockstep-debug-card">
+                    <span>보관 상태 크기</span><b id="dbgSyncBytes">미실행</b>
+                </div>
+                <div class="lockstep-debug-card">
+                    <span>최초 불일치</span><b id="dbgSyncFailure">미실행</b>
+                </div>
+            </div>
+            <div class="lockstep-debug-table">
+                <div><span>hold / stall / pace</span><b id="dbgCorePacing">-</b></div>
+                <div><span>예측 틱 / 늦은 입력 비율(EMA)</span><b id="dbgCorePrediction">-</b></div>
+                <div><span>이력 bytes / 상태 hash 계산</span><b id="dbgCoreHistory">-</b></div>
+                <div><span>Core 상태 / 확정 tick</span><b id="dbgCoreStatus">-</b></div>
+                <div><span>입력 지연 / rollback / 재실행</span><b id="dbgCoreRollback">-</b></div>
+                <div><span>해시 불일치 / 복구 / 후보 거부</span><b id="dbgCoreRecovery">-</b></div>
+                <div><span>송신 / 수신 bytes</span><b id="dbgCoreBytes">-</b></div>
+            </div>
 
-<script id="rf-pwa-install">
-(()=>{
-  "use strict";
-  let pending=null,busy=false,installed=false;
-  const standalone=()=>installed||matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
-  const render=()=>{
-    const button=document.getElementById("installPwaBtn"),guide=document.getElementById("installGuideBtn"),meta=document.getElementById("installPwaMeta");
-    if(!button||!guide)return;
-    button.classList.toggle("hidden",standalone()||!pending);button.disabled=busy;
-    guide.classList.toggle("hidden",standalone());
-    if(meta)meta.textContent=busy?"브라우저 설치 창 확인 중…":"브라우저 설치 창을 엽니다";
-  };
-  const showGuide=()=>document.getElementById("installGuideModal")?.classList.remove("hidden");
-  const hideGuide=()=>document.getElementById("installGuideModal")?.classList.add("hidden");
-  addEventListener("beforeinstallprompt",event=>{event.preventDefault();pending=event;render()});
-  addEventListener("appinstalled",()=>{installed=true;pending=null;busy=false;hideGuide();render()});
-  matchMedia("(display-mode: standalone)").addEventListener("change",render);
-  const bind=()=>{
-    render();
-    document.getElementById("installPwaBtn").addEventListener("click",async()=>{
-      if(busy)return;
-      if(!pending){if(!standalone())showGuide();return}
-      const prompt=pending;pending=null;busy=true;render();
-      try{await prompt.prompt();await prompt.userChoice}
-      catch(error){showGuide();document.querySelector(".install-guide-lead").textContent="설치 창을 열지 못했습니다. 브라우저 메뉴에서 설치해 주세요. "+String(error.message||error)}
-      finally{busy=false;render()}
-    });
-    document.getElementById("installGuideBtn").addEventListener("click",showGuide);
-    for(const id of ["installGuideCloseBtn","installGuideDoneBtn","installGuideBackdrop"])document.getElementById(id).addEventListener("click",hideGuide);
-    addEventListener("keydown",event=>{if(event.key==="Escape")hideGuide()});
-    if(/iPhone|iPad|iPod/.test(navigator.userAgent)||navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1){
-      document.querySelector("#installGuideModal .small").textContent="iOS · Safari";
-      document.querySelector(".install-guide-lead").textContent="Safari에서 공유 버튼을 누른 뒤 홈 화면에 추가를 선택하세요.";
-      document.querySelector(".install-guide-steps").innerHTML="<li><b>Safari에서 현재 페이지를 엽니다.</b></li><li><b>공유 → 홈 화면에 추가 → 추가를 누릅니다.</b></li><li><b>홈 화면의 쌀콩팡! 아이콘으로 실행합니다.</b></li>";
-    }else if(!/Android/.test(navigator.userAgent)){
-      document.querySelector("#installGuideModal .small").textContent="Chrome · Edge";
-      document.querySelector(".install-guide-lead").textContent="주소창의 설치 아이콘 또는 브라우저 메뉴에서 앱 설치를 선택하세요.";
-      document.querySelector(".install-guide-steps").innerHTML="<li><b>Chrome 또는 Edge에서 현재 게임 페이지를 엽니다.</b></li><li><b>주소창의 설치 아이콘 또는 메뉴에서 앱 설치를 선택합니다.</b></li><li><b>설치된 쌀콩팡! 앱으로 실행합니다.</b></li>";
-    }
-  };
-  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",bind,{once:true});else bind();
-})();
-</script>
-<script id="rf-diagnostic-bootstrap">
-(()=>{
-  "use strict";
-  const state=window.__RALLY_GLOBAL_ERROR_HANDLER__={
-    installed:true,errors:[],last:null,
-    sources:{windowError:0,unhandledRejection:0,diagnostic:0}
-  };
-  const text=v=>{
-    try{return typeof v==="string"?v:JSON.stringify(v,null,2)}
-    catch(_){return String(v)}
-  };
-  const buildMetadata=()=>window.__RALLY_BUILD_METADATA__||{id:"unknown",commit:null,updatedAt:null,status:"pending",source:"build.json",executedSourceVerified:false,reason:null};
-  const present=diag=>{
-    const metadata=buildMetadata();diag={...diag,build:metadata.id,buildMetadata:metadata};
-    state.last=diag;state.errors.push(diag);state.sources.diagnostic++;
-    window.__RALLY_FATAL_DIAGNOSTIC__=diag;
-    const show=()=>{
-      const overlay=document.getElementById("renderFatalOverlay");
-      const summary=document.getElementById("renderFatalSummary");
-      const copy=document.getElementById("renderFatalCopy");
-      if(summary)summary.textContent=text(diag);
-      if(copy)copy.textContent="진단 정보 복사";
-      if(overlay){
-        overlay.classList.remove("hidden");
-        overlay.style.display="flex";
-        overlay.style.visibility="visible";
-        overlay.style.opacity="1";
-        overlay.style.zIndex="2147483647";
-      }
-    };
-    show();
-    if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",show,{once:true});
-  };
-  state.refreshBuildMetadata=()=>{
-    if(!state.last)return;
-    const metadata=buildMetadata();
-    for(const diag of state.errors){diag.build=metadata.id;diag.buildMetadata=metadata}
-    const summary=document.getElementById("renderFatalSummary");
-    if(summary)summary.textContent=text(state.last);
-  };
-  window.__RALLY_PRESENT_FATAL__=present;
-  window.addEventListener("error",e=>{
-    state.sources.windowError++;
-    present({
-      kind:"SSALKONGPANG_WINDOW_ERROR",
-      build:document.documentElement.dataset.build||null,
-      at:new Date().toISOString(),
-      message:String(e?.message||e?.error?.message||"window error"),
-      source:e?.filename||null,line:e?.lineno||null,column:e?.colno||null,
-      stack:String(e?.error?.stack||"")
-    });
-  },true);
-  window.addEventListener("unhandledrejection",e=>{
-    state.sources.unhandledRejection++;
-    const reason=e?.reason;
-    present({
-      kind:"SSALKONGPANG_UNHANDLED_REJECTION",
-      build:document.documentElement.dataset.build||null,
-      at:new Date().toISOString(),
-      message:String(reason?.message||reason||"unhandled rejection"),
-      stack:String(reason?.stack||"")
-    });
-  });
+            <div class="lockstep-debug-kicker" style="margin-top: 12px">LOCAL PERFORMANCE</div>
+            <div class="lockstep-debug-table">
+                <div><span>유닛 생존 / 전투 / 투사체</span><b id="dbgPerfEntities">-</b></div>
+                <div><span>Spatial query / 후보(평균)</span><b id="dbgPerfSpatial">-</b></div>
+                <div><span>Target / Visibility 검사</span><b id="dbgPerfTarget">-</b></div>
+                <div>
+                    <span
+                        >Grid candidates / ally soft contacts / moved units / capped units /
+                        passes</span
+                    ><b id="dbgPerfCollision">-</b>
+                </div>
+                <div>
+                    <span>Collision ms / prep / grid / pair scan / soft apply</span
+                    ><b id="dbgPerfCollisionCore">-</b>
+                </div>
+                <div>
+                    <span>충돌 ms · 이동 sweep / 지형 / 최종 SAP / 기타</span
+                    ><b id="dbgPerfCollisionTail">-</b>
+                </div>
+                <div>
+                    <span>전투 ms · 주 대상 선택 / 기타 · 대상 선택 calls</span
+                    ><b id="dbgPerfCombatSplit">-</b>
+                </div>
+                <div>
+                    <span>Swept 호출 / 활성 pass / 후보 / hit / 보정 유닛 / 무보정 pass</span
+                    ><b id="dbgPerfCollisionSweepFlow">-</b>
+                </div>
+                <div>
+                    <span>Hard-fix 호출 / pass / SAP pair 검사 / 후보 / 보정 / 무보정</span
+                    ><b id="dbgPerfCollisionHardFixFlow">-</b>
+                </div>
+                <div>
+                    <span>Render draw calls / 업로드 bytes</span><b id="dbgPerfDrawCalls">-</b>
+                </div>
+                <div>
+                    <span>엔티티 peak 유닛 / 건물 / 투사체</span><b id="dbgEndurancePeaks">-</b>
+                </div>
+            </div>
 
-  // No heuristic presentation watchdog. Only concrete exceptions/fatal paths reach the global diagnostic sink.
+            <div class="lockstep-debug-kicker" style="margin-top: 12px">
+                MATCH BALANCE TELEMETRY · LOCAL ONLY
+            </div>
+            <div class="lockstep-debug-table">
+                <div><span>경기 시간 / 종료</span><b id="dbgBalanceTime">-</b></div>
+                <div><span>첫 PvP 교전</span><b id="dbgBalanceCombat">-</b></div>
+                <div><span>첫 점령 · Host / Guest</span><b id="dbgBalanceCapture">-</b></div>
+                <div><span>병력 현재 / 평균 / 최대 · H/G</span><b id="dbgBalanceArmy">-</b></div>
+                <div>
+                    <span>건물 손실 / 전진거점 손실 · H/G</span><b id="dbgBalanceLosses">-</b>
+                </div>
+            </div>
 
-  document.addEventListener("click",async e=>{
-    const copy=e.target?.closest?.("#renderFatalCopy");
-    const select=e.target?.closest?.("#renderFatalSelect");
-    const summary=document.getElementById("renderFatalSummary");
-    if(copy&&summary){
-      const value=summary.textContent||"";
-      try{await navigator.clipboard.writeText(value);copy.textContent="복사됨"}
-      catch(_){
-        const ta=document.createElement("textarea");ta.value=value;document.body.appendChild(ta);
-        ta.select();try{document.execCommand("copy");copy.textContent="복사됨"}finally{ta.remove()}
-      }
-    }
-    if(select&&summary){
-      const range=document.createRange();range.selectNodeContents(summary);
-      const sel=getSelection();sel.removeAllRanges();sel.addRange(range);
-    }
-  },true);
-})();
-</script>
+            <div id="lockstepDebugVerdict" class="lockstep-debug-verdict"></div>
 
-<script type="module">
-import { BuildMetadata } from './src/core/build-metadata.js';
-window.__RALLY_BUILD_METADATA__=BuildMetadata.snapshot();
-void BuildMetadata.load().then(metadata=>{
-  window.__RALLY_BUILD_METADATA__=metadata;
-  window.__RALLY_GLOBAL_ERROR_HANDLER__?.refreshBuildMetadata?.();
-});
-</script>
-<script type="module" src="./src/main.js"></script>
-</body>
+            <div class="lockstep-debug-actions">
+                <button
+                    id="manualRecoveryBtn"
+                    class="primary lockstep-debug-recovery"
+                    type="button"
+                >
+                    입력 이력으로 연결 복구
+                </button>
+                <button
+                    id="fullConnectionResetBtn"
+                    class="lockstep-debug-hard-reset hidden"
+                    type="button"
+                    aria-hidden="true"
+                    tabindex="-1"
+                >
+                    동일 복구
+                </button>
+                <button id="recoveryLogExportBtn" class="lockstep-debug-reset" type="button">
+                    보정 로그 JSON 저장
+                </button>
+                <button id="balanceTelemetryExportBtn" class="lockstep-debug-reset" type="button">
+                    밸런스 계측 JSON 저장
+                </button>
+                <button id="lockstepDebugResetBtn" class="lockstep-debug-reset" type="button">
+                    진단 Synctest 결과 지우기
+                </button>
+            </div>
+        </div>
+        <section id="lobby" class="title-screen launch-title">
+            <button id="titleHelpBtn" class="launch-icon-btn" type="button" aria-label="하는 법">
+                ?
+            </button>
+            <div class="launch-hero">
+                <h1 class="game-title">
+                    쌀콩<span class="frontier-accent">팡!</span
+                    ><span class="game-title-en">Rice, Beans &amp; Boom!</span>
+                </h1>
+                <p class="launch-tagline">곡식 병사를 대포로 쏘아 적 본진을 무너뜨려라</p>
+                <div id="titleGrains" class="launch-grains" aria-hidden="true"></div>
+            </div>
+            <div class="launch-title-actions">
+                <div id="singleStatus" class="single-status hidden" aria-live="polite"></div>
+                <button id="gameStartBtn" class="launch-btn primary" type="button">
+                    대전 시작
+                </button>
+                <div class="launch-row">
+                    <button id="friendMatchBtn" class="launch-btn secondary" type="button">
+                        친구와 대전
+                    </button>
+                    <button id="replayOpenBtn" class="launch-btn secondary" type="button">
+                        리플레이
+                    </button>
+                </div>
+                <input
+                    id="replayFileInput"
+                    class="hidden"
+                    type="file"
+                    accept="application/json,.json"
+                />
+                <button id="installPwaBtn" class="pwa-install-button hidden" type="button">
+                    <span class="pwa-install-main">⬇ 앱으로 설치</span>
+                    <span id="installPwaMeta">설치 가능한 경우 표시됩니다</span>
+                </button>
+                <button id="installGuideBtn" class="install-guide-link hidden" type="button">
+                    앱 설치 안내
+                </button>
+            </div>
+            <div
+                id="titleUpdateStamp"
+                class="launch-version"
+                title="이 빌드의 마지막 업데이트 시각"
+            >
+                확인 중
+            </div>
+        </section>
+
+        <dialog id="createDialog" class="game-dialog">
+            <div class="dialog-shell">
+                <button id="createCloseBtn" class="dialog-close" aria-label="닫기">×</button>
+                <div class="dialog-kicker">CREATE MATCH</div>
+                <h2>방 만들기</h2>
+                <p id="createStatus" class="dialog-copy">네트워크를 준비하고 있습니다.</p>
+                <div id="hostCodeArea" class="room-code-box hidden">
+                    <div class="small">상대에게 이 코드를 알려주세요</div>
+                    <div id="hostCode" class="room-code">----</div>
+                    <div class="small">
+                        상대가 참가하면 선택한 유닛 선택 방식으로 경기가 준비됩니다.
+                    </div>
+                </div>
+                <button id="createRetryBtn" class="dialog-action hidden">다시 시도</button>
+            </div>
+        </dialog>
+
+        <dialog id="joinDialog" class="game-dialog">
+            <form method="dialog" class="dialog-shell" onsubmit="return false;">
+                <button id="joinCloseBtn" type="button" class="dialog-close" aria-label="닫기">
+                    ×
+                </button>
+                <div class="dialog-kicker">JOIN MATCH</div>
+                <h2>방 참가</h2>
+                <p class="dialog-copy">상대가 알려준 4자리 방 코드를 입력하세요.</p>
+                <input
+                    id="roomInput"
+                    class="room-code-input"
+                    maxlength="4"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    placeholder="0000"
+                    aria-label="4자리 방 코드"
+                />
+                <div id="joinError" class="dialog-error"></div>
+                <button id="joinConfirmBtn" type="button" class="dialog-action primary">
+                    참가하기
+                </button>
+            </form>
+        </dialog>
+
+        <section id="gameScreen" class="game hidden">
+            <div class="canvas-wrap">
+                <canvas id="glCanvas"></canvas>
+                <canvas id="fxCanvas" class="fx-canvas" aria-hidden="true"></canvas>
+                <div id="launchHud" class="launch-hud">
+                    <button
+                        id="matchMenuBtnGame"
+                        class="launch-hud-btn"
+                        type="button"
+                        aria-label="경기 메뉴 열기"
+                    >
+                        ☰
+                    </button>
+                    <span id="launchHudMine" class="launch-hud-chip mine">나 ♥ 100%</span>
+                    <span id="launchHudEnemy" class="launch-hud-chip enemy">적 ♥ 100%</span>
+                    <span class="launch-hud-gap"></span>
+                    <span id="launchHudTime" class="launch-hud-chip">0:00</span>
+                </div>
+                <div id="minimapWrap" class="minimap">
+                    <canvas id="minimapCanvas" aria-label="미니맵"></canvas>
+                </div>
+                <div id="aimLabel" class="aim-label hidden" aria-hidden="true"></div>
+                <div
+                    id="launchFeedback"
+                    class="launch-feedback hidden"
+                    role="status"
+                    aria-live="polite"
+                ></div>
+                <div id="enemyBaseArrow" class="enemy-base-arrow hidden" aria-live="off">
+                    <i aria-hidden="true"></i><b>적 본진</b>
+                </div>
+                <div id="replayStats" class="replay-stats hidden"></div>
+            </div>
+            <div id="launchHand" class="launch-hand hidden" aria-label="발사 카드">
+                <div class="launch-economy">
+                    <div class="launch-wallet">
+                        <div class="launch-energy">
+                            <div id="launchEnergyFill" class="launch-energy-fill"></div>
+                            <b id="launchEnergyText">◆ 0</b>
+                        </div>
+                        <div class="launch-wallet-hints">
+                            <span id="launchIncomeText" class="launch-income">+15/초</span
+                            ><span id="launchReachText" class="launch-reach">쌀 최대 발사 500</span>
+                        </div>
+                    </div>
+                    <button id="launchRangeBtn" class="launch-range-btn" type="button">
+                        <b id="launchRangeText">사거리 ×1 → ×2</b
+                        ><span id="launchRangeCost">강화 ◆ 250</span>
+                    </button>
+                </div>
+                <div id="launchCards" class="launch-cards"></div>
+            </div>
+            <div id="replayDock" class="panel replay-dock hidden" aria-label="리플레이 조작">
+                <div class="replay-timeline-block">
+                    <div class="replay-timeline-head">
+                        <span id="replayTime" class="replay-time">00:00 / 00:00</span>
+                        <div class="replay-time-head-actions">
+                            <div class="replay-time-jump">
+                                <input
+                                    id="replayTimeInput"
+                                    class="replay-time-input"
+                                    type="text"
+                                    inputmode="numeric"
+                                    placeholder="MM:SS"
+                                    aria-label="이동할 시간"
+                                />
+                                <button
+                                    id="replayTimeGoBtn"
+                                    class="replay-btn replay-go-btn"
+                                    type="button"
+                                >
+                                    이동
+                                </button>
+                            </div>
+                            <button
+                                id="replayExitBtn"
+                                class="replay-btn replay-exit-btn"
+                                type="button"
+                            >
+                                종료
+                            </button>
+                        </div>
+                    </div>
+                    <input
+                        id="replayTimeline"
+                        class="replay-timeline"
+                        type="range"
+                        min="0"
+                        max="1"
+                        value="0"
+                        step="0.1"
+                        aria-label="리플레이 타임라인"
+                    />
+                </div>
+                <div class="replay-transport-row" aria-label="재생 조작">
+                    <button
+                        id="replayStepBack30Btn"
+                        class="replay-btn replay-long-jump"
+                        type="button"
+                    >
+                        −30s
+                    </button>
+                    <button
+                        id="replayStepBackBtn"
+                        class="replay-btn"
+                        type="button"
+                        aria-label="5초 뒤로"
+                    >
+                        −5s
+                    </button>
+                    <button
+                        id="replayPlayPauseBtn"
+                        class="replay-btn replay-play-btn"
+                        type="button"
+                    >
+                        ⏸ 일시정지
+                    </button>
+                    <button
+                        id="replayStepForwardBtn"
+                        class="replay-btn"
+                        type="button"
+                        aria-label="5초 앞으로"
+                    >
+                        +5s
+                    </button>
+                    <button
+                        id="replayStepForward30Btn"
+                        class="replay-btn replay-long-jump"
+                        type="button"
+                    >
+                        +30s
+                    </button>
+                    <select id="replaySpeed" class="replay-speed" aria-label="리플레이 속도">
+                        <option value="0.5">0.5×</option>
+                        <option value="1" selected>1×</option>
+                        <option value="2">2×</option>
+                        <option value="4">4×</option>
+                    </select>
+                </div>
+                <div class="replay-view-row" aria-label="리플레이 시야">
+                    <button id="replayHostViewBtn" class="replay-btn" type="button">
+                        HOST 시야
+                    </button>
+                    <button id="replayGuestViewBtn" class="replay-btn" type="button">
+                        GUEST 시야
+                    </button>
+                    <button id="replayAllViewBtn" class="replay-btn active" type="button">
+                        양쪽 시야
+                    </button>
+                </div>
+                <div class="replay-bottom-row">
+                    <div class="replay-orientation-group" aria-label="화면 방향">
+                        <button id="replayHostOrientationBtn" class="replay-btn" type="button">
+                            HOST 방향
+                        </button>
+                        <button id="replayGuestOrientationBtn" class="replay-btn" type="button">
+                            GUEST 방향
+                        </button>
+                    </div>
+                    <div class="replay-zoom-group" aria-label="리플레이 줌">
+                        <button
+                            id="replayZoomOutBtn"
+                            class="replay-btn replay-zoom-btn"
+                            type="button"
+                            aria-label="리플레이 축소"
+                        >
+                            −
+                        </button>
+                        <span id="replayZoomValue" class="replay-zoom-value" aria-live="polite"
+                            >100%</span
+                        >
+                        <button
+                            id="replayZoomInBtn"
+                            class="replay-btn replay-zoom-btn"
+                            type="button"
+                            aria-label="리플레이 확대"
+                        >
+                            ＋
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div
+            id="result"
+            class="result hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="resultTitle"
+            tabindex="-1"
+        >
+            <div class="result-card">
+                <p id="resultText" class="result-why"></p>
+                <h2 id="resultTitle">승리</h2>
+                <div id="resultStats" class="launch-stats"></div>
+                <button id="rematchBtn" class="launch-btn primary" type="button">다시 대전</button>
+                <div class="launch-row">
+                    <button id="replayWatchBtn" class="launch-btn secondary" type="button">
+                        리플레이
+                    </button>
+                    <button id="resultTitleBtn" class="launch-btn secondary" type="button">
+                        타이틀
+                    </button>
+                </div>
+                <button id="replaySaveBtn" class="hidden" type="button">⇩ 리플레이 저장</button>
+            </div>
+        </div>
+
+        <div
+            id="friendSheet"
+            class="launch-sheet hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="friendSheetTitle"
+        >
+            <div class="launch-sheet-panel">
+                <h2 id="friendSheetTitle">친구와 대전</h2>
+                <p>방을 만들어 코드를 보내거나, 받은 코드를 입력하세요.</p>
+                <button id="friendCreateBtn" class="launch-btn primary" type="button">
+                    방 만들기
+                </button>
+                <div class="launch-code">
+                    <input
+                        id="friendCodeInput"
+                        maxlength="4"
+                        inputmode="numeric"
+                        autocomplete="one-time-code"
+                        placeholder="코드"
+                        aria-label="4자리 방 코드"
+                    />
+                    <button id="friendJoinBtn" class="launch-btn secondary" type="button">
+                        참가
+                    </button>
+                </div>
+                <button class="launch-btn secondary" type="button" data-sheet-close>닫기</button>
+            </div>
+        </div>
+        <div
+            id="launchHelpSheet"
+            class="launch-sheet hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="launchHelpTitle"
+        >
+            <div class="launch-sheet-panel">
+                <h2 id="launchHelpTitle">하는 법</h2>
+                <p>
+                    ① 아래 카드를 골라요.<br />② 전장을 길게 누를수록 멀리 날아가요. 대포 주변의
+                    옅은 원은 고른 병종의 최대 발사 거리, 조준할 때 흰 원은 착지 범위예요. 너무 오래
+                    누르면 대포가 과열돼요.<br />③ 손을 떼면 발사! 착탄 충격으로 적을 밀어내고,
+                    묶음에서 나온 병사들이 일어나 적 본진으로 진격해요.<br />④ 시작 자원은 250원,
+                    한도는 500원이에요. 기본 초당 15원, 완성된 거점마다 5원씩 더 들어와요. 병력
+                    투입과 공통 사거리 강화 중 어디에 쓸지 골라요.<br />⑤ 병력이 중립 거점에
+                    진입하면 체력 10%로 건설을 시작해요. 유닛이 직접 다가가 몸을 당겼다 박치기하며
+                    작업을 쌓아요. 거점 완공에는 375작업과 총 75원이 필요하고, 기본 유닛은 건물에
+                    부딪힐 때마다 1작업을 해요. 여러 명이면 더 빨라져요. 다음 자원 지출까지의 진행은
+                    5칸으로 보여요. 건물 비용·필요 작업과 유닛의 작업량은 각각 달라질 수 있어요.
+                    작업자가 떠나거나 돈이 없으면 기다려요. 건설 중 파괴되면 투자한 돈은
+                    사라져요.<br />⑥ 완성된 거점은 점령과 인컴이 시작되고, 사거리 250의 단일
+                    공격으로 자동 방어해요.
+                </p>
+                <button class="launch-btn primary" type="button" data-sheet-close>알겠어요</button>
+            </div>
+        </div>
+        <div id="cardSheet" class="launch-sheet hidden" role="dialog" aria-modal="true">
+            <div id="cardDetail" class="launch-sheet-panel"></div>
+        </div>
+
+        <div
+            id="matchMenuModal"
+            class="match-menu-modal hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="matchMenuTitle"
+        >
+            <div id="matchMenuBackdrop" class="match-menu-backdrop"></div>
+            <div class="match-menu-card">
+                <div class="match-menu-head">
+                    <div>
+                        <div class="small">MATCH MENU</div>
+                        <div id="matchMenuTitle" class="match-menu-title">경기 메뉴</div>
+                    </div>
+                    <button id="matchMenuCloseBtn" class="drawer-close" type="button">닫기</button>
+                </div>
+                <div class="match-menu-copy">
+                    게임은 메뉴를 열어도 계속 진행됩니다. 연결 복구 중에는 시뮬레이션이 별도로
+                    정지됩니다.
+                </div>
+                <div class="match-menu-actions">
+                    <button id="matchMenuContinueBtn" class="primary" type="button">
+                        계속하기
+                    </button>
+                    <div class="launch-row">
+                        <button id="matchMenuSoundBtn" type="button">소리 끄기</button>
+                        <button id="matchMenuHelpBtn" type="button">도움말</button>
+                    </div>
+                    <button id="matchMenuSurrenderBtn" class="danger" type="button">항복</button>
+                    <button id="matchMenuReplaySaveBtn" class="hidden" type="button">
+                        ⇩ 현재까지 리플레이 저장
+                    </button>
+                    <button id="matchMenuLeaveBtn" class="hidden" type="button">게임 나가기</button>
+                </div>
+                <div id="matchMenuWarning" class="match-menu-warning">
+                    진행 중인 경기에서 항복하거나 나가면 패배 처리됩니다.
+                </div>
+            </div>
+        </div>
+
+        <div
+            id="disconnectGate"
+            class="disconnect-gate hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-live="assertive"
+        >
+            <div class="disconnect-gate-backdrop"></div>
+            <div class="disconnect-gate-card">
+                <div class="disconnect-gate-kicker">MATCH CONNECTION</div>
+                <div id="disconnectGateTitle" class="disconnect-gate-title">
+                    상대와 연결이 끊겼습니다
+                </div>
+                <div id="disconnectGateCount" class="disconnect-gate-count">01:00</div>
+                <div id="disconnectGateCopy" class="disconnect-gate-copy">
+                    게임은 현재 정지되어 있습니다. 제한시간 안에 재접속할 수 있습니다.
+                </div>
+                <div id="disconnectGateActions" class="disconnect-gate-actions">
+                    <button id="disconnectReconnectBtn" class="primary" type="button">
+                        재접속 시도
+                    </button>
+                    <button id="disconnectSurrenderBtn" class="danger" type="button">
+                        항복하고 나가기
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <script id="rf-pwa-install">
+            (() => {
+                'use strict';
+                let pending = null,
+                    busy = false,
+                    installed = false;
+                const standalone = () =>
+                    installed ||
+                    matchMedia('(display-mode: standalone)').matches ||
+                    navigator.standalone === true;
+                const render = () => {
+                    const button = document.getElementById('installPwaBtn'),
+                        guide = document.getElementById('installGuideBtn'),
+                        meta = document.getElementById('installPwaMeta');
+                    if (!button || !guide) return;
+                    button.classList.toggle('hidden', standalone() || !pending);
+                    button.disabled = busy;
+                    guide.classList.toggle('hidden', standalone());
+                    if (meta)
+                        meta.textContent = busy
+                            ? '브라우저 설치 창 확인 중…'
+                            : '브라우저 설치 창을 엽니다';
+                };
+                const showGuide = () =>
+                    document.getElementById('installGuideModal')?.classList.remove('hidden');
+                const hideGuide = () =>
+                    document.getElementById('installGuideModal')?.classList.add('hidden');
+                addEventListener('beforeinstallprompt', (event) => {
+                    event.preventDefault();
+                    pending = event;
+                    render();
+                });
+                addEventListener('appinstalled', () => {
+                    installed = true;
+                    pending = null;
+                    busy = false;
+                    hideGuide();
+                    render();
+                });
+                matchMedia('(display-mode: standalone)').addEventListener('change', render);
+                const bind = () => {
+                    render();
+                    document.getElementById('installPwaBtn').addEventListener('click', async () => {
+                        if (busy) return;
+                        if (!pending) {
+                            if (!standalone()) showGuide();
+                            return;
+                        }
+                        const prompt = pending;
+                        pending = null;
+                        busy = true;
+                        render();
+                        try {
+                            await prompt.prompt();
+                            await prompt.userChoice;
+                        } catch (error) {
+                            showGuide();
+                            document.querySelector('.install-guide-lead').textContent =
+                                '설치 창을 열지 못했습니다. 브라우저 메뉴에서 설치해 주세요. ' +
+                                String(error.message || error);
+                        } finally {
+                            busy = false;
+                            render();
+                        }
+                    });
+                    document.getElementById('installGuideBtn').addEventListener('click', showGuide);
+                    for (const id of [
+                        'installGuideCloseBtn',
+                        'installGuideDoneBtn',
+                        'installGuideBackdrop',
+                    ])
+                        document.getElementById(id).addEventListener('click', hideGuide);
+                    addEventListener('keydown', (event) => {
+                        if (event.key === 'Escape') hideGuide();
+                    });
+                    if (
+                        /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+                        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+                    ) {
+                        document.querySelector('#installGuideModal .small').textContent =
+                            'iOS · Safari';
+                        document.querySelector('.install-guide-lead').textContent =
+                            'Safari에서 공유 버튼을 누른 뒤 홈 화면에 추가를 선택하세요.';
+                        document.querySelector('.install-guide-steps').innerHTML =
+                            '<li><b>Safari에서 현재 페이지를 엽니다.</b></li><li><b>공유 → 홈 화면에 추가 → 추가를 누릅니다.</b></li><li><b>홈 화면의 쌀콩팡! 아이콘으로 실행합니다.</b></li>';
+                    } else if (!/Android/.test(navigator.userAgent)) {
+                        document.querySelector('#installGuideModal .small').textContent =
+                            'Chrome · Edge';
+                        document.querySelector('.install-guide-lead').textContent =
+                            '주소창의 설치 아이콘 또는 브라우저 메뉴에서 앱 설치를 선택하세요.';
+                        document.querySelector('.install-guide-steps').innerHTML =
+                            '<li><b>Chrome 또는 Edge에서 현재 게임 페이지를 엽니다.</b></li><li><b>주소창의 설치 아이콘 또는 메뉴에서 앱 설치를 선택합니다.</b></li><li><b>설치된 쌀콩팡! 앱으로 실행합니다.</b></li>';
+                    }
+                };
+                if (document.readyState === 'loading')
+                    document.addEventListener('DOMContentLoaded', bind, { once: true });
+                else bind();
+            })();
+        </script>
+        <script id="rf-diagnostic-bootstrap">
+            (() => {
+                'use strict';
+                const state = (window.__RALLY_GLOBAL_ERROR_HANDLER__ = {
+                    installed: true,
+                    errors: [],
+                    last: null,
+                    sources: { windowError: 0, unhandledRejection: 0, diagnostic: 0 },
+                });
+                const text = (v) => {
+                    try {
+                        return typeof v === 'string' ? v : JSON.stringify(v, null, 2);
+                    } catch (_) {
+                        return String(v);
+                    }
+                };
+                const buildMetadata = () =>
+                    window.__RALLY_BUILD_METADATA__ || {
+                        id: 'unknown',
+                        commit: null,
+                        updatedAt: null,
+                        status: 'pending',
+                        source: 'build.json',
+                        executedSourceVerified: false,
+                        reason: null,
+                    };
+                const present = (diag) => {
+                    const metadata = buildMetadata();
+                    diag = { ...diag, build: metadata.id, buildMetadata: metadata };
+                    state.last = diag;
+                    state.errors.push(diag);
+                    state.sources.diagnostic++;
+                    window.__RALLY_FATAL_DIAGNOSTIC__ = diag;
+                    const show = () => {
+                        const overlay = document.getElementById('renderFatalOverlay');
+                        const summary = document.getElementById('renderFatalSummary');
+                        const copy = document.getElementById('renderFatalCopy');
+                        if (summary) summary.textContent = text(diag);
+                        if (copy) copy.textContent = '진단 정보 복사';
+                        if (overlay) {
+                            overlay.classList.remove('hidden');
+                            overlay.style.display = 'flex';
+                            overlay.style.visibility = 'visible';
+                            overlay.style.opacity = '1';
+                            overlay.style.zIndex = '2147483647';
+                        }
+                    };
+                    show();
+                    if (document.readyState === 'loading')
+                        document.addEventListener('DOMContentLoaded', show, { once: true });
+                };
+                state.refreshBuildMetadata = () => {
+                    if (!state.last) return;
+                    const metadata = buildMetadata();
+                    for (const diag of state.errors) {
+                        diag.build = metadata.id;
+                        diag.buildMetadata = metadata;
+                    }
+                    const summary = document.getElementById('renderFatalSummary');
+                    if (summary) summary.textContent = text(state.last);
+                };
+                window.__RALLY_PRESENT_FATAL__ = present;
+                window.addEventListener(
+                    'error',
+                    (e) => {
+                        state.sources.windowError++;
+                        present({
+                            kind: 'SSALKONGPANG_WINDOW_ERROR',
+                            build: document.documentElement.dataset.build || null,
+                            at: new Date().toISOString(),
+                            message: String(e?.message || e?.error?.message || 'window error'),
+                            source: e?.filename || null,
+                            line: e?.lineno || null,
+                            column: e?.colno || null,
+                            stack: String(e?.error?.stack || ''),
+                        });
+                    },
+                    true,
+                );
+                window.addEventListener('unhandledrejection', (e) => {
+                    state.sources.unhandledRejection++;
+                    const reason = e?.reason;
+                    present({
+                        kind: 'SSALKONGPANG_UNHANDLED_REJECTION',
+                        build: document.documentElement.dataset.build || null,
+                        at: new Date().toISOString(),
+                        message: String(reason?.message || reason || 'unhandled rejection'),
+                        stack: String(reason?.stack || ''),
+                    });
+                });
+
+                // No heuristic presentation watchdog. Only concrete exceptions/fatal paths reach the global diagnostic sink.
+
+                document.addEventListener(
+                    'click',
+                    async (e) => {
+                        const copy = e.target?.closest?.('#renderFatalCopy');
+                        const select = e.target?.closest?.('#renderFatalSelect');
+                        const summary = document.getElementById('renderFatalSummary');
+                        if (copy && summary) {
+                            const value = summary.textContent || '';
+                            try {
+                                await navigator.clipboard.writeText(value);
+                                copy.textContent = '복사됨';
+                            } catch (_) {
+                                const ta = document.createElement('textarea');
+                                ta.value = value;
+                                document.body.appendChild(ta);
+                                ta.select();
+                                try {
+                                    document.execCommand('copy');
+                                    copy.textContent = '복사됨';
+                                } finally {
+                                    ta.remove();
+                                }
+                            }
+                        }
+                        if (select && summary) {
+                            const range = document.createRange();
+                            range.selectNodeContents(summary);
+                            const sel = getSelection();
+                            sel.removeAllRanges();
+                            sel.addRange(range);
+                        }
+                    },
+                    true,
+                );
+            })();
+        </script>
+
+        <script type="module">
+            import { BuildMetadata } from './src/core/build-metadata.js';
+            window.__RALLY_BUILD_METADATA__ = BuildMetadata.snapshot();
+            void BuildMetadata.load().then((metadata) => {
+                window.__RALLY_BUILD_METADATA__ = metadata;
+                window.__RALLY_GLOBAL_ERROR_HANDLER__?.refreshBuildMetadata?.();
+            });
+        </script>
+        <script type="module" src="./src/main.js"></script>
+    </body>
 </html>
