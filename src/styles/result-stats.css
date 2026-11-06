@@ -1,0 +1,68 @@
+#result {
+    overflow-y: auto;
+    align-items: flex-start;
+}
+
+.result-card {
+    margin: auto;
+}
+
+.result-by-unit {
+    order: 4;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: #fffdf5;
+    text-align: left;
+}
+
+.result-by-unit[hidden] {
+    display: none;
+}
+
+.result-by-unit h3 {
+    margin: 0 0 6px;
+    font-size: 16px;
+}
+
+.result-by-unit p {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.result-by-unit table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+.result-by-unit th,
+.result-by-unit td {
+    padding: 7px 3px;
+    border-bottom: 1px solid var(--line);
+    text-align: right;
+}
+
+.result-by-unit th:first-child {
+    text-align: left;
+}
+
+.result-by-unit tbody tr:last-child th,
+.result-by-unit tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+#resultByUnitPartial {
+    margin: 8px 0 0;
+}
+
+#rematchBtn {
+    order: 5;
+}
+
+.result-card .launch-row {
+    order: 6;
+}

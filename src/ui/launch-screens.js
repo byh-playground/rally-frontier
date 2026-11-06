@@ -256,10 +256,43 @@ export class LaunchScreens {
         }
         LABEL.style.transform = `translate(${Math.round(at.x)}px,${Math.round(at.y)}px) translate(-50%,-100%)`;
     }
-    static renderResult({ durationMs, launches, sent, kills }) {
+    static renderResult({ durationMs, launches, sent, kills, unitStats, deck, partial = false }) {
         const $ = this.$;
         $('resultStats').innerHTML =
-            `<div>경기 시간<b>${formatClock(durationMs)}</b></div><div>발사<b>${launches}회</b></div><div>내보낸 병사<b>${sent}</b></div><div>처치<b>${kills}</b></div>`;
+            `<div>경기 시간<b>${formatClock(durationMs)}</b></div><div>발사<b>${launches}회</b></div><div>발사 배정 병사<b>${sent}</b></div><div>처치<b>${kills}</b></div>`;
+        const section = $('resultByUnit'),
+            rows = $('resultByUnitRows');
+        rows.replaceChildren();
+        section.hidden = !unitStats;
+        $('resultByUnitPartial').hidden = !partial;
+        if (!unitStats) return;
+        const types = new Set([...this.actions.grains(), ...deck, ...Object.keys(unitStats)]);
+        for (const type of types) {
+            const stat = unitStats[type];
+            if (!stat || (!deck.includes(type) && !Object.values(stat).some((value) => value > 0)))
+                continue;
+            const row = document.createElement('tr');
+            const name = document.createElement('th');
+            name.scope = 'row';
+            name.textContent = this.actions.grainName(type);
+            row.append(name);
+            for (const value of [
+                stat.deployed,
+                stat.kills,
+                stat.unitDamage + stat.buildingDamage,
+            ]) {
+                const cell = document.createElement('td');
+                cell.textContent = value.toLocaleString('ko-KR');
+                row.append(cell);
+            }
+            const damage = row.lastElementChild;
+            damage.title = `병사 ${stat.unitDamage.toLocaleString('ko-KR')} · 건물 ${stat.buildingDamage.toLocaleString('ko-KR')}`;
+            damage.setAttribute(
+                'aria-label',
+                `유효 피해 ${damage.textContent}, 병사 ${stat.unitDamage}, 건물 ${stat.buildingDamage}`,
+            );
+            rows.append(row);
+        }
     }
 }
 

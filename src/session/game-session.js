@@ -22,6 +22,7 @@ import {
 } from '../core/session-timing.js';
 import { netcodeMode } from '../core/config.js';
 import { PRODUCT_VERSION } from '../core/product-version.js';
+import { UnitResultStats } from '../sim/unit-result-stats.js';
 import { BUILD_META } from '../core/build-info.js';
 import { RallyGamekit, RallyNetcode } from '../core/gamekit.js';
 import {
@@ -260,6 +261,7 @@ class RallySimulationAdapter {
             throw new Error('게임 snapshot의 tick/seed가 잘못되었습니다.');
         if (JSON.stringify(LaunchRules.normalizeDeckPair(state.decks)) !== this.deckSignature)
             throw new Error('게임 snapshot의 덱이 경기 시작과 다릅니다.');
+        UnitResultStats.validate(state.unitResultStats);
         for (const [key, shape] of Object.entries(this.rootShape)) {
             if (!Object.prototype.hasOwnProperty.call(state, key))
                 throw new Error(`게임 snapshot의 ${key} 필드가 없습니다.`);
