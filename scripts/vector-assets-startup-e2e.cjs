@@ -166,12 +166,12 @@ async function main(htmlPath = path.resolve(process.argv[2] || '_site/index.html
         await page.locator('#bootGate').waitFor({ state: 'hidden', timeout: 90_000 });
         const prepared = await page.evaluate(() => ({
             holds: window.__startupRenderer()?.gameResourceHolds?.length ?? 0,
-            riceAtlas: !!window.__startupRenderer()?.riceSprites?.atlas?.region,
-            acornAtlas: !!window.__startupRenderer()?.acornSprites?.atlas?.region,
-            cornAtlas: !!window.__startupRenderer()?.cornSprites?.atlas?.region,
-            chestnutAtlas: !!window.__startupRenderer()?.chestnutSprites?.atlas?.region,
+            riceAtlas: !!window.__startupRenderer()?.spriteRenderers?.rice?.atlas?.region,
+            acornAtlas: !!window.__startupRenderer()?.spriteRenderers?.acorn?.atlas?.region,
+            cornAtlas: !!window.__startupRenderer()?.spriteRenderers?.corn?.atlas?.region,
+            chestnutAtlas: !!window.__startupRenderer()?.spriteRenderers?.chestnut?.atlas?.region,
             beanAtlases: ['pea', 'redbean'].every(
-                (type) => !!window.__startupRenderer()?.beanSprites?.[type]?.atlas?.region,
+                (type) => !!window.__startupRenderer()?.spriteRenderers?.[type]?.atlas?.region,
             ),
             device: window.__startupRenderer()?.device?.state,
             loopStarted: window.__startupRenderer()?.loopStarted,
