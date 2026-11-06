@@ -36,6 +36,11 @@ export class UnitSpinAttack {
         );
     }
 
+    static isGrounded(unit) {
+        const motion = unit.impactMotion;
+        return !motion || (motion.heightFP <= 0 && motion.vzFP <= 0);
+    }
+
     // The caller supplies the same per-side vision field as normal combat.
     // Presence of a hidden enemy alone never initiates an attack.
     static canStart(sim, unit, spec, vision) {
@@ -53,6 +58,7 @@ export class UnitSpinAttack {
                     const target = sim.units[index];
                     if (
                         !target?.alive ||
+                        !this.isGrounded(target) ||
                         target.side === unit.side ||
                         !sim.canAttackEntity(unit.type, target)
                     )
@@ -154,6 +160,7 @@ export class UnitSpinAttack {
                     const target = sim.units[index];
                     if (
                         !target?.alive ||
+                        !this.isGrounded(target) ||
                         target.side === unit.side ||
                         !sim.canAttackEntity(unit.type, target)
                     )
