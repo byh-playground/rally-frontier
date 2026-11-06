@@ -606,6 +606,9 @@ class GeometryTemplateCache {
 const SHARED_GEOMETRY_TEMPLATES = new GeometryTemplateCache();
 // Depth gap between consecutive grains in painter order: a few 24-bit depth steps, so 500 grains shift terrain occlusion by ~2e-4.
 const GRAIN_DEPTH_RANK_STEP = 4e-7;
+// Bound presentation-only retention while avoiding churn when the camera crosses a unit.
+const GRAIN_ACTOR_RETENTION_MS = 2000;
+const GRAIN_ACTOR_HIDDEN_LIMIT = 512;
 
 class RenderPassProfiler {
     constructor() {
@@ -2468,6 +2471,7 @@ class GLRenderer {
             s.tick < old.tick ||
             (snapTargets && s.tick !== old.tick)
         ) {
+            this.clearGrainActors();
             this.cornTrails.clear();
             this.cornTrailAnchors.clear();
             this.cornBursts.length = 0;
@@ -4273,7 +4277,9 @@ class GLRenderer {
     }
     prepareGrainPoses(entries) {
         this.grainActorFrame++;
-        const now = this.presentationNow(performance.now());
+        const wallNow = performance.now();
+        this.grainActorNow = wallNow;
+        const now = this.presentationNow(wallNow);
         let rank = 0;
         for (const { kind, entity: u, world, depth } of entries) {
             if (kind !== 'unit' || !this.hasGrainArt(u)) continue;
@@ -4565,6 +4571,16 @@ class GLRenderer {
         let grain = this.grainActors.get(u.id);
         if (grain?.compiled !== record.compiled) {
             grain?.actor.dispose();
+            // Give the pose atlas room on smaller GPUs before allocating a new row.
+            // An actor not yet used this frame can be recreated if it becomes visible.
+            if (!grain && this.grainActors.size >= Math.max(1, this.device.maxTextureSize - 64)) {
+                for (const [id, cached] of this.grainActors) {
+                    if (cached.frame === this.grainActorFrame) continue;
+                    cached.actor.dispose();
+                    this.grainActors.delete(id);
+                    break;
+                }
+            }
             grain = {
                 actor: record.sprite
                     ? record.compiled.createActor()
@@ -4583,15 +4599,48 @@ class GLRenderer {
             };
             this.grainActors.set(u.id, grain);
         }
+        if (grain.hidden) {
+            // A newly allocated actor starts idle and has no one-frame latches.
+            // Reusing the pose resource must preserve that same re-entry behavior.
+            grain.actor.play('idle', 0);
+            grain.attackLatch = false;
+            grain.hitLatch = false;
+            grain.attackUntil = 0;
+            grain.hitUntil = 0;
+            grain.cornFacing = undefined;
+            grain.hidden = false;
+        }
         grain.frame = this.grainActorFrame;
+        grain.lastVisibleMs = this.grainActorNow;
         return grain;
     }
-    // Releases actors of grains that were not drawn this frame (dead or out of sight).
+    clearGrainActors() {
+        for (const grain of this.grainActors.values()) grain.actor.dispose();
+        this.grainActors.clear();
+    }
+    // Keep recently hidden pose resources briefly; never draw them outside visibility.
     pruneGrainActors() {
+        let hidden = 0;
         for (const [id, grain] of this.grainActors)
             if (grain.frame !== this.grainActorFrame) {
+                if (
+                    !this.renderState.entity('unit', id) ||
+                    this.grainActorNow - grain.lastVisibleMs >= GRAIN_ACTOR_RETENTION_MS
+                ) {
+                    grain.actor.dispose();
+                    this.grainActors.delete(id);
+                } else {
+                    grain.hidden = true;
+                    hidden++;
+                }
+            }
+        if (hidden > GRAIN_ACTOR_HIDDEN_LIMIT)
+            for (const [id, grain] of this.grainActors) {
+                if (hidden <= GRAIN_ACTOR_HIDDEN_LIMIT) break;
+                if (grain.frame === this.grainActorFrame) continue;
                 grain.actor.dispose();
                 this.grainActors.delete(id);
+                hidden--;
             }
     }
     flushVectorMesh(reason) {
