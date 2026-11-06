@@ -9687,6 +9687,78 @@ class BattlePresentation {
             LaunchPresentation.cancel();
         };
 
+        // A pinch consumes both pointers, so it can never release an armed cannon.
+        const touches = new Map();
+        let pinch = null;
+        let suppressTouch = false;
+        const zoomAt = (value, clientX, clientY) => {
+            const r = ActiveViewState.renderer;
+            if (!r || UiRuntimeState.value.screen !== 'game' || !r.hasDisplayArea()) return;
+            const rect = r.canvas.getBoundingClientRect();
+            const px = ((clientX - rect.left) / rect.width) * r.canvas.width;
+            const py = ((clientY - rect.top) / rect.height) * r.canvas.height;
+            const oldScale = r.sc();
+            const worldX = r.cameraLeft + px / oldScale;
+            const worldY = r.cameraTop + py / oldScale;
+            r.replayZoom = RangeUtil.clamp(value, 0.6, 1.8);
+            const scale = r.sc();
+            r.cameraLeft = RangeUtil.clamp(
+                worldX - px / scale,
+                0,
+                Math.max(0, r.world.width - r.viewWorldW()),
+            );
+            r.cameraTop = r.clampCameraTop(worldY - py / scale);
+            ActiveViewState.minimap?.draw();
+        };
+        UiRegistry.refs.canvas.addEventListener(
+            'wheel',
+            (e) => {
+                if (UiRuntimeState.value.screen !== 'game' || !ActiveViewState.renderer) return;
+                e.preventDefault();
+                cancelLaunchHold();
+                const units = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 300 : 1;
+                zoomAt(
+                    ActiveViewState.renderer.replayZoom * Math.exp(-e.deltaY * units * 0.001),
+                    e.clientX,
+                    e.clientY,
+                );
+            },
+            { passive: false },
+        );
+        const handleTouch = (point, event) => {
+            if (event.pointerType !== 'touch' || UiRuntimeState.value.screen !== 'game')
+                return false;
+            if (point.type === 'down')
+                touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+            else if (point.type === 'move' && touches.has(event.pointerId))
+                touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+            if (touches.size >= 2 && !pinch) {
+                cancelLaunchHold();
+                ActiveViewState.drag = null;
+                const [a, b] = [...touches.values()];
+                pinch = {
+                    distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+                    zoom: ActiveViewState.renderer.replayZoom,
+                };
+                suppressTouch = true;
+            }
+            if (pinch && point.type === 'move' && touches.size >= 2) {
+                const [a, b] = [...touches.values()];
+                zoomAt(
+                    (pinch.zoom * Math.hypot(a.x - b.x, a.y - b.y)) / pinch.distance,
+                    (a.x + b.x) / 2,
+                    (a.y + b.y) / 2,
+                );
+            }
+            const consumed = suppressTouch;
+            if (point.type === 'up' || point.type === 'cancel') {
+                touches.delete(event.pointerId);
+                if (touches.size < 2) pinch = null;
+                if (!touches.size) suppressTouch = false;
+            }
+            return consumed;
+        };
+
         const pointerDown = (e) => {
             if (ActiveViewState.drag && ActiveViewState.drag.id !== e.pointerId) return;
             if (ActiveViewState.drag) cancelLaunchHold();
@@ -9772,6 +9844,7 @@ class BattlePresentation {
                     if (point.type === 'up') pointerCancel(event);
                     return;
                 }
+                if (handleTouch(point, event)) return;
                 if (point.type === 'down') pointerDown(event);
                 else if (point.type === 'move') pointerMove(event);
                 else if (point.type === 'up') pointerUp(event);
@@ -9780,6 +9853,9 @@ class BattlePresentation {
             onRelease: () => {
                 cancelLaunchHold();
                 ActiveViewState.drag = null;
+                touches.clear();
+                pinch = null;
+                suppressTouch = false;
             },
         });
     }
