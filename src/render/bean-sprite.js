@@ -2,14 +2,14 @@
 import { RICE_RIG } from './rice-sprite.js';
 const root = new URL('../../assets/sprites/beans/', import.meta.url);
 const slots = Object.freeze({
-    'soy-body': [1, 1, 290, 270],
+    'pea-body': [1, 1, 290, 270],
     'red-body': [293, 1, 220, 265],
-    'soy-arm-l': [515, 1, 68, 70],
-    'soy-arm-r': [585, 1, 68, 70],
+    'pea-arm-l': [515, 1, 68, 70],
+    'pea-arm-r': [585, 1, 68, 70],
     'red-arm-l': [655, 1, 68, 70],
     'red-arm-r': [725, 1, 68, 70],
-    'soy-leg-l': [515, 73, 58, 70],
-    'soy-leg-r': [575, 73, 58, 70],
+    'pea-leg-l': [515, 73, 58, 70],
+    'pea-leg-r': [575, 73, 58, 70],
     'red-leg-l': [635, 73, 58, 70],
     'red-leg-r': [695, 73, 58, 70],
     'face-neutral': [1, 280, 148, 72],
@@ -17,7 +17,7 @@ const slots = Object.freeze({
     'face-hurt': [301, 280, 148, 72],
     'face-angry': [451, 280, 148, 72],
 });
-const types = Object.freeze({ soybean: 'soy', redbean: 'red' });
+const types = Object.freeze({ pea: 'pea', redbean: 'red' });
 const cache = new WeakMap();
 export async function loadBeanSpriteCanvases() {
     const response = await fetch(new URL('manifest.json', root), { cache: 'no-store' });
@@ -69,17 +69,17 @@ export async function loadBeanSpriteCanvases() {
     canvas.height = 512;
     const context = canvas.getContext('2d');
     for (const [name, image] of images) context.drawImage(image, ...slots[name]);
-    return Object.freeze({ soybean: canvas, redbean: canvas });
+    return Object.freeze({ pea: canvas, redbean: canvas });
 }
 function pieces(type) {
     const prefix = types[type];
     if (!prefix) throw new Error('알 수 없는 곡물 스프라이트: ' + type);
-    const soy = prefix === 'soy',
-        ly = soy ? 105 : 117;
+    const pea = prefix === 'pea',
+        ly = pea ? 105 : 117;
     return {
         body: {
             name: prefix + '-body',
-            rect: soy ? [-145, -163, 290, 270] : [-110, -141.5, 220, 265],
+            rect: pea ? [-145, -163, 290, 270] : [-110, -141.5, 220, 265],
             part: 0,
         },
         legL: { name: prefix + '-leg-l', rect: [-65, ly - 35, 58, 70], part: 1 },
@@ -88,15 +88,15 @@ function pieces(type) {
         armR: { name: prefix + '-arm-r', rect: [78, -3, 68, 70], part: 5 },
         neutral: {
             name: 'face-neutral',
-            rect: soy ? [-74, -45, 148, 72] : [-61, -64, 148, 72],
+            rect: pea ? [-74, -45, 148, 72] : [-61, -64, 148, 72],
             part: 7,
         },
         attack: {
             name: 'face-angry',
-            rect: soy ? [-74, -45, 148, 72] : [-61, -64, 148, 72],
+            rect: pea ? [-74, -45, 148, 72] : [-61, -64, 148, 72],
             part: 7,
         },
-        hurt: { name: 'face-hurt', rect: soy ? [-74, -45, 148, 72] : [-61, -64, 148, 72], part: 7 },
+        hurt: { name: 'face-hurt', rect: pea ? [-74, -45, 148, 72] : [-61, -64, 148, 72], part: 7 },
     };
 }
 export function beanSpritePortrait(canvas, type, width) {

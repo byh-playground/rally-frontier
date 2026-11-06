@@ -253,11 +253,16 @@ class StrategySim {
             ],
         },
     );
-    static createForMatch({ seed, rules = GameRuleDefinition.current } = {}) {
-        return new StrategySim(seed, rules);
+    static createForMatch({ seed, rules = GameRuleDefinition.current, decks } = {}) {
+        return new StrategySim(seed, rules, decks);
     }
-    constructor(seed, rules = GameRuleDefinition.current) {
+    constructor(
+        seed,
+        rules = GameRuleDefinition.current,
+        decks = [LaunchRules.deck, LaunchRules.deck],
+    ) {
         this.seed = seed >>> 0;
+        this.decks = LaunchRules.normalizeDeckPair(decks);
         this.rules = rules || GameRuleDefinition.current;
         this.tps = RangeUtil.clamp(
             Math.round(Number(this.rules?.simulation?.tps) || SIM_TPS),
@@ -1256,6 +1261,7 @@ class StrategySim {
         if (this.tick < (Number(cannon.launchReadyTick) || 0)) return reject('reloading');
         const grain = LaunchRules.grain(action.unitType);
         if (!grain) return reject('invalid-unit');
+        if (!this.decks[side]?.includes(action.unitType)) return reject('unit-not-in-deck');
         if (this.wallet[side] < grain.cost) return reject('insufficient-resources');
         const holdMs = Math.max(0, Math.round(action.holdMs));
         if (LaunchRules.overheated(holdMs)) {
@@ -3415,6 +3421,7 @@ class StrategySim {
             return {
                 tick: this.tick,
                 tps: this.tps,
+                decks: StateValue.copy(this.decks),
                 mapDescriptor: this.mapDescriptor,
                 launchDeployments: StateValue.copy(this.launchDeployments),
                 wallet: this.wallet.slice(),

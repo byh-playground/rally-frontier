@@ -91,6 +91,8 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   원 둘레는 각 지점의 지형 높이와 기존 월드 투영을 사용한다. 강화 명령과 공사/레벨 상태는 Netcode·저장·리플레이·체크섬을 통과한다.
 
 6. SESSION, VERIFICATION AND RELEASE
+- 덱 편성은 기기에 저장하고 경기 시작 시 각 플레이어의 선택을 확정해 양측이 같은 권위 상태로 보관한다.
+  발사 검증·봇·리플레이 및 복구는 경기 당시 확정된 덱을 사용한다.
 - GameSession은 공통 Core·Simulation Adapter·Transport를 조합한 경기 Coordinator다. Core가
   입력 예측·지연·시계·롤백·확정 해시·복구를 소유한다. 게임은 공개 API를 쓰고 Core 내부를 복제/우회하지 않는다.
 - 기본 netcode는 lockstep이며 방장이 보낸 lockstep/rollback 모드를 참가자가 경기 시작 전에 적용한다.
@@ -146,6 +148,7 @@ END OF DEVELOPMENT CONTRACT
         <link rel="apple-touch-icon" href="./icons/ssalkongpang-180.png" />
 
         <link rel="stylesheet" href="./src/styles/game.css" />
+        <link rel="stylesheet" href="./src/styles/deck.css" />
     </head>
     <body class="boot-loading">
         <div
@@ -511,6 +514,9 @@ END OF DEVELOPMENT CONTRACT
                 <button id="gameStartBtn" class="launch-btn primary" type="button">
                     대전 시작
                 </button>
+                <button id="deckEditBtn" class="launch-btn deck-open" type="button">
+                    덱 편성 <span id="deckSummary"></span>
+                </button>
                 <div class="launch-row">
                     <button id="friendMatchBtn" class="launch-btn secondary" type="button">
                         친구와 대전
@@ -541,6 +547,41 @@ END OF DEVELOPMENT CONTRACT
                 확인 중
             </div>
         </section>
+
+        <dialog id="deckDialog" class="deck-dialog" aria-labelledby="deckTitle">
+            <div class="deck-panel">
+                <header class="deck-header">
+                    <div>
+                        <p class="deck-kicker">나만의 전투 준비</p>
+                        <h2 id="deckTitle">덱 편성</h2>
+                    </div>
+                    <button
+                        id="deckCloseBtn"
+                        class="deck-close"
+                        type="button"
+                        aria-label="덱 편성 닫기"
+                    >
+                        ×
+                    </button>
+                </header>
+                <p class="deck-intro">대전에 데려갈 곡식 병사를 골라요.</p>
+                <div id="deckTabs" class="deck-tabs" role="group" aria-label="덱 선택"></div>
+                <div class="deck-section-head">
+                    <h3>내 덱</h3>
+                    <span id="deckCount"></span>
+                </div>
+                <div id="deckSelected" class="deck-selected" aria-label="현재 덱"></div>
+                <div class="deck-section-head">
+                    <h3>병사 목록</h3>
+                    <span>눌러서 추가하거나 제외</span>
+                </div>
+                <div id="deckCollection" class="deck-collection"></div>
+                <p id="deckNotice" class="deck-notice" aria-live="polite"></p>
+                <button id="deckDoneBtn" class="launch-btn primary deck-done" type="button">
+                    완료
+                </button>
+            </div>
+        </dialog>
 
         <dialog id="createDialog" class="game-dialog">
             <div class="dialog-shell">
@@ -831,19 +872,19 @@ END OF DEVELOPMENT CONTRACT
             <div class="launch-sheet-panel">
                 <h2 id="launchHelpTitle">하는 법</h2>
                 <p>
-                    ① 아래 카드를 골라요.<br />② 전장을 길게 누를수록 멀리 날아가요. 대포 주변의
-                    옅은 원은 고른 병종의 최대 발사 거리, 조준할 때 흰 원은 착지 범위예요. 너무 오래
-                    누르면 대포가 과열돼요.<br />③ 손을 떼면 발사! 착탄 충격으로 적을 밀어내고,
-                    묶음에서 나온 병사들이 일어나 적 본진으로 진격해요.<br />④ 시작 자원은 250원,
-                    한도는 500원이에요. 기본 초당 15원, 완성된 거점마다 5원씩 더 들어와요. 병력
-                    투입과 공통 사거리 강화 중 어디에 쓸지 골라요.<br />⑤ 병력이 중립 거점에
-                    진입하면 체력 10%로 건설을 시작해요. 유닛이 직접 다가가 몸을 당겼다 박치기하며
-                    작업을 쌓아요. 거점 완공에는 375작업과 총 75원이 필요하고, 기본 유닛은 건물에
-                    부딪힐 때마다 1작업을 해요. 여러 명이면 더 빨라져요. 다음 자원 지출까지의 진행은
-                    5칸으로 보여요. 건물 비용·필요 작업과 유닛의 작업량은 각각 달라질 수 있어요.
-                    작업자가 떠나거나 돈이 없으면 기다려요. 건설 중 파괴되면 투자한 돈은
-                    사라져요.<br />⑥ 완성된 거점은 점령과 인컴이 시작되고, 사거리 250의 단일
-                    공격으로 자동 방어해요.
+                    ① 대전 전에 덱 편성에서 병사를 선택하고, 경기에서는 덱에 넣은 카드를 골라요.<br />②
+                    전장을 길게 누를수록 멀리 날아가요. 대포 주변의 옅은 원은 고른 병종의 최대 발사
+                    거리, 조준할 때 흰 원은 착지 범위예요. 너무 오래 누르면 대포가 과열돼요.<br />③
+                    손을 떼면 발사! 착탄 충격으로 적을 밀어내고, 묶음에서 나온 병사들이 일어나 적
+                    본진으로 진격해요.<br />④ 시작 자원은 250원, 한도는 500원이에요. 기본 초당 15원,
+                    완성된 거점마다 5원씩 더 들어와요. 병력 투입과 공통 사거리 강화 중 어디에 쓸지
+                    골라요.<br />⑤ 병력이 중립 거점에 진입하면 체력 10%로 건설을 시작해요. 유닛이
+                    직접 다가가 몸을 당겼다 박치기하며 작업을 쌓아요. 거점 완공에는 375작업과 총
+                    75원이 필요하고, 기본 유닛은 건물에 부딪힐 때마다 1작업을 해요. 여러 명이면 더
+                    빨라져요. 다음 자원 지출까지의 진행은 5칸으로 보여요. 건물 비용·필요 작업과
+                    유닛의 작업량은 각각 달라질 수 있어요. 작업자가 떠나거나 돈이 없으면 기다려요.
+                    건설 중 파괴되면 투자한 돈은 사라져요.<br />⑥ 완성된 거점은 점령과 인컴이
+                    시작되고, 사거리 250의 단일 공격으로 자동 방어해요.
                 </p>
                 <button class="launch-btn primary" type="button" data-sheet-close>알겠어요</button>
             </div>

@@ -2,14 +2,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const names = [
-    'soy-body',
+    'pea-body',
     'red-body',
-    'soy-arm-l',
-    'soy-arm-r',
+    'pea-arm-l',
+    'pea-arm-r',
     'red-arm-l',
     'red-arm-r',
-    'soy-leg-l',
-    'soy-leg-r',
+    'pea-leg-l',
+    'pea-leg-r',
     'red-leg-l',
     'red-leg-r',
     'face-neutral',
