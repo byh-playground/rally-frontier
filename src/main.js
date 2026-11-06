@@ -3942,7 +3942,7 @@ class GLRenderer {
             at = this.projectEntityScreen(unit, 'unit');
         const dx = to[0] - at.x,
             dy = to[1] - at.y,
-            length = Math.hypot(dx, dy) || 1,
+            distance = Math.hypot(dx, dy) || 1,
             facing = dx < 0 ? -1 : 1;
         const active = phase === 'prepare' || phase === 'strike' || phase === 'recover';
         const lean =
@@ -3953,14 +3953,6 @@ class GLRenderer {
                   : phase === 'recover'
                     ? 0.26 * (1 - progress)
                     : 0;
-        const extension =
-            phase === 'prepare'
-                ? -0.25 * progress
-                : phase === 'strike'
-                  ? -0.25 + 0.9 * progress
-                  : phase === 'recover'
-                    ? 0.65 * (1 - progress)
-                    : 0;
         const squash =
             phase === 'prepare'
                 ? 0.08 * progress
@@ -3969,7 +3961,11 @@ class GLRenderer {
                   : phase === 'recover'
                     ? 0.12 * (1 - progress)
                     : 0;
-        const reach = this.unitRenderRadius(unit) * extension;
+        // Align the artwork with the collision silhouette only at confirmed contact.
+        const contactInset =
+            phase === 'recover' && work.lastHitTick != null
+                ? this.unitRenderRadius(unit) * 0.2 * (1 - progress)
+                : 0;
         return {
             phase,
             progress,
@@ -3978,9 +3974,9 @@ class GLRenderer {
             rotation: lean * facing,
             scaleX: 1 + squash,
             scaleY: 1 - squash,
-            offsetX: (dx / length) * reach,
-            offsetY: (dy / length) * reach,
-            clip: active ? 'idle' : null,
+            offsetX: (dx / distance) * contactInset,
+            offsetY: (dy / distance) * contactInset,
+            clip: active ? (phase === 'strike' || phase === 'recover' ? 'walk' : 'idle') : null,
         };
     }
     prepareGrainPoses(entries) {
@@ -4025,23 +4021,26 @@ class GLRenderer {
                     restart = true;
                 }
                 grain.hitLatch = hit;
-                clip =
-                    impact.active || work?.active
-                        ? 'idle'
-                        : grain.hitUntil > now
-                          ? 'hit'
-                          : grain.attackUntil > now
-                            ? 'fire'
-                            : moving
-                              ? 'walk'
-                              : 'idle';
+                clip = impact.active
+                    ? 'idle'
+                    : work?.active
+                      ? work.clip
+                      : grain.hitUntil > now
+                        ? 'hit'
+                        : grain.attackUntil > now
+                          ? 'fire'
+                          : moving
+                            ? 'walk'
+                            : 'idle';
             }
             if (
                 actor.currentClip !== clip ||
                 (restart && record.sprite && (clip === 'fire' || clip === 'hit'))
             )
                 actor.play(clip, 0);
-            actor.seek(work?.active ? 0 : now + (HashUtil.hash(u.id) % 997) * 7);
+            actor.seek(
+                work?.active && work.clip === 'idle' ? 0 : now + (HashUtil.hash(u.id) % 997) * 7,
+            );
             actor.preparePose();
             // Budmori bodies are front-facing: no rotation, ground socket on the unit's ground point.
             const p = this.projectRenderWorldPosition(world),
