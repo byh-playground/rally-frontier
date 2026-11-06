@@ -1,0 +1,44 @@
+#launchHelpSheet .launch-sheet-panel {
+    max-height: calc(100dvh - 16px);
+}
+
+#launchHelpSheet .launch-btn {
+    flex: 0 0 50px;
+}
+
+.help-guide {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    display: grid;
+    gap: 10px;
+}
+
+.help-rule {
+    padding: 11px 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #fffdf5;
+}
+
+.help-rule h3 {
+    margin: 0 0 4px;
+    color: var(--ink);
+    font-size: 15px;
+}
+
+.help-rule details {
+    margin-top: 6px;
+}
+
+.help-rule summary {
+    color: #416a43;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.help-rule details p {
+    margin-top: 6px;
+    font-size: 12px;
+}
