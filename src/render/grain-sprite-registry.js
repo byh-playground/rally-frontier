@@ -13,8 +13,8 @@ import {
     ChestnutSpriteRenderer,
 } from './chestnut-sprite.js';
 
-// Source order preserves the existing verified asset-loading sequence. The two
-// bean variants share one canvas and one atlas allocation.
+// Sources load concurrently. The two bean variants share one canvas and one
+// atlas allocation.
 const SPRITE_SOURCES = Object.freeze({
     rice: async () => buildRiceSpriteCanvas(await loadRiceSpriteImages()),
     beans: loadBeanSpriteCanvases,
@@ -65,8 +65,11 @@ export const GRAIN_SPRITES = Object.freeze({
 });
 
 export async function loadGrainSpriteCanvases() {
-    const sources = {};
-    for (const [id, load] of Object.entries(SPRITE_SOURCES)) sources[id] = await load();
+    const sources = Object.fromEntries(
+        await Promise.all(
+            Object.entries(SPRITE_SOURCES).map(async ([id, load]) => [id, await load()]),
+        ),
+    );
     return Object.freeze(
         Object.fromEntries(
             Object.entries(GRAIN_SPRITES).map(([type, definition]) => {
