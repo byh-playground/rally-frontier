@@ -1,6 +1,7 @@
 // Launch grain definitions, runtime geometry and visual definitions.
 import { COLLISION_RADIUS_SCALE } from './world-rules.js';
 import { FP } from '../core/config.js';
+import { DEFAULT_ATTACK_WINDUP_MS } from './combat-rules.js';
 const ACORN_SIZE = 20;
 const ACORN_SPIN_RADIUS = 55;
 
@@ -54,8 +55,8 @@ class UnitDefinition {
             // Damage, reach and impulse are trial values; cadence follows the reviewed motion.
             spinAttack: Object.freeze({
                 radius: ACORN_SPIN_RADIUS,
-                windupMs: 1000,
-                activeMs: 2000,
+                windupMs: DEFAULT_ATTACK_WINDUP_MS,
+                activeMs: 1000,
                 recoverMs: 1000,
                 pulseMs: 200,
                 knockbackSpeed: 400,

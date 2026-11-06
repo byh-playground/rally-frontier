@@ -4462,14 +4462,20 @@ class GLRenderer {
                 (restart && record.sprite && (clip === 'fire' || clip === 'hit'))
             )
                 actor.play(clip, 0);
-            if (spin)
+            if (spin) {
+                const tps = this.snapshot.tps || SIM_TPS;
+                const windupTicks = Math.max(1, spin.activeStartTick - spin.startTick);
+                const activeTicks = Math.max(1, spin.activeEndTick - spin.activeStartTick);
+                const elapsed = Math.max(0, renderTick - spin.startTick);
+                // Align the authored clip's windup and spin phases to simulation.
                 actor.seekElapsed(
-                    Math.max(
-                        0,
-                        ((renderTick - spin.startTick) * 1000) / (this.snapshot.tps || SIM_TPS),
-                    ),
+                    elapsed < windupTicks
+                        ? (elapsed / windupTicks) * 1000
+                        : elapsed < windupTicks + activeTicks
+                          ? 1000 + ((elapsed - windupTicks) / activeTicks) * 2000
+                          : 3000 + ((elapsed - windupTicks - activeTicks) * 1000) / tps,
                 );
-            else if (cornElapsed != null) actor.seekElapsed(cornElapsed);
+            } else if (cornElapsed != null) actor.seekElapsed(cornElapsed);
             else if (chestnutFireMs !== null && clip === 'fire') actor.seekElapsed(chestnutFireMs);
             else
                 actor.seek(

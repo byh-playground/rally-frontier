@@ -149,12 +149,13 @@ export class UnitSpinAttack {
             spec.radius + sim.maxUnitRadius,
             1 - unit.side,
             (indices) => {
-                // Tie-break by entity ID so equal-tick deaths and emitted events do
-                // not depend on grid traversal order.
+                // Nearest target first; stable IDs resolve equal distances.
                 indices.sort((a, b) => {
+                    const da = (sim.units[a].x - unit.x) ** 2 + (sim.units[a].y - unit.y) ** 2;
+                    const db = (sim.units[b].x - unit.x) ** 2 + (sim.units[b].y - unit.y) ** 2;
                     const left = String(sim.units[a].id),
                         right = String(sim.units[b].id);
-                    return left < right ? -1 : left > right ? 1 : 0;
+                    return da - db || (left < right ? -1 : left > right ? 1 : 0);
                 });
                 for (const index of indices) {
                     const target = sim.units[index];
@@ -210,6 +211,7 @@ export class UnitSpinAttack {
                             },
                         );
                     }
+                    break;
                 }
             },
         );
