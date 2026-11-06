@@ -88,8 +88,8 @@ class LaunchRules {
         }),
         millet: Object.freeze({
             ...SINGLE_BUNDLE_SHELL,
-            cost: 10 * this.resourceScale,
-            count: 15,
+            cost: 35 * this.resourceScale,
+            count: 20,
             impact: 10,
             splash: 50,
             deployTogether: true,
