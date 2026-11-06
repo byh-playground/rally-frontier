@@ -5,23 +5,35 @@ import { DEFAULT_ATTACK_WINDUP_MS, DEFAULT_MELEE_MOVE_RECOVERY_MS } from './comb
 const RICE_SIZE = 10;
 const ACORN_SIZE = RICE_SIZE * 3;
 const ACORN_SPIN_RADIUS = ACORN_SIZE * (55 / 20);
+const RICE_MELEE = {
+    requiresContactTerrain: true,
+    construction: { range: 5, workPerHit: 1 },
+    name: '쌀',
+    hp: 25,
+    atk: 5,
+    range: 25,
+    speed: 75,
+    cooldownMs: 1000,
+    size: RICE_SIZE,
+    sizeClass: 'light',
+    role: 'bruiser',
+    attackVisual: { sourceMotion: 'slash', travel: 'none', impact: 'light' },
+    sight: 275,
+};
 
 class UnitDefinition {
     static all = {
-        rice: {
-            requiresContactTerrain: true,
-            construction: { range: 5, workPerHit: 1 },
-            name: '쌀',
-            hp: 25,
-            atk: 5,
-            range: 25,
-            speed: 75,
-            cooldownMs: 1000,
-            size: RICE_SIZE,
-            sizeClass: 'light',
-            role: 'bruiser',
-            attackVisual: { sourceMotion: 'slash', travel: 'none', impact: 'light' },
-            sight: 275,
+        rice: RICE_MELEE,
+        // Approved combat values; other mechanics inherit rice until designed.
+        // No combat animation is selected before the millet artwork is approved.
+        millet: {
+            ...RICE_MELEE,
+            name: '조',
+            hp: 7,
+            atk: 4,
+            size: RICE_MELEE.size / 2,
+            contactMelee: true,
+            attackVisual: { ...RICE_MELEE.attackVisual, sourceMotion: null },
         },
         pea: {
             requiresContactTerrain: true,
@@ -179,6 +191,13 @@ class UnitVisualDefinition {
             fx: 'melee',
         },
         rice: {
+            family: 'grain',
+            billboard: true,
+            visualScale: 0.85,
+            accent: [0.96, 0.94, 0.86, 1],
+            fx: 'melee',
+        },
+        millet: {
             family: 'grain',
             billboard: true,
             visualScale: 0.85,

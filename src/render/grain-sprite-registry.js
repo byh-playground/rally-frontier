@@ -8,10 +8,18 @@ import { loadBeanSpriteCanvases, beanSpritePortrait, BeanSpriteRenderer } from '
 import { loadAcornSpriteCanvas, acornSpritePortrait, AcornSpriteRenderer } from './acorn-sprite.js';
 import { loadCornSpriteCanvas, cornSpritePortrait, CornSpriteRenderer } from './corn-sprite.js';
 import {
+    loadMilletSpriteCanvas,
+    milletSpritePortrait,
+    MilletSpriteRenderer,
+} from './millet-sprite.js';
+import {
     loadChestnutSpriteCanvas,
     chestnutSpritePortrait,
     ChestnutSpriteRenderer,
 } from './chestnut-sprite.js';
+
+// Approved idle artwork bounds from hat top to feet: rice 343.5, millet 311.
+const MILLET_ART_SCALE = 343.5 / 311;
 
 // Sources load concurrently. The two bean variants share one canvas and one
 // atlas allocation.
@@ -21,6 +29,7 @@ const SPRITE_SOURCES = Object.freeze({
     acorn: loadAcornSpriteCanvas,
     corn: loadCornSpriteCanvas,
     chestnut: loadChestnutSpriteCanvas,
+    millet: loadMilletSpriteCanvas,
 });
 
 // Insertion order is the actual atlas allocation order and is also used by the
@@ -31,6 +40,13 @@ export const GRAIN_SPRITES = Object.freeze({
         renderer: RiceSpriteRenderer,
         portrait: riceSpritePortrait,
         groundY: 145,
+    },
+    millet: {
+        source: 'millet',
+        renderer: MilletSpriteRenderer,
+        portrait: milletSpritePortrait,
+        groundY: 151.5,
+        artScale: MILLET_ART_SCALE,
     },
     acorn: {
         source: 'acorn',

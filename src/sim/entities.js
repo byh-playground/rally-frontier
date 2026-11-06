@@ -42,6 +42,8 @@ class Unit {
         const data = Unit.stateContract.create(spec);
         if (UnitDefinition.get(data.type)?.spinAttack && !Object.hasOwn(data, 'spinAttack'))
             data.spinAttack = null;
+        if (UnitDefinition.get(data.type)?.contactMelee && !Object.hasOwn(data, 'contactAttack'))
+            data.contactAttack = null;
         this.status = new StatusComponent(data.status || {});
         delete data.status;
         this.movement = new MovementComponent(data.movement || {});

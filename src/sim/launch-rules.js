@@ -1,6 +1,17 @@
 // Cannon launch rules: income, wallet and grain data.
 import { RangeUtil } from '../core/game-rules.js';
 
+// Existing corn shell behaviour shared with the draft single-stalk deployment.
+// Millet overrides the approved deployment and impact values below.
+const SINGLE_BUNDLE_SHELL = Object.freeze({
+    reach: 0.85,
+    speed: 750,
+    impact: 25,
+    splash: 100,
+    land: 'bundle',
+    fire: Object.freeze({ mode: 'single' }),
+});
+
 // 발사전: 대포가 유닛 뭉치를 쏜다. 거리는 누른 시간만으로 정해지고, 조준 중에는 착지 원으로 미리 보인다(D-196).
 // 한 발이 무겁다: 자원 단위는 기존 경제의 5배 환산 기준(D-233·D-235), 폭발 중심일수록 피해가 크다(D-230), 곡물마다 발사 방식이 다르다(D-234).
 class LaunchRules {
@@ -70,14 +81,17 @@ class LaunchRules {
         }),
         // Provisional corn deployment: a single shell releases one grouped squad.
         corn: Object.freeze({
+            ...SINGLE_BUNDLE_SHELL,
             cost: 50 * this.resourceScale,
             count: 6,
-            reach: 0.85,
-            speed: 750,
-            impact: 25,
-            splash: 100,
-            land: 'bundle',
-            fire: Object.freeze({ mode: 'single' }),
+        }),
+        millet: Object.freeze({
+            ...SINGLE_BUNDLE_SHELL,
+            cost: 10 * this.resourceScale,
+            count: 15,
+            impact: 10,
+            splash: 50,
+            deployTogether: true,
         }),
         chestnut: Object.freeze({
             cost: 50 * this.resourceScale,

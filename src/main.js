@@ -1654,6 +1654,8 @@ class GLRenderer {
         this.cornTrailAnchors = new Map();
         this.cornBursts = [];
         this.cornEventSeen = new Map();
+        this.milletBursts = [];
+        this.milletEventSeen = new Map();
         this.cornQuadMatrix = new Float32Array(6);
         this.projectileScreenMotionStates = new Map();
         this.last = performance.now();
@@ -1793,6 +1795,7 @@ class GLRenderer {
             this.spriteRenderers.acorn.drawTeamMarker(matrix, 0, false);
             C.flush('acorn-ammo-resource-preparation');
             C.depthTest = false;
+            this.spriteRenderers.millet.drawEar(matrix, 0);
             this.spriteRenderers.corn.drawKernel(matrix, 0);
             this.spriteRenderers.corn.drawCone(matrix, 0);
             this.spriteRenderers.corn.drawTeamMarker(matrix, 0, true);
@@ -2477,6 +2480,8 @@ class GLRenderer {
             this.cornTrailAnchors.clear();
             this.cornBursts.length = 0;
             this.cornEventSeen.clear();
+            this.milletBursts.length = 0;
+            this.milletEventSeen.clear();
         }
         if (snapTargets || !old) this.resetFogTransition();
         this.world = WorldContext.forState(s);
@@ -2508,6 +2513,7 @@ class GLRenderer {
         this.processFloatingEvents(s);
         this.processClientCombatEffects(s);
         this.processCornEvents(s);
+        this.processMilletEvents(s);
     }
 
     triggerClientShake(intensity = 2, duration = 140, seed = 1) {
@@ -2585,6 +2591,31 @@ class GLRenderer {
             });
         }
         if (this.cornBursts.length > 220) this.cornBursts.splice(0, this.cornBursts.length - 220);
+    }
+    processMilletEvents(snapshot) {
+        if (!snapshot) return;
+        for (const event of snapshot.events || []) {
+            if (event.type !== 'launchLand' || event.unit !== 'millet' || event.index !== 0)
+                continue;
+            if (event.side !== this.mySide() && !this.visibleRaw(event.x, event.y)) continue;
+            const tick = Number.isFinite(Number(event.presentationTick))
+                ? Number(event.presentationTick)
+                : snapshot.tick;
+            const key = String(event.projectileId) + '|' + tick;
+            if (this.milletEventSeen.has(key)) continue;
+            if (this.milletEventSeen.size >= 1024)
+                this.milletEventSeen.delete(this.milletEventSeen.keys().next().value);
+            this.milletEventSeen.set(key, tick);
+            this.milletBursts.push({
+                x: event.x,
+                y: event.y,
+                zFP: event.impactHeightFP,
+                side: event.side,
+                startTick: tick,
+            });
+        }
+        if (this.milletBursts.length > 220)
+            this.milletBursts.splice(0, this.milletBursts.length - 220);
     }
     addClientFx(kind, e, snapshot, index, extra = {}) {
         const eventTick = Number.isFinite(Number(e.presentationTick))
@@ -2803,12 +2834,14 @@ class GLRenderer {
         const dx = Number(e.dirX),
             dy = Number(e.dirY),
             angle = Number.isFinite(dx) && Number.isFinite(dy) ? Math.atan2(dy, dx) : 0;
-        this.addClientFx('launchBlast', e, snapshot, index, {
-            peak,
-            hits,
-            impactHeightFP: e.impactHeightFP,
-        });
-        this.combatFx[this.combatFx.length - 1].start = start;
+        if (e.unit !== 'millet') {
+            this.addClientFx('launchBlast', e, snapshot, index, {
+                peak,
+                hits,
+                impactHeightFP: e.impactHeightFP,
+            });
+            this.combatFx[this.combatFx.length - 1].start = start;
+        }
         this.addClientFx('launchBundleBreak', e, snapshot, index, {
             id: 'bundle:' + e.projectileId,
             grainType: e.unit,
@@ -3539,7 +3572,7 @@ class GLRenderer {
                         Math.max(0, 0.6 * (1 - t)),
                     );
                 }
-            } else if (fx.kind === 'launchBundleBreak') {
+            } else if (fx.kind === 'launchBundleBreak' && fx.grainType !== 'millet') {
                 LaunchImpactArt.drawBurst(ctx, {
                     x,
                     y,
@@ -4079,6 +4112,11 @@ class GLRenderer {
             this.vectorUnitAssetCache.set(key, record);
             return record;
         }
+        if (type === 'millet') {
+            record = { milletEar: true };
+            this.vectorUnitAssetCache.set(key, record);
+            return record;
+        }
         if (type === 'chestnut') {
             record = { sprite: this.spriteRenderers.chestnut };
             this.vectorUnitAssetCache.set(key, record);
@@ -4109,8 +4147,13 @@ class GLRenderer {
             this.flush(this.frame, true);
             this.begin();
         }
-        const actualAngle = record.acornAmmo || record.cornCone ? angle + Math.PI / 4 : angle,
-            actualScale = record.acornAmmo || record.cornCone ? scale * 200 : scale,
+        const actualAngle = record.milletEar
+                ? angle + 0.6
+                : record.acornAmmo || record.cornCone
+                  ? angle + Math.PI / 4
+                  : angle,
+            actualScale =
+                record.acornAmmo || record.cornCone || record.milletEar ? scale * 200 : scale,
             cos = Math.cos(actualAngle) * actualScale,
             sin = Math.sin(actualAngle) * actualScale,
             m = this._vectorUnitMatrix;
@@ -4131,13 +4174,20 @@ class GLRenderer {
         m[1] = sin * scaleX;
         m[2] = -sin * scaleY;
         m[3] = cos * scaleY;
-        m[4] = record.acornAmmo || record.cornCone ? x : x - m[0] * 128 - m[2] * 128;
-        m[5] = record.acornAmmo || record.cornCone ? y : y - m[1] * 128 - m[3] * 128;
-        if (record.acornAmmo || record.cornCone) {
+        m[4] =
+            record.acornAmmo || record.cornCone || record.milletEar
+                ? x
+                : x - m[0] * 128 - m[2] * 128;
+        m[5] =
+            record.acornAmmo || record.cornCone || record.milletEar
+                ? y
+                : y - m[1] * 128 - m[3] * 128;
+        if (record.acornAmmo || record.cornCone || record.milletEar) {
             this.vectorContext.depthTest = depthTest;
             this.vectorContext.depthWrite = false;
             if (record.acornAmmo) this.spriteRenderers.acorn.drawAmmo(m, this._renderDepth ?? 0);
-            else this.spriteRenderers.corn.drawCone(m, this._renderDepth ?? 0);
+            else if (record.cornCone) this.spriteRenderers.corn.drawCone(m, this._renderDepth ?? 0);
+            else this.spriteRenderers.millet.drawEar(m, this._renderDepth ?? 0);
             return;
         }
         this.vectorContext.drawVectorActor(record.actor, {
@@ -4407,6 +4457,39 @@ class GLRenderer {
                         chestnutFacing = this.viewX(aimX) < this.viewX(entity.x) ? -1 : 1;
                 }
             }
+            let milletFireMs = null,
+                milletFacing = 1;
+            if (
+                record.compiled === this.spriteRenderers.millet &&
+                !impact.active &&
+                !work?.active &&
+                !entity.hitFlash
+            ) {
+                const combat = entity.combat || {},
+                    start = Number(combat.attackWindupStartedAt) || 0,
+                    end = Number(combat.attackWindupUntil) || 0,
+                    hitTick = Number(combat.contactHitTick) || 0,
+                    ageMs = ((renderTick - hitTick) * 1000) / (this.snapshot.tps || SIM_TPS);
+                if (entity.contactAttack?.phase === 'charge') milletFireMs = 750;
+                else if (end > start && renderTick >= start && renderTick <= end)
+                    milletFireMs =
+                        300 * RangeUtil.clamp((renderTick - start) / (end - start), 0, 1);
+                else if (hitTick && ageMs >= 0 && ageMs < 600) milletFireMs = 900 + ageMs;
+                if (milletFireMs !== null) {
+                    clip = 'fire';
+                    const target =
+                        this.renderState.entity('unit', entity.target) ||
+                        (this.snapshot.buildings || []).find((b) => b.id === entity.target);
+                    const aimX =
+                        target?.x ??
+                        (Number.isFinite(entity.contactAttack?.retreatX)
+                            ? 2 * entity.x - entity.contactAttack.retreatX
+                            : entity.x + 1);
+                    const worldDirection = aimX < entity.x ? -1 : 1;
+                    milletFacing =
+                        this.orientationRole() === 'guest' ? -worldDirection : worldDirection;
+                }
+            }
             const spin = record.compiled === this.spriteRenderers.acorn ? entity.spinAttack : null;
             if (spin) clip = 'spin';
             if (
@@ -4429,6 +4512,7 @@ class GLRenderer {
                 );
             } else if (cornElapsed != null) actor.seekElapsed(cornElapsed);
             else if (chestnutFireMs !== null && clip === 'fire') actor.seekElapsed(chestnutFireMs);
+            else if (milletFireMs !== null && clip === 'fire') actor.seekElapsed(milletFireMs);
             else
                 actor.seek(
                     work?.active && work.clip === 'idle'
@@ -4439,7 +4523,10 @@ class GLRenderer {
             // Budmori bodies are front-facing: no rotation, ground socket on the unit's ground point.
             const p = this.projectRenderWorldPosition(world),
                 r = this.unitRenderRadius(u),
-                scale = ((r * 2.7) / 260) * (UnitVisualDefinition.get(u.type)?.visualScale || 1),
+                scale =
+                    ((r * 2.7) / 260) *
+                    (UnitVisualDefinition.get(u.type)?.visualScale || 1) *
+                    (GRAIN_SPRITES[u.type]?.artScale || 1),
                 m = grain.matrix;
             const angle =
                     work?.rotation ??
@@ -4450,7 +4537,11 @@ class GLRenderer {
                     scale *
                     impact.scaleX *
                     (work?.facing ??
-                        (cornElapsed != null ? grain.cornFacing || 1 : chestnutFacing)) *
+                        (cornElapsed != null
+                            ? grain.cornFacing || 1
+                            : milletFireMs != null
+                              ? milletFacing
+                              : chestnutFacing)) *
                     (work?.scaleX ?? 1),
                 sy = scale * impact.scaleY * (work?.scaleY ?? 1);
             m[0] = cos * sx;
@@ -5026,6 +5117,55 @@ class GLRenderer {
         anchor.groundY = world.groundY;
         anchor.at = displayMs;
     }
+    drawMilletEarProjectile(projectile, world) {
+        if (projectile.side !== this.mySide() && !this.visibleRaw(projectile.x, projectile.y))
+            return;
+        const point = this.projectRenderWorldPosition(world),
+            stable = this.projectRenderWorldPositionStable(world),
+            motion = this.projectileScreenMotion(projectile, stable.x, stable.y);
+        let dx = motion.valid ? motion.dx : 1,
+            dy = motion.valid ? motion.dy : 0;
+        if (
+            !motion.valid &&
+            Number.isFinite(projectile.lockedAimX) &&
+            Number.isFinite(projectile.lockedAimY)
+        ) {
+            const target = this.worldToPx(
+                this.viewX(projectile.lockedAimX),
+                this.viewY(projectile.lockedAimY),
+            );
+            dx = target[0] - point.x;
+            dy = target[1] - point.y;
+        }
+        // The approved ear asset points about -0.6 radians from its local x axis.
+        const angle = Math.atan2(dy, dx) + 0.6,
+            size = Math.max(30, 58 * this.sc()),
+            a = Math.cos(angle) * size,
+            b = Math.sin(angle) * size,
+            matrix = this.cornQuadMatrix,
+            context = this.vectorContext;
+        matrix[0] = a;
+        matrix[1] = b;
+        matrix[2] = -b;
+        matrix[3] = a;
+        matrix[4] = point.x;
+        matrix[5] = point.y;
+        context.depthTest = !!this.passState.depthEnabled;
+        context.depthWrite = false;
+        context.depthFunc = this.passState.depthFunc || 'lequal';
+        this.spriteRenderers.millet.drawEar(matrix, this._renderDepth ?? 0);
+        const markerSize = Math.max(4, 6 * this.sc());
+        matrix[0] = markerSize;
+        matrix[1] = 0;
+        matrix[2] = 0;
+        matrix[3] = markerSize;
+        this.spriteRenderers.corn.drawTeamMarker(
+            matrix,
+            this._renderDepth ?? 0,
+            this.factionRelation(projectile.side) === 'friendly',
+        );
+        this.sampleCornTrail('millet-ear:' + projectile.id, projectile.side, world);
+    }
     drawCornConeProjectile(projectile, world) {
         if (projectile.side !== this.mySide() && !this.visibleRaw(projectile.x, projectile.y))
             return;
@@ -5097,6 +5237,48 @@ class GLRenderer {
         C.depthWrite = false;
         C.depthFunc = this.passState.depthFunc || 'lequal';
         this.spriteRenderers.corn.drawKernel(matrix, this._renderDepth ?? 0);
+    }
+    renderMilletParticles() {
+        if (!this.milletBursts.length) return;
+        const time = this.cornPresentationTime();
+        if (!Number.isFinite(time)) return;
+        const interval = this.presentationTargetIntervalMs(),
+            life = 600 / (ReplayPresentation.replayPlayer?.speed || 1),
+            scale = this.sc();
+        let write = 0;
+        this.begin();
+        this.passState.depthWrite = false;
+        for (const burst of this.milletBursts) {
+            const age = time - burst.startTick * interval;
+            if (age >= life) continue;
+            this.milletBursts[write++] = burst;
+            if (age < 0 || (burst.side !== this.mySide() && !this.visibleRaw(burst.x, burst.y)))
+                continue;
+            const t = age / life,
+                distance = 10 + 75 * t;
+            for (let i = 0; i < 12; i++) {
+                const angle = (i * Math.PI * 2) / 12,
+                    world = {
+                        x: burst.x + Math.cos(angle) * distance,
+                        z: burst.y + Math.sin(angle) * distance * 0.4,
+                        y: (Number(burst.zFP) || 0) / FP,
+                        groundY: 0,
+                    },
+                    point = this.projectRenderWorldPosition(world);
+                this.withWorldSpriteDepth(world, () =>
+                    this.circle(
+                        point.x,
+                        point.y,
+                        Math.max(2, (3 + 3 * (1 - t)) * scale),
+                        [220 / 255, 165 / 255, 68 / 255, 1 - t],
+                        8,
+                    ),
+                );
+            }
+        }
+        this.milletBursts.length = write;
+        if (this.frame.length) this.flush(this.frame, true);
+        this.begin();
     }
     renderCornParticles() {
         if ((!this.cornTrails.size && !this.cornBursts.length) || !this.spriteRenderers.corn)
@@ -5507,7 +5689,8 @@ class GLRenderer {
             );
         }
         for (const projectile of this.renderState.displayed('projectile', this.presentationNow())) {
-            if (projectile.payload?.type !== 'corn') continue;
+            if (projectile.payload?.type !== 'corn' && projectile.payload?.type !== 'millet')
+                continue;
             if (projectile.side !== this.mySide() && !this.visibleRaw(projectile.x, projectile.y))
                 continue;
             if (
@@ -5750,6 +5933,7 @@ class GLRenderer {
                 kind === 'landingBundle' ||
                 (kind === 'projectile' && entity.payload?.type === 'acorn') ||
                 (kind === 'projectile' && entity.payload?.type === 'corn') ||
+                (kind === 'projectile' && entity.payload?.type === 'millet') ||
                 kind === 'unitLob' ||
                 kind === 'thorn' ||
                 kind === 'thornImpact' ||
@@ -5779,6 +5963,8 @@ class GLRenderer {
                 else if (kind === 'unitLob') this.drawCornKernel(entity, world);
                 else if (kind === 'projectile' && entity.payload?.type === 'corn')
                     this.drawCornConeProjectile(entity, world);
+                else if (kind === 'projectile' && entity.payload?.type === 'millet')
+                    this.drawMilletEarProjectile(entity, world);
                 else if (kind === 'thorn') this.drawThorn(entity, world);
                 else if (kind === 'thornImpact') this.drawThornImpact(entity, world);
                 else this.drawProjectileSafely(entity);
@@ -6253,6 +6439,7 @@ class GLRenderer {
             this.passProfiler.measure('world', () => {
                 this.renderWorldPass(visibleUnits);
                 this.renderCornParticles();
+                this.renderMilletParticles();
             });
             this.passProfiler.measure('shadow', () => this.renderShadowPass(visibleUnits));
             this.passProfiler.measure('overlay', () => this.renderOverlayPass());

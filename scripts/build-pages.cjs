@@ -8,6 +8,7 @@ const { readBeanSpriteManifest } = require('./bean-sprite-manifest.cjs');
 const { readAcornSpriteManifest } = require('./acorn-sprite-manifest.cjs');
 const { readCornSpriteManifest } = require('./corn-sprite-manifest.cjs');
 const { readChestnutSpriteManifest } = require('./chestnut-sprite-manifest.cjs');
+const { readMilletSpriteManifest } = require('./millet-sprite-manifest.cjs');
 const { readProductVersion } = require('./product-version.cjs');
 const sourcePaths = [
     'index.html',
@@ -27,6 +28,7 @@ function verifySource(root = path.resolve(__dirname, '..')) {
     readAcornSpriteManifest(root);
     readCornSpriteManifest(root);
     readChestnutSpriteManifest(root);
+    readMilletSpriteManifest(root);
     const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
     // GameKit provenance lives in the bootstrap module that loads the pinned dist.
     const main = fs.readFileSync(path.join(root, 'src/core/gamekit.js'), 'utf8');
