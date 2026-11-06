@@ -1423,17 +1423,17 @@ class StrategySim {
         if (action.type === 'UPGRADE_LAUNCH_RANGE') return this.upgradeLaunchRange(side);
         return false;
     }
-    moveToward(u, tx, ty, speed) {
-        return this.moveToGoal(u, NavigationGoal.point(tx, ty), speed);
+    moveToward(u, tx, ty, speed, options = undefined) {
+        return this.moveToGoal(u, NavigationGoal.point(tx, ty), speed, options);
     }
-    moveToGoal(u, goal, speed) {
+    moveToGoal(u, goal, speed, options = null) {
         let tx = goal.x,
             ty = goal.y;
         // Post-attack recovery is movement-only: attacks/cooldowns/wind-ups continue
         // normally while voluntary locomotion is temporarily locked.
         if (
             (u.impactMotion && this.tick < u.impactMotion.recoverUntilTick) ||
-            u.combat.moveRecoveryActive(this)
+            (!options?.allowContactRecovery && u.combat.moveRecoveryActive(this))
         )
             return false;
 
@@ -2043,9 +2043,19 @@ class StrategySim {
         }
     }
     // Grains are melee bruisers: march to the rally point, chase the chosen target, wind up, hit.
-    updateCombat(u, vision) {
+    updateCombat(u, vision, pendingContactAttacks = null) {
         const d = UnitDefinition.get(u.type);
         this.tickAttackTimers(u);
+        if (d.contactMelee && u.contactAttack?.phase === 'recover') {
+            if (this.tick < u.contactAttack.untilTick) {
+                const speed = (d.speed * this.timedModifierPct(u, 'movePct')) / 100;
+                this.moveToward(u, u.contactAttack.retreatX, u.contactAttack.retreatY, speed, {
+                    allowContactRecovery: true,
+                });
+                return null;
+            }
+            u.contactAttack = null;
+        }
         if (d.spinAttack && u.spinAttack) {
             const spin = UnitSpinAttack.update(this, u, d.spinAttack, d.atk);
             if (spin.active) {
@@ -2095,6 +2105,7 @@ class StrategySim {
 
         if (!found) {
             u.combat.cancelWindup();
+            if (d.contactMelee && u.contactAttack?.phase === 'charge') u.contactAttack = null;
             u.target = null;
             if (this.updateConstructionWork(u, d, moveSpeed)) return null;
             const f = this.unitRallyPoint(u);
@@ -2113,6 +2124,7 @@ class StrategySim {
                 !this.canSeeCombatTarget(u.side, t, vision[u.side]))
         ) {
             u.combat.cancelWindup();
+            if (d.contactMelee && u.contactAttack?.phase === 'charge') u.contactAttack = null;
             u.target = null;
             const f = this.unitRallyPoint(u);
             this.moveToward(u, f.x, f.y, moveSpeed);
@@ -2130,7 +2142,50 @@ class StrategySim {
         if (dist > max || dist < min) {
             // Wind-up is valid only while the target remains in legal attack range.
             if (u.combat.windupPending()) u.combat.cancelWindup();
+            if (d.contactMelee && u.contactAttack?.phase === 'charge') u.contactAttack = null;
             this.moveToGoal(u, this.engagementGoal(u, t, attackRange), moveSpeed);
+            return null;
+        }
+
+        if (d.contactMelee) {
+            if (!u.combat.windupPending() && !u.combat.cooldownActive(this))
+                this.startAttackWindup(u, t, found.isBuilding, d);
+            const contact = found.isBuilding
+                ? this.buildingClearanceDistance(u, t)
+                : InteractionGeometry.contact(u, t);
+            const readyToCharge = this.tickAttackWindup(u);
+            if (readyToCharge) {
+                if (u.contactAttack?.phase !== 'charge' || u.contactAttack.targetId !== t.id)
+                    u.contactAttack = {
+                        phase: 'charge',
+                        targetId: t.id,
+                        untilTick: this.tick + this.msTicks(ConstructionRules.chargeTimeoutMs),
+                    };
+                if (this.tick >= u.contactAttack.untilTick) {
+                    u.combat.cancelWindup();
+                    u.contactAttack = null;
+                    u.target = null;
+                    return null;
+                }
+            }
+            const fromX = u.x,
+                fromY = u.y;
+            if (readyToCharge && dist > contact)
+                this.moveToGoal(
+                    u,
+                    NavigationGoal.range(t.x, t.y, contact + NavigationGoal.ARRIVAL_INSET),
+                    moveSpeed * ConstructionRules.chargeSpeedMultiplier,
+                );
+            if (readyToCharge)
+                pendingContactAttacks?.push({
+                    unit: u,
+                    targetId: t.id,
+                    isBuilding: found.isBuilding,
+                    cooldown,
+                    beforeDistance: dist,
+                    fromX,
+                    fromY,
+                });
             return null;
         }
 
@@ -2161,6 +2216,86 @@ class StrategySim {
         return this.applyDamage(u.side, u.type, t, found.isBuilding, Math.floor(d.atk), u.id, {
             damageClass: UnitDefinition.damageClass(u.type),
         });
+    }
+    // Contact attacks commit after the shared motion solver, in the same stable
+    // unit order as target selection. Pending entries never cross a tick boundary.
+    beginContactAttackRecovery(u, target, cooldownMs) {
+        const dx = u.x - target.x,
+            dy = u.y - target.y,
+            length = Math.hypot(dx, dy) || 1;
+        u.contactAttack = {
+            phase: 'recover',
+            retreatX: u.x + (dx / length) * ConstructionRules.retreatDistance,
+            retreatY: u.y + (dy / length) * ConstructionRules.retreatDistance,
+            untilTick:
+                this.tick +
+                Math.max(
+                    1,
+                    Math.round(this.msTicks(cooldownMs) * ConstructionRules.phaseRatios.recoverEnd),
+                ),
+        };
+    }
+    resolveContactAttacks(pending, vision) {
+        let winner = null;
+        for (const attack of pending) {
+            const u = attack.unit;
+            if (
+                !u.alive ||
+                u.combat.attackWindupTargetId !== attack.targetId ||
+                !this.tickAttackWindup(u)
+            )
+                continue;
+            const target = this.liveEntityRefById(
+                attack.targetId,
+                attack.isBuilding ? 'building' : 'unit',
+            )?.entity;
+            if (!target) {
+                u.combat.cancelWindup();
+                continue;
+            }
+            if (
+                !this.canAttackEntity(u.type, target, attack.isBuilding) ||
+                (!attack.isBuilding &&
+                    (!this.canTargetUnit(u.side, target) ||
+                        !this.canSeeCombatTarget(u.side, target, vision[u.side])))
+            ) {
+                u.combat.cancelWindup();
+                continue;
+            }
+            const contact = attack.isBuilding
+                ? this.buildingClearanceDistance(u, target)
+                : InteractionGeometry.contact(u, target);
+            const afterDistance = Math.hypot(target.x - u.x, target.y - u.y);
+            if (
+                this.interactionDistance(u, target, 'attack', 0) < 0 ||
+                afterDistance > contact + ConstructionRules.contactTolerance
+            )
+                continue;
+            u.combat.cancelWindup();
+            const definition = UnitDefinition.get(u.type);
+            const dx = target.x - attack.fromX,
+                dy = target.y - attack.fromY,
+                length = Math.hypot(dx, dy) || 1,
+                sourceApproach = ((u.x - attack.fromX) * dx + (u.y - attack.fromY) * dy) / length;
+            if (attack.beforeDistance - afterDistance < 1 / FP || sourceApproach < 1 / FP) {
+                this.beginContactAttackRecovery(u, target, definition.cooldownMs);
+                continue;
+            }
+            this.commitAttackTiming(u, UnitDefinition.get(u.type), attack.cooldown);
+            u.combat.contactHitTick = this.tick;
+            this.beginContactAttackRecovery(u, target, definition.cooldownMs);
+            winner =
+                this.applyDamage(
+                    u.side,
+                    u.type,
+                    target,
+                    attack.isBuilding,
+                    Math.floor(UnitDefinition.get(u.type).atk),
+                    u.id,
+                    { damageClass: UnitDefinition.damageClass(u.type) },
+                ) || winner;
+        }
+        return winner;
     }
     // The shared height curve clears high obstacles; low swept contacts retire a shot early.
     // Impact damage and queued deployment use that actual contact point.
@@ -3278,14 +3413,16 @@ class StrategySim {
 
         mark = profile ? now() : 0;
         this.updateBuildingCombat(vision);
+        const pendingContactAttacks = [];
         for (const u of this.units) {
             if (!u.alive) continue;
-            winner = this.updateCombat(u, vision) || winner;
+            winner = this.updateCombat(u, vision, pendingContactAttacks) || winner;
         }
         const combatMs = profile ? now() - mark : 0;
 
         mark = profile ? now() : 0;
         this.solveContacts();
+        winner = this.resolveContactAttacks(pendingContactAttacks, vision) || winner;
         for (const u of this.units) this.navigation.motion.finishImpulseStep(u);
         const collisionMs = profile ? now() - mark : 0;
 

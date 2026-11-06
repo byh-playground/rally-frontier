@@ -119,6 +119,98 @@ class LaunchImpact {
             lastPhysicsTick: sim.tick,
         });
     }
+    // Reserve every spot in the landing area before creating any units. A failed
+    // search leaves the entire payload intact for a later retry.
+    static deployTogether(sim, group, grain) {
+        const origin = { x: group.x, y: group.y },
+            initialRadius = grain.splash + 60,
+            attempt = group.deployAttempt || 0,
+            absoluteHeight =
+                sim.world.terrain.surfaces.heightAt(group.x, group.y) + group.heightFP / FP;
+        const findSpots = (baseRadius, maxRadius) => {
+            const spots = [];
+            for (let i = 0; i < group.count; i++) {
+                const spot = sim.findOpenSpawnAround(origin, group.type, {
+                    baseRadius,
+                    maxRadius,
+                    angleSlots: 12,
+                    radialStep: 10,
+                    seedKey: sim.seed + '|' + group.projectileId + '|release|' + attempt + '|' + i,
+                    reserved: spots,
+                    maxElevation: absoluteHeight,
+                    canReach: (x, y) => {
+                        const fx = Math.round(x * FP) / FP,
+                            fy = Math.round(y * FP) / FP;
+                        return (
+                            sim.world.terrain.surfaces.heightAt(fx, fy) <= absoluteHeight &&
+                            sim.pointClearForUnit(group.type, fx, fy, null, spots) &&
+                            this.releasePathClear(sim, group, fx, fy, absoluteHeight)
+                        );
+                    },
+                });
+                if (!spot) return null;
+                spots.push({
+                    x: Math.round(spot.x * FP) / FP,
+                    y: Math.round(spot.y * FP) / FP,
+                    type: group.type,
+                });
+            }
+            return spots;
+        };
+        const spots = findSpots(0, initialRadius);
+        if (!spots) {
+            group.deployAttempt = attempt + 1;
+            return false;
+        }
+        for (let i = 0; i < spots.length; i++) {
+            const spot = spots[i],
+                u = sim.spawnUnit(group.side, group.type, spot.x, spot.y);
+            UnitResultStats.add(sim.unitResultStats, group.side, group.type, 'deployed');
+            if (group.holdPointId) u.launchHoldPointId = group.holdPointId;
+            // `start` applies a reference-mass impulse. Scale the input by the
+            // new unit's actual mass so small grains keep the common release speed.
+            const releaseScale = sim.mass(u) / LaunchImpactRules.referenceMass;
+            this.start(sim, u, {
+                kind: 'deploy',
+                dx: spot.x - group.x,
+                dy: spot.y - group.y,
+                speed: LaunchImpactRules.deploymentSpeed * releaseScale,
+                lift: LaunchImpactRules.deploymentLift * releaseScale,
+                sourceId: group.projectileId,
+                originX: group.x,
+                originY: group.y,
+                initialHeightFP: Math.max(
+                    0,
+                    group.heightFP +
+                        Math.round(
+                            (sim.world.terrain.surfaces.heightAt(group.x, group.y) -
+                                sim.world.terrain.surfaces.heightAt(u.x, u.y)) *
+                                FP,
+                        ),
+                ),
+                initialVzFP: group.vzFP,
+            });
+            sim.events.push({
+                type: 'launchLand',
+                side: group.side,
+                unit: group.type,
+                count: 1,
+                totalCount: group.count,
+                index: i,
+                projectileId: group.projectileId,
+                unitIds: [u.id],
+                units: [{ id: u.id, x: u.x, y: u.y }],
+                x: group.x,
+                y: group.y,
+                impactHeightFP:
+                    Math.round(sim.world.terrain.surfaces.heightAt(group.x, group.y) * FP) +
+                    group.heightFP,
+                holdPointId: group.holdPointId,
+            });
+        }
+        group.index = group.count;
+        return true;
+    }
     static deploy(sim) {
         let write = 0;
         for (const group of sim.launchDeployments) {
@@ -135,6 +227,14 @@ class LaunchImpact {
             }
             const grain = LaunchRules.grain(group.type),
                 origin = { x: group.x, y: group.y };
+            if (grain.deployTogether) {
+                if (!this.deployTogether(sim, group, grain)) {
+                    group.nextTick =
+                        sim.tick + Math.max(1, sim.msTicks(LaunchImpactRules.deploymentRetryMs));
+                    sim.launchDeployments[write++] = group;
+                }
+                continue;
+            }
             const absoluteHeight =
                 sim.world.terrain.surfaces.heightAt(group.x, group.y) + group.heightFP / FP;
             const spot = sim.findOpenSpawnAround(origin, group.type, {

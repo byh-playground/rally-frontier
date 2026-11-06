@@ -169,6 +169,7 @@ class CombatComponent {
                 'lobLaunchTick',
                 'thornLaunchTick',
                 'thornAimX',
+                'contactHitTick',
             ],
         },
     );
