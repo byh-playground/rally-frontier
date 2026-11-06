@@ -604,6 +604,11 @@ class GeometryTemplateCache {
     }
 }
 const SHARED_GEOMETRY_TEMPLATES = new GeometryTemplateCache();
+// Keep the original double-precision circle coordinates, calculated once.
+const GRAIN_SHADOW_UNIT_POINTS = Float64Array.from({ length: 28 }, (_, i) => {
+    const angle = (Math.floor(i / 2) / 14) * Math.PI * 2;
+    return i % 2 ? Math.sin(angle) : Math.cos(angle);
+});
 // Depth gap between consecutive grains in painter order: a few 24-bit depth steps, so 500 grains shift terrain occlusion by ~2e-4.
 const GRAIN_DEPTH_RANK_STEP = 4e-7;
 // Bound presentation-only retention while avoiding churn when the camera crosses a unit.
@@ -2429,14 +2434,22 @@ class GLRenderer {
             const team = UnitFactionPalette.get(this.factionRelation(u.side)).body,
                 rx = r * 1.05 * shrink,
                 ry = r * 0.42 * shrink,
-                pts = [];
-            for (let i = 0; i < 14; i++) {
-                const a = (i / 14) * Math.PI * 2;
-                pts.push([ground.x + Math.cos(a) * rx, ground.y + r * 0.55 + Math.sin(a) * ry]);
-            }
+                pts = GRAIN_SHADOW_UNIT_POINTS,
+                color = [team[0], team[1], team[2], 0.85],
+                cy = ground.y + r * 0.55;
             this.withWorldSpriteDepth(
                 groundWorld,
-                () => this.poly(pts, [team[0], team[1], team[2], 0.85]),
+                () => {
+                    const ax = ground.x + pts[0] * rx,
+                        ay = cy + pts[1] * ry;
+                    for (let i = 1; i < 13; i++) {
+                        const a = i * 2,
+                            b = (i + 1) * 2;
+                        this.v(ax, ay, color);
+                        this.v(ground.x + pts[a] * rx, cy + pts[a + 1] * ry, color);
+                        this.v(ground.x + pts[b] * rx, cy + pts[b + 1] * ry, color);
+                    }
+                },
                 0.0003,
             );
             return;
