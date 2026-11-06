@@ -9722,6 +9722,12 @@ else {
     const leaveSetup = () => {
         audioSystem.unlock();
     };
+    DeckEditor.install({
+        types: () => LaunchRules.deck,
+        nameOf: (type) => UnitDefinition.get(type)?.name || type,
+        statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
+        portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
+    });
     LaunchScreens.install({
         createNavigation: RallyGamekit.createNavigation,
         actions: {
@@ -9764,12 +9770,6 @@ else {
             },
             leaveToTitle: () => reloadAt('#/'),
         },
-    });
-    DeckEditor.install({
-        types: () => LaunchRules.deck,
-        nameOf: (type) => UnitDefinition.get(type)?.name || type,
-        statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
-        portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
     });
 }
 
