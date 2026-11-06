@@ -776,7 +776,7 @@ class TerrainNavigation {
                 return direct;
             }
         }
-        const point = this.fieldsFor(radius).next(u.x, u.y, goal, goal.radius === 0);
+        const point = this.fieldsFor(radius).next(u.x, u.y, goal, goal.radius === 0, radius);
         if (!point) this.metrics.unreachable++;
         return point;
     }
