@@ -1,6 +1,7 @@
 // Loads pinned GameKit dist and the battlefield's verified image/vector assets before dependent modules evaluate.
 import { loadRiceSpriteImages, buildRiceSpriteCanvas } from '../render/rice-sprite.js';
 import { loadBeanSpriteCanvases } from '../render/bean-sprite.js';
+import { loadChestnutSpriteCanvas } from '../render/chestnut-sprite.js';
 // prettier-ignore
 const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","navigation":"navigation.js","objectPool":"object-pool.js","geometry":"geometry.js","spatial":"spatial.js","face":"face.js","pathfield":"pathfield.js","vision":"vision.js"});
 // A dedicated Worker hosts only a simulation session (src/sim-worker.js): no UI boot.
@@ -134,6 +135,7 @@ try {
         ? null
         : buildRiceSpriteCanvas(await loadRiceSpriteImages());
     globalThis.BeanSpriteCanvases = SIM_WORKER ? null : await loadBeanSpriteCanvases();
+    globalThis.ChestnutSpriteCanvas = SIM_WORKER ? null : await loadChestnutSpriteCanvas();
     RallyNetcode = Object.freeze({
         ...namespaces.rollback,
         ...namespaces.deterministic,

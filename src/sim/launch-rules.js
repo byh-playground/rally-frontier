@@ -68,6 +68,17 @@ class LaunchRules {
             spacing: 22,
             fire: Object.freeze({ mode: 'single' }),
         }),
+        // Single burr deploys one squad; damage/range are first-play tuning.
+        chestnut: Object.freeze({
+            cost: 50 * this.resourceScale,
+            count: 6,
+            reach: 0.85,
+            speed: 750,
+            impact: 10,
+            splash: 100,
+            land: 'bundle',
+            fire: Object.freeze({ mode: 'single' }),
+        }),
         // 연사: 같은 곳에 시간차로 세 번 떨어진다.
         redbean: Object.freeze({
             cost: 50 * this.resourceScale,
