@@ -1669,6 +1669,7 @@ class GLRenderer {
         // florr.io-inspired client-only combat feedback.
         // These arrays are renderer-only and never enter StrategySim/checksum/export/recovery.
         this.combatFx = [];
+        this.bundleBreakIds = new Set();
         this.shakeFx = [];
         this.lastCombatFxTickByRole = { host: -1, guest: -1 };
         this.attackPresentationUntil = new Map();
@@ -5626,27 +5627,23 @@ class GLRenderer {
                 groundY: ground,
             });
         }
-        for (const fx of this.combatFx)
-            if (
-                fx.kind === 'launchBundleBreak' &&
-                now >= fx.start &&
-                this.landingBundlePose(fx).visible
-            )
-                add('landingBundle', fx, {
-                    x: fx.x,
-                    y: this.world.terrain.surfaces.heightAt(fx.x, fx.y),
-                    z: fx.y,
-                    groundY: 0,
-                });
+        const bundleBreakIds = this.bundleBreakIds;
+        bundleBreakIds.clear();
+        for (const fx of this.combatFx) {
+            if (fx.kind === 'launchBundleBreak') {
+                bundleBreakIds.add(fx.id);
+                if (now >= fx.start && this.landingBundlePose(fx).visible)
+                    add('landingBundle', fx, {
+                        x: fx.x,
+                        y: this.world.terrain.surfaces.heightAt(fx.x, fx.y),
+                        z: fx.y,
+                        groundY: 0,
+                    });
+            }
+        }
         for (const group of this.renderState.displayed('bundle', now)) {
             if (group.side !== this.mySide() && !this.visibleRaw(group.x, group.y)) continue;
-            if (
-                group.index >= group.count ||
-                this.combatFx.some(
-                    (fx) =>
-                        fx.kind === 'launchBundleBreak' && fx.id === 'bundle:' + group.projectileId,
-                )
-            )
+            if (group.index >= group.count || bundleBreakIds.has('bundle:' + group.projectileId))
                 continue;
             const fx = {
                 id: 'bundle:' + group.projectileId,
