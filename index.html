@@ -33,20 +33,17 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
 
 2. TERRAIN, NAVIGATION AND CONTACT
 - Map Descriptor의 terrain.blockers/layers/ramps/bridges와 TerrainSurfaceAtlas가 표면·경사로·
-  절벽 접촉면·NavMesh seam의 공통 원본이다. 렌더·미니맵·건설·spawn·이동·외력은 같은 geometry를 쓴다.
+  절벽 접촉면의 공통 원본이다. 렌더·미니맵·건설·spawn·이동·외력은 같은 geometry를 쓴다.
 - level은 부호 있는 정수이며 임의 상하한을 두지 않는다. 양수 고도는 레벨당 48, 음수는 24의
   공통 변환을 쓰고 중첩은 가장 안쪽 영역이 소유한다. 기본 지면도 함몰면·섬·경사로를 제외한 실제 mesh다.
 - 경사로 외의 자발적 층 전환과 경사로 위 건설은 금지한다. 점 목표와 공격·건설의 상호작용
   영역 목표를 구분하고 InteractionGeometry와 NavigationGoal이 같은 사거리·접촉 판정을 공유한다.
-- 지상 navigationPlanner의 기본은 adaptive다. 실제로 막힌 이동의 동일 목표·반경·연결 성분
-  요청으로 A*/공유 A*/Flow를 선택하며 직전 틱 Flow 자격은 권위 상태로 보관한다. 거리·도달 검사는
-  adaptive에서 A*를 쓰고 요청 집계에 참여하지 않는다. 명시한 astar/shared-astar/flow-field도 같은
-  NavMesh·포털·연속 목표 영역·funnel·충돌 규칙을 쓴다. 직선이 열리면 바로 연결한다.
-- 받은 경로 handle·cursor·목표 이력은 MovementComponent의 권위 상태다. 정상 이동은 이를 따르고
-  매 틱 전체 길찾기·캐시 조회·경로 검사를 반복하지 않는다. 인접 corner와 영역 도착은 국소 sweep으로
-  확인하고 명령·목표·실제 이탈·관련 통행 조건이 바뀔 때 재획득한다. 거리표·탐색 scratch·후보 인덱스는 파생 상태다.
-- 건물 변경은 영향 영역과 이웃 경계의 메쉬만 교체하고 나머지 타일·셀·포털 식별자를 유지한다.
-  같은 토폴로지에서는 cache 준비 순서·롤백·메모리 슬롯 재사용 순서가 경로 동률 선택을 바꾸지 않는다.
+- 지상 경로는 TerrainNavigation이 선택한다. 가까운 목표의 직선이 열려 있으면 그 경로를 쓰고,
+  막히거나 멀면 GameKit PathGrid의 24px 격자 거리장에서 목표 방향을 찾는다. 셀과 이웃 사이를
+  이동체 반경에 맞춰 검사하며, 실제 위치에서 첫 경로점까지도 실제 반경으로 통과를 확인한다.
+- 고정 점 목표의 거리장은 최대 24개를 보관하고 추격·건설 등 영역 목표의 거리장은 틱 단위로 공유한다.
+  건물의 물리 배치가 바뀌면 토폴로지 세대가 바뀌고 해당 반경 격자·거리장 캐시를 무효화한다.
+  경로 탐색과 캐시는 파생 상태이며, 같은 지형·목표·위치에서 같은 경로를 계산한다.
 - SurfaceMotion은 경로 이동·외력·군중 보정을 같은 지형/건물 접촉으로 처리한다. 검증한 부분 이동을
   틱 시작점의 직선으로 다시 잘라내거나 외력에 자발적 우회 속도를 더하지 않는다.
 
@@ -367,9 +364,13 @@ END OF DEVELOPMENT CONTRACT
                     <div><span>Vision / Combat</span><b id="dbgPerfCombat">-</b></div>
                     <div><span>Projectile / Collision / Post</span><b id="dbgPerfTail">-</b></div>
                     <div>
-                        <span>NavMesh / A* / Flow · 누적</span><b id="dbgPerfNavigation">-</b>
+                        <span>고정 거리장 / 영역 거리장 / 고정 첫 조회 시간 · 누적</span
+                        ><b id="dbgPerfNavigation">-</b>
                     </div>
-                    <div><span>지형 투영 준비 · 누적</span><b id="dbgPerfProjection">-</b></div>
+                    <div>
+                        <span>직선 경로 성공 / 경로 조회 · 누적</span
+                        ><b id="dbgPerfProjection">-</b>
+                    </div>
                     <div>
                         <span id="dbgPerfAllowanceLabel">틱 허용시간</span
                         ><b id="dbgPerfAllowance">-</b>
