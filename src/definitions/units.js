@@ -2,8 +2,9 @@
 import { COLLISION_RADIUS_SCALE } from './world-rules.js';
 import { FP } from '../core/config.js';
 import { DEFAULT_ATTACK_WINDUP_MS } from './combat-rules.js';
-const ACORN_SIZE = 20;
-const ACORN_SPIN_RADIUS = 55;
+const RICE_SIZE = 10;
+const ACORN_SIZE = RICE_SIZE * 3;
+const ACORN_SPIN_RADIUS = ACORN_SIZE * (55 / 20);
 
 class UnitDefinition {
     static all = {
@@ -16,7 +17,7 @@ class UnitDefinition {
             range: 25,
             speed: 75,
             cooldownMs: 1000,
-            size: 10,
+            size: RICE_SIZE,
             sizeClass: 'light',
             role: 'bruiser',
             attackVisual: { sourceMotion: 'slash', travel: 'none', impact: 'light' },
@@ -42,8 +43,8 @@ class UnitDefinition {
             requiresContactTerrain: true,
             construction: { range: 5, workPerHit: 1 },
             name: '도토리',
-            hp: 50,
-            atk: 1,
+            hp: 75,
+            atk: 13,
             range: ACORN_SPIN_RADIUS - ACORN_SIZE * COLLISION_RADIUS_SCALE,
             speed: 50,
             cooldownMs: 1000,
