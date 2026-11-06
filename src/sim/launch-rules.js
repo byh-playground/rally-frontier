@@ -103,6 +103,17 @@ class LaunchRules {
             rushPct: 150,
             fire: Object.freeze({ mode: 'burst', shots: 3, gapMs: 300 }),
         }),
+        // 도토리는 한 발당 한 병사씩 세 발을 쏜다.
+        acorn: Object.freeze({
+            cost: 75 * this.resourceScale,
+            count: 3,
+            reach: 0.85,
+            speed: 750,
+            impact: 25,
+            splash: 100,
+            land: 'bundle',
+            fire: Object.freeze({ mode: 'burst', shots: 3, gapMs: 300 }),
+        }),
     });
     static deck = Object.freeze(Object.keys(LaunchRules.grains));
     static normalizeDeck(deck) {

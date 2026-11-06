@@ -1,6 +1,7 @@
 import { RallyGamekit } from '../core/gamekit.js';
 import { riceSpritePortrait } from '../render/rice-sprite.js';
 import { beanSpritePortrait } from '../render/bean-sprite.js';
+import { acornSpritePortrait } from '../render/acorn-sprite.js';
 import { cornSpritePortrait } from '../render/corn-sprite.js';
 import { chestnutSpritePortrait } from '../render/chestnut-sprite.js';
 
@@ -19,6 +20,7 @@ export function grainPortrait(type, compiled, width = 160) {
 
 async function renderPortrait(type, compiled, width) {
     if (type === 'rice') return riceSpritePortrait(globalThis.RiceSpriteCanvas, width);
+    if (type === 'acorn') return acornSpritePortrait(globalThis.AcornSpriteCanvas, width);
     if (type === 'corn') return cornSpritePortrait(globalThis.CornSpriteCanvas, width);
     if (type === 'chestnut') return chestnutSpritePortrait(globalThis.ChestnutSpriteCanvas, width);
     if (globalThis.BeanSpriteCanvases?.[type])

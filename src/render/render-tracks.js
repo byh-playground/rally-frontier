@@ -47,6 +47,10 @@ class UnitRenderObject extends RenderField {
                 'constructionWork.cycleStartedAtTick',
                 'constructionWork.nextHitTick',
                 'constructionWork.lastHitTick',
+                'spinAttack.startTick',
+                'spinAttack.activeStartTick',
+                'spinAttack.activeEndTick',
+                'spinAttack.endTick',
             ].map((k) => ['entity.' + k, RenderField.STEP]),
         ),
     };

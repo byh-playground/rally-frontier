@@ -1,6 +1,7 @@
 // Loads pinned GameKit dist and the battlefield's verified image/vector assets before dependent modules evaluate.
 import { loadRiceSpriteImages, buildRiceSpriteCanvas } from '../render/rice-sprite.js';
 import { loadBeanSpriteCanvases } from '../render/bean-sprite.js';
+import { loadAcornSpriteCanvas } from '../render/acorn-sprite.js';
 import { loadCornSpriteCanvas } from '../render/corn-sprite.js';
 import { loadChestnutSpriteCanvas } from '../render/chestnut-sprite.js';
 // prettier-ignore
@@ -136,6 +137,7 @@ try {
         ? null
         : buildRiceSpriteCanvas(await loadRiceSpriteImages());
     globalThis.BeanSpriteCanvases = SIM_WORKER ? null : await loadBeanSpriteCanvases();
+    globalThis.AcornSpriteCanvas = SIM_WORKER ? null : await loadAcornSpriteCanvas();
     globalThis.CornSpriteCanvas = SIM_WORKER ? null : await loadCornSpriteCanvas();
     globalThis.ChestnutSpriteCanvas = SIM_WORKER ? null : await loadChestnutSpriteCanvas();
     RallyNetcode = Object.freeze({
