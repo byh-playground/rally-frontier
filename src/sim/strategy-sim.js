@@ -1,3 +1,4 @@
+import { UnitLobAttack } from './unit-lob-attack.js';
 // The deterministic lockstep strategy simulation.
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './entities.js';
@@ -284,6 +285,7 @@ class StrategySim {
         this.constructionOrders = [];
         this.navigationAdmissions = [];
         this.projectiles = [];
+        this.unitLobProjectiles = [];
         this.unitThornProjectiles = [];
         this.events = [];
         this.scheduled = new Map();
@@ -2112,8 +2114,22 @@ class StrategySim {
             return null;
         }
 
+        if (d.lobAttack && d.minRange && dist < InteractionGeometry.contact(u, t) + d.minRange) {
+            this.clearAttackWindup(u);
+            this.moveToward(
+                u,
+                u.x + ((u.x - t.x) / dist) * d.minRange,
+                u.y + ((u.y - t.y) / dist) * d.minRange,
+                moveSpeed,
+            );
+            return null;
+        }
         if (!this.attackReadyAfterWindup(u, t, found.isBuilding, d)) return null;
         this.commitAttackTiming(u, d, cooldown);
+        if (d.lobAttack) {
+            UnitLobAttack.launch(this, u, t, d.lobAttack, d.atk);
+            return null;
+        }
         if (d.thornAttack) {
             UnitThornAttack.launch(this, u, t, found.isBuilding, {
                 ...d.thornAttack,
@@ -2978,7 +2994,10 @@ class StrategySim {
     solveContacts() {
         const units = this.units,
             n = units.length;
-        if (!n) return;
+        if (!n) {
+            this.navigation.motion.solveImpulseStep(this.collisionStartFx, this.collisionStartFy);
+            return;
+        }
         const perf = this._perfCollect,
             now = perf ? () => performance.now() : null;
         let mark = perf ? now() : 0;
@@ -3229,6 +3248,7 @@ class StrategySim {
         // Collision motion origin: world-state changes above are already authoritative
         // placement. Combat/impulse movement below is the motion that solid contacts clip.
         this.captureCollisionStepStarts();
+        UnitLobAttack.beginStep(this);
 
         mark = profile ? now() : 0;
         LaunchImpact.update(this);
@@ -3251,6 +3271,7 @@ class StrategySim {
         // Projectile hits inject velocity at this boundary. Both horizontal and vertical integration start next tick.
         mark = profile ? now() : 0;
         winner = this.updateProjectiles() || winner;
+        UnitLobAttack.step(this);
         UnitThornAttack.update(this);
         LaunchImpact.deploy(this);
         this.resolveConstructionHits();
@@ -3446,6 +3467,28 @@ class StrategySim {
                 units: this.units.map((u) => u.toState('view')),
                 buildings: this.buildings.map((b) => b.toState()),
                 projectiles: this.projectiles.map((p) => p.toState()),
+                unitLobProjectiles: this.unitLobProjectiles
+                    .filter((p) => p.startTick <= this.tick)
+                    .map((p) => ({
+                        id: p.id,
+                        side: p.side,
+                        sourceId: p.sourceId,
+                        sourceType: p.sourceType,
+                        startTick: p.startTick,
+                        x: p.x,
+                        y: p.y,
+                        zFP: p.zFP,
+                        heightFP: Math.max(
+                            0,
+                            p.zFP - Math.round(this.world.terrain.surfaces.heightAt(p.x, p.y) * FP),
+                        ),
+                        vxFP: p.vxFP,
+                        vyFP: p.vyFP,
+                        vzFP: p.vzFP,
+                        landedAtTick: p.landedAtTick,
+                        explodeTick: p.explodeTick,
+                        grounded: p.grounded,
+                    })),
                 events: StateValue.copy(this.events),
             };
         } finally {

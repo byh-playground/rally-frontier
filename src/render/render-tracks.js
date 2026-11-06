@@ -36,6 +36,7 @@ class UnitRenderObject extends RenderField {
                 'combat.attackArcUntilTick',
                 'combat.attackWindupUntil',
                 'combat.attackWindupStartedAt',
+                'combat.lobLaunchTick',
                 'combat.thornLaunchTick',
                 'combat.thornAimX',
                 'combat.cooldownUntil',
@@ -86,6 +87,27 @@ class ProjectileRenderObject extends RenderField {
         ),
     };
 }
+// Soldier lob projectiles carry their simulated absolute altitude. They must not
+// reuse the deployment shell's reconstructed, fixed launch-to-target parabola.
+class UnitLobRenderObject extends RenderField {
+    static renderSchema = {
+        tick: RenderField.LINEAR,
+        'entity.x': RenderField.POSITION_X,
+        'entity.y': RenderField.POSITION_Y,
+        'entity.zFP': RenderField.LINEAR,
+        ...Object.fromEntries(
+            [
+                'side',
+                'sourceId',
+                'sourceType',
+                'grounded',
+                'landedAtTick',
+                'explodeTick',
+                'retiredAtTick',
+            ].map((k) => ['entity.' + k, RenderField.STEP]),
+        ),
+    };
+}
 class FlagRenderObject extends RenderField {
     static renderSchema = {
         tick: RenderField.LINEAR,
@@ -112,6 +134,7 @@ const RENDER_TRACKS = Object.freeze({
     bundle: { type: BundleRenderObject, snapDistance: 180 },
     unit: { type: UnitRenderObject, snapDistance: 120 },
     projectile: { type: ProjectileRenderObject, snapDistance: 180 },
+    unitLob: { type: UnitLobRenderObject, snapDistance: 180 },
     thorn: { type: ThornRenderObject, snapDistance: 180 },
     flag: { type: FlagRenderObject, snapDistance: 80 },
 });

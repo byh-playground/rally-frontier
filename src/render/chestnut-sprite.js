@@ -186,7 +186,7 @@ export async function loadChestnutSpriteCanvas() {
     );
     const canvas = document.createElement('canvas');
     canvas.width = 1024;
-    canvas.height = 512;
+    canvas.height = 384;
     const ctx = canvas.getContext('2d');
     for (const piece of Object.values(PIECES))
         ctx.drawImage(images[piece.file], ...piece.crop, ...piece.slot);

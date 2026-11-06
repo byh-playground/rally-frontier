@@ -1,0 +1,21 @@
+{
+    "schemaVersion": 1,
+    "assets": {
+        "parts.png": {
+            "bytes": 1310530,
+            "sha256": "f2d67d873fb8bb4c6300ab611136539364d00f0048f3fed27af942f0b7156972"
+        },
+        "kernel.png": {
+            "bytes": 663554,
+            "sha256": "69f6b2a9a1656800b5fd96ec6b47bc63a4a9f214b4887c61bd54e8326baf9a07"
+        },
+        "popcorn-particles.png": {
+            "bytes": 376708,
+            "sha256": "0226628ed8fc4c753d384445471d459362f617cd9afd592de19a8566d031f896"
+        },
+        "cob.png": {
+            "bytes": 1144562,
+            "sha256": "80dfeb095340cefcf32e56b6fb007f0b98ba1a00327a563d7a38fa3d6e10e381"
+        }
+    }
+}
