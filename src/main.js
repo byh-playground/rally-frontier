@@ -2631,7 +2631,7 @@ class GLRenderer {
         const impact = this.constructionImpact(b),
             compression = impact ? impact.pulse * (impact.fx.spend > 0 ? 0.06 : 0.025) : 0;
         return {
-            x,
+            x: x + this.constructionWobble(impact),
             y: y + compression * 10 * this.sc(),
             sc: this.sc() * (1 - compression),
             own: this.isFriendlySide(b.side),
@@ -2724,8 +2724,14 @@ class GLRenderer {
                     spend += Math.max(0, Number(f.spend) || 0);
         return {
             fx: paid ? { ...paid, spend } : latest,
+            progress: (now - latest.start) / 220,
             pulse: Math.sin(((now - latest.start) / 220) * Math.PI),
         };
+    }
+    constructionWobble(impact) {
+        return impact
+            ? Math.sin(impact.progress * Math.PI * 2) * (1 - impact.progress) * 5 * this.sc()
+            : 0;
     }
     // Five cells normalize the rule's next expense interval. They do not prescribe five hits.
     drawConstructionPaymentMeter(ctx, work, x, y, width, height, impact = null) {
@@ -3732,14 +3738,16 @@ class GLRenderer {
         const radius = BuildingDefinition.get(building.type).size,
             dirs = this.geometryTemplates.outlineCircle(6),
             points = [];
-        const sc = this.sc();
-        for (let i = 0; i < 6; i++)
-            points.push(
-                this.worldToPx(
-                    this.viewX(building.x + dirs[i * 2] * radius),
-                    this.viewY(building.y + dirs[i * 2 + 1] * radius),
-                ),
+        const sc = this.sc(),
+            wobble = this.constructionWobble(this.constructionImpact(building));
+        for (let i = 0; i < 6; i++) {
+            const point = this.worldToPx(
+                this.viewX(building.x + dirs[i * 2] * radius),
+                this.viewY(building.y + dirs[i * 2 + 1] * radius),
             );
+            point[0] += wobble;
+            points.push(point);
+        }
         this.poly(points, [0.51, 0.36, 0.18, 0.18]);
         for (let i = 0; i < 6; i++) {
             const a = points[i],
