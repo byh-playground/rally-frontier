@@ -4048,7 +4048,10 @@ class GLRenderer {
     }
     unitRenderRadius(u) {
         const d = UnitDefinition.get(u?.type) || {};
-        return Math.max(6.2, (d.size || 10) * this.sc() * 1.56 * this.unitRenderVisualScale(u));
+        return Math.max(
+            6.2 * (this.replayZoom || 1),
+            (d.size || 10) * this.sc() * 1.56 * this.unitRenderVisualScale(u),
+        );
     }
 
     hasGrainArt(u) {
@@ -4602,7 +4605,7 @@ class GLRenderer {
                 this.circle(
                     q.x,
                     q.y,
-                    Math.max(4, this.unitRenderRadius(u)),
+                    Math.max(4 * (this.replayZoom || 1), this.unitRenderRadius(u)),
                     u.side === this.mySide() ? [0.18, 0.43, 0.93, 1] : [0.72, 0.25, 0.22, 1],
                     10,
                 );
