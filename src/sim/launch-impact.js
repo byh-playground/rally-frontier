@@ -284,7 +284,6 @@ class LaunchImpact {
                 sim.setTimedModifier(u, 'launchRush', {
                     durationTicks: sim.msTicks(grain.rushMs),
                     movePct: grain.rushPct,
-                    attackSpeedPct: grain.rushPct,
                 });
             this.start(sim, u, {
                 kind: 'deploy',
