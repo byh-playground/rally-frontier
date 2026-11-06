@@ -181,6 +181,12 @@ class CombatComponent {
     windupPending() {
         return (Number(this.attackWindupUntil) || 0) > 0;
     }
+    cancelWindup() {
+        this.attackWindupUntil = 0;
+        this.attackWindupStartedAt = 0;
+        this.attackWindupTargetId = null;
+        this.attackWindupIsBuilding = false;
+    }
     moveRecoveryActive(sim) {
         return sim.tick < (Number(this.moveRecoveryUntil) || 0);
     }

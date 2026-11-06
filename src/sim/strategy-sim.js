@@ -1075,13 +1075,6 @@ class StrategySim {
         if (u.hitFlash > 0) u.hitFlash--;
         if (u.attackFlash > 0) u.attackFlash--;
     }
-    clearAttackWindup(u) {
-        if (!u) return;
-        u.combat.attackWindupUntil = 0;
-        u.combat.attackWindupStartedAt = 0;
-        u.combat.attackWindupTargetId = null;
-        u.combat.attackWindupIsBuilding = false;
-    }
     startAttackWindup(u, target, isBuilding, d) {
         if (!u || !target) return false;
         u.combat.attackWindupStartedAt = this.tick;
@@ -1107,7 +1100,7 @@ class StrategySim {
     attackReadyAfterWindup(u, target, isBuilding, d) {
         if ((u.combat.attackWindupUntil || 0) > 0) {
             if (!this.tickAttackWindup(u)) return false;
-            this.clearAttackWindup(u);
+            u.combat.cancelWindup();
             u.target = target.id;
             return true;
         }
@@ -2065,7 +2058,7 @@ class StrategySim {
                         : UnitDefinition.get(locked.type),
                 };
             } else {
-                this.clearAttackWindup(u);
+                u.combat.cancelWindup();
             }
         }
         if (!found) {
@@ -2088,7 +2081,7 @@ class StrategySim {
         if (timedAttackPct > 100) cooldown *= 100 / timedAttackPct;
 
         if (!found) {
-            this.clearAttackWindup(u);
+            u.combat.cancelWindup();
             u.target = null;
             if (this.updateConstructionWork(u, d, moveSpeed)) return null;
             const f = this.unitRallyPoint(u);
@@ -2106,7 +2099,7 @@ class StrategySim {
                 !this.canTargetUnit(u.side, t) ||
                 !this.canSeeCombatTarget(u.side, t, vision[u.side]))
         ) {
-            this.clearAttackWindup(u);
+            u.combat.cancelWindup();
             u.target = null;
             const f = this.unitRallyPoint(u);
             this.moveToward(u, f.x, f.y, moveSpeed);
@@ -2114,7 +2107,7 @@ class StrategySim {
         }
 
         if (d.spinAttack && UnitSpinAttack.start(this, u, d.spinAttack, vision[u.side])) {
-            this.clearAttackWindup(u);
+            u.combat.cancelWindup();
             u.combat.cooldownUntil = u.spinAttack.endTick + this.msTicks(d.cooldownMs);
             return UnitSpinAttack.update(this, u, d.spinAttack, d.atk).winner;
         }
@@ -2123,14 +2116,14 @@ class StrategySim {
         const min = d.minRange ? this.interactionDistance(u, t, 'combat-contact') + d.minRange : 0;
         if (dist > max || dist < min) {
             // Wind-up is valid only while the target remains in legal attack range.
-            if (u.combat.windupPending()) this.clearAttackWindup(u);
+            if (u.combat.windupPending()) u.combat.cancelWindup();
             this.moveToGoal(u, this.engagementGoal(u, t, attackRange), moveSpeed);
             return null;
         }
 
         if (d.spinAttack) return null;
         if (d.lobAttack && d.minRange && dist < InteractionGeometry.contact(u, t) + d.minRange) {
-            this.clearAttackWindup(u);
+            u.combat.cancelWindup();
             this.moveToward(
                 u,
                 u.x + ((u.x - t.x) / dist) * d.minRange,
