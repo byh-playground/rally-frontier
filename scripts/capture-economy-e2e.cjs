@@ -500,8 +500,8 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
             {
                 const cases = [];
                 for (const spec of [
-                    { workDone: 0, power: 3, wallet: 0, expectedWork: 3, expectedSpend: 0 },
-                    { workDone: 3, power: 3, wallet: 0, expectedWork: 4, expectedSpend: 0 },
+                    { workDone: 0, power: 3, wallet: 0, expectedWork: 0, expectedSpend: 0 },
+                    { workDone: 3, power: 3, wallet: 0, expectedWork: 3, expectedSpend: 0 },
                     { workDone: 4, power: 3, wallet: 1, expectedWork: 7, expectedSpend: 1 },
                     {
                         cost: 75,
@@ -534,13 +534,22 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 ]) {
                     const { building, events } = nextHitMission(spec),
                         event = events[0];
-                    check(
-                        events.length === 1 &&
-                            event.workDone === spec.expectedWork &&
-                            event.spend === spec.expectedSpend,
-                        'specialist work crosses boundaries, carries partial progress and respects wallet/cap',
-                        { spec, events },
-                    );
+                    if (spec.wallet === 0) {
+                        check(
+                            events.length === 0 &&
+                                building.construction.workDone === spec.expectedWork,
+                            'empty wallet pauses even work before the next payment boundary',
+                            { spec, events },
+                        );
+                    } else {
+                        check(
+                            events.length === 1 &&
+                                event.workDone === spec.expectedWork &&
+                                event.spend === spec.expectedSpend,
+                            'specialist work crosses boundaries, carries partial progress and respects wallet/cap',
+                            { spec, events },
+                        );
+                    }
                     if (spec.expectedWork === (spec.workRequired || 375))
                         check(
                             building.construction === null,
@@ -549,9 +558,9 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     cases.push({
                         power: spec.power,
                         previousWork: spec.workDone,
-                        workDone: event.workDone,
-                        workAdded: event.workAdded,
-                        spend: event.spend,
+                        workDone: event?.workDone ?? building.construction.workDone,
+                        workAdded: event?.workAdded ?? 0,
+                        spend: event?.spend ?? 0,
                     });
                 }
                 rows.push({
@@ -592,16 +601,14 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     completeEvents: completed.length,
                 });
             }
-            // First four work units remain possible with an empty wallet; the next
-            // threshold waits for resources and then requires a real new body hit.
+            // No work is performed while the wallet is empty, including before
+            // the next payment threshold; funding still requires a new body hit.
             {
                 for (let workDone = 0; workDone < 4; workDone++) {
                     const { events, building } = nextHitMission({ workDone, wallet: 0 });
                     check(
-                        events.length === 1 &&
-                            events[0].spend === 0 &&
-                            building.construction.workDone === workDone + 1,
-                        'zero-wallet free work must still require and accept an actual hit',
+                        events.length === 0 && building.construction.workDone === workDone,
+                        'zero wallet pauses work even before the next payment',
                     );
                 }
                 const { sim, building: tower, events } = nextHitMission({ workDone: 4, wallet: 0 });
@@ -625,8 +632,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     'funded worker crosses the threshold on the next actual hit',
                 );
                 rows.push({
-                    scenario:
-                        'zero wallet allows only free work and paid progress resumes on a hit',
+                    scenario: 'zero wallet pauses work and funding resumes it on a hit',
                     workDone: tower.construction.workDone,
                     invested: tower.construction.invested,
                 });

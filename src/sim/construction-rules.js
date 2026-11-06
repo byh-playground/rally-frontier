@@ -33,6 +33,14 @@ class ConstructionRules {
         if (wallet !== Infinity && (!Number.isSafeInteger(wallet) || wallet < 0))
             throw new Error('건설에 사용할 자원은 음수가 아닌 안전한 정수여야 합니다.');
         const { cost, workRequired, workDone, invested } = work;
+        if (wallet === 0)
+            return {
+                workDone,
+                workAdded: 0,
+                spend: 0,
+                invested,
+                complete: workDone === workRequired,
+            };
         const requested = workDone + Math.min(workPerHit, workRequired - workDone);
         // If all remaining cost is covered, no wallet-scaled product is needed.
         // Otherwise invested+wallet+1 <= cost, whose product was checked at creation.
