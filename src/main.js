@@ -9843,11 +9843,13 @@ class BattlePresentation {
             });
             return;
         }
+        const enteringGame = UiRuntimeState.value.screen !== 'game';
         UiController.setUiScreen('game');
         UiController.closeUiModal('create');
         UiController.closeUiModal('join');
         ActiveViewState.snap = s;
-        requestAnimationFrame(() => ConnectionPresentation.positionP2PHealthNextToMenu());
+        if (enteringGame)
+            requestAnimationFrame(() => ConnectionPresentation.positionP2PHealthNextToMenu());
 
         const rendererRoleChanged =
             !!ActiveViewState.renderer && ActiveViewState.renderer.role !== ActiveViewState.role;
