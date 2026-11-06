@@ -8218,6 +8218,7 @@ class MatchLifecycle {
         };
         trans.onError = (e) => {
             if (!isCurrent()) return;
+            if (e?.error) console.error('연결 오류 원인:', e.error);
             if (e?.type === 'version-mismatch') {
                 ConnectionPresentation.showVersionMismatch(e, r);
                 return;
@@ -8371,10 +8372,12 @@ class MatchLifecycle {
         const sessions = { [humanRole]: humanSession, [botRole]: botSession };
         const bot = CONFIG.single.botWorker ? null : BotController.attach(botSession, botRole);
         if (CONFIG.single.botWorker)
-            botSession.onFatal = (e) =>
+            botSession.onFatal = (e) => {
+                if (e?.error) console.error('AI Worker 오류 원인:', e.error);
                 MatchLifecycle.failSinglePlayer(
                     `AI ${botRole.toUpperCase()} Worker 오류 · ${e.message}`,
                 );
+            };
 
         MatchLifecycle.singleMatch = {
             roomCode: token,
@@ -8397,6 +8400,7 @@ class MatchLifecycle {
         };
 
         botTransport.onError = (e) => {
+            if (e?.error) console.error('AI 연결 오류 원인:', e.error);
             if (e?.type === 'version-mismatch') {
                 ConnectionPresentation.showVersionMismatch(e, botRole);
                 return;
@@ -8626,7 +8630,11 @@ class SimWorkerHost {
             try {
                 result = this.session[method](...(args || []));
             } catch (error) {
-                self.postMessage({ type: 'error', message: String(error?.message || error) });
+                self.postMessage({
+                    type: 'error',
+                    message: String(error?.message || error),
+                    error: error instanceof Error ? error : String(error),
+                });
             }
         if (id) self.postMessage({ type: 'result', id, result: result ?? null });
         this.publishStatus();
