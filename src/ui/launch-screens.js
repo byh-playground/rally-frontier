@@ -5,31 +5,43 @@ import './grain-portrait.js';
 // The game owns matches; this module owns which screen and sheet the address shows, and asks the game through `actions`.
 const GRAIN_COPY = Object.freeze({
     rice: {
+        role: '기동 근접',
+        feature: '빠른 이동 · 산탄 투입',
         land: '넓게 흩어짐',
         fire: '5갈래 산탄',
         desc: '가장 멀리 날아가 다섯 갈래로 흩어집니다. 넓은 곳을 한 번에 덮습니다.',
     },
     pea: {
+        role: '전열 근접',
+        feature: '높은 체력 · 중심 강타',
         land: '한 줄로 착지',
         fire: '단발 · 중심 강타',
         desc: '한 발이 크게 터집니다. 폭발 중심에 맞힐수록 피해가 커지고, 착지하면 적 본진 쪽으로 한 줄로 섭니다.',
     },
     acorn: {
+        role: '범위 근접',
+        feature: '회전 공격 · 밀쳐내기',
         land: '한 발당 한 명',
         fire: '3연발',
         desc: '큰 도토리 병사 세 명을 차례로 투입합니다. 적 가까이에서 양손을 돌려 주변 적을 밀어냅니다.',
     },
     corn: {
+        role: '범위 원거리',
+        feature: '알 착지 후 지연 폭발',
         land: '한 묶음으로 투입',
         fire: '옥수수 콘 단발',
         desc: '옥수수 콘 한 발로 병사들을 투입합니다. 병사는 알을 던지고, 알은 땅에 닿은 뒤 1초 후 팝콘처럼 폭발합니다.',
     },
     chestnut: {
+        role: '단일 원거리',
+        feature: '가시로 먼 적 공격',
         land: '한 묶음으로 투입',
         fire: '밤송이 단발',
         desc: '밤송이 한 발로 병사들을 투입합니다. 밤톨 병사는 거리를 유지하며 가시를 발사합니다.',
     },
     redbean: {
+        role: '돌격 근접',
+        feature: '착지 후 돌격 · 3연발',
         land: '착지 후 돌격',
         fire: '3연사',
         desc: '같은 곳에 세 번 시간차로 떨어집니다. 착지하자마자 잠깐 빠르게 돌격합니다.',
@@ -38,6 +50,9 @@ const GRAIN_COPY = Object.freeze({
 const SCREENS = new Set(['', 'friend', 'help', 'play', 'result']);
 
 export class LaunchScreens {
+    static grainInfo(type) {
+        return GRAIN_COPY[type] || { role: '병사', feature: '', land: '', fire: '', desc: '' };
+    }
     // actions: { inMatch(), hasResult(), startAiMatch(), openMenu(), closeMenu(), grains(), grainName(type), grainStats(type),
     //           portraitSource(type), toggleSound(), soundOn(), createRoom(), joinRoom(code), leaveToTitle() }
     static install({ createNavigation, actions }) {
@@ -204,7 +219,7 @@ export class LaunchScreens {
     static renderCardDetail(type) {
         const A = this.actions,
             STATS = A.grainStats(type),
-            COPY = GRAIN_COPY[type] || { land: '', desc: '' },
+            COPY = this.grainInfo(type),
             HOST = this.$('cardDetail');
         HOST.innerHTML = `<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2><p>${COPY.desc}</p></div></div>
 <div class="launch-stats"><div>비용<b>${STATS.cost}</b></div><div>병사 수<b>${STATS.count}</b></div><div>최대 사거리<b>${STATS.maxReach.toLocaleString('ko-KR')}</b></div><div>발사<b>${COPY.fire}</b></div><div>착지<b>${COPY.land}</b></div></div>

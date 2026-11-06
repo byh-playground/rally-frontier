@@ -10553,6 +10553,7 @@ else {
         types: () => LaunchRules.deck,
         nameOf: (type) => UnitDefinition.get(type)?.name || type,
         statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
+        infoOf: (type) => LaunchScreens.grainInfo(type),
         portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
     });
     LaunchScreens.install({
