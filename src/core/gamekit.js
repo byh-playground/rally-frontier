@@ -1,9 +1,5 @@
 // Loads pinned GameKit dist and the battlefield's verified image/vector assets before dependent modules evaluate.
-import { loadRiceSpriteImages, buildRiceSpriteCanvas } from '../render/rice-sprite.js';
-import { loadBeanSpriteCanvases } from '../render/bean-sprite.js';
-import { loadAcornSpriteCanvas } from '../render/acorn-sprite.js';
-import { loadCornSpriteCanvas } from '../render/corn-sprite.js';
-import { loadChestnutSpriteCanvas } from '../render/chestnut-sprite.js';
+import { loadGrainSpriteCanvases } from '../render/grain-sprite-registry.js';
 // prettier-ignore
 const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","navigation":"navigation.js","objectPool":"object-pool.js","geometry":"geometry.js","spatial":"spatial.js","face":"face.js","pathfield":"pathfield.js","vision":"vision.js"});
 // A dedicated Worker hosts only a simulation session (src/sim-worker.js): no UI boot.
@@ -133,13 +129,10 @@ try {
         : await loadRallyVectorAssets(namespaces.vectorAssetsLoader);
     globalThis.RallyVectorAssets = loadedVectorAssets.assets;
     globalThis.RallyVectorAssetLoader = loadedVectorAssets.loader;
-    const rice = SIM_WORKER ? null : buildRiceSpriteCanvas(await loadRiceSpriteImages());
-    const beans = SIM_WORKER ? {} : await loadBeanSpriteCanvases();
-    const acorn = SIM_WORKER ? null : await loadAcornSpriteCanvas();
-    const corn = SIM_WORKER ? null : await loadCornSpriteCanvas();
-    const chestnut = SIM_WORKER ? null : await loadChestnutSpriteCanvas();
-    // Allocation order is also the sizing order. Shared canvases are counted only once.
-    globalThis.RallySpriteCanvases = Object.freeze({ rice, acorn, chestnut, ...beans, corn });
+    // Registry order matches atlas allocation order; shared canvases count once.
+    globalThis.RallySpriteCanvases = SIM_WORKER
+        ? Object.freeze({})
+        : await loadGrainSpriteCanvases();
     RallyNetcode = Object.freeze({
         ...namespaces.rollback,
         ...namespaces.deterministic,

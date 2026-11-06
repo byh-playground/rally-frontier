@@ -1,9 +1,5 @@
 import { RallyGamekit } from '../core/gamekit.js';
-import { riceSpritePortrait } from '../render/rice-sprite.js';
-import { beanSpritePortrait } from '../render/bean-sprite.js';
-import { acornSpritePortrait } from '../render/acorn-sprite.js';
-import { cornSpritePortrait } from '../render/corn-sprite.js';
-import { chestnutSpritePortrait } from '../render/chestnut-sprite.js';
+import { GRAIN_SPRITES } from '../render/grain-sprite-registry.js';
 
 const { drawFacePaths } = RallyGamekit;
 
@@ -19,13 +15,8 @@ export function grainPortrait(type, compiled, width = 160) {
 }
 
 async function renderPortrait(type, compiled, width) {
-    if (type === 'rice') return riceSpritePortrait(globalThis.RallySpriteCanvases.rice, width);
-    if (type === 'acorn') return acornSpritePortrait(globalThis.RallySpriteCanvases.acorn, width);
-    if (type === 'corn') return cornSpritePortrait(globalThis.RallySpriteCanvases.corn, width);
-    if (type === 'chestnut')
-        return chestnutSpritePortrait(globalThis.RallySpriteCanvases.chestnut, width);
-    if (globalThis.RallySpriteCanvases?.[type])
-        return beanSpritePortrait(globalThis.RallySpriteCanvases[type], type, width);
+    const sprite = GRAIN_SPRITES[type];
+    if (sprite) return sprite.portrait(globalThis.RallySpriteCanvases[type], width);
     const [VX, VY, VW, VH] = compiled.viewBox,
         SCALE = width / VW,
         BODY = new Image();

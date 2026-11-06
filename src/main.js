@@ -38,11 +38,7 @@ import {
 import { BACKGROUND_TICK_PULSE_MS } from './core/session-timing.js';
 import { RENDER_TRACKS } from './render/render-tracks.js';
 import { BuildingArt } from './render/building-art.js';
-import { RiceSpriteRenderer } from './render/rice-sprite.js';
-import { BeanSpriteRenderer } from './render/bean-sprite.js';
-import { AcornSpriteRenderer } from './render/acorn-sprite.js';
-import { CornSpriteRenderer } from './render/corn-sprite.js';
-import { ChestnutSpriteRenderer } from './render/chestnut-sprite.js';
+import { GRAIN_SPRITES } from './render/grain-sprite-registry.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
 import {
     CONFIG,
@@ -1507,11 +1503,7 @@ class GLRenderer {
         }); // 메시 통계가 첫 유닛 그리기 전에도 null이 아니도록 미리 만든다.
         this.vectorUnitAssetCache = new Map();
         this.buildingArt = new BuildingArt(this);
-        this.riceSprites = null;
-        this.chestnutSprites = null;
-        this.beanSprites = {};
-        this.acornSprites = null;
-        this.cornSprites = null;
+        this.spriteRenderers = {};
         this.riceBodyGroup = [];
         // One actor per grain: a shared actor re-seeked per grain rewrites its pose row and splits the instanced batch.
         this.grainActors = new Map();
@@ -1724,38 +1716,15 @@ class GLRenderer {
             matrix = [1, 0, 0, 1, 0, 0];
         try {
             this.resize();
-            if (!this.riceSprites)
-                this.riceSprites = new RiceSpriteRenderer(
-                    C,
-                    globalThis.RallySpriteCanvases.rice,
-                    RallyGamekit,
-                );
-            if (!this.acornSprites)
-                this.acornSprites = new AcornSpriteRenderer(
-                    C,
-                    globalThis.RallySpriteCanvases.acorn,
-                    RallyGamekit,
-                );
-            if (!this.chestnutSprites)
-                this.chestnutSprites = new ChestnutSpriteRenderer(
-                    C,
-                    globalThis.RallySpriteCanvases.chestnut,
-                    RallyGamekit,
-                );
-            for (const type of ['pea', 'redbean'])
-                if (!this.beanSprites[type])
-                    this.beanSprites[type] = new BeanSpriteRenderer(
+            for (const [type, definition] of Object.entries(GRAIN_SPRITES)) {
+                if (!this.spriteRenderers[type])
+                    this.spriteRenderers[type] = new definition.renderer(
                         C,
                         globalThis.RallySpriteCanvases[type],
                         RallyGamekit,
                         type,
                     );
-            if (!this.cornSprites)
-                this.cornSprites = new CornSpriteRenderer(
-                    C,
-                    globalThis.RallySpriteCanvases.corn,
-                    RallyGamekit,
-                );
+            }
             this.grainFaces.prepare();
             if (!C.beginFrame()) throw new Error('그래픽 장치를 준비할 수 없습니다.');
             for (const [id, source] of Object.entries(globalThis.RallyVectorAssets)) {
@@ -1785,13 +1754,7 @@ class GLRenderer {
                             { x: 0, y: 0, sc: 1, aim: { dx: 1, dy }, own, fireAgeMs },
                         );
                     }
-            for (const sprites of [
-                this.riceSprites,
-                ...Object.values(this.beanSprites),
-                this.acornSprites,
-                this.cornSprites,
-                this.chestnutSprites,
-            ]) {
+            for (const sprites of Object.values(this.spriteRenderers)) {
                 const actor = sprites.createActor();
                 actors.push(actor);
                 actor.seek(0);
@@ -1802,9 +1765,10 @@ class GLRenderer {
                 sprites.drawBody(actor, matrix, 0);
                 C.depthWrite = false;
                 sprites.drawFace(actor, matrix, 0, 'neutral');
-                if (sprites === this.cornSprites) this.cornSprites.drawHeldKernel(actor, matrix, 0);
+                if (sprites === this.spriteRenderers.corn)
+                    this.spriteRenderers.corn.drawHeldKernel(actor, matrix, 0);
                 C.flush('grain-resource-preparation');
-                if (sprites === this.acornSprites) {
+                if (sprites === this.spriteRenderers.acorn) {
                     actor.play('spin');
                     for (const elapsed of [1250, 1500]) {
                         actor.seekElapsed(elapsed);
@@ -1820,20 +1784,20 @@ class GLRenderer {
                 C.depthTest = false;
             }
             C.depthTest = true;
-            this.acornSprites.drawAmmo(matrix, 0);
-            this.acornSprites.drawTeamMarker(matrix, 0, true);
-            this.acornSprites.drawTeamMarker(matrix, 0, false);
+            this.spriteRenderers.acorn.drawAmmo(matrix, 0);
+            this.spriteRenderers.acorn.drawTeamMarker(matrix, 0, true);
+            this.spriteRenderers.acorn.drawTeamMarker(matrix, 0, false);
             C.flush('acorn-ammo-resource-preparation');
             C.depthTest = false;
-            this.cornSprites.drawKernel(matrix, 0);
-            this.cornSprites.drawCone(matrix, 0);
-            this.cornSprites.drawTeamMarker(matrix, 0, true);
-            for (let i = 0; i < 3; i++) this.cornSprites.drawPopcorn(i, matrix, 0);
+            this.spriteRenderers.corn.drawKernel(matrix, 0);
+            this.spriteRenderers.corn.drawCone(matrix, 0);
+            this.spriteRenderers.corn.drawTeamMarker(matrix, 0, true);
+            for (let i = 0; i < 3; i++) this.spriteRenderers.corn.drawPopcorn(i, matrix, 0);
             C.flush('corn-particle-resource-preparation');
             C.depthTest = false;
-            this.chestnutSprites.drawBurr([32, 0, 0, 32, 0, 0], 0);
-            this.chestnutSprites.drawThorn([32, 0, 0, 32, 0, 0], 0);
-            this.chestnutSprites.drawParticle([8, 0, 0, 8, 0, 0], 0, THORN_IMPACT_COLOR);
+            this.spriteRenderers.chestnut.drawBurr([32, 0, 0, 32, 0, 0], 0);
+            this.spriteRenderers.chestnut.drawThorn([32, 0, 0, 32, 0, 0], 0);
+            this.spriteRenderers.chestnut.drawParticle([8, 0, 0, 8, 0, 0], 0, THORN_IMPACT_COLOR);
             C.flush('chestnut-projectile-resource-preparation');
             this.buildingArt.prune([]);
             C.endFrame();
@@ -1845,16 +1809,8 @@ class GLRenderer {
             if (C.active) C.endFrame();
             this.buildingArt.prune([]);
             for (const hold of holds) hold.release();
-            this.riceSprites?.dispose();
-            this.riceSprites = null;
-            this.chestnutSprites?.dispose();
-            this.chestnutSprites = null;
-            for (const sprites of Object.values(this.beanSprites)) sprites.dispose();
-            this.beanSprites = {};
-            this.acornSprites?.dispose();
-            this.acornSprites = null;
-            this.cornSprites?.dispose();
-            this.cornSprites = null;
+            for (const sprites of Object.values(this.spriteRenderers)) sprites.dispose();
+            this.spriteRenderers = {};
             throw error;
         } finally {
             for (const actor of actors) actor.dispose();
@@ -4096,14 +4052,7 @@ class GLRenderer {
     }
 
     hasGrainArt(u) {
-        return (
-            u?.type === 'rice' ||
-            (u?.type === 'acorn' && !!this.acornSprites) ||
-            (u?.type === 'corn' && !!this.cornSprites) ||
-            (u?.type === 'chestnut' && !!this.chestnutSprites) ||
-            !!this.beanSprites?.[u?.type] ||
-            !!window.RallyVectorAssets?.[u?.type]
-        );
+        return !!this.spriteRenderers[u?.type] || !!window.RallyVectorAssets?.[u?.type];
     }
     launchAmmoRecord(type) {
         if (!LaunchRules.grain(type)) return null;
@@ -4121,7 +4070,7 @@ class GLRenderer {
             return record;
         }
         if (type === 'chestnut') {
-            record = { sprite: this.chestnutSprites };
+            record = { sprite: this.spriteRenderers.chestnut };
             this.vectorUnitAssetCache.set(key, record);
             return record;
         }
@@ -4177,8 +4126,8 @@ class GLRenderer {
         if (record.acornAmmo || record.cornCone) {
             this.vectorContext.depthTest = depthTest;
             this.vectorContext.depthWrite = false;
-            if (record.acornAmmo) this.acornSprites.drawAmmo(m, this._renderDepth ?? 0);
-            else this.cornSprites.drawCone(m, this._renderDepth ?? 0);
+            if (record.acornAmmo) this.spriteRenderers.acorn.drawAmmo(m, this._renderDepth ?? 0);
+            else this.spriteRenderers.corn.drawCone(m, this._renderDepth ?? 0);
             return;
         }
         this.vectorContext.drawVectorActor(record.actor, {
@@ -4237,18 +4186,9 @@ class GLRenderer {
         const key = 'grain|' + type;
         let record = this.vectorUnitAssetCache.get(key);
         if (record) return record;
-        const sprites =
-            type === 'rice'
-                ? this.riceSprites
-                : type === 'acorn'
-                  ? this.acornSprites
-                  : type === 'corn'
-                    ? this.cornSprites
-                    : type === 'chestnut'
-                      ? this.chestnutSprites
-                      : this.beanSprites[type];
+        const sprites = this.spriteRenderers[type];
         if (sprites) {
-            record = { compiled: sprites, ground: [0, type === 'corn' ? 148 : 145], sprite: true };
+            record = { compiled: sprites, ground: [0, GRAIN_SPRITES[type].groundY], sprite: true };
             this.vectorUnitAssetCache.set(key, record);
             return record;
         }
@@ -4355,7 +4295,7 @@ class GLRenderer {
                               : 'idle'),
                 restart = false;
             if (record.sprite) {
-                const chestnut = record.compiled === this.chestnutSprites,
+                const chestnut = record.compiled === this.spriteRenderers.chestnut,
                     attack = !!(chestnut ? entity.attackFlash : u.attackFlash),
                     hit = !!(chestnut ? entity.hitFlash : u.hitFlash);
                 if (attack && !grain.attackLatch) {
@@ -4383,7 +4323,7 @@ class GLRenderer {
             }
             let cornElapsed = null;
             grain.holdsKernel = false;
-            if (record.compiled === this.cornSprites && !impact.active && !work?.active) {
+            if (record.compiled === this.spriteRenderers.corn && !impact.active && !work?.active) {
                 const combat = entity.combat || u.combat || {},
                     start = Number(combat.attackWindupStartedAt),
                     end = Number(combat.attackWindupUntil),
@@ -4425,7 +4365,7 @@ class GLRenderer {
             let chestnutFireMs = null,
                 chestnutFacing = 1;
             if (
-                record.compiled === this.chestnutSprites &&
+                record.compiled === this.spriteRenderers.chestnut &&
                 !impact.active &&
                 !work?.active &&
                 !entity.hitFlash
@@ -4455,7 +4395,7 @@ class GLRenderer {
                         chestnutFacing = this.viewX(aimX) < this.viewX(entity.x) ? -1 : 1;
                 }
             }
-            const spin = record.compiled === this.acornSprites ? entity.spinAttack : null;
+            const spin = record.compiled === this.spriteRenderers.acorn ? entity.spinAttack : null;
             if (spin) clip = 'spin';
             if (
                 actor.currentClip !== clip ||
@@ -4600,8 +4540,8 @@ class GLRenderer {
                 grain.depth - GRAIN_DEPTH_RANK_STEP / 2,
                 grain.face,
             );
-            if (grain.compiled === this.cornSprites && grain.holdsKernel)
-                this.cornSprites.drawHeldKernel(
+            if (grain.compiled === this.spriteRenderers.corn && grain.holdsKernel)
+                this.spriteRenderers.corn.drawHeldKernel(
                     grain.actor,
                     grain.matrix,
                     grain.depth - GRAIN_DEPTH_RANK_STEP / 2,
@@ -4776,13 +4716,13 @@ class GLRenderer {
         c.depthTest = !!this.passState.depthEnabled;
         c.depthWrite = false;
         c.depthFunc = this.passState.depthFunc || 'lequal';
-        this.acornSprites.drawAmmo(m, this._renderDepth ?? 0);
+        this.spriteRenderers.acorn.drawAmmo(m, this._renderDepth ?? 0);
         const marker = Math.max(4, 6 * this.sc());
         m[0] = marker;
         m[1] = 0;
         m[2] = 0;
         m[3] = marker;
-        this.acornSprites.drawTeamMarker(
+        this.spriteRenderers.acorn.drawTeamMarker(
             m,
             this._renderDepth ?? 0,
             this.factionRelation(p.side) === 'friendly',
@@ -4861,7 +4801,7 @@ class GLRenderer {
         return { dx, dy, valid };
     }
     drawThorn(shot, world) {
-        if (!this.chestnutSprites) return;
+        if (!this.spriteRenderers.chestnut) return;
         if (this.frame.length) {
             this.flushVectorMesh('frame-to-thorn');
             this.flush(this.frame, true);
@@ -4903,17 +4843,17 @@ class GLRenderer {
         matrix[3] = cosine;
         matrix[4] = point.x;
         matrix[5] = point.y;
-        this.chestnutSprites.drawTrail(
+        this.spriteRenderers.chestnut.drawTrail(
             matrix,
             this._renderDepth ?? 0,
             count,
             THORN_TRAIL_COLOR,
             0.25,
         );
-        this.chestnutSprites.drawThorn(matrix, this._renderDepth ?? 0);
+        this.spriteRenderers.chestnut.drawThorn(matrix, this._renderDepth ?? 0);
     }
     drawThornImpact(fx, world) {
-        if (!this.chestnutSprites) return;
+        if (!this.spriteRenderers.chestnut) return;
         if (this.frame.length) {
             this.flushVectorMesh('frame-to-thorn-impact');
             this.flush(this.frame, true);
@@ -4940,7 +4880,12 @@ class GLRenderer {
             m[3] = cosine * height;
             m[4] = p.x + cosine * distance;
             m[5] = p.y + sine * distance;
-            this.chestnutSprites.drawParticle(m, this._renderDepth ?? 0, THORN_IMPACT_COLOR, 1 - t);
+            this.spriteRenderers.chestnut.drawParticle(
+                m,
+                this._renderDepth ?? 0,
+                THORN_IMPACT_COLOR,
+                1 - t,
+            );
         }
     }
     drawProjectile(p) {
@@ -5062,20 +5007,21 @@ class GLRenderer {
         C.depthTest = !!this.passState.depthEnabled;
         C.depthWrite = false;
         C.depthFunc = this.passState.depthFunc || 'lequal';
-        this.cornSprites.drawCone(matrix, this._renderDepth ?? 0);
+        this.spriteRenderers.corn.drawCone(matrix, this._renderDepth ?? 0);
         const markerSize = Math.max(4, 6 * this.sc());
         matrix[0] = markerSize;
         matrix[1] = 0;
         matrix[2] = 0;
         matrix[3] = markerSize;
-        this.cornSprites.drawTeamMarker(
+        this.spriteRenderers.corn.drawTeamMarker(
             matrix,
             this._renderDepth ?? 0,
             this.factionRelation(projectile.side) === 'friendly',
         );
     }
     drawCornKernel(projectile, world) {
-        if (!this.cornSprites) throw new Error('옥수수 투사체 자원이 준비되지 않았습니다.');
+        if (!this.spriteRenderers.corn)
+            throw new Error('옥수수 투사체 자원이 준비되지 않았습니다.');
         const now = this.presentationNow(),
             model = this.renderState.model('unitLob', projectile.id, now),
             sampled = model?.entity || projectile;
@@ -5095,10 +5041,11 @@ class GLRenderer {
         C.depthTest = !!this.passState.depthEnabled;
         C.depthWrite = false;
         C.depthFunc = this.passState.depthFunc || 'lequal';
-        this.cornSprites.drawKernel(matrix, this._renderDepth ?? 0);
+        this.spriteRenderers.corn.drawKernel(matrix, this._renderDepth ?? 0);
     }
     renderCornParticles() {
-        if ((!this.cornTrails.size && !this.cornBursts.length) || !this.cornSprites) return;
+        if ((!this.cornTrails.size && !this.cornBursts.length) || !this.spriteRenderers.corn)
+            return;
         const time = this.cornPresentationTime();
         if (!Number.isFinite(time)) return;
         const sc = this.sc(),
@@ -5192,7 +5139,12 @@ class GLRenderer {
                 matrix[3] = a;
                 matrix[4] = point.x;
                 matrix[5] = point.y;
-                this.cornSprites.drawPopcorn(i % 3, matrix, this.spriteDepthForWorld(world), 1 - t);
+                this.spriteRenderers.corn.drawPopcorn(
+                    i % 3,
+                    matrix,
+                    this.spriteDepthForWorld(world),
+                    1 - t,
+                );
             }
         }
         C.flush('corn-particles');
