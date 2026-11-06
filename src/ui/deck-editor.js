@@ -3,13 +3,14 @@ const STORAGE_KEY = 'ssalkongpang.decks.v1';
 const DECK_COUNT = 3;
 
 export class DeckEditor {
-    static install({ types, nameOf, statsOf, portraitOf, onChange = () => {} }) {
+    static install({ types, nameOf, statsOf, portraitOf, infoOf, onChange = () => {} }) {
         if (this.initialized) return;
         this.initialized = true;
         this.types = types;
         this.nameOf = nameOf;
         this.statsOf = statsOf;
         this.portraitOf = portraitOf;
+        this.infoOf = infoOf;
         this.onChange = onChange;
         this.dialog = document.getElementById('deckDialog');
         this.state = this.load();
@@ -100,28 +101,35 @@ export class DeckEditor {
                 button = document.createElement('button'),
                 image = document.createElement('img'),
                 name = document.createElement('b'),
+                role = document.createElement('span'),
                 detail = document.createElement('small'),
+                feature = document.createElement('span'),
                 check = document.createElement('span');
             button.type = 'button';
             button.className = 'deck-card';
             button.dataset.deckType = type;
             button.setAttribute('aria-pressed', String(chosen));
-            button.setAttribute(
-                'aria-label',
-                `${this.nameOf(type)} ${chosen ? '덱에서 제외' : '덱에 추가'}`,
-            );
             image.alt = '';
             Promise.resolve(this.portraitOf(type)).then(
                 (src) => (image.src = src),
                 () => image.remove(),
             );
             name.textContent = this.nameOf(type);
-            const stats = this.statsOf(type);
+            const stats = this.statsOf(type),
+                info = this.infoOf(type);
+            role.className = 'deck-card-role';
+            role.textContent = info.role;
             detail.textContent = `비용 ${stats.cost} · ${stats.count}명`;
+            feature.className = 'deck-card-feature';
+            feature.textContent = info.feature;
+            button.setAttribute(
+                'aria-label',
+                `${this.nameOf(type)}, ${info.role}, 비용 ${stats.cost}, ${stats.count}명, ${info.feature}, ${chosen ? '덱에서 제외' : '덱에 추가'}`,
+            );
             check.className = 'deck-card-check';
             check.setAttribute('aria-hidden', 'true');
             check.textContent = chosen ? '✓' : '+';
-            button.append(image, name, detail, check);
+            button.append(image, name, role, detail, feature, check);
             button.addEventListener('click', () => {
                 if (chosen && deck.length === 1) {
                     document.getElementById('deckNotice').textContent =
