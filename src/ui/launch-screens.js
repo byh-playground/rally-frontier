@@ -16,7 +16,8 @@ const GRAIN_COPY = Object.freeze({
         feature: '저렴한 이삭 · 몸통 돌진',
         land: '15명 동시 출격',
         fire: '이삭 단발',
-        desc: '이삭 한 발에서 작은 조 병사 15명이 동시에 흩어집니다. 병사는 몸을 뒤로 당긴 뒤 부딪혀 공격합니다.',
+        desc: '이삭이 착탄하면 조 병사들이 함께 나와 몸을 부딪혀 싸웁니다.',
+        exceptions: ['착점 주변에 자리가 부족하면 모두 나올 수 있을 때까지 기다립니다.'],
     },
     pea: {
         role: '전열 근접',
@@ -30,7 +31,11 @@ const GRAIN_COPY = Object.freeze({
         feature: '회전 공격 · 밀쳐내기',
         land: '한 발당 한 명',
         fire: '3연발',
-        desc: '큰 도토리 병사 세 명을 차례로 투입합니다. 적 가까이에서 양손을 돌려 주변 적을 밀어냅니다.',
+        desc: '도토리는 적 가까이에서 회전하며 공격하고 밀쳐냅니다.',
+        exceptions: [
+            '각 타격은 가장 가까운 지상 병사 한 명을 맞힙니다.',
+            '범위 안의 적 건물은 모두 맞힙니다.',
+        ],
     },
     corn: {
         role: '범위 원거리',
@@ -44,7 +49,8 @@ const GRAIN_COPY = Object.freeze({
         feature: '가시로 먼 적 공격',
         land: '한 묶음으로 투입',
         fire: '밤송이 단발',
-        desc: '밤송이 한 발로 병사들을 투입합니다. 밤톨 병사는 거리를 유지하며 가시를 발사합니다.',
+        desc: '밤톨은 적과 거리를 유지하며 가시를 쏩니다.',
+        exceptions: ['가시는 발사할 때 정한 적에게만 맞으며, 적이 피하면 빗나갑니다.'],
     },
     redbean: {
         role: '돌격 근접',
@@ -228,7 +234,11 @@ export class LaunchScreens {
             STATS = A.grainStats(type),
             COPY = this.grainInfo(type),
             HOST = this.$('cardDetail');
+        const EXCEPTIONS = COPY.exceptions?.length
+            ? `<ul aria-label="알아둘 점" style="margin:6px 0 10px;padding-left:1.2em;font-size:.9em;line-height:1.45">${COPY.exceptions.map((text) => `<li>${text}</li>`).join('')}</ul>`
+            : '';
         HOST.innerHTML = `<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2><p>${COPY.desc}</p></div></div>
+${EXCEPTIONS}
 <div class="launch-stats"><div>비용<b>${STATS.cost}</b></div><div>병사 수<b>${STATS.count}</b></div><div>최대 사거리<b>${STATS.maxReach.toLocaleString('ko-KR')}</b></div><div>발사<b>${COPY.fire}</b></div><div>착지<b>${COPY.land}</b></div></div>
 <button type="button" class="launch-btn primary" data-sheet-close>닫기</button>`;
         this.fillCardPortraits(HOST);
