@@ -557,8 +557,9 @@ class StrategySim {
         return (
             !!d.projectile ||
             !!d.continuous ||
-            Number(d.range) > 100 ||
-            (d.attackVisual?.travel && d.attackVisual.travel !== 'none')
+            !!d.lobAttack ||
+            !!d.thornAttack ||
+            Number(d.range) > 100
         );
     }
     terrainAttackContext(sourceType, sourceEntityId, target, isBuilding = false) {
