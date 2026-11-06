@@ -604,11 +604,22 @@ class GeometryTemplateCache {
     }
 }
 const SHARED_GEOMETRY_TEMPLATES = new GeometryTemplateCache();
-// Keep the original double-precision circle coordinates, calculated once.
-const GRAIN_SHADOW_UNIT_POINTS = Float64Array.from({ length: 28 }, (_, i) => {
-    const angle = (Math.floor(i / 2) / 14) * Math.PI * 2;
-    return i % 2 ? Math.sin(angle) : Math.cos(angle);
-});
+// One retained unit ring mesh is instanced for all visible team markers.
+function buildGrainTeamRing() {
+    const builder = new RallyGamekit.MeshBuilder();
+    const segments = 14,
+        inner = 0.6;
+    for (let i = 0; i < segments; i++) {
+        const a = (i / segments) * Math.PI * 2,
+            b = ((i + 1) / segments) * Math.PI * 2;
+        const p = [Math.cos(a), Math.sin(a)],
+            q = [Math.cos(b), Math.sin(b)];
+        const pi = [p[0] * inner, p[1] * inner],
+            qi = [q[0] * inner, q[1] * inner];
+        builder.fillTriangleFan([p, q, qi, pi], [1, 1, 1, 1]);
+    }
+    return builder.build();
+}
 // Depth gap between consecutive grains in painter order: a few 24-bit depth steps, so 500 grains shift terrain occlusion by ~2e-4.
 const GRAIN_DEPTH_RANK_STEP = 4e-7;
 // Bound presentation-only retention while avoiding churn when the camera crosses a unit.
@@ -1506,6 +1517,8 @@ class GLRenderer {
             safeAlphaRunBatching: true,
         });
         this.vectorContext.acquireMeshRenderer();
+        this.grainTeamRing = this.vectorContext.createMesh(buildGrainTeamRing());
+        this.grainTeamRingMatrix = new Float32Array(6);
         this.grainFaces = new RallyGamekit.FaceOverlay(this.vectorContext, {
             faces: GRAIN_FACE_IDS,
         }); // 메시 통계가 첫 유닛 그리기 전에도 null이 아니도록 미리 만든다.
@@ -1738,6 +1751,8 @@ class GLRenderer {
             }
             this.grainFaces.prepare();
             if (!C.beginFrame()) throw new Error('그래픽 장치를 준비할 수 없습니다.');
+            C.drawMesh(this.grainTeamRing);
+            C.flush('grain-team-ring-preparation');
             for (const [id, source] of Object.entries(globalThis.RallyVectorAssets)) {
                 holds.push(RallyGamekit.holdVectorAsset(C, source));
                 const actor = RallyGamekit.createVectorActor(C, source, {
@@ -2434,26 +2449,43 @@ class GLRenderer {
             const team = UnitFactionPalette.get(this.factionRelation(u.side)).body,
                 rx = r * 1.05 * shrink,
                 ry = r * 0.42 * shrink,
-                pts = GRAIN_SHADOW_UNIT_POINTS,
-                color = [team[0], team[1], team[2], 0.85],
-                cy = ground.y + r * 0.55;
-            this.withWorldSpriteDepth(
-                groundWorld,
-                () => {
-                    const ax = ground.x + pts[0] * rx,
-                        ay = cy + pts[1] * ry;
-                    for (let i = 1; i < 13; i++) {
-                        const a = i * 2,
-                            b = (i + 1) * 2;
-                        this.v(ax, ay, color);
-                        this.v(ground.x + pts[a] * rx, cy + pts[a + 1] * ry, color);
-                        this.v(ground.x + pts[b] * rx, cy + pts[b + 1] * ry, color);
-                    }
-                },
-                0.0003,
-            );
+                C = this.vectorContext,
+                m = this.grainTeamRingMatrix,
+                previousColor = C.forceColor,
+                previousAlpha = C.globalAlpha,
+                previousDepth = C.depth,
+                previousTest = C.depthTest,
+                previousWrite = C.depthWrite,
+                previousFunc = C.depthFunc;
+            if (this.frame.length) {
+                this.flush();
+                this.begin();
+            }
+            m[0] = rx;
+            m[1] = 0;
+            m[2] = 0;
+            m[3] = ry;
+            m[4] = ground.x;
+            m[5] = ground.y + r * 0.55;
+            C.depth = this.spriteDepthForWorld(groundWorld, 0.0003);
+            C.depthTest = !!this.passState.depthEnabled;
+            C.depthWrite = false;
+            C.depthFunc = this.passState.depthFunc || 'lequal';
+            C.forceColor = team;
+            C.globalAlpha = 0.85;
+            try {
+                C.drawMesh(this.grainTeamRing, { transform: m });
+            } finally {
+                C.forceColor = previousColor;
+                C.globalAlpha = previousAlpha;
+                C.depth = previousDepth;
+                C.depthTest = previousTest;
+                C.depthWrite = previousWrite;
+                C.depthFunc = previousFunc;
+            }
             return;
         }
+        this.flushVectorMesh('grain-ring-to-shadow');
         this.withWorldSpriteDepth(
             groundWorld,
             () => {
@@ -5657,6 +5689,7 @@ class GLRenderer {
                 this.reportEntityRenderError('unit-shadow', u, err);
             }
         }
+        this.flushVectorMesh('grain-ring-end');
         for (const p of this.renderState.displayed('projectile', this.presentationNow())) {
             if (p.payload?.type !== 'acorn' || !this.presentationEntityActive('projectile', p.id))
                 continue;
