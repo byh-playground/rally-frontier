@@ -7290,6 +7290,7 @@ UiRegistry.refs.launchCards = DomUtil.byId('launchCards');
 UiRegistry.refs.launchEnergyFill = DomUtil.byId('launchEnergyFill');
 UiRegistry.refs.launchEnergyText = DomUtil.byId('launchEnergyText');
 UiRegistry.refs.launchIncomeText = DomUtil.byId('launchIncomeText');
+UiRegistry.refs.launchPopulationText = DomUtil.byId('launchPopulationText');
 UiRegistry.refs.launchReachText = DomUtil.byId('launchReachText');
 UiRegistry.refs.launchRangeBtn = DomUtil.byId('launchRangeBtn');
 UiRegistry.refs.launchRangeText = DomUtil.byId('launchRangeText');
@@ -9599,7 +9600,8 @@ class LaunchPresentation {
         UiRegistry.refs.launchHand?.classList.toggle('hidden', !on);
         if (!on) return;
         const deck = s.decks?.[side] || LaunchRules.deck,
-            wallet = Math.floor(s.wallet?.[side] || 0);
+            wallet = Math.floor(s.wallet?.[side] || 0),
+            population = LaunchRules.population(s, side);
         if (!deck.includes(this.card)) this.card = deck[0] || null;
         const key = deck.join('|');
         if (key !== this.deckKey) {
@@ -9616,6 +9618,7 @@ class LaunchPresentation {
         }
         UiRegistry.refs.launchEnergyFill.style.width = `${Math.round((100 * wallet) / LaunchRules.walletCap)}%`;
         UiRegistry.refs.launchEnergyText.textContent = `◆ ${wallet} / ${LaunchRules.walletCap}`;
+        UiRegistry.refs.launchPopulationText.textContent = `생존 ${population.alive} + 출격 중 ${population.reserved} / ${LaunchRules.populationLimit}`;
         const level = s.launchRangeLevel?.[side] ?? 0,
             cost = LaunchRules.upgradeCost(level),
             maxed = cost == null;
@@ -9653,6 +9656,7 @@ class LaunchPresentation {
                     {
                         reloading: '대포가 재장전 중입니다.',
                         'insufficient-resources': '자원이 부족합니다.',
+                        'population-limit': '인구가 가득 찼습니다.',
                         'cannon-unavailable': '사용할 수 있는 대포가 없습니다.',
                         'invalid-unit': '발사할 병종을 확인해 주세요.',
                     }[event.reason] || '발사할 수 없습니다.',
@@ -9739,6 +9743,10 @@ class LaunchPresentation {
             side = ConnectionSideUtil.roleSide(ActiveViewState.role),
             cannon = s && this.nearestCannon(s, side, a.x, a.y);
         if (!cannon || !this.card) return null;
+        if (LaunchRules.population(s, side).total >= LaunchRules.populationLimit) {
+            this.feedback('인구가 가득 찼습니다.');
+            return null;
+        }
         const wait = Math.max(0, (Number(cannon.launchReadyTick) || 0) - s.tick);
         if (wait > 0) {
             this.feedback(

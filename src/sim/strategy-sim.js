@@ -1263,6 +1263,8 @@ class StrategySim {
         const grain = LaunchRules.grain(action.unitType);
         if (!grain) return reject('invalid-unit');
         if (!this.decks[side]?.includes(action.unitType)) return reject('unit-not-in-deck');
+        if (LaunchRules.population(this, side).total >= LaunchRules.populationLimit)
+            return reject('population-limit');
         if (this.wallet[side] < grain.cost) return reject('insufficient-resources');
         const holdMs = Math.max(0, Math.round(action.holdMs));
         if (LaunchRules.overheated(holdMs)) {

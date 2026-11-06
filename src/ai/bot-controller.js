@@ -67,10 +67,14 @@ class AiCommandExecutor {
             ...snapshot,
             wallet: snapshot.wallet.slice(),
             launchRangeLevel: snapshot.launchRangeLevel.slice(),
+            aiPopulation: LaunchRules.population(snapshot, this.bot.side).total,
+            aiReservedPopulation: 0,
         };
         for (const p of this.reservations(snapshot)) {
             view.wallet[this.bot.side] -= p.cost;
             if (p.action.type === 'UPGRADE_LAUNCH_RANGE') view.launchRangeLevel[this.bot.side]++;
+            else if (p.action.type === 'LAUNCH')
+                view.aiReservedPopulation += LaunchRules.payload(p.action.unitType)?.count || 0;
         }
         this.state = view;
         return view;
@@ -94,12 +98,17 @@ class AiCommandExecutor {
         if (
             cost == null ||
             this.reservations().some((p) => p.key === key) ||
-            this.state.wallet[side] < cost
+            this.state.wallet[side] < cost ||
+            (action.type === 'LAUNCH' &&
+                this.state.aiPopulation + this.state.aiReservedPopulation >=
+                    LaunchRules.populationLimit)
         )
             return false;
         this.queue.push({ key, action: StateValue.copy(action), cost });
         this.state.wallet[side] -= cost;
         if (action.type === 'UPGRADE_LAUNCH_RANGE') this.state.launchRangeLevel[side]++;
+        else if (action.type === 'LAUNCH')
+            this.state.aiReservedPopulation += LaunchRules.payload(action.unitType).count;
         return true;
     }
     dispose() {
