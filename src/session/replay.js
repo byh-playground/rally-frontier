@@ -7,7 +7,14 @@ import { CloneUtil } from '../sim/map-generation.js';
 import { PRODUCT_VERSION } from '../core/product-version.js';
 import { BUILD_META } from '../core/build-info.js';
 import { RallyNetcode } from '../core/gamekit.js';
-import { ReplayPresentation } from '../main.js';
+import {
+    attachPublishedVisibility,
+    captureFramePresentationEvents,
+    createFramePresentationJournal,
+    configureFramePresentationJournal,
+    emitFramePresentationEvents,
+} from '../core/presentation-frame-event.js';
+import { ReplayPresentation, createPresentationView } from '../main.js';
 import { SimulationTiming } from '../core/simulation-timing.js';
 
 /* =========================
@@ -145,12 +152,26 @@ class ReplayPlayer {
         this.role = 'host';
         this.data = data;
         this.sim = null;
-        this.playing = true;
+        this.playbackState = 'playing';
         this.speed = 1;
         this.acc = 0;
         this.last = performance.now();
         this.stopped = false;
         this.eventBuffer = [];
+        this.renderEventBuffer = [];
+        this.presentationPending = [];
+        this.presentationView = createPresentationView(this, () => ActiveViewState.renderer);
+        this.presentationJournal = null;
+        this.onVisibilityChange = () => {
+            this.presentationJournal?.setPresentationActive(!document.hidden);
+            if (document.hidden) {
+                this.flushPresentationEvents();
+                this.eventBuffer = this.eventBuffer.filter((event) => !event.presentationAudio);
+            }
+            this.acc = 0;
+            this.last = performance.now();
+        };
+        document.addEventListener('visibilitychange', this.onVisibilityChange);
         this.viewMode = 'all';
         this.orientationRole =
             (data?.defaultOrientationRole || data?.savedByRole) === 'guest' ? 'guest' : 'host';
@@ -170,6 +191,9 @@ class ReplayPlayer {
     }
     command() {
         return false;
+    }
+    get playing() {
+        return ['playing', 'draining', 'tail'].includes(this.playbackState);
     }
     inputAvailable() {
         return false;
@@ -224,6 +248,7 @@ class ReplayPlayer {
     }
     seek(targetTick, { render = true } = {}) {
         targetTick = RangeUtil.clamp(Math.round(Number(targetTick) || 0), 0, this.endTick || 0);
+        const resume = this.playing;
         this.validate();
         const candidate = new StrategySim(
             Number(this.data.seed) >>> 0,
@@ -246,7 +271,32 @@ class ReplayPlayer {
         const previousSim = this.sim;
         this.sim = candidate;
         previousSim?.dispose('replay-seek');
+        this.presentationJournal?.dispose();
+        this.presentationJournal = createFramePresentationJournal({
+            getView: () => this.presentationView,
+            onImmediate: (record) => {
+                if (record.kind === 'audio' && document.hidden) return;
+                this.eventBuffer.push({
+                    ...record.payload,
+                    presentationTick: record.tick,
+                    presentationAudio: record.kind === 'audio',
+                });
+            },
+        });
+        configureFramePresentationJournal(
+            this.presentationJournal,
+            this.presentationView,
+            this.sim.tps,
+            !document.hidden,
+        );
         this.eventBuffer.length = 0;
+        this.renderEventBuffer.length = 0;
+        this.presentationPending.length = 0;
+        this.playbackState = resume
+            ? this.sim.tick >= this.endTick
+                ? 'draining'
+                : 'playing'
+            : 'paused';
         this.acc = 0;
         this.last = performance.now();
         if (render) {
@@ -257,47 +307,95 @@ class ReplayPlayer {
     }
     stepOnce() {
         if (!this.sim || this.sim.tick >= this.endTick) {
-            this.playing = false;
+            this.playbackState = this.sim ? 'draining' : 'paused';
             return false;
         }
         const winner = this.sim.step();
         if (this.sim.events?.length) {
-            const eventTick = this.sim.tick;
-            for (const e of this.sim.events)
-                this.eventBuffer.push({ ...e, presentationTick: eventTick });
+            for (const event of this.sim.events)
+                this.renderEventBuffer.push({ ...event, presentationTick: this.sim.tick });
+            this.presentationPending.push({
+                tick: this.sim.tick,
+                events: captureFramePresentationEvents(this.sim.events, this.sim),
+            });
         }
-        if (winner || this.sim.tick >= this.endTick) this.playing = false;
+        if (winner || this.sim.tick >= this.endTick) this.playbackState = 'draining';
         return true;
     }
     publish(options) {
         if (!this.sim) return;
         const s = this.sim.snapshot();
         s.events = this.eventBuffer.splice(0);
-        ReplayPresentation.renderReplaySnapshot(s, options);
+        s.renderEvents = this.renderEventBuffer.splice(0);
+        try {
+            ReplayPresentation.renderReplaySnapshot(s, options);
+        } finally {
+            // Presentation events are a synchronously consumed batch, not retained world state.
+            s.events = [];
+            s.renderEvents = [];
+        }
+    }
+    presentFrame(frame) {
+        if (!this.stopped && frame?.timeMs != null) this.presentationJournal?.present(frame);
+    }
+    flushPresentationEvents(snapshot = null) {
+        if (!this.presentationJournal || !this.presentationPending.length) return;
+        this.presentationJournal.update(performance.now());
+        for (const batch of this.presentationPending.splice(0)) {
+            emitFramePresentationEvents(
+                this.presentationJournal,
+                this.presentationView,
+                batch.tick,
+                attachPublishedVisibility(batch.events, this.presentationView),
+            );
+        }
+        if (snapshot) snapshot.events.push(...this.eventBuffer.splice(0));
+    }
+    finishPresentationEvent(record) {
+        return this.presentationJournal?.finish(record);
     }
     setPlaying(v) {
+        const wasTail = ['tail', 'paused-tail', 'ended'].includes(this.playbackState);
         const resuming = !!v && !this.playing;
-        this.playing = !!v;
+        this.playbackState = v
+            ? this.playbackState === 'paused-tail'
+                ? 'tail'
+                : this.playbackState === 'paused-drain' || this.sim?.tick >= this.endTick
+                  ? 'draining'
+                  : 'playing'
+            : this.playbackState === 'tail'
+              ? 'paused-tail'
+              : this.playbackState === 'draining'
+                ? 'paused-drain'
+                : 'paused';
         this.acc = 0;
         this.last = performance.now();
-        if (resuming) this.publish({ snapTargets: true });
+        if (resuming && !wasTail) this.publish();
         ReplayPresentation.syncReplayControls();
     }
     setSpeed(v) {
         this.speed = RangeUtil.clamp(Number(v) || 1, 0.5, 4);
         this.acc = 0;
         this.last = performance.now();
-        this.publish({ snapTargets: true });
+        this.refreshPresentation();
+        ReplayPresentation.syncReplayControls();
+    }
+    refreshPresentation() {
+        if (['tail', 'paused-tail', 'ended'].includes(this.playbackState)) {
+            // No new authority can be captured after finish(); view changes are
+            // presentation-only and the last authoritative snapshot is unchanged.
+            ReplayPresentation.refreshReplayView();
+        } else this.publish();
     }
     setViewMode(mode) {
         this.viewMode = ['host', 'guest', 'all'].includes(mode) ? mode : 'all';
         ReplayPresentation.applyReplayPerspective();
-        this.publish();
+        this.refreshPresentation();
     }
     setOrientation(roleName) {
         this.orientationRole = roleName === 'guest' ? 'guest' : 'host';
         ReplayPresentation.applyReplayPerspective({ preserveCenter: true });
-        this.publish();
+        this.refreshPresentation();
     }
     setZoom(value) {
         this.zoom = RangeUtil.clamp(Number(value) || 1, 0.6, 1.8);
@@ -311,14 +409,34 @@ class ReplayPlayer {
     }
     stop() {
         this.stopped = true;
-        this.playing = false;
+        this.playbackState = 'ended';
+        document.removeEventListener('visibilitychange', this.onVisibilityChange);
+        this.presentationJournal?.dispose();
+        this.presentationJournal = null;
+        this.presentationPending.length = 0;
         this.sim?.dispose('replay-stop');
     }
     loop(now) {
         if (this.stopped) return;
         const elapsed = Math.max(0, Math.min(250, now - this.last));
         this.last = now;
-        if (this.playing && this.sim) {
+        if (this.playbackState === 'draining' && this.sim) {
+            // The final snapshot is already captured. The shared presentation clock
+            // holds its pose and advances through the finite remaining effect lifetime.
+            const store = ActiveViewState.renderer?.renderState;
+            if (store?.runtime) {
+                store.finish(this.presentationView.tailMs);
+                this.playbackState = 'tail';
+            }
+        } else if (this.playbackState === 'tail' && this.sim) {
+            const frame = ActiveViewState.renderer?.renderState?.currentFrame;
+            if (frame?.terminalComplete) {
+                this.presentFrame(frame);
+                this.presentationJournal?.setPresentationActive(false);
+                this.playbackState = 'ended';
+                this.acc = 0;
+            }
+        } else if (this.playbackState === 'playing' && this.sim) {
             this.acc += elapsed * this.speed;
             const replayTps = RangeUtil.clamp(
                 Math.round(Number(this.sim?.tps || this.data?.rules?.simulation?.tps) || SIM_TPS),
@@ -327,7 +445,12 @@ class ReplayPlayer {
             );
             const tickMs = 1000 / replayTps;
             let steps = 0;
-            while (this.acc >= tickMs && steps < 240 && this.stepOnce()) {
+            while (
+                this.acc >= tickMs &&
+                steps < 240 &&
+                this.playbackState === 'playing' &&
+                this.stepOnce()
+            ) {
                 this.acc -= tickMs;
                 steps++;
             }

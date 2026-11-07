@@ -127,6 +127,8 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   lockstep은 매 틱 예측 snapshot을 만들지 않고 주기 checkpoint를 유지한다. Core frame t는 step 이전
   S[t]이며 player-local sequence의 확정 입력만 명령·리플레이로 변환한다. Gameplay 시간은 Simulation Tick이다.
 - 롤백은 제한된 범위를 복원 호출 안에서 동기 재실행하고 AI 결정·효과·소리·결과·리플레이를 중복 공개하지 않는다.
+- 확정된 표현 이벤트는 GameKit journal이 소유한 배치로 전달하고 렌더·소리·HUD가 동기 소비한 뒤 비운다.
+  같은 simulation tick의 새 배치를 snapshot tick만으로 중복 판정하지 않는다.
 - Nostr는 발견/협상, gameplay는 실제 RTCDataChannel의 바이너리다. 별도 개발자 서버·TURN fallback은 없다.
   방 코드는 실제 신호 준비·코드 확보 후 공개하고 준비 취소는 진행 중인 연결까지 종료한다.
   재시도는 새 방을 만들며 첫 시작 정보 송신이 실패하면 방장은 시작하지 않고 Guest HELLO에 시작 정보를 다시 보낸다.
