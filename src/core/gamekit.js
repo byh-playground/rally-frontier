@@ -164,6 +164,16 @@ try {
     ])
         if (typeof RallyGamekit[name] !== 'function')
             throw new Error('Gamekit module API missing: ' + name);
+    for (const [type, methods] of [
+        [RallyGamekit.PresentationRuntime, ['setRate', 'finish']],
+        [
+            RallyGamekit.PresentationEventQueue,
+            ['configureDisplay', 'present', 'setPresentationActive'],
+        ],
+    ])
+        for (const method of methods)
+            if (typeof type.prototype[method] !== 'function')
+                throw new Error('Gamekit presentation API missing: ' + method);
     if (!Array.isArray(RallyGamekit.VECTOR_RENDERER_ATLAS_REGIONS))
         throw new Error('Gamekit vector renderer atlas reservation API가 없습니다.');
     for (const name of [

@@ -146,22 +146,45 @@ class RenderStateStore {
     time(now) {
         return (this.clock = Math.max(this.clock, Number(now) || 0));
     }
+    syncRate(now) {
+        const replay = ReplayPresentation.replayPlayer;
+        const rate = replay ? (replay.playing ? replay.speed : 0) : 1;
+        if (this.runtime && this.rate !== rate) {
+            this.runtime.setRate(rate, now);
+            this.rate = rate;
+            this.frameAt = NaN;
+        }
+    }
+    finish(tailMs, now = performance.now()) {
+        const at = this.time(now);
+        if (!this.runtime) return false;
+        this.syncRate(at);
+        const result = this.runtime.finish({ tailMs }, at);
+        this.frameAt = NaN;
+        return result;
+    }
     capture(source, now, snap, stepMs) {
         const at = this.time(now),
             tick = Number(source.tick) || 0;
         if (!this.runtime || this.stepMs !== stepMs) {
             this.stepMs = stepMs;
             // Keep two fixed samples buffered, matching GameKit's 10 TPS / 200 ms frame example.
-            this.runtime = new RallyGamekit.PresentationRuntime({ stepMs, delayMs: stepMs * 2 });
+            this.runtime = new RallyGamekit.PresentationRuntime({
+                stepMs,
+                delayMs: stepMs * 2,
+                clock: 'bounded',
+            });
+            this.rate = null;
             snap = true;
         }
+        this.syncRate(at);
         // A reset rebases the timeline only. Live identities and their metadata copies
         // stay; re-cloning every entity here made an overloaded frame heavier still.
         if (snap) this.revision++;
         const entities = [],
             seen = new Set();
         let lobLaunches = null;
-        for (const event of source.events || [])
+        for (const event of source.renderEvents || source.events || [])
             if (event.type === 'unitLobLaunch')
                 (lobLaunches ||= new Map()).set(event.projectileId, event);
         const add = (kind, id, value) => {
@@ -267,7 +290,7 @@ class RenderStateStore {
                 add('unitLob', projectile.id, projectile);
         // Keep the last physical sample until the exact explosion subtick, so
         // the interpolated kernel and event-driven particles meet without a gap.
-        for (const event of source.events || []) {
+        for (const event of source.renderEvents || source.events || []) {
             if (event.type !== 'unitLobExplosion') continue;
             const key = 'unitLob:' + event.projectileId,
                 record = this.records.get(key);
@@ -289,7 +312,7 @@ class RenderStateStore {
         for (const thorn of source.unitThornProjectiles || [])
             if (thorn.startTick <= tick) add('thorn', thorn.id, thorn);
         // Publish the actual final contact sample before retiring the visual track. Interpolation must reach the impact.
-        for (const event of source.events || [])
+        for (const event of source.renderEvents || source.events || [])
             if (event.type === 'projectileRetire') {
                 const record = this.records.get('projectile:' + event.projectileId);
                 if (record?.live && record.entity.retiredTick == null) {
@@ -309,7 +332,7 @@ class RenderStateStore {
                     });
                 }
             }
-        for (const event of source.events || [])
+        for (const event of source.renderEvents || source.events || [])
             if (event.type === 'unitThornHit' || event.type === 'unitThornMiss') {
                 const record = this.records.get('thorn:' + event.projectileId);
                 if (record?.live && record.entity.retiredTick == null) {
@@ -357,6 +380,7 @@ class RenderStateStore {
     }
     frame(now) {
         const at = this.time(now);
+        this.syncRate(at);
         if (this.frameAt === at) return this.currentFrame;
         this.frameAt = at;
         for (const list of Object.values(this.lists)) list.length = 0;
@@ -446,8 +470,68 @@ class FloatingTextPresentationDefinition {
 }
 
 class EffectObjectFactory {
+    static cornBurstLifeMs = 650;
+    static milletBurstLifeMs = 600;
+    static defaultCombatLifeMs = 360;
+    static sourceMotionFallbackMs = 220;
+    static combatLifetimes = Object.freeze({
+        thornImpact: 250,
+        constructionHit: 220,
+        hitscanTravel: 180,
+        buildingBurst: 620,
+        launchMuzzle: 900,
+        launchBlast: 820,
+        launchBundleBreak: 680,
+        deathBurst: 480,
+    });
+    static fireShakeDuration(power) {
+        return 110 + 150 * power;
+    }
+    static impactShakeDuration(peak, hits) {
+        return hits > 0 ? 130 + 70 * (peak - 1) : 80;
+    }
+    static get maxTailMs() {
+        return Math.max(
+            LaunchRules.landingMarkMs,
+            this.cornBurstLifeMs,
+            this.milletBurstLifeMs,
+            this.defaultCombatLifeMs,
+            this.sourceMotionFallbackMs,
+            ...Object.values(this.combatLifetimes),
+            ...Object.values(FloatingTextPresentationDefinition.presets).map(
+                (preset) => preset.lifeMs,
+            ),
+            ...Object.values(AttackPresentationDefinition.sourceMotions).map(
+                (motion) => motion.lifeMs,
+            ),
+            this.fireShakeDuration(1),
+            this.impactShakeDuration(LaunchRules.centerPeak, 1),
+        );
+    }
+    static combatLife(fx) {
+        if (fx.kind === 'meleeSourceMotion')
+            return (
+                AttackPresentationDefinition.sourceMotions[fx.motion]?.lifeMs ||
+                this.sourceMotionFallbackMs
+            );
+        return this.combatLifetimes[fx.kind] ?? this.defaultCombatLifeMs;
+    }
+    static attachClock(effect, clock, lifeMs) {
+        effect.clock = clock;
+        clock.lifeMs = Math.max(clock.lifeMs, lifeMs);
+    }
     static makeFloatFx() {
-        return { x: 0, y: 0, kind: '', text: '', amount: 0, start: 0, jitter: 0, lane: 0 };
+        return {
+            x: 0,
+            y: 0,
+            kind: '',
+            text: '',
+            amount: 0,
+            start: 0,
+            presentationTick: null,
+            jitter: 0,
+            lane: 0,
+        };
     }
     static resetFloatFx(v) {
         v.x = 0;
@@ -456,17 +540,21 @@ class EffectObjectFactory {
         v.text = '';
         v.amount = 0;
         v.start = 0;
+        v.presentationTick = null;
+        v.clock = null;
         v.jitter = 0;
         v.lane = 0;
     }
     static makeShakeFx() {
-        return { start: 0, duration: 0, intensity: 0, seed: 0 };
+        return { start: 0, duration: 0, intensity: 0, seed: 0, presentationTick: null };
     }
     static resetShakeFx(v) {
         v.start = 0;
         v.duration = 0;
         v.intensity = 0;
         v.seed = 0;
+        v.presentationTick = null;
+        v.clock = null;
     }
     static makeCombatFx() {
         return {
@@ -491,6 +579,7 @@ class EffectObjectFactory {
             points: null,
             side: null,
             start: 0,
+            presentationTick: null,
             seed: 0,
             _extraKeys: null,
         };
@@ -510,6 +599,8 @@ class EffectObjectFactory {
         v.points = null;
         v.side = null;
         v.start = v.seed = 0;
+        v.presentationTick = null;
+        v.clock = null;
     }
 }
 
@@ -1674,9 +1765,7 @@ class GLRenderer {
         this.cornTrails = new Map();
         this.cornTrailAnchors = new Map();
         this.cornBursts = [];
-        this.cornEventSeen = new Map();
         this.milletBursts = [];
-        this.milletEventSeen = new Map();
         this.cornQuadMatrix = new Float32Array(6);
         this.projectileScreenMotionStates = new Map();
         this.last = performance.now();
@@ -1687,15 +1776,12 @@ class GLRenderer {
         this.fxCanvas = document.getElementById('fxCanvas');
         this.fxCtx = this.fxCanvas?.getContext('2d') || null;
         this.floatFx = [];
-        this.lastFloatTickByRole = { host: -1, guest: -1 };
 
         // florr.io-inspired client-only combat feedback.
         // These arrays are renderer-only and never enter StrategySim/checksum/export/recovery.
         this.combatFx = [];
         this.bundleBreakIds = new Set();
         this.shakeFx = [];
-        this.lastCombatFxTickByRole = { host: -1, guest: -1 };
-        this.attackPresentationUntil = new Map();
         // HAS-A common source-body pulse presentation. Presets own timing/scale; consumers only trigger them.
         this.frameShakeX = 0;
         this.frameShakeY = 0;
@@ -2176,7 +2262,7 @@ class GLRenderer {
 
     presentationTargetIntervalMs(source = this.snapshot) {
         const tps = Math.max(1, Number(source?.tps || this.snapshot?.tps || SIM_TPS) || SIM_TPS);
-        return 1000 / tps / (ReplayPresentation.replayPlayer?.speed || 1);
+        return 1000 / tps;
     }
 
     updatePresentationTargets(source, snap = false) {
@@ -2206,36 +2292,13 @@ class GLRenderer {
     presentationNow(now = performance.now()) {
         return this._framePresentationAt ?? now;
     }
-    cornPresentationTime() {
-        const time = this.renderState.frame(this.presentationNow())?.timeMs;
-        const replay = ReplayPresentation.replayPlayer;
-        if (replay && !replay.playing) return replay.sim.tick * this.presentationTargetIntervalMs();
-        return time;
+    presentationEventTick(event, snapshot) {
+        return Number.isFinite(Number(event.presentationTick))
+            ? Number(event.presentationTick)
+            : snapshot.tick;
     }
-    thornImpactAge(fx, now = this.presentationNow()) {
-        const replay = ReplayPresentation.replayPlayer;
-        if (!replay) return now - fx.start;
-        const interval = this.presentationTargetIntervalMs();
-        const current = replay.sim.tick * interval;
-        const time = Math.min(this.renderState.frame(now)?.timeMs ?? current, current);
-        const raw = ((time / interval - fx.eventTick) * 1000) / (this.snapshot?.tps || SIM_TPS);
-        let state = fx.thornReplayClock;
-        if (!state)
-            state = fx.thornReplayClock = {
-                playing: replay.playing,
-                speed: replay.speed,
-                age: raw,
-                offset: 0,
-            };
-        if (!replay.playing) {
-            state.playing = false;
-            return state.age;
-        }
-        if (!state.playing || state.speed !== replay.speed) state.offset = state.age - raw;
-        state.playing = true;
-        state.speed = replay.speed;
-        state.age = raw + state.offset;
-        return state.age;
+    cornPresentationTime() {
+        return this.renderState.frame(this.presentationNow())?.timeMs;
     }
     renderTrackedPosition(entity, kind = 'unit') {
         return this.renderState.position(kind, entity.id, entity, this.presentationNow());
@@ -2531,9 +2594,7 @@ class GLRenderer {
             this.cornTrails.clear();
             this.cornTrailAnchors.clear();
             this.cornBursts.length = 0;
-            this.cornEventSeen.clear();
             this.milletBursts.length = 0;
-            this.milletEventSeen.clear();
         }
         if (snapTargets || !old) this.resetFogTransition();
         this.world = WorldContext.forState(s);
@@ -2561,17 +2622,40 @@ class GLRenderer {
         }
 
         this.rebuildVisibilityCache();
-
-        this.processFloatingEvents(s);
-        this.processClientCombatEffects(s);
-        this.processCornEvents(s);
-        this.processMilletEvents(s);
     }
 
-    triggerClientShake(intensity = 2, duration = 140, seed = 1) {
+    presentEvent(record, ageMs, { hud = false } = {}) {
+        if (!this.snapshot) return null;
+        const clock = { ageMs, lifeMs: 0, expired: false };
+        const event = {
+            ...record.payload,
+            presentationTick: record.tick,
+            presentationSequence: record.sequence,
+        };
+        const snapshot = { ...this.snapshot, events: [event], presentationClock: clock };
+        this.processFloatingEvents(snapshot);
+        this.processClientCombatEffects(snapshot);
+        this.processCornEvents(snapshot);
+        this.processMilletEvents(snapshot);
+        if (hud) LaunchPresentation.presentEvents(snapshot, this.mySide());
+        return clock;
+    }
+
+    triggerClientShake(
+        intensity = 2,
+        duration = 140,
+        seed = 1,
+        event = null,
+        snapshot = this.snapshot,
+    ) {
         const dpr = Math.min(1.6, devicePixelRatio || 1),
             sh = this.shakeFxPool.acquire();
-        sh.start = performance.now();
+        const clock = snapshot.presentationClock;
+        if (clock.ageMs >= duration) {
+            this.shakeFxPool.release(sh);
+            return;
+        }
+        EffectObjectFactory.attachClock(sh, clock, duration);
         sh.duration = Math.max(40, duration);
         sh.intensity = Math.max(0.5, intensity * dpr);
         sh.seed = Number(seed) || 1;
@@ -2580,14 +2664,17 @@ class GLRenderer {
     }
 
     updateClientShake() {
-        const now = performance.now();
         let sx = 0,
             sy = 0,
             write = 0;
 
         for (let i = 0; i < this.shakeFx.length; i++) {
             const sh = this.shakeFx[i],
-                age = now - sh.start;
+                age = sh.clock.ageMs;
+            if (sh.clock.expired) {
+                this.shakeFxPool.release(sh);
+                continue;
+            }
             if (age >= sh.duration) {
                 this.shakeFxPool.release(sh);
                 continue;
@@ -2606,41 +2693,26 @@ class GLRenderer {
         this.frameShakeY = sy;
     }
 
-    presentationEventStart(event, snapshot, now = this.presentationNow()) {
-        const eventTick = Number.isFinite(Number(event.presentationTick))
-            ? Number(event.presentationTick)
-            : snapshot.tick;
-        const displayTime = this.renderState.frame(now)?.timeMs;
-        return Number.isFinite(displayTime)
-            ? now + (eventTick * 1000) / (snapshot.tps || SIM_TPS) - displayTime
-            : now;
-    }
     processCornEvents(snapshot) {
         if (!snapshot) return;
         for (const event of snapshot.events || []) {
             if (event.type !== 'unitLobExplosion') continue;
-            if (event.side !== this.mySide() && !this.visibleRaw(event.x, event.y)) continue;
+            if (!this.eventVisible(event)) continue;
             const tick = Number.isFinite(Number(event.presentationTick))
                 ? Number(event.presentationTick)
                 : snapshot.tick;
-            const key =
-                String(event.projectileId) + '|' + tick + '|' + (Number(event.subtick) || 0);
-            if (this.cornEventSeen.has(key)) continue;
-            if (this.cornEventSeen.size >= 1024)
-                this.cornEventSeen.delete(this.cornEventSeen.keys().next().value);
-            this.cornEventSeen.set(key, tick);
-            this.cornBursts.push({
+            const clock = snapshot.presentationClock;
+            if (clock.ageMs >= EffectObjectFactory.cornBurstLifeMs) continue;
+            const burst = {
                 x: event.x,
                 y: event.y,
                 zFP: event.zFP,
                 radius: event.radius,
                 side: event.side,
                 seed: HashUtil.hash(String(event.projectileId || '') + '|' + tick),
-                startTick:
-                    event.subtick == null
-                        ? tick
-                        : tick - 1 + RangeUtil.clamp(Number(event.subtick) / 1000000, 0, 1),
-            });
+            };
+            EffectObjectFactory.attachClock(burst, clock, EffectObjectFactory.cornBurstLifeMs);
+            this.cornBursts.push(burst);
         }
         if (this.cornBursts.length > 220) this.cornBursts.splice(0, this.cornBursts.length - 220);
     }
@@ -2649,22 +2721,17 @@ class GLRenderer {
         for (const event of snapshot.events || []) {
             if (event.type !== 'launchLand' || event.unit !== 'millet' || event.index !== 0)
                 continue;
-            if (event.side !== this.mySide() && !this.visibleRaw(event.x, event.y)) continue;
-            const tick = Number.isFinite(Number(event.presentationTick))
-                ? Number(event.presentationTick)
-                : snapshot.tick;
-            const key = String(event.projectileId) + '|' + tick;
-            if (this.milletEventSeen.has(key)) continue;
-            if (this.milletEventSeen.size >= 1024)
-                this.milletEventSeen.delete(this.milletEventSeen.keys().next().value);
-            this.milletEventSeen.set(key, tick);
-            this.milletBursts.push({
+            if (!this.eventVisible(event)) continue;
+            const clock = snapshot.presentationClock;
+            if (clock.ageMs >= EffectObjectFactory.milletBurstLifeMs) continue;
+            const burst = {
                 x: event.x,
                 y: event.y,
                 zFP: event.impactHeightFP,
                 side: event.side,
-                startTick: tick,
-            });
+            };
+            EffectObjectFactory.attachClock(burst, clock, EffectObjectFactory.milletBurstLifeMs);
+            this.milletBursts.push(burst);
         }
         if (this.milletBursts.length > 220)
             this.milletBursts.splice(0, this.milletBursts.length - 220);
@@ -2706,15 +2773,19 @@ class GLRenderer {
         fx.isBuilding = !!e.isBuilding;
         fx.points = Array.isArray(e.points) ? e.points.map((p) => ({ ...p })) : null;
         fx.side = e.side;
-        // Preserve the relative timing of events generated on different simulation ticks
-        // inside one 10 Hz snapshot instead of making the whole batch pop at once.
-        fx.start = this.presentationEventStart(e, snapshot);
         fx.seed = seed;
         const extraKeys = extra && Object.keys(extra);
         if (extraKeys?.length) {
             fx._extraKeys = extraKeys;
             for (const k of extraKeys) fx[k] = extra[k];
         }
+        const lifeMs = EffectObjectFactory.combatLife(fx);
+        const clock = snapshot.presentationClock;
+        if (clock.ageMs >= lifeMs) {
+            this.combatFxPool.release(fx);
+            return;
+        }
+        EffectObjectFactory.attachClock(fx, clock, lifeMs);
         this.combatFx.push(fx);
 
         while (this.combatFx.length > 220) this.combatFxPool.release(this.combatFx.shift());
@@ -2723,19 +2794,15 @@ class GLRenderer {
     processClientCombatEffects(snapshot) {
         if (!snapshot || !this.fxCtx) return;
 
-        const roleKey = this.role === 'guest' ? 'guest' : 'host';
-        if (this.lastCombatFxTickByRole[roleKey] === snapshot.tick) return;
-        this.lastCombatFxTickByRole[roleKey] = snapshot.tick;
-
         const mySide = this.mySide();
-        let index = 0;
+        let index = snapshot.events?.[0]?.presentationSequence ?? 0;
 
         for (const e of snapshot.events || []) {
             const x = Number(e.x),
                 y = Number(e.y);
             const visible =
                 e.side === mySide ||
-                (Number.isFinite(x) && Number.isFinite(y) && this.visibleRaw(x, y));
+                (Number.isFinite(x) && Number.isFinite(y) && this.eventVisible(e));
             if (!visible) {
                 index++;
                 continue;
@@ -2746,10 +2813,8 @@ class GLRenderer {
                 const attackVisual = AttackPresentationDefinition.forSource(sourceType),
                     impactPreset = AttackPresentationDefinition.impactPreset(sourceType);
                 if (attackVisual.travel === 'none' && attackVisual.sourceMotion && e.sourceId) {
-                    const source = (snapshot.units || []).find(
-                        (u) => u.id === e.sourceId && u.alive,
-                    );
-                    if (source)
+                    const source = e.presentationSource;
+                    if (source?.alive)
                         this.addClientFx(
                             'meleeSourceMotion',
                             { ...e, x: source.x, y: source.y, x2: e.x, y2: e.y },
@@ -2757,23 +2822,27 @@ class GLRenderer {
                             index,
                             { motion: attackVisual.sourceMotion },
                         );
-                    this.attackPresentationUntil.set(e.sourceId, performance.now() + 220);
                 }
                 if (attackVisual.travel === 'hitscan') {
-                    const source = (snapshot.buildings || []).find(
-                        (b) => b.id === e.sourceId && b.alive !== false,
-                    );
-                    if (source) {
+                    const source = e.presentationSource;
+                    if (source?.alive) {
                         const dx = e.x - source.x,
                             dy = e.y - source.y,
-                            length = Math.hypot(dx, dy) || 1,
-                            start = this.presentationEventStart(e, snapshot);
-                        this.launchRecoil.set(source.id, {
-                            at: start,
+                            length = Math.hypot(dx, dy) || 1;
+                        const recoil = {
+                            presentationTick: this.presentationEventTick(e, snapshot),
                             dx: dx / length,
                             dy: dy / length,
                             power: 0,
-                        });
+                        };
+                        if (snapshot.presentationClock.ageMs < 260) {
+                            EffectObjectFactory.attachClock(
+                                recoil,
+                                snapshot.presentationClock,
+                                260,
+                            );
+                            this.launchRecoil.set(source.id, recoil);
+                        }
                         this.addClientFx(
                             'hitscanTravel',
                             { ...e, x: source.x, y: source.y, x2: e.x, y2: e.y, side: source.side },
@@ -2792,6 +2861,8 @@ class GLRenderer {
                         1.5,
                         90,
                         HashUtil.hash(`${snapshot.tick}|hurt|${index}`),
+                        e,
+                        snapshot,
                     );
             } else if (e.type === 'unitThornHit') {
                 this.addClientFx('thornImpact', e, snapshot, index, {
@@ -2810,6 +2881,8 @@ class GLRenderer {
                     3.5,
                     180,
                     HashUtil.hash(`${snapshot.tick}|building|${index}`),
+                    e,
+                    snapshot,
                 );
             } else if (e.type === 'constructionHit') {
                 this.addClientFx(
@@ -2828,7 +2901,7 @@ class GLRenderer {
             } else if (e.type === 'launchImpact') {
                 this.launchImpactFx(e, snapshot, index);
             } else if (e.type === 'launchOverheat') {
-                const b = snapshot.buildings.find((b) => b.id === e.cannonId),
+                const b = e.presentationSource,
                     aim = b ? this.cannonAim(b) : { dx: 0, dy: -1 };
                 this.addClientFx('launchMuzzle', e, snapshot, index, {
                     power: 0,
@@ -2851,16 +2924,17 @@ class GLRenderer {
         const dx = Number(e.aimX) - e.x,
             dy = Number(e.aimY) - e.y,
             len = Math.hypot(dx, dy) || 1;
-        const eventTick = Number.isFinite(Number(e.presentationTick))
-            ? Number(e.presentationTick)
-            : snapshot.tick;
-        const age = Math.max(0, ((snapshot.tick - eventTick) * 1000) / (snapshot.tps || SIM_TPS));
-        this.launchRecoil.set(e.cannonId, {
-            at: this.presentationNow() - age,
+        const eventTick = this.presentationEventTick(e, snapshot);
+        const recoil = {
+            presentationTick: eventTick,
             dx: dx / len,
             dy: dy / len,
             power,
-        });
+        };
+        if (snapshot.presentationClock.ageMs < 260) {
+            EffectObjectFactory.attachClock(recoil, snapshot.presentationClock, 260);
+            this.launchRecoil.set(e.cannonId, recoil);
+        }
         if (mode !== 'shotgun' || first)
             this.addClientFx('launchMuzzle', { ...e, x2: e.aimX, y2: e.aimY }, snapshot, index, {
                 power,
@@ -2874,15 +2948,16 @@ class GLRenderer {
         const weight = (first ? 1 : 0.55) * (mode === 'shotgun' ? 1.25 : 1);
         this.triggerClientShake(
             (1.2 + 3.8 * power) * weight,
-            110 + 150 * power,
+            EffectObjectFactory.fireShakeDuration(power),
             HashUtil.hash(`${snapshot.tick}|fire|${index}`),
+            e,
+            snapshot,
         );
     }
     // The landing: a shock ring the size of the blast, dust, and a flash that grows when the strike was near the middle.
     launchImpactFx(e, snapshot, index) {
         const peak = Number(e.peak) || 1,
             hits = Number(e.hits) || 0;
-        const start = this.presentationEventStart(e, snapshot);
         const dx = Number(e.dirX),
             dy = Number(e.dirY),
             angle = Number.isFinite(dx) && Number.isFinite(dy) ? Math.atan2(dy, dx) : 0;
@@ -2892,7 +2967,6 @@ class GLRenderer {
                 hits,
                 impactHeightFP: e.impactHeightFP,
             });
-            this.combatFx[this.combatFx.length - 1].start = start;
         }
         this.addClientFx('launchBundleBreak', e, snapshot, index, {
             id: 'bundle:' + e.projectileId,
@@ -2900,12 +2974,13 @@ class GLRenderer {
             angle,
             impactHeightFP: e.impactHeightFP,
         });
-        this.combatFx[this.combatFx.length - 1].start = start;
         const shake = hits > 0 ? 0.7 + 0.9 * peak : 0.5;
         this.triggerClientShake(
             shake,
-            hits > 0 ? 130 + 70 * (peak - 1) : 80,
+            EffectObjectFactory.impactShakeDuration(peak, hits),
             HashUtil.hash(`${snapshot.tick}|blast|${index}`),
+            e,
+            snapshot,
         );
     }
     // World-space aim remains outside the deterministic simulation and survives the short recoil clip.
@@ -2922,7 +2997,8 @@ class GLRenderer {
             if (length > 0.001) return { dx: dx / length, dy: dy / length };
         }
         const shot = this.launchRecoil.get(b.id);
-        if (shot && this.presentationNow() - shot.at < 260) return { dx: shot.dx, dy: shot.dy };
+        if (shot && !shot.clock.expired && shot.clock.ageMs < 260)
+            return { dx: shot.dx, dy: shot.dy };
         // In-flight aim is recoverable from a snapshot, including a replay seek. Idle cannons face the enemy base.
         const pods = this.snapshot.projectiles;
         for (let i = pods.length - 1; i >= 0; i--) {
@@ -2933,12 +3009,13 @@ class GLRenderer {
                 length = Math.hypot(dx, dy);
             if (length > 0.001) return { dx: dx / length, dy: dy / length };
         }
-        const target =
-            b.targetId &&
-            ((this.snapshot.units || []).find((u) => u.id === b.targetId && u.alive !== false) ||
-                (this.snapshot.buildings || []).find(
-                    (v) => v.id === b.targetId && v.alive !== false,
-                ));
+        const target = Object.hasOwn(b, 'presentationTarget')
+            ? b.presentationTarget
+            : b.targetId &&
+              ((this.snapshot.units || []).find((u) => u.id === b.targetId && u.alive !== false) ||
+                  (this.snapshot.buildings || []).find(
+                      (v) => v.id === b.targetId && v.alive !== false,
+                  ));
         if (target) {
             const dx = target.x - b.x,
                 dy = target.y - b.y,
@@ -2966,20 +3043,15 @@ class GLRenderer {
             sc: this.sc() * (1 - compression),
             own: this.isFriendlySide(b.side),
             aim: { dx: aim.dx * flip, dy: aim.dy * flip },
-            fireAgeMs:
-                fireAgeMs ?? (shot ? Math.max(0, this.presentationNow() - shot.at) : Infinity),
+            fireAgeMs: fireAgeMs ?? (shot && !shot.clock.expired ? shot.clock.ageMs : Infinity),
             power: power ?? shot?.power ?? 0,
         };
     }
     processFloatingEvents(snapshot) {
         if (!snapshot || !this.fxCtx) return;
-        const roleKey = this.role === 'guest' ? 'guest' : 'host';
-        if (this.lastFloatTickByRole[roleKey] === snapshot.tick) return;
-        this.lastFloatTickByRole[roleKey] = snapshot.tick;
 
         const side = this.mySide();
-        const now = performance.now();
-        let index = 0;
+        let index = snapshot.events?.[0]?.presentationSequence ?? 0;
 
         for (const e of snapshot.events || []) {
             let kind = null,
@@ -2988,7 +3060,7 @@ class GLRenderer {
 
             if (e.type === 'hit' && e.amount > 0) {
                 // 적/중립 피해 숫자는 실제 시야가 있을 때만 보여 Fog 정보를 새지 않게 한다.
-                if (e.side !== side && !this.visibleRaw(e.x, e.y)) {
+                if (!this.eventVisible(e)) {
                     index++;
                     continue;
                 }
@@ -2996,7 +3068,7 @@ class GLRenderer {
                 amount = e.amount;
                 text = `-${e.amount}`;
             } else if (e.type === 'dodge' || e.type === 'graze') {
-                if (e.side !== side && !this.visibleRaw(e.x, e.y)) {
+                if (!this.eventVisible(e)) {
                     index++;
                     continue;
                 }
@@ -3021,9 +3093,15 @@ class GLRenderer {
             f.kind = kind;
             f.text = text;
             f.amount = amount;
-            f.start = this.presentationEventStart(e, snapshot, now);
             f.jitter = ((seed % 1000) / 1000 - 0.5) * 34;
             f.lane = (seed >>> 10) % 4;
+            const lifeMs = FloatingTextPresentationDefinition.get(kind).lifeMs;
+            if (snapshot.presentationClock.ageMs >= lifeMs) {
+                this.floatFxPool.release(f);
+                index++;
+                continue;
+            }
+            EffectObjectFactory.attachClock(f, snapshot.presentationClock, lifeMs);
             this.floatFx.push(f);
             index++;
         }
@@ -3033,12 +3111,11 @@ class GLRenderer {
     }
 
     constructionImpact(building) {
-        const now = this.presentationNow(),
-            active = (f) =>
-                f.kind === 'constructionHit' &&
-                f.targetId === building.id &&
-                now >= f.start &&
-                now - f.start < 220;
+        const active = (f) =>
+            f.kind === 'constructionHit' &&
+            f.targetId === building.id &&
+            !f.clock.expired &&
+            f.clock.ageMs < 220;
         const paid = this.combatFx.findLast((f) => active(f) && f.spend > 0),
             latest = paid || this.combatFx.findLast(active);
         if (!latest) return null;
@@ -3053,8 +3130,8 @@ class GLRenderer {
                     spend += Math.max(0, Number(f.spend) || 0);
         return {
             fx: paid ? { ...paid, spend } : latest,
-            progress: (now - latest.start) / 220,
-            pulse: Math.sin(((now - latest.start) / 220) * Math.PI),
+            progress: latest.clock.ageMs / 220,
+            pulse: Math.sin((latest.clock.ageMs / 220) * Math.PI),
         };
     }
     constructionWobble(impact) {
@@ -3198,8 +3275,6 @@ class GLRenderer {
     drawClientCombatFx() {
         const ctx = this.fxCtx;
         if (!ctx || !this.fxCanvas) return;
-
-        const now = performance.now();
         let write = 0;
         const sc = this.sc();
 
@@ -3287,34 +3362,9 @@ class GLRenderer {
 
         for (let read = 0; read < this.combatFx.length; read++) {
             const fx = this.combatFx[read];
-            const age = fx.kind === 'thornImpact' ? this.thornImpactAge(fx, now) : now - fx.start;
-            if (age < 0) {
-                this.combatFx[write++] = fx;
-                continue;
-            }
-            const life =
-                fx.kind === 'thornImpact'
-                    ? 250
-                    : fx.kind === 'constructionHit'
-                      ? 220
-                      : fx.kind === 'hitscanTravel'
-                        ? 180
-                        : fx.kind === 'buildingBurst'
-                          ? 620
-                          : fx.kind === 'launchMuzzle'
-                            ? 900
-                            : fx.kind === 'launchBlast'
-                              ? 820
-                              : fx.kind === 'launchBundleBreak'
-                                ? 680
-                                : fx.kind === 'deathBurst'
-                                  ? 480
-                                  : fx.kind === 'meleeSourceMotion'
-                                    ? AttackPresentationDefinition.sourceMotions[fx.motion]
-                                          ?.lifeMs || 220
-                                    : 360;
-
-            if (age >= life) {
+            const age = fx.clock.ageMs;
+            const life = EffectObjectFactory.combatLife(fx);
+            if (fx.clock.expired || age >= life) {
                 this.combatFxPool.release(fx);
                 continue;
             }
@@ -3815,19 +3865,14 @@ class GLRenderer {
         // Persistent information is never hidden by combat density.
         this.drawWorldHudOverlay();
 
-        const now = performance.now();
         let write = 0;
 
         for (let read = 0; read < this.floatFx.length; read++) {
             const f = this.floatFx[read],
-                age = now - f.start,
+                age = f.clock.ageMs,
                 preset = FloatingTextPresentationDefinition.get(f.kind);
             const life = preset.lifeMs;
-            if (age < 0) {
-                this.floatFx[write++] = f;
-                continue;
-            }
-            if (age >= life) {
+            if (f.clock.expired || age >= life) {
                 this.floatFxPool.release(f);
                 continue;
             }
@@ -3903,6 +3948,14 @@ class GLRenderer {
         for (const side of this.replayVisionSides())
             if (this.visionFields[side]?.visibleAt(x, y, targetLevel)) return true;
         return false;
+    }
+    eventVisible(event) {
+        if (event.side === this.mySide() || this.replayObserverAll) return true;
+        if (!this.visibleRaw(event.x, event.y)) return false;
+        return (
+            !event.presentationVisible ||
+            this.replayVisionSides().some((side) => event.presentationVisible[side])
+        );
     }
 
     drawStrategicMap() {
@@ -4251,7 +4304,7 @@ class GLRenderer {
         this.flushVectorMesh('vector-billboard');
     }
     landingBundlePose(fx) {
-        const age = this.presentationNow() - fx.start;
+        const age = fx.clock.ageMs;
         if (age < 0) return { visible: false };
         const pending = this.renderState.model(
             'bundle',
@@ -4934,11 +4987,13 @@ class GLRenderer {
     }
     // A fading smoke ribbon behind a launched pod, following its real arc (kept in world space so camera moves don't smear it).
     drawLaunchTrail(p, wp, sc) {
-        const now = performance.now();
+        const now = this.renderState.frame(this.presentationNow())?.timeMs;
+        if (!Number.isFinite(now)) return;
         let trail = this.projectileTrails.get(p.id);
         if (!trail) this.projectileTrails.set(p.id, (trail = []));
         const last = trail[trail.length - 1];
-        if (!last || now - last.t >= 24)
+        if (last && now < last.t) trail.length = 0;
+        if (!trail.length || now - trail[trail.length - 1].t >= 24)
             trail.push({ x: wp.x, y: wp.y, z: wp.z, groundY: wp.groundY, t: now });
         while (trail.length && now - trail[0].t > 520) trail.shift();
         const friendly = this.factionRelation(p.side) === 'friendly';
@@ -5056,7 +5111,7 @@ class GLRenderer {
             this.flush(this.frame, true);
             this.begin();
         }
-        const age = this.thornImpactAge(fx),
+        const age = fx.clock.ageMs,
             t = RangeUtil.clamp(age / 250, 0, 1),
             p = this.projectRenderWorldPosition(world),
             m = this._vectorUnitMatrix,
@@ -5129,8 +5184,7 @@ class GLRenderer {
     sampleCornTrail(id, side, world) {
         const displayMs = this.cornPresentationTime();
         if (!Number.isFinite(displayMs)) return;
-        const anchor = this.cornTrailAnchors.get(id),
-            speed = ReplayPresentation.replayPlayer?.speed || 1;
+        const anchor = this.cornTrailAnchors.get(id);
         if (!anchor) {
             if (this.cornTrailAnchors.size >= 512)
                 this.cornTrailAnchors.delete(this.cornTrailAnchors.keys().next().value);
@@ -5144,7 +5198,7 @@ class GLRenderer {
             return;
         }
         const elapsed = displayMs - anchor.at;
-        if (elapsed < 0 || elapsed > 300 / speed) {
+        if (elapsed < 0 || elapsed > 300) {
             anchor.x = world.x;
             anchor.y = world.y;
             anchor.z = world.z;
@@ -5152,7 +5206,7 @@ class GLRenderer {
             anchor.at = displayMs;
             return;
         }
-        if (elapsed < 50 / speed) return;
+        if (elapsed < 50) return;
         if (Math.hypot(world.x - anchor.x, world.y - anchor.y, world.z - anchor.z) < 0.5) return;
         let trail = this.cornTrails.get(id);
         if (!trail) {
@@ -5291,17 +5345,14 @@ class GLRenderer {
     }
     renderMilletParticles() {
         if (!this.milletBursts.length) return;
-        const time = this.cornPresentationTime();
-        if (!Number.isFinite(time)) return;
-        const interval = this.presentationTargetIntervalMs(),
-            life = 600 / (ReplayPresentation.replayPlayer?.speed || 1),
+        const life = EffectObjectFactory.milletBurstLifeMs,
             scale = this.sc();
         let write = 0;
         this.begin();
         this.passState.depthWrite = false;
         for (const burst of this.milletBursts) {
-            const age = time - burst.startTick * interval;
-            if (age >= life) continue;
+            const age = burst.clock.ageMs;
+            if (burst.clock.expired || age >= life) continue;
             this.milletBursts[write++] = burst;
             if (age < 0 || (burst.side !== this.mySide() && !this.visibleRaw(burst.x, burst.y)))
                 continue;
@@ -5337,10 +5388,8 @@ class GLRenderer {
         const time = this.cornPresentationTime();
         if (!Number.isFinite(time)) return;
         const sc = this.sc(),
-            speed = ReplayPresentation.replayPlayer?.speed || 1,
-            interval = this.presentationTargetIntervalMs(),
-            trailLife = 300 / speed,
-            burstLife = 650 / speed;
+            trailLife = 300,
+            burstLife = EffectObjectFactory.cornBurstLifeMs;
         this.begin();
         this.passState.depthWrite = false;
         for (const [id, trail] of this.cornTrails) {
@@ -5367,8 +5416,8 @@ class GLRenderer {
         }
         let write = 0;
         for (const burst of this.cornBursts) {
-            const age = time - burst.startTick * interval;
-            if (age >= burstLife) continue;
+            const age = burst.clock.ageMs;
+            if (burst.clock.expired || age >= burstLife) continue;
             this.cornBursts[write++] = burst;
             if (age < 0 || (burst.side !== this.mySide() && !this.visibleRaw(burst.x, burst.y)))
                 continue;
@@ -5403,7 +5452,7 @@ class GLRenderer {
         C.depthWrite = false;
         C.depthFunc = this.passState.depthFunc || 'lequal';
         for (const burst of this.cornBursts) {
-            const age = time - burst.startTick * interval;
+            const age = burst.clock.ageMs;
             if (age < 0 || (burst.side !== this.mySide() && !this.visibleRaw(burst.x, burst.y)))
                 continue;
             const t = Math.min(1, age / burstLife),
@@ -5850,8 +5899,8 @@ class GLRenderer {
         for (const fx of this.combatFx) {
             if (
                 fx.kind !== 'thornImpact' ||
-                this.thornImpactAge(fx, now) < 0 ||
-                this.thornImpactAge(fx, now) >= 250
+                fx.clock.expired ||
+                fx.clock.ageMs >= EffectObjectFactory.combatLife(fx)
             )
                 continue;
             const ground = this.world.terrain.surfaces.heightAt(fx.x, fx.y);
@@ -5865,9 +5914,9 @@ class GLRenderer {
         const bundleBreakIds = this.bundleBreakIds;
         bundleBreakIds.clear();
         for (const fx of this.combatFx) {
-            if (fx.kind === 'launchBundleBreak') {
+            if (fx.kind === 'launchBundleBreak' && !fx.clock.expired) {
                 bundleBreakIds.add(fx.id);
-                if (now >= fx.start && this.landingBundlePose(fx).visible)
+                if (this.landingBundlePose(fx).visible)
                     add('landingBundle', fx, {
                         x: fx.x,
                         y: this.world.terrain.surfaces.heightAt(fx.x, fx.y),
@@ -5884,7 +5933,7 @@ class GLRenderer {
                 id: 'bundle:' + group.projectileId,
                 x: group.x,
                 y: group.y,
-                start: now - 150,
+                clock: { ageMs: 150, expired: false },
                 grainType: group.type,
                 angle: 0,
             };
@@ -6308,8 +6357,8 @@ class GLRenderer {
             H = this.canvas.height,
             pad = Math.max(18, 26 * sc);
         for (const m of LaunchPresentation.marks) {
-            if (now < m.at) continue;
-            const age = RangeUtil.clamp((now - m.at) / LaunchRules.landingMarkMs, 0, 1),
+            if (m.clock.expired) continue;
+            const age = RangeUtil.clamp(m.clock.ageMs / LaunchRules.landingMarkMs, 0, 1),
                 alpha = 1 - age,
                 col = [1, 0.9, 0.5, alpha];
             const [x, y] = this.worldToPx(this.viewX(m.x), this.viewY(m.y));
@@ -6443,7 +6492,6 @@ class GLRenderer {
             // All math still uses the shared camera; input and standalone passes refresh on demand.
             LaunchPresentation.followAim(this);
             this._frameCamera = this.stableCamera();
-            this.updateClientShake();
 
             // Result/lobby UI owns the screen after a match ends. Do not continue sampling
             // presentation state from an ended match (especially the delayed sample buffer).
@@ -6456,6 +6504,9 @@ class GLRenderer {
                 this.loopFrame = requestAnimationFrame(this.loop);
                 return;
             }
+
+            this.onPresentationFrame?.(this.renderState.frame(frameStarted));
+            this.updateClientShake();
 
             const rp = this.perfStats;
             rp.drawCalls = 0;
@@ -6808,11 +6859,10 @@ class MiniMap {
             c.stroke();
         }
 
-        const now = performance.now();
         for (const m of LaunchPresentation.marks) {
-            if (now < m.at) continue;
+            if (m.clock.expired) continue;
             const p = this.point(m.x, m.y),
-                age = RangeUtil.clamp((now - m.at) / LaunchRules.landingMarkMs, 0, 1);
+                age = RangeUtil.clamp(m.clock.ageMs / LaunchRules.landingMarkMs, 0, 1);
             c.strokeStyle = `rgba(255,228,128,${1 - age})`;
             c.lineWidth = 2;
             c.beginPath();
@@ -6902,7 +6952,6 @@ class AudioSystem {
         this.noiseBuffer = null;
         this.enabled = true;
         this.unlocked = false;
-        this.lastSnapshotTick = -1;
 
         // 짧은 시간 창 안에서 같은 계열 SFX가 너무 많이 겹치지 않게 제한.
         this.budgets = {
@@ -7158,8 +7207,7 @@ class AudioSystem {
     }
 
     processSnapshot(snapshot, renderer) {
-        if (!snapshot || snapshot.tick === this.lastSnapshotTick) return;
-        this.lastSnapshotTick = snapshot.tick;
+        if (!snapshot) return;
         for (const e of snapshot.events || []) this.playEvent(e, renderer);
     }
 }
@@ -8221,6 +8269,25 @@ class ReplayPresentation {
         renderer.cameraTop = renderer.clampCameraTop(y - vh / 2);
         ActiveViewState.minimap?.draw();
     }
+    static refreshReplayView() {
+        const player = ReplayPresentation.replayPlayer,
+            renderer = ActiveViewState.renderer,
+            snapshot = renderer?.snapshot;
+        if (!player || !renderer || !snapshot) return;
+        ReplayPresentation.applyReplayPerspective();
+        ActiveViewState.minimap?.set(renderer, snapshot);
+        ActiveViewState.minimap?.draw();
+        LaunchPresentation.render(
+            { ...snapshot, events: [] },
+            ConnectionSideUtil.roleSide(player.orientationRole),
+        );
+        if (UiRegistry.refs.replayStats)
+            UiRegistry.refs.replayStats.innerHTML = ReplayPresentation.replayStatsHtml(
+                snapshot,
+                player.sim,
+            );
+        ReplayPresentation.syncReplayControls();
+    }
     static renderReplaySnapshot(s, { snapTargets = false } = {}) {
         if (!ReplayPresentation.replayPlayer) return;
         UiController.setUiScreen('replay');
@@ -8233,6 +8300,8 @@ class ReplayPresentation {
         }
         if (!ActiveViewState.minimap)
             ActiveViewState.minimap = new MiniMap(UiRegistry.refs.minimapCanvas);
+        ActiveViewState.renderer.onPresentationFrame = (frame) =>
+            ReplayPresentation.replayPlayer?.presentFrame(frame);
         ActiveViewState.renderer.startLoop();
         ReplayPresentation.applyReplayPerspective();
         ActiveViewState.renderer.selectedBuildingId = null;
@@ -8243,6 +8312,7 @@ class ReplayPresentation {
                 ActiveViewState.renderer.liveRenderTargets ||
                 s.tick < (ActiveViewState.renderer.snapshot?.tick ?? 0),
         });
+        ReplayPresentation.replayPlayer.flushPresentationEvents(s);
         ActiveViewState.minimap?.set(ActiveViewState.renderer, s);
         LaunchPresentation.render(
             s,
@@ -8385,6 +8455,47 @@ class SinglePlayerModeUtil {
     }
 }
 
+function createPresentationView(owner, getRenderer, { hud = true, audio = true } = {}) {
+    return {
+        maxLatenessMs: LaunchRules.landingMarkMs,
+        tailMs: EffectObjectFactory.maxTailMs,
+        classify(record) {
+            if (record.kind === 'audio' || record.payload.type === 'launchRejected')
+                return { delivery: 'confirmation', durationMs: 0 };
+            const result = { delivery: 'presentation', durationMs: Infinity };
+            if (record.payload.type === 'unitLobExplosion' && record.payload.subtick != null)
+                result.phase = RangeUtil.clamp(record.payload.subtick / 1000000, 0, 1);
+            return result;
+        },
+        hasAudio(event) {
+            return (
+                audio && ['captureComplete', 'buildingDeath', 'death', 'hit'].includes(event.type)
+            );
+        },
+        visibility(event) {
+            const renderer = getRenderer();
+            if (!renderer || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return null;
+            const level = renderer.world.terrain.surfaces.levelAt(event.x, event.y);
+            return [0, 1].map(
+                (side) => !!renderer.visionFields[side]?.visibleAt(event.x, event.y, level),
+            );
+        },
+        start(record, at, age) {
+            const clock = getRenderer()?.presentEvent(record, age, { hud });
+            if (!clock?.lifeMs) owner.finishPresentationEvent(record);
+            return clock;
+        },
+        update(clock, age, record) {
+            if (!clock) return;
+            clock.ageMs = age;
+            if (age >= clock.lifeMs) owner.finishPresentationEvent(record);
+        },
+        stop(clock) {
+            if (clock) clock.expired = true;
+        },
+    };
+}
+
 class MatchLifecycle {
     static singleMatch = null;
 
@@ -8402,8 +8513,14 @@ class MatchLifecycle {
             !sess.disposed &&
             ActiveViewState.session === sess &&
             ActiveViewState.transport === trans;
+        sess.presentationView = createPresentationView(
+            sess,
+            () => isCurrent() && ActiveViewState.renderer,
+        );
         sess.onSnapshot = (state) => {
             if (!isCurrent()) return;
+            if (ActiveViewState.renderer)
+                ActiveViewState.renderer.onPresentationFrame = (frame) => sess.presentFrame(frame);
             if (ActiveViewState.role === r) BattlePresentation.renderGame(state);
         };
         sess.onRenderTargets = (sim, snapNow = false) => {
@@ -9688,22 +9805,6 @@ class LaunchPresentation {
             ? '모든 대포의 발사 사거리가 최대로 강화됐습니다.'
             : `모든 대포의 최대 발사 사거리 강화 · 쌀 ${LaunchRules.maxReachOf('rice', level)} → ${LaunchRules.maxReachOf('rice', level + 1)}`;
         this.renderHud(s, side);
-        // Contacts can happen before the aimed point. Only authority impact events place a landing marker.
-        const now = performance.now();
-        for (const event of s.events || [])
-            if (event.type === 'launchImpact' && event.side === side) {
-                const mark = this.marks.find((m) => m.projectileId === event.projectileId);
-                if (mark) {
-                    mark.x = event.x;
-                    mark.y = event.y;
-                } else
-                    this.marks.push({
-                        projectileId: event.projectileId,
-                        x: event.x,
-                        y: event.y,
-                        at: ActiveViewState.renderer.presentationEventStart(event, s, now),
-                    });
-            }
         for (const event of s.events || [])
             if (event.type === 'launchRejected' && event.side === side)
                 this.feedback(
@@ -9715,7 +9816,21 @@ class LaunchPresentation {
                         'invalid-unit': '발사할 병종을 확인해 주세요.',
                     }[event.reason] || '발사할 수 없습니다.',
                 );
-        this.marks = this.marks.filter((m) => now - m.at < LaunchRules.landingMarkMs);
+        this.marks = this.marks.filter(
+            (m) => !m.clock.expired && m.clock.ageMs < LaunchRules.landingMarkMs,
+        );
+    }
+    static presentEvents(snapshot, side) {
+        for (const event of snapshot.events || []) {
+            if (event.type !== 'launchImpact' || event.side !== side) continue;
+            const mark = { projectileId: event.projectileId, x: event.x, y: event.y };
+            EffectObjectFactory.attachClock(
+                mark,
+                snapshot.presentationClock,
+                LaunchRules.landingMarkMs,
+            );
+            this.marks.push(mark);
+        }
     }
     // Both main bases' health, elapsed time, and an edge arrow while the enemy base is off screen.
     static renderHud(s, side) {
@@ -10182,6 +10297,7 @@ class BattlePresentation {
             liveTargets: true,
             snapTargets: rendererRoleChanged,
         });
+        MatchLifecycle.activeSession()?.flushPresentationEvents(s);
         ActiveViewState.minimap.set(ActiveViewState.renderer, s);
         ActiveViewState.minimap.draw();
         audioSystem.processSnapshot(s, ActiveViewState.renderer);
@@ -10787,6 +10903,7 @@ else if (document.documentElement.dataset.titleShowcase === 'true') {
         const scenario = await prepareTitleShowcase({
             renderer,
             createScenario: RallyGamekit.createScenario,
+            createPresentationView,
         });
         renderer.startLoop();
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -10795,7 +10912,8 @@ else if (document.documentElement.dataset.titleShowcase === 'true') {
         const sync = () => {
             if (requested && !document.hidden) {
                 // Rebase the delayed presentation clock after the loading gate or a pause.
-                renderer.setSnapshot(renderer.snapshot, { snapTargets: true });
+                // Rebase the existing pose without replaying its already-consumed event batch.
+                renderer.setSnapshot({ ...renderer.snapshot, events: [] }, { snapTargets: true });
                 renderer.startLoop();
                 scenario.play();
             } else {
@@ -10890,6 +11008,7 @@ else if (document.documentElement.dataset.titleShowcase === 'true') {
 
 export {
     AppLifecycle,
+    createPresentationView,
     ConnectionPresentation,
     DiagnosticPresentation,
     LogUtil,

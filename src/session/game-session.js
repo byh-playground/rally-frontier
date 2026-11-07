@@ -24,6 +24,13 @@ import { netcodeMode } from '../core/config.js';
 import { PRODUCT_VERSION } from '../core/product-version.js';
 import { RallyStateCodec } from '../core/rally-state-codec.js';
 import { SimulationTiming } from '../core/simulation-timing.js';
+import {
+    createFramePresentationJournal,
+    configureFramePresentationJournal,
+    emitFramePresentationEvents,
+    captureFramePresentationEvents,
+    attachPublishedVisibility,
+} from '../core/presentation-frame-event.js';
 import { UnitResultStats } from '../sim/unit-result-stats.js';
 import { BUILD_META } from '../core/build-info.js';
 import { RallyGamekit, RallyNetcode } from '../core/gamekit.js';
@@ -535,21 +542,22 @@ class GameSession {
             iceError: null,
         };
         this.presentationEventBuffer = [];
+        this.presentationPending = [];
         this.presentationEventsBuffered = 0;
         this.presentationEventsPublished = 0;
-        this.presentationJournal = new RallyGamekit.PresentationEventQueue({
-            adapters: {
-                frame: {
-                    start: (record) => {
-                        this.presentationEventBuffer.push({
-                            ...record.payload,
-                            presentationTick: record.tick,
-                        });
-                        this.presentationEventsBuffered++;
-                    },
-                },
+        this.presentationView = null;
+        this.presentationDisplayConfigured = false;
+        this.presentationJournal = createFramePresentationJournal({
+            getView: () => this.presentationView,
+            onImmediate: (record) => {
+                if (record.kind === 'audio' && !this.localVisible) return;
+                this.presentationEventBuffer.push({
+                    ...record.payload,
+                    presentationTick: record.tick,
+                    presentationAudio: record.kind === 'audio',
+                });
+                this.presentationEventsBuffered++;
             },
-            retentionTicks: 120,
         });
         this.simEnded = false;
         this.matchResult = null;
@@ -588,6 +596,7 @@ class GameSession {
     }
     dispose(reason = 'session-replaced') {
         this.presentationJournal?.dispose();
+        this.presentationPending.length = 0;
         if (this.disposed) return false;
         this.disposed = true;
         RallySynctestDiagnostics.clear(this);
@@ -633,6 +642,9 @@ class GameSession {
     endMatch(winner, reason = 'base-destroyed') {
         if (this.simEnded) return false;
         this.simEnded = true;
+        this.presentationJournal?.dispose();
+        this.presentationDisplayConfigured = false;
+        this.presentationPending.length = 0;
         this.matchResult = { winner: winner || null, reason, tick: this.sim?.tick || 0 };
         this.cancelScheduledWork();
         this.syncHold = true;
@@ -729,9 +741,39 @@ class GameSession {
     balanceTelemetry() {
         return PerformanceTelemetry.balanceTelemetrySnapshot(this.sim);
     }
+    presentFrame(frame) {
+        if (this.presentationDisplayConfigured && !this.disposed)
+            this.presentationJournal.present(frame);
+    }
+    flushPresentationEvents(snapshot) {
+        if (!this.presentationView) return;
+        for (const frame of this.presentationPending.splice(0))
+            emitFramePresentationEvents(
+                this.presentationJournal,
+                this.presentationView,
+                frame.tick,
+                attachPublishedVisibility(frame.events, this.presentationView),
+            );
+        if (snapshot) {
+            const immediate = this.presentationEventBuffer.splice(0);
+            this.presentationEventsPublished += immediate.length;
+            snapshot.events.push(...immediate);
+        }
+    }
+    finishPresentationEvent(record) {
+        return this.presentationJournal.finish(record);
+    }
     setLocalVisibility(visible) {
         const resumed = !this.localVisible && !!visible;
         this.localVisible = !!visible;
+        if (this.presentationDisplayConfigured)
+            this.presentationJournal.setPresentationActive(this.localVisible);
+        if (!this.localVisible && this.presentationDisplayConfigured) {
+            this.flushPresentationEvents(null);
+            this.presentationEventBuffer = this.presentationEventBuffer.filter(
+                (event) => !event.presentationAudio,
+            );
+        }
         if (!visible) this.netcodeSession?.releaseInput();
         else if (resumed && this.sim?.tick > 0) this.renderTimelineChanged = true;
     }
@@ -961,6 +1003,12 @@ class GameSession {
             rules: this.roundRules,
             decks: this.matchDecks,
         });
+        this.presentationDisplayConfigured = configureFramePresentationJournal(
+            this.presentationJournal,
+            this.presentationView,
+            this.sim.tps,
+            this.localVisible,
+        );
         this.simulationAdapter = new RallySimulationAdapter(this);
         this.replayRecorder = new ReplayRecorder({
             seed,
@@ -1100,6 +1148,9 @@ class GameSession {
         return true;
     }
     onNetcodeFrameApplied(frame) {
+        frame.presentationEvents = this.presentationView
+            ? captureFramePresentationEvents(frame.events, this.sim)
+            : frame.events;
         // Candidate resimulation은 commit 전까지 UI/AI/replay/VFX에 공개하지 않는다.
         if (frame.winner) {
             frame.terminalState = this.simulationAdapter.save();
@@ -1190,6 +1241,12 @@ class GameSession {
             const from = this.recoveredJournalFrom;
             this.recoveredJournalFrom = null;
             this.publishedGameTick = Math.min(this.publishedGameTick, from);
+            // Recovered frames replace only batches that have not reached the
+            // presentation journal yet. Its confirmed watermark still owns events
+            // already delivered before this rollback.
+            this.presentationPending = this.presentationPending.filter(
+                (frame) => frame.tick <= from,
+            );
             this.replayRecorder.commands = this.replayRecorder.commands.filter(
                 (command) => command.tick <= from,
             );
@@ -1230,19 +1287,15 @@ class GameSession {
             // Recovery may republish the authoritative journal, but already heard timeline
             // intervals must stay silent even when corrected events have different identities.
             if (tick > this.presentationJournal.confirmedTick) {
-                frame.events.forEach((event, sequence) =>
-                    this.presentationJournal.emit({
+                if (this.presentationView && this.localVisible)
+                    this.presentationPending.push({ tick, events: frame.presentationEvents });
+                else
+                    emitFramePresentationEvents(
+                        this.presentationJournal,
+                        this.presentationView,
                         tick,
-                        sequence,
-                        entityId: event.entityId ?? event.id ?? event.sourceId ?? 'world',
-                        generation: 0,
-                        kind: 'frame',
-                        payload: event,
-                        policy: 'confirmed',
-                        durationMs: 0,
-                    }),
-                );
-                this.presentationJournal.confirmThrough(tick);
+                        frame.presentationEvents,
+                    );
             }
             if (frame.snapshot) this.latestConfirmedSnapshot = frame.snapshot;
             this.publishedGameTick = tick;
@@ -1326,7 +1379,12 @@ class GameSession {
         this.netcodeSession.close();
         this.simulationAdapter.load(frame.terminalState);
         this.emitRenderTargets(this.sim, true);
-        this.emitSnapshot(this.sim.snapshot());
+        const snapshot = this.sim.snapshot();
+        // Confirmed journal batches are the sole owner of presentation events.
+        // The restored terminal state can still contain an already-published sim event.
+        snapshot.events = StateValue.copy(this.presentationEventBuffer.splice(0));
+        this.presentationEventsPublished += snapshot.events.length;
+        this.emitSnapshot(snapshot);
         this.endMatch(frame.winner === 'draw' ? null : frame.winner, frame.reason);
     }
     reconcileNetcodeProgress() {
@@ -1369,6 +1427,9 @@ class GameSession {
             };
             return result;
         } finally {
+            // Presentation batches are consumed at most once, not persistent world state.
+            // The renderer, audio and HUD synchronously consume them in onSnapshot.
+            snapshot.events = [];
             PerformanceTelemetry.recordTiming(
                 this.performanceStats.timings,
                 'snapshotUi',
@@ -1397,6 +1458,7 @@ class GameSession {
             previous.epoch !== this.sim.runtimeEpoch ||
             previous.publishedTick !== this.publishedGameTick ||
             this.presentationEventBuffer.length > 0 ||
+            this.presentationPending.length > 0 ||
             (this.publishConfirmedSnapshots && previous.confirmed !== this.latestConfirmedSnapshot);
         if (
             presentationChanged &&
