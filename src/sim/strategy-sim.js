@@ -321,6 +321,20 @@ class StrategySim {
         this.flags = CloneUtil.clone(this.mapDescriptor.flags);
         this.createBase(0);
         this.createBase(1);
+        // Campaign starts with enemy-held positions, using ordinary outpost ownership.
+        if (this.rules.campaign) {
+            const enemy = this.world.bases[1];
+            const points = [...this.capturePoints].sort(
+                (a, b) =>
+                    Math.hypot(a.x - enemy.x, a.y - enemy.y) -
+                    Math.hypot(b.x - enemy.x, b.y - enemy.y),
+            );
+            for (const point of points.slice(0, this.rules.campaign.enemyOutposts)) {
+                const outpost = this.spawnOutpost(point, 1);
+                outpost.hp = outpost.maxHp;
+                this.completeConstruction(outpost);
+            }
+        }
         // Landed units march straight to the enemy main base.
         for (const side of [0, 1]) {
             const enemy = this.buildings.find((b) => b.id === 'base' + (1 - side));
@@ -3517,6 +3531,12 @@ class StrategySim {
         mark = profile ? now() : 0;
         // Combat damage reports are not victory authority. Resolve once from the final world state.
         winner = this.netcodeMatchResult?.winner || this.baseOutcome();
+        const campaign = this.rules.campaign;
+        if (campaign?.defenseSeconds && !this.netcodeMatchResult) {
+            const timeUp = this.tick >= campaign.defenseSeconds * this.tps;
+            if (!timeUp && winner === 'host') winner = null;
+            if (timeUp && campaign.mode === 'defend' && !winner) winner = 'host';
+        }
         this.updateBalanceTelemetry(winner);
         this.cleanupDeadEntities();
         const postMs = profile ? now() - mark : 0;

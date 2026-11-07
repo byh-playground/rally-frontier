@@ -105,6 +105,9 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   원 둘레는 각 지점의 지형 높이와 기존 월드 투영을 사용한다. 강화 명령과 공사/레벨 상태는 Netcode·저장·리플레이·체크섬을 통과한다.
 
 6. SESSION, VERIFICATION AND RELEASE
+- 캠페인은 고정 스테이지별 맵 seed·병종 풀·적 선점 거점·목표를 경기 규칙으로 전달한다.
+  방어 목표는 simulation tick으로 판정하고 생존 후 반격은 방어 종료 뒤 본진 파괴를 허용한다.
+  스테이지 해금은 로컬에 저장하며 실패·이탈은 해금하지 않는다.
 - 도토리의 회전 단계·시각과 피해 주기는 Unit.spinAttack의 권위 상태가 소유하며, 양손 회전·이펙트는 그 상태를 따른다.
   회전 중 자발 이동을 멈추되 물리 충격은 정상 적용한다. 종료 후 이동 회복은 일반 근접 병종과 같다.
 - 팥은 적 병사가 평타 거리 밖이면서 점프 사거리 안에 있을 때 점프한다. 착지에 주변 적 병사에게 피해와
@@ -555,6 +558,7 @@ END OF DEVELOPMENT CONTRACT
             <div class="launch-title-actions">
                 <p class="launch-tagline">곡식 병사를 대포로 쏘아 적 본진을 무너뜨려라</p>
                 <div id="singleStatus" class="single-status hidden" aria-live="polite"></div>
+                <button id="campaignBtn" class="launch-btn primary" type="button">캠페인</button>
                 <button id="gameStartBtn" class="launch-btn primary" type="button">
                     대전 시작
                 </button>
@@ -592,6 +596,23 @@ END OF DEVELOPMENT CONTRACT
             </div>
         </section>
 
+        <dialog id="campaignDialog" class="deck-dialog" aria-labelledby="campaignTitle">
+            <div class="deck-panel">
+                <header class="deck-header">
+                    <h2 id="campaignTitle">캠페인</h2>
+                    <button
+                        id="campaignCloseBtn"
+                        class="deck-close"
+                        type="button"
+                        aria-label="닫기"
+                    >
+                        ×
+                    </button>
+                </header>
+                <p>스테이지를 차례로 공략하며 병종을 익혀요.</p>
+                <div id="campaignStages" class="campaign-stages"></div>
+            </div>
+        </dialog>
         <dialog id="deckDialog" class="deck-dialog" aria-labelledby="deckTitle">
             <div class="deck-panel">
                 <header class="deck-header">
@@ -684,6 +705,11 @@ END OF DEVELOPMENT CONTRACT
                     <span id="launchHudMine" class="launch-hud-chip mine">나 ♥ 100%</span>
                     <span id="launchHudEnemy" class="launch-hud-chip enemy">적 ♥ 100%</span>
                     <span class="launch-hud-gap"></span>
+                    <span
+                        id="campaignObjective"
+                        class="launch-hud-chip hidden"
+                        role="status"
+                    ></span>
                     <span id="launchHudTime" class="launch-hud-chip">0:00</span>
                 </div>
                 <div id="minimapWrap" class="minimap">

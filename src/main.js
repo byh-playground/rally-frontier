@@ -1,3 +1,4 @@
+import { CAMPAIGN_STAGES, campaignStage } from './definitions/campaign.js';
 import { RangeUtil, SIM_TPS } from './core/game-rules.js';
 import { SimulationTiming } from './core/simulation-timing.js';
 import { createLocalPerfStats, createLocalBalanceStats } from './diagnostics/simulation-stats.js';
@@ -8414,6 +8415,7 @@ class SinglePlayerModeUtil {
 
 class MatchLifecycle {
     static singleMatch = null;
+    static selectedCampaign = null;
 
     static activeSession() {
         return ReplayPresentation.replayPlayer || ActiveViewState.session;
@@ -8674,19 +8676,26 @@ class MatchLifecycle {
         const transports = { host: hostTransport, guest: guestTransport };
         const humanTransport = transports[humanRole];
         const botTransport = transports[botRole];
-        const config = MatchLifecycle.currentMatchConfig(),
+        const stage = campaignStage(this.selectedCampaign);
+        const config = { ...MatchLifecycle.currentMatchConfig(), campaignStage: stage?.id || null },
             configFor = (role) => (role === 'host' ? config : undefined);
         const humanSession = new GameSession(
             humanRole,
             humanTransport,
             token,
             configFor(humanRole),
-            DeckEditor.getDeck(),
+            stage?.deck || DeckEditor.getDeck(),
         );
         // CONFIG.single.botWorker runs the AI session in src/sim-worker.js; its WebRTC transport stays here.
         const botSession = CONFIG.single.botWorker
-            ? new WorkerSessionProxy(botRole, botTransport, token, configFor(botRole))
-            : new GameSession(botRole, botTransport, token, configFor(botRole));
+            ? new WorkerSessionProxy(
+                  botRole,
+                  botTransport,
+                  token,
+                  configFor(botRole),
+                  stage?.enemyDeck,
+              )
+            : new GameSession(botRole, botTransport, token, configFor(botRole), stage?.enemyDeck);
         const sessions = { [humanRole]: humanSession, [botRole]: botSession };
         const bot = CONFIG.single.botWorker ? null : BotController.attach(botSession, botRole);
         if (CONFIG.single.botWorker)
@@ -8828,6 +8837,19 @@ class MatchLifecycle {
         ConnectionPresentation.setDisconnectPhase('hidden');
         const draw = reason === 'draw' || !winner,
             mine = !draw && winner === viewRole;
+        const stage = campaignStage(MatchLifecycle.selectedCampaign);
+        if (stage && mine && reason === 'base-destroyed') {
+            const index = CAMPAIGN_STAGES.indexOf(stage);
+            try {
+                const current = Number(localStorage.getItem('ssalkongpang-campaign-progress')) || 0;
+                localStorage.setItem(
+                    'ssalkongpang-campaign-progress',
+                    String(Math.max(current, index + 1)),
+                );
+            } catch (error) {
+                console.warn('캠페인 진행 저장 실패', error);
+            }
+        }
         UiRegistry.refs.resultTitle.textContent = draw ? '무승부' : mine ? '승리' : '패배';
         if (reason === 'surrender')
             UiRegistry.refs.resultText.textContent = mine
@@ -8842,6 +8864,8 @@ class MatchLifecycle {
             UiRegistry.refs.resultText.textContent = mine
                 ? '적 메인 거점을 파괴했습니다.'
                 : '내 메인 거점이 파괴되었습니다.';
+        if (stage && mine && stage.mode === 'defend')
+            UiRegistry.refs.resultText.textContent = '제한 시간 동안 본진을 지켰습니다.';
         const end = ActiveViewState.snap,
             stats = end?.launchStats,
             mySide = ConnectionSideUtil.roleSide(viewRole);
@@ -8935,10 +8959,10 @@ class SimWorkerHost {
         };
         self.postMessage({ type: 'ready' });
     }
-    static start({ role, token, config, netcodeState, netcodeMode }) {
+    static start({ role, token, config, netcodeState, netcodeMode, deck }) {
         if (netcodeMode) UiController.setStartNetcodeMode(netcodeMode);
         const transport = new WorkerRelayTransport(role, token, netcodeState),
-            session = new GameSession(role, transport, token, config ?? undefined);
+            session = new GameSession(role, transport, token, config ?? undefined, deck);
         this.transport = transport;
         this.session = session;
         this.bot = BotController.attach(session, role);
@@ -9095,7 +9119,7 @@ class WorkerSessionProxy {
         'rebuildRecoveryGuest',
         'forceReconnect',
     ]);
-    constructor(role, transport, token, config) {
+    constructor(role, transport, token, config, deck) {
         this.role = role;
         this.roomCode = token;
         this.transport = transport;
@@ -9155,6 +9179,7 @@ class WorkerSessionProxy {
                     config,
                     netcodeState: transport.netcodeState,
                     netcodeMode: CONFIG.netcode.mode,
+                    deck,
                 });
                 this.started = true;
                 for (const [message, transfer] of this.outbox)
@@ -9788,6 +9813,19 @@ class LaunchPresentation {
                     distance: Math.hypot(dx, dy),
                 };
             }
+        }
+        const stage = campaignStage(MatchLifecycle.selectedCampaign);
+        const objective = DomUtil.byId('campaignObjective');
+        objective.classList.toggle('hidden', !stage);
+        if (stage) {
+            const remaining = Math.max(
+                0,
+                stage.defenseSeconds - s.tick / (s.tps || ActiveSimulationTiming.tps()),
+            );
+            const defending = stage.defenseSeconds && remaining > 0;
+            objective.textContent = defending
+                ? `본진을 지키세요 · ${Math.ceil(remaining)}초`
+                : '적 본진을 파괴하세요';
         }
         LaunchScreens.renderHud({
             myHpPct: hp(side),
@@ -10898,11 +10936,27 @@ else if (document.documentElement.dataset.titleShowcase === 'true') {
         createNavigation: RallyGamekit.createNavigation,
         mountScenarioFrame: RallyGamekit.mountScenarioFrame,
         actions: {
+            campaignProgress: () => {
+                try {
+                    return Math.max(
+                        0,
+                        Number(localStorage.getItem('ssalkongpang-campaign-progress')) || 0,
+                    );
+                } catch (error) {
+                    console.warn('캠페인 진행 불러오기 실패', error);
+                    return 0;
+                }
+            },
+            selectCampaign: (id) => {
+                MatchLifecycle.selectedCampaign = id;
+            },
             inMatch: () => UiRuntimeState.value.screen === 'game',
             hasResult: () => UiRuntimeState.value.screen === 'result',
             startAiMatch: () => {
                 leaveSetup();
-                MatchLifecycle.startSinglePlayerWebRTC(dev.role || 'host');
+                MatchLifecycle.startSinglePlayerWebRTC(
+                    MatchLifecycle.selectedCampaign ? 'host' : dev.role || 'host',
+                );
             },
             openMenu: () => {
                 if (UiRuntimeState.value.modal !== 'match-menu') MatchLifecycle.openMatchMenu();

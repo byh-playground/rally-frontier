@@ -1,3 +1,4 @@
+import { CAMPAIGN_STAGES } from '../definitions/campaign.js';
 import './grain-portrait.js';
 
 // Launch match screens (title, friend, help, in-game HUD and cards, match menu, result) and their addresses.
@@ -151,8 +152,35 @@ export class LaunchScreens {
         const A = this.actions,
             $ = this.$;
         // A start that failed leaves the address on #/play, so the button starts again without an address change.
-        $('gameStartBtn').onclick = () =>
-            this.navigation.snapshot().screen === 'play' ? A.startAiMatch() : this.go('play');
+        $('gameStartBtn').onclick = () => {
+            A.selectCampaign(null);
+            if (this.navigation.snapshot().screen === 'play') A.startAiMatch();
+            else this.go('play');
+        };
+        $('campaignBtn').onclick = () => {
+            const progress = A.campaignProgress();
+            $('campaignStages').replaceChildren();
+            CAMPAIGN_STAGES.forEach((stage, index) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'launch-btn secondary';
+                button.disabled = index > progress;
+                const title = document.createElement('b');
+                title.textContent = `${index + 1}. ${stage.title}${button.disabled ? ' · 잠김' : ''}`;
+                const description = document.createElement('small');
+                description.textContent = stage.briefing;
+                button.append(title, description);
+                button.onclick = () => {
+                    $('campaignDialog').close();
+                    A.selectCampaign(stage.id);
+                    if (this.navigation.snapshot().screen === 'play') A.startAiMatch();
+                    else this.go('play');
+                };
+                $('campaignStages').append(button);
+            });
+            $('campaignDialog').showModal();
+        };
+        $('campaignCloseBtn').onclick = () => $('campaignDialog').close();
         $('friendMatchBtn').onclick = () => this.go('friend');
         $('titleHelpBtn').onclick = () => this.go('help');
         $('friendCreateBtn').onclick = () => {
