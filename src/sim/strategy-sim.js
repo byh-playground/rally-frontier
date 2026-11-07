@@ -2601,7 +2601,13 @@ class StrategySim {
                 if (perf) perf.collisionSweptPairTests += candidates.length;
                 for (const j of candidates) {
                     const b = units[j];
-                    if (!b?.alive || radii[j] <= 0 || this.isAlliedCollisionUnit(a, b)) continue;
+                    if (
+                        !b?.alive ||
+                        radii[j] <= 0 ||
+                        this.isAlliedCollisionUnit(a, b) ||
+                        UnitLeapAttack.separated(this, a, b)
+                    )
+                        continue;
                     if (
                         this.navigation.motion.solvedImpulseTick === this.tick &&
                         (a.impactMotion || b.impactMotion)
@@ -2994,6 +3000,7 @@ class StrategySim {
                         if (this.isAlliedCollisionUnit(a, bb)) continue;
                         const min = radii[ai] + radii[bi];
                         if (Math.abs(otherCoord(ai) - otherCoord(bi)) >= min) continue;
+                        if (UnitLeapAttack.separated(this, a, bb)) continue;
                         if (perf) perf.collisionHardFixCandidates++;
                         const owner = this.nonAlliedPenetrationOwner(ai, bi);
                         pairs.push(owner * (n + 1) + (owner === ai ? bi : ai));

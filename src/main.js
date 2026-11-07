@@ -2828,6 +2828,8 @@ class GLRenderer {
                 this.launchFireFx(e, snapshot, index);
             } else if (e.type === 'launchImpact') {
                 this.launchImpactFx(e, snapshot, index);
+            } else if (e.type === 'leapLand') {
+                this.addClientFx('launchBlast', e, snapshot, index, { peak: 1, hits: 1 });
             } else if (e.type === 'launchOverheat') {
                 const b = snapshot.buildings.find((b) => b.id === e.cannonId),
                     aim = b ? this.cannonAim(b) : { dx: 0, dy: -1 };

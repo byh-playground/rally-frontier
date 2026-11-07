@@ -4,6 +4,16 @@ import { LaunchImpact } from './launch-impact.js';
 
 // Uses the same physical motion as other impulses; the unit owns the leap state.
 export class UnitLeapAttack {
+    // Ordinary ground collisions keep their existing policy. A leaping body only
+    // collides with a body whose actual vertical interval overlaps its own.
+    static separated(sim, a, b) {
+        if (a.leapAttack?.phase !== 'airborne' && b.leapAttack?.phase !== 'airborne') return false;
+        const bottom = (u) =>
+            sim.world.terrain.surfaces.heightAt(u.x, u.y) + (u.impactMotion?.heightFP || 0) / FP;
+        const az = bottom(a),
+            bz = bottom(b);
+        return az >= bz + 2 * sim.unitRadius(b.type) || bz >= az + 2 * sim.unitRadius(a.type);
+    }
     static start(sim, unit, target, spec, attackDistance) {
         const state = unit.leapAttack;
         const dx = target.x - unit.x;
@@ -118,6 +128,7 @@ export class UnitLeapAttack {
             sourceId: unit.id,
             x: unit.x,
             y: unit.y,
+            radius: spec.radius,
         });
     }
 }
