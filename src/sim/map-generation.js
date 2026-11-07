@@ -188,8 +188,8 @@ class FrontierTerrainLayout {
         const capturePoints = [
             ['top', 1, 0.13, 0.75],
             ['top', 2, 0.43, 0.13],
-            ['mid', 1, 0.4, 0.88],
-            ['mid', 2, 0.6, 0.12],
+            ['mid', 1, 0.35, 0.89],
+            ['mid', 2, 0.65, 0.11],
             ['bot', 1, 0.57, 0.87],
             ['bot', 2, 0.87, 0.25],
         ].map(([id, stage, x, y]) => ({
