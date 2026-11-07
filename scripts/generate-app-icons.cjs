@@ -1,39 +1,41 @@
-// Build app icons from the game's actual cannon and shared GameKit rice portrait.
+// Resize the approved square sharing artwork for browser and installed app icons.
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
-const { serveSource, routePinnedSDK } = require('./netcode-qa-module.cjs');
 
 (async () => {
-  const root = path.resolve(__dirname, '..');
-  const server = await serveSource(path.join(root, 'index.html'));
-  const browser = await chromium.launch({ channel: process.env.QA_BROWSER_CHANNEL || 'msedge' });
-  try {
-    const page = await browser.newPage();
-    await routePinnedSDK(page);
-    await page.goto(server.url, { waitUntil: 'domcontentloaded' });
-    await page.locator('#bootGate').waitFor({ state: 'hidden', timeout: 90000 });
-    const images = await page.evaluate(async () => {
-      const { grainPortrait } = await import('./src/ui/grain-portrait.js');
-      const portrait = new Image();
-      portrait.src = await grainPortrait('rice', window.RallyVectorAssets.rice, 320);
-      const cannon = new Image(); cannon.src = './assets/units/cannon.svg';
-      await Promise.all([portrait.decode(), cannon.decode()]);
-      const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;
-      const c = canvas.getContext('2d');
-      c.fillStyle = '#407b49'; c.fillRect(0, 0, 512, 512);
-      c.fillStyle = '#e7f3c7'; c.beginPath(); c.arc(256, 245, 192, 0, Math.PI * 2); c.fill();
-      c.fillStyle = '#f5c74d'; c.beginPath(); c.arc(337, 170, 61, 0, Math.PI * 2); c.fill();
-      c.drawImage(portrait, 69, 35, 260, 284);
-      c.save(); c.translate(265, 331); c.rotate(-0.34);
-      c.drawImage(cannon, -177, -177, 354, 354); c.restore();
-      return [180, 192, 512].map(size => {
-        const out = document.createElement('canvas'); out.width = out.height = size;
-        out.getContext('2d').drawImage(canvas, 0, 0, size, size);
-        return { size, data: out.toDataURL('image/png').split(',')[1] };
-      });
-    });
-    for (const image of images) fs.writeFileSync(path.join(root, 'icons', `ssalkongpang-${image.size}.png`), Buffer.from(image.data, 'base64'));
-    console.log('Generated 180, 192 and 512px icons from the current game assets.');
-  } finally { await browser.close(); await server.close(); }
-})().catch(error => { console.error(error); process.exitCode = 1; });
+    const root = path.resolve(__dirname, '..');
+    const source = fs.readFileSync(path.join(root, 'assets/ssalkongpang-thumbnail-square.png'));
+    const browser = await chromium.launch({ channel: process.env.QA_BROWSER_CHANNEL || 'msedge' });
+    try {
+        const page = await browser.newPage();
+        const images = await page.evaluate(async (base64) => {
+            const sourceImage = new Image();
+            sourceImage.src = `data:image/png;base64,${base64}`;
+            await sourceImage.decode();
+            if (sourceImage.naturalWidth !== sourceImage.naturalHeight)
+                throw new Error('App icon source must be square');
+            return [180, 192, 512].map((size) => {
+                const canvas = document.createElement('canvas');
+                canvas.width = canvas.height = size;
+                const context = canvas.getContext('2d');
+                context.imageSmoothingEnabled = true;
+                context.imageSmoothingQuality = 'high';
+                context.drawImage(sourceImage, 0, 0, size, size);
+                return { size, data: canvas.toDataURL('image/png').split(',')[1] };
+            });
+        }, source.toString('base64'));
+        for (const image of images) {
+            fs.writeFileSync(
+                path.join(root, 'icons', `ssalkongpang-${image.size}.png`),
+                Buffer.from(image.data, 'base64'),
+            );
+        }
+        console.log('Generated 180, 192 and 512px icons from the approved square artwork.');
+    } finally {
+        await browser.close();
+    }
+})().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});

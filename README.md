@@ -14,7 +14,7 @@
 
 영문 표기는 **Rice, Beans & Boom!**입니다. 링크 공유에는 가로 썸네일 [`assets/ssalkongpang-thumbnail.png`](assets/ssalkongpang-thumbnail.png)을 우선 사용하고, 정사각형 시안 [`assets/ssalkongpang-thumbnail-square.png`](assets/ssalkongpang-thumbnail-square.png)도 Open Graph에 제공합니다. 실제 이미지 선택은 공유 서비스에 따라 다릅니다. BLOOM PLAYGROUND 매니페스트의 영문 필드는 해당 스키마의 문자 제한 때문에 `RICE BEANS AND BOOM`으로 표기합니다.
 
-쌀·조·콩·팥·밤톨·옥수수·도토리는 승인된 몸체와 얼굴·팔다리 스프라이트를 공통 아틀라스와 GPU 포즈로 조합합니다. 대포는 벡터 원본을 사용합니다. 앱 아이콘은 현재 쌀과 대포 원본을 조합하며, 아트 변경 후 `npm run generate:icons`로 180·192·512px 아이콘을 다시 만듭니다.
+쌀·조·콩·팥·밤톨·옥수수·도토리는 승인된 몸체와 얼굴·팔다리 스프라이트를 공통 아틀라스와 GPU 포즈로 조합합니다. 대포는 벡터 원본을 사용합니다. 앱 아이콘은 승인된 정사각형 공유 썸네일을 원본으로 사용하며, 원본 변경 후 `npm run generate:icons`로 180·192·512px 아이콘을 다시 만듭니다. 아이콘 원본 변경 시 manifest와 HTML의 아이콘 URL 캐시 식별자도 갱신합니다.
 
 [현재 배포본 실행](https://byh-playground.github.io/rally-frontier/)
 
