@@ -9398,6 +9398,7 @@ class AppLifecycle {
                     deferLoop: true,
                 });
             ActiveViewState.renderer.prepareGameResources();
+            await LaunchScreens.prepareTitleBattle();
             AppLifecycle.finishBootGate();
             NetworkModuleLoader.ensureReady();
         } catch (error) {

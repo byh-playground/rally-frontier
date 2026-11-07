@@ -76,7 +76,7 @@ export class LaunchScreens {
                 SCREENS.has(route.screen) ? route : { screen: '', item: '', query: '' },
         });
         this.bindButtons();
-        this.renderPortraits();
+        this.installTitleBattle();
         this.navigation.subscribe((route) => this.apply(route), { immediate: true });
     }
     static go(screen, item = '') {
@@ -202,18 +202,76 @@ export class LaunchScreens {
         const ROUTE = this.navigation.snapshot();
         this.replace(ROUTE.screen === 'play' ? 'play' : '');
     }
-    static async renderPortraits() {
-        const HOST = this.$('titleGrains');
-        HOST.replaceChildren();
-        for (const TYPE of this.actions.grains()) {
-            const IMG = document.createElement('img');
-            IMG.alt = this.actions.grainName(TYPE);
-            HOST.append(IMG);
-            this.actions.portraitSource(TYPE).then(
-                (src) => (IMG.src = src),
-                () => IMG.remove(),
-            );
+    static async prepareTitleBattle() {
+        const VIDEO = document.getElementById('titleBattle');
+        if (
+            matchMedia('(prefers-reduced-motion: reduce)').matches ||
+            location.hash.startsWith('#/play')
+        )
+            return;
+        const controller = new AbortController();
+        let objectUrl = null;
+        const ready = await new Promise((resolve) => {
+            let settled = false;
+            const finish = (value) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                VIDEO.removeEventListener('loadeddata', loaded);
+                VIDEO.removeEventListener('error', failed);
+                if (!value) controller.abort();
+                resolve(value);
+            };
+            const loaded = () => finish(true);
+            const failed = () => finish(false);
+            const timer = setTimeout(failed, 8000);
+            VIDEO.addEventListener('loadeddata', loaded, { once: true });
+            VIDEO.addEventListener('error', failed, { once: true });
+            fetch(VIDEO.src, { signal: controller.signal })
+                .then((response) => {
+                    if (!response.ok) throw new Error('Title video unavailable');
+                    return response.blob();
+                })
+                .then((blob) => {
+                    if (settled) return;
+                    objectUrl = URL.createObjectURL(new Blob([blob], { type: 'video/webm' }));
+                    VIDEO.src = objectUrl;
+                    VIDEO.preload = 'auto';
+                    VIDEO.load();
+                })
+                .catch(failed);
+        });
+        if (!ready) {
+            VIDEO.hidden = true;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
         }
+    }
+    static installTitleBattle() {
+        const VIDEO = this.$('titleBattle');
+        const LOBBY = this.$('lobby');
+        const MOTION = matchMedia('(prefers-reduced-motion: reduce)');
+        const sync = () => {
+            if (
+                document.hidden ||
+                document.body.classList.contains('boot-loading') ||
+                LOBBY.classList.contains('hidden') ||
+                MOTION.matches ||
+                VIDEO.hidden
+            ) {
+                VIDEO.pause();
+                return;
+            }
+            // Autoplay can be disallowed by the browser; the static poster remains visible.
+            VIDEO.play().catch(() => {});
+        };
+        new MutationObserver(sync).observe(LOBBY, { attributes: true, attributeFilter: ['class'] });
+        new MutationObserver(sync).observe(document.body, {
+            attributes: true,
+            attributeFilter: ['class'],
+        });
+        document.addEventListener('visibilitychange', sync);
+        MOTION.addEventListener('change', sync);
+        sync();
     }
     // Card buttons with face portraits; the game keeps their selected/unaffordable classes.
     static cardMarkup(type) {
