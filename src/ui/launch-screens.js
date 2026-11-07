@@ -303,7 +303,7 @@ export class LaunchScreens {
     static cardMarkup(type) {
         const A = this.actions,
             STATS = A.grainStats(type);
-        return `<button type="button" class="launch-card" data-launch-card="${type}"><span class="launch-card-info" data-card-info="${type}" role="button" aria-label="${A.grainName(type)} 상세">i</span><img class="launch-card-portrait" data-portrait="${type}" alt=""><b>${A.grainName(type)} ×${STATS.count}</b><em>${STATS.cost}</em></button>`;
+        return `<button type="button" class="launch-card" data-launch-card="${type}"><span class="launch-card-info" data-card-info="${type}" role="button" aria-label="${A.grainName(type)} 상세">i</span><img class="launch-card-portrait" data-portrait="${type}" alt=""><b>${A.grainName(type)} ×${STATS.count}</b><em>◆ ${STATS.cost}${STATS.premiumCost ? ` ✦ ${STATS.premiumCost}` : ''}</em></button>`;
     }
     static fillCardPortraits(host) {
         for (const IMG of host.querySelectorAll('img[data-portrait]')) {
@@ -323,7 +323,7 @@ export class LaunchScreens {
             : '';
         HOST.innerHTML = `<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2><p>${COPY.desc}</p></div></div>
 ${EXCEPTIONS}
-<div class="launch-stats"><div>비용<b>${STATS.cost}</b></div><div>병사 수<b>${STATS.count}</b></div><div>최대 사거리<b>${STATS.maxReach.toLocaleString('ko-KR')}</b></div><div>발사<b>${COPY.fire}</b></div><div>착지<b>${COPY.land}</b></div></div>
+<div class="launch-stats"><div>비용<b>◆ ${STATS.cost}${STATS.premiumCost ? ` ✦ ${STATS.premiumCost}` : ''}</b></div><div>병사 수<b>${STATS.count}</b></div><div>최대 사거리<b>${STATS.maxReach.toLocaleString('ko-KR')}</b></div><div>발사<b>${COPY.fire}</b></div><div>착지<b>${COPY.land}</b></div></div>
 <button type="button" class="launch-btn primary" data-sheet-close>닫기</button>`;
         this.fillCardPortraits(HOST);
     }
