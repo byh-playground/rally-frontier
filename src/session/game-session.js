@@ -1,3 +1,4 @@
+import { campaignStage } from '../definitions/campaign.js';
 // Command lockstep session around the simulation.
 import { GameRuleRuntime, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { StrategySim } from '../sim/strategy-sim.js';
@@ -490,6 +491,11 @@ class GameSession {
                 simulation: { tps: this.matchConfig.simulationTps },
             }),
         });
+        if (this.matchConfig.campaignStage) {
+            const stage = campaignStage(this.matchConfig.campaignStage);
+            if (!stage) throw new Error('알 수 없는 캠페인 스테이지입니다.');
+            this.roundRules.campaign = stage;
+        }
         this.runtimeSeq = 0;
         this.sim = null;
         this.simulationAdapter = null;
@@ -981,7 +987,7 @@ class GameSession {
         return this.transport.send({
             type: 'GAME_START',
             gameVersion: PRODUCT_VERSION,
-            seed: GameSession.matchSeed(this.roomCode),
+            seed: this.roundRules.campaign?.seed ?? GameSession.matchSeed(this.roomCode),
             matchConfig: this.matchConfig,
             roundRules: this.roundRules,
             netcodeMode: this.netcodeMode,
@@ -990,7 +996,7 @@ class GameSession {
     }
     beginGame() {
         if (this.sim || !this.sendGameStart()) return false;
-        this.startSim(GameSession.matchSeed(this.roomCode));
+        this.startSim(this.roundRules.campaign?.seed ?? GameSession.matchSeed(this.roomCode));
         return true;
     }
     startSim(seed) {

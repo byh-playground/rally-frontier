@@ -1286,3 +1286,22 @@ body.result-mode .p2p-health {
     color: #e8efe6;
     font-weight: 700;
 }
+
+.campaign-stages {
+    display: grid;
+    gap: 10px;
+}
+.campaign-stages button {
+    height: auto;
+    min-height: 58px;
+    text-align: left;
+    white-space: normal;
+}
+.campaign-stages small {
+    display: block;
+    margin-top: 4px;
+    font-weight: normal;
+}
+#campaignObjective {
+    white-space: normal;
+}

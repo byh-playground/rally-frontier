@@ -2,6 +2,7 @@ import { UnitLobAttack } from './unit-lob-attack.js';
 // The deterministic lockstep strategy simulation.
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { UnitSpinAttack } from './unit-spin-attack.js';
+import { UnitLeapAttack } from './unit-leap-attack.js';
 import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './entities.js';
 import { StateContract, StateValue } from './components.js';
 import { UnitResultStats } from './unit-result-stats.js';
@@ -291,7 +292,14 @@ class StrategySim {
         this.events = [];
         this.scheduled = new Map();
         this.wallet = [0, 1].map(() => LaunchRules.startingWallet);
-        this.launchIncomeCarry = [0, 0];
+        this.premiumWallet = [0, 0];
+        this.baseDeposits = [0, 1].map((side) => ({
+            owner: side,
+            resourceType: 'basic',
+            remaining: LaunchRules.depositCapacity,
+            miningCarry: 0,
+            discoveredBy: [false, false],
+        }));
         this.launchRangeLevel = [0, 0];
         this.launchDeployments = [];
         // Per-side match totals for the result screen: shots fired, grains sent, enemy units killed.
@@ -302,6 +310,10 @@ class StrategySim {
             owner: p.owner === 0 || p.owner === 1 ? p.owner : null,
             enabled: p.enabled !== false,
             outpostId: null,
+            resourceType: p.resourceType,
+            remaining: p.remaining ?? LaunchRules.depositCapacity,
+            miningCarry: 0,
+            discoveredBy: [false, false],
         }));
 
         SimulationRuntimeState.initialize(this, { newMatch: true });
@@ -309,6 +321,31 @@ class StrategySim {
         this.flags = CloneUtil.clone(this.mapDescriptor.flags);
         this.createBase(0);
         this.createBase(1);
+        // Campaign starts with enemy-held positions, using ordinary outpost ownership.
+        if (this.rules.campaign) {
+            const enemy = this.world.bases[1];
+            const points = [...this.capturePoints].sort(
+                (a, b) =>
+                    Math.hypot(a.x - enemy.x, a.y - enemy.y) -
+                    Math.hypot(b.x - enemy.x, b.y - enemy.y),
+            );
+            for (const point of points.slice(0, this.rules.campaign.enemyOutposts)) {
+                const outpost = this.spawnOutpost(point, 1);
+                outpost.hp = outpost.maxHp;
+                this.completeConstruction(outpost);
+            }
+            if (this.rules.campaign.baseDepositRatio != null) {
+                this.baseDeposits[0].remaining = Math.round(
+                    LaunchRules.depositCapacity * this.rules.campaign.baseDepositRatio,
+                );
+            }
+            if (this.rules.campaign.introducedEnemy) {
+                const point = points[Math.max(0, this.rules.campaign.enemyOutposts - 1)];
+                const type = this.rules.campaign.introducedEnemy;
+                for (let i = 0; i < 3; i++)
+                    this.spawnUnit(1, type, point.x + (i - 1) * 50, point.y + 100);
+            }
+        }
         // Landed units march straight to the enemy main base.
         for (const side of [0, 1]) {
             const enemy = this.buildings.find((b) => b.id === 'base' + (1 - side));
@@ -1264,7 +1301,9 @@ class StrategySim {
         if (!this.decks[side]?.includes(action.unitType)) return reject('unit-not-in-deck');
         if (LaunchRules.population(this, side).total >= LaunchRules.populationLimit)
             return reject('population-limit');
-        if (this.wallet[side] < grain.cost) return reject('insufficient-resources');
+        if (this.wallet[side] < grain.cost) return reject('insufficient-basic-resources');
+        if (this.premiumWallet[side] < (grain.premiumCost || 0))
+            return reject('insufficient-premium-resources');
         const holdMs = Math.max(0, Math.round(action.holdMs));
         if (LaunchRules.overheated(holdMs)) {
             cannon.launchReadyTick = this.tick + this.msTicks(LaunchRules.overheatMs);
@@ -1288,6 +1327,7 @@ class StrategySim {
             this.launchRangeLevel[side],
         );
         this.wallet[side] -= grain.cost;
+        this.premiumWallet[side] -= grain.premiumCost || 0;
         // The cannon is busy until the last shell of the volley has left, plus the reload.
         cannon.launchReadyTick =
             this.tick + this.msTicks(LaunchRules.volleyMs(action.unitType) + LaunchRules.reloadMs);
@@ -1388,27 +1428,70 @@ class StrategySim {
     landLaunchPayload(p, x, y, impactHeightFP = null) {
         LaunchImpact.enqueue(this, p, x, y, impactHeightFP);
     }
-    creditResources(side, amount) {
+    creditResources(side, amount, resourceType = 'basic') {
         if ((side !== 0 && side !== 1) || !Number.isSafeInteger(amount) || amount < 0)
             throw new RangeError('유효한 진영과 정수 자원이 필요합니다.');
-        this.wallet[side] = Math.min(LaunchRules.walletCap, this.wallet[side] + amount);
+        const wallet = resourceType === 'premium' ? this.premiumWallet : this.wallet;
+        const cap =
+            resourceType === 'premium' ? LaunchRules.premiumWalletCap : LaunchRules.walletCap;
+        wallet[side] = Math.min(cap, wallet[side] + amount);
     }
     updateLaunchEconomy() {
-        // Integer carry keeps income per second independent of tps.
-        for (const side of [0, 1]) {
-            this.launchIncomeCarry[side] += LaunchRules.incomePerSecondFor(
-                this.capturePoints,
-                side,
+        // Each deposit owns its fractional progress and remaining stock across captures.
+        for (const point of [...this.baseDeposits, ...this.capturePoints]) {
+            if (point.owner !== 0 && point.owner !== 1) continue;
+            if (
+                this.baseDeposits.includes(point) &&
+                !this.buildings.some((b) => b.id === `base${point.owner}` && b.alive !== false)
+            )
+                continue;
+            const wallet = point.resourceType === 'premium' ? this.premiumWallet : this.wallet;
+            const cap =
+                point.resourceType === 'premium'
+                    ? LaunchRules.premiumWalletCap
+                    : LaunchRules.walletCap;
+            if (wallet[point.owner] >= cap || point.remaining <= 0) continue;
+            point.miningCarry += LaunchRules.captureIncomePerSecond;
+            const gained = Math.min(
+                Math.floor(point.miningCarry / this.tps),
+                point.remaining,
+                cap - wallet[point.owner],
             );
-            const gained = Math.floor(this.launchIncomeCarry[side] / this.tps);
-            this.launchIncomeCarry[side] -= gained * this.tps;
-            this.creditResources(side, gained);
+            point.miningCarry %= this.tps;
+            point.remaining -= gained;
+            wallet[point.owner] += gained;
+        }
+    }
+    updateDepositDiscovery(vision) {
+        for (const point of this.capturePoints) {
+            for (const side of [0, 1]) {
+                if (
+                    !point.discoveredBy[side] &&
+                    this.isVisible(side, point.x, point.y, vision[side])
+                )
+                    point.discoveredBy[side] = true;
+            }
+        }
+        for (const deposit of this.baseDeposits) {
+            const base = this.buildings.find((building) => building.id === `base${deposit.owner}`);
+            if (!base) continue;
+            for (const side of [0, 1]) {
+                if (
+                    !deposit.discoveredBy[side] &&
+                    this.isVisible(side, base.x, base.y, vision[side])
+                )
+                    deposit.discoveredBy[side] = true;
+            }
         }
     }
     upgradeLaunchRange(side) {
-        const cost = LaunchRules.upgradeCost(this.launchRangeLevel[side]);
-        if (cost === null || this.wallet[side] < cost) return false;
+        const level = this.launchRangeLevel[side],
+            cost = LaunchRules.upgradeCost(level),
+            premiumCost = LaunchRules.upgradePremiumCost(level);
+        if (cost === null || this.wallet[side] < cost || this.premiumWallet[side] < premiumCost)
+            return false;
         this.wallet[side] -= cost;
+        this.premiumWallet[side] -= premiumCost;
         this.launchRangeLevel[side]++;
         this.events.push({ type: 'launchRangeUpgraded', side, level: this.launchRangeLevel[side] });
         return true;
@@ -2052,6 +2135,10 @@ class StrategySim {
     updateCombat(u, vision, pendingContactAttacks = null) {
         const d = UnitDefinition.get(u.type);
         this.tickAttackTimers(u);
+        if (d.leapAttack && UnitLeapAttack.update(this, u, d.leapAttack, d.atk)) {
+            u.constructionWork = null;
+            return null;
+        }
         if (d.contactMelee && u.contactAttack?.phase === 'recover') {
             if (this.tick < u.contactAttack.untilTick) {
                 const speed = (d.speed * this.timedModifierPct(u, 'movePct')) / 100;
@@ -2150,6 +2237,12 @@ class StrategySim {
             // Wind-up is valid only while the target remains in legal attack range.
             if (u.combat.windupPending()) u.combat.cancelWindup();
             if (d.contactMelee && u.contactAttack?.phase === 'charge') u.contactAttack = null;
+            if (
+                !found.isBuilding &&
+                d.leapAttack &&
+                UnitLeapAttack.start(this, u, t, d.leapAttack, max)
+            )
+                return null;
             this.moveToGoal(u, this.engagementGoal(u, t, attackRange), moveSpeed);
             return null;
         }
@@ -2508,7 +2601,13 @@ class StrategySim {
                 if (perf) perf.collisionSweptPairTests += candidates.length;
                 for (const j of candidates) {
                     const b = units[j];
-                    if (!b?.alive || radii[j] <= 0 || this.isAlliedCollisionUnit(a, b)) continue;
+                    if (
+                        !b?.alive ||
+                        radii[j] <= 0 ||
+                        this.isAlliedCollisionUnit(a, b) ||
+                        UnitLeapAttack.separated(this, a, b)
+                    )
+                        continue;
                     if (
                         this.navigation.motion.solvedImpulseTick === this.tick &&
                         (a.impactMotion || b.impactMotion)
@@ -2901,6 +3000,7 @@ class StrategySim {
                         if (this.isAlliedCollisionUnit(a, bb)) continue;
                         const min = radii[ai] + radii[bi];
                         if (Math.abs(otherCoord(ai) - otherCoord(bi)) >= min) continue;
+                        if (UnitLeapAttack.separated(this, a, bb)) continue;
                         if (perf) perf.collisionHardFixCandidates++;
                         const owner = this.nonAlliedPenetrationOwner(ai, bi);
                         pairs.push(owner * (n + 1) + (owner === ai ? bi : ai));
@@ -3414,6 +3514,7 @@ class StrategySim {
         mark = profile ? now() : 0;
         LaunchImpact.update(this);
         const vision = [this.visionSources(0), this.visionSources(1)];
+        this.updateDepositDiscovery(vision);
         const visionMs = profile ? now() - mark : 0;
 
         mark = profile ? now() : 0;
@@ -3428,7 +3529,12 @@ class StrategySim {
         mark = profile ? now() : 0;
         this.solveContacts();
         winner = this.resolveContactAttacks(pendingContactAttacks, vision) || winner;
-        for (const u of this.units) this.navigation.motion.finishImpulseStep(u);
+        for (const u of this.units) {
+            this.navigation.motion.finishImpulseStep(u);
+            const definition = UnitDefinition.get(u.type);
+            if (definition?.leapAttack)
+                UnitLeapAttack.flush(this, u, definition.leapAttack, definition.atk);
+        }
         const collisionMs = profile ? now() - mark : 0;
 
         // Projectile hits inject velocity at this boundary. Both horizontal and vertical integration start next tick.
@@ -3443,6 +3549,12 @@ class StrategySim {
         mark = profile ? now() : 0;
         // Combat damage reports are not victory authority. Resolve once from the final world state.
         winner = this.netcodeMatchResult?.winner || this.baseOutcome();
+        const campaign = this.rules.campaign;
+        if (campaign?.defenseSeconds && !this.netcodeMatchResult) {
+            const timeUp = this.tick >= campaign.defenseSeconds * this.tps;
+            if (!timeUp && winner === 'host') winner = null;
+            if (timeUp && campaign.mode === 'defend' && !winner) winner = 'host';
+        }
         this.updateBalanceTelemetry(winner);
         this.cleanupDeadEntities();
         const postMs = profile ? now() - mark : 0;
@@ -3624,6 +3736,8 @@ class StrategySim {
                     this.unitThornProjectiles.filter((p) => p.startTick <= this.tick),
                 ),
                 wallet: this.wallet.slice(),
+                premiumWallet: this.premiumWallet.slice(),
+                baseDeposits: StateValue.copy(this.baseDeposits),
                 launchRangeLevel: this.launchRangeLevel.slice(),
                 launchStats: StateValue.copy(this.launchStats),
                 unitResultStats: StateValue.copy(this.unitResultStats),

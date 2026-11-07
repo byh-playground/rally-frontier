@@ -16,10 +16,11 @@ const SINGLE_BUNDLE_SHELL = Object.freeze({
 // 한 발이 무겁다: 자원 단위는 기존 경제의 5배 환산 기준(D-233·D-235), 폭발 중심일수록 피해가 크다(D-230), 곡물마다 발사 방식이 다르다(D-234).
 class LaunchRules {
     static resourceScale = 5;
-    static incomePerSecond = 3 * this.resourceScale;
     static walletCap = 100 * this.resourceScale;
     static populationLimit = 300;
-    static startingWallet = 50 * this.resourceScale;
+    static startingWallet = this.walletCap;
+    static premiumWalletCap = this.walletCap;
+    static depositCapacity = 200 * this.resourceScale;
     static minReach = 250;
     static maxReach = 500;
     static chargeMs = 1500;
@@ -29,8 +30,13 @@ class LaunchRules {
     static speed = 750;
     static landingMarkMs = 1500;
     static captureHoldRadius = 400;
-    static rangeMultipliers = Object.freeze([1, 2, 3]);
-    static rangeUpgradeCosts = Object.freeze([50, 75].map((cost) => cost * this.resourceScale));
+    static rangeMultipliers = Object.freeze([1, 2, 3, 4, 5]);
+    static rangeUpgradeCosts = Object.freeze(
+        [50, 75, 75, 100].map((cost) => cost * this.resourceScale),
+    );
+    static rangeUpgradePremiumCosts = Object.freeze(
+        [0, 0, 25, 50].map((cost) => cost * this.resourceScale),
+    );
     static captureIncomePerSecond = 1 * this.resourceScale;
     static rangeMultiplier(level = 0) {
         return this.rangeMultipliers[level] ?? this.rangeMultipliers[0];
@@ -38,13 +44,17 @@ class LaunchRules {
     static upgradeCost(level) {
         return this.rangeUpgradeCosts[level] ?? null;
     }
-    static incomePerSecondFor(capturePoints, side) {
-        return (
-            this.incomePerSecond +
-            capturePoints.reduce(
-                (n, p) => n + (p.owner === side ? this.captureIncomePerSecond : 0),
-                0,
-            )
+    static upgradePremiumCost(level) {
+        return this.rangeUpgradePremiumCosts[level] ?? null;
+    }
+    static incomePerSecondFor(capturePoints, side, resource = 'basic') {
+        return capturePoints.reduce(
+            (n, p) =>
+                n +
+                (p.owner === side && p.resourceType === resource && p.remaining > 0
+                    ? this.captureIncomePerSecond
+                    : 0),
+            0,
         );
     }
     // 폭발 중심의 피해 배수. 가장자리는 1배, 중심은 centerPeak배이고 거리에 따라 제곱으로 줄어든다.
@@ -84,6 +94,7 @@ class LaunchRules {
         corn: Object.freeze({
             ...SINGLE_BUNDLE_SHELL,
             cost: 50 * this.resourceScale,
+            premiumCost: 25 * this.resourceScale,
             count: 6,
         }),
         millet: Object.freeze({
@@ -96,6 +107,7 @@ class LaunchRules {
         }),
         chestnut: Object.freeze({
             cost: 50 * this.resourceScale,
+            premiumCost: 25 * this.resourceScale,
             count: 6,
             reach: 0.85,
             speed: 750,
@@ -121,6 +133,7 @@ class LaunchRules {
         // 도토리는 한 발당 한 병사씩 세 발을 쏜다.
         acorn: Object.freeze({
             cost: 75 * this.resourceScale,
+            premiumCost: 25 * this.resourceScale,
             count: 3,
             reach: 0.85,
             speed: 750,
@@ -156,7 +169,7 @@ class LaunchRules {
     }
     static payload(type) {
         const g = this.grain(type);
-        return g ? { count: g.count, cost: g.cost } : null;
+        return g ? { count: g.count, cost: g.cost, premiumCost: g.premiumCost || 0 } : null;
     }
     // Live units plus every already-authorized soldier who has not spawned yet.
     static population(state, side) {
