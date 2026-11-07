@@ -524,14 +524,24 @@ END OF DEVELOPMENT CONTRACT
                 ?
             </button>
             <div class="launch-hero">
+                <div class="launch-battle" aria-hidden="true">
+                    <video
+                        id="titleBattle"
+                        muted
+                        playsinline
+                        loop
+                        preload="none"
+                        poster="./assets/title-battle-poster.png"
+                        src="./assets/title-battle.webm"
+                    ></video>
+                </div>
                 <h1 class="game-title">
                     쌀콩<span class="frontier-accent">팡!</span
                     ><span class="game-title-en">Rice, Beans &amp; Boom!</span>
                 </h1>
-                <p class="launch-tagline">곡식 병사를 대포로 쏘아 적 본진을 무너뜨려라</p>
-                <div id="titleGrains" class="launch-grains" aria-hidden="true"></div>
             </div>
             <div class="launch-title-actions">
+                <p class="launch-tagline">곡식 병사를 대포로 쏘아 적 본진을 무너뜨려라</p>
                 <div id="singleStatus" class="single-status hidden" aria-live="polite"></div>
                 <button id="gameStartBtn" class="launch-btn primary" type="button">
                     대전 시작
