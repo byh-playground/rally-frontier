@@ -1,0 +1,2 @@
+# Asset manifests verify exact SVG bytes on every platform.
+*.svg text eol=lf
