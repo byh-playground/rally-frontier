@@ -15,6 +15,7 @@ third_party/
 *.generated.json
 *.gen.js
 *.gen.json
+assets/title-showcase.json
 assets/atlases/
 assets/generated/
 .cache/

@@ -1,4 +1,6 @@
 import { RangeUtil, SIM_TPS } from './core/game-rules.js';
+import { SimulationTiming } from './core/simulation-timing.js';
+import { createLocalPerfStats, createLocalBalanceStats } from './diagnostics/simulation-stats.js';
 import './sim/strategy-sim.js';
 import { TerrainQuery, VisibilityPolicy } from './sim/entities.js';
 import { BotController } from './ai/bot-controller.js';
@@ -53,6 +55,7 @@ import { BUILD_META } from './core/build-info.js';
 import { PRODUCT_VERSION } from './core/product-version.js';
 import { RallyGamekit, SIM_WORKER } from './core/gamekit.js';
 import { LaunchScreens } from './ui/launch-screens.js';
+import { prepareTitleShowcase } from './ui/title-showcase.js';
 import { DeckEditor } from './ui/deck-editor.js';
 import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
@@ -1704,8 +1707,12 @@ class GLRenderer {
     startLoop() {
         if (!this.loopStarted) {
             this.loopStarted = true;
-            requestAnimationFrame(this.loop);
+            this.loopFrame = requestAnimationFrame(this.loop);
         }
+    }
+    stopLoop() {
+        this.loopStarted = false;
+        cancelAnimationFrame(this.loopFrame);
     }
     resize() {
         const dpr = Math.min(1.6, devicePixelRatio || 1);
@@ -6058,7 +6065,7 @@ class GLRenderer {
                 continue;
             const active = tick >= spin.activeStartTick && tick < spin.activeEndTick,
                 recovery = tick >= spin.activeEndTick,
-                fadeTicks = Math.max(1, (this.snapshot.tps || SimulationTiming.tps()) * 0.14),
+                fadeTicks = Math.max(1, (this.snapshot.tps || ActiveSimulationTiming.tps()) * 0.14),
                 fade = recovery ? Math.max(0, 1 - (tick - spin.activeEndTick) / fadeTicks) : 1;
             if (!fade) continue;
             const windupProgress = Math.max(
@@ -6198,7 +6205,7 @@ class GLRenderer {
             outpost = BuildingDefinition.forRole('outpost'),
             reloadTicks = SimulationTiming.msToTicks(
                 LaunchRules.reloadMs,
-                s.tps || SimulationTiming.tps(),
+                s.tps || ActiveSimulationTiming.tps(),
             );
         const hold = LaunchPresentation.hold,
             card = hold?.card || LaunchPresentation.card || LaunchRules.deck[0],
@@ -6446,7 +6453,7 @@ class GLRenderer {
             ) {
                 if (this.vectorContext.active) this.vectorContext.endFrame();
                 if (this.vectorContext.beginFrame()) this.vectorContext.endFrame();
-                requestAnimationFrame(this.loop);
+                this.loopFrame = requestAnimationFrame(this.loop);
                 return;
             }
 
@@ -6465,7 +6472,7 @@ class GLRenderer {
             if (this.vectorContext.active) this.vectorContext.endFrame();
             this.grainFaces.prepare();
             if (!this.passProfiler.measure('device-begin', () => this.vectorContext.beginFrame())) {
-                requestAnimationFrame(this.loop);
+                this.loopFrame = requestAnimationFrame(this.loop);
                 return;
             }
             Object.assign(this.passState, {
@@ -6537,13 +6544,13 @@ class GLRenderer {
                 rp.maxFrameIntervalMs = rp.frameIntervalMs || 0;
                 rp.maxFrameWorkMs = rp.frameWorkMs || 0;
             }
-            requestAnimationFrame(this.loop);
+            this.loopFrame = requestAnimationFrame(this.loop);
         } catch (err) {
             this.reportRenderFatal(err);
             // Do not permanently kill requestAnimationFrame. Entity-level failures are isolated
             // above; a remaining frame-level failure keeps the diagnostic visible and retries so
             // recovery/correction or a later valid snapshot can restore presentation.
-            requestAnimationFrame(this.loop);
+            this.loopFrame = requestAnimationFrame(this.loop);
         } finally {
             if (this.vectorContext.active) this.vectorContext.endFrame();
             this._framePresentationAt = null;
@@ -7592,7 +7599,7 @@ class ConnectionPresentation {
             detail.push(
                 active.netcodeMode,
                 `tick ${active.sim.tick}`,
-                `${SimulationTiming.tps()} TPS`,
+                `${ActiveSimulationTiming.tps()} TPS`,
             );
         if (rp?.fps > 0) detail.push(`${Math.round(rp.fps)} FPS`);
         UiRegistry.refs.p2pHealth.title = detail.join(' · ') || '동기화 진단 열기';
@@ -7675,7 +7682,7 @@ class ConnectionPresentation {
         );
         UiRegistry.refs.synctestRunBtn.disabled =
             report?.status === 'running' || core.resimulating || active.disposed;
-        const perf = active.sim?.perfStats || PerformanceTelemetry.createLocalPerfStats();
+        const perf = active.sim?.perfStats || createLocalPerfStats();
         const fmtMs = (v) => `${(Number(v) || 0).toFixed(2)}ms`;
         const peerRole = active.role === 'host' ? 'guest' : 'host';
         const peerPerf = SinglePlayerModeUtil.isSinglePlayer()
@@ -7803,7 +7810,7 @@ class ConnectionPresentation {
             'dbgPerfDrawCalls',
             `${rp?.drawCalls || 0} / ${DebugFormatUtil.formatDebugBytes(rp?.bufferUploadBytes || 0)} · 전송 대기 ${DebugFormatUtil.formatDebugBytes(active.transport?.netcodeBufferedAmount || 0)}`,
         );
-        const activeTps = SimulationTiming.tps(),
+        const activeTps = ActiveSimulationTiming.tps(),
             allowanceMs = 1000 / activeTps,
             isSingle = SinglePlayerModeUtil.isSinglePlayer();
         UiRegistry.refs.dbgPerfAllowanceLabel.textContent = activeTps + ' TPS 틱 허용시간';
@@ -7830,9 +7837,9 @@ class ConnectionPresentation {
         }
         UiRegistry.refs.dbgEndurancePeaks.textContent = `${perf.peakAliveUnits || 0} / ${perf.peakBuildings || 0} / ${perf.peakProjectiles || 0}`;
 
-        const bs = active.sim?.balanceStats || PerformanceTelemetry.createLocalBalanceStats();
+        const bs = active.sim?.balanceStats || createLocalBalanceStats();
         const formatTickTime = (t) =>
-            t == null ? '-' : `${SimulationTiming.ticksToSeconds(t).toFixed(1)}s`;
+            t == null ? '-' : `${ActiveSimulationTiming.ticksToSeconds(t).toFixed(1)}s`;
         const pairTicks = (a) => `${formatTickTime(a?.[0])} / ${formatTickTime(a?.[1])}`;
         const avgArmy = [0, 1].map((side) => (bs.samples ? bs.armyTotal[side] / bs.samples : 0));
         UiRegistry.refs.dbgBalanceTime.textContent = `${formatTickTime(active.sim?.tick)} / ${bs.gameEndTick == null ? '진행 중' : `${formatTickTime(bs.gameEndTick)} · ${bs.winner || '-'}`}`;
@@ -8072,7 +8079,7 @@ class ReplayPresentation {
     });
 
     static formatReplayTime(tick) {
-        const sec = Math.max(0, Math.floor((Number(tick) || 0) / SimulationTiming.tps()));
+        const sec = Math.max(0, Math.floor((Number(tick) || 0) / ActiveSimulationTiming.tps()));
         const m = Math.floor(sec / 60),
             s = sec % 60;
         return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
@@ -8258,14 +8265,14 @@ class ReplayPresentation {
             end = ReplayPresentation.replayPlayer.endTick || 0;
         if (UiRegistry.refs.replayTimeline) {
             UiRegistry.refs.replayTimeline.max = String(
-                Math.max(0.1, end / SimulationTiming.tps()),
+                Math.max(0.1, end / ActiveSimulationTiming.tps()),
             );
             if (!ReplayPresentation.replayTimelineDragging)
                 UiRegistry.refs.replayTimeline.value = String(
                     RangeUtil.clamp(
-                        tick / SimulationTiming.tps(),
+                        tick / ActiveSimulationTiming.tps(),
                         0,
-                        end / SimulationTiming.tps() || 0.1,
+                        end / ActiveSimulationTiming.tps() || 0.1,
                     ),
                 );
         }
@@ -8813,7 +8820,7 @@ class MatchLifecycle {
             mySide = ConnectionSideUtil.roleSide(viewRole);
         if (stats)
             LaunchScreens.renderResult({
-                durationMs: (1000 * end.tick) / (end.tps || SimulationTiming.tps()),
+                durationMs: (1000 * end.tick) / (end.tps || ActiveSimulationTiming.tps()),
                 launches: stats.launches[mySide],
                 sent: stats.sent[mySide],
                 kills: stats.kills[mySide],
@@ -9746,7 +9753,7 @@ class LaunchPresentation {
         LaunchScreens.renderHud({
             myHpPct: hp(side),
             enemyHpPct: hp(1 - side),
-            elapsedMs: (1000 * s.tick) / (s.tps || SimulationTiming.tps()),
+            elapsedMs: (1000 * s.tick) / (s.tps || ActiveSimulationTiming.tps()),
             enemyDirection,
         });
     }
@@ -9797,7 +9804,7 @@ class LaunchPresentation {
         const wait = Math.max(0, (Number(cannon.launchReadyTick) || 0) - s.tick);
         if (wait > 0) {
             this.feedback(
-                `대포 재장전 중 · ${(wait / (s.tps || SimulationTiming.tps())).toFixed(1)}초`,
+                `대포 재장전 중 · ${(wait / (s.tps || ActiveSimulationTiming.tps())).toFixed(1)}초`,
             );
             return null;
         }
@@ -10155,7 +10162,7 @@ class BattlePresentation {
         if (!ActiveViewState.renderer) {
             ActiveViewState.renderer = new GLRenderer(UiRegistry.refs.canvas);
             LogUtil.log(
-                `렌더러 ${ActiveViewState.renderer.backend} · 입력/UI ${STATE_PUBLISH_HZ}Hz · Render Target ${SimulationTiming.tps()}Hz · 시뮬 ${SimulationTiming.tps()}TPS · 렌더 rAF 60Hz+`,
+                `렌더러 ${ActiveViewState.renderer.backend} · 입력/UI ${STATE_PUBLISH_HZ}Hz · Render Target ${ActiveSimulationTiming.tps()}Hz · 시뮬 ${ActiveSimulationTiming.tps()}TPS · 렌더 rAF 60Hz+`,
             );
             ActiveViewState.renderer.cameraLeft = 0;
             ActiveViewState.renderer.cameraTop =
@@ -10184,25 +10191,7 @@ class BattlePresentation {
 
 const UI_MODAL_DIALOG_KEYS = Object.freeze({ create: 'createDialog', join: 'joinDialog' });
 
-class SimulationTiming {
-    static timerTicksWithPhase(durationMs, tps, phase = 0, { min = 1 } = {}) {
-        const hz = Math.max(1, Math.round(Number(tps) || SIM_TPS));
-        const total =
-            Math.max(0, Math.round(Number(durationMs) || 0)) * hz +
-            Math.max(0, Math.round(Number(phase) || 0));
-        const ticks = Math.floor(total / 1000);
-        return { ticks: Math.max(min, ticks), phase: total % 1000 };
-    }
-
-    static ticksToMs(ticks, tps = SIM_TPS) {
-        return Math.round((Math.max(0, Number(ticks) || 0) * 1000) / tps);
-    }
-
-    static msToTicks(ms, tps = SIM_TPS, { min = 1 } = {}) {
-        const value = Math.max(0, Math.round(Number(ms) || 0));
-        return Math.max(min, Math.round((value * tps) / 1000));
-    }
-
+class ActiveSimulationTiming {
     static tps() {
         // Query the real active GameSession. `runtime` was a refactor-only phantom owner.
         const active =
@@ -10350,8 +10339,8 @@ class ReplayInteraction {
             RangeUtil.clamp(
                 Number(seconds) || 0,
                 0,
-                ReplayPresentation.replayPlayer.endTick / SimulationTiming.tps(),
-            ) * SimulationTiming.tps(),
+                ReplayPresentation.replayPlayer.endTick / ActiveSimulationTiming.tps(),
+            ) * ActiveSimulationTiming.tps(),
         );
         const shouldResume =
             resumePlaying == null ? !!ReplayPresentation.replayPlayer.playing : !!resumePlaying;
@@ -10392,7 +10381,7 @@ UiRegistry.refs.replayTimeline?.addEventListener('input', () => {
     if (!ReplayPresentation.replayPlayer) return;
     ReplayPresentation.replayTimelineDragging = true;
     if (UiRegistry.refs.replayTime)
-        UiRegistry.refs.replayTime.textContent = `${ReplayPresentation.formatReplayTime((Number(UiRegistry.refs.replayTimeline.value) || 0) * SimulationTiming.tps())} / ${ReplayPresentation.formatReplayTime(ReplayPresentation.replayPlayer.endTick)}`;
+        UiRegistry.refs.replayTime.textContent = `${ReplayPresentation.formatReplayTime((Number(UiRegistry.refs.replayTimeline.value) || 0) * ActiveSimulationTiming.tps())} / ${ReplayPresentation.formatReplayTime(ReplayPresentation.replayPlayer.endTick)}`;
 });
 class ReplayTimelineInteraction {
     static commit() {
@@ -10430,22 +10419,22 @@ UiRegistry.refs.replayTimeInput?.addEventListener('keydown', (e) => {
 });
 UiRegistry.refs.replayStepBackBtn?.addEventListener('click', () =>
     ReplayInteraction.seekSeconds(
-        (ReplayPresentation.replayPlayer?.sim?.tick || 0) / SimulationTiming.tps() - 5,
+        (ReplayPresentation.replayPlayer?.sim?.tick || 0) / ActiveSimulationTiming.tps() - 5,
     ),
 );
 UiRegistry.refs.replayStepForwardBtn?.addEventListener('click', () =>
     ReplayInteraction.seekSeconds(
-        (ReplayPresentation.replayPlayer?.sim?.tick || 0) / SimulationTiming.tps() + 5,
+        (ReplayPresentation.replayPlayer?.sim?.tick || 0) / ActiveSimulationTiming.tps() + 5,
     ),
 );
 UiRegistry.refs.replayStepBack30Btn?.addEventListener('click', () =>
     ReplayInteraction.seekSeconds(
-        (ReplayPresentation.replayPlayer?.sim?.tick || 0) / SimulationTiming.tps() - 30,
+        (ReplayPresentation.replayPlayer?.sim?.tick || 0) / ActiveSimulationTiming.tps() - 30,
     ),
 );
 UiRegistry.refs.replayStepForward30Btn?.addEventListener('click', () =>
     ReplayInteraction.seekSeconds(
-        (ReplayPresentation.replayPlayer?.sim?.tick || 0) / SimulationTiming.tps() + 30,
+        (ReplayPresentation.replayPlayer?.sim?.tick || 0) / ActiveSimulationTiming.tps() + 30,
     ),
 );
 UiRegistry.refs.replayHostViewBtn?.addEventListener('click', () =>
@@ -10777,7 +10766,7 @@ if (!SIM_WORKER) AppLifecycle.requestScreenWakeLock();
             requestAnimationFrame(frame);
         }
     }
-    requestAnimationFrame(frame);
+    if (document.documentElement.dataset.titleShowcase !== 'true') requestAnimationFrame(frame);
 })();
 
 // Deployment metadata is optional diagnostics. Its fetch never gates game startup.
@@ -10789,7 +10778,56 @@ if (UiRegistry.refs.bootRetryBtn)
     UiController.bindImmediateButton(UiRegistry.refs.bootRetryBtn, AppLifecycle.runBootAndStartApp);
 // The Worker realm hosts only a simulation session; the page boots the app.
 if (SIM_WORKER) SimWorkerHost.install();
-else {
+else if (document.documentElement.dataset.titleShowcase === 'true') {
+    void (async () => {
+        UiController.setUiScreen('game');
+        const renderer = new GLRenderer(UiRegistry.refs.canvas, { deferLoop: true });
+        renderer.prepareGameResources();
+        renderer.resize();
+        const scenario = await prepareTitleShowcase({
+            renderer,
+            createScenario: RallyGamekit.createScenario,
+        });
+        renderer.startLoop();
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        renderer.stopLoop();
+        let requested = false;
+        const sync = () => {
+            if (requested && !document.hidden) {
+                // Rebase the delayed presentation clock after the loading gate or a pause.
+                renderer.setSnapshot(renderer.snapshot, { snapTargets: true });
+                renderer.startLoop();
+                scenario.play();
+            } else {
+                scenario.pause();
+                renderer.stopLoop();
+            }
+        };
+        addEventListener('message', (event) => {
+            if (
+                event.origin !== location.origin ||
+                event.source !== parent ||
+                event.data?.type !== 'title-showcase-active'
+            )
+                return;
+            requested = !!event.data.active;
+            sync();
+        });
+        addEventListener('visibilitychange', sync);
+        addEventListener(
+            'pagehide',
+            () => {
+                scenario.dispose();
+                renderer.stopLoop();
+            },
+            { once: true },
+        );
+        parent.postMessage({ type: 'title-showcase-ready' }, location.origin);
+    })().catch((error) => {
+        console.error(error);
+        parent.postMessage({ type: 'title-showcase-failed' }, location.origin);
+    });
+} else {
     AppLifecycle.runBootAndStartApp();
     const dev = readDevQuery(location.search);
     if (dev.tps) UiController.setStartSimulationTps(dev.tps);
@@ -10806,6 +10844,7 @@ else {
     });
     LaunchScreens.install({
         createNavigation: RallyGamekit.createNavigation,
+        mountScenarioFrame: RallyGamekit.mountScenarioFrame,
         actions: {
             inMatch: () => UiRuntimeState.value.screen === 'game',
             hasResult: () => UiRuntimeState.value.screen === 'result',
@@ -10856,7 +10895,7 @@ export {
     LogUtil,
     MatchLifecycle,
     ReplayPresentation,
-    SimulationTiming,
+    ActiveSimulationTiming,
     SinglePlayerModeUtil,
     UiController,
     UiRegistry,

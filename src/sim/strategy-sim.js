@@ -5,7 +5,7 @@ import { UnitSpinAttack } from './unit-spin-attack.js';
 import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './entities.js';
 import { StateContract, StateValue } from './components.js';
 import { UnitResultStats } from './unit-result-stats.js';
-import { RallyStateCodec } from '../session/game-session.js';
+import { RallyStateCodec } from '../core/rally-state-codec.js';
 import { LaunchRules } from './launch-rules.js';
 import { ConstructionRules } from './construction-rules.js';
 import { LaunchImpact } from './launch-impact.js';
@@ -27,7 +27,7 @@ import {
     NAV_BUILDING_MARGIN,
     SPAWN_UNIT_GAP,
 } from '../definitions/combat-rules.js';
-import { PerformanceTelemetry } from '../diagnostics/performance-telemetry.js';
+import { createLocalPerfStats, createLocalBalanceStats } from '../diagnostics/simulation-stats.js';
 import {
     ALLY_SOFT_CORRECTION_FRACTION,
     ALLY_SOFT_IDLE_RADIUS_FRACTION,
@@ -54,7 +54,7 @@ import {
 import { FP } from '../core/config.js';
 import { RallyGamekit, RallyNetcode } from '../core/gamekit.js';
 const { BoundsGrid, SurfaceContactGeometry, SweptCircleContact, UniformGrid } = RallyGamekit;
-import { SimulationTiming } from '../main.js';
+import { SimulationTiming } from '../core/simulation-timing.js';
 
 class SimulationRuntimeState {
     static collision(sim) {
@@ -159,10 +159,9 @@ class SimulationRuntimeState {
         this.spatial(sim);
         this.visibility(sim);
         sim.navigation = new TerrainNavigation(sim);
-        sim.perfStats = PerformanceTelemetry.createLocalPerfStats();
+        sim.perfStats = createLocalPerfStats();
         sim._perfCollect = null;
-        if (newMatch || !sim.balanceStats)
-            sim.balanceStats = PerformanceTelemetry.createLocalBalanceStats();
+        if (newMatch || !sim.balanceStats) sim.balanceStats = createLocalBalanceStats();
         sim.commandReceipts = [];
     }
     static invalidate(sim) {
@@ -1389,6 +1388,11 @@ class StrategySim {
     landLaunchPayload(p, x, y, impactHeightFP = null) {
         LaunchImpact.enqueue(this, p, x, y, impactHeightFP);
     }
+    creditResources(side, amount) {
+        if ((side !== 0 && side !== 1) || !Number.isSafeInteger(amount) || amount < 0)
+            throw new RangeError('유효한 진영과 정수 자원이 필요합니다.');
+        this.wallet[side] = Math.min(LaunchRules.walletCap, this.wallet[side] + amount);
+    }
     updateLaunchEconomy() {
         // Integer carry keeps income per second independent of tps.
         for (const side of [0, 1]) {
@@ -1398,7 +1402,7 @@ class StrategySim {
             );
             const gained = Math.floor(this.launchIncomeCarry[side] / this.tps);
             this.launchIncomeCarry[side] -= gained * this.tps;
-            this.wallet[side] = Math.min(LaunchRules.walletCap, this.wallet[side] + gained);
+            this.creditResources(side, gained);
         }
     }
     upgradeLaunchRange(side) {
@@ -3239,9 +3243,7 @@ class StrategySim {
     }
 
     updateBalanceTelemetry(winner = null) {
-        const b =
-            this.balanceStats ||
-            (this.balanceStats = PerformanceTelemetry.createLocalBalanceStats());
+        const b = this.balanceStats || (this.balanceStats = createLocalBalanceStats());
 
         // Events are presentation/runtime data, not exported authoritative state. Consume them
         // once here to build local match diagnostics without influencing any gameplay decision.

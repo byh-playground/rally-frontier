@@ -167,6 +167,7 @@ END OF DEVELOPMENT CONTRACT
         <link rel="stylesheet" href="./src/styles/deck.css" />
         <link rel="stylesheet" href="./src/styles/help.css" />
         <link rel="stylesheet" href="./src/styles/result-stats.css" />
+        <script src="./src/ui/showcase-isolation.js"></script>
     </head>
     <body class="boot-loading">
         <div
@@ -525,15 +526,7 @@ END OF DEVELOPMENT CONTRACT
             </button>
             <div class="launch-hero">
                 <div class="launch-battle" aria-hidden="true">
-                    <video
-                        id="titleBattle"
-                        muted
-                        playsinline
-                        loop
-                        preload="none"
-                        poster="./assets/title-battle-poster.png"
-                        src="./assets/title-battle.webm"
-                    ></video>
+                    <div id="titleBattle"></div>
                 </div>
                 <h1 class="game-title">
                     쌀콩<span class="frontier-accent">팡!</span
