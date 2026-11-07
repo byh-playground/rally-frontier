@@ -2,6 +2,7 @@ import { UnitLobAttack } from './unit-lob-attack.js';
 // The deterministic lockstep strategy simulation.
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { UnitSpinAttack } from './unit-spin-attack.js';
+import { UnitLeapAttack } from './unit-leap-attack.js';
 import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './entities.js';
 import { StateContract, StateValue } from './components.js';
 import { UnitResultStats } from './unit-result-stats.js';
@@ -2052,6 +2053,10 @@ class StrategySim {
     updateCombat(u, vision, pendingContactAttacks = null) {
         const d = UnitDefinition.get(u.type);
         this.tickAttackTimers(u);
+        if (d.leapAttack && UnitLeapAttack.update(this, u, d.leapAttack, d.atk)) {
+            u.constructionWork = null;
+            return null;
+        }
         if (d.contactMelee && u.contactAttack?.phase === 'recover') {
             if (this.tick < u.contactAttack.untilTick) {
                 const speed = (d.speed * this.timedModifierPct(u, 'movePct')) / 100;
@@ -2150,6 +2155,12 @@ class StrategySim {
             // Wind-up is valid only while the target remains in legal attack range.
             if (u.combat.windupPending()) u.combat.cancelWindup();
             if (d.contactMelee && u.contactAttack?.phase === 'charge') u.contactAttack = null;
+            if (
+                !found.isBuilding &&
+                d.leapAttack &&
+                UnitLeapAttack.start(this, u, t, d.leapAttack, max)
+            )
+                return null;
             this.moveToGoal(u, this.engagementGoal(u, t, attackRange), moveSpeed);
             return null;
         }
@@ -3428,7 +3439,12 @@ class StrategySim {
         mark = profile ? now() : 0;
         this.solveContacts();
         winner = this.resolveContactAttacks(pendingContactAttacks, vision) || winner;
-        for (const u of this.units) this.navigation.motion.finishImpulseStep(u);
+        for (const u of this.units) {
+            this.navigation.motion.finishImpulseStep(u);
+            const definition = UnitDefinition.get(u.type);
+            if (definition?.leapAttack)
+                UnitLeapAttack.flush(this, u, definition.leapAttack, definition.atk);
+        }
         const collisionMs = profile ? now() - mark : 0;
 
         // Projectile hits inject velocity at this boundary. Both horizontal and vertical integration start next tick.

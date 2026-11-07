@@ -149,6 +149,16 @@ class UnitDefinition {
             role: 'bruiser',
             attackVisual: { sourceMotion: 'smash', travel: 'none', impact: 'light' },
             sight: 275,
+            // Trial values; retain the existing bundle size while balancing combat.
+            leapAttack: Object.freeze({
+                range: 150,
+                lift: 250,
+                radius: 50,
+                damageScale: 1,
+                knockbackSpeed: 250,
+                knockbackLift: 250,
+                cooldownMs: 3000,
+            }),
         },
     };
     static get(type) {

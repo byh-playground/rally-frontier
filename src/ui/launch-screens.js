@@ -54,10 +54,13 @@ const GRAIN_COPY = Object.freeze({
     },
     redbean: {
         role: '돌격 근접',
-        feature: '착지 후 돌격 · 3연발',
+        feature: '점프 돌격 · 착지 충격파',
         land: '착지 후 돌격',
         fire: '3연사',
-        desc: '같은 곳에 세 번 시간차로 떨어집니다. 착지하자마자 잠깐 빠르게 돌격합니다.',
+        desc: '세 번 시간차로 투입됩니다. 적 병사에게 점프해 접근하고 착지 충격파로 주변 적을 공격합니다.',
+        exceptions: [
+            '점프에는 재사용 대기 시간이 있으며, 가까운 적은 일반 근접 공격으로 상대합니다.',
+        ],
     },
 });
 const SCREENS = new Set(['', 'friend', 'help', 'play', 'result']);
