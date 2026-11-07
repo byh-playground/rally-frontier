@@ -3,7 +3,7 @@
     "private": true,
     "scripts": {
         "setup:gamekit": "node scripts/setup-gamekit.cjs",
-        "generate:icons": "npm run setup:gamekit && node scripts/generate-app-icons.cjs",
+        "generate:icons": "node scripts/generate-app-icons.cjs",
         "generate:title-showcase": "npm run setup:gamekit && node scripts/generate-title-showcase.cjs",
         "build": "node scripts/build-pages.cjs",
         "format": "prettier --write .",

@@ -1,26 +1,26 @@
 {
-  "id": "./",
-  "name": "쌀콩팡! | Rice, Beans & Boom!",
-  "short_name": "쌀콩팡!",
-  "lang": "ko",
-  "description": "쌀·콩·팥 병력을 대포로 투입하고 거점을 건설·점령하는 전략 게임",
-  "start_url": "./",
-  "scope": "./",
-  "display": "standalone",
-  "background_color": "#edf3da",
-  "theme_color": "#3e7447",
-  "icons": [
-    {
-      "src": "icons/ssalkongpang-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "icons/ssalkongpang-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    }
-  ]
+    "id": "./",
+    "name": "쌀콩팡! | Rice, Beans & Boom!",
+    "short_name": "쌀콩팡!",
+    "lang": "ko",
+    "description": "쌀·콩·팥 병력을 대포로 투입하고 거점을 건설·점령하는 전략 게임",
+    "start_url": "./",
+    "scope": "./",
+    "display": "standalone",
+    "background_color": "#edf3da",
+    "theme_color": "#3e7447",
+    "icons": [
+        {
+            "src": "icons/ssalkongpang-192.png?v=17b3d3cd",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/ssalkongpang-512.png?v=17b3d3cd",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        }
+    ]
 }
