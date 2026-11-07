@@ -110,6 +110,18 @@ class UnitDefinition {
             }),
             sight: 275,
         },
+        popcorn: {
+            ...RICE_MELEE,
+            name: '팝콘',
+            hp: 3,
+            speed: 100,
+            selfDestruct: Object.freeze({
+                windupMs: 1000,
+                radius: 80,
+                damage: 15,
+                impulseScale: 0.5,
+            }),
+        },
         chestnut: {
             requiresContactTerrain: false,
             construction: { range: 5, workPerHit: 1 },
@@ -211,6 +223,13 @@ class UnitVisualDefinition {
             fx: 'melee',
         },
         corn: {
+            family: 'grain',
+            billboard: true,
+            visualScale: 0.85,
+            accent: [0.95, 0.75, 0.25, 1],
+            fx: 'melee',
+        },
+        popcorn: {
             family: 'grain',
             billboard: true,
             visualScale: 0.85,

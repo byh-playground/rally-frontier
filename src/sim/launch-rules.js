@@ -86,6 +86,11 @@ class LaunchRules {
             cost: 50 * this.resourceScale,
             count: 6,
         }),
+        popcorn: Object.freeze({
+            ...SINGLE_BUNDLE_SHELL,
+            cost: 35 * this.resourceScale,
+            count: 10,
+        }),
         millet: Object.freeze({
             ...SINGLE_BUNDLE_SHELL,
             cost: 35 * this.resourceScale,

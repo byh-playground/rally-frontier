@@ -44,6 +44,8 @@ class Unit {
             data.spinAttack = null;
         if (UnitDefinition.get(data.type)?.contactMelee && !Object.hasOwn(data, 'contactAttack'))
             data.contactAttack = null;
+        if (UnitDefinition.get(data.type)?.selfDestruct && !Object.hasOwn(data, 'selfDestruct'))
+            data.selfDestruct = null;
         this.status = new StatusComponent(data.status || {});
         delete data.status;
         this.movement = new MovementComponent(data.movement || {});

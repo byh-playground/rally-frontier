@@ -1911,6 +1911,8 @@ class GLRenderer {
             this.spriteRenderers.millet.drawEar(matrix, 0);
             this.spriteRenderers.corn.drawKernel(matrix, 0);
             this.spriteRenderers.corn.drawCone(matrix, 0);
+            this.spriteRenderers.popcorn.drawAmmo(matrix, 0);
+            this.spriteRenderers.popcorn.drawBurst(matrix, 0);
             this.spriteRenderers.corn.drawTeamMarker(matrix, 0, true);
             for (let i = 0; i < 3; i++) this.spriteRenderers.corn.drawPopcorn(i, matrix, 0);
             C.flush('corn-particle-resource-preparation');
@@ -2696,7 +2698,7 @@ class GLRenderer {
     processCornEvents(snapshot) {
         if (!snapshot) return;
         for (const event of snapshot.events || []) {
-            if (event.type !== 'unitLobExplosion') continue;
+            if (event.type !== 'unitLobExplosion' && event.type !== 'unitSelfDestruct') continue;
             if (!this.eventVisible(event)) continue;
             const tick = Number.isFinite(Number(event.presentationTick))
                 ? Number(event.presentationTick)
@@ -2709,7 +2711,10 @@ class GLRenderer {
                 zFP: event.zFP,
                 radius: event.radius,
                 side: event.side,
-                seed: HashUtil.hash(String(event.projectileId || '') + '|' + tick),
+                selfDestruct: event.type === 'unitSelfDestruct',
+                seed: HashUtil.hash(
+                    String(event.projectileId || event.sourceId || '') + '|' + tick,
+                ),
             };
             EffectObjectFactory.attachClock(burst, clock, EffectObjectFactory.cornBurstLifeMs);
             this.cornBursts.push(burst);
@@ -4216,6 +4221,11 @@ class GLRenderer {
             this.vectorUnitAssetCache.set(key, record);
             return record;
         }
+        if (type === 'popcorn') {
+            record = { popcornAmmo: true };
+            this.vectorUnitAssetCache.set(key, record);
+            return record;
+        }
         if (type === 'millet') {
             record = { milletEar: true };
             this.vectorUnitAssetCache.set(key, record);
@@ -4257,7 +4267,9 @@ class GLRenderer {
                   ? angle + Math.PI / 4
                   : angle,
             actualScale =
-                record.acornAmmo || record.cornCone || record.milletEar ? scale * 200 : scale,
+                record.acornAmmo || record.cornCone || record.milletEar || record.popcornAmmo
+                    ? scale * 200
+                    : scale,
             cos = Math.cos(actualAngle) * actualScale,
             sin = Math.sin(actualAngle) * actualScale,
             m = this._vectorUnitMatrix;
@@ -4279,18 +4291,20 @@ class GLRenderer {
         m[2] = -sin * scaleY;
         m[3] = cos * scaleY;
         m[4] =
-            record.acornAmmo || record.cornCone || record.milletEar
+            record.acornAmmo || record.cornCone || record.milletEar || record.popcornAmmo
                 ? x
                 : x - m[0] * 128 - m[2] * 128;
         m[5] =
-            record.acornAmmo || record.cornCone || record.milletEar
+            record.acornAmmo || record.cornCone || record.milletEar || record.popcornAmmo
                 ? y
                 : y - m[1] * 128 - m[3] * 128;
-        if (record.acornAmmo || record.cornCone || record.milletEar) {
+        if (record.acornAmmo || record.cornCone || record.milletEar || record.popcornAmmo) {
             this.vectorContext.depthTest = depthTest;
             this.vectorContext.depthWrite = false;
             if (record.acornAmmo) this.spriteRenderers.acorn.drawAmmo(m, this._renderDepth ?? 0);
             else if (record.cornCone) this.spriteRenderers.corn.drawCone(m, this._renderDepth ?? 0);
+            else if (record.popcornAmmo)
+                this.spriteRenderers.popcorn.drawAmmo(m, this._renderDepth ?? 0);
             else this.spriteRenderers.millet.drawEar(m, this._renderDepth ?? 0);
             return;
         }
@@ -4595,6 +4609,9 @@ class GLRenderer {
                 }
             }
             const spin = record.compiled === this.spriteRenderers.acorn ? entity.spinAttack : null;
+            const selfDestruct =
+                entity.selfDestruct?.phase === 'windup' ? entity.selfDestruct : null;
+            if (selfDestruct) clip = 'windup';
             if (spin) clip = 'spin';
             if (
                 actor.currentClip !== clip ||
@@ -4613,6 +4630,11 @@ class GLRenderer {
                         : elapsed < windupTicks + activeTicks
                           ? 1000 + ((elapsed - windupTicks) / activeTicks) * 2000
                           : 3000 + ((elapsed - windupTicks - activeTicks) / recoveryTicks) * 1000,
+                );
+            } else if (selfDestruct) {
+                const duration = Math.max(1, selfDestruct.endTick - selfDestruct.startTick);
+                actor.seekElapsed(
+                    1000 * RangeUtil.clamp((renderTick - selfDestruct.startTick) / duration, 0, 1),
                 );
             } else if (cornElapsed != null) actor.seekElapsed(cornElapsed);
             else if (chestnutFireMs !== null && clip === 'fire') actor.seekElapsed(chestnutFireMs);
@@ -4661,7 +4683,10 @@ class GLRenderer {
                 impact.expression ||
                 ((record.sprite ? clip === 'hit' : u.hitFlash > 0)
                     ? 'hurt'
-                    : work?.clip || spin || (record.sprite ? clip === 'fire' : u.attackFlash > 0)
+                    : work?.clip ||
+                        spin ||
+                        selfDestruct ||
+                        (record.sprite ? clip === 'fire' : u.attackFlash > 0)
                       ? 'attack'
                       : 'neutral');
             grain.bodyDrawn = false;
@@ -5271,7 +5296,7 @@ class GLRenderer {
         );
         this.sampleCornTrail('millet-ear:' + projectile.id, projectile.side, world);
     }
-    drawCornConeProjectile(projectile, world) {
+    drawCornConeProjectile(projectile, world, popcorn = false) {
         if (projectile.side !== this.mySide() && !this.visibleRaw(projectile.x, projectile.y))
             return;
         const point = this.projectRenderWorldPosition(world),
@@ -5307,7 +5332,8 @@ class GLRenderer {
         C.depthTest = !!this.passState.depthEnabled;
         C.depthWrite = false;
         C.depthFunc = this.passState.depthFunc || 'lequal';
-        this.spriteRenderers.corn.drawCone(matrix, this._renderDepth ?? 0);
+        if (popcorn) this.spriteRenderers.popcorn.drawAmmo(matrix, this._renderDepth ?? 0);
+        else this.spriteRenderers.corn.drawCone(matrix, this._renderDepth ?? 0);
         const markerSize = Math.max(4, 6 * this.sc());
         matrix[0] = markerSize;
         matrix[1] = 0;
@@ -5455,8 +5481,30 @@ class GLRenderer {
             const age = burst.clock.ageMs;
             if (age < 0 || (burst.side !== this.mySide() && !this.visibleRaw(burst.x, burst.y)))
                 continue;
-            const t = Math.min(1, age / burstLife),
-                distance = Math.min(45, Number(burst.radius) || 45) * t;
+            const t = Math.min(1, age / burstLife);
+            if (burst.selfDestruct) {
+                const world = {
+                    x: burst.x,
+                    z: burst.y,
+                    y: (Number(burst.zFP) || 0) / FP + 10,
+                    groundY: 0,
+                };
+                const point = this.projectRenderWorldPosition(world),
+                    size = Math.max(4, (30 + 65 * Math.min(1, t * 3)) * sc);
+                matrix[0] = size;
+                matrix[1] = 0;
+                matrix[2] = 0;
+                matrix[3] = size;
+                matrix[4] = point.x;
+                matrix[5] = point.y;
+                this.spriteRenderers.popcorn.drawBurst(
+                    matrix,
+                    this.spriteDepthForWorld(world),
+                    1 - t,
+                );
+                continue;
+            }
+            const distance = Math.min(45, Number(burst.radius) || 45) * t;
             for (let i = 0; i < 6; i++) {
                 const angle = (i * Math.PI * 2) / 6 + ((burst.seed % 360) * Math.PI) / 180;
                 const world = {
@@ -6064,6 +6112,8 @@ class GLRenderer {
                 else if (kind === 'unitLob') this.drawCornKernel(entity, world);
                 else if (kind === 'projectile' && entity.payload?.type === 'corn')
                     this.drawCornConeProjectile(entity, world);
+                else if (kind === 'projectile' && entity.payload?.type === 'popcorn')
+                    this.drawCornConeProjectile(entity, world, true);
                 else if (kind === 'projectile' && entity.payload?.type === 'millet')
                     this.drawMilletEarProjectile(entity, world);
                 else if (kind === 'thorn') this.drawThorn(entity, world);
@@ -7194,6 +7244,7 @@ class AudioSystem {
 
     playEvent(e, renderer) {
         if (!e || !this.enabled || !this.unlocked) return;
+        if (e.type === 'unitSelfDestruct' && !renderer.eventVisible(e)) return;
         const gain = this.spatialGain(
             e.x ?? renderer.world.center.x,
             e.y ?? renderer.world.center.y,
@@ -7201,6 +7252,7 @@ class AudioSystem {
         );
         if (gain <= 0) return;
         if (e.type === 'captureComplete') this.captureChime(Math.max(0.45, gain));
+        else if (e.type === 'unitSelfDestruct') this.explosion(gain * 0.65);
         else if (e.type === 'buildingDeath') this.buildingCollapse(gain);
         else if (e.type === 'death') this.death(gain);
         else if (e.type === 'hit') this.playHitForType(e.sourceType || '', gain);
@@ -8469,7 +8521,10 @@ function createPresentationView(owner, getRenderer, { hud = true, audio = true }
         },
         hasAudio(event) {
             return (
-                audio && ['captureComplete', 'buildingDeath', 'death', 'hit'].includes(event.type)
+                audio &&
+                ['captureComplete', 'buildingDeath', 'death', 'hit', 'unitSelfDestruct'].includes(
+                    event.type,
+                )
             );
         },
         visibility(event) {
