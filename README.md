@@ -47,6 +47,10 @@
 
 ## 원본과 실행
 
+메인 전투는 독립된 실제 시뮬레이션을 GameKit scenario로 진행한다. `assets/title-showcase.json`은 seed 12349의 한 경기에서 저장한 세 상태이며, 최대 사거리와 연출용 보급을 적용했다. `PRODUCT_VERSION`이 바뀌면 `npm run generate:title-showcase`로 현행 엔진의 상태를 다시 만들고 화면을 검증한다. 빌드는 상태의 게임 버전이 현재 제품 버전과 다르면 실패한다.
+
+시뮬레이션 시간 변환과 상태 codec, 통계 기본값은 UI와 독립된 `src/core/simulation-timing.js`, `src/core/rally-state-codec.js`, `src/diagnostics/simulation-stats.js`가 소유한다. 순수 시뮬레이션 Worker는 게임 모듈 import 전에 `__RALLY_GAMEKIT_SCOPE__ = 'simulation'`을 지정해 필요한 GameKit 도메인 모듈만 읽는다. 기존 AI 세션 Worker는 아직 UI와 연결된 `GameSession`을 사용하므로 전체 모듈을 유지한다.
+
 ```text
 index.html                 브라우저 ESM 진입점·UI·프로젝트 개발 계약
 src/main.js                화면·입력·실제 WebGL renderer

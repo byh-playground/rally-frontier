@@ -68,8 +68,9 @@ export class LaunchScreens {
     }
     // actions: { inMatch(), hasResult(), startAiMatch(), openMenu(), closeMenu(), grains(), grainName(type), grainStats(type),
     //           portraitSource(type), toggleSound(), soundOn(), createRoom(), joinRoom(code), leaveToTitle() }
-    static install({ createNavigation, actions }) {
+    static install({ createNavigation, mountScenarioFrame, actions }) {
         this.actions = actions;
+        this.mountScenarioFrame = mountScenarioFrame;
         this.$ = (id) => document.getElementById(id);
         this.navigation = createNavigation({
             normalize: (route) =>
@@ -203,67 +204,90 @@ export class LaunchScreens {
         this.replace(ROUTE.screen === 'play' ? 'play' : '');
     }
     static async prepareTitleBattle() {
-        const VIDEO = document.getElementById('titleBattle');
         if (
             matchMedia('(prefers-reduced-motion: reduce)').matches ||
-            location.hash.startsWith('#/play')
+            this.$('lobby').classList.contains('hidden') ||
+            this.titleBattleFrame ||
+            this.titleBattleFailed
         )
             return;
-        const controller = new AbortController();
-        let objectUrl = null;
-        const ready = await new Promise((resolve) => {
-            let settled = false;
-            const finish = (value) => {
-                if (settled) return;
-                settled = true;
-                clearTimeout(timer);
-                VIDEO.removeEventListener('loadeddata', loaded);
-                VIDEO.removeEventListener('error', failed);
-                if (!value) controller.abort();
-                resolve(value);
-            };
-            const loaded = () => finish(true);
-            const failed = () => finish(false);
-            const timer = setTimeout(failed, 8000);
-            VIDEO.addEventListener('loadeddata', loaded, { once: true });
-            VIDEO.addEventListener('error', failed, { once: true });
-            fetch(VIDEO.src, { signal: controller.signal })
-                .then((response) => {
-                    if (!response.ok) throw new Error('Title video unavailable');
-                    return response.blob();
-                })
-                .then((blob) => {
-                    if (settled) return;
-                    objectUrl = URL.createObjectURL(new Blob([blob], { type: 'video/webm' }));
-                    VIDEO.src = objectUrl;
-                    VIDEO.preload = 'auto';
-                    VIDEO.load();
-                })
-                .catch(failed);
-        });
-        if (!ready) {
-            VIDEO.hidden = true;
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        const host = this.$('titleBattle');
+        try {
+            const mount = this.mountScenarioFrame({
+                container: host,
+                src: './index.html?titleShowcase=1',
+                timeoutMs: 15000,
+                configure(frame) {
+                    frame.title = '실시간 전투 배경';
+                    frame.tabIndex = -1;
+                    frame.setAttribute('aria-hidden', 'true');
+                },
+                prepare: ({ frame, signal }) =>
+                    new Promise((resolve) => {
+                        const finish = (ok) => {
+                            window.removeEventListener('message', receive);
+                            signal.removeEventListener('abort', abort);
+                            if (!ok) this.titleBattleFailed = true;
+                            resolve();
+                        };
+                        const abort = () => finish(false);
+                        const receive = (event) => {
+                            if (
+                                event.origin !== location.origin ||
+                                event.source !== frame.contentWindow
+                            )
+                                return;
+                            if (event.data?.type === 'title-showcase-ready') finish(true);
+                            else if (event.data?.type === 'title-showcase-failed') finish(false);
+                        };
+                        window.addEventListener('message', receive);
+                        signal.addEventListener('abort', abort, { once: true });
+                    }),
+            });
+            this.titleBattleMount = mount;
+            this.titleBattleFrame = mount.frame;
+            const ready = await mount.ready;
+            if (!ready || this.titleBattleFailed) {
+                mount.dispose();
+                this.titleBattleFrame = null;
+            } else this.titleBattleReady = true;
+        } catch (error) {
+            this.titleBattleFailed = true;
+            this.titleBattleFrame = null;
+            console.error(error);
         }
+        this.syncTitleBattle?.();
     }
     static installTitleBattle() {
-        const VIDEO = this.$('titleBattle');
         const LOBBY = this.$('lobby');
         const MOTION = matchMedia('(prefers-reduced-motion: reduce)');
         const sync = () => {
-            if (
-                document.hidden ||
-                document.body.classList.contains('boot-loading') ||
-                LOBBY.classList.contains('hidden') ||
-                MOTION.matches ||
-                VIDEO.hidden
-            ) {
-                VIDEO.pause();
-                return;
+            const active =
+                !document.hidden &&
+                !document.body.classList.contains('boot-loading') &&
+                !LOBBY.classList.contains('hidden') &&
+                !MOTION.matches;
+            if (active && !this.titleBattleFrame && !this.titleBattleFailed) {
+                void this.prepareTitleBattle();
             }
-            // Autoplay can be disallowed by the browser; the static poster remains visible.
-            VIDEO.play().catch(() => {});
+            this.titleBattleFrame?.contentWindow?.postMessage(
+                { type: 'title-showcase-active', active },
+                location.origin,
+            );
         };
+        this.syncTitleBattle = sync;
+        window.addEventListener('message', (event) => {
+            if (
+                this.titleBattleReady &&
+                event.origin === location.origin &&
+                event.source === this.titleBattleFrame?.contentWindow &&
+                event.data?.type === 'title-showcase-failed'
+            ) {
+                this.titleBattleMount?.dispose();
+                this.titleBattleFrame = null;
+                this.titleBattleFailed = true;
+            }
+        });
         new MutationObserver(sync).observe(LOBBY, { attributes: true, attributeFilter: ['class'] });
         new MutationObserver(sync).observe(document.body, {
             attributes: true,
@@ -271,7 +295,6 @@ export class LaunchScreens {
         });
         document.addEventListener('visibilitychange', sync);
         MOTION.addEventListener('change', sync);
-        sync();
     }
     // Card buttons with face portraits; the game keeps their selected/unaffordable classes.
     static cardMarkup(type) {

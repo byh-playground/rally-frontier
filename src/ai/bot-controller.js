@@ -6,7 +6,7 @@ import { LaunchRules } from '../sim/launch-rules.js';
 import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.js';
 import { HashUtil } from '../sim/map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
-import { SimulationTiming } from '../main.js';
+import { SimulationTiming } from '../core/simulation-timing.js';
 
 // Tracks the bot's commands from offer to the sim's receipt, so a shot already paid for
 // is not paid again from a snapshot that predates it.

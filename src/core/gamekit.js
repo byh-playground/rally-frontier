@@ -1,9 +1,12 @@
 // Loads pinned GameKit dist and the battlefield's verified image/vector assets before dependent modules evaluate.
 import { loadGrainSpriteCanvases } from '../render/grain-sprite-registry.js';
 // prettier-ignore
-const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","navigation":"navigation.js","objectPool":"object-pool.js","geometry":"geometry.js","spatial":"spatial.js","face":"face.js","pathfield":"pathfield.js","vision":"vision.js"});
+const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","navigation":"navigation.js","objectPool":"object-pool.js","geometry":"geometry.js","spatial":"spatial.js","face":"face.js","pathfield":"pathfield.js","vision":"vision.js","scenario":"scenario.js"});
 // A dedicated Worker hosts only a simulation session (src/sim-worker.js): no UI boot.
 const SIM_WORKER = typeof WorkerGlobalScope !== 'undefined';
+// A pure simulation Worker needs domain primitives, never browser rendering or transport.
+const SIMULATION_ONLY = SIM_WORKER && globalThis.__RALLY_GAMEKIT_SCOPE__ === 'simulation';
+const SIMULATION_MODULES = new Set(['deterministic', 'geometry', 'spatial', 'pathfield', 'vision']);
 // Resolve from this module so the page and the Worker realm load the same files.
 // prettier-ignore
 const RALLY_ASSET_ROOT=new URL('../../',import.meta.url);
@@ -94,34 +97,40 @@ try {
     RALLY_NETCODE_URL = 'gamekit:' + gamekitSource.distCommit;
     // Import only immutable official ESM bytes from the pinned dist; keep source files unchanged.
     const modules = await Promise.all(
-        Object.entries(RALLY_GAMEKIT_MODULES).map(async ([name, file]) => {
-            const entry = gamekitLock.modules[name];
-            if (!entry || entry.file !== file || !/^[a-f0-9]{64}$/.test(entry.sha256 || ''))
-                throw new Error('Gamekit lock entry mismatch: ' + name);
-            const url =
-                'https://cdn.jsdelivr.net/gh/' +
-                gamekitSource.repository +
-                '@' +
-                gamekitSource.distCommit +
-                '/' +
-                file;
-            const response = await fetch(url);
-            if (!response.ok)
-                throw new Error('Gamekit module load failed: ' + name + ' HTTP ' + response.status);
-            const bytes = await response.arrayBuffer();
-            const digest = Array.from(
-                new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
-                (b) => b.toString(16).padStart(2, '0'),
-            ).join('');
-            if (digest !== entry.sha256)
-                throw new Error('Gamekit module SHA-256 mismatch: ' + name);
-            const objectURL = URL.createObjectURL(new Blob([bytes], { type: 'text/javascript' }));
-            try {
-                return [name, await import(objectURL)];
-            } finally {
-                URL.revokeObjectURL(objectURL);
-            }
-        }),
+        Object.entries(RALLY_GAMEKIT_MODULES)
+            .filter(([name]) => !SIMULATION_ONLY || SIMULATION_MODULES.has(name))
+            .map(async ([name, file]) => {
+                const entry = gamekitLock.modules[name];
+                if (!entry || entry.file !== file || !/^[a-f0-9]{64}$/.test(entry.sha256 || ''))
+                    throw new Error('Gamekit lock entry mismatch: ' + name);
+                const url =
+                    'https://cdn.jsdelivr.net/gh/' +
+                    gamekitSource.repository +
+                    '@' +
+                    gamekitSource.distCommit +
+                    '/' +
+                    file;
+                const response = await fetch(url);
+                if (!response.ok)
+                    throw new Error(
+                        'Gamekit module load failed: ' + name + ' HTTP ' + response.status,
+                    );
+                const bytes = await response.arrayBuffer();
+                const digest = Array.from(
+                    new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+                    (b) => b.toString(16).padStart(2, '0'),
+                ).join('');
+                if (digest !== entry.sha256)
+                    throw new Error('Gamekit module SHA-256 mismatch: ' + name);
+                const objectURL = URL.createObjectURL(
+                    new Blob([bytes], { type: 'text/javascript' }),
+                );
+                try {
+                    return [name, await import(objectURL)];
+                } finally {
+                    URL.revokeObjectURL(objectURL);
+                }
+            }),
     );
     const namespaces = Object.fromEntries(modules);
     const loadedVectorAssets = SIM_WORKER
@@ -141,38 +150,57 @@ try {
     });
     RallyGamekit = Object.freeze(Object.assign({}, ...modules.map(([, module]) => module)));
     globalThis.RallyGamekit = RallyGamekit;
-    for (const name of [
-        'PresentationRuntime',
-        'RenderObject',
-        'WebGLDevice',
-        'estimateTextureAtlasLayers',
-        'createDOMInput',
-        'CameraViewport',
-        'PresentationEventQueue',
-        'resolveAnchorInto',
-        'DiagnosticRing',
-        'ReplayTimeline',
-        'VectorContext',
-        'createVectorActor',
-        'holdVectorAsset',
-        'createVectorAssetLoader',
-        'compilePoseChannels',
-        'ObjectPool',
-        'createNavigation',
-    ])
+    for (const name of SIMULATION_ONLY
+        ? [
+              'BoundsGrid',
+              'BoundsIndex',
+              'UniformGrid',
+              'ObstacleField',
+              'SurfaceMotion',
+              'SweptCircleContact',
+              'SurfaceContactGeometry',
+              'VisionMap',
+              'VisionField',
+              'DistanceField',
+              'FieldCache',
+              'PathGrid',
+          ]
+        : [
+              'PresentationRuntime',
+              'RenderObject',
+              'WebGLDevice',
+              'estimateTextureAtlasLayers',
+              'createDOMInput',
+              'CameraViewport',
+              'PresentationEventQueue',
+              'resolveAnchorInto',
+              'DiagnosticRing',
+              'ReplayTimeline',
+              'VectorContext',
+              'createVectorActor',
+              'holdVectorAsset',
+              'createVectorAssetLoader',
+              'compilePoseChannels',
+              'ObjectPool',
+              'createNavigation',
+              'createScenario',
+              'mountScenarioFrame',
+          ])
         if (typeof RallyGamekit[name] !== 'function')
             throw new Error('Gamekit module API missing: ' + name);
-    if (!Array.isArray(RallyGamekit.VECTOR_RENDERER_ATLAS_REGIONS))
+    if (!SIMULATION_ONLY && !Array.isArray(RallyGamekit.VECTOR_RENDERER_ATLAS_REGIONS))
         throw new Error('Gamekit vector renderer atlas reservation API가 없습니다.');
-    for (const name of [
-        'createSession',
-        'hashBytes',
-        'createValueCodec',
-        'WebRTCTransport',
-        'createNostrSignaler',
-        'createLoop',
-        'runSyncTestAsync',
-    ]) {
+    for (const name of SIMULATION_ONLY
+        ? ['hashBytes', 'createValueCodec']
+        : [
+              'createSession',
+              'hashBytes',
+              'createValueCodec',
+              'WebRTCTransport',
+              'createNostrSignaler',
+              'createLoop',
+              'runSyncTestAsync',
+          ]) {
         if (typeof RallyNetcode[name] !== 'function')
             throw new Error(
                 '공개 라이브러리에 필수 API ' +
@@ -181,6 +209,7 @@ try {
             );
     }
     if (
+        !SIMULATION_ONLY &&
         typeof Object.getOwnPropertyDescriptor(
             RallyNetcode.SyncTestSession?.prototype || {},
             'metrics',
@@ -189,7 +218,10 @@ try {
         throw new Error(
             '공개 라이브러리에 Synctest metrics API가 없습니다. 라이브러리 배포 상태를 확인해 주세요.',
         );
-    if (typeof RallyNetcode.RollbackSession?.prototype.exportSyncTestFrames !== 'function')
+    if (
+        !SIMULATION_ONLY &&
+        typeof RallyNetcode.RollbackSession?.prototype.exportSyncTestFrames !== 'function'
+    )
         throw new Error(
             '공개 라이브러리에 확정 입력 Synctest export API가 없습니다. 라이브러리 배포 상태를 확인해 주세요.',
         );
