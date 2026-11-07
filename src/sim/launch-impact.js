@@ -68,10 +68,13 @@ class LaunchImpact {
         };
     }
     static blast(sim, p, x, y, radius, impactHeightFP) {
-        sim.withNearbyUnits(x, y, radius + sim.maxUnitRadius, 1 - p.side, (indices) => {
+        this.radialImpulse(sim, { side: p.side, sourceId: p.id, x, y, radius, impactHeightFP });
+    }
+    static radialImpulse(sim, { side, sourceId, x, y, radius, impactHeightFP, scale = 1 }) {
+        sim.withNearbyUnits(x, y, radius + sim.maxUnitRadius, 1 - side, (indices) => {
             for (const index of indices) {
                 const u = sim.units[index];
-                if (!u?.alive || u.side !== 1 - p.side) continue;
+                if (!u?.alive || u.side !== 1 - side) continue;
                 const dx = u.x - x,
                     dy = u.y - y,
                     body = this.distanceToBody(sim, u, x, y, impactHeightFP),
@@ -82,9 +85,9 @@ class LaunchImpact {
                 this.start(sim, u, {
                     dx,
                     dy,
-                    speed: LaunchImpactRules.knockbackSpeed * (0.25 + 0.75 * strength),
-                    lift: strength >= 0.5 ? LaunchImpactRules.knockbackLift * strength : 0,
-                    sourceId: p.id,
+                    speed: LaunchImpactRules.knockbackSpeed * scale * (0.25 + 0.75 * strength),
+                    lift: strength >= 0.5 ? LaunchImpactRules.knockbackLift * scale * strength : 0,
+                    sourceId,
                     originX: x,
                     originY: y,
                 });

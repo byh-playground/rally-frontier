@@ -51,6 +51,9 @@ class UnitRenderObject extends RenderField {
                 'spinAttack.activeStartTick',
                 'spinAttack.activeEndTick',
                 'spinAttack.endTick',
+                'selfDestruct.phase',
+                'selfDestruct.startTick',
+                'selfDestruct.endTick',
             ].map((k) => ['entity.' + k, RenderField.STEP]),
         ),
     };

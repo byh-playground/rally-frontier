@@ -2,6 +2,7 @@ import { UnitLobAttack } from './unit-lob-attack.js';
 // The deterministic lockstep strategy simulation.
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { UnitSpinAttack } from './unit-spin-attack.js';
+import { UnitSelfDestructAttack } from './unit-self-destruct-attack.js';
 import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './entities.js';
 import { StateContract, StateValue } from './components.js';
 import { UnitResultStats } from './unit-result-stats.js';
@@ -253,6 +254,8 @@ class StrategySim {
                 'targetLevelMemo',
                 'visionFields',
                 'navigation',
+                '_selfDestructQueue',
+                '_drainingSelfDestruct',
             ],
         },
     );
@@ -1722,6 +1725,7 @@ class StrategySim {
             killerSide: sourceSide,
             sourceType,
         });
+        UnitSelfDestructAttack.onDeath(this, target);
         return null;
     }
     flatArmorValue(target) {
@@ -2051,6 +2055,7 @@ class StrategySim {
     // Grains are melee bruisers: march to the rally point, chase the chosen target, wind up, hit.
     updateCombat(u, vision, pendingContactAttacks = null) {
         const d = UnitDefinition.get(u.type);
+        if (d.selfDestruct && UnitSelfDestructAttack.update(this, u, d.selfDestruct)) return null;
         this.tickAttackTimers(u);
         if (d.contactMelee && u.contactAttack?.phase === 'recover') {
             if (this.tick < u.contactAttack.untilTick) {
@@ -2151,6 +2156,11 @@ class StrategySim {
             if (u.combat.windupPending()) u.combat.cancelWindup();
             if (d.contactMelee && u.contactAttack?.phase === 'charge') u.contactAttack = null;
             this.moveToGoal(u, this.engagementGoal(u, t, attackRange), moveSpeed);
+            return null;
+        }
+
+        if (d.selfDestruct) {
+            UnitSelfDestructAttack.start(this, u, d.selfDestruct);
             return null;
         }
 

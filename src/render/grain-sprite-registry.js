@@ -8,6 +8,11 @@ import { loadBeanSpriteCanvases, beanSpritePortrait, BeanSpriteRenderer } from '
 import { loadAcornSpriteCanvas, acornSpritePortrait, AcornSpriteRenderer } from './acorn-sprite.js';
 import { loadCornSpriteCanvas, cornSpritePortrait, CornSpriteRenderer } from './corn-sprite.js';
 import {
+    loadPopcornSpriteCanvas,
+    popcornSpritePortrait,
+    PopcornSpriteRenderer,
+} from './popcorn-sprite.js';
+import {
     loadMilletSpriteCanvas,
     milletSpritePortrait,
     MilletSpriteRenderer,
@@ -28,6 +33,7 @@ const SPRITE_SOURCES = Object.freeze({
     beans: loadBeanSpriteCanvases,
     acorn: loadAcornSpriteCanvas,
     corn: loadCornSpriteCanvas,
+    popcorn: loadPopcornSpriteCanvas,
     chestnut: loadChestnutSpriteCanvas,
     millet: loadMilletSpriteCanvas,
 });
@@ -70,6 +76,12 @@ export const GRAIN_SPRITES = Object.freeze({
         source: 'beans',
         renderer: BeanSpriteRenderer,
         portrait: (canvas, width) => beanSpritePortrait(canvas, 'redbean', width),
+        groundY: 145,
+    },
+    popcorn: {
+        source: 'popcorn',
+        renderer: PopcornSpriteRenderer,
+        portrait: popcornSpritePortrait,
         groundY: 145,
     },
     corn: {
