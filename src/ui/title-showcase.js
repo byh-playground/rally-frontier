@@ -1,8 +1,15 @@
 import { PRODUCT_VERSION } from '../core/product-version.js';
+import {
+    attachPublishedVisibility,
+    captureFramePresentationEvents,
+    createFramePresentationJournal,
+    configureFramePresentationJournal,
+    emitFramePresentationEvents,
+} from '../core/presentation-frame-event.js';
 import { createTitleRun } from './title-showcase-sim.js';
 
 // The title document owns a separate simulation; it never joins a player session.
-export async function prepareTitleShowcase({ renderer, createScenario }) {
+export async function prepareTitleShowcase({ renderer, createScenario, createPresentationView }) {
     const response = await fetch(new URL('../../assets/title-showcase.json', import.meta.url));
     if (!response.ok) throw new Error('타이틀 전투 데이터를 불러오지 못했습니다.');
     const saved = await response.json();
@@ -19,8 +26,19 @@ export async function prepareTitleShowcase({ renderer, createScenario }) {
 
     const run = createTitleRun(saved.seed);
     let scenario;
+    let journal;
+    let presentationActive = false;
     let disposed = false;
     let shownScene = -1;
+    const owner = {
+        finishPresentationEvent(record) {
+            return journal?.finish(record);
+        },
+    };
+    const view = createPresentationView(owner, () => renderer, { hud: false, audio: false });
+    const presentFrame = (frame) => {
+        if (!disposed && frame?.timeMs != null) journal?.present(frame);
+    };
     const cameras = [
         [1470, 3120],
         [2630, 2893],
@@ -33,6 +51,9 @@ export async function prepareTitleShowcase({ renderer, createScenario }) {
         renderer.cameraTop = renderer.clampCameraTop(y - renderer.viewWorldH() / 2);
     };
     const load = (index) => {
+        journal?.dispose();
+        journal = createFramePresentationJournal({ getView: () => view, onImmediate: () => {} });
+        configureFramePresentationJournal(journal, view, run.sim.tps, presentationActive);
         run.restore(checkpoints[index]);
         camera(index);
         renderer.setSnapshot(run.sim.snapshot(), { snapTargets: true });
@@ -41,7 +62,9 @@ export async function prepareTitleShowcase({ renderer, createScenario }) {
     const dispose = () => {
         if (disposed) return;
         disposed = true;
+        if (renderer.onPresentationFrame === presentFrame) renderer.onPresentationFrame = null;
         scenario?.dispose();
+        journal?.dispose();
         run.sim.dispose('title-showcase');
     };
     try {
@@ -55,6 +78,7 @@ export async function prepareTitleShowcase({ renderer, createScenario }) {
         // Strategic status belongs to the interactive match HUD, not this background scene.
         renderer.drawStrategicLabels = () => {};
         load(0);
+        renderer.onPresentationFrame = presentFrame;
         scenario = createScenario({
             definition: { seed: saved.seed, tickRate: run.sim.tps, endTick: 102, loop: true },
             createRun() {
@@ -64,10 +88,22 @@ export async function prepareTitleShowcase({ renderer, createScenario }) {
                             const scene = frame.tick <= 42 ? 0 : frame.tick <= 72 ? 1 : 2;
                             if (scene !== shownScene || frame.tick === 1) load(scene);
                             run.advance();
-                            renderer.setSnapshot(run.sim.snapshot(), {
+                            const snapshot = run.sim.snapshot();
+                            const events = captureFramePresentationEvents(
+                                snapshot.events || [],
+                                run.sim,
+                            );
+                            renderer.setSnapshot(snapshot, {
                                 liveTargets: false,
                                 snapTargets: false,
                             });
+                            journal.update(performance.now());
+                            emitFramePresentationEvents(
+                                journal,
+                                view,
+                                run.sim.tick,
+                                attachPublishedVisibility(events, view),
+                            );
                         } catch (error) {
                             dispose();
                             renderer.stopLoop();
@@ -93,10 +129,16 @@ export async function prepareTitleShowcase({ renderer, createScenario }) {
         scenario.pause();
         return {
             play() {
-                if (!disposed) scenario.play();
+                if (disposed) return;
+                presentationActive = true;
+                journal.setPresentationActive(true);
+                scenario.play();
             },
             pause() {
-                if (!disposed) scenario.pause();
+                if (disposed) return;
+                scenario.pause();
+                presentationActive = false;
+                journal.setPresentationActive(false);
             },
             dispose,
         };
