@@ -334,6 +334,17 @@ class StrategySim {
                 outpost.hp = outpost.maxHp;
                 this.completeConstruction(outpost);
             }
+            if (this.rules.campaign.baseDepositRatio != null) {
+                this.baseDeposits[0].remaining = Math.round(
+                    LaunchRules.depositCapacity * this.rules.campaign.baseDepositRatio,
+                );
+            }
+            if (this.rules.campaign.introducedEnemy) {
+                const point = points[Math.max(0, this.rules.campaign.enemyOutposts - 1)];
+                const type = this.rules.campaign.introducedEnemy;
+                for (let i = 0; i < 3; i++)
+                    this.spawnUnit(1, type, point.x + (i - 1) * 50, point.y + 100);
+            }
         }
         // Landed units march straight to the enemy main base.
         for (const side of [0, 1]) {

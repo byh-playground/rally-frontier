@@ -9823,9 +9823,18 @@ class LaunchPresentation {
                 stage.defenseSeconds - s.tick / (s.tps || ActiveSimulationTiming.tps()),
             );
             const defending = stage.defenseSeconds && remaining > 0;
+            const needsPremium =
+                stage.resourceLesson &&
+                !s.capturePoints?.some(
+                    (point) => point.owner === side && point.resourceType === 'premium',
+                );
             objective.textContent = defending
                 ? `본진을 지키세요 · ${Math.ceil(remaining)}초`
-                : '적 본진을 파괴하세요';
+                : needsPremium
+                  ? (s.launchRangeLevel?.[side] || 0) === 0
+                      ? '사거리를 강화하세요'
+                      : '고급 자원 거점을 확보하세요'
+                  : '적 본진을 파괴하세요';
         }
         LaunchScreens.renderHud({
             myHpPct: hp(side),
