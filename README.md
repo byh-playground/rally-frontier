@@ -12,7 +12,7 @@
 
 경기 결과의 병종별 출격은 발사 승인 수가 아니라 실제로 생성된 병사 수입니다. 병종별 처치는 적 병사만 세며, 유효 피해는 적 병사와 건물의 실제 감소 체력을 합산해 초과 피해를 제외합니다. 해당 병종의 투입 포탄 피해와 병사 공격을 함께 집계하고 병종이 없는 건물 자체 공격은 제외합니다. 이 누적치는 경기 권위 상태에 보관되어 스냅샷·복구·리플레이에 포함됩니다.
 
-영문 표기는 **Rice, Beans & Boom!**입니다. 공유 썸네일 원본은 [`assets/ssalkongpang-thumbnail.png`](assets/ssalkongpang-thumbnail.png)입니다. BLOOM PLAYGROUND 매니페스트의 영문 필드는 해당 스키마의 문자 제한 때문에 `RICE BEANS AND BOOM`으로 표기합니다.
+영문 표기는 **Rice, Beans & Boom!**입니다. 링크 공유에는 가로 썸네일 [`assets/ssalkongpang-thumbnail.png`](assets/ssalkongpang-thumbnail.png)을 우선 사용하고, 정사각형 시안 [`assets/ssalkongpang-thumbnail-square.png`](assets/ssalkongpang-thumbnail-square.png)도 Open Graph에 제공합니다. 실제 이미지 선택은 공유 서비스에 따라 다릅니다. BLOOM PLAYGROUND 매니페스트의 영문 필드는 해당 스키마의 문자 제한 때문에 `RICE BEANS AND BOOM`으로 표기합니다.
 
 쌀·조·콩·팥·밤톨·옥수수·도토리는 승인된 몸체와 얼굴·팔다리 스프라이트를 공통 아틀라스와 GPU 포즈로 조합합니다. 대포는 벡터 원본을 사용합니다. 앱 아이콘은 현재 쌀과 대포 원본을 조합하며, 아트 변경 후 `npm run generate:icons`로 180·192·512px 아이콘을 다시 만듭니다.
 
