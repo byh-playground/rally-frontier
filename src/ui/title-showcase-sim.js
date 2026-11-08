@@ -27,6 +27,7 @@ export function createTitleRun(seed) {
                     )[0];
                 if (!cannon) continue;
                 sim.creditResources(side, LaunchRules.walletCap);
+                sim.creditResources(side, LaunchRules.premiumWalletCap, 'premium');
                 const target =
                     sim.units
                         .filter((unit) => unit.alive && unit.side !== side)
