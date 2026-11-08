@@ -15,6 +15,8 @@ const ROLL_RADIUS_Y = 108;
 const STANDING_GROUND_Y = 121;
 const FOOT = { slot: [320, 2, 46, 58], rect: [-23, -29, 46, 58] };
 const HAND = { slot: [246, 2, 70, 70], rect: [-35, -35, 70, 70] };
+const HAND_REST_X = 110;
+const HAND_REST_Y = 48;
 const FEET = [
     { ...FOOT, rect: [-69, 64, 46, 58], part: 1 },
     { ...FOOT, rect: [23, 64, 46, 58], part: 2 },
@@ -87,7 +89,9 @@ export function watermelonSpritePortrait(source, width) {
     const ctx = canvas.getContext('2d');
     ctx.setTransform(scale, 0, 0, scale, width / 2, 130 * scale);
     for (const foot of FEET) ctx.drawImage(source, ...foot.slot, ...foot.rect);
-    for (const x of [-118, 118]) ctx.drawImage(source, ...HAND.slot, x - 35, 13, 70, 70);
+    const [handX, handY, handWidth, handHeight] = HAND.rect;
+    for (const x of [-HAND_REST_X, HAND_REST_X])
+        ctx.drawImage(source, ...HAND.slot, x + handX, HAND_REST_Y + handY, handWidth, handHeight);
     ctx.drawImage(source, ...BODY.slot, ...BODY.rect);
     ctx.drawImage(source, ...FACES.neutral.slot, ...FACES.neutral.rect);
     return canvas.toDataURL('image/png');
@@ -231,7 +235,7 @@ export class WatermelonSpriteRenderer {
                         spin && this.elapsed < 3000
                             ? Math.max(0, (this.elapsed - 1000) / 2000) * Math.PI
                             : 0;
-                // The identical fists exchange sides at the end of the half-turn.
+                // The identical hands exchange sides at the end of the half-turn.
                 // Recover from the nearest rest positions on the new sides.
                 for (const index of [1, 2]) {
                     const foot = basePoses[index];
@@ -242,9 +246,11 @@ export class WatermelonSpriteRenderer {
                     const pose = basePoses[index],
                         side = index === 3 ? -1 : 1;
                     pose.x =
-                        side * ((118 - 51 * tuck) * (1 - reach) + 144 * Math.cos(angle) * reach);
+                        side *
+                        ((HAND_REST_X - 51 * tuck) * (1 - reach) + 144 * Math.cos(angle) * reach);
                     pose.y =
-                        (48 - 24 * tuck) * (1 - reach) + (4 + side * 76 * Math.sin(angle)) * reach;
+                        (HAND_REST_Y - 24 * tuck) * (1 - reach) +
+                        (4 + side * 76 * Math.sin(angle)) * reach;
                     pose.rotation = side * 0.19 * Math.cos(angle) + Math.sin(angle) * reach;
                     pose.scaleX = 1 + 0.22 * reach - 0.45 * tuck;
                     pose.scaleY = pose.scaleX;

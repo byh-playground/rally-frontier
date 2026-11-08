@@ -42,9 +42,7 @@
   <path d="M122 14c5-8 13-11 21-10-2 8-9 12-16 14" fill="#bcdb61" stroke="#344e35" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
 
   <g transform="translate(246 2)">
-    <path d="M16 23c6-7 11-6 16-3 4-8 11-9 16-3 9-3 14 3 15 13 4 12 0 23-11 28-8 5-21 5-33-1-15-8-13-22-3-34Z" fill="url(#limb)" stroke="#234b33" stroke-width="4.5" stroke-linejoin="round"/>
-    <path d="M35 24c0 4-1 7-3 9m16-12c1 4 1 8-1 11" fill="none" stroke="#397b41" stroke-width="3.5" stroke-linecap="round"/>
-    <path d="M17 36c3-4 6-5 10-4" fill="none" stroke="#c2e672" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M20 27c5-8 17-11 25-6 8 5 10 16 4 23-6 8-17 10-25 4-7-5-9-14-4-21Z" fill="url(#limb)" stroke="#234b33" stroke-width="4.5" stroke-linejoin="round"/>
   </g>
   <g transform="translate(320 2)">
     <path d="M11 7c8-5 17-5 24 2 6 6 4 18 1 27 6 3 9 10 5 16-6 7-26 6-34 0-6-4-4-13 0-20C5 22 4 12 11 7Z" fill="url(#limb)" stroke="#233f31" stroke-width="4" stroke-linejoin="round"/>
