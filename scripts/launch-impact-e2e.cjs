@@ -196,9 +196,9 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                         175,
                         50,
                         [
-                            [0, 0, 90, 15, 1],
-                            [0, 0, 60, 25, 1],
-                            [0, 0, 40, 40, 1],
+                            [0, 0, 90, 15, 2],
+                            [0, 0, 60, 25, 2],
+                            [0, 0, 40, 40, 2],
                         ],
                         450,
                     ],
@@ -517,6 +517,32 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     offCenter,
                     edge,
                     building,
+                });
+            }
+            {
+                const { sim, x, y } = arena();
+                const acorn = sim.spawnUnit(0, 'acorn', x, y);
+                const near = defender(sim, x + 54, y);
+                const second = defender(sim, x, y - 58);
+                for (const target of [near, second]) target.combat.cooldownUntil = sim.tps * 2;
+                let pulse;
+                for (let i = 0; !pulse && i < sim.tps; i++) {
+                    sim.stepSimulation();
+                    pulse = sim.events.find(
+                        (event) => event.type === 'spinPulse' && event.sourceId === acorn.id,
+                    );
+                }
+                check(
+                    pulse?.hits === 1 &&
+                        near.maxHp - near.hp + second.maxHp - second.hp === 13 &&
+                        sim.unitRadius('acorn') === 2 * sim.unitRadius('rice'),
+                    'smaller acorn keeps its single-target spin damage and twice-rice collision radius',
+                    { pulse, near: near.hp, second: second.hp },
+                );
+                rows.push({
+                    scenario: 'twice-rice acorn retains single-target spin damage',
+                    tick: sim.tick,
+                    hits: pulse.hits,
                 });
             }
             function clearOfTerrain(sim, units) {
