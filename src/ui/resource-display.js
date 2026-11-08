@@ -1,10 +1,17 @@
 // Shared display rules for both currencies. Amounts are owned by the simulation.
 export const RESOURCES = Object.freeze([
-    { key: 'basic', name: '보급', symbol: '◆', color: '#9bd7ff', costKey: 'cost' },
+    { key: 'basic', name: '식량', symbol: '◆', color: '#9bd7ff', costKey: 'cost' },
     { key: 'premium', name: '기름', symbol: '✦', color: '#f6ca76', costKey: 'premiumCost' },
 ]);
 
 export class ResourceDisplay {
+    static depositName(point, kind) {
+        // Map descriptors are part of match identity, so translate their stored names at display time.
+        const label = point.label || point.lane;
+        const name = kind.key === 'basic' ? label.replace(/보급(?= 거점$)/, kind.name) : label;
+        return name.includes(kind.name) ? name : `${name} ${kind.name} 거점`;
+    }
+
     static rateText(rate) {
         return String(Number(rate.toFixed(4)));
     }

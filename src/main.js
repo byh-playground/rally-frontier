@@ -3396,8 +3396,7 @@ class GLRenderer {
             ctx.lineWidth = Math.max(2, 3 * sc);
             ctx.strokeStyle = 'rgba(0,0,0,.60)';
             const kind = cp.resourceType === 'premium' ? RESOURCES[1] : RESOURCES[0];
-            const name = cp.label || cp.lane;
-            const siteName = name.includes(kind.name) ? name : `${name} ${kind.name} 거점`;
+            const siteName = ResourceDisplay.depositName(cp, kind);
             const efficiency = LaunchRules.productionEfficiency(cp);
             const previousUse =
                 cp.owner == null && efficiency < 100 ? ` · 효율 ${efficiency}%` : '';
@@ -10714,7 +10713,7 @@ class LaunchPresentation {
                 this.feedback(
                     {
                         reloading: '대포가 재장전 중입니다.',
-                        'insufficient-basic-resources': '보급이 부족합니다.',
+                        'insufficient-basic-resources': `${RESOURCES[0].name}이 부족합니다.`,
                         'insufficient-premium-resources': `기름이 부족합니다. ${LaunchPresentation.premiumResourceHint}`,
                         'population-limit': '인구가 가득 찼습니다.',
                         'hero-already-deployed': '영웅이 이미 출격 중입니다.',
@@ -10749,7 +10748,7 @@ class LaunchPresentation {
                 this.feedback(
                     {
                         'hero-not-deployed': '출격 중인 영웅이 필요합니다.',
-                        'insufficient-basic-resources': '보급이 부족합니다.',
+                        'insufficient-basic-resources': `${RESOURCES[0].name}이 부족합니다.`,
                     }[event.reason] || '영웅 스킬을 쓸 수 없습니다.',
                 );
                 continue;
@@ -10867,7 +10866,7 @@ class LaunchPresentation {
         badge.toggleAttribute('data-unavailable', s.wallet?.[side] < skill.cost);
         if (queued) return ' · 스킬 발동 예약, 조건이 맞으면 자동 발동';
         if (status) return ` · ${status}`;
-        return ` · 길게 누르기 또는 Shift+Enter로 스킬 사용 · 보급 ${skill.cost}`;
+        return ` · 길게 누르기 또는 Shift+Enter로 스킬 사용 · ${ResourceDisplay.costText(skill, true)}`;
     }
     static renderAttackCounter(el, current, required) {
         let counter = el.querySelector('.hero-card-counter');
