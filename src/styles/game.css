@@ -656,6 +656,22 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
 .hero-card .launch-card-portrait {
     height: 54px;
 }
+.hero-card-counter {
+    position: absolute;
+    inset: 5px auto auto 5px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: #274c36;
+    color: #f9eac6;
+    font-size: 8px;
+    line-height: 12px;
+    letter-spacing: 1px;
+    pointer-events: none;
+}
+.hero-card-counter[data-ready] {
+    background: #725018;
+    color: #fff3a6;
+}
 .hero-card-health {
     width: calc(100% - 16px);
     margin-top: 2px;
