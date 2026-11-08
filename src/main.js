@@ -232,6 +232,12 @@ class RenderStateStore {
                 source: { entity: value, tick, delta: record.delta },
                 teleport,
             };
+            if (value.heroRoll) {
+                // A queued roll can start on the same tick the previous roll ends.
+                if (value.heroRoll.distance < record.rollDistance)
+                    packet.resetFields = ['entity.heroRoll.distance'];
+                record.rollDistance = value.heroRoll.distance;
+            }
             if (value.terminalPath) packet.pathPoints = value.terminalPath;
             if (
                 kind === 'projectile' &&
@@ -4742,9 +4748,8 @@ class GLRenderer {
                     p.x,
                     p.y + r * 0.55,
                     scale,
-                    this.sc(),
                     heading,
-                    roll.distance,
+                    roll.distance / UnitDefinition.get(u.type).heroActive.distancePerTurn,
                     actor.rollTuck,
                     roll.phase === 'unfold' ? rollProgress : 0,
                 );
@@ -9999,6 +10004,16 @@ class LaunchPresentation {
     static presentEvents(snapshot, side) {
         for (const event of snapshot.events || []) {
             if (
+                event.type === 'heroSkillStarted' &&
+                event.side === side &&
+                event.sortieId === snapshot.heroes?.[side]?.sortieId &&
+                this.active(snapshot)
+            ) {
+                const button = UiRegistry.refs.launchCards.querySelector('.hero-card');
+                if (button) this.presentHeroSpend(button, event.cost);
+                continue;
+            }
+            if (
                 event.type === 'heroSkillRejected' &&
                 event.side === side &&
                 this.active(snapshot)
@@ -10006,7 +10021,6 @@ class LaunchPresentation {
                 this.feedback(
                     {
                         'hero-not-deployed': '출격 중인 영웅이 필요합니다.',
-                        'hero-busy': '영웅이 다른 동작을 하고 있습니다.',
                         'insufficient-basic-resources': '기본 자원이 부족합니다.',
                         'hero-no-target': '범위 안에 적이 없습니다.',
                     }[event.reason] || '영웅 스킬을 쓸 수 없습니다.',
@@ -10026,6 +10040,15 @@ class LaunchPresentation {
             );
             this.marks.push(mark);
         }
+    }
+    static presentHeroSpend(button, cost) {
+        button.querySelector('.hero-card-spend')?.remove();
+        const spend = document.createElement('span');
+        spend.className = 'hero-card-spend';
+        spend.setAttribute('aria-hidden', 'true');
+        spend.textContent = `◆ −${cost}`;
+        spend.addEventListener('animationend', () => spend.remove(), { once: true });
+        button.append(spend);
     }
     static renderHeroCard(el, s, side) {
         el.classList.add('hero-card');
@@ -10095,15 +10118,13 @@ class LaunchPresentation {
             unit.heroRoll?.phase
         ];
         badge.hidden = false;
-        badge.textContent = status ?? `길게 ◆ ${skill.cost}`;
+        badge.textContent = unit.heroRollQueued ? '발동 예약' : (status ?? `길게 ◆ ${skill.cost}`);
+        badge.toggleAttribute('data-queued', unit.heroRollQueued);
         badge.toggleAttribute('data-rolling', !!status);
-        badge.toggleAttribute(
-            'data-unavailable',
-            !UnitMotion.isGrounded(unit) || s.wallet?.[side] < skill.cost,
-        );
-        return status
-            ? ` · ${status}`
-            : ` · 길게 누르기 또는 Shift+Enter로 스킬 사용 · 기본 자원 ${skill.cost}`;
+        badge.toggleAttribute('data-unavailable', s.wallet?.[side] < skill.cost);
+        if (unit.heroRollQueued) return ' · 스킬 발동 예약';
+        if (status) return ` · ${status}`;
+        return ` · 길게 누르기 또는 Shift+Enter로 스킬 사용 · 기본 자원 ${skill.cost}`;
     }
     static renderAttackCounter(el, current, required) {
         let counter = el.querySelector('.hero-card-counter');
@@ -10206,7 +10227,7 @@ class LaunchPresentation {
         const hero = s.heroes?.[side];
         if (!hero?.unitId || hero.mode === 'dead') return null;
         const unit = s.units?.find((entry) => entry.id === hero.unitId);
-        if (!unit?.alive || unit.side !== side || !UnitMotion.isGrounded(unit)) return null;
+        if (!unit?.alive || unit.side !== side) return null;
         return hero.sortieId;
     }
     static currentHeroPress(press, s, side) {
@@ -10261,6 +10282,8 @@ class LaunchPresentation {
             session,
             sortieId,
         };
+        button.style.setProperty('--hero-hold-duration', `${this.HERO_SKILL_HOLD_MS}ms`);
+        button.setAttribute('data-hero-charging', '');
         press.timer = setTimeout(() => {
             this.endHeroPress(true);
             const currentSide = ConnectionSideUtil.roleSide(ActiveViewState.role);
@@ -10287,6 +10310,7 @@ class LaunchPresentation {
         const press = this.heroPress;
         if (!press) return;
         clearTimeout(press.timer);
+        press.button.removeAttribute('data-hero-charging');
         this.heroPress = null;
         if (suppressClick)
             this.heroPressClick = { button: press.button, pointerId: press.pointerId };

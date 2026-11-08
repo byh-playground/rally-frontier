@@ -42,7 +42,7 @@ class UnitDefinition {
                 range: 250,
                 hopMs: 250,
                 speedMultiplier: 5,
-                followThrough: 60,
+                distancePerTurn: 100,
                 unfoldMs: 100,
                 damageRatio: 1,
                 knockbackSpeed: 400,
