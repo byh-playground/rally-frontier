@@ -221,6 +221,89 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     sourceDamageResolved: true,
                 });
             }
+            const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+            function secureWithRice(sim, actor, cannon, target, supportDistance = 0) {
+                const side = cannon.side;
+                const level = sim.launchRangeLevel[side];
+                const reach = distance(cannon, target);
+                check(
+                    reach <= LaunchRules.maxReachOf('rice', level) + supportDistance,
+                    'launch can reach the deposit or its support area',
+                );
+                check(
+                    sim.applyCommand(actor, {
+                        type: 'LAUNCH',
+                        cannonId: cannon.id,
+                        unitType: 'rice',
+                        holdMs: LaunchRules.holdFor(reach, 'rice', level),
+                        x: target.x,
+                        y: target.y,
+                    }),
+                    'launch toward deposit',
+                );
+                const projectiles = new Set(
+                    sim.events
+                        .filter(
+                            (event) => event.type === 'launchFire' && event.cannonId === cannon.id,
+                        )
+                        .map((event) => event.projectileId),
+                );
+                let landed = false;
+                for (let i = 0; i < 60 * sim.tps && (!landed || target.owner !== side); i++) {
+                    sim.stepSimulation();
+                    landed ||= sim.events.some(
+                        (event) =>
+                            event.type === 'launchLand' &&
+                            projectiles.has(event.projectileId) &&
+                            distance(event, target) <= LaunchRules.captureHoldRadius,
+                    );
+                }
+                check(landed && target.owner === side, 'launch lands and the deposit is secured', {
+                    target,
+                    tick: sim.tick,
+                    landed,
+                });
+                return sim.launchCannons(side).find((building) => building.id === target.outpostId);
+            }
+            function checkOilOpening(sim, actor, side, target) {
+                const base = sim.launchCannons(side)[0];
+                check(
+                    distance(base, target) >
+                        LaunchRules.maxReachOf('rice') + LaunchRules.captureHoldRadius,
+                    'basic range cannot aim into the oil construction area',
+                );
+                const beforeUpgrade = restore(sim);
+                check(
+                    beforeUpgrade.applyCommand(actor, {
+                        type: 'LAUNCH',
+                        cannonId: base.id,
+                        unitType: 'rice',
+                        x: target.x,
+                        y: target.y,
+                        holdMs: LaunchRules.chargeMs,
+                    }),
+                    'basic range still launches toward the oil side',
+                );
+                const unbuilt = beforeUpgrade.capturePoints.find((p) => p.id === target.id);
+                step(beforeUpgrade, 60 * beforeUpgrade.tps);
+                check(
+                    unbuilt.owner === null && unbuilt.outpostId === null,
+                    'basic range leaves oil neutral',
+                );
+                check(
+                    sim.applyCommand(actor, { type: 'UPGRADE_LAUNCH_RANGE' }),
+                    'buy one upgrade from home',
+                );
+                const cannon = secureWithRice(sim, actor, base, target);
+                check(
+                    sim.launchRangeLevel[side] === 1 &&
+                        sim.capturePoints
+                            .filter((point) => point.owner === side)
+                            .every((point) => point.id === target.id),
+                    'the first upgrade earns the oil cannon without a forward expansion',
+                );
+                return cannon;
+            }
             // The compact campaign lets the player support the next fight from owned ground.
             {
                 const openStage = (stage) =>
@@ -229,7 +312,6 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         { ...GameRuleDefinition.resolve(), campaign: stage },
                         [stage.deck, stage.enemyDeck],
                     );
-                const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
                 const layouts = [];
                 for (const stage of CAMPAIGN_STAGES) {
                     const sim = openStage(stage);
@@ -288,8 +370,8 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                                     distance(advance, oil) >
                                         LaunchRules.maxReachOf('rice') +
                                             LaunchRules.captureHoldRadius &&
-                                    distance(advance, oil) <= LaunchRules.maxReachOf('rice', 1))),
-                        'only lesson maps have one side oil site, with a direct shot after one range upgrade',
+                                    distance(home, oil) <= LaunchRules.maxReachOf('rice', 1))),
+                        'only lesson maps have one side oil site, with a direct shot from home after one range upgrade',
                         stage.id,
                     );
                     layouts.push({
@@ -299,6 +381,24 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         ramps: mapDescriptor.terrain.ramps.length,
                     });
                 }
+                const oilLesson = openStage(campaignStage('acorn'));
+                const lessonOil = oilLesson.capturePoints.find((p) => p.resourceType === 'premium');
+                const lessonCannon = checkOilOpening(oilLesson, 'host', 0, lessonOil);
+                const oilCaptureSeconds = oilLesson.tick / oilLesson.tps;
+                const acorn = LaunchRules.payload('acorn');
+                step(oilLesson, (acorn.premiumCost / 2.5) * oilLesson.tps);
+                const enemyBase = oilLesson.world.bases[1];
+                check(
+                    oilLesson.applyCommand('host', {
+                        type: 'LAUNCH',
+                        cannonId: lessonCannon.id,
+                        unitType: 'acorn',
+                        x: enemyBase.x,
+                        y: enemyBase.y,
+                        holdMs: LaunchRules.chargeMs,
+                    }) && oilLesson.premiumWallet[0] === 0,
+                    'oil-only campaign opening funds the lesson unit',
+                );
                 const opening = openStage(campaignStage('first'));
                 const home = opening.launchCannons(0)[0];
                 const advance = opening.capturePoints.find((p) => p.id === 'advance');
@@ -387,6 +487,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     scenario: 'compact campaign third-tier cannon coverage',
                     layouts,
                     openingCaptureSeconds,
+                    oilCaptureSeconds,
                     damage,
                 });
             }
@@ -398,82 +499,48 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     natural = point('natural-1'),
                     front = point('front-1'),
                     flank = point('flank-near-1'),
-                    premium = point('mid-center'),
-                    enemyBase = sim.buildings.find((b) => b.id === 'base1'),
-                    distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+                    center = point('mid-center'),
+                    premium = point('oil-near-1'),
+                    enemyBase = sim.buildings.find((b) => b.id === 'base1');
                 // Keep the target in play long enough to observe the mining and launch cycle.
                 enemyBase.hp = enemyBase.maxHp = 100000;
                 check(
                     sim.mapDescriptor.generation.accepted &&
-                        sim.capturePoints.length === 9 &&
+                        sim.capturePoints.length === 11 &&
                         sim.capturePoints.filter((cp) => cp.resourceType === 'premium').length ===
-                            1,
-                    'standard terrain has nine buildable neutral deposits and one central premium',
+                            2 &&
+                        center.resourceType === 'basic' &&
+                        sim.capturePoints.every((cp) => cp.owner === null),
+                    'standard terrain has eleven neutral sites, two side oil sites and center supply',
                     sim.mapDescriptor.generation,
                 );
-                const attack = (cannon, target, level, supportDistance = 0) => {
-                    const reach = distance(cannon, target);
-                    check(
-                        reach <= LaunchRules.maxReachOf('rice', level) + supportDistance,
-                        'launch can reach the deposit or its support area',
-                    );
-                    check(
-                        sim.applyCommand('host', {
-                            type: 'LAUNCH',
-                            cannonId: cannon.id,
-                            unitType: 'rice',
-                            holdMs: LaunchRules.holdFor(reach, 'rice', level),
-                            x: target.x,
-                            y: target.y,
-                        }),
-                        'launch toward deposit',
-                    );
-                    const projectiles = new Set(
-                        sim.events
-                            .filter(
-                                (event) =>
-                                    event.type === 'launchFire' && event.cannonId === cannon.id,
-                            )
-                            .map((event) => event.projectileId),
-                    );
-                    let landed = false;
-                    for (let i = 0; i < 60 * sim.tps && (!landed || target.owner !== 0); i++) {
-                        sim.stepSimulation();
-                        landed ||= sim.events.some(
-                            (event) =>
-                                event.type === 'launchLand' &&
-                                projectiles.has(event.projectileId) &&
-                                distance(event, target) <= LaunchRules.captureHoldRadius,
-                        );
-                    }
-                    check(landed && target.owner === 0, 'launch lands and the deposit is secured', {
-                        target,
-                        tick: sim.tick,
-                        landed,
-                    });
-                    return sim
-                        .launchCannons(0)
-                        .find((building) => building.id === target.outpostId);
-                };
-                const naturalCannon = attack(base, natural, 0);
+                const supplyOpening = new StrategySim(seed);
+                const supplyHome = supplyOpening.launchCannons(0)[0];
+                const supplyNatural = supplyOpening.capturePoints.find((p) => p.id === 'natural-1');
+                secureWithRice(supplyOpening, 'host', supplyHome, supplyNatural);
                 check(
-                    sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }),
-                    'buy one upgrade at the natural expansion',
+                    supplyOpening.launchRangeLevel[0] === 0 && supplyOpening.premiumWallet[0] === 0,
+                    'the supply-first opening takes ground before investing in range',
                 );
-                attack(naturalCannon, flank, 1);
+                const centralDistance = distance(front, center);
                 check(
-                    front.owner === null,
-                    'outer expansion is captured without owning the forward point',
-                );
-                const forwardCannon = attack(naturalCannon, front, 1);
-                const centralDistance = distance(forwardCannon, premium);
-                check(
-                    centralDistance === distance(point('front-2'), premium) &&
+                    centralDistance === distance(point('front-2'), center) &&
                         centralDistance > LaunchRules.maxReachOf('rice', 1) &&
                         centralDistance <= LaunchRules.maxReachOf('rice', 2),
-                    'forward cannons have equal central support and direct range after two upgrades',
+                    'both sides retain direct third-tier support to the center',
                 );
-                attack(forwardCannon, premium, 1, LaunchRules.captureHoldRadius);
+                const guest = new StrategySim(seed);
+                const guestOil = guest.capturePoints.find((cp) => cp.id === 'oil-near-2');
+                check(
+                    guestOil.x + premium.x === sim.world.width &&
+                        guestOil.y + premium.y === sim.world.height &&
+                        distance(guest.world.bases[1], guestOil) === distance(base, premium),
+                    'early oil is mirrored for equal first upgrade access',
+                );
+                checkOilOpening(guest, 'guest', 1, guestOil);
+                const guestOilCaptureSeconds = guest.tick / guest.tps;
+                const oilCannon = checkOilOpening(sim, 'host', 0, premium);
+                const hostOilCaptureSeconds = sim.tick / sim.tps;
                 const { basic: supply, premium: oil } = premium.production;
                 check(
                     supply.incomePerSecond === 2.5 && oil.incomePerSecond === 2.5,
@@ -493,12 +560,11 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     i++
                 )
                     sim.stepSimulation();
-                const centralCannon = sim.launchCannons(0).find((b) => b.id === premium.outpostId);
                 const wallet = [sim.wallet[0], sim.premiumWallet[0]];
                 check(
                     sim.applyCommand('host', {
                         type: 'LAUNCH',
-                        cannonId: centralCannon.id,
+                        cannonId: oilCannon.id,
                         unitType: 'corn',
                         holdMs: LaunchRules.chargeMs,
                         x: enemyBase.x,
@@ -546,7 +612,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 // Rebuild a previously worked site for the other side.
                 premium.extractedResources = 1500;
                 supply.miningCarry = oil.miningCarry = 0;
-                destroy(sim, centralCannon);
+                destroy(sim, oilCannon);
                 check(premium.owner === null, 'destroying the outpost leaves the site neutral');
                 const rebuilt = sim.spawnOutpost(premium, 1);
                 sim.completeConstruction(rebuilt);
@@ -567,14 +633,16 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     );
                 }
                 rows.push({
-                    scenario: 'separate outer expansion, mixed oil outpost and corn deployment',
+                    scenario: 'both sides can choose oil from home or advance on supply',
+                    hostOilCaptureSeconds,
+                    guestOilCaptureSeconds,
                     independentCaps: true,
                     recapturedOilPerSecond: 1.25,
                     cornDeployed: sim.unitResultStats[0].corn.deployed,
                     distances: [
                         distance(base, natural),
                         distance(natural, front),
-                        distance(front, premium),
+                        centralDistance,
                         distance(natural, flank),
                     ],
                     tick: sim.tick,
