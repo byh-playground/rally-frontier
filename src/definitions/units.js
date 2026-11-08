@@ -16,6 +16,7 @@ const WATERMELON_RIND_WORLD_RADIUS =
     WATERMELON_RIND_RADIUS_X;
 const ACORN_SIZE = RICE_SIZE * 2;
 const ACORN_SPIN_RADIUS = ACORN_SIZE * (55 / 20);
+const HERO_MOVE_SPEED = 75;
 const GRAIN_LEAP = Object.freeze({ range: 150, lift: 500, cooldownMs: 3000 });
 const RICE_MELEE = {
     requiresContactTerrain: true,
@@ -42,7 +43,7 @@ class UnitDefinition {
             hp: 550,
             atk: 20,
             range: 25,
-            speed: 60,
+            speed: HERO_MOVE_SPEED,
             attackIntervalMs: 500,
             size: WATERMELON_SIZE,
             sizeClass: 'heavy',
@@ -84,7 +85,7 @@ class UnitDefinition {
             hp: 350,
             atk: 24,
             range: 225,
-            speed: 55,
+            speed: HERO_MOVE_SPEED,
             attackIntervalMs: 750,
             size: 25,
             sizeClass: 'medium',
@@ -116,7 +117,7 @@ class UnitDefinition {
             hp: 300,
             atk: 20,
             range: 175,
-            speed: 45,
+            speed: HERO_MOVE_SPEED,
             attackIntervalMs: 900,
             size: 25,
             sizeClass: 'medium',
@@ -241,7 +242,7 @@ class UnitDefinition {
                 onLeapLanding: true,
                 windupMs: 1000,
                 radius: 80,
-                damage: 15,
+                damage: 40,
                 impulseScale: 0.5,
             }),
         },
