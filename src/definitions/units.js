@@ -1,8 +1,9 @@
 // Launch grain definitions, runtime geometry and visual definitions.
-import { COLLISION_RADIUS_SCALE } from './world-rules.js';
+import { COLLISION_RADIUS_SCALE, VIEW_W } from './world-rules.js';
 import { FP } from '../core/config.js';
 import { DEFAULT_ATTACK_WINDUP_MS, DEFAULT_MELEE_MOVE_RECOVERY_MS } from './combat-rules.js';
 const RICE_SIZE = 10;
+const WATERMELON_SIZE = RICE_SIZE * 3.5;
 const ACORN_SIZE = RICE_SIZE * 3;
 const ACORN_SPIN_RADIUS = ACORN_SIZE * (55 / 20);
 const RICE_MELEE = {
@@ -32,7 +33,7 @@ class UnitDefinition {
             range: 25,
             speed: 50,
             attackIntervalMs: 500,
-            size: RICE_SIZE * 3.5,
+            size: WATERMELON_SIZE,
             sizeClass: 'heavy',
             role: 'bruiser',
             attackVisual: { sourceMotion: 'smash', travel: 'none', impact: 'light' },
@@ -40,9 +41,11 @@ class UnitDefinition {
             heroActive: Object.freeze({
                 cost: 50,
                 range: 250,
-                hopMs: 250,
+                hopMs: 500,
+                hopHeight: WATERMELON_SIZE * 3,
+                landing: Object.freeze({ radius: VIEW_W / 6, damageRatio: 1 }),
                 speedMultiplier: 5,
-                distancePerTurn: 100,
+                rollDistance: 100,
                 unfoldMs: 100,
                 damageRatio: 1,
                 knockbackSpeed: 400,

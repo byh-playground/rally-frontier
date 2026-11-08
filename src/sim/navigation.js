@@ -298,6 +298,8 @@ class UnitMotion {
             initialHeightFP = 0,
         } = {},
     ) {
+        // An active roll keeps its committed path through nonlethal hits.
+        if (u.heroRoll?.phase === 'roll') return;
         const sim = this.navigation.sim,
             mass = sim.mass(u);
         let m = u.impactMotion;
