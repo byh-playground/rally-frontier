@@ -3,6 +3,7 @@ import { campaignStage } from '../definitions/campaign.js';
 import { GameRuleRuntime, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { StrategySim } from '../sim/strategy-sim.js';
 import { Building, Projectile, Unit } from '../sim/entities.js';
+import { HeroDeployment } from '../sim/hero-deployment.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { StateValue } from '../sim/components.js';
 import { ReplayRecorder } from './replay.js';
@@ -53,6 +54,7 @@ class RallyCommandCodec {
     static fields = Object.freeze({
         MATCH_SURRENDER: [],
         UPGRADE_LAUNCH_RANGE: [],
+        TOGGLE_HERO: ['sortieId'],
         LAUNCH: ['cannonId', 'x', 'y', 'holdMs', 'unitType'],
     });
     static validate(action) {
@@ -78,6 +80,8 @@ class RallyCommandCodec {
                 ['x', 'y', 'holdMs'].some((key) => !Number.isFinite(action[key])))
         )
             throw new Error('발사 명령의 필드가 잘못되었습니다.');
+        if (action.type === 'TOGGLE_HERO' && !HeroDeployment.validSortieId(action.sortieId))
+            throw new Error('영웅 명령의 출격 식별자가 잘못되었습니다.');
         return action;
     }
     static encode(action) {
@@ -124,6 +128,7 @@ class RallySimulationAdapter {
                             'units',
                             'buildings',
                             'projectiles',
+                            'heroes',
                             'capturePoints',
                             'scheduled',
                         ].includes(key)
@@ -271,6 +276,7 @@ class RallySimulationAdapter {
                 }
             }
         }
+        HeroDeployment.validate(state);
         if (
             state.netcodeMatchResult !== undefined &&
             (!state.netcodeMatchResult ||

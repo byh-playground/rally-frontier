@@ -1,6 +1,7 @@
 import { UnitLobAttack } from './unit-lob-attack.js';
 // The deterministic lockstep strategy simulation.
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
+import { HeroDeployment } from './hero-deployment.js';
 import { UnitSpinAttack } from './unit-spin-attack.js';
 import { UnitSelfDestructAttack } from './unit-self-destruct-attack.js';
 import { UnitLeapAttack } from './unit-leap-attack.js';
@@ -306,6 +307,7 @@ class StrategySim {
         }));
         this.launchRangeLevel = [0, 0];
         this.launchDeployments = [];
+        this.heroes = [null, null];
         // Per-side match totals for the result screen: shots fired, grains sent, enemy units killed.
         this.launchStats = { launches: [0, 0], sent: [0, 0], kills: [0, 0] };
         this.unitResultStats = UnitResultStats.create();
@@ -1303,7 +1305,11 @@ class StrategySim {
         if (this.tick < (Number(cannon.launchReadyTick) || 0)) return reject('reloading');
         const grain = LaunchRules.grain(action.unitType);
         if (!grain) return reject('invalid-unit');
-        if (!this.decks[side]?.includes(action.unitType)) return reject('unit-not-in-deck');
+        const isHero = action.unitType === LaunchRules.heroCard;
+        const heroRejection = isHero && HeroDeployment.launchRejection(this.heroes[side]);
+        if (heroRejection) return reject(heroRejection);
+        if (!isHero && !this.decks[side]?.includes(action.unitType))
+            return reject('unit-not-in-deck');
         if (LaunchRules.population(this, side).total >= LaunchRules.populationLimit)
             return reject('population-limit');
         if (this.wallet[side] < grain.cost) return reject('insufficient-basic-resources');
@@ -1402,6 +1408,7 @@ class StrategySim {
             sourceDamageResolved: true,
             payload: { type, count },
         });
+        if (type === LaunchRules.heroCard) HeroDeployment.begin(this, side, id);
         this.events.push({
             type: 'launchFire',
             side,
@@ -1513,6 +1520,8 @@ class StrategySim {
             return true;
         }
         const side = ConnectionSideUtil.roleSide(actor);
+        if (action.type === 'TOGGLE_HERO')
+            return HeroDeployment.toggle(this, side, action.sortieId);
         if (action.type === 'LAUNCH') return this.applyLaunchCommand(side, action);
         if (action.type === 'UPGRADE_LAUNCH_RANGE') return this.upgradeLaunchRange(side);
         return false;
@@ -1531,7 +1540,7 @@ class StrategySim {
         )
             return false;
 
-        const waypoint = this.navigation.nextPoint(u, goal);
+        const waypoint = this.navigation.nextPoint(u, goal, options?.fixedGoal);
         if (!waypoint || Math.hypot(waypoint.x - u.x, waypoint.y - u.y) < 0.001) return false;
         tx = waypoint.x;
         ty = waypoint.y;
@@ -1797,6 +1806,7 @@ class StrategySim {
         target.hp = 0;
         target.alive = false;
         target.constructionWork = null;
+        HeroDeployment.unitDied(this, target);
         if ((sourceSide === 0 || sourceSide === 1) && target.side === 1 - sourceSide)
             this.launchStats.kills[sourceSide]++;
         if ((sourceSide === 0 || sourceSide === 1) && target.side === 1 - sourceSide)
@@ -2142,6 +2152,10 @@ class StrategySim {
         const d = UnitDefinition.get(u.type);
         if (d.selfDestruct && UnitSelfDestructAttack.update(this, u, d.selfDestruct)) return null;
         this.tickAttackTimers(u);
+        if (HeroDeployment.moveReturningUnit(this, u, d)) {
+            UnitSpinAttack.cancel(this, u);
+            return null;
+        }
         if (d.leapAttack && UnitLeapAttack.update(this, u, d.leapAttack, d.atk)) {
             u.constructionWork = null;
             return null;
@@ -2301,7 +2315,7 @@ class StrategySim {
             return null;
         }
 
-        if (d.spinAttack) return null;
+        if (d.spinAttack && !d.spinAttack.arcSweep) return null;
         if (d.lobAttack && d.minRange && dist < InteractionGeometry.contact(u, t) + d.minRange) {
             u.combat.cancelWindup();
             this.moveToward(
@@ -3556,6 +3570,7 @@ class StrategySim {
         UnitThornAttack.update(this);
         LaunchImpact.deploy(this);
         this.resolveConstructionHits();
+        HeroDeployment.settle(this);
         const projectileMs = profile ? now() - mark : 0;
 
         mark = profile ? now() : 0;
@@ -3744,6 +3759,7 @@ class StrategySim {
                 decks: StateValue.copy(this.decks),
                 mapDescriptor: this.mapDescriptor,
                 launchDeployments: StateValue.copy(this.launchDeployments),
+                heroes: StateValue.copy(this.heroes),
                 unitThornProjectiles: StateValue.copy(
                     this.unitThornProjectiles.filter((p) => p.startTick <= this.tick),
                 ),

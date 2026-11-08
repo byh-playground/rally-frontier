@@ -2,22 +2,22 @@ import { FP } from '../core/config.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { LaunchImpact } from './launch-impact.js';
 import { HashUtil } from './map-generation.js';
+import { UnitMotion } from './navigation.js';
 
 // The unit owns the complete authoritative interval. The caller consumes its
 // ordinary movement/target action while this returns true, without pinning the
 // unit's position: external impulses and collision resolution remain active.
 export class UnitSpinAttack {
     static validate(spec) {
-        for (const key of [
-            'radius',
-            'windupMs',
-            'activeMs',
-            'recoverMs',
-            'pulseMs',
-            'knockbackSpeed',
-        ]) {
+        for (const key of ['radius', 'windupMs', 'activeMs', 'recoverMs', 'knockbackSpeed']) {
             if (!Number.isFinite(spec?.[key]) || spec[key] <= 0)
                 throw new TypeError(`회전 공격 설정이 올바르지 않습니다: ${key}`);
+        }
+        if (spec.arcSweep) {
+            if (!Number.isSafeInteger(spec.minTargets) || spec.minTargets < 1)
+                throw new TypeError('회전 공격에 필요한 표적 수가 올바르지 않습니다.');
+        } else if (!Number.isFinite(spec.pulseMs) || spec.pulseMs <= 0) {
+            throw new TypeError('회전 공격 간격이 올바르지 않습니다.');
         }
         if (!Number.isFinite(spec.tangentRatio) || spec.tangentRatio < 0)
             throw new TypeError('회전 공격의 접선 비율이 올바르지 않습니다.');
@@ -36,18 +36,14 @@ export class UnitSpinAttack {
         );
     }
 
-    static isGrounded(unit) {
-        const motion = unit.impactMotion;
-        return !motion || (motion.heightFP <= 0 && motion.vzFP <= 0);
-    }
-
     // The caller supplies the same per-side vision field as normal combat.
     // Presence of a hidden enemy alone never initiates an attack.
     static canStart(sim, unit, spec, vision) {
         if (!unit?.alive || !vision || unit.spinAttack || unit.combat.cooldownActive(sim))
             return false;
         const z = this.heightFP(sim, unit);
-        let found = false;
+        let found = 0;
+        const minTargets = spec.minTargets ?? 1;
         sim.withNearbyUnits(
             unit.x,
             unit.y,
@@ -58,23 +54,19 @@ export class UnitSpinAttack {
                     const target = sim.units[index];
                     if (
                         !target?.alive ||
-                        !this.isGrounded(target) ||
+                        !UnitMotion.isGrounded(target) ||
                         target.side === unit.side ||
                         !sim.canAttackEntity(unit.type, target)
                     )
                         continue;
                     if (!sim.canSeeCombatTarget(unit.side, target, vision)) continue;
-                    if (
-                        LaunchImpact.distanceToBody(sim, target, unit.x, unit.y, z)
-                            .surfaceDistance <= spec.radius
-                    ) {
-                        found = true;
-                        break;
-                    }
+                    if (!this.inReach(sim, unit, target, spec, z)) continue;
+                    if (++found >= minTargets) break;
                 }
             },
         );
-        if (found) return true;
+        if (found >= minTargets) return true;
+        if (spec.arcSweep) return false;
         for (const index of sim.nearbyBuildingIndices(
             unit.x,
             unit.y,
@@ -106,7 +98,7 @@ export class UnitSpinAttack {
             activeStartTick,
             activeEndTick,
             endTick: activeEndTick + Math.max(1, sim.msTicks(spec.recoverMs)),
-            nextPulseTick: activeStartTick,
+            ...(spec.arcSweep ? { hitIds: {} } : { nextPulseTick: activeStartTick }),
             lastUpdatedTick: sim.tick - 1,
         };
         sim.events.push({
@@ -138,6 +130,15 @@ export class UnitSpinAttack {
         }
         if (spin.lastUpdatedTick === sim.tick) return { active: true, winner: null };
         spin.lastUpdatedTick = sim.tick;
+        if (spec.arcSweep) {
+            if (
+                sim.tick >= spin.activeStartTick &&
+                sim.tick <= spin.activeEndTick &&
+                UnitMotion.isGrounded(unit)
+            )
+                this.updateArcSweep(sim, unit, spec, damage);
+            return { active: true, winner: null };
+        }
         if (sim.tick < spin.nextPulseTick || sim.tick >= spin.activeEndTick)
             return { active: true, winner: null };
 
@@ -161,56 +162,14 @@ export class UnitSpinAttack {
                     const target = sim.units[index];
                     if (
                         !target?.alive ||
-                        !this.isGrounded(target) ||
+                        !UnitMotion.isGrounded(target) ||
                         target.side === unit.side ||
                         !sim.canAttackEntity(unit.type, target)
                     )
                         continue;
-                    const body = LaunchImpact.distanceToBody(sim, target, unit.x, unit.y, z);
-                    if (body.surfaceDistance > spec.radius) continue;
-                    const rx = target.x - unit.x,
-                        ry = target.y - unit.y,
-                        dx = rx - ry * spec.tangentRatio,
-                        dy = ry + rx * spec.tangentRatio;
-                    const capture = {};
-                    sim.applyDamage(unit.side, unit.type, target, false, damage, unit.id, {
-                        capture,
-                    });
-                    if (!(capture.dealt > 0)) continue;
+                    if (!this.inReach(sim, unit, target, spec, z)) continue;
+                    if (!this.hitUnit(sim, unit, target, spec, damage)) continue;
                     hits++;
-                    if (target.alive) {
-                        LaunchImpact.start(sim, target, {
-                            dx,
-                            dy,
-                            speed: spec.knockbackSpeed,
-                            lift: spec.knockbackLift || 0,
-                            sourceId: unit.id,
-                            originX: unit.x,
-                            originY: unit.y,
-                        });
-                    } else {
-                        // Preserve physical momentum for a lethal hit as the existing
-                        // corpse lifecycle keeps units that still have impactMotion.
-                        const angle =
-                            ((HashUtil.hash(target.id + '|' + unit.id) % 8) * Math.PI) / 4;
-                        const distance = Math.hypot(dx, dy);
-                        const nx = distance ? dx / distance : Math.cos(angle);
-                        const ny = distance ? dy / distance : Math.sin(angle);
-                        sim.navigation.motion.applyImpulse(
-                            target,
-                            {
-                                x: nx * spec.knockbackSpeed * LaunchImpactRules.referenceMass,
-                                y: ny * spec.knockbackSpeed * LaunchImpactRules.referenceMass,
-                                z: (spec.knockbackLift || 0) * LaunchImpactRules.referenceMass,
-                            },
-                            {
-                                kind: 'knockback',
-                                sourceId: unit.id,
-                                originX: unit.x,
-                                originY: unit.y,
-                            },
-                        );
-                    }
                     break;
                 }
             },
@@ -253,6 +212,101 @@ export class UnitSpinAttack {
             hits,
         });
         return { active: true, winner };
+    }
+
+    static inReach(sim, unit, target, spec, heightFP) {
+        return (
+            LaunchImpact.distanceToBody(sim, target, unit.x, unit.y, heightFP).surfaceDistance <=
+                spec.radius &&
+            (!spec.arcSweep ||
+                sim.world.terrain.field.polygonSegmentClear(unit.x, unit.y, target.x, target.y, 0))
+        );
+    }
+
+    static hitUnit(sim, unit, target, spec, damage) {
+        const rx = target.x - unit.x,
+            ry = target.y - unit.y,
+            dx = rx - ry * spec.tangentRatio,
+            dy = ry + rx * spec.tangentRatio;
+        const capture = {};
+        sim.applyDamage(unit.side, unit.type, target, false, damage, unit.id, { capture });
+        if (!(capture.dealt > 0)) return false;
+        if (target.alive) {
+            LaunchImpact.start(sim, target, {
+                dx,
+                dy,
+                speed: spec.knockbackSpeed,
+                lift: spec.knockbackLift || 0,
+                sourceId: unit.id,
+                originX: unit.x,
+                originY: unit.y,
+            });
+        } else {
+            // Lethal hits keep their impulse until the common corpse lifecycle retires the unit.
+            const angle = ((HashUtil.hash(target.id + '|' + unit.id) % 8) * Math.PI) / 4;
+            const distance = Math.hypot(dx, dy);
+            const nx = distance ? dx / distance : Math.cos(angle);
+            const ny = distance ? dy / distance : Math.sin(angle);
+            const mass = LaunchImpactRules.referenceMass;
+            sim.navigation.motion.applyImpulse(
+                target,
+                {
+                    x: nx * spec.knockbackSpeed * mass,
+                    y: ny * spec.knockbackSpeed * mass,
+                    z: (spec.knockbackLift || 0) * mass,
+                },
+                {
+                    kind: 'knockback',
+                    sourceId: unit.id,
+                    originX: unit.x,
+                    originY: unit.y,
+                },
+            );
+        }
+        return true;
+    }
+
+    static updateArcSweep(sim, unit, spec, damage) {
+        const spin = unit.spinAttack;
+        const elapsed = sim.tick - spin.activeStartTick;
+        const duration = spin.activeEndTick - spin.activeStartTick;
+        const from = (Math.PI * Math.max(0, elapsed - 1)) / duration;
+        const to = (Math.PI * elapsed) / duration;
+        const midpoint = (from + to) / 2;
+        const halfArc = (to - from) / 2;
+        const heightFP = this.heightFP(sim, unit);
+        sim.withNearbyUnits(
+            unit.x,
+            unit.y,
+            spec.radius + sim.maxUnitRadius,
+            1 - unit.side,
+            (indices) => {
+                for (const index of indices) {
+                    const target = sim.units[index];
+                    if (
+                        !target?.alive ||
+                        target.side !== 1 - unit.side ||
+                        Object.hasOwn(spin.hitIds, target.id) ||
+                        !UnitMotion.isGrounded(target) ||
+                        !sim.canAttackEntity(unit.type, target) ||
+                        !this.inReach(sim, unit, target, spec, heightFP)
+                    )
+                        continue;
+                    const dx = target.x - unit.x,
+                        dy = target.y - unit.y,
+                        distance = Math.hypot(dx, dy),
+                        radius = sim.unitRadius(target.type),
+                        angle = Math.atan2(dy, dx) - midpoint;
+                    const padding = distance <= radius ? Math.PI : Math.asin(radius / distance);
+                    // Doubling folds both opposing arm angles onto the same interval.
+                    const offset =
+                        Math.abs(Math.atan2(Math.sin(2 * angle), Math.cos(2 * angle))) / 2;
+                    if (offset > halfArc + padding) continue;
+                    spin.hitIds[target.id] = true;
+                    this.hitUnit(sim, unit, target, spec, damage);
+                }
+            },
+        );
     }
 
     static cancel(sim, unit) {

@@ -783,7 +783,7 @@ const PROJECTILE_VISUAL_RENDER_FNS = Object.freeze({
         }
         const length = Math.max(30, 58 * sc);
         rdr.drawVectorBillboard(record, x, y, Math.atan2(dy, dx), length / 200, {
-            depthTest: !!record.cornCone,
+            depthTest: !!(record.cornCone || record.watermelonAmmo),
         });
         rdr.circle(
             x,
@@ -1888,7 +1888,10 @@ class GLRenderer {
                 if (sprites === this.spriteRenderers.corn)
                     this.spriteRenderers.corn.drawHeldKernel(actor, matrix, 0);
                 C.flush('grain-resource-preparation');
-                if (sprites === this.spriteRenderers.acorn) {
+                if (
+                    sprites === this.spriteRenderers.acorn ||
+                    sprites === this.spriteRenderers.watermelon
+                ) {
                     actor.play('spin');
                     for (const elapsed of [1250, 1500]) {
                         actor.seekElapsed(elapsed);
@@ -1898,7 +1901,7 @@ class GLRenderer {
                         sprites.drawBody(actor, matrix, 0);
                         C.depthWrite = false;
                         sprites.drawFace(actor, matrix, 0, 'attack');
-                        C.flush('acorn-spin-resource-preparation');
+                        C.flush('spin-resource-preparation');
                     }
                 }
                 C.depthTest = false;
@@ -1908,6 +1911,8 @@ class GLRenderer {
             this.spriteRenderers.acorn.drawTeamMarker(matrix, 0, true);
             this.spriteRenderers.acorn.drawTeamMarker(matrix, 0, false);
             C.flush('acorn-ammo-resource-preparation');
+            this.spriteRenderers.watermelon.drawAmmo([32, 0, 0, 32, 0, 0], 0);
+            C.flush('watermelon-ammo-resource-preparation');
             C.depthTest = false;
             this.spriteRenderers.millet.drawEar(matrix, 0);
             this.spriteRenderers.corn.drawKernel(matrix, 0);
@@ -4237,6 +4242,11 @@ class GLRenderer {
         const key = 'ammo|' + type;
         let record = this.vectorUnitAssetCache.get(key);
         if (record) return record;
+        if (type === 'watermelon') {
+            record = { watermelonAmmo: this.spriteRenderers.watermelon };
+            this.vectorUnitAssetCache.set(key, record);
+            return record;
+        }
         if (type === 'acorn') {
             record = { acornAmmo: true };
             this.vectorUnitAssetCache.set(key, record);
@@ -4292,10 +4302,13 @@ class GLRenderer {
                 : record.acornAmmo || record.cornCone
                   ? angle + Math.PI / 4
                   : angle,
-            actualScale =
-                record.acornAmmo || record.cornCone || record.milletEar || record.popcornAmmo
-                    ? scale * 200
-                    : scale,
+            centered =
+                record.acornAmmo ||
+                record.cornCone ||
+                record.milletEar ||
+                record.popcornAmmo ||
+                record.watermelonAmmo,
+            actualScale = centered ? scale * 200 : scale,
             cos = Math.cos(actualAngle) * actualScale,
             sin = Math.sin(actualAngle) * actualScale,
             m = this._vectorUnitMatrix;
@@ -4316,21 +4329,17 @@ class GLRenderer {
         m[1] = sin * scaleX;
         m[2] = -sin * scaleY;
         m[3] = cos * scaleY;
-        m[4] =
-            record.acornAmmo || record.cornCone || record.milletEar || record.popcornAmmo
-                ? x
-                : x - m[0] * 128 - m[2] * 128;
-        m[5] =
-            record.acornAmmo || record.cornCone || record.milletEar || record.popcornAmmo
-                ? y
-                : y - m[1] * 128 - m[3] * 128;
-        if (record.acornAmmo || record.cornCone || record.milletEar || record.popcornAmmo) {
+        m[4] = centered ? x : x - m[0] * 128 - m[2] * 128;
+        m[5] = centered ? y : y - m[1] * 128 - m[3] * 128;
+        if (centered) {
             this.vectorContext.depthTest = depthTest;
             this.vectorContext.depthWrite = false;
             if (record.acornAmmo) this.spriteRenderers.acorn.drawAmmo(m, this._renderDepth ?? 0);
             else if (record.cornCone) this.spriteRenderers.corn.drawCone(m, this._renderDepth ?? 0);
             else if (record.popcornAmmo)
                 this.spriteRenderers.popcorn.drawAmmo(m, this._renderDepth ?? 0);
+            else if (record.watermelonAmmo)
+                record.watermelonAmmo.drawAmmo(m, this._renderDepth ?? 0);
             else this.spriteRenderers.millet.drawEar(m, this._renderDepth ?? 0);
             return;
         }
@@ -4634,7 +4643,7 @@ class GLRenderer {
                         this.orientationRole() === 'guest' ? -worldDirection : worldDirection;
                 }
             }
-            const spin = record.compiled === this.spriteRenderers.acorn ? entity.spinAttack : null;
+            const spin = entity.spinAttack;
             const selfDestruct =
                 entity.selfDestruct?.phase === 'windup' ? entity.selfDestruct : null;
             if (selfDestruct) clip = 'windup';
@@ -6094,7 +6103,7 @@ class GLRenderer {
         let lastPainter = null;
         const entries = this.prepareWorldSpriteFrame(visibleUnits);
         this.prepareGrainPoses(entries);
-        this.drawAcornSpinEffects(entries);
+        this.drawSpinEffects(entries);
         if (this.frame.length) {
             this.flush(this.frame, true);
             this.begin();
@@ -6109,6 +6118,7 @@ class GLRenderer {
                 (kind === 'projectile' && entity.payload?.type === 'acorn') ||
                 (kind === 'projectile' && entity.payload?.type === 'corn') ||
                 (kind === 'projectile' && entity.payload?.type === 'millet') ||
+                (kind === 'projectile' && entity.payload?.type === 'watermelon') ||
                 kind === 'unitLob' ||
                 kind === 'thorn' ||
                 kind === 'thornImpact' ||
@@ -6172,14 +6182,16 @@ class GLRenderer {
     }
     // Visual arcs and dust share the world's primitive batch; the authoritative
     // spin interval and contact pulses remain owned by the simulation.
-    drawAcornSpinEffects(entries) {
+    drawSpinEffects(entries) {
         const now = this.presentationNow();
         for (const entry of entries) {
-            if (entry.kind !== 'unit' || entry.entity.type !== 'acorn') continue;
+            if (entry.kind !== 'unit') continue;
+            const spec = UnitDefinition.get(entry.entity.type)?.spinAttack;
+            if (!spec) continue;
             const model = this.renderState.model('unit', entry.entity.id, now);
             const spin = model?.entity?.spinAttack,
                 tick = model?.tick,
-                radius = UnitDefinition.get(entry.entity.type)?.spinAttack?.radius;
+                radius = spec.radius;
             if (
                 !spin ||
                 !Number.isFinite(tick) ||
@@ -6206,17 +6218,24 @@ class GLRenderer {
                         groundY: 0,
                     }),
                 p = this.projectRenderWorldPosition(ground),
-                fill = [
-                    0.9,
-                    0.21,
-                    0.27,
-                    (recovery ? 0.38 : active ? 0.25 : 0.08 + 0.18 * windupProgress ** 2) * fade,
-                ],
-                edge = recovery ? [1, 0.45, 0.47, fade] : [0.89, 0.24, 0.29, 0.9];
+                fill = spec.arcSweep
+                    ? [0.95, 0.48, 0.29, (0.07 + 0.12 * windupProgress ** 2) * fade]
+                    : [
+                          0.9,
+                          0.21,
+                          0.27,
+                          (recovery ? 0.38 : active ? 0.25 : 0.08 + 0.18 * windupProgress ** 2) *
+                              fade,
+                      ],
+                edge = spec.arcSweep
+                    ? [1, 0.64, 0.37, 0.85 * fade]
+                    : recovery
+                      ? [1, 0.45, 0.47, fade]
+                      : [0.89, 0.24, 0.29, 0.9];
             const turns =
                 ((tick - spin.activeStartTick) / (spin.activeEndTick - spin.activeStartTick)) *
                 Math.PI *
-                6;
+                (spec.arcSweep ? 1 : 6);
             this.withWorldSpriteDepth(ground, () => {
                 // Same world-space reach as the collision query, projected onto the ground.
                 const segments = 32;
@@ -6243,10 +6262,11 @@ class GLRenderer {
                 }
                 if (!active) return;
                 for (let arc = 0; arc < 2; arc++) {
-                    const start = turns + arc * Math.PI;
+                    const length = spec.arcSweep ? Math.min(turns, Math.PI / 3) : Math.PI / 2;
+                    const start = turns + arc * Math.PI - (spec.arcSweep ? length : 0);
                     for (let j = 0; j < 7; j++) {
-                        const a = start + ((j / 7) * Math.PI) / 2,
-                            b = start + (((j + 1) / 7) * Math.PI) / 2,
+                        const a = start + (j / 7) * length,
+                            b = start + ((j + 1) / 7) * length,
                             from = project(a),
                             to = project(b);
                         this.line(
@@ -6254,11 +6274,12 @@ class GLRenderer {
                             from.y,
                             to.x,
                             to.y,
-                            Math.max(1, 2.5 * this.sc()),
-                            [1, 0.78, 0.36, 0.72],
+                            Math.max(1, (spec.arcSweep ? 5 : 2.5) * this.sc()),
+                            spec.arcSweep ? [1, 0.9, 0.61, 0.35 + j * 0.09] : [1, 0.78, 0.36, 0.72],
                         );
                     }
                 }
+                if (spec.arcSweep) return;
                 for (let i = 0; i < 3; i++) {
                     const a = turns * 0.7 + (i * Math.PI * 2) / 3;
                     const dust = project(a);
@@ -9876,26 +9897,30 @@ class LaunchPresentation {
         UiRegistry.refs.launchHand?.classList.toggle('hidden', !on);
         if (!on) return;
         const deck = s.decks?.[side] || LaunchRules.deck,
+            heroCard = LaunchRules.heroCard,
+            hero = s.heroes?.[side],
             wallet = Math.floor(s.wallet?.[side] || 0),
             premiumWallet = Math.floor(s.premiumWallet?.[side] || 0),
             population = LaunchRules.population(s, side);
-        if (!deck.includes(this.card)) this.card = deck[0] || null;
+        if (this.card === heroCard ? hero : !deck.includes(this.card)) this.card = deck[0] || null;
         const key = deck.join('|');
         if (key !== this.deckKey) {
             this.deckKey = key;
-            UiRegistry.refs.launchCards.innerHTML = deck
+            UiRegistry.refs.launchCards.innerHTML = [heroCard, ...deck]
                 .map((t) => LaunchScreens.cardMarkup(t))
                 .join('');
             LaunchScreens.fillCardPortraits(UiRegistry.refs.launchCards);
         }
         for (const el of UiRegistry.refs.launchCards.querySelectorAll('[data-launch-card]')) {
-            const t = el.dataset.launchCard;
+            const t = el.dataset.launchCard,
+                payload = LaunchRules.payload(t),
+                deployed = t === heroCard && hero;
             el.classList.toggle('selected', t === this.card);
             el.classList.toggle(
                 'unaffordable',
-                LaunchRules.payload(t).cost > wallet ||
-                    LaunchRules.payload(t).premiumCost > premiumWallet,
+                !deployed && (payload.cost > wallet || payload.premiumCost > premiumWallet),
             );
+            if (t === heroCard) this.renderHeroCard(el, hero);
         }
         UiRegistry.refs.launchEnergyFill.style.width = `${Math.round((100 * wallet) / LaunchRules.walletCap)}%`;
         UiRegistry.refs.launchEnergyText.textContent = `◆ ${wallet} / ${LaunchRules.walletCap}  ✦ ${premiumWallet} / ${LaunchRules.premiumWalletCap}`;
@@ -9929,6 +9954,8 @@ class LaunchPresentation {
                         'insufficient-basic-resources': '기본 자원이 부족합니다.',
                         'insufficient-premium-resources': '고급 자원이 부족합니다.',
                         'population-limit': '인구가 가득 찼습니다.',
+                        'hero-already-deployed': '영웅이 이미 출격 중입니다.',
+                        'hero-unavailable': '전사한 영웅은 이번 경기에 다시 출격할 수 없습니다.',
                         'cannon-unavailable': '사용할 수 있는 대포가 없습니다.',
                         'invalid-unit': '발사할 병종을 확인해 주세요.',
                     }[event.reason] || '발사할 수 없습니다.',
@@ -9939,6 +9966,10 @@ class LaunchPresentation {
     }
     static presentEvents(snapshot, side) {
         for (const event of snapshot.events || []) {
+            if (event.type === 'heroRecovered' && event.side === side && this.active(snapshot)) {
+                this.feedback('영웅 회수 · 다시 출격할 수 있습니다.');
+                continue;
+            }
             if (event.type !== 'launchImpact' || event.side !== side) continue;
             const mark = { projectileId: event.projectileId, x: event.x, y: event.y };
             EffectObjectFactory.attachClock(
@@ -9948,6 +9979,23 @@ class LaunchPresentation {
             );
             this.marks.push(mark);
         }
+    }
+    static renderHeroCard(el, hero) {
+        el.classList.add('hero-card');
+        const badge = el.querySelector('em'),
+            mode = hero?.mode;
+        el.disabled = mode === 'dead' || !this.active();
+        const label = {
+            advance: ['ON · 진격', '영웅 복귀시키기'],
+            return: ['OFF · 복귀', '영웅 진격 재개'],
+            dead: ['전사', '전사한 영웅은 이번 경기에 다시 출격할 수 없습니다.'],
+        }[mode] ?? ['무료', '영웅 발사'];
+        badge.textContent = label[0];
+        el.title = label[1];
+        el.classList.toggle('hero-dead', mode === 'dead');
+        if (mode === 'advance' || mode === 'return')
+            el.setAttribute('aria-pressed', String(mode === 'advance'));
+        else el.removeAttribute('aria-pressed');
     }
     // Both main bases' health, elapsed time, and an edge arrow while the enemy base is off screen.
     static renderHud(s, side) {
@@ -10012,9 +10060,23 @@ class LaunchPresentation {
         });
     }
     static selectCard(type) {
-        this.card = type;
         const s = ActiveViewState.snap;
-        if (s) this.render(s, ConnectionSideUtil.roleSide(ActiveViewState.role));
+        if (!this.active(s)) return;
+        const side = ConnectionSideUtil.roleSide(ActiveViewState.role),
+            hero = s.heroes?.[side];
+        if (type === LaunchRules.heroCard && hero) {
+            if (hero.mode === 'dead') return;
+            if (
+                !MatchLifecycle.activeSession()?.command({
+                    type: 'TOGGLE_HERO',
+                    sortieId: hero.sortieId,
+                })
+            )
+                this.feedback('영웅 명령을 접수할 수 없습니다.');
+            return;
+        }
+        this.card = type;
+        this.render(s, side);
     }
     static upgradeRange() {
         if (!this.active()) return;
@@ -11144,7 +11206,7 @@ else if (document.documentElement.dataset.titleShowcase === 'true') {
             closeMenu: () => {
                 if (UiRuntimeState.value.modal === 'match-menu') MatchLifecycle.closeMatchMenu();
             },
-            grains: () => LaunchRules.deck,
+            grains: () => [LaunchRules.heroCard, ...LaunchRules.deck],
             grainName: (t) => UnitDefinition.get(t)?.name || t,
             grainStats: (t) => ({
                 ...LaunchRules.payload(t),
