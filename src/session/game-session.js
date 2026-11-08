@@ -281,7 +281,20 @@ class RallySimulationAdapter {
                     )
                         throw new Error('게임 snapshot의 건물 정의가 잘못되었습니다.');
                     RallyStateCodec.assertContract(entity, Building.stateContract);
+                    const mortar = BuildingDefinition.get(entity.type).mortar;
+                    if (
+                        !Number.isSafeInteger(entity.attacksSinceMortar) ||
+                        entity.attacksSinceMortar < 0 ||
+                        entity.attacksSinceMortar >= (mortar?.attackInterval ?? 1)
+                    )
+                        throw new Error('게임 snapshot의 박격포 공격 횟수가 잘못되었습니다.');
                 }
+                if (
+                    key === 'projectiles' &&
+                    entity.mortar !== undefined &&
+                    (entity.mortar !== true || !BuildingDefinition.get(entity.type)?.mortar)
+                )
+                    throw new Error('게임 snapshot의 박격포 투사체가 잘못되었습니다.');
             }
         }
         HeroDeployment.validate(state);

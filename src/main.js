@@ -2074,9 +2074,10 @@ class GLRenderer {
                         arcHeight: motionState.arcHeight,
                     });
                     groundY = arc.groundHeight;
-                    height = entity.payload
-                        ? LaunchImpactRules.flightHeight(arc.progress, motionState.arcHeight)
-                        : arc.height;
+                    height =
+                        entity.payload || entity.mortar
+                            ? LaunchImpactRules.flightHeight(arc.progress, motionState.arcHeight)
+                            : arc.height;
                     progress = arc.progress;
                     motion = arc.motion;
                 }
@@ -2493,7 +2494,7 @@ class GLRenderer {
                             { motion: attackVisual.sourceMotion },
                         );
                 }
-                if (attackVisual.travel === 'hitscan') {
+                if (attackVisual.travel === 'hitscan' && !e.suppressImpactFx) {
                     const source = e.presentationSource;
                     if (source?.alive) {
                         const dx = e.x - source.x,
@@ -2572,15 +2573,20 @@ class GLRenderer {
                         eventTick: e.presentationTick ?? snapshot.tick,
                     },
                 );
-            } else if (e.type === 'launchFire') {
+            } else if (e.type === 'launchFire' || e.type === 'mortarFire') {
                 this.launchFireFx(e, snapshot, index);
             } else if (e.type === 'launchImpact') {
                 this.launchImpactFx(e, snapshot, index);
-            } else if (e.type === 'leapLand' || e.type === 'heroRollLand') {
+            } else if (
+                e.type === 'leapLand' ||
+                e.type === 'heroRollLand' ||
+                e.type === 'mortarImpact'
+            ) {
                 this.addClientFx('launchBlast', e, snapshot, index, {
                     peak: 1,
                     hits: e.hits ?? 1,
-                    groundRing: e.type === 'heroRollLand',
+                    groundRing: e.type !== 'leapLand',
+                    impactHeightFP: e.impactHeightFP,
                 });
             } else if (e.type === 'launchOverheat') {
                 const b = e.presentationSource,
@@ -5080,6 +5086,12 @@ class GLRenderer {
                 );
         }
         if (p.payload) this.drawLaunchTrail(p, wp, sc);
+        if (p.mortar) {
+            const radius = Math.max(3, 10 * sc);
+            this.circle(x, y, radius, [0.19, 0.15, 0.13, 1], 12);
+            this.circle(x, y, radius * 0.6, [0.98, 0.65, 0.26, 1], 12);
+            return;
+        }
         const projectileCtx = { p, sc, target, gx, gy, wp, pp, gp, x, y };
         // Direction is sampled after interpolation/camera projection/z-height, but before
         // transient hit/camera shake.

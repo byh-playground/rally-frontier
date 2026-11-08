@@ -1475,53 +1475,115 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     lostInvestment: paid,
                 });
             }
-            // Completed towers retain their single-target basic defense; unfinished
-            // structures do not inherit that attack while their workers are busy.
             {
                 const sim = arena(),
                     [tower] = smallProjects(sim, start(sim));
                 finish(sim, tower);
-                const workerState = sim.exportState();
-                workerState.units = [];
-                sim.importState(workerState);
-                sim.spawnUnit(1, 'pea', tower.x + 301, tower.y);
+                const state = sim.exportState(),
+                    enemyBase = state.buildings.find((b) => b.id === 'base1'),
+                    { x, y } = tower;
+                state.units = [];
+                enemyBase.x = x + 501;
+                enemyBase.y = y;
+                const spot = () => sim.spawnUnit(0, 'rice', x + 440, y - 100);
+                const attacks = (s) =>
+                    s.events.filter((e) => e.type === 'hit' && e.sourceId === tower.id);
+                sim.importState(state);
+                spot();
                 step(sim, 1);
-                check(
-                    !sim.events.some((e) => e.type === 'hit' && e.sourceId === tower.id),
-                    'tower does not fire at a target 301 units away',
-                );
-                sim.importState(workerState);
-                const firstShotTick = sim.tick + 1;
-                const one = sim.spawnUnit(1, 'pea', tower.x + 300, tower.y),
-                    two = sim.spawnUnit(1, 'pea', tower.x, tower.y + 300);
-                for (const u of [one, two]) u.hp = u.maxHp = 10000;
+                check(!attacks(sim).length, 'a visible enemy at distance 501 is out of range');
+                enemyBase.x = x + 500;
+                sim.importState(state);
+                step(sim, 1);
+                check(!attacks(sim).length, 'an unspotted enemy at 500 remains hidden');
+                sim.importState(state);
+                const ally = spot();
+                const firstShotTick = sim.tick + 1,
+                    attackInterval = sim.msTicks(500);
                 const hits = [];
-                step(sim, 2 * sim.tps, (s) =>
+                step(sim, 4 * attackInterval, (s) =>
                     hits.push(
-                        ...s.events
-                            .filter((e) => e.type === 'hit' && e.sourceId === tower.id)
-                            .map((e) => ({ tick: s.tick, targetId: e.targetId, amount: e.amount })),
+                        ...attacks(s).map((e) => ({
+                            tick: s.tick,
+                            targetId: e.targetId,
+                            amount: e.amount,
+                        })),
                     ),
                 );
                 check(
-                    hits.length === 2 &&
-                        hits[0].tick === firstShotTick &&
-                        hits.every((e) => e.amount === 10) &&
-                        hits[1].tick - hits[0].tick === sim.tps,
-                    'finished tower deals 10 damage at distance 300 and still fires once per second',
+                    hits.length === 4 &&
+                        hits.every(
+                            (e, i) =>
+                                e.amount === 8 &&
+                                e.targetId === enemyBase.id &&
+                                e.tick === firstShotTick + i * attackInterval,
+                        ),
+                    'four basic attacks deal 8 damage at distance 500 every 0.5 seconds',
                     hits,
+                );
+                const near = [
+                    sim.spawnUnit(1, 'rice', x + 560, y + 65),
+                    sim.spawnUnit(1, 'pea', x + 555, y - 40),
+                ];
+                const outside = sim.spawnUnit(1, 'pea', x + 750, y);
+                const restored = arena();
+                restored.importState(sim.exportState());
+                step(sim, 1);
+                step(restored, 1);
+                const fire = sim.events.find((e) => e.type === 'mortarFire');
+                check(
+                    fire?.cannonId === tower.id &&
+                        !attacks(sim).length &&
+                        sim.projectiles.length === 1 &&
+                        sim.checksum() === restored.checksum(),
+                    'the fifth attack fires only a mortar and survives a pre-fire checkpoint',
+                    { fire, hits: attacks(sim) },
+                );
+                step(sim, 5);
+                check(
+                    sim.projectiles.length === 1,
+                    'the mortar is still airborne after five ticks',
+                );
+                restored.importState(sim.exportState());
+                let impact, blastHits;
+                for (let i = 0; i < sim.tps && !impact; i++) {
+                    step(sim, 1);
+                    step(restored, 1);
+                    impact = sim.events.find((e) => e.type === 'mortarImpact');
+                    blastHits = attacks(sim);
+                    check(sim.checksum() === restored.checksum(), 'midflight checkpoint replays');
+                }
+                check(
+                    impact?.projectileId === fire.projectileId &&
+                        impact.radius === 150 &&
+                        blastHits.find((e) => e.targetId === enemyBase.id)?.amount === 20 &&
+                        near.every(
+                            (u, i) =>
+                                blastHits.find((e) => e.targetId === u.id)?.amount === [10, 15][i],
+                        ) &&
+                        !blastHits.some(
+                            (e) => e.targetId === ally.id || e.targetId === outside.id,
+                        ) &&
+                        !sim.launchDeployments.length,
+                    'the mortar damages multiple nearby enemies and leaves allies and distant units alone',
+                    { impact, blastHits },
                 );
                 const incomplete = arena(),
                     [site] = start(incomplete, { workers: 0 });
                 incomplete.spawnUnit(1, 'pea', site.x + 150, site.y);
                 const forbidden = [];
-                step(incomplete, incomplete.tps, (s) =>
+                step(incomplete, 5 * incomplete.tps, (s) =>
                     forbidden.push(
-                        ...s.events.filter((e) => e.type === 'hit' && e.sourceId === site.id),
+                        ...s.events.filter((e) => e.sourceId === site.id || e.cannonId === site.id),
                     ),
                 );
-                check(forbidden.length === 0, 'unfinished structure cannot use its basic attack');
-                rows.push({ scenario: 'completed tower retains its basic defense', hits });
+                check(forbidden.length === 0, 'unfinished structure cannot fire');
+                rows.push({
+                    scenario: 'completed tower fires a mortar every fifth attack',
+                    hits,
+                    impact,
+                    blastHits,
+                });
             }
             // Construction also belongs to ordinary buildings without a capture-point
             // association. A trusted mission configures the existing base capability.

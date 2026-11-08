@@ -1,4 +1,5 @@
 import { LaunchRules } from '../sim/launch-rules.js';
+import { VIEW_W } from './world-rules.js';
 // Building definitions: each side's main base and the outposts spawned on captured points.
 class BuildingDefinition {
     static all = {
@@ -25,11 +26,19 @@ class BuildingDefinition {
             size: 45,
             sight: 425,
             canAttackGround: true,
-            range: 300,
-            atk: 10,
-            cooldownMs: 1000,
+            range: 500,
+            atk: 8,
+            cooldownMs: 500,
             damageClass: 'normal',
             attackVisual: { travel: 'hitscan', impact: 'light' },
+            mortar: Object.freeze({
+                attackInterval: 5,
+                damage: 20,
+                damageClass: 'area',
+                radius: VIEW_W / 6,
+                flightMs: 750,
+                arcHeight: 150,
+            }),
         },
     };
     static get(type) {
