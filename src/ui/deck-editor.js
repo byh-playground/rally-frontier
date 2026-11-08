@@ -1,3 +1,5 @@
+import { ResourceDisplay } from './resource-display.js';
+
 // Saved player loadouts are local preferences; the match owns its immutable copy.
 const STORAGE_KEY = 'ssalkongpang.decks.v1';
 const DECK_COUNT = 3;
@@ -119,12 +121,12 @@ export class DeckEditor {
                 info = this.infoOf(type);
             role.className = 'deck-card-role';
             role.textContent = info.role;
-            detail.textContent = `비용 ${stats.cost} · ${stats.count}명`;
+            detail.textContent = `${ResourceDisplay.costText(stats)} · ${stats.count}명`;
             feature.className = 'deck-card-feature';
             feature.textContent = info.feature;
             button.setAttribute(
                 'aria-label',
-                `${this.nameOf(type)}, ${info.role}, 비용 ${stats.cost}, ${stats.count}명, ${info.feature}, ${chosen ? '덱에서 제외' : '덱에 추가'}`,
+                `${this.nameOf(type)}, ${info.role}, 비용 ${ResourceDisplay.costText(stats, true)}, ${stats.count}명, ${info.feature}, ${chosen ? '덱에서 제외' : '덱에 추가'}`,
             );
             check.className = 'deck-card-check';
             check.setAttribute('aria-hidden', 'true');

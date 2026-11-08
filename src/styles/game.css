@@ -312,17 +312,22 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
 }
 .launch-feedback {
     position: absolute;
-    left: 50%;
-    top: 72px;
-    transform: translateX(-50%);
+    inset: auto 10px 8px;
+    width: max-content;
+    max-width: calc(100% - 20px);
+    margin: 0 auto;
+    box-sizing: border-box;
     z-index: 20;
-    max-width: 90%;
-    padding: 8px 14px;
-    border-radius: 12px;
-    background: rgba(20, 24, 26, 0.9);
+    padding: 6px 9px;
+    border-radius: 8px;
+    background: #111b14ed;
     color: #fff;
+    font-size: 12px;
+    line-height: 1.4;
     font-weight: 700;
     text-align: center;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
     pointer-events: none;
 }
 .canvas-wrap {
@@ -468,117 +473,127 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
     border-top: 3px solid #a5c67e;
 }
 .launch-economy {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 8px;
     align-items: center;
-    gap: 10px;
 }
-.launch-wallet {
-    flex: 1;
+.launch-resources {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+.launch-resource {
+    --resource-accent: #9bd7ff;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 5px;
     min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
+    padding: 4px 7px;
+    border-radius: 8px;
+    background: #17382c;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+.launch-resource[data-resource='premium'] {
+    --resource-accent: #f6ca76;
+}
+.launch-resource-name {
+    color: var(--resource-accent);
+    white-space: nowrap;
+}
+.launch-resource-balance {
+    justify-self: end;
+    white-space: nowrap;
+}
+.launch-resource-state,
+.launch-resource-meter {
+    grid-column: 1 / -1;
+}
+.launch-resource-state {
+    color: #dfebdf;
+    font-size: 10px;
+}
+.launch-resource-meter {
+    height: 3px;
+    border-radius: 999px;
+    background: #0b231b;
+    overflow: hidden;
+}
+.launch-resource-meter > span {
+    display: block;
+    height: 100%;
+    width: var(--balance, 0%);
+    background: var(--resource-accent);
 }
 .launch-wallet-hints {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 3px;
     flex-wrap: wrap;
-}
-.launch-reach {
-    font-size: 10px;
-    color: #cde4ff;
-    font-weight: 800;
-}
-.launch-income {
+    gap: 2px 6px;
     font-size: 11px;
     font-weight: 800;
     color: #d5e9d8;
-    text-align: center;
+}
+.launch-wallet-hints > span {
+    white-space: nowrap;
+}
+.launch-reach {
+    color: #cde4ff;
 }
 .launch-range-btn {
-    min-height: 48px;
-    min-width: 148px;
-    padding: 5px 10px;
+    min-height: 43px;
+    padding: 4px 8px;
     border: 1.5px solid var(--gold);
     border-radius: 10px;
     background: #254832;
     color: #fff;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    display: grid;
+    justify-items: center;
+    align-content: center;
     gap: 2px;
+    font-weight: 800;
+    line-height: 1.2;
 }
-.launch-range-btn b {
-    font-size: 12px;
-}
+.launch-range-btn b,
 .launch-range-btn span {
     font-size: 12px;
+    white-space: nowrap;
+}
+.launch-range-btn span {
     color: var(--gold);
-    font-weight: 800;
 }
-.launch-range-btn:disabled {
-    border-color: #66766a;
-    opacity: 0.65;
-    cursor: default;
+.launch-range-btn small {
+    color: #ffd9a6;
+    font-size: 10px;
 }
-.launch-range-btn:focus-visible {
+.launch-range-btn:disabled,
+.launch-range-btn[aria-disabled='true'] {
+    border-color: #a7b6a8;
+    background: #293c32;
+}
+.launch-range-btn:focus-visible,
+.launch-card-info:focus-visible {
     outline: 3px solid #fff;
     outline-offset: 2px;
 }
-.launch-energy {
-    position: relative;
-    height: 22px;
-    border-radius: 999px;
-    background: #0e1511;
-    overflow: hidden;
-}
-.launch-energy-fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: 0;
-    background: linear-gradient(90deg, #4aa3e6, #8fd0ff);
-    transition: width 0.12s linear;
-}
-.launch-energy b {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    color: #fff;
-    font-weight: 800;
-    font-size: 13px;
-    text-shadow: 0 1px 2px #000;
-}
-@media (max-width: 380px) {
-    .launch-economy {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 4px 8px;
-    }
-    .launch-wallet {
-        display: contents;
-    }
-    .launch-energy {
-        grid-column: 1 / -1;
-    }
-    .launch-range-btn {
-        min-width: 0;
-    }
-}
 .launch-cards {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    padding-bottom: 10px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding-bottom: 4px;
+}
+.launch-card-slot {
+    position: relative;
+    min-width: 0;
 }
 .launch-card {
     position: relative;
-    height: 104px;
-    padding: 0 0 22px;
+    width: 100%;
+    height: 96px;
+    padding: 0 2px 23px;
     border-radius: 14px;
     border: 2px solid #aecb91;
     background: #f7f5df;
@@ -593,7 +608,7 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
     position: absolute;
     top: 6px;
     left: 50%;
-    height: 64px;
+    height: 52px;
     transform: translateX(-50%);
     pointer-events: none;
 }
@@ -604,18 +619,23 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
 .launch-card em {
     position: absolute;
     left: 50%;
-    bottom: -10px;
+    bottom: 3px;
     transform: translateX(-50%);
-    min-width: 34px;
-    height: 24px;
-    padding: 0 6px;
+    width: max-content;
+    max-width: calc(100% - 4px);
+    min-width: 30px;
+    min-height: 18px;
+    padding: 1px 4px;
+    box-sizing: border-box;
+    gap: 3px;
+    white-space: nowrap;
     border-radius: 999px;
     background: #286f9e;
     border: 2px solid var(--tray);
     color: #fff;
     font-style: normal;
     font-weight: 900;
-    font-size: 13px;
+    font-size: 11px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -626,6 +646,8 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
     top: 4px;
     width: 22px;
     height: 22px;
+    padding: 0;
+    border: 0;
     border-radius: 50%;
     background: #365b3e;
     color: #fff;
@@ -638,23 +660,31 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
 }
 .launch-card.selected {
     border-color: #99580c;
-    transform: translateY(-6px);
     box-shadow:
         0 0 0 2px var(--gold),
         0 6px 0 #203e2b;
 }
 .launch-card.unaffordable {
-    filter: grayscale(0.75) brightness(0.82);
+    background: #e3e6d9;
 }
-.launch-card.unaffordable em {
-    background: #777;
+.launch-card.unaffordable .launch-card-portrait {
+    filter: grayscale(0.55);
+    opacity: 0.66;
+}
+.launch-card em [data-cost-resource='premium'] {
+    color: #ffdc91;
+}
+.launch-card em .cost-short {
+    text-decoration: underline;
+    text-decoration-color: #ffd1b0;
+    text-decoration-thickness: 2px;
 }
 .hero-card {
     border-color: var(--gold);
-    padding-bottom: 14px;
+    padding-bottom: 22px;
 }
 .hero-card .launch-card-portrait {
-    height: 54px;
+    height: 42px;
 }
 .hero-card[data-hero-skill] {
     -webkit-touch-callout: none;
@@ -801,6 +831,25 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
 }
 .hero-card.hero-dead em {
     background: #65443d;
+}
+
+@media (max-height: 650px) {
+    .launch-hand {
+        gap: 6px;
+        padding-bottom: calc(8px + var(--safe-bottom));
+    }
+    .launch-card {
+        height: 78px;
+    }
+    .launch-card-portrait {
+        height: 36px;
+    }
+    .hero-card .launch-card-portrait {
+        height: 26px;
+    }
+    .hero-card-health {
+        line-height: 11px;
+    }
 }
 
 /* Replay controls replace the card tray. */
