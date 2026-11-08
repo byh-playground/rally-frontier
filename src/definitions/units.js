@@ -39,7 +39,7 @@ class UnitDefinition {
             attackVisual: { sourceMotion: 'smash', travel: 'none', impact: 'light' },
             sight: 275,
             heroActive: Object.freeze({
-                cost: 50,
+                cost: 100,
                 range: 250,
                 hopMs: 500,
                 hopHeight: WATERMELON_SIZE * 3,

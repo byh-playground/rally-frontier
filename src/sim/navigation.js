@@ -750,12 +750,22 @@ class TerrainNavigation {
             unreachable: 0,
         };
     }
-    sync() {
-        if (this.sceneTick === this.sim.tick) return;
-        this.sceneTick = this.sim.tick;
-        if (!this.topology.refresh(this.sim.buildings)) return;
+    sync(source = this.sim) {
+        if (this.sceneTick === source.tick && this.sceneBuildings === source.buildings) return;
+        this.sceneTick = source.tick;
+        this.sceneBuildings = source.buildings;
+        if (!this.topology.refresh(source.buildings)) return;
         // A changed obstacle layout makes every grid stale; fieldsFor() notices by version.
         this.field.setCircles(this.topology.records);
+    }
+    traceStraightTravel(x, y, dx, dy, distance, radius, source = this.sim) {
+        this.sync(source);
+        const contact = this.motion.surface.cast(x, y, dx * distance, dy * distance, radius);
+        return {
+            blocked: !!contact,
+            // Leave enough room to round the clipped position to world fixed-point.
+            distance: contact ? Math.max(0, contact.t * distance - 2 / FP) : distance,
+        };
     }
     fieldsFor(radius) {
         this.sync();

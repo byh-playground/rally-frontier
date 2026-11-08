@@ -33,7 +33,12 @@ import { CAPTURE_RADIUS, LANE_CONTROL_POINTS } from './definitions/combat-rules.
 import { PerformanceTelemetry } from './diagnostics/performance-telemetry.js';
 import { VIEW_H, VIEW_W } from './definitions/world-rules.js';
 import { WorldContext } from './sim/world-context.js';
-import { NavigationGoal, UnitMotion } from './sim/navigation.js';
+import {
+    InteractionGeometry,
+    NavigationGoal,
+    TerrainNavigation,
+    UnitMotion,
+} from './sim/navigation.js';
 import {
     BattlefieldProjection,
     TerrainSurfaceAtlas,
@@ -6258,7 +6263,7 @@ class GLRenderer {
         let lastPainter = null;
         const entries = this.prepareWorldSpriteFrame(visibleUnits);
         this.prepareGrainPoses(entries);
-        this.drawSpinEffects(entries);
+        this.drawUnitAttackEffects(entries);
         if (this.frame.length) {
             this.flush(this.frame, true);
             this.begin();
@@ -6337,7 +6342,7 @@ class GLRenderer {
     }
     // Visual arcs and dust share the world's primitive batch; the authoritative
     // spin interval and contact pulses remain owned by the simulation.
-    drawSpinEffects(entries) {
+    drawUnitAttackEffects(entries) {
         for (const fx of this.combatFx) {
             if (fx.kind !== 'spinBasicImpact' || fx.clock.expired) continue;
             const fade = 1 - fx.clock.ageMs / EffectObjectFactory.combatLife(fx);
@@ -6355,12 +6360,15 @@ class GLRenderer {
         const now = this.presentationNow();
         for (const entry of entries) {
             if (entry.kind !== 'unit') continue;
-            const spec = UnitDefinition.get(entry.entity.type)?.spinAttack;
-            if (!spec) continue;
+            const definition = UnitDefinition.get(entry.entity.type);
+            const spec = definition?.spinAttack;
+            if (!spec && !definition?.heroActive) continue;
             const model = this.renderState.model('unit', entry.entity.id, now);
+            if (definition.heroActive && entry.entity.alive)
+                this.drawHeroRollTelegraph(entry, model, definition.heroActive);
             const spin = model?.entity?.spinAttack,
                 tick = model?.tick,
-                radius = spec.radius;
+                radius = spec?.radius;
             if (
                 !spin ||
                 !Number.isFinite(tick) ||
@@ -6444,6 +6452,72 @@ class GLRenderer {
                 }
             });
         }
+    }
+    drawHeroRollTelegraph({ entity, world }, model, spec) {
+        const roll = model?.entity?.heroRoll;
+        if (
+            roll?.phase !== 'hop' ||
+            model.tick < roll.phaseStartTick ||
+            model.tick >= roll.phaseEndTick
+        )
+            return;
+
+        const ground = { ...world, y: world.groundY };
+        const { x, z } = ground;
+        const radius = InteractionGeometry.unitRadius(entity.type);
+        if (this.rollPreviewNavigation?.geometry !== this.world.terrain)
+            this.rollPreviewNavigation = new TerrainNavigation({ world: this.world });
+        const { distance } = this.rollPreviewNavigation.traceStraightTravel(
+            x,
+            z,
+            roll.dx,
+            roll.dy,
+            spec.rollDistance,
+            radius,
+            this.snapshot,
+        );
+        const progress = watermelonRollProgress(roll, model.tick);
+        this.withWorldSpriteDepth(ground, () => {
+            this.drawGroundCircle(x, z, spec.landing.radius, {
+                elevation: ground.y,
+                fill: [0.9, 0.19, 0.25, 0.1 + 0.14 * progress ** 2],
+                stroke: [1, 0.42, 0.4, 0.9],
+                width: Math.max(1.5, 2 * this.sc()),
+            });
+            this.drawHeroRollPath(ground, roll, distance, radius);
+        });
+    }
+    drawHeroRollPath(ground, { dx, dy }, distance, radius) {
+        const project = (along, across) =>
+            this.worldToPx(
+                this.viewX(ground.x + dx * along - dy * across),
+                this.viewY(ground.z + dy * along + dx * across),
+                ground.y,
+            );
+        const points = [];
+        const segments = 8;
+        for (let i = 0; i <= segments; i++) {
+            const angle = (Math.PI * i) / segments;
+            points.push(project(distance + radius * Math.sin(angle), radius * Math.cos(angle)));
+        }
+        for (let i = 0; i <= segments; i++) {
+            const angle = (Math.PI * i) / segments;
+            points.push(project(-radius * Math.sin(angle), -radius * Math.cos(angle)));
+        }
+        const edge = [1, 0.79, 0.34, 0.95];
+        this.poly(points, [0.92, 0.52, 0.12, 0.22]);
+        for (let i = 0; i < points.length; i++)
+            this.line(...points[i], ...points[(i + 1) % points.length], 1.5, edge);
+        if (!distance) return;
+        const tip = project(distance, 0),
+            wing = Math.min(radius * 0.5, distance * 0.4);
+        const arrow = [
+            project(0, 0),
+            project(distance - wing, -wing),
+            project(distance - wing, wing),
+        ];
+        for (const point of arrow) this.line(...point, ...tip, 4, [0.28, 0.13, 0.04, 0.86]);
+        for (const point of arrow) this.line(...point, ...tip, 2, edge);
     }
     renderOverlayPass() {
         this.passState.depthEnabled = false;
