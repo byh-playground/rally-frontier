@@ -4032,7 +4032,7 @@ class GLRenderer {
                       : [0.42, 0.47, 0.5, 0.1];
 
             this.drawGroundCircle(cp.x, cp.y, CAPTURE_RADIUS, { fill: base });
-            this.drawGroundCircle(cp.x, cp.y, Math.max(8 / sc, 38), {
+            this.drawGroundCircle(cp.x, cp.y, 38, {
                 fill:
                     cp.owner != null
                         ? this.factionColor(cp.owner, { alpha: 0.55 })
@@ -4050,7 +4050,7 @@ class GLRenderer {
                 (this.isFriendlySide(outpost.side) || this.visibleRaw(outpost.x, outpost.y))
             ) {
                 const ratio = ConstructionRules.progress(outpost.construction);
-                this.drawGroundCircle(cp.x, cp.y, Math.max(7 / sc, 30), {
+                this.drawGroundCircle(cp.x, cp.y, 30, {
                     fill: this.factionColor(outpost.side, { alpha: 0.18 + ratio * 0.35 }),
                     segments: 16,
                 });
@@ -4222,13 +4222,8 @@ class GLRenderer {
         return UnitVisualDefinition.get(u?.type)?.visualScale ?? 1.08;
     }
     unitRenderRadius(u) {
-        const d = UnitDefinition.get(u?.type) || {},
-            baseSize = UnitDefinition.get('rice').size,
-            size = d.size || baseSize;
-        return Math.max(
-            6.2 * (this.replayZoom || 1) * (size / baseSize),
-            size * this.sc() * 1.56 * this.unitRenderVisualScale(u),
-        );
+        const size = UnitDefinition.get(u?.type)?.size || UnitDefinition.get('rice').size;
+        return size * 1.56 * this.unitRenderVisualScale(u) * this.sc();
     }
 
     hasGrainArt(u) {
@@ -6330,7 +6325,7 @@ class GLRenderer {
                 continue;
             const wait = (Number(b.launchReadyTick) || 0) - s.tick;
             if (wait <= 0) continue;
-            const radius = Math.max(18 / sc, (BuildingDefinition.get(b.type)?.size || 40) + 10),
+            const radius = (BuildingDefinition.get(b.type)?.size || 40) + 10,
                 hot = wait > reloadTicks;
             this.drawGroundCircle(b.x, b.y, radius, {
                 width: Math.max(2, 3 * sc),
@@ -6384,7 +6379,7 @@ class GLRenderer {
                     hold.lastPower * LaunchRules.chargeMs,
                     this.world,
                 );
-                this.drawGroundCircle(last.x, last.y, Math.max(8 / sc, 10), {
+                this.drawGroundCircle(last.x, last.y, 10, {
                     stroke: [1, 1, 1, 0.55],
                     width: Math.max(1.5, 2 * sc),
                     segments: 20,
@@ -6401,7 +6396,7 @@ class GLRenderer {
                 col = [1, 0.9, 0.5, alpha];
             const [x, y] = this.worldToPx(this.viewX(m.x), this.viewY(m.y));
             if (x >= 0 && x <= W && y >= 0 && y <= H) {
-                this.drawGroundCircle(m.x, m.y, Math.max(14 / sc, 30 + 40 * age), {
+                this.drawGroundCircle(m.x, m.y, 30 + 40 * age, {
                     stroke: col,
                     width: Math.max(2, 3 * sc),
                 });
