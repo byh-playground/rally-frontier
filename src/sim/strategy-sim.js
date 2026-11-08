@@ -2136,7 +2136,7 @@ class StrategySim {
             UnitSpinAttack.cancel(this, u);
             return null;
         }
-        if (d.leapAttack && UnitLeapAttack.update(this, u, d.leapAttack, d.atk)) {
+        if (d.leapAttack && UnitLeapAttack.update(this, u)) {
             u.constructionWork = null;
             return null;
         }
@@ -3548,8 +3548,12 @@ class StrategySim {
         for (const u of this.units) {
             this.navigation.motion.finishImpulseStep(u);
             const definition = UnitDefinition.get(u.type);
-            if (definition?.leapAttack)
-                UnitLeapAttack.flush(this, u, definition.leapAttack, definition.atk);
+            if (
+                definition?.leapAttack &&
+                UnitLeapAttack.flush(this, u, definition.leapAttack, definition.atk) &&
+                definition.selfDestruct?.onLeapLanding
+            )
+                UnitSelfDestructAttack.detonate(this, u, definition.selfDestruct);
         }
         const collisionMs = profile ? now() - mark : 0;
 

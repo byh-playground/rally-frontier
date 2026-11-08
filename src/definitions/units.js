@@ -16,6 +16,7 @@ const WATERMELON_RIND_WORLD_RADIUS =
     WATERMELON_RIND_RADIUS_X;
 const ACORN_SIZE = RICE_SIZE * 3;
 const ACORN_SPIN_RADIUS = ACORN_SIZE * (55 / 20);
+const GRAIN_LEAP = Object.freeze({ range: 150, lift: 500, cooldownMs: 3000 });
 const RICE_MELEE = {
     requiresContactTerrain: true,
     construction: { range: 5, workPerHit: 1 },
@@ -169,7 +170,12 @@ class UnitDefinition {
             name: '팝콘',
             hp: 3,
             speed: 100,
+            leapAttack: Object.freeze({
+                ...GRAIN_LEAP,
+                lift: GRAIN_LEAP.lift * Math.SQRT1_2,
+            }),
             selfDestruct: Object.freeze({
+                onLeapLanding: true,
                 windupMs: 1000,
                 radius: 80,
                 damage: 15,
@@ -217,13 +223,13 @@ class UnitDefinition {
             sight: 275,
             // Trial values; retain the existing bundle size while balancing combat.
             leapAttack: Object.freeze({
-                range: 150,
-                lift: 500,
-                radius: 50,
-                damageScale: 1,
-                knockbackSpeed: 250,
-                knockbackLift: 250,
-                cooldownMs: 3000,
+                ...GRAIN_LEAP,
+                impact: Object.freeze({
+                    radius: 50,
+                    damageScale: 1,
+                    knockbackSpeed: 250,
+                    knockbackLift: 250,
+                }),
             }),
         },
     };

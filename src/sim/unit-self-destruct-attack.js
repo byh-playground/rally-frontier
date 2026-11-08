@@ -18,12 +18,15 @@ export class UnitSelfDestructAttack {
     static update(sim, unit, spec) {
         if (unit.selfDestruct?.phase !== 'windup') return false;
         unit.constructionWork = null;
-        if (sim.tick >= unit.selfDestruct.endTick) {
-            this.commit(sim, unit, spec);
-            sim.emitUnitDeath(unit, null, null);
-            this.drain(sim);
-        }
+        if (sim.tick >= unit.selfDestruct.endTick) this.detonate(sim, unit, spec);
         return true;
+    }
+
+    static detonate(sim, unit, spec) {
+        if (!unit.selfDestruct) this.start(sim, unit, spec);
+        this.commit(sim, unit, spec);
+        sim.emitUnitDeath(unit, null, null);
+        this.drain(sim);
     }
 
     static onDeath(sim, unit) {

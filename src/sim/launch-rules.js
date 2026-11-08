@@ -120,7 +120,7 @@ class LaunchRules {
         }),
         // 단발: 폭발이 크고 중심 강타가 가장 세다.
         pea: Object.freeze({
-            cost: 50 * this.resourceScale,
+            cost: 35 * this.resourceScale,
             count: 12,
             reach: 0.85,
             speed: 750,
@@ -139,7 +139,7 @@ class LaunchRules {
         }),
         popcorn: Object.freeze({
             ...SINGLE_BUNDLE_SHELL,
-            cost: 35 * this.resourceScale,
+            cost: 25 * this.resourceScale,
             count: 10,
         }),
         millet: Object.freeze({

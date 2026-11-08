@@ -140,6 +140,103 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 check(copy.checksum() === sim.checksum(), 'mid-motion restore checksum');
                 return copy;
             }
+            {
+                function fight(type) {
+                    const { sim, x, y } = arena();
+                    const source = sim.spawnUnit(0, type, x - 120, y);
+                    const target = defender(sim, x, y);
+                    target.combat.cooldownUntil = sim.tick + 3 * sim.tps;
+                    const landings = [];
+                    let apex = 0;
+                    let checkpoint;
+                    for (let i = 0; i < 28; i++) {
+                        sim.stepSimulation();
+                        apex = Math.max(apex, (source.impactMotion?.heightFP || 0) / FP);
+                        if (!checkpoint && apex > 0 && type === 'popcorn')
+                            checkpoint = restored(sim);
+                        else if (checkpoint) {
+                            checkpoint.stepSimulation();
+                            check(
+                                checkpoint.checksum() === sim.checksum(),
+                                'popcorn leap restores through detonation',
+                            );
+                        }
+                        for (const event of sim.events) {
+                            if (event.sourceId !== source.id) continue;
+                            if (event.type === 'unitSelfDestruct' || event.type === 'leapLand')
+                                landings.push({
+                                    type: event.type,
+                                    tick: sim.tick,
+                                    height: source.impactMotion?.heightFP || 0,
+                                });
+                        }
+                    }
+                    return { apex, landings, alive: source.alive, damage: 10000 - target.hp };
+                }
+
+                const redbean = fight('redbean');
+                const popcorn = fight('popcorn');
+                const ratio = popcorn.apex / redbean.apex;
+                check(
+                    ratio >= 0.45 && ratio <= 0.55,
+                    'popcorn jumps to about half the redbean height',
+                    { popcorn, redbean, ratio },
+                );
+                check(
+                    popcorn.landings.length === 1 &&
+                        popcorn.landings[0].type === 'unitSelfDestruct' &&
+                        popcorn.landings[0].height === 0 &&
+                        !popcorn.alive &&
+                        popcorn.damage === 15 &&
+                        redbean.landings[0]?.type === 'leapLand',
+                    'landing deals one popcorn blast and keeps the redbean shockwave',
+                    { popcorn, redbean },
+                );
+
+                const { sim, x, y } = arena();
+                const airborne = sim.spawnUnit(0, 'popcorn', x - 120, y);
+                defender(sim, x, y);
+                for (let i = 0; i < 10 && !airborne.impactMotion?.heightFP; i++)
+                    sim.stepSimulation();
+                check(
+                    airborne.impactMotion?.heightFP > 0,
+                    'popcorn is airborne before being killed',
+                );
+                sim.emitUnitDeath(airborne, 1, 'pea');
+                step(sim, 20, (s) =>
+                    check(
+                        !s.events.some(
+                            (event) =>
+                                event.type === 'unitSelfDestruct' && event.sourceId === airborne.id,
+                        ),
+                        'popcorn killed before touchdown cannot explode',
+                    ),
+                );
+                const close = arena();
+                const grounded = close.sim.spawnUnit(0, 'popcorn', close.x - 25, close.y);
+                const closeTarget = defender(close.sim, close.x, close.y);
+                closeTarget.combat.cooldownUntil = close.sim.tick + 3 * close.sim.tps;
+                for (let i = 0; i < 10 && !grounded.selfDestruct; i++) close.sim.stepSimulation();
+                check(
+                    grounded.selfDestruct?.phase === 'windup' &&
+                        grounded.selfDestruct.endTick - close.sim.tick === close.sim.tps,
+                    'close enemies still trigger the original one-second ground fuse',
+                );
+                step(close.sim, close.sim.tps);
+                check(
+                    close.sim.events.filter(
+                        (event) =>
+                            event.type === 'unitSelfDestruct' && event.sourceId === grounded.id,
+                    ).length === 1,
+                    'the ground fuse detonates once',
+                );
+                rows.push({
+                    scenario: 'popcorn leaps at half height and detonates on touchdown',
+                    popcorn,
+                    redbean,
+                    ratio,
+                });
+            }
             function clearOfTerrain(sim, units) {
                 for (const u of units.filter((u) => u.alive))
                     check(
