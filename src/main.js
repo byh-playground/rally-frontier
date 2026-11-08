@@ -2383,7 +2383,7 @@ class GLRenderer {
                     motionState.heroRoll,
                     model?.tick ?? this.snapshot.tick,
                 );
-                const apex = UnitDefinition.get(entity.type).size;
+                const apex = UnitDefinition.get(entity.type).heroActive.hopHeight;
                 height += 4 * apex * hop * (1 - hop);
             }
         }
@@ -2934,8 +2934,12 @@ class GLRenderer {
                 this.launchFireFx(e, snapshot, index);
             } else if (e.type === 'launchImpact') {
                 this.launchImpactFx(e, snapshot, index);
-            } else if (e.type === 'leapLand') {
-                this.addClientFx('launchBlast', e, snapshot, index, { peak: 1, hits: 1 });
+            } else if (e.type === 'leapLand' || e.type === 'heroRollLand') {
+                this.addClientFx('launchBlast', e, snapshot, index, {
+                    peak: 1,
+                    hits: e.hits ?? 1,
+                    groundRing: e.type === 'heroRollLand',
+                });
             } else if (e.type === 'launchOverheat') {
                 const b = e.presentationSource,
                     aim = b ? this.cannonAim(b) : { dx: 0, dy: -1 };
@@ -3418,10 +3422,11 @@ class GLRenderer {
             ctx.fill();
         };
 
-        const ring = (x, y, r, width, stroke, alpha = 1) => {
+        const ring = (x, y, r, width, stroke, alpha = 1, yScale = 1) => {
             ctx.globalAlpha = alpha;
             ctx.beginPath();
-            ctx.arc(x, y, Math.max(1, r), 0, Math.PI * 2);
+            const radius = Math.max(1, r);
+            ctx.ellipse(x, y, radius, radius * yScale, 0, 0, Math.PI * 2);
             ctx.lineWidth = Math.max(1, width);
             ctx.strokeStyle = stroke;
             ctx.stroke();
@@ -3819,7 +3824,8 @@ class GLRenderer {
                 const radius = Math.max(30, Number(fx.radius) || 100) * sc,
                     peak = Number(fx.peak) || 1,
                     hits = Number(fx.hits) || 0,
-                    strong = peak >= 2;
+                    strong = peak >= 2,
+                    yScale = fx.groundRing ? BattlefieldProjection.groundScale : 1;
                 if (t < 0.35) {
                     const k = 1 - t / 0.35;
                     dot(
@@ -3837,8 +3843,17 @@ class GLRenderer {
                     (8 - 5 * t) * sc * (strong ? 1.6 : 1),
                     strong ? '#fff3c8' : '#ffcf6a',
                     0.9 * (1 - t),
+                    yScale,
                 );
-                ring(x, y, radius * (0.1 + 0.55 * ease), 2.4 * sc, '#ff9a3a', 0.6 * (1 - t));
+                ring(
+                    x,
+                    y,
+                    radius * (0.1 + 0.55 * ease),
+                    2.4 * sc,
+                    '#ff9a3a',
+                    0.6 * (1 - t),
+                    yScale,
+                );
                 if (strong && t < 0.55)
                     ring(
                         x,
@@ -4819,7 +4834,7 @@ class GLRenderer {
                     p.y + r * 0.55,
                     scale,
                     heading,
-                    roll.distance / UnitDefinition.get(u.type).heroActive.distancePerTurn,
+                    roll.distance / UnitDefinition.get(u.type).heroActive.rollDistance,
                     actor.rollTuck,
                     roll.phase === 'unfold' ? rollProgress : 0,
                 );

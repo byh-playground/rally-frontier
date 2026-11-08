@@ -92,7 +92,6 @@ export class HeroRollAttack {
             phaseStartTick: sim.tick,
             phaseEndTick: sim.tick + sim.msTicks(spec.hopMs),
             distance: 0,
-            stopDistance: spec.range,
             targetId: target.id,
             dx: distance ? (target.x - unit.x) / distance : Math.cos(angle),
             dy: distance ? (target.y - unit.y) / distance : Math.sin(angle),
@@ -131,6 +130,7 @@ export class HeroRollAttack {
             roll.phaseStartTick = sim.tick;
             roll.phaseEndTick = null;
             // Touchdown is the shared boundary between a stationary hop and the first roll interval.
+            this.land(sim, unit);
             return;
         }
 
@@ -141,14 +141,18 @@ export class HeroRollAttack {
         const radius = sim.unitRadius(unit.type);
         const step = Math.min(
             (definition.speed * spec.speedMultiplier) / sim.tps,
-            roll.stopDistance - roll.distance,
+            spec.rollDistance - roll.distance,
         );
         const vx = dx * step;
         const vy = dy * step;
         const motion = sim.navigation.motion;
+        // Round from the total travel so fractional steps do not shorten the roll.
+        const originX = x - Math.round(dx * roll.distance * FP) / FP;
+        const originY = y - Math.round(dy * roll.distance * FP) / FP;
         const advanceTo = (distance) => {
             if (distance <= 0) return;
-            motion.commit(unit, { x: x + dx * distance, y: y + dy * distance });
+            const travel = roll.distance + distance;
+            motion.commit(unit, { x: originX + dx * travel, y: originY + dy * travel });
             unit.movement.lastMoveTick = sim.tick;
         };
         sim.navigation.sync();
@@ -192,25 +196,40 @@ export class HeroRollAttack {
         );
         contacts.sort((a, b) => a.distance - b.distance || (a.target.id < b.target.id ? -1 : 1));
         for (const { target, distance, hitX, hitY } of contacts) {
-            if (roll.distance + distance > roll.stopDistance + STOP_EPSILON) break;
             if (!target.alive || !UnitMotion.isGrounded(target)) continue;
-            if (!roll.hitIds.length)
-                roll.stopDistance = roll.distance + distance + spec.distancePerTurn;
             roll.hitIds.push(target.id);
             advanceTo(distance);
             this.hit(sim, unit, target, definition, hitX, hitY);
-            // A hit can detonate a primed enemy, interrupting or killing the hero.
+            // Detonating a primed enemy can still kill the hero.
             if (!unit.heroRoll) return;
         }
 
-        const travel = Math.min(wallDistance, roll.stopDistance - roll.distance);
-        advanceTo(travel);
-        roll.distance = Math.min(roll.stopDistance, roll.distance + travel);
-        if (wall || roll.distance >= roll.stopDistance - STOP_EPSILON) {
+        advanceTo(wallDistance);
+        roll.distance = Math.min(spec.rollDistance, roll.distance + wallDistance);
+        if (wall || roll.distance >= spec.rollDistance - STOP_EPSILON) {
+            if (!wall) roll.distance = spec.rollDistance;
             roll.phase = 'unfold';
             roll.phaseStartTick = sim.tick;
             roll.phaseEndTick = sim.tick + sim.msTicks(spec.unfoldMs);
         }
+    }
+
+    static land(sim, unit) {
+        const definition = UnitDefinition.get(unit.type);
+        const { radius, damageRatio } = definition.heroActive.landing;
+        const { x, y, side } = unit;
+        const { hits } = sim.applyAreaDamage({
+            sourceSide: side,
+            sourceType: unit.type,
+            sourceEntityId: unit.id,
+            x,
+            y,
+            radius,
+            damage: definition.atk * damageRatio,
+            damageClass: UnitDefinition.damageClass(unit.type),
+            impactHeightFP: Math.round(sim.world.terrain.surfaces.heightAt(x, y) * FP),
+        });
+        sim.events.push({ type: 'heroRollLand', side, sourceId: unit.id, x, y, radius, hits });
     }
 
     static hit(sim, unit, target, definition, x, y) {
@@ -264,7 +283,7 @@ export class HeroRollAttack {
             !spec ||
             !roll ||
             Object.keys(roll).sort().join(',') !==
-                'distance,dx,dy,hitIds,phase,phaseEndTick,phaseStartTick,startTick,stopDistance,targetId' ||
+                'distance,dx,dy,hitIds,phase,phaseEndTick,phaseStartTick,startTick,targetId' ||
             !unit.alive ||
             !this.canDrive(unit, state.tick) ||
             unit.spinAttack ||
@@ -277,9 +296,7 @@ export class HeroRollAttack {
             !['hop', 'roll', 'unfold'].includes(roll.phase) ||
             !Number.isFinite(roll.distance) ||
             roll.distance < 0 ||
-            !Number.isFinite(roll.stopDistance) ||
-            roll.stopDistance < roll.distance ||
-            roll.stopDistance > spec.range + spec.distancePerTurn ||
+            roll.distance > spec.rollDistance ||
             !Number.isFinite(roll.dx) ||
             !Number.isFinite(roll.dy) ||
             Math.abs(Math.hypot(roll.dx, roll.dy) - 1) > STOP_EPSILON ||
@@ -288,15 +305,12 @@ export class HeroRollAttack {
             roll.targetId.length > 256 ||
             !Array.isArray(roll.hitIds) ||
             roll.hitIds.some((id) => typeof id !== 'string' || !id || id.length > 256) ||
-            new Set(roll.hitIds).size !== roll.hitIds.length ||
-            (roll.hitIds.length
-                ? roll.stopDistance < spec.distancePerTurn
-                : roll.stopDistance !== spec.range)
+            new Set(roll.hitIds).size !== roll.hitIds.length
         )
             throw new Error('게임 snapshot의 영웅 구르기 상태가 잘못되었습니다.');
 
         const landingTick = roll.startTick + SimulationTiming.msToTicks(spec.hopMs, tps);
-        const { phase, phaseStartTick, phaseEndTick, distance, stopDistance } = roll;
+        const { phase, phaseStartTick, phaseEndTick, distance } = roll;
         if (
             (phase === 'hop' &&
                 (phaseStartTick !== roll.startTick ||
@@ -307,7 +321,7 @@ export class HeroRollAttack {
             (phase === 'roll' &&
                 (phaseStartTick !== landingTick ||
                     phaseEndTick !== null ||
-                    distance >= stopDistance - STOP_EPSILON)) ||
+                    distance >= spec.rollDistance - STOP_EPSILON)) ||
             (phase === 'unfold' &&
                 (phaseStartTick < landingTick ||
                     phaseEndTick !==
