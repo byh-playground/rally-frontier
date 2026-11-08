@@ -128,10 +128,12 @@ class Projectile {
         Object.assign(this, Projectile.stateContract.create(state));
         this.visualTag = 'launchAmmo';
         this.arcHeight = LaunchRules.arcHeight(
-            Math.hypot(
-                (Number(this.lockedAimX) || 0) - (Number(this.launchX) || 0),
-                (Number(this.lockedAimY) || 0) - (Number(this.launchY) || 0),
-            ),
+            this.arcDistance ??
+                Math.hypot(
+                    (Number(this.lockedAimX) || 0) - (Number(this.launchX) || 0),
+                    (Number(this.lockedAimY) || 0) - (Number(this.launchY) || 0),
+                ),
+            this.type,
         );
         this.drawRadius = 8 + Math.min(10, (this.payload?.count || 0) / 3);
     }

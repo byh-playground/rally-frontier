@@ -102,7 +102,7 @@ class LaunchRules {
         ...Object.fromEntries(LaunchRules.heroTypes.map((type) => [type, HERO_SHELL])),
         // 산탄: 한 번에 여러 갈래, 갈래마다 폭발은 작다.
         rice: Object.freeze({
-            cost: 25 * this.resourceScale,
+            cost: 35 * this.resourceScale,
             count: 20,
             reach: 1,
             speed: 600,
@@ -120,12 +120,12 @@ class LaunchRules {
         }),
         // 단발: 폭발이 크고 중심 강타가 가장 세다.
         pea: Object.freeze({
-            cost: 35 * this.resourceScale,
+            cost: 45 * this.resourceScale,
             count: 12,
             reach: 0.85,
             speed: 750,
             impact: 40,
-            splash: 100,
+            splash: 80,
             land: 'line',
             spacing: 22,
             fire: Object.freeze({ mode: 'single' }),
@@ -133,43 +133,59 @@ class LaunchRules {
         // Provisional corn deployment: a single shell releases one grouped squad.
         corn: Object.freeze({
             ...SINGLE_BUNDLE_SHELL,
-            cost: 15 * this.resourceScale,
+            speed: 550,
+            arcScale: 1.5,
+            splash: 65,
+            land: 'compact',
+            deployTogether: true,
+            cost: 20 * this.resourceScale,
             premiumCost: 15 * this.resourceScale,
             count: 6,
         }),
         popcorn: Object.freeze({
             ...SINGLE_BUNDLE_SHELL,
-            cost: 25 * this.resourceScale,
+            impact: 15,
+            splash: 60,
+            fire: Object.freeze({
+                mode: 'split',
+                offsets: Object.freeze([0, 0]),
+                lateralSpread: 160,
+            }),
+            cost: 35 * this.resourceScale,
             count: 10,
         }),
         millet: Object.freeze({
             ...SINGLE_BUNDLE_SHELL,
-            cost: 30 * this.resourceScale,
+            cost: 40 * this.resourceScale,
             count: 20,
             impact: 10,
-            splash: 50,
+            splash: 45,
             deployTogether: true,
+            fire: Object.freeze({ mode: 'split', offsets: Object.freeze([-100, 0]) }),
         }),
         chestnut: Object.freeze({
-            cost: 20 * this.resourceScale,
+            cost: 25 * this.resourceScale,
             premiumCost: 5 * this.resourceScale,
             count: 6,
             reach: 0.85,
-            speed: 750,
+            speed: 1000,
+            arcScale: 0.65,
             impact: 10,
-            splash: 100,
-            land: 'bundle',
+            splash: 50,
+            land: 'transverse',
+            spacing: 35,
+            deployTogether: true,
             fire: Object.freeze({ mode: 'single' }),
         }),
 
         // 연사: 같은 곳에 시간차로 세 번 떨어진다.
         redbean: Object.freeze({
-            cost: 50 * this.resourceScale,
+            cost: 60 * this.resourceScale,
             count: 10,
             reach: 0.75,
             speed: 750,
-            impact: 25,
-            splash: 120,
+            impact: 20,
+            splash: 95,
             land: 'rush',
             rushMs: 2000,
             rushPct: 150,
@@ -177,7 +193,7 @@ class LaunchRules {
         }),
         // 도토리는 한 발당 한 병사씩 세 발을 쏜다.
         acorn: Object.freeze({
-            cost: 30 * this.resourceScale,
+            cost: 35 * this.resourceScale,
             premiumCost: 10 * this.resourceScale,
             count: 3,
             reach: 0.85,
@@ -185,7 +201,13 @@ class LaunchRules {
             impact: 25,
             splash: 100,
             land: 'bundle',
-            fire: Object.freeze({ mode: 'burst', shots: 3, gapMs: 300 }),
+            fire: Object.freeze({
+                mode: 'burst',
+                shots: 3,
+                gapMs: 450,
+                impacts: Object.freeze([15, 25, 40]),
+                splashes: Object.freeze([90, 60, 40]),
+            }),
         }),
     });
     static deck = Object.freeze(
@@ -275,16 +297,21 @@ class LaunchRules {
             ) * this.chargeMs
         );
     }
-    static arcHeight(distance) {
-        return RangeUtil.clamp(Math.round(distance * 0.3), 80, 600);
+    static arcHeight(distance, type) {
+        const height = RangeUtil.clamp(Math.round(distance * 0.3), 80, 600);
+        return Math.round(height * (this.grain(type)?.arcScale ?? 1));
+    }
+    static lineDeploymentPosition({ x, y, count, dirX, dirY }, index, spacing) {
+        const offset = (index - (count - 1) / 2) * spacing;
+        return { x: x - dirY * offset, y: y + dirX * offset };
     }
     // 한 번의 발사가 만드는 포탄 목록. 곡물 수는 포탄마다 나눠 담고(앞쪽이 나머지를 받는다),
     // 산탄은 부채꼴로 흩어지고, 연사는 같은 곳에 gapMs 간격으로 떨어진다.
-    static volley(type, aim, cannon) {
+    static volley(type, aim, cannon, world) {
         const g = this.grain(type),
             fire = g.fire,
             shots = [];
-        const n = fire.mode === 'shotgun' ? fire.pellets : fire.mode === 'burst' ? fire.shots : 1;
+        const n = fire.pellets ?? fire.shots ?? fire.offsets?.length ?? 1;
         const base = Math.floor(g.count / n),
             extra = g.count % n;
         const dx = aim.x - cannon.x,
@@ -304,13 +331,21 @@ class LaunchRules {
                 impactScale = fire.impactScale;
                 splashScale = fire.splashScale;
             } else if (fire.mode === 'burst') delayMs = i * fire.gapMs;
+            else if (fire.mode === 'split') {
+                const forward = fire.offsets[i];
+                const lateral = (i / (n - 1) - 0.5) * (fire.lateralSpread ?? 0);
+                x = Math.round(aim.x + (dx * forward - dy * lateral) / len);
+                y = Math.round(aim.y + (dy * forward + dx * lateral) / len);
+                x = RangeUtil.clamp(x, 40, world.width - 40);
+                y = RangeUtil.clamp(y, 40, world.height - 40);
+            }
             shots.push({
                 x,
                 y,
                 delayMs,
                 count: base + (i < extra ? 1 : 0),
-                impact: Math.max(1, Math.round(g.impact * impactScale)),
-                splash: Math.max(1, Math.round(g.splash * splashScale)),
+                impact: fire.impacts?.[i] ?? Math.max(1, Math.round(g.impact * impactScale)),
+                splash: fire.splashes?.[i] ?? Math.max(1, Math.round(g.splash * splashScale)),
             });
         }
         return shots;

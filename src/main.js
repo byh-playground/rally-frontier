@@ -4083,8 +4083,39 @@ class GLRenderer {
 
         this.floatFx.length = write;
 
-        // Selection is the final world-space UI layer, readable over explosions.
+        // Keep selection and the current firing order readable over explosions.
         this.drawSelectedBuildingOverlay();
+        this.drawLaunchAimOrder();
+    }
+
+    drawLaunchAimOrder() {
+        if (!this.launchAimOrder?.length) return;
+        const ctx = this.fxCtx,
+            ratio = this.fxCanvas.width / Math.max(1, this.canvas.clientWidth);
+        ctx.save();
+        ctx.font = `800 ${12 * ratio}px system-ui,sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineJoin = 'round';
+        for (const { label, x, y, dx, dy } of this.launchAimOrder) {
+            const pad = ctx.measureText(label).width / 2 + 4 * ratio,
+                labelX = RangeUtil.clamp(x + dx * 13 * ratio, pad, this.fxCanvas.width - pad),
+                labelY = RangeUtil.clamp(
+                    y + dy * 13 * ratio,
+                    10 * ratio,
+                    this.fxCanvas.height - 10 * ratio,
+                );
+            ctx.strokeStyle = '#332216';
+            ctx.lineWidth = 4 * ratio;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + dx * 5 * ratio, y + dy * 5 * ratio);
+            ctx.stroke();
+            ctx.strokeText(label, labelX, labelY);
+            ctx.fillStyle = '#fff5d5';
+            ctx.fillText(label, labelX, labelY);
+        }
+        ctx.restore();
     }
 
     replayVisionSides() {
@@ -6829,8 +6860,15 @@ class GLRenderer {
                     : [0.92, 0.92, 0.92, 0.45],
             });
         }
+        this.launchAimOrder = [];
         if (hold) {
-            const [cx, cy] = this.worldToPx(this.viewX(hold.cannonX), this.viewY(hold.cannonY));
+            const project = (x, y) =>
+                this.worldToPx(
+                    this.viewX(x),
+                    this.viewY(y),
+                    this.world.terrain.surfaces.heightAt(x, y),
+                );
+            const [cx, cy] = project(hold.cannonX, hold.cannonY);
             const held = now - hold.armedAt,
                 power = LaunchRules.power(held),
                 burnt = LaunchRules.overheated(held),
@@ -6841,28 +6879,60 @@ class GLRenderer {
                       ? [1, 0.78, 0.2, Math.floor(now / 90) % 2 ? 1 : 0.55]
                       : [1, 0.95, 0.75, 0.9],
                 w = Math.max(2, 3 * sc);
-            // Landing ring: the point the sim will pick for this hold time and direction, sized by the grain's splash.
-            const at = LaunchPresentation.landing(hold, held, this.world);
-            const [lx, ly] = this.worldToPx(this.viewX(at.x), this.viewY(at.y));
+            const { aim, shots, formation } = LaunchPresentation.aimPreview(hold, held, this.world);
+            const [lx, ly] = project(aim.x, aim.y);
             this.line(cx, cy, lx, ly, Math.max(1.5, 2 * sc), [color[0], color[1], color[2], 0.45]);
-            // One ring per shell of the volley (a burst lands on one point), each with its strong centre.
-            const seenAt = new Set();
-            for (const shot of LaunchRules.volley(hold.card, at, {
-                x: hold.cannonX,
-                y: hold.cannonY,
-            })) {
-                const key = shot.x + ',' + shot.y;
-                if (seenAt.has(key)) continue;
-                seenAt.add(key);
+            const rings = new Map();
+            // Split shells may launch at different times to land together. Only bursts show an order.
+            const ordered = LaunchRules.grain(hold.card).fire.mode === 'burst';
+            for (const [index, shot] of shots.entries()) {
+                // Equal-radius shells on the same point share a ring and show all their turns.
+                const key = `${shot.x},${shot.y},${shot.splash}`;
+                if (!rings.has(key)) rings.set(key, { shot, order: [] });
+                if (ordered) rings.get(key).order.push(index + 1);
+            }
+            let ringIndex = 0;
+            for (const { shot, order } of rings.values()) {
                 this.drawGroundCircle(shot.x, shot.y, shot.splash, {
                     stroke: color,
                     width: w,
                     segments: 40,
                 });
-                this.drawGroundCircle(shot.x, shot.y, shot.splash * (1 - Math.SQRT1_2), {
-                    stroke: [color[0], color[1], color[2], 0.6],
+                if (rings.size === 1 || !ordered) {
+                    this.drawGroundCircle(shot.x, shot.y, shot.splash * (1 - Math.SQRT1_2), {
+                        stroke: [color[0], color[1], color[2], 0.6],
+                        width: Math.max(1.5, 2 * sc),
+                        segments: 24,
+                    });
+                }
+                if (order.length) {
+                    // Stagger the labels so concentric rings stay legible when zoomed out.
+                    const angle = (ringIndex * 2 * Math.PI) / 3;
+                    const ox = Math.cos(angle) * shot.splash,
+                        oy = Math.sin(angle) * shot.splash;
+                    const wx = shot.x + ox,
+                        wy = shot.y + oy;
+                    const [x, y] = project(
+                        wx >= 0 && wx <= this.world.width ? wx : shot.x - ox,
+                        wy >= 0 && wy <= this.world.height ? wy : shot.y - oy,
+                    );
+                    const [sx, sy] = project(shot.x, shot.y),
+                        length = Math.hypot(x - sx, y - sy) || 1;
+                    this.launchAimOrder.push({
+                        label: order.join('·'),
+                        x,
+                        y,
+                        dx: (x - sx) / length,
+                        dy: (y - sy) / length,
+                    });
+                }
+                ringIndex++;
+            }
+            for (const spot of formation) {
+                this.drawGroundCircle(spot.x, spot.y, spot.radius, {
+                    stroke: [0.57, 0.94, 1, 0.9],
                     width: Math.max(1.5, 2 * sc),
-                    segments: 24,
+                    segments: 16,
                 });
             }
             this.line(lx - 8, ly, lx + 8, ly, 2, color);
@@ -10916,14 +10986,36 @@ class LaunchPresentation {
             { x: hold.cannonX, y: hold.cannonY },
             hold.aimX,
             hold.aimY,
-            holdMs,
+            Math.max(0, Math.round(holdMs)),
             world,
             flag,
             hold.card,
             s?.launchRangeLevel?.[side] ?? 0,
         );
     }
-    // While charging, the camera eases just far enough to keep the landing ring on screen.
+    static aimPreview(hold, holdMs, world) {
+        const cannon = { x: hold.cannonX, y: hold.cannonY };
+        const aim = this.landing(hold, holdMs, world);
+        const shots = LaunchRules.volley(hold.card, aim, cannon, world);
+        const grain = LaunchRules.grain(hold.card);
+        const formation = [];
+        if (grain.land === 'transverse') {
+            for (const shot of shots) {
+                const dx = shot.x - cannon.x,
+                    dy = shot.y - cannon.y,
+                    distance = Math.hypot(dx, dy) || 1;
+                const group = { ...shot, dirX: dx / distance, dirY: dy / distance };
+                for (let index = 0; index < shot.count; index++) {
+                    const point = LaunchRules.lineDeploymentPosition(group, index, grain.spacing);
+                    formation.push({ ...point, radius: 8 });
+                }
+            }
+        } else if (grain.land === 'compact') {
+            for (const shot of shots) formation.push({ x: shot.x, y: shot.y, radius: 18 });
+        }
+        return { aim, shots, formation };
+    }
+    // While charging, the camera eases just far enough to keep the whole preview on screen.
     static FOLLOW_HALF_LIFE_MS = 52;
     static followAt = null;
     static followAim(r) {
@@ -10936,19 +11028,39 @@ class LaunchPresentation {
             }
             return;
         }
-        const at = this.landing(hold, performance.now() - hold.armedAt, r.world),
-            vx = r.viewX(at.x),
-            vy = r.viewY(at.y);
+        const { aim, shots, formation } = this.aimPreview(
+            hold,
+            performance.now() - hold.armedAt,
+            r.world,
+        );
         const vw = r.viewWorldW(),
             vh = r.viewWorldH(),
-            splash = LaunchRules.grain(hold.card)?.splash || 120,
-            marginX = splash + 80,
-            marginY = BattlefieldProjection.planarY(splash) + 80;
-        const py = BattlefieldProjection.planarY(vy, r.world.terrain.surfaces.heightAt(at.x, at.y));
-        // The top keeps room for the HUD, the enemy arrow and the ring's label (about 120 CSS px).
+            points = [
+                ...shots.map((shot) => ({ x: shot.x, y: shot.y, radius: shot.splash })),
+                ...formation,
+            ];
+        let minX = Infinity,
+            minY = Infinity,
+            maxX = -Infinity,
+            maxY = -Infinity;
+        for (const point of points) {
+            const x = r.viewX(point.x),
+                y = BattlefieldProjection.planarY(
+                    r.viewY(point.y),
+                    r.world.terrain.surfaces.heightAt(point.x, point.y),
+                ),
+                radiusY = BattlefieldProjection.planarY(point.radius);
+            minX = Math.min(minX, x - point.radius);
+            maxX = Math.max(maxX, x + point.radius);
+            minY = Math.min(minY, y - radiusY);
+            maxY = Math.max(maxY, y + radiusY);
+        }
+        // Give the label and HUD room above the outline. Center oversized patterns in a narrow view.
         const hud = (120 * vw) / Math.max(1, r.canvas.clientWidth);
-        const left = RangeUtil.clamp(r.cameraLeft, vx + marginX - vw, vx - marginX),
-            top = RangeUtil.clamp(r.cameraTop, py + marginY - vh, py - marginY - hud);
+        const frame = (current, low, high) =>
+            low > high ? (low + high) / 2 : RangeUtil.clamp(current, low, high);
+        const left = frame(r.cameraLeft, maxX + 80 - vw, minX - 80),
+            top = frame(r.cameraTop, maxY + 80 - vh, minY - 80 - hud);
         // The shared camera eases toward that framing by half-life, so the pace does not depend on the frame rate.
         const camera = r.stableCamera(),
             halfH = vh / 2,
@@ -10962,13 +11074,12 @@ class LaunchPresentation {
             Math.max(0, r.world.width - vw),
         );
         r.cameraTop = r.clampCameraTop(camera.camera.y - halfH);
-        // Canvas pixels to the label's CSS pixels, just above the ring.
-        const [lx, ly] = r.worldToPx(vx, vy),
-            k = r.canvas.clientWidth / Math.max(1, r.canvas.width),
-            splashY = BattlefieldProjection.planarY(splash) * r.sc();
+        // Convert the highest ring edge from projected world coordinates to CSS pixels.
+        const [lx] = r.worldToPx(r.viewX(aim.x), r.viewY(aim.y)),
+            k = r.canvas.clientWidth / Math.max(1, r.canvas.width);
         this.labelShown = true;
         LaunchScreens.renderAimLabel(
-            { x: lx * k, y: (ly - splashY) * k - 6 },
+            { x: lx * k, y: (minY - r.cameraTop) * r.sc() * k - 6 },
             hold.card,
             LaunchRules.maxReachOf(
                 hold.card,
