@@ -230,22 +230,22 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     point = (id) => sim.capturePoints.find((cp) => cp.id === id),
                     natural = point('natural-1'),
                     front = point('front-1'),
-                    premium = point('mid-1'),
-                    opposingPremium = point('mid-2'),
+                    flank = point('flank-near-1'),
+                    premium = point('mid-center'),
                     distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
                 check(
                     sim.mapDescriptor.generation.accepted &&
-                        sim.capturePoints.length === 10 &&
+                        sim.capturePoints.length === 9 &&
                         sim.capturePoints.filter((cp) => cp.resourceType === 'premium').length ===
-                            2,
-                    'standard terrain has ten buildable neutral deposits',
+                            1,
+                    'standard terrain has nine buildable neutral deposits and one central premium',
                     sim.mapDescriptor.generation,
                 );
-                const attack = (cannon, target, level) => {
+                const attack = (cannon, target, level, supportDistance = 0) => {
                     const reach = distance(cannon, target);
                     check(
-                        reach <= LaunchRules.maxReachOf('rice', level),
-                        'deposit within direct range',
+                        reach <= LaunchRules.maxReachOf('rice', level) + supportDistance,
+                        'launch can reach the deposit or its support area',
                     );
                     check(
                         sim.applyCommand('host', {
@@ -290,15 +290,20 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }),
                     'buy one upgrade at the natural expansion',
                 );
-                const forwardCannon = attack(naturalCannon, front, 1);
+                attack(naturalCannon, flank, 1);
                 check(
-                    distance(forwardCannon, premium) > LaunchRules.maxReachOf('rice', 0) &&
-                        distance(forwardCannon, opposingPremium) <=
-                            LaunchRules.maxReachOf('rice', 2) &&
-                        distance(point('front-2'), premium) <= LaunchRules.maxReachOf('rice', 2),
-                    'both forward cannons can support either central deposit without premium resources',
+                    front.owner === null,
+                    'outer expansion is captured without owning the forward point',
                 );
-                attack(forwardCannon, premium, 1);
+                const forwardCannon = attack(naturalCannon, front, 1);
+                const centralDistance = distance(forwardCannon, premium);
+                check(
+                    centralDistance === distance(point('front-2'), premium) &&
+                        centralDistance > LaunchRules.maxReachOf('rice', 1) &&
+                        centralDistance <= LaunchRules.maxReachOf('rice', 2),
+                    'forward cannons have equal central support and direct range after two upgrades',
+                );
+                attack(forwardCannon, premium, 1, LaunchRules.captureHoldRadius);
                 const before = premium.remaining,
                     walletBefore = sim.premiumWallet[0];
                 step(sim, sim.tps);
@@ -313,12 +318,12 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     },
                 );
                 rows.push({
-                    scenario: 'first expansion, forward cannon and contested premium deposits',
+                    scenario: 'separate outer expansion and shared central premium deposit',
                     distances: [
                         distance(base, natural),
                         distance(natural, front),
                         distance(front, premium),
-                        distance(front, opposingPremium),
+                        distance(natural, flank),
                     ],
                     tick: sim.tick,
                     remaining: premium.remaining,
