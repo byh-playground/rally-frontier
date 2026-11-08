@@ -107,6 +107,12 @@ class FrontierTerrainLayout {
                 { name: 'flank-ramp', edge: 2, t0: 0.22, t1: 0.64, run: 220 },
             ],
         );
+        const flankShoulder = ctx.rules.campaign
+            ? []
+            : [
+                  [1800 / 4200, 2360 / 4800],
+                  [1650 / 4200, 2490 / 4800],
+              ];
         pairLayer(
             'flank-high',
             [
@@ -115,12 +121,19 @@ class FrontierTerrainLayout {
                 [0.355 + variation, 0.3],
                 [0.405 + variation, 0.37],
                 [0.4, 0.45],
+                ...flankShoulder,
                 [0.34, 0.5],
                 [0.265, 0.465],
                 [0.235, 0.4],
             ],
             [
-                { name: 'outer-ramp', edge: 6, t0: 0.15, t1: 0.85, run: 155 },
+                {
+                    name: 'outer-ramp',
+                    edge: 6 + flankShoulder.length,
+                    t0: 0.15,
+                    t1: 0.85,
+                    run: 155,
+                },
                 { name: 'centre-ramp', edge: 3, t0: 0.08, t1: 0.92, run: 160 },
                 { name: 'shortcut', edge: 0, t0: 0.135, t1: 0.865, run: 150, destructible: true },
             ],
@@ -163,10 +176,14 @@ class FrontierTerrainLayout {
         });
         const natural = point(830, 3940),
             front = point(1320, 3330),
-            high = point(1785, 2450),
+            oppositeFront = mirror(front),
+            high = {
+                x: Math.round(front.x + (oppositeFront.x - front.x) * 0.4),
+                y: Math.round(front.y + (oppositeFront.y - front.y) * 0.4),
+            },
             flank = point(1050, 2200),
-            flankFar = point(1350, 1550);
-        const top = [host, natural, front, flank, flankFar, mirror(front), mirror(natural), guest];
+            hill = point(1700, 2360);
+        const top = [host, natural, front, flank, hill, oppositeFront, mirror(natural), guest];
         const bot = top.slice().reverse().map(mirror);
         const mid = [
             host,
@@ -175,7 +192,7 @@ class FrontierTerrainLayout {
             high,
             point(2100, 2400),
             mirror(high),
-            mirror(front),
+            oppositeFront,
             mirror(natural),
             guest,
         ];
@@ -184,7 +201,7 @@ class FrontierTerrainLayout {
             ['front', 'mid', '전진', front, 'basic'],
             ['mid', 'mid', '중앙', high, 'premium'],
             ['flank-near', 'top', '측면', flank, 'basic'],
-            ['flank-far', 'bot', '측면 우회', mirror(flankFar), 'basic'],
+            ['flank-far', 'bot', '언덕', mirror(hill), 'basic'],
         ].flatMap(([id, laneKey, label, position, resourceType]) =>
             [1, 2].map((stage) => {
                 const lane =
