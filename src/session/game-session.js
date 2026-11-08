@@ -112,11 +112,9 @@ class RallySimulationAdapter {
         this.identity = { seed: sim.seed, rules: sim.rules, mapDescriptor: sim.mapDescriptor };
         StateValue.freeze(this.identity.rules);
         this.deckSignature = JSON.stringify(LaunchRules.normalizeDeckPair(sim.decks));
-        this.heroTypes = sim.heroTypes;
         const encoded = StableSerializationUtil.stableStringify({
             ...this.identity,
             decks: sim.decks,
-            heroTypes: this.heroTypes,
         });
         this.matchId = `${PRODUCT_VERSION}:${encoded.length}:${HashUtil.hash(encoded)}:${HashUtil.hash('ssalkongpang-state|' + encoded)}`;
         this.mapFingerprint = sim.mapFingerprint();
@@ -136,8 +134,6 @@ class RallySimulationAdapter {
                             'units',
                             'buildings',
                             'projectiles',
-                            'heroes',
-                            'heroRecovery',
                             'capturePoints',
                             'scheduled',
                         ].includes(key)
@@ -152,8 +148,7 @@ class RallySimulationAdapter {
         if (
             sim.seed !== this.identity.seed ||
             sim.rules !== this.identity.rules ||
-            sim.mapDescriptor !== this.identity.mapDescriptor ||
-            sim.heroTypes !== this.heroTypes
+            sim.mapDescriptor !== this.identity.mapDescriptor
         )
             throw new Error('경기 정의가 변경되면 새 simulation Adapter가 필요합니다.');
         return sim.exportState({ includeIdentity: false });
@@ -203,9 +198,6 @@ class RallySimulationAdapter {
             throw new Error('게임 snapshot의 tick/seed가 잘못되었습니다.');
         if (JSON.stringify(LaunchRules.normalizeDeckPair(state.decks)) !== this.deckSignature)
             throw new Error('게임 snapshot의 덱이 경기 시작과 다릅니다.');
-        const heroTypes = LaunchRules.normalizeHeroPair(state.heroTypes);
-        if (heroTypes.some((type, side) => type !== this.heroTypes[side]))
-            throw new Error('게임 snapshot의 영웅이 경기 시작과 다릅니다.');
         UnitResultStats.validate(state.unitResultStats);
         for (const [key, shape] of Object.entries(this.rootShape)) {
             if (!Object.prototype.hasOwnProperty.call(state, key))
@@ -440,7 +432,6 @@ class RallySynctestDiagnostics {
                 seed: session.sim.seed,
                 rules: session.sim.rules,
                 decks: session.sim.decks,
-                heroTypes: session.sim.heroTypes,
             });
             const adapter = new RallySimulationAdapter({ sim });
             adapter.load(replay.initialState);
@@ -509,8 +500,7 @@ class GameSession {
         transport,
         roomCode,
         matchConfig = null,
-        localDeck = LaunchRules.deck,
-        localHeroType = LaunchRules.heroCard,
+        localDeck = LaunchRules.starterDeck,
     ) {
         if (!['host', 'guest'].includes(role))
             throw new Error('경기 플레이어 역할이 잘못되었습니다.');
@@ -518,9 +508,7 @@ class GameSession {
         this.transport = transport;
         this.roomCode = roomCode;
         this.localDeck = LaunchRules.normalizeDeck(localDeck);
-        this.localHeroType = LaunchRules.normalizeHeroType(localHeroType);
         this.matchDecks = null;
-        this.matchHeroTypes = null;
         this.netcodeMode = netcodeMode();
         this.matchConfig = GameRuleRuntime.normalizeMatchConfig(matchConfig);
         this.matchPresetId = this.matchConfig.presetId;
@@ -989,20 +977,14 @@ class GameSession {
         }
         if (m.type === 'GAME_START' && this.role === 'guest') {
             if (this.sim || this.simEnded) return;
-            let decks, heroTypes;
+            let decks;
             try {
                 decks = LaunchRules.normalizeDeckPair(m.decks);
-                heroTypes = LaunchRules.normalizeHeroPair(m.heroTypes);
             } catch {
                 return;
             }
-            if (
-                JSON.stringify(decks[1]) !== JSON.stringify(this.localDeck) ||
-                heroTypes[1] !== this.localHeroType
-            )
-                return;
+            if (JSON.stringify(decks[1]) !== JSON.stringify(this.localDeck)) return;
             this.matchDecks = decks;
-            this.matchHeroTypes = heroTypes;
             if (m.matchConfig) this.applyMatchConfig(m.matchConfig, { authoritative: true });
             if (m.roundRules && typeof m.roundRules === 'object')
                 this.roundRules = StateValue.copy(m.roundRules);
@@ -1013,15 +995,13 @@ class GameSession {
         if (this.role === 'host') {
             if (m.type === 'HELLO') {
                 if (!this.sim) {
-                    let deck, heroType;
+                    let deck;
                     try {
                         deck = LaunchRules.normalizeDeck(m.deck);
-                        heroType = LaunchRules.normalizeHeroType(m.heroType);
                     } catch {
                         return;
                     }
                     this.matchDecks = [this.localDeck.slice(), deck];
-                    this.matchHeroTypes = [this.localHeroType, heroType];
                     this.beginGame();
                 } else this.sendGameStart();
                 return;
@@ -1040,7 +1020,6 @@ class GameSession {
             roundRules: this.roundRules,
             netcodeMode: this.netcodeMode,
             decks: this.matchDecks,
-            heroTypes: this.matchHeroTypes,
         });
     }
     beginGame() {
@@ -1057,7 +1036,6 @@ class GameSession {
             seed,
             rules: this.roundRules,
             decks: this.matchDecks,
-            heroTypes: this.matchHeroTypes,
         });
         this.presentationDisplayConfigured = configureFramePresentationJournal(
             this.presentationJournal,
@@ -1664,7 +1642,6 @@ class GameSession {
                 type: 'HELLO',
                 gameVersion: PRODUCT_VERSION,
                 deck: this.localDeck,
-                heroType: this.localHeroType,
             });
         return true;
     }

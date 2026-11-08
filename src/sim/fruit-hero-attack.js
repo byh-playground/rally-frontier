@@ -138,26 +138,28 @@ export class FruitHeroAttack {
             }),
         );
         if (proc && spec.lob) {
-            const lob = spec.lob;
-            fruit.projectiles.push(
-                this.makeShot({
-                    unit,
-                    kind: 'berry',
-                    mode: 'passive',
-                    from,
-                    to: {
-                        x: target.x,
-                        y: target.y,
-                        z: sim.world.terrain.surfaces.heightAt(target.x, target.y),
-                    },
-                    startTick,
-                    endTick: startTick + sim.msTicks(lob.durationMs),
-                    radius: spec.radius,
-                    height: lob.height,
-                }),
-            );
+            const impact = {
+                x: target.x,
+                y: target.y,
+                z: sim.world.terrain.surfaces.heightAt(target.x, target.y),
+            };
+            fruit.projectiles.push(this.lobBerry(sim, unit, from, impact, spec, 'passive'));
         }
         sim.events.push({ type: 'fruitThrow', side: unit.side, sourceId: unit.id, ...from });
+    }
+
+    static lobBerry(sim, unit, from, to, spec, mode) {
+        return this.makeShot({
+            unit,
+            kind: 'berry',
+            mode,
+            from,
+            to,
+            startTick: sim.tick,
+            endTick: sim.tick + sim.msTicks(spec.lob.durationMs),
+            radius: spec.radius,
+            height: spec.lob.height,
+        });
     }
 
     static activate(sim, unit, sortieId) {
@@ -212,18 +214,45 @@ export class FruitHeroAttack {
                   }
                 : {
                       kind: 'grape',
-                      targetId: target.id,
                       startTick: sim.tick,
                       nextTick: launchTick,
                       strike: 0,
+                      impacts: this.clusterImpacts(sim, unit, target, spec),
                   };
         unit.combat.attackArcTargetId = null;
         unit.combat.attackArcUntilTick = 0;
         unit.constructionWork = null;
         unit.target = null;
         sim.wallet[unit.side] -= cost;
-        sim.events.push({ type: 'heroSkillStarted', side: unit.side, sortieId, cost });
+        sim.events.push({
+            type: 'heroSkillStarted',
+            side: unit.side,
+            sortieId,
+            heroType: unit.type,
+            cost,
+        });
         return true;
+    }
+
+    static clusterImpacts(sim, unit, target, spec) {
+        const { width, height, terrain } = sim.world;
+        const point = (x, y) => {
+            const px = Math.max(0, Math.min(width, Math.round(x * FP) / FP));
+            const py = Math.max(0, Math.min(height, Math.round(y * FP) / FP));
+            return { x: px, y: py, z: terrain.surfaces.heightAt(px, py) };
+        };
+        const heading = Math.atan2(target.y - unit.y, target.x - unit.x);
+        const impacts = [point(target.x, target.y)];
+        for (let index = 0; index < spec.active.shots - 1; index++) {
+            const angle = heading + (2 * Math.PI * index) / (spec.active.shots - 1);
+            impacts.push(
+                point(
+                    target.x + Math.cos(angle) * spec.lob.radius,
+                    target.y + Math.sin(angle) * spec.lob.radius,
+                ),
+            );
+        }
+        return impacts;
     }
 
     static activeBoomerang(sim, unit, target, startTick, spec) {
@@ -276,48 +305,42 @@ export class FruitHeroAttack {
                 });
             if (!this.advanceShot(sim, unit, active.shot, definition)) fruit.active = null;
         } else if (active) {
-            this.advanceVine(sim, unit, active, definition);
+            this.advanceBarrage(sim, unit, active, definition.fruitAttack);
         }
         if (fruit.queued && this.canStart(unit, sim.tick)) this.activate(sim, unit, sortieId);
     }
 
-    static advanceVine(sim, unit, active, definition) {
-        const spec = definition.fruitAttack.active;
-        const target = sim.liveEntityRefById(active.targetId, 'unit')?.entity;
-        if (!target || Math.hypot(target.x - unit.x, target.y - unit.y) > spec.range) {
-            unit.fruitAttack.active = null;
-            return;
-        }
+    static advanceBarrage(sim, unit, active, spec) {
         if (sim.tick < active.nextTick) return;
-        const strike = active.strike++;
-        const hit = this.damage(
+        const from = worldPoint(sim, unit);
+        const shot = this.lobBerry(
             sim,
             unit,
-            target,
-            false,
-            definition.atk * spec.damageRatios[strike],
+            from,
+            active.impacts[active.strike++],
+            spec,
+            'active',
         );
-        if (hit)
-            sim.events.push({
-                type: 'fruitVineHit',
-                side: unit.side,
-                sourceId: unit.id,
-                targetId: target.id,
-                strike,
-                x: target.x,
-                y: target.y,
-            });
-        if (active.strike === spec.damageRatios.length || !target.alive)
-            unit.fruitAttack.active = null;
-        else active.nextTick += sim.msTicks(spec.intervalMs);
+        unit.fruitAttack.projectiles.push(shot);
+        sim.events.push({
+            type: 'fruitThrow',
+            side: unit.side,
+            sourceId: unit.id,
+            projectileId: shot.id,
+            mode: 'active',
+            ...from,
+        });
+        if (active.strike === spec.active.shots) unit.fruitAttack.active = null;
+        else active.nextTick += sim.msTicks(spec.active.intervalMs);
     }
 
     static advanceShot(sim, unit, shot, definition) {
         if (sim.tick <= shot.startTick) return true;
         const spec = definition.fruitAttack;
-        if (shot.kind === 'berry' && shot.mode === 'passive') {
+        if (shot.kind === 'berry' && shot.mode !== 'basic') {
             if (sim.tick < shot.endTick) return true;
-            this.landBerry(sim, unit, shot, spec.lob, definition.atk);
+            const damage = spec.lob.damage * (shot.mode === 'active' ? spec.active.damageRatio : 1);
+            this.landBerry(sim, unit, shot, spec.lob.radius, damage);
             return false;
         }
 
@@ -398,7 +421,7 @@ export class FruitHeroAttack {
             });
     }
 
-    static landBerry(sim, unit, shot, spec, attack) {
+    static landBerry(sim, unit, shot, radius, damage) {
         const { x, y, z } = shot.to;
         const impactHeightFP = Math.round(z * FP);
         const { hits } = sim.applyAreaDamage({
@@ -407,8 +430,8 @@ export class FruitHeroAttack {
             sourceEntityId: unit.id,
             x,
             y,
-            radius: spec.radius,
-            damage: attack * spec.damageRatio,
+            radius,
+            damage,
             impactHeightFP,
         });
         sim.events.push({
@@ -418,7 +441,7 @@ export class FruitHeroAttack {
             x,
             y,
             zFP: impactHeightFP,
-            radius: spec.radius,
+            radius,
             hits,
         });
     }
@@ -437,7 +460,7 @@ export class FruitHeroAttack {
             typeof fruit.queued !== 'boolean' ||
             !Array.isArray(fruit.projectiles) ||
             fruit.projectiles.length > MAX_SHOTS ||
-            ((!unit.alive || state.heroes?.[unit.side]?.unitId !== unit.id) &&
+            ((!unit.alive || state.heroes?.[unit.side]?.[unit.type]?.unitId !== unit.id) &&
                 (fruit.queued ||
                     fruit.active !== null ||
                     fruit.projectiles.length ||
@@ -462,14 +485,21 @@ export class FruitHeroAttack {
                 active.shot.startTick - windup <= tick
             );
         return (
-            keys === 'kind,nextTick,startTick,strike,targetId' &&
-            validId(active.targetId) &&
+            keys === 'impacts,kind,nextTick,startTick,strike' &&
+            Array.isArray(active.impacts) &&
+            active.impacts.length === spec.active.shots &&
+            active.impacts.every(validPoint) &&
+            active.impacts.every(
+                ({ x, y }) =>
+                    Math.hypot(x - active.impacts[0].x, y - active.impacts[0].y) <=
+                    spec.lob.radius + 2 / FP,
+            ) &&
             Number.isSafeInteger(active.startTick) &&
             active.startTick >= 0 &&
             active.startTick <= tick &&
             Number.isInteger(active.strike) &&
             active.strike >= 0 &&
-            active.strike < spec.active.damageRatios.length &&
+            active.strike < spec.active.shots &&
             active.nextTick ===
                 active.startTick +
                     windup +
@@ -496,7 +526,7 @@ export class FruitHeroAttack {
         )
             return false;
         const boomerang = spec.kind === 'boomerang';
-        const lob = !boomerang && shot.mode === 'passive';
+        const lob = !boomerang && (shot.mode === 'passive' || shot.mode === 'active');
         const duration = active ? spec.active.travelMs : lob ? spec.lob.durationMs : spec.basicMs;
         const outbound = SimulationTiming.msToTicks(duration, tps);
         const returning = boomerang
@@ -504,14 +534,18 @@ export class FruitHeroAttack {
             : 0;
         return (
             shot.kind === (boomerang ? 'boomerang' : 'berry') &&
-            (active ? shot.mode === 'active' : shot.mode === 'basic' || shot.mode === 'passive') &&
+            (active
+                ? shot.mode === 'active'
+                : shot.mode === 'basic' || shot.mode === 'passive' || lob) &&
             shot.radius === (active ? spec.active.radius : spec.radius) &&
             shot.curve === (active ? spec.active.curve : boomerang ? spec.radius : 0) &&
             shot.height === (lob ? spec.lob.height : 0) &&
             shot.turnTick === (boomerang ? shot.startTick + outbound : null) &&
             shot.endTick === shot.startTick + outbound + returning &&
             (active || lob
-                ? shot.targetId === null && !shot.targetIsBuilding
+                ? shot.targetId === null &&
+                  !shot.targetIsBuilding &&
+                  (!lob || !shot.outHitIds.length)
                 : validId(shot.targetId) && shot.outHitIds.length <= 1) &&
             (shot.returnTo === null ||
                 (!active && boomerang && tick > shot.turnTick && validPoint(shot.returnTo))) &&
