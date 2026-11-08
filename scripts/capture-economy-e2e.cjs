@@ -89,6 +89,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     enabled: true,
                     label: '거점' + i,
                     resourceType: 'basic',
+                    extractedResources: 0,
                     production: LaunchRules.productionChannels(LaunchRules.outpostIncomePerSecond),
                 }));
                 for (const b of state.buildings) {
@@ -343,11 +344,13 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 // Each wallet pauses independently at its own cap.
                 sim.wallet[0] = LaunchRules.walletCap;
                 const supplyCarry = supply.miningCarry;
+                const extractedBefore = premium.extractedResources;
                 const oilBefore = sim.premiumWallet[0];
                 step(sim, 2 * sim.tps);
                 check(
                     sim.wallet[0] === LaunchRules.walletCap &&
                         supply.miningCarry === supplyCarry &&
+                        premium.extractedResources === extractedBefore + 5 &&
                         sim.premiumWallet[0] - oilBefore === 5,
                     'oil production continues while supply is at capacity',
                 );
@@ -368,9 +371,33 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         sim.checksum() === copy.checksum(),
                     'supply production continues with a capped oil wallet after restore',
                 );
+                // Rebuild a previously worked site for the other side.
+                premium.extractedResources = 1500;
+                supply.miningCarry = oil.miningCarry = 0;
+                destroy(sim, centralCannon);
+                check(premium.owner === null, 'destroying the outpost leaves the site neutral');
+                const rebuilt = sim.spawnOutpost(premium, 1);
+                sim.completeConstruction(rebuilt);
+                check(
+                    premium.owner === 1 &&
+                        LaunchRules.productionEfficiency(premium) === 50 &&
+                        LaunchRules.productionRate(premium, 'basic') === 1.25 &&
+                        LaunchRules.productionRate(premium, 'premium') === 1.25,
+                    'recapturing the site keeps its efficiency and exact fractional rates',
+                );
+                sim.wallet[1] = LaunchRules.walletCap;
+                sim.premiumWallet[1] = 0;
+                for (const expected of [1, 2, 3, 5]) {
+                    step(sim, sim.tps);
+                    check(
+                        sim.premiumWallet[1] === expected,
+                        '1.25 oil per second carries the fractional share into later payouts',
+                    );
+                }
                 rows.push({
                     scenario: 'separate outer expansion, mixed oil outpost and corn deployment',
                     independentCaps: true,
+                    recapturedOilPerSecond: 1.25,
                     cornDeployed: sim.unitResultStats[0].corn.deployed,
                     distances: [
                         distance(base, natural),
@@ -445,7 +472,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
             // Home bases keep producing once spending frees space in the wallet.
             {
                 const sim = new StrategySim(seed, GameRuleDefinition.resolve()),
-                    base = sim.baseProducers[0].production.basic;
+                    base = sim.baseProducers[0];
                 check(
                     sim.wallet[0] === 500 &&
                         sim.premiumWallet[0] === 0 &&
@@ -459,7 +486,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     'basic launch prices use the same currency',
                 );
                 check(
-                    base.incomePerSecond === 15 &&
+                    base.production.basic.incomePerSecond === 15 &&
                         sim.capturePoints.every((point) =>
                             point.resourceType === 'premium'
                                 ? point.production.basic.incomePerSecond === 2.5 &&
@@ -471,23 +498,51 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 );
                 step(sim, sim.tps);
                 check(
-                    sim.wallet[0] === 500 && base.miningCarry === 0,
+                    sim.wallet[0] === 500 && base.extractedResources === 0,
                     'full wallet pauses production',
                 );
                 sim.wallet[0] = 495;
                 step(sim, sim.tps);
                 check(sim.wallet[0] === 500, 'production resumes and caps again');
 
-                let produced = 0;
-                for (let interval = 0; interval < 8; interval++) {
+                check(base.extractedResources === 5, 'only the five credited supplies count');
+                base.extractedResources = 0;
+                for (let interval = 0; interval < 6; interval++) {
                     sim.wallet[0] = 0;
-                    step(sim, 30 * sim.tps);
-                    check(sim.wallet[0] === 450, 'main base keeps producing 15 per second');
-                    produced += sim.wallet[0];
+                    step(sim, 20 * sim.tps);
+                    check(
+                        sim.wallet[0] === 300,
+                        'main base produces 15 per second for its first 2 minutes of yield',
+                    );
                 }
+                check(
+                    base.extractedResources === 1800 &&
+                        LaunchRules.productionEfficiency(base) === 100,
+                    'base has full efficiency through the 2-minute yield',
+                );
+                let intermediate;
+                while (base.extractedResources < 4500 && sim.tick < 450 * sim.tps) {
+                    sim.wallet[0] = 0;
+                    step(sim, 20 * sim.tps);
+                    const efficiency = LaunchRules.productionEfficiency(base);
+                    if (efficiency > 50 && efficiency < 100) intermediate = efficiency;
+                }
+                check(
+                    intermediate &&
+                        base.extractedResources >= 4500 &&
+                        LaunchRules.productionEfficiency(base) === 50 &&
+                        LaunchRules.productionRate(base, 'basic') === 7.5,
+                    'efficiency falls in steps and reaches 50% at the 5-minute yield',
+                );
+                sim.wallet[0] = 0;
+                step(sim, 2 * sim.tps);
+                check(sim.wallet[0] === 15, 'the base still produces 7.5 per second at the floor');
                 rows.push({
-                    scenario: 'continuous main base production beyond the former reserve',
-                    produced,
+                    scenario:
+                        'full 2-minute yield, declining efficiency and continuing production at 50%',
+                    produced: base.extractedResources,
+                    intermediate,
+                    rate: 7.5,
                 });
             }
             // Start at capture-presence distance. No fixture moves workers into contact:

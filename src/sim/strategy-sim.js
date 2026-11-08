@@ -300,6 +300,7 @@ class StrategySim {
         this.premiumWallet = [0, 0];
         this.baseProducers = [0, 1].map((side) => ({
             owner: side,
+            extractedResources: 0,
             production: LaunchRules.productionChannels(
                 LaunchRules.baseIncomePerSecond *
                     (side === 0 ? (this.rules.campaign?.baseIncomeRatio ?? 1) : 1),
@@ -318,6 +319,7 @@ class StrategySim {
             enabled: p.enabled !== false,
             outpostId: null,
             resourceType: p.resourceType ?? 'basic',
+            extractedResources: 0,
             production: LaunchRules.productionChannels(
                 miningPerSecond ?? LaunchRules.outpostIncomePerSecond,
                 p.resourceType === 'premium',
@@ -1451,19 +1453,23 @@ class StrategySim {
                 !this.buildings.some((b) => b.id === `base${point.owner}` && b.alive !== false)
             )
                 continue;
+            const efficiency = LaunchRules.productionEfficiency(point);
             for (const resource in point.production) {
                 const channel = point.production[resource];
                 const wallet = resource === 'premium' ? this.premiumWallet : this.wallet;
                 const cap =
                     resource === 'premium' ? LaunchRules.premiumWalletCap : LaunchRules.walletCap;
                 if (wallet[point.owner] >= cap) continue;
-                channel.miningCarry += channel.incomePerSecond;
+                // Carry fractional production in hundredths so wallet credits stay whole.
+                const wholeUnit = this.tps * 100;
+                channel.miningCarry += LaunchRules.productionRateHundredths(channel, efficiency);
                 const gained = Math.min(
-                    Math.floor(channel.miningCarry / this.tps),
+                    Math.floor(channel.miningCarry / wholeUnit),
                     cap - wallet[point.owner],
                 );
-                channel.miningCarry %= this.tps;
+                channel.miningCarry %= wholeUnit;
                 wallet[point.owner] += gained;
+                point.extractedResources += gained;
             }
         }
     }
