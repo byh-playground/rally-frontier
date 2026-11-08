@@ -6940,12 +6940,23 @@ class MiniMap {
                           ? '#e7bc48'
                           : '#68717a'
                       : '#ef5757';
-            this.dot(p[0], p[1], 3.2, col);
             c.strokeStyle = col;
             c.lineWidth = 1;
             c.beginPath();
-            c.arc(p[0], p[1], 5.2, 0, Math.PI * 2);
-            c.stroke();
+            if (cp.resourceType === 'premium') {
+                const [x, y] = p;
+                c.moveTo(x, y - 5.2);
+                c.lineTo(x + 5.2, y);
+                c.lineTo(x, y + 5.2);
+                c.lineTo(x - 5.2, y);
+                c.closePath();
+                c.fillStyle = col;
+                c.fill();
+            } else {
+                c.arc(p[0], p[1], 5.2, 0, Math.PI * 2);
+                c.stroke();
+                this.dot(p[0], p[1], 3.2, col);
+            }
         }
 
         for (const m of LaunchPresentation.marks) {
@@ -9874,6 +9885,7 @@ class BuildMetadataPresentation {
 
 // 조준 중 예상 착지와 최대 사거리를 표시하고, 실제 착탄 흔적은 권위 사건을 따른다.
 class LaunchPresentation {
+    static premiumResourceHint = '고급 자원 부족 · 미니맵의 마름모 거점을 완성하세요.';
     static HERO_SKILL_HOLD_MS = 500;
     static card = null;
     static deckKey = '';
@@ -9972,7 +9984,7 @@ class LaunchPresentation {
                     {
                         reloading: '대포가 재장전 중입니다.',
                         'insufficient-basic-resources': '기본 자원이 부족합니다.',
-                        'insufficient-premium-resources': '고급 자원이 부족합니다.',
+                        'insufficient-premium-resources': LaunchPresentation.premiumResourceHint,
                         'population-limit': '인구가 가득 찼습니다.',
                         'hero-already-deployed': '영웅이 이미 출격 중입니다.',
                         'hero-unavailable': '전사한 영웅은 이번 경기에 다시 출격할 수 없습니다.',
@@ -10350,7 +10362,7 @@ class LaunchPresentation {
             this.feedback(
                 LaunchRules.payload(this.card).cost > Math.floor(s.wallet[side])
                     ? '기본 자원이 부족합니다.'
-                    : '고급 자원이 부족합니다.',
+                    : LaunchPresentation.premiumResourceHint,
             );
         this.hold = {
             pointerId,

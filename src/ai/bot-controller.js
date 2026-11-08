@@ -6,6 +6,7 @@ import { LaunchRules } from '../sim/launch-rules.js';
 import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.js';
 import { HashUtil } from '../sim/map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
+import { UnitDefinition } from '../definitions/units.js';
 import { SimulationTiming } from '../core/simulation-timing.js';
 
 // Tracks the bot's commands from offer to the sim's receipt, so a shot already paid for
@@ -189,117 +190,280 @@ class BotController {
             this.commandExecutor.flush();
         }
     }
-    // Defend the base first, then empty capture points, then enemy groups.
-    launchTarget(state, cannon) {
+    static distance(a, b) {
+        return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    static shotAt(cannons, target, deck, level, support = 0) {
+        let shot = null;
+        for (const cannon of cannons) {
+            const distance = this.distance(cannon, target);
+            if (shot && distance >= shot.distance) continue;
+            const units = deck.filter(
+                ({ type }) => distance <= LaunchRules.maxReachOf(type, level) + support,
+            );
+            if (units.length) shot = { cannon, target, units, distance };
+        }
+        return shot;
+    }
+
+    captureObjectives(state) {
         const side = this.side,
-            mine = state.buildings.find((b) => b.id === 'base' + side),
-            enemyBase = state.buildings.find((b) => b.id === 'base' + (1 - side));
-        const enemies = state.units.filter((u) => u.alive && u.side === 1 - side);
-        const centroid = (list) => ({
-            x: list.reduce((a, u) => a + u.x, 0) / list.length,
-            y: list.reduce((a, u) => a + u.y, 0) / list.length,
+            distance = BotController.distance,
+            reserved = this.commandExecutor.reservations(),
+            ownUnits = state.units.filter((unit) => unit.alive && unit.side === side);
+        return state.capturePoints
+            .filter((point) => point.owner == null)
+            .flatMap((point) => {
+                const project = state.buildings.find(
+                    (building) =>
+                        building.id === point.outpostId &&
+                        building.alive !== false &&
+                        building.construction,
+                );
+                if (project ? project.side !== side : point.enabled === false) return [];
+                const inTransit =
+                    reserved.some(
+                        ({ action }) =>
+                            action.type === 'LAUNCH' &&
+                            action.x === point.x &&
+                            action.y === point.y,
+                    ) ||
+                    state.projectiles.some(
+                        (shot) =>
+                            shot.side === side &&
+                            shot.payload &&
+                            distance({ x: shot.lockedAimX, y: shot.lockedAimY }, point) <=
+                                LaunchRules.captureHoldRadius,
+                    ) ||
+                    state.launchDeployments.some(
+                        (group) => group.side === side && group.holdPointId === point.id,
+                    );
+                const workers = ownUnits.filter(
+                    (unit) =>
+                        unit.launchHoldPointId === point.id ||
+                        (project && unit.constructionWork?.targetId === project.id) ||
+                        distance(unit, point) <= 200,
+                ).length;
+                return [{ point, project, supported: inTransit || workers >= 4 }];
+            });
+    }
+
+    static captureShot(cannons, objectives, deck, level) {
+        const support = LaunchRules.captureHoldRadius - 100;
+        const workers = deck.filter(({ type }) => {
+            const unit = UnitDefinition.get(type);
+            return unit?.construction && !unit.captureExcluded;
         });
-        const threat = mine
-            ? enemies.filter((u) => Math.hypot(u.x - mine.x, u.y - mine.y) < 900)
-            : [];
-        if (threat.length) return centroid(threat);
-        const open = (state.capturePoints || [])
-            .filter((cp) => cp.owner == null && cp.enabled !== false)
+        return objectives
+            .filter(({ supported }) => !supported)
+            .flatMap(({ point, project }) => {
+                const shot = this.shotAt(cannons, point, workers, level, support);
+                return shot ? [{ ...shot, project }] : [];
+            })
             .sort(
                 (a, b) =>
-                    Math.hypot(a.x - cannon.x, a.y - cannon.y) -
-                    Math.hypot(b.x - cannon.x, b.y - cannon.y),
-            );
-        if (
-            open.length &&
-            Math.hypot(open[0].x - cannon.x, open[0].y - cannon.y) <=
-                LaunchRules.maxReachOf('rice', state.launchRangeLevel[side]) +
-                    LaunchRules.captureHoldRadius -
-                    100
-        )
-            return open[0];
-        if (enemies.length) {
-            const near = enemies
-                .slice()
-                .sort(
-                    (a, b) =>
-                        Math.hypot(a.x - cannon.x, a.y - cannon.y) -
-                        Math.hypot(b.x - cannon.x, b.y - cannon.y),
-                )
-                .slice(0, 12);
-            return centroid(near);
-        }
-        return enemyBase || null;
+                    Number(b.target.resourceType === 'premium' && b.target.remaining > 0) -
+                        Number(a.target.resourceType === 'premium' && a.target.remaining > 0) ||
+                    a.distance - b.distance,
+            )[0];
     }
-    // Hold time carries a deterministic +-12% error and never overheats.
+
+    static nearestShot(cannons, targets, deck, level) {
+        let best = null;
+        for (const target of targets) {
+            const shot = this.shotAt(cannons, target, deck, level);
+            if (shot && (!best || shot.distance < best.distance)) best = shot;
+        }
+        return best;
+    }
+
+    fire(shot, unit, level, tick, aimExactly = false) {
+        const { cannon, target, distance } = shot;
+        const error = aimExactly
+            ? 1
+            : 1 + ((HashUtil.hash(`${tick}|${cannon.id}|err`) % 241) - 120) / 1000;
+        this.commandExecutor.offer({
+            type: 'LAUNCH',
+            cannonId: cannon.id,
+            x: Math.round(target.x),
+            y: Math.round(target.y),
+            holdMs: Math.round(
+                RangeUtil.clamp(
+                    LaunchRules.holdFor(distance, unit.type, level) * error,
+                    0,
+                    LaunchRules.chargeMs,
+                ),
+            ),
+            unitType: unit.type,
+        });
+    }
+
+    chooseCombatUnit(shot, state, budget, hasIncome, enemies, urgent = false) {
+        const side = this.side,
+            stats = state.unitResultStats[side],
+            clustered =
+                enemies.filter((unit) => BotController.distance(unit, shot.target) <= 120).length >=
+                3;
+        const suitable = shot.units.filter((unit) => unit.premiumCost <= state.premiumWallet[side]);
+        const specialists = suitable.filter((unit) => unit.premiumCost > 0);
+        const pool = !urgent && specialists.length ? specialists : suitable;
+        const deployedVolleys = ({ type, count }) => (stats[type]?.deployed || 0) / count;
+        const effect = ({ type }) => {
+            const definition = UnitDefinition.get(type);
+            if (clustered && (definition.lobAttack || definition.spinAttack)) return 2;
+            if (BuildingDefinition.get(shot.target.type) && definition.role === 'ranged') return 1;
+            return 0;
+        };
+        const ranked = pool
+            .filter((unit) => (urgent || !hasIncome ? unit.cost <= budget : true))
+            .sort(
+                (a, b) =>
+                    effect(b) - effect(a) ||
+                    deployedVolleys(a) - deployedVolleys(b) ||
+                    b.cost - a.cost,
+            );
+        const unit = ranked[0];
+        return unit?.cost <= budget ? unit : null;
+    }
+
     runLaunch(state) {
         const side = this.side,
+            distance = BotController.distance,
+            level = state.launchRangeLevel[side],
             main = BuildingDefinition.forRole('mainBase'),
-            outpost = BuildingDefinition.forRole('outpost');
-        const level = state.launchRangeLevel[side],
-            upgradeCost = LaunchRules.upgradeCost(level);
-        const base = state.buildings.find((b) => b.id === 'base' + side);
-        const defending =
-            base &&
-            state.units.some(
-                (u) =>
-                    u.alive &&
-                    u.side === 1 - side &&
-                    Math.hypot(u.x - base.x, u.y - base.y) <= LaunchRules.maxReachOf('rice', level),
-            );
-        // Every thirty seconds, reserve income for the next range level unless the base is under attack.
-        if (
-            upgradeCost != null &&
-            !defending &&
-            state.tick >= SimulationTiming.msToTicks(30000 * (level + 1), state.tps || SIM_TPS)
-        ) {
-            if (this.commandExecutor.offer({ type: 'UPGRADE_LAUNCH_RANGE' })) return;
-        }
-        const busy = new Set(this.commandExecutor.reservations().map((p) => p.action.cannonId));
-        const cannons = state.buildings.filter(
+            outpost = BuildingDefinition.forRole('outpost'),
+            constructionCost = BuildingDefinition.get(outpost).construction.cost,
+            deck = state.decks[side].map((type) => ({ type, ...LaunchRules.payload(type) }));
+        const busy = new Set(
+            this.commandExecutor.reservations().map(({ action }) => action.cannonId),
+        );
+        const buildings = state.buildings.filter((b) => b.side === side && b.alive !== false);
+        const cannons = buildings.filter(
             (b) =>
-                b.side === side &&
-                b.alive !== false &&
                 !b.construction &&
                 (b.type === main || b.type === outpost) &&
                 state.tick >= (Number(b.launchReadyTick) || 0) &&
                 !busy.has(b.id),
         );
-        for (const cannon of cannons) {
-            const affordable = state.decks[side].filter(
-                (t) =>
-                    LaunchRules.grain(t).cost <= state.wallet[side] &&
-                    (LaunchRules.grain(t).premiumCost || 0) <= state.premiumWallet[side],
+        if (!cannons.length) return;
+        const base = buildings.find((b) => b.type === main),
+            enemies = state.units.filter((u) => u.alive && u.side === 1 - side),
+            hostile = state.buildings.filter((b) => b.alive !== false && b.side === 1 - side),
+            enemyBase = hostile.find((b) => b.type === main),
+            hasIncome =
+                LaunchRules.incomePerSecondFor(
+                    [...state.baseDeposits, ...state.capturePoints],
+                    side,
+                ) > 0;
+        const threat =
+            base &&
+            BotController.nearestShot(
+                cannons,
+                enemies.filter((unit) => distance(unit, base) <= 900),
+                deck,
+                level,
             );
-            if (!affordable.length) return;
-            const target = this.launchTarget(state, cannon);
-            if (!target) return;
-            const distance = Math.hypot(target.x - cannon.x, target.y - cannon.y);
-            const reaching = affordable.filter((t) => LaunchRules.maxReachOf(t, level) >= distance),
-                pool = reaching.length ? reaching : affordable;
-            const unitType = target.resourceType
-                ? pool
-                      .slice()
-                      .sort((a, b) => LaunchRules.grain(a).cost - LaunchRules.grain(b).cost)[0]
-                : pool[HashUtil.hash(`${state.tick}|${cannon.id}`) % pool.length];
-            const error =
-                1 + ((HashUtil.hash(`${state.tick}|${cannon.id}|err`) % 241) - 120) / 1000;
-            const holdMs = Math.round(
-                RangeUtil.clamp(
-                    LaunchRules.holdFor(distance, unitType, level) * error,
-                    0,
-                    LaunchRules.chargeMs,
-                ),
+        if (threat) {
+            const unit = this.chooseCombatUnit(
+                threat,
+                state,
+                state.wallet[side],
+                hasIncome,
+                enemies,
+                true,
             );
-            this.commandExecutor.offer({
-                type: 'LAUNCH',
-                cannonId: cannon.id,
-                x: Math.round(target.x),
-                y: Math.round(target.y),
-                holdMs,
-                unitType,
-            });
+            if (unit) this.fire(threat, unit, level, state.tick, true);
+            return;
         }
+
+        const budget =
+            state.wallet[side] -
+            buildings.reduce(
+                (sum, b) =>
+                    sum + (b.construction ? b.construction.cost - b.construction.invested : 0),
+                0,
+            );
+        const objectives = this.captureObjectives(state);
+        const capture = BotController.captureShot(cannons, objectives, deck, level);
+        const premiumTargets = hostile.filter((b) =>
+            state.capturePoints.some(
+                (point) =>
+                    point.outpostId === b.id &&
+                    point.resourceType === 'premium' &&
+                    point.remaining > 0,
+            ),
+        );
+        if (level < 2) {
+            const nextCapture = BotController.captureShot(cannons, objectives, deck, level + 1);
+            const unlocksCapture =
+                nextCapture &&
+                (!capture ||
+                    (nextCapture.target.resourceType === 'premium' &&
+                        capture.target.resourceType !== 'premium'));
+            const unlocksPremiumAttack =
+                !capture &&
+                !BotController.nearestShot(cannons, premiumTargets, deck, level) &&
+                BotController.nearestShot(cannons, premiumTargets, deck, level + 1);
+            if (unlocksCapture || unlocksPremiumAttack) {
+                const upgradeCost = LaunchRules.upgradeCost(level);
+                if (budget >= upgradeCost) {
+                    this.commandExecutor.offer({ type: 'UPGRADE_LAUNCH_RANGE' });
+                    return;
+                }
+                if (hasIncome) return;
+            }
+        }
+        const premiumShot = BotController.nearestShot(cannons, premiumTargets, deck, level);
+        if (
+            premiumShot &&
+            capture?.target.resourceType !== 'premium' &&
+            LaunchRules.incomePerSecondFor(state.capturePoints, side, 'premium') === 0
+        ) {
+            const unit = this.chooseCombatUnit(premiumShot, state, budget, hasIncome, enemies);
+            if (unit) this.fire(premiumShot, unit, level, state.tick);
+            return;
+        }
+        if (capture) {
+            const spendable = budget - (capture.project ? 0 : constructionCost);
+            const contested = enemies.some((unit) => distance(unit, capture.target) <= 300);
+            const priority = ({ type }) => {
+                const definition = UnitDefinition.get(type);
+                if (contested) return definition.hp;
+                const walk = Math.max(0, capture.distance - LaunchRules.maxReachOf(type, level));
+                return -walk / (definition.speed * (definition.outOfCombatMoveMultiplier || 1));
+            };
+            const unit = capture.units
+                .filter(
+                    (unit) =>
+                        unit.cost <= spendable && unit.premiumCost <= state.premiumWallet[side],
+                )
+                .sort((a, b) => priority(b) - priority(a) || a.cost - b.cost)[0];
+            if (unit) {
+                this.fire(capture, unit, level, state.tick, true);
+                return;
+            }
+            if (hasIncome) return;
+        }
+
+        let shot =
+            BotController.nearestShot(cannons, enemies, deck, level) ||
+            premiumShot ||
+            BotController.nearestShot(cannons, hostile, deck, level);
+        if (!shot && enemyBase && !objectives.some(({ supported }) => supported)) {
+            const cannon = cannons.reduce((best, candidate) =>
+                distance(candidate, enemyBase) < distance(best, enemyBase) ? candidate : best,
+            );
+            shot = {
+                cannon,
+                target: enemyBase,
+                distance: distance(cannon, enemyBase),
+                units: deck,
+            };
+        }
+        if (!shot) return;
+        const unit = this.chooseCombatUnit(shot, state, budget, hasIncome, enemies);
+        if (unit) this.fire(shot, unit, level, state.tick);
     }
 }
 
