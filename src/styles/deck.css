@@ -27,6 +27,10 @@
 .deck-panel {
     padding: 22px;
 }
+.deck-card-detail-dialog .launch-sheet-panel {
+    width: 100%;
+    border-radius: inherit;
+}
 .deck-header,
 .deck-section-head {
     display: flex;
@@ -105,6 +109,17 @@
 .deck-collection[hidden] {
     display: none;
 }
+.deck-tile {
+    position: relative;
+    display: grid;
+    min-width: 0;
+}
+.deck-card-info {
+    cursor: pointer;
+}
+.deck-card-info:focus-visible {
+    outline-color: #365b3e;
+}
 .deck-slot {
     display: flex;
     flex-direction: column;
@@ -135,6 +150,11 @@ button.deck-slot {
     border-style: dashed;
     background: transparent;
     color: #70816a;
+}
+.deck-slot-empty[aria-pressed='true'] {
+    border: 2px solid #548c55;
+    background: #edf6de;
+    color: #365b3e;
 }
 .deck-card {
     position: relative;
@@ -183,7 +203,7 @@ button.deck-slot {
 .deck-card-check {
     position: absolute;
     top: 5px;
-    right: 4px;
+    left: 5px;
     color: #4a844c;
     font-weight: 900;
 }

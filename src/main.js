@@ -12059,6 +12059,7 @@ else if (document.documentElement.dataset.titleShowcase === 'true') {
         nameOf: (type) => UnitDefinition.get(type)?.name || type,
         statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
         infoOf: (type) => LaunchScreens.grainInfo(type),
+        renderDetails: (type, host) => LaunchScreens.renderCardDetail(type, host),
         portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
     });
     LaunchScreens.install({
