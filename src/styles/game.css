@@ -631,16 +631,11 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
     transform: translateX(-50%);
     width: max-content;
     max-width: calc(100% - 4px);
-    min-width: 30px;
     min-height: 18px;
-    padding: 1px 4px;
     box-sizing: border-box;
-    gap: 3px;
+    gap: 5px;
     white-space: nowrap;
-    border-radius: 999px;
-    background: #286f9e;
-    border: 2px solid var(--tray);
-    color: #fff;
+    color: #194c70;
     font-style: normal;
     font-weight: 900;
     font-size: 11px;
@@ -680,7 +675,7 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
     opacity: 0.66;
 }
 .launch-card em [data-cost-resource='premium'] {
-    color: #ffdc91;
+    color: #754607;
 }
 .hero-card {
     border-color: var(--gold);
@@ -820,8 +815,13 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
     text-align: center;
     white-space: nowrap;
 }
-.hero-card em {
-    white-space: nowrap;
+.hero-card[aria-pressed] em,
+.hero-card.hero-dead em {
+    min-width: 30px;
+    padding: 1px 4px;
+    border: 2px solid var(--tray);
+    border-radius: 999px;
+    color: #fff;
 }
 .hero-card[aria-pressed='true'] em {
     background: #276143;
