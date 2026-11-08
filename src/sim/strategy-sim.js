@@ -298,11 +298,12 @@ class StrategySim {
         this.scheduled = new Map();
         this.wallet = [0, 1].map(() => LaunchRules.startingWallet);
         this.premiumWallet = [0, 0];
-        this.baseDeposits = [0, 1].map((side) => ({
+        this.baseProducers = [0, 1].map((side) => ({
             owner: side,
-            resourceType: 'basic',
-            stocks: LaunchRules.depositStocks(LaunchRules.baseDeposit),
-            discoveredBy: [false, false],
+            production: LaunchRules.productionChannels(
+                LaunchRules.baseIncomePerSecond *
+                    (side === 0 ? (this.rules.campaign?.baseIncomeRatio ?? 1) : 1),
+            ),
         }));
         this.launchRangeLevel = [0, 0];
         this.launchDeployments = [];
@@ -311,24 +312,17 @@ class StrategySim {
         // Per-side match totals for the result screen: shots fired, grains sent, enemy units killed.
         this.launchStats = { launches: [0, 0], sent: [0, 0], kills: [0, 0] };
         this.unitResultStats = UnitResultStats.create();
-        this.capturePoints = this.mapDescriptor.capturePoints.map(
-            ({ remaining, miningPerSecond, ...p }) => ({
-                ...p,
-                owner: p.owner === 0 || p.owner === 1 ? p.owner : null,
-                enabled: p.enabled !== false,
-                outpostId: null,
-                resourceType: p.resourceType ?? 'basic',
-                stocks: LaunchRules.depositStocks(
-                    {
-                        capacity: remaining ?? LaunchRules.outpostDeposit.capacity,
-                        miningPerSecond:
-                            miningPerSecond ?? LaunchRules.outpostDeposit.miningPerSecond,
-                    },
-                    p.resourceType === 'premium',
-                ),
-                discoveredBy: [false, false],
-            }),
-        );
+        this.capturePoints = this.mapDescriptor.capturePoints.map(({ miningPerSecond, ...p }) => ({
+            ...p,
+            owner: p.owner === 0 || p.owner === 1 ? p.owner : null,
+            enabled: p.enabled !== false,
+            outpostId: null,
+            resourceType: p.resourceType ?? 'basic',
+            production: LaunchRules.productionChannels(
+                miningPerSecond ?? LaunchRules.outpostIncomePerSecond,
+                p.resourceType === 'premium',
+            ),
+        }));
 
         SimulationRuntimeState.initialize(this, { newMatch: true });
 
@@ -347,12 +341,6 @@ class StrategySim {
                 const outpost = this.spawnOutpost(point, 1);
                 outpost.hp = outpost.maxHp;
                 this.completeConstruction(outpost);
-            }
-            if (this.rules.campaign.baseDepositRatio != null) {
-                this.baseDeposits[0].stocks.basic.remaining = Math.round(
-                    this.baseDeposits[0].stocks.basic.remaining *
-                        this.rules.campaign.baseDepositRatio,
-                );
             }
             if (this.rules.campaign.introducedEnemy) {
                 const point = points[Math.max(0, this.rules.campaign.enemyOutposts - 1)];
@@ -1456,52 +1444,26 @@ class StrategySim {
         wallet[side] = Math.min(cap, wallet[side] + amount);
     }
     updateLaunchEconomy() {
-        // Each deposit owns its fractional progress and remaining stock across captures.
-        for (const point of [...this.baseDeposits, ...this.capturePoints]) {
+        for (const point of [...this.baseProducers, ...this.capturePoints]) {
             if (point.owner !== 0 && point.owner !== 1) continue;
             if (
-                this.baseDeposits.includes(point) &&
+                this.baseProducers.includes(point) &&
                 !this.buildings.some((b) => b.id === `base${point.owner}` && b.alive !== false)
             )
                 continue;
-            for (const resource in point.stocks) {
-                const stock = point.stocks[resource];
+            for (const resource in point.production) {
+                const channel = point.production[resource];
                 const wallet = resource === 'premium' ? this.premiumWallet : this.wallet;
                 const cap =
                     resource === 'premium' ? LaunchRules.premiumWalletCap : LaunchRules.walletCap;
-                if (wallet[point.owner] >= cap || stock.remaining <= 0) continue;
-                // Half-unit rates are exact; each stock credits only whole units.
-                stock.miningCarry += stock.miningPerSecond;
+                if (wallet[point.owner] >= cap) continue;
+                channel.miningCarry += channel.incomePerSecond;
                 const gained = Math.min(
-                    Math.floor(stock.miningCarry / this.tps),
-                    stock.remaining,
+                    Math.floor(channel.miningCarry / this.tps),
                     cap - wallet[point.owner],
                 );
-                stock.miningCarry %= this.tps;
-                stock.remaining -= gained;
+                channel.miningCarry %= this.tps;
                 wallet[point.owner] += gained;
-            }
-        }
-    }
-    updateDepositDiscovery(vision) {
-        for (const point of this.capturePoints) {
-            for (const side of [0, 1]) {
-                if (
-                    !point.discoveredBy[side] &&
-                    this.isVisible(side, point.x, point.y, vision[side])
-                )
-                    point.discoveredBy[side] = true;
-            }
-        }
-        for (const deposit of this.baseDeposits) {
-            const base = this.buildings.find((building) => building.id === `base${deposit.owner}`);
-            if (!base) continue;
-            for (const side of [0, 1]) {
-                if (
-                    !deposit.discoveredBy[side] &&
-                    this.isVisible(side, base.x, base.y, vision[side])
-                )
-                    deposit.discoveredBy[side] = true;
             }
         }
     }
@@ -3563,7 +3525,6 @@ class StrategySim {
         mark = profile ? now() : 0;
         LaunchImpact.update(this);
         const vision = [this.visionSources(0), this.visionSources(1)];
-        this.updateDepositDiscovery(vision);
         const visionMs = profile ? now() - mark : 0;
 
         mark = profile ? now() : 0;
@@ -3795,7 +3756,7 @@ class StrategySim {
                 ),
                 wallet: this.wallet.slice(),
                 premiumWallet: this.premiumWallet.slice(),
-                baseDeposits: StateValue.copy(this.baseDeposits),
+                baseProducers: StateValue.copy(this.baseProducers),
                 launchRangeLevel: this.launchRangeLevel.slice(),
                 launchStats: StateValue.copy(this.launchStats),
                 unitResultStats: StateValue.copy(this.unitResultStats),

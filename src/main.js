@@ -3263,28 +3263,6 @@ class GLRenderer {
             }
             return null;
         };
-        for (const deposit of this.snapshot.baseDeposits || []) {
-            const base = (this.snapshot.buildings || []).find(
-                (b) => b.id === `base${deposit.owner}` && b.alive !== false,
-            );
-            if (
-                !base ||
-                (!this.isFriendlySide(deposit.owner) &&
-                    !this.replayObserverAll &&
-                    !this.replayVisionSides().some((side) => deposit.discoveredBy?.[side]))
-            )
-                continue;
-            const [x, y] = this.worldToPx(this.viewX(base.x), this.viewY(base.y));
-            const text = `${RESOURCES[0].symbol} 본진 잔량 ${deposit.stocks.basic.remaining}`;
-            ctx.font = `900 ${Math.max(9, 11 * sc)}px system-ui,sans-serif`;
-            const label = labelPosition(x, y, y - Math.max(50, 64 * sc), [text], 8);
-            if (!label) continue;
-            ctx.lineWidth = Math.max(2, 3 * sc);
-            ctx.strokeStyle = 'rgba(0,0,0,.60)';
-            ctx.strokeText(text, label.x, label.y, label.width);
-            ctx.fillStyle = '#fff';
-            ctx.fillText(text, label.x, label.y, label.width);
-        }
         for (const cp of this.snapshot.capturePoints || []) {
             const [px, py] = this.worldToPx(this.viewX(cp.x), this.viewY(cp.y));
             if (px < 0 || px > this.fxCanvas.width || py < 0 || py > this.fxCanvas.height) continue;
@@ -3322,21 +3300,10 @@ class GLRenderer {
             ctx.font = `900 ${Math.max(9, 11 * sc)}px system-ui,sans-serif`;
             ctx.lineWidth = Math.max(2, 3 * sc);
             ctx.strokeStyle = 'rgba(0,0,0,.60)';
-            const known =
-                this.isFriendlySide(cp.owner) ||
-                this.replayObserverAll ||
-                this.replayVisionSides().some((side) => cp.discoveredBy?.[side]);
             const kind = cp.resourceType === 'premium' ? RESOURCES[1] : RESOURCES[0];
-            const stockKinds = RESOURCES.filter(({ key }) => cp.stocks[key]);
-            const deposit = known
-                ? ' · 잔량 ' +
-                  stockKinds
-                      .map(({ key, symbol }) => `${symbol} ${cp.stocks[key].remaining}`)
-                      .join(' ')
-                : '';
             const name = cp.label || cp.lane;
             const siteName = name.includes(kind.name) ? name : `${name} ${kind.name} 거점`;
-            const text = `${kind.symbol} ${siteName} · ${owner}${deposit}`,
+            const text = `${kind.symbol} ${siteName} · ${owner}`,
                 lineGap = Math.max(14, 15 * sc);
             const workers = visibleConstruction
                 ? (this.snapshot.units || []).filter(
@@ -3359,32 +3326,14 @@ class GLRenderer {
                       : `${workers.length}명 작업 중`;
             const cost = BuildingDefinition.get(BuildingDefinition.forRole('outpost')).construction
                 .cost;
-            const mining = known
-                ? stockKinds
-                      .map(({ key, symbol }) => {
-                          const stock = cp.stocks[key];
-                          const balance =
-                              key === 'premium'
-                                  ? this.snapshot.premiumWallet[side]
-                                  : this.snapshot.wallet[side];
-                          const cap =
-                              key === 'premium'
-                                  ? LaunchRules.premiumWalletCap
-                                  : LaunchRules.walletCap;
-                          const status =
-                              stock.remaining <= 0
-                                  ? '소진'
-                                  : cp.owner === side && balance >= cap
-                                    ? '대기'
-                                    : `+${stock.miningPerSecond}/초`;
-                          return `${symbol} ${status} · `;
-                      })
-                      .join('')
-                : '';
+            const production = RESOURCES.flatMap(({ key, symbol }) => {
+                const rate = cp.production[key]?.incomePerSecond;
+                return rate > 0 ? [`${symbol} +${rate}/초`] : [];
+            });
             const guide = visibleConstruction
                 ? `건설 ${Math.round(ConstructionRules.progress(construction) * 1000) / 10}% · ◆ ${construction.invested}/${construction.cost}`
                 : cp.owner != null
-                  ? `${mining}자동 방어`
+                  ? [...production, '자동 방어'].join(' · ')
                   : locked
                     ? '연결 전술 오브젝트 처치 필요'
                     : `병력으로 건설 · ◆ ${cost}`;
@@ -7665,7 +7614,6 @@ UiRegistry.refs.disconnectSurrenderBtn = DomUtil.byId('disconnectSurrenderBtn');
 UiRegistry.refs.launchHand = DomUtil.byId('launchHand');
 UiRegistry.refs.launchCards = DomUtil.byId('launchCards');
 UiRegistry.refs.launchResources = DomUtil.byId('launchResources');
-UiRegistry.refs.launchBaseStock = DomUtil.byId('launchBaseStock');
 UiRegistry.refs.launchPopulationText = DomUtil.byId('launchPopulationText');
 UiRegistry.refs.launchReachText = DomUtil.byId('launchReachText');
 UiRegistry.refs.launchRangeBtn = DomUtil.byId('launchRangeBtn');
@@ -10126,13 +10074,12 @@ class LaunchPresentation {
                     `<div class="launch-resource" data-resource="${key}"><span class="launch-resource-name">${symbol} ${name}</span><b class="launch-resource-balance"></b><span class="launch-resource-meter" aria-hidden="true"><span></span></span><span class="launch-resource-state"></span></div>`,
             ).join('');
         }
-        const deposits = [...s.baseDeposits, ...s.capturePoints];
+        const producers = [...s.baseProducers, ...s.capturePoints];
         for (const [index, { key }] of RESOURCES.entries()) {
             const panel = host.children[index];
             const cap = key === 'premium' ? LaunchRules.premiumWalletCap : LaunchRules.walletCap;
             const amount = balance[key];
-            const rate = LaunchRules.incomePerSecondFor(deposits, side, key);
-            const ownsDeposit = deposits.some((point) => point.owner === side && point.stocks[key]);
+            const rate = LaunchRules.incomePerSecondFor(producers, side, key);
             panel.querySelector('.launch-resource-balance').textContent = `${amount}/${cap}`;
             panel.style.setProperty(
                 '--balance',
@@ -10140,16 +10087,11 @@ class LaunchPresentation {
             );
             panel.querySelector('.launch-resource-state').textContent =
                 rate > 0
-                    ? amount >= cap
-                        ? '한도 도달 · 채굴 대기'
-                        : `+${rate}/초`
-                    : ownsDeposit
-                      ? '매장량 소진'
-                      : key === 'premium'
-                        ? '기름 거점 필요'
-                        : '수입 없음';
+                    ? `+${rate}/초${amount >= cap ? ' · 한도 대기' : ''}`
+                    : key === 'premium'
+                      ? '기름 거점 필요'
+                      : '수입 없음';
         }
-        UiRegistry.refs.launchBaseStock.textContent = `본진 잔량 ${s.baseDeposits?.[side]?.stocks.basic.remaining ?? 0}`;
     }
 
     static render(s, side) {
@@ -10191,8 +10133,14 @@ class LaunchPresentation {
             }
         }
         this.renderResources(s, side, balance);
-        const reserved = population.reserved ? ` + 예약 ${population.reserved}` : '';
-        UiRegistry.refs.launchPopulationText.textContent = `병력 ${population.alive}${reserved} / ${LaunchRules.populationLimit}`;
+        const limit = LaunchRules.populationLimit,
+            atLimit = population.total >= limit,
+            populationText = UiRegistry.refs.launchPopulationText,
+            breakdown = `전장 ${population.alive}명 · 출격 대기 ${population.reserved}명`;
+        populationText.textContent = `인구 ${population.total} / ${limit}${atLimit ? ' · 출격 한도' : ''}`;
+        populationText.title = breakdown;
+        populationText.setAttribute('aria-label', `${populationText.textContent} · ${breakdown}`);
+        populationText.toggleAttribute('data-limit', atLimit);
         const level = s.launchRangeLevel?.[side] ?? 0,
             cost = LaunchRules.upgradeCost(level),
             premiumCost = LaunchRules.upgradePremiumCost(level),
