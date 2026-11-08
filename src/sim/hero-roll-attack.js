@@ -155,10 +155,14 @@ export class HeroRollAttack {
             motion.commit(unit, { x: originX + dx * travel, y: originY + dy * travel });
             unit.movement.lastMoveTick = sim.tick;
         };
-        sim.navigation.sync();
-        const wall = motion.surface.cast(x, y, vx, vy, radius);
-        // Leave enough room for rounding the clipped end to world fixed-point.
-        const wallDistance = wall ? Math.max(0, wall.t * step - 2 / FP) : step;
+        const { blocked, distance: wallDistance } = sim.navigation.traceStraightTravel(
+            x,
+            y,
+            dx,
+            dy,
+            step,
+            radius,
+        );
         const contacts = [];
         sim.withNearbyUnits(
             x,
@@ -206,8 +210,8 @@ export class HeroRollAttack {
 
         advanceTo(wallDistance);
         roll.distance = Math.min(spec.rollDistance, roll.distance + wallDistance);
-        if (wall || roll.distance >= spec.rollDistance - STOP_EPSILON) {
-            if (!wall) roll.distance = spec.rollDistance;
+        if (blocked || roll.distance >= spec.rollDistance - STOP_EPSILON) {
+            if (!blocked) roll.distance = spec.rollDistance;
             roll.phase = 'unfold';
             roll.phaseStartTick = sim.tick;
             roll.phaseEndTick = sim.tick + sim.msTicks(spec.unfoldMs);
