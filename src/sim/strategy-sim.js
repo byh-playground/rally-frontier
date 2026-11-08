@@ -334,24 +334,28 @@ class StrategySim {
         this.flags = CloneUtil.clone(this.mapDescriptor.flags);
         this.createBase(0);
         this.createBase(1);
-        // Campaign starts with enemy-held positions, using ordinary outpost ownership.
-        if (this.rules.campaign) {
-            const enemy = this.world.bases[1];
-            const points = [...this.capturePoints].sort(
-                (a, b) =>
-                    Math.hypot(a.x - enemy.x, a.y - enemy.y) -
-                    Math.hypot(b.x - enemy.x, b.y - enemy.y),
-            );
-            for (const point of points.slice(0, this.rules.campaign.enemyOutposts)) {
+        // Campaign positions use ordinary outpost ownership and construction completion.
+        const campaign = this.rules.campaign;
+        if (campaign) {
+            const points = campaign.enemyOutposts.map((id) => {
+                const point = this.capturePoints.find((p) => p.id === id);
+                if (!point) throw new Error(`캠페인 적 거점이 없습니다: ${id}`);
+                return point;
+            });
+            for (const point of points) {
                 const outpost = this.spawnOutpost(point, 1);
                 outpost.hp = outpost.maxHp;
                 this.completeConstruction(outpost);
             }
-            if (this.rules.campaign.introducedEnemy) {
-                const point = points[Math.max(0, this.rules.campaign.enemyOutposts - 1)];
-                const type = this.rules.campaign.introducedEnemy;
+            if (campaign.introducedEnemy) {
+                const [front] = points;
                 for (let i = 0; i < 3; i++)
-                    this.spawnUnit(1, type, point.x + (i - 1) * 50, point.y + 100);
+                    this.spawnUnit(
+                        1,
+                        campaign.introducedEnemy,
+                        front.x + (i - 1) * 50,
+                        front.y + 100,
+                    );
             }
         }
         // Landed units march straight to the enemy main base.

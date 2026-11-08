@@ -7286,6 +7286,7 @@ class MiniMap {
                   { id: 'bot', color: '#8bd57b77' },
               ]) {
             const pts = miniLanePoints[lane.id].map((p) => this.point(p.x, p.y));
+            if (pts.length < 2) continue;
             c.strokeStyle = lane.color;
             c.lineWidth = Math.max(1, w * 0.014);
             c.beginPath();

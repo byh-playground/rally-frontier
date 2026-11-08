@@ -45,11 +45,14 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
             const { UnitDefinition } = await import(
                 new URL('./src/definitions/units.js', location.href)
             );
-            const { InteractionGeometry } = await import(
+            const { InteractionGeometry, TerrainNavigation } = await import(
                 new URL('./src/sim/navigation.js', location.href)
             );
             const { ConstructionRules } = await import(
                 new URL('./src/sim/construction-rules.js', location.href)
+            );
+            const { CAMPAIGN_STAGES, campaignStage } = await import(
+                new URL('./src/definitions/campaign.js', location.href)
             );
             const { FP } = await import(new URL('./src/core/config.js', location.href));
             const check = (value, message, detail) => {
@@ -216,6 +219,175 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
             function destroy(sim, building) {
                 sim.applyDamage(1 - building.side, 'rice', building, true, 100000, null, {
                     sourceDamageResolved: true,
+                });
+            }
+            // The compact campaign lets the player support the next fight from owned ground.
+            {
+                const openStage = (stage) =>
+                    new StrategySim(
+                        stage.seed,
+                        { ...GameRuleDefinition.resolve(), campaign: stage },
+                        [stage.deck, stage.enemyDeck],
+                    );
+                const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+                const layouts = [];
+                for (const stage of CAMPAIGN_STAGES) {
+                    const sim = openStage(stage);
+                    const { world, capturePoints: points, mapDescriptor } = sim;
+                    const [home, enemy] = world.bases;
+                    const advance = points.find((p) => p.id === 'advance');
+                    const center = points.find((p) => p.id === 'center');
+                    const oil = points.find((p) => p.resourceType === 'premium');
+                    const enemies = points.filter((p) => p.owner === 1);
+                    check(
+                        world.width === 2400 &&
+                            world.height === 3000 &&
+                            distance(home, enemy) === 2200 &&
+                            distance(home, advance) <= LaunchRules.maxReachOf('rice'),
+                        'compact bases and the first site fit the initial rice cannon range',
+                        stage.id,
+                    );
+                    check(
+                        enemies.map((p) => p.id).join(',') === stage.enemyOutposts.join(',') &&
+                            advance.owner === null &&
+                            center.owner === null,
+                        'stages own their authored enemy defense sites and leave player approach open',
+                        stage.id,
+                    );
+                    check(
+                        [home, enemy, ...points].every(
+                            (p) =>
+                                world.terrain.field.polygonCircleClear(p.x, p.y, 42) &&
+                                world.terrain.surfaces.buildable(p.x, p.y, 42),
+                        ) &&
+                            new TerrainNavigation({ world, tick: 0, buildings: [] }).connected(
+                                home,
+                                [enemy, ...points],
+                                sim.maxUnitRadius,
+                            ),
+                        'all campaign pads are buildable and connected, including elevated pads',
+                        stage.id,
+                    );
+                    const reach = Math.min(
+                        ...stage.deck.map((type) => LaunchRules.maxReachOf(type, 2)),
+                    );
+                    const pairs = points.flatMap((point, index) =>
+                        points.slice(index + 1).map((other) => distance(point, other)),
+                    );
+                    const directPairs = pairs.filter((length) => length <= reach).length;
+                    check(
+                        directPairs >= Math.ceil(pairs.length * 0.8) &&
+                            enemies.every((p) => distance(center, p) <= reach),
+                        'third range tier directly reaches most outpost pairs and every enemy defense from center',
+                        { stage: stage.id, reach, directPairs, pairs: pairs.length },
+                    );
+                    check(
+                        !!oil === !!stage.resourceLesson &&
+                            (!oil ||
+                                (oil.owner === null &&
+                                    distance(advance, oil) >
+                                        LaunchRules.maxReachOf('rice') +
+                                            LaunchRules.captureHoldRadius &&
+                                    distance(advance, oil) <= LaunchRules.maxReachOf('rice', 1))),
+                        'only lesson maps have one side oil site, with a direct shot after one range upgrade',
+                        stage.id,
+                    );
+                    layouts.push({
+                        stage: stage.id,
+                        directPairs,
+                        pairs: pairs.length,
+                        ramps: mapDescriptor.terrain.ramps.length,
+                    });
+                }
+                const opening = openStage(campaignStage('first'));
+                const home = opening.launchCannons(0)[0];
+                const advance = opening.capturePoints.find((p) => p.id === 'advance');
+                for (let shot = 0; shot < 3; shot++) {
+                    check(
+                        opening.applyCommand('host', {
+                            type: 'LAUNCH',
+                            cannonId: home.id,
+                            unitType: 'rice',
+                            x: advance.x,
+                            y: advance.y,
+                            holdMs: LaunchRules.holdFor(distance(home, advance), 'rice', 0),
+                        }),
+                        'first campaign landing can send construction workers from the home cannon',
+                    );
+                    step(opening, opening.tps);
+                }
+                for (let i = 0; advance.owner !== 0 && i < 90 * opening.tps; i++)
+                    opening.stepSimulation();
+                check(
+                    advance.owner === 0,
+                    'the opening rice waves complete the first campaign outpost',
+                    {
+                        tick: opening.tick,
+                        advance,
+                        construction: opening.buildingById.get(advance.outpostId)?.construction,
+                    },
+                );
+                const openingCaptureSeconds = opening.tick / opening.tps;
+                const damage = [];
+                for (const [sourceId, targetId] of [
+                    ['advance', 'enemy-front'],
+                    ['advance', 'enemy-ridge'],
+                    ['center', 'enemy-rear'],
+                ]) {
+                    const sim = openStage(campaignStage('breakthrough'));
+                    const source = sim.capturePoints.find((p) => p.id === sourceId);
+                    const target = sim.capturePoints.find((p) => p.id === targetId);
+                    const cannon = sim.spawnOutpost(source, 0);
+                    cannon.hp = cannon.maxHp;
+                    sim.completeConstruction(cannon);
+                    for (let level = 0; level < 2; level++) {
+                        sim.wallet[0] = LaunchRules.walletCap;
+                        check(
+                            sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }),
+                            'range upgrade is legal',
+                        );
+                    }
+                    sim.wallet[0] = LaunchRules.walletCap;
+                    const defense = sim.buildingById.get(target.outpostId);
+                    const before = defense.hp;
+                    check(
+                        sim.applyCommand('host', {
+                            type: 'LAUNCH',
+                            cannonId: cannon.id,
+                            unitType: 'redbean',
+                            x: target.x,
+                            y: target.y,
+                            holdMs: LaunchRules.holdFor(distance(cannon, target), 'redbean', 2),
+                        }),
+                        'third-tier cannon fires the shortest-range campaign shell',
+                    );
+                    let shellDamage = 0;
+                    step(sim, 3 * sim.tps, (state) => {
+                        for (const event of state.events) {
+                            if (
+                                event.type === 'hit' &&
+                                event.targetId === defense.id &&
+                                event.sourceId === cannon.id &&
+                                event.sourceType === 'redbean'
+                            )
+                                shellDamage += event.amount;
+                        }
+                    });
+                    check(
+                        shellDamage > 0 && defense.hp < before,
+                        'direct shell hits the intended enemy outpost',
+                        {
+                            sourceId,
+                            targetId,
+                        },
+                    );
+                    damage.push({ sourceId, targetId, shellDamage });
+                }
+                rows.push({
+                    scenario: 'compact campaign third-tier cannon coverage',
+                    layouts,
+                    openingCaptureSeconds,
+                    damage,
                 });
             }
             // The opening earns a forward cannon and keeps high resources contestable.
