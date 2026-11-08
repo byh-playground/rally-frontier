@@ -724,21 +724,31 @@ class GeometryTemplateCache {
     }
 }
 const SHARED_GEOMETRY_TEMPLATES = new GeometryTemplateCache();
-// One retained unit ring mesh is instanced for all visible team markers.
+// GameKit's retained stroke offsets are in CSS pixels after the ellipse is projected.
 function buildGrainTeamRing() {
-    const builder = new RallyGamekit.MeshBuilder();
     const segments = 14,
-        inner = 0.6;
+        halfStrokePx = 1,
+        vertices = [],
+        indices = [];
     for (let i = 0; i < segments; i++) {
-        const a = (i / segments) * Math.PI * 2,
-            b = ((i + 1) / segments) * Math.PI * 2;
-        const p = [Math.cos(a), Math.sin(a)],
-            q = [Math.cos(b), Math.sin(b)];
-        const pi = [p[0] * inner, p[1] * inner],
-            qi = [q[0] * inner, q[1] * inner];
-        builder.fillTriangleFan([p, q, qi, pi], [1, 1, 1, 1]);
+        const angle = (i / segments) * Math.PI * 2,
+            x = Math.cos(angle),
+            y = Math.sin(angle);
+        // Position, RGBA, unit tangent, tangent/normal pixel offsets, part index.
+        for (const offset of [halfStrokePx, -halfStrokePx])
+            vertices.push(x, y, 1, 1, 1, 1, -y, x, 0, offset, 0);
+        const a = i * 2,
+            b = ((i + 1) % segments) * 2;
+        indices.push(a, b, b + 1, a, b + 1, a + 1);
     }
-    return builder.build();
+    return {
+        vertices: new Float32Array(vertices),
+        indices: new Uint16Array(indices),
+        strideFloats: 11,
+        partCount: 1,
+        morphCount: 0,
+        nonScalingStroke: true,
+    };
 }
 // Depth gap between consecutive grains in painter order: a few 24-bit depth steps, so 500 grains shift terrain occlusion by ~2e-4.
 const GRAIN_DEPTH_RANK_STEP = 4e-7;
@@ -1862,8 +1872,11 @@ class GLRenderer {
             }
             this.grainFaces.prepare();
             if (!C.beginFrame()) throw new Error('그래픽 장치를 준비할 수 없습니다.');
-            C.drawMesh(this.grainTeamRing);
-            C.flush('grain-team-ring-preparation');
+            // A hidden boot canvas has no CSS viewport for the non-scaling stroke.
+            if (this.canvas.clientWidth > 0 && this.canvas.clientHeight > 0) {
+                C.drawMesh(this.grainTeamRing);
+                C.flush('grain-team-ring-preparation');
+            }
             for (const [id, source] of Object.entries(globalThis.RallyVectorAssets)) {
                 holds.push(RallyGamekit.holdVectorAsset(C, source));
                 const actor = RallyGamekit.createVectorActor(C, source, {
