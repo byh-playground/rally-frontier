@@ -22,7 +22,7 @@ function createShowcaseSurface(createRenderer) {
     };
 }
 
-async function prepareShowcaseScene({ surface, scene, signal }) {
+async function prepareShowcaseScene({ surface, scene, signal, present }) {
     const { renderer } = surface;
     const prepare =
         scene.kind === 'title'
@@ -60,7 +60,7 @@ async function prepareShowcaseScene({ surface, scene, signal }) {
     }
     let onFirstFrame = () => {
         onFirstFrame = null;
-        if (ownsRenderer()) scene.onFirstFrame?.();
+        present();
     };
     return {
         play() {
@@ -86,5 +86,6 @@ export function createShowcaseHost(createRenderer) {
     return RallyGamekit.createScenarioSurface({
         createSurface: () => createShowcaseSurface(createRenderer),
         prepare: prepareShowcaseScene,
+        waitForFirstFrame: true,
     });
 }
