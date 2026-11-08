@@ -609,7 +609,11 @@ END OF DEVELOPMENT CONTRACT
             </div>
         </section>
 
-        <dialog id="campaignDialog" class="deck-dialog" aria-labelledby="campaignTitle">
+        <dialog
+            id="campaignDialog"
+            class="deck-dialog campaign-dialog"
+            aria-labelledby="campaignTitle"
+        >
             <div class="deck-panel">
                 <header class="deck-header">
                     <h2 id="campaignTitle">캠페인</h2>
@@ -622,7 +626,6 @@ END OF DEVELOPMENT CONTRACT
                         ×
                     </button>
                 </header>
-                <p>스테이지를 차례로 공략하며 병종을 익혀요.</p>
                 <div id="campaignStages" class="campaign-stages"></div>
             </div>
         </dialog>
@@ -718,13 +721,9 @@ END OF DEVELOPMENT CONTRACT
                     <span id="launchHudMine" class="launch-hud-chip mine">나 ♥ 100%</span>
                     <span id="launchHudEnemy" class="launch-hud-chip enemy">적 ♥ 100%</span>
                     <span class="launch-hud-gap"></span>
-                    <span
-                        id="campaignObjective"
-                        class="launch-hud-chip hidden"
-                        role="status"
-                    ></span>
                     <span id="launchHudTime" class="launch-hud-chip">0:00</span>
                 </div>
+                <span id="campaignObjective" class="launch-hud-chip hidden" role="status"></span>
                 <div id="minimapWrap" class="minimap">
                     <canvas id="minimapCanvas" aria-label="미니맵"></canvas>
                 </div>

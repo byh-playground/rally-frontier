@@ -10045,12 +10045,12 @@ class LaunchPresentation {
                     (point) => point.owner === side && point.resourceType === 'premium',
                 );
             objective.textContent = defending
-                ? `본진을 지키세요 · ${Math.ceil(remaining)}초`
+                ? `본진 방어 · ${Math.ceil(remaining)}초`
                 : needsPremium
                   ? (s.launchRangeLevel?.[side] || 0) === 0
-                      ? '사거리를 강화하세요'
-                      : '고급 자원 거점을 확보하세요'
-                  : '적 본진을 파괴하세요';
+                      ? '사거리 강화'
+                      : '고급 거점 확보'
+                  : '적 본진 파괴';
         }
         LaunchScreens.renderHud({
             myHpPct: hp(side),
