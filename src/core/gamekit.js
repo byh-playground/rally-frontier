@@ -160,7 +160,7 @@ try {
         'ObjectPool',
         'createNavigation',
         'createScenario',
-        'mountScenarioFrame',
+        'createScenarioSurface',
     ])
         if (typeof RallyGamekit[name] !== 'function')
             throw new Error('Gamekit module API missing: ' + name);

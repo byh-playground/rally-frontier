@@ -101,9 +101,9 @@ export class LaunchScreens {
     }
     // actions: { inMatch(), hasResult(), startAiMatch(), openMenu(), closeMenu(), grains(), grainName(type), grainStats(type),
     //           portraitSource(type), toggleSound(), soundOn(), createRoom(), joinRoom(code), leaveToTitle() }
-    static install({ createNavigation, mountScenarioFrame, actions }) {
+    static install({ createNavigation, showcaseSurface, actions }) {
         this.actions = actions;
-        this.mountScenarioFrame = mountScenarioFrame;
+        this.showcaseSurface = showcaseSurface;
         this.$ = (id) => document.getElementById(id);
         this.navigation = createNavigation({
             normalize: (route) =>
@@ -272,60 +272,43 @@ export class LaunchScreens {
         const ROUTE = this.navigation.snapshot();
         this.replace(ROUTE.screen === 'play' ? 'play' : '');
     }
+    static closeTitleBattle() {
+        const mount = this.titleBattleMount;
+        this.titleBattleMount = null;
+        delete this.$('titleBattle').dataset.ready;
+        mount?.dispose();
+    }
+
     static async prepareTitleBattle() {
         if (
             matchMedia('(prefers-reduced-motion: reduce)').matches ||
             this.$('lobby').classList.contains('hidden') ||
-            this.titleBattleFrame ||
+            this.cardDetail?.mount ||
+            this.titleBattleMount ||
             this.titleBattleFailed
         )
             return;
         const host = this.$('titleBattle');
+        let mount;
+        const fail = (error) => {
+            if (mount && this.titleBattleMount !== mount) return;
+            this.titleBattleFailed = true;
+            this.closeTitleBattle();
+            console.error(error);
+        };
         try {
-            const mount = this.mountScenarioFrame({
+            mount = this.showcaseSurface.mount({
                 container: host,
-                src: './index.html?titleShowcase=1',
-                timeoutMs: 15000,
-                configure(frame) {
-                    frame.title = '실시간 전투 배경';
-                    frame.tabIndex = -1;
-                    frame.setAttribute('aria-hidden', 'true');
-                },
-                prepare: ({ frame, signal }) =>
-                    new Promise((resolve) => {
-                        const finish = (ok) => {
-                            window.removeEventListener('message', receive);
-                            signal.removeEventListener('abort', abort);
-                            if (!ok) this.titleBattleFailed = true;
-                            resolve();
-                        };
-                        const abort = () => finish(false);
-                        const receive = (event) => {
-                            if (
-                                event.origin !== location.origin ||
-                                event.source !== frame.contentWindow
-                            )
-                                return;
-                            if (event.data?.type === 'title-showcase-ready') finish(true);
-                            else if (event.data?.type === 'title-showcase-failed') finish(false);
-                        };
-                        window.addEventListener('message', receive);
-                        signal.addEventListener('abort', abort, { once: true });
-                    }),
+                scene: { kind: 'title', onError: fail },
             });
             this.titleBattleMount = mount;
-            this.titleBattleFrame = mount.frame;
-            const ready = await mount.ready;
-            if (!ready || this.titleBattleFailed) {
-                mount.dispose();
-                this.titleBattleFrame = null;
-            } else this.titleBattleReady = true;
+            if ((await mount.ready) && this.titleBattleMount === mount) {
+                host.dataset.ready = 'true';
+                this.syncTitleBattle?.();
+            }
         } catch (error) {
-            this.titleBattleFailed = true;
-            this.titleBattleFrame = null;
-            console.error(error);
+            fail(error);
         }
-        this.syncTitleBattle?.();
     }
     static installTitleBattle() {
         const LOBBY = this.$('lobby');
@@ -337,27 +320,12 @@ export class LaunchScreens {
                 !document.body.classList.contains('boot-loading') &&
                 !LOBBY.classList.contains('hidden') &&
                 !MOTION.matches;
-            if (active && !this.titleBattleFrame && !this.titleBattleFailed) {
+            if (active && !this.titleBattleMount && !this.titleBattleFailed)
                 void this.prepareTitleBattle();
-            }
-            this.titleBattleFrame?.contentWindow?.postMessage(
-                { type: 'title-showcase-active', active },
-                location.origin,
-            );
+            this.titleBattleMount?.setActive(active);
+            this.cardDetail?.syncPlayback?.();
         };
         this.syncTitleBattle = sync;
-        window.addEventListener('message', (event) => {
-            if (
-                this.titleBattleReady &&
-                event.origin === location.origin &&
-                event.source === this.titleBattleFrame?.contentWindow &&
-                event.data?.type === 'title-showcase-failed'
-            ) {
-                this.titleBattleMount?.dispose();
-                this.titleBattleFrame = null;
-                this.titleBattleFailed = true;
-            }
-        });
         new MutationObserver(sync).observe(LOBBY, { attributes: true, attributeFilter: ['class'] });
         new MutationObserver(sync).observe(document.body, {
             attributes: true,
@@ -383,7 +351,7 @@ export class LaunchScreens {
     static renderCardDetail(type, host = this.$('cardDetail')) {
         if (this.cardDetail?.type === type && this.cardDetail.host === host)
             return this.cardDetail.close;
-        this.closeCardDetail();
+        this.closeCardDetail(false);
         const A = this.actions,
             STATS = A.grainStats(type),
             COPY = this.grainInfo(type);
@@ -416,77 +384,52 @@ export class LaunchScreens {
                 },
             );
             panel.append(play);
+            this.syncTitleBattle?.();
         } else void this.startUnitShowcase(detail, panel, motion, false);
         return detail.close;
     }
 
     static async startUnitShowcase(detail, panel, motion, manual) {
+        if (this.cardDetail !== detail) return;
         delete panel.dataset.static;
-        panel.innerHTML = '<p role="status">소개를 불러오는 중이에요.</p>';
-        const fail = () => {
-            if (this.cardDetail !== detail) return;
-            detail.mount?.dispose();
+        panel.innerHTML = '<p role="status">소개를 준비하고 있어요.</p>';
+        let mount;
+        const fail = (error) => {
+            if (this.cardDetail !== detail || (mount && detail.mount !== mount)) return;
             detail.mount = null;
+            detail.syncPlayback = null;
+            mount?.dispose();
+            delete panel.dataset.ready;
             panel.dataset.static = 'true';
             panel.innerHTML = '<p role="status">소개를 불러오지 못했어요.</p>';
+            console.error(error);
             this.syncTitleBattle?.();
         };
         try {
-            const mount = this.mountScenarioFrame({
+            this.closeTitleBattle();
+            mount = this.showcaseSurface.mount({
                 container: panel,
-                src: `./index.html?unitShowcase=${encodeURIComponent(detail.type)}`,
-                configure: (frame) => {
-                    frame.title = `${this.actions.grainName(detail.type)} 소개`;
-                    frame.tabIndex = -1;
-                },
-                prepare: ({ frame, signal }) =>
-                    new Promise((resolve) => {
-                        const sync = () => {
-                            if (panel.dataset.ready !== 'true') return;
-                            frame.contentWindow?.postMessage(
-                                {
-                                    type: 'unit-showcase-active',
-                                    active: !document.hidden && (manual || !motion.matches),
-                                },
-                                location.origin,
-                            );
-                        };
-                        window.addEventListener(
-                            'message',
-                            (event) => {
-                                if (
-                                    event.origin !== location.origin ||
-                                    event.source !== frame.contentWindow
-                                )
-                                    return;
-                                if (event.data?.type === 'unit-showcase-ready') {
-                                    panel.dataset.ready = 'true';
-                                    panel.querySelector('p')?.remove();
-                                    sync();
-                                    resolve();
-                                } else if (event.data?.type === 'unit-showcase-failed') fail();
-                            },
-                            { signal },
-                        );
-                        document.addEventListener('visibilitychange', sync, { signal });
-                        motion.addEventListener('change', sync, { signal });
-                    }),
+                scene: { kind: 'unit', unitType: detail.type, onError: fail },
             });
             detail.mount = mount;
-            this.syncTitleBattle?.();
-            await mount.ready;
+            detail.syncPlayback = () =>
+                mount.setActive(!document.hidden && (manual || !motion.matches));
+            detail.syncPlayback();
+            if ((await mount.ready) && this.cardDetail === detail && detail.mount === mount) {
+                panel.dataset.ready = 'true';
+                panel.querySelector('p')?.remove();
+            }
         } catch (error) {
-            console.error(error);
-            fail();
+            fail(error);
         }
     }
 
-    static closeCardDetail() {
+    static closeCardDetail(resumeTitle = true) {
         const detail = this.cardDetail;
         if (!detail) return;
         this.cardDetail = null;
         detail.mount?.dispose();
-        this.syncTitleBattle?.();
+        if (resumeTitle) this.syncTitleBattle?.();
     }
 
     static landingLabel(type) {

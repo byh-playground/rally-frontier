@@ -84,7 +84,6 @@ const {
 
 // The Worker realm has no window; GameKit modules must still see it as non-browser.
 const window = globalThis;
-const SHOWCASE_MODE = SIM_WORKER ? null : document.documentElement.dataset.showcase;
 
 /* =========================
    5. WebGL renderer + fog
@@ -1587,8 +1586,16 @@ class GLRenderer {
         min: -0.94,
         max: 0.94,
     });
-    constructor(canvas, { deferLoop = false } = {}) {
+    constructor(
+        canvas,
+        {
+            deferLoop = false,
+            showcase = false,
+            fxCanvas = document.getElementById('fxCanvas'),
+        } = {},
+    ) {
         this.canvas = canvas;
+        this.showcase = showcase;
         // HAS-A immutable topology cache. Unit positions/state stay dynamic; only reusable
         // polygon/circle/petal topology is shared across every instance and frame.
         this.geometryTemplates = SHARED_GEOMETRY_TEMPLATES;
@@ -1801,7 +1808,7 @@ class GLRenderer {
 
         // 전투/경제 숫자는 WebGL과 별개의 투명 Canvas2D에 그린다.
         // 이미지/폰트 리소스를 추가하지 않고 브라우저 기본 폰트만 사용한다.
-        this.fxCanvas = document.getElementById('fxCanvas');
+        this.fxCanvas = fxCanvas;
         this.fxCtx = this.fxCanvas?.getContext('2d') || null;
         this.floatFx = [];
 
@@ -4098,8 +4105,10 @@ class GLRenderer {
         this.floatFx.length = write;
 
         // Keep selection and the current firing order readable over explosions.
-        this.drawSelectedBuildingOverlay();
-        this.drawLaunchAimOrder();
+        if (!this.showcase) {
+            this.drawSelectedBuildingOverlay();
+            this.drawLaunchAimOrder();
+        }
     }
 
     drawLaunchAimOrder() {
@@ -7094,7 +7103,7 @@ class GLRenderer {
     loop() {
         try {
             // The parent can hide a showcase iframe before its pause message arrives.
-            if (SHOWCASE_MODE && !this.hasDisplayArea()) {
+            if (this.showcase && !this.hasDisplayArea()) {
                 this.loopFrame = requestAnimationFrame(this.loop);
                 return;
             }
@@ -7103,12 +7112,13 @@ class GLRenderer {
             this.resize();
             // DOM viewport synchronization is once per frame, not once per terrain/Fog vertex.
             // All math still uses the shared camera; input and standalone passes refresh on demand.
-            LaunchPresentation.followAim(this);
+            if (!this.showcase) LaunchPresentation.followAim(this);
             this._frameCamera = this.stableCamera();
 
             // Result/lobby UI owns the screen after a match ends. Do not continue sampling
             // presentation state from an ended match (especially the delayed sample buffer).
             if (
+                !this.showcase &&
                 UiRuntimeState.value.screen !== 'game' &&
                 UiRuntimeState.value.screen !== 'replay'
             ) {
@@ -7158,10 +7168,12 @@ class GLRenderer {
                 this.renderMilletParticles();
             });
             this.passProfiler.measure('shadow', () => this.renderShadowPass(visibleUnits));
-            this.passProfiler.measure('overlay', () => this.renderOverlayPass());
+            if (!this.showcase)
+                this.passProfiler.measure('overlay', () => this.renderOverlayPass());
             this.passProfiler.measure('ui-fx', () => this.renderUiFxPass());
             this.passProfiler.measure('camera-compose', () => this.renderCameraShakePass());
-            this.passProfiler.measure('minimap', () => this.renderMinimapPass());
+            if (!this.showcase)
+                this.passProfiler.measure('minimap', () => this.renderMinimapPass());
 
             const vectorStats = this.vectorContext.stats().mesh;
             rp.vectorAssetDraws = this.vectorAssetDrawnInstances;
@@ -7210,6 +7222,11 @@ class GLRenderer {
             }
             this.loopFrame = requestAnimationFrame(this.loop);
         } catch (err) {
+            if (this.showcase) {
+                this.stopLoop();
+                this.onShowcaseError?.(err);
+                return;
+            }
             this.reportRenderFatal(err);
             // Do not permanently kill requestAnimationFrame. Entity-level failures are isolated
             // above; a remaining frame-level failure keeps the diagnostic visible and retries so
@@ -9128,6 +9145,84 @@ function createPresentationView(owner, getRenderer, { hud = true, audio = true }
         },
         stop(clock) {
             if (clock) clock.expired = true;
+        },
+    };
+}
+
+function createShowcaseSurface() {
+    const element = document.createElement('div');
+    element.className = 'launch-showcase-surface';
+    element.setAttribute('aria-hidden', 'true');
+    const canvas = document.createElement('canvas');
+    const fxCanvas = document.createElement('canvas');
+    fxCanvas.className = 'fx-canvas';
+    element.append(canvas, fxCanvas);
+    // Both renderers consume the same loaded vector assets and decoded sprite canvases.
+    const renderer = new GLRenderer(canvas, { deferLoop: true, showcase: true, fxCanvas });
+    return {
+        element,
+        renderer,
+        dispose() {
+            renderer.stopLoop();
+            renderer.clearGrainActors();
+            for (const sprites of Object.values(renderer.spriteRenderers)) sprites.dispose();
+            for (const hold of renderer.gameResourceHolds || []) hold.release();
+            renderer.vectorContext.dispose();
+            renderer.device.dispose();
+        },
+    };
+}
+
+async function prepareShowcaseScene({ surface, scene, signal }) {
+    const { renderer } = surface;
+    const prepare =
+        scene.kind === 'title'
+            ? prepareTitleShowcase
+            : (await import('./ui/unit-showcase.js')).prepareUnitShowcase;
+    signal.throwIfAborted();
+    const owner = {};
+    surface.sceneOwner = owner;
+    const ownsRenderer = () => surface.sceneOwner === owner;
+    renderer.prepareGameResources();
+    renderer.resize();
+    // A new scene owns its snapshots and effects, while the prepared art remains resident.
+    renderer.snapshot = null;
+    renderer.unitFacingStates.clear();
+    renderer.projectileTrails.clear();
+    renderer.projectileScreenMotionStates.clear();
+    renderer.bundleBreakIds.clear();
+    renderer.attackVariantBreathFx.length = 0;
+    const onError = (error) => {
+        if (!ownsRenderer()) return;
+        console.error(error);
+        scene.onError?.(error);
+    };
+    const scenario = await prepare({
+        renderer,
+        createScenario: RallyGamekit.createScenario,
+        createPresentationView,
+        unitType: scene.unitType,
+        signal,
+        onError,
+    });
+    return {
+        play() {
+            if (!ownsRenderer()) return;
+            renderer.onShowcaseError = onError;
+            renderer.setSnapshot({ ...renderer.snapshot, events: [] }, { snapTargets: true });
+            renderer.startLoop();
+            scenario.play();
+        },
+        pause() {
+            scenario.pause();
+            if (ownsRenderer()) renderer.stopLoop();
+        },
+        dispose() {
+            scenario.dispose();
+            if (!ownsRenderer()) return;
+            surface.sceneOwner = null;
+            renderer.stopLoop();
+            renderer.onShowcaseError = null;
         },
     };
 }
@@ -11986,81 +12081,19 @@ if (!SIM_WORKER) AppLifecycle.requestScreenWakeLock();
             requestAnimationFrame(frame);
         }
     }
-    if (!SHOWCASE_MODE) requestAnimationFrame(frame);
+    requestAnimationFrame(frame);
 })();
 
 // Deployment metadata is optional diagnostics. Its fetch never gates game startup.
 
-if (!SHOWCASE_MODE) {
-    BuildMetadataPresentation.renderBuildMetadata();
-    void BUILD_META.load().then(() => BuildMetadataPresentation.renderBuildMetadata());
-}
+BuildMetadataPresentation.renderBuildMetadata();
+void BUILD_META.load().then(() => BuildMetadataPresentation.renderBuildMetadata());
 
 if (UiRegistry.refs.bootRetryBtn)
     UiController.bindImmediateButton(UiRegistry.refs.bootRetryBtn, AppLifecycle.runBootAndStartApp);
 // The Worker realm hosts only a simulation session; the page boots the app.
 if (SIM_WORKER) SimWorkerHost.install();
-else if (SHOWCASE_MODE) {
-    void (async () => {
-        UiController.setUiScreen('game');
-        const renderer = new GLRenderer(UiRegistry.refs.canvas, { deferLoop: true });
-        renderer.prepareGameResources();
-        renderer.resize();
-        const options = {
-            renderer,
-            createScenario: RallyGamekit.createScenario,
-            createPresentationView,
-        };
-        const unitType = document.documentElement.dataset.showcaseUnit;
-        if (SHOWCASE_MODE === 'unit' && !LaunchRules.grain(unitType))
-            throw new Error('소개할 수 없는 병종입니다.');
-        const scenario =
-            SHOWCASE_MODE === 'unit'
-                ? await (
-                      await import('./ui/unit-showcase.js')
-                  ).prepareUnitShowcase({ ...options, unitType })
-                : await prepareTitleShowcase(options);
-        renderer.startLoop();
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        renderer.stopLoop();
-        let requested = false;
-        const sync = () => {
-            if (requested && !document.hidden) {
-                // Rebase the delayed presentation clock after the loading gate or a pause.
-                // Rebase the existing pose without replaying its already-consumed event batch.
-                renderer.setSnapshot({ ...renderer.snapshot, events: [] }, { snapTargets: true });
-                renderer.startLoop();
-                scenario.play();
-            } else {
-                scenario.pause();
-                renderer.stopLoop();
-            }
-        };
-        addEventListener('message', (event) => {
-            if (
-                event.origin !== location.origin ||
-                event.source !== parent ||
-                event.data?.type !== `${SHOWCASE_MODE}-showcase-active`
-            )
-                return;
-            requested = !!event.data.active;
-            sync();
-        });
-        addEventListener('visibilitychange', sync);
-        addEventListener(
-            'pagehide',
-            () => {
-                scenario.dispose();
-                renderer.stopLoop();
-            },
-            { once: true },
-        );
-        parent.postMessage({ type: `${SHOWCASE_MODE}-showcase-ready` }, location.origin);
-    })().catch((error) => {
-        console.error(error);
-        parent.postMessage({ type: `${SHOWCASE_MODE}-showcase-failed` }, location.origin);
-    });
-} else {
+else {
     AppLifecycle.runBootAndStartApp();
     const dev = readDevQuery(location.search);
     if (dev.tps) UiController.setStartSimulationTps(dev.tps);
@@ -12079,9 +12112,16 @@ else if (SHOWCASE_MODE) {
         renderDetails: (type, host) => LaunchScreens.renderCardDetail(type, host),
         portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
     });
+    const showcaseSurface = RallyGamekit.createScenarioSurface({
+        createSurface: createShowcaseSurface,
+        prepare: prepareShowcaseScene,
+    });
+    addEventListener('pagehide', (event) => {
+        if (!event.persisted) showcaseSurface.dispose();
+    });
     LaunchScreens.install({
         createNavigation: RallyGamekit.createNavigation,
-        mountScenarioFrame: RallyGamekit.mountScenarioFrame,
+        showcaseSurface,
         actions: {
             campaignProgress: () => {
                 try {

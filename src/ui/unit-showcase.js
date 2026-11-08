@@ -64,6 +64,7 @@ export function prepareUnitShowcase({
     createScenario,
     createPresentationView,
     unitType,
+    onError,
 }) {
     if (!LaunchRules.grain(unitType)) throw new Error('알 수 없는 병종 소개 장면입니다.');
     const { sim, x, y } = createArena(unitType);
@@ -166,8 +167,7 @@ export function prepareUnitShowcase({
                         } catch (error) {
                             dispose();
                             renderer.stopLoop();
-                            console.error(error);
-                            parent.postMessage({ type: 'unit-showcase-failed' }, location.origin);
+                            onError?.(error);
                         }
                     },
                     render(frame) {
