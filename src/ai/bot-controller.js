@@ -177,11 +177,19 @@ class BotController {
             this.commandExecutor.reconcile(snapshot);
             return;
         }
+        const tps = snapshot.tps || SIM_TPS;
+        const pacing = this.side === 1 ? this.session.sim?.rules?.campaign?.enemyPacing : null;
+        if (
+            pacing &&
+            snapshot.tick < SimulationTiming.msToTicks(pacing.firstDecisionMs, tps, { min: 0 })
+        )
+            return;
+
         const state = this.commandExecutor.begin(snapshot);
         try {
             if (
                 state.tick - this.lastLaunchTick >=
-                SimulationTiming.msToTicks(1200, state.tps || SIM_TPS)
+                SimulationTiming.msToTicks(pacing?.decisionIntervalMs ?? 1200, tps)
             ) {
                 this.lastLaunchTick = state.tick;
                 this.runLaunch(state);

@@ -9,6 +9,7 @@ import {
     RIVER_PATH,
 } from './map-geometry.js';
 import { LANE_CONTROL_POINTS } from '../definitions/combat-rules.js';
+import { campaignMapLayout } from '../definitions/campaign-map.js';
 import { UNIT_RUNTIME_GEOMETRY } from '../definitions/units.js';
 import { WorldContext } from './world-context.js';
 import { TerrainNavigation } from './navigation.js';
@@ -223,7 +224,7 @@ class FrontierTerrainLayout {
         return { laneControlPoints: { top, mid, bot }, capturePoints };
     }
     static lanes(ctx) {
-        const layout = ctx.rules.campaign ? this.campaignLanes(ctx) : this.contestedLanes(ctx);
+        const layout = this.contestedLanes(ctx);
         return {
             ...layout,
             laneNormals: {
@@ -232,55 +233,6 @@ class FrontierTerrainLayout {
                 bot: { x: ctx.nx, y: ctx.ny },
             },
         };
-    }
-    static campaignLanes(ctx) {
-        const w = ctx.width,
-            h = ctx.height,
-            p = (x, y) => ({ x: Math.round(x * w), y: Math.round(y * h) }),
-            mirror = (q) => ({ x: w - q.x, y: h - q.y });
-        // Corner rooms are connected by two outer routes and the central battlefield.
-        const top = [
-            ctx.host,
-            p(0.135, 0.76),
-            p(0.135, 0.69),
-            p(0.13, 0.57),
-            p(0.12, 0.42),
-            p(0.17, 0.275),
-            p(0.27, 0.16),
-            p(0.43, 0.13),
-            p(0.61, 0.135),
-            p(0.735, 0.14),
-            ctx.guest,
-        ];
-        const bot = top.slice().reverse().map(mirror),
-            mid = [
-                ctx.host,
-                p(0.2, 0.8),
-                p(0.3, 0.72),
-                p(0.35, 0.65),
-                p(0.5, 0.5),
-                p(0.65, 0.35),
-                p(0.72, 0.3),
-                p(0.8, 0.2),
-                ctx.guest,
-            ];
-        const capturePoints = [
-            ['top', 1, 0.13, 0.75],
-            ['top', 2, 0.43, 0.13],
-            ['mid', 1, 0.35, 0.89],
-            ['mid', 2, 0.65, 0.11],
-            ['bot', 1, 0.57, 0.87],
-            ['bot', 2, 0.87, 0.25],
-        ].map(([id, stage, x, y]) => ({
-            id: id + '-' + stage,
-            lane: id.toUpperCase(),
-            laneKey: id,
-            label: id.toUpperCase() + ' ' + stage,
-            stage,
-            resourceType: id === 'mid' ? 'premium' : 'basic',
-            ...p(x, y),
-        }));
-        return { laneControlPoints: { top, mid, bot }, capturePoints };
     }
     static safety(map) {
         const geometry = TerrainGeometry.fromMap(map),
@@ -952,12 +904,20 @@ class MapGeneration {
         };
         return best;
     }
+    static fixedCampaignMapDescriptor(rules, baseSeed, roundNumber) {
+        return {
+            schemaVersion: MAP_DESCRIPTOR_SCHEMA_VERSION,
+            generatorVersion: 1,
+            seed: MapGeneration.mapRuleSeed(baseSeed, rules, roundNumber),
+            ...campaignMapLayout(rules.campaign),
+        };
+    }
     static generateMapDescriptor({
         rules = GameRuleDefinition.current,
         seed = 0,
         roundNumber = 1,
     } = {}) {
-        const id = rules?.map?.generator || 'fixed-standard';
+        const id = rules?.campaign ? 'fixed-campaign' : rules?.map?.generator || 'fixed-standard';
         const key = JSON.stringify([id, seed >>> 0, roundNumber || 1, rules]);
         if (this.descriptorCache?.key === key) return this.descriptorCache.descriptor;
         const generator = MAP_GENERATORS[id] || MAP_GENERATORS['fixed-standard'];
@@ -1089,6 +1049,7 @@ class MapGeneration {
 
 const MAP_GENERATORS = {
     'fixed-standard': MapGeneration.fixedStandardMapDescriptor,
+    'fixed-campaign': MapGeneration.fixedCampaignMapDescriptor,
     'procedural-frontier': MapGeneration.proceduralFrontierMapDescriptor,
 };
 
