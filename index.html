@@ -147,6 +147,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   강화해 확보할 수 있는 측면 기름 거점을 하나 둔다.
   캠페인의 적 출격 판단 시작 시점과 간격은 스테이지 설정을 따른다.
   스테이지별 도입 병력과 경제 설정을 적용한다. 방어선 돌파는 플레이어 본진의 식량 생산률을 낮춘다.
+  캠페인 양측의 덱은 스테이지 설정을 따른다. 보상 병종은 적으로 먼저 등장하며 첫 클리어 뒤 대전 덱에 장착할 수 있다.
 - 출격한 영웅은 스킬을 하나 예약할 수 있다. 행동 가능 상태, 식량, 유효 적 표적을 모두 확보한
   첫 전투 틱에 발동·차감한다. 대기 중 일반 이동과 공격은 가능하며 출격이 끝나면 예약은 사라진다.
 - 팝콘은 팥의 도약 이동을 사용하되 정점 높이는 약 절반이다. 착지하면 자폭 한 번을 처리하고,
@@ -983,6 +984,18 @@ END OF DEVELOPMENT CONTRACT
             <div class="result-card">
                 <p id="resultText" class="result-why"></p>
                 <h2 id="resultTitle">승리</h2>
+                <section id="resultCampaignReward" class="result-campaign-reward" hidden>
+                    <img id="resultRewardPortrait" alt="" />
+                    <div>
+                        <strong id="resultRewardText"></strong>
+                        <button id="resultDeckBtn" class="launch-btn secondary" type="button">
+                            덱에 넣기
+                        </button>
+                    </div>
+                </section>
+                <button id="resultNextCampaignBtn" class="launch-btn primary" type="button" hidden>
+                    다음 전투
+                </button>
                 <div id="resultStats" class="launch-stats"></div>
                 <section
                     id="resultByUnit"
@@ -1063,7 +1076,10 @@ END OF DEVELOPMENT CONTRACT
                 <div class="help-guide">
                     <section class="help-rule">
                         <h3>목표와 조작</h3>
-                        <p>덱에서 병사를 골라 출전하고, 적 본진을 부수면 승리해요.</p>
+                        <p>
+                            덱에서 병사를 골라 출전하고, 적 본진을 부수면 승리해요. 잠긴 병종은
+                            캠페인에서 처음 이기면 대전 덱에 넣을 수 있어요.
+                        </p>
                         <details>
                             <summary>화면 이동과 무승부</summary>
                             <p>

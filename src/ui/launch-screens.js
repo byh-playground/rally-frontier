@@ -192,18 +192,25 @@ export class LaunchScreens {
             else this.go('play');
         };
         $('campaignBtn').onclick = () => {
-            const progress = A.campaignProgress();
+            const progress = A.campaignProgress;
+            progress.sync();
             $('campaignStages').replaceChildren();
             CAMPAIGN_STAGES.forEach((stage, index) => {
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = 'launch-btn secondary campaign-stage';
-                button.disabled = index > progress;
+                button.disabled = !progress.canStart(stage);
                 const title = document.createElement('b');
                 title.textContent = `${index + 1}. ${stage.title}`;
                 const status = document.createElement('span');
                 status.className = 'campaign-stage-status';
-                status.textContent = button.disabled ? '잠김' : index < progress ? '완료' : '';
+                const stageStatus = button.disabled
+                    ? '잠김'
+                    : progress.isComplete(stage)
+                      ? '완료'
+                      : '';
+                const reward = stage.rewardCard ? `보상 ${A.grainName(stage.rewardCard)}` : '';
+                status.textContent = [stageStatus, reward].filter(Boolean).join(' · ');
                 const description = document.createElement('small');
                 description.textContent = stage.briefing;
                 button.append(title, status, description);
@@ -267,6 +274,26 @@ export class LaunchScreens {
             true,
         );
         $('resultTitleBtn').onclick = () => A.leaveToTitle();
+        $('resultDeckBtn').onclick = () => A.openRewardDeck(this.resultReward);
+        $('resultNextCampaignBtn').onclick = () => A.startCampaignStage(this.resultNextStage);
+    }
+    static renderCampaignResult(reward, nextStage) {
+        const $ = this.$;
+        this.resultReward = reward;
+        this.resultNextStage = nextStage;
+        $('resultCampaignReward').hidden = !reward;
+        $('resultNextCampaignBtn').hidden = !nextStage;
+        $('rematchBtn').hidden = !!nextStage;
+        if (!reward) return;
+        $('resultRewardText').textContent = `${this.actions.grainName(reward)} 카드를 얻었어요`;
+        const portrait = $('resultRewardPortrait');
+        portrait.removeAttribute('src');
+        this.actions.portraitSource(reward).then(
+            (src) => {
+                if (this.resultReward === reward) portrait.src = src;
+            },
+            () => {},
+        );
     }
     static closeSheet() {
         const ROUTE = this.navigation.snapshot();

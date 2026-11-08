@@ -221,11 +221,6 @@ class LaunchRules {
     static isHeroType(type) {
         return this.heroTypes.includes(type);
     }
-    static withDefaultHero(deck) {
-        const types = this.normalizeDeck(deck);
-        if (types.some((type) => this.isHeroType(type))) return types;
-        return [this.heroCard, ...types.slice(0, this.deckLimit - 1)];
-    }
     static normalizeDeck(deck) {
         if (
             !Array.isArray(deck) ||
