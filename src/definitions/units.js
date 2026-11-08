@@ -188,6 +188,7 @@ class UnitDefinition {
                 activeMs: 1000,
                 recoverMs: DEFAULT_MELEE_MOVE_RECOVERY_MS,
                 pulseMs: 200,
+                maxUnitHitsPerPulse: 3,
                 knockbackSpeed: 400,
                 knockbackLift: 300,
                 tangentRatio: 0.5,

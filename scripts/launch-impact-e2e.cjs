@@ -628,9 +628,13 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
             {
                 const { sim, x, y } = arena();
                 const acorn = sim.spawnUnit(0, 'acorn', x, y);
-                const near = defender(sim, x + 54, y);
-                const second = defender(sim, x, y - 58);
-                for (const target of [near, second]) target.combat.cooldownUntil = sim.tps * 2;
+                const targets = [
+                    defender(sim, x + 45, y),
+                    defender(sim, x - 52, y),
+                    defender(sim, x, y - 58),
+                    defender(sim, x, y + 64),
+                ];
+                for (const target of targets) target.combat.cooldownUntil = sim.tps * 2;
                 let pulse;
                 for (let i = 0; !pulse && i < sim.tps; i++) {
                     sim.stepSimulation();
@@ -638,17 +642,23 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                         (event) => event.type === 'spinPulse' && event.sourceId === acorn.id,
                     );
                 }
+                const damage = targets.map((target) => target.maxHp - target.hp);
+                const knockback = targets.map(
+                    (target) => target.impactMotion?.kind === 'knockback',
+                );
                 check(
-                    pulse?.hits === 1 &&
-                        near.maxHp - near.hp + second.maxHp - second.hp === 13 &&
+                    pulse?.hits === 3 &&
+                        damage.join(',') === '13,13,13,0' &&
+                        knockback.join(',') === 'true,true,true,false' &&
                         sim.unitRadius('acorn') === 2 * sim.unitRadius('rice'),
-                    'smaller acorn keeps its single-target spin damage and twice-rice collision radius',
-                    { pulse, near: near.hp, second: second.hp },
+                    'acorn spin damages and pushes the three nearest targets only',
+                    { pulse, damage, knockback },
                 );
                 rows.push({
-                    scenario: 'twice-rice acorn retains single-target spin damage',
+                    scenario: 'acorn spin knocks back at most three enemies per pulse',
                     tick: sim.tick,
-                    hits: pulse.hits,
+                    damage,
+                    knockback,
                 });
             }
             function clearOfTerrain(sim, units) {
