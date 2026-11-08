@@ -913,7 +913,7 @@ class TerrainPresentation {
             r.begin();
         }
     }
-    static drawBridges(r, terrain, restoreDepthWrite = null) {
+    static drawBridges(r, restoreDepthWrite = null) {
         const sc = r.sc(),
             previous = r._renderDepth,
             depthWrite = restoreDepthWrite ?? r.passState.depthWrite;
@@ -921,53 +921,37 @@ class TerrainPresentation {
         r.begin();
         try {
             // 다리: 실제 lane×river crossing descriptor를 그대로 사용. 다리 footprint는 평지 판정이다.
-            for (const br of terrain.bridges || [])
-                r.withWorldSpriteDepth({ x: br.x, y: 0, z: br.y }, () => {
-                    const c = r.worldToPx(r.viewX(br.x), r.viewY(br.y));
-                    const a =
-                        (Number(br.angle) || 0) + (r.orientationRole() === 'guest' ? Math.PI : 0);
-                    const ca = Math.cos(a),
-                        sa = Math.sin(a),
-                        hl = (br.halfLength || 80) * sc,
-                        hw = (br.halfWidth || 30) * sc;
-                    const corners = [
-                        [-hl, -hw],
-                        [hl, -hw],
-                        [hl, hw],
-                        [-hl, hw],
-                    ].map(([lx, ly]) => [c[0] + lx * ca - ly * sa, c[1] + lx * sa + ly * ca]);
+            for (const br of r.world.terrain.surfaces.bridges) {
+                const deck = { x: br.x, y: br.elevation, z: br.y, groundY: 0, bridgeId: br.id };
+                r.withWorldSpriteDepth(deck, () => {
+                    const corners = br.points.map(({ x, y }) => {
+                        const point = r.projectRenderWorldPosition({ ...deck, x, z: y });
+                        return [point.x, point.y];
+                    });
                     r.poly(corners, [0.58, 0.45, 0.28, 1]);
-                    // simple plank/stone bands so the crossing reads at combat zoom.
+                    // Interpolation of projected deck edges preserves the affine ground projection.
+                    const [a, b, c, d] = corners;
                     for (let i = -2; i <= 2; i++) {
-                        const t = i / 2.5,
-                            px = c[0] + ca * hl * t,
-                            py = c[1] + sa * hl * t;
+                        const t = 0.5 + i / 5;
+                        const x0 = a[0] + (b[0] - a[0]) * t;
+                        const y0 = a[1] + (b[1] - a[1]) * t;
+                        const x1 = d[0] + (c[0] - d[0]) * t;
+                        const y1 = d[1] + (c[1] - d[1]) * t;
+                        const dx = (x1 - x0) * 0.04;
+                        const dy = (y1 - y0) * 0.04;
                         r.line(
-                            px - sa * hw * 0.92,
-                            py + ca * hw * 0.92,
-                            px + sa * hw * 0.92,
-                            py - ca * hw * 0.92,
+                            x0 + dx,
+                            y0 + dy,
+                            x1 - dx,
+                            y1 - dy,
                             Math.max(1, 1.4 * sc),
                             [0.76, 0.64, 0.42, 0.5],
                         );
                     }
-                    r.line(
-                        corners[0][0],
-                        corners[0][1],
-                        corners[1][0],
-                        corners[1][1],
-                        Math.max(1.2, 1.8 * sc),
-                        [0.34, 0.27, 0.18, 0.75],
-                    );
-                    r.line(
-                        corners[3][0],
-                        corners[3][1],
-                        corners[2][0],
-                        corners[2][1],
-                        Math.max(1.2, 1.8 * sc),
-                        [0.34, 0.27, 0.18, 0.75],
-                    );
+                    r.line(...a, ...b, Math.max(1.2, 1.8 * sc), [0.34, 0.27, 0.18, 0.75]);
+                    r.line(...d, ...c, Math.max(1.2, 1.8 * sc), [0.34, 0.27, 0.18, 0.75]);
                 });
+            }
             r.flush();
         } finally {
             r.passState.depthWrite = depthWrite;
@@ -1756,7 +1740,7 @@ class GLRenderer {
         this.replayOrientationRole = null;
         this.replayZoom = 1;
         this.cameraLeft = 0;
-        this.cameraTop = this.world.height - VIEW_H;
+        this.cameraTop = this.clampCameraTop(Infinity);
         this.attackVariantBreathFx = [];
         // Presentation-only facing: never enters StrategySim/checksum/export/recovery.
         this.unitFacingStates = new Map();
@@ -1819,6 +1803,7 @@ class GLRenderer {
         if (this.canvas.width !== w || this.canvas.height !== h) {
             this.canvas.width = w;
             this.canvas.height = h;
+            this.cameraTop = this.clampCameraTop(this.cameraTop);
         }
         if (this.fxCanvas && (this.fxCanvas.width !== w || this.fxCanvas.height !== h)) {
             this.fxCanvas.width = w;
@@ -1954,16 +1939,14 @@ class GLRenderer {
         return VIEW_W / (this.replayZoom || 1);
     }
     viewWorldH() {
-        return VIEW_H / (this.replayZoom || 1);
+        return this.canvas.height / this.sc();
     }
     clampCameraTop(top) {
         const atlas = this.world.terrain.surfaces,
-            min = -atlas.maxHeight * BattlefieldProjection.heightScale;
+            min = BattlefieldProjection.planarY(0, atlas.maxHeight);
         const max = Math.max(
             min,
-            this.world.height -
-                atlas.minHeight * BattlefieldProjection.heightScale -
-                this.viewWorldH(),
+            BattlefieldProjection.planarY(this.world.height, atlas.minHeight) - this.viewWorldH(),
         );
         return RangeUtil.clamp(top, min, max);
     }
@@ -2022,7 +2005,7 @@ class GLRenderer {
                     },
                     groundInto: (x, y, out, height = 0) => {
                         out.x = x;
-                        out.y = y + height * BattlefieldProjection.heightScale;
+                        out.y = BattlefieldProjection.viewYFromPlane(y, height);
                         out.z = height;
                         return out;
                     },
@@ -2033,7 +2016,7 @@ class GLRenderer {
         if (camera.width !== this.canvas.width || camera.height !== this.canvas.height)
             camera.setViewport({ width: this.canvas.width, height: this.canvas.height });
         const x = this.cameraLeft + this.viewWorldW() / 2,
-            y = this.cameraTop + this.canvas.height / sc / 2;
+            y = this.cameraTop + this.viewWorldH() / 2;
         if (camera.camera.x !== x || camera.camera.y !== y || camera.camera.zoom !== sc)
             camera.setCamera({ x, y, zoom: sc });
         return camera;
@@ -2181,22 +2164,39 @@ class GLRenderer {
             ny = ((dx / l) * w) / 2;
         this.quad(x1 + nx, y1 + ny, x2 + nx, y2 + ny, x2 - nx, y2 - ny, x1 - nx, y1 - ny, c);
     }
-    outlineCircle(x, y, r, w, c, segments = 56, dashEvery = 0) {
-        const pts = this.geometryTemplates.outlineCircle(segments);
+    drawGroundCircle(x, z, radius, { stroke, fill, width = 1, segments = 32, elevation = null }) {
+        const directions = this.geometryTemplates.outlineCircle(segments),
+            atlas = this.world.terrain.surfaces,
+            // Filled circles stay on a local plane so triangles never connect two floor heights.
+            plane = elevation ?? (fill ? atlas.heightAt(x, z) : null),
+            project = (wx, wz, height) => this.worldToPx(this.viewX(wx), this.viewY(wz), height),
+            center = fill ? project(x, z, plane) : null;
         this.geometryTemplateHits++;
-        for (let i = 0; i < segments; i++) {
-            if (dashEvery > 0 && i % dashEvery !== 0) continue;
-            const j = (i + 1) % segments,
-                i0 = i * 2,
-                i1 = j * 2;
-            this.line(
-                x + pts[i0] * r,
-                y + pts[i0 + 1] * r,
-                x + pts[i1] * r,
-                y + pts[i1 + 1] * r,
-                w,
-                c,
-            );
+        const sample = (i) => {
+            const wx = x + directions[i * 2] * radius,
+                wz = z + directions[i * 2 + 1] * radius;
+            if (plane !== null) return { x: wx, z: wz, height: plane, ramp: false };
+            if (wx < 0 || wz < 0 || wx > this.world.width || wz > this.world.height) return null;
+            const surface = atlas.sample(wx, wz);
+            return { x: wx, z: wz, height: surface.elevation, ramp: !!surface.ramp };
+        };
+        let previous = sample(0),
+            previousProjected = plane === null ? null : project(previous.x, previous.z, plane);
+        for (let i = 1; i <= segments; i++) {
+            const next = sample(i % segments);
+            // An outline can follow a ramp, but must not draw a diagonal through a cliff face.
+            if (
+                previous &&
+                next &&
+                (previous.height === next.height || previous.ramp || next.ramp)
+            ) {
+                const a = previousProjected ?? project(previous.x, previous.z, previous.height),
+                    b = project(next.x, next.z, next.height);
+                if (fill) this.tri(center[0], center[1], a[0], a[1], b[0], b[1], fill);
+                if (stroke) this.line(a[0], a[1], b[0], b[1], width, stroke);
+                if (plane !== null) previousProjected = b;
+            }
+            previous = next;
         }
     }
     drawBatch(pipeline, buffer, first, count, uniforms, textures = []) {
@@ -2522,7 +2522,7 @@ class GLRenderer {
         if (UnitVisualDefinition.get(u.type)?.billboard) {
             const team = UnitFactionPalette.get(this.factionRelation(u.side)).body,
                 rx = r * 1.05 * shrink,
-                ry = r * 0.42 * shrink,
+                ry = rx * BattlefieldProjection.groundScale,
                 C = this.vectorContext,
                 m = this.grainTeamRingMatrix,
                 previousColor = C.forceColor,
@@ -2602,6 +2602,8 @@ class GLRenderer {
         }
         if (snapTargets || !old) this.resetFogTransition();
         this.world = WorldContext.forState(s);
+        if (!old || old.mapDescriptor?.seed !== s.mapDescriptor?.seed)
+            this.cameraTop = this.clampCameraTop(Infinity);
         this.snapshot = s;
         this.buildingArt.prune(s.buildings);
         // Aim/recoil is presentation-only. Never carry it across a map or backwards replay seek.
@@ -4022,8 +4024,6 @@ class GLRenderer {
         }
 
         for (const cp of this.snapshot.capturePoints || []) {
-            const [x, y] = this.worldToPx(this.viewX(cp.x), this.viewY(cp.y));
-            const rr = Math.max(20, CAPTURE_RADIUS * sc);
             const base =
                 cp.owner != null
                     ? this.factionColor(cp.owner, { alpha: 0.18 })
@@ -4031,18 +4031,16 @@ class GLRenderer {
                       ? [0.95, 0.73, 0.25, 0.16]
                       : [0.42, 0.47, 0.5, 0.1];
 
-            this.circle(x, y, rr, base, 32);
-            this.circle(
-                x,
-                y,
-                Math.max(8, 38 * sc),
-                cp.owner != null
-                    ? this.factionColor(cp.owner, { alpha: 0.55 })
-                    : cp.enabled
-                      ? [1, 0.78, 0.25, 0.48]
-                      : [0.55, 0.58, 0.6, 0.32],
-                16,
-            );
+            this.drawGroundCircle(cp.x, cp.y, CAPTURE_RADIUS, { fill: base });
+            this.drawGroundCircle(cp.x, cp.y, Math.max(8 / sc, 38), {
+                fill:
+                    cp.owner != null
+                        ? this.factionColor(cp.owner, { alpha: 0.55 })
+                        : cp.enabled
+                          ? [1, 0.78, 0.25, 0.48]
+                          : [0.55, 0.58, 0.6, 0.32],
+                segments: 16,
+            });
 
             const outpost = (this.snapshot.buildings || []).find(
                 (b) => b.id === cp.outpostId && b.alive !== false,
@@ -4052,13 +4050,10 @@ class GLRenderer {
                 (this.isFriendlySide(outpost.side) || this.visibleRaw(outpost.x, outpost.y))
             ) {
                 const ratio = ConstructionRules.progress(outpost.construction);
-                this.circle(
-                    x,
-                    y,
-                    Math.max(7, 30 * sc),
-                    this.factionColor(outpost.side, { alpha: 0.18 + ratio * 0.35 }),
-                    16,
-                );
+                this.drawGroundCircle(cp.x, cp.y, Math.max(7 / sc, 30), {
+                    fill: this.factionColor(outpost.side, { alpha: 0.18 + ratio * 0.35 }),
+                    segments: 16,
+                });
             }
         }
     }
@@ -4066,9 +4061,10 @@ class GLRenderer {
         // The underlay grid belongs to the level-zero world plane. Its height and
         // phase must never come from terrain sampled at a moving viewport edge.
         const step = 220,
-            sc = this.sc(),
-            vw = this.viewWorldW(),
-            vh = this.viewWorldH(),
+            topLeft = this.projectedCoordinatesAtScreen(0, 0),
+            bottomRight = this.projectedCoordinatesAtScreen(this.canvas.width, this.canvas.height),
+            topY = BattlefieldProjection.viewYFromPlane(topLeft.y),
+            bottomY = BattlefieldProjection.viewYFromPlane(bottomRight.y),
             guest = this.orientationRole() === 'guest',
             phaseX = guest ? this.world.width % step : 0,
             phaseY = guest ? this.world.height % step : 0,
@@ -4080,21 +4076,21 @@ class GLRenderer {
                     groundY: 0,
                 });
         for (
-            let y = Math.floor((this.cameraTop - phaseY) / step) * step + phaseY;
-            y <= this.cameraTop + vh + step;
+            let y = Math.floor((topY - phaseY) / step) * step + phaseY;
+            y <= bottomY + step;
             y += step
         ) {
-            const a = point(this.cameraLeft, y),
-                b = point(this.cameraLeft + vw, y);
+            const a = point(topLeft.x, y),
+                b = point(bottomRight.x, y);
             this.line(a.x, a.y, b.x, b.y, 1, [1, 1, 1, 0.035]);
         }
         for (
-            let x = Math.floor((this.cameraLeft - phaseX) / step) * step + phaseX;
-            x <= this.cameraLeft + vw + step;
+            let x = Math.floor((topLeft.x - phaseX) / step) * step + phaseX;
+            x <= bottomRight.x + step;
             x += step
         ) {
-            const a = point(x, this.cameraTop),
-                b = point(x, this.cameraTop + this.canvas.height / sc);
+            const a = point(x, topY),
+                b = point(x, bottomY);
             this.line(a.x, a.y, b.x, b.y, 1, [1, 1, 1, 0.03]);
         }
     }
@@ -4121,8 +4117,7 @@ class GLRenderer {
             { x: 2710, y: 3100, r: 520, c: [0.58, 0.69, 0.54, 0.48] },
             { x: 3020, y: 820, r: 450, c: [0.65, 0.72, 0.58, 0.4] },
         ]) {
-            const p = this.worldToPx(this.viewX(b.x), this.viewY(b.y));
-            this.circle(p[0], p[1], Math.max(90, b.r * sc), b.c, 28);
+            this.drawGroundCircle(b.x, b.y, b.r, { fill: b.c, elevation: 0, segments: 28 });
         }
 
         this.drawGroundGrid();
@@ -4156,7 +4151,7 @@ class GLRenderer {
         // renderGroundPass owns depth writes here; avoid GPU state readbacks between batches.
         TerrainPresentation.drawWorld(this, terrain, true);
         TerrainPresentation.drawRiverSurfaces(this, mapDesc, true);
-        TerrainPresentation.drawBridges(this, terrain, true);
+        TerrainPresentation.drawBridges(this, true);
     }
     drawConstructionScaffold(building) {
         const radius = BuildingDefinition.get(building.type).size,
@@ -4203,8 +4198,10 @@ class GLRenderer {
         // The art owns its base and flag. Selection follows the visual footprint, never the collision radius.
         const r = 40 * sc;
         if (own && this.selectedBuildingId === b.id) {
-            const rr = r * 1.28;
-            this.circle(x, y, rr, [0.25, 0.88, 0.57, 0.18], 24);
+            this.drawGroundCircle(b.x, b.y, 40 * 1.28, {
+                fill: [0.25, 0.88, 0.57, 0.18],
+                segments: 24,
+            });
             // 네 귀퉁이 선택 마커
             const m = Math.max(3, 7 * sc),
                 lw = Math.max(1.5, 2.5 * sc),
@@ -6217,7 +6214,6 @@ class GLRenderer {
                         z: ground.z + Math.sin(angle) * radius,
                         groundY: 0,
                     }),
-                p = this.projectRenderWorldPosition(ground),
                 fill = spec.arcSweep
                     ? [0.95, 0.48, 0.29, (0.07 + 0.12 * windupProgress ** 2) * fade]
                     : [
@@ -6237,29 +6233,12 @@ class GLRenderer {
                 Math.PI *
                 (spec.arcSweep ? 1 : 6);
             this.withWorldSpriteDepth(ground, () => {
-                // Same world-space reach as the collision query, projected onto the ground.
-                const segments = 32;
-                let previous = project(0);
-                for (let i = 1; i <= segments; i++) {
-                    const next = project((i * Math.PI * 2) / segments);
-                    this.v(p.x, p.y, fill);
-                    this.v(previous.x, previous.y, fill);
-                    this.v(next.x, next.y, fill);
-                    previous = next;
-                }
-                previous = project(0);
-                for (let i = 1; i <= segments; i++) {
-                    const next = project((i * Math.PI * 2) / segments);
-                    this.line(
-                        previous.x,
-                        previous.y,
-                        next.x,
-                        next.y,
-                        Math.max(1, 1.6 * this.sc()),
-                        edge,
-                    );
-                    previous = next;
-                }
+                this.drawGroundCircle(ground.x, ground.z, radius, {
+                    fill,
+                    stroke: edge,
+                    width: Math.max(1, 1.6 * this.sc()),
+                    elevation: ground.y,
+                });
                 if (!active) return;
                 for (let arc = 0; arc < 2; arc++) {
                     const length = spec.arcSweep ? Math.min(turns, Math.PI / 3) : Math.PI / 2;
@@ -6308,39 +6287,12 @@ class GLRenderer {
     }
     // Range is measured in simulation XY. Every contour point is projected from its own terrain height.
     drawLaunchRange(cannon, type, level, active = false) {
-        const reach = LaunchRules.maxReachOf(type, level),
-            segments = Math.max(64, Math.ceil((Math.PI * 2 * reach) / 48));
-        const directions = this.geometryTemplates.outlineCircle(segments),
-            color = active ? [1, 0.86, 0.36, 0.8] : [0.63, 0.84, 1, 0.24];
-        const width = Math.max(1, (active ? 2 : 1.2) * this.sc()),
-            atlas = this.world.terrain.surfaces;
-        for (let i = 0; i < segments; i++) {
-            const j = (i + 1) % segments,
-                x0 = cannon.x + directions[i * 2] * reach,
-                y0 = cannon.y + directions[i * 2 + 1] * reach,
-                x1 = cannon.x + directions[j * 2] * reach,
-                y1 = cannon.y + directions[j * 2 + 1] * reach;
-            if (
-                x0 < 0 ||
-                y0 < 0 ||
-                x0 > this.world.width ||
-                y0 > this.world.height ||
-                x1 < 0 ||
-                y1 < 0 ||
-                x1 > this.world.width ||
-                y1 > this.world.height
-            )
-                continue;
-            const surface0 = atlas.sample(x0, y0),
-                surface1 = atlas.sample(x1, y1),
-                h0 = surface0.elevation,
-                h1 = surface1.elevation;
-            // Do not draw a diagonal through a cliff face between two different floor heights.
-            if (!surface0.ramp && !surface1.ramp && h0 !== h1) continue;
-            const a = this.worldToPx(this.viewX(x0), this.viewY(y0), h0),
-                b = this.worldToPx(this.viewX(x1), this.viewY(y1), h1);
-            this.line(a[0], a[1], b[0], b[1], width, color);
-        }
+        const reach = LaunchRules.maxReachOf(type, level);
+        this.drawGroundCircle(cannon.x, cannon.y, reach, {
+            stroke: active ? [1, 0.86, 0.36, 0.8] : [0.63, 0.84, 1, 0.24],
+            width: Math.max(1, (active ? 2 : 1.2) * this.sc()),
+            segments: Math.max(64, Math.ceil((Math.PI * 2 * reach) / 48)),
+        });
     }
     drawLaunchOverlay() {
         const s = this.snapshot,
@@ -6378,23 +6330,17 @@ class GLRenderer {
                 continue;
             const wait = (Number(b.launchReadyTick) || 0) - s.tick;
             if (wait <= 0) continue;
-            const [x, y] = this.worldToPx(this.viewX(b.x), this.viewY(b.y)),
-                r = Math.max(18, ((BuildingDefinition.get(b.type)?.size || 40) + 10) * sc),
+            const radius = Math.max(18 / sc, (BuildingDefinition.get(b.type)?.size || 40) + 10),
                 hot = wait > reloadTicks;
-            this.outlineCircle(
-                x,
-                y,
-                r,
-                Math.max(2, 3 * sc),
-                hot
+            this.drawGroundCircle(b.x, b.y, radius, {
+                width: Math.max(2, 3 * sc),
+                stroke: hot
                     ? [1, 0.3, 0.2, 0.5 + 0.4 * (Math.floor(now / 160) % 2)]
                     : [0.92, 0.92, 0.92, 0.45],
-                32,
-            );
+            });
         }
         if (hold) {
-            const [cx, cy] = this.worldToPx(this.viewX(hold.cannonX), this.viewY(hold.cannonY)),
-                [ax, ay] = this.worldToPx(this.viewX(hold.aimX), this.viewY(hold.aimY));
+            const [cx, cy] = this.worldToPx(this.viewX(hold.cannonX), this.viewY(hold.cannonY));
             const held = now - hold.armedAt,
                 power = LaunchRules.power(held),
                 burnt = LaunchRules.overheated(held),
@@ -6418,17 +6364,16 @@ class GLRenderer {
                 const key = shot.x + ',' + shot.y;
                 if (seenAt.has(key)) continue;
                 seenAt.add(key);
-                const [sx, sy] = this.worldToPx(this.viewX(shot.x), this.viewY(shot.y)),
-                    ring = Math.max(14, shot.splash * sc);
-                this.outlineCircle(sx, sy, ring, w, color, 40);
-                this.outlineCircle(
-                    sx,
-                    sy,
-                    Math.max(6, ring * (1 - Math.SQRT1_2)),
-                    Math.max(1.5, 2 * sc),
-                    [color[0], color[1], color[2], 0.6],
-                    24,
-                );
+                this.drawGroundCircle(shot.x, shot.y, shot.splash, {
+                    stroke: color,
+                    width: w,
+                    segments: 40,
+                });
+                this.drawGroundCircle(shot.x, shot.y, shot.splash * (1 - Math.SQRT1_2), {
+                    stroke: [color[0], color[1], color[2], 0.6],
+                    width: Math.max(1.5, 2 * sc),
+                    segments: 24,
+                });
             }
             this.line(lx - 8, ly, lx + 8, ly, 2, color);
             this.line(lx, ly - 8, lx, ly + 8, 2, color);
@@ -6439,15 +6384,11 @@ class GLRenderer {
                     hold.lastPower * LaunchRules.chargeMs,
                     this.world,
                 );
-                const [px, py] = this.worldToPx(this.viewX(last.x), this.viewY(last.y));
-                this.outlineCircle(
-                    px,
-                    py,
-                    Math.max(8, 10 * sc),
-                    Math.max(1.5, 2 * sc),
-                    [1, 1, 1, 0.55],
-                    20,
-                );
+                this.drawGroundCircle(last.x, last.y, Math.max(8 / sc, 10), {
+                    stroke: [1, 1, 1, 0.55],
+                    width: Math.max(1.5, 2 * sc),
+                    segments: 20,
+                });
             }
         }
         const W = this.canvas.width,
@@ -6460,14 +6401,10 @@ class GLRenderer {
                 col = [1, 0.9, 0.5, alpha];
             const [x, y] = this.worldToPx(this.viewX(m.x), this.viewY(m.y));
             if (x >= 0 && x <= W && y >= 0 && y <= H) {
-                this.outlineCircle(
-                    x,
-                    y,
-                    Math.max(14, (30 + 40 * age) * sc),
-                    Math.max(2, 3 * sc),
-                    col,
-                    32,
-                );
+                this.drawGroundCircle(m.x, m.y, Math.max(14 / sc, 30 + 40 * age), {
+                    stroke: col,
+                    width: Math.max(2, 3 * sc),
+                });
                 this.line(x - 8, y, x + 8, y, 2, [1, 1, 1, alpha]);
                 this.line(x, y - 8, x, y + 8, 2, [1, 1, 1, alpha]);
                 continue;
@@ -7117,15 +7054,9 @@ class AudioSystem {
 
     spatialGain(x, y, renderer) {
         if (!renderer) return 0.7;
-        // renderer camera는 사용자 시점 좌표이므로 이벤트도 같은 시점으로 변환.
-        const vx = renderer.viewX(x),
-            vy = renderer.viewY(y);
-        const vw = renderer.viewWorldW(),
-            vh = renderer.viewWorldH();
-        const cx = renderer.cameraLeft + vw / 2;
-        const cy = renderer.cameraTop + vh / 2;
-        const dx = (vx - cx) / (vw * 0.5);
-        const dy = (vy - cy) / (vh * 0.5);
+        const [sx, sy] = renderer.worldToPx(renderer.viewX(x), renderer.viewY(y));
+        const dx = sx / (renderer.canvas.width * 0.5) - 1;
+        const dy = sy / (renderer.canvas.height * 0.5) - 1;
         const d = Math.hypot(dx, dy);
 
         if (d > 2.25) return 0;
@@ -8305,10 +8236,14 @@ class ReplayPresentation {
         let oldCenterX = ActiveViewState.renderer.cameraLeft + oldW / 2,
             oldCenterY = ActiveViewState.renderer.cameraTop + oldH / 2;
         if (preserveCenter && oldOrientation !== orientation) {
-            oldCenterX =
-                (ActiveViewState.renderer?.world || WorldContext.standard).width - oldCenterX;
-            oldCenterY =
-                (ActiveViewState.renderer?.world || WorldContext.standard).height - oldCenterY;
+            const renderer = ActiveViewState.renderer;
+            const point = renderer.surfaceAtScreen(
+                renderer.canvas.width / 2,
+                renderer.canvas.height / 2,
+            );
+            oldCenterX = orientation === 'guest' ? renderer.world.width - point.x : point.x;
+            const viewY = orientation === 'guest' ? renderer.world.height - point.z : point.z;
+            oldCenterY = BattlefieldProjection.planarY(viewY, point.y);
         }
         ActiveViewState.role = orientation;
         ActiveViewState.renderer.role = orientation;
@@ -8393,9 +8328,6 @@ class ReplayPresentation {
         ActiveViewState.snap = s;
         if (!ActiveViewState.renderer) {
             ActiveViewState.renderer = new GLRenderer(UiRegistry.refs.canvas);
-            ActiveViewState.renderer.cameraLeft = 0;
-            ActiveViewState.renderer.cameraTop =
-                (ActiveViewState.renderer?.world || WorldContext.standard).height - VIEW_H;
         }
         if (!ActiveViewState.minimap)
             ActiveViewState.minimap = new MiniMap(UiRegistry.refs.minimapCanvas);
@@ -10012,21 +9944,13 @@ class LaunchPresentation {
             );
         let enemyDirection = null;
         if (r && enemy) {
-            // Camera space: x right, y down, in world units, so the distance reads like the map.
-            const vw = r.viewWorldW(),
-                vh = r.viewWorldH(),
-                x = r.viewX(enemy.x) - r.cameraLeft,
-                y =
-                    BattlefieldProjection.planarY(
-                        r.viewY(enemy.y),
-                        r.world.terrain.surfaces.heightAt(enemy.x, enemy.y),
-                    ) - r.cameraTop;
-            if (x < 0 || x > vw || y < 0 || y > vh) {
-                const dx = x - vw / 2,
-                    dy = y - vh / 2;
+            const { width, height } = r.canvas;
+            const [x, y] = r.worldToPx(r.viewX(enemy.x), r.viewY(enemy.y));
+            if (x < 0 || x > width || y < 0 || y > height) {
+                const center = r.surfaceAtScreen(width / 2, height / 2);
                 enemyDirection = {
-                    angle: Math.atan2(dy, dx) + Math.PI / 2,
-                    distance: Math.hypot(dx, dy),
+                    angle: Math.atan2(y - height / 2, x - width / 2) + Math.PI / 2,
+                    distance: Math.hypot(enemy.x - center.x, enemy.y - center.z),
                 };
             }
         }
@@ -10194,15 +10118,17 @@ class LaunchPresentation {
             vy = r.viewY(at.y);
         const vw = r.viewWorldW(),
             vh = r.viewWorldH(),
-            margin = (LaunchRules.grain(hold.card)?.splash || 120) + 80;
+            splash = LaunchRules.grain(hold.card)?.splash || 120,
+            marginX = splash + 80,
+            marginY = BattlefieldProjection.planarY(splash) + 80;
         const py = BattlefieldProjection.planarY(vy, r.world.terrain.surfaces.heightAt(at.x, at.y));
         // The top keeps room for the HUD, the enemy arrow and the ring's label (about 120 CSS px).
         const hud = (120 * vw) / Math.max(1, r.canvas.clientWidth);
-        const left = RangeUtil.clamp(r.cameraLeft, vx + margin - vw, vx - margin),
-            top = RangeUtil.clamp(r.cameraTop, py + margin - vh, py - margin - hud);
+        const left = RangeUtil.clamp(r.cameraLeft, vx + marginX - vw, vx - marginX),
+            top = RangeUtil.clamp(r.cameraTop, py + marginY - vh, py - marginY - hud);
         // The shared camera eases toward that framing by half-life, so the pace does not depend on the frame rate.
         const camera = r.stableCamera(),
-            halfH = r.canvas.height / r.sc() / 2,
+            halfH = vh / 2,
             now = performance.now(),
             elapsed = Math.min(100, now - (this.followAt ?? now));
         this.followAt = now;
@@ -10216,10 +10142,10 @@ class LaunchPresentation {
         // Canvas pixels to the label's CSS pixels, just above the ring.
         const [lx, ly] = r.worldToPx(vx, vy),
             k = r.canvas.clientWidth / Math.max(1, r.canvas.width),
-            splash = (LaunchRules.grain(hold.card)?.splash || 120) * r.sc();
+            splashY = BattlefieldProjection.planarY(splash) * r.sc();
         this.labelShown = true;
         LaunchScreens.renderAimLabel(
-            { x: lx * k, y: (ly - splash) * k - 6 },
+            { x: lx * k, y: (ly - splashY) * k - 6 },
             hold.card,
             LaunchRules.maxReachOf(
                 hold.card,
@@ -10298,17 +10224,16 @@ class BattlePresentation {
             const rect = r.canvas.getBoundingClientRect();
             const px = ((clientX - rect.left) / rect.width) * r.canvas.width;
             const py = ((clientY - rect.top) / rect.height) * r.canvas.height;
-            const oldScale = r.sc();
-            const worldX = r.cameraLeft + px / oldScale;
-            const worldY = r.cameraTop + py / oldScale;
+            const point = r.projectedCoordinatesAtScreen(px, py);
             r.replayZoom = RangeUtil.clamp(value, 0.6, 1.8);
-            const scale = r.sc();
+            const scale = r.sc(),
+                vw = r.viewWorldW();
             r.cameraLeft = RangeUtil.clamp(
-                worldX - px / scale,
+                point.x - (px - r.canvas.width / 2) / scale - vw / 2,
                 0,
-                Math.max(0, r.world.width - r.viewWorldW()),
+                Math.max(0, r.world.width - vw),
             );
-            r.cameraTop = r.clampCameraTop(worldY - py / scale);
+            r.cameraTop = r.clampCameraTop(point.y - py / scale);
             ActiveViewState.minimap?.draw();
         };
         UiRegistry.refs.canvas.addEventListener(
@@ -10493,9 +10418,6 @@ class BattlePresentation {
             LogUtil.log(
                 `렌더러 ${ActiveViewState.renderer.backend} · 입력/UI ${STATE_PUBLISH_HZ}Hz · Render Target ${ActiveSimulationTiming.tps()}Hz · 시뮬 ${ActiveSimulationTiming.tps()}TPS · 렌더 rAF 60Hz+`,
             );
-            ActiveViewState.renderer.cameraLeft = 0;
-            ActiveViewState.renderer.cameraTop =
-                (ActiveViewState.renderer?.world || WorldContext.standard).height - VIEW_H;
         }
         ActiveViewState.renderer.role = ActiveViewState.role;
         // Live gameplay owns its faction strictly from role. Replay-only fields must never
