@@ -316,6 +316,12 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         [stage.deck, stage.enemyDeck],
                     );
                 const layouts = [];
+                const towerDefinitions = ['mainBase', 'outpost'].map((role) =>
+                    BuildingDefinition.get(BuildingDefinition.forRole(role)),
+                );
+                const towerEnvelope =
+                    Math.max(...towerDefinitions.map((d) => d.range + (d.mortar?.radius ?? 0))) +
+                    Math.max(...towerDefinitions.map((d) => d.size));
                 for (const stage of CAMPAIGN_STAGES) {
                     const sim = openStage(stage);
                     const { world, capturePoints: points, mapDescriptor } = sim;
@@ -327,10 +333,43 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     check(
                         world.width === 2400 &&
                             world.height === 3000 &&
-                            distance(home, enemy) === 2200 &&
-                            distance(home, advance) <= LaunchRules.maxReachOf('rice'),
-                        'compact bases and the first site fit the initial rice cannon range',
+                            distance(home, enemy) === 2200,
+                        'the compact campaign keeps its map size and base separation',
                         stage.id,
+                    );
+                    const towerPositions = [
+                        { id: 'home', ...home },
+                        { id: 'enemy', ...enemy },
+                        ...points,
+                    ];
+                    const towerPairs = towerPositions.flatMap((a, i) =>
+                        towerPositions.slice(i + 1).map((b) => ({
+                            from: a.id,
+                            to: b.id,
+                            distance: distance(a, b),
+                        })),
+                    );
+                    const nearestPair = towerPairs.reduce((nearest, pair) =>
+                        pair.distance < nearest.distance ? pair : nearest,
+                    );
+                    check(
+                        nearestPair.distance > towerEnvelope,
+                        'every potential opposing tower pair is beyond automatic fire and mortar splash',
+                        { stage: stage.id, nearestPair, towerEnvelope },
+                    );
+                    const landing = LaunchRules.target(
+                        home,
+                        advance.x,
+                        advance.y,
+                        LaunchRules.chargeMs,
+                        world,
+                        enemy,
+                        'rice',
+                    );
+                    check(
+                        distance(landing, advance) < LaunchRules.captureHoldRadius,
+                        'the initial rice cannon can land workers close enough to secure the first site',
+                        { stage: stage.id, landing, advance },
                     );
                     check(
                         enemies.map((p) => p.id).join(',') === stage.enemyOutposts.join(',') &&
@@ -379,6 +418,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     );
                     layouts.push({
                         stage: stage.id,
+                        nearestPair,
                         directPairs,
                         pairs: pairs.length,
                         ramps: mapDescriptor.terrain.ramps.length,
