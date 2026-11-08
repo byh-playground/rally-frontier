@@ -1,29 +1,16 @@
 // Both realms load the pinned simulation and session SDK; the page also prepares its art.
-const SESSION_MODULES = {
-    rollback: 'rollback.js',
-    deterministic: 'deterministic.js',
-    simloop: 'simloop.js',
-    events: 'presentation-events.js',
-    geometry: 'geometry.js',
-    spatial: 'spatial.js',
-    pathfield: 'pathfield.js',
-    vision: 'vision.js',
-};
-const BROWSER_MODULES = {
-    transport: 'transport.js',
-    interpolation: 'interpolation.js',
-    input: 'input.js',
-    rendering: 'rendering.js',
-    vectorAssets: 'vector-assets.js',
-    camera: 'camera.js',
-    hud: 'hud.js',
-    debug: 'debug-tools.js',
-    vectorAssetsLoader: 'vector-assets-loader.js',
-    navigation: 'navigation.js',
-    objectPool: 'object-pool.js',
-    face: 'face.js',
-    scenario: 'scenario.js',
-};
+// prettier-ignore
+const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","navigation":"navigation.js","objectPool":"object-pool.js","geometry":"geometry.js","spatial":"spatial.js","face":"face.js","pathfield":"pathfield.js","vision":"vision.js","scenario":"scenario.js"});
+const SESSION_MODULE_NAMES = new Set([
+    'rollback',
+    'deterministic',
+    'simloop',
+    'events',
+    'geometry',
+    'spatial',
+    'pathfield',
+    'vision',
+]);
 const SIM_WORKER = typeof WorkerGlobalScope !== 'undefined';
 // Resolve from this module so the page and the Worker realm load the same files.
 // prettier-ignore
@@ -114,9 +101,11 @@ try {
     });
     RALLY_NETCODE_URL = 'gamekit:' + gamekitSource.distCommit;
     // Import only immutable official ESM bytes from the pinned dist; keep source files unchanged.
-    const moduleFiles = SIM_WORKER ? SESSION_MODULES : { ...SESSION_MODULES, ...BROWSER_MODULES };
+    const moduleFiles = Object.entries(RALLY_GAMEKIT_MODULES).filter(
+        ([name]) => !SIM_WORKER || SESSION_MODULE_NAMES.has(name),
+    );
     const modules = await Promise.all(
-        Object.entries(moduleFiles).map(async ([name, file]) => {
+        moduleFiles.map(async ([name, file]) => {
             const entry = gamekitLock.modules[name];
             if (!entry || entry.file !== file || !/^[a-f0-9]{64}$/.test(entry.sha256 || ''))
                 throw new Error('Gamekit lock entry mismatch: ' + name);
