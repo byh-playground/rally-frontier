@@ -127,7 +127,7 @@ class UnitDefinition {
             sight: 275,
             fruitAttack: Object.freeze({
                 kind: 'grape',
-                every: 3,
+                every: 4,
                 basicMs: 300,
                 radius: 5,
                 lob: Object.freeze({ durationMs: 500, height: 100, radius: 50, damage: 20 }),

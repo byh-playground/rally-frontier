@@ -6684,7 +6684,7 @@ class GLRenderer {
         for (const projectile of fruit.projectiles)
             if (
                 projectile.kind === 'berry' &&
-                projectile.mode === 'active' &&
+                projectile.mode !== 'basic' &&
                 model.tick < projectile.endTick
             )
                 impacts.push(projectile.to);
