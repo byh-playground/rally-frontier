@@ -53,6 +53,9 @@ export class DeckEditor {
                 this.details.close();
         });
         this.details.addEventListener('close', () => {
+            if (this.details.open) return;
+            this.closeDetails?.();
+            this.closeDetails = null;
             if (this.dialog.open) this.detailTrigger?.focus();
             this.detailTrigger = null;
         });
@@ -168,7 +171,7 @@ export class DeckEditor {
         button.addEventListener('click', () => {
             this.detailTrigger = button;
             this.details.setAttribute('aria-label', `${this.nameOf(type)} 상세`);
-            this.renderDetails(type, this.detailsContent);
+            this.closeDetails = this.renderDetails(type, this.detailsContent);
             this.details.showModal();
             this.detailsContent.querySelector('[data-sheet-close]')?.focus();
         });

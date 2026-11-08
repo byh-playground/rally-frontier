@@ -217,10 +217,10 @@ button:disabled {
         display: none;
     }
 }
-html[data-title-showcase='true'] body > :not(#gameScreen) {
+html[data-showcase] body > :not(#gameScreen) {
     display: none !important;
 }
-html[data-title-showcase='true'] #gameScreen {
+html[data-showcase] #gameScreen {
     position: fixed;
     inset: 0;
     display: flex;
@@ -228,7 +228,7 @@ html[data-title-showcase='true'] #gameScreen {
     height: 100%;
     max-width: none;
 }
-html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
+html[data-showcase] #gameScreen .canvas-wrap > :not(canvas) {
     display: none !important;
 }
 @media (max-height: 650px) {

@@ -84,6 +84,7 @@ const {
 
 // The Worker realm has no window; GameKit modules must still see it as non-browser.
 const window = globalThis;
+const SHOWCASE_MODE = SIM_WORKER ? null : document.documentElement.dataset.showcase;
 
 /* =========================
    5. WebGL renderer + fog
@@ -7092,6 +7093,11 @@ class GLRenderer {
 
     loop() {
         try {
+            // The parent can hide a showcase iframe before its pause message arrives.
+            if (SHOWCASE_MODE && !this.hasDisplayArea()) {
+                this.loopFrame = requestAnimationFrame(this.loop);
+                return;
+            }
             const frameStarted = performance.now();
             this._framePresentationAt = frameStarted;
             this.resize();
@@ -11980,29 +11986,40 @@ if (!SIM_WORKER) AppLifecycle.requestScreenWakeLock();
             requestAnimationFrame(frame);
         }
     }
-    if (document.documentElement.dataset.titleShowcase !== 'true') requestAnimationFrame(frame);
+    if (!SHOWCASE_MODE) requestAnimationFrame(frame);
 })();
 
 // Deployment metadata is optional diagnostics. Its fetch never gates game startup.
 
-BuildMetadataPresentation.renderBuildMetadata();
-void BUILD_META.load().then(() => BuildMetadataPresentation.renderBuildMetadata());
+if (!SHOWCASE_MODE) {
+    BuildMetadataPresentation.renderBuildMetadata();
+    void BUILD_META.load().then(() => BuildMetadataPresentation.renderBuildMetadata());
+}
 
 if (UiRegistry.refs.bootRetryBtn)
     UiController.bindImmediateButton(UiRegistry.refs.bootRetryBtn, AppLifecycle.runBootAndStartApp);
 // The Worker realm hosts only a simulation session; the page boots the app.
 if (SIM_WORKER) SimWorkerHost.install();
-else if (document.documentElement.dataset.titleShowcase === 'true') {
+else if (SHOWCASE_MODE) {
     void (async () => {
         UiController.setUiScreen('game');
         const renderer = new GLRenderer(UiRegistry.refs.canvas, { deferLoop: true });
         renderer.prepareGameResources();
         renderer.resize();
-        const scenario = await prepareTitleShowcase({
+        const options = {
             renderer,
             createScenario: RallyGamekit.createScenario,
             createPresentationView,
-        });
+        };
+        const unitType = document.documentElement.dataset.showcaseUnit;
+        if (SHOWCASE_MODE === 'unit' && !LaunchRules.grain(unitType))
+            throw new Error('소개할 수 없는 병종입니다.');
+        const scenario =
+            SHOWCASE_MODE === 'unit'
+                ? await (
+                      await import('./ui/unit-showcase.js')
+                  ).prepareUnitShowcase({ ...options, unitType })
+                : await prepareTitleShowcase(options);
         renderer.startLoop();
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         renderer.stopLoop();
@@ -12023,7 +12040,7 @@ else if (document.documentElement.dataset.titleShowcase === 'true') {
             if (
                 event.origin !== location.origin ||
                 event.source !== parent ||
-                event.data?.type !== 'title-showcase-active'
+                event.data?.type !== `${SHOWCASE_MODE}-showcase-active`
             )
                 return;
             requested = !!event.data.active;
@@ -12038,10 +12055,10 @@ else if (document.documentElement.dataset.titleShowcase === 'true') {
             },
             { once: true },
         );
-        parent.postMessage({ type: 'title-showcase-ready' }, location.origin);
+        parent.postMessage({ type: `${SHOWCASE_MODE}-showcase-ready` }, location.origin);
     })().catch((error) => {
         console.error(error);
-        parent.postMessage({ type: 'title-showcase-failed' }, location.origin);
+        parent.postMessage({ type: `${SHOWCASE_MODE}-showcase-failed` }, location.origin);
     });
 } else {
     AppLifecycle.runBootAndStartApp();

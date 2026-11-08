@@ -11,13 +11,9 @@ const GRAIN_COPY = Object.freeze({
         feature: '범위 평타 4회 → 양팔 360도 휩쓸기',
         land: '영웅 한 명 출격',
         fire: '영웅 단발',
-        desc: '수박의 평타는 맞은 적 주변의 병력에도 피해를 줍니다. 병력에게 평타가 네 번 맞으면 다음 공격에 양팔로 몸 주변을 휩쓸어 기본 공격과 같은 피해를 주고 적을 밀어냅니다.',
-        exceptions: [
-            '출격 중 카드를 짧게 탭하면 진격과 복귀를 전환합니다.',
-            '카드를 길게 누르면 수박이 높이 뛰어오릅니다. 바닥의 원과 화살표가 착지 충격파 범위와 구르기 경로를 예고합니다.',
-            '착지 충격파와 구르기 접촉은 각각 평타와 같은 피해를 줍니다.',
-            '다른 동작 중에는 스킬을 한 번 예약하고, 발동할 때 보급을 씁니다.',
-            '아군 거점에 회수되면 체력이 차오르고, 현재 체력으로 다시 출격할 수 있습니다.',
+        notes: [
+            '평타 네 번 뒤 양팔로 적을 휩쓸어요.',
+            '스킬로 뛰어올라 착지한 뒤 적을 향해 굴러요.',
         ],
     },
     banana: {
@@ -25,10 +21,9 @@ const GRAIN_COPY = Object.freeze({
         feature: '네 번째 평타 · 왕복 관통',
         land: '영웅 한 명 출격',
         fire: '영웅 단발',
-        desc: '작은 부메랑으로 적 하나를 공격합니다. 네 번째 평타는 금빛 부메랑이 처음 겨눈 적 뒤까지 날아가고, 나갈 때와 돌아올 때 경로의 적을 각각 한 번 맞힙니다.',
-        exceptions: [
-            '카드를 길게 누르면 긴 왕복 궤적을 예고하고 큰 부메랑을 던집니다. 나갈 때와 돌아올 때 적 병력과 영웅에게 각각 평타의 두 배 피해를 줍니다.',
-            '바나나는 큰 부메랑을 받을 때까지 제자리에 있습니다.',
+        notes: [
+            '네 번째 평타의 금빛 부메랑이 적을 왕복 관통해요.',
+            '스킬은 더 멀리 날아가는 큰 부메랑을 던져요.',
         ],
     },
     grape: {
@@ -36,9 +31,9 @@ const GRAIN_COPY = Object.freeze({
         feature: '네 번째 평타 · 곡사탄 3알',
         land: '영웅 한 명 출격',
         fire: '영웅 단발',
-        desc: '포도알로 적 하나를 공격합니다. 네 번째 평타마다 표적의 앞·중앙·뒤에 곡사탄을 한 알씩 던져 주변 적에게 피해를 줍니다.',
-        exceptions: [
-            '카드를 길게 누르면 적 주변의 착탄 지점을 예고하고 포도알 여덟 알을 차례로 곡사 투척합니다. 한 알의 피해는 평타에 추가되는 곡사탄과 같습니다.',
+        notes: [
+            '네 번째 평타마다 표적의 앞·중앙·뒤에 곡사탄을 던져요.',
+            '스킬로 포도알 여덟 알을 곡사 연사해요.',
         ],
     },
     rice: {
@@ -46,76 +41,63 @@ const GRAIN_COPY = Object.freeze({
         feature: '빠른 이동 · 산탄 투입',
         land: '넓게 흩어짐',
         fire: '5갈래 산탄',
-        desc: '포탄 다섯 발이 좌우로 퍼지며 넓게 늘어선 전열을 한 번에 훑습니다.',
+        notes: ['산탄 다섯 발로 좌우 전열을 훑어요.'],
     },
     millet: {
         role: '기동 근접',
         feature: '비전투 이동 2배 · 몸통 돌진',
         land: '앞뒤로 10명씩 투입',
         fire: '앞뒤 2발',
-        desc: '포탄 두 발이 발사 방향을 따라 앞뒤로 동시에 떨어집니다. 조는 두 무리로 나와 빠르게 이동하고 적에게 몸을 부딪혀 싸웁니다.',
-        exceptions: ['착점 주변에 자리가 부족하면 해당 무리가 나올 수 있을 때까지 기다립니다.'],
+        notes: ['앞뒤에 투입되어 빠르게 달리고 몸으로 부딪쳐요.'],
     },
     pea: {
         role: '전열 근접',
         feature: '높은 체력 · 중심 강타',
         land: '한 줄로 착지',
         fire: '단발 · 중심 강타',
-        desc: '좁은 범위에 강한 포탄 한 발을 쏩니다. 중심에 정확히 맞힌 뒤 체력이 높은 콩으로 전열을 잡습니다.',
+        notes: ['좁은 착탄점에 큰 피해를 주고 전열을 잡아요.'],
     },
     acorn: {
         role: '범위 근접',
         feature: '회전 공격 · 밀쳐내기',
         land: '한 발당 두 명',
         fire: '범위가 좁아지는 3연사',
-        desc: '같은 자리에 세 발을 떨어뜨립니다. 뒤로 갈수록 착탄 범위가 좁아지고 마지막 탄이 가장 강합니다. 도토리는 착지 후 적 가까이에서 회전하며 공격하고 밀쳐냅니다.',
-        exceptions: [
-            '회전 공격은 타격마다 가까운 적 지상 병사를 최대 세 명 맞혀 밀쳐냅니다.',
-            '범위 안의 적 건물은 모두 맞힙니다.',
-        ],
+        notes: ['탄착 범위가 좁아지는 3연사 뒤 회전으로 적을 밀어요.'],
     },
     corn: {
         role: '범위 원거리',
         feature: '알 착지 후 지연 폭발',
         land: '착점에 6명 모여 투입',
         fire: '높고 느린 곡사 단발',
-        desc: '높이 날아가는 포탄 한 발로 옥수수 6명을 모아 내립니다. 착지한 병사가 던진 알은 땅에 닿은 뒤 1초 후 폭발합니다.',
+        notes: ['모여 착지한 뒤 알을 던져 지연 폭발을 일으켜요.'],
     },
     popcorn: {
         role: '자폭 근접',
         feature: '낮게 도약 · 착지 자폭',
         land: '좌우에 5명씩 투입',
         fire: '좌우 2발',
-        desc: '조준점 양쪽에 포탄을 동시에 떨어뜨려 팝콘을 5명씩 내립니다. 팝콘은 적에게 낮게 뛰어들어 착지와 동시에 자폭하고 주변 적 병사를 밀어냅니다.',
-        exceptions: [
-            '이미 가까운 적에게는 제자리에서 1초 동안 부푼 뒤 폭발합니다.',
-            '착지나 부풀기 전에 쓰러지면 폭발하지 않습니다. 부푸는 중 쓰러지면 즉시 폭발합니다.',
-        ],
+        notes: ['좌우에 착지한 뒤 적에게 뛰어들어 자폭해요.'],
     },
     chestnut: {
         role: '단일 원거리',
         feature: '가시로 먼 적 공격',
         land: '발사 방향과 직각으로 6명 배치',
         fire: '낮고 빠른 단발',
-        desc: '낮고 빠른 포탄으로 밤톨 6명을 좌우로 펼쳐 내립니다. 밤톨은 적과 거리를 유지하며 가시를 쏩니다.',
-        exceptions: ['가시는 발사할 때 정한 적에게만 맞으며, 적이 피하면 빗나갑니다.'],
+        notes: ['한 줄로 펼쳐져 거리를 두고 가시를 쏴요.'],
     },
     redbean: {
         role: '돌격 근접',
         feature: '높이 뛰어 내려찍기 · 착지 충격파',
         land: '착지 후 돌격',
         fire: '한 지점을 덮는 3연사',
-        desc: '같은 자리에 같은 범위의 포탄을 0.3초 간격으로 세 번 떨어뜨립니다. 팥은 적 병사 쪽으로 높이 뛰어올라 내려찍고, 착지 충격파로 주변 적을 공격합니다.',
-        exceptions: [
-            '점프에는 재사용 대기 시간이 있으며, 가까운 적은 일반 근접 공격으로 상대합니다.',
-        ],
+        notes: ['시간차로 투입되어 적에게 뛰어들어 내려찍어요.'],
     },
 });
 const SCREENS = new Set(['', 'friend', 'help', 'play', 'result']);
 
 export class LaunchScreens {
     static grainInfo(type) {
-        return GRAIN_COPY[type] || { role: '병사', feature: '', land: '', fire: '', desc: '' };
+        return GRAIN_COPY[type] || { role: '병사', feature: '', land: '', fire: '', notes: [] };
     }
     // actions: { inMatch(), hasResult(), startAiMatch(), openMenu(), closeMenu(), grains(), grainName(type), grainStats(type),
     //           portraitSource(type), toggleSound(), soundOn(), createRoom(), joinRoom(code), leaveToTitle() }
@@ -187,9 +169,8 @@ export class LaunchScreens {
             SCREEN === 'help' || (SCREEN === 'play' && ITEM === 'help'),
         );
         const CARD = SCREEN === 'play' && A.grains().includes(ITEM) ? ITEM : null;
-        if (CARD) {
-            this.renderCardDetail(CARD);
-        }
+        if (CARD) this.renderCardDetail(CARD);
+        else if (this.cardDetail?.host === this.$('cardDetail')) this.closeCardDetail();
         this.showSheet('cardSheet', !!CARD);
         if (CARD) this.$('cardDetail').querySelector('[data-sheet-close]')?.focus();
         else if (this.cardDetailTrigger) {
@@ -352,6 +333,7 @@ export class LaunchScreens {
         const sync = () => {
             const active =
                 !document.hidden &&
+                !this.cardDetail?.mount &&
                 !document.body.classList.contains('boot-loading') &&
                 !LOBBY.classList.contains('hidden') &&
                 !MOTION.matches;
@@ -399,18 +381,114 @@ export class LaunchScreens {
         }
     }
     static renderCardDetail(type, host = this.$('cardDetail')) {
+        if (this.cardDetail?.type === type && this.cardDetail.host === host)
+            return this.cardDetail.close;
+        this.closeCardDetail();
         const A = this.actions,
             STATS = A.grainStats(type),
             COPY = this.grainInfo(type);
-        const EXCEPTIONS = COPY.exceptions?.length
-            ? `<ul aria-label="알아둘 점" style="margin:6px 0 10px;padding-left:1.2em;font-size:.9em;line-height:1.45">${COPY.exceptions.map((text) => `<li>${text}</li>`).join('')}</ul>`
-            : '';
-        host.innerHTML = `<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2><p>${COPY.desc}</p></div></div>
-${EXCEPTIONS}
+        const detail = {
+            type,
+            host,
+            close: () => {
+                if (this.cardDetail === detail) this.closeCardDetail();
+            },
+        };
+        this.cardDetail = detail;
+        host.innerHTML = `<div class="launch-unit-showcase"></div>
+<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2>${COPY.notes.map((line) => `<p>${line}</p>`).join('')}</div></div>
 <div class="launch-stats"><div>비용<b>${ResourceDisplay.costText(STATS, true)}</b></div><div>병사 수<b>${STATS.count}</b></div><div>최대 사거리<b>${STATS.maxReach.toLocaleString('ko-KR')}</b></div><div>발사<b>${COPY.fire}</b></div><div>착지<b>${COPY.land}</b></div></div>
 <button type="button" class="launch-btn primary" data-sheet-close>닫기</button>`;
         this.fillCardPortraits(host);
+        const panel = host.querySelector('.launch-unit-showcase');
+        const motion = matchMedia('(prefers-reduced-motion: reduce)');
+        if (motion.matches) {
+            panel.dataset.static = 'true';
+            const play = document.createElement('button');
+            play.type = 'button';
+            play.className = 'launch-btn';
+            play.textContent = '소개 재생';
+            play.addEventListener(
+                'click',
+                () => void this.startUnitShowcase(detail, panel, motion, true),
+                {
+                    once: true,
+                },
+            );
+            panel.append(play);
+        } else void this.startUnitShowcase(detail, panel, motion, false);
+        return detail.close;
     }
+
+    static async startUnitShowcase(detail, panel, motion, manual) {
+        delete panel.dataset.static;
+        panel.innerHTML = '<p role="status">소개를 불러오는 중이에요.</p>';
+        const fail = () => {
+            if (this.cardDetail !== detail) return;
+            detail.mount?.dispose();
+            detail.mount = null;
+            panel.dataset.static = 'true';
+            panel.innerHTML = '<p role="status">소개를 불러오지 못했어요.</p>';
+            this.syncTitleBattle?.();
+        };
+        try {
+            const mount = this.mountScenarioFrame({
+                container: panel,
+                src: `./index.html?unitShowcase=${encodeURIComponent(detail.type)}`,
+                configure: (frame) => {
+                    frame.title = `${this.actions.grainName(detail.type)} 소개`;
+                    frame.tabIndex = -1;
+                },
+                prepare: ({ frame, signal }) =>
+                    new Promise((resolve) => {
+                        const sync = () => {
+                            if (panel.dataset.ready !== 'true') return;
+                            frame.contentWindow?.postMessage(
+                                {
+                                    type: 'unit-showcase-active',
+                                    active: !document.hidden && (manual || !motion.matches),
+                                },
+                                location.origin,
+                            );
+                        };
+                        window.addEventListener(
+                            'message',
+                            (event) => {
+                                if (
+                                    event.origin !== location.origin ||
+                                    event.source !== frame.contentWindow
+                                )
+                                    return;
+                                if (event.data?.type === 'unit-showcase-ready') {
+                                    panel.dataset.ready = 'true';
+                                    panel.querySelector('p')?.remove();
+                                    sync();
+                                    resolve();
+                                } else if (event.data?.type === 'unit-showcase-failed') fail();
+                            },
+                            { signal },
+                        );
+                        document.addEventListener('visibilitychange', sync, { signal });
+                        motion.addEventListener('change', sync, { signal });
+                    }),
+            });
+            detail.mount = mount;
+            this.syncTitleBattle?.();
+            await mount.ready;
+        } catch (error) {
+            console.error(error);
+            fail();
+        }
+    }
+
+    static closeCardDetail() {
+        const detail = this.cardDetail;
+        if (!detail) return;
+        this.cardDetail = null;
+        detail.mount?.dispose();
+        this.syncTitleBattle?.();
+    }
+
     static landingLabel(type) {
         return GRAIN_COPY[type]?.land || '';
     }
