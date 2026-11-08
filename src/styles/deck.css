@@ -52,11 +52,7 @@
 .launch-showcase-surface {
     position: absolute;
     inset: 0;
-    visibility: hidden;
     pointer-events: none;
-}
-[data-ready='true'] > .launch-showcase-surface {
-    visibility: visible;
 }
 .launch-showcase-surface > canvas {
     position: absolute;

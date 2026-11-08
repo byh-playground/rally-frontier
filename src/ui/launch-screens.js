@@ -302,7 +302,6 @@ export class LaunchScreens {
     static closeTitleBattle() {
         const mount = this.titleBattleMount;
         this.titleBattleMount = null;
-        delete this.$('titleBattle').dataset.ready;
         mount?.dispose();
     }
 
@@ -326,13 +325,7 @@ export class LaunchScreens {
         try {
             mount = this.showcaseSurface.mount({
                 container: host,
-                scene: {
-                    kind: 'title',
-                    onError: fail,
-                    onFirstFrame: () => {
-                        if (this.titleBattleMount === mount) host.dataset.ready = 'true';
-                    },
-                },
+                scene: { kind: 'title', onError: fail },
             });
             this.titleBattleMount = mount;
             if ((await mount.ready) && this.titleBattleMount === mount) this.syncTitleBattle?.();
@@ -431,7 +424,6 @@ export class LaunchScreens {
             detail.mount = null;
             detail.syncPlayback = null;
             mount?.dispose();
-            delete panel.dataset.ready;
             panel.dataset.static = 'true';
             panel.innerHTML = '<p role="status">소개를 불러오지 못했어요.</p>';
             console.error(error);
@@ -441,22 +433,20 @@ export class LaunchScreens {
             this.closeTitleBattle();
             mount = this.showcaseSurface.mount({
                 container: panel,
-                scene: {
-                    kind: 'unit',
-                    unitType: detail.type,
-                    onError: fail,
-                    onFirstFrame: () => {
-                        if (this.cardDetail !== detail || detail.mount !== mount) return;
-                        panel.dataset.ready = 'true';
-                        panel.querySelector('p')?.remove();
-                    },
-                },
+                scene: { kind: 'unit', unitType: detail.type, onError: fail },
             });
             detail.mount = mount;
             detail.syncPlayback = () =>
                 mount.setActive(!document.hidden && (manual || !motion.matches));
             detail.syncPlayback();
-            await mount.ready;
+            if (
+                (await mount.ready) &&
+                (await mount.presented) &&
+                this.cardDetail === detail &&
+                detail.mount === mount
+            ) {
+                panel.querySelector('p')?.remove();
+            }
         } catch (error) {
             fail(error);
         }
