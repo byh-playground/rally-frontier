@@ -398,19 +398,18 @@ export class LaunchScreens {
             );
         }
     }
-    static renderCardDetail(type) {
+    static renderCardDetail(type, host = this.$('cardDetail')) {
         const A = this.actions,
             STATS = A.grainStats(type),
-            COPY = this.grainInfo(type),
-            HOST = this.$('cardDetail');
+            COPY = this.grainInfo(type);
         const EXCEPTIONS = COPY.exceptions?.length
             ? `<ul aria-label="알아둘 점" style="margin:6px 0 10px;padding-left:1.2em;font-size:.9em;line-height:1.45">${COPY.exceptions.map((text) => `<li>${text}</li>`).join('')}</ul>`
             : '';
-        HOST.innerHTML = `<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2><p>${COPY.desc}</p></div></div>
+        host.innerHTML = `<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2><p>${COPY.desc}</p></div></div>
 ${EXCEPTIONS}
 <div class="launch-stats"><div>비용<b>${ResourceDisplay.costText(STATS, true)}</b></div><div>병사 수<b>${STATS.count}</b></div><div>최대 사거리<b>${STATS.maxReach.toLocaleString('ko-KR')}</b></div><div>발사<b>${COPY.fire}</b></div><div>착지<b>${COPY.land}</b></div></div>
 <button type="button" class="launch-btn primary" data-sheet-close>닫기</button>`;
-        this.fillCardPortraits(HOST);
+        this.fillCardPortraits(host);
     }
     static landingLabel(type) {
         return GRAIN_COPY[type]?.land || '';

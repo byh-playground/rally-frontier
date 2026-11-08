@@ -161,8 +161,8 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
 - 팥은 적 병사가 평타 거리 밖이면서 점프 사거리 안에 있을 때 높이 뛰어올라 적 쪽으로 내려찍는다.
   표현은 물리 높이를 따르고, 착지에 주변 적 병사에게 피해와 수평·수직 충격을 준다. 착지부터 재사용 대기
   시간을 적용하며 비행·대기 상태는 저장·복원·해시에 포함한다.
-- 덱 편성은 기기에 저장하고 경기 시작 시 각 플레이어의 선택을 확정해 양측이 같은 권위 상태로 보관한다.
-  발사 검증·봇·리플레이 및 복구는 경기 당시 확정된 덱을 사용한다.
+- 덱 편성은 빈 칸을 포함한 슬롯 위치를 기기에 저장한다. 경기 시작 시 장착한 카드를 슬롯 순서대로
+  확정해 양측이 같은 권위 상태로 보관한다. 발사 검증·봇·리플레이 및 복구는 경기 당시 확정된 덱을 사용한다.
 - GameSession은 공통 Core·Simulation Adapter·Transport를 조합한 경기 Coordinator다. Core가
   입력 예측·지연·시계·롤백·확정 해시·복구를 소유한다. 게임은 공개 API를 쓰고 Core 내부를 복제/우회하지 않는다.
 - 기본 netcode는 lockstep이며 방장이 보낸 lockstep/rollback 모드를 참가자가 경기 시작 전에 적용한다.
@@ -683,7 +683,10 @@ END OF DEVELOPMENT CONTRACT
                         ×
                     </button>
                 </header>
-                <p class="deck-intro">영웅과 병사가 같은 덱 칸을 써요.</p>
+                <p class="deck-intro">
+                    영웅과 병사가 같은 덱 칸을 써요. 원하는 빈 칸을 먼저 누르면 그 자리에 카드를
+                    넣을 수 있어요.
+                </p>
                 <div id="deckTabs" class="deck-tabs" role="group" aria-label="덱 선택"></div>
                 <div class="deck-section-head">
                     <h3>내 덱</h3>
@@ -725,6 +728,14 @@ END OF DEVELOPMENT CONTRACT
                     완료
                 </button>
             </div>
+        </dialog>
+
+        <dialog
+            id="deckCardDialog"
+            class="deck-dialog deck-card-detail-dialog"
+            aria-label="카드 상세"
+        >
+            <div id="deckCardDetail" class="launch-sheet-panel"></div>
         </dialog>
 
         <dialog id="createDialog" class="game-dialog">

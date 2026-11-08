@@ -3,10 +3,20 @@ import { ResourceDisplay } from './resource-display.js';
 // Saved player loadouts are local preferences; the match owns its immutable copy.
 const STORAGE_KEY = 'ssalkongpang.decks.v1';
 const DECK_COUNT = 3;
-const LOADOUT_VERSION = 2;
+const LOADOUT_VERSION = 3;
 
 export class DeckEditor {
-    static install({ types, heroes, starter, limit, nameOf, statsOf, portraitOf, infoOf }) {
+    static install({
+        types,
+        heroes,
+        starter,
+        limit,
+        nameOf,
+        statsOf,
+        portraitOf,
+        infoOf,
+        renderDetails,
+    }) {
         if (this.initialized) return;
         this.initialized = true;
         this.types = types;
@@ -17,8 +27,12 @@ export class DeckEditor {
         this.statsOf = statsOf;
         this.portraitOf = portraitOf;
         this.infoOf = infoOf;
+        this.renderDetails = renderDetails;
         this.filter = 'hero';
+        this.selectedSlot = null;
         this.dialog = document.getElementById('deckDialog');
+        this.details = document.getElementById('deckCardDialog');
+        this.detailsContent = document.getElementById('deckCardDetail');
         this.state = this.load();
         for (const button of this.dialog.querySelectorAll('[data-deck-filter]')) {
             button.addEventListener('click', () => {
@@ -33,6 +47,14 @@ export class DeckEditor {
             .addEventListener('click', () => this.dialog.close());
         this.dialog.addEventListener('click', (event) => {
             if (event.target === this.dialog) this.dialog.close();
+        });
+        this.details.addEventListener('click', (event) => {
+            if (event.target === this.details || event.target.closest('[data-sheet-close]'))
+                this.details.close();
+        });
+        this.details.addEventListener('close', () => {
+            if (this.dialog.open) this.detailTrigger?.focus();
+            this.detailTrigger = null;
         });
         this.refresh();
     }
@@ -49,19 +71,30 @@ export class DeckEditor {
         const selected = Number.isInteger(saved?.selected)
             ? Math.max(0, Math.min(DECK_COUNT - 1, saved.selected))
             : 0;
+        const starter = this.starter();
+        const starterSlots = () =>
+            Array.from({ length: this.limit }, (_, index) => starter[index] ?? null);
         const decks = Array.from({ length: DECK_COUNT }, (_, index) => {
             const deck = saved?.decks?.[index];
-            if (!Array.isArray(deck)) return [...this.starter()];
+            if (!Array.isArray(deck)) return starterSlots();
             const legacyHero = saved?.heroTypes?.[index];
             const cards =
-                saved.version === LOADOUT_VERSION
+                saved.version === LOADOUT_VERSION || saved.version === 2
                     ? deck
                     : [heroes.includes(legacyHero) ? legacyHero : heroes[0], ...deck];
-            const valid = [...new Set(cards.filter((type) => available.has(type)))].slice(
-                0,
-                this.limit,
-            );
-            return valid.length ? valid : [...this.starter()];
+            // Older loadouts were dense. Migrate in order; new loadouts preserve slot indices.
+            const entries =
+                saved.version === LOADOUT_VERSION
+                    ? cards
+                    : [...new Set(cards.filter((type) => available.has(type)))];
+            const seen = new Set();
+            const slots = Array.from({ length: this.limit }, (_, slot) => {
+                const type = entries[slot];
+                if (!available.has(type) || seen.has(type)) return null;
+                seen.add(type);
+                return type;
+            });
+            return seen.size ? slots : starterSlots();
         });
         return { version: LOADOUT_VERSION, selected, decks };
     }
@@ -75,10 +108,16 @@ export class DeckEditor {
         }
     }
 
-    static getDeck() {
-        return [...this.state.decks[this.state.selected]];
+    static getSlots() {
+        return this.state.decks[this.state.selected];
     }
+
+    static getDeck() {
+        return this.getSlots().filter((type) => type !== null);
+    }
+
     static open() {
+        this.selectedSlot = null;
         this.refresh();
         if (!this.dialog.open) this.dialog.showModal();
     }
@@ -98,12 +137,13 @@ export class DeckEditor {
             button.setAttribute('aria-pressed', String(index === this.state.selected));
             button.addEventListener('click', () => {
                 this.state.selected = index;
+                this.selectedSlot = null;
                 this.persistAndRefresh();
                 tabs.querySelector(`[data-deck-index="${index}"]`)?.focus();
             });
             tabs.append(button);
         }
-        this.renderSlots(deck);
+        this.renderSlots();
         this.renderCatalog(deck);
     }
 
@@ -117,15 +157,36 @@ export class DeckEditor {
         return image;
     }
 
-    static renderSlots(deck) {
+    static infoButton(type) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'launch-card-info deck-card-info';
+        button.dataset.deckCardInfo = type;
+        button.setAttribute('aria-label', `${this.nameOf(type)} 상세`);
+        button.setAttribute('aria-haspopup', 'dialog');
+        button.textContent = 'i';
+        button.addEventListener('click', () => {
+            this.detailTrigger = button;
+            this.details.setAttribute('aria-label', `${this.nameOf(type)} 상세`);
+            this.renderDetails(type, this.detailsContent);
+            this.details.showModal();
+            this.detailsContent.querySelector('[data-sheet-close]')?.focus();
+        });
+        return button;
+    }
+
+    static renderSlots() {
         const selected = document.getElementById('deckSelected');
         selected.replaceChildren();
-        for (let index = 0; index < this.limit; index++) {
-            const type = deck[index];
-            const slot = document.createElement(type ? 'button' : 'span');
+        for (const [index, type] of this.getSlots().entries()) {
+            const tile = document.createElement('div');
+            tile.className = 'deck-tile';
+            const slot = document.createElement('button');
+            slot.type = 'button';
             slot.className = 'deck-slot';
+            slot.dataset.deckSlotIndex = String(index);
+            tile.append(slot);
             if (type) {
-                slot.type = 'button';
                 slot.dataset.deckSlotCard = type;
                 slot.toggleAttribute('data-hero', this.heroes().includes(type));
                 slot.setAttribute(
@@ -135,16 +196,25 @@ export class DeckEditor {
                 const name = document.createElement('span');
                 name.textContent = this.nameOf(type);
                 slot.append(this.makePortrait(type), name);
-                slot.addEventListener('click', () => {
-                    if (!this.toggleCard(type)) return;
-                    const remaining = selected.querySelectorAll('button');
-                    remaining[Math.min(index, remaining.length - 1)]?.focus();
-                });
+                tile.append(this.infoButton(type));
             } else {
                 slot.classList.add('deck-slot-empty');
                 slot.textContent = '빈 칸';
+                slot.setAttribute('aria-label', `${index + 1}번 빈 칸 선택`);
+                slot.setAttribute('aria-pressed', String(this.selectedSlot === index));
             }
-            selected.append(slot);
+            slot.addEventListener('click', () => {
+                if (type) {
+                    if (!this.toggleCard(type)) return;
+                } else {
+                    this.selectedSlot = index;
+                    this.renderSlots();
+                    document.getElementById('deckNotice').textContent =
+                        `${index + 1}번 칸에 넣을 카드를 골라 주세요.`;
+                }
+                selected.querySelector(`[data-deck-slot-index="${index}"]`)?.focus();
+            });
+            selected.append(tile);
         }
     }
 
@@ -188,25 +258,35 @@ export class DeckEditor {
                 if (this.toggleCard(type))
                     host.querySelector(`[data-deck-type="${type}"]`)?.focus();
             });
-            host.append(button);
+            const tile = document.createElement('div');
+            tile.className = 'deck-tile';
+            tile.append(button, this.infoButton(type));
+            host.append(tile);
         }
     }
 
     static toggleCard(type) {
-        const deck = this.getDeck(),
-            chosen = deck.includes(type),
+        const slots = this.getSlots().slice(),
+            index = slots.indexOf(type),
             notice = document.getElementById('deckNotice');
-        if (chosen && deck.length === 1) {
-            notice.textContent = '카드를 한 장 이상 골라야 해요.';
-            return false;
+        if (index >= 0) {
+            if (this.getDeck().length === 1) {
+                notice.textContent = '카드를 한 장 이상 골라야 해요.';
+                return false;
+            }
+            slots[index] = null;
+            this.selectedSlot = index;
+        } else {
+            const empty =
+                slots[this.selectedSlot] === null ? this.selectedSlot : slots.indexOf(null);
+            if (empty < 0) {
+                notice.textContent = `덱은 최대 ${this.limit}칸이에요. 카드 한 장을 먼저 빼 주세요.`;
+                return false;
+            }
+            slots[empty] = type;
+            this.selectedSlot = null;
         }
-        if (!chosen && deck.length >= this.limit) {
-            notice.textContent = `덱은 최대 ${this.limit}칸이에요. 카드 한 장을 먼저 빼 주세요.`;
-            return false;
-        }
-        this.state.decks[this.state.selected] = chosen
-            ? deck.filter((card) => card !== type)
-            : [...deck, type];
+        this.state.decks[this.state.selected] = slots;
         this.persistAndRefresh();
         return true;
     }
