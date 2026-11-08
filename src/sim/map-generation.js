@@ -173,7 +173,8 @@ class FrontierTerrainLayout {
             oppositeFront = mirror(front),
             center = point(2100, 2400),
             flank = point(560, 3020),
-            hill = point(1350, 1550);
+            hill = point(1350, 1550),
+            homeOil = point(1440, 4665);
         // The outside road separates at the home plateau instead of sharing the forward cannon.
         const top = [
             host,
@@ -187,6 +188,7 @@ class FrontierTerrainLayout {
             point(1134, 768),
             point(1806, 624),
             point(2562, 648),
+            mirror(homeOil),
             point(3087, 672),
             guest,
         ];
@@ -197,6 +199,7 @@ class FrontierTerrainLayout {
             ['front', 'mid', '전진', front, 'basic'],
             ['flank-near', 'top', '측면', flank, 'basic'],
             ['flank-far', 'bot', '언덕', mirror(hill), 'basic'],
+            ['oil-near', 'bot', '후방 기름 거점', homeOil, 'premium'],
         ].flatMap(([id, laneKey, label, position, resourceType]) =>
             [1, 2].map((stage) => {
                 const lane =
@@ -216,9 +219,9 @@ class FrontierTerrainLayout {
             id: 'mid-center',
             lane: 'MID',
             laneKey: 'mid',
-            label: '중앙 기름 거점',
+            label: '중앙 보급 거점',
             stage: 0,
-            resourceType: 'premium',
+            resourceType: 'basic',
             ...center,
         });
         return { laneControlPoints: { top, mid, bot }, capturePoints };

@@ -10,11 +10,17 @@ export function campaignMapLayout(stage) {
     const advance = { id: 'advance', label: '전진 보급 거점', x: centerX, y: 2200 };
     const center = { id: 'center', label: '중앙 보급 거점', x: centerX, y: 1720 };
     const front = { id: 'enemy-front', label: '전방 보급 거점', x: centerX, y: 1280 };
-    const rear = { id: 'enemy-rear', label: '후방 보급 거점', x: centerX, y: 850 };
     const ridge = { id: 'enemy-ridge', label: '언덕 보급 거점', x: 1500, y: 1380 };
-    const oil = { id: 'oil', label: '측면 기름 거점', x: 265, y: 1875 };
-    const hasRear = stage.enemyOutposts.includes(rear.id);
+    const oil = { id: 'oil', label: '측면 기름 거점', x: 2145, y: 2300 };
     const hasRidge = stage.enemyOutposts.includes(ridge.id);
+    const rear = {
+        id: 'enemy-rear',
+        label: '후방 보급 거점',
+        x: centerX,
+        // Keep the forward-to-rear third-tier link in the flat oil lessons.
+        y: stage.resourceLesson && !hasRidge ? 940 : 850,
+    };
+    const hasRear = stage.enemyOutposts.includes(rear.id);
     const capturePoint = (point, laneKey = 'mid', resourceType = 'basic') => ({
         ...point,
         laneKey,
@@ -74,7 +80,7 @@ export function campaignMapLayout(stage) {
                 ...(hasRear ? [rear] : []),
                 spawns.guest,
             ),
-            top: stage.resourceLesson ? route(advance, oil, center) : [],
+            top: stage.resourceLesson ? route(spawns.host, oil, center) : [],
             bot: hasRidge
                 ? route(center, { x: centerX, y: ridge.y }, ridge, { x: 1840, y: ridge.y }, rear)
                 : [],
