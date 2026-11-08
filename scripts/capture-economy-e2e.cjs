@@ -299,12 +299,18 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     'both forward cannons can support either central deposit without premium resources',
                 );
                 attack(forwardCannon, premium, 1);
-                const before = sim.premiumWallet[0];
+                const before = premium.remaining,
+                    walletBefore = sim.premiumWallet[0];
                 step(sim, sim.tps);
                 check(
-                    sim.premiumWallet[0] - before === 5 &&
-                        premium.remaining < LaunchRules.outpostDeposit.capacity,
-                    'completed premium deposit mines its finite stock',
+                    before - premium.remaining === 5 && sim.premiumWallet[0] - walletBefore >= 5,
+                    'completed premium deposit mines five units from its own finite stock',
+                    {
+                        before,
+                        remaining: premium.remaining,
+                        walletBefore,
+                        wallet: sim.premiumWallet[0],
+                    },
                 );
                 rows.push({
                     scenario: 'first expansion, forward cannon and contested premium deposits',
@@ -1125,8 +1131,16 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 const workerState = sim.exportState();
                 workerState.units = [];
                 sim.importState(workerState);
-                const one = sim.spawnUnit(1, 'pea', tower.x + 150, tower.y),
-                    two = sim.spawnUnit(1, 'pea', tower.x + 180, tower.y + 50);
+                sim.spawnUnit(1, 'pea', tower.x + 301, tower.y);
+                step(sim, 1);
+                check(
+                    !sim.events.some((e) => e.type === 'hit' && e.sourceId === tower.id),
+                    'tower does not fire at a target 301 units away',
+                );
+                sim.importState(workerState);
+                const firstShotTick = sim.tick + 1;
+                const one = sim.spawnUnit(1, 'pea', tower.x + 300, tower.y),
+                    two = sim.spawnUnit(1, 'pea', tower.x, tower.y + 300);
                 for (const u of [one, two]) u.hp = u.maxHp = 10000;
                 const hits = [];
                 step(sim, 2 * sim.tps, (s) =>
@@ -1138,9 +1152,10 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 );
                 check(
                     hits.length === 2 &&
+                        hits[0].tick === firstShotTick &&
                         hits.every((e) => e.amount === 10) &&
                         hits[1].tick - hits[0].tick === sim.tps,
-                    'finished tower retains10 damage single-target attacks every second',
+                    'finished tower deals 10 damage at distance 300 and still fires once per second',
                     hits,
                 );
                 const incomplete = arena(),
