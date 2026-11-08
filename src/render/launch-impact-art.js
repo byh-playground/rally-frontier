@@ -11,7 +11,6 @@ const hash = (seed, index) => {
     return (h ^ (h >>> 16)) >>> 0;
 };
 const identity = () => ({
-    height: 0,
     rotation: 0,
     scaleX: 1,
     scaleY: 1,
@@ -42,10 +41,9 @@ class LaunchImpactArt {
             tick >= recover
         )
             return identity();
-        const height = Math.max(0, heightFP) / 100;
         const duration = Math.max(1, end - start),
             flight = clamp01((tick - start) / duration);
-        const airborne = height > 0.01;
+        const airborne = heightFP > 1;
         const recovery = clamp01((tick - end) / Math.max(1, recover - end));
         const settle = 1 - smooth(recovery);
         if (motion.kind === 'leap') {
@@ -53,7 +51,6 @@ class LaunchImpactArt {
             const dive = smooth(Math.max(0, flight * 2 - 1));
             const landing = tick >= end ? settle : 0;
             return {
-                height,
                 rotation: 0,
                 scaleX: airborne ? 1 - 0.1 * dive : 1 + 0.15 * landing,
                 scaleY: airborne ? 1 + 0.15 * dive : 1 - 0.22 * landing,
@@ -71,7 +68,6 @@ class LaunchImpactArt {
         const ageMs = (Math.max(0, tick - start) * 1000) / rate;
         const open = deployed ? smooth(ageMs / 95) : 1;
         return {
-            height,
             rotation:
                 direction *
                 (airborne
