@@ -138,7 +138,8 @@ export class HeroRollAttack {
         const spec = definition.heroActive;
         const { x, y } = unit;
         const { dx, dy } = roll;
-        const radius = sim.unitRadius(unit.type);
+        const terrainRadius = sim.unitRadius(unit.type);
+        const { rollHitRadius } = spec;
         const step = Math.min(
             (definition.speed * spec.speedMultiplier) / sim.tps,
             spec.rollDistance - roll.distance,
@@ -161,13 +162,13 @@ export class HeroRollAttack {
             dx,
             dy,
             step,
-            radius,
+            terrainRadius,
         );
         const contacts = [];
         sim.withNearbyUnits(
             x,
             y,
-            wallDistance + radius + sim.maxUnitRadius,
+            wallDistance + rollHitRadius + sim.maxUnitRadius,
             1 - unit.side,
             (indices) => {
                 for (const index of indices) {
@@ -182,7 +183,7 @@ export class HeroRollAttack {
 
                     const rx = x - target.x;
                     const ry = y - target.y;
-                    const reach = radius + sim.unitRadius(target.type);
+                    const reach = rollHitRadius + sim.unitRadius(target.type);
                     const hitTime =
                         rx ** 2 + ry ** 2 <= reach ** 2
                             ? 0

@@ -1,3 +1,5 @@
+import { WATERMELON_RIND_RADIUS_X } from '../definitions/units.js';
+
 const PARTS = [
     { id: 'body', parent: null, pivot: [0, 0] },
     { id: 'leftFoot', parent: 'body', pivot: [-46, 93] },
@@ -9,7 +11,6 @@ const PARTS = [
 const BODY = { slot: [2, 2, 240, 214], rect: [-120, -116, 240, 214], part: 0 };
 // Rind bounds around the roll pivot in source pixels.
 const ROLL_CENTER_Y = -9;
-const ROLL_RADIUS_X = 118;
 const ROLL_RADIUS_Y = 108;
 const STANDING_GROUND_Y = 121;
 const FOOT = { slot: [320, 2, 46, 58], rect: [-23, -29, 46, 58] };
@@ -127,7 +128,7 @@ export function setWatermelonRollMatrix(
     matrix[3] = cos * scale;
     matrix[4] = x - matrix[2] * ROLL_CENTER_Y;
     // The short side and long side of the rind both rest on the same ground line.
-    const rind = Math.hypot(ROLL_RADIUS_X * sin, ROLL_RADIUS_Y * cos);
+    const rind = Math.hypot(WATERMELON_RIND_RADIUS_X * sin, ROLL_RADIUS_Y * cos);
     const standing = STANDING_GROUND_Y - ROLL_CENTER_Y;
     const support = (standing + (rind - standing) * tuck) * scale;
     matrix[5] = groundY - support - matrix[3] * ROLL_CENTER_Y;
