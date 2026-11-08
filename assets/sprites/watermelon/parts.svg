@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="368" height="220" viewBox="0 0 368 220">
+  <defs>
+    <radialGradient id="rind" cx="34%" cy="24%" r="82%">
+      <stop stop-color="#bde779"/>
+      <stop offset=".46" stop-color="#74b64a"/>
+      <stop offset=".83" stop-color="#478c3c"/>
+      <stop offset="1" stop-color="#2b6540"/>
+    </radialGradient>
+    <linearGradient id="limb" x2="0.8" y2="1">
+      <stop stop-color="#a1d858"/>
+      <stop offset=".58" stop-color="#5da84b"/>
+      <stop offset="1" stop-color="#34703e"/>
+    </linearGradient>
+    <path id="body" d="M122 9c35-1 68 11 89 36 18 21 28 50 26 78-1 33-16 57-38 71-21 13-49 18-77 18-35 0-63-7-84-23-22-16-32-40-32-67C6 58 49 10 122 9Z"/>
+    <clipPath id="body-clip"><use href="#body"/></clipPath>
+    <g id="eyes">
+      <ellipse cx="34" cy="20" rx="12" ry="14"/>
+      <ellipse cx="78" cy="20" rx="12" ry="14"/>
+      <g fill="#fff7d6">
+        <ellipse cx="31" cy="15" rx="4" ry="5"/>
+        <ellipse cx="75" cy="15" rx="4" ry="5"/>
+      </g>
+    </g>
+    <g id="cheeks" fill="#e38572" opacity=".85">
+      <ellipse cx="14" cy="31" rx="9" ry="4"/>
+      <ellipse cx="98" cy="31" rx="9" ry="4"/>
+    </g>
+  </defs>
+
+  <!-- Whole rind and loose, irregular stripes; face and limbs occupy separate atlas cells. -->
+  <use href="#body" fill="url(#rind)"/>
+  <g clip-path="url(#body-clip)" fill="#2f7943">
+    <path d="M91 2C56 21 48 37 35 54c-6 12-4 17-13 25-9 14-7 35-9 48-1 23 7 46 16 57 1 7 9 14 12 25l-31-12-16-46 7-72 21-34 25-28Z"/>
+    <path d="M108 3C86 31 75 54 73 77c-7 19-15 39-13 59 0 33 11 61 22 83L63 216c-4-20-16-37-18-55-6-22-1-47 2-68 7-18 12-26 17-46C74 26 87 14 102 4Z"/>
+    <path d="M137 3c-12 26-8 39-13 58-6 18-10 31-10 49-5 29 6 41 3 64 1 20 7 35 14 45l-20 1c-12-15-16-42-16-60-5-30-4-52 3-71 4-13 9-26 9-43 5-17 12-31 21-42Z"/>
+    <path d="M153 8c29 25 40 54 43 79 2 14 10 29 9 52-1 26-13 60-22 74l-26 6c15-24 22-46 24-71 1-16-4-33-4-51 0-19-10-57-31-85Z"/>
+    <path d="M172 7c40 21 63 50 71 79l6 62-16 49-23 14c16-27 21-57 17-77 0-17-5-29-6-46-7-37-24-56-49-81Z"/>
+    <path d="M9 136c17 31 55 50 109 51 54 2 95-13 118-36l-9 46-37 15-64 14-69-9-42-24Z" fill="#164b36" opacity=".2"/>
+    <path d="M40 65c9-17 21-29 37-34 13-4 20-1 18 4-4 9-20 10-35 21-12 9-20 15-20 9Z" fill="#e0f5a0" opacity=".57"/>
+  </g>
+  <use href="#body" fill="none" stroke="#233f31" stroke-width="5.5"/>
+  <path d="M122 14c5-8 13-11 21-10-2 8-9 12-16 14" fill="#bcdb61" stroke="#344e35" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g transform="translate(246 2)">
+    <path d="M16 23c6-7 11-6 16-3 4-8 11-9 16-3 9-3 14 3 15 13 4 12 0 23-11 28-8 5-21 5-33-1-15-8-13-22-3-34Z" fill="url(#limb)" stroke="#234b33" stroke-width="4.5" stroke-linejoin="round"/>
+    <path d="M35 24c0 4-1 7-3 9m16-12c1 4 1 8-1 11" fill="none" stroke="#397b41" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M17 36c3-4 6-5 10-4" fill="none" stroke="#c2e672" stroke-width="3.5" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(320 2)">
+    <path d="M11 7c8-5 17-5 24 2 6 6 4 18 1 27 6 3 9 10 5 16-6 7-26 6-34 0-6-4-4-13 0-20C5 22 4 12 11 7Z" fill="url(#limb)" stroke="#233f31" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M11 47c6 3 12 3 19 2" fill="none" stroke="#8bc458" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(244 75)" fill="#172a22">
+    <use href="#eyes"/>
+    <use href="#cheeks"/>
+    <path d="M48 31q8 8 16 0" fill="none" stroke="#172a22" stroke-width="4.5" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(244 122)" fill="#172a22">
+    <use href="#eyes"/>
+    <use href="#cheeks"/>
+    <path d="m23 6 23 8M89 6l-23 8" fill="none" stroke="#172a22" stroke-width="5.5" stroke-linecap="round"/>
+    <path d="M44 32q12-6 24 0-2 11-12 11T44 32Z"/>
+    <path d="M48 33q8-3 16 0" fill="none" stroke="#fff0d5" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(244 169)" fill="#172a22">
+    <use href="#cheeks"/>
+    <path d="m23 11 18 10-17 8m65-18L71 21l17 8" fill="none" stroke="#172a22" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <ellipse cx="56" cy="35" rx="7" ry="8"/>
+  </g>
+</svg>

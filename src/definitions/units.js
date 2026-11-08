@@ -24,6 +24,31 @@ const RICE_MELEE = {
 class UnitDefinition {
     static all = {
         rice: RICE_MELEE,
+        watermelon: {
+            requiresContactTerrain: true,
+            name: '수박',
+            hp: 300,
+            atk: 50,
+            range: 25,
+            speed: 50,
+            cooldownMs: 4000,
+            size: RICE_SIZE * 3.5,
+            sizeClass: 'heavy',
+            role: 'bruiser',
+            attackVisual: { sourceMotion: 'smash', travel: 'none', impact: 'light' },
+            sight: 275,
+            spinAttack: Object.freeze({
+                radius: RICE_SIZE * 12,
+                windupMs: 500,
+                activeMs: 1000,
+                recoverMs: 500,
+                arcSweep: true,
+                minTargets: 2,
+                knockbackSpeed: 400,
+                knockbackLift: 300,
+                tangentRatio: 0,
+            }),
+        },
         millet: {
             ...RICE_MELEE,
             name: '조',
@@ -204,6 +229,13 @@ const UNIT_RUNTIME_GEOMETRY = Object.freeze(
 
 class UnitVisualDefinition {
     static all = {
+        watermelon: {
+            family: 'grain',
+            billboard: true,
+            visualScale: 1,
+            accent: [0.26, 0.69, 0.38, 1],
+            fx: 'melee',
+        },
         acorn: {
             family: 'grain',
             billboard: true,

@@ -99,7 +99,7 @@ window.__netcodeE2E={ActiveViewState,MatchLifecycle,ReplayPresentation,UiRuntime
 
 async function launchFromHand(page) {
     // The launch game has no build step: pick a real hand card, hold on the field, aim, release.
-    const card = page.locator('[data-launch-card]').first();
+    const card = page.locator('[data-launch-card="rice"]');
     await card.click();
     await page.waitForFunction(
         () => document.querySelector('.launch-card.selected:not(.unaffordable)'),

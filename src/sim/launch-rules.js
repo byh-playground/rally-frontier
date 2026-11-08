@@ -59,7 +59,13 @@ class LaunchRules {
     }
     // 폭발 중심의 피해 배수. 가장자리는 1배, 중심은 centerPeak배이고 거리에 따라 제곱으로 줄어든다.
     static centerPeak = 3;
+    static heroCard = 'watermelon';
     static grains = Object.freeze({
+        [LaunchRules.heroCard]: Object.freeze({
+            ...SINGLE_BUNDLE_SHELL,
+            cost: 0,
+            count: 1,
+        }),
         // 산탄: 한 번에 여러 갈래, 갈래마다 폭발은 작다.
         rice: Object.freeze({
             cost: 25 * this.resourceScale,
@@ -148,14 +154,16 @@ class LaunchRules {
             fire: Object.freeze({ mode: 'burst', shots: 3, gapMs: 300 }),
         }),
     });
-    static deck = Object.freeze(Object.keys(LaunchRules.grains));
+    static deck = Object.freeze(
+        Object.keys(LaunchRules.grains).filter((type) => type !== LaunchRules.heroCard),
+    );
     static normalizeDeck(deck) {
         if (
             !Array.isArray(deck) ||
             deck.length < 1 ||
             deck.length > this.deck.length ||
             new Set(deck).size !== deck.length ||
-            deck.some((type) => typeof type !== 'string' || !this.grain(type))
+            deck.some((type) => !this.deck.includes(type))
         )
             throw new Error('덱은 중복 없는 유효한 병종을 하나 이상 포함해야 합니다.');
         return deck.slice();

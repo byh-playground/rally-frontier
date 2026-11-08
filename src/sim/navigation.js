@@ -246,6 +246,11 @@ class InteractionGeometry {
 // Local contacts share one solver; the distance field only chooses where to head.
 // A grain's own motion record: checkpoints, fixed-point commit and the unit's radius sit around the shared contact solver.
 class UnitMotion {
+    static isGrounded(unit) {
+        const motion = unit.impactMotion;
+        return !motion || (motion.heightFP <= 0 && motion.vzFP <= 0);
+    }
+
     constructor(navigation) {
         this.navigation = navigation;
         this.surface = new SurfaceMotion(navigation.field, { sync: () => navigation.sync() });
@@ -767,7 +772,7 @@ class TerrainNavigation {
     // Where a unit heads next to reach `goal`. A clear straight ray inside the scan
     // radius wins; otherwise the unit reads the goal's distance field. Point goals are
     // fixed places (bases, flags, capture points) and keep their field.
-    nextPoint(u, goal) {
+    nextPoint(u, goal, fixed = goal.radius === 0) {
         this.metrics.nextCalls++;
         const radius = this.sim.unitRadius(u.type);
         const near = goal.closest(u.x, u.y);
@@ -778,7 +783,7 @@ class TerrainNavigation {
                 return direct;
             }
         }
-        const point = this.fieldsFor(radius).next(u.x, u.y, goal, goal.radius === 0, radius);
+        const point = this.fieldsFor(radius).next(u.x, u.y, goal, fixed, radius);
         if (!point) this.metrics.unreachable++;
         return point;
     }

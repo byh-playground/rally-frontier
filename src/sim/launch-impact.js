@@ -1,3 +1,4 @@
+import { HeroDeployment } from './hero-deployment.js';
 import { FP } from '../core/config.js';
 import { LaunchRules } from './launch-rules.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
@@ -257,6 +258,7 @@ class LaunchImpact {
                 canReach: (x, y) => this.releasePathClear(sim, group, x, y, absoluteHeight),
             });
             if (!spot) {
+                if (HeroDeployment.landingFailed(sim, group)) continue;
                 group.nextTick =
                     sim.tick + Math.max(1, sim.msTicks(LaunchImpactRules.deploymentRetryMs));
                 sim.launchDeployments[write++] = group;
@@ -289,7 +291,8 @@ class LaunchImpact {
                 dx = sideX * sign;
                 dy = sideY * sign;
             }
-            if (group.holdPointId) u.launchHoldPointId = group.holdPointId;
+            if (!HeroDeployment.land(sim, group, u) && group.holdPointId)
+                u.launchHoldPointId = group.holdPointId;
             if (grain.land === 'rush')
                 sim.setTimedModifier(u, 'launchRush', {
                     durationTicks: sim.msTicks(grain.rushMs),

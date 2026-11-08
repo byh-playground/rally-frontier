@@ -5,6 +5,17 @@ import './grain-portrait.js';
 // Routes: #/ title, #/friend, #/help, #/play, #/play/menu, #/play/help, #/play/<grain> card detail, #/result.
 // The game owns matches; this module owns which screen and sheet the address shows, and asks the game through `actions`.
 const GRAIN_COPY = Object.freeze({
+    watermelon: {
+        role: '범위 근접 영웅',
+        feature: '양팔 360도 휩쓸기 · 거점 복귀',
+        land: '영웅 한 명 출격',
+        fire: '영웅 단발',
+        desc: '수박은 양팔로 몸 주변의 적 병력을 휩쓸어 사방으로 밀어냅니다.',
+        exceptions: [
+            '출격 중 카드를 누를 때마다 진격과 복귀를 전환합니다.',
+            '살아서 아군 거점에 돌아오면 다시 출격할 수 있습니다.',
+        ],
+    },
     rice: {
         role: '기동 근접',
         feature: '빠른 이동 · 산탄 투입',

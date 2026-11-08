@@ -22,6 +22,11 @@ import {
     chestnutSpritePortrait,
     ChestnutSpriteRenderer,
 } from './chestnut-sprite.js';
+import {
+    loadWatermelonSpriteCanvas,
+    watermelonSpritePortrait,
+    WatermelonSpriteRenderer,
+} from './watermelon-sprite.js';
 
 // Approved idle artwork bounds from hat top to feet: rice 343.5, millet 311.
 const MILLET_ART_SCALE = 343.5 / 311;
@@ -36,6 +41,7 @@ const SPRITE_SOURCES = Object.freeze({
     popcorn: loadPopcornSpriteCanvas,
     chestnut: loadChestnutSpriteCanvas,
     millet: loadMilletSpriteCanvas,
+    watermelon: loadWatermelonSpriteCanvas,
 });
 
 // Insertion order is the actual atlas allocation order and is also used by the
@@ -89,6 +95,12 @@ export const GRAIN_SPRITES = Object.freeze({
         renderer: CornSpriteRenderer,
         portrait: cornSpritePortrait,
         groundY: 148,
+    },
+    watermelon: {
+        source: 'watermelon',
+        renderer: WatermelonSpriteRenderer,
+        portrait: watermelonSpritePortrait,
+        groundY: 121,
     },
 });
 
