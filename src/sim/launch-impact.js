@@ -95,7 +95,32 @@ class LaunchImpact {
             }
         });
     }
-    static enqueue(sim, p, x, y, impactHeightFP = null) {
+    static deploymentOrigin(sim, p, x, y, contact) {
+        const building = contact?.isBuilding ? sim.buildingById.get(contact.id) : null;
+        if (!building) return { x, y };
+        const radius = BuildingDefinition.get(building.type)?.size || 30;
+        const offsetX = x - building.x,
+            offsetY = y - building.y,
+            offsetSquared = offsetX * offsetX + offsetY * offsetY;
+        if (offsetSquared > radius * radius) return { x, y };
+
+        // A descending shell can meet a roof after crossing the horizontal wall.
+        // Backtrack its incoming ray to just outside that wall for deployment only.
+        const dx = p.lockedAimX - p.launchX,
+            dy = p.lockedAimY - p.launchY,
+            length = Math.hypot(dx, dy);
+        if (!length) return { x, y };
+        const ux = dx / length,
+            uy = dy / length,
+            along = offsetX * ux + offsetY * uy,
+            outside = radius + 2 / FP,
+            back = along + Math.sqrt(along * along + outside * outside - offsetSquared);
+        return {
+            x: Math.round((x - ux * back) * FP) / FP,
+            y: Math.round((y - uy * back) * FP) / FP,
+        };
+    }
+    static enqueue(sim, p, x, y, impactHeightFP = null, contact = null) {
         const { type, count } = p.payload;
         let holdPointId = null,
             best = LaunchRules.captureHoldRadius;
@@ -107,15 +132,15 @@ class LaunchImpact {
                 holdPointId = cp.id;
             }
         }
-        const groundFP = Math.round(sim.world.terrain.surfaces.heightAt(x, y) * FP);
+        const origin = this.deploymentOrigin(sim, p, x, y, contact);
+        const groundFP = Math.round(sim.world.terrain.surfaces.heightAt(origin.x, origin.y) * FP);
         sim.launchDeployments.push({
             projectileId: p.id,
             side: p.side,
             type,
             count,
             index: 0,
-            x,
-            y,
+            ...origin,
             holdPointId,
             nextTick: sim.tick,
             heightFP: Math.max(0, (impactHeightFP ?? groundFP) - groundFP),
