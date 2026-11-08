@@ -1101,6 +1101,9 @@ class FogVisibilityGrid {
     }
 }
 
+const DEFAULT_LIVE_ZOOM = 1.5;
+const MAX_LIVE_ZOOM = 2;
+
 class GLRenderer {
     static DEPTH_PROJECTION = Object.freeze({
         offset: 0.88,
@@ -10146,7 +10149,7 @@ class BattlePresentation {
             const px = ((clientX - rect.left) / rect.width) * r.canvas.width;
             const py = ((clientY - rect.top) / rect.height) * r.canvas.height;
             const point = r.projectedCoordinatesAtScreen(px, py);
-            r.replayZoom = RangeUtil.clamp(value, 0.6, 1.8);
+            r.replayZoom = RangeUtil.clamp(value, 0.6, MAX_LIVE_ZOOM);
             const scale = r.sc(),
                 vw = r.viewWorldW();
             r.cameraLeft = RangeUtil.clamp(
@@ -10355,10 +10358,22 @@ class BattlePresentation {
             snapTargets: rendererRoleChanged,
         });
         MatchLifecycle.activeSession()?.flushPresentationEvents(s);
+        LaunchPresentation.render(s, side);
+        if (enteringGame) {
+            const r = ActiveViewState.renderer;
+            r.replayZoom = DEFAULT_LIVE_ZOOM;
+            r.resize();
+            const base = r.world.bases[side],
+                width = r.viewWorldW(),
+                height = r.world.terrain.surfaces.heightAt(base.x, base.y);
+            r.cameraLeft = RangeUtil.clamp(r.viewX(base.x) - width / 2, 0, r.world.width - width);
+            r.cameraTop = r.clampCameraTop(
+                BattlefieldProjection.planarY(r.viewY(base.y), height) - r.viewWorldH() / 2,
+            );
+        }
         ActiveViewState.minimap.set(ActiveViewState.renderer, s);
         ActiveViewState.minimap.draw();
         audioSystem.processSnapshot(s, ActiveViewState.renderer);
-        LaunchPresentation.render(s, side);
     }
 }
 
