@@ -477,6 +477,7 @@ class EffectObjectFactory {
     static sourceMotionFallbackMs = 220;
     static combatLifetimes = Object.freeze({
         thornImpact: 250,
+        spinBasicImpact: 180,
         constructionHit: 220,
         hitscanTravel: 180,
         buildingBurst: 620,
@@ -2873,6 +2874,8 @@ class GLRenderer {
                         e,
                         snapshot,
                     );
+            } else if (e.type === 'spinBasicImpact') {
+                this.addClientFx('spinBasicImpact', e, snapshot, index);
             } else if (e.type === 'unitThornHit') {
                 this.addClientFx('thornImpact', e, snapshot, index, {
                     id: 'thorn-impact:' + e.projectileId,
@@ -6175,6 +6178,20 @@ class GLRenderer {
     // Visual arcs and dust share the world's primitive batch; the authoritative
     // spin interval and contact pulses remain owned by the simulation.
     drawSpinEffects(entries) {
+        for (const fx of this.combatFx) {
+            if (fx.kind !== 'spinBasicImpact' || fx.clock.expired) continue;
+            const fade = 1 - fx.clock.ageMs / EffectObjectFactory.combatLife(fx);
+            if (fade <= 0) continue;
+            const elevation = this.world.terrain.surfaces.heightAt(fx.x, fx.y);
+            this.withWorldSpriteDepth({ x: fx.x, y: elevation, z: fx.y, groundY: 0 }, () =>
+                this.drawGroundCircle(fx.x, fx.y, fx.radius, {
+                    elevation,
+                    stroke: [1, 0.77, 0.44, fade],
+                    width: Math.max(1, 2 * this.sc()),
+                    segments: 20,
+                }),
+            );
+        }
         const now = this.presentationNow();
         for (const entry of entries) {
             if (entry.kind !== 'unit') continue;
