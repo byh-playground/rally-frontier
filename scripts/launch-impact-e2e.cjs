@@ -519,6 +519,40 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     building,
                 });
             }
+            {
+                const { sim, x, y } = arena();
+                const acorn = sim.spawnUnit(0, 'acorn', x, y);
+                const enemies = [
+                    defender(sim, x + 70, y),
+                    defender(sim, x, y - 70),
+                    defender(sim, x, y + 70),
+                ];
+                const outside = defender(sim, x + 220, y);
+                const ally = defender(sim, x - 80, y, 0);
+                for (const unit of [...enemies, outside, ally])
+                    unit.combat.cooldownUntil = sim.tps * 2;
+                let pulse;
+                for (let i = 0; !pulse && i < sim.tps; i++) {
+                    sim.stepSimulation();
+                    pulse = sim.events.find(
+                        (event) => event.type === 'spinPulse' && event.sourceId === acorn.id,
+                    );
+                }
+                const damage = enemies.map((enemy) => enemy.maxHp - enemy.hp);
+                check(
+                    pulse?.hits === enemies.length &&
+                        damage.every((amount) => amount === 13) &&
+                        outside.hp === outside.maxHp &&
+                        ally.hp === ally.maxHp,
+                    'one acorn spin pulse hits every nearby enemy and excludes allies and distant units',
+                    { hits: pulse?.hits, damage },
+                );
+                rows.push({
+                    scenario: 'acorn spin pulse hits the whole nearby enemy group',
+                    tick: sim.tick,
+                    damage,
+                });
+            }
             function clearOfTerrain(sim, units) {
                 for (const u of units.filter((u) => u.alive))
                     check(

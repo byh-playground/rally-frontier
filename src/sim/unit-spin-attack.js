@@ -170,9 +170,7 @@ export class UnitSpinAttack {
                     )
                         continue;
                     if (!this.inReach(sim, unit, target, spec, z)) continue;
-                    if (!this.hitUnit(sim, unit, target, spec, damage)) continue;
-                    hits++;
-                    break;
+                    if (this.hitUnit(sim, unit, target, spec, damage)) hits++;
                 }
             },
         );
