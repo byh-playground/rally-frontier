@@ -7,18 +7,18 @@ export function campaignMapLayout(stage) {
         host: { x: centerX, y: 2600 },
         guest: { x: centerX, y: 400 },
     };
-    const advance = { id: 'advance', label: '전진 보급 거점', x: centerX, y: 2200 };
-    const center = { id: 'center', label: '중앙 보급 거점', x: centerX, y: 1720 };
-    const front = { id: 'enemy-front', label: '전방 보급 거점', x: centerX, y: 1280 };
-    const ridge = { id: 'enemy-ridge', label: '언덕 보급 거점', x: 1500, y: 1380 };
-    const oil = { id: 'oil', label: '측면 기름 거점', x: 2145, y: 2300 };
+    // Stagger the pads so automatic fire, including mortar splash, cannot reach another tower.
+    const advance = { id: 'advance', label: '전진 보급 거점', x: 970, y: 1925 };
+    const center = { id: 'center', label: '중앙 보급 거점', x: 1475, y: 1500 };
+    const front = { id: 'enemy-front', label: '전방 보급 거점', x: 950, y: 1050 };
+    const ridge = { id: 'enemy-ridge', label: '언덕 보급 거점', x: 2075, y: 1775 };
+    const oil = { id: 'oil', label: '측면 기름 거점', x: 2135, y: 2440 };
     const hasRidge = stage.enemyOutposts.includes(ridge.id);
     const rear = {
         id: 'enemy-rear',
         label: '후방 보급 거점',
-        x: centerX,
-        // Keep the forward-to-rear third-tier link in the flat oil lessons.
-        y: stage.resourceLesson && !hasRidge ? 940 : 850,
+        x: 1685,
+        y: 875,
     };
     const hasRear = stage.enemyOutposts.includes(rear.id);
     const capturePoint = (point, laneKey = 'mid', resourceType = 'basic') => ({
@@ -52,10 +52,10 @@ export function campaignMapLayout(stage) {
             id: layerId,
             level: 1,
             points: [
-                { x: 1340, y: 1180 },
-                { x: 1760, y: 1180 },
-                { x: 1760, y: 1580 },
-                { x: 1340, y: 1580 },
+                { x: ridge.x - 160, y: ridge.y - 200 },
+                { x: ridge.x + 260, y: ridge.y - 200 },
+                { x: ridge.x + 260, y: ridge.y + 200 },
+                { x: ridge.x - 160, y: ridge.y + 200 },
             ],
         });
         terrain.ramps.push(
@@ -81,9 +81,7 @@ export function campaignMapLayout(stage) {
                 spawns.guest,
             ),
             top: stage.resourceLesson ? route(spawns.host, oil, center) : [],
-            bot: hasRidge
-                ? route(center, { x: centerX, y: ridge.y }, ridge, { x: 1840, y: ridge.y }, rear)
-                : [],
+            bot: hasRidge ? route(center, { x: ridge.x - 270, y: ridge.y }, ridge, rear) : [],
         },
         capturePoints,
         terrain,
