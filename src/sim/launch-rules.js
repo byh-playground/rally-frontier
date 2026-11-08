@@ -214,6 +214,7 @@ class LaunchRules {
         Object.keys(LaunchRules.grains).filter((type) => !LaunchRules.isHeroType(type)),
     );
     static deckLimit = 8;
+    static deckHeroLimit = 1;
     static starterDeck = Object.freeze([
         LaunchRules.heroCard,
         ...LaunchRules.deck.slice(0, LaunchRules.deckLimit - 1),
@@ -231,6 +232,8 @@ class LaunchRules {
             deck.some((type) => typeof type !== 'string' || !this.grain(type))
         )
             throw new Error(`덱은 중복 없이 유효한 카드를 1~${this.deckLimit}장 포함해야 합니다.`);
+        if (deck.filter((type) => this.isHeroType(type)).length > this.deckHeroLimit)
+            throw new Error(`덱에 장착할 수 있는 영웅은 최대 ${this.deckHeroLimit}명이에요.`);
         return deck.slice();
     }
     static normalizeDeckPair(decks) {
