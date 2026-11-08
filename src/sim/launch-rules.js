@@ -20,7 +20,8 @@ class LaunchRules {
     static populationLimit = 300;
     static startingWallet = this.walletCap;
     static premiumWalletCap = this.walletCap;
-    static depositCapacity = 200 * this.resourceScale;
+    static baseDeposit = Object.freeze({ capacity: 3000, miningPerSecond: 15 });
+    static outpostDeposit = Object.freeze({ capacity: 1000, miningPerSecond: 5 });
     static minReach = 250;
     static maxReach = 500;
     static chargeMs = 1500;
@@ -37,7 +38,6 @@ class LaunchRules {
     static rangeUpgradePremiumCosts = Object.freeze(
         [0, 0, 25, 50].map((cost) => cost * this.resourceScale),
     );
-    static captureIncomePerSecond = 1 * this.resourceScale;
     static rangeMultiplier(level = 0) {
         return this.rangeMultipliers[level] ?? this.rangeMultipliers[0];
     }
@@ -47,12 +47,12 @@ class LaunchRules {
     static upgradePremiumCost(level) {
         return this.rangeUpgradePremiumCosts[level] ?? null;
     }
-    static incomePerSecondFor(capturePoints, side, resource = 'basic') {
-        return capturePoints.reduce(
+    static incomePerSecondFor(deposits, side, resource = 'basic') {
+        return deposits.reduce(
             (n, p) =>
                 n +
                 (p.owner === side && p.resourceType === resource && p.remaining > 0
-                    ? this.captureIncomePerSecond
+                    ? p.miningPerSecond
                     : 0),
             0,
         );

@@ -3263,7 +3263,7 @@ class GLRenderer {
             const guide = visibleConstruction
                 ? `건설 ${Math.round(ConstructionRules.progress(construction) * 1000) / 10}% · ◆ ${construction.invested}/${construction.cost}`
                 : cp.owner != null
-                  ? `인컴 +${LaunchRules.captureIncomePerSecond}/초 · 자동 방어`
+                  ? `인컴 +${cp.remaining > 0 ? cp.miningPerSecond : 0}/초 · 자동 방어`
                   : locked
                     ? '연결 전술 오브젝트 처치 필요'
                     : `병력이 직접 건설 · ${BuildingDefinition.get(BuildingDefinition.forRole('outpost')).construction.cost}원 · ${BuildingDefinition.get(BuildingDefinition.forRole('outpost')).construction.workRequired}작업`;
