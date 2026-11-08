@@ -7,6 +7,11 @@ const PARTS = [
 ];
 
 const BODY = { slot: [2, 2, 240, 214], rect: [-120, -116, 240, 214], part: 0 };
+// Rind bounds around the roll pivot in source pixels.
+const ROLL_CENTER_Y = -9;
+const ROLL_RADIUS_X = 118;
+const ROLL_RADIUS_Y = 108;
+const STANDING_GROUND_Y = 121;
 const FOOT = { slot: [320, 2, 46, 58], rect: [-23, -29, 46, 58] };
 const HAND = { slot: [246, 2, 70, 70], rect: [-35, -35, 70, 70] };
 const FEET = [
@@ -50,6 +55,7 @@ const RIG = {
             key(0, { body: { scaleX: 1.08, scaleY: 0.9, rotation: -0.09 } }),
             key(260),
         ]),
+        roll: clip(1, 'once', [key(0), key(1)]),
         spin: clip(4000, 'once', [
             key(0),
             key(850, { body: { y: 7, scaleX: 1.08, scaleY: 0.91 } }),
@@ -84,6 +90,49 @@ export function watermelonSpritePortrait(source, width) {
     ctx.drawImage(source, ...BODY.slot, ...BODY.rect);
     ctx.drawImage(source, ...FACES.neutral.slot, ...FACES.neutral.rect);
     return canvas.toDataURL('image/png');
+}
+
+export function watermelonRollProgress(roll, renderTick) {
+    if (roll.phase === 'roll') return 0;
+    const duration = Math.max(1, roll.phaseEndTick - roll.phaseStartTick);
+    return Math.min(1, Math.max(0, (renderTick - roll.phaseStartTick) / duration));
+}
+
+export function watermelonRollTuck(phase, progress) {
+    if (phase === 'roll') return 1;
+    const p = phase === 'hop' ? Math.min(1, Math.max(0, (progress - 0.18) / 0.5)) : 1 - progress;
+    return p * p * (3 - 2 * p);
+}
+
+export function setWatermelonRollMatrix(
+    matrix,
+    x,
+    groundY,
+    scale,
+    pixelsPerWorld,
+    heading,
+    distance,
+    tuck = 1,
+    unfoldProgress = 0,
+) {
+    const radius = (ROLL_RADIUS_X * scale) / pixelsPerWorld;
+    let angle = (heading * distance) / radius;
+    if (unfoldProgress > 0) {
+        // Resolve the nearest upright angle so the body does not unwind through past turns.
+        angle = Math.atan2(Math.sin(angle), Math.cos(angle)) * (1 - unfoldProgress);
+    }
+    const cos = Math.cos(angle),
+        sin = Math.sin(angle);
+    matrix[0] = cos * scale;
+    matrix[1] = sin * scale;
+    matrix[2] = -sin * scale;
+    matrix[3] = cos * scale;
+    matrix[4] = x - matrix[2] * ROLL_CENTER_Y;
+    // The short side and long side of the rind both rest on the same ground line.
+    const rind = Math.hypot(ROLL_RADIUS_X * sin, ROLL_RADIUS_Y * cos);
+    const standing = STANDING_GROUND_Y - ROLL_CENTER_Y;
+    const support = (standing + (rind - standing) * tuck) * scale;
+    matrix[5] = groundY - support - matrix[3] * ROLL_CENTER_Y;
 }
 
 // The original SVG is sampled once into the shared sprite atlas. The same pieces
@@ -130,6 +179,7 @@ export class WatermelonSpriteRenderer {
             };
         };
         this.body = [build([...FEET, LEFT, RIGHT, BODY]), build([...FEET, LEFT, BODY])];
+        this.rollBody = build([BODY]);
         this.faces = Object.fromEntries(
             Object.entries(FACES).map(([name, part]) => [
                 name,
@@ -157,6 +207,7 @@ export class WatermelonSpriteRenderer {
             elapsed: 0,
             pose: null,
             frontHand: false,
+            rollTuck: 0,
             disposed: false,
             play(name) {
                 this.currentClip = name in RIG.clips ? name : 'idle';
@@ -173,6 +224,7 @@ export class WatermelonSpriteRenderer {
             },
             preparePose() {
                 const spin = this.currentClip === 'spin',
+                    tuck = this.currentClip === 'roll' ? this.rollTuck : 0,
                     windup = spin ? Math.min(1, this.elapsed / 1000) : 0,
                     recovery = spin ? Math.max(0, 1 - (this.elapsed - 3000) / 1000) : 0,
                     reach = Math.min(windup, recovery),
@@ -182,13 +234,20 @@ export class WatermelonSpriteRenderer {
                             : 0;
                 // The identical fists exchange sides at the end of the half-turn.
                 // Recover from the nearest rest positions on the new sides.
+                for (const index of [1, 2]) {
+                    const foot = basePoses[index];
+                    foot.y = -45 * tuck;
+                    foot.scaleX = foot.scaleY = 1 - 0.45 * tuck;
+                }
                 for (const index of [3, 4]) {
                     const pose = basePoses[index],
                         side = index === 3 ? -1 : 1;
-                    pose.x = side * (118 * (1 - reach) + 144 * Math.cos(angle) * reach);
-                    pose.y = 48 * (1 - reach) + (4 + side * 76 * Math.sin(angle)) * reach;
+                    pose.x =
+                        side * ((118 - 51 * tuck) * (1 - reach) + 144 * Math.cos(angle) * reach);
+                    pose.y =
+                        (48 - 24 * tuck) * (1 - reach) + (4 + side * 76 * Math.sin(angle)) * reach;
                     pose.rotation = side * 0.19 * Math.cos(angle) + Math.sin(angle) * reach;
-                    pose.scaleX = 1 + 0.22 * reach;
+                    pose.scaleX = 1 + 0.22 * reach - 0.45 * tuck;
                     pose.scaleY = pose.scaleX;
                 }
                 this.frontHand = spin && this.elapsed > 1000 && this.elapsed < 3000;
@@ -226,7 +285,11 @@ export class WatermelonSpriteRenderer {
     }
 
     drawBody(actor, matrix, depth) {
-        this.draw(this.body[Number(actor.frontHand)], matrix, depth, actor, 0.05);
+        const body =
+            actor.currentClip === 'roll' && actor.rollTuck >= 1
+                ? this.rollBody
+                : this.body[Number(actor.frontHand)];
+        this.draw(body, matrix, depth, actor, 0.05);
     }
 
     drawFace(actor, matrix, depth, face) {

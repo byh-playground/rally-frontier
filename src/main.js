@@ -42,6 +42,11 @@ import { BACKGROUND_TICK_PULSE_MS } from './core/session-timing.js';
 import { RENDER_TRACKS } from './render/render-tracks.js';
 import { BuildingArt } from './render/building-art.js';
 import { GRAIN_SPRITES } from './render/grain-sprite-registry.js';
+import {
+    setWatermelonRollMatrix,
+    watermelonRollProgress,
+    watermelonRollTuck,
+} from './render/watermelon-sprite.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
 import {
     CONFIG,
@@ -2366,6 +2371,14 @@ class GLRenderer {
         if (kind === 'unit') {
             const heightFP = motionState.impactMotion?.heightFP;
             if (Number.isFinite(heightFP)) height = Math.max(0, heightFP) / FP;
+            if (motionState.heroRoll?.phase === 'hop') {
+                const hop = watermelonRollProgress(
+                    motionState.heroRoll,
+                    model?.tick ?? this.snapshot.tick,
+                );
+                const apex = UnitDefinition.get(entity.type).size;
+                height += 4 * apex * hop * (1 - hop);
+            }
         }
         if (kind === 'unitLob') {
             // zFP is authoritative absolute world altitude, not a visual-only arc.
@@ -2876,6 +2889,8 @@ class GLRenderer {
                     );
             } else if (e.type === 'spinBasicImpact') {
                 this.addClientFx('spinBasicImpact', e, snapshot, index);
+            } else if (e.type === 'heroRollHit') {
+                this.addClientFx('meleeImpact', e, snapshot, index, { impactScale: 1.5 });
             } else if (e.type === 'unitThornHit') {
                 this.addClientFx('thornImpact', e, snapshot, index, {
                     id: 'thorn-impact:' + e.projectileId,
@@ -4639,17 +4654,26 @@ class GLRenderer {
                         this.orientationRole() === 'guest' ? -worldDirection : worldDirection;
                 }
             }
-            const spin = entity.spinAttack;
+            const spin = entity.spinAttack,
+                roll =
+                    record.compiled === this.spriteRenderers.watermelon && grounded
+                        ? entity.heroRoll
+                        : null;
+            const rollProgress = roll?.phase ? watermelonRollProgress(roll, renderTick) : 0;
             const selfDestruct =
                 entity.selfDestruct?.phase === 'windup' ? entity.selfDestruct : null;
             if (selfDestruct) clip = 'windup';
             if (spin) clip = 'spin';
+            if (roll?.phase) clip = 'roll';
             if (
                 actor.currentClip !== clip ||
                 (restart && record.sprite && (clip === 'fire' || clip === 'hit'))
             )
                 actor.play(clip, 0);
-            if (spin) {
+            if (roll?.phase) {
+                actor.rollTuck = watermelonRollTuck(roll.phase, rollProgress);
+                actor.seekElapsed(0);
+            } else if (spin) {
                 const windupTicks = Math.max(1, spin.activeStartTick - spin.startTick);
                 const activeTicks = Math.max(1, spin.activeEndTick - spin.activeStartTick);
                 const recoveryTicks = Math.max(1, spin.endTick - spin.activeEndTick);
@@ -4709,9 +4733,25 @@ class GLRenderer {
                 cy = record.ground[1] - 120;
             m[4] = p.x + (work?.offsetX ?? 0) - m[0] * cx - m[2] * cy;
             m[5] = p.y + (work?.offsetY ?? 0) + r * 0.55 - 120 * scale - m[1] * cx - m[3] * cy;
+            if (roll?.phase) {
+                const heading =
+                    (this.orientationRole() === 'guest' ? -1 : 1) *
+                    Math.sign(Math.abs(roll.dx) > 0.001 ? roll.dx : roll.dy);
+                setWatermelonRollMatrix(
+                    m,
+                    p.x,
+                    p.y + r * 0.55,
+                    scale,
+                    this.sc(),
+                    heading,
+                    roll.distance,
+                    actor.rollTuck,
+                    roll.phase === 'unfold' ? rollProgress : 0,
+                );
+            }
             grain.depth = RangeUtil.clamp(depth, -0.98, 0.98) - ++rank * GRAIN_DEPTH_RANK_STEP;
             grain.face =
-                grounded && (clip === 'fire' || spin)
+                grounded && (clip === 'fire' || spin || roll?.phase)
                     ? 'attack'
                     : impact.expression ||
                       ((record.sprite ? clip === 'hit' : u.hitFlash > 0)
@@ -7442,9 +7482,35 @@ UiRegistry.refs.launchRangeBtn = DomUtil.byId('launchRangeBtn');
 UiRegistry.refs.launchRangeText = DomUtil.byId('launchRangeText');
 UiRegistry.refs.launchRangeCost = DomUtil.byId('launchRangeCost');
 UiRegistry.refs.launchRangeBtn?.addEventListener('click', () => LaunchPresentation.upgradeRange());
+UiRegistry.refs.launchCards?.addEventListener('pointerdown', (e) =>
+    LaunchPresentation.pressHeroCard(e),
+);
+UiRegistry.refs.launchCards?.addEventListener('pointermove', (e) =>
+    LaunchPresentation.moveHeroPress(e),
+);
+UiRegistry.refs.launchCards?.addEventListener('pointerout', (e) => {
+    const press = LaunchPresentation.heroPress;
+    if (press?.pointerId === e.pointerId && !press.button.contains(e.relatedTarget))
+        LaunchPresentation.endHeroPress(true);
+});
+for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    UiRegistry.refs.launchCards?.addEventListener(type, (e) => {
+        if (LaunchPresentation.heroPress?.pointerId === e.pointerId)
+            LaunchPresentation.endHeroPress(type !== 'pointerup');
+    });
+}
+UiRegistry.refs.launchCards?.addEventListener('contextmenu', (e) => {
+    if (e.pointerType !== 'touch' && e.button !== 0) return;
+    const press = LaunchPresentation.heroPress || LaunchPresentation.heroPressClick;
+    if (press?.button.contains(e.target) && !e.target.closest('[data-card-info]'))
+        e.preventDefault();
+});
+UiRegistry.refs.launchCards?.addEventListener('keydown', (e) => LaunchPresentation.heroSkillKey(e));
+window.addEventListener('blur', () => LaunchPresentation.endHeroPress(true));
 UiRegistry.refs.launchCards?.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-launch-card]');
-    if (b) LaunchPresentation.selectCard(b.dataset.launchCard);
+    const button = e.target.closest('[data-launch-card]');
+    if (button && !LaunchPresentation.consumeHeroClick(e, button))
+        LaunchPresentation.selectCard(button.dataset.launchCard);
 });
 
 const UI_RADIO = Object.freeze({
@@ -9808,11 +9874,14 @@ class BuildMetadataPresentation {
 
 // 조준 중 예상 착지와 최대 사거리를 표시하고, 실제 착탄 흔적은 권위 사건을 따른다.
 class LaunchPresentation {
+    static HERO_SKILL_HOLD_MS = 500;
     static card = null;
     static deckKey = '';
     static lastPower = null;
     static marks = [];
     static hold = null;
+    static heroPress = null;
+    static heroPressClick = null;
     static feedbackTimer = 0;
     static feedback(message) {
         const el = DomUtil.byId('launchFeedback');
@@ -9834,6 +9903,8 @@ class LaunchPresentation {
         this.lastPower = null;
         this.marks = [];
         this.hold = null;
+        this.endHeroPress();
+        this.heroPressClick = null;
         clearTimeout(this.feedbackTimer);
         this.feedbackTimer = 0;
         DomUtil.byId('launchFeedback')?.classList.add('hidden');
@@ -9842,6 +9913,8 @@ class LaunchPresentation {
         const on = !!s;
         document.body.classList.toggle('launch-mode', on);
         UiRegistry.refs.launchHand?.classList.toggle('hidden', !on);
+        if (this.heroPress && !this.currentHeroPress(this.heroPress, s, side))
+            this.endHeroPress(true);
         if (!on) return;
         const deck = s.decks?.[side] || LaunchRules.deck,
             heroCard = LaunchRules.heroCard,
@@ -9913,6 +9986,21 @@ class LaunchPresentation {
     }
     static presentEvents(snapshot, side) {
         for (const event of snapshot.events || []) {
+            if (
+                event.type === 'heroSkillRejected' &&
+                event.side === side &&
+                this.active(snapshot)
+            ) {
+                this.feedback(
+                    {
+                        'hero-not-deployed': '출격 중인 영웅이 필요합니다.',
+                        'hero-busy': '영웅이 다른 동작을 하고 있습니다.',
+                        'insufficient-basic-resources': '기본 자원이 부족합니다.',
+                        'hero-no-target': '범위 안에 적이 없습니다.',
+                    }[event.reason] || '영웅 스킬을 쓸 수 없습니다.',
+                );
+                continue;
+            }
             if (event.type === 'heroRecovered' && event.side === side && this.active(snapshot)) {
                 this.feedback('영웅 회수 · 다시 출격할 수 있습니다.');
                 continue;
@@ -9955,7 +10043,8 @@ class LaunchPresentation {
         const hpText = `${currentHp}/${maxHp}`;
         health.textContent = `♥ ${hpText}`;
         health.style.setProperty('--hero-hp', `${(100 * currentHp) / maxHp}%`);
-        el.title = recovering ? `${label[1]} · 회복 중` : label[1];
+        const skillHint = this.renderHeroSkill(el, s, side, unit, definition.heroActive);
+        el.title = `${label[1]}${recovering ? ' · 회복 중' : ''}${skillHint}`;
         const attackCounter = this.renderAttackCounter(
             el,
             unit?.alive ? (unit.spinAttackBasicHits ?? 0) : null,
@@ -9963,12 +10052,46 @@ class LaunchPresentation {
         );
         el.setAttribute(
             'aria-label',
-            `${definition.name} · ${label[0]} · 체력 ${hpText}${recovering ? ' · 회복 중' : ''}${attackCounter}`,
+            `${definition.name} · ${label[0]} · 체력 ${hpText}${recovering ? ' · 회복 중' : ''}${attackCounter}${skillHint}`,
         );
         el.classList.toggle('hero-dead', mode === 'dead');
         if (mode === 'advance' || mode === 'return')
             el.setAttribute('aria-pressed', String(mode === 'advance'));
         else el.removeAttribute('aria-pressed');
+    }
+    static renderHeroSkill(el, s, side, unit, skill) {
+        let badge = el.querySelector('.hero-card-skill');
+        const deployed = !!skill && !!unit?.alive && this.active(s);
+        el.toggleAttribute('data-hero-skill', deployed);
+        if (!deployed) {
+            if (badge) badge.hidden = true;
+            el.removeAttribute('aria-keyshortcuts');
+            return '';
+        }
+        el.setAttribute('aria-keyshortcuts', 'Shift+Enter');
+        if (!badge) {
+            const name = el.querySelector('b'),
+                row = document.createElement('span');
+            row.className = 'hero-card-name';
+            badge = document.createElement('span');
+            badge.className = 'hero-card-skill';
+            badge.setAttribute('aria-hidden', 'true');
+            name.before(row);
+            row.append(name, badge);
+        }
+        const status = { hop: '뛰는 중', roll: '구르는 중', unfold: '자세 펴기' }[
+            unit.heroRoll?.phase
+        ];
+        badge.hidden = false;
+        badge.textContent = status ?? `길게 ◆ ${skill.cost}`;
+        badge.toggleAttribute('data-rolling', !!status);
+        badge.toggleAttribute(
+            'data-unavailable',
+            !UnitMotion.isGrounded(unit) || s.wallet?.[side] < skill.cost,
+        );
+        return status
+            ? ` · ${status}`
+            : ` · 길게 누르기 또는 Shift+Enter로 스킬 사용 · 기본 자원 ${skill.cost}`;
     }
     static renderAttackCounter(el, current, required) {
         let counter = el.querySelector('.hero-card-counter');
@@ -10060,6 +10183,113 @@ class LaunchPresentation {
         }
         this.card = type;
         this.render(s, side);
+    }
+    static heroSkillSortie(s, side) {
+        if (
+            !this.active(s) ||
+            UiRuntimeState.value.screen !== 'game' ||
+            UiRuntimeState.value.modal !== 'none'
+        )
+            return null;
+        const hero = s.heroes?.[side];
+        if (!hero?.unitId || hero.mode === 'dead') return null;
+        const unit = s.units?.find((entry) => entry.id === hero.unitId);
+        if (!unit?.alive || unit.side !== side || !UnitMotion.isGrounded(unit)) return null;
+        return hero.sortieId;
+    }
+    static currentHeroPress(press, s, side) {
+        return (
+            press.button.isConnected &&
+            MatchLifecycle.activeSession() === press.session &&
+            press.session.inputAvailable() &&
+            this.heroSkillSortie(s, side) === press.sortieId
+        );
+    }
+    static issueHeroSkill(session, sortieId) {
+        if (!session.command({ type: 'ACTIVATE_HERO_SKILL', sortieId }))
+            this.feedback('영웅 스킬 명령을 접수할 수 없습니다.');
+    }
+    static heroSkillKey(e) {
+        if (
+            e.key !== 'Enter' ||
+            !e.shiftKey ||
+            e.altKey ||
+            e.ctrlKey ||
+            e.metaKey ||
+            !e.target.matches('[data-hero-skill]')
+        )
+            return;
+        e.preventDefault();
+        if (e.repeat || this.heroPress) return;
+        const side = ConnectionSideUtil.roleSide(ActiveViewState.role),
+            sortieId = this.heroSkillSortie(ActiveViewState.snap, side),
+            session = MatchLifecycle.activeSession();
+        if (sortieId && session?.inputAvailable()) this.issueHeroSkill(session, sortieId);
+    }
+    static pressHeroCard(e) {
+        if (!e.isPrimary || e.button !== 0) return;
+        this.endHeroPress();
+        this.heroPressClick = null;
+        const button = e.target.closest('[data-launch-card]');
+        if (
+            button?.dataset.launchCard !== LaunchRules.heroCard ||
+            e.target.closest('[data-card-info]') ||
+            !UnitDefinition.get(LaunchRules.heroCard)?.heroActive
+        )
+            return;
+        const side = ConnectionSideUtil.roleSide(ActiveViewState.role),
+            sortieId = this.heroSkillSortie(ActiveViewState.snap, side),
+            session = MatchLifecycle.activeSession();
+        if (!sortieId || !session?.inputAvailable()) return;
+        const press = {
+            button,
+            pointerId: e.pointerId,
+            x: e.clientX,
+            y: e.clientY,
+            session,
+            sortieId,
+        };
+        press.timer = setTimeout(() => {
+            this.endHeroPress(true);
+            const currentSide = ConnectionSideUtil.roleSide(ActiveViewState.role);
+            if (document.hidden || !this.currentHeroPress(press, ActiveViewState.snap, currentSide))
+                return;
+            this.issueHeroSkill(session, sortieId);
+        }, this.HERO_SKILL_HOLD_MS);
+        this.heroPress = press;
+    }
+    static moveHeroPress(e) {
+        const press = this.heroPress;
+        if (press?.pointerId !== e.pointerId) return;
+        const rect = press.button.getBoundingClientRect();
+        if (
+            Math.hypot(e.clientX - press.x, e.clientY - press.y) > LAUNCH_HOLD_DRAG_PX ||
+            e.clientX < rect.left ||
+            e.clientX >= rect.right ||
+            e.clientY < rect.top ||
+            e.clientY >= rect.bottom
+        )
+            this.endHeroPress(true);
+    }
+    static endHeroPress(suppressClick = false) {
+        const press = this.heroPress;
+        if (!press) return;
+        clearTimeout(press.timer);
+        this.heroPress = null;
+        if (suppressClick)
+            this.heroPressClick = { button: press.button, pointerId: press.pointerId };
+    }
+    static consumeHeroClick(e, button) {
+        const press = this.heroPressClick;
+        // Keyboard clicks have no pointer and must keep their tap behavior.
+        if (
+            press?.button !== button ||
+            !e.detail ||
+            (e.pointerType && e.pointerId !== press.pointerId)
+        )
+            return false;
+        this.heroPressClick = null;
+        return true;
     }
     static upgradeRange() {
         if (!this.active()) return;

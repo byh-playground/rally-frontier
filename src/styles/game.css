@@ -656,6 +656,35 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
 .hero-card .launch-card-portrait {
     height: 54px;
 }
+.hero-card[data-hero-skill] {
+    -webkit-touch-callout: none;
+}
+.hero-card .launch-card-info {
+    -webkit-touch-callout: default;
+}
+.hero-card-name {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+}
+.hero-card-skill {
+    padding: 1px 4px;
+    border-radius: 999px;
+    background: #286f9e;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+}
+.hero-card-skill[data-unavailable] {
+    background: #645d55;
+}
+.hero-card-skill[data-rolling] {
+    background: #276143;
+}
 .hero-card-counter {
     position: absolute;
     inset: 5px auto auto 5px;

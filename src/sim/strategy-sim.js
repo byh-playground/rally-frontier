@@ -2,6 +2,7 @@ import { UnitLobAttack } from './unit-lob-attack.js';
 // The deterministic lockstep strategy simulation.
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { HeroDeployment } from './hero-deployment.js';
+import { HeroRollAttack } from './hero-roll-attack.js';
 import { UnitSpinAttack } from './unit-spin-attack.js';
 import { UnitSelfDestructAttack } from './unit-self-destruct-attack.js';
 import { UnitLeapAttack } from './unit-leap-attack.js';
@@ -1522,6 +1523,8 @@ class StrategySim {
         const side = ConnectionSideUtil.roleSide(actor);
         if (action.type === 'TOGGLE_HERO')
             return HeroDeployment.toggle(this, side, action.sortieId);
+        if (action.type === 'ACTIVATE_HERO_SKILL')
+            return HeroRollAttack.activate(this, side, action.sortieId);
         if (action.type === 'LAUNCH') return this.applyLaunchCommand(side, action);
         if (action.type === 'UPGRADE_LAUNCH_RANGE') return this.upgradeLaunchRange(side);
         return false;
@@ -2152,6 +2155,7 @@ class StrategySim {
         const d = UnitDefinition.get(u.type);
         if (d.selfDestruct && UnitSelfDestructAttack.update(this, u, d.selfDestruct)) return null;
         this.tickAttackTimers(u);
+        if (u.heroRoll) return null;
         if (HeroDeployment.moveReturningUnit(this, u, d)) {
             UnitSpinAttack.cancel(this, u);
             return null;
@@ -3308,7 +3312,7 @@ class StrategySim {
         for (let i = 0; i < n; i++) {
             const u = units[i],
                 ud = UnitDefinition.get(u.type);
-            if (!u.alive || ud?.crowdCollision === false) {
+            if (!u.alive || u.heroRoll || ud?.crowdCollision === false) {
                 radii[i] = 0;
                 masses[i] = 0;
                 continue;
@@ -3574,6 +3578,11 @@ class StrategySim {
 
         // Projectile hits inject velocity at this boundary. Both horizontal and vertical integration start next tick.
         mark = profile ? now() : 0;
+        for (const hero of this.heroes) {
+            if (hero?.unitId == null) continue;
+            const unit = this.liveEntityRefById(hero.unitId, 'unit')?.entity;
+            if (unit?.heroRoll) HeroRollAttack.update(this, unit);
+        }
         winner = this.updateProjectiles() || winner;
         UnitLobAttack.step(this);
         UnitThornAttack.update(this);

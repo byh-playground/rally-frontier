@@ -11,6 +11,7 @@ const { ObstacleField, SurfaceMotion, SweptCircleContact, SurfaceContactGeometry
 import { FP } from '../core/config.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { UnitLeapAttack } from './unit-leap-attack.js';
+import { HeroRollAttack } from './hero-roll-attack.js';
 
 // Interaction geometry owns the legal arrival set; the distance field only leads units to it.
 // Goal regions are continuous (discs/annuli), not a fixed number of radial probes.
@@ -331,6 +332,7 @@ class UnitMotion {
         m.startTick = sim.tick;
         m.endTick = sim.tick + sim.msTicks(Math.max(250, Math.round(flightSeconds * 1000)));
         m.recoverUntilTick = m.endTick + sim.msTicks(LaunchImpactRules.recoveryMs);
+        if (u.heroRoll) HeroRollAttack.cancel(u);
         if (!UnitMotion.isGrounded(u)) {
             u.combat.cancelWindup();
             u.combat.attackArcTargetId = null;
@@ -449,7 +451,7 @@ class UnitMotion {
                             key: 'surface:' + u.id + ':' + String(hit.key || 'surface'),
                         });
                 }
-                if (!u.alive || !u.impactMotion) continue;
+                if (!u.alive || !u.impactMotion || u.heroRoll) continue;
                 const reach =
                     (Math.hypot(vx[i], vy[i]) + maxSpeed) * remaining +
                     sim.unitRadius(u.type) +
@@ -459,6 +461,7 @@ class UnitMotion {
                         const other = units[j];
                         if (
                             !other?.alive ||
+                            other.heroRoll ||
                             sim.isAlliedCollisionUnit(u, other) ||
                             UnitLeapAttack.separated(sim, u, other) ||
                             (other.impactMotion && j < i)

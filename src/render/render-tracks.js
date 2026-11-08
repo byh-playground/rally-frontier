@@ -9,6 +9,7 @@ class UnitRenderObject extends RenderField {
     static renderSchema = {
         tick: RenderField.LINEAR,
         'entity.impactMotion.heightFP': RenderField.LINEAR,
+        'entity.heroRoll.distance': RenderField.LINEAR,
         ...Object.fromEntries(
             [
                 'kind',
@@ -51,6 +52,11 @@ class UnitRenderObject extends RenderField {
                 'spinAttack.activeStartTick',
                 'spinAttack.activeEndTick',
                 'spinAttack.endTick',
+                'heroRoll.phase',
+                'heroRoll.phaseStartTick',
+                'heroRoll.phaseEndTick',
+                'heroRoll.dx',
+                'heroRoll.dy',
                 'selfDestruct.phase',
                 'selfDestruct.startTick',
                 'selfDestruct.endTick',

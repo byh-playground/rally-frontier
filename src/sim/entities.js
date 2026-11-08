@@ -40,6 +40,8 @@ class Unit {
     );
     constructor(spec = {}) {
         const data = Unit.stateContract.create(spec);
+        if (UnitDefinition.get(data.type)?.heroActive && !Object.hasOwn(data, 'heroRoll'))
+            data.heroRoll = null;
         const spinAttack = UnitDefinition.get(data.type)?.spinAttack;
         if (spinAttack && !Object.hasOwn(data, 'spinAttack')) data.spinAttack = null;
         if (spinAttack?.rhythm && !Object.hasOwn(data, 'spinAttackBasicHits'))
