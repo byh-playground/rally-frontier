@@ -215,7 +215,7 @@ class FrontierTerrainLayout {
             id: 'mid-center',
             lane: 'MID',
             laneKey: 'mid',
-            label: '중앙 고급 거점',
+            label: '중앙 기름 거점',
             stage: 0,
             resourceType: 'premium',
             ...center,

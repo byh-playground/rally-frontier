@@ -77,8 +77,8 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 };
                 state.mapDescriptor = map;
                 for (const deposit of state.baseDeposits) {
-                    deposit.remaining = 0;
-                    deposit.miningCarry = 0;
+                    deposit.stocks.basic.remaining = 0;
+                    deposit.stocks.basic.miningCarry = 0;
                 }
                 state.units = [];
                 state.projectiles = [];
@@ -92,9 +92,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     enabled: true,
                     label: '거점' + i,
                     resourceType: 'basic',
-                    remaining: LaunchRules.outpostDeposit.capacity,
-                    miningPerSecond: LaunchRules.outpostDeposit.miningPerSecond,
-                    miningCarry: 0,
+                    stocks: LaunchRules.depositStocks(LaunchRules.outpostDeposit),
                     discoveredBy: [false, false],
                 }));
                 for (const b of state.buildings) {
@@ -307,15 +305,20 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     'forward cannons have equal central support and direct range after two upgrades',
                 );
                 attack(forwardCannon, premium, 1, LaunchRules.captureHoldRadius);
-                const before = premium.remaining,
-                    walletBefore = sim.premiumWallet[0];
-                step(sim, sim.tps);
+                const { basic: supplyStock, premium: oilStock } = premium.stocks;
                 check(
-                    before - premium.remaining === 5 && sim.premiumWallet[0] - walletBefore >= 5,
-                    'completed premium deposit mines five units from its own finite stock',
+                    supplyStock.miningPerSecond === 2.5 && oilStock.miningPerSecond === 2.5,
+                    'oil outpost divides the mining rate equally',
+                );
+                const before = oilStock.remaining,
+                    walletBefore = sim.premiumWallet[0];
+                step(sim, 2 * sim.tps);
+                check(
+                    before - oilStock.remaining === 5 && sim.premiumWallet[0] - walletBefore >= 5,
+                    'completed oil deposit mines five oil in two seconds',
                     {
                         before,
-                        remaining: premium.remaining,
+                        remaining: oilStock.remaining,
                         walletBefore,
                         wallet: sim.premiumWallet[0],
                     },
@@ -323,7 +326,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 const corn = LaunchRules.payload('corn');
                 for (
                     let i = 0;
-                    i < 30 * sim.tps &&
+                    i < 55 * sim.tps &&
                     (sim.wallet[0] < corn.cost || sim.premiumWallet[0] < corn.premiumCost);
                     i++
                 )
@@ -348,8 +351,31 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     sim.unitResultStats[0].corn.deployed === corn.count,
                     'all corn soldiers deploy',
                 );
+                // A capped wallet preserves only its own stock. The other one keeps mining.
+                sim.wallet[0] = LaunchRules.walletCap;
+                const supplyBefore = supplyStock.remaining;
+                const oilBefore = oilStock.remaining;
+                step(sim, 2 * sim.tps);
+                check(
+                    supplyStock.remaining === supplyBefore && oilBefore - oilStock.remaining === 5,
+                    'oil mining continues while supply is at capacity',
+                );
+                sim.wallet[0] = 0;
+                sim.premiumWallet[0] = LaunchRules.premiumWalletCap;
+                const pausedOil = oilStock.remaining;
+                const copy = restore(sim);
+                step(sim, 2 * sim.tps);
+                step(copy, 2 * copy.tps);
+                check(
+                    supplyBefore - supplyStock.remaining === 5 &&
+                        oilStock.remaining === pausedOil &&
+                        sim.checksum() === copy.checksum(),
+                    'supply mining continues with a capped oil wallet after restore',
+                );
                 rows.push({
-                    scenario: 'separate outer expansion, central premium and corn deployment',
+                    scenario: 'separate outer expansion, mixed oil deposit and corn deployment',
+                    mixedRemaining: { supply: supplyStock.remaining, oil: oilStock.remaining },
+                    independentCaps: true,
                     cornDeployed: sim.unitResultStats[0].corn.deployed,
                     distances: [
                         distance(base, natural),
@@ -358,7 +384,6 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         distance(natural, flank),
                     ],
                     tick: sim.tick,
-                    remaining: premium.remaining,
                 });
             }
             // The player can buy a global range level with the starting wallet.
@@ -425,7 +450,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
             // The home base is a finite basic deposit; a full wallet pauses mining.
             {
                 const sim = new StrategySim(seed, GameRuleDefinition.resolve()),
-                    baseDeposit = sim.baseDeposits[0];
+                    baseDeposit = sim.baseDeposits[0].stocks.basic;
                 check(
                     sim.wallet[0] === 500 &&
                         sim.premiumWallet[0] === 0 &&
@@ -440,7 +465,12 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 );
                 check(
                     baseDeposit.remaining === 3000 &&
-                        sim.capturePoints.every((point) => point.remaining === 1000),
+                        sim.capturePoints.every((point) =>
+                            point.resourceType === 'premium'
+                                ? point.stocks.basic.remaining === 500 &&
+                                  point.stocks.premium.remaining === 500
+                                : point.stocks.basic.remaining === 1000 && !point.stocks.premium,
+                        ),
                     'home base starts with a larger stock than ordinary deposits',
                 );
                 sim.wallet[0] = 400;

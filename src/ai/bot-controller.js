@@ -249,6 +249,10 @@ class BotController {
             });
     }
 
+    static hasOil(point) {
+        return (point?.stocks.premium?.remaining ?? 0) > 0;
+    }
+
     static captureShot(cannons, objectives, deck, level) {
         const support = LaunchRules.captureHoldRadius - 100;
         const workers = deck.filter(({ type }) => {
@@ -263,8 +267,7 @@ class BotController {
             })
             .sort(
                 (a, b) =>
-                    Number(b.target.resourceType === 'premium' && b.target.remaining > 0) -
-                        Number(a.target.resourceType === 'premium' && a.target.remaining > 0) ||
+                    Number(this.hasOil(b.target)) - Number(this.hasOil(a.target)) ||
                     a.distance - b.distance,
             )[0];
     }
@@ -388,10 +391,7 @@ class BotController {
         const capture = BotController.captureShot(cannons, objectives, deck, level);
         const premiumTargets = hostile.filter((b) =>
             state.capturePoints.some(
-                (point) =>
-                    point.outpostId === b.id &&
-                    point.resourceType === 'premium' &&
-                    point.remaining > 0,
+                (point) => point.outpostId === b.id && BotController.hasOil(point),
             ),
         );
         if (level < 2) {
@@ -399,8 +399,8 @@ class BotController {
             const unlocksCapture =
                 nextCapture &&
                 (!capture ||
-                    (nextCapture.target.resourceType === 'premium' &&
-                        capture.target.resourceType !== 'premium'));
+                    (BotController.hasOil(nextCapture.target) &&
+                        !BotController.hasOil(capture.target)));
             const unlocksPremiumAttack =
                 !capture &&
                 !BotController.nearestShot(cannons, premiumTargets, deck, level) &&
@@ -417,7 +417,7 @@ class BotController {
         const premiumShot = BotController.nearestShot(cannons, premiumTargets, deck, level);
         if (
             premiumShot &&
-            capture?.target.resourceType !== 'premium' &&
+            !BotController.hasOil(capture?.target) &&
             LaunchRules.incomePerSecondFor(state.capturePoints, side, 'premium') === 0
         ) {
             const unit = this.chooseCombatUnit(premiumShot, state, budget, hasIncome, enemies);
