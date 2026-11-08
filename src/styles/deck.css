@@ -31,6 +31,36 @@
     width: 100%;
     border-radius: inherit;
 }
+#cardDetail {
+    max-height: 100dvh;
+    overflow-y: auto;
+}
+.launch-unit-showcase {
+    position: relative;
+    flex: none;
+    display: grid;
+    place-items: center;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border-radius: 12px;
+    background: #e8efd9;
+}
+.launch-unit-showcase[data-static='true'] {
+    aspect-ratio: auto;
+    padding: 8px;
+}
+.launch-unit-showcase iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+.launch-unit-showcase[data-ready='true'] iframe {
+    visibility: visible;
+}
 .deck-header,
 .deck-section-head {
     display: flex;
