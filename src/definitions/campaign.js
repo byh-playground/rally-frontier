@@ -48,7 +48,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         id: 'breakthrough',
         title: '방어선 돌파',
         briefing: '적은 자원으로 방어선을 뚫으세요.',
-        baseDepositRatio: 0.25,
+        baseIncomeRatio: 0.25,
         deck: ['rice', 'pea', 'redbean'],
         enemyDeck: ['rice', 'pea', 'chestnut'],
         introducedEnemy: 'chestnut',

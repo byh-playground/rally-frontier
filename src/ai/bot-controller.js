@@ -250,7 +250,7 @@ class BotController {
     }
 
     static hasOil(point) {
-        return (point?.stocks.premium?.remaining ?? 0) > 0;
+        return (point?.production.premium?.incomePerSecond ?? 0) > 0;
     }
 
     static captureShot(cannons, objectives, deck, level) {
@@ -356,7 +356,7 @@ class BotController {
             enemyBase = hostile.find((b) => b.type === main),
             hasIncome =
                 LaunchRules.incomePerSecondFor(
-                    [...state.baseDeposits, ...state.capturePoints],
+                    [...state.baseProducers, ...state.capturePoints],
                     side,
                 ) > 0;
         const threat =

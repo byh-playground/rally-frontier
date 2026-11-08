@@ -20,8 +20,8 @@ class LaunchRules {
     static populationLimit = 300;
     static startingWallet = this.walletCap;
     static premiumWalletCap = this.walletCap;
-    static baseDeposit = Object.freeze({ capacity: 3000, miningPerSecond: 15 });
-    static outpostDeposit = Object.freeze({ capacity: 1000, miningPerSecond: 5 });
+    static baseIncomePerSecond = 15;
+    static outpostIncomePerSecond = 5;
     static minReach = 250;
     static maxReach = 500;
     static chargeMs = 1500;
@@ -47,26 +47,23 @@ class LaunchRules {
     static upgradePremiumCost(level) {
         return this.rangeUpgradePremiumCosts[level] ?? null;
     }
-    static depositStocks({ capacity, miningPerSecond }, mixed = false) {
-        const oilCapacity = mixed ? Math.floor(capacity / 2) : 0;
-        const oilRate = mixed ? miningPerSecond / 2 : 0;
-        const stocks = {
-            basic: {
-                remaining: capacity - oilCapacity,
-                miningPerSecond: miningPerSecond - oilRate,
-                miningCarry: 0,
-            },
+    static productionChannels(incomePerSecond, mixed = false) {
+        const oilRate = mixed ? incomePerSecond / 2 : 0;
+        const production = {
+            basic: { incomePerSecond: incomePerSecond - oilRate, miningCarry: 0 },
         };
         if (mixed) {
-            stocks.premium = { remaining: oilCapacity, miningPerSecond: oilRate, miningCarry: 0 };
+            production.premium = { incomePerSecond: oilRate, miningCarry: 0 };
         }
-        return stocks;
+        return production;
     }
-    static incomePerSecondFor(deposits, side, resource = 'basic') {
-        return deposits.reduce((sum, point) => {
-            const stock = point.stocks[resource];
-            return sum + (point.owner === side && stock?.remaining > 0 ? stock.miningPerSecond : 0);
-        }, 0);
+    static incomePerSecondFor(producers, side, resource = 'basic') {
+        return producers.reduce(
+            (sum, point) =>
+                sum +
+                (point.owner === side ? (point.production[resource]?.incomePerSecond ?? 0) : 0),
+            0,
+        );
     }
     // 폭발 중심의 피해 배수. 가장자리는 1배, 중심은 centerPeak배이고 거리에 따라 제곱으로 줄어든다.
     static centerPeak = 3;

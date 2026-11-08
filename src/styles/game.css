@@ -540,6 +540,14 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
 .launch-wallet-hints > span {
     white-space: nowrap;
 }
+.launch-population {
+    color: #fff;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+.launch-population[data-limit] {
+    color: #ffd9a6;
+}
 .launch-reach {
     color: #cde4ff;
 }
