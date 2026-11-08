@@ -326,13 +326,16 @@ export class LaunchScreens {
         try {
             mount = this.showcaseSurface.mount({
                 container: host,
-                scene: { kind: 'title', onError: fail },
+                scene: {
+                    kind: 'title',
+                    onError: fail,
+                    onFirstFrame: () => {
+                        if (this.titleBattleMount === mount) host.dataset.ready = 'true';
+                    },
+                },
             });
             this.titleBattleMount = mount;
-            if ((await mount.ready) && this.titleBattleMount === mount) {
-                host.dataset.ready = 'true';
-                this.syncTitleBattle?.();
-            }
+            if ((await mount.ready) && this.titleBattleMount === mount) this.syncTitleBattle?.();
         } catch (error) {
             fail(error);
         }
@@ -438,16 +441,22 @@ export class LaunchScreens {
             this.closeTitleBattle();
             mount = this.showcaseSurface.mount({
                 container: panel,
-                scene: { kind: 'unit', unitType: detail.type, onError: fail },
+                scene: {
+                    kind: 'unit',
+                    unitType: detail.type,
+                    onError: fail,
+                    onFirstFrame: () => {
+                        if (this.cardDetail !== detail || detail.mount !== mount) return;
+                        panel.dataset.ready = 'true';
+                        panel.querySelector('p')?.remove();
+                    },
+                },
             });
             detail.mount = mount;
             detail.syncPlayback = () =>
                 mount.setActive(!document.hidden && (manual || !motion.matches));
             detail.syncPlayback();
-            if ((await mount.ready) && this.cardDetail === detail && detail.mount === mount) {
-                panel.dataset.ready = 'true';
-                panel.querySelector('p')?.remove();
-            }
+            await mount.ready;
         } catch (error) {
             fail(error);
         }

@@ -1363,8 +1363,9 @@ class GLRenderer {
         this.loopStarted = false;
         cancelAnimationFrame(this.loopFrame);
     }
-    playShowcase(onError) {
+    playShowcase(onError, onFirstFrame) {
         this.onShowcaseError = onError;
+        this.onShowcaseFirstFrame = onFirstFrame;
         this.setSnapshot({ ...this.snapshot, events: [] }, { snapTargets: true });
         this.startLoop();
     }
@@ -1383,6 +1384,7 @@ class GLRenderer {
         if (this.vectorContext.active) this.vectorContext.endFrame();
         this.onPresentationFrame = null;
         this.onShowcaseError = null;
+        this.onShowcaseFirstFrame = null;
         this.snapshot = null;
         this.world = WorldContext.standard;
         this.renderState.reset();
@@ -1570,6 +1572,8 @@ class GLRenderer {
             C.flush('chestnut-projectile-resource-preparation');
             this.buildingArt.prune([]);
             C.endFrame();
+            // Warm-up draws raw art in canvas coordinates. Leave a clean backbuffer.
+            this.device.clear({ color: [0, 0, 0, 0] });
             this.gl.finish();
             if (this.device.state !== 'ready' || this.gl.isContextLost())
                 throw new Error('그래픽 장치 연결이 끊겼습니다.');
@@ -6829,7 +6833,13 @@ class GLRenderer {
                 rp.maxFrameIntervalMs = rp.frameIntervalMs || 0;
                 rp.maxFrameWorkMs = rp.frameWorkMs || 0;
             }
-            this.loopFrame = requestAnimationFrame(this.loop);
+            if (this.onShowcaseFirstFrame) {
+                this.vectorContext.endFrame();
+                const onFirstFrame = this.onShowcaseFirstFrame;
+                this.onShowcaseFirstFrame = null;
+                onFirstFrame();
+            }
+            if (this.loopStarted) this.loopFrame = requestAnimationFrame(this.loop);
         } catch (err) {
             if (this.showcase) {
                 this.stopLoop();

@@ -58,10 +58,14 @@ async function prepareShowcaseScene({ surface, scene, signal }) {
         release();
         throw error;
     }
+    let onFirstFrame = () => {
+        onFirstFrame = null;
+        if (ownsRenderer()) scene.onFirstFrame?.();
+    };
     return {
         play() {
             if (!ownsRenderer()) return;
-            renderer.playShowcase(onError);
+            renderer.playShowcase(onError, onFirstFrame);
             scenario.play();
         },
         pause() {
