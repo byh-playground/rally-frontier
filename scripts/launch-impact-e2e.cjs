@@ -508,7 +508,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                         popcorn.landings[0].type === 'unitSelfDestruct' &&
                         popcorn.landings[0].height === 0 &&
                         !popcorn.alive &&
-                        popcorn.damage === 15 &&
+                        popcorn.damage === 40 &&
                         redbean.landings[0]?.type === 'leapLand',
                     'landing deals one popcorn blast and keeps the redbean shockwave',
                     { popcorn, redbean },
