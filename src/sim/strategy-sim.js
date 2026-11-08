@@ -301,9 +301,7 @@ class StrategySim {
         this.baseDeposits = [0, 1].map((side) => ({
             owner: side,
             resourceType: 'basic',
-            remaining: LaunchRules.baseDeposit.capacity,
-            miningPerSecond: LaunchRules.baseDeposit.miningPerSecond,
-            miningCarry: 0,
+            stocks: LaunchRules.depositStocks(LaunchRules.baseDeposit),
             discoveredBy: [false, false],
         }));
         this.launchRangeLevel = [0, 0];
@@ -313,17 +311,24 @@ class StrategySim {
         // Per-side match totals for the result screen: shots fired, grains sent, enemy units killed.
         this.launchStats = { launches: [0, 0], sent: [0, 0], kills: [0, 0] };
         this.unitResultStats = UnitResultStats.create();
-        this.capturePoints = this.mapDescriptor.capturePoints.map((p) => ({
-            ...p,
-            owner: p.owner === 0 || p.owner === 1 ? p.owner : null,
-            enabled: p.enabled !== false,
-            outpostId: null,
-            resourceType: p.resourceType,
-            remaining: p.remaining ?? LaunchRules.outpostDeposit.capacity,
-            miningPerSecond: p.miningPerSecond ?? LaunchRules.outpostDeposit.miningPerSecond,
-            miningCarry: 0,
-            discoveredBy: [false, false],
-        }));
+        this.capturePoints = this.mapDescriptor.capturePoints.map(
+            ({ remaining, miningPerSecond, ...p }) => ({
+                ...p,
+                owner: p.owner === 0 || p.owner === 1 ? p.owner : null,
+                enabled: p.enabled !== false,
+                outpostId: null,
+                resourceType: p.resourceType ?? 'basic',
+                stocks: LaunchRules.depositStocks(
+                    {
+                        capacity: remaining ?? LaunchRules.outpostDeposit.capacity,
+                        miningPerSecond:
+                            miningPerSecond ?? LaunchRules.outpostDeposit.miningPerSecond,
+                    },
+                    p.resourceType === 'premium',
+                ),
+                discoveredBy: [false, false],
+            }),
+        );
 
         SimulationRuntimeState.initialize(this, { newMatch: true });
 
@@ -344,8 +349,9 @@ class StrategySim {
                 this.completeConstruction(outpost);
             }
             if (this.rules.campaign.baseDepositRatio != null) {
-                this.baseDeposits[0].remaining = Math.round(
-                    this.baseDeposits[0].remaining * this.rules.campaign.baseDepositRatio,
+                this.baseDeposits[0].stocks.basic.remaining = Math.round(
+                    this.baseDeposits[0].stocks.basic.remaining *
+                        this.rules.campaign.baseDepositRatio,
                 );
             }
             if (this.rules.campaign.introducedEnemy) {
@@ -1458,21 +1464,23 @@ class StrategySim {
                 !this.buildings.some((b) => b.id === `base${point.owner}` && b.alive !== false)
             )
                 continue;
-            const wallet = point.resourceType === 'premium' ? this.premiumWallet : this.wallet;
-            const cap =
-                point.resourceType === 'premium'
-                    ? LaunchRules.premiumWalletCap
-                    : LaunchRules.walletCap;
-            if (wallet[point.owner] >= cap || point.remaining <= 0) continue;
-            point.miningCarry += point.miningPerSecond;
-            const gained = Math.min(
-                Math.floor(point.miningCarry / this.tps),
-                point.remaining,
-                cap - wallet[point.owner],
-            );
-            point.miningCarry %= this.tps;
-            point.remaining -= gained;
-            wallet[point.owner] += gained;
+            for (const resource in point.stocks) {
+                const stock = point.stocks[resource];
+                const wallet = resource === 'premium' ? this.premiumWallet : this.wallet;
+                const cap =
+                    resource === 'premium' ? LaunchRules.premiumWalletCap : LaunchRules.walletCap;
+                if (wallet[point.owner] >= cap || stock.remaining <= 0) continue;
+                // Half-unit rates are exact; each stock credits only whole units.
+                stock.miningCarry += stock.miningPerSecond;
+                const gained = Math.min(
+                    Math.floor(stock.miningCarry / this.tps),
+                    stock.remaining,
+                    cap - wallet[point.owner],
+                );
+                stock.miningCarry %= this.tps;
+                stock.remaining -= gained;
+                wallet[point.owner] += gained;
+            }
         }
     }
     updateDepositDiscovery(vision) {

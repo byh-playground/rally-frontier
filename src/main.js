@@ -3268,7 +3268,7 @@ class GLRenderer {
             )
                 continue;
             const [x, y] = this.worldToPx(this.viewX(base.x), this.viewY(base.y));
-            const text = `${RESOURCES[0].symbol} 본진 잔량 ${deposit.remaining}`;
+            const text = `${RESOURCES[0].symbol} 본진 잔량 ${deposit.stocks.basic.remaining}`;
             ctx.font = `900 ${Math.max(9, 11 * sc)}px system-ui,sans-serif`;
             const label = labelPosition(x, y, y - Math.max(50, 64 * sc), [text], 8);
             if (!label) continue;
@@ -3289,6 +3289,18 @@ class GLRenderer {
                 construction &&
                 (this.isFriendlySide(outpost.side) || this.visibleRaw(outpost.x, outpost.y));
             const locked = !cp.enabled && !outpost;
+            const relation = this.factionRelation(visibleConstruction ? outpost.side : cp.owner);
+            const ownerColor =
+                relation === 'friendly' ? '#4d93ff' : relation === 'enemy' ? '#ef5757' : '#c0cbb2';
+            ResourceDisplay.drawDepositMarker(
+                ctx,
+                px,
+                py,
+                Math.max(5.2, 6 * sc),
+                cp.resourceType,
+                ownerColor,
+                locked,
+            );
             const owner = visibleConstruction
                 ? outpost.side === side
                     ? '아군 건설 중'
@@ -3308,8 +3320,16 @@ class GLRenderer {
                 this.replayObserverAll ||
                 this.replayVisionSides().some((side) => cp.discoveredBy?.[side]);
             const kind = cp.resourceType === 'premium' ? RESOURCES[1] : RESOURCES[0];
-            const deposit = known ? ` · ${kind.symbol} 잔량 ${cp.remaining}` : '';
-            const text = `${cp.label || cp.lane} · ${owner}${deposit}`,
+            const stockKinds = RESOURCES.filter(({ key }) => cp.stocks[key]);
+            const deposit = known
+                ? ' · 잔량 ' +
+                  stockKinds
+                      .map(({ key, symbol }) => `${symbol} ${cp.stocks[key].remaining}`)
+                      .join(' ')
+                : '';
+            const name = cp.label || cp.lane;
+            const siteName = name.includes(kind.name) ? name : `${name} ${kind.name} 거점`;
+            const text = `${kind.symbol} ${siteName} · ${owner}${deposit}`,
                 lineGap = Math.max(14, 15 * sc);
             const workers = visibleConstruction
                 ? (this.snapshot.units || []).filter(
@@ -3332,21 +3352,28 @@ class GLRenderer {
                       : `${workers.length}명 작업 중`;
             const cost = BuildingDefinition.get(BuildingDefinition.forRole('outpost')).construction
                 .cost;
-            const balance =
-                cp.resourceType === 'premium'
-                    ? this.snapshot.premiumWallet?.[side]
-                    : this.snapshot.wallet?.[side];
-            const cap =
-                cp.resourceType === 'premium'
-                    ? LaunchRules.premiumWalletCap
-                    : LaunchRules.walletCap;
-            const mining = !known
-                ? ''
-                : cp.remaining <= 0
-                  ? '매장량 소진 · '
-                  : cp.owner === side && balance >= cap
-                    ? '한도 도달 · '
-                    : `${kind.symbol} +${cp.miningPerSecond}/초 · `;
+            const mining = known
+                ? stockKinds
+                      .map(({ key, symbol }) => {
+                          const stock = cp.stocks[key];
+                          const balance =
+                              key === 'premium'
+                                  ? this.snapshot.premiumWallet[side]
+                                  : this.snapshot.wallet[side];
+                          const cap =
+                              key === 'premium'
+                                  ? LaunchRules.premiumWalletCap
+                                  : LaunchRules.walletCap;
+                          const status =
+                              stock.remaining <= 0
+                                  ? '소진'
+                                  : cp.owner === side && balance >= cap
+                                    ? '대기'
+                                    : `+${stock.miningPerSecond}/초`;
+                          return `${symbol} ${status} · `;
+                      })
+                      .join('')
+                : '';
             const guide = visibleConstruction
                 ? `건설 ${Math.round(ConstructionRules.progress(construction) * 1000) / 10}% · ◆ ${construction.invested}/${construction.cost}`
                 : cp.owner != null
@@ -7023,34 +7050,16 @@ class MiniMap {
             const p = this.point(cp.x, cp.y);
             const relation = r.factionRelation(cp.owner);
             const col =
-                relation === 'friendly'
-                    ? '#4d93ff'
-                    : relation === 'neutral'
-                      ? cp.enabled
-                          ? '#e7bc48'
-                          : '#68717a'
-                      : '#ef5757';
-            c.strokeStyle = col;
-            c.lineWidth = 1;
-            c.beginPath();
-            if (cp.resourceType === 'premium') {
-                const [x, y] = p;
-                c.moveTo(x, y - 5.2);
-                c.lineTo(x + 1.5, y - 1.5);
-                c.lineTo(x + 5.2, y);
-                c.lineTo(x + 1.5, y + 1.5);
-                c.lineTo(x, y + 5.2);
-                c.lineTo(x - 1.5, y + 1.5);
-                c.lineTo(x - 5.2, y);
-                c.lineTo(x - 1.5, y - 1.5);
-                c.closePath();
-                c.fillStyle = col;
-                c.fill();
-            } else {
-                c.arc(p[0], p[1], 5.2, 0, Math.PI * 2);
-                c.stroke();
-                this.dot(p[0], p[1], 3.2, col);
-            }
+                relation === 'friendly' ? '#4d93ff' : relation === 'enemy' ? '#ef5757' : '#c0cbb2';
+            ResourceDisplay.drawDepositMarker(
+                c,
+                p[0],
+                p[1],
+                4.3,
+                cp.resourceType,
+                col,
+                cp.owner == null && cp.enabled === false,
+            );
         }
 
         for (const m of LaunchPresentation.marks) {
@@ -9979,7 +9988,7 @@ class BuildMetadataPresentation {
 
 // 조준 중 예상 착지와 최대 사거리를 표시하고, 실제 착탄 흔적은 권위 사건을 따른다.
 class LaunchPresentation {
-    static premiumResourceHint = '미니맵의 ✦ 거점을 확보하세요.';
+    static premiumResourceHint = '미니맵의 ✦ 기름 거점을 확보하세요.';
     static HERO_SKILL_HOLD_MS = 500;
     static card = null;
     static deckKey = '';
@@ -10046,9 +10055,7 @@ class LaunchPresentation {
             const cap = key === 'premium' ? LaunchRules.premiumWalletCap : LaunchRules.walletCap;
             const amount = balance[key];
             const rate = LaunchRules.incomePerSecondFor(deposits, side, key);
-            const ownsDeposit = deposits.some(
-                (point) => point.owner === side && point.resourceType === key,
-            );
+            const ownsDeposit = deposits.some((point) => point.owner === side && point.stocks[key]);
             panel.querySelector('.launch-resource-balance').textContent = `${amount}/${cap}`;
             panel.style.setProperty(
                 '--balance',
@@ -10062,10 +10069,10 @@ class LaunchPresentation {
                     : ownsDeposit
                       ? '매장량 소진'
                       : key === 'premium'
-                        ? '고급 거점 필요'
+                        ? '기름 거점 필요'
                         : '수입 없음';
         }
-        UiRegistry.refs.launchBaseStock.textContent = `본진 잔량 ${s.baseDeposits?.[side]?.remaining ?? 0}`;
+        UiRegistry.refs.launchBaseStock.textContent = `본진 잔량 ${s.baseDeposits?.[side]?.stocks.basic.remaining ?? 0}`;
     }
 
     static render(s, side) {
@@ -10140,8 +10147,8 @@ class LaunchPresentation {
                 this.feedback(
                     {
                         reloading: '대포가 재장전 중입니다.',
-                        'insufficient-basic-resources': '기본 자원이 부족합니다.',
-                        'insufficient-premium-resources': `고급 자원이 부족합니다. ${LaunchPresentation.premiumResourceHint}`,
+                        'insufficient-basic-resources': '보급이 부족합니다.',
+                        'insufficient-premium-resources': `기름이 부족합니다. ${LaunchPresentation.premiumResourceHint}`,
                         'population-limit': '인구가 가득 찼습니다.',
                         'hero-already-deployed': '영웅이 이미 출격 중입니다.',
                         'hero-unavailable': '전사한 영웅은 이번 경기에 다시 출격할 수 없습니다.',
@@ -10173,7 +10180,7 @@ class LaunchPresentation {
                 this.feedback(
                     {
                         'hero-not-deployed': '출격 중인 영웅이 필요합니다.',
-                        'insufficient-basic-resources': '기본 자원이 부족합니다.',
+                        'insufficient-basic-resources': '보급이 부족합니다.',
                         'hero-no-target': '범위 안에 적이 없습니다.',
                     }[event.reason] || '영웅 스킬을 쓸 수 없습니다.',
                 );
@@ -10276,7 +10283,7 @@ class LaunchPresentation {
         badge.toggleAttribute('data-unavailable', s.wallet?.[side] < skill.cost);
         if (unit.heroRollQueued) return ' · 스킬 발동 예약';
         if (status) return ` · ${status}`;
-        return ` · 길게 누르기 또는 Shift+Enter로 스킬 사용 · 기본 자원 ${skill.cost}`;
+        return ` · 길게 누르기 또는 Shift+Enter로 스킬 사용 · 보급 ${skill.cost}`;
     }
     static renderAttackCounter(el, current, required) {
         let counter = el.querySelector('.hero-card-counter');
@@ -10340,7 +10347,7 @@ class LaunchPresentation {
                 : needsPremium
                   ? (s.launchRangeLevel?.[side] || 0) === 0
                       ? '사거리 강화'
-                      : '고급 거점 확보'
+                      : '기름 거점 확보'
                   : '적 본진 파괴';
         }
         LaunchScreens.renderHud({

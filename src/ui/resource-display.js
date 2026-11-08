@@ -1,10 +1,39 @@
 // Shared display rules for both currencies. Amounts are owned by the simulation.
 export const RESOURCES = Object.freeze([
-    { key: 'basic', name: '기본 자원', symbol: '◆', costKey: 'cost' },
-    { key: 'premium', name: '고급 자원', symbol: '✦', costKey: 'premiumCost' },
+    { key: 'basic', name: '보급', symbol: '◆', color: '#9bd7ff', costKey: 'cost' },
+    { key: 'premium', name: '기름', symbol: '✦', color: '#f6ca76', costKey: 'premiumCost' },
 ]);
 
 export class ResourceDisplay {
+    static drawDepositMarker(ctx, x, y, radius, type, ownerColor, locked = false) {
+        const oil = type === 'premium';
+        const kind = oil ? RESOURCES[1] : RESOURCES[0];
+        ctx.save();
+        if (locked) ctx.globalAlpha *= 0.6;
+        ctx.beginPath();
+        ctx.arc(x, y, radius + 1.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#14261d';
+        ctx.fill();
+        ctx.lineWidth = 1.25;
+        ctx.strokeStyle = ownerColor;
+        ctx.stroke();
+
+        const arm = radius * 0.28;
+        ctx.beginPath();
+        ctx.moveTo(x, y - radius);
+        if (oil) ctx.lineTo(x + arm, y - arm);
+        ctx.lineTo(x + radius, y);
+        if (oil) ctx.lineTo(x + arm, y + arm);
+        ctx.lineTo(x, y + radius);
+        if (oil) ctx.lineTo(x - arm, y + arm);
+        ctx.lineTo(x - radius, y);
+        if (oil) ctx.lineTo(x - arm, y - arm);
+        ctx.closePath();
+        ctx.fillStyle = kind.color;
+        ctx.fill();
+        ctx.restore();
+    }
+
     static costs(price) {
         return RESOURCES.flatMap((kind) =>
             price[kind.costKey] > 0 ? [{ ...kind, amount: price[kind.costKey] }] : [],

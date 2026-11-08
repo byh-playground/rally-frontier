@@ -59,7 +59,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'chestnut',
         title: '멀리서 가시를',
-        briefing: '고급 자원으로 밤톨을 투입하세요.',
+        briefing: '기름을 모아 밤톨을 투입하세요.',
         resourceLesson: true,
         deck: ['rice', 'pea', 'chestnut'],
         enemyDeck: ['rice', 'pea', 'corn'],
