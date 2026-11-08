@@ -154,7 +154,66 @@ class FrontierTerrainLayout {
             }
         return { layers, ramps, blockers, structures };
     }
+    static contestedLanes(ctx) {
+        // Draft coordinates are authored at the standard map size and paired by rotation.
+        const { width, height, host, guest, mirror } = ctx;
+        const point = (x, y) => ({
+            x: Math.round((x * width) / 4200),
+            y: Math.round((y * height) / 4800),
+        });
+        const natural = point(830, 3940),
+            front = point(1320, 3330),
+            high = point(1785, 2450),
+            flank = point(1050, 2200),
+            flankFar = point(1350, 1550);
+        const top = [host, natural, front, flank, flankFar, mirror(front), mirror(natural), guest];
+        const bot = top.slice().reverse().map(mirror);
+        const mid = [
+            host,
+            natural,
+            front,
+            high,
+            point(2100, 2400),
+            mirror(high),
+            mirror(front),
+            mirror(natural),
+            guest,
+        ];
+        const capturePoints = [
+            ['natural', 'mid', '앞마당', natural, 'basic'],
+            ['front', 'mid', '전진', front, 'basic'],
+            ['mid', 'mid', '중앙', high, 'premium'],
+            ['flank-near', 'top', '측면', flank, 'basic'],
+            ['flank-far', 'bot', '측면 우회', mirror(flankFar), 'basic'],
+        ].flatMap(([id, laneKey, label, position, resourceType]) =>
+            [1, 2].map((stage) => {
+                const lane =
+                    stage === 1 || laneKey === 'mid' ? laneKey : laneKey === 'top' ? 'bot' : 'top';
+                return {
+                    id: id + '-' + stage,
+                    lane: lane.toUpperCase(),
+                    laneKey: lane,
+                    label: label + ' ' + stage,
+                    stage,
+                    resourceType,
+                    ...(stage === 1 ? position : mirror(position)),
+                };
+            }),
+        );
+        return { laneControlPoints: { top, mid, bot }, capturePoints };
+    }
     static lanes(ctx) {
+        const layout = ctx.rules.campaign ? this.campaignLanes(ctx) : this.contestedLanes(ctx);
+        return {
+            ...layout,
+            laneNormals: {
+                top: { x: ctx.nx, y: ctx.ny },
+                mid: { x: ctx.nx, y: ctx.ny },
+                bot: { x: ctx.nx, y: ctx.ny },
+            },
+        };
+    }
+    static campaignLanes(ctx) {
         const w = ctx.width,
             h = ctx.height,
             p = (x, y) => ({ x: Math.round(x * w), y: Math.round(y * h) }),
@@ -201,15 +260,7 @@ class FrontierTerrainLayout {
             resourceType: id === 'mid' ? 'premium' : 'basic',
             ...p(x, y),
         }));
-        return {
-            laneControlPoints: { top, mid, bot },
-            laneNormals: {
-                top: { x: ctx.nx, y: ctx.ny },
-                mid: { x: ctx.nx, y: ctx.ny },
-                bot: { x: ctx.nx, y: ctx.ny },
-            },
-            capturePoints,
-        };
+        return { laneControlPoints: { top, mid, bot }, capturePoints };
     }
     static safety(map) {
         const geometry = TerrainGeometry.fromMap(map),

@@ -223,58 +223,99 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     sourceDamageResolved: true,
                 });
             }
-            // On the production terrain the premium deposit is not directly in the
-            // initial rice range, but can actually be reached and built after one upgrade.
+            // The opening earns a forward cannon and keeps high resources contestable.
             {
                 const sim = new StrategySim(seed),
                     base = sim.launchCannons(0)[0],
-                    cp = sim.capturePoints.find(
-                        (point) =>
-                            point.resourceType === 'premium' &&
-                            Math.hypot(point.x - base.x, point.y - base.y) < 1000,
-                    ),
-                    distance = cp && Math.hypot(cp.x - base.x, cp.y - base.y);
+                    point = (id) => sim.capturePoints.find((cp) => cp.id === id),
+                    natural = point('natural-1'),
+                    front = point('front-1'),
+                    premium = point('mid-1'),
+                    opposingPremium = point('mid-2'),
+                    distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
                 check(
-                    cp &&
-                        distance > LaunchRules.maxReachOf('rice', 0) &&
-                        distance <= LaunchRules.maxReachOf('rice', 1),
-                    'premium deposit requires one upgrade',
-                    { cp, distance },
+                    sim.mapDescriptor.generation.accepted &&
+                        sim.capturePoints.length === 10 &&
+                        sim.capturePoints.filter((cp) => cp.resourceType === 'premium').length ===
+                            2,
+                    'standard terrain has ten buildable neutral deposits',
+                    sim.mapDescriptor.generation,
                 );
+                const attack = (cannon, target, level) => {
+                    const reach = distance(cannon, target);
+                    check(
+                        reach <= LaunchRules.maxReachOf('rice', level),
+                        'deposit within direct range',
+                    );
+                    check(
+                        sim.applyCommand('host', {
+                            type: 'LAUNCH',
+                            cannonId: cannon.id,
+                            unitType: 'rice',
+                            holdMs: LaunchRules.holdFor(reach, 'rice', level),
+                            x: target.x,
+                            y: target.y,
+                        }),
+                        'launch toward deposit',
+                    );
+                    const projectiles = new Set(
+                        sim.events
+                            .filter(
+                                (event) =>
+                                    event.type === 'launchFire' && event.cannonId === cannon.id,
+                            )
+                            .map((event) => event.projectileId),
+                    );
+                    let landed = false;
+                    for (let i = 0; i < 60 * sim.tps && (!landed || target.owner !== 0); i++) {
+                        sim.stepSimulation();
+                        landed ||= sim.events.some(
+                            (event) =>
+                                event.type === 'launchLand' &&
+                                projectiles.has(event.projectileId) &&
+                                distance(event, target) <= LaunchRules.captureHoldRadius,
+                        );
+                    }
+                    check(landed && target.owner === 0, 'launch lands and the deposit is secured', {
+                        target,
+                        tick: sim.tick,
+                        landed,
+                    });
+                    return sim
+                        .launchCannons(0)
+                        .find((building) => building.id === target.outpostId);
+                };
+                const naturalCannon = attack(base, natural, 0);
                 check(
                     sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }),
-                    'upgrade before premium launch',
+                    'buy one upgrade at the natural expansion',
                 );
+                const forwardCannon = attack(naturalCannon, front, 1);
                 check(
-                    sim.applyCommand('host', {
-                        type: 'LAUNCH',
-                        cannonId: base.id,
-                        unitType: 'rice',
-                        holdMs: LaunchRules.holdFor(distance, 'rice', 1),
-                        x: cp.x,
-                        y: cp.y,
-                    }),
-                    'launch toward premium deposit',
+                    distance(forwardCannon, premium) > LaunchRules.maxReachOf('rice', 0) &&
+                        distance(forwardCannon, opposingPremium) <=
+                            LaunchRules.maxReachOf('rice', 2) &&
+                        distance(point('front-2'), premium) <= LaunchRules.maxReachOf('rice', 2),
+                    'both forward cannons can support either central deposit without premium resources',
                 );
-                for (let i = 0; i < 60 * sim.tps && cp.owner !== 0; i++) sim.stepSimulation();
-                check(cp.owner === 0, 'actual launch reaches and constructs the premium deposit', {
-                    tick: sim.tick,
-                    cp,
-                    wallet: sim.wallet[0],
-                    units: sim.units.length,
-                });
+                attack(forwardCannon, premium, 1);
                 const before = sim.premiumWallet[0];
                 step(sim, sim.tps);
                 check(
                     sim.premiumWallet[0] - before === 5 &&
-                        cp.remaining === LaunchRules.outpostDeposit.capacity - 5,
+                        premium.remaining < LaunchRules.outpostDeposit.capacity,
                     'completed premium deposit mines its finite stock',
                 );
                 rows.push({
-                    scenario: 'production terrain premium capture after one upgrade',
-                    distance,
+                    scenario: 'first expansion, forward cannon and contested premium deposits',
+                    distances: [
+                        distance(base, natural),
+                        distance(natural, front),
+                        distance(front, premium),
+                        distance(front, opposingPremium),
+                    ],
                     tick: sim.tick,
-                    remaining: cp.remaining,
+                    remaining: premium.remaining,
                 });
             }
             // The player can buy a global range level with the starting wallet.
