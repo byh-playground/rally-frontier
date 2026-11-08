@@ -1756,6 +1756,7 @@ class GLRenderer {
         // Reusable CPU staging buffer + persistent GPU allocation. This removes per-flush
         // frame copies and repeated GPU buffer orphaning.
         this.frame = new ReusableFloat32Buffer(7 * 16384);
+        this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
         this.worldSpriteFrame = [];
         this.worldSpritePool = [];
         this.terrainOccludedBodyFrame = new ReusableFloat32Buffer(7 * 4096);
@@ -6122,7 +6123,13 @@ class GLRenderer {
                 const groundY = this.world.terrain.surfaces.heightAt(x, y);
                 add(
                     'fruitProjectile',
-                    { ...shot, sourceType: unit.type, sourceId: unit.id, renderTick },
+                    {
+                        ...shot,
+                        sourceType: unit.type,
+                        sourceId: unit.id,
+                        side: unit.side,
+                        renderTick,
+                    },
                     {
                         x,
                         y: z,
@@ -6518,11 +6525,6 @@ class GLRenderer {
         }
     }
     drawFruitProjectile(shot, world) {
-        if (this.frame.length) {
-            this.flushVectorMesh('frame-to-fruit-projectile-switch');
-            this.flush(this.frame, true);
-            this.begin();
-        }
         const p = this.projectRenderWorldPosition(world),
             span =
                 (shot.kind === 'berry'
@@ -6548,6 +6550,12 @@ class GLRenderer {
                 p.x += (x - p.x) * weight;
                 p.y += (y - p.y) * weight;
             }
+            if (shot.mode === 'passive') this.drawBananaPassiveCue(shot, p, span);
+        }
+        if (this.frame.length) {
+            this.flushVectorMesh('frame-to-fruit-projectile-switch');
+            this.flush(this.frame, true);
+            this.begin();
         }
         this.vectorContext.depthTest = true;
         this.vectorContext.depthWrite = false;
@@ -6555,6 +6563,65 @@ class GLRenderer {
             [cos, sin, -sin, cos, p.x, p.y],
             this._renderDepth ?? 0,
         );
+    }
+    drawBananaPassiveCue(shot, point, span) {
+        const returning = shot.renderTick >= shot.turnTick;
+        const ink = [0.22, 0.13, 0.29, 0.9],
+            gold = [1, 0.85, 0.33, 1];
+        const radius = Math.max(5, span * 0.58);
+        const corners = [
+            [point.x, point.y - radius],
+            [point.x + radius, point.y],
+            [point.x, point.y + radius],
+            [point.x - radius, point.y],
+        ];
+        for (let i = 0; i < corners.length; i++) {
+            const from = corners[i],
+                to = corners[(i + 1) % corners.length];
+            this.line(...from, ...to, returning ? 3.5 : 2.5, ink);
+            this.line(...from, ...to, returning ? 1.8 : 1.2, gold);
+        }
+        if (this.reducedMotion.matches) return;
+
+        // Rebuild from the displayed tick so a seek or a lost sightline leaves no trail state.
+        const tps = this.snapshot.tps || SIM_TPS,
+            oldest = Math.max(
+                returning ? shot.turnTick : shot.startTick,
+                shot.renderTick - tps * (returning ? 0.22 : 0.12),
+            );
+        if (oldest >= shot.renderTick) return;
+        let previous = point;
+        const segments = 4;
+        for (let i = 1; i <= segments; i++) {
+            const fraction = i / segments;
+            const { x, y, z } = fruitProjectilePosition(
+                shot,
+                shot.renderTick + (oldest - shot.renderTick) * fraction,
+            );
+            if (shot.side !== this.mySide() && !this.visibleRaw(x, y)) break;
+            const current = this.projectRenderWorldPosition({
+                x,
+                y: z,
+                z: y,
+                groundY: this.world.terrain.surfaces.heightAt(x, y),
+            });
+            const fade = 1 - (i - 1) / segments;
+            this.line(previous.x, previous.y, current.x, current.y, (returning ? 5 : 3) * fade, [
+                0.22,
+                0.13,
+                0.29,
+                0.8 * fade,
+            ]);
+            this.line(
+                previous.x,
+                previous.y,
+                current.x,
+                current.y,
+                (returning ? 2.8 : 1.4) * fade,
+                [1, 0.85, 0.33, fade],
+            );
+            previous = current;
+        }
     }
     drawFruitAttackEffect(model, spec) {
         const fruit = model?.entity.fruitAttack;
