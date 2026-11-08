@@ -84,7 +84,7 @@ import { PRODUCT_VERSION } from './core/product-version.js';
 import { RallyGamekit } from './core/gamekit.js';
 import { LaunchScreens } from './ui/launch-screens.js';
 import { createShowcaseHost } from './ui/showcase-host.js';
-import { DeckEditor, equippedDeckCards } from './ui/deck-editor.js';
+import { DeckEditor } from './ui/deck-editor.js';
 import { CampaignProgress } from './ui/campaign-progress.js';
 import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
@@ -10979,7 +10979,7 @@ try {
 } catch (error) {
     console.warn('캠페인 진행 저장소를 열 수 없습니다.', error);
 }
-const campaignProgress = new CampaignProgress(campaignStorage, equippedDeckCards);
+const campaignProgress = new CampaignProgress(campaignStorage);
 addEventListener('storage', () => campaignProgress.sync());
 DeckEditor.install({
     types: () => LaunchRules.deck,
