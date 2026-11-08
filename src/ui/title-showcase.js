@@ -6,6 +6,7 @@ import {
     configureFramePresentationJournal,
     emitFramePresentationEvents,
 } from '../core/presentation-frame-event.js';
+import { BattlefieldProjection } from '../sim/terrain.js';
 import { createTitleRun } from './title-showcase-sim.js';
 
 // The title document owns a separate simulation; it never joins a player session.
@@ -39,24 +40,55 @@ export async function prepareTitleShowcase({ renderer, createScenario, createPre
     const presentFrame = (frame) => {
         if (!disposed && frame?.timeMs != null) journal?.present(frame);
     };
-    const cameras = [
-        [1470, 3120],
-        [2630, 2893],
-        [2684, 3031],
-    ];
-    const camera = (index) => {
-        const [x, y] = cameras[index];
-        renderer.replayZoom = index === 0 ? 2.2 : 1.25;
+    let openingShot = null;
+    const camera = (x, y, zoom, elevation = run.sim.world.terrain.surfaces.heightAt(x, y)) => {
+        renderer.replayZoom = zoom;
         renderer.cameraLeft = Math.max(0, x - renderer.viewWorldW() / 2);
-        renderer.cameraTop = renderer.clampCameraTop(y - renderer.viewWorldH() / 2);
+        renderer.cameraTop = renderer.clampCameraTop(
+            BattlefieldProjection.planarY(y, elevation) - renderer.viewWorldH() / 2,
+        );
+    };
+    const battleFocus = () => {
+        const units = new Map(
+            run.sim.units.filter((unit) => unit.alive).map((unit) => [unit.id, unit]),
+        );
+        let x = 0,
+            y = 0,
+            count = 0;
+        for (const unit of units.values()) {
+            const target = units.get(unit.target);
+            if (
+                !target ||
+                target.side === unit.side ||
+                Math.hypot(unit.x - target.x, unit.y - target.y) > 250
+            )
+                continue;
+            x += unit.x;
+            y += unit.y;
+            count++;
+        }
+        return count ? { x: x / count, y: y / count } : run.sim.world.center;
     };
     const load = (index) => {
         journal?.dispose();
         journal = createFramePresentationJournal({ getView: () => view, onImmediate: () => {} });
         configureFramePresentationJournal(journal, view, run.sim.tps, presentationActive);
         run.restore(checkpoints[index]);
-        camera(index);
         renderer.setSnapshot(run.sim.snapshot(), { snapTargets: true });
+        openingShot = null;
+        if (index === 0) {
+            const previousShot = run.sim.projectiles.find(
+                (shot) => shot.side === 0 && shot.payload,
+            );
+            const cannon =
+                run.sim.buildingById.get(previousShot?.owner) ||
+                run.sim.launchCannons(0)[0] ||
+                run.sim.world.center;
+            camera(cannon.x, cannon.y, 2.2);
+        } else {
+            const focus = battleFocus();
+            camera(focus.x, focus.y, index === 1 ? 1.35 : 1.65);
+        }
         shownScene = index;
     };
     const dispose = () => {
@@ -89,6 +121,22 @@ export async function prepareTitleShowcase({ renderer, createScenario, createPre
                             if (scene !== shownScene || frame.tick === 1) load(scene);
                             run.advance();
                             const snapshot = run.sim.snapshot();
+                            if (scene === 0 && !openingShot) {
+                                const fire = snapshot.events?.find(
+                                    (event) => event.type === 'launchFire' && event.side === 0,
+                                );
+                                if (fire) {
+                                    openingShot = { fire, tick: frame.tick };
+                                    camera(fire.x, fire.y, 2.2);
+                                }
+                            }
+                            if (scene === 0 && openingShot && !openingShot.impact) {
+                                openingShot.impact = snapshot.events?.find(
+                                    (event) =>
+                                        event.type === 'launchImpact' &&
+                                        event.projectileId === openingShot.fire.projectileId,
+                                );
+                            }
                             const events = captureFramePresentationEvents(
                                 snapshot.events || [],
                                 run.sim,
@@ -112,14 +160,28 @@ export async function prepareTitleShowcase({ renderer, createScenario, createPre
                         }
                     },
                     render(frame) {
-                        if (frame.tick < 10 || frame.tick > 18 || shownScene !== 0) return;
-                        const t = Math.min(1, Math.max(0, (frame.tick + frame.alpha - 10) / 8));
+                        if (!openingShot || shownScene !== 0) return;
+                        const { fire, tick, impact } = openingShot;
+                        const age = frame.tick + frame.alpha - tick;
+                        if (age < 2) return;
+                        const shell = renderer.snapshot.projectiles.find(
+                            (projectile) => projectile.id === fire.projectileId,
+                        );
+                        const point =
+                            shell && renderer.resolveRenderWorldPosition(shell, 'projectile');
+                        const x = point?.x ?? impact?.x ?? fire.aimX;
+                        const y = point?.z ?? impact?.y ?? fire.aimY;
+                        const terrain = run.sim.world.terrain.surfaces;
+                        const height = point?.y ?? terrain.heightAt(x, y);
+                        const startHeight = terrain.heightAt(fire.x, fire.y);
+                        const t = Math.min(1, (age - 2) / 4);
                         const eased = t * t * (3 - 2 * t);
-                        renderer.replayZoom = 2.2 + (1.25 - 2.2) * eased;
-                        const x = 1470 + (1940 - 1470) * eased;
-                        const y = 3120 + (2940 - 3120) * eased;
-                        renderer.cameraLeft = Math.max(0, x - renderer.viewWorldW() / 2);
-                        renderer.cameraTop = renderer.clampCameraTop(y - renderer.viewWorldH() / 2);
+                        camera(
+                            fire.x + (x - fire.x) * eased,
+                            fire.y + (y - fire.y) * eased,
+                            2.2 + (1.35 - 2.2) * eased,
+                            startHeight + (height - startHeight) * eased,
+                        );
                     },
                     dispose() {},
                 };

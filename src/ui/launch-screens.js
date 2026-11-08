@@ -182,13 +182,16 @@ export class LaunchScreens {
             CAMPAIGN_STAGES.forEach((stage, index) => {
                 const button = document.createElement('button');
                 button.type = 'button';
-                button.className = 'launch-btn secondary';
+                button.className = 'launch-btn secondary campaign-stage';
                 button.disabled = index > progress;
                 const title = document.createElement('b');
-                title.textContent = `${index + 1}. ${stage.title}${button.disabled ? ' · 잠김' : ''}`;
+                title.textContent = `${index + 1}. ${stage.title}`;
+                const status = document.createElement('span');
+                status.className = 'campaign-stage-status';
+                status.textContent = button.disabled ? '잠김' : index < progress ? '완료' : '';
                 const description = document.createElement('small');
                 description.textContent = stage.briefing;
-                button.append(title, description);
+                button.append(title, status, description);
                 button.onclick = () => {
                     $('campaignDialog').close();
                     A.selectCampaign(stage.id);

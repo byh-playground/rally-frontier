@@ -3,7 +3,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'first',
         title: '첫 진격',
-        briefing: '쌀 병사를 보내 거점을 차지하고 적 본진을 파괴하세요.',
+        briefing: '쌀로 거점을 확보하세요.',
         deck: ['rice'],
         enemyDeck: ['rice', 'pea'],
         introducedEnemy: 'pea',
@@ -14,7 +14,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'bean',
         title: '든든한 콩',
-        briefing: '콩과 쌀을 함께 투입해 적 본진을 파괴하세요.',
+        briefing: '쌀과 콩을 함께 투입하세요.',
         deck: ['rice', 'pea'],
         enemyDeck: ['rice', 'pea'],
         enemyOutposts: 1,
@@ -24,7 +24,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'defense',
         title: '거점을 지켜라',
-        briefing: '적의 공격을 버티고 제한 시간 동안 본진을 지키세요.',
+        briefing: '시간이 끝날 때까지 버티세요.',
         deck: ['rice', 'pea'],
         enemyDeck: ['rice', 'pea', 'redbean'],
         introducedEnemy: 'redbean',
@@ -36,7 +36,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'counterattack',
         title: '반격의 시간',
-        briefing: '공격을 버틴 뒤 적 본진을 파괴하세요.',
+        briefing: '본진을 지킨 뒤 반격하세요.',
         deck: ['rice', 'pea', 'redbean'],
         enemyDeck: ['rice', 'pea', 'redbean'],
         enemyOutposts: 2,
@@ -47,7 +47,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'breakthrough',
         title: '방어선 돌파',
-        briefing: '본진 매장량이 적어요. 자원을 아껴 거점을 확보하고 적 본진을 파괴하세요.',
+        briefing: '적은 자원으로 방어선을 뚫으세요.',
         baseDepositRatio: 0.25,
         deck: ['rice', 'pea', 'redbean'],
         enemyDeck: ['rice', 'pea', 'chestnut'],
@@ -59,7 +59,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'chestnut',
         title: '멀리서 가시를',
-        briefing: '사거리를 강화하고 고급 자원 거점을 확보해 밤톨을 투입하세요.',
+        briefing: '고급 자원으로 밤톨을 투입하세요.',
         resourceLesson: true,
         deck: ['rice', 'pea', 'chestnut'],
         enemyDeck: ['rice', 'pea', 'corn'],
@@ -71,7 +71,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'corn',
         title: '폭발하는 옥수수',
-        briefing: '사거리를 강화하고 고급 자원 거점을 확보해 옥수수를 투입하세요.',
+        briefing: '옥수수로 적 무리를 공격하세요.',
         resourceLesson: true,
         deck: ['rice', 'pea', 'corn'],
         enemyDeck: ['rice', 'pea', 'acorn'],
@@ -83,7 +83,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'acorn',
         title: '회전하는 도토리',
-        briefing: '사거리를 강화하고 고급 자원 거점을 확보해 도토리를 투입하세요.',
+        briefing: '도토리로 적 전열을 흔드세요.',
         resourceLesson: true,
         deck: ['rice', 'pea', 'acorn'],
         enemyDeck: ['rice', 'pea', 'millet'],
@@ -95,7 +95,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'millet',
         title: '빠른 조',
-        briefing: '조로 진격하고 고급 자원 거점을 확보해 밤톨과 조합하세요.',
+        briefing: '조와 밤톨을 함께 투입하세요.',
         resourceLesson: true,
         deck: ['rice', 'millet', 'chestnut'],
         enemyDeck: ['rice', 'pea', 'redbean', 'acorn'],

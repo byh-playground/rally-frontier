@@ -553,6 +553,22 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
     font-size: 13px;
     text-shadow: 0 1px 2px #000;
 }
+@media (max-width: 380px) {
+    .launch-economy {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 4px 8px;
+    }
+    .launch-wallet {
+        display: contents;
+    }
+    .launch-energy {
+        grid-column: 1 / -1;
+    }
+    .launch-range-btn {
+        min-width: 0;
+    }
+}
 .launch-cards {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -1305,21 +1321,51 @@ body.result-mode .p2p-health {
     font-weight: 700;
 }
 
+.campaign-dialog {
+    width: min(460px, calc(100% - 16px));
+}
+.campaign-dialog .deck-panel {
+    padding: clamp(12px, 4vw, 20px);
+}
 .campaign-stages {
     display: grid;
-    gap: 10px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    margin-top: 10px;
 }
-.campaign-stages button {
+.campaign-stage.launch-btn.secondary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-content: center;
+    gap: 2px 8px;
+    min-height: 50px;
     height: auto;
-    min-height: 58px;
+    padding: 6px 10px;
     text-align: left;
-    white-space: normal;
+    line-height: 1.25;
 }
-.campaign-stages small {
-    display: block;
-    margin-top: 4px;
-    font-weight: normal;
+.campaign-stage-status,
+.campaign-stage small {
+    font-size: 12px;
+    font-weight: 600;
+}
+.campaign-stage small {
+    grid-column: 1 / -1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 #campaignObjective {
-    white-space: normal;
+    position: absolute;
+    top: 54px;
+    left: 10px;
+    z-index: 6;
+    max-width: calc(100% - 114px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+}
+#campaignObjective:not(.hidden) ~ .enemy-base-arrow {
+    top: 94px;
 }
