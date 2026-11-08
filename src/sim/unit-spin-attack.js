@@ -1,5 +1,6 @@
 import { FP } from '../core/config.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
+import { UnitDefinition } from '../definitions/units.js';
 import { LaunchImpact } from './launch-impact.js';
 import { HashUtil } from './map-generation.js';
 import { UnitMotion } from './navigation.js';
@@ -13,10 +14,7 @@ export class UnitSpinAttack {
             if (!Number.isFinite(spec?.[key]) || spec[key] <= 0)
                 throw new TypeError(`회전 공격 설정이 올바르지 않습니다: ${key}`);
         }
-        if (spec.arcSweep) {
-            if (!Number.isSafeInteger(spec.minTargets) || spec.minTargets < 1)
-                throw new TypeError('회전 공격에 필요한 표적 수가 올바르지 않습니다.');
-        } else if (!Number.isFinite(spec.pulseMs) || spec.pulseMs <= 0) {
+        if (!spec.arcSweep && (!Number.isFinite(spec.pulseMs) || spec.pulseMs <= 0)) {
             throw new TypeError('회전 공격 간격이 올바르지 않습니다.');
         }
         if (!Number.isFinite(spec.tangentRatio) || spec.tangentRatio < 0)
@@ -41,10 +39,13 @@ export class UnitSpinAttack {
     static canStart(sim, unit, spec, vision) {
         if (!unit?.alive || !vision || unit.spinAttack || unit.combat.cooldownActive(sim))
             return false;
+        if (
+            spec.rhythm &&
+            (unit.spinAttackBasicHits < spec.rhythm.basicsPerSweep || !UnitMotion.isGrounded(unit))
+        )
+            return false;
         const z = this.heightFP(sim, unit);
-        let found = 0;
-        const minTargets = spec.minTargets ?? 1;
-        sim.withNearbyUnits(
+        const found = sim.withNearbyUnits(
             unit.x,
             unit.y,
             spec.radius + sim.maxUnitRadius,
@@ -61,11 +62,12 @@ export class UnitSpinAttack {
                         continue;
                     if (!sim.canSeeCombatTarget(unit.side, target, vision)) continue;
                     if (!this.inReach(sim, unit, target, spec, z)) continue;
-                    if (++found >= minTargets) break;
+                    return true;
                 }
+                return false;
             },
         );
-        if (found >= minTargets) return true;
+        if (found) return true;
         if (spec.arcSweep) return false;
         for (const index of sim.nearbyBuildingIndices(
             unit.x,
@@ -223,6 +225,51 @@ export class UnitSpinAttack {
         );
     }
 
+    static hitBasic(sim, unit, target, rhythm, damage) {
+        const grounded = UnitMotion.isGrounded(target),
+            x = target.x,
+            y = target.y,
+            heightFP = this.heightFP(sim, target),
+            capture = {};
+        sim.applyDamage(unit.side, unit.type, target, false, damage, unit.id, { capture });
+        if (!grounded || !(capture.dealt > 0)) return;
+
+        unit.spinAttackBasicHits = Math.min(unit.spinAttackBasicHits + 1, rhythm.basicsPerSweep);
+        sim.events.push({
+            type: 'spinBasicImpact',
+            side: unit.side,
+            sourceId: unit.id,
+            targetId: target.id,
+            x,
+            y,
+            radius: rhythm.splashRadius,
+            basicHits: unit.spinAttackBasicHits,
+        });
+        const splashDamage = Math.max(1, Math.floor(damage * rhythm.splashDamageRatio));
+        sim.withNearbyUnits(
+            x,
+            y,
+            rhythm.splashRadius + sim.maxUnitRadius,
+            1 - unit.side,
+            (indices) => {
+                for (const index of indices) {
+                    const other = sim.units[index];
+                    if (!other?.alive || other === target || !UnitMotion.isGrounded(other))
+                        continue;
+                    if (
+                        LaunchImpact.distanceToBody(sim, other, x, y, heightFP).surfaceDistance >
+                            rhythm.splashRadius ||
+                        !sim.world.terrain.field.polygonSegmentClear(x, y, other.x, other.y, 0)
+                    )
+                        continue;
+                    sim.applyDamage(unit.side, unit.type, other, false, splashDamage, unit.id, {
+                        sourceDamageResolved: true,
+                    });
+                }
+            },
+        );
+    }
+
     static hitUnit(sim, unit, target, spec, damage) {
         const rx = target.x - unit.x,
             ry = target.y - unit.y,
@@ -267,6 +314,10 @@ export class UnitSpinAttack {
     }
 
     static updateArcSweep(sim, unit, spec, damage) {
+        if (spec.rhythm && unit.spinAttackBasicHits >= spec.rhythm.basicsPerSweep) {
+            unit.spinAttackBasicHits = 0;
+            sim.commitAttackTiming(unit, UnitDefinition.get(unit.type));
+        }
         const spin = unit.spinAttack;
         const elapsed = sim.tick - spin.activeStartTick;
         const duration = spin.activeEndTick - spin.activeStartTick;

@@ -253,6 +253,15 @@ class RallySimulationAdapter {
                         !Number.isFinite(entity.maxHp)
                     )
                         throw new Error('게임 snapshot의 유닛 정의가 잘못되었습니다.');
+                    const rhythm = UnitDefinition.get(entity.type).spinAttack?.rhythm;
+                    const basicHits = entity.spinAttackBasicHits;
+                    if (
+                        rhythm &&
+                        (!Number.isSafeInteger(basicHits) ||
+                            basicHits < 0 ||
+                            basicHits > rhythm.basicsPerSweep)
+                    )
+                        throw new Error('게임 snapshot의 회전 공격 횟수가 잘못되었습니다.');
                     RallyStateCodec.assertContract(entity, Unit.stateContract);
                 }
                 if (

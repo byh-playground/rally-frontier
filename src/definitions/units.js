@@ -40,10 +40,14 @@ class UnitDefinition {
             spinAttack: Object.freeze({
                 radius: 150,
                 windupMs: 500,
-                activeMs: 1000,
-                recoverMs: 500,
+                activeMs: 500,
+                recoverMs: 250,
                 arcSweep: true,
-                minTargets: 2,
+                rhythm: Object.freeze({
+                    basicsPerSweep: 3,
+                    splashRadius: 25,
+                    splashDamageRatio: 0.5,
+                }),
                 knockbackSpeed: 400,
                 knockbackLift: 300,
                 tangentRatio: 0,

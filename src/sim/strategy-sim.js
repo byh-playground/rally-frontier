@@ -2246,9 +2246,14 @@ class StrategySim {
             return null;
         }
 
-        if (d.spinAttack && UnitSpinAttack.start(this, u, d.spinAttack, vision[u.side])) {
+        if (
+            d.spinAttack &&
+            (!d.spinAttack.rhythm || !found.isBuilding) &&
+            UnitSpinAttack.start(this, u, d.spinAttack, vision[u.side])
+        ) {
             u.combat.cancelWindup();
-            u.combat.cooldownUntil = u.spinAttack.endTick + this.msTicks(d.cooldownMs);
+            if (!d.spinAttack.rhythm)
+                u.combat.cooldownUntil = u.spinAttack.endTick + this.msTicks(d.cooldownMs);
             return UnitSpinAttack.update(this, u, d.spinAttack, d.atk).winner;
         }
         const dist = Math.hypot(t.x - u.x, t.y - u.y) || 1;
@@ -2337,6 +2342,10 @@ class StrategySim {
                 ...d.thornAttack,
                 damage: Math.floor(d.atk),
             });
+            return null;
+        }
+        if (d.spinAttack?.rhythm && !found.isBuilding) {
+            UnitSpinAttack.hitBasic(this, u, t, d.spinAttack.rhythm, Math.floor(d.atk));
             return null;
         }
         return this.applyDamage(u.side, u.type, t, found.isBuilding, Math.floor(d.atk), u.id, {
