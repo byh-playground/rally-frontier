@@ -14,7 +14,7 @@ const WATERMELON_RIND_WORLD_RADIUS =
     GRAIN_SPRITE_BASE_SCALE *
     WATERMELON_VISUAL_SCALE ** 2 *
     WATERMELON_RIND_RADIUS_X;
-const ACORN_SIZE = RICE_SIZE * 3;
+const ACORN_SIZE = RICE_SIZE * 2;
 const ACORN_SPIN_RADIUS = ACORN_SIZE * (55 / 20);
 const GRAIN_LEAP = Object.freeze({ range: 150, lift: 500, cooldownMs: 3000 });
 const RICE_MELEE = {
@@ -176,6 +176,7 @@ class UnitDefinition {
             speed: 50,
             cooldownMs: 1000,
             size: ACORN_SIZE,
+            mass: 900,
             sizeClass: 'heavy',
             role: 'bruiser',
             attackVisual: { sourceMotion: null, travel: 'none', impact: 'light' },

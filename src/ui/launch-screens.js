@@ -66,7 +66,7 @@ const GRAIN_COPY = Object.freeze({
     acorn: {
         role: '범위 근접',
         feature: '회전 공격 · 밀쳐내기',
-        land: '한 발당 한 명',
+        land: '한 발당 두 명',
         fire: '범위가 좁아지는 3연사',
         desc: '같은 자리에 세 발을 떨어뜨립니다. 뒤로 갈수록 착탄 범위가 좁아지고 마지막 탄이 가장 강합니다. 도토리는 착지 후 적 가까이에서 회전하며 공격하고 밀쳐냅니다.',
         exceptions: [
