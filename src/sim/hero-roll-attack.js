@@ -137,10 +137,7 @@ export class HeroRollAttack {
         const { dx, dy } = roll;
         const terrainRadius = sim.unitRadius(unit.type);
         const { rollHitRadius } = spec;
-        const step = Math.min(
-            (definition.speed * spec.speedMultiplier) / sim.tps,
-            spec.rollDistance - roll.distance,
-        );
+        const step = Math.min(spec.rollSpeed / sim.tps, spec.rollDistance - roll.distance);
         const vx = dx * step;
         const vy = dy * step;
         const motion = sim.navigation.motion;
