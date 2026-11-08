@@ -38,7 +38,7 @@ class UnitDefinition {
             attackVisual: { sourceMotion: 'smash', travel: 'none', impact: 'light' },
             sight: 275,
             spinAttack: Object.freeze({
-                radius: RICE_SIZE * 12,
+                radius: 150,
                 windupMs: 500,
                 activeMs: 1000,
                 recoverMs: 500,
