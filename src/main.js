@@ -2357,14 +2357,10 @@ class GLRenderer {
             ? null
             : this.renderState.model(kind, entity.id, this.presentationNow());
         const motionState = model?.entity || entity;
-        const renderTick = model?.tick ?? (this.snapshot?.tick || 0);
-
-        if (kind === 'unit')
-            height = LaunchImpactArt.unitPose(
-                motionState,
-                renderTick,
-                this.snapshot?.tps || SIM_TPS,
-            ).height;
+        if (kind === 'unit') {
+            const heightFP = motionState.impactMotion?.heightFP;
+            if (Number.isFinite(heightFP)) height = Math.max(0, heightFP) / FP;
+        }
         if (kind === 'unitLob') {
             // zFP is authoritative absolute world altitude, not a visual-only arc.
             height = (Number(motionState.zFP) || 0) / FP - groundY;
