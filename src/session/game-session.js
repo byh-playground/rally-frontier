@@ -129,6 +129,7 @@ class RallySimulationAdapter {
                             'buildings',
                             'projectiles',
                             'heroes',
+                            'heroRecovery',
                             'capturePoints',
                             'scheduled',
                         ].includes(key)

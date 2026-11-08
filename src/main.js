@@ -9867,7 +9867,7 @@ class LaunchPresentation {
                 'unaffordable',
                 !deployed && (payload.cost > wallet || payload.premiumCost > premiumWallet),
             );
-            if (t === heroCard) this.renderHeroCard(el, hero);
+            if (t === heroCard) this.renderHeroCard(el, s, side);
         }
         UiRegistry.refs.launchEnergyFill.style.width = `${Math.round((100 * wallet) / LaunchRules.walletCap)}%`;
         UiRegistry.refs.launchEnergyText.textContent = `◆ ${wallet} / ${LaunchRules.walletCap}  ✦ ${premiumWallet} / ${LaunchRules.premiumWalletCap}`;
@@ -9927,18 +9927,39 @@ class LaunchPresentation {
             this.marks.push(mark);
         }
     }
-    static renderHeroCard(el, hero) {
+    static renderHeroCard(el, s, side) {
         el.classList.add('hero-card');
         const badge = el.querySelector('em'),
+            hero = s.heroes?.[side],
             mode = hero?.mode;
-        el.disabled = mode === 'dead' || !this.active();
+        el.disabled = mode === 'dead' || !this.active(s);
         const label = {
             advance: ['ON · 진격', '영웅 복귀시키기'],
             return: ['OFF · 복귀', '영웅 진격 재개'],
             dead: ['전사', '전사한 영웅은 이번 경기에 다시 출격할 수 없습니다.'],
         }[mode] ?? ['무료', '영웅 발사'];
         badge.textContent = label[0];
-        el.title = label[1];
+        const definition = UnitDefinition.get(LaunchRules.heroCard),
+            unit = hero?.unitId ? s.units?.find((entry) => entry.id === hero.unitId) : null,
+            maxHp = unit?.maxHp ?? definition.hp,
+            hp = mode === 'dead' ? 0 : (unit?.hp ?? s.heroReserveHp?.[side] ?? maxHp),
+            currentHp = RangeUtil.clamp(Math.floor(hp), 0, maxHp),
+            recovering = !hero && currentHp < maxHp;
+        let health = el.querySelector('.hero-card-health');
+        if (!health) {
+            health = document.createElement('span');
+            health.className = 'hero-card-health';
+            health.setAttribute('aria-hidden', 'true');
+            badge.before(health);
+        }
+        const hpText = `${currentHp}/${maxHp}`;
+        health.textContent = `♥ ${hpText}`;
+        health.style.setProperty('--hero-hp', `${(100 * currentHp) / maxHp}%`);
+        el.title = recovering ? `${label[1]} · 회복 중` : label[1];
+        el.setAttribute(
+            'aria-label',
+            `${definition.name} · ${label[0]} · 체력 ${hpText}${recovering ? ' · 회복 중' : ''}`,
+        );
         el.classList.toggle('hero-dead', mode === 'dead');
         if (mode === 'advance' || mode === 'return')
             el.setAttribute('aria-pressed', String(mode === 'advance'));
