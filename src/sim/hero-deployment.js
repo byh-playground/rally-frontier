@@ -119,7 +119,7 @@ export class HeroDeployment {
     static unitDied(sim, unit) {
         const hero = sim.heroes[unit.side];
         if (hero?.unitId !== unit.id) return;
-        HeroRollAttack.cancel(unit);
+        HeroRollAttack.endSortie(unit);
         hero.mode = 'dead';
         hero.unitId = null;
     }
@@ -189,6 +189,7 @@ export class HeroDeployment {
             const site = this.returnSites(sim, unit).find(({ arrived }) => arrived);
             if (!site) continue;
 
+            HeroRollAttack.endSortie(unit);
             this.dock(sim, side, unit.hp);
             unit.alive = false;
             unit.hp = 0;

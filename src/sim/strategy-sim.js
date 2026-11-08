@@ -2181,6 +2181,8 @@ class StrategySim {
                 return spin.winner;
             }
         }
+        // Give a queued skill the action slot before combat can start another windup.
+        if (u.heroRollQueued && HeroRollAttack.canStart(u, this.tick)) return null;
         if (!UnitMotion.isGrounded(u)) {
             u.constructionWork = null;
             return null;
@@ -3581,7 +3583,8 @@ class StrategySim {
         for (const hero of this.heroes) {
             if (hero?.unitId == null) continue;
             const unit = this.liveEntityRefById(hero.unitId, 'unit')?.entity;
-            if (unit?.heroRoll) HeroRollAttack.update(this, unit);
+            if (unit?.heroRoll || unit?.heroRollQueued)
+                HeroRollAttack.update(this, unit, hero.sortieId);
         }
         winner = this.updateProjectiles() || winner;
         UnitLobAttack.step(this);

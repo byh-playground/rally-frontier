@@ -658,6 +658,75 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
 }
 .hero-card[data-hero-skill] {
     -webkit-touch-callout: none;
+    isolation: isolate;
+}
+.hero-card[data-hero-charging] {
+    border-color: #b46b15;
+    box-shadow: 0 0 0 2px #ffd574;
+}
+.hero-card[data-hero-charging]::before {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    z-index: -1;
+    border-radius: 10px;
+    background: linear-gradient(#ffe28a, #ed9b40);
+    border-top: 3px solid #fff4c0;
+    transform-origin: bottom;
+    animation: hero-card-charge var(--hero-hold-duration) linear both;
+    pointer-events: none;
+}
+@keyframes hero-card-charge {
+    from {
+        transform: scaleY(0.05);
+    }
+    to {
+        transform: scaleY(1);
+    }
+}
+.hero-card-spend {
+    position: absolute;
+    z-index: 2;
+    inset: 34px auto auto 50%;
+    translate: -50% 0;
+    padding: 2px 7px;
+    border: 1px solid #ffcc80;
+    border-radius: 999px;
+    background: #8e3020;
+    color: #fff4d7;
+    font-size: 14px;
+    font-weight: 900;
+    white-space: nowrap;
+    pointer-events: none;
+    animation: hero-card-spend 800ms ease-out both;
+}
+@keyframes hero-card-spend {
+    0% {
+        opacity: 1;
+        transform: scale(1.15);
+    }
+    55% {
+        opacity: 1;
+        transform: translateY(-5px);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-12px);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .hero-card-spend {
+        animation-name: hero-card-spend-fade;
+    }
+    @keyframes hero-card-spend-fade {
+        0%,
+        55% {
+            opacity: 1;
+        }
+        100% {
+            opacity: 0;
+        }
+    }
 }
 .hero-card .launch-card-info {
     -webkit-touch-callout: default;
@@ -684,6 +753,10 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
 }
 .hero-card-skill[data-rolling] {
     background: #276143;
+}
+.hero-card-skill[data-queued] {
+    background: #804b14;
+    color: #fff1c6;
 }
 .hero-card-counter {
     position: absolute;

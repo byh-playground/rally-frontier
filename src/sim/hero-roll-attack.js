@@ -23,11 +23,26 @@ export class HeroRollAttack {
         if (unit.heroRoll) unit.heroRoll = null;
     }
 
+    static endSortie(unit) {
+        this.cancel(unit);
+        unit.heroRollQueued = false;
+    }
+
+    static canStart(unit, tick) {
+        return (
+            !unit.heroRoll &&
+            !unit.spinAttack &&
+            !unit.combat.attackWindupUntil &&
+            this.canDrive(unit, tick)
+        );
+    }
+
+    static reject(sim, side, sortieId, reason) {
+        sim.events.push({ type: 'heroSkillRejected', side, sortieId, reason });
+        return false;
+    }
+
     static activate(sim, side, sortieId) {
-        const reject = (reason) => {
-            sim.events.push({ type: 'heroSkillRejected', side, sortieId, reason });
-            return false;
-        };
         const hero = sim.heroes[side];
         const unit =
             hero &&
@@ -35,12 +50,19 @@ export class HeroRollAttack {
             (hero.mode === 'advance' || hero.mode === 'return')
                 ? sim.liveEntityRefById(hero.unitId, 'unit')?.entity
                 : null;
-        const spec = UnitDefinition.get(unit?.type)?.heroActive;
-        if (!unit || unit.side !== side || !spec) return reject('hero-not-deployed');
-        if (unit.heroRoll || unit.spinAttack || !this.canDrive(unit, sim.tick))
-            return reject('hero-busy');
-        if (sim.wallet[side] < spec.cost) return reject('insufficient-basic-resources');
+        if (!unit || unit.side !== side || !UnitDefinition.get(unit.type)?.heroActive)
+            return this.reject(sim, side, sortieId, 'hero-not-deployed');
+        if (unit.heroRollQueued) return true;
+        if (this.canStart(unit, sim.tick)) return this.start(sim, unit, sortieId);
+        unit.heroRollQueued = true;
+        return true;
+    }
 
+    static start(sim, unit, sortieId) {
+        const { side } = unit;
+        const spec = UnitDefinition.get(unit.type).heroActive;
+        if (sim.wallet[side] < spec.cost)
+            return this.reject(sim, side, sortieId, 'insufficient-basic-resources');
         const vision = sim.visionSources(side);
         let target = null;
         let bestDistance = spec.range ** 2;
@@ -60,7 +82,7 @@ export class HeroRollAttack {
                 }
             }
         });
-        if (!target) return reject('hero-no-target');
+        if (!target) return this.reject(sim, side, sortieId, 'hero-no-target');
 
         const distance = Math.sqrt(bestDistance);
         const angle = (HashUtil.hash(unit.id + '|' + target.id) % 8) * (Math.PI / 4);
@@ -76,16 +98,23 @@ export class HeroRollAttack {
             dy: distance ? (target.y - unit.y) / distance : Math.sin(angle),
             hitIds: [],
         };
-        unit.combat.cancelWindup();
         unit.combat.attackArcTargetId = null;
         unit.combat.attackArcUntilTick = 0;
         unit.constructionWork = null;
         unit.target = null;
         sim.wallet[side] -= spec.cost;
+        sim.events.push({ type: 'heroSkillStarted', side, sortieId, cost: spec.cost });
         return true;
     }
 
-    static update(sim, unit) {
+    static update(sim, unit, sortieId) {
+        if (unit.heroRoll) this.advance(sim, unit);
+        if (!unit.alive || !unit.heroRollQueued || !this.canStart(unit, sim.tick)) return;
+        unit.heroRollQueued = false;
+        this.start(sim, unit, sortieId);
+    }
+
+    static advance(sim, unit) {
         const roll = unit.heroRoll;
         if (!this.canDrive(unit, sim.tick)) {
             this.cancel(unit);
@@ -166,7 +195,7 @@ export class HeroRollAttack {
             if (roll.distance + distance > roll.stopDistance + STOP_EPSILON) break;
             if (!target.alive || !UnitMotion.isGrounded(target)) continue;
             if (!roll.hitIds.length)
-                roll.stopDistance = roll.distance + distance + spec.followThrough;
+                roll.stopDistance = roll.distance + distance + spec.distancePerTurn;
             roll.hitIds.push(target.id);
             advanceTo(distance);
             this.hit(sim, unit, target, definition, hitX, hitY);
@@ -222,6 +251,14 @@ export class HeroRollAttack {
     static validateState(unit, state, tps) {
         const spec = UnitDefinition.get(unit.type).heroActive;
         const roll = unit.heroRoll;
+        if (
+            spec
+                ? typeof unit.heroRollQueued !== 'boolean' ||
+                  (unit.heroRollQueued &&
+                      (!unit.alive || state.heroes?.[unit.side]?.unitId !== unit.id))
+                : unit.heroRollQueued !== undefined
+        )
+            throw new Error('게임 snapshot의 영웅 스킬 예약 상태가 잘못되었습니다.');
         if (spec ? roll === null : roll === undefined) return;
         if (
             !spec ||
@@ -242,7 +279,7 @@ export class HeroRollAttack {
             roll.distance < 0 ||
             !Number.isFinite(roll.stopDistance) ||
             roll.stopDistance < roll.distance ||
-            roll.stopDistance > spec.range + spec.followThrough ||
+            roll.stopDistance > spec.range + spec.distancePerTurn ||
             !Number.isFinite(roll.dx) ||
             !Number.isFinite(roll.dy) ||
             Math.abs(Math.hypot(roll.dx, roll.dy) - 1) > STOP_EPSILON ||
@@ -253,7 +290,7 @@ export class HeroRollAttack {
             roll.hitIds.some((id) => typeof id !== 'string' || !id || id.length > 256) ||
             new Set(roll.hitIds).size !== roll.hitIds.length ||
             (roll.hitIds.length
-                ? roll.stopDistance < spec.followThrough
+                ? roll.stopDistance < spec.distancePerTurn
                 : roll.stopDistance !== spec.range)
         )
             throw new Error('게임 snapshot의 영웅 구르기 상태가 잘못되었습니다.');

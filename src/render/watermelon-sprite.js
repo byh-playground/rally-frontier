@@ -109,14 +109,12 @@ export function setWatermelonRollMatrix(
     x,
     groundY,
     scale,
-    pixelsPerWorld,
     heading,
-    distance,
+    turns,
     tuck = 1,
     unfoldProgress = 0,
 ) {
-    const radius = (ROLL_RADIUS_X * scale) / pixelsPerWorld;
-    let angle = (heading * distance) / radius;
+    let angle = heading * turns * 2 * Math.PI;
     if (unfoldProgress > 0) {
         // Resolve the nearest upright angle so the body does not unwind through past turns.
         angle = Math.atan2(Math.sin(angle), Math.cos(angle)) * (1 - unfoldProgress);
