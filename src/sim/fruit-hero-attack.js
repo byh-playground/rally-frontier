@@ -47,6 +47,13 @@ function worldPoint(sim, entity, isBuilding = false) {
     };
 }
 
+function impactPoint(sim, x, y) {
+    const { width, height, terrain } = sim.world;
+    const px = Math.max(0, Math.min(width, Math.round(x * FP) / FP));
+    const py = Math.max(0, Math.min(height, Math.round(y * FP) / FP));
+    return { x: px, y: py, z: terrain.surfaces.heightAt(px, py) };
+}
+
 export class FruitHeroAttack {
     static initialState() {
         return { combo: 0, queued: false, active: null, projectiles: [] };
@@ -90,9 +97,10 @@ export class FruitHeroAttack {
         height = 0,
         targetId = null,
         targetIsBuilding = false,
+        index = null,
     }) {
         return {
-            id: `${unit.id}|${startTick}|${mode}`,
+            id: `${unit.id}|${startTick}|${mode}${index === null ? '' : `|${index}`}`,
             kind,
             mode,
             from,
@@ -150,21 +158,25 @@ export class FruitHeroAttack {
             }),
         );
         if (proc && spec.lob) {
-            const impact = {
-                x: target.x,
-                y: target.y,
-                z: sim.world.terrain.surfaces.heightAt(target.x, target.y),
-            };
-            fruit.projectiles.push(this.lobBerry(sim, unit, from, impact, spec, 'passive'));
+            const heading = Math.atan2(target.y - unit.y, target.x - unit.x);
+            const dx = Math.cos(heading) * spec.lob.radius;
+            const dy = Math.sin(heading) * spec.lob.radius;
+            for (const offset of [-1, 0, 1]) {
+                const impact = impactPoint(sim, target.x + dx * offset, target.y + dy * offset);
+                fruit.projectiles.push(
+                    this.lobBerry(sim, unit, from, impact, spec, 'passive', offset + 1),
+                );
+            }
         }
         sim.events.push({ type: 'fruitThrow', side: unit.side, sourceId: unit.id, ...from });
     }
 
-    static lobBerry(sim, unit, from, to, spec, mode) {
+    static lobBerry(sim, unit, from, to, spec, mode, index = null) {
         return this.makeShot({
             unit,
             kind: 'berry',
             mode,
+            index,
             from,
             to,
             startTick: sim.tick,
@@ -240,18 +252,13 @@ export class FruitHeroAttack {
     }
 
     static clusterImpacts(sim, unit, target, spec) {
-        const { width, height, terrain } = sim.world;
-        const point = (x, y) => {
-            const px = Math.max(0, Math.min(width, Math.round(x * FP) / FP));
-            const py = Math.max(0, Math.min(height, Math.round(y * FP) / FP));
-            return { x: px, y: py, z: terrain.surfaces.heightAt(px, py) };
-        };
         const heading = Math.atan2(target.y - unit.y, target.x - unit.x);
-        const impacts = [point(target.x, target.y)];
+        const impacts = [impactPoint(sim, target.x, target.y)];
         for (let index = 0; index < spec.active.shots - 1; index++) {
             const angle = heading + (2 * Math.PI * index) / (spec.active.shots - 1);
             impacts.push(
-                point(
+                impactPoint(
+                    sim,
                     target.x + Math.cos(angle) * spec.lob.radius,
                     target.y + Math.sin(angle) * spec.lob.radius,
                 ),
