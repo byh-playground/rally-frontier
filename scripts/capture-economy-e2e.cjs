@@ -232,7 +232,10 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     front = point('front-1'),
                     flank = point('flank-near-1'),
                     premium = point('mid-center'),
+                    enemyBase = sim.buildings.find((b) => b.id === 'base1'),
                     distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+                // Keep the target in play long enough to observe the mining and launch cycle.
+                enemyBase.hp = enemyBase.maxHp = 100000;
                 check(
                     sim.mapDescriptor.generation.accepted &&
                         sim.capturePoints.length === 9 &&
@@ -317,8 +320,37 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         wallet: sim.premiumWallet[0],
                     },
                 );
+                const corn = LaunchRules.payload('corn');
+                for (
+                    let i = 0;
+                    i < 30 * sim.tps &&
+                    (sim.wallet[0] < corn.cost || sim.premiumWallet[0] < corn.premiumCost);
+                    i++
+                )
+                    sim.stepSimulation();
+                const centralCannon = sim.launchCannons(0).find((b) => b.id === premium.outpostId);
+                const wallet = [sim.wallet[0], sim.premiumWallet[0]];
+                check(
+                    sim.applyCommand('host', {
+                        type: 'LAUNCH',
+                        cannonId: centralCannon.id,
+                        unitType: 'corn',
+                        holdMs: LaunchRules.chargeMs,
+                        x: enemyBase.x,
+                        y: enemyBase.y,
+                    }) &&
+                        wallet[0] - sim.wallet[0] === corn.cost &&
+                        wallet[1] - sim.premiumWallet[0] === corn.premiumCost,
+                    'mined premium and basic resources pay for a corn launch',
+                );
+                step(sim, sim.tps * 8);
+                check(
+                    sim.unitResultStats[0].corn.deployed === corn.count,
+                    'all corn soldiers deploy',
+                );
                 rows.push({
-                    scenario: 'separate outer expansion and shared central premium deposit',
+                    scenario: 'separate outer expansion, central premium and corn deployment',
+                    cornDeployed: sim.unitResultStats[0].corn.deployed,
                     distances: [
                         distance(base, natural),
                         distance(natural, front),
