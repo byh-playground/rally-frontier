@@ -47,7 +47,7 @@
 
 ## 원본과 실행
 
-메인 전투는 독립된 실제 시뮬레이션을 GameKit scenario로 진행한다. `assets/title-showcase.json`은 seed 12349의 한 경기에서 저장한 세 상태이며, 최대 사거리와 연출용 보급을 적용했다. `PRODUCT_VERSION`이 바뀌면 `npm run generate:title-showcase`로 현행 엔진의 상태를 다시 만들고 화면을 검증한다. 빌드는 상태의 게임 버전이 현재 제품 버전과 다르면 실패한다.
+메인 전투는 독립된 실제 시뮬레이션을 GameKit scenario로 진행한다. `assets/title-showcase.json`은 seed 12349의 한 경기에서 저장한 세 상태이며, 최대 사거리와 연출용 식량을 적용했다. `PRODUCT_VERSION`이 바뀌면 `npm run generate:title-showcase`로 현행 엔진의 상태를 다시 만들고 화면을 검증한다. 빌드는 상태의 게임 버전이 현재 제품 버전과 다르면 실패한다.
 
 시뮬레이션 시간 변환과 상태 codec, 통계 기본값은 UI와 독립된 `src/core/simulation-timing.js`, `src/core/rally-state-codec.js`, `src/diagnostics/simulation-stats.js`가 소유한다. 메인 쇼케이스는 격리된 문서에서 시뮬레이션을 직접 진행하며, 실제 대전의 AI 세션은 기존 Worker에서 실행한다.
 
