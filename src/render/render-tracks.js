@@ -10,6 +10,7 @@ class UnitRenderObject extends RenderField {
         tick: RenderField.LINEAR,
         'entity.impactMotion.heightFP': RenderField.LINEAR,
         'entity.heroRoll.distance': RenderField.LINEAR,
+        'entity.fruitAttack': RenderField.STEP,
         ...Object.fromEntries(
             [
                 'kind',
@@ -37,6 +38,7 @@ class UnitRenderObject extends RenderField {
                 'combat.attackArcUntilTick',
                 'combat.attackWindupUntil',
                 'combat.attackWindupStartedAt',
+                'combat.basicAttackTick',
                 'combat.lobLaunchTick',
                 'combat.thornLaunchTick',
                 'combat.thornAimX',

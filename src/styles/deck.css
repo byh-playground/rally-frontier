@@ -118,6 +118,9 @@
     color: #344c36;
     cursor: pointer;
 }
+.deck-heroes .deck-card {
+    min-height: 76px;
+}
 .deck-card[aria-pressed='true'] {
     border-color: #548c55;
     background: #edf6de;

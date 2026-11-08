@@ -1,0 +1,58 @@
+{
+    "sheet": [440, 248],
+    "ground": [106, 255],
+    "parts": {
+        "body": {
+            "slot": [2, 2, 220, 240],
+            "pivot": [106, 155]
+        },
+        "arm": {
+            "slot": [230, 2, 70, 45],
+            "pivot": [16, 22],
+            "grip": [34, 23]
+        },
+        "boot": {
+            "slot": [306, 2, 56, 56],
+            "pivot": [21, 14]
+        },
+        "neutral": {
+            "slot": [230, 66, 64, 48],
+            "pivot": [31, 23]
+        },
+        "attack": {
+            "slot": [298, 66, 64, 48],
+            "pivot": [31, 23]
+        },
+        "hurt": {
+            "slot": [366, 66, 64, 48],
+            "pivot": [31, 23]
+        },
+        "boomerang": {
+            "slot": [230, 120, 104, 112],
+            "pivot": [54, 63],
+            "grip": [24, 83]
+        }
+    },
+    "rest": {
+        "body": [106, 155],
+        "face": [82, 133],
+        "farBoot": [78, 220],
+        "nearBoot": [124, 222],
+        "farArm": [55, 157],
+        "nearArm": [119, 160]
+    },
+    "layers": ["farBoot", "farArm", "body", "nearBoot", "face", "heldBoomerang", "nearArm"],
+    "restAngles": {
+        "farBoot": -0.13,
+        "nearBoot": 0.12,
+        "farArm": -0.24,
+        "nearArm": 0.18,
+        "face": -0.06,
+        "heldBoomerang": -0.65
+    },
+    "mirrored": ["farBoot", "farArm"],
+    "cannonAmmo": {
+        "part": "body",
+        "pivot": [111, 120]
+    }
+}

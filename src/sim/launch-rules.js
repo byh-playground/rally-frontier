@@ -11,6 +11,7 @@ const SINGLE_BUNDLE_SHELL = Object.freeze({
     land: 'bundle',
     fire: Object.freeze({ mode: 'single' }),
 });
+const HERO_SHELL = Object.freeze({ ...SINGLE_BUNDLE_SHELL, cost: 0, count: 1 });
 
 // 발사전: 대포가 유닛 뭉치를 쏜다. 거리는 누른 시간만으로 정해지고, 조준 중에는 착지 원으로 미리 보인다(D-196).
 // 한 발이 무겁다: 자원 단위는 기존 경제의 5배 환산 기준(D-233·D-235), 폭발 중심일수록 피해가 크다(D-230), 곡물마다 발사 방식이 다르다(D-234).
@@ -94,12 +95,9 @@ class LaunchRules {
     // 폭발 중심의 피해 배수. 가장자리는 1배, 중심은 centerPeak배이고 거리에 따라 제곱으로 줄어든다.
     static centerPeak = 3;
     static heroCard = 'watermelon';
+    static heroTypes = Object.freeze([LaunchRules.heroCard, 'banana', 'grape']);
     static grains = Object.freeze({
-        [LaunchRules.heroCard]: Object.freeze({
-            ...SINGLE_BUNDLE_SHELL,
-            cost: 0,
-            count: 1,
-        }),
+        ...Object.fromEntries(LaunchRules.heroTypes.map((type) => [type, HERO_SHELL])),
         // 산탄: 한 번에 여러 갈래, 갈래마다 폭발은 작다.
         rice: Object.freeze({
             cost: 25 * this.resourceScale,
@@ -189,8 +187,20 @@ class LaunchRules {
         }),
     });
     static deck = Object.freeze(
-        Object.keys(LaunchRules.grains).filter((type) => type !== LaunchRules.heroCard),
+        Object.keys(LaunchRules.grains).filter((type) => !LaunchRules.isHeroType(type)),
     );
+    static isHeroType(type) {
+        return this.heroTypes.includes(type);
+    }
+    static normalizeHeroType(type) {
+        if (!this.isHeroType(type)) throw new Error('유효한 영웅을 선택해야 합니다.');
+        return type;
+    }
+    static normalizeHeroPair(heroTypes) {
+        if (!Array.isArray(heroTypes) || heroTypes.length !== 2)
+            throw new Error('양쪽 플레이어의 영웅이 필요합니다.');
+        return [this.normalizeHeroType(heroTypes[0]), this.normalizeHeroType(heroTypes[1])];
+    }
     static normalizeDeck(deck) {
         if (
             !Array.isArray(deck) ||

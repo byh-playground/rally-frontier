@@ -3,6 +3,7 @@ import { UnitLobAttack } from './unit-lob-attack.js';
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { HeroDeployment } from './hero-deployment.js';
 import { HeroRollAttack } from './hero-roll-attack.js';
+import { FruitHeroAttack } from './fruit-hero-attack.js';
 import { UnitSpinAttack } from './unit-spin-attack.js';
 import { UnitSelfDestructAttack } from './unit-self-destruct-attack.js';
 import { UnitLeapAttack } from './unit-leap-attack.js';
@@ -262,16 +263,18 @@ class StrategySim {
             ],
         },
     );
-    static createForMatch({ seed, rules = GameRuleDefinition.current, decks } = {}) {
-        return new StrategySim(seed, rules, decks);
+    static createForMatch({ seed, rules = GameRuleDefinition.current, decks, heroTypes } = {}) {
+        return new StrategySim(seed, rules, decks, heroTypes);
     }
     constructor(
         seed,
         rules = GameRuleDefinition.current,
         decks = [LaunchRules.deck, LaunchRules.deck],
+        heroTypes = [LaunchRules.heroCard, LaunchRules.heroCard],
     ) {
         this.seed = seed >>> 0;
         this.decks = LaunchRules.normalizeDeckPair(decks);
+        this.heroTypes = Object.freeze(LaunchRules.normalizeHeroPair(heroTypes));
         this.rules = rules || GameRuleDefinition.current;
         this.tps = RangeUtil.clamp(
             Math.round(Number(this.rules?.simulation?.tps) || SIM_TPS),
@@ -1176,6 +1179,7 @@ class StrategySim {
         const windupTicks = d.attackIntervalMs == null ? 0 : this.attackWindupTicksFor(d);
         u.combat.cooldownUntil = this.tick + Math.max(1, scheduled.ticks - windupTicks);
         u.combat.moveRecoveryUntil = this.tick + this.attackMoveRecoveryDurationTicks(u, d);
+        if (d.heroActive || d.fruitAttack) u.combat.basicAttackTick = this.tick;
         u.attackFlash = 1;
     }
 
@@ -1305,7 +1309,7 @@ class StrategySim {
         if (this.tick < (Number(cannon.launchReadyTick) || 0)) return reject('reloading');
         const grain = LaunchRules.grain(action.unitType);
         if (!grain) return reject('invalid-unit');
-        const isHero = action.unitType === LaunchRules.heroCard;
+        const isHero = action.unitType === this.heroTypes[side];
         const heroRejection = isHero && HeroDeployment.launchRejection(this.heroes[side]);
         if (heroRejection) return reject(heroRejection);
         if (!isHero && !this.decks[side]?.includes(action.unitType))
@@ -1408,7 +1412,7 @@ class StrategySim {
             sourceDamageResolved: true,
             payload: { type, count },
         });
-        if (type === LaunchRules.heroCard) HeroDeployment.begin(this, side, id);
+        if (type === this.heroTypes[side]) HeroDeployment.begin(this, side, id);
         this.events.push({
             type: 'launchFire',
             side,
@@ -1499,8 +1503,14 @@ class StrategySim {
         const side = ConnectionSideUtil.roleSide(actor);
         if (action.type === 'TOGGLE_HERO')
             return HeroDeployment.toggle(this, side, action.sortieId);
-        if (action.type === 'ACTIVATE_HERO_SKILL')
+        if (action.type === 'ACTIVATE_HERO_SKILL') {
+            const hero = this.heroes[side];
+            const unit =
+                hero?.sortieId === action.sortieId &&
+                this.liveEntityRefById(hero.unitId, 'unit')?.entity;
+            if (unit?.fruitAttack) return FruitHeroAttack.activate(this, unit, action.sortieId);
             return HeroRollAttack.activate(this, side, action.sortieId);
+        }
         if (action.type === 'LAUNCH') return this.applyLaunchCommand(side, action);
         if (action.type === 'UPGRADE_LAUNCH_RANGE') return this.upgradeLaunchRange(side);
         return false;
@@ -2131,7 +2141,7 @@ class StrategySim {
         const d = UnitDefinition.get(u.type);
         if (d.selfDestruct && UnitSelfDestructAttack.update(this, u, d.selfDestruct)) return null;
         this.tickAttackTimers(u);
-        if (u.heroRoll) return null;
+        if (u.heroRoll || u.fruitAttack?.active) return null;
         if (HeroDeployment.moveReturningUnit(this, u, d)) {
             UnitSpinAttack.cancel(this, u);
             return null;
@@ -2159,6 +2169,7 @@ class StrategySim {
         }
         // Give a queued skill the action slot before combat can start another windup.
         if (u.heroRollQueued && HeroRollAttack.canStart(u, this.tick)) return null;
+        if (u.fruitAttack?.queued && FruitHeroAttack.canStart(u, this.tick)) return null;
         if (!UnitMotion.isGrounded(u)) {
             u.constructionWork = null;
             return null;
@@ -2313,8 +2324,13 @@ class StrategySim {
             );
             return null;
         }
+        if (u.fruitAttack && !FruitHeroAttack.canBasic(u)) return null;
         if (!this.attackReadyAfterWindup(u, t, found.isBuilding, d)) return null;
         this.commitAttackTiming(u, d, cooldown);
+        if (u.fruitAttack) {
+            FruitHeroAttack.basic(this, u, t, found.isBuilding);
+            return null;
+        }
         if (d.lobAttack) {
             UnitLobAttack.launch(this, u, t, d.lobAttack, d.atk);
             return null;
@@ -3290,7 +3306,12 @@ class StrategySim {
         for (let i = 0; i < n; i++) {
             const u = units[i],
                 ud = UnitDefinition.get(u.type);
-            if (!u.alive || u.heroRoll || ud?.crowdCollision === false) {
+            if (
+                !u.alive ||
+                u.heroRoll ||
+                FruitHeroAttack.blocksMovement(u) ||
+                ud?.crowdCollision === false
+            ) {
                 radii[i] = 0;
                 masses[i] = 0;
                 continue;
@@ -3564,6 +3585,7 @@ class StrategySim {
             const unit = this.liveEntityRefById(hero.unitId, 'unit')?.entity;
             if (unit?.heroRoll || unit?.heroRollQueued)
                 HeroRollAttack.update(this, unit, hero.sortieId);
+            if (unit?.fruitAttack) FruitHeroAttack.update(this, unit, hero.sortieId);
         }
         winner = this.updateProjectiles() || winner;
         UnitLobAttack.step(this);
@@ -3703,7 +3725,12 @@ class StrategySim {
     }
     importState(s, { rollback = false } = {}) {
         UnitResultStats.validate(s.unitResultStats);
-        const retained = { mapDescriptor: this.mapDescriptor, rules: this.rules };
+        const heroTypes = LaunchRules.normalizeHeroPair(s.heroTypes);
+        const retained = {
+            mapDescriptor: this.mapDescriptor,
+            rules: this.rules,
+            heroTypes: this.heroTypes,
+        };
         const retainedNavigation =
             rollback && this.navigation instanceof TerrainNavigation ? this.navigation : null;
         if (rollback) {
@@ -3728,6 +3755,7 @@ class StrategySim {
                     delete this[key];
         }
         Object.assign(this, copy);
+        if (!rollback) this.heroTypes = Object.freeze(heroTypes);
         StateValue.freeze(this.mapDescriptor);
         this.world = WorldContext.fromMap(this.mapDescriptor);
         this.tps = RangeUtil.clamp(
@@ -3757,6 +3785,7 @@ class StrategySim {
                 tick: this.tick,
                 tps: this.tps,
                 decks: StateValue.copy(this.decks),
+                heroTypes: this.heroTypes.slice(),
                 mapDescriptor: this.mapDescriptor,
                 launchDeployments: StateValue.copy(this.launchDeployments),
                 heroes: StateValue.copy(this.heroes),

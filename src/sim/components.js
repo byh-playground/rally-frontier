@@ -151,6 +151,7 @@ class CombatComponent {
             attackArcUntilTick: 0,
             attackWindupUntil: 0,
             attackWindupStartedAt: 0,
+            basicAttackTick: null,
             attackWindupTargetId: null,
             attackWindupIsBuilding: false,
             moveRecoveryUntil: 0,
@@ -158,13 +159,14 @@ class CombatComponent {
             recentImpactUntil: 0,
         },
         {
-            presentation: ['attackArcTargetId', 'attackArcUntilTick'],
+            presentation: ['attackArcTargetId', 'attackArcUntilTick', 'basicAttackTick'],
             derived: ['lastTimerTick'],
             view: [
                 'attackArcTargetId',
                 'attackArcUntilTick',
                 'attackWindupStartedAt',
                 'attackWindupUntil',
+                'basicAttackTick',
                 'cooldownUntil',
                 'lobLaunchTick',
                 'thornLaunchTick',

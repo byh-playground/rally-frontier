@@ -668,8 +668,18 @@ END OF DEVELOPMENT CONTRACT
                         ×
                     </button>
                 </header>
-                <p class="deck-intro">대전에 데려갈 곡식 병사를 골라요.</p>
+                <p class="deck-intro">대전에 데려갈 과일 영웅 한 명과 곡식 병사를 골라요.</p>
                 <div id="deckTabs" class="deck-tabs" role="group" aria-label="덱 선택"></div>
+                <div class="deck-section-head">
+                    <h3>영웅</h3>
+                    <span>한 명 선택</span>
+                </div>
+                <div
+                    id="deckHeroes"
+                    class="deck-collection deck-heroes"
+                    role="group"
+                    aria-label="영웅 선택"
+                ></div>
                 <div class="deck-section-head">
                     <h3>내 덱</h3>
                     <span id="deckCount"></span>
@@ -1036,9 +1046,28 @@ END OF DEVELOPMENT CONTRACT
                     <section class="help-rule">
                         <h3>영웅 카드</h3>
                         <p>
-                            맨 앞 카드의 영웅은 무료로 발사할 수 있고, 진영마다 한 번에 한 명만
-                            출격해요. 영웅이 전사하면 그 경기에서 다시 출격할 수 없어요.
+                            덱 편성에서 수박, 바나나, 포도 중 이번 경기에 데려갈 영웅 한 명을
+                            골라요. 맨 앞 카드의 영웅은 무료로 발사할 수 있어요. 영웅이 전사하면 그
+                            경기에서 다시 출격할 수 없어요.
                         </p>
+                        <details>
+                            <summary>바나나의 부메랑</summary>
+                            <p>
+                                작은 부메랑으로 적 한 명을 맞혀요. 네 번째 평타는 돌아오는 길에도
+                                피해를 줘요. 카드를 길게 누르면 길고 좁은 두 경로를 예고하고, 그
+                                경로로 큰 부메랑을 던져요. 나갈 때와 돌아올 때 적 병력에 각각 한 번
+                                피해를 주며, 바나나는 부메랑을 받을 때까지 제자리에 있어요.
+                            </p>
+                        </details>
+                        <details>
+                            <summary>포도의 곡사탄과 덩굴</summary>
+                            <p>
+                                평타로 적 한 명을 맞히고, 세 번째 평타마다 포도알 한 알을 더 높이
+                                던져 착탄 지점 주변에 피해를 줘요. 카드를 길게 누르면 적 한 명을
+                                덩굴로 세 번 조여요. 마지막에 가장 큰 피해를 주고, 적이 사거리
+                                밖으로 빠지면 덩굴이 끊어져요.
+                            </p>
+                        </details>
                         <details>
                             <summary>수박의 범위 평타와 휩쓸기</summary>
                             <p>

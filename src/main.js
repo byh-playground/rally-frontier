@@ -16,6 +16,7 @@ import {
 import { LaunchRules } from './sim/launch-rules.js';
 import { ConstructionRules } from './sim/construction-rules.js';
 import { LaunchImpactRules } from './definitions/launch-impact-rules.js';
+import { fruitProjectilePosition } from './definitions/fruit-hero-trajectory.js';
 import { RoomTransport } from './net/rtc-transport.js';
 import { RecoveryTelemetry } from './diagnostics/recovery-telemetry.js';
 import { ConnectionSideUtil } from './net/lobby-codec.js';
@@ -50,6 +51,7 @@ import { BACKGROUND_TICK_PULSE_MS } from './core/session-timing.js';
 import { RENDER_TRACKS } from './render/render-tracks.js';
 import { BuildingArt } from './render/building-art.js';
 import { GRAIN_SPRITES } from './render/grain-sprite-registry.js';
+import { heroBasicAttackElapsedMs, HERO_BASIC_STRIKE_MS } from './render/hero-basic-motion.js';
 import {
     setWatermelonRollMatrix,
     watermelonRollProgress,
@@ -803,7 +805,7 @@ const PROJECTILE_VISUAL_RENDER_FNS = Object.freeze({
         }
         const length = Math.max(30, 58 * sc);
         rdr.drawVectorBillboard(record, x, y, Math.atan2(dy, dx), length / 200, {
-            depthTest: !!(record.cornCone || record.watermelonAmmo),
+            depthTest: !!(record.cornCone || record.heroAmmo),
         });
         rdr.circle(
             x,
@@ -814,6 +816,12 @@ const PROJECTILE_VISUAL_RENDER_FNS = Object.freeze({
         );
     },
 });
+function fruitShotsAt(attack, tick) {
+    if (!attack) return [];
+    const active = attack.active?.shot;
+    const shots = active ? [...attack.projectiles, active] : attack.projectiles;
+    return shots.filter((shot) => tick >= shot.startTick && tick < shot.endTick);
+}
 const THORN_TRAIL_COLOR = Object.freeze([151 / 255, 93 / 255, 43 / 255, 1]);
 const THORN_IMPACT_COLOR = Object.freeze([225 / 255, 157 / 255, 65 / 255, 1]);
 const BUILDING_VISUAL_RENDER_FNS = Object.freeze({
@@ -1916,8 +1924,13 @@ class GLRenderer {
             this.spriteRenderers.acorn.drawTeamMarker(matrix, 0, true);
             this.spriteRenderers.acorn.drawTeamMarker(matrix, 0, false);
             C.flush('acorn-ammo-resource-preparation');
-            this.spriteRenderers.watermelon.drawAmmo([32, 0, 0, 32, 0, 0], 0);
-            C.flush('watermelon-ammo-resource-preparation');
+            for (const [type, spec] of Object.entries(GRAIN_SPRITES)) {
+                if (!spec.cannonAmmo) continue;
+                const renderer = this.spriteRenderers[type];
+                renderer.drawAmmo([32, 0, 0, 32, 0, 0], 0);
+                renderer.drawCombatAmmo?.([24, 0, 0, 24, 0, 0], 0);
+                C.flush('fruit-ammo-resource-preparation');
+            }
             C.depthTest = false;
             this.spriteRenderers.millet.drawEar(matrix, 0);
             this.spriteRenderers.corn.drawKernel(matrix, 0);
@@ -2905,6 +2918,10 @@ class GLRenderer {
                 this.addClientFx('spinBasicImpact', e, snapshot, index);
             } else if (e.type === 'heroRollHit') {
                 this.addClientFx('meleeImpact', e, snapshot, index, { impactScale: 1.5 });
+            } else if (e.type === 'fruitBerryLand') {
+                this.addClientFx('fruitBerryImpact', e, snapshot, index);
+            } else if (e.type === 'fruitVineHit') {
+                this.addClientFx('fruitVineImpact', e, snapshot, index);
             } else if (e.type === 'unitThornHit') {
                 this.addClientFx('thornImpact', e, snapshot, index, {
                     id: 'thorn-impact:' + e.projectileId,
@@ -4329,8 +4346,8 @@ class GLRenderer {
         const key = 'ammo|' + type;
         let record = this.vectorUnitAssetCache.get(key);
         if (record) return record;
-        if (type === 'watermelon') {
-            record = { watermelonAmmo: this.spriteRenderers.watermelon };
+        if (GRAIN_SPRITES[type]?.cannonAmmo) {
+            record = { heroAmmo: this.spriteRenderers[type] };
             this.vectorUnitAssetCache.set(key, record);
             return record;
         }
@@ -4394,7 +4411,7 @@ class GLRenderer {
                 record.cornCone ||
                 record.milletEar ||
                 record.popcornAmmo ||
-                record.watermelonAmmo,
+                record.heroAmmo,
             actualScale = centered ? scale * 200 : scale,
             cos = Math.cos(actualAngle) * actualScale,
             sin = Math.sin(actualAngle) * actualScale,
@@ -4425,8 +4442,7 @@ class GLRenderer {
             else if (record.cornCone) this.spriteRenderers.corn.drawCone(m, this._renderDepth ?? 0);
             else if (record.popcornAmmo)
                 this.spriteRenderers.popcorn.drawAmmo(m, this._renderDepth ?? 0);
-            else if (record.watermelonAmmo)
-                record.watermelonAmmo.drawAmmo(m, this._renderDepth ?? 0);
+            else if (record.heroAmmo) record.heroAmmo.drawAmmo(m, this._renderDepth ?? 0);
             else this.spriteRenderers.millet.drawEar(m, this._renderDepth ?? 0);
             return;
         }
@@ -4739,6 +4755,59 @@ class GLRenderer {
             const rollProgress = roll?.phase ? watermelonRollProgress(roll, renderTick) : 0;
             const selfDestruct =
                 entity.selfDestruct?.phase === 'windup' ? entity.selfDestruct : null;
+            const sprite = GRAIN_SPRITES[u.type];
+            const heroBasic =
+                sprite?.heroBasic && grounded && !impact.active && !work?.active
+                    ? heroBasicAttackElapsedMs(
+                          entity.combat,
+                          renderTick,
+                          this.snapshot.tps || SIM_TPS,
+                      )
+                    : null;
+            const fruit = sprite?.fruitAttack ? entity.fruitAttack : null;
+            const active = fruit?.active;
+            let fruitSkillElapsed = null;
+            if (heroBasic != null || active) {
+                const targetId =
+                    active?.targetId ?? entity.combat?.attackWindupTargetId ?? entity.target;
+                const target =
+                    targetId &&
+                    (this.renderState.model('unit', targetId, now)?.entity ||
+                        this.snapshot.buildings.find((entry) => entry.id === targetId));
+                const aimX = active?.shot?.to.x ?? target?.x;
+                if (Number.isFinite(aimX))
+                    grain.heroFacing = this.viewX(aimX) < this.viewX(entity.x) ? -1 : 1;
+            }
+            if (sprite?.heroBasic && clip === 'fire' && heroBasic == null)
+                clip = moving ? 'walk' : 'idle';
+            if (heroBasic != null || active) clip = 'fire';
+            if (sprite?.fruitAttack) {
+                actor.weaponAway = fruitShotsAt(fruit, renderTick).some(
+                    (shot) => shot.kind === 'boomerang',
+                );
+                const activeSpec = UnitDefinition.get(u.type).fruitAttack.active;
+                const tps = this.snapshot.tps || SIM_TPS;
+                const releaseTick =
+                    active?.shot?.startTick ??
+                    (active?.strike
+                        ? active.nextTick - SimulationTiming.msToTicks(activeSpec.intervalMs, tps)
+                        : active?.nextTick);
+                const windupStart = active?.shot
+                    ? releaseTick - SimulationTiming.msToTicks(activeSpec.windupMs, tps)
+                    : active?.startTick;
+                if (active) {
+                    fruitSkillElapsed =
+                        !active.strike && renderTick < releaseTick
+                            ? HERO_BASIC_STRIKE_MS *
+                              RangeUtil.clamp(
+                                  (renderTick - windupStart) /
+                                      Math.max(1, releaseTick - windupStart),
+                                  0,
+                                  1,
+                              )
+                            : HERO_BASIC_STRIKE_MS + ((renderTick - releaseTick) * 1000) / tps;
+                }
+            }
             if (selfDestruct) clip = 'windup';
             if (spin) clip = 'spin';
             if (roll?.phase) clip = 'roll';
@@ -4768,7 +4837,9 @@ class GLRenderer {
                 actor.seekElapsed(
                     1000 * RangeUtil.clamp((renderTick - selfDestruct.startTick) / duration, 0, 1),
                 );
-            } else if (cornElapsed != null) actor.seekElapsed(cornElapsed);
+            } else if (fruitSkillElapsed != null) actor.seekElapsed(fruitSkillElapsed);
+            else if (heroBasic != null) actor.seekElapsed(heroBasic);
+            else if (cornElapsed != null) actor.seekElapsed(cornElapsed);
             else if (chestnutFireMs !== null && clip === 'fire') actor.seekElapsed(chestnutFireMs);
             else if (milletFireMs !== null && clip === 'fire') actor.seekElapsed(milletFireMs);
             else
@@ -4796,11 +4867,14 @@ class GLRenderer {
                     scale *
                     impact.scaleX *
                     (work?.facing ??
-                        (cornElapsed != null
-                            ? grain.cornFacing || 1
-                            : milletFireMs != null
-                              ? milletFacing
-                              : chestnutFacing)) *
+                        (sprite?.fruitAttack ||
+                        (sprite?.heroBasic && heroBasic != null && !spin && !roll)
+                            ? grain.heroFacing || 1
+                            : cornElapsed != null
+                              ? grain.cornFacing || 1
+                              : milletFireMs != null
+                                ? milletFacing
+                                : chestnutFacing)) *
                     (work?.scaleX ?? 1),
                 sy = scale * impact.scaleY * (work?.scaleY ?? 1);
             m[0] = cos * sx;
@@ -6033,6 +6107,27 @@ class GLRenderer {
             )
                 add('building', b, { x: b.x, y: 0, z: b.y });
         for (const u of visibleUnits) add('unit', u, this.resolveRenderWorldPosition(u, 'unit'));
+        const fruitNow = this.presentationNow();
+        for (const unit of this.renderState.displayed('unit', fruitNow)) {
+            if (!GRAIN_SPRITES[unit.type]?.fruitAttack) continue;
+            const model = this.renderState.model('unit', unit.id, fruitNow);
+            const renderTick = model?.tick ?? this.snapshot.tick;
+            for (const shot of fruitShotsAt(model?.entity.fruitAttack, renderTick)) {
+                const { x, y, z } = fruitProjectilePosition(shot, renderTick);
+                if (unit.side !== this.mySide() && !this.visibleRaw(x, y)) continue;
+                const groundY = this.world.terrain.surfaces.heightAt(x, y);
+                add(
+                    'fruitProjectile',
+                    { ...shot, sourceType: unit.type, sourceId: unit.id, renderTick },
+                    {
+                        x,
+                        y: z,
+                        z: y,
+                        groundY,
+                    },
+                );
+            }
+        }
         for (const p of this.renderState.displayed('projectile', this.presentationNow())) {
             if (!this.presentationEntityActive('projectile', p.id)) continue;
             if (
@@ -6233,7 +6328,8 @@ class GLRenderer {
                 (kind === 'projectile' && entity.payload?.type === 'acorn') ||
                 (kind === 'projectile' && entity.payload?.type === 'corn') ||
                 (kind === 'projectile' && entity.payload?.type === 'millet') ||
-                (kind === 'projectile' && entity.payload?.type === 'watermelon') ||
+                (kind === 'projectile' && GRAIN_SPRITES[entity.payload?.type]?.cannonAmmo) ||
+                kind === 'fruitProjectile' ||
                 kind === 'unitLob' ||
                 kind === 'thorn' ||
                 kind === 'thornImpact' ||
@@ -6267,6 +6363,7 @@ class GLRenderer {
                     this.drawCornConeProjectile(entity, world, true);
                 else if (kind === 'projectile' && entity.payload?.type === 'millet')
                     this.drawMilletEarProjectile(entity, world);
+                else if (kind === 'fruitProjectile') this.drawFruitProjectile(entity, world);
                 else if (kind === 'thorn') this.drawThorn(entity, world);
                 else if (kind === 'thornImpact') this.drawThornImpact(entity, world);
                 else this.drawProjectileSafely(entity);
@@ -6299,14 +6396,27 @@ class GLRenderer {
     // spin interval and contact pulses remain owned by the simulation.
     drawUnitAttackEffects(entries) {
         for (const fx of this.combatFx) {
-            if (fx.kind !== 'spinBasicImpact' || fx.clock.expired) continue;
+            if (
+                (fx.kind !== 'spinBasicImpact' &&
+                    fx.kind !== 'fruitBerryImpact' &&
+                    fx.kind !== 'fruitVineImpact') ||
+                fx.clock.expired
+            )
+                continue;
             const fade = 1 - fx.clock.ageMs / EffectObjectFactory.combatLife(fx);
             if (fade <= 0) continue;
             const elevation = this.world.terrain.surfaces.heightAt(fx.x, fx.y);
+            const stroke =
+                fx.kind === 'fruitBerryImpact'
+                    ? [0.75, 0.45, 1, fade]
+                    : fx.kind === 'fruitVineImpact'
+                      ? [0.55, 0.9, 0.23, fade]
+                      : [1, 0.77, 0.44, fade];
+            const radius = fx.kind === 'fruitVineImpact' ? 16 + (1 - fade) * 18 : fx.radius;
             this.withWorldSpriteDepth({ x: fx.x, y: elevation, z: fx.y, groundY: 0 }, () =>
-                this.drawGroundCircle(fx.x, fx.y, fx.radius, {
+                this.drawGroundCircle(fx.x, fx.y, radius, {
                     elevation,
-                    stroke: [1, 0.77, 0.44, fade],
+                    stroke,
                     width: Math.max(1, 2 * this.sc()),
                     segments: 20,
                 }),
@@ -6317,10 +6427,12 @@ class GLRenderer {
             if (entry.kind !== 'unit') continue;
             const definition = UnitDefinition.get(entry.entity.type);
             const spec = definition?.spinAttack;
-            if (!spec && !definition?.heroActive) continue;
+            if (!spec && !definition?.heroActive && !definition?.fruitAttack) continue;
             const model = this.renderState.model('unit', entry.entity.id, now);
             if (definition.heroActive && entry.entity.alive)
                 this.drawHeroRollTelegraph(entry, model, definition.heroActive);
+            if (definition.fruitAttack && entry.entity.alive)
+                this.drawFruitAttackEffect(entry, model, now);
             const spin = model?.entity?.spinAttack,
                 tick = model?.tick,
                 radius = spec?.radius;
@@ -6407,6 +6519,119 @@ class GLRenderer {
                 }
             });
         }
+    }
+    drawFruitProjectile(shot, world) {
+        if (this.frame.length) {
+            this.flushVectorMesh('frame-to-fruit-projectile-switch');
+            this.flush(this.frame, true);
+            this.begin();
+        }
+        const p = this.projectRenderWorldPosition(world),
+            span =
+                (shot.kind === 'berry'
+                    ? shot.mode === 'passive'
+                        ? 20
+                        : 14
+                    : shot.mode === 'active'
+                      ? shot.radius * 2
+                      : 22) * this.sc(),
+            age = (shot.renderTick - shot.startTick) / (this.snapshot.tps || SIM_TPS),
+            angle = shot.kind === 'boomerang' ? age * Math.PI * 7 : 0,
+            cos = Math.cos(angle) * span,
+            sin = Math.sin(angle) * span;
+        if (shot.kind === 'boomerang') {
+            const departure = shot.renderTick - shot.startTick;
+            const arrival = shot.endTick - shot.renderTick;
+            const source = this.grainActors.get(shot.sourceId);
+            // Only bridge the one-tick boundary from the visible grip to the
+            // authoritative trajectory and back. The flight itself uses its world track.
+            if ((departure < 1 || arrival < 1) && source?.frame === this.grainActorFrame) {
+                const [x, y] = source.compiled.weaponSocket(source.matrix, departure < 1);
+                const weight = 1 - Math.min(departure, arrival);
+                p.x += (x - p.x) * weight;
+                p.y += (y - p.y) * weight;
+            }
+        }
+        this.vectorContext.depthTest = true;
+        this.vectorContext.depthWrite = false;
+        this.spriteRenderers[shot.sourceType].drawCombatAmmo(
+            [cos, sin, -sin, cos, p.x, p.y],
+            this._renderDepth ?? 0,
+        );
+    }
+    drawFruitAttackEffect(entry, model, now) {
+        const active = model?.entity.fruitAttack?.active;
+        if (!active) return;
+        const shot = active.shot;
+        if (shot) {
+            if (model.tick >= shot.startTick) return;
+            this.drawFruitThrowPreview(shot);
+            return;
+        }
+        const target = this.renderState.model('unit', active.targetId, now)?.entity;
+        if (!target || (target.side !== this.mySide() && !this.visibleRaw(target.x, target.y)))
+            return;
+        const from = this.projectRenderWorldPosition(entry.world),
+            to = this.projectEntityScreen(target, 'unit'),
+            ground = this.world.terrain.surfaces.heightAt(target.x, target.y);
+        this.withWorldSpriteDepth({ x: target.x, y: ground, z: target.y, groundY: ground }, () => {
+            this.line(
+                from.x,
+                from.y,
+                to.x,
+                to.y,
+                Math.max(1.5, 4 * this.sc()),
+                [0.32, 0.76, 0.29, 0.84],
+            );
+            this.drawGroundCircle(target.x, target.y, InteractionGeometry.unitRadius(target.type), {
+                elevation: ground,
+                stroke: [0.62, 0.93, 0.25, 0.88],
+                fill: [0.25, 0.67, 0.25, 0.16],
+                width: Math.max(1, 2 * this.sc()),
+            });
+        });
+    }
+    drawFruitThrowPreview(shot) {
+        const groundPoint = (x, z) => {
+            const y = this.world.terrain.surfaces.heightAt(x, z);
+            return this.projectRenderWorldPosition({ x, y, z, groundY: y });
+        };
+        const drawLeg = (start, end, edge, band) => {
+            const segments = 16;
+            let a = fruitProjectilePosition(shot, start);
+            for (let i = 1; i <= segments; i++) {
+                const b = fruitProjectilePosition(shot, start + ((end - start) * i) / segments),
+                    dx = b.x - a.x,
+                    dy = b.y - a.y,
+                    length = Math.hypot(dx, dy);
+                if (!length) continue;
+                const nx = (-dy * shot.radius) / length,
+                    ny = (dx * shot.radius) / length,
+                    leftA = groundPoint(a.x + nx, a.y + ny),
+                    leftB = groundPoint(b.x + nx, b.y + ny),
+                    rightB = groundPoint(b.x - nx, b.y - ny),
+                    rightA = groundPoint(a.x - nx, a.y - ny);
+                this.withRenderDepth((leftA.depth + leftB.depth) / 2 - 0.001, () => {
+                    this.quad(
+                        leftA.x,
+                        leftA.y,
+                        leftB.x,
+                        leftB.y,
+                        rightB.x,
+                        rightB.y,
+                        rightA.x,
+                        rightA.y,
+                        band,
+                    );
+                    const from = groundPoint(a.x, a.y),
+                        to = groundPoint(b.x, b.y);
+                    this.line(from.x, from.y, to.x, to.y, Math.max(1.5, 2 * this.sc()), edge);
+                });
+                a = b;
+            }
+        };
+        drawLeg(shot.startTick, shot.turnTick, [0.35, 0.95, 0.53, 0.9], [0.25, 0.82, 0.45, 0.24]);
+        drawLeg(shot.turnTick, shot.endTick, [1, 0.82, 0.27, 0.9], [1, 0.74, 0.24, 0.24]);
     }
     drawHeroRollTelegraph({ entity, world }, model, spec) {
         const roll = model?.entity?.heroRoll;
@@ -8984,6 +9209,7 @@ class MatchLifecycle {
             c,
             r === 'host' ? MatchLifecycle.currentMatchConfig() : null,
             DeckEditor.getDeck(),
+            DeckEditor.getHeroType(),
         );
         MatchLifecycle.wireSessionForView(r, ActiveViewState.session, ActiveViewState.transport);
         ActiveViewState.transport.open();
@@ -9031,6 +9257,7 @@ class MatchLifecycle {
             token,
             configFor(humanRole),
             stage?.deck || DeckEditor.getDeck(),
+            stage ? LaunchRules.heroCard : DeckEditor.getHeroType(),
         );
         // CONFIG.single.botWorker runs the AI session in src/sim-worker.js; its WebRTC transport stays here.
         const botSession = CONFIG.single.botWorker
@@ -10108,16 +10335,16 @@ class LaunchPresentation {
             this.endHeroPress(true);
         if (!on) return;
         const deck = s.decks?.[side] || LaunchRules.deck,
-            heroCard = LaunchRules.heroCard,
+            heroCard = s.heroTypes?.[side] ?? LaunchRules.heroCard,
             hero = s.heroes?.[side],
             balance = this.resourceBalance(s, side),
             population = LaunchRules.population(s, side);
         if (this.card === heroCard ? hero : !deck.includes(this.card)) this.card = deck[0] || null;
-        const key = deck.join('|');
+        const key = [heroCard, ...deck].join('|');
         if (key !== this.deckKey) {
             this.deckKey = key;
             UiRegistry.refs.launchCards.innerHTML = [heroCard, ...deck]
-                .map((t) => LaunchScreens.cardMarkup(t))
+                .map((t) => LaunchScreens.cardMarkup(t, t === heroCard))
                 .join('');
             LaunchScreens.fillCardPortraits(UiRegistry.refs.launchCards);
         }
@@ -10252,7 +10479,7 @@ class LaunchPresentation {
             dead: ['전사', '전사한 영웅은 이번 경기에 다시 출격할 수 없습니다.'],
         }[mode] ?? ['무료', '영웅 발사'];
         badge.textContent = label[0];
-        const definition = UnitDefinition.get(LaunchRules.heroCard),
+        const definition = UnitDefinition.get(el.dataset.launchCard),
             unit = hero?.unitId ? s.units?.find((entry) => entry.id === hero.unitId) : null,
             maxHp = unit?.maxHp ?? definition.hp,
             hp = mode === 'dead' ? 0 : (unit?.hp ?? s.heroReserveHp?.[side] ?? maxHp),
@@ -10268,12 +10495,20 @@ class LaunchPresentation {
         const hpText = `${currentHp}/${maxHp}`;
         health.textContent = `♥ ${hpText}`;
         health.style.setProperty('--hero-hp', `${(100 * currentHp) / maxHp}%`);
-        const skillHint = this.renderHeroSkill(el, s, side, unit, definition.heroActive);
+        const skillHint = this.renderHeroSkill(
+            el,
+            s,
+            side,
+            unit,
+            definition.fruitAttack?.active ?? definition.heroActive,
+        );
         el.title = `${label[1]}${recovering ? ' · 회복 중' : ''}${skillHint}`;
         const attackCounter = this.renderAttackCounter(
             el,
-            unit?.alive ? (unit.spinAttackBasicHits ?? 0) : null,
-            definition.spinAttack?.rhythm?.basicsPerSweep,
+            unit?.alive ? (unit.fruitAttack?.combo ?? unit.spinAttackBasicHits ?? 0) : null,
+            definition.fruitAttack
+                ? definition.fruitAttack.every - 1
+                : definition.spinAttack?.rhythm?.basicsPerSweep,
         );
         el.setAttribute(
             'aria-label',
@@ -10304,15 +10539,21 @@ class LaunchPresentation {
             name.before(row);
             row.append(name, badge);
         }
-        const status = { hop: '뛰는 중', roll: '구르는 중', unfold: '자세 펴기' }[
-            unit.heroRoll?.phase
-        ];
+        const active = unit.fruitAttack?.active;
+        const status = active
+            ? active.kind === 'boomerang'
+                ? s.tick < active.shot.startTick
+                    ? '투척 준비'
+                    : '왕복 중'
+                : '덩굴 조이기'
+            : { hop: '뛰는 중', roll: '구르는 중', unfold: '자세 펴기' }[unit.heroRoll?.phase];
+        const queued = unit.fruitAttack?.queued ?? unit.heroRollQueued;
         badge.hidden = false;
-        badge.textContent = unit.heroRollQueued ? '발동 예약' : (status ?? `길게 ◆ ${skill.cost}`);
-        badge.toggleAttribute('data-queued', unit.heroRollQueued);
+        badge.textContent = queued ? '발동 예약' : (status ?? `길게 ◆ ${skill.cost}`);
+        badge.toggleAttribute('data-queued', queued);
         badge.toggleAttribute('data-rolling', !!status);
         badge.toggleAttribute('data-unavailable', s.wallet?.[side] < skill.cost);
-        if (unit.heroRollQueued) return ' · 스킬 발동 예약';
+        if (queued) return ' · 스킬 발동 예약';
         if (status) return ` · ${status}`;
         return ` · 길게 누르기 또는 Shift+Enter로 스킬 사용 · 보급 ${skill.cost}`;
     }
@@ -10393,7 +10634,7 @@ class LaunchPresentation {
         if (!this.active(s)) return;
         const side = ConnectionSideUtil.roleSide(ActiveViewState.role),
             hero = s.heroes?.[side];
-        if (type === LaunchRules.heroCard && hero) {
+        if (type === (s.heroTypes?.[side] ?? LaunchRules.heroCard) && hero) {
             if (hero.mode === 'dead') return;
             if (
                 !MatchLifecycle.activeSession()?.command({
@@ -10455,13 +10696,8 @@ class LaunchPresentation {
         if (!e.isPrimary || e.button !== 0) return;
         this.endHeroPress();
         this.heroPressClick = null;
-        const button = e.target.closest('[data-launch-card]');
-        if (
-            button?.dataset.launchCard !== LaunchRules.heroCard ||
-            e.target.closest('[data-card-info]') ||
-            !UnitDefinition.get(LaunchRules.heroCard)?.heroActive
-        )
-            return;
+        const button = e.target.closest('[data-launch-card][data-hero-skill]');
+        if (!button) return;
         const side = ConnectionSideUtil.roleSide(ActiveViewState.role),
             sortieId = this.heroSkillSortie(ActiveViewState.snap, side),
             session = MatchLifecycle.activeSession();
@@ -11616,6 +11852,7 @@ else if (document.documentElement.dataset.titleShowcase === 'true') {
     };
     DeckEditor.install({
         types: () => LaunchRules.deck,
+        heroes: () => LaunchRules.heroTypes,
         nameOf: (type) => UnitDefinition.get(type)?.name || type,
         statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
         infoOf: (type) => LaunchScreens.grainInfo(type),
@@ -11653,7 +11890,7 @@ else if (document.documentElement.dataset.titleShowcase === 'true') {
             closeMenu: () => {
                 if (UiRuntimeState.value.modal === 'match-menu') MatchLifecycle.closeMatchMenu();
             },
-            grains: () => [LaunchRules.heroCard, ...LaunchRules.deck],
+            grains: () => [...LaunchRules.heroTypes, ...LaunchRules.deck],
             grainName: (t) => UnitDefinition.get(t)?.name || t,
             grainStats: (t) => ({
                 ...LaunchRules.payload(t),
