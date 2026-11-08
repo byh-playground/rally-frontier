@@ -127,8 +127,6 @@ export async function prepareTitleShowcase({
         }
         renderer.role = 'host';
         renderer.replayObserverAll = true;
-        // Strategic status belongs to the interactive match HUD, not this background scene.
-        renderer.drawStrategicLabels = () => {};
         load(0);
         renderer.onPresentationFrame = presentFrame;
         scenario = createScenario({

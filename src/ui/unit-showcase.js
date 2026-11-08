@@ -104,7 +104,6 @@ export function prepareUnitShowcase({
     try {
         renderer.role = 'host';
         renderer.replayObserverAll = true;
-        renderer.drawStrategicLabels = () => {};
         renderer.replayZoom = 4;
         renderer.onPresentationFrame = presentFrame;
         scenario = createScenario({

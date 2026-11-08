@@ -314,11 +314,13 @@ export class LaunchScreens {
         const LOBBY = this.$('lobby');
         const MOTION = matchMedia('(prefers-reduced-motion: reduce)');
         const sync = () => {
+            const lobbyVisible = !LOBBY.classList.contains('hidden');
+            if (!lobbyVisible) this.closeTitleBattle();
             const active =
                 !document.hidden &&
                 !this.cardDetail?.mount &&
                 !document.body.classList.contains('boot-loading') &&
-                !LOBBY.classList.contains('hidden') &&
+                lobbyVisible &&
                 !MOTION.matches;
             if (active && !this.titleBattleMount && !this.titleBattleFailed)
                 void this.prepareTitleBattle();
@@ -428,7 +430,10 @@ export class LaunchScreens {
         const detail = this.cardDetail;
         if (!detail) return;
         this.cardDetail = null;
-        detail.mount?.dispose();
+        const mount = detail.mount;
+        detail.mount = null;
+        detail.syncPlayback = null;
+        mount?.dispose();
         if (resumeTitle) this.syncTitleBattle?.();
     }
 
