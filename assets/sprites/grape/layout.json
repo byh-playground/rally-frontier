@@ -1,0 +1,24 @@
+{
+    "sheet": [400, 260],
+    "parts": {
+        "body": { "slot": [4, 4, 212, 236], "pivot": [108, 232] },
+        "hand": { "slot": [230, 4, 60, 60], "pivot": [30, 30] },
+        "foot": { "slot": [302, 4, 54, 64], "pivot": [28, 49] },
+        "neutral": { "slot": [230, 72, 102, 46], "pivot": [51, 25] },
+        "attack": { "slot": [230, 124, 102, 46], "pivot": [51, 25] },
+        "hurt": { "slot": [230, 176, 102, 46], "pivot": [51, 25] },
+        "berry": { "slot": [340, 80, 58, 58], "pivot": [28, 29] }
+    },
+    "cannonAmmo": {
+        "part": "body",
+        "pivot": [108, 120]
+    },
+    "standing": [
+        { "id": "leftFoot", "part": "foot", "position": [-42, -7], "mirror": true },
+        { "id": "rightFoot", "part": "foot", "position": [42, -7] },
+        { "id": "leftHand", "part": "hand", "position": [-88, -83], "mirror": true },
+        { "id": "body", "part": "body", "position": [0, 0] },
+        { "id": "face", "part": "neutral", "position": [-1, -101] },
+        { "id": "rightHand", "part": "hand", "position": [88, -83] }
+    ]
+}

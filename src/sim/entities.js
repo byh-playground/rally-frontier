@@ -7,6 +7,7 @@ import {
     StatusComponent,
 } from './components.js';
 import { LaunchRules } from './launch-rules.js';
+import { FruitHeroAttack } from './fruit-hero-attack.js';
 import { MapGeneration } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
@@ -44,6 +45,8 @@ class Unit {
             if (!Object.hasOwn(data, 'heroRoll')) data.heroRoll = null;
             if (!Object.hasOwn(data, 'heroRollQueued')) data.heroRollQueued = false;
         }
+        if (UnitDefinition.get(data.type)?.fruitAttack && !Object.hasOwn(data, 'fruitAttack'))
+            data.fruitAttack = FruitHeroAttack.initialState();
         const spinAttack = UnitDefinition.get(data.type)?.spinAttack;
         if (spinAttack && !Object.hasOwn(data, 'spinAttack')) data.spinAttack = null;
         if (spinAttack?.rhythm && !Object.hasOwn(data, 'spinAttackBasicHits'))

@@ -1,5 +1,6 @@
 import { UnitDefinition } from '../definitions/units.js';
 import { HeroRollAttack } from './hero-roll-attack.js';
+import { FruitHeroAttack } from './fruit-hero-attack.js';
 import { LaunchRules } from './launch-rules.js';
 import { NavigationGoal, UnitMotion } from './navigation.js';
 
@@ -8,16 +9,19 @@ const LANDING_GRACE_MS = 2000;
 const FULL_HEAL_SECONDS = 10;
 
 export class HeroDeployment {
+    static maxHp(state, side) {
+        return UnitDefinition.get(state.heroTypes[side]).hp;
+    }
+
     static begin(sim, side, sortieId) {
         const hp = this.reserveHp(sim, side);
-        sim.heroRecovery[side] =
-            hp < UnitDefinition.get(LaunchRules.heroCard).hp ? { hp, startedAtTick: null } : null;
+        sim.heroRecovery[side] = hp < this.maxHp(sim, side) ? { hp, startedAtTick: null } : null;
         sim.heroes[side] = { sortieId, mode: 'advance', unitId: null };
     }
 
     static reserveHp(sim, side) {
         if (sim.heroes[side]?.mode === 'dead') return 0;
-        const maxHp = UnitDefinition.get(LaunchRules.heroCard).hp;
+        const maxHp = this.maxHp(sim, side);
         const recovery = sim.heroRecovery[side];
         if (!recovery) return maxHp;
         if (recovery.startedAtTick === null) return recovery.hp;
@@ -28,7 +32,7 @@ export class HeroDeployment {
     }
 
     static dock(sim, side, hp) {
-        const maxHp = UnitDefinition.get(LaunchRules.heroCard).hp;
+        const maxHp = this.maxHp(sim, side);
         sim.heroes[side] = null;
         sim.heroRecovery[side] = hp < maxHp ? { hp, startedAtTick: sim.tick } : null;
     }
@@ -43,12 +47,13 @@ export class HeroDeployment {
     }
 
     static validate(state) {
+        LaunchRules.normalizeHeroPair(state.heroTypes);
         if (!Array.isArray(state.heroes) || state.heroes.length !== 2)
             throw new Error('게임 snapshot의 영웅 슬롯이 잘못되었습니다.');
         if (!Array.isArray(state.heroRecovery) || state.heroRecovery.length !== 2)
             throw new Error('게임 snapshot의 영웅 회복 상태가 잘못되었습니다.');
-        const maxHp = UnitDefinition.get(LaunchRules.heroCard).hp;
         for (const [side, hero] of state.heroes.entries()) {
+            const maxHp = this.maxHp(state, side);
             const recovery = state.heroRecovery[side];
             if (
                 recovery !== null &&
@@ -77,14 +82,22 @@ export class HeroDeployment {
                 throw new Error('게임 snapshot의 영웅 출격이 잘못되었습니다.');
             if (hero.mode === 'dead') continue;
             const belongsToHero = (entity) =>
-                entity.side === side && entity.type === LaunchRules.heroCard;
+                entity.side === side && entity.type === state.heroTypes[side];
             const valid =
                 hero.unitId === null
                     ? state.projectiles.some(
-                          (p) => p.id === hero.sortieId && p.alive && belongsToHero(p),
+                          (p) =>
+                              p.id === hero.sortieId &&
+                              p.alive &&
+                              belongsToHero(p) &&
+                              p.payload?.type === p.type &&
+                              p.payload.count === 1,
                       ) ||
                       state.launchDeployments.some(
-                          (group) => group.projectileId === hero.sortieId && belongsToHero(group),
+                          (group) =>
+                              group.projectileId === hero.sortieId &&
+                              belongsToHero(group) &&
+                              group.count === 1,
                       )
                     : state.units.some((u) => u.id === hero.unitId && u.alive && belongsToHero(u));
             if (!valid) throw new Error('게임 snapshot의 영웅 출격 대상이 없습니다.');
@@ -100,7 +113,12 @@ export class HeroDeployment {
 
     static land(sim, group, unit) {
         const hero = sim.heroes[group.side];
-        if (!hero || hero.sortieId !== group.projectileId) return false;
+        if (
+            !hero ||
+            hero.sortieId !== group.projectileId ||
+            unit.type !== sim.heroTypes[group.side]
+        )
+            return false;
         unit.hp = this.reserveHp(sim, group.side);
         sim.heroRecovery[group.side] = null;
         hero.unitId = unit.id;
@@ -109,7 +127,12 @@ export class HeroDeployment {
 
     static landingFailed(sim, group) {
         const hero = sim.heroes[group.side];
-        if (!hero || hero.sortieId !== group.projectileId) return false;
+        if (
+            !hero ||
+            hero.sortieId !== group.projectileId ||
+            group.type !== sim.heroTypes[group.side]
+        )
+            return false;
         group.heroRetryUntil ??= sim.tick + sim.msTicks(LANDING_GRACE_MS);
         if (sim.tick < group.heroRetryUntil) return false;
         this.dock(sim, group.side, this.reserveHp(sim, group.side));
@@ -119,9 +142,14 @@ export class HeroDeployment {
     static unitDied(sim, unit) {
         const hero = sim.heroes[unit.side];
         if (hero?.unitId !== unit.id) return;
-        HeroRollAttack.endSortie(unit);
+        this.endSkill(unit);
         hero.mode = 'dead';
         hero.unitId = null;
+    }
+
+    static endSkill(unit) {
+        if (unit.fruitAttack) FruitHeroAttack.endSortie(unit);
+        else if (Object.hasOwn(unit, 'heroRollQueued')) HeroRollAttack.endSortie(unit);
     }
 
     static returnSites(sim, unit) {
@@ -185,11 +213,17 @@ export class HeroDeployment {
                 hero.unitId = null;
                 continue;
             }
-            if (hero.mode !== 'return' || unit.heroRoll || !UnitMotion.isGrounded(unit)) continue;
+            if (
+                hero.mode !== 'return' ||
+                unit.heroRoll ||
+                unit.fruitAttack?.active ||
+                !UnitMotion.isGrounded(unit)
+            )
+                continue;
             const site = this.returnSites(sim, unit).find(({ arrived }) => arrived);
             if (!site) continue;
 
-            HeroRollAttack.endSortie(unit);
+            this.endSkill(unit);
             this.dock(sim, side, unit.hp);
             unit.alive = false;
             unit.hp = 0;

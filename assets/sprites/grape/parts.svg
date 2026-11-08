@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="260" viewBox="0 0 400 260">
+  <title>포도 영웅 파츠 시트</title>
+  <defs>
+    <radialGradient id="grape" cx="33%" cy="24%" r="78%">
+      <stop stop-color="#cc9bef"/>
+      <stop offset=".37" stop-color="#9c65cb"/>
+      <stop offset=".73" stop-color="#783fa0"/>
+      <stop offset="1" stop-color="#522968"/>
+    </radialGradient>
+    <radialGradient id="grape-back" cx="38%" cy="26%" r="82%">
+      <stop stop-color="#a174cb"/>
+      <stop offset=".62" stop-color="#744699"/>
+      <stop offset="1" stop-color="#482653"/>
+    </radialGradient>
+    <linearGradient id="leaf" x2=".85" y2="1">
+      <stop stop-color="#d1e77c"/>
+      <stop offset=".52" stop-color="#83b65a"/>
+      <stop offset="1" stop-color="#44703f"/>
+    </linearGradient>
+    <linearGradient id="limb" x2=".88" y2="1">
+      <stop stop-color="#b281d6"/>
+      <stop offset=".58" stop-color="#8b55ad"/>
+      <stop offset="1" stop-color="#543063"/>
+    </linearGradient>
+    <g id="eyes">
+      <ellipse cx="26" cy="20" rx="8.6" ry="11.5"/>
+      <ellipse cx="76" cy="20" rx="8.6" ry="11.5"/>
+      <g fill="#fff6df">
+        <ellipse cx="24" cy="16" rx="3" ry="3.7"/>
+        <ellipse cx="74" cy="16" rx="3" ry="3.7"/>
+      </g>
+    </g>
+    <g id="cheeks" fill="#f7a4c9" opacity=".76">
+      <ellipse cx="13" cy="34" rx="8" ry="4"/>
+      <ellipse cx="89" cy="34" rx="8" ry="4"/>
+    </g>
+  </defs>
+
+  <!-- Body: back berries, stem, two side lobes, and the face-bearing front berry. -->
+  <g id="body-part" stroke="#412447" stroke-width="4.8" stroke-linejoin="round">
+    <path d="M102 63c-5-19-1-34 11-47 4-5 11-3 13 1 2 4-2 8-6 12-6 8-8 18-5 32Z" fill="#81a65c" stroke="#435234"/>
+    <path d="M110 36c12-15 27-20 41-20l-2 8 15-2-3 9 14 3-9 8 9 5c-15 15-35 20-57 10l-13-10Z" fill="url(#leaf)" stroke="#435234"/>
+    <path d="M111 48q20-15 49-11m-25 4 11 8" fill="none" stroke="#547c44" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M116 235c-25 0-43-17-43-41 0-24 19-43 43-43 26 0 46 18 46 42 0 26-18 42-46 42Z" fill="url(#grape-back)"/>
+    <path d="M67 55c25 0 44 17 44 42 0 26-19 46-47 46-26 0-45-18-44-42 1-27 21-46 47-46Z" fill="url(#grape-back)"/>
+    <path d="M151 55c29-1 51 18 52 43 1 27-18 46-46 47-27 1-48-18-48-43 0-26 17-46 42-47Z" fill="url(#grape-back)"/>
+    <path d="M62 108c29-1 49 18 49 47 0 28-20 47-47 48-28 0-51-19-51-46 0-29 20-49 49-49Z" fill="url(#grape)"/>
+    <path d="M166 107c27 0 45 21 45 47 1 28-18 48-47 49-27 1-48-19-48-46 0-29 22-50 50-50Z" fill="url(#grape)"/>
+    <path d="M111 71c38-2 65 25 66 61 2 38-26 68-64 69-40 1-68-26-68-63 0-37 28-65 66-67Z" fill="url(#grape)"/>
+  </g>
+  <g fill="#f4d2ff" opacity=".47">
+    <path d="M65 107c1-12 17-22 34-23 11-1 18 1 17 5-2 5-14 5-27 10-13 4-21 15-24 8Z"/>
+    <path d="M27 142c3-10 13-16 21-18 3-1 5 1 4 4-2 5-9 5-16 12-5 6-10 6-9 2Z"/>
+    <path d="M181 121c10 4 18 13 19 23 1 5-4 6-6 1-3-8-8-13-14-17-4-3-3-8 1-7Z"/>
+  </g>
+
+  <g id="hand-part" transform="translate(230 4)">
+    <path d="M22 15c7-3 15 2 20 8 6 7 6 15 1 20-5 6-14 5-21-1-7-6-10-15-7-21 2-3 4-5 7-6Z" fill="url(#limb)" stroke="#412447" stroke-width="4.1" stroke-linejoin="round"/>
+  </g>
+  <g id="foot-part" transform="translate(302 4)">
+    <path d="M15 8c8-5 19-3 24 5 5 7 4 14 2 21 6 4 11 10 8 17-4 8-24 9-37 5-10-3-12-13-5-21 1-12 0-21 8-27Z" fill="url(#limb)" stroke="#412447" stroke-width="4.1" stroke-linejoin="round"/>
+    <path d="M14 48q8 5 19 2" fill="none" stroke="#c492db" stroke-width="3.1" stroke-linecap="round"/>
+  </g>
+  <g id="neutral-part" transform="translate(230 72)" fill="#24172f">
+    <use href="#eyes"/>
+    <use href="#cheeks"/>
+    <path d="M44 33q7 7 15 0" fill="none" stroke="#24172f" stroke-width="3.6" stroke-linecap="round"/>
+  </g>
+  <g id="attack-part" transform="translate(230 124)" fill="#24172f">
+    <use href="#eyes"/>
+    <use href="#cheeks"/>
+    <path d="m18 10 17 5m48-5-16 5" fill="none" stroke="#24172f" stroke-width="4.2" stroke-linecap="round"/>
+    <path d="M43 33q8-4 17 0-2 9-9 9-6 0-8-9Z"/>
+    <path d="M47 33q4-1 9 0" fill="none" stroke="#fff0dd" stroke-width="2.6" stroke-linecap="round"/>
+  </g>
+  <g id="hurt-part" transform="translate(230 176)" fill="#24172f">
+    <use href="#cheeks"/>
+    <path d="m18 13 16 9-16 7m66-16-16 9 16 7" fill="none" stroke="#24172f" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <ellipse cx="51" cy="34" rx="5.8" ry="6"/>
+  </g>
+  <g id="berry-part" transform="translate(340 80)">
+    <path d="M28 5c15 0 25 10 25 24S42 53 28 53 4 44 4 30C4 15 14 5 28 5Z" fill="url(#grape)" stroke="#412447" stroke-width="4"/>
+    <path d="M11 23c2-6 10-11 17-11 4 0 7 2 4 4-3 2-8 1-14 7-3 3-8 3-7 0Z" fill="#f4d2ff" opacity=".7"/>
+    <path d="m25 6 6 5 4-5" fill="#91b668" stroke="#435234" stroke-width="2.5" stroke-linejoin="round"/>
+  </g>
+</svg>

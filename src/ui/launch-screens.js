@@ -19,6 +19,27 @@ const GRAIN_COPY = Object.freeze({
             '아군 거점에 회수되면 체력이 차오르고, 현재 체력으로 다시 출격할 수 있습니다.',
         ],
     },
+    banana: {
+        role: '왕복 원거리 영웅',
+        feature: '네 번째 평타 · 복귀 타격',
+        land: '영웅 한 명 출격',
+        fire: '영웅 단발',
+        desc: '작은 부메랑으로 적 하나를 공격합니다. 네 번째 평타는 돌아오는 길에도 적에게 피해를 줍니다.',
+        exceptions: [
+            '카드를 길게 누르면 긴 왕복 궤적을 예고하고 큰 부메랑을 던집니다. 적 병력과 영웅은 나갈 때와 돌아올 때 각각 한 번 맞을 수 있습니다.',
+            '바나나는 큰 부메랑을 받을 때까지 제자리에 있습니다.',
+        ],
+    },
+    grape: {
+        role: '곡사 원거리 영웅',
+        feature: '세 번째 평타 · 포도알 곡사탄',
+        land: '영웅 한 명 출격',
+        fire: '영웅 단발',
+        desc: '포도알로 적 하나를 공격합니다. 세 번째 평타마다 포도알 한 알을 추가로 높이 던져 착탄 지점 주변에 피해를 줍니다.',
+        exceptions: [
+            '카드를 길게 누르면 적 하나를 덩굴로 세 번 조입니다. 마지막 타격이 가장 강하고, 적이 사거리 밖으로 빠지면 덩굴이 끊어집니다.',
+        ],
+    },
     rice: {
         role: '기동 근접',
         feature: '빠른 이동 · 산탄 투입',
@@ -363,10 +384,10 @@ export class LaunchScreens {
         MOTION.addEventListener('change', sync);
     }
     // Card buttons with face portraits; the game keeps their selected/unaffordable classes.
-    static cardMarkup(type) {
+    static cardMarkup(type, hero) {
         const A = this.actions,
             STATS = A.grainStats(type);
-        return `<div class="launch-card-slot"><button type="button" class="launch-card" data-launch-card="${type}"><img class="launch-card-portrait" data-portrait="${type}" alt=""><b>${A.grainName(type)} ×${STATS.count}</b><em>${ResourceDisplay.costMarkup(STATS)}</em></button><button type="button" class="launch-card-info" data-card-info="${type}" aria-label="${A.grainName(type)} 상세">i</button></div>`;
+        return `<div class="launch-card-slot"><button type="button" class="launch-card" data-launch-card="${type}"><img class="launch-card-portrait" data-portrait="${type}" alt=""><b>${A.grainName(type)}${hero ? '' : ` ×${STATS.count}`}</b><em>${ResourceDisplay.costMarkup(STATS)}</em></button><button type="button" class="launch-card-info" data-card-info="${type}" aria-label="${A.grainName(type)} 상세">i</button></div>`;
     }
     static fillCardPortraits(host) {
         for (const IMG of host.querySelectorAll('img[data-portrait]')) {

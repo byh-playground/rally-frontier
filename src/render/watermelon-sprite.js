@@ -1,4 +1,5 @@
 import { WATERMELON_RIND_RADIUS_X } from '../definitions/units.js';
+import { createHeroBasicAttackClip } from './hero-basic-motion.js';
 
 const PARTS = [
     { id: 'body', parent: null, pivot: [0, 0] },
@@ -49,11 +50,22 @@ const RIG = {
             }),
             key(650, { leftFoot: { rotation: -0.24 }, rightFoot: { rotation: 0.24 } }),
         ]),
-        fire: clip(650, 'once', [
-            key(0, { body: { scaleX: 0.92, scaleY: 1.08 } }),
-            key(145, { body: { scaleX: 1.1, scaleY: 0.9 } }),
-            key(650),
-        ]),
+        fire: createHeroBasicAttackClip({
+            windup: {
+                body: { x: -8, y: -3, rotation: -0.07, scaleX: 0.96, scaleY: 1.05 },
+                leftHand: { x: 8, y: 6 },
+                rightHand: { x: -24, y: -27, rotation: -0.48 },
+            },
+            strike: {
+                body: { x: 12, y: 6, rotation: 0.08, scaleX: 1.08, scaleY: 0.94 },
+                leftHand: { x: 12, y: 9 },
+                rightHand: { x: 37, y: -12, rotation: 0.32, scaleX: 1.12, scaleY: 1.12 },
+            },
+            followThrough: {
+                body: { x: 6, y: 4, rotation: 0.035, scaleX: 1.03, scaleY: 0.97 },
+                rightHand: { x: 16, y: 8, rotation: 0.18 },
+            },
+        }),
         hit: clip(260, 'once', [
             key(0, { body: { scaleX: 1.08, scaleY: 0.9, rotation: -0.09 } }),
             key(260),
@@ -255,7 +267,9 @@ export class WatermelonSpriteRenderer {
                     pose.scaleX = 1 + 0.22 * reach - 0.45 * tuck;
                     pose.scaleY = pose.scaleX;
                 }
-                this.frontHand = spin && this.elapsed > 1000 && this.elapsed < 3000;
+                this.frontHand =
+                    this.currentClip === 'fire' ||
+                    (spin && this.elapsed > 1000 && this.elapsed < 3000);
                 this.pose = owner.mesh.preparePose(instance, {
                     clipName: this.currentClip,
                     elapsedMs: this.elapsed,

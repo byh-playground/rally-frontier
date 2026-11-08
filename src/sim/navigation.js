@@ -12,6 +12,7 @@ import { FP } from '../core/config.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { UnitLeapAttack } from './unit-leap-attack.js';
 import { HeroRollAttack } from './hero-roll-attack.js';
+import { FruitHeroAttack } from './fruit-hero-attack.js';
 
 // Interaction geometry owns the legal arrival set; the distance field only leads units to it.
 // Goal regions are continuous (discs/annuli), not a fixed number of radial probes.
@@ -299,7 +300,7 @@ class UnitMotion {
         } = {},
     ) {
         // An active roll keeps its committed path through nonlethal hits.
-        if (u.heroRoll?.phase === 'roll') return;
+        if (u.heroRoll?.phase === 'roll' || FruitHeroAttack.blocksMovement(u)) return;
         const sim = this.navigation.sim,
             mass = sim.mass(u);
         let m = u.impactMotion;
