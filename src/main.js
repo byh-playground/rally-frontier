@@ -9956,14 +9956,37 @@ class LaunchPresentation {
         health.textContent = `♥ ${hpText}`;
         health.style.setProperty('--hero-hp', `${(100 * currentHp) / maxHp}%`);
         el.title = recovering ? `${label[1]} · 회복 중` : label[1];
+        const attackCounter = this.renderAttackCounter(
+            el,
+            unit?.alive ? (unit.spinAttackBasicHits ?? 0) : null,
+            definition.spinAttack?.rhythm?.basicsPerSweep,
+        );
         el.setAttribute(
             'aria-label',
-            `${definition.name} · ${label[0]} · 체력 ${hpText}${recovering ? ' · 회복 중' : ''}`,
+            `${definition.name} · ${label[0]} · 체력 ${hpText}${recovering ? ' · 회복 중' : ''}${attackCounter}`,
         );
         el.classList.toggle('hero-dead', mode === 'dead');
         if (mode === 'advance' || mode === 'return')
             el.setAttribute('aria-pressed', String(mode === 'advance'));
         else el.removeAttribute('aria-pressed');
+    }
+    static renderAttackCounter(el, current, required) {
+        let counter = el.querySelector('.hero-card-counter');
+        if (current === null || !required) {
+            if (counter) counter.hidden = true;
+            return '';
+        }
+        if (!counter) {
+            counter = document.createElement('span');
+            counter.className = 'hero-card-counter';
+            counter.setAttribute('aria-hidden', 'true');
+            el.append(counter);
+        }
+        const count = RangeUtil.clamp(current, 0, required);
+        counter.hidden = false;
+        counter.textContent = '●'.repeat(count) + '○'.repeat(required - count);
+        counter.toggleAttribute('data-ready', count === required);
+        return ` · 공격 연계 ${count}/${required}`;
     }
     // Both main bases' health, elapsed time, and an edge arrow while the enemy base is off screen.
     static renderHud(s, side) {
