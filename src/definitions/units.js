@@ -164,7 +164,7 @@ class UnitDefinition {
             // Trial values; retain the existing bundle size while balancing combat.
             leapAttack: Object.freeze({
                 range: 150,
-                lift: 250,
+                lift: 500,
                 radius: 50,
                 damageScale: 1,
                 knockbackSpeed: 250,
