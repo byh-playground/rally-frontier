@@ -97,6 +97,7 @@ class UnitDefinition {
                 every: 4,
                 basicMs: 400,
                 returnMs: 300,
+                passiveFollowThrough: 75,
                 radius: 10,
                 active: Object.freeze({
                     cost: 100,
