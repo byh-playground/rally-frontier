@@ -3,7 +3,17 @@ import { COLLISION_RADIUS_SCALE, VIEW_W } from './world-rules.js';
 import { FP } from '../core/config.js';
 import { DEFAULT_ATTACK_WINDUP_MS, DEFAULT_MELEE_MOVE_RECOVERY_MS } from './combat-rules.js';
 const RICE_SIZE = 10;
+const UNIT_RENDER_RADIUS_SCALE = 1.56;
+const GRAIN_SPRITE_BASE_SCALE = 2.7 / 260;
 const WATERMELON_SIZE = RICE_SIZE * 3.5;
+const WATERMELON_VISUAL_SCALE = 1;
+const WATERMELON_RIND_RADIUS_X = 118;
+const WATERMELON_RIND_WORLD_RADIUS =
+    WATERMELON_SIZE *
+    UNIT_RENDER_RADIUS_SCALE *
+    GRAIN_SPRITE_BASE_SCALE *
+    WATERMELON_VISUAL_SCALE ** 2 *
+    WATERMELON_RIND_RADIUS_X;
 const ACORN_SIZE = RICE_SIZE * 3;
 const ACORN_SPIN_RADIUS = ACORN_SIZE * (55 / 20);
 const RICE_MELEE = {
@@ -45,7 +55,8 @@ class UnitDefinition {
                 hopHeight: WATERMELON_SIZE * 3,
                 landing: Object.freeze({ radius: VIEW_W / 6, damageRatio: 1 }),
                 speedMultiplier: 5,
-                rollDistance: 100,
+                rollHitRadius: WATERMELON_RIND_WORLD_RADIUS,
+                rollDistance: WATERMELON_RIND_WORLD_RADIUS * 2 * 3,
                 unfoldMs: 100,
                 damageRatio: 1,
                 knockbackSpeed: 400,
@@ -250,7 +261,7 @@ class UnitVisualDefinition {
         watermelon: {
             family: 'grain',
             billboard: true,
-            visualScale: 1,
+            visualScale: WATERMELON_VISUAL_SCALE,
             accent: [0.26, 0.69, 0.38, 1],
             fx: 'melee',
         },
@@ -348,7 +359,10 @@ const GRAIN_FACE_IDS = Object.freeze(['neutral', 'attack', 'hurt']);
 
 export {
     GRAIN_FACE_IDS,
+    GRAIN_SPRITE_BASE_SCALE,
+    UNIT_RENDER_RADIUS_SCALE,
     UNIT_RUNTIME_GEOMETRY,
+    WATERMELON_RIND_RADIUS_X,
     UnitDefinition,
     UnitFactionPalette,
     UnitVisualDefinition,

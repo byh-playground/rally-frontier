@@ -24,6 +24,8 @@ import { AttackPresentationDefinition } from './definitions/attack-presentation.
 import { BuildingDefinition } from './definitions/buildings.js';
 import {
     GRAIN_FACE_IDS,
+    GRAIN_SPRITE_BASE_SCALE,
+    UNIT_RENDER_RADIUS_SCALE,
     UnitDefinition,
     UnitFactionPalette,
     UnitVisualDefinition,
@@ -4364,7 +4366,7 @@ class GLRenderer {
     }
     unitRenderRadius(u) {
         const size = UnitDefinition.get(u?.type)?.size || UnitDefinition.get('rice').size;
-        return size * 1.56 * this.unitRenderVisualScale(u) * this.sc();
+        return size * UNIT_RENDER_RADIUS_SCALE * this.unitRenderVisualScale(u) * this.sc();
     }
 
     hasGrainArt(u) {
@@ -4828,7 +4830,8 @@ class GLRenderer {
             const p = this.projectRenderWorldPosition(world),
                 r = this.unitRenderRadius(u),
                 scale =
-                    ((r * 2.7) / 260) *
+                    r *
+                    GRAIN_SPRITE_BASE_SCALE *
                     (UnitVisualDefinition.get(u.type)?.visualScale || 1) *
                     (GRAIN_SPRITES[u.type]?.artScale || 1),
                 m = grain.matrix;
@@ -6484,7 +6487,7 @@ class GLRenderer {
                 stroke: [1, 0.42, 0.4, 0.9],
                 width: Math.max(1.5, 2 * this.sc()),
             });
-            this.drawHeroRollPath(ground, roll, distance, radius);
+            this.drawHeroRollPath(ground, roll, distance, spec.rollHitRadius);
         });
     }
     drawHeroRollPath(ground, { dx, dy }, distance, radius) {
