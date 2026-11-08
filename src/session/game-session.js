@@ -4,6 +4,7 @@ import { GameRuleRuntime, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { StrategySim } from '../sim/strategy-sim.js';
 import { Building, Projectile, Unit } from '../sim/entities.js';
 import { HeroDeployment } from '../sim/hero-deployment.js';
+import { HeroRollAttack } from '../sim/hero-roll-attack.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { StateValue } from '../sim/components.js';
 import { ReplayRecorder } from './replay.js';
@@ -55,6 +56,7 @@ class RallyCommandCodec {
         MATCH_SURRENDER: [],
         UPGRADE_LAUNCH_RANGE: [],
         TOGGLE_HERO: ['sortieId'],
+        ACTIVATE_HERO_SKILL: ['sortieId'],
         LAUNCH: ['cannonId', 'x', 'y', 'holdMs', 'unitType'],
     });
     static validate(action) {
@@ -80,7 +82,10 @@ class RallyCommandCodec {
                 ['x', 'y', 'holdMs'].some((key) => !Number.isFinite(action[key])))
         )
             throw new Error('발사 명령의 필드가 잘못되었습니다.');
-        if (action.type === 'TOGGLE_HERO' && !HeroDeployment.validSortieId(action.sortieId))
+        if (
+            ['TOGGLE_HERO', 'ACTIVATE_HERO_SKILL'].includes(action.type) &&
+            !HeroDeployment.validSortieId(action.sortieId)
+        )
             throw new Error('영웅 명령의 출격 식별자가 잘못되었습니다.');
         return action;
     }
@@ -264,6 +269,7 @@ class RallySimulationAdapter {
                     )
                         throw new Error('게임 snapshot의 회전 공격 횟수가 잘못되었습니다.');
                     RallyStateCodec.assertContract(entity, Unit.stateContract);
+                    HeroRollAttack.validateState(entity, state, this.session.sim.tps);
                 }
                 if (
                     key === 'projectiles' &&

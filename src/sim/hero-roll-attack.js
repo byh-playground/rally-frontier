@@ -1,0 +1,282 @@
+import { FP } from '../core/config.js';
+import { RallyGamekit } from '../core/gamekit.js';
+import { SimulationTiming } from '../core/simulation-timing.js';
+import { UnitDefinition } from '../definitions/units.js';
+import { LaunchImpact } from './launch-impact.js';
+import { HashUtil } from './map-generation.js';
+import { UnitMotion } from './navigation.js';
+
+const { SweptCircleContact } = RallyGamekit;
+const CONTACT = { ...SweptCircleContact.policies.relative, retreat: 0 };
+const STOP_EPSILON = 1e-8;
+
+export class HeroRollAttack {
+    static canDrive(unit, tick) {
+        const motion = unit.impactMotion;
+        return (
+            UnitMotion.isGrounded(unit) &&
+            (!motion || (tick >= motion.recoverUntilTick && !motion.vxFP && !motion.vyFP))
+        );
+    }
+
+    static cancel(unit) {
+        if (unit.heroRoll) unit.heroRoll = null;
+    }
+
+    static activate(sim, side, sortieId) {
+        const reject = (reason) => {
+            sim.events.push({ type: 'heroSkillRejected', side, sortieId, reason });
+            return false;
+        };
+        const hero = sim.heroes[side];
+        const unit =
+            hero &&
+            hero.sortieId === sortieId &&
+            (hero.mode === 'advance' || hero.mode === 'return')
+                ? sim.liveEntityRefById(hero.unitId, 'unit')?.entity
+                : null;
+        const spec = UnitDefinition.get(unit?.type)?.heroActive;
+        if (!unit || unit.side !== side || !spec) return reject('hero-not-deployed');
+        if (unit.heroRoll || unit.spinAttack || !this.canDrive(unit, sim.tick))
+            return reject('hero-busy');
+        if (sim.wallet[side] < spec.cost) return reject('insufficient-basic-resources');
+
+        const vision = sim.visionSources(side);
+        let target = null;
+        let bestDistance = spec.range ** 2;
+        sim.withNearbyUnits(unit.x, unit.y, spec.range, 1 - side, (indices) => {
+            for (const index of indices) {
+                const candidate = sim.units[index];
+                const distance = (candidate.x - unit.x) ** 2 + (candidate.y - unit.y) ** 2;
+                if (
+                    sim.targetChoiceBetter(distance, candidate.id, bestDistance, target) &&
+                    candidate.hp > 0 &&
+                    UnitMotion.isGrounded(candidate) &&
+                    sim.canAttackEntity(unit.type, candidate) &&
+                    sim.canSeeCombatTarget(side, candidate, vision)
+                ) {
+                    target = candidate;
+                    bestDistance = distance;
+                }
+            }
+        });
+        if (!target) return reject('hero-no-target');
+
+        const distance = Math.sqrt(bestDistance);
+        const angle = (HashUtil.hash(unit.id + '|' + target.id) % 8) * (Math.PI / 4);
+        unit.heroRoll = {
+            startTick: sim.tick,
+            phase: 'hop',
+            phaseStartTick: sim.tick,
+            phaseEndTick: sim.tick + sim.msTicks(spec.hopMs),
+            distance: 0,
+            stopDistance: spec.range,
+            targetId: target.id,
+            dx: distance ? (target.x - unit.x) / distance : Math.cos(angle),
+            dy: distance ? (target.y - unit.y) / distance : Math.sin(angle),
+            hitIds: [],
+        };
+        unit.combat.cancelWindup();
+        unit.combat.attackArcTargetId = null;
+        unit.combat.attackArcUntilTick = 0;
+        unit.constructionWork = null;
+        unit.target = null;
+        sim.wallet[side] -= spec.cost;
+        return true;
+    }
+
+    static update(sim, unit) {
+        const roll = unit.heroRoll;
+        if (!this.canDrive(unit, sim.tick)) {
+            this.cancel(unit);
+            return;
+        }
+
+        if (roll.phase === 'unfold') {
+            if (sim.tick >= roll.phaseEndTick) this.cancel(unit);
+            return;
+        }
+        if (roll.phase === 'hop') {
+            if (sim.tick < roll.phaseEndTick) return;
+            roll.phase = 'roll';
+            roll.phaseStartTick = sim.tick;
+            roll.phaseEndTick = null;
+            // Touchdown is the shared boundary between a stationary hop and the first roll interval.
+            return;
+        }
+
+        const definition = UnitDefinition.get(unit.type);
+        const spec = definition.heroActive;
+        const { x, y } = unit;
+        const { dx, dy } = roll;
+        const radius = sim.unitRadius(unit.type);
+        const step = Math.min(
+            (definition.speed * spec.speedMultiplier) / sim.tps,
+            roll.stopDistance - roll.distance,
+        );
+        const vx = dx * step;
+        const vy = dy * step;
+        const motion = sim.navigation.motion;
+        const advanceTo = (distance) => {
+            if (distance <= 0) return;
+            motion.commit(unit, { x: x + dx * distance, y: y + dy * distance });
+            unit.movement.lastMoveTick = sim.tick;
+        };
+        sim.navigation.sync();
+        const wall = motion.surface.cast(x, y, vx, vy, radius);
+        // Leave enough room for rounding the clipped end to world fixed-point.
+        const wallDistance = wall ? Math.max(0, wall.t * step - 2 / FP) : step;
+        const contacts = [];
+        sim.withNearbyUnits(
+            x,
+            y,
+            wallDistance + radius + sim.maxUnitRadius,
+            1 - unit.side,
+            (indices) => {
+                for (const index of indices) {
+                    const target = sim.units[index];
+                    if (
+                        !target?.alive ||
+                        roll.hitIds.includes(target.id) ||
+                        !UnitMotion.isGrounded(target) ||
+                        !sim.canAttackEntity(unit.type, target)
+                    )
+                        continue;
+
+                    const rx = x - target.x;
+                    const ry = y - target.y;
+                    const reach = radius + sim.unitRadius(target.type);
+                    const hitTime =
+                        rx ** 2 + ry ** 2 <= reach ** 2
+                            ? 0
+                            : SweptCircleContact.cast(rx, ry, vx, vy, reach, CONTACT)?.t;
+                    if (hitTime == null) continue;
+                    const distance = hitTime * step;
+                    if (distance > wallDistance + STOP_EPSILON) continue;
+                    const hitX = x + dx * distance;
+                    const hitY = y + dy * distance;
+                    if (!sim.navigation.field.segmentClear(hitX, hitY, target.x, target.y, 0))
+                        continue;
+                    contacts.push({ target, distance, hitX, hitY });
+                }
+            },
+        );
+        contacts.sort((a, b) => a.distance - b.distance || (a.target.id < b.target.id ? -1 : 1));
+        for (const { target, distance, hitX, hitY } of contacts) {
+            if (roll.distance + distance > roll.stopDistance + STOP_EPSILON) break;
+            if (!target.alive || !UnitMotion.isGrounded(target)) continue;
+            if (!roll.hitIds.length)
+                roll.stopDistance = roll.distance + distance + spec.followThrough;
+            roll.hitIds.push(target.id);
+            advanceTo(distance);
+            this.hit(sim, unit, target, definition, hitX, hitY);
+            // A hit can detonate a primed enemy, interrupting or killing the hero.
+            if (!unit.heroRoll) return;
+        }
+
+        const travel = Math.min(wallDistance, roll.stopDistance - roll.distance);
+        advanceTo(travel);
+        roll.distance = Math.min(roll.stopDistance, roll.distance + travel);
+        if (wall || roll.distance >= roll.stopDistance - STOP_EPSILON) {
+            roll.phase = 'unfold';
+            roll.phaseStartTick = sim.tick;
+            roll.phaseEndTick = sim.tick + sim.msTicks(spec.unfoldMs);
+        }
+    }
+
+    static hit(sim, unit, target, definition, x, y) {
+        const spec = definition.heroActive;
+        const { dx, dy } = unit.heroRoll;
+        const side = dx * (target.y - y) - dy * (target.x - x);
+        const sign = Math.sign(side) || (HashUtil.hash(target.id + '|' + unit.id) % 2 ? -1 : 1);
+        sim.applyDamage(
+            unit.side,
+            unit.type,
+            target,
+            false,
+            definition.atk * spec.damageRatio,
+            unit.id,
+            {
+                suppressImpactFx: true,
+            },
+        );
+        LaunchImpact.start(sim, target, {
+            dx: -dy * sign + dx * 0.25,
+            dy: dx * sign + dy * 0.25,
+            speed: spec.knockbackSpeed,
+            lift: spec.knockbackLift,
+            sourceId: unit.id,
+            originX: x,
+            originY: y,
+        });
+        sim.events.push({
+            type: 'heroRollHit',
+            side: unit.side,
+            sourceId: unit.id,
+            targetId: target.id,
+            x: target.x,
+            y: target.y,
+        });
+    }
+
+    static validateState(unit, state, tps) {
+        const spec = UnitDefinition.get(unit.type).heroActive;
+        const roll = unit.heroRoll;
+        if (spec ? roll === null : roll === undefined) return;
+        if (
+            !spec ||
+            !roll ||
+            Object.keys(roll).sort().join(',') !==
+                'distance,dx,dy,hitIds,phase,phaseEndTick,phaseStartTick,startTick,stopDistance,targetId' ||
+            !unit.alive ||
+            !this.canDrive(unit, state.tick) ||
+            unit.spinAttack ||
+            state.heroes?.[unit.side]?.unitId !== unit.id ||
+            !Number.isSafeInteger(roll.startTick) ||
+            roll.startTick < 0 ||
+            !Number.isSafeInteger(roll.phaseStartTick) ||
+            roll.phaseStartTick < roll.startTick ||
+            roll.phaseStartTick > state.tick ||
+            !['hop', 'roll', 'unfold'].includes(roll.phase) ||
+            !Number.isFinite(roll.distance) ||
+            roll.distance < 0 ||
+            !Number.isFinite(roll.stopDistance) ||
+            roll.stopDistance < roll.distance ||
+            roll.stopDistance > spec.range + spec.followThrough ||
+            !Number.isFinite(roll.dx) ||
+            !Number.isFinite(roll.dy) ||
+            Math.abs(Math.hypot(roll.dx, roll.dy) - 1) > STOP_EPSILON ||
+            typeof roll.targetId !== 'string' ||
+            !roll.targetId ||
+            roll.targetId.length > 256 ||
+            !Array.isArray(roll.hitIds) ||
+            roll.hitIds.some((id) => typeof id !== 'string' || !id || id.length > 256) ||
+            new Set(roll.hitIds).size !== roll.hitIds.length ||
+            (roll.hitIds.length
+                ? roll.stopDistance < spec.followThrough
+                : roll.stopDistance !== spec.range)
+        )
+            throw new Error('게임 snapshot의 영웅 구르기 상태가 잘못되었습니다.');
+
+        const landingTick = roll.startTick + SimulationTiming.msToTicks(spec.hopMs, tps);
+        const { phase, phaseStartTick, phaseEndTick, distance, stopDistance } = roll;
+        if (
+            (phase === 'hop' &&
+                (phaseStartTick !== roll.startTick ||
+                    phaseEndTick !== landingTick ||
+                    state.tick >= phaseEndTick ||
+                    distance !== 0 ||
+                    roll.hitIds.length)) ||
+            (phase === 'roll' &&
+                (phaseStartTick !== landingTick ||
+                    phaseEndTick !== null ||
+                    distance >= stopDistance - STOP_EPSILON)) ||
+            (phase === 'unfold' &&
+                (phaseStartTick < landingTick ||
+                    phaseEndTick !==
+                        phaseStartTick + SimulationTiming.msToTicks(spec.unfoldMs, tps) ||
+                    state.tick >= phaseEndTick))
+        )
+            throw new Error('게임 snapshot의 영웅 구르기 단계가 잘못되었습니다.');
+    }
+}

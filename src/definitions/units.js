@@ -37,6 +37,17 @@ class UnitDefinition {
             role: 'bruiser',
             attackVisual: { sourceMotion: 'smash', travel: 'none', impact: 'light' },
             sight: 275,
+            heroActive: Object.freeze({
+                cost: 50,
+                range: 250,
+                hopMs: 250,
+                speedMultiplier: 5,
+                followThrough: 60,
+                unfoldMs: 100,
+                damageRatio: 1,
+                knockbackSpeed: 400,
+                knockbackLift: 300,
+            }),
             spinAttack: Object.freeze({
                 radius: 150,
                 windupMs: 500,

@@ -1,4 +1,5 @@
 import { UnitDefinition } from '../definitions/units.js';
+import { HeroRollAttack } from './hero-roll-attack.js';
 import { LaunchRules } from './launch-rules.js';
 import { NavigationGoal, UnitMotion } from './navigation.js';
 
@@ -118,6 +119,7 @@ export class HeroDeployment {
     static unitDied(sim, unit) {
         const hero = sim.heroes[unit.side];
         if (hero?.unitId !== unit.id) return;
+        HeroRollAttack.cancel(unit);
         hero.mode = 'dead';
         hero.unitId = null;
     }
@@ -183,7 +185,7 @@ export class HeroDeployment {
                 hero.unitId = null;
                 continue;
             }
-            if (hero.mode !== 'return' || !UnitMotion.isGrounded(unit)) continue;
+            if (hero.mode !== 'return' || unit.heroRoll || !UnitMotion.isGrounded(unit)) continue;
             const site = this.returnSites(sim, unit).find(({ arrived }) => arrived);
             if (!site) continue;
 
