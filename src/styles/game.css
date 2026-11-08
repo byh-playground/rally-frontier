@@ -658,7 +658,7 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
     justify-content: center;
     z-index: 1;
 }
-.launch-card.selected {
+.launch-card.selected:not(:disabled) {
     border-color: #99580c;
     box-shadow:
         0 0 0 2px var(--gold),
@@ -673,11 +673,6 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
 }
 .launch-card em [data-cost-resource='premium'] {
     color: #ffdc91;
-}
-.launch-card em .cost-short {
-    text-decoration: underline;
-    text-decoration-color: #ffd1b0;
-    text-decoration-thickness: 2px;
 }
 .hero-card {
     border-color: var(--gold);

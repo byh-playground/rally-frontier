@@ -10091,19 +10091,13 @@ class LaunchPresentation {
         }
         for (const el of UiRegistry.refs.launchCards.querySelectorAll('[data-launch-card]')) {
             const t = el.dataset.launchCard,
-                payload = LaunchRules.payload(t),
-                deployed = t === heroCard && hero;
+                payload = LaunchRules.payload(t);
             el.classList.toggle('selected', t === this.card);
-            const shortfalls = deployed ? [] : ResourceDisplay.shortfalls(payload, balance);
-            el.classList.toggle('unaffordable', shortfalls.length > 0);
-            for (const chip of el.querySelectorAll('[data-cost-resource]'))
-                chip.classList.toggle(
-                    'cost-short',
-                    shortfalls.some(({ key }) => key === chip.dataset.costResource),
-                );
             if (t === heroCard) this.renderHeroCard(el, s, side);
             else {
                 const warning = this.resourceWarning(s, side, payload);
+                el.classList.toggle('unaffordable', !!warning);
+                el.disabled = !this.active(s) || !!warning;
                 el.setAttribute('aria-pressed', String(t === this.card));
                 el.setAttribute(
                     'aria-label',
