@@ -1,9 +1,25 @@
-import { LaunchRules } from '../sim/launch-rules.js';
-import { VIEW_W } from './world-rules.js';
+const TOWER_ATTACK = Object.freeze({
+    canAttackGround: true,
+    range: 500,
+    atk: 8,
+    cooldownMs: 500,
+    damageClass: 'normal',
+    attackVisual: Object.freeze({ travel: 'hitscan', impact: 'light' }),
+    mortar: Object.freeze({
+        attackInterval: 5,
+        damage: 20,
+        damageClass: 'area',
+        radius: 100,
+        flightMs: 750,
+        arcHeight: 150,
+    }),
+});
+
 // Building definitions: each side's main base and the outposts spawned on captured points.
 class BuildingDefinition {
     static all = {
         base: {
+            ...TOWER_ATTACK,
             name: '메인 거점',
             showsFactionPennant: true,
             visualCategory: 'base',
@@ -13,32 +29,20 @@ class BuildingDefinition {
             sight: 475,
         },
         outpost: {
+            ...TOWER_ATTACK,
             name: '전진 거점',
             showsFactionPennant: true,
             visualCategory: 'outpost',
             isOutpost: true,
             construction: {
-                cost: 15 * LaunchRules.resourceScale,
-                workRequired: 375,
+                cost: 100,
+                workRequired: 250,
+                paymentWork: 5,
                 initialHpRatio: 0.1,
             },
-            hp: 1400,
+            hp: 500,
             size: 45,
             sight: 425,
-            canAttackGround: true,
-            range: 500,
-            atk: 8,
-            cooldownMs: 500,
-            damageClass: 'normal',
-            attackVisual: { travel: 'hitscan', impact: 'light' },
-            mortar: Object.freeze({
-                attackInterval: 5,
-                damage: 20,
-                damageClass: 'area',
-                radius: VIEW_W / 6,
-                flightMs: 750,
-                arcHeight: 150,
-            }),
         },
     };
     static get(type) {

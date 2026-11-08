@@ -93,6 +93,8 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     b.x = x + (b.side ? 800 : -800);
                     b.y = y;
                     b.hp = b.maxHp = 100000;
+                    // This arena measures the injected shots and unit attacks in isolation.
+                    b.cooldownUntil = Number.MAX_SAFE_INTEGER;
                 }
                 state.flags = [
                     { x, y, forced: false },
