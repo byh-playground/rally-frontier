@@ -5,27 +5,13 @@ const STORAGE_KEY = 'ssalkongpang.decks.v1';
 const DECK_COUNT = 3;
 const LOADOUT_VERSION = 3;
 
-function readSavedLoadouts(storage) {
+function readSavedLoadouts() {
     try {
-        return JSON.parse((storage ?? localStorage).getItem(STORAGE_KEY) || 'null');
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+        return saved?.version === LOADOUT_VERSION ? saved : null;
     } catch {
         return null;
     }
-}
-
-// Existing loadouts can retain their equipped cards when campaign unlocks are introduced.
-export function equippedDeckCards(storage) {
-    const saved = readSavedLoadouts(storage);
-    if (!Array.isArray(saved?.decks)) return [];
-    return [
-        ...new Set(
-            saved.decks
-                .slice(0, DECK_COUNT)
-                .filter(Array.isArray)
-                .flat()
-                .filter((type) => typeof type === 'string'),
-        ),
-    ];
 }
 
 export class DeckEditor {
@@ -106,20 +92,10 @@ export class DeckEditor {
         const decks = Array.from({ length: DECK_COUNT }, (_, index) => {
             const deck = saved?.decks?.[index];
             if (!Array.isArray(deck)) return starterSlots();
-            const legacyHero = saved?.heroTypes?.[index];
-            const cards =
-                saved.version === LOADOUT_VERSION || saved.version === 2
-                    ? deck
-                    : [heroes.includes(legacyHero) ? legacyHero : heroes[0], ...deck];
-            // Older loadouts were dense. Migrate in order; new loadouts preserve slot indices.
-            const entries =
-                saved.version === LOADOUT_VERSION
-                    ? cards
-                    : [...new Set(cards.filter((type) => available.has(type)))];
             const seen = new Set();
             let heroCount = 0;
             const slots = Array.from({ length: this.limit }, (_, slot) => {
-                const type = entries[slot];
+                const type = deck[slot];
                 if (!available.has(type) || seen.has(type)) return null;
                 if (heroes.includes(type)) {
                     if (heroCount >= this.heroLimit) return null;
