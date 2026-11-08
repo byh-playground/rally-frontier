@@ -272,13 +272,12 @@ export class DeckEditor {
                 detail = document.createElement('small'),
                 check = document.createElement('span');
             button.type = 'button';
+            button.disabled = locked;
             button.className = 'deck-card';
             button.dataset.deckType = type;
             if (heroCatalog) button.dataset.deckHero = type;
             button.setAttribute('aria-pressed', String(chosen));
             const blockReason = !locked && !chosen ? this.additionBlock(type, deck) : '';
-            button.toggleAttribute('data-locked', locked);
-            if (locked) button.setAttribute('aria-disabled', 'true');
             button.toggleAttribute('data-capacity-blocked', !!blockReason);
             name.textContent = this.nameOf(type);
             const stats = this.statsOf(type),
@@ -298,7 +297,7 @@ export class DeckEditor {
             }
             check.className = 'deck-card-check';
             check.setAttribute('aria-hidden', 'true');
-            check.textContent = locked ? '🔒' : chosen ? '✓' : '+';
+            check.textContent = locked ? '잠김' : chosen ? '✓' : '+';
             button.append(this.makePortrait(type), name, detail, check);
             button.addEventListener('click', () => {
                 if (this.toggleCard(type))

@@ -223,14 +223,15 @@ button.deck-slot {
     background: #f1eee3;
     color: #58634e;
 }
-.deck-card[data-locked] {
+.deck-card:disabled {
     border-color: #d4d1c2;
     background: #f0eee5;
     color: #4d5547;
     cursor: not-allowed;
+    opacity: 1;
 }
-.deck-card[data-locked] img {
-    filter: grayscale(1);
+.deck-card:disabled img {
+    filter: grayscale(1) opacity(0.55);
 }
 .deck-card small {
     display: flex;
@@ -243,7 +244,7 @@ button.deck-slot {
     line-height: 1.15;
     white-space: nowrap;
 }
-.deck-card[data-locked] small {
+.deck-card:disabled small {
     color: #605747;
     white-space: normal;
     overflow-wrap: anywhere;
@@ -254,6 +255,13 @@ button.deck-slot {
     left: 5px;
     color: #4a844c;
     font-weight: 900;
+}
+.deck-card:disabled .deck-card-check {
+    padding: 1px 4px;
+    border-radius: 5px;
+    background: #e1ddcf;
+    color: #524d40;
+    font-size: 9px;
 }
 .deck-notice {
     min-height: 18px;
