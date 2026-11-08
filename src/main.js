@@ -7,6 +7,8 @@ import './sim/strategy-sim.js';
 import { TerrainQuery, VisibilityPolicy } from './sim/entities.js';
 import { BotController } from './ai/bot-controller.js';
 import { GameSession, RallySynctestDiagnostics } from './session/game-session.js';
+import { SimWorkerHost } from './session/sim-worker-host.js';
+import { WorkerSessionProxy } from './session/worker-session-proxy.js';
 import { ReplayPlayer, ReplayPolicy } from './session/replay.js';
 import {
     ActiveViewState,
@@ -48,8 +50,13 @@ import {
     TerrainSurfaceProjection,
 } from './sim/terrain.js';
 import { BACKGROUND_TICK_PULSE_MS } from './core/session-timing.js';
-import { RENDER_TRACKS } from './render/render-tracks.js';
+import { RenderStateStore } from './render/render-state-store.js';
 import { BuildingArt } from './render/building-art.js';
+import {
+    createPresentationView,
+    EffectObjectFactory,
+    FloatingTextPresentationDefinition,
+} from './render/presentation-effects.js';
 import { GRAIN_SPRITES } from './render/grain-sprite-registry.js';
 import { heroBasicAttackElapsedMs, HERO_BASIC_STRIKE_MS } from './render/hero-basic-motion.js';
 import {
@@ -65,16 +72,17 @@ import {
     LAUNCH_HOLD_DRAG_PX,
     STATE_PUBLISH_HZ,
     STATE_PUBLISH_INTERVAL_MS,
-    netcodeMode,
+    setNetcodeMode,
 } from './core/config.js';
 import { BUILD_META } from './core/build-info.js';
 import { PRODUCT_VERSION } from './core/product-version.js';
 import { RallyGamekit, SIM_WORKER } from './core/gamekit.js';
 import { LaunchScreens } from './ui/launch-screens.js';
-import { prepareTitleShowcase } from './ui/title-showcase.js';
+import { createShowcaseHost } from './ui/showcase-host.js';
 import { DeckEditor } from './ui/deck-editor.js';
 import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
+import { AudioSystem } from './audio/audio-system.js';
 const {
     insetPolygonTowardCenter,
     pointInSimplePolygon,
@@ -138,495 +146,6 @@ class ReusableFloat32Buffer {
     }
     view() {
         return this.data.subarray(0, this.length);
-    }
-}
-
-/* Render-position contract:
-   Every continuous moving visual, including bodies, strategic markers, facing origins,
-   construction poses, hidden/burrow ground markers, trails and moving VFX endpoints,
-   reads registered x/y through RenderStateStore. Snapshot x/y remains authoritative for gameplay,
-   visibility/detection and checksum; presentation must not bypass interpolation merely
-   because the unit body itself is hidden. */
-// Game-owned identity/discontinuity policy; the gamekit timeline owns interpolation.
-class RenderStateStore {
-    constructor(definitions) {
-        this.definitions = definitions;
-        this.records = new Map();
-        this.generation = 0;
-        this.revision = 0;
-        this.sequence = 0;
-        this.clock = 0;
-        this.zeroDelta = Object.freeze({ x: 0, y: 0 });
-        this.lists = { unit: [], projectile: [], unitLob: [], thorn: [], flag: [], bundle: [] };
-    }
-    time(now) {
-        return (this.clock = Math.max(this.clock, Number(now) || 0));
-    }
-    syncRate(now) {
-        const replay = ReplayPresentation.replayPlayer;
-        const rate = replay ? (replay.playing ? replay.speed : 0) : 1;
-        if (this.runtime && this.rate !== rate) {
-            this.runtime.setRate(rate, now);
-            this.rate = rate;
-            this.frameAt = NaN;
-        }
-    }
-    finish(tailMs, now = performance.now()) {
-        const at = this.time(now);
-        if (!this.runtime) return false;
-        this.syncRate(at);
-        const result = this.runtime.finish({ tailMs }, at);
-        this.frameAt = NaN;
-        return result;
-    }
-    capture(source, now, snap, stepMs) {
-        const at = this.time(now),
-            tick = Number(source.tick) || 0;
-        if (!this.runtime || this.stepMs !== stepMs) {
-            this.stepMs = stepMs;
-            // Keep two fixed samples buffered, matching GameKit's 10 TPS / 200 ms frame example.
-            this.runtime = new RallyGamekit.PresentationRuntime({
-                stepMs,
-                delayMs: stepMs * 2,
-                clock: 'bounded',
-            });
-            this.rate = null;
-            snap = true;
-        }
-        this.syncRate(at);
-        // A reset rebases the timeline only. Live identities and their metadata copies
-        // stay; re-cloning every entity here made an overloaded frame heavier still.
-        if (snap) this.revision++;
-        const entities = [],
-            seen = new Set();
-        let lobLaunches = null;
-        for (const event of source.renderEvents || source.events || [])
-            if (event.type === 'unitLobLaunch')
-                (lobLaunches ||= new Map()).set(event.projectileId, event);
-        const add = (kind, id, value) => {
-            const key = kind + ':' + id,
-                def = this.definitions[kind];
-            let record = this.records.get(key);
-            const revived =
-                kind === 'projectile' &&
-                record?.entity.retiredTick != null &&
-                value.retiredTick == null;
-            const previous = record?.live && !revived ? record : null;
-            if (!previous) {
-                // One detached visual identity at birth. Ordinary metadata is refreshed by
-                // the existing UI snapshot cadence, never by cloning the sim each frame.
-                record = {
-                    kind,
-                    id,
-                    generation: ++this.generation,
-                    entity: value.toState ? value.toState('view') : structuredClone(value),
-                    delta: { x: 0, y: 0 },
-                };
-                this.records.set(key, record);
-            } else if (!value.toState) record.entity = value;
-            const teleport =
-                !!previous &&
-                Math.hypot(value.x - record.x, value.y - record.y) >
-                    def.snapDistance * Math.max(1, tick - record.tick);
-            record.delta.x = snap || teleport || !previous ? 0 : value.x - record.x;
-            record.delta.y = snap || teleport || !previous ? 0 : value.y - record.y;
-            record.x = value.x;
-            record.y = value.y;
-            record.tick = tick;
-            record.live = true;
-            seen.add(key);
-            const packet = {
-                id: key,
-                generation: record.generation,
-                type: def.type,
-                source: { entity: value, tick, delta: record.delta },
-                teleport,
-            };
-            if (value.heroRoll) {
-                // A queued roll can start on the same tick the previous roll ends.
-                if (value.heroRoll.distance < record.rollDistance)
-                    packet.resetFields = ['entity.heroRoll.distance'];
-                record.rollDistance = value.heroRoll.distance;
-            }
-            if (value.terminalPath) packet.pathPoints = value.terminalPath;
-            if (
-                kind === 'projectile' &&
-                !previous &&
-                !revived &&
-                !snap &&
-                Number.isFinite(value.launchX) &&
-                Number.isFinite(value.launchY)
-            ) {
-                packet.initialSource = {
-                    entity: { ...value, x: value.launchX, y: value.launchY },
-                    tick: tick - 1,
-                };
-                packet.initialTimeMs = (tick - 1) * stepMs;
-            }
-            if (kind === 'unitLob' && !previous && !snap) {
-                const launch = lobLaunches?.get(id);
-                if (
-                    launch &&
-                    Number.isFinite(launch.x) &&
-                    Number.isFinite(launch.y) &&
-                    Number.isFinite(launch.zFP)
-                ) {
-                    const launchTick = Number.isFinite(Number(launch.presentationTick))
-                        ? Number(launch.presentationTick)
-                        : tick;
-                    packet.initialSource = {
-                        entity: { ...value, x: launch.x, y: launch.y, zFP: launch.zFP },
-                        tick: launchTick - 1,
-                    };
-                    packet.initialTimeMs = (launchTick - 1) * stepMs;
-                }
-            }
-            if (
-                kind === 'thorn' &&
-                !previous &&
-                !snap &&
-                Number.isFinite(value.fromFx) &&
-                Number.isFinite(value.fromFy) &&
-                Number.isFinite(value.fromZFP)
-            ) {
-                const initialTick = Math.min(tick - 1, (Number(value.startTick) || tick) - 1);
-                packet.initialSource = {
-                    entity: {
-                        ...value,
-                        x: value.fromFx / FP,
-                        y: value.fromFy / FP,
-                        zFP: value.fromZFP,
-                    },
-                    tick: initialTick,
-                };
-                packet.initialTimeMs = initialTick * stepMs;
-            }
-            entities.push(packet);
-        };
-        for (const unit of source.units || [])
-            if (unit.alive !== false || unit.impactMotion) add('unit', unit.id, unit);
-        for (const projectile of source.projectiles || [])
-            if (projectile.alive !== false) add('projectile', projectile.id, projectile);
-        for (const projectile of source.unitLobProjectiles || [])
-            if (projectile.startTick == null || projectile.startTick <= tick)
-                add('unitLob', projectile.id, projectile);
-        // Keep the last physical sample until the exact explosion subtick, so
-        // the interpolated kernel and event-driven particles meet without a gap.
-        for (const event of source.renderEvents || source.events || []) {
-            if (event.type !== 'unitLobExplosion') continue;
-            const key = 'unitLob:' + event.projectileId,
-                record = this.records.get(key);
-            if (!record?.live || seen.has(key)) continue;
-            const eventTick = Number.isFinite(Number(event.presentationTick))
-                ? Number(event.presentationTick)
-                : tick;
-            add('unitLob', event.projectileId, {
-                ...record.entity,
-                x: event.x,
-                y: event.y,
-                zFP: event.zFP,
-                retiredAtTick:
-                    event.subtick == null
-                        ? eventTick
-                        : eventTick - 1 + RangeUtil.clamp(Number(event.subtick) / 1000000, 0, 1),
-            });
-        }
-        for (const thorn of source.unitThornProjectiles || [])
-            if (thorn.startTick <= tick) add('thorn', thorn.id, thorn);
-        // Publish the actual final contact sample before retiring the visual track. Interpolation must reach the impact.
-        for (const event of source.renderEvents || source.events || [])
-            if (event.type === 'projectileRetire') {
-                const record = this.records.get('projectile:' + event.projectileId);
-                if (record?.live && record.entity.retiredTick == null) {
-                    const retiredTick = Number.isFinite(Number(event.presentationTick))
-                        ? Number(event.presentationTick)
-                        : tick;
-                    const terminalPath =
-                        retiredTick >= record.tick
-                            ? [{ timeMs: retiredTick * stepMs, x: event.x, y: event.y }]
-                            : [];
-                    add('projectile', event.projectileId, {
-                        ...record.entity,
-                        x: event.x,
-                        y: event.y,
-                        retiredTick,
-                        terminalPath,
-                    });
-                }
-            }
-        for (const event of source.renderEvents || source.events || [])
-            if (event.type === 'unitThornHit' || event.type === 'unitThornMiss') {
-                const record = this.records.get('thorn:' + event.projectileId);
-                if (record?.live && record.entity.retiredTick == null) {
-                    const retiredTick = Number.isFinite(Number(event.presentationTick))
-                        ? Number(event.presentationTick)
-                        : tick;
-                    add('thorn', event.projectileId, {
-                        ...record.entity,
-                        x: event.x,
-                        y: event.y,
-                        zFP: event.zFP,
-                        retiredTick,
-                    });
-                }
-            }
-        for (const group of source.launchDeployments || [])
-            if (group.index < group.count) add('bundle', group.projectileId, group);
-        for (let side = 0; side < (source.flags || []).length; side++)
-            if (source.flags[side]) add('flag', side, source.flags[side]);
-        for (const [key, record] of this.records) if (!seen.has(key)) record.live = false;
-        this.runtime.capture(
-            {
-                revision: this.revision,
-                sequence: ++this.sequence,
-                timeMs: tick * stepMs,
-                mode: snap ? 'reset' : 'continuous',
-                entities,
-            },
-            at,
-        );
-        this.frameAt = NaN;
-    }
-    updateMetadata(snapshot) {
-        for (const kind of ['unit', 'projectile']) {
-            for (const entity of snapshot[kind === 'unit' ? 'units' : 'projectiles'] || []) {
-                const record = this.records.get(kind + ':' + entity.id);
-                if (
-                    record &&
-                    (entity.alive !== false || entity.impactMotion) &&
-                    record.entity.retiredTick == null
-                )
-                    record.entity = entity;
-            }
-        }
-    }
-    frame(now) {
-        const at = this.time(now);
-        this.syncRate(at);
-        if (this.frameAt === at) return this.currentFrame;
-        this.frameAt = at;
-        for (const list of Object.values(this.lists)) list.length = 0;
-        this.currentFrame = this.runtime?.frame(at);
-        const displayed = new Set();
-        this.currentFrame?.forEach((model, key) => {
-            const record = this.records.get(key);
-            if (record) {
-                displayed.add(key);
-                record.model = model;
-                this.lists[record.kind].push(record.entity);
-            }
-        });
-        for (const [key, record] of this.records) {
-            if (!displayed.has(key)) {
-                record.model = null;
-                if (!record.live) this.records.delete(key);
-            }
-        }
-        return this.currentFrame;
-    }
-    model(kind, id, now = performance.now()) {
-        this.frame(now);
-        return this.records.get(kind + ':' + id)?.model || null;
-    }
-    has(kind, id, now = performance.now()) {
-        return !!this.model(kind, id, now);
-    }
-    position(kind, id, source, now = performance.now()) {
-        return (
-            this.model(kind, id, now)?.entity || {
-                x: Number(source?.x) || 0,
-                y: Number(source?.y) || 0,
-            }
-        );
-    }
-    displayed(kind, now) {
-        this.frame(now);
-        return this.lists[kind];
-    }
-    entity(kind, id) {
-        return this.records.get(kind + ':' + id)?.entity || null;
-    }
-    delta(kind, id) {
-        return this.records.get(kind + ':' + id)?.model?.delta || this.zeroDelta;
-    }
-    clear() {
-        this.records.clear();
-        this.runtime = null;
-        this.frameAt = NaN;
-        for (const list of Object.values(this.lists)) list.length = 0;
-    }
-}
-class FloatingTextPresentationDefinition {
-    static presets = Object.freeze({
-        damageTaken: Object.freeze({
-            lifeMs: 600,
-            baseSize: 15,
-            minSize: 10,
-            rise: 30,
-            alpha: 0.8,
-            strokeAlpha: 0.8,
-            pop: 1,
-        }),
-        damageDealt: Object.freeze({
-            lifeMs: 600,
-            baseSize: 15,
-            minSize: 10,
-            rise: 30,
-            alpha: 0.8,
-            strokeAlpha: 0.8,
-            pop: 1,
-        }),
-        dodge: Object.freeze({
-            lifeMs: 750,
-            baseSize: 15,
-            minSize: 10,
-            rise: 30,
-            alpha: 0.8,
-            strokeAlpha: 0.8,
-            pop: 1,
-        }),
-    });
-    static get(kind) {
-        return this.presets[kind] || this.presets.damageDealt;
-    }
-}
-
-class EffectObjectFactory {
-    static cornBurstLifeMs = 650;
-    static milletBurstLifeMs = 600;
-    static defaultCombatLifeMs = 360;
-    static sourceMotionFallbackMs = 220;
-    static combatLifetimes = Object.freeze({
-        thornImpact: 250,
-        spinBasicImpact: 180,
-        constructionHit: 220,
-        hitscanTravel: 180,
-        buildingBurst: 620,
-        launchMuzzle: 900,
-        launchBlast: 820,
-        launchBundleBreak: 680,
-        deathBurst: 480,
-    });
-    static fireShakeDuration(power) {
-        return 110 + 150 * power;
-    }
-    static impactShakeDuration(peak, hits) {
-        return hits > 0 ? 130 + 70 * (peak - 1) : 80;
-    }
-    static get maxTailMs() {
-        return Math.max(
-            LaunchRules.landingMarkMs,
-            this.cornBurstLifeMs,
-            this.milletBurstLifeMs,
-            this.defaultCombatLifeMs,
-            this.sourceMotionFallbackMs,
-            ...Object.values(this.combatLifetimes),
-            ...Object.values(FloatingTextPresentationDefinition.presets).map(
-                (preset) => preset.lifeMs,
-            ),
-            ...Object.values(AttackPresentationDefinition.sourceMotions).map(
-                (motion) => motion.lifeMs,
-            ),
-            this.fireShakeDuration(1),
-            this.impactShakeDuration(
-                Math.max(LaunchRules.unitImpactPeak, LaunchRules.buildingImpactPeak),
-                1,
-            ),
-        );
-    }
-    static combatLife(fx) {
-        if (fx.kind === 'meleeSourceMotion')
-            return (
-                AttackPresentationDefinition.sourceMotions[fx.motion]?.lifeMs ||
-                this.sourceMotionFallbackMs
-            );
-        return this.combatLifetimes[fx.kind] ?? this.defaultCombatLifeMs;
-    }
-    static attachClock(effect, clock, lifeMs) {
-        effect.clock = clock;
-        clock.lifeMs = Math.max(clock.lifeMs, lifeMs);
-    }
-    static makeFloatFx() {
-        return {
-            x: 0,
-            y: 0,
-            kind: '',
-            text: '',
-            amount: 0,
-            start: 0,
-            presentationTick: null,
-            jitter: 0,
-            lane: 0,
-        };
-    }
-    static resetFloatFx(v) {
-        v.x = 0;
-        v.y = 0;
-        v.kind = '';
-        v.text = '';
-        v.amount = 0;
-        v.start = 0;
-        v.presentationTick = null;
-        v.clock = null;
-        v.jitter = 0;
-        v.lane = 0;
-    }
-    static makeShakeFx() {
-        return { start: 0, duration: 0, intensity: 0, seed: 0, presentationTick: null };
-    }
-    static resetShakeFx(v) {
-        v.start = 0;
-        v.duration = 0;
-        v.intensity = 0;
-        v.seed = 0;
-        v.presentationTick = null;
-        v.clock = null;
-    }
-    static makeCombatFx() {
-        return {
-            kind: '',
-            x: 0,
-            y: 0,
-            x2: 0,
-            y2: 0,
-            sourceType: '',
-            targetType: '',
-            entity: '',
-            amount: 0,
-            radius: 0,
-            width: 0,
-            durationTicks: 0,
-            remaining: 0,
-            sourceId: null,
-            targetId: null,
-            fromX: null,
-            fromY: null,
-            isBuilding: false,
-            points: null,
-            side: null,
-            start: 0,
-            presentationTick: null,
-            seed: 0,
-            _extraKeys: null,
-        };
-    }
-    static resetCombatFx(v) {
-        if (v._extraKeys) {
-            for (const k of v._extraKeys) delete v[k];
-            v._extraKeys = null;
-        }
-        v.kind = '';
-        v.x = v.y = v.x2 = v.y2 = 0;
-        v.sourceType = v.targetType = v.entity = '';
-        v.amount = v.radius = v.width = v.durationTicks = v.remaining = 0;
-        v.sourceId = v.targetId = null;
-        v.fromX = v.fromY = null;
-        v.isBuilding = false;
-        v.points = null;
-        v.side = null;
-        v.start = v.seed = 0;
-        v.presentationTick = null;
-        v.clock = null;
     }
 }
 
@@ -1680,7 +1199,10 @@ class GLRenderer {
 
         // High-frequency renderer pools. They are presentation-only and deliberately
         // excluded from deterministic state. Sizes are bounded to prevent hidden growth.
-        this.renderState = new RenderStateStore(RENDER_TRACKS);
+        this.renderState = new RenderStateStore(() => {
+            const replay = ReplayPresentation.replayPlayer;
+            return replay ? (replay.playing ? replay.speed : 0) : 1;
+        });
         this.liveRenderTargets = false;
         this.combatFxPool = new RallyGamekit.ObjectPool(
             EffectObjectFactory.makeCombatFx,
@@ -1835,6 +1357,21 @@ class GLRenderer {
         this.loopStarted = false;
         cancelAnimationFrame(this.loopFrame);
     }
+    playShowcase(onError) {
+        this.onShowcaseError = onError;
+        this.setSnapshot({ ...this.snapshot, events: [] }, { snapTargets: true });
+        this.startLoop();
+    }
+    disposeShowcase() {
+        this.releaseShowcaseScene();
+        this.grainFaces.dispose();
+        for (const sprites of Object.values(this.spriteRenderers)) sprites.dispose();
+        for (const hold of this.gameResourceHolds || []) hold.release();
+        this.spriteRenderers = {};
+        this.gameResourceHolds = null;
+        this.vectorContext.dispose();
+        this.device.dispose();
+    }
     releaseShowcaseScene() {
         this.stopLoop();
         if (this.vectorContext.active) this.vectorContext.endFrame();
@@ -1842,7 +1379,7 @@ class GLRenderer {
         this.onShowcaseError = null;
         this.snapshot = null;
         this.world = WorldContext.standard;
-        this.renderState = new RenderStateStore(RENDER_TRACKS);
+        this.renderState.reset();
         this.renderEntity = null;
 
         this.clearGrainActors();
@@ -7623,273 +7160,6 @@ class MiniMap {
     }
 }
 
-/* =========================
-   6. Procedural audio
-   ========================= */
-class AudioSystem {
-    constructor() {
-        this.ctx = null;
-        this.master = null;
-        this.compressor = null;
-        this.noiseBuffer = null;
-        this.enabled = true;
-        this.unlocked = false;
-
-        // 짧은 시간 창 안에서 같은 계열 SFX가 너무 많이 겹치지 않게 제한.
-        this.budgets = {
-            hit: { window: 70, max: 4, times: [] },
-            shot: { window: 80, max: 3, times: [] },
-            explosion: { window: 120, max: 2, times: [] },
-            death: { window: 100, max: 2, times: [] },
-        };
-    }
-
-    unlock() {
-        if (!this.enabled) return;
-        try {
-            if (!this.ctx) {
-                const AC = window.AudioContext || window.webkitAudioContext;
-                if (!AC) return;
-                this.ctx = new AC();
-
-                this.master = this.ctx.createGain();
-                this.master.gain.value = 0.46;
-
-                this.compressor = this.ctx.createDynamicsCompressor();
-                this.compressor.threshold.value = -18;
-                this.compressor.knee.value = 16;
-                this.compressor.ratio.value = 6;
-                this.compressor.attack.value = 0.002;
-                this.compressor.release.value = 0.16;
-
-                this.master.connect(this.compressor);
-                this.compressor.connect(this.ctx.destination);
-
-                // 0.5초짜리 노이즈 버퍼 한 번만 생성. 외부 음원 리소스 없음.
-                const len = Math.floor(this.ctx.sampleRate * 0.5);
-                this.noiseBuffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-                const data = this.noiseBuffer.getChannelData(0);
-                let state = 0x12345678;
-                for (let i = 0; i < len; i++) {
-                    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-                    data[i] = (state / 0xffffffff) * 2 - 1;
-                }
-            }
-            if (this.ctx.state === 'suspended') this.ctx.resume();
-            this.unlocked = true;
-        } catch (_) {}
-    }
-
-    setEnabled(v) {
-        this.enabled = !!v;
-        if (this.enabled) this.unlock();
-        if (this.master && this.ctx) {
-            const t = this.ctx.currentTime;
-            this.master.gain.cancelScheduledValues(t);
-            this.master.gain.setTargetAtTime(this.enabled ? 0.46 : 0, t, 0.015);
-        }
-    }
-
-    allow(kind) {
-        const b = this.budgets[kind];
-        if (!b) return true;
-        const now = performance.now();
-        b.times = b.times.filter((t) => now - t < b.window);
-        if (b.times.length >= b.max) return false;
-        b.times.push(now);
-        return true;
-    }
-
-    spatialGain(x, y, renderer) {
-        if (!renderer) return 0.7;
-        const [sx, sy] = renderer.worldToPx(renderer.viewX(x), renderer.viewY(y));
-        const dx = sx / (renderer.canvas.width * 0.5) - 1;
-        const dy = sy / (renderer.canvas.height * 0.5) - 1;
-        const d = Math.hypot(dx, dy);
-
-        if (d > 2.25) return 0;
-        if (d <= 0.65) return 1;
-        return Math.max(0.08, 1 - (d - 0.65) / 1.6);
-    }
-
-    gainNode(value, when = 0) {
-        const g = this.ctx.createGain();
-        const t = this.ctx.currentTime + when;
-        g.gain.setValueAtTime(Math.max(0.0001, value), t);
-        g.connect(this.master);
-        return { g, t };
-    }
-
-    tone({
-        freq = 220,
-        endFreq = null,
-        type = 'sine',
-        gain = 0.15,
-        duration = 0.1,
-        attack = 0.002,
-        when = 0,
-        filter = 0,
-    } = {}) {
-        if (!this.ctx || !this.enabled) return;
-        const { g, t } = this.gainNode(gain, when);
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), t + attack);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-
-        const o = this.ctx.createOscillator();
-        o.type = type;
-        o.frequency.setValueAtTime(Math.max(20, freq), t);
-        if (endFreq) o.frequency.exponentialRampToValueAtTime(Math.max(20, endFreq), t + duration);
-
-        if (filter) {
-            const f = this.ctx.createBiquadFilter();
-            f.type = 'lowpass';
-            f.frequency.value = filter;
-            o.connect(f);
-            f.connect(g);
-        } else o.connect(g);
-
-        o.start(t);
-        o.stop(t + duration + 0.02);
-    }
-
-    noise({ gain = 0.1, duration = 0.08, when = 0, lowpass = 2500, highpass = 0 } = {}) {
-        if (!this.ctx || !this.enabled || !this.noiseBuffer) return;
-        const t = this.ctx.currentTime + when;
-        const src = this.ctx.createBufferSource();
-        src.buffer = this.noiseBuffer;
-
-        let node = src;
-        if (highpass) {
-            const hp = this.ctx.createBiquadFilter();
-            hp.type = 'highpass';
-            hp.frequency.value = highpass;
-            node.connect(hp);
-            node = hp;
-        }
-        if (lowpass) {
-            const lp = this.ctx.createBiquadFilter();
-            lp.type = 'lowpass';
-            lp.frequency.value = lowpass;
-            node.connect(lp);
-            node = lp;
-        }
-
-        const g = this.ctx.createGain();
-        g.gain.setValueAtTime(Math.max(0.0001, gain), t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-        node.connect(g);
-        g.connect(this.master);
-        src.start(t);
-        src.stop(t + duration + 0.02);
-    }
-
-    metalHit(g = 0.5) {
-        if (!this.allow('hit')) return;
-        this.noise({ gain: 0.08 * g, duration: 0.045, highpass: 1800, lowpass: 7200 });
-        this.tone({ freq: 920, endFreq: 560, type: 'square', gain: 0.035 * g, duration: 0.055 });
-        this.tone({
-            freq: 1450,
-            endFreq: 1180,
-            type: 'triangle',
-            gain: 0.025 * g,
-            duration: 0.035,
-            when: 0.008,
-        });
-    }
-
-    fleshHit(g = 0.5) {
-        if (!this.allow('hit')) return;
-        this.noise({ gain: 0.1 * g, duration: 0.055, lowpass: 1000 });
-        this.tone({ freq: 105, endFreq: 72, type: 'sine', gain: 0.12 * g, duration: 0.075 });
-    }
-
-    explosion(g = 0.6, heavy = false) {
-        if (!this.allow('explosion')) return;
-        const mul = heavy ? 1.25 : 1;
-        this.noise({
-            gain: 0.22 * g * mul,
-            duration: heavy ? 0.34 : 0.2,
-            lowpass: heavy ? 1200 : 2100,
-        });
-        this.tone({
-            freq: heavy ? 72 : 105,
-            endFreq: heavy ? 34 : 55,
-            type: 'sine',
-            gain: 0.25 * g * mul,
-            duration: heavy ? 0.36 : 0.2,
-        });
-        if (heavy)
-            this.tone({
-                freq: 42,
-                endFreq: 28,
-                type: 'sine',
-                gain: 0.2 * g,
-                duration: 0.42,
-                when: 0.015,
-            });
-    }
-
-    death(g = 0.5) {
-        if (!this.allow('death')) return;
-        this.tone({ freq: 130, endFreq: 52, type: 'sawtooth', gain: 0.06 * g, duration: 0.16 });
-        this.noise({ gain: 0.06 * g, duration: 0.13, lowpass: 900 });
-    }
-
-    captureChime(g = 0.6) {
-        this.tone({ freq: 330, endFreq: 440, type: 'sine', gain: 0.06 * g, duration: 0.16 });
-        this.tone({
-            freq: 440,
-            endFreq: 660,
-            type: 'sine',
-            gain: 0.055 * g,
-            duration: 0.18,
-            when: 0.09,
-        });
-        this.tone({
-            freq: 660,
-            endFreq: 880,
-            type: 'triangle',
-            gain: 0.045 * g,
-            duration: 0.22,
-            when: 0.18,
-        });
-    }
-
-    buildingCollapse(g = 0.7) {
-        this.noise({ gain: 0.2 * g, duration: 0.35, lowpass: 1000 });
-        this.tone({ freq: 74, endFreq: 32, type: 'sine', gain: 0.25 * g, duration: 0.38 });
-        this.noise({ gain: 0.08 * g, duration: 0.22, highpass: 1200, lowpass: 3200, when: 0.08 });
-    }
-
-    playHitForType(sourceType, gain) {
-        const d = UnitDefinition.get(sourceType) || BuildingDefinition.get(sourceType) || {};
-        if ((d.splash || 0) >= 80) this.explosion(gain, true);
-        else this.fleshHit(gain * 0.78);
-    }
-
-    playEvent(e, renderer) {
-        if (!e || !this.enabled || !this.unlocked) return;
-        if (e.type === 'unitSelfDestruct' && !renderer.eventVisible(e)) return;
-        const gain = this.spatialGain(
-            e.x ?? renderer.world.center.x,
-            e.y ?? renderer.world.center.y,
-            renderer,
-        );
-        if (gain <= 0) return;
-        if (e.type === 'captureComplete') this.captureChime(Math.max(0.45, gain));
-        else if (e.type === 'unitSelfDestruct') this.explosion(gain * 0.65);
-        else if (e.type === 'buildingDeath') this.buildingCollapse(gain);
-        else if (e.type === 'death') this.death(gain);
-        else if (e.type === 'hit') this.playHitForType(e.sourceType || '', gain);
-    }
-
-    processSnapshot(snapshot, renderer) {
-        if (!snapshot) return;
-        for (const e of snapshot.events || []) this.playEvent(e, renderer);
-    }
-}
-
 const audioSystem = new AudioSystem();
 
 /* =========================
@@ -8193,9 +7463,6 @@ class UiController {
         UiController.setUiModal('none');
         UiController.syncModalState();
         return true;
-    }
-    static setStartNetcodeMode(value) {
-        CONFIG.netcode.mode = netcodeMode(value);
     }
     static setStartSimulationTps(value) {
         UiRuntimeState.value.settings.simulationTps = RangeUtil.clamp(
@@ -9159,135 +8426,6 @@ class SinglePlayerModeUtil {
     }
 }
 
-function createPresentationView(owner, getRenderer, { hud = true, audio = true } = {}) {
-    return {
-        maxLatenessMs: LaunchRules.landingMarkMs,
-        tailMs: EffectObjectFactory.maxTailMs,
-        classify(record) {
-            if (record.kind === 'audio' || record.payload.type === 'launchRejected')
-                return { delivery: 'confirmation', durationMs: 0 };
-            const result = { delivery: 'presentation', durationMs: Infinity };
-            if (record.payload.type === 'unitLobExplosion' && record.payload.subtick != null)
-                result.phase = RangeUtil.clamp(record.payload.subtick / 1000000, 0, 1);
-            return result;
-        },
-        hasAudio(event) {
-            return (
-                audio &&
-                ['captureComplete', 'buildingDeath', 'death', 'hit', 'unitSelfDestruct'].includes(
-                    event.type,
-                )
-            );
-        },
-        visibility(event) {
-            const renderer = getRenderer();
-            if (!renderer || !Number.isFinite(event.x) || !Number.isFinite(event.y)) return null;
-            const level = renderer.world.terrain.surfaces.levelAt(event.x, event.y);
-            return [0, 1].map(
-                (side) => !!renderer.visionFields[side]?.visibleAt(event.x, event.y, level),
-            );
-        },
-        start(record, at, age) {
-            const clock = getRenderer()?.presentEvent(record, age, { hud });
-            if (!clock?.lifeMs) owner.finishPresentationEvent(record);
-            return clock;
-        },
-        update(clock, age, record) {
-            if (!clock) return;
-            clock.ageMs = age;
-            if (age >= clock.lifeMs) owner.finishPresentationEvent(record);
-        },
-        stop(clock) {
-            if (clock) clock.expired = true;
-        },
-    };
-}
-
-function createShowcaseSurface() {
-    const element = document.createElement('div');
-    element.className = 'launch-showcase-surface';
-    element.setAttribute('aria-hidden', 'true');
-    const canvas = document.createElement('canvas');
-    const fxCanvas = document.createElement('canvas');
-    fxCanvas.className = 'fx-canvas';
-    element.append(canvas, fxCanvas);
-    // Both renderers consume the same loaded vector assets and decoded sprite canvases.
-    const renderer = new GLRenderer(canvas, { deferLoop: true, showcase: true, fxCanvas });
-    return {
-        element,
-        renderer,
-        dispose() {
-            this.sceneOwner = null;
-            renderer.releaseShowcaseScene();
-            renderer.grainFaces.dispose();
-            for (const sprites of Object.values(renderer.spriteRenderers)) sprites.dispose();
-            for (const hold of renderer.gameResourceHolds || []) hold.release();
-            renderer.spriteRenderers = {};
-            renderer.gameResourceHolds = null;
-            renderer.vectorContext.dispose();
-            renderer.device.dispose();
-        },
-    };
-}
-
-async function prepareShowcaseScene({ surface, scene, signal }) {
-    const { renderer } = surface;
-    const prepare =
-        scene.kind === 'title'
-            ? prepareTitleShowcase
-            : (await import('./ui/unit-showcase.js')).prepareUnitShowcase;
-    signal.throwIfAborted();
-    const owner = {};
-    surface.sceneOwner = owner;
-    const ownsRenderer = () => surface.sceneOwner === owner;
-    const release = () => {
-        if (!ownsRenderer()) return;
-        surface.sceneOwner = null;
-        renderer.releaseShowcaseScene();
-    };
-    const onError = (error) => {
-        if (!ownsRenderer()) return;
-        console.error(error);
-        scene.onError?.(error);
-    };
-    let scenario;
-    try {
-        renderer.prepareGameResources();
-        renderer.resize();
-        scenario = await prepare({
-            renderer,
-            createScenario: RallyGamekit.createScenario,
-            createPresentationView,
-            unitType: scene.unitType,
-            signal,
-            onError,
-        });
-    } catch (error) {
-        release();
-        throw error;
-    }
-    return {
-        play() {
-            if (!ownsRenderer()) return;
-            renderer.onShowcaseError = onError;
-            renderer.setSnapshot({ ...renderer.snapshot, events: [] }, { snapTargets: true });
-            renderer.startLoop();
-            scenario.play();
-        },
-        pause() {
-            scenario.pause();
-            if (ownsRenderer()) renderer.stopLoop();
-        },
-        dispose() {
-            try {
-                scenario.dispose();
-            } finally {
-                release();
-            }
-        },
-    };
-}
-
 class MatchLifecycle {
     static singleMatch = null;
     static selectedCampaign = null;
@@ -9807,366 +8945,6 @@ class MatchLifecycle {
     }
 }
 
-// Worker side of a single-player AI peer: the same GameSession + BotController
-// as the in-page path. Its transport is a mirror of the AI's real WebRTC
-// transport, which stays on the main thread (Workers have no RTCPeerConnection).
-class SimWorkerHost {
-    static STATUS_MS = 250;
-    // Session calls the main thread may forward.
-    static SESSION_CALLS = new Set([
-        'setTestModePaused',
-        'setLocalVisibility',
-        'markManualRecoveryNeeded',
-        'prepareSimpleRecovery',
-        'startSimpleRecovery',
-        'balanceTelemetry',
-    ]);
-    static session = null;
-    static bot = null;
-    static transport = null;
-    static statusTimer = 0;
-    static install() {
-        self.onmessage = (e) => {
-            const m = e.data;
-            if (m?.type === 'start') this.start(m);
-            else if (m?.type === 'transport') this.transport?.receive(m);
-            else if (m?.type === 'call') this.call(m);
-            else if (m?.type === 'dispose') this.dispose(m.reason);
-        };
-        self.postMessage({ type: 'ready' });
-    }
-    static start({ role, token, config, netcodeState, netcodeMode, deck }) {
-        if (netcodeMode) UiController.setStartNetcodeMode(netcodeMode);
-        const transport = new WorkerRelayTransport(role, token, netcodeState),
-            session = new GameSession(role, transport, token, config ?? undefined, deck);
-        this.transport = transport;
-        this.session = session;
-        this.bot = BotController.attach(session, role);
-        transport.onOpen = (visible) => {
-            session.localVisible = visible;
-            session.onTransportOpen();
-        };
-        transport.onClose = () => session.onTransportClosed();
-        this.statusTimer = setInterval(() => this.publishStatus(), this.STATUS_MS);
-    }
-    static call({ id, method, args }) {
-        let result = null;
-        if (this.session && this.SESSION_CALLS.has(method))
-            try {
-                result = this.session[method](...(args || []));
-            } catch (error) {
-                self.postMessage({
-                    type: 'error',
-                    message: String(error?.message || error),
-                    error: error instanceof Error ? error : String(error),
-                });
-            }
-        if (id) self.postMessage({ type: 'result', id, result: result ?? null });
-        this.publishStatus();
-    }
-    static publishStatus() {
-        const s = this.session;
-        if (!s) return;
-        const core = s.netcodeSession;
-        self.postMessage({
-            type: 'status',
-            tick: s.sim?.tick ?? 0,
-            simEnded: !!s.simEnded,
-            transportConnected: !!s.transportConnected,
-            perfStats: s.sim?.perfStats || null,
-            timings: s.performanceStats?.timings || {},
-            netcode: core
-                ? { ready: !!core.ready, status: core.status, metrics: core.metrics }
-                : null,
-            recovery: {
-                phase: s.recoveryPhase || 'idle',
-                needsManual: !!s.simpleRecoveryNeedsManual,
-                token: s.simpleRecoveryToken || '',
-                syncHold: !!s.syncHold,
-            },
-        });
-    }
-    static dispose(reason) {
-        clearInterval(this.statusTimer);
-        this.bot?.stop();
-        try {
-            this.session?.dispose(reason);
-        } finally {
-            this.session = null;
-            this.bot = null;
-            this.transport = null;
-            self.close();
-        }
-    }
-}
-// The Worker session's view of the AI's main-thread WebRTC transport: state is
-// mirrored from WorkerSessionProxy, sends and recovery calls are relayed to it.
-class WorkerRelayTransport {
-    constructor(role, roomCode, netcodeState) {
-        this.role = role;
-        this.roomCode = roomCode;
-        this.connected = false;
-        this.netcodeState = netcodeState || 'closed';
-        this.netcodeListeners = new Set();
-        this.netcodeStatusListeners = new Set();
-        this.onMessage = () => {};
-        this.onPeerReady = () => {};
-        this.onOpen = () => {};
-        this.onClose = () => {};
-        this.onError = () => {};
-    }
-    receive({ event, data, state, visible }) {
-        if (event === 'open') {
-            this.connected = true;
-            this.onOpen(visible);
-        } else if (event === 'close') {
-            this.connected = false;
-            this.onClose();
-        } else if (event === 'message') this.onMessage(data);
-        else if (event === 'packet')
-            for (const listener of this.netcodeListeners) {
-                try {
-                    listener(data);
-                } catch (error) {
-                    this.onError(error);
-                }
-            }
-        else if (event === 'netcode-state') {
-            this.netcodeState = state;
-            for (const listener of this.netcodeStatusListeners) listener(state);
-        }
-    }
-    relay(op, payload, transfer) {
-        self.postMessage({ type: 'transport', op, ...payload }, transfer || []);
-    }
-    isOpen() {
-        return this.connected;
-    }
-    isNetcodeOpen() {
-        return this.netcodeState === 'open';
-    }
-    get netcodeBufferedAmount() {
-        return 0;
-    }
-    send(message) {
-        if (!this.connected) return false;
-        this.relay('send', { data: message });
-        return true;
-    }
-    sendNetcode(packet) {
-        if (!(packet instanceof Uint8Array) || !this.isNetcodeOpen()) return false;
-        const copy = packet.slice();
-        this.relay('send-netcode', { data: copy }, [copy.buffer]);
-        return true;
-    }
-    subscribeNetcode(listener) {
-        this.netcodeListeners.add(listener);
-        return () => this.netcodeListeners.delete(listener);
-    }
-    subscribeNetcodeStatus(listener) {
-        this.netcodeStatusListeners.add(listener);
-        return () => this.netcodeStatusListeners.delete(listener);
-    }
-    prepareRecoveryHost(reason) {
-        this.relay('call', { method: 'prepareRecoveryHost', args: [reason] });
-        return this.role === 'host';
-    }
-    rebuildRecoveryGuest(reason) {
-        this.relay('call', { method: 'rebuildRecoveryGuest', args: [reason] });
-        return this.role === 'guest';
-    }
-    forceReconnect(reason) {
-        this.relay('call', { method: 'forceReconnect', args: [reason] });
-        return true;
-    }
-    // The main thread owns the WebRTC transport and closes it with the proxy.
-    close() {
-        this.netcodeListeners.clear();
-        this.netcodeStatusListeners.clear();
-    }
-}
-// Main-thread stand-in for the AI GameSession in SimWorkerHost. It keeps the AI's
-// real WebRTC transport here, relays its traffic to the Worker, mirrors the state
-// the UI and recovery read (every STATUS_MS and after each call) and forwards
-// session calls. Forwarded calls answer true once sent; the outcome arrives as status.
-class WorkerSessionProxy {
-    static TRANSPORT_CALLS = new Set([
-        'prepareRecoveryHost',
-        'rebuildRecoveryGuest',
-        'forceReconnect',
-    ]);
-    constructor(role, transport, token, config, deck) {
-        this.role = role;
-        this.roomCode = token;
-        this.transport = transport;
-        this.sim = null;
-        this.netcodeSession = null;
-        this.performanceStats = { timings: {} };
-        this.statusMessages = 0;
-        this.simEnded = false;
-        this.disposed = false;
-        this.transportConnected = false;
-        this.syncHold = true;
-        this.simpleRecoverySeq = 0;
-        this.localVisible = true;
-        this.recoveryPhase = 'idle';
-        this.simpleRecoveryNeedsManual = false;
-        this.simpleRecoveryToken = '';
-        this.onFatal = () => {};
-        this.pending = new Map();
-        this.nextCallId = 0;
-        this.started = false;
-        this.outbox = [];
-        this.ready = new Promise((resolve) => (this.resolveReady = resolve));
-        // Relay traffic for diagnostics: control messages are structured-cloned, netcode packets are moved.
-        this.traffic = {
-            sentMessages: 0,
-            sentPackets: 0,
-            sentPacketBytes: 0,
-            receivedMessages: 0,
-            receivedPackets: 0,
-            receivedPacketBytes: 0,
-        };
-        transport.onMessage = (data) => {
-            this.traffic.receivedMessages++;
-            this.toTransport('message', { data });
-        };
-        this.detachTransport = [
-            transport.subscribeNetcode((packet) => {
-                const copy = packet.slice();
-                this.traffic.receivedPackets++;
-                this.traffic.receivedPacketBytes += copy.byteLength;
-                this.toTransport('packet', { data: copy }, [copy.buffer]);
-            }),
-            transport.subscribeNetcodeStatus((state) =>
-                this.toTransport('netcode-state', { state }),
-            ),
-        ];
-        this.worker = new Worker(new URL('./sim-worker.js', import.meta.url), { type: 'module' });
-        this.worker.onmessage = (e) => {
-            const m = e.data;
-            if (m?.type === 'ready') {
-                // The WebRTC link may open before the Worker has loaded main.js; hold what it sent until then.
-                // The Worker realm has its own CONFIG: hand it the page's sync mode, or both peers fail the handshake.
-                this.worker.postMessage({
-                    type: 'start',
-                    role,
-                    token,
-                    config,
-                    netcodeState: transport.netcodeState,
-                    netcodeMode: CONFIG.netcode.mode,
-                    deck,
-                });
-                this.started = true;
-                for (const [message, transfer] of this.outbox)
-                    this.worker.postMessage(message, transfer);
-                this.outbox.length = 0;
-                this.resolveReady();
-            } else if (m?.type === 'transport') this.fromTransport(m);
-            else if (m?.type === 'status') this.applyStatus(m);
-            else if (m?.type === 'result') {
-                this.pending.get(m.id)?.(m.result);
-                this.pending.delete(m.id);
-            } else if (m?.type === 'fatal' || m?.type === 'error') this.onFatal(m);
-        };
-        this.worker.onerror = (e) => this.onFatal({ message: e.message || 'worker error' });
-    }
-    post(message, transfer = []) {
-        if (this.started) this.worker.postMessage(message, transfer);
-        else this.outbox.push([message, transfer]);
-    }
-    toTransport(event, payload, transfer) {
-        if (!this.disposed) this.post({ type: 'transport', event, ...payload }, transfer);
-    }
-    fromTransport({ op, data, method, args }) {
-        if (this.disposed) return;
-        if (op === 'send') {
-            if (this.transport.send(data)) this.traffic.sentMessages++;
-        } else if (op === 'send-netcode') {
-            if (this.transport.sendNetcode(data)) {
-                this.traffic.sentPackets++;
-                this.traffic.sentPacketBytes += data.byteLength;
-            }
-        } else if (op === 'call' && WorkerSessionProxy.TRANSPORT_CALLS.has(method))
-            this.transport[method]?.(...(args || []));
-    }
-    // The single-player wiring calls these from the AI transport's onOpen/onClose, as for a GameSession.
-    onTransportOpen() {
-        this.toTransport('open', { visible: this.localVisible });
-    }
-    onTransportClosed() {
-        this.toTransport('close');
-    }
-    applyStatus(m) {
-        this.statusMessages++;
-        this.simEnded = m.simEnded;
-        this.transportConnected = m.transportConnected;
-        this.performanceStats.timings = m.timings;
-        this.recoveryPhase = m.recovery.phase;
-        this.simpleRecoveryNeedsManual = m.recovery.needsManual;
-        this.simpleRecoveryToken = m.recovery.token;
-        this.syncHold = m.recovery.syncHold;
-        // Readers test sim/netcodeSession presence and identity the way they do for an in-page session.
-        if (m.tick > 0 || m.perfStats) {
-            this.sim ||= { tick: 0, perfStats: null };
-            this.sim.tick = m.tick;
-            this.sim.perfStats = m.perfStats;
-        }
-        this.netcodeSession = m.netcode;
-    }
-    forward(method, args = []) {
-        if (this.disposed) return false;
-        this.post({ type: 'call', method, args });
-        return true;
-    }
-    request(method, args = []) {
-        if (this.disposed) return Promise.resolve(null);
-        const id = ++this.nextCallId;
-        return new Promise((resolve) => {
-            this.pending.set(id, resolve);
-            this.post({ type: 'call', id, method, args });
-        });
-    }
-    setTestModePaused(paused) {
-        return this.forward('setTestModePaused', [!!paused]);
-    }
-    setLocalVisibility(visible) {
-        this.localVisible = !!visible;
-        this.forward('setLocalVisibility', [!!visible]);
-    }
-    markManualRecoveryNeeded(reason) {
-        return !!this.sim && !this.simEnded && this.forward('markManualRecoveryNeeded', [reason]);
-    }
-    prepareSimpleRecovery(token, reason) {
-        return (
-            !!this.sim && !this.simEnded && this.forward('prepareSimpleRecovery', [token, reason])
-        );
-    }
-    startSimpleRecovery(reason) {
-        return !!this.sim && !this.simEnded && this.forward('startSimpleRecovery', [reason]);
-    }
-    balanceTelemetry() {
-        return this.request('balanceTelemetry');
-    }
-    dispose(reason) {
-        if (this.disposed) return false;
-        this.disposed = true;
-        this.worker.postMessage({ type: 'dispose', reason });
-        for (const resolve of this.pending.values()) resolve(null);
-        this.pending.clear();
-        for (const detach of this.detachTransport) detach();
-        const t = this.transport;
-        t.onMessage = () => {};
-        t.onOpen = () => {};
-        t.onClose = () => {};
-        t.onPeerReady = () => {};
-        t.onError = () => {};
-        t.close();
-        // The Worker closes itself after disposing; terminate covers a stuck one.
-        setTimeout(() => this.worker.terminate(), 1000);
-        return true;
-    }
-}
 class AppLifecycle {
     static async requestScreenWakeLock() {
         if (document.visibilityState !== 'visible') return;
@@ -10599,37 +9377,6 @@ class LaunchPresentation {
             : shortage;
     }
 
-    static renderResources(s, side, balance) {
-        const host = UiRegistry.refs.launchResources;
-        if (!host.childElementCount) {
-            host.innerHTML = RESOURCES.map(
-                ({ key, symbol, name }) =>
-                    `<div class="launch-resource" data-resource="${key}"><span class="launch-resource-name">${symbol} ${name}</span><b class="launch-resource-balance"></b><span class="launch-resource-meter" aria-hidden="true"><span></span></span><span class="launch-resource-state"></span>${key === 'basic' ? '<span class="launch-resource-state launch-base-income"></span>' : ''}</div>`,
-            ).join('');
-        }
-        const producers = [...s.baseProducers, ...s.capturePoints];
-        const base = s.baseProducers[side];
-        host.querySelector('.launch-base-income').textContent =
-            `본진 효율 ${LaunchRules.productionEfficiency(base)}% · +${ResourceDisplay.rateText(LaunchRules.productionRate(base, 'basic'))}/초`;
-        for (const [index, { key }] of RESOURCES.entries()) {
-            const panel = host.children[index];
-            const cap = key === 'premium' ? LaunchRules.premiumWalletCap : LaunchRules.walletCap;
-            const amount = balance[key];
-            const rate = LaunchRules.incomePerSecondFor(producers, side, key);
-            panel.querySelector('.launch-resource-balance').textContent = `${amount}/${cap}`;
-            panel.style.setProperty(
-                '--balance',
-                `${Math.min(100, Math.round((100 * amount) / cap))}%`,
-            );
-            panel.querySelector('.launch-resource-state').textContent =
-                rate > 0
-                    ? `+${ResourceDisplay.rateText(rate)}/초${amount >= cap ? ' · 한도 대기' : ''}`
-                    : key === 'premium'
-                      ? '기름 거점 필요'
-                      : '수입 없음';
-        }
-    }
-
     static render(s, side) {
         const on = !!s;
         document.body.classList.toggle('launch-mode', on);
@@ -10671,7 +9418,7 @@ class LaunchPresentation {
                 el.title = warning;
             }
         }
-        this.renderResources(s, side, balance);
+        ResourceDisplay.renderWallet(UiRegistry.refs.launchResources, s, side, balance);
         const limit = LaunchRules.populationLimit,
             atLimit = population.total >= limit,
             populationText = UiRegistry.refs.launchPopulationText,
@@ -12158,7 +10905,7 @@ else {
     AppLifecycle.runBootAndStartApp();
     const dev = readDevQuery(location.search);
     if (dev.tps) UiController.setStartSimulationTps(dev.tps);
-    if (dev.netcode) UiController.setStartNetcodeMode(dev.netcode);
+    if (dev.netcode) setNetcodeMode(dev.netcode);
     const leaveSetup = () => {
         audioSystem.unlock();
     };
@@ -12173,10 +10920,9 @@ else {
         renderDetails: (type, host) => LaunchScreens.renderCardDetail(type, host),
         portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
     });
-    const showcaseSurface = RallyGamekit.createScenarioSurface({
-        createSurface: createShowcaseSurface,
-        prepare: prepareShowcaseScene,
-    });
+    const showcaseSurface = createShowcaseHost(
+        (canvas, fxCanvas) => new GLRenderer(canvas, { deferLoop: true, showcase: true, fxCanvas }),
+    );
     addEventListener('pagehide', (event) => {
         if (!event.persisted) showcaseSurface.dispose();
     });
@@ -12244,7 +10990,6 @@ else {
 
 export {
     AppLifecycle,
-    createPresentationView,
     ConnectionPresentation,
     DiagnosticPresentation,
     LogUtil,

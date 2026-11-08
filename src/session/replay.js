@@ -15,7 +15,8 @@ import {
     configureFramePresentationJournal,
     emitFramePresentationEvents,
 } from '../core/presentation-frame-event.js';
-import { ReplayPresentation, createPresentationView } from '../main.js';
+import { ReplayPresentation } from '../main.js';
+import { createPresentationView } from '../render/presentation-effects.js';
 import { SimulationTiming } from '../core/simulation-timing.js';
 
 /* =========================
