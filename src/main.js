@@ -3303,7 +3303,10 @@ class GLRenderer {
             const kind = cp.resourceType === 'premium' ? RESOURCES[1] : RESOURCES[0];
             const name = cp.label || cp.lane;
             const siteName = name.includes(kind.name) ? name : `${name} ${kind.name} 거점`;
-            const text = `${kind.symbol} ${siteName} · ${owner}`,
+            const efficiency = LaunchRules.productionEfficiency(cp);
+            const previousUse =
+                cp.owner == null && efficiency < 100 ? ` · 효율 ${efficiency}%` : '';
+            const text = `${kind.symbol} ${siteName} · ${owner}${previousUse}`,
                 lineGap = Math.max(14, 15 * sc);
             const workers = visibleConstruction
                 ? (this.snapshot.units || []).filter(
@@ -3327,13 +3330,13 @@ class GLRenderer {
             const cost = BuildingDefinition.get(BuildingDefinition.forRole('outpost')).construction
                 .cost;
             const production = RESOURCES.flatMap(({ key, symbol }) => {
-                const rate = cp.production[key]?.incomePerSecond;
-                return rate > 0 ? [`${symbol} +${rate}/초`] : [];
+                const rate = LaunchRules.productionRate(cp, key);
+                return rate > 0 ? [`${symbol} +${ResourceDisplay.rateText(rate)}/초`] : [];
             });
             const guide = visibleConstruction
                 ? `건설 ${Math.round(ConstructionRules.progress(construction) * 1000) / 10}% · ◆ ${construction.invested}/${construction.cost}`
                 : cp.owner != null
-                  ? [...production, '자동 방어'].join(' · ')
+                  ? [`효율 ${efficiency}%`, ...production].join(' · ')
                   : locked
                     ? '연결 전술 오브젝트 처치 필요'
                     : `병력으로 건설 · ◆ ${cost}`;
@@ -10071,10 +10074,13 @@ class LaunchPresentation {
         if (!host.childElementCount) {
             host.innerHTML = RESOURCES.map(
                 ({ key, symbol, name }) =>
-                    `<div class="launch-resource" data-resource="${key}"><span class="launch-resource-name">${symbol} ${name}</span><b class="launch-resource-balance"></b><span class="launch-resource-meter" aria-hidden="true"><span></span></span><span class="launch-resource-state"></span></div>`,
+                    `<div class="launch-resource" data-resource="${key}"><span class="launch-resource-name">${symbol} ${name}</span><b class="launch-resource-balance"></b><span class="launch-resource-meter" aria-hidden="true"><span></span></span><span class="launch-resource-state"></span>${key === 'basic' ? '<span class="launch-resource-state launch-base-income"></span>' : ''}</div>`,
             ).join('');
         }
         const producers = [...s.baseProducers, ...s.capturePoints];
+        const base = s.baseProducers[side];
+        host.querySelector('.launch-base-income').textContent =
+            `본진 효율 ${LaunchRules.productionEfficiency(base)}% · +${ResourceDisplay.rateText(LaunchRules.productionRate(base, 'basic'))}/초`;
         for (const [index, { key }] of RESOURCES.entries()) {
             const panel = host.children[index];
             const cap = key === 'premium' ? LaunchRules.premiumWalletCap : LaunchRules.walletCap;
@@ -10087,7 +10093,7 @@ class LaunchPresentation {
             );
             panel.querySelector('.launch-resource-state').textContent =
                 rate > 0
-                    ? `+${rate}/초${amount >= cap ? ' · 한도 대기' : ''}`
+                    ? `+${ResourceDisplay.rateText(rate)}/초${amount >= cap ? ' · 한도 대기' : ''}`
                     : key === 'premium'
                       ? '기름 거점 필요'
                       : '수입 없음';

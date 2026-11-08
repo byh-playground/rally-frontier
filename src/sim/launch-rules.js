@@ -22,6 +22,11 @@ class LaunchRules {
     static premiumWalletCap = this.walletCap;
     static baseIncomePerSecond = 15;
     static outpostIncomePerSecond = 5;
+    static productionDecline = Object.freeze({
+        fullYieldSeconds: 120,
+        floorYieldSeconds: 300,
+        minimumPercent: 50,
+    });
     static minReach = 250;
     static maxReach = 500;
     static chargeMs = 1500;
@@ -57,11 +62,32 @@ class LaunchRules {
         }
         return production;
     }
+    static productionEfficiency(point) {
+        const { basic, premium } = point.production;
+        const total = basic.incomePerSecond + (premium?.incomePerSecond ?? 0);
+        const { fullYieldSeconds, floorYieldSeconds, minimumPercent } = this.productionDecline;
+        const start = fullYieldSeconds * total;
+        const end = floorYieldSeconds * total;
+        if (point.extractedResources <= start) return 100;
+        const decline = Math.floor(
+            ((point.extractedResources - start) * (100 - minimumPercent)) / (end - start),
+        );
+        return Math.max(minimumPercent, 100 - decline);
+    }
+    static productionRateHundredths(channel, efficiency) {
+        return (channel?.incomePerSecond ?? 0) * efficiency;
+    }
+    static productionRate(point, resource) {
+        return (
+            this.productionRateHundredths(
+                point.production[resource],
+                this.productionEfficiency(point),
+            ) / 100
+        );
+    }
     static incomePerSecondFor(producers, side, resource = 'basic') {
         return producers.reduce(
-            (sum, point) =>
-                sum +
-                (point.owner === side ? (point.production[resource]?.incomePerSecond ?? 0) : 0),
+            (sum, point) => sum + (point.owner === side ? this.productionRate(point, resource) : 0),
             0,
         );
     }

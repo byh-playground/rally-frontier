@@ -5,6 +5,10 @@ export const RESOURCES = Object.freeze([
 ]);
 
 export class ResourceDisplay {
+    static rateText(rate) {
+        return String(Number(rate.toFixed(4)));
+    }
+
     static drawDepositMarker(ctx, x, y, radius, type, ownerColor, locked = false) {
         const oil = type === 'premium';
         const kind = oil ? RESOURCES[1] : RESOURCES[0];
