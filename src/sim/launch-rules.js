@@ -133,8 +133,8 @@ class LaunchRules {
         // Provisional corn deployment: a single shell releases one grouped squad.
         corn: Object.freeze({
             ...SINGLE_BUNDLE_SHELL,
-            cost: 50 * this.resourceScale,
-            premiumCost: 25 * this.resourceScale,
+            cost: 15 * this.resourceScale,
+            premiumCost: 15 * this.resourceScale,
             count: 6,
         }),
         popcorn: Object.freeze({
@@ -151,8 +151,8 @@ class LaunchRules {
             deployTogether: true,
         }),
         chestnut: Object.freeze({
-            cost: 50 * this.resourceScale,
-            premiumCost: 25 * this.resourceScale,
+            cost: 20 * this.resourceScale,
+            premiumCost: 5 * this.resourceScale,
             count: 6,
             reach: 0.85,
             speed: 750,
@@ -177,8 +177,8 @@ class LaunchRules {
         }),
         // 도토리는 한 발당 한 병사씩 세 발을 쏜다.
         acorn: Object.freeze({
-            cost: 75 * this.resourceScale,
-            premiumCost: 25 * this.resourceScale,
+            cost: 30 * this.resourceScale,
+            premiumCost: 10 * this.resourceScale,
             count: 3,
             reach: 0.85,
             speed: 750,
