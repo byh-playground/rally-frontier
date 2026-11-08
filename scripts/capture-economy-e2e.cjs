@@ -92,7 +92,8 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     enabled: true,
                     label: '거점' + i,
                     resourceType: 'basic',
-                    remaining: LaunchRules.depositCapacity,
+                    remaining: LaunchRules.outpostDeposit.capacity,
+                    miningPerSecond: LaunchRules.outpostDeposit.miningPerSecond,
                     miningCarry: 0,
                     discoveredBy: [false, false],
                 }));
@@ -265,7 +266,8 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 const before = sim.premiumWallet[0];
                 step(sim, sim.tps);
                 check(
-                    sim.premiumWallet[0] > before && cp.remaining < LaunchRules.depositCapacity,
+                    sim.premiumWallet[0] - before === 5 &&
+                        cp.remaining === LaunchRules.outpostDeposit.capacity - 5,
                     'completed premium deposit mines its finite stock',
                 );
                 rows.push({
@@ -338,13 +340,12 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
             }
             // The home base is a finite basic deposit; a full wallet pauses mining.
             {
-                const sim = arena(),
+                const sim = new StrategySim(seed, GameRuleDefinition.resolve()),
                     baseDeposit = sim.baseDeposits[0];
                 check(
                     sim.wallet[0] === 500 &&
                         sim.premiumWallet[0] === 0 &&
-                        LaunchRules.walletCap === 500 &&
-                        LaunchRules.captureIncomePerSecond === 5,
+                        LaunchRules.walletCap === 500,
                     'full starting basic wallet and empty premium wallet',
                 );
                 check(
@@ -353,6 +354,18 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         LaunchRules.grain('redbean').cost === 250,
                     'basic launch prices use the same currency',
                 );
+                check(
+                    baseDeposit.remaining === 3000 &&
+                        sim.capturePoints.every((point) => point.remaining === 1000),
+                    'home base starts with a larger stock than ordinary deposits',
+                );
+                sim.wallet[0] = 400;
+                step(sim, sim.tps);
+                check(
+                    sim.wallet[0] === 415 && baseDeposit.remaining === 2985,
+                    'home base mines 15 per second',
+                );
+                sim.wallet[0] = 500;
                 baseDeposit.remaining = 10;
                 step(sim, sim.tps);
                 check(baseDeposit.remaining === 10, 'full wallet preserves base deposit');
@@ -1245,6 +1258,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
         assert(
             ui.wallet.includes('◆') &&
                 ui.wallet.includes('✦') &&
+                ui.income.includes('◆ +15/초') &&
                 ui.income.includes('본진 잔량') &&
                 ui.button.includes('375'),
             'native HUD displays both currencies and the remaining base deposit',

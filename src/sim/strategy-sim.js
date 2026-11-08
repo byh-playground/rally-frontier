@@ -299,7 +299,8 @@ class StrategySim {
         this.baseDeposits = [0, 1].map((side) => ({
             owner: side,
             resourceType: 'basic',
-            remaining: LaunchRules.depositCapacity,
+            remaining: LaunchRules.baseDeposit.capacity,
+            miningPerSecond: LaunchRules.baseDeposit.miningPerSecond,
             miningCarry: 0,
             discoveredBy: [false, false],
         }));
@@ -314,7 +315,8 @@ class StrategySim {
             enabled: p.enabled !== false,
             outpostId: null,
             resourceType: p.resourceType,
-            remaining: p.remaining ?? LaunchRules.depositCapacity,
+            remaining: p.remaining ?? LaunchRules.outpostDeposit.capacity,
+            miningPerSecond: p.miningPerSecond ?? LaunchRules.outpostDeposit.miningPerSecond,
             miningCarry: 0,
             discoveredBy: [false, false],
         }));
@@ -339,7 +341,7 @@ class StrategySim {
             }
             if (this.rules.campaign.baseDepositRatio != null) {
                 this.baseDeposits[0].remaining = Math.round(
-                    LaunchRules.depositCapacity * this.rules.campaign.baseDepositRatio,
+                    this.baseDeposits[0].remaining * this.rules.campaign.baseDepositRatio,
                 );
             }
             if (this.rules.campaign.introducedEnemy) {
@@ -1454,7 +1456,7 @@ class StrategySim {
                     ? LaunchRules.premiumWalletCap
                     : LaunchRules.walletCap;
             if (wallet[point.owner] >= cap || point.remaining <= 0) continue;
-            point.miningCarry += LaunchRules.captureIncomePerSecond;
+            point.miningCarry += point.miningPerSecond;
             const gained = Math.min(
                 Math.floor(point.miningCarry / this.tps),
                 point.remaining,
