@@ -2,14 +2,18 @@ import { RESOURCES, ResourceDisplay } from './ui/resource-display.js';
 import { CAMPAIGN_STAGES, campaignStage } from './definitions/campaign.js';
 import { RangeUtil, SIM_TPS } from './core/game-rules.js';
 import { SimulationTiming } from './core/simulation-timing.js';
-import { createLocalPerfStats, createLocalBalanceStats } from './diagnostics/simulation-stats.js';
+import {
+    createLocalPerfStats,
+    createLocalBalanceStats,
+    measureSessionPulse,
+} from './diagnostics/simulation-stats.js';
 import './sim/strategy-sim.js';
 import { TerrainQuery, VisibilityPolicy } from './sim/entities.js';
 import { BotController } from './ai/bot-controller.js';
 import { GameSession, RallySynctestDiagnostics } from './session/game-session.js';
-import { SimWorkerHost } from './session/sim-worker-host.js';
 import { WorkerSessionProxy } from './session/worker-session-proxy.js';
-import { ReplayPlayer, ReplayPolicy } from './session/replay.js';
+import { ReplayPlayer } from './session/replay.js';
+import { ReplayPolicy } from './session/replay-recording.js';
 import {
     ActiveViewState,
     BACKGROUND_TICK_SESSIONS,
@@ -21,6 +25,7 @@ import { LaunchImpactRules } from './definitions/launch-impact-rules.js';
 import { fruitProjectilePosition } from './definitions/fruit-hero-trajectory.js';
 import { RoomTransport } from './net/rtc-transport.js';
 import { RecoveryTelemetry } from './diagnostics/recovery-telemetry.js';
+import { recordRecovery } from './diagnostics/recovery-flight-recorder.js';
 import { ConnectionSideUtil } from './net/lobby-codec.js';
 import { CloneUtil, HashUtil, MapGeneration } from './sim/map-generation.js';
 import { AttackPresentationDefinition } from './definitions/attack-presentation.js';
@@ -76,7 +81,7 @@ import {
 } from './core/config.js';
 import { BUILD_META } from './core/build-info.js';
 import { PRODUCT_VERSION } from './core/product-version.js';
-import { RallyGamekit, SIM_WORKER } from './core/gamekit.js';
+import { RallyGamekit } from './core/gamekit.js';
 import { LaunchScreens } from './ui/launch-screens.js';
 import { createShowcaseHost } from './ui/showcase-host.js';
 import { DeckEditor } from './ui/deck-editor.js';
@@ -89,9 +94,6 @@ const {
     polylineToRibbonPolygon,
     triangulatePolygon,
 } = RallyGamekit;
-
-// The Worker realm has no window; GameKit modules must still see it as non-browser.
-const window = globalThis;
 
 /* =========================
    5. WebGL renderer + fog
@@ -8060,7 +8062,11 @@ UiRegistry.refs.balanceTelemetryExportBtn?.addEventListener('click', (e) => {
     e.preventDefault();
     PerformanceTelemetry.exportBalanceTelemetry();
 });
-UiRegistry.refs.synctestRunBtn?.addEventListener('click', () => RallySynctestDiagnostics.request());
+UiRegistry.refs.synctestRunBtn?.addEventListener('click', () =>
+    RallySynctestDiagnostics.request(MatchLifecycle.activeSession(), () =>
+        ConnectionPresentation.renderLockstepDebugPanel(),
+    ),
+);
 UiRegistry.refs.lockstepDebugResetBtn?.addEventListener('click', () => {
     RallySynctestDiagnostics.clear(MatchLifecycle.activeSession?.());
     ConnectionPresentation.renderLockstepDebugPanel();
@@ -8439,6 +8445,34 @@ class MatchLifecycle {
             simulationTps: UiRuntimeState.value.settings.simulationTps,
         };
     }
+    static createSession(role, transport, roomCode, config, deck) {
+        const session = new GameSession(role, transport, roomCode, config, deck);
+        session.onSimulationStarted = AppLifecycle.registerBackgroundSession;
+        session.onSimulationStopped = AppLifecycle.unregisterBackgroundSession;
+        session.onSimulationFatal = (info) => {
+            const sim = session.sim;
+            DiagnosticPresentation.presentFatalDiagnostic({
+                kind: 'SSALKONGPANG_SIMULATION_FATAL',
+                build: BUILD_META.id,
+                buildMetadata: BUILD_META.snapshot(),
+                at: info.at,
+                source: info.source,
+                role: info.role,
+                remote: info.remote,
+                tick: info.tick,
+                localTick: info.localTick,
+                runtimeSeq: info.runtimeSeq,
+                checksum: info.checksum,
+                localChecksum: info.localChecksum,
+                tps: Number(sim?.tps) || ActiveSimulationTiming.tps(),
+                units: sim?.units?.filter?.((u) => u?.alive !== false)?.length || 0,
+                projectiles: sim?.projectiles?.filter?.((p) => p?.alive !== false)?.length || 0,
+                message: info.message,
+                stack: info.stack,
+            });
+        };
+        return session;
+    }
     static wireSessionForView(r, sess, trans) {
         const isCurrent = () =>
             !sess.disposed &&
@@ -8500,9 +8534,9 @@ class MatchLifecycle {
             }
         };
         sess.onResult = (w, reason = 'base-destroyed') => {
-            if (!isCurrent()) return;
             // Authoritative result must not depend on which role is currently displayed.
-            MatchLifecycle.presentMatchResult(w, reason, r);
+            if (isCurrent()) MatchLifecycle.presentMatchResult(w, reason, r);
+            if (sess.leaveAfterResult) setTimeout(() => location.reload(), 0);
         };
 
         trans.onPeerReady = () => {
@@ -8651,7 +8685,7 @@ class MatchLifecycle {
         ActiveViewState.roomCode = c;
         LogUtil.status('연결 중…');
         ActiveViewState.transport = new RoomTransport(r, c);
-        ActiveViewState.session = new GameSession(
+        ActiveViewState.session = MatchLifecycle.createSession(
             r,
             ActiveViewState.transport,
             c,
@@ -8698,7 +8732,7 @@ class MatchLifecycle {
         const stage = campaignStage(this.selectedCampaign);
         const config = { ...MatchLifecycle.currentMatchConfig(), campaignStage: stage?.id || null },
             configFor = (role) => (role === 'host' ? config : undefined);
-        const humanSession = new GameSession(
+        const humanSession = MatchLifecycle.createSession(
             humanRole,
             humanTransport,
             token,
@@ -8709,7 +8743,13 @@ class MatchLifecycle {
         const botDeck = stage ? LaunchRules.withDefaultHero(stage.enemyDeck) : undefined;
         const botSession = CONFIG.single.botWorker
             ? new WorkerSessionProxy(botRole, botTransport, token, configFor(botRole), botDeck)
-            : new GameSession(botRole, botTransport, token, configFor(botRole), botDeck);
+            : MatchLifecycle.createSession(
+                  botRole,
+                  botTransport,
+                  token,
+                  configFor(botRole),
+                  botDeck,
+              );
         const sessions = { [humanRole]: humanSession, [botRole]: botSession };
         const bot = CONFIG.single.botWorker ? null : BotController.attach(botSession, botRole);
         if (CONFIG.single.botWorker)
@@ -8770,8 +8810,7 @@ class MatchLifecycle {
             guestTransport.open();
         };
 
-        // A Worker-hosted AI loads main.js first; open the link once it can answer, or the
-        // human's core reads the load time as an interrupted peer.
+        // Open the link once the AI worker is ready to answer its first peer message.
         if (CONFIG.single.botWorker)
             void botSession.ready.then(() => {
                 if (!botSession.disposed) hostTransport.open();
@@ -8982,7 +9021,7 @@ class AppLifecycle {
     static pulseBackgroundSessions(now = performance.now()) {
         for (const sess of [...BACKGROUND_TICK_SESSIONS]) {
             try {
-                PerformanceTelemetry.measureSessionPulse(sess, now);
+                measureSessionPulse(sess, now);
             } catch (err) {
                 try {
                     if (typeof sess?.enterSimulationFatal === 'function') {
@@ -9055,12 +9094,9 @@ class AppLifecycle {
         const seenTrans = new Set();
         for (const sess of sessions) {
             if (!sess?.sim || sess.simEnded) continue;
-            RecoveryTelemetry.recordRecovery(
-                'page.lifecycle-invalidates-connection',
-                sess,
-                sess.transport,
-                { reason },
-            );
+            recordRecovery('page.lifecycle-invalidates-connection', sess, sess.transport, {
+                reason,
+            });
             sess.markManualRecoveryNeeded(reason);
             sess.startDisconnectGrace?.(reason);
             const trans = sess.transport;
@@ -10591,7 +10627,7 @@ const reloadAt = (hash) => {
 UiController.bindImmediateButton(UiRegistry.refs.rematch, () =>
     reloadAt(MatchLifecycle.singleMatch ? '#/play' : '#/friend'),
 );
-if (!SIM_WORKER) BattlePresentation.setupCanvas();
+BattlePresentation.setupCanvas();
 
 // Recovery initiation must mirror a real multiplayer client:
 // only the session controlled by this UI/tab initiates recovery.
@@ -10599,7 +10635,7 @@ if (!SIM_WORKER) BattlePresentation.setupCanvas();
 // The AI remains the opposite real WebRTC peer.
 
 document.addEventListener('visibilitychange', () => {
-    RecoveryTelemetry.recordRecovery(
+    recordRecovery(
         'page.visibility',
         RecoveryTelemetry.localRecoverySession?.(),
         RecoveryTelemetry.localRecoverySession?.()?.transport,
@@ -10609,7 +10645,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 document.addEventListener('freeze', () => {
-    RecoveryTelemetry.recordRecovery(
+    recordRecovery(
         'page.freeze',
         RecoveryTelemetry.localRecoverySession?.(),
         RecoveryTelemetry.localRecoverySession?.()?.transport,
@@ -10618,7 +10654,7 @@ document.addEventListener('freeze', () => {
 });
 
 document.addEventListener('resume', () => {
-    RecoveryTelemetry.recordRecovery(
+    recordRecovery(
         'page.resume',
         RecoveryTelemetry.localRecoverySession?.(),
         RecoveryTelemetry.localRecoverySession?.()?.transport,
@@ -10626,7 +10662,7 @@ document.addEventListener('resume', () => {
 });
 
 window.addEventListener('pagehide', (e) => {
-    RecoveryTelemetry.recordRecovery(
+    recordRecovery(
         'page.pagehide',
         RecoveryTelemetry.localRecoverySession?.(),
         RecoveryTelemetry.localRecoverySession?.()?.transport,
@@ -10635,7 +10671,7 @@ window.addEventListener('pagehide', (e) => {
     if (e.persisted) AppLifecycle.invalidateLiveConnectionForLifecycle('pagehide-bfcache');
 });
 window.addEventListener('pageshow', (e) => {
-    RecoveryTelemetry.recordRecovery(
+    recordRecovery(
         'page.pageshow',
         RecoveryTelemetry.localRecoverySession?.(),
         RecoveryTelemetry.localRecoverySession?.()?.transport,
@@ -10645,7 +10681,7 @@ window.addEventListener('pageshow', (e) => {
         AppLifecycle.applyPageVisibility();
 });
 window.addEventListener('focus', () => {
-    RecoveryTelemetry.recordRecovery(
+    recordRecovery(
         'page.focus',
         RecoveryTelemetry.localRecoverySession?.(),
         RecoveryTelemetry.localRecoverySession?.()?.transport,
@@ -10654,7 +10690,7 @@ window.addEventListener('focus', () => {
         AppLifecycle.applyPageVisibility();
 });
 window.addEventListener('blur', () => {
-    RecoveryTelemetry.recordRecovery(
+    recordRecovery(
         'page.blur',
         RecoveryTelemetry.localRecoverySession?.(),
         RecoveryTelemetry.localRecoverySession?.()?.transport,
@@ -10662,11 +10698,11 @@ window.addEventListener('blur', () => {
 });
 
 // 페이지가 실제로 사용자에게 보여지는 동안 화면 자동 꺼짐을 최대한 방지한다.
-if (!SIM_WORKER) AppLifecycle.requestScreenWakeLock();
+AppLifecycle.requestScreenWakeLock();
 
 /* Title-screen procedural scene. Pure presentation: fixed local paths, no StrategySim state. */
 (function initTitleScene() {
-    const canvas = SIM_WORKER ? null : document.getElementById('titleSceneCanvas');
+    const canvas = document.getElementById('titleSceneCanvas');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -10899,94 +10935,90 @@ void BUILD_META.load().then(() => BuildMetadataPresentation.renderBuildMetadata(
 
 if (UiRegistry.refs.bootRetryBtn)
     UiController.bindImmediateButton(UiRegistry.refs.bootRetryBtn, AppLifecycle.runBootAndStartApp);
-// The Worker realm hosts only a simulation session; the page boots the app.
-if (SIM_WORKER) SimWorkerHost.install();
-else {
-    AppLifecycle.runBootAndStartApp();
-    const dev = readDevQuery(location.search);
-    if (dev.tps) UiController.setStartSimulationTps(dev.tps);
-    if (dev.netcode) setNetcodeMode(dev.netcode);
-    const leaveSetup = () => {
-        audioSystem.unlock();
-    };
-    DeckEditor.install({
-        types: () => LaunchRules.deck,
-        heroes: () => LaunchRules.heroTypes,
-        starter: () => LaunchRules.starterDeck,
-        limit: LaunchRules.deckLimit,
-        nameOf: (type) => UnitDefinition.get(type)?.name || type,
-        statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
-        infoOf: (type) => LaunchScreens.grainInfo(type),
-        renderDetails: (type, host) => LaunchScreens.renderCardDetail(type, host),
-        portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
-    });
-    const showcaseSurface = createShowcaseHost(
-        (canvas, fxCanvas) => new GLRenderer(canvas, { deferLoop: true, showcase: true, fxCanvas }),
-    );
-    addEventListener('pagehide', (event) => {
-        if (!event.persisted) showcaseSurface.dispose();
-    });
-    LaunchScreens.install({
-        createNavigation: RallyGamekit.createNavigation,
-        showcaseSurface,
-        actions: {
-            campaignProgress: () => {
-                try {
-                    return Math.max(
-                        0,
-                        Number(localStorage.getItem('ssalkongpang-campaign-progress')) || 0,
-                    );
-                } catch (error) {
-                    console.warn('캠페인 진행 불러오기 실패', error);
-                    return 0;
-                }
-            },
-            selectCampaign: (id) => {
-                MatchLifecycle.selectedCampaign = id;
-            },
-            inMatch: () => UiRuntimeState.value.screen === 'game',
-            hasResult: () => UiRuntimeState.value.screen === 'result',
-            startAiMatch: () => {
-                leaveSetup();
-                MatchLifecycle.startSinglePlayerWebRTC(
-                    MatchLifecycle.selectedCampaign ? 'host' : dev.role || 'host',
+AppLifecycle.runBootAndStartApp();
+const dev = readDevQuery(location.search);
+if (dev.tps) UiController.setStartSimulationTps(dev.tps);
+if (dev.netcode) setNetcodeMode(dev.netcode);
+const leaveSetup = () => {
+    audioSystem.unlock();
+};
+DeckEditor.install({
+    types: () => LaunchRules.deck,
+    heroes: () => LaunchRules.heroTypes,
+    starter: () => LaunchRules.starterDeck,
+    limit: LaunchRules.deckLimit,
+    nameOf: (type) => UnitDefinition.get(type)?.name || type,
+    statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
+    infoOf: (type) => LaunchScreens.grainInfo(type),
+    renderDetails: (type, host) => LaunchScreens.renderCardDetail(type, host),
+    portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
+});
+const showcaseSurface = createShowcaseHost(
+    (canvas, fxCanvas) => new GLRenderer(canvas, { deferLoop: true, showcase: true, fxCanvas }),
+);
+addEventListener('pagehide', (event) => {
+    if (!event.persisted) showcaseSurface.dispose();
+});
+LaunchScreens.install({
+    createNavigation: RallyGamekit.createNavigation,
+    showcaseSurface,
+    actions: {
+        campaignProgress: () => {
+            try {
+                return Math.max(
+                    0,
+                    Number(localStorage.getItem('ssalkongpang-campaign-progress')) || 0,
                 );
-            },
-            openMenu: () => {
-                if (UiRuntimeState.value.modal !== 'match-menu') MatchLifecycle.openMatchMenu();
-            },
-            closeMenu: () => {
-                if (UiRuntimeState.value.modal === 'match-menu') MatchLifecycle.closeMatchMenu();
-            },
-            grains: () => [...LaunchRules.heroTypes, ...LaunchRules.deck],
-            grainName: (t) => UnitDefinition.get(t)?.name || t,
-            grainStats: (t) => ({
-                ...LaunchRules.payload(t),
-                maxReach: LaunchRules.maxReachOf(
-                    t,
-                    ActiveViewState.snap?.launchRangeLevel?.[
-                        ConnectionSideUtil.roleSide(ActiveViewState.role)
-                    ] ?? 0,
-                ),
-            }),
-            portraitSource: (t) => grainPortrait(t, window.RallyVectorAssets[t]),
-            toggleSound: () => audioSystem.setEnabled(!audioSystem.enabled),
-            soundOn: () => !!audioSystem.enabled,
-            createRoom: () => {
-                leaveSetup();
-                UiController.openUiModal('create');
-                MatchLifecycle.beginCreateRoom();
-            },
-            joinRoom: (code) => {
-                leaveSetup();
-                UiController.openJoinDialog();
-                UiRegistry.refs.room.value = code;
-                MatchLifecycle.submitJoinRoom();
-            },
-            leaveToTitle: () => reloadAt('#/'),
+            } catch (error) {
+                console.warn('캠페인 진행 불러오기 실패', error);
+                return 0;
+            }
         },
-    });
-}
+        selectCampaign: (id) => {
+            MatchLifecycle.selectedCampaign = id;
+        },
+        inMatch: () => UiRuntimeState.value.screen === 'game',
+        hasResult: () => UiRuntimeState.value.screen === 'result',
+        startAiMatch: () => {
+            leaveSetup();
+            MatchLifecycle.startSinglePlayerWebRTC(
+                MatchLifecycle.selectedCampaign ? 'host' : dev.role || 'host',
+            );
+        },
+        openMenu: () => {
+            if (UiRuntimeState.value.modal !== 'match-menu') MatchLifecycle.openMatchMenu();
+        },
+        closeMenu: () => {
+            if (UiRuntimeState.value.modal === 'match-menu') MatchLifecycle.closeMatchMenu();
+        },
+        grains: () => [...LaunchRules.heroTypes, ...LaunchRules.deck],
+        grainName: (t) => UnitDefinition.get(t)?.name || t,
+        grainStats: (t) => ({
+            ...LaunchRules.payload(t),
+            maxReach: LaunchRules.maxReachOf(
+                t,
+                ActiveViewState.snap?.launchRangeLevel?.[
+                    ConnectionSideUtil.roleSide(ActiveViewState.role)
+                ] ?? 0,
+            ),
+        }),
+        portraitSource: (t) => grainPortrait(t, window.RallyVectorAssets[t]),
+        toggleSound: () => audioSystem.setEnabled(!audioSystem.enabled),
+        soundOn: () => !!audioSystem.enabled,
+        createRoom: () => {
+            leaveSetup();
+            UiController.openUiModal('create');
+            MatchLifecycle.beginCreateRoom();
+        },
+        joinRoom: (code) => {
+            leaveSetup();
+            UiController.openJoinDialog();
+            UiRegistry.refs.room.value = code;
+            MatchLifecycle.submitJoinRoom();
+        },
+        leaveToTitle: () => reloadAt('#/'),
+    },
+});
 
 export {
     AppLifecycle,

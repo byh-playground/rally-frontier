@@ -1,8 +1,29 @@
-// Loads pinned GameKit dist and the battlefield's verified image/vector assets before dependent modules evaluate.
-import { loadGrainSpriteCanvases } from '../render/grain-sprite-registry.js';
-// prettier-ignore
-const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","navigation":"navigation.js","objectPool":"object-pool.js","geometry":"geometry.js","spatial":"spatial.js","face":"face.js","pathfield":"pathfield.js","vision":"vision.js","scenario":"scenario.js"});
-// A dedicated Worker hosts only a simulation session (src/sim-worker.js): no UI boot.
+// Both realms load the pinned simulation and session SDK; the page also prepares its art.
+const SESSION_MODULES = {
+    rollback: 'rollback.js',
+    deterministic: 'deterministic.js',
+    simloop: 'simloop.js',
+    events: 'presentation-events.js',
+    geometry: 'geometry.js',
+    spatial: 'spatial.js',
+    pathfield: 'pathfield.js',
+    vision: 'vision.js',
+};
+const BROWSER_MODULES = {
+    transport: 'transport.js',
+    interpolation: 'interpolation.js',
+    input: 'input.js',
+    rendering: 'rendering.js',
+    vectorAssets: 'vector-assets.js',
+    camera: 'camera.js',
+    hud: 'hud.js',
+    debug: 'debug-tools.js',
+    vectorAssetsLoader: 'vector-assets-loader.js',
+    navigation: 'navigation.js',
+    objectPool: 'object-pool.js',
+    face: 'face.js',
+    scenario: 'scenario.js',
+};
 const SIM_WORKER = typeof WorkerGlobalScope !== 'undefined';
 // Resolve from this module so the page and the Worker realm load the same files.
 // prettier-ignore
@@ -93,8 +114,9 @@ try {
     });
     RALLY_NETCODE_URL = 'gamekit:' + gamekitSource.distCommit;
     // Import only immutable official ESM bytes from the pinned dist; keep source files unchanged.
+    const moduleFiles = SIM_WORKER ? SESSION_MODULES : { ...SESSION_MODULES, ...BROWSER_MODULES };
     const modules = await Promise.all(
-        Object.entries(RALLY_GAMEKIT_MODULES).map(async ([name, file]) => {
+        Object.entries(moduleFiles).map(async ([name, file]) => {
             const entry = gamekitLock.modules[name];
             if (!entry || entry.file !== file || !/^[a-f0-9]{64}$/.test(entry.sha256 || ''))
                 throw new Error('Gamekit lock entry mismatch: ' + name);
@@ -124,15 +146,14 @@ try {
         }),
     );
     const namespaces = Object.fromEntries(modules);
-    const loadedVectorAssets = SIM_WORKER
-        ? { assets: Object.freeze({}), loader: null }
-        : await loadRallyVectorAssets(namespaces.vectorAssetsLoader);
-    globalThis.RallyVectorAssets = loadedVectorAssets.assets;
-    globalThis.RallyVectorAssetLoader = loadedVectorAssets.loader;
-    // Registry order matches atlas allocation order; shared canvases count once.
-    globalThis.RallySpriteCanvases = SIM_WORKER
-        ? Object.freeze({})
-        : await loadGrainSpriteCanvases();
+    if (!SIM_WORKER) {
+        const loaded = await loadRallyVectorAssets(namespaces.vectorAssetsLoader);
+        const { loadGrainSpriteCanvases } = await import('../render/grain-sprite-registry.js');
+        globalThis.RallyVectorAssets = loaded.assets;
+        globalThis.RallyVectorAssetLoader = loaded.loader;
+        // Registry order matches atlas allocation order; shared canvases count once.
+        globalThis.RallySpriteCanvases = await loadGrainSpriteCanvases();
+    }
     RallyNetcode = Object.freeze({
         ...namespaces.rollback,
         ...namespaces.deterministic,
@@ -141,50 +162,54 @@ try {
     });
     RallyGamekit = Object.freeze(Object.assign({}, ...modules.map(([, module]) => module)));
     globalThis.RallyGamekit = RallyGamekit;
-    for (const name of [
-        'PresentationRuntime',
-        'RenderObject',
-        'WebGLDevice',
-        'estimateTextureAtlasLayers',
-        'createDOMInput',
-        'CameraViewport',
-        'PresentationEventQueue',
-        'resolveAnchorInto',
-        'DiagnosticRing',
-        'ReplayTimeline',
-        'VectorContext',
-        'createVectorActor',
-        'holdVectorAsset',
-        'createVectorAssetLoader',
-        'compilePoseChannels',
-        'ObjectPool',
-        'createNavigation',
-        'createScenario',
-        'createScenarioSurface',
-    ])
+    const requiredGameKit = ['PresentationEventQueue'];
+    if (!SIM_WORKER)
+        requiredGameKit.push(
+            'PresentationRuntime',
+            'RenderObject',
+            'WebGLDevice',
+            'estimateTextureAtlasLayers',
+            'createDOMInput',
+            'CameraViewport',
+            'resolveAnchorInto',
+            'DiagnosticRing',
+            'ReplayTimeline',
+            'VectorContext',
+            'createVectorActor',
+            'holdVectorAsset',
+            'createVectorAssetLoader',
+            'compilePoseChannels',
+            'ObjectPool',
+            'createNavigation',
+            'createScenario',
+            'createScenarioSurface',
+        );
+    for (const name of requiredGameKit)
         if (typeof RallyGamekit[name] !== 'function')
             throw new Error('Gamekit module API missing: ' + name);
-    for (const [type, methods] of [
-        [RallyGamekit.PresentationRuntime, ['setRate', 'finish']],
+    const requiredPresentationMethods = [
         [
             RallyGamekit.PresentationEventQueue,
             ['configureDisplay', 'present', 'setPresentationActive'],
         ],
-    ])
+    ];
+    if (!SIM_WORKER)
+        requiredPresentationMethods.push([RallyGamekit.PresentationRuntime, ['setRate', 'finish']]);
+    for (const [type, methods] of requiredPresentationMethods)
         for (const method of methods)
             if (typeof type.prototype[method] !== 'function')
                 throw new Error('Gamekit presentation API missing: ' + method);
-    if (!Array.isArray(RallyGamekit.VECTOR_RENDERER_ATLAS_REGIONS))
+    if (!SIM_WORKER && !Array.isArray(RallyGamekit.VECTOR_RENDERER_ATLAS_REGIONS))
         throw new Error('Gamekit vector renderer atlas reservation API가 없습니다.');
-    for (const name of [
+    const requiredNetcode = [
         'createSession',
         'hashBytes',
         'createValueCodec',
-        'WebRTCTransport',
-        'createNostrSignaler',
         'createLoop',
         'runSyncTestAsync',
-    ]) {
+    ];
+    if (!SIM_WORKER) requiredNetcode.push('WebRTCTransport', 'createNostrSignaler');
+    for (const name of requiredNetcode) {
         if (typeof RallyNetcode[name] !== 'function')
             throw new Error(
                 '공개 라이브러리에 필수 API ' +
@@ -224,4 +249,4 @@ try {
     await new Promise(() => {});
 }
 
-export { RallyGamekit, RallyNetcode, SIM_WORKER };
+export { RallyGamekit, RallyNetcode };

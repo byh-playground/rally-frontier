@@ -84,6 +84,8 @@ SVG는 원본 manifest의 SHA-256 검증 후 고정 GameKit 로더가 시작 시
 
 `GameSession`은 SDK의 Core·게임 Adapter·Transport를 조합합니다. SDK의 필수 `simulationVersion` 옵션에도 게임 버전 `PRODUCT_VERSION`을 직접 전달하며 별도 값을 관리하지 않습니다. 명령은 UI와 AI 모두 `GameSession.command(action)`에 제출하고, Core가 player-local sequence의 확정 입력을 게임 틱에 적용합니다. Core frame `t`는 step 이전 상태 `S[t]`입니다. 게임이 입력 지연·롤백·해시·복구를 다시 구현하지 않습니다.
 
+브라우저는 `GameSession`의 시작·종료·오류 콜백에 화면과 백그라운드 틱 처리를 연결합니다. AI는 `src/sim-worker.js`에서 워커 호스트를 불러오고 자체 타이머로 같은 세션을 실행합니다. 워커는 DOM이나 화면 진입점 없이 시뮬레이션, 리플레이 기록, 세션 통계에 필요한 GameKit 모듈을 로드합니다.
+
 현재 게임 버전이 없거나 다르면 연결·snapshot 복원·리플레이 재생을 거부하며 구버전 별칭이나 숫자 변환으로 허용하지 않습니다. 파일 종류·codec 형식의 검증은 게임 호환 버전 관리와 구별합니다.
 
 기본 netcode는 lockstep이며 `?netcode=lockstep|rollback`은 다음 경기의 모드를 고릅니다. 친구 대전의 참가자는 방장이 보낸 동기화 모드를 경기 시작 전에 적용합니다. Nostr는 발견·협상, gameplay는 실제 RTCDataChannel의 바이너리입니다. 별도 게임 서버나 TURN fallback은 없습니다. 방 코드는 실제 Nostr 신호 준비와 코드 확보가 끝난 뒤 표시합니다. 방 준비 취소는 진행 중인 연결도 종료하고, 재시도는 새 방을 만듭니다. 첫 시작 메시지를 보내지 못하면 방장은 시뮬레이션을 시작하지 않으며 재연결한 참가자의 HELLO에 시작 정보를 다시 보냅니다. 싱글도 같은 실제 WebRTC·Session을 쓰며 AI 세션은 Worker에서 실행합니다. 양쪽 세션 관찰용 UI 검사는 in-page AI를 사용하고 Worker 경로는 별도로 검증합니다.

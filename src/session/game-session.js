@@ -8,13 +8,13 @@ import { HeroRollAttack } from '../sim/hero-roll-attack.js';
 import { FruitHeroAttack } from '../sim/fruit-hero-attack.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { StateValue } from '../sim/components.js';
-import { ReplayRecorder } from './replay.js';
-import { RecoveryTelemetry } from '../diagnostics/recovery-telemetry.js';
+import { ReplayRecorder } from './replay-recording.js';
+import { recordRecovery } from '../diagnostics/recovery-flight-recorder.js';
 import { StableSerializationUtil } from '../net/lobby-codec.js';
 import { HashUtil } from '../sim/map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
-import { PerformanceTelemetry } from '../diagnostics/performance-telemetry.js';
+import { balanceTelemetrySnapshot, recordTiming } from '../diagnostics/simulation-stats.js';
 import {
     DISCONNECT_GRACE_MS,
     LOCKSTEP_INPUT_DELAY_BASE_MS,
@@ -36,15 +36,7 @@ import {
     attachPublishedVisibility,
 } from '../core/presentation-frame-event.js';
 import { UnitResultStats } from '../sim/unit-result-stats.js';
-import { BUILD_META } from '../core/build-info.js';
 import { RallyGamekit, RallyNetcode } from '../core/gamekit.js';
-import {
-    AppLifecycle,
-    ConnectionPresentation,
-    DiagnosticPresentation,
-    MatchLifecycle,
-    ActiveSimulationTiming,
-} from '../main.js';
 
 /* =========================
    4. Session / command lockstep
@@ -165,7 +157,7 @@ class RallySimulationAdapter {
             });
         } finally {
             if (this.session.performanceStats)
-                PerformanceTelemetry.recordTiming(
+                recordTiming(
                     this.session.performanceStats.timings,
                     'save',
                     performance.now() - started,
@@ -469,12 +461,11 @@ class RallySynctestDiagnostics {
             this.reports.set(session, report);
         return report;
     }
-    static request() {
-        const session = MatchLifecycle.activeSession?.();
+    static request(session, onUpdate) {
         if (!session || this.report(session)?.status === 'running') return;
         const queued = { status: 'running', metrics: null };
         this.reports.set(session, queued);
-        ConnectionPresentation.renderLockstepDebugPanel();
+        onUpdate();
         setTimeout(async () => {
             if (this.reports.get(session) !== queued || session.disposed) return;
             try {
@@ -487,7 +478,7 @@ class RallySynctestDiagnostics {
                         error: String(error.message || error),
                     });
             }
-            ConnectionPresentation.renderLockstepDebugPanel();
+            onUpdate();
         }, 0);
     }
 }
@@ -600,6 +591,9 @@ class GameSession {
         this.disconnectGraceDeadlineAt = 0;
         this.disconnectGraceReason = '';
         this.disconnectGraceTimer = 0;
+        this.onSimulationStarted = null;
+        this.onSimulationStopped = null;
+        this.onSimulationFatal = null;
         this.onSnapshot = () => {};
         this.onRenderTargets = () => {};
         this.onLog = () => {};
@@ -626,7 +620,7 @@ class GameSession {
         this.clearPostRecoveryCountdown();
         this.stopHeartbeat(false);
         this.netcodeLoop?.stop();
-        AppLifecycle.unregisterBackgroundSession(this);
+        this.onSimulationStopped?.(this);
     }
     dispose(reason = 'session-replaced') {
         this.presentationJournal?.dispose();
@@ -687,7 +681,6 @@ class GameSession {
         this.netcodeSession?.close();
         this.sim?.dispose('match-ended');
         this.onResult(winner, reason);
-        if (this.leaveAfterResult) setTimeout(() => location.reload(), 0);
         return true;
     }
     surrender() {
@@ -734,7 +727,7 @@ class GameSession {
         this.simpleRecoveryNeedsManual = true;
         this.recoveryPhase = 'needs-manual';
         this.stopHeartbeat(true);
-        RecoveryTelemetry.recordRecovery('netcode.connection-lost', this, this.transport, {
+        recordRecovery('netcode.connection-lost', this, this.transport, {
             reason,
         });
         return true;
@@ -773,7 +766,7 @@ class GameSession {
         return !!ok;
     }
     balanceTelemetry() {
-        return PerformanceTelemetry.balanceTelemetrySnapshot(this.sim);
+        return balanceTelemetrySnapshot(this.sim);
     }
     presentFrame(frame) {
         if (this.presentationDisplayConfigured && !this.disposed)
@@ -830,7 +823,7 @@ class GameSession {
             this.transportConnected &&
             this.sim?.tick > 0 &&
             this.confirmedGameTick > 0;
-        RecoveryTelemetry.recordRecovery('simulation.backlog-drop', this, this.transport, {
+        recordRecovery('simulation.backlog-drop', this, this.transport, {
             elapsedMs,
             droppedMs,
             droppedTicks,
@@ -1178,7 +1171,7 @@ class GameSession {
             onError: (error) => this.enterSimulationFatal(error, { source: 'netcode-loop' }),
         });
         this.syncHold = !this.transportConnected;
-        AppLifecycle.registerBackgroundSession(this);
+        this.onSimulationStarted?.(this);
         return true;
     }
     onNetcodeFrameApplied(frame) {
@@ -1309,7 +1302,7 @@ class GameSession {
                 if (command.actor === this.role) {
                     const ticket = this.pendingNetcodeCommands.get(command.netcodeSequence);
                     if (Number.isFinite(ticket?.submittedAt))
-                        PerformanceTelemetry.recordTiming(
+                        recordTiming(
                             this.performanceStats.timings,
                             'commandConfirm',
                             performance.now() - ticket.submittedAt,
@@ -1464,11 +1457,7 @@ class GameSession {
             // Presentation batches are consumed at most once, not persistent world state.
             // The renderer, audio and HUD synchronously consume them in onSnapshot.
             snapshot.events = [];
-            PerformanceTelemetry.recordTiming(
-                this.performanceStats.timings,
-                'snapshotUi',
-                performance.now() - started,
-            );
+            recordTiming(this.performanceStats.timings, 'snapshotUi', performance.now() - started);
         }
     }
     emitRenderTargets(sim, snap) {
@@ -1476,7 +1465,7 @@ class GameSession {
         try {
             return this.onRenderTargets(sim, snap);
         } finally {
-            PerformanceTelemetry.recordTiming(
+            recordTiming(
                 this.performanceStats.timings,
                 'renderTargets',
                 performance.now() - started,
@@ -1563,34 +1552,13 @@ class GameSession {
         this.clearPostRecoveryCountdown();
         this.netcodeSession?.close();
         this.stopHeartbeat(false);
-        AppLifecycle.unregisterBackgroundSession(this);
+        this.onSimulationStopped?.(this);
 
-        RecoveryTelemetry.recordRecovery('simulation.fatal', this, this.transport, {
+        recordRecovery('simulation.fatal', this, this.transport, {
             fatal: { ...info, stack: undefined },
             error: { message, stack },
         });
-        if (typeof DiagnosticPresentation !== 'undefined') {
-            DiagnosticPresentation.presentFatalDiagnostic({
-                kind: 'SSALKONGPANG_SIMULATION_FATAL',
-                build: BUILD_META.id,
-                buildMetadata: BUILD_META.snapshot(),
-                at: info.at,
-                source: info.source,
-                role: info.role,
-                remote: info.remote,
-                tick: info.tick,
-                localTick: info.localTick,
-                runtimeSeq: info.runtimeSeq,
-                checksum: info.checksum,
-                localChecksum: info.localChecksum,
-                tps: Number(this.sim?.tps) || ActiveSimulationTiming.tps(),
-                units: this.sim?.units?.filter?.((u) => u?.alive !== false)?.length || 0,
-                projectiles:
-                    this.sim?.projectiles?.filter?.((p) => p?.alive !== false)?.length || 0,
-                message,
-                stack,
-            });
-        }
+        this.onSimulationFatal?.(info, err);
         console.error('simulation fatal', info, err);
         this.onLog(`시뮬레이션 오류로 중단 · tick ${localTick ?? '-'} · ${message}`);
 

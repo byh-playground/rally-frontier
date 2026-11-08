@@ -1,5 +1,7 @@
 import { BotController } from '../ai/bot-controller.js';
 import { setNetcodeMode } from '../core/config.js';
+import { BACKGROUND_TICK_PULSE_MS } from '../core/session-timing.js';
+import { measureSessionPulse } from '../diagnostics/simulation-stats.js';
 import { GameSession } from './game-session.js';
 
 // Worker side of a single-player AI peer: the same GameSession + BotController
@@ -20,22 +22,26 @@ export class SimWorkerHost {
     static bot = null;
     static transport = null;
     static statusTimer = 0;
-    static install() {
+    static pulseTimer = 0;
+    static install(reportFatal) {
         self.onmessage = (e) => {
             const m = e.data;
-            if (m?.type === 'start') this.start(m);
+            if (m?.type === 'start') this.start(m, reportFatal);
             else if (m?.type === 'transport') this.transport?.receive(m);
             else if (m?.type === 'call') this.call(m);
             else if (m?.type === 'dispose') this.dispose(m.reason);
         };
         self.postMessage({ type: 'ready' });
     }
-    static start({ role, token, config, netcodeState, netcodeMode, deck }) {
+    static start({ role, token, config, netcodeState, netcodeMode, deck }, reportFatal) {
         if (netcodeMode) setNetcodeMode(netcodeMode);
         const transport = new WorkerRelayTransport(role, token, netcodeState),
             session = new GameSession(role, transport, token, config ?? undefined, deck);
         this.transport = transport;
         this.session = session;
+        session.onSimulationStarted = () => this.startPulsing(session);
+        session.onSimulationStopped = () => this.stopPulsing();
+        session.onSimulationFatal = reportFatal;
         this.bot = BotController.attach(session, role);
         transport.onOpen = (visible) => {
             session.localVisible = visible;
@@ -43,6 +49,29 @@ export class SimWorkerHost {
         };
         transport.onClose = () => session.onTransportClosed();
         this.statusTimer = setInterval(() => this.publishStatus(), this.STATUS_MS);
+    }
+    static startPulsing(session) {
+        if (this.pulseTimer) return;
+        const pulse = () => {
+            const started = performance.now();
+            try {
+                measureSessionPulse(session, started);
+            } catch (error) {
+                session.enterSimulationFatal(error, { source: 'background-pulse' });
+            } finally {
+                if (this.pulseTimer) {
+                    this.pulseTimer = setTimeout(
+                        pulse,
+                        Math.max(1, BACKGROUND_TICK_PULSE_MS - (performance.now() - started)),
+                    );
+                }
+            }
+        };
+        this.pulseTimer = setTimeout(pulse, BACKGROUND_TICK_PULSE_MS);
+    }
+    static stopPulsing() {
+        clearTimeout(this.pulseTimer);
+        this.pulseTimer = 0;
     }
     static call({ id, method, args }) {
         let result = null;
@@ -83,6 +112,7 @@ export class SimWorkerHost {
     }
     static dispose(reason) {
         clearInterval(this.statusTimer);
+        this.stopPulsing();
         this.bot?.stop();
         try {
             this.session?.dispose(reason);
