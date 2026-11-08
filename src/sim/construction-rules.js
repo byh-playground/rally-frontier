@@ -8,19 +8,32 @@ class ConstructionRules {
     static contactTolerance = 0.15;
     static chargeSpeedMultiplier = 1.5;
     static chargeTimeoutMs = 1600;
-    static create({ cost, workRequired, initialHpRatio }, startedAtTick) {
+    static create({ cost, workRequired, paymentWork = 1, initialHpRatio }, startedAtTick) {
         if (
             !Number.isSafeInteger(cost) ||
             cost < 0 ||
             !Number.isSafeInteger(workRequired) ||
             workRequired < 1 ||
             !Number.isSafeInteger(cost * workRequired) ||
+            !Number.isSafeInteger(paymentWork) ||
+            paymentWork < 1 ||
+            workRequired % paymentWork !== 0 ||
             !Number.isFinite(initialHpRatio) ||
             initialHpRatio < 0 ||
             initialHpRatio > 1
         )
-            throw new Error('건설 비용·필요 작업량·초기 체력 비율이 잘못되었습니다.');
-        return { cost, workRequired, initialHpRatio, workDone: 0, invested: 0, startedAtTick };
+            throw new Error(
+                '건설 비용·필요 작업량·결제 작업 단위·초기 체력 비율이 잘못되었습니다.',
+            );
+        return {
+            cost,
+            workRequired,
+            ...(paymentWork === 1 ? {} : { paymentWork }),
+            initialHpRatio,
+            workDone: 0,
+            invested: 0,
+            startedAtTick,
+        };
     }
     static progress(work) {
         return work ? work.workDone / work.workRequired : 1;
@@ -32,7 +45,7 @@ class ConstructionRules {
             throw new Error('타격당 건설 작업량은 양의 안전한 정수여야 합니다.');
         if (wallet !== Infinity && (!Number.isSafeInteger(wallet) || wallet < 0))
             throw new Error('건설에 사용할 자원은 음수가 아닌 안전한 정수여야 합니다.');
-        const { cost, workRequired, workDone, invested } = work;
+        const { cost, workRequired, paymentWork = 1, workDone, invested } = work;
         if (wallet === 0)
             return {
                 workDone,
@@ -42,17 +55,18 @@ class ConstructionRules {
                 complete: workDone === workRequired,
             };
         const requested = workDone + Math.min(workPerHit, workRequired - workDone);
+        const paymentSteps = workRequired / paymentWork;
         // If all remaining cost is covered, no wallet-scaled product is needed.
-        // Otherwise invested+wallet+1 <= cost, whose product was checked at creation.
+        // Otherwise the worker can stop one work short of the first unaffordable payment.
         const affordable =
             cost === 0 || wallet >= cost - invested
                 ? workRequired
-                : Math.min(
-                      workRequired,
-                      Math.floor(((invested + wallet + 1) * workRequired - 1) / cost),
-                  );
+                : (Math.floor(((invested + wallet + 1) * paymentSteps - 1) / cost) + 1) *
+                      paymentWork -
+                  1;
         const nextWork = Math.max(workDone, Math.min(requested, affordable));
-        const nextInvestment = cost === 0 ? 0 : Math.floor((cost * nextWork) / workRequired);
+        const completedSteps = Math.floor(nextWork / paymentWork);
+        const nextInvestment = Math.floor((cost * completedSteps) / paymentSteps);
         return {
             workDone: nextWork,
             workAdded: nextWork - workDone,
@@ -63,18 +77,18 @@ class ConstructionRules {
     }
     static nextPayment(work) {
         if (!work || work.cost === 0 || work.workDone === work.workRequired) return null;
-        const previous = Math.ceil((work.invested * work.workRequired) / work.cost);
-        const next = Math.min(
-            work.workRequired,
-            Math.ceil(((work.invested + 1) * work.workRequired) / work.cost),
-        );
+        const { cost, workRequired, paymentWork = 1, workDone, invested } = work;
+        const paymentSteps = workRequired / paymentWork;
+        const previous = Math.ceil((invested * paymentSteps) / cost) * paymentWork;
+        const nextStep = Math.ceil(((invested + 1) * paymentSteps) / cost);
+        const next = nextStep * paymentWork;
         const workSpan = next - previous;
         return {
             workDone: next,
-            workRemaining: next - work.workDone,
-            amount: Math.floor((work.cost * next) / work.workRequired) - work.invested,
+            workRemaining: next - workDone,
+            amount: Math.floor((cost * nextStep) / paymentSteps) - invested,
             workSpan,
-            progress: (work.workDone - previous) / workSpan,
+            progress: (workDone - previous) / workSpan,
         };
     }
     static healthAt(work, maxHp, workDone = work.workDone) {

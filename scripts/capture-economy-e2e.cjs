@@ -176,6 +176,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
             function nextHitMission({
                 cost = 75,
                 workRequired = 375,
+                paymentWork = 1,
                 workDone = 0,
                 power = 1,
                 wallet = 50,
@@ -189,11 +190,13 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     const state = sim.exportState(),
                         b = state.buildings.find((b) => b.id === initial.id);
                     b.construction = ConstructionRules.create(
-                        { cost, workRequired, initialHpRatio: 0.1 },
+                        { cost, workRequired, paymentWork, initialHpRatio: 0.1 },
                         1,
                     );
                     b.construction.workDone = workDone;
-                    b.construction.invested = Math.floor((cost * workDone) / workRequired);
+                    b.construction.invested = Math.floor(
+                        (cost * Math.floor(workDone / paymentWork) * paymentWork) / workRequired,
+                    );
                     b.hp = ConstructionRules.healthAt(b.construction, b.maxHp, workDone);
                     state.wallet[0] = wallet;
                     sim.importState(state);
@@ -724,8 +727,8 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         LaunchRules.upgradeCost(0) +
                         BuildingDefinition.get(BuildingDefinition.forRole('outpost')).construction
                             .cost ===
-                        LaunchRules.startingWallet,
-                    'first upgrade, rice launch and oil construction use exactly the starting supply',
+                        LaunchRules.startingWallet + 25,
+                    'the opening upgrade, rice launch and oil construction need 25 additional supply',
                 );
                 check(
                     base.production.basic.incomePerSecond === 15 &&
@@ -832,17 +835,17 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 check(
                     tower.construction === null &&
                         sim.capturePoints[0].owner === 0 &&
-                        hits.reduce((n, e) => n + e.workAdded, 0) === 375 &&
-                        hits.reduce((n, e) => n + e.spend, 0) === 75,
-                    'funded symmetric crowd completes375 work and spends75',
+                        hits.reduce((n, e) => n + e.workAdded, 0) === 250 &&
+                        hits.reduce((n, e) => n + e.spend, 0) === 100,
+                    'funded symmetric crowd completes 250 work and spends 100',
                     { hits: hits.length, work: tower.construction },
                 );
                 rows.push({
                     scenario:
                         'twenty workers approach through crowd contacts and complete without a funded stall',
                     elapsedTicks: sim.tick - begun,
-                    work: 375,
-                    spend: 75,
+                    work: 250,
+                    spend: 100,
                     checksum: sim.checksum(),
                 });
             }
@@ -854,11 +857,13 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     startTick = sim.tick,
                     hits = [];
                 check(
-                    building.construction.cost === 75 &&
-                        building.construction.workRequired === 375 &&
+                    building.construction.cost === 100 &&
+                        building.construction.workRequired === 250 &&
+                        building.construction.paymentWork === 5 &&
                         building.construction.workDone === 0 &&
-                        building.hp === 140,
-                    'default project declares75 cost and375 work at10% HP',
+                        building.hp === 50 &&
+                        building.maxHp === 500,
+                    'default project declares 100 cost and 250 work, with 50 of 500 HP at start',
                 );
                 check(
                     !sim.launchCannons(0).some((b) => b.id === building.id),
@@ -877,8 +882,8 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 );
                 step(sim, tps);
                 check(
-                    building.construction.workDone === 5 && building.construction.invested === 1,
-                    'fifth actual hit crosses the first resource threshold',
+                    building.construction.workDone === 5 && building.construction.invested === 2,
+                    'fifth actual hit pays the first two supply',
                 );
                 rows.push({
                     scenario: 'one-second work cadence is independent of money thresholds',
@@ -894,33 +899,37 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     started = sim.tick,
                     hits = [];
                 const hpBefore = tower.hp;
-                sim.applyDamage(1, 'rice', tower, true, 50, null, { sourceDamageResolved: true });
+                sim.applyDamage(1, 'rice', tower, true, 25, null, { sourceDamageResolved: true });
                 const damage = hpBefore - tower.hp;
-                step(sim, 375 * sim.tps - 1, (s) =>
+                step(sim, 250 * sim.tps - 1, (s) =>
                     hits.push(...s.events.filter((e) => e.type === 'constructionHit')),
                 );
                 check(
-                    tower.construction.workDone === 374 &&
-                        tower.construction.invested === 74 &&
+                    tower.construction.workDone === 249 &&
+                        tower.construction.invested === 98 &&
                         sim.capturePoints[0].owner === null,
-                    '374 hits cannot complete375-work project',
+                    '249 hits cannot complete a 250-work project',
                 );
+                const restored = restore(sim);
+                step(restored, 1);
                 step(sim, 1, (s) =>
                     hits.push(...s.events.filter((e) => e.type === 'constructionHit')),
                 );
                 check(
                     tower.construction === null &&
-                        hits.length === 375 &&
-                        hits.reduce((n, e) => n + e.spend, 0) === 75 &&
-                        sim.tick - started === 375 * sim.tps,
-                    'one worker finishes in375 seconds and spends exactly75',
+                        hits.length === 250 &&
+                        hits.every((e, i) => e.spend === ((i + 1) % 5 === 0 ? 2 : 0)) &&
+                        hits.reduce((n, e) => n + e.spend, 0) === 100 &&
+                        sim.tick - started === 250 * sim.tps &&
+                        sim.checksum() === restored.checksum(),
+                    'one worker pays two supply on each fifth hit and finishes at 250 hits after a checkpoint',
                 );
                 check(
                     tower.hp === tower.maxHp - damage,
                     'work-proportional HP preserves damage through full completion',
                 );
                 rows.push({
-                    scenario: 'full375-hit project spends75 and preserves damage',
+                    scenario: 'full 250-hit project spends 100 and preserves damage',
                     elapsedTicks: sim.tick - started,
                     hits: hits.length,
                     spend: hits.reduce((n, e) => n + e.spend, 0),
@@ -1056,22 +1065,29 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     started = sim.tick,
                     hits = [],
                     completed = [];
-                step(sim, 125 * sim.tps, (s) => {
+                step(sim, 84 * sim.tps, (s) => {
                     hits.push(...s.events.filter((e) => e.type === 'constructionHit'));
                     completed.push(...s.events.filter((e) => e.type === 'captureComplete'));
                 });
                 check(
                     tower.construction === null &&
-                        hits.length === 375 &&
+                        hits.length === 250 &&
                         completed.length === 1 &&
-                        hits.reduce((n, e) => n + e.spend, 0) === 75,
-                    'three actual workers finish375 work in125 seconds and charge75 once',
+                        hits.reduce((n, e) => n + e.spend, 0) === 100,
+                    'three actual workers finish 250 work in 84 seconds and charge exactly 100',
                 );
-                const last = nextHitMission({ workDone: 374, power: 3, wallet: 1 });
+                const last = nextHitMission({
+                    cost: 100,
+                    workRequired: 250,
+                    paymentWork: 5,
+                    workDone: 249,
+                    power: 3,
+                    wallet: 2,
+                });
                 check(
                     last.events.length === 1 &&
                         last.events[0].workAdded === 1 &&
-                        last.events[0].spend === 1 &&
+                        last.events[0].spend === 2 &&
                         last.building.construction === null,
                     'final specialist hit caps work and payment',
                 );
@@ -1086,21 +1102,42 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
             // No work is performed while the wallet is empty, including before
             // the next payment threshold; funding still requires a new body hit.
             {
+                const grouped = { cost: 100, workRequired: 250, paymentWork: 5 };
                 for (let workDone = 0; workDone < 4; workDone++) {
-                    const { events, building } = nextHitMission({ workDone, wallet: 0 });
+                    const { events, building } = nextHitMission({
+                        ...grouped,
+                        workDone,
+                        wallet: 0,
+                    });
                     check(
                         events.length === 0 && building.construction.workDone === workDone,
                         'zero wallet pauses work even before the next payment',
                     );
                 }
-                const { sim, building: tower, events } = nextHitMission({ workDone: 4, wallet: 0 });
+                const prefix = nextHitMission({ ...grouped, workDone: 3, power: 3, wallet: 1 });
+                check(
+                    prefix.events.length === 1 &&
+                        prefix.events[0].workDone === 4 &&
+                        prefix.events[0].spend === 0,
+                    'a multiwork hit stops at four when the wallet cannot cover the two-supply payment',
+                    prefix.events,
+                );
+                const {
+                    sim,
+                    building: tower,
+                    events,
+                } = nextHitMission({
+                    ...grouped,
+                    workDone: 4,
+                    wallet: 1,
+                });
                 check(
                     events.length === 0 &&
                         tower.construction.workDone === 4 &&
                         tower.construction.invested === 0,
-                    'empty wallet blocks work crossing the next price threshold',
+                    'one supply cannot cross the two-supply payment boundary',
                 );
-                sim.wallet[0] = 1;
+                sim.wallet[0] = 2;
                 step(sim, 1);
                 check(tower.construction.workDone === 4, 'funding alone cannot create work');
                 step(sim, sim.tps - 1);
@@ -1110,11 +1147,13 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 );
                 step(sim, 1);
                 check(
-                    tower.construction.workDone === 5 && tower.construction.invested === 1,
+                    tower.construction.workDone === 5 &&
+                        tower.construction.invested === 2 &&
+                        sim.wallet[0] === 0,
                     'funded worker crosses the threshold on the next actual hit',
                 );
                 rows.push({
-                    scenario: 'zero wallet pauses work and funding resumes it on a hit',
+                    scenario: 'zero wallet pauses work and grouped payments resume when funded',
                     workDone: tower.construction.workDone,
                     invested: tower.construction.invested,
                 });
@@ -1127,7 +1166,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 check(
                     tower.construction.workDone === 0 &&
                         tower.construction.invested === 0 &&
-                        tower.hp === 140,
+                        tower.hp === 50,
                     'worker absence cannot grant free work or paid work',
                 );
                 rows.push({
@@ -1465,7 +1504,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     wallet = loss.wallet[0];
                 destroy(loss, partial);
                 check(
-                    paid === 1 && loss.wallet[0] === wallet && loss.capturePoints[0].owner === null,
+                    paid === 2 && loss.wallet[0] === wallet && loss.capturePoints[0].owner === null,
                     'destroyed worker project loses invested resources',
                 );
                 rows.push({
@@ -1475,16 +1514,21 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     lostInvestment: paid,
                 });
             }
-            {
+            for (const type of ['outpost', 'base']) {
                 const sim = arena(),
-                    [tower] = smallProjects(sim, start(sim));
-                finish(sim, tower);
+                    tower =
+                        type === 'outpost'
+                            ? smallProjects(sim, start(sim))[0]
+                            : sim.buildings.find((b) => b.id === 'base0');
+                if (tower.construction) finish(sim, tower);
+                check(tower.maxHp === (type === 'base' ? 2400 : 500), 'tower HP matches its role');
                 const state = sim.exportState(),
                     enemyBase = state.buildings.find((b) => b.id === 'base1'),
                     { x, y } = tower;
                 state.units = [];
                 enemyBase.x = x + 501;
                 enemyBase.y = y;
+                enemyBase.cooldownUntil = sim.tick + 10 * sim.tps;
                 const spot = () => sim.spawnUnit(0, 'rice', x + 440, y - 100);
                 const attacks = (s) =>
                     s.events.filter((e) => e.type === 'hit' && e.sourceId === tower.id);
@@ -1521,11 +1565,6 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     'four basic attacks deal 8 damage at distance 500 every 0.5 seconds',
                     hits,
                 );
-                const near = [
-                    sim.spawnUnit(1, 'rice', x + 560, y + 65),
-                    sim.spawnUnit(1, 'pea', x + 555, y - 40),
-                ];
-                const outside = sim.spawnUnit(1, 'pea', x + 750, y);
                 const restored = arena();
                 restored.importState(sim.exportState());
                 step(sim, 1);
@@ -1539,6 +1578,11 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     'the fifth attack fires only a mortar and survives a pre-fire checkpoint',
                     { fire, hits: attacks(sim) },
                 );
+                const near = [
+                    sim.spawnUnit(1, 'rice', x + 435, y + 67),
+                    sim.spawnUnit(1, 'pea', x + 435, y - 67),
+                ];
+                const outside = sim.spawnUnit(1, 'pea', x + 590, y + 60);
                 step(sim, 5);
                 check(
                     sim.projectiles.length === 1,
@@ -1555,7 +1599,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 }
                 check(
                     impact?.projectileId === fire.projectileId &&
-                        impact.radius === 150 &&
+                        impact.radius === 100 &&
                         blastHits.find((e) => e.targetId === enemyBase.id)?.amount === 20 &&
                         near.every(
                             (u, i) =>
@@ -1568,22 +1612,26 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     'the mortar damages multiple nearby enemies and leaves allies and distant units alone',
                     { impact, blastHits },
                 );
-                const incomplete = arena(),
-                    [site] = start(incomplete, { workers: 0 });
-                incomplete.spawnUnit(1, 'pea', site.x + 150, site.y);
+                rows.push({
+                    scenario:
+                        'base or completed outpost fires a radius-100 mortar every fifth attack',
+                    towerType: type,
+                    hits,
+                    impact,
+                    blastHits,
+                });
+            }
+            {
+                const sim = arena(),
+                    [site] = start(sim, { workers: 0 });
+                sim.spawnUnit(1, 'pea', site.x + 150, site.y);
                 const forbidden = [];
-                step(incomplete, 5 * incomplete.tps, (s) =>
+                step(sim, 5 * sim.tps, (s) =>
                     forbidden.push(
                         ...s.events.filter((e) => e.sourceId === site.id || e.cannonId === site.id),
                     ),
                 );
                 check(forbidden.length === 0, 'unfinished structure cannot fire');
-                rows.push({
-                    scenario: 'completed tower fires a mortar every fifth attack',
-                    hits,
-                    impact,
-                    blastHits,
-                });
             }
             // Construction also belongs to ordinary buildings without a capture-point
             // association. A trusted mission configures the existing base capability.
@@ -1658,8 +1706,8 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     );
                 }
                 check(
-                    tower.construction.workDone === 5 && tower.construction.invested === 1,
-                    'restored checkpoint reaches five work and one payment',
+                    tower.construction.workDone === 5 && tower.construction.invested === 2,
+                    'restored checkpoint reaches five work and a two-supply payment',
                 );
                 copy = restore(sim);
                 for (let i = 0; i < 6 * sim.tps; i++) {
@@ -1891,43 +1939,47 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
             const cases = [
                 {
                     name: 'one ordinary hit',
-                    cost: 75,
-                    workRequired: 375,
+                    cost: 100,
+                    workRequired: 250,
+                    paymentWork: 5,
                     workDone: 1,
                     invested: 0,
                     fill: [1, 0, 0, 0, 0],
                     remaining: 4,
-                    amount: 1,
+                    amount: 2,
                 },
                 {
                     name: 'three ordinary hits',
-                    cost: 75,
-                    workRequired: 375,
+                    cost: 100,
+                    workRequired: 250,
+                    paymentWork: 5,
                     workDone: 3,
                     invested: 0,
                     fill: [1, 1, 1, 0, 0],
                     remaining: 2,
-                    amount: 1,
+                    amount: 2,
                 },
                 {
                     name: 'one specialist hit adding3',
-                    cost: 75,
-                    workRequired: 375,
+                    cost: 100,
+                    workRequired: 250,
+                    paymentWork: 5,
                     workDone: 3,
                     invested: 0,
                     fill: [1, 1, 1, 0, 0],
                     remaining: 2,
-                    amount: 1,
+                    amount: 2,
                 },
                 {
                     name: 'next interval after spending',
-                    cost: 75,
-                    workRequired: 375,
+                    cost: 100,
+                    workRequired: 250,
+                    paymentWork: 5,
                     workDone: 5,
-                    invested: 1,
+                    invested: 2,
                     fill: [0, 0, 0, 0, 0],
                     remaining: 5,
-                    amount: 1,
+                    amount: 2,
                 },
                 {
                     name: 'three-cost seven-work project',
@@ -1971,14 +2023,15 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 },
                 {
                     name: 'payment flash completes all five cells',
-                    cost: 75,
-                    workRequired: 375,
+                    cost: 100,
+                    workRequired: 250,
+                    paymentWork: 5,
                     workDone: 5,
-                    invested: 1,
+                    invested: 2,
                     fill: [1, 1, 1, 1, 1],
                     remaining: 5,
-                    amount: 1,
-                    impact: { fx: { spend: 1 }, pulse: 1 },
+                    amount: 2,
+                    impact: { fx: { spend: 2 }, pulse: 1 },
                 },
                 {
                     name: 'free project has no expense cells',
@@ -1992,7 +2045,12 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
             try {
                 for (const [index, c] of cases.entries()) {
                     const work = ConstructionRules.create(
-                        { cost: c.cost, workRequired: c.workRequired, initialHpRatio: 0.1 },
+                        {
+                            cost: c.cost,
+                            workRequired: c.workRequired,
+                            paymentWork: c.paymentWork,
+                            initialHpRatio: 0.1,
+                        },
                         0,
                     );
                     Object.assign(work, { workDone: c.workDone, invested: c.invested });
