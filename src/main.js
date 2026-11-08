@@ -1835,6 +1835,61 @@ class GLRenderer {
         this.loopStarted = false;
         cancelAnimationFrame(this.loopFrame);
     }
+    releaseShowcaseScene() {
+        this.stopLoop();
+        if (this.vectorContext.active) this.vectorContext.endFrame();
+        this.onPresentationFrame = null;
+        this.onShowcaseError = null;
+        this.snapshot = null;
+        this.world = WorldContext.standard;
+        this.renderState = new RenderStateStore(RENDER_TRACKS);
+        this.renderEntity = null;
+
+        this.clearGrainActors();
+        this.buildingArt.dispose();
+        this.unitFacingStates.clear();
+        this.launchRecoil.clear();
+        this.visibleUnitFrame.length = 0;
+        this.riceBodyGroup.length = 0;
+        this.grainBodyGroups.clear();
+        this.worldSpriteFrame.length = 0;
+        this.worldSpritePool.length = 0;
+        this.visionFields.fill(null);
+        this.fogVisibilityGrids.clear();
+        this.fogSurfaces = null;
+        this._fogSurfaceAtlas = null;
+        this.resetFogTransition();
+        for (const textures of [this.fogTextures, this.fogPreviousTextures]) {
+            for (const texture of textures.values()) this.device.deleteTexture(texture);
+            textures.clear();
+        }
+
+        this.projectileTrails.clear();
+        this.projectileScreenMotionStates.clear();
+        this.cornTrails.clear();
+        this.cornTrailAnchors.clear();
+        this.cornBursts.length = 0;
+        this.milletBursts.length = 0;
+        this.particles.length = 0;
+        this.bundleBreakIds.clear();
+        this.attackVariantBreathFx.length = 0;
+        for (const fx of this.combatFx) this.combatFxPool.release(fx);
+        for (const fx of this.floatFx) this.floatFxPool.release(fx);
+        for (const fx of this.shakeFx) this.shakeFxPool.release(fx);
+        this.combatFx.length = 0;
+        this.floatFx.length = 0;
+        this.shakeFx.length = 0;
+        this.frameShakeX = this.frameShakeY = 0;
+        this.cameraShakePresentationMoved = false;
+        if (this.frameComposition?.texture) {
+            this.device.deleteTexture(this.frameComposition.texture);
+            this.frameComposition.texture = null;
+            this.frameComposition.width = this.frameComposition.height = 0;
+        }
+        this.fxCanvas.style.transform = '';
+        this.canvas.width = this.canvas.height = 1;
+        this.fxCanvas.width = this.fxCanvas.height = 1;
+    }
     resize() {
         const dpr = Math.min(1.6, devicePixelRatio || 1);
         const cssW = Math.max(
@@ -4030,7 +4085,7 @@ class GLRenderer {
 
         // Stable presentation order. It never changes with unit count:
         // world annotations -> decorative combat VFX -> persistent world HUD -> numbers -> status/selection.
-        this.drawStrategicLabels();
+        if (!this.showcase) this.drawStrategicLabels();
 
         // Decorative presentation is always below information overlays.
         this.drawClientCombatFx();
@@ -7102,7 +7157,7 @@ class GLRenderer {
 
     loop() {
         try {
-            // The parent can hide a showcase iframe before its pause message arrives.
+            // A showcase can lose its display area before visibility is synchronized.
             if (this.showcase && !this.hasDisplayArea()) {
                 this.loopFrame = requestAnimationFrame(this.loop);
                 return;
@@ -9163,10 +9218,13 @@ function createShowcaseSurface() {
         element,
         renderer,
         dispose() {
-            renderer.stopLoop();
-            renderer.clearGrainActors();
+            this.sceneOwner = null;
+            renderer.releaseShowcaseScene();
+            renderer.grainFaces.dispose();
             for (const sprites of Object.values(renderer.spriteRenderers)) sprites.dispose();
             for (const hold of renderer.gameResourceHolds || []) hold.release();
+            renderer.spriteRenderers = {};
+            renderer.gameResourceHolds = null;
             renderer.vectorContext.dispose();
             renderer.device.dispose();
         },
@@ -9183,28 +9241,32 @@ async function prepareShowcaseScene({ surface, scene, signal }) {
     const owner = {};
     surface.sceneOwner = owner;
     const ownsRenderer = () => surface.sceneOwner === owner;
-    renderer.prepareGameResources();
-    renderer.resize();
-    // A new scene owns its snapshots and effects, while the prepared art remains resident.
-    renderer.snapshot = null;
-    renderer.unitFacingStates.clear();
-    renderer.projectileTrails.clear();
-    renderer.projectileScreenMotionStates.clear();
-    renderer.bundleBreakIds.clear();
-    renderer.attackVariantBreathFx.length = 0;
+    const release = () => {
+        if (!ownsRenderer()) return;
+        surface.sceneOwner = null;
+        renderer.releaseShowcaseScene();
+    };
     const onError = (error) => {
         if (!ownsRenderer()) return;
         console.error(error);
         scene.onError?.(error);
     };
-    const scenario = await prepare({
-        renderer,
-        createScenario: RallyGamekit.createScenario,
-        createPresentationView,
-        unitType: scene.unitType,
-        signal,
-        onError,
-    });
+    let scenario;
+    try {
+        renderer.prepareGameResources();
+        renderer.resize();
+        scenario = await prepare({
+            renderer,
+            createScenario: RallyGamekit.createScenario,
+            createPresentationView,
+            unitType: scene.unitType,
+            signal,
+            onError,
+        });
+    } catch (error) {
+        release();
+        throw error;
+    }
     return {
         play() {
             if (!ownsRenderer()) return;
@@ -9218,11 +9280,11 @@ async function prepareShowcaseScene({ surface, scene, signal }) {
             if (ownsRenderer()) renderer.stopLoop();
         },
         dispose() {
-            scenario.dispose();
-            if (!ownsRenderer()) return;
-            surface.sceneOwner = null;
-            renderer.stopLoop();
-            renderer.onShowcaseError = null;
+            try {
+                scenario.dispose();
+            } finally {
+                release();
+            }
         },
     };
 }
