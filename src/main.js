@@ -32,7 +32,7 @@ import { CAPTURE_RADIUS, LANE_CONTROL_POINTS } from './definitions/combat-rules.
 import { PerformanceTelemetry } from './diagnostics/performance-telemetry.js';
 import { VIEW_H, VIEW_W } from './definitions/world-rules.js';
 import { WorldContext } from './sim/world-context.js';
-import { NavigationGoal } from './sim/navigation.js';
+import { NavigationGoal, UnitMotion } from './sim/navigation.js';
 import {
     BattlefieldProjection,
     TerrainSurfaceAtlas,
@@ -4491,45 +4491,46 @@ class GLRenderer {
             const model = this.renderState.model('unit', u.id, now),
                 entity = model?.entity || u,
                 renderTick = model?.tick ?? this.snapshot.tick,
+                grounded = UnitMotion.isGrounded(entity),
                 impact = LaunchImpactArt.unitPose(entity, renderTick, this.snapshot.tps || SIM_TPS);
             const work = impact.active ? null : this.constructionWorkPose(entity, renderTick);
-            let clip = impact.active
+            let clip = !grounded
                     ? 'idle'
                     : work?.clip ||
                       (u.attackFlash > 0
                           ? 'fire'
-                          : u.hitFlash > 0
-                            ? 'hit'
-                            : moving
-                              ? 'walk'
-                              : 'idle'),
+                          : impact.active
+                            ? 'idle'
+                            : u.hitFlash > 0
+                              ? 'hit'
+                              : moving
+                                ? 'walk'
+                                : 'idle'),
                 restart = false;
             if (record.sprite) {
                 const chestnut = record.compiled === this.spriteRenderers.chestnut,
                     attack = !!(chestnut ? entity.attackFlash : u.attackFlash),
-                    hit = !!(chestnut ? entity.hitFlash : u.hitFlash);
-                if (attack && !grain.attackLatch) {
-                    grain.attackUntil = now + 425;
-                    restart = true;
-                }
+                    hit = !!(chestnut ? entity.hitFlash : u.hitFlash),
+                    attackStarted = attack && !grain.attackLatch,
+                    hitStarted = hit && !grain.hitLatch;
+                if (attackStarted) grain.attackUntil = now + 425;
+                if (hitStarted) grain.hitUntil = now + 295;
                 grain.attackLatch = attack;
-                if (hit && !grain.hitLatch) {
-                    grain.hitUntil = now + 295;
-                    grain.attackUntil = 0;
-                    restart = true;
-                }
                 grain.hitLatch = hit;
-                clip = impact.active
+                clip = !grounded
                     ? 'idle'
                     : work?.active
                       ? work.clip
-                      : grain.hitUntil > now
-                        ? 'hit'
-                        : grain.attackUntil > now
-                          ? 'fire'
-                          : moving
-                            ? 'walk'
-                            : 'idle';
+                      : grain.attackUntil > now
+                        ? 'fire'
+                        : impact.active
+                          ? 'idle'
+                          : grain.hitUntil > now
+                            ? 'hit'
+                            : moving
+                              ? 'walk'
+                              : 'idle';
+                restart = clip === 'fire' ? attackStarted : clip === 'hit' && hitStarted;
             }
             let cornElapsed = null;
             grain.holdsKernel = false;
@@ -4710,15 +4711,17 @@ class GLRenderer {
             m[5] = p.y + (work?.offsetY ?? 0) + r * 0.55 - 120 * scale - m[1] * cx - m[3] * cy;
             grain.depth = RangeUtil.clamp(depth, -0.98, 0.98) - ++rank * GRAIN_DEPTH_RANK_STEP;
             grain.face =
-                impact.expression ||
-                ((record.sprite ? clip === 'hit' : u.hitFlash > 0)
-                    ? 'hurt'
-                    : work?.clip ||
-                        spin ||
-                        selfDestruct ||
-                        (record.sprite ? clip === 'fire' : u.attackFlash > 0)
-                      ? 'attack'
-                      : 'neutral');
+                grounded && (clip === 'fire' || spin)
+                    ? 'attack'
+                    : impact.expression ||
+                      ((record.sprite ? clip === 'hit' : u.hitFlash > 0)
+                          ? 'hurt'
+                          : work?.clip ||
+                              spin ||
+                              selfDestruct ||
+                              (record.sprite ? clip === 'fire' : u.attackFlash > 0)
+                            ? 'attack'
+                            : 'neutral');
             grain.bodyDrawn = false;
         }
         this.vectorContext.preparePoses();

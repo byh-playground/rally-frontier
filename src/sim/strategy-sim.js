@@ -2177,7 +2177,7 @@ class StrategySim {
                 return spin.winner;
             }
         }
-        if (u.impactMotion && this.tick < u.impactMotion.recoverUntilTick) {
+        if (!UnitMotion.isGrounded(u)) {
             u.constructionWork = null;
             return null;
         }

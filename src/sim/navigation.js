@@ -331,9 +331,11 @@ class UnitMotion {
         m.startTick = sim.tick;
         m.endTick = sim.tick + sim.msTicks(Math.max(250, Math.round(flightSeconds * 1000)));
         m.recoverUntilTick = m.endTick + sim.msTicks(LaunchImpactRules.recoveryMs);
-        u.combat.cancelWindup();
-        u.combat.attackArcTargetId = null;
-        u.combat.attackArcUntilTick = 0;
+        if (!UnitMotion.isGrounded(u)) {
+            u.combat.cancelWindup();
+            u.combat.attackArcTargetId = null;
+            u.combat.attackArcUntilTick = 0;
+        }
         return m;
     }
     removeInwardVelocity(m, nx, ny) {
