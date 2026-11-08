@@ -5,6 +5,29 @@ const STORAGE_KEY = 'ssalkongpang.decks.v1';
 const DECK_COUNT = 3;
 const LOADOUT_VERSION = 3;
 
+function readSavedLoadouts(storage) {
+    try {
+        return JSON.parse((storage ?? localStorage).getItem(STORAGE_KEY) || 'null');
+    } catch {
+        return null;
+    }
+}
+
+// Existing loadouts can retain their equipped cards when campaign unlocks are introduced.
+export function equippedDeckCards(storage) {
+    const saved = readSavedLoadouts(storage);
+    if (!Array.isArray(saved?.decks)) return [];
+    return [
+        ...new Set(
+            saved.decks
+                .slice(0, DECK_COUNT)
+                .filter(Array.isArray)
+                .flat()
+                .filter((type) => typeof type === 'string'),
+        ),
+    ];
+}
+
 export class DeckEditor {
     static install({
         types,
@@ -16,6 +39,8 @@ export class DeckEditor {
         portraitOf,
         infoOf,
         renderDetails,
+        isUnlocked,
+        unlockHint,
     }) {
         if (this.initialized) return;
         this.initialized = true;
@@ -28,7 +53,9 @@ export class DeckEditor {
         this.portraitOf = portraitOf;
         this.infoOf = infoOf;
         this.renderDetails = renderDetails;
-        this.filter = 'hero';
+        this.isUnlocked = isUnlocked;
+        this.unlockHint = unlockHint;
+        this.filter = 'grain';
         this.selectedSlot = null;
         this.dialog = document.getElementById('deckDialog');
         this.details = document.getElementById('deckCardDialog');
@@ -64,17 +91,14 @@ export class DeckEditor {
 
     static load() {
         const heroes = this.heroes(),
-            available = new Set([...heroes, ...this.types()]);
-        let saved = null;
-        try {
-            saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-        } catch {
-            // A missing, damaged or inaccessible preference uses the full starter deck.
-        }
+            available = new Set(
+                [...heroes, ...this.types()].filter((type) => this.isUnlocked(type)),
+            ),
+            saved = readSavedLoadouts();
         const selected = Number.isInteger(saved?.selected)
             ? Math.max(0, Math.min(DECK_COUNT - 1, saved.selected))
             : 0;
-        const starter = this.starter();
+        const starter = this.starter().filter((type) => available.has(type));
         const starterSlots = () =>
             Array.from({ length: this.limit }, (_, index) => starter[index] ?? null);
         const decks = Array.from({ length: DECK_COUNT }, (_, index) => {
@@ -119,10 +143,12 @@ export class DeckEditor {
         return this.getSlots().filter((type) => type !== null);
     }
 
-    static open() {
+    static open(type) {
         this.selectedSlot = null;
+        if (type) this.filter = this.heroes().includes(type) ? 'hero' : 'grain';
         this.refresh();
         if (!this.dialog.open) this.dialog.showModal();
+        if (type) this.dialog.querySelector(`[data-deck-type="${CSS.escape(type)}"]`)?.focus();
     }
 
     static refresh() {
@@ -233,6 +259,7 @@ export class DeckEditor {
         host.replaceChildren();
         for (const type of heroCatalog ? this.heroes() : this.types()) {
             const chosen = deck.includes(type),
+                locked = !this.isUnlocked(type),
                 button = document.createElement('button'),
                 name = document.createElement('b'),
                 detail = document.createElement('small'),
@@ -242,20 +269,29 @@ export class DeckEditor {
             button.dataset.deckType = type;
             if (heroCatalog) button.dataset.deckHero = type;
             button.setAttribute('aria-pressed', String(chosen));
-            const full = !chosen && deck.length >= this.limit;
+            const full = !locked && !chosen && deck.length >= this.limit;
+            button.toggleAttribute('data-locked', locked);
+            if (locked) button.setAttribute('aria-disabled', 'true');
             button.toggleAttribute('data-capacity-blocked', full);
             name.textContent = this.nameOf(type);
             const stats = this.statsOf(type),
                 info = this.infoOf(type);
-            detail.innerHTML = heroCatalog ? '영웅' : ResourceDisplay.costMarkup(stats);
-            button.title = `${info.role} · ${info.feature}`;
-            button.setAttribute(
-                'aria-label',
-                `${this.nameOf(type)}, ${info.role}, 비용 ${ResourceDisplay.costText(stats, true)}, ${stats.count}명, ${info.feature}, ${chosen ? '덱에서 제외' : full ? '덱이 가득 찼어요' : '덱에 추가'}`,
-            );
+            if (locked) {
+                const hint = this.unlockHint(type);
+                detail.textContent = hint;
+                button.title = hint;
+                button.setAttribute('aria-label', `${this.nameOf(type)} 잠김 · ${hint}`);
+            } else {
+                detail.innerHTML = heroCatalog ? '영웅' : ResourceDisplay.costMarkup(stats);
+                button.title = `${info.role} · ${info.feature}`;
+                button.setAttribute(
+                    'aria-label',
+                    `${this.nameOf(type)}, ${info.role}, 비용 ${ResourceDisplay.costText(stats, true)}, ${stats.count}명, ${info.feature}, ${chosen ? '덱에서 제외' : full ? '덱이 가득 찼어요' : '덱에 추가'}`,
+                );
+            }
             check.className = 'deck-card-check';
             check.setAttribute('aria-hidden', 'true');
-            check.textContent = chosen ? '✓' : '+';
+            check.textContent = locked ? '🔒' : chosen ? '✓' : '+';
             button.append(this.makePortrait(type), name, detail, check);
             button.addEventListener('click', () => {
                 if (this.toggleCard(type))
@@ -269,9 +305,13 @@ export class DeckEditor {
     }
 
     static toggleCard(type) {
+        const notice = document.getElementById('deckNotice');
+        if (!this.isUnlocked(type)) {
+            notice.textContent = this.unlockHint(type);
+            return false;
+        }
         const slots = this.getSlots().slice(),
-            index = slots.indexOf(type),
-            notice = document.getElementById('deckNotice');
+            index = slots.indexOf(type);
         if (index >= 0) {
             if (this.getDeck().length === 1) {
                 notice.textContent = '카드를 한 장 이상 골라야 해요.';

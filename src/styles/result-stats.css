@@ -7,6 +7,38 @@
     margin: auto;
 }
 
+.result-campaign-reward {
+    order: 3;
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: #fffdf5;
+    text-align: left;
+}
+
+.result-campaign-reward[hidden] {
+    display: none;
+}
+
+.result-campaign-reward img {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+}
+
+.result-campaign-reward strong {
+    display: block;
+    margin-bottom: 5px;
+}
+
+#resultNextCampaignBtn {
+    order: 3;
+}
+
 .result-by-unit {
     order: 4;
     padding: 14px;

@@ -381,7 +381,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         ramps: mapDescriptor.terrain.ramps.length,
                     });
                 }
-                const oilLesson = openStage(campaignStage('acorn'));
+                const oilLesson = openStage(campaignStage('millet'));
                 const lessonOil = oilLesson.capturePoints.find((p) => p.resourceType === 'premium');
                 const lessonCannon = checkOilOpening(oilLesson, 'host', 0, lessonOil);
                 const oilCaptureSeconds = oilLesson.tick / oilLesson.tps;

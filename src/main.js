@@ -84,7 +84,8 @@ import { PRODUCT_VERSION } from './core/product-version.js';
 import { RallyGamekit } from './core/gamekit.js';
 import { LaunchScreens } from './ui/launch-screens.js';
 import { createShowcaseHost } from './ui/showcase-host.js';
-import { DeckEditor } from './ui/deck-editor.js';
+import { DeckEditor, equippedDeckCards } from './ui/deck-editor.js';
+import { CampaignProgress } from './ui/campaign-progress.js';
 import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
 import { AudioSystem } from './audio/audio-system.js';
@@ -8704,6 +8705,8 @@ class MatchLifecycle {
     }
     static startSinglePlayerWebRTC(humanRole = 'guest') {
         if (MatchLifecycle.singleMatch) return;
+        const stage = campaignStage(this.selectedCampaign);
+        if (this.selectedCampaign && (!stage || !campaignProgress.canStart(stage))) return;
         MatchLifecycle.disposeMatches('single-start');
 
         humanRole = humanRole === 'host' ? 'host' : 'guest';
@@ -8729,7 +8732,6 @@ class MatchLifecycle {
         const transports = { host: hostTransport, guest: guestTransport };
         const humanTransport = transports[humanRole];
         const botTransport = transports[botRole];
-        const stage = campaignStage(this.selectedCampaign);
         const config = { ...MatchLifecycle.currentMatchConfig(), campaignStage: stage?.id || null },
             configFor = (role) => (role === 'host' ? config : undefined);
         const humanSession = MatchLifecycle.createSession(
@@ -8737,10 +8739,10 @@ class MatchLifecycle {
             humanTransport,
             token,
             configFor(humanRole),
-            stage ? LaunchRules.withDefaultHero(stage.deck) : DeckEditor.getDeck(),
+            stage?.deck ?? DeckEditor.getDeck(),
         );
         // CONFIG.single.botWorker runs the AI session in src/sim-worker.js; its WebRTC transport stays here.
-        const botDeck = stage ? LaunchRules.withDefaultHero(stage.enemyDeck) : undefined;
+        const botDeck = stage?.enemyDeck;
         const botSession = CONFIG.single.botWorker
             ? new WorkerSessionProxy(botRole, botTransport, token, configFor(botRole), botDeck)
             : MatchLifecycle.createSession(
@@ -8880,6 +8882,12 @@ class MatchLifecycle {
         MatchLifecycle.closeMatchMenu();
         return true;
     }
+    static startCampaignStage(stage) {
+        if (!stage || !campaignProgress.canStart(stage)) return;
+        this.disposeMatches('campaign-stage-change');
+        this.selectedCampaign = stage.id;
+        this.startSinglePlayerWebRTC('host');
+    }
     static presentMatchResult(winner, reason = 'base-destroyed', sourceRole = null) {
         const humanRole = SinglePlayerModeUtil.isSinglePlayer()
             ? MatchLifecycle.singleMatch?.humanRole || ActiveViewState.role
@@ -8891,18 +8899,10 @@ class MatchLifecycle {
         const draw = reason === 'draw' || !winner,
             mine = !draw && winner === viewRole;
         const stage = campaignStage(MatchLifecycle.selectedCampaign);
-        if (stage && mine && reason === 'base-destroyed') {
-            const index = CAMPAIGN_STAGES.indexOf(stage);
-            try {
-                const current = Number(localStorage.getItem('ssalkongpang-campaign-progress')) || 0;
-                localStorage.setItem(
-                    'ssalkongpang-campaign-progress',
-                    String(Math.max(current, index + 1)),
-                );
-            } catch (error) {
-                console.warn('캠페인 진행 저장 실패', error);
-            }
-        }
+        const cleared = stage && mine && reason === 'base-destroyed';
+        const reward = cleared ? campaignProgress.complete(stage) : null;
+        const next = cleared ? CAMPAIGN_STAGES[CAMPAIGN_STAGES.indexOf(stage) + 1] : null;
+        LaunchScreens.renderCampaignResult(reward, next);
         UiRegistry.refs.resultTitle.textContent = draw ? '무승부' : mine ? '승리' : '패배';
         if (reason === 'surrender')
             UiRegistry.refs.resultText.textContent = mine
@@ -8919,6 +8919,8 @@ class MatchLifecycle {
                 : '내 메인 거점이 파괴되었습니다.';
         if (stage && mine && stage.mode === 'defend')
             UiRegistry.refs.resultText.textContent = '제한 시간 동안 본진을 지켰습니다.';
+        if (cleared && !next)
+            UiRegistry.refs.resultText.textContent = '캠페인을 모두 완료했습니다.';
         const end = ActiveViewState.snap,
             stats = end?.launchStats,
             mySide = ConnectionSideUtil.roleSide(viewRole);
@@ -10624,9 +10626,11 @@ const reloadAt = (hash) => {
     history.replaceState(null, '', location.pathname + location.search + hash);
     location.reload();
 };
-UiController.bindImmediateButton(UiRegistry.refs.rematch, () =>
-    reloadAt(MatchLifecycle.singleMatch ? '#/play' : '#/friend'),
-);
+UiController.bindImmediateButton(UiRegistry.refs.rematch, () => {
+    const stage = campaignStage(MatchLifecycle.selectedCampaign);
+    if (stage) MatchLifecycle.startCampaignStage(stage);
+    else reloadAt(MatchLifecycle.singleMatch ? '#/play' : '#/friend');
+});
 BattlePresentation.setupCanvas();
 
 // Recovery initiation must mirror a real multiplayer client:
@@ -10942,6 +10946,14 @@ if (dev.netcode) setNetcodeMode(dev.netcode);
 const leaveSetup = () => {
     audioSystem.unlock();
 };
+let campaignStorage;
+try {
+    campaignStorage = window.localStorage;
+} catch (error) {
+    console.warn('캠페인 진행 저장소를 열 수 없습니다.', error);
+}
+const campaignProgress = new CampaignProgress(campaignStorage, equippedDeckCards);
+addEventListener('storage', () => campaignProgress.sync());
 DeckEditor.install({
     types: () => LaunchRules.deck,
     heroes: () => LaunchRules.heroTypes,
@@ -10950,6 +10962,11 @@ DeckEditor.install({
     nameOf: (type) => UnitDefinition.get(type)?.name || type,
     statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
     infoOf: (type) => LaunchScreens.grainInfo(type),
+    isUnlocked: (type) => campaignProgress.isUnlocked(type),
+    unlockHint: (type) => {
+        const stage = campaignProgress.unlockStage(type);
+        return stage ? `${stage.title} 클리어 시 해금` : '';
+    },
     renderDetails: (type, host) => LaunchScreens.renderCardDetail(type, host),
     portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
 });
@@ -10963,17 +10980,12 @@ LaunchScreens.install({
     createNavigation: RallyGamekit.createNavigation,
     showcaseSurface,
     actions: {
-        campaignProgress: () => {
-            try {
-                return Math.max(
-                    0,
-                    Number(localStorage.getItem('ssalkongpang-campaign-progress')) || 0,
-                );
-            } catch (error) {
-                console.warn('캠페인 진행 불러오기 실패', error);
-                return 0;
-            }
+        campaignProgress,
+        startCampaignStage: (stage) => {
+            leaveSetup();
+            MatchLifecycle.startCampaignStage(stage);
         },
+        openRewardDeck: (type) => DeckEditor.open(type),
         selectCampaign: (id) => {
             MatchLifecycle.selectedCampaign = id;
         },

@@ -223,6 +223,15 @@ button.deck-slot {
     background: #f1eee3;
     color: #58634e;
 }
+.deck-card[data-locked] {
+    border-color: #d4d1c2;
+    background: #f0eee5;
+    color: #4d5547;
+    cursor: not-allowed;
+}
+.deck-card[data-locked] img {
+    filter: grayscale(1);
+}
 .deck-card small {
     display: flex;
     align-items: center;
@@ -233,6 +242,11 @@ button.deck-slot {
     font-size: 10px;
     line-height: 1.15;
     white-space: nowrap;
+}
+.deck-card[data-locked] small {
+    color: #605747;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 .deck-card-check {
     position: absolute;
