@@ -528,7 +528,10 @@ class EffectObjectFactory {
                 (motion) => motion.lifeMs,
             ),
             this.fireShakeDuration(1),
-            this.impactShakeDuration(LaunchRules.centerPeak, 1),
+            this.impactShakeDuration(
+                Math.max(LaunchRules.unitImpactPeak, LaunchRules.buildingImpactPeak),
+                1,
+            ),
         );
     }
     static combatLife(fx) {

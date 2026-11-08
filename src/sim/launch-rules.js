@@ -92,8 +92,10 @@ class LaunchRules {
             0,
         );
     }
-    // 폭발 중심의 피해 배수. 가장자리는 1배, 중심은 centerPeak배이고 거리에 따라 제곱으로 줄어든다.
-    static centerPeak = 3;
+    // Artillery damage falls off from the center to 1× at the edge.
+    static unitImpactScale = 0.75;
+    static unitImpactPeak = 4;
+    static buildingImpactPeak = 3;
     static heroCard = 'watermelon';
     static heroTypes = Object.freeze([LaunchRules.heroCard, 'banana', 'grape']);
     static grains = Object.freeze({
@@ -219,9 +221,9 @@ class LaunchRules {
             throw new Error('양쪽 플레이어의 덱이 필요합니다.');
         return decks.map((deck) => this.normalizeDeck(deck));
     }
-    static strike(distance, radius) {
+    static strike(distance, radius, peak) {
         const k = RangeUtil.clamp(1 - distance / Math.max(1, radius), 0, 1);
-        return 1 + (this.centerPeak - 1) * k * k;
+        return 1 + (peak - 1) * k * k;
     }
     static grain(type) {
         return Object.hasOwn(this.grains, type) ? this.grains[type] : null;
