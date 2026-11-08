@@ -10971,6 +10971,7 @@ DeckEditor.install({
     heroes: () => LaunchRules.heroTypes,
     starter: () => LaunchRules.starterDeck,
     limit: LaunchRules.deckLimit,
+    heroLimit: LaunchRules.deckHeroLimit,
     nameOf: (type) => UnitDefinition.get(type)?.name || type,
     statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
     infoOf: (type) => LaunchScreens.grainInfo(type),

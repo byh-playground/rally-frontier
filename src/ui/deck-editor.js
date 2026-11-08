@@ -34,6 +34,7 @@ export class DeckEditor {
         heroes,
         starter,
         limit,
+        heroLimit,
         nameOf,
         statsOf,
         portraitOf,
@@ -48,6 +49,7 @@ export class DeckEditor {
         this.heroes = heroes;
         this.starter = starter;
         this.limit = limit;
+        this.heroLimit = heroLimit;
         this.nameOf = nameOf;
         this.statsOf = statsOf;
         this.portraitOf = portraitOf;
@@ -115,9 +117,14 @@ export class DeckEditor {
                     ? cards
                     : [...new Set(cards.filter((type) => available.has(type)))];
             const seen = new Set();
+            let heroCount = 0;
             const slots = Array.from({ length: this.limit }, (_, slot) => {
                 const type = entries[slot];
                 if (!available.has(type) || seen.has(type)) return null;
+                if (heroes.includes(type)) {
+                    if (heroCount >= this.heroLimit) return null;
+                    heroCount++;
+                }
                 seen.add(type);
                 return type;
             });
@@ -269,10 +276,10 @@ export class DeckEditor {
             button.dataset.deckType = type;
             if (heroCatalog) button.dataset.deckHero = type;
             button.setAttribute('aria-pressed', String(chosen));
-            const full = !locked && !chosen && deck.length >= this.limit;
+            const blockReason = !locked && !chosen ? this.additionBlock(type, deck) : '';
             button.toggleAttribute('data-locked', locked);
             if (locked) button.setAttribute('aria-disabled', 'true');
-            button.toggleAttribute('data-capacity-blocked', full);
+            button.toggleAttribute('data-capacity-blocked', !!blockReason);
             name.textContent = this.nameOf(type);
             const stats = this.statsOf(type),
                 info = this.infoOf(type);
@@ -283,10 +290,10 @@ export class DeckEditor {
                 button.setAttribute('aria-label', `${this.nameOf(type)} 잠김 · ${hint}`);
             } else {
                 detail.innerHTML = heroCatalog ? '영웅' : ResourceDisplay.costMarkup(stats);
-                button.title = `${info.role} · ${info.feature}`;
+                button.title = blockReason || `${info.role} · ${info.feature}`;
                 button.setAttribute(
                     'aria-label',
-                    `${this.nameOf(type)}, ${info.role}, 비용 ${ResourceDisplay.costText(stats, true)}, ${stats.count}명, ${info.feature}, ${chosen ? '덱에서 제외' : full ? '덱이 가득 찼어요' : '덱에 추가'}`,
+                    `${this.nameOf(type)}, ${info.role}, 비용 ${ResourceDisplay.costText(stats, true)}, ${stats.count}명, ${info.feature}, ${chosen ? '덱에서 제외' : blockReason || '덱에 추가'}`,
                 );
             }
             check.className = 'deck-card-check';
@@ -302,6 +309,18 @@ export class DeckEditor {
             tile.append(button, this.infoButton(type));
             host.append(tile);
         }
+    }
+
+    static additionBlock(type, deck) {
+        const heroes = this.heroes();
+        if (
+            heroes.includes(type) &&
+            deck.filter((card) => heroes.includes(card)).length >= this.heroLimit
+        )
+            return `영웅은 최대 ${this.heroLimit}명이에요. 장착한 영웅을 먼저 빼 주세요.`;
+        if (deck.length >= this.limit)
+            return `덱은 최대 ${this.limit}칸이에요. 카드 한 장을 먼저 빼 주세요.`;
+        return '';
     }
 
     static toggleCard(type) {
@@ -320,12 +339,13 @@ export class DeckEditor {
             slots[index] = null;
             this.selectedSlot = index;
         } else {
-            const empty =
-                slots[this.selectedSlot] === null ? this.selectedSlot : slots.indexOf(null);
-            if (empty < 0) {
-                notice.textContent = `덱은 최대 ${this.limit}칸이에요. 카드 한 장을 먼저 빼 주세요.`;
+            const blockReason = this.additionBlock(type, this.getDeck());
+            if (blockReason) {
+                notice.textContent = blockReason;
                 return false;
             }
+            const empty =
+                slots[this.selectedSlot] === null ? this.selectedSlot : slots.indexOf(null);
             slots[empty] = type;
             this.selectedSlot = null;
         }
