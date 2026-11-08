@@ -43,13 +43,13 @@ export class UnitLeapAttack {
         return true;
     }
 
-    // Commit impulses at the post-collision boundary, so XYZ integration starts together.
+    // Commit impulses after collision so XYZ integration starts together. Report completed landings.
     static flush(sim, unit, spec, damage) {
         const state = unit.leapAttack;
         if (!state || !unit.alive) return;
         if (state.phase === 'landPending') {
             this.land(sim, unit, spec, damage);
-            return;
+            return true;
         }
         if (state.phase !== 'launchPending') return;
         const mass = sim.mass(unit);
@@ -68,7 +68,7 @@ export class UnitLeapAttack {
         delete state.velocityY;
     }
 
-    static update(sim, unit, spec, damage) {
+    static update(sim, unit) {
         const state = unit.leapAttack;
         if (!state || state.phase !== 'airborne') return false;
         const motion = unit.impactMotion;
@@ -82,11 +82,13 @@ export class UnitLeapAttack {
         const state = unit.leapAttack;
         state.phase = 'ready';
         state.cooldownUntil = sim.tick + sim.msTicks(spec.cooldownMs);
+        const impact = spec.impact;
+        if (!impact) return;
         const heightFP = Math.round(sim.world.terrain.surfaces.heightAt(unit.x, unit.y) * FP);
         sim.withNearbyUnits(
             unit.x,
             unit.y,
-            spec.radius + sim.maxUnitRadius,
+            impact.radius + sim.maxUnitRadius,
             1 - unit.side,
             (indices) => {
                 for (const index of indices) {
@@ -99,14 +101,14 @@ export class UnitLeapAttack {
                         continue;
                     if (
                         LaunchImpact.distanceToBody(sim, target, unit.x, unit.y, heightFP)
-                            .surfaceDistance > spec.radius
+                            .surfaceDistance > impact.radius
                     )
                         continue;
                     LaunchImpact.start(sim, target, {
                         dx: target.x - unit.x,
                         dy: target.y - unit.y,
-                        speed: spec.knockbackSpeed,
-                        lift: spec.knockbackLift,
+                        speed: impact.knockbackSpeed,
+                        lift: impact.knockbackLift,
                         sourceId: unit.id,
                         originX: unit.x,
                         originY: unit.y,
@@ -116,7 +118,7 @@ export class UnitLeapAttack {
                         unit.type,
                         target,
                         false,
-                        Math.floor(damage * spec.damageScale),
+                        Math.floor(damage * impact.damageScale),
                         unit.id,
                     );
                 }
@@ -128,7 +130,7 @@ export class UnitLeapAttack {
             sourceId: unit.id,
             x: unit.x,
             y: unit.y,
-            radius: spec.radius,
+            radius: impact.radius,
         });
     }
 }

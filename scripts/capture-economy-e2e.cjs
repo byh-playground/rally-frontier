@@ -481,7 +481,8 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 );
                 check(
                     LaunchRules.grain('rice').cost === 125 &&
-                        LaunchRules.grain('pea').cost === 250 &&
+                        LaunchRules.grain('pea').cost === 175 &&
+                        LaunchRules.grain('popcorn').cost === 125 &&
                         LaunchRules.grain('redbean').cost === 250,
                     'basic launch prices use the same currency',
                 );
