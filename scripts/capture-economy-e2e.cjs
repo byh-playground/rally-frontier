@@ -402,7 +402,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 const opening = openStage(campaignStage('first'));
                 const home = opening.launchCannons(0)[0];
                 const advance = opening.capturePoints.find((p) => p.id === 'advance');
-                for (let shot = 0; shot < 3; shot++) {
+                for (let shot = 0; shot < 2; shot++) {
                     check(
                         opening.applyCommand('host', {
                             type: 'LAUNCH',
@@ -720,11 +720,12 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     'full starting basic wallet and empty premium wallet',
                 );
                 check(
-                    LaunchRules.grain('rice').cost === 125 &&
-                        LaunchRules.grain('pea').cost === 175 &&
-                        LaunchRules.grain('popcorn').cost === 125 &&
-                        LaunchRules.grain('redbean').cost === 250,
-                    'basic launch prices use the same currency',
+                    LaunchRules.grain('rice').cost +
+                        LaunchRules.upgradeCost(0) +
+                        BuildingDefinition.get(BuildingDefinition.forRole('outpost')).construction
+                            .cost ===
+                        LaunchRules.startingWallet,
+                    'first upgrade, rice launch and oil construction use exactly the starting supply',
                 );
                 check(
                     base.production.basic.incomePerSecond === 15 &&

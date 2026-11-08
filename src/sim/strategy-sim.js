@@ -1347,8 +1347,16 @@ class StrategySim {
         cannon.launchReadyTick =
             this.tick + this.msTicks(LaunchRules.volleyMs(action.unitType) + LaunchRules.reloadMs);
         const power = LaunchRules.power(holdMs),
-            shots = LaunchRules.volley(action.unitType, aim, cannon),
+            shots = LaunchRules.volley(action.unitType, aim, cannon, this.world),
             mode = grain.fire.mode;
+        const arcDistance =
+            mode === 'split'
+                ? Math.max(
+                      1,
+                      Math.hypot(aim.x - cannon.x, aim.y - cannon.y) -
+                          LaunchImpactRules.muzzleReach,
+                  )
+                : null;
         shots.forEach((shot, i) => {
             const fire = {
                 side,
@@ -1359,6 +1367,7 @@ class StrategySim {
                 shots: shots.length,
                 power,
                 holdMs,
+                arcDistance,
                 ...shot,
             };
             if (shot.delayMs > 0)
@@ -1378,6 +1387,7 @@ class StrategySim {
         shots,
         power,
         holdMs,
+        arcDistance,
         x,
         y,
         count,
@@ -1403,7 +1413,13 @@ class StrategySim {
             trajectoryPolicy: 'lockedPoint',
             lockedAimX: x,
             lockedAimY: y,
-            speed: grain.speed,
+            // Split shells cover unequal distances in the same time on clear ground.
+            speed:
+                arcDistance != null
+                    ? (grain.speed * Math.max(1, length - LaunchImpactRules.muzzleReach)) /
+                      arcDistance
+                    : grain.speed,
+            arcDistance,
             damage: impact,
             splash,
             splashUnitDamage: impact * LaunchRules.unitImpactScale,
@@ -2446,7 +2462,8 @@ class StrategySim {
                 aimX = contact.x;
                 aimY = contact.y;
             }
-            if (dist <= Math.max(20, step) || contact) {
+            const arrivalStep = p.arcDistance != null ? step : Math.max(20, step);
+            if (dist <= arrivalStep || contact) {
                 p.alive = false;
                 this.events.push({
                     type: 'projectileRetire',

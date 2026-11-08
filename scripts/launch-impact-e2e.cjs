@@ -52,8 +52,8 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     throw new Error(message + (detail ? ': ' + JSON.stringify(detail) : ''));
             };
             const rows = [];
-            function arena({ wall = false } = {}) {
-                const sim = new StrategySim(12345),
+            function arena({ wall = false, deck = LaunchRules.starterDeck } = {}) {
+                const sim = new StrategySim(12345, undefined, [deck, LaunchRules.starterDeck]),
                     state = sim.exportState();
                 const map = structuredClone(state.mapDescriptor),
                     x = Math.round(map.width / 2),
@@ -142,6 +142,218 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 copy.importState(sim.exportState());
                 check(copy.checksum() === sim.checksum(), 'mid-motion restore checksum');
                 return copy;
+            }
+            // One ordinary launch must produce its promised pattern in the authoritative world.
+            {
+                const cases = [
+                    [
+                        'rice',
+                        175,
+                        0,
+                        [
+                            [0, -200, 126, 6, 4],
+                            [0, -100, 126, 6, 4],
+                            [0, 0, 126, 6, 4],
+                            [0, 100, 126, 6, 4],
+                            [0, 200, 126, 6, 4],
+                        ],
+                        0,
+                    ],
+                    ['pea', 225, 0, [[0, 0, 80, 40, 12]], 0],
+                    [
+                        'redbean',
+                        300,
+                        0,
+                        [
+                            [0, 0, 95, 20, 4],
+                            [0, 0, 95, 20, 3],
+                            [0, 0, 95, 20, 3],
+                        ],
+                        300,
+                    ],
+                    [
+                        'millet',
+                        200,
+                        0,
+                        [
+                            [-100, 0, 45, 10, 10],
+                            [0, 0, 45, 10, 10],
+                        ],
+                        0,
+                    ],
+                    [
+                        'popcorn',
+                        175,
+                        0,
+                        [
+                            [0, -80, 60, 15, 5],
+                            [0, 80, 60, 15, 5],
+                        ],
+                        0,
+                    ],
+                    [
+                        'acorn',
+                        175,
+                        50,
+                        [
+                            [0, 0, 90, 15, 1],
+                            [0, 0, 60, 25, 1],
+                            [0, 0, 40, 40, 1],
+                        ],
+                        450,
+                    ],
+                    ['corn', 100, 75, [[0, 0, 65, 25, 6]], 0, 550],
+                    ['chestnut', 125, 25, [[0, 0, 50, 10, 6]], 0, 1000],
+                ];
+                const flights = {};
+                for (const [type, cost, oil, expected, gapMs, speed] of cases) {
+                    const { sim } = arena({ deck: [type] });
+                    const cannon = sim.launchCannons(0)[0];
+                    const aim = { x: cannon.x + 350, y: cannon.y };
+                    sim.creditResources(0, oil, 'premium');
+                    check(
+                        sim.applyCommand('host', {
+                            type: 'LAUNCH',
+                            cannonId: cannon.id,
+                            unitType: type,
+                            holdMs: LaunchRules.holdFor(350, type, 0),
+                            ...aim,
+                        }) &&
+                            sim.wallet[0] === LaunchRules.startingWallet - cost &&
+                            sim.premiumWallet[0] === 0,
+                        'one artillery order charges the proposed price exactly once',
+                        type,
+                    );
+
+                    const shots = [];
+                    const impacts = new Map();
+                    const landings = [];
+                    const observe = () => {
+                        for (const event of sim.events) {
+                            if (event.type === 'launchFire') {
+                                const p = sim.projectiles.find(
+                                    (shell) => shell.id === event.projectileId,
+                                );
+                                const midX = (p.launchX + p.lockedAimX) / 2;
+                                const midY = (p.launchY + p.lockedAimY) / 2;
+                                shots.push({
+                                    id: p.id,
+                                    tick: sim.tick,
+                                    offsetX: p.lockedAimX - aim.x,
+                                    offsetY: p.lockedAimY - aim.y,
+                                    radius: p.splash,
+                                    impact: p.splashBuildingDamage,
+                                    count: p.payload.count,
+                                    speed: p.speed,
+                                    height: LaunchImpact.projectileHeight(sim, p, midX, midY),
+                                });
+                            } else if (event.type === 'launchImpact') {
+                                impacts.set(event.projectileId, { ...event, tick: sim.tick });
+                            } else if (event.type === 'launchLand') {
+                                landings.push(event);
+                            }
+                        }
+                    };
+                    observe();
+                    step(sim, sim.tps * 4, observe);
+                    const pattern = shots.map((p) => [
+                        p.offsetX,
+                        p.offsetY,
+                        p.radius,
+                        p.impact,
+                        p.count,
+                    ]);
+                    check(
+                        JSON.stringify(pattern) === JSON.stringify(expected),
+                        'actual ordered projectiles match the artillery profile',
+                        { type, pattern, expected },
+                    );
+                    check(
+                        shots.every(
+                            (p, i) => p.tick === Math.round((i * gapMs * sim.tps) / 1000),
+                        ) &&
+                            shots.every((p) => {
+                                const hit = impacts.get(p.id);
+                                return (
+                                    hit?.radius === p.radius &&
+                                    Math.hypot(
+                                        hit.x - aim.x - p.offsetX,
+                                        hit.y - aim.y - p.offsetY,
+                                    ) < 35
+                                );
+                            }),
+                        'projectiles leave on schedule and carry their radius to the intended ground',
+                        { type, shots, impacts: [...impacts.values()] },
+                    );
+                    check(
+                        type === 'rice' ||
+                            gapMs !== 0 ||
+                            new Set([...impacts.values()].map((e) => e.tick)).size === 1,
+                        'simultaneous pattern reaches unobstructed ground on one tick',
+                        { type, impacts: [...impacts.values()] },
+                    );
+                    check(
+                        shots.every(
+                            (p) =>
+                                landings
+                                    .filter((event) => event.projectileId === p.id)
+                                    .reduce((count, event) => count + event.count, 0) === p.count,
+                        ),
+                        'each shell deploys exactly its share of the launch',
+                        type,
+                    );
+                    if (speed)
+                        check(
+                            shots[0].speed === speed,
+                            'specialized shell keeps its flight speed',
+                            type,
+                        );
+                    flights[type] = {
+                        height: shots[0].height,
+                        tick: impacts.get(shots[0].id).tick,
+                    };
+                    if (type === 'corn') {
+                        check(
+                            landings.every((event) =>
+                                event.units.every(
+                                    (unit) =>
+                                        Math.hypot(unit.x - event.x, unit.y - event.y) <=
+                                        shots[0].radius,
+                                ),
+                            ),
+                            'corn deploys a compact group around its landing point',
+                            landings,
+                        );
+                    }
+                    if (type === 'chestnut') {
+                        const release = landings.flatMap((event) => event.units);
+                        const lateral = release.map((unit) => unit.y - aim.y).sort((a, b) => a - b);
+                        check(
+                            lateral.length === 6 &&
+                                lateral.every((y, i) => Math.abs(y - (i - 2.5) * 35) < 0.1) &&
+                                Math.max(...release.map((unit) => unit.x)) -
+                                    Math.min(...release.map((unit) => unit.x)) <
+                                    0.1,
+                            'chestnut draws a centered transverse six-unit line on open ground',
+                            release,
+                        );
+                    }
+                    rows.push({
+                        scenario: 'artillery profile ' + type,
+                        pattern,
+                        fireTicks: shots.map((p) => p.tick),
+                        landingTicks: shots.map((p) => impacts.get(p.id).tick),
+                        flight: flights[type],
+                    });
+                }
+                check(
+                    flights.corn.height > flights.pea.height &&
+                        flights.pea.height > flights.chestnut.height &&
+                        flights.corn.tick > flights.pea.tick &&
+                        flights.pea.tick > flights.chestnut.tick,
+                    'corn flies higher and slower while chestnut flies lower and faster',
+                    flights,
+                );
             }
             {
                 function fight(type) {
@@ -283,13 +495,17 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     );
                     return initial - target.hp;
                 }
-                const halfway = ['rice', 'pea', 'acorn'].map((type) => measure(type, 50));
-                const edge = measure('rice', 100);
-                const building = measure('base', 100);
+                const radius = LaunchRules.grain('pea').splash;
+                const offCenter = ['rice', 'pea', 'acorn'].map((type) => measure(type, 50));
+                const edge = measure('rice', radius);
+                const building = measure(
+                    'base',
+                    BuildingDefinition.get('base').size + radius * 0.45,
+                );
                 check(
-                    halfway.every((damage) => damage === 51) && edge === 30,
+                    offCenter.every((damage) => damage === 42) && edge === 30,
                     'artillery scales with distance, without a light, medium or heavy multiplier',
-                    { halfway, edge },
+                    { offCenter, edge },
                 );
                 check(
                     building === 63,
@@ -298,7 +514,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 );
                 rows.push({
                     scenario: 'artillery damage follows the landing point without size bonuses',
-                    halfway,
+                    offCenter,
                     edge,
                     building,
                 });

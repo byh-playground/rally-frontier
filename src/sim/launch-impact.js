@@ -141,6 +141,11 @@ class LaunchImpact {
         }
         const origin = this.deploymentOrigin(sim, p, x, y);
         const groundFP = Math.round(sim.world.terrain.surfaces.heightAt(origin.x, origin.y) * FP);
+        const direction =
+            LaunchRules.grain(type).land === 'transverse'
+                ? { x: p.lockedAimX - p.launchX, y: p.lockedAimY - p.launchY }
+                : null;
+        const line = direction && (Math.hypot(direction.x, direction.y) || 1);
         sim.launchDeployments.push({
             projectileId: p.id,
             side: p.side,
@@ -148,6 +153,7 @@ class LaunchImpact {
             count,
             index: 0,
             ...origin,
+            ...(direction ? { dirX: direction.x / line, dirY: direction.y / line } : {}),
             holdPointId,
             nextTick: sim.tick,
             heightFP: Math.max(0, (impactHeightFP ?? groundFP) - groundFP),
@@ -165,25 +171,40 @@ class LaunchImpact {
                 sim.world.terrain.surfaces.heightAt(group.x, group.y) + group.heightFP / FP;
         const findSpots = (baseRadius, maxRadius) => {
             const spots = [];
+            const canRelease = (x, y) => {
+                const fx = Math.round(x * FP) / FP,
+                    fy = Math.round(y * FP) / FP;
+                return (
+                    sim.world.terrain.surfaces.heightAt(fx, fy) <= absoluteHeight &&
+                    sim.pointClearForUnit(group.type, fx, fy, null, spots) &&
+                    this.releasePathClear(sim, group, fx, fy, absoluteHeight)
+                );
+            };
             for (let i = 0; i < group.count; i++) {
-                const spot = sim.findOpenSpawnAround(origin, group.type, {
-                    baseRadius,
-                    maxRadius,
-                    angleSlots: 12,
-                    radialStep: 10,
-                    seedKey: sim.seed + '|' + group.projectileId + '|release|' + attempt + '|' + i,
-                    reserved: spots,
-                    maxElevation: absoluteHeight,
-                    canReach: (x, y) => {
-                        const fx = Math.round(x * FP) / FP,
-                            fy = Math.round(y * FP) / FP;
-                        return (
-                            sim.world.terrain.surfaces.heightAt(fx, fy) <= absoluteHeight &&
-                            sim.pointClearForUnit(group.type, fx, fy, null, spots) &&
-                            this.releasePathClear(sim, group, fx, fy, absoluteHeight)
-                        );
-                    },
-                });
+                const anchor =
+                    grain.land === 'transverse'
+                        ? LaunchRules.lineDeploymentPosition(group, i, grain.spacing)
+                        : origin;
+                const spot =
+                    anchor !== origin && canRelease(anchor.x, anchor.y)
+                        ? anchor
+                        : sim.findOpenSpawnAround(anchor, group.type, {
+                              baseRadius,
+                              maxRadius,
+                              angleSlots: 12,
+                              radialStep: 10,
+                              seedKey:
+                                  sim.seed +
+                                  '|' +
+                                  group.projectileId +
+                                  '|release|' +
+                                  attempt +
+                                  '|' +
+                                  i,
+                              reserved: spots,
+                              maxElevation: absoluteHeight,
+                              canReach: canRelease,
+                          });
                 if (!spot) return null;
                 spots.push({
                     x: Math.round(spot.x * FP) / FP,
@@ -198,6 +219,7 @@ class LaunchImpact {
             group.deployAttempt = attempt + 1;
             return false;
         }
+        const keepFormation = grain.land === 'compact' || grain.land === 'transverse';
         const radii = spots.map((spot) => Math.hypot(spot.x - group.x, spot.y - group.y)),
             closest = Math.min(...radii),
             radiusSpan = Math.max(...radii) - closest;
@@ -217,7 +239,7 @@ class LaunchImpact {
                 speed:
                     LaunchImpactRules.deploymentSpeed *
                     releaseScale *
-                    (radiusSpan ? (radii[i] - closest) / radiusSpan : 0),
+                    (radiusSpan && !keepFormation ? (radii[i] - closest) / radiusSpan : 0),
                 lift: LaunchImpactRules.deploymentLift * releaseScale,
                 sourceId: group.projectileId,
                 originX: group.x,
@@ -383,7 +405,7 @@ class LaunchImpact {
             ground =
                 atlas.heightAt(p.launchX, p.launchY) * (1 - progress) +
                 atlas.heightAt(p.lockedAimX, p.lockedAimY) * progress;
-        return ground + LaunchImpactRules.flightHeight(progress, LaunchRules.arcHeight(distance));
+        return ground + LaunchImpactRules.flightHeight(progress, p.arcHeight);
     }
     static terrainSweep(sim, x0, y0, x1, y1) {
         const atlas = sim.world.terrain.surfaces;
@@ -588,7 +610,7 @@ class LaunchImpact {
             const distance = Math.hypot(p.lockedAimX - p.launchX, p.lockedAimY - p.launchY) || 1;
             const fromGround = sim.world.terrain.surfaces.heightAt(p.launchX, p.launchY),
                 toGround = sim.world.terrain.surfaces.heightAt(p.lockedAimX, p.lockedAimY);
-            const arc = LaunchRules.arcHeight(distance),
+            const arc = p.arcHeight,
                 q0 = Math.hypot(p.x - p.launchX, p.y - p.launchY) / distance;
             const q1 = Math.hypot(toX - p.launchX, toY - p.launchY) / distance;
             const peak =
