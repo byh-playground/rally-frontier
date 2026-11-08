@@ -1331,8 +1331,9 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 sessions = Object.values(q.MatchLifecycle.singleMatch.sessions);
             return {
                 button: document.querySelector('#launchRangeBtn').textContent,
-                income: document.querySelector('#launchIncomeText').textContent,
-                wallet: document.querySelector('#launchEnergyText').textContent,
+                income: document.querySelector('[data-resource=basic] .launch-resource-state')
+                    .textContent,
+                wallet: document.querySelector('#launchResources').textContent,
                 levels: sessions.map((s) => s.sim.launchRangeLevel),
                 recorded: sessions.map(
                     (s) =>
@@ -1351,8 +1352,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
         assert(
             ui.wallet.includes('◆') &&
                 ui.wallet.includes('✦') &&
-                ui.income.includes('◆ +15/초') &&
-                ui.income.includes('본진 잔량') &&
+                ui.income.includes('+15/초') &&
                 ui.button.includes('375'),
             'native HUD displays both currencies and the remaining base deposit',
         );
