@@ -1,3 +1,5 @@
+import { LaunchRules } from '../sim/launch-rules.js';
+
 // Shared display rules for both currencies. Amounts are owned by the simulation.
 export const RESOURCES = Object.freeze([
     { key: 'basic', name: '식량', symbol: '◆', color: '#9bd7ff', costKey: 'cost' },
@@ -14,6 +16,36 @@ export class ResourceDisplay {
 
     static rateText(rate) {
         return String(Number(rate.toFixed(4)));
+    }
+
+    static renderWallet(host, s, side, balance) {
+        if (!host.childElementCount) {
+            host.innerHTML = RESOURCES.map(
+                ({ key, symbol, name }) =>
+                    `<div class="launch-resource" data-resource="${key}"><span class="launch-resource-name">${symbol} ${name}</span><b class="launch-resource-balance"></b><span class="launch-resource-meter" aria-hidden="true"><span></span></span><span class="launch-resource-state"></span>${key === 'basic' ? '<span class="launch-resource-state launch-base-income"></span>' : ''}</div>`,
+            ).join('');
+        }
+        const producers = [...s.baseProducers, ...s.capturePoints];
+        const base = s.baseProducers[side];
+        host.querySelector('.launch-base-income').textContent =
+            `본진 효율 ${LaunchRules.productionEfficiency(base)}% · +${this.rateText(LaunchRules.productionRate(base, 'basic'))}/초`;
+        for (const [index, { key }] of RESOURCES.entries()) {
+            const panel = host.children[index];
+            const cap = key === 'premium' ? LaunchRules.premiumWalletCap : LaunchRules.walletCap;
+            const amount = balance[key];
+            const rate = LaunchRules.incomePerSecondFor(producers, side, key);
+            panel.querySelector('.launch-resource-balance').textContent = `${amount}/${cap}`;
+            panel.style.setProperty(
+                '--balance',
+                `${Math.min(100, Math.round((100 * amount) / cap))}%`,
+            );
+            panel.querySelector('.launch-resource-state').textContent =
+                rate > 0
+                    ? `+${this.rateText(rate)}/초${amount >= cap ? ' · 한도 대기' : ''}`
+                    : key === 'premium'
+                      ? '기름 거점 필요'
+                      : '수입 없음';
+        }
     }
 
     static drawDepositMarker(ctx, x, y, radius, type, ownerColor, locked = false) {

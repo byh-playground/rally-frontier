@@ -49,7 +49,7 @@
 
 메인 전투는 독립된 실제 시뮬레이션을 GameKit scenario로 진행한다. `assets/title-showcase.json`은 seed 12349의 한 경기에서 저장한 세 상태이며, 최대 사거리와 연출용 식량을 적용했다. `PRODUCT_VERSION`이 바뀌면 `npm run generate:title-showcase`로 현행 엔진의 상태를 다시 만들고 화면을 검증한다. 빌드는 상태의 게임 버전이 현재 제품 버전과 다르면 실패한다.
 
-시뮬레이션 시간 변환과 상태 codec, 통계 기본값은 UI와 독립된 `src/core/simulation-timing.js`, `src/core/rally-state-codec.js`, `src/diagnostics/simulation-stats.js`가 소유한다. 메인 쇼케이스는 격리된 문서에서 시뮬레이션을 직접 진행하며, 실제 대전의 AI 세션은 기존 Worker에서 실행한다.
+시뮬레이션 시간 변환과 상태 codec, 통계 기본값은 UI와 독립된 `src/core/simulation-timing.js`, `src/core/rally-state-codec.js`, `src/diagnostics/simulation-stats.js`가 소유한다. 타이틀과 병종 소개는 준비된 쇼케이스 렌더러를 공유하고 장면마다 독립 시뮬레이션을 실행한다. 실제 대전의 AI 세션은 Worker에서 실행한다.
 
 ```text
 index.html                 브라우저 ESM 진입점·UI·프로젝트 개발 계약
@@ -57,8 +57,10 @@ src/main.js                화면·입력·실제 WebGL renderer
 src/core/                  제품 버전·호환 식별자·SDK 로딩·배포 정보
 src/definitions/           유닛·건물·전투 수치
 src/sim/                   권위 판정·지형·이동·충격·건설
-src/session/               경기·명령·리플레이 조정
-src/render/                공통 표시 track·곡물 방출·분할 대포 아트
+src/session/               경기·명령·리플레이 조정, 워커 호스트·프록시
+src/render/                보간 상태·표시 효과·곡물 방출·분할 대포 아트
+src/ui/                    자원 HUD·쇼케이스·화면 전환
+src/audio/                 효과음 재생
 assets/units/              원본 SVG·크기와 SHA-256 manifest
 scripts/                   SDK 준비·원본 복사·고정 시나리오 검사
 legacy/                    현재 실행·배포에서 제외한 과거 코드 보관소
