@@ -2144,10 +2144,50 @@ class StrategySim {
             b.targetId = target?.id ?? null;
             if (!target) continue;
             b.startCooldownUntil(this.tick + this.msTicks(d.cooldownMs));
+            if (d.mortar && ++b.attacksSinceMortar === d.mortar.attackInterval) {
+                b.attacksSinceMortar = 0;
+                this.fireMortar(b, target, d.mortar);
+                continue;
+            }
             this.applyDamage(b.side, b.type, target, isBuilding, d.atk, b.id, {
                 damageClass: d.damageClass,
             });
         }
+    }
+    fireMortar(cannon, target, spec) {
+        const dx = target.x - cannon.x,
+            dy = target.y - cannon.y,
+            distance = Math.hypot(dx, dy),
+            muzzleReach = Math.min(LaunchImpactRules.muzzleReach, distance / 2),
+            muzzleFraction = distance ? muzzleReach / distance : 0,
+            arcDistance = Math.max(1, distance - muzzleReach),
+            id = 'p' + ++this.seq;
+        this.spawnProjectile({
+            id,
+            owner: cannon.id,
+            side: cannon.side,
+            type: cannon.type,
+            x: cannon.x + dx * muzzleFraction,
+            y: cannon.y + dy * muzzleFraction,
+            lockedAimX: target.x,
+            lockedAimY: target.y,
+            speed: (arcDistance * 1000) / spec.flightMs,
+            arcDistance,
+            damage: spec.damage,
+            damageClass: spec.damageClass,
+            splash: spec.radius,
+            mortar: true,
+        });
+        this.events.push({
+            type: 'mortarFire',
+            side: cannon.side,
+            cannonId: cannon.id,
+            projectileId: id,
+            x: cannon.x,
+            y: cannon.y,
+            aimX: target.x,
+            aimY: target.y,
+        });
     }
     // Grains are melee bruisers: march to the rally point, chase the chosen target, wind up, hit.
     updateCombat(u, vision, pendingContactAttacks = null) {
@@ -2456,11 +2496,11 @@ class StrategySim {
                 aimY = Number(p.lockedAimY) || p.y;
             const dx = aimX - p.x,
                 dy = aimY - p.y,
-                dist = Math.hypot(dx, dy) || 1,
+                dist = Math.hypot(dx, dy),
                 step = p.speed / this.tps;
             const travel = Math.min(step, dist),
-                toX = p.x + (dx / dist) * travel,
-                toY = p.y + (dy / dist) * travel;
+                toX = p.x + (dx / (dist || 1)) * travel,
+                toY = p.y + (dy / (dist || 1)) * travel;
             const contact = LaunchImpact.firstContact(this, p, toX, toY);
             if (contact) {
                 aimX = contact.x;
@@ -2480,9 +2520,9 @@ class StrategySim {
                 const impactHeightFP =
                     contact?.impactHeightFP ??
                     Math.round(this.world.terrain.surfaces.heightAt(aimX, aimY) * FP);
-                LaunchImpact.blast(this, p, aimX, aimY, Math.max(1, p.splash || 1), impactHeightFP);
-                if (p.payload) LaunchImpact.enqueue(this, p, aimX, aimY, impactHeightFP);
                 const radius = Math.max(1, p.splash || 1);
+                if (!p.mortar) LaunchImpact.blast(this, p, aimX, aimY, radius, impactHeightFP);
+                if (p.payload) LaunchImpact.enqueue(this, p, aimX, aimY, impactHeightFP);
                 const blast = this.applyAreaDamage({
                     sourceSide: p.side,
                     sourceType: p.type,
@@ -2493,7 +2533,7 @@ class StrategySim {
                     damage: p.splashUnitDamage ?? p.damage,
                     damageClass: p.damageClass || 'normal',
                     suppressImpactFx: true,
-                    strikePeak: LaunchRules.unitImpactPeak,
+                    strikePeak: p.mortar ? 1 : LaunchRules.unitImpactPeak,
                     impactHeightFP,
                 });
                 for (const b of this.buildings) {
@@ -2507,11 +2547,13 @@ class StrategySim {
                         true,
                     );
                     if (body.surfaceDistance > radius) continue;
-                    const mult = LaunchRules.strike(
-                        body.falloffDistance,
-                        radius,
-                        LaunchRules.buildingImpactPeak,
-                    );
+                    const mult = p.mortar
+                        ? 1
+                        : LaunchRules.strike(
+                              body.falloffDistance,
+                              radius,
+                              LaunchRules.buildingImpactPeak,
+                          );
                     blast.hits++;
                     blast.peak = Math.max(blast.peak, mult);
                     this.applyDamage(
@@ -2529,7 +2571,7 @@ class StrategySim {
                     );
                 }
                 this.events.push({
-                    type: 'launchImpact',
+                    type: p.mortar ? 'mortarImpact' : 'launchImpact',
                     side: p.side,
                     unit: p.type,
                     x: aimX,

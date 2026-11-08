@@ -84,6 +84,7 @@ class Building {
         {
             cooldownUntil: 0,
             attackCooldownPhase: 0,
+            attacksSinceMortar: 0,
             targetId: null,
             construction: null,
             salvo: [],
@@ -127,14 +128,16 @@ class Projectile {
     constructor(state = {}) {
         Object.assign(this, Projectile.stateContract.create(state));
         this.visualTag = 'launchAmmo';
-        this.arcHeight = LaunchRules.arcHeight(
-            this.arcDistance ??
-                Math.hypot(
-                    (Number(this.lockedAimX) || 0) - (Number(this.launchX) || 0),
-                    (Number(this.lockedAimY) || 0) - (Number(this.launchY) || 0),
-                ),
-            this.type,
-        );
+        this.arcHeight = this.mortar
+            ? BuildingDefinition.get(this.type).mortar.arcHeight
+            : LaunchRules.arcHeight(
+                  this.arcDistance ??
+                      Math.hypot(
+                          (Number(this.lockedAimX) || 0) - (Number(this.launchX) || 0),
+                          (Number(this.lockedAimY) || 0) - (Number(this.launchY) || 0),
+                      ),
+                  this.type,
+              );
         this.drawRadius = 8 + Math.min(10, (this.payload?.count || 0) / 3);
     }
     toState(mode = 'snapshot') {
