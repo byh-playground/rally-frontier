@@ -9,9 +9,13 @@ import {
 import { BattlefieldProjection } from '../sim/terrain.js';
 import { createTitleRun } from './title-showcase-sim.js';
 
-// The title document owns a separate simulation; it never joins a player session.
-export async function prepareTitleShowcase({ renderer, createScenario, createPresentationView }) {
-    const response = await fetch(new URL('../../assets/title-showcase.json', import.meta.url));
+let titleCheckpoints;
+
+async function loadTitleCheckpoints(signal) {
+    if (titleCheckpoints) return titleCheckpoints;
+    const response = await fetch(new URL('../../assets/title-showcase.json', import.meta.url), {
+        signal,
+    });
     if (!response.ok) throw new Error('타이틀 전투 데이터를 불러오지 못했습니다.');
     const saved = await response.json();
     if (
@@ -20,11 +24,27 @@ export async function prepareTitleShowcase({ renderer, createScenario, createPre
         saved.checkpoints?.length !== 3
     )
         throw new Error('타이틀 전투 데이터 버전이 현재 게임과 다릅니다.');
-    const checkpoints = saved.checkpoints;
-    const map = JSON.stringify(checkpoints[0].state.mapDescriptor);
-    if (checkpoints.some((checkpoint) => JSON.stringify(checkpoint.state.mapDescriptor) !== map))
+    const map = JSON.stringify(saved.checkpoints[0].state.mapDescriptor);
+    if (
+        saved.checkpoints.some(
+            (checkpoint) => JSON.stringify(checkpoint.state.mapDescriptor) !== map,
+        )
+    )
         throw new Error('타이틀 전투 장면의 맵이 일치하지 않습니다.');
+    titleCheckpoints = saved;
+    return saved;
+}
 
+export async function prepareTitleShowcase({
+    renderer,
+    createScenario,
+    createPresentationView,
+    signal,
+    onError,
+}) {
+    const saved = await loadTitleCheckpoints(signal);
+    signal?.throwIfAborted();
+    const { checkpoints } = saved;
     const run = createTitleRun(saved.seed);
     let scenario;
     let journal;
@@ -155,8 +175,7 @@ export async function prepareTitleShowcase({ renderer, createScenario, createPre
                         } catch (error) {
                             dispose();
                             renderer.stopLoop();
-                            console.error(error);
-                            parent.postMessage({ type: 'title-showcase-failed' }, location.origin);
+                            onError?.(error);
                         }
                     },
                     render(frame) {
