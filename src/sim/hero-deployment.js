@@ -1,12 +1,35 @@
+import { UnitDefinition } from '../definitions/units.js';
 import { LaunchRules } from './launch-rules.js';
 import { NavigationGoal, UnitMotion } from './navigation.js';
 
 const RETURN_PADDING = 10;
 const LANDING_GRACE_MS = 2000;
+const FULL_HEAL_SECONDS = 10;
 
 export class HeroDeployment {
     static begin(sim, side, sortieId) {
+        const hp = this.reserveHp(sim, side);
+        sim.heroRecovery[side] =
+            hp < UnitDefinition.get(LaunchRules.heroCard).hp ? { hp, startedAtTick: null } : null;
         sim.heroes[side] = { sortieId, mode: 'advance', unitId: null };
+    }
+
+    static reserveHp(sim, side) {
+        if (sim.heroes[side]?.mode === 'dead') return 0;
+        const maxHp = UnitDefinition.get(LaunchRules.heroCard).hp;
+        const recovery = sim.heroRecovery[side];
+        if (!recovery) return maxHp;
+        if (recovery.startedAtTick === null) return recovery.hp;
+        const fullHealTicks = FULL_HEAL_SECONDS * sim.tps;
+        const elapsed = Math.min(fullHealTicks, sim.tick - recovery.startedAtTick);
+        const healed = Math.floor((elapsed * maxHp) / fullHealTicks);
+        return Math.min(maxHp, recovery.hp + healed);
+    }
+
+    static dock(sim, side, hp) {
+        const maxHp = UnitDefinition.get(LaunchRules.heroCard).hp;
+        sim.heroes[side] = null;
+        sim.heroRecovery[side] = hp < maxHp ? { hp, startedAtTick: sim.tick } : null;
     }
 
     static launchRejection(hero) {
@@ -21,7 +44,27 @@ export class HeroDeployment {
     static validate(state) {
         if (!Array.isArray(state.heroes) || state.heroes.length !== 2)
             throw new Error('게임 snapshot의 영웅 슬롯이 잘못되었습니다.');
+        if (!Array.isArray(state.heroRecovery) || state.heroRecovery.length !== 2)
+            throw new Error('게임 snapshot의 영웅 회복 상태가 잘못되었습니다.');
+        const maxHp = UnitDefinition.get(LaunchRules.heroCard).hp;
         for (const [side, hero] of state.heroes.entries()) {
+            const recovery = state.heroRecovery[side];
+            if (
+                recovery !== null &&
+                (!recovery ||
+                    Object.keys(recovery).sort().join(',') !== 'hp,startedAtTick' ||
+                    !Number.isFinite(recovery.hp) ||
+                    recovery.hp <= 0 ||
+                    recovery.hp >= maxHp ||
+                    (hero === null
+                        ? !Number.isSafeInteger(recovery.startedAtTick) ||
+                          recovery.startedAtTick < 0 ||
+                          recovery.startedAtTick > state.tick
+                        : hero?.mode === 'dead' ||
+                          hero?.unitId !== null ||
+                          recovery.startedAtTick !== null))
+            )
+                throw new Error('게임 snapshot의 영웅 회복 상태가 잘못되었습니다.');
             if (hero === null) continue;
             if (
                 !hero ||
@@ -57,6 +100,8 @@ export class HeroDeployment {
     static land(sim, group, unit) {
         const hero = sim.heroes[group.side];
         if (!hero || hero.sortieId !== group.projectileId) return false;
+        unit.hp = this.reserveHp(sim, group.side);
+        sim.heroRecovery[group.side] = null;
         hero.unitId = unit.id;
         return true;
     }
@@ -66,7 +111,7 @@ export class HeroDeployment {
         if (!hero || hero.sortieId !== group.projectileId) return false;
         group.heroRetryUntil ??= sim.tick + sim.msTicks(LANDING_GRACE_MS);
         if (sim.tick < group.heroRetryUntil) return false;
-        sim.heroes[group.side] = null;
+        this.dock(sim, group.side, this.reserveHp(sim, group.side));
         return true;
     }
 
@@ -129,7 +174,7 @@ export class HeroDeployment {
                     !sim.projectiles.some((p) => p.id === hero.sortieId && p.alive) &&
                     !sim.launchDeployments.some((group) => group.projectileId === hero.sortieId)
                 )
-                    sim.heroes[side] = null;
+                    this.dock(sim, side, this.reserveHp(sim, side));
                 continue;
             }
             const unit = sim.liveEntityRefById(hero.unitId, 'unit')?.entity;
@@ -142,7 +187,7 @@ export class HeroDeployment {
             const site = this.returnSites(sim, unit).find(({ arrived }) => arrived);
             if (!site) continue;
 
-            sim.heroes[side] = null;
+            this.dock(sim, side, unit.hp);
             unit.alive = false;
             unit.hp = 0;
             unit.impactMotion = null;

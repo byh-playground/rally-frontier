@@ -651,6 +651,23 @@ html[data-title-showcase='true'] #gameScreen .canvas-wrap > :not(canvas) {
 }
 .hero-card {
     border-color: var(--gold);
+    padding-bottom: 14px;
+}
+.hero-card .launch-card-portrait {
+    height: 54px;
+}
+.hero-card-health {
+    width: calc(100% - 16px);
+    margin-top: 2px;
+    border-radius: 999px;
+    background: linear-gradient(to right, #276143 var(--hero-hp), #483a39 0);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 14px;
+    text-align: center;
+    white-space: nowrap;
 }
 .hero-card em {
     white-space: nowrap;

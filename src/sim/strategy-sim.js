@@ -308,6 +308,7 @@ class StrategySim {
         this.launchRangeLevel = [0, 0];
         this.launchDeployments = [];
         this.heroes = [null, null];
+        this.heroRecovery = [null, null];
         // Per-side match totals for the result screen: shots fired, grains sent, enemy units killed.
         this.launchStats = { launches: [0, 0], sent: [0, 0], kills: [0, 0] };
         this.unitResultStats = UnitResultStats.create();
@@ -1166,7 +1167,8 @@ class StrategySim {
         const cooldownMs = Number.isFinite(Number(d?.cooldownMs))
             ? Math.max(1, Math.round(Number(d.cooldownMs)))
             : Math.max(1, Math.round(Number(cooldown || 0) * 1000));
-        const effectiveMs = Math.max(1, cooldownMs + this.attackCooldownJitterMs(u));
+        const effectiveMs =
+            d.attackIntervalMs ?? Math.max(1, cooldownMs + this.attackCooldownJitterMs(u));
         const scheduled = SimulationTiming.timerTicksWithPhase(
             effectiveMs,
             this.tps,
@@ -1174,7 +1176,8 @@ class StrategySim {
             { min: 1 },
         );
         u.combat.attackCooldownPhase = scheduled.phase;
-        u.combat.cooldownUntil = this.tick + scheduled.ticks;
+        const windupTicks = d.attackIntervalMs == null ? 0 : this.attackWindupTicksFor(d);
+        u.combat.cooldownUntil = this.tick + Math.max(1, scheduled.ticks - windupTicks);
         u.combat.moveRecoveryUntil = this.tick + this.attackMoveRecoveryDurationTicks(u, d);
         u.attackFlash = 1;
     }
@@ -2211,7 +2214,7 @@ class StrategySim {
 
         const attackRange = this.basicAttackRange(u);
         let moveSpeed = d.speed;
-        let cooldown = d.cooldown;
+        let cooldown = d.cooldown ?? d.attackIntervalMs / 1000;
         // 공통 전투 이동/공속 보정.
         moveSpeed *= this.timedModifierPct(u, 'movePct') / 100;
         const nonCombatMoveSpeed = moveSpeed * (d.outOfCombatMoveMultiplier ?? 1);
@@ -3769,6 +3772,7 @@ class StrategySim {
                 mapDescriptor: this.mapDescriptor,
                 launchDeployments: StateValue.copy(this.launchDeployments),
                 heroes: StateValue.copy(this.heroes),
+                heroReserveHp: this.heroes.map((_, side) => HeroDeployment.reserveHp(this, side)),
                 unitThornProjectiles: StateValue.copy(
                     this.unitThornProjectiles.filter((p) => p.startTick <= this.tick),
                 ),

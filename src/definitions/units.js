@@ -27,11 +27,11 @@ class UnitDefinition {
         watermelon: {
             requiresContactTerrain: true,
             name: '수박',
-            hp: 300,
-            atk: 50,
+            hp: 500,
+            atk: 10,
             range: 25,
             speed: 50,
-            cooldownMs: 4000,
+            attackIntervalMs: 500,
             size: RICE_SIZE * 3.5,
             sizeClass: 'heavy',
             role: 'bruiser',
@@ -44,7 +44,7 @@ class UnitDefinition {
                 recoverMs: 250,
                 arcSweep: true,
                 rhythm: Object.freeze({
-                    basicsPerSweep: 3,
+                    basicsPerSweep: 4,
                     splashRadius: 25,
                     splashDamageRatio: 0.5,
                 }),
