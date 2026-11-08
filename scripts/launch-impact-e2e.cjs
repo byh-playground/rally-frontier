@@ -1273,6 +1273,102 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     checksum: sim.checksum(),
                 });
             }
+            // Rice pellets that descend onto a building must release outside it before destruction.
+            {
+                const { LaunchRules } = await import(
+                    new URL('./src/sim/launch-rules.js', location.href)
+                );
+                const sim = new StrategySim(12345);
+                const site = sim.capturePoints.find((point) => point.id === 'natural-2');
+                const cannon = sim.spawnOutpost(site, 0);
+                cannon.hp = cannon.maxHp;
+                sim.completeConstruction(cannon);
+                const base = sim.buildings.find((building) => building.id === 'base1');
+                base.hp = base.maxHp = 100000;
+                check(
+                    sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }) &&
+                        sim.applyCommand('host', {
+                            type: 'LAUNCH',
+                            cannonId: cannon.id,
+                            unitType: 'rice',
+                            holdMs: LaunchRules.holdFor(550, 'rice', 1),
+                            x: base.x,
+                            y: base.y,
+                        }),
+                    'first upgraded rice volley launches from the captured natural',
+                );
+                const radius = BuildingDefinition.get(base.type).size;
+                const distance = (point) => Math.hypot(point.x - base.x, point.y - base.y);
+                let impact;
+                for (let i = 0; i < sim.tps * 2 && !impact; i++) {
+                    sim.stepSimulation();
+                    impact = sim.events.find(
+                        (event) =>
+                            event.type === 'launchImpact' &&
+                            event.directHitId === base.id &&
+                            distance(event) < radius,
+                    );
+                }
+                check(impact, 'central pellet strikes the roof inside the base footprint');
+                const group = sim.launchDeployments.find(
+                    (pending) => pending.projectileId === impact.projectileId,
+                );
+                check(
+                    group && distance(group) > radius,
+                    'roof hit releases from outside the base',
+                    {
+                        impact,
+                        group,
+                    },
+                );
+                const initial = sim.events.filter(
+                    (event) =>
+                        event.type === 'launchLand' && event.projectileId === impact.projectileId,
+                ).length;
+                const copy = restored(sim);
+                const finish = (world) => {
+                    const released = [];
+                    step(world, world.tps * 2, () => {
+                        for (const event of world.events)
+                            if (
+                                event.type === 'launchLand' &&
+                                event.projectileId === impact.projectileId
+                            )
+                                released.push(world.tick);
+                    });
+                    return released;
+                };
+                const released = finish(sim);
+                check(
+                    JSON.stringify(released) === JSON.stringify(finish(copy)) &&
+                        sim.checksum() === copy.checksum(),
+                    'roof-hit deployment is deterministic across restore',
+                );
+                check(
+                    base.alive !== false &&
+                        base.hp > 0 &&
+                        initial + released.length === 4 &&
+                        !sim.launchDeployments.some(
+                            (pending) => pending.projectileId === impact.projectileId,
+                        ),
+                    'all four soldiers deploy while the base remains standing',
+                    { baseHp: base.hp, initial, released, pending: sim.launchDeployments },
+                );
+                sim.applyDamage(0, 'rice', base, true, base.hp, cannon.id, {
+                    sourceDamageResolved: true,
+                });
+                check(
+                    base.alive === false && finish(sim).length === 0,
+                    'base destruction cannot release old rice',
+                );
+                rows.push({
+                    scenario: 'rice roof hit deploys outside the standing base',
+                    impactDistance: distance(impact),
+                    deploymentDistance: distance(group),
+                    released: initial + released.length,
+                    releasedAfterDestruction: 0,
+                });
+            }
             // A sealed landing area must retain the entire squad instead of silently losing it after a timeout.
             {
                 const { sim, x, y } = arena(),

@@ -1440,9 +1440,6 @@ class StrategySim {
                 this.fireLaunchShell(cannon.salvo.shift());
         }
     }
-    landLaunchPayload(p, x, y, impactHeightFP = null) {
-        LaunchImpact.enqueue(this, p, x, y, impactHeightFP);
-    }
     creditResources(side, amount, resourceType = 'basic') {
         if ((side !== 0 && side !== 1) || !Number.isSafeInteger(amount) || amount < 0)
             throw new RangeError('유효한 진영과 정수 자원이 필요합니다.');
@@ -2468,7 +2465,7 @@ class StrategySim {
                     contact?.impactHeightFP ??
                     Math.round(this.world.terrain.surfaces.heightAt(aimX, aimY) * FP);
                 LaunchImpact.blast(this, p, aimX, aimY, Math.max(1, p.splash || 1), impactHeightFP);
-                if (p.payload) this.landLaunchPayload(p, aimX, aimY, impactHeightFP);
+                if (p.payload) LaunchImpact.enqueue(this, p, aimX, aimY, impactHeightFP, contact);
                 const radius = Math.max(1, p.splash || 1);
                 const blast = this.applyAreaDamage({
                     sourceSide: p.side,
