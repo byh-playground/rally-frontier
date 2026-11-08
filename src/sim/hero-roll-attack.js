@@ -44,17 +44,17 @@ export class HeroRollAttack {
 
     static activate(sim, unit, sortieId) {
         if (unit.heroRollQueued) return true;
-        if (this.canStart(unit, sim.tick)) return this.start(sim, unit, sortieId);
         unit.heroRollQueued = true;
+        this.tryQueued(sim, unit, sortieId);
         return true;
     }
 
-    static start(sim, unit, sortieId) {
+    static tryQueued(sim, unit, sortieId, vision) {
+        if (!unit.heroRollQueued || !this.canStart(unit, sim.tick)) return false;
         const { side } = unit;
         const spec = UnitDefinition.get(unit.type).heroActive;
-        if (sim.wallet[side] < spec.cost)
-            return this.reject(sim, side, sortieId, 'insufficient-basic-resources');
-        const vision = sim.visionSources(side);
+        if (sim.wallet[side] < spec.cost) return false;
+        const sources = vision ?? sim.visionSources(side);
         let target = null;
         let bestDistance = spec.range ** 2;
         sim.withNearbyUnits(unit.x, unit.y, spec.range, 1 - side, (indices) => {
@@ -66,14 +66,15 @@ export class HeroRollAttack {
                     candidate.hp > 0 &&
                     UnitMotion.isGrounded(candidate) &&
                     sim.canAttackEntity(unit.type, candidate) &&
-                    sim.canSeeCombatTarget(side, candidate, vision)
+                    sim.canSeeCombatTarget(side, candidate, sources)
                 ) {
                     target = candidate;
                     bestDistance = distance;
                 }
             }
         });
-        if (!target) return this.reject(sim, side, sortieId, 'hero-no-target');
+        if (!target) return false;
+        unit.heroRollQueued = false;
 
         const distance = Math.sqrt(bestDistance);
         const angle = (HashUtil.hash(unit.id + '|' + target.id) % 8) * (Math.PI / 4);
@@ -101,13 +102,6 @@ export class HeroRollAttack {
             cost: spec.cost,
         });
         return true;
-    }
-
-    static update(sim, unit, sortieId) {
-        if (unit.heroRoll) this.advance(sim, unit);
-        if (!unit.alive || !unit.heroRollQueued || !this.canStart(unit, sim.tick)) return;
-        unit.heroRollQueued = false;
-        this.start(sim, unit, sortieId);
     }
 
     static advance(sim, unit) {

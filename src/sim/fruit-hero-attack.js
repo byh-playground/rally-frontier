@@ -175,22 +175,14 @@ export class FruitHeroAttack {
     }
 
     static activate(sim, unit, sortieId) {
-        const fruit = unit.fruitAttack;
-        if (!this.canStart(unit, sim.tick)) {
-            fruit.queued = true;
-            return true;
-        }
-        fruit.queued = false;
-        return this.start(sim, unit, sortieId);
+        if (unit.fruitAttack.queued) return true;
+        unit.fruitAttack.queued = true;
+        this.tryQueued(sim, unit, sortieId);
+        return true;
     }
 
-    static reject(sim, unit, sortieId, reason) {
-        sim.events.push({ type: 'heroSkillRejected', side: unit.side, sortieId, reason });
-        return false;
-    }
-
-    static target(sim, unit, range) {
-        const vision = sim.visionSources(unit.side);
+    static target(sim, unit, range, vision) {
+        const sources = vision ?? sim.visionSources(unit.side);
         let target = null;
         let best = range ** 2;
         sim.withNearbyUnits(unit.x, unit.y, range, 1 - unit.side, (indices) => {
@@ -200,7 +192,7 @@ export class FruitHeroAttack {
                 const distance = (candidate.x - unit.x) ** 2 + (candidate.y - unit.y) ** 2;
                 if (
                     sim.targetChoiceBetter(distance, candidate.id, best, target) &&
-                    sim.canSeeCombatTarget(unit.side, candidate, vision)
+                    sim.canSeeCombatTarget(unit.side, candidate, sources)
                 ) {
                     target = candidate;
                     best = distance;
@@ -210,13 +202,14 @@ export class FruitHeroAttack {
         return target;
     }
 
-    static start(sim, unit, sortieId) {
+    static tryQueued(sim, unit, sortieId, vision) {
+        if (!unit.fruitAttack.queued || !this.canStart(unit, sim.tick)) return false;
         const spec = UnitDefinition.get(unit.type).fruitAttack;
         const { cost, range, windupMs } = spec.active;
-        if (sim.wallet[unit.side] < cost)
-            return this.reject(sim, unit, sortieId, 'insufficient-basic-resources');
-        const target = this.target(sim, unit, range);
-        if (!target) return this.reject(sim, unit, sortieId, 'hero-no-target');
+        if (sim.wallet[unit.side] < cost) return false;
+        const target = this.target(sim, unit, range, vision);
+        if (!target) return false;
+        unit.fruitAttack.queued = false;
         const launchTick = sim.tick + sim.msTicks(windupMs);
         unit.fruitAttack.active =
             spec.kind === 'boomerang'
@@ -299,7 +292,7 @@ export class FruitHeroAttack {
         });
     }
 
-    static update(sim, unit, sortieId) {
+    static update(sim, unit) {
         const fruit = unit.fruitAttack;
         const definition = UnitDefinition.get(unit.type);
         const projectiles = [];
@@ -321,7 +314,6 @@ export class FruitHeroAttack {
         } else if (active) {
             this.advanceBarrage(sim, unit, active, definition.fruitAttack);
         }
-        if (fruit.queued && this.canStart(unit, sim.tick)) this.activate(sim, unit, sortieId);
     }
 
     static advanceBarrage(sim, unit, active, spec) {

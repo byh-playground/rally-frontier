@@ -10587,7 +10587,6 @@ class LaunchPresentation {
                     {
                         'hero-not-deployed': '출격 중인 영웅이 필요합니다.',
                         'insufficient-basic-resources': '보급이 부족합니다.',
-                        'hero-no-target': '범위 안에 적이 없습니다.',
                     }[event.reason] || '영웅 스킬을 쓸 수 없습니다.',
                 );
                 continue;
@@ -10677,7 +10676,9 @@ class LaunchPresentation {
             el.removeAttribute('aria-keyshortcuts');
             return '';
         }
-        el.setAttribute('aria-keyshortcuts', 'Shift+Enter');
+        const queued = unit.fruitAttack?.queued ?? unit.heroRollQueued;
+        if (queued) el.removeAttribute('aria-keyshortcuts');
+        else el.setAttribute('aria-keyshortcuts', 'Shift+Enter');
         if (!badge) {
             const name = el.querySelector('b'),
                 row = document.createElement('span');
@@ -10696,13 +10697,12 @@ class LaunchPresentation {
                     : '왕복 중'
                 : '포도알 연사'
             : { hop: '뛰는 중', roll: '구르는 중', unfold: '자세 펴기' }[unit.heroRoll?.phase];
-        const queued = unit.fruitAttack?.queued ?? unit.heroRollQueued;
         badge.hidden = false;
         badge.textContent = queued ? '발동 예약' : (status ?? `길게 ◆ ${skill.cost}`);
         badge.toggleAttribute('data-queued', queued);
         badge.toggleAttribute('data-rolling', !!status);
         badge.toggleAttribute('data-unavailable', s.wallet?.[side] < skill.cost);
-        if (queued) return ' · 스킬 발동 예약';
+        if (queued) return ' · 스킬 발동 예약, 조건이 맞으면 자동 발동';
         if (status) return ` · ${status}`;
         return ` · 길게 누르기 또는 Shift+Enter로 스킬 사용 · 보급 ${skill.cost}`;
     }
@@ -10800,7 +10800,7 @@ class LaunchPresentation {
         const warning = this.resourceWarning(s, side, LaunchRules.payload(type));
         if (warning) this.feedback(warning);
     }
-    static heroSkillSortie(s, side, type) {
+    static heroSkillInput(s, side, type) {
         if (
             !this.active(s) ||
             UiRuntimeState.value.screen !== 'game' ||
@@ -10811,14 +10811,16 @@ class LaunchPresentation {
         if (!hero?.unitId || hero.mode === 'dead') return null;
         const unit = s.units?.find((entry) => entry.id === hero.unitId);
         if (!unit?.alive || unit.side !== side) return null;
-        return hero.sortieId;
+        return { sortieId: hero.sortieId, queued: unit.fruitAttack?.queued ?? unit.heroRollQueued };
     }
     static currentHeroPress(press, s, side) {
+        const input = this.heroSkillInput(s, side, press.button.dataset.launchCard);
         return (
             press.button.isConnected &&
             MatchLifecycle.activeSession() === press.session &&
             press.session.inputAvailable() &&
-            this.heroSkillSortie(s, side, press.button.dataset.launchCard) === press.sortieId
+            input?.sortieId === press.sortieId &&
+            (press.queued || !input.queued)
         );
     }
     static issueHeroSkill(session, sortieId) {
@@ -10838,13 +10840,10 @@ class LaunchPresentation {
         e.preventDefault();
         if (e.repeat || this.heroPress) return;
         const side = ConnectionSideUtil.roleSide(ActiveViewState.role),
-            sortieId = this.heroSkillSortie(
-                ActiveViewState.snap,
-                side,
-                e.target.dataset.launchCard,
-            ),
+            input = this.heroSkillInput(ActiveViewState.snap, side, e.target.dataset.launchCard),
             session = MatchLifecycle.activeSession();
-        if (sortieId && session?.inputAvailable()) this.issueHeroSkill(session, sortieId);
+        if (input && !input.queued && session?.inputAvailable())
+            this.issueHeroSkill(session, input.sortieId);
     }
     static pressHeroCard(e) {
         if (!e.isPrimary || e.button !== 0) return;
@@ -10853,25 +10852,32 @@ class LaunchPresentation {
         const button = e.target.closest('[data-launch-card][data-hero-skill]');
         if (!button) return;
         const side = ConnectionSideUtil.roleSide(ActiveViewState.role),
-            sortieId = this.heroSkillSortie(ActiveViewState.snap, side, button.dataset.launchCard),
+            input = this.heroSkillInput(ActiveViewState.snap, side, button.dataset.launchCard),
             session = MatchLifecycle.activeSession();
-        if (!sortieId || !session?.inputAvailable()) return;
+        if (!input || !session?.inputAvailable()) return;
         const press = {
             button,
             pointerId: e.pointerId,
             x: e.clientX,
             y: e.clientY,
             session,
-            sortieId,
+            ...input,
         };
-        button.style.setProperty('--hero-hold-duration', `${this.HERO_SKILL_HOLD_MS}ms`);
-        button.setAttribute('data-hero-charging', '');
+        if (!press.queued) {
+            button.style.setProperty('--hero-hold-duration', `${this.HERO_SKILL_HOLD_MS}ms`);
+            button.setAttribute('data-hero-charging', '');
+        }
         press.timer = setTimeout(() => {
+            // A held card must never fall through to the short-tap toggle.
             this.endHeroPress(true);
             const currentSide = ConnectionSideUtil.roleSide(ActiveViewState.role);
-            if (document.hidden || !this.currentHeroPress(press, ActiveViewState.snap, currentSide))
+            if (
+                press.queued ||
+                document.hidden ||
+                !this.currentHeroPress(press, ActiveViewState.snap, currentSide)
+            )
                 return;
-            this.issueHeroSkill(session, sortieId);
+            this.issueHeroSkill(session, press.sortieId);
         }, this.HERO_SKILL_HOLD_MS);
         this.heroPress = press;
     }

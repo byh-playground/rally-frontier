@@ -2155,6 +2155,13 @@ class StrategySim {
         if (d.selfDestruct && UnitSelfDestructAttack.update(this, u, d.selfDestruct)) return null;
         this.tickAttackTimers(u);
         if (u.heroRoll || u.fruitAttack?.active) return null;
+        // A pending skill only takes the combat action slot when it can actually start.
+        if (u.heroRollQueued || u.fruitAttack?.queued) {
+            const hero = this.heroes[u.side][u.type];
+            const skill = u.fruitAttack ? FruitHeroAttack : HeroRollAttack;
+            if (hero?.unitId === u.id && skill.tryQueued(this, u, hero.sortieId, vision[u.side]))
+                return null;
+        }
         if (HeroDeployment.moveReturningUnit(this, u, d)) {
             UnitSpinAttack.cancel(this, u);
             return null;
@@ -2180,9 +2187,6 @@ class StrategySim {
                 return spin.winner;
             }
         }
-        // Give a queued skill the action slot before combat can start another windup.
-        if (u.heroRollQueued && HeroRollAttack.canStart(u, this.tick)) return null;
-        if (u.fruitAttack?.queued && FruitHeroAttack.canStart(u, this.tick)) return null;
         if (!UnitMotion.isGrounded(u)) {
             u.constructionWork = null;
             return null;
@@ -3603,9 +3607,8 @@ class StrategySim {
                 const hero = heroes[type];
                 if (hero?.unitId == null) continue;
                 const unit = this.liveEntityRefById(hero.unitId, 'unit')?.entity;
-                if (unit?.heroRoll || unit?.heroRollQueued)
-                    HeroRollAttack.update(this, unit, hero.sortieId);
-                if (unit?.fruitAttack) FruitHeroAttack.update(this, unit, hero.sortieId);
+                if (unit?.heroRoll) HeroRollAttack.advance(this, unit);
+                if (unit?.fruitAttack) FruitHeroAttack.update(this, unit);
             }
         winner = this.updateProjectiles() || winner;
         UnitLobAttack.step(this);
