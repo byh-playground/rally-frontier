@@ -2469,7 +2469,7 @@ class StrategySim {
                     contact?.impactHeightFP ??
                     Math.round(this.world.terrain.surfaces.heightAt(aimX, aimY) * FP);
                 LaunchImpact.blast(this, p, aimX, aimY, Math.max(1, p.splash || 1), impactHeightFP);
-                if (p.payload) LaunchImpact.enqueue(this, p, aimX, aimY, impactHeightFP, contact);
+                if (p.payload) LaunchImpact.enqueue(this, p, aimX, aimY, impactHeightFP);
                 const radius = Math.max(1, p.splash || 1);
                 const blast = this.applyAreaDamage({
                     sourceSide: p.side,
