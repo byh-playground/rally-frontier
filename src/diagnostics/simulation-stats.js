@@ -84,4 +84,47 @@ function createLocalBalanceStats() {
     };
 }
 
-export { createLocalPerfStats, createLocalBalanceStats };
+function recordTiming(stats, key, ms) {
+    const row =
+        stats[key] ||
+        (stats[key] = { samples: 0, currentMs: 0, cumulativeMs: 0, ewmaMs: 0, maxMs: 0 });
+    row.currentMs = Math.max(0, ms);
+    row.cumulativeMs = (row.cumulativeMs || 0) + row.currentMs;
+    row.ewmaMs = row.samples ? row.ewmaMs * 0.85 + row.currentMs * 0.15 : row.currentMs;
+    row.maxMs = Math.max(row.maxMs, row.currentMs);
+    row.samples++;
+}
+
+function measureSessionPulse(session, now) {
+    const stats = session.performanceStats;
+    if (!stats || !session.sim || session.simEnded || session.simulationFatal)
+        return session.advanceSimulation(now);
+    const started = performance.now();
+    if (stats.lastPulseAt !== null)
+        recordTiming(stats.timings, 'pulseGap', started - stats.lastPulseAt);
+    stats.lastPulseAt = started;
+    try {
+        return session.advanceSimulation(now);
+    } finally {
+        recordTiming(stats.timings, 'pulse', performance.now() - started);
+    }
+}
+
+function balanceTelemetrySnapshot(sim) {
+    if (!sim) return null;
+    const b = structuredClone(sim.balanceStats || createLocalBalanceStats());
+    b.tick = sim.tick;
+    b.seconds = sim.tick / sim.tps;
+    b.averageArmy = [0, 1].map((side) => (b.samples ? b.armyTotal[side] / b.samples : 0));
+    b.currentWallet = sim.wallet.slice();
+    b.checksum = sim.checksum();
+    return b;
+}
+
+export {
+    balanceTelemetrySnapshot,
+    createLocalBalanceStats,
+    createLocalPerfStats,
+    measureSessionPulse,
+    recordTiming,
+};

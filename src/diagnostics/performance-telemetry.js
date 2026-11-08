@@ -1,37 +1,12 @@
-import { createLocalBalanceStats } from './simulation-stats.js';
-// Simulation performance sampling.
+// Browser runtime sampling and downloads.
+import { recordTiming } from './simulation-stats.js';
 import { ActiveViewState } from '../session/runtime-state.js';
-import { CloneUtil } from '../sim/map-generation.js';
 import { PRODUCT_VERSION } from '../core/product-version.js';
 import { BUILD_META } from '../core/build-info.js';
 import { LogUtil, MatchLifecycle, SinglePlayerModeUtil } from '../main.js';
 
 class PerformanceTelemetry {
     static runtimeMonitor = null;
-    static recordTiming(stats, key, ms) {
-        const row =
-            stats[key] ||
-            (stats[key] = { samples: 0, currentMs: 0, cumulativeMs: 0, ewmaMs: 0, maxMs: 0 });
-        row.currentMs = Math.max(0, ms);
-        row.cumulativeMs = (row.cumulativeMs || 0) + row.currentMs;
-        row.ewmaMs = row.samples ? row.ewmaMs * 0.85 + row.currentMs * 0.15 : row.currentMs;
-        row.maxMs = Math.max(row.maxMs, row.currentMs);
-        row.samples++;
-    }
-    static measureSessionPulse(session, now) {
-        const stats = session.performanceStats;
-        if (!stats || !session.sim || session.simEnded || session.simulationFatal)
-            return session.advanceSimulation(now);
-        const started = performance.now();
-        if (stats.lastPulseAt !== null)
-            this.recordTiming(stats.timings, 'pulseGap', started - stats.lastPulseAt);
-        stats.lastPulseAt = started;
-        try {
-            return session.advanceSimulation(now);
-        } finally {
-            this.recordTiming(stats.timings, 'pulse', performance.now() - started);
-        }
-    }
     static startRuntimeMonitor() {
         if (this.runtimeMonitor) return;
         const m = (this.runtimeMonitor = {
@@ -46,7 +21,7 @@ class PerformanceTelemetry {
         let expectedAt = performance.now() + 250;
         m.timer = setInterval(() => {
             const now = performance.now();
-            this.recordTiming(m.timings, 'eventLoop', now - expectedAt);
+            recordTiming(m.timings, 'eventLoop', now - expectedAt);
             expectedAt = now + 250;
         }, 250);
         if (globalThis.PerformanceObserver?.supportedEntryTypes?.includes('longtask')) {
@@ -200,17 +175,6 @@ class PerformanceTelemetry {
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
         LogUtil.log('밸런스 계측 JSON 저장 · authoritative state에는 포함되지 않음');
-    }
-
-    static balanceTelemetrySnapshot(sim) {
-        if (!sim) return null;
-        const b = CloneUtil.clone(sim.balanceStats || createLocalBalanceStats());
-        b.tick = sim.tick;
-        b.seconds = sim.tick / sim.tps;
-        b.averageArmy = [0, 1].map((side) => (b.samples ? b.armyTotal[side] / b.samples : 0));
-        b.currentWallet = sim.wallet.slice();
-        b.checksum = sim.checksum();
-        return b;
     }
 }
 

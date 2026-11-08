@@ -1,7 +1,7 @@
 // Rally's session-facing peer transport, on GameKit's reconnecting room.
 // GameKit owns Nostr discovery, SDP/ICE, the three data channels, reconnect and version checks.
 // This class only maps the room onto what GameSession expects: lobby messages, Netcode packets and callbacks.
-import { RecoveryTelemetry } from '../diagnostics/recovery-telemetry.js';
+import { recordRecovery } from '../diagnostics/recovery-flight-recorder.js';
 import { LobbyControlCodec } from './lobby-codec.js';
 import { P2P_CONNECT_ATTEMPT_TIMEOUT_MS } from '../core/session-timing.js';
 import { PRODUCT_VERSION } from '../core/product-version.js';
@@ -54,7 +54,7 @@ class RoomTransport {
         return (this.room?.generation || 0) > 0;
     }
     trace(type, extra = {}) {
-        RecoveryTelemetry.recordRecovery(type, null, this, extra);
+        recordRecovery(type, null, this, extra);
     }
 
     // Resolves once discovery is ready (a host also after its room-code check). The link itself opens later.
