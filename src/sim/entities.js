@@ -46,6 +46,8 @@ class Unit {
             data.contactAttack = null;
         if (UnitDefinition.get(data.type)?.selfDestruct && !Object.hasOwn(data, 'selfDestruct'))
             data.selfDestruct = null;
+        if (UnitDefinition.get(data.type)?.leapAttack && !Object.hasOwn(data, 'leapAttack'))
+            data.leapAttack = { phase: 'ready', cooldownUntil: 0 };
         this.status = new StatusComponent(data.status || {});
         delete data.status;
         this.movement = new MovementComponent(data.movement || {});

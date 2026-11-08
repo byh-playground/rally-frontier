@@ -10,6 +10,7 @@ import { RallyGamekit } from '../core/gamekit.js';
 const { ObstacleField, SurfaceMotion, SweptCircleContact, SurfaceContactGeometry } = RallyGamekit;
 import { FP } from '../core/config.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
+import { UnitLeapAttack } from './unit-leap-attack.js';
 
 // Interaction geometry owns the legal arrival set; the distance field only leads units to it.
 // Goal regions are continuous (discs/annuli), not a fixed number of radial probes.
@@ -452,6 +453,7 @@ class UnitMotion {
                         if (
                             !other?.alive ||
                             sim.isAlliedCollisionUnit(u, other) ||
+                            UnitLeapAttack.separated(sim, u, other) ||
                             (other.impactMotion && j < i)
                         )
                             continue;

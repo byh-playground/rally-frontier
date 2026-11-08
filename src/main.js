@@ -1,3 +1,4 @@
+import { CAMPAIGN_STAGES, campaignStage } from './definitions/campaign.js';
 import { RangeUtil, SIM_TPS } from './core/game-rules.js';
 import { SimulationTiming } from './core/simulation-timing.js';
 import { createLocalPerfStats, createLocalBalanceStats } from './diagnostics/simulation-stats.js';
@@ -2905,6 +2906,8 @@ class GLRenderer {
                 this.launchFireFx(e, snapshot, index);
             } else if (e.type === 'launchImpact') {
                 this.launchImpactFx(e, snapshot, index);
+            } else if (e.type === 'leapLand') {
+                this.addClientFx('launchBlast', e, snapshot, index, { peak: 1, hits: 1 });
             } else if (e.type === 'launchOverheat') {
                 const b = e.presentationSource,
                     aim = b ? this.cannonAim(b) : { dx: 0, dy: -1 };
@@ -3176,6 +3179,26 @@ class GLRenderer {
         ctx.save();
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
+        for (const deposit of this.snapshot.baseDeposits || []) {
+            const base = (this.snapshot.buildings || []).find(
+                (b) => b.id === `base${deposit.owner}` && b.alive !== false,
+            );
+            if (
+                !base ||
+                (!this.isFriendlySide(deposit.owner) &&
+                    !this.replayObserverAll &&
+                    !this.replayVisionSides().some((side) => deposit.discoveredBy?.[side]))
+            )
+                continue;
+            const [x, y] = this.worldToPx(this.viewX(base.x), this.viewY(base.y));
+            const text = `기본 자원 ${deposit.remaining}`;
+            ctx.font = `900 ${Math.max(9, 11 * sc)}px system-ui,sans-serif`;
+            ctx.lineWidth = Math.max(2, 3 * sc);
+            ctx.strokeStyle = 'rgba(0,0,0,.60)';
+            ctx.strokeText(text, x, y - Math.max(50, 64 * sc));
+            ctx.fillStyle = '#fff';
+            ctx.fillText(text, x, y - Math.max(50, 64 * sc));
+        }
         for (const cp of this.snapshot.capturePoints || []) {
             const [x, y] = this.worldToPx(this.viewX(cp.x), this.viewY(cp.y));
             if (x < -80 || x > this.fxCanvas.width + 80 || y < -80 || y > this.fxCanvas.height + 80)
@@ -3202,7 +3225,14 @@ class GLRenderer {
             ctx.font = `900 ${Math.max(9, 11 * sc)}px system-ui,sans-serif`;
             ctx.lineWidth = Math.max(2, 3 * sc);
             ctx.strokeStyle = 'rgba(0,0,0,.60)';
-            const text = `${cp.label || cp.lane} · ${owner}`,
+            const known =
+                this.isFriendlySide(cp.owner) ||
+                this.replayObserverAll ||
+                this.replayVisionSides().some((side) => cp.discoveredBy?.[side]);
+            const deposit = known
+                ? ` · ${cp.resourceType === 'premium' ? '고급' : '기본'} ${cp.remaining}`
+                : '';
+            const text = `${cp.label || cp.lane} · ${owner}${deposit}`,
                 labelY =
                     y -
                     Math.max(visibleConstruction ? 110 : 50, (visibleConstruction ? 180 : 64) * sc),
@@ -8553,6 +8583,7 @@ function createPresentationView(owner, getRenderer, { hud = true, audio = true }
 
 class MatchLifecycle {
     static singleMatch = null;
+    static selectedCampaign = null;
 
     static activeSession() {
         return ReplayPresentation.replayPlayer || ActiveViewState.session;
@@ -8819,19 +8850,26 @@ class MatchLifecycle {
         const transports = { host: hostTransport, guest: guestTransport };
         const humanTransport = transports[humanRole];
         const botTransport = transports[botRole];
-        const config = MatchLifecycle.currentMatchConfig(),
+        const stage = campaignStage(this.selectedCampaign);
+        const config = { ...MatchLifecycle.currentMatchConfig(), campaignStage: stage?.id || null },
             configFor = (role) => (role === 'host' ? config : undefined);
         const humanSession = new GameSession(
             humanRole,
             humanTransport,
             token,
             configFor(humanRole),
-            DeckEditor.getDeck(),
+            stage?.deck || DeckEditor.getDeck(),
         );
         // CONFIG.single.botWorker runs the AI session in src/sim-worker.js; its WebRTC transport stays here.
         const botSession = CONFIG.single.botWorker
-            ? new WorkerSessionProxy(botRole, botTransport, token, configFor(botRole))
-            : new GameSession(botRole, botTransport, token, configFor(botRole));
+            ? new WorkerSessionProxy(
+                  botRole,
+                  botTransport,
+                  token,
+                  configFor(botRole),
+                  stage?.enemyDeck,
+              )
+            : new GameSession(botRole, botTransport, token, configFor(botRole), stage?.enemyDeck);
         const sessions = { [humanRole]: humanSession, [botRole]: botSession };
         const bot = CONFIG.single.botWorker ? null : BotController.attach(botSession, botRole);
         if (CONFIG.single.botWorker)
@@ -8973,6 +9011,19 @@ class MatchLifecycle {
         ConnectionPresentation.setDisconnectPhase('hidden');
         const draw = reason === 'draw' || !winner,
             mine = !draw && winner === viewRole;
+        const stage = campaignStage(MatchLifecycle.selectedCampaign);
+        if (stage && mine && reason === 'base-destroyed') {
+            const index = CAMPAIGN_STAGES.indexOf(stage);
+            try {
+                const current = Number(localStorage.getItem('ssalkongpang-campaign-progress')) || 0;
+                localStorage.setItem(
+                    'ssalkongpang-campaign-progress',
+                    String(Math.max(current, index + 1)),
+                );
+            } catch (error) {
+                console.warn('캠페인 진행 저장 실패', error);
+            }
+        }
         UiRegistry.refs.resultTitle.textContent = draw ? '무승부' : mine ? '승리' : '패배';
         if (reason === 'surrender')
             UiRegistry.refs.resultText.textContent = mine
@@ -8987,6 +9038,8 @@ class MatchLifecycle {
             UiRegistry.refs.resultText.textContent = mine
                 ? '적 메인 거점을 파괴했습니다.'
                 : '내 메인 거점이 파괴되었습니다.';
+        if (stage && mine && stage.mode === 'defend')
+            UiRegistry.refs.resultText.textContent = '제한 시간 동안 본진을 지켰습니다.';
         const end = ActiveViewState.snap,
             stats = end?.launchStats,
             mySide = ConnectionSideUtil.roleSide(viewRole);
@@ -9080,10 +9133,10 @@ class SimWorkerHost {
         };
         self.postMessage({ type: 'ready' });
     }
-    static start({ role, token, config, netcodeState, netcodeMode }) {
+    static start({ role, token, config, netcodeState, netcodeMode, deck }) {
         if (netcodeMode) UiController.setStartNetcodeMode(netcodeMode);
         const transport = new WorkerRelayTransport(role, token, netcodeState),
-            session = new GameSession(role, transport, token, config ?? undefined);
+            session = new GameSession(role, transport, token, config ?? undefined, deck);
         this.transport = transport;
         this.session = session;
         this.bot = BotController.attach(session, role);
@@ -9240,7 +9293,7 @@ class WorkerSessionProxy {
         'rebuildRecoveryGuest',
         'forceReconnect',
     ]);
-    constructor(role, transport, token, config) {
+    constructor(role, transport, token, config, deck) {
         this.role = role;
         this.roomCode = token;
         this.transport = transport;
@@ -9300,6 +9353,7 @@ class WorkerSessionProxy {
                     config,
                     netcodeState: transport.netcodeState,
                     netcodeMode: CONFIG.netcode.mode,
+                    deck,
                 });
                 this.started = true;
                 for (const [message, transfer] of this.outbox)
@@ -9827,6 +9881,7 @@ class LaunchPresentation {
         if (!on) return;
         const deck = s.decks?.[side] || LaunchRules.deck,
             wallet = Math.floor(s.wallet?.[side] || 0),
+            premiumWallet = Math.floor(s.premiumWallet?.[side] || 0),
             population = LaunchRules.population(s, side);
         if (!deck.includes(this.card)) this.card = deck[0] || null;
         const key = deck.join('|');
@@ -9840,22 +9895,32 @@ class LaunchPresentation {
         for (const el of UiRegistry.refs.launchCards.querySelectorAll('[data-launch-card]')) {
             const t = el.dataset.launchCard;
             el.classList.toggle('selected', t === this.card);
-            el.classList.toggle('unaffordable', LaunchRules.payload(t).cost > wallet);
+            el.classList.toggle(
+                'unaffordable',
+                LaunchRules.payload(t).cost > wallet ||
+                    LaunchRules.payload(t).premiumCost > premiumWallet,
+            );
         }
         UiRegistry.refs.launchEnergyFill.style.width = `${Math.round((100 * wallet) / LaunchRules.walletCap)}%`;
-        UiRegistry.refs.launchEnergyText.textContent = `◆ ${wallet} / ${LaunchRules.walletCap}`;
+        UiRegistry.refs.launchEnergyText.textContent = `◆ ${wallet} / ${LaunchRules.walletCap}  ✦ ${premiumWallet} / ${LaunchRules.premiumWalletCap}`;
         UiRegistry.refs.launchPopulationText.textContent = `생존 ${population.alive} + 출격 중 ${population.reserved} / ${LaunchRules.populationLimit}`;
         const level = s.launchRangeLevel?.[side] ?? 0,
             cost = LaunchRules.upgradeCost(level),
+            premiumCost = LaunchRules.upgradePremiumCost(level),
             maxed = cost == null;
-        UiRegistry.refs.launchIncomeText.textContent = `+${LaunchRules.incomePerSecondFor(s.capturePoints || [], side)}/초`;
+        UiRegistry.refs.launchIncomeText.textContent = `◆ +${LaunchRules.incomePerSecondFor([...(s.baseDeposits || []), ...(s.capturePoints || [])], side)}/초 · ✦ +${LaunchRules.incomePerSecondFor(s.capturePoints || [], side, 'premium')}/초 · 본진 잔량 ${s.baseDeposits?.[side]?.remaining ?? 0}`;
         UiRegistry.refs.launchReachText.textContent = `${UnitDefinition.get(this.card)?.name || this.card} 최대 발사 ${LaunchRules.maxReachOf(this.card, level).toLocaleString('ko-KR')}`;
         UiRegistry.refs.launchRangeText.textContent = maxed
             ? `사거리 ×${LaunchRules.rangeMultiplier(level)} · 최대`
             : `사거리 ×${LaunchRules.rangeMultiplier(level)} → ×${LaunchRules.rangeMultiplier(level + 1)}`;
-        UiRegistry.refs.launchRangeCost.textContent = maxed ? '강화 완료' : `강화 ◆ ${cost}`;
+        UiRegistry.refs.launchRangeCost.textContent = maxed
+            ? '강화 완료'
+            : `강화 ◆ ${cost}${premiumCost ? ` ✦ ${premiumCost}` : ''}`;
         UiRegistry.refs.launchRangeBtn.disabled =
-            maxed || wallet < cost || !!ReplayPresentation.replayPlayer;
+            maxed ||
+            wallet < cost ||
+            premiumWallet < premiumCost ||
+            !!ReplayPresentation.replayPlayer;
         UiRegistry.refs.launchRangeBtn.title = maxed
             ? '모든 대포의 발사 사거리가 최대로 강화됐습니다.'
             : `모든 대포의 최대 발사 사거리 강화 · 쌀 ${LaunchRules.maxReachOf('rice', level)} → ${LaunchRules.maxReachOf('rice', level + 1)}`;
@@ -9865,7 +9930,8 @@ class LaunchPresentation {
                 this.feedback(
                     {
                         reloading: '대포가 재장전 중입니다.',
-                        'insufficient-resources': '자원이 부족합니다.',
+                        'insufficient-basic-resources': '기본 자원이 부족합니다.',
+                        'insufficient-premium-resources': '고급 자원이 부족합니다.',
                         'population-limit': '인구가 가득 찼습니다.',
                         'cannon-unavailable': '사용할 수 있는 대포가 없습니다.',
                         'invalid-unit': '발사할 병종을 확인해 주세요.',
@@ -9920,6 +9986,28 @@ class LaunchPresentation {
                 };
             }
         }
+        const stage = campaignStage(MatchLifecycle.selectedCampaign);
+        const objective = DomUtil.byId('campaignObjective');
+        objective.classList.toggle('hidden', !stage);
+        if (stage) {
+            const remaining = Math.max(
+                0,
+                stage.defenseSeconds - s.tick / (s.tps || ActiveSimulationTiming.tps()),
+            );
+            const defending = stage.defenseSeconds && remaining > 0;
+            const needsPremium =
+                stage.resourceLesson &&
+                !s.capturePoints?.some(
+                    (point) => point.owner === side && point.resourceType === 'premium',
+                );
+            objective.textContent = defending
+                ? `본진을 지키세요 · ${Math.ceil(remaining)}초`
+                : needsPremium
+                  ? (s.launchRangeLevel?.[side] || 0) === 0
+                      ? '사거리를 강화하세요'
+                      : '고급 자원 거점을 확보하세요'
+                  : '적 본진을 파괴하세요';
+        }
         LaunchScreens.renderHud({
             myHpPct: hp(side),
             enemyHpPct: hp(1 - side),
@@ -9937,7 +10025,13 @@ class LaunchPresentation {
         const s = ActiveViewState.snap,
             side = ConnectionSideUtil.roleSide(ActiveViewState.role),
             cost = LaunchRules.upgradeCost(s.launchRangeLevel?.[side] ?? 0);
-        if (cost == null || s.wallet?.[side] < cost) return;
+        if (
+            cost == null ||
+            s.wallet?.[side] < cost ||
+            s.premiumWallet?.[side] <
+                LaunchRules.upgradePremiumCost(s.launchRangeLevel?.[side] ?? 0)
+        )
+            return;
         if (!MatchLifecycle.activeSession()?.command({ type: 'UPGRADE_LAUNCH_RANGE' }))
             LogUtil.log('⚠ 사거리 강화 명령을 접수할 수 없습니다.');
     }
@@ -9978,8 +10072,15 @@ class LaunchPresentation {
             );
             return null;
         }
-        if (LaunchRules.payload(this.card).cost > Math.floor(s.wallet[side]))
-            this.feedback('자원이 부족합니다.');
+        if (
+            LaunchRules.payload(this.card).cost > Math.floor(s.wallet[side]) ||
+            LaunchRules.payload(this.card).premiumCost > Math.floor(s.premiumWallet[side])
+        )
+            this.feedback(
+                LaunchRules.payload(this.card).cost > Math.floor(s.wallet[side])
+                    ? '기본 자원이 부족합니다.'
+                    : '고급 자원이 부족합니다.',
+            );
         this.hold = {
             pointerId,
             cannonId: cannon.id,
@@ -11019,11 +11120,27 @@ else if (document.documentElement.dataset.titleShowcase === 'true') {
         createNavigation: RallyGamekit.createNavigation,
         mountScenarioFrame: RallyGamekit.mountScenarioFrame,
         actions: {
+            campaignProgress: () => {
+                try {
+                    return Math.max(
+                        0,
+                        Number(localStorage.getItem('ssalkongpang-campaign-progress')) || 0,
+                    );
+                } catch (error) {
+                    console.warn('캠페인 진행 불러오기 실패', error);
+                    return 0;
+                }
+            },
+            selectCampaign: (id) => {
+                MatchLifecycle.selectedCampaign = id;
+            },
             inMatch: () => UiRuntimeState.value.screen === 'game',
             hasResult: () => UiRuntimeState.value.screen === 'result',
             startAiMatch: () => {
                 leaveSetup();
-                MatchLifecycle.startSinglePlayerWebRTC(dev.role || 'host');
+                MatchLifecycle.startSinglePlayerWebRTC(
+                    MatchLifecycle.selectedCampaign ? 'host' : dev.role || 'host',
+                );
             },
             openMenu: () => {
                 if (UiRuntimeState.value.modal !== 'match-menu') MatchLifecycle.openMatchMenu();

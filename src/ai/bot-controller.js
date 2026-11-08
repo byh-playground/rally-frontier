@@ -66,12 +66,14 @@ class AiCommandExecutor {
         const view = {
             ...snapshot,
             wallet: snapshot.wallet.slice(),
+            premiumWallet: snapshot.premiumWallet.slice(),
             launchRangeLevel: snapshot.launchRangeLevel.slice(),
             aiPopulation: LaunchRules.population(snapshot, this.bot.side).total,
             aiReservedPopulation: 0,
         };
         for (const p of this.reservations(snapshot)) {
             view.wallet[this.bot.side] -= p.cost;
+            view.premiumWallet[this.bot.side] -= p.premiumCost;
             if (p.action.type === 'UPGRADE_LAUNCH_RANGE') view.launchRangeLevel[this.bot.side]++;
             else if (p.action.type === 'LAUNCH')
                 view.aiReservedPopulation += LaunchRules.payload(p.action.unitType)?.count || 0;
@@ -94,18 +96,24 @@ class AiCommandExecutor {
             cost =
                 action.type === 'UPGRADE_LAUNCH_RANGE'
                     ? LaunchRules.upgradeCost(this.state.launchRangeLevel[side])
-                    : LaunchRules.payload(action.unitType)?.cost;
+                    : LaunchRules.payload(action.unitType)?.cost,
+            premiumCost =
+                action.type === 'UPGRADE_LAUNCH_RANGE'
+                    ? LaunchRules.upgradePremiumCost(this.state.launchRangeLevel[side])
+                    : LaunchRules.payload(action.unitType)?.premiumCost;
         if (
             cost == null ||
             this.reservations().some((p) => p.key === key) ||
             this.state.wallet[side] < cost ||
+            this.state.premiumWallet[side] < premiumCost ||
             (action.type === 'LAUNCH' &&
                 this.state.aiPopulation + this.state.aiReservedPopulation >=
                     LaunchRules.populationLimit)
         )
             return false;
-        this.queue.push({ key, action: StateValue.copy(action), cost });
+        this.queue.push({ key, action: StateValue.copy(action), cost, premiumCost });
         this.state.wallet[side] -= cost;
+        this.state.premiumWallet[side] -= premiumCost;
         if (action.type === 'UPGRADE_LAUNCH_RANGE') this.state.launchRangeLevel[side]++;
         else if (action.type === 'LAUNCH')
             this.state.aiReservedPopulation += LaunchRules.payload(action.unitType).count;
@@ -205,7 +213,9 @@ class BotController {
         if (
             open.length &&
             Math.hypot(open[0].x - cannon.x, open[0].y - cannon.y) <=
-                LaunchRules.maxReachOf('rice', state.launchRangeLevel[side])
+                LaunchRules.maxReachOf('rice', state.launchRangeLevel[side]) +
+                    LaunchRules.captureHoldRadius -
+                    100
         )
             return open[0];
         if (enemies.length) {
@@ -243,8 +253,7 @@ class BotController {
             !defending &&
             state.tick >= SimulationTiming.msToTicks(30000 * (level + 1), state.tps || SIM_TPS)
         ) {
-            this.commandExecutor.offer({ type: 'UPGRADE_LAUNCH_RANGE' });
-            return;
+            if (this.commandExecutor.offer({ type: 'UPGRADE_LAUNCH_RANGE' })) return;
         }
         const busy = new Set(this.commandExecutor.reservations().map((p) => p.action.cannonId));
         const cannons = state.buildings.filter(
@@ -258,7 +267,9 @@ class BotController {
         );
         for (const cannon of cannons) {
             const affordable = state.decks[side].filter(
-                (t) => LaunchRules.grain(t).cost <= state.wallet[side],
+                (t) =>
+                    LaunchRules.grain(t).cost <= state.wallet[side] &&
+                    (LaunchRules.grain(t).premiumCost || 0) <= state.premiumWallet[side],
             );
             if (!affordable.length) return;
             const target = this.launchTarget(state, cannon);
@@ -266,7 +277,11 @@ class BotController {
             const distance = Math.hypot(target.x - cannon.x, target.y - cannon.y);
             const reaching = affordable.filter((t) => LaunchRules.maxReachOf(t, level) >= distance),
                 pool = reaching.length ? reaching : affordable;
-            const unitType = pool[HashUtil.hash(`${state.tick}|${cannon.id}`) % pool.length];
+            const unitType = target.resourceType
+                ? pool
+                      .slice()
+                      .sort((a, b) => LaunchRules.grain(a).cost - LaunchRules.grain(b).cost)[0]
+                : pool[HashUtil.hash(`${state.tick}|${cannon.id}`) % pool.length];
             const error =
                 1 + ((HashUtil.hash(`${state.tick}|${cannon.id}|err`) % 241) - 120) / 1000;
             const holdMs = Math.round(

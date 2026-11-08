@@ -1,3 +1,4 @@
+import { CAMPAIGN_STAGES } from '../definitions/campaign.js';
 import './grain-portrait.js';
 
 // Launch match screens (title, friend, help, in-game HUD and cards, match menu, result) and their addresses.
@@ -62,10 +63,13 @@ const GRAIN_COPY = Object.freeze({
     },
     redbean: {
         role: '돌격 근접',
-        feature: '착지 후 돌격 · 3연발',
+        feature: '점프 돌격 · 착지 충격파',
         land: '착지 후 돌격',
         fire: '3연사',
-        desc: '같은 곳에 세 번 시간차로 떨어집니다. 착지하자마자 잠깐 빠르게 돌격합니다.',
+        desc: '세 번 시간차로 투입됩니다. 적 병사에게 점프해 접근하고 착지 충격파로 주변 적을 공격합니다.',
+        exceptions: [
+            '점프에는 재사용 대기 시간이 있으며, 가까운 적은 일반 근접 공격으로 상대합니다.',
+        ],
     },
 });
 const SCREENS = new Set(['', 'friend', 'help', 'play', 'result']);
@@ -156,8 +160,35 @@ export class LaunchScreens {
         const A = this.actions,
             $ = this.$;
         // A start that failed leaves the address on #/play, so the button starts again without an address change.
-        $('gameStartBtn').onclick = () =>
-            this.navigation.snapshot().screen === 'play' ? A.startAiMatch() : this.go('play');
+        $('gameStartBtn').onclick = () => {
+            A.selectCampaign(null);
+            if (this.navigation.snapshot().screen === 'play') A.startAiMatch();
+            else this.go('play');
+        };
+        $('campaignBtn').onclick = () => {
+            const progress = A.campaignProgress();
+            $('campaignStages').replaceChildren();
+            CAMPAIGN_STAGES.forEach((stage, index) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'launch-btn secondary';
+                button.disabled = index > progress;
+                const title = document.createElement('b');
+                title.textContent = `${index + 1}. ${stage.title}${button.disabled ? ' · 잠김' : ''}`;
+                const description = document.createElement('small');
+                description.textContent = stage.briefing;
+                button.append(title, description);
+                button.onclick = () => {
+                    $('campaignDialog').close();
+                    A.selectCampaign(stage.id);
+                    if (this.navigation.snapshot().screen === 'play') A.startAiMatch();
+                    else this.go('play');
+                };
+                $('campaignStages').append(button);
+            });
+            $('campaignDialog').showModal();
+        };
+        $('campaignCloseBtn').onclick = () => $('campaignDialog').close();
         $('friendMatchBtn').onclick = () => this.go('friend');
         $('titleHelpBtn').onclick = () => this.go('help');
         $('friendCreateBtn').onclick = () => {
@@ -308,7 +339,7 @@ export class LaunchScreens {
     static cardMarkup(type) {
         const A = this.actions,
             STATS = A.grainStats(type);
-        return `<button type="button" class="launch-card" data-launch-card="${type}"><span class="launch-card-info" data-card-info="${type}" role="button" aria-label="${A.grainName(type)} 상세">i</span><img class="launch-card-portrait" data-portrait="${type}" alt=""><b>${A.grainName(type)} ×${STATS.count}</b><em>${STATS.cost}</em></button>`;
+        return `<button type="button" class="launch-card" data-launch-card="${type}"><span class="launch-card-info" data-card-info="${type}" role="button" aria-label="${A.grainName(type)} 상세">i</span><img class="launch-card-portrait" data-portrait="${type}" alt=""><b>${A.grainName(type)} ×${STATS.count}</b><em>◆ ${STATS.cost}${STATS.premiumCost ? ` ✦ ${STATS.premiumCost}` : ''}</em></button>`;
     }
     static fillCardPortraits(host) {
         for (const IMG of host.querySelectorAll('img[data-portrait]')) {
@@ -328,7 +359,7 @@ export class LaunchScreens {
             : '';
         HOST.innerHTML = `<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2><p>${COPY.desc}</p></div></div>
 ${EXCEPTIONS}
-<div class="launch-stats"><div>비용<b>${STATS.cost}</b></div><div>병사 수<b>${STATS.count}</b></div><div>최대 사거리<b>${STATS.maxReach.toLocaleString('ko-KR')}</b></div><div>발사<b>${COPY.fire}</b></div><div>착지<b>${COPY.land}</b></div></div>
+<div class="launch-stats"><div>비용<b>◆ ${STATS.cost}${STATS.premiumCost ? ` ✦ ${STATS.premiumCost}` : ''}</b></div><div>병사 수<b>${STATS.count}</b></div><div>최대 사거리<b>${STATS.maxReach.toLocaleString('ko-KR')}</b></div><div>발사<b>${COPY.fire}</b></div><div>착지<b>${COPY.land}</b></div></div>
 <button type="button" class="launch-btn primary" data-sheet-close>닫기</button>`;
         this.fillCardPortraits(HOST);
     }

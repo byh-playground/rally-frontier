@@ -76,6 +76,10 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     bridges: [],
                 };
                 state.mapDescriptor = map;
+                for (const deposit of state.baseDeposits) {
+                    deposit.remaining = 0;
+                    deposit.miningCarry = 0;
+                }
                 state.units = [];
                 state.projectiles = [];
                 state.launchDeployments = [];
@@ -87,6 +91,10 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     outpostId: null,
                     enabled: true,
                     label: '거점' + i,
+                    resourceType: 'basic',
+                    remaining: LaunchRules.depositCapacity,
+                    miningCarry: 0,
+                    discoveredBy: [false, false],
                 }));
                 for (const b of state.buildings) {
                     b.x = x + (b.side ? 1400 : -1400);
@@ -189,7 +197,6 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     b.construction.invested = Math.floor((cost * workDone) / workRequired);
                     b.hp = ConstructionRules.healthAt(b.construction, b.maxHp, workDone);
                     state.wallet[0] = wallet;
-                    state.launchIncomeCarry[0] = 0;
                     sim.importState(state);
                     sim.stepSimulation();
                     return {
@@ -215,7 +222,60 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     sourceDamageResolved: true,
                 });
             }
-            // The player can trade the entire starting wallet for a global range level.
+            // On the production terrain the premium deposit is not directly in the
+            // initial rice range, but can actually be reached and built after one upgrade.
+            {
+                const sim = new StrategySim(seed),
+                    base = sim.launchCannons(0)[0],
+                    cp = sim.capturePoints.find(
+                        (point) =>
+                            point.resourceType === 'premium' &&
+                            Math.hypot(point.x - base.x, point.y - base.y) < 1000,
+                    ),
+                    distance = cp && Math.hypot(cp.x - base.x, cp.y - base.y);
+                check(
+                    cp &&
+                        distance > LaunchRules.maxReachOf('rice', 0) &&
+                        distance <= LaunchRules.maxReachOf('rice', 1),
+                    'premium deposit requires one upgrade',
+                    { cp, distance },
+                );
+                check(
+                    sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }),
+                    'upgrade before premium launch',
+                );
+                check(
+                    sim.applyCommand('host', {
+                        type: 'LAUNCH',
+                        cannonId: base.id,
+                        unitType: 'rice',
+                        holdMs: LaunchRules.holdFor(distance, 'rice', 1),
+                        x: cp.x,
+                        y: cp.y,
+                    }),
+                    'launch toward premium deposit',
+                );
+                for (let i = 0; i < 60 * sim.tps && cp.owner !== 0; i++) sim.stepSimulation();
+                check(cp.owner === 0, 'actual launch reaches and constructs the premium deposit', {
+                    tick: sim.tick,
+                    cp,
+                    wallet: sim.wallet[0],
+                    units: sim.units.length,
+                });
+                const before = sim.premiumWallet[0];
+                step(sim, sim.tps);
+                check(
+                    sim.premiumWallet[0] > before && cp.remaining < LaunchRules.depositCapacity,
+                    'completed premium deposit mines its finite stock',
+                );
+                rows.push({
+                    scenario: 'production terrain premium capture after one upgrade',
+                    distance,
+                    tick: sim.tick,
+                    remaining: cp.remaining,
+                });
+            }
+            // The player can buy a global range level with the starting wallet.
             {
                 const sim = arena(),
                     base = sim.launchCannons(0)[0];
@@ -231,14 +291,14 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 );
                 check(
                     sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }) &&
-                        sim.wallet[0] === 0 &&
+                        sim.wallet[0] === 250 &&
                         sim.launchRangeLevel[0] === 1 &&
                         sim.launchRangeLevel[1] === 0,
                     '250 resource purchase upgrades only the buying side',
                 );
                 check(
                     !sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }) &&
-                        sim.wallet[0] === 0,
+                        sim.wallet[0] === 250,
                     'insufficient wallet is rejected without spending',
                 );
                 sim.wallet[0] = 500;
@@ -251,7 +311,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 check(
                     !sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }) &&
                         sim.wallet[0] === 125,
-                    'maximum level rejects further payment',
+                    'third upgrade rejects insufficient basic and premium resources',
                 );
                 sim.wallet[0] = 500;
                 const target = {
@@ -276,33 +336,42 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     reach: 1275,
                 });
             }
-            // Economy values share one currency scale; construction was already scaled.
+            // The home base is a finite basic deposit; a full wallet pauses mining.
             {
-                const sim = arena();
+                const sim = arena(),
+                    baseDeposit = sim.baseDeposits[0];
                 check(
-                    sim.wallet[0] === 250 &&
+                    sim.wallet[0] === 500 &&
+                        sim.premiumWallet[0] === 0 &&
                         LaunchRules.walletCap === 500 &&
-                        LaunchRules.incomePerSecond === 15 &&
                         LaunchRules.captureIncomePerSecond === 5,
-                    'complete fivefold resource conversion',
+                    'full starting basic wallet and empty premium wallet',
                 );
                 check(
                     LaunchRules.grain('rice').cost === 125 &&
                         LaunchRules.grain('pea').cost === 250 &&
                         LaunchRules.grain('redbean').cost === 250,
-                    'all launch prices use the same currency',
+                    'basic launch prices use the same currency',
                 );
-                sim.wallet[0] = 495;
-                sim.launchIncomeCarry[0] = 0;
+                baseDeposit.remaining = 10;
                 step(sim, sim.tps);
-                check(sim.wallet[0] === 500, 'income caps at500 instead of the old100');
+                check(baseDeposit.remaining === 10, 'full wallet preserves base deposit');
+                sim.wallet[0] = 495;
+                step(sim, sim.tps);
+                check(
+                    sim.wallet[0] === 500 && baseDeposit.remaining === 5,
+                    'base mining resumes and wallet caps',
+                );
+                sim.wallet[0] = 490;
+                step(sim, 2 * sim.tps);
+                check(
+                    sim.wallet[0] === 495 && baseDeposit.remaining === 0,
+                    'finite deposit depletes',
+                );
                 rows.push({
-                    scenario:
-                        'fivefold currency covers wallet income launches upgrades and existing75-cost construction',
-                    cap: LaunchRules.walletCap,
-                    start: 250,
-                    income: 15,
-                    launchCosts: [125, 250, 250],
+                    scenario: 'finite home deposit pauses at cap and depletes',
+                    remaining: baseDeposit.remaining,
+                    wallet: sim.wallet[0],
                 });
             }
             // Start at capture-presence distance. No fixture moves workers into contact:
@@ -964,9 +1033,8 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     towers = smallProjects(income, start(income));
                 for (const b of towers) finish(income, b);
                 income.wallet[0] = 0;
-                income.launchIncomeCarry[0] = 0;
                 step(income, income.tps);
-                check(income.wallet[0] === 30, 'three completed worker projects give30 income');
+                check(income.wallet[0] === 15, 'three completed worker projects give15 income');
                 const clear = income.exportState();
                 clear.units = [];
                 income.importState(clear);
@@ -975,9 +1043,8 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     income.buildings.find((b) => b.id === towers[0].id),
                 );
                 income.wallet[0] = 0;
-                income.launchIncomeCarry[0] = 0;
                 step(income, income.tps);
-                check(income.wallet[0] === 25, 'destroyed capture stops its income');
+                check(income.wallet[0] === 10, 'destroyed capture stops its income');
                 const loss = arena(),
                     [partial] = start(loss);
                 step(loss, 5 * loss.tps);
@@ -1176,8 +1243,11 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
             };
         });
         assert(
-            ui.wallet.endsWith('/ 500') && ui.income === '+15/초' && ui.button.includes('375'),
-            'native HUD displays the converted currency',
+            ui.wallet.includes('◆') &&
+                ui.wallet.includes('✦') &&
+                ui.income.includes('본진 잔량') &&
+                ui.button.includes('375'),
+            'native HUD displays both currencies and the remaining base deposit',
         );
         assert(
             ui.modes.every((value) => value === mode),
