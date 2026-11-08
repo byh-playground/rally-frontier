@@ -54,7 +54,7 @@ class ReplayPolicy {
             );
         if (!Array.isArray(data.commands) || !Number.isFinite(Number(data.seed)))
             throw new Error('리플레이 데이터가 손상되었습니다.');
-        LaunchRules.normalizeHeroPair(data.heroTypes);
+        LaunchRules.normalizeDeckPair(data.decks);
         return data;
     }
 }
@@ -69,7 +69,9 @@ class ReplayRecorder {
         this.seed = seed >>> 0;
         this.roomCode = roomCode || null;
         this.rules = CloneUtil.clone(rules || sim?.rules || GameRuleDefinition.current);
-        this.heroTypes = sim?.heroTypes.slice() || [LaunchRules.heroCard, LaunchRules.heroCard];
+        this.decks = LaunchRules.normalizeDeckPair(
+            sim?.decks ?? [LaunchRules.starterDeck, LaunchRules.starterDeck],
+        );
         this.commands = [];
         this.checkpoints = [];
         this.result = null;
@@ -143,7 +145,7 @@ class ReplayRecorder {
             roomCode: this.roomCode,
             seed: this.seed,
             rules: CloneUtil.clone(this.rules),
-            heroTypes: this.heroTypes.slice(),
+            decks: this.decks.map((deck) => deck.slice()),
             commands: CloneUtil.clone(this.commands),
             checkpoints: CloneUtil.clone(this.checkpoints),
             result: CloneUtil.clone(result),
@@ -234,9 +236,9 @@ class ReplayPlayer {
         const cp = this.checkpointFor(targetTick);
         let baseTick = 0;
         if (cp?.state) {
-            const heroTypes = LaunchRules.normalizeHeroPair(cp.state.heroTypes);
-            if (heroTypes.some((type, side) => type !== sim.heroTypes[side]))
-                throw new Error('리플레이 체크포인트의 영웅이 경기 시작과 다릅니다.');
+            const decks = LaunchRules.normalizeDeckPair(cp.state.decks);
+            if (JSON.stringify(decks) !== JSON.stringify(sim.decks))
+                throw new Error('리플레이 체크포인트의 덱이 경기 시작과 다릅니다.');
             sim.importState(cp.state);
             sim.scheduled = new Map();
             const stateTick = Number(sim.tick) || 0;
@@ -260,8 +262,7 @@ class ReplayPlayer {
         const candidate = new StrategySim(
             Number(this.data.seed) >>> 0,
             this.data.rules || GameRuleDefinition.current,
-            undefined,
-            this.data.heroTypes,
+            this.data.decks,
         );
         try {
             this.resetAtCheckpoint(candidate, targetTick);

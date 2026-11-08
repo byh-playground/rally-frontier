@@ -672,28 +672,43 @@ END OF DEVELOPMENT CONTRACT
                         ×
                     </button>
                 </header>
-                <p class="deck-intro">대전에 데려갈 과일 영웅 한 명과 곡식 병사를 골라요.</p>
+                <p class="deck-intro">영웅과 병사가 같은 덱 칸을 써요.</p>
                 <div id="deckTabs" class="deck-tabs" role="group" aria-label="덱 선택"></div>
-                <div class="deck-section-head">
-                    <h3>영웅</h3>
-                    <span>한 명 선택</span>
-                </div>
-                <div
-                    id="deckHeroes"
-                    class="deck-collection deck-heroes"
-                    role="group"
-                    aria-label="영웅 선택"
-                ></div>
                 <div class="deck-section-head">
                     <h3>내 덱</h3>
                     <span id="deckCount"></span>
                 </div>
-                <div id="deckSelected" class="deck-selected" aria-label="현재 덱"></div>
+                <div
+                    id="deckSelected"
+                    class="deck-selected"
+                    role="group"
+                    aria-label="현재 덱"
+                ></div>
                 <div class="deck-section-head">
-                    <h3>병사 목록</h3>
+                    <h3>카드 목록</h3>
                     <span>눌러서 추가하거나 제외</span>
                 </div>
-                <div id="deckCollection" class="deck-collection"></div>
+                <div class="deck-filters" role="group" aria-label="카드 목록 분류">
+                    <button type="button" data-deck-filter="hero" aria-controls="deckHeroes">
+                        영웅
+                    </button>
+                    <button type="button" data-deck-filter="grain" aria-controls="deckCollection">
+                        병사
+                    </button>
+                </div>
+                <div
+                    id="deckHeroes"
+                    class="deck-collection"
+                    role="group"
+                    aria-label="영웅 목록"
+                ></div>
+                <div
+                    id="deckCollection"
+                    class="deck-collection"
+                    role="group"
+                    aria-label="병사 목록"
+                    hidden
+                ></div>
                 <p id="deckNotice" class="deck-notice" aria-live="polite"></p>
                 <button id="deckDoneBtn" class="launch-btn primary deck-done" type="button">
                     완료
@@ -1050,9 +1065,9 @@ END OF DEVELOPMENT CONTRACT
                     <section class="help-rule">
                         <h3>영웅 카드</h3>
                         <p>
-                            덱 편성에서 수박, 바나나, 포도 중 이번 경기에 데려갈 영웅 한 명을
-                            골라요. 맨 앞 카드의 영웅은 무료로 발사할 수 있어요. 영웅이 전사하면 그
-                            경기에서 다시 출격할 수 없어요.
+                            영웅과 병사를 합쳐 덱에 최대 여덟 장을 넣을 수 있어요. 수박, 바나나,
+                            포도를 한 덱에 넣고 함께 출격시킬 수도 있어요. 영웅은 무료로 발사할 수
+                            있고, 전사한 영웅은 그 경기에서 다시 출격할 수 없어요.
                         </p>
                         <details>
                             <summary>바나나의 부메랑</summary>
@@ -1064,12 +1079,11 @@ END OF DEVELOPMENT CONTRACT
                             </p>
                         </details>
                         <details>
-                            <summary>포도의 곡사탄과 덩굴</summary>
+                            <summary>포도의 곡사탄과 포도알 연사</summary>
                             <p>
                                 평타로 적 한 명을 맞히고, 세 번째 평타마다 포도알 한 알을 더 높이
-                                던져 착탄 지점 주변에 피해를 줘요. 카드를 길게 누르면 적 한 명을
-                                덩굴로 세 번 조여요. 마지막에 가장 큰 피해를 주고, 적이 사거리
-                                밖으로 빠지면 덩굴이 끊어져요.
+                                던져 착탄 지점 주변에 피해를 줘요. 카드를 길게 누르면 적 주변의 착탄
+                                지점을 예고하고 포도알 여덟 알을 차례로 높이 던져요.
                             </p>
                         </details>
                         <details>

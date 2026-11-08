@@ -345,7 +345,9 @@ class BotController {
             main = BuildingDefinition.forRole('mainBase'),
             outpost = BuildingDefinition.forRole('outpost'),
             constructionCost = BuildingDefinition.get(outpost).construction.cost,
-            deck = state.decks[side].map((type) => ({ type, ...LaunchRules.payload(type) }));
+            deck = state.decks[side]
+                .filter((type) => !LaunchRules.isHeroType(type))
+                .map((type) => ({ type, ...LaunchRules.payload(type) }));
         const busy = new Set(
             this.commandExecutor.reservations().map(({ action }) => action.cannonId),
         );

@@ -42,16 +42,7 @@ export class HeroRollAttack {
         return false;
     }
 
-    static activate(sim, side, sortieId) {
-        const hero = sim.heroes[side];
-        const unit =
-            hero &&
-            hero.sortieId === sortieId &&
-            (hero.mode === 'advance' || hero.mode === 'return')
-                ? sim.liveEntityRefById(hero.unitId, 'unit')?.entity
-                : null;
-        if (!unit || unit.side !== side || !UnitDefinition.get(unit.type)?.heroActive)
-            return this.reject(sim, side, sortieId, 'hero-not-deployed');
+    static activate(sim, unit, sortieId) {
         if (unit.heroRollQueued) return true;
         if (this.canStart(unit, sim.tick)) return this.start(sim, unit, sortieId);
         unit.heroRollQueued = true;
@@ -102,7 +93,13 @@ export class HeroRollAttack {
         unit.constructionWork = null;
         unit.target = null;
         sim.wallet[side] -= spec.cost;
-        sim.events.push({ type: 'heroSkillStarted', side, sortieId, cost: spec.cost });
+        sim.events.push({
+            type: 'heroSkillStarted',
+            side,
+            sortieId,
+            heroType: unit.type,
+            cost: spec.cost,
+        });
         return true;
     }
 
@@ -275,11 +272,10 @@ export class HeroRollAttack {
     static validateState(unit, state, tps) {
         const spec = UnitDefinition.get(unit.type).heroActive;
         const roll = unit.heroRoll;
+        const deployed = unit.alive && state.heroes?.[unit.side]?.[unit.type]?.unitId === unit.id;
         if (
             spec
-                ? typeof unit.heroRollQueued !== 'boolean' ||
-                  (unit.heroRollQueued &&
-                      (!unit.alive || state.heroes?.[unit.side]?.unitId !== unit.id))
+                ? typeof unit.heroRollQueued !== 'boolean' || (unit.heroRollQueued && !deployed)
                 : unit.heroRollQueued !== undefined
         )
             throw new Error('게임 snapshot의 영웅 스킬 예약 상태가 잘못되었습니다.');
@@ -289,10 +285,9 @@ export class HeroRollAttack {
             !roll ||
             Object.keys(roll).sort().join(',') !==
                 'distance,dx,dy,hitIds,phase,phaseEndTick,phaseStartTick,startTick,targetId' ||
-            !unit.alive ||
+            !deployed ||
             !this.canDrive(unit, state.tick) ||
             unit.spinAttack ||
-            state.heroes?.[unit.side]?.unitId !== unit.id ||
             !Number.isSafeInteger(roll.startTick) ||
             roll.startTick < 0 ||
             !Number.isSafeInteger(roll.phaseStartTick) ||

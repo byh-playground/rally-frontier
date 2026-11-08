@@ -189,27 +189,29 @@ class LaunchRules {
     static deck = Object.freeze(
         Object.keys(LaunchRules.grains).filter((type) => !LaunchRules.isHeroType(type)),
     );
+    static deckLimit = 8;
+    static starterDeck = Object.freeze([
+        LaunchRules.heroCard,
+        ...LaunchRules.deck.slice(0, LaunchRules.deckLimit - 1),
+    ]);
     static isHeroType(type) {
         return this.heroTypes.includes(type);
     }
-    static normalizeHeroType(type) {
-        if (!this.isHeroType(type)) throw new Error('유효한 영웅을 선택해야 합니다.');
-        return type;
-    }
-    static normalizeHeroPair(heroTypes) {
-        if (!Array.isArray(heroTypes) || heroTypes.length !== 2)
-            throw new Error('양쪽 플레이어의 영웅이 필요합니다.');
-        return [this.normalizeHeroType(heroTypes[0]), this.normalizeHeroType(heroTypes[1])];
+    static withDefaultHero(deck) {
+        const types = this.normalizeDeck(deck);
+        if (types.some((type) => this.isHeroType(type))) return types;
+        return [this.heroCard, ...types.slice(0, this.deckLimit - 1)];
     }
     static normalizeDeck(deck) {
         if (
             !Array.isArray(deck) ||
             deck.length < 1 ||
-            deck.length > this.deck.length ||
+            deck.length > this.deckLimit ||
+            deck.includes(undefined) ||
             new Set(deck).size !== deck.length ||
-            deck.some((type) => !this.deck.includes(type))
+            deck.some((type) => typeof type !== 'string' || !this.grain(type))
         )
-            throw new Error('덱은 중복 없는 유효한 병종을 하나 이상 포함해야 합니다.');
+            throw new Error(`덱은 중복 없이 유효한 카드를 1~${this.deckLimit}장 포함해야 합니다.`);
         return deck.slice();
     }
     static normalizeDeckPair(decks) {

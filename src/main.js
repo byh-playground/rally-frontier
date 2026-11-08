@@ -2920,8 +2920,6 @@ class GLRenderer {
                 this.addClientFx('meleeImpact', e, snapshot, index, { impactScale: 1.5 });
             } else if (e.type === 'fruitBerryLand') {
                 this.addClientFx('fruitBerryImpact', e, snapshot, index);
-            } else if (e.type === 'fruitVineHit') {
-                this.addClientFx('fruitVineImpact', e, snapshot, index);
             } else if (e.type === 'unitThornHit') {
                 this.addClientFx('thornImpact', e, snapshot, index, {
                     id: 'thorn-impact:' + e.projectileId,
@@ -4766,38 +4764,44 @@ class GLRenderer {
                     : null;
             const fruit = sprite?.fruitAttack ? entity.fruitAttack : null;
             const active = fruit?.active;
-            let fruitSkillElapsed = null;
-            if (heroBasic != null || active) {
-                const targetId =
-                    active?.targetId ?? entity.combat?.attackWindupTargetId ?? entity.target;
+            const tps = this.snapshot.tps || SIM_TPS;
+            const barrageShot = fruit?.projectiles.findLast(
+                (shot) =>
+                    shot.kind === 'berry' && shot.mode === 'active' && shot.startTick <= renderTick,
+            );
+            let fruitSkillElapsed = barrageShot
+                ? heroBasicAttackElapsedMs(
+                      { basicAttackTick: barrageShot.startTick },
+                      renderTick,
+                      tps,
+                  )
+                : null;
+            if (heroBasic != null || active || fruitSkillElapsed != null) {
+                const targetId = entity.combat?.attackWindupTargetId ?? entity.target;
                 const target =
                     targetId &&
                     (this.renderState.model('unit', targetId, now)?.entity ||
                         this.snapshot.buildings.find((entry) => entry.id === targetId));
-                const aimX = active?.shot?.to.x ?? target?.x;
+                const aimX =
+                    active?.shot?.to.x ?? active?.impacts?.[0]?.x ?? barrageShot?.to.x ?? target?.x;
                 if (Number.isFinite(aimX))
                     grain.heroFacing = this.viewX(aimX) < this.viewX(entity.x) ? -1 : 1;
             }
             if (sprite?.heroBasic && clip === 'fire' && heroBasic == null)
                 clip = moving ? 'walk' : 'idle';
-            if (heroBasic != null || active) clip = 'fire';
+            if (heroBasic != null || active || fruitSkillElapsed != null) clip = 'fire';
             if (sprite?.fruitAttack) {
                 actor.weaponAway = fruitShotsAt(fruit, renderTick).some(
                     (shot) => shot.kind === 'boomerang',
                 );
                 const activeSpec = UnitDefinition.get(u.type).fruitAttack.active;
-                const tps = this.snapshot.tps || SIM_TPS;
-                const releaseTick =
-                    active?.shot?.startTick ??
-                    (active?.strike
-                        ? active.nextTick - SimulationTiming.msToTicks(activeSpec.intervalMs, tps)
-                        : active?.nextTick);
-                const windupStart = active?.shot
-                    ? releaseTick - SimulationTiming.msToTicks(activeSpec.windupMs, tps)
-                    : active?.startTick;
-                if (active) {
+                if (active?.shot || (active && active.strike === 0)) {
+                    const releaseTick = active.shot?.startTick ?? active.nextTick;
+                    const windupStart = active.shot
+                        ? releaseTick - SimulationTiming.msToTicks(activeSpec.windupMs, tps)
+                        : active.startTick;
                     fruitSkillElapsed =
-                        !active.strike && renderTick < releaseTick
+                        renderTick < releaseTick
                             ? HERO_BASIC_STRIKE_MS *
                               RangeUtil.clamp(
                                   (renderTick - windupStart) /
@@ -6397,9 +6401,7 @@ class GLRenderer {
     drawUnitAttackEffects(entries) {
         for (const fx of this.combatFx) {
             if (
-                (fx.kind !== 'spinBasicImpact' &&
-                    fx.kind !== 'fruitBerryImpact' &&
-                    fx.kind !== 'fruitVineImpact') ||
+                (fx.kind !== 'spinBasicImpact' && fx.kind !== 'fruitBerryImpact') ||
                 fx.clock.expired
             )
                 continue;
@@ -6407,14 +6409,9 @@ class GLRenderer {
             if (fade <= 0) continue;
             const elevation = this.world.terrain.surfaces.heightAt(fx.x, fx.y);
             const stroke =
-                fx.kind === 'fruitBerryImpact'
-                    ? [0.75, 0.45, 1, fade]
-                    : fx.kind === 'fruitVineImpact'
-                      ? [0.55, 0.9, 0.23, fade]
-                      : [1, 0.77, 0.44, fade];
-            const radius = fx.kind === 'fruitVineImpact' ? 16 + (1 - fade) * 18 : fx.radius;
+                fx.kind === 'fruitBerryImpact' ? [0.75, 0.45, 1, fade] : [1, 0.77, 0.44, fade];
             this.withWorldSpriteDepth({ x: fx.x, y: elevation, z: fx.y, groundY: 0 }, () =>
-                this.drawGroundCircle(fx.x, fx.y, radius, {
+                this.drawGroundCircle(fx.x, fx.y, fx.radius, {
                     elevation,
                     stroke,
                     width: Math.max(1, 2 * this.sc()),
@@ -6432,7 +6429,7 @@ class GLRenderer {
             if (definition.heroActive && entry.entity.alive)
                 this.drawHeroRollTelegraph(entry, model, definition.heroActive);
             if (definition.fruitAttack && entry.entity.alive)
-                this.drawFruitAttackEffect(entry, model, now);
+                this.drawFruitAttackEffect(model, definition.fruitAttack);
             const spin = model?.entity?.spinAttack,
                 tick = model?.tick,
                 radius = spec?.radius;
@@ -6529,9 +6526,9 @@ class GLRenderer {
         const p = this.projectRenderWorldPosition(world),
             span =
                 (shot.kind === 'berry'
-                    ? shot.mode === 'passive'
-                        ? 20
-                        : 14
+                    ? shot.mode === 'basic'
+                        ? 14
+                        : 20
                     : shot.mode === 'active'
                       ? shot.radius * 2
                       : 22) * this.sc(),
@@ -6559,37 +6556,34 @@ class GLRenderer {
             this._renderDepth ?? 0,
         );
     }
-    drawFruitAttackEffect(entry, model, now) {
-        const active = model?.entity.fruitAttack?.active;
-        if (!active) return;
-        const shot = active.shot;
+    drawFruitAttackEffect(model, spec) {
+        const fruit = model?.entity.fruitAttack;
+        if (!fruit) return;
+        const { active } = fruit;
+        const shot = active?.shot;
         if (shot) {
             if (model.tick >= shot.startTick) return;
             this.drawFruitThrowPreview(shot);
             return;
         }
-        const target = this.renderState.model('unit', active.targetId, now)?.entity;
-        if (!target || (target.side !== this.mySide() && !this.visibleRaw(target.x, target.y)))
-            return;
-        const from = this.projectRenderWorldPosition(entry.world),
-            to = this.projectEntityScreen(target, 'unit'),
-            ground = this.world.terrain.surfaces.heightAt(target.x, target.y);
-        this.withWorldSpriteDepth({ x: target.x, y: ground, z: target.y, groundY: ground }, () => {
-            this.line(
-                from.x,
-                from.y,
-                to.x,
-                to.y,
-                Math.max(1.5, 4 * this.sc()),
-                [0.32, 0.76, 0.29, 0.84],
-            );
-            this.drawGroundCircle(target.x, target.y, InteractionGeometry.unitRadius(target.type), {
-                elevation: ground,
-                stroke: [0.62, 0.93, 0.25, 0.88],
-                fill: [0.25, 0.67, 0.25, 0.16],
-                width: Math.max(1, 2 * this.sc()),
+        const impacts = active?.impacts?.slice(active.strike) ?? [];
+        for (const projectile of fruit.projectiles)
+            if (
+                projectile.kind === 'berry' &&
+                projectile.mode === 'active' &&
+                model.tick < projectile.endTick
+            )
+                impacts.push(projectile.to);
+        for (const { x, y, z } of impacts)
+            this.withWorldSpriteDepth({ x, y: z, z: y, groundY: z }, () => {
+                this.drawGroundCircle(x, y, spec.lob.radius, {
+                    elevation: z,
+                    stroke: [0.81, 0.58, 1, 0.9],
+                    fill: [0.55, 0.3, 0.82, 0.08],
+                    width: Math.max(1, 2 * this.sc()),
+                    segments: 20,
+                });
             });
-        });
     }
     drawFruitThrowPreview(shot) {
         const groundPoint = (x, z) => {
@@ -9210,7 +9204,6 @@ class MatchLifecycle {
             c,
             r === 'host' ? MatchLifecycle.currentMatchConfig() : null,
             DeckEditor.getDeck(),
-            DeckEditor.getHeroType(),
         );
         MatchLifecycle.wireSessionForView(r, ActiveViewState.session, ActiveViewState.transport);
         ActiveViewState.transport.open();
@@ -9257,19 +9250,13 @@ class MatchLifecycle {
             humanTransport,
             token,
             configFor(humanRole),
-            stage?.deck || DeckEditor.getDeck(),
-            stage ? LaunchRules.heroCard : DeckEditor.getHeroType(),
+            stage ? LaunchRules.withDefaultHero(stage.deck) : DeckEditor.getDeck(),
         );
         // CONFIG.single.botWorker runs the AI session in src/sim-worker.js; its WebRTC transport stays here.
+        const botDeck = stage ? LaunchRules.withDefaultHero(stage.enemyDeck) : undefined;
         const botSession = CONFIG.single.botWorker
-            ? new WorkerSessionProxy(
-                  botRole,
-                  botTransport,
-                  token,
-                  configFor(botRole),
-                  stage?.enemyDeck,
-              )
-            : new GameSession(botRole, botTransport, token, configFor(botRole), stage?.enemyDeck);
+            ? new WorkerSessionProxy(botRole, botTransport, token, configFor(botRole), botDeck)
+            : new GameSession(botRole, botTransport, token, configFor(botRole), botDeck);
         const sessions = { [humanRole]: humanSession, [botRole]: botSession };
         const bot = CONFIG.single.botWorker ? null : BotController.attach(botSession, botRole);
         if (CONFIG.single.botWorker)
@@ -10335,17 +10322,20 @@ class LaunchPresentation {
         if (this.heroPress && !this.currentHeroPress(this.heroPress, s, side))
             this.endHeroPress(true);
         if (!on) return;
-        const deck = s.decks?.[side] || LaunchRules.deck,
-            heroCard = s.heroTypes?.[side] ?? LaunchRules.heroCard,
-            hero = s.heroes?.[side],
+        const deck = s.decks?.[side] ?? LaunchRules.starterDeck,
+            heroes = s.heroes?.[side],
             balance = this.resourceBalance(s, side),
             population = LaunchRules.population(s, side);
-        if (this.card === heroCard ? hero : !deck.includes(this.card)) this.card = deck[0] || null;
-        const key = [heroCard, ...deck].join('|');
+        if (!deck.includes(this.card) || heroes?.[this.card])
+            this.card =
+                deck.find((type) => !LaunchRules.isHeroType(type)) ??
+                deck.find((type) => !heroes?.[type]) ??
+                null;
+        const key = deck.join('|');
         if (key !== this.deckKey) {
             this.deckKey = key;
-            UiRegistry.refs.launchCards.innerHTML = [heroCard, ...deck]
-                .map((t) => LaunchScreens.cardMarkup(t, t === heroCard))
+            UiRegistry.refs.launchCards.innerHTML = deck
+                .map((type) => LaunchScreens.cardMarkup(type, LaunchRules.isHeroType(type)))
                 .join('');
             LaunchScreens.fillCardPortraits(UiRegistry.refs.launchCards);
         }
@@ -10353,7 +10343,7 @@ class LaunchPresentation {
             const t = el.dataset.launchCard,
                 payload = LaunchRules.payload(t);
             el.classList.toggle('selected', t === this.card);
-            if (t === heroCard) this.renderHeroCard(el, s, side);
+            if (LaunchRules.isHeroType(t)) this.renderHeroCard(el, s, side, t);
             else {
                 const warning = this.resourceWarning(s, side, payload);
                 el.classList.toggle('unaffordable', !!warning);
@@ -10382,7 +10372,9 @@ class LaunchPresentation {
             price = { cost, premiumCost },
             warning = maxed ? '' : this.resourceWarning(s, side, price),
             rangeButton = UiRegistry.refs.launchRangeBtn;
-        UiRegistry.refs.launchReachText.textContent = `${UnitDefinition.get(this.card)?.name || this.card} 최대 발사 ${LaunchRules.maxReachOf(this.card, level).toLocaleString('ko-KR')}`;
+        UiRegistry.refs.launchReachText.textContent = this.card
+            ? `${UnitDefinition.get(this.card).name} 최대 발사 ${LaunchRules.maxReachOf(this.card, level).toLocaleString('ko-KR')}`
+            : '발사할 카드 없음';
         UiRegistry.refs.launchRangeText.textContent = maxed
             ? `사거리 ×${LaunchRules.rangeMultiplier(level)} · 최대`
             : `사거리 ×${LaunchRules.rangeMultiplier(level)} → ×${LaunchRules.rangeMultiplier(level + 1)}`;
@@ -10421,13 +10413,15 @@ class LaunchPresentation {
     }
     static presentEvents(snapshot, side) {
         for (const event of snapshot.events || []) {
-            if (
-                event.type === 'heroSkillStarted' &&
-                event.side === side &&
-                event.sortieId === snapshot.heroes?.[side]?.sortieId &&
-                this.active(snapshot)
-            ) {
-                const button = UiRegistry.refs.launchCards.querySelector('.hero-card');
+            if (event.type === 'heroSkillStarted' && event.side === side && this.active(snapshot)) {
+                const type =
+                    event.heroType ??
+                    Object.entries(snapshot.heroes?.[side] ?? {}).find(
+                        ([, hero]) => hero?.sortieId === event.sortieId,
+                    )?.[0];
+                const button = LaunchRules.isHeroType(type)
+                    ? UiRegistry.refs.launchCards.querySelector(`[data-launch-card="${type}"]`)
+                    : null;
                 if (button) this.presentHeroSpend(button, event.cost);
                 continue;
             }
@@ -10446,7 +10440,8 @@ class LaunchPresentation {
                 continue;
             }
             if (event.type === 'heroRecovered' && event.side === side && this.active(snapshot)) {
-                this.feedback('영웅 회수 · 다시 출격할 수 있습니다.');
+                const name = UnitDefinition.get(event.heroType)?.name ?? '영웅';
+                this.feedback(`${name} 회수 · 다시 출격할 수 있습니다.`);
                 continue;
             }
             if (event.type !== 'launchImpact' || event.side !== side) continue;
@@ -10468,10 +10463,10 @@ class LaunchPresentation {
         spend.addEventListener('animationend', () => spend.remove(), { once: true });
         button.append(spend);
     }
-    static renderHeroCard(el, s, side) {
+    static renderHeroCard(el, s, side, type) {
         el.classList.add('hero-card');
         const badge = el.querySelector('em'),
-            hero = s.heroes?.[side],
+            hero = s.heroes?.[side]?.[type],
             mode = hero?.mode;
         el.disabled = mode === 'dead' || !this.active(s);
         const label = {
@@ -10480,10 +10475,10 @@ class LaunchPresentation {
             dead: ['전사', '전사한 영웅은 이번 경기에 다시 출격할 수 없습니다.'],
         }[mode] ?? ['무료', '영웅 발사'];
         badge.textContent = label[0];
-        const definition = UnitDefinition.get(el.dataset.launchCard),
+        const definition = UnitDefinition.get(type),
             unit = hero?.unitId ? s.units?.find((entry) => entry.id === hero.unitId) : null,
             maxHp = unit?.maxHp ?? definition.hp,
-            hp = mode === 'dead' ? 0 : (unit?.hp ?? s.heroReserveHp?.[side] ?? maxHp),
+            hp = mode === 'dead' ? 0 : (unit?.hp ?? s.heroReserveHp?.[side]?.[type] ?? maxHp),
             currentHp = RangeUtil.clamp(Math.floor(hp), 0, maxHp),
             recovering = !hero && currentHp < maxHp;
         let health = el.querySelector('.hero-card-health');
@@ -10546,7 +10541,7 @@ class LaunchPresentation {
                 ? s.tick < active.shot.startTick
                     ? '투척 준비'
                     : '왕복 중'
-                : '덩굴 조이기'
+                : '포도알 연사'
             : { hop: '뛰는 중', roll: '구르는 중', unfold: '자세 펴기' }[unit.heroRoll?.phase];
         const queued = unit.fruitAttack?.queued ?? unit.heroRollQueued;
         badge.hidden = false;
@@ -10634,8 +10629,9 @@ class LaunchPresentation {
         const s = ActiveViewState.snap;
         if (!this.active(s)) return;
         const side = ConnectionSideUtil.roleSide(ActiveViewState.role),
-            hero = s.heroes?.[side];
-        if (type === (s.heroTypes?.[side] ?? LaunchRules.heroCard) && hero) {
+            hero = s.heroes?.[side]?.[type];
+        if (!s.decks?.[side]?.includes(type)) return;
+        if (hero) {
             if (hero.mode === 'dead') return;
             if (
                 !MatchLifecycle.activeSession()?.command({
@@ -10651,14 +10647,14 @@ class LaunchPresentation {
         const warning = this.resourceWarning(s, side, LaunchRules.payload(type));
         if (warning) this.feedback(warning);
     }
-    static heroSkillSortie(s, side) {
+    static heroSkillSortie(s, side, type) {
         if (
             !this.active(s) ||
             UiRuntimeState.value.screen !== 'game' ||
             UiRuntimeState.value.modal !== 'none'
         )
             return null;
-        const hero = s.heroes?.[side];
+        const hero = s.heroes?.[side]?.[type];
         if (!hero?.unitId || hero.mode === 'dead') return null;
         const unit = s.units?.find((entry) => entry.id === hero.unitId);
         if (!unit?.alive || unit.side !== side) return null;
@@ -10669,7 +10665,7 @@ class LaunchPresentation {
             press.button.isConnected &&
             MatchLifecycle.activeSession() === press.session &&
             press.session.inputAvailable() &&
-            this.heroSkillSortie(s, side) === press.sortieId
+            this.heroSkillSortie(s, side, press.button.dataset.launchCard) === press.sortieId
         );
     }
     static issueHeroSkill(session, sortieId) {
@@ -10689,7 +10685,11 @@ class LaunchPresentation {
         e.preventDefault();
         if (e.repeat || this.heroPress) return;
         const side = ConnectionSideUtil.roleSide(ActiveViewState.role),
-            sortieId = this.heroSkillSortie(ActiveViewState.snap, side),
+            sortieId = this.heroSkillSortie(
+                ActiveViewState.snap,
+                side,
+                e.target.dataset.launchCard,
+            ),
             session = MatchLifecycle.activeSession();
         if (sortieId && session?.inputAvailable()) this.issueHeroSkill(session, sortieId);
     }
@@ -10700,7 +10700,7 @@ class LaunchPresentation {
         const button = e.target.closest('[data-launch-card][data-hero-skill]');
         if (!button) return;
         const side = ConnectionSideUtil.roleSide(ActiveViewState.role),
-            sortieId = this.heroSkillSortie(ActiveViewState.snap, side),
+            sortieId = this.heroSkillSortie(ActiveViewState.snap, side, button.dataset.launchCard),
             session = MatchLifecycle.activeSession();
         if (!sortieId || !session?.inputAvailable()) return;
         const press = {
@@ -11854,6 +11854,8 @@ else if (document.documentElement.dataset.titleShowcase === 'true') {
     DeckEditor.install({
         types: () => LaunchRules.deck,
         heroes: () => LaunchRules.heroTypes,
+        starter: () => LaunchRules.starterDeck,
+        limit: LaunchRules.deckLimit,
         nameOf: (type) => UnitDefinition.get(type)?.name || type,
         statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
         infoOf: (type) => LaunchScreens.grainInfo(type),
