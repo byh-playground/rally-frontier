@@ -112,20 +112,32 @@ export class FruitHeroAttack {
     }
 
     static basic(sim, unit, target, isBuilding) {
-        const spec = UnitDefinition.get(unit.type).fruitAttack;
+        const definition = UnitDefinition.get(unit.type);
+        const spec = definition.fruitAttack;
         const fruit = unit.fruitAttack;
         const startTick = sim.tick;
         const impactTick = startTick + sim.msTicks(spec.basicMs);
         const from = worldPoint(sim, unit);
-        const to = worldPoint(sim, target, isBuilding);
         fruit.combo = (fruit.combo + 1) % spec.every;
         const proc = fruit.combo === 0;
         const boomerang = spec.kind === 'boomerang';
+        const piercing = boomerang && proc;
+        const to = piercing
+            ? this.boomerangTurnPoint(
+                  sim,
+                  unit,
+                  target,
+                  Math.max(
+                      definition.range,
+                      Math.hypot(target.x - unit.x, target.y - unit.y) + spec.passiveFollowThrough,
+                  ),
+              )
+            : worldPoint(sim, target, isBuilding);
         fruit.projectiles.push(
             this.makeShot({
                 unit,
                 kind: boomerang ? 'boomerang' : 'berry',
-                mode: boomerang && proc ? 'passive' : 'basic',
+                mode: piercing ? 'passive' : 'basic',
                 from,
                 to,
                 startTick,
@@ -255,8 +267,7 @@ export class FruitHeroAttack {
         return impacts;
     }
 
-    static activeBoomerang(sim, unit, target, startTick, spec) {
-        const from = worldPoint(sim, unit);
+    static boomerangTurnPoint(sim, unit, target, reach) {
         const dx = target.x - unit.x;
         const dy = target.y - unit.y;
         const distance = Math.hypot(dx, dy);
@@ -264,19 +275,22 @@ export class FruitHeroAttack {
         const ux = distance ? dx / distance : Math.cos(angle);
         const uy = distance ? dy / distance : Math.sin(angle);
         const { width, height, terrain } = sim.world;
-        const limitX = ux > 0 ? (width - from.x) / ux : ux < 0 ? -from.x / ux : Infinity;
-        const limitY = uy > 0 ? (height - from.y) / uy : uy < 0 ? -from.y / uy : Infinity;
-        const length = Math.max(0, Math.min(spec.length, limitX, limitY));
-        const x = from.x + ux * length;
-        const y = from.y + uy * length;
-        const z = terrain.surfaces.heightAt(x, y) + sim.unitRadius(unit.type);
+        const limitX = ux > 0 ? (width - unit.x) / ux : ux < 0 ? -unit.x / ux : Infinity;
+        const limitY = uy > 0 ? (height - unit.y) / uy : uy < 0 ? -unit.y / uy : Infinity;
+        const length = Math.max(0, Math.min(reach, limitX, limitY));
+        const x = unit.x + ux * length;
+        const y = unit.y + uy * length;
+        return { x, y, z: terrain.surfaces.heightAt(x, y) + sim.unitRadius(unit.type) };
+    }
+
+    static activeBoomerang(sim, unit, target, startTick, spec) {
         const travel = sim.msTicks(spec.travelMs);
         return this.makeShot({
             unit,
             kind: 'boomerang',
             mode: 'active',
-            from,
-            to: { x, y, z },
+            from: worldPoint(sim, unit),
+            to: this.boomerangTurnPoint(sim, unit, target, spec.length),
             startTick,
             turnTick: startTick + travel,
             endTick: startTick + 2 * travel,
@@ -348,10 +362,16 @@ export class FruitHeroAttack {
         const returning = shot.turnTick !== null && sim.tick > shot.turnTick;
         if (returning && shot.mode !== 'active') shot.returnTo = worldPoint(sim, unit);
         const to = fruitProjectilePosition(shot, sim.tick);
-        if (shot.mode === 'active' || (returning && shot.mode === 'passive')) {
+        if (shot.mode !== 'basic') {
             const damage = definition.atk * (shot.mode === 'active' ? spec.active.damageRatio : 1);
             this.sweep(sim, unit, shot, from, to, returning, damage);
-        } else if (!returning && !shot.outHitIds.length) {
+        }
+        if (
+            unit.alive &&
+            !returning &&
+            (shot.mode === 'basic' || shot.targetIsBuilding) &&
+            !shot.outHitIds.includes(shot.targetId)
+        ) {
             const target = sim.liveEntityRefById(
                 shot.targetId,
                 shot.targetIsBuilding ? 'building' : 'unit',
@@ -546,7 +566,8 @@ export class FruitHeroAttack {
                 ? shot.targetId === null &&
                   !shot.targetIsBuilding &&
                   (!lob || !shot.outHitIds.length)
-                : validId(shot.targetId) && shot.outHitIds.length <= 1) &&
+                : validId(shot.targetId) &&
+                  (shot.mode === 'passive' || shot.outHitIds.length <= 1)) &&
             (shot.returnTo === null ||
                 (!active && boomerang && tick > shot.turnTick && validPoint(shot.returnTo))) &&
             (tick > shot.startTick || !shot.outHitIds.length) &&
