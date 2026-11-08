@@ -17,6 +17,11 @@ export class UnitSpinAttack {
         if (!spec.arcSweep && (!Number.isFinite(spec.pulseMs) || spec.pulseMs <= 0)) {
             throw new TypeError('회전 공격 간격이 올바르지 않습니다.');
         }
+        if (
+            !spec.arcSweep &&
+            (!Number.isSafeInteger(spec.maxUnitHitsPerPulse) || spec.maxUnitHitsPerPulse < 1)
+        )
+            throw new TypeError('회전 타격의 병사 수 제한이 올바르지 않습니다.');
         if (!Number.isFinite(spec.tangentRatio) || spec.tangentRatio < 0)
             throw new TypeError('회전 공격의 접선 비율이 올바르지 않습니다.');
         if (
@@ -172,7 +177,7 @@ export class UnitSpinAttack {
                     if (!this.inReach(sim, unit, target, spec, z)) continue;
                     if (!this.hitUnit(sim, unit, target, spec, damage)) continue;
                     hits++;
-                    break;
+                    if (hits >= spec.maxUnitHitsPerPulse) break;
                 }
             },
         );
