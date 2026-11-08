@@ -95,32 +95,39 @@ class LaunchImpact {
             }
         });
     }
-    static deploymentOrigin(sim, p, x, y, contact) {
-        const building = contact?.isBuilding ? sim.buildingById.get(contact.id) : null;
-        if (!building) return { x, y };
-        const radius = BuildingDefinition.get(building.type)?.size || 30;
-        const offsetX = x - building.x,
-            offsetY = y - building.y,
-            offsetSquared = offsetX * offsetX + offsetY * offsetY;
-        if (offsetSquared > radius * radius) return { x, y };
-
-        // A descending shell can meet a roof after crossing the horizontal wall.
-        // Backtrack its incoming ray to just outside that wall for deployment only.
+    static deploymentOrigin(sim, p, x, y) {
         const dx = p.lockedAimX - p.launchX,
             dy = p.lockedAimY - p.launchY,
             length = Math.hypot(dx, dy);
         if (!length) return { x, y };
         const ux = dx / length,
-            uy = dy / length,
-            along = offsetX * ux + offsetY * uy,
-            outside = radius + 2 / FP,
-            back = along + Math.sqrt(along * along + outside * outside - offsetSquared);
+            uy = dy / length;
+        let back = 0;
+        // Friendly buildings do not intercept a shell, but their footprints still block release.
+        // Backtrack only the release point; the impact can still be on terrain or an enemy body.
+        for (const index of sim.nearbyBuildingIndices(x, y, sim.maxBuildingRadius)) {
+            const building = sim.buildings[index];
+            if (!building || building.alive === false) continue;
+            const radius = BuildingDefinition.get(building.type)?.size || 30;
+            const offsetX = x - building.x,
+                offsetY = y - building.y,
+                offsetSquared = offsetX * offsetX + offsetY * offsetY;
+            if (offsetSquared > radius * radius) continue;
+
+            const along = offsetX * ux + offsetY * uy,
+                outside = radius + 2 / FP;
+            back = Math.max(
+                back,
+                along + Math.sqrt(along * along + outside * outside - offsetSquared),
+            );
+        }
+        if (!back) return { x, y };
         return {
             x: Math.round((x - ux * back) * FP) / FP,
             y: Math.round((y - uy * back) * FP) / FP,
         };
     }
-    static enqueue(sim, p, x, y, impactHeightFP = null, contact = null) {
+    static enqueue(sim, p, x, y, impactHeightFP = null) {
         const { type, count } = p.payload;
         let holdPointId = null,
             best = LaunchRules.captureHoldRadius;
@@ -132,7 +139,7 @@ class LaunchImpact {
                 holdPointId = cp.id;
             }
         }
-        const origin = this.deploymentOrigin(sim, p, x, y, contact);
+        const origin = this.deploymentOrigin(sim, p, x, y);
         const groundFP = Math.round(sim.world.terrain.surfaces.heightAt(origin.x, origin.y) * FP);
         sim.launchDeployments.push({
             projectileId: p.id,
