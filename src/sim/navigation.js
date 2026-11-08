@@ -454,7 +454,8 @@ class UnitMotion {
                             key: 'surface:' + u.id + ':' + String(hit.key || 'surface'),
                         });
                 }
-                if (!u.alive || !u.impactMotion || u.heroRoll) continue;
+                if (!u.alive || !u.impactMotion || u.heroRoll || FruitHeroAttack.blocksMovement(u))
+                    continue;
                 const reach =
                     (Math.hypot(vx[i], vy[i]) + maxSpeed) * remaining +
                     sim.unitRadius(u.type) +
@@ -465,6 +466,7 @@ class UnitMotion {
                         if (
                             !other?.alive ||
                             other.heroRoll ||
+                            FruitHeroAttack.blocksMovement(other) ||
                             sim.isAlliedCollisionUnit(u, other) ||
                             UnitLeapAttack.separated(sim, u, other) ||
                             (other.impactMotion && j < i)
