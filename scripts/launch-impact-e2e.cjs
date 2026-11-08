@@ -38,6 +38,9 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 new URL('./src/definitions/combat-rules.js', location.href)
             );
             const { FP } = await import(new URL('./src/core/config.js', location.href));
+            const { LaunchRules } = await import(
+                new URL('./src/sim/launch-rules.js', location.href)
+            );
             const { LaunchImpact } = await import(
                 new URL('./src/sim/launch-impact.js', location.href)
             );
@@ -118,7 +121,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     splash: 100,
                     splashUnitDamage: 1,
                     splashBuildingDamage: 1,
-                    damageClass: 'area',
+                    damageClass: 'normal',
                     sourceDamageResolved: true,
                     payload: { type: 'pea', count },
                 });
@@ -235,6 +238,69 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     popcorn,
                     redbean,
                     ratio,
+                });
+            }
+            {
+                function measure(type, offset) {
+                    const { sim } = arena();
+                    const home = sim.launchCannons(0)[0];
+                    const aim = { x: home.x + 350, y: home.y };
+                    const targetPosition = { x: aim.x, y: aim.y + offset };
+                    let target;
+                    if (type === 'base') {
+                        const state = sim.exportState();
+                        const base = state.buildings.find((b) => b.id === 'base1');
+                        Object.assign(base, targetPosition);
+                        sim.importState(state);
+                        target = sim.buildingById.get(base.id);
+                    } else {
+                        sim.flags[1] = { ...targetPosition, forced: false };
+                        target = sim.spawnUnit(1, type, targetPosition.x, targetPosition.y);
+                        target.hp = target.maxHp = 10000;
+                    }
+                    check(
+                        sim.applyCommand('host', {
+                            type: 'LAUNCH',
+                            cannonId: home.id,
+                            unitType: 'pea',
+                            holdMs: LaunchRules.holdFor(350, 'pea', 0),
+                            ...aim,
+                        }),
+                        'the normal player cannon fires a pea shell at the marked ground',
+                    );
+                    const initial = target.hp;
+                    let impact;
+                    for (let i = 0; !impact && i < sim.tps * 2; i++) {
+                        sim.stepSimulation();
+                        impact = sim.events.find((event) => event.type === 'launchImpact');
+                    }
+                    check(
+                        impact?.directHitId === 'low-ground' &&
+                            impact.y === aim.y &&
+                            Math.abs(impact.x - aim.x) < 20,
+                        'the shell hits the same ground point in each size fixture',
+                        impact,
+                    );
+                    return initial - target.hp;
+                }
+                const halfway = ['rice', 'pea', 'acorn'].map((type) => measure(type, 50));
+                const edge = measure('rice', 100);
+                const building = measure('base', 100);
+                check(
+                    halfway.every((damage) => damage === 51) && edge === 30,
+                    'artillery scales with distance, without a light, medium or heavy multiplier',
+                    { halfway, edge },
+                );
+                check(
+                    building === 63,
+                    'the same off-center shell still deals the old building damage',
+                    building,
+                );
+                rows.push({
+                    scenario: 'artillery damage follows the landing point without size bonuses',
+                    halfway,
+                    edge,
+                    building,
                 });
             }
             function clearOfTerrain(sim, units) {
@@ -496,7 +562,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     splash: 100,
                     splashUnitDamage: 1,
                     splashBuildingDamage: 1,
-                    damageClass: 'area',
+                    damageClass: 'normal',
                     sourceDamageResolved: true,
                     payload: { type: 'rice', count: 1 },
                 });

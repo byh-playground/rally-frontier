@@ -1406,9 +1406,9 @@ class StrategySim {
             speed: grain.speed,
             damage: impact,
             splash,
-            splashUnitDamage: impact,
+            splashUnitDamage: impact * LaunchRules.unitImpactScale,
             splashBuildingDamage: impact,
-            damageClass: 'area',
+            damageClass: 'normal',
             sourceDamageResolved: true,
             payload: { type, count },
         });
@@ -1974,10 +1974,6 @@ class StrategySim {
         impactHeightFP = undefined,
     } = {}) {
         const result = { hits: 0, peak: 1 };
-        const scale = (d) =>
-            strikePeak > 1
-                ? 1 + (strikePeak - 1) * (1 - RangeUtil.clamp(d / Math.max(1, radius), 0, 1)) ** 2
-                : 1;
         this.withNearbyUnits(x, y, radius + this.maxUnitRadius, (indices) => {
             for (const idx of indices) {
                 const e = this.units[idx];
@@ -1989,7 +1985,7 @@ class StrategySim {
                 const d = body ? body.falloffDistance : Math.hypot(e.x - x, e.y - y);
                 if (body ? body.surfaceDistance > radius : d > radius + this.unitRadius(e.type))
                     continue;
-                const mult = scale(d);
+                const mult = strikePeak > 1 ? LaunchRules.strike(d, radius, strikePeak) : 1;
                 result.hits++;
                 result.peak = Math.max(result.peak, mult);
                 this.applyDamage(
@@ -2474,9 +2470,9 @@ class StrategySim {
                     y: aimY,
                     radius,
                     damage: p.splashUnitDamage ?? p.damage,
-                    damageClass: p.damageClass || 'area',
+                    damageClass: p.damageClass || 'normal',
                     suppressImpactFx: true,
-                    strikePeak: LaunchRules.centerPeak,
+                    strikePeak: LaunchRules.unitImpactPeak,
                     impactHeightFP,
                 });
                 for (const b of this.buildings) {
@@ -2490,7 +2486,11 @@ class StrategySim {
                         true,
                     );
                     if (body.surfaceDistance > radius) continue;
-                    const mult = LaunchRules.strike(body.falloffDistance, radius);
+                    const mult = LaunchRules.strike(
+                        body.falloffDistance,
+                        radius,
+                        LaunchRules.buildingImpactPeak,
+                    );
                     blast.hits++;
                     blast.peak = Math.max(blast.peak, mult);
                     this.applyDamage(
@@ -2501,7 +2501,7 @@ class StrategySim {
                         Math.max(1, Math.floor((p.splashBuildingDamage ?? p.damage) * mult)),
                         p.owner || null,
                         {
-                            damageClass: p.damageClass || 'area',
+                            damageClass: p.damageClass || 'normal',
                             sourceDamageResolved: true,
                             suppressImpactFx: true,
                         },
