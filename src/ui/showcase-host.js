@@ -24,10 +24,14 @@ function createShowcaseSurface(createRenderer) {
 
 async function prepareShowcaseScene({ surface, scene, signal, present }) {
     const { renderer } = surface;
-    const prepare =
-        scene.kind === 'title'
-            ? prepareTitleShowcase
-            : (await import('./unit-showcase.js')).prepareUnitShowcase;
+    let prepare = prepareTitleShowcase;
+    if (scene.kind !== 'title') {
+        const scenes = await import('./unit-showcase.js');
+        prepare =
+            scene.kind === 'campaign-opening'
+                ? scenes.prepareCampaignOpening
+                : scenes.prepareUnitShowcase;
+    }
     signal.throwIfAborted();
     const owner = {};
     surface.sceneOwner = owner;
@@ -53,6 +57,8 @@ async function prepareShowcaseScene({ surface, scene, signal, present }) {
             unitType: scene.unitType,
             signal,
             onError,
+            onLaunch: scene.onLaunch,
+            onComplete: scene.onComplete,
         });
     } catch (error) {
         release();

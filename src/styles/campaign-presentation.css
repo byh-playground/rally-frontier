@@ -57,6 +57,27 @@
     color: var(--campaign-accent);
 }
 
+.campaign-briefing-scene {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    margin-bottom: 10px;
+    overflow: hidden;
+    border: 1px solid var(--campaign-edge);
+    border-radius: 12px;
+    background: var(--campaign-inset);
+    pointer-events: none;
+}
+
+.campaign-briefing-scene::before {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--campaign-accent);
+    font-size: 13px;
+    content: '전장 준비 중';
+}
+
 .campaign-briefing-dialogue {
     min-height: 102px;
     padding: 14px;
@@ -212,6 +233,40 @@
         max-width: calc(100% - 114px);
         padding: 5px 8px;
         font-size: 12px;
+    }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+    .campaign-briefing .deck-panel:has(.campaign-briefing-scene:not([hidden])) {
+        display: grid;
+        grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+        column-gap: 10px;
+        padding: 10px 14px;
+    }
+
+    .campaign-briefing
+        .deck-panel:has(.campaign-briefing-scene:not([hidden]))
+        > :not(.campaign-briefing-scene, .campaign-briefing-dialogue) {
+        grid-column: 1 / -1;
+    }
+
+    .campaign-briefing
+        .deck-panel:has(.campaign-briefing-scene:not([hidden]))
+        .campaign-briefing-objective {
+        margin-block: 8px;
+    }
+
+    .campaign-briefing
+        .deck-panel:has(.campaign-briefing-scene:not([hidden]))
+        .campaign-briefing-progress {
+        margin-block: 5px 6px;
+    }
+
+    .campaign-briefing-scene {
+        align-self: center;
+        justify-self: center;
+        width: min(100%, 52dvh);
+        margin-bottom: 0;
     }
 }
 

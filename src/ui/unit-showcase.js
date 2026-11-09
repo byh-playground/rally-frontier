@@ -14,6 +14,9 @@ const DURATION_SECONDS = 7;
 const VOLLEY_DISTANCE = 330;
 const LAUNCH_DELAY_SECONDS = 0.4;
 const HERO_SKILL_DELAY_SECONDS = 2;
+const OPENING_DURATION_SECONDS = 3;
+const OPENING_LAUNCH_DELAY_SECONDS = 1.1;
+const OPENING_ZOOM = 5.4;
 const DEFENDERS = [
     [180, -115],
     [205, -60],
@@ -22,7 +25,7 @@ const DEFENDERS = [
     [180, 115],
 ];
 
-function createArena(unitType) {
+function createArena(unitType, defenders) {
     const sim = new StrategySim(SEED, undefined, [[unitType], ['pea']]);
     const { x, y } = sim.world.center;
     const state = sim.exportState();
@@ -54,35 +57,71 @@ function createArena(unitType) {
         Object.assign(building, building.side === 0 ? host : guest);
     sim.importState(state);
     sim.creditResources(0, LaunchRules.premiumWalletCap, 'premium');
-    for (const [dx, dy] of DEFENDERS) sim.spawnUnit(1, 'pea', x + dx, y + dy);
+    for (const [dx, dy] of defenders) sim.spawnUnit(1, 'pea', x + dx, y + dy);
     return { sim, x, y };
 }
 
 // Card previews use an isolated showcase run with the same commands and rendering as a match.
-export function prepareUnitShowcase({
-    renderer,
-    createScenario,
-    createPresentationView,
-    unitType,
-    onError,
-}) {
+export function prepareUnitShowcase(options) {
+    return prepareVolleyShowcase(options);
+}
+
+export function prepareCampaignOpening(options) {
+    return prepareVolleyShowcase({ ...options, unitType: 'rice' }, true);
+}
+
+function prepareVolleyShowcase(
+    { renderer, createScenario, createPresentationView, unitType, onError, onLaunch, onComplete },
+    opening = false,
+) {
     if (!LaunchRules.grain(unitType)) throw new Error('알 수 없는 병종 소개 장면입니다.');
-    const { sim, x, y } = createArena(unitType);
+    const { sim, x, y } = createArena(unitType, opening ? [] : DEFENDERS);
     const initialState = sim.exportState();
-    const launchTick = sim.msTicks(LAUNCH_DELAY_SECONDS * 1000);
+    const launchDelay = opening ? OPENING_LAUNCH_DELAY_SECONDS : LAUNCH_DELAY_SECONDS;
+    const launchTick = sim.msTicks(launchDelay * 1000);
     const skillTick = sim.msTicks(HERO_SKILL_DELAY_SECONDS * 1000);
     let scenario;
     let journal;
     let active = false;
     let disposed = false;
+    let launchShown = false;
+    let centerShot = null;
     const owner = {
         finishPresentationEvent(record) {
             return journal?.finish(record);
         },
     };
     const view = createPresentationView(owner, () => renderer, { hud: false, audio: false });
+    if (opening) {
+        const { start } = view;
+        view.start = (record, at, age) => {
+            const handle = start(record, at, age);
+            const fire = record.payload;
+            if (fire.type === 'launchFire' && fire.side === 0) {
+                if (fire.shot === Math.floor(fire.shots / 2)) centerShot = fire;
+                if (!launchShown) {
+                    launchShown = true;
+                    onLaunch?.(fire);
+                }
+            }
+            return handle;
+        };
+    }
+    const openingCamera = () => {
+        const shot =
+            centerShot && renderer.renderState.entity('projectile', centerShot.projectileId);
+        const position = shot && renderer.resolveRenderWorldPosition(shot, 'projectile');
+        const focusX = position?.x ?? centerShot?.aimX ?? x - VOLLEY_DISTANCE + 55;
+        const focusY = position?.z ?? centerShot?.aimY ?? y;
+        renderer.cameraLeft = focusX - renderer.viewWorldW() / 2;
+        renderer.cameraTop = renderer.clampCameraTop(
+            BattlefieldProjection.planarY(focusY, position?.y ?? 0) - renderer.viewWorldH() / 2,
+        );
+    };
     const presentFrame = (frame) => {
-        if (frame?.timeMs != null) journal?.present(frame);
+        if (disposed || frame?.timeMs == null) return;
+        journal?.present(frame);
+        if (opening && !disposed) openingCamera();
     };
     const frameCamera = (timeMs) => {
         const progress = Math.max(0, Math.min(1, (timeMs - 600) / 1000));
@@ -104,19 +143,23 @@ export function prepareUnitShowcase({
     try {
         renderer.role = 'host';
         renderer.replayObserverAll = true;
-        renderer.replayZoom = 4;
+        renderer.replayZoom = opening ? OPENING_ZOOM : 4;
         renderer.onPresentationFrame = presentFrame;
         scenario = createScenario({
             definition: {
                 seed: SEED,
                 tickRate: sim.tps,
-                endTick: DURATION_SECONDS * sim.tps,
-                loop: true,
+                endTick: (opening ? OPENING_DURATION_SECONDS : DURATION_SECONDS) * sim.tps,
+                loop: !opening,
+            },
+            onEnd() {
+                if (opening && !disposed) onComplete?.();
             },
             createRun() {
                 sim.importState(initialState);
                 renderer.setSnapshot(sim.snapshot(), { snapTargets: true });
-                frameCamera(0);
+                if (opening) openingCamera();
+                else frameCamera(0);
                 journal = createFramePresentationJournal({
                     getView: () => view,
                     onImmediate: () => {},
@@ -170,7 +213,7 @@ export function prepareUnitShowcase({
                         }
                     },
                     render(frame) {
-                        frameCamera(frame.timeMs);
+                        if (!opening) frameCamera(frame.timeMs);
                     },
                     dispose() {
                         journal.dispose();

@@ -33,14 +33,19 @@ function currentGoal(stage, snapshot, side, remaining) {
 }
 
 export class CampaignPresentation {
-    static install(find) {
+    static install(find, { openOpening, onOpeningClosed }) {
         this.$ = find;
+        this.openOpening = openOpening;
+        this.onOpeningClosed = onOpeningClosed;
         const dialog = find('campaignBriefingDialog');
         find('campaignBriefingBack').onclick = () => dialog.close();
         find('campaignBriefingNext').onclick = () => this.advanceBriefing();
         find('campaignBriefingSkip').onclick = () => this.finishBriefing();
         dialog.addEventListener('close', () => {
-            if (!dialog.open) this.briefing = null;
+            if (!dialog.open) {
+                this.briefing = null;
+                this.closeOpening();
+            }
         });
     }
 
@@ -54,14 +59,67 @@ export class CampaignPresentation {
     }
 
     static renderBriefingLine() {
+        this.closeOpening();
         const { lines, index } = this.briefing;
-        const { speaker, text } = lines[index];
+        const line = lines[index];
         const last = index === lines.length - 1;
-        this.$('campaignBriefingSpeaker').textContent = speaker;
-        this.$('campaignBriefingLine').textContent = text;
+        this.$('campaignBriefingSpeaker').textContent = line.speaker;
+        this.$('campaignBriefingLine').textContent = line.text;
         this.$('campaignBriefingProgress').textContent = `${index + 1} / ${lines.length}`;
-        this.$('campaignBriefingNext').textContent = last ? '전투 시작' : '다음';
+        const next = this.$('campaignBriefingNext');
+        next.textContent = last ? '전투 시작' : '다음';
+        next.disabled = false;
         this.$('campaignBriefingSkip').hidden = last;
+        if (!line.interruptedByLaunch) return;
+        if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            this.$('campaignBriefingLine').textContent = line.interruptedByLaunch;
+        } else {
+            void this.playOpening(this.briefing, line);
+        }
+    }
+
+    static async playOpening(briefing, line) {
+        const panel = this.$('campaignBriefingScene');
+        const next = this.$('campaignBriefingNext');
+        const index = briefing.index;
+        const current = () =>
+            this.briefing === briefing &&
+            briefing.index === index &&
+            this.$('campaignBriefingDialog').open;
+        panel.hidden = false;
+        next.disabled = true;
+        const finish = () => {
+            if (current()) this.advanceBriefing();
+        };
+        try {
+            this.opening = this.openOpening(panel, {
+                onLaunch: () => {
+                    if (current())
+                        this.$('campaignBriefingLine').textContent = line.interruptedByLaunch;
+                },
+                onComplete: finish,
+                onError: finish,
+            });
+            this.syncOpening();
+            await this.opening.ready;
+        } catch (error) {
+            console.error(error);
+            finish();
+        }
+    }
+
+    static syncOpening() {
+        this.opening?.setActive(!document.hidden);
+    }
+
+    static closeOpening() {
+        const mount = this.opening;
+        this.opening = null;
+        this.$('campaignBriefingScene').hidden = true;
+        if (mount) {
+            mount.dispose();
+            this.onOpeningClosed();
+        }
     }
 
     static advanceBriefing() {
@@ -78,6 +136,7 @@ export class CampaignPresentation {
         const briefing = this.briefing;
         if (!briefing) return;
         this.briefing = null;
+        this.closeOpening();
         this.$('campaignBriefingDialog').close();
         briefing.start();
     }

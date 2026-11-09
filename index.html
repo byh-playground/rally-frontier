@@ -152,6 +152,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   기름 학습에는 전진 거점 없이도 본진 대포를 한 번 강화해 확보할 수 있는 측면 기름 거점을 하나 둔다.
   캠페인의 적 출격 판단 시작 시점과 간격은 스테이지 설정을 따른다.
   전투 전 대화는 표시 전용이며 시작 또는 건너뛰기를 선택한 뒤에만 경기를 연다.
+  첫 브리핑의 발사 장면은 공용 GameKit 쇼케이스 화면에서 재생하는 표시 전용 연출이다.
   전투 중 목표와 방어 시간은 현재 경기 스냅샷을 읽어 표시한다.
   스테이지별 도입 병력과 경제 설정을 적용한다. 방어선 돌파는 플레이어 본진의 식량 생산률을 낮춘다.
   캠페인 양측의 덱은 스테이지 설정을 따른다. 보상 병종은 적으로 먼저 등장하며 첫 클리어 뒤 대전 덱에 장착할 수 있다.
@@ -705,6 +706,12 @@ END OF DEVELOPMENT CONTRACT
                     <strong>목표</strong>
                     <span id="campaignBriefingObjective"></span>
                 </p>
+                <div
+                    id="campaignBriefingScene"
+                    class="campaign-briefing-scene"
+                    aria-hidden="true"
+                    hidden
+                ></div>
                 <div class="campaign-briefing-dialogue" aria-live="polite" aria-atomic="true">
                     <p id="campaignBriefingSpeaker"></p>
                     <p id="campaignBriefingLine"></p>
