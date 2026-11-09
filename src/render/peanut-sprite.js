@@ -10,7 +10,6 @@ const cells = {
     neutral: { slot: [189, 91, 98, 45], pivot: [48, 22] },
     attack: { slot: [292, 91, 98, 45], pivot: [48, 22] },
     hurt: { slot: [395, 91, 98, 45], pivot: [48, 22] },
-    plate: { slot: [190, 154, 115, 76], pivot: [57, 37] },
     ammo: { slot: [325, 151, 165, 82], pivot: [82, 41] },
 };
 const bodyParts = [
@@ -20,9 +19,8 @@ const bodyParts = [
 ];
 const frontParts = [
     { id: 'face', position: [0, -166] },
-    { cell: 'plate', id: 'plate', position: [0, -83] },
-    { cell: 'arm', id: 'leftArm', position: [-62, -103], mirror: true },
-    { cell: 'arm', id: 'rightArm', position: [62, -103] },
+    { cell: 'arm', id: 'leftArm', position: [-56, -77], mirror: true },
+    { cell: 'arm', id: 'rightArm', position: [56, -77] },
 ];
 const parts = [...bodyParts, ...frontParts];
 const key = (timeMs, parts = {}) => ({ timeMs, parts, easing: 'inOutSine' });
@@ -48,7 +46,7 @@ const rig = {
         ]),
         fire: clip(280, 'once', [
             key(0, { body: { y: 5, scaleX: 1.07, scaleY: 0.92 } }),
-            key(85, { body: { y: -13, scaleX: 0.96, scaleY: 1.1 }, plate: { y: -8 } }),
+            key(85, { body: { y: -13, scaleX: 0.96, scaleY: 1.1 } }),
             key(180, { body: { y: 5, scaleX: 1.05, scaleY: 0.93 } }),
             key(280),
         ]),
