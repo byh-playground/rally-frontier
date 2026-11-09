@@ -106,7 +106,16 @@ export class LaunchScreens {
         this.actions = actions;
         this.showcaseSurface = showcaseSurface;
         this.$ = (id) => document.getElementById(id);
-        CampaignPresentation.install(this.$);
+        CampaignPresentation.install(this.$, {
+            openOpening: (container, events) => {
+                this.closeTitleBattle();
+                return this.showcaseSurface.mount({
+                    container,
+                    scene: { kind: 'campaign-opening', ...events },
+                });
+            },
+            onOpeningClosed: () => this.syncTitleBattle?.(),
+        });
         this.navigation = createNavigation({
             normalize: (route) =>
                 SCREENS.has(route.screen) ? route : { screen: '', item: '', query: '' },
@@ -315,6 +324,7 @@ export class LaunchScreens {
             matchMedia('(prefers-reduced-motion: reduce)').matches ||
             this.$('lobby').classList.contains('hidden') ||
             this.cardDetail?.mount ||
+            CampaignPresentation.opening ||
             this.titleBattleMount ||
             this.titleBattleFailed
         )
@@ -347,6 +357,7 @@ export class LaunchScreens {
             const active =
                 !document.hidden &&
                 !this.cardDetail?.mount &&
+                !CampaignPresentation.opening &&
                 !document.body.classList.contains('boot-loading') &&
                 lobbyVisible &&
                 !MOTION.matches;
@@ -354,6 +365,7 @@ export class LaunchScreens {
                 void this.prepareTitleBattle();
             this.titleBattleMount?.setActive(active);
             this.cardDetail?.syncPlayback?.();
+            CampaignPresentation.syncOpening();
         };
         this.syncTitleBattle = sync;
         new MutationObserver(sync).observe(LOBBY, { attributes: true, attributeFilter: ['class'] });
