@@ -1,6 +1,6 @@
 import { RESOURCES, ResourceDisplay } from './ui/resource-display.js';
 import { CAMPAIGN_STAGES, campaignStage } from './definitions/campaign.js';
-import { RangeUtil, SIM_TPS } from './core/game-rules.js';
+import { PVP_MAP_PRESET_IDS, RangeUtil, SIM_TPS } from './core/game-rules.js';
 import { SimulationTiming } from './core/simulation-timing.js';
 import {
     createLocalPerfStats,
@@ -8810,10 +8810,13 @@ class MatchLifecycle {
     static activeSession() {
         return ReplayPresentation.replayPlayer || ActiveViewState.session;
     }
-    static currentMatchConfig() {
+    static currentMatchConfig(campaignStage = null) {
         return {
-            presetId: UiRuntimeState.value.settings.presetId,
+            presetId: campaignStage
+                ? UiRuntimeState.value.settings.presetId
+                : PVP_MAP_PRESET_IDS[Math.floor(Math.random() * PVP_MAP_PRESET_IDS.length)],
             simulationTps: UiRuntimeState.value.settings.simulationTps,
+            campaignStage,
         };
     }
     static createSession(role, transport, roomCode, config, deck, deckOptions) {
@@ -9105,7 +9108,7 @@ class MatchLifecycle {
         const transports = { host: hostTransport, guest: guestTransport };
         const humanTransport = transports[humanRole];
         const botTransport = transports[botRole];
-        const config = { ...MatchLifecycle.currentMatchConfig(), campaignStage: stage?.id || null },
+        const config = MatchLifecycle.currentMatchConfig(stage?.id ?? null),
             configFor = (role) => (role === 'host' ? config : undefined);
         const humanSession = MatchLifecycle.createSession(
             humanRole,

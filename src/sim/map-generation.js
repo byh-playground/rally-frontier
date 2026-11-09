@@ -10,6 +10,8 @@ import {
 } from './map-geometry.js';
 import { LANE_CONTROL_POINTS } from '../definitions/combat-rules.js';
 import { campaignMapLayout } from '../definitions/campaign-map.js';
+import { artilleryBasinMapLayout } from '../definitions/artillery-basin-map.js';
+import { twinGatesMapLayout } from '../definitions/twin-gates-map.js';
 import { UNIT_RUNTIME_GEOMETRY } from '../definitions/units.js';
 import { WorldContext } from './world-context.js';
 import { TerrainNavigation } from './navigation.js';
@@ -915,6 +917,15 @@ class MapGeneration {
             ...campaignMapLayout(rules.campaign),
         };
     }
+    static fixedPvpMapDescriptor(layout, rules, baseSeed, roundNumber) {
+        return {
+            schemaVersion: MAP_DESCRIPTOR_SCHEMA_VERSION,
+            generatorVersion: rules.map.generatorVersion,
+            seed: MapGeneration.mapRuleSeed(baseSeed, rules, roundNumber),
+            symmetry: rules.map.symmetry,
+            ...layout(),
+        };
+    }
     static generateMapDescriptor({
         rules = GameRuleDefinition.current,
         seed = 0,
@@ -1054,6 +1065,10 @@ const MAP_GENERATORS = {
     'fixed-standard': MapGeneration.fixedStandardMapDescriptor,
     'fixed-campaign': MapGeneration.fixedCampaignMapDescriptor,
     'procedural-frontier': MapGeneration.proceduralFrontierMapDescriptor,
+    'fixed-twin-gates': (rules, seed, round) =>
+        MapGeneration.fixedPvpMapDescriptor(twinGatesMapLayout, rules, seed, round),
+    'fixed-artillery-basin': (rules, seed, round) =>
+        MapGeneration.fixedPvpMapDescriptor(artilleryBasinMapLayout, rules, seed, round),
 };
 
 export { CloneUtil, HashUtil, MapGeneration };
