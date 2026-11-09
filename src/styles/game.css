@@ -1357,6 +1357,7 @@ button:disabled {
 .render-fatal-card {
     width: min(100%, 560px);
     max-height: 100%;
+    overflow: auto;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -1375,6 +1376,7 @@ button:disabled {
     margin: 0;
     font-size: 13px;
     color: var(--muted);
+    word-break: keep-all;
 }
 .render-fatal-summary {
     flex: 1;
@@ -1392,17 +1394,19 @@ button:disabled {
 }
 .render-fatal-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
 }
 .render-fatal-actions button {
-    flex: 1;
-    min-height: 40px;
+    flex: 1 1 108px;
+    min-height: 44px;
     border-radius: 10px;
     border: 1.5px solid var(--line);
     background: #fff;
     font-weight: 700;
 }
 .render-fatal-actions .primary {
+    flex-basis: 100%;
     border: 0;
     background: var(--green);
     color: #fff;
