@@ -755,7 +755,6 @@ class StrategySim {
                     cycleStartedAtTick: null,
                     nextHitTick: this.tick + this.msTicks(ConstructionRules.cooldownMs),
                     lastHitTick: null,
-                    retaliationId: null,
                 };
             }
         }
@@ -829,7 +828,8 @@ class StrategySim {
             return false;
         }
         if (!this.constructionWorkerAvailable(u)) {
-            this.resetConstructionCycle(work, 'approach', work.nextHitTick);
+            if (work.phase !== 'defend')
+                this.resetConstructionCycle(work, 'approach', work.nextHitTick);
             return true;
         }
         const cycle = this.msTicks(ConstructionRules.cooldownMs),
@@ -1644,11 +1644,11 @@ class StrategySim {
         const interval = this.msTicks(COMBAT_TARGET_REFRESH_MS);
         return this.tick % interval === (HashUtil.hash(String(u.id)) >>> 0) % interval;
     }
-    retainedCombatTarget(u, visibleSources, targetId = u.target) {
-        if (targetId == null) return null;
+    retainedCombatTarget(u, visibleSources) {
+        if (u.target == null) return null;
         // Runtime indexes include this tick's spawns; do not linearly scan dead IDs.
-        const unit = this.unitById.get(targetId),
-            entity = unit || this.buildingById.get(targetId);
+        const unit = this.unitById.get(u.target),
+            entity = unit || this.buildingById.get(u.target);
         if (!entity) return null;
         const isBuilding = !unit;
         if (isBuilding) {
@@ -1677,28 +1677,31 @@ class StrategySim {
             def: isBuilding ? BuildingDefinition.get(entity.type) : UnitDefinition.get(entity.type),
         };
     }
-    constructionRetaliationInReach(u, site, attacker) {
+    constructionDefenseContactAllowed(d, site, target) {
+        return (
+            !d.contactMelee || Math.hypot(site.x - target.x, site.y - target.y) <= CAPTURE_RADIUS
+        );
+    }
+    constructionDefenseInReach(u, site, target) {
         const d = UnitDefinition.get(u.type);
-        const distance = Math.hypot(u.x - attacker.x, u.y - attacker.y);
-        if (d.contactMelee && Math.hypot(site.x - attacker.x, site.y - attacker.y) > CAPTURE_RADIUS)
-            return false;
+        if (!this.constructionDefenseContactAllowed(d, site, target)) return false;
+        const distance = Math.hypot(u.x - target.x, u.y - target.y);
         const min = d.minRange
-            ? this.interactionDistance(u, attacker, 'combat-contact') + d.minRange
+            ? this.interactionDistance(u, target, 'combat-contact') + d.minRange
             : 0;
         return (
             distance >= min &&
-            distance <= this.interactionDistance(u, attacker, 'attack', this.basicAttackRange(u))
+            distance <= this.interactionDistance(u, target, 'attack', this.basicAttackRange(u))
         );
     }
-    constructionRetaliation(u, site, visibleSources) {
-        if (!this.constructionWorkerAvailable(u)) return null;
-        const work = u.constructionWork;
-        const found = this.retainedCombatTarget(u, visibleSources, work.retaliationId ?? null);
-        if (found && this.constructionRetaliationInReach(u, site, found.entity)) return found;
-        work.retaliationId = null;
-        return null;
+    constructionDefenseTarget(u, site, visibleSources) {
+        if (u.constructionWork.phase !== 'defend' || !this.constructionWorkerAvailable(u))
+            return null;
+        const retained = this.retainedCombatTarget(u, visibleSources);
+        if (retained && this.constructionDefenseInReach(u, site, retained.entity)) return retained;
+        return this.pickCombatTarget(u, visibleSources, site);
     }
-    pickCombatTarget(u, visibleSources) {
+    pickCombatTarget(u, visibleSources, defensiveSite = null) {
         // Fireable hostile threats share one pool, regardless of player/neutral storage.
         // Keep a valid target within its priority tier; an idle structure cannot mask
         // a fireable combatant. Only acquire a chase target when nothing can be hit.
@@ -1710,7 +1713,7 @@ class StrategySim {
             'attack',
             attackRange,
         );
-        const aggro = this.combatTargetAggroRange(u);
+        const aggro = defensiveSite ? 0 : this.combatTargetAggroRange(u);
         const queryRange = Math.max(
             aggro,
             attackRange +
@@ -1728,6 +1731,8 @@ class StrategySim {
         let closeFallback = null,
             closeFallbackD2 = Infinity;
         const consider = (entity, isBuilding, def, d2) => {
+            if (defensiveSite && !this.constructionDefenseContactAllowed(d, defensiveSite, entity))
+                return;
             const dist = Math.sqrt(d2);
             // Preserve visibility memo seeding above. The source's terrain policy is
             // constant for this selection; ranged reach needs no per-target ray gate.
@@ -1740,10 +1745,17 @@ class StrategySim {
                 ? this.interactionDistance(u, entity, 'attack', attackRange)
                 : rawReach;
             if (dist > aggro && dist > max) return;
-            const min = d.minRange ? InteractionGeometry.contact(u, entity) + d.minRange : 0;
+            const min = d.minRange
+                ? (defensiveSite
+                      ? this.interactionDistance(u, entity, 'combat-contact')
+                      : InteractionGeometry.contact(u, entity)) + d.minRange
+                : 0;
             const candidate = { entity, isBuilding, def };
             if (min && dist < min) {
-                if (this.targetChoiceBetter(d2, entity.id, closeFallbackD2, closeFallback)) {
+                if (
+                    !defensiveSite &&
+                    this.targetChoiceBetter(d2, entity.id, closeFallbackD2, closeFallback)
+                ) {
                     closeFallback = candidate;
                     closeFallbackD2 = d2;
                 }
@@ -1762,7 +1774,7 @@ class StrategySim {
                     inRangeScore = score;
                     inRangeRank = rank;
                 }
-            } else {
+            } else if (!defensiveSite) {
                 if (this.targetChoiceBetter(d2, entity.id, acquireD2, acquireBest)) {
                     acquireBest = candidate;
                     acquireD2 = d2;
@@ -1816,7 +1828,8 @@ class StrategySim {
                 (b.x - u.x) ** 2 + (b.y - u.y) ** 2,
             );
         }
-        if (!inRangeBest && nearRange < queryRange) scan(queryRange, nearRange2, queryRange2);
+        if (!defensiveSite && !inRangeBest && nearRange < queryRange)
+            scan(queryRange, nearRange2, queryRange2);
         if (currentInRange && currentInRange.rank <= inRangeRank) return currentInRange.candidate;
         if (inRangeBest) return inRangeBest;
         if (currentAcquire && currentAcquireD2 * 100 <= acquireD2 * COMBAT_TARGET_STICKINESS_PCT)
@@ -1961,23 +1974,14 @@ class StrategySim {
         if (!isBuilding) {
             target.hitFlash = 4;
             target.combat.recordImpact(this, 4);
+            const work = target.constructionWork;
             if (
-                target.constructionWork &&
-                sourceEntityId != null &&
-                sourceSide === 1 - target.side
-            ) {
-                const site = this.constructionSite(target);
-                const source =
-                    this.unitById.get(sourceEntityId) || this.buildingById.get(sourceEntityId);
-                if (
-                    site?.construction &&
-                    source?.hp > 0 &&
-                    source.alive !== false &&
-                    source.side === sourceSide &&
-                    this.constructionRetaliationInReach(target, site, source)
-                )
-                    target.constructionWork.retaliationId = sourceEntityId;
-            }
+                dealt > 0 &&
+                work &&
+                work.phase !== 'defend' &&
+                this.constructionSite(target)?.construction
+            )
+                this.resetConstructionCycle(work, 'defend', work.nextHitTick);
         }
 
         this.events.push({
@@ -2287,7 +2291,7 @@ class StrategySim {
 
         let found = null;
         if (activeSite) {
-            found = this.constructionRetaliation(u, activeSite, vision[u.side]);
+            found = this.constructionDefenseTarget(u, activeSite, vision[u.side]);
             if (
                 found &&
                 u.combat.windupPending() &&
@@ -2340,10 +2344,6 @@ class StrategySim {
         }
 
         if (!activeSite) u.constructionWork = null;
-        else if (u.constructionWork.phase !== 'defend') {
-            const work = u.constructionWork;
-            this.resetConstructionCycle(work, 'defend', work.nextHitTick);
-        }
         const t = found.entity;
         u.target = t.id;
         // Authoritative second gate: a target picked earlier this tick must still be attackable and visible.
