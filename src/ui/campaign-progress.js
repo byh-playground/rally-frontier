@@ -6,6 +6,8 @@ const REWARD_STAGES = new Map(
 );
 
 export class CampaignProgress {
+    #debugUnlocked = false;
+
     constructor(storage) {
         this.storage = storage;
         this.completed = new Set();
@@ -40,8 +42,16 @@ export class CampaignProgress {
         return this.completed.has(stage.id);
     }
 
+    get debugUnlocked() {
+        return this.#debugUnlocked;
+    }
+
+    enableDebugUnlock() {
+        this.#debugUnlocked = true;
+    }
+
     canStart(stage) {
-        return this.isComplete(stage) || this.nextStage === stage;
+        return this.#debugUnlocked || this.isComplete(stage) || this.nextStage === stage;
     }
 
     unlockStage(card) {
@@ -50,10 +60,11 @@ export class CampaignProgress {
 
     isUnlocked(card) {
         const stage = this.unlockStage(card);
-        return !stage || this.isComplete(stage);
+        return this.#debugUnlocked || !stage || this.isComplete(stage);
     }
 
     complete(stage) {
+        if (this.#debugUnlocked) return null;
         this.sync();
         if (!stage || stage !== this.nextStage) return null;
         this.completed.add(stage.id);
