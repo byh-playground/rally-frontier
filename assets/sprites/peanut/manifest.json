@@ -1,8 +1,8 @@
 {
     "assets": {
         "parts.svg": {
-            "bytes": 3877,
-            "sha256": "514c150d00c11102e83c450d8e0b191950d40e2feddc03f584a1e3b909c33eda"
+            "bytes": 3805,
+            "sha256": "6cf2c265db404e5409ee9a28ee96893bdbbf1530b7cf1e8bbb1e01311676315a"
         }
     },
     "schemaVersion": 1

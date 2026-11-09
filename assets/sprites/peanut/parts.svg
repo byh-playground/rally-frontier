@@ -30,14 +30,13 @@
     <use href="#body-outline" fill="none" stroke="#512e20" stroke-width="5" stroke-linejoin="round"/>
   </g>
 
-  <g id="boot" transform="translate(190 16)">
-    <path d="M11 22 12 7q10-5 27 0l3 12 13 4q4 4 2 10-5 8-41 5-11-2-10-8Z" fill="#92572f" stroke="#512e20" stroke-width="4" stroke-linejoin="round"/>
-    <path d="M13 29q23 5 42-1l-1 7q-18 7-42 2Z" fill="#623b29"/>
-    <path d="M18 16 35 14" stroke="#ebad69" stroke-width="3" stroke-linecap="round"/>
+  <g id="foot" transform="translate(190 16)">
+    <path d="M16 7q14-4 28 0 2 1 2 5 1 13-4 23-5 8-12 8t-12-8q-5-10-4-23 0-4 2-5Z" fill="#bb7838" stroke="#512e20" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M20 13q10-3 19 0 2 9-3 17-3 5-7 5-8-1-9-22Z" fill="#e9ad5e"/>
   </g>
   <g id="arm" transform="translate(267 12)">
-    <path d="M24 8q11-3 16 7l8 20q5 13-8 17-10 4-17-8L13 24Q7 12 24 8Z" fill="url(#shell)" stroke="#512e20" stroke-width="4"/>
-    <path d="M30 41q8-1 14-7" fill="none" stroke="#9a5427" stroke-width="3" stroke-linecap="round"/>
+    <path d="M18 8q8-5 17 2 8 6 13 17 4 12-4 18-8 6-17-2-9-7-13-18-4-12 4-17Z" fill="#bd7839" stroke="#512e20" stroke-width="4"/>
+    <path d="M20 12q6-3 13 3 10 9 12 18 0 4-3 6-5 3-11-3-9-8-12-18-1-4 1-6Z" fill="#edb56b"/>
   </g>
 
   <g id="neutral" transform="translate(189 91)" fill="#382822">
