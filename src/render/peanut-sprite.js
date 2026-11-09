@@ -19,8 +19,8 @@ const bodyParts = [
 ];
 const frontParts = [
     { id: 'face', position: [0, -166] },
-    { cell: 'arm', id: 'leftArm', position: [-51, -124], mirror: true },
-    { cell: 'arm', id: 'rightArm', position: [51, -124] },
+    { cell: 'arm', id: 'leftArm', position: [-47, -106], mirror: true },
+    { cell: 'arm', id: 'rightArm', position: [47, -106] },
 ];
 const parts = [...bodyParts, ...frontParts];
 const key = (timeMs, parts = {}) => ({ timeMs, parts, easing: 'inOutSine' });
