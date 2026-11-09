@@ -35,7 +35,7 @@ class LaunchRules {
     static overheatMs = 2000;
     static reloadMs = 400;
     static speed = 750;
-    static shellFlight = Object.freeze({ speedScale: 0.8, arcScale: 1.25 });
+    static shellFlight = Object.freeze({ speedScale: 0.8, arcScale: 1.25, sightRadius: 200 });
     static landingMarkMs = 1500;
     static captureHoldRadius = 400;
     static rangeMultipliers = Object.freeze([1, 2, 3, 4, 5]);

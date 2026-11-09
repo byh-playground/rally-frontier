@@ -6,6 +6,7 @@ import { UnitResultStats } from './unit-result-stats.js';
 import { HashUtil } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { TerrainSurfaceAtlas } from './terrain.js';
+import { WorldContext } from './world-context.js';
 
 // The simulation owns impulses, release queues and projectile contacts. Rendering only observes these records.
 class LaunchImpact {
@@ -416,13 +417,13 @@ class LaunchImpact {
         }
         sim.launchDeployments.length = write;
     }
-    static projectileHeight(sim, p, x, y) {
+    static projectileHeight(state, p, x, y) {
         const distance = Math.hypot(p.lockedAimX - p.launchX, p.lockedAimY - p.launchY) || 1;
         const progress = Math.max(
             0,
             Math.min(1, Math.hypot(x - p.launchX, y - p.launchY) / distance),
         );
-        const atlas = sim.world.terrain.surfaces,
+        const atlas = WorldContext.forState(state).terrain.surfaces,
             ground =
                 atlas.heightAt(p.launchX, p.launchY) * (1 - progress) +
                 atlas.heightAt(p.lockedAimX, p.lockedAimY) * progress;

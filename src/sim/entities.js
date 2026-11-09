@@ -7,6 +7,7 @@ import {
     StatusComponent,
 } from './components.js';
 import { LaunchRules } from './launch-rules.js';
+import { LaunchImpact } from './launch-impact.js';
 import { FruitHeroAttack } from './fruit-hero-attack.js';
 import { MapGeneration } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
@@ -225,6 +226,21 @@ class VisibilityPolicy {
                     level: world.terrain.surfaces.levelAt(b.x, b.y),
                 });
             }
+        const surfaces = world.terrain.surfaces;
+        for (const p of state.projectiles || []) {
+            if (!p.alive || !p.payload || p.side !== side) continue;
+            const elevation = LaunchImpact.projectileHeight(state, p, p.x, p.y);
+            out.push({
+                id: p.id,
+                x: p.x,
+                y: p.y,
+                radius: LaunchRules.shellFlight.sightRadius,
+                level: Math.min(
+                    surfaces.maxLevel,
+                    Math.floor(TerrainSurfaceAtlas.levelForElevation(elevation)),
+                ),
+            });
+        }
         // High-ground attackers briefly reveal their own tile to the side they attacked.
         for (const u of state.units || [])
             if (u?.alive && u.side !== side && this.revealUntil(u, side) > Number(state.tick || 0))
