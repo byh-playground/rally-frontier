@@ -2554,7 +2554,8 @@ class StrategySim {
                 this.moveToGoal(
                     u,
                     NavigationGoal.range(t.x, t.y, contact + NavigationGoal.ARRIVAL_INSET),
-                    moveSpeed * ConstructionRules.chargeSpeedMultiplier,
+                    moveSpeed *
+                        (d.contactChargeSpeedMultiplier ?? ConstructionRules.chargeSpeedMultiplier),
                 );
             if (readyToCharge)
                 pendingContactAttacks?.push({
