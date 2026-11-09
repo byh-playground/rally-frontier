@@ -334,16 +334,26 @@ class RallySimulationAdapter {
                 throw new Error('게임 snapshot의 비상 착지 높이가 잘못되었습니다.');
         }
         HeroDeployment.validate(state);
-        const practice = state.campaignVolleyPractice;
+        const practice = state.campaignVolleyPractice,
+            volleyGoal = this.session.sim.rules.campaign?.volleyGoal;
         if (
-            this.session.sim.rules.campaign?.volleyGoal
+            volleyGoal
                 ? !practice ||
                   !Array.isArray(practice.projectileIds) ||
                   practice.projectileIds.some((id) => typeof id !== 'string' || !id) ||
                   new Set(practice.projectileIds).size !== practice.projectileIds.length ||
+                  !Array.isArray(practice.garrisonIds) ||
+                  practice.garrisonIds.length !== volleyGoal.garrison.count ||
+                  practice.garrisonIds.some((id) => typeof id !== 'string' || !id) ||
+                  new Set(practice.garrisonIds).size !== practice.garrisonIds.length ||
                   typeof practice.landed !== 'boolean' ||
                   typeof practice.complete !== 'boolean' ||
-                  (practice.complete && (!practice.landed || practice.projectileIds.length > 0))
+                  (practice.complete &&
+                      (!practice.landed ||
+                          practice.projectileIds.length > 0 ||
+                          state.units.some(
+                              (unit) => unit.alive && practice.garrisonIds.includes(unit.id),
+                          )))
                 : practice !== null
         )
             throw new Error('게임 snapshot의 일제사격 연습 상태가 잘못되었습니다.');

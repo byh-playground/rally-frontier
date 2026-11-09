@@ -130,7 +130,7 @@ class StateContract {
 class StatusComponent {
     static stateContract = new StateContract(
         { timedModifiers: {}, terrainRevealUntil0: 0, terrainRevealUntil1: 0 },
-        { view: [] },
+        { view: ['terrainRevealUntil0', 'terrainRevealUntil1'] },
     );
     constructor(state = {}) {
         Object.assign(this, StatusComponent.stateContract.create(state));

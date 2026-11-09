@@ -313,7 +313,7 @@ class StrategySim {
         this.launchRangeLevel = [campaign?.startingLaunchRangeLevel ?? 0, 0];
         this.launchDeployments = [];
         this.campaignVolleyPractice = campaign?.volleyGoal
-            ? { projectileIds: [], landed: false, complete: false }
+            ? { projectileIds: [], garrisonIds: [], landed: false, complete: false }
             : null;
         this.heroes = this.decks.map((deck) => HeroDeployment.emptySlots(deck));
         this.heroRecovery = this.decks.map((deck) => HeroDeployment.emptySlots(deck));
@@ -369,6 +369,18 @@ class StrategySim {
         for (const side of [0, 1]) {
             const enemy = this.buildings.find((b) => b.id === 'base' + (1 - side));
             this.flags[side] = { x: enemy.x, y: enemy.y, forced: false };
+        }
+        if (campaign?.volleyGoal) {
+            const { x, y, garrison } = campaign.volleyGoal;
+            const rows = Math.ceil(garrison.count / garrison.columns);
+            this.flags[1] = { x, y, forced: false };
+            for (let i = 0; i < garrison.count; i++) {
+                const dx = ((i % garrison.columns) - (garrison.columns - 1) / 2) * garrison.spacing,
+                    dy = (Math.floor(i / garrison.columns) - (rows - 1) / 2) * garrison.spacing;
+                const defender = this.spawnUnit(1, garrison.type, x + dx, y + dy);
+                defender.status.terrainRevealUntil0 = Number.MAX_SAFE_INTEGER;
+                this.campaignVolleyPractice.garrisonIds.push(defender.id);
+            }
         }
     }
     dispose(reason = 'disposed') {
@@ -1425,7 +1437,8 @@ class StrategySim {
     }
     updateVolleyPractice() {
         const practice = this.campaignVolleyPractice;
-        if (!practice || practice.complete || !practice.projectileIds.length) return;
+        if (!practice || practice.complete || (!practice.landed && !practice.projectileIds.length))
+            return;
         const goal = this.rules.campaign.volleyGoal;
         if (!practice.landed) {
             practice.landed = this.events.some(
@@ -1438,7 +1451,12 @@ class StrategySim {
         const pending = new Set(this.projectiles.map((shell) => shell.id));
         for (const group of this.launchDeployments) pending.add(group.projectileId);
         practice.projectileIds = practice.projectileIds.filter((id) => pending.has(id));
-        if (practice.landed && !practice.projectileIds.length) practice.complete = true;
+        if (
+            practice.landed &&
+            !practice.projectileIds.length &&
+            practice.garrisonIds.every((id) => !this.unitById.get(id)?.alive)
+        )
+            practice.complete = true;
     }
     fireLaunchShell({
         side,

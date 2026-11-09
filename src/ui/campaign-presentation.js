@@ -9,7 +9,7 @@ function formatCountdown(seconds) {
 }
 
 function missionGoal(stage) {
-    if (stage.volleyGoal) return `표시된 곳에 ${stage.volleyGoal.cannons}문 일제사격`;
+    if (stage.volleyGoal) return `${stage.volleyGoal.cannons}문 일제사격으로 수비대 격파`;
     if (!stage.defenseSeconds) return ATTACK_GOAL;
     const time = formatCountdown(stage.defenseSeconds);
     return stage.mode === 'counterattack'

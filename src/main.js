@@ -3105,7 +3105,7 @@ class GLRenderer {
             ctx.lineWidth = 2 * ratio;
             ctx.strokeStyle = '#ffe09b';
             ctx.stroke();
-            const text = '일제사격 목표';
+            const text = '적 수비대';
             ctx.font = `900 ${11 * ratio}px system-ui,sans-serif`;
             const label = labelPosition(x, y, y - radiusY - 10 * ratio, [text], 8 * ratio);
             if (label) {
@@ -9288,7 +9288,8 @@ class MatchLifecycle {
             UiRegistry.refs.resultText.textContent =
                 '연결을 60초 안에 복구하지 못해 경기가 중단되었습니다.';
         else if (reason === 'volley-practice')
-            UiRegistry.refs.resultText.textContent = '세 대포의 일제사격이 목표에 닿았습니다.';
+            UiRegistry.refs.resultText.textContent =
+                '세 대포의 일제사격으로 적 수비대를 격파했습니다.';
         else if (reason === 'draw')
             UiRegistry.refs.resultText.textContent = '양쪽 메인 거점이 같은 tick에 파괴되었습니다.';
         else
@@ -10748,11 +10749,11 @@ class BattlePresentation {
         LaunchPresentation.render(s, side);
         if (enteringGame) {
             const r = ActiveViewState.renderer;
-            r.replayZoom = DEFAULT_LIVE_ZOOM;
-            r.resize();
             const base = r.world.bases[side],
-                practice = campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoal,
-                points = practice ? [...LaunchRules.launchCannons(s, side), practice] : [base],
+                practice = campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoal;
+            r.replayZoom = practice ? 1 : DEFAULT_LIVE_ZOOM;
+            r.resize();
+            const points = practice ? [...LaunchRules.launchCannons(s, side), practice] : [base],
                 middle = (key) => {
                     const values = points.map((point) => point[key]);
                     return (Math.min(...values) + Math.max(...values)) / 2;
