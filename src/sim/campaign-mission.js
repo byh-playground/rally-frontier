@@ -55,7 +55,7 @@ export class CampaignMission {
     static spawnFormations(sim, formations = []) {
         const enemies = [];
         for (const formation of formations) {
-            const { type, x, y, count, columns = count, spacing = 34, side = 1 } = formation;
+            const { type, x, y, count, columns = count, spacing = 34, side = 1, hold } = formation;
             const rows = Math.ceil(count / columns);
             for (let i = 0; i < count; i++) {
                 const row = Math.floor(i / columns),
@@ -63,6 +63,8 @@ export class CampaignMission {
                     dx = ((i % columns) - (rowCount - 1) / 2) * spacing,
                     dy = (row - (rows - 1) / 2) * spacing;
                 const unit = sim.spawnUnit(side, type, x + dx, y + dy);
+                // A garrison keeps its post and fights what comes into reach; it does not march on the base.
+                if (hold) unit.holdPost = { x: unit.x, y: unit.y };
                 if (side === 1) enemies.push(unit.id);
             }
         }

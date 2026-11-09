@@ -2230,6 +2230,7 @@ class StrategySim {
         return dist <= max && (!d.minRange || dist >= min);
     }
     unitRallyPoint(u) {
+        if (u.holdPost) return { x: u.holdPost.x, y: u.holdPost.y, forced: false };
         if (u.launchHoldPointId) {
             const cp = this.capturePoints.find((p) => p.id === u.launchHoldPointId);
             if (cp && cp.owner == null && cp.enabled) return { x: cp.x, y: cp.y, forced: false };
@@ -3908,15 +3909,6 @@ class StrategySim {
         ) {
             this.updateVolleyPractice();
             winner = this.campaignVolleyPractice.complete ? 'host' : null;
-        }
-        if (
-            campaign?.defenseSeconds &&
-            !campaign.mission?.waves?.length &&
-            !this.netcodeMatchResult
-        ) {
-            const timeUp = this.tick >= campaign.defenseSeconds * this.tps;
-            if (!timeUp && winner === 'host') winner = null;
-            if (timeUp && campaign.mode === 'defend' && !winner) winner = 'host';
         }
         if (!this.netcodeMatchResult) winner = CampaignMission.resolve(this, winner);
         this.updateBalanceTelemetry(winner);
