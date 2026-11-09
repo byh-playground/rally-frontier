@@ -127,13 +127,44 @@
 .unit-info-panel[hidden] {
     display: none;
 }
-.unit-info-panel .launch-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+.unit-stat-groups {
+    display: grid;
+    gap: 6px;
 }
-.unit-info-panel .launch-stats b {
-    font-size: 16px;
+.unit-stat-group {
+    border-top: 1px solid var(--line);
+    padding-top: 5px;
+}
+.unit-stat-group h3 {
+    margin: 0 0 3px;
+    font-size: 13px;
+}
+.unit-stat-group dl,
+.unit-stat-group dd {
+    margin: 0;
+}
+.unit-stat-group dl > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+    align-items: baseline;
+    gap: 8px;
+    padding: 1px 0;
+    font-size: 14px;
+    line-height: 1.3;
+}
+.unit-stat-group dt {
+    color: var(--muted);
+}
+.unit-stat-group dd {
+    text-align: right;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
     word-break: keep-all;
     overflow-wrap: anywhere;
+}
+.unit-stat-group p,
+.unit-info-panel .unit-stat-note {
+    font-size: 12px;
 }
 .deck-section-head {
     margin: 20px 0 9px;

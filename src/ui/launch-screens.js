@@ -449,16 +449,17 @@ export class LaunchScreens {
             },
         };
         this.cardDetail = detail;
-        const renderStats = (rows) =>
-            `<div class="launch-stats">${rows.map(([label, value]) => `<div>${label}<b>${value}</b></div>`).join('')}</div>`;
+        const renderStats = (groups) =>
+            `<div class="unit-stat-groups">${groups
+                .map(
+                    ([title, rows, notes = []]) =>
+                        `<section class="unit-stat-group"><h3>${title}</h3><dl>${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>${notes.map((line) => `<p>${line}</p>`).join('')}</section>`,
+                )
+                .join('')}</div>`;
         const panels = [
             `<div class="launch-unit-showcase"></div><p>${copy.airNote ?? copy.notes[0] ?? copy.feature}</p>`,
-            renderStats(stats.troop) +
-                copy.notes
-                    .slice(1)
-                    .map((line) => `<p>${line}</p>`)
-                    .join(''),
-            `<p>대포 1대 · 현재 사거리 강화 기준</p>${renderStats(stats.shell)}`,
+            renderStats(stats.troop),
+            `<p class="unit-stat-note">대포 1대 · 현재 사거리 강화 기준</p>${renderStats(stats.shell)}`,
         ];
         host.innerHTML = `<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2><p>${copy.role}</p></div></div>
 <div class="deck-tabs" role="tablist" aria-label="유닛 정보">${sections.map((label, index) => `<button type="button" role="tab" id="${host.id}-tab-${index}" aria-controls="${host.id}-panel-${index}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}">${label}</button>`).join('')}</div>

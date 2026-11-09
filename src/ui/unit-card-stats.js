@@ -21,52 +21,76 @@ export function unitCardStats(type, rangeLevel, copy) {
         spin = unit.spinAttack,
         active = unit.heroActive || unit.fruitAttack?.active;
 
-    const troop = [
+    const movement = [
         ['체력', number.format(unit.hp)],
-        [suicide ? '자폭 피해' : '기본 공격력', number.format(suicide?.damage ?? unit.atk)],
         ['이동속도', number.format(unit.speed)],
-        ['시야', number.format(unit.sight)],
-        [suicide ? '자폭 반경' : '지상 공격 사거리', number.format(suicide?.radius ?? unit.range)],
     ];
     if (unit.outOfCombatMoveMultiplier)
-        troop.push(['비전투 이동속도', number.format(unit.speed * unit.outOfCombatMoveMultiplier)]);
+        movement.push([
+            '비전투 이동속도',
+            number.format(unit.speed * unit.outOfCombatMoveMultiplier),
+        ]);
+    movement.push(['시야', number.format(unit.sight)]);
+
+    const attack = [
+        [suicide ? '자폭 피해' : '기본 공격력', number.format(suicide?.damage ?? unit.atk)],
+        [suicide ? '자폭 반경' : '지상 공격 사거리', number.format(suicide?.radius ?? unit.range)],
+    ];
     if (unit.canAttackAir)
-        troop.push(
+        attack.push(
             ['대공 공격력', number.format(unit.atk * (burst?.airDamageMultiplier ?? 1))],
             ['대공 사거리', number.format(burst?.airRange ?? unit.range)],
         );
     if (burst)
-        troop.push(
+        attack.push(
             ['최대 연사', `${number.format(burst.shots)}발`],
             ['연사 간격', seconds(burst.shotGapMs)],
             ['재장전', seconds(unit.cooldownMs)],
         );
     else if (spin?.pulseMs)
-        troop.push(
+        attack.push(
             ['회전 공격 반경', number.format(spin.radius)],
             ['회전 타격 간격', seconds(spin.pulseMs)],
         );
     else if (!suicide)
-        troop.push(['기본 공격 주기', seconds(unit.attackIntervalMs ?? unit.cooldownMs)]);
-    if (unit.leapAttack) troop.push(['도약 발동 거리', number.format(unit.leapAttack.range)]);
-    if (active)
-        troop.push(
-            ['스킬 사거리', number.format(active.range)],
-            ['스킬 비용', ResourceDisplay.costText({ cost: active.cost }, true)],
-        );
+        attack.push(['기본 공격 주기', seconds(unit.attackIntervalMs ?? unit.cooldownMs)]);
+    if (unit.leapAttack) attack.push(['도약 발동 거리', number.format(unit.leapAttack.range)]);
 
-    const shell = [
+    const troop = [
+        ['생존·기동', movement],
+        ['공격', attack],
+    ];
+    if (active)
+        troop.push([
+            '스킬',
+            [
+                ['사거리', number.format(active.range)],
+                ['비용', ResourceDisplay.costText({ cost: active.cost }, true)],
+            ],
+            copy.notes.slice(1),
+        ]);
+
+    const deployment = [
         ['투입 비용', ResourceDisplay.costText(payload, true)],
         ['투입 인원', `${number.format(payload.count)}명`],
-        ['발사 방식', copy.fire],
         ['착지 배치', copy.land],
+    ];
+    const firing = [
+        ['발사 방식', copy.fire],
         ['포탄 수', `${number.format(shots.length)}발`],
+        ['최대 발사 거리', number.format(LaunchRules.maxReachOf(type, rangeLevel))],
+    ];
+    if (grain.fire.mode === 'burst') firing.push(['발사 간격', seconds(grain.fire.gapMs)]);
+    const shellStats = [
         ['포탄 체력 · 발당', number.format(grain.shellHp)],
+        ['기준 비행 속도', number.format(LaunchRules.shellSpeed(type))],
         ['착탄 위력 · 발당', perShell(shots, 'impact')],
         ['착탄 반경 · 발당', perShell(shots, 'splash')],
-        ['최대 발사 거리', number.format(LaunchRules.maxReachOf(type, rangeLevel))],
-        ['기준 비행 속도', number.format(LaunchRules.shellSpeed(type))],
     ];
-    if (grain.fire.mode === 'burst') shell.push(['발사 간격', seconds(grain.fire.gapMs)]);
+    const shell = [
+        ['투입', deployment],
+        ['발사', firing],
+        ['포탄 성능', shellStats],
+    ];
     return { troop, shell };
 }
