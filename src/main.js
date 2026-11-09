@@ -2721,14 +2721,18 @@ class GLRenderer {
     }
     // World-space aim remains outside the deterministic simulation and survives the short recoil clip.
     cannonAim(b) {
-        const hold = LaunchPresentation.hold;
+        const hold = LaunchPresentation.hold,
+            preview = this.launchPreview,
+            primary = hold?.cannonId === b.id,
+            support =
+                preview?.hold === hold && preview?.groups.some(({ cannon }) => cannon.id === b.id);
         if (
             !ReplayPresentation.replayPlayer &&
-            hold?.cannonId === b.id &&
+            (primary || support) &&
             this.isFriendlySide(b.side)
         ) {
-            const dx = hold.aimX - b.x,
-                dy = hold.aimY - b.y,
+            const dx = (primary ? hold.aimX : preview.aim.x) - b.x,
+                dy = (primary ? hold.aimY : preview.aim.y) - b.y,
                 length = Math.hypot(dx, dy);
             if (length > 0.001) return { dx: dx / length, dy: dy / length };
         }
@@ -6665,35 +6669,21 @@ class GLRenderer {
             side = this.mySide(),
             sc = this.sc(),
             now = performance.now();
-        const main = BuildingDefinition.forRole('mainBase'),
-            outpost = BuildingDefinition.forRole('outpost'),
+        const cannons = LaunchRules.launchCannons(s, side),
             reloadTicks = SimulationTiming.msToTicks(
                 LaunchRules.reloadMs,
                 s.tps || ActiveSimulationTiming.tps(),
             );
-        const hold = LaunchPresentation.hold,
+        const preview = this.launchPreview,
+            hold = preview?.hold,
             card = hold?.card || LaunchPresentation.card || LaunchRules.deck[0],
             level = s.launchRangeLevel?.[side] ?? 0;
         // Friendly completed cannons show the selected payload's maximum launch reach.
-        for (const b of s.buildings || []) {
-            if (
-                b.side !== side ||
-                b.alive === false ||
-                b.construction ||
-                (b.type !== main && b.type !== outpost)
-            )
-                continue;
+        for (const b of cannons) {
             this.drawLaunchRange(b, card, level, hold?.cannonId === b.id);
         }
         // Overheated cannons glow red; reloading ones show a thin ring.
-        for (const b of s.buildings || []) {
-            if (
-                b.side !== side ||
-                b.alive === false ||
-                b.construction ||
-                (b.type !== main && b.type !== outpost)
-            )
-                continue;
+        for (const b of cannons) {
             const wait = (Number(b.launchReadyTick) || 0) - s.tick;
             if (wait <= 0) continue;
             const radius = (BuildingDefinition.get(b.type)?.size || 40) + 10,
@@ -6706,7 +6696,7 @@ class GLRenderer {
             });
         }
         this.launchAimOrder = [];
-        if (hold) {
+        if (preview && (preview.groups.length || preview.burnt)) {
             const project = (x, y) =>
                 this.worldToPx(
                     this.viewX(x),
@@ -6714,9 +6704,8 @@ class GLRenderer {
                     this.world.terrain.surfaces.heightAt(x, y),
                 );
             const [cx, cy] = project(hold.cannonX, hold.cannonY);
-            const held = now - hold.armedAt,
+            const { held, burnt, aim, groups, formation } = preview,
                 power = LaunchRules.power(held),
-                burnt = LaunchRules.overheated(held),
                 full = power >= 1;
             const color = burnt
                     ? [1, 0.22, 0.16, 1]
@@ -6724,33 +6713,44 @@ class GLRenderer {
                       ? [1, 0.78, 0.2, Math.floor(now / 90) % 2 ? 1 : 0.55]
                       : [1, 0.95, 0.75, 0.9],
                 w = Math.max(2, 3 * sc);
-            const { aim, shots, formation } = LaunchPresentation.aimPreview(hold, held, this.world);
             const [lx, ly] = project(aim.x, aim.y);
             this.line(cx, cy, lx, ly, Math.max(1.5, 2 * sc), [color[0], color[1], color[2], 0.45]);
+            for (const { cannon } of groups.slice(1)) {
+                const [sx, sy] = project(cannon.x, cannon.y);
+                this.line(sx, sy, lx, ly, Math.max(1, 1.5 * sc), [
+                    color[0],
+                    color[1],
+                    color[2],
+                    0.32,
+                ]);
+            }
             const rings = new Map();
             // Split shells may launch at different times to land together. Only bursts show an order.
             const ordered = LaunchRules.grain(hold.card).fire.mode === 'burst';
-            for (const [index, shot] of shots.entries()) {
-                // Equal-radius shells on the same point share a ring and show all their turns.
-                const key = `${shot.x},${shot.y},${shot.splash}`;
-                if (!rings.has(key)) rings.set(key, { shot, order: [] });
-                if (ordered) rings.get(key).order.push(index + 1);
+            for (const [groupIndex, { shots }] of groups.entries()) {
+                for (const [index, shot] of shots.entries()) {
+                    // Equal-radius shells on the same point share a ring and show all their turns.
+                    const key = `${shot.x},${shot.y},${shot.splash}`;
+                    if (!rings.has(key))
+                        rings.set(key, { shot, order: new Set(), primary: groupIndex === 0 });
+                    if (ordered) rings.get(key).order.add(index + 1);
+                }
             }
             let ringIndex = 0;
-            for (const { shot, order } of rings.values()) {
+            for (const { shot, order, primary } of rings.values()) {
                 this.drawGroundCircle(shot.x, shot.y, shot.splash, {
-                    stroke: color,
-                    width: w,
+                    stroke: primary ? color : [color[0], color[1], color[2], color[3] * 0.4],
+                    width: primary ? w : Math.max(1, 2 * sc),
                     segments: 40,
                 });
-                if (rings.size === 1 || !ordered) {
+                if (primary && (rings.size === 1 || !ordered)) {
                     this.drawGroundCircle(shot.x, shot.y, shot.splash * (1 - Math.SQRT1_2), {
                         stroke: [color[0], color[1], color[2], 0.6],
                         width: Math.max(1.5, 2 * sc),
                         segments: 24,
                     });
                 }
-                if (order.length) {
+                if (order.size) {
                     // Stagger the labels so concentric rings stay legible when zoomed out.
                     const angle = (ringIndex * 2 * Math.PI) / 3;
                     const ox = Math.cos(angle) * shot.splash,
@@ -6764,7 +6764,7 @@ class GLRenderer {
                     const [sx, sy] = project(shot.x, shot.y),
                         length = Math.hypot(x - sx, y - sy) || 1;
                     this.launchAimOrder.push({
-                        label: order.join('·'),
+                        label: [...order].join('·'),
                         x,
                         y,
                         dx: (x - sx) / length,
@@ -10100,18 +10100,9 @@ class LaunchPresentation {
             LogUtil.log('⚠ 사거리 강화 명령을 접수할 수 없습니다.');
     }
     static nearestCannon(s, side, x, y) {
-        const main = BuildingDefinition.forRole('mainBase'),
-            outpost = BuildingDefinition.forRole('outpost');
         let best = null,
             bestD = Infinity;
-        for (const b of s.buildings || []) {
-            if (
-                b.side !== side ||
-                b.alive === false ||
-                b.construction ||
-                (b.type !== main && b.type !== outpost)
-            )
-                continue;
+        for (const b of LaunchRules.launchCannons(s, side)) {
             const d = Math.hypot(b.x - x, b.y - y);
             if (d < bestD) {
                 bestD = d;
@@ -10169,8 +10160,8 @@ class LaunchPresentation {
             flag = s?.flags?.[side] || { x: hold.cannonX, y: hold.cannonY };
         return LaunchRules.target(
             { x: hold.cannonX, y: hold.cannonY },
-            hold.aimX,
-            hold.aimY,
+            Math.round(hold.aimX),
+            Math.round(hold.aimY),
             Math.max(0, Math.round(holdMs)),
             world,
             flag,
@@ -10179,33 +10170,61 @@ class LaunchPresentation {
         );
     }
     static aimPreview(hold, holdMs, world) {
-        const cannon = { x: hold.cannonX, y: hold.cannonY };
-        const aim = this.landing(hold, holdMs, world);
-        const shots = LaunchRules.volley(hold.card, aim, cannon, world);
-        const grain = LaunchRules.grain(hold.card);
+        const s = ActiveViewState.snap,
+            side = hold.side ?? ConnectionSideUtil.roleSide(ActiveViewState.role),
+            cannons = s ? LaunchRules.launchCannons(s, side) : [],
+            primary = cannons.find((cannon) => cannon.id === hold.cannonId),
+            level = s?.launchRangeLevel?.[side] ?? 0;
+        const aim = this.landing(hold, holdMs, world),
+            burnt = LaunchRules.overheated(Math.round(holdMs)),
+            groups =
+                primary && !burnt && (primary.launchReadyTick ?? 0) <= s.tick
+                    ? LaunchRules.sharedVolley(
+                          hold.card,
+                          aim,
+                          primary,
+                          world,
+                          cannons,
+                          s.tick,
+                          level,
+                      )
+                    : [],
+            grain = LaunchRules.grain(hold.card);
+        const shots = groups.flatMap((group) => group.shots);
         const formation = [];
         if (grain.land === 'transverse') {
-            for (const shot of shots) {
-                const dx = shot.x - cannon.x,
-                    dy = shot.y - cannon.y,
-                    distance = Math.hypot(dx, dy) || 1;
-                const group = { ...shot, dirX: dx / distance, dirY: dy / distance };
-                for (let index = 0; index < shot.count; index++) {
-                    const point = LaunchRules.lineDeploymentPosition(group, index, grain.spacing);
-                    formation.push({ ...point, radius: 8 });
+            for (const { cannon, shots: cannonShots } of groups) {
+                for (const shot of cannonShots) {
+                    const dx = shot.x - cannon.x,
+                        dy = shot.y - cannon.y,
+                        distance = Math.hypot(dx, dy) || 1;
+                    const group = { ...shot, dirX: dx / distance, dirY: dy / distance };
+                    for (let index = 0; index < shot.count; index++) {
+                        const point = LaunchRules.lineDeploymentPosition(
+                            group,
+                            index,
+                            grain.spacing,
+                        );
+                        formation.push({ ...point, radius: 8 });
+                    }
                 }
             }
         } else if (grain.land === 'compact') {
-            for (const shot of shots) formation.push({ x: shot.x, y: shot.y, radius: 18 });
+            const centres = new Map(shots.map(({ x, y }) => [`${x},${y}`, { x, y, radius: 18 }]));
+            formation.push(...centres.values());
         }
-        return { aim, shots, formation };
+        return { aim, shots, formation, groups, burnt };
     }
     // While charging, the camera eases just far enough to keep the whole preview on screen.
     static FOLLOW_HALF_LIFE_MS = 52;
     static followAt = null;
     static followAim(r) {
         const hold = this.hold;
-        if (!hold || !r.world) {
+        const held = hold ? performance.now() - hold.armedAt : 0;
+        const preview =
+            hold && r.world ? { hold, held, ...this.aimPreview(hold, held, r.world) } : null;
+        r.launchPreview = preview;
+        if (!preview?.groups.length) {
             this.followAt = null;
             if (this.labelShown) {
                 this.labelShown = false;
@@ -10213,11 +10232,7 @@ class LaunchPresentation {
             }
             return;
         }
-        const { aim, shots, formation } = this.aimPreview(
-            hold,
-            performance.now() - hold.armedAt,
-            r.world,
-        );
+        const { aim, shots, formation, groups } = preview;
         const vw = r.viewWorldW(),
             vh = r.viewWorldH(),
             points = [
@@ -10270,6 +10285,7 @@ class LaunchPresentation {
                 hold.card,
                 ActiveViewState.snap?.launchRangeLevel?.[hold.side] ?? 0,
             ),
+            groups.length,
         );
     }
     static cancel() {
