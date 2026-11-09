@@ -5,7 +5,7 @@ export const PEANUT_ART_SCALE = 343.5 / STANDING_HEIGHT;
 
 const cells = {
     body: { slot: [12, 8, 165, 228], pivot: [82, 222] },
-    boot: { slot: [190, 16, 64, 46], pivot: [30, 16] },
+    foot: { slot: [190, 16, 64, 46], pivot: [30, 16] },
     arm: { slot: [267, 12, 64, 66], pivot: [30, 14] },
     neutral: { slot: [189, 91, 98, 45], pivot: [48, 22] },
     attack: { slot: [292, 91, 98, 45], pivot: [48, 22] },
@@ -13,14 +13,14 @@ const cells = {
     ammo: { slot: [325, 151, 165, 82], pivot: [82, 41] },
 };
 const bodyParts = [
-    { cell: 'boot', id: 'leftBoot', position: [-40, -16], mirror: true },
-    { cell: 'boot', id: 'rightBoot', position: [40, -16] },
+    { cell: 'foot', id: 'leftFoot', position: [-32, -16], mirror: true },
+    { cell: 'foot', id: 'rightFoot', position: [32, -16] },
     { cell: 'body', id: 'body', position: [0, 0] },
 ];
 const frontParts = [
     { id: 'face', position: [0, -166] },
-    { cell: 'arm', id: 'leftArm', position: [-56, -77], mirror: true },
-    { cell: 'arm', id: 'rightArm', position: [56, -77] },
+    { cell: 'arm', id: 'leftArm', position: [-51, -124], mirror: true },
+    { cell: 'arm', id: 'rightArm', position: [51, -124] },
 ];
 const parts = [...bodyParts, ...frontParts];
 const key = (timeMs, parts = {}) => ({ timeMs, parts, easing: 'inOutSine' });
@@ -38,11 +38,11 @@ const rig = {
             key(1200),
         ]),
         walk: clip(600, 'repeat', [
-            key(0, { body: { rotation: -0.045 }, leftBoot: { y: -11, rotation: 0.16 } }),
+            key(0, { body: { rotation: -0.045 }, leftFoot: { y: -11, rotation: 0.16 } }),
             key(150, { body: { y: -5 } }),
-            key(300, { body: { rotation: 0.045 }, rightBoot: { y: -11, rotation: -0.16 } }),
+            key(300, { body: { rotation: 0.045 }, rightFoot: { y: -11, rotation: -0.16 } }),
             key(450, { body: { y: -5 } }),
-            key(600, { body: { rotation: -0.045 }, leftBoot: { y: -11, rotation: 0.16 } }),
+            key(600, { body: { rotation: -0.045 }, leftFoot: { y: -11, rotation: 0.16 } }),
         ]),
         fire: clip(280, 'once', [
             key(0, { body: { y: 5, scaleX: 1.07, scaleY: 0.92 } }),
