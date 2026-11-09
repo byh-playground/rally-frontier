@@ -35,6 +35,7 @@ class LaunchRules {
     static overheatMs = 2000;
     static reloadMs = 400;
     static speed = 750;
+    static shellFlight = Object.freeze({ speedScale: 0.8, arcScale: 1.25 });
     static landingMarkMs = 1500;
     static captureHoldRadius = 400;
     static rangeMultipliers = Object.freeze([1, 2, 3, 4, 5]);
@@ -305,9 +306,12 @@ class LaunchRules {
             ) * this.chargeMs
         );
     }
+    static shellSpeed(type) {
+        return this.grain(type).speed * this.shellFlight.speedScale;
+    }
     static arcHeight(distance, type) {
         const height = RangeUtil.clamp(Math.round(distance * 0.3), 80, 600);
-        return Math.round(height * (this.grain(type)?.arcScale ?? 1));
+        return Math.round(height * (this.grain(type)?.arcScale ?? 1) * this.shellFlight.arcScale);
     }
     static lineDeploymentPosition({ x, y, count, dirX, dirY }, index, spacing) {
         const offset = (index - (count - 1) / 2) * spacing;
