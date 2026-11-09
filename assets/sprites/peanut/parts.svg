@@ -5,12 +5,7 @@
       <stop offset=".55" stop-color="#ca8439"/>
       <stop offset="1" stop-color="#98511f"/>
     </linearGradient>
-    <linearGradient id="iron" x1=".15" y1="0" x2=".8" y2="1">
-      <stop stop-color="#dce9df"/>
-      <stop offset=".5" stop-color="#92a998"/>
-      <stop offset="1" stop-color="#586e63"/>
-    </linearGradient>
-    <path id="body-outline" d="M81 10C35 8 10 42 14 79c2 21 20 33 17 52-2 15-23 29-22 54 1 26 25 36 65 36 49 0 72-9 78-34 6-25-13-38-18-56-5-16 13-30 16-53 5-35-20-67-69-68Z"/>
+    <path id="body-outline" d="M83 10C47 7 21 26 18 57c-3 26 10 41 24 55 13 13 10 23-6 36-17 14-29 27-27 46 2 20 27 27 69 27 45 0 72-8 76-31 3-20-11-35-27-47-13-10-17-22-4-35 13-14 24-28 22-50-3-29-28-47-62-48Z"/>
     <clipPath id="body-mask"><use href="#body-outline"/></clipPath>
     <path id="ammo-outline" d="M9 42C6 21 25 10 46 11c18 0 25 9 36 9 13 0 20-10 36-9 23 0 38 13 37 32-1 17-17 28-38 27-17-1-21-10-35-10-14 0-20 10-38 10C24 70 10 60 9 42Z"/>
     <clipPath id="ammo-mask"><use href="#ammo-outline"/></clipPath>
@@ -27,11 +22,11 @@
 
   <g id="body" transform="translate(12 8)">
     <use href="#body-outline" fill="url(#shell)"/>
-    <g clip-path="url(#body-mask)" fill="none" stroke="#8b4e27" stroke-width="4" opacity=".48">
-      <path d="M24 47q57-18 116 1M15 76q66-19 137 2M25 106q60-17 120 3M26 137q56-18 117-2M14 163q69-17 136 0M7 188q77-13 151 2"/>
-      <path d="M43 14q-20 45 1 81t-2 75q-14 24-9 49M72 9q-15 44-3 83t-7 72q-11 31-7 58M104 12q13 47 2 85t7 73q12 25 9 48M128 25q14 33 1 71t12 67q13 23 7 38"/>
+    <g clip-path="url(#body-mask)" fill="none" stroke="#8b4e27" stroke-width="4" opacity=".58">
+      <path d="M22 41q31-15 63-13t55 14M17 68q30-13 55-13t76 13M28 93q22-9 52-9t61 10M41 117q39-13 81 0M40 140q32-13 86-1M19 166q34-12 69-13t58 14M8 192q28-8 68-7t79 8M26 212q43-10 112-3"/>
+      <path d="M47 15q-14 28-6 62t20 42q6 13-14 33t-11 69M78 10q-8 25-5 56t13 53q4 12-8 32t-7 69M112 13q18 32 4 72t-14 47q0 11 16 30t12 56"/>
     </g>
-    <path d="M37 52q10-27 37-32M24 181q1-12 10-22" fill="none" stroke="#ffe2a2" stroke-width="6" stroke-linecap="round" opacity=".7"/>
+    <path d="M37 46q13-21 38-25M22 185q5-12 16-20" fill="none" stroke="#ffe2a2" stroke-width="6" stroke-linecap="round" opacity=".7"/>
     <use href="#body-outline" fill="none" stroke="#512e20" stroke-width="5" stroke-linejoin="round"/>
   </g>
 
@@ -41,8 +36,8 @@
     <path d="M18 16 35 14" stroke="#ebad69" stroke-width="3" stroke-linecap="round"/>
   </g>
   <g id="arm" transform="translate(267 12)">
-    <path d="M23 6q11-3 18 8l10 23q8 17-8 22-12 5-20-10L12 24Q6 9 23 6Z" fill="url(#shell)" stroke="#512e20" stroke-width="4"/>
-    <path d="M19 36q15-5 28-13l5 10q4 8 1 13-12 10-24 10Z" fill="url(#iron)" stroke="#435146" stroke-width="3"/>
+    <path d="M24 8q11-3 16 7l8 20q5 13-8 17-10 4-17-8L13 24Q7 12 24 8Z" fill="url(#shell)" stroke="#512e20" stroke-width="4"/>
+    <path d="M30 41q8-1 14-7" fill="none" stroke="#9a5427" stroke-width="3" stroke-linecap="round"/>
   </g>
 
   <g id="neutral" transform="translate(189 91)" fill="#382822">
@@ -60,12 +55,6 @@
     <path d="M43 38q5-9 10 0" fill="none" stroke="#382822" stroke-width="3" stroke-linecap="round"/>
   </g>
 
-  <g id="ram-plate" transform="translate(190 154)">
-    <path d="m12 13 23 1 8 54-15 1ZM102 13l-23 1-8 54 15 1Z" fill="#755336" stroke="#512e20" stroke-width="4"/>
-    <path d="M8 15Q55 5 106 15l-7 31Q86 63 57 70 25 62 15 46Z" fill="url(#iron)" stroke="#435146" stroke-width="5" stroke-linejoin="round"/>
-    <path d="M20 21q39-8 74 0M41 44l16 13 16-13" fill="none" stroke="#eef6de" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-    <g fill="#4f645a"><circle cx="28" cy="29" r="4"/><circle cx="85" cy="29" r="4"/></g>
-  </g>
   <g id="launch-ammo" transform="translate(325 151)">
     <use href="#ammo-outline" fill="url(#shell)"/>
     <g clip-path="url(#ammo-mask)">
