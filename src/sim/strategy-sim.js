@@ -2611,10 +2611,24 @@ class StrategySim {
     }
     // Contact attacks commit after the shared motion solver, in the same stable
     // unit order as target selection. Pending entries never cross a tick boundary.
-    beginContactAttackRecovery(u, target, cooldownMs) {
+    beginContactAttackRecovery(u, target, cooldownMs, rebound = null) {
         const dx = u.x - target.x,
             dy = u.y - target.y,
             length = Math.hypot(dx, dy) || 1;
+        if (rebound) {
+            const mass = this.mass(u);
+            u.contactAttack = null;
+            this.navigation.motion.applyImpulse(
+                u,
+                {
+                    x: (dx / length) * rebound.speed * mass,
+                    y: (dy / length) * rebound.speed * mass,
+                    z: rebound.lift * mass,
+                },
+                { sourceId: target.id },
+            );
+            return;
+        }
         u.contactAttack = {
             phase: 'recover',
             retreatX: u.x + (dx / length) * ConstructionRules.retreatDistance,
@@ -2683,6 +2697,7 @@ class StrategySim {
                 u,
                 target,
                 definition.attackIntervalMs ?? definition.cooldownMs,
+                definition.contactRebound,
             );
             winner =
                 this.applyDamage(

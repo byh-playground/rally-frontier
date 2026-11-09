@@ -173,6 +173,7 @@ class UnitDefinition {
             requiresContactTerrain: true,
             name: '땅콩',
             contactMelee: true,
+            contactRebound: Object.freeze({ speed: 100, lift: 200 }),
             canAttackBuildings: true,
             canAttackGround: false,
             mass: 225,
