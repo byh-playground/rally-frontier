@@ -36,6 +36,7 @@ class LaunchRules {
     static overheatMs = 2000;
     static reloadMs = 400;
     static maxVolleyCannons = 3;
+    static volleyReinforcementPctPerExtraCannon = 20;
     static speed = 750;
     static shellFlight = Object.freeze({ speedScale: 0.8, arcScale: 1.25, sightRadius: 200 });
     static landingMarkMs = 1500;
@@ -390,11 +391,7 @@ class LaunchRules {
     static sharedVolley(type, aim, primary, world, cannons, tick, level) {
         const original = this.volley(type, aim, primary, world),
             grain = this.grain(type),
-            limit = Math.min(
-                this.maxVolleyCannons,
-                Math.floor(grain.count / original.length),
-                grain.shellHp,
-            );
+            limit = Math.min(this.maxVolleyCannons, Math.floor(grain.count / original.length));
         const groups = [{ cannon: primary, shots: original }];
         if (limit <= 1 || this.isHeroType(type)) return groups;
 
@@ -425,36 +422,32 @@ class LaunchRules {
         }
         if (groups.length === 1) return groups;
 
-        // Each original shell slot keeps its total cargo, impact and HP. Rotate
-        // the extra passengers so the supporting cannons also carry even loads.
+        const bonus = Math.round(
+            (grain.count * (groups.length - 1) * this.volleyReinforcementPctPerExtraCannon) / 100,
+        );
+        const total = grain.count + bonus,
+            slotBase = Math.floor(total / original.length),
+            slotExtra = total % original.length;
+        // Rotate the extra passengers between cannons while keeping each
+        // cannon's usual shell impact and durability.
         let offset = 0;
-        for (const [slot, shot] of original.entries()) {
-            const { count: originalCount, impact } = shot,
-                countPerCannon = Math.floor(originalCount / groups.length),
-                extra = originalCount % groups.length;
-            let assigned = 0,
-                assignedHp = 0;
-            groups.forEach(({ shots }, index) => {
+        for (let slot = 0; slot < original.length; slot++) {
+            const slotCount = slotBase + (slot < slotExtra ? 1 : 0),
+                perCannon = Math.floor(slotCount / groups.length),
+                extra = slotCount % groups.length;
+            for (let index = 0; index < groups.length; index++) {
                 const extraIndex = (index - offset + groups.length) % groups.length;
-                const count = countPerCannon + (extraIndex < extra ? 1 : 0);
-                assigned += count;
-                const hpThroughShot = Math.min(
-                    grain.shellHp - (groups.length - index - 1),
-                    Math.max(
-                        assignedHp + 1,
-                        Math.floor((grain.shellHp * assigned) / originalCount),
-                    ),
-                );
-                Object.assign(shots[slot], {
-                    count,
-                    impact: (impact * count) / originalCount,
-                    shellHp: hpThroughShot - assignedHp,
-                });
-                assignedHp = hpThroughShot;
-            });
+                groups[index].shots[slot].count = perCannon + (extraIndex < extra ? 1 : 0);
+            }
             offset = (offset + extra) % groups.length;
         }
         return groups;
+    }
+    static volleyPassengerCount(groups) {
+        return groups.reduce(
+            (total, { shots }) => total + shots.reduce((count, shot) => count + shot.count, 0),
+            0,
+        );
     }
     static volleyMs(type) {
         const fire = this.grain(type).fire;

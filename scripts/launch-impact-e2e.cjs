@@ -200,7 +200,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 rows.push({ scenario: 'loaded shells have per-projectile HP', rice, pea });
             }
             // Put the support candidates around the actual locked aim, not the input pointer.
-            function sharedVolleyArena(type) {
+            function sharedVolleyArena(type, unavailable = []) {
                 const { sim } = arena({ deck: [type] });
                 const home = sim.launchCannons(0)[0];
                 const aim = LaunchRules.target(
@@ -231,7 +231,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                         side,
                         hp,
                         maxHp: hp,
-                        launchReadyTick,
+                        launchReadyTick: unavailable.includes(id) ? 60 : launchReadyTick,
                         cooldownUntil: Number.MAX_SAFE_INTEGER,
                     });
                 sim.importState(state);
@@ -245,8 +245,15 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 };
                 return { sim, home, aim, action };
             }
-            {
-                const { sim, home, aim, action } = sharedVolleyArena('rice');
+            for (const [expectedCounts, unavailable] of [
+                [[10, 9, 9], []],
+                [
+                    [12, 12],
+                    ['support-b', 'spare-ready'],
+                ],
+                [[20], ['support-a', 'support-b', 'spare-ready']],
+            ]) {
+                const { sim, home, aim, action } = sharedVolleyArena('rice', unavailable);
                 const grain = LaunchRules.grain('rice'),
                     pattern = LaunchRules.volley('rice', aim, home, sim.world),
                     wallet = sim.wallet[0];
@@ -254,42 +261,76 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     sim.applyCommand('host', action),
                     'one player command fires the shared volley',
                 );
-                const participantIds = [home.id, 'support-a', 'support-b'];
+                const participantIds = [home.id, 'support-a', 'support-b'].slice(
+                    0,
+                    expectedCounts.length,
+                );
                 const total = (shells, read) => shells.reduce((sum, shell) => sum + read(shell), 0);
+                const sent = total(expectedCounts, (count) => count);
+                const shotCount = pattern.length * participantIds.length;
                 const counts = participantIds.map((id) => {
                     const shells = sim.projectiles.filter((p) => p.owner === id);
                     check(shells.length === 5, 'each cannon retains the five-pellet pattern', id);
+                    check(
+                        shells.every(
+                            (p, slot) =>
+                                p.hp === grain.shellHp &&
+                                p.splashBuildingDamage === pattern[slot].impact,
+                        ),
+                        'every participating cannon fires full-strength shells',
+                        id,
+                    );
                     return total(shells, (p) => p.payload.count);
                 });
                 const fires = sim.events.filter((e) => e.type === 'launchFire');
                 const shellHp = total(sim.projectiles, (p) => p.hp);
                 const impact = total(sim.projectiles, (p) => p.splashBuildingDamage);
                 check(
-                    sim.projectiles.length === 15 &&
-                        fires.length === 15 &&
+                    sim.projectiles.length === shotCount &&
+                        fires.length === shotCount &&
                         fires.every((e) => participantIds.includes(e.cannonId)) &&
                         sim.projectiles.every((p) => p.payload.count > 0 && p.hp > 0) &&
-                        counts.join(',') === '7,7,6' &&
-                        shellHp === grain.shellHp * pattern.length &&
-                        impact === total(pattern, (p) => p.impact) &&
+                        counts.join(',') === expectedCounts.join(',') &&
+                        shellHp === grain.shellHp * shotCount &&
+                        impact === total(pattern, (p) => p.impact) * participantIds.length &&
                         sim.wallet[0] === wallet - grain.cost &&
                         sim.launchStats.launches[0] === 1 &&
-                        sim.launchStats.sent[0] === grain.count &&
-                        LaunchRules.population(sim, 0).reserved === grain.count &&
+                        sim.launchStats.sent[0] === sent &&
+                        LaunchRules.population(sim, 0).reserved === sent &&
                         participantIds.every(
                             (id) => sim.buildingById.get(id).launchReadyTick > 0,
                         ) &&
-                        sim.buildingById.get('spare-ready').launchReadyTick === 0 &&
+                        sim.buildingById.get('spare-ready').launchReadyTick ===
+                            (unavailable.includes('spare-ready') ? 60 : 0) &&
                         sim.buildingById.get('reloading').launchReadyTick === 60,
-                    'shared rice fires immediately from only three ready cannons with one cargo and damage budget',
+                    'shared rice boosts cargo only for participating cannons at one cost',
                     { counts, shellHp, impact, fires: fires.map((e) => e.cannonId) },
                 );
                 rows.push({
-                    scenario: 'three cannons share one simultaneous rice volley',
+                    scenario: 'rice reinforcement follows the number of participating cannons',
                     counts,
+                    sent,
+                    shotCount,
                     shellHp,
                     impact,
                 });
+            }
+            {
+                const { sim, home, action } = sharedVolleyArena('watermelon');
+                check(
+                    sim.applyCommand('host', action),
+                    'launch a hero near multiple ready cannons',
+                );
+                check(
+                    sim.projectiles.length === 1 &&
+                        sim.projectiles[0].owner === home.id &&
+                        sim.projectiles[0].payload.count === 1 &&
+                        sim.launchStats.sent[0] === 1 &&
+                        LaunchRules.population(sim, 0).reserved === 1 &&
+                        sim.buildingById.get('support-a').launchReadyTick === 0,
+                    'heroes still use a single cannon and do not receive reinforcements',
+                );
+                rows.push({ scenario: 'hero launch stays single next to ready supports' });
             }
             {
                 const { sim, home, aim, action } = sharedVolleyArena('acorn');
@@ -306,8 +347,15 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                         ) &&
                         sim.wallet[0] === wallet - grain.cost &&
                         sim.premiumWallet[0] === premiumWallet - grain.premiumCost &&
-                        LaunchRules.population(sim, 0).reserved === grain.count,
-                    'a six-unit three-shot pattern starts from two cannons and reserves one full purchase',
+                        sim.projectiles.reduce((count, p) => count + p.payload.count, 0) === 3 &&
+                        sim.projectiles.every(
+                            (p) =>
+                                p.hp === grain.shellHp &&
+                                p.splashBuildingDamage === pattern[0].impact,
+                        ) &&
+                        sim.launchStats.sent[0] === 7 &&
+                        LaunchRules.population(sim, 0).reserved === 7,
+                    'two cannons reserve seven acorns and place the extra passenger in the first shot pair',
                 );
                 const copy = restored(sim);
                 const collect = (world) => {
@@ -335,17 +383,17 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     JSON.stringify(delayed) === JSON.stringify(collect(copy)) &&
                         sim.checksum() === copy.checksum() &&
                         delayed.length === 4 &&
-                        delayed.every((p) => p.count === 1 && p.hp > 0) &&
+                        delayed.every(
+                            (p) =>
+                                p.count === 1 &&
+                                p.hp === grain.shellHp &&
+                                p.impact === pattern[p.slot].impact,
+                        ) &&
                         [1, 2].every((slot) => {
                             const pair = delayed.filter((p) => p.slot === slot);
-                            return (
-                                pair.length === 2 &&
-                                pair[0].tick === pair[1].tick &&
-                                pair[0].impact + pair[1].impact === pattern[slot].impact &&
-                                pair[0].hp + pair[1].hp === grain.shellHp
-                            );
+                            return pair.length === 2 && pair[0].tick === pair[1].tick;
                         }),
-                    'saved burst continues in sync without empty shells or extra impact or HP',
+                    'saved burst continues in sync with full-strength nonempty shells',
                     delayed,
                 );
                 rows.push({
