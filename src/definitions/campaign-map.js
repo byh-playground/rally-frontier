@@ -13,6 +13,13 @@ export function campaignMapLayout(stage) {
     const front = { id: 'enemy-front', label: '전방 식량 거점', x: 950, y: 1050, ...layout.front };
     const ridge = { id: 'enemy-ridge', label: '언덕 보급 거점', x: 2075, y: 1775 };
     const oil = { id: 'oil', label: '측면 기름 거점', x: 2135, y: 2440 };
+    // Mirror of the player's oil outpost around the map centre, measured from the enemy base.
+    const enemyOil = {
+        id: 'enemy-oil',
+        label: '적 기름 거점',
+        x: width - oil.x,
+        y: spawns.guest.y + (spawns.host.y - oil.y),
+    };
     const flank = layout.flank && { id: 'flank', label: '측면 식량 거점', ...layout.flank };
     const foothold = stage.mission?.counterattackPoint && {
         id: stage.mission.counterattackPoint,
@@ -30,6 +37,7 @@ export function campaignMapLayout(stage) {
         ...layout.rear,
     };
     const hasRear = stage.enemyOutposts.includes(rear.id);
+    const hasEnemyOil = stage.enemyOutposts.includes(enemyOil.id);
     const capturePoint = (point, laneKey = 'mid', resourceType = 'basic') => ({
         ...point,
         laneKey,
@@ -42,6 +50,7 @@ export function campaignMapLayout(stage) {
         ...(hasRear ? [capturePoint(rear)] : []),
         ...(hasRidge ? [capturePoint(ridge, 'bot')] : []),
         ...(hasOil ? [capturePoint(oil, 'top', 'premium')] : []),
+        ...(hasEnemyOil ? [capturePoint(enemyOil, 'bot', 'premium')] : []),
         ...(flank ? [capturePoint(flank, 'top')] : []),
         ...(foothold ? [capturePoint(foothold)] : []),
     ];

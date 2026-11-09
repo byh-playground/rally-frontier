@@ -29,14 +29,10 @@ function missionGoal(stage) {
             : `${count}차 공격 방어`;
     }
     if (stage.mission?.firstCapture) return '전진 거점 완공';
-    if (!stage.defenseSeconds) return ATTACK_GOAL;
-    const time = formatCountdown(stage.defenseSeconds);
-    return stage.mode === 'counterattack'
-        ? `${time} 방어 후 적 본진 파괴`
-        : `${time} 동안 본진 방어`;
+    return ATTACK_GOAL;
 }
 
-function currentGoal(stage, snapshot, side, remaining) {
+function currentGoal(stage, snapshot, side) {
     if (stage.volleyGoals) return { key: 'volley', label: missionGoal(stage) };
     const mission = snapshot.campaignMission;
     if (stage.mission?.heroLesson) {
@@ -59,8 +55,6 @@ function currentGoal(stage, snapshot, side, remaining) {
     }
     if (stage.mission?.firstCapture && !mission?.firstCaptureComplete)
         return { key: 'first-capture', label: '전진 거점 완공' };
-    if (stage.defenseSeconds && (remaining > 0 || stage.mode === 'defend'))
-        return { key: 'defend', label: '본진 방어' };
     if (
         stage.resourceLesson &&
         !snapshot.capturePoints?.some(
@@ -189,8 +183,7 @@ export class CampaignPresentation {
             return;
         }
         const tick = snapshot.tick;
-        const remaining = (stage.defenseSeconds || 0) - tick / tps;
-        const goal = currentGoal(stage, snapshot, side, remaining);
+        const goal = currentGoal(stage, snapshot, side);
         const $ = this.$;
         if (this.battle?.stage !== stage || tick < this.battle.tick) {
             this.battle = { stage, goal: goal.key, announced: new Set([goal.key]), cueEnd: 0 };
@@ -204,7 +197,7 @@ export class CampaignPresentation {
             if (!this.battle.announced.has(goal.key)) {
                 this.battle.announced.add(goal.key);
                 const title =
-                    (previous === 'defend' || previous.startsWith('wave-')) &&
+                    previous.startsWith('wave-') &&
                     goal.key === 'attack' &&
                     stage.mode === 'counterattack'
                         ? '반격 개시'
@@ -216,11 +209,9 @@ export class CampaignPresentation {
         }
         this.battle.tick = tick;
         const timer = $('campaignObjectiveTimer');
-        timer.hidden = goal.key !== 'defend' && goal.nextWaveTick == null;
+        timer.hidden = goal.nextWaveTick == null;
         if (!timer.hidden) {
-            const value = formatCountdown(
-                goal.nextWaveTick == null ? remaining : (goal.nextWaveTick - tick) / tps,
-            );
+            const value = formatCountdown((goal.nextWaveTick - tick) / tps);
             if (timer.textContent !== value) timer.textContent = value;
         }
         $('campaignCue').classList.toggle('hidden', tick >= this.battle.cueEnd);

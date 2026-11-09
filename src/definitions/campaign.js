@@ -134,7 +134,31 @@ export const CAMPAIGN_STAGES = Object.freeze([
             center: { x: 1300, y: 1740 },
             front: { x: 1510, y: 1220 },
         },
-        mission: { formations: [{ type: 'pea', x: 1290, y: 2210, count: 6, columns: 3 }] },
+        mission: {
+            formations: [{ type: 'pea', x: 1290, y: 2210, count: 6, columns: 3, hold: true }],
+        },
+    },
+    {
+        id: 'peanut',
+        enemyPacing: { firstDecisionMs: 25_000, decisionIntervalMs: 18_000 },
+        title: '건물을 부수는 땅콩',
+        briefing: '쌀로 콩 수비대를 걷어내고 땅콩으로 적 거점 포탑을 부수세요.',
+        deck: ['rice', 'pea', 'peanut'],
+        enemyDeck: ['rice', 'pea', 'peanut'],
+        rewardCard: 'peanut',
+        enemyOutposts: ['enemy-front'],
+        startingLaunchRangeLevel: 1,
+        seed: 114,
+        mode: 'eliminate',
+        layout: {
+            guestY: 900,
+            advance: { x: 1000, y: 2170 },
+            center: { x: 1300, y: 1740 },
+            front: { x: 1510, y: 1220 },
+        },
+        mission: {
+            formations: [{ type: 'pea', x: 1480, y: 1380, count: 6, columns: 3, hold: true }],
+        },
     },
     {
         id: 'defense',
@@ -142,7 +166,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         title: '거점을 지켜라',
         briefing: '방향을 바꿔 오는 팝콘의 공격을 세 차례 막으세요.',
         deck: ['rice', 'pea'],
-        enemyDeck: ['rice', 'pea', 'popcorn'],
+        enemyDeck: ['pea', 'popcorn'],
         rewardCard: 'popcorn',
         enemyOutposts: ['enemy-front', 'enemy-rear'],
         seed: 102,
@@ -180,7 +204,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         title: '반격의 시간',
         briefing: '팥 돌격대를 막고 지원 대포에서 팝콘으로 반격하세요.',
         deck: ['rice', 'pea', 'popcorn'],
-        enemyDeck: ['rice', 'pea', 'redbean'],
+        enemyDeck: ['pea', 'redbean'],
         rewardCard: 'redbean',
         enemyOutposts: ['enemy-front', 'enemy-rear'],
         seed: 103,
@@ -252,11 +276,13 @@ export const CAMPAIGN_STAGES = Object.freeze([
         deck: ['rice', 'pea', 'millet'],
         enemyDeck: ['rice', 'pea', 'chestnut'],
         rewardCard: 'chestnut',
-        enemyOutposts: ['enemy-front', 'enemy-rear'],
+        enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-oil'],
         seed: 105,
         mode: 'eliminate',
         layout: { advance: { x: 930, y: 2210 }, flank: { x: 1490, y: 2220 } },
-        mission: { formations: [{ type: 'chestnut', x: 1210, y: 1960, count: 6, columns: 3 }] },
+        mission: {
+            formations: [{ type: 'chestnut', x: 1210, y: 1960, count: 6, columns: 3, hold: true }],
+        },
     },
     {
         id: 'corn',
@@ -267,7 +293,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         deck: ['rice', 'pea', 'chestnut'],
         enemyDeck: ['rice', 'pea', 'corn'],
         rewardCard: 'corn',
-        enemyOutposts: ['enemy-front', 'enemy-rear'],
+        enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-oil'],
         seed: 106,
         mode: 'eliminate',
         layout: {
@@ -278,7 +304,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         },
         mission: {
             formations: [
-                { type: 'corn', x: 1480, y: 1960, count: 6, columns: 3 },
+                { type: 'corn', x: 1480, y: 1960, count: 6, columns: 3, hold: true },
                 { type: 'rice', x: 1430, y: 2110, count: 3, columns: 3, side: 0 },
             ],
             captureSupport: [
@@ -295,7 +321,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         deck: ['rice', 'pea', 'corn'],
         enemyDeck: ['rice', 'pea', 'acorn'],
         rewardCard: 'acorn',
-        enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-ridge'],
+        enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-ridge', 'enemy-oil'],
         friendlyOutposts: ['oil'],
         startingLaunchRangeLevel: 1,
         seed: 107,
@@ -308,7 +334,9 @@ export const CAMPAIGN_STAGES = Object.freeze([
         },
         mission: {
             startingPremium: [premiumFor('corn'), 0],
-            formations: [{ type: 'acorn', x: 1980, y: 1770, count: 6, columns: 2, spacing: 32 }],
+            formations: [
+                { type: 'acorn', x: 1980, y: 1770, count: 6, columns: 2, spacing: 32, hold: true },
+            ],
         },
     },
     {
@@ -319,13 +347,13 @@ export const CAMPAIGN_STAGES = Object.freeze([
         deck: ['rice', 'pea', 'millet'],
         enemyDeck: ['rice', 'pea', 'sunflower-seed'],
         rewardCard: 'sunflower-seed',
-        enemyOutposts: ['enemy-front', 'enemy-rear'],
+        enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-oil'],
         startingLaunchRangeLevel: 1,
         seed: 109,
         mode: 'eliminate',
         mission: {
             formations: [
-                { type: 'sunflower-seed', x: 1380, y: 2050, count: 4, columns: 2 },
+                { type: 'sunflower-seed', x: 1380, y: 2050, count: 4, columns: 2, hold: true },
                 { type: 'rice', x: 1375, y: 2300, count: 2, columns: 2, side: 0 },
             ],
             demoLaunch: { atMs: 500, type: 'rice', x: 1380, y: 1975 },
@@ -338,7 +366,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         briefing: '조로 측면을 잡거나 도토리로 중앙을 밀고 해바라기씨로 포탄을 견제하세요.',
         deck: ['rice', 'millet', 'acorn', 'sunflower-seed'],
         enemyDeck: ['rice', 'pea', 'redbean', 'acorn'],
-        enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-ridge'],
+        enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-ridge', 'enemy-oil'],
         friendlyOutposts: ['advance', 'oil'],
         startingLaunchRangeLevel: 1,
         seed: 108,
@@ -347,8 +375,8 @@ export const CAMPAIGN_STAGES = Object.freeze([
         mission: {
             startingPremium: [premiumFor('sunflower-seed'), 0],
             formations: [
-                { type: 'pea', x: 1220, y: 1510, count: 6, columns: 3 },
-                { type: 'chestnut', x: 1990, y: 1680, count: 4, columns: 2 },
+                { type: 'pea', x: 1220, y: 1510, count: 6, columns: 3, hold: true },
+                { type: 'chestnut', x: 1990, y: 1680, count: 4, columns: 2, hold: true },
             ],
         },
     },
