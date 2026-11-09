@@ -8816,8 +8816,8 @@ class MatchLifecycle {
             simulationTps: UiRuntimeState.value.settings.simulationTps,
         };
     }
-    static createSession(role, transport, roomCode, config, deck) {
-        const session = new GameSession(role, transport, roomCode, config, deck);
+    static createSession(role, transport, roomCode, config, deck, deckOptions) {
+        const session = new GameSession(role, transport, roomCode, config, deck, deckOptions);
         session.onSimulationStarted = AppLifecycle.registerBackgroundSession;
         session.onSimulationStopped = AppLifecycle.unregisterBackgroundSession;
         session.onSimulationFatal = (info) => {
@@ -9048,7 +9048,7 @@ class MatchLifecycle {
         UiController.closeUiModal('create');
         UiController.closeUiModal('join');
     }
-    static connect(r, c) {
+    static connect(r, c, deckMode = 'own') {
         MatchLifecycle.disposeMatches('online-start');
         MatchLifecycle.singleMatch = null;
         ConnectionPresentation.hideP2PHealth();
@@ -9056,12 +9056,15 @@ class MatchLifecycle {
         ActiveViewState.roomCode = c;
         LogUtil.status('연결 중…');
         ActiveViewState.transport = new RoomTransport(r, c);
+        const deck = DeckEditor.getDeck(),
+            mode = deckMode === 'random' || !deck.length ? 'random' : 'own';
         ActiveViewState.session = MatchLifecycle.createSession(
             r,
             ActiveViewState.transport,
             c,
             r === 'host' ? MatchLifecycle.currentMatchConfig() : null,
-            DeckEditor.getDeck(),
+            mode === 'random' ? undefined : deck,
+            { deckMode: mode },
         );
         MatchLifecycle.wireSessionForView(r, ActiveViewState.session, ActiveViewState.transport);
         ActiveViewState.transport.open();
@@ -9189,9 +9192,10 @@ class MatchLifecycle {
             });
         else hostTransport.open();
     }
-    static beginCreateRoom() {
+    static beginCreateRoom(deckMode = this.onlineDeckMode ?? 'own') {
         if (this.singleMatch || ActiveViewState.session?.sim) return false;
         this.cancelOnlinePreparation();
+        this.onlineDeckMode = deckMode;
         UiController.openUiModal('create');
         const c = RoomCodeUtil.randomCode();
         UiRegistry.refs.code.textContent = c;
@@ -9203,7 +9207,7 @@ class MatchLifecycle {
             () => {
                 NetworkModuleLoader.pendingPeerAction = null;
                 UiRegistry.refs.createStatus.textContent = '방 코드를 확보하고 있습니다…';
-                MatchLifecycle.connect('host', c);
+                MatchLifecycle.connect('host', c, deckMode);
             },
             (msg, failed) => {
                 UiRegistry.refs.createStatus.textContent = msg;
@@ -9211,7 +9215,7 @@ class MatchLifecycle {
             },
         );
     }
-    static submitJoinRoom() {
+    static submitJoinRoom(deckMode = this.onlineDeckMode ?? 'own') {
         if (this.joinBusy || this.singleMatch || ActiveViewState.session?.sim) return false;
         const c = UiRegistry.refs.room.value.replace(/\D/g, '').slice(0, 4);
         UiRegistry.refs.room.value = c;
@@ -9222,13 +9226,14 @@ class MatchLifecycle {
         }
 
         audioSystem.unlock();
+        this.onlineDeckMode = deckMode;
         UiRegistry.refs.joinError.textContent = '';
         MatchLifecycle.setJoinBusy(true);
 
         ConnectionPresentation.runWhenNetworkReady(
             () => {
                 NetworkModuleLoader.pendingPeerAction = null;
-                MatchLifecycle.connect('guest', c);
+                MatchLifecycle.connect('guest', c, deckMode);
             },
             (msg, failed) => {
                 if (failed) MatchLifecycle.setJoinBusy(false);
@@ -9272,12 +9277,20 @@ class MatchLifecycle {
         const cleared =
             stage && mine && (reason === 'base-destroyed' || reason === 'volley-practice');
         const reward = cleared ? campaignProgress.complete(stage) : null;
+        const followingStages = cleared
+            ? CAMPAIGN_STAGES.slice(CAMPAIGN_STAGES.indexOf(stage) + 1)
+            : [];
         const next = cleared
             ? stage.optional
-                ? campaignProgress.nextStage
-                : CAMPAIGN_STAGES.slice(CAMPAIGN_STAGES.indexOf(stage) + 1).find(
-                      (candidate) => !candidate.optional,
-                  )
+                ? (stage.mission?.heroLesson &&
+                      followingStages.find(
+                          (candidate) =>
+                              candidate.mission?.heroLesson &&
+                              !campaignProgress.isComplete(candidate) &&
+                              campaignProgress.canStart(candidate),
+                      )) ||
+                  campaignProgress.nextStage
+                : followingStages.find((candidate) => !candidate.optional)
             : null;
         LaunchScreens.renderCampaignResult(reward, next);
         UiRegistry.refs.resultTitle.textContent = draw ? '무승부' : mine ? '승리' : '패배';
@@ -9293,6 +9306,10 @@ class MatchLifecycle {
                 '1·2·3문 사격으로 적 수비대 세 곳을 모두 격파했습니다.';
         else if (reason === 'draw')
             UiRegistry.refs.resultText.textContent = '양쪽 메인 거점이 같은 tick에 파괴되었습니다.';
+        else if (stage?.mission?.heroLesson)
+            UiRegistry.refs.resultText.textContent = mine
+                ? '영웅 훈련을 마쳤습니다.'
+                : '영웅 훈련을 다시 시도해 보세요.';
         else
             UiRegistry.refs.resultText.textContent = mine
                 ? '적 메인 거점을 파괴했습니다.'
@@ -11455,16 +11472,17 @@ LaunchScreens.install({
         portraitSource: (t) => grainPortrait(t, window.RallyVectorAssets[t]),
         toggleSound: () => audioSystem.setEnabled(!audioSystem.enabled),
         soundOn: () => !!audioSystem.enabled,
-        createRoom: () => {
+        ownDeckSize: () => DeckEditor.getDeck().length,
+        createRoom: (deckMode) => {
             leaveSetup();
             UiController.openUiModal('create');
-            MatchLifecycle.beginCreateRoom();
+            MatchLifecycle.beginCreateRoom(deckMode);
         },
-        joinRoom: (code) => {
+        joinRoom: (code, deckMode) => {
             leaveSetup();
             UiController.openJoinDialog();
             UiRegistry.refs.room.value = code;
-            MatchLifecycle.submitJoinRoom();
+            MatchLifecycle.submitJoinRoom(deckMode);
         },
         leaveToTitle: () => reloadAt('#/'),
     },

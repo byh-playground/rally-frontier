@@ -2241,7 +2241,7 @@ class StrategySim {
             );
             if (index >= 0) return this.rules.campaign.volleyGoals[index];
         }
-        return this.flags[u.side];
+        return CampaignMission.heroLessonRallyPoint(this, u) ?? this.flags[u.side];
     }
     updateBuildingCombat(vision) {
         for (const b of this.buildings) {

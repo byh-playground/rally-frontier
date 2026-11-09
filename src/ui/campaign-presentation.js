@@ -2,6 +2,14 @@ import { campaignBriefingLines } from './campaign-copy.js';
 
 const CUE_SECONDS = 3;
 const ATTACK_GOAL = '적 본진 파괴';
+const HERO_LESSON_GOALS = {
+    launch: '전방에 영웅 출격',
+    skill: '영웅 카드를 길게 눌러 스킬 사용',
+    cast: '스킬이 끝날 때까지 지켜보기',
+    recover: '영웅 카드를 한 번 눌러 복귀',
+    redeploy: '영웅 다시 출격',
+    done: '영웅 훈련 완료',
+};
 
 function formatCountdown(seconds) {
     const value = Math.max(0, Math.ceil(seconds));
@@ -10,6 +18,10 @@ function formatCountdown(seconds) {
 
 function missionGoal(stage) {
     if (stage.volleyGoals) return '1·2·3문 사격으로 수비대 3곳 격파';
+    if (stage.mission?.heroLesson)
+        return stage.mission.heroLesson.recover
+            ? '출격 · 스킬 · 복귀 · 재출격'
+            : '출격 후 스킬 사용';
     if (stage.mission?.waves) {
         const count = stage.mission.waves.length;
         return stage.mode === 'counterattack'
@@ -27,6 +39,10 @@ function missionGoal(stage) {
 function currentGoal(stage, snapshot, side, remaining) {
     if (stage.volleyGoals) return { key: 'volley', label: missionGoal(stage) };
     const mission = snapshot.campaignMission;
+    if (stage.mission?.heroLesson) {
+        const step = mission?.heroLessonStep ?? 'launch';
+        return { key: `hero-${step}`, label: HERO_LESSON_GOALS[step] };
+    }
     if (stage.mission?.waves) {
         if (mission?.phase === 'counterattack') return { key: 'attack', label: ATTACK_GOAL };
         if (mission?.phase === 'complete') return { key: 'complete', label: '모든 공격 방어 완료' };
