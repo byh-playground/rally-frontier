@@ -2643,7 +2643,6 @@ class GLRenderer {
         }
         this.addClientFx(e.destroyed ? 'shellIntercepted' : 'antiAirHit', e, snapshot, index, {
             impactHeightFP: e.heightFP,
-            projectileId: e.projectileId,
             cannon,
             aim,
         });
@@ -3191,11 +3190,10 @@ class GLRenderer {
             );
 
             if (
-                fx.kind !== 'shellIntercepted' &&
-                (x < -160 ||
-                    x > this.fxCanvas.width + 160 ||
-                    y < -160 ||
-                    y > this.fxCanvas.height + 160)
+                x < -160 ||
+                x > this.fxCanvas.width + 160 ||
+                y < -160 ||
+                y > this.fxCanvas.height + 160
             ) {
                 this.combatFx[write++] = fx;
                 continue;
@@ -3457,44 +3455,13 @@ class GLRenderer {
                         sc,
                         this.fxCanvas.width / Math.max(1, this.canvas.clientWidth),
                     );
-                    const bundle = this.renderState.model(
-                        'bundle',
-                        fx.projectileId,
-                        this.presentationNow(),
-                    )?.entity;
-                    if (
-                        bundle?.heightFP > 0 &&
-                        (bundle.side === this.mySide() || this.visibleRaw(bundle.x, bundle.y))
-                    ) {
-                        const ground = this.world.terrain.surfaces.heightAt(bundle.x, bundle.y);
-                        const [dropX, dropY] = this.worldToPx(
-                            this.viewX(bundle.x),
-                            this.viewY(bundle.y),
-                            ground + bundle.heightFP / FP,
-                        );
-                        const trail = RangeUtil.clamp(dropY - y, 0, 34 * scale);
-                        for (let i = 3; i >= 1; i--) {
-                            const part = i / 3;
-                            dot(
-                                dropX + (i - 2) * 2 * scale,
-                                dropY - trail * part,
-                                (3 + 3 * part) * scale,
-                                '#583a32',
-                                0.75 - part * 0.35,
-                            );
-                        }
-                        dot(dropX, dropY, 3.5 * scale, '#ffb14d', 0.85);
-                    }
-                    const shatter = age / 420;
-                    if (shatter < 1) {
-                        const fade = 1 - shatter,
-                            radius = (10 + 20 * (1 - fade * fade)) * scale;
-                        ring(x, y, radius, 4.5 * scale, '#39201f', fade * 0.85);
-                        ring(x, y, radius, 2.2 * scale, '#ffad5c', fade);
-                        dot(x, y, 7 * scale * fade, '#ff9a47', fade);
-                        dot(x, y, 4.5 * scale * fade, '#fff3b8', fade);
-                        burst(fx, x, y, shatter, 9, '#ffc477', 48, 3.2, 1);
-                    }
+                    const fade = 1 - t,
+                        radius = (10 + 20 * (1 - fade * fade)) * scale;
+                    ring(x, y, radius, 4.5 * scale, '#39201f', fade * 0.85);
+                    ring(x, y, radius, 2.2 * scale, '#ffad5c', fade);
+                    dot(x, y, 7 * scale * fade, '#ff9a47', fade);
+                    dot(x, y, 4.5 * scale * fade, '#fff3b8', fade);
+                    burst(fx, x, y, t, 9, '#ffc477', 48, 3.2, 1);
                 } else {
                     dot(x, y, 4 * sc * (1 - t), '#e1f7ff', 1 - t);
                     burst(fx, x, y, t, 3, '#e1f7ff', 24, 2, 0.9);
@@ -3797,6 +3764,60 @@ class GLRenderer {
         ctx.restore();
     }
 
+    drawEmergencyDrops(ctx) {
+        const now = this.presentationNow(),
+            groups = this.renderState.displayed('bundle', now);
+        if (!groups.length) return;
+        const side = this.mySide(),
+            scale = Math.max(this.sc(), this.fxCanvas.width / Math.max(1, this.canvas.clientWidth));
+        ctx.save();
+        ctx.strokeStyle = '#6e472f';
+        ctx.lineWidth = 1.2 * scale;
+        for (const group of groups) {
+            if (group.emergencyDropHeightFP == null) continue;
+            if (group.side !== side && !this.visibleRaw(group.x, group.y)) continue;
+            const drop = this.renderState.model('bundle', group.projectileId, now)?.entity;
+            if (!drop || drop.index >= drop.count) continue;
+            const ground = this.world.terrain.surfaces.heightAt(drop.x, drop.y);
+            const [x, y] = this.worldToPx(
+                this.viewX(drop.x),
+                this.viewY(drop.y),
+                ground + drop.heightFP / FP,
+            );
+            if (
+                x < -32 * scale ||
+                x > this.fxCanvas.width + 32 * scale ||
+                y < -32 * scale ||
+                y > this.fxCanvas.height + 32 * scale
+            )
+                continue;
+            const fall = RangeUtil.clamp(
+                    1 - drop.heightFP / Math.max(1, group.emergencyDropHeightFP),
+                    0,
+                    1,
+                ),
+                spread = (4 + 3 * fall) * scale;
+            ctx.globalAlpha = Math.max(0.45, (drop.count - drop.index) / drop.count);
+            for (let i = -2; i <= 2; i++) {
+                const direction = i % 2 === 0 ? 1 : -1;
+                ctx.beginPath();
+                ctx.ellipse(
+                    x + i * spread,
+                    y + (Math.abs(i) * 3 - 4) * scale,
+                    4.5 * scale,
+                    2.3 * scale,
+                    i * 0.55 + direction * fall * 3,
+                    0,
+                    Math.PI * 2,
+                );
+                ctx.fillStyle = direction > 0 ? '#ffe3a2' : '#ffb45f';
+                ctx.fill();
+                ctx.stroke();
+            }
+        }
+        ctx.restore();
+    }
+
     drawFloatingFx() {
         const ctx = this.fxCtx;
         if (!ctx || !this.fxCanvas) return;
@@ -3808,6 +3829,7 @@ class GLRenderer {
         if (!this.showcase) this.drawStrategicLabels();
 
         // Decorative presentation is always below information overlays.
+        this.drawEmergencyDrops(ctx);
         this.drawClientCombatFx();
 
         // Persistent information is never hidden by combat density.
@@ -6068,6 +6090,7 @@ class GLRenderer {
             }
         }
         for (const group of this.renderState.displayed('bundle', now)) {
+            if (group.emergencyDropHeightFP != null) continue;
             if (group.side !== this.mySide() && !this.visibleRaw(group.x, group.y)) continue;
             if (group.index >= group.count || bundleBreakIds.has('bundle:' + group.projectileId))
                 continue;
