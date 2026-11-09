@@ -1441,9 +1441,11 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     [tower] = start(sim),
                     worker = sim.units[0];
                 worker.hp = worker.maxHp = 10000;
-                const attacker = sim.spawnUnit(1, 'rice', worker.x, worker.y + 39);
-                const bystander = sim.spawnUnit(1, 'rice', worker.x, worker.y - 34);
-                for (const enemy of [attacker, bystander]) {
+                const enemies = [
+                    sim.spawnUnit(1, 'rice', worker.x, worker.y + 39),
+                    sim.spawnUnit(1, 'rice', worker.x, worker.y - 34),
+                ];
+                for (const enemy of enemies) {
                     enemy.hp = enemy.maxHp = 10000;
                     enemy.combat.cooldownUntil = enemy.combat.moveRecoveryUntil =
                         sim.tick + 10 * sim.tps;
@@ -1461,17 +1463,30 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     tower.construction.workDone > workBeforeContact,
                     'worker keeps building near passive enemies',
                 );
-                const workBeforeHit = tower.construction.workDone;
-                sim.applyDamage(1, 'rice', worker, false, 5, attacker.id, {
-                    sourceDamageResolved: true,
-                });
-                check(worker.hp < worker.maxHp, 'retaliation starts with actual enemy damage');
-                const distantBase = sim.buildings.find(
-                    (building) => building.side === 1 && building.type === 'base',
+                // Exercise the real projectile impact path with no owner on the shell.
+                const mortar = BuildingDefinition.get('base').mortar;
+                sim.fireMortar(
+                    { id: null, side: 1, type: 'base', x: worker.x + 300, y: worker.y },
+                    worker,
+                    mortar,
                 );
-                sim.applyDamage(1, 'base', worker, false, 1, distantBase.id, {
-                    sourceDamageResolved: true,
-                });
+                let shellHit;
+                for (let i = 0; i <= sim.msTicks(mortar.flightMs) && !shellHit; i++) {
+                    step(sim, 1);
+                    shellHit = sim.events.find((e) => e.type === 'hit' && e.targetId === worker.id);
+                    check(
+                        workerHits(sim).length === 0,
+                        'an incoming shell does not trigger defense',
+                    );
+                }
+                check(
+                    sim.events.some((e) => e.type === 'mortarImpact') &&
+                        shellHit?.sourceId === null &&
+                        worker.hp < worker.maxHp &&
+                        worker.constructionWork?.phase === 'defend',
+                    'actual shell damage without an owner puts the worker in defense mode',
+                );
+                const workBeforeHit = tower.construction.workDone;
                 const copy = restore(sim);
                 const hits = [];
                 step(sim, 2 * sim.tps, (world) => {
@@ -1479,36 +1494,40 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     copy.stepSimulation();
                     check(
                         world.checksum() === copy.checksum(),
-                        'checkpoint retains the attacker through retaliation',
+                        'checkpoint retains the defense phase after ownerless shell damage',
                     );
                 });
                 check(
-                    hits.length > 0 && hits.every((hit) => hit.targetId === attacker.id),
-                    'worker retaliates against the attacker without switching to a bystander',
+                    hits.length > 0 &&
+                        hits.every((hit) => enemies.some((enemy) => enemy.id === hit.targetId)),
+                    'worker fights reachable enemies even when they did not fire the shell',
                 );
                 check(
                     tower.construction.workDone === workBeforeHit &&
                         worker.constructionWork?.phase === 'defend',
-                    'retaliation pauses work while the attacker is within reach',
+                    'defense pauses work while enemies are within reach',
                 );
-                attacker.x = tower.x + 260;
-                attacker.y = tower.y;
-                attacker.fx = Math.round(attacker.x * FP);
-                attacker.fy = Math.round(attacker.y * FP);
+                for (const [index, enemy] of enemies.entries()) {
+                    enemy.x = tower.x + 260;
+                    enemy.y = tower.y + 60 * index;
+                    enemy.fx = Math.round(enemy.x * FP);
+                    enemy.fy = Math.round(enemy.y * FP);
+                }
                 step(sim, 3 * sim.tps, (world) =>
                     check(
                         workerHits(world).length === 0 &&
                             worker.constructionWork?.targetId === tower.id,
-                        'worker stays on the project as the attacker retreats',
+                        'worker stays on the project as enemies retreat',
                     ),
                 );
                 check(
                     tower.construction.workDone > workBeforeHit,
-                    'worker resumes construction while the attacker is still alive',
+                    'worker resumes construction while retreating enemies are still alive',
                 );
                 rows.push({
                     scenario:
-                        'construction continues until hit, then worker retaliates without chasing',
+                        'ownerless shell damage triggers construction defense without chasing',
+                    damageSource: shellHit.sourceId,
                     combatHits: hits.length,
                     resumedWork: tower.construction.workDone,
                 });
