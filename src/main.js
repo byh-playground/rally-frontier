@@ -3535,18 +3535,25 @@ class GLRenderer {
 
     drawMortarCounter(ctx, x, y, count, required, pixelRatio) {
         const ready = count === required;
-        const text = `${attackCounterDots(count, required)} ${ready ? '다음 박격포' : '박격포'}`;
-        ctx.font = `800 ${11 * pixelRatio}px system-ui,sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const width = ctx.measureText(text).width + 10 * pixelRatio,
-            height = 16 * pixelRatio;
+        const spacing = 7 * pixelRatio,
+            radius = 2.25 * pixelRatio,
+            width = required * spacing + 6 * pixelRatio,
+            height = 12 * pixelRatio,
+            centerY = y + height / 2,
+            firstX = x - ((required - 1) * spacing) / 2;
         ctx.fillStyle = ready ? '#725018' : '#274c36';
         ctx.beginPath();
         ctx.roundRect(x - width / 2, y, width, height, height / 2);
         ctx.fill();
         ctx.fillStyle = ready ? '#fff3a6' : '#f9eac6';
-        ctx.fillText(text, x, y + height / 2);
+        ctx.strokeStyle = '#e4d6a9';
+        ctx.lineWidth = pixelRatio;
+        for (let i = 0; i < required; i++) {
+            ctx.beginPath();
+            ctx.arc(firstX + i * spacing, centerY, radius, 0, Math.PI * 2);
+            if (i < count) ctx.fill();
+            else ctx.stroke();
+        }
     }
 
     drawWorldHudOverlay() {
