@@ -3554,6 +3554,7 @@ class GLRenderer {
             if (i < count) ctx.fill();
             else ctx.stroke();
         }
+        return y + height;
     }
 
     drawWorldHudOverlay() {
@@ -3592,25 +3593,27 @@ class GLRenderer {
             const { x, y } = anchor,
                 r = d.size * sc;
             const bw = r * 2,
-                bh = Math.max(2.4, 3.2 * sc),
-                by = y + r + 3 * sc;
+                bh = Math.max(2.4, 3.2 * sc);
+            let by = y + r + 3 * sc;
+            if (mortar) {
+                const required = mortar.attackInterval - 1,
+                    gap = 3 * pixelRatio;
+                const counterBottom = this.drawMortarCounter(
+                    ctx,
+                    x,
+                    BuildingArt.baseBottomY(y, sc) + gap,
+                    RangeUtil.clamp(b.attacksSinceMortar ?? 0, 0, required),
+                    required,
+                    pixelRatio,
+                );
+                by = counterBottom + gap + sc;
+            }
             if (damaged) {
                 const ratio = RangeUtil.clamp((b.hp || 0) / Math.max(1, b.maxHp || 1), 0, 1);
                 ctx.fillStyle = 'rgba(18,24,28,.72)';
                 ctx.fillRect(x - r - 1 * sc, by - 1 * sc, bw + 2 * sc, bh + 2 * sc);
                 ctx.fillStyle = ratio > 0.48 ? '#62c775' : '#f04d49';
                 ctx.fillRect(x - r, by, bw * ratio, bh);
-            }
-            if (mortar) {
-                const required = mortar.attackInterval - 1;
-                this.drawMortarCounter(
-                    ctx,
-                    x,
-                    by + bh + 3 * pixelRatio,
-                    RangeUtil.clamp(b.attacksSinceMortar ?? 0, 0, required),
-                    required,
-                    pixelRatio,
-                );
             }
         }
 
