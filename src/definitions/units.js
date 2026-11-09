@@ -3,6 +3,8 @@ import { COLLISION_RADIUS_SCALE, VIEW_W } from './world-rules.js';
 import { FP } from '../core/config.js';
 import { DEFAULT_ATTACK_WINDUP_MS, DEFAULT_MELEE_MOVE_RECOVERY_MS } from './combat-rules.js';
 const RICE_SIZE = 10;
+// A peanut starts its contact charge this far from a building and rebounds the same distance away.
+const PEANUT_CHARGE_REACH = 150;
 const UNIT_RENDER_RADIUS_SCALE = 1.56;
 const GRAIN_SPRITE_BASE_SCALE = 2.7 / 260;
 const WATERMELON_SIZE = RICE_SIZE * 3.5;
@@ -174,13 +176,13 @@ class UnitDefinition {
             name: '땅콩',
             contactMelee: true,
             contactChargeSpeedMultiplier: 2,
-            contactRebound: Object.freeze({ speed: 295, lift: 200 }),
+            contactRebound: Object.freeze({ distance: PEANUT_CHARGE_REACH, lift: 200 }),
             canAttackBuildings: true,
             canAttackGround: false,
             mass: 225,
             hp: 75,
             atk: 50,
-            range: 150,
+            range: PEANUT_CHARGE_REACH,
             speed: 100,
             attackIntervalMs: 1500,
             size: 10,

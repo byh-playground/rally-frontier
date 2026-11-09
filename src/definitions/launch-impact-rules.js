@@ -34,5 +34,32 @@ class LaunchImpactRules {
             ) / 100
         );
     }
+    // Horizontal travel of one impulse per unit of launch speed, using the same per-tick gravity and drag
+    // as impact motion. Drag is linear, so travel is proportional to speed. The impulse tick only applies drag.
+    static travelPerSpeed(lift, tps) {
+        let x = 0,
+            vx = 1,
+            z = 0,
+            vz = lift;
+        const applyDrag = () => {
+            const drag = z > 0 || vz > 0 ? this.airDrag : this.groundDrag;
+            vx *= Math.max(0, 1 - drag / tps);
+        };
+        applyDrag();
+        for (let tick = 0; tick < tps * 20 && vx > 1e-9; tick++) {
+            x += vx / tps;
+            if (z > 0 || vz > 0) {
+                z = Math.max(0, z + vz / tps);
+                vz -= this.gravity / tps;
+                if (z === 0 && vz < 0) vz = 0;
+            }
+            applyDrag();
+        }
+        return x;
+    }
+    // Impulse speed that carries a body `distance` away before it settles.
+    static speedForDistance(distance, lift, tps) {
+        return distance / this.travelPerSpeed(lift, tps);
+    }
 }
 export { LaunchImpactRules };
