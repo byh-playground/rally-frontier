@@ -150,11 +150,12 @@ export class UnitLobAttack {
                     ),
                 },
             );
-            bodyVelocities.set(unit.id, {
-                x: unit.impactMotion.vxFP / FP,
-                y: unit.impactMotion.vyFP / FP,
-                z: unit.impactMotion.vzFP / FP,
-            });
+            // A unit mid-roll or mid-boomerang refuses impulses and keeps the velocity it had.
+            const motion = unit.impactMotion;
+            bodyVelocities.set(
+                unit.id,
+                motion ? { x: motion.vxFP / FP, y: motion.vyFP / FP, z: motion.vzFP / FP } : body,
+            );
         }
         if (hit.kind === 'ground') {
             this.registerGround(sim, shot, spec, elapsed);
