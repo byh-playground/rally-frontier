@@ -14,9 +14,13 @@ const DURATION_SECONDS = 7;
 const VOLLEY_DISTANCE = 330;
 const LAUNCH_DELAY_SECONDS = 0.4;
 const HERO_SKILL_DELAY_SECONDS = 2;
-const OPENING_DURATION_SECONDS = 3;
 const OPENING_LAUNCH_DELAY_SECONDS = 1.1;
+const OPENING_SHOT_DISTANCE = 1400;
+const OPENING_RANGE_LEVEL = 2;
 const OPENING_ZOOM = 5.4;
+const OPENING_LANDING_ZOOM = 3.6;
+const OPENING_LANDING_APPROACH = 400;
+const OPENING_LANDING_HOLD_MS = 1800;
 const DEFENDERS = [
     [180, -115],
     [205, -60],
@@ -25,12 +29,15 @@ const DEFENDERS = [
     [180, 115],
 ];
 
-function createArena(unitType, defenders) {
+function createArena(unitType, opening) {
     const sim = new StrategySim(SEED, undefined, [[unitType], ['pea']]);
     const { x, y } = sim.world.center;
     const state = sim.exportState();
     const host = { x: x - VOLLEY_DISTANCE, y };
-    const guest = { x: x + 460, y };
+    const guest = { x: opening ? host.x + OPENING_SHOT_DISTANCE : x + 460, y };
+    const target = opening ? guest : { x, y };
+    const rangeLevel = opening ? OPENING_RANGE_LEVEL : 0;
+    state.launchRangeLevel[0] = rangeLevel;
     state.mapDescriptor = {
         ...state.mapDescriptor,
         spawns: { host, guest },
@@ -57,8 +64,8 @@ function createArena(unitType, defenders) {
         Object.assign(building, building.side === 0 ? host : guest);
     sim.importState(state);
     sim.creditResources(0, LaunchRules.premiumWalletCap, 'premium');
-    for (const [dx, dy] of defenders) sim.spawnUnit(1, 'pea', x + dx, y + dy);
-    return { sim, x, y };
+    if (!opening) for (const [dx, dy] of DEFENDERS) sim.spawnUnit(1, 'pea', x + dx, y + dy);
+    return { sim, x, y, host, target, rangeLevel };
 }
 
 // Card previews use an isolated showcase run with the same commands and rendering as a match.
@@ -74,11 +81,16 @@ function prepareVolleyShowcase(
     { renderer, createScenario, createPresentationView, unitType, onError, onLaunch, onComplete },
     opening = false,
 ) {
-    if (!LaunchRules.grain(unitType)) throw new Error('알 수 없는 병종 소개 장면입니다.');
-    const { sim, x, y } = createArena(unitType, opening ? [] : DEFENDERS);
+    const grain = LaunchRules.grain(unitType);
+    if (!grain) throw new Error('알 수 없는 병종 소개 장면입니다.');
+    const { sim, x, y, host, target, rangeLevel } = createArena(unitType, opening);
+    const distance = Math.hypot(target.x - host.x, target.y - host.y);
     const initialState = sim.exportState();
     const launchDelay = opening ? OPENING_LAUNCH_DELAY_SECONDS : LAUNCH_DELAY_SECONDS;
     const launchTick = sim.msTicks(launchDelay * 1000);
+    const endTick = opening
+        ? launchTick + sim.msTicks((distance / grain.speed) * 1000 + OPENING_LANDING_HOLD_MS)
+        : DURATION_SECONDS * sim.tps;
     const skillTick = sim.msTicks(HERO_SKILL_DELAY_SECONDS * 1000);
     let scenario;
     let journal;
@@ -111,11 +123,18 @@ function prepareVolleyShowcase(
         const shot =
             centerShot && renderer.renderState.entity('projectile', centerShot.projectileId);
         const position = shot && renderer.resolveRenderWorldPosition(shot, 'projectile');
-        const focusX = position?.x ?? centerShot?.aimX ?? x - VOLLEY_DISTANCE + 55;
+        const shotX = position?.x ?? centerShot?.aimX;
+        const approach =
+            shotX == null
+                ? 0
+                : Math.max(0, 1 - Math.abs(target.x - shotX) / OPENING_LANDING_APPROACH);
+        const focusX = shotX == null ? host.x + 55 : shotX + (target.x - shotX) * approach * 0.5;
         const focusY = position?.z ?? centerShot?.aimY ?? y;
+        renderer.replayZoom = OPENING_ZOOM + (OPENING_LANDING_ZOOM - OPENING_ZOOM) * approach;
         renderer.cameraLeft = focusX - renderer.viewWorldW() / 2;
         renderer.cameraTop = renderer.clampCameraTop(
-            BattlefieldProjection.planarY(focusY, position?.y ?? 0) - renderer.viewWorldH() / 2,
+            BattlefieldProjection.planarY(focusY, (position?.y ?? 0) * (1 - approach * 0.5)) -
+                renderer.viewWorldH() / 2,
         );
     };
     const presentFrame = (frame) => {
@@ -149,7 +168,7 @@ function prepareVolleyShowcase(
             definition: {
                 seed: SEED,
                 tickRate: sim.tps,
-                endTick: (opening ? OPENING_DURATION_SECONDS : DURATION_SECONDS) * sim.tps,
+                endTick,
                 loop: !opening,
             },
             onEnd() {
@@ -173,9 +192,8 @@ function prepareVolleyShowcase(
                         type: 'LAUNCH',
                         cannonId: sim.launchCannons(0)[0].id,
                         unitType,
-                        holdMs: Math.round(LaunchRules.holdFor(VOLLEY_DISTANCE, unitType, 0)),
-                        x,
-                        y,
+                        holdMs: Math.round(LaunchRules.holdFor(distance, unitType, rangeLevel)),
+                        ...target,
                     },
                 });
                 let skillRequested = false;
