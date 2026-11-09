@@ -48,6 +48,7 @@ class EffectObjectFactory {
         constructionHit: 220,
         hitscanTravel: 180,
         antiAirHit: 320,
+        shellIntercepted: 1050,
         emergencyLanding: 320,
         buildingBurst: 620,
         launchMuzzle: 900,
