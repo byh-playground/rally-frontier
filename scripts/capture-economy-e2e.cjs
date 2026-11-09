@@ -466,6 +466,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                             .filter((cannon) => cannon !== primary)
                             .slice(readyCannons - 1))
                             cannon.launchReadyTick = sim.tick + 4 * sim.tps;
+                        const beforeLaunch = sim.events.length;
                         check(
                             sim.applyCommand('host', {
                                 type: 'LAUNCH',
@@ -477,7 +478,9 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                             }),
                             'launch is accepted in practice',
                         );
-                        const fire = sim.events.filter((event) => event.type === 'launchFire');
+                        const fire = sim.events
+                            .slice(beforeLaunch)
+                            .filter((event) => event.type === 'launchFire');
                         check(
                             new Set(fire.map((event) => event.cannonId)).size === readyCannons,
                             'practice uses exactly the ready cannons that reach the aim',
@@ -487,7 +490,27 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     }
 
                     const practice = openStage(lesson),
-                        launchIds = launchLesson(practice, goal, 3);
+                        garrisonIds = new Set(practice.campaignVolleyPractice.garrisonIds),
+                        initialVision = practice.visionSources(0);
+                    const survivingGarrison = (sim) =>
+                        sim.units.filter((unit) => unit.alive && garrisonIds.has(unit.id));
+                    const defenders = survivingGarrison(practice);
+                    check(
+                        garrisonIds.size === 16 &&
+                            defenders.length === 16 &&
+                            new Set(defenders.map((unit) => unit.x)).size === 4 &&
+                            new Set(defenders.map((unit) => unit.y)).size === 4 &&
+                            new Set(defenders.map((unit) => `${unit.x},${unit.y}`)).size === 16 &&
+                            defenders.every(
+                                (unit) =>
+                                    unit.side === 1 &&
+                                    unit.type === 'pea' &&
+                                    distance(unit, goal) <= goal.radius &&
+                                    practice.canSeeCombatTarget(0, unit, initialVision),
+                            ),
+                        'the marked circle begins with sixteen visible enemy pea defenders in a grid',
+                    );
+                    const launchIds = launchLesson(practice, goal, 3);
                     check(
                         launchIds.size === 15 && practice.launchStats.sent[0] === 28,
                         'the marked practice shot launches fifteen shells with twenty-eight rice',
@@ -504,8 +527,10 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     );
                     let landed = 0,
                         landedInGoal = false,
-                        winner = null;
-                    for (let i = 0; i < 4 * practice.tps && !winner; i++) {
+                        winner = null,
+                        volleys = 1;
+                    const riceCost = LaunchRules.payload('rice').cost;
+                    for (let i = 0; i < 25 * practice.tps && !winner; i++) {
                         winner = practice.stepSimulation();
                         for (const event of practice.events) {
                             if (event.type !== 'launchLand' || !launchIds.has(event.projectileId))
@@ -518,12 +543,51 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                                 restored.checksum() === practice.checksum(),
                             'practice objective resolves identically after restoring the volley',
                         );
+                        if (
+                            !winner &&
+                            practice.tick % (5 * practice.tps) === 0 &&
+                            practice.wallet[0] >= riceCost
+                        ) {
+                            launchLesson(practice, goal, 3);
+                            launchLesson(restored, goal, 3);
+                            check(
+                                restored.checksum() === practice.checksum(),
+                                'both runs accept the same follow-up volley after restoring',
+                            );
+                            volleys++;
+                        }
                     }
                     check(
-                        winner === 'host' && landed === 28 && landedInGoal,
-                        'a three-cannon hit clears practice after the volley lands and deploys',
-                        { winner, landed, landedInGoal },
+                        winner === 'host' &&
+                            landed === 28 &&
+                            landedInGoal &&
+                            !survivingGarrison(practice).length,
+                        'a three-cannon hit clears practice after deployment and garrison defeat',
+                        {
+                            winner,
+                            landed,
+                            landedInGoal,
+                            volleys,
+                            remaining: survivingGarrison(practice).length,
+                        },
                     );
+
+                    const holdout = openStage(lesson),
+                        toughGuard = survivingGarrison(holdout)[0];
+                    toughGuard.hp = toughGuard.maxHp = 100000;
+                    launchLesson(holdout, goal, 3);
+                    for (let i = 0; i < 4 * holdout.tps; i++)
+                        check(
+                            holdout.stepSimulation() === null,
+                            'a surviving defender prevents a clear',
+                        );
+                    check(
+                        holdout.campaignVolleyPractice.landed &&
+                            !holdout.campaignVolleyPractice.projectileIds.length &&
+                            toughGuard.alive,
+                        'a valid landed volley alone does not clear the lesson',
+                    );
+
                     for (const [readyCannons, aim] of [
                         [1, goal],
                         [2, goal],
@@ -537,11 +601,18 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                                 'wrong aim or fewer than three cannons cannot clear practice',
                                 { readyCannons, aim },
                             );
+                        check(
+                            !miss.campaignVolleyPractice.landed,
+                            'the objective never credits an ineligible shot',
+                            { readyCannons, aim },
+                        );
                     }
                     rows.push({
-                        scenario: 'optional three-cannon campaign practice clears after landing',
+                        scenario: 'optional three-cannon practice clears after garrison defeat',
                         projectiles: launchIds.size,
                         troops: practice.launchStats.sent[0],
+                        defenders: garrisonIds.size,
+                        volleys,
                         clearTick: practice.tick,
                     });
                 }
