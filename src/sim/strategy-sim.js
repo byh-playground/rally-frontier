@@ -16,6 +16,7 @@ import { ConstructionRules } from './construction-rules.js';
 import { LaunchImpact } from './launch-impact.js';
 import { LaunchInterception } from './launch-interception.js';
 import { UnitThornAttack } from './unit-thorn-attack.js';
+import { UnitBurstAttack } from './unit-burst-attack.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.js';
 import { CloneUtil, HashUtil, MapGeneration } from './map-generation.js';
@@ -2302,6 +2303,7 @@ class StrategySim {
             }
         }
         if (!UnitMotion.isGrounded(u)) {
+            if (d.burstAttack) UnitBurstAttack.cancel(this, u, d);
             if (!activeSite) u.constructionWork = null;
             else if (u.constructionWork.cycleStartedAtTick !== null) {
                 const work = u.constructionWork;
@@ -2309,24 +2311,28 @@ class StrategySim {
             }
             return null;
         }
+        if (d.burstAttack && u.combat.burstAttack) {
+            const burst = UnitBurstAttack.update(this, u, d, vision[u.side]);
+            if (burst.active) return burst.winner;
+        }
 
         const attackRange = this.basicAttackRange(u);
         let found = activeSite
             ? this.constructionDefenseTarget(u, activeSite, vision[u.side])
             : null;
         const targetKind = u.combat.attackWindupTargetKind;
-        // Prefer air when choosing a new attack. An already committed ground windup
-        // still resolves, so a fleeting shell cannot repeatedly reset that attack.
+        // A burst unit prefers air until its first shot commits the target.
+        // Other units finish their ground windup before acquiring an air target.
         const shell =
             d.canAttackAir &&
             (!activeSite || found) &&
-            (targetKind === 'projectile' || !u.combat.windupPending()) &&
+            (d.burstAttack || targetKind === 'projectile' || !u.combat.windupPending()) &&
             !u.combat.cooldownActive(this) &&
             FruitHeroAttack.canBasic(u) &&
             LaunchInterception.target(
                 this,
                 u,
-                attackRange,
+                d.burstAttack?.airRange ?? attackRange,
                 vision[u.side],
                 targetKind === 'projectile' ? u.combat.attackWindupTargetId : null,
             );
@@ -2335,8 +2341,11 @@ class StrategySim {
             if (targetKind !== 'projectile' || u.combat.attackWindupTargetId !== shell.id)
                 u.combat.cancelWindup();
             if (this.attackReadyAfterWindup(u, shell, 'projectile', d)) {
-                this.commitAttackTiming(u, d, this.attackCooldown(u, d));
-                LaunchInterception.hit(this, u, shell, d.atk);
+                if (d.burstAttack) UnitBurstAttack.start(this, u, shell, 'projectile', d);
+                else {
+                    this.commitAttackTiming(u, d, this.attackCooldown(u, d));
+                    LaunchInterception.hit(this, u, shell, d.atk);
+                }
             }
             return null;
         }
@@ -2500,6 +2509,8 @@ class StrategySim {
         if (u.fruitAttack && !FruitHeroAttack.canBasic(u)) return null;
         if (!this.attackReadyAfterWindup(u, t, found.isBuilding ? 'building' : 'unit', d))
             return null;
+        if (d.burstAttack)
+            return UnitBurstAttack.start(this, u, t, found.isBuilding ? 'building' : 'unit', d);
         this.commitAttackTiming(u, d, cooldown);
         if (u.fruitAttack) {
             FruitHeroAttack.basic(this, u, t, found.isBuilding);

@@ -2593,6 +2593,11 @@ class GLRenderer {
                 this.launchFireFx(e, snapshot, index);
             } else if (e.type === 'antiAirHit') {
                 this.antiAirHitFx(e, snapshot, index);
+            } else if (e.type === 'unitBurstShot') {
+                this.addClientFx('unitBurstShot', e, snapshot, index, {
+                    impactHeightFP: e.heightFP,
+                    sourceHeightFP: e.fromHeightFP,
+                });
             } else if (e.type === 'launchLand' && e.index === 0 && e.fallDamage != null) {
                 this.addClientFx('emergencyLanding', e, snapshot, index, {
                     impactHeightFP: e.impactHeightFP,
@@ -3189,6 +3194,10 @@ class GLRenderer {
                 this.combatFx[write++] = fx;
                 continue;
             }
+            if (fx.kind === 'unitBurstShot') {
+                this.combatFx[write++] = fx;
+                continue;
+            }
             const t = age / life;
             const ease = 1 - Math.pow(1 - t, 3);
             let [x, y] = this.worldToPx(
@@ -3435,6 +3444,7 @@ class GLRenderer {
                 const trace = age / (EffectObjectFactory.combatLifetimes.antiAirHit * 0.4);
                 if (
                     trace < 1 &&
+                    !UnitDefinition.get(fx.sourceType)?.burstAttack &&
                     (fx.side === this.mySide() || this.visibleRaw(fx.fromX, fx.fromY))
                 ) {
                     let [sx, sy] = this.worldToPx(this.viewX(fx.fromX), this.viewY(fx.fromY));
@@ -4463,6 +4473,9 @@ class GLRenderer {
         const wallNow = performance.now();
         this.grainActorNow = wallNow;
         const now = this.presentationNow(wallNow);
+        const displayMs =
+            this.renderState.frame(now)?.timeMs ??
+            this.snapshot.tick * this.presentationTargetIntervalMs();
         let rank = 0;
         for (const { kind, entity: u, world, depth } of entries) {
             if (kind !== 'unit' || !this.hasGrainArt(u)) continue;
@@ -4693,6 +4706,17 @@ class GLRenderer {
             if (selfDestruct) clip = 'windup';
             if (spin) clip = 'spin';
             if (roll?.phase) clip = 'roll';
+            let burstFacing = 1;
+            if (actor.setWeaponState) {
+                const pose = this.burstWeaponPose(u, entity.combat, world, displayMs);
+                if (grounded && !impact.active) burstFacing = pose.facing;
+                actor.setWeaponState(
+                    grounded && !impact.active ? pose : { shotsSpent: pose.shotsSpent },
+                );
+                if (grounded && !impact.active && pose.aimAngle != null) clip = 'fire';
+                else if (grounded && !impact.active && clip === 'fire')
+                    clip = moving ? 'walk' : 'idle';
+            }
             if (
                 actor.currentClip !== clip ||
                 (restart && record.sprite && (clip === 'fire' || clip === 'hit'))
@@ -4756,7 +4780,7 @@ class GLRenderer {
                               ? grain.cornFacing || 1
                               : milletFireMs != null
                                 ? milletFacing
-                                : chestnutFacing)) *
+                                : chestnutFacing * burstFacing)) *
                     (work?.scaleX ?? 1),
                 sy = scale * impact.scaleY * (work?.scaleY ?? 1);
             m[0] = cos * sx;
@@ -4798,6 +4822,40 @@ class GLRenderer {
             grain.bodyDrawn = false;
         }
         this.vectorContext.preparePoses();
+    }
+    burstWeaponPose(unit, combat, world, displayMs) {
+        const burst = combat?.burstAttack,
+            stepMs = this.presentationTargetIntervalMs(),
+            age = burst?.lastShotTick == null ? Infinity : displayMs - burst.lastShotTick * stepMs,
+            reloading =
+                burst?.nextShotTick == null && displayMs >= (combat?.cooldownUntil ?? 0) * stepMs,
+            shotsSpent = reloading ? 0 : (burst?.shotsFired ?? 0),
+            windup = combat?.attackWindupUntil > 0,
+            aiming = windup || burst?.nextShotTick != null || (age >= 0 && age < 140);
+        const pose = { aimAngle: null, facing: 1, shotsSpent, recoilAgeMs: age };
+        if (!aiming) return pose;
+        const kind = windup ? combat.attackWindupTargetKind : burst?.targetKind,
+            id = windup ? combat.attackWindupTargetId : burst?.targetId,
+            target =
+                kind === 'building'
+                    ? this.snapshot.buildings.find((building) => building.id === id)
+                    : this.renderState.entity(kind, id);
+        const destination = target
+            ? this.projectEntityScreen(target, kind)
+            : burst &&
+              this.projectRenderWorldPosition({
+                  x: burst.aimX,
+                  y: burst.aimHeightFP / FP,
+                  z: burst.aimY,
+                  groundY: 0,
+              });
+        if (!destination) return pose;
+        const source = this.projectRenderWorldPosition(world),
+            dx = destination.x - source.x,
+            dy = destination.y - source.y + this.unitRenderRadius(unit) * 0.4;
+        pose.facing = dx < 0 ? -1 : 1;
+        pose.aimAngle = Math.atan2(dy, Math.abs(dx));
+        return pose;
     }
     // Opaque bodies go first, grouped by species, writing depth: the native path draws each species in one
     // instanced call and the depth buffer, not submission order, settles overlaps. Faces follow in painter order.
@@ -6833,9 +6891,51 @@ class GLRenderer {
         }
     }
     renderUiFxPass() {
+        this.drawBurstShotAmmo();
         this.drawFloatingFx();
         this.passState.depthWrite = true;
         this.passState.depthEnabled = true;
+    }
+    drawBurstShotAmmo() {
+        const life = EffectObjectFactory.combatLifetimes.unitBurstShot;
+        for (const fx of this.combatFx) {
+            if (fx.kind !== 'unitBurstShot' || fx.clock.expired || fx.clock.ageMs >= life) continue;
+            if (fx.side !== this.mySide() && !this.visibleRaw(fx.fromX, fx.fromY)) continue;
+            const sprite = this.spriteRenderers[fx.sourceType];
+            if (!sprite?.drawCombatAmmo) continue;
+            const grain = this.grainActors.get(fx.sourceId),
+                muzzle =
+                    grain?.frame === this.grainActorFrame &&
+                    sprite.weaponSocket?.(grain.matrix, grain.actor),
+                [fromX, fromY] =
+                    muzzle ||
+                    this.worldToPx(
+                        this.viewX(fx.fromX),
+                        this.viewY(fx.fromY),
+                        Number.isFinite(fx.sourceHeightFP) ? fx.sourceHeightFP / FP : null,
+                    ),
+                [toX, toY] = this.worldToPx(
+                    this.viewX(fx.x),
+                    this.viewY(fx.y),
+                    fx.impactHeightFP / FP,
+                ),
+                progress = RangeUtil.clamp(fx.clock.ageMs / life, 0, 1),
+                size = Math.max(6, 14 * this.sc()),
+                angle = Math.atan2(toY - fromY, toX - fromX),
+                cos = Math.cos(angle) * size,
+                sin = Math.sin(angle) * size,
+                matrix = this._vectorUnitMatrix;
+            matrix[0] = cos;
+            matrix[1] = sin;
+            matrix[2] = -sin;
+            matrix[3] = cos;
+            matrix[4] = fromX + (toX - fromX) * progress;
+            matrix[5] = fromY + (toY - fromY) * progress;
+            this.vectorContext.depthTest = false;
+            this.vectorContext.depthWrite = false;
+            sprite.drawCombatAmmo(matrix, 0);
+        }
+        this.flushVectorMesh('burst-shot-ammo');
     }
     displayCoordinatesAtScene(x, y) {
         return { x: x + (this.frameShakeX || 0), y: y + (this.frameShakeY || 0) };

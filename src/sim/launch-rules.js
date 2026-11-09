@@ -222,6 +222,17 @@ class LaunchRules {
                 splashes: Object.freeze([90, 60, 40]),
             }),
         }),
+        'sunflower-seed': Object.freeze({
+            ...SINGLE_BUNDLE_SHELL,
+            shellHp: 25,
+            cost: 40 * this.resourceScale,
+            premiumCost: 10 * this.resourceScale,
+            count: 6,
+            impact: 10,
+            splash: 50,
+            land: 'compact',
+            deployTogether: true,
+        }),
     });
     static deck = Object.freeze(
         Object.keys(LaunchRules.grains).filter((type) => !LaunchRules.isHeroType(type)),

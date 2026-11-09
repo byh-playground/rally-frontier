@@ -28,6 +28,13 @@ import {
     WatermelonSpriteRenderer,
 } from './watermelon-sprite.js';
 import { loadFruitSpriteCanvas, fruitSpritePortrait, FruitSpriteRenderer } from './fruit-sprite.js';
+import {
+    loadSunflowerSeedSpriteCanvas,
+    SUNFLOWER_SEED_ART_SCALE,
+    SUNFLOWER_SEED_GROUND_Y,
+    sunflowerSeedSpritePortrait,
+    SunflowerSeedSpriteRenderer,
+} from './sunflower-seed-sprite.js';
 
 // Approved idle artwork bounds from hat top to feet: rice 343.5, millet 311.
 const MILLET_ART_SCALE = 343.5 / 311;
@@ -45,6 +52,7 @@ const SPRITE_SOURCES = Object.freeze({
     watermelon: loadWatermelonSpriteCanvas,
     banana: () => loadFruitSpriteCanvas('banana'),
     grape: () => loadFruitSpriteCanvas('grape'),
+    'sunflower-seed': loadSunflowerSeedSpriteCanvas,
 });
 
 // Insertion order is the actual atlas allocation order and is also used by the
@@ -124,6 +132,14 @@ export const GRAIN_SPRITES = Object.freeze({
         heroBasic: true,
         fruitAttack: true,
         groundY: 0,
+    },
+    'sunflower-seed': {
+        source: 'sunflower-seed',
+        renderer: SunflowerSeedSpriteRenderer,
+        portrait: sunflowerSeedSpritePortrait,
+        cannonAmmo: true,
+        groundY: SUNFLOWER_SEED_GROUND_Y,
+        artScale: SUNFLOWER_SEED_ART_SCALE,
     },
 });
 

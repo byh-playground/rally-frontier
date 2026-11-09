@@ -5,6 +5,7 @@ import {
     createFramePresentationJournal,
     emitFramePresentationEvents,
 } from '../core/presentation-frame-event.js';
+import { UnitDefinition } from '../definitions/units.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { StrategySim } from '../sim/strategy-sim.js';
 import { BattlefieldProjection } from '../sim/terrain.js';
@@ -21,6 +22,21 @@ const OPENING_ZOOM = 5.4;
 const OPENING_LANDING_ZOOM = 3.6;
 const OPENING_LANDING_APPROACH = 400;
 const OPENING_LANDING_HOLD_MS = 1800;
+const INTERCEPTION = Object.freeze({
+    durationMs: 4500,
+    launchDelayMs: 800,
+    launchType: 'corn',
+    rangeLevel: 1,
+    zoom: 4.2,
+    aimOffset: -150,
+    cameraOffset: 82,
+    cameraHeight: 175,
+    formation: [
+        [-62, -24],
+        [-22, 0],
+        [-62, 24],
+    ],
+});
 const DEFENDERS = [
     [180, -115],
     [205, -60],
@@ -29,8 +45,8 @@ const DEFENDERS = [
     [180, 115],
 ];
 
-function createArena(unitType, opening) {
-    const sim = new StrategySim(SEED, undefined, [[unitType], ['pea']]);
+function createArena(unitType, opening, interception) {
+    const sim = new StrategySim(SEED, undefined, [[unitType], [interception?.launchType ?? 'pea']]);
     const { x, y } = sim.world.center;
     const state = sim.exportState();
     const host = { x: x - VOLLEY_DISTANCE, y };
@@ -60,11 +76,20 @@ function createArena(unitType, opening) {
         { ...guest, forced: false },
         { ...host, forced: false },
     ];
-    for (const building of state.buildings)
+    for (const building of state.buildings) {
         Object.assign(building, building.side === 0 ? host : guest);
+        // The showcase's artillery is available to launch, while its automatic fire stays quiet.
+        if (interception) building.cooldownUntil = sim.msTicks(interception.durationMs);
+    }
+    if (interception) state.launchRangeLevel[1] = interception.rangeLevel;
     sim.importState(state);
     sim.creditResources(0, LaunchRules.premiumWalletCap, 'premium');
-    if (!opening) for (const [dx, dy] of DEFENDERS) sim.spawnUnit(1, 'pea', x + dx, y + dy);
+    if (interception) {
+        sim.creditResources(1, LaunchRules.premiumWalletCap, 'premium');
+        for (const [dx, dy] of interception.formation) sim.spawnUnit(0, unitType, x + dx, y + dy);
+    } else if (!opening) {
+        for (const [dx, dy] of DEFENDERS) sim.spawnUnit(1, 'pea', x + dx, y + dy);
+    }
     return { sim, x, y, host, target, rangeLevel };
 }
 
@@ -82,17 +107,25 @@ function prepareVolleyShowcase(
     opening = false,
 ) {
     if (!LaunchRules.grain(unitType)) throw new Error('알 수 없는 병종 소개 장면입니다.');
-    const { sim, x, y, host, target, rangeLevel } = createArena(unitType, opening);
-    const distance = Math.hypot(target.x - host.x, target.y - host.y);
+    const unit = UnitDefinition.get(unitType);
+    const interception = !opening && unit?.burstAttack && unit.canAttackAir ? INTERCEPTION : null;
+    const { sim, x, y, host, target, rangeLevel } = createArena(unitType, opening, interception);
+    const side = interception ? 1 : 0;
+    const cannon = sim.launchCannons(side)[0];
+    const launchTarget = interception ? { x: x + interception.aimOffset, y } : target;
+    const launchType = interception?.launchType ?? unitType;
+    const distance = Math.hypot(launchTarget.x - cannon.x, launchTarget.y - cannon.y);
     const initialState = sim.exportState();
-    const launchDelay = opening ? OPENING_LAUNCH_DELAY_SECONDS : LAUNCH_DELAY_SECONDS;
-    const launchTick = sim.msTicks(launchDelay * 1000);
+    const launchDelayMs =
+        interception?.launchDelayMs ??
+        (opening ? OPENING_LAUNCH_DELAY_SECONDS : LAUNCH_DELAY_SECONDS) * 1000;
+    const launchTick = sim.msTicks(launchDelayMs);
     const endTick = opening
         ? launchTick +
           sim.msTicks(
               (distance / LaunchRules.shellSpeed(unitType)) * 1000 + OPENING_LANDING_HOLD_MS,
           )
-        : DURATION_SECONDS * sim.tps;
+        : sim.msTicks(interception?.durationMs ?? DURATION_SECONDS * 1000);
     const skillTick = sim.msTicks(HERO_SKILL_DELAY_SECONDS * 1000);
     let scenario;
     let journal;
@@ -146,10 +179,13 @@ function prepareVolleyShowcase(
     };
     const frameCamera = (timeMs) => {
         const progress = Math.max(0, Math.min(1, (timeMs - 600) / 1000));
-        const focusX = x - 120 + 245 * progress * progress * (3 - 2 * progress);
+        const focusX = interception
+            ? x + interception.cameraOffset
+            : x - 120 + 245 * progress * progress * (3 - 2 * progress);
         renderer.cameraLeft = focusX - renderer.viewWorldW() / 2;
         renderer.cameraTop = renderer.clampCameraTop(
-            BattlefieldProjection.planarY(y, 0) - renderer.viewWorldH() / 2,
+            BattlefieldProjection.planarY(y, interception?.cameraHeight ?? 0) -
+                renderer.viewWorldH() / 2,
         );
     };
     const dispose = () => {
@@ -164,7 +200,7 @@ function prepareVolleyShowcase(
     try {
         renderer.role = 'host';
         renderer.replayObserverAll = true;
-        renderer.replayZoom = opening ? OPENING_ZOOM : 4;
+        renderer.replayZoom = opening ? OPENING_ZOOM : (interception?.zoom ?? 4);
         renderer.onPresentationFrame = presentFrame;
         scenario = createScenario({
             definition: {
@@ -189,13 +225,19 @@ function prepareVolleyShowcase(
                 sim.queueCommand({
                     tick: launchTick,
                     seq: 1,
-                    actor: 'host',
+                    actor: interception ? 'guest' : 'host',
                     action: {
                         type: 'LAUNCH',
-                        cannonId: sim.launchCannons(0)[0].id,
-                        unitType,
-                        holdMs: Math.round(LaunchRules.holdFor(distance, unitType, rangeLevel)),
-                        ...target,
+                        cannonId: cannon.id,
+                        unitType: launchType,
+                        holdMs: Math.round(
+                            LaunchRules.holdFor(
+                                distance,
+                                launchType,
+                                interception?.rangeLevel ?? rangeLevel,
+                            ),
+                        ),
+                        ...launchTarget,
                     },
                 });
                 let skillRequested = false;

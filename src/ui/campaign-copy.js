@@ -20,6 +20,8 @@ const GUIDE = {
     corn: '밤톨을 발사하려면 기름이 필요해요. 측면 기름 거점부터 확보해 보세요.',
     acorn: '옥수수는 적이 한곳에 모였을 때 겨냥하면 좋아요.',
     millet: '전진 거점을 확보하면 그곳의 대포에서도 병력을 발사할 수 있어요.',
+    'sunflower-seed':
+        '해바라기씨는 적 투입탄부터 쏴요. 사거리 밖에 병력을 내려 걸어서 접근해 보세요.',
 };
 
 export function campaignBriefingLines(stage) {

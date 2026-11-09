@@ -86,6 +86,14 @@ const GRAIN_COPY = Object.freeze({
         fire: '낮고 빠른 단발',
         notes: ['한 줄로 펼쳐져 거리를 두고 가시를 쏴요.'],
     },
+    'sunflower-seed': {
+        role: '대공 호위',
+        feature: '투입탄 우선 · 씨앗 연사',
+        land: '착점에 모여 투입',
+        fire: '단발',
+        notes: [],
+        airNote: '적 투입탄을 먼저 연사하고, 공중에 적이 없으면 지상을 쏴요.',
+    },
     redbean: {
         role: '돌격 근접',
         feature: '높이 뛰어 내려찍기 · 착지 충격파',
@@ -406,7 +414,7 @@ export class LaunchScreens {
         };
         this.cardDetail = detail;
         host.innerHTML = `<div class="launch-unit-showcase"></div>
-<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2>${COPY.notes.map((line) => `<p>${line}</p>`).join('')}${STATS.canAttackAir ? '<p>사거리 안의 적 투입탄을 우선 공격해요.</p>' : ''}</div></div>
+<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2>${COPY.notes.map((line) => `<p>${line}</p>`).join('')}${STATS.canAttackAir ? `<p>${COPY.airNote ?? '사거리 안의 적 투입탄을 우선 공격해요.'}</p>` : ''}</div></div>
 <div class="launch-stats"><div>비용<b>${ResourceDisplay.costText(STATS, true)}</b></div><div>병사 수<b>${STATS.count}</b></div><div>최대 사거리<b>${STATS.maxReach.toLocaleString('ko-KR')}</b></div><div>포탄 체력<b>${STATS.shellHp}</b></div><div>발사<b>${COPY.fire}</b></div><div>착지<b>${COPY.land}</b></div></div>
 <button type="button" class="launch-btn primary" data-sheet-close>닫기</button>`;
         this.fillCardPortraits(host);
