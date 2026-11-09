@@ -33,6 +33,30 @@ const FACES = Object.fromEntries(
 
 const key = (timeMs, parts = {}) => ({ timeMs, parts, easing: 'inOutSine' });
 const clip = (durationMs, loop, keyframes) => ({ durationMs, loop, keyframes });
+const walkPose = (swing) => {
+    const body = { x: swing * 12, y: swing ? -14 : 5, rotation: swing * 0.12 };
+    const sin = Math.sin(body.rotation),
+        cos = Math.cos(body.rotation);
+    const foot = (side, [px, py]) => {
+        const lifted = side === swing;
+        const x = px - body.x + (lifted ? side * 8 : 0),
+            y = py - body.y - (lifted ? 23 : 0);
+        // Feet are children of the body. Keep the planted foot at ground height while the rind rocks.
+        return {
+            x: x * cos + y * sin - px,
+            y: y * cos - x * sin - py,
+            rotation: (lifted ? side * 0.28 : 0) - body.rotation,
+        };
+    };
+    return {
+        body,
+        leftFoot: foot(-1, PARTS[1].pivot),
+        rightFoot: foot(1, PARTS[2].pivot),
+        leftHand: { y: -swing * 8 },
+        rightHand: { y: swing * 8 },
+    };
+};
+const PLANTED_WALK_POSE = walkPose(0);
 const RIG = {
     parts: PARTS,
     clips: {
@@ -41,14 +65,12 @@ const RIG = {
             key(600, { body: { y: -3, scaleX: 0.99, scaleY: 1.025 } }),
             key(1200),
         ]),
-        walk: clip(650, 'repeat', [
-            key(0, { leftFoot: { rotation: -0.24 }, rightFoot: { rotation: 0.24 } }),
-            key(325, {
-                body: { y: -6, rotation: 0.04 },
-                leftFoot: { rotation: 0.24 },
-                rightFoot: { rotation: -0.24 },
-            }),
-            key(650, { leftFoot: { rotation: -0.24 }, rightFoot: { rotation: 0.24 } }),
+        walk: clip(680, 'repeat', [
+            key(0, PLANTED_WALK_POSE),
+            key(170, walkPose(-1)),
+            key(340, PLANTED_WALK_POSE),
+            key(510, walkPose(1)),
+            key(680, PLANTED_WALK_POSE),
         ]),
         fire: createHeroBasicAttackClip({
             windup: {

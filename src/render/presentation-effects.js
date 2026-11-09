@@ -42,6 +42,7 @@ class EffectObjectFactory {
     static milletBurstLifeMs = 600;
     static defaultCombatLifeMs = 360;
     static sourceMotionFallbackMs = 220;
+    static shellFlinch = Object.freeze({ lifeMs: 160, tilt: 0.6, squash: 0.28 });
     static combatLifetimes = Object.freeze({
         thornImpact: 250,
         spinBasicImpact: 180,
