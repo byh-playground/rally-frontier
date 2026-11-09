@@ -151,6 +151,8 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   병사가 걸어가 건설할 수 있다. 사거리 ×3에서 중앙 거점은 모든 적 거점에 포탄을 직접 투입할 수 있다.
   기름 학습에는 전진 거점 없이도 본진 대포를 한 번 강화해 확보할 수 있는 측면 기름 거점을 하나 둔다.
   캠페인의 적 출격 판단 시작 시점과 간격은 스테이지 설정을 따른다.
+  전투 전 대화는 표시 전용이며 시작 또는 건너뛰기를 선택한 뒤에만 경기를 연다.
+  전투 중 목표와 방어 시간은 현재 경기 스냅샷을 읽어 표시한다.
   스테이지별 도입 병력과 경제 설정을 적용한다. 방어선 돌파는 플레이어 본진의 식량 생산률을 낮춘다.
   캠페인 양측의 덱은 스테이지 설정을 따른다. 보상 병종은 적으로 먼저 등장하며 첫 클리어 뒤 대전 덱에 장착할 수 있다.
   덱 편성의 잠긴 카드에는 해금 조건을 표시하고 장착 버튼을 비활성화한다. 별도 정보 버튼은 병종 소개를 연다.
@@ -249,6 +251,7 @@ END OF DEVELOPMENT CONTRACT
 
         <link rel="stylesheet" href="./src/styles/game.css" />
         <link rel="stylesheet" href="./src/styles/deck.css" />
+        <link rel="stylesheet" href="./src/styles/campaign-presentation.css" />
         <link rel="stylesheet" href="./src/styles/help.css" />
         <link rel="stylesheet" href="./src/styles/result-stats.css" />
     </head>
@@ -677,6 +680,51 @@ END OF DEVELOPMENT CONTRACT
                 <div id="campaignStages" class="campaign-stages"></div>
             </div>
         </dialog>
+        <dialog
+            id="campaignBriefingDialog"
+            class="deck-dialog campaign-briefing"
+            aria-labelledby="campaignBriefingTitle"
+            aria-describedby="campaignBriefingObjective"
+        >
+            <div class="deck-panel">
+                <header class="deck-header">
+                    <div>
+                        <p class="campaign-briefing-kicker">전투 브리핑</p>
+                        <h2 id="campaignBriefingTitle"></h2>
+                    </div>
+                    <button
+                        id="campaignBriefingBack"
+                        class="deck-close"
+                        type="button"
+                        aria-label="캠페인 대화 닫기"
+                    >
+                        ×
+                    </button>
+                </header>
+                <p class="campaign-briefing-objective">
+                    <strong>목표</strong>
+                    <span id="campaignBriefingObjective"></span>
+                </p>
+                <div class="campaign-briefing-dialogue" aria-live="polite" aria-atomic="true">
+                    <p id="campaignBriefingSpeaker"></p>
+                    <p id="campaignBriefingLine"></p>
+                </div>
+                <p id="campaignBriefingProgress" class="campaign-briefing-progress"></p>
+                <div class="campaign-briefing-actions">
+                    <button id="campaignBriefingSkip" class="launch-btn secondary" type="button">
+                        바로 시작
+                    </button>
+                    <button
+                        id="campaignBriefingNext"
+                        class="launch-btn primary"
+                        type="button"
+                        autofocus
+                    >
+                        다음
+                    </button>
+                </div>
+            </div>
+        </dialog>
         <dialog id="deckDialog" class="deck-dialog" aria-labelledby="deckTitle">
             <div class="deck-panel">
                 <header class="deck-header">
@@ -807,7 +855,11 @@ END OF DEVELOPMENT CONTRACT
                     <span class="launch-hud-gap"></span>
                     <span id="launchHudTime" class="launch-hud-chip">0:00</span>
                 </div>
-                <span id="campaignObjective" class="launch-hud-chip hidden" role="status"></span>
+                <div id="campaignObjective" class="launch-hud-chip campaign-objective hidden">
+                    <span class="campaign-objective-tag">목표</span>
+                    <span id="campaignObjectiveLabel" role="status" aria-atomic="true"></span>
+                    <span id="campaignObjectiveTimer" aria-live="off" hidden></span>
+                </div>
                 <div id="minimapWrap" class="minimap">
                     <canvas id="minimapCanvas" aria-label="미니맵"></canvas>
                 </div>
@@ -820,6 +872,10 @@ END OF DEVELOPMENT CONTRACT
                 ></div>
                 <div id="enemyBaseArrow" class="enemy-base-arrow hidden" aria-live="off">
                     <i aria-hidden="true"></i><b>적 본진</b>
+                </div>
+                <div id="campaignCue" class="campaign-cue hidden" role="status" aria-atomic="true">
+                    <strong id="campaignCueTitle"></strong>
+                    <span id="campaignCueText"></span>
                 </div>
                 <div id="replayStats" class="replay-stats hidden"></div>
             </div>

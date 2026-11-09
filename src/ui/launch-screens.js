@@ -1,5 +1,6 @@
 import { ResourceDisplay } from './resource-display.js';
 import { CAMPAIGN_STAGES } from '../definitions/campaign.js';
+import { CampaignPresentation } from './campaign-presentation.js';
 import './grain-portrait.js';
 
 // Launch match screens (title, friend, help, in-game HUD and cards, match menu, result) and their addresses.
@@ -105,6 +106,7 @@ export class LaunchScreens {
         this.actions = actions;
         this.showcaseSurface = showcaseSurface;
         this.$ = (id) => document.getElementById(id);
+        CampaignPresentation.install(this.$);
         this.navigation = createNavigation({
             normalize: (route) =>
                 SCREENS.has(route.screen) ? route : { screen: '', item: '', query: '' },
@@ -214,12 +216,7 @@ export class LaunchScreens {
                 const description = document.createElement('small');
                 description.textContent = stage.briefing;
                 button.append(title, status, description);
-                button.onclick = () => {
-                    $('campaignDialog').close();
-                    A.selectCampaign(stage.id);
-                    if (this.navigation.snapshot().screen === 'play') A.startAiMatch();
-                    else this.go('play');
-                };
+                button.onclick = () => this.showCampaignBriefing(stage);
                 $('campaignStages').append(button);
             });
             $('campaignDialog').showModal();
@@ -275,7 +272,15 @@ export class LaunchScreens {
         );
         $('resultTitleBtn').onclick = () => A.leaveToTitle();
         $('resultDeckBtn').onclick = () => A.openRewardDeck(this.resultReward);
-        $('resultNextCampaignBtn').onclick = () => A.startCampaignStage(this.resultNextStage);
+        $('resultNextCampaignBtn').onclick = () => this.showCampaignBriefing(this.resultNextStage);
+    }
+    static showCampaignBriefing(stage) {
+        if (!stage || !this.actions.campaignProgress.canStart(stage)) return;
+        CampaignPresentation.showBriefing(stage, () => {
+            const list = this.$('campaignDialog');
+            if (list.open) list.close();
+            this.actions.startCampaignStage(stage);
+        });
     }
     static renderCampaignResult(reward, nextStage) {
         const $ = this.$;

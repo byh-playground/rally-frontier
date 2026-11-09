@@ -86,6 +86,7 @@ import { LaunchScreens } from './ui/launch-screens.js';
 import { createShowcaseHost } from './ui/showcase-host.js';
 import { DeckEditor } from './ui/deck-editor.js';
 import { CampaignProgress } from './ui/campaign-progress.js';
+import { CampaignPresentation } from './ui/campaign-presentation.js';
 import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
 import { AudioSystem } from './audio/audio-system.js';
@@ -7441,6 +7442,7 @@ class UiController {
     }
     static setUiScreen(value) {
         UiController.setUiRadio('screen', value);
+        if (value !== 'game') CampaignPresentation.clearBattle();
         UiController.renderUiState();
         LaunchScreens.syncScreen(value);
         return value;
@@ -9721,32 +9723,16 @@ class LaunchPresentation {
                 };
             }
         }
-        const stage = campaignStage(MatchLifecycle.selectedCampaign);
-        const objective = DomUtil.byId('campaignObjective');
-        objective.classList.toggle('hidden', !stage);
-        if (stage) {
-            const remaining = Math.max(
-                0,
-                stage.defenseSeconds - s.tick / (s.tps || ActiveSimulationTiming.tps()),
-            );
-            const defending = stage.defenseSeconds && remaining > 0;
-            const needsPremium =
-                stage.resourceLesson &&
-                !s.capturePoints?.some(
-                    (point) => point.owner === side && point.resourceType === 'premium',
-                );
-            objective.textContent = defending
-                ? `본진 방어 · ${Math.ceil(remaining)}초`
-                : needsPremium
-                  ? (s.launchRangeLevel?.[side] || 0) === 0
-                      ? '사거리 강화'
-                      : '기름 거점 확보'
-                  : '적 본진 파괴';
-        }
+        const stage =
+            UiRuntimeState.value.screen === 'game'
+                ? campaignStage(MatchLifecycle.selectedCampaign)
+                : null;
+        const tps = s.tps || ActiveSimulationTiming.tps();
+        CampaignPresentation.renderBattle(stage, s, side, tps);
         LaunchScreens.renderHud({
             myHpPct: hp(side),
             enemyHpPct: hp(1 - side),
-            elapsedMs: (1000 * s.tick) / (s.tps || ActiveSimulationTiming.tps()),
+            elapsedMs: (1000 * s.tick) / tps,
             enemyDirection,
         });
     }

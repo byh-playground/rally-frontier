@@ -1573,17 +1573,3 @@ body.result-mode .p2p-health {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-#campaignObjective {
-    position: absolute;
-    top: 54px;
-    left: 10px;
-    z-index: 6;
-    max-width: calc(100% - 114px);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    pointer-events: none;
-}
-#campaignObjective:not(.hidden) ~ .enemy-base-arrow {
-    top: 94px;
-}
