@@ -1397,7 +1397,7 @@ class StrategySim {
             });
         }
         this.launchStats.launches[side]++;
-        this.launchStats.sent[side] += grain.count;
+        this.launchStats.sent[side] += LaunchRules.volleyPassengerCount(volley);
         return true;
     }
     fireLaunchShell({
@@ -1415,7 +1415,6 @@ class StrategySim {
         count,
         impact,
         splash,
-        shellHp,
     }) {
         const cannon =
                 this.buildingById.get(cannonId) || this.buildings.find((b) => b.id === cannonId),
@@ -1449,7 +1448,6 @@ class StrategySim {
             damageClass: 'normal',
             sourceDamageResolved: true,
             payload: { type, count },
-            ...(shellHp === undefined ? {} : { hp: shellHp }),
         });
         if (LaunchRules.isHeroType(type)) HeroDeployment.begin(this, side, type, id);
         this.events.push({

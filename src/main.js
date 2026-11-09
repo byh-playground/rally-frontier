@@ -10386,6 +10386,7 @@ class LaunchPresentation {
                 ActiveViewState.snap?.launchRangeLevel?.[hold.side] ?? 0,
             ),
             groups.length,
+            LaunchRules.volleyPassengerCount(groups),
         );
     }
     static cancel() {
