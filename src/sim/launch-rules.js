@@ -1,5 +1,6 @@
 // Cannon launch rules: income, wallet and grain data.
 import { RangeUtil } from '../core/game-rules.js';
+import { BuildingDefinition } from '../definitions/buildings.js';
 
 // Existing corn shell behaviour shared with the draft single-stalk deployment.
 // Millet overrides the approved deployment and impact values below.
@@ -34,6 +35,7 @@ class LaunchRules {
     static overheatGraceMs = 180;
     static overheatMs = 2000;
     static reloadMs = 400;
+    static maxVolleyCannons = 3;
     static speed = 750;
     static shellFlight = Object.freeze({ speedScale: 0.8, arcScale: 1.25, sightRadius: 200 });
     static landingMarkMs = 1500;
@@ -263,6 +265,18 @@ class LaunchRules {
         const g = this.grain(type);
         return g ? { count: g.count, cost: g.cost, premiumCost: g.premiumCost || 0 } : null;
     }
+    static isLaunchCannon(building, side) {
+        const definition = BuildingDefinition.get(building.type);
+        return (
+            building.side === side &&
+            building.alive !== false &&
+            !building.construction &&
+            (definition?.isMainBase || definition?.isOutpost)
+        );
+    }
+    static launchCannons(state, side) {
+        return (state?.buildings || []).filter((building) => this.isLaunchCannon(building, side));
+    }
     // Live units plus every already-authorized soldier who has not spawned yet.
     static population(state, side) {
         let alive = 0,
@@ -361,6 +375,75 @@ class LaunchRules {
             });
         }
         return shots;
+    }
+    static sharedVolley(type, aim, primary, world, cannons, tick, level) {
+        const original = this.volley(type, aim, primary, world),
+            grain = this.grain(type),
+            limit = Math.min(
+                this.maxVolleyCannons,
+                Math.floor(grain.count / original.length),
+                grain.shellHp,
+            );
+        const groups = [{ cannon: primary, shots: original }];
+        if (limit <= 1 || this.isHeroType(type)) return groups;
+
+        const maxReach = this.maxReachOf(type, level),
+            candidates = [];
+        for (const cannon of cannons) {
+            if (
+                cannon.id === primary.id ||
+                !this.isLaunchCannon(cannon, primary.side) ||
+                (Number(cannon.launchReadyTick) || 0) > tick
+            )
+                continue;
+            const distanceSquared = (aim.x - cannon.x) ** 2 + (aim.y - cannon.y) ** 2;
+            if (distanceSquared >= this.minReach ** 2 && distanceSquared <= maxReach ** 2)
+                candidates.push({ cannon, distanceSquared });
+        }
+        candidates.sort(
+            (a, b) =>
+                a.distanceSquared - b.distanceSquared ||
+                (a.cannon.id < b.cannon.id ? -1 : a.cannon.id > b.cannon.id ? 1 : 0),
+        );
+        const seen = new Set([primary.id]);
+        for (const { cannon } of candidates) {
+            if (groups.length === limit) break;
+            if (seen.has(cannon.id)) continue;
+            seen.add(cannon.id);
+            groups.push({ cannon, shots: this.volley(type, aim, cannon, world) });
+        }
+        if (groups.length === 1) return groups;
+
+        // Each original shell slot keeps its total cargo, impact and HP. Rotate
+        // the extra passengers so the supporting cannons also carry even loads.
+        let offset = 0;
+        for (const [slot, shot] of original.entries()) {
+            const { count: originalCount, impact } = shot,
+                countPerCannon = Math.floor(originalCount / groups.length),
+                extra = originalCount % groups.length;
+            let assigned = 0,
+                assignedHp = 0;
+            groups.forEach(({ shots }, index) => {
+                const extraIndex = (index - offset + groups.length) % groups.length;
+                const count = countPerCannon + (extraIndex < extra ? 1 : 0);
+                assigned += count;
+                const hpThroughShot = Math.min(
+                    grain.shellHp - (groups.length - index - 1),
+                    Math.max(
+                        assignedHp + 1,
+                        Math.floor((grain.shellHp * assigned) / originalCount),
+                    ),
+                );
+                Object.assign(shots[slot], {
+                    count,
+                    impact: (impact * count) / originalCount,
+                    shellHp: hpThroughShot - assignedHp,
+                });
+                assignedHp = hpThroughShot;
+            });
+            offset = (offset + extra) % groups.length;
+        }
+        return groups;
     }
     static volleyMs(type) {
         const fire = this.grain(type).fire;

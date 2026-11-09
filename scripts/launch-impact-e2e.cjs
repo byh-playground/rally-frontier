@@ -199,6 +199,160 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 );
                 rows.push({ scenario: 'loaded shells have per-projectile HP', rice, pea });
             }
+            // Put the support candidates around the actual locked aim, not the input pointer.
+            function sharedVolleyArena(type) {
+                const { sim } = arena({ deck: [type] });
+                const home = sim.launchCannons(0)[0];
+                const aim = LaunchRules.target(
+                    home,
+                    home.x + 1000,
+                    home.y,
+                    LaunchRules.chargeMs,
+                    sim.world,
+                    sim.flags[0],
+                    type,
+                );
+                const state = sim.exportState();
+                const outpost = BuildingDefinition.forRole('outpost');
+                const hp = BuildingDefinition.get(outpost).hp;
+                for (const [id, dx, dy, side, launchReadyTick] of [
+                    ['support-a', 0, -300, 0, 0],
+                    ['support-b', 0, 330, 0, 0],
+                    ['spare-ready', 0, 390, 0, 0],
+                    ['reloading', 0, 260, 0, 60],
+                    ['too-far', 600, 0, 0, 0],
+                    ['hostile', 120, -240, 1, 0],
+                ])
+                    state.buildings.push({
+                        id,
+                        type: outpost,
+                        x: aim.x + dx,
+                        y: aim.y + dy,
+                        side,
+                        hp,
+                        maxHp: hp,
+                        launchReadyTick,
+                        cooldownUntil: Number.MAX_SAFE_INTEGER,
+                    });
+                sim.importState(state);
+                const action = {
+                    type: 'LAUNCH',
+                    cannonId: home.id,
+                    unitType: type,
+                    holdMs: LaunchRules.chargeMs,
+                    x: home.x + 1000,
+                    y: home.y,
+                };
+                return { sim, home, aim, action };
+            }
+            {
+                const { sim, home, aim, action } = sharedVolleyArena('rice');
+                const grain = LaunchRules.grain('rice'),
+                    pattern = LaunchRules.volley('rice', aim, home, sim.world),
+                    wallet = sim.wallet[0];
+                check(
+                    sim.applyCommand('host', action),
+                    'one player command fires the shared volley',
+                );
+                const participantIds = [home.id, 'support-a', 'support-b'];
+                const total = (shells, read) => shells.reduce((sum, shell) => sum + read(shell), 0);
+                const counts = participantIds.map((id) => {
+                    const shells = sim.projectiles.filter((p) => p.owner === id);
+                    check(shells.length === 5, 'each cannon retains the five-pellet pattern', id);
+                    return total(shells, (p) => p.payload.count);
+                });
+                const fires = sim.events.filter((e) => e.type === 'launchFire');
+                const shellHp = total(sim.projectiles, (p) => p.hp);
+                const impact = total(sim.projectiles, (p) => p.splashBuildingDamage);
+                check(
+                    sim.projectiles.length === 15 &&
+                        fires.length === 15 &&
+                        fires.every((e) => participantIds.includes(e.cannonId)) &&
+                        sim.projectiles.every((p) => p.payload.count > 0 && p.hp > 0) &&
+                        counts.join(',') === '7,7,6' &&
+                        shellHp === grain.shellHp * pattern.length &&
+                        impact === total(pattern, (p) => p.impact) &&
+                        sim.wallet[0] === wallet - grain.cost &&
+                        sim.launchStats.launches[0] === 1 &&
+                        sim.launchStats.sent[0] === grain.count &&
+                        LaunchRules.population(sim, 0).reserved === grain.count &&
+                        participantIds.every(
+                            (id) => sim.buildingById.get(id).launchReadyTick > 0,
+                        ) &&
+                        sim.buildingById.get('spare-ready').launchReadyTick === 0 &&
+                        sim.buildingById.get('reloading').launchReadyTick === 60,
+                    'shared rice fires immediately from only three ready cannons with one cargo and damage budget',
+                    { counts, shellHp, impact, fires: fires.map((e) => e.cannonId) },
+                );
+                rows.push({
+                    scenario: 'three cannons share one simultaneous rice volley',
+                    counts,
+                    shellHp,
+                    impact,
+                });
+            }
+            {
+                const { sim, home, aim, action } = sharedVolleyArena('acorn');
+                const grain = LaunchRules.grain('acorn'),
+                    pattern = LaunchRules.volley('acorn', aim, home, sim.world),
+                    wallet = sim.wallet[0],
+                    premiumWallet = (sim.premiumWallet[0] = LaunchRules.premiumWalletCap);
+                check(sim.applyCommand('host', action), 'launch the shared acorn burst');
+                const initial = sim.events.filter((e) => e.type === 'launchFire');
+                check(
+                    initial.length === 2 &&
+                        initial.every(
+                            (e) => e.shot === 0 && [home.id, 'support-a'].includes(e.cannonId),
+                        ) &&
+                        sim.wallet[0] === wallet - grain.cost &&
+                        sim.premiumWallet[0] === premiumWallet - grain.premiumCost &&
+                        LaunchRules.population(sim, 0).reserved === grain.count,
+                    'a six-unit three-shot pattern starts from two cannons and reserves one full purchase',
+                );
+                const copy = restored(sim);
+                const collect = (world) => {
+                    const result = [];
+                    step(world, world.msTicks(LaunchRules.volleyMs('acorn')), (s) => {
+                        for (const event of s.events) {
+                            if (event.type !== 'launchFire') continue;
+                            const p = s.projectiles.find(
+                                (projectile) => projectile.id === event.projectileId,
+                            );
+                            result.push({
+                                tick: s.tick,
+                                cannon: event.cannonId,
+                                slot: event.shot,
+                                count: p?.payload.count,
+                                impact: p?.splashBuildingDamage,
+                                hp: p?.hp,
+                            });
+                        }
+                    });
+                    return result;
+                };
+                const delayed = collect(sim);
+                check(
+                    JSON.stringify(delayed) === JSON.stringify(collect(copy)) &&
+                        sim.checksum() === copy.checksum() &&
+                        delayed.length === 4 &&
+                        delayed.every((p) => p.count === 1 && p.hp > 0) &&
+                        [1, 2].every((slot) => {
+                            const pair = delayed.filter((p) => p.slot === slot);
+                            return (
+                                pair.length === 2 &&
+                                pair[0].tick === pair[1].tick &&
+                                pair[0].impact + pair[1].impact === pattern[slot].impact &&
+                                pair[0].hp + pair[1].hp === grain.shellHp
+                            );
+                        }),
+                    'saved burst continues in sync without empty shells or extra impact or HP',
+                    delayed,
+                );
+                rows.push({
+                    scenario: 'two cannons restore and finish one shared acorn burst',
+                    delayed,
+                });
+            }
             {
                 const { sim } = arena();
                 const tower = sim.buildingById.get('base0'),

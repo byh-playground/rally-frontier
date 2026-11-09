@@ -1307,18 +1307,11 @@ class StrategySim {
         arr.sort((a, b) => a.seq - b.seq);
     }
     launchCannons(side) {
-        const main = BuildingDefinition.forRole('mainBase'),
-            outpost = BuildingDefinition.forRole('outpost');
-        return this.buildings.filter(
-            (b) =>
-                b.side === side &&
-                b.alive !== false &&
-                !b.construction &&
-                (b.type === main || b.type === outpost),
-        );
+        return LaunchRules.launchCannons(this, side);
     }
     applyLaunchCommand(side, action) {
-        const cannon = this.launchCannons(side).find((b) => b.id === action.cannonId);
+        const cannons = this.launchCannons(side),
+            cannon = cannons.find((b) => b.id === action.cannonId);
         const reject = (reason) => {
             this.events.push({ type: 'launchRejected', side, reason });
             return false;
@@ -1347,6 +1340,7 @@ class StrategySim {
             });
             return true;
         }
+        const level = this.launchRangeLevel[side];
         const aim = LaunchRules.target(
             cannon,
             action.x,
@@ -1355,41 +1349,52 @@ class StrategySim {
             this.world,
             this.flags[side],
             action.unitType,
-            this.launchRangeLevel[side],
+            level,
+        );
+        const volley = LaunchRules.sharedVolley(
+            action.unitType,
+            aim,
+            cannon,
+            this.world,
+            cannons,
+            this.tick,
+            level,
         );
         this.wallet[side] -= grain.cost;
         this.premiumWallet[side] -= grain.premiumCost || 0;
         // The cannon is busy until the last shell of the volley has left, plus the reload.
-        cannon.launchReadyTick =
+        const readyTick =
             this.tick + this.msTicks(LaunchRules.volleyMs(action.unitType) + LaunchRules.reloadMs);
         const power = LaunchRules.power(holdMs),
-            shots = LaunchRules.volley(action.unitType, aim, cannon, this.world),
             mode = grain.fire.mode;
-        const arcDistance =
-            mode === 'split'
-                ? Math.max(
-                      1,
-                      Math.hypot(aim.x - cannon.x, aim.y - cannon.y) -
-                          LaunchImpactRules.muzzleReach,
-                  )
-                : null;
-        shots.forEach((shot, i) => {
-            const fire = {
-                side,
-                cannonId: cannon.id,
-                type: action.unitType,
-                mode,
-                shot: i,
-                shots: shots.length,
-                power,
-                holdMs,
-                arcDistance,
-                ...shot,
-            };
-            if (shot.delayMs > 0)
-                cannon.salvo.push({ tick: this.tick + this.msTicks(shot.delayMs), ...fire });
-            else this.fireLaunchShell(fire);
-        });
+        for (const { cannon: launcher, shots } of volley) {
+            launcher.launchReadyTick = readyTick;
+            const arcDistance =
+                mode === 'split'
+                    ? Math.max(
+                          1,
+                          Math.hypot(aim.x - launcher.x, aim.y - launcher.y) -
+                              LaunchImpactRules.muzzleReach,
+                      )
+                    : null;
+            shots.forEach((shot, i) => {
+                const fire = {
+                    side,
+                    cannonId: launcher.id,
+                    type: action.unitType,
+                    mode,
+                    shot: i,
+                    shots: shots.length,
+                    power,
+                    holdMs,
+                    arcDistance,
+                    ...shot,
+                };
+                if (shot.delayMs > 0)
+                    launcher.salvo.push({ tick: this.tick + this.msTicks(shot.delayMs), ...fire });
+                else this.fireLaunchShell(fire);
+            });
+        }
         this.launchStats.launches[side]++;
         this.launchStats.sent[side] += grain.count;
         return true;
@@ -1409,6 +1414,7 @@ class StrategySim {
         count,
         impact,
         splash,
+        shellHp,
     }) {
         const cannon =
                 this.buildingById.get(cannonId) || this.buildings.find((b) => b.id === cannonId),
@@ -1442,6 +1448,7 @@ class StrategySim {
             damageClass: 'normal',
             sourceDamageResolved: true,
             payload: { type, count },
+            ...(shellHp === undefined ? {} : { hp: shellHp }),
         });
         if (LaunchRules.isHeroType(type)) HeroDeployment.begin(this, side, type, id);
         this.events.push({
