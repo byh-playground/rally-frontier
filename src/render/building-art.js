@@ -16,6 +16,8 @@ const ENEMY = Object.freeze({
     'team-shadow': [179 / 255, 47 / 255, 47 / 255],
 });
 const ART_SCALE = 90 / 360;
+// The lower rim of the base sits 32 SVG units below the ground socket.
+const BASE_RIM_OFFSET = 32 * ART_SCALE;
 const matrixAt = (a, b, c, d, sx, sy, x, y) => [
     a,
     b,
@@ -48,6 +50,9 @@ class BuildingArt {
         this.renderer = renderer;
         this.actors = new Map();
         this.liveIds = new Set();
+    }
+    static baseBottomY(groundY, scale) {
+        return groundY + BASE_RIM_OFFSET * scale;
     }
     static pose({ x, y, sc, aim, fireAgeMs = Infinity }, matrices = false) {
         const asset = globalThis.RallyVectorAssets?.cannon;
