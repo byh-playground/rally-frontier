@@ -260,16 +260,38 @@ class RallySimulationAdapter {
                     )
                         throw new Error('게임 snapshot의 회전 공격 횟수가 잘못되었습니다.');
                     RallyStateCodec.assertContract(entity, Unit.stateContract);
+                    if (
+                        ![null, 'unit', 'building', 'projectile'].includes(
+                            entity.combat.attackWindupTargetKind,
+                        ) ||
+                        (entity.combat.attackWindupTargetKind === null) !==
+                            (entity.combat.attackWindupTargetId === null)
+                    )
+                        throw new Error('게임 snapshot의 공격 준비 표적이 잘못되었습니다.');
                     HeroRollAttack.validateState(entity, state, this.session.sim.tps);
                     FruitHeroAttack.validateState(entity, state, this.session.sim.tps);
                 }
-                if (
-                    key === 'projectiles' &&
-                    [...Projectile.stateContract.presentation].some((field) =>
-                        Object.prototype.hasOwnProperty.call(entity, field),
+                if (key === 'projectiles') {
+                    if (
+                        [...Projectile.stateContract.presentation].some((field) =>
+                            Object.prototype.hasOwnProperty.call(entity, field),
+                        )
                     )
-                )
-                    throw new Error('게임 projectile snapshot에 렌더 필드가 있습니다.');
+                        throw new Error('게임 projectile snapshot에 렌더 필드가 있습니다.');
+                    if (entity.payload) {
+                        const shellHp = LaunchRules.grain(entity.payload.type)?.shellHp;
+                        if (
+                            entity.payload.type !== entity.type ||
+                            !Number.isSafeInteger(shellHp) ||
+                            !Number.isSafeInteger(entity.hp) ||
+                            entity.hp < (entity.alive ? 1 : 0) ||
+                            entity.hp > shellHp
+                        )
+                            throw new Error('게임 snapshot의 투입탄 체력이 잘못되었습니다.');
+                    } else if (entity.hp !== undefined) {
+                        throw new Error('게임 snapshot의 투사체에 불필요한 체력이 있습니다.');
+                    }
+                }
                 if (key === 'buildings') {
                     if (
                         !Object.prototype.hasOwnProperty.call(
@@ -292,10 +314,24 @@ class RallySimulationAdapter {
                 if (
                     key === 'projectiles' &&
                     entity.mortar !== undefined &&
-                    (entity.mortar !== true || !BuildingDefinition.get(entity.type)?.mortar)
+                    (entity.mortar !== true ||
+                        entity.payload ||
+                        !BuildingDefinition.get(entity.type)?.mortar)
                 )
                     throw new Error('게임 snapshot의 박격포 투사체가 잘못되었습니다.');
             }
+        }
+        for (const group of state.launchDeployments) {
+            const dropHeight = group?.emergencyDropHeightFP;
+            if (
+                dropHeight !== undefined &&
+                (!Number.isSafeInteger(dropHeight) ||
+                    dropHeight < 0 ||
+                    !Number.isSafeInteger(group.heightFP) ||
+                    group.heightFP < 0 ||
+                    group.heightFP > dropHeight)
+            )
+                throw new Error('게임 snapshot의 비상 착지 높이가 잘못되었습니다.');
         }
         HeroDeployment.validate(state);
         if (

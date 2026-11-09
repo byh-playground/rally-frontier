@@ -127,6 +127,7 @@ class Projectile {
     );
     constructor(state = {}) {
         Object.assign(this, Projectile.stateContract.create(state));
+        if (this.payload && this.hp == null) this.hp = LaunchRules.grain(this.payload.type).shellHp;
         this.visualTag = 'launchAmmo';
         this.arcHeight = this.mortar
             ? BuildingDefinition.get(this.type).mortar.arcHeight

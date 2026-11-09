@@ -47,6 +47,8 @@ class EffectObjectFactory {
         spinBasicImpact: 180,
         constructionHit: 220,
         hitscanTravel: 180,
+        antiAirHit: 320,
+        emergencyLanding: 320,
         buildingBurst: 620,
         launchMuzzle: 900,
         launchBlast: 820,

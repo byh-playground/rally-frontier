@@ -153,7 +153,7 @@ class CombatComponent {
             attackWindupStartedAt: 0,
             basicAttackTick: null,
             attackWindupTargetId: null,
-            attackWindupIsBuilding: false,
+            attackWindupTargetKind: null,
             moveRecoveryUntil: 0,
             hitBurstCooldownUntil: 0,
             recentImpactUntil: 0,
@@ -188,7 +188,7 @@ class CombatComponent {
         this.attackWindupUntil = 0;
         this.attackWindupStartedAt = 0;
         this.attackWindupTargetId = null;
-        this.attackWindupIsBuilding = false;
+        this.attackWindupTargetKind = null;
     }
     moveRecoveryActive(sim) {
         return sim.tick < (Number(this.moveRecoveryUntil) || 0);

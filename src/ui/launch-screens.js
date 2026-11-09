@@ -406,8 +406,8 @@ export class LaunchScreens {
         };
         this.cardDetail = detail;
         host.innerHTML = `<div class="launch-unit-showcase"></div>
-<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2>${COPY.notes.map((line) => `<p>${line}</p>`).join('')}</div></div>
-<div class="launch-stats"><div>비용<b>${ResourceDisplay.costText(STATS, true)}</b></div><div>병사 수<b>${STATS.count}</b></div><div>최대 사거리<b>${STATS.maxReach.toLocaleString('ko-KR')}</b></div><div>발사<b>${COPY.fire}</b></div><div>착지<b>${COPY.land}</b></div></div>
+<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2>${COPY.notes.map((line) => `<p>${line}</p>`).join('')}${STATS.canAttackAir ? '<p>사거리 안의 적 투입탄을 우선 공격해요.</p>' : ''}</div></div>
+<div class="launch-stats"><div>비용<b>${ResourceDisplay.costText(STATS, true)}</b></div><div>병사 수<b>${STATS.count}</b></div><div>최대 사거리<b>${STATS.maxReach.toLocaleString('ko-KR')}</b></div><div>포탄 체력<b>${STATS.shellHp}</b></div><div>발사<b>${COPY.fire}</b></div><div>착지<b>${COPY.land}</b></div></div>
 <button type="button" class="launch-btn primary" data-sheet-close>닫기</button>`;
         this.fillCardPortraits(host);
         const panel = host.querySelector('.launch-unit-showcase');

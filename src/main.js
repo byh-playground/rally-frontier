@@ -2485,6 +2485,7 @@ class GLRenderer {
                 y = Number(e.y);
             const visible =
                 e.side === mySide ||
+                (e.type === 'antiAirHit' && e.targetSide === mySide) ||
                 (Number.isFinite(x) && Number.isFinite(y) && this.eventVisible(e));
             if (!visible) {
                 index++;
@@ -2587,6 +2588,12 @@ class GLRenderer {
                 );
             } else if (e.type === 'launchFire' || e.type === 'mortarFire') {
                 this.launchFireFx(e, snapshot, index);
+            } else if (e.type === 'antiAirHit') {
+                this.antiAirHitFx(e, snapshot, index);
+            } else if (e.type === 'launchLand' && e.index === 0 && e.fallDamage != null) {
+                this.addClientFx('emergencyLanding', e, snapshot, index, {
+                    impactHeightFP: e.impactHeightFP,
+                });
             } else if (e.type === 'launchImpact') {
                 this.launchImpactFx(e, snapshot, index);
             } else if (
@@ -2614,6 +2621,32 @@ class GLRenderer {
             }
             index++;
         }
+    }
+    antiAirHitFx(e, snapshot, index) {
+        const cannon = !!BuildingDefinition.get(e.sourceType);
+        const dx = e.x - e.fromX,
+            dy = e.y - e.fromY,
+            length = Math.hypot(dx, dy) || 1;
+        const aim = { dx: dx / length, dy: dy / length };
+        if (
+            cannon &&
+            snapshot.presentationClock.ageMs < 260 &&
+            (e.side === this.mySide() || this.visibleRaw(e.fromX, e.fromY))
+        ) {
+            const recoil = {
+                ...aim,
+                presentationTick: this.presentationEventTick(e, snapshot),
+                power: 0,
+            };
+            EffectObjectFactory.attachClock(recoil, snapshot.presentationClock, 260);
+            this.launchRecoil.set(e.sourceId, recoil);
+        }
+        this.addClientFx('antiAirHit', e, snapshot, index, {
+            impactHeightFP: e.heightFP,
+            destroyed: e.destroyed,
+            cannon,
+            aim,
+        });
     }
     // The firing moment: muzzle flash and smoke at the cannon, a kick on the cannon itself, and a
     // camera shake that grows with the charge. Later shells of a burst are lighter; a shotgun flashes once.
@@ -3154,7 +3187,7 @@ class GLRenderer {
             let [x, y] = this.worldToPx(
                 this.viewX(fx.x),
                 this.viewY(fx.y),
-                Number.isFinite(fx.impactHeightFP) ? fx.impactHeightFP / 100 : null,
+                Number.isFinite(fx.impactHeightFP) ? fx.impactHeightFP / FP : null,
             );
 
             if (
@@ -3391,6 +3424,43 @@ class GLRenderer {
                 ctx.lineTo(tx, ty);
                 ctx.stroke();
                 dot(pose.muzzle.x, pose.muzzle.y, (5 + 3 * (1 - t)) * sc, '#fff3bf', 1 - t);
+            } else if (fx.kind === 'antiAirHit') {
+                if (t < 0.4 && (fx.side === this.mySide() || this.visibleRaw(fx.fromX, fx.fromY))) {
+                    let [sx, sy] = this.worldToPx(this.viewX(fx.fromX), this.viewY(fx.fromY));
+                    if (fx.cannon) {
+                        const source = { id: fx.sourceId, x: fx.fromX, y: fx.fromY, side: fx.side };
+                        const { muzzle } = BuildingArt.pose(
+                            this.cannonArtOptions(source, {
+                                aim: fx.aim,
+                                fireAgeMs: age,
+                                power: 0,
+                            }),
+                        );
+                        sx = muzzle.x;
+                        sy = muzzle.y;
+                    }
+                    ctx.globalAlpha = 1 - t / 0.4;
+                    ctx.strokeStyle = '#d4f4ff';
+                    ctx.lineWidth = Math.max(1, 2 * sc);
+                    ctx.beginPath();
+                    ctx.moveTo(sx, sy);
+                    ctx.lineTo(x, y);
+                    ctx.stroke();
+                }
+                const color = fx.destroyed ? '#ffc477' : '#e1f7ff';
+                dot(x, y, (fx.destroyed ? 7 : 4) * sc * (1 - t), color, 1 - t);
+                burst(fx, x, y, t, fx.destroyed ? 7 : 3, color, fx.destroyed ? 42 : 24, 2, 0.9);
+            } else if (fx.kind === 'emergencyLanding') {
+                burst(fx, x, y, t, 4, '#d9bf96', 24, 2, BattlefieldProjection.groundScale);
+                ring(
+                    x,
+                    y,
+                    (8 + 28 * ease) * sc,
+                    1.8 * sc,
+                    '#ffc477',
+                    0.75 * (1 - t),
+                    BattlefieldProjection.groundScale,
+                );
             } else if (fx.kind === 'launchMuzzle') {
                 // Muzzle flash on the barrel's end, then smoke that drifts up and spreads.
                 const power = Number(fx.power) || 0,
@@ -11079,6 +11149,8 @@ LaunchScreens.install({
         grainName: (t) => UnitDefinition.get(t)?.name || t,
         grainStats: (t) => ({
             ...LaunchRules.payload(t),
+            shellHp: LaunchRules.grain(t).shellHp,
+            canAttackAir: !!UnitDefinition.get(t)?.canAttackAir,
             maxReach: LaunchRules.maxReachOf(
                 t,
                 ActiveViewState.snap?.launchRangeLevel?.[

@@ -14,6 +14,7 @@ import { RallyStateCodec } from '../core/rally-state-codec.js';
 import { LaunchRules } from './launch-rules.js';
 import { ConstructionRules } from './construction-rules.js';
 import { LaunchImpact } from './launch-impact.js';
+import { LaunchInterception } from './launch-interception.js';
 import { UnitThornAttack } from './unit-thorn-attack.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.js';
@@ -1133,12 +1134,12 @@ class StrategySim {
         if (u.hitFlash > 0) u.hitFlash--;
         if (u.attackFlash > 0) u.attackFlash--;
     }
-    startAttackWindup(u, target, isBuilding, d) {
+    startAttackWindup(u, target, targetKind, d) {
         if (!u || !target) return false;
         u.combat.attackWindupStartedAt = this.tick;
         u.combat.attackWindupUntil = this.tick + this.attackWindupTicksFor(d);
         u.combat.attackWindupTargetId = target.id;
-        u.combat.attackWindupIsBuilding = !!isBuilding;
+        u.combat.attackWindupTargetKind = targetKind;
         u.target = target.id;
         return true;
     }
@@ -1146,7 +1147,7 @@ class StrategySim {
         if (!u?.combat.attackWindupTargetId) return null;
         const ref = this.liveEntityRefById(
             u.combat.attackWindupTargetId,
-            u.combat.attackWindupIsBuilding ? 'building' : 'unit',
+            u.combat.attackWindupTargetKind,
         );
         return ref?.entity || null;
     }
@@ -1155,7 +1156,7 @@ class StrategySim {
         if (!u || !u.combat.attackWindupUntil) return false;
         return this.tick >= u.combat.attackWindupUntil;
     }
-    attackReadyAfterWindup(u, target, isBuilding, d) {
+    attackReadyAfterWindup(u, target, targetKind, d) {
         if ((u.combat.attackWindupUntil || 0) > 0) {
             if (!this.tickAttackWindup(u)) return false;
             u.combat.cancelWindup();
@@ -1163,7 +1164,7 @@ class StrategySim {
             return true;
         }
         if (u.combat.cooldownActive(this)) return false;
-        this.startAttackWindup(u, target, isBuilding, d);
+        this.startAttackWindup(u, target, targetKind, d);
         return false;
     }
     attackCooldownJitterMs(entity) {
@@ -1172,6 +1173,12 @@ class StrategySim {
         const id = String(entity?.id || entity?.type || 'attack');
         const slot = HashUtil.hash(`${id}|attack-cooldown|${this.tick}`) & 3;
         return slot === 0 ? -50 : slot === 1 ? 0 : 50;
+    }
+
+    attackCooldown(u, d) {
+        const cooldown = d.cooldown ?? d.attackIntervalMs / 1000;
+        const attackSpeedPct = this.timedModifierPct(u, 'attackSpeedPct');
+        return attackSpeedPct > 100 ? (cooldown * 100) / attackSpeedPct : cooldown;
     }
 
     commitAttackTiming(u, d, cooldown = d.cooldown) {
@@ -2166,35 +2173,43 @@ class StrategySim {
                 b.cooldownActive(this)
             )
                 continue;
-            let target = null,
-                isBuilding = false,
-                bestDistance = Infinity;
-            const consider = (entity, building) => {
-                if (
-                    !this.canAttackEntity(b.type, entity, building) ||
-                    !this.canSeeCombatTarget(b.side, entity, vision[b.side])
-                )
-                    return;
-                const distance = (entity.x - b.x) ** 2 + (entity.y - b.y) ** 2;
-                if (distance > d.range * d.range) return;
-                if (this.targetChoiceBetter(distance, entity.id, bestDistance, target)) {
-                    target = entity;
-                    isBuilding = building;
-                    bestDistance = distance;
-                }
-            };
-            // A defensive tower prefers nearby troops; structures are a fallback.
-            this.forEachNearbyHostileUnit(b.side, b.x, b.y, d.range, (e) => {
-                if (this.canTargetUnit(b.side, e, vision[b.side])) consider(e, false);
-            });
-            if (!target)
-                for (const idx of this.nearbyBuildingIndices(b.x, b.y, d.range)) {
-                    const e = this.buildings[idx];
-                    if (this.isHostileCombatBuilding(b.side, e)) consider(e, true);
-                }
+            const shell =
+                d.canAttackAir && LaunchInterception.target(this, b, d.range, vision[b.side]);
+            let target = shell,
+                isBuilding = false;
+            if (!target) {
+                let bestDistance = Infinity;
+                const consider = (entity, building) => {
+                    if (
+                        !this.canAttackEntity(b.type, entity, building) ||
+                        !this.canSeeCombatTarget(b.side, entity, vision[b.side])
+                    )
+                        return;
+                    const distance = (entity.x - b.x) ** 2 + (entity.y - b.y) ** 2;
+                    if (distance > d.range * d.range) return;
+                    if (this.targetChoiceBetter(distance, entity.id, bestDistance, target)) {
+                        target = entity;
+                        isBuilding = building;
+                        bestDistance = distance;
+                    }
+                };
+                // On the ground, a defensive tower prefers troops over structures.
+                this.forEachNearbyHostileUnit(b.side, b.x, b.y, d.range, (e) => {
+                    if (this.canTargetUnit(b.side, e, vision[b.side])) consider(e, false);
+                });
+                if (!target)
+                    for (const idx of this.nearbyBuildingIndices(b.x, b.y, d.range)) {
+                        const e = this.buildings[idx];
+                        if (this.isHostileCombatBuilding(b.side, e)) consider(e, true);
+                    }
+            }
             b.targetId = target?.id ?? null;
             if (!target) continue;
             b.startCooldownUntil(this.tick + this.msTicks(d.cooldownMs));
+            if (shell) {
+                LaunchInterception.hit(this, b, shell, d.atk);
+                continue;
+            }
             if (d.mortar && ++b.attacksSinceMortar === d.mortar.attackInterval) {
                 b.attacksSinceMortar = 0;
                 this.fireMortar(b, target, d.mortar);
@@ -2289,9 +2304,42 @@ class StrategySim {
             return null;
         }
 
-        let found = null;
+        const attackRange = this.basicAttackRange(u);
+        let found = activeSite
+            ? this.constructionDefenseTarget(u, activeSite, vision[u.side])
+            : null;
+        const targetKind = u.combat.attackWindupTargetKind;
+        // Prefer air when choosing a new attack. An already committed ground windup
+        // still resolves, so a fleeting shell cannot repeatedly reset that attack.
+        const shell =
+            d.canAttackAir &&
+            (!activeSite || found) &&
+            (targetKind === 'projectile' || !u.combat.windupPending()) &&
+            !u.combat.cooldownActive(this) &&
+            FruitHeroAttack.canBasic(u) &&
+            LaunchInterception.target(
+                this,
+                u,
+                attackRange,
+                vision[u.side],
+                targetKind === 'projectile' ? u.combat.attackWindupTargetId : null,
+            );
+        if (shell) {
+            if (!activeSite) u.constructionWork = null;
+            if (targetKind !== 'projectile' || u.combat.attackWindupTargetId !== shell.id)
+                u.combat.cancelWindup();
+            if (this.attackReadyAfterWindup(u, shell, 'projectile', d)) {
+                this.commitAttackTiming(u, d, this.attackCooldown(u, d));
+                LaunchInterception.hit(this, u, shell, d.atk);
+            }
+            return null;
+        }
+        if (targetKind === 'projectile') {
+            u.combat.cancelWindup();
+            u.target = null;
+        }
+
         if (activeSite) {
-            found = this.constructionDefenseTarget(u, activeSite, vision[u.side]);
             if (
                 found &&
                 u.combat.windupPending() &&
@@ -2324,14 +2372,11 @@ class StrategySim {
             } else found = this.retainedCombatTarget(u, vision[u.side]);
         }
 
-        const attackRange = this.basicAttackRange(u);
         let moveSpeed = d.speed;
-        let cooldown = d.cooldown ?? d.attackIntervalMs / 1000;
+        const cooldown = this.attackCooldown(u, d);
         // 공통 전투 이동/공속 보정.
         moveSpeed *= this.timedModifierPct(u, 'movePct') / 100;
         const nonCombatMoveSpeed = moveSpeed * (d.outOfCombatMoveMultiplier ?? 1);
-        const timedAttackPct = this.timedModifierPct(u, 'attackSpeedPct');
-        if (timedAttackPct > 100) cooldown *= 100 / timedAttackPct;
 
         if (!found) {
             u.combat.cancelWindup();
@@ -2395,7 +2440,7 @@ class StrategySim {
 
         if (d.contactMelee) {
             if (!u.combat.windupPending() && !u.combat.cooldownActive(this))
-                this.startAttackWindup(u, t, found.isBuilding, d);
+                this.startAttackWindup(u, t, found.isBuilding ? 'building' : 'unit', d);
             const contact = found.isBuilding
                 ? this.buildingClearanceDistance(u, t)
                 : InteractionGeometry.contact(u, t);
@@ -2447,7 +2492,8 @@ class StrategySim {
             return null;
         }
         if (u.fruitAttack && !FruitHeroAttack.canBasic(u)) return null;
-        if (!this.attackReadyAfterWindup(u, t, found.isBuilding, d)) return null;
+        if (!this.attackReadyAfterWindup(u, t, found.isBuilding ? 'building' : 'unit', d))
+            return null;
         this.commitAttackTiming(u, d, cooldown);
         if (u.fruitAttack) {
             FruitHeroAttack.basic(this, u, t, found.isBuilding);
@@ -2554,6 +2600,18 @@ class StrategySim {
     }
     // The shared height curve clears high obstacles; low swept contacts retire a shot early.
     // Impact damage and queued deployment use that actual contact point.
+    retireProjectile(projectile, x, y) {
+        projectile.alive = false;
+        this.events.push({
+            type: 'projectileRetire',
+            projectileId: projectile.id,
+            x,
+            y,
+            side: projectile.side,
+            sourceType: projectile.type,
+        });
+    }
+
     updateProjectiles() {
         for (const p of this.projectiles) {
             if (!p.alive) continue;
@@ -2573,15 +2631,7 @@ class StrategySim {
             }
             const arrivalStep = p.arcDistance != null ? step : Math.max(20, step);
             if (dist <= arrivalStep || contact) {
-                p.alive = false;
-                this.events.push({
-                    type: 'projectileRetire',
-                    projectileId: p.id,
-                    x: aimX,
-                    y: aimY,
-                    side: p.side,
-                    sourceType: p.type,
-                });
+                this.retireProjectile(p, aimX, aimY);
                 const impactHeightFP =
                     contact?.impactHeightFP ??
                     Math.round(this.world.terrain.surfaces.heightAt(aimX, aimY) * FP);

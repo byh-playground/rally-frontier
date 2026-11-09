@@ -1,5 +1,6 @@
 const TOWER_ATTACK = Object.freeze({
     canAttackGround: true,
+    canAttackAir: true,
     range: 500,
     atk: 8,
     cooldownMs: 500,

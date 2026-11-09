@@ -99,11 +99,14 @@ class LaunchRules {
     static heroCard = 'watermelon';
     static heroTypes = Object.freeze([LaunchRules.heroCard, 'banana', 'grape']);
     static grains = Object.freeze({
-        ...Object.fromEntries(LaunchRules.heroTypes.map((type) => [type, HERO_SHELL])),
+        watermelon: Object.freeze({ ...HERO_SHELL, shellHp: 65 }),
+        banana: Object.freeze({ ...HERO_SHELL, shellHp: 50 }),
+        grape: Object.freeze({ ...HERO_SHELL, shellHp: 55 }),
         // 산탄: 한 번에 여러 갈래, 갈래마다 폭발은 작다.
         rice: Object.freeze({
             cost: 35 * this.resourceScale,
             count: 20,
+            shellHp: 10,
             reach: 1,
             speed: 600,
             impact: 10,
@@ -122,6 +125,7 @@ class LaunchRules {
         pea: Object.freeze({
             cost: 45 * this.resourceScale,
             count: 12,
+            shellHp: 40,
             reach: 0.85,
             speed: 750,
             impact: 40,
@@ -133,6 +137,7 @@ class LaunchRules {
         // Provisional corn deployment: a single shell releases one grouped squad.
         corn: Object.freeze({
             ...SINGLE_BUNDLE_SHELL,
+            shellHp: 30,
             speed: 550,
             arcScale: 1.5,
             splash: 65,
@@ -144,6 +149,7 @@ class LaunchRules {
         }),
         popcorn: Object.freeze({
             ...SINGLE_BUNDLE_SHELL,
+            shellHp: 15,
             impact: 15,
             splash: 60,
             fire: Object.freeze({
@@ -156,6 +162,7 @@ class LaunchRules {
         }),
         millet: Object.freeze({
             ...SINGLE_BUNDLE_SHELL,
+            shellHp: 20,
             cost: 40 * this.resourceScale,
             count: 20,
             impact: 10,
@@ -164,6 +171,7 @@ class LaunchRules {
             fire: Object.freeze({ mode: 'split', offsets: Object.freeze([-100, 0]) }),
         }),
         chestnut: Object.freeze({
+            shellHp: 25,
             cost: 25 * this.resourceScale,
             premiumCost: 5 * this.resourceScale,
             count: 6,
@@ -182,6 +190,7 @@ class LaunchRules {
         redbean: Object.freeze({
             cost: 60 * this.resourceScale,
             count: 10,
+            shellHp: 18,
             reach: 0.75,
             speed: 750,
             impact: 20,
@@ -193,6 +202,7 @@ class LaunchRules {
         }),
         // 도토리는 한 발당 두 병사씩 세 발을 쏜다.
         acorn: Object.freeze({
+            shellHp: 35,
             cost: 35 * this.resourceScale,
             premiumCost: 10 * this.resourceScale,
             count: 6,
