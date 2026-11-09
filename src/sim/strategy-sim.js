@@ -623,7 +623,9 @@ class StrategySim {
     }
     canAttackEntity(sourceType, target, isBuilding = false) {
         const d = UnitDefinition.get(sourceType) || BuildingDefinition.get(sourceType);
-        return isBuilding ? !!d?.canAttackGround : !d || !!d.canAttackGround;
+        return isBuilding
+            ? (d?.canAttackBuildings ?? !!d?.canAttackGround)
+            : !d || !!d.canAttackGround;
     }
     terrainLevelAt(x, y) {
         return this.world.terrain.surfaces.levelAt(x, y);
@@ -1889,7 +1891,7 @@ class StrategySim {
                 }
                 consider(e, false, UnitDefinition.get(e.type), d2);
             });
-        scan(nearRange, -1, nearRange2);
+        if (d.canAttackGround) scan(nearRange, -1, nearRange2);
         for (const i of this.nearbyBuildingIndices(u.x, u.y, queryRange)) {
             const b = this.buildings[i];
             if (
@@ -1906,7 +1908,7 @@ class StrategySim {
                 (b.x - u.x) ** 2 + (b.y - u.y) ** 2,
             );
         }
-        if (!defensiveSite && !inRangeBest && nearRange < queryRange)
+        if (d.canAttackGround && !defensiveSite && !inRangeBest && nearRange < queryRange)
             scan(queryRange, nearRange2, queryRange2);
         if (currentInRange && currentInRange.rank <= inRangeRank) return currentInRange.candidate;
         if (inRangeBest) return inRangeBest;
@@ -1973,6 +1975,7 @@ class StrategySim {
         };
         if (
             !isBuilding &&
+            options?.damageDelivery !== 'launch-shell' &&
             (UnitDefinition.get(sourceType) || BuildingDefinition.get(sourceType)) &&
             !this.canAttackEntity(sourceType, target, false)
         ) {
@@ -2114,6 +2117,7 @@ class StrategySim {
         radius,
         damage,
         damageClass = 'area',
+        damageDelivery,
         suppressImpactFx = false,
         strikePeak = 1,
         impactHeightFP = undefined,
@@ -2140,7 +2144,7 @@ class StrategySim {
                     false,
                     Math.max(1, Math.floor(damage * mult)),
                     sourceEntityId,
-                    { damageClass, suppressImpactFx, sourceDamageResolved: true },
+                    { damageClass, damageDelivery, suppressImpactFx, sourceDamageResolved: true },
                 );
             }
         });
@@ -2666,19 +2670,27 @@ class StrategySim {
                 length = Math.hypot(dx, dy) || 1,
                 sourceApproach = ((u.x - attack.fromX) * dx + (u.y - attack.fromY) * dy) / length;
             if (attack.beforeDistance - afterDistance < 1 / FP || sourceApproach < 1 / FP) {
-                this.beginContactAttackRecovery(u, target, definition.cooldownMs);
+                this.beginContactAttackRecovery(
+                    u,
+                    target,
+                    definition.attackIntervalMs ?? definition.cooldownMs,
+                );
                 continue;
             }
-            this.commitAttackTiming(u, UnitDefinition.get(u.type), attack.cooldown);
+            this.commitAttackTiming(u, definition, attack.cooldown);
             u.combat.contactHitTick = this.tick;
-            this.beginContactAttackRecovery(u, target, definition.cooldownMs);
+            this.beginContactAttackRecovery(
+                u,
+                target,
+                definition.attackIntervalMs ?? definition.cooldownMs,
+            );
             winner =
                 this.applyDamage(
                     u.side,
                     u.type,
                     target,
                     attack.isBuilding,
-                    Math.floor(UnitDefinition.get(u.type).atk),
+                    Math.floor(definition.atk),
                     u.id,
                     { damageClass: UnitDefinition.damageClass(u.type) },
                 ) || winner;
@@ -2734,6 +2746,7 @@ class StrategySim {
                     radius,
                     damage: p.splashUnitDamage ?? p.damage,
                     damageClass: p.damageClass || 'normal',
+                    damageDelivery: p.payload ? 'launch-shell' : undefined,
                     suppressImpactFx: true,
                     strikePeak: p.mortar ? 1 : LaunchRules.unitImpactPeak,
                     impactHeightFP,

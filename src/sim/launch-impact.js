@@ -5,6 +5,7 @@ import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { UnitResultStats } from './unit-result-stats.js';
 import { HashUtil } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
+import { UnitDefinition } from '../definitions/units.js';
 import { TerrainSurfaceAtlas } from './terrain.js';
 import { WorldContext } from './world-context.js';
 
@@ -132,12 +133,14 @@ class LaunchImpact {
         const { type, count } = p.payload;
         let holdPointId = null,
             best = LaunchRules.captureHoldRadius;
-        for (const cp of sim.capturePoints) {
-            if (cp.owner != null || !cp.enabled) continue;
-            const d = Math.hypot(cp.x - x, cp.y - y);
-            if (d < best) {
-                best = d;
-                holdPointId = cp.id;
+        if (!UnitDefinition.onlyAttacksBuildings(type)) {
+            for (const cp of sim.capturePoints) {
+                if (cp.owner != null || !cp.enabled) continue;
+                const d = Math.hypot(cp.x - x, cp.y - y);
+                if (d < best) {
+                    best = d;
+                    holdPointId = cp.id;
+                }
             }
         }
         const origin = this.deploymentOrigin(sim, p, x, y);

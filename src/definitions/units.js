@@ -169,6 +169,24 @@ class UnitDefinition {
             attackVisual: { sourceMotion: 'smash', travel: 'none', impact: 'light' },
             sight: 275,
         },
+        peanut: {
+            requiresContactTerrain: true,
+            name: '땅콩',
+            contactMelee: true,
+            canAttackBuildings: true,
+            canAttackGround: false,
+            mass: 225,
+            hp: 75,
+            atk: 50,
+            range: 25,
+            speed: 50,
+            attackIntervalMs: 1500,
+            size: 10,
+            sizeClass: 'medium',
+            role: 'bruiser',
+            attackVisual: { sourceMotion: null, travel: 'none', impact: 'light' },
+            sight: 275,
+        },
         acorn: {
             requiresContactTerrain: true,
             construction: { range: 5, workPerHit: 1 },
@@ -328,6 +346,10 @@ class UnitDefinition {
     static get(type) {
         return this.all[type] || null;
     }
+    static onlyAttacksBuildings(type) {
+        const unit = this.get(type);
+        return unit?.canAttackBuildings === true && !unit.canAttackGround;
+    }
     static damageClass(type) {
         const d = this.get(type);
         if (!d) return 'normal';
@@ -403,6 +425,13 @@ class UnitVisualDefinition {
             billboard: true,
             visualScale: 0.9,
             accent: [0.5, 0.69, 0.27, 1],
+            fx: 'melee',
+        },
+        peanut: {
+            family: 'grain',
+            billboard: true,
+            visualScale: 0.9,
+            accent: [0.77, 0.5, 0.24, 1],
             fx: 'melee',
         },
         corn: {
