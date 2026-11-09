@@ -9,6 +9,7 @@ import { UnitSelfDestructAttack } from './unit-self-destruct-attack.js';
 import { UnitLeapAttack } from './unit-leap-attack.js';
 import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './entities.js';
 import { StateContract, StateValue } from './components.js';
+import { CampaignMission } from './campaign-mission.js';
 import { UnitResultStats } from './unit-result-stats.js';
 import { RallyStateCodec } from '../core/rally-state-codec.js';
 import { LaunchRules } from './launch-rules.js';
@@ -361,7 +362,7 @@ class StrategySim {
                     if (side === 1) enemyPoints.push(point);
                 }
             }
-            if (campaign.introducedEnemy) {
+            if (campaign.introducedEnemy && !campaign.mission?.formations) {
                 const [front] = enemyPoints;
                 for (let i = 0; i < 3; i++)
                     this.spawnUnit(
@@ -387,6 +388,8 @@ class StrategySim {
                 this.campaignVolleyPractice.goals[index].garrisonIds.push(defender.id);
             }
         }
+        const missionState = CampaignMission.initialize(this);
+        if (missionState) this.campaignMission = missionState;
     }
     dispose(reason = 'disposed') {
         if (this.disposed) return false;
@@ -1424,8 +1427,7 @@ class StrategySim {
         if (this.campaignVolleyPractice && side === 0 && action.unitType === 'rice') {
             const index = this.rules.campaign.volleyGoals.findIndex(
                 (goal) =>
-                    volley.length === goal.cannons &&
-                    Math.hypot(aim.x - goal.x, aim.y - goal.y) <= goal.radius,
+                    volley.length === goal.cannons && CampaignMission.volleyGoalContains(goal, aim),
             );
             const progress = this.campaignVolleyPractice.goals[index];
             if (progress && !progress.landed) {
@@ -1450,7 +1452,7 @@ class StrategySim {
                 (event) =>
                     event.type === 'launchImpact' &&
                     progress.projectileIds.includes(event.projectileId) &&
-                    Math.hypot(event.x - goal.x, event.y - goal.y) <= goal.radius,
+                    CampaignMission.volleyGoalContains(goal, event),
             );
             const pending = new Set(this.projectiles.map((shell) => shell.id));
             for (const group of this.launchDeployments) pending.add(group.projectileId);
@@ -3780,6 +3782,7 @@ class StrategySim {
         this.tick++;
         this.events = [];
 
+        CampaignMission.beforeCommands(this);
         const cmds = this.scheduled.get(this.tick) || [];
         for (const c of cmds) {
             const applied = this.applyCommand(c.actor, c.action) === true;
@@ -3872,11 +3875,16 @@ class StrategySim {
             this.updateVolleyPractice();
             winner = this.campaignVolleyPractice.complete ? 'host' : null;
         }
-        if (campaign?.defenseSeconds && !this.netcodeMatchResult) {
+        if (
+            campaign?.defenseSeconds &&
+            !campaign.mission?.waves?.length &&
+            !this.netcodeMatchResult
+        ) {
             const timeUp = this.tick >= campaign.defenseSeconds * this.tps;
             if (!timeUp && winner === 'host') winner = null;
             if (timeUp && campaign.mode === 'defend' && !winner) winner = 'host';
         }
+        if (!this.netcodeMatchResult) winner = CampaignMission.resolve(this, winner);
         this.updateBalanceTelemetry(winner);
         this.cleanupDeadEntities();
         const postMs = profile ? now() - mark : 0;
@@ -3998,6 +4006,7 @@ class StrategySim {
     }
     importState(s, { rollback = false } = {}) {
         UnitResultStats.validate(s.unitResultStats);
+        CampaignMission.validate(s, s.rules?.campaign?.mission);
         const retained = {
             mapDescriptor: this.mapDescriptor,
             rules: this.rules,
@@ -4028,6 +4037,7 @@ class StrategySim {
                     delete this[key];
         }
         Object.assign(this, copy);
+        if (!copy.campaignMission) delete this.campaignMission;
         StateValue.freeze(this.decks);
         StateValue.freeze(this.mapDescriptor);
         this.world = WorldContext.fromMap(this.mapDescriptor);
@@ -4060,6 +4070,7 @@ class StrategySim {
                 decks: StateValue.copy(this.decks),
                 mapDescriptor: this.mapDescriptor,
                 launchDeployments: StateValue.copy(this.launchDeployments),
+                campaignMission: CampaignMission.snapshot(this.campaignMission),
                 heroes: StateValue.copy(this.heroes),
                 heroRecovery: StateValue.copy(this.heroRecovery),
                 heroReserveHp: this.heroes.map((heroes, side) =>

@@ -590,10 +590,32 @@ ${panels.map((body, index) => `<section class="unit-info-panel" role="tabpanel" 
         }
     }
     // Label over the landing ring while aiming; at is the ring centre in page pixels, or null when not aiming.
-    static renderAimLabel(at, type, maxReach, cannonCount, passengerCount, showVolleyHint = false) {
+    static renderAimLabel(
+        at,
+        type,
+        maxReach,
+        cannonCount,
+        passengerCount,
+        { showVolleyHint = false, requiredCannons } = {},
+    ) {
         const LABEL = this.$('aimLabel');
         LABEL.classList.toggle('hidden', !at);
         if (!at) {
+            return;
+        }
+        if (requiredCannons != null) {
+            const status =
+                cannonCount === requiredCannons
+                    ? '충족'
+                    : cannonCount < requiredCannons
+                      ? '부족'
+                      : '초과';
+            const text = `목표 ${requiredCannons}문 · 현재 ${cannonCount}문 · ${status}`;
+            LABEL.classList.remove('shared');
+            if (LABEL.textContent !== text) LABEL.textContent = text;
+            const half = LABEL.offsetWidth / 2,
+                x = Math.max(half, Math.min(at.x, LABEL.parentElement.clientWidth - half));
+            LABEL.style.transform = `translate(${Math.round(x)}px,${Math.round(at.y)}px) translate(-50%,-100%)`;
             return;
         }
         const SHARED = cannonCount > 1,

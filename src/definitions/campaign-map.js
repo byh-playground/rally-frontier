@@ -3,22 +3,31 @@ export function campaignMapLayout(stage) {
     const width = 2400;
     const height = 3000;
     const centerX = width / 2;
+    const layout = stage.layout ?? {};
     const spawns = {
         host: { x: centerX, y: 2600 },
-        guest: { x: centerX, y: 400 },
+        guest: { x: centerX, y: layout.guestY ?? 400 },
     };
-    // Stagger the pads so automatic fire, including mortar splash, cannot reach another tower.
-    const advance = { id: 'advance', label: '전진 보급 거점', x: 970, y: 1925 };
-    const center = { id: 'center', label: '중앙 보급 거점', x: 1475, y: 1500 };
-    const front = { id: 'enemy-front', label: '전방 보급 거점', x: 950, y: 1050 };
+    const advance = { id: 'advance', label: '전진 식량 거점', x: 970, y: 1925, ...layout.advance };
+    const center = { id: 'center', label: '중앙 식량 거점', x: 1475, y: 1500, ...layout.center };
+    const front = { id: 'enemy-front', label: '전방 식량 거점', x: 950, y: 1050, ...layout.front };
     const ridge = { id: 'enemy-ridge', label: '언덕 보급 거점', x: 2075, y: 1775 };
     const oil = { id: 'oil', label: '측면 기름 거점', x: 2135, y: 2440 };
+    const flank = layout.flank && { id: 'flank', label: '측면 식량 거점', ...layout.flank };
+    const foothold = stage.mission?.counterattackPoint && {
+        id: stage.mission.counterattackPoint,
+        label: '반격 지원 거점',
+        ...layout.counterFoothold,
+        enabled: false,
+    };
     const hasRidge = stage.enemyOutposts.includes(ridge.id);
+    const hasOil = stage.resourceLesson || stage.friendlyOutposts?.includes(oil.id);
     const rear = {
         id: 'enemy-rear',
         label: '후방 보급 거점',
         x: 1685,
         y: 875,
+        ...layout.rear,
     };
     const hasRear = stage.enemyOutposts.includes(rear.id);
     const capturePoint = (point, laneKey = 'mid', resourceType = 'basic') => ({
@@ -32,7 +41,9 @@ export function campaignMapLayout(stage) {
         ...(stage.volleyGoals ? [] : [capturePoint(front)]),
         ...(hasRear ? [capturePoint(rear)] : []),
         ...(hasRidge ? [capturePoint(ridge, 'bot')] : []),
-        ...(stage.resourceLesson ? [capturePoint(oil, 'top', 'premium')] : []),
+        ...(hasOil ? [capturePoint(oil, 'top', 'premium')] : []),
+        ...(flank ? [capturePoint(flank, 'top')] : []),
+        ...(foothold ? [capturePoint(foothold)] : []),
     ];
 
     const layerId = 'campaign-ridge';
@@ -75,12 +86,17 @@ export function campaignMapLayout(stage) {
             mid: route(
                 spawns.host,
                 advance,
+                ...(foothold ? [foothold] : []),
                 center,
                 front,
                 ...(hasRear ? [rear] : []),
                 spawns.guest,
             ),
-            top: stage.resourceLesson ? route(spawns.host, oil, center) : [],
+            top: flank
+                ? route(spawns.host, flank, center)
+                : hasOil
+                  ? route(spawns.host, oil, center)
+                  : [],
             bot: hasRidge ? route(center, { x: ridge.x - 270, y: ridge.y }, ridge, rear) : [],
         },
         capturePoints,
