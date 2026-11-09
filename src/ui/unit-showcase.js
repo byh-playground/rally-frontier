@@ -81,15 +81,17 @@ function prepareVolleyShowcase(
     { renderer, createScenario, createPresentationView, unitType, onError, onLaunch, onComplete },
     opening = false,
 ) {
-    const grain = LaunchRules.grain(unitType);
-    if (!grain) throw new Error('알 수 없는 병종 소개 장면입니다.');
+    if (!LaunchRules.grain(unitType)) throw new Error('알 수 없는 병종 소개 장면입니다.');
     const { sim, x, y, host, target, rangeLevel } = createArena(unitType, opening);
     const distance = Math.hypot(target.x - host.x, target.y - host.y);
     const initialState = sim.exportState();
     const launchDelay = opening ? OPENING_LAUNCH_DELAY_SECONDS : LAUNCH_DELAY_SECONDS;
     const launchTick = sim.msTicks(launchDelay * 1000);
     const endTick = opening
-        ? launchTick + sim.msTicks((distance / grain.speed) * 1000 + OPENING_LANDING_HOLD_MS)
+        ? launchTick +
+          sim.msTicks(
+              (distance / LaunchRules.shellSpeed(unitType)) * 1000 + OPENING_LANDING_HOLD_MS,
+          )
         : DURATION_SECONDS * sim.tps;
     const skillTick = sim.msTicks(HERO_SKILL_DELAY_SECONDS * 1000);
     let scenario;

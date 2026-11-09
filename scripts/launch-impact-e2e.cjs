@@ -515,7 +515,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                         ],
                         0,
                     ],
-                    ['pea', 225, 0, [[0, 0, 80, 40, 12]], 0],
+                    ['pea', 225, 0, [[0, 0, 80, 40, 12]], 0, 600, 133],
                     [
                         'redbean',
                         300,
@@ -558,11 +558,11 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                         ],
                         450,
                     ],
-                    ['corn', 100, 75, [[0, 0, 65, 25, 6]], 0, 550],
-                    ['chestnut', 125, 25, [[0, 0, 50, 10, 6]], 0, 1000],
+                    ['corn', 100, 75, [[0, 0, 65, 25, 6]], 0, 440, 191],
+                    ['chestnut', 125, 25, [[0, 0, 50, 10, 6]], 0, 800, 91],
                 ];
                 const flights = {};
-                for (const [type, cost, oil, expected, gapMs, speed] of cases) {
+                for (const [type, cost, oil, expected, gapMs, speed, midHeight] of cases) {
                     const { sim } = arena({ deck: [type] });
                     const cannon = sim.launchCannons(0)[0];
                     const aim = { x: cannon.x + 350, y: cannon.y };
@@ -660,11 +660,12 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     );
                     if (speed)
                         check(
-                            shots[0].speed === speed,
-                            'specialized shell keeps its flight speed',
-                            type,
+                            shots[0].speed === speed && shots[0].height === midHeight,
+                            'the player cannon uses the authored flight speed and midpoint height',
+                            { type, speed, midHeight, shot: shots[0] },
                         );
                     flights[type] = {
+                        speed: shots[0].speed,
                         height: shots[0].height,
                         tick: impacts.get(shots[0].id).tick,
                     };
@@ -1698,7 +1699,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                             originY: victim.y,
                             sourceId: 'qa-existing-flight',
                         };
-                    shell(sim, x, y, { startX: x - 17, count: 0 });
+                    shell(sim, x, y, { startX: x - 14, count: 0 });
                     const shot = sim.projectiles.at(-1),
                         projectileHeight = LaunchImpact.projectileHeight(sim, shot, shot.x, shot.y);
                     check(

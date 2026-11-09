@@ -1412,7 +1412,7 @@ class StrategySim {
     }) {
         const cannon =
                 this.buildingById.get(cannonId) || this.buildings.find((b) => b.id === cannonId),
-            grain = LaunchRules.grain(type),
+            speed = LaunchRules.shellSpeed(type),
             id = 'p' + ++this.seq;
         const dx = x - cannon.x,
             dy = y - cannon.y,
@@ -1432,9 +1432,8 @@ class StrategySim {
             // Split shells cover unequal distances in the same time on clear ground.
             speed:
                 arcDistance != null
-                    ? (grain.speed * Math.max(1, length - LaunchImpactRules.muzzleReach)) /
-                      arcDistance
-                    : grain.speed,
+                    ? (speed * Math.max(1, length - LaunchImpactRules.muzzleReach)) / arcDistance
+                    : speed,
             arcDistance,
             damage: impact,
             splash,
