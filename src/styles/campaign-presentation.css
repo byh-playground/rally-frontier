@@ -1,3 +1,25 @@
+.campaign-briefing,
+.campaign-objective,
+.campaign-cue {
+    --campaign-paper: #fff7e9;
+    --campaign-inset: #f1e5d5;
+    --campaign-ink: #2d251f;
+    --campaign-accent: #754625;
+    --campaign-edge: #d7c3aa;
+}
+
+.campaign-briefing {
+    border-color: var(--campaign-edge);
+    background: var(--campaign-paper);
+    color: var(--campaign-ink);
+    box-shadow: 0 18px 60px #251c166b;
+}
+
+.campaign-briefing::backdrop,
+.campaign-dialog::backdrop {
+    background: #29231db3;
+}
+
 .campaign-briefing .deck-panel {
     padding: clamp(14px, 5vw, 24px);
 }
@@ -5,7 +27,7 @@
 .campaign-briefing-kicker,
 .campaign-briefing-progress {
     margin: 0;
-    color: var(--muted);
+    color: #675448;
     font-size: 12px;
     font-weight: 800;
 }
@@ -14,6 +36,8 @@
     flex: none;
     width: 44px;
     height: 44px;
+    background: var(--campaign-inset);
+    color: var(--campaign-ink);
 }
 
 .campaign-briefing-objective {
@@ -22,30 +46,30 @@
     gap: 8px;
     margin: 14px 0 10px;
     padding: 8px 11px;
-    border: 1px solid var(--line);
+    border: 1px solid var(--campaign-edge);
     border-radius: 10px;
-    background: var(--bg);
+    background: var(--campaign-paper);
     font-size: 13px;
 }
 
 .campaign-briefing-objective strong {
     flex: none;
-    color: var(--green);
+    color: var(--campaign-accent);
 }
 
 .campaign-briefing-dialogue {
     min-height: 102px;
     padding: 14px;
     border-radius: 14px;
-    background: var(--tray);
-    color: var(--panel);
+    background: var(--campaign-inset);
+    color: var(--campaign-ink);
     word-break: keep-all;
     overflow-wrap: anywhere;
 }
 
 #campaignBriefingSpeaker {
     margin: 0 0 5px;
-    color: var(--gold);
+    color: var(--campaign-accent);
     font-size: 13px;
     font-weight: 800;
 }
@@ -74,6 +98,18 @@
     font-size: 14px;
 }
 
+.campaign-briefing-actions .secondary {
+    border-color: var(--campaign-edge);
+    background: var(--campaign-paper);
+    color: var(--campaign-ink);
+}
+
+.campaign-briefing-actions .primary {
+    background: var(--campaign-accent);
+    color: var(--campaign-paper);
+    box-shadow: 0 3px 0 #4d2e1b;
+}
+
 .campaign-objective {
     position: absolute;
     top: 54px;
@@ -84,6 +120,8 @@
     gap: 6px;
     max-width: calc(100% - 114px);
     padding: 5px 8px;
+    background: var(--campaign-paper);
+    color: var(--campaign-ink);
     font-size: 12px;
     pointer-events: none;
 }
@@ -91,7 +129,7 @@
 .campaign-objective-tag,
 #campaignObjectiveTimer {
     flex: none;
-    color: var(--green);
+    color: var(--campaign-accent);
     white-space: nowrap;
 }
 
@@ -128,10 +166,10 @@
     max-width: calc(100% - 24px);
     margin: auto;
     padding: 8px 13px;
-    border: 1px solid #c9dcaf7a;
+    border: 1px solid var(--campaign-edge);
     border-radius: 12px;
-    background: #213c2bea;
-    color: var(--panel);
+    background: #332921;
+    color: var(--campaign-paper);
     font-size: 13px;
     line-height: 1.4;
     text-align: center;
@@ -147,7 +185,7 @@
 }
 
 .campaign-cue strong {
-    color: var(--gold);
+    color: #efc79c;
 }
 
 @keyframes campaign-cue-in {
