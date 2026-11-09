@@ -86,6 +86,5 @@ export function createShowcaseHost(createRenderer) {
     return RallyGamekit.createScenarioSurface({
         createSurface: () => createShowcaseSurface(createRenderer),
         prepare: prepareShowcaseScene,
-        waitForFirstFrame: true,
     });
 }
