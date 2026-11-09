@@ -13,6 +13,7 @@ const SINGLE_BUNDLE_SHELL = Object.freeze({
     fire: Object.freeze({ mode: 'single' }),
 });
 const HERO_SHELL = Object.freeze({ ...SINGLE_BUNDLE_SHELL, cost: 0, count: 1 });
+const PEA_BUNDLE_COST = 45;
 
 // 발사전: 대포가 유닛 뭉치를 쏜다. 거리는 누른 시간만으로 정해지고, 조준 중에는 착지 원으로 미리 보인다(D-196).
 // 한 발이 무겁다: 자원 단위는 기존 경제의 5배 환산 기준(D-233·D-235), 폭발 중심일수록 피해가 크다(D-230), 곡물마다 발사 방식이 다르다(D-234).
@@ -127,7 +128,7 @@ class LaunchRules {
         }),
         // 단발: 폭발이 크고 중심 강타가 가장 세다.
         pea: Object.freeze({
-            cost: 45 * this.resourceScale,
+            cost: PEA_BUNDLE_COST * this.resourceScale,
             count: 12,
             shellHp: 40,
             reach: 0.85,
@@ -232,6 +233,17 @@ class LaunchRules {
             impact: 10,
             splash: 50,
             land: 'compact',
+            deployTogether: true,
+        }),
+        peanut: Object.freeze({
+            ...SINGLE_BUNDLE_SHELL,
+            cost: PEA_BUNDLE_COST * this.resourceScale,
+            count: 5,
+            shellHp: 25,
+            impact: 10,
+            splash: 50,
+            land: 'transverse',
+            spacing: 32,
             deployTogether: true,
         }),
     });

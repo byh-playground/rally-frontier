@@ -220,7 +220,12 @@ class BotController {
         const side = this.side,
             distance = BotController.distance,
             reserved = this.commandExecutor.reservations(),
-            ownUnits = state.units.filter((unit) => unit.alive && unit.side === side);
+            ownUnits = state.units.filter(
+                (unit) =>
+                    unit.alive &&
+                    unit.side === side &&
+                    !UnitDefinition.onlyAttacksBuildings(unit.type),
+            );
         return state.capturePoints
             .filter((point) => point.owner == null)
             .flatMap((point) => {
@@ -235,6 +240,7 @@ class BotController {
                     reserved.some(
                         ({ action }) =>
                             action.type === 'LAUNCH' &&
+                            !UnitDefinition.onlyAttacksBuildings(action.unitType) &&
                             action.x === point.x &&
                             action.y === point.y,
                     ) ||
@@ -242,6 +248,7 @@ class BotController {
                         (shot) =>
                             shot.side === side &&
                             shot.payload &&
+                            !UnitDefinition.onlyAttacksBuildings(shot.payload.type) &&
                             distance({ x: shot.lockedAimX, y: shot.lockedAimY }, point) <=
                                 LaunchRules.captureHoldRadius,
                     ) ||
@@ -323,6 +330,11 @@ class BotController {
         const deployedVolleys = ({ type, count }) => (stats[type]?.deployed || 0) / count;
         const effect = ({ type }) => {
             const definition = UnitDefinition.get(type);
+            if (
+                BuildingDefinition.get(shot.target.type) &&
+                UnitDefinition.onlyAttacksBuildings(type)
+            )
+                return 3;
             if (clustered && (definition.lobAttack || definition.spinAttack)) return 2;
             if (BuildingDefinition.get(shot.target.type) && definition.role === 'ranged') return 1;
             return 0;
@@ -348,7 +360,8 @@ class BotController {
             constructionCost = BuildingDefinition.get(outpost).construction.cost,
             deck = state.decks[side]
                 .filter((type) => !LaunchRules.isHeroType(type))
-                .map((type) => ({ type, ...LaunchRules.payload(type) }));
+                .map((type) => ({ type, ...LaunchRules.payload(type) })),
+            groundDeck = deck.filter(({ type }) => UnitDefinition.get(type).canAttackGround);
         const busy = new Set(
             this.commandExecutor.reservations().map(({ action }) => action.cannonId),
         );
@@ -375,7 +388,7 @@ class BotController {
             BotController.nearestShot(
                 cannons,
                 enemies.filter((unit) => distance(unit, base) <= 900),
-                deck,
+                groundDeck,
                 level,
             );
         if (threat) {
@@ -458,7 +471,7 @@ class BotController {
         }
 
         let shot =
-            BotController.nearestShot(cannons, enemies, deck, level) ||
+            BotController.nearestShot(cannons, enemies, groundDeck, level) ||
             premiumShot ||
             BotController.nearestShot(cannons, hostile, deck, level);
         if (!shot && enemyBase && !objectives.some(({ supported }) => supported)) {

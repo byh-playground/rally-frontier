@@ -14,6 +14,7 @@ const perShell = (shots, key) => {
 export function unitCardStats(type, rangeLevel, copy) {
     const unit = UnitDefinition.get(type),
         grain = LaunchRules.grain(type),
+        siege = UnitDefinition.onlyAttacksBuildings(type),
         shots = LaunchRules.volleyStats(type),
         payload = LaunchRules.payload(type),
         burst = unit.burstAttack,
@@ -33,8 +34,14 @@ export function unitCardStats(type, rangeLevel, copy) {
     movement.push(['시야', number.format(unit.sight)]);
 
     const attack = [
-        [suicide ? '자폭 피해' : '기본 공격력', number.format(suicide?.damage ?? unit.atk)],
-        [suicide ? '자폭 반경' : '지상 공격 사거리', number.format(suicide?.radius ?? unit.range)],
+        [
+            suicide ? '자폭 피해' : siege ? '건물 공격력' : '기본 공격력',
+            number.format(suicide?.damage ?? unit.atk),
+        ],
+        [
+            suicide ? '자폭 반경' : siege ? '건물 돌격 거리' : '지상 공격 사거리',
+            number.format(suicide?.radius ?? unit.range),
+        ],
     ];
     if (unit.canAttackAir)
         attack.push(

@@ -29,6 +29,12 @@ import {
 } from './watermelon-sprite.js';
 import { loadFruitSpriteCanvas, fruitSpritePortrait, FruitSpriteRenderer } from './fruit-sprite.js';
 import {
+    loadPeanutSpriteCanvas,
+    peanutSpritePortrait,
+    PeanutSpriteRenderer,
+    PEANUT_ART_SCALE,
+} from './peanut-sprite.js';
+import {
     loadSunflowerSeedSpriteCanvas,
     SUNFLOWER_SEED_ART_SCALE,
     SUNFLOWER_SEED_GROUND_Y,
@@ -53,6 +59,7 @@ const SPRITE_SOURCES = Object.freeze({
     banana: () => loadFruitSpriteCanvas('banana'),
     grape: () => loadFruitSpriteCanvas('grape'),
     'sunflower-seed': loadSunflowerSeedSpriteCanvas,
+    peanut: loadPeanutSpriteCanvas,
 });
 
 // Insertion order is the actual atlas allocation order and is also used by the
@@ -140,6 +147,14 @@ export const GRAIN_SPRITES = Object.freeze({
         cannonAmmo: true,
         groundY: SUNFLOWER_SEED_GROUND_Y,
         artScale: SUNFLOWER_SEED_ART_SCALE,
+    },
+    peanut: {
+        source: 'peanut',
+        renderer: PeanutSpriteRenderer,
+        portrait: peanutSpritePortrait,
+        cannonAmmo: true,
+        groundY: 0,
+        artScale: PEANUT_ART_SCALE,
     },
 });
 

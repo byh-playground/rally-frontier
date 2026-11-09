@@ -49,8 +49,9 @@ function createArena(unitType, opening, interception) {
     const sim = new StrategySim(SEED, undefined, [[unitType], [interception?.launchType ?? 'pea']]);
     const { x, y } = sim.world.center;
     const state = sim.exportState();
+    const siege = UnitDefinition.onlyAttacksBuildings(unitType);
     const host = { x: x - VOLLEY_DISTANCE, y };
-    const guest = { x: opening ? host.x + OPENING_SHOT_DISTANCE : x + 460, y };
+    const guest = { x: opening ? host.x + OPENING_SHOT_DISTANCE : x + (siege ? 150 : 460), y };
     const target = opening ? guest : { x, y };
     const rangeLevel = opening ? OPENING_RANGE_LEVEL : 0;
     state.launchRangeLevel[0] = rangeLevel;
@@ -79,7 +80,10 @@ function createArena(unitType, opening, interception) {
     for (const building of state.buildings) {
         Object.assign(building, building.side === 0 ? host : guest);
         // The showcase's artillery is available to launch, while its automatic fire stays quiet.
-        if (interception) building.cooldownUntil = sim.msTicks(interception.durationMs);
+        if (interception || siege)
+            building.cooldownUntil = sim.msTicks(
+                interception?.durationMs ?? DURATION_SECONDS * 1000,
+            );
     }
     if (interception) state.launchRangeLevel[1] = interception.rangeLevel;
     sim.importState(state);
@@ -87,7 +91,7 @@ function createArena(unitType, opening, interception) {
     if (interception) {
         sim.creditResources(1, LaunchRules.premiumWalletCap, 'premium');
         for (const [dx, dy] of interception.formation) sim.spawnUnit(0, unitType, x + dx, y + dy);
-    } else if (!opening) {
+    } else if (!opening && !siege) {
         for (const [dx, dy] of DEFENDERS) sim.spawnUnit(1, 'pea', x + dx, y + dy);
     }
     return { sim, x, y, host, target, rangeLevel };
