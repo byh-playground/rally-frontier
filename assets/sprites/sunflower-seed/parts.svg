@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="624" height="282" viewBox="0 0 624 282">
+  <title>Sunflower seed anti-air infantry sprite parts</title>
+  <defs>
+    <linearGradient id="husk-light" x1="0" x2="1" y1="0" y2="1">
+      <stop stop-color="#a29a80"/>
+      <stop offset=".42" stop-color="#645a4d"/>
+      <stop offset="1" stop-color="#332d2c"/>
+    </linearGradient>
+    <linearGradient id="limb-light" x1="0" x2=".7" y1="0" y2="1">
+      <stop stop-color="#baa787"/>
+      <stop offset="1" stop-color="#776353"/>
+    </linearGradient>
+    <linearGradient id="tube-light">
+      <stop stop-color="#426b65"/>
+      <stop offset=".34" stop-color="#91a99a"/>
+      <stop offset=".58" stop-color="#648980"/>
+      <stop offset="1" stop-color="#375d58"/>
+    </linearGradient>
+    <path id="husk-outline" d="M-7-209Q-2-217 8-209C29-190 62-151 73-113 89-59 67-28 35-19 17-12-20-13-40-23-81-41-88-78-72-119-59-156-26-193-7-209Z"/>
+    <clipPath id="husk-clip"><use href="#husk-outline"/></clipPath>
+    <g id="body">
+      <use href="#husk-outline" fill="url(#husk-light)"/>
+      <g clip-path="url(#husk-clip)">
+        <path d="M0-214C-30-164-70-86-46-47Q-35-24-14-15L-44-11C-92-42-88-97-60-144Z" fill="#403631"/>
+        <path d="M-3-209C-25-166-60-97-54-60-52-44-45-32-35-24-57-36-68-57-66-83-62-127-30-181-3-209Z" fill="#decaa6"/>
+        <path d="M3-209C20-176 46-132 54-91 60-61 54-39 38-24 66-40 74-64 63-103 51-146 20-187 3-209Z" fill="#f0dbb6"/>
+        <path d="M3-206C12-172 24-143 25-114L13-125C9-152 6-183 3-206Z" fill="#b2a68c" opacity=".8"/>
+        <path d="M-79-70C-45-25 42-17 76-67L77-12H-83Z" fill="#312824" opacity=".28"/>
+      </g>
+      <use href="#husk-outline" fill="none" stroke="#322820" stroke-width="7" stroke-linejoin="round"/>
+      <path d="M-15-190Q-33-167-39-154" fill="none" stroke="#f8e7be" stroke-width="4" stroke-linecap="round" opacity=".74"/>
+    </g>
+    <g id="foot">
+      <path d="M-14-17Q0-21 14-17C17-6 17 9 9 16 4 21-5 21-10 15-17 7-18-6-14-17Z" fill="url(#limb-light)" stroke="#382a23" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M-8-8Q-10-2-8 4" fill="none" stroke="#ddc49e" stroke-width="3" stroke-linecap="round" opacity=".78"/>
+    </g>
+    <g id="arm">
+      <ellipse rx="12" ry="18" fill="url(#limb-light)" stroke="#382a23" stroke-width="5"/>
+      <path d="M-5-10Q-8-5-7 1" fill="none" stroke="#ddc49e" stroke-width="3" stroke-linecap="round" opacity=".78"/>
+    </g>
+    <g id="launcher" stroke="#30342d" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M-53-7H-33V9H-49L-56 15H-66L-62-1Z" fill="#896241"/>
+      <path d="M-25 10H-9L-13 29H-23L-28 21Z" fill="#8b613f"/>
+      <path d="M-4 9H15L13 19H-5Z" fill="#bf8b50" stroke-width="3.5"/>
+      <path d="M19-11H77V10H19Z" fill="url(#tube-light)"/>
+      <path d="M23-4H74M23 3H74" stroke="#344e48" stroke-width="3"/>
+      <path d="M-40-13Q-34-17-25-17H22Q27-17 29-12V8Q26 14 19 14H-34Q-41 11-41 5Z" fill="url(#tube-light)"/>
+      <path d="M-29-8H7" stroke="#b2c8b8" stroke-width="3"/>
+      <path d="M17-13H30V11H17Z" fill="#d5aa62" stroke-width="3"/>
+      <path d="M68-13H82V12H68Z" fill="#d5aa62" stroke-width="3.5"/>
+      <ellipse cx="82" cy="-.5" rx="5" ry="12.5" fill="#f1c77e" stroke-width="3"/>
+      <ellipse cx="83" cy="-.5" rx="2.5" ry="7" fill="#253d39" stroke="none"/>
+      <circle cx="-17" cy="2" r="2.5" fill="#e2be83" stroke="none"/>
+    </g>
+    <g id="belt-cartridge" stroke="#4b3728" stroke-width="1.7" stroke-linejoin="round">
+      <path d="M-3-5H3V5H-3Z" fill="#564338"/>
+      <path d="M-13-3.4H5L12-1.5Q16 0 12 1.5L5 3.4H-13Z" fill="#d99e53"/>
+      <path d="M-13-3.4H-9V3.4H-13Z" fill="#ecbd71"/>
+      <path d="M-3-3.5H3V3.5H-3Z" fill="#705442" stroke-width="1.4"/>
+      <path d="M5-1.6 11-1" stroke="#f9d698" stroke-width="1.3" stroke-linecap="round"/>
+    </g>
+    <g id="ammo-belt">
+      <use href="#belt-cartridge" transform="translate(0 0) rotate(-5)"/>
+      <use href="#belt-cartridge" transform="translate(1.5 9) rotate(-10)"/>
+      <use href="#belt-cartridge" transform="translate(5 18) rotate(-17)"/>
+      <use href="#belt-cartridge" transform="translate(10 27) rotate(-25)"/>
+      <use href="#belt-cartridge" transform="translate(16 35) rotate(-34)"/>
+      <use href="#belt-cartridge" transform="translate(24 43) rotate(-40)"/>
+      <use href="#belt-cartridge" transform="translate(33 49) rotate(-48)"/>
+    </g>
+    <!-- Projectile tips point along the positive x axis. -->
+    <g id="seed-bullet">
+      <path d="M-13 0C-13-7-5-8 3-5L15-.8Q17 0 15 .8L3 5C-5 8-13 7-13 0Z" fill="#584d42" stroke="#312721" stroke-width="2.4" stroke-linejoin="round"/>
+      <path d="M-10-3C-4-5 3-4 12-1M-9 3C-4 4 3 3 12 1" fill="none" stroke="#e6cf9f" stroke-width="1.8" stroke-linecap="round"/>
+    </g>
+    <g id="deploy-shell">
+      <use href="#seed-bullet" transform="translate(-5 -11) rotate(-10) scale(2.2)"/>
+      <use href="#seed-bullet" transform="translate(-5 11) rotate(10) scale(2.2)"/>
+      <use href="#seed-bullet" transform="scale(2.6)"/>
+      <path d="M-13-25Q-5-28 4-25Q-6 0 4 25Q-5 28-13 25-23 0-13-25Z" fill="#d7a35b" stroke="#4b3728" stroke-width="2.8"/>
+      <path d="M-10-18Q-15-5-14 8" fill="none" stroke="#f5cd84" stroke-width="2.4" stroke-linecap="round"/>
+    </g>
+    <g id="face-cheeks" fill="#f3a58d" opacity=".94">
+      <ellipse cx="-30" cy="10" rx="8" ry="4.7"/><ellipse cx="30" cy="10" rx="8" ry="4.7"/>
+    </g>
+    <g id="face-eyes" fill="#271a14">
+      <ellipse cx="-19" rx="7.5" ry="10"/><ellipse cx="19" rx="7.5" ry="10"/>
+      <g fill="#fff7e7"><circle cx="-21" cy="-4" r="2.8"/><circle cx="17" cy="-4" r="2.8"/></g>
+    </g>
+    <g id="face-idle">
+      <use href="#face-cheeks"/>
+      <use href="#face-eyes"/>
+      <path d="M-6 10Q0 17 6 10" fill="none" stroke="#271a14" stroke-width="4" stroke-linecap="round"/>
+    </g>
+    <g id="face-aim">
+      <use href="#face-cheeks"/>
+      <use href="#face-eyes" y="-4"/>
+      <ellipse cy="12" rx="4.5" ry="5" fill="#f09986" stroke="#271a14" stroke-width="3.5"/>
+    </g>
+    <g id="face-hit" fill="none" stroke="#271a14" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+      <use href="#face-cheeks" stroke="none"/>
+      <path d="m-25-6 11 6-11 6M25-6 14 0l11 6"/>
+      <path d="M-7 11Q0 14 7 11C6 20-6 20-7 11Z" fill="#f09986" stroke-width="3"/>
+    </g>
+  </defs>
+  <!-- Body origin is at ground level. Other parts use their joint or expression center as origin. -->
+  <use href="#body" x="111" y="245"/>
+  <use href="#foot" x="247" y="63"/>
+  <use href="#arm" x="339" y="58"/>
+  <use href="#launcher" x="472" y="70"/>
+  <use href="#face-idle" x="257" y="171"/>
+  <use href="#face-aim" x="393" y="171"/>
+  <use href="#face-hit" x="529" y="171"/>
+  <use href="#seed-bullet" transform="translate(255 239) scale(1.6)"/>
+  <use href="#ammo-belt" x="360" y="210"/>
+  <use href="#belt-cartridge" x="445" y="239"/>
+  <use href="#deploy-shell" x="533" y="236"/>
+</svg>

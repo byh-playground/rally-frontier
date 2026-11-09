@@ -126,6 +126,20 @@ export const CAMPAIGN_STAGES = Object.freeze([
         seed: 108,
         mode: 'eliminate',
     },
+    {
+        id: 'sunflower-seed',
+        enemyPacing: ASSAULT_PACING,
+        title: '하늘을 지키는 씨앗',
+        briefing: '적 해바라기씨 앞에 병력을 내려 방어선을 무너뜨리세요.',
+        resourceLesson: true,
+        deck: ['rice', 'pea', 'millet', 'acorn'],
+        enemyDeck: ['rice', 'pea', 'sunflower-seed'],
+        introducedEnemy: 'sunflower-seed',
+        rewardCard: 'sunflower-seed',
+        enemyOutposts: ['enemy-front', 'enemy-rear'],
+        seed: 109,
+        mode: 'eliminate',
+    },
 ]);
 export function campaignStage(id) {
     return CAMPAIGN_STAGES.find((stage) => stage.id === id) || null;
