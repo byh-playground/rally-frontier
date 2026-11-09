@@ -352,6 +352,10 @@ const PROJECTILE_VISUAL_RENDER_FNS = Object.freeze({
         );
     },
 });
+function attackCounterDots(count, required) {
+    return '●'.repeat(count) + '○'.repeat(required - count);
+}
+
 function fruitShotsAt(attack, tick) {
     if (!attack) return [];
     const active = attack.active?.shot;
@@ -3529,12 +3533,29 @@ class GLRenderer {
         this.combatFx.length = write;
     }
 
+    drawMortarCounter(ctx, x, y, count, required, pixelRatio) {
+        const ready = count === required;
+        const text = `${attackCounterDots(count, required)} ${ready ? '다음 박격포' : '박격포'}`;
+        ctx.font = `800 ${11 * pixelRatio}px system-ui,sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const width = ctx.measureText(text).width + 10 * pixelRatio,
+            height = 16 * pixelRatio;
+        ctx.fillStyle = ready ? '#725018' : '#274c36';
+        ctx.beginPath();
+        ctx.roundRect(x - width / 2, y, width, height, height / 2);
+        ctx.fill();
+        ctx.fillStyle = ready ? '#fff3a6' : '#f9eac6';
+        ctx.fillText(text, x, y + height / 2);
+    }
+
     drawWorldHudOverlay() {
         const ctx = this.fxCtx,
             snap = this.snapshot;
         if (!ctx || !this.fxCanvas || !snap) return;
         const side = this.mySide(),
-            sc = this.sc();
+            sc = this.sc(),
+            pixelRatio = this.fxCanvas.width / Math.max(1, this.canvas.clientWidth);
 
         ctx.save();
         ctx.lineCap = 'round';
@@ -3544,11 +3565,13 @@ class GLRenderer {
         // never inside drawBuilding()/drawUnit(). This pass stays above combat VFX so
         // explosions/debris can never cover persistent information.
         for (const b of snap.buildings || []) {
-            if (b.alive === false || b.hp >= b.maxHp) continue;
+            if (b.alive === false) continue;
+            const d = BuildingDefinition.get(b.type) || { size: 35 },
+                damaged = b.hp < b.maxHp,
+                mortar = !this.showcase && !b.construction && d.mortar;
+            if (!damaged && !mortar) continue;
             if (b.side !== side && !this.visibleRaw(b.x, b.y)) continue;
-            if (!this.onScreenAuth(b.x, b.y, (BuildingDefinition.get(b.type)?.size || 40) + 100))
-                continue;
-            const d = BuildingDefinition.get(b.type) || { size: 35 };
+            if (!this.onScreenAuth(b.x, b.y, d.size + 100)) continue;
             const anchor = RallyGamekit.resolveAnchorInto(
                 this.stableCamera(),
                 {
@@ -3561,14 +3584,27 @@ class GLRenderer {
             );
             const { x, y } = anchor,
                 r = d.size * sc;
-            const ratio = RangeUtil.clamp((b.hp || 0) / Math.max(1, b.maxHp || 1), 0, 1);
             const bw = r * 2,
                 bh = Math.max(2.4, 3.2 * sc),
                 by = y + r + 3 * sc;
-            ctx.fillStyle = 'rgba(18,24,28,.72)';
-            ctx.fillRect(x - r - 1 * sc, by - 1 * sc, bw + 2 * sc, bh + 2 * sc);
-            ctx.fillStyle = ratio > 0.48 ? '#62c775' : '#f04d49';
-            ctx.fillRect(x - r, by, bw * ratio, bh);
+            if (damaged) {
+                const ratio = RangeUtil.clamp((b.hp || 0) / Math.max(1, b.maxHp || 1), 0, 1);
+                ctx.fillStyle = 'rgba(18,24,28,.72)';
+                ctx.fillRect(x - r - 1 * sc, by - 1 * sc, bw + 2 * sc, bh + 2 * sc);
+                ctx.fillStyle = ratio > 0.48 ? '#62c775' : '#f04d49';
+                ctx.fillRect(x - r, by, bw * ratio, bh);
+            }
+            if (mortar) {
+                const required = mortar.attackInterval - 1;
+                this.drawMortarCounter(
+                    ctx,
+                    x,
+                    by + bh + 3 * pixelRatio,
+                    RangeUtil.clamp(b.attacksSinceMortar ?? 0, 0, required),
+                    required,
+                    pixelRatio,
+                );
+            }
         }
 
         for (const u of snap.units || []) {
@@ -9696,7 +9732,7 @@ class LaunchPresentation {
         }
         const count = RangeUtil.clamp(current, 0, required);
         counter.hidden = false;
-        counter.textContent = '●'.repeat(count) + '○'.repeat(required - count);
+        counter.textContent = attackCounterDots(count, required);
         counter.toggleAttribute('data-ready', count === required);
         return ` · 공격 연계 ${count}/${required}`;
     }
