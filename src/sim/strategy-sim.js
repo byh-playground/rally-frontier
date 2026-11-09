@@ -2617,13 +2617,18 @@ class StrategySim {
             dy = u.y - target.y,
             length = Math.hypot(dx, dy) || 1;
         if (rebound) {
-            const mass = this.mass(u);
+            const mass = this.mass(u),
+                speed = LaunchImpactRules.speedForDistance(
+                    rebound.distance,
+                    rebound.lift,
+                    this.tps,
+                );
             u.contactAttack = null;
             this.navigation.motion.applyImpulse(
                 u,
                 {
-                    x: (dx / length) * rebound.speed * mass,
-                    y: (dy / length) * rebound.speed * mass,
+                    x: (dx / length) * speed * mass,
+                    y: (dy / length) * speed * mass,
                     z: rebound.lift * mass,
                 },
                 { sourceId: target.id },
