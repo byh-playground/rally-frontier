@@ -121,7 +121,22 @@ async function verifyOptionalMetadata(browser, server, routePinnedSDK, record) {
             throw new Error('Early SDK failure omitted product version');
         if (diagnostic.build !== record.commit || diagnostic.buildMetadata.source !== 'build.json')
             throw new Error('Early SDK failure omitted deployment identity');
-        results.push({ scenario: 'early-sdk-failure', commit: diagnostic.buildMetadata.commit });
+        await page.unroute('**/rollback.js');
+        await page.unroute('**/build.json');
+        await Promise.all([
+            page.waitForEvent('framenavigated', {
+                predicate: (frame) => frame === page.mainFrame(),
+            }),
+            page.getByRole('button', { name: '새로고침', exact: true }).click(),
+        ]);
+        await page.locator('#bootGate').waitFor({ state: 'hidden', timeout: 15_000 });
+        if (await page.locator('#renderFatalOverlay').isVisible())
+            throw new Error('Diagnostic reload did not clear the startup failure');
+        results.push({
+            scenario: 'early-sdk-failure',
+            commit: diagnostic.buildMetadata.commit,
+            reloadRecovered: true,
+        });
     } finally {
         await page.close();
     }

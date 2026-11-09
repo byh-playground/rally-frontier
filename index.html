@@ -18,6 +18,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   고정한 공식 ESM bytes만 로드한다. 다른 버전·CDN·내장 대체 Core fallback은 없다.
 - 실제 제품 최초 부팅은 고정 CDN 접근이 필요하다. setup:gamekit의 검증한 QA cache 응답과
   제품 CDN 가용성을 구별한다. 원본/_site 실행은 HTTP(S)를 쓰며 단일 HTML 오프라인 실행을 보장하지 않는다.
+- 전역 오류 진단 패널의 새로고침과 진단 복사는 게임 모듈 로드가 실패해도 사용할 수 있어야 한다.
 - 전투에 쓰는 벡터·스프라이트 자산은 시작 화면에서 실제 GPU 그리기 경로까지 준비하고 경기 동안 유지한다.
   준비가 실패하면 게임 시작을 허용하지 않고 재시도할 수 있게 표시한다.
 - 스프라이트의 공유 캔버스는 중복 없이 실제 배치 순서대로 크기를 산정하고 2048×1024 배열에
@@ -265,17 +266,16 @@ END OF DEVELOPMENT CONTRACT
             aria-labelledby="renderFatalTitle"
         >
             <div class="render-fatal-card">
-                <h2 id="renderFatalTitle">렌더 오류로 화면이 중단됨</h2>
+                <h2 id="renderFatalTitle">게임 오류</h2>
                 <p>
-                    시뮬레이션과 별개로 렌더 단계에서 예외가 발생했습니다. 아래 진단 정보를 복사해
-                    전달하면 원인 추적에 사용할 수 있습니다.
+                    새로고침으로 다시 시도해 주세요. 같은 오류가 반복되면 진단 정보를 복사해 알려
+                    주세요.
                 </p>
                 <div id="renderFatalSummary" class="render-fatal-summary"></div>
                 <div class="render-fatal-actions">
-                    <button id="renderFatalCopy" class="primary" type="button">
-                        진단 정보 복사
-                    </button>
-                    <button id="renderFatalSelect" type="button">텍스트 전체 선택</button>
+                    <button id="renderFatalReload" class="primary" type="button">새로고침</button>
+                    <button id="renderFatalCopy" type="button">진단 정보 복사</button>
+                    <button id="renderFatalSelect" type="button">전체 선택</button>
                 </div>
             </div>
         </div>
@@ -1546,11 +1546,13 @@ END OF DEVELOPMENT CONTRACT
                         if (summary) summary.textContent = text(diag);
                         if (copy) copy.textContent = '진단 정보 복사';
                         if (overlay) {
+                            const firstShow = overlay.classList.contains('hidden');
                             overlay.classList.remove('hidden');
                             overlay.style.display = 'flex';
                             overlay.style.visibility = 'visible';
                             overlay.style.opacity = '1';
                             overlay.style.zIndex = '2147483647';
+                            if (firstShow) document.getElementById('renderFatalReload')?.focus();
                         }
                     };
                     show();
@@ -1602,6 +1604,10 @@ END OF DEVELOPMENT CONTRACT
                 document.addEventListener(
                     'click',
                     async (e) => {
+                        if (e.target?.closest?.('#renderFatalReload')) {
+                            location.reload();
+                            return;
+                        }
                         const copy = e.target?.closest?.('#renderFatalCopy');
                         const select = e.target?.closest?.('#renderFatalSelect');
                         const summary = document.getElementById('renderFatalSummary');
