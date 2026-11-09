@@ -3090,6 +3090,32 @@ class GLRenderer {
                 ctx.fillText(`${payment} · ${workState}`, x, barY + 28, width);
             }
         }
+        const practice =
+            UiRuntimeState.value.screen === 'replay'
+                ? ReplayPresentation.replayPlayer?.sim?.rules.campaign?.volleyGoal
+                : campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoal;
+        if (practice) {
+            const [x, y] = this.worldToPx(this.viewX(practice.x), this.viewY(practice.y)),
+                radius = practice.radius * sc,
+                radiusY = BattlefieldProjection.planarY(practice.radius) * sc;
+            ctx.beginPath();
+            ctx.ellipse(x, y, radius, radiusY, 0, 0, 2 * Math.PI);
+            ctx.fillStyle = 'rgba(255,211,97,.18)';
+            ctx.fill();
+            ctx.lineWidth = 2 * ratio;
+            ctx.strokeStyle = '#ffe09b';
+            ctx.stroke();
+            const text = '일제사격 목표';
+            ctx.font = `900 ${11 * ratio}px system-ui,sans-serif`;
+            const label = labelPosition(x, y, y - radiusY - 10 * ratio, [text], 8 * ratio);
+            if (label) {
+                ctx.lineWidth = 3 * ratio;
+                ctx.strokeStyle = '#302a20';
+                ctx.strokeText(text, label.x, label.y, label.width);
+                ctx.fillStyle = '#fff0bb';
+                ctx.fillText(text, label.x, label.y, label.width);
+            }
+        }
         ctx.restore();
     }
 
@@ -6775,11 +6801,19 @@ class GLRenderer {
             this.line(cx, cy, lx, ly, Math.max(1.5, 2 * sc), [color[0], color[1], color[2], 0.45]);
             for (const { cannon } of groups.slice(1)) {
                 const [sx, sy] = project(cannon.x, cannon.y);
-                this.line(sx, sy, lx, ly, Math.max(1, 1.5 * sc), [
+                const join = RangeUtil.clamp(
+                    1 -
+                        (this.presentationNow() -
+                            (hold.supportJoinedAt?.get(cannon.id) ?? -Infinity)) /
+                            420,
+                    0,
+                    1,
+                );
+                this.line(sx, sy, lx, ly, Math.max(1, (1.5 + 1.5 * join) * sc), [
                     color[0],
                     color[1],
                     color[2],
-                    0.32,
+                    0.32 + 0.55 * join,
                 ]);
             }
             const rings = new Map();
@@ -9234,9 +9268,16 @@ class MatchLifecycle {
         const draw = reason === 'draw' || !winner,
             mine = !draw && winner === viewRole;
         const stage = campaignStage(MatchLifecycle.selectedCampaign);
-        const cleared = stage && mine && reason === 'base-destroyed';
+        const cleared =
+            stage && mine && (reason === 'base-destroyed' || reason === 'volley-practice');
         const reward = cleared ? campaignProgress.complete(stage) : null;
-        const next = cleared ? CAMPAIGN_STAGES[CAMPAIGN_STAGES.indexOf(stage) + 1] : null;
+        const next = cleared
+            ? stage.optional
+                ? campaignProgress.nextStage
+                : CAMPAIGN_STAGES.slice(CAMPAIGN_STAGES.indexOf(stage) + 1).find(
+                      (candidate) => !candidate.optional,
+                  )
+            : null;
         LaunchScreens.renderCampaignResult(reward, next);
         UiRegistry.refs.resultTitle.textContent = draw ? '무승부' : mine ? '승리' : '패배';
         if (reason === 'surrender')
@@ -9246,6 +9287,8 @@ class MatchLifecycle {
         else if (reason === 'disconnect-timeout')
             UiRegistry.refs.resultText.textContent =
                 '연결을 60초 안에 복구하지 못해 경기가 중단되었습니다.';
+        else if (reason === 'volley-practice')
+            UiRegistry.refs.resultText.textContent = '세 대포의 일제사격이 목표에 닿았습니다.';
         else if (reason === 'draw')
             UiRegistry.refs.resultText.textContent = '양쪽 메인 거점이 같은 tick에 파괴되었습니다.';
         else
@@ -9254,7 +9297,7 @@ class MatchLifecycle {
                 : '내 메인 거점이 파괴되었습니다.';
         if (stage && mine && stage.mode === 'defend')
             UiRegistry.refs.resultText.textContent = '제한 시간 동안 본진을 지켰습니다.';
-        if (cleared && !next)
+        if (cleared && !next && !stage.optional)
             UiRegistry.refs.resultText.textContent = '캠페인을 모두 완료했습니다.';
         const end = ActiveViewState.snap,
             stats = end?.launchStats,
@@ -10318,12 +10361,35 @@ class LaunchPresentation {
     // While charging, the camera eases just far enough to keep the whole preview on screen.
     static FOLLOW_HALF_LIFE_MS = 52;
     static followAt = null;
+    static volleyHintSeen = false;
+    static updateVolleyAimFeedback(hold, groups, now) {
+        const joined = (hold.supportJoinedAt ??= new Map()),
+            active = new Set(groups.slice(1).map(({ cannon }) => cannon.id));
+        for (const id of joined.keys()) if (!active.has(id)) joined.delete(id);
+        for (const id of active) if (!joined.has(id)) joined.set(id, now);
+        if (!active.size) hold.volleyHintUntil = 0;
+        else if (!this.volleyHintSeen) {
+            this.volleyHintSeen = true;
+            const key = 'ssalkongpang.volley-aim-hint.v1';
+            try {
+                if (localStorage.getItem(key) === '1') return false;
+                localStorage.setItem(key, '1');
+            } catch {
+                // The in-memory flag still prevents repeats on this page.
+            }
+            hold.volleyHintUntil = now + 2600;
+        }
+        return now < (hold.volleyHintUntil || 0);
+    }
     static followAim(r) {
         const hold = this.hold;
-        const held = hold ? performance.now() - hold.armedAt : 0;
+        const now = r.presentationNow(),
+            held = hold ? now - hold.armedAt : 0;
         const preview =
             hold && r.world ? { hold, held, ...this.aimPreview(hold, held, r.world) } : null;
         r.launchPreview = preview;
+        const showVolleyHint =
+            hold && this.updateVolleyAimFeedback(hold, preview?.groups ?? [], now);
         if (!preview?.groups.length) {
             this.followAt = null;
             if (this.labelShown) {
@@ -10364,7 +10430,6 @@ class LaunchPresentation {
         // The shared camera eases toward that framing by half-life, so the pace does not depend on the frame rate.
         const camera = r.stableCamera(),
             halfH = vh / 2,
-            now = performance.now(),
             elapsed = Math.min(100, now - (this.followAt ?? now));
         this.followAt = now;
         camera.follow(left + vw / 2, top + halfH, elapsed, this.FOLLOW_HALF_LIFE_MS);
@@ -10387,6 +10452,7 @@ class LaunchPresentation {
             ),
             groups.length,
             LaunchRules.volleyPassengerCount(groups),
+            showVolleyHint,
         );
     }
     static cancel() {
@@ -10685,11 +10751,19 @@ class BattlePresentation {
             r.replayZoom = DEFAULT_LIVE_ZOOM;
             r.resize();
             const base = r.world.bases[side],
+                practice = campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoal,
+                points = practice ? [...LaunchRules.launchCannons(s, side), practice] : [base],
+                middle = (key) => {
+                    const values = points.map((point) => point[key]);
+                    return (Math.min(...values) + Math.max(...values)) / 2;
+                },
                 width = r.viewWorldW(),
-                height = r.world.terrain.surfaces.heightAt(base.x, base.y);
-            r.cameraLeft = RangeUtil.clamp(r.viewX(base.x) - width / 2, 0, r.world.width - width);
+                x = middle('x'),
+                y = middle('y'),
+                height = r.world.terrain.surfaces.heightAt(x, y);
+            r.cameraLeft = RangeUtil.clamp(r.viewX(x) - width / 2, 0, r.world.width - width);
             r.cameraTop = r.clampCameraTop(
-                BattlefieldProjection.planarY(r.viewY(base.y), height) - r.viewWorldH() / 2,
+                BattlefieldProjection.planarY(r.viewY(y), height) - r.viewWorldH() / 2,
             );
         }
         ActiveViewState.minimap.set(ActiveViewState.renderer, s);

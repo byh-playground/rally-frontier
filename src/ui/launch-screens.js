@@ -248,13 +248,16 @@ export class LaunchScreens {
                 ? '캠페인 · 디버그 해금'
                 : '캠페인';
             $('campaignStages').replaceChildren();
-            CAMPAIGN_STAGES.forEach((stage, index) => {
+            let stageNumber = 0;
+            CAMPAIGN_STAGES.forEach((stage) => {
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = 'launch-btn secondary campaign-stage';
                 button.disabled = !progress.canStart(stage);
                 const title = document.createElement('b');
-                title.textContent = `${index + 1}. ${stage.title}`;
+                title.textContent = stage.optional
+                    ? stage.title
+                    : `${++stageNumber}. ${stage.title}`;
                 const status = document.createElement('span');
                 status.className = 'campaign-stage-status';
                 const stageStatus = button.disabled
@@ -263,7 +266,9 @@ export class LaunchScreens {
                       ? '완료'
                       : '';
                 const reward = stage.rewardCard ? `보상 ${A.grainName(stage.rewardCard)}` : '';
-                status.textContent = [stageStatus, reward].filter(Boolean).join(' · ');
+                status.textContent = [stage.optional ? '선택 연습' : '', stageStatus, reward]
+                    .filter(Boolean)
+                    .join(' · ');
                 const description = document.createElement('small');
                 description.textContent = stage.briefing;
                 button.append(title, status, description);
@@ -585,16 +590,36 @@ ${panels.map((body, index) => `<section class="unit-info-panel" role="tabpanel" 
         }
     }
     // Label over the landing ring while aiming; at is the ring centre in page pixels, or null when not aiming.
-    static renderAimLabel(at, type, maxReach, cannonCount, passengerCount) {
+    static renderAimLabel(at, type, maxReach, cannonCount, passengerCount, showVolleyHint = false) {
         const LABEL = this.$('aimLabel');
         LABEL.classList.toggle('hidden', !at);
         if (!at) {
             return;
         }
-        const SALVO = cannonCount > 1 ? ` · ${cannonCount}문 일제사격` : '';
-        const TEXT = `${this.actions.grainName(type)} ×${passengerCount}${SALVO} · ${GRAIN_COPY[type]?.fire || this.landingLabel(type)} · 최대 발사 ${maxReach.toLocaleString('ko-KR')}`;
-        if (LABEL.textContent !== TEXT) {
+        const SHARED = cannonCount > 1,
+            NAME = this.actions.grainName(type),
+            STATS = this.actions.grainStats(type),
+            BONUS = passengerCount - STATS.count,
+            TEXT = SHARED
+                ? `${NAME} ${passengerCount}기${BONUS > 0 ? ` (+${BONUS})` : ''} · 대포 ${cannonCount}문`
+                : `${NAME} ×${passengerCount} · ${GRAIN_COPY[type]?.fire || this.landingLabel(type)} · 최대 발사 ${maxReach.toLocaleString('ko-KR')}`,
+            COST = SHARED ? ResourceDisplay.costText(STATS) : '',
+            HINT = showVolleyHint ? '대포의 사거리가 겹치면 같은 값으로 병력이 더 나와요.' : '';
+        LABEL.classList.toggle('shared', SHARED);
+        if (LABEL.textContent !== TEXT + COST + HINT) {
             LABEL.textContent = TEXT;
+            if (COST) {
+                const detail = document.createElement('span');
+                detail.className = 'aim-label-cost';
+                detail.textContent = COST;
+                LABEL.append(detail);
+            }
+            if (HINT) {
+                const hint = document.createElement('span');
+                hint.className = 'aim-label-hint';
+                hint.textContent = HINT;
+                LABEL.append(hint);
+            }
         }
         LABEL.style.transform = `translate(${Math.round(at.x)}px,${Math.round(at.y)}px) translate(-50%,-100%)`;
     }

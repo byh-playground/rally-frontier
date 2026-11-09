@@ -309,8 +309,12 @@ class StrategySim {
                     (side === 0 ? (this.rules.campaign?.baseIncomeRatio ?? 1) : 1),
             ),
         }));
-        this.launchRangeLevel = [0, 0];
+        const campaign = this.rules.campaign;
+        this.launchRangeLevel = [campaign?.startingLaunchRangeLevel ?? 0, 0];
         this.launchDeployments = [];
+        this.campaignVolleyPractice = campaign?.volleyGoal
+            ? { projectileIds: [], landed: false, complete: false }
+            : null;
         this.heroes = this.decks.map((deck) => HeroDeployment.emptySlots(deck));
         this.heroRecovery = this.decks.map((deck) => HeroDeployment.emptySlots(deck));
         // Per-side match totals for the result screen: shots fired, grains sent, enemy units killed.
@@ -335,20 +339,23 @@ class StrategySim {
         this.createBase(0);
         this.createBase(1);
         // Campaign positions use ordinary outpost ownership and construction completion.
-        const campaign = this.rules.campaign;
         if (campaign) {
-            const points = campaign.enemyOutposts.map((id) => {
-                const point = this.capturePoints.find((p) => p.id === id);
-                if (!point) throw new Error(`캠페인 적 거점이 없습니다: ${id}`);
-                return point;
-            });
-            for (const point of points) {
-                const outpost = this.spawnOutpost(point, 1);
-                outpost.hp = outpost.maxHp;
-                this.completeConstruction(outpost);
+            const enemyPoints = [];
+            for (const [side, ids] of [
+                campaign.friendlyOutposts ?? [],
+                campaign.enemyOutposts,
+            ].entries()) {
+                for (const id of ids) {
+                    const point = this.capturePoints.find((p) => p.id === id);
+                    if (!point) throw new Error(`캠페인 거점이 없습니다: ${id}`);
+                    const outpost = this.spawnOutpost(point, side);
+                    outpost.hp = outpost.maxHp;
+                    this.completeConstruction(outpost);
+                    if (side === 1) enemyPoints.push(point);
+                }
             }
             if (campaign.introducedEnemy) {
-                const [front] = points;
+                const [front] = enemyPoints;
                 for (let i = 0; i < 3; i++)
                     this.spawnUnit(
                         1,
@@ -1367,7 +1374,8 @@ class StrategySim {
         const readyTick =
             this.tick + this.msTicks(LaunchRules.volleyMs(action.unitType) + LaunchRules.reloadMs);
         const power = LaunchRules.power(holdMs),
-            mode = grain.fire.mode;
+            mode = grain.fire.mode,
+            eventsBeforeVolley = this.events.length;
         for (const { cannon: launcher, shots } of volley) {
             launcher.launchReadyTick = readyTick;
             const arcDistance =
@@ -1396,9 +1404,41 @@ class StrategySim {
                 else this.fireLaunchShell(fire);
             });
         }
+        const practice = this.campaignVolleyPractice,
+            goal = this.rules.campaign?.volleyGoal;
+        if (
+            practice &&
+            !practice.landed &&
+            side === 0 &&
+            action.unitType === 'rice' &&
+            volley.length >= goal.cannons &&
+            Math.hypot(aim.x - goal.x, aim.y - goal.y) <= goal.radius
+        ) {
+            for (let i = eventsBeforeVolley; i < this.events.length; i++) {
+                const event = this.events[i];
+                if (event.type === 'launchFire') practice.projectileIds.push(event.projectileId);
+            }
+        }
         this.launchStats.launches[side]++;
         this.launchStats.sent[side] += LaunchRules.volleyPassengerCount(volley);
         return true;
+    }
+    updateVolleyPractice() {
+        const practice = this.campaignVolleyPractice;
+        if (!practice || practice.complete || !practice.projectileIds.length) return;
+        const goal = this.rules.campaign.volleyGoal;
+        if (!practice.landed) {
+            practice.landed = this.events.some(
+                (event) =>
+                    event.type === 'launchImpact' &&
+                    practice.projectileIds.includes(event.projectileId) &&
+                    Math.hypot(event.x - goal.x, event.y - goal.y) <= goal.radius,
+            );
+        }
+        const pending = new Set(this.projectiles.map((shell) => shell.id));
+        for (const group of this.launchDeployments) pending.add(group.projectileId);
+        practice.projectileIds = practice.projectileIds.filter((id) => pending.has(id));
+        if (practice.landed && !practice.projectileIds.length) practice.complete = true;
     }
     fireLaunchShell({
         side,
@@ -3794,6 +3834,14 @@ class StrategySim {
         // Combat damage reports are not victory authority. Resolve once from the final world state.
         winner = this.netcodeMatchResult?.winner || this.baseOutcome();
         const campaign = this.rules.campaign;
+        if (
+            this.campaignVolleyPractice &&
+            !this.netcodeMatchResult &&
+            (!winner || winner === 'host')
+        ) {
+            this.updateVolleyPractice();
+            winner = this.campaignVolleyPractice.complete ? 'host' : null;
+        }
         if (campaign?.defenseSeconds && !this.netcodeMatchResult) {
             const timeUp = this.tick >= campaign.defenseSeconds * this.tps;
             if (!timeUp && winner === 'host') winner = null;

@@ -35,7 +35,10 @@ export class CampaignProgress {
     }
 
     get nextStage() {
-        return CAMPAIGN_STAGES.find((stage) => !this.completed.has(stage.id)) || null;
+        return (
+            CAMPAIGN_STAGES.find((stage) => !stage.optional && !this.completed.has(stage.id)) ||
+            null
+        );
     }
 
     isComplete(stage) {
@@ -51,7 +54,11 @@ export class CampaignProgress {
     }
 
     canStart(stage) {
-        return this.#debugUnlocked || this.isComplete(stage) || this.nextStage === stage;
+        return (
+            this.#debugUnlocked ||
+            this.isComplete(stage) ||
+            (stage.optional ? this.completed.has(stage.prerequisite) : this.nextStage === stage)
+        );
     }
 
     unlockStage(card) {
@@ -66,7 +73,7 @@ export class CampaignProgress {
     complete(stage) {
         if (this.#debugUnlocked) return null;
         this.sync();
-        if (!stage || stage !== this.nextStage) return null;
+        if (!stage || this.isComplete(stage) || !this.canStart(stage)) return null;
         this.completed.add(stage.id);
         this.save();
         return stage.rewardCard ?? null;
