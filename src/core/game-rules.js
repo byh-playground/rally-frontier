@@ -1,13 +1,17 @@
 const SIM_TPS = 20;
+const PVP_MAP_PRESETS = Object.freeze({
+    standard: {},
+    'twin-gates': { map: { generator: 'fixed-twin-gates', generatorVersion: 1 } },
+    'artillery-basin': { map: { generator: 'fixed-artillery-basin', generatorVersion: 1 } },
+});
+const PVP_MAP_PRESET_IDS = Object.freeze(Object.keys(PVP_MAP_PRESETS));
 class RangeUtil {
     static clamp(v, a, b) {
         return Math.max(a, Math.min(b, v));
     }
 }
 class GameRuleDefinition {
-    static presets = {
-        standard: {},
-    };
+    static presets = PVP_MAP_PRESETS;
     static defaults = {
         schemaVersion: 2,
         modeId: 'standard',
@@ -121,4 +125,4 @@ class GameRuleRuntime {
     }
 }
 GameRuleDefinition.current = GameRuleDefinition.resolve();
-export { RangeUtil, GameRuleDefinition, GameRuleRuntime, SIM_TPS };
+export { RangeUtil, GameRuleDefinition, GameRuleRuntime, PVP_MAP_PRESET_IDS, SIM_TPS };
