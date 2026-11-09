@@ -127,7 +127,7 @@ class LaunchImpact {
             y: Math.round((y - uy * back) * FP) / FP,
         };
     }
-    static enqueue(sim, p, x, y, impactHeightFP = null) {
+    static enqueue(sim, p, x, y, impactHeightFP = null, { emergencyDrop = false } = {}) {
         const { type, count } = p.payload;
         let holdPointId = null,
             best = LaunchRules.captureHoldRadius;
@@ -141,6 +141,7 @@ class LaunchImpact {
         }
         const origin = this.deploymentOrigin(sim, p, x, y);
         const groundFP = Math.round(sim.world.terrain.surfaces.heightAt(origin.x, origin.y) * FP);
+        const heightFP = Math.max(0, (impactHeightFP ?? groundFP) - groundFP);
         const direction =
             LaunchRules.grain(type).land === 'transverse'
                 ? { x: p.lockedAimX - p.launchX, y: p.lockedAimY - p.launchY }
@@ -156,10 +157,23 @@ class LaunchImpact {
             ...(direction ? { dirX: direction.x / line, dirY: direction.y / line } : {}),
             holdPointId,
             nextTick: sim.tick,
-            heightFP: Math.max(0, (impactHeightFP ?? groundFP) - groundFP),
+            heightFP,
+            ...(emergencyDrop ? { emergencyDropHeightFP: heightFP } : {}),
             vzFP: 0,
             lastPhysicsTick: sim.tick,
         });
+    }
+    static applyEmergencyDropDamage(group, unit) {
+        if (group.emergencyDropHeightFP == null) return undefined;
+        const { safeHeight, maxDamageHeight, maxDamageRatio } = LaunchImpactRules.interceptFall;
+        const dropHeight = group.emergencyDropHeightFP / FP;
+        const progress = Math.max(
+            0,
+            Math.min(1, (dropHeight - safeHeight) / (maxDamageHeight - safeHeight)),
+        );
+        const damage = Math.floor(unit.hp * progress * maxDamageRatio);
+        unit.hp -= damage;
+        return damage;
     }
     // Reserve every spot in the landing area before creating any units. A failed
     // search leaves the entire payload intact for a later retry.
@@ -228,6 +242,7 @@ class LaunchImpact {
                 u = sim.spawnUnit(group.side, group.type, spot.x, spot.y);
             UnitResultStats.add(sim.unitResultStats, group.side, group.type, 'deployed');
             if (group.holdPointId) u.launchHoldPointId = group.holdPointId;
+            const fallDamage = this.applyEmergencyDropDamage(group, u);
             // `start` applies a reference-mass impulse. Scale the input by the
             // new unit's actual mass. Inner positions stay near the impact while
             // outer positions receive proportionally stronger radial motion.
@@ -240,7 +255,7 @@ class LaunchImpact {
                     LaunchImpactRules.deploymentSpeed *
                     releaseScale *
                     (radiusSpan && !keepFormation ? (radii[i] - closest) / radiusSpan : 0),
-                lift: LaunchImpactRules.deploymentLift * releaseScale,
+                lift: fallDamage == null ? LaunchImpactRules.deploymentLift * releaseScale : 0,
                 sourceId: group.projectileId,
                 originX: group.x,
                 originY: group.y,
@@ -271,6 +286,7 @@ class LaunchImpact {
                     Math.round(sim.world.terrain.surfaces.heightAt(group.x, group.y) * FP) +
                     group.heightFP,
                 holdPointId: group.holdPointId,
+                ...(fallDamage == null ? {} : { fallDamage }),
             });
         }
         group.index = group.count;
@@ -286,7 +302,10 @@ class LaunchImpact {
                 if (group.heightFP === 0 && group.vzFP < 0) group.vzFP = 0;
                 group.lastPhysicsTick = sim.tick;
             }
-            if (group.nextTick > sim.tick) {
+            if (
+                group.nextTick > sim.tick ||
+                (group.emergencyDropHeightFP != null && group.heightFP > 0)
+            ) {
                 sim.launchDeployments[write++] = group;
                 continue;
             }
@@ -347,6 +366,7 @@ class LaunchImpact {
             }
             if (!HeroDeployment.land(sim, group, u) && group.holdPointId)
                 u.launchHoldPointId = group.holdPointId;
+            const fallDamage = this.applyEmergencyDropDamage(group, u);
             if (grain.land === 'rush')
                 sim.setTimedModifier(u, 'launchRush', {
                     durationTicks: sim.msTicks(grain.rushMs),
@@ -357,7 +377,7 @@ class LaunchImpact {
                 dx,
                 dy,
                 speed: LaunchImpactRules.deploymentSpeed,
-                lift: LaunchImpactRules.deploymentLift,
+                lift: fallDamage == null ? LaunchImpactRules.deploymentLift : 0,
                 sourceId: group.projectileId,
                 originX: group.x,
                 originY: group.y,
@@ -388,6 +408,7 @@ class LaunchImpact {
                     Math.round(sim.world.terrain.surfaces.heightAt(group.x, group.y) * FP) +
                     group.heightFP,
                 holdPointId: group.holdPointId,
+                ...(fallDamage == null ? {} : { fallDamage }),
             });
             group.index++;
             group.nextTick = sim.tick + Math.max(1, sim.msTicks(LaunchImpactRules.deploymentGapMs));

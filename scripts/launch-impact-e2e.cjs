@@ -148,6 +148,254 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 check(copy.checksum() === sim.checksum(), 'mid-motion restore checksum');
                 return copy;
             }
+            function interceptionShell(sim, x, y, { hp, side = 1, remaining = 350 } = {}) {
+                sim.spawnProjectile({
+                    id: 'intercept-shell-' + ++sim.seq,
+                    owner: side === 0 ? 'base0' : 'base1',
+                    side,
+                    type: 'pea',
+                    x,
+                    y,
+                    launchX: x - 350,
+                    launchY: y,
+                    lockedAimX: x + remaining,
+                    lockedAimY: y,
+                    speed: 20,
+                    damage: 100,
+                    splash: 100,
+                    payload: { type: 'pea', count: LaunchRules.grain('pea').count },
+                    ...(hp === undefined ? {} : { hp }),
+                });
+                return sim.projectiles.at(-1);
+            }
+            {
+                const fired = (type) => {
+                    const { sim } = arena({ deck: [type] });
+                    const home = sim.launchCannons(0)[0];
+                    check(
+                        sim.applyCommand('host', {
+                            type: 'LAUNCH',
+                            cannonId: home.id,
+                            unitType: type,
+                            holdMs: LaunchRules.chargeMs,
+                            x: home.x + 600,
+                            y: home.y,
+                        }),
+                        'launch the loaded shells through the player cannon',
+                        type,
+                    );
+                    return sim.projectiles.map((p) => p.hp);
+                };
+                const rice = fired('rice'),
+                    pea = fired('pea');
+                check(
+                    rice.length === 5 &&
+                        rice.every((hp) => hp > 0 && hp === LaunchRules.grain('rice').shellHp) &&
+                        pea.length === 1 &&
+                        pea[0] === LaunchRules.grain('pea').shellHp &&
+                        rice[0] !== pea[0],
+                    'every rice pellet has independent HP and the pea shell has different HP',
+                    { rice, pea },
+                );
+                rows.push({ scenario: 'loaded shells have per-projectile HP', rice, pea });
+            }
+            {
+                const { sim } = arena();
+                const tower = sim.buildingById.get('base0'),
+                    definition = BuildingDefinition.get(tower.type);
+                tower.cooldownUntil = 0;
+                tower.attacksSinceMortar = definition.mortar.attackInterval - 1;
+                const foe = sim.spawnUnit(1, 'rice', tower.x + 155, tower.y + 30);
+                sim.spawnUnit(0, 'rice', tower.x + definition.range, tower.y - 140);
+                const hostile = interceptionShell(sim, tower.x + 150, tower.y - 20, {
+                        hp: definition.atk + 1,
+                    }),
+                    ally = interceptionShell(sim, tower.x + 80, tower.y + 80, { side: 0 }),
+                    distant = interceptionShell(sim, tower.x + definition.range + 1, tower.y);
+                const foeHp = foe.hp;
+                step(sim, 1);
+                const first = sim.events.find((e) => e.type === 'antiAirHit');
+                check(
+                    sim.canSeeCombatTarget(tower.side, distant, sim.visionSources(tower.side)) &&
+                        first?.sourceId === tower.id &&
+                        first.projectileId === hostile.id &&
+                        first.amount === definition.atk &&
+                        !first.destroyed &&
+                        hostile.alive &&
+                        hostile.hp === 1 &&
+                        foe.hp === foeHp &&
+                        tower.attacksSinceMortar === definition.mortar.attackInterval - 1,
+                    'the ready tower prioritizes the in-range hostile shell and retains its ground mortar',
+                    { first, hostileHp: hostile.hp, foeHp: foe.hp },
+                );
+                const copy = restored(sim);
+                const cooldown = sim.msTicks(definition.cooldownMs);
+                function throughInterception(world) {
+                    const timeline = [];
+                    step(world, cooldown, (s) =>
+                        timeline.push({ tick: s.tick, checksum: s.checksum(), events: s.events }),
+                    );
+                    return timeline;
+                }
+                const timeline = throughInterception(sim),
+                    replay = throughInterception(copy);
+                const last = timeline.at(-1),
+                    downed = last.events.find((e) => e.type === 'antiAirHit'),
+                    retire = last.events.find(
+                        (e) => e.type === 'projectileRetire' && e.projectileId === hostile.id,
+                    );
+                check(
+                    JSON.stringify(timeline) === JSON.stringify(replay) &&
+                        timeline
+                            .slice(0, -1)
+                            .every((f) => f.events.every((e) => e.type !== 'antiAirHit')) &&
+                        downed?.projectileId === hostile.id &&
+                        downed.destroyed &&
+                        downed.amount === 1 &&
+                        retire?.x === downed.x &&
+                        retire.y === downed.y &&
+                        !sim.projectiles.some((p) => p.id === hostile.id) &&
+                        ally.hp === LaunchRules.grain('pea').shellHp &&
+                        distant.hp === LaunchRules.grain('pea').shellHp &&
+                        foe.hp === foeHp &&
+                        !last.events.some(
+                            (e) => e.type === 'launchImpact' && e.projectileId === hostile.id,
+                        ),
+                    'the damaged shell restores, drops once at the interception, and causes no blast',
+                    { downed, retire, allyHp: ally.hp, distantHp: distant.hp, foeHp: foe.hp },
+                );
+                const queued = sim.launchDeployments.find((p) => p.projectileId === hostile.id);
+                check(
+                    downed.heightFP > LaunchImpactRules.interceptFall.safeHeight * FP &&
+                        queued?.x === downed.x &&
+                        queued.y === downed.y &&
+                        queued.heightFP > 0 &&
+                        !last.events.some(
+                            (e) => e.type === 'launchLand' && e.projectileId === hostile.id,
+                        ),
+                    'the high interception starts a fall at the horizontal interception point',
+                    { downed, queued },
+                );
+                const midFall = restored(sim);
+                function observeLanding(world) {
+                    let count = 0,
+                        mortar = false,
+                        firstLandingTick = null;
+                    const fallDamage = [],
+                        checksums = [];
+                    step(world, world.tps * 2, (s) => {
+                        checksums.push(s.checksum());
+                        for (const e of s.events) {
+                            if (e.type === 'mortarFire' && e.cannonId === tower.id) mortar = true;
+                            if (e.type === 'launchLand' && e.projectileId === hostile.id) {
+                                count += e.count;
+                                fallDamage.push(e.fallDamage);
+                                firstLandingTick ??= s.tick;
+                            }
+                        }
+                    });
+                    return { count, mortar, firstLandingTick, fallDamage, checksums };
+                }
+                const { checksums, ...landing } = observeLanding(sim);
+                const { safeHeight, maxDamageHeight, maxDamageRatio } =
+                    LaunchImpactRules.interceptFall;
+                const fraction = Math.min(
+                    1,
+                    (downed.heightFP / FP - safeHeight) / (maxDamageHeight - safeHeight),
+                );
+                const damagePerUnit = Math.floor(
+                    UnitDefinition.get('pea').hp * fraction * maxDamageRatio,
+                );
+                check(
+                    JSON.stringify({ ...landing, checksums }) ===
+                        JSON.stringify(observeLanding(midFall)) &&
+                        landing.count === hostile.payload.count &&
+                        landing.firstLandingTick > last.tick &&
+                        damagePerUnit > 0 &&
+                        landing.fallDamage.every((amount) => amount === damagePerUnit) &&
+                        !sim.launchDeployments.some((p) => p.projectileId === hostile.id) &&
+                        landing.mortar,
+                    'a high emergency fall restores, damages but deploys every soldier, and preserves the ground mortar',
+                    landing,
+                );
+                rows.push({
+                    scenario: 'tower intercepts with normal cadence and deploys the full cargo',
+                    firstTick: timeline[0].tick - 1,
+                    interceptTick: last.tick,
+                    ...landing,
+                });
+            }
+            {
+                const { sim } = arena();
+                const tower = sim.buildingById.get('base0');
+                tower.cooldownUntil = 0;
+                const hostile = interceptionShell(sim, tower.x + 160, tower.y, {
+                    hp: 1,
+                    remaining: 20,
+                });
+                step(sim, 1);
+                const downed = sim.events.find((e) => e.type === 'antiAirHit');
+                check(
+                    downed?.destroyed &&
+                        downed.projectileId === hostile.id &&
+                        downed.heightFP <= LaunchImpactRules.interceptFall.safeHeight * FP,
+                    'low fixture intercepts at a safe height',
+                    downed,
+                );
+                tower.cooldownUntil = Number.MAX_SAFE_INTEGER;
+                const landings = [];
+                const observe = (s) =>
+                    landings.push(
+                        ...s.events.filter(
+                            (e) => e.type === 'launchLand' && e.projectileId === hostile.id,
+                        ),
+                    );
+                observe(sim);
+                step(sim, sim.tps * 2, observe);
+                check(
+                    landings.reduce((sum, e) => sum + e.count, 0) === hostile.payload.count &&
+                        landings.every((e) => e.fallDamage === 0) &&
+                        sim.units.filter((u) => u.side === 1).every((u) => u.hp === u.maxHp),
+                    'a low emergency fall releases the full payload without HP loss',
+                    landings,
+                );
+                rows.push({
+                    scenario: 'safe-height interception preserves all passenger HP',
+                    heightFP: downed.heightFP,
+                    count: hostile.payload.count,
+                });
+            }
+            {
+                const { sim, x, y } = arena();
+                const ranged = sim.spawnUnit(0, 'chestnut', x, y),
+                    melee = sim.spawnUnit(0, 'rice', x + 118, y + 90),
+                    ground = sim.spawnUnit(1, 'rice', x + 90, y - 80),
+                    hostile = interceptionShell(sim, x + 125, y + 90),
+                    distant = interceptionShell(sim, x + 450, y + 90);
+                const definition = UnitDefinition.get(ranged.type),
+                    initialHp = hostile.hp,
+                    hits = [],
+                    groundShots = [];
+                step(sim, sim.attackWindupTicksFor(definition) + 2, (s) => {
+                    hits.push(...s.events.filter((e) => e.type === 'antiAirHit'));
+                    groundShots.push(...s.events.filter((e) => e.type === 'unitThornLaunch'));
+                });
+                check(
+                    hits.length === 1 &&
+                        hits[0].sourceId === ranged.id &&
+                        hits[0].projectileId === hostile.id &&
+                        hostile.hp === initialHp - definition.atk &&
+                        distant.hp === initialHp &&
+                        !groundShots.length &&
+                        ranged.combat.cooldownActive(sim),
+                    'ranged windup and cooldown give the shell priority while nearby melee cannot target it',
+                    { hits, groundShots, ground: ground.id, melee: melee.id },
+                );
+                rows.push({
+                    scenario: 'ranged attack opportunity prioritizes a visible shell',
+                    hits,
+                });
+            }
             for (const type of LaunchRules.heroTypes) {
                 const { sim } = arena({ deck: [type] });
                 const home = sim.launchCannons(0)[0];
@@ -1808,6 +2056,8 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 sim.completeConstruction(cannon);
                 const base = sim.buildings.find((building) => building.id === 'base1');
                 base.hp = base.maxHp = 100000;
+                // Isolate the landing contact with the base from interception by that base.
+                base.cooldownUntil = Number.MAX_SAFE_INTEGER;
                 const actor = side === 0 ? 'host' : 'guest';
                 check(
                     sim.applyCommand(actor, { type: 'UPGRADE_LAUNCH_RANGE' }) &&
