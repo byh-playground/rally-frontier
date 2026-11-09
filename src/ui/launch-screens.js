@@ -1,6 +1,7 @@
 import { ResourceDisplay } from './resource-display.js';
 import { CAMPAIGN_STAGES } from '../definitions/campaign.js';
 import { CampaignPresentation } from './campaign-presentation.js';
+import { unitCardStats } from './unit-card-stats.js';
 import './grain-portrait.js';
 
 // Launch match screens (title, friend, help, in-game HUD and cards, match menu, result) and their addresses.
@@ -436,20 +437,34 @@ export class LaunchScreens {
             return this.cardDetail.close;
         this.closeCardDetail(false);
         const A = this.actions,
-            STATS = A.grainStats(type),
-            COPY = this.grainInfo(type);
+            copy = this.grainInfo(type),
+            stats = unitCardStats(type, A.grainRangeLevel(), copy),
+            sections = ['소개', '병력', '포탄'];
         const detail = {
             type,
             host,
+            tabIndex: 0,
             close: () => {
                 if (this.cardDetail === detail) this.closeCardDetail();
             },
         };
         this.cardDetail = detail;
-        host.innerHTML = `<div class="launch-unit-showcase"></div>
-<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2>${COPY.notes.map((line) => `<p>${line}</p>`).join('')}${STATS.canAttackAir ? `<p>${COPY.airNote ?? '사거리 안의 적 투입탄을 우선 공격해요.'}</p>` : ''}</div></div>
-<div class="launch-stats"><div>비용<b>${ResourceDisplay.costText(STATS, true)}</b></div><div>병사 수<b>${STATS.count}</b></div><div>최대 사거리<b>${STATS.maxReach.toLocaleString('ko-KR')}</b></div><div>포탄 체력<b>${STATS.shellHp}</b></div><div>발사<b>${COPY.fire}</b></div><div>착지<b>${COPY.land}</b></div></div>
+        const renderStats = (rows) =>
+            `<div class="launch-stats">${rows.map(([label, value]) => `<div>${label}<b>${value}</b></div>`).join('')}</div>`;
+        const panels = [
+            `<div class="launch-unit-showcase"></div><p>${copy.airNote ?? copy.notes[0] ?? copy.feature}</p>`,
+            renderStats(stats.troop) +
+                copy.notes
+                    .slice(1)
+                    .map((line) => `<p>${line}</p>`)
+                    .join(''),
+            `<p>대포 1대 · 현재 사거리 강화 기준</p>${renderStats(stats.shell)}`,
+        ];
+        host.innerHTML = `<div class="launch-detail"><img data-portrait="${type}" alt=""><div><h2>${A.grainName(type)}</h2><p>${copy.role}</p></div></div>
+<div class="deck-tabs" role="tablist" aria-label="유닛 정보">${sections.map((label, index) => `<button type="button" role="tab" id="${host.id}-tab-${index}" aria-controls="${host.id}-panel-${index}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}">${label}</button>`).join('')}</div>
+${panels.map((body, index) => `<section class="unit-info-panel" role="tabpanel" id="${host.id}-panel-${index}" aria-labelledby="${host.id}-tab-${index}"${index === 0 ? '' : ' hidden'}>${body}</section>`).join('')}
 <button type="button" class="launch-btn primary" data-sheet-close>닫기</button>`;
+        this.bindCardDetailTabs(detail);
         this.fillCardPortraits(host);
         const panel = host.querySelector('.launch-unit-showcase');
         const motion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -470,6 +485,34 @@ export class LaunchScreens {
             this.syncTitleBattle?.();
         } else void this.startUnitShowcase(detail, panel, motion, false);
         return detail.close;
+    }
+
+    static bindCardDetailTabs(detail) {
+        const tabs = [...detail.host.querySelectorAll('[role="tab"]')],
+            panels = [...detail.host.querySelectorAll('[role="tabpanel"]')];
+        const select = (index) => {
+            detail.tabIndex = index;
+            tabs.forEach((tab, i) => {
+                tab.setAttribute('aria-selected', String(i === index));
+                tab.tabIndex = i === index ? 0 : -1;
+                panels[i].hidden = i !== index;
+            });
+            detail.syncPlayback?.();
+        };
+        tabs.forEach((tab, index) => {
+            tab.addEventListener('click', () => select(index));
+            tab.addEventListener('keydown', (event) => {
+                let next;
+                if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+                else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+                else if (event.key === 'Home') next = 0;
+                else if (event.key === 'End') next = tabs.length - 1;
+                else return;
+                event.preventDefault();
+                select(next);
+                tabs[next].focus();
+            });
+        });
     }
 
     static async startUnitShowcase(detail, panel, motion, manual) {
@@ -495,7 +538,9 @@ export class LaunchScreens {
             });
             detail.mount = mount;
             detail.syncPlayback = () =>
-                mount.setActive(!document.hidden && (manual || !motion.matches));
+                mount.setActive(
+                    detail.tabIndex === 0 && !document.hidden && (manual || !motion.matches),
+                );
             detail.syncPlayback();
             if (
                 (await mount.ready) &&

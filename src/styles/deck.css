@@ -114,10 +114,26 @@
     cursor: pointer;
 }
 .deck-tabs button[aria-pressed='true'],
+.deck-tabs button[aria-selected='true'],
 .deck-filters button[aria-pressed='true'] {
     background: #4b8050;
     border-color: #4b8050;
     color: white;
+}
+.unit-info-panel {
+    display: grid;
+    gap: 8px;
+}
+.unit-info-panel[hidden] {
+    display: none;
+}
+.unit-info-panel .launch-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.unit-info-panel .launch-stats b {
+    font-size: 16px;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
 }
 .deck-section-head {
     margin: 20px 0 9px;
