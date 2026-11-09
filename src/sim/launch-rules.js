@@ -343,33 +343,39 @@ class LaunchRules {
         const offset = (index - (count - 1) / 2) * spacing;
         return { x: x - dirY * offset, y: y + dirX * offset };
     }
-    // 한 번의 발사가 만드는 포탄 목록. 곡물 수는 포탄마다 나눠 담고(앞쪽이 나머지를 받는다),
-    // 산탄은 부채꼴로 흩어지고, 연사는 같은 곳에 gapMs 간격으로 떨어진다.
-    static volley(type, aim, cannon, world) {
+    // A single cannon's shell stats are independent of aim and map position.
+    static volleyStats(type) {
         const g = this.grain(type),
             fire = g.fire,
-            shots = [];
-        const n = fire.pellets ?? fire.shots ?? fire.offsets?.length ?? 1;
-        const base = Math.floor(g.count / n),
-            extra = g.count % n;
+            count = fire.pellets ?? fire.shots ?? fire.offsets?.length ?? 1,
+            base = Math.floor(g.count / count),
+            extra = g.count % count,
+            impactScale = fire.mode === 'shotgun' ? fire.impactScale : 1,
+            splashScale = fire.mode === 'shotgun' ? fire.splashScale : 1;
+        return Array.from({ length: count }, (_, i) => ({
+            delayMs: fire.mode === 'burst' ? i * fire.gapMs : 0,
+            count: base + (i < extra ? 1 : 0),
+            impact: fire.impacts?.[i] ?? Math.max(1, Math.round(g.impact * impactScale)),
+            splash: fire.splashes?.[i] ?? Math.max(1, Math.round(g.splash * splashScale)),
+        }));
+    }
+    // 산탄은 부채꼴로 흩어지고, 연사는 같은 곳에 gapMs 간격으로 떨어진다.
+    static volley(type, aim, cannon, world) {
+        const { fire } = this.grain(type),
+            shots = this.volleyStats(type),
+            n = shots.length;
         const dx = aim.x - cannon.x,
             dy = aim.y - cannon.y,
             len = Math.hypot(dx, dy) || 1;
-        for (let i = 0; i < n; i++) {
+        return shots.map((shot, i) => {
             let x = aim.x,
-                y = aim.y,
-                delayMs = 0,
-                impactScale = 1,
-                splashScale = 1;
+                y = aim.y;
             if (fire.mode === 'shotgun') {
                 // 폭(spread)은 거리와 무관하게 조준점 좌우로 일정하다.
                 const off = n > 1 ? (i / (n - 1) - 0.5) * fire.spread : 0;
                 x = Math.round(aim.x - (dy / len) * off);
                 y = Math.round(aim.y + (dx / len) * off);
-                impactScale = fire.impactScale;
-                splashScale = fire.splashScale;
-            } else if (fire.mode === 'burst') delayMs = i * fire.gapMs;
-            else if (fire.mode === 'split') {
+            } else if (fire.mode === 'split') {
                 const forward = fire.offsets[i];
                 const lateral = (i / (n - 1) - 0.5) * (fire.lateralSpread ?? 0);
                 x = Math.round(aim.x + (dx * forward - dy * lateral) / len);
@@ -377,16 +383,8 @@ class LaunchRules {
                 x = RangeUtil.clamp(x, 40, world.width - 40);
                 y = RangeUtil.clamp(y, 40, world.height - 40);
             }
-            shots.push({
-                x,
-                y,
-                delayMs,
-                count: base + (i < extra ? 1 : 0),
-                impact: fire.impacts?.[i] ?? Math.max(1, Math.round(g.impact * impactScale)),
-                splash: fire.splashes?.[i] ?? Math.max(1, Math.round(g.splash * splashScale)),
-            });
-        }
-        return shots;
+            return { x, y, ...shot };
+        });
     }
     static sharedVolley(type, aim, primary, world, cannons, tick, level) {
         const original = this.volley(type, aim, primary, world),

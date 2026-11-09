@@ -11355,17 +11355,11 @@ LaunchScreens.install({
         },
         grains: () => [...LaunchRules.heroTypes, ...LaunchRules.deck],
         grainName: (t) => UnitDefinition.get(t)?.name || t,
-        grainStats: (t) => ({
-            ...LaunchRules.payload(t),
-            shellHp: LaunchRules.grain(t).shellHp,
-            canAttackAir: !!UnitDefinition.get(t)?.canAttackAir,
-            maxReach: LaunchRules.maxReachOf(
-                t,
-                ActiveViewState.snap?.launchRangeLevel?.[
-                    ConnectionSideUtil.roleSide(ActiveViewState.role)
-                ] ?? 0,
-            ),
-        }),
+        grainStats: (t) => LaunchRules.payload(t),
+        grainRangeLevel: () =>
+            ActiveViewState.snap?.launchRangeLevel?.[
+                ConnectionSideUtil.roleSide(ActiveViewState.role)
+            ] ?? 0,
         portraitSource: (t) => grainPortrait(t, window.RallyVectorAssets[t]),
         toggleSound: () => audioSystem.setEnabled(!audioSystem.enabled),
         soundOn: () => !!audioSystem.enabled,
