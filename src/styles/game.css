@@ -410,6 +410,26 @@ button:disabled {
     white-space: nowrap;
     pointer-events: none;
 }
+.aim-label.shared {
+    font-size: 14px;
+    text-align: center;
+    padding: 4px 8px;
+}
+.aim-label-cost,
+.aim-label-hint {
+    display: block;
+    font-size: 11px;
+    line-height: 1.35;
+    font-weight: 600;
+    color: #ffe6a5;
+}
+.aim-label-hint {
+    max-width: min(184px, 70vw);
+    margin-top: 2px;
+    color: #fff;
+    white-space: normal;
+    word-break: keep-all;
+}
 .enemy-base-arrow {
     position: absolute;
     top: 62px;

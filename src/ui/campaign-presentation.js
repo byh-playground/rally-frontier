@@ -9,6 +9,7 @@ function formatCountdown(seconds) {
 }
 
 function missionGoal(stage) {
+    if (stage.volleyGoal) return `표시된 곳에 ${stage.volleyGoal.cannons}문 일제사격`;
     if (!stage.defenseSeconds) return ATTACK_GOAL;
     const time = formatCountdown(stage.defenseSeconds);
     return stage.mode === 'counterattack'
@@ -17,6 +18,7 @@ function missionGoal(stage) {
 }
 
 function currentGoal(stage, snapshot, side, remaining) {
+    if (stage.volleyGoal) return { key: 'volley', label: missionGoal(stage) };
     if (stage.defenseSeconds && (remaining > 0 || stage.mode === 'defend'))
         return { key: 'defend', label: '본진 방어' };
     if (

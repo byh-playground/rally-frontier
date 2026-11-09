@@ -54,6 +54,9 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
             const { CAMPAIGN_STAGES, campaignStage } = await import(
                 new URL('./src/definitions/campaign.js', location.href)
             );
+            const { CampaignProgress } = await import(
+                new URL('./src/ui/campaign-progress.js', location.href)
+            );
             const { FP } = await import(new URL('./src/core/config.js', location.href));
             const check = (value, message, detail) => {
                 if (!value) throw Error(message + (detail ? ': ' + JSON.stringify(detail) : ''));
@@ -373,9 +376,12 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     );
                     check(
                         enemies.map((p) => p.id).join(',') === stage.enemyOutposts.join(',') &&
-                            advance.owner === null &&
-                            center.owner === null,
-                        'stages own their authored enemy defense sites and leave player approach open',
+                            [advance, center].every(
+                                (point) =>
+                                    point.owner ===
+                                    (stage.friendlyOutposts?.includes(point.id) ? 0 : null),
+                            ),
+                        'stages start with their authored friendly and enemy outposts',
                         stage.id,
                     );
                     check(
@@ -422,6 +428,121 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         directPairs,
                         pairs: pairs.length,
                         ramps: mapDescriptor.terrain.ramps.length,
+                    });
+                }
+                {
+                    const lesson = campaignStage('volley-practice'),
+                        first = campaignStage('first'),
+                        bean = campaignStage('bean'),
+                        goal = lesson.volleyGoal;
+                    const storage = new Map();
+                    const progress = new CampaignProgress({
+                        getItem: (key) => storage.get(key),
+                        setItem: (key, value) => storage.set(key, value),
+                    });
+                    check(!progress.canStart(lesson), 'practice opens after the first stage');
+                    progress.complete(first);
+                    check(
+                        progress.canStart(lesson) &&
+                            progress.canStart(bean) &&
+                            progress.nextStage === bean,
+                        'practice is available without blocking the main campaign',
+                    );
+                    progress.complete(lesson);
+                    check(
+                        progress.isComplete(lesson) && progress.nextStage === bean,
+                        'the optional clear saves separately from main campaign progression',
+                    );
+
+                    function launchLesson(sim, aim, readyCannons) {
+                        const cannons = sim.launchCannons(0),
+                            primary = cannons.find((cannon) => cannon.id === 'base0'),
+                            level = sim.launchRangeLevel[0];
+                        check(
+                            cannons.length === 3 && level === 1,
+                            'practice starts with three cannons and range ×2',
+                        );
+                        for (const cannon of cannons
+                            .filter((cannon) => cannon !== primary)
+                            .slice(readyCannons - 1))
+                            cannon.launchReadyTick = sim.tick + 4 * sim.tps;
+                        check(
+                            sim.applyCommand('host', {
+                                type: 'LAUNCH',
+                                cannonId: primary.id,
+                                unitType: 'rice',
+                                x: aim.x,
+                                y: aim.y,
+                                holdMs: LaunchRules.holdFor(distance(primary, aim), 'rice', level),
+                            }),
+                            'launch is accepted in practice',
+                        );
+                        const fire = sim.events.filter((event) => event.type === 'launchFire');
+                        check(
+                            new Set(fire.map((event) => event.cannonId)).size === readyCannons,
+                            'practice uses exactly the ready cannons that reach the aim',
+                            { readyCannons, fired: fire.map((event) => event.cannonId) },
+                        );
+                        return new Set(fire.map((event) => event.projectileId));
+                    }
+
+                    const practice = openStage(lesson),
+                        launchIds = launchLesson(practice, goal, 3);
+                    check(
+                        launchIds.size === 15 && practice.launchStats.sent[0] === 28,
+                        'the marked practice shot launches fifteen shells with twenty-eight rice',
+                    );
+                    check(
+                        practice.stepSimulation() === null && practice.projectiles.length > 0,
+                        'practice does not clear while the volley is still in flight',
+                    );
+                    const restored = openStage(lesson);
+                    restored.importState(practice.exportState());
+                    check(
+                        restored.checksum() === practice.checksum(),
+                        'mid-flight practice checkpoint matches',
+                    );
+                    let landed = 0,
+                        landedInGoal = false,
+                        winner = null;
+                    for (let i = 0; i < 4 * practice.tps && !winner; i++) {
+                        winner = practice.stepSimulation();
+                        for (const event of practice.events) {
+                            if (event.type !== 'launchLand' || !launchIds.has(event.projectileId))
+                                continue;
+                            landed += event.count;
+                            landedInGoal ||= distance(event, goal) <= goal.radius;
+                        }
+                        check(
+                            restored.stepSimulation() === winner &&
+                                restored.checksum() === practice.checksum(),
+                            'practice objective resolves identically after restoring the volley',
+                        );
+                    }
+                    check(
+                        winner === 'host' && landed === 28 && landedInGoal,
+                        'a three-cannon hit clears practice after the volley lands and deploys',
+                        { winner, landed, landedInGoal },
+                    );
+                    for (const [readyCannons, aim] of [
+                        [1, goal],
+                        [2, goal],
+                        [3, { x: goal.x, y: goal.y + goal.radius * 2 }],
+                    ]) {
+                        const miss = openStage(lesson);
+                        launchLesson(miss, aim, readyCannons);
+                        for (let i = 0; i < 4 * miss.tps; i++)
+                            check(
+                                miss.stepSimulation() === null,
+                                'wrong aim or fewer than three cannons cannot clear practice',
+                                { readyCannons, aim },
+                            );
+                    }
+                    rows.push({
+                        scenario: 'optional three-cannon campaign practice clears after landing',
+                        projectiles: launchIds.size,
+                        troops: practice.launchStats.sent[0],
+                        clearTick: practice.tick,
                     });
                 }
                 const oilLesson = openStage(campaignStage('millet'));

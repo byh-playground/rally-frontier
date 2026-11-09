@@ -334,6 +334,19 @@ class RallySimulationAdapter {
                 throw new Error('게임 snapshot의 비상 착지 높이가 잘못되었습니다.');
         }
         HeroDeployment.validate(state);
+        const practice = state.campaignVolleyPractice;
+        if (
+            this.session.sim.rules.campaign?.volleyGoal
+                ? !practice ||
+                  !Array.isArray(practice.projectileIds) ||
+                  practice.projectileIds.some((id) => typeof id !== 'string' || !id) ||
+                  new Set(practice.projectileIds).size !== practice.projectileIds.length ||
+                  typeof practice.landed !== 'boolean' ||
+                  typeof practice.complete !== 'boolean' ||
+                  (practice.complete && (!practice.landed || practice.projectileIds.length > 0))
+                : practice !== null
+        )
+            throw new Error('게임 snapshot의 일제사격 연습 상태가 잘못되었습니다.');
         if (
             state.netcodeMatchResult !== undefined &&
             (!state.netcodeMatchResult ||
@@ -1232,7 +1245,11 @@ class GameSession {
             frame.terminalState = this.simulationAdapter.save();
             frame.reason =
                 this.sim.netcodeMatchResult?.reason ||
-                (frame.winner === 'draw' ? 'draw' : 'base-destroyed');
+                (frame.winner === 'draw'
+                    ? 'draw'
+                    : frame.winner === 'host' && this.sim.campaignVolleyPractice?.complete
+                      ? 'volley-practice'
+                      : 'base-destroyed');
         }
         if (
             this.publishConfirmedSnapshots &&
