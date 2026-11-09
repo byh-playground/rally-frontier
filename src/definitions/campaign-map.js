@@ -99,7 +99,7 @@ export function campaignMapLayout(stage) {
                   : [],
             bot: hasRidge ? route(center, { x: ridge.x - 270, y: ridge.y }, ridge, rear) : [],
         },
-        capturePoints,
+        capturePoints: stage.mission?.heroLesson ? [] : capturePoints,
         terrain,
     };
 }

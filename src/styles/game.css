@@ -1004,6 +1004,50 @@ button:disabled {
     height: 50px;
     font-size: 16px;
 }
+.friend-deck-choice {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+.friend-deck-choice legend {
+    margin-bottom: 5px;
+    padding: 0;
+    font-size: 14px;
+    font-weight: 800;
+}
+.friend-deck-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+.friend-deck-options label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 44px;
+    padding: 6px 9px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.friend-deck-options label:has(input:checked) {
+    border-color: var(--green);
+    background: #e8efd9;
+}
+.friend-deck-options label:has(input:disabled) {
+    opacity: 0.6;
+    cursor: default;
+}
+.friend-deck-options input {
+    margin: 0;
+    accent-color: var(--green);
+}
+#friendDeckHint {
+    font-size: 12px;
+}
 .launch-code {
     display: flex;
     gap: 8px;

@@ -10,6 +10,11 @@ import { FruitHeroAttack } from '../sim/fruit-hero-attack.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { StateValue } from '../sim/components.js';
 import { ReplayRecorder } from './replay-recording.js';
+import {
+    matchesDeckSelection,
+    normalizeDeckSelection,
+    resolveDeckSelection,
+} from './friend-decks.js';
 import { recordRecovery } from '../diagnostics/recovery-flight-recorder.js';
 import { StableSerializationUtil } from '../net/lobby-codec.js';
 import { HashUtil } from '../sim/map-generation.js';
@@ -574,14 +579,19 @@ class GameSession {
         transport,
         roomCode,
         matchConfig = null,
-        localDeck = LaunchRules.starterDeck,
+        localDeck,
+        { deckMode = 'own' } = {},
     ) {
         if (!['host', 'guest'].includes(role))
             throw new Error('경기 플레이어 역할이 잘못되었습니다.');
         this.role = role;
         this.transport = transport;
         this.roomCode = roomCode;
-        this.localDeck = LaunchRules.normalizeDeck(localDeck);
+        this.deckSelection = normalizeDeckSelection(
+            deckMode,
+            deckMode === 'own' && localDeck === undefined ? LaunchRules.starterDeck : localDeck,
+        );
+        this.guestDeckMode = null;
         this.matchDecks = null;
         this.netcodeMode = netcodeMode();
         this.matchConfig = GameRuleRuntime.normalizeMatchConfig(matchConfig);
@@ -1059,7 +1069,7 @@ class GameSession {
             } catch {
                 return;
             }
-            if (JSON.stringify(decks[1]) !== JSON.stringify(this.localDeck)) return;
+            if (!matchesDeckSelection(this.deckSelection, decks[1])) return;
             this.matchDecks = decks;
             if (m.matchConfig) this.applyMatchConfig(m.matchConfig, { authoritative: true });
             if (m.roundRules && typeof m.roundRules === 'object')
@@ -1068,20 +1078,27 @@ class GameSession {
             this.startSim(m.seed);
             return;
         }
-        if (this.role === 'host') {
-            if (m.type === 'HELLO') {
-                if (!this.sim) {
-                    let deck;
-                    try {
-                        deck = LaunchRules.normalizeDeck(m.deck);
-                    } catch {
-                        return;
-                    }
-                    this.matchDecks = [this.localDeck.slice(), deck];
-                    this.beginGame();
-                } else this.sendGameStart();
+        if (m.type === 'HELLO' && this.role === 'host') {
+            let guestSelection;
+            try {
+                guestSelection = normalizeDeckSelection(m.deckMode, m.deck);
+            } catch {
                 return;
             }
+            if (!this.matchDecks) {
+                this.matchDecks = [
+                    resolveDeckSelection(this.deckSelection),
+                    resolveDeckSelection(guestSelection),
+                ];
+                this.guestDeckMode = guestSelection.deckMode;
+            } else if (
+                guestSelection.deckMode !== this.guestDeckMode ||
+                !matchesDeckSelection(guestSelection, this.matchDecks[1])
+            )
+                return;
+            // Resolve once so an interrupted START or a reconnect receives the same decks.
+            if (this.sim) this.sendGameStart();
+            else this.beginGame();
         }
     }
     static matchSeed(roomCode) {
@@ -1696,7 +1713,7 @@ class GameSession {
             return this.transport.send({
                 type: 'HELLO',
                 gameVersion: PRODUCT_VERSION,
-                deck: this.localDeck,
+                ...this.deckSelection,
             });
         return true;
     }

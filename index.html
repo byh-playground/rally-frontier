@@ -188,6 +188,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   전투 중 목표와 공격 진행은 현재 경기 스냅샷을 읽어 표시한다.
   스테이지별 도입 병력, 시범 사격, 경제 설정을 적용한다. 방어선 돌파는 전진 거점 완공에 식량을 지원한다.
   캠페인 양측의 덱은 스테이지 설정을 따른다. 보상 병종은 적으로 먼저 등장하며 첫 클리어 뒤 대전 덱에 장착할 수 있다.
+  수박은 기본 영웅이며 선택 영웅 훈련에서 출격·스킬·회수를 배운다. 바나나와 포도는 각각의 훈련 완료로 해금한다.
   타이틀의 캠페인 버튼을 1초 누르면 현재 페이지에서만 디버그 해금을 켠다. 이 모드의 클리어와 덱 편집은 저장하지 않는다.
   덱 편성의 잠긴 카드에는 해금 조건을 표시하고 장착 버튼을 비활성화한다. 별도 정보 버튼은 병종 소개를 연다.
 - 출격한 영웅은 스킬을 하나 예약할 수 있다. 행동 가능 상태, 식량, 유효 적 표적을 모두 확보한
@@ -210,6 +211,8 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   시간을 적용하며 비행·대기 상태는 저장·복원·해시에 포함한다.
 - 덱 편성은 빈 칸을 포함한 슬롯 위치를 기기에 저장한다. 경기 시작 시 장착한 카드를 슬롯 순서대로
   확정해 양측이 같은 권위 상태로 보관한다. 발사 검증·봇·리플레이 및 복구는 경기 당시 확정된 덱을 사용한다.
+  친구 대전은 1장 이상 장착한 본인 덱과 영웅 1장·일반 병종 7장의 랜덤 덱 중 각자 고른다.
+  랜덤 덱은 게임 시작 메시지에서 확정·공개하고, 시작 재시도와 재접속은 같은 덱을 사용한다.
 - GameSession은 공통 Core·Simulation Adapter·Transport를 조합한 경기 Coordinator다. Core가
   입력 예측·지연·시계·롤백·확정 해시·복구를 소유한다. 게임은 공개 API를 쓰고 Core 내부를 복제/우회하지 않는다.
 - 기본 netcode는 lockstep이며 방장이 보낸 lockstep/rollback 모드를 참가자가 경기 시작 전에 적용한다.
@@ -1146,6 +1149,22 @@ END OF DEVELOPMENT CONTRACT
             <div class="launch-sheet-panel">
                 <h2 id="friendSheetTitle">친구와 대전</h2>
                 <p>방을 만들어 코드를 보내거나, 받은 코드를 입력하세요.</p>
+                <fieldset class="friend-deck-choice" aria-describedby="friendDeckHint">
+                    <legend>내 출전 덱</legend>
+                    <div class="friend-deck-options">
+                        <label>
+                            <input id="friendDeckOwn" type="radio" name="friendDeck" checked />
+                            <span id="friendDeckOwnLabel">본인 덱</span>
+                        </label>
+                        <label>
+                            <input id="friendDeckRandom" type="radio" name="friendDeck" />
+                            <span>랜덤 덱</span>
+                        </label>
+                    </div>
+                </fieldset>
+                <p id="friendDeckHint">
+                    랜덤 덱은 보유 카드와 관계없이 선택하며, 경기 시작 후 확인할 수 있어요.
+                </p>
                 <button id="friendCreateBtn" class="launch-btn primary" type="button">
                     방 만들기
                 </button>

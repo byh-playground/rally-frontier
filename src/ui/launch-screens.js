@@ -193,6 +193,7 @@ export class LaunchScreens {
             A.closeMenu();
         }
         this.$('matchMenuSoundBtn').textContent = A.soundOn() ? '소리 끄기' : '소리 켜기';
+        if (SCREEN === 'friend') this.syncFriendDeckChoice();
         this.showSheet('friendSheet', SCREEN === 'friend');
         this.showSheet(
             'launchHelpSheet',
@@ -211,6 +212,18 @@ export class LaunchScreens {
     }
     static showSheet(id, on) {
         this.$(id).classList.toggle('hidden', !on);
+    }
+    static syncFriendDeckChoice() {
+        const size = this.actions.ownDeckSize(),
+            own = this.$('friendDeckOwn');
+        own.disabled = size === 0;
+        this.$('friendDeckOwnLabel').textContent = size
+            ? `본인 덱 · ${size}장`
+            : '본인 덱 · 비어 있음';
+        if (own.disabled) this.$('friendDeckRandom').checked = true;
+    }
+    static friendDeckMode() {
+        return this.$('friendDeckRandom').checked ? 'random' : 'own';
     }
     static bindButtons() {
         const A = this.actions,
@@ -291,8 +304,9 @@ export class LaunchScreens {
         $('friendMatchBtn').onclick = () => this.go('friend');
         $('titleHelpBtn').onclick = () => this.go('help');
         $('friendCreateBtn').onclick = () => {
+            const deckMode = this.friendDeckMode();
             this.replace('');
-            A.createRoom();
+            A.createRoom(deckMode);
         };
         $('friendJoinBtn').onclick = () => {
             const CODE = $('friendCodeInput').value.replace(/\D/g, '').slice(0, 4);
@@ -300,8 +314,9 @@ export class LaunchScreens {
                 $('friendCodeInput').focus();
                 return;
             }
+            const deckMode = this.friendDeckMode();
             this.replace('');
-            A.joinRoom(CODE);
+            A.joinRoom(CODE, deckMode);
         };
         $('friendCodeInput').oninput = (e) => {
             e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
