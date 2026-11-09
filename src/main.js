@@ -3460,12 +3460,11 @@ class GLRenderer {
                         this.fxCanvas.width / Math.max(1, this.canvas.clientWidth),
                     );
                     const fade = 1 - t,
-                        radius = (10 + 20 * (1 - fade * fade)) * scale;
-                    ring(x, y, radius, 4.5 * scale, '#39201f', fade * 0.85);
-                    ring(x, y, radius, 2.2 * scale, '#ffad5c', fade);
-                    dot(x, y, 7 * scale * fade, '#ff9a47', fade);
-                    dot(x, y, 4.5 * scale * fade, '#fff3b8', fade);
-                    burst(fx, x, y, t, 9, '#ffc477', 48, 3.2, 1);
+                        radius = (8 + 12 * ease) * scale;
+                    ring(x, y, radius, 3 * scale, '#39201f', fade);
+                    ring(x, y, radius, 1.5 * scale, '#ffad5c', fade);
+                    dot(x, y, 5 * scale * fade, '#fff3b8', fade);
+                    burst(fx, x, y, t, 6, '#ffc477', 32, 2.4, 1);
                 } else {
                     dot(x, y, 4 * sc * (1 - t), '#e1f7ff', 1 - t);
                     burst(fx, x, y, t, 3, '#e1f7ff', 24, 2, 0.9);
@@ -3775,7 +3774,6 @@ class GLRenderer {
         const side = this.mySide(),
             scale = Math.max(this.sc(), this.fxCanvas.width / Math.max(1, this.canvas.clientWidth));
         ctx.save();
-        ctx.strokeStyle = '#6e472f';
         ctx.lineWidth = 1.2 * scale;
         for (const group of groups) {
             if (group.emergencyDropHeightFP == null) continue;
@@ -3795,26 +3793,43 @@ class GLRenderer {
                 y > this.fxCanvas.height + 32 * scale
             )
                 continue;
-            const fall = RangeUtil.clamp(
-                    1 - drop.heightFP / Math.max(1, group.emergencyDropHeightFP),
-                    0,
-                    1,
-                ),
-                spread = (4 + 3 * fall) * scale;
-            ctx.globalAlpha = Math.max(0.45, (drop.count - drop.index) / drop.count);
+            const fallen = Math.max(0, group.emergencyDropHeightFP - drop.heightFP),
+                fall = RangeUtil.clamp(fallen / Math.max(1, group.emergencyDropHeightFP), 0, 1),
+                spread = (2 + 5 * fall) * scale,
+                opacity = Math.max(0.45, (drop.count - drop.index) / drop.count),
+                trail =
+                    drop.heightFP > 0
+                        ? Math.min(
+                              18 * scale,
+                              (fallen / FP) * BattlefieldProjection.heightScale * this.sc(),
+                          )
+                        : 0;
             for (let i = -2; i <= 2; i++) {
-                const direction = i % 2 === 0 ? 1 : -1;
+                const direction = i % 2 === 0 ? 1 : -1,
+                    grainX = x + i * spread,
+                    grainY = y + (Math.abs(i) * 3 - 4) * scale,
+                    color = direction > 0 ? '#ffe3a2' : '#ffb45f';
+                if (trail > 0) {
+                    ctx.globalAlpha = opacity * 0.35;
+                    ctx.strokeStyle = color;
+                    ctx.beginPath();
+                    ctx.moveTo(grainX - i * trail * 0.12, grainY - trail);
+                    ctx.lineTo(grainX, grainY);
+                    ctx.stroke();
+                }
+                ctx.globalAlpha = opacity;
+                ctx.strokeStyle = '#6e472f';
                 ctx.beginPath();
                 ctx.ellipse(
-                    x + i * spread,
-                    y + (Math.abs(i) * 3 - 4) * scale,
+                    grainX,
+                    grainY,
                     4.5 * scale,
                     2.3 * scale,
                     i * 0.55 + direction * fall * 3,
                     0,
                     Math.PI * 2,
                 );
-                ctx.fillStyle = direction > 0 ? '#ffe3a2' : '#ffb45f';
+                ctx.fillStyle = color;
                 ctx.fill();
                 ctx.stroke();
             }
@@ -5033,9 +5048,10 @@ class GLRenderer {
             }
         }
     }
-    drawProjectileSafely(p) {
+    drawProjectileSafely(p, world) {
+        if (!this.isFriendlySide(p.side) && !this.visibleRaw(p.x, p.y)) return;
         try {
-            return this.drawProjectile(p);
+            return this.drawProjectile(p, world);
         } catch (err) {
             this.reportEntityRenderError('projectile', p, err);
             try {
@@ -5054,7 +5070,6 @@ class GLRenderer {
     }
 
     drawAcornAmmoProjectile(p, world) {
-        if (p.side !== this.mySide() && !this.visibleRaw(p.x, p.y)) return;
         const point = this.projectRenderWorldPosition(world);
         const stable = this.projectRenderWorldPositionStable(world);
         const motion = this.projectileScreenMotion(p, stable.x, stable.y);
@@ -5279,52 +5294,49 @@ class GLRenderer {
             );
         }
     }
-    drawProjectile(p) {
-        const targetVisible = this.visibleRaw(p.x, p.y) || p.side === this.mySide();
-        if (!targetVisible) return;
+    drawProjectileGroundEffects(p, world) {
         const sc = this.sc();
-        const wp = this.resolveRenderWorldPosition(p, 'projectile');
-        const stablePp = this.projectRenderWorldPositionStable(wp);
-        const pp = this.projectRenderWorldPosition(wp);
-        const gp = this.projectRenderWorldPosition(
-            this.resolveGroundShadowPosition(p, 'projectile'),
-        );
-        const gx = gp.x,
-            gy = gp.y;
-        let x = pp.x,
-            y = pp.y;
-        this.setRenderDepth(this.spriteDepthForWorld(wp));
-        const target =
-            (this.snapshot?.units || []).find((u) => u.id === p.target && u.alive) ||
-            (this.snapshot?.buildings || []).find((b) => b.id === p.target && b.alive !== false);
-        if (wp.y > 0.01) {
-            const sr = Math.max(2, ((p.drawRadius || 5) - 1) * sc);
-            this.withWorldSpriteDepth(this.resolveGroundShadowPosition(p, 'projectile'), () => {
-                this.circle(gx, gy, sr, [0.06, 0.08, 0.1, 0.22], 8);
-                this.circle(gx, gy, sr * 1.55, [0.06, 0.08, 0.1, 0.08], 10);
-            });
-            if (gy - y > 2.5)
-                this.line(
-                    gx,
-                    gy - sr * 0.25,
-                    gx,
-                    y + sr * 0.3,
-                    Math.max(1, 1.25 * sc),
-                    [0.95, 0.92, 0.8, 0.16],
-                );
-        }
-        if (p.payload) this.drawLaunchTrail(p, wp, sc);
+        const type = p.payload?.type,
+            particleTrail = type === 'corn' || type === 'millet' || type === 'popcorn';
+        if (p.payload && !particleTrail) this.drawLaunchTrail(p, world, sc);
+        if (world.y <= world.groundY + 0.01) return;
+        const ground = this.resolveGroundShadowPosition(p, 'projectile'),
+            { x, y } = this.projectRenderWorldPosition(ground),
+            radius = Math.max(2, ((p.drawRadius || 5) - 1) * sc);
+        this.withWorldSpriteDepth(ground, () => {
+            this.circle(x, y, radius, [0.06, 0.08, 0.1, 0.22], 8);
+            this.circle(x, y, radius * 1.55, [0.06, 0.08, 0.1, 0.08], 10);
+        });
+        const airY = this.projectRenderWorldPosition(world).y;
+        if (!particleTrail && type !== 'acorn' && y - airY > 2.5)
+            this.line(
+                x,
+                y - radius * 0.25,
+                x,
+                airY + radius * 0.3,
+                Math.max(1, 1.25 * sc),
+                [0.95, 0.92, 0.8, 0.16],
+            );
+    }
+    drawProjectile(p, world) {
+        const type = p.payload?.type;
+        if (type === 'acorn') return this.drawAcornAmmoProjectile(p, world);
+        if (type === 'millet') return this.drawMilletEarProjectile(p, world);
+        if (type === 'corn' || type === 'popcorn')
+            return this.drawCornConeProjectile(p, world, type === 'popcorn');
+
+        const { x, y } = this.projectRenderWorldPosition(world),
+            sc = this.sc();
         if (p.mortar) {
             const radius = Math.max(3, 10 * sc);
             this.circle(x, y, radius, [0.19, 0.15, 0.13, 1], 12);
             this.circle(x, y, radius * 0.6, [0.98, 0.65, 0.26, 1], 12);
             return;
         }
-        const projectileCtx = { p, sc, target, gx, gy, wp, pp, gp, x, y };
         // Direction is sampled after interpolation/camera projection/z-height, but before
         // transient hit/camera shake.
-        projectileCtx.screenMotion = this.projectileScreenMotion(p, stablePp.x, stablePp.y);
-        PROJECTILE_VISUAL_RENDER_FNS.launchAmmo(this, projectileCtx);
+        const screenMotion = this.projectileScreenMotion(p, x, y);
+        PROJECTILE_VISUAL_RENDER_FNS.launchAmmo(this, { p, sc, x, y, screenMotion });
     }
     sampleCornTrail(id, side, world) {
         const displayMs = this.cornPresentationTime();
@@ -5368,8 +5380,6 @@ class GLRenderer {
         anchor.at = displayMs;
     }
     drawMilletEarProjectile(projectile, world) {
-        if (projectile.side !== this.mySide() && !this.visibleRaw(projectile.x, projectile.y))
-            return;
         const point = this.projectRenderWorldPosition(world),
             stable = this.projectRenderWorldPositionStable(world),
             motion = this.projectileScreenMotion(projectile, stable.x, stable.y);
@@ -5418,8 +5428,6 @@ class GLRenderer {
         this.sampleCornTrail('millet-ear:' + projectile.id, projectile.side, world);
     }
     drawCornConeProjectile(projectile, world, popcorn = false) {
-        if (projectile.side !== this.mySide() && !this.visibleRaw(projectile.x, projectile.y))
-            return;
         const point = this.projectRenderWorldPosition(world),
             stable = this.projectRenderWorldPositionStable(world),
             motion = this.projectileScreenMotion(projectile, stable.x, stable.y);
@@ -5916,25 +5924,10 @@ class GLRenderer {
             }
         }
         this.flushVectorMesh('grain-ring-end');
-        for (const p of this.renderState.displayed('projectile', this.presentationNow())) {
-            if (p.payload?.type !== 'acorn' || !this.presentationEntityActive('projectile', p.id))
-                continue;
-            if (p.side !== this.mySide() && !this.visibleRaw(p.x, p.y)) continue;
-            if (
-                p.retiredTick != null &&
-                this.renderState.frame(this.presentationNow()).timeMs >=
-                    p.retiredTick * this.presentationTargetIntervalMs()
-            )
-                continue;
-            const world = this.resolveRenderWorldPosition(p, 'projectile');
-            const ground = this.resolveGroundShadowPosition(p, 'projectile');
-            const pt = this.projectRenderWorldPosition(ground),
-                radius = Math.max(2, ((p.drawRadius || 5) - 1) * this.sc());
-            this.withWorldSpriteDepth(ground, () => {
-                this.circle(pt.x, pt.y, radius, [0.06, 0.08, 0.1, 0.22], 8);
-                this.circle(pt.x, pt.y, radius * 1.55, [0.06, 0.08, 0.1, 0.08], 10);
-            });
-            this.withWorldSpriteDepth(world, () => this.drawLaunchTrail(p, world, this.sc()));
+        for (const { kind, entity, world } of this.worldSpriteFrame) {
+            if (kind !== 'projectile') continue;
+            if (!this.isFriendlySide(entity.side) && !this.visibleRaw(entity.x, entity.y)) continue;
+            this.withWorldSpriteDepth(world, () => this.drawProjectileGroundEffects(entity, world));
         }
         for (const projectile of this.renderState.displayed('unitLob', this.presentationNow())) {
             if (
@@ -5958,27 +5951,6 @@ class GLRenderer {
                     8,
                 ),
             );
-        }
-        for (const projectile of this.renderState.displayed('projectile', this.presentationNow())) {
-            if (projectile.payload?.type !== 'corn' && projectile.payload?.type !== 'millet')
-                continue;
-            if (projectile.side !== this.mySide() && !this.visibleRaw(projectile.x, projectile.y))
-                continue;
-            if (
-                projectile.retiredTick != null &&
-                this.renderState.frame(this.presentationNow()).timeMs >=
-                    projectile.retiredTick * this.presentationTargetIntervalMs()
-            )
-                continue;
-            const world = this.resolveRenderWorldPosition(projectile, 'projectile');
-            if (world.y <= world.groundY + 0.01) continue;
-            const ground = this.resolveGroundShadowPosition(projectile, 'projectile');
-            const point = this.projectRenderWorldPosition(ground),
-                radius = Math.max(2, ((projectile.drawRadius || 5) - 1) * this.sc());
-            this.withWorldSpriteDepth(ground, () => {
-                this.circle(point.x, point.y, radius, [0.06, 0.08, 0.1, 0.22], 8);
-                this.circle(point.x, point.y, radius * 1.55, [0.06, 0.08, 0.1, 0.08], 10);
-            });
         }
         this.flush();
         this.passState.depthWrite = true;
@@ -6226,6 +6198,7 @@ class GLRenderer {
         this.drawGrainBodies(entries);
         for (const entry of entries) {
             const { kind, entity, world } = entry;
+            if (!this.showcase && kind === 'projectile' && entity.payload) continue;
             this.renderEntity = entity;
             this.renderStage = kind;
             const nextPainter =
@@ -6233,6 +6206,7 @@ class GLRenderer {
                 (kind === 'projectile' && entity.payload?.type === 'acorn') ||
                 (kind === 'projectile' && entity.payload?.type === 'corn') ||
                 (kind === 'projectile' && entity.payload?.type === 'millet') ||
+                (kind === 'projectile' && entity.payload?.type === 'popcorn') ||
                 (kind === 'projectile' && GRAIN_SPRITES[entity.payload?.type]?.cannonAmmo) ||
                 kind === 'fruitProjectile' ||
                 kind === 'unitLob' ||
@@ -6259,19 +6233,11 @@ class GLRenderer {
                     });
                 else if (kind === 'building') this.drawBuildingSafely(entity);
                 else if (kind === 'landingBundle') this.drawLandingBundle(entity);
-                else if (entity.payload?.type === 'acorn')
-                    this.drawAcornAmmoProjectile(entity, world);
                 else if (kind === 'unitLob') this.drawCornKernel(entity, world);
-                else if (kind === 'projectile' && entity.payload?.type === 'corn')
-                    this.drawCornConeProjectile(entity, world);
-                else if (kind === 'projectile' && entity.payload?.type === 'popcorn')
-                    this.drawCornConeProjectile(entity, world, true);
-                else if (kind === 'projectile' && entity.payload?.type === 'millet')
-                    this.drawMilletEarProjectile(entity, world);
                 else if (kind === 'fruitProjectile') this.drawFruitProjectile(entity, world);
                 else if (kind === 'thorn') this.drawThorn(entity, world);
                 else if (kind === 'thornImpact') this.drawThornImpact(entity, world);
-                else this.drawProjectileSafely(entity);
+                else this.drawProjectileSafely(entity, world);
             });
         }
         this.flushVectorMesh('world-pass-end');
@@ -6658,6 +6624,7 @@ class GLRenderer {
         this.passState.depthEnabled = false;
         this.passState.depthWrite = false;
         this.drawFog();
+        this.renderLaunchShellsAboveFog();
         this.begin();
         this.setRenderDepth(0);
         this.drawFogLandmarks();
@@ -6665,6 +6632,24 @@ class GLRenderer {
         this.begin();
         this.drawLaunchOverlay();
         this.flush();
+    }
+    renderLaunchShellsAboveFog() {
+        if (!this.snapshot) return;
+        // The ground fog still follows world visibility. Only eligible air bodies paint after it.
+        this.passState.depthEnabled = true;
+        this.begin();
+        try {
+            this.renderStage = 'launch-shell';
+            for (const { kind, entity, world } of this.worldSpriteFrame) {
+                if (kind !== 'projectile' || !entity.payload) continue;
+                this.renderEntity = entity;
+                this.withWorldSpriteDepth(world, () => this.drawProjectileSafely(entity, world));
+            }
+            this.flushVectorMesh('launch-shells-above-fog');
+            this.flush(this.frame, true);
+        } finally {
+            this.passState.depthEnabled = false;
+        }
     }
     // Range is measured in simulation XY. Every contour point is projected from its own terrain height.
     drawLaunchRange(cannon, type, level, active = false) {
