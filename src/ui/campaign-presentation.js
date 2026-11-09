@@ -9,7 +9,7 @@ function formatCountdown(seconds) {
 }
 
 function missionGoal(stage) {
-    if (stage.volleyGoal) return `${stage.volleyGoal.cannons}문 일제사격으로 수비대 격파`;
+    if (stage.volleyGoals) return '1·2·3문 사격으로 수비대 3곳 격파';
     if (!stage.defenseSeconds) return ATTACK_GOAL;
     const time = formatCountdown(stage.defenseSeconds);
     return stage.mode === 'counterattack'
@@ -18,7 +18,7 @@ function missionGoal(stage) {
 }
 
 function currentGoal(stage, snapshot, side, remaining) {
-    if (stage.volleyGoal) return { key: 'volley', label: missionGoal(stage) };
+    if (stage.volleyGoals) return { key: 'volley', label: missionGoal(stage) };
     if (stage.defenseSeconds && (remaining > 0 || stage.mode === 'defend'))
         return { key: 'defend', label: '본진 방어' };
     if (

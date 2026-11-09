@@ -3090,14 +3090,14 @@ class GLRenderer {
                 ctx.fillText(`${payment} · ${workState}`, x, barY + 28, width);
             }
         }
-        const practice =
+        const volleyGoals =
             UiRuntimeState.value.screen === 'replay'
-                ? ReplayPresentation.replayPlayer?.sim?.rules.campaign?.volleyGoal
-                : campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoal;
-        if (practice) {
-            const [x, y] = this.worldToPx(this.viewX(practice.x), this.viewY(practice.y)),
-                radius = practice.radius * sc,
-                radiusY = BattlefieldProjection.planarY(practice.radius) * sc;
+                ? ReplayPresentation.replayPlayer?.sim?.rules.campaign?.volleyGoals
+                : campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoals;
+        for (const goal of volleyGoals ?? []) {
+            const [x, y] = this.worldToPx(this.viewX(goal.x), this.viewY(goal.y)),
+                radius = goal.radius * sc,
+                radiusY = BattlefieldProjection.planarY(goal.radius) * sc;
             ctx.beginPath();
             ctx.ellipse(x, y, radius, radiusY, 0, 0, 2 * Math.PI);
             ctx.fillStyle = 'rgba(255,211,97,.18)';
@@ -3105,8 +3105,8 @@ class GLRenderer {
             ctx.lineWidth = 2 * ratio;
             ctx.strokeStyle = '#ffe09b';
             ctx.stroke();
-            const text = '적 수비대';
-            ctx.font = `900 ${11 * ratio}px system-ui,sans-serif`;
+            const text = goal.cannons === 1 ? '1문 사격' : `${goal.cannons}문 일제사격`;
+            ctx.font = `900 ${13 * ratio}px system-ui,sans-serif`;
             const label = labelPosition(x, y, y - radiusY - 10 * ratio, [text], 8 * ratio);
             if (label) {
                 ctx.lineWidth = 3 * ratio;
@@ -9289,7 +9289,7 @@ class MatchLifecycle {
                 '연결을 60초 안에 복구하지 못해 경기가 중단되었습니다.';
         else if (reason === 'volley-practice')
             UiRegistry.refs.resultText.textContent =
-                '세 대포의 일제사격으로 적 수비대를 격파했습니다.';
+                '1·2·3문 사격으로 적 수비대 세 곳을 모두 격파했습니다.';
         else if (reason === 'draw')
             UiRegistry.refs.resultText.textContent = '양쪽 메인 거점이 같은 tick에 파괴되었습니다.';
         else
@@ -9847,30 +9847,39 @@ class LaunchPresentation {
         const level = s.launchRangeLevel?.[side] ?? 0,
             cost = LaunchRules.upgradeCost(level),
             premiumCost = LaunchRules.upgradePremiumCost(level),
+            fixedRange = !!(ReplayPresentation.replayPlayer
+                ? ReplayPresentation.replayPlayer.sim?.rules.campaign?.volleyGoals
+                : campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoals),
             maxed = cost == null,
             price = { cost, premiumCost },
-            warning = maxed ? '' : this.resourceWarning(s, side, price),
+            warning = maxed || fixedRange ? '' : this.resourceWarning(s, side, price),
             rangeButton = UiRegistry.refs.launchRangeBtn;
         UiRegistry.refs.launchReachText.textContent = this.card
             ? `${UnitDefinition.get(this.card).name} 최대 발사 ${LaunchRules.maxReachOf(this.card, level).toLocaleString('ko-KR')}`
             : '발사할 카드 없음';
-        UiRegistry.refs.launchRangeText.textContent = maxed
-            ? `사거리 ×${LaunchRules.rangeMultiplier(level)} · 최대`
-            : `사거리 ×${LaunchRules.rangeMultiplier(level)} → ×${LaunchRules.rangeMultiplier(level + 1)}`;
-        UiRegistry.refs.launchRangeCost.textContent = maxed
-            ? '강화 완료'
-            : ResourceDisplay.costText(price);
+        UiRegistry.refs.launchRangeText.textContent = fixedRange
+            ? `사거리 ×${LaunchRules.rangeMultiplier(level)}`
+            : maxed
+              ? `사거리 ×${LaunchRules.rangeMultiplier(level)} · 최대`
+              : `사거리 ×${LaunchRules.rangeMultiplier(level)} → ×${LaunchRules.rangeMultiplier(level + 1)}`;
+        UiRegistry.refs.launchRangeCost.textContent = fixedRange
+            ? '연습 중 고정'
+            : maxed
+              ? '강화 완료'
+              : ResourceDisplay.costText(price);
         UiRegistry.refs.launchRangeStatus.hidden = !warning;
-        UiRegistry.refs.launchRangeStatus.textContent = maxed
-            ? ''
-            : ResourceDisplay.shortageText(price, balance);
-        rangeButton.disabled = maxed || !!ReplayPresentation.replayPlayer;
+        UiRegistry.refs.launchRangeStatus.textContent = warning
+            ? ResourceDisplay.shortageText(price, balance)
+            : '';
+        rangeButton.disabled = fixedRange || maxed || !!ReplayPresentation.replayPlayer;
         rangeButton.setAttribute('aria-disabled', String(rangeButton.disabled || !!warning));
         rangeButton.title =
             warning ||
-            (maxed
-                ? '모든 대포의 발사 사거리가 최대로 강화됐습니다.'
-                : `모든 대포의 발사 사거리 강화 · ${ResourceDisplay.costText(price, true)}`);
+            (fixedRange
+                ? '일제사격 연습에서는 발사 사거리가 고정됩니다.'
+                : maxed
+                  ? '모든 대포의 발사 사거리가 최대로 강화됐습니다.'
+                  : `모든 대포의 발사 사거리 강화 · ${ResourceDisplay.costText(price, true)}`);
         this.renderHud(s, side);
         for (const event of s.events || [])
             if (event.type === 'launchRejected' && event.side === side)
@@ -10750,10 +10759,12 @@ class BattlePresentation {
         if (enteringGame) {
             const r = ActiveViewState.renderer;
             const base = r.world.bases[side],
-                practice = campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoal;
-            r.replayZoom = practice ? 1 : DEFAULT_LIVE_ZOOM;
+                volleyGoals = campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoals;
+            r.replayZoom = volleyGoals ? 0.6 : DEFAULT_LIVE_ZOOM;
             r.resize();
-            const points = practice ? [...LaunchRules.launchCannons(s, side), practice] : [base],
+            const points = volleyGoals
+                    ? [...LaunchRules.launchCannons(s, side), ...volleyGoals]
+                    : [base],
                 middle = (key) => {
                     const values = points.map((point) => point[key]);
                     return (Math.min(...values) + Math.max(...values)) / 2;

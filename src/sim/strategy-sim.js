@@ -312,8 +312,15 @@ class StrategySim {
         const campaign = this.rules.campaign;
         this.launchRangeLevel = [campaign?.startingLaunchRangeLevel ?? 0, 0];
         this.launchDeployments = [];
-        this.campaignVolleyPractice = campaign?.volleyGoal
-            ? { projectileIds: [], garrisonIds: [], landed: false, complete: false }
+        this.campaignVolleyPractice = campaign?.volleyGoals
+            ? {
+                  goals: campaign.volleyGoals.map(() => ({
+                      projectileIds: [],
+                      garrisonIds: [],
+                      landed: false,
+                  })),
+                  complete: false,
+              }
             : null;
         this.heroes = this.decks.map((deck) => HeroDeployment.emptySlots(deck));
         this.heroRecovery = this.decks.map((deck) => HeroDeployment.emptySlots(deck));
@@ -370,16 +377,14 @@ class StrategySim {
             const enemy = this.buildings.find((b) => b.id === 'base' + (1 - side));
             this.flags[side] = { x: enemy.x, y: enemy.y, forced: false };
         }
-        if (campaign?.volleyGoal) {
-            const { x, y, garrison } = campaign.volleyGoal;
+        for (const [index, { x, y, garrison }] of (campaign?.volleyGoals ?? []).entries()) {
             const rows = Math.ceil(garrison.count / garrison.columns);
-            this.flags[1] = { x, y, forced: false };
             for (let i = 0; i < garrison.count; i++) {
                 const dx = ((i % garrison.columns) - (garrison.columns - 1) / 2) * garrison.spacing,
                     dy = (Math.floor(i / garrison.columns) - (rows - 1) / 2) * garrison.spacing;
                 const defender = this.spawnUnit(1, garrison.type, x + dx, y + dy);
                 defender.status.terrainRevealUntil0 = Number.MAX_SAFE_INTEGER;
-                this.campaignVolleyPractice.garrisonIds.push(defender.id);
+                this.campaignVolleyPractice.goals[index].garrisonIds.push(defender.id);
             }
         }
     }
@@ -1416,19 +1421,19 @@ class StrategySim {
                 else this.fireLaunchShell(fire);
             });
         }
-        const practice = this.campaignVolleyPractice,
-            goal = this.rules.campaign?.volleyGoal;
-        if (
-            practice &&
-            !practice.landed &&
-            side === 0 &&
-            action.unitType === 'rice' &&
-            volley.length >= goal.cannons &&
-            Math.hypot(aim.x - goal.x, aim.y - goal.y) <= goal.radius
-        ) {
-            for (let i = eventsBeforeVolley; i < this.events.length; i++) {
-                const event = this.events[i];
-                if (event.type === 'launchFire') practice.projectileIds.push(event.projectileId);
+        if (this.campaignVolleyPractice && side === 0 && action.unitType === 'rice') {
+            const index = this.rules.campaign.volleyGoals.findIndex(
+                (goal) =>
+                    volley.length === goal.cannons &&
+                    Math.hypot(aim.x - goal.x, aim.y - goal.y) <= goal.radius,
+            );
+            const progress = this.campaignVolleyPractice.goals[index];
+            if (progress && !progress.landed) {
+                for (let i = eventsBeforeVolley; i < this.events.length; i++) {
+                    const event = this.events[i];
+                    if (event.type === 'launchFire')
+                        progress.projectileIds.push(event.projectileId);
+                }
             }
         }
         this.launchStats.launches[side]++;
@@ -1437,26 +1442,26 @@ class StrategySim {
     }
     updateVolleyPractice() {
         const practice = this.campaignVolleyPractice;
-        if (!practice || practice.complete || (!practice.landed && !practice.projectileIds.length))
-            return;
-        const goal = this.rules.campaign.volleyGoal;
-        if (!practice.landed) {
-            practice.landed = this.events.some(
+        if (!practice || practice.complete) return;
+        for (const [index, progress] of practice.goals.entries()) {
+            if (!progress.projectileIds.length) continue;
+            const goal = this.rules.campaign.volleyGoals[index];
+            progress.landed ||= this.events.some(
                 (event) =>
                     event.type === 'launchImpact' &&
-                    practice.projectileIds.includes(event.projectileId) &&
+                    progress.projectileIds.includes(event.projectileId) &&
                     Math.hypot(event.x - goal.x, event.y - goal.y) <= goal.radius,
             );
+            const pending = new Set(this.projectiles.map((shell) => shell.id));
+            for (const group of this.launchDeployments) pending.add(group.projectileId);
+            progress.projectileIds = progress.projectileIds.filter((id) => pending.has(id));
         }
-        const pending = new Set(this.projectiles.map((shell) => shell.id));
-        for (const group of this.launchDeployments) pending.add(group.projectileId);
-        practice.projectileIds = practice.projectileIds.filter((id) => pending.has(id));
-        if (
-            practice.landed &&
-            !practice.projectileIds.length &&
-            practice.garrisonIds.every((id) => !this.unitById.get(id)?.alive)
-        )
-            practice.complete = true;
+        practice.complete = practice.goals.every(
+            (progress) =>
+                progress.landed &&
+                !progress.projectileIds.length &&
+                progress.garrisonIds.every((id) => !this.unitById.get(id)?.alive),
+        );
     }
     fireLaunchShell({
         side,
@@ -1573,6 +1578,7 @@ class StrategySim {
         }
     }
     upgradeLaunchRange(side) {
+        if (side === 0 && this.campaignVolleyPractice) return false;
         const level = this.launchRangeLevel[side],
             cost = LaunchRules.upgradeCost(level),
             premiumCost = LaunchRules.upgradePremiumCost(level);
@@ -2222,6 +2228,12 @@ class StrategySim {
             const cp = this.capturePoints.find((p) => p.id === u.launchHoldPointId);
             if (cp && cp.owner == null && cp.enabled) return { x: cp.x, y: cp.y, forced: false };
             u.launchHoldPointId = null;
+        }
+        if (u.side === 1 && this.campaignVolleyPractice) {
+            const index = this.campaignVolleyPractice.goals.findIndex((goal) =>
+                goal.garrisonIds.includes(u.id),
+            );
+            if (index >= 0) return this.rules.campaign.volleyGoals[index];
         }
         return this.flags[u.side];
     }
