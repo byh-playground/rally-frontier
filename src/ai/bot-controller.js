@@ -179,6 +179,7 @@ class BotController {
         }
         const tps = snapshot.tps || SIM_TPS;
         const pacing = this.side === 1 ? this.session.sim?.rules?.campaign?.enemyPacing : null;
+        if (pacing?.disabled) return;
         if (
             pacing &&
             snapshot.tick < SimulationTiming.msToTicks(pacing.firstDecisionMs, tps, { min: 0 })

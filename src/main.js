@@ -20,6 +20,7 @@ import {
     NetworkModuleLoader,
 } from './session/runtime-state.js';
 import { LaunchRules } from './sim/launch-rules.js';
+import { CampaignMission } from './sim/campaign-mission.js';
 import { ConstructionRules } from './sim/construction-rules.js';
 import { LaunchImpactRules } from './definitions/launch-impact-rules.js';
 import { fruitProjectilePosition } from './definitions/fruit-hero-trajectory.js';
@@ -9297,7 +9298,9 @@ class MatchLifecycle {
                 ? '적 메인 거점을 파괴했습니다.'
                 : '내 메인 거점이 파괴되었습니다.';
         if (stage && mine && stage.mode === 'defend')
-            UiRegistry.refs.resultText.textContent = '제한 시간 동안 본진을 지켰습니다.';
+            UiRegistry.refs.resultText.textContent = stage.mission?.waves
+                ? '모든 공격을 막아 본진을 지켰습니다.'
+                : '제한 시간 동안 본진을 지켰습니다.';
         if (cleared && !next && !stage.optional)
             UiRegistry.refs.resultText.textContent = '캠페인을 모두 완료했습니다.';
         const end = ActiveViewState.snap,
@@ -10409,6 +10412,9 @@ class LaunchPresentation {
             return;
         }
         const { aim, shots, formation, groups } = preview;
+        const practiceGoal = campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoals?.find(
+            (goal) => CampaignMission.volleyGoalContains(goal, aim),
+        );
         const vw = r.viewWorldW(),
             vh = r.viewWorldH(),
             points = [
@@ -10462,7 +10468,7 @@ class LaunchPresentation {
             ),
             groups.length,
             LaunchRules.volleyPassengerCount(groups),
-            showVolleyHint,
+            { showVolleyHint, requiredCannons: practiceGoal?.cannons },
         );
     }
     static cancel() {

@@ -2,6 +2,7 @@ import { campaignStage } from '../definitions/campaign.js';
 // Command lockstep session around the simulation.
 import { GameRuleRuntime, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { StrategySim } from '../sim/strategy-sim.js';
+import { CampaignMission } from '../sim/campaign-mission.js';
 import { Building, Projectile, Unit } from '../sim/entities.js';
 import { HeroDeployment } from '../sim/hero-deployment.js';
 import { HeroRollAttack } from '../sim/hero-roll-attack.js';
@@ -334,6 +335,7 @@ class RallySimulationAdapter {
                 throw new Error('게임 snapshot의 비상 착지 높이가 잘못되었습니다.');
         }
         HeroDeployment.validate(state);
+        CampaignMission.validate(state, this.session.sim.rules.campaign?.mission);
         const practice = state.campaignVolleyPractice,
             volleyGoals = this.session.sim.rules.campaign?.volleyGoals;
         const validIds = (ids) =>

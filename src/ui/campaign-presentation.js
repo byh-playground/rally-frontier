@@ -10,6 +10,13 @@ function formatCountdown(seconds) {
 
 function missionGoal(stage) {
     if (stage.volleyGoals) return '1·2·3문 사격으로 수비대 3곳 격파';
+    if (stage.mission?.waves) {
+        const count = stage.mission.waves.length;
+        return stage.mode === 'counterattack'
+            ? `${count}차 공격을 막고 반격`
+            : `${count}차 공격 방어`;
+    }
+    if (stage.mission?.firstCapture) return '전진 거점 완공';
     if (!stage.defenseSeconds) return ATTACK_GOAL;
     const time = formatCountdown(stage.defenseSeconds);
     return stage.mode === 'counterattack'
@@ -19,6 +26,23 @@ function missionGoal(stage) {
 
 function currentGoal(stage, snapshot, side, remaining) {
     if (stage.volleyGoals) return { key: 'volley', label: missionGoal(stage) };
+    const mission = snapshot.campaignMission;
+    if (stage.mission?.waves) {
+        if (mission?.phase === 'counterattack') return { key: 'attack', label: ATTACK_GOAL };
+        if (mission?.phase === 'complete') return { key: 'complete', label: '모든 공격 방어 완료' };
+        const count = stage.mission.waves.length,
+            wave =
+                mission?.phase === 'waiting'
+                    ? mission.waveIndex + 2
+                    : (mission?.waveIndex ?? 0) + 1;
+        return {
+            key: `wave-${wave}`,
+            label: `${wave} / ${count}차 공격 방어`,
+            nextWaveTick: mission?.nextWaveTick,
+        };
+    }
+    if (stage.mission?.firstCapture && !mission?.firstCaptureComplete)
+        return { key: 'first-capture', label: '전진 거점 완공' };
     if (stage.defenseSeconds && (remaining > 0 || stage.mode === 'defend'))
         return { key: 'defend', label: '본진 방어' };
     if (
@@ -152,7 +176,7 @@ export class CampaignPresentation {
         const remaining = (stage.defenseSeconds || 0) - tick / tps;
         const goal = currentGoal(stage, snapshot, side, remaining);
         const $ = this.$;
-        if (this.battle?.stage !== stage) {
+        if (this.battle?.stage !== stage || tick < this.battle.tick) {
             this.battle = { stage, goal: goal.key, announced: new Set([goal.key]), cueEnd: 0 };
             $('campaignObjective').classList.remove('hidden');
             $('campaignObjectiveLabel').textContent = goal.label;
@@ -164,7 +188,9 @@ export class CampaignPresentation {
             if (!this.battle.announced.has(goal.key)) {
                 this.battle.announced.add(goal.key);
                 const title =
-                    previous === 'defend' && stage.mode === 'counterattack'
+                    (previous === 'defend' || previous.startsWith('wave-')) &&
+                    goal.key === 'attack' &&
+                    stage.mode === 'counterattack'
                         ? '반격 개시'
                         : '다음 목표';
                 this.showCue(title, goal.label, tick, tps);
@@ -172,10 +198,13 @@ export class CampaignPresentation {
                 this.battle.cueEnd = tick;
             }
         }
+        this.battle.tick = tick;
         const timer = $('campaignObjectiveTimer');
-        timer.hidden = goal.key !== 'defend';
+        timer.hidden = goal.key !== 'defend' && goal.nextWaveTick == null;
         if (!timer.hidden) {
-            const value = formatCountdown(remaining);
+            const value = formatCountdown(
+                goal.nextWaveTick == null ? remaining : (goal.nextWaveTick - tick) / tps,
+            );
             if (timer.textContent !== value) timer.textContent = value;
         }
         $('campaignCue').classList.toggle('hidden', tick >= this.battle.cueEnd);
