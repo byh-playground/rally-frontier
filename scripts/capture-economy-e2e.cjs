@@ -1435,35 +1435,80 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     workDone: tower.construction.workDone,
                 });
             }
-            // The worker must resolve nearby combat before resuming construction.
+            // Assigned workers defend against actual hits without chasing retreating enemies.
             {
                 const sim = arena(),
                     [tower] = start(sim),
                     worker = sim.units[0];
                 worker.hp = worker.maxHp = 10000;
-                const enemy = sim.spawnUnit(1, 'rice', worker.x + 35, worker.y);
-                enemy.hp = enemy.maxHp = 10000;
-                const workDone = tower.construction.workDone,
-                    hits = [];
-                step(sim, 2 * sim.tps, (s) =>
-                    hits.push(
-                        ...s.events.filter((e) => e.type === 'hit' && e.sourceId === worker.id),
+                const attacker = sim.spawnUnit(1, 'rice', worker.x, worker.y + 39);
+                const bystander = sim.spawnUnit(1, 'rice', worker.x, worker.y - 34);
+                for (const enemy of [attacker, bystander]) {
+                    enemy.hp = enemy.maxHp = 10000;
+                    enemy.combat.cooldownUntil = enemy.combat.moveRecoveryUntil =
+                        sim.tick + 10 * sim.tps;
+                }
+                const workBeforeContact = tower.construction.workDone;
+                const workerHits = (world) =>
+                    world.events.filter((e) => e.type === 'hit' && e.sourceId === worker.id);
+                step(sim, 2 * sim.tps, (world) =>
+                    check(
+                        workerHits(world).length === 0 && worker.hp === worker.maxHp,
+                        'nearby enemies that have not attacked do not interrupt work',
                     ),
                 );
                 check(
-                    tower.construction.workDone === workDone && hits.length > 0,
-                    'nearby enemy combat takes priority over construction',
+                    tower.construction.workDone > workBeforeContact,
+                    'worker keeps building near passive enemies',
                 );
-                sim.applyDamage(0, 'rice', enemy, false, 100000, null, {
+                const workBeforeHit = tower.construction.workDone;
+                sim.applyDamage(1, 'rice', worker, false, 5, attacker.id, {
                     sourceDamageResolved: true,
                 });
-                step(sim, 3 * sim.tps);
+                check(worker.hp < worker.maxHp, 'retaliation starts with actual enemy damage');
+                const distantBase = sim.buildings.find(
+                    (building) => building.side === 1 && building.type === 'base',
+                );
+                sim.applyDamage(1, 'base', worker, false, 1, distantBase.id, {
+                    sourceDamageResolved: true,
+                });
+                const copy = restore(sim);
+                const hits = [];
+                step(sim, 2 * sim.tps, (world) => {
+                    hits.push(...workerHits(world));
+                    copy.stepSimulation();
+                    check(
+                        world.checksum() === copy.checksum(),
+                        'checkpoint retains the attacker through retaliation',
+                    );
+                });
                 check(
-                    tower.construction.workDone > workDone,
-                    'worker resumes after combat target disappears',
+                    hits.length > 0 && hits.every((hit) => hit.targetId === attacker.id),
+                    'worker retaliates against the attacker without switching to a bystander',
+                );
+                check(
+                    tower.construction.workDone === workBeforeHit &&
+                        worker.constructionWork?.phase === 'defend',
+                    'retaliation pauses work while the attacker is within reach',
+                );
+                attacker.x = tower.x + 260;
+                attacker.y = tower.y;
+                attacker.fx = Math.round(attacker.x * FP);
+                attacker.fy = Math.round(attacker.y * FP);
+                step(sim, 3 * sim.tps, (world) =>
+                    check(
+                        workerHits(world).length === 0 &&
+                            worker.constructionWork?.targetId === tower.id,
+                        'worker stays on the project as the attacker retreats',
+                    ),
+                );
+                check(
+                    tower.construction.workDone > workBeforeHit,
+                    'worker resumes construction while the attacker is still alive',
                 );
                 rows.push({
-                    scenario: 'combat interrupts construction and workers resume afterwards',
+                    scenario:
+                        'construction continues until hit, then worker retaliates without chasing',
                     combatHits: hits.length,
                     resumedWork: tower.construction.workDone,
                 });

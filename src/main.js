@@ -2972,9 +2972,11 @@ class GLRenderer {
                       : '작업자 미확인'
                   : workers.every((u) => u.constructionWork.phase === 'waiting')
                     ? '자원 대기'
-                    : workers.every((u) => u.constructionWork.phase === 'approach')
-                      ? `${workers.length}명 접근 중`
-                      : `${workers.length}명 작업 중`;
+                    : workers.every((u) => u.constructionWork.phase === 'defend')
+                      ? `${workers.length}명 응전 중`
+                      : workers.every((u) => u.constructionWork.phase === 'approach')
+                        ? `${workers.length}명 접근 중`
+                        : `${workers.length}명 작업 중`;
             const cost = BuildingDefinition.get(BuildingDefinition.forRole('outpost')).construction
                 .cost;
             const production = RESOURCES.flatMap(({ key, symbol }) => {
@@ -4194,7 +4196,7 @@ class GLRenderer {
                 (this.snapshot.buildings || []).find(
                     (b) => b.id === work.targetId && b.alive !== false,
                 );
-        if (!target) return null;
+        if (!target || work.phase === 'defend') return null;
         const phase = work.phase,
             progress = RangeUtil.clamp(
                 (renderTick - work.phaseStartedAtTick) /
