@@ -11312,6 +11312,7 @@ DeckEditor.install({
     statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
     infoOf: (type) => LaunchScreens.grainInfo(type),
     isUnlocked: (type) => campaignProgress.isUnlocked(type),
+    isTemporary: () => campaignProgress.debugUnlocked,
     unlockHint: (type) => {
         const stage = campaignProgress.unlockStage(type);
         return stage ? `${stage.title} 클리어 시 해금` : '';

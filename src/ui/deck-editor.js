@@ -27,6 +27,7 @@ export class DeckEditor {
         infoOf,
         renderDetails,
         isUnlocked,
+        isTemporary = () => false,
         unlockHint,
     }) {
         if (this.initialized) return;
@@ -42,6 +43,7 @@ export class DeckEditor {
         this.infoOf = infoOf;
         this.renderDetails = renderDetails;
         this.isUnlocked = isUnlocked;
+        this.isTemporary = isTemporary;
         this.unlockHint = unlockHint;
         this.filter = 'grain';
         this.selectedSlot = null;
@@ -330,10 +332,13 @@ export class DeckEditor {
     }
 
     static persistAndRefresh() {
-        const saved = this.save();
+        const temporary = this.isTemporary(),
+            saved = !temporary && this.save();
         this.refresh();
-        document.getElementById('deckNotice').textContent = saved
-            ? '이 기기에 저장됐어요.'
-            : '이 기기에 저장할 수 없어 이번에만 유지돼요.';
+        document.getElementById('deckNotice').textContent = temporary
+            ? '디버그 덱은 이번 접속에서만 유지돼요.'
+            : saved
+              ? '이 기기에 저장됐어요.'
+              : '이 기기에 저장할 수 없어 이번에만 유지돼요.';
     }
 }

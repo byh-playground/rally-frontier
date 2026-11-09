@@ -210,9 +210,42 @@ export class LaunchScreens {
             if (this.navigation.snapshot().screen === 'play') A.startAiMatch();
             else this.go('play');
         };
-        $('campaignBtn').onclick = () => {
+        const campaignButton = $('campaignBtn'),
+            campaignDialog = $('campaignDialog');
+        let campaignHoldTimer = null;
+        const cancelCampaignHold = () => {
+            clearTimeout(campaignHoldTimer);
+            campaignHoldTimer = null;
+        };
+        campaignButton.addEventListener('pointerdown', (event) => {
+            if (!event.isPrimary || event.button !== 0) return;
+            cancelCampaignHold();
+            campaignHoldTimer = setTimeout(() => {
+                campaignHoldTimer = null;
+                A.campaignProgress.enableDebugUnlock();
+                campaignButton.click();
+            }, 1000);
+        });
+        for (const type of ['pointerup', 'pointerleave', 'pointercancel', 'lostpointercapture'])
+            campaignButton.addEventListener(type, (event) => {
+                if (event.isPrimary) cancelCampaignHold();
+            });
+        campaignButton.addEventListener('pointermove', (event) => {
+            if (campaignHoldTimer === null || !event.isPrimary) return;
+            if (!campaignButton.contains(document.elementFromPoint(event.clientX, event.clientY)))
+                cancelCampaignHold();
+        });
+        campaignButton.addEventListener('contextmenu', (event) => {
+            if (campaignHoldTimer !== null || event.pointerType === 'touch') event.preventDefault();
+        });
+        window.addEventListener('blur', cancelCampaignHold);
+        campaignButton.onclick = () => {
+            if (campaignDialog.open) return;
             const progress = A.campaignProgress;
             progress.sync();
+            $('campaignTitle').textContent = progress.debugUnlocked
+                ? '캠페인 · 디버그 해금'
+                : '캠페인';
             $('campaignStages').replaceChildren();
             CAMPAIGN_STAGES.forEach((stage, index) => {
                 const button = document.createElement('button');
@@ -236,9 +269,9 @@ export class LaunchScreens {
                 button.onclick = () => this.showCampaignBriefing(stage);
                 $('campaignStages').append(button);
             });
-            $('campaignDialog').showModal();
+            campaignDialog.showModal();
         };
-        $('campaignCloseBtn').onclick = () => $('campaignDialog').close();
+        $('campaignCloseBtn').onclick = () => campaignDialog.close();
         $('friendMatchBtn').onclick = () => this.go('friend');
         $('titleHelpBtn').onclick = () => this.go('help');
         $('friendCreateBtn').onclick = () => {
