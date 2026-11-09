@@ -29,7 +29,7 @@ export function campaignMapLayout(stage) {
     const capturePoints = [
         capturePoint(advance),
         capturePoint(center),
-        capturePoint(front),
+        ...(stage.volleyGoals ? [] : [capturePoint(front)]),
         ...(hasRear ? [capturePoint(rear)] : []),
         ...(hasRidge ? [capturePoint(ridge, 'bot')] : []),
         ...(stage.resourceLesson ? [capturePoint(oil, 'top', 'premium')] : []),
