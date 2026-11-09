@@ -340,7 +340,10 @@ const PROJECTILE_VISUAL_RENDER_FNS = Object.freeze({
             dy = target[1] - y;
         }
         const length = Math.max(30, 58 * sc);
-        rdr.drawVectorBillboard(record, x, y, Math.atan2(dy, dx), length / 200, {
+        const { angle, scaleX, scaleY } = rdr.launchShellVisualPose(p, Math.atan2(dy, dx));
+        rdr.drawVectorBillboard(record, x, y, angle, length / 200, {
+            scaleX,
+            scaleY,
             depthTest: !!(record.cornCone || record.heroAmmo),
         });
         rdr.circle(
@@ -2643,6 +2646,7 @@ class GLRenderer {
         }
         this.addClientFx(e.destroyed ? 'shellIntercepted' : 'antiAirHit', e, snapshot, index, {
             impactHeightFP: e.heightFP,
+            projectileId: e.projectileId,
             cannon,
             aim,
         });
@@ -5061,14 +5065,17 @@ class GLRenderer {
             dx = target[0] - point.x;
             dy = target[1] - point.y;
         }
-        const angle = Math.atan2(dy, dx) + Math.PI / 4,
+        const pose = this.launchShellVisualPose(p, Math.atan2(dy, dx)),
+            angle = pose.angle + Math.PI / 4,
             size = Math.max(30, 58 * this.sc());
         const m = this._vectorUnitMatrix,
-            c = this.vectorContext;
-        m[0] = Math.cos(angle) * size;
-        m[1] = Math.sin(angle) * size;
-        m[2] = -m[1];
-        m[3] = m[0];
+            c = this.vectorContext,
+            a = Math.cos(angle) * size,
+            b = Math.sin(angle) * size;
+        m[0] = a * pose.scaleX;
+        m[1] = b * pose.scaleX;
+        m[2] = -b * pose.scaleY;
+        m[3] = a * pose.scaleY;
         m[4] = point.x;
         m[5] = point.y;
         c.depthTest = !!this.passState.depthEnabled;
@@ -5092,6 +5099,30 @@ class GLRenderer {
         if (!renderOptions?.visibilityChecked && !own && !this.visibleRaw(u.x, u.y)) return;
         // Health/status bars are drawn by drawWorldHudOverlay(), never in the unit pass.
         this.drawGrainUnit(u);
+    }
+    launchShellVisualPose(projectile, angle) {
+        const { lifeMs, tilt, squash } = EffectObjectFactory.shellFlinch;
+        const hit = this.combatFx.findLast(
+            (fx) =>
+                fx.kind === 'antiAirHit' &&
+                fx.projectileId === projectile.id &&
+                fx.amount > 0 &&
+                !fx.clock.expired &&
+                fx.clock.ageMs >= 0 &&
+                fx.clock.ageMs < lifeMs,
+        );
+        if (!hit) return { angle, scaleX: 1, scaleY: 1 };
+        const t = hit.clock.ageMs / lifeMs,
+            pulse = Math.sin(t * Math.PI * 2) * (1 - t),
+            cross =
+                (projectile.lockedAimX - projectile.launchX) * hit.aim.dy -
+                (projectile.lockedAimY - projectile.launchY) * hit.aim.dx,
+            direction = cross < 0 ? -1 : 1;
+        return {
+            angle: angle + direction * tilt * pulse,
+            scaleX: 1 - squash * pulse,
+            scaleY: 1 + squash * pulse,
+        };
     }
     // A fading smoke ribbon behind a launched pod, following its real arc (kept in world space so camera moves don't smear it).
     drawLaunchTrail(p, wp, sc) {
@@ -5357,16 +5388,17 @@ class GLRenderer {
             dy = target[1] - point.y;
         }
         // The approved ear asset points about -0.6 radians from its local x axis.
-        const angle = Math.atan2(dy, dx) + 0.6,
+        const pose = this.launchShellVisualPose(projectile, Math.atan2(dy, dx)),
+            angle = pose.angle + 0.6,
             size = Math.max(30, 58 * this.sc()),
             a = Math.cos(angle) * size,
             b = Math.sin(angle) * size,
             matrix = this.cornQuadMatrix,
             context = this.vectorContext;
-        matrix[0] = a;
-        matrix[1] = b;
-        matrix[2] = -b;
-        matrix[3] = a;
+        matrix[0] = a * pose.scaleX;
+        matrix[1] = b * pose.scaleX;
+        matrix[2] = -b * pose.scaleY;
+        matrix[3] = a * pose.scaleY;
         matrix[4] = point.x;
         matrix[5] = point.y;
         context.depthTest = !!this.passState.depthEnabled;
@@ -5406,16 +5438,17 @@ class GLRenderer {
             dy = target[1] - point.y;
         }
         this.sampleCornTrail('cone:' + projectile.id, projectile.side, world);
-        const angle = Math.atan2(dy, dx) + Math.PI / 4,
+        const pose = this.launchShellVisualPose(projectile, Math.atan2(dy, dx)),
+            angle = pose.angle + Math.PI / 4,
             size = Math.max(30, 58 * this.sc()),
             a = Math.cos(angle) * size,
             b = Math.sin(angle) * size,
             matrix = this.cornQuadMatrix,
             C = this.vectorContext;
-        matrix[0] = a;
-        matrix[1] = b;
-        matrix[2] = -b;
-        matrix[3] = a;
+        matrix[0] = a * pose.scaleX;
+        matrix[1] = b * pose.scaleX;
+        matrix[2] = -b * pose.scaleY;
+        matrix[3] = a * pose.scaleY;
         matrix[4] = point.x;
         matrix[5] = point.y;
         C.depthTest = !!this.passState.depthEnabled;

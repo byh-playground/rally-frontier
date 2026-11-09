@@ -41,12 +41,33 @@ function bananaLayers(data) {
 
 function fruitRig(layers, armId) {
     const feet = layers.filter(({ part }) => part === 'boot' || part === 'foot');
-    const stride = Object.fromEntries(
-        feet.map(({ id }, index) => [id, { rotation: index ? 0.26 : -0.26 }]),
-    );
-    const strideBack = Object.fromEntries(
-        feet.map(({ id }, index) => [id, { rotation: index ? -0.26 : 0.26 }]),
-    );
+    const torso = layers.filter((layer) => !layer.parent && !feet.includes(layer));
+    const walkPose = (swing) => {
+        const pose = {};
+        const lean = swing * 0.11;
+        for (const [index, { id }] of feet.entries()) {
+            const side = index === 0 ? -1 : 1;
+            const lifted = swing === side;
+            pose[id] = {
+                x: lifted ? side * 8 : 0,
+                y: lifted ? -24 : 0,
+                rotation: lifted ? side * 0.32 : 0,
+            };
+        }
+        for (const { id, part, position } of torso) {
+            const arm = part === 'arm' || part === 'hand';
+            const armSide = Math.sign(position[0]);
+            // Rotate all torso layers around the same ground point so the face and held gear follow.
+            const [x, y] = rotated(...position, lean);
+            pose[id] = {
+                x: x - position[0] + swing * 9,
+                y: y - position[1] + (swing ? -15 : 5) + (arm ? swing * armSide * 6 : 0),
+                rotation: lean - (arm ? swing * 0.16 : 0),
+            };
+        }
+        return pose;
+    };
+    const planted = walkPose(0);
     return {
         parts: layers.map(({ id, parent, position }) => ({
             id,
@@ -55,7 +76,13 @@ function fruitRig(layers, armId) {
         })),
         clips: {
             idle: clip(1200, 'repeat', [key(0), key(1200)]),
-            walk: clip(600, 'repeat', [key(0, stride), key(300, strideBack), key(600, stride)]),
+            walk: clip(600, 'repeat', [
+                key(0, planted),
+                key(150, walkPose(-1)),
+                key(300, planted),
+                key(450, walkPose(1)),
+                key(600, planted),
+            ]),
             fire: createHeroBasicAttackClip({
                 windup: { [armId]: { x: -12, y: -16, rotation: -0.9 } },
                 strike: { [armId]: THROW_STRIKE },
