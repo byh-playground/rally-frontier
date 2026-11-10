@@ -167,16 +167,8 @@ try {
         bootModule.bindBootProgress(RallyBoot, {
             progress: document.getElementById('bootProgressBar'),
             label: document.getElementById('bootStatus'),
-            text: (state) =>
-                state.failed
-                    ? String(state.failed.message || state.failed)
-                    : state.overall === 1
-                      ? '준비 완료'
-                      : !state.stage
-                        ? '게임 모듈 확인 중'
-                        : RALLY_BOOT_LABELS[state.stage] +
-                          (state.total === null ? '' : ` ${state.completed}/${state.total}`) +
-                          ` · ${Math.round(state.overall * 100)}%`,
+            labels: RALLY_BOOT_LABELS,
+            done: '준비 완료',
         });
     }
     // boot receives, verifies (SHA-256) and imports the rest, advancing once per module.
