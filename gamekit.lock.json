@@ -1,11 +1,11 @@
 {
     "repository": "byh-playground/bloom-gamekit",
-    "sourceCommit": "e3d72b9133f0665c9ff16e2eed7b360ea60477aa",
-    "distCommit": "2449c06bbd80b5e405e86fc4b00e83aa5268c867",
+    "sourceCommit": "40cb72bdf374f53b9ca8e72826c308217a58a0c5",
+    "distCommit": "a01d0708e869e22326cf6734b4f392fe171829c5",
     "modules": {
         "rollback": {
             "file": "rollback.js",
-            "sha256": "dfb1af0e5016e6f6cf224ebb8e7d66debc04999106f168522406901783249b49"
+            "sha256": "b03a9aac766b47eedf5761a638dfd99f4b50b64c47f7bfd94b4042f15dec3732"
         },
         "deterministic": {
             "file": "deterministic.js",
@@ -77,7 +77,7 @@
         },
         "pathfield": {
             "file": "pathfield.js",
-            "sha256": "16315160ede3dc788506538c3e33f011f8b02b99a2bd7e086db4781a0c945412"
+            "sha256": "1f996f81bf3e578eb5d93ed07d36b506915c4520722a0d30c0aaf83688feaea5"
         },
         "vision": {
             "file": "vision.js",
@@ -92,5 +92,5 @@
             "sha256": "9352ec017b633be6fbdefc0a98b6cdf47f47ac99385b0277da96964215c874d9"
         }
     },
-    "distManifestSha256": "79f47c1bd8c4748d85fcaad3b6f2e53a6d0c6b8d025f2be615fd3a2485d7f0b0"
+    "distManifestSha256": "e09bef77d117227630723b7aed2ae476dda5a3f7009eb3e820ca357368bcbe46"
 }

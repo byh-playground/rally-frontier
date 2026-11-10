@@ -19,6 +19,7 @@ import { TERRAIN_ATTACK_REVEAL_RADIUS, VISION_SPATIAL_CELL } from '../definition
 import { WorldContext } from './world-context.js';
 import { TerrainSurfaceAtlas } from './terrain.js';
 import { RallyGamekit } from '../core/gamekit.js';
+import { FP } from '../core/config.js';
 const { VisionField, pointInSimplePolygon, pointPolylineDistance } = RallyGamekit;
 
 class Unit {
@@ -61,6 +62,8 @@ class Unit {
             data.selfDestruct = null;
         if (UnitDefinition.get(data.type)?.leapAttack && !Object.hasOwn(data, 'leapAttack'))
             data.leapAttack = { phase: 'ready', cooldownUntil: 0 };
+        // A returning hero keeps its own A* route (navigation-paths.js RoutePath).
+        if (LaunchRules.isHeroType(data.type) && !Object.hasOwn(data, 'route')) data.route = null;
         this.status = new StatusComponent(data.status || {});
         delete data.status;
         this.movement = new MovementComponent(data.movement || {});
@@ -351,7 +354,26 @@ class NavigationTopology {
         this.byId = new Map();
         this.changes = [];
         this.version = 0;
+        // FNV-1a of the obstacle records: equal for equal layouts in every peer, replay and restored save,
+        // unlike `version`, which only counts this instance's refreshes. Stored routes compare against it.
+        this.signature = NavigationTopology.signatureOf([]);
         this.scans = 0;
+    }
+    static signatureOf(records) {
+        let h = 0x811c9dc5;
+        const mix = (n) => {
+            h = Math.imul(h ^ (n >>> 0), 0x01000193) >>> 0;
+        };
+        for (const b of records) {
+            const id = String(b.id);
+            mix(id.length);
+            for (let i = 0; i < id.length; i++) mix(id.charCodeAt(i));
+            mix(Math.round(b.x * FP));
+            mix(Math.round(b.y * FP));
+            mix(Math.round(b.r * FP));
+            mix(b.terrainBarrier ? 1 : 0);
+        }
+        return h;
     }
     refresh(buildings) {
         this.scans++;
@@ -410,6 +432,7 @@ class NavigationTopology {
             String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0,
         );
         this.byId = new Map(this.records.map((b) => [b.id, b]));
+        this.signature = NavigationTopology.signatureOf(this.records);
         this.version++;
         return true;
     }

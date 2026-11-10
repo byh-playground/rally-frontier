@@ -6,6 +6,7 @@ import { UNIT_RUNTIME_GEOMETRY, UnitDefinition } from '../definitions/units.js';
 import { NAV_BUILDING_MARGIN } from '../definitions/combat-rules.js';
 import { COLLISION_RADIUS_SCALE, COLLISION_NORMAL } from '../definitions/world-rules.js';
 import { GoalFields } from './navigation-field.js';
+import { DirectPath, FieldPath, RoutePath } from './navigation-paths.js';
 import { RallyGamekit } from '../core/gamekit.js';
 const { ObstacleField, SurfaceMotion, SweptCircleContact, SurfaceContactGeometry } = RallyGamekit;
 import { FP } from '../core/config.js';
@@ -751,6 +752,12 @@ class TerrainNavigation {
             nextCalls: 0,
             rayHits: 0,
             unreachable: 0,
+            routeSearches: 0,
+        };
+        this.paths = {
+            field: new FieldPath(this),
+            route: new RoutePath(this),
+            direct: new DirectPath(this),
         };
     }
     sync(source = this.sim) {
@@ -789,23 +796,20 @@ class TerrainNavigation {
         if (!p || !this.acceptsGoalPoint(goal, p.x, p.y)) return null;
         return this.field.segmentClear(x, y, p.x, p.y, radius, null, true, 0) ? p : null;
     }
-    // Where a unit heads next to reach `goal`. A clear straight ray inside the scan
-    // radius wins; otherwise the unit reads the goal's distance field. Point goals are
-    // fixed places (bases, flags, capture points) and keep their field.
-    nextPoint(u, goal, fixed = goal.radius === 0) {
-        this.metrics.nextCalls++;
-        const radius = this.sim.unitRadius(u.type);
+    // The closest goal point when it lies inside the scan radius and the straight ray to it is clear.
+    straightGoal(u, goal, radius) {
         const near = goal.closest(u.x, u.y);
-        if (near && Math.hypot(near.x - u.x, near.y - u.y) <= GoalFields.RAY_RANGE) {
-            const direct = this.directGoal(u.x, u.y, goal, radius);
-            if (direct) {
-                this.metrics.rayHits++;
-                return direct;
-            }
-        }
-        const point = this.fieldsFor(radius).next(u.x, u.y, goal, fixed, radius);
-        if (!point) this.metrics.unreachable++;
-        return point;
+        if (!near || Math.hypot(near.x - u.x, near.y - u.y) > GoalFields.RAY_RANGE) return null;
+        const direct = this.directGoal(u.x, u.y, goal, radius);
+        if (direct) this.metrics.rayHits++;
+        return direct;
+    }
+    // Where a unit heads next to reach `goal`, or null when it cannot. The caller picks the way
+    // (navigation-paths.js): 'field' (shared distance field), 'route' (A* kept in Unit.route)
+    // or 'direct' (straight line only).
+    nextPoint(u, goal, path = 'field') {
+        this.metrics.nextCalls++;
+        return this.paths[path].nextPoint(u, goal);
     }
     // Whether every strategic point can be reached from `from` by a unit this wide.
     connected(from, points, radius) {

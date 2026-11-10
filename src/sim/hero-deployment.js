@@ -227,7 +227,10 @@ export class HeroDeployment {
 
     static moveReturningUnit(sim, unit, definition) {
         const hero = sim.heroes[unit.side][unit.type];
-        if (hero?.unitId !== unit.id || hero.mode !== 'return') return false;
+        if (hero?.unitId !== unit.id || hero.mode !== 'return') {
+            if (unit.route) unit.route = null;
+            return false;
+        }
         unit.combat.cancelWindup();
         unit.constructionWork = null;
         unit.target = null;
@@ -236,14 +239,29 @@ export class HeroDeployment {
             (unit.impactMotion && sim.tick < unit.impactMotion.recoverUntilTick)
         )
             return true;
-        const site = this.returnSites(sim, unit).find(
-            ({ arrived, goal }) => arrived || sim.navigation.nextPoint(unit, goal, true),
-        );
+        const site = this.returnSite(sim, unit);
         if (site && !site.arrived) {
             const speed = (definition.speed * sim.timedModifierPct(unit, 'movePct')) / 100;
-            sim.moveToGoal(unit, site.goal, speed, { fixedGoal: true });
+            sim.moveToGoal(unit, site.goal, speed, { path: 'route' });
         }
         return true;
+    }
+
+    // The cannon a returning hero walks to. The cannon its route leads to is kept while it stands and stays
+    // reachable, so a nearer cannon never steals the target mid-way. Only when it is gone or cut off are the
+    // others tried, nearest first, one route search each. When none was reachable the route remembers it, and
+    // nothing is searched again until the building layout changes.
+    static returnSite(sim, unit) {
+        const sites = this.returnSites(sim, unit);
+        const arrived = sites.find((site) => site.arrived);
+        if (arrived) return arrived;
+        const routes = sim.navigation.paths.route,
+            kept = sites.find((site) => site.goal.key === unit.route?.goal);
+        if (kept) {
+            if (routes.knownUnreachable(unit, kept.goal)) return null;
+            if (routes.reaches(unit, kept.goal)) return kept;
+        }
+        return sites.find((site) => site !== kept && routes.reaches(unit, site.goal)) || null;
     }
 
     static settle(sim) {
