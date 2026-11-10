@@ -46,19 +46,41 @@ const DEFENDERS = [
     [205, 60],
     [180, 115],
 ];
+// A cannon rider's loop: land, fight, walk back to the launching cannon, ride it, fly at the enemy, land.
+// Distances are from the host cannon and keep the enemy inside that cannon's launch range.
+const CANNON_RIDER = Object.freeze({
+    durationMs: 12000,
+    // Inside the cannon recognition range (COMBAT_AGGRO_RANGE), so the whole squad returns after the delay.
+    launchDistance: 250,
+    defenders: [
+        [300, -50],
+        [315, 0],
+        [300, 50],
+    ],
+    guestDistance: 1400,
+    cameraOffset: 200,
+});
 
 function createArena(unitType, opening, interception) {
     const sim = new StrategySim(SEED, undefined, [[unitType], [interception?.launchType ?? 'pea']]);
     const { x, y } = sim.world.center;
     const state = sim.exportState();
     const siege = UnitDefinition.onlyAttacksBuildings(unitType),
-        grows = UnitDefinition.get(unitType)?.growsCannon;
+        grows = UnitDefinition.get(unitType)?.growsCannon,
+        rider = !opening && UnitDefinition.get(unitType)?.cannonRider ? CANNON_RIDER : null;
     // A muzzle-wrapping unit can only hold a completed outpost, so the main base moves out of its sight.
     const wrapsOutpost = !!UnitDefinition.get(unitType)?.stickyCling;
     const host = { x: x - VOLLEY_DISTANCE, y };
-    const guest = { x: opening ? host.x + OPENING_SHOT_DISTANCE : x + (siege ? 150 : 460), y };
+    const guest = {
+        x: opening
+            ? host.x + OPENING_SHOT_DISTANCE
+            : rider
+              ? host.x + rider.guestDistance
+              : x + (siege ? 150 : 460),
+        y,
+    };
     const base = wrapsOutpost ? { x: guest.x + 700, y } : guest;
-    const target = opening ? guest : { x, y };
+    const target = opening ? guest : rider ? { x: host.x + rider.launchDistance, y } : { x, y };
     const rangeLevel = opening ? OPENING_RANGE_LEVEL : 0;
     state.launchRangeLevel[0] = rangeLevel;
     state.mapDescriptor = {
@@ -87,10 +109,11 @@ function createArena(unitType, opening, interception) {
         Object.assign(building, building.side === 0 ? host : base);
         // The showcase's artillery is available to launch, while its automatic fire stays quiet.
         // A rooting potato is left alone for the whole preview.
-        if (interception || siege || grows)
-            building.cooldownUntil = grows
-                ? Number.MAX_SAFE_INTEGER
-                : sim.msTicks(interception?.durationMs ?? DURATION_SECONDS * 1000);
+        if (interception || siege || grows || rider)
+            building.cooldownUntil =
+                grows || rider
+                    ? Number.MAX_SAFE_INTEGER
+                    : sim.msTicks(interception?.durationMs ?? DURATION_SECONDS * 1000);
     }
     if (interception) state.launchRangeLevel[1] = interception.rangeLevel;
     sim.importState(state);
@@ -104,10 +127,12 @@ function createArena(unitType, opening, interception) {
     if (interception) {
         sim.creditResources(1, LaunchRules.premiumWalletCap, 'premium');
         for (const [dx, dy] of interception.formation) sim.spawnUnit(0, unitType, x + dx, y + dy);
+    } else if (rider) {
+        for (const [dx, dy] of rider.defenders) sim.spawnUnit(1, 'pea', host.x + dx, y + dy);
     } else if (!opening && !siege && !grows) {
         for (const [dx, dy] of DEFENDERS) sim.spawnUnit(1, 'pea', x + dx, y + dy);
     }
-    return { sim, x, y, host, target, rangeLevel };
+    return { sim, x, y, host, target, rangeLevel, rider };
 }
 
 // Card previews use an isolated showcase run with the same commands and rendering as a match.
@@ -126,7 +151,11 @@ function prepareVolleyShowcase(
     if (!LaunchRules.grain(unitType)) throw new Error('알 수 없는 병종 소개 장면입니다.');
     const unit = UnitDefinition.get(unitType);
     const interception = !opening && unit?.burstAttack && unit.canAttackAir ? INTERCEPTION : null;
-    const { sim, x, y, host, target, rangeLevel } = createArena(unitType, opening, interception);
+    const { sim, x, y, host, target, rangeLevel, rider } = createArena(
+        unitType,
+        opening,
+        interception,
+    );
     const side = interception ? 1 : 0;
     const cannon = sim.launchCannons(side)[0];
     const launchTarget = interception ? { x: x + interception.aimOffset, y } : target;
@@ -144,6 +173,7 @@ function prepareVolleyShowcase(
           )
         : sim.msTicks(
               interception?.durationMs ??
+                  rider?.durationMs ??
                   Math.max(
                       DURATION_SECONDS * 1000,
                       unit?.growsCannon
@@ -207,9 +237,12 @@ function prepareVolleyShowcase(
     };
     const frameCamera = (timeMs) => {
         const progress = Math.max(0, Math.min(1, (timeMs - 600) / 1000));
+        // A rider's loop stays between its cannon and the enemy, so its camera holds still.
         const focusX = interception
             ? x + interception.cameraOffset
-            : x - 120 + 245 * progress * progress * (3 - 2 * progress);
+            : rider
+              ? host.x + rider.cameraOffset
+              : x - 120 + 245 * progress * progress * (3 - 2 * progress);
         renderer.cameraLeft = focusX - renderer.viewWorldW() / 2;
         renderer.cameraTop = renderer.clampCameraTop(
             BattlefieldProjection.planarY(y, interception?.cameraHeight ?? 0) -

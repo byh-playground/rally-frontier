@@ -9,6 +9,7 @@ import { UnitSelfDestructAttack } from './unit-self-destruct-attack.js';
 import { UnitLeapAttack } from './unit-leap-attack.js';
 import { StickyCling } from './sticky-cling.js';
 import { ForwardCannon } from './forward-cannon.js';
+import { CannonRider } from './cannon-rider.js';
 import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './entities.js';
 import { StateContract, StateValue } from './components.js';
 import { CampaignMission } from './campaign-mission.js';
@@ -28,6 +29,7 @@ import { UNIT_RUNTIME_GEOMETRY, UnitDefinition } from '../definitions/units.js';
 import {
     DAMAGE_CLASS_MATRIX,
     CAPTURE_RADIUS,
+    COMBAT_AGGRO_RANGE,
     COMBAT_TARGET_REFRESH_MS,
     COMBAT_TARGET_STICKINESS_PCT,
     DEAD_ENTITY_CLEANUP_MS,
@@ -1113,6 +1115,7 @@ class StrategySim {
             alive: true,
         });
         if (d.growsCannon) ForwardCannon.plant(this, u, d.growsCannon);
+        if (d.cannonRider) CannonRider.land(this, u, d.cannonRider);
         this.units.push(u);
         this.ensureCollisionBuffers(this.units.length);
         const birth = this.units.length - 1;
@@ -1491,6 +1494,7 @@ class StrategySim {
         count,
         impact,
         splash,
+        passengerHp = null,
     }) {
         const cannon =
                 this.buildingById.get(cannonId) || this.buildings.find((b) => b.id === cannonId),
@@ -1524,7 +1528,7 @@ class StrategySim {
             splashBuildingDamage: impact,
             damageClass: 'normal',
             sourceDamageResolved: true,
-            payload: { type, count },
+            payload: passengerHp == null ? { type, count } : { type, count, passengerHp },
         });
         if (LaunchRules.isHeroType(type)) HeroDeployment.begin(this, side, type, id);
         this.events.push({
@@ -1731,7 +1735,7 @@ class StrategySim {
     }
     combatTargetAggroRange(u) {
         const d = UnitDefinition.get(u.type);
-        return Number(d.aggroRange) || 390;
+        return Number(d.aggroRange) || COMBAT_AGGRO_RANGE;
     }
     combatTargetRefreshDue(u) {
         const interval = this.msTicks(COMBAT_TARGET_REFRESH_MS);
@@ -2371,6 +2375,8 @@ class StrategySim {
             if (hero?.unitId === u.id && skill.tryQueued(this, u, hero.sortieId, vision[u.side]))
                 return null;
         }
+        if (d.cannonRider && CannonRider.update(this, u, d.cannonRider, vision[u.side]))
+            return null;
         if (HeroDeployment.moveReturningUnit(this, u, d)) {
             UnitSpinAttack.cancel(this, u);
             return null;
@@ -2494,6 +2500,7 @@ class StrategySim {
             if (d.contactMelee && u.contactAttack?.phase === 'charge') u.contactAttack = null;
             u.target = null;
             if (this.updateConstructionWork(u, d, nonCombatMoveSpeed)) return null;
+            if (d.cannonRider && CannonRider.holdBeside(this, u, nonCombatMoveSpeed)) return null;
             const f = this.unitRallyPoint(u);
             this.moveToward(u, f.x, f.y, nonCombatMoveSpeed);
             return null;

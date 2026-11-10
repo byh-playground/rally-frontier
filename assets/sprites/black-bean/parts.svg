@@ -1,0 +1,193 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="740" height="540" viewBox="0 0 740 540">
+  <!--
+    검은콩(서리태) 파츠 시트 시안 v3. 셀 좌표는 [x, y, w, h] / 회전 중심 [px, py] (셀 왼쪽 위 기준).
+    v2: 크림색 얼굴판을 없애고 몸을 온전히 검은콩으로 두었다. 표정은 검은 몸 위에서 읽히는 흰 표정 세트(face-*)를 시트에 둔다.
+        헬멧은 사용자 선택 A(스턴트 돔: 흰 돔 + 가운데 팀색 줄 + 별), 크기 1.0배 확정.
+    v3: 표정 눈을 사용자 선택 A(흰 점 눈, 눈동자 없음)로 바꿨다. 표정 차이는 점 모양(보통 타원 · 기쁨 아래가 눌린 반달 ·
+        화남 위가 눈썹에 비스듬히 잘린 반달 · 아픔 &gt;&lt;)과 굵은 흰 눈썹으로 낸다.
+    시트 1단위 = 쌀 원본 1단위(쌀 서 있는 키 343.5). 검은콩 서 있는 키(발바닥~헬멧 끝) 252 = 쌀의 73%. ART_SCALE = 1.
+    서 있는 조립 (원점 = 발바닥 접지점, 위가 -y)
+      body   [10,10,200,230] / [100,222]   (0,0)
+      helmet [220,10,200,170] / [100,112]  (0,-160)  스턴트 돔. 가운데 줄이 팀색 칠 영역(team / team-light / team-shadow).
+      arm    [610,10,50,64] / [25,10]      오른팔 (82,-92) 0.85배, 왼팔은 좌우 반전 (-82,-92)
+      foot   [670,10,60,40] / [30,12]      오른발 (34,-14), 왼발은 좌우 반전 (-34,-14)
+      face-neutral [434,372,148,72] / [74,36]   face-happy [586,372,148,72] / [74,36]
+      face-angry   [434,452,148,72] / [74,36]   face-hurt  [586,452,148,72] / [74,36]
+             흰 표정. 콩·팥 공유 얼굴과 같은 148x72 셀·중심 기준·같은 눈 위치. (0,-100)에 0.9배로 얹는다(얼굴판이 없어 v1의 0.78배보다 키웠다).
+    대포에 탄 조립 (원점 = 포구 소켓)
+      ride-body [430,10,170,190] / [85,170]  포구 구멍에 끼인 윗몸. 아래쪽 어두운 타원이 구멍 입구.
+      grip      [610,84,56,56] / [28,28]     포구 테두리를 쥔 손 (±86,0)
+      헬멧은 (0,-98)에 0.82배, 얼굴은 (0,-58)에 0.8배.
+    날아가는 조립 (원점 = 몸 중심 = 서 있는 조립의 (0,-110), 머리 방향 -y)
+      trail  [10,250,200,280] / [100,10]   몸 뒤로 늘어진 바람줄기·포연. 몸보다 먼저 그린다.
+      whoosh [220,190,200,100] / [100,80]  헬멧 끝 앞을 가르는 공기 호. 맨 나중에 그린다.
+    착탄
+      impact [430,210,240,150] / [120,100]  원점 = 땅에 닿는 점.
+  -->
+  <defs>
+    <radialGradient id="skin" cx=".36" cy=".3" r=".82">
+      <stop stop-color="#6c6690"/>
+      <stop offset=".26" stop-color="#3b3650"/>
+      <stop offset=".62" stop-color="#211d2c"/>
+      <stop offset="1" stop-color="#131119"/>
+    </radialGradient>
+    <linearGradient id="limb" x1=".2" y1="0" x2=".7" y2="1">
+      <stop stop-color="#5e5880"/>
+      <stop offset=".5" stop-color="#2b2738"/>
+      <stop offset="1" stop-color="#16141c"/>
+    </linearGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#d9d4c7"/>
+      <stop offset=".28" stop-color="#ffffff"/>
+      <stop offset=".58" stop-color="#f3f0e8"/>
+      <stop offset=".86" stop-color="#cfc8b8"/>
+      <stop offset="1" stop-color="#ada591"/>
+    </linearGradient>
+    <linearGradient id="hole-fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16120c" stop-opacity="0"/>
+      <stop offset=".55" stop-color="#16120c" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#16120c" stop-opacity=".95"/>
+    </linearGradient>
+    <path id="body-outline" d="M0-212C52-212 88-174 88-118 88-56 54-10 0-10-54-10-88-54-88-114-88-176-52-212 0-212Z"/>
+    <clipPath id="body-mask"><use href="#body-outline"/></clipPath>
+    <path id="dome" d="M-88 10C-92-50-52-92 0-92 52-92 92-50 88 10Q0 30-88 10Z"/>
+    <clipPath id="dome-mask"><use href="#dome"/></clipPath>
+    <path id="ride-outline" d="M-64 8C-70-40-70-102-50-128-36-146 36-146 50-128 70-102 70-40 64 8Q0 26-64 8Z"/>
+    <clipPath id="ride-mask"><use href="#ride-outline"/></clipPath>
+    <!-- 흰 표정 공통 (v3 A안: 눈동자 없는 흰 점). 전장 크기에서 남도록 v2 흰자보다 조금 크게. -->
+    <ellipse id="eye" cx="0" cy="0" rx="12" ry="14.5" fill="#ffffff"/>
+    <!-- 기쁨: 아래가 위로 눌린 반달(웃는 볼에 밀린 눈) -->
+    <path id="eye-happy" d="M-12.5 5C-13-8-7-19 0-19 7-19 13-8 12.5 5 5-1-5-1-12.5 5Z" fill="#ffffff"/>
+    <!-- 화남(왼눈): 위가 눈썹 쪽으로 비스듬히 잘린 반달. 오른눈은 좌우 반전. -->
+    <path id="eye-angry" d="M-12-9L12 1C12 8 7 14 0 14-7 14-12 8-12 0Z" fill="#ffffff"/>
+    <g id="cheeks" fill="#ff9cb5" opacity=".34">
+      <ellipse cx="-50" cy="8" rx="11" ry="6"/>
+      <ellipse cx="50" cy="8" rx="11" ry="6"/>
+    </g>  </defs>
+
+  <!-- 서 있는 몸통: 윤기 있는 서리태. 얼굴판 없이 온전히 검은 몸, 왼쪽 아래에 흰 배꼽(콩 눈). -->
+  <g id="body" transform="translate(110 232)">
+    <use href="#body-outline" fill="url(#skin)"/>
+    <g clip-path="url(#body-mask)">
+      <path d="M84-150C92-80 58-14 0-12" fill="none" stroke="#97a2e0" stroke-width="10" stroke-linecap="round" opacity=".55"/>
+      <path d="M-84-92C-82-50-60-22-28-14" fill="none" stroke="#6a70a6" stroke-width="7" stroke-linecap="round" opacity=".5"/>
+      <ellipse cx="-34" cy="-176" rx="34" ry="15" transform="rotate(-28 -34 -176)" fill="#ffffff" opacity=".2"/>
+    </g>
+    <path d="M-64-146C-76-124-78-100-72-80" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round" opacity=".92"/>
+    <circle cx="-66" cy="-64" r="4.5" fill="#ffffff" opacity=".85"/>
+    <path d="M70-60q-6 18-20 30" fill="none" stroke="#c9d0ff" stroke-width="4" stroke-linecap="round" opacity=".7"/>
+    <g transform="translate(-50 -38) rotate(40)">
+      <ellipse rx="5" ry="11" fill="#d8d0e2" stroke="#131119" stroke-width="2.5"/>
+      <path d="M0-6V6" stroke="#5f5878" stroke-width="2.5" stroke-linecap="round"/>
+    </g>
+    <use href="#body-outline" fill="none" stroke="#2b211c" stroke-width="5" stroke-linejoin="round"/>
+  </g>
+
+  <!-- 스턴트 돔 헬멧 (사용자 선택 A): 흰 돔 + 앞뒤로 지나는 팀색 줄 + 별 + 짧은 턱끈. 원점 = 서 있는 조립의 (0,-160). -->
+  <g id="helmet" transform="translate(320 122)">
+    <path d="M-80 12L-74 42M80 12L74 42" fill="none" stroke="#2b211c" stroke-width="11" stroke-linecap="round"/>
+    <path d="M-80 12L-74 42M80 12L74 42" fill="none" stroke="#6b4630" stroke-width="6" stroke-linecap="round"/>
+    <rect x="-80" y="38" width="12" height="10" rx="2" transform="rotate(-8 -74 43)" fill="#e7c36b" stroke="#2b211c" stroke-width="2.5"/>
+    <rect x="68" y="38" width="12" height="10" rx="2" transform="rotate(8 74 43)" fill="#e7c36b" stroke="#2b211c" stroke-width="2.5"/>
+    <use href="#dome" fill="url(#shell)"/>
+    <g clip-path="url(#dome-mask)">
+      <path d="M46-80C82-56 96-20 92 22H120V-100Z" fill="#8c8471" opacity=".28"/>
+      <path d="M-17-93Q0-95 17-93L19 27Q0 31-19 27Z" fill="#307af0" data-paint-region="team"/>
+      <path d="M-12-93L-7-93-8 29-13 28Z" fill="#91c7ff" data-paint-region="team-light"/>
+      <path d="M9-93L17-93 19 27 11 29Z" fill="#1f55b5" data-paint-region="team-shadow"/>
+      <path d="M-17-93L-19 27M17-93L19 27" fill="none" stroke="#2b211c" stroke-width="3"/>
+      <path d="M-88 10Q0 30 88 10L88 0Q0 20-88 0Z" fill="#c4bcaa"/>
+      <path d="M-88 0Q0 20 88 0" fill="none" stroke="#2b211c" stroke-width="3"/>
+      <path d="M-70-50C-60-74-36-86-22-88" fill="none" stroke="#d6cfbe" stroke-width="5" stroke-linecap="round" opacity=".8"/>
+    </g>
+    <path d="M0.0 -62.0L4.1 -51.7L15.2 -50.9L6.7 -43.8L9.4 -33.1L0.0 -39.0L-9.4 -33.1L-6.7 -43.8L-15.2 -50.9L-4.1 -51.7Z" fill="#ffffff" stroke="#2b211c" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M-60-30C-58-56-38-78-20-84" fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round"/>
+    <use href="#dome" fill="none" stroke="#2b211c" stroke-width="5" stroke-linejoin="round"/>
+  </g>
+
+  <!-- 포구에 끼인 윗몸: 아래쪽이 구멍 어둠으로 사라진다. 원점 = 포구 소켓. -->
+  <g id="ride-body" transform="translate(515 180)">
+    <ellipse cx="0" cy="4" rx="72" ry="16" fill="#241f15" stroke="#2b211c" stroke-width="3.5"/>
+    <use href="#ride-outline" fill="url(#skin)"/>
+    <g clip-path="url(#ride-mask)">
+      <path d="M62-110C70-60 60-20 40 4" fill="none" stroke="#97a2e0" stroke-width="9" stroke-linecap="round" opacity=".5"/>
+      <rect x="-80" y="-34" width="160" height="62" fill="url(#hole-fade)"/>
+    </g>
+    <path d="M-52-108C-60-88-62-64-58-44" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round" opacity=".9"/>
+    <use href="#ride-outline" fill="none" stroke="#2b211c" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M-72 4Q0 36 72 4" fill="none" stroke="#2b211c" stroke-width="4"/>
+  </g>
+
+  <g id="arm" transform="translate(635 20)">
+    <path d="M-12-4C-20 6-20 34-12 44-4 52 10 52 15 42 20 30 18 6 10-4 4-10-6-10-12-4Z" fill="url(#limb)" stroke="#2b211c" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M-9 4Q-3-1 5 2" fill="none" stroke="#9590b8" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <g id="foot" transform="translate(700 22)">
+    <ellipse cx="2" cy="8" rx="24" ry="14" fill="url(#limb)" stroke="#2b211c" stroke-width="4"/>
+    <path d="M-12 1Q-4-3 6-2" fill="none" stroke="#9590b8" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <g id="grip" transform="translate(638 112)">
+    <path d="M-18 4C-20-12-8-20 4-19 16-18 22-8 19 4 17 14 6 19-4 18-14 17-17 12-18 4Z" fill="url(#limb)" stroke="#2b211c" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M-6-18Q-4-8-8-1M6-19Q8-9 4-2" fill="none" stroke="#2b211c" stroke-width="3" stroke-linecap="round"/>
+    <path d="M-12-6Q-10-13-3-15" fill="none" stroke="#9590b8" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- 날아갈 때 몸 뒤로 늘어지는 바람줄기와 포연. 원점 = 몸 중심, +y = 뒤쪽. -->
+  <g id="trail" transform="translate(110 260)">
+    <path d="M-66 40L66 40 34 240-34 240Z" fill="#ffffff" opacity=".14"/>
+    <path d="M-8 72Q0 66 8 72L2.5 228Q0 233-2.5 228Z" fill="#ffffff" opacity=".95"/>
+    <path d="M-46 60Q-38 55-31 61L-48 196Q-51 200-53 196Z" fill="#ffffff" opacity=".85"/>
+    <path d="M46 60Q38 55 31 61L48 196Q51 200 53 196Z" fill="#ffffff" opacity=".85"/>
+    <path d="M-74 86L-80 150M74 86L80 150" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity=".6"/>
+    <g fill="#f5efe3" stroke="#a3967f" stroke-width="3.5">
+      <circle cx="-34" cy="244" r="18"/>
+      <circle cx="32" cy="248" r="20"/>
+      <circle cx="0" cy="238" r="27"/>
+    </g>
+    <path d="M-14 226q8-8 20-6M22 240q6-4 13-2" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+  </g>
+
+  <!-- 헬멧 끝 앞에서 공기를 가르는 호. v2: 둥근 돔이라 호를 세 겹으로 늘려 앞쪽을 분명히 했다. 원점 = 헬멧 끝. -->
+  <g id="whoosh" transform="translate(320 270)" fill="none" stroke-linecap="round">
+    <path d="M-62 14Q0-50 62 14" stroke="#ffffff" stroke-width="8" opacity=".95"/>
+    <path d="M-86 28Q0-92 86 28" stroke="#ffffff" stroke-width="5" opacity=".75"/>
+    <path d="M-94 44L-98 60M94 44L98 60" stroke="#ffffff" stroke-width="4" opacity=".6"/>
+  </g>
+
+  <!-- 착탄: 별 모양 충격과 흙먼지. 원점 = 땅에 닿는 점. -->
+  <g id="impact" transform="translate(550 310)">
+    <ellipse cx="0" cy="8" rx="92" ry="20" fill="#8c7650" opacity=".35"/>
+    <path d="M6.2-97.7L13-63 44.4-79.3 27.3-48.3 61.8-40.6 28.9-27.9 50.3.2 16.9-11.2 15.3 24.1-3-6.1-26.9 19.9-21.5-15.1-56.5-10.5-29.9-33.8-59.7-52.8-24.4-53.5-34.9-87.2-7.4-65.1Z" fill="#ffd95a" stroke="#2b211c" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M3.4-69.8L7.4-51.3 24.3-59.7 15.5-43 33.9-38.5 16.4-31.4 27.6-16.1 9.6-22 8.4-3-1.7-19.1-14.8-5.4-12.2-24.1-31-22-17-34.7-32.7-45.2-13.8-45.9-19.1-64.1-4.2-52.5Z" fill="#fffbe6"/>
+    <g fill="#ecdfc4" stroke="#8a7458" stroke-width="3.5">
+      <circle cx="-84" cy="0" r="18"/><circle cx="84" cy="0" r="18"/>
+      <circle cx="-56" cy="10" r="22"/><circle cx="56" cy="10" r="22"/>
+      <circle cx="-22" cy="20" r="18"/><circle cx="24" cy="20" r="18"/>
+    </g>
+    <path d="M-62 2q6-8 16-8M50 2q6-8 16-8" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round"/>
+    <g fill="#7a6446"><circle cx="-100" cy="-36" r="5"/><circle cx="96" cy="-44" r="6"/><circle cx="-76" cy="-60" r="4"/></g>
+  </g>
+
+  <!-- 흰 표정 세트 v3 (148x72, 중심 = 회전 중심). 눈 위치 (±30,-10)은 공유 얼굴과 같다. -->
+  <g id="face-neutral" transform="translate(508 408)">
+    <use href="#cheeks"/>
+    <use href="#eye" x="-30" y="-10"/><use href="#eye" x="30" y="-10"/>
+    <path d="M-9 12Q0 20 9 12" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round"/>
+  </g>
+  <g id="face-happy" transform="translate(660 408)">
+    <use href="#cheeks"/>
+    <use href="#eye-happy" x="-30" y="-8"/><use href="#eye-happy" x="30" y="-8"/>
+    <path d="M-13 7Q0 30 13 7Q0 12-13 7Z" fill="#7a2f3a" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"/>
+    <ellipse cx="0" cy="17" rx="5" ry="3" fill="#ff8fa3"/>
+  </g>
+  <g id="face-angry" transform="translate(508 488)">
+    <use href="#cheeks"/>
+    <use href="#eye-angry" x="-30" y="-8"/><use href="#eye-angry" transform="translate(30 -8) scale(-1 1)"/>
+    <path d="M-48-28L-17-15M48-28L17-15" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+    <path d="M-10 21Q0 9 10 21Q0 25-10 21Z" fill="#7a2f3a" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"/>
+  </g>
+  <g id="face-hurt" transform="translate(660 488)">
+    <use href="#cheeks"/>
+    <path d="M-42-20L-22-10-42 0M42-20L22-10 42 0" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M-10 16q2.5-4 5 0t5 0 5 0 5 0" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g></svg>

@@ -7,6 +7,7 @@ import { Building, Projectile, Unit } from '../sim/entities.js';
 import { HeroDeployment } from '../sim/hero-deployment.js';
 import { HeroRollAttack } from '../sim/hero-roll-attack.js';
 import { FruitHeroAttack } from '../sim/fruit-hero-attack.js';
+import { CannonRider } from '../sim/cannon-rider.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { StateValue } from '../sim/components.js';
 import { ReplayRecorder } from './replay-recording.js';
@@ -276,6 +277,7 @@ class RallySimulationAdapter {
                         throw new Error('게임 snapshot의 공격 준비 표적이 잘못되었습니다.');
                     HeroRollAttack.validateState(entity, state, this.session.sim.tps);
                     FruitHeroAttack.validateState(entity, state, this.session.sim.tps);
+                    CannonRider.validateState(entity);
                 }
                 if (key === 'projectiles') {
                     if (
@@ -291,7 +293,12 @@ class RallySimulationAdapter {
                             !Number.isSafeInteger(shellHp) ||
                             !Number.isSafeInteger(entity.hp) ||
                             entity.hp < (entity.alive ? 1 : 0) ||
-                            entity.hp > shellHp
+                            entity.hp > shellHp ||
+                            (entity.payload.passengerHp !== undefined &&
+                                (entity.payload.count !== 1 ||
+                                    !UnitDefinition.get(entity.payload.type)?.cannonRider ||
+                                    !Number.isFinite(entity.payload.passengerHp) ||
+                                    entity.payload.passengerHp <= 0))
                         )
                             throw new Error('게임 snapshot의 투입탄 체력이 잘못되었습니다.');
                     } else if (entity.hp !== undefined) {

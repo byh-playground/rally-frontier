@@ -130,7 +130,7 @@ class LaunchImpact {
         };
     }
     static enqueue(sim, p, x, y, impactHeightFP = null, { emergencyDrop = false } = {}) {
-        const { type, count } = p.payload;
+        const { type, count, passengerHp } = p.payload;
         let holdPointId = null,
             best = LaunchRules.captureHoldRadius;
         if (!UnitDefinition.onlyAttacksBuildings(type)) {
@@ -163,6 +163,8 @@ class LaunchImpact {
             nextTick: sim.tick,
             heightFP,
             ...(emergencyDrop ? { emergencyDropHeightFP: heightFP } : {}),
+            // A soldier that launched itself lands again with the health it boarded with.
+            ...(passengerHp == null ? {} : { passengerHp }),
             vzFP: 0,
             lastPhysicsTick: sim.tick,
         });
@@ -342,7 +344,9 @@ class LaunchImpact {
                 continue;
             }
             const u = sim.spawnUnit(group.side, group.type, spot.x, spot.y);
-            UnitResultStats.add(sim.unitResultStats, group.side, group.type, 'deployed');
+            if (group.passengerHp == null)
+                UnitResultStats.add(sim.unitResultStats, group.side, group.type, 'deployed');
+            else u.hp = group.passengerHp;
             const enemy = sim.buildings.find(
                 (b) =>
                     b.side === 1 - group.side &&

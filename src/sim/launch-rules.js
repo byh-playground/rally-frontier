@@ -273,6 +273,17 @@ class LaunchRules {
             impact: 10,
             splash: 50,
         }),
+        // 비용·인원은 확정, 포탄 체력·위력·반경은 찹쌀과 같은 초안이다.
+        // A soldier that launches itself again rides one of these shells alone (CannonRider).
+        'black-bean': Object.freeze({
+            ...SINGLE_BUNDLE_SHELL,
+            cost: 10 * this.resourceScale,
+            premiumCost: 10 * this.resourceScale,
+            count: 10,
+            shellHp: 25,
+            impact: 10,
+            splash: 50,
+        }),
     });
     static deck = Object.freeze(
         Object.keys(LaunchRules.grains).filter((type) => !LaunchRules.isHeroType(type)),

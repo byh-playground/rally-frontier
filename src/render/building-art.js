@@ -246,13 +246,22 @@ class BuildingArt {
                     depthFunc: r.passState.depthFunc || 'lequal',
                 });
         };
+        // options.rider(pose, part) draws a soldier sitting in the muzzle. Its body goes in front of the
+        // barrel when the muzzle faces the viewer and behind the barrel and front cradle when it faces
+        // away; its hands always grip the rim last.
+        const rider = options.rider;
         draw('base', pose.base);
         draw('cradle-back', pose.cradle);
         // The pin and wooden support move behind the shaft when its muzzle faces the viewer.
         if (options.aim.dy > 0) draw('cradle', pose.cradle);
+        if (rider && options.aim.dy <= 0) rider(pose, 'body');
         draw('barrel', pose.barrel);
         if (pose.capVisible) draw(pose.face, pose.cap);
         if (options.aim.dy <= 0) draw('cradle', pose.cradle);
+        if (rider) {
+            if (options.aim.dy > 0) rider(pose, 'body');
+            rider(pose, 'hands');
+        }
         r.flushVectorMesh('cannon-art');
         return pose;
     }

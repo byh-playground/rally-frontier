@@ -22,6 +22,7 @@ import {
 import { LaunchRules } from './sim/launch-rules.js';
 import { StickyCling } from './sim/sticky-cling.js';
 import { ForwardCannon } from './sim/forward-cannon.js';
+import { CannonRider } from './sim/cannon-rider.js';
 import { CampaignMission } from './sim/campaign-mission.js';
 import { ConstructionRules } from './sim/construction-rules.js';
 import { LaunchImpactRules } from './definitions/launch-impact-rules.js';
@@ -332,23 +333,44 @@ const PROJECTILE_VISUAL_RENDER_FNS = Object.freeze({
         if (!record) return;
         let dx = screenMotion?.valid ? screenMotion.dx : 1,
             dy = screenMotion?.valid ? screenMotion.dy : 0;
-        if (
-            record.cornCone &&
-            !screenMotion?.valid &&
-            Number.isFinite(p.lockedAimX) &&
-            Number.isFinite(p.lockedAimY)
-        ) {
-            const target = rdr.worldToPx(rdr.viewX(p.lockedAimX), rdr.viewY(p.lockedAimY));
-            dx = target[0] - x;
-            dy = target[1] - y;
+        // A soldier that flies as itself (black bean): head first, at its standing size.
+        if (record.heroAmmo?.drawFlight) {
+            if (rdr.frame.length) {
+                rdr.flushVectorMesh('frame-to-vector-switch');
+                rdr.flush(rdr.frame, true);
+                rdr.begin();
+            }
+            const C = rdr.vectorContext;
+            C.depthTest = true;
+            C.depthWrite = false;
+            record.heroAmmo.drawFlight(
+                x,
+                y,
+                dx,
+                dy,
+                rdr.grainSpriteScale(p.payload.type),
+                rdr.isFriendlySide(p.side),
+                rdr._renderDepth ?? 0,
+            );
+        } else {
+            if (
+                record.cornCone &&
+                !screenMotion?.valid &&
+                Number.isFinite(p.lockedAimX) &&
+                Number.isFinite(p.lockedAimY)
+            ) {
+                const target = rdr.worldToPx(rdr.viewX(p.lockedAimX), rdr.viewY(p.lockedAimY));
+                dx = target[0] - x;
+                dy = target[1] - y;
+            }
+            const length = Math.max(30, 58 * sc);
+            const { angle, scaleX, scaleY } = rdr.launchShellVisualPose(p, Math.atan2(dy, dx));
+            rdr.drawVectorBillboard(record, x, y, angle, length / 200, {
+                scaleX,
+                scaleY,
+                depthTest: !!(record.cornCone || record.heroAmmo),
+            });
         }
-        const length = Math.max(30, 58 * sc);
-        const { angle, scaleX, scaleY } = rdr.launchShellVisualPose(p, Math.atan2(dy, dx));
-        rdr.drawVectorBillboard(record, x, y, angle, length / 200, {
-            scaleX,
-            scaleY,
-            depthTest: !!(record.cornCone || record.heroAmmo),
-        });
         rdr.circle(
             x,
             y,
@@ -1193,7 +1215,9 @@ class GLRenderer {
         this.buildingArt = new BuildingArt(this);
         // Per snapshot: which outposts a sticky-rice soldier holds, and each held cannon's frozen aim.
         this.stickyClingers = new Map();
-        this.stickyClingerIds = new Set();
+        // Black beans sitting on a muzzle, by cannon id (CannonRider.boardedCannon).
+        this.cannonRiders = new Map();
+        this.mountedUnitIds = new Set();
         this.stickyAims = new Map();
         this.stickyWrapPoses = [];
         this.spriteRenderers = {};
@@ -2192,9 +2216,9 @@ class GLRenderer {
     prepareVisibleUnitFrame() {
         const out = this.visibleUnitFrame;
         out.length = 0;
-        // A soldier holding a muzzle is drawn on the cannon instead of at its own position.
+        // A soldier holding or riding a muzzle is drawn on the cannon instead of at its own position.
         for (const u of this.renderState.displayed('unit', this.presentationNow()))
-            if (!this.stickyClingerIds.has(u.id) && this.unitVisibleForRender(u)) out.push(u);
+            if (!this.mountedUnitIds.has(u.id) && this.unitVisibleForRender(u)) out.push(u);
         return out;
     }
 
@@ -2297,12 +2321,26 @@ class GLRenderer {
         this.snapshot = s;
         this.buildingArt.prune(s.buildings);
         this.stickyClingers.clear();
-        this.stickyClingerIds.clear();
+        this.mountedUnitIds.clear();
         for (const b of s.buildings) {
             const clinger = StickyCling.clingerOf(s, b);
             if (!clinger) continue;
             this.stickyClingers.set(b.id, clinger);
-            this.stickyClingerIds.add(clinger.id);
+            this.mountedUnitIds.add(clinger.id);
+        }
+        // Several beans may board one cannon on the same tick; the next to leave is the one shown.
+        this.cannonRiders.clear();
+        for (const u of s.units || []) {
+            const cannon = CannonRider.boardedCannon(s, u);
+            if (!cannon) continue;
+            this.mountedUnitIds.add(u.id);
+            const shown = this.cannonRiders.get(cannon.id);
+            if (
+                !shown ||
+                u.cannonRide.launchTick < shown.cannonRide.launchTick ||
+                (u.cannonRide.launchTick === shown.cannonRide.launchTick && u.id < shown.id)
+            )
+                this.cannonRiders.set(cannon.id, u);
         }
         for (const id of this.stickyAims.keys())
             if (!this.stickyClingers.has(id)) this.stickyAims.delete(id);
@@ -2769,6 +2807,29 @@ class GLRenderer {
             this.spriteRenderers['sticky-rice'].drawWrapOverlay(this.fxCtx, cannon);
         this.stickyWrapPoses.length = 0;
     }
+    // BuildingArt.draw calls this inside the cannon's own part order: 'body' where the barrel
+    // occludes it correctly, 'hands' on the rim after the whole cannon.
+    drawCannonRider(rider, pose, part) {
+        const C = this.vectorContext;
+        C.depthTest = !!this.passState.depthEnabled;
+        C.depthWrite = false;
+        C.depthFunc = this.passState.depthFunc || 'lequal';
+        this.spriteRenderers[rider.type].drawRide(
+            pose,
+            this.isFriendlySide(rider.side),
+            part,
+            this._renderDepth ?? 0,
+        );
+    }
+    // Screen pixels per sprite sheet unit for a standing soldier of this type.
+    grainSpriteScale(type) {
+        return (
+            this.unitRenderRadius({ type }) *
+            GRAIN_SPRITE_BASE_SCALE *
+            (UnitVisualDefinition.get(type)?.visualScale || 1) *
+            (GRAIN_SPRITES[type]?.artScale || 1)
+        );
+    }
     // World-space aim remains outside the deterministic simulation and survives the short recoil clip.
     freeCannonAim(b) {
         const hold = LaunchPresentation.hold,
@@ -2789,6 +2850,14 @@ class GLRenderer {
         const shot = this.launchRecoil.get(b.id);
         if (shot && !shot.clock.expired && shot.clock.ageMs < 260)
             return { dx: shot.dx, dy: shot.dy };
+        // A boarding black bean has already locked where it flies.
+        const rider = this.cannonRiders.get(b.id);
+        if (rider) {
+            const dx = rider.cannonRide.aimX - b.x,
+                dy = rider.cannonRide.aimY - b.y,
+                length = Math.hypot(dx, dy);
+            if (length > 0.001) return { dx: dx / length, dy: dy / length };
+        }
         // In-flight aim is recoverable from a snapshot, including a replay seek. Idle cannons face the enemy base.
         const pods = this.snapshot.projectiles;
         for (let i = pods.length - 1; i >= 0; i--) {
@@ -2827,7 +2896,13 @@ class GLRenderer {
             flip = this.orientationRole() === 'guest' ? -1 : 1;
         const impact = this.constructionImpact(b),
             compression = impact ? impact.pulse * (impact.fx.spend > 0 ? 0.06 : 0.025) : 0;
+        const rider = this.cannonRiders.get(b.id),
+            shownRider =
+                rider && (rider.side === this.mySide() || this.visibleRaw(rider.x, rider.y));
         return {
+            ...(shownRider
+                ? { rider: (pose, part) => this.drawCannonRider(rider, pose, part) }
+                : {}),
             x: x + this.constructionWobble(impact),
             y: y + compression * 10 * this.sc(),
             sc: this.sc() * (1 - compression),
@@ -4454,6 +4529,30 @@ class GLRenderer {
                   : ground;
         const [x, y] = this.worldToPx(this.viewX(fx.x), this.viewY(fx.y), height),
             flip = this.orientationRole() === 'guest' ? Math.PI : 0;
+        // A black bean lands head first: the beans still waiting stick out of the ground, and the
+        // impact splash is laid over the ground point.
+        if (record.heroAmmo?.drawImpact) {
+            if (this.frame.length) {
+                this.flushVectorMesh('frame-to-vector-switch');
+                this.flush(this.frame, true);
+                this.begin();
+            }
+            this.vectorContext.depthTest = true;
+            this.vectorContext.depthWrite = false;
+            record.heroAmmo.drawImpact(
+                x,
+                y,
+                this.grainSpriteScale(fx.grainType),
+                this._renderDepth ?? 0,
+                pending
+                    ? {
+                          mirror: Math.cos((fx.angle || 0) + flip) < 0,
+                          own: this.isFriendlySide(pending.side),
+                      }
+                    : null,
+            );
+            return;
+        }
         this.drawVectorBillboard(
             record,
             x,
@@ -4785,6 +4884,7 @@ class GLRenderer {
             if (selfDestruct) clip = 'windup';
             if (spin) clip = 'spin';
             if (roll?.phase) clip = 'roll';
+            if (actor.setTeam) actor.setTeam(this.isFriendlySide(u.side));
             // A potato knocked into the air stands up until it is down again.
             if (actor.setRootStage) {
                 const tps = this.snapshot.tps || SIM_TPS,
