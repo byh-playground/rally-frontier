@@ -331,12 +331,36 @@ END OF DEVELOPMENT CONTRACT
                 <div id="bootTitle" class="boot-title">게임 준비 중</div>
                 <div id="bootStatus" class="boot-status">게임을 준비합니다.</div>
                 <progress id="bootProgressBar" class="boot-progress" max="1" value="0"></progress>
-                <div id="bootBuild" class="boot-build">BUILD ···</div>
+                <div id="bootBuild" class="boot-build">&nbsp;</div>
                 <button id="bootRetryBtn" class="boot-retry hidden" type="button">
                     다시 불러오기
                 </button>
             </div>
         </div>
+        <script id="rf-boot-source-progress">
+            // Before any module runs, the browser is fetching the game's own source files. Count what actually
+            // arrived (Resource Timing) so the wait is visible; core/gamekit.js stops this when GameKit boot takes over.
+            (() => {
+                'use strict';
+                if (typeof PerformanceObserver !== 'function') return;
+                const status = document.getElementById('bootStatus');
+                let files = 0,
+                    bytes = 0;
+                const observer = new PerformanceObserver((list) => {
+                    for (const entry of list.getEntries()) {
+                        if (!/\/src\/.*\.(?:js|css)(?:\?|$)/.test(entry.name)) continue;
+                        files++;
+                        bytes += entry.encodedBodySize || 0;
+                    }
+                    if (files)
+                        status.textContent =
+                            `게임 파일 ${files}개 받는 중` +
+                            (bytes ? ` · ${(bytes / 1024 / 1024).toFixed(1)}MB` : '');
+                });
+                observer.observe({ type: 'resource', buffered: true });
+                window.__RALLY_SOURCE_PROGRESS__ = observer;
+            })();
+        </script>
 
         <div
             id="installGuideModal"

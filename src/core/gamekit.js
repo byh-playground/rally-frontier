@@ -36,8 +36,8 @@ const RALLY_BOOT_LABELS = Object.freeze({
     sdk: '게임 모듈',
     units: '유닛 그림',
     sprites: '병종 스프라이트',
-    graphics: '그래픽 준비',
-    title: '타이틀 장면',
+    graphics: '그래픽 준비 중',
+    title: '타이틀 장면 준비 중',
 });
 // boot.js itself has to arrive before it can report anything: verify and import this one file here.
 async function importVerifiedModule(url, sha256, name) {
@@ -161,18 +161,24 @@ try {
     RallyBoot = bootModule.createBoot({
         stages: SIM_WORKER ? RALLY_BOOT_STAGES.slice(0, 1) : RALLY_BOOT_STAGES,
     });
-    if (!SIM_WORKER)
+    if (!SIM_WORKER) {
+        // The inline source-file counter (index.html) owned the status line until now.
+        globalThis.__RALLY_SOURCE_PROGRESS__?.disconnect();
         bootModule.bindBootProgress(RallyBoot, {
             progress: document.getElementById('bootProgressBar'),
             label: document.getElementById('bootStatus'),
             text: (state) =>
                 state.failed
                     ? String(state.failed.message || state.failed)
-                    : !state.stage
-                      ? '게임을 준비합니다.'
-                      : RALLY_BOOT_LABELS[state.stage] +
-                        (state.total === null ? '' : ` ${state.completed}/${state.total}`),
+                    : state.overall === 1
+                      ? '준비 완료'
+                      : !state.stage
+                        ? '게임 모듈 확인 중'
+                        : RALLY_BOOT_LABELS[state.stage] +
+                          (state.total === null ? '' : ` ${state.completed}/${state.total}`) +
+                          ` · ${Math.round(state.overall * 100)}%`,
         });
+    }
     // boot receives, verifies (SHA-256) and imports the rest, advancing once per module.
     const namespaces = {
         boot: bootModule,
