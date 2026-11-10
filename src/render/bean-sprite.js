@@ -1,5 +1,5 @@
 // Approved bean artwork is assembled once into a shared texture; poses are evaluated by GameKit.
-import { RICE_RIG } from './rice-sprite.js';
+import { GRAIN_RIG as RICE_RIG } from './grain-rig.js';
 const root = new URL('../../assets/sprites/beans/', import.meta.url);
 const slots = Object.freeze({
     'pea-body': [1, 1, 290, 270],
@@ -17,7 +17,6 @@ const slots = Object.freeze({
     'face-hurt': [301, 280, 148, 72],
     'face-angry': [451, 280, 148, 72],
 });
-const types = Object.freeze({ pea: 'pea', redbean: 'red' });
 const cache = new WeakMap();
 export async function loadBeanSpriteCanvases() {
     const response = await fetch(new URL('manifest.json', root), { cache: 'no-store' });
@@ -69,38 +68,24 @@ export async function loadBeanSpriteCanvases() {
     canvas.height = 384;
     const context = canvas.getContext('2d');
     for (const [name, image] of images) context.drawImage(image, ...slots[name]);
-    return Object.freeze({ pea: canvas, redbean: canvas });
+    return canvas;
 }
-function pieces(type) {
-    const prefix = types[type];
-    if (!prefix) throw new Error('알 수 없는 곡물 스프라이트: ' + type);
-    const pea = prefix === 'pea',
-        ly = pea ? 105 : 117;
+// `bean` is the unit's own placement on the shared sheet: { prefix, body, legY, face }.
+function pieces(bean) {
+    const { prefix, body, legY: ly, face } = bean;
     return {
-        body: {
-            name: prefix + '-body',
-            rect: pea ? [-145, -163, 290, 270] : [-110, -141.5, 220, 265],
-            part: 0,
-        },
+        body: { name: prefix + '-body', rect: body, part: 0 },
         legL: { name: prefix + '-leg-l', rect: [-65, ly - 35, 58, 70], part: 1 },
         legR: { name: prefix + '-leg-r', rect: [7, ly - 35, 58, 70], part: 2 },
         armL: { name: prefix + '-arm-l', rect: [-146, -3, 68, 70], part: 3 },
         armR: { name: prefix + '-arm-r', rect: [78, -3, 68, 70], part: 5 },
-        neutral: {
-            name: 'face-neutral',
-            rect: pea ? [-74, -45, 148, 72] : [-61, -64, 148, 72],
-            part: 7,
-        },
-        attack: {
-            name: 'face-angry',
-            rect: pea ? [-74, -45, 148, 72] : [-61, -64, 148, 72],
-            part: 7,
-        },
-        hurt: { name: 'face-hurt', rect: pea ? [-74, -45, 148, 72] : [-61, -64, 148, 72], part: 7 },
+        neutral: { name: 'face-neutral', rect: face, part: 7 },
+        attack: { name: 'face-angry', rect: face, part: 7 },
+        hurt: { name: 'face-hurt', rect: face, part: 7 },
     };
 }
-export function beanSpritePortrait(canvas, type, width) {
-    const p = pieces(type),
+export function beanSpritePortrait(canvas, bean, width) {
+    const p = pieces(bean),
         output = document.createElement('canvas'),
         scale = width / 320;
     output.width = width;
@@ -134,11 +119,10 @@ function acquire(context, canvas) {
     return entry;
 }
 export class BeanSpriteRenderer {
-    constructor(context, canvas, gamekit, type) {
+    constructor(context, canvas, gamekit, bean) {
         this.context = context;
         this.mesh = context.acquireMeshRenderer();
         this.actors = new Set();
-        this.type = type;
         this.shared = acquire(context, canvas);
         this.atlas = { region: this.shared.region };
         try {
@@ -158,7 +142,7 @@ export class BeanSpriteRenderer {
         this.visible = RICE_RIG.parts.map(() => true);
         this.morph = [0, 0];
         this.disposed = false;
-        const all = pieces(type),
+        const all = pieces(bean),
             region = this.atlas.region,
             atlas = region.atlas;
         const data = (names) => {

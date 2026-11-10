@@ -11,9 +11,9 @@ import { RallyGamekit } from '../core/gamekit.js';
 const { ObstacleField, SurfaceMotion, SweptCircleContact, SurfaceContactGeometry } = RallyGamekit;
 import { FP } from '../core/config.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
-import { UnitLeapAttack } from './unit-leap-attack.js';
-import { HeroRollAttack } from './hero-roll-attack.js';
-import { FruitHeroAttack } from './fruit-hero-attack.js';
+import { UnitLeapAttack } from './capabilities/unit-leap-attack.js';
+import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
+import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 
 // Interaction geometry owns the legal arrival set; the distance field only leads units to it.
 // Goal regions are continuous (discs/annuli), not a fixed number of radial probes.

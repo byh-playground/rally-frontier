@@ -20,9 +20,9 @@ import {
     NetworkModuleLoader,
 } from './session/runtime-state.js';
 import { LaunchRules } from './sim/launch-rules.js';
-import { StickyCling } from './sim/sticky-cling.js';
-import { ForwardCannon } from './sim/forward-cannon.js';
-import { CannonRider } from './sim/cannon-rider.js';
+import { StickyCling } from './sim/capabilities/sticky-cling.js';
+import { ForwardCannon } from './sim/capabilities/forward-cannon.js';
+import { CannonRider } from './sim/capabilities/cannon-rider.js';
 import { CampaignMission } from './sim/campaign-mission.js';
 import { ConstructionRules } from './sim/construction-rules.js';
 import { LaunchImpactRules } from './definitions/launch-impact-rules.js';
@@ -34,10 +34,9 @@ import { ConnectionSideUtil } from './net/lobby-codec.js';
 import { CloneUtil, HashUtil, MapGeneration } from './sim/map-generation.js';
 import { AttackPresentationDefinition } from './definitions/attack-presentation.js';
 import { BuildingDefinition } from './definitions/buildings.js';
+import { GRAIN_SIZE, GRAIN_SPRITE_BASE_SCALE, UNIT_RENDER_RADIUS_SCALE } from './units/baseline.js';
 import {
     GRAIN_FACE_IDS,
-    GRAIN_SPRITE_BASE_SCALE,
-    UNIT_RENDER_RADIUS_SCALE,
     UnitDefinition,
     UnitFactionPalette,
     UnitVisualDefinition,
@@ -68,11 +67,6 @@ import {
 } from './render/presentation-effects.js';
 import { GRAIN_SPRITES } from './render/grain-sprite-registry.js';
 import { heroBasicAttackElapsedMs, HERO_BASIC_STRIKE_MS } from './render/hero-basic-motion.js';
-import {
-    setWatermelonRollMatrix,
-    watermelonRollProgress,
-    watermelonRollTuck,
-} from './render/watermelon-sprite.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
 import {
     CONFIG,
@@ -333,8 +327,9 @@ const PROJECTILE_VISUAL_RENDER_FNS = Object.freeze({
         if (!record) return;
         let dx = screenMotion?.valid ? screenMotion.dx : 1,
             dy = screenMotion?.valid ? screenMotion.dy : 0;
-        // A soldier that flies as itself (black bean): head first, at its standing size.
-        if (record.heroAmmo?.drawFlight) {
+        // A shell that flies as the soldier itself (sprite.shell.flight 'soldier'): head first, at its
+        // standing size.
+        if (record.shell?.flight === 'soldier') {
             if (rdr.frame.length) {
                 rdr.flushVectorMesh('frame-to-vector-switch');
                 rdr.flush(rdr.frame, true);
@@ -343,7 +338,7 @@ const PROJECTILE_VISUAL_RENDER_FNS = Object.freeze({
             const C = rdr.vectorContext;
             C.depthTest = true;
             C.depthWrite = false;
-            record.heroAmmo.drawFlight(
+            record.renderer.drawFlight(
                 x,
                 y,
                 dx,
@@ -354,7 +349,7 @@ const PROJECTILE_VISUAL_RENDER_FNS = Object.freeze({
             );
         } else {
             if (
-                record.cornCone &&
+                record.shell?.aimFallback &&
                 !screenMotion?.valid &&
                 Number.isFinite(p.lockedAimX) &&
                 Number.isFinite(p.lockedAimY)
@@ -368,7 +363,7 @@ const PROJECTILE_VISUAL_RENDER_FNS = Object.freeze({
             rdr.drawVectorBillboard(record, x, y, angle, length / 200, {
                 scaleX,
                 scaleY,
-                depthTest: !!(record.cornCone || record.heroAmmo),
+                depthTest: !!record.shell?.depthTest,
             });
         }
         rdr.circle(
@@ -1215,12 +1210,13 @@ class GLRenderer {
         this.buildingArt = new BuildingArt(this);
         // Per snapshot: which outposts a sticky-rice soldier holds, and each held cannon's frozen aim.
         this.stickyClingers = new Map();
-        // Black beans sitting on a muzzle, by cannon id (CannonRider.boardedCannon).
+        // Cannon riders sitting on a muzzle, by cannon id (CannonRider.boardedCannon).
         this.cannonRiders = new Map();
         this.mountedUnitIds = new Set();
         this.stickyAims = new Map();
         this.stickyWrapPoses = [];
         this.spriteRenderers = {};
+        this.effectArt = {};
         this.riceBodyGroup = [];
         // One actor per grain: a shared actor re-seeked per grain rewrites its pose row and splits the instanced batch.
         this.grainActors = new Map();
@@ -1418,6 +1414,7 @@ class GLRenderer {
         for (const sprites of Object.values(this.spriteRenderers)) sprites.dispose();
         for (const hold of this.gameResourceHolds || []) hold.release();
         this.spriteRenderers = {};
+        this.effectArt = {};
         this.gameResourceHolds = null;
         this.vectorContext.dispose();
         this.device.dispose();
@@ -1518,8 +1515,12 @@ class GLRenderer {
                         C,
                         globalThis.RallySpriteCanvases[type],
                         RallyGamekit,
-                        type,
+                        definition.art,
                     );
+                // Shared effects (shell team markers and trails, blasts, thorns) are drawn by the
+                // renderer whose sprite contract declares that effect art.
+                for (const role of definition.effectArt || [])
+                    this.effectArt[role] = this.spriteRenderers[type];
             }
             this.grainFaces.prepare();
             if (!C.beginFrame()) throw new Error('그래픽 장치를 준비할 수 없습니다.');
@@ -1556,7 +1557,7 @@ class GLRenderer {
                                 { x: 0, y: 0, sc: 1, aim: { dx: 1, dy }, own, fireAgeMs },
                             );
                         }
-            for (const sprites of Object.values(this.spriteRenderers)) {
+            for (const [type, sprites] of Object.entries(this.spriteRenderers)) {
                 const actor = sprites.createActor();
                 actors.push(actor);
                 actor.seek(0);
@@ -1567,13 +1568,9 @@ class GLRenderer {
                 sprites.drawBody(actor, matrix, 0);
                 C.depthWrite = false;
                 sprites.drawFace(actor, matrix, 0, 'neutral');
-                if (sprites === this.spriteRenderers.corn)
-                    this.spriteRenderers.corn.drawHeldKernel(actor, matrix, 0);
+                sprites.drawHeldKernel?.(actor, matrix, 0);
                 C.flush('grain-resource-preparation');
-                if (
-                    sprites === this.spriteRenderers.acorn ||
-                    sprites === this.spriteRenderers.watermelon
-                ) {
+                if (UnitDefinition.get(type)?.spinAttack) {
                     actor.play('spin');
                     for (const elapsed of [1250, 1500]) {
                         actor.seekElapsed(elapsed);
@@ -1588,32 +1585,18 @@ class GLRenderer {
                 }
                 C.depthTest = false;
             }
-            C.depthTest = true;
-            this.spriteRenderers.acorn.drawAmmo(matrix, 0);
-            this.spriteRenderers.acorn.drawTeamMarker(matrix, 0, true);
-            this.spriteRenderers.acorn.drawTeamMarker(matrix, 0, false);
-            C.flush('acorn-ammo-resource-preparation');
+            // Shell art and each renderer's extra effect art (sprite.shell, prepareExtraArt).
             for (const [type, spec] of Object.entries(GRAIN_SPRITES)) {
-                if (!spec.cannonAmmo) continue;
                 const renderer = this.spriteRenderers[type];
-                renderer.drawAmmo([32, 0, 0, 32, 0, 0], 0);
-                renderer.drawCombatAmmo?.([24, 0, 0, 24, 0, 0], 0);
-                C.flush('fruit-ammo-resource-preparation');
+                C.depthTest = true;
+                if (spec.shell) {
+                    renderer[spec.shell.draw]([32, 0, 0, 32, 0, 0], 0);
+                    renderer.drawCombatAmmo?.([24, 0, 0, 24, 0, 0], 0);
+                }
+                renderer.prepareExtraArt?.(matrix);
+                C.flush('grain-extra-resource-preparation');
             }
             C.depthTest = false;
-            this.spriteRenderers.millet.drawEar(matrix, 0);
-            this.spriteRenderers.corn.drawKernel(matrix, 0);
-            this.spriteRenderers.corn.drawCone(matrix, 0);
-            this.spriteRenderers.popcorn.drawAmmo(matrix, 0);
-            this.spriteRenderers.popcorn.drawBurst(matrix, 0);
-            this.spriteRenderers.corn.drawTeamMarker(matrix, 0, true);
-            for (let i = 0; i < 3; i++) this.spriteRenderers.corn.drawPopcorn(i, matrix, 0);
-            C.flush('corn-particle-resource-preparation');
-            C.depthTest = false;
-            this.spriteRenderers.chestnut.drawBurr([32, 0, 0, 32, 0, 0], 0);
-            this.spriteRenderers.chestnut.drawThorn([32, 0, 0, 32, 0, 0], 0);
-            this.spriteRenderers.chestnut.drawParticle([8, 0, 0, 8, 0, 0], 0, THORN_IMPACT_COLOR);
-            C.flush('chestnut-projectile-resource-preparation');
             this.buildingArt.prune([]);
             C.endFrame();
             // Warm-up draws raw art in canvas coordinates. Leave a clean backbuffer.
@@ -1628,6 +1611,7 @@ class GLRenderer {
             for (const hold of holds) hold.release();
             for (const sprites of Object.values(this.spriteRenderers)) sprites.dispose();
             this.spriteRenderers = {};
+            this.effectArt = {};
             throw error;
         } finally {
             for (const actor of actors) actor.dispose();
@@ -2070,7 +2054,7 @@ class GLRenderer {
             const heightFP = motionState.impactMotion?.heightFP;
             if (Number.isFinite(heightFP)) height = Math.max(0, heightFP) / FP;
             if (motionState.heroRoll?.phase === 'hop') {
-                const hop = watermelonRollProgress(
+                const hop = GRAIN_SPRITES[entity.type].roll.progress(
                     motionState.heroRoll,
                     model?.tick ?? this.snapshot.tick,
                 );
@@ -2466,7 +2450,11 @@ class GLRenderer {
     processMilletEvents(snapshot) {
         if (!snapshot) return;
         for (const event of snapshot.events || []) {
-            if (event.type !== 'launchLand' || event.unit !== 'millet' || event.index !== 0)
+            if (
+                event.type !== 'launchLand' ||
+                GRAIN_SPRITES[event.unit]?.landing !== 'ear-burst' ||
+                event.index !== 0
+            )
                 continue;
             if (!this.eventVisible(event)) continue;
             const clock = snapshot.presentationClock;
@@ -2765,7 +2753,8 @@ class GLRenderer {
         const dx = Number(e.dirX),
             dy = Number(e.dirY),
             angle = Number.isFinite(dx) && Number.isFinite(dy) ? Math.atan2(dy, dx) : 0;
-        if (e.unit !== 'millet') {
+        // An ear-burst landing (sprite.landing) scatters instead of a blast ring and husk.
+        if (GRAIN_SPRITES[e.unit]?.landing !== 'ear-burst') {
             this.addClientFx('launchBlast', e, snapshot, index, {
                 peak,
                 hits,
@@ -2800,12 +2789,15 @@ class GLRenderer {
     // A held cannon's pose this frame; the wrap itself is drawn on the overlay above the outpost
     // marker and label (drawStickyWrapOverlay), because it is the only sign the cannon cannot fire.
     drawStickyWrap(b, cannon) {
-        if (this.stickyClingers.has(b.id)) this.stickyWrapPoses.push(cannon);
+        const clinger = this.stickyClingers.get(b.id);
+        // The clinging soldier's own renderer draws the wrap; poses are stored as renderer, cannon pairs.
+        if (clinger) this.stickyWrapPoses.push(this.spriteRenderers[clinger.type], cannon);
     }
     drawStickyWrapOverlay() {
-        for (const cannon of this.stickyWrapPoses)
-            this.spriteRenderers['sticky-rice'].drawWrapOverlay(this.fxCtx, cannon);
-        this.stickyWrapPoses.length = 0;
+        const poses = this.stickyWrapPoses;
+        for (let i = 0; i < poses.length; i += 2)
+            poses[i].drawWrapOverlay(this.fxCtx, poses[i + 1]);
+        poses.length = 0;
     }
     // BuildingArt.draw calls this inside the cannon's own part order: 'body' where the barrel
     // occludes it correctly, 'hands' on the rim after the whole cannon.
@@ -2850,7 +2842,7 @@ class GLRenderer {
         const shot = this.launchRecoil.get(b.id);
         if (shot && !shot.clock.expired && shot.clock.ageMs < 260)
             return { dx: shot.dx, dy: shot.dy };
-        // A boarding black bean has already locked where it flies.
+        // A boarding cannon rider has already locked where it flies.
         const rider = this.cannonRiders.get(b.id);
         if (rider) {
             const dx = rider.cannonRide.aimX - b.x,
@@ -3706,7 +3698,10 @@ class GLRenderer {
                         Math.max(0, 0.6 * (1 - t)),
                     );
                 }
-            } else if (fx.kind === 'launchBundleBreak' && fx.grainType !== 'millet') {
+            } else if (
+                fx.kind === 'launchBundleBreak' &&
+                GRAIN_SPRITES[fx.grainType]?.landing !== 'ear-burst'
+            ) {
                 LaunchImpactArt.drawBurst(ctx, {
                     x,
                     y,
@@ -4374,7 +4369,7 @@ class GLRenderer {
         return UnitVisualDefinition.get(u?.type)?.visualScale ?? 1.08;
     }
     unitRenderRadius(u) {
-        const size = UnitDefinition.get(u?.type)?.size || UnitDefinition.get('rice').size;
+        const size = UnitDefinition.get(u?.type)?.size || GRAIN_SIZE;
         return size * UNIT_RENDER_RADIUS_SCALE * this.unitRenderVisualScale(u) * this.sc();
     }
 
@@ -4386,33 +4381,9 @@ class GLRenderer {
         const key = 'ammo|' + type;
         let record = this.vectorUnitAssetCache.get(key);
         if (record) return record;
-        if (GRAIN_SPRITES[type]?.cannonAmmo) {
-            record = { heroAmmo: this.spriteRenderers[type] };
-            this.vectorUnitAssetCache.set(key, record);
-            return record;
-        }
-        if (type === 'acorn') {
-            record = { acornAmmo: true };
-            this.vectorUnitAssetCache.set(key, record);
-            return record;
-        }
-        if (type === 'corn') {
-            record = { cornCone: true };
-            this.vectorUnitAssetCache.set(key, record);
-            return record;
-        }
-        if (type === 'popcorn') {
-            record = { popcornAmmo: true };
-            this.vectorUnitAssetCache.set(key, record);
-            return record;
-        }
-        if (type === 'millet') {
-            record = { milletEar: true };
-            this.vectorUnitAssetCache.set(key, record);
-            return record;
-        }
-        if (type === 'chestnut') {
-            record = { sprite: this.spriteRenderers.chestnut };
+        const shell = GRAIN_SPRITES[type]?.shell;
+        if (shell) {
+            record = { shell, renderer: this.spriteRenderers[type] };
             this.vectorUnitAssetCache.set(key, record);
             return record;
         }
@@ -4441,22 +4412,15 @@ class GLRenderer {
             this.flush(this.frame, true);
             this.begin();
         }
-        const actualAngle = record.milletEar
-                ? angle + 0.6
-                : record.acornAmmo || record.cornCone
-                  ? angle + Math.PI / 4
-                  : angle,
-            centered =
-                record.acornAmmo ||
-                record.cornCone ||
-                record.milletEar ||
-                record.popcornAmmo ||
-                record.heroAmmo,
+        const shell = record.shell,
+            // A sheet-framed shell (sprite.shell.sheet) draws in sheet units; the rest are centred.
+            centered = !!shell && !shell.sheet,
+            actualAngle = angle + (shell?.turn || 0),
             actualScale = centered ? scale * 200 : scale,
             cos = Math.cos(actualAngle) * actualScale,
             sin = Math.sin(actualAngle) * actualScale,
             m = this._vectorUnitMatrix;
-        if (record.sprite) {
+        if (shell?.sheet) {
             m[0] = cos * scaleX * 256;
             m[1] = sin * scaleX * 256;
             m[2] = -sin * scaleY * 256;
@@ -4465,7 +4429,7 @@ class GLRenderer {
             m[5] = y;
             this.vectorContext.depthTest = depthTest;
             this.vectorContext.depthWrite = false;
-            record.sprite.drawBurr(m, this._renderDepth ?? 0);
+            record.renderer[shell.draw](m, this._renderDepth ?? 0);
             this.flushVectorMesh('burr-billboard');
             return;
         }
@@ -4478,12 +4442,7 @@ class GLRenderer {
         if (centered) {
             this.vectorContext.depthTest = depthTest;
             this.vectorContext.depthWrite = false;
-            if (record.acornAmmo) this.spriteRenderers.acorn.drawAmmo(m, this._renderDepth ?? 0);
-            else if (record.cornCone) this.spriteRenderers.corn.drawCone(m, this._renderDepth ?? 0);
-            else if (record.popcornAmmo)
-                this.spriteRenderers.popcorn.drawAmmo(m, this._renderDepth ?? 0);
-            else if (record.heroAmmo) record.heroAmmo.drawAmmo(m, this._renderDepth ?? 0);
-            else this.spriteRenderers.millet.drawEar(m, this._renderDepth ?? 0);
+            record.renderer[shell.draw](m, this._renderDepth ?? 0);
             return;
         }
         this.vectorContext.drawVectorActor(record.actor, {
@@ -4529,9 +4488,9 @@ class GLRenderer {
                   : ground;
         const [x, y] = this.worldToPx(this.viewX(fx.x), this.viewY(fx.y), height),
             flip = this.orientationRole() === 'guest' ? Math.PI : 0;
-        // A black bean lands head first: the beans still waiting stick out of the ground, and the
-        // impact splash is laid over the ground point.
-        if (record.heroAmmo?.drawImpact) {
+        // A soldier shell lands head first (sprite.shell.flight 'soldier'): the soldiers still waiting
+        // stick out of the ground, and the impact splash is laid over the ground point.
+        if (record.shell?.flight === 'soldier') {
             if (this.frame.length) {
                 this.flushVectorMesh('frame-to-vector-switch');
                 this.flush(this.frame, true);
@@ -4539,7 +4498,7 @@ class GLRenderer {
             }
             this.vectorContext.depthTest = true;
             this.vectorContext.depthWrite = false;
-            record.heroAmmo.drawImpact(
+            record.renderer.drawImpact(
                 x,
                 y,
                 this.grainSpriteScale(fx.grainType),
@@ -4683,7 +4642,7 @@ class GLRenderer {
                                 : 'idle'),
                 restart = false;
             if (record.sprite) {
-                const chestnut = record.compiled === this.spriteRenderers.chestnut,
+                const chestnut = GRAIN_SPRITES[u.type]?.pose === 'thorn-thrower',
                     attack = !!(chestnut ? entity.attackFlash : u.attackFlash),
                     hit = !!(chestnut ? entity.hitFlash : u.hitFlash),
                     attackStarted = attack && !grain.attackLatch,
@@ -4709,7 +4668,11 @@ class GLRenderer {
             }
             let cornElapsed = null;
             grain.holdsKernel = false;
-            if (record.compiled === this.spriteRenderers.corn && !impact.active && !work?.active) {
+            if (
+                GRAIN_SPRITES[u.type]?.pose === 'kernel-thrower' &&
+                !impact.active &&
+                !work?.active
+            ) {
                 const combat = entity.combat || u.combat || {},
                     start = Number(combat.attackWindupStartedAt),
                     end = Number(combat.attackWindupUntil),
@@ -4751,7 +4714,7 @@ class GLRenderer {
             let chestnutFireMs = null,
                 chestnutFacing = 1;
             if (
-                record.compiled === this.spriteRenderers.chestnut &&
+                GRAIN_SPRITES[u.type]?.pose === 'thorn-thrower' &&
                 !impact.active &&
                 !work?.active &&
                 !entity.hitFlash
@@ -4784,7 +4747,7 @@ class GLRenderer {
             let milletFireMs = null,
                 milletFacing = 1;
             if (
-                record.compiled === this.spriteRenderers.millet &&
+                GRAIN_SPRITES[u.type]?.pose === 'body-charge' &&
                 !impact.active &&
                 !work?.active &&
                 !entity.hitFlash
@@ -4815,11 +4778,9 @@ class GLRenderer {
                 }
             }
             const spin = entity.spinAttack,
-                roll =
-                    record.compiled === this.spriteRenderers.watermelon && grounded
-                        ? entity.heroRoll
-                        : null;
-            const rollProgress = roll?.phase ? watermelonRollProgress(roll, renderTick) : 0;
+                roll = GRAIN_SPRITES[u.type]?.roll && grounded ? entity.heroRoll : null;
+            const rollArt = GRAIN_SPRITES[u.type]?.roll;
+            const rollProgress = roll?.phase ? rollArt.progress(roll, renderTick) : 0;
             const selfDestruct =
                 entity.selfDestruct?.phase === 'windup' ? entity.selfDestruct : null;
             const sprite = GRAIN_SPRITES[u.type];
@@ -4915,7 +4876,7 @@ class GLRenderer {
             )
                 actor.play(clip, 0);
             if (roll?.phase) {
-                actor.rollTuck = watermelonRollTuck(roll.phase, rollProgress);
+                actor.rollTuck = rollArt.tuck(roll.phase, rollProgress);
                 actor.seekElapsed(0);
             } else if (spin) {
                 const windupTicks = Math.max(1, spin.activeStartTick - spin.startTick);
@@ -4987,7 +4948,7 @@ class GLRenderer {
                 const heading =
                     (this.orientationRole() === 'guest' ? -1 : 1) *
                     Math.sign(Math.abs(roll.dx) > 0.001 ? roll.dx : roll.dy);
-                setWatermelonRollMatrix(
+                rollArt.setMatrix(
                     m,
                     p.x,
                     p.y + r * 0.55,
@@ -5128,8 +5089,8 @@ class GLRenderer {
                 grain.depth - GRAIN_DEPTH_RANK_STEP / 2,
                 grain.face,
             );
-            if (grain.compiled === this.spriteRenderers.corn && grain.holdsKernel)
-                this.spriteRenderers.corn.drawHeldKernel(
+            if (grain.holdsKernel)
+                grain.compiled.drawHeldKernel(
                     grain.actor,
                     grain.matrix,
                     grain.depth - GRAIN_DEPTH_RANK_STEP / 2,
@@ -5323,7 +5284,7 @@ class GLRenderer {
         }
     }
 
-    drawAcornAmmoProjectile(p, world) {
+    drawTumblingShell(p, world, renderer) {
         const point = this.projectRenderWorldPosition(world);
         const stable = this.projectRenderWorldPositionStable(world);
         const motion = this.projectileScreenMotion(p, stable.x, stable.y);
@@ -5350,13 +5311,13 @@ class GLRenderer {
         c.depthTest = !!this.passState.depthEnabled;
         c.depthWrite = false;
         c.depthFunc = this.passState.depthFunc || 'lequal';
-        this.spriteRenderers.acorn.drawAmmo(m, this._renderDepth ?? 0);
+        renderer.drawAmmo(m, this._renderDepth ?? 0);
         const marker = Math.max(4, 6 * this.sc());
         m[0] = marker;
         m[1] = 0;
         m[2] = 0;
         m[3] = marker;
-        this.spriteRenderers.acorn.drawTeamMarker(
+        renderer.drawTeamMarker(
             m,
             this._renderDepth ?? 0,
             this.factionRelation(p.side) === 'friendly',
@@ -5461,7 +5422,7 @@ class GLRenderer {
         return { dx, dy, valid };
     }
     drawThorn(shot, world) {
-        if (!this.spriteRenderers.chestnut) return;
+        if (!this.effectArt.thorn) return;
         if (this.frame.length) {
             this.flushVectorMesh('frame-to-thorn');
             this.flush(this.frame, true);
@@ -5503,17 +5464,17 @@ class GLRenderer {
         matrix[3] = cosine;
         matrix[4] = point.x;
         matrix[5] = point.y;
-        this.spriteRenderers.chestnut.drawTrail(
+        this.effectArt.thorn.drawTrail(
             matrix,
             this._renderDepth ?? 0,
             count,
             THORN_TRAIL_COLOR,
             0.25,
         );
-        this.spriteRenderers.chestnut.drawThorn(matrix, this._renderDepth ?? 0);
+        this.effectArt.thorn.drawThorn(matrix, this._renderDepth ?? 0);
     }
     drawThornImpact(fx, world) {
-        if (!this.spriteRenderers.chestnut) return;
+        if (!this.effectArt.thorn) return;
         if (this.frame.length) {
             this.flushVectorMesh('frame-to-thorn-impact');
             this.flush(this.frame, true);
@@ -5540,18 +5501,14 @@ class GLRenderer {
             m[3] = cosine * height;
             m[4] = p.x + cosine * distance;
             m[5] = p.y + sine * distance;
-            this.spriteRenderers.chestnut.drawParticle(
-                m,
-                this._renderDepth ?? 0,
-                THORN_IMPACT_COLOR,
-                1 - t,
-            );
+            this.effectArt.thorn.drawParticle(m, this._renderDepth ?? 0, THORN_IMPACT_COLOR, 1 - t);
         }
     }
     drawProjectileGroundEffects(p, world) {
         const sc = this.sc();
         const type = p.payload?.type,
-            particleTrail = type === 'corn' || type === 'millet' || type === 'popcorn';
+            shell = GRAIN_SPRITES[type]?.shell,
+            particleTrail = !!shell?.particleTrail;
         if (p.payload && !particleTrail) this.drawLaunchTrail(p, world, sc);
         if (world.y <= world.groundY + 0.01) return;
         const ground = this.resolveGroundShadowPosition(p, 'projectile'),
@@ -5562,7 +5519,7 @@ class GLRenderer {
             this.circle(x, y, radius * 1.55, [0.06, 0.08, 0.1, 0.08], 10);
         });
         const airY = this.projectRenderWorldPosition(world).y;
-        if (!particleTrail && type !== 'acorn' && y - airY > 2.5)
+        if (!particleTrail && shell?.flight !== 'tumble' && y - airY > 2.5)
             this.line(
                 x,
                 y - radius * 0.25,
@@ -5574,10 +5531,12 @@ class GLRenderer {
     }
     drawProjectile(p, world) {
         const type = p.payload?.type;
-        if (type === 'acorn') return this.drawAcornAmmoProjectile(p, world);
-        if (type === 'millet') return this.drawMilletEarProjectile(p, world);
-        if (type === 'corn' || type === 'popcorn')
-            return this.drawCornConeProjectile(p, world, type === 'popcorn');
+        // sprite.shell.flight picks how a shell flies; the shell's own renderer draws it.
+        const shell = GRAIN_SPRITES[type]?.shell,
+            shellArt = shell && this.spriteRenderers[type];
+        if (shell?.flight === 'tumble') return this.drawTumblingShell(p, world, shellArt);
+        if (shell?.flight === 'ear') return this.drawEarShell(p, world, shellArt, shell);
+        if (shell?.flight === 'cone') return this.drawConeShell(p, world, shellArt, shell);
 
         const { x, y } = this.projectRenderWorldPosition(world),
             sc = this.sc();
@@ -5633,7 +5592,7 @@ class GLRenderer {
         anchor.groundY = world.groundY;
         anchor.at = displayMs;
     }
-    drawMilletEarProjectile(projectile, world) {
+    drawEarShell(projectile, world, renderer, shell) {
         const point = this.projectRenderWorldPosition(world),
             stable = this.projectRenderWorldPositionStable(world),
             motion = this.projectileScreenMotion(projectile, stable.x, stable.y);
@@ -5668,20 +5627,20 @@ class GLRenderer {
         context.depthTest = !!this.passState.depthEnabled;
         context.depthWrite = false;
         context.depthFunc = this.passState.depthFunc || 'lequal';
-        this.spriteRenderers.millet.drawEar(matrix, this._renderDepth ?? 0);
+        renderer[shell.draw](matrix, this._renderDepth ?? 0);
         const markerSize = Math.max(4, 6 * this.sc());
         matrix[0] = markerSize;
         matrix[1] = 0;
         matrix[2] = 0;
         matrix[3] = markerSize;
-        this.spriteRenderers.corn.drawTeamMarker(
+        this.effectArt['grain-particles'].drawTeamMarker(
             matrix,
             this._renderDepth ?? 0,
             this.factionRelation(projectile.side) === 'friendly',
         );
         this.sampleCornTrail('millet-ear:' + projectile.id, projectile.side, world);
     }
-    drawCornConeProjectile(projectile, world, popcorn = false) {
+    drawConeShell(projectile, world, renderer, shell) {
         const point = this.projectRenderWorldPosition(world),
             stable = this.projectRenderWorldPositionStable(world),
             motion = this.projectileScreenMotion(projectile, stable.x, stable.y);
@@ -5716,22 +5675,21 @@ class GLRenderer {
         C.depthTest = !!this.passState.depthEnabled;
         C.depthWrite = false;
         C.depthFunc = this.passState.depthFunc || 'lequal';
-        if (popcorn) this.spriteRenderers.popcorn.drawAmmo(matrix, this._renderDepth ?? 0);
-        else this.spriteRenderers.corn.drawCone(matrix, this._renderDepth ?? 0);
+        renderer[shell.draw](matrix, this._renderDepth ?? 0);
         const markerSize = Math.max(4, 6 * this.sc());
         matrix[0] = markerSize;
         matrix[1] = 0;
         matrix[2] = 0;
         matrix[3] = markerSize;
-        this.spriteRenderers.corn.drawTeamMarker(
+        this.effectArt['grain-particles'].drawTeamMarker(
             matrix,
             this._renderDepth ?? 0,
             this.factionRelation(projectile.side) === 'friendly',
         );
     }
-    drawCornKernel(projectile, world) {
-        if (!this.spriteRenderers.corn)
-            throw new Error('옥수수 투사체 자원이 준비되지 않았습니다.');
+    drawLobKernel(projectile, world) {
+        const renderer = this.spriteRenderers[projectile.sourceType];
+        if (!renderer) throw new Error('곡사 투사체 자원이 준비되지 않았습니다.');
         const now = this.presentationNow(),
             model = this.renderState.model('unitLob', projectile.id, now),
             sampled = model?.entity || projectile;
@@ -5751,7 +5709,7 @@ class GLRenderer {
         C.depthTest = !!this.passState.depthEnabled;
         C.depthWrite = false;
         C.depthFunc = this.passState.depthFunc || 'lequal';
-        this.spriteRenderers.corn.drawKernel(matrix, this._renderDepth ?? 0);
+        renderer.drawKernel(matrix, this._renderDepth ?? 0);
     }
     renderMilletParticles() {
         if (!this.milletBursts.length) return;
@@ -5793,7 +5751,10 @@ class GLRenderer {
         this.begin();
     }
     renderCornParticles() {
-        if ((!this.cornTrails.size && !this.cornBursts.length) || !this.spriteRenderers.corn)
+        if (
+            (!this.cornTrails.size && !this.cornBursts.length) ||
+            !this.effectArt['grain-particles']
+        )
             return;
         const time = this.cornPresentationTime();
         if (!Number.isFinite(time)) return;
@@ -5881,7 +5842,7 @@ class GLRenderer {
                 matrix[3] = size;
                 matrix[4] = point.x;
                 matrix[5] = point.y;
-                this.spriteRenderers.popcorn.drawBurst(
+                this.effectArt['self-destruct-burst'].drawBurst(
                     matrix,
                     this.spriteDepthForWorld(world),
                     1 - t,
@@ -5908,7 +5869,7 @@ class GLRenderer {
                 matrix[3] = a;
                 matrix[4] = point.x;
                 matrix[5] = point.y;
-                this.spriteRenderers.corn.drawPopcorn(
+                this.effectArt['grain-particles'].drawPopcorn(
                     i % 3,
                     matrix,
                     this.spriteDepthForWorld(world),
@@ -6457,11 +6418,9 @@ class GLRenderer {
             this.renderStage = kind;
             const nextPainter =
                 kind === 'landingBundle' ||
-                (kind === 'projectile' && entity.payload?.type === 'acorn') ||
-                (kind === 'projectile' && entity.payload?.type === 'corn') ||
-                (kind === 'projectile' && entity.payload?.type === 'millet') ||
-                (kind === 'projectile' && entity.payload?.type === 'popcorn') ||
-                (kind === 'projectile' && GRAIN_SPRITES[entity.payload?.type]?.cannonAmmo) ||
+                (kind === 'projectile' &&
+                    GRAIN_SPRITES[entity.payload?.type]?.shell &&
+                    !GRAIN_SPRITES[entity.payload.type].shell.sheet) ||
                 kind === 'fruitProjectile' ||
                 kind === 'unitLob' ||
                 kind === 'thorn' ||
@@ -6487,7 +6446,7 @@ class GLRenderer {
                     });
                 else if (kind === 'building') this.drawBuildingSafely(entity);
                 else if (kind === 'landingBundle') this.drawLandingBundle(entity);
-                else if (kind === 'unitLob') this.drawCornKernel(entity, world);
+                else if (kind === 'unitLob') this.drawLobKernel(entity, world);
                 else if (kind === 'fruitProjectile') this.drawFruitProjectile(entity, world);
                 else if (kind === 'thorn') this.drawThorn(entity, world);
                 else if (kind === 'thornImpact') this.drawThornImpact(entity, world);
@@ -6831,7 +6790,7 @@ class GLRenderer {
             radius,
             this.snapshot,
         );
-        const progress = watermelonRollProgress(roll, model.tick);
+        const progress = GRAIN_SPRITES[entity.type].roll.progress(roll, model.tick);
         this.withWorldSpriteDepth(ground, () => {
             this.drawGroundCircle(x, z, spec.landing.radius, {
                 elevation: ground.y,

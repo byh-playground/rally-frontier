@@ -1,15 +1,16 @@
-import { UnitLobAttack } from './unit-lob-attack.js';
+import { UnitLobAttack } from './capabilities/unit-lob-attack.js';
 // The deterministic lockstep strategy simulation.
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { HeroDeployment } from './hero-deployment.js';
-import { HeroRollAttack } from './hero-roll-attack.js';
-import { FruitHeroAttack } from './fruit-hero-attack.js';
-import { UnitSpinAttack } from './unit-spin-attack.js';
-import { UnitSelfDestructAttack } from './unit-self-destruct-attack.js';
-import { UnitLeapAttack } from './unit-leap-attack.js';
-import { StickyCling } from './sticky-cling.js';
-import { ForwardCannon } from './forward-cannon.js';
-import { CannonRider } from './cannon-rider.js';
+import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
+import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
+import { UnitSpinAttack } from './capabilities/unit-spin-attack.js';
+import { UnitSelfDestructAttack } from './capabilities/unit-self-destruct-attack.js';
+import { UnitLeapAttack } from './capabilities/unit-leap-attack.js';
+import { StickyCling } from './capabilities/sticky-cling.js';
+import { ContactMelee } from './capabilities/contact-melee.js';
+import { ForwardCannon } from './capabilities/forward-cannon.js';
+import { CannonRider } from './capabilities/cannon-rider.js';
 import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './entities.js';
 import { StateContract, StateValue } from './components.js';
 import { CampaignMission } from './campaign-mission.js';
@@ -19,8 +20,8 @@ import { LaunchRules } from './launch-rules.js';
 import { ConstructionRules } from './construction-rules.js';
 import { LaunchImpact } from './launch-impact.js';
 import { LaunchInterception } from './launch-interception.js';
-import { UnitThornAttack } from './unit-thorn-attack.js';
-import { UnitBurstAttack } from './unit-burst-attack.js';
+import { UnitThornAttack } from './capabilities/unit-thorn-attack.js';
+import { UnitBurstAttack } from './capabilities/unit-burst-attack.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.js';
 import { CloneUtil, HashUtil, MapGeneration } from './map-generation.js';
@@ -1438,7 +1439,11 @@ class StrategySim {
                 else this.fireLaunchShell(fire);
             });
         }
-        if (this.campaignVolleyPractice && side === 0 && action.unitType === 'rice') {
+        if (
+            this.campaignVolleyPractice &&
+            side === 0 &&
+            this.rules.campaign.deck.includes(action.unitType)
+        ) {
             const index = this.rules.campaign.volleyGoals.findIndex(
                 (goal) =>
                     volley.length === goal.cannons && CampaignMission.volleyGoalContains(goal, aim),
@@ -2385,16 +2390,7 @@ class StrategySim {
             u.constructionWork = null;
             return null;
         }
-        if (d.contactMelee && u.contactAttack?.phase === 'recover') {
-            if (this.tick < u.contactAttack.untilTick) {
-                const speed = (d.speed * this.timedModifierPct(u, 'movePct')) / 100;
-                this.moveToward(u, u.contactAttack.retreatX, u.contactAttack.retreatY, speed, {
-                    allowContactRecovery: true,
-                });
-                return null;
-            }
-            u.contactAttack = null;
-        }
+        if (d.contactMelee && ContactMelee.recover(this, u, d)) return null;
         const site = d.construction ? this.constructionSite(u) : null;
         const activeSite = site?.construction ? site : null;
         if (d.spinAttack && u.spinAttack) {
@@ -2497,7 +2493,7 @@ class StrategySim {
 
         if (!found) {
             u.combat.cancelWindup();
-            if (d.contactMelee && u.contactAttack?.phase === 'charge') u.contactAttack = null;
+            if (d.contactMelee) ContactMelee.cancelCharge(u);
             u.target = null;
             if (this.updateConstructionWork(u, d, nonCombatMoveSpeed)) return null;
             if (d.cannonRider && CannonRider.holdBeside(this, u, nonCombatMoveSpeed)) return null;
@@ -2517,7 +2513,7 @@ class StrategySim {
                 !this.canSeeCombatTarget(u.side, t, vision[u.side]))
         ) {
             u.combat.cancelWindup();
-            if (d.contactMelee && u.contactAttack?.phase === 'charge') u.contactAttack = null;
+            if (d.contactMelee) ContactMelee.cancelCharge(u);
             u.target = null;
             const f = this.unitRallyPoint(u);
             this.moveToward(u, f.x, f.y, nonCombatMoveSpeed);
@@ -2540,7 +2536,7 @@ class StrategySim {
         if (dist > max || dist < min) {
             // Wind-up is valid only while the target remains in legal attack range.
             if (u.combat.windupPending()) u.combat.cancelWindup();
-            if (d.contactMelee && u.contactAttack?.phase === 'charge') u.contactAttack = null;
+            if (d.contactMelee) ContactMelee.cancelCharge(u);
             if (
                 !found.isBuilding &&
                 d.leapAttack &&
@@ -2556,48 +2552,18 @@ class StrategySim {
             return null;
         }
 
-        if (d.contactMelee) {
-            if (!u.combat.windupPending() && !u.combat.cooldownActive(this))
-                this.startAttackWindup(u, t, found.isBuilding ? 'building' : 'unit', d);
-            const contact = found.isBuilding
-                ? this.buildingClearanceDistance(u, t)
-                : InteractionGeometry.contact(u, t);
-            const readyToCharge = this.tickAttackWindup(u);
-            if (readyToCharge) {
-                if (u.contactAttack?.phase !== 'charge' || u.contactAttack.targetId !== t.id)
-                    u.contactAttack = {
-                        phase: 'charge',
-                        targetId: t.id,
-                        untilTick: this.tick + this.msTicks(ConstructionRules.chargeTimeoutMs),
-                    };
-                if (this.tick >= u.contactAttack.untilTick) {
-                    u.combat.cancelWindup();
-                    u.contactAttack = null;
-                    u.target = null;
-                    return null;
-                }
-            }
-            const fromX = u.x,
-                fromY = u.y;
-            if (readyToCharge && dist > contact)
-                this.moveToGoal(
-                    u,
-                    NavigationGoal.range(t.x, t.y, contact + NavigationGoal.ARRIVAL_INSET),
-                    moveSpeed *
-                        (d.contactChargeSpeedMultiplier ?? ConstructionRules.chargeSpeedMultiplier),
-                );
-            if (readyToCharge)
-                pendingContactAttacks?.push({
-                    unit: u,
-                    targetId: t.id,
-                    isBuilding: found.isBuilding,
-                    cooldown,
-                    beforeDistance: dist,
-                    fromX,
-                    fromY,
-                });
-            return null;
-        }
+        if (d.contactMelee)
+            return ContactMelee.charge(
+                this,
+                u,
+                t,
+                found,
+                d,
+                dist,
+                moveSpeed,
+                cooldown,
+                pendingContactAttacks,
+            );
 
         if (d.spinAttack && !d.spinAttack.arcSweep) return null;
         if (d.lobAttack && d.minRange && dist < InteractionGeometry.contact(u, t) + d.minRange) {
@@ -2638,115 +2604,6 @@ class StrategySim {
         return this.applyDamage(u.side, u.type, t, found.isBuilding, Math.floor(d.atk), u.id, {
             damageClass: UnitDefinition.damageClass(u.type),
         });
-    }
-    // Contact attacks commit after the shared motion solver, in the same stable
-    // unit order as target selection. Pending entries never cross a tick boundary.
-    beginContactAttackRecovery(u, target, cooldownMs, rebound = null) {
-        const dx = u.x - target.x,
-            dy = u.y - target.y,
-            length = Math.hypot(dx, dy) || 1;
-        if (rebound) {
-            const mass = this.mass(u),
-                speed = LaunchImpactRules.speedForDistance(
-                    rebound.distance,
-                    rebound.lift,
-                    this.tps,
-                );
-            u.contactAttack = null;
-            this.navigation.motion.applyImpulse(
-                u,
-                {
-                    x: (dx / length) * speed * mass,
-                    y: (dy / length) * speed * mass,
-                    z: rebound.lift * mass,
-                },
-                { sourceId: target.id },
-            );
-            return;
-        }
-        u.contactAttack = {
-            phase: 'recover',
-            retreatX: u.x + (dx / length) * ConstructionRules.retreatDistance,
-            retreatY: u.y + (dy / length) * ConstructionRules.retreatDistance,
-            untilTick:
-                this.tick +
-                Math.max(
-                    1,
-                    Math.round(this.msTicks(cooldownMs) * ConstructionRules.phaseRatios.recoverEnd),
-                ),
-        };
-    }
-    resolveContactAttacks(pending, vision) {
-        let winner = null;
-        for (const attack of pending) {
-            const u = attack.unit;
-            if (
-                !u.alive ||
-                u.combat.attackWindupTargetId !== attack.targetId ||
-                !this.tickAttackWindup(u)
-            )
-                continue;
-            const target = this.liveEntityRefById(
-                attack.targetId,
-                attack.isBuilding ? 'building' : 'unit',
-            )?.entity;
-            if (!target) {
-                u.combat.cancelWindup();
-                continue;
-            }
-            if (
-                !this.canAttackEntity(u.type, target, attack.isBuilding) ||
-                (!attack.isBuilding &&
-                    (!this.canTargetUnit(u.side, target) ||
-                        !this.canSeeCombatTarget(u.side, target, vision[u.side])))
-            ) {
-                u.combat.cancelWindup();
-                continue;
-            }
-            const contact = attack.isBuilding
-                ? this.buildingClearanceDistance(u, target)
-                : InteractionGeometry.contact(u, target);
-            const afterDistance = Math.hypot(target.x - u.x, target.y - u.y);
-            if (
-                this.interactionDistance(u, target, 'attack', 0) < 0 ||
-                afterDistance > contact + ConstructionRules.contactTolerance
-            )
-                continue;
-            u.combat.cancelWindup();
-            if (attack.isBuilding && StickyCling.tryBegin(this, u, target)) continue;
-            const definition = UnitDefinition.get(u.type);
-            const dx = target.x - attack.fromX,
-                dy = target.y - attack.fromY,
-                length = Math.hypot(dx, dy) || 1,
-                sourceApproach = ((u.x - attack.fromX) * dx + (u.y - attack.fromY) * dy) / length;
-            if (attack.beforeDistance - afterDistance < 1 / FP || sourceApproach < 1 / FP) {
-                this.beginContactAttackRecovery(
-                    u,
-                    target,
-                    definition.attackIntervalMs ?? definition.cooldownMs,
-                );
-                continue;
-            }
-            this.commitAttackTiming(u, definition, attack.cooldown);
-            u.combat.contactHitTick = this.tick;
-            this.beginContactAttackRecovery(
-                u,
-                target,
-                definition.attackIntervalMs ?? definition.cooldownMs,
-                definition.contactRebound,
-            );
-            winner =
-                this.applyDamage(
-                    u.side,
-                    u.type,
-                    target,
-                    attack.isBuilding,
-                    Math.floor(definition.atk),
-                    u.id,
-                    { damageClass: UnitDefinition.damageClass(u.type) },
-                ) || winner;
-        }
-        return winner;
     }
     // The shared height curve clears high obstacles; low swept contacts retire a shot early.
     // Impact damage and queued deployment use that actual contact point.
@@ -3897,7 +3754,7 @@ class StrategySim {
 
         mark = profile ? now() : 0;
         this.solveContacts();
-        winner = this.resolveContactAttacks(pendingContactAttacks, vision) || winner;
+        winner = ContactMelee.resolve(this, pendingContactAttacks, vision) || winner;
         for (const u of this.units) {
             this.navigation.motion.finishImpulseStep(u);
             const definition = UnitDefinition.get(u.type);

@@ -1,3 +1,5 @@
+import { UnitVisualDefinition } from '../definitions/units.js';
+
 // Presentation of authoritative launch motion. Positions, height and control recovery belong to the simulation.
 const clamp01 = (value) => Math.max(0, Math.min(1, value));
 const smooth = (value) => {
@@ -17,12 +19,8 @@ const identity = () => ({
     active: false,
     expression: null,
 });
-const HUSK_COLORS = Object.freeze({
-    rice: ['#e8c078', '#bd8744'],
-    pea: ['#a7c466', '#698b38'],
-    chestnut: ['#a5aa55', '#6f7834'],
-    redbean: ['#c76a60', '#8a393a'],
-});
+// Grain husk colors; a unit's visual definition may carry its own `husk` pair.
+const DEFAULT_HUSK = Object.freeze(['#e8c078', '#bd8744']);
 
 class LaunchImpactArt {
     static unitPose(unit, renderTick, tps = 20) {
@@ -96,13 +94,13 @@ class LaunchImpactArt {
         };
     }
 
-    static drawBurst(ctx, { x, y, ageMs, scale = 1, seed = 0, grainType = 'rice', power = 1 }) {
+    static drawBurst(ctx, { x, y, ageMs, scale = 1, seed = 0, grainType, power = 1 }) {
         const age = Number(ageMs) || 0;
         if (age < 0 || age > 680) return;
         const time = age / 1000,
             size = Math.max(0.01, scale),
             strength = 0.8 + 0.2 * clamp01(Number(power) || 0);
-        const colors = HUSK_COLORS[grainType] || HUSK_COLORS.rice;
+        const colors = UnitVisualDefinition.get(grainType)?.husk || DEFAULT_HUSK;
         ctx.save();
         ctx.translate(x, y);
         ctx.scale(size, size);
