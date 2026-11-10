@@ -1,5 +1,5 @@
 import { ResourceDisplay } from './resource-display.js';
-import { CAMPAIGN_STAGES } from '../definitions/campaign.js';
+import { CAMPAIGN_STAGES, CAMPAIGN_TIERS } from '../definitions/campaign.js';
 import { CampaignPresentation } from './campaign-presentation.js';
 import { unitCardStats } from './unit-card-stats.js';
 import './grain-portrait.js';
@@ -270,34 +270,9 @@ export class LaunchScreens {
             $('campaignTitle').textContent = progress.debugUnlocked
                 ? '캠페인 · 디버그 해금'
                 : '캠페인';
-            $('campaignStages').replaceChildren();
-            let stageNumber = 0;
-            CAMPAIGN_STAGES.forEach((stage) => {
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.className = 'launch-btn secondary campaign-stage';
-                button.disabled = !progress.canStart(stage);
-                const title = document.createElement('b');
-                title.textContent = stage.optional
-                    ? stage.title
-                    : `${++stageNumber}. ${stage.title}`;
-                const status = document.createElement('span');
-                status.className = 'campaign-stage-status';
-                const stageStatus = button.disabled
-                    ? '잠김'
-                    : progress.isComplete(stage)
-                      ? '완료'
-                      : '';
-                const reward = stage.rewardCard ? `보상 ${A.grainName(stage.rewardCard)}` : '';
-                status.textContent = [stage.optional ? '선택 연습' : '', stageStatus, reward]
-                    .filter(Boolean)
-                    .join(' · ');
-                const description = document.createElement('small');
-                description.textContent = stage.briefing;
-                button.append(title, status, description);
-                button.onclick = () => this.showCampaignBriefing(stage);
-                $('campaignStages').append(button);
-            });
+            $('campaignStages').replaceChildren(
+                ...CAMPAIGN_TIERS.map((tier, index) => this.renderCampaignTier(tier, index)),
+            );
             campaignDialog.showModal();
         };
         $('campaignCloseBtn').onclick = () => campaignDialog.close();
@@ -354,6 +329,104 @@ export class LaunchScreens {
         $('resultTitleBtn').onclick = () => A.leaveToTitle();
         $('resultDeckBtn').onclick = () => A.openRewardDeck(this.resultReward);
         $('resultNextCampaignBtn').onclick = () => this.showCampaignBriefing(this.resultNextStage);
+    }
+    // One row per tier, linked by connector lines. Inside a tier the stages stand side by side in no fixed order.
+    static renderCampaignTier(tier, index) {
+        const progress = this.actions.campaignProgress;
+        const open = progress.isTierOpen(tier.id);
+        const stages = CAMPAIGN_STAGES.filter((stage) => stage.tier === tier.id);
+        const row = document.createElement('section');
+        row.className = `campaign-tier${open ? '' : ' is-locked'}`;
+        const head = document.createElement('header');
+        head.className = 'campaign-tier-head';
+        const name = document.createElement('b');
+        name.textContent = tier.title;
+        head.append(name);
+        if (!open) {
+            const hint = document.createElement('span');
+            hint.textContent = '앞 단계에서 하나만 깨면 열려요';
+            head.append(hint);
+        }
+        const nodes = document.createElement('div');
+        nodes.className = 'campaign-nodes';
+        const heroes = stages.filter((stage) => stage.group === 'hero');
+        for (const stage of stages.filter((stage) => !stage.group))
+            nodes.append(this.campaignNode(stage));
+        if (heroes.length) nodes.append(this.campaignHeroNode(heroes));
+        row.append(head, nodes);
+        if (heroes.length) {
+            const branch = document.createElement('div');
+            branch.className = 'campaign-branch';
+            for (const stage of heroes) branch.append(this.campaignNode(stage, true));
+            row.append(branch);
+        }
+        if (index > 0) row.classList.add('has-link');
+        return row;
+    }
+    static campaignNode(stage, small = false) {
+        const progress = this.actions.campaignProgress;
+        const locked = !progress.canStart(stage);
+        const done = progress.isComplete(stage);
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `campaign-node${small ? ' is-small' : ''}${locked ? ' is-locked' : ''}${done ? ' is-done' : ''}`;
+        button.disabled = locked;
+        button.title = stage.title;
+        const name = stage.nodeLabel || this.actions.grainName(stage.rewardCard ?? stage.deck[0]);
+        button.setAttribute(
+            'aria-label',
+            `${stage.title}, ${locked ? '잠김' : done ? '완료' : '도전 가능'}`,
+        );
+        const art = document.createElement('span');
+        art.className = 'campaign-node-art';
+        if (stage.nodeMark) art.textContent = stage.nodeMark;
+        else {
+            const image = document.createElement('img');
+            image.alt = '';
+            this.actions.portraitSource(stage.rewardCard ?? stage.deck[0]).then((src) => {
+                image.src = src;
+            });
+            art.append(image);
+        }
+        const label = document.createElement('span');
+        label.className = 'campaign-node-name';
+        label.textContent = name;
+        button.append(art, label);
+        if (done) {
+            const check = document.createElement('i');
+            check.className = 'campaign-node-check';
+            check.textContent = '✓';
+            button.append(check);
+        }
+        button.onclick = () => this.showCampaignBriefing(stage);
+        return button;
+    }
+    // The hero group is a label node: its three training stages hang below it.
+    static campaignHeroNode(heroes) {
+        const progress = this.actions.campaignProgress;
+        const locked = heroes.every((stage) => !progress.canStart(stage));
+        const done = heroes.every((stage) => progress.isComplete(stage));
+        const node = document.createElement('div');
+        node.className = `campaign-node is-group${locked ? ' is-locked' : ''}${done ? ' is-done' : ''}`;
+        const art = document.createElement('span');
+        art.className = 'campaign-node-art';
+        const image = document.createElement('img');
+        image.alt = '';
+        this.actions.portraitSource(heroes[0].deck[0]).then((src) => {
+            image.src = src;
+        });
+        art.append(image);
+        const label = document.createElement('span');
+        label.className = 'campaign-node-name';
+        label.textContent = '영웅';
+        node.append(art, label);
+        if (done) {
+            const check = document.createElement('i');
+            check.className = 'campaign-node-check';
+            check.textContent = '✓';
+            node.append(check);
+        }
+        return node;
     }
     static showCampaignBriefing(stage) {
         if (!stage || !this.actions.campaignProgress.canStart(stage)) return;

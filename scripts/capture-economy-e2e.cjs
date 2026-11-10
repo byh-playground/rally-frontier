@@ -441,17 +441,21 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         setItem: (key, value) => storage.set(key, value),
                     });
                     check(!progress.canStart(lesson), 'practice opens after the first stage');
+                    check(
+                        !progress.canStart(bean),
+                        'basic tier stays closed before the first clear',
+                    );
                     progress.complete(first);
                     check(
                         progress.canStart(lesson) &&
                             progress.canStart(bean) &&
-                            progress.nextStage === bean,
-                        'practice is available without blocking the main campaign',
+                            progress.nextStage === lesson,
+                        'practice and the basic tier open after the first stage',
                     );
                     progress.complete(lesson);
                     check(
-                        progress.isComplete(lesson) && progress.nextStage === bean,
-                        'the optional clear saves separately from main campaign progression',
+                        progress.isComplete(lesson) && progress.nextStage?.tier === 'basics',
+                        'the practice clear saves separately and the next stage skips cleared ones',
                     );
 
                     const rice = LaunchRules.grain('rice');

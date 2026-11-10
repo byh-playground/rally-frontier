@@ -1,5 +1,5 @@
 import { RESOURCES, ResourceDisplay } from './ui/resource-display.js';
-import { CAMPAIGN_STAGES, campaignStage } from './definitions/campaign.js';
+import { campaignStage } from './definitions/campaign.js';
 import { PVP_MAP_PRESET_IDS, RangeUtil, SIM_TPS } from './core/game-rules.js';
 import { SimulationTiming } from './core/simulation-timing.js';
 import {
@@ -9280,21 +9280,7 @@ class MatchLifecycle {
         const cleared =
             stage && mine && (reason === 'base-destroyed' || reason === 'volley-practice');
         const reward = cleared ? campaignProgress.complete(stage) : null;
-        const followingStages = cleared
-            ? CAMPAIGN_STAGES.slice(CAMPAIGN_STAGES.indexOf(stage) + 1)
-            : [];
-        const next = cleared
-            ? stage.optional
-                ? (stage.mission?.heroLesson &&
-                      followingStages.find(
-                          (candidate) =>
-                              candidate.mission?.heroLesson &&
-                              !campaignProgress.isComplete(candidate) &&
-                              campaignProgress.canStart(candidate),
-                      )) ||
-                  campaignProgress.nextStage
-                : followingStages.find((candidate) => !candidate.optional)
-            : null;
+        const next = cleared ? campaignProgress.nextAfter(stage) : null;
         LaunchScreens.renderCampaignResult(reward, next);
         UiRegistry.refs.resultTitle.textContent = draw ? '무승부' : mine ? '승리' : '패배';
         if (reason === 'surrender')
@@ -9321,7 +9307,7 @@ class MatchLifecycle {
             UiRegistry.refs.resultText.textContent = stage.mission?.waves
                 ? '모든 공격을 막아 본진을 지켰습니다.'
                 : '제한 시간 동안 본진을 지켰습니다.';
-        if (cleared && !next && !stage.optional)
+        if (cleared && !next)
             UiRegistry.refs.resultText.textContent = '캠페인을 모두 완료했습니다.';
         const end = ActiveViewState.snap,
             stats = end?.launchStats,
