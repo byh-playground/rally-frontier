@@ -53,14 +53,17 @@ function createArena(unitType, opening, interception) {
     const state = sim.exportState();
     const siege = UnitDefinition.onlyAttacksBuildings(unitType),
         grows = UnitDefinition.get(unitType)?.growsCannon;
+    // A muzzle-wrapping unit can only hold a completed outpost, so the main base moves out of its sight.
+    const wrapsOutpost = !!UnitDefinition.get(unitType)?.stickyCling;
     const host = { x: x - VOLLEY_DISTANCE, y };
     const guest = { x: opening ? host.x + OPENING_SHOT_DISTANCE : x + (siege ? 150 : 460), y };
+    const base = wrapsOutpost ? { x: guest.x + 700, y } : guest;
     const target = opening ? guest : { x, y };
     const rangeLevel = opening ? OPENING_RANGE_LEVEL : 0;
     state.launchRangeLevel[0] = rangeLevel;
     state.mapDescriptor = {
         ...state.mapDescriptor,
-        spawns: { host, guest },
+        spawns: { host, guest: base },
         capturePoints: [],
         laneControlPoints: { top: [], mid: [host, guest], bot: [] },
         terrain: {
@@ -77,11 +80,11 @@ function createArena(unitType, opening, interception) {
     };
     state.capturePoints = [];
     state.flags = [
-        { ...guest, forced: false },
+        { ...base, forced: false },
         { ...host, forced: false },
     ];
     for (const building of state.buildings) {
-        Object.assign(building, building.side === 0 ? host : guest);
+        Object.assign(building, building.side === 0 ? host : base);
         // The showcase's artillery is available to launch, while its automatic fire stays quiet.
         // A rooting potato is left alone for the whole preview.
         if (interception || siege || grows)
@@ -91,6 +94,12 @@ function createArena(unitType, opening, interception) {
     }
     if (interception) state.launchRangeLevel[1] = interception.rangeLevel;
     sim.importState(state);
+    if (wrapsOutpost) {
+        const outpost = sim.spawnOutpost({ id: 'showcase', ...guest }, 1);
+        sim.completeConstruction(outpost);
+        outpost.hp = outpost.maxHp;
+        outpost.cooldownUntil = sim.msTicks(DURATION_SECONDS * 1000);
+    }
     sim.creditResources(0, LaunchRules.premiumWalletCap, 'premium');
     if (interception) {
         sim.creditResources(1, LaunchRules.premiumWalletCap, 'premium');
