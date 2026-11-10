@@ -13,32 +13,6 @@ function rotated(x, y, angle) {
     return [x * cos - y * sin, x * sin + y * cos];
 }
 
-function bananaLayers(data) {
-    const { ground, parts, rest, restAngles, mirrored } = data;
-    const shapes = {
-        farBoot: 'boot',
-        nearBoot: 'boot',
-        farArm: 'arm',
-        nearArm: 'arm',
-        face: 'neutral',
-        heldBoomerang: 'boomerang',
-        body: 'body',
-    };
-    const gripOffset = parts.arm.grip.map((value, index) => value - parts.arm.pivot[index]);
-    return data.layers.map((id) => ({
-        id,
-        part: shapes[id],
-        parent: id === 'heldBoomerang' ? 'nearArm' : null,
-        position: (id === 'heldBoomerang'
-            ? rest.nearArm.map((v, i) => v + gripOffset[i])
-            : rest[id]
-        ).map((v, i) => v - ground[i]),
-        rotation: restAngles[id] ?? 0,
-        mirror: mirrored.includes(id),
-        pivot: id === 'heldBoomerang' ? parts.boomerang.grip : undefined,
-    }));
-}
-
 function fruitRig(layers, armId) {
     const feet = layers.filter(({ part }) => part === 'boot' || part === 'foot');
     const torso = layers.filter((layer) => !layer.parent && !feet.includes(layer));
@@ -99,12 +73,12 @@ async function readAsset(root, name) {
     return response;
 }
 
-export async function loadFruitSpriteCanvas(type) {
+// `rig` is the hero's own art contract: { file, layers(layout), arm, combatAmmo }.
+export async function loadFruitSpriteCanvas(type, rig) {
     const root = new URL(type + '/', ROOT);
-    const rigFile = type === 'banana' ? 'rig.json' : 'layout.json';
     const [manifest, layout, bytes] = await Promise.all([
         readAsset(root, 'manifest.json').then((r) => r.json()),
-        readAsset(root, rigFile).then((r) => r.json()),
+        readAsset(root, rig.file).then((r) => r.json()),
         readAsset(root, 'parts.svg').then((r) => r.arrayBuffer()),
     ]);
     const spec = manifest?.assets?.['parts.svg'];
@@ -128,7 +102,7 @@ export async function loadFruitSpriteCanvas(type) {
         canvas.height = image.naturalHeight;
         if (canvas.width !== layout.sheet[0] || canvas.height !== layout.sheet[1])
             throw new Error('과일 영웅 스프라이트 시트 크기가 다릅니다: ' + type);
-        const layers = type === 'banana' ? bananaLayers(layout) : layout.standing;
+        const layers = rig.layers(layout);
         for (const {
             slot: [x, y, width, height],
         } of Object.values(layout.parts)) {
@@ -143,7 +117,7 @@ export async function loadFruitSpriteCanvas(type) {
                 throw new Error('과일 영웅 스프라이트 파츠가 시트를 벗어났습니다: ' + type);
         }
         canvas.getContext('2d').drawImage(image, 0, 0);
-        artwork.set(canvas, { type, layout, layers });
+        artwork.set(canvas, { rig, layout, layers });
         return canvas;
     } finally {
         URL.revokeObjectURL(url);
@@ -181,10 +155,10 @@ export class FruitSpriteRenderer {
         this.context = context;
         this.mesh = context.acquireMeshRenderer();
         this.actors = new Set();
-        const { type, layout, layers } = artwork.get(canvas);
+        const { rig, layout, layers } = artwork.get(canvas);
         this.layout = layout;
         this.layers = layers;
-        this.rig = fruitRig(layers, type === 'banana' ? 'nearArm' : 'rightHand');
+        this.rig = fruitRig(layers, rig.arm);
         this.heldIndex = layers.findIndex(({ id }) => id === 'heldBoomerang');
         if (this.heldIndex >= 0) {
             const held = layers[this.heldIndex],
@@ -268,7 +242,7 @@ export class FruitSpriteRenderer {
             );
         };
         this.ammo = loosePart(layout.cannonAmmo.part, layout.cannonAmmo.pivot);
-        this.combatAmmo = loosePart(type === 'banana' ? 'boomerang' : 'berry');
+        this.combatAmmo = loosePart(rig.combatAmmo);
         context.onDispose(() => this.dispose());
     }
 

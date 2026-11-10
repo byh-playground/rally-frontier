@@ -3,153 +3,16 @@ import { CAMPAIGN_STAGES, CAMPAIGN_TIERS } from '../definitions/campaign.js';
 import { CampaignPresentation } from './campaign-presentation.js';
 import { unitCardStats } from './unit-card-stats.js';
 import './grain-portrait.js';
+import { UNITS, unitCard } from '../units/index.js';
 
 // Launch match screens (title, friend, help, in-game HUD and cards, match menu, result) and their addresses.
 // Routes: #/ title, #/friend, #/help, #/play, #/play/menu, #/play/help, #/play/<grain> card detail, #/result.
 // The game owns matches; this module owns which screen and sheet the address shows, and asks the game through `actions`.
-const GRAIN_COPY = Object.freeze({
-    watermelon: {
-        role: '범위 근접 영웅',
-        feature: '범위 평타 4회 → 양팔 360도 휩쓸기',
-        land: '영웅 한 명 출격',
-        fire: '영웅 단발',
-        notes: [
-            '평타 네 번 뒤 양팔로 적을 휩쓸어요.',
-            '스킬로 뛰어올라 착지한 뒤 적을 향해 굴러요.',
-        ],
-    },
-    banana: {
-        role: '왕복 원거리 영웅',
-        feature: '네 번째 평타 · 왕복 관통',
-        land: '영웅 한 명 출격',
-        fire: '영웅 단발',
-        notes: [
-            '네 번째 평타의 금빛 부메랑이 적을 왕복 관통해요.',
-            '스킬은 더 멀리 날아가는 큰 부메랑을 던져요.',
-        ],
-    },
-    grape: {
-        role: '곡사 원거리 영웅',
-        feature: '네 번째 평타 · 곡사탄 3알',
-        land: '영웅 한 명 출격',
-        fire: '영웅 단발',
-        notes: [
-            '네 번째 평타마다 표적의 앞·중앙·뒤에 곡사탄을 던져요.',
-            '스킬로 포도알 여덟 알을 곡사 연사해요.',
-        ],
-    },
-    rice: {
-        role: '기동 근접',
-        feature: '빠른 이동 · 산탄 투입',
-        land: '넓게 흩어짐',
-        fire: '5갈래 산탄',
-        notes: ['산탄 다섯 발로 좌우 전열을 훑어요.'],
-    },
-    millet: {
-        role: '기동 근접',
-        feature: '비전투 이동 2배 · 몸통 돌진',
-        land: '앞뒤로 10명씩 투입',
-        fire: '앞뒤 2발',
-        notes: ['앞뒤에 투입되어 빠르게 달리고 몸으로 부딪쳐요.'],
-    },
-    pea: {
-        role: '전열 근접',
-        feature: '높은 체력 · 중심 강타',
-        land: '한 줄로 착지',
-        fire: '단발 · 중심 강타',
-        notes: ['좁은 착탄점에 큰 피해를 주고 전열을 잡아요.'],
-    },
-    peanut: {
-        role: '건물 돌격',
-        feature: '건물만 몸통으로 공격',
-        land: '발사 방향과 직각으로 한 줄 배치',
-        fire: '단발',
-        notes: [
-            '착지하면 시야에 들어온 가까운 적 건물에 달려가 들이받아요.',
-            '적 병사가 길을 막으면 아군의 엄호가 필요해요.',
-        ],
-    },
-    'sticky-rice': {
-        role: '거점 봉쇄',
-        feature: '적 거점 포구에 붙어 발사·포탑 정지',
-        land: '발사 방향과 직각으로 한 줄 배치',
-        fire: '단발',
-        notes: [
-            '착지하면 시야에 들어온 가까운 적 건물로 달려가 몸통박치기로 공격해요. 완공된 적 거점에 닿으면 한 명이 포구에 1초 붙어요.',
-            '붙어 있는 동안 그 거점은 발사와 포탑 공격을 못 해요. 붙었던 병사는 5초 뒤 다시 붙을 수 있어요.',
-        ],
-    },
-    potato: {
-        role: '전진 대포',
-        feature: '착지 5초 뒤 그 자리에 전진 대포',
-        land: '대포마다 한 명, 착지점에 바로',
-        fire: '단발 · 사거리 75%',
-        notes: [
-            '착지한 자리에 파고들어 5초 뒤 전진 대포가 돼요. 뿌리 내리는 동안 공격받아 쓰러지면 대포는 생기지 않아요.',
-            '전진 대포는 거점 대포처럼 발사하지만 포탑·생산·점령이 없고, 체력이 초당 10씩 줄어 약 15초 뒤 사라져요.',
-            '일제 발사에 참여한 대포마다 감자가 한 명씩 나가 그만큼 전진 대포가 생겨요. 비용은 한 번만 내요.',
-        ],
-    },
-    'black-bean': {
-        role: '재발사 근접',
-        feature: '착지 5초 뒤 아군 대포로 돌아가 스스로 재발사',
-        land: '착지점에 한 명씩',
-        fire: '단발',
-        notes: [
-            '착지하면 근처 적과 싸우다가, 5초가 지나면 싸우는 중이라도 가까운 아군 대포로 두 배 속도로 달려가 올라타요.',
-            '포구에서 0.5초 뒤 혼자 날아가요. 대포 사거리 안의 가장 가까운 적 병사, 없으면 적 건물, 둘 다 없으면 적 본진에 더 가까운 아군 대포 곁으로 날아가요. 비용과 재장전은 쓰지 않아요.',
-            '시야 거리 안에서 곧게 걸어갈 수 있는 아군 대포만 골라요. 찹쌀이 붙은 대포는 건너뛰고, 가장 앞 대포에서는 곁에 머물며 다가오는 적과 싸워요.',
-        ],
-    },
-    acorn: {
-        role: '범위 근접',
-        feature: '회전 공격 · 밀쳐내기',
-        land: '한 발당 두 명',
-        fire: '범위가 좁아지는 3연사',
-        notes: ['탄착 범위가 좁아지는 3연사 뒤 회전으로 적을 밀어요.'],
-    },
-    corn: {
-        role: '범위 원거리',
-        feature: '알 착지 후 지연 폭발',
-        land: '착점에 6명 모여 투입',
-        fire: '높고 느린 곡사 단발',
-        notes: ['모여 착지한 뒤 알을 던져 지연 폭발을 일으켜요.'],
-    },
-    popcorn: {
-        role: '자폭 근접',
-        feature: '낮게 도약 · 착지 자폭',
-        land: '좌우에 5명씩 투입',
-        fire: '좌우 2발',
-        notes: ['좌우에 착지한 뒤 적에게 뛰어들어 자폭해요.'],
-    },
-    chestnut: {
-        role: '단일 원거리',
-        feature: '가시로 먼 적 공격',
-        land: '발사 방향과 직각으로 6명 배치',
-        fire: '낮고 빠른 단발',
-        notes: ['한 줄로 펼쳐져 거리를 두고 가시를 쏴요.'],
-    },
-    'sunflower-seed': {
-        role: '대공 호위',
-        feature: '투입탄 우선 · 씨앗 연사',
-        land: '착점에 모여 투입',
-        fire: '단발',
-        notes: [],
-        airNote: '적 투입탄을 먼저 연사하고, 공중에 적이 없으면 지상을 쏴요.',
-    },
-    redbean: {
-        role: '돌격 근접',
-        feature: '높이 뛰어 내려찍기 · 착지 충격파',
-        land: '착지 후 돌격',
-        fire: '한 지점을 덮는 3연사',
-        notes: ['시간차로 투입되어 적에게 뛰어들어 내려찍어요.'],
-    },
-});
 const SCREENS = new Set(['', 'friend', 'help', 'play', 'result']);
 
 export class LaunchScreens {
     static grainInfo(type) {
-        return GRAIN_COPY[type] || { role: '병사', feature: '', land: '', fire: '', notes: [] };
+        return unitCard(type)?.card || { role: '병사', feature: '', land: '', fire: '', notes: [] };
     }
     // actions: { inMatch(), hasResult(), startAiMatch(), openMenu(), closeMenu(), grains(), grainName(type), grainStats(type),
     //           portraitSource(type), toggleSound(), soundOn(), createRoom(), joinRoom(code), leaveToTitle() }
@@ -171,9 +34,36 @@ export class LaunchScreens {
             normalize: (route) =>
                 SCREENS.has(route.screen) ? route : { screen: '', item: '', query: '' },
         });
+        this.renderUnitHelp();
         this.bindButtons();
         this.installTitleBattle();
         this.navigation.subscribe((route) => this.apply(route), { immediate: true });
+    }
+    // Unit-specific help lives with each unit (src/units/<id>/index.js `help`); the page holds only the slots.
+    static renderUnitHelp() {
+        const guide = document.querySelector('#launchHelpSheet .help-guide');
+        const names = UNITS.filter((card) => card.hero).map((card) => card.unit.name);
+        for (const slot of guide.querySelectorAll('[data-unit-hero-names]'))
+            slot.replaceWith(names.join(', '));
+        for (const slot of guide.querySelectorAll('[data-unit-help]')) {
+            const entries = UNITS.flatMap((card) =>
+                card.help.filter((entry) => entry.section === slot.dataset.unitHelp),
+            );
+            slot.replaceWith(
+                ...entries.map(({ summary, paragraphs }) => {
+                    const details = document.createElement('details'),
+                        title = document.createElement('summary');
+                    title.textContent = summary;
+                    details.append(title);
+                    for (const text of paragraphs) {
+                        const p = document.createElement('p');
+                        p.textContent = text;
+                        details.append(p);
+                    }
+                    return details;
+                }),
+            );
+        }
     }
     static go(screen, item = '') {
         this.navigation?.navigate({ screen, item, query: '' });
@@ -732,7 +622,7 @@ ${panels.map((body, index) => `<section class="unit-info-panel" role="tabpanel" 
     }
 
     static landingLabel(type) {
-        return GRAIN_COPY[type]?.land || '';
+        return unitCard(type)?.card.land || '';
     }
     // Top HUD: both main bases' health and the elapsed match time. enemyDirection is null while the base is on screen.
     static renderHud({ myHpPct, enemyHpPct, elapsedMs, enemyDirection }) {
@@ -783,7 +673,7 @@ ${panels.map((body, index) => `<section class="unit-info-panel" role="tabpanel" 
             BONUS = passengerCount - STATS.count,
             TEXT = SHARED
                 ? `${NAME} ${passengerCount}기${BONUS > 0 ? ` (+${BONUS})` : ''} · 대포 ${cannonCount}문`
-                : `${NAME} ×${passengerCount} · ${GRAIN_COPY[type]?.fire || this.landingLabel(type)} · 최대 발사 ${maxReach.toLocaleString('ko-KR')}`,
+                : `${NAME} ×${passengerCount} · ${unitCard(type)?.card.fire || this.landingLabel(type)} · 최대 발사 ${maxReach.toLocaleString('ko-KR')}`,
             COST = SHARED ? ResourceDisplay.costText(STATS) : '',
             HINT = showVolleyHint ? '대포의 사거리가 겹치면 같은 값으로 병력이 더 나와요.' : '';
         LABEL.classList.toggle('shared', SHARED);

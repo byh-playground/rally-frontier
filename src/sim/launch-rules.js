@@ -1,25 +1,14 @@
 // Cannon launch rules: income, wallet and grain data.
 import { RangeUtil } from '../core/game-rules.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
-import { StickyCling } from './sticky-cling.js';
-
-// Existing corn shell behaviour shared with the draft single-stalk deployment.
-// Millet overrides the approved deployment and impact values below.
-const SINGLE_BUNDLE_SHELL = Object.freeze({
-    reach: 0.85,
-    speed: 750,
-    impact: 25,
-    splash: 100,
-    land: 'bundle',
-    fire: Object.freeze({ mode: 'single' }),
-});
-const HERO_SHELL = Object.freeze({ ...SINGLE_BUNDLE_SHELL, cost: 0, count: 1 });
-const PEA_BUNDLE_COST = 45;
+import { StickyCling } from './capabilities/sticky-cling.js';
+import { RESOURCE_SCALE } from '../units/baseline.js';
+import { UNITS } from '../units/index.js';
 
 // 발사전: 대포가 유닛 뭉치를 쏜다. 거리는 누른 시간만으로 정해지고, 조준 중에는 착지 원으로 미리 보인다(D-196).
 // 한 발이 무겁다: 자원 단위는 기존 경제의 5배 환산 기준(D-233·D-235), 폭발 중심일수록 피해가 크다(D-230), 곡물마다 발사 방식이 다르다(D-234).
 class LaunchRules {
-    static resourceScale = 5;
+    static resourceScale = RESOURCE_SCALE;
     static walletCap = 100 * this.resourceScale;
     static populationLimit = 300;
     static startingWallet = this.walletCap;
@@ -102,189 +91,11 @@ class LaunchRules {
     static unitImpactScale = 0.75;
     static unitImpactPeak = 4;
     static buildingImpactPeak = 3;
-    static heroCard = 'watermelon';
-    static heroTypes = Object.freeze([LaunchRules.heroCard, 'banana', 'grape']);
-    static grains = Object.freeze({
-        watermelon: Object.freeze({ ...HERO_SHELL, shellHp: 65 }),
-        banana: Object.freeze({ ...HERO_SHELL, shellHp: 50 }),
-        grape: Object.freeze({ ...HERO_SHELL, shellHp: 55 }),
-        // 산탄: 한 번에 여러 갈래, 갈래마다 폭발은 작다.
-        rice: Object.freeze({
-            cost: 35 * this.resourceScale,
-            count: 20,
-            shellHp: 10,
-            reach: 1,
-            speed: 600,
-            impact: 10,
-            splash: 180,
-            land: 'scatter',
-            spread: 260,
-            fire: Object.freeze({
-                mode: 'shotgun',
-                pellets: 5,
-                spread: 400,
-                impactScale: 0.6,
-                splashScale: 0.7,
-            }),
-        }),
-        // 단발: 폭발이 크고 중심 강타가 가장 세다.
-        pea: Object.freeze({
-            cost: PEA_BUNDLE_COST * this.resourceScale,
-            count: 12,
-            shellHp: 40,
-            reach: 0.85,
-            speed: 750,
-            impact: 40,
-            splash: 80,
-            land: 'line',
-            spacing: 22,
-            fire: Object.freeze({ mode: 'single' }),
-        }),
-        // Provisional corn deployment: a single shell releases one grouped squad.
-        corn: Object.freeze({
-            ...SINGLE_BUNDLE_SHELL,
-            shellHp: 30,
-            speed: 550,
-            arcScale: 1.5,
-            splash: 65,
-            land: 'compact',
-            deployTogether: true,
-            cost: 20 * this.resourceScale,
-            premiumCost: 15 * this.resourceScale,
-            count: 6,
-        }),
-        popcorn: Object.freeze({
-            ...SINGLE_BUNDLE_SHELL,
-            shellHp: 15,
-            impact: 15,
-            splash: 60,
-            fire: Object.freeze({
-                mode: 'split',
-                offsets: Object.freeze([0, 0]),
-                lateralSpread: 160,
-            }),
-            cost: 35 * this.resourceScale,
-            count: 10,
-        }),
-        millet: Object.freeze({
-            ...SINGLE_BUNDLE_SHELL,
-            shellHp: 20,
-            cost: 40 * this.resourceScale,
-            count: 20,
-            impact: 10,
-            splash: 45,
-            deployTogether: true,
-            fire: Object.freeze({ mode: 'split', offsets: Object.freeze([-100, 0]) }),
-        }),
-        chestnut: Object.freeze({
-            shellHp: 25,
-            cost: 25 * this.resourceScale,
-            premiumCost: 5 * this.resourceScale,
-            count: 6,
-            reach: 0.85,
-            speed: 1000,
-            arcScale: 0.65,
-            impact: 10,
-            splash: 50,
-            land: 'transverse',
-            spacing: 35,
-            deployTogether: true,
-            fire: Object.freeze({ mode: 'single' }),
-        }),
-
-        // 연사: 같은 곳에 시간차로 세 번 떨어진다.
-        redbean: Object.freeze({
-            cost: 60 * this.resourceScale,
-            count: 10,
-            shellHp: 18,
-            reach: 0.75,
-            speed: 750,
-            impact: 20,
-            splash: 95,
-            land: 'rush',
-            rushMs: 2000,
-            rushPct: 150,
-            fire: Object.freeze({ mode: 'burst', shots: 3, gapMs: 300 }),
-        }),
-        // 도토리는 한 발당 두 병사씩 세 발을 쏜다.
-        acorn: Object.freeze({
-            shellHp: 35,
-            cost: 35 * this.resourceScale,
-            premiumCost: 10 * this.resourceScale,
-            count: 6,
-            reach: 0.85,
-            speed: 750,
-            impact: 25,
-            splash: 100,
-            land: 'bundle',
-            fire: Object.freeze({
-                mode: 'burst',
-                shots: 3,
-                gapMs: 450,
-                impacts: Object.freeze([15, 25, 40]),
-                splashes: Object.freeze([90, 60, 40]),
-            }),
-        }),
-        'sunflower-seed': Object.freeze({
-            ...SINGLE_BUNDLE_SHELL,
-            shellHp: 25,
-            cost: 40 * this.resourceScale,
-            premiumCost: 10 * this.resourceScale,
-            count: 6,
-            impact: 10,
-            splash: 50,
-            land: 'compact',
-            deployTogether: true,
-        }),
-        peanut: Object.freeze({
-            ...SINGLE_BUNDLE_SHELL,
-            cost: PEA_BUNDLE_COST * this.resourceScale,
-            count: 5,
-            shellHp: 25,
-            impact: 10,
-            splash: 50,
-            land: 'transverse',
-            spacing: 32,
-            deployTogether: true,
-        }),
-        // 비용·인원은 확정, 포탄 성능은 땅콩의 초안을 따른다.
-        'sticky-rice': Object.freeze({
-            ...SINGLE_BUNDLE_SHELL,
-            cost: 20 * this.resourceScale,
-            premiumCost: 5 * this.resourceScale,
-            count: 5,
-            shellHp: 25,
-            impact: 10,
-            splash: 50,
-            land: 'transverse',
-            spacing: 32,
-            deployTogether: true,
-        }),
-        // 비용·사거리(일반의 75%)·대포당 한 명은 확정, 포탄 체력·위력·반경은 찹쌀과 같은 초안이다.
-        // Every cannon in a volley carries its own potato, so the volley grows one cannon per participant.
-        potato: Object.freeze({
-            ...SINGLE_BUNDLE_SHELL,
-            cost: 5 * this.resourceScale,
-            premiumCost: 15 * this.resourceScale,
-            reach: 0.75,
-            count: 1,
-            perCannonLoad: true,
-            shellHp: 25,
-            impact: 10,
-            splash: 50,
-        }),
-        // 비용·인원은 확정, 포탄 체력·위력·반경은 찹쌀과 같은 초안이다.
-        // A soldier that launches itself again rides one of these shells alone (CannonRider).
-        'black-bean': Object.freeze({
-            ...SINGLE_BUNDLE_SHELL,
-            cost: 10 * this.resourceScale,
-            premiumCost: 10 * this.resourceScale,
-            count: 10,
-            shellHp: 25,
-            impact: 10,
-            splash: 50,
-        }),
-    });
+    // Each card's cannon shell comes from its unit folder; heroes are the cards marked hero.
+    static grains = Object.freeze(Object.fromEntries(UNITS.map((card) => [card.id, card.payload])));
+    static heroTypes = Object.freeze(UNITS.filter((card) => card.hero).map((card) => card.id));
+    // The starter deck's hero.
+    static heroCard = LaunchRules.heroTypes[0];
     static deck = Object.freeze(
         Object.keys(LaunchRules.grains).filter((type) => !LaunchRules.isHeroType(type)),
     );

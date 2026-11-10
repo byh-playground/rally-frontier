@@ -8,9 +8,9 @@ import {
 } from './components.js';
 import { LaunchRules } from './launch-rules.js';
 import { LaunchImpact } from './launch-impact.js';
-import { FruitHeroAttack } from './fruit-hero-attack.js';
-import { StickyCling } from './sticky-cling.js';
-import { CannonRider } from './cannon-rider.js';
+import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
+import { StickyCling } from './capabilities/sticky-cling.js';
+import { CannonRider } from './capabilities/cannon-rider.js';
 import { MapGeneration } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';

@@ -1,6 +1,6 @@
 import { UnitDefinition } from '../definitions/units.js';
-import { HeroRollAttack } from './hero-roll-attack.js';
-import { FruitHeroAttack } from './fruit-hero-attack.js';
+import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
+import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { LaunchRules } from './launch-rules.js';
 import { NavigationGoal, UnitMotion } from './navigation.js';
 

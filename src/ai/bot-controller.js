@@ -8,6 +8,7 @@ import { HashUtil } from '../sim/map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { SimulationTiming } from '../core/simulation-timing.js';
+import { BOT_LAUNCH_RULES } from '../sim/capabilities/bot-launch-rules.js';
 
 // Tracks the bot's commands from offer to the sim's receipt, so a shot already paid for
 // is not paid again from a snapshot that predates it.
@@ -364,6 +365,27 @@ class BotController {
         return unit?.cost <= budget ? unit : null;
     }
 
+    // Runs the capability-owned launch rules of one stage (src/sim/capabilities/bot-launch-rules.js).
+    runCapabilityLaunch(stage, context) {
+        for (const rule of BOT_LAUNCH_RULES) {
+            if (rule.stage !== stage) continue;
+            const units = context.cards.filter(
+                ({ type }) => UnitDefinition.get(type)[rule.capability],
+            );
+            if (!units.length) continue;
+            const action = rule.shot({
+                ...context,
+                units,
+                nearestShot: BOT_NEAREST_SHOT,
+                maxReachOf: BOT_MAX_REACH_OF,
+            });
+            if (action) {
+                this.fire(action.shot, action.unit, context.level, context.state.tick, true);
+                return true;
+            }
+        }
+        return false;
+    }
     runLaunch(state) {
         const side = this.side,
             distance = BotController.distance,
@@ -374,9 +396,13 @@ class BotController {
             cards = state.decks[side]
                 .filter((type) => !LaunchRules.isHeroType(type))
                 .map((type) => ({ type, ...LaunchRules.payload(type) })),
-            // A potato roots where it lands, so it never walks to a target; it only has its own shot below.
-            planters = cards.filter(({ type }) => UnitDefinition.get(type).growsCannon),
-            deck = cards.filter(({ type }) => !UnitDefinition.get(type).growsCannon),
+            // Cards whose capability rule owns their shot never join ordinary targeting.
+            deck = cards.filter(
+                ({ type }) =>
+                    !BOT_LAUNCH_RULES.some(
+                        (rule) => rule.ownShotOnly && UnitDefinition.get(type)[rule.capability],
+                    ),
+            ),
             groundDeck = deck.filter(({ type }) => UnitDefinition.get(type).canAttackGround);
         const busy = new Set(
             this.commandExecutor.reservations().map(({ action }) => action.cannonId),
@@ -415,25 +441,8 @@ class BotController {
             if (unit) this.fire(threat, unit, level, state.tick, true);
             return;
         }
-        // Sticky rice goes straight at a completed enemy outpost in range.
-        const clingers = deck.filter(
-            ({ type, cost, premiumCost }) =>
-                UnitDefinition.get(type).stickyCling &&
-                cost <= state.wallet[side] &&
-                premiumCost <= state.premiumWallet[side],
-        );
-        const cling =
-            clingers.length &&
-            BotController.nearestShot(
-                cannons,
-                hostile.filter((b) => b.type === outpost && !b.construction),
-                clingers,
-                level,
-            );
-        if (cling) {
-            this.fire(cling, cling.units[0], level, state.tick, true);
-            return;
-        }
+        const rules = { state, side, cards, cannons, hostile, enemyBase, level, distance };
+        if (this.runCapabilityLaunch('opening', rules)) return;
 
         const budget =
             state.wallet[side] -
@@ -505,29 +514,7 @@ class BotController {
             BotController.nearestShot(cannons, enemies, groundDeck, level) ||
             premiumShot ||
             BotController.nearestShot(cannons, hostile, deck, level);
-        // With nothing else to hit, a potato goes as far toward the enemy base as the cannon reaches.
-        const planter =
-            !shot &&
-            enemyBase &&
-            planters.find(
-                ({ cost, premiumCost }) =>
-                    cost <= budget && premiumCost <= state.premiumWallet[side],
-            );
-        if (planter) {
-            const cannon = cannons.reduce((best, candidate) =>
-                distance(candidate, enemyBase) < distance(best, enemyBase) ? candidate : best,
-            );
-            const target = {
-                cannon,
-                target: enemyBase,
-                distance: Math.min(
-                    distance(cannon, enemyBase),
-                    LaunchRules.maxReachOf(planter.type, level),
-                ),
-            };
-            this.fire(target, planter, level, state.tick, true);
-            return;
-        }
+        if (!shot && this.runCapabilityLaunch('fallback', { ...rules, budget })) return;
         if (!shot && enemyBase && !objectives.some(({ supported }) => supported)) {
             const cannon = cannons.reduce((best, candidate) =>
                 distance(candidate, enemyBase) < distance(best, enemyBase) ? candidate : best,
@@ -544,5 +531,8 @@ class BotController {
         if (unit) this.fire(shot, unit, level, state.tick);
     }
 }
+
+const BOT_NEAREST_SHOT = (...args) => BotController.nearestShot(...args);
+const BOT_MAX_REACH_OF = (type, level) => LaunchRules.maxReachOf(type, level);
 
 export { BotController };
