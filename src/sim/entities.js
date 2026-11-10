@@ -11,6 +11,7 @@ import { LaunchImpact } from './launch-impact.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { StickyCling } from './capabilities/sticky-cling.js';
 import { CannonRider } from './capabilities/cannon-rider.js';
+import { RollingBody } from './capabilities/rolling-body.js';
 import { MapGeneration } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
@@ -61,6 +62,8 @@ class Unit {
             data.stickyCling = StickyCling.initialState();
         if (UnitDefinition.get(data.type)?.cannonRider && !Object.hasOwn(data, 'cannonRide'))
             data.cannonRide = CannonRider.initialState();
+        if (UnitDefinition.get(data.type)?.rolling && !Object.hasOwn(data, 'rolling'))
+            data.rolling = RollingBody.initialState();
         if (UnitDefinition.get(data.type)?.selfDestruct && !Object.hasOwn(data, 'selfDestruct'))
             data.selfDestruct = null;
         if (UnitDefinition.get(data.type)?.leapAttack && !Object.hasOwn(data, 'leapAttack'))

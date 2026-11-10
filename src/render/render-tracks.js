@@ -66,6 +66,8 @@ class UnitRenderObject extends RenderField {
                 'selfDestruct.startTick',
                 'selfDestruct.endTick',
                 'cannonTick',
+                'rolling.bumpTick',
+                'rolling.wallTick',
             ].map((k) => ['entity.' + k, RenderField.STEP]),
         ),
     };

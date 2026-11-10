@@ -14,6 +14,7 @@ import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { UnitLeapAttack } from './capabilities/unit-leap-attack.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
+import { RollingBody } from './capabilities/rolling-body.js';
 
 // Interaction geometry owns the legal arrival set; the distance field only leads units to it.
 // Goal regions are continuous (discs/annuli), not a fixed number of radial probes.
@@ -344,10 +345,10 @@ class UnitMotion {
         }
         return m;
     }
-    removeInwardVelocity(m, nx, ny) {
+    removeInwardVelocity(m, nx, ny, restitution = LaunchImpactRules.restitution) {
         const inward = m.vxFP * nx + m.vyFP * ny;
         if (inward >= 0) return;
-        const factor = 1 + LaunchImpactRules.restitution;
+        const factor = 1 + restitution;
         m.vxFP = Math.round(m.vxFP - factor * inward * nx);
         m.vyFP = Math.round(m.vyFP - factor * inward * ny);
         // Rounding may leave a sub-quantum inward component. Round conservatively along the dominant normal axis.
@@ -453,6 +454,7 @@ class UnitMotion {
                             nx: hit.nx,
                             ny: hit.ny,
                             key: 'surface:' + u.id + ':' + String(hit.key || 'surface'),
+                            obstacleId: hit.obstacle ? hit.obstacle.id : null,
                         });
                 }
                 if (!u.alive || !u.impactMotion || u.heroRoll || FruitHeroAttack.blocksMovement(u))
@@ -555,7 +557,21 @@ class UnitMotion {
                 if (j >= 0 && repeats >= LaunchImpactRules.maxZeroTimeContactIterations) {
                     // A degenerate zero-time contact sticks locally. Unrelated bodies and the world clock keep advancing.
                     const other = units[j],
-                        ma = sim.mass(u),
+                        velocityA = { x: vx[i], y: vy[i] },
+                        velocityB = { x: vx[j], y: vy[j] };
+                    // A rolling body bounces off once instead of sticking (RollingBody.bounceStuck); a
+                    // contact that still recurs after that sticks like any other.
+                    if (
+                        repeats === LaunchImpactRules.maxZeroTimeContactIterations &&
+                        RollingBody.bounceStuck(this, u, other, nx, ny, velocityA, velocityB)
+                    ) {
+                        vx[i] = velocityA.x;
+                        vy[i] = velocityA.y;
+                        vx[j] = velocityB.x;
+                        vy[j] = velocityB.y;
+                        continue;
+                    }
+                    const ma = sim.mass(u),
                         mb = sim.mass(other),
                         commonX = (vx[i] * ma + vx[j] * mb) / (ma + mb),
                         commonY = (vy[i] * ma + vy[j] * mb) / (ma + mb);
@@ -617,7 +633,17 @@ class UnitMotion {
                     vx[j] = (other.impactMotion?.vxFP || 0) / FP;
                     vy[j] = (other.impactMotion?.vyFP || 0) / FP;
                 } else if (u.impactMotion) {
-                    const m = u.impactMotion;
+                    const m = u.impactMotion,
+                        restitution = RollingBody.surfaceRestitution(u);
+                    if (restitution !== null)
+                        RollingBody.hitSurface(
+                            sim,
+                            u,
+                            contact.obstacleId,
+                            nx,
+                            ny,
+                            -(vx[i] * nx + vy[i] * ny),
+                        );
                     this.applyImpulse(
                         u,
                         {
@@ -631,7 +657,7 @@ class UnitMotion {
                             originY: m.originY,
                         },
                     );
-                    this.removeInwardVelocity(m, nx, ny);
+                    this.removeInwardVelocity(m, nx, ny, restitution ?? undefined);
                     vx[i] = m.vxFP / FP;
                     vy[i] = m.vyFP / FP;
                 } else {
@@ -657,7 +683,8 @@ class UnitMotion {
     finishImpulseStep(u) {
         const sim = this.navigation.sim,
             m = u.impactMotion;
-        if (!m) return;
+        // A rolling walnut's speed is its motor's: drive minus drag, applied before contacts.
+        if (!m || RollingBody.rolling(u)) return;
         const drag =
             m.heightFP > 0 || m.vzFP > 0 ? LaunchImpactRules.airDrag : LaunchImpactRules.groundDrag;
         const factor = Math.max(0, 1 - drag / sim.tps);
@@ -675,6 +702,8 @@ class UnitMotion {
             bv = b.impactMotion;
         const totalA = velocityA || { x: (av?.vxFP || 0) / FP, y: (av?.vyFP || 0) / FP };
         const totalB = velocityB || { x: (bv?.vxFP || 0) / FP, y: (bv?.vyFP || 0) / FP };
+        if (RollingBody.rolling(a) || RollingBody.rolling(b))
+            return RollingBody.collide(this, a, b, nx, ny, totalA, totalB);
         const relative = (totalA.x - totalB.x) * nx + (totalA.y - totalB.y) * ny;
         if (relative >= 0) return;
         for (const [unit, total] of [

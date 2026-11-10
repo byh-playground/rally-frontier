@@ -61,6 +61,21 @@ const CANNON_RIDER = Object.freeze({
     guestDistance: 1400,
     cameraOffset: 200,
 });
+// A rolling unit lands well short of ten soldiers racked like bowling pins, reaches near top speed,
+// scatters them and bounces off the enemy main base behind them. The pins hold still so the rack
+// stays in the rolling unit's path. Offsets are from the arena centre.
+const ROLLER = Object.freeze({
+    durationMs: 11000,
+    landOffset: -250,
+    baseOffset: 640,
+    pinType: 'rice',
+    pins: [0, 1, 2, 3].flatMap((row) =>
+        Array.from({ length: row + 1 }, (_, k) => [360 + row * 60, (k - row / 2) * 30]),
+    ),
+    camera: [-180, 480],
+    cameraMs: [1200, 3600],
+    zoom: 3,
+});
 
 function createArena(unitType, opening, interception) {
     const sim = new StrategySim(SEED, undefined, [[unitType], [interception?.launchType ?? 'pea']]);
@@ -68,7 +83,8 @@ function createArena(unitType, opening, interception) {
     const state = sim.exportState();
     const siege = UnitDefinition.onlyAttacksBuildings(unitType),
         grows = UnitDefinition.get(unitType)?.growsCannon,
-        rider = !opening && UnitDefinition.get(unitType)?.cannonRider ? CANNON_RIDER : null;
+        rider = !opening && UnitDefinition.get(unitType)?.cannonRider ? CANNON_RIDER : null,
+        roller = !opening && UnitDefinition.get(unitType)?.rolling ? ROLLER : null;
     // A muzzle-wrapping unit can only hold a completed outpost, so the main base moves out of its sight.
     const wrapsOutpost = !!UnitDefinition.get(unitType)?.stickyCling;
     const host = { x: x - VOLLEY_DISTANCE, y };
@@ -77,11 +93,19 @@ function createArena(unitType, opening, interception) {
             ? host.x + OPENING_SHOT_DISTANCE
             : rider
               ? host.x + rider.guestDistance
-              : x + (siege ? 150 : 460),
+              : roller
+                ? x + roller.baseOffset
+                : x + (siege ? 150 : 460),
         y,
     };
     const base = wrapsOutpost ? { x: guest.x + 700, y } : guest;
-    const target = opening ? guest : rider ? { x: host.x + rider.launchDistance, y } : { x, y };
+    const target = opening
+        ? guest
+        : rider
+          ? { x: host.x + rider.launchDistance, y }
+          : roller
+            ? { x: x + roller.landOffset, y }
+            : { x, y };
     const rangeLevel = opening ? OPENING_RANGE_LEVEL : 0;
     state.launchRangeLevel[0] = rangeLevel;
     state.mapDescriptor = {
@@ -110,9 +134,9 @@ function createArena(unitType, opening, interception) {
         Object.assign(building, building.side === 0 ? host : base);
         // The showcase's artillery is available to launch, while its automatic fire stays quiet.
         // A rooting potato is left alone for the whole preview.
-        if (interception || siege || grows || rider)
+        if (interception || siege || grows || rider || roller)
             building.cooldownUntil =
-                grows || rider
+                grows || rider || roller
                     ? Number.MAX_SAFE_INTEGER
                     : sim.msTicks(interception?.durationMs ?? DURATION_SECONDS * 1000);
     }
@@ -137,10 +161,15 @@ function createArena(unitType, opening, interception) {
         outpost.hp = outpost.maxHp;
         outpost.cooldownUntil = Number.MAX_SAFE_INTEGER;
         for (const [dx, dy] of rider.defenders) sim.spawnUnit(1, 'pea', host.x + dx, y + dy);
+    } else if (roller) {
+        for (const [dx, dy] of roller.pins) {
+            const pin = sim.spawnUnit(1, roller.pinType, x + dx, y + dy);
+            pin.combat.moveRecoveryUntil = pin.combat.cooldownUntil = Number.MAX_SAFE_INTEGER;
+        }
     } else if (!opening && !siege && !grows) {
         for (const [dx, dy] of DEFENDERS) sim.spawnUnit(1, 'pea', x + dx, y + dy);
     }
-    return { sim, x, y, host, target, rangeLevel, rider };
+    return { sim, x, y, host, target, rangeLevel, rider, roller };
 }
 
 // Card previews use an isolated showcase run with the same commands and rendering as a match.
@@ -159,7 +188,7 @@ function prepareVolleyShowcase(
     if (!LaunchRules.grain(unitType)) throw new Error('알 수 없는 병종 소개 장면입니다.');
     const unit = UnitDefinition.get(unitType);
     const interception = !opening && unit?.burstAttack && unit.canAttackAir ? INTERCEPTION : null;
-    const { sim, x, y, host, target, rangeLevel, rider } = createArena(
+    const { sim, x, y, host, target, rangeLevel, rider, roller } = createArena(
         unitType,
         opening,
         interception,
@@ -182,6 +211,7 @@ function prepareVolleyShowcase(
         : sim.msTicks(
               interception?.durationMs ??
                   rider?.durationMs ??
+                  roller?.durationMs ??
                   Math.max(
                       DURATION_SECONDS * 1000,
                       unit?.growsCannon
@@ -244,13 +274,17 @@ function prepareVolleyShowcase(
         if (opening && !disposed) openingCamera();
     };
     const frameCamera = (timeMs) => {
-        const progress = Math.max(0, Math.min(1, (timeMs - 600) / 1000));
+        const progress = roller
+            ? Math.max(0, Math.min(1, (timeMs - roller.cameraMs[0]) / roller.cameraMs[1]))
+            : Math.max(0, Math.min(1, (timeMs - 600) / 1000));
         // A rider's loop stays between its cannon and the enemy, so its camera holds still.
+        // A roller's camera runs from its landing point to the base it bounces off.
+        const [fromX, toX] = roller?.camera ?? [-120, 125];
         const focusX = interception
             ? x + interception.cameraOffset
             : rider
               ? host.x + rider.cameraOffset
-              : x - 120 + 245 * progress * progress * (3 - 2 * progress);
+              : x + fromX + (toX - fromX) * progress * progress * (3 - 2 * progress);
         renderer.cameraLeft = focusX - renderer.viewWorldW() / 2;
         renderer.cameraTop = renderer.clampCameraTop(
             BattlefieldProjection.planarY(y, interception?.cameraHeight ?? 0) -
@@ -269,7 +303,7 @@ function prepareVolleyShowcase(
     try {
         renderer.role = 'host';
         renderer.replayObserverAll = true;
-        renderer.replayZoom = opening ? OPENING_ZOOM : (interception?.zoom ?? 4);
+        renderer.replayZoom = opening ? OPENING_ZOOM : (interception?.zoom ?? roller?.zoom ?? 4);
         renderer.onPresentationFrame = presentFrame;
         scenario = createScenario({
             definition: {

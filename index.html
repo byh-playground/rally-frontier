@@ -28,7 +28,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   UNITS 순서가 덱 순서·시작 덱·결과 통계 행·스프라이트 아틀라스 배치 순서다. 공유 코드는 UNITS만 읽고 병종 이름 표를 두지 않는다.
 - 병종 추가: ① src/units/<id>/index.js(필요하면 sprite.js)를 만들고 ② UNITS에 한 줄을 넣는다. 기존 능력은
   Definition 필드로 켠다(contactMelee·stickyCling·growsCannon·leapAttack·spinAttack·lobAttack·thornAttack·burstAttack·
-  selfDestruct·heroActive·fruitAttack). 새 능력은 src/sim/capabilities/<능력>.js 모듈과 판정의 호출 지점을 더한다.
+  selfDestruct·heroActive·fruitAttack·rolling). 새 능력은 src/sim/capabilities/<능력>.js 모듈과 판정의 호출 지점을 더한다.
   두 병종 이상이 쓰는 지점만 공통 hook으로 만들고, 한 병종만 쓰는 지점은 능력 필드로 거른 직접 호출로 둔다.
   그림 계약은 sprite.js의 SPRITE가 소유한다: 투입탄(shell: draw·turn·flight), 착지 연출(landing), 포즈(pose·roll),
   공용 효과 그림(effectArt), 준비 그리기(렌더러 prepareExtraArt). main.js는 이 계약만 읽고 병종 id를 비교하지 않는다.

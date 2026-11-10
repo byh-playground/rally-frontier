@@ -17,11 +17,14 @@
 //                          shell is the vector asset 'ammo-<id>'
 //              landing?    'ear-burst'
 //              pose?       'kernel-thrower'|'thorn-thrower'|'body-charge'
-//              roll?       { progress, tuck, setMatrix }
+//              roll?       { progress, tuck, setMatrix }  (HeroRollAttack)
+//              rolling?    { prepare(grain, entity, world, renderTick, now, tps, orientation) }: the
+//                          self-propelled rolling body's per-frame art (RollingBody)
 //              effectArt?  ['grain-particles'|'self-destruct-burst'|'thorn']
 //            Optional renderer methods the shared drawing calls when present: prepareExtraArt,
 //            drawHeldKernel, drawWrapOverlay (StickyCling), drawRide (CannonRider), drawFlight and
-//            drawImpact (a 'soldier' shell), actor.setTeam and actor.setRootStage.
+//            drawImpact (a 'soldier' shell), drawBehind (trailing effects just behind the body),
+//            actor.setTeam and actor.setRootStage.
 const REQUIRED = ['unit', 'payload', 'visual', 'card'];
 
 export function defineUnit({ id, hero = false, help = [], ...parts }) {

@@ -4959,6 +4959,16 @@ class GLRenderer {
                     roll.phase === 'unfold' ? rollProgress : 0,
                 );
             }
+            // A self-propelled rolling body (RollingBody): its art follows its motion.
+            sprite?.rolling?.prepare(
+                grain,
+                entity,
+                world,
+                renderTick,
+                now,
+                this.snapshot.tps || SIM_TPS,
+                this.orientationRole() === 'guest' ? -1 : 1,
+            );
             grain.depth = RangeUtil.clamp(depth, -0.98, 0.98) - ++rank * GRAIN_DEPTH_RANK_STEP;
             grain.face =
                 grounded && (clip === 'fire' || spin || roll?.phase)
@@ -5083,6 +5093,12 @@ class GLRenderer {
         C.depthFunc = this.passState.depthFunc || 'lequal';
         if (grain.sprite) {
             if (!grain.bodyDrawn) grain.compiled.drawBody(grain.actor, grain.matrix, grain.depth);
+            // Effects that trail behind a body, drawn just behind it.
+            grain.compiled.drawBehind?.(
+                grain.actor,
+                grain.matrix,
+                grain.depth + GRAIN_DEPTH_RANK_STEP / 4,
+            );
             grain.compiled.drawFace(
                 grain.actor,
                 grain.matrix,
