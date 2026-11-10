@@ -229,6 +229,28 @@ class UnitDefinition {
             // digMs: the art shows digging in until then, rooting after it, until the cannon stands.
             growsCannon: Object.freeze({ delayMs: 5000, digMs: 2000, building: 'forward-cannon' }),
         },
+        // 초안: 체력은 쌀과 같고, 공격력은 쌀의 절반 남짓, 이동속도는 쌀과 같다.
+        // 재탑승 5초·복귀 이동 2배는 확정 규칙이고, 탑승 0.5초는 초안이다.
+        'black-bean': {
+            requiresContactTerrain: true,
+            name: '검은콩',
+            hp: 25,
+            atk: 3,
+            range: RICE_MELEE.range,
+            speed: 75,
+            cooldownMs: 1000,
+            size: RICE_SIZE,
+            sizeClass: 'light',
+            role: 'bruiser',
+            attackVisual: { sourceMotion: 'slash', travel: 'none', impact: 'light' },
+            sight: 275,
+            // Each soldier walks back to a friendly cannon on its own and launches itself again.
+            cannonRider: Object.freeze({
+                reboardDelayMs: 5000,
+                boardMs: 500,
+                returnSpeedMultiplier: 2,
+            }),
+        },
         acorn: {
             requiresContactTerrain: true,
             construction: { range: 5, workPerHit: 1 },
@@ -488,6 +510,13 @@ class UnitVisualDefinition {
             billboard: true,
             visualScale: 0.85,
             accent: [0.71, 0.53, 0.35, 1],
+            fx: 'melee',
+        },
+        'black-bean': {
+            family: 'grain',
+            billboard: true,
+            visualScale: 0.85,
+            accent: [0.2, 0.18, 0.22, 1],
             fx: 'melee',
         },
         corn: {

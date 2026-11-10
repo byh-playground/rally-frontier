@@ -7,6 +7,8 @@ const COMBAT_TARGET_STICKINESS_PCT=120;
 // Full acquisition is staggered by stable unit ID. Movement, legal-fire gates,
 // wind-up and cooldown still run every tick; invalid targets wait for their slot.
 const COMBAT_TARGET_REFRESH_MS=300;
+// How far a unit notices enemies to fight, and how far a black bean looks for a cannon to ride.
+const COMBAT_AGGRO_RANGE=390;
 // Common attack grammar: acquire -> wind-up -> fire/hit -> cooldown.
 // Any range break during wind-up cancels the attack for both melee and ranged.
 // Airborne also clears wind-up immediately at the moment the status is applied.
@@ -59,4 +61,4 @@ const DAMAGE_CLASS_MATRIX={
   area:{light:50,medium:75,heavy:100}
 };
 
-export { CAPTURE_RADIUS, COMBAT_TARGET_REFRESH_MS, COMBAT_TARGET_STICKINESS_PCT, DAMAGE_CLASS_MATRIX, DEAD_ENTITY_CLEANUP_MS, DEFAULT_ATTACK_WINDUP_MS, DEFAULT_MELEE_MOVE_RECOVERY_MS, DEFAULT_RANGED_MOVE_RECOVERY_MS, LANE_CONTROL_POINTS, NAV_BUILDING_MARGIN, SPAWN_UNIT_GAP };
+export { CAPTURE_RADIUS, COMBAT_AGGRO_RANGE, COMBAT_TARGET_REFRESH_MS, COMBAT_TARGET_STICKINESS_PCT, DAMAGE_CLASS_MATRIX, DEAD_ENTITY_CLEANUP_MS, DEFAULT_ATTACK_WINDUP_MS, DEFAULT_MELEE_MOVE_RECOVERY_MS, DEFAULT_RANGED_MOVE_RECOVERY_MS, LANE_CONTROL_POINTS, NAV_BUILDING_MARGIN, SPAWN_UNIT_GAP };

@@ -47,6 +47,12 @@ import {
     POTATO_ART_SCALE,
 } from './potato-sprite.js';
 import {
+    loadBlackBeanSpriteCanvas,
+    blackBeanSpritePortrait,
+    BlackBeanSpriteRenderer,
+    BLACK_BEAN_ART_SCALE,
+} from './black-bean-sprite.js';
+import {
     loadSunflowerSeedSpriteCanvas,
     SUNFLOWER_SEED_ART_SCALE,
     SUNFLOWER_SEED_GROUND_Y,
@@ -74,6 +80,7 @@ const SPRITE_SOURCES = Object.freeze({
     peanut: loadPeanutSpriteCanvas,
     'sticky-rice': loadStickyRiceSpriteCanvas,
     potato: loadPotatoSpriteCanvas,
+    'black-bean': loadBlackBeanSpriteCanvas,
 });
 
 // Insertion order is the actual atlas allocation order and is also used by the
@@ -185,6 +192,14 @@ export const GRAIN_SPRITES = Object.freeze({
         cannonAmmo: true,
         groundY: 0,
         artScale: POTATO_ART_SCALE,
+    },
+    'black-bean': {
+        source: 'black-bean',
+        renderer: BlackBeanSpriteRenderer,
+        portrait: blackBeanSpritePortrait,
+        cannonAmmo: true,
+        groundY: 0,
+        artScale: BLACK_BEAN_ART_SCALE,
     },
 });
 
