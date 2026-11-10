@@ -188,10 +188,12 @@ class BotController {
 
         const state = this.commandExecutor.begin(snapshot);
         try {
-            if (
-                state.tick - this.lastLaunchTick >=
-                SimulationTiming.msToTicks(pacing?.decisionIntervalMs ?? 1200, tps)
-            ) {
+            // 지갑이 가득 찼는데 간격 때문에 결정을 미루면 수입이 버려진다. 가득 찬 동안에는 기본(1대1) 간격으로 결정한다.
+            const walletFull = state.wallet[this.side] >= LaunchRules.walletCap;
+            const intervalMs = walletFull
+                ? Math.min(pacing?.decisionIntervalMs ?? 1200, 1200)
+                : (pacing?.decisionIntervalMs ?? 1200);
+            if (state.tick - this.lastLaunchTick >= SimulationTiming.msToTicks(intervalMs, tps)) {
                 this.lastLaunchTick = state.tick;
                 this.runLaunch(state);
             }
