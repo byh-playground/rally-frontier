@@ -1,5 +1,4 @@
 import { BuildingDefinition } from '../definitions/buildings.js';
-import { COMBAT_AGGRO_RANGE } from '../definitions/combat-rules.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { ResourceDisplay } from './resource-display.js';
@@ -115,10 +114,16 @@ export function unitCardStats(type, rangeLevel, copy) {
         troop.push([
             '스킬',
             [
-                ['재탑승까지', seconds(rider.reboardDelayMs)],
+                ['적에게 떨어진 뒤 재탑승까지', seconds(rider.reboardDelayMs)],
                 ['탑승 시간', seconds(rider.boardMs)],
                 ['복귀 이동속도', number.format(unit.speed * rider.returnSpeedMultiplier)],
-                ['대포 인식 거리', number.format(unit.aggroRange ?? COMBAT_AGGRO_RANGE)],
+                [
+                    '대포 탐색 거리',
+                    number.format(
+                        LaunchRules.maxReachOf(type, rangeLevel) *
+                            rider.cannonSearchReachMultiplier,
+                    ),
+                ],
                 ['재발사 인원', '1명'],
                 ['재발사 비용', '무료'],
             ],

@@ -1,3 +1,4 @@
+import { CannonRider } from './capabilities/cannon-rider.js';
 import { HeroDeployment } from './hero-deployment.js';
 import { FP } from '../core/config.js';
 import { LaunchRules } from './launch-rules.js';
@@ -130,7 +131,7 @@ class LaunchImpact {
         };
     }
     static enqueue(sim, p, x, y, impactHeightFP = null, { emergencyDrop = false } = {}) {
-        const { type, count, passengerHp } = p.payload;
+        const { type, count, passengerHp, ride } = p.payload;
         let holdPointId = null,
             best = LaunchRules.captureHoldRadius;
         if (!UnitDefinition.onlyAttacksBuildings(type)) {
@@ -164,7 +165,7 @@ class LaunchImpact {
             heightFP,
             ...(emergencyDrop ? { emergencyDropHeightFP: heightFP } : {}),
             // A soldier that launched itself lands again with the health it boarded with.
-            ...(passengerHp == null ? {} : { passengerHp }),
+            ...(passengerHp == null ? {} : { passengerHp, ride }),
             vzFP: 0,
             lastPhysicsTick: sim.tick,
         });
@@ -346,7 +347,11 @@ class LaunchImpact {
             const u = sim.spawnUnit(group.side, group.type, spot.x, spot.y);
             if (group.passengerHp == null)
                 UnitResultStats.add(sim.unitResultStats, group.side, group.type, 'deployed');
-            else u.hp = group.passengerHp;
+            else {
+                u.hp = group.passengerHp;
+                // How the soldier flew decides when it picks a cannon again.
+                CannonRider.land(sim, u, UnitDefinition.get(u.type).cannonRider, group.ride);
+            }
             const enemy = sim.buildings.find(
                 (b) =>
                     b.side === 1 - group.side &&

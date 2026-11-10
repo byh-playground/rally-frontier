@@ -298,7 +298,10 @@ class RallySimulationAdapter {
                                 (entity.payload.count !== 1 ||
                                     !UnitDefinition.get(entity.payload.type)?.cannonRider ||
                                     !Number.isFinite(entity.payload.passengerHp) ||
-                                    entity.payload.passengerHp <= 0))
+                                    entity.payload.passengerHp <= 0 ||
+                                    !CannonRider.FLIGHTS.includes(entity.payload.ride))) ||
+                            (entity.payload.passengerHp === undefined &&
+                                entity.payload.ride !== undefined)
                         )
                             throw new Error('게임 snapshot의 투입탄 체력이 잘못되었습니다.');
                     } else if (entity.hp !== undefined) {
