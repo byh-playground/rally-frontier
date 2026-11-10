@@ -1,0 +1,174 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="470" viewBox="0 0 640 470">
+  <!--
+    찹쌀 파츠 시트 시안 v3. 셀 좌표는 [x, y, w, h] / 회전 중심 [px, py] (셀 왼쪽 위 기준).
+    서 있는 모습
+      body [10,10,180,185] / [90,164]        foot [455,12,52,40] / [26,14]
+      arm [515,8,48,60] / [20,10]            ribbon [568,8,66,62] / [6,14]
+      neutral [10,205,98,45] / [49,22]       attack [115,205,98,45] / [49,22]
+      hurt [220,205,98,45] / [49,22]         hug [325,205,98,45] / [49,22]
+      launch-ammo [450,186,120,96] / [60,50]
+    포구 감싸기 (v3). 찹쌀 한 명이 포구에 뒤집어씌워진 하나의 형태. 시트 1단위 = 거점 대포 SVG 0.674단위(포신 지름 90 = 시트 134).
+      wrap-sleeve [10,262,140,196] / [102,98]  포신 좌표계(회전만): 회전 중심 = 포구 소켓, +x = 포구 바깥 방향.
+                                               포신 끝에 씌워져 늘어난 떡 자락과 테두리를 감싸 쥔 두 손. 포신 축 위아래 대칭.
+      wrap-body [200,4,176,192] / [88,100]     화면 좌표계(회전 없음): 회전 중심 = 포구 소켓에서 포구 방향으로 대포 14단위 나간 점.
+                                               포구를 덮는 둥근 떡 몸통. 얼굴(hug)은 이 몸통 위 (0,4)에 0.9배, 리본은 (72,-44)에 18도.
+    왼쪽 팔·발은 오른쪽 파츠를 좌우 반전해 재사용한다.
+  -->
+  <defs>
+    <radialGradient id="mochi" cx="36%" cy="30%" r="78%">
+      <stop stop-color="#ffffff"/>
+      <stop offset=".45" stop-color="#f6f4fc"/>
+      <stop offset=".8" stop-color="#ddd8ee"/>
+      <stop offset="1" stop-color="#bdb5da"/>
+    </radialGradient>
+    <linearGradient id="limb" x1=".2" y1="0" x2=".7" y2="1">
+      <stop stop-color="#ffffff"/>
+      <stop offset=".6" stop-color="#ebe8f6"/>
+      <stop offset="1" stop-color="#c3bbdd"/>
+    </linearGradient>
+    <linearGradient id="band" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#ff9ab6"/>
+      <stop offset=".55" stop-color="#ec6f93"/>
+      <stop offset="1" stop-color="#c84c74"/>
+    </linearGradient>
+    <!-- v2: 꼭지를 한쪽으로 휘어 늘어진 떡 가닥으로, 바닥은 아래로 처지게 해서 뚜껑 손잡이·그릇 바닥처럼 읽히지 않게 했다. -->
+    <path id="body-outline" d="M32 160C10 155 3 134 7 108 12 70 41 41 76 33 70 22 60 12 44 10 54 4 70 6 80 16 88 24 94 30 104 33 142 39 168 66 172 107c2 23-2 41-13 49 3 8 4 17-1 22-5 4-11-1-9-8 1-5 0-8-4-9-30 10-84 10-114-1Z"/>
+    <clipPath id="body-mask"><use href="#body-outline"/></clipPath>
+    <!-- v3 포구 감싸기: 둥근 떡 몸통(꼭지는 서 있는 몸과 같은 쪽으로 휨, 아래로 한 방울 처짐). -->
+    <path id="wrap-outline" d="M-80 6C-82-36-54-64-14-68-20-78-30-88-46-90-36-96-20-94-10-84-2-76 4-70 14-68 54-62 82-36 82 6 82 40 64 62 38 70 38 80 32 88 25 87 18 86 20 78 18 74-10 80-46 76-66 58-76 48-80 30-80 6Z"/>
+    <clipPath id="wrap-mask"><use href="#wrap-outline"/></clipPath>
+    <!-- 포신에 씌워진 떡 자락: 가운데가 밝고 양쪽 가장자리가 어두운 대칭 음영이라 포신이 어느 쪽을 봐도 같다. -->
+    <path id="sleeve-outline" d="M30-66C10-74-30-76-62-79-74-80-84-74-84-62-84-40-96-22-92 0-96 22-84 40-84 62-84 74-74 80-62 79-30 76 10 74 30 66Z"/>
+    <clipPath id="sleeve-mask"><use href="#sleeve-outline"/></clipPath>
+    <linearGradient id="sleeve-shade" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#c3bbdd"/>
+      <stop offset=".22" stop-color="#ebe8f6"/>
+      <stop offset=".5" stop-color="#ffffff"/>
+      <stop offset=".78" stop-color="#ebe8f6"/>
+      <stop offset="1" stop-color="#c3bbdd"/>
+    </linearGradient>
+    <g id="grip-hand">
+      <path d="M-86-66C-92-80-82-96-64-96-50-96-44-84-48-72-52-62-80-56-86-66Z" fill="url(#limb)" stroke="#4b3022" stroke-width="4.5" stroke-linejoin="round"/>
+      <path d="M-74-94q3 8-1 15M-62-95q3 8-1 15" fill="none" stroke="#4b3022" stroke-width="3" stroke-linecap="round"/>
+      <path d="M-82-78q2-8 10-12" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+    </g>
+    <path id="ammo-outline" d="M10 50C8 28 30 14 56 14c7-9 17-12 25-8 4 3 1 8-5 9 18 5 30 18 28 35-2 18-22 26-48 26-26 0-44-8-46-26Z"/>
+    <clipPath id="ammo-mask"><use href="#ammo-outline"/></clipPath>
+    <g id="eyes">
+      <ellipse cx="24" cy="20" rx="7.5" ry="9.5"/>
+      <ellipse cx="74" cy="20" rx="7.5" ry="9.5"/>
+      <g fill="#ffffff"><circle cx="22" cy="16" r="3"/><circle cx="72" cy="16" r="3"/></g>
+    </g>
+    <g id="cheeks" fill="#f28aa3" opacity=".9">
+      <ellipse cx="9" cy="32" rx="7" ry="4"/>
+      <ellipse cx="89" cy="32" rx="7" ry="4"/>
+    </g>
+  </defs>
+
+  <!-- 서 있는 몸통: 아래로 처진 떡 모양, 한쪽으로 휘어 늘어진 끈적한 꼭지, 비스듬히 두른 분홍 머리띠. -->
+  <g id="body" transform="translate(10 10)">
+    <use href="#body-outline" fill="url(#mochi)"/>
+    <g clip-path="url(#body-mask)">
+      <path d="M0 122q90 52 180 0v70H0Z" fill="#b9b0d8" opacity=".55"/>
+      <path d="M20 150q30 14 70 12" fill="none" stroke="#a89fcd" stroke-width="4" stroke-linecap="round" opacity=".5"/>
+      <g transform="rotate(-9 90 66)">
+        <path d="M-10 52q100 40 200 0v19q-100 40-200 0Z" fill="url(#band)"/>
+        <path d="M-10 54q100 40 200 0" fill="none" stroke="#ffc4d4" stroke-width="4"/>
+        <path d="M-10 52q100 40 200 0M-10 71q100 40 200 0" fill="none" stroke="#4b3022" stroke-width="3.5"/>
+        <path d="M36 83q18 6 34 7" fill="none" stroke="#b9426a" stroke-width="2.5" stroke-linecap="round" opacity=".7"/>
+      </g>
+    </g>
+    <path d="M30 70q10-18 34-28" fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round"/>
+    <path d="M56 10q8-3 16 2" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="24" cy="102" r="4.5" fill="#ffffff"/>
+    <path d="M158 104q6 16 2 32" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity=".8"/>
+    <ellipse cx="156.5" cy="172" rx="2" ry="3" fill="#ffffff"/>
+    <use href="#body-outline" fill="none" stroke="#4b3022" stroke-width="5" stroke-linejoin="round"/>
+    <ellipse cx="164" cy="56" rx="10" ry="9" fill="#ec6f93" stroke="#4b3022" stroke-width="3.5"/>
+    <path d="M159 52q4-3 8-1" fill="none" stroke="#ffc4d4" stroke-width="2.5" stroke-linecap="round"/>
+  </g>
+
+  <!-- 포구 감싸기 몸통 (v3): 포구를 통째로 덮은 둥근 떡. 회전하지 않아 얼굴이 늘 바로 선다. 중심(0,0)이 회전 중심. -->
+  <g id="wrap-body" transform="translate(288 104)">
+    <use href="#wrap-outline" fill="url(#mochi)"/>
+    <g clip-path="url(#wrap-mask)">
+      <path d="M-90 30q90 60 180 0v70H-90Z" fill="#b9b0d8" opacity=".55"/>
+      <path d="M-56 62q30 14 70 12" fill="none" stroke="#a89fcd" stroke-width="4" stroke-linecap="round" opacity=".5"/>
+      <g transform="rotate(-8 0 -40)">
+        <path d="M-96-56q96 36 192 0v19q-96 36-192 0Z" fill="url(#band)"/>
+        <path d="M-96-54q96 36 192 0" fill="none" stroke="#ffc4d4" stroke-width="4"/>
+        <path d="M-96-56q96 36 192 0M-96-37q96 36 192 0" fill="none" stroke="#4b3022" stroke-width="3.5"/>
+        <path d="M-50-24q18 6 34 7" fill="none" stroke="#b9426a" stroke-width="2.5" stroke-linecap="round" opacity=".7"/>
+      </g>
+    </g>
+    <path d="M-60-18q10-18 32-28" fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round"/>
+    <path d="M-34-90q8-3 16 2" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="-64" cy="14" r="4.5" fill="#ffffff"/>
+    <path d="M70 0q6 16 2 32" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity=".8"/>
+    <ellipse cx="25" cy="80" rx="2" ry="3" fill="#ffffff"/>
+    <use href="#wrap-outline" fill="none" stroke="#4b3022" stroke-width="5" stroke-linejoin="round"/>
+    <ellipse cx="76" cy="-46" rx="10" ry="9" fill="#ec6f93" stroke="#4b3022" stroke-width="3.5"/>
+    <path d="M71-50q4-3 8-1" fill="none" stroke="#ffc4d4" stroke-width="2.5" stroke-linecap="round"/>
+  </g>
+
+  <g id="foot" transform="translate(455 12)">
+    <path d="M9 7q17-6 34 0 5 13 3 22-1 6-7 7H13q-6-1-7-7-2-9 3-22Z" fill="url(#limb)" stroke="#4b3022" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M14 11q8-3 16-2" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <g id="arm" transform="translate(515 8)">
+    <path d="M12 7c10-6 22-2 27 9 5 12 4 26-3 33-8 7-20 6-26-3-6-9-7-20-6-28 1-5 4-9 8-11Z" fill="url(#limb)" stroke="#4b3022" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M14 13q6-3 12 1" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <g id="ribbon" transform="translate(568 8)">
+    <path d="M6 10C20 2 38 0 58 6l-7 8 9 7c-20 0-36-2-52-6Z" fill="url(#band)" stroke="#4b3022" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M8 18c14 6 28 20 40 36l-11-1 1 8C27 48 16 34 6 22Z" fill="url(#band)" stroke="#4b3022" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M14 9q16-4 30-2M14 24q12 10 22 24" fill="none" stroke="#ffc4d4" stroke-width="2.5" stroke-linecap="round"/>
+  </g>
+
+  <g id="neutral" transform="translate(10 205)" fill="#3a2a22">
+    <use href="#eyes"/><use href="#cheeks"/>
+    <path d="M41 30q4 5 8 0 4 5 8 0" fill="none" stroke="#3a2a22" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="attack" transform="translate(115 205)" fill="#3a2a22">
+    <use href="#eyes"/><use href="#cheeks"/>
+    <path d="m14 8 17 6m37 0 17-6" fill="none" stroke="#3a2a22" stroke-width="4" stroke-linecap="round"/>
+    <path d="M40 29q9-6 18 0-1 11-9 11t-9-11Z"/>
+    <path d="M44 37q5-4 10 0" fill="#f28aa3"/>
+  </g>
+  <g id="hurt" transform="translate(220 205)">
+    <use href="#cheeks"/>
+    <path d="m14 13 18 7-18 7m70-14-18 7 18 7" fill="none" stroke="#3a2a22" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M38 36q3-4 6 0t6 0 6 0 6 0" fill="none" stroke="#3a2a22" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <!-- 꼬옥 안은 얼굴: 질끈 감은 눈, 이를 꽉 문 웃음, 커진 볼. -->
+  <g id="hug" transform="translate(325 205)">
+    <g fill="#f28aa3" opacity=".95"><ellipse cx="9" cy="31" rx="9" ry="5"/><ellipse cx="89" cy="31" rx="9" ry="5"/></g>
+    <path d="m14 11 18 8-18 8m70-16-18 8 18 8" fill="none" stroke="#3a2a22" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M37 30h24q3 0 2 4-3 8-14 8t-14-8q-1-4 2-4Z" fill="#ffffff" stroke="#3a2a22" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M38 34h22M49 31v9" fill="none" stroke="#3a2a22" stroke-width="2" stroke-linecap="round"/>
+  </g>
+
+  <g id="launch-ammo" transform="translate(450 190)">
+    <use href="#ammo-outline" fill="url(#mochi)"/>
+    <g clip-path="url(#ammo-mask)">
+      <path d="M0 64q56 24 112 0v30H0Z" fill="#b9b0d8" opacity=".55"/>
+      <path d="M0 38q56 20 112 0v14q-56 20-112 0Z" fill="url(#band)"/>
+      <path d="M0 38q56 20 112 0M0 52q56 20 112 0" fill="none" stroke="#4b3022" stroke-width="3"/>
+    </g>
+    <path d="M22 34q8-10 22-12" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+    <use href="#ammo-outline" fill="none" stroke="#4b3022" stroke-width="5" stroke-linejoin="round"/>
+  </g>
+
+  <!-- 포구 감싸기 자락 (v3): 몸통에서 포신 끝으로 늘어나 씌워진 떡과, 포구 테두리 뒤를 감싸 쥔 두 손. 회전 중심(0,0) = 포구 소켓, +x = 포구 바깥. -->
+  <g id="wrap-sleeve" transform="translate(112 360)">
+    <use href="#sleeve-outline" fill="url(#sleeve-shade)"/>
+    <g clip-path="url(#sleeve-mask)">
+      <path d="M-30-80q-8 80 0 160M-62-80q-8 80 0 160" fill="none" stroke="#cbc4e2" stroke-width="3.5" stroke-linecap="round"/>
+      <path d="M-96 0q6-10 4-22M-96 0q6 10 4 22" fill="none" stroke="#b9b0d8" stroke-width="4" stroke-linecap="round" opacity=".7"/>
+    </g>
+    <path d="M-76-6q40-4 96-2" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+    <path d="M30-66C10-74-30-76-62-79-74-80-84-74-84-62-84-40-96-22-92 0-96 22-84 40-84 62-84 74-74 80-62 79-30 76 10 74 30 66" fill="none" stroke="#4b3022" stroke-width="5" stroke-linejoin="round"/>
+    <use href="#grip-hand"/>
+    <use href="#grip-hand" transform="scale(1 -1)"/>
+  </g>
+</svg>

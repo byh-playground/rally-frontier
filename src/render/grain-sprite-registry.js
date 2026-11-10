@@ -35,6 +35,12 @@ import {
     PEANUT_ART_SCALE,
 } from './peanut-sprite.js';
 import {
+    loadStickyRiceSpriteCanvas,
+    stickyRiceSpritePortrait,
+    StickyRiceSpriteRenderer,
+    STICKY_RICE_ART_SCALE,
+} from './sticky-rice-sprite.js';
+import {
     loadSunflowerSeedSpriteCanvas,
     SUNFLOWER_SEED_ART_SCALE,
     SUNFLOWER_SEED_GROUND_Y,
@@ -60,6 +66,7 @@ const SPRITE_SOURCES = Object.freeze({
     grape: () => loadFruitSpriteCanvas('grape'),
     'sunflower-seed': loadSunflowerSeedSpriteCanvas,
     peanut: loadPeanutSpriteCanvas,
+    'sticky-rice': loadStickyRiceSpriteCanvas,
 });
 
 // Insertion order is the actual atlas allocation order and is also used by the
@@ -155,6 +162,14 @@ export const GRAIN_SPRITES = Object.freeze({
         cannonAmmo: true,
         groundY: 0,
         artScale: PEANUT_ART_SCALE,
+    },
+    'sticky-rice': {
+        source: 'sticky-rice',
+        renderer: StickyRiceSpriteRenderer,
+        portrait: stickyRiceSpritePortrait,
+        cannonAmmo: true,
+        groundY: 0,
+        artScale: STICKY_RICE_ART_SCALE,
     },
 });
 

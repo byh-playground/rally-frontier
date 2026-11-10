@@ -5,6 +5,16 @@ import { DEFAULT_ATTACK_WINDUP_MS, DEFAULT_MELEE_MOVE_RECOVERY_MS } from './comb
 const RICE_SIZE = 10;
 // A peanut starts its contact charge this far from a building and rebounds the same distance away.
 const PEANUT_CHARGE_REACH = 150;
+// Building-only contact chargers share the peanut's targeting, charge and rebound.
+const BUILDING_CHARGE = Object.freeze({
+    requiresContactTerrain: true,
+    contactMelee: true,
+    contactChargeSpeedMultiplier: 2,
+    contactRebound: Object.freeze({ distance: PEANUT_CHARGE_REACH, lift: 200 }),
+    canAttackBuildings: true,
+    canAttackGround: false,
+    range: PEANUT_CHARGE_REACH,
+});
 const UNIT_RENDER_RADIUS_SCALE = 1.56;
 const GRAIN_SPRITE_BASE_SCALE = 2.7 / 260;
 const WATERMELON_SIZE = RICE_SIZE * 3.5;
@@ -172,17 +182,11 @@ class UnitDefinition {
             sight: 275,
         },
         peanut: {
-            requiresContactTerrain: true,
+            ...BUILDING_CHARGE,
             name: '땅콩',
-            contactMelee: true,
-            contactChargeSpeedMultiplier: 2,
-            contactRebound: Object.freeze({ distance: PEANUT_CHARGE_REACH, lift: 200 }),
-            canAttackBuildings: true,
-            canAttackGround: false,
             mass: 225,
             hp: 75,
             atk: 50,
-            range: PEANUT_CHARGE_REACH,
             speed: 100,
             attackIntervalMs: 1500,
             size: 10,
@@ -190,6 +194,22 @@ class UnitDefinition {
             role: 'bruiser',
             attackVisual: { sourceMotion: null, travel: 'none', impact: 'light' },
             sight: 275,
+        },
+        // 초안: 체력·공격력·이동은 기존 병종 수치 체계의 임시값이다. 붙기 시간·재사용 대기는 확정 규칙이다.
+        'sticky-rice': {
+            ...BUILDING_CHARGE,
+            name: '찹쌀',
+            hp: 60,
+            atk: 10,
+            speed: 75,
+            attackIntervalMs: 1500,
+            size: RICE_SIZE,
+            sizeClass: 'light',
+            role: 'bruiser',
+            attackVisual: { sourceMotion: null, travel: 'none', impact: 'light' },
+            sight: 275,
+            // One soldier at a time holds a completed enemy outpost's muzzle shut.
+            stickyCling: Object.freeze({ durationMs: 1000, cooldownMs: 5000 }),
         },
         acorn: {
             requiresContactTerrain: true,
@@ -436,6 +456,13 @@ class UnitVisualDefinition {
             billboard: true,
             visualScale: 0.9,
             accent: [0.77, 0.5, 0.24, 1],
+            fx: 'melee',
+        },
+        'sticky-rice': {
+            family: 'grain',
+            billboard: true,
+            visualScale: 0.85,
+            accent: [0.93, 0.44, 0.58, 1],
             fx: 'melee',
         },
         corn: {
