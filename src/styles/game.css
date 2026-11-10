@@ -1639,30 +1639,147 @@ body.result-mode .p2p-health {
     padding: clamp(12px, 4vw, 20px);
 }
 .campaign-stages {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
-    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    margin-top: 8px;
+    --tree-line: #9bb98a;
 }
-.campaign-stage.launch-btn.secondary {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-content: center;
-    gap: 2px 8px;
-    min-height: 50px;
-    height: auto;
-    padding: 6px 10px;
-    text-align: left;
-    line-height: 1.25;
+.campaign-tier {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
 }
-.campaign-stage-status,
-.campaign-stage small {
+.campaign-tier.has-link {
+    margin-top: 12px;
+}
+.campaign-tier.has-link::before {
+    content: '';
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    height: 12px;
+    border-left: 2px solid var(--tree-line);
+}
+.campaign-tier-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
     font-size: 12px;
-    font-weight: 600;
+    color: var(--muted);
 }
-.campaign-stage small {
-    grid-column: 1 / -1;
+.campaign-tier-head b {
+    font-size: 13px;
+    color: var(--ink);
+}
+.campaign-tier.is-locked {
+    opacity: 0.55;
+}
+.campaign-nodes,
+.campaign-branch {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+    grid-auto-flow: column;
+    gap: 6px;
+}
+.campaign-node {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    min-width: 0;
+    padding: 4px 2px 3px;
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+    color: var(--ink);
+    font: inherit;
+}
+.campaign-node-art {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 34px;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--green);
+}
+.campaign-node-art img {
+    width: auto;
+    max-width: 100%;
+    height: 34px;
+    object-fit: contain;
+}
+.campaign-node-name {
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 12px;
+    font-weight: 700;
+}
+.campaign-node:not(.is-locked):not(.is-done):not(.is-group) {
+    border-color: var(--green);
+    box-shadow: 0 2px 0 #284f30;
+}
+.campaign-node.is-locked {
+    opacity: 0.45;
+    filter: grayscale(0.8);
+}
+.campaign-node.is-done {
+    background: #f1f6df;
+}
+.campaign-node-check {
+    position: absolute;
+    top: -6px;
+    right: -4px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--green);
+    color: #fff;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 800;
+    line-height: 18px;
+    text-align: center;
+}
+.campaign-node.is-group {
+    border-style: dashed;
+}
+.campaign-node.is-small .campaign-node-art,
+.campaign-node.is-small .campaign-node-art img {
+    height: 30px;
+}
+/* The hero node (third column) forks into its three training nodes: stub, bar, ticks. */
+.campaign-branch {
+    position: relative;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 12px;
+}
+.campaign-branch::before {
+    content: '';
+    position: absolute;
+    top: -12px;
+    right: calc(100% / 6);
+    height: 12px;
+    border-left: 2px solid var(--tree-line);
+}
+.campaign-branch::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: calc(100% / 6);
+    right: calc(100% / 6);
+    border-top: 2px solid var(--tree-line);
+}
+.campaign-branch .campaign-node::before {
+    content: '';
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    height: 8px;
+    border-left: 2px solid var(--tree-line);
 }

@@ -3,19 +3,36 @@ import { LaunchRules } from '../sim/launch-rules.js';
 
 // Enemy launch cadence is the difficulty lever. Within a stage the enemy starts at the shared AI decision
 // interval (a hard early push) and slows linearly to `endIntervalMs` over `rampMs`, so the player can stop the
-// push and turn the match around. Later stages end at a shorter interval (15s -> 7s). A full wallet always
+// push and turn the match around. Later tiers end at a shorter interval (15s -> 7s). A full wallet always
 // forces a decision at the shared interval (see BotController).
 const RAMP_MS = 180_000;
-const pacing = (firstDecisionMs, endIntervalMs) =>
-    Object.freeze({ firstDecisionMs, endIntervalMs, rampMs: RAMP_MS });
+// Clearing any one stage of a tier opens the whole next tier. Stages inside a tier have no fixed order
+// (a stage may still require one earlier stage through `prerequisite`).
+export const CAMPAIGN_TIERS = Object.freeze([
+    { id: 'basics', title: '기초', endIntervalMs: 15_000 },
+    { id: 'basic', title: '기본 병종', requires: 'basics', endIntervalMs: 13_000 },
+    { id: 'mid', title: '중급 병종', requires: 'basic', endIntervalMs: 10_000 },
+    { id: 'high', title: '고급 병종', requires: 'mid', endIntervalMs: 7_000 },
+]);
+export function campaignTier(id) {
+    return CAMPAIGN_TIERS.find((tier) => tier.id === id) || null;
+}
+const pacing = (firstDecisionMs, tierId) =>
+    Object.freeze({
+        firstDecisionMs,
+        endIntervalMs: campaignTier(tierId).endIntervalMs,
+        rampMs: RAMP_MS,
+    });
 const SCRIPTED_ONLY = Object.freeze({ disabled: true });
 const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 
 export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'first',
-        enemyPacing: pacing(20_000, 15_000),
+        tier: 'basics',
+        enemyPacing: pacing(20_000, 'basics'),
         title: '첫 진격',
+        nodeLabel: '첫 진격',
         briefing: '쌀로 전진 거점을 세우고 새 대포로 적 본진을 노리세요.',
         deck: ['rice'],
         enemyDeck: ['rice'],
@@ -33,10 +50,12 @@ export const CAMPAIGN_STAGES = Object.freeze([
     },
     {
         id: 'volley-practice',
-        optional: true,
+        tier: 'basics',
         prerequisite: 'first',
         enemyPacing: SCRIPTED_ONLY,
         title: '일제사격 연습',
+        nodeLabel: '일제사격',
+        nodeMark: '1·2·3',
         briefing: '대포가 1문, 2문, 3문씩 닿는 지점의 적 콩 수비대를 격파하세요.',
         deck: ['rice'],
         enemyDeck: ['pea'],
@@ -71,7 +90,8 @@ export const CAMPAIGN_STAGES = Object.freeze([
     },
     {
         id: 'hero-watermelon',
-        optional: true,
+        tier: 'basics',
+        group: 'hero',
         prerequisite: 'first',
         enemyPacing: SCRIPTED_ONLY,
         title: '영웅 훈련 · 수박 출격',
@@ -88,8 +108,9 @@ export const CAMPAIGN_STAGES = Object.freeze([
     },
     {
         id: 'hero-banana',
-        optional: true,
-        prerequisite: 'hero-watermelon',
+        tier: 'basics',
+        group: 'hero',
+        prerequisite: 'first',
         enemyPacing: SCRIPTED_ONLY,
         title: '영웅 획득 · 바나나 부메랑',
         briefing: '줄지어 선 적에게 왕복하는 부메랑을 던져 보세요.',
@@ -106,8 +127,9 @@ export const CAMPAIGN_STAGES = Object.freeze([
     },
     {
         id: 'hero-grape',
-        optional: true,
-        prerequisite: 'hero-watermelon',
+        tier: 'basics',
+        group: 'hero',
+        prerequisite: 'first',
         enemyPacing: SCRIPTED_ONLY,
         title: '영웅 획득 · 포도알 연사',
         briefing: '모여 있는 적을 향해 포도알을 연달아 던져 보세요.',
@@ -124,7 +146,8 @@ export const CAMPAIGN_STAGES = Object.freeze([
     },
     {
         id: 'bean',
-        enemyPacing: pacing(25_000, 14_000),
+        tier: 'basic',
+        enemyPacing: pacing(25_000, 'basic'),
         title: '든든한 콩',
         briefing: '콩이 흩어지기 전에 모인 곳에 쌀 포격을 넣으세요.',
         deck: ['rice'],
@@ -146,7 +169,8 @@ export const CAMPAIGN_STAGES = Object.freeze([
     },
     {
         id: 'peanut',
-        enemyPacing: pacing(25_000, 13_000),
+        tier: 'basic',
+        enemyPacing: pacing(25_000, 'basic'),
         title: '건물을 부수는 땅콩',
         briefing: '쌀로 콩 수비대를 걷어내고 땅콩으로 적 거점 포탑을 부수세요.',
         deck: ['rice', 'pea', 'peanut'],
@@ -168,6 +192,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
     },
     {
         id: 'defense',
+        tier: 'basic',
         enemyPacing: SCRIPTED_ONLY,
         title: '거점을 지켜라',
         briefing: '방향을 바꿔 오는 팝콘의 공격을 세 차례 막으세요.',
@@ -206,6 +231,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
     },
     {
         id: 'counterattack',
+        tier: 'basic',
         enemyPacing: SCRIPTED_ONLY,
         title: '반격의 시간',
         briefing: '팥 돌격대를 막고 지원 대포에서 팝콘으로 반격하세요.',
@@ -245,7 +271,8 @@ export const CAMPAIGN_STAGES = Object.freeze([
     },
     {
         id: 'breakthrough',
-        enemyPacing: pacing(30_000, 12_000),
+        tier: 'mid',
+        enemyPacing: pacing(30_000, 'mid'),
         title: '방어선 돌파',
         briefing: '전진 거점을 세워 팥을 지원받고 측면을 덮치는 조를 막으세요.',
         baseIncomeRatio: 0.5,
@@ -276,7 +303,8 @@ export const CAMPAIGN_STAGES = Object.freeze([
     },
     {
         id: 'chestnut',
-        enemyPacing: pacing(20_000, 11_000),
+        tier: 'mid',
+        enemyPacing: pacing(20_000, 'mid'),
         title: '멀리서 가시를',
         briefing: '양쪽에 조를 내려 적 밤톨의 가시를 분산시키세요.',
         deck: ['rice', 'pea', 'millet'],
@@ -292,7 +320,8 @@ export const CAMPAIGN_STAGES = Object.freeze([
     },
     {
         id: 'corn',
-        enemyPacing: pacing(30_000, 10_000),
+        tier: 'mid',
+        enemyPacing: pacing(30_000, 'mid'),
         title: '폭발하는 옥수수',
         briefing: '기름 거점을 확보해 밤톨을 펼쳐 내리고 옥수수 폭발에 대비하세요.',
         resourceLesson: true,
@@ -321,7 +350,8 @@ export const CAMPAIGN_STAGES = Object.freeze([
     },
     {
         id: 'acorn',
-        enemyPacing: pacing(28_000, 9_000),
+        tier: 'high',
+        enemyPacing: pacing(28_000, 'high'),
         title: '회전하는 도토리',
         briefing: '기름 거점에서 옥수수를 쏘아 언덕을 내려오는 도토리를 막으세요.',
         deck: ['rice', 'pea', 'corn'],
@@ -347,7 +377,8 @@ export const CAMPAIGN_STAGES = Object.freeze([
     },
     {
         id: 'sunflower-seed',
-        enemyPacing: pacing(20_000, 8_000),
+        tier: 'high',
+        enemyPacing: pacing(20_000, 'high'),
         title: '하늘을 지키는 씨앗',
         briefing: '격추를 지켜본 뒤 적 해바라기씨 사거리 밖에 병력을 내리세요.',
         deck: ['rice', 'pea', 'millet'],
@@ -367,8 +398,11 @@ export const CAMPAIGN_STAGES = Object.freeze([
     },
     {
         id: 'millet',
-        enemyPacing: pacing(20_000, 7_000),
+        tier: 'high',
+        enemyPacing: pacing(20_000, 'high'),
         title: '마지막 진격',
+        nodeLabel: '마지막 진격',
+        nodeMark: '★',
         briefing: '조로 측면을 잡거나 도토리로 중앙을 밀고 해바라기씨로 포탄을 견제하세요.',
         deck: ['rice', 'millet', 'acorn', 'sunflower-seed'],
         enemyDeck: ['rice', 'pea', 'redbean', 'acorn'],

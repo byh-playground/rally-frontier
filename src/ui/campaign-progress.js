@@ -1,4 +1,4 @@
-import { CAMPAIGN_STAGES } from '../definitions/campaign.js';
+import { CAMPAIGN_STAGES, campaignTier } from '../definitions/campaign.js';
 
 const PROGRESS_KEY = 'ssalkongpang.campaign.v1';
 const REWARD_STAGES = new Map(
@@ -34,10 +34,26 @@ export class CampaignProgress {
         }
     }
 
+    // First stage in definition order that can be started now and is not cleared yet.
     get nextStage() {
         return (
-            CAMPAIGN_STAGES.find((stage) => !stage.optional && !this.completed.has(stage.id)) ||
-            null
+            CAMPAIGN_STAGES.find((stage) => !this.isComplete(stage) && this.canStart(stage)) || null
+        );
+    }
+
+    // The debug unlock saves nothing, so there the next stage is simply the following one in definition order.
+    nextAfter(stage) {
+        return this.#debugUnlocked
+            ? CAMPAIGN_STAGES[CAMPAIGN_STAGES.indexOf(stage) + 1] || null
+            : this.nextStage;
+    }
+
+    // Clearing any one stage of the previous tier opens a tier.
+    isTierOpen(tierId) {
+        const tier = campaignTier(tierId);
+        return (
+            !tier.requires ||
+            CAMPAIGN_STAGES.some((stage) => stage.tier === tier.requires && this.isComplete(stage))
         );
     }
 
@@ -56,8 +72,8 @@ export class CampaignProgress {
     canStart(stage) {
         return (
             this.#debugUnlocked ||
-            this.isComplete(stage) ||
-            (stage.optional ? this.completed.has(stage.prerequisite) : this.nextStage === stage)
+            (this.isTierOpen(stage.tier) &&
+                (!stage.prerequisite || this.completed.has(stage.prerequisite)))
         );
     }
 
