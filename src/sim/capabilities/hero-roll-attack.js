@@ -12,6 +12,8 @@ import { UnitMotion } from '../navigation.js';
 
 const { SweptCircleContact } = RallyGamekit;
 const CONTACT = { ...SweptCircleContact.policies.relative, retreat: 0 };
+// Out buffer of the roll's swept contact test; read right after each cast.
+const CONTACT_HIT = { t: 0, nx: 0, ny: 0, degenerate: false };
 const STOP_EPSILON = 1e-8;
 
 export class HeroRollAttack {
@@ -179,7 +181,9 @@ export class HeroRollAttack {
                     const hitTime =
                         rx ** 2 + ry ** 2 <= reach ** 2
                             ? 0
-                            : SweptCircleContact.cast(rx, ry, vx, vy, reach, CONTACT)?.t;
+                            : SweptCircleContact.cast(rx, ry, vx, vy, reach, CONTACT, CONTACT_HIT)
+                              ? CONTACT_HIT.t
+                              : null;
                     if (hitTime == null) continue;
                     const distance = hitTime * step;
                     if (distance > wallDistance + STOP_EPSILON) continue;

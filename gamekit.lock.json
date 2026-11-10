@@ -1,27 +1,27 @@
 {
     "repository": "byh-playground/bloom-gamekit",
-    "sourceCommit": "40cb72bdf374f53b9ca8e72826c308217a58a0c5",
-    "distCommit": "a01d0708e869e22326cf6734b4f392fe171829c5",
+    "sourceCommit": "d9cd0129485743aa9c3a92f027b88b0c7740bddc",
+    "distCommit": "dedff5f48b0648ff92ff8e3be8e2a68a16df079f",
     "modules": {
         "rollback": {
             "file": "rollback.js",
-            "sha256": "b03a9aac766b47eedf5761a638dfd99f4b50b64c47f7bfd94b4042f15dec3732"
+            "sha256": "5a94a762345acb12a1005dc315cc81e1ed6291673cf4965a6f60076732b7f14a"
         },
         "deterministic": {
             "file": "deterministic.js",
-            "sha256": "1917d9766f1a1a2bbd4eab3bf214205979e7881c8cfb34cd1183f462a47ba62f"
+            "sha256": "1ee3c5d0766bf9e8fbed64516b6f0eb87b8fe33fff49bfdc283e58224f07cdf6"
         },
         "simloop": {
             "file": "simloop.js",
-            "sha256": "c25a8f7f4999e4fe8beb6b08167fa4d0934c34098db2bf912335e81db53c4ef8"
+            "sha256": "c9bd2330e00f1ec964d317cbc075b42099a220cc3ed05d5bc8ca352ca5f93f76"
         },
         "transport": {
             "file": "transport.js",
-            "sha256": "37e3e42647709bd0551020cf810266e97440b1a219fa6dd8c6ca6f5acfe838af"
+            "sha256": "883db0ae044214a9cee89adefb454d83afde004a29a3360557950856252c3868"
         },
         "interpolation": {
             "file": "interpolation.js",
-            "sha256": "3fe9294016ba6c5e41487c0bddea89879020bc9efee4bae3f75ef5a340dd8c70"
+            "sha256": "9fd27192be7ab212cda052fb79076512ebc1d4a74485072e9ab02fe8794f1df0"
         },
         "input": {
             "file": "input.js",
@@ -29,11 +29,11 @@
         },
         "rendering": {
             "file": "rendering.js",
-            "sha256": "663ae824eb1179c57e0c9d852a047134f3de7b748478433c47088c6ad0cb58d5"
+            "sha256": "3eb2893b8f149fad89a68b5b9c5df9daa594eaff0b6968b16c5a6e7936662350"
         },
         "vectorAssets": {
             "file": "vector-assets.js",
-            "sha256": "56e39b7428a29f838b8fc5b432f75075e6cc69be4f28b5ed8553c0c94184bb52"
+            "sha256": "fe9dd1ad1774d30778a10cb16f4c0a00d7c2a04c328e237e0fb8c1e82e36407e"
         },
         "vectorAssetsLoader": {
             "file": "vector-assets-loader.js",
@@ -45,7 +45,7 @@
         },
         "events": {
             "file": "presentation-events.js",
-            "sha256": "4442cc8bfc787abce9a37bbda87a12d994dfc4b4266d3b97f36e26aa501418f5"
+            "sha256": "ec7b4b9f92d72ada76e98e4c64179ac868c36b51012ff49c2ce608dbab4d04eb"
         },
         "hud": {
             "file": "hud.js",
@@ -65,11 +65,11 @@
         },
         "geometry": {
             "file": "geometry.js",
-            "sha256": "cf471d5a627429d28fc91d69b8f94bc93df0cf36c1b2e6236fbc727b6dadb796"
+            "sha256": "27312d0997f521340ae2a49daee7dc22e4a8c3e5d6563df0b20fb9d6af1484fa"
         },
         "spatial": {
             "file": "spatial.js",
-            "sha256": "1fb88fa46dde9cdc85e2cc0d9349572362227daa69a11662eb2e37000d36c2f2"
+            "sha256": "131fcfa44b372e035418c00023f7c76be13d8b9438c733f188ba2ccd2595cc8a"
         },
         "face": {
             "file": "face.js",
@@ -77,20 +77,20 @@
         },
         "pathfield": {
             "file": "pathfield.js",
-            "sha256": "1f996f81bf3e578eb5d93ed07d36b506915c4520722a0d30c0aaf83688feaea5"
+            "sha256": "1c810498650bf5fc9d95cefba9d773f207d280f08b28c61d59838a3554a7f538"
         },
         "vision": {
             "file": "vision.js",
-            "sha256": "b630ae1678f99f6936422751b6f0bbeaa20a29e2867a1d938333d3d3f0f3e911"
+            "sha256": "38cb77e835e7aad4a2d737a467e082384826a38a9739be5c8c966a4551009aa1"
         },
         "scenario": {
             "file": "scenario.js",
-            "sha256": "b817a8d20cb87a150c50004b67daefd4e9b2402e9389cb19d3771057e16b4a99"
+            "sha256": "68459591fe6f7a58eb4470430683413e1546f2c5816e1d529f9c72560305eb77"
         },
         "boot": {
             "file": "boot.js",
             "sha256": "9352ec017b633be6fbdefc0a98b6cdf47f47ac99385b0277da96964215c874d9"
         }
     },
-    "distManifestSha256": "e09bef77d117227630723b7aed2ae476dda5a3f7009eb3e820ca357368bcbe46"
+    "distManifestSha256": "335f8067f29f08c07da5f02fd440032a1f973eb8bcefa065e987598338f781a1"
 }

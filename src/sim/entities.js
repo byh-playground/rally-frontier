@@ -169,6 +169,12 @@ class Projectile {
 }
 
 class VisibilityPolicy {
+    // Observer kinds (VisibilityPolicy.observe).
+    static UNIT = 0;
+    static BUILDING = 1;
+    static SHELL = 2;
+    static UNIT_REVEAL = 3;
+    static BUILDING_REVEAL = 4;
     static snapshotQueries = new WeakMap();
     static unitQuery(state) {
         if (typeof state.nearbyUnits === 'function')
@@ -211,75 +217,94 @@ class VisibilityPolicy {
             fields = (owner.visionFields ||= [null, null]);
         let field = fields[side];
         if (field?.map !== map) field = fields[side] = new VisionField(map);
-        return field.update(this.observers(state, side));
+        this.observe(field.begin(), state, side);
+        return field.end();
     }
-    static observers(state, side) {
-        const out = [],
-            world = WorldContext.forState(state);
-        for (const u of state.units || [])
-            if (u.alive && u.side === side) {
-                const d = UnitDefinition.get(u.type) || {};
-                out.push({
-                    id: u.id,
-                    x: u.x,
-                    y: u.y,
-                    radius: Number(d.sight) || 0,
-                    level: world.terrain.surfaces.levelAt(u.x, u.y),
-                });
-            }
-        for (const b of state.buildings || [])
-            if (b.alive !== false && b.side === side) {
-                const d = BuildingDefinition.get(b.type) || {};
-                out.push({
-                    id: b.id,
-                    x: b.x,
-                    y: b.y,
-                    radius: Number(d.sight) || 0,
-                    level: world.terrain.surfaces.levelAt(b.x, b.y),
-                });
-            }
-        const surfaces = world.terrain.surfaces;
+    // Observer id = number · 8 + kind. A unit's or shell's number is its id's sequence, a building's its place in
+    // state.buildings, so ids stay unique within one update and steady across updates while the entity lives.
+    static observe(field, state, side) {
+        const world = WorldContext.forState(state),
+            surfaces = world.terrain.surfaces,
+            tick = Number(state.tick || 0),
+            units = state.units || [],
+            buildings = state.buildings || [];
+        for (const u of units)
+            if (u.alive && u.side === side)
+                field.observe(
+                    EntityKey.number(u.id) * 8 + VisibilityPolicy.UNIT,
+                    u.x,
+                    u.y,
+                    Number(UnitDefinition.get(u.type)?.sight) || 0,
+                    surfaces.levelAt(u.x, u.y),
+                );
+        for (let i = 0; i < buildings.length; i++) {
+            const b = buildings[i];
+            if (b.alive !== false && b.side === side)
+                field.observe(
+                    i * 8 + VisibilityPolicy.BUILDING,
+                    b.x,
+                    b.y,
+                    Number(BuildingDefinition.get(b.type)?.sight) || 0,
+                    surfaces.levelAt(b.x, b.y),
+                );
+        }
         for (const p of state.projectiles || []) {
             if (!p.alive || !p.payload || p.side !== side) continue;
             const elevation = LaunchImpact.projectileHeight(state, p, p.x, p.y);
-            out.push({
-                id: p.id,
-                x: p.x,
-                y: p.y,
-                radius: LaunchRules.shellFlight.sightRadius,
-                level: Math.min(
+            field.observe(
+                EntityKey.number(p.id) * 8 + VisibilityPolicy.SHELL,
+                p.x,
+                p.y,
+                LaunchRules.shellFlight.sightRadius,
+                Math.min(
                     surfaces.maxLevel,
                     Math.floor(TerrainSurfaceAtlas.levelForElevation(elevation)),
                 ),
-            });
+            );
         }
         // High-ground attackers briefly reveal their own tile to the side they attacked.
-        for (const u of state.units || [])
-            if (u?.alive && u.side !== side && this.revealUntil(u, side) > Number(state.tick || 0))
-                out.push({
-                    id: `reveal:${u.id}`,
-                    x: u.x,
-                    y: u.y,
-                    radius: TERRAIN_ATTACK_REVEAL_RADIUS,
-                    level: world.terrain.surfaces.levelAt(u.x, u.y),
-                    xray: true,
-                });
-        for (const b of state.buildings || [])
+        for (const u of units)
+            if (u?.alive && u.side !== side && this.revealUntil(u, side) > tick)
+                field.observe(
+                    EntityKey.number(u.id) * 8 + VisibilityPolicy.UNIT_REVEAL,
+                    u.x,
+                    u.y,
+                    TERRAIN_ATTACK_REVEAL_RADIUS,
+                    surfaces.levelAt(u.x, u.y),
+                    true,
+                );
+        for (let i = 0; i < buildings.length; i++) {
+            const b = buildings[i];
             if (
                 b?.alive !== false &&
                 b.side !== side &&
-                Number(side === 0 ? b.terrainRevealUntil0 : b.terrainRevealUntil1) >
-                    Number(state.tick || 0)
+                Number(side === 0 ? b.terrainRevealUntil0 : b.terrainRevealUntil1) > tick
             )
-                out.push({
-                    id: `reveal:${b.id}`,
-                    x: b.x,
-                    y: b.y,
-                    radius: TERRAIN_ATTACK_REVEAL_RADIUS,
-                    level: world.terrain.surfaces.levelAt(b.x, b.y),
-                    xray: true,
-                });
-        return out;
+                field.observe(
+                    i * 8 + VisibilityPolicy.BUILDING_REVEAL,
+                    b.x,
+                    b.y,
+                    TERRAIN_ATTACK_REVEAL_RADIUS,
+                    surfaces.levelAt(b.x, b.y),
+                    true,
+                );
+        }
+    }
+}
+// Numeric keys for tick-path ties and caches instead of strings built from ids.
+class EntityKey {
+    // The decimal digits that end an id ('u' + seq, 'p' + seq): the entity's sequence number, unique per kind.
+    // A match counts far fewer than 2^50 entities, so the number and number · 8 + kind stay below 2^53.
+    static number(id) {
+        let n = 0,
+            scale = 1;
+        for (let i = id.length - 1; i >= 0; i--) {
+            const digit = id.charCodeAt(i) - 48;
+            if (digit < 0 || digit > 9) break;
+            n += digit * scale;
+            scale *= 10;
+        }
+        return n;
     }
 }
 class TerrainQuery {
@@ -371,7 +396,7 @@ class NavigationTopology {
             h = Math.imul(h ^ (n >>> 0), 0x01000193) >>> 0;
         };
         for (const b of records) {
-            const id = String(b.id);
+            const id = b.buildingId;
             mix(id.length);
             for (let i = 0; i < id.length; i++) mix(id.charCodeAt(i));
             mix(Math.round(b.x * FP));
@@ -411,7 +436,7 @@ class NavigationTopology {
                 const d = BuildingDefinition.get(b.type),
                     r = (d?.size || 35) + NAV_BUILDING_MARGIN;
                 const next = {
-                        id: b.id,
+                        buildingId: b.id,
                         type: b.type,
                         x: b.x,
                         y: b.y,
@@ -435,13 +460,23 @@ class NavigationTopology {
         this.changes = changes;
         if (!changes.length && this.version > 0) return false;
         this.records = records.sort((a, b) =>
-            String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0,
+            a.buildingId < b.buildingId ? -1 : a.buildingId > b.buildingId ? 1 : 0,
         );
-        this.byId = new Map(this.records.map((b) => [b.id, b]));
+        // A circle obstacle's id is its place in this sorted list: an integer, as contact keys need.
+        for (let i = 0; i < this.records.length; i++) this.records[i].id = i;
+        this.byId = new Map(this.records.map((b) => [b.buildingId, b]));
         this.signature = NavigationTopology.signatureOf(this.records);
         this.version++;
         return true;
     }
 }
 
-export { Building, NavigationTopology, Projectile, TerrainQuery, Unit, VisibilityPolicy };
+export {
+    Building,
+    EntityKey,
+    NavigationTopology,
+    Projectile,
+    TerrainQuery,
+    Unit,
+    VisibilityPolicy,
+};

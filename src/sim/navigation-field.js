@@ -145,7 +145,10 @@ class GoalFields {
     // Whether every point lies in the cells reachable from `from`; proves a generated map is connected.
     connected(from, points) {
         const grid = this.grid,
-            reached = grid.reachableFrom(grid.nearestOpen(grid.cellAt(from.x, from.y), 4));
+            reached = grid.reachableFrom(
+                grid.nearestOpen(grid.cellAt(from.x, from.y), 4),
+                (this.reached ||= new Uint8Array(grid.size)),
+            );
         return points.every((p) => {
             const cell = grid.nearestOpen(grid.cellAt(p.x, p.y), 4);
             return cell >= 0 && reached[cell] === 1;
