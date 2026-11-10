@@ -13,14 +13,16 @@ class FieldPath {
     constructor(nav) {
         this.nav = nav;
     }
-    // Point goals are fixed places (bases, flags, capture points) and keep their field; area goals share
-    // a field for the tick.
+    // Point goals are fixed places (bases, flags, capture points) and keep their field, as does an area goal
+    // marked `fixed` (a cannon's boarding ring); other area goals share a field for the tick.
     nextPoint(u, goal) {
         const nav = this.nav,
             radius = nav.sim.unitRadius(u.type);
         const direct = nav.straightGoal(u, goal, radius);
         if (direct) return direct;
-        const point = nav.fieldsFor(radius).next(u.x, u.y, goal, goal.radius === 0, radius);
+        const point = nav
+            .fieldsFor(radius)
+            .next(u.x, u.y, goal, goal.radius === 0 || goal.fixed === true, radius);
         if (!point) nav.metrics.unreachable++;
         return point;
     }

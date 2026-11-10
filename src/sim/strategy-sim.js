@@ -1500,6 +1500,7 @@ class StrategySim {
         impact,
         splash,
         passengerHp = null,
+        ride = null,
     }) {
         const cannon =
                 this.buildingById.get(cannonId) || this.buildings.find((b) => b.id === cannonId),
@@ -1533,7 +1534,7 @@ class StrategySim {
             splashBuildingDamage: impact,
             damageClass: 'normal',
             sourceDamageResolved: true,
-            payload: passengerHp == null ? { type, count } : { type, count, passengerHp },
+            payload: passengerHp == null ? { type, count } : { type, count, passengerHp, ride },
         });
         if (LaunchRules.isHeroType(type)) HeroDeployment.begin(this, side, type, id);
         this.events.push({
@@ -2496,7 +2497,6 @@ class StrategySim {
             if (d.contactMelee) ContactMelee.cancelCharge(u);
             u.target = null;
             if (this.updateConstructionWork(u, d, nonCombatMoveSpeed)) return null;
-            if (d.cannonRider && CannonRider.holdBeside(this, u, nonCombatMoveSpeed)) return null;
             const f = this.unitRallyPoint(u);
             this.moveToward(u, f.x, f.y, nonCombatMoveSpeed);
             return null;

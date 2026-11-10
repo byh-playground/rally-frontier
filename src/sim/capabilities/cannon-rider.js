@@ -1,36 +1,55 @@
 // Contract (moved from the index.html Development Contract):
 // - 검은콩(Unit Definition cannonRider)은 한 번에 10알을 싣는 묶음 투입탄이다. 착지(spawnUnit)할 때
-//   Unit.cannonRide.readyTick(재탑승 가능 틱)을 정하고, 그 전에는 일반 근접 AI로 싸운다. readyTick 뒤에는
-//   교전 중이어도 공용 교전 인식 거리(COMBAT_AGGRO_RANGE) 안에서 직선 경로가 열린 가장 가까운 탑승 가능 대포
-//   (발사 대포 중 찹쌀에 막히지 않은 것, 재장전 중 포함, 같으면 id 순)로 이동속도 배율을 곱해 돌아간다(phase 'return').
-//   대포가 없으면 계속 싸우며 주기적으로 다시 찾는다. 도착하면 한 명씩 탑승(phase 'board')해 조준을 고정하고,
-//   탑승 시간 뒤 공용 fireLaunchShell로 자기 한 명(count 1, passengerHp=현재 체력)을 비용·재장전 없이 쏜다.
-//   병사는 비행 중 투입탄 payload로만 존재하므로 인구는 그대로다. 비행 표적은 대포 사거리 안에서
-//   ① 보이는 가장 가까운 적 병사 ② 보이는 가장 가까운 적 건물 ③ 현재 대포보다 적 본진에 가까운 아군 발사 대포 중
-//   현재 대포에서 가장 가까운 것 앞 순서이고, 모두 없으면 그 대포 곁에서 기다리며 싸운다(phase 'wait').
-//   타는 대포가 사라지거나 막히면 탑승을 취소한다. cannonRide 전체가 권위 상태다. 탑승 모습은 스냅샷의
-//   cannonRide로 그리는 연출이며, 한 대포에 여러 명이면 가장 먼저 발사할 한 명만 그린다.
-// A black-bean soldier walks back to a friendly cannon on its own and launches itself again.
-// Unit.cannonRide { readyTick, phase, cannonId, launchTick, aimX, aimY } is the only state:
-//   phase null     fights normally; once readyTick has passed it looks for a cannon to ride,
-//   phase 'return' walks a straight line to that cannon, faster than usual, even mid-fight,
-//   phase 'board'  sits on the muzzle until launchTick, then rides a shell of its own to the locked aim,
-//   phase 'wait'   stands by the frontmost cannon and fights whatever comes near.
+//   Unit.cannonRide.readyTick(대포를 다시 고를 틱)을 정한다. 적(유닛·건물)을 노리고 떨어졌거나 플레이어가 쏜
+//   경우는 재탑승 지연 뒤, 아군 대포로 건너뛰었거나 적진 방향으로 날아간 경우는 착지 즉시다. 그 전에는 일반 근접 AI로 싸운다.
+// - 대포 고르기: 자기보다 앞(적 본진까지의 거리가 자기보다 짧은) 아군 발사 대포 중 찹쌀에 막히지 않았고
+//   직선거리가 탐색 상한(발사 사거리 × cannonSearchReachMultiplier) 안인 가장 가까운 것(같으면 id 순).
+//   고르는 때는 착지 뒤 readyTick이 지났을 때, 그 진영의 탈 수 있는 대포 목록(cannonListKey)이 바뀌었을 때,
+//   고른 대포를 잃었을 때뿐이고 틱마다 고르지 않는다. 고른 결과와 그때의 목록 키가 Unit.cannonRide에 남는다.
+//   앞에 대포가 없으면 일반 병종처럼 싸우며 행군한다.
+// - 고른 대포로는 교전 중이어도 이동속도 배율을 곱해 달려간다(phase 'return'). 직선이 열려 있으면 직선, 막혔으면
+//   그 대포의 탑승 고리를 목표로 하는 공용 고정 거리장(navigation field, 건물 배치가 바뀔 때만 다시 만듦)을 따른다.
+//   도착하면 한 명씩 탑승(phase 'board')해 조준을 고정하고, 탑승 시간 뒤 공용 fireLaunchShell로 자기 한 명
+//   (count 1, passengerHp=현재 체력, ride=비행 종류)을 비용·재장전 없이 쏜다. 탑승한 대포는 반드시 발사한다.
+// - 비행 표적(대포 발사 사거리 안, 최소 사거리 없음): ① 보이는 가장 가까운 적 병사 ② 보이는 가장 가까운 적 건물
+//   ('enemy') ③ 현재 대포보다 적 본진에 가까운 아군 발사 대포 중 현재 대포에서 가장 가까운 것의 탑승 고리 안
+//   ('hop', 적 본진 반대쪽에 병사마다 결정론적으로 흩음) ④ 적 본진 방향 사거리 끝('front', 보정은 일반 발사와 같음).
+//   포구에 너무 가까운 표적은 같은 방향으로 포구 밖 MIN_FLIGHT만큼 떨어진 곳을 노린다.
+// - cannonRide 전체가 권위 상태다. 탑승 모습은 스냅샷의 cannonRide로 그리는 연출이며, 한 대포에 여러 명이면
+//   가장 먼저 발사할 한 명만 그린다.
+// Unit.cannonRide { readyTick, phase, cannonId, launchTick, aimX, aimY, flight, listKey } is the only state:
+//   phase null     fights normally; once readyTick has passed it picks the nearest cannon ahead, at most once
+//                  per change of its side's cannon list (listKey), and none means it marches like any grain,
+//   phase 'return' runs to that cannon, faster than usual, even mid-fight,
+//   phase 'board'  sits on the muzzle until launchTick, then rides a shell of its own to the locked aim.
 // The flight reuses the ordinary launch path: shell, flight, impact and landing. Only the issuer differs,
-// it costs nothing, ignores the cannon's reload, and the single passenger keeps its health (payload.passengerHp).
+// it costs nothing, ignores the cannon's reload, and the single passenger keeps its health (payload.passengerHp)
+// and how it flew (payload.ride), which decides when it picks a cannon again.
 import { BuildingDefinition } from '../../definitions/buildings.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { LaunchRules } from '../launch-rules.js';
+import { HashUtil } from '../map-generation.js';
 import { NavigationGoal, UnitMotion } from '../navigation.js';
 
 // Same margin as a returning hero: the bean stops just outside the cannon's body.
 const BOARD_PADDING = 10;
-// A hop to a forward cannon lands this far in front of that cannon's body, on the side it came from.
-const HOP_LANDING_GAP = 30;
+// A shell aimed closer than this past the muzzle flies this far in the same direction instead.
+const MIN_FLIGHT = 40;
+// Hop landings fan out this far either side of the line from the next cannon away from the enemy base.
+const HOP_SPREAD = Math.PI / 4;
 
-const PHASES = Object.freeze([null, 'return', 'board', 'wait']);
+const PHASES = Object.freeze([null, 'return', 'board']);
+// enemy: aimed at an enemy (or launched by the player), fights before picking a cannon again.
+// hop:   dropped beside a cannon further forward, picks a cannon again at once.
+// front: thrown toward the enemy base from the frontmost cannon, picks a cannon again at once.
+const FLIGHTS = Object.freeze(['enemy', 'hop', 'front']);
+
+// Per tick and side: a key of the cannons a rider may pick. Derived from the state, never stored in it.
+const LIST_KEYS = new WeakMap();
 
 class CannonRider {
+    static FLIGHTS = FLIGHTS;
+
     static initialState() {
         return {
             readyTick: 0,
@@ -39,6 +58,8 @@ class CannonRider {
             launchTick: 0,
             aimX: 0,
             aimY: 0,
+            flight: null,
+            listKey: null,
         };
     }
 
@@ -53,16 +74,22 @@ class CannonRider {
             !Number.isSafeInteger(ride.aimX) ||
             !Number.isSafeInteger(ride.aimY) ||
             (ride.phase === null) !== (ride.cannonId === null) ||
-            (ride.cannonId !== null && typeof ride.cannonId !== 'string')
+            (ride.cannonId !== null && typeof ride.cannonId !== 'string') ||
+            (ride.phase === 'board') !== FLIGHTS.includes(ride.flight) ||
+            (ride.phase !== 'board' && ride.flight !== null) ||
+            (ride.listKey !== null && (!Number.isSafeInteger(ride.listKey) || ride.listKey < 0)) ||
+            (ride.phase !== null && ride.listKey === null)
         )
             throw new Error('게임 snapshot의 검은콩 탑승 상태가 잘못되었습니다.');
     }
 
-    // Every landing starts the wait again, including a hop to another cannon.
-    static land(sim, unit, spec) {
+    // Every landing picks a cannon again: after the fight delay, or at once after a hop or a forward throw.
+    static land(sim, unit, spec, flight = 'enemy') {
         unit.cannonRide = {
             ...this.initialState(),
-            readyTick: sim.tick + sim.msTicks(spec.reboardDelayMs),
+            readyTick:
+                sim.tick +
+                (flight === 'hop' || flight === 'front' ? 0 : sim.msTicks(spec.reboardDelayMs)),
         };
     }
 
@@ -72,6 +99,7 @@ class CannonRider {
         ride.launchTick = 0;
         ride.aimX = 0;
         ride.aimY = 0;
+        ride.flight = null;
     }
 
     // Works on the live simulation and on any snapshot: a friendly launch cannon nobody is jamming.
@@ -98,12 +126,31 @@ class CannonRider {
         return this.rideable(state, unit, cannon) ? cannon : null;
     }
 
+    // The cannons a side's riders may pick, as one key: it changes when a cannon is built, lost or jammed.
+    static cannonListKey(sim, side) {
+        let memo = LIST_KEYS.get(sim);
+        if (!memo || memo.tick !== sim.tick) {
+            memo = { tick: sim.tick, keys: [null, null] };
+            LIST_KEYS.set(sim, memo);
+        }
+        if (memo.keys[side] === null) {
+            let text = '';
+            for (const cannon of sim.launchCannons(side))
+                if (!LaunchRules.jammed(sim, cannon)) text += cannon.id + '|';
+            memo.keys[side] = HashUtil.hash(text);
+        }
+        return memo.keys[side];
+    }
+
     // A squad crowds the muzzle: a soldier one body behind those already standing there has arrived too.
+    // The walking goal keeps one shared distance field per cannon (fixed), used only when the straight line is closed.
     static goal(sim, unit, cannon) {
         const radius = sim.buildingClearanceDistance(unit, cannon) + BOARD_PADDING,
-            body = UnitDefinition.get(unit.type).size * 2;
+            body = UnitDefinition.get(unit.type).size * 2,
+            goal = NavigationGoal.range(cannon.x, cannon.y, radius, 0, true);
+        goal.fixed = true;
         return {
-            goal: NavigationGoal.range(cannon.x, cannon.y, radius, 0, true),
+            goal,
             arrival: new NavigationGoal(cannon.x, cannon.y, radius + body, 0, true),
         };
     }
@@ -113,27 +160,6 @@ class CannonRider {
             sim.terrainLevelAt(unit.x, unit.y) === sim.terrainLevelAt(cannon.x, cannon.y) &&
             sim.navigation.acceptsGoalPoint(this.goal(sim, unit, cannon).arrival, unit.x, unit.y)
         );
-    }
-
-    // Cannons within recognition range whose straight line is open; the nearest wins, ties by id.
-    static findCannon(sim, unit) {
-        const range = sim.combatTargetAggroRange(unit),
-            range2 = range * range;
-        let best = null,
-            bestD2 = Infinity;
-        for (const cannon of sim.launchCannons(unit.side)) {
-            if (LaunchRules.jammed(sim, cannon)) continue;
-            const d2 = (cannon.x - unit.x) ** 2 + (cannon.y - unit.y) ** 2;
-            if (d2 > range2 || d2 > bestD2 || (d2 === bestD2 && cannon.id > best.id)) continue;
-            if (
-                !this.arrived(sim, unit, cannon) &&
-                !sim.navigation.nextPoint(unit, this.goal(sim, unit, cannon).goal, 'direct')
-            )
-                continue;
-            best = cannon;
-            bestD2 = d2;
-        }
-        return best;
     }
 
     static enemyBase(sim, side) {
@@ -147,87 +173,140 @@ class CannonRider {
         );
     }
 
-    // Where a soldier on this cannon flies, nearest first within the cannon's launch range:
-    // a. a visible enemy soldier, b. a visible enemy building, c. a friendly cannon closer to the
-    // enemy main base (the one nearest this cannon). null means this is the frontmost cannon: wait here.
-    static flightTarget(sim, unit, cannon, sources) {
-        const side = unit.side,
-            minReach = LaunchRules.minReach,
-            maxReach = LaunchRules.maxReachOf(unit.type, sim.launchRangeLevel[side]),
-            min2 = minReach * minReach,
-            max2 = maxReach * maxReach;
-        const inReach = (x, y) => {
-            const d2 = (x - cannon.x) ** 2 + (y - cannon.y) ** 2;
-            return d2 >= min2 && d2 <= max2 ? d2 : -1;
-        };
+    // The nearest friendly cannon ahead of the soldier (closer to the enemy main base than the soldier is),
+    // within the search reach; ties by id. null: nothing ahead, march like any grain.
+    static findCannon(sim, unit, spec) {
+        const base = this.enemyBase(sim, unit.side);
+        if (!base) return null;
+        const reach =
+                LaunchRules.maxReachOf(unit.type, sim.launchRangeLevel[unit.side]) *
+                spec.cannonSearchReachMultiplier,
+            reach2 = reach * reach,
+            ahead2 = (unit.x - base.x) ** 2 + (unit.y - base.y) ** 2;
         let best = null,
             bestD2 = Infinity;
-        const consider = (entity, x, y) => {
-            const d2 = inReach(x, y);
-            if (d2 < 0 || d2 > bestD2 || (d2 === bestD2 && entity.id > best.id)) return;
+        for (const cannon of sim.launchCannons(unit.side)) {
+            if ((cannon.x - base.x) ** 2 + (cannon.y - base.y) ** 2 >= ahead2) continue;
+            const d2 = (cannon.x - unit.x) ** 2 + (cannon.y - unit.y) ** 2;
+            if (d2 > reach2 || d2 > bestD2 || (d2 === bestD2 && cannon.id > best.id)) continue;
+            if (LaunchRules.jammed(sim, cannon)) continue;
+            best = cannon;
+            bestD2 = d2;
+        }
+        return best;
+    }
+
+    // Where a soldier on this cannon flies, always somewhere, within the cannon's launch range:
+    // a. the nearest visible enemy soldier, b. the nearest visible enemy building, c. beside the nearest
+    // friendly cannon closer to the enemy main base, d. toward the enemy main base at full range.
+    static flightTarget(sim, unit, cannon, sources) {
+        const side = unit.side,
+            level = sim.launchRangeLevel[side],
+            maxReach = LaunchRules.maxReachOf(unit.type, level),
+            max2 = maxReach * maxReach;
+        let best = null,
+            bestD2 = Infinity;
+        const consider = (entity) => {
+            const d2 = (entity.x - cannon.x) ** 2 + (entity.y - cannon.y) ** 2;
+            if (d2 > max2 || d2 > bestD2 || (d2 === bestD2 && entity.id > best.id)) return;
             best = entity;
             bestD2 = d2;
         };
         sim.forEachNearbyHostileUnit(side, cannon.x, cannon.y, maxReach, (enemy) => {
-            if (sim.canSeeCombatTarget(side, enemy, sources)) consider(enemy, enemy.x, enemy.y);
+            if (sim.canSeeCombatTarget(side, enemy, sources)) consider(enemy);
         });
-        if (best) return { x: best.x, y: best.y };
-        for (const building of sim.buildings)
-            if (
-                sim.isHostileCombatBuilding(side, building) &&
-                sim.isVisible(side, building.x, building.y, sources)
-            )
-                consider(building, building.x, building.y);
-        if (best) return { x: best.x, y: best.y };
-
+        if (!best)
+            for (const building of sim.buildings)
+                if (
+                    sim.isHostileCombatBuilding(side, building) &&
+                    sim.isVisible(side, building.x, building.y, sources)
+                )
+                    consider(building);
         const base = this.enemyBase(sim, side);
-        if (!base) return null;
-        const front2 = (b) => (b.x - base.x) ** 2 + (b.y - base.y) ** 2,
-            here = front2(cannon);
-        let hop = null;
-        for (const next of sim.launchCannons(side)) {
-            if (next === cannon || front2(next) >= here || LaunchRules.jammed(sim, next)) continue;
-            const landing = this.hopLanding(sim, unit, cannon, next);
-            if (inReach(landing.x, landing.y) < 0) continue;
-            const d2 = (next.x - cannon.x) ** 2 + (next.y - cannon.y) ** 2;
-            if (d2 > bestD2 || (d2 === bestD2 && next.id > best.id)) continue;
-            best = next;
-            bestD2 = d2;
-            hop = landing;
+        if (best) return { ...this.pastMuzzle(sim, unit, cannon, best), flight: 'enemy' };
+
+        if (base) {
+            const front2 = (b) => (b.x - base.x) ** 2 + (b.y - base.y) ** 2,
+                here = front2(cannon);
+            let hop = null,
+                hopD2 = Infinity,
+                next = null;
+            for (const candidate of sim.launchCannons(side)) {
+                if (candidate === cannon || front2(candidate) >= here) continue;
+                const d2 = (candidate.x - cannon.x) ** 2 + (candidate.y - cannon.y) ** 2;
+                if (d2 > hopD2 || (d2 === hopD2 && candidate.id > next.id)) continue;
+                if (LaunchRules.jammed(sim, candidate)) continue;
+                const landing = this.hopLanding(sim, unit, cannon, candidate, base);
+                if ((landing.x - cannon.x) ** 2 + (landing.y - cannon.y) ** 2 > max2) continue;
+                next = candidate;
+                hopD2 = d2;
+                hop = landing;
+            }
+            if (hop) return { ...hop, flight: 'hop' };
         }
-        return hop;
-    }
 
-    // In front of the next cannon's body, on the side the shell comes from.
-    static hopLanding(sim, unit, from, to) {
-        const dx = from.x - to.x,
-            dy = from.y - to.y,
-            length = Math.hypot(dx, dy) || 1,
-            gap = sim.buildingClearanceDistance(unit, to) + HOP_LANDING_GAP;
-        return { x: to.x + (dx / length) * gap, y: to.y + (dy / length) * gap };
-    }
-
-    // On the muzzle: lock the aim the way a held launch would, and launch after boardMs.
-    static board(sim, unit, spec, cannon, target) {
-        const level = sim.launchRangeLevel[unit.side],
-            distance = Math.hypot(target.x - cannon.x, target.y - cannon.y),
-            holdMs = Math.round(LaunchRules.holdFor(distance, unit.type, level)),
+        const toward = base || sim.flags[1 - side] || sim.flags[side],
             aim = LaunchRules.target(
                 cannon,
-                target.x,
-                target.y,
-                holdMs,
+                toward.x,
+                toward.y,
+                LaunchRules.chargeMs,
                 sim.world,
-                sim.flags[unit.side],
+                sim.flags[side],
                 unit.type,
                 level,
             );
+        return { x: aim.x, y: aim.y, flight: 'front' };
+    }
+
+    // An aim right at the muzzle still flies: it moves out along the same line to MIN_FLIGHT past the muzzle.
+    static pastMuzzle(sim, unit, cannon, target) {
+        const muzzle = LaunchRules.muzzleReach(cannon) + MIN_FLIGHT;
+        let dx = target.x - cannon.x,
+            dy = target.y - cannon.y,
+            length = Math.hypot(dx, dy);
+        if (length >= muzzle) return { x: Math.round(target.x), y: Math.round(target.y) };
+        if (length < 1) {
+            const toward = this.enemyBase(sim, unit.side) || sim.flags[unit.side];
+            dx = toward.x - cannon.x;
+            dy = toward.y - cannon.y;
+            length = Math.hypot(dx, dy) || 1;
+        }
+        return {
+            x: Math.round(cannon.x + (dx / length) * muzzle),
+            y: Math.round(cannon.y + (dy / length) * muzzle),
+        };
+    }
+
+    // Inside the next cannon's boarding ring, on its side away from the enemy base (so that cannon is ahead of
+    // the soldier), each soldier at its own angle so a squad does not land on one point.
+    static hopLanding(sim, unit, from, to, base) {
+        let dx = to.x - base.x,
+            dy = to.y - base.y,
+            length = Math.hypot(dx, dy);
+        if (length < 1) {
+            dx = from.x - to.x;
+            dy = from.y - to.y;
+            length = Math.hypot(dx, dy) || 1;
+        }
+        const spread = ((HashUtil.hash(unit.id + '|hop') % 1001) / 500 - 1) * HOP_SPREAD,
+            angle = Math.atan2(dy, dx) + spread,
+            gap = sim.buildingClearanceDistance(unit, to) + BOARD_PADDING;
+        return {
+            x: Math.round(to.x + Math.cos(angle) * gap),
+            y: Math.round(to.y + Math.sin(angle) * gap),
+        };
+    }
+
+    // On the muzzle: lock the aim and launch after boardMs.
+    static board(sim, unit, spec, cannon, target) {
         const ride = unit.cannonRide;
         ride.phase = 'board';
         ride.cannonId = cannon.id;
         ride.launchTick = sim.tick + sim.msTicks(spec.boardMs);
-        ride.aimX = aim.x;
-        ride.aimY = aim.y;
+        ride.aimX = target.x;
+        ride.aimY = target.y;
+        ride.flight = target.flight;
         unit.combat.cancelWindup();
         unit.constructionWork = null;
         unit.target = null;
@@ -260,6 +339,7 @@ class CannonRider {
             impact: shot.impact,
             splash: shot.splash,
             passengerHp: unit.hp,
+            ride: ride.flight,
         });
         // The soldier is now the shell's passenger; it lands as a new soldier with the same health.
         unit.alive = false;
@@ -268,27 +348,14 @@ class CannonRider {
         sim.syncUnitSpatial(unit);
     }
 
-    // On the cannon: fly to a target, hop forward, or stay as the frontmost guard.
-    static decide(sim, unit, spec, cannon, sources) {
-        const target = this.flightTarget(sim, unit, cannon, sources);
-        if (target) {
-            this.board(sim, unit, spec, cannon, target);
-            return true;
-        }
-        const ride = unit.cannonRide;
-        ride.phase = 'wait';
-        ride.cannonId = cannon.id;
-        return false;
-    }
-
     // True when the ride took this tick's combat action.
     static update(sim, unit, spec, sources) {
         const ride = unit.cannonRide;
-        if (ride.phase === null && sim.tick < ride.readyTick) return false;
         if (ride.phase === 'board') {
             const cannon = this.cannonOf(sim, unit);
             if (!cannon) {
                 this.clear(ride);
+                ride.listKey = null;
                 return false;
             }
             unit.combat.cancelWindup();
@@ -296,30 +363,24 @@ class CannonRider {
             if (sim.tick >= ride.launchTick) this.launch(sim, unit, cannon);
             return true;
         }
-        const cannon = ride.phase === null ? null : this.cannonOf(sim, unit);
-        if (ride.phase !== null && !cannon) this.clear(ride);
-        if (ride.phase === 'wait') {
-            // A guard fights whatever comes near; only an idle guard back at its cannon looks again.
-            if (unit.target !== null || !sim.combatTargetRefreshDue(unit)) return false;
-            if (!this.arrived(sim, unit, cannon)) {
-                if (!sim.navigation.nextPoint(unit, this.goal(sim, unit, cannon).goal, 'direct'))
-                    this.clear(ride);
-                return false;
+        if (sim.tick < ride.readyTick) return false;
+        const key = this.cannonListKey(sim, unit.side);
+        let cannon = ride.phase === 'return' ? this.cannonOf(sim, unit) : null;
+        // Pick again only when there is no pick yet, the cannon list changed, or the picked cannon is gone.
+        if (ride.listKey !== key || (ride.phase === 'return' && !cannon)) {
+            this.clear(ride);
+            ride.listKey = key;
+            cannon = this.findCannon(sim, unit, spec);
+            if (cannon) {
+                ride.phase = 'return';
+                ride.cannonId = cannon.id;
             }
-            return this.decide(sim, unit, spec, cannon, sources);
         }
-        if (ride.phase === null) {
-            if (!sim.combatTargetRefreshDue(unit)) return false;
-            const found = this.findCannon(sim, unit);
-            if (!found) return false;
-            ride.phase = 'return';
-            ride.cannonId = found.id;
-            return this.walk(sim, unit, spec, found, sources);
-        }
+        if (!cannon) return false;
         return this.walk(sim, unit, spec, cannon, sources);
     }
 
-    // The way back drops any fight and runs a straight line; a closed line gives the cannon up.
+    // The way to the cannon drops any fight; a cannon that cannot be reached is given up until the list changes.
     static walk(sim, unit, spec, cannon, sources) {
         unit.combat.cancelWindup();
         unit.constructionWork = null;
@@ -330,11 +391,11 @@ class CannonRider {
         )
             return true;
         if (this.arrived(sim, unit, cannon)) {
-            this.decide(sim, unit, spec, cannon, sources);
+            this.board(sim, unit, spec, cannon, this.flightTarget(sim, unit, cannon, sources));
             return true;
         }
         const { goal } = this.goal(sim, unit, cannon);
-        if (!sim.navigation.nextPoint(unit, goal, 'direct')) {
+        if (!sim.navigation.nextPoint(unit, goal, 'field')) {
             this.clear(unit.cannonRide);
             return false;
         }
@@ -344,18 +405,7 @@ class CannonRider {
                     spec.returnSpeedMultiplier *
                     sim.timedModifierPct(unit, 'movePct')) /
                 100;
-        sim.moveToGoal(unit, goal, speed, { path: 'direct' });
-        return true;
-    }
-
-    // An idle guard drifts back beside its cannon instead of marching to the rally point.
-    static holdBeside(sim, unit, speed) {
-        const ride = unit.cannonRide;
-        if (ride?.phase !== 'wait') return false;
-        const cannon = this.cannonOf(sim, unit);
-        if (!cannon) return false;
-        if (!this.arrived(sim, unit, cannon))
-            sim.moveToGoal(unit, this.goal(sim, unit, cannon).goal, speed, { path: 'direct' });
+        sim.moveToGoal(unit, goal, speed, { path: 'field' });
         return true;
     }
 }

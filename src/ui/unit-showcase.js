@@ -46,12 +46,13 @@ const DEFENDERS = [
     [205, 60],
     [180, 115],
 ];
-// A cannon rider's loop: land, fight, walk back to the launching cannon, ride it, fly at the enemy, land.
-// Distances are from the host cannon and keep the enemy inside that cannon's launch range.
+// A cannon rider's loop: land, fight, run to the friendly cannon ahead, ride it, fly at the enemy, land.
+// Distances are from the host cannon; the outpost ahead keeps the enemy inside its launch range.
 const CANNON_RIDER = Object.freeze({
     durationMs: 12000,
-    // Inside the cannon recognition range (COMBAT_AGGRO_RANGE), so the whole squad returns after the delay.
     launchDistance: 250,
+    // Ahead of the landing squad, so the whole squad runs to it after the delay.
+    outpostDistance: 520,
     defenders: [
         [300, -50],
         [315, 0],
@@ -128,6 +129,13 @@ function createArena(unitType, opening, interception) {
         sim.creditResources(1, LaunchRules.premiumWalletCap, 'premium');
         for (const [dx, dy] of interception.formation) sim.spawnUnit(0, unitType, x + dx, y + dy);
     } else if (rider) {
+        const outpost = sim.spawnOutpost(
+            { id: 'showcase', x: host.x + rider.outpostDistance, y },
+            0,
+        );
+        sim.completeConstruction(outpost);
+        outpost.hp = outpost.maxHp;
+        outpost.cooldownUntil = Number.MAX_SAFE_INTEGER;
         for (const [dx, dy] of rider.defenders) sim.spawnUnit(1, 'pea', host.x + dx, y + dy);
     } else if (!opening && !siege && !grows) {
         for (const [dx, dy] of DEFENDERS) sim.spawnUnit(1, 'pea', x + dx, y + dy);
