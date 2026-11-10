@@ -147,6 +147,8 @@ class AiCommandExecutor {
     }
 }
 
+const DECISION_INTERVAL_MS = 1_000;
+
 class BotController {
     static attach(session, role) {
         const bot = new BotController(session, { role });
@@ -188,11 +190,12 @@ class BotController {
 
         const state = this.commandExecutor.begin(snapshot);
         try {
-            // 지갑이 가득 찼는데 간격 때문에 결정을 미루면 수입이 버려진다. 가득 찬 동안에는 기본(1대1) 간격으로 결정한다.
-            const walletFull = state.wallet[this.side] >= LaunchRules.walletCap;
-            const intervalMs = walletFull
-                ? Math.min(pacing?.decisionIntervalMs ?? 1200, 1200)
-                : (pacing?.decisionIntervalMs ?? 1200);
+            const intervalMs = BotController.decisionIntervalMs(
+                pacing,
+                state.tick,
+                tps,
+                state.wallet[this.side] >= LaunchRules.walletCap,
+            );
             if (state.tick - this.lastLaunchTick >= SimulationTiming.msToTicks(intervalMs, tps)) {
                 this.lastLaunchTick = state.tick;
                 this.runLaunch(state);
@@ -200,6 +203,14 @@ class BotController {
         } finally {
             this.commandExecutor.flush();
         }
+    }
+    // 모든 AI 공통 결정 간격. 캠페인 적은 첫 결정 뒤 이 값에서 시작해 `endIntervalMs`까지 `rampMs`에 걸쳐 선형으로 길어진다.
+    // 지갑이 가득 차면(수입이 버려지는 상태) 어떤 설정이든 기본 간격으로 결정한다.
+    static decisionIntervalMs(pacing, tick, tps, walletFull) {
+        if (walletFull || !pacing?.rampMs) return DECISION_INTERVAL_MS;
+        const elapsedMs = (tick / tps) * 1000 - pacing.firstDecisionMs;
+        const t = Math.min(1, Math.max(0, elapsedMs / pacing.rampMs));
+        return DECISION_INTERVAL_MS + (pacing.endIntervalMs - DECISION_INTERVAL_MS) * t;
     }
     static distance(a, b) {
         return Math.hypot(a.x - b.x, a.y - b.y);
