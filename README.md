@@ -73,6 +73,8 @@ legacy/                    현재 실행·배포에서 제외한 과거 코드 �
 
 `npm run build`와 [Pages 워크플로](.github/workflows/pages.yml)는 같은 원본 검사·복사 도구를 사용합니다. 실행 원본과 원본 자산을 `_site/`로 복사하며 SDK를 번들링하거나 소스를 재작성하지 않습니다. 실제 복사 목록은 [`build-pages.cjs`](scripts/build-pages.cjs)가 소유합니다. 검사·복사에 실패하면 이전 `_site`를 새 결과로 오인하지 않도록 제거합니다.
 
+시작 로딩의 진행률은 GameKit `boot`가 맡습니다. [`src/core/gamekit.js`](src/core/gamekit.js)가 단계와 가중치를 정하고, 게임 모듈·유닛 그림·병종 스프라이트는 실제 완료 개수를 보고합니다. 고정 SDK는 `boot.importPinnedModules`가 받아 SHA-256을 검증한 뒤 import합니다. 그래픽 준비와 타이틀 장면은 개수가 없어 끝날 때 채워집니다. 준비에 실패하면 같은 진행 상태를 재사용하지 않고 페이지를 다시 불러옵니다.
+
 화면의 배포 기록은 `build.json`을 페이지당 한 번, `cache: no-store`·3초 제한으로 읽습니다. 조회는 게임 시작을 막지 않으며 `pending`·`available`·`unavailable`을 구분합니다. 기록이 없거나 실패했다고 공개 게임을 미배포 개발본이라고 판단하지 않습니다. 제품 버전은 로딩한 원본 `PRODUCT_VERSION`을 유지하며, 배포 기록의 제품 버전이 일치하지 않으면 그 기록을 `unavailable`로 판정합니다. 초기 SDK 실패 진단에도 조회가 끝난 배포 정보를 반영합니다.
 
 ## 판정·표현·네트워크 경계

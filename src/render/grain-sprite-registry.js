@@ -158,10 +158,17 @@ export const GRAIN_SPRITES = Object.freeze({
     },
 });
 
-export async function loadGrainSpriteCanvases() {
+// `boot` is the GameKit startup progress: one item per sprite source.
+export async function loadGrainSpriteCanvases(boot) {
+    const entries = Object.entries(SPRITE_SOURCES);
+    boot.begin('sprites', entries.length);
     const sources = Object.fromEntries(
         await Promise.all(
-            Object.entries(SPRITE_SOURCES).map(async ([id, load]) => [id, await load()]),
+            entries.map(async ([id, load]) => {
+                const canvas = await load();
+                boot.advance('sprites');
+                return [id, canvas];
+            }),
         ),
     );
     return Object.freeze(

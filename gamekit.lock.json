@@ -1,11 +1,11 @@
 {
     "repository": "byh-playground/bloom-gamekit",
-    "sourceCommit": "c93b61348d0569ea2fb93f164b14cab7f15d64a2",
-    "distCommit": "0f2426792baf2293aeb4c4356805f5ac78cf920f",
+    "sourceCommit": "a41195fb3c2039d880aad7187713bdcca059c1d6",
+    "distCommit": "de59545b221ef33407574142a3d0555a7f87b4e9",
     "modules": {
         "rollback": {
             "file": "rollback.js",
-            "sha256": "6debbaac1c7787cf0eb5e993ebcea221d1c111485eaed34b9400a4108b386791"
+            "sha256": "f31c76c89b1b71ece113b58f99c4fffd5d423b9285363199e9d4e024db9b7125"
         },
         "deterministic": {
             "file": "deterministic.js",
@@ -35,6 +35,10 @@
             "file": "vector-assets.js",
             "sha256": "56e39b7428a29f838b8fc5b432f75075e6cc69be4f28b5ed8553c0c94184bb52"
         },
+        "vectorAssetsLoader": {
+            "file": "vector-assets-loader.js",
+            "sha256": "f53c266c4bff3e79c0a6341b8e1c68525507199a920c7d6a97936ebc84ca6da9"
+        },
         "camera": {
             "file": "camera.js",
             "sha256": "99c1be43b6a38945028d029a5ecc594f7ff6dfc71075305264930748cafe88b6"
@@ -50,10 +54,6 @@
         "debug": {
             "file": "debug-tools.js",
             "sha256": "bd077de55035f4e258d341318108b32613de5153d09aa5f6edca6ad31eedb4a4"
-        },
-        "vectorAssetsLoader": {
-            "file": "vector-assets-loader.js",
-            "sha256": "f53c266c4bff3e79c0a6341b8e1c68525507199a920c7d6a97936ebc84ca6da9"
         },
         "navigation": {
             "file": "navigation.js",
@@ -86,7 +86,11 @@
         "scenario": {
             "file": "scenario.js",
             "sha256": "b817a8d20cb87a150c50004b67daefd4e9b2402e9389cb19d3771057e16b4a99"
+        },
+        "boot": {
+            "file": "boot.js",
+            "sha256": "dd42d9840e634471921546587f1fc9e645cbb334f2e7ac4adac72f0140f1d5e5"
         }
     },
-    "distManifestSha256": "96ea3a4ef26c00f85a1d82f79febddbafc24da9671c0453f950e04d8d0c3df68"
+    "distManifestSha256": "db010d8f1b8f3a8046c5436be3712a52206d8e849a7e76ea978d5703f7be611f"
 }
