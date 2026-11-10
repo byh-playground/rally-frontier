@@ -330,9 +330,11 @@ END OF DEVELOPMENT CONTRACT
                 <div class="boot-kicker">쌀콩팡!</div>
                 <div id="bootTitle" class="boot-title">게임 준비 중</div>
                 <div id="bootStatus" class="boot-status">게임을 준비합니다.</div>
-                <div class="boot-progress"><span id="bootProgressBar"></span></div>
+                <progress id="bootProgressBar" class="boot-progress" max="1" value="0"></progress>
                 <div id="bootBuild" class="boot-build">BUILD ···</div>
-                <button id="bootRetryBtn" class="boot-retry hidden" type="button">다시 확인</button>
+                <button id="bootRetryBtn" class="boot-retry hidden" type="button">
+                    다시 불러오기
+                </button>
             </div>
         </div>
 

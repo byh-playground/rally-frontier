@@ -1,6 +1,6 @@
 // Both realms load the pinned simulation and session SDK; the page also prepares its art.
 // prettier-ignore
-const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","navigation":"navigation.js","objectPool":"object-pool.js","geometry":"geometry.js","spatial":"spatial.js","face":"face.js","pathfield":"pathfield.js","vision":"vision.js","scenario":"scenario.js"});
+const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","navigation":"navigation.js","objectPool":"object-pool.js","geometry":"geometry.js","spatial":"spatial.js","face":"face.js","pathfield":"pathfield.js","vision":"vision.js","scenario":"scenario.js","boot":"boot.js"});
 const SESSION_MODULE_NAMES = new Set([
     'rollback',
     'deterministic',
@@ -10,6 +10,7 @@ const SESSION_MODULE_NAMES = new Set([
     'spatial',
     'pathfield',
     'vision',
+    'boot',
 ]);
 const SIM_WORKER = typeof WorkerGlobalScope !== 'undefined';
 // Resolve from this module so the page and the Worker realm load the same files.
@@ -20,8 +21,42 @@ const RALLY_GAMEKIT_SOURCE=Object.freeze({lock:new URL('gamekit.lock.json',RALLY
 const RALLY_VECTOR_ASSET_MANIFEST_URL = new URL('assets/units/manifest.json', RALLY_ASSET_ROOT)
     .href;
 let RALLY_NETCODE_URL = RALLY_GAMEKIT_SOURCE.lock;
-let RallyNetcode, RallyGamekit;
-async function loadRallyVectorAssets(loaderModule) {
+let RallyNetcode, RallyGamekit, RallyBoot;
+// Startup stages and their share of the bar: measured wall time on a desktop build, in tenths of a second, with the
+// SDK raised for a real CDN. Counts are real work items; the bar never estimates time. `graphics` is one synchronous
+// GPU frame, so it has no count and fills when it ends.
+const RALLY_BOOT_STAGES = Object.freeze([
+    { id: 'sdk', weight: 5 },
+    { id: 'units', weight: 2 },
+    { id: 'sprites', weight: 7 },
+    { id: 'graphics', weight: 12 },
+    { id: 'title', weight: 5 },
+]);
+const RALLY_BOOT_LABELS = Object.freeze({
+    sdk: '게임 모듈',
+    units: '유닛 그림',
+    sprites: '병종 스프라이트',
+    graphics: '그래픽 준비',
+    title: '타이틀 장면',
+});
+// boot.js itself has to arrive before it can report anything: verify and import this one file here.
+async function importVerifiedModule(url, sha256, name) {
+    const response = await fetch(url);
+    if (!response.ok)
+        throw new Error('Gamekit module load failed: ' + name + ' HTTP ' + response.status);
+    const bytes = await response.arrayBuffer();
+    const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (b) =>
+        b.toString(16).padStart(2, '0'),
+    ).join('');
+    if (digest !== sha256) throw new Error('Gamekit module SHA-256 mismatch: ' + name);
+    const objectURL = URL.createObjectURL(new Blob([bytes], { type: 'text/javascript' }));
+    try {
+        return await import(objectURL);
+    } finally {
+        URL.revokeObjectURL(objectURL);
+    }
+}
+async function loadRallyVectorAssets(loaderModule, boot) {
     const response = await fetch(RALLY_VECTOR_ASSET_MANIFEST_URL, { cache: 'no-store' });
     if (!response.ok) throw new Error('Unit SVG manifest를 불러오지 못했습니다.');
     const manifest = await response.json();
@@ -59,6 +94,7 @@ async function loadRallyVectorAssets(loaderModule) {
     if (typeof loaderModule?.createVectorAssetLoader !== 'function')
         throw new Error('Gamekit vector asset loader API가 없습니다.');
     const loader = loaderModule.createVectorAssetLoader({ maxEntries: manifest.assets.length });
+    boot.begin('units', manifest.assets.length);
     // Preserve the pre-upgrade SVG geometry: curve16 and round-stroke arc12.
     const loaded = await Promise.all(
         manifest.assets.map(async (entry) => {
@@ -74,6 +110,7 @@ async function loadRallyVectorAssets(loaderModule) {
                 throw new Error(
                     'Unit SVG 무결성 또는 compiler output 검증에 실패했습니다: ' + entry.id,
                 );
+            boot.advance('units');
             return [entry.id, asset];
         }),
     );
@@ -104,44 +141,61 @@ try {
     const moduleFiles = Object.entries(RALLY_GAMEKIT_MODULES).filter(
         ([name]) => !SIM_WORKER || SESSION_MODULE_NAMES.has(name),
     );
-    const modules = await Promise.all(
-        moduleFiles.map(async ([name, file]) => {
-            const entry = gamekitLock.modules[name];
-            if (!entry || entry.file !== file || !/^[a-f0-9]{64}$/.test(entry.sha256 || ''))
-                throw new Error('Gamekit lock entry mismatch: ' + name);
-            const url =
-                'https://cdn.jsdelivr.net/gh/' +
-                gamekitSource.repository +
-                '@' +
-                gamekitSource.distCommit +
-                '/' +
-                file;
-            const response = await fetch(url);
-            if (!response.ok)
-                throw new Error('Gamekit module load failed: ' + name + ' HTTP ' + response.status);
-            const bytes = await response.arrayBuffer();
-            const digest = Array.from(
-                new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
-                (b) => b.toString(16).padStart(2, '0'),
-            ).join('');
-            if (digest !== entry.sha256)
-                throw new Error('Gamekit module SHA-256 mismatch: ' + name);
-            const objectURL = URL.createObjectURL(new Blob([bytes], { type: 'text/javascript' }));
-            try {
-                return [name, await import(objectURL)];
-            } finally {
-                URL.revokeObjectURL(objectURL);
-            }
-        }),
+    for (const [name, file] of moduleFiles) {
+        const entry = gamekitLock.modules[name];
+        if (!entry || entry.file !== file || !/^[a-f0-9]{64}$/.test(entry.sha256 || ''))
+            throw new Error('Gamekit lock entry mismatch: ' + name);
+    }
+    const base =
+        'https://cdn.jsdelivr.net/gh/' +
+        gamekitSource.repository +
+        '@' +
+        gamekitSource.distCommit +
+        '/';
+    const bootModule = await importVerifiedModule(
+        base + gamekitLock.modules.boot.file,
+        gamekitLock.modules.boot.sha256,
+        'boot',
     );
-    const namespaces = Object.fromEntries(modules);
+    // The Worker realm only loads the session SDK; the page owns the visible bar and the art stages.
+    RallyBoot = bootModule.createBoot({
+        stages: SIM_WORKER ? RALLY_BOOT_STAGES.slice(0, 1) : RALLY_BOOT_STAGES,
+    });
+    if (!SIM_WORKER)
+        bootModule.bindBootProgress(RallyBoot, {
+            progress: document.getElementById('bootProgressBar'),
+            label: document.getElementById('bootStatus'),
+            text: (state) =>
+                state.failed
+                    ? String(state.failed.message || state.failed)
+                    : !state.stage
+                      ? '게임을 준비합니다.'
+                      : RALLY_BOOT_LABELS[state.stage] +
+                        (state.total === null ? '' : ` ${state.completed}/${state.total}`),
+        });
+    // boot receives, verifies (SHA-256) and imports the rest, advancing once per module.
+    const namespaces = {
+        boot: bootModule,
+        ...(await RallyBoot.importPinnedModules(
+            {
+                base,
+                modules: Object.fromEntries(
+                    moduleFiles
+                        .filter(([name]) => name !== 'boot')
+                        .map(([name]) => [name, gamekitLock.modules[name]]),
+                ),
+            },
+            { stage: 'sdk' },
+        )),
+    };
+    const modules = moduleFiles.map(([name]) => [name, namespaces[name]]);
     if (!SIM_WORKER) {
-        const loaded = await loadRallyVectorAssets(namespaces.vectorAssetsLoader);
+        const loaded = await loadRallyVectorAssets(namespaces.vectorAssetsLoader, RallyBoot);
         const { loadGrainSpriteCanvases } = await import('../render/grain-sprite-registry.js');
         globalThis.RallyVectorAssets = loaded.assets;
         globalThis.RallyVectorAssetLoader = loaded.loader;
         // Registry order matches atlas allocation order; shared canvases count once.
-        globalThis.RallySpriteCanvases = await loadGrainSpriteCanvases();
+        globalThis.RallySpriteCanvases = await loadGrainSpriteCanvases(RallyBoot);
     }
     RallyNetcode = Object.freeze({
         ...namespaces.rollback,
@@ -227,6 +281,7 @@ try {
         ...gamekitSource,
     });
 } catch (error) {
+    RallyBoot?.fail(error);
     globalThis.__RALLY_PRESENT_FATAL__({
         kind: 'RALLY_NETCODE_LOAD_FAILED',
         message:
@@ -238,4 +293,4 @@ try {
     await new Promise(() => {});
 }
 
-export { RallyGamekit, RallyNetcode };
+export { RallyBoot, RallyGamekit, RallyNetcode };

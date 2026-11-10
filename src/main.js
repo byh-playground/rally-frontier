@@ -82,7 +82,7 @@ import {
 } from './core/config.js';
 import { BUILD_META } from './core/build-info.js';
 import { PRODUCT_VERSION } from './core/product-version.js';
-import { RallyGamekit } from './core/gamekit.js';
+import { RallyBoot, RallyGamekit } from './core/gamekit.js';
 import { LaunchScreens } from './ui/launch-screens.js';
 import { createShowcaseHost } from './ui/showcase-host.js';
 import { DeckEditor } from './ui/deck-editor.js';
@@ -9510,12 +9510,10 @@ class AppLifecycle {
             }
         }
     }
-    static setBootState(title, status, progress, retry = false) {
+    // The bar and the stage text belong to GameKit boot (RallyBoot, bound in core/gamekit.js). This only sets the
+    // heading, the build line and the retry button.
+    static setBootState(title, retry = false) {
         if (UiRegistry.refs.bootTitle) UiRegistry.refs.bootTitle.textContent = title;
-        if (UiRegistry.refs.bootStatus) UiRegistry.refs.bootStatus.textContent = status;
-        if (UiRegistry.refs.bootProgressBar)
-            UiRegistry.refs.bootProgressBar.style.width =
-                Math.max(4, Math.min(100, progress)) + '%';
         if (UiRegistry.refs.bootBuild)
             UiRegistry.refs.bootBuild.textContent = BUILD_META.commit
                 ? `v${PRODUCT_VERSION} · BUILD ${BUILD_META.commit.slice(0, 12)}`
@@ -9526,12 +9524,8 @@ class AppLifecycle {
     static finishBootGate() {
         if (AppLifecycle.bootGateFinished) return;
         AppLifecycle.bootGateFinished = true;
-        AppLifecycle.setBootState(
-            '게임 준비 완료',
-            '브라우저 게임 · 별도 설치 파일 없음',
-            100,
-            false,
-        );
+        RallyBoot.complete();
+        AppLifecycle.setBootState('게임 준비 완료');
         requestAnimationFrame(() => {
             UiRegistry.refs.bootGate?.classList.add('ready');
             setTimeout(() => {
@@ -9543,24 +9537,27 @@ class AppLifecycle {
     static async runBootAndStartApp() {
         if (AppLifecycle.bootGateFinished || AppLifecycle.bootPreparing) return;
         AppLifecycle.bootPreparing = true;
-        AppLifecycle.setBootState('게임 준비 중', '그래픽 리소스를 준비하고 있습니다.', 80, false);
+        AppLifecycle.setBootState('게임 준비 중');
         try {
-            await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+            // Paint the stage change before the synchronous resource build blocks the thread.
+            RallyBoot.begin('graphics');
+            await RallyGamekit.yieldFrame();
             if (!ActiveViewState.renderer)
                 ActiveViewState.renderer = new GLRenderer(UiRegistry.refs.canvas, {
                     deferLoop: true,
                 });
             ActiveViewState.renderer.prepareGameResources();
+            RallyBoot.finish('graphics');
+            RallyBoot.begin('title');
+            await RallyGamekit.yieldFrame();
             await LaunchScreens.prepareTitleBattle();
+            RallyBoot.finish('title');
             AppLifecycle.finishBootGate();
             NetworkModuleLoader.ensureReady();
         } catch (error) {
-            AppLifecycle.setBootState(
-                '그래픽 준비 실패',
-                String(error?.message || error),
-                80,
-                true,
-            );
+            // A boot that failed is not reused: the retry button reloads the page.
+            RallyBoot.fail(error);
+            AppLifecycle.setBootState('게임 준비 실패', true);
             console.error(error);
         } finally {
             AppLifecycle.bootPreparing = false;
@@ -11398,7 +11395,7 @@ BuildMetadataPresentation.renderBuildMetadata();
 void BUILD_META.load().then(() => BuildMetadataPresentation.renderBuildMetadata());
 
 if (UiRegistry.refs.bootRetryBtn)
-    UiController.bindImmediateButton(UiRegistry.refs.bootRetryBtn, AppLifecycle.runBootAndStartApp);
+    UiController.bindImmediateButton(UiRegistry.refs.bootRetryBtn, () => location.reload());
 AppLifecycle.runBootAndStartApp();
 const dev = readDevQuery(location.search);
 if (dev.tps) UiController.setStartSimulationTps(dev.tps);

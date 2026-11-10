@@ -1379,18 +1379,24 @@ button:disabled {
     color: var(--muted);
 }
 .boot-progress {
+    appearance: none;
+    -webkit-appearance: none;
     width: 100%;
     height: 6px;
+    border: 0;
     border-radius: 999px;
     background: var(--line);
     overflow: hidden;
 }
-.boot-progress span {
-    display: block;
-    height: 100%;
-    width: 0;
+.boot-progress::-webkit-progress-bar {
+    background: var(--line);
+}
+.boot-progress::-webkit-progress-value {
     background: var(--green);
     transition: width 0.2s;
+}
+.boot-progress::-moz-progress-bar {
+    background: var(--green);
 }
 .boot-build {
     font-size: 11px;

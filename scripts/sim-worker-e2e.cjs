@@ -100,6 +100,7 @@ const observer = `window.__simWorkerE2E={MatchLifecycle,RecoveryTelemetry,AppLif
             .map((entry) => entry.split('/').at(-1))
             .sort();
         assert.deepEqual(workerSDKModules, [
+            'boot.js',
             'deterministic.js',
             'geometry.js',
             'pathfield.js',

@@ -25,6 +25,7 @@ const moduleFiles = Object.freeze({
     pathfield: 'pathfield.js',
     vision: 'vision.js',
     scenario: 'scenario.js',
+    boot: 'boot.js',
 });
 const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 const cacheDirectory = (root) => path.join(root, '.cache', 'gamekit');
