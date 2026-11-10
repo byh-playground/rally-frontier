@@ -7,6 +7,24 @@ import { RallyGamekit } from '../../core/gamekit.js';
 import { UnitLobPhysics } from './unit-lob-physics.js';
 import { LaunchImpact } from '../launch-impact.js';
 
+const {
+    CONTACT_POLYGON,
+    ContactHit,
+    ContactList,
+    MotionResult,
+    SurfaceContactGeometry,
+    SweptCircleContact,
+    contactKey,
+} = RallyGamekit;
+// Shell pairs touch at the contact itself, without the relative policy's early stop.
+const PAIR_POLICY = Object.freeze({ ...SweptCircleContact.policies.relative, retreat: 0 });
+// Out buffers of the terrain and pair casts; read (or copied) right after each call.
+const WALL_HIT = new ContactHit(),
+    EDGE_HIT = new ContactHit(),
+    PAIR_HIT = new ContactHit(),
+    SURFACE_CONTACTS = new ContactList(),
+    MOTION = new MotionResult();
+
 // Projectile state is independent of artillery/deployment and remains authoritative after the shooter dies.
 export class UnitLobAttack {
     static previous = new WeakMap();
@@ -461,16 +479,20 @@ export class UnitLobAttack {
                     st.processed,
                 );
                 {
+                    // Terrain contacts are keyed by their integer contact key; other contacts use strings.
                     let wall = terrainMotion.cast(
                         shot.x,
                         shot.y,
                         (shot.vxFP / FP) * left,
                         (shot.vyFP / FP) * left,
                         shot.spec.radius,
-                    );
+                        null,
+                        WALL_HIT,
+                    )
+                        ? WALL_HIT
+                        : null;
                     const eligibleWall = (candidate) => {
-                        if (!candidate || st.processed.has('terrain:' + candidate.key))
-                            return false;
+                        if (!candidate || st.processed.has(candidate.key)) return false;
                         const point = UnitLobPhysics.position(
                             shot,
                             left,
@@ -487,38 +509,59 @@ export class UnitLobAttack {
                         const dx = (shot.vxFP / FP) * left,
                             dy = (shot.vyFP / FP) * left,
                             field = sim.world.terrain.field;
-                        for (const polygon of field.polygons.query(
-                            shot.x,
-                            shot.y,
-                            shot.x + dx,
-                            shot.y + dy,
-                            shot.spec.radius,
-                        )) {
-                            for (let edge = 0; edge < polygon.points.length; edge++) {
-                                const candidate = RallyGamekit.SurfaceContactGeometry.edgeCast(
-                                    shot.x,
-                                    shot.y,
-                                    dx,
-                                    dy,
-                                    polygon.points[edge],
-                                    polygon.points[(edge + 1) % polygon.points.length],
-                                    shot.spec.radius,
-                                    String(polygon.id) + ':' + edge,
-                                    field.quantum,
-                                );
+                        const polygons = field.polygons.query(
+                                shot.x,
+                                shot.y,
+                                shot.x + dx,
+                                shot.y + dy,
+                                shot.spec.radius,
+                            ),
+                            found = field.polygons.found;
+                        for (let k = 0; k < polygons.length; k++) {
+                            const points = polygons[k].points,
+                                base = contactKey(CONTACT_POLYGON, found[k]);
+                            for (let edge = 0; edge < points.length; edge++) {
+                                const a = points[edge],
+                                    b = points[(edge + 1) % points.length];
                                 if (
-                                    eligibleWall(candidate) &&
+                                    SurfaceContactGeometry.edgeCast(
+                                        shot.x,
+                                        shot.y,
+                                        dx,
+                                        dy,
+                                        a.x,
+                                        a.y,
+                                        b.x,
+                                        b.y,
+                                        shot.spec.radius,
+                                        base + edge * 4,
+                                        field.quantum,
+                                        EDGE_HIT,
+                                    ) &&
+                                    eligibleWall(EDGE_HIT) &&
                                     (!wall ||
-                                        candidate.t < wall.t - 1e-9 ||
-                                        (Math.abs(candidate.t - wall.t) <= 1e-9 &&
-                                            candidate.key < wall.key))
-                                )
-                                    wall = candidate;
+                                        EDGE_HIT.t < wall.t - 1e-9 ||
+                                        (Math.abs(EDGE_HIT.t - wall.t) <= 1e-9 &&
+                                            EDGE_HIT.key < wall.key))
+                                ) {
+                                    WALL_HIT.t = EDGE_HIT.t;
+                                    WALL_HIT.nx = EDGE_HIT.nx;
+                                    WALL_HIT.ny = EDGE_HIT.ny;
+                                    WALL_HIT.key = EDGE_HIT.key;
+                                    wall = WALL_HIT;
+                                }
                             }
                         }
                     }
                     if (eligibleWall(wall) && (!hit || wall.t < hit.t))
-                        hit = { ...wall, key: 'terrain:' + wall.key, kind: 'wall', nz: 0 };
+                        hit = {
+                            t: wall.t,
+                            nx: wall.nx,
+                            ny: wall.ny,
+                            key: wall.key,
+                            kind: 'wall',
+                            nz: 0,
+                        };
                 }
                 let at = hit ? st.time + Math.max(0, Math.min(1, hit.t)) * left : slice,
                     kind = hit ? 'contact' : 'end';
@@ -591,24 +634,25 @@ export class UnitLobAttack {
                         bx = q.x + (q.vxFP / FP) * (base - B.time),
                         by = q.y + (q.vyFP / FP) * (base - B.time);
                     metrics.pairChecks++;
-                    const hit = RallyGamekit.SweptCircleContact.cast(
-                        ax - bx,
-                        ay - by,
-                        ((p.vxFP - q.vxFP) / FP) * left,
-                        ((p.vyFP - q.vyFP) / FP) * left,
-                        p.spec.radius + q.spec.radius,
-                        { ...RallyGamekit.SweptCircleContact.policies.relative, retreat: 0 },
-                    );
-                    if (hit)
+                    if (
+                        SweptCircleContact.cast(
+                            ax - bx,
+                            ay - by,
+                            ((p.vxFP - q.vxFP) / FP) * left,
+                            ((p.vyFP - q.vyFP) / FP) * left,
+                            p.spec.radius + q.spec.radius,
+                            PAIR_POLICY,
+                            PAIR_HIT,
+                        )
+                    )
                         push({
-                            at: base + hit.t * left,
+                            at: base + PAIR_HIT.t * left,
                             key: 'pair|' + p.id + '|' + q.id,
                             kind: 'pair',
                             i: ai,
                             j: bi,
                             rev: A.rev,
                             revB: B.rev,
-                            hit,
                         });
                 }
             };
@@ -793,10 +837,12 @@ export class UnitLobAttack {
                         const inverseA = 1 / a.spec.mass,
                             inverseB = 1 / b.spec.mass,
                             amount = (overlap + 1 / FP) / (inverseA + inverseB);
-                        for (const [shot, sign, inverse] of [
-                            [a, 1, inverseA],
-                            [b, -1, inverseB],
-                        ]) {
+                        for (let side = 0; side < 2; side++) {
+                            // shots are sorted by id, so a shot's index is a steady integer tieKey.
+                            const index = side === 0 ? i : j,
+                                shot = shots[index],
+                                sign = side === 0 ? 1 : -1,
+                                inverse = side === 0 ? inverseA : inverseB;
                             const x = shot.x + sign * nx * amount * inverse,
                                 y = shot.y + sign * ny * amount * inverse;
                             const resolved = terrainMotion.solve(
@@ -807,7 +853,8 @@ export class UnitLobAttack {
                                 shot.spec.radius,
                                 null,
                                 'project',
-                                String(shot.id),
+                                index,
+                                MOTION,
                             );
                             shot.x = Math.round(resolved.x * FP) / FP;
                             shot.y = Math.round(resolved.y * FP) / FP;
@@ -827,7 +874,8 @@ export class UnitLobAttack {
                             pairFeedback.add(key);
                     }
                 }
-                for (const shot of shots) {
+                for (let index = 0; index < shots.length; index++) {
+                    const shot = shots[index];
                     if (
                         shot.expired ||
                         !shot.grounded ||
@@ -842,13 +890,21 @@ export class UnitLobAttack {
                         shot.spec.radius,
                         null,
                         'project',
-                        String(shot.id),
+                        index,
+                        MOTION,
                     );
                     if (resolved.valid === false) continue;
                     shot.x = Math.round(resolved.x * FP) / FP;
                     shot.y = Math.round(resolved.y * FP) / FP;
-                    const surfaces = terrainMotion.contacts(shot.x, shot.y, shot.spec.radius, null);
-                    for (const surface of surfaces) {
+                    const surfaces = terrainMotion.contacts(
+                        shot.x,
+                        shot.y,
+                        shot.spec.radius,
+                        null,
+                        SURFACE_CONTACTS,
+                    );
+                    for (let k = 0; k < surfaces.count; k++) {
+                        const surface = surfaces.items[k];
                         const n = (shot.vxFP / FP) * surface.nx + (shot.vyFP / FP) * surface.ny;
                         if (n < 0) {
                             shot.vxFP = Math.round((shot.vxFP / FP - n * surface.nx) * FP);

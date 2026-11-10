@@ -63,6 +63,9 @@ class RallyStateCodec {
     static encode(value) {
         return this.codec.encode(value);
     }
+    static encodeInto(value, out) {
+        return this.codec.encodeInto(value, out);
+    }
     static decode(bytes, options) {
         return this.assertData(this.codec.decode(bytes), options);
     }

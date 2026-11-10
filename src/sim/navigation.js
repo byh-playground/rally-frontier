@@ -1,6 +1,6 @@
 // Goals, interaction geometry, surface contacts and the navigation front door.
 import { RangeUtil } from '../core/game-rules.js';
-import { NavigationTopology } from './entities.js';
+import { EntityKey, NavigationTopology } from './entities.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UNIT_RUNTIME_GEOMETRY, UnitDefinition } from '../definitions/units.js';
 import { NAV_BUILDING_MARGIN } from '../definitions/combat-rules.js';
@@ -8,7 +8,15 @@ import { COLLISION_RADIUS_SCALE, COLLISION_NORMAL } from '../definitions/world-r
 import { GoalFields } from './navigation-field.js';
 import { DirectPath, FieldPath, RoutePath } from './navigation-paths.js';
 import { RallyGamekit } from '../core/gamekit.js';
-const { ObstacleField, SurfaceMotion, SweptCircleContact, SurfaceContactGeometry } = RallyGamekit;
+const {
+    ContactHit,
+    ContactList,
+    MotionResult,
+    ObstacleField,
+    SurfaceMotion,
+    SweptCircleContact,
+    SurfaceContactGeometry,
+} = RallyGamekit;
 import { FP } from '../core/config.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { UnitLeapAttack } from './capabilities/unit-leap-attack.js';
@@ -247,6 +255,101 @@ class InteractionGeometry {
     }
 }
 
+// The contacts of one event-time pass of UnitMotion.solveImpulseStep: only the earliest ones, kept in typed
+// columns that grow and are reused instead of an object per contact.
+class ImpulseContacts {
+    constructor() {
+        this.capacity = 0;
+        this.count = 0;
+        this.first = 1;
+        this.grow(64);
+        this.obstacle = [];
+        this.order = [];
+        // Same-time contacts resolve surfaces first (by unit, then contact key), then unit pairs (by lower, then
+        // higher index), then by the moving unit.
+        this.compare = (a, b) =>
+            (this.j[a] < 0 ? 0 : 1) - (this.j[b] < 0 ? 0 : 1) ||
+            this.sortA[a] - this.sortA[b] ||
+            this.sortB[a] - this.sortB[b] ||
+            this.i[a] - this.i[b];
+        // Zero-time repeat counts, keyed by integers: a unit pair under -(lo * n + hi) - 1 < 0, a surface contact
+        // under slot * n + i >= 0, where slot numbers each surface contact key met this step. |key| < n^2 * slots,
+        // far inside 2^53.
+        this.repeats = new Map();
+        this.surfaceSlots = new Map();
+        this.units = 0;
+    }
+    grow(capacity) {
+        const columns = [
+            ['t', Float64Array],
+            ['i', Int32Array],
+            ['j', Int32Array],
+            ['nx', Float64Array],
+            ['ny', Float64Array],
+            ['key', Float64Array],
+            ['sortA', Float64Array],
+            ['sortB', Float64Array],
+        ];
+        for (const [name, Type] of columns) {
+            const next = new Type(capacity);
+            if (this[name]) next.set(this[name]);
+            this[name] = next;
+        }
+        this.capacity = capacity;
+    }
+    beginStep(units) {
+        this.units = units;
+        this.repeats.clear();
+        this.surfaceSlots.clear();
+    }
+    beginPass() {
+        this.count = 0;
+        this.first = 1;
+    }
+    clearRepeats() {
+        this.repeats.clear();
+    }
+    // Keeps the contact when it is the earliest so far (within 1e-9), dropping every later one.
+    keep(t, i, j, nx, ny, key, obstacle) {
+        if (t < this.first - 1e-9) {
+            this.first = t;
+            this.count = 0;
+        } else if (Math.abs(t - this.first) > 1e-9) return;
+        if (this.count === this.capacity) this.grow(this.capacity * 2);
+        const c = this.count++;
+        this.t[c] = t;
+        this.i[c] = i;
+        this.j[c] = j;
+        this.nx[c] = nx;
+        this.ny[c] = ny;
+        this.key[c] = key;
+        this.obstacle[c] = obstacle;
+        this.sortA[c] = j < 0 ? i : Math.min(i, j);
+        this.sortB[c] = j < 0 ? key : Math.max(i, j);
+    }
+    sorted() {
+        const order = this.order;
+        order.length = this.count;
+        for (let c = 0; c < this.count; c++) order[c] = c;
+        return order.sort(this.compare);
+    }
+    // How many zero-time passes in a row have met this contact, this one included.
+    repeat(c) {
+        const n = this.units;
+        let key;
+        if (this.j[c] >= 0) key = -(this.sortA[c] * n + this.sortB[c]) - 1;
+        else {
+            let slot = this.surfaceSlots.get(this.key[c]);
+            if (slot === undefined)
+                this.surfaceSlots.set(this.key[c], (slot = this.surfaceSlots.size));
+            key = slot * n + this.i[c];
+        }
+        const count = (this.repeats.get(key) || 0) + 1;
+        this.repeats.set(key, count);
+        return count;
+    }
+}
+
 // Local contacts share one solver; the distance field only chooses where to head.
 // A grain's own motion record: checkpoints, fixed-point commit and the unit's radius sit around the shared contact solver.
 class UnitMotion {
@@ -258,6 +361,17 @@ class UnitMotion {
     constructor(navigation) {
         this.navigation = navigation;
         this.surface = new SurfaceMotion(navigation.field, { sync: () => navigation.sync() });
+        // Out buffers the contact solver writes into; read before the next call.
+        this.result = new MotionResult();
+        this.surfaceHit = new ContactHit();
+        this.pairHit = new ContactHit();
+        this.slideContacts = new ContactList();
+        this.slideVelocity = { x: 0, y: 0 };
+        this.slideSafe = { vxFP: 0, vyFP: 0 };
+        this.velocityA = { x: 0, y: 0 };
+        this.velocityB = { x: 0, y: 0 };
+        this.pairCandidates = [];
+        this.contacts = new ImpulseContacts();
     }
     beginStep() {
         this.surface.forgetAll();
@@ -286,7 +400,8 @@ class UnitMotion {
                 this.navigation.sim.unitRadius(u.type),
                 null,
                 mode,
-                String(u.id),
+                EntityKey.number(u.id),
+                this.result,
             ),
         );
     }
@@ -391,7 +506,9 @@ class UnitMotion {
         const sim = this.navigation.sim,
             units = sim.units,
             n = units.length;
-        if (!units.some((u) => u.impactMotion)) return;
+        let moving = false;
+        for (let i = 0; i < n && !moving; i++) moving = !!units[i].impactMotion;
+        if (!moving) return;
         this.solvedImpulseTick = sim.tick;
         if (!this.impulseFrame || this.impulseFrame.capacity < n) {
             const capacity = Math.max(n, this.impulseFrame?.capacity * 2 || 64);
@@ -404,7 +521,11 @@ class UnitMotion {
             };
         }
         const { vx, vy, rx: remaindersX, ry: remaindersY } = this.impulseFrame,
-            dt = 1 / sim.tps;
+            dt = 1 / sim.tps,
+            contacts = this.contacts,
+            surfaceHit = this.surfaceHit,
+            pairHit = this.pairHit,
+            candidates = this.pairCandidates;
         remaindersX.fill(0, 0, n);
         remaindersY.fill(0, 0, n);
         this.navigation.sync();
@@ -423,18 +544,10 @@ class UnitMotion {
             sim.syncUnitSpatial(u);
         }
         let remaining = dt;
-        const zeroTimeContacts = this.zeroTimeContacts || (this.zeroTimeContacts = new Map());
-        zeroTimeContacts.clear();
+        contacts.beginStep(n);
         // Global event time: even uninvolved bodies advance only to the first contact, then all casts are rebuilt.
         while (remaining > 1e-9) {
-            let first = 1,
-                contacts = [];
-            const keep = (contact) => {
-                if (contact.t < first - 1e-9) {
-                    first = contact.t;
-                    contacts = [contact];
-                } else if (Math.abs(contact.t - first) <= 1e-9) contacts.push(contact);
-            };
+            contacts.beginPass();
             let maxSpeed = 0;
             for (let i = 0; i < n; i++)
                 if (units[i].alive || units[i].impactMotion)
@@ -444,64 +557,69 @@ class UnitMotion {
                 if (!u.alive && !u.impactMotion) continue;
                 const dx = vx[i] * remaining,
                     dy = vy[i] * remaining;
-                if (Math.abs(dx) + Math.abs(dy) > 1e-9) {
-                    const hit = this.surface.cast(u.x, u.y, dx, dy, sim.unitRadius(u.type));
-                    if (hit && vx[i] * hit.nx + vy[i] * hit.ny < -1e-7)
-                        keep({
-                            t: Math.max(0, Math.min(1, hit.t)),
-                            i,
-                            j: -1,
-                            nx: hit.nx,
-                            ny: hit.ny,
-                            key: 'surface:' + u.id + ':' + String(hit.key || 'surface'),
-                            obstacleId: hit.obstacle ? hit.obstacle.id : null,
-                        });
-                }
+                if (
+                    Math.abs(dx) + Math.abs(dy) > 1e-9 &&
+                    this.surface.cast(u.x, u.y, dx, dy, sim.unitRadius(u.type), null, surfaceHit) &&
+                    vx[i] * surfaceHit.nx + vy[i] * surfaceHit.ny < -1e-7
+                )
+                    contacts.keep(
+                        Math.max(0, Math.min(1, surfaceHit.t)),
+                        i,
+                        -1,
+                        surfaceHit.nx,
+                        surfaceHit.ny,
+                        surfaceHit.key,
+                        surfaceHit.obstacle,
+                    );
                 if (!u.alive || !u.impactMotion || u.heroRoll || FruitHeroAttack.blocksMovement(u))
                     continue;
                 const reach =
                     (Math.hypot(vx[i], vy[i]) + maxSpeed) * remaining +
                     sim.unitRadius(u.type) +
                     sim.maxUnitRadius;
-                sim.withNearbyUnits(u.x, u.y, reach, 1 - u.side, (indices) => {
-                    for (const j of indices) {
-                        const other = units[j];
-                        if (
-                            !other?.alive ||
-                            other.heroRoll ||
-                            FruitHeroAttack.blocksMovement(other) ||
-                            sim.isAlliedCollisionUnit(u, other) ||
-                            UnitLeapAttack.separated(sim, u, other) ||
-                            (other.impactMotion && j < i)
-                        )
-                            continue;
-                        const rx = (vx[i] - vx[j]) * remaining,
-                            ry = (vy[i] - vy[j]) * remaining;
-                        const hit = SweptCircleContact.cast(
+                sim.nearbyUnits(u.x, u.y, reach, 1 - u.side, candidates);
+                for (let k = 0; k < candidates.length; k++) {
+                    const j = candidates[k],
+                        other = units[j];
+                    if (
+                        !other?.alive ||
+                        other.heroRoll ||
+                        FruitHeroAttack.blocksMovement(other) ||
+                        sim.isAlliedCollisionUnit(u, other) ||
+                        UnitLeapAttack.separated(sim, u, other) ||
+                        (other.impactMotion && j < i)
+                    )
+                        continue;
+                    if (
+                        !SweptCircleContact.cast(
                             u.x - other.x,
                             u.y - other.y,
-                            rx,
-                            ry,
+                            (vx[i] - vx[j]) * remaining,
+                            (vy[i] - vy[j]) * remaining,
                             sim.unitRadius(u.type) + sim.unitRadius(other.type),
                             SweptCircleContact.policies.relative,
-                            () => {
-                                const v = sim.fallbackNormal(u, other);
-                                return { x: v[0] / COLLISION_NORMAL, y: v[1] / COLLISION_NORMAL };
-                            },
-                        );
-                        if (hit && (vx[i] - vx[j]) * hit.nx + (vy[i] - vy[j]) * hit.ny < -1e-7)
-                            keep({
-                                t: Math.max(0, Math.min(1, hit.t)),
-                                i,
-                                j,
-                                nx: hit.nx,
-                                ny: hit.ny,
-                                key: 'unit:' + Math.min(i, j) + ':' + Math.max(i, j),
-                            });
+                            pairHit,
+                        )
+                    )
+                        continue;
+                    if (pairHit.degenerate) {
+                        const normal = sim.fallbackNormal(u, other);
+                        pairHit.nx = normal[0] / COLLISION_NORMAL;
+                        pairHit.ny = normal[1] / COLLISION_NORMAL;
                     }
-                });
+                    if ((vx[i] - vx[j]) * pairHit.nx + (vy[i] - vy[j]) * pairHit.ny < -1e-7)
+                        contacts.keep(
+                            Math.max(0, Math.min(1, pairHit.t)),
+                            i,
+                            j,
+                            pairHit.nx,
+                            pairHit.ny,
+                            0,
+                            null,
+                        );
+                }
             }
-            const elapsed = remaining * first;
+            const elapsed = remaining * contacts.first;
             for (let i = 0; i < n; i++) {
                 const u = units[i];
                 if (!u.alive && !u.impactMotion) continue;
@@ -529,14 +647,17 @@ class UnitMotion {
                 sim.syncUnitSpatial(u);
             }
             remaining -= elapsed;
-            if (elapsed > 1e-9) zeroTimeContacts.clear();
-            if (!contacts.length) break;
-            contacts.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.i - b.i));
-            for (const contact of contacts) {
-                const { i, j, nx, ny } = contact,
+            if (elapsed > 1e-9) contacts.clearRepeats();
+            if (!contacts.count) break;
+            const order = contacts.sorted();
+            for (let q = 0; q < order.length; q++) {
+                const c = order[q],
+                    i = contacts.i[c],
+                    j = contacts.j[c],
+                    nx = contacts.nx[c],
+                    ny = contacts.ny[c],
                     u = units[i];
-                const repeats = elapsed <= 1e-9 ? (zeroTimeContacts.get(contact.key) || 0) + 1 : 0;
-                if (repeats) zeroTimeContacts.set(contact.key, repeats);
+                const repeats = elapsed <= 1e-9 ? contacts.repeat(c) : 0;
                 if (j < 0 && repeats >= LaunchImpactRules.maxZeroTimeContactIterations) {
                     const m = u.impactMotion;
                     if (m)
@@ -554,11 +675,15 @@ class UnitMotion {
                     vy[i] = 0;
                     continue;
                 }
+                const velocityA = this.velocityA,
+                    velocityB = this.velocityB;
                 if (j >= 0 && repeats >= LaunchImpactRules.maxZeroTimeContactIterations) {
                     // A degenerate zero-time contact sticks locally. Unrelated bodies and the world clock keep advancing.
-                    const other = units[j],
-                        velocityA = { x: vx[i], y: vy[i] },
-                        velocityB = { x: vx[j], y: vy[j] };
+                    const other = units[j];
+                    velocityA.x = vx[i];
+                    velocityA.y = vy[i];
+                    velocityB.x = vx[j];
+                    velocityB.y = vy[j];
                     // A rolling body bounces off once instead of sticking (RollingBody.bounceStuck); a
                     // contact that still recurs after that sticks like any other.
                     if (
@@ -575,11 +700,10 @@ class UnitMotion {
                         mb = sim.mass(other),
                         commonX = (vx[i] * ma + vx[j] * mb) / (ma + mb),
                         commonY = (vy[i] * ma + vy[j] * mb) / (ma + mb);
-                    for (const [index, body] of [
-                        [i, u],
-                        [j, other],
-                    ]) {
-                        const m = body.impactMotion,
+                    for (let side = 0; side < 2; side++) {
+                        const index = side === 0 ? i : j,
+                            body = side === 0 ? u : other,
+                            m = body.impactMotion,
                             mass = sim.mass(body);
                         this.applyImpulse(
                             body,
@@ -588,7 +712,7 @@ class UnitMotion {
                                 y: (commonY - (m?.vyFP || 0) / FP) * mass,
                             },
                             {
-                                sourceId: index === i ? other.id : u.id,
+                                sourceId: side === 0 ? other.id : u.id,
                                 originX: body.x,
                                 originY: body.y,
                                 kind: m?.kind || 'knockback',
@@ -603,13 +727,17 @@ class UnitMotion {
                     const other = units[j];
                     const hadA = !!u.impactMotion,
                         hadB = !!other.impactMotion;
+                    velocityA.x = vx[i];
+                    velocityA.y = vy[i];
+                    velocityB.x = vx[j];
+                    velocityB.y = vy[j];
                     const applied = this.solveImpulseContact(
                         u,
                         other,
                         nx,
                         ny,
-                        { x: vx[i], y: vy[i] },
-                        { x: vx[j], y: vy[j] },
+                        velocityA,
+                        velocityB,
                     );
                     if (!applied) continue;
                     if (!hadA) {
@@ -634,12 +762,13 @@ class UnitMotion {
                     vy[j] = (other.impactMotion?.vyFP || 0) / FP;
                 } else if (u.impactMotion) {
                     const m = u.impactMotion,
-                        restitution = RollingBody.surfaceRestitution(u);
+                        restitution = RollingBody.surfaceRestitution(u),
+                        obstacle = contacts.obstacle[c];
                     if (restitution !== null)
                         RollingBody.hitSurface(
                             sim,
                             u,
-                            contact.obstacleId,
+                            obstacle ? obstacle.buildingId : null,
                             nx,
                             ny,
                             -(vx[i] * nx + vy[i] * ny),
@@ -661,14 +790,23 @@ class UnitMotion {
                     vx[i] = m.vxFP / FP;
                     vy[i] = m.vyFP / FP;
                 } else {
-                    const speed = Math.hypot(vx[i], vy[i]),
-                        slide = SurfaceContactGeometry.slide(vx[i], vy[i], [contact], speed, {
-                            steer: true,
-                            goalX: vx[i],
-                            goalY: vy[i],
-                            tieKey: String(u.id),
-                        });
-                    const safe = { vxFP: Math.round(slide.x * FP), vyFP: Math.round(slide.y * FP) };
+                    const list = this.slideContacts.clear(),
+                        safe = this.slideSafe;
+                    list.add(nx, ny, 0, contacts.key[c]);
+                    const slide = SurfaceContactGeometry.slide(
+                        vx[i],
+                        vy[i],
+                        list,
+                        Math.hypot(vx[i], vy[i]),
+                        true,
+                        vx[i],
+                        vy[i],
+                        EntityKey.number(u.id),
+                        null,
+                        this.slideVelocity,
+                    );
+                    safe.vxFP = Math.round(slide.x * FP);
+                    safe.vyFP = Math.round(slide.y * FP);
                     this.removeInwardVelocity(safe, nx, ny);
                     vx[i] = safe.vxFP / FP;
                     vy[i] = safe.vyFP / FP;
@@ -743,16 +881,19 @@ class UnitMotion {
     }
     constrain(u) {
         const oldX = u.fx,
-            oldY = u.fy,
-            result = this.surface.constrain(
+            oldY = u.fy;
+        if (
+            this.surface.constrain(
                 u,
                 u.x,
                 u.y,
                 this.navigation.sim.unitRadius(u.type),
                 null,
-                String(u.id),
-            );
-        if (result) this.commit(u, result);
+                EntityKey.number(u.id),
+                this.result,
+            )
+        )
+            this.commit(u, this.result);
         return u.fx !== oldX || u.fy !== oldY;
     }
 }
@@ -770,7 +911,7 @@ class TerrainNavigation {
             fixedPoint: FP,
             polygons: this.geometry.index,
             circles: [],
-            ignoreAll: { id: '*', keep: (b) => b.terrainBarrier },
+            ignoreAll: { id: -1, keep: (b) => b.terrainBarrier },
         });
         this.motion = new UnitMotion(this);
         this.goalFields = new Map();
@@ -799,11 +940,20 @@ class TerrainNavigation {
     }
     traceStraightTravel(x, y, dx, dy, distance, radius, source = this.sim) {
         this.sync(source);
-        const contact = this.motion.surface.cast(x, y, dx * distance, dy * distance, radius);
+        const hit = this.motion.surfaceHit,
+            blocked = this.motion.surface.cast(
+                x,
+                y,
+                dx * distance,
+                dy * distance,
+                radius,
+                null,
+                hit,
+            );
         return {
-            blocked: !!contact,
+            blocked,
             // Leave enough room to round the clipped position to world fixed-point.
-            distance: contact ? Math.max(0, contact.t * distance - 2 / FP) : distance,
+            distance: blocked ? Math.max(0, hit.t * distance - 2 / FP) : distance,
         };
     }
     fieldsFor(radius) {

@@ -153,16 +153,19 @@ class RallySimulationAdapter {
             throw new Error('경기 정의가 변경되면 새 simulation Adapter가 필요합니다.');
         return sim.exportState({ includeIdentity: false });
     }
-    save() {
+    // The value that save bytes encode (saveInto for the netcode core, terminal frames as bytes).
+    saveValue() {
+        return {
+            gameVersion: PRODUCT_VERSION,
+            matchId: this.matchId,
+            mapFingerprint: this.mapFingerprint,
+            state: this.stateData(),
+        };
+    }
+    saveInto(out) {
         const started = performance.now();
         try {
-            const state = this.stateData();
-            return RallyStateCodec.encode({
-                gameVersion: PRODUCT_VERSION,
-                matchId: this.matchId,
-                mapFingerprint: this.mapFingerprint,
-                state,
-            });
+            RallyStateCodec.encodeInto(this.saveValue(), out);
         } finally {
             if (this.session.performanceStats)
                 recordTiming(
@@ -1292,7 +1295,7 @@ class GameSession {
             : frame.events;
         // Candidate resimulation은 commit 전까지 UI/AI/replay/VFX에 공개하지 않는다.
         if (frame.winner) {
-            frame.terminalState = this.simulationAdapter.save();
+            frame.terminalState = RallyStateCodec.encode(this.simulationAdapter.saveValue());
             frame.reason =
                 this.sim.netcodeMatchResult?.reason ||
                 (frame.winner === 'draw'

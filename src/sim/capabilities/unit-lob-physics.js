@@ -3,8 +3,13 @@ import { LaunchImpact } from '../launch-impact.js';
 import { FP } from '../../core/config.js';
 import { BuildingDefinition } from '../../definitions/buildings.js';
 
-const { SweptCircleContact, SurfaceContactGeometry } = RallyGamekit;
+const { ContactHit, SweptCircleContact, SurfaceContactGeometry } = RallyGamekit;
 const EPS = 1e-7;
+// Out buffers of the body and wall casts; read right after each call.
+const BODY_HIT = new ContactHit(),
+    EDGE_HIT = new ContactHit();
+// Names of an edge cast's contact part (key & 3) in a wall contact key.
+const EDGE_PARTS = Object.freeze(['edge', 'a', 'b']);
 
 // Continuous projectile motion over a single sub-step, with fixed-point state at tick boundaries.
 export class UnitLobPhysics {
@@ -128,7 +133,10 @@ export class UnitLobPhysics {
             dy - ty,
             radius,
             SweptCircleContact.policies.relative,
-        );
+            BODY_HIT,
+        )
+            ? BODY_HIT
+            : null;
         let nx = length ? relX / length : cast?.nx || 1,
             ny = length ? relY / length : cast?.ny || 0,
             nz = 0;
@@ -255,31 +263,51 @@ export class UnitLobPhysics {
                     shot.y + dy * Math.max(0, time - 1e-5),
                 );
             if (time > 0 && ground > prior + 0.01 && point.z - spec.radius < ground - 0.01) {
-                let wall = null;
+                let wall = null,
+                    wallEdge = 0,
+                    wallPart = 0,
+                    wallT = Infinity,
+                    wallNx = 0,
+                    wallNy = 0;
                 for (const polygon of polygons)
                     for (let j = 0; j < polygon.points.length; j++) {
-                        const hit = SurfaceContactGeometry.edgeCast(
-                            shot.x,
-                            shot.y,
-                            dx,
-                            dy,
-                            polygon.points[j],
-                            polygon.points[(j + 1) % polygon.points.length],
-                            spec.radius,
-                            `${polygon.id}:${j}`,
-                            0,
-                        );
-                        if (hit && hit.t <= time + 0.01 && (!wall || hit.t < wall.t)) wall = hit;
+                        const a = polygon.points[j],
+                            b = polygon.points[(j + 1) % polygon.points.length];
+                        if (
+                            SurfaceContactGeometry.edgeCast(
+                                shot.x,
+                                shot.y,
+                                dx,
+                                dy,
+                                a.x,
+                                a.y,
+                                b.x,
+                                b.y,
+                                spec.radius,
+                                j * 4,
+                                0,
+                                EDGE_HIT,
+                            ) &&
+                            EDGE_HIT.t <= time + 0.01 &&
+                            EDGE_HIT.t < wallT
+                        ) {
+                            wall = polygon;
+                            wallEdge = j;
+                            wallPart = EDGE_HIT.key & 3;
+                            wallT = EDGE_HIT.t;
+                            wallNx = EDGE_HIT.nx;
+                            wallNy = EDGE_HIT.ny;
+                        }
                     }
                 if (wall)
                     best = this.earlier(best, {
-                        t: wall.t,
-                        key: 'wall:' + wall.key,
+                        t: wallT,
+                        key: 'wall:' + wall.id + ':' + wallEdge + ':' + EDGE_PARTS[wallPart],
                         kind: 'wall',
-                        nx: wall.nx,
-                        ny: wall.ny,
+                        nx: wallNx,
+                        ny: wallNy,
                         nz: 0,
-                        point: this.position(shot, dt, wall.t, spec.gravity),
+                        point: this.position(shot, dt, wallT, spec.gravity),
                     });
                 continue;
             }

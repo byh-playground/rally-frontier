@@ -6,6 +6,8 @@ import { RallyGamekit } from '../../core/gamekit.js';
 import { BuildingDefinition } from '../../definitions/buildings.js';
 
 const { SweptCircleContact } = RallyGamekit;
+// Out buffer of the thorn's swept test; only whether it hit is read.
+const CAST_HIT = { t: 0, nx: 0, ny: 0, degenerate: false };
 
 // The base chestnut attack has a committed aim and checks only its original
 // target. It is independent of cannon-deployment shells and corn explosives.
@@ -104,6 +106,7 @@ export class UnitThornAttack {
                 vy,
                 radius,
                 SweptCircleContact.policies.relative,
+                CAST_HIT,
             );
         if (!inside && !cast) return null;
         const a = vx * vx + vy * vy,
