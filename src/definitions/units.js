@@ -211,6 +211,23 @@ class UnitDefinition {
             // One soldier at a time holds a completed enemy outpost's muzzle shut.
             stickyCling: Object.freeze({ durationMs: 1000, cooldownMs: 5000 }),
         },
+        // 초안: 체력·크기·시야. 착지 5초 뒤 전진 대포가 되는 규칙과 대포 수치(Building Definition)는 확정이다.
+        // A rooting potato neither moves nor attacks; it can be hit, and dying first leaves no cannon.
+        potato: {
+            requiresContactTerrain: true,
+            name: '감자',
+            hp: 60,
+            atk: 0,
+            range: 0,
+            speed: 0,
+            size: RICE_SIZE,
+            sizeClass: 'light',
+            role: 'support',
+            attackVisual: { sourceMotion: null, travel: 'none', impact: 'light' },
+            sight: 275,
+            // digMs: the art shows digging in until then, rooting after it, until the cannon stands.
+            growsCannon: Object.freeze({ delayMs: 5000, digMs: 2000, building: 'forward-cannon' }),
+        },
         acorn: {
             requiresContactTerrain: true,
             construction: { range: 5, workPerHit: 1 },
@@ -463,6 +480,13 @@ class UnitVisualDefinition {
             billboard: true,
             visualScale: 0.85,
             accent: [0.93, 0.44, 0.58, 1],
+            fx: 'melee',
+        },
+        potato: {
+            family: 'grain',
+            billboard: true,
+            visualScale: 0.85,
+            accent: [0.71, 0.53, 0.35, 1],
             fx: 'melee',
         },
         corn: {

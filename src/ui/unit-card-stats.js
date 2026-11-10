@@ -1,3 +1,4 @@
+import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { ResourceDisplay } from './resource-display.js';
@@ -63,10 +64,33 @@ export function unitCardStats(type, rangeLevel, copy) {
         attack.push(['기본 공격 주기', seconds(unit.attackIntervalMs ?? unit.cooldownMs)]);
     if (unit.leapAttack) attack.push(['도약 발동 거리', number.format(unit.leapAttack.range)]);
 
-    const troop = [
-        ['생존·기동', movement],
-        ['공격', attack],
-    ];
+    const grows = unit.growsCannon,
+        cannon = grows && BuildingDefinition.get(grows.building);
+    // A potato neither walks nor fights: it roots where it lands and becomes a forward cannon.
+    const troop = grows
+        ? [
+              [
+                  '생존',
+                  [
+                      ['체력', number.format(unit.hp)],
+                      ['시야', number.format(unit.sight)],
+                  ],
+              ],
+              [
+                  '변신',
+                  [
+                      [cannon.name + '까지', seconds(grows.delayMs)],
+                      ['대포 체력', number.format(cannon.hp)],
+                      ['초당 체력 감소', number.format(cannon.decay.hpPerSecond)],
+                      ['유지 시간', seconds((cannon.hp / cannon.decay.hpPerSecond) * 1000)],
+                  ],
+                  copy.notes.slice(1),
+              ],
+          ]
+        : [
+              ['생존·기동', movement],
+              ['공격', attack],
+          ];
     if (active)
         troop.push([
             '스킬',

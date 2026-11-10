@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="360" viewBox="0 0 400 360" fill="none" stroke="#392e22" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"><metadata id="vector-asset">{"schemaVersion":1,"id":"rally-forward-cannon","defaultExpression":"default","parts":[{"id":"base","parent":null,"pivot":[200,300]},{"id":"base-wear","parent":"base","pivot":[200,300]},{"id":"cradle","parent":"base","pivot":[200,190]},{"id":"cradle-back","parent":"cradle","pivot":[200,190]},{"id":"cradle-wilt","parent":"cradle","pivot":[200,190]},{"id":"barrel","parent":"cradle","pivot":[200,190]},{"id":"wear-1","parent":"barrel","pivot":[200,190]},{"id":"wear-2","parent":"barrel","pivot":[200,190]},{"id":"barrel-front","parent":"barrel","pivot":[292,190]},{"id":"barrel-back","parent":"barrel","pivot":[126,190]}],"expressions":{"default":{"show":["base"],"hide":["wear-1","wear-2","cradle-wilt","base-wear"]},"worn":{"show":["base","wear-1","cradle-wilt"],"hide":["wear-2","base-wear"]},"failing":{"show":["base","wear-1","wear-2","cradle-wilt","base-wear"],"hide":[]}},"sockets":{"ground":{"part":"base","point":[200,300]},"trunnion":{"part":"cradle","point":[200,190]},"muzzle":{"part":"barrel","point":[292,190]},"muzzle-dir":{"part":"barrel","point":[322,190]},"breech":{"part":"barrel","point":[126,190]}},"clips":{"idle":{"durationMs":1200,"loop":"repeat","easing":"linear","keyframes":[{"timeMs":0,"parts":{"barrel":{"x":0}},"easing":"linear"},{"timeMs":1200,"parts":{"barrel":{"x":0}},"easing":"linear"}]},"fire":{"durationMs":260,"loop":"once","easing":"linear","keyframes":[{"timeMs":0,"easing":"linear","parts":{"barrel":{"x":0}}},{"timeMs":40,"easing":"linear","parts":{"barrel":{"x":-24}}},{"timeMs":100,"easing":"linear","parts":{"barrel":{"x":-13}}},{"timeMs":180,"easing":"linear","parts":{"barrel":{"x":-4}}},{"timeMs":260,"easing":"linear","parts":{"barrel":{"x":0}}}]}}}</metadata>
+<!-- 전진 대포 시안 v2. 거점 대포(cannon.svg)와 같은 파츠 이름·소켓 구조. 흙무더기 받침, 덩굴 거치대, 감자 포신. 낡음 단계는 wear-1·cradle-wilt(낡음) → wear-2·base-wear(무너지기 직전)를 차례로 켠다. v2에서 금·얼룩을 전장 크기에서 보이게 굵고 진하게 했다. -->
+<g id="base">
+ <ellipse id="forward-cannon-shape-1" cx="200" cy="296" rx="98" ry="36" fill="#273c26" opacity=".16" stroke="none"/>
+ <path id="forward-cannon-shape-2" d="M108 256C104 286 146 308 200 309C256 310 296 288 292 256Z" fill="#6f4d30"/>
+ <path id="forward-cannon-shape-3" d="M110 254C112 230 152 214 200 214C248 214 290 230 290 254C290 276 250 290 200 290C150 290 110 278 110 254Z" fill="#a27650"/>
+ <path id="forward-cannon-shape-4" d="M130 248C140 232 170 224 200 224C236 224 262 232 272 246C256 240 232 236 200 236C170 236 146 240 130 248Z" fill="#bb8e60" stroke="none"/>
+ <path id="forward-cannon-shape-5" d="M138 262Q170 252 196 256M214 254Q246 252 268 262M150 276Q176 270 196 274" fill="none" stroke="#86603c" stroke-width="3"/>
+ <g fill="#d3bb92" stroke-width="2"><ellipse id="forward-cannon-shape-6" cx="146" cy="244" rx="5" ry="3.5"/><ellipse id="forward-cannon-shape-7" cx="256" cy="242" rx="4" ry="3"/><ellipse id="forward-cannon-shape-8" cx="236" cy="276" rx="5" ry="3.5"/></g>
+ <path id="forward-cannon-shape-9" d="M118 270L118 236L124 226L130 236L131 276Z" fill="#c79350"/>
+ <path id="forward-cannon-shape-10" d="M150 284L151 248L158 238L164 248L163 288Z" fill="#b8843f"/>
+ <path id="forward-cannon-shape-11" d="M236 288L236 248L243 238L249 248L250 284Z" fill="#b8843f"/>
+ <path id="forward-cannon-shape-12" d="M269 276L270 236L276 226L282 236L282 270Z" fill="#c79350"/>
+ <path id="forward-cannon-shape-13" d="M121 268V240M154 282V252M240 282V252M273 268V240" stroke="#efd095" stroke-width="2.5"/>
+ <path id="forward-cannon-shape-14" d="M114 254Q156 278 200 280Q244 278 286 254L287 262Q244 288 200 290Q156 288 113 262Z" fill="#307af0" data-paint-region="team"/>
+ <path id="forward-cannon-shape-15" d="M118 257Q158 278 200 280Q242 278 282 257L283 259Q242 282 200 283Q158 282 117 259Z" fill="#91c7ff" stroke="none" data-paint-region="team-light"/>
+ <g fill="#d8a45e" stroke-width="3"><ellipse id="forward-cannon-shape-16" cx="124" cy="262" rx="7" ry="6"/><ellipse id="forward-cannon-shape-17" cx="157" cy="276" rx="7" ry="6"/><ellipse id="forward-cannon-shape-18" cx="243" cy="276" rx="7" ry="6"/><ellipse id="forward-cannon-shape-19" cx="276" cy="262" rx="7" ry="6"/></g>
+ <path id="forward-cannon-shape-20" d="M104 252L106 196" stroke-width="7"/>
+ <path id="forward-cannon-shape-21" d="M104 252L106 196" stroke="#c79350" stroke-width="3"/>
+ <path id="forward-cannon-shape-22" d="M106 200Q90 194 74 200L86 209L76 220Q92 214 106 218Z" fill="#307af0" data-paint-region="team"/>
+ <path id="forward-cannon-shape-23" d="M100 203Q90 200 84 202L86 205Q92 203 100 206Z" fill="#91c7ff" stroke="none" data-paint-region="team-light"/>
+ <path id="forward-cannon-shape-24" d="M176 262C170 268 160 270 152 266M226 262C232 270 244 272 252 266" fill="none" stroke="#5c4a2a" stroke-width="3.5"/>
+</g>
+<g id="base-wear" display="none">
+ <path id="forward-cannon-shape-25" d="M140 250L158 262L150 272L168 282M246 246L232 258L246 268L238 282" fill="none" stroke="#3a2614" stroke-width="4.5"/>
+ <path id="forward-cannon-shape-26" d="M264 300L300 284L304 292L268 308Z" fill="#b8843f" stroke-width="3.5"/>
+ <path id="forward-cannon-shape-27" d="M86 209L76 220Q90 215 104 218L106 211Z" fill="#1f55b5" data-paint-region="team-shadow"/>
+ <path id="forward-cannon-shape-28" d="M80 204L88 209L80 214" fill="none" stroke="#392e22" stroke-width="3"/>
+</g>
+<g id="cradle-back">
+ <path id="forward-cannon-shape-29" d="M208 266C214 240 224 214 214 194C211 186 220 181 225 188C234 212 228 244 222 268Z" fill="#5f7f33"/>
+ <path id="forward-cannon-shape-30" d="M216 256C222 236 226 216 220 198" stroke="#8fb556" stroke-width="3"/>
+</g>
+<g id="barrel">
+ <path id="forward-cannon-shape-31" d="M136 166C114 162 102 148 106 134C110 120 126 118 130 128C134 138 124 144 118 138" fill="none" stroke="#392e22" stroke-width="13"/>
+ <path id="forward-cannon-shape-32" d="M136 166C114 162 102 148 106 134C110 120 126 118 130 128C134 138 124 144 118 138" fill="none" stroke="#8cc152" stroke-width="6"/>
+ <path id="forward-cannon-shape-33" d="M109 128C99 116 85 116 81 122C89 132 101 134 109 128Z" fill="#9fd05c" stroke-width="3.5"/>
+ <path id="forward-cannon-shape-34" d="M130 154C150 146 184 148 210 150C236 145 256 148 272 152L272 228C256 233 236 234 214 230C186 235 152 234 132 226C124 214 121 202 123 190C121 176 124 162 130 154Z" fill="#cfa86f"/>
+ <path id="forward-cannon-shape-35" d="M124 200C130 220 152 228 180 230C212 232 246 232 272 224L272 228C256 233 236 234 214 230C186 235 152 234 132 226C127 218 125 210 124 200Z" fill="#a07848" stroke="none"/>
+ <path id="forward-cannon-shape-36" d="M140 165C162 157 190 158 230 160M244 159Q256 157 266 159" fill="none" stroke="#efd8a2" stroke-width="7"/>
+ <g fill="#8a6640" stroke="none"><circle id="forward-cannon-shape-37" cx="160" cy="180" r="2.6"/><circle id="forward-cannon-shape-38" cx="166" cy="185" r="1.6"/><circle id="forward-cannon-shape-39" cx="174" cy="210" r="2.2"/><circle id="forward-cannon-shape-40" cx="246" cy="176" r="2.4"/><circle id="forward-cannon-shape-41" cx="238" cy="212" r="2"/><circle id="forward-cannon-shape-42" cx="148" cy="204" r="2"/></g>
+ <g fill="#6e4e30" stroke="none"><ellipse id="forward-cannon-shape-43" cx="152" cy="194" rx="4" ry="2.2"/><ellipse id="forward-cannon-shape-44" cx="230" cy="190" rx="4" ry="2.2"/><ellipse id="forward-cannon-shape-45" cx="256" cy="210" rx="3.5" ry="2"/></g>
+ <path id="forward-cannon-shape-46" d="M188 148Q197 146 206 148L206 233Q197 235 188 233Z" fill="#307af0" data-paint-region="team"/>
+ <path id="forward-cannon-shape-47" d="M192 150L198 149L198 232L192 231Z" fill="#91c7ff" stroke="none" data-paint-region="team-light"/>
+ <path id="forward-cannon-shape-48" d="M202 151L205 152L205 232L202 233Z" fill="#1f55b5" stroke="none" data-paint-region="team-shadow"/>
+ <path id="forward-cannon-shape-49" d="M266 146Q280 142 292 146L292 234Q280 238 266 234Z" fill="#7a9a3e"/>
+ <path id="forward-cannon-shape-50" d="M271 150Q276 166 270 182Q276 200 271 218M281 148Q286 166 280 184Q286 204 281 230" fill="none" stroke="#b2cf6e" stroke-width="3"/>
+ <path id="forward-cannon-shape-51" d="M292 148Q297 150 298 154L298 226Q297 230 292 232Z" fill="#f0dc9e"/>
+</g>
+<g id="wear-1" display="none">
+ <path id="forward-cannon-shape-52" d="M130 154C150 146 184 148 210 150C236 145 256 148 272 152L272 228C256 233 236 234 214 230C186 235 152 234 132 226C124 214 121 202 123 190C121 176 124 162 130 154Z" fill="#4a3018" opacity=".2" stroke="none"/>
+ <path id="forward-cannon-shape-53" d="M164 152L174 168L166 178L178 192" fill="none" stroke="#3a2614" stroke-width="5.5"/>
+ <path id="forward-cannon-shape-54" d="M252 230L246 216L254 208L248 196" fill="none" stroke="#3a2614" stroke-width="5.5"/>
+ <path id="forward-cannon-shape-55" d="M168 157L176 169M250 222L254 212" fill="none" stroke="#f3dfaa" stroke-width="2" opacity=".8"/>
+ <ellipse id="forward-cannon-shape-56" cx="226" cy="204" rx="13" ry="8" fill="#5e3f22" opacity=".55" stroke="none"/>
+ <ellipse id="forward-cannon-shape-57" cx="152" cy="216" rx="9" ry="5" fill="#5e3f22" opacity=".55" stroke="none"/>
+</g>
+<g id="wear-2" display="none">
+ <path id="forward-cannon-shape-58" d="M130 154C150 146 184 148 210 150C236 145 256 148 272 152L272 228C256 233 236 234 214 230C186 235 152 234 132 226C124 214 121 202 123 190C121 176 124 162 130 154Z" fill="#3a2410" opacity=".22" stroke="none"/>
+ <path id="forward-cannon-shape-59" d="M212 149L222 166L240 160L246 147Z" fill="#f3dfaa" stroke-width="3.5"/>
+ <path id="forward-cannon-shape-60" d="M134 180L150 190L142 202L158 212L150 228" fill="none" stroke="#2e1d0e" stroke-width="6.5"/>
+ <path id="forward-cannon-shape-61" d="M262 156L254 174L266 186L256 204L264 224" fill="none" stroke="#2e1d0e" stroke-width="6.5"/>
+ <path id="forward-cannon-shape-62" d="M196 150L200 172L190 186" fill="none" stroke="#2e1d0e" stroke-width="5"/>
+ <ellipse id="forward-cannon-shape-63" cx="180" cy="208" rx="15" ry="9" fill="#4a3018" opacity=".6" stroke="none"/>
+ <path id="forward-cannon-shape-64" d="M109 128C103 122 93 124 85 132C93 140 103 138 109 128Z" fill="#9a8344" stroke-width="3.5"/>
+ <path id="forward-cannon-shape-65" d="M268 158L282 172M272 200L286 214M268 222L280 230" stroke="#4b3a1c" stroke-width="4"/>
+</g>
+<g id="barrel-back"><circle id="forward-cannon-shape-66" cx="126" cy="190" r="40" fill="#c39a62"/><circle id="forward-cannon-shape-67" cx="120" cy="184" r="28" fill="#d6b27a" stroke="none"/><path id="forward-cannon-shape-68" d="M104 176Q112 164 128 164" fill="none" stroke="#f3dfaa" stroke-width="7"/><ellipse id="forward-cannon-shape-69" cx="138" cy="204" rx="4" ry="2.2" fill="#6e4e30" stroke="none"/><circle id="forward-cannon-shape-70" cx="112" cy="206" r="2.4" fill="#8a6640" stroke="none"/></g>
+<g id="barrel-front"><circle id="forward-cannon-shape-71" cx="292" cy="190" r="44" fill="#7a9a3e"/><path id="forward-cannon-shape-72" d="M262 172Q270 150 292 148M322 208Q314 230 292 232" fill="none" stroke="#b2cf6e" stroke-width="3"/><circle id="forward-cannon-shape-73" cx="292" cy="190" r="35" fill="#f0dc9e" stroke-width="3.5"/><circle id="forward-cannon-shape-74" cx="292" cy="190" r="27" fill="#e2c07a" stroke="none"/><circle id="forward-cannon-shape-75" cx="292" cy="191" r="22" fill="#3b2a1c" stroke-width="3"/><path id="forward-cannon-shape-76" d="M278 176Q288 168 300 171" fill="none" stroke="#fff3c8" stroke-width="4"/></g>
+<g id="cradle">
+ <path id="forward-cannon-shape-77" d="M180 268C186 244 184 214 192 194C196 184 208 184 207 194C202 216 202 244 199 270Q189 275 180 268Z" fill="#7a9a3e"/>
+ <path id="forward-cannon-shape-78" d="M183 262C194 254 186 244 196 236C204 228 194 218 200 208" fill="none" stroke="#557a2c" stroke-width="3.5"/>
+ <path id="forward-cannon-shape-79" d="M188 258C190 236 190 214 196 198" stroke="#b2cf6e" stroke-width="3"/>
+ <path id="forward-cannon-shape-80" d="M196 236C182 226 168 230 164 238C176 246 188 244 196 236Z" fill="#8cc152" stroke-width="3.5"/>
+ <path id="forward-cannon-shape-81" d="M170 237Q182 235 192 237" stroke="#5f9a3a" stroke-width="2"/>
+ <path id="forward-cannon-shape-82" d="M204 214C216 204 230 206 234 212C224 222 212 222 204 214Z" fill="#9fd05c" stroke-width="3.5"/>
+ <circle id="forward-cannon-shape-83" cx="200" cy="190" r="12" fill="#6a8a34"/>
+ <path id="forward-cannon-shape-84" d="M193 186Q200 180 206 187Q208 194 200 196Q195 194 197 189" fill="none" stroke="#b2cf6e" stroke-width="3"/>
+ <path id="forward-cannon-shape-85" d="M184 270C178 276 170 278 164 274M198 272C204 278 214 278 218 272" stroke="#5c4a2a" stroke-width="3.5"/>
+</g>
+<g id="cradle-wilt" display="none">
+ <path id="forward-cannon-shape-86" d="M196 236C188 242 178 250 172 262C182 262 192 252 196 236Z" fill="#a88a44" stroke-width="3.5"/>
+ <path id="forward-cannon-shape-87" d="M204 214C212 224 216 234 214 246C206 240 202 228 204 214Z" fill="#b09a52" stroke-width="3.5"/>
+ <ellipse id="forward-cannon-shape-88" cx="178" cy="236" rx="6" ry="3" fill="#8a6f3a" opacity=".7" stroke="none"/>
+</g>
+</svg>

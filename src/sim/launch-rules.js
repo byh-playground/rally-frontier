@@ -260,6 +260,19 @@ class LaunchRules {
             spacing: 32,
             deployTogether: true,
         }),
+        // 비용·사거리(일반의 75%)·대포당 한 명은 확정, 포탄 체력·위력·반경은 찹쌀과 같은 초안이다.
+        // Every cannon in a volley carries its own potato, so the volley grows one cannon per participant.
+        potato: Object.freeze({
+            ...SINGLE_BUNDLE_SHELL,
+            cost: 5 * this.resourceScale,
+            premiumCost: 15 * this.resourceScale,
+            reach: 0.75,
+            count: 1,
+            perCannonLoad: true,
+            shellHp: 25,
+            impact: 10,
+            splash: 50,
+        }),
     });
     static deck = Object.freeze(
         Object.keys(LaunchRules.grains).filter((type) => !LaunchRules.isHeroType(type)),
@@ -309,8 +322,12 @@ class LaunchRules {
             building.side === side &&
             building.alive !== false &&
             !building.construction &&
-            (definition?.isMainBase || definition?.isOutpost)
+            !!definition?.launch
         );
+    }
+    // Where a shell leaves this cannon, measured from its centre toward the aim.
+    static muzzleReach(cannon) {
+        return BuildingDefinition.get(cannon.type).launch.muzzleReach;
     }
     static launchCannons(state, side) {
         return (state?.buildings || []).filter((building) => this.isLaunchCannon(building, side));
@@ -426,7 +443,10 @@ class LaunchRules {
     static sharedVolley(type, aim, primary, world, state, level) {
         const original = this.volley(type, aim, primary, world),
             grain = this.grain(type),
-            limit = Math.min(this.maxVolleyCannons, Math.floor(grain.count / original.length));
+            // A per-cannon load fills every joining cannon; otherwise each shell must keep a passenger.
+            limit = grain.perCannonLoad
+                ? this.maxVolleyCannons
+                : Math.min(this.maxVolleyCannons, Math.floor(grain.count / original.length));
         const groups = [{ cannon: primary, shots: original }];
         if (limit <= 1 || this.isHeroType(type)) return groups;
 
@@ -450,7 +470,7 @@ class LaunchRules {
             seen.add(cannon.id);
             groups.push({ cannon, shots: this.volley(type, aim, cannon, world) });
         }
-        if (groups.length === 1) return groups;
+        if (groups.length === 1 || grain.perCannonLoad) return groups;
 
         const bonus = Math.round(
             (grain.count * (groups.length - 1) * this.volleyReinforcementPctPerExtraCannon) / 100,

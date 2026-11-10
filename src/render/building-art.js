@@ -1,10 +1,51 @@
 import { RallyGamekit } from '../core/gamekit.js';
+import { BuildingDefinition } from '../definitions/buildings.js';
 import { ConstructionRules } from '../sim/construction-rules.js';
 
 const PARTS = ['base', 'cradle', 'cradle-back', 'barrel', 'barrel-front', 'barrel-back'];
-const EXCLUDE = Object.fromEntries(
-    PARTS.map((part) => [part, new Set(PARTS.filter((other) => other !== part))]),
-);
+// Each launch building draws one SVG. Its wear parts ride inside the drawn part they belong to,
+// and the expression picks which of them show.
+const ASSETS = Object.freeze({
+    cannon: Object.freeze({}),
+    'forward-cannon': Object.freeze({
+        base: ['base-wear'],
+        cradle: ['cradle-wilt'],
+        barrel: ['wear-1', 'wear-2'],
+    }),
+});
+const assetIdOf = (type) =>
+    BuildingDefinition.get(type)?.visualCategory === 'forward-cannon' ? 'forward-cannon' : 'cannon';
+const exclusions = new Map(),
+    shownWear = new WeakMap();
+function excludeFor(assetId, asset) {
+    let table = exclusions.get(assetId);
+    if (table) return table;
+    const all = asset.metadata.parts.map(({ id }) => id),
+        extras = ASSETS[assetId];
+    table = Object.fromEntries(
+        PARTS.map((part) => {
+            const own = new Set([part, ...(extras[part] || [])]);
+            return [part, new Set(all.filter((id) => !own.has(id)))];
+        }),
+    );
+    exclusions.set(assetId, table);
+    return table;
+}
+function assetFor(type) {
+    const id = assetIdOf(type),
+        asset = globalThis.RallyVectorAssets?.[id];
+    if (!asset) throw new Error(`${id} vector asset is missing`);
+    return { id, asset };
+}
+// Wear stages: two thirds of health left shows the first wear, one third the failing art.
+function wearExpression(building, asset) {
+    const expressions = asset.metadata.expressions || {},
+        hp = Number(building.hp) || 0,
+        maxHp = Number(building.maxHp) || 1;
+    if (expressions.failing && hp * 3 <= maxHp) return 'failing';
+    if (expressions.worn && hp * 3 <= maxHp * 2) return 'worn';
+    return 'default';
+}
 const TEAM = Object.freeze({
     team: [48 / 255, 122 / 255, 240 / 255],
     'team-light': [145 / 255, 199 / 255, 1],
@@ -54,9 +95,9 @@ class BuildingArt {
     static baseBottomY(groundY, scale) {
         return groundY + BASE_RIM_OFFSET * scale;
     }
-    static pose({ x, y, sc, aim, fireAgeMs = Infinity }, matrices = false) {
-        const asset = globalThis.RallyVectorAssets?.cannon;
-        if (!asset) throw new Error('Cannon vector asset is missing');
+    // type picks the building's SVG; every launch cannon shares one projection.
+    static pose({ x, y, sc, aim, type, fireAgeMs = Infinity }, matrices = false) {
+        const { asset } = assetFor(type);
         const sockets = asset.metadata.sockets,
             GROUND = sockets.ground.point,
             TRUNNION = sockets.trunnion.point,
@@ -131,8 +172,9 @@ class BuildingArt {
     }
     draw(building, options) {
         const r = this.renderer,
-            source = globalThis.RallyVectorAssets?.cannon;
-        if (!source) throw new Error('Cannon vector asset is missing');
+            { id: assetId, asset: source } = assetFor(building.type),
+            EXCLUDE = excludeFor(assetId, source),
+            expression = wearExpression(building, source);
         let actors = this.actors.get(building.id);
         if (!actors) {
             actors = Object.fromEntries(
@@ -149,7 +191,7 @@ class BuildingArt {
         const firing =
                 options.fireAgeMs >= 0 && options.fireAgeMs < source.metadata.clips.fire.durationMs,
             clip = firing ? 'fire' : 'idle';
-        const pose = BuildingArt.pose(options, true),
+        const pose = BuildingArt.pose({ ...options, type: building.type }, true),
             context = r.vectorContext,
             paintRegions = options.own ? TEAM : ENEMY;
         const progress = building.construction
@@ -176,6 +218,10 @@ class BuildingArt {
             )
                 continue;
             const actor = actors[part];
+            if (shownWear.get(actor) !== expression) {
+                actor.setExpression(expression);
+                shownWear.set(actor, expression);
+            }
             if (actor.currentClip !== clip) actor.play(clip, 0);
             actor.seek(firing ? options.fireAgeMs : 0);
             actor.preparePose({ excludeParts: EXCLUDE[part] });

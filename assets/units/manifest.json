@@ -28,6 +28,13 @@
             "sourcePath": "assets/units/cannon.svg",
             "sha256": "aa4736c69843adfaed5779bdbff31440bc158947c762bc5c4e31d62b6435a6f3",
             "bytes": 7272
+        },
+        {
+            "id": "forward-cannon",
+            "url": "./assets/units/forward-cannon.svg",
+            "sourcePath": "assets/units/forward-cannon.svg",
+            "sha256": "50fb6e20595af4bf4a6988cfbf0d97d87af6fbb56f710ebce19cbd2ad7fe7113",
+            "bytes": 13178
         }
     ]
 }
