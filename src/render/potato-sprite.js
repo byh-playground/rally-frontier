@@ -129,6 +129,105 @@ const stagePoses = Object.fromEntries(
         return [stage, poses];
     }),
 );
+// Squirm while it turns into the cannon, a pure function of the milliseconds spent rooting (cannonTick
+// in the simulation, interpolated by the renderer) so replays and pauses show the same frame. Every
+// channel gets its own phase and size on top of its stage pose, and the shape progresses inside each
+// stage: the mound heaps up and the body sinks in while digging; the bud, vine and leaf grow while
+// rooting; the body pulses and sways; the last 0.5 s swells into a pop that shrinks away at the end.
+const DIG_MS = 2000,
+    ROOT_MS = 5000,
+    DEG = Math.PI / 180;
+const clamp01 = (value) => Math.min(1, Math.max(0, value));
+const smooth = (value) => value * value * (3 - 2 * value);
+// Squash and stretch that keeps the volume: stretching narrows, squashing widens.
+const volume = (pose, stretch) => {
+    pose.scaleY *= 1 + stretch;
+    pose.scaleX /= 1 + stretch;
+};
+function squirm(poses, stage, ms) {
+    const at = (id) => poses[channelIndex.get(id)];
+    const trunk = at('trunk');
+    // 0.5 s per spade stroke while digging; the breathing speeds up from 1.2 to 2.4 Hz while rooting.
+    const stroke = (ms / 500) * Math.PI * 2;
+    const rootAge = Math.max(0, ms - DIG_MS) / 1000,
+        progress = clamp01((ms - DIG_MS) / (ROOT_MS - DIG_MS)),
+        breath = Math.PI * 2 * (1.2 * rootAge + 0.2 * rootAge * rootAge),
+        urgency = progress * progress;
+    // The pop: a small squash, then a swell; the soldier shrinks away on its very last frames.
+    const popAge = clamp01((ms - 4400) / 400),
+        pop =
+            (1 -
+                (popAge < 0.35 ? 0.1 * Math.sin((Math.PI * popAge) / 0.35) : 0) +
+                0.35 * smooth(clamp01((popAge - 0.35) / 0.65)) ** 2) *
+            (1 - 0.85 * smooth(clamp01((ms - 4800) / 180)));
+    // Crossing from digging to rooting swells up and springs back, so the change of poses is covered.
+    const hop =
+        ms < DIG_MS
+            ? 0.14 * smooth(clamp01((ms - 1800) / 200))
+            : 0.14 * Math.exp(-rootAge * 6) * Math.cos(rootAge * 11);
+    if (stage === 'dig') {
+        const grow = clamp01(ms / DIG_MS),
+            s = Math.sin(stroke),
+            lag = Math.sin(stroke - 1.1);
+        volume(trunk, (s > 0 ? 0.2 : 0.14) * s + hop);
+        // Lift on the up stroke, drop on the down stroke, sinking into the ground as it goes.
+        trunk.y += -16 * s - 28 * (1 - grow) + 8 * grow;
+        trunk.x += 5 * Math.sin(stroke * 0.5 + 0.4);
+        trunk.rotation += 8 * DEG * Math.sin(stroke * 0.5 + 0.9);
+        const sprout = at('sprout');
+        sprout.rotation += 20 * DEG * lag;
+        sprout.scaleY *= 1 + 0.2 * lag;
+        sprout.scaleX *= 1 - 0.1 * lag;
+        const shovel = at('plantedShovel');
+        shovel.rotation += 12 * DEG * Math.sin(stroke + 0.5);
+        shovel.y += -9 * Math.max(0, Math.sin(stroke + 0.5));
+        for (const [id, size] of [
+            ['moundBack', 1],
+            ['moundFront', 1.3],
+        ]) {
+            const mound = at(id),
+                heap = 0.12 + 0.88 * smooth(grow),
+                puff = Math.max(0, Math.sin(stroke - 0.4)) * size;
+            mound.scaleX *= heap * (1 + 0.06 * puff);
+            mound.scaleY *= heap * (1 + 0.14 * puff);
+        }
+        return;
+    }
+    const wave = Math.sin(breath),
+        lag = Math.sin(breath - 0.9),
+        grow = smooth(progress),
+        shake = Math.PI * 2 * 15 * rootAge;
+    // A pulse of 12-15 % that slowly gets bigger, on a body that keeps growing.
+    volume(trunk, (0.12 + 0.04 * progress) * wave + hop);
+    trunk.scaleX *= (1 + 0.12 * grow) * pop;
+    trunk.scaleY *= (1 + 0.12 * grow) * pop;
+    trunk.x += 4 * urgency * Math.sin(shake) + 3 * Math.sin(breath * 0.5 + 1.3);
+    // A slow sway that the 0.1 s frames can see, and a fast tremble on top of it near the end.
+    trunk.rotation +=
+        DEG *
+        ((4 + 5 * progress) * Math.sin(breath * 0.5 + 0.7) + 3 * urgency * Math.sin(shake * 1.3));
+    const sprout = at('sprout');
+    sprout.rotation += DEG * (10 + 8 * progress) * lag;
+    const leaf = 0.7 + 0.5 * grow;
+    sprout.scaleX *= leaf * (1 + 0.14 * Math.sin(breath - 1.6));
+    sprout.scaleY *= leaf * (1 + 0.14 * lag);
+    // The barrel bud starts as a small lump and ends fully grown, pushing out as it does.
+    const bud = at('bud'),
+        size = 0.4 + 0.85 * grow;
+    bud.scaleX *= size * (1 + 0.08 * Math.sin(breath - 0.4));
+    bud.scaleY *= size * (1 + 0.08 * wave);
+    bud.x += 10 * grow;
+    bud.rotation += DEG * (4 + 4 * progress) * Math.sin(breath + 1.4);
+    const vine = at('vine');
+    vine.scaleY *= 0.4 + 0.85 * grow + 0.08 * Math.sin(breath - 0.5);
+    vine.scaleX *= 0.55 + 0.5 * grow - 0.05 * wave;
+    vine.rotation += DEG * 3 * Math.sin(breath * 0.5 + 2);
+    for (const id of ['moundBack', 'moundFront']) {
+        const mound = at(id);
+        mound.scaleX *= 1 + 0.1 * (pop - 1) + 0.03 * Math.sin(breath + 2);
+        mound.scaleY *= 1 + 0.08 * Math.sin(breath + 2.4) + 0.3 * (pop - 1);
+    }
+}
 const key = (timeMs, parts = {}) => ({ timeMs, parts, easing: 'inOutSine' });
 const clip = (durationMs, loop, keyframes) => ({ durationMs, loop, keyframes });
 const rig = {
@@ -285,11 +384,17 @@ export class PotatoSpriteRenderer {
             pose: null,
             disposed: false,
             rootStage: 'standing',
-            // 'standing', 'dig' or 'root'; main.js derives it from the soldier's cannonTick.
-            setRootStage(stage) {
-                if (stage === this.rootStage || !stagePoses[stage]) return this;
+            squirming: false,
+            // 'standing', 'dig' or 'root'; main.js derives it from the soldier's cannonTick, with the
+            // milliseconds spent rooting (null when standing) that the squirming follows.
+            setRootStage(stage, rootingMs = null) {
+                if (!stagePoses[stage]) return this;
+                const squirming = stage !== 'standing' && rootingMs !== null;
+                if (stage === this.rootStage && !squirming && !this.squirming) return this;
                 this.rootStage = stage;
+                this.squirming = squirming;
                 stagePoses[stage].forEach((pose, index) => Object.assign(basePoses[index], pose));
+                if (squirming) squirm(basePoses, stage, rootingMs);
                 return this;
             },
             play(name) {

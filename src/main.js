@@ -4786,17 +4786,18 @@ class GLRenderer {
             if (spin) clip = 'spin';
             if (roll?.phase) clip = 'roll';
             // A potato knocked into the air stands up until it is down again.
-            if (actor.setRootStage)
+            if (actor.setRootStage) {
+                const tps = this.snapshot.tps || SIM_TPS,
+                    rootingMs = grounded
+                        ? ForwardCannon.rootingMs(u.type, entity.cannonTick, renderTick, tps)
+                        : null;
                 actor.setRootStage(
-                    (grounded &&
-                        ForwardCannon.stage(
-                            u.type,
-                            entity.cannonTick,
-                            renderTick,
-                            this.snapshot.tps || SIM_TPS,
-                        )) ||
+                    (rootingMs !== null &&
+                        ForwardCannon.stage(u.type, entity.cannonTick, renderTick, tps)) ||
                         'standing',
+                    rootingMs,
                 );
+            }
             let burstFacing = 1;
             if (actor.setWeaponState) {
                 const pose = this.burstWeaponPose(u, entity.combat, world, displayMs);
