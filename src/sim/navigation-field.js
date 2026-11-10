@@ -2,12 +2,13 @@
 // GameKit's pathfield walks the grid; this file is the policy on top of it: which cells satisfy a goal, which
 // fields are kept, and which cell of the descent a unit actually heads for.
 // A field is the integer walking distance to a goal over cells that clear the unit radius. Units only read it:
-// descend a few cells, then slide to the farthest cell on that descent they can still see. No unit keeps a route.
+// descend a few cells, then slide to the farthest cell on that descent they can still see.
+// The same grid also searches single routes (RouteFinder) for units that keep their own route (navigation-paths.js).
 // Fixed goals (bases, flags, capture points) own a full field that is built once.
 // A chase goal builds a field only while terrain blocks the straight ray, and only as far as the asking unit;
 // units chasing the same point share it for the tick.
 import { RallyGamekit } from '../core/gamekit.js';
-const { DistanceField, FieldCache, PathGrid, UNREACHED } = RallyGamekit;
+const { DistanceField, FieldCache, PathGrid, RouteFinder, UNREACHED } = RallyGamekit;
 
 const CELL = 24;
 // The half-diagonal margin keeps thin annuli from vanishing between cell centres; the final approach is
@@ -16,9 +17,12 @@ const GOAL_MARGIN = CELL * 0.71;
 const DESCENT = [];
 
 class GoalFields {
+    static CELL = CELL;
     static RAY_RANGE = 360;
     static LOOKAHEAD = 8;
     static MAX_FIXED = 24;
+    // Rings searched for an entry cell when a unit stands in the grid's extra clearance near a wall or map edge.
+    static ENTRY_RINGS = 4;
 
     constructor(nav, radius) {
         this.nav = nav;
@@ -41,6 +45,7 @@ class GoalFields {
         });
         this.fixed = new FieldCache(this.grid, { capacity: GoalFields.MAX_FIXED });
         this.chase = new FieldCache(this.grid);
+        this.routes = new RouteFinder(this.grid);
     }
     // Cells a unit can stand on while satisfying the goal.
     goalSources(goal) {
@@ -115,7 +120,7 @@ class GoalFields {
         // Find a physically reachable entry cell, not an unchecked nearest centre.
         const col = cell % grid.cols,
             row = Math.floor(cell / grid.cols);
-        for (let ring = 1; ring <= 4; ring++) {
+        for (let ring = 1; ring <= GoalFields.ENTRY_RINGS; ring++) {
             let best = -1,
                 bestCost = Infinity;
             for (let dy = -ring; dy <= ring; dy++)

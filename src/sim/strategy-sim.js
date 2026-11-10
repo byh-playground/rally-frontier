@@ -1636,6 +1636,7 @@ class StrategySim {
     moveToward(u, tx, ty, speed, options = undefined) {
         return this.moveToGoal(u, NavigationGoal.point(tx, ty), speed, options);
     }
+    // options.path: how the next point is found ('field' default, 'route', 'direct'; TerrainNavigation.nextPoint).
     moveToGoal(u, goal, speed, options = null) {
         let tx = goal.x,
             ty = goal.y;
@@ -1647,7 +1648,7 @@ class StrategySim {
         )
             return false;
 
-        const waypoint = this.navigation.nextPoint(u, goal, options?.fixedGoal);
+        const waypoint = this.navigation.nextPoint(u, goal, options?.path);
         if (!waypoint || Math.hypot(waypoint.x - u.x, waypoint.y - u.y) < 0.001) return false;
         tx = waypoint.x;
         ty = waypoint.y;
