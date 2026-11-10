@@ -9520,6 +9520,7 @@ class AppLifecycle {
                 : `v${PRODUCT_VERSION} · BUILD · 배포 정보 ${BUILD_META.status === 'pending' ? '확인 중' : '확인 불가'}`;
         if (UiRegistry.refs.bootRetryBtn)
             UiRegistry.refs.bootRetryBtn.classList.toggle('hidden', !retry);
+        UiRegistry.refs.bootGate?.classList.toggle('failed', retry);
     }
     static finishBootGate() {
         if (AppLifecycle.bootGateFinished) return;
