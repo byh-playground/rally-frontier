@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="800" viewBox="0 0 900 800">
+  <!--
+    호두 파츠 시트 시안 v2. 셀 좌표는 [x, y, w, h] / 회전 중심 [px, py] (셀 왼쪽 위 기준).
+    v2: 기존 병종(땅콩·수박) 톤에 맞춰 단순화. 촘촘한 미로 주름(약 24줄)을 없애고 굵은 이음선 1 + 가장자리 큰 주름 4줄만 남겼다.
+        주름은 모두 공 중심에서 반지름 70 바깥에 둬서, 껍데기가 어느 각도로 돌아도 얼굴 자리는 매끈한 면이다.
+        외곽은 살짝 울퉁불퉁한 동그라미 + 위쪽 꼭지. 얼굴은 땅콩과 같은 짙은 점 눈(테 없음).
+        구를 때 얼굴 처리는 (나) 확정: 껍데기만 돌고 얼굴·빛은 바로 선다.
+    시트 1단위 = 쌀 원본 1단위와 같은 선 굵기 체계. 껍데기 반지름 약 100 (외곽선 바깥 약 103, 꼭지 끝 111).
+    셀 배치·회전 중심·조립 위치는 v1과 같다(구현 수치 변경 없음, 바람 꼬리 길이만 짧아짐).
+
+    구르는 조립 (원점 = 공 중심, 땅 접점은 (0, +101). 진행 방향 +x, 왼쪽으로 갈 때는 전체를 좌우 반전)
+      shell       [10,10,250,250] / [125,125]   회전하는 껍데기. 이음선·주름·꼭지. 이 셀만 돈다. 머리띠는 없다(팀은 발밑 표식으로 구분).
+      shade       [270,10,220,220] / [110,110]  돌지 않는 빛·그늘 덧칠(반투명). 껍데기 위에 회전 없이 얹는다.
+      face-*      160x80 / [80,40]              돌지 않는 얼굴. 공 중심에서 (+14,+6)에 얹는다(진행 쪽으로 살짝).
+                  neutral [10,300]  happy [180,300]  rush [350,300]  bump [520,300]  hurt [690,300]
+      spin-arcs   [500,10,280,280] / [140,140]  최고 속도 회전 호. 돌지 않음, 맨 나중.
+    속도 효과 (원점 = 공 중심, 몸보다 먼저 그린다)
+      streaks-mid [10,400,340,220] / [330,110]  중간 속도 바람줄 2가닥
+      streaks-max [360,400,530,220] / [520,110] 최고 속도 바람 원뿔 + 바람줄 3가닥 (공 뒤로 지름 1배 안팎)
+    땅 효과 (원점 = 땅 접점, 몸보다 먼저)
+      dust-slow   [10,630,200,70] / [190,60]
+      dust-max    [220,630,330,160] / [320,140]
+    충돌
+      impact      [560,630,230,160] / [110,90]  원점 = 부딪힌 점. 맨 나중.
+  -->
+  <defs>
+    <radialGradient id="shell-fill" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#efcf98"/>
+      <stop offset=".66" stop-color="#dcb176"/>
+      <stop offset="1" stop-color="#c39257"/>
+    </radialGradient>
+    <radialGradient id="shade-fill" cx=".34" cy=".3" r=".78">
+      <stop offset="0" stop-color="#fff6dc" stop-opacity=".55"/>
+      <stop offset=".36" stop-color="#fff6dc" stop-opacity="0"/>
+      <stop offset=".68" stop-color="#5a3216" stop-opacity="0"/>
+      <stop offset="1" stop-color="#5a3216" stop-opacity=".45"/>
+    </radialGradient>
+    <path id="outline" d="M0.0 -109.6C5.3 -109.5 10.7 -102.6 15.9 -100.2C21.0 -97.7 25.9 -96.8 30.9 -95.0C35.8 -93.2 40.8 -91.5 45.5 -89.3C50.2 -87.0 54.9 -84.4 59.2 -81.5C63.6 -78.6 68.0 -75.4 71.6 -71.6C75.3 -67.9 78.5 -63.5 81.2 -59.0C83.9 -54.6 85.8 -49.5 87.8 -44.8C89.9 -40.0 91.6 -35.2 93.5 -30.4C95.3 -25.5 97.4 -20.7 98.8 -15.6C100.1 -10.6 101.2 -5.2 101.4 0.0C101.5 5.2 100.8 10.6 99.8 15.8C98.7 21.0 97.1 26.0 95.3 31.0C93.5 35.9 91.4 40.7 88.9 45.3C86.4 49.9 83.5 54.3 80.3 58.3C77.1 62.4 73.4 66.1 69.8 69.8C66.2 73.5 62.5 77.1 58.5 80.6C54.6 84.0 50.6 87.7 46.0 90.4C41.5 93.1 36.5 95.3 31.4 96.7C26.4 98.1 20.9 98.5 15.6 98.8C10.4 99.1 5.2 98.8 0.0 98.6C-5.2 98.5 -10.3 98.4 -15.5 97.8C-20.6 97.2 -25.9 96.4 -30.8 94.9C-35.8 93.5 -40.8 91.5 -45.5 89.3C-50.2 87.0 -54.9 84.4 -59.2 81.5C-63.6 78.6 -68.0 75.4 -71.6 71.6C-75.3 67.9 -78.5 63.5 -81.2 59.0C-83.9 54.6 -85.8 49.5 -87.8 44.8C-89.9 40.0 -91.6 35.2 -93.5 30.4C-95.3 25.5 -97.4 20.7 -98.8 15.6C-100.1 10.6 -101.2 5.2 -101.4 0.0C-101.5 -5.2 -100.8 -10.6 -99.8 -15.8C-98.7 -21.0 -97.1 -26.0 -95.3 -31.0C-93.5 -35.9 -91.4 -40.7 -88.9 -45.3C-86.4 -49.9 -83.5 -54.3 -80.3 -58.3C-77.1 -62.4 -73.4 -66.1 -69.8 -69.8C-66.2 -73.5 -62.5 -77.1 -58.5 -80.6C-54.6 -84.0 -50.6 -87.7 -46.0 -90.4C-41.5 -93.1 -36.4 -95.0 -31.4 -96.8C-26.4 -98.6 -21.3 -99.0 -16.0 -101.1C-10.8 -103.3 -5.3 -109.8 0.0 -109.6Z"/>
+    <clipPath id="shell-mask"><use href="#outline"/></clipPath>
+    <!-- 가장자리 큰 주름 4줄. 왼쪽 2·오른쪽 2를 서로 다른 자리에 둬서 반 바퀴마다 같아 보이지 않는다. -->
+    <path id="wrinkles" d="M-26-88C-56-80-80-58-86-28C-88-18-82-10-74-12M-90 30C-84 52-68 68-46 80C-38 84-33 78-37 71M66-68C84-50 92-24 88 2C86 12 80 18 72 19M26 90C44 86 58 74 64 60C66 53 61 50 56 53"/>
+    <path id="seam" d="M0-104C6-70-6-36 0 0 6 36-5 70 0 96"/>
+    <g id="eyes" fill="#382822">
+      <ellipse cx="-26" cy="-4" rx="9" ry="11.5"/>
+      <ellipse cx="26" cy="-4" rx="9" ry="11.5"/>
+    </g>
+    <g id="glints" fill="#fff4c9"><circle cx="-27" cy="-8" r="3"/><circle cx="25" cy="-8" r="3"/></g>
+    <path id="eye-happy" d="M-10 4C-10.5-7-6-15 0-15 6-15 10.5-7 10 4 4-1-4-1-10 4Z" fill="#382822"/>
+    <path id="eye-angry" d="M-10-7L10 1C10 8 6 12 0 12-6 12-10 8-10 0Z" fill="#382822"/>
+    <g id="cheeks" fill="#e57c5e" opacity=".75">
+      <ellipse cx="-44" cy="13" rx="9" ry="5"/>
+      <ellipse cx="44" cy="13" rx="9" ry="5"/>
+    </g>
+  </defs>
+
+  <!-- 껍데기: 회전하는 유일한 셀. 원점 = 공 중심 (135,135). -->
+  <g id="shell" transform="translate(135 135)">
+    <use href="#outline" fill="url(#shell-fill)"/>
+    <g clip-path="url(#shell-mask)" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <use href="#wrinkles" stroke="#6e4524" stroke-width="7" opacity=".85"/>
+      <!-- 도드라진 이음선 테: 짙은 바깥 + 밝은 등 -->
+      <use href="#seam" stroke="#6e4524" stroke-width="17"/>
+      <use href="#seam" stroke="#f3d8a3" stroke-width="10"/>
+    </g>
+    <use href="#outline" fill="none" stroke="#4e2e1c" stroke-width="5.5" stroke-linejoin="round"/>
+    <path d="M-3-102Q0-106 3-102" fill="none" stroke="#fbe9c2" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- 빛·그늘 덧칠: 돌지 않는다. 원점 = (380,120). -->
+  <g id="shade" transform="translate(380 120)">
+    <circle r="97.5" fill="url(#shade-fill)"/>
+    <ellipse cx="-46" cy="-50" rx="24" ry="12" transform="rotate(-38 -46 -50)" fill="#fffaf0" opacity=".5"/>
+    <path d="M78 42A88 88 0 0 1 30 84" fill="none" stroke="#f6dcaa" stroke-width="5" stroke-linecap="round" opacity=".55"/>
+  </g>
+
+  <!-- 최고 속도 회전 호 (진행 +x, 시계 방향). 원점 = (640,150). -->
+  <g id="spin-arcs" transform="translate(640 150)" fill="none" stroke-linecap="round">
+    <path d="M-112-38A118 118 0 0 1-38-112" stroke="#4e2e1c" stroke-width="11" opacity=".3"/>
+    <path d="M-112-38A118 118 0 0 1-38-112" stroke="#ffffff" stroke-width="7"/>
+    <path d="M112 38A118 118 0 0 1 52 105" stroke="#ffffff" stroke-width="6" opacity=".85"/>
+  </g>
+
+  <!-- 돌지 않는 얼굴 5종 (160x80, 중심 = 셀 중심). 땅콩과 같은 짙은 점 눈 + 반짝 점. -->
+  <g id="face-neutral" transform="translate(90 340)">
+    <use href="#cheeks"/><use href="#eyes"/><use href="#glints"/>
+    <path d="M-7 14Q0 20 7 14" fill="none" stroke="#382822" stroke-width="3.5" stroke-linecap="round"/>
+  </g>
+  <g id="face-happy" transform="translate(260 340)">
+    <use href="#cheeks"/>
+    <use href="#eye-happy" x="-26" y="-2"/><use href="#eye-happy" x="26" y="-2"/>
+    <path d="M-12 9Q0 30 12 9Q0 14-12 9Z" fill="#7a2f22" stroke="#382822" stroke-width="3" stroke-linejoin="round"/>
+    <ellipse cx="0" cy="18" rx="5" ry="3" fill="#ff8f86"/>
+  </g>
+  <g id="face-rush" transform="translate(430 340)">
+    <use href="#cheeks"/>
+    <path d="M-35 0Q-26-13-17 0M17 0Q26-13 35 0" fill="none" stroke="#382822" stroke-width="5" stroke-linecap="round"/>
+    <path d="M-15 6Q0 38 15 6Q0 11-15 6Z" fill="#7a2f22" stroke="#382822" stroke-width="3" stroke-linejoin="round"/>
+    <ellipse cx="0" cy="22" rx="6" ry="3.5" fill="#ff8f86"/>
+  </g>
+  <g id="face-bump" transform="translate(600 340)">
+    <use href="#cheeks"/>
+    <use href="#eye-angry" x="-26" y="-2"/><use href="#eye-angry" transform="translate(26 -2) scale(-1 1)"/>
+    <path d="M-40-21L-15-12M40-21L15-12" fill="none" stroke="#382822" stroke-width="5" stroke-linecap="round"/>
+    <path d="M-11 20Q0 9 11 20Q0 24-11 20Z" fill="#7a2f22" stroke="#382822" stroke-width="3" stroke-linejoin="round"/>
+  </g>
+  <g id="face-hurt" transform="translate(770 340)">
+    <use href="#cheeks"/>
+    <path d="M-37-14L-18-4-37 6M37-14L18-4 37 6" fill="none" stroke="#382822" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M-8 18q4-7 8 0t8 0" fill="none" stroke="#382822" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- 중간 속도 바람줄 2가닥. 원점 = 공 중심 (340,510). -->
+  <g id="streaks-mid" transform="translate(340 510)" fill="#ffffff">
+    <path d="M-114-30Q-110-36-104-30L-220-27Q-226-30-220-33Z"/>
+    <path d="M-110 30Q-106 25-100 30L-190 32Q-195 29-190 26Z" opacity=".85"/>
+  </g>
+  <!-- 최고 속도: 옅은 바람 원뿔 + 바람줄 3가닥. 공 뒤로 지름 1배 안팎. 원점 = 공 중심 (880,510). -->
+  <g id="streaks-max" transform="translate(880 510)" fill="#ffffff">
+    <path d="M-92-80L-300-34-300 38-92 82Z" opacity=".14"/>
+    <path d="M-116-42Q-112-49-104-42L-280-36Q-288-40-280-44Z"/>
+    <path d="M-120 4Q-116-4-107 4L-310 6Q-318 2-310-2Z"/>
+    <path d="M-114 48Q-110 41-102 48L-250 50Q-257 46-250 42Z" opacity=".85"/>
+  </g>
+
+  <!-- 느린 흙먼지 2알. 원점 = 땅 접점 (200,690). -->
+  <g id="dust-slow" transform="translate(200 690)" fill="#efe2c4" stroke="#a38a62" stroke-width="3.5">
+    <circle cx="-66" cy="-10" r="9"/>
+    <circle cx="-36" cy="-14" r="14"/>
+  </g>
+  <!-- 최고 속도 흙먼지 4알 + 흙알 2. 원점 = 땅 접점 (540,770). -->
+  <g id="dust-max" transform="translate(540 770)">
+    <g fill="#efe2c4" stroke="#a38a62" stroke-width="3.5">
+      <circle cx="-170" cy="-16" r="13"/>
+      <circle cx="-124" cy="-26" r="22"/>
+      <circle cx="-74" cy="-30" r="26"/>
+      <circle cx="-30" cy="-18" r="19"/>
+    </g>
+    <path d="M-86-44q8-10 20-10" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+    <g fill="#7a6446"><circle cx="-56" cy="-92" r="6"/><circle cx="-112" cy="-78" r="4.5"/></g>
+  </g>
+
+  <!-- 충돌: 별 모양 충격. 원점 = 부딪힌 점 (670,720). -->
+  <g id="impact" transform="translate(670 720)">
+    <path d="M0-82L14-38 58-62 34-22 92-16 38 4 66 46 20 26 10 76-6 30-44 64-30 18-90 10-38-12-70-52-22-36Z" fill="#ffd95a" stroke="#2b1a10" stroke-width="4.5" stroke-linejoin="round"/>
+    <path d="M0-52L8-24 34-38 20-12 54-8 22 4 38 28 12 16 6 44-4 18-26 38-18 10-52 6-22-8-40-30-12-20Z" fill="#fffbe6"/>
+  </g>
+</svg>

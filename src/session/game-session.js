@@ -8,6 +8,7 @@ import { HeroDeployment } from '../sim/hero-deployment.js';
 import { HeroRollAttack } from '../sim/capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from '../sim/capabilities/fruit-hero-attack.js';
 import { CannonRider } from '../sim/capabilities/cannon-rider.js';
+import { RollingBody } from '../sim/capabilities/rolling-body.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { StateValue } from '../sim/components.js';
 import { ReplayRecorder } from './replay-recording.js';
@@ -278,6 +279,7 @@ class RallySimulationAdapter {
                     HeroRollAttack.validateState(entity, state, this.session.sim.tps);
                     FruitHeroAttack.validateState(entity, state, this.session.sim.tps);
                     CannonRider.validateState(entity);
+                    RollingBody.validateState(entity, state);
                 }
                 if (key === 'projectiles') {
                     if (

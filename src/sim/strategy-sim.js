@@ -11,6 +11,7 @@ import { StickyCling } from './capabilities/sticky-cling.js';
 import { ContactMelee } from './capabilities/contact-melee.js';
 import { ForwardCannon } from './capabilities/forward-cannon.js';
 import { CannonRider } from './capabilities/cannon-rider.js';
+import { RollingBody } from './capabilities/rolling-body.js';
 import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './entities.js';
 import { StateContract, StateValue } from './components.js';
 import { CampaignMission } from './campaign-mission.js';
@@ -2370,6 +2371,10 @@ class StrategySim {
             ForwardCannon.root(this, u, d.growsCannon);
             return null;
         }
+        if (d.rolling) {
+            RollingBody.step(this, u, vision[u.side]);
+            return null;
+        }
         if (d.selfDestruct && UnitSelfDestructAttack.update(this, u, d.selfDestruct)) return null;
         this.tickAttackTimers(u);
         if (d.stickyCling && StickyCling.heldBuilding(this, u)) return null;
@@ -3754,6 +3759,7 @@ class StrategySim {
 
         mark = profile ? now() : 0;
         this.solveContacts();
+        RollingBody.flushHits(this);
         winner = ContactMelee.resolve(this, pendingContactAttacks, vision) || winner;
         for (const u of this.units) {
             this.navigation.motion.finishImpulseStep(u);

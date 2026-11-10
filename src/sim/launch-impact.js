@@ -9,6 +9,7 @@ import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { TerrainSurfaceAtlas } from './terrain.js';
 import { WorldContext } from './world-context.js';
+import { RollingBody } from './capabilities/rolling-body.js';
 
 // The simulation owns impulses, release queues and projectile contacts. Rendering only observes these records.
 class LaunchImpact {
@@ -249,6 +250,7 @@ class LaunchImpact {
                 u = sim.spawnUnit(group.side, group.type, spot.x, spot.y);
             UnitResultStats.add(sim.unitResultStats, group.side, group.type, 'deployed');
             if (group.holdPointId) u.launchHoldPointId = group.holdPointId;
+            if (group.dirX != null) RollingBody.aim(u, group.dirX, group.dirY);
             const fallDamage = this.applyEmergencyDropDamage(group, u);
             // `start` applies a reference-mass impulse. Scale the input by the
             // new unit's actual mass. Inner positions stay near the impact while

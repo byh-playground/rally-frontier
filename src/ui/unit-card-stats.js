@@ -109,6 +109,33 @@ export function unitCardStats(type, rangeLevel, copy) {
             ],
             copy.notes.slice(1),
         ]);
+    const rolling = unit.rolling;
+    if (rolling) {
+        // The motor's speed curve: top - (top - start)·e^(-drag·t).
+        const start = rolling.topSpeed * rolling.launchSpeedRatio;
+        troop.splice(1, 1, [
+            '구르기',
+            [
+                ['최고 속도', number.format(rolling.topSpeed)],
+                ['착지 속도', number.format(start)],
+                [
+                    '최고 속도의 95%까지',
+                    seconds(
+                        Math.round(
+                            (Math.log((rolling.topSpeed - start) / (rolling.topSpeed * 0.05)) /
+                                rolling.drag) *
+                                10,
+                        ) * 100,
+                    ),
+                ],
+                ['무게', number.format(unit.mass)],
+                ['같은 적 재타격', seconds(rolling.rehitMs)],
+                ['벽 반발', number.format(rolling.wallRestitution)],
+                ['최고 속도 건물 피해', number.format(rolling.buildingDamageAtTop)],
+            ],
+            copy.notes.slice(1),
+        ]);
+    }
     const rider = unit.cannonRider;
     if (rider)
         troop.push([

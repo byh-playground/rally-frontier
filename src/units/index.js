@@ -16,6 +16,7 @@ import { Peanut } from './peanut/index.js';
 import { StickyRice } from './sticky-rice/index.js';
 import { Potato } from './potato/index.js';
 import { BlackBean } from './black-bean/index.js';
+import { Walnut } from './walnut/index.js';
 
 export const UNITS = Object.freeze([
     Watermelon,
@@ -34,6 +35,7 @@ export const UNITS = Object.freeze([
     StickyRice,
     Potato,
     BlackBean,
+    Walnut,
 ]);
 
 const byId = new Map();
