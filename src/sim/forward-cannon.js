@@ -12,12 +12,17 @@ class ForwardCannon {
     static plant(sim, unit, spec) {
         unit.cannonTick = sim.tick + sim.msTicks(spec.delayMs);
     }
-    // Presentation: 'dig' then 'root' from the soldier's cannonTick in any snapshot. Null for every other unit.
-    static stage(type, cannonTick, tick, tps) {
+    // Presentation: milliseconds the soldier has been rooting, from its cannonTick in any snapshot. Null for every other unit.
+    static rootingMs(type, cannonTick, tick, tps) {
         const spec = UnitDefinition.get(type)?.growsCannon;
         if (!spec || cannonTick == null) return null;
-        const rootingMs = spec.delayMs - ((cannonTick - tick) * 1000) / tps;
-        return rootingMs < spec.digMs ? 'dig' : 'root';
+        return spec.delayMs - ((cannonTick - tick) * 1000) / tps;
+    }
+    // Presentation: 'dig' then 'root' from the soldier's cannonTick in any snapshot. Null for every other unit.
+    static stage(type, cannonTick, tick, tps) {
+        const rootingMs = ForwardCannon.rootingMs(type, cannonTick, tick, tps);
+        if (rootingMs === null) return null;
+        return rootingMs < UnitDefinition.get(type).growsCannon.digMs ? 'dig' : 'root';
     }
     // The rooting soldier's whole turn. A soldier knocked into the air stands up once it is down again.
     static root(sim, unit, spec) {
