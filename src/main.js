@@ -21,6 +21,7 @@ import {
 } from './session/runtime-state.js';
 import { LaunchRules } from './sim/launch-rules.js';
 import { StickyCling } from './sim/sticky-cling.js';
+import { ForwardCannon } from './sim/forward-cannon.js';
 import { CampaignMission } from './sim/campaign-mission.js';
 import { ConstructionRules } from './sim/construction-rules.js';
 import { LaunchImpactRules } from './definitions/launch-impact-rules.js';
@@ -373,6 +374,8 @@ const BUILDING_VISUAL_RENDER_FNS = Object.freeze({
     base: (renderer, { b }) => renderer.buildingArt.draw(b, renderer.cannonArtOptions(b)),
     outpost: (renderer, { b }) =>
         renderer.drawStickyWrap(b, renderer.buildingArt.draw(b, renderer.cannonArtOptions(b))),
+    'forward-cannon': (renderer, { b }) =>
+        renderer.buildingArt.draw(b, renderer.cannonArtOptions(b)),
 });
 class TerrainPresentation {
     static colors = Object.freeze({
@@ -1520,14 +1523,15 @@ class GLRenderer {
                     C.flush('resource-face-preparation');
                 }
             }
-            for (const own of [true, false])
-                for (const dy of [-1, 1])
-                    for (const fireAgeMs of [Infinity, 0]) {
-                        this.buildingArt.draw(
-                            { id: 'resource-preparation' },
-                            { x: 0, y: 0, sc: 1, aim: { dx: 1, dy }, own, fireAgeMs },
-                        );
-                    }
+            for (const type of ['base', 'forward-cannon'])
+                for (const own of [true, false])
+                    for (const dy of [-1, 1])
+                        for (const fireAgeMs of [Infinity, 0]) {
+                            this.buildingArt.draw(
+                                { id: 'resource-preparation-' + type, type },
+                                { x: 0, y: 0, sc: 1, aim: { dx: 1, dy }, own, fireAgeMs },
+                            );
+                        }
             for (const sprites of Object.values(this.spriteRenderers)) {
                 const actor = sprites.createActor();
                 actors.push(actor);
@@ -2642,6 +2646,7 @@ class GLRenderer {
                     mode: 'overheat',
                     shot: 0,
                     cannonId: e.cannonId,
+                    cannonType: e.cannonType,
                     aimDx: aim.dx,
                     aimDy: aim.dy,
                 });
@@ -2701,6 +2706,7 @@ class GLRenderer {
                 mode,
                 shot: e.shot || 0,
                 cannonId: e.cannonId,
+                cannonType: e.cannonType,
                 aimDx: dx / len,
                 aimDy: dy / len,
             });
@@ -2826,6 +2832,7 @@ class GLRenderer {
             y: y + compression * 10 * this.sc(),
             sc: this.sc() * (1 - compression),
             own: this.isFriendlySide(b.side),
+            type: b.type,
             aim: { dx: aim.dx * flip, dy: aim.dy * flip },
             fireAgeMs: fireAgeMs ?? (shot && !shot.clock.expired ? shot.clock.ageMs : Infinity),
             power: power ?? shot?.power ?? 0,
@@ -3563,7 +3570,13 @@ class GLRenderer {
                 // Muzzle flash on the barrel's end, then smoke that drifts up and spreads.
                 const power = Number(fx.power) || 0,
                     overheat = fx.mode === 'overheat';
-                const cannon = { id: fx.cannonId, x: fx.x, y: fx.y, side: fx.side };
+                const cannon = {
+                    id: fx.cannonId,
+                    type: fx.cannonType,
+                    x: fx.x,
+                    y: fx.y,
+                    side: fx.side,
+                };
                 const pose = BuildingArt.pose(
                     this.cannonArtOptions(cannon, {
                         aim: { dx: fx.aimDx, dy: fx.aimDy },
@@ -4772,6 +4785,18 @@ class GLRenderer {
             if (selfDestruct) clip = 'windup';
             if (spin) clip = 'spin';
             if (roll?.phase) clip = 'roll';
+            // A potato knocked into the air stands up until it is down again.
+            if (actor.setRootStage)
+                actor.setRootStage(
+                    (grounded &&
+                        ForwardCannon.stage(
+                            u.type,
+                            entity.cannonTick,
+                            renderTick,
+                            this.snapshot.tps || SIM_TPS,
+                        )) ||
+                        'standing',
+                );
             let burstFacing = 1;
             if (actor.setWeaponState) {
                 const pose = this.burstWeaponPose(u, entity.combat, world, displayMs);

@@ -15,6 +15,8 @@ const DURATION_SECONDS = 7;
 const VOLLEY_DISTANCE = 330;
 const LAUNCH_DELAY_SECONDS = 0.4;
 const HERO_SKILL_DELAY_SECONDS = 2;
+// A potato preview runs on until its forward cannon has stood this long.
+const GROWN_CANNON_HOLD_MS = 2000;
 const OPENING_LAUNCH_DELAY_SECONDS = 1.1;
 const OPENING_SHOT_DISTANCE = 1400;
 const OPENING_RANGE_LEVEL = 2;
@@ -49,7 +51,8 @@ function createArena(unitType, opening, interception) {
     const sim = new StrategySim(SEED, undefined, [[unitType], [interception?.launchType ?? 'pea']]);
     const { x, y } = sim.world.center;
     const state = sim.exportState();
-    const siege = UnitDefinition.onlyAttacksBuildings(unitType);
+    const siege = UnitDefinition.onlyAttacksBuildings(unitType),
+        grows = UnitDefinition.get(unitType)?.growsCannon;
     const host = { x: x - VOLLEY_DISTANCE, y };
     const guest = { x: opening ? host.x + OPENING_SHOT_DISTANCE : x + (siege ? 150 : 460), y };
     const target = opening ? guest : { x, y };
@@ -80,10 +83,11 @@ function createArena(unitType, opening, interception) {
     for (const building of state.buildings) {
         Object.assign(building, building.side === 0 ? host : guest);
         // The showcase's artillery is available to launch, while its automatic fire stays quiet.
-        if (interception || siege)
-            building.cooldownUntil = sim.msTicks(
-                interception?.durationMs ?? DURATION_SECONDS * 1000,
-            );
+        // A rooting potato is left alone for the whole preview.
+        if (interception || siege || grows)
+            building.cooldownUntil = grows
+                ? Number.MAX_SAFE_INTEGER
+                : sim.msTicks(interception?.durationMs ?? DURATION_SECONDS * 1000);
     }
     if (interception) state.launchRangeLevel[1] = interception.rangeLevel;
     sim.importState(state);
@@ -91,7 +95,7 @@ function createArena(unitType, opening, interception) {
     if (interception) {
         sim.creditResources(1, LaunchRules.premiumWalletCap, 'premium');
         for (const [dx, dy] of interception.formation) sim.spawnUnit(0, unitType, x + dx, y + dy);
-    } else if (!opening && !siege) {
+    } else if (!opening && !siege && !grows) {
         for (const [dx, dy] of DEFENDERS) sim.spawnUnit(1, 'pea', x + dx, y + dy);
     }
     return { sim, x, y, host, target, rangeLevel };
@@ -129,7 +133,18 @@ function prepareVolleyShowcase(
           sim.msTicks(
               (distance / LaunchRules.shellSpeed(unitType)) * 1000 + OPENING_LANDING_HOLD_MS,
           )
-        : sim.msTicks(interception?.durationMs ?? DURATION_SECONDS * 1000);
+        : sim.msTicks(
+              interception?.durationMs ??
+                  Math.max(
+                      DURATION_SECONDS * 1000,
+                      unit?.growsCannon
+                          ? launchDelayMs +
+                                (distance / LaunchRules.shellSpeed(unitType)) * 1000 +
+                                unit.growsCannon.delayMs +
+                                GROWN_CANNON_HOLD_MS
+                          : 0,
+                  ),
+          );
     const skillTick = sim.msTicks(HERO_SKILL_DELAY_SECONDS * 1000);
     let scenario;
     let journal;

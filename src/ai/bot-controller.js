@@ -371,9 +371,12 @@ class BotController {
             main = BuildingDefinition.forRole('mainBase'),
             outpost = BuildingDefinition.forRole('outpost'),
             constructionCost = BuildingDefinition.get(outpost).construction.cost,
-            deck = state.decks[side]
+            cards = state.decks[side]
                 .filter((type) => !LaunchRules.isHeroType(type))
                 .map((type) => ({ type, ...LaunchRules.payload(type) })),
+            // A potato roots where it lands, so it never walks to a target; it only has its own shot below.
+            planters = cards.filter(({ type }) => UnitDefinition.get(type).growsCannon),
+            deck = cards.filter(({ type }) => !UnitDefinition.get(type).growsCannon),
             groundDeck = deck.filter(({ type }) => UnitDefinition.get(type).canAttackGround);
         const busy = new Set(
             this.commandExecutor.reservations().map(({ action }) => action.cannonId),
@@ -502,6 +505,29 @@ class BotController {
             BotController.nearestShot(cannons, enemies, groundDeck, level) ||
             premiumShot ||
             BotController.nearestShot(cannons, hostile, deck, level);
+        // With nothing else to hit, a potato goes as far toward the enemy base as the cannon reaches.
+        const planter =
+            !shot &&
+            enemyBase &&
+            planters.find(
+                ({ cost, premiumCost }) =>
+                    cost <= budget && premiumCost <= state.premiumWallet[side],
+            );
+        if (planter) {
+            const cannon = cannons.reduce((best, candidate) =>
+                distance(candidate, enemyBase) < distance(best, enemyBase) ? candidate : best,
+            );
+            const target = {
+                cannon,
+                target: enemyBase,
+                distance: Math.min(
+                    distance(cannon, enemyBase),
+                    LaunchRules.maxReachOf(planter.type, level),
+                ),
+            };
+            this.fire(target, planter, level, state.tick, true);
+            return;
+        }
         if (!shot && enemyBase && !objectives.some(({ supported }) => supported)) {
             const cannon = cannons.reduce((best, candidate) =>
                 distance(candidate, enemyBase) < distance(best, enemyBase) ? candidate : best,

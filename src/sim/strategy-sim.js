@@ -8,6 +8,7 @@ import { UnitSpinAttack } from './unit-spin-attack.js';
 import { UnitSelfDestructAttack } from './unit-self-destruct-attack.js';
 import { UnitLeapAttack } from './unit-leap-attack.js';
 import { StickyCling } from './sticky-cling.js';
+import { ForwardCannon } from './forward-cannon.js';
 import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './entities.js';
 import { StateContract, StateValue } from './components.js';
 import { CampaignMission } from './campaign-mission.js';
@@ -713,6 +714,13 @@ class StrategySim {
         this.events.push({ type: 'captureLost', captureId: cp.id, x: cp.x, y: cp.y });
     }
 
+    addBuilding(building) {
+        this.buildings.push(building);
+        this.buildingById.set(building.id, building);
+        this.markBuildingSpatialDirty();
+        return building;
+    }
+
     spawnOutpost(cp, side) {
         const d = BuildingDefinition.get(BuildingDefinition.forRole('outpost'));
         const id = 'outpost-' + cp.id + '-' + ++this.seq;
@@ -728,9 +736,7 @@ class StrategySim {
             captureId: cp.id,
             construction,
         });
-        this.buildings.push(outpost);
-        this.buildingById.set(id, outpost);
-        this.markBuildingSpatialDirty();
+        this.addBuilding(outpost);
         cp.owner = null;
         cp.outpostId = id;
         cp.enabled = false;
@@ -1106,6 +1112,7 @@ class StrategySim {
             maxHp: d.hp,
             alive: true,
         });
+        if (d.growsCannon) ForwardCannon.plant(this, u, d.growsCannon);
         this.units.push(u);
         this.ensureCollisionBuffers(this.units.length);
         const birth = this.units.length - 1;
@@ -1367,6 +1374,7 @@ class StrategySim {
                 type: 'launchOverheat',
                 side,
                 cannonId: cannon.id,
+                cannonType: cannon.type,
                 x: cannon.x,
                 y: cannon.y,
             });
@@ -1406,7 +1414,7 @@ class StrategySim {
                     ? Math.max(
                           1,
                           Math.hypot(aim.x - launcher.x, aim.y - launcher.y) -
-                              LaunchImpactRules.muzzleReach,
+                              LaunchRules.muzzleReach(launcher),
                       )
                     : null;
             shots.forEach((shot, i) => {
@@ -1487,7 +1495,8 @@ class StrategySim {
         const cannon =
                 this.buildingById.get(cannonId) || this.buildings.find((b) => b.id === cannonId),
             speed = LaunchRules.shellSpeed(type),
-            id = 'p' + ++this.seq;
+            id = 'p' + ++this.seq,
+            muzzleReach = LaunchRules.muzzleReach(cannon);
         const dx = x - cannon.x,
             dy = y - cannon.y,
             length = Math.hypot(dx, dy) || 1;
@@ -1496,8 +1505,8 @@ class StrategySim {
             owner: cannonId,
             side,
             type,
-            x: cannon.x + (dx / length) * LaunchImpactRules.muzzleReach,
-            y: cannon.y + (dy / length) * LaunchImpactRules.muzzleReach,
+            x: cannon.x + (dx / length) * muzzleReach,
+            y: cannon.y + (dy / length) * muzzleReach,
             target: null,
             isBuilding: false,
             trajectoryPolicy: 'lockedPoint',
@@ -1506,7 +1515,7 @@ class StrategySim {
             // Split shells cover unequal distances in the same time on clear ground.
             speed:
                 arcDistance != null
-                    ? (speed * Math.max(1, length - LaunchImpactRules.muzzleReach)) / arcDistance
+                    ? (speed * Math.max(1, length - muzzleReach)) / arcDistance
                     : speed,
             arcDistance,
             damage: impact,
@@ -1522,6 +1531,7 @@ class StrategySim {
             type: 'launchFire',
             side,
             cannonId,
+            cannonType: cannon.type,
             projectileId: id,
             x: cannon.x,
             y: cannon.y,
@@ -2084,28 +2094,30 @@ class StrategySim {
         });
 
         if (target.hp <= 0) {
-            if (isBuilding) {
-                target.hp = 0;
-                target.alive = false;
-                this.markBuildingSpatialDirty();
-                this.events.push({
-                    type: 'buildingDeath',
-                    side: target.side,
-                    x: target.x,
-                    y: target.y,
-                    entity: target.type,
-                    isOutpost: !!BuildingDefinition.get(target.type)?.isOutpost,
-                    killerSide: sourceSide,
-                    sourceType,
-                });
-                if (BuildingDefinition.get(target.type)?.isOutpost)
-                    this.releaseCaptureForOutpost(target.id);
-                if (BuildingDefinition.get(target.type)?.isMainBase)
-                    return target.side === 0 ? 'guest' : 'host';
-            } else {
-                this.emitUnitDeath(target, sourceSide, sourceType);
-            }
+            if (isBuilding) return this.destroyBuilding(target, sourceSide, sourceType);
+            this.emitUnitDeath(target, sourceSide, sourceType);
         }
+        return null;
+    }
+    // A building at zero health, from damage or from its own decay. Returns the winner when it was a main base.
+    destroyBuilding(target, killerSide, sourceType) {
+        target.hp = 0;
+        target.alive = false;
+        this.markBuildingSpatialDirty();
+        this.events.push({
+            type: 'buildingDeath',
+            side: target.side,
+            x: target.x,
+            y: target.y,
+            entity: target.type,
+            isOutpost: !!BuildingDefinition.get(target.type)?.isOutpost,
+            killerSide,
+            sourceType,
+        });
+        if (BuildingDefinition.get(target.type)?.isOutpost)
+            this.releaseCaptureForOutpost(target.id);
+        if (BuildingDefinition.get(target.type)?.isMainBase)
+            return target.side === 0 ? 'guest' : 'host';
         return null;
     }
     // strikePeak > 1 makes the blast hit harder toward its centre (1 at the edge, strikePeak at the middle).
@@ -2343,6 +2355,10 @@ class StrategySim {
     // Grains are melee bruisers: march to the rally point, chase the chosen target, wind up, hit.
     updateCombat(u, vision, pendingContactAttacks = null) {
         const d = UnitDefinition.get(u.type);
+        if (d.growsCannon) {
+            ForwardCannon.root(this, u, d.growsCannon);
+            return null;
+        }
         if (d.selfDestruct && UnitSelfDestructAttack.update(this, u, d.selfDestruct)) return null;
         this.tickAttackTimers(u);
         if (d.stickyCling && StickyCling.heldBuilding(this, u)) return null;
@@ -3846,6 +3862,7 @@ class StrategySim {
 
         mark = profile ? now() : 0;
         this.updateLaunchEconomy();
+        ForwardCannon.decay(this);
         this.updateCapturePoints();
         this.updateLaunchSalvos();
         let winner = null;
