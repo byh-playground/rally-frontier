@@ -95,6 +95,8 @@ class BuildingArt {
             },
             trunnion: pivot,
             ground: { x, y },
+            // Screen pixels per cannon SVG unit.
+            scale,
             recoil,
             face: dy >= 0 ? 'barrel-front' : 'barrel-back',
             ...(matrices

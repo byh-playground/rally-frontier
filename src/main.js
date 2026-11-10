@@ -20,6 +20,7 @@ import {
     NetworkModuleLoader,
 } from './session/runtime-state.js';
 import { LaunchRules } from './sim/launch-rules.js';
+import { StickyCling } from './sim/sticky-cling.js';
 import { CampaignMission } from './sim/campaign-mission.js';
 import { ConstructionRules } from './sim/construction-rules.js';
 import { LaunchImpactRules } from './definitions/launch-impact-rules.js';
@@ -370,7 +371,8 @@ const THORN_TRAIL_COLOR = Object.freeze([151 / 255, 93 / 255, 43 / 255, 1]);
 const THORN_IMPACT_COLOR = Object.freeze([225 / 255, 157 / 255, 65 / 255, 1]);
 const BUILDING_VISUAL_RENDER_FNS = Object.freeze({
     base: (renderer, { b }) => renderer.buildingArt.draw(b, renderer.cannonArtOptions(b)),
-    outpost: (renderer, { b }) => renderer.buildingArt.draw(b, renderer.cannonArtOptions(b)),
+    outpost: (renderer, { b }) =>
+        renderer.drawStickyWrap(b, renderer.buildingArt.draw(b, renderer.cannonArtOptions(b))),
 });
 class TerrainPresentation {
     static colors = Object.freeze({
@@ -1186,6 +1188,11 @@ class GLRenderer {
         }); // 메시 통계가 첫 유닛 그리기 전에도 null이 아니도록 미리 만든다.
         this.vectorUnitAssetCache = new Map();
         this.buildingArt = new BuildingArt(this);
+        // Per snapshot: which outposts a sticky-rice soldier holds, and each held cannon's frozen aim.
+        this.stickyClingers = new Map();
+        this.stickyClingerIds = new Set();
+        this.stickyAims = new Map();
+        this.stickyWrapPoses = [];
         this.spriteRenderers = {};
         this.riceBodyGroup = [];
         // One actor per grain: a shared actor re-seeked per grain rewrites its pose row and splits the instanced batch.
@@ -2181,8 +2188,9 @@ class GLRenderer {
     prepareVisibleUnitFrame() {
         const out = this.visibleUnitFrame;
         out.length = 0;
+        // A soldier holding a muzzle is drawn on the cannon instead of at its own position.
         for (const u of this.renderState.displayed('unit', this.presentationNow()))
-            if (this.unitVisibleForRender(u)) out.push(u);
+            if (!this.stickyClingerIds.has(u.id) && this.unitVisibleForRender(u)) out.push(u);
         return out;
     }
 
@@ -2284,6 +2292,16 @@ class GLRenderer {
             this.cameraTop = this.clampCameraTop(Infinity);
         this.snapshot = s;
         this.buildingArt.prune(s.buildings);
+        this.stickyClingers.clear();
+        this.stickyClingerIds.clear();
+        for (const b of s.buildings) {
+            const clinger = StickyCling.clingerOf(s, b);
+            if (!clinger) continue;
+            this.stickyClingers.set(b.id, clinger);
+            this.stickyClingerIds.add(clinger.id);
+        }
+        for (const id of this.stickyAims.keys())
+            if (!this.stickyClingers.has(id)) this.stickyAims.delete(id);
         // Aim/recoil is presentation-only. Never carry it across a map or backwards replay seek.
         if (!old || old.mapDescriptor?.seed !== s.mapDescriptor?.seed || s.tick < old.tick)
             this.launchRecoil.clear();
@@ -2725,8 +2743,28 @@ class GLRenderer {
             snapshot,
         );
     }
-    // World-space aim remains outside the deterministic simulation and survives the short recoil clip.
+    // A held cannon keeps the aim it had when the soldier wrapped its muzzle.
     cannonAim(b) {
+        const clinger = this.stickyClingers.get(b.id);
+        if (!clinger) return this.freeCannonAim(b);
+        const key = clinger.id + ':' + clinger.stickyCling.endTick;
+        let held = this.stickyAims.get(b.id);
+        if (held?.key !== key)
+            this.stickyAims.set(b.id, (held = { key, aim: this.freeCannonAim(b) }));
+        return held.aim;
+    }
+    // A held cannon's pose this frame; the wrap itself is drawn on the overlay above the outpost
+    // marker and label (drawStickyWrapOverlay), because it is the only sign the cannon cannot fire.
+    drawStickyWrap(b, cannon) {
+        if (this.stickyClingers.has(b.id)) this.stickyWrapPoses.push(cannon);
+    }
+    drawStickyWrapOverlay() {
+        for (const cannon of this.stickyWrapPoses)
+            this.spriteRenderers['sticky-rice'].drawWrapOverlay(this.fxCtx, cannon);
+        this.stickyWrapPoses.length = 0;
+    }
+    // World-space aim remains outside the deterministic simulation and survives the short recoil clip.
+    freeCannonAim(b) {
         const hold = LaunchPresentation.hold,
             preview = this.launchPreview,
             primary = hold?.cannonId === b.id,
@@ -3887,6 +3925,7 @@ class GLRenderer {
         // Stable presentation order. It never changes with unit count:
         // world annotations -> decorative combat VFX -> persistent world HUD -> numbers -> status/selection.
         if (!this.showcase) this.drawStrategicLabels();
+        this.drawStickyWrapOverlay();
 
         // Decorative presentation is always below information overlays.
         this.drawEmergencyDrops(ctx);
@@ -6767,10 +6806,10 @@ class GLRenderer {
         for (const b of cannons) {
             this.drawLaunchRange(b, card, level, hold?.cannonId === b.id);
         }
-        // Overheated cannons glow red; reloading ones show a thin ring.
+        // Overheated cannons glow red; reloading and jammed ones show a thin ring.
         for (const b of cannons) {
             const wait = (Number(b.launchReadyTick) || 0) - s.tick;
-            if (wait <= 0) continue;
+            if (wait <= 0 && !LaunchRules.jammed(s, b)) continue;
             const radius = (BuildingDefinition.get(b.type)?.size || 40) + 10,
                 hot = wait > reloadTicks;
             this.drawGroundCircle(b.x, b.y, radius, {
@@ -7114,6 +7153,7 @@ class GLRenderer {
                 colorMask: [true, true, true, true],
             });
 
+            this.stickyWrapPoses.length = 0;
             this.passProfiler.measure('ground', () => this.renderGroundPass());
             this.vectorAssetDrawnInstances = 0;
             this.vectorTerrainOcclusionTests = 0;
@@ -9758,6 +9798,7 @@ class LaunchPresentation {
     static heroPress = null;
     static heroPressClick = null;
     static feedbackTimer = 0;
+    static jammedMessage = '적 찹쌀이 포구를 막고 있어 이 대포는 쏠 수 없어요.';
     static feedback(message) {
         const el = DomUtil.byId('launchFeedback');
         if (!el) return;
@@ -9893,6 +9934,7 @@ class LaunchPresentation {
                 this.feedback(
                     {
                         reloading: '대포가 재장전 중입니다.',
+                        'cannon-jammed': LaunchPresentation.jammedMessage,
                         'insufficient-basic-resources': `${RESOURCES[0].name}이 부족합니다.`,
                         'insufficient-premium-resources': `기름이 부족합니다. ${LaunchPresentation.premiumResourceHint}`,
                         'population-limit': '인구가 가득 찼습니다.',
@@ -10287,6 +10329,10 @@ class LaunchPresentation {
             );
             return null;
         }
+        if (LaunchRules.jammed(s, cannon)) {
+            this.feedback(this.jammedMessage);
+            return null;
+        }
         const warning = this.resourceWarning(s, side, LaunchRules.payload(this.card));
         if (warning) {
             this.feedback(warning);
@@ -10338,16 +10384,8 @@ class LaunchPresentation {
         const aim = this.landing(hold, holdMs, world),
             burnt = LaunchRules.overheated(Math.round(holdMs)),
             groups =
-                primary && !burnt && (primary.launchReadyTick ?? 0) <= s.tick
-                    ? LaunchRules.sharedVolley(
-                          hold.card,
-                          aim,
-                          primary,
-                          world,
-                          cannons,
-                          s.tick,
-                          level,
-                      )
+                primary && !burnt && LaunchRules.readyToLaunch(s, primary)
+                    ? LaunchRules.sharedVolley(hold.card, aim, primary, world, s, level)
                     : [],
             grain = LaunchRules.grain(hold.card);
         const shots = groups.flatMap((group) => group.shots);

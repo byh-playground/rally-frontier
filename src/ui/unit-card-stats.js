@@ -76,6 +76,15 @@ export function unitCardStats(type, rangeLevel, copy) {
             ],
             copy.notes.slice(1),
         ]);
+    if (unit.stickyCling)
+        troop.push([
+            '스킬',
+            [
+                ['포구 붙기', seconds(unit.stickyCling.durationMs)],
+                ['재사용 대기', seconds(unit.stickyCling.cooldownMs)],
+            ],
+            copy.notes.slice(1),
+        ]);
 
     const deployment = [
         ['투입 비용', ResourceDisplay.costText(payload, true)],

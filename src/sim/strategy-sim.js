@@ -7,6 +7,7 @@ import { FruitHeroAttack } from './fruit-hero-attack.js';
 import { UnitSpinAttack } from './unit-spin-attack.js';
 import { UnitSelfDestructAttack } from './unit-self-destruct-attack.js';
 import { UnitLeapAttack } from './unit-leap-attack.js';
+import { StickyCling } from './sticky-cling.js';
 import { Building, Projectile, TerrainQuery, Unit, VisibilityPolicy } from './entities.js';
 import { StateContract, StateValue } from './components.js';
 import { CampaignMission } from './campaign-mission.js';
@@ -1348,6 +1349,7 @@ class StrategySim {
         };
         if (!cannon) return reject('cannon-unavailable');
         if (this.tick < (Number(cannon.launchReadyTick) || 0)) return reject('reloading');
+        if (LaunchRules.jammed(this, cannon)) return reject('cannon-jammed');
         const grain = LaunchRules.grain(action.unitType);
         if (!grain) return reject('invalid-unit');
         if (!this.decks[side]?.includes(action.unitType)) return reject('unit-not-in-deck');
@@ -1386,8 +1388,7 @@ class StrategySim {
             aim,
             cannon,
             this.world,
-            cannons,
-            this.tick,
+            this,
             level,
         );
         this.wallet[side] -= grain.cost;
@@ -1541,6 +1542,7 @@ class StrategySim {
                 cannon.salvo.length = 0;
                 continue;
             }
+            if (LaunchRules.jammed(this, cannon)) continue;
             while (cannon.salvo.length && cannon.salvo[0].tick <= this.tick)
                 this.fireLaunchShell(cannon.salvo.shift());
         }
@@ -2252,7 +2254,8 @@ class StrategySim {
                 b.construction ||
                 !(d?.atk > 0) ||
                 !(d.range > 0) ||
-                b.cooldownActive(this)
+                b.cooldownActive(this) ||
+                LaunchRules.jammed(this, b)
             )
                 continue;
             const shell =
@@ -2342,6 +2345,7 @@ class StrategySim {
         const d = UnitDefinition.get(u.type);
         if (d.selfDestruct && UnitSelfDestructAttack.update(this, u, d.selfDestruct)) return null;
         this.tickAttackTimers(u);
+        if (d.stickyCling && StickyCling.heldBuilding(this, u)) return null;
         if (u.heroRoll || u.fruitAttack?.active) return null;
         // A pending skill only takes the combat action slot when it can actually start.
         if (u.heroRollQueued || u.fruitAttack?.queued) {
@@ -2685,6 +2689,7 @@ class StrategySim {
             )
                 continue;
             u.combat.cancelWindup();
+            if (attack.isBuilding && StickyCling.tryBegin(this, u, target)) continue;
             const definition = UnitDefinition.get(u.type);
             const dx = target.x - attack.fromX,
                 dy = target.y - attack.fromY,

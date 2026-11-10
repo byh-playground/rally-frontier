@@ -1,6 +1,7 @@
 // Cannon launch rules: income, wallet and grain data.
 import { RangeUtil } from '../core/game-rules.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
+import { StickyCling } from './sticky-cling.js';
 
 // Existing corn shell behaviour shared with the draft single-stalk deployment.
 // Millet overrides the approved deployment and impact values below.
@@ -246,6 +247,19 @@ class LaunchRules {
             spacing: 32,
             deployTogether: true,
         }),
+        // 비용·인원은 확정, 포탄 성능은 땅콩의 초안을 따른다.
+        'sticky-rice': Object.freeze({
+            ...SINGLE_BUNDLE_SHELL,
+            cost: 20 * this.resourceScale,
+            premiumCost: 5 * this.resourceScale,
+            count: 5,
+            shellHp: 25,
+            impact: 10,
+            splash: 50,
+            land: 'transverse',
+            spacing: 32,
+            deployTogether: true,
+        }),
     });
     static deck = Object.freeze(
         Object.keys(LaunchRules.grains).filter((type) => !LaunchRules.isHeroType(type)),
@@ -300,6 +314,17 @@ class LaunchRules {
     }
     static launchCannons(state, side) {
         return (state?.buildings || []).filter((building) => this.isLaunchCannon(building, side));
+    }
+    // A sticky-rice soldier wrapped around the muzzle stops launches and turret fire.
+    static jammed(state, cannon) {
+        return !!StickyCling.clingerOf(state, cannon);
+    }
+    static readyToLaunch(state, cannon) {
+        return (
+            this.isLaunchCannon(cannon, cannon.side) &&
+            Number(state.tick) >= (Number(cannon.launchReadyTick) || 0) &&
+            !this.jammed(state, cannon)
+        );
     }
     // Live units plus every already-authorized soldier who has not spawned yet.
     static population(state, side) {
@@ -398,7 +423,7 @@ class LaunchRules {
             return { x, y, ...shot };
         });
     }
-    static sharedVolley(type, aim, primary, world, cannons, tick, level) {
+    static sharedVolley(type, aim, primary, world, state, level) {
         const original = this.volley(type, aim, primary, world),
             grain = this.grain(type),
             limit = Math.min(this.maxVolleyCannons, Math.floor(grain.count / original.length));
@@ -407,13 +432,8 @@ class LaunchRules {
 
         const maxReach = this.maxReachOf(type, level),
             candidates = [];
-        for (const cannon of cannons) {
-            if (
-                cannon.id === primary.id ||
-                !this.isLaunchCannon(cannon, primary.side) ||
-                (Number(cannon.launchReadyTick) || 0) > tick
-            )
-                continue;
+        for (const cannon of this.launchCannons(state, primary.side)) {
+            if (cannon.id === primary.id || !this.readyToLaunch(state, cannon)) continue;
             const distanceSquared = (aim.x - cannon.x) ** 2 + (aim.y - cannon.y) ** 2;
             if (distanceSquared >= this.minReach ** 2 && distanceSquared <= maxReach ** 2)
                 candidates.push({ cannon, distanceSquared });

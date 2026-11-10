@@ -380,11 +380,7 @@ class BotController {
         );
         const buildings = state.buildings.filter((b) => b.side === side && b.alive !== false);
         const cannons = buildings.filter(
-            (b) =>
-                !b.construction &&
-                (b.type === main || b.type === outpost) &&
-                state.tick >= (Number(b.launchReadyTick) || 0) &&
-                !busy.has(b.id),
+            (b) => LaunchRules.readyToLaunch(state, b) && !busy.has(b.id),
         );
         if (!cannons.length) return;
         const base = buildings.find((b) => b.type === main),
@@ -414,6 +410,25 @@ class BotController {
                 true,
             );
             if (unit) this.fire(threat, unit, level, state.tick, true);
+            return;
+        }
+        // Sticky rice goes straight at a completed enemy outpost in range.
+        const clingers = deck.filter(
+            ({ type, cost, premiumCost }) =>
+                UnitDefinition.get(type).stickyCling &&
+                cost <= state.wallet[side] &&
+                premiumCost <= state.premiumWallet[side],
+        );
+        const cling =
+            clingers.length &&
+            BotController.nearestShot(
+                cannons,
+                hostile.filter((b) => b.type === outpost && !b.construction),
+                clingers,
+                level,
+            );
+        if (cling) {
+            this.fire(cling, cling.units[0], level, state.tick, true);
             return;
         }
 
