@@ -5,7 +5,78 @@ import {
     createFramePresentationJournal,
     emitFramePresentationEvents,
 } from '../core/presentation-frame-event.js';
+import { RollingBody } from '../sim/capabilities/rolling-body.js';
+import { LaunchRules } from '../sim/launch-rules.js';
 import { BattlefieldProjection } from '../sim/terrain.js';
+
+// Staging helpers shared by the card previews, the title scenes (title-scenes.js) and the debug scenes
+// (src/debug-scenes.js): they place what a scene starts with through the sim's own spawn and command paths.
+
+// The axis between the two main bases: the way each side's units walk by default.
+export function baseAxis(sim) {
+    const host = sim.buildings.find((b) => b.id === 'base0'),
+        guest = sim.buildings.find((b) => b.id === 'base1');
+    const length = Math.hypot(guest.x - host.x, guest.y - host.y);
+    return {
+        host,
+        guest,
+        center: { x: (host.x + guest.x) / 2, y: (host.y + guest.y) / 2 },
+        dir: { x: (guest.x - host.x) / length, y: (guest.y - host.y) / length },
+    };
+}
+
+// The distance between neighbours in a block of these types: the widest body plus a small gap.
+export function blockSpacing(sim, types) {
+    return 2 * Math.max(...types.map((type) => sim.unitRadius(type))) + 4;
+}
+
+// Fills a square block of `count` units around `center`, rows across `dir` (the side's facing), types taken in
+// turn. A rolling unit starts rolling along `dir`, as one landing from a shell fired that way. Returns the block's
+// depth along `dir`.
+export function placeBlock(sim, side, types, count, center, dir) {
+    const spacing = blockSpacing(sim, types);
+    const columns = Math.ceil(Math.sqrt(count)),
+        rows = Math.ceil(count / columns);
+    for (let i = 0; i < count; i++) {
+        const along = (Math.floor(i / columns) - (rows - 1) / 2) * spacing,
+            across = ((i % columns) - (columns - 1) / 2) * spacing;
+        const unit = sim.spawnUnit(
+            side,
+            types[i % types.length],
+            center.x + dir.x * along - dir.y * across,
+            center.y + dir.y * along + dir.x * across,
+        );
+        RollingBody.aim(unit, dir.x, dir.y);
+    }
+    return rows * spacing;
+}
+
+// A finished, full-health outpost of `side` on `point` (a capture point, or any { id, x, y }).
+export function buildOutpost(sim, point, side) {
+    const outpost = sim.spawnOutpost(point, side);
+    sim.completeConstruction(outpost);
+    outpost.hp = outpost.maxHp;
+    return outpost;
+}
+
+// Queues the launch a player makes by holding `cannon` just long enough to land `unitType` on (x, y) at the
+// side's current range level.
+export function queueLaunch(sim, { tick, seq, side, cannon, unitType, x, y }) {
+    const distance = Math.hypot(x - cannon.x, y - cannon.y);
+    sim.queueCommand({
+        tick,
+        seq,
+        actor: side ? 'guest' : 'host',
+        action: {
+            type: 'LAUNCH',
+            cannonId: cannon.id,
+            unitType,
+            holdMs: Math.round(LaunchRules.holdFor(distance, unitType, sim.launchRangeLevel[side])),
+            x,
+            y,
+        },
+    });
+}
 
 // Centres the camera on a world point standing at the given terrain height. The zoom stays the caller's.
 export function centerCamera(renderer, x, y, height = 0) {
@@ -37,7 +108,8 @@ export function battleFocus(sim) {
 }
 
 // One StrategySim on the GameKit scenario timeline, drawn by the match renderer with the match's presentation
-// events. Card previews (unit-showcase.js) and the debug scenes (src/debug-scenes.js) open their scenes here.
+// events. Card previews (unit-showcase.js), the title scenes (title-scenes.js) and the debug scenes
+// (src/debug-scenes.js) open their scenes here.
 // Every run (a loop's repeat included) restarts from the sim's state at this call. `start` sets the camera and
 // queues the run's commands, `beforeStep` adds commands for the tick about to run, `render` follows the camera.
 // The returned handle starts paused: play() for the real-time loop, play({ automatic: false }) then step() for
@@ -83,7 +155,6 @@ export function prepareSimScene({
         journal?.dispose();
         sim.dispose('sim-scene');
     };
-
     try {
         renderer.onPresentationFrame = presentFrame;
         scenario = createScenario({
@@ -92,7 +163,8 @@ export function prepareSimScene({
                 if (!disposed) onEnd?.(snapshot);
             },
             createRun() {
-                sim.importState(initialState);
+                // The sim's own earlier state: same map, rules and decks, so the navigation built for them is kept.
+                sim.importState(initialState, { rollback: true });
                 renderer.setSnapshot(sim.snapshot(), { snapTargets: true });
                 start?.();
                 journal = createFramePresentationJournal({

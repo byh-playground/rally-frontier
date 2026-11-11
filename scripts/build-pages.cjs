@@ -10,7 +10,6 @@ const { readCornSpriteManifest } = require('./corn-sprite-manifest.cjs');
 const { readChestnutSpriteManifest } = require('./chestnut-sprite-manifest.cjs');
 const { readMilletSpriteManifest } = require('./millet-sprite-manifest.cjs');
 const { readProductVersion } = require('./product-version.cjs');
-const { verifyTitleShowcase } = require('./title-showcase-source.cjs');
 const sourcePaths = [
     'index.html',
     'gamekit.lock.json',
@@ -23,7 +22,6 @@ const sourcePaths = [
 function verifySource(root = path.resolve(__dirname, '..')) {
     const lock = readLock(root);
     readProductVersion(root);
-    verifyTitleShowcase(root);
     readVectorAssetManifest(root);
     readRiceSpriteManifest(root);
     readBeanSpriteManifest(root);

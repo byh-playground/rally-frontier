@@ -1,6 +1,6 @@
 import { RallyGamekit } from '../core/gamekit.js';
 import { createPresentationView } from '../render/presentation-effects.js';
-import { prepareTitleShowcase } from './title-showcase.js';
+import { prepareTitleScenes } from './title-scenes.js';
 
 // The card and title previews mount this through createShowcaseHost; the debug scenes open one directly.
 export function createShowcaseSurface(createRenderer) {
@@ -25,7 +25,7 @@ export function createShowcaseSurface(createRenderer) {
 
 async function prepareShowcaseScene({ surface, scene, signal, present }) {
     const { renderer } = surface;
-    let prepare = prepareTitleShowcase;
+    let prepare = prepareTitleScenes;
     if (scene.kind !== 'title') {
         const scenes = await import('./unit-showcase.js');
         prepare =
