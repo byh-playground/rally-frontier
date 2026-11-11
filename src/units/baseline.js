@@ -35,6 +35,10 @@ export const HERO_MOVE_SPEED = 75;
 // The leap shared by red beans and popcorn (popcorn lowers the apex).
 export const GRAIN_LEAP = Object.freeze({ range: 150, lift: 500, cooldownMs: 3000 });
 
+// The knockback of a heavy hit (acorn's spin, popcorn's blast): ground speed and lift of the impulse, at full
+// strength. A body gets it scaled by reference mass / its own mass (LaunchImpact.start).
+export const HEAVY_KNOCKBACK = Object.freeze({ knockbackSpeed: 400, knockbackLift: 300 });
+
 // A single shell that drops one squad: corn's original deployment, reused by most single-shot cards.
 export const SINGLE_BUNDLE_SHELL = Object.freeze({
     reach: 0.85,

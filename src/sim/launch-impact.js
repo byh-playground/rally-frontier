@@ -83,7 +83,20 @@ class LaunchImpact {
     static blast(sim, p, x, y, radius, impactHeightFP) {
         this.radialImpulse(sim, { side: p.side, sourceId: p.id, x, y, radius, impactHeightFP });
     }
-    static radialImpulse(sim, { side, sourceId, x, y, radius, impactHeightFP, scale = 1 }) {
+    // `speed` and `lift` are the impulse at the centre of the blast; it fades with distance from there.
+    static radialImpulse(
+        sim,
+        {
+            side,
+            sourceId,
+            x,
+            y,
+            radius,
+            impactHeightFP,
+            speed = LaunchImpactRules.knockbackSpeed,
+            lift = LaunchImpactRules.knockbackLift,
+        },
+    ) {
         const found = sim.nearbyUnits(x, y, radius + sim.maxUnitRadius, 1 - side, IMPULSE_QUERY);
         for (let k = 0; k < found; k++) {
             const index = IMPULSE_QUERY.items[k];
@@ -99,8 +112,8 @@ class LaunchImpact {
             this.start(sim, u, {
                 dx,
                 dy,
-                speed: LaunchImpactRules.knockbackSpeed * scale * (0.25 + 0.75 * strength),
-                lift: strength >= 0.5 ? LaunchImpactRules.knockbackLift * scale * strength : 0,
+                speed: speed * (0.25 + 0.75 * strength),
+                lift: strength >= 0.5 ? lift * strength : 0,
                 sourceId,
                 originX: x,
                 originY: y,
