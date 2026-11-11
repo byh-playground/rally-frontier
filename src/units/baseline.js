@@ -40,13 +40,20 @@ export const GRAIN_LEAP = Object.freeze({ range: 150, lift: 500, cooldownMs: 300
 export const HEAVY_KNOCKBACK = Object.freeze({ knockbackSpeed: 400, knockbackLift: 300 });
 
 // A single shell that drops one squad: corn's original deployment, reused by most single-shot cards.
+// Its squad bursts out of the impact all at once (land 'burst', millet's landing); `spreadAcross` > 1
+// throws it wider across the shot than along it.
 export const SINGLE_BUNDLE_SHELL = Object.freeze({
     reach: 0.85,
     speed: 750,
     impact: 25,
     splash: 100,
-    land: 'bundle',
+    land: 'burst',
     fire: Object.freeze({ mode: 'single' }),
 });
-// A hero flies alone and free.
-export const HERO_SHELL = Object.freeze({ ...SINGLE_BUNDLE_SHELL, cost: 0, count: 1 });
+// A hero flies alone and free, and comes out of the shell on its own (land 'bundle': one soldier at a time).
+export const HERO_SHELL = Object.freeze({
+    ...SINGLE_BUNDLE_SHELL,
+    cost: 0,
+    count: 1,
+    land: 'bundle',
+});

@@ -20,7 +20,6 @@ export const Millet = defineUnit({
         count: 20,
         impact: 10,
         splash: 45,
-        deployTogether: true,
         fire: Object.freeze({ mode: 'split', offsets: Object.freeze([-100, 0]) }),
     },
     visual: {

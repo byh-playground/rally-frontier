@@ -67,9 +67,6 @@ export const Walnut = defineUnit({
         shellHp: 25,
         impact: 10,
         splash: 50,
-        land: 'transverse',
-        spacing: 0,
-        deployTogether: true,
     },
     // 초안: visualScale.
     visual: {

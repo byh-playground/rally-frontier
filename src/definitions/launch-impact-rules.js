@@ -44,6 +44,9 @@ class LaunchImpactRules {
     static deploymentGapMs = 50;
     static deploymentRetryMs = 100;
     static deploymentSpeed = 250;
+    // A burst throws its outer soldier at deploymentSpeed × √(squad / burstSquad), so a smaller squad
+    // spreads over a smaller circle at about the density of millet's 20-soldier squad.
+    static burstSquad = 20;
     static deploymentLift = 250;
     static knockbackSpeed = 400;
     static knockbackLift = 250;

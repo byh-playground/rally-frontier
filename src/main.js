@@ -7206,7 +7206,7 @@ class GLRenderer {
                     this.world.terrain.surfaces.heightAt(x, y),
                 );
             const [cx, cy] = project(hold.cannonX, hold.cannonY);
-            const { held, burnt, aim, groups, formation } = preview,
+            const { held, burnt, aim, groups } = preview,
                 power = LaunchRules.power(held),
                 full = power >= 1;
             const color = burnt
@@ -7282,13 +7282,6 @@ class GLRenderer {
                     });
                 }
                 ringIndex++;
-            }
-            for (const spot of formation) {
-                this.drawGroundCircle(spot.x, spot.y, spot.radius, {
-                    stroke: [0.57, 0.94, 1, 0.9],
-                    width: Math.max(1.5, 2 * sc),
-                    segments: 16,
-                });
             }
             this.line(lx - 8, ly, lx + 8, ly, 2, color);
             this.line(lx, ly - 8, lx, ly + 8, 2, color);
@@ -10779,32 +10772,9 @@ class LaunchPresentation {
             groups =
                 primary && !burnt && LaunchRules.readyToLaunch(s, primary)
                     ? LaunchRules.sharedVolley(hold.card, aim, primary, world, s, level)
-                    : [],
-            grain = LaunchRules.grain(hold.card);
+                    : [];
         const shots = groups.flatMap((group) => group.shots);
-        const formation = [];
-        if (grain.land === 'transverse') {
-            for (const { cannon, shots: cannonShots } of groups) {
-                for (const shot of cannonShots) {
-                    const dx = shot.x - cannon.x,
-                        dy = shot.y - cannon.y,
-                        distance = Math.hypot(dx, dy) || 1;
-                    const group = { ...shot, dirX: dx / distance, dirY: dy / distance };
-                    for (let index = 0; index < shot.count; index++) {
-                        const point = LaunchRules.lineDeploymentPosition(
-                            group,
-                            index,
-                            grain.spacing,
-                        );
-                        formation.push({ ...point, radius: 8 });
-                    }
-                }
-            }
-        } else if (grain.land === 'compact') {
-            const centres = new Map(shots.map(({ x, y }) => [`${x},${y}`, { x, y, radius: 18 }]));
-            formation.push(...centres.values());
-        }
-        return { aim, shots, formation, groups, burnt };
+        return { aim, shots, groups, burnt };
     }
     // While charging, the camera eases just far enough to keep the whole preview on screen.
     static FOLLOW_HALF_LIFE_MS = 52;
@@ -10846,16 +10816,13 @@ class LaunchPresentation {
             }
             return;
         }
-        const { aim, shots, formation, groups } = preview;
+        const { aim, shots, groups } = preview;
         const practiceGoal = campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoals?.find(
             (goal) => CampaignMission.volleyGoalContains(goal, aim),
         );
         const vw = r.viewWorldW(),
             vh = r.viewWorldH(),
-            points = [
-                ...shots.map((shot) => ({ x: shot.x, y: shot.y, radius: shot.splash })),
-                ...formation,
-            ];
+            points = shots.map((shot) => ({ x: shot.x, y: shot.y, radius: shot.splash }));
         let minX = Infinity,
             minY = Infinity,
             maxX = -Infinity,

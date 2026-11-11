@@ -13,8 +13,7 @@ export const Rice = defineUnit({
         speed: 600,
         impact: 10,
         splash: 180,
-        land: 'scatter',
-        spread: 260,
+        land: 'burst',
         fire: Object.freeze({
             mode: 'shotgun',
             pellets: 5,

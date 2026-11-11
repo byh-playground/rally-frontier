@@ -215,10 +215,6 @@ class LaunchRules {
         const height = RangeUtil.clamp(Math.round(distance * 0.3), 80, 600);
         return Math.round(height * (this.grain(type)?.arcScale ?? 1) * this.shellFlight.arcScale);
     }
-    static lineDeploymentPosition({ x, y, count, dirX, dirY }, index, spacing) {
-        const offset = (index - (count - 1) / 2) * spacing;
-        return { x: x - dirY * offset, y: y + dirX * offset };
-    }
     // A single cannon's shell stats are independent of aim and map position.
     static volleyStats(type) {
         const g = this.grain(type),

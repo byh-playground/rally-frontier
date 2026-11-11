@@ -10,6 +10,7 @@
 import { BuildingDefinition } from './definitions/buildings.js';
 import { FP } from './core/config.js';
 import { GameRuleRuntime } from './core/game-rules.js';
+import { LaunchRules } from './sim/launch-rules.js';
 import { BotController } from './ai/bot-controller.js';
 import { UnitDefinition } from './definitions/units.js';
 import { StableSerializationUtil } from './net/lobby-codec.js';
@@ -23,6 +24,7 @@ import {
     centerCamera,
     placeBlock,
     prepareSimScene,
+    queueLaunch,
 } from './ui/sim-scene.js';
 import { prepareTitleScenes } from './ui/title-scenes.js';
 import { prepareUnitShowcase } from './ui/unit-showcase.js';
@@ -288,7 +290,7 @@ function createKnockbackProbe(sim) {
     };
 }
 
-// One row of `count` units across `dir`, `spacing` apart: a transverse landing line (chestnut's).
+// One row of `count` units across `dir`, `spacing` apart.
 function placeLine(sim, side, type, count, center, dir, spacing) {
     for (let i = 0; i < count; i++) {
         const across = (i - (count - 1) / 2) * spacing;
@@ -763,6 +765,111 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     fight: fight.state(),
                     enemySpread: spread(sim, 1),
                 }),
+            });
+        },
+        /**
+         * 완성된 아군 거점 대포 하나가 `unit` 한 발을 쏘아 착지시킨다. 착지점은 맵 가운데에서 본진 축의 옆으로
+         * `across`(기본 400) 비킨 곳(가운데 점령 지점과 맵 가장자리를 피함)이고, 대포는 그 아군 본진 쪽
+         * `distance`(기본 300)에 있다. `x`·`y`를 주면 그곳에 착지하고 대포는 그 아군 본진 쪽에 선다. 발사는 10틱이고
+         * 그 한 발 값은 지갑에 채워 둔다. `enemy`·`enemyCount`가 있으면 그 적 무리가 착지점에 서 있다(난전 한가운데
+         * 착지). 카메라는 착지점에 `zoom`(기본 3)으로 고정하고, 상태의 `landing`은 첫 병사가 나온 틱과 살아 있는
+         * 그 병종 아군 수, 그 무리의 퍼짐(`nearest`·`pair`·`radius`·`ahead`)이다. 예: `?debug=1&scene=launch&map=standard&seed=1&unit=chestnut&zoom=2&tick=20`,
+         * 절벽 옆: `?debug=1&scene=launch&map=twin-gates&seed=1&unit=chestnut&zoom=2&x=820&y=1300&tick=30`
+         */
+        launch(params) {
+            const scene = 'launch';
+            const type = unitType(scene, 'unit', params.unit);
+            const enemy =
+                params.enemy === undefined ? undefined : unitType(scene, 'enemy', params.enemy);
+            const sim = new StrategySim(
+                integer(scene, 'seed', params.seed),
+                GameRuleRuntime.resolveMatchRules({ presetId: params.map }),
+                [[type], [enemy ?? type]],
+            );
+            const { host, center, dir } = baseAxis(sim);
+            const across =
+                params.across === undefined ? 400 : integer(scene, 'across', params.across);
+            const distance =
+                params.distance === undefined ? 300 : integer(scene, 'distance', params.distance);
+            // `x`·`y` name the landing point instead; the cannon then stands toward the friendly main base.
+            const target =
+                params.x === undefined && params.y === undefined
+                    ? { x: center.x - dir.y * across, y: center.y + dir.x * across }
+                    : { x: integer(scene, 'x', params.x), y: integer(scene, 'y', params.y) };
+            const back =
+                params.x === undefined
+                    ? { x: -dir.x, y: -dir.y }
+                    : {
+                          x: (host.x - target.x) / Math.hypot(host.x - target.x, host.y - target.y),
+                          y: (host.y - target.y) / Math.hypot(host.x - target.x, host.y - target.y),
+                      };
+            const cannon = buildOutpost(
+                sim,
+                { id: 'launch', x: target.x + back.x * distance, y: target.y + back.y * distance },
+                0,
+            );
+            const grain = LaunchRules.grain(type);
+            sim.wallet[0] = Math.max(sim.wallet[0], grain.cost);
+            sim.premiumWallet[0] = Math.max(sim.premiumWallet[0], grain.premiumCost || 0);
+            if (enemy !== undefined)
+                placeBlock(
+                    sim,
+                    1,
+                    [enemy],
+                    integer(scene, 'enemyCount', params.enemyCount),
+                    target,
+                    { x: back.x, y: back.y },
+                );
+            queueLaunch(sim, { tick: 10, seq: 1, side: 0, cannon, unitType: type, ...target });
+            // The tick the first soldier of the shot came out (its launchLand event).
+            let landTick = null;
+            // How the squad stands: mean distance to the nearest and to every other soldier, the farthest
+            // soldier from the squad's centre, and how far past the impact toward the enemy one went.
+            const spreadOf = (squad) => {
+                if (!squad.length) return {};
+                const n = squad.length,
+                    cx = squad.reduce((sum, u) => sum + u.x, 0) / n,
+                    cy = squad.reduce((sum, u) => sum + u.y, 0) / n;
+                let nearest = 0,
+                    pair = 0,
+                    radius = 0,
+                    ahead = 0;
+                for (const u of squad) {
+                    let closest = Infinity;
+                    for (const o of squad) {
+                        if (o === u) continue;
+                        const d = Math.hypot(o.x - u.x, o.y - u.y);
+                        closest = Math.min(closest, d);
+                        pair += d;
+                    }
+                    if (n > 1) nearest += closest;
+                    radius = Math.max(radius, Math.hypot(u.x - cx, u.y - cy));
+                    ahead = Math.max(
+                        ahead,
+                        -((u.x - target.x) * back.x + (u.y - target.y) * back.y),
+                    );
+                }
+                const round = (v) => Math.round(v * 10) / 10;
+                return {
+                    nearest: round(nearest / n),
+                    pair: round(n > 1 ? pair / (n * (n - 1)) : 0),
+                    radius: round(radius),
+                    ahead: round(ahead),
+                };
+            };
+            return matchScene(scene, params, sim, {
+                zoom: params.zoom === undefined ? 3 : integer(scene, 'zoom', params.zoom),
+                focus: () => target,
+                beforeStep: () => {
+                    if (landTick === null && sim.events.some((e) => e.type === 'launchLand'))
+                        landTick = sim.tick;
+                },
+                extra: () => {
+                    const squad = sim.units.filter(
+                        (u) => u.alive && u.side === 0 && u.type === type,
+                    );
+                    return { landing: { tick: landTick, units: squad.length, ...spreadOf(squad) } };
+                },
             });
         },
         /**

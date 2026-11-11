@@ -33,9 +33,8 @@ export const Peanut = defineUnit({
         shellHp: 25,
         impact: 10,
         splash: 50,
-        land: 'transverse',
-        spacing: 32,
-        deployTogether: true,
+        land: 'burst',
+        spreadAcross: 1.5,
     },
     visual: {
         family: 'grain',
@@ -47,7 +46,7 @@ export const Peanut = defineUnit({
     card: {
         role: '건물 돌격',
         feature: '건물만 몸통으로 공격',
-        land: '발사 방향과 직각으로 한 줄 배치',
+        land: '착지점에서 좌우로 넓게 튀어나옴',
         fire: '단발',
         notes: [
             '착지하면 시야에 들어온 가까운 적 건물에 달려가 들이받아요.',
