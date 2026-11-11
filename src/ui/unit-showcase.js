@@ -1,14 +1,7 @@
-import {
-    attachPublishedVisibility,
-    captureFramePresentationEvents,
-    configureFramePresentationJournal,
-    createFramePresentationJournal,
-    emitFramePresentationEvents,
-} from '../core/presentation-frame-event.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { StrategySim } from '../sim/strategy-sim.js';
-import { BattlefieldProjection } from '../sim/terrain.js';
+import { centerCamera, prepareSimScene } from './sim-scene.js';
 
 const SEED = 12345;
 const DURATION_SECONDS = 7;
@@ -182,7 +175,16 @@ export function prepareCampaignOpening(options) {
 }
 
 function prepareVolleyShowcase(
-    { renderer, createScenario, createPresentationView, unitType, onError, onLaunch, onComplete },
+    {
+        renderer,
+        createScenario,
+        createPresentationView,
+        unitType,
+        advanceTick,
+        onError,
+        onLaunch,
+        onComplete,
+    },
     opening = false,
 ) {
     if (!LaunchRules.grain(unitType)) throw new Error('알 수 없는 병종 소개 장면입니다.');
@@ -198,7 +200,6 @@ function prepareVolleyShowcase(
     const launchTarget = interception ? { x: x + interception.aimOffset, y } : target;
     const launchType = interception?.launchType ?? unitType;
     const distance = Math.hypot(launchTarget.x - cannon.x, launchTarget.y - cannon.y);
-    const initialState = sim.exportState();
     const launchDelayMs =
         interception?.launchDelayMs ??
         (opening ? OPENING_LAUNCH_DELAY_SECONDS : LAUNCH_DELAY_SECONDS) * 1000;
@@ -223,33 +224,9 @@ function prepareVolleyShowcase(
                   ),
           );
     const skillTick = sim.msTicks(HERO_SKILL_DELAY_SECONDS * 1000);
-    let scenario;
-    let journal;
-    let active = false;
-    let disposed = false;
+    let skillRequested = false;
     let launchShown = false;
     let centerShot = null;
-    const owner = {
-        finishPresentationEvent(record) {
-            return journal?.finish(record);
-        },
-    };
-    const view = createPresentationView(owner, () => renderer, { hud: false, audio: false });
-    if (opening) {
-        const { start } = view;
-        view.start = (record, at, age) => {
-            const handle = start(record, at, age);
-            const fire = record.payload;
-            if (fire.type === 'launchFire' && fire.side === 0) {
-                if (fire.shot === Math.floor(fire.shots / 2)) centerShot = fire;
-                if (!launchShown) {
-                    launchShown = true;
-                    onLaunch?.(fire);
-                }
-            }
-            return handle;
-        };
-    }
     const openingCamera = () => {
         const shot =
             centerShot && renderer.renderState.entity('projectile', centerShot.projectileId);
@@ -262,16 +239,7 @@ function prepareVolleyShowcase(
         const focusX = shotX == null ? host.x + 55 : shotX + (target.x - shotX) * approach * 0.5;
         const focusY = position?.z ?? centerShot?.aimY ?? y;
         renderer.replayZoom = OPENING_ZOOM + (OPENING_LANDING_ZOOM - OPENING_ZOOM) * approach;
-        renderer.cameraLeft = focusX - renderer.viewWorldW() / 2;
-        renderer.cameraTop = renderer.clampCameraTop(
-            BattlefieldProjection.planarY(focusY, (position?.y ?? 0) * (1 - approach * 0.5)) -
-                renderer.viewWorldH() / 2,
-        );
-    };
-    const presentFrame = (frame) => {
-        if (disposed || frame?.timeMs == null) return;
-        journal?.present(frame);
-        if (opening && !disposed) openingCamera();
+        centerCamera(renderer, focusX, focusY, (position?.y ?? 0) * (1 - approach * 0.5));
     };
     const frameCamera = (timeMs) => {
         const progress = roller
@@ -285,127 +253,78 @@ function prepareVolleyShowcase(
             : rider
               ? host.x + rider.cameraOffset
               : x + fromX + (toX - fromX) * progress * progress * (3 - 2 * progress);
-        renderer.cameraLeft = focusX - renderer.viewWorldW() / 2;
-        renderer.cameraTop = renderer.clampCameraTop(
-            BattlefieldProjection.planarY(y, interception?.cameraHeight ?? 0) -
-                renderer.viewWorldH() / 2,
-        );
-    };
-    const dispose = () => {
-        if (disposed) return;
-        disposed = true;
-        if (renderer.onPresentationFrame === presentFrame) renderer.onPresentationFrame = null;
-        scenario?.dispose();
-        journal?.dispose();
-        sim.dispose('unit-showcase');
+        centerCamera(renderer, focusX, y, interception?.cameraHeight ?? 0);
     };
 
-    try {
-        renderer.role = 'host';
-        renderer.replayObserverAll = true;
-        renderer.replayZoom = opening ? OPENING_ZOOM : (interception?.zoom ?? roller?.zoom ?? 4);
-        renderer.onPresentationFrame = presentFrame;
-        scenario = createScenario({
-            definition: {
-                seed: SEED,
-                tickRate: sim.tps,
-                endTick,
-                loop: !opening,
-            },
-            onEnd() {
-                if (opening && !disposed) onComplete?.();
-            },
-            createRun() {
-                sim.importState(initialState);
-                renderer.setSnapshot(sim.snapshot(), { snapTargets: true });
-                if (opening) openingCamera();
-                else frameCamera(0);
-                journal = createFramePresentationJournal({
-                    getView: () => view,
-                    onImmediate: () => {},
-                });
-                configureFramePresentationJournal(journal, view, sim.tps, active);
-                sim.queueCommand({
-                    tick: launchTick,
-                    seq: 1,
-                    actor: interception ? 'guest' : 'host',
-                    action: {
-                        type: 'LAUNCH',
-                        cannonId: cannon.id,
-                        unitType: launchType,
-                        holdMs: Math.round(
-                            LaunchRules.holdFor(
-                                distance,
-                                launchType,
-                                interception?.rangeLevel ?? rangeLevel,
-                            ),
+    renderer.role = 'host';
+    renderer.replayObserverAll = true;
+    renderer.replayZoom = opening ? OPENING_ZOOM : (interception?.zoom ?? roller?.zoom ?? 4);
+    const scene = prepareSimScene({
+        renderer,
+        createScenario,
+        createPresentationView,
+        sim,
+        seed: SEED,
+        endTick,
+        loop: !opening,
+        advanceTick,
+        start() {
+            if (opening) openingCamera();
+            else frameCamera(0);
+            sim.queueCommand({
+                tick: launchTick,
+                seq: 1,
+                actor: interception ? 'guest' : 'host',
+                action: {
+                    type: 'LAUNCH',
+                    cannonId: cannon.id,
+                    unitType: launchType,
+                    holdMs: Math.round(
+                        LaunchRules.holdFor(
+                            distance,
+                            launchType,
+                            interception?.rangeLevel ?? rangeLevel,
                         ),
-                        ...launchTarget,
+                    ),
+                    ...launchTarget,
+                },
+            });
+            skillRequested = false;
+        },
+        beforeStep(frame) {
+            const hero = sim.heroes[0][unitType];
+            if (!skillRequested && frame.tick >= skillTick && hero?.unitId) {
+                skillRequested = true;
+                sim.queueCommand({
+                    tick: sim.tick + 1,
+                    seq: 2,
+                    actor: 'host',
+                    action: {
+                        type: 'ACTIVATE_HERO_SKILL',
+                        sortieId: hero.sortieId,
                     },
                 });
-                let skillRequested = false;
-                return {
-                    step(frame) {
-                        try {
-                            const hero = sim.heroes[0][unitType];
-                            if (!skillRequested && frame.tick >= skillTick && hero?.unitId) {
-                                skillRequested = true;
-                                sim.queueCommand({
-                                    tick: sim.tick + 1,
-                                    seq: 2,
-                                    actor: 'host',
-                                    action: {
-                                        type: 'ACTIVATE_HERO_SKILL',
-                                        sortieId: hero.sortieId,
-                                    },
-                                });
-                            }
-                            sim.stepSimulation();
-                            const snapshot = sim.snapshot();
-                            const events = captureFramePresentationEvents(snapshot.events, sim);
-                            renderer.setSnapshot(snapshot, { liveTargets: false });
-                            journal.update(performance.now());
-                            emitFramePresentationEvents(
-                                journal,
-                                view,
-                                sim.tick,
-                                attachPublishedVisibility(events, view),
-                            );
-                        } catch (error) {
-                            dispose();
-                            renderer.stopLoop();
-                            onError?.(error);
-                        }
-                    },
-                    render(frame) {
-                        if (!opening) frameCamera(frame.timeMs);
-                    },
-                    dispose() {
-                        journal.dispose();
-                        journal = null;
-                    },
-                };
-            },
-        });
-        scenario.play();
-        scenario.pause();
-        return {
-            play() {
-                if (disposed) return;
-                active = true;
-                journal.setPresentationActive(true);
-                scenario.play();
-            },
-            pause() {
-                if (disposed) return;
-                active = false;
-                scenario.pause();
-                journal.setPresentationActive(false);
-            },
-            dispose,
+            }
+        },
+        render: opening ? undefined : (frame) => frameCamera(frame.timeMs),
+        onPresent: opening ? openingCamera : undefined,
+        onEnd: opening ? () => onComplete?.() : undefined,
+        onError,
+    });
+    if (opening) {
+        const { start } = scene.view;
+        scene.view.start = (record, at, age) => {
+            const handle = start(record, at, age);
+            const fire = record.payload;
+            if (fire.type === 'launchFire' && fire.side === 0) {
+                if (fire.shot === Math.floor(fire.shots / 2)) centerShot = fire;
+                if (!launchShown) {
+                    launchShown = true;
+                    onLaunch?.(fire);
+                }
+            }
+            return handle;
         };
-    } catch (error) {
-        dispose();
-        throw error;
     }
+    return scene;
 }
