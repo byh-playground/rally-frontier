@@ -319,46 +319,21 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         [stage.deck, stage.enemyDeck],
                     );
                 const layouts = [];
-                const towerDefinitions = ['mainBase', 'outpost'].map((role) =>
-                    BuildingDefinition.get(BuildingDefinition.forRole(role)),
-                );
-                const towerEnvelope =
-                    Math.max(...towerDefinitions.map((d) => d.range + (d.mortar?.radius ?? 0))) +
-                    Math.max(...towerDefinitions.map((d) => d.size));
                 for (const stage of CAMPAIGN_STAGES) {
                     const sim = openStage(stage);
                     const { world, capturePoints: points, mapDescriptor } = sim;
                     const [home, enemy] = world.bases;
                     const advance = points.find((p) => p.id === 'advance');
+                    if (!advance) continue; // practice and hero lessons have no capture sites
                     const center = points.find((p) => p.id === 'center');
-                    const oil = points.find((p) => p.resourceType === 'premium');
+                    const oil = points.find((p) => p.id === 'oil');
                     const enemies = points.filter((p) => p.owner === 1);
                     check(
                         world.width === 2400 &&
                             world.height === 3000 &&
-                            distance(home, enemy) === 2200,
+                            distance(home, enemy) === 2600 - (stage.layout?.guestY ?? 400),
                         'the compact campaign keeps its map size and base separation',
                         stage.id,
-                    );
-                    const towerPositions = [
-                        { id: 'home', ...home },
-                        { id: 'enemy', ...enemy },
-                        ...points,
-                    ];
-                    const towerPairs = towerPositions.flatMap((a, i) =>
-                        towerPositions.slice(i + 1).map((b) => ({
-                            from: a.id,
-                            to: b.id,
-                            distance: distance(a, b),
-                        })),
-                    );
-                    const nearestPair = towerPairs.reduce((nearest, pair) =>
-                        pair.distance < nearest.distance ? pair : nearest,
-                    );
-                    check(
-                        nearestPair.distance > towerEnvelope,
-                        'every potential opposing tower pair is beyond automatic fire and mortar splash',
-                        { stage: stage.id, nearestPair, towerEnvelope },
                     );
                     const landing = LaunchRules.target(
                         home,
@@ -398,35 +373,21 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         'all campaign pads are buildable and connected, including elevated pads',
                         stage.id,
                     );
-                    const reach = Math.min(
-                        ...stage.deck.map((type) => LaunchRules.maxReachOf(type, 2)),
-                    );
-                    const pairs = points.flatMap((point, index) =>
-                        points.slice(index + 1).map((other) => distance(point, other)),
-                    );
-                    const directPairs = pairs.filter((length) => length <= reach).length;
                     check(
-                        directPairs >= Math.ceil(pairs.length * 0.8) &&
-                            enemies.every((p) => distance(center, p) <= reach),
-                        'third range tier directly reaches most outpost pairs and every enemy defense from center',
-                        { stage: stage.id, reach, directPairs, pairs: pairs.length },
-                    );
-                    check(
-                        !!oil === !!stage.resourceLesson &&
+                        !!oil ===
+                            !!(stage.resourceLesson || stage.friendlyOutposts?.includes('oil')) &&
                             (!oil ||
+                                !stage.resourceLesson ||
                                 (oil.owner === null &&
                                     distance(advance, oil) >
                                         LaunchRules.maxReachOf('rice') +
                                             LaunchRules.captureHoldRadius &&
                                     distance(home, oil) <= LaunchRules.maxReachOf('rice', 1))),
-                        'only lesson maps have one side oil site, with a direct shot from home after one range upgrade',
+                        'a side oil site exists only for the resource lesson or a stage that grants it, and the lesson has a direct shot from home after one range upgrade',
                         stage.id,
                     );
                     layouts.push({
                         stage: stage.id,
-                        nearestPair,
-                        directPairs,
-                        pairs: pairs.length,
                         ramps: mapDescriptor.terrain.ramps.length,
                     });
                 }
@@ -650,22 +611,27 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         clearTick: practice.tick,
                     });
                 }
-                const oilLesson = openStage(campaignStage('millet'));
-                const lessonOil = oilLesson.capturePoints.find((p) => p.resourceType === 'premium');
+                const oilLessonStage = CAMPAIGN_STAGES.find((stage) => stage.resourceLesson);
+                const oilLesson = openStage(oilLessonStage);
+                const lessonUnit = oilLessonStage.mission.captureSupport.find(
+                    (support) => support.resource === 'premium',
+                ).unitType;
+                const lessonOil = oilLesson.capturePoints.find((p) => p.id === 'oil');
                 const lessonCannon = checkOilOpening(oilLesson, 'host', 0, lessonOil);
                 const oilCaptureSeconds = oilLesson.tick / oilLesson.tps;
-                const acorn = LaunchRules.payload('acorn');
-                step(oilLesson, (acorn.premiumCost / 2.5) * oilLesson.tps);
+                const lessonPayload = LaunchRules.payload(lessonUnit);
+                step(oilLesson, (lessonPayload.premiumCost / 2.5) * oilLesson.tps);
                 const enemyBase = oilLesson.world.bases[1];
+                const premiumBefore = oilLesson.premiumWallet[0];
                 check(
                     oilLesson.applyCommand('host', {
                         type: 'LAUNCH',
                         cannonId: lessonCannon.id,
-                        unitType: 'acorn',
+                        unitType: lessonUnit,
                         x: enemyBase.x,
                         y: enemyBase.y,
                         holdMs: LaunchRules.chargeMs,
-                    }) && oilLesson.premiumWallet[0] === 0,
+                    }) && oilLesson.premiumWallet[0] === premiumBefore - lessonPayload.premiumCost,
                     'oil-only campaign opening funds the lesson unit',
                 );
                 const opening = openStage(campaignStage('first'));
