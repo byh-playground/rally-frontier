@@ -1382,6 +1382,9 @@ class GLRenderer {
         this.cornBursts = [];
         this.milletBursts = [];
         this.cornQuadMatrix = new Float32Array(6);
+        // Reused by the self-destruct burst each frame (renderCornParticles).
+        this.selfDestructWorld = { x: 0, y: 0, z: 0, groundY: 0 };
+        this.selfDestructPoint = { x: 0, y: 0, depth: 0, world: null };
         this.projectileScreenMotionStates = new Map();
         this.last = performance.now();
         this.particles = [];
@@ -1391,6 +1394,7 @@ class GLRenderer {
         this.fxCanvas = fxCanvas;
         this.fxCtx = this.fxCanvas?.getContext('2d') || null;
         this.floatFx = [];
+        this.areaHitGroups = new Map();
 
         // florr.io-inspired client-only combat feedback.
         // These arrays are renderer-only and never enter StrategySim/checksum/export/recovery.
@@ -1476,6 +1480,7 @@ class GLRenderer {
         for (const fx of this.shakeFx) this.shakeFxPool.release(fx);
         this.combatFx.length = 0;
         this.floatFx.length = 0;
+        this.areaHitGroups.clear();
         this.shakeFx.length = 0;
         this.frameShakeX = this.frameShakeY = 0;
         this.cameraShakePresentationMoved = false;
@@ -2174,7 +2179,8 @@ class GLRenderer {
                 ) || null
         );
     }
-    projectRenderWorldPositionStable(p) {
+    // `into` lets a per-frame caller reuse one result object ({ x, y, depth, world }).
+    projectRenderWorldPositionStable(p, into = {}) {
         // Same projection as projectRenderWorldPosition, but intentionally before
         // final screen composition. All world consumers use this stable projection.
         const vx = this.viewX(p.x),
@@ -2182,16 +2188,17 @@ class GLRenderer {
         const groundY =
             p.groundY == null ? this.world.terrain.surfaces.heightAt(p.x, p.z) : p.groundY;
         const resolved = p.groundY == null ? { ...p, y: p.y + groundY, groundY } : p;
-        const projected = { depth: this.renderDepthForWorld(resolved), world: resolved };
+        into.depth = this.renderDepthForWorld(resolved);
+        into.world = resolved;
         return (this._frameCamera || this.stableCamera()).worldToScreenInto(
             vx,
             vz,
             resolved.y,
-            projected,
+            into,
         );
     }
-    projectRenderWorldPosition(p) {
-        return this.projectRenderWorldPositionStable(p);
+    projectRenderWorldPosition(p, into) {
+        return this.projectRenderWorldPositionStable(p, into);
     }
     projectEntityScreen(entity, kind = 'unit') {
         return this.projectRenderWorldPosition(this.resolveRenderWorldPosition(entity, kind));
@@ -2478,6 +2485,35 @@ class GLRenderer {
         sh.seed = Number(seed) || 1;
         this.shakeFx.push(sh);
         while (this.shakeFx.length > 8) this.shakeFxPool.release(this.shakeFx.shift());
+        return sh;
+    }
+
+    // A popcorn burst on screen shakes lightly. Bursts in a row keep one shake: the new one replaces the
+    // previous at whichever is stronger now, so a chain never adds up past a single burst.
+    triggerSelfDestructShake(e, snapshot, index) {
+        const { shakeIntensity, shakeMs } = EffectObjectFactory.selfDestructBurst;
+        if (!this.onScreenAuth(e.x, e.y, 0)) return;
+        const dpr = Math.min(1.6, devicePixelRatio || 1);
+        let remaining = 0,
+            write = 0;
+        for (const sh of this.shakeFx) {
+            if (!sh.selfDestruct) {
+                this.shakeFx[write++] = sh;
+                continue;
+            }
+            const t = Math.min(1, sh.clock.ageMs / sh.duration);
+            remaining = Math.max(remaining, (sh.intensity / dpr) * Math.pow(1 - t, 2));
+            this.shakeFxPool.release(sh);
+        }
+        this.shakeFx.length = write;
+        const sh = this.triggerClientShake(
+            Math.max(shakeIntensity, remaining),
+            shakeMs,
+            HashUtil.hash(`${snapshot.tick}|self-destruct|${index}`),
+            e,
+            snapshot,
+        );
+        if (sh) sh.selfDestruct = true;
     }
 
     updateClientShake() {
@@ -2518,20 +2554,25 @@ class GLRenderer {
             const tick = Number.isFinite(Number(event.presentationTick))
                 ? Number(event.presentationTick)
                 : snapshot.tick;
-            const clock = snapshot.presentationClock;
-            if (clock.ageMs >= EffectObjectFactory.cornBurstLifeMs) continue;
+            const clock = snapshot.presentationClock,
+                selfDestruct = event.type === 'unitSelfDestruct',
+                lifeMs = selfDestruct
+                    ? EffectObjectFactory.selfDestructBurst.lifeMs
+                    : EffectObjectFactory.cornBurstLifeMs;
+            if (clock.ageMs >= lifeMs) continue;
             const burst = {
                 x: event.x,
                 y: event.y,
                 zFP: event.zFP,
                 radius: event.radius,
                 side: event.side,
-                selfDestruct: event.type === 'unitSelfDestruct',
+                selfDestruct,
+                lifeMs,
                 seed: HashUtil.hash(
                     String(event.projectileId || event.sourceId || '') + '|' + tick,
                 ),
             };
-            EffectObjectFactory.attachClock(burst, clock, EffectObjectFactory.cornBurstLifeMs);
+            EffectObjectFactory.attachClock(burst, clock, lifeMs);
             this.cornBursts.push(burst);
         }
         if (this.cornBursts.length > 220) this.cornBursts.splice(0, this.cornBursts.length - 220);
@@ -2714,6 +2755,11 @@ class GLRenderer {
                     if (e.id != null) this.corpseBurstIds.add(e.id);
                     this.addClientFx('deathBurst', e, snapshot, index);
                 }
+            } else if (e.type === 'unitSelfDestruct') {
+                this.addClientFx('selfDestructBurst', e, snapshot, index, {
+                    impactHeightFP: e.zFP,
+                });
+                this.triggerSelfDestructShake(e, snapshot, index);
             } else if (e.type === 'buildingDeath') {
                 this.addClientFx('buildingBurst', e, snapshot, index);
                 this.triggerClientShake(
@@ -3013,6 +3059,11 @@ class GLRenderer {
                 text = '',
                 amount = 0;
 
+            if (e.type === 'unitSelfDestruct') {
+                this.openAreaHitGroup(e, this.presentationEventTick(e, snapshot));
+                index++;
+                continue;
+            }
             if (e.type === 'hit' && e.amount > 0) {
                 // 적/중립 피해 숫자는 실제 시야가 있을 때만 보여 Fog 정보를 새지 않게 한다.
                 if (!this.eventVisible(e)) {
@@ -3042,6 +3093,20 @@ class GLRenderer {
             const seed = HashUtil.hash(
                 `${eventTick}|${index}|${kind}|${Math.round(e.x)}|${Math.round(e.y)}|${amount}`,
             );
+            const group = kind === 'dodge' ? null : this.areaHitGroups.get(e.sourceId);
+            const grouped = group?.tick === eventTick;
+            if (grouped && group.float?.group === group) {
+                // One number per burst: "-40 ×6" (or the total when the amounts differ).
+                const f = group.float;
+                group.count++;
+                group.total += amount;
+                if (amount !== group.amount) group.amount = null;
+                f.amount = group.total;
+                f.text =
+                    group.amount == null ? `-${group.total}` : `-${group.amount} ×${group.count}`;
+                index++;
+                continue;
+            }
             const f = this.floatFxPool.acquire();
             f.x = e.x;
             f.y = e.y;
@@ -3050,6 +3115,17 @@ class GLRenderer {
             f.amount = amount;
             f.jitter = ((seed % 1000) / 1000 - 0.5) * 34;
             f.lane = (seed >>> 10) % 4;
+            if (grouped) {
+                f.x = group.x;
+                f.y = group.y;
+                f.jitter = 0;
+                f.lane = 0;
+                f.group = group;
+                group.float = f;
+                group.count = 1;
+                group.amount = amount;
+                group.total = amount;
+            }
             const lifeMs = FloatingTextPresentationDefinition.get(kind).lifeMs;
             if (snapshot.presentationClock.ageMs >= lifeMs) {
                 this.floatFxPool.release(f);
@@ -3063,6 +3139,21 @@ class GLRenderer {
 
         // 화면을 숫자로 도배하지 않되, 최근 실제 타격 수치는 충분히 남긴다.
         while (this.floatFx.length > 72) this.floatFxPool.release(this.floatFx.shift());
+    }
+
+    // A burst's hits arrive after its event in the same tick; they share one group keyed by the source.
+    openAreaHitGroup(e, tick) {
+        for (const [id, group] of this.areaHitGroups)
+            if (group.tick < tick) this.areaHitGroups.delete(id);
+        this.areaHitGroups.set(e.sourceId, {
+            tick,
+            x: e.x,
+            y: e.y,
+            float: null,
+            count: 0,
+            amount: 0,
+            total: 0,
+        });
     }
 
     constructionImpact(building) {
@@ -3642,6 +3733,35 @@ class GLRenderer {
                 burst(fx, x, y, t, 6, accent, 54, 3.5, 0.62);
                 burst(fx, x, y, t, 5, '#e7d7b7', 64, 2.5, 0.58, fx.seed ^ 0x2a51);
                 ring(x, y, (6 + 26 * ease) * sc, 2 * sc, accent, 0.34 * (1 - t));
+            } else if (fx.kind === 'selfDestructBurst') {
+                // Popcorn's blast on the ground: a butter flash and a ring that reach the real radius, and crumbs
+                // thrown to its edge. The kernels themselves fly in the WebGL pass (renderCornParticles).
+                const burst = EffectObjectFactory.selfDestructBurst,
+                    radius = fx.radius * burst.radiusScale * sc,
+                    ground = BattlefieldProjection.groundScale,
+                    reach = radius * (0.3 + 0.7 * ease),
+                    fade = 1 - t;
+                if (t < 0.3) {
+                    ctx.globalAlpha = 0.3 * (1 - t / 0.3);
+                    ctx.fillStyle = '#ffe9a8';
+                    ctx.beginPath();
+                    ctx.ellipse(x, y, reach, reach * ground, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ring(x, y, reach, (6 - 3 * t) * sc, '#a8682a', 0.5 * fade, ground);
+                ring(x, y, reach, (3.5 - 2 * t) * sc, '#fff1cf', 0.95 * fade, ground);
+                for (let i = 0; i < burst.kernels * 2; i++) {
+                    const h = Math.imul(fx.seed ^ (i + 1), 0x9e3779b1) >>> 0,
+                        a = ((i + (h % 1000) / 1000) / (burst.kernels * 2)) * Math.PI * 2,
+                        d = reach * (0.7 + ((h >>> 10) % 300) / 1000);
+                    dot(
+                        x + Math.cos(a) * d,
+                        y + Math.sin(a) * d * ground,
+                        (2.2 + (h % 2)) * sc * (1 - 0.5 * t),
+                        i % 2 ? '#f2c14e' : '#fff3d6',
+                        fade,
+                    );
+                }
             } else if (fx.kind === 'buildingBurst') {
                 burst(fx, x, y, t, 13, '#6a6259', 72, 4.8, 0.48);
                 burst(fx, x, y, t, 7, '#d2aa63', 58, 3.3, 0.52);
@@ -5887,6 +6007,39 @@ class GLRenderer {
         if (this.frame.length) this.flush(this.frame, true);
         this.begin();
     }
+    // Popcorn kernels thrown from a self-destruct to the edge of its radius, hopping as they go (corn's popcorn
+    // particle art). `t` runs 0..1 over the burst's life.
+    drawSelfDestructKernels(burst, t, sc) {
+        const spec = EffectObjectFactory.selfDestructBurst,
+            world = this.selfDestructWorld,
+            point = this.selfDestructPoint,
+            matrix = this.cornQuadMatrix,
+            art = this.effectArt['grain-particles'],
+            reach = burst.radius * spec.radiusScale,
+            travel = 1 - Math.pow(1 - Math.min(1, t * 1.6), 3),
+            alpha = t < 0.6 ? 1 : (1 - t) / 0.4,
+            baseY = (Number(burst.zFP) || 0) / FP;
+        for (let i = 0; i < spec.kernels; i++) {
+            const h = Math.imul(burst.seed ^ (i + 1), 0x9e3779b1) >>> 0,
+                angle = ((i + (h % 1000) / 1000) / spec.kernels) * Math.PI * 2,
+                distance = reach * (0.8 + ((h >>> 10) % 200) / 1000) * travel;
+            world.x = burst.x + Math.cos(angle) * distance;
+            world.z = burst.y + Math.sin(angle) * distance;
+            world.y = baseY + 6 + Math.sin(Math.PI * travel) * (18 + ((h >>> 20) % 14));
+            this.projectRenderWorldPosition(world, point);
+            const size = Math.max(3, 13 * sc * (1.1 - 0.3 * t)),
+                rotation = angle + t * (i % 2 ? -6 : 6),
+                a = Math.cos(rotation) * size,
+                b = Math.sin(rotation) * size;
+            matrix[0] = a;
+            matrix[1] = b;
+            matrix[2] = -b;
+            matrix[3] = a;
+            matrix[4] = point.x;
+            matrix[5] = point.y;
+            art.drawPopcorn(i % 3, matrix, this.spriteDepthForWorld(world), alpha);
+        }
+    }
     renderCornParticles() {
         if (
             (!this.cornTrails.size && !this.cornBursts.length) ||
@@ -5896,8 +6049,7 @@ class GLRenderer {
         const time = this.cornPresentationTime();
         if (!Number.isFinite(time)) return;
         const sc = this.sc(),
-            trailLife = 300,
-            burstLife = EffectObjectFactory.cornBurstLifeMs;
+            trailLife = 300;
         this.begin();
         this.passState.depthWrite = false;
         for (const [id, trail] of this.cornTrails) {
@@ -5925,11 +6077,12 @@ class GLRenderer {
         let write = 0;
         for (const burst of this.cornBursts) {
             const age = burst.clock.ageMs;
-            if (burst.clock.expired || age >= burstLife) continue;
+            if (burst.clock.expired || age >= burst.lifeMs) continue;
             this.cornBursts[write++] = burst;
             if (age < 0 || (burst.side !== this.mySide() && !this.visibleRaw(burst.x, burst.y)))
                 continue;
-            const t = age / burstLife;
+            const t = Math.min(1, age / EffectObjectFactory.cornBurstLifeMs);
+            if (t >= 1) continue;
             for (let i = 0; i < 3; i++) {
                 const angle = (i * Math.PI * 2) / 3 + ((burst.seed % 360) * Math.PI) / 180;
                 const world = {
@@ -5963,16 +6116,18 @@ class GLRenderer {
             const age = burst.clock.ageMs;
             if (age < 0 || (burst.side !== this.mySide() && !this.visibleRaw(burst.x, burst.y)))
                 continue;
-            const t = Math.min(1, age / burstLife);
+            const t = Math.min(1, age / EffectObjectFactory.cornBurstLifeMs);
             if (burst.selfDestruct) {
-                const world = {
-                    x: burst.x,
-                    z: burst.y,
-                    y: (Number(burst.zFP) || 0) / FP + 10,
-                    groundY: 0,
-                };
-                const point = this.projectRenderWorldPosition(world),
-                    size = Math.max(4, (30 + 65 * Math.min(1, t * 3)) * sc);
+                const spec = EffectObjectFactory.selfDestructBurst,
+                    world = this.selfDestructWorld,
+                    point = this.selfDestructPoint;
+                world.x = burst.x;
+                world.z = burst.y;
+                world.y = (Number(burst.zFP) || 0) / FP + 10;
+                this.projectRenderWorldPosition(world, point);
+                // The puff keeps its original timing; the kernels and the ground ring last the burst's whole life.
+                const puff = burst.radius * spec.radiusScale * spec.puffScale,
+                    size = Math.max(4, (30 + (puff - 30) * Math.min(1, t * 3)) * sc);
                 matrix[0] = size;
                 matrix[1] = 0;
                 matrix[2] = 0;
@@ -5984,6 +6139,7 @@ class GLRenderer {
                     this.spriteDepthForWorld(world),
                     1 - t,
                 );
+                this.drawSelfDestructKernels(burst, age / burst.lifeMs, sc);
                 continue;
             }
             const distance = Math.min(45, Number(burst.radius) || 45) * t;
