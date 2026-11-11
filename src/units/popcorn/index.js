@@ -1,10 +1,4 @@
-import {
-    BASIC_MELEE,
-    GRAIN_LEAP,
-    HEAVY_KNOCKBACK,
-    RESOURCE_SCALE,
-    SINGLE_BUNDLE_SHELL,
-} from '../baseline.js';
+import { BASIC_MELEE, GRAIN_LEAP, RESOURCE_SCALE, SINGLE_BUNDLE_SHELL } from '../baseline.js';
 import { defineUnit } from '../define-unit.js';
 
 export const Popcorn = defineUnit({
@@ -23,8 +17,7 @@ export const Popcorn = defineUnit({
             windupMs: 1000,
             radius: 80,
             damage: 40,
-            ...HEAVY_KNOCKBACK,
-            // Every enemy inside the radius flies like an acorn hit, not only the ones at the centre.
+            // Every grounded enemy inside the radius is thrown as hard as one at the centre.
             knockbackFalloff: false,
         }),
     },

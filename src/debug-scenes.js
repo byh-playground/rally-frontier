@@ -213,35 +213,72 @@ function createTickLog() {
     };
 }
 
-// Blast and spin knockbacks (`unit` scene), read by `state().knockback`: for each unit the first impulse from a
-// self-destruct or a spin attack, as the change of its impact velocity (speed along the ground, lift), then the
-// highest point, the top ground speed it ever reached (several blasts add up), how far it travels from where it stood and how many ticks it flies. A contact bump is not counted.
-function createKnockbackProbe(sim) {
+// Every knockback (`unit` and `ai-match` scenes), read by `state().knockback`: for each unit the first impulse that
+// throws it (kind 'knockback'), as the change of its impact velocity (speed along the ground, lift), labelled by
+// what gave it: 'blast' (self-destruct), 'spin', 'splash' (a basic attack's splash), 'heroRoll', 'heroLand' (a hero's
+// hop landing), 'leap', 'roll' (a rolling walnut, with the walnut's speed just before as `sourceSpeed`), 'shell' (a
+// launch shell's landing), 'lob' (a lobbed ball), 'egg' (a lobbed ball's burst) or 'contact' (a flying body bumping
+// into it). Then the highest point, the top ground speed it reached (later impulses add up),
+// the first landing (`airTicks`, `airDist`), how far it travels from where it stood and how many ticks until it
+// settles. `trace=1` adds each entry's side view per tick, [ground distance, height]. `outside()` is the most units
+// (living or a flying corpse) seen outside the map at once.
+function createKnockbackProbe(sim, trace = false) {
+    let outside = 0;
     const entries = new Map(),
-        previous = new Map();
-    const blasts = new Set();
+        previous = new Map(),
+        sourceSpeed = new Map();
+    const blasts = new Set(),
+        eggs = new Set(),
+        landings = new Set(),
+        splashes = new Set();
+    const label = (sourceId) => {
+        if (blasts.has(sourceId)) return 'blast';
+        if (eggs.has(sourceId)) return 'egg';
+        if (landings.has(sourceId)) return 'heroLand';
+        if (splashes.has(sourceId)) return 'splash';
+        const source = sim.units.find((o) => o.id === sourceId);
+        if (source) {
+            const d = UnitDefinition.get(source.type);
+            if (source.heroRoll) return 'heroRoll';
+            if (d?.rolling) return 'roll';
+            if (d?.spinAttack) return 'spin';
+            if (d?.leapAttack) return 'leap';
+            return 'contact';
+        }
+        if (sim.projectiles.some((p) => p.id === sourceId) || /^p\d+$/.test(String(sourceId)))
+            return 'shell';
+        if (String(sourceId).includes('|')) return 'lob';
+        return 'other';
+    };
     return {
         observe() {
             blasts.clear();
+            eggs.clear();
+            landings.clear();
+            splashes.clear();
             for (const event of sim.events)
                 if (event.type === 'unitSelfDestruct') blasts.add(event.sourceId);
+                else if (event.type === 'unitLobExplosion') eggs.add(event.projectileId);
+                else if (event.type === 'heroRollLand') landings.add(event.sourceId);
+                else if (event.type === 'spinBasicImpact') splashes.add(event.sourceId);
             for (const unit of sim.units) {
                 const m = unit.impactMotion,
                     before = previous.get(unit.id);
-                if (!m) continue;
+                if (!m) {
+                    previous.delete(unit.id);
+                    continue;
+                }
                 let entry = entries.get(unit.id);
-                if (
-                    !entry &&
-                    m.kind === 'knockback' &&
-                    before?.startTick !== m.startTick &&
-                    (blasts.has(m.sourceId) ||
-                        UnitDefinition.get(sim.units.find((o) => o.id === m.sourceId)?.type)
-                            ?.spinAttack)
-                ) {
+                if (!entry && m.kind === 'knockback' && before?.startTick !== m.startTick) {
                     const source = sim.units.find((o) => o.id === m.sourceId);
+                    const kind = label(m.sourceId);
                     entry = {
-                        source: blasts.has(m.sourceId) ? 'blast' : 'spin',
+                        source: kind,
+                        sourceType: source?.type ?? null,
+                        sourceSpeed:
+                            kind === 'roll' ? round(sourceSpeed.get(m.sourceId) ?? 0) : null,
                         target: unit.type,
+                        mass: sim.mass(unit),
                         tick: m.startTick,
                         x0: before?.x ?? unit.x,
                         y0: before?.y ?? unit.y,
@@ -251,18 +288,31 @@ function createKnockbackProbe(sim) {
                         lift: round((m.vzFP - (before?.vz ?? 0)) / FP),
                         peak: 0,
                         top: 0,
+                        airTicks: null,
+                        airDist: null,
                         dist: 0,
                         ticks: 0,
                         done: false,
+                        ...(trace ? { path: [] } : {}),
                     };
                     entries.set(unit.id, entry);
-                    void source;
                 }
                 if (entry && !entry.done) {
+                    const d = Math.hypot(unit.x - entry.x0, unit.y - entry.y0);
                     entry.peak = Math.max(entry.peak, m.heightFP / FP);
                     entry.top = Math.max(entry.top, Math.hypot(m.vxFP, m.vyFP) / FP);
-                    entry.dist = round(Math.hypot(unit.x - entry.x0, unit.y - entry.y0));
+                    entry.dist = round(d);
                     entry.ticks = sim.tick - entry.tick;
+                    if (
+                        entry.airTicks === null &&
+                        sim.tick > entry.tick &&
+                        m.heightFP === 0 &&
+                        m.vzFP <= 0
+                    ) {
+                        entry.airTicks = entry.ticks;
+                        entry.airDist = round(d);
+                    }
+                    if (trace) entry.path.push([round(d), round(m.heightFP / FP)]);
                     if (
                         sim.tick > entry.tick + 2 &&
                         m.heightFP === 0 &&
@@ -279,14 +329,32 @@ function createKnockbackProbe(sim) {
                     vz: m.vzFP,
                 });
             }
+            let out = 0;
+            for (const unit of sim.units)
+                if (
+                    unit.x < 0 ||
+                    unit.y < 0 ||
+                    unit.x > sim.world.width ||
+                    unit.y > sim.world.height
+                )
+                    out++;
+            outside = Math.max(outside, out);
+            for (const unit of sim.units)
+                if (UnitDefinition.get(unit.type)?.rolling && unit.impactMotion)
+                    sourceSpeed.set(
+                        unit.id,
+                        Math.hypot(unit.impactMotion.vxFP, unit.impactMotion.vyFP) / FP,
+                    );
         },
         state() {
             return [...entries.values()].map((e) => ({
                 ...e,
                 peak: round(e.peak),
                 top: round(e.top),
+                angle: round((Math.atan2(e.lift, e.speed) * 180) / Math.PI),
             }));
         },
+        outside: () => outside,
     };
 }
 
@@ -748,10 +816,64 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     1,
                     [unitType(scene, 'enemy', params.enemy)],
                     integer(scene, 'enemyCount', params.enemyCount),
-                    { x: at.x + dir.x * 300, y: at.y + dir.y * 300 },
+                    {
+                        x:
+                            at.x +
+                            dir.x *
+                                (params.gap === undefined
+                                    ? 300
+                                    : integer(scene, 'gap', params.gap)),
+                        y:
+                            at.y +
+                            dir.y *
+                                (params.gap === undefined
+                                    ? 300
+                                    : integer(scene, 'gap', params.gap)),
+                    },
                     { x: -dir.x, y: -dir.y },
                 );
-            const probe = createKnockbackProbe(sim),
+            // shell=<type>: the host base fires one launch shell of that card (its payload's impact, splash and count)
+            // at the enemy block, so the shell's landing knockback can be measured.
+            if (params.shell !== undefined) {
+                const type = unitType(scene, 'shell', params.shell),
+                    payload = LaunchRules.grain(type),
+                    gap = params.gap === undefined ? 300 : integer(scene, 'gap', params.gap),
+                    base = sim.buildings.find((b) => b.id === 'base0'),
+                    walk = UnitDefinition.get(params.enemy)?.speed || 0;
+                // Lead the aim by how far the enemy block walks toward the host while the shell flies.
+                let lead = 0;
+                for (let k = 0; k < 3; k++) {
+                    const ax = at.x + dir.x * (gap - lead),
+                        ay = at.y + dir.y * (gap - lead);
+                    lead =
+                        (walk * Math.hypot(ax - base.x, ay - base.y)) /
+                        LaunchRules.shellSpeed(type);
+                }
+                sim.fireLaunchShell({
+                    side: 0,
+                    cannonId: 'base0',
+                    type,
+                    mode: 'single',
+                    shot: 0,
+                    shots: 1,
+                    power: 1,
+                    holdMs: 0,
+                    arcDistance: null,
+                    x: at.x + dir.x * (gap - lead),
+                    y: at.y + dir.y * (gap - lead),
+                    count: payload.count,
+                    impact: payload.impact,
+                    splash: payload.splash,
+                });
+            }
+            // heroSkill=1: the placed heroes are sortied and their active skill (hero roll) is queued.
+            if (flag(scene, 'heroSkill', params.heroSkill))
+                for (const u of sim.units)
+                    if (u.side === 0 && UnitDefinition.get(u.type)?.heroActive) {
+                        sim.heroes[0][u.type] = { sortieId: 'p1', mode: 'advance', unitId: u.id };
+                        u.heroRollQueued = true;
+                    }
+            const probe = createKnockbackProbe(sim, flag(scene, 'trace', params.trace)),
                 fight = createFightProbe(sim);
             return matchScene(scene, params, sim, {
                 zoom: 1.6,
@@ -762,6 +884,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 },
                 extra: () => ({
                     knockback: probe.state(),
+                    outside: probe.outside(),
                     fight: fight.state(),
                     enemySpread: spread(sim, 1),
                 }),
@@ -878,15 +1001,22 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          */
         'ai-match'(params) {
             const sim = createMatchSim('ai-match', params.map, params.seed);
+            const bots = attachBots(sim),
+                probe = createKnockbackProbe(sim, flag('ai-match', 'trace', params.trace));
             return matchScene('ai-match', params, sim, {
                 zoom: 1,
                 focus: () => battleFocus(sim),
-                beforeStep: attachBots(sim),
+                beforeStep: () => {
+                    probe.observe();
+                    bots();
+                },
                 isComplete: () => sim.baseOutcome() !== null,
                 extra: () => ({
                     winner: sim.baseOutcome(),
                     wallet: sim.wallet.slice(),
                     launches: sim.launchStats.launches.slice(),
+                    knockback: probe.state(),
+                    outside: probe.outside(),
                 }),
             });
         },

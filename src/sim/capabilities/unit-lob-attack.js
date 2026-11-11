@@ -5,7 +5,9 @@
 import { FP } from '../../core/config.js';
 import { RallyGamekit } from '../../core/gamekit.js';
 import { UnitLobPhysics } from './unit-lob-physics.js';
+import { KnockbackRules } from '../../definitions/knockback-rules.js';
 import { LaunchImpact } from '../launch-impact.js';
+import { Knockback } from '../knockback.js';
 import { IndexList } from '../index-list.js';
 
 const EXPLOSION_BUILDING_QUERY = new IndexList();
@@ -155,13 +157,16 @@ export class UnitLobAttack {
         shot.vyFP = Math.round((vy + (impulse / spec.mass) * hit.ny) * FP);
         shot.vzFP = Math.round((vz + (impulse / spec.mass) * hit.nz) * FP);
         if (unit) {
+            // The struck body takes the exchange along the ground and leaves it at the shared knockback angle.
             const previous = unit.impactMotion;
             sim.navigation.motion.applyImpulse(
                 unit,
                 {
                     x: (body.x - (previous?.vxFP || 0) / FP) * targetMass - impulse * hit.nx,
                     y: (body.y - (previous?.vyFP || 0) / FP) * targetMass - impulse * hit.ny,
-                    z: (body.z - (previous?.vzFP || 0) / FP) * targetMass - impulse * hit.nz,
+                    z:
+                        (body.z - (previous?.vzFP || 0) / FP) * targetMass +
+                        Math.abs(impulse) * Math.hypot(hit.nx, hit.ny) * KnockbackRules.liftRatio,
                 },
                 {
                     kind: 'knockback',
@@ -262,6 +267,18 @@ export class UnitLobAttack {
             zFP: shot.zFP,
             subtick: shot.landedAtSubtick,
             radius,
+        });
+        // The egg bursts: a small throw, since the egg weighs little.
+        Knockback.area(sim, {
+            side: shot.side,
+            sourceId: shot.id,
+            x,
+            y,
+            radius,
+            impactHeightFP: shot.zFP,
+            mass: shot.spec.mass,
+            speed: KnockbackRules.impactSpeed,
+            gain: KnockbackRules.gain.burst,
         });
         sim.applyAreaDamage({
             sourceSide: shot.side,

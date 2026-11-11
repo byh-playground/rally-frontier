@@ -1,4 +1,5 @@
 import { BuildingDefinition } from '../definitions/buildings.js';
+import { KnockbackRules } from '../definitions/knockback-rules.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { ResourceDisplay } from './resource-display.js';
@@ -130,7 +131,7 @@ export function unitCardStats(type, rangeLevel, copy) {
                 ],
                 ['무게', number.format(unit.mass)],
                 ['같은 적 재타격', seconds(rolling.rehitMs)],
-                ['맞은 적 넉백 배수', `×${number.format(rolling.knockback)}`],
+                ['맞은 적 넉백 배수', `×${number.format(KnockbackRules.gain.roll)}`],
                 ['벽 반발', number.format(rolling.wallRestitution)],
                 ['최고 속도 건물 피해', number.format(rolling.buildingDamageAtTop)],
             ],

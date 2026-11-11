@@ -4,7 +4,9 @@
 //   시간을 적용하며 비행·대기 상태는 저장·복원·해시에 포함한다.
 import { FP } from '../../core/config.js';
 import { LaunchImpactRules } from '../../definitions/launch-impact-rules.js';
+import { KnockbackRules } from '../../definitions/knockback-rules.js';
 import { LaunchImpact } from '../launch-impact.js';
+import { Knockback } from '../knockback.js';
 import { IndexList } from '../index-list.js';
 
 const IMPACT_QUERY = new IndexList();
@@ -93,6 +95,20 @@ export class UnitLeapAttack {
         const impact = spec.impact;
         if (!impact) return;
         const heightFP = Math.round(sim.world.terrain.surfaces.heightAt(unit.x, unit.y) * FP);
+        // The body comes down at the speed it leapt up with and throws the grounded enemies around it first.
+        if (sim.canAttackEntity(unit.type, null))
+            Knockback.area(sim, {
+                side: unit.side,
+                sourceId: unit.id,
+                x: unit.x,
+                y: unit.y,
+                radius: impact.radius,
+                impactHeightFP: heightFP,
+                mass: sim.mass(unit),
+                speed: spec.lift,
+                gain: KnockbackRules.gain.area,
+                falloff: impact.knockbackFalloff,
+            });
         const found = sim.nearbyUnits(
             unit.x,
             unit.y,
@@ -114,15 +130,6 @@ export class UnitLeapAttack {
                 impact.radius
             )
                 continue;
-            LaunchImpact.start(sim, target, {
-                dx: target.x - unit.x,
-                dy: target.y - unit.y,
-                speed: impact.knockbackSpeed,
-                lift: impact.knockbackLift,
-                sourceId: unit.id,
-                originX: unit.x,
-                originY: unit.y,
-            });
             sim.applyDamage(
                 unit.side,
                 unit.type,

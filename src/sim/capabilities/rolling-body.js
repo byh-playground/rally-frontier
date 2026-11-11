@@ -11,8 +11,9 @@
 //   가는 길을 따르고, 그것도 없으면 목표를 곧장 향한다. 길찾기는 조향 방향만 정하고 물리는 그대로다.
 //   회전 한도는 turnRateSlow에서 turnRateTop으로 속도 비율에 따라 선형으로 줄어든다(빠를수록 크게 돈다).
 //   접촉은 공용 접촉 풀이(GameKit contact-solver, UnitMotion.solveContacts)가 시간순으로 내주고 respond가 답한다.
-//   적과는 질량·반발 e의 운동량 교환 J=−(1+e)·v_n/(1/M+1/m)로 양쪽 속도가 바뀌고, 맞은 적은 넉백 비율만큼 띄워지며
-//   (재타격 대기 밖의 첫 타격은 knockback배의 속도·띄움, 같은 접촉의 반복은 1배)
+//   적과는 질량·반발 e(KnockbackRules.restitution)의 운동량 교환 J=−(1+e)·v_n/(1/M+1/m)로 양쪽 속도가 바뀌고,
+//   맞은 적은 공용 넉백 발사각(KnockbackRules.liftRatio)으로 띄워지며
+//   (재타격 대기 밖의 첫 타격은 구르는 몸 배수 KnockbackRules.gain.roll배의 속도·띄움, 같은 접촉의 반복은 1배)
 //   피해는 round(J·damagePerImpulse)다. 호두가 낀 쌍도 다른 몸끼리와 같은 틱당 접촉 예산을 쓴다(넘치면 겹쳐 지나감).
 //   아군은 접촉이 아니다: 모든 몸이 움직이고 겹침 풀기까지 끝난 뒤 겹친 지상 아군을
 //   호두 밖으로 위치만 밀어낸다(pushAllies). 아군은 피해·속도 변화가 없고 호두 속도도 그대로다.
@@ -32,7 +33,7 @@
 import { BuildingDefinition } from '../../definitions/buildings.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { FP } from '../../core/config.js';
-import { LaunchImpactRules } from '../../definitions/launch-impact-rules.js';
+import { KnockbackRules } from '../../definitions/knockback-rules.js';
 import { EntityKey } from '../entities.js';
 import { InteractionGeometry, NavigationGoal } from '../navigation.js';
 import { RallyGamekit } from '../../core/gamekit.js';
@@ -40,9 +41,6 @@ import { IndexList } from '../index-list.js';
 const { RESPONSE_BOUNCE } = RallyGamekit;
 
 const DEGREE = Math.PI / 180;
-// A struck enemy also leaves the ground in the proportion of the shared knockback (lift per speed),
-// so it flies off ahead of the walnut instead of being shoved along in front of it.
-const KNOCKBACK_LIFT_RATIO = LaunchImpactRules.knockbackLift / LaunchImpactRules.knockbackSpeed;
 // Hits waiting for the end of the contact solve, per simulation. Damage changes hit points and deaths, so it is
 // applied once every body has moved for the tick. A hit is two references (source unit, target unit or building)
 // and HIT_NUMBERS numbers (amount, x, y, nx, ny, building 0/1); the arrays only grow, `count` is the live length.
@@ -284,9 +282,9 @@ class RollingBody {
     // A contact the solver hands over with at least one rolling body; false leaves it to the standard response.
     // Walls and buildings: hostile building damage from the entry speed, then a bounce with the walnut's own
     // restitution. A zero-time repeat at the limit bounces the rolling body once; later repeats stick as usual.
-    // An enemy: momentum exchange with the unit restitution, the struck body thrown by `knockback` times the
-    // impulse on a strike outside the rehit window (the walnut loses speed from the plain exchange only), lifted
-    // in the shared knockback proportion, and the impulse sets the damage. The normal points from j to i.
+    // An enemy: momentum exchange with the knockback restitution, the struck body thrown by the rolling gain times
+    // the impulse on a strike outside the rehit window (the walnut loses speed from the plain exchange only), lifted
+    // at the shared knockback angle so it flies off ahead of the walnut, and the impulse sets the damage. The normal points from j to i.
     static respond(motion, ev) {
         const sim = motion.navigation.sim,
             solver = motion.contacts,
@@ -339,14 +337,9 @@ class RollingBody {
             strikeA = rollingB && this.mayHit(sim, b, unitHitKey(a));
         if (rollingA) a.rolling.bumpTick = sim.tick;
         if (rollingB) b.rolling.bumpTick = sim.tick;
-        const gainA = !rollingA && strikeA ? this.spec(b).knockback : 1,
-            gainB = !rollingB && strikeB ? this.spec(a).knockback : 1,
-            impulse = solver.exchange(
-                ev,
-                this.spec(rollingA ? a : b).unitRestitution,
-                gainA,
-                gainB,
-            ),
+        const gainA = !rollingA && strikeA ? KnockbackRules.gain.roll : 1,
+            gainB = !rollingB && strikeB ? KnockbackRules.gain.roll : 1,
+            impulse = solver.exchange(ev, KnockbackRules.restitution, gainA, gainB),
             ax = bodies.x[i] / FP,
             ay = bodies.y[i] / FP,
             bx = bodies.x[j] / FP,
@@ -358,7 +351,7 @@ class RollingBody {
                 m = motion.impactRecord(unit);
             if (!rolls)
                 m.vzFP += Math.round(
-                    ((impulse * KNOCKBACK_LIFT_RATIO * (side === 0 ? gainA : gainB)) /
+                    ((impulse * KnockbackRules.liftRatio * (side === 0 ? gainA : gainB)) /
                         sim.mass(unit)) *
                         FP,
                 );

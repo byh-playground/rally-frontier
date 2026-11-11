@@ -11,10 +11,11 @@ import { TerrainSurfaceAtlas } from './terrain.js';
 import { WorldContext } from './world-context.js';
 import { RollingBody } from './capabilities/rolling-body.js';
 import { IndexList } from './index-list.js';
+import { Knockback } from './knockback.js';
+import { KnockbackRules } from '../definitions/knockback-rules.js';
 
-// One list per query: these loops start knockbacks or measure contacts and never query again.
-const IMPULSE_QUERY = new IndexList(),
-    CONTACT_QUERY = new IndexList(),
+// One list per query: these loops measure contacts or release points and never query again.
+const CONTACT_QUERY = new IndexList(),
     CONTACT_BUILDING_QUERY = new IndexList(),
     RELEASE_BUILDING_QUERY = new IndexList(),
     PATH_BUILDING_QUERY = new IndexList();
@@ -80,47 +81,20 @@ class LaunchImpact {
             ),
         };
     }
+    // A launch shell lands as one body: everyone it carries, at the landing speed.
     static blast(sim, p, x, y, radius, impactHeightFP) {
-        this.radialImpulse(sim, { side: p.side, sourceId: p.id, x, y, radius, impactHeightFP });
-    }
-    // `speed` and `lift` are the impulse at the centre of the blast. With `falloff` it fades with distance
-    // from there (a shell); without it every body in reach gets the full impulse (popcorn's burst).
-    static radialImpulse(
-        sim,
-        {
-            side,
-            sourceId,
+        Knockback.area(sim, {
+            side: p.side,
+            sourceId: p.id,
             x,
             y,
             radius,
             impactHeightFP,
-            speed = LaunchImpactRules.knockbackSpeed,
-            lift = LaunchImpactRules.knockbackLift,
-            falloff = true,
-        },
-    ) {
-        const found = sim.nearbyUnits(x, y, radius + sim.maxUnitRadius, 1 - side, IMPULSE_QUERY);
-        for (let k = 0; k < found; k++) {
-            const index = IMPULSE_QUERY.items[k];
-            const u = sim.units[index];
-            if (!u?.alive || u.side !== 1 - side) continue;
-            const dx = u.x - x,
-                dy = u.y - y,
-                body = this.distanceToBody(sim, u, x, y, impactHeightFP),
-                distance = body.falloffDistance,
-                reach = radius + sim.unitRadius(u.type);
-            if (body.surfaceDistance > radius) continue;
-            const strength = falloff ? Math.max(0.1, 1 - distance / reach) : 1;
-            this.start(sim, u, {
-                dx,
-                dy,
-                speed: speed * (0.25 + 0.75 * strength),
-                lift: strength >= 0.5 ? lift * strength : 0,
-                sourceId,
-                originX: x,
-                originY: y,
-            });
-        }
+            // sim.mass reads the payload's unit type.
+            mass: p.payload.count * sim.mass(p.payload),
+            speed: KnockbackRules.impactSpeed,
+            gain: KnockbackRules.gain.area,
+        });
     }
     static deploymentOrigin(sim, p, x, y) {
         const dx = p.lockedAimX - p.launchX,

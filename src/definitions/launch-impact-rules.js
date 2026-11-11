@@ -48,8 +48,6 @@ class LaunchImpactRules {
     // spreads over a smaller circle at about the density of millet's 20-soldier squad.
     static burstSquad = 20;
     static deploymentLift = 250;
-    static knockbackSpeed = 400;
-    static knockbackLift = 250;
     static projectileRadius = 10;
     static interceptFall = Object.freeze({
         safeHeight: 50,
