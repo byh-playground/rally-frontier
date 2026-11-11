@@ -384,6 +384,29 @@ function createFightProbe(sim) {
     };
 }
 
+// How widely one side's live units are scattered: their count, and the mean and largest distance from their centre.
+function spread(sim, side) {
+    let count = 0,
+        sumX = 0,
+        sumY = 0;
+    for (const u of sim.units)
+        if (u.alive && u.side === side) {
+            count++;
+            sumX += u.x;
+            sumY += u.y;
+        }
+    if (!count) return { count, mean: 0, max: 0 };
+    let sum = 0,
+        max = 0;
+    for (const u of sim.units)
+        if (u.alive && u.side === side) {
+            const d = Math.hypot(u.x - sumX / count, u.y - sumY / count);
+            sum += d;
+            max = Math.max(max, d);
+        }
+    return { count, mean: round(sum / count), max: round(max) };
+}
+
 // Pairs of live units whose collision discs overlap now, and the summed overlap depth (world units).
 function overlap(sim) {
     const units = sim.units.filter((unit) => unit.alive);
@@ -735,7 +758,11 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     probe.observe();
                     fight.observe();
                 },
-                extra: () => ({ knockback: probe.state(), fight: fight.state() }),
+                extra: () => ({
+                    knockback: probe.state(),
+                    fight: fight.state(),
+                    enemySpread: spread(sim, 1),
+                }),
             });
         },
         /**

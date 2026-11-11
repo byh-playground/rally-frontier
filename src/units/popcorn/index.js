@@ -24,6 +24,8 @@ export const Popcorn = defineUnit({
             radius: 80,
             damage: 40,
             ...HEAVY_KNOCKBACK,
+            // Every enemy inside the radius flies like an acorn hit, not only the ones at the centre.
+            knockbackFalloff: false,
         }),
     },
     payload: {
