@@ -1,3 +1,4 @@
+import { drawUnitQuads } from '../../render/dead-unit-look.js';
 // Approved chestnut body, limbs, face and thorn occupy one GPU atlas.
 const ROOT = new URL('../../../assets/sprites/chestnut/', import.meta.url);
 const FILES = Object.freeze(['parts.png', 'thorn.png', 'burr.png']);
@@ -339,7 +340,7 @@ export class ChestnutSpriteRenderer {
     draw(data, actor, matrix, depth, alpha = 1, threshold = 0, color = [1, 1, 1, 1]) {
         const c = this.context;
         c.depth = depth;
-        c.drawQuads({
+        drawUnitQuads(c, this.paint, {
             layer: this.atlas.region.layer,
             filter: this.atlas.region.filter,
             ...data,

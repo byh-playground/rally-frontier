@@ -1,5 +1,6 @@
 // Approved popcorn character parts from the reviewed movement mockup.
 import { GRAIN_RIG as RICE_RIG } from '../../render/grain-rig.js';
+import { drawUnitQuads } from '../../render/dead-unit-look.js';
 
 const ROOT = new URL('../../../assets/sprites/popcorn/', import.meta.url);
 const FILES = Object.freeze(['parts.png']);
@@ -282,7 +283,7 @@ export class PopcornSpriteRenderer {
     draw(data, actor, matrix, depth, alpha = 1, threshold = 0) {
         const c = this.context;
         c.depth = depth;
-        c.drawQuads({
+        drawUnitQuads(c, this.paint, {
             layer: this.atlas.region.layer,
             filter: this.atlas.region.filter,
             ...data,

@@ -1,5 +1,6 @@
 // Approved bean artwork is assembled once into a shared texture; poses are evaluated by GameKit.
 import { GRAIN_RIG as RICE_RIG } from './grain-rig.js';
+import { drawUnitQuads } from './dead-unit-look.js';
 const root = new URL('../../assets/sprites/beans/', import.meta.url);
 const slots = Object.freeze({
     'pea-body': [1, 1, 290, 270],
@@ -220,7 +221,7 @@ export class BeanSpriteRenderer {
     draw(data, actor, matrix, depth, threshold = 0) {
         const c = this.context;
         c.depth = depth;
-        c.drawQuads({
+        drawUnitQuads(c, this.paint, {
             layer: this.atlas.region.layer,
             filter: this.atlas.region.filter,
             ...data,

@@ -68,6 +68,7 @@ import {
 import { GRAIN_SPRITES } from './render/grain-sprite-registry.js';
 import { heroBasicAttackElapsedMs, HERO_BASIC_STRIKE_MS } from './render/hero-basic-motion.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
+import { DEAD_UNIT_LOOK, DeadUnitLook } from './render/dead-unit-look.js';
 import {
     CONFIG,
     FP,
@@ -1241,6 +1242,18 @@ class GLRenderer {
         this.visionFields = [null, null];
         this.fogVisibilityGrids = new Map();
         this.visibleUnitFrame = [];
+        // Dead units still flying (DeadUnitLook): ids drawn as corpses this frame, each corpse's last ground
+        // point until its landing burst, and the clocks of those bursts (renderer-owned, aged per frame).
+        this.flyingCorpses = new Set();
+        this.corpseTracks = new Map();
+        this.corpseFrame = 0;
+        this.corpseBurstClocks = [];
+        this.corpseBurstSequence = 0;
+        // Units whose death already burst (at death or on landing): one burst per unit through rollback
+        // corrections and short flights. Cleared with the other presentation state on a seek or new map.
+        this.corpseBurstIds = new Set();
+        this.corpseBurstEvent = { x: 0, y: 0, entity: '', side: null };
+        this.corpseBurstSnapshot = { tick: 0, presentationClock: null };
 
         // High-frequency renderer pools. They are presentation-only and deliberately
         // excluded from deterministic state. Sizes are bounded to prevent hidden growth.
@@ -2198,12 +2211,85 @@ class GLRenderer {
         return u.side === this.mySide() || this.visibleRaw(u.x, u.y);
     }
     prepareVisibleUnitFrame() {
-        const out = this.visibleUnitFrame;
+        const out = this.visibleUnitFrame,
+            now = this.presentationNow();
         out.length = 0;
+        this.flyingCorpses.clear();
+        this.corpseFrame++;
+        this.ageCorpseBursts(now);
         // A soldier holding or riding a muzzle is drawn on the cannon instead of at its own position.
-        for (const u of this.renderState.displayed('unit', this.presentationNow()))
+        for (const u of this.renderState.displayed('unit', now)) {
+            if (DeadUnitLook.flying(u) && this.corpseLanded(u, now)) continue;
             if (!this.mountedUnitIds.has(u.id) && this.unitVisibleForRender(u)) out.push(u);
+        }
+        // A corpse the simulation dropped before it was seen landing bursts where it was last drawn; one a
+        // rollback correction brought back to life does not.
+        for (const [id, track] of this.corpseTracks)
+            if (track.frame !== this.corpseFrame) {
+                if (!track.burst && !this.renderState.entity('unit', id)?.alive)
+                    this.burstCorpse(track, now);
+                this.corpseTracks.delete(id);
+            }
         return out;
+    }
+    // Follows a flying corpse to the ground: true once it has landed (it burst and is no longer drawn).
+    corpseLanded(u, now) {
+        const entity = this.renderState.model('unit', u.id, now)?.entity || u;
+        let track = this.corpseTracks.get(u.id);
+        if (!track)
+            this.corpseTracks.set(
+                u.id,
+                (track = {
+                    id: u.id,
+                    x: 0,
+                    y: 0,
+                    type: u.type,
+                    side: u.side,
+                    frame: 0,
+                    burst: false,
+                }),
+            );
+        track.frame = this.corpseFrame;
+        if (track.burst) return true;
+        track.x = entity.x;
+        track.y = entity.y;
+        // The displayed sample can trail the death by a tick and not hold the motion yet: still in flight.
+        if (!entity.impactMotion || !DeadUnitLook.landed(entity.impactMotion)) {
+            this.flyingCorpses.add(u.id);
+            return false;
+        }
+        this.burstCorpse(track, now);
+        return true;
+    }
+    // The landing burst: the death burst, at the corpse's ground point, on a clock this renderer ages.
+    burstCorpse(track, now) {
+        track.burst = true;
+        if (this.corpseBurstIds.has(track.id)) return;
+        this.corpseBurstIds.add(track.id);
+        if (!this.snapshot || (track.side !== this.mySide() && !this.visibleRaw(track.x, track.y)))
+            return;
+        const clock = { ageMs: 0, lifeMs: 0, expired: false, startMs: now },
+            event = this.corpseBurstEvent,
+            snapshot = this.corpseBurstSnapshot;
+        event.x = track.x;
+        event.y = track.y;
+        event.entity = track.type;
+        event.side = track.side;
+        snapshot.tick = this.snapshot.tick;
+        snapshot.presentationClock = clock;
+        this.addClientFx('deathBurst', event, snapshot, ++this.corpseBurstSequence);
+        snapshot.presentationClock = null;
+        if (clock.lifeMs) this.corpseBurstClocks.push(clock);
+    }
+    ageCorpseBursts(now) {
+        const clocks = this.corpseBurstClocks;
+        let write = 0;
+        for (const clock of clocks) {
+            clock.ageMs = now - clock.startMs;
+            if (clock.ageMs >= clock.lifeMs) clock.expired = true;
+            else clocks[write++] = clock;
+        }
+        clocks.length = write;
     }
 
     drawUnitShadow(u, visibilityChecked = false) {
@@ -2217,7 +2303,8 @@ class GLRenderer {
         const height = Math.max(0, body.y - body.groundY),
             shrink = 1 / (1 + height / 220),
             alpha = RangeUtil.clamp(0.17 - height / 850, 0.06, 0.17);
-        if (UnitVisualDefinition.get(u.type)?.billboard) {
+        // A flying corpse keeps a plain ground shadow (its height stays readable) but loses its team ring.
+        if (UnitVisualDefinition.get(u.type)?.billboard && !this.flyingCorpses.has(u.id)) {
             const team = UnitFactionPalette.get(this.factionRelation(u.side)).body,
                 rx = r * 1.05 * shrink,
                 ry = rx * BattlefieldProjection.groundScale,
@@ -2297,6 +2384,8 @@ class GLRenderer {
             this.cornTrailAnchors.clear();
             this.cornBursts.length = 0;
             this.milletBursts.length = 0;
+            this.corpseTracks.clear();
+            this.corpseBurstIds.clear();
         }
         if (snapTargets || !old) this.resetFogTransition();
         this.world = WorldContext.forState(s);
@@ -2616,7 +2705,15 @@ class GLRenderer {
                     thornReplayClock: null,
                 });
             } else if (e.type === 'death') {
-                this.addClientFx('deathBurst', e, snapshot, index);
+                // A unit that dies flying bursts when it lands (prepareVisibleUnitFrame), not here. One whose
+                // short flight already ended in a landing burst does not burst again.
+                if (
+                    !DeadUnitLook.flying(this.renderState.entity('unit', e.id)) &&
+                    !this.corpseBurstIds.has(e.id)
+                ) {
+                    if (e.id != null) this.corpseBurstIds.add(e.id);
+                    this.addClientFx('deathBurst', e, snapshot, index);
+                }
             } else if (e.type === 'buildingDeath') {
                 this.addClientFx('buildingBurst', e, snapshot, index);
                 this.triggerClientShake(
@@ -4970,18 +5067,20 @@ class GLRenderer {
                 this.orientationRole() === 'guest' ? -1 : 1,
             );
             grain.depth = RangeUtil.clamp(depth, -0.98, 0.98) - ++rank * GRAIN_DEPTH_RANK_STEP;
-            grain.face =
-                grounded && (clip === 'fire' || spin || roll?.phase)
-                    ? 'attack'
-                    : impact.expression ||
-                      ((record.sprite ? clip === 'hit' : u.hitFlash > 0)
-                          ? 'hurt'
-                          : work?.clip ||
-                              spin ||
-                              selfDestruct ||
-                              (record.sprite ? clip === 'fire' : u.attackFlash > 0)
-                            ? 'attack'
-                            : 'neutral');
+            grain.corpse = this.flyingCorpses.has(u.id);
+            grain.face = grain.corpse
+                ? DEAD_UNIT_LOOK.face
+                : grounded && (clip === 'fire' || spin || roll?.phase)
+                  ? 'attack'
+                  : impact.expression ||
+                    ((record.sprite ? clip === 'hit' : u.hitFlash > 0)
+                        ? 'hurt'
+                        : work?.clip ||
+                            spin ||
+                            selfDestruct ||
+                            (record.sprite ? clip === 'fire' : u.attackFlash > 0)
+                          ? 'attack'
+                          : 'neutral');
             grain.bodyDrawn = false;
         }
         this.vectorContext.preparePoses();
@@ -5031,7 +5130,8 @@ class GLRenderer {
         for (const { kind, entity: u } of entries) {
             if (kind !== 'unit') continue;
             const grain = this.grainActors.get(u.id);
-            if (!grain || grain.frame !== this.grainActorFrame) continue;
+            // A see-through corpse must not write depth: it is drawn in painter order (drawGrainUnit).
+            if (!grain || grain.frame !== this.grainActorFrame || grain.corpse) continue;
             if (grain.sprite) {
                 this.riceBodyGroup.push(grain);
                 continue;
@@ -5091,6 +5191,10 @@ class GLRenderer {
         C.depthTest = !!this.passState.depthEnabled;
         C.depthWrite = false;
         C.depthFunc = this.passState.depthFunc || 'lequal';
+        if (grain.sprite && grain.corpse) {
+            this.drawGrainCorpse(grain);
+            return;
+        }
         if (grain.sprite) {
             if (!grain.bodyDrawn) grain.compiled.drawBody(grain.actor, grain.matrix, grain.depth);
             // Effects that trail behind a body, drawn just behind it.
@@ -5119,6 +5223,23 @@ class GLRenderer {
         C.depth = grain.depth - GRAIN_DEPTH_RANK_STEP / 2;
         // Budmori faces: shared eye/mouth/cheek atlas parts placed on this body's posed face sockets.
         this.grainFaces.draw(grain.compiled, grain.actor, grain.face, grain.matrix, 1);
+        this.vectorAssetDrawnInstances = (this.vectorAssetDrawnInstances || 0) + 1;
+    }
+    // A flying corpse: its body and face in the dead paint, in painter order without depth writes.
+    drawGrainCorpse(grain) {
+        const renderer = grain.compiled;
+        renderer.paint = DEAD_UNIT_LOOK.paint;
+        try {
+            renderer.drawBody(grain.actor, grain.matrix, grain.depth);
+            renderer.drawFace(
+                grain.actor,
+                grain.matrix,
+                grain.depth - GRAIN_DEPTH_RANK_STEP / 2,
+                grain.face,
+            );
+        } finally {
+            renderer.paint = null;
+        }
         this.vectorAssetDrawnInstances = (this.vectorAssetDrawnInstances || 0) + 1;
     }
     grainActor(u, record) {

@@ -1,5 +1,6 @@
 // Approved corn character, kernel and popcorn remain separate components in one GPU atlas.
 import { GRAIN_RIG as RICE_RIG } from '../../render/grain-rig.js';
+import { drawUnitQuads } from '../../render/dead-unit-look.js';
 
 const ROOT = new URL('../../../assets/sprites/corn/', import.meta.url);
 const FRIENDLY_MARKER = Object.freeze([0.3, 0.55, 1, 1]);
@@ -334,7 +335,7 @@ export class CornSpriteRenderer {
     draw(data, actor, matrix, depth, alpha = 1, threshold = 0) {
         const c = this.context;
         c.depth = depth;
-        c.drawQuads({
+        drawUnitQuads(c, this.paint, {
             layer: this.atlas.region.layer,
             filter: this.atlas.region.filter,
             ...data,

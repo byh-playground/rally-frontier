@@ -1,3 +1,4 @@
+import { drawUnitQuads } from '../../render/dead-unit-look.js';
 // Approved millet parts; forward charge position comes from authoritative unit movement.
 const ROOT = new URL('../../../assets/sprites/millet/', import.meta.url);
 const FILES = Object.freeze(['parts.png', 'ear.png']);
@@ -291,7 +292,7 @@ export class MilletSpriteRenderer {
     draw(data, actor, matrix, depth, threshold = 0, alpha = 1) {
         const c = this.context;
         c.depth = depth;
-        c.drawQuads({
+        drawUnitQuads(c, this.paint, {
             layer: this.atlas.region.layer,
             filter: this.atlas.region.filter,
             ...data,

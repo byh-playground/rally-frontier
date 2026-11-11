@@ -1,3 +1,4 @@
+import { drawUnitQuads } from '../../render/dead-unit-look.js';
 const ROOT = new URL('../../../assets/sprites/peanut/', import.meta.url);
 const SHEET_SIZE = [500, 248];
 const STANDING_HEIGHT = 228;
@@ -225,7 +226,7 @@ export class PeanutSpriteRenderer {
 
     draw(data, matrix, depth, actor = null, depthWriteAlphaThreshold = 0) {
         this.context.depth = depth;
-        this.context.drawQuads({
+        drawUnitQuads(this.context, this.paint, {
             layer: this.region.layer,
             filter: this.region.filter,
             ...data,

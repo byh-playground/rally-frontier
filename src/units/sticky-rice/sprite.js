@@ -1,3 +1,4 @@
+import { drawUnitQuads } from '../../render/dead-unit-look.js';
 const ROOT = new URL('../../../assets/sprites/sticky-rice/', import.meta.url);
 const SHEET_SIZE = [640, 470];
 // Body top to the feet's ground contact in sheet units. A standing sticky rice is 80% of rice's 343.5.
@@ -272,7 +273,7 @@ export class StickyRiceSpriteRenderer {
 
     draw(data, matrix, depth, actor = null, depthWriteAlphaThreshold = 0) {
         this.context.depth = depth;
-        this.context.drawQuads({
+        drawUnitQuads(this.context, this.paint, {
             layer: this.region.layer,
             filter: this.region.filter,
             ...data,

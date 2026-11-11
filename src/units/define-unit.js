@@ -24,7 +24,9 @@
 //            Optional renderer methods the shared drawing calls when present: prepareExtraArt,
 //            drawHeldKernel, drawWrapOverlay (StickyCling), drawRide (CannonRider), drawFlight and
 //            drawImpact (a 'soldier' shell), drawBehind (trailing effects just behind the body),
-//            actor.setTeam and actor.setRootStage.
+//            actor.setTeam and actor.setRootStage. The renderer draws its body and face quads
+//            through drawUnitQuads(context, this.paint, …) (render/dead-unit-look.js): main.js sets
+//            `paint` around a flying corpse's drawBody/drawFace, and its `hurt` face is the corpse's.
 const REQUIRED = ['unit', 'payload', 'visual', 'card'];
 
 export function defineUnit({ id, hero = false, help = [], ...parts }) {

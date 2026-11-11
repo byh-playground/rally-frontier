@@ -1,6 +1,7 @@
 import { createHeroBasicAttackClip } from '../../render/hero-basic-motion.js';
 
 import { WATERMELON_RIND_RADIUS_X } from './index.js';
+import { drawUnitQuads } from '../../render/dead-unit-look.js';
 
 const PARTS = [
     { id: 'body', parent: null, pivot: [0, 0] },
@@ -316,7 +317,7 @@ export class WatermelonSpriteRenderer {
 
     draw(data, matrix, depth, actor = null, depthWriteAlphaThreshold = 0) {
         this.context.depth = depth;
-        this.context.drawQuads({
+        drawUnitQuads(this.context, this.paint, {
             layer: this.region.layer,
             filter: this.region.filter,
             ...data,
