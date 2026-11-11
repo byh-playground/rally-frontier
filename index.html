@@ -121,6 +121,11 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   격추는 공중 섬광과 짧은 잔상을 남기며 내려오는 알갱이로 표시하고, 지면 효과는 실제 착지 시점에 표시한다.
 - 피격·방출은 기존 속도에 Δv=J/mass를 누적한다. 공통 TOI에서 법선·역질량으로 속도를 갱신하고
   남은 시간도 새 속도로 적분한다. 목표 좌표로 밀어내거나 재피격 때 속도를 덮지 않는다.
+- 넉백은 모두 Knockback(src/sim/knockback.js)과 KnockbackRules 한 규칙이다. 공격은 친 몸의 질량 M·속도 v와
+  종류(KnockbackRules.gain: 구르기·범위·기본 공격·폭발·피해에 딸린 충격)만 넘기고, 맞은 몸(질량 m)은
+  J=(1+e)·v·M·m/(M+m)·gain·세기의 J/m을 수평으로, 그 liftRatio배를 위로 받아 모든 넉백이 같은 발사각으로 뜬다.
+  범위 공격의 세기는 중심 거리로 max(edgeStrength, 1−d/reach)이고(자폭 정의의 knockbackFalloff가 false면 1),
+  이미 공중에 뜬 몸은 범위 공격에 다시 던져지지 않는다. 넉백은 체력을 보지 않아 그 타격으로 죽은 몸도 날아간다.
 - 포탄·방출 경계의 새 impulse는 속도에 즉시 반영하고 XY/Z 모두 다음 물리 틱부터 적분한다.
   접촉 수 때문에 전역 남은 시간을 버리지 않으며 위치 보정은 잔여 침투 안정화에만 쓴다.
 - 한 틱의 접촉은 GameKit ContactSolver(UnitMotion.solveContacts)가 begin → 몸 열 채움 → next/응답 → end →
@@ -128,7 +133,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   옮겨 다시 cast한다. 몸-몸 접촉은 LaunchImpactRules.unitContactBudget 하나까지만 풀고, 넘친 접촉은 그 틱에
   겹쳐 지나가 이후 겹침 풀기로 풀린다. 벽·건물·맵 경계 접촉은 상한 없이 항상 푼다. 진영 관계는
   LaunchImpactRules.contactRelations(아군 SOFT·적 SOLID)이고, 도약 중인 몸은 실제 높이 구간이 겹칠 때만 만난다.
-- 접촉 응답의 게임 규칙(호두 반발·넉백 배수·재타격 대기·피해 대기열·건물 피해, 영웅 구르기 취소)은
+- 접촉 응답의 게임 규칙(호두 반발·넉백 배수·발사각은 KnockbackRules 값, 재타격 대기·피해 대기열·건물 피해, 영웅 구르기 취소)은
   RollingBody.respond와 UnitMotion.recordContact가 소유하고 공용 코드는 병종 id를 비교하지 않는다.
   모듈은 틱 사이 상태를 갖지 않으며 저장·복원·체크섬은 유닛의 impactMotion·rolling 상태만 본다.
 - 충격 속도·적분 잔여량·높이·회복 시각과 방출 대기열은 저장·복원한다. 회복 중 자발 이동은 제한하고

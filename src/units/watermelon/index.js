@@ -4,6 +4,7 @@ import {
     HERO_MOVE_SPEED,
     HERO_SHELL,
     UNIT_RENDER_RADIUS_SCALE,
+    WALNUT_MASS,
 } from '../baseline.js';
 import { defineUnit } from '../define-unit.js';
 import { VIEW_W } from '../../definitions/world-rules.js';
@@ -32,6 +33,8 @@ export const Watermelon = defineUnit({
         speed: HERO_MOVE_SPEED,
         attackIntervalMs: 500,
         size: WATERMELON_SIZE,
+        // The big rind weighs twice a walnut, so its roll throws harder than a walnut at the same speed.
+        mass: WALNUT_MASS * 2,
         sizeClass: 'heavy',
         role: 'bruiser',
         attackVisual: { sourceMotion: 'smash', travel: 'none', impact: 'light' },
@@ -47,8 +50,6 @@ export const Watermelon = defineUnit({
             rollDistance: WATERMELON_RIND_WORLD_RADIUS * 2 * 3,
             unfoldMs: 100,
             damageRatio: 1,
-            knockbackSpeed: 400,
-            knockbackLift: 300,
         }),
         spinAttack: Object.freeze({
             radius: 150,
@@ -61,8 +62,6 @@ export const Watermelon = defineUnit({
                 splashRadius: 25,
                 splashDamageRatio: 0.5,
             }),
-            knockbackSpeed: 400,
-            knockbackLift: 300,
             tangentRatio: 0,
         }),
     },
@@ -89,7 +88,7 @@ export const Watermelon = defineUnit({
             section: 'hero',
             summary: '수박의 범위 평타와 휩쓸기',
             paragraphs: [
-                '수박의 평타는 맞은 적 주변의 병력에도 피해를 줘요. 병력에게 평타가 네 번 맞으면 다음 공격에 양팔로 몸 주변을 휩쓸어 평타와 같은 피해를 주고 적을 밀어내요.',
+                '수박의 평타는 맞은 적 주변의 병력에도 피해를 주고 살짝 밀어내요. 병력에게 평타가 네 번 맞으면 다음 공격에 양팔로 몸 주변을 휩쓸어 평타와 같은 피해를 주고 적을 밀어내요.',
                 '수박 카드의 점이 모두 차면 다음 공격에 휩쓸기를 써요.',
             ],
         },
@@ -97,7 +96,7 @@ export const Watermelon = defineUnit({
             section: 'hero-skill',
             summary: '수박의 액티브 스킬',
             paragraphs: [
-                '수박은 제자리에서 높이 뛰었다가 착지하면서 충격파로 주변 적 병력에 피해를 줘요. 점프 중에는 바닥의 원이 충격파 범위를, 화살표가 구르기 방향과 경로를 알려 줘요. 처음 겨눈 적 방향으로 몸통 지름의 세 배만큼 굴러가며 몸통 폭에 닿은 적을 밀어내고, 지형이나 건물에 닿으면 멈춰요.',
+                '수박은 제자리에서 높이 뛰었다가 착지하면서 충격파로 주변 적 병력에 피해를 주고 살짝 밀어내요. 점프 중에는 바닥의 원이 충격파 범위를, 화살표가 구르기 방향과 경로를 알려 줘요. 처음 겨눈 적 방향으로 몸통 지름의 세 배만큼 굴러가며 몸통 폭에 닿은 적을 호두처럼 멀리 쳐 내고(맞고 쓰러진 적도 날아가요), 지형이나 건물에 닿으면 멈춰요.',
             ],
         },
     ],

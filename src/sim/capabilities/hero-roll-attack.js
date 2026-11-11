@@ -6,7 +6,8 @@ import { FP } from '../../core/config.js';
 import { RallyGamekit } from '../../core/gamekit.js';
 import { SimulationTiming } from '../../core/simulation-timing.js';
 import { UnitDefinition } from '../../definitions/units.js';
-import { LaunchImpact } from '../launch-impact.js';
+import { KnockbackRules } from '../../definitions/knockback-rules.js';
+import { Knockback } from '../knockback.js';
 import { HashUtil } from '../map-generation.js';
 import { UnitMotion } from '../navigation.js';
 import { IndexList } from '../index-list.js';
@@ -222,6 +223,19 @@ export class HeroRollAttack {
         const definition = UnitDefinition.get(unit.type);
         const { radius, damageRatio } = definition.heroActive.landing;
         const { x, y, side } = unit;
+        const impactHeightFP = Math.round(sim.world.terrain.surfaces.heightAt(x, y) * FP);
+        // The landing shock shoves the enemies around a little before it hurts them.
+        Knockback.area(sim, {
+            side,
+            sourceId: unit.id,
+            x,
+            y,
+            radius,
+            impactHeightFP,
+            mass: sim.mass(unit),
+            speed: KnockbackRules.impactSpeed,
+            gain: KnockbackRules.gain.splash,
+        });
         const { hits } = sim.applyAreaDamage({
             sourceSide: side,
             sourceType: unit.type,
@@ -231,16 +245,25 @@ export class HeroRollAttack {
             radius,
             damage: definition.atk * damageRatio,
             damageClass: UnitDefinition.damageClass(unit.type),
-            impactHeightFP: Math.round(sim.world.terrain.surfaces.heightAt(x, y) * FP),
+            impactHeightFP,
         });
         sim.events.push({ type: 'heroRollLand', side, sourceId: unit.id, x, y, radius, hits });
     }
 
+    // The rolling body strikes the target along the contact normal (from where it touched to the target) before
+    // the damage, so a target the hit kills is thrown too.
     static hit(sim, unit, target, definition, x, y) {
         const spec = definition.heroActive;
-        const { dx, dy } = unit.heroRoll;
-        const side = dx * (target.y - y) - dy * (target.x - x);
-        const sign = Math.sign(side) || (HashUtil.hash(target.id + '|' + unit.id) % 2 ? -1 : 1);
+        Knockback.hit(sim, target, {
+            dx: target.x - x,
+            dy: target.y - y,
+            mass: sim.mass(unit),
+            speed: spec.rollSpeed,
+            gain: KnockbackRules.gain.roll,
+            sourceId: unit.id,
+            originX: x,
+            originY: y,
+        });
         sim.applyDamage(
             unit.side,
             unit.type,
@@ -252,15 +275,6 @@ export class HeroRollAttack {
                 suppressImpactFx: true,
             },
         );
-        LaunchImpact.start(sim, target, {
-            dx: -dy * sign + dx * 0.25,
-            dy: dx * sign + dy * 0.25,
-            speed: spec.knockbackSpeed,
-            lift: spec.knockbackLift,
-            sourceId: unit.id,
-            originX: x,
-            originY: y,
-        });
         sim.events.push({
             type: 'heroRollHit',
             side: unit.side,

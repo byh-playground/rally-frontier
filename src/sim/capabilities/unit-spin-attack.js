@@ -6,10 +6,10 @@
 // - 수박은 병력에 맞힌 범위 평타를 공격당 한 번 센다. 네 번 뒤 다음 병력 공격으로 360도 휩쓸기를
 //   시작하고 평타 기본 피해를 사용한다. 진행 횟수와 회전 상태는 저장·복원·리플레이에 포함한다.
 import { FP } from '../../core/config.js';
-import { LaunchImpactRules } from '../../definitions/launch-impact-rules.js';
+import { KnockbackRules } from '../../definitions/knockback-rules.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { LaunchImpact } from '../launch-impact.js';
-import { HashUtil } from '../map-generation.js';
+import { Knockback } from '../knockback.js';
 import { UnitMotion } from '../navigation.js';
 import { IndexList } from '../index-list.js';
 
@@ -24,7 +24,7 @@ const START_QUERY = new IndexList(),
 // unit's position: external impulses and collision resolution remain active.
 export class UnitSpinAttack {
     static validate(spec) {
-        for (const key of ['radius', 'windupMs', 'activeMs', 'recoverMs', 'knockbackSpeed']) {
+        for (const key of ['radius', 'windupMs', 'activeMs', 'recoverMs']) {
             if (!Number.isFinite(spec?.[key]) || spec[key] <= 0)
                 throw new TypeError(`회전 공격 설정이 올바르지 않습니다: ${key}`);
         }
@@ -38,11 +38,6 @@ export class UnitSpinAttack {
             throw new TypeError('회전 타격의 병사 수 제한이 올바르지 않습니다.');
         if (!Number.isFinite(spec.tangentRatio) || spec.tangentRatio < 0)
             throw new TypeError('회전 공격의 접선 비율이 올바르지 않습니다.');
-        if (
-            spec.knockbackLift != null &&
-            (!Number.isFinite(spec.knockbackLift) || spec.knockbackLift < 0)
-        )
-            throw new TypeError('회전 공격의 수직 충격량이 올바르지 않습니다.');
     }
 
     static heightFP(sim, unit) {
@@ -271,12 +266,27 @@ export class UnitSpinAttack {
             const index = SPLASH_QUERY.items[k];
             const other = sim.units[index];
             if (!other?.alive || other === target || !UnitMotion.isGrounded(other)) continue;
+            const body = LaunchImpact.distanceToBody(sim, other, x, y, heightFP);
             if (
-                LaunchImpact.distanceToBody(sim, other, x, y, heightFP).surfaceDistance >
-                    rhythm.splashRadius ||
+                body.surfaceDistance > rhythm.splashRadius ||
                 !sim.world.terrain.field.polygonSegmentClear(x, y, other.x, other.y, 0)
             )
                 continue;
+            // The splash shoves away from the struck body, a small area hit by the swinging arm.
+            Knockback.hit(sim, other, {
+                dx: other.x - x,
+                dy: other.y - y,
+                mass: sim.mass(unit),
+                speed: KnockbackRules.swingSpeed,
+                gain: KnockbackRules.gain.splash,
+                strength: KnockbackRules.strength(
+                    body.falloffDistance,
+                    rhythm.splashRadius + sim.unitRadius(other.type),
+                ),
+                sourceId: unit.id,
+                originX: x,
+                originY: y,
+            });
             sim.applyDamage(unit.side, unit.type, other, false, splashDamage, unit.id, {
                 sourceDamageResolved: true,
             });
@@ -290,39 +300,18 @@ export class UnitSpinAttack {
             dy = ry + rx * spec.tangentRatio;
         const capture = {};
         sim.applyDamage(unit.side, unit.type, target, false, damage, unit.id, { capture });
+        // A dodged swing throws nothing; a lethal one still throws the body.
         if (!(capture.dealt > 0)) return false;
-        if (target.alive) {
-            LaunchImpact.start(sim, target, {
-                dx,
-                dy,
-                speed: spec.knockbackSpeed,
-                lift: spec.knockbackLift || 0,
-                sourceId: unit.id,
-                originX: unit.x,
-                originY: unit.y,
-            });
-        } else {
-            // Lethal hits keep their impulse until the common corpse lifecycle retires the unit.
-            const angle = ((HashUtil.hash(target.id + '|' + unit.id) % 8) * Math.PI) / 4;
-            const distance = Math.hypot(dx, dy);
-            const nx = distance ? dx / distance : Math.cos(angle);
-            const ny = distance ? dy / distance : Math.sin(angle);
-            const mass = LaunchImpactRules.referenceMass;
-            sim.navigation.motion.applyImpulse(
-                target,
-                {
-                    x: nx * spec.knockbackSpeed * mass,
-                    y: ny * spec.knockbackSpeed * mass,
-                    z: (spec.knockbackLift || 0) * mass,
-                },
-                {
-                    kind: 'knockback',
-                    sourceId: unit.id,
-                    originX: unit.x,
-                    originY: unit.y,
-                },
-            );
-        }
+        Knockback.hit(sim, target, {
+            dx,
+            dy,
+            mass: sim.mass(unit),
+            speed: KnockbackRules.swingSpeed,
+            gain: KnockbackRules.gain.basic,
+            sourceId: unit.id,
+            originX: unit.x,
+            originY: unit.y,
+        });
         return true;
     }
 

@@ -1,19 +1,25 @@
-import { BASIC_MELEE, GRAIN_SIZE, RESOURCE_SCALE, SINGLE_BUNDLE_SHELL } from '../baseline.js';
+import {
+    BASIC_MELEE,
+    GRAIN_SIZE,
+    RESOURCE_SCALE,
+    SINGLE_BUNDLE_SHELL,
+    WALNUT_MASS,
+} from '../baseline.js';
 import { defineUnit } from '../define-unit.js';
+import { KnockbackRules } from '../../definitions/knockback-rules.js';
 
 // 초안: the walnut's rolling numbers. Its top speed is four times a plain soldier's walk.
-const WALNUT_MASS = 1600;
 const WALNUT_TOP_SPEED = BASIC_MELEE.speed * 4;
-const WALNUT_UNIT_RESTITUTION = 0.5;
 // A plain soldier's mass (UnitDefinition's light default).
 const SOLDIER_MASS = 100;
 // The momentum exchange of a head-on hit on a standing plain soldier at 80 % of the top speed
 // takes all of its health, so a hit at full speed always kills it.
-const SOLDIER_KILL_IMPULSE =
-    (1 + WALNUT_UNIT_RESTITUTION) *
-    ((WALNUT_MASS * SOLDIER_MASS) / (WALNUT_MASS + SOLDIER_MASS)) *
-    0.8 *
-    WALNUT_TOP_SPEED;
+const SOLDIER_KILL_IMPULSE = KnockbackRules.impulse(
+    WALNUT_MASS,
+    WALNUT_TOP_SPEED * 0.8,
+    SOLDIER_MASS,
+    1,
+);
 
 export const Walnut = defineUnit({
     id: 'walnut',
@@ -46,15 +52,11 @@ export const Walnut = defineUnit({
             // Degrees per second at rest and at top speed, linear in between.
             turnRateSlow: 180,
             turnRateTop: 45,
-            unitRestitution: WALNUT_UNIT_RESTITUTION,
             wallRestitution: 0.6,
             damagePerImpulse: BASIC_MELEE.hp / SOLDIER_KILL_IMPULSE,
             // Damage to an enemy building hit straight on at the top speed.
             buildingDamageAtTop: 40,
             rehitMs: 500,
-            // 초안: the struck enemy is thrown by this many times the exchanged impulse (speed and lift);
-            // the walnut's own speed loss and the damage stay at the plain exchange.
-            knockback: 3,
         }),
     },
     // 비용(식량 50·기름 75)·한 발에 하나는 확정, 포탄 체력·위력·반경은 찹쌀과 같은 초안이다.

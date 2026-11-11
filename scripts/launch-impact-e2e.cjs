@@ -1145,7 +1145,8 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                         );
                     }
             }
-            // Two real shell shocks must add momentum; an opposite shock must cancel instead of replacing it.
+            // A real shell shock throws a grounded body off the ground; a second shock in the same tick, same or opposite,
+            // finds it in the air and does not throw it again (KnockbackRules: area hits only throw grounded bodies).
             {
                 const run = (directions) => {
                     const { sim, x, y } = arena(),
@@ -1153,7 +1154,11 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     for (const [i, direction] of directions.entries())
                         LaunchImpact.blast(
                             sim,
-                            { id: 'impulse-hit-' + i, side: 0 },
+                            {
+                                id: 'impulse-hit-' + i,
+                                side: 0,
+                                payload: { type: 'rice', count: 1 },
+                            },
                             direction > 0 ? x : x + 60,
                             y,
                             100,
@@ -1178,22 +1183,19 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     doubled = run([1, 1]),
                     cancelled = run([1, -1]);
                 check(
-                    single.travel > 0 && doubled.travel > single.travel * 1.5,
-                    'two same-direction hits add momentum instead of replacing the first velocity',
-                    { single, doubled },
+                    single.travel > 0 && single.peakHeightFP > 0,
+                    'a shell shock throws a grounded body up and away',
+                    single,
                 );
                 check(
-                    doubled.peakHeightFP > single.peakHeightFP * 1.5,
-                    'repeated shocks also add vertical momentum instead of taking the larger lift',
-                    { single, doubled },
-                );
-                check(
-                    Math.abs(cancelled.travel) < single.travel / 4,
-                    'equal opposite hits cancel horizontal momentum instead of overwriting its direction',
-                    { single, cancelled },
+                    JSON.stringify(doubled) === JSON.stringify(single) &&
+                        JSON.stringify(cancelled) === JSON.stringify(single),
+                    'a second shock, same or opposite, does not throw a body already in the air',
+                    { single, doubled, cancelled },
                 );
                 rows.push({
-                    scenario: 'repeated shell shocks add and opposing shocks cancel',
+                    scenario:
+                        'a shell shock throws a grounded body once; a body in the air is not thrown again',
                     single,
                     doubled,
                     cancelled,
@@ -1680,7 +1682,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     { x: 0, y: 800 * sim.mass(victim), z: 0 },
                     { sourceId: 'crossing-impulse' },
                 );
-                shell(sim, x, y, { startX: x - 60, count: 0 });
+                shell(sim, x, y, { startX: x - 60, count: 1 });
                 sim.stepSimulation();
                 const impact = sim.events.find((e) => e.type === 'launchImpact');
                 check(
@@ -1747,7 +1749,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 const { sim, x, y } = arena(),
                     center = defender(sim, x + 30, y),
                     edge = defender(sim, x + 90, y);
-                shell(sim, x, y, { count: 0 });
+                shell(sim, x, y, { count: 1 });
                 const initial = [center.x, edge.x],
                     peaks = [0, 0],
                     maxTravel = [0, 0];
@@ -1817,7 +1819,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     sim.rebuildRuntimeIndexes();
                 }
                 const u = defender(sim, x + 65, y);
-                shell(sim, x + 15, y, { count: 0 });
+                shell(sim, x + 15, y, { count: 1 });
                 let moved = false,
                     previous = u.x;
                 step(sim, 15, () => {
@@ -1834,7 +1836,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 const { sim, x, y } = arena(),
                     enemy = defender(sim, x + 30, y),
                     ally = defender(sim, x + 90, y, 0);
-                shell(sim, x, y, { count: 0 });
+                shell(sim, x, y, { count: 1 });
                 let minimumGap = Infinity,
                     observedImpulse = false;
                 step(sim, 15, () => {
@@ -1862,7 +1864,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 const { sim, x, y } = arena(),
                     victimX = altitude === 'high' ? x - 300 : x - 5;
                 const u = defender(sim, victimX, y);
-                shell(sim, x, y, { startX: altitude === 'high' ? victimX - 30 : x - 25, count: 0 });
+                shell(sim, x, y, { startX: altitude === 'high' ? victimX - 30 : x - 25, count: 1 });
                 const initialHP = u.hp;
                 sim.stepSimulation();
                 if (altitude === 'high')
@@ -1902,7 +1904,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                             originY: victim.y,
                             sourceId: 'qa-existing-flight',
                         };
-                    shell(sim, x, y, { startX: x - 14, count: 0 });
+                    shell(sim, x, y, { startX: x - 14, count: 1 });
                     const shot = sim.projectiles.at(-1),
                         projectileHeight = LaunchImpact.projectileHeight(sim, shot, shot.x, shot.y);
                     check(
@@ -2182,7 +2184,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                             sourceId: 'qa-existing-flight',
                         };
                     const hp = victim.hp;
-                    shell(sim, x, y, { count: 0 });
+                    shell(sim, x, y, { count: 1 });
                     sim.stepSimulation();
                     if (bottom)
                         check(
@@ -2216,7 +2218,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     observer = defender(sim, x - 200, y, 0);
                 victim.hp = 1;
                 observer.target = victim.id;
-                shell(sim, x, y, { count: 0 });
+                shell(sim, x, y, { count: 1 });
                 sim.stepSimulation();
                 check(!victim.alive && victim.hp <= 0, 'lethal shell immediately ends target life');
                 check(

@@ -1,10 +1,12 @@
 // Contract (moved from the index.html Development Contract):
 // - 팝콘은 팥의 도약 이동을 사용하되 정점 높이는 약 절반이다. 착지하면 자폭 한 번을 처리하고,
 //   이미 가까운 적에게는 기존 준비 동작으로 자폭한다.
-// - 자폭 넉백의 거리 감쇠는 정의의 `knockbackFalloff`가 정한다. 팝콘은 false라 반경 안의 적이 모두
-//   중심에서 바깥쪽으로 같은 세기(도토리 회전 타격과 같은 HEAVY_KNOCKBACK)로 날아간다.
+// - 자폭은 터지는 몸(자기 질량, KnockbackRules.impactSpeed)의 폭발(gain.burst) 넉백이다. 거리 감쇠는 정의의
+//   `knockbackFalloff`가 정한다. 팝콘은 false라 반경 안의 땅에 있는 적이 모두 중심에서 바깥쪽으로 같은 세기로 날아간다.
 import { FP } from '../../core/config.js';
+import { KnockbackRules } from '../../definitions/knockback-rules.js';
 import { LaunchImpact } from '../launch-impact.js';
+import { Knockback } from '../knockback.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { IndexList } from '../index-list.js';
 
@@ -55,6 +57,7 @@ export class UnitSelfDestructAttack {
             side: unit.side,
             sourceId: unit.id,
             sourceType: unit.type,
+            mass: sim.mass(unit),
             heightFP:
                 Math.round(sim.world.terrain.surfaces.heightAt(unit.x, unit.y) * FP) +
                 (unit.impactMotion?.heightFP || 0),
@@ -69,7 +72,7 @@ export class UnitSelfDestructAttack {
             const queue = sim._selfDestructQueue || [];
             for (let i = 0; i < queue.length; i++) {
                 const burst = queue[i],
-                    { x, y, side, sourceId, sourceType, heightFP, spec } = burst;
+                    { x, y, side, sourceId, sourceType, mass, heightFP, spec } = burst;
                 sim.events.push({
                     type: 'unitSelfDestruct',
                     side,
@@ -80,15 +83,16 @@ export class UnitSelfDestructAttack {
                     zFP: heightFP,
                     radius: spec.radius,
                 });
-                LaunchImpact.radialImpulse(sim, {
+                Knockback.area(sim, {
                     side,
                     sourceId,
                     x,
                     y,
                     radius: spec.radius,
                     impactHeightFP: heightFP,
-                    speed: spec.knockbackSpeed,
-                    lift: spec.knockbackLift,
+                    mass,
+                    speed: KnockbackRules.impactSpeed,
+                    gain: KnockbackRules.gain.burst,
                     falloff: spec.knockbackFalloff,
                 });
                 sim.applyAreaDamage({

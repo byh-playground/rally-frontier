@@ -23,8 +23,8 @@ export const Redbean = defineUnit({
             impact: Object.freeze({
                 radius: 50,
                 damageScale: 1,
-                knockbackSpeed: 250,
-                knockbackLift: 250,
+                // The ring is about the body itself: everyone under the landing is thrown alike.
+                knockbackFalloff: false,
             }),
         }),
     },
