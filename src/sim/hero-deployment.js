@@ -209,7 +209,7 @@ export class HeroDeployment {
             .map((cannon) => {
                 const distance = Math.hypot(cannon.x - unit.x, cannon.y - unit.y);
                 const radius = sim.buildingClearanceDistance(unit, cannon) + RETURN_PADDING;
-                const goal = NavigationGoal.range(cannon.x, cannon.y, radius, 0, true);
+                const goal = NavigationGoal.range(cannon.x, cannon.y, radius, 0, true, true);
                 // Stop slightly inside the actual recovery radius so fixed-point rounding can
                 // never strand the unit just outside the threshold it is aiming for.
                 const arrival = new NavigationGoal(cannon.x, cannon.y, radius, 0, true);
@@ -256,7 +256,7 @@ export class HeroDeployment {
         const arrived = sites.find((site) => site.arrived);
         if (arrived) return arrived;
         const routes = sim.navigation.paths.route,
-            kept = sites.find((site) => site.goal.key === unit.route?.goal);
+            kept = sites.find((site) => routes.follows(unit, site.goal));
         if (kept) {
             if (routes.knownUnreachable(unit, kept.goal)) return null;
             if (routes.reaches(unit, kept.goal)) return kept;

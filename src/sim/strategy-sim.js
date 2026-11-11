@@ -442,6 +442,8 @@ class StrategySim {
         }
         const missionState = CampaignMission.initialize(this);
         if (missionState) this.campaignMission = missionState;
+        // Loading: every radius bucket's chunk and portal structure, before the first tick asks for a field.
+        this.navigation.prepare();
     }
     dispose(reason = 'disposed') {
         if (this.disposed) return false;
@@ -972,7 +974,11 @@ class StrategySim {
                 distance > readyDistance + 1 ||
                 this.terrainLevelAt(u.x, u.y) !== this.terrainLevelAt(b.x, b.y)
             ) {
-                this.moveToGoal(u, NavigationGoal.range(b.x, b.y, readyDistance, 0, true), speed);
+                this.moveToGoal(
+                    u,
+                    NavigationGoal.range(b.x, b.y, readyDistance, 0, true, true),
+                    speed,
+                );
                 return true;
             }
             work.cycleStartedAtTick = this.tick;
@@ -3995,7 +4001,9 @@ class StrategySim {
             this.navigation.motion = new UnitMotion(this.navigation);
         }
         this.navigation.sceneTick = -1;
-        this.navigation.sync();
+        // A kept (rollback) navigation follows the restored layout by its change rectangles; a new one is built now.
+        if (this.navigation === retainedNavigation) this.navigation.sync();
+        else this.navigation.prepare();
         this.rebuildRuntimeIndexes();
     }
     snapshot() {
