@@ -1857,6 +1857,7 @@ class StrategySim {
             UnitResultStats.add(this.unitResultStats, sourceSide, sourceType, 'kills');
         this.events.push({
             type: 'death',
+            id: target.id,
             side: target.side,
             x: target.x,
             y: target.y,

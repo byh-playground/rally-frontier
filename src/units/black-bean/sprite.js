@@ -1,3 +1,4 @@
+import { drawUnitQuads } from '../../render/dead-unit-look.js';
 const ROOT = new URL('../../../assets/sprites/black-bean/', import.meta.url);
 const SHEET_SIZE = [740, 540];
 // The enemy helmet is the same cell repainted in enemy colors and baked below the sheet.
@@ -363,7 +364,7 @@ export class BlackBeanSpriteRenderer {
 
     draw(data, matrix, depth, actor = null, depthWriteAlphaThreshold = 0) {
         this.context.depth = depth;
-        this.context.drawQuads({
+        drawUnitQuads(this.context, this.paint, {
             layer: this.region.layer,
             filter: this.region.filter,
             ...data,

@@ -1,4 +1,5 @@
 import { GRAIN_RIG as RICE_RIG } from '../../render/grain-rig.js';
+import { drawUnitQuads } from '../../render/dead-unit-look.js';
 // Rice texture regions and motion use the approved part artwork.  Pose evaluation
 // remains in GameKit; the game supplies only pivots, clips and display state.
 const assetRoot = new URL('../../../assets/sprites/rice/', import.meta.url);
@@ -318,7 +319,7 @@ export class RiceSpriteRenderer {
     draw(data, actor, matrix, depth, { depthWriteAlphaThreshold = 0 } = {}) {
         const C = this.context;
         C.depth = depth;
-        C.drawQuads({
+        drawUnitQuads(C, this.paint, {
             layer: this.atlas.region.layer,
             filter: this.atlas.region.filter,
             ...data,

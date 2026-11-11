@@ -1,3 +1,4 @@
+import { drawUnitQuads } from '../../render/dead-unit-look.js';
 // Approved acorn artwork and motion, prepared once for GameKit GPU poses.
 const ROOT = new URL('../../../assets/sprites/acorn/', import.meta.url);
 const FILES = Object.freeze(['parts.png', 'ammo.png']);
@@ -384,7 +385,7 @@ export class AcornSpriteRenderer {
     draw(data, actor, matrix, depth, threshold = 0) {
         const c = this.context;
         c.depth = depth;
-        c.drawQuads({
+        drawUnitQuads(c, this.paint, {
             layer: this.atlas.region.layer,
             filter: this.atlas.region.filter,
             ...data,

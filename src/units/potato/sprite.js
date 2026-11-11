@@ -1,3 +1,4 @@
+import { drawUnitQuads } from '../../render/dead-unit-look.js';
 const ROOT = new URL('../../../assets/sprites/potato/', import.meta.url);
 const SHEET_SIZE = [680, 360];
 // Body top to the feet's ground contact in sheet units. A standing potato is as tall as rice's 343.5 (초안).
@@ -434,7 +435,7 @@ export class PotatoSpriteRenderer {
 
     draw(data, matrix, depth, actor = null, depthWriteAlphaThreshold = 0) {
         this.context.depth = depth;
-        this.context.drawQuads({
+        drawUnitQuads(this.context, this.paint, {
             layer: this.region.layer,
             filter: this.region.filter,
             ...data,

@@ -125,8 +125,12 @@ function createTickLog() {
     const ticks = [],
         tickMs = [],
         samples = [],
-        contacts = { skippedPairs: 0, maxSkippedPairs: 0, maxPairContacts: 0, maxCasts: 0 };
-    let last = null;
+        contacts = { skippedPairs: 0, maxSkippedPairs: 0, maxPairContacts: 0, maxCasts: 0 },
+        // A dead unit stays in the sim (and on screen) while it still has impact motion: ticks in the air, sliding
+        // on the ground, and lying still until its recovery tick, per unit id.
+        corpses = new Map();
+    let last = null,
+        deaths = 0;
     const summary = (values) => {
         if (!values.length) return null;
         const sorted = [...values].sort((a, b) => a - b);
@@ -154,6 +158,16 @@ function createTickLog() {
             contacts.maxPairContacts = Math.max(contacts.maxPairContacts, stats.pairContacts);
             contacts.maxCasts = Math.max(contacts.maxCasts, stats.casts);
             last = { ...stats };
+            for (const event of sim.events) if (event.type === 'death') deaths++;
+            for (const unit of sim.units) {
+                const motion = unit.impactMotion;
+                if (unit.alive || !motion) continue;
+                let corpse = corpses.get(unit.id);
+                if (!corpse) corpses.set(unit.id, (corpse = { air: 0, slide: 0, rest: 0 }));
+                if (motion.heightFP > 0 || motion.vzFP > 0) corpse.air++;
+                else if (motion.vxFP || motion.vyFP) corpse.slide++;
+                else corpse.rest++;
+            }
         },
         state(times) {
             const slowest = tickMs.indexOf(Math.max(...tickMs));
@@ -177,6 +191,20 @@ function createTickLog() {
                       }
                     : null,
                 contacts: { ...contacts, last },
+                corpses: {
+                    deaths,
+                    moving: corpses.size,
+                    ...Object.fromEntries(
+                        ['air', 'slide', 'rest', 'total'].map((phase) => {
+                            const values = [...corpses.values()].map((corpse) =>
+                                phase === 'total'
+                                    ? corpse.air + corpse.slide + corpse.rest
+                                    : corpse[phase],
+                            );
+                            return [phase, values.length ? summary(values) : null];
+                        }),
+                    ),
+                },
                 ...(times ? { tickTimes: tickMs.map(round) } : {}),
             };
         },

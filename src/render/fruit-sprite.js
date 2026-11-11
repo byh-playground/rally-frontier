@@ -1,4 +1,5 @@
 import { createHeroBasicAttackClip } from './hero-basic-motion.js';
+import { drawUnitQuads } from './dead-unit-look.js';
 
 const ROOT = new URL('../../assets/sprites/', import.meta.url);
 const artwork = new WeakMap();
@@ -303,7 +304,7 @@ export class FruitSpriteRenderer {
 
     draw(data, matrix, depth, actor = null, depthWriteAlphaThreshold = 0) {
         this.context.depth = depth;
-        this.context.drawQuads({
+        drawUnitQuads(this.context, this.paint, {
             layer: this.region.layer,
             filter: this.region.filter,
             ...data,

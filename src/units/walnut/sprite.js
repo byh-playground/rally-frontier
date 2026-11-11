@@ -4,6 +4,7 @@
 import { GRAIN_SIZE, GRAIN_SPRITE_BASE_SCALE, UNIT_RENDER_RADIUS_SCALE } from '../baseline.js';
 import { Walnut } from './index.js';
 import { FP } from '../../core/config.js';
+import { drawUnitQuads } from '../../render/dead-unit-look.js';
 
 const ROOT = new URL('../../../assets/sprites/walnut/', import.meta.url);
 const SHEET_SIZE = [900, 800];
@@ -311,7 +312,7 @@ export class WalnutSpriteRenderer {
 
     draw(name, matrix, depth, alpha = 1, depthWriteAlphaThreshold = 0) {
         this.context.depth = depth;
-        this.context.drawQuads({
+        drawUnitQuads(this.context, this.paint, {
             layer: this.region.layer,
             filter: this.region.filter,
             ...this.cells[name],

@@ -1,3 +1,4 @@
+import { drawUnitQuads } from '../../render/dead-unit-look.js';
 const ROOT = new URL('../../../assets/sprites/sunflower-seed/', import.meta.url);
 const SHEET_WIDTH = 624;
 const SHEET_HEIGHT = 282;
@@ -338,7 +339,7 @@ export class SunflowerSeedSpriteRenderer {
 
     draw(data, matrix, depth, actor = null, depthWriteAlphaThreshold = 0) {
         this.context.depth = depth;
-        this.context.drawQuads({
+        drawUnitQuads(this.context, this.paint, {
             layer: this.region.layer,
             filter: this.region.filter,
             ...data,
