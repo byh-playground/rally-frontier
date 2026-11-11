@@ -11,6 +11,13 @@ import { UnitDefinition } from '../../definitions/units.js';
 import { LaunchImpact } from '../launch-impact.js';
 import { HashUtil } from '../map-generation.js';
 import { UnitMotion } from '../navigation.js';
+import { IndexList } from '../index-list.js';
+
+// Query lists per call site: a pulse's hits can kill a bursting unit, whose blast queries its own lists.
+const START_QUERY = new IndexList(),
+    PULSE_QUERY = new IndexList(),
+    SPLASH_QUERY = new IndexList(),
+    SWEEP_QUERY = new IndexList();
 
 // The unit owns the complete authoritative interval. The caller consumes its
 // ordinary movement/target action while this returns true, without pinning the
@@ -57,36 +64,34 @@ export class UnitSpinAttack {
         )
             return false;
         const z = this.heightFP(sim, unit);
-        const found = sim.withNearbyUnits(
+        const unitCount = sim.nearbyUnits(
             unit.x,
             unit.y,
             spec.radius + sim.maxUnitRadius,
             1 - unit.side,
-            (indices) => {
-                for (const index of indices) {
-                    const target = sim.units[index];
-                    if (
-                        !target?.alive ||
-                        !UnitMotion.isGrounded(target) ||
-                        target.side === unit.side ||
-                        !sim.canAttackEntity(unit.type, target)
-                    )
-                        continue;
-                    if (!sim.canSeeCombatTarget(unit.side, target, vision)) continue;
-                    if (!this.inReach(sim, unit, target, spec, z)) continue;
-                    return true;
-                }
-                return false;
-            },
+            START_QUERY,
         );
-        if (found) return true;
+        for (let k = 0; k < unitCount; k++) {
+            const target = sim.units[START_QUERY.items[k]];
+            if (
+                !target?.alive ||
+                !UnitMotion.isGrounded(target) ||
+                target.side === unit.side ||
+                !sim.canAttackEntity(unit.type, target)
+            )
+                continue;
+            if (!sim.canSeeCombatTarget(unit.side, target, vision)) continue;
+            if (this.inReach(sim, unit, target, spec, z)) return true;
+        }
         if (spec.arcSweep) return false;
-        for (const index of sim.nearbyBuildingIndices(
+        const buildingCount = sim.nearbyBuildingIndices(
             unit.x,
             unit.y,
             spec.radius + sim.maxBuildingRadius,
-        )) {
-            const target = sim.buildings[index];
+            START_QUERY,
+        );
+        for (let k = 0; k < buildingCount; k++) {
+            const target = sim.buildings[START_QUERY.items[k]];
             if (
                 !sim.isHostileCombatBuilding(unit.side, target) ||
                 !sim.canAttackEntity(unit.type, target, true)
@@ -158,47 +163,44 @@ export class UnitSpinAttack {
 
         const z = this.heightFP(sim, unit);
         let hits = 0;
-        sim.withNearbyUnits(
+        sim.nearbyUnits(
             unit.x,
             unit.y,
             spec.radius + sim.maxUnitRadius,
             1 - unit.side,
-            (indices) => {
-                // Nearest target first; stable IDs resolve equal distances.
-                indices.sort((a, b) => {
-                    const da = (sim.units[a].x - unit.x) ** 2 + (sim.units[a].y - unit.y) ** 2;
-                    const db = (sim.units[b].x - unit.x) ** 2 + (sim.units[b].y - unit.y) ** 2;
-                    const left = String(sim.units[a].id),
-                        right = String(sim.units[b].id);
-                    return da - db || (left < right ? -1 : left > right ? 1 : 0);
-                });
-                for (const index of indices) {
-                    const target = sim.units[index];
-                    if (
-                        !target?.alive ||
-                        !UnitMotion.isGrounded(target) ||
-                        target.side === unit.side ||
-                        !sim.canAttackEntity(unit.type, target)
-                    )
-                        continue;
-                    if (!this.inReach(sim, unit, target, spec, z)) continue;
-                    if (!this.hitUnit(sim, unit, target, spec, damage)) continue;
-                    hits++;
-                    if (hits >= spec.maxUnitHitsPerPulse) break;
-                }
-            },
+            PULSE_QUERY,
         );
+        // Nearest target first; stable IDs resolve equal distances.
+        PULSE_QUERY.sort((a, b) => {
+            const da = (sim.units[a].x - unit.x) ** 2 + (sim.units[a].y - unit.y) ** 2;
+            const db = (sim.units[b].x - unit.x) ** 2 + (sim.units[b].y - unit.y) ** 2;
+            const left = String(sim.units[a].id),
+                right = String(sim.units[b].id);
+            return da - db || (left < right ? -1 : left > right ? 1 : 0);
+        });
+        for (let k = 0; k < PULSE_QUERY.count; k++) {
+            const target = sim.units[PULSE_QUERY.items[k]];
+            if (
+                !target?.alive ||
+                !UnitMotion.isGrounded(target) ||
+                target.side === unit.side ||
+                !sim.canAttackEntity(unit.type, target)
+            )
+                continue;
+            if (!this.inReach(sim, unit, target, spec, z)) continue;
+            if (!this.hitUnit(sim, unit, target, spec, damage)) continue;
+            hits++;
+            if (hits >= spec.maxUnitHitsPerPulse) break;
+        }
         let winner = null;
-        const buildings = sim
-            .nearbyBuildingIndices(unit.x, unit.y, spec.radius + sim.maxBuildingRadius)
-            .slice();
-        buildings.sort((a, b) => {
+        sim.nearbyBuildingIndices(unit.x, unit.y, spec.radius + sim.maxBuildingRadius, PULSE_QUERY);
+        PULSE_QUERY.sort((a, b) => {
             const left = String(sim.buildings[a].id),
                 right = String(sim.buildings[b].id);
             return left < right ? -1 : left > right ? 1 : 0;
         });
-        for (const index of buildings) {
-            const target = sim.buildings[index];
+        for (let k = 0; k < PULSE_QUERY.count; k++) {
+            const target = sim.buildings[PULSE_QUERY.items[k]];
             if (
                 !sim.isHostileCombatBuilding(unit.side, target) ||
                 !sim.canAttackEntity(unit.type, target, true)
@@ -258,28 +260,27 @@ export class UnitSpinAttack {
             basicHits: unit.spinAttackBasicHits,
         });
         const splashDamage = Math.max(1, Math.floor(damage * rhythm.splashDamageRatio));
-        sim.withNearbyUnits(
+        const found = sim.nearbyUnits(
             x,
             y,
             rhythm.splashRadius + sim.maxUnitRadius,
             1 - unit.side,
-            (indices) => {
-                for (const index of indices) {
-                    const other = sim.units[index];
-                    if (!other?.alive || other === target || !UnitMotion.isGrounded(other))
-                        continue;
-                    if (
-                        LaunchImpact.distanceToBody(sim, other, x, y, heightFP).surfaceDistance >
-                            rhythm.splashRadius ||
-                        !sim.world.terrain.field.polygonSegmentClear(x, y, other.x, other.y, 0)
-                    )
-                        continue;
-                    sim.applyDamage(unit.side, unit.type, other, false, splashDamage, unit.id, {
-                        sourceDamageResolved: true,
-                    });
-                }
-            },
+            SPLASH_QUERY,
         );
+        for (let k = 0; k < found; k++) {
+            const index = SPLASH_QUERY.items[k];
+            const other = sim.units[index];
+            if (!other?.alive || other === target || !UnitMotion.isGrounded(other)) continue;
+            if (
+                LaunchImpact.distanceToBody(sim, other, x, y, heightFP).surfaceDistance >
+                    rhythm.splashRadius ||
+                !sim.world.terrain.field.polygonSegmentClear(x, y, other.x, other.y, 0)
+            )
+                continue;
+            sim.applyDamage(unit.side, unit.type, other, false, splashDamage, unit.id, {
+                sourceDamageResolved: true,
+            });
+        }
     }
 
     static hitUnit(sim, unit, target, spec, damage) {
@@ -338,38 +339,37 @@ export class UnitSpinAttack {
         const midpoint = (from + to) / 2;
         const halfArc = (to - from) / 2;
         const heightFP = this.heightFP(sim, unit);
-        sim.withNearbyUnits(
+        const found = sim.nearbyUnits(
             unit.x,
             unit.y,
             spec.radius + sim.maxUnitRadius,
             1 - unit.side,
-            (indices) => {
-                for (const index of indices) {
-                    const target = sim.units[index];
-                    if (
-                        !target?.alive ||
-                        target.side !== 1 - unit.side ||
-                        Object.hasOwn(spin.hitIds, target.id) ||
-                        !UnitMotion.isGrounded(target) ||
-                        !sim.canAttackEntity(unit.type, target) ||
-                        !this.inReach(sim, unit, target, spec, heightFP)
-                    )
-                        continue;
-                    const dx = target.x - unit.x,
-                        dy = target.y - unit.y,
-                        distance = Math.hypot(dx, dy),
-                        radius = sim.unitRadius(target.type),
-                        angle = Math.atan2(dy, dx) - midpoint;
-                    const padding = distance <= radius ? Math.PI : Math.asin(radius / distance);
-                    // Doubling folds both opposing arm angles onto the same interval.
-                    const offset =
-                        Math.abs(Math.atan2(Math.sin(2 * angle), Math.cos(2 * angle))) / 2;
-                    if (offset > halfArc + padding) continue;
-                    spin.hitIds[target.id] = true;
-                    this.hitUnit(sim, unit, target, spec, damage);
-                }
-            },
+            SWEEP_QUERY,
         );
+        for (let k = 0; k < found; k++) {
+            const index = SWEEP_QUERY.items[k];
+            const target = sim.units[index];
+            if (
+                !target?.alive ||
+                target.side !== 1 - unit.side ||
+                Object.hasOwn(spin.hitIds, target.id) ||
+                !UnitMotion.isGrounded(target) ||
+                !sim.canAttackEntity(unit.type, target) ||
+                !this.inReach(sim, unit, target, spec, heightFP)
+            )
+                continue;
+            const dx = target.x - unit.x,
+                dy = target.y - unit.y,
+                distance = Math.hypot(dx, dy),
+                radius = sim.unitRadius(target.type),
+                angle = Math.atan2(dy, dx) - midpoint;
+            const padding = distance <= radius ? Math.PI : Math.asin(radius / distance);
+            // Doubling folds both opposing arm angles onto the same interval.
+            const offset = Math.abs(Math.atan2(Math.sin(2 * angle), Math.cos(2 * angle))) / 2;
+            if (offset > halfArc + padding) continue;
+            spin.hitIds[target.id] = true;
+            this.hitUnit(sim, unit, target, spec, damage);
+        }
     }
 
     static cancel(sim, unit) {

@@ -7,6 +7,7 @@
  * 연출)로 돈다. 표시는 가상 시계로 틱에서만 시간을 읽어 같은 주소가 같은 그림을 만들고, 시뮬레이션 틱
  * 시간은 실제 시계로 잰다(StrategySim.step의 기존 계측).
  */
+import { BuildingDefinition } from './definitions/buildings.js';
 import { FP } from './core/config.js';
 import { GameRuleRuntime } from './core/game-rules.js';
 import { BotController } from './ai/bot-controller.js';
@@ -222,7 +223,23 @@ function overlap(sim) {
             pairs++;
             depth += (reach - distance) / FP;
         }
-    return { pairs, depth: round(depth) };
+    // Live units whose disc reaches more than half a unit into terrain or into a building's body.
+    let terrain = 0,
+        buildings = 0;
+    for (const unit of units) {
+        const radius = sim.radiusFP(unit) / FP - 0.5;
+        if (!sim.world.terrain.field.polygonCircleClear(unit.x, unit.y, radius)) terrain++;
+        for (const building of sim.buildings)
+            if (
+                building.alive !== false &&
+                Math.hypot(unit.x - building.x, unit.y - building.y) <
+                    radius + (BuildingDefinition.get(building.type)?.size || 0)
+            ) {
+                buildings++;
+                break;
+            }
+    }
+    return { pairs, depth: round(depth), embedded: { terrain, buildings } };
 }
 
 export function createDebugScenes({ createRenderer, createScenario, createPresentationView }) {
@@ -415,7 +432,31 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 );
                 RollingBody.aim(walnut, facing.x, facing.y);
             }
-        return matchScene(scene, params, sim, { zoom: 1.4, focus: () => center });
+        return matchScene(scene, params, sim, {
+            zoom: 1.4,
+            focus: () => center,
+            // The walnuts still rolling: how many, and their mean and top speed (world units per second).
+            extra: () => {
+                let rolling = 0,
+                    sum = 0,
+                    top = 0;
+                for (const unit of sim.units) {
+                    if (!unit.alive || !unit.rolling) continue;
+                    const motion = unit.impactMotion,
+                        speed = motion ? Math.hypot(motion.vxFP || 0, motion.vyFP || 0) / FP : 0;
+                    rolling++;
+                    sum += speed;
+                    top = Math.max(top, speed);
+                }
+                return {
+                    walnuts: {
+                        alive: rolling,
+                        meanSpeed: rolling ? round(sum / rolling) : 0,
+                        topSpeed: round(top),
+                    },
+                };
+            },
+        });
     }
 
     return {
@@ -448,7 +489,33 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 start,
                 dir,
             );
-            return matchScene(scene, params, sim, { zoom: 1.4, focus: followUnits(sim, start) });
+            const goal = sim.buildings.find((b) => b.id === 'base1');
+            return matchScene(scene, params, sim, {
+                zoom: 1.4,
+                focus: followUnits(sim, start),
+                // How far the column got: along the start direction (mean, front) and to the enemy base (nearest).
+                extra: () => {
+                    let sum = 0,
+                        front = -Infinity,
+                        nearest = Infinity,
+                        alive = 0;
+                    for (const u of sim.units) {
+                        if (!u.alive || u.side !== 0) continue;
+                        const along = (u.x - start.x) * dir.x + (u.y - start.y) * dir.y;
+                        sum += along;
+                        front = Math.max(front, along);
+                        nearest = Math.min(nearest, Math.hypot(u.x - goal.x, u.y - goal.y));
+                        alive++;
+                    }
+                    return {
+                        march: {
+                            meanProgress: alive ? Math.round((sum / alive) * 100) / 100 : 0,
+                            frontProgress: Math.round(front * 100) / 100,
+                            nearestToBase: Math.round(nearest * 100) / 100,
+                        },
+                    };
+                },
+            });
         },
         /**
          * `count`명의 `unit`을 (`x`,`y`)에 세운다. 평소처럼 적 본진으로 가고, `enemy`·`enemyCount`가 있으면 그 적

@@ -2,6 +2,11 @@ import { RallyGamekit } from '../../core/gamekit.js';
 import { LaunchImpact } from '../launch-impact.js';
 import { FP } from '../../core/config.js';
 import { BuildingDefinition } from '../../definitions/buildings.js';
+import { IndexList } from '../index-list.js';
+
+// One list per query: a sweep's loops only measure contacts and never query again.
+const BODY_QUERY = new IndexList(),
+    BUILDING_QUERY = new IndexList();
 
 const { ContactHit, SweptCircleContact, SurfaceContactGeometry } = RallyGamekit;
 const EPS = 1e-7;
@@ -414,81 +419,89 @@ export class UnitLobPhysics {
                 zEnd,
                 apex > 0 && apex < dt ? this.height(shot, dt, apex / dt, spec.gravity) : -Infinity,
             );
-        if (!skipUnits)
-            sim.withNearbyUnits((shot.x + end.x) / 2, (shot.y + end.y) / 2, reach, (indices) => {
-                for (const i of indices) {
-                    const unit = sim.units[i];
-                    if (!unit?.alive || (unit.id === shot.sourceId && !shot.clearedSource))
-                        continue;
-                    const radius = sim.unitRadius(unit.type),
-                        pad = radius + spec.radius;
-                    const coarse =
-                        pad + (sim.collisionMaxStepMovementFP || 0) / FP + maxBodySpeed * dt;
+        if (!skipUnits) {
+            const found = sim.nearbyUnits(
+                (shot.x + end.x) / 2,
+                (shot.y + end.y) / 2,
+                reach,
+                null,
+                BODY_QUERY,
+            );
+            for (let k = 0; k < found; k++) {
+                const i = BODY_QUERY.items[k];
+                const unit = sim.units[i];
+                if (!unit?.alive || (unit.id === shot.sourceId && !shot.clearedSource)) continue;
+                const radius = sim.unitRadius(unit.type),
+                    pad = radius + spec.radius;
+                const coarse = pad + (sim.collisionMaxStepMovementFP || 0) / FP + maxBodySpeed * dt;
+                if (
+                    unit.x < xMin - coarse ||
+                    unit.x > xMax + coarse ||
+                    unit.y < yMin - coarse ||
+                    unit.y > yMax + coarse
+                )
+                    continue;
+                const motion = motionOf?.(unit) || null;
+                if (motion) {
+                    const mx = motion.x ?? unit.x,
+                        my = motion.y ?? unit.y,
+                        ux = mx + motion.vx * dt,
+                        uy = my + motion.vy * dt;
                     if (
-                        unit.x < xMin - coarse ||
-                        unit.x > xMax + coarse ||
-                        unit.y < yMin - coarse ||
-                        unit.y > yMax + coarse
+                        xMax + pad < Math.min(mx, ux) ||
+                        xMin - pad > Math.max(mx, ux) ||
+                        yMax + pad < Math.min(my, uy) ||
+                        yMin - pad > Math.max(my, uy)
                     )
                         continue;
-                    const motion = motionOf?.(unit) || null;
-                    if (motion) {
-                        const mx = motion.x ?? unit.x,
-                            my = motion.y ?? unit.y,
-                            ux = mx + motion.vx * dt,
-                            uy = my + motion.vy * dt;
-                        if (
-                            xMax + pad < Math.min(mx, ux) ||
-                            xMin - pad > Math.max(mx, ux) ||
-                            yMax + pad < Math.min(my, uy) ||
-                            yMin - pad > Math.max(my, uy)
-                        )
-                            continue;
-                        const gravity = motion.gravity || 0,
-                            uz = motion.z + motion.vz * dt - (gravity * dt * dt) / 2,
-                            peak = gravity > 0 ? motion.vz / gravity : -1;
-                        const uzMin = Math.min(motion.z, uz),
-                            uzMax = Math.max(
-                                motion.z,
-                                uz,
-                                peak > 0 && peak < dt
-                                    ? motion.z + motion.vz * peak - (gravity * peak * peak) / 2
-                                    : -Infinity,
-                            );
-                        if (zMax + spec.radius < uzMin || zMin - spec.radius > uzMax + radius * 2)
-                            continue;
-                    } else {
-                        const current =
-                            sim.world.terrain.surfaces.heightAt(unit.x, unit.y) +
-                            (unit.impactMotion?.heightFP || 0) / FP;
-                        const start = previous.get(unit.id)?.z ?? current;
-                        if (
-                            zMax + spec.radius < Math.min(start, current) ||
-                            zMin - spec.radius > Math.max(start, current) + radius * 2
-                        )
-                            continue;
-                    }
-                    consider(
-                        this.bodyContact(
-                            sim,
-                            shot,
-                            unit,
-                            false,
-                            previous,
-                            elapsed,
-                            dt * sim.tps,
-                            dt,
-                            spec,
-                            motion,
-                        ),
-                    );
+                    const gravity = motion.gravity || 0,
+                        uz = motion.z + motion.vz * dt - (gravity * dt * dt) / 2,
+                        peak = gravity > 0 ? motion.vz / gravity : -1;
+                    const uzMin = Math.min(motion.z, uz),
+                        uzMax = Math.max(
+                            motion.z,
+                            uz,
+                            peak > 0 && peak < dt
+                                ? motion.z + motion.vz * peak - (gravity * peak * peak) / 2
+                                : -Infinity,
+                        );
+                    if (zMax + spec.radius < uzMin || zMin - spec.radius > uzMax + radius * 2)
+                        continue;
+                } else {
+                    const current =
+                        sim.world.terrain.surfaces.heightAt(unit.x, unit.y) +
+                        (unit.impactMotion?.heightFP || 0) / FP;
+                    const start = previous.get(unit.id)?.z ?? current;
+                    if (
+                        zMax + spec.radius < Math.min(start, current) ||
+                        zMin - spec.radius > Math.max(start, current) + radius * 2
+                    )
+                        continue;
                 }
-            });
-        for (const i of sim.nearbyBuildingIndices(
+                consider(
+                    this.bodyContact(
+                        sim,
+                        shot,
+                        unit,
+                        false,
+                        previous,
+                        elapsed,
+                        dt * sim.tps,
+                        dt,
+                        spec,
+                        motion,
+                    ),
+                );
+            }
+        }
+        const buildingCount = sim.nearbyBuildingIndices(
             (shot.x + end.x) / 2,
             (shot.y + end.y) / 2,
             Math.hypot(dx, dy) / 2 + sim.maxBuildingRadius + spec.radius,
-        )) {
+            BUILDING_QUERY,
+        );
+        for (let k = 0; k < buildingCount; k++) {
+            const i = BUILDING_QUERY.items[k];
             const building = sim.buildings[i];
             if (building?.alive === false) continue;
             consider(

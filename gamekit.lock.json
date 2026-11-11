@@ -1,11 +1,11 @@
 {
     "repository": "byh-playground/bloom-gamekit",
-    "sourceCommit": "4ed101692c8041f0a6c84e4417383cc7d6db80f1",
-    "distCommit": "f52688a92a904d5e4c3aa4f30216b16b20f430f1",
+    "sourceCommit": "fcca5b6f50f4b52f1469548dd3a02f064b52e008",
+    "distCommit": "414a14817dab2f4f7e35df4389460bdfc44a8f75",
     "modules": {
         "rollback": {
             "file": "rollback.js",
-            "sha256": "0e01dd2a4541a199facfd31fb0db397fae0883a3b077840f4b8a1446ada513dd"
+            "sha256": "49af6e239c9fddcb8953685586da1d39e3889e6229086f0154ae15e781b1d9b8"
         },
         "deterministic": {
             "file": "deterministic.js",
@@ -69,7 +69,7 @@
         },
         "spatial": {
             "file": "spatial.js",
-            "sha256": "131fcfa44b372e035418c00023f7c76be13d8b9438c733f188ba2ccd2595cc8a"
+            "sha256": "68107fede69e73a6abe9c3b6ba5f08001251dca4eae1cf8b4e036b059ee9a97a"
         },
         "face": {
             "file": "face.js",
@@ -85,7 +85,7 @@
         },
         "contactSolver": {
             "file": "contact-solver.js",
-            "sha256": "4b0e8f131d4136daf29546ee7e5c7123e9edc195ab2bd77df30857c31d272384"
+            "sha256": "56c52a07fcbb058b6cfefb3b81a456244331c5c0f8a48c214f47bb5000a29b7a"
         },
         "scenario": {
             "file": "scenario.js",
@@ -96,5 +96,5 @@
             "sha256": "9352ec017b633be6fbdefc0a98b6cdf47f47ac99385b0277da96964215c874d9"
         }
     },
-    "distManifestSha256": "10335540fa1cebffb38cca8a82ec1da238ba917a64957fcd6b1eba3d0b4c8019"
+    "distManifestSha256": "7b464ac9c48c6e38c722ceb656f304a6dba0474ecc41f28b6c0fc1065430bb38"
 }

@@ -17,7 +17,7 @@ import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { MapGeometry } from './map-geometry.js';
 import { NAV_BUILDING_MARGIN } from '../definitions/combat-rules.js';
-import { TERRAIN_ATTACK_REVEAL_RADIUS, VISION_SPATIAL_CELL } from '../definitions/world-rules.js';
+import { TERRAIN_ATTACK_REVEAL_RADIUS } from '../definitions/world-rules.js';
 import { WorldContext } from './world-context.js';
 import { TerrainSurfaceAtlas } from './terrain.js';
 import { RallyGamekit } from '../core/gamekit.js';
@@ -167,34 +167,6 @@ class VisibilityPolicy {
     static SHELL = 2;
     static UNIT_REVEAL = 3;
     static BUILDING_REVEAL = 4;
-    static snapshotQueries = new WeakMap();
-    static unitQuery(state) {
-        if (typeof state.nearbyUnits === 'function')
-            return (x, y, r, visit) => {
-                for (const i of state.nearbyUnits(x, y, r)) visit(state.units[i]);
-            };
-        let cached = this.snapshotQueries.get(state);
-        if (cached && cached.tick === state.tick && cached.units === state.units)
-            return cached.query;
-        const cell = VISION_SPATIAL_CELL,
-            bins = new Map();
-        for (const u of state.units || [])
-            if (u?.alive) {
-                const key = Math.floor(u.x / cell) + ',' + Math.floor(u.y / cell);
-                let bin = bins.get(key);
-                if (!bin) bins.set(key, (bin = []));
-                bin.push(u);
-            }
-        const query = (x, y, r, visit) => {
-            for (let cy = Math.floor((y - r) / cell); cy <= Math.floor((y + r) / cell); cy++)
-                for (let cx = Math.floor((x - r) / cell); cx <= Math.floor((x + r) / cell); cx++) {
-                    const bin = bins.get(cx + ',' + cy);
-                    if (bin) for (const u of bin) visit(u);
-                }
-        };
-        this.snapshotQueries.set(state, { tick: state.tick, units: state.units, query });
-        return query;
-    }
     static revealUntil(unit, side) {
         return (
             Number(

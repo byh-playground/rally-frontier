@@ -6,6 +6,12 @@ import { FP } from '../../core/config.js';
 import { RallyGamekit } from '../../core/gamekit.js';
 import { UnitLobPhysics } from './unit-lob-physics.js';
 import { LaunchImpact } from '../launch-impact.js';
+import { IndexList } from '../index-list.js';
+
+const EXPLOSION_BUILDING_QUERY = new IndexList();
+// A blocked shot pair is retried once either shot changes: both revisions as one number. A revision counts the
+// events one shot handled this tick (well below 2^20), so rev · 2^20 + rev stays below 2^40.
+const revisionPair = (a, b) => a.rev * 0x100000 + b.rev;
 
 const {
     CONTACT_POLYGON,
@@ -269,7 +275,14 @@ export class UnitLobAttack {
             impactHeightFP: shot.zFP,
             suppressImpactFx: true,
         });
-        for (const i of sim.nearbyBuildingIndices(x, y, radius + sim.maxBuildingRadius)) {
+        const buildingCount = sim.nearbyBuildingIndices(
+            x,
+            y,
+            radius + sim.maxBuildingRadius,
+            EXPLOSION_BUILDING_QUERY,
+        );
+        for (let k = 0; k < buildingCount; k++) {
+            const i = EXPLOSION_BUILDING_QUERY.items[k];
             const b = sim.buildings[i];
             if (!b || b.alive === false || b.side === shot.side) continue;
             if (LaunchImpact.distanceToBody(sim, b, x, y, shot.zFP, true).surfaceDistance > radius)
@@ -315,6 +328,10 @@ export class UnitLobAttack {
             String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0,
         );
         if (!shots.length) return;
+        // Shot pair keys: the shots' places in this tick's id order, i · n + j with i < j < n. A tick holds far fewer
+        // than 2^20 shots, so a pair key is below 2^40 and an event key (pair key · 2 + 1 for a pair, the shot's own
+        // pair key i · n + i times two for its contact or fuse) below 2^41, exact in a double.
+        const n = shots.length;
         const dt = 1 / sim.tps,
             subdivisions = 4,
             slice = dt / subdivisions,
@@ -577,7 +594,7 @@ export class UnitLobAttack {
                 if (kind !== 'end')
                     push({
                         at,
-                        key: shot.id + '|' + (kind === 'fuse' ? 'fuse' : hit.key),
+                        key: (i * n + i) * 2,
                         kind,
                         i,
                         rev: st.rev,
@@ -627,8 +644,8 @@ export class UnitLobAttack {
                         continue;
                     const base = Math.max(A.time, B.time),
                         left = slice - base,
-                        key = p.id + '|' + q.id;
-                    if (left <= 1e-9 || blockedPairs.get(key) === A.rev + ':' + B.rev) continue;
+                        key = ai * n + bi;
+                    if (left <= 1e-9 || blockedPairs.get(key) === revisionPair(A, B)) continue;
                     const ax = p.x + (p.vxFP / FP) * (base - A.time),
                         ay = p.y + (p.vyFP / FP) * (base - A.time),
                         bx = q.x + (q.vxFP / FP) * (base - B.time),
@@ -647,7 +664,7 @@ export class UnitLobAttack {
                     )
                         push({
                             at: base + PAIR_HIT.t * left,
-                            key: 'pair|' + p.id + '|' + q.id,
+                            key: key * 2 + 1,
                             kind: 'pair',
                             i: ai,
                             j: bi,
@@ -751,7 +768,7 @@ export class UnitLobAttack {
                         dy = shot.y - other.y,
                         d = Math.hypot(dx, dy),
                         radius = shot.spec.radius + other.spec.radius,
-                        key = shot.id + '|' + other.id;
+                        key = e.i * n + e.j;
                     let pairApplied = false;
                     if (d <= radius + 2 / FP) {
                         const hit = { nx: d > 1e-9 ? dx / d : 1, ny: d > 1e-9 ? dy / d : 0, nz: 0 },
@@ -794,7 +811,7 @@ export class UnitLobAttack {
                     if (b.frozen) other.vxFP = other.vyFP = 0;
                     a.rev++;
                     b.rev++;
-                    if (!pairApplied) blockedPairs.set(key, a.rev + ':' + b.rev);
+                    if (!pairApplied) blockedPairs.set(key, revisionPair(a, b));
                     enqueueWorld(e.i);
                     enqueueWorld(e.j);
                     rebuildGrid();
@@ -859,7 +876,7 @@ export class UnitLobAttack {
                             shot.x = Math.round(resolved.x * FP) / FP;
                             shot.y = Math.round(resolved.y * FP) / FP;
                         }
-                        const key = a.id + '|' + b.id;
+                        const key = i * n + j;
                         if (
                             this.resolvePair(
                                 sim,

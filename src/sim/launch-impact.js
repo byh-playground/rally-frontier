@@ -10,6 +10,14 @@ import { UnitDefinition } from '../definitions/units.js';
 import { TerrainSurfaceAtlas } from './terrain.js';
 import { WorldContext } from './world-context.js';
 import { RollingBody } from './capabilities/rolling-body.js';
+import { IndexList } from './index-list.js';
+
+// One list per query: these loops start knockbacks or measure contacts and never query again.
+const IMPULSE_QUERY = new IndexList(),
+    CONTACT_QUERY = new IndexList(),
+    CONTACT_BUILDING_QUERY = new IndexList(),
+    RELEASE_BUILDING_QUERY = new IndexList(),
+    PATH_BUILDING_QUERY = new IndexList();
 
 // The simulation owns impulses, release queues and projectile contacts. Rendering only observes these records.
 class LaunchImpact {
@@ -76,28 +84,28 @@ class LaunchImpact {
         this.radialImpulse(sim, { side: p.side, sourceId: p.id, x, y, radius, impactHeightFP });
     }
     static radialImpulse(sim, { side, sourceId, x, y, radius, impactHeightFP, scale = 1 }) {
-        sim.withNearbyUnits(x, y, radius + sim.maxUnitRadius, 1 - side, (indices) => {
-            for (const index of indices) {
-                const u = sim.units[index];
-                if (!u?.alive || u.side !== 1 - side) continue;
-                const dx = u.x - x,
-                    dy = u.y - y,
-                    body = this.distanceToBody(sim, u, x, y, impactHeightFP),
-                    distance = body.falloffDistance,
-                    reach = radius + sim.unitRadius(u.type);
-                if (body.surfaceDistance > radius) continue;
-                const strength = Math.max(0.1, 1 - distance / reach);
-                this.start(sim, u, {
-                    dx,
-                    dy,
-                    speed: LaunchImpactRules.knockbackSpeed * scale * (0.25 + 0.75 * strength),
-                    lift: strength >= 0.5 ? LaunchImpactRules.knockbackLift * scale * strength : 0,
-                    sourceId,
-                    originX: x,
-                    originY: y,
-                });
-            }
-        });
+        const found = sim.nearbyUnits(x, y, radius + sim.maxUnitRadius, 1 - side, IMPULSE_QUERY);
+        for (let k = 0; k < found; k++) {
+            const index = IMPULSE_QUERY.items[k];
+            const u = sim.units[index];
+            if (!u?.alive || u.side !== 1 - side) continue;
+            const dx = u.x - x,
+                dy = u.y - y,
+                body = this.distanceToBody(sim, u, x, y, impactHeightFP),
+                distance = body.falloffDistance,
+                reach = radius + sim.unitRadius(u.type);
+            if (body.surfaceDistance > radius) continue;
+            const strength = Math.max(0.1, 1 - distance / reach);
+            this.start(sim, u, {
+                dx,
+                dy,
+                speed: LaunchImpactRules.knockbackSpeed * scale * (0.25 + 0.75 * strength),
+                lift: strength >= 0.5 ? LaunchImpactRules.knockbackLift * scale * strength : 0,
+                sourceId,
+                originX: x,
+                originY: y,
+            });
+        }
     }
     static deploymentOrigin(sim, p, x, y) {
         const dx = p.lockedAimX - p.launchX,
@@ -109,7 +117,14 @@ class LaunchImpact {
         let back = 0;
         // Friendly buildings do not intercept a shell, but their footprints still block release.
         // Backtrack only the release point; the impact can still be on terrain or an enemy body.
-        for (const index of sim.nearbyBuildingIndices(x, y, sim.maxBuildingRadius)) {
+        const buildingCount = sim.nearbyBuildingIndices(
+            x,
+            y,
+            sim.maxBuildingRadius,
+            RELEASE_BUILDING_QUERY,
+        );
+        for (let k = 0; k < buildingCount; k++) {
+            const index = RELEASE_BUILDING_QUERY.items[k];
             const building = sim.buildings[index];
             if (!building || building.alive === false) continue;
             const radius = BuildingDefinition.get(building.type)?.size || 30;
@@ -479,7 +494,14 @@ class LaunchImpact {
         }
         const length2 = dx * dx + dy * dy,
             reach = Math.sqrt(length2) / 2 + sim.maxBuildingRadius;
-        for (const i of sim.nearbyBuildingIndices((x + group.x) / 2, (y + group.y) / 2, reach)) {
+        const buildingCount = sim.nearbyBuildingIndices(
+            (x + group.x) / 2,
+            (y + group.y) / 2,
+            reach,
+            PATH_BUILDING_QUERY,
+        );
+        for (let k = 0; k < buildingCount; k++) {
+            const i = PATH_BUILDING_QUERY.items[k];
             const building = sim.buildings[i];
             if (building?.alive === false) continue;
             const radius = BuildingDefinition.get(building.type)?.size || 30,
@@ -708,27 +730,28 @@ class LaunchImpact {
                 sim.maxUnitRadius +
                 LaunchImpactRules.projectileRadius +
                 (sim.collisionMaxStepMovementFP || 0) / FP;
-        sim.withNearbyUnits(cx, cy, reach, 1 - p.side, (indices) => {
-            for (const i of indices) {
-                const u = sim.units[i];
-                if (u?.alive && u.side === 1 - p.side)
-                    add(
-                        u,
-                        sim.unitRadius(u.type),
-                        2 * sim.unitRadius(u.type),
-                        false,
-                        i < sim.collisionStartCount ? sim.collisionStartFx[i] / FP : u.x,
-                        i < sim.collisionStartCount ? sim.collisionStartFy[i] / FP : u.y,
-                    );
-            }
-        });
-        const buildings = sim.nearbyBuildingIndices(
+        const found = sim.nearbyUnits(cx, cy, reach, 1 - p.side, CONTACT_QUERY);
+        for (let k = 0; k < found; k++) {
+            const i = CONTACT_QUERY.items[k];
+            const u = sim.units[i];
+            if (u?.alive && u.side === 1 - p.side)
+                add(
+                    u,
+                    sim.unitRadius(u.type),
+                    2 * sim.unitRadius(u.type),
+                    false,
+                    i < sim.collisionStartCount ? sim.collisionStartFx[i] / FP : u.x,
+                    i < sim.collisionStartCount ? sim.collisionStartFy[i] / FP : u.y,
+                );
+        }
+        const buildingCount = sim.nearbyBuildingIndices(
             cx,
             cy,
             Math.sqrt(length2) / 2 + sim.maxBuildingRadius + LaunchImpactRules.projectileRadius,
+            CONTACT_BUILDING_QUERY,
         );
-        for (const i of buildings) {
-            const b = sim.buildings[i];
+        for (let k = 0; k < buildingCount; k++) {
+            const b = sim.buildings[CONTACT_BUILDING_QUERY.items[k]];
             if (b?.alive !== false && b.side === 1 - p.side) {
                 const size = BuildingDefinition.get(b.type)?.size || 30;
                 add(b, size, size * 2, true);

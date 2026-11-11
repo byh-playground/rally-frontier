@@ -6,6 +6,10 @@ import { UnitDefinition } from '../../definitions/units.js';
 import { HashUtil } from '../map-generation.js';
 import { UnitMotion } from '../navigation.js';
 import { UnitThornAttack } from './unit-thorn-attack.js';
+import { IndexList } from '../index-list.js';
+
+const TARGET_QUERY = new IndexList(),
+    SWEEP_QUERY = new IndexList();
 
 const STATE_KEYS = 'active,combo,projectiles,queued';
 const SHOT_KEYS =
@@ -197,20 +201,20 @@ export class FruitHeroAttack {
         const sources = vision ?? sim.visionSources(unit.side);
         let target = null;
         let best = range ** 2;
-        sim.withNearbyUnits(unit.x, unit.y, range, 1 - unit.side, (indices) => {
-            for (const index of indices) {
-                const candidate = sim.units[index];
-                if (!candidate?.alive || candidate.hp <= 0) continue;
-                const distance = (candidate.x - unit.x) ** 2 + (candidate.y - unit.y) ** 2;
-                if (
-                    sim.targetChoiceBetter(distance, candidate.id, best, target) &&
-                    sim.canSeeCombatTarget(unit.side, candidate, sources)
-                ) {
-                    target = candidate;
-                    best = distance;
-                }
+        const found = sim.nearbyUnits(unit.x, unit.y, range, 1 - unit.side, TARGET_QUERY);
+        for (let k = 0; k < found; k++) {
+            const index = TARGET_QUERY.items[k];
+            const candidate = sim.units[index];
+            if (!candidate?.alive || candidate.hp <= 0) continue;
+            const distance = (candidate.x - unit.x) ** 2 + (candidate.y - unit.y) ** 2;
+            if (
+                sim.targetChoiceBetter(distance, candidate.id, best, target) &&
+                sim.canSeeCombatTarget(unit.side, candidate, sources)
+            ) {
+                target = candidate;
+                best = distance;
             }
-        });
+        }
         return target;
     }
 
@@ -400,19 +404,19 @@ export class FruitHeroAttack {
         const contacts = [];
         const length = Math.hypot(to.x - from.x, to.y - from.y);
         const radius = shot.radius + sim.maxUnitRadius + sim.collisionMaxStepMovementFP / FP;
-        sim.withNearbyUnits(from.x, from.y, length + radius, 1 - unit.side, (indices) => {
-            for (const index of indices) {
-                const target = sim.units[index];
-                if (!target?.alive || hits.includes(target.id)) continue;
-                const point = this.contact(sim, shot, from, to, target, false);
-                if (!point) continue;
-                contacts.push({
-                    target,
-                    point,
-                    distance: Math.hypot(point.x - from.x, point.y - from.y),
-                });
-            }
-        });
+        const found = sim.nearbyUnits(from.x, from.y, length + radius, 1 - unit.side, SWEEP_QUERY);
+        for (let k = 0; k < found; k++) {
+            const index = SWEEP_QUERY.items[k];
+            const target = sim.units[index];
+            if (!target?.alive || hits.includes(target.id)) continue;
+            const point = this.contact(sim, shot, from, to, target, false);
+            if (!point) continue;
+            contacts.push({
+                target,
+                point,
+                distance: Math.hypot(point.x - from.x, point.y - from.y),
+            });
+        }
         contacts.sort((a, b) => a.distance - b.distance || (a.target.id < b.target.id ? -1 : 1));
         for (const { target, point } of contacts) {
             if (!unit.alive) return;

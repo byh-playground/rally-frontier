@@ -9,6 +9,10 @@ import { UnitDefinition } from '../../definitions/units.js';
 import { LaunchImpact } from '../launch-impact.js';
 import { HashUtil } from '../map-generation.js';
 import { UnitMotion } from '../navigation.js';
+import { IndexList } from '../index-list.js';
+
+const TARGET_QUERY = new IndexList(),
+    SWEEP_QUERY = new IndexList();
 
 const { SweptCircleContact } = RallyGamekit;
 const CONTACT = { ...SweptCircleContact.policies.relative, retreat: 0 };
@@ -63,22 +67,22 @@ export class HeroRollAttack {
         const sources = vision ?? sim.visionSources(side);
         let target = null;
         let bestDistance = spec.range ** 2;
-        sim.withNearbyUnits(unit.x, unit.y, spec.range, 1 - side, (indices) => {
-            for (const index of indices) {
-                const candidate = sim.units[index];
-                const distance = (candidate.x - unit.x) ** 2 + (candidate.y - unit.y) ** 2;
-                if (
-                    sim.targetChoiceBetter(distance, candidate.id, bestDistance, target) &&
-                    candidate.hp > 0 &&
-                    UnitMotion.isGrounded(candidate) &&
-                    sim.canAttackEntity(unit.type, candidate) &&
-                    sim.canSeeCombatTarget(side, candidate, sources)
-                ) {
-                    target = candidate;
-                    bestDistance = distance;
-                }
+        const found = sim.nearbyUnits(unit.x, unit.y, spec.range, 1 - side, TARGET_QUERY);
+        for (let k = 0; k < found; k++) {
+            const index = TARGET_QUERY.items[k];
+            const candidate = sim.units[index];
+            const distance = (candidate.x - unit.x) ** 2 + (candidate.y - unit.y) ** 2;
+            if (
+                sim.targetChoiceBetter(distance, candidate.id, bestDistance, target) &&
+                candidate.hp > 0 &&
+                UnitMotion.isGrounded(candidate) &&
+                sim.canAttackEntity(unit.type, candidate) &&
+                sim.canSeeCombatTarget(side, candidate, sources)
+            ) {
+                target = candidate;
+                bestDistance = distance;
             }
-        });
+        }
         if (!target) return false;
         unit.heroRollQueued = false;
 
@@ -159,42 +163,41 @@ export class HeroRollAttack {
             terrainRadius,
         );
         const contacts = [];
-        sim.withNearbyUnits(
+        const found = sim.nearbyUnits(
             x,
             y,
             wallDistance + rollHitRadius + sim.maxUnitRadius,
             1 - unit.side,
-            (indices) => {
-                for (const index of indices) {
-                    const target = sim.units[index];
-                    if (
-                        !target?.alive ||
-                        roll.hitIds.includes(target.id) ||
-                        !UnitMotion.isGrounded(target) ||
-                        !sim.canAttackEntity(unit.type, target)
-                    )
-                        continue;
-
-                    const rx = x - target.x;
-                    const ry = y - target.y;
-                    const reach = rollHitRadius + sim.unitRadius(target.type);
-                    const hitTime =
-                        rx ** 2 + ry ** 2 <= reach ** 2
-                            ? 0
-                            : SweptCircleContact.cast(rx, ry, vx, vy, reach, CONTACT, CONTACT_HIT)
-                              ? CONTACT_HIT.t
-                              : null;
-                    if (hitTime == null) continue;
-                    const distance = hitTime * step;
-                    if (distance > wallDistance + STOP_EPSILON) continue;
-                    const hitX = x + dx * distance;
-                    const hitY = y + dy * distance;
-                    if (!sim.navigation.field.segmentClear(hitX, hitY, target.x, target.y, 0))
-                        continue;
-                    contacts.push({ target, distance, hitX, hitY });
-                }
-            },
+            SWEEP_QUERY,
         );
+        for (let k = 0; k < found; k++) {
+            const index = SWEEP_QUERY.items[k];
+            const target = sim.units[index];
+            if (
+                !target?.alive ||
+                roll.hitIds.includes(target.id) ||
+                !UnitMotion.isGrounded(target) ||
+                !sim.canAttackEntity(unit.type, target)
+            )
+                continue;
+
+            const rx = x - target.x;
+            const ry = y - target.y;
+            const reach = rollHitRadius + sim.unitRadius(target.type);
+            const hitTime =
+                rx ** 2 + ry ** 2 <= reach ** 2
+                    ? 0
+                    : SweptCircleContact.cast(rx, ry, vx, vy, reach, CONTACT, CONTACT_HIT)
+                      ? CONTACT_HIT.t
+                      : null;
+            if (hitTime == null) continue;
+            const distance = hitTime * step;
+            if (distance > wallDistance + STOP_EPSILON) continue;
+            const hitX = x + dx * distance;
+            const hitY = y + dy * distance;
+            if (!sim.navigation.field.segmentClear(hitX, hitY, target.x, target.y, 0)) continue;
+            contacts.push({ target, distance, hitX, hitY });
+        }
         contacts.sort((a, b) => a.distance - b.distance || (a.target.id < b.target.id ? -1 : 1));
         for (const { target, distance, hitX, hitY } of contacts) {
             if (!target.alive || !UnitMotion.isGrounded(target)) continue;
