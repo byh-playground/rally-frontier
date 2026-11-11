@@ -6,6 +6,11 @@ class LaunchImpactRules {
     static referenceMass = 100;
     static restitution = 0;
     static maxZeroTimeContactIterations = 32;
+    // Unit-unit impulse contacts one tick resolves (UnitMotion.solveImpulseStep); later ones pass through and
+    // the crowd separation pulls them apart afterwards. Contacts with a rolling body have their own share.
+    // Walls, buildings and the map edge are never limited.
+    static unitContactBudget = 64;
+    static rollingContactBudget = 64;
     static remainderScale = 10000;
     static airDrag = 0.4;
     static groundDrag = 5;
