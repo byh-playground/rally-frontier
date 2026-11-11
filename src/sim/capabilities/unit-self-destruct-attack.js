@@ -1,6 +1,8 @@
 // Contract (moved from the index.html Development Contract):
 // - 팝콘은 팥의 도약 이동을 사용하되 정점 높이는 약 절반이다. 착지하면 자폭 한 번을 처리하고,
 //   이미 가까운 적에게는 기존 준비 동작으로 자폭한다.
+// - 자폭 넉백의 거리 감쇠는 정의의 `knockbackFalloff`가 정한다. 팝콘은 false라 반경 안의 적이 모두
+//   중심에서 바깥쪽으로 같은 세기(도토리 회전 타격과 같은 HEAVY_KNOCKBACK)로 날아간다.
 import { FP } from '../../core/config.js';
 import { LaunchImpact } from '../launch-impact.js';
 import { UnitDefinition } from '../../definitions/units.js';
@@ -87,6 +89,7 @@ export class UnitSelfDestructAttack {
                     impactHeightFP: heightFP,
                     speed: spec.knockbackSpeed,
                     lift: spec.knockbackLift,
+                    falloff: spec.knockbackFalloff,
                 });
                 sim.applyAreaDamage({
                     sourceSide: side,

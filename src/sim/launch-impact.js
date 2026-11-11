@@ -83,7 +83,8 @@ class LaunchImpact {
     static blast(sim, p, x, y, radius, impactHeightFP) {
         this.radialImpulse(sim, { side: p.side, sourceId: p.id, x, y, radius, impactHeightFP });
     }
-    // `speed` and `lift` are the impulse at the centre of the blast; it fades with distance from there.
+    // `speed` and `lift` are the impulse at the centre of the blast. With `falloff` it fades with distance
+    // from there (a shell); without it every body in reach gets the full impulse (popcorn's burst).
     static radialImpulse(
         sim,
         {
@@ -95,6 +96,7 @@ class LaunchImpact {
             impactHeightFP,
             speed = LaunchImpactRules.knockbackSpeed,
             lift = LaunchImpactRules.knockbackLift,
+            falloff = true,
         },
     ) {
         const found = sim.nearbyUnits(x, y, radius + sim.maxUnitRadius, 1 - side, IMPULSE_QUERY);
@@ -108,7 +110,7 @@ class LaunchImpact {
                 distance = body.falloffDistance,
                 reach = radius + sim.unitRadius(u.type);
             if (body.surfaceDistance > radius) continue;
-            const strength = Math.max(0.1, 1 - distance / reach);
+            const strength = falloff ? Math.max(0.1, 1 - distance / reach) : 1;
             this.start(sim, u, {
                 dx,
                 dy,
