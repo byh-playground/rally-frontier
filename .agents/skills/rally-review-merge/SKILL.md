@@ -32,9 +32,9 @@ description: 쌀콩팡! PR을 검토하고 검증한 구현 PR을 별도 확인 
 - head 갱신 후 새 SHA의 PR diff, 필수 검사, 승인 및 mergeability를 다시 확인한다. squash로 승인이 무효화되거나 검사가 진행 중이면 머지를 보류하고 이유를 보고한다. 통합 커밋이 이미 하나라면 불필요하게 재작성하지 않는다.
 - 검토한 head SHA를 `--match-head-commit`에 지정해 실행한다:
 
-  ```powershell
-  gh pr merge <번호> --repo byh-playground/rally-frontier --merge --match-head-commit <검토한-SHA>
-  ```
+    ```powershell
+    gh pr merge <번호> --repo byh-playground/rally-frontier --merge --match-head-commit <검토한-SHA>
+    ```
 
 - head가 바뀌면 새 변경을 확인하기 전에는 머지하지 않는다. `--admin`, 보호 설정 변경, 자동 머지 예약, 원격 브랜치 삭제를 기본 흐름에 추가하지 않는다. `gh pr merge --delete-branch`는 원격까지 삭제하므로 사용하지 않는다.
 - 머지 도구 오류는 현재 사용 가능한 GitHub 연결 도구 또는 CLI로 실제 PR 상태·권한·허용 방식·차단 조건을 확인한다. 이미 정한 머지 권한 범위에서 검토한 head SHA를 지정해 실행하며, diff 크기만으로 실패 원인을 단정하지 않는다.

@@ -12,7 +12,7 @@ const CHOICES = Object.freeze({
 
 export function readDevQuery(search) {
     const PARAMS = new URLSearchParams(search);
-    const pick = name => {
+    const pick = (name) => {
         if (!PARAMS.has(name)) {
             return null;
         }
