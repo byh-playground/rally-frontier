@@ -7,6 +7,7 @@ import {
     emitFramePresentationEvents,
 } from '../core/presentation-frame-event.js';
 import { BattlefieldProjection } from '../sim/terrain.js';
+import { battleFocus } from './sim-scene.js';
 import { createTitleRun } from './title-showcase-sim.js';
 
 let titleCheckpoints;
@@ -68,27 +69,6 @@ export async function prepareTitleShowcase({
             BattlefieldProjection.planarY(y, elevation) - renderer.viewWorldH() / 2,
         );
     };
-    const battleFocus = () => {
-        const units = new Map(
-            run.sim.units.filter((unit) => unit.alive).map((unit) => [unit.id, unit]),
-        );
-        let x = 0,
-            y = 0,
-            count = 0;
-        for (const unit of units.values()) {
-            const target = units.get(unit.target);
-            if (
-                !target ||
-                target.side === unit.side ||
-                Math.hypot(unit.x - target.x, unit.y - target.y) > 250
-            )
-                continue;
-            x += unit.x;
-            y += unit.y;
-            count++;
-        }
-        return count ? { x: x / count, y: y / count } : run.sim.world.center;
-    };
     const load = (index) => {
         journal?.dispose();
         journal = createFramePresentationJournal({ getView: () => view, onImmediate: () => {} });
@@ -106,7 +86,7 @@ export async function prepareTitleShowcase({
                 run.sim.world.center;
             camera(cannon.x, cannon.y, 2.2);
         } else {
-            const focus = battleFocus();
+            const focus = battleFocus(run.sim);
             camera(focus.x, focus.y, index === 1 ? 1.35 : 1.65);
         }
         shownScene = index;

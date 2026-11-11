@@ -7266,7 +7266,8 @@ class GLRenderer {
                 this.renderMilletParticles();
             });
             this.passProfiler.measure('shadow', () => this.renderShadowPass(visibleUnits));
-            if (!this.showcase)
+            // Previews observe everything; a debug scene may draw one side's fog (src/debug-scenes.js).
+            if (!this.showcase || !this.replayObserverAll)
                 this.passProfiler.measure('overlay', () => this.renderOverlayPass());
             this.passProfiler.measure('ui-fx', () => this.renderUiFxPass());
             this.passProfiler.measure('camera-compose', () => this.renderCameraShakePass());
@@ -9685,6 +9686,26 @@ class AppLifecycle {
             AppLifecycle.bootPreparing = false;
         }
     }
+    // Installs the GameKit debug host on src/debug-scenes.js, loaded only for a debug address.
+    static async openDebugScene(createRenderer) {
+        AppLifecycle.setBootState('확인 장면 준비 중');
+        try {
+            const { createDebugScenes } = await import('./debug-scenes.js');
+            const debug = RallyGamekit.installDebugHost({
+                scenes: createDebugScenes({
+                    createRenderer,
+                    createScenario: RallyGamekit.createScenario,
+                    createPresentationView,
+                }),
+            });
+            await debug.done;
+            AppLifecycle.finishBootGate();
+        } catch (error) {
+            RallyBoot.fail(error);
+            AppLifecycle.setBootState('확인 장면 준비 실패', true);
+            console.error(error);
+        }
+    }
     static stopBackgroundTicker() {
         const worker = AppLifecycle.backgroundTickWorker;
         AppLifecycle.backgroundTickWorker = null;
@@ -11516,97 +11537,106 @@ void BUILD_META.load().then(() => BuildMetadataPresentation.renderBuildMetadata(
 
 if (UiRegistry.refs.bootRetryBtn)
     UiController.bindImmediateButton(UiRegistry.refs.bootRetryBtn, () => location.reload());
-AppLifecycle.runBootAndStartApp();
-const dev = readDevQuery(location.search);
-if (dev.tps) UiController.setStartSimulationTps(dev.tps);
-if (dev.netcode) setNetcodeMode(dev.netcode);
-const leaveSetup = () => {
-    audioSystem.unlock();
-};
-let campaignStorage;
-try {
-    campaignStorage = window.localStorage;
-} catch (error) {
-    console.warn('캠페인 진행 저장소를 열 수 없습니다.', error);
+const createShowcaseRenderer = (canvas, fxCanvas) =>
+    new GLRenderer(canvas, { deferLoop: true, showcase: true, fxCanvas });
+let campaignProgress;
+// A debug address (`?debug=1&scene=…`) opens one scene of src/debug-scenes.js instead of the title and match flow,
+// so it never reads or writes the saved campaign progress or deck.
+if (new URLSearchParams(location.search).has('debug'))
+    void AppLifecycle.openDebugScene(createShowcaseRenderer);
+else startTitleApp();
+
+function startTitleApp() {
+    AppLifecycle.runBootAndStartApp();
+    const dev = readDevQuery(location.search);
+    if (dev.tps) UiController.setStartSimulationTps(dev.tps);
+    if (dev.netcode) setNetcodeMode(dev.netcode);
+    const leaveSetup = () => {
+        audioSystem.unlock();
+    };
+    let campaignStorage;
+    try {
+        campaignStorage = window.localStorage;
+    } catch (error) {
+        console.warn('캠페인 진행 저장소를 열 수 없습니다.', error);
+    }
+    campaignProgress = new CampaignProgress(campaignStorage);
+    addEventListener('storage', () => campaignProgress.sync());
+    DeckEditor.install({
+        types: () => LaunchRules.deck,
+        heroes: () => LaunchRules.heroTypes,
+        starter: () => LaunchRules.starterDeck,
+        limit: LaunchRules.deckLimit,
+        heroLimit: LaunchRules.deckHeroLimit,
+        nameOf: (type) => UnitDefinition.get(type)?.name || type,
+        statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
+        infoOf: (type) => LaunchScreens.grainInfo(type),
+        isUnlocked: (type) => campaignProgress.isUnlocked(type),
+        isTemporary: () => campaignProgress.debugUnlocked,
+        unlockHint: (type) => {
+            const stage = campaignProgress.unlockStage(type);
+            return stage ? `${stage.title} 클리어 시 해금` : '';
+        },
+        renderDetails: (type, host) => LaunchScreens.renderCardDetail(type, host),
+        portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
+    });
+    const showcaseSurface = createShowcaseHost(createShowcaseRenderer);
+    addEventListener('pagehide', (event) => {
+        if (!event.persisted) showcaseSurface.dispose();
+    });
+    LaunchScreens.install({
+        createNavigation: RallyGamekit.createNavigation,
+        showcaseSurface,
+        actions: {
+            campaignProgress,
+            startCampaignStage: (stage) => {
+                leaveSetup();
+                MatchLifecycle.startCampaignStage(stage);
+            },
+            openRewardDeck: (type) => DeckEditor.open(type),
+            selectCampaign: (id) => {
+                MatchLifecycle.selectedCampaign = id;
+            },
+            inMatch: () => UiRuntimeState.value.screen === 'game',
+            hasResult: () => UiRuntimeState.value.screen === 'result',
+            startAiMatch: () => {
+                leaveSetup();
+                MatchLifecycle.startSinglePlayerWebRTC(
+                    MatchLifecycle.selectedCampaign ? 'host' : dev.role || 'host',
+                );
+            },
+            openMenu: () => {
+                if (UiRuntimeState.value.modal !== 'match-menu') MatchLifecycle.openMatchMenu();
+            },
+            closeMenu: () => {
+                if (UiRuntimeState.value.modal === 'match-menu') MatchLifecycle.closeMatchMenu();
+            },
+            grains: () => [...LaunchRules.heroTypes, ...LaunchRules.deck],
+            grainName: (t) => UnitDefinition.get(t)?.name || t,
+            grainStats: (t) => LaunchRules.payload(t),
+            grainRangeLevel: () =>
+                ActiveViewState.snap?.launchRangeLevel?.[
+                    ConnectionSideUtil.roleSide(ActiveViewState.role)
+                ] ?? 0,
+            portraitSource: (t) => grainPortrait(t, window.RallyVectorAssets[t]),
+            toggleSound: () => audioSystem.setEnabled(!audioSystem.enabled),
+            soundOn: () => !!audioSystem.enabled,
+            ownDeckSize: () => DeckEditor.getDeck().length,
+            createRoom: (deckMode) => {
+                leaveSetup();
+                UiController.openUiModal('create');
+                MatchLifecycle.beginCreateRoom(deckMode);
+            },
+            joinRoom: (code, deckMode) => {
+                leaveSetup();
+                UiController.openJoinDialog();
+                UiRegistry.refs.room.value = code;
+                MatchLifecycle.submitJoinRoom(deckMode);
+            },
+            leaveToTitle: () => reloadAt('#/'),
+        },
+    });
 }
-const campaignProgress = new CampaignProgress(campaignStorage);
-addEventListener('storage', () => campaignProgress.sync());
-DeckEditor.install({
-    types: () => LaunchRules.deck,
-    heroes: () => LaunchRules.heroTypes,
-    starter: () => LaunchRules.starterDeck,
-    limit: LaunchRules.deckLimit,
-    heroLimit: LaunchRules.deckHeroLimit,
-    nameOf: (type) => UnitDefinition.get(type)?.name || type,
-    statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
-    infoOf: (type) => LaunchScreens.grainInfo(type),
-    isUnlocked: (type) => campaignProgress.isUnlocked(type),
-    isTemporary: () => campaignProgress.debugUnlocked,
-    unlockHint: (type) => {
-        const stage = campaignProgress.unlockStage(type);
-        return stage ? `${stage.title} 클리어 시 해금` : '';
-    },
-    renderDetails: (type, host) => LaunchScreens.renderCardDetail(type, host),
-    portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
-});
-const showcaseSurface = createShowcaseHost(
-    (canvas, fxCanvas) => new GLRenderer(canvas, { deferLoop: true, showcase: true, fxCanvas }),
-);
-addEventListener('pagehide', (event) => {
-    if (!event.persisted) showcaseSurface.dispose();
-});
-LaunchScreens.install({
-    createNavigation: RallyGamekit.createNavigation,
-    showcaseSurface,
-    actions: {
-        campaignProgress,
-        startCampaignStage: (stage) => {
-            leaveSetup();
-            MatchLifecycle.startCampaignStage(stage);
-        },
-        openRewardDeck: (type) => DeckEditor.open(type),
-        selectCampaign: (id) => {
-            MatchLifecycle.selectedCampaign = id;
-        },
-        inMatch: () => UiRuntimeState.value.screen === 'game',
-        hasResult: () => UiRuntimeState.value.screen === 'result',
-        startAiMatch: () => {
-            leaveSetup();
-            MatchLifecycle.startSinglePlayerWebRTC(
-                MatchLifecycle.selectedCampaign ? 'host' : dev.role || 'host',
-            );
-        },
-        openMenu: () => {
-            if (UiRuntimeState.value.modal !== 'match-menu') MatchLifecycle.openMatchMenu();
-        },
-        closeMenu: () => {
-            if (UiRuntimeState.value.modal === 'match-menu') MatchLifecycle.closeMatchMenu();
-        },
-        grains: () => [...LaunchRules.heroTypes, ...LaunchRules.deck],
-        grainName: (t) => UnitDefinition.get(t)?.name || t,
-        grainStats: (t) => LaunchRules.payload(t),
-        grainRangeLevel: () =>
-            ActiveViewState.snap?.launchRangeLevel?.[
-                ConnectionSideUtil.roleSide(ActiveViewState.role)
-            ] ?? 0,
-        portraitSource: (t) => grainPortrait(t, window.RallyVectorAssets[t]),
-        toggleSound: () => audioSystem.setEnabled(!audioSystem.enabled),
-        soundOn: () => !!audioSystem.enabled,
-        ownDeckSize: () => DeckEditor.getDeck().length,
-        createRoom: (deckMode) => {
-            leaveSetup();
-            UiController.openUiModal('create');
-            MatchLifecycle.beginCreateRoom(deckMode);
-        },
-        joinRoom: (code, deckMode) => {
-            leaveSetup();
-            UiController.openJoinDialog();
-            UiRegistry.refs.room.value = code;
-            MatchLifecycle.submitJoinRoom(deckMode);
-        },
-        leaveToTitle: () => reloadAt('#/'),
-    },
-});
 
 export {
     AppLifecycle,

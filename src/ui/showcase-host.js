@@ -2,7 +2,8 @@ import { RallyGamekit } from '../core/gamekit.js';
 import { createPresentationView } from '../render/presentation-effects.js';
 import { prepareTitleShowcase } from './title-showcase.js';
 
-function createShowcaseSurface(createRenderer) {
+// The card and title previews mount this through createShowcaseHost; the debug scenes open one directly.
+export function createShowcaseSurface(createRenderer) {
     const element = document.createElement('div');
     element.className = 'launch-showcase-surface';
     element.setAttribute('aria-hidden', 'true');
