@@ -5,6 +5,9 @@
 import { FP } from '../../core/config.js';
 import { LaunchImpactRules } from '../../definitions/launch-impact-rules.js';
 import { LaunchImpact } from '../launch-impact.js';
+import { IndexList } from '../index-list.js';
+
+const IMPACT_QUERY = new IndexList();
 
 // Uses the same physical motion as other impulses; the unit owns the leap state.
 export class UnitLeapAttack {
@@ -90,45 +93,45 @@ export class UnitLeapAttack {
         const impact = spec.impact;
         if (!impact) return;
         const heightFP = Math.round(sim.world.terrain.surfaces.heightAt(unit.x, unit.y) * FP);
-        sim.withNearbyUnits(
+        const found = sim.nearbyUnits(
             unit.x,
             unit.y,
             impact.radius + sim.maxUnitRadius,
             1 - unit.side,
-            (indices) => {
-                for (const index of indices) {
-                    const target = sim.units[index];
-                    if (
-                        !target?.alive ||
-                        target.side === unit.side ||
-                        !sim.canAttackEntity(unit.type, target)
-                    )
-                        continue;
-                    if (
-                        LaunchImpact.distanceToBody(sim, target, unit.x, unit.y, heightFP)
-                            .surfaceDistance > impact.radius
-                    )
-                        continue;
-                    LaunchImpact.start(sim, target, {
-                        dx: target.x - unit.x,
-                        dy: target.y - unit.y,
-                        speed: impact.knockbackSpeed,
-                        lift: impact.knockbackLift,
-                        sourceId: unit.id,
-                        originX: unit.x,
-                        originY: unit.y,
-                    });
-                    sim.applyDamage(
-                        unit.side,
-                        unit.type,
-                        target,
-                        false,
-                        Math.floor(damage * impact.damageScale),
-                        unit.id,
-                    );
-                }
-            },
+            IMPACT_QUERY,
         );
+        for (let k = 0; k < found; k++) {
+            const index = IMPACT_QUERY.items[k];
+            const target = sim.units[index];
+            if (
+                !target?.alive ||
+                target.side === unit.side ||
+                !sim.canAttackEntity(unit.type, target)
+            )
+                continue;
+            if (
+                LaunchImpact.distanceToBody(sim, target, unit.x, unit.y, heightFP).surfaceDistance >
+                impact.radius
+            )
+                continue;
+            LaunchImpact.start(sim, target, {
+                dx: target.x - unit.x,
+                dy: target.y - unit.y,
+                speed: impact.knockbackSpeed,
+                lift: impact.knockbackLift,
+                sourceId: unit.id,
+                originX: unit.x,
+                originY: unit.y,
+            });
+            sim.applyDamage(
+                unit.side,
+                unit.type,
+                target,
+                false,
+                Math.floor(damage * impact.damageScale),
+                unit.id,
+            );
+        }
         sim.events.push({
             type: 'leapLand',
             side: unit.side,

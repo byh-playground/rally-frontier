@@ -32,6 +32,10 @@ import { UnitDefinition } from '../../definitions/units.js';
 import { LaunchRules } from '../launch-rules.js';
 import { HashUtil } from '../map-generation.js';
 import { NavigationGoal, UnitMotion } from '../navigation.js';
+import { IndexList } from '../index-list.js';
+import { EntityKey } from '../entities.js';
+
+const ENEMY_QUERY = new IndexList();
 
 // Same margin as a returning hero: the bean stops just outside the cannon's body.
 const BOARD_PADDING = 10;
@@ -131,15 +135,24 @@ class CannonRider {
     // The cannons a side's riders may pick, as one key: it changes when a cannon is built, lost or jammed.
     static cannonListKey(sim, side) {
         let memo = LIST_KEYS.get(sim);
-        if (!memo || memo.tick !== sim.tick) {
-            memo = { tick: sim.tick, keys: [null, null] };
-            LIST_KEYS.set(sim, memo);
+        if (!memo) LIST_KEYS.set(sim, (memo = { tick: -1, keys: [null, null] }));
+        if (memo.tick !== sim.tick) {
+            memo.tick = sim.tick;
+            memo.keys[0] = memo.keys[1] = null;
         }
         if (memo.keys[side] === null) {
-            let text = '';
-            for (const cannon of sim.launchCannons(side))
-                if (!LaunchRules.jammed(sim, cannon)) text += cannon.id + '|';
-            memo.keys[side] = HashUtil.hash(text);
+            // One word per open cannon in building order: its id's sequence number · 2, plus 1 for the main base
+            // (whose id ends in its side, which a sequence number can repeat). Sequence numbers stay below 2^31, so
+            // every word is below 2^32; the hash is below 2^32, a safe integer for the saved listKey.
+            let h = HashUtil.OFFSET;
+            for (const cannon of sim.buildings)
+                if (LaunchRules.isLaunchCannon(cannon, side) && !LaunchRules.jammed(sim, cannon))
+                    h = HashUtil.word(
+                        h,
+                        EntityKey.number(cannon.id) * 2 +
+                            (BuildingDefinition.get(cannon.type)?.isMainBase ? 1 : 0),
+                    );
+            memo.keys[side] = HashUtil.finish(h);
         }
         return memo.keys[side];
     }
@@ -223,9 +236,11 @@ class CannonRider {
             best = entity;
             bestD2 = d2;
         };
-        sim.forEachNearbyHostileUnit(side, cannon.x, cannon.y, maxReach, (enemy) => {
+        const count = sim.nearbyHostileUnits(side, cannon.x, cannon.y, maxReach, ENEMY_QUERY);
+        for (let k = 0; k < count; k++) {
+            const enemy = sim.units[ENEMY_QUERY.items[k]];
             if (sim.canSeeCombatTarget(side, enemy, sources)) consider(enemy);
-        });
+        }
         if (!best)
             for (const building of sim.buildings)
                 if (

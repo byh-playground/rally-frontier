@@ -68,7 +68,16 @@ import {
 import { FP } from '../core/config.js';
 import { RallyGamekit, RallyNetcode } from '../core/gamekit.js';
 const { UniformGrid } = RallyGamekit;
+// Query lists of call sites whose loop bodies never query the same list again (IndexList).
+const CONSTRUCTION_QUERY = new IndexList(),
+    CAPTURE_QUERY = new IndexList(),
+    SPAWN_QUERY = new IndexList(),
+    TARGET_QUERY = new IndexList(),
+    TARGET_BUILDING_QUERY = new IndexList(),
+    TOWER_QUERY = new IndexList(),
+    TOWER_BUILDING_QUERY = new IndexList();
 import { SimulationTiming } from '../core/simulation-timing.js';
+import { IndexList } from './index-list.js';
 
 class SimulationRuntimeState {
     static collision(sim) {
@@ -97,8 +106,6 @@ class SimulationRuntimeState {
             outside: 'clamp',
         });
         sim.buildingSpatialDirty = true;
-        sim.buildingSpatialQueryBuffers = Array.from({ length: 16 }, () => []);
-        sim.buildingSpatialQueryCursor = 0;
         sim.maxBuildingRadius =
             Math.max(...Object.values(BuildingDefinition.all).map((d) => Number(d?.size) || 35)) +
             NAV_BUILDING_MARGIN;
@@ -106,12 +113,9 @@ class SimulationRuntimeState {
         sim.buildingById = new Map();
         sim.unitIndexById = new Map();
         sim.runtimeIndexTick = -1;
-        sim.spatialQueryBuffers = Array.from({ length: 64 }, () => []);
-        sim.spatialQueryCursor = 0;
-        // Scoped results are owned by the active query caller. Nested traversals
-        // use a separate stack so they never alias a live rotating-ring result.
-        sim.spatialQueryScopeBuffers = [];
-        sim.spatialQueryScopeDepth = 0;
+        // Area damage can kill a bursting unit whose blast is area damage again (UnitSelfDestructAttack.drain), so
+        // each nesting depth reads its own list.
+        sim.areaDamageQueries = { lists: [], depth: 0 };
         sim.maxUnitRadius = Math.max(
             ...Object.values(UnitDefinition.all).map(
                 (d) => (d?.size || 10) * COLLISION_RADIUS_SCALE,
@@ -137,9 +141,7 @@ class SimulationRuntimeState {
         sim.runtimeEpoch = (sim.runtimeEpoch || 0) + 1;
         this.visibility(sim);
         sim.runtimeIndexTick = -1;
-        sim.spatialQueryCursor = 0;
-        sim.spatialQueryScopeDepth = 0;
-        sim.buildingSpatialQueryCursor = 0;
+        sim.areaDamageQueries.depth = 0;
         sim.buildingSpatialDirty = true;
         sim.collisionStartCount = 0;
         sim.navigation.motion = new UnitMotion(sim.navigation);
@@ -169,17 +171,12 @@ class StrategySim {
                 'unitSpatial',
                 'buildingSpatial',
                 'buildingSpatialDirty',
-                'buildingSpatialQueryBuffers',
-                'buildingSpatialQueryCursor',
                 'maxBuildingRadius',
                 'unitById',
                 'buildingById',
                 'unitIndexById',
                 'runtimeIndexTick',
-                'spatialQueryBuffers',
-                'spatialQueryCursor',
-                'spatialQueryScopeBuffers',
-                'spatialQueryScopeDepth',
+                'areaDamageQueries',
                 'maxUnitRadius',
                 'targetLevelMemo',
                 'visionFields',
@@ -400,10 +397,12 @@ class StrategySim {
             this.buildingSpatialDirty = false;
         }
     }
-    nearbyBuildingIndices(x, y, r) {
+    // Buildings whose cell the circle's bounding square covers (candidates, not a distance test), as indices into
+    // this.buildings in grid order, written to `list`. Returns the count.
+    nearbyBuildingIndices(x, y, r, list) {
         this.ensureBuildingSpatial();
-        const out = this.buildingSpatialQueryBuffers[this.buildingSpatialQueryCursor++ & 15];
-        return this.buildingSpatial.queryCircle(x, y, r, out);
+        list.reserve(this.buildings.length);
+        return (list.count = this.buildingSpatial.queryCircleInto(x, y, r, list.items));
     }
     static spatialGroup(side) {
         return side === 0 ? 0 : side === 1 ? 1 : 2;
@@ -433,53 +432,35 @@ class StrategySim {
         this.unitIndexById.set(u.id, index);
         if (u.alive) this.unitSpatial.insert(index, u.x, u.y, StrategySim.spatialGroup(u.side));
     }
-    nearbyUnits(x, y, r, side = null, out = null) {
+    // Units whose cell the circle's bounding square covers (candidates, not a distance test), as indices into
+    // this.units in grid order, written to `list`; `side` null reads every side. Returns the count.
+    nearbyUnits(x, y, r, side, list) {
         if (this.runtimeIndexTick !== this.tick) this.rebuildRuntimeIndexes();
-        if (out !== null && !Array.isArray(out))
-            throw new TypeError('nearbyUnits result buffer must be an array');
-        const result = this.unitSpatial.queryCircle(
+        list.reserve(this.units.length);
+        const count = (list.count = this.unitSpatial.queryCircleInto(
             x,
             y,
             r,
-            out || this.spatialQueryBuffers[this.spatialQueryCursor++ & 63],
+            list.items,
             side == null ? -1 : StrategySim.spatialGroup(side),
-        );
+        ));
         if (this._perfCollect) {
             this._perfCollect.spatialQueries++;
-            this._perfCollect.spatialCandidates += result.length;
+            this._perfCollect.spatialCandidates += count;
             if (side != null) this._perfCollect.sideSpatialQueries++;
         }
-        return result;
+        return count;
     }
-    withNearbyUnits(x, y, r, side, visit) {
-        if (typeof side === 'function') {
-            visit = side;
-            side = null;
-        }
-        if (typeof visit !== 'function')
-            throw new TypeError('nearbyUnits visitor must be a function');
-        if (this.runtimeIndexTick !== this.tick) this.rebuildRuntimeIndexes();
-        const depth = this.spatialQueryScopeDepth || 0;
-        const out =
-            this.spatialQueryScopeBuffers[depth] || (this.spatialQueryScopeBuffers[depth] = []);
-        this.spatialQueryScopeDepth = depth + 1;
-        try {
-            const result = this.unitSpatial.queryCircle(
-                x,
-                y,
-                r,
-                out,
-                side == null ? -1 : StrategySim.spatialGroup(side),
-            );
-            if (this._perfCollect) {
-                this._perfCollect.spatialQueries++;
-                this._perfCollect.spatialCandidates += result.length;
-                if (side != null) this._perfCollect.sideSpatialQueries++;
-            }
-            return visit(result);
-        } finally {
-            this.spatialQueryScopeDepth = depth;
-        }
+    // nearbyUnits of the attacker's enemy side, kept only for living hostile combat units (grid order).
+    nearbyHostileUnits(attackerSide, x, y, r, list) {
+        if (attackerSide !== 0 && attackerSide !== 1) return (list.count = 0);
+        const found = this.nearbyUnits(x, y, r, 1 - attackerSide, list),
+            items = list.items;
+        let count = 0;
+        for (let k = 0; k < found; k++)
+            if (this.isHostileCombatUnit(attackerSide, this.units[items[k]]))
+                items[count++] = items[k];
+        return (list.count = count);
     }
     ensureCollisionBuffers(n) {
         if (this.collisionStartFx.length >= n) return;
@@ -672,10 +653,12 @@ class StrategySim {
     assignConstructionWorkers() {
         // Query the existing index around each unfinished structure, rather than
         // searching every capture point from every unit. Keep valid assignments.
+        const near = CONSTRUCTION_QUERY;
         for (const b of this.buildings) {
             if (b.alive === false || !b.construction) continue;
-            for (const idx of this.nearbyUnits(b.x, b.y, CAPTURE_RADIUS, b.side)) {
-                const u = this.units[idx];
+            const count = this.nearbyUnits(b.x, b.y, CAPTURE_RADIUS, b.side, near);
+            for (let k = 0; k < count; k++) {
+                const u = this.units[near.items[k]];
                 if (
                     !u?.alive ||
                     !UnitDefinition.get(u.type)?.construction ||
@@ -877,7 +860,8 @@ class StrategySim {
         // unit ID breaks simultaneous-hit ties; a completed project cannot overpay.
         for (const b of this.buildings) {
             if (b.alive === false || !b.construction) continue;
-            const candidates = this.nearbyUnits(b.x, b.y, CAPTURE_RADIUS, b.side).slice();
+            const candidates = CONSTRUCTION_QUERY;
+            this.nearbyUnits(b.x, b.y, CAPTURE_RADIUS, b.side, candidates);
             candidates.sort((a, c) =>
                 String(this.units[a].id) < String(this.units[c].id)
                     ? -1
@@ -885,9 +869,9 @@ class StrategySim {
                       ? 1
                       : 0,
             );
-            for (const idx of candidates) {
+            for (let k = 0; k < candidates.count; k++) {
                 if (!b.construction) break;
-                const u = this.units[idx],
+                const u = this.units[candidates.items[k]],
                     work = u.constructionWork,
                     ability = UnitDefinition.get(u.type)?.construction;
                 if (
@@ -964,8 +948,9 @@ class StrategySim {
             if (cp.owner != null || !cp.enabled) continue;
             let hostPresence = 0,
                 guestPresence = 0;
-            for (const idx of this.nearbyUnits(cp.x, cp.y, CAPTURE_RADIUS)) {
-                const u = this.units[idx];
+            const count = this.nearbyUnits(cp.x, cp.y, CAPTURE_RADIUS, null, CAPTURE_QUERY);
+            for (let k = 0; k < count; k++) {
+                const u = this.units[CAPTURE_QUERY.items[k]];
                 if (
                     !u?.alive ||
                     (u.side !== 0 && u.side !== 1) ||
@@ -1109,11 +1094,14 @@ class StrategySim {
         this.startAttackWindup(u, target, targetKind, d);
         return false;
     }
-    attackCooldownJitterMs(entity) {
+    attackCooldownJitterMs(u) {
         // Preserve the former 20TPS ±1-tick flavor as deterministic ±50ms,
-        // independent of the selected simulation TPS.
-        const id = String(entity?.id || entity?.type || 'attack');
-        const slot = HashUtil.hash(`${id}|attack-cooldown|${this.tick}`) & 3;
+        // independent of the selected simulation TPS. Words: the unit's sequence number and the tick, both
+        // below 2^32 (a match never reaches 2^32 entities or ticks).
+        const slot =
+            HashUtil.finish(
+                HashUtil.word(HashUtil.word(HashUtil.OFFSET, EntityKey.number(u.id)), this.tick),
+            ) & 3;
         return slot === 0 ? -50 : slot === 1 ? 0 : 50;
     }
 
@@ -1165,13 +1153,16 @@ class StrategySim {
             if (Math.hypot(x - b.x, y - b.y) < clearance) return false;
         }
 
-        const nearby =
-            this.runtimeIndexTick === this.tick
-                ? this.nearbyUnits(x, y, ur + this.maxUnitRadius + SPAWN_UNIT_GAP)
-                : null;
-        if (nearby) {
-            for (const idx of nearby) {
-                const u = this.units[idx];
+        if (this.runtimeIndexTick === this.tick) {
+            const count = this.nearbyUnits(
+                x,
+                y,
+                ur + this.maxUnitRadius + SPAWN_UNIT_GAP,
+                null,
+                SPAWN_QUERY,
+            );
+            for (let k = 0; k < count; k++) {
+                const u = this.units[SPAWN_QUERY.items[k]];
                 if (!u?.alive) continue;
                 const other = this.unitRadius(u.type);
                 if (Math.hypot(x - u.x, y - u.y) < ur + other + SPAWN_UNIT_GAP) return false;
@@ -1790,24 +1781,34 @@ class StrategySim {
                 attackRange + this.unitRadius(u.type) + this.maxUnitRadius,
             ),
             nearRange2 = nearRange * nearRange;
-        const scan = (range, minD2, maxD2) =>
-            this.forEachNearbyHostileUnit(u.side, u.x, u.y, range, (e) => {
+        // Hostile units with minD2 < distance² <= maxD2, in grid order.
+        const scanBand = (range, minD2, maxD2) => {
+            const count = this.nearbyHostileUnits(u.side, u.x, u.y, range, TARGET_QUERY);
+            for (let k = 0; k < count; k++) {
+                const e = this.units[TARGET_QUERY.items[k]];
                 const d2 = (e.x - u.x) ** 2 + (e.y - u.y) ** 2;
-                if (d2 <= minD2 || d2 > maxD2) return;
+                if (d2 <= minD2 || d2 > maxD2) continue;
                 if (
                     !this.canAttackEntity(u.type, e, false) ||
                     !this.canTargetUnit(u.side, e, visibleSources)
                 )
-                    return;
+                    continue;
                 if (!this.canSeeCombatTarget(u.side, e, visibleSources)) {
                     if (this._perfCollect) this._perfCollect.targetVisibilityRejects++;
-                    return;
+                    continue;
                 }
                 consider(e, false, UnitDefinition.get(e.type), d2);
-            });
-        if (d.canAttackGround) scan(nearRange, -1, nearRange2);
-        for (const i of this.nearbyBuildingIndices(u.x, u.y, queryRange)) {
-            const b = this.buildings[i];
+            }
+        };
+        if (d.canAttackGround) scanBand(nearRange, -1, nearRange2);
+        const buildingCount = this.nearbyBuildingIndices(
+            u.x,
+            u.y,
+            queryRange,
+            TARGET_BUILDING_QUERY,
+        );
+        for (let k = 0; k < buildingCount; k++) {
+            const b = this.buildings[TARGET_BUILDING_QUERY.items[k]];
             if (
                 !this.isHostileCombatBuilding(u.side, b) ||
                 !this.canAttackEntity(u.type, b, true) ||
@@ -1823,7 +1824,7 @@ class StrategySim {
             );
         }
         if (d.canAttackGround && !defensiveSite && !inRangeBest && nearRange < queryRange)
-            scan(queryRange, nearRange2, queryRange2);
+            scanBand(queryRange, nearRange2, queryRange2);
         if (currentInRange && currentInRange.rank <= inRangeRank) return currentInRange.candidate;
         if (inRangeBest) return inRangeBest;
         if (currentAcquire && currentAcquireD2 * 100 <= acquireD2 * COMBAT_TARGET_STICKINESS_PCT)
@@ -2038,10 +2039,14 @@ class StrategySim {
         strikePeak = 1,
         impactHeightFP = undefined,
     } = {}) {
-        const result = { hits: 0, peak: 1 };
-        this.withNearbyUnits(x, y, radius + this.maxUnitRadius, (indices) => {
-            for (const idx of indices) {
-                const e = this.units[idx];
+        const result = { hits: 0, peak: 1 },
+            queries = this.areaDamageQueries,
+            depth = queries.depth++,
+            near = (queries.lists[depth] ||= new IndexList());
+        try {
+            const count = this.nearbyUnits(x, y, radius + this.maxUnitRadius, null, near);
+            for (let k = 0; k < count; k++) {
+                const e = this.units[near.items[k]];
                 if (!e?.alive || e.side === sourceSide) continue;
                 const body =
                     impactHeightFP === undefined
@@ -2063,7 +2068,9 @@ class StrategySim {
                     { damageClass, damageDelivery, suppressImpactFx, sourceDamageResolved: true },
                 );
             }
-        });
+        } finally {
+            queries.depth = depth;
+        }
         return result;
     }
     setTimedModifier(
@@ -2126,15 +2133,6 @@ class StrategySim {
             !!e?.alive && (attackerSide === 0 || attackerSide === 1) && e.side === 1 - attackerSide
         );
     }
-    forEachNearbyHostileUnit(attackerSide, x, y, radius, visit) {
-        if (attackerSide !== 0 && attackerSide !== 1) return;
-        this.withNearbyUnits(x, y, radius, 1 - attackerSide, (indices) => {
-            for (const idx of indices) {
-                const e = this.units[idx];
-                if (this.isHostileCombatUnit(attackerSide, e)) visit(e);
-            }
-        });
-    }
     combatTargetInAttackRange(u, found, attackRange = null) {
         if (!u || !found?.entity) return false;
         const d = UnitDefinition.get(u.type),
@@ -2193,14 +2191,23 @@ class StrategySim {
                     }
                 };
                 // On the ground, a defensive tower prefers troops over structures.
-                this.forEachNearbyHostileUnit(b.side, b.x, b.y, d.range, (e) => {
+                const unitCount = this.nearbyHostileUnits(b.side, b.x, b.y, d.range, TOWER_QUERY);
+                for (let k = 0; k < unitCount; k++) {
+                    const e = this.units[TOWER_QUERY.items[k]];
                     if (this.canTargetUnit(b.side, e, vision[b.side])) consider(e, false);
-                });
-                if (!target)
-                    for (const idx of this.nearbyBuildingIndices(b.x, b.y, d.range)) {
-                        const e = this.buildings[idx];
+                }
+                if (!target) {
+                    const count = this.nearbyBuildingIndices(
+                        b.x,
+                        b.y,
+                        d.range,
+                        TOWER_BUILDING_QUERY,
+                    );
+                    for (let k = 0; k < count; k++) {
+                        const e = this.buildings[TOWER_BUILDING_QUERY.items[k]];
                         if (this.isHostileCombatBuilding(b.side, e)) consider(e, true);
                     }
+                }
             }
             b.targetId = target?.id ?? null;
             if (!target) continue;

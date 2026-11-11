@@ -4,6 +4,10 @@
 import { FP } from '../../core/config.js';
 import { LaunchImpact } from '../launch-impact.js';
 import { UnitDefinition } from '../../definitions/units.js';
+import { IndexList } from '../index-list.js';
+
+// drain never runs inside itself (_drainingSelfDestruct), so one list serves every burst.
+const BURST_BUILDING_QUERY = new IndexList();
 
 // Each commitment is queued before applying damage. Chain reactions are drained
 // synchronously in simulation order, without recursive damage calls.
@@ -95,11 +99,14 @@ export class UnitSelfDestructAttack {
                     impactHeightFP: heightFP,
                     suppressImpactFx: true,
                 });
-                for (const index of sim.nearbyBuildingIndices(
+                const buildingCount = sim.nearbyBuildingIndices(
                     x,
                     y,
                     spec.radius + sim.maxBuildingRadius,
-                )) {
+                    BURST_BUILDING_QUERY,
+                );
+                for (let k = 0; k < buildingCount; k++) {
+                    const index = BURST_BUILDING_QUERY.items[k];
                     const building = sim.buildings[index];
                     if (!sim.isHostileCombatBuilding(side, building)) continue;
                     if (

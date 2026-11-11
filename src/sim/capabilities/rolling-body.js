@@ -36,6 +36,7 @@ import { LaunchImpactRules } from '../../definitions/launch-impact-rules.js';
 import { EntityKey } from '../entities.js';
 import { InteractionGeometry, NavigationGoal } from '../navigation.js';
 import { RallyGamekit } from '../../core/gamekit.js';
+import { IndexList } from '../index-list.js';
 const { RESPONSE_BOUNCE } = RallyGamekit;
 
 const DEGREE = Math.PI / 180;
@@ -49,7 +50,7 @@ const pendingHits = new WeakMap();
 const HIT_NUMBERS = 6;
 // Reused every step: the unit indices near a walnut, and the goal it asks the flow field about
 // (made on first use, since this module and navigation.js import each other).
-const NEARBY = [];
+const NEARBY = new IndexList();
 let steerGoal = null;
 // Rehit window keys: the entity's EntityKey number (< 2^50, entities.js) times two, plus 0 for a unit and 1 for a
 // building, so every key is a distinct integer below 2^51, exact in a double.
@@ -91,12 +92,12 @@ class RollingBody {
     // Nearest visible enemy unit or building in sight (ties by id number, units before buildings).
     static nearestEnemy(sim, unit, vision) {
         const sight = UnitDefinition.get(unit.type).sight,
-            near = sim.nearbyUnits(unit.x, unit.y, sight, 1 - unit.side, NEARBY);
+            count = sim.nearbyUnits(unit.x, unit.y, sight, 1 - unit.side, NEARBY);
         let best = null,
             bestDistance = sight * sight,
             bestKey = Infinity;
-        for (let i = 0; i < near.length; i++) {
-            const other = sim.units[near[i]];
+        for (let i = 0; i < count; i++) {
+            const other = sim.units[NEARBY.items[i]];
             if (!other?.alive || !sim.canSeeCombatTarget(unit.side, other, vision)) continue;
             const distance = (other.x - unit.x) ** 2 + (other.y - unit.y) ** 2,
                 key = EntityKey.number(other.id) * 2;
@@ -406,9 +407,9 @@ class RollingBody {
             const u = units[i];
             if (!this.rolling(u)) continue;
             const radius = sim.unitRadius(u.type),
-                near = sim.nearbyUnits(u.x, u.y, radius + sim.maxUnitRadius, u.side, NEARBY);
-            for (let k = 0; k < near.length; k++) {
-                const other = units[near[k]];
+                count = sim.nearbyUnits(u.x, u.y, radius + sim.maxUnitRadius, u.side, NEARBY);
+            for (let k = 0; k < count; k++) {
+                const other = units[NEARBY.items[k]];
                 if (
                     other === u ||
                     !other?.alive ||

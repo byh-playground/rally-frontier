@@ -46,6 +46,19 @@ class HashUtil {
         }
         return h >>> 0;
     }
+    // Integer keys without building a string: hash.word(hash.word(HashUtil.OFFSET, a), b) ... then finish(h).
+    // Each word is one 32-bit integer (callers pass values below 2^32; ToInt32 keeps exactly those bits).
+    static OFFSET = 2166136261;
+    static word(h, value) {
+        return Math.imul(h ^ value, 16777619) >>> 0;
+    }
+    // murmur3's finalizer: FNV over whole words leaves the low output bits depending on the low input bits only,
+    // which a `& 3` or `% n` reads.
+    static finish(h) {
+        h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+        h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+        return (h ^ (h >>> 16)) >>> 0;
+    }
 }
 
 const MAP_DESCRIPTOR_SCHEMA_VERSION = 1;

@@ -8,7 +8,6 @@ const COLLISION_RADIUS_SCALE = 1.35;
 // Combat and range queries share the same deterministic unit grid (contact candidates live in the contact solver).
 // Final distance/contact tests remain exact, so the grid changes candidate discovery only.
 const SIM_SPATIAL_CELL = 256;
-const VISION_SPATIAL_CELL = 256;
 // Cell size of the per-side vision grid (GameKit vision module); sight radii round to this.
 const VISION_CELL = 32;
 const PERF_SAMPLE_EVERY_MS = 1000;
@@ -28,5 +27,4 @@ export {
     VIEW_H,
     VIEW_W,
     VISION_CELL,
-    VISION_SPATIAL_CELL,
 };
