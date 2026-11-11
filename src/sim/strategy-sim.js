@@ -50,17 +50,10 @@ import {
 } from '../definitions/combat-rules.js';
 import { createLocalPerfStats, createLocalBalanceStats } from '../diagnostics/simulation-stats.js';
 import {
-    ALLY_SOFT_CORRECTION_FRACTION,
-    ALLY_SOFT_IDLE_RADIUS_FRACTION,
-    ALLY_SOFT_MAX_RADIUS_FRACTION,
-    ALLY_SOFT_ITERATIONS,
-    ALLY_SOFT_SPEED_FRACTION,
     BALANCE_HISTORY_EVERY_MS,
     BALANCE_HISTORY_MAX,
     BALANCE_SAMPLE_EVERY_MS,
-    COLLISION_NORMAL,
     COLLISION_RADIUS_SCALE,
-    COLLISION_SPATIAL_CELL,
     PERF_SAMPLE_EVERY_MS,
     SIM_SPATIAL_CELL,
     TERRAIN_ATTACK_REVEAL_MS,
@@ -74,95 +67,18 @@ import {
 } from './navigation.js';
 import { FP } from '../core/config.js';
 import { RallyGamekit, RallyNetcode } from '../core/gamekit.js';
-const {
-    BoundsGrid,
-    CONTACT_USER,
-    ContactHit,
-    ContactList,
-    SurfaceContactGeometry,
-    SweptCircleContact,
-    UniformGrid,
-    contactKey,
-} = RallyGamekit;
-// fallbackNormal's eight directions, scaled by COLLISION_NORMAL (2896 = 4096 / sqrt 2).
-const FALLBACK_NORMALS = Object.freeze([
-    [COLLISION_NORMAL, 0],
-    [2896, 2896],
-    [0, COLLISION_NORMAL],
-    [-2896, 2896],
-    [-COLLISION_NORMAL, 0],
-    [-2896, -2896],
-    [0, -COLLISION_NORMAL],
-    [2896, -2896],
-]);
-const ascending = (a, b) => a - b;
+const { UniformGrid } = RallyGamekit;
 import { SimulationTiming } from '../core/simulation-timing.js';
 
 class SimulationRuntimeState {
     static collision(sim) {
-        // Fixed-point coordinates: one cell is COLLISION_SPATIAL_CELL world units, positions are the units' fx/fy.
-        sim.collisionGrid = new UniformGrid({
-            cellSize: COLLISION_SPATIAL_CELL * FP,
-            width: sim.world.width * FP,
-            height: sim.world.height * FP,
-            outside: 'clamp',
-        });
-        sim.collisionGridMaxRadius = 0;
-        sim.collisionCandidateBuffer = [];
-        sim.collisionSweepGrid = new BoundsGrid({
-            cellSize: COLLISION_SPATIAL_CELL * FP,
-            width: sim.world.width * FP,
-            height: sim.world.height * FP,
-            maxCells: 16,
-            views: 2,
-        });
-        sim.collisionSweepEndCell = new Int32Array(0);
-        sim.collisionSweepOrder = [];
-        sim.collisionMotion = null;
-        // Out buffers of the swept pair contact and its slide; read before the next call.
-        sim.collisionCastHit = new ContactHit();
-        sim.collisionSlideContacts = new ContactList();
-        sim.collisionSlide = { x: 0, y: 0 };
-        sim.collisionFallbackNormal = [0, 0];
-        for (const key of [
-            'collisionRadii',
-            'collisionMasses',
-            'collisionDx',
-            'collisionDy',
-            'collisionStartFx',
-            'collisionStartFy',
-            'collisionSegmentFx',
-            'collisionSegmentFy',
-            'collisionNextFx',
-            'collisionNextFy',
-            'collisionBestOther',
-        ])
-            sim[key] = new Int32Array(0);
-        sim.collisionCnt = new Uint16Array(0);
-        for (const key of ['collisionBestT', 'collisionBestNx', 'collisionBestNy'])
-            sim[key] = new Float64Array(0);
+        // Where each unit stood when this tick's contact motion began (index = sim.units order, FP), and the
+        // farthest any unit has moved from it so far. Reach checks of attacks that run after the contact solve
+        // widen by that distance. The contact solver itself lives in navigation.motion.
+        sim.collisionStartFx = new Int32Array(0);
+        sim.collisionStartFy = new Int32Array(0);
         sim.collisionStartCount = 0;
         sim.collisionMaxStepMovementFP = 0;
-        sim.hardFixSapAxis = 'x';
-        for (const key of [
-            'hardFixSapOrder',
-            'hardFixSapEligible',
-            'hardFixSapWorkOrder',
-            'hardFixSapSweepActive',
-            'hardFixSapPairs',
-        ])
-            sim[key] = [];
-        sim.hardFixSapSideHeads = new Int32Array([-1, -1, -1]);
-        sim.hardFixSapSideNext = new Int32Array(0);
-        sim.hardFixSapSidePrev = new Int32Array(0);
-        sim.hardFixSapSideHeaps = [[], [], []];
-        sim.hardFixSapMarks = new Uint32Array(0);
-        sim.hardFixSapEpoch = 1;
-        sim.hardFixSapRadii = sim.collisionRadii;
-        sim.hardFixSapCompare = (ia, ib) =>
-            sim.sapCoord(ia) -
-                sim.hardFixSapRadii[ia] -
-                (sim.sapCoord(ib) - sim.hardFixSapRadii[ib]) || ia - ib;
     }
     static spatial(sim) {
         // Units are tracked by array index with one group per side (0, 1, other), so enemy and ally queries skip each other.
@@ -226,12 +142,6 @@ class SimulationRuntimeState {
         sim.buildingSpatialQueryCursor = 0;
         sim.buildingSpatialDirty = true;
         sim.collisionStartCount = 0;
-        sim.hardFixSapOrder.length = 0;
-        sim.hardFixSapEligible.length = 0;
-        sim.hardFixSapEpoch = 1;
-        sim.hardFixSapMarks.fill(0);
-        sim.hardFixSapSideHeads.fill(-1);
-        for (const heap of sim.hardFixSapSideHeaps) heap.length = 0;
         sim.navigation.motion = new UnitMotion(sim.navigation);
         sim.rebuildRuntimeIndexes();
     }
@@ -252,49 +162,10 @@ class StrategySim {
                 'disposed',
                 'runtimeEpoch',
                 'commandReceipts',
-                'collisionGrid',
-                'collisionGridMaxRadius',
-                'collisionSweepGrid',
-                'collisionSweepEndCell',
-                'collisionSweepOrder',
-                'collisionSweepOut',
-                'collisionMotion',
-                'collisionCastHit',
-                'collisionSlideContacts',
-                'collisionSlide',
-                'collisionFallbackNormal',
-                'collisionRadii',
-                'collisionMasses',
-                'collisionDx',
-                'collisionDy',
                 'collisionStartFx',
                 'collisionStartFy',
-                'collisionSegmentFx',
-                'collisionSegmentFy',
-                'collisionNextFx',
-                'collisionNextFy',
-                'collisionBestOther',
-                'collisionCandidateBuffer',
-                'collisionCnt',
-                'collisionBestT',
-                'collisionBestNx',
-                'collisionBestNy',
                 'collisionStartCount',
                 'collisionMaxStepMovementFP',
-                'hardFixSapAxis',
-                'hardFixSapOrder',
-                'hardFixSapEligible',
-                'hardFixSapWorkOrder',
-                'hardFixSapSweepActive',
-                'hardFixSapPairs',
-                'hardFixSapSideHeads',
-                'hardFixSapSideNext',
-                'hardFixSapSidePrev',
-                'hardFixSapSideHeaps',
-                'hardFixSapMarks',
-                'hardFixSapEpoch',
-                'hardFixSapRadii',
-                'hardFixSapCompare',
                 'unitSpatial',
                 'buildingSpatial',
                 'buildingSpatialDirty',
@@ -611,36 +482,15 @@ class StrategySim {
         }
     }
     ensureCollisionBuffers(n) {
-        if (this.collisionRadii.length >= n) return;
-        const oldStartX = this.collisionStartFx,
-            oldStartY = this.collisionStartFy;
-        let cap = Math.max(64, this.collisionRadii.length || 0);
+        if (this.collisionStartFx.length >= n) return;
+        let cap = Math.max(64, this.collisionStartFx.length);
         while (cap < n) cap *= 2;
-        this.collisionRadii = new Int32Array(cap);
-        this.collisionMasses = new Int32Array(cap);
-        this.collisionDx = new Int32Array(cap);
-        this.collisionDy = new Int32Array(cap);
-        this.collisionCnt = new Uint16Array(cap);
-        this.collisionStartFx = new Int32Array(cap);
-        this.collisionStartFy = new Int32Array(cap);
-        this.collisionStartFx.set(oldStartX);
-        this.collisionStartFy.set(oldStartY);
-        this.collisionSegmentFx = new Int32Array(cap);
-        this.collisionSegmentFy = new Int32Array(cap);
-        this.collisionNextFx = new Int32Array(cap);
-        this.collisionNextFy = new Int32Array(cap);
-        this.collisionBestT = new Float64Array(cap);
-        this.collisionBestNx = new Float64Array(cap);
-        this.collisionBestNy = new Float64Array(cap);
-        this.collisionBestOther = new Int32Array(cap);
-        this.collisionMotion = {
-            sx: new Float64Array(cap),
-            sy: new Float64Array(cap),
-            ex: new Float64Array(cap),
-            ey: new Float64Array(cap),
-            vx: new Float64Array(cap),
-            vy: new Float64Array(cap),
-        };
+        const startX = new Int32Array(cap),
+            startY = new Int32Array(cap);
+        startX.set(this.collisionStartFx);
+        startY.set(this.collisionStartFy);
+        this.collisionStartFx = startX;
+        this.collisionStartFy = startY;
     }
     captureCollisionStepStarts() {
         const n = this.units.length;
@@ -652,7 +502,6 @@ class StrategySim {
         }
         this.collisionStartCount = n;
         this.collisionMaxStepMovementFP = 0;
-        this.navigation.motion.beginStep();
     }
 
     // Launch shots arrive with their damage already resolved; armor and terrain apply on impact.
@@ -1180,7 +1029,6 @@ class StrategySim {
         this.collisionStartFy[birth] = u.fy;
         this.collisionStartCount = this.units.length;
         this.addRuntimeUnit(u);
-        this.navigation.motion.remember(u, false);
         return u;
     }
     unitRadius(type) {
@@ -1193,10 +1041,6 @@ class StrategySim {
     // Building interactions must stay reachable outside that physical envelope.
     buildingClearanceDistance(unitOrType, buildingOrType) {
         return InteractionGeometry.buildingClearance(unitOrType, buildingOrType);
-    }
-
-    isAlliedCollisionUnit(a, b) {
-        return !!a && !!b && (a.side === 0 || a.side === 1) && a.side === b.side;
     }
 
     interactionDistance(source, target, kind, extra = 0) {
@@ -1732,15 +1576,6 @@ class StrategySim {
         const vx = (dx / dist) * step,
             vy = (dy / dist) * step;
 
-        u.collisionIntentTick = this.tick;
-        u.collisionIntentTx = tx;
-        u.collisionIntentTy = ty;
-
-        if (Math.abs(vx) + Math.abs(vy) > 0.0001 && u.collisionMoveTick !== this.tick) {
-            u.collisionMoveTick = this.tick;
-            u.collisionMoveStartFx = u.fx;
-            u.collisionMoveStartFy = u.fy;
-        }
         const oldX = u.fx,
             oldY = u.fy;
         this.navigation.motion.move(u, u.x + vx, u.y + vy, 'steer');
@@ -2786,815 +2621,23 @@ class StrategySim {
     mass(u) {
         return UNIT_RUNTIME_GEOMETRY[u.type]?.mass || 100;
     }
-    // A fixed direction for two coincident units, from a hash of their id numbers. Points from the lower
-    // number to the higher; written into one shared pair, read it before the next call.
-    fallbackNormal(a, b) {
-        const na = EntityKey.number(a.id),
-            nb = EntityKey.number(b.id),
-            lo = Math.min(na, nb),
-            hi = Math.max(na, nb),
-            v = FALLBACK_NORMALS[StrategySim.pairHash(lo, hi) & 7],
-            out = this.collisionFallbackNormal,
-            sign = na === lo ? 1 : -1;
-        out[0] = sign * v[0];
-        out[1] = sign * v[1];
-        return out;
-    }
-    // FNV-1a over the low and high 32-bit words of two non-negative safe integers.
-    static pairHash(a, b) {
-        let h = Math.imul(0x811c9dc5 ^ (a % 0x100000000), 0x01000193);
-        h = Math.imul(h ^ Math.floor(a / 0x100000000), 0x01000193);
-        h = Math.imul(h ^ (b % 0x100000000), 0x01000193);
-        h = Math.imul(h ^ Math.floor(b / 0x100000000), 0x01000193);
-        return h >>> 0;
-    }
-    resolveNonAlliedSurfaceMotion(startFx, startFy, radii, maxRadius, maxPasses = 4) {
-        const units = this.units,
-            n = units.length;
-        if (!n) return 0;
-        const perf = this._perfCollect;
-        if (perf) perf.collisionSweptCalls++;
-        this.ensureCollisionBuffers(n);
-        const segX = this.collisionSegmentFx,
-            segY = this.collisionSegmentFy;
-        const nextX = this.collisionNextFx,
-            nextY = this.collisionNextFy;
-        const bestT = this.collisionBestT,
-            bestNx = this.collisionBestNx,
-            bestNy = this.collisionBestNy,
-            bestOther = this.collisionBestOther;
-        const grid = this.collisionGrid;
-        const motion = this.collisionMotion;
-        let unitRadiusMax = 0;
-
-        for (let i = 0; i < n; i++) {
-            const u = units[i];
-            segX[i] = i < startFx.length ? startFx[i] : (u?.fx ?? 0);
-            segY[i] = i < startFy.length ? startFy[i] : (u?.fy ?? 0);
-            if (u?.alive && radii[i] > 0) unitRadiusMax = Math.max(unitRadiusMax, radii[i]);
-        }
-
-        let totalCorrections = 0;
-        for (let pass = 0; pass < maxPasses; pass++) {
-            bestT.fill(Infinity, 0, n);
-            bestOther.fill(-1, 0, n);
-            let travelMax = 0;
-            for (let i = 0; i < n; i++) {
-                const u = units[i];
-                if (!u?.alive) continue;
-                motion.sx[i] = segX[i] / FP;
-                motion.sy[i] = segY[i] / FP;
-                motion.ex[i] = u.fx / FP;
-                motion.ey[i] = u.fy / FP;
-                motion.vx[i] = motion.ex[i] - motion.sx[i];
-                motion.vy[i] = motion.ey[i] - motion.sy[i];
-                if (radii[i] > 0) {
-                    const travel = Math.ceil(Math.hypot(u.fx - segX[i], u.fy - segY[i]));
-                    travelMax = Math.max(travelMax, travel);
-                }
-            }
-            if (!travelMax) {
-                if (perf) perf.collisionSweptZeroMotionCalls++;
-                break;
-            } // Every relative cast would reject zero motion.
-            if (perf) perf.collisionSweptActivePasses++;
-            this.rebuildCollisionGrid(units, 0);
-            this.rebuildSweepGrid(units, radii, segX, segY, grid);
-            let pairContacts = 0;
-            for (let i = 0; i < n; i++) {
-                const a = units[i];
-                if (!a?.alive || radii[i] <= 0) continue;
-                const sx = segX[i],
-                    sy = segY[i],
-                    ex = a.fx,
-                    ey = a.fy;
-                const reach = radii[i] + unitRadiusMax + travelMax;
-                const minCx = grid.cellX(Math.min(sx, ex) - reach),
-                    maxCx = grid.cellX(Math.max(sx, ex) + reach);
-                const minCy = grid.cellY(Math.min(sy, ey) - reach),
-                    maxCy = grid.cellY(Math.max(sy, ey) + reach);
-                const candidates = this.sweepCandidates(
-                    i,
-                    grid,
-                    minCx,
-                    maxCx,
-                    minCy,
-                    maxCy,
-                    a.side,
-                );
-                if (perf) perf.collisionSweptPairTests += candidates.length;
-                for (const j of candidates) {
-                    const b = units[j];
-                    if (
-                        !b?.alive ||
-                        radii[j] <= 0 ||
-                        this.isAlliedCollisionUnit(a, b) ||
-                        UnitLeapAttack.separated(this, a, b)
-                    )
-                        continue;
-                    if (
-                        this.navigation.motion.solvedImpulseTick === this.tick &&
-                        (a.impactMotion || b.impactMotion)
-                    )
-                        continue;
-                    // Keep the original floating-point subtraction order. Equal relative
-                    // motion has no inward contact, including a stationary overlap.
-                    const vx = motion.vx[i] - motion.vx[j],
-                        vy = motion.vy[i] - motion.vy[j];
-                    if (vx === 0 && vy === 0) continue;
-                    const hit = this.collisionCastHit;
-                    if (
-                        !SweptCircleContact.cast(
-                            motion.sx[i] - motion.sx[j],
-                            motion.sy[i] - motion.sy[j],
-                            vx,
-                            vy,
-                            (radii[i] + radii[j]) / FP,
-                            SweptCircleContact.policies.relative,
-                            hit,
-                        )
-                    )
-                        continue;
-                    if (hit.degenerate) {
-                        const v = this.fallbackNormal(a, b);
-                        hit.nx = v[0] / COLLISION_NORMAL;
-                        hit.ny = v[1] / COLLISION_NORMAL;
-                    }
-                    if (perf) perf.collisionSweptHits++;
-                    pairContacts++;
-
-                    if (
-                        hit.t < bestT[i] - 1e-9 ||
-                        (Math.abs(hit.t - bestT[i]) <= 1e-9 &&
-                            (bestOther[i] < 0 || j < bestOther[i]))
-                    ) {
-                        bestT[i] = hit.t;
-                        bestNx[i] = hit.nx;
-                        bestNy[i] = hit.ny;
-                        bestOther[i] = j;
-                    }
-                    if (
-                        hit.t < bestT[j] - 1e-9 ||
-                        (Math.abs(hit.t - bestT[j]) <= 1e-9 &&
-                            (bestOther[j] < 0 || i < bestOther[j]))
-                    ) {
-                        bestT[j] = hit.t;
-                        bestNx[j] = -hit.nx;
-                        bestNy[j] = -hit.ny;
-                        bestOther[j] = i;
-                    }
-                }
-            }
-            if (!pairContacts) {
-                if (perf) perf.collisionSweptEmptyPasses++;
-                break;
-            }
-
-            let corrected = 0;
-            for (let i = 0; i < n; i++) {
-                const u = units[i];
-                nextX[i] = u?.fx ?? 0;
-                nextY[i] = u?.fy ?? 0;
-                const other = bestOther[i];
-                if (!u?.alive || other < 0) continue;
-                const sx = segX[i] / FP,
-                    sy = segY[i] / FP,
-                    ex = u.fx / FP,
-                    ey = u.fy / FP;
-                const dx = ex - sx,
-                    dy = ey - sy,
-                    len = Math.hypot(dx, dy);
-                if (len < 0.000001) {
-                    segX[i] = u.fx;
-                    segY[i] = u.fy;
-                    continue;
-                }
-
-                const q = RangeUtil.clamp(bestT[i], 0, 1),
-                    cx = sx + dx * q,
-                    cy = sy + dy * q,
-                    leftLen = len * (1 - q);
-                let goalX = dx,
-                    goalY = dy;
-                if (u.collisionIntentTick === this.tick) {
-                    goalX = (Number(u.collisionIntentTx) || 0) - cx;
-                    goalY = (Number(u.collisionIntentTy) || 0) - cy;
-                }
-                const contacts = this.collisionSlideContacts.clear();
-                // The other unit's index (< 2^28) names the contact; with the unit's number as tieKey the pair
-                // ranks the same way in every peer.
-                contacts.add(bestNx[i], bestNy[i], 0, contactKey(CONTACT_USER, other));
-                const slide = SurfaceContactGeometry.slide(
-                    dx * (1 - q),
-                    dy * (1 - q),
-                    contacts,
-                    leftLen,
-                    true,
-                    goalX,
-                    goalY,
-                    EntityKey.number(u.id),
-                    null,
-                    this.collisionSlide,
-                );
-                const ur = radii[i] || this.radiusFP(u);
-                nextX[i] = RangeUtil.clamp(
-                    Math.round((cx + slide.x) * FP),
-                    ur,
-                    this.world.width * FP - ur,
-                );
-                nextY[i] = RangeUtil.clamp(
-                    Math.round((cy + slide.y) * FP),
-                    ur,
-                    this.world.height * FP - ur,
-                );
-
-                // Next pass starts at this contact point, not at tick start. This preserves
-                // the actual piecewise path and catches second/third obstacles on the tangent.
-                segX[i] = Math.round(cx * FP);
-                segY[i] = Math.round(cy * FP);
-                if (nextX[i] !== u.fx || nextY[i] !== u.fy) corrected++;
-            }
-
-            // Units without a contact have consumed their entire segment and are stationary
-            // for later sub-passes; units with a contact continue from their contact point.
-            for (let i = 0; i < n; i++) {
-                const u = units[i];
-                if (!u?.alive) continue;
-                if (bestOther[i] < 0) {
-                    segX[i] = u.fx;
-                    segY[i] = u.fy;
-                    continue;
-                }
-                u.fx = nextX[i];
-                u.fy = nextY[i];
-                u.x = u.fx / FP;
-                u.y = u.fy / FP;
-                this.navigation.motion.constrain(u);
-            }
-            totalCorrections += corrected;
-            if (perf) {
-                perf.collisionSweptCorrectionUnits += corrected;
-                if (!corrected) perf.collisionSweptNoCorrectionPasses++;
-            }
-            if (!corrected) break;
-        }
-        return totalCorrections;
-    }
-
-    nonAlliedPenetrationOwner(ai, bi) {
-        const units = this.units,
-            a = units[ai],
-            b = units[bi];
-
-        // Cross-team crowd pressure never transfers through the contact.
-        // Recovery moves the unit whose own motion entered the opposing solid.
-        const asx = this.collisionStartFx[ai],
-            asy = this.collisionStartFy[ai];
-        const bsx = this.collisionStartFx[bi],
-            bsy = this.collisionStartFy[bi];
-        let dx = bsx - asx,
-            dy = bsy - asy;
-        if (dx === 0 && dy === 0) {
-            const f = this.fallbackNormal(a, b);
-            dx = f[0];
-            dy = f[1];
-        }
-        const avx = a.fx - asx,
-            avy = a.fy - asy,
-            bvx = b.fx - bsx,
-            bvy = b.fy - bsy;
-        const approachA = avx * dx + avy * dy;
-        const approachB = -(bvx * dx + bvy * dy);
-        if (approachA > approachB) return ai;
-        if (approachB > approachA) return bi;
-
-        const moveA = avx * avx + avy * avy,
-            moveB = bvx * bvx + bvy * bvy;
-        if (moveA > moveB) return ai;
-        if (moveB > moveA) return bi;
-
-        // Exact ties are deterministic only; they do not transmit displacement to the other unit.
-        return String(a.id || '') <= String(b.id || '') ? ai : bi;
-    }
-
-    // Sweep-and-prune helpers of enforceNonAlliedNoOverlap: positions along and across hardFixSapAxis, and a binary
-    // heap of active units ordered by where they end on the axis (ties by index).
-    sapCoord(i) {
-        const u = this.units[i];
-        return this.hardFixSapAxis === 'x' ? u.fx : u.fy;
-    }
-    sapCross(i) {
-        const u = this.units[i];
-        return this.hardFixSapAxis === 'x' ? u.fy : u.fx;
-    }
-    sapEndsBefore(ia, ib) {
-        const radii = this.hardFixSapRadii,
-            ea = this.sapCoord(ia) + radii[ia],
-            eb = this.sapCoord(ib) + radii[ib];
-        return ea < eb || (ea === eb && ia < ib);
-    }
-    sapHeapPush(heap, value) {
-        let i = heap.length;
-        heap.push(value);
-        while (i > 0) {
-            const p = (i - 1) >> 1;
-            if (!this.sapEndsBefore(value, heap[p])) break;
-            heap[i] = heap[p];
-            i = p;
-        }
-        heap[i] = value;
-    }
-    sapHeapPop(heap) {
-        const root = heap[0],
-            last = heap.pop();
-        if (heap.length) {
-            let i = 0;
-            while (true) {
-                const left = i * 2 + 1;
-                if (left >= heap.length) break;
-                const right = left + 1,
-                    child =
-                        right < heap.length && this.sapEndsBefore(heap[right], heap[left])
-                            ? right
-                            : left;
-                if (!this.sapEndsBefore(heap[child], last)) break;
-                heap[i] = heap[child];
-                i = child;
-            }
-            heap[i] = last;
-        }
-        return root;
-    }
-    sapUnlink(group, index) {
-        const next = this.hardFixSapSideNext,
-            prev = this.hardFixSapSidePrev,
-            p = prev[index],
-            q = next[index];
-        if (p >= 0) next[p] = q;
-        else this.hardFixSapSideHeads[group] = q;
-        if (q >= 0) prev[q] = p;
-        prev[index] = next[index] = -1;
-    }
-    enforceNonAlliedNoOverlap(radii, maxRadius, maxPasses = 4) {
-        const units = this.units,
-            n = units.length;
-        let total = 0;
-        const perf = this._perfCollect;
-        if (perf) perf.collisionHardFixCalls++;
-        for (let pass = 0; pass < maxPasses; pass++) {
-            if (perf) perf.collisionHardFixPasses++;
-            for (let i = 0; i < n; i++) {
-                const u = units[i];
-                this.collisionSegmentFx[i] = u?.fx ?? 0;
-                this.collisionSegmentFy[i] = u?.fy ?? 0;
-            }
-            const eligible = this.hardFixSapEligible;
-            eligible.length = 0;
-            let sx = 0,
-                sy = 0,
-                sxx = 0,
-                syy = 0;
-            for (let i = 0; i < n; i++) {
-                const u = units[i];
-                if (!u?.alive || radii[i] <= 0) continue;
-                eligible.push(i);
-                sx += u.fx;
-                sy += u.fy;
-                sxx += u.fx * u.fx;
-                syy += u.fy * u.fy;
-            }
-            const count = eligible.length || 1,
-                vx = Math.max(0, sxx / count - (sx / count) * (sx / count)),
-                vy = Math.max(0, syy / count - (sy / count) * (sy / count));
-            let axis = this.hardFixSapAxis || 'x';
-            const current = axis === 'x' ? vx : vy,
-                other = axis === 'x' ? vy : vx;
-            // 25% hysteresis prevents near-equal diagonal distributions from throwing away
-            // the temporally coherent ordering for a marginal variance difference.
-            if (other > current * 1.25) axis = axis === 'x' ? 'y' : 'x';
-            const axisChanged = axis !== this.hardFixSapAxis;
-            this.hardFixSapAxis = axis;
-            this.hardFixSapRadii = radii;
-            if (this.hardFixSapMarks.length < n)
-                this.hardFixSapMarks = new Uint32Array(
-                    Math.max(n, this.collisionRadii.length || n),
-                );
-            let epoch = (this.hardFixSapEpoch + 2) >>> 0;
-            if (epoch < 2) {
-                this.hardFixSapMarks.fill(0);
-                epoch = 2;
-            }
-            this.hardFixSapEpoch = epoch;
-            const marks = this.hardFixSapMarks;
-            for (const i of eligible) marks[i] = epoch;
-            let order = this.hardFixSapWorkOrder;
-            order.length = 0;
-            if (!axisChanged && this.hardFixSapOrder.length) {
-                for (const i of this.hardFixSapOrder)
-                    if (marks[i] === epoch) {
-                        order.push(i);
-                        marks[i] = epoch + 1;
-                    }
-                for (const i of eligible) if (marks[i] === epoch) order.push(i);
-                for (let i = 1; i < order.length; i++) {
-                    const cur = order[i],
-                        key = this.sapCoord(cur) - radii[cur];
-                    let j = i - 1;
-                    while (j >= 0) {
-                        const prev = order[j],
-                            pk = this.sapCoord(prev) - radii[prev];
-                        if (pk < key || (pk === key && prev < cur)) break;
-                        order[j + 1] = prev;
-                        j--;
-                    }
-                    order[j + 1] = cur;
-                }
-            } else {
-                for (const i of eligible) order.push(i);
-                order.sort(this.hardFixSapCompare);
-            }
-            const saved = this.hardFixSapOrder;
-            saved.length = order.length;
-            for (let q = 0; q < order.length; q++) saved[q] = order[q];
-            const pairs = this.hardFixSapPairs;
-            pairs.length = 0;
-            if (this.hardFixSapSideNext.length < n) {
-                this.hardFixSapSideNext = new Int32Array(n);
-                this.hardFixSapSidePrev = new Int32Array(n);
-            }
-            const heads = this.hardFixSapSideHeads,
-                next = this.hardFixSapSideNext,
-                prev = this.hardFixSapSidePrev,
-                heaps = this.hardFixSapSideHeaps;
-            heads.fill(-1);
-            for (const heap of heaps) heap.length = 0;
-            for (const bi of order) {
-                const minB = this.sapCoord(bi) - radii[bi],
-                    side = units[bi].side,
-                    biGroup = side === 0 ? 0 : side === 1 ? 1 : 2;
-                for (let group = 0; group < 3; group++) {
-                    // Player units on the same side are always allied; neutral/other-side
-                    // units retain the existing isAlliedCollisionUnit semantics.
-                    if (group === biGroup && biGroup !== 2) continue;
-                    const heap = heaps[group];
-                    while (heap.length && this.sapCoord(heap[0]) + radii[heap[0]] < minB)
-                        this.sapUnlink(group, this.sapHeapPop(heap));
-                    for (let ai = heads[group]; ai >= 0; ai = next[ai]) {
-                        if (perf) perf.collisionHardFixActivePairTests++;
-                        const a = units[ai],
-                            bb = units[bi];
-                        if (this.isAlliedCollisionUnit(a, bb)) continue;
-                        const min = radii[ai] + radii[bi];
-                        if (Math.abs(this.sapCross(ai) - this.sapCross(bi)) >= min) continue;
-                        if (UnitLeapAttack.separated(this, a, bb)) continue;
-                        if (perf) perf.collisionHardFixCandidates++;
-                        const owner = this.nonAlliedPenetrationOwner(ai, bi);
-                        pairs.push(owner * (n + 1) + (owner === ai ? bi : ai));
-                    }
-                }
-                const groupHeap = heaps[biGroup],
-                    head = heads[biGroup];
-                prev[bi] = -1;
-                next[bi] = head;
-                if (head >= 0) prev[head] = bi;
-                heads[biGroup] = bi;
-                this.sapHeapPush(groupHeap, bi);
-            }
-            pairs.sort(ascending);
-            let changed = 0;
-            const pairBase = n + 1;
-            for (let q = 0; q < pairs.length; q++) {
-                const packed = pairs[q],
-                    i = Math.floor(packed / pairBase),
-                    j = packed - i * pairBase;
-                const u = units[i],
-                    o = units[j],
-                    ox = this.collisionSegmentFx[j],
-                    oy = this.collisionSegmentFy[j];
-                const min = radii[i] + radii[j],
-                    dx = u.fx - ox,
-                    dy = u.fy - oy,
-                    d2 = dx * dx + dy * dy;
-                if (d2 >= min * min) continue;
-                let nx, ny, dist;
-                if (d2 === 0) {
-                    const f = this.fallbackNormal(u, o);
-                    nx = f[0];
-                    ny = f[1];
-                    dist = 0;
-                } else {
-                    dist = Math.max(1, Math.floor(Math.sqrt(d2)));
-                    nx = Math.trunc((dx * COLLISION_NORMAL) / dist);
-                    ny = Math.trunc((dy * COLLISION_NORMAL) / dist);
-                }
-                const pen = min - dist + 1,
-                    ur = radii[i];
-                u.fx = RangeUtil.clamp(
-                    u.fx + Math.trunc((nx * pen) / COLLISION_NORMAL),
-                    ur,
-                    this.world.width * FP - ur,
-                );
-                u.fy = RangeUtil.clamp(
-                    u.fy + Math.trunc((ny * pen) / COLLISION_NORMAL),
-                    ur,
-                    this.world.height * FP - ur,
-                );
-                u.x = u.fx / FP;
-                u.y = u.fy / FP;
-                changed++;
-                total++;
-            }
-            if (!changed) break;
-        }
-        return total;
-    }
-
-    resetTerrainMotionOrigin(u) {
-        this.navigation.motion.remember(u, false);
-        const i = this.unitIndexById.get(u.id);
-        if (i != null && i < this.collisionStartCount) {
-            this.collisionStartFx[i] = u.fx;
-            this.collisionStartFy[i] = u.fy;
-        }
-    }
-    constrainSurfaceContacts() {
-        let changed = 0;
-        for (const u of this.units) if (u?.alive && this.navigation.motion.constrain(u)) changed++;
-        return changed;
-    }
-    // segmentStart: record where this pass starts as the segment the hostile/terrain sweep checks afterwards.
-    // Units live in the collision grid by fixed-point centre; `maxRadius` widens soft-separation queries so a
-    // small circle still finds a large possible partner.
-    rebuildCollisionGrid(units, maxRadius) {
-        const grid = this.collisionGrid;
-        grid.clear();
-        this.collisionGridMaxRadius = Math.max(0, Math.trunc(Number(maxRadius) || 0));
-        for (let i = 0; i < units.length; i++) {
-            const u = units[i];
-            if (u.alive) grid.insert(i, u.fx, u.fy);
-        }
-    }
-    // Each swept circle is inserted with its own bounds, in the coarse grid's cell order, so a query returns
-    // candidates in the same order the coarse traversal would. Views hold only non-allies of side 0 / side 1.
-    rebuildSweepGrid(units, radii, segX, segY, coarse) {
-        const swept = this.collisionSweepGrid;
-        swept.clear();
-        if (this.collisionSweepEndCell.length < units.length)
-            this.collisionSweepEndCell = new Int32Array(
-                Math.max(units.length, this.collisionSweepEndCell.length * 2, 64),
-            );
-        const endCell = this.collisionSweepEndCell,
-            order = coarse.itemsInCellOrder(this.collisionSweepOrder);
-        for (let k = 0; k < order.length; k++) {
-            const i = order[k],
-                u = units[i];
-            if (!u?.alive || radii[i] <= 0) continue;
-            // The cell rebuildCollisionGrid filed the unit under; nothing moved in between.
-            endCell[i] = coarse.keyAt(u.fx, u.fy);
-            swept.insert(
-                i,
-                Math.min(segX[i], u.fx) - radii[i] - 1,
-                Math.min(segY[i], u.fy) - radii[i] - 1,
-                Math.max(segX[i], u.fx) + radii[i] + 1,
-                Math.max(segY[i], u.fy) + radii[i] + 1,
-                (u.side !== 0 ? 1 : 0) | (u.side !== 1 ? 2 : 0),
-            );
-        }
-    }
-    sweepCandidates(i, coarse, minCx, maxCx, minCy, maxCy, attackerSide) {
-        const out = this.collisionSweepOut || (this.collisionSweepOut = []),
-            endCell = this.collisionSweepEndCell;
-        this.collisionSweepGrid.queryOverlaps(
-            i,
-            out,
-            attackerSide === 0 || attackerSide === 1 ? attackerSide : -1,
-            i,
-        );
-        let write = 0;
-        for (let k = 0; k < out.length; k++) {
-            const j = out[k],
-                key = endCell[j],
-                x = key % coarse.cols,
-                y = Math.floor(key / coarse.cols);
-            if (x < minCx || x > maxCx || y < minCy || y > maxCy) continue;
-            out[write++] = j;
-        }
-        out.length = write;
-        return out;
-    }
-    resolveAlliedSoftSeparation(radii, maxRadius, segmentStart = true) {
-        const units = this.units,
-            n = units.length;
-        if (!n) return 0;
-        const perf = this._perfCollect,
-            now = perf ? () => performance.now() : null;
-        const grid = this.collisionGrid,
-            candidates = this.collisionCandidateBuffer;
-        const masses = this.collisionMasses;
-        const dxA = this.collisionDx,
-            dyA = this.collisionDy,
-            cnt = this.collisionCnt;
-        let mark = perf ? now() : 0;
-        this.rebuildCollisionGrid(units, maxRadius);
-        dxA.fill(0, 0, n);
-        dyA.fill(0, 0, n);
-        cnt.fill(0, 0, n);
-        if (segmentStart)
-            for (let i = 0; i < n; i++) {
-                const u = units[i];
-                this.collisionSegmentFx[i] = u?.fx ?? 0;
-                this.collisionSegmentFy[i] = u?.fy ?? 0;
-            }
-        if (perf) {
-            perf.collisionGridBuildMs += now() - mark;
-            perf.collisionSoftPasses++;
-        }
-
-        mark = perf ? now() : 0;
-        for (let i = 0; i < n; i++) {
-            const a = units[i];
-            if (!a?.alive || radii[i] <= 0) continue;
-            grid.queryCircle(a.fx, a.fy, radii[i] + this.collisionGridMaxRadius, candidates);
-            for (let k = 0; k < candidates.length; k++) {
-                const j = candidates[k];
-                if (j <= i) continue;
-                const b = units[j];
-                if (radii[j] <= 0) continue;
-                if (!b?.alive) continue;
-                if (perf) perf.collisionPairs++;
-                if (!this.isAlliedCollisionUnit(a, b)) continue;
-                const min = radii[i] + radii[j];
-                let dx = b.fx - a.fx,
-                    dy = b.fy - a.fy;
-                const d2 = dx * dx + dy * dy;
-                if (d2 >= min * min) continue;
-                let nx, ny, dist;
-                if (d2 === 0) {
-                    const f = this.fallbackNormal(a, b);
-                    nx = f[0];
-                    ny = f[1];
-                    dist = 0;
-                } else {
-                    dist = Math.max(1, Math.floor(Math.sqrt(d2)));
-                    nx = Math.trunc((dx * COLLISION_NORMAL) / dist);
-                    ny = Math.trunc((dy * COLLISION_NORMAL) / dist);
-                }
-                const pen = min - dist;
-                if (pen <= 0) continue;
-                const softPen = Math.max(1, Math.trunc(pen * ALLY_SOFT_CORRECTION_FRACTION));
-                const ma = masses[i],
-                    mb = masses[j],
-                    total = Math.max(1, ma + mb);
-                const pa = Math.trunc((softPen * mb) / total),
-                    pb = softPen - pa;
-                dxA[i] -= Math.trunc((nx * pa) / COLLISION_NORMAL);
-                dyA[i] -= Math.trunc((ny * pa) / COLLISION_NORMAL);
-                dxA[j] += Math.trunc((nx * pb) / COLLISION_NORMAL);
-                dyA[j] += Math.trunc((ny * pb) / COLLISION_NORMAL);
-                cnt[i]++;
-                cnt[j]++;
-                if (perf) {
-                    perf.collisionSoftContacts++;
-                    perf.collisionOverlaps++;
-                }
-            }
-        }
-        if (perf) perf.collisionPairScanMs += now() - mark;
-
-        mark = perf ? now() : 0;
-        let moved = 0,
-            capped = 0;
-        for (let i = 0; i < n; i++) {
-            const u = units[i];
-            if (!u?.alive || !cnt[i]) continue;
-            let cx = Math.trunc(dxA[i] / cnt[i]),
-                cy = Math.trunc(dyA[i] / cnt[i]);
-            const radius = radii[i],
-                speed = Math.max(0, Number(UnitDefinition.get(u.type)?.speed) || 0);
-            const idleAllowance = Math.round(radius * ALLY_SOFT_IDLE_RADIUS_FRACTION);
-            const speedAllowance = Math.round((speed / this.tps) * FP * ALLY_SOFT_SPEED_FRACTION);
-            const maxCorrection = Math.max(
-                1,
-                Math.min(
-                    Math.round(radius * ALLY_SOFT_MAX_RADIUS_FRACTION),
-                    Math.max(idleAllowance, speedAllowance),
-                ),
-            );
-            const len2 = cx * cx + cy * cy;
-            if (len2 > maxCorrection * maxCorrection) {
-                const len = Math.max(1, Math.sqrt(len2)),
-                    scale = maxCorrection / len;
-                cx = Math.trunc(cx * scale);
-                cy = Math.trunc(cy * scale);
-                capped++;
-            }
-            if (cx === 0 && cy === 0) continue;
-            const oldFx = u.fx,
-                oldFy = u.fy;
-            u.fx = RangeUtil.clamp(u.fx + cx, radius, this.world.width * FP - radius);
-            u.fy = RangeUtil.clamp(u.fy + cy, radius, this.world.height * FP - radius);
-            u.x = u.fx / FP;
-            u.y = u.fy / FP;
-            if (u.fx !== oldFx || u.fy !== oldFy) moved++;
-        }
-        if (perf) {
-            perf.collisionSoftApplyMs += now() - mark;
-            perf.collisionSoftMovedUnits = moved;
-            perf.collisionSoftCappedUnits = capped;
-        }
-        return moved;
-    }
+    // One tick's contacts and overlap separation (UnitMotion.solveContacts) from where the units stood when this
+    // tick's motion began.
     solveContacts() {
-        const units = this.units,
-            n = units.length;
-        if (!n) {
-            this.navigation.motion.solveImpulseStep(this.collisionStartFx, this.collisionStartFy);
-            return;
-        }
         const perf = this._perfCollect,
-            now = perf ? () => performance.now() : null;
-        let mark = perf ? now() : 0;
-        this.constrainSurfaceContacts();
-
-        this.ensureCollisionBuffers(n);
-        const radii = this.collisionRadii,
-            masses = this.collisionMasses;
-        let maxRadius = FP;
-        for (let i = 0; i < n; i++) {
-            const u = units[i],
-                ud = UnitDefinition.get(u.type);
-            if (
-                !u.alive ||
-                u.heroRoll ||
-                FruitHeroAttack.blocksMovement(u) ||
-                ud?.crowdCollision === false
-            ) {
-                radii[i] = 0;
-                masses[i] = 0;
-                continue;
-            }
-            radii[i] = this.radiusFP(u);
-            masses[i] = this.mass(u);
-            if (radii[i] > maxRadius) maxRadius = radii[i];
-        }
-        if (perf) perf.collisionPrepMs += now() - mark;
-
-        this.navigation.motion.solveImpulseStep(this.collisionStartFx, this.collisionStartFy);
-
-        // Pure steering keeps its existing nonpenetration policy; dynamic pairs have already consumed one common clock.
-        mark = perf ? now() : 0;
-        this.resolveNonAlliedSurfaceMotion(
-            this.collisionStartFx,
-            this.collisionStartFy,
-            radii,
-            maxRadius,
-            4,
-        );
-        if (perf) perf.collisionSweptMotionMs += now() - mark;
-
-        // Jacobi ally passes (A011·A012, budmori separationIterations): one pass, bounded by radius and tick
-        // speed, loses to a crowd that all walks toward the same front, so repeat until nothing moves.
-        let softMoved = 0;
-        for (let pass = 0; pass < ALLY_SOFT_ITERATIONS; pass++) {
-            const moved = this.resolveAlliedSoftSeparation(radii, maxRadius, pass === 0);
-            softMoved += moved;
-            if (!moved) break;
-        }
-        if (softMoved) {
-            // One sweep from the first pass's start keeps the combined nudge from crossing a hostile solid or terrain.
-            mark = perf ? now() : 0;
-            this.resolveNonAlliedSurfaceMotion(
-                this.collisionSegmentFx,
-                this.collisionSegmentFy,
-                radii,
-                maxRadius,
-                3,
-            );
-            if (perf) perf.collisionSweptMotionMs += now() - mark;
-            mark = perf ? now() : 0;
-            const surfaceCorrections = this.constrainSurfaceContacts();
-            if (perf) {
-                perf.collisionTerrainMs += now() - mark;
-                perf.collisionOverlaps += surfaceCorrections;
-            }
-        }
-
-        // This single final SAP call retains zero-motion hostile overlap recovery. It is
-        // no longer repeated once per allied convergence iteration.
-        mark = perf ? now() : 0;
-        const hardFixes = this.enforceNonAlliedNoOverlap(radii, maxRadius, 4);
-        if (perf) {
-            perf.collisionHardFixMs += now() - mark;
-            perf.collisionHardFixCorrections += hardFixes;
-            if (!hardFixes) perf.collisionHardFixNoOpCalls++;
-        }
-        if (hardFixes) {
-            if (perf) perf.collisionOverlaps += hardFixes;
-            for (let i = 0; i < n; i++) if (units[i]?.alive) this.syncUnitSpatial(units[i]);
-            mark = perf ? now() : 0;
-            this.constrainSurfaceContacts();
-            if (perf) perf.collisionTerrainMs += now() - mark;
-        }
+            motion = this.navigation.motion,
+            mark = perf ? performance.now() : 0;
+        motion.solveContacts(this.collisionStartFx, this.collisionStartFy);
+        if (!perf) return;
+        const stats = motion.contacts.stats;
+        perf.collisionSolveMs += performance.now() - mark;
+        perf.contactSurface = stats.surfaceContacts;
+        perf.contactPairs = stats.pairContacts;
+        perf.contactSkippedPairs = stats.skippedPairs;
+        perf.contactGroups = stats.groups;
+        perf.contactCasts = stats.casts;
+        perf.contactSoftMoves = stats.softMoves;
+        perf.contactHardMoves = stats.hardMoves;
     }
 
     updateBalanceTelemetry(winner = null) {
@@ -3697,34 +2740,15 @@ class StrategySim {
                   targetVisibilityRejects: 0,
                   sideSpatialQueries: 0,
                   visibilityChecks: 0,
-                  collisionPairs: 0,
-                  collisionOverlaps: 0,
-                  collisionSoftPasses: 0,
-                  collisionSoftContacts: 0,
-                  collisionSoftMovedUnits: 0,
-                  collisionSoftCappedUnits: 0,
+                  collisionSolveMs: 0,
+                  contactSurface: 0,
+                  contactPairs: 0,
+                  contactSkippedPairs: 0,
+                  contactGroups: 0,
+                  contactCasts: 0,
+                  contactSoftMoves: 0,
+                  contactHardMoves: 0,
                   buildingCollisionCandidates: 0,
-                  collisionPrepMs: 0,
-                  collisionGridBuildMs: 0,
-                  collisionPairScanMs: 0,
-                  collisionSoftApplyMs: 0,
-                  collisionSweptMotionMs: 0,
-                  collisionTerrainMs: 0,
-                  collisionHardFixMs: 0,
-                  collisionSweptCalls: 0,
-                  collisionSweptActivePasses: 0,
-                  collisionSweptZeroMotionCalls: 0,
-                  collisionSweptEmptyPasses: 0,
-                  collisionSweptPairTests: 0,
-                  collisionSweptHits: 0,
-                  collisionSweptCorrectionUnits: 0,
-                  collisionSweptNoCorrectionPasses: 0,
-                  collisionHardFixCalls: 0,
-                  collisionHardFixPasses: 0,
-                  collisionHardFixActivePairTests: 0,
-                  collisionHardFixCandidates: 0,
-                  collisionHardFixCorrections: 0,
-                  collisionHardFixNoOpCalls: 0,
                   combatTargetPickMs: 0,
                   combatTargetPickCalls: 0,
               }
@@ -3848,44 +2872,16 @@ class StrategySim {
             p.projectileMs = projectileMs;
             p.collisionMs = collisionMs;
             p.postMs = postMs;
-            p.collisionPrepMs = c.collisionPrepMs;
-            p.collisionGridBuildMs = c.collisionGridBuildMs;
-            p.collisionPairScanMs = c.collisionPairScanMs;
-            p.collisionSoftApplyMs = c.collisionSoftApplyMs;
-            p.collisionSweptMotionMs = c.collisionSweptMotionMs;
-            p.collisionTerrainMs = c.collisionTerrainMs;
-            p.collisionHardFixMs = c.collisionHardFixMs;
-            p.collisionOtherMs = Math.max(
-                0,
-                collisionMs -
-                    (c.collisionPrepMs +
-                        c.collisionGridBuildMs +
-                        c.collisionPairScanMs +
-                        c.collisionSoftApplyMs +
-                        c.collisionSweptMotionMs +
-                        c.collisionTerrainMs +
-                        c.collisionHardFixMs),
-            );
-            p.collisionSoftPasses = c.collisionSoftPasses;
-            p.collisionSoftContacts = c.collisionSoftContacts;
-            p.collisionSoftMovedUnits = c.collisionSoftMovedUnits;
-            p.collisionSoftCappedUnits = c.collisionSoftCappedUnits;
-            p.collisionSoftDetailedSamples = (p.collisionSoftDetailedSamples || 0) + 1;
+            p.collisionSolveMs = c.collisionSolveMs;
+            p.collisionOtherMs = Math.max(0, collisionMs - c.collisionSolveMs);
             for (const key of [
-                'collisionSweptCalls',
-                'collisionSweptActivePasses',
-                'collisionSweptZeroMotionCalls',
-                'collisionSweptEmptyPasses',
-                'collisionSweptPairTests',
-                'collisionSweptHits',
-                'collisionSweptCorrectionUnits',
-                'collisionSweptNoCorrectionPasses',
-                'collisionHardFixCalls',
-                'collisionHardFixPasses',
-                'collisionHardFixActivePairTests',
-                'collisionHardFixCandidates',
-                'collisionHardFixCorrections',
-                'collisionHardFixNoOpCalls',
+                'contactSurface',
+                'contactPairs',
+                'contactSkippedPairs',
+                'contactGroups',
+                'contactCasts',
+                'contactSoftMoves',
+                'contactHardMoves',
                 'combatTargetPickMs',
                 'combatTargetPickCalls',
             ])
@@ -3902,8 +2898,6 @@ class StrategySim {
             p.targetVisibilityRejects = c.targetVisibilityRejects;
             p.sideSpatialQueries = c.sideSpatialQueries;
             p.visibilityChecks = c.visibilityChecks;
-            p.collisionPairs = c.collisionPairs;
-            p.collisionOverlaps = c.collisionOverlaps;
             p.buildingCollisionCandidates = c.buildingCollisionCandidates || 0;
         }
         this._perfCollect = null;

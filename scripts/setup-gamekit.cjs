@@ -24,6 +24,7 @@ const moduleFiles = Object.freeze({
     face: 'face.js',
     pathfield: 'pathfield.js',
     vision: 'vision.js',
+    contactSolver: 'contact-solver.js',
     scenario: 'scenario.js',
     boot: 'boot.js',
 });

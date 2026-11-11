@@ -7776,10 +7776,7 @@ UiRegistry.refs.dbgPerfUsed = DomUtil.byId('dbgPerfUsed');
 UiRegistry.refs.dbgPerfBudgetLabel = DomUtil.byId('dbgPerfBudgetLabel');
 UiRegistry.refs.dbgPerfBudget = DomUtil.byId('dbgPerfBudget');
 UiRegistry.refs.dbgPerfCollisionCore = DomUtil.byId('dbgPerfCollisionCore');
-UiRegistry.refs.dbgPerfCollisionTail = DomUtil.byId('dbgPerfCollisionTail');
 UiRegistry.refs.dbgPerfCombatSplit = DomUtil.byId('dbgPerfCombatSplit');
-UiRegistry.refs.dbgPerfCollisionSweepFlow = DomUtil.byId('dbgPerfCollisionSweepFlow');
-UiRegistry.refs.dbgPerfCollisionHardFixFlow = DomUtil.byId('dbgPerfCollisionHardFixFlow');
 UiRegistry.refs.dbgEndurancePeaks = DomUtil.byId('dbgEndurancePeaks');
 UiRegistry.refs.dbgBalanceTime = DomUtil.byId('dbgBalanceTime');
 UiRegistry.refs.dbgBalanceCombat = DomUtil.byId('dbgBalanceCombat');
@@ -8237,11 +8234,8 @@ class ConnectionPresentation {
         UiRegistry.refs.dbgPerfSpatial.textContent = `${perf.spatialQueries || 0} / ${perf.spatialCandidates || 0} (${avgCandidates.toFixed(1)})`;
         UiRegistry.refs.dbgPerfTarget.textContent = `target ${perf.targetQueries || 0} · reject ${perf.targetVisibilityRejects || 0} / vis ${perf.visibilityChecks || 0} · sideQ ${perf.sideSpatialQueries || 0}`;
         UiRegistry.refs.dbgPerfCombatSplit.textContent = `${fmtMs(perf.combatTargetPickMs)} / ${fmtMs(perf.combatOtherMs)} · ${perf.combatTargetPickCalls || 0} target calls`;
-        UiRegistry.refs.dbgPerfCollision.textContent = `${perf.collisionPairs || 0} / ${perf.collisionSoftContacts || 0} / ${perf.collisionSoftMovedUnits || 0} / ${perf.collisionSoftCappedUnits || 0} / ${perf.collisionSoftPasses || 0}`;
-        UiRegistry.refs.dbgPerfCollisionCore.textContent = `${fmtMs(perf.collisionPrepMs)} / ${fmtMs(perf.collisionGridBuildMs)} / ${fmtMs(perf.collisionPairScanMs)} / ${fmtMs(perf.collisionSoftApplyMs)}`;
-        UiRegistry.refs.dbgPerfCollisionTail.textContent = `${fmtMs(perf.collisionSweptMotionMs)} / ${fmtMs(perf.collisionTerrainMs)} / ${fmtMs(perf.collisionHardFixMs)} / ${fmtMs(perf.collisionOtherMs)}`;
-        UiRegistry.refs.dbgPerfCollisionSweepFlow.textContent = `${perf.collisionSweptCalls || 0} / ${perf.collisionSweptActivePasses || 0} / ${perf.collisionSweptPairTests || 0} / ${perf.collisionSweptHits || 0} / ${perf.collisionSweptCorrectionUnits || 0} / ${perf.collisionSweptNoCorrectionPasses || 0}`;
-        UiRegistry.refs.dbgPerfCollisionHardFixFlow.textContent = `${perf.collisionHardFixCalls || 0} / ${perf.collisionHardFixPasses || 0} / ${perf.collisionHardFixActivePairTests || 0} / ${perf.collisionHardFixCandidates || 0} / ${perf.collisionHardFixCorrections || 0} / ${perf.collisionHardFixNoOpCalls || 0}`;
+        UiRegistry.refs.dbgPerfCollision.textContent = `${perf.contactSurface || 0} / ${perf.contactPairs || 0} / ${perf.contactSkippedPairs || 0} / ${perf.contactGroups || 0} / ${perf.contactCasts || 0}`;
+        UiRegistry.refs.dbgPerfCollisionCore.textContent = `${fmtMs(perf.collisionMs)} / ${fmtMs(perf.collisionSolveMs)} / ${fmtMs(perf.collisionOtherMs)} · ${perf.contactSoftMoves || 0} / ${perf.contactHardMoves || 0}`;
         const rp = ActiveViewState.renderer?.perfStats;
         UiRegistry.refs.dbgPerfRender.textContent = rp
             ? `${(rp.fps || 0).toFixed(1)} FPS / ${fmtMs(rp.ewmaFrameWorkMs)} (max ${fmtMs(rp.maxFrameWorkMs)})`

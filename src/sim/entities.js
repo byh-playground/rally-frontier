@@ -29,14 +29,6 @@ class Unit {
         { hitFlash: 0, attackFlash: 0, target: null, impactMotion: null, constructionWork: null },
         {
             presentation: ['hitFlash', 'attackFlash'],
-            derived: [
-                'collisionIntentTick',
-                'collisionIntentTx',
-                'collisionIntentTy',
-                'collisionMoveTick',
-                'collisionMoveStartFx',
-                'collisionMoveStartFy',
-            ],
             children: {
                 status: StatusComponent.stateContract,
                 movement: MovementComponent.stateContract,

@@ -10,42 +10,51 @@
 //   추격 목표다. 원 안에 들면 목표 자체를 향한다. 보이는 적에게 땅으로 닿을 수 없으면 적 본진(없으면 깃발)으로
 //   가는 길을 따르고, 그것도 없으면 목표를 곧장 향한다. 길찾기는 조향 방향만 정하고 물리는 그대로다.
 //   회전 한도는 turnRateSlow에서 turnRateTop으로 속도 비율에 따라 선형으로 줄어든다(빠를수록 크게 돈다).
-//   접촉은 기존 충격량 접촉(UnitMotion.solveImpulseContact)을 쓴다. 적과는 질량·반발 e의 운동량 교환
-//   J=−(1+e)·v_n/(1/M+1/m)로 양쪽 속도가 바뀌고, 맞은 적은 넉백 비율만큼 띄워지며
+//   접촉은 공용 접촉 풀이(GameKit contact-solver, UnitMotion.solveContacts)가 시간순으로 내주고 respond가 답한다.
+//   적과는 질량·반발 e의 운동량 교환 J=−(1+e)·v_n/(1/M+1/m)로 양쪽 속도가 바뀌고, 맞은 적은 넉백 비율만큼 띄워지며
 //   (재타격 대기 밖의 첫 타격은 knockback배의 속도·띄움, 같은 접촉의 반복은 1배)
-//   피해는 round(J·damagePerImpulse)다. 아군은 충격량 접촉이 아니다: 모든 몸이 움직인 뒤 겹친 지상 아군을
+//   피해는 round(J·damagePerImpulse)다. 호두가 낀 쌍도 다른 몸끼리와 같은 틱당 접촉 예산을 쓴다(넘치면 겹쳐 지나감).
+//   아군은 접촉이 아니다: 모든 몸이 움직이고 겹침 풀기까지 끝난 뒤 겹친 지상 아군을
 //   호두 밖으로 위치만 밀어낸다(pushAllies). 아군은 피해·속도 변화가 없고 호두 속도도 그대로다.
-//   같은 표적 재타격은 rehitMs 뒤에만, 연쇄 피해는 없다(맞은 적끼리의 충돌은 일반 충격량 접촉이다).
-//   벽·건물은 removeInwardVelocity에 wallRestitution을 넘겨 반사하고, 적 건물은 진입 속도에 비례한 피해
+//   같은 표적 재타격은 rehitMs 뒤에만, 연쇄 피해는 없다(맞은 적끼리의 충돌은 일반 접촉이다).
+//   벽·건물은 wallRestitution으로 반사하고, 적 건물은 진입 속도에 비례한 피해
 //   (최고 속도 정면에서 buildingDamageAtTop)를 받는다. 0시간 접촉이 반복되면(맵 끝에 눌린 적 등) 함께 멈추지 않고
-//   한 번 벽처럼 튕기고(bounceStuck), 그래도 반복되면 일반 몸처럼 붙는다. 피해는 접촉 해소 뒤 flushHits에서 한 번에 적용하고 rollingImpact 이벤트를 낸다.
+//   한도에서 한 번 벽처럼 튕기고, 그래도 반복되면 일반 몸처럼 붙는다. 피해는 접촉 해소 뒤 flushHits에서 한 번에 적용하고 rollingImpact 이벤트를 낸다.
 //   Unit.rolling 전체가 권위 상태다. 껍데기 회전 θ·속도 단계·표정·늘어남은 렌더가 위치 변화로 누적하는
 //   연출(스프라이트 계약 rolling)이며 권위 상태가 아니다. 봇은 일반 지상 병력과 같은 규칙으로 쏜다.
 // A walnut never stops: after landing it rolls, speeds up and bowls enemies over.
-// Unit.rolling { kicked, dx, dy, hits, bumpTick, wallTick } is its only
-// own state. The rolling velocity lives in the shared impulse motion (impactMotion, kind 'roll'), so UnitMotion moves it,
-// casts it against walls, buildings and units and exchanges momentum exactly like a knocked body.
-// The extension to that motion is small: a rolling body keeps its motion record while it lives,
-// gets its velocity from this motor instead of the ground drag, bounces with its own restitution,
-// bounces off a contact that would otherwise stick, and moves overlapping allies aside afterwards.
+// Unit.rolling { kicked, dx, dy, hits, bumpTick, wallTick } is its only own state. The rolling velocity lives in
+// the shared impact motion (impactMotion, kind 'roll'), so the contact solve moves it and casts it against walls,
+// buildings and units like a knocked body. The walnut's own rules are small: it keeps its motion record while it
+// lives, gets its velocity from this motor instead of the ground drag, answers its contacts here (strike gain,
+// rehit window, damage queue, its own restitution, one bounce off a stuck contact), and moves overlapping allies
+// aside afterwards.
 import { BuildingDefinition } from '../../definitions/buildings.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { FP } from '../../core/config.js';
 import { LaunchImpactRules } from '../../definitions/launch-impact-rules.js';
 import { EntityKey } from '../entities.js';
 import { InteractionGeometry, NavigationGoal } from '../navigation.js';
+import { RallyGamekit } from '../../core/gamekit.js';
+const { RESPONSE_BOUNCE } = RallyGamekit;
 
 const DEGREE = Math.PI / 180;
 // A struck enemy also leaves the ground in the proportion of the shared knockback (lift per speed),
 // so it flies off ahead of the walnut instead of being shoved along in front of it.
 const KNOCKBACK_LIFT_RATIO = LaunchImpactRules.knockbackLift / LaunchImpactRules.knockbackSpeed;
-// Hits waiting for the end of the contact solve, per simulation. Damage changes hit points and
-// deaths, so it is applied once every body has moved for the tick.
+// Hits waiting for the end of the contact solve, per simulation. Damage changes hit points and deaths, so it is
+// applied once every body has moved for the tick. A hit is two references (source unit, target unit or building)
+// and HIT_NUMBERS numbers (amount, x, y, nx, ny, building 0/1); the arrays only grow, `count` is the live length.
 const pendingHits = new WeakMap();
-// Reused every step: the enemy indices near a walnut, and the goal it asks the flow field about
+const HIT_NUMBERS = 6;
+// Reused every step: the unit indices near a walnut, and the goal it asks the flow field about
 // (made on first use, since this module and navigation.js import each other).
 const NEARBY = [];
 let steerGoal = null;
+// Rehit window keys: the entity's EntityKey number (< 2^50, entities.js) times two, plus 0 for a unit and 1 for a
+// building, so every key is a distinct integer below 2^51, exact in a double.
+const unitHitKey = (unit) => EntityKey.number(unit.id) * 2;
+const buildingHitKey = (building) => EntityKey.number(building.id) * 2 + 1;
 
 class RollingBody {
     static spec(unit) {
@@ -236,222 +245,238 @@ class RollingBody {
             m.vyFP = ty;
             m.kind = 'roll';
         }
+        // hits is a flat list of (key, tick) pairs; drop the ones past the rehit window.
         const hits = state.hits,
             since = sim.tick - sim.msTicks(spec.rehitMs);
         let write = 0;
-        for (const hit of hits) if (hit.tick > since) hits[write++] = hit;
+        for (let k = 0; k < hits.length; k += 2)
+            if (hits[k + 1] > since) {
+                hits[write++] = hits[k];
+                hits[write++] = hits[k + 1];
+            }
         hits.length = write;
     }
+    // A strike on `key` outside the rehit window is recorded and counts; one inside it does not.
     static mayHit(sim, unit, key) {
-        const spec = this.spec(unit),
-            since = sim.tick - sim.msTicks(spec.rehitMs);
-        if (unit.rolling.hits.some((hit) => hit.key === key && hit.tick > since)) return false;
-        unit.rolling.hits.push({ key, tick: sim.tick });
+        const hits = unit.rolling.hits,
+            since = sim.tick - sim.msTicks(this.spec(unit).rehitMs);
+        for (let k = 0; k < hits.length; k += 2)
+            if (hits[k] === key && hits[k + 1] > since) return false;
+        hits.push(key, sim.tick);
         return true;
     }
-    static queue(sim, hit) {
+    static queue(sim, source, target, building, amount, x, y, nx, ny) {
         let list = pendingHits.get(sim);
-        if (!list) pendingHits.set(sim, (list = []));
-        list.push(hit);
+        if (!list) pendingHits.set(sim, (list = { count: 0, refs: [], numbers: [] }));
+        const k = list.count++,
+            numbers = list.numbers,
+            at = k * HIT_NUMBERS;
+        list.refs[2 * k] = source;
+        list.refs[2 * k + 1] = target;
+        numbers[at] = amount;
+        numbers[at + 1] = x;
+        numbers[at + 2] = y;
+        numbers[at + 3] = nx;
+        numbers[at + 4] = ny;
+        numbers[at + 5] = building ? 1 : 0;
     }
-    // Contact with an enemy unit, at least one side rolling. Normal n points from b to a, relative < 0
-    // closes. The bodies exchange momentum with the unit restitution, the struck one leaves the ground
-    // in the shared knockback proportion, and the impulse sets the damage.
-    static collide(motion, a, b, nx, ny, totalA, totalB) {
-        const sim = motion.navigation.sim;
-        const relative = (totalA.x - totalB.x) * nx + (totalA.y - totalB.y) * ny;
-        if (relative >= 0) return false;
-        const rollingA = this.rolling(a),
-            rollingB = this.rolling(b),
-            spec = this.spec(rollingA ? a : b),
-            massA = sim.mass(a),
-            massB = sim.mass(b);
-        // A motor-driven participant becomes dynamic at contact, as in solveImpulseContact.
-        for (const [unit, total] of [
-            [a, totalA],
-            [b, totalB],
-        ]) {
-            const m = unit.impactMotion,
-                mass = sim.mass(unit);
-            motion.applyImpulse(
+    // A contact the solver hands over with at least one rolling body; false leaves it to the standard response.
+    // Walls and buildings: hostile building damage from the entry speed, then a bounce with the walnut's own
+    // restitution. A zero-time repeat at the limit bounces the rolling body once; later repeats stick as usual.
+    // An enemy: momentum exchange with the unit restitution, the struck body thrown by `knockback` times the
+    // impulse on a strike outside the rehit window (the walnut loses speed from the plain exchange only), lifted
+    // in the shared knockback proportion, and the impulse sets the damage. The normal points from j to i.
+    static respond(motion, ev) {
+        const sim = motion.navigation.sim,
+            solver = motion.contacts,
+            bodies = solver.bodies,
+            units = sim.units,
+            i = ev.i,
+            j = ev.j,
+            a = units[i],
+            b = j >= 0 ? units[j] : null,
+            rollingA = this.rolling(a),
+            rollingB = b !== null && this.rolling(b);
+        if (!rollingA && !rollingB) return false;
+        if (b === null) {
+            if (ev.stuck) return false;
+            this.hitSurface(
+                sim,
+                a,
+                ev.obstacle ? ev.obstacle.buildingId : null,
+                ev.nx,
+                ev.ny,
+                solver.closing(ev),
+                bodies.x[i] / FP,
+                bodies.y[i] / FP,
+            );
+            solver.reflect(ev, this.spec(a).wallRestitution);
+            motion.recordContact(ev);
+            return true;
+        }
+        if (ev.stuck) {
+            if (ev.repeats !== solver.maxZeroTimeRepeats) return false;
+            solver.bounce(
+                ev,
+                rollingA,
+                rollingB,
+                rollingA ? this.spec(a).wallRestitution : 0,
+                rollingB ? this.spec(b).wallRestitution : 0,
+            );
+            if (ev.response === RESPONSE_BOUNCE)
+                for (let side = 0; side < 2; side++) {
+                    const unit = side === 0 ? a : b,
+                        m = unit.impactMotion;
+                    if (side === 0 ? rollingA : rollingB)
+                        motion.markImpact(unit, m.kind, m.sourceId, m.originX, m.originY);
+                }
+            return true;
+        }
+        if (!(solver.closing(ev) > 0)) return false;
+        // A strike is the first hit on a target outside the rolling body's rehit window.
+        const strikeB = rollingA && this.mayHit(sim, a, unitHitKey(b)),
+            strikeA = rollingB && this.mayHit(sim, b, unitHitKey(a));
+        if (rollingA) a.rolling.bumpTick = sim.tick;
+        if (rollingB) b.rolling.bumpTick = sim.tick;
+        const gainA = !rollingA && strikeA ? this.spec(b).knockback : 1,
+            gainB = !rollingB && strikeB ? this.spec(a).knockback : 1,
+            impulse = solver.exchange(
+                ev,
+                this.spec(rollingA ? a : b).unitRestitution,
+                gainA,
+                gainB,
+            ),
+            ax = bodies.x[i] / FP,
+            ay = bodies.y[i] / FP,
+            bx = bodies.x[j] / FP,
+            by = bodies.y[j] / FP;
+        // The struck body leaves the ground too; the rolling one keeps its kind 'roll'.
+        for (let side = 0; side < 2; side++) {
+            const unit = side === 0 ? a : b,
+                rolls = side === 0 ? rollingA : rollingB,
+                m = motion.impactRecord(unit);
+            if (!rolls)
+                m.vzFP += Math.round(
+                    ((impulse * KNOCKBACK_LIFT_RATIO * (side === 0 ? gainA : gainB)) /
+                        sim.mass(unit)) *
+                        FP,
+                );
+            motion.markImpact(
                 unit,
-                {
-                    x: (total.x - (m?.vxFP || 0) / FP) * mass,
-                    y: (total.y - (m?.vyFP || 0) / FP) * mass,
-                },
-                {
-                    sourceId: unit === a ? b.id : a.id,
-                    originX: unit.x,
-                    originY: unit.y,
-                    kind: m?.kind || 'knockback',
-                },
+                rolls ? m.kind : 'knockback',
+                side === 0 ? b.id : a.id,
+                side === 0 ? bx : ax,
+                side === 0 ? by : ay,
             );
         }
-        const impulse = (-(1 + spec.unitRestitution) * relative) / (1 / massA + 1 / massB),
-            lift = impulse * KNOCKBACK_LIFT_RATIO;
-        // A rolling body's first hit on a target in a rehit window is a strike: the struck one is
-        // thrown by `knockback` times the exchanged impulse, while the rolling body loses speed from the
-        // exchange alone. The repeats inside the window (a target pinned against a wall or building)
-        // exchange the plain impulse, as the damage does, so a pinned body is not pumped up by them.
-        const strikes = new Map();
-        for (const [source, target] of [
-            [a, b],
-            [b, a],
-        ])
-            if (source === a ? rollingA : rollingB) {
-                source.rolling.bumpTick = sim.tick;
-                strikes.set(target, this.mayHit(sim, source, 'unit:' + target.id));
-            }
-        for (const [unit, source, sign, rolls] of [
-            [a, b, 1, rollingA],
-            [b, a, -1, rollingB],
-        ]) {
-            const gain = !rolls && strikes.get(unit) ? this.spec(source).knockback : 1;
-            motion.applyImpulse(
-                unit,
-                {
-                    x: sign * impulse * nx * gain,
-                    y: sign * impulse * ny * gain,
-                    z: rolls ? 0 : lift * gain,
-                },
-                {
-                    sourceId: source.id,
-                    originX: source.x,
-                    originY: source.y,
-                    kind: rolls ? unit.impactMotion?.kind : 'knockback',
-                },
+        if (strikeB)
+            this.queue(
+                sim,
+                a,
+                b,
+                false,
+                Math.round(impulse * this.spec(a).damagePerImpulse),
+                (ax + bx) / 2,
+                (ay + by) / 2,
+                -ev.nx,
+                -ev.ny,
             );
-        }
-        for (const [source, target, sign] of [
-            [a, b, -1],
-            [b, a, 1],
-        ]) {
-            if (!strikes.get(target) || !(source === a ? rollingA : rollingB)) continue;
-            this.queue(sim, {
-                sourceId: source.id,
-                targetId: target.id,
-                building: false,
-                amount: Math.round(impulse * this.spec(source).damagePerImpulse),
-                x: (source.x + target.x) / 2,
-                y: (source.y + target.y) / 2,
-                nx: sign * nx,
-                ny: sign * ny,
-            });
-        }
+        if (strikeA)
+            this.queue(
+                sim,
+                b,
+                a,
+                false,
+                Math.round(impulse * this.spec(b).damagePerImpulse),
+                (ax + bx) / 2,
+                (ay + by) / 2,
+                ev.nx,
+                ev.ny,
+            );
         return true;
     }
-    // Allies are not impulse contacts: once every body has moved, a ground ally overlapping a rolling
-    // body is moved straight out of it. No velocity is exchanged, so the walnut keeps its speed and the
-    // ally takes no damage and is not flung through its own crowd.
+    // Allies are not contacts: once every body has moved and separated, a ground ally overlapping a rolling body is
+    // moved straight out of it, along the terrain. No velocity is exchanged, so the walnut keeps its speed and the
+    // ally takes no damage and is not flung through its own crowd. The solver's ally separation splits by mass and
+    // is capped per pass, so it would leave allies inside a fast walnut; this rule stays the walnut's own.
     static pushAllies(sim) {
         const units = sim.units,
             motion = sim.navigation.motion;
-        for (const u of units) {
+        for (let i = 0; i < units.length; i++) {
+            const u = units[i];
             if (!this.rolling(u)) continue;
-            const radius = sim.unitRadius(u.type);
-            sim.withNearbyUnits(u.x, u.y, radius + sim.maxUnitRadius, u.side, (indices) => {
-                for (const j of indices) {
-                    const other = units[j];
-                    if (
-                        other === u ||
-                        !other?.alive ||
-                        this.rolling(other) ||
-                        !this.grounded(other) ||
-                        other.heroRoll
-                    )
-                        continue;
-                    const reach = radius + sim.unitRadius(other.type);
-                    let dx = other.x - u.x,
-                        dy = other.y - u.y;
-                    const distance = Math.hypot(dx, dy);
-                    if (distance >= reach) continue;
-                    if (distance > 1e-9) {
-                        dx /= distance;
-                        dy /= distance;
-                    } else {
-                        // Dead centre: aside, to the walnut's left.
-                        dx = -u.rolling.dy;
-                        dy = u.rolling.dx;
-                    }
-                    other.fx += Math.round(dx * (reach - distance) * FP);
-                    other.fy += Math.round(dy * (reach - distance) * FP);
-                    other.x = other.fx / FP;
-                    other.y = other.fy / FP;
-                    motion.constrain(other);
-                    sim.syncUnitSpatial(other);
+            const radius = sim.unitRadius(u.type),
+                near = sim.nearbyUnits(u.x, u.y, radius + sim.maxUnitRadius, u.side, NEARBY);
+            for (let k = 0; k < near.length; k++) {
+                const other = units[near[k]];
+                if (
+                    other === u ||
+                    !other?.alive ||
+                    this.rolling(other) ||
+                    !this.grounded(other) ||
+                    other.heroRoll
+                )
+                    continue;
+                const reach = radius + sim.unitRadius(other.type);
+                let dx = other.x - u.x,
+                    dy = other.y - u.y;
+                const distance = Math.hypot(dx, dy);
+                if (distance >= reach) continue;
+                if (distance > 1e-9) {
+                    dx /= distance;
+                    dy /= distance;
+                } else {
+                    // Dead centre: aside, to the walnut's left.
+                    dx = -u.rolling.dy;
+                    dy = u.rolling.dx;
                 }
-            });
+                motion.move(
+                    other,
+                    (other.fx + Math.round(dx * (reach - distance) * FP)) / FP,
+                    (other.fy + Math.round(dy * (reach - distance) * FP)) / FP,
+                    'project',
+                );
+            }
         }
     }
-    // A contact that keeps recurring in zero time, such as a unit pinned against the map edge,
-    // would stick both bodies together. A rolling body bounces off it as off a wall instead, and the
-    // pinned body keeps its own velocity. n points from b to a. Returns false when neither rolls.
-    // The velocities are updated in place, unrounded, so the solver's next cast sees them separate.
-    static bounceStuck(motion, a, b, nx, ny, velocityA, velocityB) {
-        const rollingA = this.rolling(a),
-            rollingB = this.rolling(b);
-        if (!rollingA && !rollingB) return false;
-        // The closing speed is reflected relative to the other body, so the pair always separates.
-        // Two rolling bodies share the change; a rolling body alone takes all of it.
-        const closing = (velocityA.x - velocityB.x) * nx + (velocityA.y - velocityB.y) * ny;
-        if (closing >= 0) return true;
-        const share = rollingA && rollingB ? 0.5 : 1;
-        for (const [unit, velocity, sign] of [
-            [a, velocityA, 1],
-            [b, velocityB, -1],
-        ]) {
-            if (!(unit === a ? rollingA : rollingB)) continue;
-            const m = unit.impactMotion,
-                mass = motion.navigation.sim.mass(unit),
-                change = -(1 + this.spec(unit).wallRestitution) * closing * share * sign;
-            velocity.x += change * nx;
-            velocity.y += change * ny;
-            motion.applyImpulse(
-                unit,
-                {
-                    x: (velocity.x - m.vxFP / FP) * mass,
-                    y: (velocity.y - m.vyFP / FP) * mass,
-                },
-                { kind: m.kind, sourceId: m.sourceId, originX: m.originX, originY: m.originY },
-            );
-        }
-        return true;
-    }
-    static surfaceRestitution(unit) {
-        return this.rolling(unit) ? this.spec(unit).wallRestitution : null;
-    }
-    // A wall or building contact, before the bounce removes the inward speed.
-    static hitSurface(sim, unit, obstacleId, nx, ny, inwardSpeed) {
+    // A wall or building contact, before the bounce removes the inward speed. (x, y) is the walnut at the contact.
+    static hitSurface(sim, unit, obstacleId, nx, ny, inwardSpeed, x, y) {
         const spec = this.spec(unit);
         const building = obstacleId == null ? null : sim.buildingById.get(obstacleId),
             hostile = !!building && sim.isHostileCombatBuilding(unit.side, building);
         // The bump the sprite shows (sprite contract rolling).
         unit.rolling.wallTick = sim.tick;
-        if (!hostile || !this.mayHit(sim, unit, 'building:' + building.id)) return;
-        this.queue(sim, {
-            sourceId: unit.id,
-            targetId: building.id,
-            building: true,
-            amount: Math.round((spec.buildingDamageAtTop * inwardSpeed) / spec.topSpeed),
-            x: unit.x - nx * sim.unitRadius(unit.type),
-            y: unit.y - ny * sim.unitRadius(unit.type),
-            nx: -nx,
-            ny: -ny,
-        });
+        if (!hostile || !this.mayHit(sim, unit, buildingHitKey(building))) return;
+        this.queue(
+            sim,
+            unit,
+            building,
+            true,
+            Math.round((spec.buildingDamageAtTop * inwardSpeed) / spec.topSpeed),
+            x - nx * sim.unitRadius(unit.type),
+            y - ny * sim.unitRadius(unit.type),
+            -nx,
+            -ny,
+        );
     }
     // After every body has moved for the tick: allies step aside, then damage lands. Struck units
     // already carry their knockback.
     static flushHits(sim) {
         this.pushAllies(sim);
         const list = pendingHits.get(sim);
-        if (!list?.length) return;
-        for (const hit of list) {
-            const source = sim.unitById.get(hit.sourceId);
-            const target = hit.building
-                ? sim.buildingById.get(hit.targetId)
-                : sim.unitById.get(hit.targetId);
-            if (!source || !target || target.alive === false || hit.amount <= 0) continue;
-            sim.applyDamage(source.side, source.type, target, hit.building, hit.amount, source.id, {
+        if (!list?.count) return;
+        const refs = list.refs,
+            numbers = list.numbers;
+        for (let k = 0; k < list.count; k++) {
+            const source = refs[2 * k],
+                target = refs[2 * k + 1],
+                at = k * HIT_NUMBERS,
+                amount = numbers[at],
+                building = numbers[at + 5] === 1;
+            refs[2 * k] = null;
+            refs[2 * k + 1] = null;
+            if (target.alive === false || amount <= 0) continue;
+            sim.applyDamage(source.side, source.type, target, building, amount, source.id, {
                 sourceDamageResolved: true,
                 suppressImpactFx: true,
             });
@@ -460,15 +485,15 @@ class RollingBody {
                 side: source.side,
                 sourceId: source.id,
                 targetId: target.id,
-                isBuilding: hit.building,
-                amount: hit.amount,
-                x: hit.x,
-                y: hit.y,
-                nx: hit.nx,
-                ny: hit.ny,
+                isBuilding: building,
+                amount,
+                x: numbers[at + 1],
+                y: numbers[at + 2],
+                nx: numbers[at + 3],
+                ny: numbers[at + 4],
             });
         }
-        list.length = 0;
+        list.count = 0;
     }
     static validateState(unit, state) {
         const spec = this.spec(unit),
@@ -490,13 +515,11 @@ class RollingBody {
             !tickOrNull(rolling.bumpTick) ||
             !tickOrNull(rolling.wallTick) ||
             !Array.isArray(rolling.hits) ||
-            rolling.hits.some(
-                (hit) =>
-                    !hit ||
-                    typeof hit.key !== 'string' ||
-                    !hit.key ||
-                    hit.key.length > 256 ||
-                    !tickOrNull(hit.tick),
+            rolling.hits.length % 2 !== 0 ||
+            rolling.hits.some((value, k) =>
+                k % 2 === 0
+                    ? !Number.isSafeInteger(value) || value < 0
+                    : value === null || !tickOrNull(value),
             )
         )
             throw new Error('게임 snapshot의 구르기 상태가 잘못되었습니다.');
