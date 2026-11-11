@@ -1,2 +1,17 @@
-# Asset manifests verify exact SVG bytes on every platform.
+# Source text is LF on every platform so `prettier --check` (endOfLine: lf) and the
+# asset manifests that verify exact SVG bytes do not depend on core.autocrlf.
+* text=auto eol=lf
 *.svg text eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ogg binary
+*.mp3 binary
+*.wav binary
+*.mp4 binary
+*.webm binary
