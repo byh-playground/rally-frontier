@@ -3,7 +3,12 @@
 //   일반 교전·이동 AI를 쓰지 않고 RollingBody가 매 틱 impactMotion 속도를 직접 쓴다.
 //   착지 충격이 끝나면(땅에 닿고 XY 속도 0) 발사 방향으로 최고 속도×launchSpeedRatio로 차고 나간다(kicked).
 //   속도는 speed += (top·drag·max(0, 진행 방향·목표 방향) − drag·speed)/tps로, 구동−저항의 평형이 최고 속도다.
-//   목표는 시야 안의 가장 가까운 적 병사·건물(같으면 id), 없으면 적 본진, 없으면 깃발이며 길찾기는 없다.
+//   목표는 시야 안의 가장 가까운 적 병사·건물(같으면 id 번호, 병사 먼저), 없으면 적 본진, 없으면 깃발이다.
+//   조향 방향은 목표 직선이 아니라 공용 흐름장(TerrainNavigation.nextPoint, 'field')이 주는 다음 지점이다:
+//   목표의 접촉 원(병사는 접촉 거리, 건물은 공격 도달 거리)까지 직선이 열려 있으면 직선, 막혔으면 호두 반경
+//   묶음의 흐름장. 건물·깃발은 고정 목표라 같은 목표로 가는 호두가 흐름장을 함께 쓰고, 병사는 선 칸 단위의
+//   추격 목표다. 원 안에 들면 목표 자체를 향한다. 보이는 적에게 땅으로 닿을 수 없으면 적 본진(없으면 깃발)으로
+//   가는 길을 따르고, 그것도 없으면 목표를 곧장 향한다. 길찾기는 조향 방향만 정하고 물리는 그대로다.
 //   회전 한도는 turnRateSlow에서 turnRateTop으로 속도 비율에 따라 선형으로 줄어든다(빠를수록 크게 돈다).
 //   접촉은 기존 충격량 접촉(UnitMotion.solveImpulseContact)을 쓴다. 적과는 질량·반발 e의 운동량 교환
 //   J=−(1+e)·v_n/(1/M+1/m)로 양쪽 속도가 바뀌고, 맞은 적은 넉백 비율만큼 띄워지며
@@ -12,13 +17,12 @@
 //   호두 밖으로 위치만 밀어낸다(pushAllies). 아군은 피해·속도 변화가 없고 호두 속도도 그대로다.
 //   같은 표적 재타격은 rehitMs 뒤에만, 연쇄 피해는 없다(맞은 적끼리의 충돌은 일반 충격량 접촉이다).
 //   벽·건물은 removeInwardVelocity에 wallRestitution을 넘겨 반사하고, 적 건물은 진입 속도에 비례한 피해
-//   (최고 속도 정면에서 buildingDamageAtTop)를 받는다. 벽에 맞은 뒤 slideMs 동안은 목표가 벽 안쪽이면
-//   벽을 따라 한쪽(wallSide)으로 미끄러진다. 0시간 접촉이 반복되면(맵 끝에 눌린 적 등) 함께 멈추지 않고
+//   (최고 속도 정면에서 buildingDamageAtTop)를 받는다. 0시간 접촉이 반복되면(맵 끝에 눌린 적 등) 함께 멈추지 않고
 //   한 번 벽처럼 튕기고(bounceStuck), 그래도 반복되면 일반 몸처럼 붙는다. 피해는 접촉 해소 뒤 flushHits에서 한 번에 적용하고 rollingImpact 이벤트를 낸다.
 //   Unit.rolling 전체가 권위 상태다. 껍데기 회전 θ·속도 단계·표정·늘어남은 렌더가 위치 변화로 누적하는
 //   연출(스프라이트 계약 rolling)이며 권위 상태가 아니다. 봇은 일반 지상 병력과 같은 규칙으로 쏜다.
 // A walnut never stops: after landing it rolls, speeds up and bowls enemies over.
-// Unit.rolling { kicked, dx, dy, hits, bumpTick, wallTick, wallNx, wallNy, wallSide } is its only
+// Unit.rolling { kicked, dx, dy, hits, bumpTick, wallTick } is its only
 // own state. The rolling velocity lives in the shared impulse motion (impactMotion, kind 'roll'), so UnitMotion moves it,
 // casts it against walls, buildings and units and exchanges momentum exactly like a knocked body.
 // The extension to that motion is small: a rolling body keeps its motion record while it lives,
@@ -28,6 +32,8 @@ import { BuildingDefinition } from '../../definitions/buildings.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { FP } from '../../core/config.js';
 import { LaunchImpactRules } from '../../definitions/launch-impact-rules.js';
+import { EntityKey } from '../entities.js';
+import { InteractionGeometry, NavigationGoal } from '../navigation.js';
 
 const DEGREE = Math.PI / 180;
 // A struck enemy also leaves the ground in the proportion of the shared knockback (lift per speed),
@@ -36,6 +42,10 @@ const KNOCKBACK_LIFT_RATIO = LaunchImpactRules.knockbackLift / LaunchImpactRules
 // Hits waiting for the end of the contact solve, per simulation. Damage changes hit points and
 // deaths, so it is applied once every body has moved for the tick.
 const pendingHits = new WeakMap();
+// Reused every step: the enemy indices near a walnut, and the goal it asks the flow field about
+// (made on first use, since this module and navigation.js import each other).
+const NEARBY = [];
+let steerGoal = null;
 
 class RollingBody {
     static spec(unit) {
@@ -49,9 +59,6 @@ class RollingBody {
             hits: [],
             bumpTick: null,
             wallTick: null,
-            wallNx: 0,
-            wallNy: 0,
-            wallSide: 0,
         };
     }
     static grounded(unit) {
@@ -72,43 +79,82 @@ class RollingBody {
         unit.rolling.dx = dx / length;
         unit.rolling.dy = dy / length;
     }
-    // Nearest visible enemy unit or building in sight; with none, the enemy main base.
-    static goal(sim, unit, spec, vision) {
-        const sight = UnitDefinition.get(unit.type).sight;
+    // Nearest visible enemy unit or building in sight (ties by id number, units before buildings).
+    static nearestEnemy(sim, unit, vision) {
+        const sight = UnitDefinition.get(unit.type).sight,
+            near = sim.nearbyUnits(unit.x, unit.y, sight, 1 - unit.side, NEARBY);
         let best = null,
-            bestDistance = Infinity,
-            bestId = '';
-        const consider = (entity, id) => {
-            const distance = (entity.x - unit.x) ** 2 + (entity.y - unit.y) ** 2;
-            if (distance > sight * sight) return;
-            if (distance < bestDistance || (distance === bestDistance && id < bestId)) {
-                best = entity;
+            bestDistance = sight * sight,
+            bestKey = Infinity;
+        for (let i = 0; i < near.length; i++) {
+            const other = sim.units[near[i]];
+            if (!other?.alive || !sim.canSeeCombatTarget(unit.side, other, vision)) continue;
+            const distance = (other.x - unit.x) ** 2 + (other.y - unit.y) ** 2,
+                key = EntityKey.number(other.id) * 2;
+            if (distance < bestDistance || (distance === bestDistance && key < bestKey)) {
+                best = other;
                 bestDistance = distance;
-                bestId = id;
+                bestKey = key;
             }
-        };
-        sim.withNearbyUnits(unit.x, unit.y, sight, 1 - unit.side, (indices) => {
-            for (const index of indices) {
-                const other = sim.units[index];
-                if (other?.alive && sim.canSeeCombatTarget(unit.side, other, vision))
-                    consider(other, String(other.id));
-            }
-        });
-        for (const building of sim.buildings)
+        }
+        const buildings = sim.buildings;
+        for (let i = 0; i < buildings.length; i++) {
+            const building = buildings[i];
             if (
-                sim.isHostileCombatBuilding(unit.side, building) &&
-                sim.isVisible(unit.side, building.x, building.y, vision)
+                !sim.isHostileCombatBuilding(unit.side, building) ||
+                !sim.isVisible(unit.side, building.x, building.y, vision)
             )
-                consider(building, String(building.id));
-        if (best) return best;
-        return (
-            sim.buildings.find(
-                (b) =>
-                    b.side === 1 - unit.side &&
-                    b.alive !== false &&
-                    BuildingDefinition.isMainBase(b.type),
-            ) || sim.flags[unit.side]
-        );
+                continue;
+            const distance = (building.x - unit.x) ** 2 + (building.y - unit.y) ** 2,
+                key = EntityKey.number(building.id) * 2 + 1;
+            if (distance < bestDistance || (distance === bestDistance && key < bestKey)) {
+                best = building;
+                bestDistance = distance;
+                bestKey = key;
+            }
+        }
+        return best;
+    }
+    static enemyBase(sim, unit) {
+        const buildings = sim.buildings;
+        for (let i = 0; i < buildings.length; i++) {
+            const b = buildings[i];
+            if (
+                b.side === 1 - unit.side &&
+                b.alive !== false &&
+                BuildingDefinition.isMainBase(b.type)
+            )
+                return b;
+        }
+        return null;
+    }
+    // Where to steer: the way to the nearest visible enemy; when there is none or it cannot be reached
+    // over the ground, the way to the enemy main base (or, without one, the flag); when neither can be
+    // reached, straight at whichever exists.
+    static steerPoint(sim, unit, vision) {
+        const enemy = this.nearestEnemy(sim, unit, vision),
+            way = enemy && this.wayTo(sim, unit, enemy);
+        if (way) return way;
+        const home = this.enemyBase(sim, unit) || sim.flags[unit.side];
+        return (home && this.wayTo(sim, unit, home)) || enemy || home;
+    }
+    // The next point of the shared flow field to the target's contact disc (a clear straight line in the
+    // ray range is taken straight, as for every army unit); the target itself once inside the disc; null
+    // when the ground does not lead there. A unit's disc is a chase goal keyed by the cell it stands in;
+    // a building's disc and the flag's point are fixed, so every walnut heading there shares one field.
+    static wayTo(sim, unit, target) {
+        const goal = (steerGoal ??= NavigationGoal.point(0, 0)).reset(
+                target.x,
+                target.y,
+                target.type ? InteractionGeometry.reach(unit, target, 'attack') : 0,
+                0,
+                false,
+                !!BuildingDefinition.get(target.type),
+            ),
+            point = sim.navigation.nextPoint(unit, goal, 'field');
+        if (point && Math.abs(point.x - unit.x) < 1e-6 && Math.abs(point.y - unit.y) < 1e-6)
+            return target;
+        return point;
     }
     // The motor, once per tick before contacts: turn toward the goal, then drive minus drag.
     // The heading is the direction of travel, so a bounce turns the walnut with it.
@@ -124,10 +170,10 @@ class RollingBody {
         let vx = (m?.vxFP || 0) / FP,
             vy = (m?.vyFP || 0) / FP,
             speed = Math.hypot(vx, vy);
-        const goal = this.goal(sim, unit, spec, vision);
+        const goal = this.steerPoint(sim, unit, vision);
         let gx = (goal?.x ?? unit.x) - unit.x,
             gy = (goal?.y ?? unit.y) - unit.y;
-        let goalLength = Math.hypot(gx, gy);
+        const goalLength = Math.hypot(gx, gy);
         if (goalLength > 1e-9) {
             gx /= goalLength;
             gy /= goalLength;
@@ -140,29 +186,6 @@ class RollingBody {
         } else if (!(Math.hypot(hx, hy) > 0)) {
             hx = goalLength > 1e-9 ? gx : 1;
             hy = goalLength > 1e-9 ? gy : 0;
-        }
-        // For a while after bouncing off a wall the goal's share into that wall is dropped, so the
-        // walnut runs along it instead of butting it again. No path is searched.
-        const nx = state.wallNx,
-            ny = state.wallNy;
-        if (
-            (nx || ny) &&
-            state.wallTick !== null &&
-            sim.tick < state.wallTick + sim.msTicks(spec.slideMs) &&
-            goalLength > 1e-9
-        ) {
-            const into = gx * nx + gy * ny;
-            if (into < 0) {
-                // One side per wall, chosen once, so the next bounce does not undo it: the goal's side
-                // when it clearly has one, otherwise the side the walnut is already moving along.
-                const along = gx * -ny + gy * nx;
-                if (!state.wallSide)
-                    state.wallSide =
-                        Math.abs(along) > 0.25 ? Math.sign(along) : hx * -ny + hy * nx < 0 ? -1 : 1;
-                gx = -ny * state.wallSide;
-                gy = nx * state.wallSide;
-                goalLength = 1;
-            }
         }
         if (!state.kicked) {
             // Landing: half the top speed along the launch direction.
@@ -399,20 +422,11 @@ class RollingBody {
     }
     // A wall or building contact, before the bounce removes the inward speed.
     static hitSurface(sim, unit, obstacleId, nx, ny, inwardSpeed) {
-        const spec = this.spec(unit),
-            state = unit.rolling;
+        const spec = this.spec(unit);
         const building = obstacleId == null ? null : sim.buildingById.get(obstacleId),
             hostile = !!building && sim.isHostileCombatBuilding(unit.side, building);
-        // The same wall again, soon: keep running the same way along it.
-        const sameWall =
-            state.wallTick !== null &&
-            sim.tick < state.wallTick + 2 * sim.msTicks(spec.slideMs) &&
-            state.wallNx * nx + state.wallNy * ny > 0.9;
-        if (!sameWall) state.wallSide = 0;
-        state.wallTick = sim.tick;
-        // An enemy building is a target to strike again, so only other surfaces are run along.
-        state.wallNx = hostile ? 0 : nx;
-        state.wallNy = hostile ? 0 : ny;
+        // The bump the sprite shows (sprite contract rolling).
+        unit.rolling.wallTick = sim.tick;
         if (!hostile || !this.mayHit(sim, unit, 'building:' + building.id)) return;
         this.queue(sim, {
             sourceId: unit.id,
@@ -468,12 +482,7 @@ class RollingBody {
             tick === null || (Number.isSafeInteger(tick) && tick >= 0 && tick <= state.tick);
         if (
             !rolling ||
-            Object.keys(rolling).sort().join(',') !==
-                'bumpTick,dx,dy,hits,kicked,wallNx,wallNy,wallSide,wallTick' ||
-            ![-1, 0, 1].includes(rolling.wallSide) ||
-            !Number.isFinite(rolling.wallNx) ||
-            !Number.isFinite(rolling.wallNy) ||
-            Math.hypot(rolling.wallNx, rolling.wallNy) > 1 + 1e-9 ||
+            Object.keys(rolling).sort().join(',') !== 'bumpTick,dx,dy,hits,kicked,wallTick' ||
             typeof rolling.kicked !== 'boolean' ||
             !Number.isFinite(rolling.dx) ||
             !Number.isFinite(rolling.dy) ||

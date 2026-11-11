@@ -48,8 +48,6 @@ export const Walnut = defineUnit({
             turnRateTop: 45,
             unitRestitution: WALNUT_UNIT_RESTITUTION,
             wallRestitution: 0.6,
-            // After a wall, the goal's share into it is ignored this long, so it runs along the wall.
-            slideMs: 2000,
             damagePerImpulse: BASIC_MELEE.hp / SOLDIER_KILL_IMPULSE,
             // Damage to an enemy building hit straight on at the top speed.
             buildingDamageAtTop: 40,
@@ -88,7 +86,7 @@ export const Walnut = defineUnit({
         fire: '단발',
         notes: [
             '착지하면 발사 방향으로 굴러가며 약 4초 동안 최고 속도까지 빨라져요. 멈춰서 싸우지 않아요.',
-            '시야 안의 가장 가까운 적을 향해 방향을 틀지만 빠를수록 크게 돌아요. 적이 없으면 적 본진으로 굴러가요.',
+            '시야 안의 가장 가까운 적을 향해 방향을 틀지만 빠를수록 크게 돌아요. 적이 없으면 적 본진으로 굴러가요. 벽이 가로막으면 돌아가는 길을 따라 굴러가요.',
             '닿은 적은 부딪힌 세기만큼 피해를 입고 멀리 날아가요. 가벼운 적일수록 더 멀리 날아가고, 무거운 적일수록 호두가 더 많이 느려지고, 같은 적은 0.5초 안에 다시 맞지 않아요.',
             '벽과 건물에서는 튕겨 나오고, 적 건물은 속도만큼 피해를 입어요. 아군은 피해 없이 옆으로 밀려나고 호두는 느려지지 않아요.',
         ],
@@ -98,7 +96,7 @@ export const Walnut = defineUnit({
             section: 'construction',
             summary: '호두의 구르기',
             paragraphs: [
-                '호두는 한 번에 하나만 떨어져 멈추지 않고 굴러요. 구를수록 빨라져 4초쯤 지나면 최고 속도에 가까워지고, 빠를수록 크게 돌아요. 가장 가까운 적을 향해 굴러가요.',
+                '호두는 한 번에 하나만 떨어져 멈추지 않고 굴러요. 구를수록 빨라져 4초쯤 지나면 최고 속도에 가까워지고, 빠를수록 크게 돌아요. 가장 가까운 적을 향해 굴러가고, 벽이 가로막으면 돌아가는 길을 따라가요.',
                 '닿은 적은 빠를수록 세게 튕겨 나가며 피해를 받아요. 같은 적은 0.5초 뒤에야 다시 칠 수 있어요. 우리 병사는 다치지 않고 옆으로 밀려나요. 벽과 건물에는 튕겨 나오고, 적 건물은 빠를수록 큰 피해를 받아요.',
             ],
         },
