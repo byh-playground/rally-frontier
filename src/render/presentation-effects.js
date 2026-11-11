@@ -39,6 +39,19 @@ class FloatingTextPresentationDefinition {
 
 class EffectObjectFactory {
     static cornBurstLifeMs = 650;
+    // Popcorn's self-destruct burst, presentation only. The ground ring and the kernels reach the blast radius
+    // × `radiusScale` and last `lifeMs` (1.5 × a corn burst; the puff keeps the corn burst's 650 ms). A burst on
+    // screen shakes the camera lightly (a building death is 3.5 for 180 ms); bursts in a row keep one shake at
+    // the strongest value instead of adding up.
+    static selfDestructBurst = Object.freeze({
+        radiusScale: 1,
+        // The puff art's width against the blast radius (1.2 × 80 keeps its original 95-ish size).
+        puffScale: 1.2,
+        lifeMs: 975,
+        kernels: 10,
+        shakeIntensity: 1.2,
+        shakeMs: 110,
+    });
     static milletBurstLifeMs = 600;
     static defaultCombatLifeMs = 360;
     static sourceMotionFallbackMs = 220;
@@ -57,6 +70,7 @@ class EffectObjectFactory {
         launchBlast: 820,
         launchBundleBreak: 680,
         deathBurst: 480,
+        selfDestructBurst: EffectObjectFactory.selfDestructBurst.lifeMs,
     });
     static fireShakeDuration(power) {
         return 110 + 150 * power;
@@ -68,6 +82,7 @@ class EffectObjectFactory {
         return Math.max(
             LaunchRules.landingMarkMs,
             this.cornBurstLifeMs,
+            this.selfDestructBurst.lifeMs,
             this.milletBurstLifeMs,
             this.defaultCombatLifeMs,
             this.sourceMotionFallbackMs,
@@ -108,6 +123,7 @@ class EffectObjectFactory {
             presentationTick: null,
             jitter: 0,
             lane: 0,
+            group: null,
         };
     }
     static resetFloatFx(v) {
@@ -121,11 +137,20 @@ class EffectObjectFactory {
         v.clock = null;
         v.jitter = 0;
         v.lane = 0;
+        v.group = null;
     }
     static makeShakeFx() {
-        return { start: 0, duration: 0, intensity: 0, seed: 0, presentationTick: null };
+        return {
+            start: 0,
+            duration: 0,
+            intensity: 0,
+            seed: 0,
+            presentationTick: null,
+            selfDestruct: false,
+        };
     }
     static resetShakeFx(v) {
+        v.selfDestruct = false;
         v.start = 0;
         v.duration = 0;
         v.intensity = 0;
