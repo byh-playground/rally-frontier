@@ -288,6 +288,102 @@ function createKnockbackProbe(sim) {
     };
 }
 
+// One row of `count` units across `dir`, `spacing` apart: a transverse landing line (chestnut's).
+function placeLine(sim, side, type, count, center, dir, spacing) {
+    for (let i = 0; i < count; i++) {
+        const across = (i - (count - 1) / 2) * spacing;
+        const unit = sim.spawnUnit(
+            side,
+            type,
+            center.x - dir.y * across,
+            center.y + dir.x * across,
+        );
+        RollingBody.aim(unit, dir.x, dir.y);
+    }
+}
+
+// A fight in the `unit` scene, read by `state().fight`: the tick one side first has no live unit (with who is left
+// and their health then), and every lobbed egg thrown (`unitLobLaunch`), every explosion (`unitLobExplosion`) and
+// how many enemies each explosion hit (the area damage's own hit count). Eggs count until 20 ticks after the end.
+function createFightProbe(sim) {
+    const lobs = { thrown: 0, explosions: 0, hits: 0, empty: 0, log: [] };
+    let end = null;
+    // Damage dealt before the end, by the type of the unit that dealt it.
+    const dealt = {},
+        thrown = new Set(),
+        landed = new Map();
+    const damage = sim.applyDamage.bind(sim);
+    sim.applyDamage = (side, type, target, building, amount, ...rest) => {
+        const hpBefore = target.hp;
+        const result = damage(side, type, target, building, amount, ...rest);
+        if (!end) dealt[type] = (dealt[type] ?? 0) + Math.max(0, hpBefore - target.hp);
+        return result;
+    };
+    const areaDamage = sim.applyAreaDamage.bind(sim);
+    sim.applyAreaDamage = (options) => {
+        // The explosion event is the last one pushed just before its area damage.
+        const blast = sim.events.at(-1);
+        const result = areaDamage(options);
+        if (blast?.type === 'unitLobExplosion' && (!end || sim.tick <= end.tick + 20)) {
+            lobs.explosions++;
+            lobs.hits += result.hits;
+            lobs.log.push({
+                tick: sim.tick,
+                hits: result.hits,
+                rolled: round(
+                    Math.hypot(
+                        blast.x - (landed.get(blast.projectileId)?.x ?? blast.x),
+                        blast.y - (landed.get(blast.projectileId)?.y ?? blast.y),
+                    ),
+                ),
+                nearest: round(
+                    Math.min(
+                        ...sim.units
+                            .filter((unit) => unit.alive && unit.side !== blast.side)
+                            .map((unit) => Math.hypot(unit.x - blast.x, unit.y - blast.y)),
+                    ),
+                ),
+            });
+            if (!result.hits) lobs.empty++;
+        }
+        return result;
+    };
+    const tally = () =>
+        [0, 1].map((side) => {
+            const live = sim.units.filter((unit) => unit.alive && unit.side === side);
+            return { alive: live.length, hp: live.reduce((sum, unit) => sum + unit.hp, 0) };
+        });
+    return {
+        observe() {
+            for (const event of sim.events)
+                if (event.type === 'unitLobLand') landed.set(event.projectileId, event);
+            if (!end)
+                for (const event of sim.events)
+                    if (event.type === 'unitLobLaunch' && !thrown.has(event.projectileId)) {
+                        thrown.add(event.projectileId);
+                        lobs.thrown++;
+                    }
+            if (end) return;
+            const sides = tally();
+            if (sides.some((side) => !side.alive))
+                end = { tick: sim.tick, host: sides[0], guest: sides[1] };
+        },
+        state() {
+            const now = tally();
+            return {
+                end,
+                dealt,
+                now: { host: now[0], guest: now[1] },
+                lobs: {
+                    ...lobs,
+                    hitsPerExplosion: lobs.explosions ? round(lobs.hits / lobs.explosions) : null,
+                    hitsPerThrown: lobs.thrown ? round(lobs.hits / lobs.thrown) : null,
+                },
+            };
+        },
+    };
+}
+
 // Pairs of live units whose collision discs overlap now, and the summed overlap depth (world units).
 function overlap(sim) {
     const units = sim.units.filter((unit) => unit.alive);
@@ -604,7 +700,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             });
         },
         /**
-         * `count`명의 `unit`을 (`x`,`y`)에 세운다. 평소처럼 적 본진으로 가고, `enemy`·`enemyCount`가 있으면 그 적
+         * `count`명의 `unit`을 (`x`,`y`)에 세운다(`line=N`이면 N 간격의 가로 한 줄). 평소처럼 적 본진으로 가고, `enemy`·`enemyCount`가 있으면 그 적
          * 무리가 적 본진 쪽 300 앞에 선다. `outposts=1`이면 모든 점령 지점에 더 가까운 본진 쪽의 완성된 거점을 둔다
          * (검은콩 앞쪽 대포 탑승, 찹쌀 거점 포구 막기). 예:
          * `?debug=1&scene=unit&map=twin-gates&seed=1&unit=walnut&count=1&x=1400&y=2900&tick=150`
@@ -617,14 +713,10 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             const at = { x: integer(scene, 'x', params.x), y: integer(scene, 'y', params.y) };
             const length = Math.hypot(guest.x - at.x, guest.y - at.y);
             const dir = { x: (guest.x - at.x) / length, y: (guest.y - at.y) / length };
-            placeBlock(
-                sim,
-                0,
-                [unitType(scene, 'unit', params.unit)],
-                integer(scene, 'count', params.count),
-                at,
-                dir,
-            );
+            const group = [unitType(scene, 'unit', params.unit)],
+                count = integer(scene, 'count', params.count);
+            if (params.line === undefined) placeBlock(sim, 0, group, count, at, dir);
+            else placeLine(sim, 0, group[0], count, at, dir, integer(scene, 'line', params.line));
             if (params.enemy !== undefined || params.enemyCount !== undefined)
                 placeBlock(
                     sim,
@@ -634,12 +726,16 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     { x: at.x + dir.x * 300, y: at.y + dir.y * 300 },
                     { x: -dir.x, y: -dir.y },
                 );
-            const probe = createKnockbackProbe(sim);
+            const probe = createKnockbackProbe(sim),
+                fight = createFightProbe(sim);
             return matchScene(scene, params, sim, {
                 zoom: 1.6,
                 focus: followUnits(sim, at),
-                beforeStep: () => probe.observe(),
-                extra: () => ({ knockback: probe.state() }),
+                beforeStep: () => {
+                    probe.observe();
+                    fight.observe();
+                },
+                extra: () => ({ knockback: probe.state(), fight: fight.state() }),
             });
         },
         /**

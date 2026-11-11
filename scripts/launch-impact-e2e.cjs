@@ -760,8 +760,8 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                         ],
                         450,
                     ],
-                    ['corn', 100, 75, [[0, 0, 65, 25, 6]], 0, 440, 191],
-                    ['chestnut', 125, 25, [[0, 0, 50, 10, 6]], 0, 800, 91],
+                    ['corn', 100, 50, [[0, 0, 65, 25, 6]], 0, 440, 191],
+                    ['chestnut', 125, 25, [[0, 0, 50, 10, 10]], 0, 800, 91],
                 ];
                 const flights = {};
                 for (const [type, cost, oil, expected, gapMs, speed, midHeight] of cases) {
@@ -888,12 +888,12 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                         const release = landings.flatMap((event) => event.units);
                         const lateral = release.map((unit) => unit.y - aim.y).sort((a, b) => a - b);
                         check(
-                            lateral.length === 6 &&
-                                lateral.every((y, i) => Math.abs(y - (i - 2.5) * 35) < 0.1) &&
+                            lateral.length === 10 &&
+                                lateral.every((y, i) => Math.abs(y - (i - 4.5) * 35) < 0.1) &&
                                 Math.max(...release.map((unit) => unit.x)) -
                                     Math.min(...release.map((unit) => unit.x)) <
                                     0.1,
-                            'chestnut draws a centered transverse six-unit line on open ground',
+                            'chestnut draws a centered transverse ten-unit line on open ground',
                             release,
                         );
                     }
