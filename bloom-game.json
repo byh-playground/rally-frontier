@@ -1,18 +1,14 @@
 {
-  "$schema": "https://byh-playground.github.io/bloom-world/playground/bloom-game.schema.json",
-  "schemaVersion": 1,
-  "title": "쌀콩팡!",
-  "en": "RICE BEANS AND BOOM",
-  "genre": "strategy",
-  "tags": [
-    "실시간 전략",
-    "대포 투입",
-    "멀티플레이"
-  ],
-  "desc": "쌀·콩·팥 병력을 대포로 투입하고 거점을 건설·점령하는 실시간 전략 게임입니다.",
-  "points": [
-    "쌀·콩·팥 병력을 대포로 투입",
-    "거점 공사·점령으로 인컴 확장",
-    "병력 투입과 공통 발사 사거리 강화의 선택"
-  ]
+    "$schema": "https://byh-playground.github.io/bloom-world/playground/bloom-game.schema.json",
+    "schemaVersion": 1,
+    "title": "쌀콩팡!",
+    "en": "RICE BEANS AND BOOM",
+    "genre": "strategy",
+    "tags": ["실시간 전략", "대포 투입", "멀티플레이"],
+    "desc": "쌀·콩·팥 병력을 대포로 투입하고 거점을 건설·점령하는 실시간 전략 게임입니다.",
+    "points": [
+        "쌀·콩·팥 병력을 대포로 투입",
+        "거점 공사·점령으로 인컴 확장",
+        "병력 투입과 공통 발사 사거리 강화의 선택"
+    ]
 }

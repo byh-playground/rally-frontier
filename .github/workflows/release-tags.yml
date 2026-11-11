@@ -1,51 +1,51 @@
 name: Publish immutable Stable and Nightly tags
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      version:
-        description: Product version declared by the selected source commit
-        type: string
-        required: true
-      commit_sha:
-        description: Full SHA of the validated game snapshot (main ancestry)
-        type: string
-        required: true
-      validated:
-        description: I verified and approved this Stable release
-        type: boolean
-        required: true
-        default: false
+    push:
+        branches: [main]
+    workflow_dispatch:
+        inputs:
+            version:
+                description: Product version declared by the selected source commit
+                type: string
+                required: true
+            commit_sha:
+                description: Full SHA of the validated game snapshot (main ancestry)
+                type: string
+                required: true
+            validated:
+                description: I verified and approved this Stable release
+                type: boolean
+                required: true
+                default: false
 permissions:
-  contents: write
+    contents: write
 jobs:
-  verify-product-version:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
+    verify-product-version:
+        if: github.event_name == 'workflow_dispatch'
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+                  persist-credentials: false
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: '22'
+            - name: Verify selected snapshot product version
+              env:
+                  TARGET_SHA: ${{ inputs.commit_sha }}
+                  RELEASE_VERSION: ${{ inputs.version || '' }}
+              run: node scripts/verify-release-version.cjs
+    tag:
+        if: ${{ !cancelled() && (github.event_name == 'push' || needs.verify-product-version.result == 'success') }}
+        needs: verify-product-version
+        uses: byh-playground/bloom-reference/.github/workflows/game-release-tags.yml@2f9f28b0d029fab92cbeddb35983aa65051674d2
+        permissions:
+            contents: write
         with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-      - name: Verify selected snapshot product version
-        env:
-          TARGET_SHA: ${{ inputs.commit_sha }}
-          RELEASE_VERSION: ${{ inputs.version || '' }}
-        run: node scripts/verify-release-version.cjs
-  tag:
-    if: ${{ !cancelled() && (github.event_name == 'push' || needs.verify-product-version.result == 'success') }}
-    needs: verify-product-version
-    uses: byh-playground/bloom-reference/.github/workflows/game-release-tags.yml@2f9f28b0d029fab92cbeddb35983aa65051674d2
-    permissions:
-      contents: write
-    with:
-      channel: ${{ github.event_name == 'workflow_dispatch' && 'stable' || 'nightly' }}
-      commit_sha: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.sha }}
-      stable_version: ${{ inputs.version || '' }}
-      stable_approved: ${{ inputs.validated == true }}
+            channel: ${{ github.event_name == 'workflow_dispatch' && 'stable' || 'nightly' }}
+            commit_sha: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.sha }}
+            stable_version: ${{ inputs.version || '' }}
+            stable_approved: ${{ inputs.validated == true }}
