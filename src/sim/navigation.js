@@ -41,6 +41,11 @@ class NavigationGoal {
     // `fixed` marks a goal whose centre does not move (a place, a building, a cannon): its field is keyed by the
     // quantized centre. Other area goals chase a moving unit and are keyed by the cell it stands in (GoalFields).
     constructor(x, y, radius = 0, innerRadius = 0, terrainLine = false, fixed = false) {
+        this.reset(x, y, radius, innerRadius, terrainLine, fixed);
+    }
+    // Makes this goal a new one in place. Nothing holds a goal across navigation calls (fields and routes keep only
+    // its integer key), so a caller asking every tick may keep one goal and reset it instead of allocating.
+    reset(x, y, radius = 0, innerRadius = 0, terrainLine = false, fixed = false) {
         if (
             ![x, y, radius, innerRadius].every(Number.isFinite) ||
             radius < 0 ||
@@ -64,6 +69,7 @@ class NavigationGoal {
         this.pointKey = this.xq * 2 ** 20 + this.yq;
         this.keyB =
             ((this.rq * 2 ** 20 + this.iq) * 2 + (terrainLine ? 1 : 0)) * 2 + (this.fixed ? 0 : 1);
+        return this;
     }
     static point(x, y) {
         return new NavigationGoal(x, y, 0, 0, false, true);
