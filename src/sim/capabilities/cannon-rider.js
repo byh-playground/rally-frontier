@@ -2,11 +2,12 @@
 // - 검은콩(Unit Definition cannonRider)은 한 번에 10알을 싣는 묶음 투입탄이다. 착지(spawnUnit)할 때
 //   Unit.cannonRide.readyTick(대포를 다시 고를 틱)을 정한다. 적(유닛·건물)을 노리고 떨어졌거나 플레이어가 쏜
 //   경우는 재탑승 지연 뒤, 아군 대포로 건너뛰었거나 적진 방향으로 날아간 경우는 착지 즉시다. 그 전에는 일반 근접 AI로 싸운다.
-// - 대포 고르기: 자기보다 앞(적 본진까지의 거리가 자기보다 짧은) 아군 발사 대포 중 찹쌀에 막히지 않았고
+// - 대포 고르기: 먼저 자기보다 앞(적 본진까지의 거리가 자기보다 짧은) 아군 발사 대포 중 찹쌀에 막히지 않았고
 //   직선거리가 탐색 상한(발사 사거리 × cannonSearchReachMultiplier) 안인 가장 가까운 것(같으면 id 순).
 //   고르는 때는 착지 뒤 readyTick이 지났을 때, 그 진영의 탈 수 있는 대포 목록(cannonListKey)이 바뀌었을 때,
 //   고른 대포를 잃었을 때뿐이고 틱마다 고르지 않는다. 고른 결과와 그때의 목록 키가 Unit.cannonRide에 남는다.
-//   앞에 대포가 없으면 일반 병종처럼 싸우며 행군한다.
+//   앞에 탈 수 있는 대포가 없으면 같은 탐색 상한 안의 가장 가까운 뒤쪽 아군 대포로 돌아가 다시 탄다(앞쪽이 우선).
+//   앞뒤 어디에도 없으면 일반 병종처럼 싸우며 행군한다.
 // - 고른 대포로는 교전 중이어도 이동속도 배율을 곱해 달려간다(phase 'return'). 직선이 열려 있으면 직선, 막혔으면
 //   그 대포의 탑승 고리를 목표로 하는 공용 고정 거리장(navigation field, 건물 배치가 바뀔 때만 다시 만듦)을 따른다.
 //   도착하면 한 명씩 탑승(phase 'board')해 조준을 고정하고, 탑승 시간 뒤 공용 fireLaunchShell로 자기 한 명
@@ -19,7 +20,8 @@
 //   가장 먼저 발사할 한 명만 그린다.
 // Unit.cannonRide { readyTick, phase, cannonId, launchTick, aimX, aimY, flight, listKey } is the only state:
 //   phase null     fights normally; once readyTick has passed it picks the nearest cannon ahead, at most once
-//                  per change of its side's cannon list (listKey), and none means it marches like any grain,
+//                  per change of its side's cannon list (listKey), ahead first and else the nearest behind;
+//                  none means it marches like any grain,
 //   phase 'return' runs to that cannon, faster than usual, even mid-fight,
 //   phase 'board'  sits on the muzzle until launchTick, then rides a shell of its own to the locked aim.
 // The flight reuses the ordinary launch path: shell, flight, impact and landing. Only the issuer differs,
@@ -174,7 +176,8 @@ class CannonRider {
     }
 
     // The nearest friendly cannon ahead of the soldier (closer to the enemy main base than the soldier is),
-    // within the search reach; ties by id. null: nothing ahead, march like any grain.
+    // within the search reach; ties by id. With none ahead, the nearest one behind it within the same reach, so
+    // a soldier that flew past the frontmost cannon goes back to ride again. null: no cannon in reach, march like any grain.
     static findCannon(sim, unit, spec) {
         const base = this.enemyBase(sim, unit.side);
         if (!base) return null;
@@ -183,17 +186,26 @@ class CannonRider {
                 spec.cannonSearchReachMultiplier,
             reach2 = reach * reach,
             ahead2 = (unit.x - base.x) ** 2 + (unit.y - base.y) ** 2;
-        let best = null,
-            bestD2 = Infinity;
+        let ahead = null,
+            aheadD2 = Infinity,
+            behind = null,
+            behindD2 = Infinity;
         for (const cannon of sim.launchCannons(unit.side)) {
-            if ((cannon.x - base.x) ** 2 + (cannon.y - base.y) ** 2 >= ahead2) continue;
             const d2 = (cannon.x - unit.x) ** 2 + (cannon.y - unit.y) ** 2;
-            if (d2 > reach2 || d2 > bestD2 || (d2 === bestD2 && cannon.id > best.id)) continue;
-            if (LaunchRules.jammed(sim, cannon)) continue;
-            best = cannon;
-            bestD2 = d2;
+            if (d2 > reach2) continue;
+            if ((cannon.x - base.x) ** 2 + (cannon.y - base.y) ** 2 < ahead2) {
+                if (d2 > aheadD2 || (d2 === aheadD2 && cannon.id > ahead.id)) continue;
+                if (LaunchRules.jammed(sim, cannon)) continue;
+                ahead = cannon;
+                aheadD2 = d2;
+            } else {
+                if (d2 > behindD2 || (d2 === behindD2 && cannon.id > behind.id)) continue;
+                if (LaunchRules.jammed(sim, cannon)) continue;
+                behind = cannon;
+                behindD2 = d2;
+            }
         }
-        return best;
+        return ahead || behind;
     }
 
     // Where a soldier on this cannon flies, always somewhere, within the cannon's launch range:
