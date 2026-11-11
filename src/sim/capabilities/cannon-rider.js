@@ -9,7 +9,7 @@
 //   앞에 탈 수 있는 대포가 없으면 같은 탐색 상한 안의 가장 가까운 뒤쪽 아군 대포로 돌아가 다시 탄다(앞쪽이 우선).
 //   앞뒤 어디에도 없으면 일반 병종처럼 싸우며 행군한다.
 // - 고른 대포로는 교전 중이어도 이동속도 배율을 곱해 달려간다(phase 'return'). 직선이 열려 있으면 직선, 막혔으면
-//   그 대포의 탑승 고리를 목표로 하는 공용 고정 거리장(navigation field, 건물 배치가 바뀔 때만 다시 만듦)을 따른다.
+//   그 대포의 탑승 고리를 목표로 하는 공용 고정 흐름장(navigation field, 대포 중심이 키라 건물 배치가 바뀔 때만 다시 만듦)을 따른다.
 //   도착하면 한 명씩 탑승(phase 'board')해 조준을 고정하고, 탑승 시간 뒤 공용 fireLaunchShell로 자기 한 명
 //   (count 1, passengerHp=현재 체력, ride=비행 종류)을 비용·재장전 없이 쏜다. 탑승한 대포는 반드시 발사한다.
 // - 비행 표적(대포 발사 사거리 안, 최소 사거리 없음): ① 보이는 가장 가까운 적 병사 ② 보이는 가장 가까운 적 건물
@@ -145,12 +145,11 @@ class CannonRider {
     }
 
     // A squad crowds the muzzle: a soldier one body behind those already standing there has arrived too.
-    // The walking goal keeps one shared distance field per cannon (fixed), used only when the straight line is closed.
+    // The walking goal keeps one shared flow field per cannon (fixed goal key), used only when the straight line is closed.
     static goal(sim, unit, cannon) {
         const radius = sim.buildingClearanceDistance(unit, cannon) + BOARD_PADDING,
             body = UnitDefinition.get(unit.type).size * 2,
-            goal = NavigationGoal.range(cannon.x, cannon.y, radius, 0, true);
-        goal.fixed = true;
+            goal = NavigationGoal.range(cannon.x, cannon.y, radius, 0, true, true);
         return {
             goal,
             arrival: new NavigationGoal(cannon.x, cannon.y, radius + body, 0, true),

@@ -24,7 +24,7 @@ import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { RollingBody } from './capabilities/rolling-body.js';
 
-// Interaction geometry owns the legal arrival set; the distance field only leads units to it.
+// Interaction geometry owns the legal arrival set; the flow field only leads units to it.
 // Goal regions are continuous (discs/annuli), not a fixed number of radial probes.
 class NavigationGoal {
     static EPS = 1e-7;
@@ -32,7 +32,15 @@ class NavigationGoal {
         return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
     }
     static ARRIVAL_INSET = 5 / FP;
-    constructor(x, y, radius = 0, innerRadius = 0, terrainLine = false, project = false) {
+    // Each quantized coordinate or radius is a fixed-point integer clamped to [0, 2^20): the map is a few thousand
+    // units wide (4200 · FP 100 = 420000 < 2^20), and a clamped value only moves a goal outside the map.
+    static QUANTUM_LIMIT = 2 ** 20 - 1;
+    static quantize(value) {
+        return Math.min(NavigationGoal.QUANTUM_LIMIT, Math.max(0, Math.round(value * FP)));
+    }
+    // `fixed` marks a goal whose centre does not move (a place, a building, a cannon): its field is keyed by the
+    // quantized centre. Other area goals chase a moving unit and are keyed by the cell it stands in (GoalFields).
+    constructor(x, y, radius = 0, innerRadius = 0, terrainLine = false, fixed = false) {
         if (
             ![x, y, radius, innerRadius].every(Number.isFinite) ||
             radius < 0 ||
@@ -45,13 +53,22 @@ class NavigationGoal {
         this.radius = radius;
         this.innerRadius = innerRadius;
         this.terrainLine = terrainLine;
-        this.project = project;
-        this.key = [x, y, radius, innerRadius, terrainLine ? 1 : 0, project ? 1 : 0].join(':');
+        this.fixed = fixed || radius === 0;
+        this.xq = NavigationGoal.quantize(x);
+        this.yq = NavigationGoal.quantize(y);
+        this.rq = NavigationGoal.quantize(radius);
+        this.iq = NavigationGoal.quantize(innerRadius);
+        // The goal key is two safe integers (GoalFields.keyA gives the first): a fixed goal's first half is
+        // xq · 2^20 + yq < 2^40. The second half packs ((rq · 2^20 + iq) · 2 + terrainLine) · 2 + kind < 2^42, where
+        // kind 0 is fixed and 1 is chase, so the two kinds never share a key.
+        this.pointKey = this.xq * 2 ** 20 + this.yq;
+        this.keyB =
+            ((this.rq * 2 ** 20 + this.iq) * 2 + (terrainLine ? 1 : 0)) * 2 + (this.fixed ? 0 : 1);
     }
-    static point(x, y, project = true) {
-        return new NavigationGoal(x, y, 0, 0, false, project);
+    static point(x, y) {
+        return new NavigationGoal(x, y, 0, 0, false, true);
     }
-    static range(x, y, radius, innerRadius = 0, terrainLine = false) {
+    static range(x, y, radius, innerRadius = 0, terrainLine = false, fixed = false) {
         // Five fixed-point quanta prevent rounding a stopped unit outside gameplay
         // range. The gameplay reach itself is not changed.
         const inset = Math.min(this.ARRIVAL_INSET, Math.max(0, (radius - innerRadius) / 4));
@@ -61,7 +78,7 @@ class NavigationGoal {
             Math.max(0, radius - inset),
             innerRadius > 0 ? innerRadius + inset : 0,
             terrainLine,
-            false,
+            fixed,
         );
     }
     contains(x, y) {
@@ -234,10 +251,12 @@ class InteractionGeometry {
             if (minimum > 0) inner = this.contact(source, target) + minimum;
         }
         const outer = this.reach(source, target, kind, extra),
-            terrainLine = this.requiresTerrainLine(source, kind, extra);
+            terrainLine = this.requiresTerrainLine(source, kind, extra),
+            // Buildings stand still; a unit target moves and its goal chases the cell it stands in.
+            fixed = !!BuildingDefinition.get(target?.type);
         return inset
-            ? NavigationGoal.range(target.x, target.y, outer, inner, terrainLine)
-            : new NavigationGoal(target.x, target.y, outer, inner, terrainLine);
+            ? NavigationGoal.range(target.x, target.y, outer, inner, terrainLine, fixed)
+            : new NavigationGoal(target.x, target.y, outer, inner, terrainLine, fixed);
     }
     static goal(source, target, kind, extra = 0, minRange = null) {
         // Workers approach the physical building envelope. Their body-charge reach
@@ -249,6 +268,7 @@ class InteractionGeometry {
                 target.y,
                 this.buildingClearance(source, target) + NavigationGoal.ARRIVAL_INSET,
                 0,
+                true,
                 true,
             );
         return this.region(source, target, kind, extra, minRange, true);
@@ -397,7 +417,7 @@ class ImpulseContacts {
     }
 }
 
-// Local contacts share one solver; the distance field only chooses where to head.
+// Local contacts share one solver; the flow field only chooses where to head.
 // A grain's own motion record: checkpoints, fixed-point commit and the unit's radius sit around the shared contact solver.
 class UnitMotion {
     static isGrounded(unit) {
@@ -1034,7 +1054,7 @@ class UnitMotion {
     }
 }
 
-// Terrain and building obstacles, plus the distance fields units steer by.
+// Terrain and building obstacles, plus the flow fields units steer by.
 class TerrainNavigation {
     constructor(sim) {
         this.sim = sim;
@@ -1050,7 +1070,9 @@ class TerrainNavigation {
             ignoreAll: { id: -1, keep: (b) => b.terrainBarrier },
         });
         this.motion = new UnitMotion(this);
+        // One GoalFields per unit radius bucket: by bucket key, and in creation order for change notices.
         this.goalFields = new Map();
+        this.fieldList = [];
         this.metrics = {
             fieldsBuilt: 0,
             fieldBuildMs: 0,
@@ -1071,8 +1093,20 @@ class TerrainNavigation {
         this.sceneTick = source.tick;
         this.sceneBuildings = source.buildings;
         if (!this.topology.refresh(source.buildings)) return;
-        // A changed obstacle layout makes every grid stale; fieldsFor() notices by version.
         this.field.setCircles(this.topology.records);
+        // Every appeared, moved or removed building record reaches every radius grid as its own rectangle; the
+        // graphs rebuild only the chunks those rectangles touch on their next query.
+        const changes = this.topology.changes,
+            fields = this.fieldList;
+        for (let i = 0; i < changes.length; i++)
+            for (let k = 0; k < fields.length; k++) fields[k].obstacleChanged(changes[i]);
+    }
+    // Loading step: builds every radius bucket's chunk and portal structure now, so the first queries of a match
+    // only compute flow fields.
+    prepare() {
+        this.sync();
+        for (const type in UNIT_RUNTIME_GEOMETRY)
+            this.fieldsFor(UNIT_RUNTIME_GEOMETRY[type].radius).graph.prepare();
     }
     traceStraightTravel(x, y, dx, dy, distance, radius, source = this.sim) {
         this.sync(source);
@@ -1096,8 +1130,11 @@ class TerrainNavigation {
         this.sync();
         const key = Math.ceil((radius + 0.12) * 100) / 100;
         let fields = this.goalFields.get(key);
-        if (!fields) this.goalFields.set(key, (fields = new GoalFields(this, key)));
-        fields.grid.sync(this.topology.version);
+        if (!fields) {
+            // A new grid starts empty and reads the current layout; only later changes are notified.
+            this.goalFields.set(key, (fields = new GoalFields(this, key)));
+            this.fieldList.push(fields);
+        }
         return fields;
     }
     acceptsGoalPoint(goal, x, y) {
@@ -1120,7 +1157,7 @@ class TerrainNavigation {
         return direct;
     }
     // Where a unit heads next to reach `goal`, or null when it cannot. The caller picks the way
-    // (navigation-paths.js): 'field' (shared distance field), 'route' (A* kept in Unit.route)
+    // (navigation-paths.js): 'field' (shared flow field), 'route' (A* kept in Unit.route)
     // or 'direct' (straight line only).
     nextPoint(u, goal, path = 'field') {
         this.metrics.nextCalls++;

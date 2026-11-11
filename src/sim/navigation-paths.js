@@ -1,6 +1,6 @@
 // The ways a ground unit can find its next point. TerrainNavigation.nextPoint is the one front door; the caller
 // names the way (`path`) and every way answers the same question: where to head next, or null when unreachable.
-//   field  : the shared grid distance field per goal (every army unit).
+//   field  : the shared flow field per goal key on the chunk/portal graph (every army unit).
 //   route  : one A* search kept in Unit.route, searched again only when the goal changes or the building layout
 //            changes under the remaining route (returning heroes).
 //   direct : the straight line to the goal's closest point, or nothing; no field and no search.
@@ -13,16 +13,14 @@ class FieldPath {
     constructor(nav) {
         this.nav = nav;
     }
-    // Point goals are fixed places (bases, flags, capture points) and keep their field, as does an area goal
-    // marked `fixed` (a cannon's boarding ring); other area goals share a field for the tick.
+    // Every goal keeps its flow field across ticks under its key (GoalFields.keyA, NavigationGoal.keyB): fixed goals
+    // by their quantized centre, chase goals by the cell their target stands in.
     nextPoint(u, goal) {
         const nav = this.nav,
             radius = nav.sim.unitRadius(u.type);
         const direct = nav.straightGoal(u, goal, radius);
         if (direct) return direct;
-        const point = nav
-            .fieldsFor(radius)
-            .next(u.x, u.y, goal, goal.radius === 0 || goal.fixed === true, radius);
+        const point = nav.fieldsFor(radius).next(u.x, u.y, goal, radius);
         if (!point) nav.metrics.unreachable++;
         return point;
     }
@@ -42,8 +40,9 @@ class DirectPath {
 }
 
 const ROUTE_CELLS = [];
+const ROUTE_OPTIONS = Object.freeze({});
 
-// Unit.route = { goal, layout, cells, index } is authoritative state: the goal key the unit is headed for, the
+// Unit.route = { goalA, goalB, layout, cells, index } is authoritative state: the goal key the unit is headed for, the
 // building layout signature the route was checked against, its waypoint cells on the unit's radius grid and the
 // waypoint the unit is heading for. `cells` is null while the goal is held by a straight ray (not searched yet)
 // and empty when the goal was unreachable on that layout. Every search decision reads only that state, the unit's
@@ -89,17 +88,29 @@ class RoutePath {
         const nav = this.nav,
             radius = nav.sim.unitRadius(u.type);
         nav.sync();
+        const fields = nav.fieldsFor(radius);
         if (nav.straightGoal(u, goal, radius)) {
-            if (u.route?.goal !== goal.key)
-                u.route = { goal: goal.key, layout: nav.topology.signature, cells: null, index: 0 };
+            if (!this.follows(u, goal, fields))
+                u.route = {
+                    goalA: fields.keyA(goal),
+                    goalB: goal.keyB,
+                    layout: nav.topology.signature,
+                    cells: null,
+                    index: 0,
+                };
             return true;
         }
-        return !!this.plan(u, goal, nav.fieldsFor(radius), radius);
+        return !!this.plan(u, goal, fields, radius);
+    }
+    // Whether the kept route was made for `goal` (the same two-integer key the flow fields use).
+    follows(u, goal, fields = this.nav.fieldsFor(this.nav.sim.unitRadius(u.type))) {
+        const route = u.route;
+        return !!route && route.goalA === fields.keyA(goal) && route.goalB === goal.keyB;
     }
     // Whether the kept route already found `goal` unreachable on the current layout.
     knownUnreachable(u, goal) {
         const route = u.route;
-        if (route?.goal !== goal.key || route.cells?.length !== 0) return false;
+        if (!this.follows(u, goal) || route.cells?.length !== 0) return false;
         this.nav.sync();
         return route.layout === this.nav.topology.signature;
     }
@@ -108,7 +119,8 @@ class RoutePath {
     plan(u, goal, fields, radius) {
         const layout = this.nav.topology.signature;
         let route = u.route;
-        if (route?.goal !== goal.key || !route.cells) route = this.search(u, goal, fields, radius);
+        if (!this.follows(u, goal, fields) || !route.cells)
+            route = this.search(u, goal, fields, radius);
         else if (route.layout !== layout) {
             if (!route.cells.length || this.blocked(fields, route, u, radius))
                 route = this.search(u, goal, fields, radius);
@@ -120,10 +132,15 @@ class RoutePath {
         this.nav.metrics.routeSearches++;
         const finder = fields.routes,
             start = this.entryCell(fields, u.x, u.y, radius),
+            goalCells = start < 0 ? null : fields.goalSources(goal),
+            // A goal in another connected component is unreachable without running A*.
             found =
-                start < 0 ? null : finder.find(start, fields.goalSources(goal), {}, ROUTE_CELLS);
+                start < 0 || !fields.reachable(start, goalCells)
+                    ? null
+                    : finder.find(start, goalCells, ROUTE_OPTIONS, ROUTE_CELLS);
         return (u.route = {
-            goal: goal.key,
+            goalA: fields.keyA(goal),
+            goalB: goal.keyB,
             layout: this.nav.topology.signature,
             cells: found ? finder.waypoints(found, this.lineClear(radius), []) : [],
             index: 0,

@@ -1,14 +1,17 @@
-// Grid distance fields: how a grain finds its way across terrain.
-// GameKit's pathfield walks the grid; this file is the policy on top of it: which cells satisfy a goal, which
-// fields are kept, and which cell of the descent a unit actually heads for.
-// A field is the integer walking distance to a goal over cells that clear the unit radius. Units only read it:
+// Hierarchical flow fields: how a grain finds its way across terrain.
+// GameKit's pathfield walks the grid; this file is the policy on top of it: which cells satisfy a goal, how a goal
+// is keyed, which building changes reach the grid, and which cell of the descent a unit actually heads for.
+// Per unit radius bucket one PathGrid (24px cells that clear the radius) carries one PortalGraph (16-cell chunks,
+// portal nodes on chunk borders, connected components). The graph keeps a flow field per goal key; a field is the
+// integer walking cost to the goal and is computed only for the chunks units ask about. Units only read it:
 // descend a few cells, then slide to the farthest cell on that descent they can still see.
 // The same grid also searches single routes (RouteFinder) for units that keep their own route (navigation-paths.js).
-// Fixed goals (bases, flags, capture points) own a full field that is built once.
-// A chase goal builds a field only while terrain blocks the straight ray, and only as far as the asking unit;
-// units chasing the same point share it for the tick.
+// Goals stay keyed across ticks: a fixed goal (place, building, cannon) by its quantized centre and radii, a goal
+// chasing a moving unit by the cell the unit stands in, so a field is built again only when that key changes.
+// A building change invalidates only its own rectangle; the graph rebuilds the chunks it touches and drops goals.
 import { RallyGamekit } from '../core/gamekit.js';
-const { DistanceField, FieldCache, PathGrid, RouteFinder, UNREACHED } = RallyGamekit;
+import { FP } from '../core/config.js';
+const { PathGrid, PortalGraph, RouteFinder, UNREACHED } = RallyGamekit;
 
 const CELL = 24;
 // The half-diagonal margin keeps thin annuli from vanishing between cell centres; the final approach is
@@ -20,7 +23,6 @@ class GoalFields {
     static CELL = CELL;
     static RAY_RANGE = 360;
     static LOOKAHEAD = 8;
-    static MAX_FIXED = 24;
     // Rings searched for an entry cell when a unit stands in the grid's extra clearance near a wall or map edge.
     static ENTRY_RINGS = 4;
 
@@ -43,50 +45,76 @@ class GoalFields {
                 (safe[cell] === 1 && safe[nextCell] === 1) ||
                 nav.field.segmentClear(x, y, tx, ty, radius, null, true, 0),
         });
-        this.fixed = new FieldCache(this.grid, { capacity: GoalFields.MAX_FIXED });
-        this.chase = new FieldCache(this.grid);
+        this.graph = new PortalGraph(this.grid);
         this.routes = new RouteFinder(this.grid);
+        // A circle obstacle changes `passable` for cell centres within radius + GOAL_MARGIN of it and `passableEdge`
+        // for segments within radius; one more cell covers an edge whose nearer end lies just outside.
+        this.pad = radius + GOAL_MARGIN + CELL;
+        this.sources = [];
+        // The terrain-line test of the goal being resolved; one bound method instead of a closure per goal.
+        this.lineX = 0;
+        this.lineY = 0;
+        this.acceptLine = (x, y) =>
+            nav.geometry.field.polygonSegmentClear(x, y, this.lineX, this.lineY, 0);
+        // Read before the next call: the point headingOf answers.
+        this.point = { x: 0, y: 0 };
     }
-    // Cells a unit can stand on while satisfying the goal.
-    goalSources(goal) {
-        const grid = this.grid,
-            geometry = this.nav.geometry,
-            sources = grid.openCellsWithin(
-                goal.x,
-                goal.y,
-                goal.radius + GOAL_MARGIN,
-                Math.max(0, goal.innerRadius - GOAL_MARGIN),
-                goal.terrainLine
-                    ? (x, y) => geometry.field.polygonSegmentClear(x, y, goal.x, goal.y, 0)
-                    : null,
-            );
-        if (!sources.length) {
-            const near = grid.nearestOpen(grid.cellAt(goal.x, goal.y), 24);
-            if (near >= 0) {
-                sources.push(near);
-            }
-        }
-        return sources;
+    // A building record (NavigationTopology change) appeared, moved or disappeared: only its padded rectangle of
+    // this grid is stale.
+    obstacleChanged(record) {
+        const pad = this.pad;
+        this.grid.invalidateRect(
+            record.minX - pad,
+            record.minY - pad,
+            record.maxX + pad,
+            record.maxY + pad,
+        );
     }
-    // The next point to walk toward from (x, y), or null when the goal is unreachable.
-    next(x, y, goal, fixed, movementRadius) {
+    // First half of a goal's key. Fixed goals use their quantized centre (NavigationGoal.pointKey < 2^40); a chase
+    // goal uses the cell its target stands in (< 2^22 cells), so moves inside one cell keep the same field.
+    keyA(goal) {
+        return goal.fixed ? goal.pointKey : this.grid.cellAt(goal.x, goal.y);
+    }
+    // Cells a unit can stand on while satisfying the goal, a function of the goal's key alone: the centre is the
+    // quantized centre (fixed) or the target cell's centre (chase), and the radii are the quantized radii.
+    goalSources(goal, out = this.sources) {
         const grid = this.grid,
-            metrics = this.nav.metrics,
-            cache = fixed ? this.fixed : this.chase;
-        if (!fixed) {
-            cache.sync(this.nav.sim.tick);
+            cell = goal.fixed ? -1 : grid.cellAt(goal.x, goal.y),
+            x = goal.fixed ? goal.xq / FP : grid.centerX(cell),
+            y = goal.fixed ? goal.yq / FP : grid.centerY(cell);
+        this.lineX = x;
+        this.lineY = y;
+        // A chase target stands up to half a cell diagonal (GOAL_MARGIN) from its cell centre, so the snapped centre
+        // already carries that slack; adding the margin again would let a unit settle a full cell short of its reach.
+        grid.openCellsWithin(
+            x,
+            y,
+            goal.rq / FP + (goal.fixed ? GOAL_MARGIN : 0),
+            Math.max(0, goal.iq / FP - GOAL_MARGIN),
+            goal.terrainLine ? this.acceptLine : null,
+            out,
+        );
+        if (!out.length) {
+            const near = grid.nearestOpen(grid.cellAt(x, y), 24);
+            if (near >= 0) out.push(near);
         }
-        let field = cache.get(goal.key),
+        return out;
+    }
+    // The next point to walk toward from (x, y), or null when the goal is unreachable. The field is taken from the
+    // graph's goal store every call (a FlowField is a reused slot and is never held across ticks).
+    next(x, y, goal, movementRadius) {
+        const graph = this.graph,
+            keyA = this.keyA(goal),
+            keyB = goal.keyB;
+        let field = graph.goal(keyA, keyB),
             begun = 0;
         if (!field) {
-            begun = fixed ? performance.now() : 0;
-            field = cache.set(goal.key, new DistanceField(grid, this.goalSources(goal)));
-            metrics[fixed ? 'fieldsBuilt' : 'localFields']++;
+            begun = performance.now();
+            field = graph.setGoal(keyA, keyB, this.goalSources(goal));
+            this.nav.metrics[goal.fixed ? 'fieldsBuilt' : 'localFields']++;
         }
         const point = this.headingOf(x, y, field, movementRadius);
-        if (begun) {
-            metrics.fieldBuildMs += performance.now() - begun;
-        }
+        if (begun) this.nav.metrics.fieldBuildMs += performance.now() - begun;
         return point;
     }
     clearCell(x, y, cell, movementRadius) {
@@ -101,6 +129,12 @@ class GoalFields {
             0,
         );
     }
+    toCell(cell) {
+        const point = this.point;
+        point.x = this.grid.centerX(cell);
+        point.y = this.grid.centerY(cell);
+        return point;
+    }
     headingOf(x, y, field, movementRadius) {
         const grid = this.grid;
         const cell = grid.cellAt(x, y),
@@ -110,11 +144,9 @@ class GoalFields {
             // The cell-to-cell route is obstacle-aware, but the unit can be at
             // any position within its current cell. Check its actual first step.
             for (let i = path.length - 1; i >= 0; i--) {
-                if (this.clearCell(x, y, path[i], movementRadius))
-                    return { x: grid.centerX(path[i]), y: grid.centerY(path[i]) };
+                if (this.clearCell(x, y, path[i], movementRadius)) return this.toCell(path[i]);
             }
-            if (this.clearCell(x, y, start, movementRadius))
-                return { x: grid.centerX(start), y: grid.centerY(start) };
+            if (this.clearCell(x, y, start, movementRadius)) return this.toCell(start);
         }
         // A unit can occupy the grid's extra clearance near a wall or map edge.
         // Find a physically reachable entry cell, not an unchecked nearest centre.
@@ -138,20 +170,27 @@ class GoalFields {
                         bestCost = cost;
                     }
                 }
-            if (best >= 0) return { x: grid.centerX(best), y: grid.centerY(best) };
+            if (best >= 0) return this.toCell(best);
         }
         return null;
     }
-    // Whether every point lies in the cells reachable from `from`; proves a generated map is connected.
+    // Whether some goal cell lies in the connected component of `start` (O(1) per cell, nothing is searched).
+    reachable(start, cells) {
+        const graph = this.graph,
+            component = graph.component(start);
+        if (component < 0) return false;
+        for (let i = 0; i < cells.length; i++)
+            if (graph.component(cells[i]) === component) return true;
+        return false;
+    }
+    // Whether every point lies in the component reachable from `from`; proves a generated map is connected.
     connected(from, points) {
         const grid = this.grid,
-            reached = grid.reachableFrom(
-                grid.nearestOpen(grid.cellAt(from.x, from.y), 4),
-                (this.reached ||= new Uint8Array(grid.size)),
-            );
+            graph = this.graph,
+            component = graph.component(grid.nearestOpen(grid.cellAt(from.x, from.y), 4));
         return points.every((p) => {
             const cell = grid.nearestOpen(grid.cellAt(p.x, p.y), 4);
-            return cell >= 0 && reached[cell] === 1;
+            return cell >= 0 && component >= 0 && graph.component(cell) === component;
         });
     }
 }

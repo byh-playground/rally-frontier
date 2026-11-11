@@ -60,7 +60,14 @@ export class ContactMelee {
         if (readyToCharge && dist > contact)
             sim.moveToGoal(
                 u,
-                NavigationGoal.range(t.x, t.y, contact + NavigationGoal.ARRIVAL_INSET),
+                NavigationGoal.range(
+                    t.x,
+                    t.y,
+                    contact + NavigationGoal.ARRIVAL_INSET,
+                    0,
+                    false,
+                    found.isBuilding,
+                ),
                 moveSpeed *
                     (d.contactChargeSpeedMultiplier ?? ConstructionRules.chargeSpeedMultiplier),
             );
