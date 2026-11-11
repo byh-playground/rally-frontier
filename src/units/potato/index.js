@@ -24,6 +24,8 @@ export const Potato = defineUnit({
     // Every cannon in a volley carries its own potato, so the volley grows one cannon per participant.
     payload: {
         ...SINGLE_BUNDLE_SHELL,
+        // A lone soldier set down at the impact.
+        land: 'bundle',
         cost: 5 * RESOURCE_SCALE,
         premiumCost: 15 * RESOURCE_SCALE,
         reach: 0.75,

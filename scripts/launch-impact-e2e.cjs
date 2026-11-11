@@ -108,12 +108,17 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 u.hp = u.maxHp = 10000;
                 return u;
             }
-            function shell(sim, x, y, { fromX = x - 600, startX = x - 10, count = 12 } = {}) {
+            function shell(
+                sim,
+                x,
+                y,
+                { fromX = x - 600, startX = x - 10, count = 12, type = 'pea' } = {},
+            ) {
                 return sim.spawnProjectile({
                     id: 'qa-shell-' + ++sim.seq,
                     owner: 'base0',
                     side: 0,
-                    type: 'pea',
+                    type,
                     x: startX,
                     y,
                     launchX: fromX,
@@ -128,7 +133,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     splashBuildingDamage: 1,
                     damageClass: 'normal',
                     sourceDamageResolved: true,
-                    payload: { type: 'pea', count },
+                    payload: { type, count },
                 });
             }
             function step(sim, n, visit = () => {}) {
@@ -808,7 +813,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                             } else if (event.type === 'launchImpact') {
                                 impacts.set(event.projectileId, { ...event, tick: sim.tick });
                             } else if (event.type === 'launchLand') {
-                                landings.push(event);
+                                landings.push({ ...event, tick: sim.tick });
                             }
                         }
                     };
@@ -885,16 +890,11 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                         );
                     }
                     if (type === 'chestnut') {
-                        const release = landings.flatMap((event) => event.units);
-                        const lateral = release.map((unit) => unit.y - aim.y).sort((a, b) => a - b);
                         check(
-                            lateral.length === 10 &&
-                                lateral.every((y, i) => Math.abs(y - (i - 4.5) * 35) < 0.1) &&
-                                Math.max(...release.map((unit) => unit.x)) -
-                                    Math.min(...release.map((unit) => unit.x)) <
-                                    0.1,
-                            'chestnut draws a centered transverse ten-unit line on open ground',
-                            release,
+                            landings.length === shots[0].count &&
+                                new Set(landings.map((event) => event.tick)).size === 1,
+                            'chestnut bursts its whole squad out of the shell on one tick',
+                            landings,
                         );
                     }
                     rows.push({
@@ -1701,10 +1701,11 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     directHitId: impact.directHitId,
                 });
             }
-            // A pea bundle opens over several ticks; its twelve soldiers recover on the ground.
+            // A one-at-a-time bundle (land 'bundle': black bean) opens over several ticks; its twelve soldiers
+            // recover on the ground.
             {
                 const { sim, x, y } = arena();
-                shell(sim, x, y);
+                shell(sim, x, y, { type: 'black-bean' });
                 sim.stepSimulation();
                 const firstCount = sim.units.filter((u) => u.side === 0).length;
                 check(firstCount < 12, 'bundle must not instantly materialize its entire squad', {
@@ -1939,7 +1940,8 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     contacts,
                 });
             }
-            // Even a one-unit-wide raised floor is solid to a low shot, while an arc above it passes.
+            // Even a one-unit-wide raised floor is solid to a low shot, while an arc above it passes. The released
+            // packet is a one-at-a-time bundle (black bean), so it stays pending while it falls.
             {
                 const contacts = [];
                 for (const altitude of ['low', 'high']) {
@@ -1963,6 +1965,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     shell(sim, x, y, {
                         startX: altitude === 'low' ? x - 80 : x - 330,
                         count: altitude === 'low' ? 12 : 0,
+                        type: 'black-bean',
                     });
                     const shot = sim.projectiles.at(-1);
                     sim.stepSimulation();
@@ -2057,7 +2060,8 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     contacts,
                 });
             }
-            // An airborne direct hit opens its packet at contact height; pending and released grains stay continuous.
+            // An airborne direct hit opens its packet at contact height; pending and released grains stay continuous
+            // (a one-at-a-time bundle: black bean).
             {
                 const { sim, x, y } = arena(),
                     victim = defender(sim, x - 100, y);
@@ -2074,7 +2078,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     originY: victim.y,
                     sourceId: 'qa-existing-flight',
                 };
-                shell(sim, x, y, { startX: x - 130 });
+                shell(sim, x, y, { startX: x - 130, type: 'black-bean' });
                 sim.stepSimulation();
                 const impact = sim.events.find((e) => e.type === 'launchImpact'),
                     first = sim.events.find((e) => e.type === 'launchLand');
@@ -2287,15 +2291,23 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     );
                 }
                 check(impact, 'central pellet impacts inside the base footprint');
-                const group = sim.launchDeployments.find(
-                    (pending) => pending.projectileId === impact.projectileId,
-                );
+                // A burst releases on the impact tick (its launchLand carries the release point); a pending
+                // group keeps it until the next release.
+                const release =
+                    sim.launchDeployments.find(
+                        (pending) => pending.projectileId === impact.projectileId,
+                    ) ||
+                    sim.events.find(
+                        (event) =>
+                            event.type === 'launchLand' &&
+                            event.projectileId === impact.projectileId,
+                    );
                 check(
-                    group && distance(group) > radius,
+                    release && distance(release) > radius,
                     'roof hit releases from outside the base',
                     {
                         impact,
-                        group,
+                        release,
                     },
                 );
                 const initial = sim.events.filter(
@@ -2343,7 +2355,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     firingSide: side,
                     impactId: impact.directHitId,
                     impactDistance: distance(impact),
-                    deploymentDistance: distance(group),
+                    deploymentDistance: distance(release),
                     released: initial + released.length,
                     releasedAfterDestruction: 0,
                 });

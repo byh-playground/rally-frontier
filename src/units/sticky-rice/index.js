@@ -33,9 +33,8 @@ export const StickyRice = defineUnit({
         shellHp: 25,
         impact: 10,
         splash: 50,
-        land: 'transverse',
-        spacing: 32,
-        deployTogether: true,
+        land: 'burst',
+        spreadAcross: 1.5,
     },
     visual: {
         family: 'grain',
@@ -47,7 +46,7 @@ export const StickyRice = defineUnit({
     card: {
         role: '거점 봉쇄',
         feature: '적 거점 포구에 붙어 발사·포탑 정지',
-        land: '발사 방향과 직각으로 한 줄 배치',
+        land: '착지점에서 좌우로 넓게 튀어나옴',
         fire: '단발',
         notes: [
             '착지하면 시야에 들어온 가까운 적 건물로 달려가 몸통박치기로 공격해요. 완공된 적 거점에 닿으면 한 명이 포구에 1초 붙어요.',

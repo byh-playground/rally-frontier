@@ -178,8 +178,9 @@ class LaunchImpact {
         const origin = this.deploymentOrigin(sim, p, x, y);
         const groundFP = Math.round(sim.world.terrain.surfaces.heightAt(origin.x, origin.y) * FP);
         const heightFP = Math.max(0, (impactHeightFP ?? groundFP) - groundFP);
+        // A burst spreads along and across the shot, and a rolling soldier rolls along it.
         const direction =
-            LaunchRules.grain(type).land === 'transverse'
+            LaunchRules.grain(type).land === 'burst'
                 ? { x: p.lockedAimX - p.launchX, y: p.lockedAimY - p.launchY }
                 : null;
         const line = direction && (Math.hypot(direction.x, direction.y) || 1);
@@ -213,9 +214,12 @@ class LaunchImpact {
         unit.hp -= damage;
         return damage;
     }
-    // Reserve every spot in the landing area before creating any units. A failed
-    // search leaves the entire payload intact for a later retry.
-    static deployTogether(sim, group, grain) {
+    // A burst landing (land 'burst'): reserve every spot packed around the impact before creating any
+    // units, then throw them all out on the same tick, the outer ones hardest. The throw grows with
+    // √(squad / burstSquad), so every squad lands about as far apart as millet's, and across the shot
+    // it is `spreadAcross` times as hard as along it. A failed search leaves the entire payload intact
+    // for a later retry.
+    static deployBurst(sim, group, grain) {
         const origin = { x: group.x, y: group.y },
             initialRadius = grain.splash + 60,
             attempt = group.deployAttempt || 0,
@@ -233,30 +237,16 @@ class LaunchImpact {
                 );
             };
             for (let i = 0; i < group.count; i++) {
-                const anchor =
-                    grain.land === 'transverse'
-                        ? LaunchRules.lineDeploymentPosition(group, i, grain.spacing)
-                        : origin;
-                const spot =
-                    anchor !== origin && canRelease(anchor.x, anchor.y)
-                        ? anchor
-                        : sim.findOpenSpawnAround(anchor, group.type, {
-                              baseRadius,
-                              maxRadius,
-                              angleSlots: 12,
-                              radialStep: 10,
-                              seedKey:
-                                  sim.seed +
-                                  '|' +
-                                  group.projectileId +
-                                  '|release|' +
-                                  attempt +
-                                  '|' +
-                                  i,
-                              reserved: spots,
-                              maxElevation: absoluteHeight,
-                              canReach: canRelease,
-                          });
+                const spot = sim.findOpenSpawnAround(origin, group.type, {
+                    baseRadius,
+                    maxRadius,
+                    angleSlots: 12,
+                    radialStep: 10,
+                    seedKey: sim.seed + '|' + group.projectileId + '|release|' + attempt + '|' + i,
+                    reserved: spots,
+                    maxElevation: absoluteHeight,
+                    canReach: canRelease,
+                });
                 if (!spot) return null;
                 spots.push({
                     x: Math.round(spot.x * FP) / FP,
@@ -271,7 +261,9 @@ class LaunchImpact {
             group.deployAttempt = attempt + 1;
             return false;
         }
-        const keepFormation = grain.land === 'compact' || grain.land === 'transverse';
+        // A smaller squad is thrown proportionally less far so it lands about as dense as millet's.
+        const across = grain.spreadAcross ?? 1,
+            spread = Math.sqrt(grain.count / LaunchImpactRules.burstSquad);
         const radii = spots.map((spot) => Math.hypot(spot.x - group.x, spot.y - group.y)),
             closest = Math.min(...radii),
             radiusSpan = Math.max(...radii) - closest;
@@ -286,14 +278,27 @@ class LaunchImpact {
             // new unit's actual mass. Inner positions stay near the impact while
             // outer positions receive proportionally stronger radial motion.
             const releaseScale = sim.mass(u) / LaunchImpactRules.referenceMass;
+            let dx = spot.x - group.x,
+                dy = spot.y - group.y,
+                stretch = 1;
+            if (across !== 1 && radii[i]) {
+                const along = dx * group.dirX + dy * group.dirY,
+                    side = (dy * group.dirX - dx * group.dirY) * across;
+                dx = group.dirX * along - group.dirY * side;
+                dy = group.dirY * along + group.dirX * side;
+                stretch = Math.hypot(dx, dy) / radii[i];
+            }
+            this.rush(sim, u, grain);
             this.start(sim, u, {
                 kind: 'deploy',
-                dx: spot.x - group.x,
-                dy: spot.y - group.y,
+                dx,
+                dy,
                 speed:
                     LaunchImpactRules.deploymentSpeed *
                     releaseScale *
-                    (radiusSpan && !keepFormation ? (radii[i] - closest) / radiusSpan : 0),
+                    spread *
+                    stretch *
+                    (radiusSpan ? (radii[i] - closest) / radiusSpan : 0),
                 lift: fallDamage == null ? LaunchImpactRules.deploymentLift * releaseScale : 0,
                 sourceId: group.projectileId,
                 originX: group.x,
@@ -331,6 +336,14 @@ class LaunchImpact {
         group.index = group.count;
         return true;
     }
+    // A rushing grain (rushMs) runs faster for a while after it lands.
+    static rush(sim, u, grain) {
+        if (grain.rushMs)
+            sim.setTimedModifier(u, 'launchRush', {
+                durationTicks: sim.msTicks(grain.rushMs),
+                movePct: grain.rushPct,
+            });
+    }
     static deploy(sim) {
         let write = 0;
         for (const group of sim.launchDeployments) {
@@ -350,8 +363,8 @@ class LaunchImpact {
             }
             const grain = LaunchRules.grain(group.type),
                 origin = { x: group.x, y: group.y };
-            if (grain.deployTogether) {
-                if (!this.deployTogether(sim, group, grain)) {
+            if (grain.land === 'burst') {
+                if (!this.deployBurst(sim, group, grain)) {
                     group.nextTick =
                         sim.tick + Math.max(1, sim.msTicks(LaunchImpactRules.deploymentRetryMs));
                     sim.launchDeployments[write++] = group;
@@ -395,28 +408,10 @@ class LaunchImpact {
                 length = Math.hypot(dx, dy) || 1;
             dx /= length;
             dy /= length;
-            if (grain.land === 'scatter') {
-                const angle =
-                    ((HashUtil.hash(group.projectileId + '|' + group.index) % 3600) / 3600) *
-                    Math.PI *
-                    2;
-                dx = Math.cos(angle);
-                dy = Math.sin(angle);
-            } else if (grain.land === 'line') {
-                const sign = group.index % 2 ? 1 : -1,
-                    sideX = -dy,
-                    sideY = dx;
-                dx = sideX * sign;
-                dy = sideY * sign;
-            }
             if (!HeroDeployment.land(sim, group, u) && group.holdPointId)
                 u.launchHoldPointId = group.holdPointId;
             const fallDamage = this.applyEmergencyDropDamage(group, u);
-            if (grain.land === 'rush')
-                sim.setTimedModifier(u, 'launchRush', {
-                    durationTicks: sim.msTicks(grain.rushMs),
-                    movePct: grain.rushPct,
-                });
+            this.rush(sim, u, grain);
             this.start(sim, u, {
                 kind: 'deploy',
                 dx,

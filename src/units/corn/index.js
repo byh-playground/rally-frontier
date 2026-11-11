@@ -45,8 +45,6 @@ export const Corn = defineUnit({
         speed: 550,
         arcScale: 1.5,
         splash: 65,
-        land: 'compact',
-        deployTogether: true,
         cost: 20 * RESOURCE_SCALE,
         premiumCost: 10 * RESOURCE_SCALE,
         count: 6,
@@ -61,7 +59,7 @@ export const Corn = defineUnit({
     card: {
         role: '범위 원거리',
         feature: '알 착지 후 지연 폭발',
-        land: '착점에 6명 모여 투입',
+        land: '착지점에서 사방으로 튀어나옴',
         fire: '높고 느린 곡사 단발',
         notes: ['모여 착지한 뒤 알을 던져 지연 폭발을 일으켜요.'],
     },

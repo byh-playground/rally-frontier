@@ -35,8 +35,6 @@ export const SunflowerSeed = defineUnit({
         count: 6,
         impact: 10,
         splash: 50,
-        land: 'compact',
-        deployTogether: true,
     },
     visual: {
         family: 'grain',
@@ -48,7 +46,7 @@ export const SunflowerSeed = defineUnit({
     card: {
         role: '대공 호위',
         feature: '투입탄 우선 · 씨앗 연사',
-        land: '착점에 모여 투입',
+        land: '착지점에서 사방으로 튀어나옴',
         fire: '단발',
         notes: [],
         airNote: '적 투입탄을 먼저 연사하고, 공중에 적이 없으면 지상을 쏴요.',

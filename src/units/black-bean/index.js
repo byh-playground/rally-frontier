@@ -31,6 +31,8 @@ export const BlackBean = defineUnit({
     // A soldier that launches itself again rides one of these shells alone (CannonRider).
     payload: {
         ...SINGLE_BUNDLE_SHELL,
+        // One soldier at a time, as it always lands (a cannon rider keeps the health it flew with).
+        land: 'bundle',
         cost: 10 * RESOURCE_SCALE,
         premiumCost: 10 * RESOURCE_SCALE,
         count: 10,

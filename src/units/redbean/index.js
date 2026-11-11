@@ -37,7 +37,7 @@ export const Redbean = defineUnit({
         speed: 750,
         impact: 20,
         splash: 95,
-        land: 'rush',
+        land: 'burst',
         rushMs: 2000,
         rushPct: 150,
         fire: Object.freeze({ mode: 'burst', shots: 3, gapMs: 300 }),

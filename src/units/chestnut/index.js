@@ -39,9 +39,7 @@ export const Chestnut = defineUnit({
         arcScale: 0.65,
         impact: 10,
         splash: 50,
-        land: 'transverse',
-        spacing: 35,
-        deployTogether: true,
+        land: 'burst',
         fire: Object.freeze({ mode: 'single' }),
     },
     visual: {
@@ -55,9 +53,9 @@ export const Chestnut = defineUnit({
     card: {
         role: '단일 원거리',
         feature: '가시로 먼 적 공격',
-        land: '발사 방향과 직각으로 10명 배치',
+        land: '착지점에서 사방으로 튀어나옴',
         fire: '낮고 빠른 단발',
-        notes: ['한 줄로 펼쳐져 거리를 두고 가시를 쏴요.'],
+        notes: ['착지점에서 흩어져 거리를 두고 가시를 쏴요.'],
     },
     sprite: () => import('./sprite.js').then((art) => art.SPRITE),
 });

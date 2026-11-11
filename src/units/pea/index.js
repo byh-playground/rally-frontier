@@ -28,8 +28,7 @@ export const Pea = defineUnit({
         speed: 750,
         impact: 40,
         splash: 80,
-        land: 'line',
-        spacing: 22,
+        land: 'burst',
         fire: Object.freeze({ mode: 'single' }),
     },
     visual: {
@@ -43,7 +42,7 @@ export const Pea = defineUnit({
     card: {
         role: '전열 근접',
         feature: '높은 체력 · 중심 강타',
-        land: '한 줄로 착지',
+        land: '착지점에서 사방으로 튀어나옴',
         fire: '단발 · 중심 강타',
         notes: ['좁은 착탄점에 큰 피해를 주고 전열을 잡아요.'],
     },
