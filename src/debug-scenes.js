@@ -14,6 +14,7 @@ import { BotController } from './ai/bot-controller.js';
 import { UnitDefinition } from './definitions/units.js';
 import { StableSerializationUtil } from './net/lobby-codec.js';
 import { RollingBody } from './sim/capabilities/rolling-body.js';
+import { LaunchRules } from './sim/launch-rules.js';
 import { StrategySim } from './sim/strategy-sim.js';
 import { createShowcaseSurface } from './ui/showcase-host.js';
 import {
@@ -781,6 +782,40 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     },
                     { x: -dir.x, y: -dir.y },
                 );
+            // shell=<type>: the host base fires one launch shell of that card (its payload's impact, splash and count)
+            // at the enemy block, so the shell's landing knockback can be measured.
+            if (params.shell !== undefined) {
+                const type = unitType(scene, 'shell', params.shell),
+                    payload = LaunchRules.grain(type),
+                    gap = params.gap === undefined ? 300 : integer(scene, 'gap', params.gap),
+                    base = sim.buildings.find((b) => b.id === 'base0'),
+                    walk = UnitDefinition.get(params.enemy)?.speed || 0;
+                // Lead the aim by how far the enemy block walks toward the host while the shell flies.
+                let lead = 0;
+                for (let k = 0; k < 3; k++) {
+                    const ax = at.x + dir.x * (gap - lead),
+                        ay = at.y + dir.y * (gap - lead);
+                    lead =
+                        (walk * Math.hypot(ax - base.x, ay - base.y)) /
+                        LaunchRules.shellSpeed(type);
+                }
+                sim.fireLaunchShell({
+                    side: 0,
+                    cannonId: 'base0',
+                    type,
+                    mode: 'single',
+                    shot: 0,
+                    shots: 1,
+                    power: 1,
+                    holdMs: 0,
+                    arcDistance: null,
+                    x: at.x + dir.x * (gap - lead),
+                    y: at.y + dir.y * (gap - lead),
+                    count: payload.count,
+                    impact: payload.impact,
+                    splash: payload.splash,
+                });
+            }
             // heroSkill=1: the placed heroes are sortied and their active skill (hero roll) is queued.
             if (flag(scene, 'heroSkill', params.heroSkill))
                 for (const u of sim.units)
