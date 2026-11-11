@@ -7,6 +7,7 @@
 //   회전 한도는 turnRateSlow에서 turnRateTop으로 속도 비율에 따라 선형으로 줄어든다(빠를수록 크게 돈다).
 //   접촉은 기존 충격량 접촉(UnitMotion.solveImpulseContact)을 쓴다. 적과는 질량·반발 e의 운동량 교환
 //   J=−(1+e)·v_n/(1/M+1/m)로 양쪽 속도가 바뀌고, 맞은 적은 넉백 비율만큼 띄워지며
+//   (재타격 대기 밖의 첫 타격은 knockback배의 속도·띄움, 같은 접촉의 반복은 1배)
 //   피해는 round(J·damagePerImpulse)다. 아군은 충격량 접촉이 아니다: 모든 몸이 움직인 뒤 겹친 지상 아군을
 //   호두 밖으로 위치만 밀어낸다(pushAllies). 아군은 피해·속도 변화가 없고 호두 속도도 그대로다.
 //   같은 표적 재타격은 rehitMs 뒤에만, 연쇄 피해는 없다(맞은 적끼리의 충돌은 일반 충격량 접촉이다).
@@ -265,13 +266,31 @@ class RollingBody {
         }
         const impulse = (-(1 + spec.unitRestitution) * relative) / (1 / massA + 1 / massB),
             lift = impulse * KNOCKBACK_LIFT_RATIO;
+        // A rolling body's first hit on a target in a rehit window is a strike: the struck one is
+        // thrown by `knockback` times the exchanged impulse, while the rolling body loses speed from the
+        // exchange alone. The repeats inside the window (a target pinned against a wall or building)
+        // exchange the plain impulse, as the damage does, so a pinned body is not pumped up by them.
+        const strikes = new Map();
+        for (const [source, target] of [
+            [a, b],
+            [b, a],
+        ])
+            if (source === a ? rollingA : rollingB) {
+                source.rolling.bumpTick = sim.tick;
+                strikes.set(target, this.mayHit(sim, source, 'unit:' + target.id));
+            }
         for (const [unit, source, sign, rolls] of [
             [a, b, 1, rollingA],
             [b, a, -1, rollingB],
-        ])
+        ]) {
+            const gain = !rolls && strikes.get(unit) ? this.spec(source).knockback : 1;
             motion.applyImpulse(
                 unit,
-                { x: sign * impulse * nx, y: sign * impulse * ny, z: rolls ? 0 : lift },
+                {
+                    x: sign * impulse * nx * gain,
+                    y: sign * impulse * ny * gain,
+                    z: rolls ? 0 : lift * gain,
+                },
                 {
                     sourceId: source.id,
                     originX: source.x,
@@ -279,19 +298,17 @@ class RollingBody {
                     kind: rolls ? unit.impactMotion?.kind : 'knockback',
                 },
             );
+        }
         for (const [source, target, sign] of [
             [a, b, -1],
             [b, a, 1],
         ]) {
-            if (!(source === a ? rollingA : rollingB)) continue;
-            const own = this.spec(source);
-            source.rolling.bumpTick = sim.tick;
-            if (!this.mayHit(sim, source, 'unit:' + target.id)) continue;
+            if (!strikes.get(target) || !(source === a ? rollingA : rollingB)) continue;
             this.queue(sim, {
                 sourceId: source.id,
                 targetId: target.id,
                 building: false,
-                amount: Math.round(impulse * own.damagePerImpulse),
+                amount: Math.round(impulse * this.spec(source).damagePerImpulse),
                 x: (source.x + target.x) / 2,
                 y: (source.y + target.y) / 2,
                 nx: sign * nx,
