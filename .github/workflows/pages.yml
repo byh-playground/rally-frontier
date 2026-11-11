@@ -28,7 +28,6 @@ jobs:
                     base="HEAD^"
                   fi
                   git diff --check "$base" HEAD
-                  node scripts/title-showcase-source.cjs
                   while IFS= read -r -d '' file; do node --check "$file"; done < <(git diff --name-only --diff-filter=ACMR -z "$base" HEAD -- '*.js' '*.cjs' '*.mjs')
                   mapfile -d '' files < <(git diff --name-only --diff-filter=ACMR -z "$base" HEAD -- '*.js' '*.cjs' '*.mjs' '*.html' '*.css' '*.json' '*.md')
                   if (( ${#files[@]} )); then npx --no-install prettier --check --ignore-unknown "${files[@]}"; fi

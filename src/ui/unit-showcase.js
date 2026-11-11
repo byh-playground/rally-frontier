@@ -1,7 +1,7 @@
 import { UnitDefinition } from '../definitions/units.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { StrategySim } from '../sim/strategy-sim.js';
-import { centerCamera, prepareSimScene } from './sim-scene.js';
+import { buildOutpost, centerCamera, prepareSimScene, queueLaunch } from './sim-scene.js';
 
 const SEED = 12345;
 const DURATION_SECONDS = 7;
@@ -99,8 +99,7 @@ function createArena(unitType, opening, interception) {
           : roller
             ? { x: x + roller.landOffset, y }
             : { x, y };
-    const rangeLevel = opening ? OPENING_RANGE_LEVEL : 0;
-    state.launchRangeLevel[0] = rangeLevel;
+    state.launchRangeLevel[0] = opening ? OPENING_RANGE_LEVEL : 0;
     state.mapDescriptor = {
         ...state.mapDescriptor,
         spawns: { host, guest: base },
@@ -136,9 +135,7 @@ function createArena(unitType, opening, interception) {
     if (interception) state.launchRangeLevel[1] = interception.rangeLevel;
     sim.importState(state);
     if (wrapsOutpost) {
-        const outpost = sim.spawnOutpost({ id: 'showcase', ...guest }, 1);
-        sim.completeConstruction(outpost);
-        outpost.hp = outpost.maxHp;
+        const outpost = buildOutpost(sim, { id: 'showcase', ...guest }, 1);
         outpost.cooldownUntil = sim.msTicks(DURATION_SECONDS * 1000);
     }
     sim.creditResources(0, LaunchRules.premiumWalletCap, 'premium');
@@ -146,12 +143,11 @@ function createArena(unitType, opening, interception) {
         sim.creditResources(1, LaunchRules.premiumWalletCap, 'premium');
         for (const [dx, dy] of interception.formation) sim.spawnUnit(0, unitType, x + dx, y + dy);
     } else if (rider) {
-        const outpost = sim.spawnOutpost(
+        const outpost = buildOutpost(
+            sim,
             { id: 'showcase', x: host.x + rider.outpostDistance, y },
             0,
         );
-        sim.completeConstruction(outpost);
-        outpost.hp = outpost.maxHp;
         outpost.cooldownUntil = Number.MAX_SAFE_INTEGER;
         for (const [dx, dy] of rider.defenders) sim.spawnUnit(1, 'pea', host.x + dx, y + dy);
     } else if (roller) {
@@ -162,7 +158,7 @@ function createArena(unitType, opening, interception) {
     } else if (!opening && !siege && !grows) {
         for (const [dx, dy] of DEFENDERS) sim.spawnUnit(1, 'pea', x + dx, y + dy);
     }
-    return { sim, x, y, host, target, rangeLevel, rider, roller };
+    return { sim, x, y, host, target, rider, roller };
 }
 
 // Card previews use an isolated showcase run with the same commands and rendering as a match.
@@ -190,11 +186,7 @@ function prepareVolleyShowcase(
     if (!LaunchRules.grain(unitType)) throw new Error('알 수 없는 병종 소개 장면입니다.');
     const unit = UnitDefinition.get(unitType);
     const interception = !opening && unit?.burstAttack && unit.canAttackAir ? INTERCEPTION : null;
-    const { sim, x, y, host, target, rangeLevel, rider, roller } = createArena(
-        unitType,
-        opening,
-        interception,
-    );
+    const { sim, x, y, host, target, rider, roller } = createArena(unitType, opening, interception);
     const side = interception ? 1 : 0;
     const cannon = sim.launchCannons(side)[0];
     const launchTarget = interception ? { x: x + interception.aimOffset, y } : target;
@@ -271,23 +263,13 @@ function prepareVolleyShowcase(
         start() {
             if (opening) openingCamera();
             else frameCamera(0);
-            sim.queueCommand({
+            queueLaunch(sim, {
                 tick: launchTick,
                 seq: 1,
-                actor: interception ? 'guest' : 'host',
-                action: {
-                    type: 'LAUNCH',
-                    cannonId: cannon.id,
-                    unitType: launchType,
-                    holdMs: Math.round(
-                        LaunchRules.holdFor(
-                            distance,
-                            launchType,
-                            interception?.rangeLevel ?? rangeLevel,
-                        ),
-                    ),
-                    ...launchTarget,
-                },
+                side,
+                cannon,
+                unitType: launchType,
+                ...launchTarget,
             });
             skillRequested = false;
         },

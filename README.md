@@ -43,7 +43,7 @@
 
 ## 원본과 실행
 
-메인 전투는 독립된 실제 시뮬레이션을 GameKit scenario로 진행한다. `assets/title-showcase.json`은 seed 12349의 한 경기에서 저장한 세 상태이며, 최대 사거리와 연출용 식량을 적용했다. `PRODUCT_VERSION`이 바뀌면 `npm run generate:title-showcase`로 현행 엔진의 상태를 다시 만들고 화면을 검증한다. 빌드는 상태의 게임 버전이 현재 제품 버전과 다르면 실패한다.
+타이틀 뒤 전투는 저장 파일 없이 [`src/ui/title-scenes.js`](src/ui/title-scenes.js)가 매번 직접 배치한다. seed 12349 맵의 시뮬레이션 하나에 세 장면의 전투를 서로 다른 구역에 놓고, 각 장면이 화면에 나오기 직전 틱에 병력을 배치하거나 발사로 투입한다. 102틱을 반복해 돌리면서 카메라만 구역 사이로 옮긴다. 현행 엔진으로 실행되므로 `PRODUCT_VERSION`이 바뀌어도 다시 만들 파일이 없다. 화면은 `?debug=1&scene=title`로 확인한다.
 
 시뮬레이션 시간 변환과 상태 codec, 통계 기본값은 UI와 독립된 `src/core/simulation-timing.js`, `src/core/rally-state-codec.js`, `src/diagnostics/simulation-stats.js`가 소유한다. 타이틀과 병종 소개는 준비된 쇼케이스 렌더러를 공유하고 장면마다 독립 시뮬레이션을 실행한다. 실제 대전의 AI 세션은 Worker에서 실행한다.
 

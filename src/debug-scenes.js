@@ -16,7 +16,15 @@ import { StableSerializationUtil } from './net/lobby-codec.js';
 import { RollingBody } from './sim/capabilities/rolling-body.js';
 import { StrategySim } from './sim/strategy-sim.js';
 import { createShowcaseSurface } from './ui/showcase-host.js';
-import { battleFocus, centerCamera, prepareSimScene } from './ui/sim-scene.js';
+import {
+    baseAxis,
+    battleFocus,
+    buildOutpost,
+    centerCamera,
+    placeBlock,
+    prepareSimScene,
+} from './ui/sim-scene.js';
+import { prepareTitleScenes } from './ui/title-scenes.js';
 import { prepareUnitShowcase } from './ui/unit-showcase.js';
 
 // The virtual clock starts here, so absolute-time animation is the same on every open. A page must open its
@@ -60,39 +68,6 @@ function createMatchSim(scene, map, seed) {
     );
 }
 
-// The axis between the two main bases: the way each side's units walk by default.
-function baseAxis(sim) {
-    const host = sim.buildings.find((b) => b.id === 'base0'),
-        guest = sim.buildings.find((b) => b.id === 'base1');
-    const length = Math.hypot(guest.x - host.x, guest.y - host.y);
-    return {
-        host,
-        guest,
-        center: { x: (host.x + guest.x) / 2, y: (host.y + guest.y) / 2 },
-        dir: { x: (guest.x - host.x) / length, y: (guest.y - host.y) / length },
-    };
-}
-
-// Fills a block of `count` units around `center`, rows across `dir` (the side's facing), types taken in turn.
-// A rolling unit starts rolling along `dir`, as one landing from a shell fired that way.
-function placeBlock(sim, side, types, count, center, dir) {
-    const spacing = 2 * Math.max(...types.map((type) => sim.unitRadius(type))) + 4;
-    const columns = Math.ceil(Math.sqrt(count)),
-        rows = Math.ceil(count / columns);
-    for (let i = 0; i < count; i++) {
-        const along = (Math.floor(i / columns) - (rows - 1) / 2) * spacing,
-            across = ((i % columns) - (columns - 1) / 2) * spacing;
-        const unit = sim.spawnUnit(
-            side,
-            types[i % types.length],
-            center.x + dir.x * along - dir.y * across,
-            center.y + dir.y * along + dir.x * across,
-        );
-        RollingBody.aim(unit, dir.x, dir.y);
-    }
-    return rows * spacing;
-}
-
 // Every capture point gets a completed outpost of the side whose main base is nearer.
 function completeOutposts(sim) {
     const { host, guest } = baseAxis(sim);
@@ -102,9 +77,7 @@ function completeOutposts(sim) {
             Math.hypot(point.x - guest.x, point.y - guest.y)
                 ? 0
                 : 1;
-        const outpost = sim.spawnOutpost(point, side);
-        sim.completeConstruction(outpost);
-        outpost.hp = outpost.maxHp;
+        buildOutpost(sim, point, side);
     }
 }
 
@@ -319,6 +292,28 @@ function overlap(sim) {
     return { pairs, depth: round(depth), embedded: { terrain, buildings } };
 }
 
+// The walnuts still rolling: how many, and their mean and top speed (world units per second).
+function walnutSpeeds(sim) {
+    let rolling = 0,
+        sum = 0,
+        top = 0;
+    for (const unit of sim.units) {
+        if (!unit.alive || !unit.rolling) continue;
+        const motion = unit.impactMotion,
+            speed = motion ? Math.hypot(motion.vxFP || 0, motion.vyFP || 0) / FP : 0;
+        rolling++;
+        sum += speed;
+        top = Math.max(top, speed);
+    }
+    return {
+        walnuts: {
+            alive: rolling,
+            meanSpeed: rolling ? round(sum / rolling) : 0,
+            topSpeed: round(top),
+        },
+    };
+}
+
 export function createDebugScenes({ createRenderer, createScenario, createPresentationView }) {
     // A full-window surface drawn by the match renderer under the virtual clock. `fog` (host|guest) draws that
     // side's fog of war; without it the scene shows everything, as the card previews do.
@@ -352,6 +347,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
         renderer.replayObserverAll = !fog;
         return {
             renderer,
+            realNow,
             realTime(operation) {
                 performance.now = realNow;
                 try {
@@ -377,7 +373,10 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
         const times = flag(name, 'times', params.times);
         let failure = null;
         let run;
+        // Real time to build the scene (staging, any ticks run before it shows, the first snapshot).
+        let openMs;
         try {
+            const opened = stage.realNow();
             run = open(
                 () => {
                     stage.realTime(() => run.sim.step());
@@ -387,6 +386,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     failure = error;
                 },
             );
+            openMs = round(stage.realNow() - opened);
             run.play({ automatic: false });
         } catch (error) {
             run?.dispose();
@@ -410,6 +410,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             state: () => ({
                 simTick: run.sim.tick,
                 checksum: run.sim.checksum(),
+                openMs,
                 units: { host: alive(0), guest: alive(1) },
                 ...extra(run.sim),
                 ...log.state(times),
@@ -512,27 +513,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
         return matchScene(scene, params, sim, {
             zoom: 1.4,
             focus: () => center,
-            // The walnuts still rolling: how many, and their mean and top speed (world units per second).
-            extra: () => {
-                let rolling = 0,
-                    sum = 0,
-                    top = 0;
-                for (const unit of sim.units) {
-                    if (!unit.alive || !unit.rolling) continue;
-                    const motion = unit.impactMotion,
-                        speed = motion ? Math.hypot(motion.vxFP || 0, motion.vyFP || 0) / FP : 0;
-                    rolling++;
-                    sum += speed;
-                    top = Math.max(top, speed);
-                }
-                return {
-                    walnuts: {
-                        alive: rolling,
-                        meanSpeed: rolling ? round(sum / rolling) : 0,
-                        topSpeed: round(top),
-                    },
-                };
-            },
+            extra: walnutSpeeds,
         });
     }
 
@@ -650,6 +631,27 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     launches: sim.launchStats.launches.slice(),
                 }),
             });
+        },
+        /**
+         * 타이틀 뒤 전투(src/ui/title-scenes.js)를 반복한다. 장면은 틱 1~42, 43~72, 73~102이고 굴러가는 호두
+         * 속도(`walnuts`)를 함께 낸다. 예: `?debug=1&scene=title&tick=50`
+         */
+        title(params) {
+            const stage = openStage(undefined);
+            return host(
+                stage,
+                'title',
+                params,
+                (advanceTick, onError) =>
+                    prepareTitleScenes({
+                        renderer: stage.renderer,
+                        createScenario,
+                        createPresentationView,
+                        advanceTick,
+                        onError,
+                    }),
+                walnutSpeeds,
+            );
         },
         /**
          * 카드 시연(src/ui/unit-showcase.js)을 그대로 연다. 시연처럼 끝나면 처음부터 다시 돈다.
