@@ -101,6 +101,7 @@ const observer = `window.__simWorkerE2E={MatchLifecycle,RecoveryTelemetry,AppLif
             .sort();
         assert.deepEqual(workerSDKModules, [
             'boot.js',
+            'contact-solver.js',
             'deterministic.js',
             'geometry.js',
             'pathfield.js',

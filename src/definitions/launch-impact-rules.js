@@ -1,4 +1,6 @@
 // Artillery contact and deployment policy. Distances/seconds are world units; authority stores FP integers.
+import { RallyGamekit } from '../core/gamekit.js';
+const { SOFT, SOLID } = RallyGamekit;
 class LaunchImpactRules {
     static launchHeight = 60;
     static muzzleReach = 38;
@@ -6,11 +8,35 @@ class LaunchImpactRules {
     static referenceMass = 100;
     static restitution = 0;
     static maxZeroTimeContactIterations = 32;
-    // Unit-unit impulse contacts one tick resolves (UnitMotion.solveImpulseStep); later ones pass through and
-    // the crowd separation pulls them apart afterwards. Contacts with a rolling body have their own share.
-    // Walls, buildings and the map edge are never limited.
+    // One tick's contact solve (GameKit contact-solver, UnitMotion.solveContacts). Walls, buildings and the map
+    // edge are always solved. Unit-unit contacts, walking or flying alike, are solved in time order up to this
+    // many a tick; later ones pass through each other and the overlap separation pulls them apart afterwards.
     static unitContactBudget = 64;
-    static rollingContactBudget = 64;
+    // Contact groups by side (0, 1, any other): allies are not contacts and separate by a mass-weighted share
+    // (SOFT), everyone else is solid (SOLID). The table is groups x groups, row = one body's group.
+    static contactRelations = Object.freeze([
+        SOFT,
+        SOLID,
+        SOLID,
+        SOLID,
+        SOFT,
+        SOLID,
+        SOLID,
+        SOLID,
+        SOLID,
+    ]);
+    // Candidate grid cell of the contact solve, world units. Cost only, never the result.
+    static contactCellSize = 64;
+    // Ally separation (SOFT): each pass moves a body by this share of its overlaps, at most allySoftPasses
+    // passes; one pass moves a body at most max(1, min(radius·allySoftMaxRadius,
+    // max(radius·allySoftIdleRadius, tick speed·allySoftSpeed))) (Jacobi, A011·A012).
+    static allySoftFraction = 0.8;
+    static allySoftPasses = 4;
+    static allySoftIdleRadius = 0.08;
+    static allySoftMaxRadius = 0.25;
+    static allySoftSpeed = 0.75;
+    // Enemy separation (SOLID): passes that move the body that entered the other fully out.
+    static hostileSeparationPasses = 4;
     static remainderScale = 10000;
     static airDrag = 0.4;
     static groundDrag = 5;
