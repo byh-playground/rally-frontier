@@ -210,6 +210,83 @@ function createTickLog() {
     };
 }
 
+// Blast and spin knockbacks (`unit` scene), read by `state().knockback`: for each unit the first impulse from a
+// self-destruct or a spin attack, as the change of its impact velocity (speed along the ground, lift), then the
+// highest point, the top ground speed it ever reached (several blasts add up), how far it travels from where it stood and how many ticks it flies. A contact bump is not counted.
+function createKnockbackProbe(sim) {
+    const entries = new Map(),
+        previous = new Map();
+    const blasts = new Set();
+    return {
+        observe() {
+            blasts.clear();
+            for (const event of sim.events)
+                if (event.type === 'unitSelfDestruct') blasts.add(event.sourceId);
+            for (const unit of sim.units) {
+                const m = unit.impactMotion,
+                    before = previous.get(unit.id);
+                if (!m) continue;
+                let entry = entries.get(unit.id);
+                if (
+                    !entry &&
+                    m.kind === 'knockback' &&
+                    before?.startTick !== m.startTick &&
+                    (blasts.has(m.sourceId) ||
+                        UnitDefinition.get(sim.units.find((o) => o.id === m.sourceId)?.type)
+                            ?.spinAttack)
+                ) {
+                    const source = sim.units.find((o) => o.id === m.sourceId);
+                    entry = {
+                        source: blasts.has(m.sourceId) ? 'blast' : 'spin',
+                        target: unit.type,
+                        tick: m.startTick,
+                        x0: before?.x ?? unit.x,
+                        y0: before?.y ?? unit.y,
+                        speed: round(
+                            Math.hypot(m.vxFP - (before?.vx ?? 0), m.vyFP - (before?.vy ?? 0)) / FP,
+                        ),
+                        lift: round((m.vzFP - (before?.vz ?? 0)) / FP),
+                        peak: 0,
+                        top: 0,
+                        dist: 0,
+                        ticks: 0,
+                        done: false,
+                    };
+                    entries.set(unit.id, entry);
+                    void source;
+                }
+                if (entry && !entry.done) {
+                    entry.peak = Math.max(entry.peak, m.heightFP / FP);
+                    entry.top = Math.max(entry.top, Math.hypot(m.vxFP, m.vyFP) / FP);
+                    entry.dist = round(Math.hypot(unit.x - entry.x0, unit.y - entry.y0));
+                    entry.ticks = sim.tick - entry.tick;
+                    if (
+                        sim.tick > entry.tick + 2 &&
+                        m.heightFP === 0 &&
+                        Math.hypot(m.vxFP, m.vyFP) < FP
+                    )
+                        entry.done = true;
+                }
+                previous.set(unit.id, {
+                    startTick: m.startTick,
+                    x: unit.x,
+                    y: unit.y,
+                    vx: m.vxFP,
+                    vy: m.vyFP,
+                    vz: m.vzFP,
+                });
+            }
+        },
+        state() {
+            return [...entries.values()].map((e) => ({
+                ...e,
+                peak: round(e.peak),
+                top: round(e.top),
+            }));
+        },
+    };
+}
+
 // Pairs of live units whose collision discs overlap now, and the summed overlap depth (world units).
 function overlap(sim) {
     const units = sim.units.filter((unit) => unit.alive);
@@ -548,7 +625,13 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     { x: at.x + dir.x * 300, y: at.y + dir.y * 300 },
                     { x: -dir.x, y: -dir.y },
                 );
-            return matchScene(scene, params, sim, { zoom: 1.6, focus: followUnits(sim, at) });
+            const probe = createKnockbackProbe(sim);
+            return matchScene(scene, params, sim, {
+                zoom: 1.6,
+                focus: followUnits(sim, at),
+                beforeStep: () => probe.observe(),
+                extra: () => ({ knockback: probe.state() }),
+            });
         },
         /**
          * 양쪽을 경기 AI(BotController)가 둔다. 덱은 둘 다 기본 덱이고, 한쪽 본진이 무너지면 끝난다.

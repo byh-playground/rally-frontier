@@ -1,4 +1,4 @@
-import { GRAIN_SIZE, RESOURCE_SCALE } from '../baseline.js';
+import { GRAIN_SIZE, HEAVY_KNOCKBACK, RESOURCE_SCALE } from '../baseline.js';
 import { defineUnit } from '../define-unit.js';
 import { COLLISION_RADIUS_SCALE } from '../../definitions/world-rules.js';
 import {
@@ -34,8 +34,7 @@ export const Acorn = defineUnit({
             recoverMs: DEFAULT_MELEE_MOVE_RECOVERY_MS,
             pulseMs: 200,
             maxUnitHitsPerPulse: 3,
-            knockbackSpeed: 400,
-            knockbackLift: 300,
+            ...HEAVY_KNOCKBACK,
             tangentRatio: 0.5,
         }),
     },

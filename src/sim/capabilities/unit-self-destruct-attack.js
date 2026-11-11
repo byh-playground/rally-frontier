@@ -85,7 +85,8 @@ export class UnitSelfDestructAttack {
                     y,
                     radius: spec.radius,
                     impactHeightFP: heightFP,
-                    scale: spec.impulseScale,
+                    speed: spec.knockbackSpeed,
+                    lift: spec.knockbackLift,
                 });
                 sim.applyAreaDamage({
                     sourceSide: side,
