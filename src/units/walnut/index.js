@@ -54,6 +54,9 @@ export const Walnut = defineUnit({
             // Damage to an enemy building hit straight on at the top speed.
             buildingDamageAtTop: 40,
             rehitMs: 500,
+            // 초안: the struck enemy is thrown by this many times the exchanged impulse (speed and lift);
+            // the walnut's own speed loss and the damage stay at the plain exchange.
+            knockback: 3,
         }),
     },
     // 비용(식량 50·기름 75)·한 발에 하나는 확정, 포탄 체력·위력·반경은 찹쌀과 같은 초안이다.
@@ -86,7 +89,7 @@ export const Walnut = defineUnit({
         notes: [
             '착지하면 발사 방향으로 굴러가며 약 4초 동안 최고 속도까지 빨라져요. 멈춰서 싸우지 않아요.',
             '시야 안의 가장 가까운 적을 향해 방향을 틀지만 빠를수록 크게 돌아요. 적이 없으면 적 본진으로 굴러가요.',
-            '닿은 적은 부딪힌 세기만큼 피해를 입고 튕겨 나가요. 무거운 적일수록 호두가 더 많이 느려지고, 같은 적은 0.5초 안에 다시 맞지 않아요.',
+            '닿은 적은 부딪힌 세기만큼 피해를 입고 멀리 날아가요. 가벼운 적일수록 더 멀리 날아가고, 무거운 적일수록 호두가 더 많이 느려지고, 같은 적은 0.5초 안에 다시 맞지 않아요.',
             '벽과 건물에서는 튕겨 나오고, 적 건물은 속도만큼 피해를 입어요. 아군은 피해 없이 옆으로 밀려나고 호두는 느려지지 않아요.',
         ],
     },
