@@ -8357,7 +8357,7 @@ class UiRuntimeState {
         modal: 'none',
         modalState: { disconnect: 'hidden' },
         options: { minimapExpanded: false, lockstepDebugOpen: false },
-        settings: { presetId: 'standard', simulationTps: 10 },
+        settings: { simulationTps: 10 },
     };
 }
 
@@ -9402,13 +9402,14 @@ class MatchLifecycle {
     static activeSession() {
         return ReplayPresentation.replayPlayer || ActiveViewState.session;
     }
-    static currentMatchConfig(campaignStage = null) {
+    // A campaign stage plays the PvP map it names (`map`); without one the preset only carries the shared rules.
+    static currentMatchConfig(stage = null) {
         return {
-            presetId: campaignStage
-                ? UiRuntimeState.value.settings.presetId
+            presetId: stage
+                ? (stage.map ?? 'standard')
                 : PVP_MAP_POOL[Math.floor(Math.random() * PVP_MAP_POOL.length)],
             simulationTps: UiRuntimeState.value.settings.simulationTps,
-            campaignStage,
+            campaignStage: stage?.id ?? null,
         };
     }
     static createSession(role, transport, roomCode, config, deck, deckOptions) {
@@ -9700,7 +9701,7 @@ class MatchLifecycle {
         const transports = { host: hostTransport, guest: guestTransport };
         const humanTransport = transports[humanRole];
         const botTransport = transports[botRole];
-        const config = MatchLifecycle.currentMatchConfig(stage?.id ?? null),
+        const config = MatchLifecycle.currentMatchConfig(stage),
             configFor = (role) => (role === 'host' ? config : undefined);
         const humanSession = MatchLifecycle.createSession(
             humanRole,
@@ -9926,7 +9927,6 @@ class MatchLifecycle {
     }
     static failSinglePlayer(message) {
         MatchLifecycle.disposeMatches('single-start-failed');
-        UiRuntimeState.value.settings.presetId = 'standard';
         UiRegistry.refs.singleStatus.textContent = message;
         UiController.setElementVisible(UiRegistry.refs.singleStatus, true);
     }

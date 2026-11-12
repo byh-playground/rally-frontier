@@ -970,7 +970,11 @@ class MapGeneration {
         seed = 0,
         roundNumber = 1,
     } = {}) {
-        const id = rules?.campaign ? 'fixed-campaign' : rules?.map?.generator || 'fixed-standard';
+        // A campaign stage plays on the campaign front unless it names a PvP map (`map`, a preset of game-rules.js).
+        const id =
+            rules?.campaign && !rules.campaign.map
+                ? 'fixed-campaign'
+                : rules?.map?.generator || 'fixed-standard';
         const key = JSON.stringify([id, seed >>> 0, roundNumber || 1, rules]);
         if (this.descriptorCache?.key === key) return this.descriptorCache.descriptor;
         const generator = MAP_GENERATORS[id] || MAP_GENERATORS['fixed-standard'];
