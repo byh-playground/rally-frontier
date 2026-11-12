@@ -28,11 +28,6 @@ export function unitCardStats(type, rangeLevel, copy) {
         ['체력', number.format(unit.hp)],
         ['이동속도', number.format(unit.speed)],
     ];
-    if (unit.outOfCombatMoveMultiplier)
-        movement.push([
-            '비전투 이동속도',
-            number.format(unit.speed * unit.outOfCombatMoveMultiplier),
-        ]);
     if (unit.flight)
         movement.push(
             ['비행 속도(한 번)', number.format(unit.flight.speed)],

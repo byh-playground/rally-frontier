@@ -377,6 +377,40 @@ function placeLine(sim, side, type, count, center, dir, spacing) {
     }
 }
 
+// Outposts being built (`unit` and `ai-match` scenes), read by `state().outposts`: for each capture point the tick its
+// outpost first stood finished (`doneTick`, null while it is still a construction site or was never started).
+function createOutpostProbe(sim) {
+    const done = new Map();
+    return {
+        observe() {
+            for (const point of sim.capturePoints) {
+                if (done.has(point.id) || !point.outpostId) continue;
+                const outpost = sim.buildings.find((b) => b.id === point.outpostId);
+                if (outpost && outpost.alive !== false && !outpost.construction)
+                    done.set(point.id, sim.tick);
+            }
+        },
+        state() {
+            const points = sim.capturePoints.map((point) => {
+                const outpost =
+                    point.outpostId && sim.buildings.find((b) => b.id === point.outpostId);
+                return {
+                    id: point.id,
+                    started: !!point.outpostId,
+                    side: outpost ? outpost.side : null,
+                    workDone: outpost?.construction?.workDone ?? null,
+                    doneTick: done.get(point.id) ?? null,
+                };
+            });
+            return {
+                built: points.filter((point) => point.doneTick !== null).length,
+                firstDone: Math.min(...points.map((point) => point.doneTick ?? Infinity)),
+                points,
+            };
+        },
+    };
+}
+
 // A fight in the `unit` scene, read by `state().fight`: the tick one side first has no live unit (with who is left
 // and their health then), and every lobbed egg thrown (`unitLobLaunch`), every explosion (`unitLobExplosion`) and
 // how many enemies each explosion hit (the area damage's own hit count). Eggs count until 20 ticks after the end.
@@ -1018,7 +1052,23 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             const dir = { x: (guest.x - at.x) / length, y: (guest.y - at.y) / length };
             const group = [unitType(scene, 'unit', params.unit)],
                 count = integer(scene, 'count', params.count);
-            if (params.line === undefined) placeBlock(sim, 0, group, count, at, dir);
+            // point=N: the soldiers stand in a ring (radius `ring`, default 160) around capture point N, so they
+            // build its outpost (read `state().outposts`); `x`·`y` are then ignored for the block.
+            if (params.point !== undefined) {
+                const point = sim.capturePoints[integer(scene, 'point', params.point)];
+                if (!point) throw new Error(`unit: point ${params.point} does not exist`);
+                const radius =
+                    params.ring === undefined ? 160 : integer(scene, 'ring', params.ring);
+                for (let i = 0; i < count; i++) {
+                    const angle = (i * Math.PI * 2) / count;
+                    sim.spawnUnit(
+                        0,
+                        group[0],
+                        point.x + Math.cos(angle) * radius,
+                        point.y + Math.sin(angle) * radius,
+                    );
+                }
+            } else if (params.line === undefined) placeBlock(sim, 0, group, count, at, dir);
             else placeLine(sim, 0, group[0], count, at, dir, integer(scene, 'line', params.line));
             if (params.enemy !== undefined || params.enemyCount !== undefined)
                 placeBlock(
@@ -1098,7 +1148,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     }
             const probe = createKnockbackProbe(sim, flag(scene, 'trace', params.trace)),
                 fight = createFightProbe(sim),
-                flight = createFlightProbe(sim);
+                flight = createFlightProbe(sim),
+                outposts = createOutpostProbe(sim);
             return matchScene(scene, params, sim, {
                 zoom: 1.6,
                 focus: followUnits(sim, at),
@@ -1106,12 +1157,14 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     probe.observe();
                     fight.observe();
                     flight.observe();
+                    outposts.observe();
                 },
                 extra: () => ({
                     knockback: probe.state(),
                     outside: probe.outside(),
                     fight: fight.state(),
                     flight: flight.state(),
+                    outposts: outposts.state(),
                     enemySpread: spread(sim, 1),
                 }),
             });
@@ -1264,13 +1317,15 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             const sim = createMatchSim('ai-match', params.map, params.seed, params.deck);
             const bots = attachBots(sim),
                 probe = createKnockbackProbe(sim, flag('ai-match', 'trace', params.trace)),
-                flight = createFlightProbe(sim);
+                flight = createFlightProbe(sim),
+                outposts = createOutpostProbe(sim);
             return matchScene('ai-match', params, sim, {
                 zoom: 1,
                 focus: () => battleFocus(sim),
                 beforeStep: () => {
                     probe.observe();
                     flight.observe();
+                    outposts.observe();
                     bots();
                 },
                 isComplete: () => sim.baseOutcome() !== null,
@@ -1281,6 +1336,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     knockback: probe.state(),
                     outside: probe.outside(),
                     flight: flight.state(),
+                    outposts: outposts.state(),
                 }),
             });
         },

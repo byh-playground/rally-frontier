@@ -1511,8 +1511,10 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     ),
                     'wall fixture worker circle starts outside its collider',
                 );
+                // The fixture places the worker 0.75 outside the wall (start() with contact); it has since stepped
+                // once and backs off during its cooldown, so the placement distance is checked, not its position.
                 check(
-                    Math.hypot(worker.x - tower.x, worker.y - tower.y) <=
+                    sim.buildingClearanceDistance(worker, tower) + 0.75 <=
                         InteractionGeometry.reach(
                             worker,
                             tower,

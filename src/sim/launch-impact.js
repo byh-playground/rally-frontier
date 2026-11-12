@@ -194,10 +194,10 @@ class LaunchImpact {
     // units, then throw them all out on the same tick, the outer ones hardest. The throw grows with
     // √(squad / burstSquad), so every squad lands about as far apart as millet's, and across the shot
     // it is `spreadAcross` times as hard as along it. A failed search leaves the entire payload intact
-    // for a later retry.
+    // for a later retry. The packing radius is the card's `deployRadius`, or its `splash` when it has none.
     static deployBurst(sim, group, grain) {
         const origin = { x: group.x, y: group.y },
-            initialRadius = grain.splash + 60,
+            initialRadius = (grain.deployRadius ?? grain.splash) + 60,
             attempt = group.deployAttempt || 0,
             absoluteHeight =
                 sim.world.terrain.surfaces.heightAt(group.x, group.y) + group.heightFP / FP;
@@ -352,7 +352,7 @@ class LaunchImpact {
                 sim.world.terrain.surfaces.heightAt(group.x, group.y) + group.heightFP / FP;
             const spot = sim.findOpenSpawnAround(origin, group.type, {
                 baseRadius: 0,
-                maxRadius: grain.splash + 60,
+                maxRadius: (grain.deployRadius ?? grain.splash) + 60,
                 angleSlots: 12,
                 radialStep: 10,
                 seedKey: group.projectileId + '|release|' + group.index,

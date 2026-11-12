@@ -911,11 +911,15 @@ class StrategySim {
                         work.strikeFromFy / FP - b.y,
                     ),
                     afterDistance = Math.hypot(u.x - b.x, u.y - b.y);
-                if (
-                    afterDistance >
-                        this.buildingClearanceDistance(u, b) + ConstructionRules.contactTolerance ||
-                    beforeDistance - afterDistance < 1 / FP
-                )
+                if (beforeDistance - afterDistance < 1 / FP) continue;
+                // Before its cooldown the worker keeps striking until it touches the wall. Once a hit is due,
+                // the reach test above is the contact rule: a packed crowd can leave every worker pressed a
+                // little short of the wall (never closer than its neighbours allow), and that must still
+                // count however fast the workers walk.
+                const touching =
+                    afterDistance <=
+                    this.buildingClearanceDistance(u, b) + ConstructionRules.contactTolerance;
+                if (!touching && (work.nextHitTick === null || this.tick < work.nextHitTick))
                     continue;
                 // Crowding or a speed change may bring the worker to contact
                 // before its cooldown. Recoil without credit and retry later;
@@ -2427,15 +2431,14 @@ class StrategySim {
         const cooldown = this.attackCooldown(u, d);
         // 공통 전투 이동/공속 보정.
         moveSpeed *= this.timedModifierPct(u, 'movePct') / 100;
-        const nonCombatMoveSpeed = moveSpeed * (d.outOfCombatMoveMultiplier ?? 1);
 
         if (!found) {
             u.combat.cancelWindup();
             if (d.contactMelee) ContactMelee.cancelCharge(u);
             u.target = null;
-            if (this.updateConstructionWork(u, d, nonCombatMoveSpeed)) return null;
+            if (this.updateConstructionWork(u, d, moveSpeed)) return null;
             const f = this.unitRallyPoint(u);
-            this.moveToward(u, f.x, f.y, nonCombatMoveSpeed);
+            this.moveToward(u, f.x, f.y, moveSpeed);
             return null;
         }
 
@@ -2453,7 +2456,7 @@ class StrategySim {
             if (d.contactMelee) ContactMelee.cancelCharge(u);
             u.target = null;
             const f = this.unitRallyPoint(u);
-            this.moveToward(u, f.x, f.y, nonCombatMoveSpeed);
+            this.moveToward(u, f.x, f.y, moveSpeed);
             return null;
         }
 
