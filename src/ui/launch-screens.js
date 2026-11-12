@@ -1,5 +1,5 @@
 import { ResourceDisplay } from './resource-display.js';
-import { CAMPAIGN_STAGES, CAMPAIGN_TIERS } from '../definitions/campaign.js';
+import { CAMPAIGN_GROUPS, CAMPAIGN_STAGES, CAMPAIGN_TIERS } from '../definitions/campaign.js';
 import { CampaignPresentation } from './campaign-presentation.js';
 import { unitCardStats } from './unit-card-stats.js';
 import './grain-portrait.js';
@@ -251,14 +251,15 @@ export class LaunchScreens {
         $('resultDeckBtn').onclick = () => A.openRewardDeck(this.resultReward);
         $('resultNextCampaignBtn').onclick = () => this.showCampaignBriefing(this.resultNextStage);
     }
-    // Depth list: tiers (depth 0) fold open to their stages (depth 1); the hero group (depth 1) folds open to its
-    // training stages (depth 2). Only one tier is open at a time, so the whole list fits without scrolling.
+    // Depth list: tiers (depth 0) fold open to their stages (depth 1); a stage group (`CAMPAIGN_GROUPS`, depth 1)
+    // folds open to its stages (depth 2). Only one tier and one group are open at a time, so the whole list fits
+    // without scrolling.
     static initialCampaignOpen() {
         const progress = this.actions.campaignProgress;
         const next = progress.nextStage;
-        if (next) return { tier: next.tier, hero: next.group === 'hero' };
+        if (next) return { tier: next.tier, group: next.group ?? null };
         const opened = CAMPAIGN_TIERS.filter((tier) => progress.isTierOpen(tier.id));
-        return { tier: opened.at(-1)?.id ?? null, hero: false };
+        return { tier: opened.at(-1)?.id ?? null, group: null };
     }
     static renderCampaignList(focusKey) {
         const list = this.$('campaignStages');
@@ -287,26 +288,29 @@ export class LaunchScreens {
         };
         section.append(row);
         if (!expanded) return section;
-        const heroes = stages.filter((stage) => stage.group === 'hero');
         for (const stage of stages.filter((stage) => !stage.group))
             section.append(this.campaignStageRow(stage, 1));
-        if (heroes.length) {
-            const heroRow = this.campaignRow({
+        for (const group of CAMPAIGN_GROUPS) {
+            const members = stages.filter((stage) => stage.group === group.id);
+            if (!members.length) continue;
+            const key = `group-${tier.id}-${group.id}`,
+                groupOpen = this.campaignOpen.group === group.id;
+            const groupRow = this.campaignRow({
                 depth: 1,
-                key: `hero-${tier.id}`,
-                title: '영웅',
-                expanded: this.campaignOpen.hero,
-                art: heroes[0].deck[0],
-                meta: `${heroes.filter((stage) => progress.isComplete(stage)).length}/${heroes.length}`,
+                key,
+                title: group.title,
+                expanded: groupOpen,
+                art: group.art,
+                meta: `${members.filter((stage) => progress.isComplete(stage)).length}/${members.length}`,
             });
-            heroRow.classList.add('is-tier');
-            heroRow.onclick = () => {
-                this.campaignOpen = { ...this.campaignOpen, hero: !this.campaignOpen.hero };
-                this.renderCampaignList(`hero-${tier.id}`);
+            groupRow.classList.add('is-tier');
+            groupRow.onclick = () => {
+                this.campaignOpen = { ...this.campaignOpen, group: groupOpen ? null : group.id };
+                this.renderCampaignList(key);
             };
-            section.append(heroRow);
-            if (this.campaignOpen.hero)
-                for (const stage of heroes) section.append(this.campaignStageRow(stage, 2));
+            section.append(groupRow);
+            if (groupOpen)
+                for (const stage of members) section.append(this.campaignStageRow(stage, 2));
         }
         return section;
     }
@@ -359,7 +363,7 @@ export class LaunchScreens {
         const row = this.campaignRow({
             depth,
             key: `stage-${stage.id}`,
-            // Under the hero row the shared "영웅 …" prefix is redundant and would crowd the row on a phone.
+            // Under a group row the shared "영웅 …"·"호두 …" prefix is redundant and would crowd the row on a phone.
             title: stage.group ? stage.title.split(' · ').pop() : stage.title,
             art: stage.nodeMark ? null : (stage.rewardCard ?? stage.deck[0]),
             mark: stage.nodeMark,

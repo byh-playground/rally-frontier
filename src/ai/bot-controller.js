@@ -522,7 +522,6 @@ class BotController {
             BotController.nearestShot(cannons, enemies, groundDeck, level) ||
             premiumShot ||
             BotController.nearestShot(cannons, hostile, deck, level);
-        if (!shot && this.runCapabilityLaunch('fallback', { ...rules, budget })) return;
         if (!shot && enemyBase && !objectives.some(({ supported }) => supported)) {
             const cannon = cannons.reduce((best, candidate) =>
                 distance(candidate, enemyBase) < distance(best, enemyBase) ? candidate : best,

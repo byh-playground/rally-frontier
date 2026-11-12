@@ -315,11 +315,15 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 const openStage = (stage) =>
                     new StrategySim(
                         stage.seed,
-                        { ...GameRuleDefinition.resolve(), campaign: stage },
+                        {
+                            ...GameRuleDefinition.resolve({ presetId: stage.map ?? 'standard' }),
+                            campaign: stage,
+                        },
                         [stage.deck, stage.enemyDeck],
                     );
                 const layouts = [];
-                for (const stage of CAMPAIGN_STAGES) {
+                // Stages on a PvP map (`map`) use that map's own sites; these checks are for the campaign front.
+                for (const stage of CAMPAIGN_STAGES.filter((stage) => !stage.map)) {
                     const sim = openStage(stage);
                     const { world, capturePoints: points, mapDescriptor } = sim;
                     const [home, enemy] = world.bases;

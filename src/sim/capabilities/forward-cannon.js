@@ -6,7 +6,7 @@
 // - 전진 대포는 Building Definition 'forward-cannon'의 일반 건물이다. 거점 대포와 같은 발사 규칙(재장전·비용·연쇄)을
 //   쓰고 포탑·생산·점령·수입·승패 판정이 없다. 선 틱(Building.decayStartTick)부터 정수 단위로 체력이 줄어
 //   0이 되면 파괴되며 적 피해도 받는다. 찹쌀은 붙지 않는다. 영웅은 발사 대포인 전진 대포로도 회수된다.
-//   봇은 다른 표적이 없을 때 사거리 안에서 적 본진 쪽 가장 먼 지점으로 감자를 쏜다.
+//   봇은 적 본진이 다른 카드의 사거리 밖이고 자기 감자·전진 대포가 없으면 적 본진 쪽 가장 먼 지점으로 감자를 쏜다.
 // A potato roots where it landed and stands up as a forward cannon (Unit Definition growsCannon).
 // Unit.cannonTick, set when the soldier spawns, is the only rooting state: the tick the cannon appears.
 // Until then the soldier neither moves nor attacks and can be hit; a soldier that dies first leaves nothing.
@@ -76,20 +76,42 @@ class ForwardCannon {
 }
 
 // Bot launch rule (src/sim/capabilities/bot-launch-rules.js): a potato roots where it lands, so it
-// never joins ordinary targeting (ownShotOnly). With nothing else to hit, it goes as far toward the
-// enemy base as the nearest cannon reaches.
+// never joins ordinary targeting (ownShotOnly). While the enemy base is beyond every other card's
+// reach and no own potato is rooting or standing as a forward cannon, an affordable potato goes as far
+// toward that base as the nearest cannon reaches. One cannon at a time leaves oil for the other cards.
 ForwardCannon.botLaunch = Object.freeze({
     capability: 'growsCannon',
-    stage: 'fallback',
+    stage: 'opening',
     ownShotOnly: true,
-    shot({ state, side, units, cannons, enemyBase, budget, level, distance, maxReachOf }) {
+    shot({
+        state,
+        side,
+        cards,
+        units,
+        cannons,
+        enemyBase,
+        level,
+        distance,
+        nearestShot,
+        maxReachOf,
+    }) {
         const planter =
             enemyBase &&
             units.find(
                 ({ cost, premiumCost }) =>
-                    cost <= budget && premiumCost <= state.premiumWallet[side],
+                    cost <= state.wallet[side] && premiumCost <= state.premiumWallet[side],
             );
         if (!planter) return null;
+        const growing = UnitDefinition.get(planter.type).growsCannon;
+        if (
+            state.units.some((u) => u.alive && u.side === side && u.cannonTick != null) ||
+            state.buildings.some(
+                (b) => b.alive !== false && b.side === side && b.type === growing.building,
+            )
+        )
+            return null;
+        const others = cards.filter(({ type }) => !units.some((unit) => unit.type === type));
+        if (nearestShot(cannons, [enemyBase], others, level)) return null;
         const cannon = cannons.reduce((best, candidate) =>
             distance(candidate, enemyBase) < distance(best, enemyBase) ? candidate : best,
         );
