@@ -8,8 +8,7 @@ const PVP_MAP_PRESETS = Object.freeze({
     'wind-ravines': { map: { generator: 'fixed-wind-ravines', generatorVersion: 1 } },
     'causeway-flats': { map: { generator: 'fixed-causeway-flats', generatorVersion: 1 } },
 });
-// Maps a random match draws from with equal chance. causeway-flats is defined (debug scenes, campaign stages) but
-// stays out until its bot match ends within the 20000-tick check.
+// Maps a random match draws from with equal chance.
 const PVP_MAP_POOL = Object.freeze([
     'standard',
     'twin-gates',
@@ -17,6 +16,7 @@ const PVP_MAP_POOL = Object.freeze([
     'kings-hill',
     'small-field',
     'wind-ravines',
+    'causeway-flats',
 ]);
 class RangeUtil {
     static clamp(v, a, b) {

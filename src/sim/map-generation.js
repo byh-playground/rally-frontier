@@ -359,7 +359,7 @@ class FrontierTerrainLayout {
         // Every strategic point must be reachable by the widest grain on the
         // radius-inflated distance grid. Generation-time caches are discarded.
         const world = WorldContext.fromMap(map),
-            nav = new TerrainNavigation({ world, tick: 0, buildings: [] });
+            nav = new TerrainNavigation({ world, mapDescriptor: map, tick: 0, buildings: [] });
         const strategic = [
             map.spawns.guest,
             ...map.capturePoints,

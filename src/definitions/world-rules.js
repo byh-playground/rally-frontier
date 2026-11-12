@@ -4,6 +4,9 @@ const VIEW_H = 1500,
 const TERRAIN_ATTACK_REVEAL_MS = 1000;
 const TERRAIN_ATTACK_REVEAL_RADIUS = 40;
 const COLLISION_RADIUS_SCALE = 1.35;
+// Ground speed in a river (a bridge is dry ground). Also the source of a river cell's path cost: crossing it takes
+// 1 / RIVER_MOVEMENT_MULTIPLIER times as long, so the flow fields weigh water by that time (TerrainNavigation).
+const RIVER_MOVEMENT_MULTIPLIER = 0.5;
 // Runtime-only fixed-cell spatial indexes. They never enter checksum/exportState.
 // Combat and range queries share the same deterministic unit grid (contact candidates live in the contact solver).
 // Final distance/contact tests remain exact, so the grid changes candidate discovery only.
@@ -21,6 +24,7 @@ export {
     BALANCE_SAMPLE_EVERY_MS,
     COLLISION_RADIUS_SCALE,
     PERF_SAMPLE_EVERY_MS,
+    RIVER_MOVEMENT_MULTIPLIER,
     SIM_SPATIAL_CELL,
     TERRAIN_ATTACK_REVEAL_MS,
     TERRAIN_ATTACK_REVEAL_RADIUS,
