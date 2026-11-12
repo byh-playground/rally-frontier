@@ -6,7 +6,7 @@ import {
     turnedLane,
 } from './pvp-map-layout.js';
 
-// A short open field with two rocks: no home oil, the only oil is the one in the middle.
+// A short open field with two rocks: each side has a safe oil behind its base, and one contested oil in the middle.
 export function smallFieldMapLayout() {
     const width = 3000;
     const height = 3600;
@@ -29,6 +29,7 @@ export function smallFieldMapLayout() {
             ['natural', 'mid', '앞마당 식량 거점', natural, 'basic'],
             ['west', 'top', '서쪽 식량 거점', west, 'basic'],
             ['east', 'bot', '동쪽 식량 거점', east, 'basic'],
+            ['oil', 'mid', '본진 기름 거점', { x: 1150, y: 3350 }, 'premium'],
         ]),
         neutralCapturePoint('center-oil', 'mid', '중앙 기름 거점', 'premium', center),
     ];

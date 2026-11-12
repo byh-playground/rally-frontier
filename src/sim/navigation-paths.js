@@ -4,7 +4,8 @@
 //   route  : one A* search kept in Unit.route, searched again only when the goal changes or the building layout
 //            changes under the remaining route (returning heroes).
 //   direct : the straight line to the goal's closest point, or nothing; no field and no search.
-// A clear straight ray inside the scan radius wins over both grid ways (field and route).
+// A clear straight ray inside the scan radius wins over both grid ways (field and route), unless it cuts across
+// water from dry ground (TerrainNavigation.crossesSlowerGround): then the cost-aware grid way decides.
 import { RallyGamekit } from '../core/gamekit.js';
 import { GoalFields } from './navigation-field.js';
 const { RouteFinder } = RallyGamekit;
@@ -68,7 +69,14 @@ class RoutePath {
         }
         const finder = fields.routes,
             clear = this.lineClear(radius);
-        let index = finder.advance(route.cells, route.index, u.x, u.y, RoutePath.REACH, clear);
+        let index = finder.advance(
+            route.cells,
+            route.index,
+            u.x,
+            u.y,
+            RoutePath.REACH,
+            this.shortcutClear(radius),
+        );
         // Pushed off the route (knockback, crowding): neither the waypoint ahead nor the one behind is in sight.
         if (!this.inSight(fields, route.cells, index, u, clear)) {
             route = this.search(u, goal, fields, radius);
@@ -76,7 +84,14 @@ class RoutePath {
                 nav.metrics.unreachable++;
                 return null;
             }
-            index = finder.advance(route.cells, 0, u.x, u.y, RoutePath.REACH, clear);
+            index = finder.advance(
+                route.cells,
+                0,
+                u.x,
+                u.y,
+                RoutePath.REACH,
+                this.shortcutClear(radius),
+            );
         }
         route.index = index;
         const cell = route.cells[index];
@@ -142,7 +157,7 @@ class RoutePath {
             goalA: fields.keyA(goal),
             goalB: goal.keyB,
             layout: this.nav.topology.signature,
-            cells: found ? finder.waypoints(found, this.lineClear(radius), []) : [],
+            cells: found ? finder.waypoints(found, this.shortcutClear(radius), []) : [],
             index: 0,
         });
     }
@@ -187,6 +202,15 @@ class RoutePath {
     lineClear(radius) {
         const field = this.nav.field;
         return (x0, y0, x1, y1) => field.segmentClear(x0, y0, x1, y1, radius, null, true, 0);
+    }
+    // A line that may replace part of the searched route: clear, and not cutting across water the route goes
+    // around. Whether the unit still sees its route (inSight, blocked) stays the plain line test.
+    shortcutClear(radius) {
+        const nav = this.nav,
+            field = nav.field;
+        return (x0, y0, x1, y1) =>
+            !nav.crossesSlowerGround(x0, y0, x1, y1) &&
+            field.segmentClear(x0, y0, x1, y1, radius, null, true, 0);
     }
 }
 

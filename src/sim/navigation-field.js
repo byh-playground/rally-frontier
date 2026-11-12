@@ -1,7 +1,7 @@
 // Hierarchical flow fields: how a grain finds its way across terrain.
 // GameKit's pathfield walks the grid; this file is the policy on top of it: which cells satisfy a goal, how a goal
 // is keyed, which building changes reach the grid, and which cell of the descent a unit actually heads for.
-// Per unit radius bucket one PathGrid (24px cells that clear the radius) carries one PortalGraph (16-cell chunks,
+// Per unit radius bucket one PathGrid (24px cells that clear the radius, river cells costing twice the time) carries one PortalGraph (16-cell chunks,
 // portal nodes on chunk borders, connected components). The graph keeps a flow field per goal key; a field is the
 // integer walking cost to the goal and is computed only for the chunks units ask about. Units only read it:
 // descend a few cells, then slide to the farthest cell on that descent they can still see.
@@ -29,6 +29,7 @@ class GoalFields {
     constructor(nav, radius) {
         this.nav = nav;
         this.radius = radius;
+        nav.readCellCosts();
         const safe = new Uint8Array(
             Math.ceil(nav.geometry.width / CELL) * Math.ceil(nav.geometry.height / CELL),
         );
@@ -44,6 +45,9 @@ class GoalFields {
             passableEdge: (x, y, tx, ty, cell, nextCell) =>
                 (safe[cell] === 1 && safe[nextCell] === 1) ||
                 nav.field.segmentClear(x, y, tx, ty, radius, null, true, 0),
+            // Water is slower, so the fields and routes take the way that arrives first (TerrainNavigation.cellCost).
+            cellCost: nav.maxCellCost > 1 ? (x, y, cell) => nav.cellCost(x, y, cell) : null,
+            maxCellCost: nav.maxCellCost,
         });
         this.graph = new PortalGraph(this.grid);
         this.routes = new RouteFinder(this.grid);
@@ -143,8 +147,14 @@ class GoalFields {
             const path = field.descend(start, GoalFields.LOOKAHEAD, DESCENT);
             // The cell-to-cell route is obstacle-aware, but the unit can be at
             // any position within its current cell. Check its actual first step.
+            // A farther cell reached by a line across water the descent goes around is skipped (crossesSlowerGround).
             for (let i = path.length - 1; i >= 0; i--) {
-                if (this.clearCell(x, y, path[i], movementRadius)) return this.toCell(path[i]);
+                const cell = path[i];
+                if (
+                    !this.nav.crossesSlowerGround(x, y, grid.centerX(cell), grid.centerY(cell)) &&
+                    this.clearCell(x, y, cell, movementRadius)
+                )
+                    return this.toCell(cell);
             }
             if (this.clearCell(x, y, start, movementRadius)) return this.toCell(start);
         }

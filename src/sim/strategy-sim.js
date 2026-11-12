@@ -58,6 +58,7 @@ import {
     BALANCE_SAMPLE_EVERY_MS,
     COLLISION_RADIUS_SCALE,
     PERF_SAMPLE_EVERY_MS,
+    RIVER_MOVEMENT_MULTIPLIER,
     SIM_SPATIAL_CELL,
     TERRAIN_ATTACK_REVEAL_MS,
 } from '../definitions/world-rules.js';
@@ -71,6 +72,8 @@ import {
 import { FP } from '../core/config.js';
 import { RallyGamekit, RallyNetcode } from '../core/gamekit.js';
 const { UniformGrid } = RallyGamekit;
+// Where releaseUnitsInside puts a unit (navigation field nearestExterior out).
+const RELEASE_SPOT = { x: 0, y: 0 };
 // Query lists of call sites whose loop bodies never query the same list again (IndexList).
 const CONSTRUCTION_QUERY = new IndexList(),
     CAPTURE_QUERY = new IndexList(),
@@ -335,7 +338,8 @@ class StrategySim {
         const current = this.terrainAt(x, y),
             next = this.terrainAt(nextX, nextY);
         // 다리 footprint는 평지이며 강 패널티를 완전히 제거한다.
-        if (!current.bridge && !next.bridge && (current.river || next.river)) return 0.5;
+        if (!current.bridge && !next.bridge && (current.river || next.river))
+            return RIVER_MOVEMENT_MULTIPLIER;
         const fromH = Number(current.surfaceElevation) || 0,
             toH = Number(next.surfaceElevation) || 0;
         if (toH <= fromH + 0.002) return 1;
@@ -645,6 +649,7 @@ class StrategySim {
             construction,
         });
         this.addBuilding(outpost);
+        this.releaseUnitsInside(outpost);
         cp.owner = null;
         cp.outpostId = id;
         cp.enabled = false;
@@ -657,6 +662,23 @@ class StrategySim {
             outpostId: id,
         });
         return outpost;
+    }
+
+    // A new body appears where units may already stand (an outpost rises among the units that claimed the point).
+    // Walls only push a disc from outside, so a unit left inside would stay there: move each ground unit the body
+    // covers to the nearest open spot, in unit order.
+    releaseUnitsInside(building) {
+        const navigation = this.navigation,
+            reach = BuildingDefinition.get(building.type)?.size || 0;
+        for (const u of this.units) {
+            if (!u.alive || UnitFlight.airborne(u)) continue;
+            const radius = this.unitRadius(u.type);
+            if (Math.hypot(u.x - building.x, u.y - building.y) >= radius + reach) continue;
+            navigation.sync();
+            if (navigation.field.pointClear(u.x, u.y, radius)) continue;
+            if (navigation.field.nearestExterior(u.x, u.y, radius, null, RELEASE_SPOT))
+                navigation.motion.commit(u, RELEASE_SPOT);
+        }
     }
 
     completeConstruction(building) {

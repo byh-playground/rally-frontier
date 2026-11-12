@@ -1,10 +1,10 @@
 // Goals, interaction geometry, surface contacts and the navigation front door.
 import { RangeUtil } from '../core/game-rules.js';
-import { EntityKey, NavigationTopology } from './entities.js';
+import { EntityKey, NavigationTopology, TerrainQuery } from './entities.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UNIT_RUNTIME_GEOMETRY, UnitDefinition } from '../definitions/units.js';
 import { NAV_BUILDING_MARGIN } from '../definitions/combat-rules.js';
-import { COLLISION_RADIUS_SCALE } from '../definitions/world-rules.js';
+import { COLLISION_RADIUS_SCALE, RIVER_MOVEMENT_MULTIPLIER } from '../definitions/world-rules.js';
 import { GoalFields } from './navigation-field.js';
 import { DirectPath, FieldPath, RoutePath } from './navigation-paths.js';
 import { RallyGamekit } from '../core/gamekit.js';
@@ -617,6 +617,10 @@ class TerrainNavigation {
             ignoreAll: { id: -1, keep: (b) => b.terrainBarrier },
         });
         this.motion = new UnitMotion(this);
+        // Path cost of every GoalFields.CELL cell, shared by all radius grids (they number cells alike): how many
+        // times longer crossing it takes than dry ground. Built on first use (terrainCostAt).
+        this.cellCosts = null;
+        this.maxCellCost = 0;
         // One GoalFields per unit radius bucket: by bucket key, and in creation order for change notices.
         this.goalFields = new Map();
         this.fieldList = [];
@@ -673,6 +677,62 @@ class TerrainNavigation {
             distance: blocked ? Math.max(0, hit.t * distance - 2 / FP) : distance,
         };
     }
+    // A river cell costs 1 / RIVER_MOVEMENT_MULTIPLIER (crossing takes twice as long); every other cell 1. Only time
+    // goes in: the extra damage a unit takes in water is not a cost, so a unit never walks around water that is
+    // faster to cross. A map without water, or a navigation built without a map (placement checks), keeps every
+    // cost 1 (the grids then never read costs).
+    readCellCosts() {
+        if (this.cellCosts) return;
+        const terrain = this.sim.mapDescriptor?.terrain,
+            water =
+                !!terrain &&
+                [
+                    terrain.riverPath,
+                    terrain.riverPolygon,
+                    terrain.riverBranches,
+                    terrain.riverBranchPolygons,
+                ].some((list) => list?.length);
+        this.maxCellCost = water ? 1 / RIVER_MOVEMENT_MULTIPLIER : 1;
+        this.costCols = Math.ceil(this.geometry.width / GoalFields.CELL);
+        this.costRows = Math.ceil(this.geometry.height / GoalFields.CELL);
+        this.cellCosts = new Uint8Array(this.costCols * this.costRows);
+    }
+    // The cost of the cell with centre (x, y), read from the terrain once (the river test of terrainMovementMultiplier).
+    cellCost(x, y, cell) {
+        let cost = this.cellCosts[cell];
+        if (cost === 0)
+            this.cellCosts[cell] = cost = TerrainQuery.at(
+                this.sim.mapDescriptor,
+                x,
+                y,
+                this.geometry.surfaces,
+            ).river
+                ? this.maxCellCost
+                : 1;
+        return cost;
+    }
+    terrainCostAt(x, y) {
+        const CELL = GoalFields.CELL,
+            col = Math.min(this.costCols - 1, Math.max(0, Math.floor(x / CELL))),
+            row = Math.min(this.costRows - 1, Math.max(0, Math.floor(y / CELL)));
+        return this.cellCost((col + 0.5) * CELL, (row + 0.5) * CELL, row * this.costCols + col);
+    }
+    // Whether the straight line from (x0, y0) to (x1, y1) crosses a cell slower than both of its ends: a unit on dry
+    // ground cutting across water the cost-aware field or route may lead around. Such a line is left to the field or
+    // route, which cross the water anyway when that is faster; a line already starting or ending in water is kept.
+    crossesSlowerGround(x0, y0, x1, y1) {
+        this.readCellCosts();
+        if (this.maxCellCost === 1) return false;
+        const ends = Math.max(this.terrainCostAt(x0, y0), this.terrainCostAt(x1, y1));
+        if (ends >= this.maxCellCost) return false;
+        const dx = x1 - x0,
+            dy = y1 - y0,
+            steps = Math.ceil(Math.hypot(dx, dy) / (GoalFields.CELL / 2));
+        for (let i = 1; i < steps; i++)
+            if (this.terrainCostAt(x0 + (dx * i) / steps, y0 + (dy * i) / steps) > ends)
+                return true;
+        return false;
+    }
     fieldsFor(radius) {
         this.sync();
         const key = Math.ceil((radius + 0.12) * 100) / 100;
@@ -695,10 +755,12 @@ class TerrainNavigation {
         if (!p || !this.acceptsGoalPoint(goal, p.x, p.y)) return null;
         return this.field.segmentClear(x, y, p.x, p.y, radius, null, true, 0) ? p : null;
     }
-    // The closest goal point when it lies inside the scan radius and the straight ray to it is clear.
+    // The closest goal point when it lies inside the scan radius and the straight ray to it is clear and does not cut
+    // across water from dry ground (crossesSlowerGround; the cost-aware field or route decides those).
     straightGoal(u, goal, radius) {
         const near = goal.closest(u.x, u.y);
         if (!near || Math.hypot(near.x - u.x, near.y - u.y) > GoalFields.RAY_RANGE) return null;
+        if (this.crossesSlowerGround(u.x, u.y, near.x, near.y)) return null;
         const direct = this.directGoal(u.x, u.y, goal, radius);
         if (direct) this.metrics.rayHits++;
         return direct;
