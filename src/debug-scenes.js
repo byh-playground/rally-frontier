@@ -538,6 +538,60 @@ function createFightProbe(sim) {
     };
 }
 
+// Cannon riders' own shells (`unit` scene), read by `state().rider`: launches by flight (`fired`), on the same cannon
+// the gaps from one enemy-bound rider shell's strike to the next enemy-bound launch (`gaps`: count, how many left
+// before the shell ahead struck `early`, min and mean ticks), and at each strike the distance to the nearest live
+// enemy unit (`strikeEnemyDistance` mean of enemy-bound shells, null when none).
+function createRiderProbe(sim) {
+    const fired = { enemy: 0, hop: 0, front: 0 },
+        shells = new Map(),
+        lastStrike = new Map(),
+        gaps = [],
+        distances = [];
+    let early = 0;
+    return {
+        observe() {
+            for (const event of sim.events) {
+                if (event.type === 'launchFire') {
+                    const ride = sim.projectiles.find((p) => p.id === event.projectileId)?.payload
+                        ?.ride;
+                    if (!ride) continue;
+                    fired[ride]++;
+                    shells.set(event.projectileId, { cannonId: event.cannonId, ride });
+                    if (ride !== 'enemy') continue;
+                    const last = lastStrike.get(event.cannonId);
+                    if (last?.pending) early++;
+                    else if (last) gaps.push(sim.tick - last.tick);
+                    lastStrike.set(event.cannonId, { tick: last?.tick ?? null, pending: true });
+                } else if (event.type === 'launchImpact') {
+                    const shell = shells.get(event.projectileId);
+                    if (shell?.ride !== 'enemy') continue;
+                    lastStrike.set(shell.cannonId, { tick: sim.tick, pending: false });
+                    let best = Infinity;
+                    for (const u of sim.units)
+                        if (u.alive && u.side !== event.side && (u.side === 0 || u.side === 1))
+                            best = Math.min(best, Math.hypot(u.x - event.x, u.y - event.y));
+                    if (best < Infinity) distances.push(best);
+                }
+            }
+        },
+        state() {
+            return {
+                fired,
+                gaps: {
+                    count: gaps.length,
+                    early,
+                    min: gaps.length ? Math.min(...gaps) : null,
+                    mean: gaps.length ? round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : null,
+                },
+                strikeEnemyDistance: distances.length
+                    ? round(distances.reduce((a, b) => a + b, 0) / distances.length)
+                    : null,
+            };
+        },
+    };
+}
+
 // Flying units (`unit` and `ai-match` scenes, units whose Definition has `flight`), read by `state().flight`: how many
 // took off and landed, the first and last landing tick and the mean distance from a landing to the nearest live
 // enemy (unit or building) then, how many landed on a wall, cliff or building (`landedBlocked`) and how many had to
@@ -1484,6 +1538,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             const probe = createKnockbackProbe(sim, flag(scene, 'trace', params.trace)),
                 fight = createFightProbe(sim),
                 flight = createFlightProbe(sim),
+                rider = createRiderProbe(sim),
                 outposts = createOutpostProbe(sim),
                 breath = breathProbe(sim, [...new Set(sim.units.map((u) => u.type))]);
             return matchScene(scene, params, sim, {
@@ -1493,6 +1548,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     probe.observe();
                     fight.observe();
                     flight.observe();
+                    rider.observe();
                     outposts.observe();
                     breath?.observe();
                 },
@@ -1501,6 +1557,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     outside: probe.outside(),
                     fight: fight.state(),
                     flight: flight.state(),
+                    rider: rider.state(),
                     outposts: outposts.state(),
                     enemySpread: spread(sim, 1),
                     ...(breath ? { breath: breath.state() } : {}),
@@ -1659,6 +1716,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             const bots = attachBots(sim),
                 probe = createKnockbackProbe(sim, flag('ai-match', 'trace', params.trace)),
                 flight = createFlightProbe(sim),
+                rider = createRiderProbe(sim),
                 outposts = createOutpostProbe(sim),
                 breath = breathProbe(sim, sim.decks.flat());
             return matchScene('ai-match', params, sim, {
@@ -1667,6 +1725,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 beforeStep: () => {
                     probe.observe();
                     flight.observe();
+                    rider.observe();
                     outposts.observe();
                     breath?.observe();
                     bots();
@@ -1680,6 +1739,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     knockback: probe.state(),
                     outside: probe.outside(),
                     flight: flight.state(),
+                    rider: rider.state(),
                     outposts: outposts.state(),
                     ...(breath ? { breath: breath.state() } : {}),
                 }),

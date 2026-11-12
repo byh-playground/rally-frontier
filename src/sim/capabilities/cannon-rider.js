@@ -12,18 +12,23 @@
 //   그 대포의 탑승 고리를 목표로 하는 공용 고정 흐름장(navigation field, 대포 중심이 키라 건물 배치가 바뀔 때만 다시 만듦)을 따른다.
 //   도착하면 한 명씩 탑승(phase 'board')해 조준을 고정하고, 탑승 시간 뒤 공용 fireLaunchShell로 자기 한 명
 //   (count 1, passengerHp=현재 체력, ride=비행 종류)을 비용·재장전 없이 쏜다. 탑승한 대포는 반드시 발사한다.
+// - 적을 노리는 비행('enemy')은 같은 대포에서 앞서 적을 노리고 쏜 검은콩 포탄이 아직 날고 있으면 포구에 앉은 채
+//   (phase 'board', waiting) 기다리고, 그 포탄이 착탄하거나 요격돼 사라진 틱에 표적을 다시 골라 탑승 시간 뒤 쏜다.
+//   다시 고른 비행이 'hop'·'front'면 기다리지 않는다. 그래서 첫 포탄이 밀어낸 적의 새 자리로 다음 검은콩이 날아간다.
 // - 비행 표적(대포 발사 사거리 안, 최소 사거리 없음): ① 보이는 가장 가까운 적 병사 ② 보이는 가장 가까운 적 건물
 //   ('enemy') ③ 현재 대포보다 적 본진에 가까운 아군 발사 대포 중 현재 대포에서 가장 가까운 것의 탑승 고리 안
 //   ('hop', 적 본진 반대쪽에 병사마다 결정론적으로 흩음) ④ 적 본진 방향 사거리 끝('front', 보정은 일반 발사와 같음).
 //   포구에 너무 가까운 표적은 같은 방향으로 포구 밖 MIN_FLIGHT만큼 떨어진 곳을 노린다.
 // - cannonRide 전체가 권위 상태다. 탑승 모습은 스냅샷의 cannonRide로 그리는 연출이며, 한 대포에 여러 명이면
 //   가장 먼저 발사할 한 명만 그린다.
-// Unit.cannonRide { readyTick, phase, cannonId, launchTick, aimX, aimY, flight, listKey } is the only state:
+// Unit.cannonRide { readyTick, phase, cannonId, launchTick, aimX, aimY, flight, listKey, waiting } is the only state:
 //   phase null     fights normally; once readyTick has passed it picks the nearest cannon ahead, at most once
 //                  per change of its side's cannon list (listKey), ahead first and else the nearest behind;
 //                  none means it marches like any grain,
 //   phase 'return' runs to that cannon, faster than usual, even mid-fight,
-//   phase 'board'  sits on the muzzle until launchTick, then rides a shell of its own to the locked aim.
+//   phase 'board'  sits on the muzzle until launchTick, then rides a shell of its own to the locked aim; an
+//                  enemy-bound ride waits (waiting) while the cannon's previous enemy-bound rider shell is still
+//                  in the air, then aims again and launches boardMs later.
 // The flight reuses the ordinary launch path: shell, flight, impact and landing. Only the issuer differs,
 // it costs nothing, ignores the cannon's reload, and the single passenger keeps its health (payload.passengerHp)
 // and how it flew (payload.ride), which decides when it picks a cannon again.
@@ -52,6 +57,8 @@ const FLIGHTS = Object.freeze(['enemy', 'hop', 'front']);
 
 // Per tick and side: a key of the cannons a rider may pick. Derived from the state, never stored in it.
 const LIST_KEYS = new WeakMap();
+// Per tick: the cannons with an enemy-bound rider shell still in the air. Derived from the projectiles, never stored.
+const IN_FLIGHT = new WeakMap();
 
 class CannonRider {
     static FLIGHTS = FLIGHTS;
@@ -66,6 +73,7 @@ class CannonRider {
             aimY: 0,
             flight: null,
             listKey: null,
+            waiting: false,
         };
     }
 
@@ -84,7 +92,9 @@ class CannonRider {
             (ride.phase === 'board') !== FLIGHTS.includes(ride.flight) ||
             (ride.phase !== 'board' && ride.flight !== null) ||
             (ride.listKey !== null && (!Number.isSafeInteger(ride.listKey) || ride.listKey < 0)) ||
-            (ride.phase !== null && ride.listKey === null)
+            (ride.phase !== null && ride.listKey === null) ||
+            typeof ride.waiting !== 'boolean' ||
+            (ride.waiting && ride.flight !== 'enemy')
         )
             throw new Error('게임 snapshot의 검은콩 탑승 상태가 잘못되었습니다.');
     }
@@ -106,6 +116,20 @@ class CannonRider {
         ride.aimX = 0;
         ride.aimY = 0;
         ride.flight = null;
+        ride.waiting = false;
+    }
+
+    // True while a shell this cannon fired with an enemy-bound rider has neither struck nor been shot down.
+    static shellInFlight(sim, cannon) {
+        let memo = IN_FLIGHT.get(sim);
+        if (!memo) IN_FLIGHT.set(sim, (memo = { tick: -1, ids: new Set() }));
+        if (memo.tick !== sim.tick) {
+            memo.tick = sim.tick;
+            memo.ids.clear();
+            for (const p of sim.projectiles)
+                if (p.alive && p.payload?.ride === 'enemy') memo.ids.add(p.owner);
+        }
+        return memo.ids.has(cannon.id);
     }
 
     // Works on the live simulation and on any snapshot: a friendly launch cannon nobody is jamming.
@@ -333,6 +357,7 @@ class CannonRider {
         ride.aimX = target.x;
         ride.aimY = target.y;
         ride.flight = target.flight;
+        ride.waiting = false;
         unit.combat.cancelWindup();
         unit.constructionWork = null;
         unit.target = null;
@@ -367,6 +392,9 @@ class CannonRider {
             passengerHp: unit.hp,
             ride: ride.flight,
         });
+        // A rider boarded behind this one on the same tick sees the shell that just left.
+        const memo = IN_FLIGHT.get(sim);
+        if (ride.flight === 'enemy' && memo?.tick === sim.tick) memo.ids.add(cannon.id);
         // The soldier is now the shell's passenger; it lands as a new soldier with the same health.
         unit.alive = false;
         unit.hp = 0;
@@ -386,7 +414,20 @@ class CannonRider {
             }
             unit.combat.cancelWindup();
             unit.target = null;
-            if (sim.tick >= ride.launchTick) this.launch(sim, unit, cannon);
+            if (ride.waiting) {
+                // The shell ahead struck or was shot down: aim again where the enemies are now.
+                if (!this.shellInFlight(sim, cannon))
+                    this.board(
+                        sim,
+                        unit,
+                        spec,
+                        cannon,
+                        this.flightTarget(sim, unit, cannon, sources),
+                    );
+            } else if (sim.tick >= ride.launchTick) {
+                if (ride.flight === 'enemy' && this.shellInFlight(sim, cannon)) ride.waiting = true;
+                else this.launch(sim, unit, cannon);
+            }
             return true;
         }
         if (sim.tick < ride.readyTick) return false;
