@@ -35,7 +35,7 @@ import { UnitDefinition } from '../../definitions/units.js';
 import { FP } from '../../core/config.js';
 import { KnockbackRules } from '../../definitions/knockback-rules.js';
 import { EntityKey } from '../entities.js';
-import { InteractionGeometry, NavigationGoal } from '../navigation.js';
+import { InteractionGeometry, NavigationGoal, UnitMotion } from '../navigation.js';
 import { RallyGamekit } from '../../core/gamekit.js';
 import { IndexList } from '../index-list.js';
 const { RESPONSE_BOUNCE } = RallyGamekit;
@@ -69,15 +69,14 @@ class RollingBody {
             wallTick: null,
         };
     }
-    static grounded(unit) {
-        const m = unit.impactMotion;
-        return !m || (m.heightFP <= 0 && m.vzFP <= 0);
-    }
     // A live walnut on the ground, rolling under its own drive. A push that does not lift it keeps it
     // rolling; the motor marks the motion 'roll' again on its next step.
     static rolling(unit) {
         return (
-            !!unit?.alive && !!unit.rolling?.kicked && !!unit.impactMotion && this.grounded(unit)
+            !!unit?.alive &&
+            !!unit.rolling?.kicked &&
+            !!unit.impactMotion &&
+            UnitMotion.isGrounded(unit)
         );
     }
     // The launch direction, from the shell's flight, is the first heading.
@@ -169,7 +168,7 @@ class RollingBody {
     static step(sim, unit, vision) {
         const spec = this.spec(unit),
             state = unit.rolling;
-        if (!spec || !state || !this.grounded(unit)) return;
+        if (!spec || !state || !UnitMotion.isGrounded(unit)) return;
         const tps = sim.tps,
             mass = sim.mass(unit);
         const m = unit.impactMotion;
@@ -407,7 +406,7 @@ class RollingBody {
                     other === u ||
                     !other?.alive ||
                     this.rolling(other) ||
-                    !this.grounded(other) ||
+                    !UnitMotion.isGrounded(other) ||
                     other.heroRoll
                 )
                     continue;

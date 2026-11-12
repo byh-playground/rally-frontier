@@ -1,6 +1,7 @@
 // Contract (moved from the index.html Development Contract):
 // - 밤톨 기본 가시는 발사 순간 목표 위치를 고정해 비행한다. 지정 목표와의 상대 sweep 및 높이 겹침이
 //   있을 때만 피해를 주며, 공격자가 사망해도 발사된 가시는 유지한다. 투사체 상태는 저장·복원한다.
+import { UnitMotion } from '../navigation.js';
 import { FP } from '../../core/config.js';
 import { RallyGamekit } from '../../core/gamekit.js';
 import { BuildingDefinition } from '../../definitions/buildings.js';
@@ -39,14 +40,11 @@ export class UnitThornAttack {
             terrain = sim.world.terrain.surfaces,
             startTick = sim.tick + 1,
             durationTicks = Math.max(1, sim.msTicks(spec.durationMs)),
-            fromZ =
-                terrain.heightAt(source.x, source.y) +
-                (source.impactMotion?.heightFP || 0) / FP +
-                spec.launchHeight,
+            fromZ = UnitMotion.bottom(sim, source) + spec.launchHeight,
             targetZ =
-                terrain.heightAt(target.x, target.y) +
-                (isBuilding ? 0 : (target.impactMotion?.heightFP || 0) / FP) +
-                spec.targetHeight;
+                (isBuilding
+                    ? terrain.heightAt(target.x, target.y)
+                    : UnitMotion.bottom(sim, target)) + spec.targetHeight;
         const shot = {
             id: `thorn:${source.id}:${sim.tick}`,
             sourceId: source.id,
@@ -118,9 +116,9 @@ export class UnitThornAttack {
             entry = inside ? 0 : Math.max(0, (-b - root) / a),
             exit = a > 1e-12 ? Math.min(1, (-b + root) / a) : 1;
         if (entry > exit || exit < 0 || entry > 1) return null;
-        const bottom =
-                sim.world.terrain.surfaces.heightAt(target.x, target.y) +
-                (shot.targetIsBuilding ? 0 : (target.impactMotion?.heightFP || 0) / FP),
+        const bottom = shot.targetIsBuilding
+                ? sim.world.terrain.surfaces.heightAt(target.x, target.y)
+                : UnitMotion.bottom(sim, target),
             lower = bottom - shot.radius,
             upper = bottom + bodyRadius * 2 + shot.radius,
             z = from.zFP / FP,

@@ -1,5 +1,6 @@
 import { RallyGamekit } from '../../core/gamekit.js';
 import { LaunchImpact } from '../launch-impact.js';
+import { UnitMotion } from '../navigation.js';
 import { FP } from '../../core/config.js';
 import { BuildingDefinition } from '../../definitions/buildings.js';
 import { IndexList } from '../index-list.js';
@@ -66,13 +67,9 @@ export class UnitLobPhysics {
         spec,
         motion = null,
     ) {
-        const currentGround = motion ? 0 : sim.world.terrain.surfaces.heightAt(entity.x, entity.y);
-        const prev = previous.get(entity.id) || {
-            x: entity.x,
-            y: entity.y,
-            z: currentGround + (entity.impactMotion?.heightFP || 0) / FP,
-        };
-        const endZ = currentGround + (entity.impactMotion?.heightFP || 0) / FP;
+        // A given motion path already carries the ground in its z: only the lift is added then.
+        const endZ = motion ? UnitMotion.heightFP(entity) / FP : UnitMotion.bottom(sim, entity);
+        const prev = previous.get(entity.id) || { x: entity.x, y: entity.y, z: endZ };
         const px = motion ? (motion.x ?? entity.x) : prev.x + (entity.x - prev.x) * tickStart,
             py = motion ? (motion.y ?? entity.y) : prev.y + (entity.y - prev.y) * tickStart;
         const pz = motion ? motion.z : prev.z + (endZ - prev.z) * tickStart;
@@ -468,9 +465,7 @@ export class UnitLobPhysics {
                     if (zMax + spec.radius < uzMin || zMin - spec.radius > uzMax + radius * 2)
                         continue;
                 } else {
-                    const current =
-                        sim.world.terrain.surfaces.heightAt(unit.x, unit.y) +
-                        (unit.impactMotion?.heightFP || 0) / FP;
+                    const current = UnitMotion.bottom(sim, unit);
                     const start = previous.get(unit.id)?.z ?? current;
                     if (
                         zMax + spec.radius < Math.min(start, current) ||

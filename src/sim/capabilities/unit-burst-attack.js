@@ -1,6 +1,7 @@
 // Contract (moved from the index.html Development Contract):
 // - 해바라기씨는 보이는 적 투입탄을 우선하고 지상 표적도 공격한다. 멈춰서 한 표적에 연사하고 재장전한다.
 //   총과 두 손은 표적 방향을 공유한다. 표시 시각의 사격 횟수에 맞춰 총구가 반동하고 탄띠가 줄어든다.
+import { UnitMotion } from '../navigation.js';
 import { FP } from '../../core/config.js';
 import { BuildingDefinition } from '../../definitions/buildings.js';
 import { UnitDefinition } from '../../definitions/units.js';
@@ -83,7 +84,7 @@ export class UnitBurstAttack {
             return Math.round((ground + (BuildingDefinition.get(target.type)?.size || 0) / 2) * FP);
         return (
             Math.round((ground + (UnitDefinition.get(target.type)?.size || 0)) * FP) +
-            (target.impactMotion?.heightFP || 0)
+            UnitMotion.heightFP(target)
         );
     }
 

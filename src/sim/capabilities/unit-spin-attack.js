@@ -41,11 +41,7 @@ export class UnitSpinAttack {
     }
 
     static heightFP(sim, unit) {
-        return (
-            Math.round(sim.world.terrain.surfaces.heightAt(unit.x, unit.y) * FP) +
-            (Number(unit.impactMotion?.heightFP) || 0) +
-            Math.round(sim.unitRadius(unit.type) * FP)
-        );
+        return UnitMotion.bottomFP(sim, unit) + Math.round(sim.unitRadius(unit.type) * FP);
     }
 
     // The caller supplies the same per-side vision field as normal combat.

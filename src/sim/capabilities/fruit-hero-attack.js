@@ -43,11 +43,13 @@ function worldPoint(sim, entity, isBuilding = false) {
     const radius = isBuilding
         ? BuildingDefinition.get(entity.type)?.size || 30
         : sim.unitRadius(entity.type);
-    const ground = sim.world.terrain.surfaces.heightAt(entity.x, entity.y);
+    const bottom = isBuilding
+        ? sim.world.terrain.surfaces.heightAt(entity.x, entity.y)
+        : UnitMotion.bottom(sim, entity);
     return {
         x: entity.x,
         y: entity.y,
-        z: ground + (isBuilding ? 0 : (entity.impactMotion?.heightFP || 0) / FP) + radius,
+        z: bottom + radius,
     };
 }
 
