@@ -3,7 +3,9 @@
 //   id       stable identifier (decks, snapshots, replays, assets)
 //   hero     hero card: one per deck, launched alone and free, recalled to a cannon
 //   unit     simulation Definition. A capability is a named field whose value is its parameters
-//            (stickyCling, leapAttack, spinAttack, ...); the simulation reads it directly.
+//            (stickyCling, leapAttack, spinAttack, ...); the simulation reads it directly. A sustained attack
+//            (breathAttack) also has `sustain { durationMs, tickMs, cooldownMs }`, the shared timing of every
+//            damage-over-time attack (SustainedAttack) in place of the unit's cooldownMs.
 //   payload  the cannon shell that carries the unit (LaunchRules)
 //   visual   body scale, team accent, hit effect family, optional landing husk colors
 //   card     deck card and card detail copy
@@ -21,6 +23,11 @@
 //              rolling?    { prepare(grain, entity, world, renderTick, now, tps, orientation) }: the
 //                          self-propelled rolling body's per-frame art (RollingBody)
 //              effectArt?  ['grain-particles'|'self-destruct-burst'|'thorn']
+//              breath?     { drawFlame(ctx, flame) }: paints a breathAttack unit's flame (UnitBreathAttack)
+//                          on main.js's 2D effect canvas from the screen geometry main.js measures
+//                          (drawBreathFlames); its actors then also have setAim(dx, dy, breathing,
+//                          alive, clockMs, cooling), facing and mouthTip(out); flame.cooling marks the
+//                          wait between breaths (SustainedAttack cooldown)
 //            Optional renderer methods the shared drawing calls when present: prepareExtraArt,
 //            drawHeldKernel, drawWrapOverlay (StickyCling), drawRide (CannonRider), drawFlight and
 //            drawImpact (a 'soldier' shell), drawBehind (trailing effects just behind the body),
@@ -30,7 +37,26 @@
 //            landing fall, main.js). The renderer draws its body and face quads
 //            through drawUnitQuads(context, this.paint, …) (render/dead-unit-look.js): main.js sets
 //            `paint` around a flying corpse's drawBody/drawFace, and its `hurt` face is the corpse's.
+import { COLLISION_RADIUS_SCALE } from '../definitions/world-rules.js';
+import { GRAIN_SIZE } from './baseline.js';
+import { SustainedAttack } from '../sim/capabilities/sustained-attack.js';
+
 const REQUIRED = ['unit', 'payload', 'visual', 'card'];
+// Attacks and movements a breathing unit cannot also have: its combat action is the breath alone.
+const BREATH_EXCLUSIVE = [
+    'flight',
+    'rolling',
+    'growsCannon',
+    'cannonRider',
+    'spinAttack',
+    'burstAttack',
+    'lobAttack',
+    'thornAttack',
+    'leapAttack',
+    'contactMelee',
+    'selfDestruct',
+    'canAttackAir',
+];
 
 export function defineUnit({ id, hero = false, help = [], ...parts }) {
     if (typeof id !== 'string' || !id) throw new Error('병종 id가 필요합니다.');
@@ -48,6 +74,36 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
         for (const key of ['speed', 'altitude', 'climbSpeed'])
             if (!(Number(unit.flight[key]) > 0))
                 throw new Error(`병종 ${id}의 flight.${key}는 양수여야 합니다.`);
+    }
+    // A sustained attack (SustainedAttack): its own duration, damage step and cooldown replace the unit's attack
+    // cadence, so the unit has no cooldownMs or attackIntervalMs of its own.
+    if (unit.sustain) {
+        SustainedAttack.validate(id, unit.sustain);
+        if (unit.cooldownMs != null || unit.attackIntervalMs != null)
+            throw new Error(
+                `병종 ${id}는 sustain.cooldownMs를 쓰므로 cooldownMs·attackIntervalMs를 따로 둘 수 없습니다.`,
+            );
+    }
+    // A breath (UnitBreathAttack) is a sustained attack: the unit's atk on every damage tick; its flame tip is the
+    // attack reach.
+    if (unit.breathAttack) {
+        const spec = unit.breathAttack;
+        for (const key of ['length', 'arcDegrees', 'turnDegreesPerSecond', 'buildingDamageScale'])
+            if (!(Number(spec[key]) > 0))
+                throw new Error(`병종 ${id}의 breathAttack.${key}는 양수여야 합니다.`);
+        if (spec.arcDegrees >= 180)
+            throw new Error(`병종 ${id}의 breathAttack.arcDegrees는 180보다 작아야 합니다.`);
+        if (!(unit.atk > 0) || !unit.sustain)
+            throw new Error(
+                `병종 ${id}의 breathAttack은 atk(피해 틱당 피해)와 sustain이 필요합니다.`,
+            );
+        if (unit.range + (unit.size || GRAIN_SIZE) * COLLISION_RADIUS_SCALE !== spec.length)
+            throw new Error(
+                `병종 ${id}의 range는 breathAttack.length에서 몸 반경을 뺀 값이어야 합니다.`,
+            );
+        for (const other of BREATH_EXCLUSIVE)
+            if (hero || unit[other])
+                throw new Error(`병종 ${id}의 breathAttack은 영웅·${other}와 함께 쓸 수 없습니다.`);
     }
     if (Number.isFinite(Number(unit.cooldownMs))) unit.cooldown = Number(unit.cooldownMs) / 1000;
     if (unit.canAttackGround == null) unit.canAttackGround = (unit.atk || 0) > 0;

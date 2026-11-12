@@ -18,6 +18,7 @@ import { Potato } from './potato/index.js';
 import { BlackBean } from './black-bean/index.js';
 import { Walnut } from './walnut/index.js';
 import { Dandelion } from './dandelion/index.js';
+import { Chili } from './chili/index.js';
 
 export const UNITS = Object.freeze([
     Watermelon,
@@ -38,6 +39,7 @@ export const UNITS = Object.freeze([
     BlackBean,
     Walnut,
     Dandelion,
+    Chili,
 ]);
 
 const byId = new Map();

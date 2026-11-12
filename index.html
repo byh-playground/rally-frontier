@@ -28,12 +28,19 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   UNITS 순서가 덱 순서·시작 덱·결과 통계 행·스프라이트 아틀라스 배치 순서다. 공유 코드는 UNITS만 읽고 병종 이름 표를 두지 않는다.
 - 병종 추가: ① src/units/<id>/index.js(필요하면 sprite.js)를 만들고 ② UNITS에 한 줄을 넣는다. 기존 능력은
   Definition 필드로 켠다(contactMelee·stickyCling·growsCannon·leapAttack·spinAttack·lobAttack·thornAttack·burstAttack·
-  selfDestruct·heroActive·fruitAttack·rolling·flight). 새 능력은 src/sim/capabilities/<능력>.js 모듈과 판정의 호출 지점을 더한다.
+  selfDestruct·heroActive·fruitAttack·rolling·flight·breathAttack). 새 능력은 src/sim/capabilities/<능력>.js 모듈과 판정의 호출 지점을 더한다.
   두 병종 이상이 쓰는 지점만 공통 hook으로 만들고, 한 병종만 쓰는 지점은 능력 필드로 거른 직접 호출로 둔다.
   그림 계약은 sprite.js의 SPRITE가 소유한다: 투입탄(shell: draw·turn·flight), 착지 연출(landing), 포즈(pose·roll),
-  공용 효과 그림(effectArt), 준비 그리기(렌더러 prepareExtraArt). main.js는 이 계약만 읽고 병종 id를 비교하지 않는다.
+  공용 효과 그림(effectArt), 준비 그리기(렌더러 prepareExtraArt), 불줄기(breath.drawFlame, 조준 자세는 actor.setAim). main.js는 이 계약만 읽고 병종 id를 비교하지 않는다.
   봇의 능력별 발사 규칙은 능력 모듈의 botLaunch가 소유하고 bot-launch-rules.js 목록 순서로 실행한다.
 - 능력별 판정·표현 계약은 각 능력 모듈(src/sim/capabilities/) 머리 주석이 소유한다.
+- 지속 피해형 공격은 공격 주기(재사용 대기)와 그 안의 피해 틱을 분리한다: 한 번의 공격은 정해진 시간 동안
+  지속되며 그동안 일정 간격으로 피해를 주고, 끝나면 별도의 재사용 대기를 가진다. Definition의 공통 블록
+  sustain { durationMs, tickMs, cooldownMs }(지속 시간·피해 간격·재사용 대기)로 정하고, 이 시간 구조는
+  src/sim/capabilities/sustained-attack.js(SustainedAttack)가 맡는다. 공격 능력은 범위 판정과 피해만 맡고
+  '지금 지속 중인가, 이번 틱이 피해 틱인가'를 SustainedAttack에 묻는다. 첫 피해 틱은 시작한 틱이고, 한 번 시작한
+  공격은 표적을 잃어도 지속 시간을 끝까지 채운다. sustain이 있는 병종은 cooldownMs·attackIntervalMs를 따로 두지
+  않는다.
 - 화면 밖 병종의 포즈 객체는 재진입 비용을 줄이도록 최대 2초·비표시 512개까지 보관한다.
   보관 중에는 그리지 않고 맵 전환·불연속 리플레이 시킹에서는 즉시 정리한다.
 - 카드 상세와 타이틀은 GameKit의 쇼케이스 표면을 재사용한다. 실제 경기와 시뮬레이션·표현 상태를
@@ -1302,6 +1309,19 @@ END OF DEVELOPMENT CONTRACT
                                 나는 동안에는 공격하지 않고, 지상 공격·폭발·넉백도 닿지 않아요. 적
                                 투입탄을 쏘는 포탑과 병종만 나는 병종을 맞혀요(투입탄을 먼저 쏴요).
                                 공중에서 쓰러지면 그 자리에서 떨어져요.
+                            </p>
+                        </details>
+                        <details>
+                            <summary>불 뿜는 병종</summary>
+                            <p>
+                                고추는 멈춰 서서 앞쪽으로 길고 좁은 불줄기를 1초 동안 뿜고, 1초
+                                쉬었다가 다시 뿜어요. 불줄기 안의 적은 모두 함께 타고, 고추 셋이
+                                겹치면 그만큼 더 뜨거워요. 한 번 뿜기 시작하면 적이 쓰러져도 1초를
+                                다 뿜어요.
+                            </p>
+                            <p>
+                                방향은 천천히 돌려요. 벽·절벽 너머와 나는 적, 투입탄에는 닿지 않고,
+                                건물에는 절반만 들어가요. 아군은 타지 않아요.
                             </p>
                         </details>
                     </section>

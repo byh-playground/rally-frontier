@@ -3059,7 +3059,8 @@ class GLRenderer {
                 text = '',
                 amount = 0;
 
-            if (e.type === 'unitSelfDestruct') {
+            // A burst and one burn of a flame each show one damage number (their hits follow in the same tick).
+            if (e.type === 'unitSelfDestruct' || e.type === 'breathPulse') {
                 this.openAreaHitGroup(e, this.presentationEventTick(e, snapshot));
                 index++;
                 continue;
@@ -4216,6 +4217,32 @@ class GLRenderer {
         ctx.restore();
     }
 
+    // Every breathing unit's flame (UnitBreathAttack), over the units it burns: from the mouth its art reports
+    // (actor.mouthTip, mirrored with the figure) along the interpolated aim to the breath's reach, painted by the
+    // sprite contract's breath.drawFlame, which also draws the smoke of one cooling down between breaths. Nothing is
+    // allocated per frame; the geometry record is reused.
+    drawBreathFlames(ctx) {
+        const now = this.presentationNow(),
+            mouth = (this._flameMouth ??= { x: 0, y: 0 });
+        for (const u of this.visibleUnitFrame) {
+            const art = GRAIN_SPRITES[u.type]?.breath;
+            if (!art) continue;
+            const grain = this.grainActors.get(u.id),
+                f = grain?.flame;
+            if (!f || grain.frame !== this.grainActorFrame) continue;
+            if (!f.on && !f.cooling && (f.stoppedAt === null || u.alive === false)) continue;
+            if (!this.isFriendlySide(u.side) && !this.visibleRaw(u.x, u.y)) continue;
+            const m = grain.matrix;
+            grain.actor.mouthTip(mouth);
+            f.mouthX = m[0] * mouth.x + m[2] * mouth.y + m[4];
+            f.mouthY = m[1] * mouth.x + m[3] * mouth.y + m[5];
+            f.ageMs = now - f.startedAt;
+            f.stopMs = f.on ? null : f.stoppedAt === null ? Infinity : now - f.stoppedAt;
+            f.clockMs = now;
+            art.drawFlame(ctx, f);
+        }
+    }
+
     drawFloatingFx() {
         const ctx = this.fxCtx;
         if (!ctx || !this.fxCanvas) return;
@@ -4229,6 +4256,7 @@ class GLRenderer {
 
         // Decorative presentation is always below information overlays.
         this.drawEmergencyDrops(ctx);
+        this.drawBreathFlames(ctx);
         this.drawClientCombatFx();
 
         // Persistent information is never hidden by combat density.
@@ -5063,6 +5091,63 @@ class GLRenderer {
             if (spin) clip = 'spin';
             if (roll?.phase) clip = 'roll';
             if (actor.setTeam) actor.setTeam(this.isFriendlySide(u.side));
+            // A breathing unit's art (UnitBreathAttack): it faces and tilts toward its aim on screen, and its flame
+            // (drawBreathFlames) grows in when it starts breathing and runs out when it stops, on the render clock.
+            let aimFacing = 1;
+            if (actor.setAim) {
+                const breath = entity.breath,
+                    spec = UnitDefinition.get(u.type).breathAttack,
+                    camera = this._frameCamera || this.stableCamera(),
+                    at = (this._aimScreenPoint ??= { x: 0, y: 0 }),
+                    alive = u.alive !== false,
+                    sustain = entity.sustain,
+                    breathing = alive && grounded && !!sustain.active,
+                    // Between breaths (SustainedAttack cooldown) the art shows it cooling down.
+                    cooling = alive && !breathing && renderTick < sustain.readyTick,
+                    // Screen geometry of the flame (pixels per world unit along and across the aim), reused per unit.
+                    // on: null until first seen; one first seen already breathing shows its flame grown.
+                    flame = (grain.flame ??= {
+                        on: null,
+                        startedAt: 0,
+                        stoppedAt: null,
+                        seed: HashUtil.hash(u.id) % 997,
+                        length: spec.length,
+                        halfArc: (spec.arcDegrees * Math.PI) / 360,
+                    }),
+                    ax = breath.aimX / 10000,
+                    ay = breath.aimY / 10000,
+                    vx = this.viewX(world.x),
+                    vz = this.viewY(world.z);
+                camera.worldToScreenInto(vx, vz, world.groundY, at);
+                flame.groundX = at.x;
+                flame.groundY = at.y;
+                camera.worldToScreenInto(
+                    this.viewX(world.x + ax * 100),
+                    this.viewY(world.z + ay * 100),
+                    world.groundY,
+                    at,
+                );
+                flame.forwardX = (at.x - flame.groundX) / 100;
+                flame.forwardY = (at.y - flame.groundY) / 100;
+                camera.worldToScreenInto(
+                    this.viewX(world.x - ay * 100),
+                    this.viewY(world.z + ax * 100),
+                    world.groundY,
+                    at,
+                );
+                flame.sideX = (at.x - flame.groundX) / 100;
+                flame.sideY = (at.y - flame.groundY) / 100;
+                camera.worldToScreenInto(vx + 100, vz, world.groundY, at);
+                flame.pixelsPerUnit = Math.abs(at.x - flame.groundX) / 100;
+                actor.setAim(flame.forwardX, flame.forwardY, breathing, alive, now, cooling);
+                aimFacing = actor.facing;
+                if (breathing && !flame.on) {
+                    flame.startedAt = flame.on === null ? -Infinity : now;
+                    flame.stoppedAt = null;
+                } else if (!breathing && flame.on) flame.stoppedAt = now;
+                flame.on = breathing;
+                flame.cooling = cooling;
+            }
             // A flying unit's art (the dandelion's fluff), on the render tick's clock. A landing is the fall that
             // UnitFlight.drop starts (impact kind 'landing'); the height it fell from is drawn in screen pixels so the
             // fluff torn off there can stay up while the body drops.
@@ -5189,7 +5274,7 @@ class GLRenderer {
                               ? grain.cornFacing || 1
                               : milletFireMs != null
                                 ? milletFacing
-                                : chestnutFacing * burstFacing)) *
+                                : chestnutFacing * burstFacing * aimFacing)) *
                     (work?.scaleX ?? 1),
                 sy = scale * impact.scaleY * (work?.scaleY ?? 1);
             m[0] = cos * sx;

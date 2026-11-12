@@ -7,6 +7,7 @@ import {
 } from '../core/presentation-frame-event.js';
 import { RollingBody } from '../sim/capabilities/rolling-body.js';
 import { UnitFlight } from '../sim/capabilities/unit-flight.js';
+import { UnitBreathAttack } from '../sim/capabilities/unit-breath-attack.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { BattlefieldProjection } from '../sim/terrain.js';
 
@@ -32,7 +33,8 @@ export function blockSpacing(sim, types) {
 }
 
 // Fills a square block of `count` units around `center`, rows across `dir` (the side's facing), types taken in
-// turn. A rolling unit starts rolling along `dir`, as one landing from a shell fired that way. Returns the block's
+// turn. A rolling unit starts rolling along `dir`, as one landing from a shell fired that way, and a breathing unit
+// aims along it. Returns the block's
 // depth along `dir`.
 export function placeBlock(sim, side, types, count, center, dir) {
     const spacing = blockSpacing(sim, types);
@@ -48,6 +50,7 @@ export function placeBlock(sim, side, types, count, center, dir) {
             center.y + dir.y * along + dir.x * across,
         );
         RollingBody.aim(unit, dir.x, dir.y);
+        UnitBreathAttack.aim(unit, dir.x, dir.y);
         UnitFlight.formation(unit, center.x, center.y);
     }
     return rows * spacing;

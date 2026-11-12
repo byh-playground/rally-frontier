@@ -16,12 +16,14 @@ import { UnitDefinition } from './definitions/units.js';
 import { StableSerializationUtil } from './net/lobby-codec.js';
 import { RollingBody } from './sim/capabilities/rolling-body.js';
 import { UnitFlight } from './sim/capabilities/unit-flight.js';
+import { UnitBreathAttack } from './sim/capabilities/unit-breath-attack.js';
 import { Knockback } from './sim/knockback.js';
 import { StrategySim } from './sim/strategy-sim.js';
 import { createShowcaseSurface } from './ui/showcase-host.js';
 import {
     baseAxis,
     battleFocus,
+    blockSpacing,
     buildOutpost,
     centerCamera,
     placeBlock,
@@ -363,7 +365,7 @@ function createKnockbackProbe(sim, trace = false) {
     };
 }
 
-// One row of `count` units across `dir`, `spacing` apart.
+// One row of `count` units across `dir`, `spacing` apart. Returns the row's depth along `dir` (as placeBlock).
 function placeLine(sim, side, type, count, center, dir, spacing) {
     for (let i = 0; i < count; i++) {
         const across = (i - (count - 1) / 2) * spacing;
@@ -374,7 +376,9 @@ function placeLine(sim, side, type, count, center, dir, spacing) {
             center.y + dir.x * across,
         );
         RollingBody.aim(unit, dir.x, dir.y);
+        UnitBreathAttack.aim(unit, dir.x, dir.y);
     }
+    return blockSpacing(sim, [type]);
 }
 
 // Outposts being built (`unit` and `ai-match` scenes), read by `state().outposts`: for each capture point the tick its
@@ -684,6 +688,246 @@ function createFlightProbe(sim) {
     };
 }
 
+// Flame breathers (`unit`, `melee` and `ai-match` scenes when a card has `breathAttack`, the chili), read by
+// `state().breath`. `pulses` burns and their unit hits per burn (`perPulse` mean·max), damage dealt to units and to
+// buildings (`buildingPerPulse`: each building hit's amount), `activeTicks` unit-ticks breathing, `turnTicks` unit-ticks
+// whose aim changed, `fullTurnTicks` those that turned by the full rate, `maxTurnPerTick` the largest turn in one tick
+// (degrees), `moveWhileBreathing` the largest step a breathing unit took in one tick (pushes only: it does not
+// walk), `firstPulse` the first burn's tick. `geometry` checks every burn against an independent test made with
+// atan2 (the body circle against the 30° fan, the terrain line), at the moment the burn hits: `checked` enemies looked
+// at, `misses` touching enemies not hit and `falseHits` hits not touching (both 0 by the rule), `edgeHits` hits whose
+// body reaches less than 2 into the fan and `nearMisses` enemies within 2 outside it (how much of the edge a scene
+// exercised), `blockedLine` hits through a wall, `shielded` enemies inside the fan but behind a wall or cliff (not hit). `allies` allied unit-ticks inside a burning fan (they never burn:
+// `allyHits`), `airHits` hits on a flying unit (0). `kills` time from a target's first burn to its death, by type.
+// `burns` is the sustained-attack rhythm (SustainedAttack): `count` breaths started, `ticksPerBurn` damage ticks in
+// each finished breath, `tickOffsets` the first finished breath's damage ticks counted from its start, `cycleTicks`
+// one unit's breath start to its next and `restTicks` its breath end to its next start; `coolingTicks` unit-ticks
+// waiting out the cooldown. `pulses` counts only burns that hit something.
+function createBreathProbe(sim) {
+    const out = {
+        pulses: 0,
+        unitHits: 0,
+        dealt: { units: 0, buildings: 0 },
+        buildingPerPulse: [],
+        activeTicks: 0,
+        turnTicks: 0,
+        fullTurnTicks: 0,
+        maxTurnPerTick: 0,
+        moveWhileBreathing: 0,
+        firstPulse: null,
+        geometry: {
+            checked: 0,
+            misses: 0,
+            falseHits: 0,
+            edgeHits: 0,
+            nearMisses: 0,
+            blockedLine: 0,
+            shielded: 0,
+        },
+        coolingTicks: 0,
+        allies: 0,
+        allyHits: 0,
+        airHits: 0,
+    };
+    // The sustain timing (SustainedAttack) of every breath: starts, its damage ticks (offsets from the start),
+    // start-to-start cycles and the rest from one breath's end to the next start, per unit.
+    let burnStarts = 0,
+        firstOffsets = null;
+    const ticksPerBurn = [],
+        cycles = [],
+        rests = [],
+        offsets = new Map();
+    const burns = (u, s, before) => {
+        if (!before) return;
+        if (s.uses > before.uses) {
+            burnStarts++;
+            if (before.uses > 0) {
+                cycles.push(s.startTick - before.startTick);
+                rests.push(s.startTick - before.endTick);
+            }
+            offsets.set(u.id, s.ticks > before.ticks ? [0] : []);
+            return;
+        }
+        const list = offsets.get(u.id);
+        if (s.ticks > before.ticks) list?.push(before.nextTick - s.startTick);
+        // A breath ended (its time ran out or it was knocked down): its damage ticks are complete.
+        if (before.active && !s.active && list) {
+            ticksPerBurn.push(list.length);
+            firstOffsets ??= [...list];
+        }
+    };
+    const perPulse = [],
+        firstHit = new Map(),
+        kills = {},
+        last = new Map();
+    let pulse = null;
+    // Signed distance (negative inside) from a circle's edge to the fan of `source`, by angles.
+    const margin = (source, spec, x, y, r) => {
+        const aim = Math.atan2(source.breath.aimY, source.breath.aimX),
+            dx = x - source.x,
+            dy = y - source.y,
+            dist = Math.hypot(dx, dy),
+            half = (spec.arcDegrees * Math.PI) / 360;
+        let offset = Math.abs(
+            Math.atan2(Math.sin(Math.atan2(dy, dx) - aim), Math.cos(Math.atan2(dy, dx) - aim)),
+        );
+        if (offset <= half) return dist - spec.length - r;
+        offset -= half;
+        if (offset >= Math.PI / 2) return dist - r;
+        const along = dist * Math.cos(offset),
+            across = dist * Math.sin(offset);
+        return (along <= spec.length ? across : Math.hypot(along - spec.length, across)) - r;
+    };
+    const finish = () => {
+        if (!pulse) return;
+        for (const [id, m] of pulse.expected) {
+            if (pulse.hit.has(id)) continue;
+            if (m <= 0) out.geometry.misses++;
+            else if (m < 2) out.geometry.nearMisses++;
+        }
+        for (const id of pulse.hit) {
+            const m = pulse.expected.get(id);
+            if (m === undefined || m > 0) out.geometry.falseHits++;
+            else if (m > -2) out.geometry.edgeHits++;
+        }
+        perPulse.push(pulse.hit.size);
+        pulse = null;
+    };
+    // The first hit of a burn opens it: every enemy ground unit is measured where it stands as the burn starts.
+    const open = (source, spec) => {
+        finish();
+        out.pulses++;
+        out.firstPulse ??= sim.tick;
+        pulse = { key: `${source.id}|${sim.tick}`, expected: new Map(), hit: new Set() };
+        const clear = (u) =>
+            sim.world.terrain.field.polygonSegmentClear(source.x, source.y, u.x, u.y, 0);
+        for (const u of sim.units) {
+            if (!u.alive || u === source || UnitFlight.airborne(u)) continue;
+            const m = margin(source, spec, u.x, u.y, sim.unitRadius(u.type));
+            if (u.side === source.side) {
+                if (m <= 0 && clear(u)) out.allies++;
+                continue;
+            }
+            out.geometry.checked++;
+            if (m >= 2) continue;
+            if (clear(u)) pulse.expected.set(u.id, m);
+            else if (m <= 0) out.geometry.shielded++;
+        }
+    };
+    const damage = sim.applyDamage.bind(sim);
+    sim.applyDamage = (side, type, target, building, amount, sourceId, ...rest) => {
+        // Only a breathing unit's burn (its launch shell's blast has the same type but a cannon as source).
+        const spec = UnitDefinition.get(type)?.breathAttack,
+            source = spec && sim.unitById.get(sourceId);
+        if (!source?.breath) return damage(side, type, target, building, amount, sourceId, ...rest);
+        if (pulse?.key !== `${sourceId}|${sim.tick}`) open(source, spec);
+        const hpBefore = target.hp;
+        const result = damage(side, type, target, building, amount, sourceId, ...rest);
+        const dealt = Math.max(0, hpBefore - target.hp);
+        if (building) {
+            out.dealt.buildings += dealt;
+            out.buildingPerPulse.push(dealt);
+            return result;
+        }
+        out.unitHits++;
+        out.dealt.units += dealt;
+        pulse.hit.add(target.id);
+        if (target.side === side) out.allyHits++;
+        if (UnitFlight.airborne(target)) out.airHits++;
+        if (!sim.world.terrain.field.polygonSegmentClear(source.x, source.y, target.x, target.y, 0))
+            out.geometry.blockedLine++;
+        if (!firstHit.has(target.id)) firstHit.set(target.id, sim.tick);
+        if (target.hp <= 0 && hpBefore > 0)
+            (kills[target.type] ??= []).push(sim.tick - firstHit.get(target.id));
+        return result;
+    };
+    return {
+        observe() {
+            finish();
+            for (const u of sim.units) {
+                if (!u.alive || !u.breath) continue;
+                const before = last.get(u.id),
+                    s = u.sustain;
+                burns(u, s, before);
+                if (!s.active && sim.tick < s.readyTick) out.coolingTicks++;
+                if (s.active) {
+                    out.activeTicks++;
+                    if (before?.active)
+                        out.moveWhileBreathing = Math.max(
+                            out.moveWhileBreathing,
+                            round(Math.hypot(u.x - before.x, u.y - before.y)),
+                        );
+                }
+                if (before && (before.aimX !== u.breath.aimX || before.aimY !== u.breath.aimY)) {
+                    const turned =
+                        (Math.abs(
+                            Math.atan2(
+                                before.aimX * u.breath.aimY - before.aimY * u.breath.aimX,
+                                before.aimX * u.breath.aimX + before.aimY * u.breath.aimY,
+                            ),
+                        ) *
+                            180) /
+                        Math.PI;
+                    out.turnTicks++;
+                    out.maxTurnPerTick = Math.max(out.maxTurnPerTick, round(turned));
+                    // A tick turned by the full rate (the aim was still swinging toward its goal).
+                    if (
+                        turned >=
+                        (0.99 * UnitDefinition.get(u.type).breathAttack.turnDegreesPerSecond) /
+                            sim.tps
+                    )
+                        out.fullTurnTicks++;
+                }
+                last.set(u.id, {
+                    x: u.x,
+                    y: u.y,
+                    aimX: u.breath.aimX,
+                    aimY: u.breath.aimY,
+                    active: s.active,
+                    uses: s.uses,
+                    ticks: s.ticks,
+                    nextTick: s.nextTick,
+                    startTick: s.startTick,
+                    endTick: s.endTick,
+                });
+            }
+        },
+        state() {
+            finish();
+            const summary = (values) =>
+                values.length
+                    ? {
+                          count: values.length,
+                          mean: round(values.reduce((sum, v) => sum + v, 0) / values.length),
+                          min: Math.min(...values),
+                          max: Math.max(...values),
+                      }
+                    : null;
+            return {
+                ...out,
+                perPulse: summary(perPulse),
+                burns: {
+                    count: burnStarts,
+                    ticksPerBurn: summary(ticksPerBurn),
+                    tickOffsets: firstOffsets,
+                    cycleTicks: summary(cycles),
+                    restTicks: summary(rests),
+                },
+                buildingPerPulse: summary(out.buildingPerPulse),
+                kills: Object.fromEntries(
+                    Object.entries(kills).map(([type, ticks]) => [type, summary(ticks)]),
+                ),
+            };
+        },
+    };
+}
+// A breath probe only where a breathing card can appear, so other scenes keep their plain damage path.
+function breathProbe(sim, types) {
+    return types.some((type) => UnitDefinition.get(type)?.breathAttack)
+        ? createBreathProbe(sim)
+        : null;
+}
+
 // How widely one side's live units are scattered: their count, and the mean and largest distance from their centre.
 function spread(sim, side) {
     let count = 0,
@@ -970,10 +1214,12 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 );
                 RollingBody.aim(walnut, facing.x, facing.y);
             }
+        const breath = breathProbe(sim, types);
         return matchScene(scene, params, sim, {
             zoom: 1.4,
             focus: () => center,
-            extra: walnutSpeeds,
+            beforeStep: breath ? () => breath.observe() : undefined,
+            extra: breath ? () => ({ ...walnutSpeeds(sim), breath: breath.state() }) : walnutSpeeds,
         });
     }
 
@@ -1039,7 +1285,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * `count`명의 `unit`을 (`x`,`y`)에 세운다(`line=N`이면 N 간격의 가로 한 줄). 평소처럼 적 본진으로 가고, `enemy`·`enemyCount`가 있으면 그 적
          * 무리가 적 본진 쪽 300(`gap`) 앞에 서고, `support`·`supportCount`는 그 뒤 100에 두 번째 적 무리를 세운다.
          * 나는 병종(민들레씨)은 상태의 `flight`에 이륙·착지·공중 피해·공중 밀림을 낸다. `outposts=1`이면 모든 점령 지점에 더 가까운 본진 쪽의 완성된 거점을 둔다
-         * (검은콩 앞쪽 대포 탑승, 찹쌀 거점 포구 막기). 예:
+         * (검은콩 앞쪽 대포 탑승, 찹쌀 거점 포구 막기). `enemyLine=N`은 적을 N 간격 가로 한 줄로, `behind=1`은 적 무리를 아군 본진
+         * 쪽에, `front`·`frontCount`는 아군 앞줄을 세운다. 불 뿜는 병종(고추)은 상태의 `breath`에 불줄기 기록을 낸다. 예:
          * `?debug=1&scene=unit&map=twin-gates&seed=1&unit=walnut&count=1&x=1400&y=2900&tick=150`
          */
         unit(params) {
@@ -1068,41 +1315,69 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                         point.y + Math.sin(angle) * radius,
                     );
                 }
-            } else if (params.line === undefined) placeBlock(sim, 0, group, count, at, dir);
-            else placeLine(sim, 0, group[0], count, at, dir, integer(scene, 'line', params.line));
-            if (params.enemy !== undefined || params.enemyCount !== undefined)
+            }
+            const depth =
+                params.point !== undefined
+                    ? 0
+                    : params.line === undefined
+                      ? placeBlock(sim, 0, group, count, at, dir)
+                      : placeLine(
+                            sim,
+                            0,
+                            group[0],
+                            count,
+                            at,
+                            dir,
+                            integer(scene, 'line', params.line),
+                        );
+            // front=<type>&frontCount=N: a friendly block just in front of the first (a front line ahead of breathers).
+            if (params.front !== undefined || params.frontCount !== undefined) {
+                const types = [unitType(scene, 'front', params.front)],
+                    frontCount = integer(scene, 'frontCount', params.frontCount),
+                    columns = Math.ceil(Math.sqrt(frontCount)),
+                    ahead =
+                        (depth + Math.ceil(frontCount / columns) * blockSpacing(sim, types)) / 2;
                 placeBlock(
                     sim,
-                    1,
-                    [unitType(scene, 'enemy', params.enemy)],
-                    integer(scene, 'enemyCount', params.enemyCount),
-                    {
-                        x:
-                            at.x +
-                            dir.x *
-                                (params.gap === undefined
-                                    ? 300
-                                    : integer(scene, 'gap', params.gap)),
-                        y:
-                            at.y +
-                            dir.y *
-                                (params.gap === undefined
-                                    ? 300
-                                    : integer(scene, 'gap', params.gap)),
-                    },
-                    { x: -dir.x, y: -dir.y },
+                    0,
+                    types,
+                    frontCount,
+                    { x: at.x + dir.x * ahead, y: at.y + dir.y * ahead },
+                    dir,
                 );
+            }
+            // behind=1: the enemy blocks stand on the far side of the units, toward the friendly base.
+            const toward = flag(scene, 'behind', params.behind) ? -1 : 1,
+                gap = params.gap === undefined ? 300 : integer(scene, 'gap', params.gap),
+                facing = { x: -dir.x * toward, y: -dir.y * toward };
+            if (params.enemy !== undefined || params.enemyCount !== undefined) {
+                const enemy = unitType(scene, 'enemy', params.enemy),
+                    enemyCount = integer(scene, 'enemyCount', params.enemyCount),
+                    center = { x: at.x + dir.x * gap * toward, y: at.y + dir.y * gap * toward };
+                // enemyLine=N: the enemies stand in one row across, N apart (edge checks against still targets).
+                if (params.enemyLine === undefined)
+                    placeBlock(sim, 1, [enemy], enemyCount, center, facing);
+                else
+                    placeLine(
+                        sim,
+                        1,
+                        enemy,
+                        enemyCount,
+                        center,
+                        facing,
+                        integer(scene, 'enemyLine', params.enemyLine),
+                    );
+            }
             // support=<type>&supportCount=N: a second enemy block 100 behind the first (anti-air escorts behind a front).
             if (params.support !== undefined || params.supportCount !== undefined) {
-                const behind =
-                    (params.gap === undefined ? 300 : integer(scene, 'gap', params.gap)) + 100;
+                const behind = (gap + 100) * toward;
                 placeBlock(
                     sim,
                     1,
                     [unitType(scene, 'support', params.support)],
                     integer(scene, 'supportCount', params.supportCount),
                     { x: at.x + dir.x * behind, y: at.y + dir.y * behind },
-                    { x: -dir.x, y: -dir.y },
+                    facing,
                 );
             }
             // shell=<type>: the host base fires one launch shell of that card (its payload's impact, splash and count)
@@ -1149,15 +1424,17 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             const probe = createKnockbackProbe(sim, flag(scene, 'trace', params.trace)),
                 fight = createFightProbe(sim),
                 flight = createFlightProbe(sim),
-                outposts = createOutpostProbe(sim);
+                outposts = createOutpostProbe(sim),
+                breath = breathProbe(sim, [...new Set(sim.units.map((u) => u.type))]);
             return matchScene(scene, params, sim, {
-                zoom: 1.6,
+                zoom: params.zoom === undefined ? 1.6 : integer(scene, 'zoom', params.zoom),
                 focus: followUnits(sim, at),
                 beforeStep: () => {
                     probe.observe();
                     fight.observe();
                     flight.observe();
                     outposts.observe();
+                    breath?.observe();
                 },
                 extra: () => ({
                     knockback: probe.state(),
@@ -1166,6 +1443,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     flight: flight.state(),
                     outposts: outposts.state(),
                     enemySpread: spread(sim, 1),
+                    ...(breath ? { breath: breath.state() } : {}),
                 }),
             });
         },
@@ -1266,7 +1544,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     ahead: round(ahead),
                 };
             };
-            const flight = createFlightProbe(sim);
+            const flight = createFlightProbe(sim),
+                breath = breathProbe(sim, [type]);
             // follow=1: the camera eases toward the squad's centre on the clock (time constant FOLLOW_MS), so frames
             // drawn between ticks do not jump with the tick-rate centre.
             // It starts on the cannon, and holds there until the shot's first soldier is out.
@@ -1296,6 +1575,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     if (landTick === null && sim.events.some((e) => e.type === 'launchLand'))
                         landTick = sim.tick;
                     flight.observe();
+                    breath?.observe();
                 },
                 extra: () => {
                     const squad = sim.units.filter(
@@ -1304,6 +1584,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     return {
                         landing: { tick: landTick, units: squad.length, ...spreadOf(squad) },
                         flight: flight.state(),
+                        ...(breath ? { breath: breath.state() } : {}),
                     };
                 },
             });
@@ -1318,7 +1599,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             const bots = attachBots(sim),
                 probe = createKnockbackProbe(sim, flag('ai-match', 'trace', params.trace)),
                 flight = createFlightProbe(sim),
-                outposts = createOutpostProbe(sim);
+                outposts = createOutpostProbe(sim),
+                breath = breathProbe(sim, sim.decks.flat());
             return matchScene('ai-match', params, sim, {
                 zoom: 1,
                 focus: () => battleFocus(sim),
@@ -1326,6 +1608,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     probe.observe();
                     flight.observe();
                     outposts.observe();
+                    breath?.observe();
                     bots();
                 },
                 isComplete: () => sim.baseOutcome() !== null,
@@ -1337,6 +1620,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     outside: probe.outside(),
                     flight: flight.state(),
                     outposts: outposts.state(),
+                    ...(breath ? { breath: breath.state() } : {}),
                 }),
             });
         },

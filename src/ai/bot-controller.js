@@ -353,7 +353,11 @@ class BotController {
                 UnitDefinition.onlyAttacksBuildings(type)
             )
                 return 3;
-            if (clustered && (definition.lobAttack || definition.spinAttack)) return 2;
+            if (
+                clustered &&
+                (definition.lobAttack || definition.spinAttack || definition.breathAttack)
+            )
+                return 2;
             if (BuildingDefinition.get(shot.target.type) && definition.role === 'ranged') return 1;
             return 0;
         };

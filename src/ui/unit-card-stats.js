@@ -35,16 +35,36 @@ export function unitCardStats(type, rangeLevel, copy) {
         );
     movement.push(['시야', number.format(unit.sight)]);
 
-    const attack = [
-        [
-            suicide ? '자폭 피해' : siege ? '건물 공격력' : '기본 공격력',
-            number.format(suicide?.damage ?? unit.atk),
-        ],
-        [
-            suicide ? '자폭 반경' : siege ? '건물 돌격 거리' : '지상 공격 사거리',
-            number.format(suicide?.radius ?? unit.range),
-        ],
-    ];
+    const breath = unit.breathAttack,
+        sustain = unit.sustain;
+    // A sustained attack (SustainedAttack) reads its own timing: how long one attack lasts, its damage step, its
+    // cooldown, and the damage per second while it lasts.
+    const sustained = sustain
+        ? [
+              ['지속 중 초당 피해', number.format((unit.atk * 1000) / sustain.tickMs)],
+              ['지속 시간', seconds(sustain.durationMs)],
+              ['피해 간격', `${seconds(sustain.tickMs)} · ${number.format(unit.atk)}`],
+              ['재사용 대기', seconds(sustain.cooldownMs)],
+          ]
+        : [];
+    const attack = breath
+        ? [
+              ['불줄기 길이', number.format(breath.length)],
+              ['불줄기 각도', `${number.format(breath.arcDegrees)}°`],
+              ['방향 전환', `초당 ${number.format(breath.turnDegreesPerSecond)}°`],
+              ['건물 피해', `${number.format(breath.buildingDamageScale * 100)}%`],
+          ]
+        : [
+              [
+                  suicide ? '자폭 피해' : siege ? '건물 공격력' : '기본 공격력',
+                  number.format(suicide?.damage ?? unit.atk),
+              ],
+              [
+                  suicide ? '자폭 반경' : siege ? '건물 돌격 거리' : '지상 공격 사거리',
+                  number.format(suicide?.radius ?? unit.range),
+              ],
+          ];
+    attack.unshift(...sustained);
     if (unit.canAttackAir)
         attack.push(
             ['대공 공격력', number.format(unit.atk * (burst?.airDamageMultiplier ?? 1))],
@@ -61,7 +81,7 @@ export function unitCardStats(type, rangeLevel, copy) {
             ['회전 공격 반경', number.format(spin.radius)],
             ['회전 타격 간격', seconds(spin.pulseMs)],
         );
-    else if (!suicide)
+    else if (!suicide && !sustain)
         attack.push(['기본 공격 주기', seconds(unit.attackIntervalMs ?? unit.cooldownMs)]);
     if (unit.leapAttack) attack.push(['도약 발동 거리', number.format(unit.leapAttack.range)]);
 
