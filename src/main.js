@@ -1,6 +1,6 @@
 import { RESOURCES, ResourceDisplay } from './ui/resource-display.js';
 import { campaignStage } from './definitions/campaign.js';
-import { PVP_MAP_PRESET_IDS, RangeUtil, SIM_TPS } from './core/game-rules.js';
+import { PVP_MAP_POOL, RangeUtil, SIM_TPS } from './core/game-rules.js';
 import { SimulationTiming } from './core/simulation-timing.js';
 import {
     createLocalPerfStats,
@@ -781,12 +781,17 @@ class TerrainPresentation {
                 minY > r.canvas.height + 40
             )
                 continue;
-            const anchor = block.points.reduce(
-                (p, q) => ({
-                    x: p.x + q.x / block.points.length,
-                    y: p.y + q.y / block.points.length,
-                }),
-                { x: 0, y: 0 },
+            // The flat footprint takes the depth of its corner nearest the camera: ground drawn with depth (a map
+            // with raised layers) in front of the centre would otherwise hide the near half of the rock.
+            const groundDepth = (p) =>
+                r.renderDepthForWorld({
+                    x: p.x,
+                    y: r.world.terrain.surfaces.heightAt(p.x, p.y),
+                    z: p.y,
+                    groundY: 0,
+                });
+            const anchor = block.points.reduce((best, p) =>
+                groundDepth(p) < groundDepth(best) ? p : best,
             );
             r.withWorldSpriteDepth(
                 {
@@ -9401,7 +9406,7 @@ class MatchLifecycle {
         return {
             presetId: campaignStage
                 ? UiRuntimeState.value.settings.presetId
-                : PVP_MAP_PRESET_IDS[Math.floor(Math.random() * PVP_MAP_PRESET_IDS.length)],
+                : PVP_MAP_POOL[Math.floor(Math.random() * PVP_MAP_POOL.length)],
             simulationTps: UiRuntimeState.value.settings.simulationTps,
             campaignStage,
         };

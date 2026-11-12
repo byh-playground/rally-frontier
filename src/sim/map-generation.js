@@ -11,7 +11,11 @@ import {
 import { LANE_CONTROL_POINTS } from '../definitions/combat-rules.js';
 import { campaignMapLayout } from '../definitions/campaign-map.js';
 import { artilleryBasinMapLayout } from '../definitions/artillery-basin-map.js';
+import { causewayFlatsMapLayout } from '../definitions/causeway-flats-map.js';
+import { kingsHillMapLayout } from '../definitions/kings-hill-map.js';
+import { smallFieldMapLayout } from '../definitions/small-field-map.js';
 import { twinGatesMapLayout } from '../definitions/twin-gates-map.js';
+import { windRavinesMapLayout } from '../definitions/wind-ravines-map.js';
 import { UNIT_RUNTIME_GEOMETRY } from '../definitions/units.js';
 import { WorldContext } from './world-context.js';
 import { TerrainNavigation } from './navigation.js';
@@ -234,9 +238,9 @@ class FrontierTerrainLayout {
             id: 'mid-center',
             lane: 'MID',
             laneKey: 'mid',
-            label: '중앙 보급 거점',
+            label: '중앙 기름 거점',
             stage: 0,
-            resourceType: 'basic',
+            resourceType: 'premium',
             ...center,
         });
         return { laneControlPoints: { top, mid, bot }, capturePoints };
@@ -329,18 +333,27 @@ class FrontierTerrainLayout {
                 !elevated.some((l) => polygonsOverlap(p, l.points))
             );
         });
-        const pads = [map.spawns.host, map.spawns.guest, ...map.capturePoints];
-        const buildablePads = pads.every(
-            (p) =>
-                geometry.field.polygonCircleClear(p.x, p.y, 42) &&
-                atlas.buildable(p.x, p.y, 42) &&
-                !banks.some((b) => pointInSimplePolygon(p.x, p.y, b.points)),
-        );
         return {
             waterLayerSeparation: waterClear,
             bridgeRampSeparation: bridgeClear,
-            buildablePads,
+            buildablePads: !this.unbuildablePads(map, geometry).length,
         };
+    }
+    // Bases and capture points whose pad touches a cliff, a ramp, a river bank or open water.
+    static unbuildablePads(map, geometry = TerrainGeometry.fromMap(map)) {
+        const atlas = geometry.surfaces,
+            terrain = map.terrain,
+            banks = atlas.layers.filter((l) => l.innerPoints?.length),
+            water = [terrain.riverPolygon, ...(terrain.riverBranchPolygons || [])].filter(
+                (poly) => poly?.length >= 3,
+            );
+        return [map.spawns.host, map.spawns.guest, ...map.capturePoints].filter(
+            (p) =>
+                !geometry.field.polygonCircleClear(p.x, p.y, 42) ||
+                !atlas.buildable(p.x, p.y, 42) ||
+                banks.some((b) => pointInSimplePolygon(p.x, p.y, b.points)) ||
+                water.some((poly) => pointInSimplePolygon(p.x, p.y, poly)),
+        );
     }
     static connectedLayout(map) {
         // Every strategic point must be reachable by the widest grain on the
@@ -930,14 +943,27 @@ class MapGeneration {
             ...campaignMapLayout(rules.campaign),
         };
     }
+    // A fixed map has no candidates to choose from, so the authored layout must pass the procedural map's pad and
+    // ground checks as it is: a pad off buildable ground or out of walking reach fails the descriptor here.
     static fixedPvpMapDescriptor(layout, rules, baseSeed, roundNumber) {
-        return {
+        const descriptor = {
             schemaVersion: MAP_DESCRIPTOR_SCHEMA_VERSION,
             generatorVersion: rules.map.generatorVersion,
             seed: MapGeneration.mapRuleSeed(baseSeed, rules, roundNumber),
             symmetry: rules.map.symmetry,
             ...layout(),
         };
+        const unbuildable = FrontierTerrainLayout.unbuildablePads(descriptor);
+        if (unbuildable.length)
+            throw new Error(
+                `Map ${descriptor.topology} has unbuildable pads: ` +
+                    unbuildable.map((p) => p.id ?? `${p.x},${p.y}`).join(', '),
+            );
+        if (!FrontierTerrainLayout.connectedLayout(descriptor))
+            throw new Error(
+                `Map ${descriptor.topology} leaves a strategic point out of walking reach`,
+            );
+        return descriptor;
     }
     static generateMapDescriptor({
         rules = GameRuleDefinition.current,
@@ -1082,6 +1108,14 @@ const MAP_GENERATORS = {
         MapGeneration.fixedPvpMapDescriptor(twinGatesMapLayout, rules, seed, round),
     'fixed-artillery-basin': (rules, seed, round) =>
         MapGeneration.fixedPvpMapDescriptor(artilleryBasinMapLayout, rules, seed, round),
+    'fixed-kings-hill': (rules, seed, round) =>
+        MapGeneration.fixedPvpMapDescriptor(kingsHillMapLayout, rules, seed, round),
+    'fixed-small-field': (rules, seed, round) =>
+        MapGeneration.fixedPvpMapDescriptor(smallFieldMapLayout, rules, seed, round),
+    'fixed-wind-ravines': (rules, seed, round) =>
+        MapGeneration.fixedPvpMapDescriptor(windRavinesMapLayout, rules, seed, round),
+    'fixed-causeway-flats': (rules, seed, round) =>
+        MapGeneration.fixedPvpMapDescriptor(causewayFlatsMapLayout, rules, seed, round),
 };
 
 export { CloneUtil, HashUtil, MapGeneration };

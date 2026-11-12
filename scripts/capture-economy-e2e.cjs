@@ -743,10 +743,10 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     sim.mapDescriptor.generation.accepted &&
                         sim.capturePoints.length === 11 &&
                         sim.capturePoints.filter((cp) => cp.resourceType === 'premium').length ===
-                            2 &&
-                        center.resourceType === 'basic' &&
+                            3 &&
+                        center.resourceType === 'premium' &&
                         sim.capturePoints.every((cp) => cp.owner === null),
-                    'standard terrain has eleven neutral sites, two side oil sites and center supply',
+                    'standard terrain has eleven neutral sites, two side oil sites and a contested center oil',
                     sim.mapDescriptor.generation,
                 );
                 const supplyOpening = new StrategySim(seed);

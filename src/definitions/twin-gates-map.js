@@ -1,3 +1,5 @@
+import { neutralCapturePoint } from './pvp-map-layout.js';
+
 export function twinGatesMapLayout() {
     const width = 3800;
     const height = 4200;
@@ -44,6 +46,12 @@ export function twinGatesMapLayout() {
             ...position,
         }));
     });
+    // Both sides contest one oil inside each gate.
+    const gateOil = { x: 505, y: 810 };
+    capturePoints.push(
+        neutralCapturePoint('gate-oil-1', 'top', '북서 관문 기름 거점', 'premium', gateOil),
+        neutralCapturePoint('gate-oil-2', 'bot', '남동 관문 기름 거점', 'premium', mirror(gateOil)),
+    );
 
     const rockWall = [
         { x: 660, y: 952 },

@@ -3,8 +3,21 @@ const PVP_MAP_PRESETS = Object.freeze({
     standard: {},
     'twin-gates': { map: { generator: 'fixed-twin-gates', generatorVersion: 1 } },
     'artillery-basin': { map: { generator: 'fixed-artillery-basin', generatorVersion: 1 } },
+    'kings-hill': { map: { generator: 'fixed-kings-hill', generatorVersion: 1 } },
+    'small-field': { map: { generator: 'fixed-small-field', generatorVersion: 1 } },
+    'wind-ravines': { map: { generator: 'fixed-wind-ravines', generatorVersion: 1 } },
+    'causeway-flats': { map: { generator: 'fixed-causeway-flats', generatorVersion: 1 } },
 });
-const PVP_MAP_PRESET_IDS = Object.freeze(Object.keys(PVP_MAP_PRESETS));
+// Maps a random match draws from with equal chance. causeway-flats is defined (debug scenes, campaign stages) but
+// stays out until its bot match ends within the 20000-tick check.
+const PVP_MAP_POOL = Object.freeze([
+    'standard',
+    'twin-gates',
+    'artillery-basin',
+    'kings-hill',
+    'small-field',
+    'wind-ravines',
+]);
 class RangeUtil {
     static clamp(v, a, b) {
         return Math.max(a, Math.min(b, v));
@@ -125,4 +138,4 @@ class GameRuleRuntime {
     }
 }
 GameRuleDefinition.current = GameRuleDefinition.resolve();
-export { RangeUtil, GameRuleDefinition, GameRuleRuntime, PVP_MAP_PRESET_IDS, SIM_TPS };
+export { RangeUtil, GameRuleDefinition, GameRuleRuntime, PVP_MAP_POOL, SIM_TPS };
