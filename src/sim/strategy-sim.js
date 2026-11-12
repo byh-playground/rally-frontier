@@ -2350,7 +2350,7 @@ class StrategySim {
         }
         if (!UnitMotion.isGrounded(u)) {
             if (d.burstAttack) UnitBurstAttack.cancel(this, u, d);
-            if (d.breathAttack) UnitBreathAttack.stop(u);
+            if (d.breathAttack) UnitBreathAttack.stop(this, u, d);
             if (!activeSite) u.constructionWork = null;
             else if (u.constructionWork.cycleStartedAtTick !== null) {
                 const work = u.constructionWork;
@@ -2446,10 +2446,7 @@ class StrategySim {
             // A running breath (a sustained attack) burns out its time where it stands, aim held.
             if (d.breathAttack && UnitBreathAttack.burning(this, u))
                 return UnitBreathAttack.burn(this, u, d);
-            if (this.updateConstructionWork(u, d, moveSpeed)) {
-                if (d.breathAttack) UnitBreathAttack.stop(u);
-                return null;
-            }
+            if (this.updateConstructionWork(u, d, moveSpeed)) return null;
             const f = this.unitRallyPoint(u);
             if (d.breathAttack) UnitBreathAttack.idle(this, u, d.breathAttack, f.x, f.y);
             this.moveToward(u, f.x, f.y, moveSpeed);

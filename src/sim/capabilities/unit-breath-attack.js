@@ -8,7 +8,8 @@
 //   뿜기는 표적이 죽거나 사거리를 벗어나도 끝까지 서서 뿜는다(표적이 사거리 밖이면 그쪽으로 조준을 돌리고, 표적이
 //   없으면 조준을 그대로 둔다). 대기 중에는 다른 원거리 병종의 쿨다운처럼 사거리 안이면 서서 조준만 돌리고, 밖이면
 //   다가간다. 표적이 없으면 걸어갈 집결 지점 쪽으로 조준을 돌린다. 처음 조준이 정해지지 않았으면(0, 0) 처음 바라볼
-//   방향으로 바로 정한다. 넘어지면(지면을 떠나면) 그 뿜기는 끝난다.
+//   방향으로 바로 정한다. 넘어지면(지면을 떠나면) 그 뿜기는 그 틱에 끝나고
+//   재사용 대기를 그 틱부터 처음부터 다시 센다(표적이 죽은 것은 끊김이 아니다).
 // - 불줄기의 반지름 방향 끝은 기존 공격 사거리(InteractionGeometry.reach, Definition range = length - 자기 반경)와
 //   같고, 지형 선(벽·절벽)은 표적마다 기존 판정(sim.interactionDistance, requiresTerrainLine)을 다시 쓴다. 그래서
 //   불줄기가 닿는 적과 "사거리 안" 표적이 같은 규칙이다.
@@ -83,9 +84,9 @@ class UnitBreathAttack {
             ? this.pulse(sim, unit, d)
             : null;
     }
-    // Knocked off its feet: the breath ends there (its cooldown keeps the time set when it started), no turning.
-    static stop(unit) {
-        SustainedAttack.interrupt(unit.sustain);
+    // Knocked off its feet: the breath ends there and its cooldown counts in full from this tick, no turning.
+    static stop(sim, unit, d) {
+        SustainedAttack.cut(sim, unit.sustain, d.sustain);
     }
     // The target is in attack reach: stand and turn toward it. A ready breath starts once the target is inside the
     // flame and then runs its whole duration; while it waits for its cooldown the unit only turns.

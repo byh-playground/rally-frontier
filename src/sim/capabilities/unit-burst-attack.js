@@ -5,7 +5,7 @@
 //   능력은 표적 고정·발사·피해만 맡는다.
 // - 보이는 적 투입탄을 우선하고 지상 표적도 공격한다. 멈춰서 한 표적에 연사한다. 쏠 발이 남은 동안만 서 있고
 //   마지막 발 뒤에는 (재장전 중이라도) 움직일 수 있다. 고정한 표적이 죽거나 보이지 않거나 사거리를 벗어나거나
-//   넘어지면 연사를 거둔다(SustainedAttack.cut: 그 틱부터 한 발 간격 뒤에 끝나고 재장전은 거기서 센다).
+//   넘어지면 연사를 거둔다(SustainedAttack.cut: 그 틱에 끝나고 재장전을 그 틱부터 처음부터 센다).
 // - combat.burstAttack { targetId, targetKind, aimX, aimY, aimHeightFP }는 고정한 표적과 조준점이다(재장전이
 //   끝나면 지운다). 총과 두 손은 표적 방향을 공유한다. 사격 수·마지막 사격 틱은 Unit.sustain에서 읽어 총구가
 //   반동하고 탄띠가 줄어든다(SustainedAttack.tickCount·lastTick).

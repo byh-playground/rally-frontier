@@ -166,6 +166,11 @@ export class UnitSpinAttack {
             this.cancel(sim, unit);
             return INACTIVE;
         }
+        // Knocked off its feet: the spin ends here and its cooldown counts in full from this tick.
+        if (!UnitMotion.isGrounded(unit)) {
+            this.cancel(sim, unit);
+            return INACTIVE;
+        }
         if (!SustainedAttack.advance(sim, unit.sustain)) {
             this.ended(sim, unit);
             return INACTIVE;
@@ -398,11 +403,11 @@ export class UnitSpinAttack {
         }
     }
 
-    // Stops a running spin early (death, a returning hero); a pulsing spin keeps the cooldown set when it started.
+    // Stops a running spin early (a fall, death, a returning hero); a pulsing spin's cooldown counts from here.
     static cancel(sim, unit) {
         if (unit?.spinAttack) unit.spinAttack = null;
         else if (unit?.sustain?.active && UnitDefinition.get(unit.type).spinAttack)
-            SustainedAttack.interrupt(unit.sustain);
+            SustainedAttack.cut(sim, unit.sustain, UnitDefinition.get(unit.type).sustain);
         else return false;
         this.ended(sim, unit);
         return true;
