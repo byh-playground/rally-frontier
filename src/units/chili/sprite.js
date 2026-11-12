@@ -557,7 +557,8 @@ export class ChiliSpriteRenderer {
 // The F1 flame ("불덩이 줄", docs/handoff/chili-art/v5 index.html flame): a row of round fireballs that grow along
 // the flame (red, orange, yellow core) ending in two puffs of smoke, flowing out of the muzzle while it breathes.
 // Presentation only, on the render clock.
-const FLAME_BALLS = 11;
+// The fireballs keep their spacing as the flame's length changes (11 balls over 175 = about one per 16 units).
+const FLAME_SPACING = 16;
 const FLAME_SMOKE = 2;
 // One fireball moves to the next one's place in this long (the flow), so the flame runs out at about 300 a second.
 const FLAME_FLOW_MS = 50;
@@ -576,7 +577,8 @@ const FIRE = ['#e2361a', '#ff901f', '#ffe36b'];
 // fireballs' wobble) and cooling (between breaths: a thin wisp of smoke rises from the shut mouth instead).
 function drawFlame(ctx, f) {
     if (f.cooling) drawCoolingSmoke(ctx, f);
-    const span = (f.length - 18) / (FLAME_BALLS - 1),
+    const balls = Math.round((f.length - 18) / FLAME_SPACING) + 1,
+        span = (f.length - 18) / (balls - 1),
         flow = f.clockMs / FLAME_FLOW_MS,
         shift = flow - Math.floor(flow),
         cycle = Math.floor(flow),
@@ -587,7 +589,7 @@ function drawFlame(ctx, f) {
         gone = f.stopMs === null ? 0 : f.stopMs / FLAME_FADE_MS;
     if (gone >= 1) return;
     // Far fireballs first, so the nearer (smaller) ones lie over them as in the approved row.
-    for (let k = FLAME_BALLS - 2; k >= 0; k--) {
+    for (let k = balls - 2; k >= 0; k--) {
         const slot = k + shift,
             d = 12 + slot * span,
             along = d / f.length;
@@ -603,10 +605,10 @@ function drawFlame(ctx, f) {
             rx = rad * f.pixelsPerUnit,
             ry = rx * 0.66,
             // The first ball grows out of the muzzle, the last fades at the tip.
-            alpha = (k === 0 ? shift : 1) * (k === FLAME_BALLS - 2 ? 1 - shift : 1),
-            smoke = clamp01(slot - (FLAME_BALLS - FLAME_SMOKE - 1.5));
+            alpha = (k === 0 ? shift : 1) * (k === balls - 2 ? 1 - shift : 1),
+            smoke = clamp01(slot - (balls - FLAME_SMOKE - 1.5));
         if (smoke > 0) {
-            ctx.globalAlpha = alpha * smoke * lerp(0.4, 0.28, clamp01(slot - (FLAME_BALLS - 2)));
+            ctx.globalAlpha = alpha * smoke * lerp(0.4, 0.28, clamp01(slot - (balls - 2)));
             ctx.fillStyle = SMOKE;
             ctx.beginPath();
             ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
