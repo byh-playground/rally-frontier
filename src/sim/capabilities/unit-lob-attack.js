@@ -2,6 +2,7 @@
 // - 옥수수 병사의 알은 대포 투입탄과 별도의 권위 상태다. 기존 2D 접촉 기하와 지형·몸체의 높이를
 //   함께 사용하며, 최초 지면 접촉 시각부터 1초 뒤 폭발한다. 지상 알끼리 충돌하고 공중 알끼리의
 //   충돌은 처리하지 않는다. 알의 위치·속도와 착지·폭발 시각은 저장·복원·리플레이에 포함한다.
+import { UnitMotion } from '../navigation.js';
 import { FP } from '../../core/config.js';
 import { RallyGamekit } from '../../core/gamekit.js';
 import { UnitLobPhysics } from './unit-lob-physics.js';
@@ -54,9 +55,7 @@ export class UnitLobAttack {
                 positions.set(u.id, {
                     x: u.x,
                     y: u.y,
-                    z:
-                        sim.world.terrain.surfaces.heightAt(u.x, u.y) +
-                        (u.impactMotion?.heightFP || 0) / FP,
+                    z: UnitMotion.bottom(sim, u),
                 });
         this.previous.set(sim, positions);
     }
@@ -363,9 +362,7 @@ export class UnitLobAttack {
             const end = {
                 x: unit.x,
                 y: unit.y,
-                z:
-                    sim.world.terrain.surfaces.heightAt(unit.x, unit.y) +
-                    (unit.impactMotion?.heightFP || 0) / FP,
+                z: UnitMotion.bottom(sim, unit),
             };
             ends.set(unit.id, end);
             velocities.set(unit.id, {

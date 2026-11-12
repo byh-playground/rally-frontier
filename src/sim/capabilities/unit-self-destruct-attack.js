@@ -3,7 +3,7 @@
 //   이미 가까운 적에게는 기존 준비 동작으로 자폭한다.
 // - 자폭은 터지는 몸(자기 질량, KnockbackRules.impactSpeed)의 폭발(gain.burst) 넉백이다. 거리 감쇠는 정의의
 //   `knockbackFalloff`가 정한다. 팝콘은 false라 반경 안의 땅에 있는 적이 모두 중심에서 바깥쪽으로 같은 세기로 날아간다.
-import { FP } from '../../core/config.js';
+import { UnitMotion } from '../navigation.js';
 import { KnockbackRules } from '../../definitions/knockback-rules.js';
 import { LaunchImpact } from '../launch-impact.js';
 import { Knockback } from '../knockback.js';
@@ -58,9 +58,7 @@ export class UnitSelfDestructAttack {
             sourceId: unit.id,
             sourceType: unit.type,
             mass: sim.mass(unit),
-            heightFP:
-                Math.round(sim.world.terrain.surfaces.heightAt(unit.x, unit.y) * FP) +
-                (unit.impactMotion?.heightFP || 0),
+            heightFP: UnitMotion.bottomFP(sim, unit),
             spec,
         });
     }

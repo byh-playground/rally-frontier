@@ -1,5 +1,6 @@
 import { CannonRider } from './capabilities/cannon-rider.js';
 import { HeroDeployment } from './hero-deployment.js';
+import { UnitMotion } from './navigation.js';
 import { FP } from '../core/config.js';
 import { LaunchRules } from './launch-rules.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
@@ -65,9 +66,9 @@ class LaunchImpact {
         const radius = isBuilding
             ? BuildingDefinition.get(entity.type)?.size || 30
             : sim.unitRadius(entity.type);
-        const bottom =
-            sim.world.terrain.surfaces.heightAt(entity.x, entity.y) +
-            (isBuilding ? 0 : (entity.impactMotion?.heightFP || 0) / FP);
+        const bottom = isBuilding
+            ? sim.world.terrain.surfaces.heightAt(entity.x, entity.y)
+            : UnitMotion.bottom(sim, entity);
         const top = bottom + 2 * radius,
             z = impactHeightFP / FP,
             verticalGap = Math.max(bottom - z, z - top, 0);
@@ -641,8 +642,7 @@ class LaunchImpact {
                 exit = Math.min(1, (-b + root) / a);
                 if (entry > exit) return;
             } else if (c > 0) return;
-            const ground = sim.world.terrain.surfaces.heightAt(entity.x, entity.y);
-            const bodyBottom = ground + (entity.impactMotion?.heightFP || 0) / FP,
+            const bodyBottom = UnitMotion.bottom(sim, entity),
                 bodyTop = bodyBottom + height;
             const lower = bodyBottom - LaunchImpactRules.projectileRadius,
                 upper = bodyTop + LaunchImpactRules.projectileRadius;

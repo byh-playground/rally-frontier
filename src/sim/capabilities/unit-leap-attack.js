@@ -2,6 +2,7 @@
 // - 팥은 적 병사가 평타 거리 밖이면서 점프 사거리 안에 있을 때 높이 뛰어올라 적 쪽으로 내려찍는다.
 //   표현은 물리 높이를 따르고, 착지에 주변 적 병사에게 피해와 수평·수직 충격을 준다. 착지부터 재사용 대기
 //   시간을 적용하며 비행·대기 상태는 저장·복원·해시에 포함한다.
+import { UnitMotion } from '../navigation.js';
 import { FP } from '../../core/config.js';
 import { LaunchImpactRules } from '../../definitions/launch-impact-rules.js';
 import { KnockbackRules } from '../../definitions/knockback-rules.js';
@@ -17,12 +18,6 @@ export class UnitLeapAttack {
     // VERTICAL and compares bottoms (terrain height plus flight height) against diameters.
     static airborne(unit) {
         return unit.leapAttack?.phase === 'airborne';
-    }
-    static bottom(sim, unit) {
-        return (
-            sim.world.terrain.surfaces.heightAt(unit.x, unit.y) +
-            (unit.impactMotion?.heightFP || 0) / FP
-        );
     }
     static start(sim, unit, target, spec, attackDistance) {
         const state = unit.leapAttack;
@@ -81,9 +76,7 @@ export class UnitLeapAttack {
     static update(sim, unit) {
         const state = unit.leapAttack;
         if (!state || state.phase !== 'airborne') return false;
-        const motion = unit.impactMotion;
-        if (sim.tick === state.startTick || (motion && (motion.heightFP > 0 || motion.vzFP > 0)))
-            return true;
+        if (sim.tick === state.startTick || !UnitMotion.isGrounded(unit)) return true;
         state.phase = 'landPending';
         return true;
     }

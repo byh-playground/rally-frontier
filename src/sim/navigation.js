@@ -296,6 +296,22 @@ class UnitMotion {
         const motion = unit.impactMotion;
         return !motion || (motion.heightFP <= 0 && motion.vzFP <= 0);
     }
+    // The single source of a body's height: its bottom above the ground under it (FP). Only the impact
+    // motion (knockback, launch, leap) lifts a body today; every body-height reader goes through here.
+    static heightFP(unit) {
+        return unit.impactMotion?.heightFP || 0;
+    }
+    // The body's bottom in world height: the ground under it plus its lift.
+    static bottom(sim, unit) {
+        return sim.world.terrain.surfaces.heightAt(unit.x, unit.y) + this.heightFP(unit) / FP;
+    }
+    // The same in FP: the ground rounded first, the lift added whole.
+    static bottomFP(sim, unit) {
+        return (
+            Math.round(sim.world.terrain.surfaces.heightAt(unit.x, unit.y) * FP) +
+            this.heightFP(unit)
+        );
+    }
     // Hero rolls and boomerang throws keep their committed path: no impulse or contact bookkeeping touches them.
     static locked(unit) {
         return unit.heroRoll?.phase === 'roll' || FruitHeroAttack.blocksMovement(unit);
@@ -485,7 +501,7 @@ class UnitMotion {
         bodies.mass[i] = sim.mass(u);
         bodies.key[i] = EntityKey.number(u.id);
         bodies.group[i] = u.side === 0 || u.side === 1 ? u.side : 2;
-        bodies.z[i] = vertical ? UnitLeapAttack.bottom(sim, u) : 0;
+        bodies.z[i] = vertical ? UnitMotion.bottom(sim, u) : 0;
         bodies.softCap[i] = Math.max(
             1,
             Math.min(
