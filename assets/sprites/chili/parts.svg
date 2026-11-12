@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="613" viewBox="0 0 760 613">
+  <title>Chili final v5: low horizontal body on short feet, side mouth, fists spread below</title>
+  <!--
+    고추 최종 파츠 시트 v5. 가로로 누운 고추가 몸을 낮춰 짧고 뭉툭한 발(기존 병종 방식) 위에 얹히고, 살짝 쥔 주먹 둘을 몸 아래 앞뒤로 벌린다. 오른쪽을 보는 그림이 원본.
+    단위: 쌀 그림 단위(쌀 서 있는 키 343.5). 쌀과 같은 배율이면 쌀 29px 기준 몸 길이 약 35px, 키 약 26px.
+
+    셀 [x, y, w, h] / 회전 중심 [px, py] (셀 왼쪽 위 기준):
+      body     [12,12,525,225] / [298,273]
+      cap      [12,249,260,260] / [170,130]
+      muzzle   [284,249,150,92] / [18,46]
+      foot     [446,249,60,64] / [30,32]      ← 짧은 발(기존 병종 방식). 회전 중심 = 발 가운데.
+      hand     [518,249,56,62] / [25,6]       ← 살짝 쥔 주먹. 회전 중심 = 손목(위 끝).
+      neutral  [574,249,140,80] / [70,34]
+      attack   [12,521,140,80] / [70,34]
+      hurt     [164,521,140,80] / [70,34]
+      fire     [316,521,140,80] / [70,34]
+
+    좌표계: 원점 = 땅(두 발 사이 가운데), +x = 앞(얼굴·불 쪽), +y = 아래. 아래 값은 모두 이 땅 좌표 그대로(몸 낮춤 44 반영 끝).
+    놓을 곳(회전 중심을 이 점에 맞춘다), 변환 순서 translate(놓을 곳) rotate(각도) [scale(-1 1)]:
+      body    (0, 44)
+      cap     (-186, -116)   회전은 시트에 구워 둠
+      face    (12, -107)     표정 셀 하나(neutral / attack / hurt / fire)
+      muzzle  (22, -83)     입. 불 뿜기 때만. 회전 = 조준 각도(아래 참고)
+      발 뒤   (-66, -14)   좌우 반전(scale(-1 1))
+      발 앞   (70, -14)    반전 없음
+      주먹 뒤 (-136, -48)  회전 +82도, 반전 뒤 회전 → 뒤(-x)로 거의 옆으로 뻗음
+      주먹 앞 (126, -56)  회전 -76도, 반전 없음 → 앞(+x)으로 뻗음
+      그림자  타원 중심 (0, 0), 지름 약 380 × 84(기존 병종과 같은 방식)
+    몸 높이: 몸 아랫선 y = 뒤끝 x -180 → -16, 발 뒤 x -66 → -27, 가운데 → -34, 발 앞 x 70 → -41, 주먹 앞 x 126 → -46.
+      발 윗부분(y -39)이 뒤 발은 몸 아래로 약 12 들어가 덮이고, 앞 발은 몸 아랫선에 맞닿는다(외곽선끼리 겹침). 몸 뒤끝은 땅에서 약 16 떠 거의 끌린다.
+      주먹 아래 끝은 땅보다 약 18 위.
+
+    그리는 순서(뒤 → 앞): 그림자 → 발 뒤·발 앞(땅에 고정, 몸 그룹 밖) → [몸 그룹: body → cap → face → muzzle(불 뿜기만) → 주먹 뒤·주먹 앞]
+      몸 그룹 = translate(0, dy) rotate(tilt, 0, -86). 위 놓을 곳은 이미 땅 좌표이므로 그룹은 dy·tilt만 준다.
+
+    포즈별 값 (발 각도 +는 시계 방향, 주먹 각도 +는 바깥으로 더 벌림):
+      stand: dy 0, tilt 0. 발 그대로. 주먹 그대로. 표정 neutral
+      walk : 반 주기마다 발을 번갈아 든다(기존 병종 방식).
+             A: 발 뒤 (-70, -14) 회전 6 / 발 앞 (76, -28) 회전 -14(들림), 몸 dy -6, 주먹 뒤 +16 / 앞 -16
+             B: 발 뒤 (-60, -28) 회전 -14(들림) / 발 앞 (66, -14) 회전 6, 몸 dy -6, 주먹 뒤 -16 / 앞 +16
+             발이 땅에 둘 다 닿는 사이 프레임은 stand와 같고 dy 0 → 몸이 6만큼 살짝 출렁인다.
+      fire : dy 0, tilt 0. 발 뒤 (-74, -14) 회전 -8 / 발 앞 (78, -14) 회전 8(버팀). 주먹 둘 다 +14·y -6. muzzle 표시, 표정 fire
+      hurt : dy -10, tilt 7. 발 뒤 (-66, -20) 회전 16 / 발 앞 (70, -32) 회전 -24(들림). 주먹 둘 다 +50·바깥으로 x 12·y -8, 표정 hurt
+      attack 표정은 예비(포즈 없음).
+
+    조준: 몸은 기울이지 않는다(tilt 0, 발은 땅에 그대로). 좌우는 전체 좌우 반전, 위아래는 muzzle만 돌린다.
+      화면 조준각 a = atan2(sin(phi)×0.62, cos(phi)), facing = cos a < 0 ? -1 : 1, 로컬각 = atan2(sin a, |cos a|)
+      muzzle 회전 = clamp(로컬각, -35, 35)도. 불줄기(F1) 시작점 = 입 (22, -83) 에서 muzzle 방향으로 118, 불줄기 자체는 실제 조준 방향으로 나간다.
+      (몸을 낮췄기 때문에 몸을 ±35° 기울이면 한쪽 끝이 땅에 70~100 묻히거나 발에서 떠오른다. 그래서 몸 기울기는 쓰지 않는다.)
+
+    왼쪽을 볼 때는 전체를 좌우 반전한다. 색: 외곽선 #3b2a1e, 몸 #ff7457→#e2261f→#9c1016, 손발 #ff8a6a→#b41f1c, 꽃받침 #9fd25e→#5a9a2f→#2f6420.
+  -->
+  <defs>
+    <g id="chili-eyes" fill="#271a14">
+      <ellipse cx="-28" rx="11" ry="14.5"/><ellipse cx="28" rx="11" ry="14.5"/>
+      <g fill="#fff7e7"><circle cx="-25" cy="-5.5" r="4"/><circle cx="31" cy="-5.5" r="4"/></g>
+    </g>
+    <g id="chili-cheeks" fill="#ffb9a6" opacity=".9">
+      <ellipse cx="-47" cy="15" rx="12" ry="7"/><ellipse cx="47" cy="15" rx="12" ry="7"/>
+    </g>
+    <path id="chili-brows" d="M-44-24-17-13M44-24 17-13" fill="none" stroke="#271a14" stroke-width="6.5" stroke-linecap="round"/>
+    <linearGradient id="chili-skin" x1="0" y1="0" x2=".25" y2="1">
+      <stop stop-color="#ff7457"/><stop offset=".4" stop-color="#e2261f"/><stop offset="1" stop-color="#9c1016"/>
+    </linearGradient>
+    <linearGradient id="chili-leaf" x1="0" y1="0" x2=".6" y2="1"><stop stop-color="#9fd25e"/><stop offset=".55" stop-color="#5a9a2f"/><stop offset="1" stop-color="#2f6420"/></linearGradient>
+    <linearGradient id="chili-limb" x1="0" y1="0" x2=".7" y2="1"><stop stop-color="#ff8a6a"/><stop offset="1" stop-color="#b41f1c"/></linearGradient>
+    <path id="chili-body-outline" d="M-180.9 -60.1L-173.5 -60.6L-166.2 -61.1L-158.8 -61.7L-151.4 -62.4L-144 -63L-136.6 -63.7L-129.2 -64.5L-121.7 -65.2L-114.3 -66L-106.8 -66.7L-99.2 -67.5L-91.7 -68.3L-84.1 -69.1L-76.5 -69.9L-68.8 -70.7L-61.1 -71.5L-53.4 -72.3L-45.7 -73.1L-37.9 -74L-30 -74.8L-22.1 -75.6L-14.2 -76.4L-6.2 -77.2L1.8 -78L9.8 -78.8L18 -79.6L26.1 -80.5L34.3 -81.3L42.6 -82.1L50.9 -82.9L59.3 -83.7L67.8 -84.5L76.3 -85.3L84.8 -86.1L93.5 -86.9L102.1 -87.7L110.9 -88.6L119.7 -89.4L128.6 -90.3L137.6 -91.2L146.7 -92.1L155.8 -93L165 -94L174.4 -95.1L183.8 -96.3L193.4 -97.7L203.2 -99.4L213.4 -102.1L214.6 -105.9L207.8 -114.1L200.6 -121L193.2 -127.6L185.7 -133.8L178.1 -139.8L170.4 -145.6L162.7 -151.2L154.8 -156.6L146.9 -161.9L139 -167L130.9 -172L122.9 -176.8L114.7 -181.4L106.5 -186L98.3 -190.4L90 -194.6L81.7 -198.8L73.3 -202.8L64.9 -206.6L56.4 -210.4L47.9 -214L39.4 -217.4L30.8 -220.8L22.2 -224L13.6 -227.1L4.9 -230L-3.8 -232.8L-12.5 -235.5L-21.3 -238.1L-30.1 -240.5L-38.9 -242.8L-47.8 -244.9L-56.6 -247L-65.5 -248.8L-74.4 -250.6L-83.3 -252.2L-92.3 -253.7L-101.2 -255L-110.2 -256.2L-119.1 -257.2L-128.1 -258.1L-137.1 -258.9L-146.1 -259.5L-155.1 -259.9L-164.1 -260.2L-173.1 -260.3L-182.1 -260.2L-191.1 -259.9L-210.5 -257L-228.9 -250.3L-245.7 -240.2L-260.2 -227L-271.9 -211.2L-280.2 -193.5L-284.9 -174.5L-285.9 -154.9L-283 -135.5L-276.3 -117.1L-266.2 -100.3L-253 -85.8L-237.2 -74.1L-219.5 -65.8L-200.5 -61.1Z"/>
+    <clipPath id="chili-body-clip"><use href="#chili-body-outline"/></clipPath>
+  </defs>
+  <g id="chili-body" transform="translate(310 285)">
+      <use href="#chili-body-outline" fill="url(#chili-skin)"/>
+      <g clip-path="url(#chili-body-clip)">
+        <path d="M-183.2 -105.1L-164.7 -106.1L-146.1 -107.2L-127.4 -108.1L-108.6 -109L-89.8 -109.7L-70.8 -110.2L-51.7 -110.6L-32.5 -110.9L-13.2 -111L6.4 -110.9L26.1 -110.6L46 -110.1L66 -109.5L86.3 -108.7L106.8 -107.8L127.5 -106.7L148.5 -105.5L169.8 -104.2L191.4 -103.1L213.7 -103" fill="none" stroke="#7a0c10" stroke-width="98" opacity=".35" stroke-linecap="round"/>
+        <path d="M-169.6 -140.8L-153 -141.4L-136.4 -141.8L-119.8 -142L-103.1 -142L-86.4 -141.8L-69.6 -141.4L-52.8 -140.7L-35.9 -139.9L-18.9 -138.8L-1.9 -137.5L15.1 -135.9L32.3 -134.1L49.5 -132.1L66.7 -129.9L84.1 -127.5L101.5 -124.8L119 -121.9L136.6 -118.8L154.2 -115.5L172 -112" fill="none" stroke="#8e1418" stroke-width="4" opacity=".4" stroke-linecap="round"/>
+      </g>
+      <use href="#chili-body-outline" fill="none" stroke="#3b2a1e" stroke-width="8" stroke-linejoin="round"/>
+      <path d="M-139.1 -219.9L-132.9 -219.6L-126.6 -219.3L-120.4 -218.9L-114.1 -218.4L-107.9 -217.9L-101.6 -217.3L-95.4 -216.6L-89.1 -215.9L-82.9 -215.2L-76.7 -214.3L-70.5 -213.5L-64.2 -212.5L-58 -211.5L-51.8 -210.5L-45.6 -209.4L-39.4 -208.2L-33.2 -207L-27 -205.8L-20.8 -204.4L-14.7 -203.1" fill="none" stroke="#fff3ea" stroke-width="11" stroke-linecap="round" opacity=".82"/>
+      <path d="M17.6 -191.1L20.1 -190.5L22.5 -189.8L25 -189.1L27.4 -188.5L29.8 -187.8L32.3 -187.1L34.7 -186.4L37.1 -185.7L39.6 -185L42 -184.2L44.4 -183.5L46.9 -182.7L49.3 -182L51.7 -181.2L54.2 -180.4L56.6 -179.7L59 -178.9L61.4 -178.1L63.8 -177.3L66.3 -176.5" fill="none" stroke="#fff3ea" stroke-width="7" stroke-linecap="round" opacity=".7"/>
+  </g>
+  <g id="chili-cap" transform="translate(182 379)">
+      <g transform="rotate(-92.9)"><path d="M0-50C2-92 40-104 86-136" fill="none" stroke="#3b2a1e" stroke-width="22" stroke-linecap="round"/>
+      <path d="M0-50C2-92 40-104 86-136" fill="none" stroke="#5f9a33" stroke-width="13" stroke-linecap="round"/>
+      <g transform="scale(.74 .6)"><g fill="url(#chili-leaf)" stroke="#3b2a1e" stroke-width="7.5" stroke-linejoin="round"><path d="M-106 8C-108-40 -49-108 0-110S108-40 106 8L96 44 60.76 18 37.24 50 13.72 20-11.76 52-37.24 20-60.76 46-78.4 16-98 40Z"/></g>
+      <path d="M-49-53.900000000000006Q0-83.3 39.2-58.8" fill="none" stroke="#d6f0a0" stroke-width="5" stroke-linecap="round" opacity=".8"/>
+      <path d="M-39.2 16 -29.4-12M0 22V-14M39.2 16 29.4-12" stroke="#2f5a1c" stroke-width="3.5" stroke-linecap="round" opacity=".55"/></g></g>
+  </g>
+  <g id="chili-muzzle" transform="translate(302 295)">
+      <path d="M-4 0C6-30 52-40 126-8 98 0 104 4 126 10 52 40 6 30-4 0Z" fill="#e8401c" stroke="#8a1c0c" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M2 0C12-18 46-24 96-4 80 2 82 4 94 8 46 22 12 18 2 0Z" fill="#ff9a1f"/>
+      <path d="M6 0C14-9 32-11 58 0 32 11 14 9 6 0Z" fill="#ffe36b"/>
+  </g>
+  <g id="chili-foot" transform="translate(476 281)">
+      <path d="M-20-25Q0-30 20-25C25-9 25 13 13 23 6 30-7 30-14 22-25 10-26-9-20-25Z" fill="url(#chili-limb)" stroke="#3b2a1e" stroke-width="6.5" stroke-linejoin="round"/>
+      <path d="M-11-12Q-14-3-11 6" fill="none" stroke="#ffe0d0" stroke-width="4.5" stroke-linecap="round" opacity=".7"/>
+  </g>
+  <g id="chili-hand" transform="translate(543 255)">
+      <path d="M-14 6C-24 10-26 30-18 40-8 50 12 49 19 38 25 28 22 12 14 6 6 1-6 2-14 6Z" fill="url(#chili-limb)" stroke="#3b2a1e" stroke-width="6.5" stroke-linejoin="round"/>
+      <path d="M12 16C22 12 28 22 21 29" fill="url(#chili-limb)" stroke="#3b2a1e" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M-9 14Q-14 22-11 31" fill="none" stroke="#ffe0d0" stroke-width="4.5" stroke-linecap="round" opacity=".75"/>
+  </g>
+  <g id="chili-neutral" transform="translate(644 283)">
+      <use href="#chili-cheeks"/><use href="#chili-eyes"/><path d="M-9 14Q0 24 9 14" fill="none" stroke="#271a14" stroke-width="5.5" stroke-linecap="round"/>
+  </g>
+  <g id="chili-attack" transform="translate(82 555)">
+      <use href="#chili-cheeks"/><use href="#chili-eyes" y="3"/><use href="#chili-brows"/><ellipse cx="4" cy="20" rx="7" ry="8" fill="#7a1a14" stroke="#271a14" stroke-width="5"/>
+  </g>
+  <g id="chili-hurt" transform="translate(234 555)">
+      <use href="#chili-cheeks"/>
+      <path d="m-37-9 16 9-16 9M37-9 21 0l16 9" fill="none" stroke="#271a14" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M-10 16Q0 20 10 16C9 29-9 29-10 16Z" fill="#7a1a14" stroke="#271a14" stroke-width="4.5" stroke-linejoin="round"/>
+  </g>
+  <g id="chili-fire" transform="translate(386 555)">
+      <use href="#chili-cheeks"/><use href="#chili-eyes" y="-4"/><use href="#chili-brows" y="-6"/><path d="M-8 6H26Q30 6 29 10C27 30 16 38 6 38S-10 30-11 14Q-11 6-8 6Z" fill="#5c0d0d" stroke="#271a14" stroke-width="5" stroke-linejoin="round"/>
+      <ellipse cx="10" cy="24" rx="9" ry="8" fill="#ffc94a"/><path d="M-4 8 0 16 4 8Z" fill="#fff7e7"/>
+  </g>
+</svg>

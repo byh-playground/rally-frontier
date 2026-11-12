@@ -31,6 +31,7 @@ import { LaunchImpact } from './launch-impact.js';
 import { LaunchInterception } from './launch-interception.js';
 import { UnitThornAttack } from './capabilities/unit-thorn-attack.js';
 import { UnitBurstAttack } from './capabilities/unit-burst-attack.js';
+import { UnitBreathAttack } from './capabilities/unit-breath-attack.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.js';
 import { CloneUtil, HashUtil, MapGeneration } from './map-generation.js';
@@ -2344,6 +2345,7 @@ class StrategySim {
         }
         if (!UnitMotion.isGrounded(u)) {
             if (d.burstAttack) UnitBurstAttack.cancel(this, u, d);
+            if (d.breathAttack) UnitBreathAttack.stop(u);
             if (!activeSite) u.constructionWork = null;
             else if (u.constructionWork.cycleStartedAtTick !== null) {
                 const work = u.constructionWork;
@@ -2436,8 +2438,15 @@ class StrategySim {
             u.combat.cancelWindup();
             if (d.contactMelee) ContactMelee.cancelCharge(u);
             u.target = null;
-            if (this.updateConstructionWork(u, d, moveSpeed)) return null;
+            // A running breath (a sustained attack) burns out its time where it stands, aim held.
+            if (d.breathAttack && UnitBreathAttack.burning(this, u))
+                return UnitBreathAttack.burn(this, u, d);
+            if (this.updateConstructionWork(u, d, moveSpeed)) {
+                if (d.breathAttack) UnitBreathAttack.stop(u);
+                return null;
+            }
             const f = this.unitRallyPoint(u);
+            if (d.breathAttack) UnitBreathAttack.idle(this, u, d.breathAttack, f.x, f.y);
             this.moveToward(u, f.x, f.y, moveSpeed);
             return null;
         }
@@ -2455,7 +2464,10 @@ class StrategySim {
             u.combat.cancelWindup();
             if (d.contactMelee) ContactMelee.cancelCharge(u);
             u.target = null;
+            if (d.breathAttack && UnitBreathAttack.burning(this, u))
+                return UnitBreathAttack.burn(this, u, d);
             const f = this.unitRallyPoint(u);
+            if (d.breathAttack) UnitBreathAttack.idle(this, u, d.breathAttack, f.x, f.y);
             this.moveToward(u, f.x, f.y, moveSpeed);
             return null;
         }
@@ -2477,6 +2489,10 @@ class StrategySim {
             // Wind-up is valid only while the target remains in legal attack range.
             if (u.combat.windupPending()) u.combat.cancelWindup();
             if (d.contactMelee) ContactMelee.cancelCharge(u);
+            // A running breath stays where it is and turns toward the target it lost.
+            if (d.breathAttack && UnitBreathAttack.burning(this, u))
+                return UnitBreathAttack.burn(this, u, d, t.x, t.y);
+            if (d.breathAttack) UnitBreathAttack.idle(this, u, d.breathAttack, t.x, t.y);
             if (
                 !found.isBuilding &&
                 d.leapAttack &&
@@ -2486,6 +2502,8 @@ class StrategySim {
             this.moveToGoal(u, this.engagementGoal(u, t, attackRange), moveSpeed);
             return null;
         }
+        // In reach: it stands and turns; its breath runs on its own sustain timing (SustainedAttack).
+        if (d.breathAttack) return UnitBreathAttack.update(this, u, t, found.isBuilding, d);
 
         if (d.selfDestruct) {
             UnitSelfDestructAttack.start(this, u, d.selfDestruct);

@@ -236,12 +236,12 @@ class InteractionGeometry {
     static requiresTerrainLine(source, kind, extra = 0) {
         const st = typeof source === 'string' ? source : source?.type,
             d = UnitDefinition.get(st) || {};
+        // A breath (UnitBreathAttack) is a flame along the ground: walls and cliffs stop it at any reach.
         return (
             kind === 'construction' ||
             (kind === 'attack' &&
-                !d.projectile &&
-                Number(extra) <= 100 &&
-                d.requiresContactTerrain === true)
+                (!!d.breathAttack ||
+                    (!d.projectile && Number(extra) <= 100 && d.requiresContactTerrain === true)))
         );
     }
     static reach(source, target, kind, extra = 0) {

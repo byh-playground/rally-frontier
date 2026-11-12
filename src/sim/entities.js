@@ -13,6 +13,8 @@ import { StickyCling } from './capabilities/sticky-cling.js';
 import { CannonRider } from './capabilities/cannon-rider.js';
 import { RollingBody } from './capabilities/rolling-body.js';
 import { UnitFlight } from './capabilities/unit-flight.js';
+import { UnitBreathAttack } from './capabilities/unit-breath-attack.js';
+import { SustainedAttack } from './capabilities/sustained-attack.js';
 import { MapGeneration } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
@@ -63,6 +65,11 @@ class Unit {
             data.leapAttack = { phase: 'ready', cooldownUntil: 0 };
         if (UnitDefinition.get(data.type)?.flight && !Object.hasOwn(data, 'flight'))
             data.flight = UnitFlight.initialState();
+        if (UnitDefinition.get(data.type)?.breathAttack && !Object.hasOwn(data, 'breath'))
+            data.breath = UnitBreathAttack.initialState();
+        // A sustained attack's timing (duration, damage ticks, cooldown) is its own state, shared by every such attack.
+        if (UnitDefinition.get(data.type)?.sustain && !Object.hasOwn(data, 'sustain'))
+            data.sustain = SustainedAttack.initialState();
         // A returning hero keeps its own A* route (navigation-paths.js RoutePath).
         if (LaunchRules.isHeroType(data.type) && !Object.hasOwn(data, 'route')) data.route = null;
         this.status = new StatusComponent(data.status || {});

@@ -12,6 +12,12 @@ class UnitRenderObject extends RenderField {
         'entity.heroRoll.distance': RenderField.LINEAR,
         'entity.flight.altitudeFP': RenderField.LINEAR,
         'entity.flight.phase': RenderField.STEP,
+        // The flame turns smoothly between ticks (normalized when drawn).
+        'entity.breath.aimX': RenderField.LINEAR,
+        'entity.breath.aimY': RenderField.LINEAR,
+        // A sustained attack runs (flame on) and then cools down until readyTick (SustainedAttack).
+        'entity.sustain.active': RenderField.STEP,
+        'entity.sustain.readyTick': RenderField.STEP,
         'entity.fruitAttack': RenderField.STEP,
         ...Object.fromEntries(
             [
