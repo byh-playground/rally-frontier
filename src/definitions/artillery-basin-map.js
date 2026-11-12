@@ -34,9 +34,9 @@ export function artilleryBasinMapLayout() {
     });
     capturePoints.push({
         id: 'basin-center',
-        label: '분지 중앙 식량 거점',
+        label: '분지 중앙 기름 거점',
         laneKey: 'mid',
-        resourceType: 'basic',
+        resourceType: 'premium',
         stage: 0,
         ...center,
     });

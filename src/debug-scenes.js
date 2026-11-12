@@ -57,6 +57,12 @@ function integer(scene, name, text) {
     if (!/^\d+$/.test(text ?? '')) throw new Error(`${scene} needs an integer ${name}: ${text}`);
     return Number(text);
 }
+// A positive number such as 1.6 or 0.25 (a camera zoom below 1 shows more of the map).
+function positive(scene, name, text) {
+    if (!/^(\d+|\d*\.\d+)$/.test(text ?? '') || !(Number(text) > 0))
+        throw new Error(`${scene} needs a positive number ${name}: ${text}`);
+    return Number(text);
+}
 function unitType(scene, name, text) {
     if (!UnitDefinition.get(text))
         throw new Error(`${scene} needs a unit type for ${name}: ${text}`);
@@ -382,12 +388,21 @@ function placeLine(sim, side, type, count, center, dir, spacing) {
 }
 
 // Outposts being built (`unit` and `ai-match` scenes), read by `state().outposts`: for each capture point the tick its
-// outpost first stood finished (`doneTick`, null while it is still a construction site or was never started).
+// outpost first stood finished (`doneTick`, null while it is still a construction site or was never started), its
+// resource, the sides that have owned it (`heldBy`) and how many times a side took it from the other (`turnovers`).
 function createOutpostProbe(sim) {
-    const done = new Map();
+    const done = new Map(),
+        held = new Map(),
+        turnovers = new Map();
     return {
         observe() {
             for (const point of sim.capturePoints) {
+                if (point.owner !== null) {
+                    const sides = held.get(point.id) ?? [];
+                    if (sides.length && sides.at(-1) !== point.owner)
+                        turnovers.set(point.id, (turnovers.get(point.id) ?? 0) + 1);
+                    if (sides.at(-1) !== point.owner) held.set(point.id, [...sides, point.owner]);
+                }
                 if (done.has(point.id) || !point.outpostId) continue;
                 const outpost = sim.buildings.find((b) => b.id === point.outpostId);
                 if (outpost && outpost.alive !== false && !outpost.construction)
@@ -404,6 +419,9 @@ function createOutpostProbe(sim) {
                     side: outpost ? outpost.side : null,
                     workDone: outpost?.construction?.workDone ?? null,
                     doneTick: done.get(point.id) ?? null,
+                    resourceType: point.resourceType,
+                    heldBy: [...new Set(held.get(point.id) ?? [])].sort(),
+                    turnovers: turnovers.get(point.id) ?? 0,
                 };
             });
             return {
@@ -1444,7 +1462,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 outposts = createOutpostProbe(sim),
                 breath = breathProbe(sim, [...new Set(sim.units.map((u) => u.type))]);
             return matchScene(scene, params, sim, {
-                zoom: params.zoom === undefined ? 1.6 : integer(scene, 'zoom', params.zoom),
+                zoom: params.zoom === undefined ? 1.6 : positive(scene, 'zoom', params.zoom),
                 focus: followUnits(sim, at),
                 beforeStep: () => {
                     probe.observe();
@@ -1586,7 +1604,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 return shown;
             };
             return matchScene(scene, params, sim, {
-                zoom: params.zoom === undefined ? 3 : integer(scene, 'zoom', params.zoom),
+                zoom: params.zoom === undefined ? 3 : positive(scene, 'zoom', params.zoom),
                 focus: flag(scene, 'follow', params.follow) ? follow : () => target,
                 beforeStep: () => {
                     if (landTick === null && sim.events.some((e) => e.type === 'launchLand'))
@@ -1632,6 +1650,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 extra: () => ({
                     winner: sim.baseOutcome(),
                     wallet: sim.wallet.slice(),
+                    premiumWallet: sim.premiumWallet.slice(),
                     launches: sim.launchStats.launches.slice(),
                     knockback: probe.state(),
                     outside: probe.outside(),
