@@ -11,6 +11,7 @@ import { UnitDefinition } from '../definitions/units.js';
 import { TerrainSurfaceAtlas } from './terrain.js';
 import { WorldContext } from './world-context.js';
 import { RollingBody } from './capabilities/rolling-body.js';
+import { UnitFlight } from './capabilities/unit-flight.js';
 import { IndexList } from './index-list.js';
 import { Knockback } from './knockback.js';
 import { KnockbackRules } from '../definitions/knockback-rules.js';
@@ -248,6 +249,7 @@ class LaunchImpact {
             UnitResultStats.add(sim.unitResultStats, group.side, group.type, 'deployed');
             if (group.holdPointId) u.launchHoldPointId = group.holdPointId;
             if (group.dirX != null) RollingBody.aim(u, group.dirX, group.dirY);
+            UnitFlight.formation(u, group.x, group.y);
             const fallDamage = this.applyEmergencyDropDamage(group, u);
             // `start` applies a reference-mass impulse. Scale the input by the
             // new unit's actual mass. Inner positions stay near the impact while

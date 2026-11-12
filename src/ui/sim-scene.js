@@ -6,6 +6,7 @@ import {
     emitFramePresentationEvents,
 } from '../core/presentation-frame-event.js';
 import { RollingBody } from '../sim/capabilities/rolling-body.js';
+import { UnitFlight } from '../sim/capabilities/unit-flight.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { BattlefieldProjection } from '../sim/terrain.js';
 
@@ -47,6 +48,7 @@ export function placeBlock(sim, side, types, count, center, dir) {
             center.y + dir.y * along + dir.x * across,
         );
         RollingBody.aim(unit, dir.x, dir.y);
+        UnitFlight.formation(unit, center.x, center.y);
     }
     return rows * spacing;
 }

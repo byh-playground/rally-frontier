@@ -10,6 +10,8 @@ class UnitRenderObject extends RenderField {
         tick: RenderField.LINEAR,
         'entity.impactMotion.heightFP': RenderField.LINEAR,
         'entity.heroRoll.distance': RenderField.LINEAR,
+        'entity.flight.altitudeFP': RenderField.LINEAR,
+        'entity.flight.phase': RenderField.STEP,
         'entity.fruitAttack': RenderField.STEP,
         ...Object.fromEntries(
             [

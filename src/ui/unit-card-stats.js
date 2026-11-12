@@ -33,6 +33,11 @@ export function unitCardStats(type, rangeLevel, copy) {
             '비전투 이동속도',
             number.format(unit.speed * unit.outOfCombatMoveMultiplier),
         ]);
+    if (unit.flight)
+        movement.push(
+            ['비행 속도(한 번)', number.format(unit.flight.speed)],
+            ['비행 고도', number.format(unit.flight.altitude)],
+        );
     movement.push(['시야', number.format(unit.sight)]);
 
     const attack = [

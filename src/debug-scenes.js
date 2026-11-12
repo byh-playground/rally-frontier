@@ -15,6 +15,8 @@ import { BotController } from './ai/bot-controller.js';
 import { UnitDefinition } from './definitions/units.js';
 import { StableSerializationUtil } from './net/lobby-codec.js';
 import { RollingBody } from './sim/capabilities/rolling-body.js';
+import { UnitFlight } from './sim/capabilities/unit-flight.js';
+import { Knockback } from './sim/knockback.js';
 import { StrategySim } from './sim/strategy-sim.js';
 import { createShowcaseSurface } from './ui/showcase-host.js';
 import {
@@ -46,6 +48,8 @@ const STAGES = Object.freeze({
     post: 'postMs',
 });
 const round = (value) => Math.round(value * 100) / 100;
+// How quickly the launch scene's following camera catches up with the squad (ms, exponential).
+const FOLLOW_MS = 400;
 
 function integer(scene, name, text) {
     if (!/^\d+$/.test(text ?? '')) throw new Error(`${scene} needs an integer ${name}: ${text}`);
@@ -62,12 +66,13 @@ function flag(scene, name, text) {
     return text === '1';
 }
 
-// A match on one of the PvP maps (game-rules.js presets), with both sides' decks at the starter deck.
-function createMatchSim(scene, map, seed) {
-    return new StrategySim(
-        integer(scene, 'seed', seed),
-        GameRuleRuntime.resolveMatchRules({ presetId: map }),
-    );
+// A match on one of the PvP maps (game-rules.js presets), with both sides' decks at the starter deck, or both at
+// `deck` (comma-separated cards, LaunchRules.normalizeDeck checks it).
+function createMatchSim(scene, map, seed, deck = undefined) {
+    const rules = GameRuleRuntime.resolveMatchRules({ presetId: map });
+    if (deck === undefined) return new StrategySim(integer(scene, 'seed', seed), rules);
+    const cards = String(deck).split(',');
+    return new StrategySim(integer(scene, 'seed', seed), rules, [cards, cards]);
 }
 
 // Every capture point gets a completed outpost of the side whose main base is nearer.
@@ -454,6 +459,197 @@ function createFightProbe(sim) {
     };
 }
 
+// Flying units (`unit` and `ai-match` scenes, units whose Definition has `flight`), read by `state().flight`: how many
+// took off and landed, the first and last landing tick and the mean distance from a landing to the nearest live
+// enemy (unit or building) then, how many landed on a wall, cliff or building (`landedBlocked`) and how many had to
+// fly on to open ground first because the spot was blocked (`movedToOpen`), how many took off
+// again after landing (`reflights`, 0 by the rule), how many died in
+// the air, and every hit and push tried on a unit while it flew, by the source type: `air` the damage that reached it
+// (anti-air only), `blocked` the hits that did not, `pushes` the impulses tried (all refused). `exposure` is how often
+// a flyer was where a ground effect would have reached it: `area` (area damage) and `knockback` (area throws) count
+// flyers inside the circle when it went off, `inRange` unit-ticks inside an enemy's attack reach, `under` unit-ticks
+// overlapping a rolling enemy body, all by the enemy's type. `firstBuildingHit` is
+// the tick any unit first damaged a building (a squad's arrival at the enemy base, flying or walking alike).
+// `longestAir` is the longest time (s) any flyer has spent in the air so far, finished or not; `longAir` how many
+// flyers have been up longer than LONG_AIR_SECONDS and `stuckAir` how many have hung in place in the air for
+// STUCK_AIR_SECONDS (both 0 by the rule: a flyer lands on reaching its goal). `airNearest` is the mean distance from
+// each flyer in the air to the nearest other flyer of its side now, `airNearestMin` the smallest such mean over the
+// run while two or more flew (how tight the flock ever got).
+const LONG_AIR_SECONDS = 30,
+    STUCK_AIR_SECONDS = 2;
+function createFlightProbe(sim) {
+    const flying = new Set(),
+        upSince = new Map(),
+        still = new Map(),
+        stuck = new Set(),
+        long = new Set(),
+        landedIds = new Set(),
+        movedToOpen = new Set(),
+        air = {},
+        blocked = {},
+        pushes = { tried: 0 };
+    let takeoffs = 0,
+        reflights = 0,
+        airDeaths = 0,
+        firstBuildingHit = null,
+        longestTicks = 0,
+        airNearest = null,
+        airNearestMin = null;
+    const landings = [];
+    const damage = sim.applyDamage.bind(sim);
+    sim.applyDamage = (side, type, target, building, amount, ...rest) => {
+        const inAir = !building && UnitFlight.airborne(target),
+            hpBefore = target.hp;
+        const result = damage(side, type, target, building, amount, ...rest);
+        const dealt = Math.max(0, hpBefore - target.hp);
+        if (inAir) {
+            if (dealt > 0) air[type] = (air[type] ?? 0) + dealt;
+            else blocked[type] = (blocked[type] ?? 0) + 1;
+        }
+        if (building && dealt > 0 && firstBuildingHit === null && UnitDefinition.get(type))
+            firstBuildingHit = sim.tick;
+        return result;
+    };
+    const motion = sim.navigation.motion,
+        impulse = motion.applyImpulse.bind(motion);
+    motion.applyImpulse = (u, ...rest) => {
+        if (UnitFlight.airborne(u)) pushes.tried++;
+        return impulse(u, ...rest);
+    };
+    // Exposure: a flying enemy of `side` that the circle reaches (in the plane) when an area hit or throw goes off.
+    const exposure = { area: {}, knockback: {}, inRange: {}, under: {} };
+    const reached = (side, x, y, radius) => {
+        let count = 0;
+        for (const u of sim.units)
+            if (
+                u.alive &&
+                u.side !== side &&
+                UnitFlight.airborne(u) &&
+                Math.hypot(u.x - x, u.y - y) <= radius + sim.unitRadius(u.type)
+            )
+                count++;
+        return count;
+    };
+    const areaDamage = sim.applyAreaDamage.bind(sim);
+    sim.applyAreaDamage = (options) => {
+        const count = reached(options.sourceSide, options.x, options.y, options.radius);
+        if (count)
+            exposure.area[options.sourceType] = (exposure.area[options.sourceType] ?? 0) + count;
+        return areaDamage(options);
+    };
+    const area = Knockback.area;
+    Knockback.area = function (target, options) {
+        if (target === sim) {
+            const count = reached(options.side, options.x, options.y, options.radius),
+                source = sim.units.find((u) => u.id === options.sourceId)?.type ?? 'shell';
+            if (count) exposure.knockback[source] = (exposure.knockback[source] ?? 0) + count;
+        }
+        return area.call(this, target, options);
+    };
+    const nearestEnemy = (event) => {
+        let best = Infinity;
+        for (const u of sim.units)
+            if (u.alive && u.side !== event.side && (u.side === 0 || u.side === 1))
+                best = Math.min(best, Math.hypot(u.x - event.x, u.y - event.y));
+        for (const b of sim.buildings)
+            if (b.alive !== false && b.side !== event.side && (b.side === 0 || b.side === 1))
+                best = Math.min(best, Math.hypot(b.x - event.x, b.y - event.y));
+        return best;
+    };
+    return {
+        observe() {
+            for (const event of sim.events)
+                if (event.type === 'flightLand')
+                    landings.push({
+                        tick: sim.tick,
+                        enemy: nearestEnemy(event),
+                        // Landed on a wall, cliff or building (0 by the rule: it moves to open ground first).
+                        blocked: embeddedAt(sim, event.x, event.y, event.sourceId),
+                    });
+            for (const u of sim.units) {
+                if (!UnitDefinition.get(u.type)?.flight) continue;
+                const now = UnitFlight.airborne(u);
+                if (u.flight.phase === 'alight') movedToOpen.add(u.id);
+                // Unit-ticks a flyer spent inside a live enemy's attack reach, or under a rolling enemy body.
+                if (now && u.alive)
+                    for (const e of sim.units) {
+                        if (!e.alive || e.side === u.side || UnitFlight.airborne(e)) continue;
+                        const d = Math.hypot(e.x - u.x, e.y - u.y),
+                            radii = sim.unitRadius(e.type) + sim.unitRadius(u.type);
+                        if (d <= sim.basicAttackRange(e) + radii)
+                            exposure.inRange[e.type] = (exposure.inRange[e.type] ?? 0) + 1;
+                        if (d < radii && (e.rolling || e.heroRoll))
+                            exposure.under[e.type] = (exposure.under[e.type] ?? 0) + 1;
+                    }
+                if (now && !flying.has(u.id)) {
+                    takeoffs++;
+                    if (landedIds.has(u.id)) reflights++;
+                    flying.add(u.id);
+                    upSince.set(u.id, sim.tick);
+                    still.set(u.id, { fx: u.fx, fy: u.fy, tick: sim.tick });
+                } else if (!now && flying.has(u.id)) {
+                    flying.delete(u.id);
+                    landedIds.add(u.id);
+                    if (!u.alive) airDeaths++;
+                }
+                if (now) {
+                    const up = sim.tick - upSince.get(u.id),
+                        rest = still.get(u.id);
+                    longestTicks = Math.max(longestTicks, up);
+                    if (up > LONG_AIR_SECONDS * sim.tps) long.add(u.id);
+                    if (rest.fx !== u.fx || rest.fy !== u.fy) {
+                        rest.fx = u.fx;
+                        rest.fy = u.fy;
+                        rest.tick = sim.tick;
+                    } else if (sim.tick - rest.tick >= STUCK_AIR_SECONDS * sim.tps) stuck.add(u.id);
+                }
+            }
+            let sum = 0,
+                count = 0;
+            for (const u of sim.units) {
+                if (!u.alive || !UnitFlight.airborne(u)) continue;
+                let best = Infinity;
+                for (const o of sim.units)
+                    if (o !== u && o.alive && o.side === u.side && UnitFlight.airborne(o))
+                        best = Math.min(best, Math.hypot(o.x - u.x, o.y - u.y));
+                if (best < Infinity) {
+                    sum += best;
+                    count++;
+                }
+            }
+            airNearest = count ? round(sum / count) : null;
+            if (count >= 2) airNearestMin = Math.min(airNearestMin ?? Infinity, airNearest);
+        },
+        state() {
+            const ticks = landings.map((l) => l.tick);
+            return {
+                takeoffs,
+                inAir: flying.size,
+                landed: landings.length,
+                firstLand: ticks.length ? Math.min(...ticks) : null,
+                lastLand: ticks.length ? Math.max(...ticks) : null,
+                landEnemyDistance: landings.length
+                    ? round(landings.reduce((sum, l) => sum + l.enemy, 0) / landings.length)
+                    : null,
+                landedBlocked: landings.filter((l) => l.blocked).length,
+                movedToOpen: movedToOpen.size,
+                reflights,
+                airDeaths,
+                air,
+                blocked,
+                pushes: pushes.tried,
+                exposure,
+                firstBuildingHit,
+                longestAir: round(longestTicks / sim.tps),
+                longAir: long.size,
+                stuckAir: stuck.size,
+                airNearest,
+                airNearestMin,
+            };
+        },
+    };
+}
+
 // How widely one side's live units are scattered: their count, and the mean and largest distance from their centre.
 function spread(sim, side) {
     let count = 0,
@@ -475,6 +671,19 @@ function spread(sim, side) {
             max = Math.max(max, d);
         }
     return { count, mean: round(sum / count), max: round(max) };
+}
+
+// A unit's disc at (x, y) reaches more than half a unit into terrain or into a building's body (overlap.embedded).
+function embeddedAt(sim, x, y, unitId) {
+    const unit = sim.units.find((u) => u.id === unitId),
+        radius = sim.radiusFP(unit) / FP - 0.5;
+    if (!sim.world.terrain.field.polygonCircleClear(x, y, radius)) return true;
+    return sim.buildings.some(
+        (building) =>
+            building.alive !== false &&
+            Math.hypot(x - building.x, y - building.y) <
+                radius + (BuildingDefinition.get(building.type)?.size || 0),
+    );
 }
 
 // Pairs of live units whose collision discs overlap now, and the summed overlap depth (world units).
@@ -674,10 +883,10 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
     }
 
     // The mean position of the live units, held where they were last seen once none is left.
-    function followUnits(sim, from) {
+    function followUnits(sim, from, keep = () => true) {
         let focus = from;
         return () => {
-            const units = sim.units.filter((unit) => unit.alive);
+            const units = sim.units.filter((unit) => unit.alive && keep(unit));
             if (units.length)
                 focus = {
                     x: units.reduce((sum, unit) => sum + unit.x, 0) / units.length,
@@ -794,7 +1003,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
         },
         /**
          * `count`명의 `unit`을 (`x`,`y`)에 세운다(`line=N`이면 N 간격의 가로 한 줄). 평소처럼 적 본진으로 가고, `enemy`·`enemyCount`가 있으면 그 적
-         * 무리가 적 본진 쪽 300 앞에 선다. `outposts=1`이면 모든 점령 지점에 더 가까운 본진 쪽의 완성된 거점을 둔다
+         * 무리가 적 본진 쪽 300(`gap`) 앞에 서고, `support`·`supportCount`는 그 뒤 100에 두 번째 적 무리를 세운다.
+         * 나는 병종(민들레씨)은 상태의 `flight`에 이륙·착지·공중 피해·공중 밀림을 낸다. `outposts=1`이면 모든 점령 지점에 더 가까운 본진 쪽의 완성된 거점을 둔다
          * (검은콩 앞쪽 대포 탑승, 찹쌀 거점 포구 막기). 예:
          * `?debug=1&scene=unit&map=twin-gates&seed=1&unit=walnut&count=1&x=1400&y=2900&tick=150`
          */
@@ -832,6 +1042,19 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     },
                     { x: -dir.x, y: -dir.y },
                 );
+            // support=<type>&supportCount=N: a second enemy block 100 behind the first (anti-air escorts behind a front).
+            if (params.support !== undefined || params.supportCount !== undefined) {
+                const behind =
+                    (params.gap === undefined ? 300 : integer(scene, 'gap', params.gap)) + 100;
+                placeBlock(
+                    sim,
+                    1,
+                    [unitType(scene, 'support', params.support)],
+                    integer(scene, 'supportCount', params.supportCount),
+                    { x: at.x + dir.x * behind, y: at.y + dir.y * behind },
+                    { x: -dir.x, y: -dir.y },
+                );
+            }
             // shell=<type>: the host base fires one launch shell of that card (its payload's impact, splash and count)
             // at the enemy block, so the shell's landing knockback can be measured.
             if (params.shell !== undefined) {
@@ -874,18 +1097,21 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                         u.heroRollQueued = true;
                     }
             const probe = createKnockbackProbe(sim, flag(scene, 'trace', params.trace)),
-                fight = createFightProbe(sim);
+                fight = createFightProbe(sim),
+                flight = createFlightProbe(sim);
             return matchScene(scene, params, sim, {
                 zoom: 1.6,
                 focus: followUnits(sim, at),
                 beforeStep: () => {
                     probe.observe();
                     fight.observe();
+                    flight.observe();
                 },
                 extra: () => ({
                     knockback: probe.state(),
                     outside: probe.outside(),
                     fight: fight.state(),
+                    flight: flight.state(),
                     enemySpread: spread(sim, 1),
                 }),
             });
@@ -895,8 +1121,10 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * `across`(기본 400) 비킨 곳(가운데 점령 지점과 맵 가장자리를 피함)이고, 대포는 그 아군 본진 쪽
          * `distance`(기본 300)에 있다. `x`·`y`를 주면 그곳에 착지하고 대포는 그 아군 본진 쪽에 선다. 발사는 10틱이고
          * 그 한 발 값은 지갑에 채워 둔다. `enemy`·`enemyCount`가 있으면 그 적 무리가 착지점에 서 있다(난전 한가운데
-         * 착지). 카메라는 착지점에 `zoom`(기본 3)으로 고정하고, 상태의 `landing`은 첫 병사가 나온 틱과 살아 있는
-         * 그 병종 아군 수, 그 무리의 퍼짐(`nearest`·`pair`·`radius`·`ahead`)이다. 예: `?debug=1&scene=launch&map=standard&seed=1&unit=chestnut&zoom=2&tick=20`,
+         * 착지). `enemyX`·`enemyY`를 주면 그 적 무리는 그곳에 선다(나는 병종이 날아갈 거리). 카메라는 착지점에
+         * `zoom`(기본 3)으로 고정하고 `follow=1`이면 대포에서 시작해 쏜 병종의 아군 무리를 부드럽게 따라간다. 상태의 `landing`은 첫 병사가 나온 틱과
+         * 살아 있는 그 병종 아군 수, 그 무리의 퍼짐(`nearest`·`pair`·`radius`·`ahead`)이고, `flight`는 `unit`
+         * 장면과 같은 나는 병종 기록이다. 예: `?debug=1&scene=launch&map=standard&seed=1&unit=chestnut&zoom=2&tick=20`,
          * 절벽 옆: `?debug=1&scene=launch&map=twin-gates&seed=1&unit=chestnut&zoom=2&x=820&y=1300&tick=30`
          */
         launch(params) {
@@ -940,7 +1168,12 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     1,
                     [enemy],
                     integer(scene, 'enemyCount', params.enemyCount),
-                    target,
+                    params.enemyX === undefined && params.enemyY === undefined
+                        ? target
+                        : {
+                              x: integer(scene, 'enemyX', params.enemyX),
+                              y: integer(scene, 'enemyY', params.enemyY),
+                          },
                     { x: back.x, y: back.y },
                 );
             queueLaunch(sim, { tick: 10, seq: 1, side: 0, cannon, unitType: type, ...target });
@@ -980,34 +1213,64 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     ahead: round(ahead),
                 };
             };
+            const flight = createFlightProbe(sim);
+            // follow=1: the camera eases toward the squad's centre on the clock (time constant FOLLOW_MS), so frames
+            // drawn between ticks do not jump with the tick-rate centre.
+            // It starts on the cannon, and holds there until the shot's first soldier is out.
+            const squadCentre = followUnits(
+                sim,
+                { x: cannon.x, y: cannon.y },
+                (u) => u.side === 0 && u.type === type,
+            );
+            let shown = null,
+                shownAt = 0;
+            const follow = () => {
+                const goal = squadCentre(),
+                    now = performance.now();
+                if (!shown) shown = { x: goal.x, y: goal.y };
+                else {
+                    const k = 1 - Math.exp(-(now - shownAt) / FOLLOW_MS);
+                    shown.x += (goal.x - shown.x) * k;
+                    shown.y += (goal.y - shown.y) * k;
+                }
+                shownAt = now;
+                return shown;
+            };
             return matchScene(scene, params, sim, {
                 zoom: params.zoom === undefined ? 3 : integer(scene, 'zoom', params.zoom),
-                focus: () => target,
+                focus: flag(scene, 'follow', params.follow) ? follow : () => target,
                 beforeStep: () => {
                     if (landTick === null && sim.events.some((e) => e.type === 'launchLand'))
                         landTick = sim.tick;
+                    flight.observe();
                 },
                 extra: () => {
                     const squad = sim.units.filter(
                         (u) => u.alive && u.side === 0 && u.type === type,
                     );
-                    return { landing: { tick: landTick, units: squad.length, ...spreadOf(squad) } };
+                    return {
+                        landing: { tick: landTick, units: squad.length, ...spreadOf(squad) },
+                        flight: flight.state(),
+                    };
                 },
             });
         },
         /**
-         * 양쪽을 경기 AI(BotController)가 둔다. 덱은 둘 다 기본 덱이고, 한쪽 본진이 무너지면 끝난다.
-         * 예: `?debug=1&scene=ai-match&map=standard&seed=7&tick=900`
+         * 양쪽을 경기 AI(BotController)가 둔다. 덱은 둘 다 기본 덱(`deck`이 있으면 둘 다 그 카드들)이고, 한쪽 본진이
+         * 무너지면 끝난다. 예: `?debug=1&scene=ai-match&map=standard&seed=7&tick=900`,
+         * 민들레씨 포함: `?debug=1&scene=ai-match&map=standard&seed=7&deck=watermelon,rice,pea,corn,popcorn,chestnut,sunflower-seed,dandelion&tick=6000`
          */
         'ai-match'(params) {
-            const sim = createMatchSim('ai-match', params.map, params.seed);
+            const sim = createMatchSim('ai-match', params.map, params.seed, params.deck);
             const bots = attachBots(sim),
-                probe = createKnockbackProbe(sim, flag('ai-match', 'trace', params.trace));
+                probe = createKnockbackProbe(sim, flag('ai-match', 'trace', params.trace)),
+                flight = createFlightProbe(sim);
             return matchScene('ai-match', params, sim, {
                 zoom: 1,
                 focus: () => battleFocus(sim),
                 beforeStep: () => {
                     probe.observe();
+                    flight.observe();
                     bots();
                 },
                 isComplete: () => sim.baseOutcome() !== null,
@@ -1017,6 +1280,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     launches: sim.launchStats.launches.slice(),
                     knockback: probe.state(),
                     outside: probe.outside(),
+                    flight: flight.state(),
                 }),
             });
         },

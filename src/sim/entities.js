@@ -12,6 +12,7 @@ import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { StickyCling } from './capabilities/sticky-cling.js';
 import { CannonRider } from './capabilities/cannon-rider.js';
 import { RollingBody } from './capabilities/rolling-body.js';
+import { UnitFlight } from './capabilities/unit-flight.js';
 import { MapGeneration } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
@@ -60,6 +61,8 @@ class Unit {
             data.selfDestruct = null;
         if (UnitDefinition.get(data.type)?.leapAttack && !Object.hasOwn(data, 'leapAttack'))
             data.leapAttack = { phase: 'ready', cooldownUntil: 0 };
+        if (UnitDefinition.get(data.type)?.flight && !Object.hasOwn(data, 'flight'))
+            data.flight = UnitFlight.initialState();
         // A returning hero keeps its own A* route (navigation-paths.js RoutePath).
         if (LaunchRules.isHeroType(data.type) && !Object.hasOwn(data, 'route')) data.route = null;
         this.status = new StatusComponent(data.status || {});

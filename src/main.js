@@ -2069,7 +2069,7 @@ class GLRenderer {
             : this.renderState.model(kind, entity.id, this.presentationNow());
         const motionState = model?.entity || entity;
         if (kind === 'unit') {
-            const heightFP = motionState.impactMotion?.heightFP;
+            const heightFP = UnitMotion.heightFP(motionState);
             if (Number.isFinite(heightFP)) height = Math.max(0, heightFP) / FP;
             if (motionState.heroRoll?.phase === 'hop') {
                 const hop = GRAIN_SPRITES[entity.type].roll.progress(
@@ -5063,6 +5063,45 @@ class GLRenderer {
             if (spin) clip = 'spin';
             if (roll?.phase) clip = 'roll';
             if (actor.setTeam) actor.setTeam(this.isFriendlySide(u.side));
+            // A flying unit's art (the dandelion's fluff), on the render tick's clock. A landing is the fall that
+            // UnitFlight.drop starts (impact kind 'landing'); the height it fell from is drawn in screen pixels so the
+            // fluff torn off there can stay up while the body drops.
+            if (actor.setFlight) {
+                const tps = this.snapshot.tps || SIM_TPS,
+                    tickMs = 1000 / tps,
+                    camera = this._frameCamera || this.stableCamera(),
+                    vx = this.viewX(world.x),
+                    vz = this.viewY(world.z),
+                    at = (this._flightScreenPoint ??= { x: 0, y: 0 }),
+                    groundPx = camera.worldToScreenInto(vx, vz, world.groundY, at).y,
+                    motion = entity.impactMotion?.kind === 'landing' ? entity.impactMotion : null,
+                    flight = (grain.flight ??= {});
+                flight.phase = entity.flight?.phase;
+                flight.alive = u.alive !== false;
+                flight.altitude = (entity.flight?.altitudeFP || 0) / FP;
+                flight.clockMs = renderTick * tickMs;
+                flight.heightPx = groundPx - camera.worldToScreenInto(vx, vz, world.y, at).y;
+                flight.landStartMs = motion ? motion.startTick * tickMs : NaN;
+                flight.landEndMs = motion ? motion.endTick * tickMs : NaN;
+                flight.dropFromPx = 0;
+                if (motion) {
+                    const fall =
+                        RangeUtil.clamp(
+                            renderTick - motion.startTick,
+                            0,
+                            motion.endTick - motion.startTick,
+                        ) / tps;
+                    flight.dropFromPx =
+                        groundPx -
+                        camera.worldToScreenInto(
+                            vx,
+                            vz,
+                            world.y + (LaunchImpactRules.gravity * fall * fall) / 2,
+                            at,
+                        ).y;
+                }
+                actor.setFlight(flight);
+            }
             // A potato knocked into the air stands up until it is down again.
             if (actor.setRootStage) {
                 const tps = this.snapshot.tps || SIM_TPS,
@@ -5241,6 +5280,34 @@ class GLRenderer {
     }
     // Opaque bodies go first, grouped by species, writing depth: the native path draws each species in one
     // instanced call and the depth buffer, not submission order, settles overlaps. Faces follow in painter order.
+    // Art that lies under every body (sprite drawUnderlay: the dandelion's see-through fluff), in painter order
+    // without writing depth, before any body or face, so no body or face is ever veiled by it.
+    drawGrainUnderlays(entries) {
+        const C = this.vectorContext;
+        let drawn = false;
+        for (const { kind, entity: u } of entries) {
+            if (kind !== 'unit') continue;
+            const grain = this.grainActors.get(u.id);
+            if (!grain?.compiled.drawUnderlay || grain.frame !== this.grainActorFrame) continue;
+            if (!drawn) {
+                C.depthTest = !!this.passState.depthEnabled;
+                C.depthWrite = false;
+                C.depthFunc = this.passState.depthFunc || 'lequal';
+                drawn = true;
+            }
+            const renderer = grain.compiled;
+            renderer.paint = grain.corpse ? DEAD_UNIT_LOOK.paint : null;
+            try {
+                renderer.drawUnderlay(grain.actor, grain.matrix, grain.depth);
+            } finally {
+                renderer.paint = null;
+            }
+        }
+        if (!drawn) return;
+        C.depth = 0;
+        C.depthTest = false;
+        C.depthFunc = 'lequal';
+    }
     drawGrainBodies(entries) {
         if (!this.passState.depthEnabled) return;
         const C = this.vectorContext,
@@ -6703,6 +6770,7 @@ class GLRenderer {
             this.flush(this.frame, true);
             this.begin();
         }
+        this.drawGrainUnderlays(entries);
         this.drawGrainBodies(entries);
         for (const entry of entries) {
             const { kind, entity, world } = entry;

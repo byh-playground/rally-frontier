@@ -12,6 +12,7 @@ import { ContactMelee } from './capabilities/contact-melee.js';
 import { ForwardCannon } from './capabilities/forward-cannon.js';
 import { CannonRider } from './capabilities/cannon-rider.js';
 import { RollingBody } from './capabilities/rolling-body.js';
+import { UnitFlight } from './capabilities/unit-flight.js';
 import {
     Building,
     EntityKey,
@@ -90,13 +91,14 @@ class SimulationRuntimeState {
         sim.collisionMaxStepMovementFP = 0;
     }
     static spatial(sim) {
-        // Units are tracked by array index with one group per side (0, 1, other), so enemy and ally queries skip each other.
+        // Units are tracked by array index with one group per side and layer (spatialGroup), so enemy and ally
+        // queries skip each other and ground queries skip flying units.
         sim.unitSpatial = new UniformGrid({
             cellSize: SIM_SPATIAL_CELL,
             width: sim.world.width,
             height: sim.world.height,
             outside: 'clamp',
-            groups: 3,
+            groups: 5,
             track: 'index',
         });
         sim.buildingSpatial = new UniformGrid({
@@ -360,7 +362,13 @@ class StrategySim {
         this.unitSpatial.clear();
         for (let i = 0; i < this.units.length; i++) {
             const u = this.units[i];
-            if (u.alive) this.unitSpatial.insert(i, u.x, u.y, StrategySim.spatialGroup(u.side));
+            if (u.alive)
+                this.unitSpatial.insert(
+                    i,
+                    u.x,
+                    u.y,
+                    StrategySim.spatialGroup(u.side, UnitFlight.airborne(u)),
+                );
         }
         this.runtimeIndexTick = this.tick;
         this.ensureBuildingSpatial();
@@ -404,8 +412,11 @@ class StrategySim {
         list.reserve(this.buildings.length);
         return (list.count = this.buildingSpatial.queryCircleInto(x, y, r, list.items));
     }
-    static spatialGroup(side) {
-        return side === 0 ? 0 : side === 1 ? 1 : 2;
+    // Groups 0 and 1 are each side's ground units, 2 every other side, 3 and 4 each side's flying units: a side
+    // query (targeting, contacts, knockback) reads only one layer, so flyers drop out of ground queries by group.
+    static spatialGroup(side, airborne = false) {
+        if (side !== 0 && side !== 1) return 2;
+        return airborne ? 3 + side : side;
     }
     // A moved unit changes cell (and so bucket order) only when its cell changes; a dead one leaves the grid.
     syncUnitSpatial(u) {
@@ -420,7 +431,13 @@ class StrategySim {
                     u.fy - this.collisionStartFy[index],
                 ),
             );
-        if (u.alive) this.unitSpatial.move(index, u.x, u.y, StrategySim.spatialGroup(u.side));
+        if (u.alive)
+            this.unitSpatial.move(
+                index,
+                u.x,
+                u.y,
+                StrategySim.spatialGroup(u.side, UnitFlight.airborne(u)),
+            );
         else if (this.unitSpatial.keyOf(index) !== this.unitSpatial.keyAt(u.x, u.y))
             this.unitSpatial.remove(index);
     }
@@ -430,11 +447,18 @@ class StrategySim {
         const index = this.units.length - 1;
         this.unitById.set(u.id, u);
         this.unitIndexById.set(u.id, index);
-        if (u.alive) this.unitSpatial.insert(index, u.x, u.y, StrategySim.spatialGroup(u.side));
+        if (u.alive)
+            this.unitSpatial.insert(
+                index,
+                u.x,
+                u.y,
+                StrategySim.spatialGroup(u.side, UnitFlight.airborne(u)),
+            );
     }
     // Units whose cell the circle's bounding square covers (candidates, not a distance test), as indices into
-    // this.units in grid order, written to `list`; `side` null reads every side. Returns the count.
-    nearbyUnits(x, y, r, side, list) {
+    // this.units in grid order, written to `list`; `side` null reads every side and both layers, `airborne` picks
+    // the side's flying layer instead of its ground one. Returns the count.
+    nearbyUnits(x, y, r, side, list, airborne = false) {
         if (this.runtimeIndexTick !== this.tick) this.rebuildRuntimeIndexes();
         list.reserve(this.units.length);
         const count = (list.count = this.unitSpatial.queryCircleInto(
@@ -442,7 +466,7 @@ class StrategySim {
             y,
             r,
             list.items,
-            side == null ? -1 : StrategySim.spatialGroup(side),
+            side == null ? -1 : StrategySim.spatialGroup(side, airborne),
         ));
         if (this._perfCollect) {
             this._perfCollect.spatialQueries++;
@@ -954,7 +978,8 @@ class StrategySim {
                 if (
                     !u?.alive ||
                     (u.side !== 0 && u.side !== 1) ||
-                    !!UnitDefinition.get(u.type)?.captureExcluded
+                    !!UnitDefinition.get(u.type)?.captureExcluded ||
+                    UnitFlight.airborne(u)
                 )
                     continue;
                 if (Math.hypot(u.x - cp.x, u.y - cp.y) > CAPTURE_RADIUS) continue;
@@ -1163,13 +1188,13 @@ class StrategySim {
             );
             for (let k = 0; k < count; k++) {
                 const u = this.units[SPAWN_QUERY.items[k]];
-                if (!u?.alive) continue;
+                if (!u?.alive || UnitFlight.airborne(u)) continue;
                 const other = this.unitRadius(u.type);
                 if (Math.hypot(x - u.x, y - u.y) < ur + other + SPAWN_UNIT_GAP) return false;
             }
         } else {
             for (const u of this.units) {
-                if (!u.alive) continue;
+                if (!u.alive || UnitFlight.airborne(u)) continue;
                 const other = this.unitRadius(u.type);
                 if (Math.hypot(x - u.x, y - u.y) < ur + other + SPAWN_UNIT_GAP) return false;
             }
@@ -1587,7 +1612,12 @@ class StrategySim {
         return field.visibleAt(x, y, this.terrainLevelAt(x, y));
     }
     canTargetUnit(attackerSide, target) {
-        return !!target && target.alive !== false && target.side !== attackerSide;
+        return (
+            !!target &&
+            target.alive !== false &&
+            target.side !== attackerSide &&
+            !UnitFlight.airborne(target)
+        );
     }
     targetLevel(target) {
         const memo = this.targetLevelMemo.get(target);
@@ -1850,6 +1880,7 @@ class StrategySim {
         target.hp = 0;
         target.alive = false;
         target.constructionWork = null;
+        UnitFlight.onDeath(this, target);
         HeroDeployment.unitDied(this, target);
         if ((sourceSide === 0 || sourceSide === 1) && target.side === 1 - sourceSide)
             this.launchStats.kills[sourceSide]++;
@@ -1889,11 +1920,13 @@ class StrategySim {
                 capture.damageClass = damageClass;
             }
         };
+        // A flying unit takes only anti-air hits (LaunchInterception); every ground delivery misses it.
         if (
             !isBuilding &&
-            options?.damageDelivery !== 'launch-shell' &&
-            (UnitDefinition.get(sourceType) || BuildingDefinition.get(sourceType)) &&
-            !this.canAttackEntity(sourceType, target, false)
+            ((UnitFlight.airborne(target) && options?.damageDelivery !== 'anti-air') ||
+                (options?.damageDelivery !== 'launch-shell' &&
+                    (UnitDefinition.get(sourceType) || BuildingDefinition.get(sourceType)) &&
+                    !this.canAttackEntity(sourceType, target, false)))
         ) {
             setCapture(0, true, options?.damageClass || UnitDefinition.damageClass(sourceType));
             return null;
@@ -2048,7 +2081,7 @@ class StrategySim {
             const count = this.nearbyUnits(x, y, radius + this.maxUnitRadius, null, near);
             for (let k = 0; k < count; k++) {
                 const e = this.units[near.items[k]];
-                if (!e?.alive || e.side === sourceSide) continue;
+                if (!e?.alive || e.side === sourceSide || UnitFlight.airborne(e)) continue;
                 const body =
                     impactHeightFP === undefined
                         ? null
@@ -2275,6 +2308,7 @@ class StrategySim {
         }
         if (d.selfDestruct && UnitSelfDestructAttack.update(this, u, d.selfDestruct)) return null;
         this.tickAttackTimers(u);
+        if (d.flight && UnitFlight.step(this, u, d.flight, vision[u.side])) return null;
         if (d.stickyCling && StickyCling.heldBuilding(this, u)) return null;
         if (u.heroRoll || u.fruitAttack?.active) return null;
         // A pending skill only takes the combat action slot when it can actually start.
