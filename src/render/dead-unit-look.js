@@ -1,18 +1,23 @@
-// How a dead unit that is still flying is drawn. A unit that dies while knocked back stays in the simulation
-// while it has impact motion (StrategySim.cleanupDeadEntities keeps it); until it lands the renderer draws it
-// as a corpse: grey and see-through, its species' hurt face, no team ring. On landing it bursts (deathBurst)
-// and is gone. Presentation only: positions, motion and removal belong to the simulation.
+// How a dead unit is drawn. A unit that dies while knocked back stays in the simulation while it has impact
+// motion (StrategySim.cleanupDeadEntities keeps it). While it flies and slides it looks like a living unit (its
+// own colours, its species' hurt face, no team ring, only the ground shadow). Once it has (nearly) stopped it turns
+// grey for `turnMs`, then stays grey while it fades out over `fadeMs`, and is no longer drawn. Presentation only:
+// positions, motion and removal belong to the simulation, which keeps the body well past this (it drops it once
+// its motion has fully settled).
 import { FP } from '../core/config.js';
 
 const DEAD_UNIT_LOOK = Object.freeze({
     // The species' own face (sprite contract drawFace): every species has an approved hurt face.
     face: 'hurt',
-    // Every sprite quad of the body and face is drawn twice: as authored at `alpha`, then as a flat `wash`
+    // A corpse on the ground slower than this (world units per second) has stopped.
+    landSpeed: 25,
+    // Grey: every sprite quad of the body and face is drawn twice, as authored at `alpha`, then as a flat `wash`
     // silhouette (forceColor) at `washAlpha` on top. The wash greys any species colour, dark or saturated,
     // while the faint first pass keeps its outline and face readable.
-    paint: Object.freeze({ alpha: 0.4, wash: Object.freeze([0.66, 0.67, 0.7, 1]), washAlpha: 0.7 }),
-    // A corpse on the ground slower than this (world units per second) has landed.
-    landSpeed: 25,
+    grey: Object.freeze({ alpha: 0.4, wash: Object.freeze([0.66, 0.67, 0.7, 1]), washAlpha: 0.7 }),
+    // After stopping: the colour-to-grey turn, then the grey fade-out.
+    turnMs: 100,
+    fadeMs: 400,
 });
 
 class DeadUnitLook {
@@ -28,6 +33,22 @@ class DeadUnitLook {
             !(motion.vzFP > 0) &&
             (motion.vxFP || 0) ** 2 + (motion.vyFP || 0) ** 2 < limit * limit
         );
+    }
+    // The whole stopped-corpse look (turn, then fade).
+    static get totalMs() {
+        return DEAD_UNIT_LOOK.turnMs + DEAD_UNIT_LOOK.fadeMs;
+    }
+    // The paint of a corpse `ageMs` after it stopped, written into the caller's own record (no allocation).
+    static paint(ageMs, out) {
+        const { grey, turnMs, fadeMs } = DEAD_UNIT_LOOK,
+            turn = Math.min(1, Math.max(0, ageMs / turnMs)),
+            left = Math.min(1, Math.max(0, (ageMs - turnMs) / fadeMs)),
+            // Eased so the grey stays readable for most of the fade and drops away at its end.
+            fade = 1 - left * left;
+        out.alpha = (1 + (grey.alpha - 1) * turn) * fade;
+        out.wash = grey.wash;
+        out.washAlpha = grey.washAlpha * turn * fade;
+        return out;
     }
 }
 

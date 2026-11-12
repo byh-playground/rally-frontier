@@ -1251,18 +1251,13 @@ class GLRenderer {
         this.visionFields = [null, null];
         this.fogVisibilityGrids = new Map();
         this.visibleUnitFrame = [];
-        // Dead units still flying (DeadUnitLook): ids drawn as corpses this frame, each corpse's last ground
-        // point until its landing burst, and the clocks of those bursts (renderer-owned, aged per frame).
-        this.flyingCorpses = new Set();
+        // Dead units the simulation still moves (DeadUnitLook): ids drawn as corpses this frame (flying, sliding,
+        // or stopped and fading), and per id the time it stopped (renderer-owned, cleared on a seek or new map).
+        this.corpseIds = new Set();
         this.corpseTracks = new Map();
+        this.corpseGhostPool = [];
         this.corpseFrame = 0;
-        this.corpseBurstClocks = [];
-        this.corpseBurstSequence = 0;
-        // Units whose death already burst (at death or on landing): one burst per unit through rollback
-        // corrections and short flights. Cleared with the other presentation state on a seek or new map.
-        this.corpseBurstIds = new Set();
-        this.corpseBurstEvent = { x: 0, y: 0, entity: '', side: null };
-        this.corpseBurstSnapshot = { tick: 0, presentationClock: null };
+        this.corpsePaint = { alpha: 1, wash: null, washAlpha: 0 };
 
         // High-frequency renderer pools. They are presentation-only and deliberately
         // excluded from deterministic state. Sizes are bounded to prevent hidden growth.
@@ -2212,8 +2207,11 @@ class GLRenderer {
     projectEntityScreen(entity, kind = 'unit') {
         return this.projectRenderWorldPosition(this.resolveRenderWorldPosition(entity, kind));
     }
-    unitVisibleForRender(u) {
-        if ((!u?.alive && !u?.impactMotion) || !this.presentationEntityActive('unit', u.id))
+    unitVisibleForRender(u, frozen = false) {
+        if (
+            (!u?.alive && !u?.impactMotion) ||
+            (!frozen && !this.presentationEntityActive('unit', u.id))
+        )
             return false;
         const p = this.projectEntityScreen(u, 'unit'),
             pad = ((UnitDefinition.get(u.type)?.size || 15) + 80) * this.sc();
@@ -2230,84 +2228,75 @@ class GLRenderer {
         const out = this.visibleUnitFrame,
             now = this.presentationNow();
         out.length = 0;
-        this.flyingCorpses.clear();
+        this.corpseIds.clear();
         this.corpseFrame++;
-        this.ageCorpseBursts(now);
         // A soldier holding or riding a muzzle is drawn on the cannon instead of at its own position.
         for (const u of this.renderState.displayed('unit', now)) {
-            if (DeadUnitLook.flying(u) && this.corpseLanded(u, now)) continue;
-            if (!this.mountedUnitIds.has(u.id) && this.unitVisibleForRender(u)) out.push(u);
+            const shown = DeadUnitLook.flying(u) ? this.corpseShown(u, now) : u;
+            if (
+                shown &&
+                !this.mountedUnitIds.has(u.id) &&
+                this.unitVisibleForRender(shown, shown !== u)
+            )
+                out.push(shown);
         }
-        // A corpse the simulation dropped before it was seen landing bursts where it was last drawn; one a
-        // rollback correction brought back to life does not.
-        for (const [id, track] of this.corpseTracks)
-            if (track.frame !== this.corpseFrame) {
-                if (!track.burst && !this.renderState.entity('unit', id)?.alive)
-                    this.burstCorpse(track, now);
-                this.corpseTracks.delete(id);
+        // A stopped corpse the simulation has already dropped keeps greying from its frozen copy; a corpse that is
+        // gone for good (faded, or dropped while still moving) is forgotten.
+        for (const [id, track] of this.corpseTracks) {
+            if (track.frame === this.corpseFrame) continue;
+            const ghost = track.ghost;
+            if (ghost && track.stoppedAt >= 0 && now - track.stoppedAt < DeadUnitLook.totalMs) {
+                this.corpseIds.add(id);
+                if (this.unitVisibleForRender(ghost, true)) out.push(ghost);
+                continue;
             }
+            this.releaseCorpse(track);
+            this.corpseTracks.delete(id);
+        }
         return out;
     }
-    // Follows a flying corpse to the ground: true once it has landed (it burst and is no longer drawn).
-    corpseLanded(u, now) {
+    // Follows a dead unit the simulation still moves. While it moves it is drawn as it is; from the moment it stops
+    // it is drawn from a frozen copy (the simulation may drop it any tick) until it has greyed and faded: the unit
+    // to draw, or null once it is gone.
+    corpseShown(u, now) {
         const entity = this.renderState.model('unit', u.id, now)?.entity || u;
         let track = this.corpseTracks.get(u.id);
-        if (!track)
-            this.corpseTracks.set(
-                u.id,
-                (track = {
-                    id: u.id,
-                    x: 0,
-                    y: 0,
-                    type: u.type,
-                    side: u.side,
-                    frame: 0,
-                    burst: false,
-                }),
-            );
+        if (!track) this.corpseTracks.set(u.id, (track = { stoppedAt: -1, frame: 0, ghost: null }));
         track.frame = this.corpseFrame;
-        if (track.burst) return true;
-        track.x = entity.x;
-        track.y = entity.y;
         // The displayed sample can trail the death by a tick and not hold the motion yet: still in flight.
         if (!entity.impactMotion || !DeadUnitLook.landed(entity.impactMotion)) {
-            this.flyingCorpses.add(u.id);
-            return false;
+            track.stoppedAt = -1;
+            this.releaseCorpse(track);
+            this.corpseIds.add(u.id);
+            return u;
         }
-        this.burstCorpse(track, now);
-        return true;
+        if (track.stoppedAt < 0) track.stoppedAt = now;
+        if (now - track.stoppedAt >= DeadUnitLook.totalMs) return null;
+        if (!track.ghost) track.ghost = this.corpseGhost(u);
+        this.corpseIds.add(u.id);
+        return track.ghost;
     }
-    // The landing burst: the death burst, at the corpse's ground point, on a clock this renderer ages.
-    burstCorpse(track, now) {
-        track.burst = true;
-        if (this.corpseBurstIds.has(track.id)) return;
-        this.corpseBurstIds.add(track.id);
-        if (!this.snapshot || (track.side !== this.mySide() && !this.visibleRaw(track.x, track.y)))
-            return;
-        const clock = { ageMs: 0, lifeMs: 0, expired: false, startMs: now },
-            event = this.corpseBurstEvent,
-            snapshot = this.corpseBurstSnapshot;
-        event.x = track.x;
-        event.y = track.y;
-        event.entity = track.type;
-        event.side = track.side;
-        snapshot.tick = this.snapshot.tick;
-        snapshot.presentationClock = clock;
-        this.addClientFx('deathBurst', event, snapshot, ++this.corpseBurstSequence);
-        snapshot.presentationClock = null;
-        if (clock.lifeMs) this.corpseBurstClocks.push(clock);
+    // A frozen copy of a unit in a pooled record (every key overwritten, keys it no longer has cleared).
+    corpseGhost(u) {
+        const ghost = this.corpseGhostPool.pop() || {};
+        for (const key in ghost) if (!(key in u)) ghost[key] = undefined;
+        return Object.assign(ghost, u);
     }
-    ageCorpseBursts(now) {
-        const clocks = this.corpseBurstClocks;
-        let write = 0;
-        for (const clock of clocks) {
-            clock.ageMs = now - clock.startMs;
-            if (clock.ageMs >= clock.lifeMs) clock.expired = true;
-            else clocks[write++] = clock;
-        }
-        clocks.length = write;
+    releaseCorpse(track) {
+        if (track.ghost && this.corpseGhostPool.length < 128)
+            this.corpseGhostPool.push(track.ghost);
+        track.ghost = null;
+    }
+    // Milliseconds since a corpse stopped (it is greying), or -1 while it still moves or is not a corpse.
+    corpseStoppedMs(id, now) {
+        const track = this.corpseTracks.get(id);
+        return track && track.stoppedAt >= 0 ? now - track.stoppedAt : -1;
     }
 
+    // A flying corpse keeps a plain ground shadow (its height stays readable) but loses its team ring.
+    usesTeamRing(u) {
+        return !!UnitVisualDefinition.get(u.type)?.billboard && !this.corpseIds.has(u.id);
+    }
     drawUnitShadow(u, visibilityChecked = false) {
         const own = u.side === this.mySide();
         if (!visibilityChecked && !own && !this.visibleRaw(u.x, u.y)) return;
@@ -2319,8 +2308,7 @@ class GLRenderer {
         const height = Math.max(0, body.y - body.groundY),
             shrink = 1 / (1 + height / 220),
             alpha = RangeUtil.clamp(0.17 - height / 850, 0.06, 0.17);
-        // A flying corpse keeps a plain ground shadow (its height stays readable) but loses its team ring.
-        if (UnitVisualDefinition.get(u.type)?.billboard && !this.flyingCorpses.has(u.id)) {
+        if (this.usesTeamRing(u)) {
             const team = UnitFactionPalette.get(this.factionRelation(u.side)).body,
                 rx = r * 1.05 * shrink,
                 ry = rx * BattlefieldProjection.groundScale,
@@ -2360,7 +2348,6 @@ class GLRenderer {
             }
             return;
         }
-        this.flushVectorMesh('grain-ring-to-shadow');
         this.withWorldSpriteDepth(
             groundWorld,
             () => {
@@ -2400,8 +2387,8 @@ class GLRenderer {
             this.cornTrailAnchors.clear();
             this.cornBursts.length = 0;
             this.milletBursts.length = 0;
+            for (const track of this.corpseTracks.values()) this.releaseCorpse(track);
             this.corpseTracks.clear();
-            this.corpseBurstIds.clear();
         }
         if (snapTargets || !old) this.resetFogTransition();
         this.world = WorldContext.forState(s);
@@ -2755,15 +2742,9 @@ class GLRenderer {
                     thornReplayClock: null,
                 });
             } else if (e.type === 'death') {
-                // A unit that dies flying bursts when it lands (prepareVisibleUnitFrame), not here. One whose
-                // short flight already ended in a landing burst does not burst again.
-                if (
-                    !DeadUnitLook.flying(this.renderState.entity('unit', e.id)) &&
-                    !this.corpseBurstIds.has(e.id)
-                ) {
-                    if (e.id != null) this.corpseBurstIds.add(e.id);
+                // A unit that dies flying has no burst: it greys and fades where it stops (DeadUnitLook).
+                if (!DeadUnitLook.flying(this.renderState.entity('unit', e.id)))
                     this.addClientFx('deathBurst', e, snapshot, index);
-                }
             } else if (e.type === 'unitSelfDestruct') {
                 this.addClientFx('selfDestructBurst', e, snapshot, index, {
                     impactHeightFP: e.zFP,
@@ -5328,7 +5309,8 @@ class GLRenderer {
                 this.orientationRole() === 'guest' ? -1 : 1,
             );
             grain.depth = RangeUtil.clamp(depth, -0.98, 0.98) - ++rank * GRAIN_DEPTH_RANK_STEP;
-            grain.corpse = this.flyingCorpses.has(u.id);
+            grain.corpse = this.corpseIds.has(u.id);
+            grain.stoppedMs = grain.corpse ? this.corpseStoppedMs(u.id, now) : -1;
             grain.face = grain.corpse
                 ? DEAD_UNIT_LOOK.face
                 : grounded && (clip === 'fire' || spin || roll?.phase)
@@ -5407,7 +5389,8 @@ class GLRenderer {
                 drawn = true;
             }
             const renderer = grain.compiled;
-            renderer.paint = grain.corpse ? DEAD_UNIT_LOOK.paint : null;
+            renderer.paint =
+                grain.stoppedMs >= 0 ? DeadUnitLook.paint(grain.stoppedMs, this.corpsePaint) : null;
             try {
                 renderer.drawUnderlay(grain.actor, grain.matrix, grain.depth);
             } finally {
@@ -5428,8 +5411,8 @@ class GLRenderer {
         for (const { kind, entity: u } of entries) {
             if (kind !== 'unit') continue;
             const grain = this.grainActors.get(u.id);
-            // A see-through corpse must not write depth: it is drawn in painter order (drawGrainUnit).
-            if (!grain || grain.frame !== this.grainActorFrame || grain.corpse) continue;
+            // A greying (see-through) corpse must not write depth: it is drawn in painter order (drawGrainUnit).
+            if (!grain || grain.frame !== this.grainActorFrame || grain.stoppedMs >= 0) continue;
             if (grain.sprite) {
                 this.riceBodyGroup.push(grain);
                 continue;
@@ -5489,7 +5472,7 @@ class GLRenderer {
         C.depthTest = !!this.passState.depthEnabled;
         C.depthWrite = false;
         C.depthFunc = this.passState.depthFunc || 'lequal';
-        if (grain.sprite && grain.corpse) {
+        if (grain.sprite && grain.stoppedMs >= 0) {
             this.drawGrainCorpse(grain);
             return;
         }
@@ -5523,10 +5506,10 @@ class GLRenderer {
         this.grainFaces.draw(grain.compiled, grain.actor, grain.face, grain.matrix, 1);
         this.vectorAssetDrawnInstances = (this.vectorAssetDrawnInstances || 0) + 1;
     }
-    // A flying corpse: its body and face in the dead paint, in painter order without depth writes.
+    // A stopped corpse: its body and face in the grey paint, in painter order without depth writes.
     drawGrainCorpse(grain) {
         const renderer = grain.compiled;
-        renderer.paint = DEAD_UNIT_LOOK.paint;
+        renderer.paint = DeadUnitLook.paint(grain.stoppedMs, this.corpsePaint);
         try {
             renderer.drawBody(grain.actor, grain.matrix, grain.depth);
             renderer.drawFace(
@@ -6601,15 +6584,27 @@ class GLRenderer {
         this.passState.depthWrite = false;
         this.begin();
         this.renderStage = 'unit-shadow';
-        for (const u of visibleUnits) {
-            this.renderEntity = u;
-            try {
-                this.drawUnitShadow(u, true);
-            } catch (err) {
-                this.reportEntityRenderError('unit-shadow', u, err);
+        // Team rings (one mesh batch) first, plain triangle-stream shadows after: interleaving them would close the
+        // ring batch and the shadow stream at every switch (DEV-034: draws follow corpses between living grains).
+        for (const ringPhase of [true, false]) {
+            for (const u of visibleUnits) {
+                if (this.usesTeamRing(u) !== ringPhase) continue;
+                // A greying corpse is see-through and writes no depth: its shadow disc would paint over its belly.
+                if (
+                    !ringPhase &&
+                    this.corpseTracks.get(u.id)?.stoppedAt >= 0 &&
+                    this.corpseIds.has(u.id)
+                )
+                    continue;
+                this.renderEntity = u;
+                try {
+                    this.drawUnitShadow(u, true);
+                } catch (err) {
+                    this.reportEntityRenderError('unit-shadow', u, err);
+                }
             }
+            if (ringPhase) this.flushVectorMesh('grain-ring-end');
         }
-        this.flushVectorMesh('grain-ring-end');
         for (const { kind, entity, world } of this.worldSpriteFrame) {
             if (kind !== 'projectile') continue;
             if (!this.isFriendlySide(entity.side) && !this.visibleRaw(entity.x, entity.y)) continue;
