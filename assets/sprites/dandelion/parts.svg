@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="731" viewBox="0 0 760 731">
+  <title>Dandelion seed v2 B: many thin strands on a pale halo, long natural stalk</title>
+  <!--
+    민들레씨 v2 파츠 시트 B (실제 민들레 씨앗 구조: 씨앗 몸 꼭대기에서 자루가 자라고 그 끝에 방사형 털).
+    단위는 쌀 그림 단위(쌀 서 있는 키 343.5 = artScale 1). 셀 [x, y, w, h] / 회전 중심 [px, py]:
+      body     [12,12,190,340] / [95,326]
+      canopy   [214,12,468,497] / [234,483]
+      foot     [12,521,60,64] / [30,32]
+      hand     [84,521,44,60] / [22,30]
+      stub     [140,521,36,48] / [18,40]
+      bits     [188,521,120,120] / [60,60]
+      neutral  [320,521,132,66] / [66,30]
+      attack   [464,521,132,66] / [66,30]
+      hurt     [608,521,132,66] / [66,30]
+      float    [12,653,132,66] / [66,30]
+    body 원점 = 두 발 사이 땅. 자루 소켓 = body (0, -310). 얼굴 중심 = body (0, -110).
+    canopy = 자루(길이 290) + 털. 원점 = 자루 밑동(소켓에 붙는 점). 솜털을 뗄 때 자루째 날아간다.
+    stub = 뗀 뒤 꼭대기에 남는 자루 밑동. bits = 뗄 때 흩어지는 털 조각. 발·손은 하나를 좌우 반전해 재사용.
+    표정 4종은 eyes·cheeks 공유 파츠 조합(1차 시안·해바라기씨와 같은 얼굴).
+  -->
+  <defs>
+    <g id="b-eyes" fill="#271a14">
+      <ellipse cx="-28" rx="11" ry="14.5"/><ellipse cx="28" rx="11" ry="14.5"/>
+      <g fill="#fff7e7"><circle cx="-31" cy="-5.5" r="4"/><circle cx="25" cy="-5.5" r="4"/></g>
+    </g>
+    <g id="b-cheeks" fill="#f3a58d" opacity=".92">
+      <ellipse cx="-47" cy="15" rx="12" ry="7"/><ellipse cx="47" cy="15" rx="12" ry="7"/>
+    </g>
+    <linearGradient id="b-husk" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#eba468"/><stop offset=".45" stop-color="#b8662f"/><stop offset="1" stop-color="#5f2a15"/>
+    </linearGradient>
+    <linearGradient id="b-limb" x1="0" y1="0" x2=".7" y2="1"><stop stop-color="#efbb88"/><stop offset="1" stop-color="#a05b31"/></linearGradient>
+    <path id="b-body-outline" d="M-8-306Q0-314 8-306L17-262C42-230 66-180 67-120 68-58 44-16 0-14-44-16-68-58-67-120-66-180-42-230-17-262Z"/>
+    <clipPath id="b-body-clip"><use href="#b-body-outline"/></clipPath>
+  </defs>
+  <g id="b-body" transform="translate(107 338)">
+      <path d="M-19.1 -234L-37.1 -254L-23.1 -230ZM19.1 -234L37.1 -254L23.1 -230ZM-30.55 -204L-48.55 -224L-34.55 -200ZM30.55 -204L48.55 -224L34.55 -200ZM-40.95 -174L-58.95 -194L-44.95 -170ZM40.95 -174L58.95 -194L44.95 -170ZM-49.73 -144L-67.73 -164L-53.73 -140ZM49.73 -144L67.73 -164L53.73 -140ZM-56.39 -114L-74.39 -134L-60.39 -110ZM56.39 -114L74.39 -134L60.39 -110ZM-60.56 -84L-78.56 -104L-64.56 -80ZM60.56 -84L78.56 -104L64.56 -80Z" fill="#b5642f" stroke="#3b2a1e" stroke-width="5" stroke-linejoin="round"/>
+      <use href="#b-body-outline" fill="url(#b-husk)"/>
+      <g clip-path="url(#b-body-clip)">
+        <path d="M-40-280H40V-258Q0-248-40-258Z" fill="#e7a35c"/>
+        <path d="M-24 -232L-15 -242L-6 -232M6 -232L15 -242L24 -232M-43 -206L-34 -216L-25 -206M-9 -206L0 -216L9 -206M25 -206L34 -216L43 -206M-47 -180L-38 -190L-29 -180M-9 -180L0 -190L9 -180M29 -180L38 -190L47 -180M-51 -154L-42 -164L-33 -154M-9 -154L0 -164L9 -154M33 -154L42 -164L51 -154M-55 -128L-46 -138L-37 -128M-9 -128L0 -138L9 -128M37 -128L46 -138L55 -128" fill="none" stroke="#6a3119" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" opacity=".75"/>
+        <path d="M0-250V-150" stroke="#6a3119" stroke-width="3.5" stroke-dasharray="8 10" opacity=".5"/>
+        <path d="M-90-80C-46-20 46-20 90-80V0H-90Z" fill="#2c1208" opacity=".28"/>
+      </g>
+      <use href="#b-body-outline" fill="none" stroke="#3b2a1e" stroke-width="8" stroke-linejoin="round"/>
+      <path d="M-17-262Q0-254 17-262" fill="none" stroke="#3b2a1e" stroke-width="4.5" stroke-linecap="round"/>
+      <ellipse cx="-42" cy="-128" rx="8" ry="24" transform="rotate(12 -42 -128)" fill="#ffe7cf" opacity=".72"/>
+      <circle cx="-34" cy="-166" r="4.5" fill="#ffe7cf" opacity=".72"/>
+  </g>
+  <g id="b-canopy" transform="translate(448 495)">
+      <path d="M0 6Q16 -145 0 -290" fill="none" stroke="#3b2a1e" stroke-width="12" stroke-linecap="round"/>
+      <path d="M0 6Q16 -145 0 -290" fill="none" stroke="#f0d9b5" stroke-width="4.5" stroke-linecap="round"/>
+      <g transform="translate(0 -290)"><ellipse rx="180" ry="140.4" fill="#ffffff" opacity="0.6"/>
+      <path d="M0 0L-3.5 -74.49L-34.23 -146.68M0 0L20.57 -65.65L41.03 -131.33M27.93 -89.3L15.37 -134.2M0 0L36.06 -55.32L44.2 -119.24M37.82 -79.08L74.11 -110.39M0 0L53.8 -64.16L105.15 -129.54M72.17 -87.76L129.06 -115.12M0 0L71.32 -56.36L130.56 -121.3M0 0L80.68 -35.11L160.06 -72M0 0L85.44 -22.19L159.94 -64.6M112.07 -38.54L173.29 -39.69M0 0L86.85 -10.12L174.39 16.21M119.42 1.1L169.61 26.33M0 0L89.01 5.17L178.37 -5.4M0 0L83.03 21.38L162.8 49.82M111.63 31.97L170.9 28.27M0 0L72.76 28.47L132.18 74.13M93.79 45.87L148.35 53.15M0 0L61.01 42.35L130.27 76.86M86.4 54.44L111.52 93.07M0 0L52.58 52.41L100.01 107.84M0 0L31.37 52.91L88.2 94.13M53.3 67.51L98.24 86.02M0 0L15.91 61.17L-8 124.68M5.44 84.78L26.82 123.82M0 0L3.43 55.37L39.59 106.48M18.13 74.06L9.88 111.2M0 0L-16.41 51.24L-37.69 101.46M0 0L-26.42 55.2L-82.47 98.74M-48.3 70.73L-92.37 91.32M0 0L-55.02 51.43L-141.5 75.94M-88.44 59.5L-117.17 99.16M0 0L-65.19 39.98L-105.68 99.7M0 0L-80.12 34.77L-173.1 47.21M-114.61 38.32L-158.49 72.87M0 0L-84.26 18.06L-163.97 47.18M-112.84 29.1L-171.96 24.45M0 0L-80.34 8.5L-161.15 14M-109.46 10.34L-156.03 33.35M0 0L-85.28 -3.61L-169.01 -19.22M-115.46 -9.81L-163.44 -35.33M0 0L-79.6 -17.61L-163.76 -18.58M-110.35 -17.2L-156.84 -41.92M0 0L-82.49 -33.07L-169.94 -57.99M-114.26 -41.67L-177.28 -39.63M0 0L-65.46 -51.87L-158.02 -77.45M-100.73 -60.21L-163.81 -65.51M0 0L-54.97 -59.15L-115.43 -115.06M-77.01 -79.14L-90.3 -127.72M0 0L-36.44 -58.66L-108.99 -98.85M0 0L-13.38 -70.17L-37.89 -138.78M-22.75 -94.84L-60.84 -132.85" fill="none" stroke="#8b7a6e" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M0 0L-3.5 -74.49L-34.23 -146.68M0 0L20.57 -65.65L41.03 -131.33M27.93 -89.3L15.37 -134.2M0 0L36.06 -55.32L44.2 -119.24M37.82 -79.08L74.11 -110.39M0 0L53.8 -64.16L105.15 -129.54M72.17 -87.76L129.06 -115.12M0 0L71.32 -56.36L130.56 -121.3M0 0L80.68 -35.11L160.06 -72M0 0L85.44 -22.19L159.94 -64.6M112.07 -38.54L173.29 -39.69M0 0L86.85 -10.12L174.39 16.21M119.42 1.1L169.61 26.33M0 0L89.01 5.17L178.37 -5.4M0 0L83.03 21.38L162.8 49.82M111.63 31.97L170.9 28.27M0 0L72.76 28.47L132.18 74.13M93.79 45.87L148.35 53.15M0 0L61.01 42.35L130.27 76.86M86.4 54.44L111.52 93.07M0 0L52.58 52.41L100.01 107.84M0 0L31.37 52.91L88.2 94.13M53.3 67.51L98.24 86.02M0 0L15.91 61.17L-8 124.68M5.44 84.78L26.82 123.82M0 0L3.43 55.37L39.59 106.48M18.13 74.06L9.88 111.2M0 0L-16.41 51.24L-37.69 101.46M0 0L-26.42 55.2L-82.47 98.74M-48.3 70.73L-92.37 91.32M0 0L-55.02 51.43L-141.5 75.94M-88.44 59.5L-117.17 99.16M0 0L-65.19 39.98L-105.68 99.7M0 0L-80.12 34.77L-173.1 47.21M-114.61 38.32L-158.49 72.87M0 0L-84.26 18.06L-163.97 47.18M-112.84 29.1L-171.96 24.45M0 0L-80.34 8.5L-161.15 14M-109.46 10.34L-156.03 33.35M0 0L-85.28 -3.61L-169.01 -19.22M-115.46 -9.81L-163.44 -35.33M0 0L-79.6 -17.61L-163.76 -18.58M-110.35 -17.2L-156.84 -41.92M0 0L-82.49 -33.07L-169.94 -57.99M-114.26 -41.67L-177.28 -39.63M0 0L-65.46 -51.87L-158.02 -77.45M-100.73 -60.21L-163.81 -65.51M0 0L-54.97 -59.15L-115.43 -115.06M-77.01 -79.14L-90.3 -127.72M0 0L-36.44 -58.66L-108.99 -98.85M0 0L-13.38 -70.17L-37.89 -138.78M-22.75 -94.84L-60.84 -132.85" fill="none" stroke="#fffdf6" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle r="11" fill="#e9c9a0" stroke="#3b2a1e" stroke-width="5"/></g>
+  </g>
+  <g id="b-foot" transform="translate(42 553)">
+      <path d="M-20-25Q0-30 20-25C25-9 25 13 13 23 6 30-7 30-14 22-25 10-26-9-20-25Z" fill="url(#b-limb)" stroke="#3b2a1e" stroke-width="6.5" stroke-linejoin="round"/>
+      <path d="M-11-12Q-14-3-11 6" fill="none" stroke="#fff3d6" stroke-width="4.5" stroke-linecap="round" opacity=".7"/>
+  </g>
+  <g id="b-hand" transform="translate(106 551)">
+      <ellipse rx="17" ry="25" fill="url(#b-limb)" stroke="#3b2a1e" stroke-width="6.5"/>
+      <path d="M-7-14Q-11-7-10 2" fill="none" stroke="#fff3d6" stroke-width="4.5" stroke-linecap="round" opacity=".7"/>
+  </g>
+  <g id="b-stub" transform="translate(158 561)">
+      <path d="M0 6Q0 -12 0 -24" fill="none" stroke="#3b2a1e" stroke-width="12" stroke-linecap="round"/>
+      <path d="M0 6Q0 -12 0 -24" fill="none" stroke="#f0d9b5" stroke-width="4.5" stroke-linecap="round"/><path d="M-6-22-2-34 3-26 8-36" fill="none" stroke="#3b2a1e" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+  <g id="b-bits" transform="translate(248 581)">
+      <ellipse rx="41.4" ry="41.4" fill="#ffffff" opacity="0.5"/>
+      <path d="M0 0L-3.36 -21.22L-5.33 -42.63M0 0L12.53 -17.25L16.09 -39.49M13.48 -25.67L24.28 -35.34M0 0L19.54 8.51L39.3 16.52M26.67 11.37L36.21 22.28M0 0L3.14 15.71L9.4 30.64M5.55 21.08L3.86 31.84M0 0L-4.08 15.09L-12.97 28.44M-7.54 19.87L-15.74 26.63M0 0L-17.62 4.22L-34.6 10.77M0 0L-14.99 -15.08L-26.56 -33.23" fill="none" stroke="#8b7a6e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M0 0L-3.36 -21.22L-5.33 -42.63M0 0L12.53 -17.25L16.09 -39.49M13.48 -25.67L24.28 -35.34M0 0L19.54 8.51L39.3 16.52M26.67 11.37L36.21 22.28M0 0L3.14 15.71L9.4 30.64M5.55 21.08L3.86 31.84M0 0L-4.08 15.09L-12.97 28.44M-7.54 19.87L-15.74 26.63M0 0L-17.62 4.22L-34.6 10.77M0 0L-14.99 -15.08L-26.56 -33.23" fill="none" stroke="#fffdf6" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle r="11" fill="#e9c9a0" stroke="#3b2a1e" stroke-width="5"/>
+  </g>
+  <g id="b-neutral" transform="translate(386 551)">
+      <use href="#b-cheeks"/><use href="#b-eyes"/>
+      <path d="M-9 14Q0 24 9 14" fill="none" stroke="#271a14" stroke-width="5.5" stroke-linecap="round"/>
+  </g>
+  <g id="b-attack" transform="translate(530 551)">
+      <use href="#b-cheeks"/><use href="#b-eyes" y="3"/>
+      <path d="M-44-20 -19-11M44-20 19-11" fill="none" stroke="#271a14" stroke-width="6" stroke-linecap="round"/>
+      <ellipse cy="19" rx="7" ry="8" fill="#f09986" stroke="#271a14" stroke-width="5"/>
+  </g>
+  <g id="b-hurt" transform="translate(674 551)">
+      <use href="#b-cheeks"/>
+      <path d="m-37-9 16 9-16 9M37-9 21 0l16 9" fill="none" stroke="#271a14" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M-10 16Q0 20 10 16C9 29-9 29-10 16Z" fill="#f09986" stroke="#271a14" stroke-width="4.5" stroke-linejoin="round"/>
+  </g>
+  <g id="b-float" transform="translate(78 683)">
+      <use href="#b-cheeks"/>
+      <path d="M-39 3Q-28-13-17 3M17 3Q28-13 39 3" fill="none" stroke="#271a14" stroke-width="6" stroke-linecap="round"/>
+      <path d="M-11 12H11Q11 28 0 28-11 28-11 12Z" fill="#f09986" stroke="#271a14" stroke-width="4.5" stroke-linejoin="round"/>
+  </g>
+</svg>

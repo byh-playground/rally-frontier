@@ -24,7 +24,10 @@
 //            Optional renderer methods the shared drawing calls when present: prepareExtraArt,
 //            drawHeldKernel, drawWrapOverlay (StickyCling), drawRide (CannonRider), drawFlight and
 //            drawImpact (a 'soldier' shell), drawBehind (trailing effects just behind the body),
-//            actor.setTeam and actor.setRootStage. The renderer draws its body and face quads
+//            drawUnderlay (see-through art under every body and face, before any of them),
+//            actor.setTeam, actor.setRootStage and actor.setFlight({ phase, alive, altitude, clockMs,
+//            heightPx, landStartMs, landEndMs, dropFromPx }) (Unit.flight on the render tick's clock and the
+//            landing fall, main.js). The renderer draws its body and face quads
 //            through drawUnitQuads(context, this.paint, …) (render/dead-unit-look.js): main.js sets
 //            `paint` around a flying corpse's drawBody/drawFace, and its `hurt` face is the corpse's.
 const REQUIRED = ['unit', 'payload', 'visual', 'card'];
@@ -36,6 +39,16 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
             throw new Error(`병종 ${id}에 ${key}가 없습니다.`);
     if (typeof parts.sprite !== 'function') throw new Error(`병종 ${id}에 sprite 로더가 없습니다.`);
     const unit = { ...parts.unit };
+    // A flight (UnitFlight) is a walking soldier's one way of moving: it takes the ordinary melee path once landed.
+    if (unit.flight) {
+        if (hero || unit.rolling || unit.growsCannon || unit.cannonRider)
+            throw new Error(
+                `병종 ${id}의 flight는 영웅·rolling·growsCannon·cannonRider와 함께 쓸 수 없습니다.`,
+            );
+        for (const key of ['speed', 'altitude', 'climbSpeed'])
+            if (!(Number(unit.flight[key]) > 0))
+                throw new Error(`병종 ${id}의 flight.${key}는 양수여야 합니다.`);
+    }
     if (Number.isFinite(Number(unit.cooldownMs))) unit.cooldown = Number(unit.cooldownMs) / 1000;
     if (unit.canAttackGround == null) unit.canAttackGround = (unit.atk || 0) > 0;
     return Object.freeze({

@@ -49,7 +49,7 @@ export const SunflowerSeed = defineUnit({
         land: '착지점에서 사방으로 튀어나옴',
         fire: '단발',
         notes: [],
-        airNote: '적 투입탄을 먼저 연사하고, 공중에 적이 없으면 지상을 쏴요.',
+        airNote: '적 투입탄과 나는 적을 먼저 연사하고, 공중에 적이 없으면 지상을 쏴요.',
     },
     sprite: () => import('./sprite.js').then((art) => art.SPRITE),
 });

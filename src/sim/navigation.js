@@ -31,6 +31,7 @@ import { UnitLeapAttack } from './capabilities/unit-leap-attack.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { RollingBody } from './capabilities/rolling-body.js';
+import { UnitFlight } from './capabilities/unit-flight.js';
 
 // Interaction geometry owns the legal arrival set; the flow field only leads units to it.
 // Goal regions are continuous (discs/annuli), not a fixed number of radial probes.
@@ -294,12 +295,14 @@ class InteractionGeometry {
 class UnitMotion {
     static isGrounded(unit) {
         const motion = unit.impactMotion;
-        return !motion || (motion.heightFP <= 0 && motion.vzFP <= 0);
+        return (
+            !UnitFlight.airborne(unit) && (!motion || (motion.heightFP <= 0 && motion.vzFP <= 0))
+        );
     }
-    // The single source of a body's height: its bottom above the ground under it (FP). Only the impact
-    // motion (knockback, launch, leap) lifts a body today; every body-height reader goes through here.
+    // The single source of a body's height: its bottom above the ground under it (FP). The impact motion
+    // (knockback, launch, leap) and a flight's altitude lift a body; every body-height reader goes through here.
     static heightFP(unit) {
-        return unit.impactMotion?.heightFP || 0;
+        return (unit.impactMotion?.heightFP || 0) + (unit.flight?.altitudeFP || 0);
     }
     // The body's bottom in world height: the ground under it plus its lift.
     static bottom(sim, unit) {
@@ -377,7 +380,8 @@ class UnitMotion {
             initialHeightFP = 0,
         } = {},
     ) {
-        if (UnitMotion.locked(u)) return;
+        // A flying unit is out of every ground push (knockback, blasts, rolls, contacts).
+        if (UnitMotion.locked(u) || UnitFlight.airborne(u)) return;
         const mass = this.navigation.sim.mass(u),
             m = this.impactRecord(u, initialHeightFP);
         m.vxFP += Math.round(((Number(impulse.x) || 0) / mass) * FP);
@@ -488,9 +492,11 @@ class UnitMotion {
             definition = UnitDefinition.get(u.type),
             radius = sim.unitRadius(u.type),
             radiusFP = radius * FP,
-            pairs = u.alive && !u.heroRoll && !FruitHeroAttack.blocksMovement(u);
-        bodies.x[i] = startFx;
-        bodies.y[i] = startFy;
+            pairs = u.alive && !u.heroRoll && !FruitHeroAttack.blocksMovement(u),
+            // A flying unit's own step already placed it; its body stays inactive where it is (no contacts).
+            flying = UnitFlight.airborne(u);
+        bodies.x[i] = flying ? u.fx : startFx;
+        bodies.y[i] = flying ? u.fy : startFy;
         bodies.steerX[i] = u.fx;
         bodies.steerY[i] = u.fy;
         bodies.ivx[i] = m ? m.vxFP : 0;
@@ -516,12 +522,13 @@ class UnitMotion {
                 ),
             ),
         );
-        bodies.flags[i] =
-            (u.alive || m ? ACTIVE : 0) |
-            (m ? DYNAMIC : 0) |
-            (pairs ? PAIRS : 0) |
-            (pairs && definition?.crowdCollision !== false ? SEPARATE : 0) |
-            (UnitLeapAttack.airborne(u) ? VERTICAL : 0);
+        bodies.flags[i] = flying
+            ? 0
+            : (u.alive || m ? ACTIVE : 0) |
+              (m ? DYNAMIC : 0) |
+              (pairs ? PAIRS : 0) |
+              (pairs && definition?.crowdCollision !== false ? SEPARATE : 0) |
+              (UnitLeapAttack.airborne(u) ? VERTICAL : 0);
     }
     // The bookkeeping of a standard response: a reflection or stop keeps the record's source; an exchange takes
     // the other body, from where it stands at the contact; sticking takes the other body, from the unit's own spot.

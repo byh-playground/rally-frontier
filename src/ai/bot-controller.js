@@ -9,6 +9,7 @@ import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { SimulationTiming } from '../core/simulation-timing.js';
 import { BOT_LAUNCH_RULES } from '../sim/capabilities/bot-launch-rules.js';
+import { UnitFlight } from '../sim/capabilities/unit-flight.js';
 
 // Tracks the bot's commands from offer to the sim's receipt, so a shot already paid for
 // is not paid again from a snapshot that predates it.
@@ -344,6 +345,8 @@ class BotController {
         const deployedVolleys = ({ type, count }) => (stats[type]?.deployed || 0) / count;
         const effect = ({ type }) => {
             const definition = UnitDefinition.get(type);
+            // A flying unit is answered only by anti-air (UnitFlight): no ground card can hit it before it lands.
+            if (UnitFlight.airborne(shot.target)) return definition.canAttackAir ? 3 : 0;
             if (
                 BuildingDefinition.get(shot.target.type) &&
                 UnitDefinition.onlyAttacksBuildings(type)

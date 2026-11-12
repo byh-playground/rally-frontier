@@ -67,7 +67,8 @@ export class UnitBurstAttack {
             isBuilding = burst.targetKind === 'building';
         if (
             !sim.canSeeCombatTarget(unit.side, target, vision) ||
-            !sim.canAttackEntity(unit.type, target, isBuilding)
+            !sim.canAttackEntity(unit.type, target, isBuilding) ||
+            (!isBuilding && !sim.canTargetUnit(unit.side, target))
         )
             return null;
         const distance = Math.hypot(target.x - unit.x, target.y - unit.y);
@@ -77,7 +78,8 @@ export class UnitBurstAttack {
     }
 
     static aimHeightFP(sim, target, kind) {
-        if (kind === 'projectile')
+        // An air target is a shell or a flying unit; the flying unit aims like any unit body (its lift included).
+        if (kind === 'projectile' && target.payload)
             return Math.round(LaunchImpact.projectileHeight(sim, target, target.x, target.y) * FP);
         const ground = sim.world.terrain.surfaces.heightAt(target.x, target.y);
         if (kind === 'building')

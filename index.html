@@ -28,7 +28,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   UNITS 순서가 덱 순서·시작 덱·결과 통계 행·스프라이트 아틀라스 배치 순서다. 공유 코드는 UNITS만 읽고 병종 이름 표를 두지 않는다.
 - 병종 추가: ① src/units/<id>/index.js(필요하면 sprite.js)를 만들고 ② UNITS에 한 줄을 넣는다. 기존 능력은
   Definition 필드로 켠다(contactMelee·stickyCling·growsCannon·leapAttack·spinAttack·lobAttack·thornAttack·burstAttack·
-  selfDestruct·heroActive·fruitAttack·rolling). 새 능력은 src/sim/capabilities/<능력>.js 모듈과 판정의 호출 지점을 더한다.
+  selfDestruct·heroActive·fruitAttack·rolling·flight). 새 능력은 src/sim/capabilities/<능력>.js 모듈과 판정의 호출 지점을 더한다.
   두 병종 이상이 쓰는 지점만 공통 hook으로 만들고, 한 병종만 쓰는 지점은 능력 필드로 거른 직접 호출로 둔다.
   그림 계약은 sprite.js의 SPRITE가 소유한다: 투입탄(shell: draw·turn·flight), 착지 연출(landing), 포즈(pose·roll),
   공용 효과 그림(effectArt), 준비 그리기(렌더러 prepareExtraArt). main.js는 이 계약만 읽고 병종 id를 비교하지 않는다.
@@ -86,7 +86,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
 3. SIMULATION AND PRESENTATION
 - 연속 이동하는 표현 좌표는 공통 Render State에서 샘플링하고 판정에 되먹이지 않는다. 몸체·높이·전략 표시·잔상·
   VFX endpoint가 같은 표시 시계와 생명주기를 사용한다. 사건 tick은 보간 표시 시각으로 매핑한다.
-- 병사의 투영 높이는 보간된 impactMotion.heightFP를 직접 사용한다. 자세 효과는 회전·크기·표정만 정하며
+- 병사의 투영 높이는 보간된 UnitMotion.heightFP(impactMotion.heightFP와 비행 고도 flight.altitudeFP의 합)를 사용한다. 자세 효과는 회전·크기·표정만 정하며
   동작 종류별 자세가 정의되지 않아도 투영 높이는 유지된다.
 - BattlefieldProjection은 전장의 지면 앞뒤 축과 고도에 각각의 투영 계수를 적용한다. 지면 범위는
   월드의 원형 판정을 사용하고 윤곽점을 같은 카메라로 투영한다. 입력은 공통 투영을 역변환해 지면을 찾는다.
@@ -111,7 +111,8 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   상대 이동과 높이 구간을 포함한 swept contact로 판정한다. 공중 몸체 아래/위의 탄은 통과하고
   고지의 정확 경계에서는 실제 접점 고도로 충돌한다.
 - 병력 투입탄은 실제 탄 한 발마다 병종별 체력을 가진다. 대공 능력이 있는 병사와 포탑은 시야 안의 적 투입탄을
-  지면 거리로 찾아 우선 공격하고 기존 공격 주기를 공유한다. 포탑 박격포 순서는 지상 사격으로 진행한다.
+  지면 거리로 찾아 우선 공격하고, 투입탄이 없으면 나는 적 병사(UnitFlight)를 같은 방식으로 공격하며 기존 공격 주기를
+  공유한다. 나는 병사는 이 대공 공격만 맞고 지상 표적·피해·넉백·접촉·점령에서 빠진다(공간 격자의 비행 층). 포탑 박격포 순서는 지상 사격으로 진행한다.
   병종별 비행 속도와 곡사 높이에 공통 보정을 적용하며 캠페인 발사 시연도 같은 비행 속도를 읽는다.
   비행 중인 투입탄은 실제 고도를 기준으로 아군에게 주변 시야를 제공한다. 착탄하거나 격추되면 그 시야가 사라진다.
   지면 안개는 지면 시야를 따르고, 아군 투입탄과 시야에 들어온 적 투입탄의 몸체는 안개 위에 표시한다.
@@ -1287,6 +1288,19 @@ END OF DEVELOPMENT CONTRACT
                                 격추된 탄은 아래로 떨어져 병력을 내려요. 정상 착탄 폭발은 일어나지
                                 않고, 병력은 떨어진 높이에 따라 남은 체력의 최대 절반만큼 피해를
                                 받아요.
+                            </p>
+                        </details>
+                        <details>
+                            <summary>나는 병종</summary>
+                            <p>
+                                민들레씨는 투입된 뒤 한 번만 솜털로 떠올라 벽·절벽·건물을 넘어
+                                적에게 곧장 날아가요. 적이 공격 사거리에 들어오면 그 자리에
+                                내려앉고, 다시는 뜨지 않아요.
+                            </p>
+                            <p>
+                                나는 동안에는 공격하지 않고, 지상 공격·폭발·넉백도 닿지 않아요. 적
+                                투입탄을 쏘는 포탑과 병종만 나는 병종을 맞혀요(투입탄을 먼저 쏴요).
+                                공중에서 쓰러지면 그 자리에서 떨어져요.
                             </p>
                         </details>
                     </section>
