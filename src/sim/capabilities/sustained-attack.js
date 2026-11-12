@@ -20,9 +20,10 @@
 // - Unit.sustain { active, startTick, endTick, nextTick, readyTick, uses, ticks, durationPhase, tickPhase,
 //   cooldownPhase }가 권위 상태다(저장·해시). active는 준비부터 회복까지 공격 전체, startTick·endTick은 그 처음과
 //   끝, nextTick은 다음 피해 틱이다. 지속 구간은 startTick + 준비 틱부터 endTick - 회복 틱까지다(phases).
-// - 일찍 끝내기는 두 가지다. 끊김(interrupt: 넘어짐·죽음 등 공격자가 멈춤)은 active만 내리고 재사용 대기는 시작할 때
-//   정한 readyTick을 그대로 따른다. 거둠(cut: 고정한 표적을 잃는 등 공격이 할 일을 잃음)은 그 틱부터 피해 간격
-//   하나를 마지막 간격으로 치고 끝나며, 재사용 대기는 그 끝부터 센다.
+// - 일찍 끝내기는 하나다(cut): 넘어짐·고정한 표적을 잃음·죽음·영웅 복귀처럼 공격자가 더는 이어 갈 수 없으면 그 틱에
+//   공격이 끝나고(준비·지속·회복 어느 단계든) 재사용 대기 cooldownMs를 그 틱부터 처음부터 센다. 시작할 때 정해 둔
+//   readyTick은 버리고, 대기 틱은 시작 때와 같은 누적 방식(cooldownPhase)으로 구한다. 표적을 잃은 것도 같은 규칙이다
+//   (남은 한 발 간격을 더 쓰지 않는다). 죽은 유닛은 대기를 쓰지 않으니 정리만 된다. 공격 중이 아니면 아무것도 바꾸지 않는다.
 import { SimulationTiming } from '../../core/simulation-timing.js';
 
 class SustainedAttack {
@@ -93,16 +94,13 @@ class SustainedAttack {
             state.nextTick < state.endTick - this.recoverTicks(sim.tps, spec)
         );
     }
-    static interrupt(state) {
-        state.active = false;
-    }
-    // The attack has nothing left to do while damage ticks remain: this tick's damage step is its last, and the
-    // cooldown counts from that step's end. With no damage tick left it simply runs out.
+    // Ends a running attack here (knocked off its feet, its locked target lost, dead): its cooldown counts in full from
+    // this tick, whatever stage it was in. Nothing happens when no attack runs.
     static cut(sim, state, spec) {
-        if (!this.ticking(sim, state, spec)) return;
+        if (!state.active) return;
         state.active = false;
-        state.endTick = sim.tick + this.span(sim, state, 'tickPhase', spec.tickMs);
-        state.readyTick = state.endTick + this.span(sim, state, 'cooldownPhase', spec.cooldownMs);
+        state.endTick = sim.tick;
+        state.readyTick = sim.tick + this.span(sim, state, 'cooldownPhase', spec.cooldownMs);
     }
     // The running attack's stages in ticks (presentation): start, duration start and end, end. Fills `out`.
     static phases(state, spec, tps, out) {
