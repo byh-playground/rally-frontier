@@ -418,6 +418,9 @@ function createOutpostProbe(sim) {
 // A fight in the `unit` scene, read by `state().fight`: the tick one side first has no live unit (with who is left
 // and their health then), and every lobbed egg thrown (`unitLobLaunch`), every explosion (`unitLobExplosion`) and
 // how many enemies each explosion hit (the area damage's own hit count). Eggs count until 20 ticks after the end.
+// The events that mark a sustained attack's start, damage ticks and end (fight.beats); BEAT_LOG first ones kept.
+const BEAT_EVENTS = ['spinStart', 'spinPulse', 'spinEnd', 'unitBurstShot', 'breathPulse'],
+    BEAT_LOG = 24;
 function createFightProbe(sim) {
     const lobs = { thrown: 0, explosions: 0, hits: 0, empty: 0, log: [] };
     let end = null;
@@ -466,8 +469,21 @@ function createFightProbe(sim) {
             const live = sim.units.filter((unit) => unit.alive && unit.side === side);
             return { alive: live.length, hp: live.reduce((sum, unit) => sum + unit.hp, 0) };
         });
+    // Sustained attacks' beats before the end: how many, and the first ones as [tick, hits] (hits where the event
+    // counts them).
+    const beats = Object.fromEntries(BEAT_EVENTS.map((type) => [type, { count: 0, first: [] }]));
     return {
         observe() {
+            if (!end)
+                for (const event of sim.events) {
+                    const beat = beats[event.type];
+                    if (!beat) continue;
+                    beat.count++;
+                    if (beat.first.length < BEAT_LOG)
+                        beat.first.push(
+                            event.hits === undefined ? sim.tick : [sim.tick, event.hits],
+                        );
+                }
             for (const event of sim.events)
                 if (event.type === 'unitLobLand') landed.set(event.projectileId, event);
             if (!end)
@@ -486,6 +502,7 @@ function createFightProbe(sim) {
             return {
                 end,
                 dealt,
+                beats,
                 now: { host: now[0], guest: now[1] },
                 lobs: {
                     ...lobs,

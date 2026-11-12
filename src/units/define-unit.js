@@ -4,8 +4,9 @@
 //   hero     hero card: one per deck, launched alone and free, recalled to a cannon
 //   unit     simulation Definition. A capability is a named field whose value is its parameters
 //            (stickyCling, leapAttack, spinAttack, ...); the simulation reads it directly. A sustained attack
-//            (breathAttack) also has `sustain { durationMs, tickMs, cooldownMs }`, the shared timing of every
-//            damage-over-time attack (SustainedAttack) in place of the unit's cooldownMs.
+//            (breathAttack, a pulsing spinAttack, burstAttack) also has `sustain { durationMs, tickMs, cooldownMs,
+//            windupMs?, recoverMs? }`, the shared timing of every damage-over-time attack (SustainedAttack) in
+//            place of the unit's cooldownMs.
 //   payload  the cannon shell that carries the unit (LaunchRules)
 //   visual   body scale, team accent, hit effect family, optional landing husk colors
 //   card     deck card and card detail copy
@@ -42,6 +43,8 @@ import { GRAIN_SIZE } from './baseline.js';
 import { SustainedAttack } from '../sim/capabilities/sustained-attack.js';
 
 const REQUIRED = ['unit', 'payload', 'visual', 'card'];
+// The attacks timed by the shared sustained-attack grammar (Definition `sustain`, SustainedAttack).
+const SUSTAINED = ['breathAttack', 'spinAttack', 'burstAttack'];
 // Attacks and movements a breathing unit cannot also have: its combat action is the breath alone.
 const BREATH_EXCLUSIVE = [
     'flight',
@@ -79,11 +82,20 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
     // cadence, so the unit has no cooldownMs or attackIntervalMs of its own.
     if (unit.sustain) {
         SustainedAttack.validate(id, unit.sustain);
+        if (!SUSTAINED.some((key) => unit[key]))
+            throw new Error(
+                `병종 ${id}의 sustain은 지속 피해형 공격(${SUSTAINED.join('·')})에만 씁니다.`,
+            );
         if (unit.cooldownMs != null || unit.attackIntervalMs != null)
             throw new Error(
                 `병종 ${id}는 sustain.cooldownMs를 쓰므로 cooldownMs·attackIntervalMs를 따로 둘 수 없습니다.`,
             );
     }
+    // The burst and the pulsing spin are sustained attacks; the arc sweep keeps its own timing.
+    if ((unit.burstAttack || (unit.spinAttack && !unit.spinAttack.arcSweep)) && !unit.sustain)
+        throw new Error(`병종 ${id}의 burstAttack·회전 타격(spinAttack)은 sustain이 필요합니다.`);
+    if (unit.spinAttack?.arcSweep && unit.sustain)
+        throw new Error(`병종 ${id}의 spinAttack.arcSweep은 sustain을 쓰지 않습니다.`);
     // A breath (UnitBreathAttack) is a sustained attack: the unit's atk on every damage tick; its flame tip is the
     // attack reach.
     if (unit.breathAttack) {

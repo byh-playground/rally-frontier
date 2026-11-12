@@ -21,6 +21,8 @@ import {
 } from './session/runtime-state.js';
 import { LaunchRules } from './sim/launch-rules.js';
 import { StickyCling } from './sim/capabilities/sticky-cling.js';
+import { SustainedAttack } from './sim/capabilities/sustained-attack.js';
+import { UnitSpinAttack } from './sim/capabilities/unit-spin-attack.js';
 import { ForwardCannon } from './sim/capabilities/forward-cannon.js';
 import { CannonRider } from './sim/capabilities/cannon-rider.js';
 import { CampaignMission } from './sim/campaign-mission.js';
@@ -277,6 +279,8 @@ const GRAIN_DEPTH_RANK_STEP = 4e-7;
 // Bound presentation-only retention while avoiding churn when the camera crosses a unit.
 const GRAIN_ACTOR_RETENTION_MS = 2000;
 const GRAIN_ACTOR_HIDDEN_LIMIT = 512;
+// The spin ring's stages (UnitSpinAttack.phases), filled per unit as the rings are drawn.
+const SPIN_RING_STAGES = {};
 
 class RenderPassProfiler {
     constructor() {
@@ -5022,7 +5026,15 @@ class GLRenderer {
                         this.orientationRole() === 'guest' ? -worldDirection : worldDirection;
                 }
             }
-            const spin = entity.spinAttack,
+            const spinDefinition = UnitDefinition.get(u.type),
+                spin = spinDefinition?.spinAttack
+                    ? UnitSpinAttack.phases(
+                          entity,
+                          spinDefinition,
+                          this.snapshot.tps || SIM_TPS,
+                          (grain.spinStages ??= {}),
+                      )
+                    : null,
                 roll = GRAIN_SPRITES[u.type]?.roll && grounded ? entity.heroRoll : null;
             const rollArt = GRAIN_SPRITES[u.type]?.roll;
             const rollProgress = roll?.phase ? rollArt.progress(roll, renderTick) : 0;
@@ -5202,7 +5214,7 @@ class GLRenderer {
             }
             let burstFacing = 1;
             if (actor.setWeaponState) {
-                const pose = this.burstWeaponPose(u, entity.combat, world, displayMs);
+                const pose = this.burstWeaponPose(u, entity, world, displayMs);
                 if (grounded && !impact.active) burstFacing = pose.facing;
                 actor.setWeaponState(
                     grounded && !impact.active ? pose : { shotsSpent: pose.shotsSpent },
@@ -5329,15 +5341,24 @@ class GLRenderer {
         }
         this.vectorContext.preparePoses();
     }
-    burstWeaponPose(unit, combat, world, displayMs) {
-        const burst = combat?.burstAttack,
+    // The burst's shots (UnitBurstAttack) come from its sustained-attack timing (Unit.sustain).
+    burstWeaponPose(unit, entity, world, displayMs) {
+        const combat = entity.combat,
+            burst = combat?.burstAttack,
+            sustain = entity.sustain,
+            spec = UnitDefinition.get(unit.type).sustain,
+            tps = this.snapshot.tps || SIM_TPS,
             stepMs = this.presentationTargetIntervalMs(),
-            age = burst?.lastShotTick == null ? Infinity : displayMs - burst.lastShotTick * stepMs,
-            reloading =
-                burst?.nextShotTick == null && displayMs >= (combat?.cooldownUntil ?? 0) * stepMs,
-            shotsSpent = reloading ? 0 : (burst?.shotsFired ?? 0),
+            lastShotTick = burst ? SustainedAttack.lastTick(sustain, spec, tps) : null,
+            age = lastShotTick == null ? Infinity : displayMs - lastShotTick * stepMs,
+            shooting =
+                !!burst &&
+                sustain.active &&
+                sustain.nextTick < sustain.endTick - SustainedAttack.recoverTicks(tps, spec),
+            reloading = !shooting && displayMs >= sustain.readyTick * stepMs,
+            shotsSpent = !burst || reloading ? 0 : SustainedAttack.tickCount(sustain, spec, tps),
             windup = combat?.attackWindupUntil > 0,
-            aiming = windup || burst?.nextShotTick != null || (age >= 0 && age < 140);
+            aiming = windup || shooting || (age >= 0 && age < 140);
         const pose = { aimAngle: null, facing: 1, shotsSpent, recoilAgeMs: age };
         if (!aiming) return pose;
         const kind = windup ? combat.attackWindupTargetKind : burst?.targetKind,
@@ -6956,7 +6977,14 @@ class GLRenderer {
                 this.drawHeroRollTelegraph(entry, model, definition.heroActive);
             if (definition.fruitAttack && entry.entity.alive)
                 this.drawFruitAttackEffect(model, definition.fruitAttack);
-            const spin = model?.entity?.spinAttack,
+            const spin = model?.entity
+                    ? UnitSpinAttack.phases(
+                          model.entity,
+                          definition,
+                          this.snapshot.tps || ActiveSimulationTiming.tps(),
+                          SPIN_RING_STAGES,
+                      )
+                    : null,
                 tick = model?.tick,
                 radius = spec?.radius;
             if (

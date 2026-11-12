@@ -1,10 +1,14 @@
 // Contract (moved from the index.html Development Contract):
-// - 도토리의 회전 단계·시각과 피해 주기는 Unit.spinAttack의 권위 상태가 소유하며, 양손 회전·이펙트는 그 상태를 따른다.
-//   도토리의 몸 크기와 회전 반경은 쌀 기준 크기에서 파생한다. 회전 타격마다 가까운 적 지상 병사를
-//   최대 세 명 밀쳐낸다. 회전 중 자발 이동을 멈추되 물리 충격은 정상 적용한다.
-//   종료 후 이동 회복은 일반 근접 병종과 같다.
+// - 도토리 회전은 지속 피해형 공격이다(Definition `sustain`, SustainedAttack): 준비(sustain.windupMs) 뒤
+//   sustain.durationMs 동안 sustain.tickMs마다 회전 타격, 회복(sustain.recoverMs) 뒤 sustain.cooldownMs 대기.
+//   시간·단계는 Unit.sustain이 소유하고 이 능력은 범위 판정과 타격만 맡는다. 양손 회전·이펙트는 그 단계(phases)를
+//   따른다. 도토리의 몸 크기와 회전 반경은 쌀 기준 크기에서 파생한다. 회전 타격마다 가까운 적 지상 병사를
+//   최대 세 명 밀쳐낸다. 회전(준비~회복) 중 자발 이동을 멈추되 물리 충격은 정상 적용한다.
+//   회복은 일반 근접 병종의 이동 회복과 같은 ms·같은 틱이다.
 // - 수박은 병력에 맞힌 범위 평타를 공격당 한 번 센다. 네 번 뒤 다음 병력 공격으로 360도 휩쓸기를
-//   시작하고 평타 기본 피해를 사용한다. 진행 횟수와 회전 상태는 저장·복원·리플레이에 포함한다.
+//   시작하고 평타 기본 피해를 사용한다. 휩쓸기는 지속 피해가 아니라(대상마다 한 번) 자기 시간
+//   (spinAttack.windupMs·activeMs·recoverMs)과 Unit.spinAttack 상태를 쓴다. 진행 횟수와 회전 상태는
+//   저장·복원·리플레이에 포함한다.
 import { FP } from '../../core/config.js';
 import { KnockbackRules } from '../../definitions/knockback-rules.js';
 import { UnitDefinition } from '../../definitions/units.js';
@@ -12,25 +16,33 @@ import { LaunchImpact } from '../launch-impact.js';
 import { Knockback } from '../knockback.js';
 import { UnitMotion } from '../navigation.js';
 import { IndexList } from '../index-list.js';
+import { SustainedAttack } from './sustained-attack.js';
 
 // Query lists per call site: a pulse's hits can kill a bursting unit, whose blast queries its own lists.
 const START_QUERY = new IndexList(),
     PULSE_QUERY = new IndexList(),
     SPLASH_QUERY = new IndexList(),
     SWEEP_QUERY = new IndexList();
+const INACTIVE = Object.freeze({ active: false, winner: null });
 
 // The unit owns the complete authoritative interval. The caller consumes its
 // ordinary movement/target action while this returns true, without pinning the
 // unit's position: external impulses and collision resolution remain active.
+// A pulsing spin (the acorn) times itself with SustainedAttack (Unit.sustain); an arc sweep (the watermelon) keeps
+// its own Unit.spinAttack.
 export class UnitSpinAttack {
-    static validate(spec) {
-        for (const key of ['radius', 'windupMs', 'activeMs', 'recoverMs']) {
+    // A pulsing spin takes its time from the Definition's sustain block; an arc sweep has its own.
+    static validate(d) {
+        const spec = d.spinAttack;
+        const timing = spec?.arcSweep
+            ? ['radius', 'windupMs', 'activeMs', 'recoverMs']
+            : ['radius'];
+        for (const key of timing) {
             if (!Number.isFinite(spec?.[key]) || spec[key] <= 0)
                 throw new TypeError(`회전 공격 설정이 올바르지 않습니다: ${key}`);
         }
-        if (!spec.arcSweep && (!Number.isFinite(spec.pulseMs) || spec.pulseMs <= 0)) {
-            throw new TypeError('회전 공격 간격이 올바르지 않습니다.');
-        }
+        if (!spec.arcSweep && !d.sustain)
+            throw new TypeError('회전 타격에는 sustain(지속 피해형 공격의 시간)이 필요합니다.');
         if (
             !spec.arcSweep &&
             (!Number.isSafeInteger(spec.maxUnitHitsPerPulse) || spec.maxUnitHitsPerPulse < 1)
@@ -40,14 +52,31 @@ export class UnitSpinAttack {
             throw new TypeError('회전 공격의 접선 비율이 올바르지 않습니다.');
     }
 
+    // The running spin's stages in ticks (startTick, activeStartTick, activeEndTick, endTick), or null; fills `out`.
+    static phases(unit, d, tps, out) {
+        if (d.spinAttack.arcSweep) return unit.spinAttack ?? null;
+        const sustain = unit.sustain;
+        if (!sustain?.active) return null;
+        const stages = SustainedAttack.phases(sustain, d.sustain, tps, out);
+        out.activeStartTick = stages.durationStartTick;
+        out.activeEndTick = stages.durationEndTick;
+        return out;
+    }
+
     static heightFP(sim, unit) {
         return UnitMotion.bottomFP(sim, unit) + Math.round(sim.unitRadius(unit.type) * FP);
     }
 
     // The caller supplies the same per-side vision field as normal combat.
     // Presence of a hidden enemy alone never initiates an attack.
-    static canStart(sim, unit, spec, vision) {
-        if (!unit?.alive || !vision || unit.spinAttack || unit.combat.cooldownActive(sim))
+    static canStart(sim, unit, d, vision) {
+        const spec = d.spinAttack;
+        if (!unit?.alive || !vision) return false;
+        if (
+            spec.arcSweep
+                ? unit.spinAttack || unit.combat.cooldownActive(sim)
+                : !SustainedAttack.ready(sim, unit.sustain)
+        )
             return false;
         if (
             spec.rhythm &&
@@ -98,19 +127,22 @@ export class UnitSpinAttack {
         return false;
     }
 
-    static start(sim, unit, spec, vision) {
-        this.validate(spec);
-        if (!this.canStart(sim, unit, spec, vision)) return false;
-        const activeStartTick = sim.tick + Math.max(1, sim.msTicks(spec.windupMs));
-        const activeEndTick = activeStartTick + Math.max(1, sim.msTicks(spec.activeMs));
-        unit.spinAttack = {
-            startTick: sim.tick,
-            activeStartTick,
-            activeEndTick,
-            endTick: activeEndTick + Math.max(1, sim.msTicks(spec.recoverMs)),
-            ...(spec.arcSweep ? { hitIds: {} } : { nextPulseTick: activeStartTick }),
-            lastUpdatedTick: sim.tick - 1,
-        };
+    static start(sim, unit, d, vision) {
+        this.validate(d);
+        if (!this.canStart(sim, unit, d, vision)) return false;
+        const spec = d.spinAttack;
+        if (spec.arcSweep) {
+            const activeStartTick = sim.tick + Math.max(1, sim.msTicks(spec.windupMs));
+            const activeEndTick = activeStartTick + Math.max(1, sim.msTicks(spec.activeMs));
+            unit.spinAttack = {
+                startTick: sim.tick,
+                activeStartTick,
+                activeEndTick,
+                endTick: activeEndTick + Math.max(1, sim.msTicks(spec.recoverMs)),
+                hitIds: {},
+                lastUpdatedTick: sim.tick - 1,
+            };
+        } else SustainedAttack.start(sim, unit.sustain, d.sustain);
         sim.events.push({
             type: 'spinStart',
             side: unit.side,
@@ -121,37 +153,47 @@ export class UnitSpinAttack {
         return true;
     }
 
-    static update(sim, unit, spec, damage) {
-        const spin = unit?.spinAttack;
-        if (!spin) return { active: false, winner: null };
-        this.validate(spec);
+    // Runs a started spin for this tick: true (`active`) while it holds the unit's combat action.
+    static update(sim, unit, d) {
+        const spec = d.spinAttack,
+            damage = d.atk;
+        if (!(spec.arcSweep ? unit?.spinAttack : unit?.sustain.active)) return INACTIVE;
+        this.validate(d);
         if (!Number.isFinite(damage) || damage <= 0)
             throw new TypeError('회전 공격 피해가 올바르지 않습니다.');
+        if (spec.arcSweep) return this.updateSweep(sim, unit, spec, damage);
+        if (!unit.alive) {
+            this.cancel(sim, unit);
+            return INACTIVE;
+        }
+        if (!SustainedAttack.advance(sim, unit.sustain)) {
+            this.ended(sim, unit);
+            return INACTIVE;
+        }
+        if (!SustainedAttack.takeTick(sim, unit.sustain, d.sustain))
+            return { active: true, winner: null };
+        return { active: true, winner: this.pulse(sim, unit, spec, damage) };
+    }
+
+    static updateSweep(sim, unit, spec, damage) {
+        const spin = unit.spinAttack;
         if (!unit.alive || sim.tick >= spin.endTick) {
-            unit.spinAttack = null;
-            sim.events.push({
-                type: 'spinEnd',
-                side: unit.side,
-                sourceId: unit.id,
-                x: unit.x,
-                y: unit.y,
-            });
-            return { active: false, winner: null };
+            this.cancel(sim, unit);
+            return INACTIVE;
         }
         if (spin.lastUpdatedTick === sim.tick) return { active: true, winner: null };
         spin.lastUpdatedTick = sim.tick;
-        if (spec.arcSweep) {
-            if (
-                sim.tick >= spin.activeStartTick &&
-                sim.tick <= spin.activeEndTick &&
-                UnitMotion.isGrounded(unit)
-            )
-                this.updateArcSweep(sim, unit, spec, damage);
-            return { active: true, winner: null };
-        }
-        if (sim.tick < spin.nextPulseTick || sim.tick >= spin.activeEndTick)
-            return { active: true, winner: null };
+        if (
+            sim.tick >= spin.activeStartTick &&
+            sim.tick <= spin.activeEndTick &&
+            UnitMotion.isGrounded(unit)
+        )
+            this.updateArcSweep(sim, unit, spec, damage);
+        return { active: true, winner: null };
+    }
 
+    // One spin hit: the nearest enemy ground soldiers (up to the cap) and every hostile building in reach.
+    static pulse(sim, unit, spec, damage) {
         const z = this.heightFP(sim, unit);
         let hits = 0;
         sim.nearbyUnits(
@@ -209,7 +251,6 @@ export class UnitSpinAttack {
                 }) || winner;
             if (capture.dealt > 0) hits++;
         }
-        spin.nextPulseTick = sim.tick + Math.max(1, sim.msTicks(spec.pulseMs));
         sim.events.push({
             type: 'spinPulse',
             side: unit.side,
@@ -218,7 +259,7 @@ export class UnitSpinAttack {
             y: unit.y,
             hits,
         });
-        return { active: true, winner };
+        return winner;
     }
 
     static inReach(sim, unit, target, spec, heightFP) {
@@ -357,9 +398,17 @@ export class UnitSpinAttack {
         }
     }
 
+    // Stops a running spin early (death, a returning hero); a pulsing spin keeps the cooldown set when it started.
     static cancel(sim, unit) {
-        if (!unit?.spinAttack) return false;
-        unit.spinAttack = null;
+        if (unit?.spinAttack) unit.spinAttack = null;
+        else if (unit?.sustain?.active && UnitDefinition.get(unit.type).spinAttack)
+            SustainedAttack.interrupt(unit.sustain);
+        else return false;
+        this.ended(sim, unit);
+        return true;
+    }
+
+    static ended(sim, unit) {
         sim.events.push({
             type: 'spinEnd',
             side: unit.side,
@@ -367,6 +416,5 @@ export class UnitSpinAttack {
             x: unit.x,
             y: unit.y,
         });
-        return true;
     }
 }

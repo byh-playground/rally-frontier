@@ -36,11 +36,17 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
 - 능력별 판정·표현 계약은 각 능력 모듈(src/sim/capabilities/) 머리 주석이 소유한다.
 - 지속 피해형 공격은 공격 주기(재사용 대기)와 그 안의 피해 틱을 분리한다: 한 번의 공격은 정해진 시간 동안
   지속되며 그동안 일정 간격으로 피해를 주고, 끝나면 별도의 재사용 대기를 가진다. Definition의 공통 블록
-  sustain { durationMs, tickMs, cooldownMs }(지속 시간·피해 간격·재사용 대기)로 정하고, 이 시간 구조는
-  src/sim/capabilities/sustained-attack.js(SustainedAttack)가 맡는다. 공격 능력은 범위 판정과 피해만 맡고
-  '지금 지속 중인가, 이번 틱이 피해 틱인가'를 SustainedAttack에 묻는다. 첫 피해 틱은 시작한 틱이고, 한 번 시작한
-  공격은 표적을 잃어도 지속 시간을 끝까지 채운다. sustain이 있는 병종은 cooldownMs·attackIntervalMs를 따로 두지
-  않는다.
+  sustain { durationMs, tickMs, cooldownMs }(지속 시간·피해 간격·재사용 대기)로 정하고, 한 번의 공격의 피해 틱
+  수는 따로 적지 않고 durationMs/tickMs에서 나온다. 선택 단계 windupMs·recoverMs는 지속 앞의 준비와 뒤의
+  회복이다(그동안 서 있고 피해는 없으며, 재사용 대기는 회복 끝부터). 표적을 조준하고 사거리를 벗어나면 취소되는
+  준비는 기존 전투 준비(attackWindupMs)를 쓴다. 이 시간 구조는 src/sim/capabilities/sustained-attack.js
+  (SustainedAttack)가 맡는다. 공격 능력은 범위 판정·표적·발사와 피해만 맡고 '지금 지속 중인가, 이번 틱이 피해
+  틱인가'를 SustainedAttack에 묻는다. 첫 피해 틱은 지속이 시작한 틱이다. 넘어짐·죽음으로 끊기면 재사용 대기는
+  시작할 때 정한 대로이고, 고정한 표적을 잃어 거두면(cut) 그 틱부터 한 간격 뒤에 끝나 재사용 대기를 센다.
+  sustain이 있는 병종은 cooldownMs·attackIntervalMs를 따로 두지 않는다. 적용된 공격: 고추 불 뿜기(breathAttack,
+  표적을 잃어도 끝까지 뿜음), 도토리 회전(spinAttack, 준비·회복 포함, 끝까지 돎), 해바라기씨 연사(burstAttack,
+  attackWindupMs로 조준, 표적을 잃으면 거둠, 마지막 발 뒤에는 움직임). 수박 휩쓸기(spinAttack.arcSweep)는 대상마다
+  한 번 맞히는 공격이라 자기 시간을 쓴다.
 - 화면 밖 병종의 포즈 객체는 재진입 비용을 줄이도록 최대 2초·비표시 512개까지 보관한다.
   보관 중에는 그리지 않고 맵 전환·불연속 리플레이 시킹에서는 즉시 정리한다.
 - 카드 상세와 타이틀은 GameKit의 쇼케이스 표면을 재사용한다. 실제 경기와 시뮬레이션·표현 상태를
