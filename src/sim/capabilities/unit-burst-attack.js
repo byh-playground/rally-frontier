@@ -1,55 +1,61 @@
 // Contract (moved from the index.html Development Contract):
-// - 해바라기씨는 보이는 적 투입탄을 우선하고 지상 표적도 공격한다. 멈춰서 한 표적에 연사하고 재장전한다.
-//   총과 두 손은 표적 방향을 공유한다. 표시 시각의 사격 횟수에 맞춰 총구가 반동하고 탄띠가 줄어든다.
+// - 해바라기씨 연사는 지속 피해형 공격이다(Definition `sustain`, SustainedAttack): 전투 준비(attackWindupMs)로
+//   표적을 조준한 뒤 sustain.durationMs 동안 sustain.tickMs마다 한 발(첫 발은 시작한 틱), 연사가 끝나면
+//   sustain.cooldownMs 재장전. 발 수는 durationMs/tickMs에서 나온다. 시간·발사 틱은 Unit.sustain이 소유하고 이
+//   능력은 표적 고정·발사·피해만 맡는다.
+// - 보이는 적 투입탄을 우선하고 지상 표적도 공격한다. 멈춰서 한 표적에 연사한다. 쏠 발이 남은 동안만 서 있고
+//   마지막 발 뒤에는 (재장전 중이라도) 움직일 수 있다. 고정한 표적이 죽거나 보이지 않거나 사거리를 벗어나거나
+//   넘어지면 연사를 거둔다(SustainedAttack.cut: 그 틱부터 한 발 간격 뒤에 끝나고 재장전은 거기서 센다).
+// - combat.burstAttack { targetId, targetKind, aimX, aimY, aimHeightFP }는 고정한 표적과 조준점이다(재장전이
+//   끝나면 지운다). 총과 두 손은 표적 방향을 공유한다. 사격 수·마지막 사격 틱은 Unit.sustain에서 읽어 총구가
+//   반동하고 탄띠가 줄어든다(SustainedAttack.tickCount·lastTick).
 import { UnitMotion } from '../navigation.js';
 import { FP } from '../../core/config.js';
 import { BuildingDefinition } from '../../definitions/buildings.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { LaunchImpact } from '../launch-impact.js';
 import { LaunchInterception } from '../launch-interception.js';
+import { SustainedAttack } from './sustained-attack.js';
+
+const INACTIVE = Object.freeze({ active: false, winner: null });
 
 // A burst commits to one target. The normal combat loop chooses and prepares
 // its first shot; subsequent shots keep that target while it remains legal.
 export class UnitBurstAttack {
     static start(sim, unit, target, targetKind, definition) {
-        const burst = {
+        unit.combat.burstAttack = {
             targetId: target.id,
             targetKind,
             aimX: target.x,
             aimY: target.y,
             aimHeightFP: this.aimHeightFP(sim, target, targetKind),
-            shotsFired: 0,
-            nextShotTick: sim.tick,
-            lastShotTick: null,
         };
-        unit.combat.burstAttack = burst;
-        return this.fire(sim, unit, target, burst, definition);
+        SustainedAttack.start(sim, unit.sustain, definition.sustain);
+        return this.shoot(sim, unit, target, definition);
     }
 
+    // True (`active`) while shots remain: the unit stands and keeps its target.
     static update(sim, unit, definition, vision) {
-        const burst = unit.combat.burstAttack;
-        if (burst.nextShotTick === null) {
-            if (!unit.combat.cooldownActive(sim)) delete unit.combat.burstAttack;
-            return { active: false, winner: null };
+        const sustain = unit.sustain;
+        SustainedAttack.advance(sim, sustain);
+        if (!SustainedAttack.ticking(sim, sustain, definition.sustain)) {
+            if (SustainedAttack.ready(sim, sustain)) delete unit.combat.burstAttack;
+            return INACTIVE;
         }
+        const burst = unit.combat.burstAttack;
         const target = this.lockedTarget(sim, unit, burst, definition, vision);
         if (!target) {
             this.cancel(sim, unit, definition);
-            return { active: false, winner: null };
+            return INACTIVE;
         }
         burst.aimX = target.x;
         burst.aimY = target.y;
         burst.aimHeightFP = this.aimHeightFP(sim, target, burst.targetKind);
-        const winner =
-            sim.tick >= burst.nextShotTick ? this.fire(sim, unit, target, burst, definition) : null;
-        return { active: true, winner };
+        return { active: true, winner: this.shoot(sim, unit, target, definition) };
     }
 
     static cancel(sim, unit, definition) {
-        const burst = unit.combat.burstAttack;
-        if (burst?.nextShotTick == null) return;
-        burst.nextShotTick = null;
-        unit.combat.cooldownUntil = sim.tick + Math.max(1, sim.msTicks(definition.cooldownMs));
+        SustainedAttack.cut(sim, unit.sustain, definition.sustain);
     }
 
     static lockedTarget(sim, unit, burst, definition, vision) {
@@ -90,10 +96,11 @@ export class UnitBurstAttack {
         );
     }
 
-    static fire(sim, unit, target, burst, definition) {
-        const spec = definition.burstAttack;
-        burst.shotsFired++;
-        burst.lastShotTick = sim.tick;
+    // One shot on this tick's damage tick, if it is one.
+    static shoot(sim, unit, target, definition) {
+        if (!SustainedAttack.takeTick(sim, unit.sustain, definition.sustain)) return null;
+        const spec = definition.burstAttack,
+            burst = unit.combat.burstAttack;
         unit.attackFlash = 1;
         sim.events.push({
             type: 'unitBurstShot',
@@ -110,7 +117,6 @@ export class UnitBurstAttack {
             heightFP: burst.aimHeightFP,
             targetId: burst.targetId,
             targetKind: burst.targetKind,
-            shot: burst.shotsFired,
         });
         let winner = null;
         if (burst.targetKind === 'projectile')
@@ -125,9 +131,7 @@ export class UnitBurstAttack {
                 unit.id,
                 { damageClass: UnitDefinition.damageClass(unit.type) },
             );
-        if (burst.shotsFired >= spec.shots || target.alive === false || target.hp <= 0)
-            this.cancel(sim, unit, definition);
-        else burst.nextShotTick = sim.tick + Math.max(1, sim.msTicks(spec.shotGapMs));
+        if (target.alive === false || target.hp <= 0) this.cancel(sim, unit, definition);
         return winner;
     }
 }

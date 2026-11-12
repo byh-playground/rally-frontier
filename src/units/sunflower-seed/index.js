@@ -10,7 +10,6 @@ export const SunflowerSeed = defineUnit({
         atk: 3,
         range: 150,
         speed: 30,
-        cooldownMs: 800,
         attackWindupMs: 100,
         size: 10,
         sizeClass: 'light',
@@ -19,9 +18,10 @@ export const SunflowerSeed = defineUnit({
         projectile: true,
         damageClass: 'ranged',
         attackVisual: { sourceMotion: null, travel: 'none', impact: 'light' },
+        // A sustained attack (SustainedAttack): after aiming (attackWindupMs) one seed every 0.2 s for 1.4 s (7 shots),
+        // then 0.6 s to reload.
+        sustain: Object.freeze({ durationMs: 1400, tickMs: 200, cooldownMs: 600 }),
         burstAttack: Object.freeze({
-            shots: 7,
-            shotGapMs: 200,
             airRange: 250,
             airDamageMultiplier: 2,
         }),

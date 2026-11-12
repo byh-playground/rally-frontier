@@ -70,17 +70,7 @@ export function unitCardStats(type, rangeLevel, copy) {
             ['대공 공격력', number.format(unit.atk * (burst?.airDamageMultiplier ?? 1))],
             ['대공 사거리', number.format(burst?.airRange ?? unit.range)],
         );
-    if (burst)
-        attack.push(
-            ['최대 연사', `${number.format(burst.shots)}발`],
-            ['연사 간격', seconds(burst.shotGapMs)],
-            ['재장전', seconds(unit.cooldownMs)],
-        );
-    else if (spin?.pulseMs)
-        attack.push(
-            ['회전 공격 반경', number.format(spin.radius)],
-            ['회전 타격 간격', seconds(spin.pulseMs)],
-        );
+    if (spin && !spin.arcSweep) attack.push(['회전 공격 반경', number.format(spin.radius)]);
     else if (!suicide && !sustain)
         attack.push(['기본 공격 주기', seconds(unit.attackIntervalMs ?? unit.cooldownMs)]);
     if (unit.leapAttack) attack.push(['도약 발동 거리', number.format(unit.leapAttack.range)]);

@@ -47,8 +47,9 @@ class Unit {
         }
         if (UnitDefinition.get(data.type)?.fruitAttack && !Object.hasOwn(data, 'fruitAttack'))
             data.fruitAttack = FruitHeroAttack.initialState();
+        // An arc sweep keeps its own spin state; a pulsing spin is timed by its sustain (below).
         const spinAttack = UnitDefinition.get(data.type)?.spinAttack;
-        if (spinAttack && !Object.hasOwn(data, 'spinAttack')) data.spinAttack = null;
+        if (spinAttack?.arcSweep && !Object.hasOwn(data, 'spinAttack')) data.spinAttack = null;
         if (spinAttack?.rhythm && !Object.hasOwn(data, 'spinAttackBasicHits'))
             data.spinAttackBasicHits = 0;
         if (UnitDefinition.get(data.type)?.contactMelee && !Object.hasOwn(data, 'contactAttack'))

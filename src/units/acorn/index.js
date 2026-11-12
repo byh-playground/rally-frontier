@@ -19,20 +19,24 @@ export const Acorn = defineUnit({
         atk: 13,
         range: ACORN_SPIN_RADIUS - ACORN_SIZE * COLLISION_RADIUS_SCALE,
         speed: 50,
-        cooldownMs: 1000,
         size: ACORN_SIZE,
         mass: 900,
         sizeClass: 'heavy',
         role: 'bruiser',
         attackVisual: { sourceMotion: null, travel: 'none', impact: 'light' },
         sight: 275,
-        // Damage, reach and impulse are trial values; cadence follows the reviewed motion.
+        // A sustained attack (SustainedAttack): wind up as a basic attack does, spin 1 s with a hit every 0.2 s (5),
+        // recover as a melee soldier does, then 1 s before the next spin. The cadence follows the reviewed motion.
+        sustain: Object.freeze({
+            windupMs: DEFAULT_ATTACK_WINDUP_MS,
+            durationMs: 1000,
+            tickMs: 200,
+            recoverMs: DEFAULT_MELEE_MOVE_RECOVERY_MS,
+            cooldownMs: 1000,
+        }),
+        // Damage, reach and impulse are trial values; every spin hit (UnitSpinAttack) deals atk.
         spinAttack: Object.freeze({
             radius: ACORN_SPIN_RADIUS,
-            windupMs: DEFAULT_ATTACK_WINDUP_MS,
-            activeMs: 1000,
-            recoverMs: DEFAULT_MELEE_MOVE_RECOVERY_MS,
-            pulseMs: 200,
             maxUnitHitsPerPulse: 3,
             tangentRatio: 0.5,
         }),

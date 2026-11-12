@@ -31,6 +31,7 @@ import { LaunchImpact } from './launch-impact.js';
 import { LaunchInterception } from './launch-interception.js';
 import { UnitThornAttack } from './capabilities/unit-thorn-attack.js';
 import { UnitBurstAttack } from './capabilities/unit-burst-attack.js';
+import { SustainedAttack } from './capabilities/sustained-attack.js';
 import { UnitBreathAttack } from './capabilities/unit-breath-attack.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.js';
@@ -1120,9 +1121,13 @@ class StrategySim {
             u.target = target.id;
             return true;
         }
-        if (u.combat.cooldownActive(this)) return false;
+        if (this.attackCoolingDown(u, d)) return false;
         this.startAttackWindup(u, target, targetKind, d);
         return false;
+    }
+    // A sustained attack (SustainedAttack) waits on its own cooldown; any other attack on the combat cooldown.
+    attackCoolingDown(u, d) {
+        return d.sustain ? !SustainedAttack.ready(this, u.sustain) : u.combat.cooldownActive(this);
     }
     attackCooldownJitterMs(u) {
         // Preserve the former 20TPS ±1-tick flavor as deterministic ±50ms,
@@ -1881,7 +1886,7 @@ class StrategySim {
     emitUnitDeath(target, sourceSide, sourceType) {
         if (!target || target.alive === false) return null;
 
-        if (target.spinAttack) UnitSpinAttack.cancel(this, target);
+        if (UnitDefinition.get(target.type)?.spinAttack) UnitSpinAttack.cancel(this, target);
         target.hp = 0;
         target.alive = false;
         target.constructionWork = null;
@@ -2336,8 +2341,8 @@ class StrategySim {
         if (d.contactMelee && ContactMelee.recover(this, u, d)) return null;
         const site = d.construction ? this.constructionSite(u) : null;
         const activeSite = site?.construction ? site : null;
-        if (d.spinAttack && u.spinAttack) {
-            const spin = UnitSpinAttack.update(this, u, d.spinAttack, d.atk);
+        if (d.spinAttack) {
+            const spin = UnitSpinAttack.update(this, u, d);
             if (spin.active) {
                 if (!activeSite) u.constructionWork = null;
                 return spin.winner;
@@ -2369,7 +2374,7 @@ class StrategySim {
             d.canAttackAir &&
             (!activeSite || found) &&
             (d.burstAttack || targetKind === 'projectile' || !u.combat.windupPending()) &&
-            !u.combat.cooldownActive(this) &&
+            !this.attackCoolingDown(u, d) &&
             FruitHeroAttack.canBasic(u) &&
             LaunchInterception.target(
                 this,
@@ -2475,12 +2480,10 @@ class StrategySim {
         if (
             d.spinAttack &&
             (!d.spinAttack.rhythm || !found.isBuilding) &&
-            UnitSpinAttack.start(this, u, d.spinAttack, vision[u.side])
+            UnitSpinAttack.start(this, u, d, vision[u.side])
         ) {
             u.combat.cancelWindup();
-            if (!d.spinAttack.rhythm)
-                u.combat.cooldownUntil = u.spinAttack.endTick + this.msTicks(d.cooldownMs);
-            return UnitSpinAttack.update(this, u, d.spinAttack, d.atk).winner;
+            return UnitSpinAttack.update(this, u, d).winner;
         }
         const dist = Math.hypot(t.x - u.x, t.y - u.y) || 1;
         const max = this.interactionDistance(u, t, 'attack', attackRange);
