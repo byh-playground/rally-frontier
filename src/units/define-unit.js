@@ -37,7 +37,7 @@
 //            heightPx, landStartMs, landEndMs, dropFromPx }) (Unit.flight on the render tick's clock and the
 //            landing fall, main.js). The renderer draws its body and face quads
 //            through drawUnitQuads(context, this.paint, …) (render/dead-unit-look.js): main.js sets
-//            `paint` around a flying corpse's drawBody/drawFace, and its `hurt` face is the corpse's.
+//            `paint` around a stopped, greying corpse's drawBody/drawFace (null otherwise), and its `hurt` face is every corpse's.
 import { COLLISION_RADIUS_SCALE } from '../definitions/world-rules.js';
 import { GRAIN_SIZE } from './baseline.js';
 import { SustainedAttack } from '../sim/capabilities/sustained-attack.js';

@@ -1112,6 +1112,24 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
         };
     }
 
+    // The last drawn frame's submission (`render()` draws one after each step). `deviceDraws` is every draw call the GL
+    // device made; `draws` is the renderer's own `perfStats` sum, which leaves out the GameKit sprite submits.
+    function renderStats(renderer) {
+        const rp = renderer.perfStats,
+            mesh = renderer.vectorContext.stats().mesh;
+        return {
+            draws: rp.drawCalls,
+            deviceDraws: renderer.device.stats.drawCalls,
+            instancedDraws: renderer.device.stats.instancedDrawCalls,
+            vertices: renderer.device.stats.vertices,
+            vectorDraws: rp.vectorAssetDrawCalls,
+            vectorInstances: rp.vectorAssetInstances,
+            uploadBytes: rp.bufferUploadBytes,
+            flushReasons: mesh.flushReasons,
+            drawDispatchReasons: mesh.drawDispatchReasons,
+        };
+    }
+
     // The debug-host handle of one scene. `open(advanceTick, onError)` builds the prepareSimScene handle.
     function host(stage, name, params, open, extra = () => ({})) {
         const log = createTickLog();
@@ -1157,6 +1175,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 checksum: run.sim.checksum(),
                 openMs,
                 units: { host: alive(0), guest: alive(1) },
+                render: renderStats(stage.renderer),
                 ...extra(run.sim),
                 ...log.state(times),
                 overlap: overlap(run.sim),
