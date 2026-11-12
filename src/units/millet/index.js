@@ -9,7 +9,9 @@ export const Millet = defineUnit({
         hp: 15,
         atk: 8,
         size: BASIC_MELEE.size * 0.75,
-        outOfCombatMoveMultiplier: 2,
+        speed: 125,
+        // 선딜을 포함한 타격 간격이다(cooldownMs는 선딜 뒤에 더해져 더 길어진다). 10틱/초라 3틱과 4틱이 번갈아 평균 0.35초.
+        attackIntervalMs: 350,
         contactMelee: true,
         attackVisual: { ...BASIC_MELEE.attackVisual, sourceMotion: null },
     },
@@ -31,10 +33,10 @@ export const Millet = defineUnit({
     },
     card: {
         role: '기동 근접',
-        feature: '비전투 이동 2배 · 몸통 돌진',
+        feature: '빠른 이동 · 빠른 몸통 돌진',
         land: '앞뒤로 10명씩 투입',
         fire: '앞뒤 2발',
-        notes: ['앞뒤에 투입되어 빠르게 달리고 몸으로 부딪쳐요.'],
+        notes: ['앞뒤에 투입되어 빠르게 달려 몸으로 연달아 부딪쳐요.'],
     },
     sprite: () => import('./sprite.js').then((art) => art.SPRITE),
 });

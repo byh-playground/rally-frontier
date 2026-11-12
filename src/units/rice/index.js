@@ -3,7 +3,8 @@ import { defineUnit } from '../define-unit.js';
 
 export const Rice = defineUnit({
     id: 'rice',
-    unit: { ...BASIC_MELEE, name: '쌀' },
+    // 걷는 속도만 기본 근접보다 빠르다(민들레씨와 달리 쌀을 쓰는 이유).
+    unit: { ...BASIC_MELEE, name: '쌀', speed: 100 },
     // 산탄: 한 번에 여러 갈래, 갈래마다 폭발은 작다.
     payload: {
         cost: 35 * RESOURCE_SCALE,

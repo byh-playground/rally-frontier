@@ -288,7 +288,8 @@ class BotController {
         const support = LaunchRules.captureHoldRadius - 100;
         const workers = deck.filter(({ type }) => {
             const unit = UnitDefinition.get(type);
-            return unit?.construction && !unit.captureExcluded;
+            // A flier lifts off toward the enemy and does not build or hold the point from the air.
+            return unit?.construction && !unit.captureExcluded && !unit.flight;
         });
         return objectives
             .filter(({ supported }) => !supported)
@@ -498,7 +499,7 @@ class BotController {
                 const definition = UnitDefinition.get(type);
                 if (contested) return definition.hp;
                 const walk = Math.max(0, capture.distance - LaunchRules.maxReachOf(type, level));
-                return -walk / (definition.speed * (definition.outOfCombatMoveMultiplier || 1));
+                return -walk / definition.speed;
             };
             const unit = capture.units
                 .filter(

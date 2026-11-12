@@ -1,7 +1,6 @@
 // Contract (moved from the index.html Development Contract):
 // - 조의 공격은 기존 충돌 해소 후 실제 접근·병사 또는 건물 외곽 접촉 시에만 피해를 준다.
 //   타격 뒤 후퇴하고 재돌진하며, 후퇴·충전 상태와 타격 시각은 저장·복원·리플레이에 포함한다.
-//   적을 추적하거나 공격하지 않을 때는 설정된 비전투 이동 배율을 적용한다.
 // - 땅콩은 시야에 들어온 가까운 적 건물만 지상 공격 대상으로 삼고, 사거리 150에서 접촉 돌진을 시작하며 돌진 중에는 기본 이동속도(100)의 두 배로 움직인다. 유효타 뒤 반동은 속도가 아니라 돌진 시작 거리와 같은 목표 거리(150)로 정의하고, 속도는 공용 중력·감쇠로 계산한다.
 //   건물 외곽에 유효타를 내면 공용 물리 임펄스로 건물 반대 방향 위로 튀고, 착지하고 회복한 위치에서 다시 접근한다.
 //   적 병사와는 공용 충돌을 적용한다.
@@ -26,6 +25,13 @@ export class ContactMelee {
             sim.moveToward(u, u.contactAttack.retreatX, u.contactAttack.retreatY, speed, {
                 allowContactRecovery: true,
             });
+            // The next wind-up runs while backing off, so a short interval (millet's 3.5 ticks) is not
+            // stretched by the retreat; the windup waits for the same cooldown as everywhere else.
+            if (!u.combat.windupPending() && !u.combat.cooldownActive(sim)) {
+                const ref = u.target ? sim.liveEntityRefById(u.target) : null;
+                if (ref)
+                    sim.startAttackWindup(u, ref.entity, ref.isBuilding ? 'building' : 'unit', d);
+            }
             return true;
         }
         u.contactAttack = null;
@@ -108,8 +114,9 @@ export class ContactMelee {
             retreatY: u.y + (dy / length) * ConstructionRules.retreatDistance,
             untilTick:
                 sim.tick +
+                // At least two ticks: the first one is the step back, so a short interval still separates the pair.
                 Math.max(
-                    1,
+                    2,
                     Math.round(sim.msTicks(cooldownMs) * ConstructionRules.phaseRatios.recoverEnd),
                 ),
         };

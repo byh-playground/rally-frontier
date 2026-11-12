@@ -27,7 +27,9 @@ export const Pea = defineUnit({
         reach: 0.85,
         speed: 750,
         impact: 40,
-        splash: 80,
+        splash: 120,
+        // 착지 퍼짐은 탄착 범위와 따로 80으로 둔다.
+        deployRadius: 80,
         land: 'burst',
         fire: Object.freeze({ mode: 'single' }),
     },

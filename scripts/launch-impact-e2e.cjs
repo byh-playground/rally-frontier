@@ -722,7 +722,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                         ],
                         0,
                     ],
-                    ['pea', 225, 0, [[0, 0, 80, 40, 12]], 0, 600, 133],
+                    ['pea', 225, 0, [[0, 0, 120, 40, 12]], 0, 600, 133],
                     [
                         'redbean',
                         300,
@@ -1062,12 +1062,12 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     BuildingDefinition.get('base').size + radius * 0.45,
                 );
                 check(
-                    offCenter.every((damage) => damage === 42) && edge === 30,
+                    offCenter.every((damage) => damage === 60) && edge === 30,
                     'artillery scales with distance, without a light, medium or heavy multiplier',
                     { offCenter, edge },
                 );
                 check(
-                    building === 63,
+                    building === 64,
                     'the same off-center shell still deals the old building damage',
                     building,
                 );
