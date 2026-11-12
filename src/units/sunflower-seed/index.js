@@ -32,7 +32,7 @@ export const SunflowerSeed = defineUnit({
         shellHp: 25,
         cost: 30 * RESOURCE_SCALE,
         premiumCost: 10 * RESOURCE_SCALE,
-        count: 6,
+        count: 10,
         impact: 10,
         splash: 50,
     },

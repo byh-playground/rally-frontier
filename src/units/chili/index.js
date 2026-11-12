@@ -2,7 +2,7 @@ import { GRAIN_SIZE, RESOURCE_SCALE, SINGLE_BUNDLE_SHELL } from '../baseline.js'
 import { defineUnit } from '../define-unit.js';
 import { COLLISION_RADIUS_SCALE } from '../../definitions/world-rules.js';
 
-// 확정 규칙: 불줄기 길이 175·각도 30°, 3명·체력 60, 한 명이 줄기 안의 적 모두에게 뿜는 동안 초당 20, 멈춰서 뿜고
+// 확정 규칙: 불줄기 길이 175·각도 30°, 6명·체력 60, 한 명이 줄기 안의 적 모두에게 뿜는 동안 초당 20, 멈춰서 뿜고
 // 천천히 돌린다, 지상 유닛만 태우고 건물은 절반, 가격 150+50. 지속 피해형 공격의 문법(sustain)을 따른다: 한 번에
 // 1초 뿜고 그동안 0.2초마다 4(5회 20), 끝나면 1초 재사용 대기.
 // 초안(되돌릴 수 있음): 방향 전환 초당 90°, 걷는 속도 50, 포탄은 단발 기본값.
@@ -40,7 +40,7 @@ export const Chili = defineUnit({
         ...SINGLE_BUNDLE_SHELL,
         cost: 30 * RESOURCE_SCALE,
         premiumCost: 10 * RESOURCE_SCALE,
-        count: 3,
+        count: 6,
         shellHp: 25,
     },
     visual: {
