@@ -4,6 +4,7 @@ import { CampaignPresentation } from './campaign-presentation.js';
 import { unitCardStats } from './unit-card-stats.js';
 import './grain-portrait.js';
 import { UNITS, unitCard } from '../units/index.js';
+import { LaunchRules } from '../sim/launch-rules.js';
 
 // Launch match screens (title, friend, help, in-game HUD and cards, match menu, result) and their addresses.
 // Routes: #/ title, #/friend, #/help, #/play, #/play/menu, #/play/help, #/play/<grain> card detail, #/result.
@@ -476,11 +477,35 @@ export class LaunchScreens {
         document.addEventListener('visibilitychange', sync);
         MOTION.addEventListener('change', sync);
     }
+    // The hand row (HandCycle): the next card, the hand cards and, while the hero is out, its round sortie button
+    // (same data-launch-card controls as the hero's card). A card that was not in the previous hand slides in.
+    static renderHand(host, hand, next, sortie, previous) {
+        const A = this.actions,
+            nextMarkup = next
+                ? `<div class="launch-next" aria-label="다음 카드 ${A.grainName(next)}"><img data-portrait="${next}" alt=""><small>다음</small></div>`
+                : '',
+            sortieMarkup = sortie
+                ? `<div class="launch-hero-sortie"><button type="button" class="launch-card hero-orb" data-launch-card="${sortie}"><img class="launch-card-portrait" data-portrait="${sortie}" alt=""><b>${A.grainName(sortie)}</b><em></em></button></div>`
+                : '';
+        host.innerHTML =
+            nextMarkup +
+            hand
+                .map((type) =>
+                    this.cardMarkup(
+                        type,
+                        LaunchRules.isHeroType(type),
+                        previous.length > 0 && !previous.includes(type),
+                    ),
+                )
+                .join('') +
+            sortieMarkup;
+        this.fillCardPortraits(host);
+    }
     // Card buttons with face portraits; the game keeps their selected/unaffordable classes.
-    static cardMarkup(type, hero) {
+    static cardMarkup(type, hero, entering = false) {
         const A = this.actions,
             STATS = A.grainStats(type);
-        return `<div class="launch-card-slot"><button type="button" class="launch-card" data-launch-card="${type}"><img class="launch-card-portrait" data-portrait="${type}" alt=""><b>${A.grainName(type)}${hero ? '' : ` ×${STATS.count}`}</b><em>${ResourceDisplay.costMarkup(STATS)}</em></button><button type="button" class="launch-card-info" data-card-info="${type}" aria-label="${A.grainName(type)} 상세">i</button></div>`;
+        return `<div class="launch-card-slot${entering ? ' entering' : ''}"><button type="button" class="launch-card" data-launch-card="${type}"><img class="launch-card-portrait" data-portrait="${type}" alt=""><b>${A.grainName(type)}${hero ? '' : ` ×${STATS.count}`}</b><em>${ResourceDisplay.costMarkup(STATS)}</em></button><button type="button" class="launch-card-info" data-card-info="${type}" aria-label="${A.grainName(type)} 상세">i</button></div>`;
     }
     static fillCardPortraits(host) {
         for (const IMG of host.querySelectorAll('img[data-portrait]')) {
