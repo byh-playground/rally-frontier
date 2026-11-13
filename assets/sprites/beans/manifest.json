@@ -2,20 +2,20 @@
     "schemaVersion": 1,
     "assets": {
         "face-angry.png": {
-            "bytes": 36022,
-            "sha256": "5d51995af21a917d92591032d9f8d3a531e5ea9c2cfbf4add1c246d4707260bb"
+            "bytes": 5760,
+            "sha256": "6d5e5c7ee0259e8d741b7887ed3786f4fd198ec068d6f0e1f12e565b5b3efecb"
         },
         "face-happy.png": {
-            "bytes": 36440,
-            "sha256": "dd3cf16454a2e2a10b40e9e433c689abb825b00f4059c2b29c183ecb3de48ede"
+            "bytes": 4758,
+            "sha256": "7671f03ced3b20e7db43dfa9346677e2c10b186bc16fbe559c58f0682814e6ee"
         },
         "face-hurt.png": {
-            "bytes": 30838,
-            "sha256": "709b04f20570671196e411bc88b6784cbfe2047d3f193fa2a57e37e77ed9983a"
+            "bytes": 4525,
+            "sha256": "44b75891748700ead830ffc09c2d1edc278eaea582f4f63c77b867a3c47dc2a2"
         },
         "face-neutral.png": {
-            "bytes": 29642,
-            "sha256": "8688c858078f141598e4883a1d880693e8f787345393004f025932ff2f8fce31"
+            "bytes": 4139,
+            "sha256": "ff2f72b29e7c752d546893568a316a14eba8831dee92096899ac01ac465135a1"
         },
         "pea-arm-l.png": {
             "bytes": 13720,
