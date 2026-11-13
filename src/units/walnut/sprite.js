@@ -122,7 +122,7 @@ export async function loadWalnutSpriteCanvas() {
     }
 }
 
-// The deck card: the resting ball turned a little, happy, without speed effects.
+// The deck card: the resting ball turned a little, with its everyday dot-eye face, without speed effects.
 export function walnutSpritePortrait(source, width) {
     const canvas = document.createElement('canvas'),
         scale = width / 330;
@@ -141,7 +141,7 @@ export function walnutSpritePortrait(source, width) {
     ctx.restore();
     piece('shade');
     ctx.translate(14, 6);
-    piece('happy');
+    piece('neutral');
     return canvas.toDataURL('image/png');
 }
 
