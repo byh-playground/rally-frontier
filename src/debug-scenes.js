@@ -18,6 +18,7 @@ import { StableSerializationUtil } from './net/lobby-codec.js';
 import { RollingBody } from './sim/capabilities/rolling-body.js';
 import { UnitFlight } from './sim/capabilities/unit-flight.js';
 import { UnitBreathAttack } from './sim/capabilities/unit-breath-attack.js';
+import { UnitChainAttack } from './sim/capabilities/unit-chain-attack.js';
 import { Knockback } from './sim/knockback.js';
 import { StrategySim } from './sim/strategy-sim.js';
 import { createShowcaseSurface } from './ui/showcase-host.js';
@@ -443,7 +444,14 @@ function createOutpostProbe(sim) {
 // and their health then), and every lobbed egg thrown (`unitLobLaunch`), every explosion (`unitLobExplosion`) and
 // how many enemies each explosion hit (the area damage's own hit count). Eggs count until 20 ticks after the end.
 // The events that mark a sustained attack's start, damage ticks and end (fight.beats); BEAT_LOG first ones kept.
-const BEAT_EVENTS = ['spinStart', 'spinPulse', 'spinEnd', 'unitBurstShot', 'breathPulse'],
+const BEAT_EVENTS = [
+        'spinStart',
+        'spinPulse',
+        'spinEnd',
+        'unitBurstShot',
+        'breathPulse',
+        'chainPulse',
+    ],
     BEAT_LOG = 24;
 function createFightProbe(sim) {
     const lobs = { thrown: 0, explosions: 0, hits: 0, empty: 0, log: [] };
@@ -1023,6 +1031,181 @@ function breathProbe(sim, types) {
         : null;
 }
 
+// Chain lightning (`unit`, `melee`, `launch` and `ai-match` scenes when a card has `chainAttack`, the cotton), read by
+// `state().chain`. `burns` is the channel's sustained-attack rhythm as for the breath (`count` channels started,
+// `ticksPerBurn` damage ticks in each finished channel, `tickOffsets` the first finished one's, `cycleTicks` start to
+// start and `restTicks` end to next start per unit), `cuts` channels that ended early while knocked off their feet
+// (with their damage ticks so far in `cutTicks`), `activeTicks`·`coolingTicks` unit-ticks channelling and cooling down,
+// `moveWhileChannelling` the largest one-tick step of a channelling unit. `links` the unit-ticks of a channel by how
+// many links it held (index 0..links), `maxLinks` the most held at once, `relinks` links made again after a cut
+// (Unit.chain.relinks), `lostToDeath` links whose enemy died while held, `pulses` damage ticks and `perPulse` targets
+// hit per damage tick (mean·max), `unitHits`·`airHits` (flying targets hit)·`buildingHits`, `dealt` units·buildings,
+// `buildingPerPulse` each building hit's amount, `allyHits` (0 by the rule), `geometry` every held link against the
+// rule at each damage tick: `firstOutOfReach` (first link past the attack reach) and `bounceTooFar` (a link farther
+// than bounceRange from the one before), both 0 by the rule, and `bounceDistance` (mean·max of the bounces held).
+function createChainProbe(sim) {
+    const out = {
+        activeTicks: 0,
+        coolingTicks: 0,
+        moveWhileChannelling: 0,
+        maxLinks: 0,
+        lostToDeath: 0,
+        pulses: 0,
+        unitHits: 0,
+        airHits: 0,
+        buildingHits: 0,
+        allyHits: 0,
+        dealt: { units: 0, buildings: 0 },
+        cuts: 0,
+        geometry: { firstOutOfReach: 0, bounceTooFar: 0 },
+    };
+    const linkTicks = [],
+        perPulse = [],
+        buildingPerPulse = [],
+        cutTicks = [],
+        bounces = [],
+        ticksPerBurn = [],
+        cycles = [],
+        rests = [],
+        last = new Map(),
+        offsets = new Map();
+    let burnStarts = 0,
+        firstOffsets = null;
+    const damage = sim.applyDamage.bind(sim);
+    sim.applyDamage = (side, type, target, building, amount, sourceId, ...rest) => {
+        const source = UnitDefinition.get(type)?.chainAttack && sim.unitById.get(sourceId);
+        if (!source?.chain) return damage(side, type, target, building, amount, sourceId, ...rest);
+        const hpBefore = target.hp,
+            air = !building && UnitFlight.airborne(target);
+        const result = damage(side, type, target, building, amount, sourceId, ...rest);
+        const dealt = Math.max(0, hpBefore - target.hp);
+        if (target.side === side) out.allyHits++;
+        if (building) {
+            out.buildingHits++;
+            out.dealt.buildings += dealt;
+            buildingPerPulse.push(dealt);
+        } else {
+            out.unitHits++;
+            out.dealt.units += dealt;
+            if (air) out.airHits++;
+        }
+        return result;
+    };
+    return {
+        observe() {
+            for (const event of sim.events)
+                if (event.type === 'chainPulse') {
+                    out.pulses++;
+                    perPulse.push(event.hits);
+                    // Every held link against the rule at this damage tick.
+                    const source = sim.unitById.get(event.sourceId),
+                        d = UnitDefinition.get(source.type);
+                    for (let k = 0; k < source.chain.count; k++) {
+                        const e = UnitChainAttack.entity(sim, source.chain, k);
+                        if (!e) continue;
+                        if (k === 0) {
+                            const reach = sim.interactionDistance(source, e, 'attack', d.range);
+                            if (Math.hypot(e.x - source.x, e.y - source.y) > reach + 1e-6)
+                                out.geometry.firstOutOfReach++;
+                            continue;
+                        }
+                        const from = UnitChainAttack.entity(sim, source.chain, k - 1),
+                            gap = Math.hypot(e.x - from.x, e.y - from.y);
+                        bounces.push(gap);
+                        if (gap > d.chainAttack.bounceRange + 1e-6) out.geometry.bounceTooFar++;
+                    }
+                }
+            for (const u of sim.units) {
+                if (!u.chain) continue;
+                const s = u.sustain,
+                    before = last.get(u.id);
+                if (u.alive) {
+                    if (s.active) {
+                        out.activeTicks++;
+                        linkTicks[u.chain.count] = (linkTicks[u.chain.count] ?? 0) + 1;
+                        out.maxLinks = Math.max(out.maxLinks, u.chain.count);
+                        if (before?.active)
+                            out.moveWhileChannelling = Math.max(
+                                out.moveWhileChannelling,
+                                round(Math.hypot(u.x - before.x, u.y - before.y)),
+                            );
+                    } else if (sim.tick < s.readyTick) out.coolingTicks++;
+                }
+                if (before) {
+                    // Links held last tick whose enemy has died since.
+                    for (const id of before.ids)
+                        if (id && sim.unitById.get(id)?.alive === false) out.lostToDeath++;
+                    if (s.uses > before.uses) {
+                        burnStarts++;
+                        if (before.uses > 0) {
+                            cycles.push(s.startTick - before.startTick);
+                            rests.push(s.startTick - before.endTick);
+                        }
+                        offsets.set(u.id, s.ticks > before.ticks ? [0] : []);
+                    } else {
+                        const list = offsets.get(u.id);
+                        if (s.ticks > before.ticks) list?.push(before.nextTick - s.startTick);
+                        if (before.active && !s.active && list) {
+                            // Knocked off its feet before its time ran out: a cut.
+                            if (s.endTick < before.endTick) {
+                                out.cuts++;
+                                cutTicks.push(list.length);
+                            } else {
+                                ticksPerBurn.push(list.length);
+                                firstOffsets ??= [...list];
+                            }
+                        }
+                    }
+                }
+                last.set(u.id, {
+                    x: u.x,
+                    y: u.y,
+                    active: s.active,
+                    uses: s.uses,
+                    ticks: s.ticks,
+                    nextTick: s.nextTick,
+                    startTick: s.startTick,
+                    endTick: s.endTick,
+                    ids: u.alive && s.active ? u.chain.ids.slice(0, u.chain.count) : [],
+                });
+            }
+        },
+        state() {
+            const summary = (values) =>
+                values.length
+                    ? {
+                          count: values.length,
+                          mean: round(values.reduce((sum, v) => sum + v, 0) / values.length),
+                          min: round(Math.min(...values)),
+                          max: round(Math.max(...values)),
+                      }
+                    : null;
+            return {
+                ...out,
+                relinks: sim.units.reduce((sum, u) => sum + (u.chain?.relinks ?? 0), 0),
+                links: Array.from({ length: out.maxLinks + 1 }, (_, k) => linkTicks[k] ?? 0),
+                perPulse: summary(perPulse),
+                buildingPerPulse: summary(buildingPerPulse),
+                cutTicks,
+                bounceDistance: summary(bounces),
+                burns: {
+                    count: burnStarts,
+                    ticksPerBurn: summary(ticksPerBurn),
+                    tickOffsets: firstOffsets,
+                    cycleTicks: summary(cycles),
+                    restTicks: summary(rests),
+                },
+            };
+        },
+    };
+}
+// A chain probe only where a chain card can appear, so other scenes keep their plain damage path.
+function chainProbe(sim, types) {
+    return types.some((type) => UnitDefinition.get(type)?.chainAttack)
+        ? createChainProbe(sim)
+        : null;
+}
+
 // How widely one side's live units are scattered: their count, and the mean and largest distance from their centre.
 function spread(sim, side) {
     let count = 0,
@@ -1328,12 +1511,26 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 );
                 RollingBody.aim(walnut, facing.x, facing.y);
             }
-        const breath = breathProbe(sim, types);
+        const breath = breathProbe(sim, types),
+            chain = chainProbe(sim, types);
         return matchScene(scene, params, sim, {
             zoom: 1.4,
             focus: () => center,
-            beforeStep: breath ? () => breath.observe() : undefined,
-            extra: breath ? () => ({ ...walnutSpeeds(sim), breath: breath.state() }) : walnutSpeeds,
+            beforeStep:
+                breath || chain
+                    ? () => {
+                          breath?.observe();
+                          chain?.observe();
+                      }
+                    : undefined,
+            extra:
+                breath || chain
+                    ? () => ({
+                          ...walnutSpeeds(sim),
+                          ...(breath ? { breath: breath.state() } : {}),
+                          ...(chain ? { chain: chain.state() } : {}),
+                      })
+                    : walnutSpeeds,
         });
     }
 
@@ -1540,7 +1737,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 flight = createFlightProbe(sim),
                 rider = createRiderProbe(sim),
                 outposts = createOutpostProbe(sim),
-                breath = breathProbe(sim, [...new Set(sim.units.map((u) => u.type))]);
+                breath = breathProbe(sim, [...new Set(sim.units.map((u) => u.type))]),
+                chain = chainProbe(sim, [...new Set(sim.units.map((u) => u.type))]);
             return matchScene(scene, params, sim, {
                 zoom: params.zoom === undefined ? 1.6 : positive(scene, 'zoom', params.zoom),
                 focus: followUnits(sim, at),
@@ -1551,6 +1749,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     rider.observe();
                     outposts.observe();
                     breath?.observe();
+                    chain?.observe();
                 },
                 extra: () => ({
                     knockback: probe.state(),
@@ -1561,6 +1760,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     outposts: outposts.state(),
                     enemySpread: spread(sim, 1),
                     ...(breath ? { breath: breath.state() } : {}),
+                    ...(chain ? { chain: chain.state() } : {}),
                 }),
             });
         },
@@ -1662,7 +1862,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 };
             };
             const flight = createFlightProbe(sim),
-                breath = breathProbe(sim, [type]);
+                breath = breathProbe(sim, [type]),
+                chain = chainProbe(sim, [type]);
             // follow=1: the camera eases toward the squad's centre on the clock (time constant FOLLOW_MS), so frames
             // drawn between ticks do not jump with the tick-rate centre.
             // It starts on the cannon, and holds there until the shot's first soldier is out.
@@ -1693,6 +1894,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                         landTick = sim.tick;
                     flight.observe();
                     breath?.observe();
+                    chain?.observe();
                 },
                 extra: () => {
                     const squad = sim.units.filter(
@@ -1702,6 +1904,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                         landing: { tick: landTick, units: squad.length, ...spreadOf(squad) },
                         flight: flight.state(),
                         ...(breath ? { breath: breath.state() } : {}),
+                        ...(chain ? { chain: chain.state() } : {}),
                     };
                 },
             });
@@ -1718,7 +1921,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 flight = createFlightProbe(sim),
                 rider = createRiderProbe(sim),
                 outposts = createOutpostProbe(sim),
-                breath = breathProbe(sim, sim.decks.flat());
+                breath = breathProbe(sim, sim.decks.flat()),
+                chain = chainProbe(sim, sim.decks.flat());
             return matchScene('ai-match', params, sim, {
                 zoom: 1,
                 focus: () => battleFocus(sim),
@@ -1728,6 +1932,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     rider.observe();
                     outposts.observe();
                     breath?.observe();
+                    chain?.observe();
                     bots();
                 },
                 isComplete: () => sim.baseOutcome() !== null,
@@ -1742,6 +1947,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     rider: rider.state(),
                     outposts: outposts.state(),
                     ...(breath ? { breath: breath.state() } : {}),
+                    ...(chain ? { chain: chain.state() } : {}),
                 }),
             });
         },

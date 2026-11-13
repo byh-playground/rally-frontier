@@ -15,6 +15,7 @@ import { RollingBody } from './capabilities/rolling-body.js';
 import { UnitFlight } from './capabilities/unit-flight.js';
 import { UnitBreathAttack } from './capabilities/unit-breath-attack.js';
 import { SustainedAttack } from './capabilities/sustained-attack.js';
+import { UnitChainAttack } from './capabilities/unit-chain-attack.js';
 import { MapGeneration } from './map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
@@ -68,6 +69,9 @@ class Unit {
             data.flight = UnitFlight.initialState();
         if (UnitDefinition.get(data.type)?.breathAttack && !Object.hasOwn(data, 'breath'))
             data.breath = UnitBreathAttack.initialState();
+        const chainAttack = UnitDefinition.get(data.type)?.chainAttack;
+        if (chainAttack && !Object.hasOwn(data, 'chain'))
+            data.chain = UnitChainAttack.initialState(chainAttack);
         // A sustained attack's timing (duration, damage ticks, cooldown) is its own state, shared by every such attack.
         if (UnitDefinition.get(data.type)?.sustain && !Object.hasOwn(data, 'sustain'))
             data.sustain = SustainedAttack.initialState();

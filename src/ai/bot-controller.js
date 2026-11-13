@@ -347,7 +347,8 @@ class BotController {
         const effect = ({ type }) => {
             const definition = UnitDefinition.get(type);
             // A flying unit is answered only by anti-air (UnitFlight): no ground card can hit it before it lands.
-            if (UnitFlight.airborne(shot.target)) return definition.canAttackAir ? 3 : 0;
+            if (UnitFlight.airborne(shot.target))
+                return definition.canAttackAir || definition.chainAttack ? 3 : 0;
             if (
                 BuildingDefinition.get(shot.target.type) &&
                 UnitDefinition.onlyAttacksBuildings(type)
@@ -355,7 +356,10 @@ class BotController {
                 return 3;
             if (
                 clustered &&
-                (definition.lobAttack || definition.spinAttack || definition.breathAttack)
+                (definition.lobAttack ||
+                    definition.spinAttack ||
+                    definition.breathAttack ||
+                    definition.chainAttack)
             )
                 return 2;
             if (BuildingDefinition.get(shot.target.type) && definition.role === 'ranged') return 1;

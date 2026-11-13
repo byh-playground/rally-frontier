@@ -28,10 +28,10 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   UNITS 순서가 덱 순서·시작 덱·결과 통계 행·스프라이트 아틀라스 배치 순서다. 공유 코드는 UNITS만 읽고 병종 이름 표를 두지 않는다.
 - 병종 추가: ① src/units/<id>/index.js(필요하면 sprite.js)를 만들고 ② UNITS에 한 줄을 넣는다. 기존 능력은
   Definition 필드로 켠다(contactMelee·stickyCling·growsCannon·leapAttack·spinAttack·lobAttack·thornAttack·burstAttack·
-  selfDestruct·heroActive·fruitAttack·rolling·flight·breathAttack). 새 능력은 src/sim/capabilities/<능력>.js 모듈과 판정의 호출 지점을 더한다.
+  selfDestruct·heroActive·fruitAttack·rolling·flight·breathAttack·chainAttack). 새 능력은 src/sim/capabilities/<능력>.js 모듈과 판정의 호출 지점을 더한다.
   두 병종 이상이 쓰는 지점만 공통 hook으로 만들고, 한 병종만 쓰는 지점은 능력 필드로 거른 직접 호출로 둔다.
   그림 계약은 sprite.js의 SPRITE가 소유한다: 투입탄(shell: draw·turn·flight), 착지 연출(landing), 포즈(pose·roll),
-  공용 효과 그림(effectArt), 준비 그리기(렌더러 prepareExtraArt), 불줄기(breath.drawFlame, 조준 자세는 actor.setAim). main.js는 이 계약만 읽고 병종 id를 비교하지 않는다.
+  공용 효과 그림(effectArt), 준비 그리기(렌더러 prepareExtraArt), 불줄기(breath.drawFlame, 조준 자세는 actor.setAim), 연쇄 번개(chain.drawBolt, 채널 자세는 actor.setChannel·번개 시작점은 actor.boltTip). main.js는 이 계약만 읽고 병종 id를 비교하지 않는다.
   봇의 능력별 발사 규칙은 능력 모듈의 botLaunch가 소유하고 bot-launch-rules.js 목록 순서로 실행한다.
 - 능력별 판정·표현 계약은 각 능력 모듈(src/sim/capabilities/) 머리 주석이 소유한다.
 - 지속 피해형 공격은 공격 주기(재사용 대기)와 그 안의 피해 틱을 분리한다: 한 번의 공격은 정해진 시간 동안
@@ -45,7 +45,8 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   끊기면(cut, 단계 어디서든) 그 틱에 공격이 끝나고 재사용 대기 cooldownMs를 그 틱부터 처음부터 다시 센다.
   sustain이 있는 병종은 cooldownMs·attackIntervalMs를 따로 두지 않는다. 적용된 공격: 고추 불 뿜기(breathAttack,
   표적을 잃어도 끝까지 뿜음), 도토리 회전(spinAttack, 준비·회복 포함, 넘어지지 않으면 끝까지 돎), 해바라기씨 연사(burstAttack,
-  attackWindupMs로 조준, 표적을 잃으면 거둠, 마지막 발 뒤에는 움직임). 수박 휩쓸기(spinAttack.arcSweep)는 대상마다
+  attackWindupMs로 조준, 표적을 잃으면 거둠, 마지막 발 뒤에는 움직임), 목화솜 연쇄 번개(chainAttack, 끊긴 고리는
+  다시 이으며 끝까지 채널링). 수박 휩쓸기(spinAttack.arcSweep)는 대상마다
   한 번 맞히는 공격이라 자기 시간을 쓴다.
 - 화면 밖 병종의 포즈 객체는 재진입 비용을 줄이도록 최대 2초·비표시 512개까지 보관한다.
   보관 중에는 그리지 않고 맵 전환·불연속 리플레이 시킹에서는 즉시 정리한다.
@@ -1326,8 +1327,24 @@ END OF DEVELOPMENT CONTRACT
                             </p>
                             <p>
                                 나는 동안에는 공격하지 않고, 지상 공격·폭발·넉백도 닿지 않아요. 적
-                                투입탄을 쏘는 포탑과 병종만 나는 병종을 맞혀요(투입탄을 먼저 쏴요).
-                                공중에서 쓰러지면 그 자리에서 떨어져요.
+                                투입탄을 쏘는 포탑과 병종, 그리고 목화솜의 번개만 나는 병종을
+                                맞혀요(투입탄을 쏘는 쪽은 투입탄을 먼저 쏴요). 공중에서 쓰러지면 그
+                                자리에서 떨어져요.
+                            </p>
+                        </details>
+                        <details>
+                            <summary>번개 잇는 병종</summary>
+                            <p>
+                                목화솜은 멈춰 서서 사거리 안의 적에게 번개를 걸고, 그 적에서 가장
+                                가까운 적으로 번개가 튀어 최대 넷을 한 줄로 이어요. 1초 동안
+                                0.2초마다 이어진 적 모두에게 같은 피해를 주고, 1초 쉬었다가 다시
+                                이어요.
+                            </p>
+                            <p>
+                                이어진 적이 쓰러지거나 멀어지면 그 고리부터 끊기고 근처의 다른
+                                적에게 다시 이어요. 나는 적에도 닿아 땅과 하늘 사이를 오가며 튀지만
+                                투입탄은 맞히지 못해요. 건물에는 절반만 들어가고, 아군은 맞지
+                                않아요. 넘어지면 번개가 끊기고 1초를 다시 기다려요.
                             </p>
                         </details>
                         <details>
