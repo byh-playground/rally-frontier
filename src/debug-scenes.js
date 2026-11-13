@@ -423,6 +423,8 @@ function createOutpostProbe(sim) {
                     point.outpostId && sim.buildings.find((b) => b.id === point.outpostId);
                 return {
                     id: point.id,
+                    x: Math.round(point.x),
+                    y: Math.round(point.y),
                     started: !!point.outpostId,
                     side: outpost ? outpost.side : null,
                     workDone: outpost?.construction?.workDone ?? null,
@@ -491,6 +493,10 @@ function createCycleProbe(sim) {
 // A fight in the `unit` scene, read by `state().fight`: the tick one side first has no live unit (with who is left
 // and their health then), and every lobbed egg thrown (`unitLobLaunch`), every explosion (`unitLobExplosion`) and
 // how many enemies each explosion hit (the area damage's own hit count). Eggs count until 20 ticks after the end.
+// `throws`: thorn shots (thornAttack: chestnut, buckwheat) before the end, how many, and the first ones as [tick, thrower,
+// gap] (gap: centre distance to the target minus both body radii when it left the hand). `taken`: the damage of each
+// hit on a unit before the end, by the target's type, split by whether it was building then (`building`, an assigned
+// project under way) or not (`other`), as { damage: hits }.
 // The events that mark a sustained attack's start, damage ticks and end (fight.beats); BEAT_LOG first ones kept.
 const BEAT_EVENTS = [
         'spinStart',
@@ -507,12 +513,22 @@ function createFightProbe(sim) {
     // Damage dealt before the end, by the type of the unit that dealt it.
     const dealt = {},
         thrown = new Set(),
-        landed = new Map();
+        landed = new Map(),
+        throws = { count: 0, first: [] },
+        taken = {};
     const damage = sim.applyDamage.bind(sim);
     sim.applyDamage = (side, type, target, building, amount, ...rest) => {
         const hpBefore = target.hp;
+        const working =
+            !building && !!target.constructionWork && !!sim.constructionSite(target)?.construction;
         const result = damage(side, type, target, building, amount, ...rest);
         if (!end) dealt[type] = (dealt[type] ?? 0) + Math.max(0, hpBefore - target.hp);
+        if (!end && !building && hpBefore > target.hp) {
+            const byType = (taken[target.type] ??= { building: {}, other: {} }),
+                slot = byType[working ? 'building' : 'other'],
+                hit = hpBefore - target.hp;
+            slot[hit] = (slot[hit] ?? 0) + 1;
+        }
         return result;
     };
     const areaDamage = sim.applyAreaDamage.bind(sim);
@@ -556,6 +572,32 @@ function createFightProbe(sim) {
         observe() {
             if (!end)
                 for (const event of sim.events) {
+                    if (event.type !== 'unitThornLaunch') continue;
+                    throws.count++;
+                    if (throws.first.length >= BEAT_LOG) continue;
+                    const shot = sim.unitThornProjectiles.find(
+                            (entry) => entry.id === event.projectileId,
+                        ),
+                        source = sim.unitById.get(event.sourceId),
+                        target =
+                            shot &&
+                            (shot.targetIsBuilding
+                                ? sim.buildingById.get(shot.targetId)
+                                : sim.unitById.get(shot.targetId));
+                    throws.first.push([
+                        sim.tick,
+                        event.sourceId,
+                        source && target && !shot.targetIsBuilding
+                            ? round(
+                                  Math.hypot(target.x - source.x, target.y - source.y) -
+                                      sim.unitRadius(source.type) -
+                                      sim.unitRadius(target.type),
+                              )
+                            : null,
+                    ]);
+                }
+            if (!end)
+                for (const event of sim.events) {
                     const beat = beats[event.type];
                     if (!beat) continue;
                     beat.count++;
@@ -583,6 +625,8 @@ function createFightProbe(sim) {
                 end,
                 dealt,
                 beats,
+                throws,
+                taken,
                 now: { host: now[0], guest: now[1] },
                 lobs: {
                     ...lobs,

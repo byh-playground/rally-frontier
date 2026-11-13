@@ -31,7 +31,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   selfDestruct·heroActive·fruitAttack·rolling·flight·breathAttack·chainAttack). 새 능력은 src/sim/capabilities/<능력>.js 모듈과 판정의 호출 지점을 더한다.
   두 병종 이상이 쓰는 지점만 공통 hook으로 만들고, 한 병종만 쓰는 지점은 능력 필드로 거른 직접 호출로 둔다.
   그림 계약은 sprite.js의 SPRITE가 소유한다: 투입탄(shell: draw·turn·flight), 착지 연출(landing), 포즈(pose·roll),
-  공용 효과 그림(effectArt), 준비 그리기(렌더러 prepareExtraArt), 불줄기(breath.drawFlame, 조준 자세는 actor.setAim), 연쇄 번개(chain.drawBolt, 채널 자세는 actor.setChannel·번개 시작점은 actor.boltTip). main.js는 이 계약만 읽고 병종 id를 비교하지 않는다.
+  공용 효과 그림(effectArt, 자기 가시 탄을 그리는 병종은 렌더러 drawThorn), 준비 그리기(렌더러 prepareExtraArt), 불줄기(breath.drawFlame, 조준 자세는 actor.setAim), 연쇄 번개(chain.drawBolt, 채널 자세는 actor.setChannel·번개 시작점은 actor.boltTip). main.js는 이 계약만 읽고 병종 id를 비교하지 않는다.
   봇의 능력별 발사 규칙은 능력 모듈의 botLaunch가 소유하고 bot-launch-rules.js 목록 순서로 실행한다.
 - 능력별 판정·표현 계약은 각 능력 모듈(src/sim/capabilities/) 머리 주석이 소유한다.
 - 지속 피해형 공격은 공격 주기(재사용 대기)와 그 안의 피해 틱을 분리한다: 한 번의 공격은 정해진 시간 동안
@@ -175,6 +175,9 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   적중 시 반동으로 복귀하며, 닿지 못한 돌진은 작업량을 더하지 않는다. 이탈·사망·교전·공중/회복 중에는
   기여하지 않으며 미납 작업을 쌓지 않는다. 체력 증가 후에도 기존 피해는 유지한다.
   배정된 병사는 건설을 우선한다. 실제 피해를 받으면 건설 상태를 응전으로 바꾸고 현재 닿는 적을 공격한다.
+  타격당 작업량은 Definition construction.workPerHit(기본 1, 참깨 2)이다. construction.damageTakenScale이 있는 병종(참깨 0.25)은
+  진행 중인 공사에 배정된 동안(응전 포함) 받는 유닛 피해에 그 비율을 곱해 내림한다(최소 1). 봇은 workerCard 카드(참깨)를
+  싸움에 내지 않고 지을 거점이 비었을 때 먼저 낸다.
   포탄과 범위 피해도 가해자 식별과 관계없이 응전을 시작한다. 닿는 적이 없으면 공사를 이어간다.
   공사가 시작되어 건물 몸이 생길 때 그 자리에 서 있던 지상 유닛은 유닛 순서대로 가장 가까운 빈 땅으로 옮긴다
   (벽은 바깥에서만 밀어 내므로 안에 남으면 빠져나오지 못한다).
