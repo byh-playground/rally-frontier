@@ -66,25 +66,23 @@ class AiCommandExecutor {
         this.reconcile(snapshot);
         this.queue = [];
         // An isolated decision view, never a mutation of a published snapshot.
-        const side = this.bot.side,
-            deck = snapshot.decks[side];
         const view = {
             ...snapshot,
             wallet: snapshot.wallet.slice(),
             premiumWallet: snapshot.premiumWallet.slice(),
             launchRangeLevel: snapshot.launchRangeLevel.slice(),
-            // The launchable cards (HandCycle), less those a pending launch already plays.
-            hand: snapshot.handCycle[side].hand.map((index) => deck[index]),
-            aiPopulation: LaunchRules.population(snapshot, side).total,
+            aiPopulation: LaunchRules.population(snapshot, this.bot.side).total,
             aiReservedPopulation: 0,
+            // The bot's rounds per deck card (CardAmmo), less those a pending launch already spends.
+            aiRounds: snapshot.cardAmmo[this.bot.side].rounds.slice(),
         };
         for (const p of this.reservations(snapshot)) {
-            view.wallet[side] -= p.cost;
-            view.premiumWallet[side] -= p.premiumCost;
-            if (p.action.type === 'UPGRADE_LAUNCH_RANGE') view.launchRangeLevel[side]++;
+            view.wallet[this.bot.side] -= p.cost;
+            view.premiumWallet[this.bot.side] -= p.premiumCost;
+            if (p.action.type === 'UPGRADE_LAUNCH_RANGE') view.launchRangeLevel[this.bot.side]++;
             else if (p.action.type === 'LAUNCH') {
                 view.aiReservedPopulation += LaunchRules.payload(p.action.unitType)?.count || 0;
-                view.hand = view.hand.filter((type) => type !== p.action.unitType);
+                AiCommandExecutor.spendRound(view, this.bot.side, p.action.unitType);
             }
         }
         this.state = view;
@@ -116,8 +114,9 @@ class AiCommandExecutor {
             this.state.wallet[side] < cost ||
             this.state.premiumWallet[side] < premiumCost ||
             (action.type === 'LAUNCH' &&
-                this.state.aiPopulation + this.state.aiReservedPopulation >=
-                    LaunchRules.populationLimit)
+                (this.state.aiPopulation + this.state.aiReservedPopulation >=
+                    LaunchRules.populationLimit ||
+                    !AiCommandExecutor.hasRound(this.state, side, action.unitType)))
         )
             return false;
         this.queue.push({ key, action: StateValue.copy(action), cost, premiumCost });
@@ -126,9 +125,16 @@ class AiCommandExecutor {
         if (action.type === 'UPGRADE_LAUNCH_RANGE') this.state.launchRangeLevel[side]++;
         else if (action.type === 'LAUNCH') {
             this.state.aiReservedPopulation += LaunchRules.payload(action.unitType).count;
-            this.state.hand = this.state.hand.filter((type) => type !== action.unitType);
+            AiCommandExecutor.spendRound(this.state, side, action.unitType);
         }
         return true;
+    }
+    // A card the view still has a round of (a hero has no ammo).
+    static hasRound(view, side, type) {
+        return !LaunchRules.ammo(type) || view.aiRounds[view.decks[side].indexOf(type)] > 0;
+    }
+    static spendRound(view, side, type) {
+        if (LaunchRules.ammo(type)) view.aiRounds[view.decks[side].indexOf(type)]--;
     }
     dispose() {
         const sim = this.bot.session.sim;
@@ -209,11 +215,6 @@ class BotController {
             if (state.tick - this.lastLaunchTick >= SimulationTiming.msToTicks(intervalMs, tps)) {
                 this.lastLaunchTick = state.tick;
                 this.runLaunch(state);
-                if (
-                    !this.commandExecutor.queue.length &&
-                    state.wallet[this.side] >= LaunchRules.walletCap
-                )
-                    this.cycleHand(state);
             }
         } finally {
             this.commandExecutor.flush();
@@ -390,44 +391,6 @@ class BotController {
         return unit?.cost <= budget ? unit : null;
     }
 
-    // A decision that launched nothing with a full wallet means no hand card is one the rules above want (HandCycle):
-    // the cheapest affordable hand card goes toward the enemy main base to bring the next card in.
-    cycleHand(state) {
-        const side = this.side,
-            busy = new Set(
-                this.commandExecutor.reservations().map(({ action }) => action.cannonId),
-            ),
-            cannons = state.buildings.filter(
-                (b) =>
-                    b.side === side &&
-                    b.alive !== false &&
-                    LaunchRules.readyToLaunch(state, b) &&
-                    !busy.has(b.id),
-            ),
-            main = BuildingDefinition.forRole('mainBase'),
-            target = state.buildings.find(
-                (b) => b.side === 1 - side && b.type === main && b.alive !== false,
-            ),
-            unit = state.hand
-                .map((type) => ({ type, ...LaunchRules.payload(type) }))
-                .filter(
-                    ({ cost, premiumCost = 0 }) =>
-                        cost <= state.wallet[side] && premiumCost <= state.premiumWallet[side],
-                )
-                .sort((a, b) => a.cost - b.cost || (a.premiumCost || 0) - (b.premiumCost || 0))[0];
-        if (!cannons.length || !target || !unit) return;
-        const distance = BotController.distance,
-            cannon = cannons.reduce((best, candidate) =>
-                distance(candidate, target) < distance(best, target) ? candidate : best,
-            );
-        this.fire(
-            { cannon, target, distance: distance(cannon, target) },
-            unit,
-            state.launchRangeLevel[side],
-            state.tick,
-        );
-    }
-
     // Runs the capability-owned launch rules of one stage (src/sim/capabilities/bot-launch-rules.js).
     runCapabilityLaunch(stage, context) {
         for (const rule of BOT_LAUNCH_RULES) {
@@ -456,8 +419,13 @@ class BotController {
             main = BuildingDefinition.forRole('mainBase'),
             outpost = BuildingDefinition.forRole('outpost'),
             constructionCost = BuildingDefinition.get(outpost).construction.cost,
-            cards = state.hand
-                .filter((type) => !LaunchRules.isHeroType(type))
+            // The cards with a round left (CardAmmo) are the ones the rules below choose from.
+            cards = state.decks[side]
+                .filter(
+                    (type) =>
+                        !LaunchRules.isHeroType(type) &&
+                        AiCommandExecutor.hasRound(state, side, type),
+                )
                 .map((type) => ({ type, ...LaunchRules.payload(type) })),
             // Cards whose capability rule owns their shot never join ordinary targeting.
             deck = cards.filter(

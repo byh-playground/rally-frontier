@@ -194,6 +194,13 @@ export function unitCardStats(type, rangeLevel, copy) {
         ['투입 인원', `${number.format(payload.count)}명`],
         ['착지 배치', copy.land],
     ];
+    // Card ammo (CardAmmo); a hero has none.
+    const ammo = LaunchRules.ammo(type);
+    if (ammo)
+        deployment.splice(1, 0, [
+            '탄약',
+            `${number.format(ammo.max)}발 · 한 발 충전 ${seconds(ammo.rechargeMs)}`,
+        ]);
     const firing = [
         ['발사 방식', copy.fire],
         ['포탄 수', `${number.format(shots.length)}발`],

@@ -1013,7 +1013,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
             }
             {
                 function measure(type, offset) {
-                    const { sim } = arena({ deck: ['pea'] });
+                    const { sim } = arena();
                     const home = sim.launchCannons(0)[0];
                     const aim = { x: home.x + 350, y: home.y };
                     const targetPosition = { x: aim.x, y: aim.y + offset };
@@ -2258,7 +2258,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 const { LaunchRules } = await import(
                     new URL('./src/sim/launch-rules.js', location.href)
                 );
-                const sim = new StrategySim(12345, undefined, [['rice'], ['rice']]);
+                const sim = new StrategySim(12345);
                 const site = sim.capturePoints.find((point) => point.id === 'natural-2');
                 const cannon = sim.spawnOutpost(site, side);
                 cannon.hp = cannon.maxHp;

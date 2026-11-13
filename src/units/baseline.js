@@ -49,6 +49,12 @@ export const SINGLE_BUNDLE_SHELL = Object.freeze({
     land: 'burst',
     fire: Object.freeze({ mode: 'single' }),
 });
+// Card ammo (CardAmmo): a launch spends one round, and a card below its max refills one round per rechargeMs.
+// A card without payload.ammo takes the food default, or the oil default when it costs oil (premiumCost). Heroes
+// have no ammo.
+export const FOOD_CARD_AMMO = Object.freeze({ max: 3, rechargeMs: 10000 });
+export const OIL_CARD_AMMO = Object.freeze({ max: 2, rechargeMs: 20000 });
+
 // A hero flies alone and free, and comes out of the shell on its own (land 'bundle': one soldier at a time).
 export const HERO_SHELL = Object.freeze({
     ...SINGLE_BUNDLE_SHELL,

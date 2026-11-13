@@ -2,7 +2,6 @@ import { UnitDefinition } from '../definitions/units.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { LaunchRules } from './launch-rules.js';
-import { HandCycle } from './hand-cycle.js';
 import { NavigationGoal, UnitMotion } from './navigation.js';
 
 const RETURN_PADDING = 10;
@@ -35,12 +34,15 @@ export class HeroDeployment {
         return Math.min(maxHp, recovery.hp + healed);
     }
 
-    // The hero is off the field alive: its card rejoins the hand cycle (HandCycle).
     static dock(sim, side, type, hp) {
         sim.heroes[side][type] = null;
         sim.heroRecovery[side][type] =
             hp < UnitDefinition.get(type).hp ? { hp, startedAtTick: sim.tick } : null;
-        HandCycle.rejoin(sim, side, type);
+    }
+
+    static launchRejection(hero) {
+        if (!hero) return null;
+        return hero.mode === 'dead' ? 'hero-unavailable' : 'hero-already-deployed';
     }
 
     static validSortieId(id) {

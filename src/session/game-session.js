@@ -5,7 +5,7 @@ import { StrategySim } from '../sim/strategy-sim.js';
 import { CampaignMission } from '../sim/campaign-mission.js';
 import { Building, Projectile, Unit } from '../sim/entities.js';
 import { HeroDeployment } from '../sim/hero-deployment.js';
-import { HandCycle } from '../sim/hand-cycle.js';
+import { CardAmmo } from '../sim/card-ammo.js';
 import { HeroRollAttack } from '../sim/capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from '../sim/capabilities/fruit-hero-attack.js';
 import { CannonRider } from '../sim/capabilities/cannon-rider.js';
@@ -356,7 +356,7 @@ class RallySimulationAdapter {
                 throw new Error('게임 snapshot의 비상 착지 높이가 잘못되었습니다.');
         }
         HeroDeployment.validate(state);
-        HandCycle.validate(state);
+        CardAmmo.validate(state);
         CampaignMission.validate(state, this.session.sim.rules.campaign?.mission);
         const practice = state.campaignVolleyPractice,
             volleyGoals = this.session.sim.rules.campaign?.volleyGoals;

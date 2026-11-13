@@ -21,7 +21,6 @@ import { UnitBreathAttack } from './sim/capabilities/unit-breath-attack.js';
 import { UnitChainAttack } from './sim/capabilities/unit-chain-attack.js';
 import { Knockback } from './sim/knockback.js';
 import { StrategySim } from './sim/strategy-sim.js';
-import { HandCycle } from './sim/hand-cycle.js';
 import { createShowcaseSurface } from './ui/showcase-host.js';
 import {
     baseAxis,
@@ -140,6 +139,84 @@ function attachBots(sim, roles = ['host', 'guest']) {
     };
     decide.fired = fired;
     return decide;
+}
+
+// Card ammo (CardAmmo), read by `state().ammo` of `ai-match`·`campaign`: per side, per ammo card, `uses` (rounds
+// spent), `empties` (uses that left 0), `waits` (ticks from a use that left 0 to the card's next use, first 12),
+// `rejected` (launches refused as card-out-of-ammo). An independent model replays the observed spends with the
+// card's max and recharge ticks: `overdrawn` counts spends the model had no round for and `mismatches` the ticks
+// whose sim rounds differ from the model (both must be 0).
+function createAmmoProbe(sim) {
+    const cards = sim.decks.map((deck) =>
+        deck.map((type) => {
+            const spec = LaunchRules.ammo(type);
+            return (
+                spec && {
+                    type,
+                    max: spec.max,
+                    ticks: Math.floor((spec.rechargeMs * sim.tps) / 1000),
+                    rounds: spec.max,
+                    ready: 0,
+                    uses: 0,
+                    empties: 0,
+                    emptyTick: null,
+                    waits: [],
+                }
+            );
+        }),
+    );
+    const rejected = [0, 0];
+    let seen = sim.tick,
+        overdrawn = 0,
+        mismatches = 0;
+    return {
+        // Before a step: sim.events are the last tick's (its commands, then its recharge).
+        observe() {
+            if (sim.tick === seen) return;
+            seen = sim.tick;
+            for (const event of sim.events) {
+                if (event.type === 'launchRejected' && event.reason === 'card-out-of-ammo')
+                    rejected[event.side]++;
+                if (event.type !== 'cardAmmoSpent') continue;
+                const card = cards[event.side][sim.decks[event.side].indexOf(event.unitType)];
+                if (card.rounds <= 0) overdrawn++;
+                if (card.emptyTick !== null && card.waits.length < 12)
+                    card.waits.push(sim.tick - card.emptyTick);
+                card.emptyTick = null;
+                card.rounds--;
+                card.uses++;
+                if (!card.ready) card.ready = sim.tick + card.ticks;
+                if (card.rounds === 0) {
+                    card.empties++;
+                    card.emptyTick = sim.tick;
+                }
+            }
+            for (const [side, list] of cards.entries())
+                for (const [index, card] of list.entries()) {
+                    if (!card) continue;
+                    if (card.ready && sim.tick >= card.ready) {
+                        card.rounds++;
+                        card.ready = card.rounds < card.max ? card.ready + card.ticks : 0;
+                    }
+                    if (sim.cardAmmo[side].rounds[index] !== card.rounds) mismatches++;
+                }
+        },
+        state: () => ({
+            sides: cards.map((list) =>
+                Object.fromEntries(
+                    list
+                        .filter(Boolean)
+                        .map(({ type, max, ticks, uses, empties, waits }) => [
+                            type,
+                            { max, rechargeTicks: ticks, uses, empties, waits },
+                        ]),
+                ),
+            ),
+            rejected: rejected.slice(),
+            overdrawn,
+            mismatches,
+        }),
+    };
 }
 
 // Reads what the game already measures after every tick: StrategySim.step's tick time, its once-a-second stage
@@ -439,53 +516,6 @@ function createOutpostProbe(sim) {
                 firstDone: Math.min(...points.map((point) => point.doneTick ?? Infinity)),
                 points,
             };
-        },
-    };
-}
-
-// The hand cycle (HandCycle) of the `ai-match` and `campaign` scenes, read by `state().cycle`, per side: launches per
-// card (`used`), the same card launched twice in a row (`repeats`) and of those the ones from a cycle of two or more
-// cards (`repeatsInCycle`, 0), the hero cards leaving (`heroOut`) and rejoining (`heroBack`) the cycle as [tick, card],
-// and the hand and next card now.
-function createCycleProbe(sim) {
-    const sides = [0, 1].map(() => ({
-        used: {},
-        repeats: 0,
-        repeatsInCycle: 0,
-        heroOut: [],
-        heroBack: [],
-        last: null,
-    }));
-    const step = sim.step.bind(sim);
-    sim.step = () => {
-        const result = step();
-        for (const event of sim.events) {
-            const record = sides[event.side];
-            if (event.type === 'cardUsed') {
-                record.used[event.unitType] = (record.used[event.unitType] ?? 0) + 1;
-                if (record.last === event.unitType) {
-                    record.repeats++;
-                    if (event.cycleCards >= 2) record.repeatsInCycle++;
-                }
-                record.last = event.unitType;
-                if (LaunchRules.isHeroType(event.unitType))
-                    record.heroOut.push([sim.tick, event.unitType]);
-            } else if (event.type === 'cardRejoined')
-                record.heroBack.push([sim.tick, event.unitType]);
-        }
-        return result;
-    };
-    return {
-        state() {
-            return sides.map(({ last, ...record }, side) => {
-                const deck = sim.decks[side],
-                    { hand, queue } = sim.handCycle[side];
-                return {
-                    ...record,
-                    hand: hand.map((index) => deck[index]),
-                    next: queue.length ? deck[queue[0]] : null,
-                };
-            });
         },
     };
 }
@@ -1822,7 +1852,6 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 for (const u of sim.units)
                     if (u.side === 0 && UnitDefinition.get(u.type)?.heroActive) {
                         sim.heroes[0][u.type] = { sortieId: 'p1', mode: 'advance', unitId: u.id };
-                        HandCycle.takeOut(sim, 0, u.type);
                         u.heroRollQueued = true;
                     }
             const probe = createKnockbackProbe(sim, flag(scene, 'trace', params.trace)),
@@ -2014,13 +2043,14 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 flight = createFlightProbe(sim),
                 rider = createRiderProbe(sim),
                 outposts = createOutpostProbe(sim),
-                cycle = createCycleProbe(sim),
+                ammo = createAmmoProbe(sim),
                 breath = breathProbe(sim, sim.decks.flat()),
                 chain = chainProbe(sim, sim.decks.flat());
             return matchScene('ai-match', params, sim, {
                 zoom: 1,
                 focus: () => battleFocus(sim),
                 beforeStep: () => {
+                    ammo.observe();
                     probe.observe();
                     flight.observe();
                     rider.observe();
@@ -2035,12 +2065,12 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     wallet: sim.wallet.slice(),
                     premiumWallet: sim.premiumWallet.slice(),
                     launches: sim.launchStats.launches.slice(),
+                    ammo: ammo.state(),
                     knockback: probe.state(),
                     outside: probe.outside(),
                     flight: flight.state(),
                     rider: rider.state(),
                     outposts: outposts.state(),
-                    cycle: cycle.state(),
                     ...(breath ? { breath: breath.state() } : {}),
                     ...(chain ? { chain: chain.state() } : {}),
                 }),
@@ -2062,7 +2092,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             rules.campaign = stage;
             const sim = new StrategySim(stage.seed, rules, [stage.deck, stage.enemyDeck]);
             const bots = attachBots(sim, params.player === 'bot' ? ['host', 'guest'] : ['guest']),
-                cycle = createCycleProbe(sim);
+                ammo = createAmmoProbe(sim);
             let result = null;
             const step = sim.step.bind(sim);
             sim.step = () => {
@@ -2073,13 +2103,16 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             return matchScene('campaign', params, sim, {
                 zoom: 1,
                 focus: () => battleFocus(sim),
-                beforeStep: bots,
+                beforeStep: () => {
+                    ammo.observe();
+                    bots();
+                },
                 extra: () => ({
                     stage: stage.id,
                     map: sim.mapDescriptor.topology,
                     result,
                     fired: bots.fired,
-                    cycle: cycle.state(),
+                    ammo: ammo.state(),
                     launches: sim.launchStats.launches.slice(),
                     wallet: sim.wallet.slice(),
                     premiumWallet: sim.premiumWallet.slice(),
