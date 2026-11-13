@@ -3050,7 +3050,11 @@ class GLRenderer {
                 amount = 0;
 
             // A burst and one burn of a flame each show one damage number (their hits follow in the same tick).
-            if (e.type === 'unitSelfDestruct' || e.type === 'breathPulse') {
+            if (
+                e.type === 'unitSelfDestruct' ||
+                e.type === 'breathPulse' ||
+                e.type === 'chainPulse'
+            ) {
                 this.openAreaHitGroup(e, this.presentationEventTick(e, snapshot));
                 index++;
                 continue;
@@ -4233,6 +4237,167 @@ class GLRenderer {
         }
     }
 
+    // A chain unit's frame (UnitChainAttack), while its grains are posed: its channel and telegraph pose
+    // (actor.setChannel), and its lightning record — which enemies it holds now, slot by slot, when each slot lit
+    // (one after another, the art's igniteGapMs apart), the last damage tick, and the pieces of links cut since the
+    // last frame (from the screen points drawChainBolts drew them at). The record is made once per unit and reused.
+    prepareChainBolt(u, entity, grain, world, renderTick, now, grounded) {
+        const art = GRAIN_SPRITES[u.type].chain,
+            d = UnitDefinition.get(u.type),
+            links = d.chainAttack.links,
+            tps = this.snapshot.tps || SIM_TPS,
+            tickMs = 1000 / tps,
+            chain = entity.chain,
+            sustain = entity.sustain,
+            alive = u.alive !== false,
+            channel = alive && grounded && !!sustain?.active && !!chain,
+            bolt = (grain.bolt ??= {
+                seed: HashUtil.hash(u.id) % 997,
+                next: 0,
+                ids: new Array(links).fill(null),
+                building: false,
+                count: 0,
+                x: new Float64Array(links + 1),
+                y: new Float64Array(links + 1),
+                igniteMs: new Float64Array(links),
+                linkSeed: new Int32Array(links),
+                fadeCount: 0,
+                fadeAx: new Float64Array(links * 2),
+                fadeAy: new Float64Array(links * 2),
+                fadeBx: new Float64Array(links * 2),
+                fadeBy: new Float64Array(links * 2),
+                fadeAtMs: new Float64Array(links * 2),
+                fadeSeed: new Int32Array(links * 2),
+                channel: false,
+                telegraph: -1,
+                hitAgeMs: Infinity,
+                clockMs: 0,
+                ppu: 1,
+                centerX: 0,
+                centerY: 0,
+            });
+        // Pieces whose fade has run out leave the list (order kept, nothing allocated).
+        let kept = 0;
+        for (let f = 0; f < bolt.fadeCount; f++) {
+            if (now - bolt.fadeAtMs[f] >= art.fadeMs) continue;
+            if (kept !== f) {
+                bolt.fadeAx[kept] = bolt.fadeAx[f];
+                bolt.fadeAy[kept] = bolt.fadeAy[f];
+                bolt.fadeBx[kept] = bolt.fadeBx[f];
+                bolt.fadeBy[kept] = bolt.fadeBy[f];
+                bolt.fadeAtMs[kept] = bolt.fadeAtMs[f];
+                bolt.fadeSeed[kept] = bolt.fadeSeed[f];
+            }
+            kept++;
+        }
+        bolt.fadeCount = kept;
+        const drawn = bolt.count;
+        for (let k = 0; k < links; k++) {
+            const id = channel && k < chain.count ? chain.ids[k] : null;
+            if (bolt.ids[k] === id && (k > 0 || bolt.building === !!chain?.building)) continue;
+            // A lit link that changed or ended breaks into pieces where it was last drawn.
+            if (bolt.ids[k] !== null && k < drawn && now >= bolt.igniteMs[k]) {
+                const f = bolt.fadeCount < links * 2 ? bolt.fadeCount++ : 0;
+                bolt.fadeAx[f] = bolt.x[k];
+                bolt.fadeAy[f] = bolt.y[k];
+                bolt.fadeBx[f] = bolt.x[k + 1];
+                bolt.fadeBy[f] = bolt.y[k + 1];
+                bolt.fadeAtMs[f] = now;
+                bolt.fadeSeed[f] = bolt.linkSeed[k];
+            }
+            bolt.ids[k] = id;
+            if (id === null) continue;
+            bolt.igniteMs[k] = k > 0 ? Math.max(now, bolt.igniteMs[k - 1] + art.igniteGapMs) : now;
+            bolt.linkSeed[k] = bolt.seed * 7919 + ++bolt.next * 613;
+        }
+        bolt.building = !!(channel && chain.building);
+        bolt.channel = channel;
+        // The last damage tick of this channel (SustainedAttack), for the flash on its targets.
+        const last = channel ? SustainedAttack.lastTick(sustain, d.sustain, tps) : -1;
+        bolt.hitAgeMs =
+            channel && last >= sustain.startTick ? (renderTick - last) * tickMs : Infinity;
+        // The telegraph: the cooldown's last telegraphMs while it holds a target.
+        const remain = sustain ? (sustain.readyTick - renderTick) * tickMs : -1;
+        bolt.telegraph =
+            alive &&
+            grounded &&
+            !channel &&
+            entity.target != null &&
+            remain > 0 &&
+            remain <= art.telegraphMs
+                ? 1 - remain / art.telegraphMs
+                : -1;
+        const camera = this._frameCamera || this.stableCamera(),
+            at = (this._chainScreenPoint ??= { x: 0, y: 0 }),
+            vx = this.viewX(world.x),
+            vz = this.viewY(world.z);
+        camera.worldToScreenInto(vx, vz, world.groundY, at);
+        const groundX = at.x;
+        camera.worldToScreenInto(vx + 100, vz, world.groundY, at);
+        bolt.ppu = Math.abs(at.x - groundX) / 100;
+        grain.actor.setChannel(
+            channel ? 'channel' : bolt.telegraph >= 0 ? 'telegraph' : null,
+            now,
+            alive,
+        );
+    }
+
+    // Every chain unit's lightning (UnitChainAttack), over the units: from the tip its art reports (actor.boltTip)
+    // through each held enemy's body on screen (a flyer's at its height), painted by the sprite contract's
+    // chain.drawBolt. A link whose enemy is not drawn this frame (off screen, hidden) ends the drawn chain there.
+    drawChainBolts(ctx) {
+        const now = this.presentationNow(),
+            tip = (this._chainTip ??= { x: 0, y: 0 });
+        for (const u of this.visibleUnitFrame) {
+            const art = GRAIN_SPRITES[u.type]?.chain;
+            if (!art) continue;
+            const grain = this.grainActors.get(u.id),
+                bolt = grain?.bolt;
+            if (!bolt || grain.frame !== this.grainActorFrame) continue;
+            if (!this.isFriendlySide(u.side) && !this.visibleRaw(u.x, u.y)) continue;
+            const m = grain.matrix;
+            grain.actor.boltTip(tip);
+            bolt.x[0] = m[0] * tip.x + m[2] * tip.y + m[4];
+            bolt.y[0] = m[1] * tip.x + m[3] * tip.y + m[5];
+            // The body's middle (about half the tip's height) for the ring and the sparks.
+            bolt.centerX = m[0] * tip.x + m[2] * tip.y * 0.55 + m[4];
+            bolt.centerY = m[1] * tip.x + m[3] * tip.y * 0.55 + m[5];
+            let count = 0;
+            for (let k = 0; k < bolt.ids.length; k++) {
+                const id = bolt.ids[k];
+                if (id === null) break;
+                if (k === 0 && bolt.building) {
+                    const b = this.chainBuilding(id);
+                    if (!b) break;
+                    const at = (this._chainScreenPoint ??= { x: 0, y: 0 }),
+                        groundY = this.world.terrain.surfaces.heightAt(b.x, b.y);
+                    (this._frameCamera || this.stableCamera()).worldToScreenInto(
+                        this.viewX(b.x),
+                        this.viewY(b.y),
+                        groundY + (BuildingDefinition.get(b.type)?.size || 0) / 2,
+                        at,
+                    );
+                    bolt.x[1] = at.x;
+                    bolt.y[1] = at.y;
+                } else {
+                    const target = this.grainActors.get(id);
+                    if (!target || target.frame !== this.grainActorFrame) break;
+                    bolt.x[k + 1] = target.anchorX;
+                    bolt.y[k + 1] = target.anchorY;
+                }
+                count = k + 1;
+            }
+            bolt.count = count;
+            bolt.clockMs = now;
+            if (bolt.channel || bolt.telegraph >= 0 || bolt.fadeCount) art.drawBolt(ctx, bolt);
+        }
+    }
+    chainBuilding(id) {
+        for (const b of this.snapshot.buildings || [])
+            if (b.id === id && b.alive !== false) return b;
+        return null;
+    }
+
     drawFloatingFx() {
         const ctx = this.fxCtx;
         if (!ctx || !this.fxCanvas) return;
@@ -4247,6 +4412,7 @@ class GLRenderer {
         // Decorative presentation is always below information overlays.
         this.drawEmergencyDrops(ctx);
         this.drawBreathFlames(ctx);
+        this.drawChainBolts(ctx);
         this.drawClientCombatFx();
 
         // Persistent information is never hidden by combat density.
@@ -5146,6 +5312,10 @@ class GLRenderer {
                 flame.on = breathing;
                 flame.cooling = cooling;
             }
+            // A chain unit's art (UnitChainAttack): the channel and telegraph pose, and its lightning's links and timing
+            // (drawChainBolts reads them after every grain is posed).
+            if (actor.setChannel)
+                this.prepareChainBolt(u, entity, grain, world, renderTick, now, grounded);
             // A flying unit's art (the dandelion's fluff), on the render tick's clock. A landing is the fall that
             // UnitFlight.drop starts (impact kind 'landing'); the height it fell from is drawn in screen pixels so the
             // fluff torn off there can stay up while the body drops.
@@ -5283,6 +5453,15 @@ class GLRenderer {
                 cy = record.ground[1] - 120;
             m[4] = p.x + (work?.offsetX ?? 0) - m[0] * cx - m[2] * cy;
             m[5] = p.y + (work?.offsetY ?? 0) + r * 0.55 - 120 * scale - m[1] * cx - m[3] * cy;
+            // The body's middle on screen (a chain's link lands there; a flyer's includes its height).
+            grain.anchorX = p.x;
+            grain.anchorY =
+                p.y +
+                r * 0.55 -
+                r *
+                    GRAIN_SPRITE_BASE_SCALE *
+                    (UnitVisualDefinition.get(u.type)?.visualScale || 1) *
+                    150;
             if (roll?.phase) {
                 const heading =
                     (this.orientationRole() === 'guest' ? -1 : 1) *

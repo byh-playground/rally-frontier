@@ -33,6 +33,7 @@ import { UnitThornAttack } from './capabilities/unit-thorn-attack.js';
 import { UnitBurstAttack } from './capabilities/unit-burst-attack.js';
 import { SustainedAttack } from './capabilities/sustained-attack.js';
 import { UnitBreathAttack } from './capabilities/unit-breath-attack.js';
+import { UnitChainAttack } from './capabilities/unit-chain-attack.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.js';
 import { CloneUtil, HashUtil, MapGeneration } from './map-generation.js';
@@ -2370,6 +2371,7 @@ class StrategySim {
         if (!UnitMotion.isGrounded(u)) {
             if (d.burstAttack) UnitBurstAttack.cancel(this, u, d);
             if (d.breathAttack) UnitBreathAttack.stop(this, u, d);
+            if (d.chainAttack) UnitChainAttack.stop(this, u, d);
             if (!activeSite) u.constructionWork = null;
             else if (u.constructionWork.cycleStartedAtTick !== null) {
                 const work = u.constructionWork;
@@ -2380,6 +2382,11 @@ class StrategySim {
         if (d.burstAttack && u.combat.burstAttack) {
             const burst = UnitBurstAttack.update(this, u, d, vision[u.side]);
             if (burst.active) return burst.winner;
+        }
+        // A running chain channel stands and keeps (and re-makes) its links until its time is up.
+        if (d.chainAttack && UnitChainAttack.channeling(this, u)) {
+            if (!activeSite) u.constructionWork = null;
+            return UnitChainAttack.channel(this, u, d, vision[u.side]);
         }
 
         const attackRange = this.basicAttackRange(u);
@@ -2453,6 +2460,16 @@ class StrategySim {
             } else found = this.retainedCombatTarget(u, vision[u.side]);
         }
 
+        // A chain reaches flying enemies too: with no ground target in reach it takes the nearest one in reach.
+        if (d.chainAttack && !activeSite && !(found && this.combatTargetInAttackRange(u, found))) {
+            const air = UnitChainAttack.airTarget(this, u, d, vision[u.side]);
+            if (air) {
+                u.constructionWork = null;
+                u.target = air.id;
+                return UnitChainAttack.update(this, u, air, false, d, vision[u.side]);
+            }
+        }
+
         let moveSpeed = d.speed;
         const cooldown = this.attackCooldown(u, d);
         // 공통 전투 이동/공속 보정.
@@ -2523,6 +2540,9 @@ class StrategySim {
         }
         // In reach: it stands and turns; its breath runs on its own sustain timing (SustainedAttack).
         if (d.breathAttack) return UnitBreathAttack.update(this, u, t, found.isBuilding, d);
+        // In reach: it stands; a ready chain starts on this target (UnitChainAttack).
+        if (d.chainAttack)
+            return UnitChainAttack.update(this, u, t, found.isBuilding, d, vision[u.side]);
 
         if (d.selfDestruct) {
             UnitSelfDestructAttack.start(this, u, d.selfDestruct);

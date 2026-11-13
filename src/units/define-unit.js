@@ -4,7 +4,7 @@
 //   hero     hero card: one per deck, launched alone and free, recalled to a cannon
 //   unit     simulation Definition. A capability is a named field whose value is its parameters
 //            (stickyCling, leapAttack, spinAttack, ...); the simulation reads it directly. A sustained attack
-//            (breathAttack, a pulsing spinAttack, burstAttack) also has `sustain { durationMs, tickMs, cooldownMs,
+//            (breathAttack, a pulsing spinAttack, burstAttack, chainAttack) also has `sustain { durationMs, tickMs, cooldownMs,
 //            windupMs?, recoverMs? }`, the shared timing of every damage-over-time attack (SustainedAttack) in
 //            place of the unit's cooldownMs.
 //   payload  the cannon shell that carries the unit (LaunchRules)
@@ -29,6 +29,10 @@
 //                          (drawBreathFlames); its actors then also have setAim(dx, dy, breathing,
 //                          alive, clockMs, cooling), facing and mouthTip(out); flame.cooling marks the
 //                          wait between breaths (SustainedAttack cooldown)
+//              chain?      { drawBolt(ctx, bolt) }: paints a chainAttack unit's lightning (UnitChainAttack) on
+//                          main.js's 2D effect canvas (drawChainBolts) through the screen points main.js
+//                          measures for its links; its actors then also have setChannel(state, clockMs, alive)
+//                          (state 'channel'|'telegraph'|null) and boltTip(out)
 //            Optional renderer methods the shared drawing calls when present: prepareExtraArt,
 //            drawHeldKernel, drawWrapOverlay (StickyCling), drawRide (CannonRider), drawFlight and
 //            drawImpact (a 'soldier' shell), drawBehind (trailing effects just behind the body),
@@ -44,7 +48,7 @@ import { SustainedAttack } from '../sim/capabilities/sustained-attack.js';
 
 const REQUIRED = ['unit', 'payload', 'visual', 'card'];
 // The attacks timed by the shared sustained-attack grammar (Definition `sustain`, SustainedAttack).
-const SUSTAINED = ['breathAttack', 'spinAttack', 'burstAttack'];
+const SUSTAINED = ['breathAttack', 'spinAttack', 'burstAttack', 'chainAttack'];
 // Attacks and movements a breathing unit cannot also have: its combat action is the breath alone.
 const BREATH_EXCLUSIVE = [
     'flight',
@@ -116,6 +120,23 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
         for (const other of BREATH_EXCLUSIVE)
             if (hero || unit[other])
                 throw new Error(`병종 ${id}의 breathAttack은 영웅·${other}와 함께 쓸 수 없습니다.`);
+    }
+    // A chain (UnitChainAttack) is a sustained attack: the unit's atk on every link at each damage tick, its first
+    // link within the attack range. Its combat action is the chain alone (the same exclusions as a breath, plus it).
+    if (unit.chainAttack) {
+        const spec = unit.chainAttack;
+        for (const key of ['links', 'bounceRange', 'buildingDamageScale'])
+            if (!(Number(spec[key]) > 0))
+                throw new Error(`병종 ${id}의 chainAttack.${key}는 양수여야 합니다.`);
+        if (!Number.isInteger(spec.links))
+            throw new Error(`병종 ${id}의 chainAttack.links는 정수여야 합니다.`);
+        if (!(unit.atk > 0) || !unit.sustain || !(unit.range > 0))
+            throw new Error(
+                `병종 ${id}의 chainAttack은 atk(피해 틱당 피해)·range·sustain이 필요합니다.`,
+            );
+        for (const other of [...BREATH_EXCLUSIVE, 'breathAttack'])
+            if (hero || unit[other])
+                throw new Error(`병종 ${id}의 chainAttack은 영웅·${other}와 함께 쓸 수 없습니다.`);
     }
     if (Number.isFinite(Number(unit.cooldownMs))) unit.cooldown = Number(unit.cooldownMs) / 1000;
     if (unit.canAttackGround == null) unit.canAttackGround = (unit.atk || 0) > 0;

@@ -47,23 +47,32 @@ export function unitCardStats(type, rangeLevel, copy) {
               ['재사용 대기', seconds(sustain.cooldownMs)],
           ]
         : [];
-    const attack = breath
+    const chain = unit.chainAttack;
+    const attack = chain
         ? [
-              ['불줄기 길이', number.format(breath.length)],
-              ['불줄기 각도', `${number.format(breath.arcDegrees)}°`],
-              ['방향 전환', `초당 ${number.format(breath.turnDegreesPerSecond)}°`],
-              ['건물 피해', `${number.format(breath.buildingDamageScale * 100)}%`],
+              ['번개 사거리', number.format(unit.range)],
+              ['연결 수', `${number.format(chain.links)}명`],
+              ['튀는 거리', number.format(chain.bounceRange)],
+              ['건물 피해', `${number.format(chain.buildingDamageScale * 100)}%`],
+              ['대공', '나는 적에 닿음 · 투입탄 제외'],
           ]
-        : [
-              [
-                  suicide ? '자폭 피해' : siege ? '건물 공격력' : '기본 공격력',
-                  number.format(suicide?.damage ?? unit.atk),
-              ],
-              [
-                  suicide ? '자폭 반경' : siege ? '건물 돌격 거리' : '지상 공격 사거리',
-                  number.format(suicide?.radius ?? unit.range),
-              ],
-          ];
+        : breath
+          ? [
+                ['불줄기 길이', number.format(breath.length)],
+                ['불줄기 각도', `${number.format(breath.arcDegrees)}°`],
+                ['방향 전환', `초당 ${number.format(breath.turnDegreesPerSecond)}°`],
+                ['건물 피해', `${number.format(breath.buildingDamageScale * 100)}%`],
+            ]
+          : [
+                [
+                    suicide ? '자폭 피해' : siege ? '건물 공격력' : '기본 공격력',
+                    number.format(suicide?.damage ?? unit.atk),
+                ],
+                [
+                    suicide ? '자폭 반경' : siege ? '건물 돌격 거리' : '지상 공격 사거리',
+                    number.format(suicide?.radius ?? unit.range),
+                ],
+            ];
     attack.unshift(...sustained);
     if (unit.canAttackAir)
         attack.push(
@@ -100,7 +109,7 @@ export function unitCardStats(type, rangeLevel, copy) {
           ]
         : [
               ['생존·기동', movement],
-              ['공격', attack],
+              ['공격', attack, chain ? copy.notes.slice(1) : []],
           ];
     if (active)
         troop.push([

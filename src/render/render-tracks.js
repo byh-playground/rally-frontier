@@ -1,10 +1,16 @@
 // Interpolated render tracks: which sim fields the presentation samples per entity kind.
 import { RallyGamekit } from '../core/gamekit.js';
+import { UnitDefinition } from '../definitions/units.js';
 
 // Full UI snapshots stay at 10 Hz. Presentation targets are fed directly from the
 // local authoritative sim at the selected SIM TPS without cloning sim.snapshot().
 // Game-owned visual fields; the SDK owns sampling and display lifetime.
 const RenderField = RallyGamekit.RenderObject;
+// The most links any chainAttack card holds.
+const CHAIN_LINKS = Math.max(
+    0,
+    ...Object.values(UnitDefinition.all).map((d) => Number(d?.chainAttack?.links) || 0),
+);
 class UnitRenderObject extends RenderField {
     static renderSchema = {
         tick: RenderField.LINEAR,
@@ -22,6 +28,15 @@ class UnitRenderObject extends RenderField {
         'entity.sustain.nextTick': RenderField.STEP,
         'entity.sustain.readyTick': RenderField.STEP,
         'entity.fruitAttack': RenderField.STEP,
+        // A chain's links (UnitChainAttack): who it holds, slot by slot, so a sampled tick keeps its own links.
+        'entity.chain.count': RenderField.STEP,
+        'entity.chain.building': RenderField.STEP,
+        ...Object.fromEntries(
+            Array.from({ length: CHAIN_LINKS }, (_, k) => [
+                'entity.chain.ids.' + k,
+                RenderField.STEP,
+            ]),
+        ),
         ...Object.fromEntries(
             [
                 'kind',
