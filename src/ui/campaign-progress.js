@@ -52,6 +52,7 @@ export class CampaignProgress {
     isTierOpen(tierId) {
         const tier = campaignTier(tierId);
         return (
+            this.#debugUnlocked ||
             !tier.requires ||
             CAMPAIGN_STAGES.some((stage) => stage.tier === tier.requires && this.isComplete(stage))
         );
