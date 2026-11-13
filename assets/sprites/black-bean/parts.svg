@@ -5,6 +5,8 @@
         헬멧은 사용자 선택 A(스턴트 돔: 흰 돔 + 가운데 팀색 줄 + 별), 크기 1.0배 확정.
     v3: 표정 눈을 사용자 선택 A(흰 점 눈, 눈동자 없음)로 바꿨다. 표정 차이는 점 모양(보통 타원 · 기쁨 아래가 눌린 반달 ·
         화남 위가 눈썹에 비스듬히 잘린 반달 · 아픔 &gt;&lt;)과 굵은 흰 눈썹으로 낸다.
+    v4 (K1): 병종 공통 점눈으로 통일. 쌀·찹쌀 점눈을 색만 뒤집어 크림색 세로 타원 눈 + 그늘 점, 넓은 눈 간격, 분홍 볼, 작은 입.
+        평소·기쁨 얼굴은 눈썹 없이 중립이고 화남 얼굴만 눈썹을 쓴다. 셀 위치·크기는 그대로.
     시트 1단위 = 쌀 원본 1단위(쌀 서 있는 키 343.5). 검은콩 서 있는 키(발바닥~헬멧 끝) 252 = 쌀의 73%. ART_SCALE = 1.
     서 있는 조립 (원점 = 발바닥 접지점, 위가 -y)
       body   [10,10,200,230] / [100,222]   (0,0)
@@ -13,7 +15,7 @@
       foot   [670,10,60,40] / [30,12]      오른발 (34,-14), 왼발은 좌우 반전 (-34,-14)
       face-neutral [434,372,148,72] / [74,36]   face-happy [586,372,148,72] / [74,36]
       face-angry   [434,452,148,72] / [74,36]   face-hurt  [586,452,148,72] / [74,36]
-             흰 표정. 콩·팥 공유 얼굴과 같은 148x72 셀·중심 기준·같은 눈 위치. (0,-100)에 0.9배로 얹는다(얼굴판이 없어 v1의 0.78배보다 키웠다).
+             점눈 표정. 콩·팥 공유 얼굴과 같은 148x72 셀·중심 기준. (0,-100)에 0.9배로 얹는다(얼굴판이 없어 v1의 0.78배보다 키웠다).
     대포에 탄 조립 (원점 = 포구 소켓)
       ride-body [430,10,170,190] / [85,170]  포구 구멍에 끼인 윗몸. 아래쪽 어두운 타원이 구멍 입구.
       grip      [610,84,56,56] / [28,28]     포구 테두리를 쥔 손 (±86,0)
@@ -54,16 +56,18 @@
     <clipPath id="dome-mask"><use href="#dome"/></clipPath>
     <path id="ride-outline" d="M-64 8C-70-40-70-102-50-128-36-146 36-146 50-128 70-102 70-40 64 8Q0 26-64 8Z"/>
     <clipPath id="ride-mask"><use href="#ride-outline"/></clipPath>
-    <!-- 흰 표정 공통 (v3 A안: 눈동자 없는 흰 점). 전장 크기에서 남도록 v2 흰자보다 조금 크게. -->
-    <ellipse id="eye" cx="0" cy="0" rx="12" ry="14.5" fill="#ffffff"/>
-    <!-- 기쁨: 아래가 위로 눌린 반달(웃는 볼에 밀린 눈) -->
-    <path id="eye-happy" d="M-12.5 5C-13-8-7-19 0-19 7-19 13-8 12.5 5 5-1-5-1-12.5 5Z" fill="#ffffff"/>
-    <!-- 화남(왼눈): 위가 눈썹 쪽으로 비스듬히 잘린 반달. 오른눈은 좌우 반전. -->
-    <path id="eye-angry" d="M-12-9L12 1C12 8 7 14 0 14-7 14-12 8-12 0Z" fill="#ffffff"/>
-    <g id="cheeks" fill="#ff9cb5" opacity=".34">
-      <ellipse cx="-50" cy="8" rx="11" ry="6"/>
-      <ellipse cx="50" cy="8" rx="11" ry="6"/>
-    </g>  </defs>
+    <!-- 점눈 (v4 K1): 쌀·찹쌀 점눈을 색만 뒤집었다. 크림색 세로 타원 + 하이라이트 자리의 살짝 어두운 그늘 점.
+         얼굴은 0.9배로 얹히므로 셀 단위 크기 = 몸 폭(눈 높이에서 176) 대비 비율 / 0.9: 눈 높이 0.116, 눈 중심 간격 0.33, 점 지름 = 눈 높이 x 0.29. -->
+    <g id="eye">
+      <ellipse rx="9" ry="11.3" fill="#fff6e2"/>
+      <circle cx="-2.5" cy="-4.5" r="3.3" fill="#e0cfac"/>
+    </g>
+    <g id="eyes"><use href="#eye" x="-32" y="-10"/><use href="#eye" x="32" y="-10"/></g>
+    <g id="cheeks" fill="#ff8fb0" opacity=".55">
+      <ellipse cx="-50" cy="5" rx="10" ry="5.5"/>
+      <ellipse cx="50" cy="5" rx="10" ry="5.5"/>
+    </g>
+  </defs>
 
   <!-- 서 있는 몸통: 윤기 있는 서리태. 얼굴판 없이 온전히 검은 몸, 왼쪽 아래에 흰 배꼽(콩 눈). -->
   <g id="body" transform="translate(110 232)">
@@ -168,26 +172,23 @@
     <g fill="#7a6446"><circle cx="-100" cy="-36" r="5"/><circle cx="96" cy="-44" r="6"/><circle cx="-76" cy="-60" r="4"/></g>
   </g>
 
-  <!-- 흰 표정 세트 v3 (148x72, 중심 = 회전 중심). 눈 위치 (±30,-10)은 공유 얼굴과 같다. -->
+  <!-- 점눈 표정 세트 v4 K1 (148x72, 중심 = 회전 중심). 평소·기쁨은 눈썹 없음, 화남만 눈썹. 콩·팥 점눈 얼굴과 같은 문법. -->
   <g id="face-neutral" transform="translate(508 408)">
-    <use href="#cheeks"/>
-    <use href="#eye" x="-30" y="-10"/><use href="#eye" x="30" y="-10"/>
-    <path d="M-9 12Q0 20 9 12" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round"/>
+    <use href="#cheeks"/><use href="#eyes"/>
+    <path d="M-6 8Q0 13 6 8" fill="none" stroke="#fff6e2" stroke-width="3" stroke-linecap="round"/>
   </g>
   <g id="face-happy" transform="translate(660 408)">
-    <use href="#cheeks"/>
-    <use href="#eye-happy" x="-30" y="-8"/><use href="#eye-happy" x="30" y="-8"/>
-    <path d="M-13 7Q0 30 13 7Q0 12-13 7Z" fill="#7a2f3a" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"/>
-    <ellipse cx="0" cy="17" rx="5" ry="3" fill="#ff8fa3"/>
+    <use href="#cheeks"/><use href="#eyes"/>
+    <path d="M-8 6Q0 19 8 6Z" fill="#7a2f3a" stroke="#fff6e2" stroke-width="2.5" stroke-linejoin="round"/>
+    <ellipse cx="0" cy="12" rx="3.5" ry="2" fill="#ff8fa3"/>
   </g>
   <g id="face-angry" transform="translate(508 488)">
-    <use href="#cheeks"/>
-    <use href="#eye-angry" x="-30" y="-8"/><use href="#eye-angry" transform="translate(30 -8) scale(-1 1)"/>
-    <path d="M-48-28L-17-15M48-28L17-15" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
-    <path d="M-10 21Q0 9 10 21Q0 25-10 21Z" fill="#7a2f3a" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"/>
+    <use href="#cheeks"/><use href="#eyes"/>
+    <path d="M-46-30L-21-23M46-30L21-23" fill="none" stroke="#fff6e2" stroke-width="5.5" stroke-linecap="round"/>
+    <path d="M-6 12Q0 4 6 12Q0 15-6 12Z" fill="#7a2f3a" stroke="#fff6e2" stroke-width="2.5" stroke-linejoin="round"/>
   </g>
   <g id="face-hurt" transform="translate(660 488)">
     <use href="#cheeks"/>
-    <path d="M-42-20L-22-10-42 0M42-20L22-10 42 0" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M-10 16q2.5-4 5 0t5 0 5 0 5 0" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M-41-19L-25-10-41-1M41-19L25-10 41-1" fill="none" stroke="#fff6e2" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <ellipse cx="0" cy="11" rx="3.5" ry="4.5" fill="#7a2f3a" stroke="#fff6e2" stroke-width="2.5"/>
   </g></svg>
