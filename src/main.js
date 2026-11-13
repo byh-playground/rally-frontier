@@ -6977,14 +6977,16 @@ class GLRenderer {
                 this.drawHeroRollTelegraph(entry, model, definition.heroActive);
             if (definition.fruitAttack && entry.entity.alive)
                 this.drawFruitAttackEffect(model, definition.fruitAttack);
-            const spin = model?.entity
-                    ? UnitSpinAttack.phases(
-                          model.entity,
-                          definition,
-                          this.snapshot.tps || ActiveSimulationTiming.tps(),
-                          SPIN_RING_STAGES,
-                      )
-                    : null,
+            // Heroes without a spin (banana, grape) only draw their own telegraphs above.
+            const spin =
+                    spec && model?.entity
+                        ? UnitSpinAttack.phases(
+                              model.entity,
+                              definition,
+                              this.snapshot.tps || ActiveSimulationTiming.tps(),
+                              SPIN_RING_STAGES,
+                          )
+                        : null,
                 tick = model?.tick,
                 radius = spec?.radius;
             if (
