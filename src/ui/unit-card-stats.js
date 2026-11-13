@@ -129,6 +129,17 @@ export function unitCardStats(type, rangeLevel, copy) {
             ],
             copy.notes.slice(1),
         ]);
+    // A building specialist: work per hit above the plain soldier's, and the damage share while it builds.
+    const construction = unit.construction;
+    if (construction?.damageTakenScale)
+        troop.push([
+            '건설',
+            [
+                ['타격당 작업량', number.format(construction.workPerHit)],
+                ['건설 중 받는 피해', `${number.format(construction.damageTakenScale * 100)}%`],
+            ],
+            copy.notes.slice(1),
+        ]);
     const rolling = unit.rolling;
     if (rolling) {
         // The motor's speed curve: top - (top - start)·e^(-drag·t).

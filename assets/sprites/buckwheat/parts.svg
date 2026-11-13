@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="262" viewBox="0 0 560 262">
+  <!--
+    메밀 파츠 시트 3차 시안 BB2 BA3 밝은 갈색 + 오른쪽으로 비낀 능선(얼굴은 넓은 왼쪽 면) (쌀 계열, 찹쌀·목화솜 parts.svg 형식). 셀 좌표는 [x, y, w, h] / 회전 중심 [px, py] (셀 왼쪽 위 기준).
+      body     [10, 10, 180, 190] / [90, 190]
+      tool     [370, 4, 64, 100] / [32, 80]
+      foot     [444, 12, 52, 40] / [26, 14]
+      arm      [504, 8, 48, 60] / [20, 10]
+      neutral  [10, 210, 98, 45] / [49, 22]
+      attack   [115, 210, 98, 45] / [49, 22]
+      hurt     [220, 210, 98, 45] / [49, 22]
+    body·cap의 회전 중심 = 땅(두 발 사이 가운데). 서 있는 모습(땅 원점 기준):
+      발 [(-20, -8), (20, -8)] (왼발은 좌우 반전), 몸 (0,0), 얼굴 (-8, -64) 0.7배,
+      팔(손목) [(-60, -60), (60, -60)] 회전 ±8도 · 0.76배 (왼팔 좌우 반전),
+      공격 자세: 오른팔 (52, -70) 회전 205도(위로 듦), 씨앗(tool) (68, -118) 회전 10도 1.3배를 오른팔 다음에 그림(손끝에 쥠). 평소 자세엔 씨앗 없음. 날아가는 탄도 같은 tool 셀.
+    그리는 순서: 발 → 몸 → 얼굴 → 팔 → (씨앗). 외곽선 #4b3022 5(몸)·4(팔다리). 실물 사진(위키미디어 공용 sesame seeds / buckwheat grain 맨 위 왼쪽 사진)의 외곽·색을 따름.
+  -->
+  <defs>
+    <linearGradient id="bb2-limb" x1=".2" y1="0" x2=".7" y2="1">
+      <stop stop-color="#dcb48c"/><stop offset=".6" stop-color="#c0946a"/><stop offset="1" stop-color="#9c7049"/>
+    </linearGradient>
+    <path id="bb2-body-outline" d="M0 -160C12 -156 40 -122 56 -96C68 -74 68 -50 54 -32C42 -16 22 -8 0 -8C-22 -8 -42 -16 -54 -32C-68 -50 -68 -74 -56 -96C-40 -122 -12 -156 0 -160Z"/>
+    <clipPath id="bb2-body-mask"><use href="#bb2-body-outline"/></clipPath>
+    <g id="bb2-eyes">
+      <ellipse cx="24" cy="20" rx="7.5" ry="9.5"/>
+      <ellipse cx="74" cy="20" rx="7.5" ry="9.5"/>
+      <g fill="#ffffff"><circle cx="22" cy="16" r="3"/><circle cx="72" cy="16" r="3"/></g>
+    </g>
+    <g id="bb2-cheeks" fill="#f6a0a0" opacity=".9">
+      <ellipse cx="9" cy="32" rx="7" ry="4"/><ellipse cx="89" cy="32" rx="7" ry="4"/>
+    </g>
+  </defs>
+
+  <!-- 몸: 메밀 낱알(사진 기준). 세 개의 볼록한 면이 능선에서 만나는 각진 씨를 정면에서 본 통통한 마름모(연) 모양, 가장 넓은 곳이 가운데보다 조금 아래.
+       두 면을 각각 평평한 색으로(오른쪽 면 한 톤 어둡게), 능선만 살짝 짙게 + 그 옆 밝은 선, 아래 끝에 작은 적갈색 배꼽, 균일한 진갈색 외곽선. 얼굴은 쌀 계열 까만 점눈 그대로. -->
+  <g id="body" transform="translate(100 200)">
+    <use href="#bb2-body-outline" fill="#c0916a"/>
+    <g clip-path="url(#bb2-body-mask)">
+      <path d="M0 -160Q46 -96 30 -8L90 0L90 -170Z" fill="#a77a52"/>
+      <path d="M0 -160Q46 -96 30 -8" fill="none" stroke="#74492c" stroke-width="3.5" stroke-linecap="round"/>
+      <path d="M-3 -156Q40 -96 25 -12" fill="none" stroke="#dcb48c" stroke-width="3" stroke-linecap="round"/>
+      <ellipse cx="0" cy="-10" rx="9" ry="6" fill="#7d3f22" opacity=".85"/>
+    </g>
+    <path d="M-34 -104q6-16 16-26" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity=".75"/>
+    <use href="#bb2-body-outline" fill="none" stroke="#4b3022" stroke-width="5" stroke-linejoin="round"/>
+  </g>
+
+  <!-- 던지는 씨앗: 몸과 같은 색·모양의 작은 마름모 메밀알(가운데 능선). 회전 중심 = 가운데. 공격 자세에서 든 손끝에, 날아가는 탄으로도 그대로 쓴다. -->
+  <g id="tool" transform="translate(402 84)">
+    <path d="M0 -15C2 -12 10 -4 12 1 14 6 10 11 0 12-10 11-14 6-12 1-10 -4-2 -12 0 -15Z" fill="#c0916a" stroke="#4b3022" stroke-width="3.2" stroke-linejoin="round"/>
+    <path d="M0 -13Q2 0 0 11" fill="none" stroke="#74492c" stroke-width="2.2" stroke-linecap="round"/>
+  </g>
+
+  <g id="foot" transform="translate(444 12)">
+    <path d="M9 7q17-6 34 0 5 13 3 22-1 6-7 7H13q-6-1-7-7-2-9 3-22Z" fill="url(#bb2-limb)" stroke="#4b3022" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M14 11q8-3 16-2" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity=".9"/>
+  </g>
+  <g id="arm" transform="translate(504 8)">
+    <path d="M12 7c10-6 22-2 27 9 5 12 4 26-3 33-8 7-20 6-26-3-6-9-7-20-6-28 1-5 4-9 8-11Z" fill="url(#bb2-limb)" stroke="#4b3022" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M14 13q6-3 12 1" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity=".9"/>
+  </g>
+
+  <!-- 얼굴: 찹쌀·목화솜 얼굴 셀 그대로(점눈 + 흰 하이라이트 한 점, 넓은 눈 간격, 분홍 볼, 작은 입). -->
+  <g id="neutral" transform="translate(10 210)" fill="#3a2a22">
+    <use href="#bb2-eyes"/><use href="#bb2-cheeks"/>
+    <path d="M43 30q6 6 12 0" fill="none" stroke="#3a2a22" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <g id="attack" transform="translate(115 210)" fill="#3a2a22">
+    <use href="#bb2-eyes"/><use href="#bb2-cheeks"/>
+    <path d="m14 8 17 6m37 0 17-6" fill="none" stroke="#3a2a22" stroke-width="4" stroke-linecap="round"/>
+    <path d="M40 29q9-6 18 0-1 11-9 11t-9-11Z"/>
+    <path d="M44 37q5-4 10 0" fill="#f28aa3"/>
+  </g>
+  <g id="hurt" transform="translate(220 210)">
+    <use href="#bb2-cheeks"/>
+    <path d="m14 13 18 7-18 7m70-14-18 7 18 7" fill="none" stroke="#3a2a22" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M38 36q3-4 6 0t6 0 6 0 6 0" fill="none" stroke="#3a2a22" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

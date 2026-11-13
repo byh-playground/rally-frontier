@@ -466,7 +466,9 @@ class BotController {
                         (rule) => rule.ownShotOnly && UnitDefinition.get(type)[rule.capability],
                     ),
             ),
-            groundDeck = deck.filter(({ type }) => UnitDefinition.get(type).canAttackGround);
+            // A worker card (Definition workerCard) is launched only to build (captureShot), never to fight.
+            combatDeck = deck.filter(({ type }) => !UnitDefinition.get(type).workerCard),
+            groundDeck = combatDeck.filter(({ type }) => UnitDefinition.get(type).canAttackGround);
         const busy = new Set(
             this.commandExecutor.reservations().map(({ action }) => action.cannonId),
         );
@@ -530,8 +532,8 @@ class BotController {
                         !BotController.hasOil(capture.target)));
             const unlocksPremiumAttack =
                 !capture &&
-                !BotController.nearestShot(cannons, premiumTargets, deck, level) &&
-                BotController.nearestShot(cannons, premiumTargets, deck, level + 1);
+                !BotController.nearestShot(cannons, premiumTargets, combatDeck, level) &&
+                BotController.nearestShot(cannons, premiumTargets, combatDeck, level + 1);
             if (unlocksCapture || unlocksPremiumAttack) {
                 const upgradeCost = LaunchRules.upgradeCost(level);
                 if (budget >= upgradeCost) {
@@ -541,7 +543,7 @@ class BotController {
                 if (hasIncome) return;
             }
         }
-        const premiumShot = BotController.nearestShot(cannons, premiumTargets, deck, level);
+        const premiumShot = BotController.nearestShot(cannons, premiumTargets, combatDeck, level);
         if (
             premiumShot &&
             !BotController.hasOil(capture?.target) &&
@@ -560,12 +562,19 @@ class BotController {
                 const walk = Math.max(0, capture.distance - LaunchRules.maxReachOf(type, level));
                 return -walk / definition.speed;
             };
+            const worker = ({ type }) => Number(!!UnitDefinition.get(type).workerCard);
             const unit = capture.units
                 .filter(
                     (unit) =>
                         unit.cost <= spendable && unit.premiumCost <= state.premiumWallet[side],
                 )
-                .sort((a, b) => priority(b) - priority(a) || a.cost - b.cost)[0];
+                .sort(
+                    (a, b) =>
+                        // Uncontested, a worker card builds first.
+                        (contested ? 0 : worker(b) - worker(a)) ||
+                        priority(b) - priority(a) ||
+                        a.cost - b.cost,
+                )[0];
             if (unit) {
                 this.fire(capture, unit, level, state.tick, true);
                 return;
@@ -576,7 +585,7 @@ class BotController {
         let shot =
             BotController.nearestShot(cannons, enemies, groundDeck, level) ||
             premiumShot ||
-            BotController.nearestShot(cannons, hostile, deck, level);
+            BotController.nearestShot(cannons, hostile, combatDeck, level);
         if (!shot && enemyBase && !objectives.some(({ supported }) => supported)) {
             const cannon = cannons.reduce((best, candidate) =>
                 distance(candidate, enemyBase) < distance(best, enemyBase) ? candidate : best,
@@ -585,7 +594,7 @@ class BotController {
                 cannon,
                 target: enemyBase,
                 distance: distance(cannon, enemyBase),
-                units: deck,
+                units: combatDeck,
             };
         }
         if (!shot) return;

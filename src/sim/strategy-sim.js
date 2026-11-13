@@ -2015,6 +2015,11 @@ class StrategySim {
         if (!isBuilding && sourceSide !== target.side) {
             const terrain = this.terrainAt(target.x, target.y);
             if (terrain.river) dmg = Math.max(1, Math.floor(dmg * 1.5));
+            // A worker assigned to a project under way (the same state a hit turns to 'defend') takes its
+            // construction.damageTakenScale share, floored like the other damage shares.
+            const taken = td?.construction?.damageTakenScale;
+            if (taken && target.constructionWork && this.constructionSite(target)?.construction)
+                dmg = Math.max(1, Math.floor(dmg * taken));
         }
 
         const flatArmor = this.flatArmorValue(target);

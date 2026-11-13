@@ -6069,7 +6069,9 @@ class GLRenderer {
             THORN_TRAIL_COLOR,
             0.25,
         );
-        this.effectArt.thorn.drawThorn(matrix, this._renderDepth ?? 0);
+        // A thrower whose renderer draws its own shot (drawThorn) shows it; the tail stays the shared thorn art's.
+        const own = this.spriteRenderers[shot.sourceType];
+        (own?.drawThorn ? own : this.effectArt.thorn).drawThorn(matrix, this._renderDepth ?? 0);
     }
     drawThornImpact(fx, world) {
         if (!this.effectArt.thorn) return;

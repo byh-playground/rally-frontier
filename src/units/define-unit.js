@@ -6,7 +6,9 @@
 //            (stickyCling, leapAttack, spinAttack, ...); the simulation reads it directly. A sustained attack
 //            (breathAttack, a pulsing spinAttack, burstAttack, chainAttack) also has `sustain { durationMs, tickMs, cooldownMs,
 //            windupMs?, recoverMs? }`, the shared timing of every damage-over-time attack (SustainedAttack) in
-//            place of the unit's cooldownMs.
+//            place of the unit's cooldownMs. `construction { range, workPerHit, damageTakenScale? }`: work added
+//            per hit, and the share of damage it takes while assigned to a project under way (StrategySim.applyDamage,
+//            floored, at least 1). `workerCard` marks a card the bot launches only to build (BotController).
 //   payload  the cannon shell that carries the unit (LaunchRules)
 //   visual   body scale, team accent, hit effect family, optional landing husk colors
 //   card     deck card and card detail copy
@@ -34,6 +36,7 @@
 //                          measures for its links; its actors then also have setChannel(state, clockMs, alive)
 //                          (state 'channel'|'telegraph'|null) and boltTip(out)
 //            Optional renderer methods the shared drawing calls when present: prepareExtraArt,
+//            drawThorn(matrix, depth) (this unit's own thornAttack shot; otherwise effectArt 'thorn' draws it),
 //            drawHeldKernel, drawWrapOverlay (StickyCling), drawRide (CannonRider), drawFlight and
 //            drawImpact (a 'soldier' shell), drawBehind (trailing effects just behind the body),
 //            drawUnderlay (see-through art under every body and face, before any of them),
@@ -138,6 +141,14 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
             if (hero || unit[other])
                 throw new Error(`병종 ${id}의 chainAttack은 영웅·${other}와 함께 쓸 수 없습니다.`);
     }
+    // A worker that takes less damage while it builds keeps a share in (0, 1].
+    const taken = unit.construction?.damageTakenScale;
+    if (taken !== undefined && !(Number(taken) > 0 && Number(taken) <= 1))
+        throw new Error(
+            `병종 ${id}의 construction.damageTakenScale은 0보다 크고 1 이하여야 합니다.`,
+        );
+    if (unit.workerCard && !unit.construction)
+        throw new Error(`병종 ${id}의 workerCard는 construction이 필요합니다.`);
     if (Number.isFinite(Number(unit.cooldownMs))) unit.cooldown = Number(unit.cooldownMs) / 1000;
     if (unit.canAttackGround == null) unit.canAttackGround = (unit.atk || 0) > 0;
     return Object.freeze({
