@@ -8,7 +8,7 @@ export const SunflowerSeed = defineUnit({
         name: '해바라기씨',
         hp: 30,
         atk: 3,
-        range: 150,
+        range: 300,
         speed: 30,
         attackWindupMs: 100,
         size: 10,
@@ -22,10 +22,10 @@ export const SunflowerSeed = defineUnit({
         // then 0.6 s to reload.
         sustain: Object.freeze({ durationMs: 1400, tickMs: 200, cooldownMs: 600 }),
         burstAttack: Object.freeze({
-            airRange: 250,
+            airRange: 300,
             airDamageMultiplier: 2,
         }),
-        sight: 275,
+        sight: 325,
     },
     payload: {
         ...SINGLE_BUNDLE_SHELL,
