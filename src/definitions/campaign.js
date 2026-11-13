@@ -32,7 +32,7 @@ export function campaignTier(id) {
 // its first card (`deck[0]`) against the enemy it beats. The new-unit chapter pairs "써 보기" (the unit in the
 // player's deck) with "상대하기" (the unit in the enemy deck) for each unit group; inside that chapter no two
 // stages' enemy decks share more than one card, except the rice·millet swarm that black-bean-chain and
-// cotton-storm both face. A stage with `map` (a PvP preset of game-rules.js) names that map's capture points.
+// cotton-storm both face and the dandelion·rice deck that dandelion-sky-guard and cotton-sky both face. A stage with `map` (a PvP preset of game-rules.js) names that map's capture points.
 const pacing = (firstDecisionMs, tierId) =>
     Object.freeze({
         firstDecisionMs,
@@ -693,6 +693,51 @@ export const CAMPAIGN_STAGES = Object.freeze([
                         { type: 'rice', x: 1500, y: 1600, count: 25, columns: 5 },
                     ],
                 },
+            ],
+        },
+    },
+    {
+        id: 'cotton-sky',
+        tier: 'new-units',
+        group: 'cotton',
+        map: 'twin-gates',
+        enemyPacing: pacing(25_000, 'new-units'),
+        title: '목화솜 · 하늘까지',
+        briefing:
+            '목화솜 번개는 나는 민들레씨에도 닿아요. 바위벽을 넘어오는 민들레씨를 콩 앞줄 뒤에서 번개로 떨어뜨리세요.',
+        deck: ['cotton', 'pea'],
+        enemyDeck: ['dandelion', 'rice'],
+        enemyOutposts: ['natural-2'],
+        friendlyOutposts: ['natural-1', 'oil-1'],
+        startingLaunchRangeLevel: 1,
+        seed: 133,
+        mode: 'eliminate',
+        mission: {
+            startingPremium: [premiumFor('cotton') * 4, 0],
+            formations: [{ type: 'rice', x: 2300, y: 1450, count: 10, columns: 5, hold: true }],
+        },
+    },
+    {
+        id: 'cotton-outrange',
+        tier: 'new-units',
+        group: 'cotton',
+        enemyPacing: pacing(30_000, 'new-units'),
+        title: '목화솜 · 사거리 밖에서',
+        briefing:
+            '목화솜은 사거리 250이에요. 사거리 300 해바라기씨로 밖에서 쏘고, 번개가 닿으면 튼튼한 콩이 버티세요.',
+        deck: ['sunflower-seed', 'pea'],
+        enemyDeck: ['cotton', 'rice'],
+        enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-oil'],
+        friendlyOutposts: ['oil'],
+        seed: 134,
+        mode: 'eliminate',
+        layout: { guestY: 850 },
+        mission: {
+            startingPremium: [premiumFor('sunflower-seed') * 3, premiumFor('cotton') * 3],
+            formations: [
+                { type: 'rice', x: 1200, y: 1500, count: 10, columns: 5, hold: true },
+                { type: 'cotton', x: 1000, y: 1650, count: 4, columns: 4, hold: true },
+                { type: 'cotton', x: 1400, y: 1650, count: 4, columns: 4, hold: true },
             ],
         },
     },
