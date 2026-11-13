@@ -3,15 +3,15 @@ import { LaunchRules } from '../sim/launch-rules.js';
 
 // Enemy launch cadence is the difficulty lever. Within a stage the enemy starts at the shared AI decision
 // interval (a hard early push) and slows linearly to `endIntervalMs` over `rampMs`, so the player can stop the
-// push and turn the match around. Later tiers end at a shorter interval (15s -> 7s). A full wallet always
+// push and turn the match around. Later tiers end at a shorter interval (15s -> 10s). A full wallet always
 // forces a decision at the shared interval (see BotController).
 const RAMP_MS = 180_000;
 // Clearing any one stage of a tier opens the whole next tier. Stages inside a tier have no fixed order
 // (a stage may still require one earlier stage through `prerequisite`).
 export const CAMPAIGN_TIERS = Object.freeze([
     { id: 'basics', title: '기초', endIntervalMs: 15_000 },
-    { id: 'new-units', title: '새 병종', requires: 'basics', endIntervalMs: 10_000 },
-    { id: 'classes', title: '병종 교실', requires: 'new-units', endIntervalMs: 7_000 },
+    { id: 'basic-units', title: '기본 병종', requires: 'basics', endIntervalMs: 12_000 },
+    { id: 'new-units', title: '새 병종', requires: 'basic-units', endIntervalMs: 10_000 },
 ]);
 // Stages that share a `group` fold together under one row of their tier (`art` is that row's portrait card).
 export const CAMPAIGN_GROUPS = Object.freeze([
@@ -22,13 +22,17 @@ export const CAMPAIGN_GROUPS = Object.freeze([
     { id: 'sticky-rice', title: '찹쌀', art: 'sticky-rice' },
     { id: 'dandelion', title: '민들레씨', art: 'dandelion' },
     { id: 'chili', title: '고추', art: 'chili' },
+    { id: 'cotton', title: '목화솜', art: 'cotton' },
 ]);
 export function campaignTier(id) {
     return CAMPAIGN_TIERS.find((tier) => tier.id === id) || null;
 }
-// The new-unit chapter pairs "써 보기" (the unit in the player's deck) with "상대하기" (the unit in the enemy deck)
-// for each unit group. From that chapter on, no two stages' enemy decks share more than one card, so no
-// rice·pea base repeats. A stage with `map` (a PvP preset of game-rules.js) names that map's capture points.
+// From the basic-unit chapter on, every stage is built for the player to win: the player's deck counters the
+// enemy deck, and the enemy deck carries no counter of the player's cards. Each basic-unit stage introduces
+// its first card (`deck[0]`) against the enemy it beats. The new-unit chapter pairs "써 보기" (the unit in the
+// player's deck) with "상대하기" (the unit in the enemy deck) for each unit group; inside that chapter no two
+// stages' enemy decks share more than one card, except the rice·millet swarm that black-bean-chain and
+// cotton-storm both face. A stage with `map` (a PvP preset of game-rules.js) names that map's capture points.
 const pacing = (firstDecisionMs, tierId) =>
     Object.freeze({
         firstDecisionMs,
@@ -155,6 +159,241 @@ export const CAMPAIGN_STAGES = Object.freeze([
         },
     },
     {
+        id: 'basic-pea',
+        tier: 'basic-units',
+        enemyPacing: SCRIPTED_ONLY,
+        title: '콩 · 무너지지 않는 앞줄',
+        briefing:
+            '콩은 튼튼하고 포탄이 넓게 터져요. 몰려오는 쌀·조 떼 한가운데에 콩을 떨어뜨려 막으세요.',
+        deck: ['pea'],
+        enemyDeck: ['rice', 'millet'],
+        enemyOutposts: ['enemy-front', 'enemy-rear'],
+        friendlyOutposts: ['advance'],
+        seed: 140,
+        mode: 'defend',
+        mission: {
+            waves: [
+                {
+                    delayMs: 4000,
+                    formations: [{ type: 'rice', x: 1150, y: 1650, count: 20, columns: 5 }],
+                },
+                {
+                    delayMs: 8000,
+                    formations: [
+                        { type: 'rice', x: 900, y: 1650, count: 20, columns: 5 },
+                        { type: 'millet', x: 1400, y: 1600, count: 20, columns: 5 },
+                    ],
+                },
+                {
+                    delayMs: 8000,
+                    formations: [
+                        { type: 'millet', x: 950, y: 1600, count: 20, columns: 5 },
+                        { type: 'rice', x: 1250, y: 1650, count: 30, columns: 6 },
+                        { type: 'millet', x: 1550, y: 1550, count: 20, columns: 5 },
+                    ],
+                },
+            ],
+        },
+    },
+    {
+        id: 'basic-redbean',
+        tier: 'basic-units',
+        map: 'small-field',
+        enemyPacing: pacing(30_000, 'basic-units'),
+        title: '팥 · 포대 덮치기',
+        briefing:
+            '해바라기씨 포대는 멀리서 쏘지만 붙으면 약해요. 팥은 높이 뛰어 내려찍으니 포대 바로 앞에 떨어뜨리세요.',
+        deck: ['redbean', 'rice'],
+        enemyDeck: ['sunflower-seed'],
+        enemyOutposts: ['natural-2', 'oil-2'],
+        friendlyOutposts: ['natural-1'],
+        startingLaunchRangeLevel: 1,
+        seed: 141,
+        mode: 'eliminate',
+        mission: {
+            startingPremium: [0, premiumFor('sunflower-seed') * 3],
+            formations: [
+                { type: 'sunflower-seed', x: 1950, y: 1150, count: 5, columns: 5, hold: true },
+                { type: 'sunflower-seed', x: 2300, y: 1150, count: 5, columns: 5, hold: true },
+            ],
+        },
+    },
+    {
+        id: 'basic-millet',
+        tier: 'basic-units',
+        enemyPacing: pacing(30_000, 'basic-units'),
+        title: '조 · 원거리 녹이기',
+        briefing:
+            '옥수수와 해바라기씨는 붙으면 약해요. 빠른 조를 포대 바로 옆에 떨어뜨려 몸으로 들이받으세요.',
+        deck: ['millet'],
+        enemyDeck: ['corn', 'sunflower-seed'],
+        enemyOutposts: ['enemy-front', 'enemy-ridge', 'enemy-oil'],
+        seed: 142,
+        mode: 'eliminate',
+        layout: { guestY: 800 },
+        mission: {
+            startingPremium: [0, premiumFor('corn') * 2],
+            formations: [
+                { type: 'corn', x: 1050, y: 1400, count: 6, columns: 3, hold: true },
+                { type: 'sunflower-seed', x: 2075, y: 1775, count: 4, columns: 4, hold: true },
+                { type: 'corn', x: 1500, y: 1250, count: 6, columns: 3, hold: true },
+            ],
+        },
+    },
+    {
+        id: 'basic-peanut',
+        tier: 'basic-units',
+        enemyPacing: pacing(35_000, 'basic-units'),
+        title: '땅콩 · 거점 허물기',
+        briefing:
+            '땅콩은 병사를 때리지 않고 건물만 들이받아요. 쌀로 길을 열고 적 거점 앞에 땅콩을 내리세요.',
+        deck: ['peanut', 'rice'],
+        enemyDeck: ['peanut'],
+        enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-ridge'],
+        friendlyOutposts: ['advance', 'center'],
+        seed: 143,
+        mode: 'eliminate',
+        layout: { guestY: 600 },
+        mission: {
+            formations: [
+                { type: 'rice', x: 1000, y: 1250, count: 8, columns: 4, hold: true },
+                { type: 'rice', x: 1900, y: 1700, count: 6, columns: 3, hold: true },
+            ],
+        },
+    },
+    {
+        id: 'basic-popcorn',
+        tier: 'basic-units',
+        enemyPacing: pacing(45_000, 'basic-units'),
+        title: '팝콘 · 뭉친 줄 터뜨리기',
+        briefing:
+            '팝콘은 적에게 뛰어들어 터져요. 촘촘히 뭉친 콩 앞줄 옆에 내려 한꺼번에 날려 보내세요.',
+        deck: ['popcorn', 'chestnut'],
+        enemyDeck: ['pea'],
+        enemyOutposts: ['enemy-front'],
+        friendlyOutposts: ['advance', 'center', 'oil'],
+        seed: 144,
+        mode: 'eliminate',
+        layout: { guestY: 700 },
+        mission: {
+            startingPremium: [premiumFor('chestnut') * 4, 0],
+            formations: [
+                { type: 'pea', x: 1200, y: 1600, count: 16, columns: 4, spacing: 24, hold: true },
+                { type: 'pea', x: 900, y: 1300, count: 12, columns: 4, spacing: 24, hold: true },
+            ],
+        },
+    },
+    {
+        id: 'basic-chestnut',
+        tier: 'basic-units',
+        enemyPacing: SCRIPTED_ONLY,
+        title: '밤톨 · 멀리서 깎기',
+        briefing:
+            '도토리와 콩은 느린 근접이에요. 다가오는 길에 밤톨을 떨어뜨려 붙기 전에 가시로 깎으세요.',
+        deck: ['chestnut', 'corn'],
+        enemyDeck: ['acorn', 'pea'],
+        enemyOutposts: ['enemy-front'],
+        friendlyOutposts: ['advance', 'oil'],
+        seed: 145,
+        mode: 'defend',
+        mission: {
+            startingPremium: [premiumFor('chestnut') * 4 + premiumFor('corn') * 2, 0],
+            waves: [
+                {
+                    delayMs: 4000,
+                    formations: [{ type: 'pea', x: 1200, y: 1450, count: 12, columns: 6 }],
+                },
+                {
+                    delayMs: 10000,
+                    formations: [
+                        { type: 'acorn', x: 1000, y: 1400, count: 4, columns: 2, spacing: 40 },
+                        { type: 'pea', x: 1400, y: 1450, count: 12, columns: 6 },
+                    ],
+                },
+                {
+                    delayMs: 10000,
+                    formations: [
+                        { type: 'acorn', x: 1200, y: 1350, count: 6, columns: 3, spacing: 40 },
+                        { type: 'pea', x: 900, y: 1450, count: 12, columns: 6 },
+                        { type: 'pea', x: 1500, y: 1450, count: 12, columns: 6 },
+                    ],
+                },
+            ],
+        },
+    },
+    {
+        id: 'basic-corn',
+        tier: 'basic-units',
+        map: 'causeway-flats',
+        enemyPacing: pacing(30_000, 'basic-units'),
+        title: '옥수수 · 넘겨 던지는 폭발',
+        briefing:
+            '옥수수 알은 떨어진 뒤 터져 둘레를 함께 맞혀요. 콩 앞줄 뒤에서 뭉쳐 선 수비대에 던지세요.',
+        deck: ['corn', 'pea'],
+        enemyDeck: ['pea', 'rice'],
+        enemyOutposts: ['natural-2', 'rear-2'],
+        friendlyOutposts: ['natural-1', 'oil-1'],
+        startingLaunchRangeLevel: 1,
+        seed: 146,
+        mode: 'eliminate',
+        mission: {
+            startingPremium: [premiumFor('corn') * 4, 0],
+            formations: [
+                { type: 'pea', x: 2850, y: 1400, count: 12, columns: 6, spacing: 24, hold: true },
+                { type: 'rice', x: 2600, y: 1250, count: 20, columns: 10, spacing: 22, hold: true },
+            ],
+        },
+    },
+    {
+        id: 'basic-acorn',
+        tier: 'basic-units',
+        enemyPacing: pacing(25_000, 'basic-units'),
+        title: '도토리 · 회전으로 쓸기',
+        briefing:
+            '도토리는 제자리에서 돌며 둘레의 적을 한꺼번에 쳐요. 몰려든 쌀·조 떼 한가운데에 내리세요.',
+        deck: ['acorn', 'pea'],
+        enemyDeck: ['rice', 'millet'],
+        enemyOutposts: ['enemy-front', 'enemy-rear'],
+        friendlyOutposts: ['oil'],
+        seed: 147,
+        mode: 'eliminate',
+        layout: { guestY: 900 },
+        mission: {
+            startingPremium: [premiumFor('acorn') * 4, 0],
+            formations: [
+                { type: 'rice', x: 1250, y: 1650, count: 20, columns: 10, spacing: 26, hold: true },
+                {
+                    type: 'millet',
+                    x: 1000,
+                    y: 1400,
+                    count: 20,
+                    columns: 10,
+                    spacing: 26,
+                    hold: true,
+                },
+            ],
+        },
+    },
+    {
+        id: 'basic-sunflower-seed',
+        tier: 'basic-units',
+        map: 'kings-hill',
+        enemyPacing: pacing(25_000, 'basic-units'),
+        title: '해바라기씨 · 하늘 쏘기',
+        briefing:
+            '민들레씨는 날아서 벽을 넘어요. 해바라기씨는 나는 적을 먼저 두 배로 쏘니 우리 거점 앞에 세우세요.',
+        deck: ['sunflower-seed', 'rice'],
+        enemyDeck: ['dandelion'],
+        enemyOutposts: ['natural-2'],
+        friendlyOutposts: ['natural-1', 'oil-1'],
+        startingLaunchRangeLevel: 1,
+        seed: 148,
+        mode: 'eliminate',
+        mission: {
+            startingPremium: [premiumFor('sunflower-seed') * 4, 0],
+        },
+    },
+    {
         id: 'walnut-lanes',
         tier: 'new-units',
         group: 'walnut',
@@ -204,14 +443,14 @@ export const CAMPAIGN_STAGES = Object.freeze([
         title: '검은콩 · 징검다리 대포',
         briefing: '검은콩은 싸운 뒤 앞쪽 대포로 돌아가 다시 날아가요. 거점을 이어 멀리 보내세요.',
         deck: ['black-bean', 'rice'],
-        enemyDeck: ['rice', 'corn'],
+        enemyDeck: ['rice', 'millet'],
         enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-oil'],
         friendlyOutposts: ['advance', 'center', 'oil'],
         seed: 122,
         mode: 'eliminate',
         layout: { guestY: 500 },
         mission: {
-            startingPremium: [premiumFor('black-bean') * 3, premiumFor('corn')],
+            startingPremium: [premiumFor('black-bean') * 3, 0],
             formations: [
                 { type: 'rice', x: 1250, y: 1250, count: 10, columns: 5, hold: true },
                 { type: 'rice', x: 1700, y: 1000, count: 10, columns: 5, hold: true },
@@ -245,14 +484,14 @@ export const CAMPAIGN_STAGES = Object.freeze([
         title: '감자 · 전진 포대',
         briefing: '멀리 있는 적 본진은 감자로 대포를 세워 가며 닿게 하세요.',
         deck: ['potato', 'rice'],
-        enemyDeck: ['corn', 'pea'],
+        enemyDeck: ['pea', 'rice'],
         enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-oil'],
         friendlyOutposts: ['oil'],
         seed: 124,
         mode: 'eliminate',
         layout: { guestY: 400 },
         mission: {
-            startingPremium: [premiumFor('potato') * 4, premiumFor('corn')],
+            startingPremium: [premiumFor('potato') * 4, 0],
             formations: [{ type: 'pea', x: 1475, y: 1500, count: 8, columns: 4, hold: true }],
         },
     },
@@ -264,7 +503,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         title: '감자 · 뿌리 뽑기',
         briefing: '감자는 내려앉고 5초 뒤 대포가 돼요. 뿌리내리는 동안 쌀을 쏘아 끊으세요.',
         deck: ['rice', 'millet'],
-        enemyDeck: ['potato', 'chestnut'],
+        enemyDeck: ['potato', 'pea'],
         enemyOutposts: ['enemy-front', 'enemy-oil'],
         seed: 125,
         mode: 'eliminate',
@@ -277,19 +516,19 @@ export const CAMPAIGN_STAGES = Object.freeze([
         id: 'sticky-rice-seal',
         tier: 'new-units',
         group: 'sticky-rice',
-        enemyPacing: pacing(28_000, 'new-units'),
+        enemyPacing: pacing(40_000, 'new-units'),
         title: '찹쌀 · 포문 봉쇄',
         briefing: '찹쌀로 적 거점 포구를 막아 포탑을 멈추고, 그 틈에 땅콩으로 부수세요.',
         deck: ['sticky-rice', 'peanut', 'rice'],
-        enemyDeck: ['sunflower-seed', 'acorn'],
-        enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-ridge', 'enemy-oil'],
+        enemyDeck: ['rice', 'peanut'],
+        enemyOutposts: ['enemy-front', 'enemy-ridge', 'enemy-oil'],
         friendlyOutposts: ['oil'],
         startingLaunchRangeLevel: 1,
         seed: 126,
         mode: 'eliminate',
         layout: { guestY: 870 },
         mission: {
-            startingPremium: [premiumFor('sticky-rice') * 4, premiumFor('acorn')],
+            startingPremium: [premiumFor('sticky-rice') * 4, 0],
         },
     },
     {
@@ -317,19 +556,20 @@ export const CAMPAIGN_STAGES = Object.freeze([
         map: 'twin-gates',
         enemyPacing: pacing(30_000, 'new-units'),
         title: '민들레씨 · 벽 너머로',
-        briefing: '쌀은 바위벽을 돌아가지만 민들레씨는 벽을 넘어 날아가요. 벽 앞에 내려 보세요.',
+        briefing:
+            '쌀은 바위벽을 돌아가지만 민들레씨는 벽을 넘어 날아가요. 밤톨·옥수수 포대 곁에 내려앉아 바짝 붙어 싸우세요.',
         deck: ['dandelion', 'rice'],
-        enemyDeck: ['redbean', 'acorn'],
+        enemyDeck: ['chestnut', 'corn'],
         enemyOutposts: ['natural-2', 'oil-2'],
         friendlyOutposts: ['natural-1'],
         startingLaunchRangeLevel: 1,
         seed: 128,
         mode: 'eliminate',
         mission: {
-            startingPremium: [0, premiumFor('acorn') * 2],
+            startingPremium: [0, premiumFor('chestnut') * 2 + premiumFor('corn')],
             formations: [
-                { type: 'redbean', x: 2300, y: 1450, count: 10, columns: 5, hold: true },
-                { type: 'redbean', x: 2750, y: 2050, count: 10, columns: 5, hold: true },
+                { type: 'chestnut', x: 2300, y: 1450, count: 10, columns: 5, hold: true },
+                { type: 'corn', x: 2750, y: 2050, count: 6, columns: 3, hold: true },
             ],
         },
     },
@@ -341,8 +581,8 @@ export const CAMPAIGN_STAGES = Object.freeze([
         enemyPacing: pacing(25_000, 'new-units'),
         title: '민들레씨 · 하늘 지키기',
         briefing:
-            '민들레씨는 골짜기 벽을 넘어 날아와요. 날고 있을 때는 대공 병종만 맞히니 밤톨로 지키세요.',
-        deck: ['chestnut', 'pea'],
+            '민들레씨는 골짜기 벽을 넘어 날아와요. 나는 동안 해바라기씨로 떨어뜨리고, 내려앉은 적은 콩으로 막으세요.',
+        deck: ['sunflower-seed', 'pea'],
         enemyDeck: ['dandelion', 'rice'],
         enemyOutposts: ['natural-2', 'ravine-2', 'oil-2'],
         friendlyOutposts: ['natural-1', 'oil-1'],
@@ -350,7 +590,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         seed: 129,
         mode: 'eliminate',
         mission: {
-            startingPremium: [premiumFor('chestnut') * 2, 0],
+            startingPremium: [premiumFor('sunflower-seed') * 3, 0],
         },
     },
     {
@@ -398,9 +638,10 @@ export const CAMPAIGN_STAGES = Object.freeze([
         tier: 'new-units',
         group: 'chili',
         enemyPacing: pacing(25_000, 'new-units'),
-        title: '고추 · 옆과 뒤로',
-        briefing: '고추는 천천히 돌아요. 정면을 피해 조로 옆과 뒤를 치세요.',
-        deck: ['millet', 'rice'],
+        title: '고추 · 넘기고 돌아가기',
+        briefing:
+            '고추는 정면만 태우고 천천히 돌아요. 옥수수 알을 불줄기 너머로 던지고, 조로 옆과 뒤를 치세요.',
+        deck: ['corn', 'millet'],
         enemyDeck: ['chili'],
         enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-oil'],
         friendlyOutposts: ['oil'],
@@ -408,7 +649,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         mode: 'eliminate',
         layout: { guestY: 850 },
         mission: {
-            startingPremium: [0, premiumFor('chili') * 2],
+            startingPremium: [premiumFor('corn') * 4, premiumFor('chili') * 2],
             formations: [
                 { type: 'chili', x: 900, y: 1550, count: 3, columns: 3, hold: true },
                 { type: 'chili', x: 1200, y: 1650, count: 3, columns: 3, hold: true },
@@ -417,175 +658,42 @@ export const CAMPAIGN_STAGES = Object.freeze([
         },
     },
     {
-        id: 'class-swarm',
-        tier: 'classes',
-        enemyPacing: pacing(15_000, 'classes'),
-        title: '떼의 물결',
-        briefing: '가벼운 떼는 콩 앞줄로 받고 옥수수 폭발로 한꺼번에 걷어 내세요.',
-        deck: ['pea', 'corn'],
-        enemyDeck: ['rice', 'millet', 'popcorn'],
+        id: 'cotton-storm',
+        tier: 'new-units',
+        group: 'cotton',
+        enemyPacing: SCRIPTED_ONLY,
+        title: '목화솜 · 번개 사슬',
+        briefing:
+            '목화솜 번개는 뭉친 적 넷까지 튀어요. 콩 앞줄 뒤에 목화솜을 세우고 몰려오는 쌀·조 떼에 번개를 이으세요.',
+        deck: ['cotton', 'pea'],
+        enemyDeck: ['rice', 'millet'],
         enemyOutposts: ['enemy-front', 'enemy-rear'],
-        friendlyOutposts: ['oil'],
-        seed: 140,
-        mode: 'eliminate',
-        layout: { guestY: 900 },
-        mission: {
-            startingPremium: [premiumFor('corn') * 2, 0],
-        },
-    },
-    {
-        id: 'class-heavy-line',
-        tier: 'classes',
-        enemyPacing: pacing(25_000, 'classes'),
-        title: '무거운 앞줄',
-        briefing: '느린 도토리 앞줄은 빠른 조로 돌아 넘고, 뭉친 곳에 옥수수를 떨어뜨리세요.',
-        deck: ['millet', 'corn', 'rice'],
-        enemyDeck: ['pea', 'acorn'],
-        enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-ridge', 'enemy-oil'],
-        friendlyOutposts: ['oil'],
-        seed: 141,
-        mode: 'eliminate',
-        layout: { guestY: 870 },
-        mission: {
-            startingPremium: [premiumFor('corn'), premiumFor('acorn')],
-            formations: [
-                { type: 'acorn', x: 1300, y: 1550, count: 6, columns: 3, spacing: 32, hold: true },
-            ],
-        },
-    },
-    {
-        id: 'class-thorn-battery',
-        tier: 'classes',
-        map: 'standard',
-        enemyPacing: pacing(25_000, 'classes'),
-        title: '가시 포대',
-        briefing: '멀리서 쏘는 포대에는 팥 도약과 조 돌진으로 단숨에 파고드세요.',
-        deck: ['redbean', 'millet', 'rice'],
-        enemyDeck: ['chestnut', 'sunflower-seed'],
-        enemyOutposts: ['natural-2', 'front-2', 'oil-near-2'],
-        friendlyOutposts: ['front-1'],
-        startingLaunchRangeLevel: 1,
-        seed: 142,
-        mode: 'eliminate',
-        mission: {
-            startingPremium: [0, premiumFor('chestnut') * 4],
-            formations: [
-                { type: 'chestnut', x: 2650, y: 1700, count: 10, columns: 5, hold: true },
-                { type: 'sunflower-seed', x: 2950, y: 1750, count: 6, columns: 3, hold: true },
-            ],
-        },
-    },
-    {
-        id: 'class-charge',
-        tier: 'classes',
-        enemyPacing: pacing(30_000, 'classes'),
-        title: '자폭과 내려찍기',
-        briefing: '돌격해 오는 팝콘과 팥은 콩으로 받고 원거리로 거리를 두고 끊으세요.',
-        deck: ['chestnut', 'corn', 'pea'],
-        enemyDeck: ['popcorn', 'redbean'],
-        enemyOutposts: ['enemy-front', 'enemy-rear'],
-        friendlyOutposts: ['oil'],
-        seed: 143,
+        friendlyOutposts: ['advance', 'oil'],
+        seed: 132,
         mode: 'defend',
         mission: {
-            startingPremium: [premiumFor('chestnut') * 2, 0],
+            startingPremium: [premiumFor('cotton') * 5, 0],
             waves: [
                 {
                     delayMs: 5000,
+                    formations: [{ type: 'rice', x: 1200, y: 1600, count: 20, columns: 5 }],
+                },
+                {
+                    delayMs: 8000,
                     formations: [
-                        { type: 'popcorn', x: 1000, y: 1900, count: 10, columns: 5, spacing: 58 },
+                        { type: 'millet', x: 950, y: 1600, count: 20, columns: 5 },
+                        { type: 'rice', x: 1450, y: 1650, count: 20, columns: 5 },
                     ],
                 },
                 {
                     delayMs: 8000,
                     formations: [
-                        { type: 'redbean', x: 1400, y: 1900, count: 10, columns: 5 },
-                        { type: 'popcorn', x: 1000, y: 1850, count: 10, columns: 5, spacing: 58 },
-                    ],
-                },
-                {
-                    delayMs: 8000,
-                    formations: [
-                        { type: 'popcorn', x: 950, y: 1850, count: 10, columns: 5, spacing: 58 },
-                        { type: 'popcorn', x: 1450, y: 1850, count: 10, columns: 5, spacing: 58 },
-                        { type: 'redbean', x: 1200, y: 1950, count: 15, columns: 5 },
+                        { type: 'rice', x: 1000, y: 1600, count: 25, columns: 5 },
+                        { type: 'millet', x: 1250, y: 1550, count: 25, columns: 5 },
+                        { type: 'rice', x: 1500, y: 1600, count: 25, columns: 5 },
                     ],
                 },
             ],
-        },
-    },
-    {
-        id: 'class-building-raid',
-        tier: 'classes',
-        enemyPacing: pacing(20_000, 'classes'),
-        title: '건물만 노린다',
-        briefing: '땅콩과 찹쌀은 병사를 때리지 않아요. 거점 앞길에 쌀과 조를 내려 지키세요.',
-        deck: ['rice', 'millet'],
-        enemyDeck: ['peanut', 'sticky-rice'],
-        enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-oil'],
-        friendlyOutposts: ['advance', 'center', 'oil'],
-        seed: 144,
-        mode: 'eliminate',
-        mission: {
-            startingPremium: [0, premiumFor('sticky-rice') * 4],
-        },
-    },
-    {
-        id: 'class-fluff-sky',
-        tier: 'classes',
-        map: 'twin-gates',
-        enemyPacing: pacing(25_000, 'classes'),
-        title: '하늘을 덮는 솜털',
-        briefing: '벽을 넘어오는 민들레씨는 해바라기씨로 떨어뜨리고, 땅콩은 쌀로 막으세요.',
-        deck: ['sunflower-seed', 'corn', 'rice'],
-        enemyDeck: ['dandelion', 'peanut'],
-        enemyOutposts: ['natural-2', 'inner-staging-2', 'gate-2'],
-        friendlyOutposts: ['natural-1', 'oil-1'],
-        startingLaunchRangeLevel: 1,
-        seed: 145,
-        mode: 'eliminate',
-        mission: {
-            startingPremium: [premiumFor('sunflower-seed') * 2, 0],
-        },
-    },
-    {
-        id: 'class-firestorm',
-        tier: 'classes',
-        enemyPacing: pacing(25_000, 'classes'),
-        title: '불바다',
-        briefing: '콩 앞줄 뒤의 고추에게는 옥수수를 넘겨 던지고 팥으로 뛰어드세요.',
-        deck: ['corn', 'redbean', 'rice'],
-        enemyDeck: ['chili', 'pea'],
-        enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-oil'],
-        friendlyOutposts: ['oil'],
-        seed: 146,
-        mode: 'eliminate',
-        layout: { guestY: 850 },
-        mission: {
-            startingPremium: [premiumFor('corn') * 2, premiumFor('chili') * 2],
-            formations: [
-                { type: 'pea', x: 1200, y: 1500, count: 12, columns: 6, hold: true },
-                { type: 'chili', x: 1200, y: 1380, count: 6, columns: 3, hold: true },
-            ],
-        },
-    },
-    {
-        id: 'class-rolling-battery',
-        tier: 'classes',
-        map: 'artillery-basin',
-        enemyPacing: pacing(20_000, 'classes'),
-        title: '굴러오는 공·대포 행렬',
-        nodeMark: '★',
-        briefing: '도토리로 호두를 받아 멈추고, 찹쌀로 대포를 막아 검은콩의 재탑승을 끊으세요.',
-        deck: ['acorn', 'sticky-rice', 'chestnut'],
-        enemyDeck: ['walnut', 'black-bean', 'potato'],
-        enemyOutposts: ['basin-natural-2', 'basin-oil-2', 'basin-shoulder-2'],
-        friendlyOutposts: ['basin-natural-1', 'basin-oil-1'],
-        startingLaunchRangeLevel: 1,
-        seed: 147,
-        mode: 'eliminate',
-        mission: {
-            startingPremium: [premiumFor('acorn') * 3, LaunchRules.premiumWalletCap],
         },
     },
 ]);

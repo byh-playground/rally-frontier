@@ -390,7 +390,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 {
                     const lesson = campaignStage('volley-practice'),
                         first = campaignStage('first'),
-                        nextTier = campaignStage('walnut-lanes'),
+                        nextTier = campaignStage('basic-pea'),
                         goals = lesson.volleyGoals;
                     const storage = new Map();
                     const progress = new CampaignProgress({
@@ -400,14 +400,14 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     check(!progress.canStart(lesson), 'practice opens after the first stage');
                     check(
                         !progress.canStart(nextTier),
-                        'the new-unit tier stays closed before the first clear',
+                        'the basic-unit tier stays closed before the first clear',
                     );
                     progress.complete(first);
                     check(
                         progress.canStart(lesson) &&
                             progress.canStart(nextTier) &&
                             progress.nextStage === lesson,
-                        'practice and the new-unit tier open after the first stage',
+                        'practice and the basic-unit tier open after the first stage',
                     );
                     progress.complete(lesson);
                     check(
