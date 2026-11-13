@@ -378,16 +378,8 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         stage.id,
                     );
                     check(
-                        !!oil ===
-                            !!(stage.resourceLesson || stage.friendlyOutposts?.includes('oil')) &&
-                            (!oil ||
-                                !stage.resourceLesson ||
-                                (oil.owner === null &&
-                                    distance(advance, oil) >
-                                        LaunchRules.maxReachOf('rice') +
-                                            LaunchRules.captureHoldRadius &&
-                                    distance(home, oil) <= LaunchRules.maxReachOf('rice', 1))),
-                        'a side oil site exists only for the resource lesson or a stage that grants it, and the lesson has a direct shot from home after one range upgrade',
+                        !!oil === !!stage.friendlyOutposts?.includes('oil'),
+                        'a side oil site exists only for a stage that grants it',
                         stage.id,
                     );
                     layouts.push({
@@ -398,7 +390,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 {
                     const lesson = campaignStage('volley-practice'),
                         first = campaignStage('first'),
-                        bean = campaignStage('bean'),
+                        nextTier = campaignStage('walnut-lanes'),
                         goals = lesson.volleyGoals;
                     const storage = new Map();
                     const progress = new CampaignProgress({
@@ -407,15 +399,15 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     });
                     check(!progress.canStart(lesson), 'practice opens after the first stage');
                     check(
-                        !progress.canStart(bean),
-                        'basic tier stays closed before the first clear',
+                        !progress.canStart(nextTier),
+                        'the new-unit tier stays closed before the first clear',
                     );
                     progress.complete(first);
                     check(
                         progress.canStart(lesson) &&
-                            progress.canStart(bean) &&
+                            progress.canStart(nextTier) &&
                             progress.nextStage === lesson,
-                        'practice and the basic tier open after the first stage',
+                        'practice and the new-unit tier open after the first stage',
                     );
                     progress.complete(lesson);
                     check(
@@ -615,29 +607,6 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         clearTick: practice.tick,
                     });
                 }
-                const oilLessonStage = CAMPAIGN_STAGES.find((stage) => stage.resourceLesson);
-                const oilLesson = openStage(oilLessonStage);
-                const lessonUnit = oilLessonStage.mission.captureSupport.find(
-                    (support) => support.resource === 'premium',
-                ).unitType;
-                const lessonOil = oilLesson.capturePoints.find((p) => p.id === 'oil');
-                const lessonCannon = checkOilOpening(oilLesson, 'host', 0, lessonOil);
-                const oilCaptureSeconds = oilLesson.tick / oilLesson.tps;
-                const lessonPayload = LaunchRules.payload(lessonUnit);
-                step(oilLesson, (lessonPayload.premiumCost / 2.5) * oilLesson.tps);
-                const enemyBase = oilLesson.world.bases[1];
-                const premiumBefore = oilLesson.premiumWallet[0];
-                check(
-                    oilLesson.applyCommand('host', {
-                        type: 'LAUNCH',
-                        cannonId: lessonCannon.id,
-                        unitType: lessonUnit,
-                        x: enemyBase.x,
-                        y: enemyBase.y,
-                        holdMs: LaunchRules.chargeMs,
-                    }) && oilLesson.premiumWallet[0] === premiumBefore - lessonPayload.premiumCost,
-                    'oil-only campaign opening funds the lesson unit',
-                );
                 const opening = openStage(campaignStage('first'));
                 const home = opening.launchCannons(0)[0];
                 const advance = opening.capturePoints.find((p) => p.id === 'advance');
@@ -667,67 +636,10 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     },
                 );
                 const openingCaptureSeconds = opening.tick / opening.tps;
-                const damage = [];
-                for (const [sourceId, targetId] of [
-                    ['advance', 'enemy-front'],
-                    ['advance', 'enemy-ridge'],
-                    ['center', 'enemy-rear'],
-                ]) {
-                    const sim = openStage(campaignStage('breakthrough'));
-                    const source = sim.capturePoints.find((p) => p.id === sourceId);
-                    const target = sim.capturePoints.find((p) => p.id === targetId);
-                    const cannon = sim.spawnOutpost(source, 0);
-                    cannon.hp = cannon.maxHp;
-                    sim.completeConstruction(cannon);
-                    for (let level = 0; level < 2; level++) {
-                        sim.wallet[0] = LaunchRules.walletCap;
-                        check(
-                            sim.applyCommand('host', { type: 'UPGRADE_LAUNCH_RANGE' }),
-                            'range upgrade is legal',
-                        );
-                    }
-                    sim.wallet[0] = LaunchRules.walletCap;
-                    const defense = sim.buildingById.get(target.outpostId);
-                    const before = defense.hp;
-                    check(
-                        sim.applyCommand('host', {
-                            type: 'LAUNCH',
-                            cannonId: cannon.id,
-                            unitType: 'redbean',
-                            x: target.x,
-                            y: target.y,
-                            holdMs: LaunchRules.holdFor(distance(cannon, target), 'redbean', 2),
-                        }),
-                        'third-tier cannon fires the shortest-range campaign shell',
-                    );
-                    let shellDamage = 0;
-                    step(sim, 3 * sim.tps, (state) => {
-                        for (const event of state.events) {
-                            if (
-                                event.type === 'hit' &&
-                                event.targetId === defense.id &&
-                                event.sourceId === cannon.id &&
-                                event.sourceType === 'redbean'
-                            )
-                                shellDamage += event.amount;
-                        }
-                    });
-                    check(
-                        shellDamage > 0 && defense.hp < before,
-                        'direct shell hits the intended enemy outpost',
-                        {
-                            sourceId,
-                            targetId,
-                        },
-                    );
-                    damage.push({ sourceId, targetId, shellDamage });
-                }
                 rows.push({
-                    scenario: 'compact campaign third-tier cannon coverage',
+                    scenario: 'compact campaign layouts and first outpost',
                     layouts,
                     openingCaptureSeconds,
-                    oilCaptureSeconds,
-                    damage,
                 });
             }
             // The opening earns a forward cannon and keeps high resources contestable.

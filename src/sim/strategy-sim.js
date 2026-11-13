@@ -232,10 +232,7 @@ class StrategySim {
         this.baseProducers = [0, 1].map((side) => ({
             owner: side,
             extractedResources: 0,
-            production: LaunchRules.productionChannels(
-                LaunchRules.baseIncomePerSecond *
-                    (side === 0 ? (this.rules.campaign?.baseIncomeRatio ?? 1) : 1),
-            ),
+            production: LaunchRules.productionChannels(LaunchRules.baseIncomePerSecond),
         }));
         const campaign = this.rules.campaign;
         this.launchRangeLevel = [campaign?.startingLaunchRangeLevel ?? 0, 0];
