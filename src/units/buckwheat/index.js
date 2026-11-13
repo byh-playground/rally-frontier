@@ -1,7 +1,7 @@
 import { BASIC_MELEE, RESOURCE_SCALE, SINGLE_BUNDLE_SHELL } from '../baseline.js';
 import { defineUnit } from '../define-unit.js';
 
-// 확정 규칙: 체력 낮은 물량 중거리, 조의 원거리 버전. 20명, 사거리 125(원거리 중 가장 짧음), 체력 15(조와 같음),
+// 확정 규칙: 체력 낮은 물량 중거리, 조의 원거리 버전. 20명, 사거리 150(원거리 중 가장 짧음), 체력 15(조와 같음),
 // 이속 100. 각자 가장 가까운 적에게 작은 세모 씨앗을 0.5초마다 하나씩 던진다(일반 공격 주기, 지속 피해 문법 아님).
 // 대공 없음. 투사체는 밤톨의 단발 투사체(thornAttack)를 쓰고, 보이는 탄은 몸과 같은 작은 메밀알이다.
 // 초안(주인이 써 보고 조정): 한 발 피해 4, 식량 40(조와 같음, 기름 없음).
@@ -13,7 +13,7 @@ export const Buckwheat = defineUnit({
         name: '메밀',
         hp: 15,
         atk: 4,
-        range: 125,
+        range: 150,
         speed: 100,
         // 선딜(attackWindupMs)을 포함한 던지기 간격이다. 10틱/초면 5틱.
         attackIntervalMs: 500,

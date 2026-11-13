@@ -23,6 +23,8 @@ export const CAMPAIGN_GROUPS = Object.freeze([
     { id: 'dandelion', title: '민들레씨', art: 'dandelion' },
     { id: 'chili', title: '고추', art: 'chili' },
     { id: 'cotton', title: '목화솜', art: 'cotton' },
+    { id: 'sesame', title: '참깨', art: 'sesame' },
+    { id: 'buckwheat', title: '메밀', art: 'buckwheat' },
 ]);
 export function campaignTier(id) {
     return CAMPAIGN_TIERS.find((tier) => tier.id === id) || null;
@@ -738,6 +740,85 @@ export const CAMPAIGN_STAGES = Object.freeze([
                 { type: 'rice', x: 1200, y: 1500, count: 10, columns: 5, hold: true },
                 { type: 'cotton', x: 1000, y: 1650, count: 4, columns: 4, hold: true },
                 { type: 'cotton', x: 1400, y: 1650, count: 4, columns: 4, hold: true },
+            ],
+        },
+    },
+    {
+        id: 'sesame-builders',
+        tier: 'new-units',
+        group: 'sesame',
+        enemyPacing: pacing(45_000, 'new-units'),
+        title: '참깨 · 뚝딱 일꾼',
+        briefing:
+            '참깨는 건설이 두 배 빠르고 짓는 동안 덜 다쳐요. 빈 거점에 참깨를 내려 서둘러 세우고, 쌀로 적을 막으세요.',
+        deck: ['sesame', 'rice'],
+        enemyDeck: ['rice'],
+        enemyOutposts: ['enemy-front'],
+        seed: 135,
+        mode: 'eliminate',
+        layout: { guestY: 700 },
+        mission: {
+            formations: [{ type: 'rice', x: 1000, y: 1250, count: 6, columns: 3, hold: true }],
+        },
+    },
+    {
+        id: 'buckwheat-volley',
+        tier: 'new-units',
+        group: 'buckwheat',
+        enemyPacing: SCRIPTED_ONLY,
+        title: '메밀 · 씨앗 세례',
+        briefing:
+            '메밀은 몸이 약해도 20명이 씨앗을 쏟아부어요. 콩 앞줄 뒤에 메밀을 세우고 몰려오는 쌀 떼와 밤톨을 쓸어내세요.',
+        deck: ['buckwheat', 'pea'],
+        enemyDeck: ['rice', 'chestnut'],
+        enemyOutposts: ['enemy-front', 'enemy-rear'],
+        friendlyOutposts: ['advance', 'oil'],
+        seed: 136,
+        mode: 'defend',
+        mission: {
+            waves: [
+                {
+                    delayMs: 5000,
+                    formations: [{ type: 'rice', x: 1200, y: 1600, count: 20, columns: 5 }],
+                },
+                {
+                    delayMs: 8000,
+                    formations: [
+                        { type: 'rice', x: 1000, y: 1600, count: 20, columns: 5 },
+                        { type: 'chestnut', x: 1450, y: 1650, count: 4, columns: 2, spacing: 36 },
+                    ],
+                },
+                {
+                    delayMs: 8000,
+                    formations: [
+                        { type: 'rice', x: 950, y: 1600, count: 25, columns: 5 },
+                        { type: 'chestnut', x: 1250, y: 1650, count: 6, columns: 3, spacing: 36 },
+                        { type: 'rice', x: 1550, y: 1600, count: 25, columns: 5 },
+                    ],
+                },
+            ],
+        },
+    },
+    {
+        id: 'buckwheat-rush',
+        tier: 'new-units',
+        group: 'buckwheat',
+        enemyPacing: pacing(40_000, 'new-units'),
+        title: '메밀 · 붙으면 끝',
+        briefing:
+            '메밀은 멀리서 쏘지만 몸이 약해요. 빠른 조를 메밀 수비대 바로 옆에 내려 붙고, 콩으로 씨앗을 받아내세요.',
+        deck: ['millet', 'pea'],
+        enemyDeck: ['buckwheat', 'rice'],
+        enemyOutposts: ['enemy-front', 'enemy-rear'],
+        friendlyOutposts: ['advance', 'center'],
+        seed: 137,
+        mode: 'eliminate',
+        layout: { guestY: 700 },
+        mission: {
+            formations: [
+                { type: 'buckwheat', x: 1000, y: 1250, count: 20, columns: 5, hold: true },
+                { type: 'buckwheat', x: 1450, y: 1150, count: 10, columns: 5, hold: true },
+                { type: 'rice', x: 1250, y: 1300, count: 8, columns: 4, hold: true },
             ],
         },
     },
