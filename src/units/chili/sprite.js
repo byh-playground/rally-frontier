@@ -1,7 +1,7 @@
-// The chili (assets/sprites/chili/parts.svg, approved final v5 body and flame F1, docs/handoff/chili-art/v5). Art
+// The chili (assets/sprites/chili/parts.svg, approved final v5 body, docs/handoff/chili-art/v5; flame F-C). Art
 // units are rice's (standing height 343.5 = artScale 1); the origin is the ground between its two short feet. It lies
 // low on its side facing +x with its mouth on the flank; the whole figure mirrors to face left. The body never tilts
-// toward the aim (it lies too low): only the mouth flame (muzzle) turns up or down, at most 35°, and the F1 flame
+// toward the aim (it lies too low): only the mouth flame (muzzle) turns up or down, at most 35°, and the flame
 // (drawFlame) leaves the muzzle's tip along the simulation's aim itself.
 // The fists are separate parts with their own pose values (HANDS) so their placement can be swapped on its own.
 import { drawUnitQuads } from '../../render/dead-unit-look.js';
@@ -34,7 +34,7 @@ const FACE = [12, -107];
 const MOUTH = [22, -83];
 // The body group lifts and tilts (a hit) about this point; the feet stay on the ground outside it.
 const BODY_CENTER = [0, -86];
-// The F1 flame starts this far from the mouth along the muzzle.
+// The flame starts this far from the mouth along the muzzle.
 const FLAME_START = 118;
 // The approved aim: the muzzle turns toward the aim on screen by at most this much.
 const MAX_MUZZLE = 35;
@@ -554,95 +554,432 @@ export class ChiliSpriteRenderer {
     }
 }
 
-// The F1 flame ("불덩이 줄", docs/handoff/chili-art/v5 index.html flame): a row of round fireballs that grow along
-// the flame (red, orange, yellow core) ending in two puffs of smoke, flowing out of the muzzle while it breathes.
-// Presentation only, on the render clock.
-// The fireballs keep their spacing as the flame's length changes (11 balls over 175 = about one per 16 units).
-const FLAME_SPACING = 16;
-const FLAME_SMOKE = 2;
-// One fireball moves to the next one's place in this long (the flow), so the flame runs out at about 300 a second.
-const FLAME_FLOW_MS = 50;
+// The F-C flame ("만화풍 덩어리 + 불씨 강조", the approved vfx review): blobs that really flow from the mouth to the
+// breath's reach and grow on the way, painted in four passes (dark rim, heat colour, bright inside, white core in the
+// near half) so they read as one cartoon silhouette, over a heat glow on the ground, with embers falling off its
+// edges and tip. It bursts out when breathing starts (mouth flash, twice the blobs, faster), and when it stops the
+// stream burns down from its tip, some cut blobs turning to smoke, with a spray of embers off the tip.
+// Presentation only, and stateless: nothing is kept between frames. Every blob and ember is the k-th one emitted on a
+// fixed per-second grid, its birth time, speed, angle and size hashed from (k, seed), so only the emissions still alive
+// at clockMs are visited and the same clock always paints the same flame (pause, replay, debug scenes) without garbage.
+// The judgment (length, arc, ticks) is the simulation's; this only draws inside it.
+const TAU = Math.PI * 2;
 // The flame drops from the muzzle's height to the ground over this distance (world units).
 const FLAME_DROP = 110;
-// It grows out of the muzzle when breathing starts, and when it stops the last fireballs run out and fade.
-const FLAME_GROW_MS = 120;
-const FLAME_FADE_MS = 220;
-const SMOKE = '#7d6a5e';
-const FIRE = ['#e2361a', '#ff901f', '#ffe36b'];
+// Blob speed (world units a second, ±10%) and emission rate (a second). The review had 56 a second of radius 5..15;
+// fewer, larger blobs keep its silhouette at about two thirds of the shapes (many chilis can breathe at once).
+const FLAME_SPEED = 430;
+const FLAME_RATE = 36;
+const BLOB_R0 = 5.8;
+const BLOB_R1 = 17.2;
+// Rim width (world units), never thinner than a pixel so the cartoon outline survives zooming out.
+const BLOB_RIM = 1.6;
+// Breathing starts with a burst: twice the blobs, 1.25× faster, a flash at the mouth.
+const BURST_S = 0.12;
+const BURST_SPEED = 1.25;
+// When it stops the stream burns down from its tip over this long; this share of the cut blobs turns to smoke.
+const FADE_S = 0.25;
+const CUT_SMOKE_SHARE = 0.3;
+const CUT_SMOKE_LIFE_MAX = 1.1;
+// The heat glow under the stream: comes in over GLOW_IN_S, goes over GLOW_OUT_S after it stops.
+const GLOW_IN_S = 0.1;
+const GLOW_OUT_S = 0.3;
+// Embers off the edges (a second, the review's 42 with larger embers) and the spray off the tip when it stops.
+const EMBER_RATE = 28;
+const EMBER_SIZE = 2.2;
+const EMBER_LIFE_MAX = 0.8;
+const STOP_EMBERS = 6;
+// Colours: the heat ramp (white-hot at the mouth to deep red at the tip) as a table built once, so nothing is
+// formatted per frame.
+const HEAT_STEPS = 14;
+const HEAT = Object.freeze(
+    (() => {
+        const stops = [
+            [0, [255, 252, 232]],
+            [0.14, [255, 232, 110]],
+            [0.42, [255, 152, 34]],
+            [0.72, [232, 66, 26]],
+            [1, [178, 34, 24]],
+        ];
+        const out = [];
+        for (let s = 0; s < HEAT_STEPS; s++) {
+            const u = s / (HEAT_STEPS - 1);
+            let i = 1;
+            while (i < stops.length - 1 && stops[i][0] < u) i++;
+            const [u0, c0] = stops[i - 1],
+                [u1, c1] = stops[i],
+                k = (u - u0) / (u1 - u0);
+            out.push(
+                'rgb(' +
+                    Math.round(lerp(c0[0], c1[0], k)) +
+                    ',' +
+                    Math.round(lerp(c0[1], c1[1], k)) +
+                    ',' +
+                    Math.round(lerp(c0[2], c1[2], k)) +
+                    ')',
+            );
+        }
+        return out;
+    })(),
+);
+const heatIndex = (u) => Math.round(clamp01(u) * (HEAT_STEPS - 1));
+const RIM = '#b3200f';
+const CORE = '#fffbe6';
+const MOUTH_FLASH = '#fff4c2';
+const MOUTH_GLOW = '#fffbe8';
+const EMBER_TRAIL = '#ff9d2a';
+const EMBER_SPARK = '#fff1a8';
+const CUT_SMOKE = '#8f8781';
+// The glow's radial gradient (unit radius, placed by a transform), made once per canvas.
+const glowGradients = new WeakMap();
+function glowGradient(ctx) {
+    let gradient = glowGradients.get(ctx);
+    if (!gradient) {
+        gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+        gradient.addColorStop(0, 'rgba(255,170,60,0.35)');
+        gradient.addColorStop(1, 'rgba(255,120,40,0)');
+        glowGradients.set(ctx, gradient);
+    }
+    return gradient;
+}
+
+// A float in [0, 1) from an emission number and a channel (integer avalanche hash; no state).
+function hash01(n, salt) {
+    let h = Math.imul(n | 0, 0x27d4eb2d) ^ Math.imul((salt | 0) + 0x3c6ef372, 0x165667b1);
+    h ^= h >>> 15;
+    h = Math.imul(h, 0x85ebca6b);
+    h ^= h >>> 13;
+    h = Math.imul(h, 0xc2b2ae35);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+}
+// Hash channels per unit seed (salt = seed * 32 + channel): blob streams 0 (steady) and 1 (the burst) use 0..7 and
+// 8..15, embers 16..22, the stop spray 24..29.
+const CH_BORN = 0,
+    CH_SPEED = 1,
+    CH_SPREAD = 2, // 2, 3, 4: three draws averaged (crowds the blobs to the middle)
+    CH_WOBBLE = 5,
+    CH_SIZE = 6,
+    CH_SMOKE = 7,
+    CH_EMBER = 16,
+    CH_SPRAY = 24;
+
+// Scratch for one frame's blobs (screen x, y, radius in pixels, u along the flame, alpha) and their far-first order,
+// allocated once.
+const MAX_BLOBS = 128;
+const blobX = new Float64Array(MAX_BLOBS);
+const blobY = new Float64Array(MAX_BLOBS);
+const blobR = new Float64Array(MAX_BLOBS);
+const blobU = new Float64Array(MAX_BLOBS);
+const blobA = new Float64Array(MAX_BLOBS);
+const blobOrder = new Uint8Array(MAX_BLOBS);
+// The flame being drawn (set by drawFlame) and the last projected point.
+let flame = null,
+    flameOffset = 0,
+    flameHeight = 0,
+    px = 0,
+    py = 0;
+// (d along the aim from the mouth, lat across it) in world units -> (px, py) on screen: it leaves the muzzle at its
+// height, drops to the ground over FLAME_DROP and ends at the breath's reach from the unit's ground point.
+function project(d, lat) {
+    const f = flame,
+        along = Math.min(1, d / f.length),
+        h = flameHeight * Math.max(0, 1 - d / FLAME_DROP);
+    px = f.groundX + flameOffset * (1 - along) + f.forwardX * d + f.sideX * lat;
+    py = f.groundY + f.forwardY * d + f.sideY * lat - h;
+}
+
+// Same-style circles share one path (one fill) until the style or alpha changes.
+let batchOpen = false,
+    batchStyle = null,
+    batchAlpha = -1;
+function circle(ctx, style, alpha, x, y, r) {
+    if (!batchOpen || style !== batchStyle || alpha !== batchAlpha) {
+        if (batchOpen) ctx.fill();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = style;
+        ctx.beginPath();
+        batchOpen = true;
+        batchStyle = style;
+        batchAlpha = alpha;
+    }
+    ctx.moveTo(x + r, y);
+    ctx.arc(x, y, r, 0, TAU);
+}
+function endCircles(ctx) {
+    if (batchOpen) ctx.fill();
+    batchOpen = false;
+    batchStyle = null;
+}
+
+// One ember born `age` seconds ago at (x0, y0) on screen: it drifts along the aim at vx (world units a second, slowing
+// as e^-t) and rises at vy (world units a second, screen up) under a pull back down, a short streak behind a spark.
+function drawEmber(ctx, x0, y0, vx, vy, age, life, size) {
+    const k = age / life,
+        alpha = (1 - k) * clamp01(k * 10);
+    if (alpha <= 0) return;
+    const f = flame,
+        ppu = f.pixelsPerUnit,
+        drift = vx * (1 - Math.exp(-age)),
+        x = x0 + f.forwardX * drift,
+        y = y0 + f.forwardY * drift + (vy * age + 35 * age * age) * ppu,
+        vxNow = vx * Math.exp(-age) * 0.035,
+        vyNow = (vy + 70 * age) * ppu * 0.035,
+        width = Math.max(1, size * ppu);
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - f.forwardX * vxNow, y - f.forwardY * vxNow - vyNow);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, width * 0.8, 0, TAU);
+    ctx.fill();
+}
 
 // Paints one flame on main.js's 2D effect canvas. f: mouthX/mouthY (the muzzle's tip on screen), groundX/groundY
 // (the unit's ground point), forwardX/forwardY and sideX/sideY (screen pixels per world unit along the aim and across
-// it), pixelsPerUnit, length and halfArc (the breath's reach), ageMs since it started breathing, stopMs since it
-// stopped (null while it breathes, Infinity when never seen breathing), clockMs, seed (a stable number per unit for the
-// fireballs' wobble) and cooling (between breaths: a thin wisp of smoke rises from the shut mouth instead).
+// it), pixelsPerUnit, length and halfArc (the breath's reach), ageMs since it started breathing (Infinity when first
+// seen already breathing), stopMs since it stopped (null while it breathes, Infinity when never seen breathing),
+// clockMs, seed (a stable number per unit for the hashes) and cooling (between breaths: a thin wisp of smoke rises from
+// the shut mouth).
 function drawFlame(ctx, f) {
     if (f.cooling) drawCoolingSmoke(ctx, f);
-    const balls = Math.round((f.length - 18) / FLAME_SPACING) + 1,
-        span = (f.length - 18) / (balls - 1),
-        flow = f.clockMs / FLAME_FLOW_MS,
-        shift = flow - Math.floor(flow),
-        cycle = Math.floor(flow),
+    const t = f.clockMs / 1000,
+        start = t - f.ageMs / 1000,
+        stop = f.stopMs === null ? Infinity : t - f.stopMs / 1000,
+        on = f.stopMs === null,
+        since = on ? 0 : t - stop;
+    // Never seen breathing, or long burnt out (embers, cut smoke) after it stopped.
+    if (!(stop >= start) || since > FADE_S + CUT_SMOKE_LIFE_MAX) return;
+    const length = f.length,
         tan = Math.tan(f.halfArc),
-        mouthHeight = f.groundY - f.mouthY,
-        offset = f.mouthX - f.groundX,
-        reach = clamp01(f.ageMs / FLAME_GROW_MS),
-        gone = f.stopMs === null ? 0 : f.stopMs / FLAME_FADE_MS;
-    if (gone >= 1) return;
-    // Far fireballs first, so the nearer (smaller) ones lie over them as in the approved row.
-    for (let k = balls - 2; k >= 0; k--) {
-        const slot = k + shift,
-            d = 12 + slot * span,
-            along = d / f.length;
-        // Growing in: nothing past the reach yet. Running out: nothing behind the last ball that left the muzzle.
-        if (along > reach || along < gone) continue;
-        const wobble = Math.sin((cycle - k) * 12.9898 + f.seed) * 0.5,
-            rad = Math.max(4, d * tan * 0.72) + 3,
-            l = wobble * rad * 0.35,
-            h = mouthHeight * Math.max(0, 1 - d / FLAME_DROP),
-            // The flame leaves the muzzle and its tip ends at the breath's reach from the unit's centre.
-            x = f.groundX + offset * (1 - along) + f.forwardX * d + f.sideX * l,
-            y = f.groundY + f.forwardY * d + f.sideY * l - h,
-            rx = rad * f.pixelsPerUnit,
-            ry = rx * 0.66,
-            // The first ball grows out of the muzzle, the last fades at the tip.
-            alpha = (k === 0 ? shift : 1) * (k === balls - 2 ? 1 - shift : 1),
-            smoke = clamp01(slot - (balls - FLAME_SMOKE - 1.5));
-        if (smoke > 0) {
-            ctx.globalAlpha = alpha * smoke * lerp(0.4, 0.28, clamp01(slot - (balls - 2)));
-            ctx.fillStyle = SMOKE;
+        ppu = f.pixelsPerUnit,
+        age = t - start,
+        // The stream has reached this far (grows at the blob speed from the mouth, burns down from the tip).
+        reach = on ? Math.min(length, age * FLAME_SPEED) : length * Math.max(0, 1 - since / FADE_S),
+        lifeMax = length / (FLAME_SPEED * 0.9),
+        salt = f.seed * 32;
+    flame = f;
+    flameOffset = f.mouthX - f.groundX;
+    flameHeight = f.groundY - f.mouthY;
+    ctx.save();
+
+    // The heat glow on the ground under the stream: an ellipse along the aim filled with the cached gradient.
+    const glow = on ? clamp01(age / GLOW_IN_S) : clamp01(1 - since / GLOW_OUT_S);
+    if (glow > 0) {
+        const glowReach = on ? reach : length * Math.max(0.2, 1 - since / FADE_S),
+            d = glowReach * 0.5,
+            rx = glowReach * 0.58 + 6,
+            ry = glowReach * tan * 0.9 + 12;
+        project(d, 0);
+        ctx.save();
+        ctx.transform(
+            f.forwardX * rx,
+            f.forwardY * rx,
+            f.sideX * ry,
+            f.sideY * ry,
+            px,
+            py + flameHeight * Math.max(0, 1 - d / FLAME_DROP) - 2 * ppu,
+        );
+        ctx.globalAlpha = glow;
+        ctx.fillStyle = glowGradient(ctx);
+        ctx.beginPath();
+        ctx.arc(0, 0, 1, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    // The blobs alive now (and, once it stopped, the ones it cut, some of which are smoke now), oldest first. Two
+    // emission streams on the same grid: the steady one and the burst's extra blobs.
+    const end = Math.min(t, stop),
+        kFrom = Math.floor(Math.max(start, end - lifeMax) * FLAME_RATE) - 1,
+        kTo = Math.floor(end * FLAME_RATE);
+    let blobs = 0;
+    for (let k = kFrom; k <= kTo; k++)
+        for (let stream = 0; stream < 2; stream++) {
+            const s = salt + stream * 8,
+                born = (k + hash01(k, s + CH_BORN)) / FLAME_RATE;
+            if (born < start || born > end) continue;
+            const burst = born - start < BURST_S;
+            if (stream === 1 && !burst) continue;
+            const speed =
+                    FLAME_SPEED * (0.9 + 0.2 * hash01(k, s + CH_SPEED)) * (burst ? BURST_SPEED : 1),
+                spread =
+                    (hash01(k, s + CH_SPREAD) +
+                        hash01(k, s + CH_SPREAD + 1) +
+                        hash01(k, s + CH_SPREAD + 2)) /
+                        3 -
+                    0.5,
+                slope = Math.tan(spread * 2 * f.halfArc * 0.95),
+                wobble = hash01(k, s + CH_WOBBLE) * TAU,
+                d = (t - born) * speed;
+            if (d <= length && (on || d <= reach)) {
+                if (blobs === MAX_BLOBS) continue;
+                const u = d / length;
+                project(d, d * slope + Math.sin(t * 18 + wobble) * u * 3);
+                blobX[blobs] = px;
+                blobY[blobs] = py;
+                blobU[blobs] = u;
+                blobR[blobs] =
+                    lerp(BLOB_R0, BLOB_R1, Math.pow(u, 0.8)) *
+                    (0.8 + 0.4 * hash01(k, s + CH_SIZE)) *
+                    ppu;
+                blobA[blobs] = clamp01(d / 10) * (u > 0.86 ? clamp01((1 - u) / 0.14) : 1);
+                // Insert far-first (larger u first).
+                let i = blobs++;
+                while (i > 0 && blobU[blobOrder[i - 1]] < u) {
+                    blobOrder[i] = blobOrder[i - 1];
+                    i--;
+                }
+                blobOrder[i] = blobs - 1;
+                continue;
+            }
+            // Cut by the burn-down after it stopped (not run out at the tip): when the falling reach met it.
+            if (on || (stop - born) * speed > length || hash01(k, s + CH_SMOKE) >= CUT_SMOKE_SHARE)
+                continue;
+            const cutAt =
+                    (length + (length * stop) / FADE_S + born * speed) / (speed + length / FADE_S),
+                smokeAge = t - cutAt,
+                smokeLife = 0.8 + 0.3 * hash01(k, s + CH_SIZE);
+            if (smokeAge < 0 || smokeAge >= smokeLife) continue;
+            const dc = (cutAt - born) * speed,
+                p = smokeAge / smokeLife;
+            project(dc, dc * slope + Math.sin(cutAt * 18 + wobble) * (dc / length) * 3);
+            ctx.globalAlpha = 0.32 * (1 - p) * clamp01(p * 8);
+            ctx.fillStyle = CUT_SMOKE;
             ctx.beginPath();
-            ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+            ctx.arc(
+                px + f.forwardX * 6 * smokeAge,
+                py - 18 * smokeAge * ppu,
+                (3 + 3 * hash01(k, s + CH_WOBBLE) + 8 * p) * ppu,
+                0,
+                TAU,
+            );
             ctx.fill();
         }
-        if (smoke >= 1) continue;
-        const fire = alpha * (1 - smoke);
-        ctx.globalAlpha = fire * 0.86;
-        ctx.fillStyle = FIRE[0];
+
+    // The four passes over the blobs, far first: dark rim, heat colour, bright inside, white core in the near half.
+    const rim = Math.max(1, BLOB_RIM * ppu);
+    for (let n = 0; n < blobs; n++) {
+        const i = blobOrder[n];
+        circle(ctx, RIM, blobA[i] * 0.9, blobX[i], blobY[i], blobR[i] + rim);
+    }
+    for (let n = 0; n < blobs; n++) {
+        const i = blobOrder[n];
+        circle(ctx, HEAT[heatIndex(blobU[i] + 0.12)], blobA[i], blobX[i], blobY[i], blobR[i]);
+    }
+    for (let n = 0; n < blobs; n++) {
+        const i = blobOrder[n],
+            r = blobR[i];
+        circle(
+            ctx,
+            HEAT[heatIndex(blobU[i] - 0.3)],
+            blobA[i],
+            blobX[i] - r * 0.1,
+            blobY[i] - r * 0.18,
+            r * 0.62,
+        );
+    }
+    for (let n = 0; n < blobs; n++) {
+        const i = blobOrder[n],
+            u = blobU[i],
+            r = blobR[i];
+        if (u > 0.55) continue;
+        // Its fade in quarter steps so neighbouring cores share a fill.
+        const fade = Math.ceil((1 - u / 0.55) * 4) / 4;
+        circle(ctx, CORE, blobA[i] * fade, blobX[i] - r * 0.15, blobY[i] - r * 0.25, r * 0.3);
+    }
+    endCircles(ctx);
+
+    // The mouth while breathing: white-hot, with a flash as it bursts out.
+    if (on) {
+        const mx = f.mouthX + f.forwardX * 2,
+            my = f.mouthY + f.forwardY * 2,
+            flash = age < BURST_S ? 1 - age / BURST_S : 0;
+        if (flash > 0) {
+            ctx.globalAlpha = 0.85 * flash;
+            ctx.fillStyle = MOUTH_FLASH;
+            ctx.beginPath();
+            ctx.arc(mx + f.forwardX * 3, my + f.forwardY * 3, (6 + 8 * flash) * ppu, 0, TAU);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = MOUTH_GLOW;
         ctx.beginPath();
-        ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = fire * 0.92;
-        ctx.fillStyle = FIRE[1];
-        ctx.beginPath();
-        ctx.ellipse(x - rx * 0.08, y - ry * 0.12, rx * 0.72, ry * 0.7, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = fire;
-        ctx.fillStyle = FIRE[2];
-        ctx.beginPath();
-        ctx.ellipse(x - rx * 0.14, y - ry * 0.22, rx * 0.4, ry * 0.38, 0, 0, Math.PI * 2);
+        ctx.ellipse(
+            mx + f.forwardX * 2,
+            my + f.forwardY * 2,
+            4.5 * ppu,
+            3 * ppu,
+            Math.atan2(f.forwardY, f.forwardX),
+            0,
+            TAU,
+        );
         ctx.fill();
     }
-    ctx.globalAlpha = 1;
+
+    // Embers off the edges of the stream while it breathed (born where it had reached by then), then the spray off
+    // the tip at the moment it stopped. They rise up the screen and fall back as they die.
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = EMBER_TRAIL;
+    ctx.fillStyle = EMBER_SPARK;
+    const jFrom = Math.floor(Math.max(start, t - EMBER_LIFE_MAX) * EMBER_RATE) - 1,
+        jTo = Math.floor(end * EMBER_RATE);
+    for (let j = jFrom; j <= jTo; j++) {
+        const s = salt + CH_EMBER,
+            born = (j + hash01(j, s)) / EMBER_RATE;
+        if (born < start || born > end) continue;
+        const life = 0.35 + 0.45 * hash01(j, s + 1),
+            emberAge = t - born;
+        if (emberAge >= life) continue;
+        const d = Math.min(length, (born - start) * FLAME_SPEED) * (0.35 + 0.65 * hash01(j, s + 2)),
+            edge = hash01(j, s + 3) < 0.5 ? -1 : 1;
+        project(d, edge * d * tan * (0.7 + 0.3 * hash01(j, s + 4)));
+        drawEmber(
+            ctx,
+            px,
+            py,
+            30 + 70 * hash01(j, s + 5),
+            -(25 + 60 * hash01(j, s + 6)),
+            emberAge,
+            life,
+            EMBER_SIZE * (0.7 + 0.6 * hash01(j, s + 7)),
+        );
+    }
+    if (!on && since < EMBER_LIFE_MAX)
+        for (let j = 0; j < STOP_EMBERS; j++) {
+            const s = salt + CH_SPRAY,
+                life = 0.35 + 0.45 * hash01(j, s + 1);
+            if (since >= life) continue;
+            project(
+                length * (0.75 + 0.25 * hash01(j, s + 2)),
+                (hash01(j, s + 3) - 0.5) * 2 * length * tan * 0.8,
+            );
+            drawEmber(
+                ctx,
+                px,
+                py,
+                (30 + 70 * hash01(j, s + 5)) * 0.5,
+                -(25 + 60 * hash01(j, s + 6)),
+                since,
+                life,
+                EMBER_SIZE * (0.7 + 0.6 * hash01(j, s + 4)),
+            );
+        }
+    ctx.restore();
+    flame = null;
 }
 
 // Cooling down: three small puffs rise from the mouth one after another and fade, coming in as the flame runs out.
+const COOL_FADE_MS = 220;
 const COOL_PUFFS = 3;
 const COOL_PUFF_MS = 900;
 const COOL_RISE = 22;
 const COOL_SMOKE = '#a39a94';
 function drawCoolingSmoke(ctx, f) {
     const since = f.stopMs === null ? 0 : Math.min(f.stopMs, 1e6),
-        fadeIn = clamp01((since - FLAME_FADE_MS * 0.5) / FLAME_FADE_MS);
+        fadeIn = clamp01((since - COOL_FADE_MS * 0.5) / COOL_FADE_MS);
     if (fadeIn <= 0) return;
     ctx.fillStyle = COOL_SMOKE;
     for (let k = 0; k < COOL_PUFFS; k++) {
