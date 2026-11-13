@@ -66,20 +66,26 @@ class AiCommandExecutor {
         this.reconcile(snapshot);
         this.queue = [];
         // An isolated decision view, never a mutation of a published snapshot.
+        const side = this.bot.side,
+            deck = snapshot.decks[side];
         const view = {
             ...snapshot,
             wallet: snapshot.wallet.slice(),
             premiumWallet: snapshot.premiumWallet.slice(),
             launchRangeLevel: snapshot.launchRangeLevel.slice(),
-            aiPopulation: LaunchRules.population(snapshot, this.bot.side).total,
+            // The launchable cards (HandCycle), less those a pending launch already plays.
+            hand: snapshot.handCycle[side].hand.map((index) => deck[index]),
+            aiPopulation: LaunchRules.population(snapshot, side).total,
             aiReservedPopulation: 0,
         };
         for (const p of this.reservations(snapshot)) {
-            view.wallet[this.bot.side] -= p.cost;
-            view.premiumWallet[this.bot.side] -= p.premiumCost;
-            if (p.action.type === 'UPGRADE_LAUNCH_RANGE') view.launchRangeLevel[this.bot.side]++;
-            else if (p.action.type === 'LAUNCH')
+            view.wallet[side] -= p.cost;
+            view.premiumWallet[side] -= p.premiumCost;
+            if (p.action.type === 'UPGRADE_LAUNCH_RANGE') view.launchRangeLevel[side]++;
+            else if (p.action.type === 'LAUNCH') {
                 view.aiReservedPopulation += LaunchRules.payload(p.action.unitType)?.count || 0;
+                view.hand = view.hand.filter((type) => type !== p.action.unitType);
+            }
         }
         this.state = view;
         return view;
@@ -118,8 +124,10 @@ class AiCommandExecutor {
         this.state.wallet[side] -= cost;
         this.state.premiumWallet[side] -= premiumCost;
         if (action.type === 'UPGRADE_LAUNCH_RANGE') this.state.launchRangeLevel[side]++;
-        else if (action.type === 'LAUNCH')
+        else if (action.type === 'LAUNCH') {
             this.state.aiReservedPopulation += LaunchRules.payload(action.unitType).count;
+            this.state.hand = this.state.hand.filter((type) => type !== action.unitType);
+        }
         return true;
     }
     dispose() {
@@ -201,6 +209,11 @@ class BotController {
             if (state.tick - this.lastLaunchTick >= SimulationTiming.msToTicks(intervalMs, tps)) {
                 this.lastLaunchTick = state.tick;
                 this.runLaunch(state);
+                if (
+                    !this.commandExecutor.queue.length &&
+                    state.wallet[this.side] >= LaunchRules.walletCap
+                )
+                    this.cycleHand(state);
             }
         } finally {
             this.commandExecutor.flush();
@@ -377,6 +390,44 @@ class BotController {
         return unit?.cost <= budget ? unit : null;
     }
 
+    // A decision that launched nothing with a full wallet means no hand card is one the rules above want (HandCycle):
+    // the cheapest affordable hand card goes toward the enemy main base to bring the next card in.
+    cycleHand(state) {
+        const side = this.side,
+            busy = new Set(
+                this.commandExecutor.reservations().map(({ action }) => action.cannonId),
+            ),
+            cannons = state.buildings.filter(
+                (b) =>
+                    b.side === side &&
+                    b.alive !== false &&
+                    LaunchRules.readyToLaunch(state, b) &&
+                    !busy.has(b.id),
+            ),
+            main = BuildingDefinition.forRole('mainBase'),
+            target = state.buildings.find(
+                (b) => b.side === 1 - side && b.type === main && b.alive !== false,
+            ),
+            unit = state.hand
+                .map((type) => ({ type, ...LaunchRules.payload(type) }))
+                .filter(
+                    ({ cost, premiumCost = 0 }) =>
+                        cost <= state.wallet[side] && premiumCost <= state.premiumWallet[side],
+                )
+                .sort((a, b) => a.cost - b.cost || (a.premiumCost || 0) - (b.premiumCost || 0))[0];
+        if (!cannons.length || !target || !unit) return;
+        const distance = BotController.distance,
+            cannon = cannons.reduce((best, candidate) =>
+                distance(candidate, target) < distance(best, target) ? candidate : best,
+            );
+        this.fire(
+            { cannon, target, distance: distance(cannon, target) },
+            unit,
+            state.launchRangeLevel[side],
+            state.tick,
+        );
+    }
+
     // Runs the capability-owned launch rules of one stage (src/sim/capabilities/bot-launch-rules.js).
     runCapabilityLaunch(stage, context) {
         for (const rule of BOT_LAUNCH_RULES) {
@@ -405,7 +456,7 @@ class BotController {
             main = BuildingDefinition.forRole('mainBase'),
             outpost = BuildingDefinition.forRole('outpost'),
             constructionCost = BuildingDefinition.get(outpost).construction.cost,
-            cards = state.decks[side]
+            cards = state.hand
                 .filter((type) => !LaunchRules.isHeroType(type))
                 .map((type) => ({ type, ...LaunchRules.payload(type) })),
             // Cards whose capability rule owns their shot never join ordinary targeting.

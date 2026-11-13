@@ -2,6 +2,7 @@ import { UnitLobAttack } from './capabilities/unit-lob-attack.js';
 // The deterministic lockstep strategy simulation.
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { HeroDeployment } from './hero-deployment.js';
+import { HandCycle } from './hand-cycle.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { UnitSpinAttack } from './capabilities/unit-spin-attack.js';
@@ -250,6 +251,7 @@ class StrategySim {
             : null;
         this.heroes = this.decks.map((deck) => HeroDeployment.emptySlots(deck));
         this.heroRecovery = this.decks.map((deck) => HeroDeployment.emptySlots(deck));
+        this.handCycle = HandCycle.create(this.decks, this.seed);
         // Per-side match totals for the result screen: shots fired, grains sent, enemy units killed.
         this.launchStats = { launches: [0, 0], sent: [0, 0], kills: [0, 0] };
         this.unitResultStats = UnitResultStats.create();
@@ -1310,8 +1312,9 @@ class StrategySim {
         const grain = LaunchRules.grain(action.unitType);
         if (!grain) return reject('invalid-unit');
         if (!this.decks[side]?.includes(action.unitType)) return reject('unit-not-in-deck');
-        const heroRejection = HeroDeployment.launchRejection(this.heroes[side][action.unitType]);
-        if (heroRejection) return reject(heroRejection);
+        // A launched hero is out of the cycle, so this also refuses a hero that is out or dead.
+        const slot = HandCycle.slotOf(this, side, action.unitType);
+        if (slot < 0) return reject('card-not-in-hand');
         if (LaunchRules.population(this, side).total >= LaunchRules.populationLimit)
             return reject('population-limit');
         if (this.wallet[side] < grain.cost) return reject('insufficient-basic-resources');
@@ -1351,6 +1354,15 @@ class StrategySim {
         );
         this.wallet[side] -= grain.cost;
         this.premiumWallet[side] -= grain.premiumCost || 0;
+        // One card use however many cannons join the volley.
+        const cycle = this.handCycle[side];
+        this.events.push({
+            type: 'cardUsed',
+            side,
+            unitType: action.unitType,
+            cycleCards: cycle.hand.length + cycle.queue.length,
+        });
+        HandCycle.use(this, side, slot);
         // The cannon is busy until the last shell of the volley has left, plus the reload.
         const readyTick =
             this.tick + this.msTicks(LaunchRules.volleyMs(action.unitType) + LaunchRules.reloadMs);
@@ -3115,6 +3127,7 @@ class StrategySim {
                 campaignMission: CampaignMission.snapshot(this.campaignMission),
                 heroes: StateValue.copy(this.heroes),
                 heroRecovery: StateValue.copy(this.heroRecovery),
+                handCycle: StateValue.copy(this.handCycle),
                 heroReserveHp: this.heroes.map((heroes, side) =>
                     Object.fromEntries(
                         Object.keys(heroes).map((type) => [

@@ -61,6 +61,17 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
             const check = (value, message, detail) => {
                 if (!value) throw Error(message + (detail ? ': ' + JSON.stringify(detail) : ''));
             };
+            // These scenarios test launches, not the hand cycle (src/sim/hand-cycle.js): the launched card is dealt
+            // into the hand first by swapping it with hand slot 0.
+            const deal = (sim, side, type) => {
+                const { hand, queue } = sim.handCycle[side],
+                    index = sim.decks[side].indexOf(type);
+                if (hand.includes(index)) return;
+                const at = queue.indexOf(index);
+                check(at >= 0, 'the launched card is in the side cycle', type);
+                queue[at] = hand[0];
+                hand[0] = index;
+            };
             const rows = [],
                 seed = 12345;
             function arena(tps = 20, count = 1) {
@@ -236,6 +247,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     reach <= LaunchRules.maxReachOf('rice', level) + supportDistance,
                     'launch can reach the deposit or its support area',
                 );
+                deal(sim, side, 'rice');
                 check(
                     sim.applyCommand(actor, {
                         type: 'LAUNCH',
@@ -279,6 +291,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     'basic range cannot aim into the oil construction area',
                 );
                 const beforeUpgrade = restore(sim);
+                deal(beforeUpgrade, side, 'rice');
                 check(
                     beforeUpgrade.applyCommand(actor, {
                         type: 'LAUNCH',
@@ -441,6 +454,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                             beforeLaunch = sim.events.length,
                             beforeTroops = sim.launchStats.sent[0],
                             beforeWallet = sim.wallet[0];
+                        deal(sim, 0, 'rice');
                         check(
                             primary &&
                                 sim.applyCommand('host', {
@@ -712,6 +726,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 )
                     sim.stepSimulation();
                 const wallet = [sim.wallet[0], sim.premiumWallet[0]];
+                deal(sim, 0, 'corn');
                 check(
                     sim.applyCommand('host', {
                         type: 'LAUNCH',
@@ -846,6 +861,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     x: base.x,
                     y: base.y + 2000,
                 };
+                deal(sim, 0, 'pea');
                 check(sim.applyCommand('host', target), 'upgraded cannon accepts normal launch');
                 const fire = sim.events.find((e) => e.type === 'launchFire');
                 check(
@@ -1679,6 +1695,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 sim.wallet[0] = 500;
                 const [tower] = smallProjects(sim, start(sim));
                 finish(sim, tower);
+                deal(sim, 0, 'pea');
                 check(
                     sim.applyCommand('host', {
                         type: 'LAUNCH',

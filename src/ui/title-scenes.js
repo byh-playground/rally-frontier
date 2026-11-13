@@ -16,8 +16,9 @@ import {
 // just before its turn on screen, so it is in full swing when shown and the battle stays near the size of a
 // match's. Same seed, same placement: the same pictures.
 const SEED = 12349;
-// The cards the battle launches (a launch command needs its card in the side's deck); placed units need none.
-const DECK = Object.freeze(['watermelon', 'rice', 'corn', 'peanut']);
+// The cards the battle launches (a launch command needs its card in the side's hand); placed units need none. With
+// SEED this order deals corn into both hands and brings each later card of the host's script into its hand in time.
+const DECK = Object.freeze(['watermelon', 'corn', 'rice', 'peanut']);
 const RANGE_LEVEL = 2;
 // Battle ticks run unseen before the first frame (ticks 1 - LEAD to 0), so the first fight has met when the title
 // opens. Only that fight and its cannons exist this early, eight ticks before the title opens.

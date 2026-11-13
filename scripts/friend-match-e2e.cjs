@@ -221,7 +221,11 @@ RoomCodeUtil.randomCode=()=>window.__friend.generatedCodes.shift()||window.__fri
         );
         await host.screenshot({ path: path.join(output, 'launch-rejected.png') });
         for (const page of pages) {
-            await page.locator('[data-launch-card="rice"]').click();
+            // Any affordable soldier card the hand cycle dealt.
+            await page
+                .locator('#launchCards .launch-card:not(.hero-card):not(.unaffordable)')
+                .first()
+                .click();
             const point = await page.evaluate(() => {
                 const rect = document.querySelector('#glCanvas').getBoundingClientRect();
                 return { x: rect.left + rect.width / 2, y: rect.top + rect.height * 0.4 };

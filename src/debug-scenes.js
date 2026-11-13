@@ -21,6 +21,7 @@ import { UnitBreathAttack } from './sim/capabilities/unit-breath-attack.js';
 import { UnitChainAttack } from './sim/capabilities/unit-chain-attack.js';
 import { Knockback } from './sim/knockback.js';
 import { StrategySim } from './sim/strategy-sim.js';
+import { HandCycle } from './sim/hand-cycle.js';
 import { createShowcaseSurface } from './ui/showcase-host.js';
 import {
     baseAxis,
@@ -436,6 +437,53 @@ function createOutpostProbe(sim) {
                 firstDone: Math.min(...points.map((point) => point.doneTick ?? Infinity)),
                 points,
             };
+        },
+    };
+}
+
+// The hand cycle (HandCycle) of the `ai-match` and `campaign` scenes, read by `state().cycle`, per side: launches per
+// card (`used`), the same card launched twice in a row (`repeats`) and of those the ones from a cycle of two or more
+// cards (`repeatsInCycle`, 0), the hero cards leaving (`heroOut`) and rejoining (`heroBack`) the cycle as [tick, card],
+// and the hand and next card now.
+function createCycleProbe(sim) {
+    const sides = [0, 1].map(() => ({
+        used: {},
+        repeats: 0,
+        repeatsInCycle: 0,
+        heroOut: [],
+        heroBack: [],
+        last: null,
+    }));
+    const step = sim.step.bind(sim);
+    sim.step = () => {
+        const result = step();
+        for (const event of sim.events) {
+            const record = sides[event.side];
+            if (event.type === 'cardUsed') {
+                record.used[event.unitType] = (record.used[event.unitType] ?? 0) + 1;
+                if (record.last === event.unitType) {
+                    record.repeats++;
+                    if (event.cycleCards >= 2) record.repeatsInCycle++;
+                }
+                record.last = event.unitType;
+                if (LaunchRules.isHeroType(event.unitType))
+                    record.heroOut.push([sim.tick, event.unitType]);
+            } else if (event.type === 'cardRejoined')
+                record.heroBack.push([sim.tick, event.unitType]);
+        }
+        return result;
+    };
+    return {
+        state() {
+            return sides.map(({ last, ...record }, side) => {
+                const deck = sim.decks[side],
+                    { hand, queue } = sim.handCycle[side];
+                return {
+                    ...record,
+                    hand: hand.map((index) => deck[index]),
+                    next: queue.length ? deck[queue[0]] : null,
+                };
+            });
         },
     };
 }
@@ -1730,6 +1778,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 for (const u of sim.units)
                     if (u.side === 0 && UnitDefinition.get(u.type)?.heroActive) {
                         sim.heroes[0][u.type] = { sortieId: 'p1', mode: 'advance', unitId: u.id };
+                        HandCycle.takeOut(sim, 0, u.type);
                         u.heroRollQueued = true;
                     }
             const probe = createKnockbackProbe(sim, flag(scene, 'trace', params.trace)),
@@ -1921,6 +1970,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 flight = createFlightProbe(sim),
                 rider = createRiderProbe(sim),
                 outposts = createOutpostProbe(sim),
+                cycle = createCycleProbe(sim),
                 breath = breathProbe(sim, sim.decks.flat()),
                 chain = chainProbe(sim, sim.decks.flat());
             return matchScene('ai-match', params, sim, {
@@ -1946,6 +1996,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     flight: flight.state(),
                     rider: rider.state(),
                     outposts: outposts.state(),
+                    cycle: cycle.state(),
                     ...(breath ? { breath: breath.state() } : {}),
                     ...(chain ? { chain: chain.state() } : {}),
                 }),
@@ -1966,7 +2017,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             const rules = GameRuleRuntime.resolveMatchRules({ presetId: stage.map ?? 'standard' });
             rules.campaign = stage;
             const sim = new StrategySim(stage.seed, rules, [stage.deck, stage.enemyDeck]);
-            const bots = attachBots(sim, params.player === 'bot' ? ['host', 'guest'] : ['guest']);
+            const bots = attachBots(sim, params.player === 'bot' ? ['host', 'guest'] : ['guest']),
+                cycle = createCycleProbe(sim);
             let result = null;
             const step = sim.step.bind(sim);
             sim.step = () => {
@@ -1983,6 +2035,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     map: sim.mapDescriptor.topology,
                     result,
                     fired: bots.fired,
+                    cycle: cycle.state(),
                     launches: sim.launchStats.launches.slice(),
                     wallet: sim.wallet.slice(),
                     premiumWallet: sim.premiumWallet.slice(),

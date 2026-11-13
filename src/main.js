@@ -20,6 +20,7 @@ import {
     NetworkModuleLoader,
 } from './session/runtime-state.js';
 import { LaunchRules } from './sim/launch-rules.js';
+import { HandCycle } from './sim/hand-cycle.js';
 import { StickyCling } from './sim/capabilities/sticky-cling.js';
 import { SustainedAttack } from './sim/capabilities/sustained-attack.js';
 import { UnitSpinAttack } from './sim/capabilities/unit-spin-attack.js';
@@ -10539,7 +10540,10 @@ class LaunchPresentation {
     static premiumResourceHint = '미니맵의 ✦ 기름 거점을 확보하세요.';
     static HERO_SKILL_HOLD_MS = 500;
     static card = null;
-    static deckKey = '';
+    // The hand slot of `card`: when the card is launched, the card dealt into that slot is selected next.
+    static cardSlot = -1;
+    static handKey = '';
+    static handTypes = [];
     static lastPower = null;
     static marks = [];
     static hold = null;
@@ -10563,7 +10567,9 @@ class LaunchPresentation {
     }
     static reset() {
         this.card = null;
-        this.deckKey = '';
+        this.cardSlot = -1;
+        this.handKey = '';
+        this.handTypes = [];
         this.lastPower = null;
         this.marks = [];
         this.hold = null;
@@ -10590,6 +10596,18 @@ class LaunchPresentation {
             : shortage;
     }
 
+    // Keeps the selected card in the hand. A launched card is replaced by the card dealt into its slot, or by the
+    // first non-hero card when that is a hero (a hero launch is always a deliberate pick).
+    static pickCard(hand) {
+        if (!hand.includes(this.card)) {
+            const dealt = hand[this.cardSlot];
+            this.card =
+                dealt && !LaunchRules.isHeroType(dealt)
+                    ? dealt
+                    : (hand.find((type) => !LaunchRules.isHeroType(type)) ?? hand[0] ?? null);
+        }
+        this.cardSlot = hand.indexOf(this.card);
+    }
     static render(s, side) {
         const on = !!s;
         document.body.classList.toggle('launch-mode', on);
@@ -10597,22 +10615,33 @@ class LaunchPresentation {
         if (this.heroPress && !this.currentHeroPress(this.heroPress, s, side))
             this.endHeroPress(true);
         if (!on) return;
-        const deck = s.decks?.[side] ?? LaunchRules.starterDeck,
-            heroes = s.heroes?.[side],
+        const deck = s.decks[side],
+            cycle = s.handCycle[side],
+            hand = cycle.hand.map((index) => deck[index]),
+            next = cycle.queue.length ? deck[cycle.queue[0]] : null,
+            heroes = s.heroes[side],
+            // The hero out on the field (its card is out of the hand cycle) gets the round sortie button.
+            sortie =
+                deck.find(
+                    (type) =>
+                        LaunchRules.isHeroType(type) &&
+                        heroes[type] &&
+                        heroes[type].mode !== 'dead',
+                ) ?? null,
             balance = this.resourceBalance(s, side),
             population = LaunchRules.population(s, side);
-        if (!deck.includes(this.card) || heroes?.[this.card])
-            this.card =
-                deck.find((type) => !LaunchRules.isHeroType(type)) ??
-                deck.find((type) => !heroes?.[type]) ??
-                null;
-        const key = deck.join('|');
-        if (key !== this.deckKey) {
-            this.deckKey = key;
-            UiRegistry.refs.launchCards.innerHTML = deck
-                .map((type) => LaunchScreens.cardMarkup(type, LaunchRules.isHeroType(type)))
-                .join('');
-            LaunchScreens.fillCardPortraits(UiRegistry.refs.launchCards);
+        this.pickCard(hand);
+        const key = `${hand.join('|')}>${next ?? ''}>${sortie ?? ''}`;
+        if (key !== this.handKey) {
+            this.handKey = key;
+            LaunchScreens.renderHand(
+                UiRegistry.refs.launchCards,
+                hand,
+                next,
+                sortie,
+                this.handTypes,
+            );
+            this.handTypes = hand;
         }
         for (const el of UiRegistry.refs.launchCards.querySelectorAll('[data-launch-card]')) {
             const t = el.dataset.launchCard,
@@ -10686,8 +10715,7 @@ class LaunchPresentation {
                         'insufficient-basic-resources': `${RESOURCES[0].name}이 부족합니다.`,
                         'insufficient-premium-resources': `기름이 부족합니다. ${LaunchPresentation.premiumResourceHint}`,
                         'population-limit': '인구가 가득 찼습니다.',
-                        'hero-already-deployed': '영웅이 이미 출격 중입니다.',
-                        'hero-unavailable': '전사한 영웅은 이번 경기에 다시 출격할 수 없습니다.',
+                        'card-not-in-hand': '그 카드는 지금 손패에 없습니다.',
                         'cannon-unavailable': '사용할 수 있는 대포가 없습니다.',
                         'invalid-unit': '발사할 병종을 확인해 주세요.',
                     }[event.reason] || '발사할 수 없습니다.',
@@ -10725,7 +10753,7 @@ class LaunchPresentation {
             }
             if (event.type === 'heroRecovered' && event.side === side && this.active(snapshot)) {
                 const name = UnitDefinition.get(event.heroType)?.name ?? '영웅';
-                this.feedback(`${name} 회수 · 다시 출격할 수 있습니다.`);
+                this.feedback(`${name} 회수 · 카드가 대기 줄 맨 뒤로 돌아갔어요.`);
                 continue;
             }
             if (event.type !== 'launchImpact' || event.side !== side) continue;
@@ -10749,20 +10777,20 @@ class LaunchPresentation {
     }
     static renderHeroCard(el, s, side, type) {
         el.classList.add('hero-card');
+        // In the hand the hero card launches; out on the field it is the sortie button (advance/return).
         const badge = el.querySelector('em'),
             hero = s.heroes?.[side]?.[type],
             mode = hero?.mode;
-        el.disabled = mode === 'dead' || !this.active(s);
+        el.disabled = !this.active(s);
         const label = {
             advance: ['ON · 진격', '영웅 복귀시키기'],
             return: ['OFF · 복귀', '영웅 진격 재개'],
-            dead: ['전사', '전사한 영웅은 이번 경기에 다시 출격할 수 없습니다.'],
         }[mode] ?? ['무료', '영웅 발사'];
         badge.textContent = label[0];
         const definition = UnitDefinition.get(type),
             unit = hero?.unitId ? s.units?.find((entry) => entry.id === hero.unitId) : null,
             maxHp = unit?.maxHp ?? definition.hp,
-            hp = mode === 'dead' ? 0 : (unit?.hp ?? s.heroReserveHp?.[side]?.[type] ?? maxHp),
+            hp = unit?.hp ?? s.heroReserveHp?.[side]?.[type] ?? maxHp,
             currentHp = RangeUtil.clamp(Math.floor(hp), 0, maxHp),
             recovering = !hero && currentHp < maxHp;
         let health = el.querySelector('.hero-card-health');
@@ -10794,7 +10822,6 @@ class LaunchPresentation {
             'aria-label',
             `${definition.name} · ${label[0]} · 체력 ${hpText}${recovering ? ' · 회복 중' : ''}${attackCounter}${skillHint}`,
         );
-        el.classList.toggle('hero-dead', mode === 'dead');
         if (mode === 'advance' || mode === 'return')
             el.setAttribute('aria-pressed', String(mode === 'advance'));
         else el.removeAttribute('aria-pressed');
@@ -10899,9 +10926,7 @@ class LaunchPresentation {
         if (!this.active(s)) return;
         const side = ConnectionSideUtil.roleSide(ActiveViewState.role),
             hero = s.heroes?.[side]?.[type];
-        if (!s.decks?.[side]?.includes(type)) return;
         if (hero) {
-            if (hero.mode === 'dead') return;
             if (
                 !MatchLifecycle.activeSession()?.command({
                     type: 'TOGGLE_HERO',
@@ -10911,6 +10936,7 @@ class LaunchPresentation {
                 this.feedback('영웅 명령을 접수할 수 없습니다.');
             return;
         }
+        if (HandCycle.slotOf(s, side, type) < 0) return;
         this.card = type;
         this.render(s, side);
         const warning = this.resourceWarning(s, side, LaunchRules.payload(type));
