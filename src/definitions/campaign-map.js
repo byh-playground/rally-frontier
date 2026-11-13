@@ -20,22 +20,9 @@ export function campaignMapLayout(stage) {
         x: width - oil.x,
         y: spawns.guest.y + (spawns.host.y - oil.y),
     };
-    const flank = layout.flank && { id: 'flank', label: '측면 식량 거점', ...layout.flank };
-    const foothold = stage.mission?.counterattackPoint && {
-        id: stage.mission.counterattackPoint,
-        label: '반격 지원 거점',
-        ...layout.counterFoothold,
-        enabled: false,
-    };
     const hasRidge = stage.enemyOutposts.includes(ridge.id);
-    const hasOil = stage.resourceLesson || stage.friendlyOutposts?.includes(oil.id);
-    const rear = {
-        id: 'enemy-rear',
-        label: '후방 보급 거점',
-        x: 1685,
-        y: 875,
-        ...layout.rear,
-    };
+    const hasOil = stage.friendlyOutposts?.includes(oil.id);
+    const rear = { id: 'enemy-rear', label: '후방 보급 거점', x: 1685, y: 875 };
     const hasRear = stage.enemyOutposts.includes(rear.id);
     const hasEnemyOil = stage.enemyOutposts.includes(enemyOil.id);
     const capturePoint = (point, laneKey = 'mid', resourceType = 'basic') => ({
@@ -51,8 +38,6 @@ export function campaignMapLayout(stage) {
         ...(hasRidge ? [capturePoint(ridge, 'bot')] : []),
         ...(hasOil ? [capturePoint(oil, 'top', 'premium')] : []),
         ...(hasEnemyOil ? [capturePoint(enemyOil, 'bot', 'premium')] : []),
-        ...(flank ? [capturePoint(flank, 'top')] : []),
-        ...(foothold ? [capturePoint(foothold)] : []),
     ];
 
     const layerId = 'campaign-ridge';
@@ -95,17 +80,12 @@ export function campaignMapLayout(stage) {
             mid: route(
                 spawns.host,
                 advance,
-                ...(foothold ? [foothold] : []),
                 center,
                 front,
                 ...(hasRear ? [rear] : []),
                 spawns.guest,
             ),
-            top: flank
-                ? route(spawns.host, flank, center)
-                : hasOil
-                  ? route(spawns.host, oil, center)
-                  : [],
+            top: hasOil ? route(spawns.host, oil, center) : [],
             bot: hasRidge ? route(center, { x: ridge.x - 270, y: ridge.y }, ridge, rear) : [],
         },
         capturePoints: stage.mission?.heroLesson ? [] : capturePoints,

@@ -10705,7 +10705,7 @@ class LaunchPresentation {
                 ? campaignStage(MatchLifecycle.selectedCampaign)
                 : null;
         const tps = s.tps || ActiveSimulationTiming.tps();
-        CampaignPresentation.renderBattle(stage, s, side, tps);
+        CampaignPresentation.renderBattle(stage, s, tps);
         LaunchScreens.renderHud({
             myHpPct: hp(side),
             enemyHpPct: hp(1 - side),

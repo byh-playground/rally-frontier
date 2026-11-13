@@ -22,17 +22,12 @@ function missionGoal(stage) {
         return stage.mission.heroLesson.recover
             ? '출격 · 스킬 · 복귀 · 재출격'
             : '출격 후 스킬 사용';
-    if (stage.mission?.waves) {
-        const count = stage.mission.waves.length;
-        return stage.mode === 'counterattack'
-            ? `${count}차 공격을 막고 반격`
-            : `${count}차 공격 방어`;
-    }
+    if (stage.mission?.waves) return `${stage.mission.waves.length}차 공격 방어`;
     if (stage.mission?.firstCapture) return '전진 거점 완공';
     return ATTACK_GOAL;
 }
 
-function currentGoal(stage, snapshot, side) {
+function currentGoal(stage, snapshot) {
     if (stage.volleyGoals) return { key: 'volley', label: missionGoal(stage) };
     const mission = snapshot.campaignMission;
     if (stage.mission?.heroLesson) {
@@ -40,7 +35,6 @@ function currentGoal(stage, snapshot, side) {
         return { key: `hero-${step}`, label: HERO_LESSON_GOALS[step] };
     }
     if (stage.mission?.waves) {
-        if (mission?.phase === 'counterattack') return { key: 'attack', label: ATTACK_GOAL };
         if (mission?.phase === 'complete') return { key: 'complete', label: '모든 공격 방어 완료' };
         const count = stage.mission.waves.length,
             wave =
@@ -55,16 +49,6 @@ function currentGoal(stage, snapshot, side) {
     }
     if (stage.mission?.firstCapture && !mission?.firstCaptureComplete)
         return { key: 'first-capture', label: '전진 거점 완공' };
-    if (
-        stage.resourceLesson &&
-        !snapshot.capturePoints?.some(
-            (point) => point.owner === side && point.resourceType === 'premium',
-        )
-    ) {
-        return (snapshot.launchRangeLevel?.[side] || 0) === 0
-            ? { key: 'range', label: '사거리 한 번 강화' }
-            : { key: 'oil', label: '측면 기름 거점 확보' };
-    }
     return { key: 'attack', label: ATTACK_GOAL };
 }
 
@@ -177,13 +161,13 @@ export class CampaignPresentation {
         briefing.start();
     }
 
-    static renderBattle(stage, snapshot, side, tps) {
+    static renderBattle(stage, snapshot, tps) {
         if (!stage) {
             this.clearBattle();
             return;
         }
         const tick = snapshot.tick;
-        const goal = currentGoal(stage, snapshot, side);
+        const goal = currentGoal(stage, snapshot);
         const $ = this.$;
         if (this.battle?.stage !== stage || tick < this.battle.tick) {
             this.battle = { stage, goal: goal.key, announced: new Set([goal.key]), cueEnd: 0 };
@@ -191,18 +175,11 @@ export class CampaignPresentation {
             $('campaignObjectiveLabel').textContent = goal.label;
             this.showCue('전투 목표', missionGoal(stage), tick, tps);
         } else if (this.battle.goal !== goal.key) {
-            const previous = this.battle.goal;
             this.battle.goal = goal.key;
             $('campaignObjectiveLabel').textContent = goal.label;
             if (!this.battle.announced.has(goal.key)) {
                 this.battle.announced.add(goal.key);
-                const title =
-                    previous.startsWith('wave-') &&
-                    goal.key === 'attack' &&
-                    stage.mode === 'counterattack'
-                        ? '반격 개시'
-                        : '다음 목표';
-                this.showCue(title, goal.label, tick, tps);
+                this.showCue('다음 목표', goal.label, tick, tps);
             } else {
                 this.battle.cueEnd = tick;
             }
