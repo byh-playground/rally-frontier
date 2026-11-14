@@ -85,7 +85,8 @@ export class HeroAllyAura {
         for (const id of allyIds) {
             const ally = sim.unitById.get(id);
             if (!ally?.alive || ally.hp <= 0) continue;
-            const maxHp = UnitDefinition.get(ally.type).hp,
+            // The body's full health: a hero ally's rises with its level (HeroGrowth.maxHp).
+            const maxHp = ally.maxHp,
                 before = ally.hp;
             ally.hp = Math.min(maxHp, ally.hp + Math.max(min, Math.floor((maxHp * percent) / 100)));
             if (ally.hp > before) healed.push({ id, x: ally.x, y: ally.y, heal: ally.hp - before });

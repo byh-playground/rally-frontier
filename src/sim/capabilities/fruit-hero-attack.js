@@ -366,10 +366,11 @@ export class FruitHeroAttack {
                 from,
                 to,
                 returning,
-                ultimate ? ultimate.boomerang.damage : definition.atk,
+                ultimate ? ultimate.boomerang.damage : HeroGrowth.atk(unit, definition),
             );
+        // The echo doubles the basic hit at the hero's level (HeroGrowth.atk).
         else if (returning && shot.kind === 'boomerang')
-            this.echoBasic(sim, unit, shot, from, to, definition.atk);
+            this.echoBasic(sim, unit, shot, from, to, HeroGrowth.atk(unit, definition));
         if (
             unit.alive &&
             !returning &&
@@ -384,7 +385,15 @@ export class FruitHeroAttack {
                 target && this.contact(sim, shot, from, to, target, shot.targetIsBuilding);
             if (point) {
                 shot.outHitIds.push(target.id);
-                this.hit(sim, unit, shot, target, point, shot.targetIsBuilding, definition.atk);
+                this.hit(
+                    sim,
+                    unit,
+                    shot,
+                    target,
+                    point,
+                    shot.targetIsBuilding,
+                    HeroGrowth.atk(unit, definition),
+                );
             }
         }
         return sim.tick < shot.endTick;

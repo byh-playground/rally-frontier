@@ -10958,7 +10958,8 @@ class LaunchPresentation {
         badge.textContent = label[0];
         const definition = UnitDefinition.get(type),
             unit = hero?.unitId ? s.units?.find((entry) => entry.id === hero.unitId) : null,
-            maxHp = unit?.maxHp ?? definition.hp,
+            // The full health of the hero's level (HeroGrowth.maxHp): the body's, or the waiting slot's.
+            maxHp = unit?.maxHp ?? HeroGrowth.maxHp(type, s.heroGrowth?.[side]?.[type]?.level ?? 1),
             hp = mode === 'dead' ? 0 : (unit?.hp ?? s.heroReserveHp?.[side]?.[type] ?? maxHp),
             currentHp = RangeUtil.clamp(Math.floor(hp), 0, maxHp),
             recovering = !hero && currentHp < maxHp;
@@ -12306,6 +12307,16 @@ function startTitleApp() {
                 ActiveViewState.snap?.launchRangeLevel?.[
                     ConnectionSideUtil.roleSide(ActiveViewState.role)
                 ] ?? 0,
+            // The level of this side's hero of `type` in the match on screen (HeroGrowth): on the field or waiting, else 1.
+            heroLevel: (type) => {
+                const snap = ActiveViewState.snap,
+                    side = ConnectionSideUtil.roleSide(ActiveViewState.role),
+                    unitId = snap?.heroes?.[side]?.[type]?.unitId;
+                const growth = unitId
+                    ? snap.units?.find((unit) => unit.id === unitId)?.heroGrowth
+                    : snap?.heroGrowth?.[side]?.[type];
+                return growth?.level ?? 1;
+            },
             portraitSource: (t) => grainPortrait(t, window.RallyVectorAssets[t]),
             toggleSound: () => audioSystem.setEnabled(!audioSystem.enabled),
             soundOn: () => !!audioSystem.enabled,

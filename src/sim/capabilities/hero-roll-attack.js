@@ -91,7 +91,7 @@ export class HeroRollAttack {
             return {
                 speed: body.speed,
                 hitRadius: body.hitRadius * HeroGrowth.bodyScale(unit),
-                damage: definition.atk * body.damageRatio,
+                damage: HeroGrowth.atk(unit, definition) * body.damageRatio,
                 buildingDamage: 0,
             };
         const siege = HeroGrowth.declared(unit.type, 'ultimate').siegeRoll;

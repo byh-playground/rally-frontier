@@ -36,6 +36,10 @@ export const HERO_MOVE_SPEED = 75;
 // whatever their kind. Reaching HERO_LEVEL_KILLS[n] kills makes it level n + 1 (1 to 6). Recovering keeps the
 // level, dying ends it with the hero.
 export const HERO_LEVEL_KILLS = Object.freeze([0, 10, 25, 45, 70, 100]);
+// Each level above 1 adds this share (percent) of the level-1 Definition health and attack, added up, not
+// compounded: level L has hp * (100 + 20 * (L - 1)) / 100 and atk * (100 + 10 * (L - 1)) / 100, floored (HeroGrowth).
+export const HERO_LEVEL_HP_PCT = 20;
+export const HERO_LEVEL_ATK_PCT = 10;
 
 // The leap shared by red beans and popcorn (popcorn lowers the apex).
 export const GRAIN_LEAP = Object.freeze({ range: 150, lift: 500, cooldownMs: 3000 });

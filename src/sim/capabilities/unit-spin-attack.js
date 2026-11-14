@@ -156,8 +156,9 @@ export class UnitSpinAttack {
 
     // Runs a started spin for this tick: true (`active`) while it holds the unit's combat action.
     static update(sim, unit, d) {
+        // A hero sweeps with its level's attack (HeroGrowth.atk).
         const spec = d.spinAttack,
-            damage = d.atk;
+            damage = HeroGrowth.atk(unit, d);
         if (!(spec.arcSweep ? unit?.spinAttack : unit?.sustain.active)) return INACTIVE;
         this.validate(d);
         if (!Number.isFinite(damage) || damage <= 0)

@@ -400,6 +400,7 @@ function heroProbe(sim, type) {
     let landings = 0,
         strike = null,
         shellHits = null;
+    const hits = {};
     return {
         observe() {
             for (const event of sim.events) {
@@ -417,8 +418,23 @@ function heroProbe(sim, type) {
                     };
                 if (event.type === 'launchLand' && event.unit === type && event.side === 0)
                     landings++;
+                // The hero's hits on enemy soldiers, by amount (its level's attack, HeroGrowth.atk).
+                if (
+                    event.type === 'hit' &&
+                    event.sourceSide === 0 &&
+                    event.sourceType === type &&
+                    !event.isBuilding
+                )
+                    hits[event.amount] = (hits[event.amount] ?? 0) + 1;
                 if (event.type === 'heroLevelUp' && event.heroType === type)
-                    levelUps.push({ tick: sim.tick, level: event.level, kills: event.kills });
+                    levelUps.push({
+                        tick: sim.tick,
+                        level: event.level,
+                        kills: event.kills,
+                        hp: event.hp,
+                        maxHp: event.maxHp,
+                        hpGain: event.hpGain,
+                    });
                 if (event.type === 'heroKillEffect' && event.unit === type && event.side === 0) {
                     effects.count++;
                     effects.first ??= { tick: sim.tick, level: event.level, kills: event.kills };
@@ -642,6 +658,13 @@ function heroProbe(sim, type) {
                 growth: sim.unitById.get(slot?.unitId)?.heroGrowth ?? sim.heroGrowth[0][type],
                 levelUps,
                 hp: sim.unitById.get(slot?.unitId)?.hp ?? null,
+                // The body's full health and attack at its level (HeroGrowth), and its hits by amount.
+                maxHp: sim.unitById.get(slot?.unitId)?.maxHp ?? null,
+                atk: (() => {
+                    const hero = sim.unitById.get(slot?.unitId);
+                    return hero?.heroGrowth ? HeroGrowth.atk(hero) : null;
+                })(),
+                hits,
                 killEffects: effects,
                 ultimate: {
                     ...ultimate,
@@ -2566,7 +2589,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * 장면과 같은 나는 병종 기록이다. 예: `?debug=1&scene=launch&map=standard&seed=1&unit=chestnut&zoom=2&tick=20`,
          * 절벽 옆: `?debug=1&scene=launch&map=twin-gates&seed=1&unit=chestnut&zoom=2&x=820&y=1300&tick=30`.
          * 영웅이면 상태의 `hero`가 지금 처치 수·레벨(`growth`)과 레벨업 기록(`levelUps`),
-         * 출격 슬롯 상태(`mode`·`landings`)·체력(`hp`)·막타 효과(`killEffects`)·패시브(`passive`)·주변 버프(`aura`)다.
+         * 출격 슬롯 상태(`mode`·`landings`)·체력(`hp`)·레벨의 최대 체력·공격(`maxHp`·`atk`)·적 병력에 준 피해량별 수(`hits`)·막타 효과(`killEffects`)·패시브(`passive`)·주변 버프(`aura`)다.
          * `heroHp`를 주면 그 체력으로, `heroLevel`을 주면 그 레벨의 처치 수로 출격한다. `ally`·`allyCount`는 영웅이
          * 빠지는 자리(착지점에서 본진 쪽 120, 또는 `allyX`·`allyY`)의 아군 무리다. `recallMs`를 주면 그 시각에 영웅을 복귀시키고, 회수되면 같은 곳으로
          * 다시 쏜다. 예: `?debug=1&scene=launch&map=standard&seed=1&unit=watermelon&enemy=rice&enemyCount=30&zoom=2&tick=60`

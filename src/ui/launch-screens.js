@@ -500,7 +500,7 @@ export class LaunchScreens {
         this.closeCardDetail(false);
         const A = this.actions,
             copy = this.grainInfo(type),
-            stats = unitCardStats(type, A.grainRangeLevel(), copy),
+            stats = unitCardStats(type, A.grainRangeLevel(), copy, A.heroLevel(type)),
             sections = ['소개', '병력', '포탄'];
         const detail = {
             type,

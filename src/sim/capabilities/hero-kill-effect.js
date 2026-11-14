@@ -7,7 +7,6 @@
 //   자리에서 열매 하나가 곡사(fruitAttack.lob의 경로·시간)로 튀어 반경 안의 가장 가까운 지상 적 한 명에게 피해를 준다.
 // - 튄 열매의 막타도 처치 수에 들어가지만 막타 효과는 다시 실행하지 않는다(연쇄 없음, `heroKillEffect: false`).
 // - 실행한 막타 효과마다 `heroKillEffect` 사건 하나를 낸다. 연출(과즙 방울·금빛 고리)은 이 사건을 읽는다.
-import { UnitDefinition } from '../../definitions/units.js';
 import { HeroGrowth } from '../hero-growth.js';
 import { FruitHeroAttack } from './fruit-hero-attack.js';
 
@@ -38,10 +37,10 @@ export class HeroKillEffect {
         });
     }
 
-    // Health restored, up to the hero's maximum. Returns how much it rose (the event's `heal`, null without one).
+    // Health restored, up to the hero's maximum at its level (HeroGrowth.maxHp, the body's `maxHp`). Returns how much it rose (the event's `heal`, null without one).
     static heal(hero, amount) {
         const before = hero.hp;
-        hero.hp = Math.min(UnitDefinition.get(hero.type).hp, hero.hp + amount);
+        hero.hp = Math.min(hero.maxHp, hero.hp + amount);
         return Math.max(0, hero.hp - before);
     }
 }

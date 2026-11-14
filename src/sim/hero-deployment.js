@@ -1,4 +1,3 @@
-import { UnitDefinition } from '../definitions/units.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { HeroAllyAura } from './capabilities/hero-ally-aura.js';
@@ -22,13 +21,14 @@ export class HeroDeployment {
     static begin(sim, side, type, sortieId) {
         const hp = this.reserveHp(sim, side, type);
         sim.heroRecovery[side][type] =
-            hp < UnitDefinition.get(type).hp ? { hp, startedAtTick: null } : null;
+            hp < HeroGrowth.slotMaxHp(sim, side, type) ? { hp, startedAtTick: null } : null;
         sim.heroes[side][type] = { sortieId, mode: 'advance', unitId: null };
     }
 
     static reserveHp(sim, side, type) {
         if (sim.heroes[side][type]?.mode === 'dead') return 0;
-        const maxHp = UnitDefinition.get(type).hp;
+        // The full health of the hero's level (HeroGrowth): its growth record waits in the slot with it.
+        const maxHp = HeroGrowth.slotMaxHp(sim, side, type);
         const recovery = sim.heroRecovery[side][type];
         if (!recovery) return maxHp;
         if (recovery.startedAtTick === null) return recovery.hp;
@@ -41,7 +41,7 @@ export class HeroDeployment {
     static dock(sim, side, type, hp) {
         sim.heroes[side][type] = null;
         sim.heroRecovery[side][type] =
-            hp < UnitDefinition.get(type).hp ? { hp, startedAtTick: sim.tick } : null;
+            hp < HeroGrowth.slotMaxHp(sim, side, type) ? { hp, startedAtTick: sim.tick } : null;
     }
 
     static launchRejection(hero) {
@@ -95,7 +95,8 @@ export class HeroDeployment {
             // The deployed hero holds its growth record; every other hero body holds none.
             if (
                 unit.alive && deployed
-                    ? !HeroGrowth.valid(unit.heroGrowth)
+                    ? !HeroGrowth.valid(unit.heroGrowth) ||
+                      unit.maxHp !== HeroGrowth.maxHp(unit.type, unit.heroGrowth.level)
                     : unit.heroGrowth !== null
             )
                 throw new Error('게임 snapshot의 영웅 성장 상태가 잘못되었습니다.');
@@ -134,7 +135,7 @@ export class HeroDeployment {
                 : !HeroGrowth.valid(growth)
         )
             throw new Error('게임 snapshot의 영웅 성장 상태가 잘못되었습니다.');
-        const maxHp = UnitDefinition.get(type).hp;
+        const maxHp = HeroGrowth.slotMaxHp(state, side, type);
         const recovery = state.heroRecovery[side][type];
         if (
             recovery !== null &&
@@ -196,6 +197,8 @@ export class HeroDeployment {
         const { side, type } = group;
         const hero = sim.heroes[side][type];
         if (!hero || hero.sortieId !== group.projectileId || unit.type !== type) return false;
+        // The body comes out with its level's full health (HeroGrowth.maxHp) and the health it kept.
+        unit.maxHp = HeroGrowth.slotMaxHp(sim, side, type);
         unit.hp = this.reserveHp(sim, side, type);
         sim.heroRecovery[side][type] = null;
         hero.unitId = unit.id;
