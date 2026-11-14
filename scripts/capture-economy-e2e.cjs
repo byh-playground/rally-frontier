@@ -592,21 +592,27 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                                 'each launch, a volley too, spends one round',
                                 { at, rounds: rounds() },
                             );
-                            settle();
+                            // The refusal below is checked right after the last launch, before a round recharges.
+                            if (at < spec.max - 1) settle();
                         }
-                        const cannon = coveringCannons(ammo, goals[0])[0],
+                        // A cannon the last launch left ready, so the refusal is about ammo and not reloading.
+                        const target = goals[2],
+                            cannon = coveringCannons(ammo, target).find(
+                                (candidate) => (candidate.launchReadyTick ?? 0) <= ammo.tick,
+                            ),
                             wallet = ammo.wallet[0],
-                            launch = (holdMs) =>
+                            launchFrom = (from, at, holdMs) =>
                                 ammo.applyCommand('host', {
                                     type: 'LAUNCH',
-                                    cannonId: cannon.id,
+                                    cannonId: from.id,
                                     unitType: 'rice',
-                                    x: goals[0].x,
-                                    y: goals[0].y,
+                                    x: at.x,
+                                    y: at.y,
                                     holdMs,
-                                });
+                                }),
+                            launch = (holdMs) => launchFrom(cannon, target, holdMs);
                         check(
-                            !launch(LaunchRules.holdFor(distance(cannon, goals[0]), 'rice', 1)) &&
+                            !launch(LaunchRules.holdFor(distance(cannon, target), 'rice', 1)) &&
                                 ammo.events.at(-1)?.reason === 'card-out-of-ammo' &&
                                 ammo.wallet[0] === wallet,
                             'an empty card is refused without spending resources',
@@ -619,10 +625,18 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                             rounds() === 1,
                             'one round comes back a recharge after the first use',
                         );
+                        // Let the last volley's cannons reload and the wallet refill for one more launch; rounds refill
+                        // meanwhile, so compare before and after.
+                        while (ammo.tick < firstTick + 10 * ammo.tps) ammo.stepSimulation();
+                        const before = rounds();
                         check(
-                            launch(LaunchRules.chargeMs + LaunchRules.overheatGraceMs + 1) &&
+                            launchFrom(
+                                coveringCannons(ammo, goals[0])[0],
+                                goals[0],
+                                LaunchRules.chargeMs + LaunchRules.overheatGraceMs + 1,
+                            ) &&
                                 ammo.events.some((event) => event.type === 'launchOverheat') &&
-                                rounds() === 1,
+                                rounds() === before,
                             'an overheated launch spends no round',
                         );
                     }
