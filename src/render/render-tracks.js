@@ -31,6 +31,9 @@ class UnitRenderObject extends RenderField {
         // A hero level's ground marks: its passive puddles (HeroPassive) and its ally aura's targets (HeroAllyAura).
         'entity.heroPassive': RenderField.STEP,
         'entity.heroAura': RenderField.STEP,
+        // The hero's level (its awakened body, HeroGrowth.bodyScale) and its level-5 berry rain (HeroUltimate).
+        'entity.heroGrowth': RenderField.STEP,
+        'entity.heroUltimate': RenderField.STEP,
         // A chain's links (UnitChainAttack): who it holds, slot by slot, so a sampled tick keeps its own links.
         'entity.chain.count': RenderField.STEP,
         'entity.chain.building': RenderField.STEP,
@@ -86,6 +89,7 @@ class UnitRenderObject extends RenderField {
                 'spinAttack.activeStartTick',
                 'spinAttack.activeEndTick',
                 'spinAttack.endTick',
+                'heroRoll.mode',
                 'heroRoll.phase',
                 'heroRoll.phaseStartTick',
                 'heroRoll.phaseEndTick',

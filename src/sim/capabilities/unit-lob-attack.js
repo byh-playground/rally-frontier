@@ -329,7 +329,7 @@ export class UnitLobAttack {
             if (
                 !source ||
                 Math.hypot(shot.x - source.x, shot.y - source.y) >
-                    sim.unitRadius(source.type) + shot.spec.radius + 1 / FP
+                    sim.unitRadius(source) + shot.spec.radius + 1 / FP
             )
                 shot.clearedSource = true;
             active.push(shot);
@@ -492,7 +492,7 @@ export class UnitLobAttack {
                     !source ||
                     !source.alive ||
                     Math.hypot(shot.x - source.x, shot.y - source.y) >
-                        sim.unitRadius(source.type) + shot.spec.radius + 1 / FP
+                        sim.unitRadius(source) + shot.spec.radius + 1 / FP
                 )
                     shot.clearedSource = true;
                 const spec = this.physicsSpec(shot);

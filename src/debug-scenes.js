@@ -11,6 +11,7 @@ import { BuildingDefinition } from './definitions/buildings.js';
 import { FP } from './core/config.js';
 import { GameRuleRuntime } from './core/game-rules.js';
 import { campaignStage } from './definitions/campaign.js';
+import { HeroGrowth } from './sim/hero-growth.js';
 import { LaunchRules } from './sim/launch-rules.js';
 import { HashUtil } from './sim/map-generation.js';
 import { HERO_LEVEL_KILLS, RESOURCE_SCALE } from './units/baseline.js';
@@ -371,6 +372,30 @@ function heroProbe(sim, type) {
         }
         return 0;
     };
+    // The level-5 strike (HeroUltimate): each use and what it hit; the level-6 awakening's visible changes.
+    const ultimate = { uses: [] };
+    const ultimateShots = new Set();
+    const awaken = {
+        sweeps: [],
+        passiveThrows: {},
+        passiveTicks: [],
+        throws: {},
+        bodyRadius: null,
+        baseRadius: sim.unitRadius(type),
+    };
+    let basicHits = 0,
+        lastBasicHits = 0;
+    // The hits of `event`, the hero's area strike: the hero's `hits` hit events right before it.
+    const areaDamage = (i, hits, heroId) => {
+        let damage = 0;
+        for (let k = i - 1, left = hits; k >= 0 && left > 0; k--) {
+            const before = sim.events[k];
+            if (before.type !== 'hit' || before.sourceId !== heroId) continue;
+            damage += before.amount;
+            left--;
+        }
+        return damage;
+    };
     let chargedTick = null;
     let landings = 0,
         strike = null,
@@ -501,6 +526,79 @@ function heroProbe(sim, type) {
                     }
                 }
             });
+            if (hero) {
+                for (const shot of hero.fruitAttack?.projectiles ?? [])
+                    if (shot.mode === 'ultimate') ultimateShots.add(shot.id);
+                const use = () => ultimate.uses[ultimate.uses.length - 1];
+                sim.events.forEach((event, i) => {
+                    if (event.sourceId !== heroId) return;
+                    if (event.type === 'heroUltimate')
+                        ultimate.uses.push({
+                            tick: sim.tick,
+                            kind: event.kind,
+                            level: event.level,
+                            count: event.count,
+                            hits: 0,
+                            damage: 0,
+                            buildingHits: 0,
+                            buildingDamage: 0,
+                        });
+                    const current = use();
+                    if (!current) return;
+                    if (event.type === 'heroRollLand') {
+                        current.hits += event.hits;
+                        current.damage += areaDamage(i, event.hits, heroId);
+                    } else if (event.type === 'heroRollHit' && event.mode === 'siege') {
+                        current.hits++;
+                        current.damage += event.dealt;
+                    } else if (event.type === 'heroRollBuildingHit' && event.mode === 'siege') {
+                        current.buildingHits++;
+                        current.buildingDamage += event.dealt;
+                        current.building = event.building;
+                    } else if (
+                        event.type === 'fruitProjectileHit' &&
+                        ultimateShots.has(event.projectileId)
+                    ) {
+                        current.hits++;
+                        current.damage += hitBefore(i, event.targetId);
+                    } else if (event.type === 'fruitBerryLand' && event.mode === 'ultimate') {
+                        current.hits += event.hits;
+                        current.damage += areaDamage(i, event.hits, heroId);
+                    }
+                });
+                // Awakening: the body, the basics before each sweep, the boomerangs per nth throw, the lobbed share.
+                awaken.bodyRadius = Math.round(sim.unitRadius(hero) * 100) / 100;
+                if (hero.spinAttackBasicHits !== undefined) {
+                    if (hero.spinAttackBasicHits > lastBasicHits)
+                        basicHits += hero.spinAttackBasicHits - lastBasicHits;
+                    if (hero.spinAttack?.startTick === sim.tick) {
+                        awaken.sweeps.push(basicHits);
+                        basicHits = 0;
+                    }
+                    lastBasicHits = hero.spinAttackBasicHits;
+                }
+                let passive = 0,
+                    basic = 0,
+                    lobbed = 0;
+                for (const shot of hero.fruitAttack?.projectiles ?? []) {
+                    if (shot.startTick !== sim.tick) continue;
+                    if (shot.kind === 'boomerang' && shot.mode === 'passive') passive++;
+                    if (shot.kind === 'berry' && shot.mode === 'basic') basic++;
+                    if (shot.kind === 'berry' && shot.mode === 'passive') lobbed++;
+                }
+                // By the hero's level: boomerangs per nth throw, and [throws, throws with lobbed berries].
+                const level = hero.heroGrowth?.level;
+                if (passive) {
+                    const counts = (awaken.passiveThrows[level] ??= {});
+                    counts[passive] = (counts[passive] ?? 0) + 1;
+                    if (awaken.passiveTicks.length < 12) awaken.passiveTicks.push(sim.tick);
+                }
+                if (basic) {
+                    const counts = (awaken.throws[level] ??= [0, 0]);
+                    counts[0]++;
+                    if (lobbed) counts[1]++;
+                }
+            }
             if (!hero || strike.settled) return;
             if (strike.from === undefined) {
                 strike.from = { x: hero.x, y: hero.y };
@@ -545,6 +643,18 @@ function heroProbe(sim, type) {
                 levelUps,
                 hp: sim.unitById.get(slot?.unitId)?.hp ?? null,
                 killEffects: effects,
+                ultimate: {
+                    ...ultimate,
+                    // Ticks from one use to the next (the internal recharge).
+                    gaps: ultimate.uses.slice(1).map((u, i) => u.tick - ultimate.uses[i].tick),
+                },
+                awaken: {
+                    ...awaken,
+                    spinRhythm: (() => {
+                        const hero = sim.unitById.get(slot?.unitId);
+                        return hero ? (HeroGrowth.spec(hero, 'spinAttack')?.rhythm ?? null) : null;
+                    })(),
+                },
                 passive,
                 aura: {
                     ...aura,
@@ -872,8 +982,8 @@ function createFightProbe(sim) {
                         source && target && !shot.targetIsBuilding
                             ? round(
                                   Math.hypot(target.x - source.x, target.y - source.y) -
-                                      sim.unitRadius(source.type) -
-                                      sim.unitRadius(target.type),
+                                      sim.unitRadius(source) -
+                                      sim.unitRadius(target),
                               )
                             : null,
                     ]);
@@ -1040,7 +1150,7 @@ function createFlightProbe(sim) {
                 u.alive &&
                 u.side !== side &&
                 UnitFlight.airborne(u) &&
-                Math.hypot(u.x - x, u.y - y) <= radius + sim.unitRadius(u.type)
+                Math.hypot(u.x - x, u.y - y) <= radius + sim.unitRadius(u)
             )
                 count++;
         return count;
@@ -1090,7 +1200,7 @@ function createFlightProbe(sim) {
                     for (const e of sim.units) {
                         if (!e.alive || e.side === u.side || UnitFlight.airborne(e)) continue;
                         const d = Math.hypot(e.x - u.x, e.y - u.y),
-                            radii = sim.unitRadius(e.type) + sim.unitRadius(u.type);
+                            radii = sim.unitRadius(e) + sim.unitRadius(u);
                         if (d <= sim.basicAttackRange(e) + radii)
                             exposure.inRange[e.type] = (exposure.inRange[e.type] ?? 0) + 1;
                         if (d < radii && (e.rolling || e.heroRoll))
@@ -1280,7 +1390,7 @@ function createBreathProbe(sim) {
             sim.world.terrain.field.polygonSegmentClear(source.x, source.y, u.x, u.y, 0);
         for (const u of sim.units) {
             if (!u.alive || u === source || UnitFlight.airborne(u)) continue;
-            const m = margin(source, spec, u.x, u.y, sim.unitRadius(u.type));
+            const m = margin(source, spec, u.x, u.y, sim.unitRadius(u));
             if (u.side === source.side) {
                 if (m <= 0 && clear(u)) out.allies++;
                 continue;
@@ -2496,7 +2606,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             const grain = LaunchRules.grain(type);
             sim.wallet[0] = Math.max(sim.wallet[0], grain.cost);
             sim.premiumWallet[0] = Math.max(sim.premiumWallet[0], grain.premiumCost || 0);
-            if (enemy !== undefined)
+            const placeEnemies = () =>
                 placeBlock(
                     sim,
                     1,
@@ -2510,6 +2620,13 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                           },
                     { x: back.x, y: back.y },
                 );
+            if (enemy !== undefined) placeEnemies();
+            // `enemyEveryMs`: the same enemy block comes again at that interval (a crowd that lasts, for the hero's
+            // level-5 recharge, HeroUltimate).
+            const enemyEvery =
+                params.enemyEveryMs === undefined
+                    ? null
+                    : sim.msTicks(integer(scene, 'enemyEveryMs', params.enemyEveryMs));
             // `ally`·`allyCount`: a friendly block where the hero retreats to (120 back from the landing point toward
             // home, or `allyX`·`allyY`), for its ally aura (HeroAllyAura).
             if (params.ally !== undefined)
@@ -2618,6 +2735,13 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     if (landTick === null && sim.events.some((e) => e.type === 'launchLand'))
                         landTick = sim.tick;
                     hero?.observe();
+                    if (
+                        enemy !== undefined &&
+                        enemyEvery &&
+                        sim.tick > 0 &&
+                        sim.tick % enemyEvery === 0
+                    )
+                        placeEnemies();
                     // recallMs: the hero walks back, and is shot at the same point again once recovered.
                     const slot = sim.heroes[0][type];
                     if (

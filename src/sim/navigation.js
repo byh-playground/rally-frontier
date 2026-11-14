@@ -8,6 +8,7 @@ import { COLLISION_RADIUS_SCALE, RIVER_MOVEMENT_MULTIPLIER } from '../definition
 import { GoalFields } from './navigation-field.js';
 import { DirectPath, FieldPath, RoutePath } from './navigation-paths.js';
 import { RallyGamekit } from '../core/gamekit.js';
+import { HeroGrowth } from './hero-growth.js';
 const {
     ACTIVE,
     ContactEvent,
@@ -213,13 +214,19 @@ class NavigationGoal {
     }
 }
 class InteractionGeometry {
-    static unitRadius(type) {
-        return UNIT_RUNTIME_GEOMETRY[type]?.radius || Math.max(1, 10 * COLLISION_RADIUS_SCALE);
+    // A unit's body radius: its type's, times the hero's level body scale (HeroGrowth.bodyScale) when given the unit
+    // itself. A type name alone is the Definition's radius.
+    static unitRadius(unitOrType) {
+        const type = typeof unitOrType === 'string' ? unitOrType : unitOrType?.type,
+            radius =
+                UNIT_RUNTIME_GEOMETRY[type]?.radius || Math.max(1, 10 * COLLISION_RADIUS_SCALE);
+        return typeof unitOrType === 'string' ? radius : radius * HeroGrowth.bodyScale(unitOrType);
     }
     static buildingClearance(source, target) {
-        const st = typeof source === 'string' ? source : source?.type,
-            tt = typeof target === 'string' ? target : target?.type;
-        return this.unitRadius(st) + (BuildingDefinition.get(tt)?.size || 35) + NAV_BUILDING_MARGIN;
+        const tt = typeof target === 'string' ? target : target?.type;
+        return (
+            this.unitRadius(source) + (BuildingDefinition.get(tt)?.size || 35) + NAV_BUILDING_MARGIN
+        );
     }
     static contact(source, target) {
         const st = typeof source === 'string' ? source : source?.type,
@@ -227,10 +234,12 @@ class InteractionGeometry {
             building = BuildingDefinition.get(tt);
         if (building)
             return (
-                (((UnitDefinition.get(st) || {}).size || 10) + (building.size || 30)) *
-                COLLISION_RADIUS_SCALE
+                ((UnitDefinition.get(st) || {}).size || 10) *
+                    COLLISION_RADIUS_SCALE *
+                    (typeof source === 'string' ? 1 : HeroGrowth.bodyScale(source)) +
+                (building.size || 30) * COLLISION_RADIUS_SCALE
             );
-        return this.unitRadius(st) + this.unitRadius(tt);
+        return this.unitRadius(source) + this.unitRadius(target);
     }
     static requiresTerrainLine(source, kind, extra = 0) {
         const st = typeof source === 'string' ? source : source?.type,
@@ -358,7 +367,7 @@ class UnitMotion {
                 u.y,
                 tx,
                 ty,
-                this.navigation.sim.unitRadius(u.type),
+                this.navigation.sim.unitRadius(u),
                 null,
                 mode,
                 EntityKey.number(u.id),
@@ -489,7 +498,7 @@ class UnitMotion {
         const sim = this.navigation.sim,
             m = u.impactMotion,
             definition = UnitDefinition.get(u.type),
-            radius = sim.unitRadius(u.type),
+            radius = sim.unitRadius(u),
             radiusFP = radius * FP,
             pairs = u.alive && !u.heroRoll,
             // A flying unit's own step already placed it; its body stays inactive where it is (no contacts).
@@ -655,8 +664,13 @@ class TerrainNavigation {
     // only compute flow fields.
     prepare() {
         this.sync();
-        for (const type in UNIT_RUNTIME_GEOMETRY)
-            this.fieldsFor(UNIT_RUNTIME_GEOMETRY[type].radius).graph.prepare();
+        for (const type in UNIT_RUNTIME_GEOMETRY) {
+            const { radius } = UNIT_RUNTIME_GEOMETRY[type],
+                scale = HeroGrowth.maxBodyScale(type);
+            this.fieldsFor(radius).graph.prepare();
+            // An awakened hero's larger body walks its own field, prepared with the others.
+            if (scale !== 1) this.fieldsFor(radius * scale).graph.prepare();
+        }
     }
     traceStraightTravel(x, y, dx, dy, distance, radius, source = this.sim) {
         this.sync(source);

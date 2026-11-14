@@ -89,7 +89,7 @@ export class LaunchInterception {
     static hitFlyer(sim, attacker, unit, attack) {
         const x = unit.x,
             y = unit.y,
-            heightFP = UnitMotion.bottomFP(sim, unit) + Math.round(sim.unitRadius(unit.type) * FP);
+            heightFP = UnitMotion.bottomFP(sim, unit) + Math.round(sim.unitRadius(unit) * FP);
         FLYER_HIT.dealt = 0;
         sim.applyDamage(
             attacker.side,

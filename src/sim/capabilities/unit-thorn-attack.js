@@ -33,11 +33,11 @@ export class UnitThornAttack {
             throw new Error('밤톨 투사체 상태가 초기화되지 않았습니다.');
         const radius = isBuilding
                 ? BuildingDefinition.get(target.type)?.size || 30
-                : sim.unitRadius(target.type),
+                : sim.unitRadius(target),
             dx = target.x - source.x,
             dy = target.y - source.y,
             distance = Math.hypot(dx, dy) || 1,
-            launchOffset = Math.min(sim.unitRadius(source.type), distance),
+            launchOffset = Math.min(sim.unitRadius(source), distance),
             travel = Math.max(0, distance - radius + spec.radius),
             terrain = sim.world.terrain.surfaces,
             startTick = sim.tick + 1,
@@ -98,7 +98,7 @@ export class UnitThornAttack {
             vy = to.y - from.y - (target.y - sy),
             bodyRadius = shot.targetIsBuilding
                 ? BuildingDefinition.get(target.type)?.size || 30
-                : sim.unitRadius(target.type),
+                : sim.unitRadius(target),
             radius = bodyRadius + shot.radius,
             inside = rx * rx + ry * ry <= radius * radius,
             cast = SweptCircleContact.cast(

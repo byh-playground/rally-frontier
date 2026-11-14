@@ -3,6 +3,7 @@ import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { HeroAllyAura } from './capabilities/hero-ally-aura.js';
 import { HeroPassive } from './capabilities/hero-passive.js';
+import { HeroUltimate } from './capabilities/hero-ultimate.js';
 import { HeroGrowth } from './hero-growth.js';
 import { LaunchRules } from './launch-rules.js';
 import { NavigationGoal, UnitMotion } from './navigation.js';
@@ -225,8 +226,9 @@ export class HeroDeployment {
     // The hero body leaves the field (fallen or recovered): its attacks stop and it holds no growth record.
     static endSortie(unit) {
         if (unit.fruitAttack) FruitHeroAttack.endSortie(unit);
-        else if (Object.hasOwn(unit, 'heroRollQueued')) HeroRollAttack.endSortie(unit);
+        HeroRollAttack.cancel(unit);
         HeroPassive.endSortie(unit);
+        HeroUltimate.endSortie(unit);
         HeroAllyAura.endSortie(unit);
         unit.heroGrowth = null;
     }

@@ -17,6 +17,12 @@
 //              passive { seedBurst? { takenPerBurst, seeds, radius, damage, flightMs }, echoHit? { ratio },
 //                puddle? { durationMs, tickMs, radius, damage } } (HeroPassive)
 //              allyAura { radius, refreshMs, takenScale?, movePct?, regen? { intervalMs, percent, min } } (HeroAllyAura)
+//              ultimate { cooldownMs, checkMs, siegeRoll? | boomerang? | berryRain? } (HeroUltimate, the automatic
+//                strike; siegeRoll needs rollAttack, boomerang a boomerang fruitAttack, berryRain a grape one)
+//              awaken { bodyScale?, spinAttack? { rhythm { basicsPerSweep } }, fruitAttack? { every? | twinCurve? } }:
+//                overrides of the hero's own blocks, read through HeroGrowth.spec and HeroGrowth.bodyScale
+//            `rollAttack { speed, hitRadius, unfoldMs, damageRatio }` (a hero): its rolling body (HeroRollAttack),
+//            the landing strike's retreat roll and the siege roll.
 //   payload  the cannon shell that carries the unit (LaunchRules). A hero's shell has no landing shock (impact,
 //            splash) but `landingStrike { radius, damage, knockback?, scatter? { ring, count }, retreat { motion:
 //            'roll'|'hop', distance } }`, the hero's own strike when it lands (HeroLandingStrike)
@@ -141,6 +147,95 @@ const GROWTH_EFFECTS = Object.freeze({
         )
             throw new Error(
                 `병종 ${id}의 passive.puddle은 양수 값(tickMs ≤ durationMs)과 fruitAttack.lob이 필요합니다.`,
+            );
+    },
+    // HeroUltimate: the automatic strike, one kind of it.
+    ultimate(id, spec, unit) {
+        const kinds = ['siegeRoll', 'boomerang', 'berryRain'];
+        const keys = Object.keys(spec || {});
+        const kind = keys.filter((key) => kinds.includes(key));
+        if (
+            kind.length !== 1 ||
+            keys.some((key) => !['cooldownMs', 'checkMs', ...kinds].includes(key)) ||
+            !(spec.cooldownMs > 0 && spec.checkMs > 0 && spec.checkMs <= spec.cooldownMs)
+        )
+            throw new Error(
+                `병종 ${id}의 ultimate는 양수 cooldownMs·checkMs(≤ cooldownMs)와 siegeRoll·boomerang·berryRain 중 하나가 필요합니다.`,
+            );
+        const block = spec[kind[0]];
+        const fields = {
+            siegeRoll: [
+                'reach',
+                'hopMs',
+                'hopHeight',
+                'distance',
+                'speed',
+                'bodyScale',
+                'damage',
+                'buildingDamage',
+            ],
+            boomerang: ['length', 'radius', 'travelMs', 'damage'],
+            berryRain: [
+                'clusterRadius',
+                'radius',
+                'berries',
+                'durationMs',
+                'fallMs',
+                'dropHeight',
+                'berryRadius',
+                'damage',
+            ],
+        }[kind[0]];
+        const needs = {
+            siegeRoll: !!unit.rollAttack,
+            boomerang: unit.fruitAttack?.kind === 'boomerang',
+            berryRain: unit.fruitAttack?.kind === 'grape',
+        }[kind[0]];
+        if (
+            !needs ||
+            !fields.every((field) => Number.isFinite(block[field]) && block[field] > 0) ||
+            !(Number.isInteger(block.moreThan) && block.moreThan >= 0) ||
+            (kind[0] === 'siegeRoll' && !(block.landing?.radius > 0 && block.landing.damage > 0)) ||
+            (kind[0] === 'berryRain' && !Number.isInteger(block.berries))
+        )
+            throw new Error(`병종 ${id}의 ultimate.${kind[0]}가 잘못되었습니다.`);
+    },
+    // The awakening: the hero's own blocks, overridden.
+    awaken(id, spec, unit) {
+        const keys = Object.keys(spec || {});
+        if (
+            !keys.length ||
+            keys.some((key) => !['bodyScale', 'spinAttack', 'fruitAttack'].includes(key))
+        )
+            throw new Error(
+                `병종 ${id}의 awaken은 bodyScale·spinAttack·fruitAttack 중 하나 이상이어야 합니다.`,
+            );
+        if (spec.bodyScale !== undefined && !(spec.bodyScale > 1))
+            throw new Error(`병종 ${id}의 awaken.bodyScale은 1보다 커야 합니다.`);
+        const spin = spec.spinAttack;
+        if (
+            spin !== undefined &&
+            (Object.keys(spin).join(',') !== 'rhythm' ||
+                Object.keys(spin.rhythm || {}).join(',') !== 'basicsPerSweep' ||
+                !(Number.isInteger(spin.rhythm.basicsPerSweep) && spin.rhythm.basicsPerSweep > 0) ||
+                !unit.spinAttack?.rhythm)
+        )
+            throw new Error(
+                `병종 ${id}의 awaken.spinAttack은 rhythm.basicsPerSweep(양의 정수)만 바꾸고 spinAttack.rhythm이 있어야 합니다.`,
+            );
+        const fruit = spec.fruitAttack;
+        if (
+            fruit !== undefined &&
+            (Object.keys(fruit).length !== 1 ||
+                !unit.fruitAttack ||
+                (fruit.every !== undefined &&
+                    !(Number.isInteger(fruit.every) && fruit.every > 0)) ||
+                (fruit.twinCurve !== undefined &&
+                    !(fruit.twinCurve > 0 && unit.fruitAttack.kind === 'boomerang')) ||
+                (fruit.every === undefined && fruit.twinCurve === undefined))
+        )
+            throw new Error(
+                `병종 ${id}의 awaken.fruitAttack은 every(양의 정수) 또는 twinCurve(부메랑, 양수) 하나여야 합니다.`,
             );
     },
     // HeroAllyAura: the allies around the hero.
@@ -298,7 +393,7 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
         if (
             !(strike.radius > 0 && strike.damage > 0 && strike.retreat?.distance > 0) ||
             !['roll', 'hop'].includes(strike.retreat.motion) ||
-            (strike.retreat.motion === 'roll' && !unit.heroActive) ||
+            (strike.retreat.motion === 'roll' && !unit.rollAttack) ||
             (strike.scatter && !(strike.scatter.ring > 0 && Number.isInteger(strike.scatter.count)))
         )
             throw new Error(`병종 ${id}의 landingStrike가 잘못되었습니다.`);

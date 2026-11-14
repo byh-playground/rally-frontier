@@ -12,6 +12,7 @@
 import { FP } from '../../core/config.js';
 import { KnockbackRules } from '../../definitions/knockback-rules.js';
 import { UnitDefinition } from '../../definitions/units.js';
+import { HeroGrowth } from '../hero-growth.js';
 import { LaunchImpact } from '../launch-impact.js';
 import { Knockback } from '../knockback.js';
 import { UnitMotion } from '../navigation.js';
@@ -63,13 +64,14 @@ export class UnitSpinAttack {
     }
 
     static heightFP(sim, unit) {
-        return UnitMotion.bottomFP(sim, unit) + Math.round(sim.unitRadius(unit.type) * FP);
+        return UnitMotion.bottomFP(sim, unit) + Math.round(sim.unitRadius(unit) * FP);
     }
 
     // The caller supplies the same per-side vision field as normal combat.
     // Presence of a hidden enemy alone never initiates an attack.
     static canStart(sim, unit, d, vision) {
-        const spec = d.spinAttack;
+        // The block as the hero's level has it (HeroGrowth.spec): the awakening may quicken the rhythm.
+        const spec = HeroGrowth.spec(unit, 'spinAttack');
         if (!unit?.alive || !vision) return false;
         if (
             spec.arcSweep
@@ -303,7 +305,8 @@ export class UnitSpinAttack {
     }
 
     static updateArcSweep(sim, unit, spec, damage) {
-        if (spec.rhythm && unit.spinAttackBasicHits >= spec.rhythm.basicsPerSweep) {
+        const rhythm = HeroGrowth.spec(unit, 'spinAttack').rhythm;
+        if (rhythm && unit.spinAttackBasicHits >= rhythm.basicsPerSweep) {
             unit.spinAttackBasicHits = 0;
             sim.commitAttackTiming(unit, UnitDefinition.get(unit.type));
         }
@@ -337,7 +340,7 @@ export class UnitSpinAttack {
             const dx = target.x - unit.x,
                 dy = target.y - unit.y,
                 distance = Math.hypot(dx, dy),
-                radius = sim.unitRadius(target.type),
+                radius = sim.unitRadius(target),
                 angle = Math.atan2(dy, dx) - midpoint;
             const padding = distance <= radius ? Math.PI : Math.asin(radius / distance);
             // Doubling folds both opposing arm angles onto the same interval.

@@ -119,7 +119,7 @@ class UnitFlight {
     }
     // Straight toward (tx, ty), first kept inside the map by the body's radius, at `speed`. True on arrival.
     static flyToward(sim, unit, tx, ty, speed) {
-        const radius = sim.unitRadius(unit.type),
+        const radius = sim.unitRadius(unit),
             dx = Math.min(sim.world.width - radius, Math.max(radius, tx)) - unit.x,
             dy = Math.min(sim.world.height - radius, Math.max(radius, ty)) - unit.y,
             distance = Math.hypot(dx, dy),
@@ -136,7 +136,7 @@ class UnitFlight {
     // Lands here when the ground is open (walls, cliffs and buildings), else flies to the nearest open spot first;
     // with no open spot near, it lands here anyway rather than staying up.
     static alight(sim, unit) {
-        const radius = sim.unitRadius(unit.type),
+        const radius = sim.unitRadius(unit),
             navigation = sim.navigation;
         navigation.sync();
         if (navigation.field.pointClear(unit.x, unit.y, radius)) {

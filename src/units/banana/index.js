@@ -31,11 +31,30 @@ export const Banana = defineUnit({
         // Level unlocks (HeroGrowth.unlocked). Level 2: a killing blow fills the n-hit counter at once. Level 3: a
         // boomerang that hits a soldier again on its way back deals double (HeroPassive). Level 4: the allies
         // within 150 (not the hero itself, refreshed every 0.5 s) move 1.3 times as fast (HeroAllyAura).
+        // Level 5: with more than 6 enemies lined up on the band a throw would cross, a huge boomerang flies 800
+        // through them and back, at most once every 20 s (HeroUltimate boomerang). Level 6: the nth golden
+        // boomerang flies as two, curving to each side (awaken).
         growth: Object.freeze({
             2: Object.freeze({ killEffect: Object.freeze({ fillCombo: true }) }),
             3: Object.freeze({ passive: Object.freeze({ echoHit: Object.freeze({ ratio: 2 }) }) }),
             4: Object.freeze({
                 allyAura: Object.freeze({ radius: 150, refreshMs: 500, movePct: 130 }),
+            }),
+            5: Object.freeze({
+                ultimate: Object.freeze({
+                    cooldownMs: 20000,
+                    checkMs: 500,
+                    boomerang: Object.freeze({
+                        moreThan: 6,
+                        length: 800,
+                        radius: 40,
+                        travelMs: 600,
+                        damage: 50,
+                    }),
+                }),
+            }),
+            6: Object.freeze({
+                awaken: Object.freeze({ fruitAttack: Object.freeze({ twinCurve: 60 }) }),
             }),
         }),
     },
@@ -67,6 +86,8 @@ export const Banana = defineUnit({
             '2레벨: 막타를 치면 다음 평타가 바로 금빛 부메랑',
             '3레벨: 갈 때 맞힌 적을 돌아오며 또 맞히면 피해 2배',
             '4레벨: 주변 아군 이동 속도 1.3배',
+            '5레벨: 적이 줄지어 있으면 스스로 초대형 부메랑, 왕복 관통 피해 50',
+            '6레벨: 금빛 부메랑이 양쪽으로 2개씩',
         ],
     },
     help: [
@@ -79,6 +100,8 @@ export const Banana = defineUnit({
                 '2레벨: 바나나가 막타로 적 병력을 쓰러뜨리면 카드의 점이 모두 차서 다음 평타가 곧바로 금빛 부메랑이 돼요.',
                 '3레벨: 부메랑이 갈 때 맞힌 적을 돌아올 때 또 맞히면 두 번째 피해가 2배가 되고 금빛으로 번쩍여요.',
                 '4레벨: 바나나 둘레 150 안의 아군이 1.3배 빠르게 움직여요. 아군 발밑에 노란 고리가 보여요.',
+                '5레벨: 부메랑이 날아갈 길(길이 800, 폭 반경 40) 위에 적이 6명보다 많이 줄지어 있으면 스스로 초대형 부메랑을 던져요. 길 위의 적을 모두 관통해 갈 때와 올 때 피해 50을 줘요. 한 번 쓰면 20초 동안 다시 쓰지 않아요.',
+                '6레벨: 네 번째 평타의 금빛 부메랑이 양쪽 곡선으로 2개씩 날아가요.',
             ],
         },
     ],

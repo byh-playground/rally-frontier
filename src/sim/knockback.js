@@ -46,7 +46,7 @@ class Knockback {
             const body = LaunchImpact.distanceToBody(sim, u, x, y, impactHeightFP);
             if (body.surfaceDistance > radius) continue;
             const strength = falloff
-                ? KnockbackRules.strength(body.falloffDistance, radius + sim.unitRadius(u.type))
+                ? KnockbackRules.strength(body.falloffDistance, radius + sim.unitRadius(u))
                 : 1;
             this.push(
                 sim,

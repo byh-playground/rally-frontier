@@ -398,7 +398,7 @@ class RollingBody {
         for (let i = 0; i < units.length; i++) {
             const u = units[i];
             if (!this.rolling(u)) continue;
-            const radius = sim.unitRadius(u.type),
+            const radius = sim.unitRadius(u),
                 count = sim.nearbyUnits(u.x, u.y, radius + sim.maxUnitRadius, u.side, NEARBY);
             for (let k = 0; k < count; k++) {
                 const other = units[NEARBY.items[k]];
@@ -410,7 +410,7 @@ class RollingBody {
                     other.heroRoll
                 )
                     continue;
-                const reach = radius + sim.unitRadius(other.type);
+                const reach = radius + sim.unitRadius(other);
                 let dx = other.x - u.x,
                     dy = other.y - u.y;
                 const distance = Math.hypot(dx, dy);
@@ -446,8 +446,8 @@ class RollingBody {
             building,
             true,
             Math.round((spec.buildingDamageAtTop * inwardSpeed) / spec.topSpeed),
-            x - nx * sim.unitRadius(unit.type),
-            y - ny * sim.unitRadius(unit.type),
+            x - nx * sim.unitRadius(unit),
+            y - ny * sim.unitRadius(unit),
             -nx,
             -ny,
         );

@@ -2080,7 +2080,7 @@ class GLRenderer {
                     motionState.heroRoll,
                     model?.tick ?? this.snapshot.tick,
                 );
-                const apex = UnitDefinition.get(entity.type).heroActive.hopHeight;
+                const apex = HeroGrowth.declared(entity.type, 'ultimate').siegeRoll.hopHeight;
                 height += 4 * apex * hop * (1 - hop);
             }
         }
@@ -4888,9 +4888,16 @@ class GLRenderer {
     unitRenderVisualScale(u) {
         return UnitVisualDefinition.get(u?.type)?.visualScale ?? 1.08;
     }
+    // An awakened hero is drawn as large as its body (HeroGrowth.bodyScale).
     unitRenderRadius(u) {
         const size = UnitDefinition.get(u?.type)?.size || GRAIN_SIZE;
-        return size * UNIT_RENDER_RADIUS_SCALE * this.unitRenderVisualScale(u) * this.sc();
+        return (
+            size *
+            UNIT_RENDER_RADIUS_SCALE *
+            this.unitRenderVisualScale(u) *
+            HeroGrowth.bodyScale(u) *
+            this.sc()
+        );
     }
 
     hasGrainArt(u) {
@@ -5503,8 +5510,19 @@ class GLRenderer {
                 );
             actor.preparePose();
             // Budmori bodies are front-facing: no rotation, ground socket on the unit's ground point.
+            // A siege roll (HeroUltimate siegeRoll) grows the rind through its hop and shrinks it as it unfolds.
+            const siegeScale =
+                roll?.mode === 'siege'
+                    ? 1 +
+                      (HeroGrowth.declared(u.type, 'ultimate').siegeRoll.bodyScale - 1) *
+                          (roll.phase === 'hop'
+                              ? rollProgress
+                              : roll.phase === 'unfold'
+                                ? 1 - rollProgress
+                                : 1)
+                    : 1;
             const p = this.projectRenderWorldPosition(world),
-                r = this.unitRenderRadius(u),
+                r = this.unitRenderRadius(u) * siegeScale,
                 scale =
                     r *
                     GRAIN_SPRITE_BASE_SCALE *
@@ -7246,12 +7264,13 @@ class GLRenderer {
             if (entry.kind !== 'unit') continue;
             const definition = UnitDefinition.get(entry.entity.type);
             const spec = definition?.spinAttack;
-            if (!spec && !definition?.heroActive && !definition?.fruitAttack) continue;
+            if (!spec && !definition?.rollAttack && !definition?.fruitAttack) continue;
             const model = this.renderState.model('unit', entry.entity.id, now);
-            if (definition.heroActive && entry.entity.alive)
-                this.drawHeroRollTelegraph(entry, model, definition.heroActive);
+            const ultimate = HeroGrowth.declared(entry.entity.type, 'ultimate');
+            if (ultimate?.siegeRoll && entry.entity.alive)
+                this.drawHeroRollTelegraph(entry, model, ultimate.siegeRoll, definition.rollAttack);
             if (definition.fruitAttack && entry.entity.alive)
-                this.drawFruitAttackEffect(model, definition.fruitAttack);
+                this.drawFruitAttackEffect(model, definition.fruitAttack, ultimate?.berryRain);
             if (definition.growth && entry.entity.alive)
                 this.drawHeroGrowthEffects(entry.entity.type, model, entries);
             // Heroes without a spin (banana, grape) only draw their own telegraphs above.
@@ -7352,7 +7371,15 @@ class GLRenderer {
     }
     drawFruitProjectile(shot, world) {
         const p = this.projectRenderWorldPosition(world),
-            span = (shot.kind === 'berry' ? (shot.mode === 'basic' ? 14 : 20) : 22) * this.sc(),
+            // The level-5 boomerang (HeroUltimate) is drawn as wide as the band it sweeps.
+            span =
+                (shot.kind === 'berry'
+                    ? shot.mode === 'basic'
+                        ? 14
+                        : 20
+                    : shot.mode === 'ultimate'
+                      ? shot.radius * 1.5
+                      : 22) * this.sc(),
             age = (shot.renderTick - shot.startTick) / (this.snapshot.tps || SIM_TPS),
             angle = shot.kind === 'boomerang' ? age * Math.PI * 7 : 0,
             cos = Math.cos(angle) * span,
@@ -7369,7 +7396,8 @@ class GLRenderer {
                 p.x += (x - p.x) * weight;
                 p.y += (y - p.y) * weight;
             }
-            if (shot.mode === 'passive') this.drawBananaPassiveCue(shot, p, span);
+            if (shot.mode === 'passive' || shot.mode === 'ultimate')
+                this.drawBananaPassiveCue(shot, p, span);
         }
         if (this.frame.length) {
             this.flushVectorMesh('frame-to-fruit-projectile-switch');
@@ -7541,25 +7569,34 @@ class GLRenderer {
                 continue;
             const { x, z, groundY } = entry.world;
             this.withWorldSpriteDepth({ ...entry.world, y: groundY }, () =>
-                this.drawGroundCircle(
-                    x,
-                    z,
-                    InteractionGeometry.unitRadius(entry.entity.type) * scale,
-                    {
-                        elevation: groundY,
-                        fill: [accent[0], accent[1], accent[2], 0.25 * alpha],
-                        stroke: [accent[0], accent[1], accent[2], alpha],
-                        width: Math.max(1, 2 * this.sc()),
-                        segments: 16,
-                    },
-                ),
+                this.drawGroundCircle(x, z, InteractionGeometry.unitRadius(entry.entity) * scale, {
+                    elevation: groundY,
+                    fill: [accent[0], accent[1], accent[2], 0.25 * alpha],
+                    stroke: [accent[0], accent[1], accent[2], alpha],
+                    width: Math.max(1, 2 * this.sc()),
+                    segments: 16,
+                }),
             );
         }
     }
-    // Where the grape's lobbed berries (the fourth basic's three) will land.
-    drawFruitAttackEffect(model, spec) {
+    // Where the grape's lobbed berries (the fourth basic's three) and its berry rain (HeroUltimate berryRain) will
+    // land: a ring for each falling berry, and the rain's whole area while it lasts.
+    drawFruitAttackEffect(model, spec, rainSpec) {
         const fruit = model?.entity.fruitAttack;
         if (!fruit) return;
+        const rain = model.entity.heroUltimate?.rain;
+        if (rain && rainSpec) {
+            const z = this.world.terrain.surfaces.heightAt(rain.x, rain.y);
+            this.withWorldSpriteDepth({ x: rain.x, y: z, z: rain.y, groundY: z }, () =>
+                this.drawGroundCircle(rain.x, rain.y, rainSpec.radius, {
+                    elevation: z,
+                    stroke: [0.81, 0.58, 1, 0.7],
+                    fill: [0.55, 0.3, 0.82, 0.06],
+                    width: Math.max(1.5, 2.5 * this.sc()),
+                    segments: 40,
+                }),
+            );
+        }
         for (const projectile of fruit.projectiles) {
             if (
                 projectile.kind !== 'berry' ||
@@ -7569,8 +7606,9 @@ class GLRenderer {
             )
                 continue;
             const { x, y, z } = projectile.to;
+            const radius = projectile.mode === 'ultimate' ? rainSpec.berryRadius : spec.lob.radius;
             this.withWorldSpriteDepth({ x, y: z, z: y, groundY: z }, () => {
-                this.drawGroundCircle(x, y, spec.lob.radius, {
+                this.drawGroundCircle(x, y, radius, {
                     elevation: z,
                     stroke: [0.81, 0.58, 1, 0.9],
                     fill: [0.55, 0.3, 0.82, 0.08],
@@ -7580,7 +7618,8 @@ class GLRenderer {
             });
         }
     }
-    drawHeroRollTelegraph({ entity, world }, model, spec) {
+    // The siege roll's hop (HeroUltimate siegeRoll): the landing shock's circle and the band the big rind will roll.
+    drawHeroRollTelegraph({ entity, world }, model, spec, body) {
         const roll = model?.entity?.heroRoll;
         if (
             roll?.phase !== 'hop' ||
@@ -7591,7 +7630,7 @@ class GLRenderer {
 
         const ground = { ...world, y: world.groundY };
         const { x, z } = ground;
-        const radius = InteractionGeometry.unitRadius(entity.type);
+        const radius = InteractionGeometry.unitRadius(entity);
         if (this.rollPreviewNavigation?.geometry !== this.world.terrain)
             this.rollPreviewNavigation = new TerrainNavigation({ world: this.world });
         const { distance } = this.rollPreviewNavigation.traceStraightTravel(
@@ -7599,7 +7638,7 @@ class GLRenderer {
             z,
             roll.dx,
             roll.dy,
-            spec.rollDistance,
+            spec.distance,
             radius,
             this.snapshot,
         );
@@ -7611,7 +7650,12 @@ class GLRenderer {
                 stroke: [1, 0.42, 0.4, 0.9],
                 width: Math.max(1.5, 2 * this.sc()),
             });
-            this.drawHeroRollPath(ground, roll, distance, spec.rollHitRadius);
+            this.drawHeroRollPath(
+                ground,
+                roll,
+                distance,
+                body.hitRadius * HeroGrowth.bodyScale(entity) * spec.bodyScale,
+            );
         });
     }
     drawHeroRollPath(ground, { dx, dy }, distance, radius) {
@@ -10933,12 +10977,13 @@ class LaunchPresentation {
             mode === 'dead' ? null : (unit?.heroGrowth ?? s.heroGrowth?.[side]?.[type]),
         );
         el.title = `${label[1]}${recovering ? ' · 회복 중' : ''}${levelHint}`;
+        // The counter's length as the hero's level has it (an awakening can shorten it, HeroGrowth.spec).
+        const fruitSpec = unit ? HeroGrowth.spec(unit, 'fruitAttack') : definition.fruitAttack,
+            spinSpec = unit ? HeroGrowth.spec(unit, 'spinAttack') : definition.spinAttack;
         const attackCounter = this.renderAttackCounter(
             el,
             unit?.alive ? (unit.fruitAttack?.combo ?? unit.spinAttackBasicHits ?? 0) : null,
-            definition.fruitAttack
-                ? definition.fruitAttack.every - 1
-                : definition.spinAttack?.rhythm?.basicsPerSweep,
+            fruitSpec ? fruitSpec.every - 1 : spinSpec?.rhythm?.basicsPerSweep,
         );
         el.setAttribute(
             'aria-label',
