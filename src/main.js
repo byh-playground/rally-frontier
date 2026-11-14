@@ -54,6 +54,7 @@ import {
     TerrainNavigation,
     UnitMotion,
 } from './sim/navigation.js';
+import { HeroGrowth } from './sim/hero-growth.js';
 import {
     BattlefieldProjection,
     TerrainSurfaceAtlas,
@@ -68,7 +69,7 @@ import {
     FloatingTextPresentationDefinition,
 } from './render/presentation-effects.js';
 import { GRAIN_SPRITES } from './render/grain-sprite-registry.js';
-import { heroBasicAttackElapsedMs, HERO_BASIC_STRIKE_MS } from './render/hero-basic-motion.js';
+import { heroBasicAttackElapsedMs } from './render/hero-basic-motion.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
 import { DEAD_UNIT_LOOK, DeadUnitLook } from './render/dead-unit-look.js';
 import {
@@ -386,9 +387,7 @@ function attackCounterDots(count, required) {
 
 function fruitShotsAt(attack, tick) {
     if (!attack) return [];
-    const active = attack.active?.shot;
-    const shots = active ? [...attack.projectiles, active] : attack.projectiles;
-    return shots.filter((shot) => tick >= shot.startTick && tick < shot.endTick);
+    return attack.projectiles.filter((shot) => tick >= shot.startTick && tick < shot.endTick);
 }
 const THORN_TRAIL_COLOR = Object.freeze([151 / 255, 93 / 255, 43 / 255, 1]);
 const THORN_IMPACT_COLOR = Object.freeze([225 / 255, 157 / 255, 65 / 255, 1]);
@@ -3075,6 +3074,14 @@ class GLRenderer {
                 }
                 kind = 'dodge';
                 text = 'MISS';
+            } else if (e.type === 'heroLevelUp') {
+                // A hero's level-up rises above it in gold (HeroGrowth).
+                if (!this.eventVisible(e)) {
+                    index++;
+                    continue;
+                }
+                kind = 'heroLevelUp';
+                text = `Lv ${e.level}!`;
             }
 
             if (!kind) {
@@ -4491,6 +4498,9 @@ class GLRenderer {
             } else if (f.kind === 'damageDealt') {
                 fill = '#fff0c2';
                 stroke = '#6d2c12';
+            } else if (f.kind === 'heroLevelUp') {
+                fill = '#ffe066';
+                stroke = '#5c3d00';
             }
 
             ctx.save();
@@ -5230,55 +5240,22 @@ class GLRenderer {
                       )
                     : null;
             const fruit = sprite?.fruitAttack ? entity.fruitAttack : null;
-            const active = fruit?.active;
-            const tps = this.snapshot.tps || SIM_TPS;
-            const barrageShot = fruit?.projectiles.findLast(
-                (shot) =>
-                    shot.kind === 'berry' && shot.mode === 'active' && shot.startTick <= renderTick,
-            );
-            let fruitSkillElapsed = barrageShot
-                ? heroBasicAttackElapsedMs(
-                      { basicAttackTick: barrageShot.startTick },
-                      renderTick,
-                      tps,
-                  )
-                : null;
-            if (heroBasic != null || active || fruitSkillElapsed != null) {
+            if (heroBasic != null) {
                 const targetId = entity.combat?.attackWindupTargetId ?? entity.target;
                 const target =
                     targetId &&
                     (this.renderState.model('unit', targetId, now)?.entity ||
                         this.snapshot.buildings.find((entry) => entry.id === targetId));
-                const aimX =
-                    active?.shot?.to.x ?? active?.impacts?.[0]?.x ?? barrageShot?.to.x ?? target?.x;
-                if (Number.isFinite(aimX))
-                    grain.heroFacing = this.viewX(aimX) < this.viewX(entity.x) ? -1 : 1;
+                if (Number.isFinite(target?.x))
+                    grain.heroFacing = this.viewX(target.x) < this.viewX(entity.x) ? -1 : 1;
             }
             if (sprite?.heroBasic && clip === 'fire' && heroBasic == null)
                 clip = moving ? 'walk' : 'idle';
-            if (heroBasic != null || active || fruitSkillElapsed != null) clip = 'fire';
-            if (sprite?.fruitAttack) {
+            if (heroBasic != null) clip = 'fire';
+            if (sprite?.fruitAttack)
                 actor.weaponAway = fruitShotsAt(fruit, renderTick).some(
                     (shot) => shot.kind === 'boomerang',
                 );
-                const activeSpec = UnitDefinition.get(u.type).fruitAttack.active;
-                if (active?.shot || (active && active.strike === 0)) {
-                    const releaseTick = active.shot?.startTick ?? active.nextTick;
-                    const windupStart = active.shot
-                        ? releaseTick - SimulationTiming.msToTicks(activeSpec.windupMs, tps)
-                        : active.startTick;
-                    fruitSkillElapsed =
-                        renderTick < releaseTick
-                            ? HERO_BASIC_STRIKE_MS *
-                              RangeUtil.clamp(
-                                  (renderTick - windupStart) /
-                                      Math.max(1, releaseTick - windupStart),
-                                  0,
-                                  1,
-                              )
-                            : HERO_BASIC_STRIKE_MS + ((renderTick - releaseTick) * 1000) / tps;
-                }
-            }
             if (selfDestruct) clip = 'windup';
             if (spin) clip = 'spin';
             if (roll?.phase) clip = 'roll';
@@ -5433,8 +5410,7 @@ class GLRenderer {
                 actor.seekElapsed(
                     1000 * RangeUtil.clamp((renderTick - selfDestruct.startTick) / duration, 0, 1),
                 );
-            } else if (fruitSkillElapsed != null) actor.seekElapsed(fruitSkillElapsed);
-            else if (heroBasic != null) actor.seekElapsed(heroBasic);
+            } else if (heroBasic != null) actor.seekElapsed(heroBasic);
             else if (cornElapsed != null) actor.seekElapsed(cornElapsed);
             else if (chestnutFireMs !== null && clip === 'fire') actor.seekElapsed(chestnutFireMs);
             else if (milletFireMs !== null && clip === 'fire') actor.seekElapsed(milletFireMs);
@@ -7284,14 +7260,7 @@ class GLRenderer {
     }
     drawFruitProjectile(shot, world) {
         const p = this.projectRenderWorldPosition(world),
-            span =
-                (shot.kind === 'berry'
-                    ? shot.mode === 'basic'
-                        ? 14
-                        : 20
-                    : shot.mode === 'active'
-                      ? shot.radius * 2
-                      : 22) * this.sc(),
+            span = (shot.kind === 'berry' ? (shot.mode === 'basic' ? 14 : 20) : 22) * this.sc(),
             age = (shot.renderTick - shot.startTick) / (this.snapshot.tps || SIM_TPS),
             angle = shot.kind === 'boomerang' ? age * Math.PI * 7 : 0,
             cos = Math.cos(angle) * span,
@@ -7381,25 +7350,18 @@ class GLRenderer {
             previous = current;
         }
     }
+    // Where the grape's lobbed berries (the fourth basic's three) will land.
     drawFruitAttackEffect(model, spec) {
         const fruit = model?.entity.fruitAttack;
         if (!fruit) return;
-        const { active } = fruit;
-        const shot = active?.shot;
-        if (shot) {
-            if (model.tick >= shot.startTick) return;
-            this.drawFruitThrowPreview(shot);
-            return;
-        }
-        const impacts = active?.impacts?.slice(active.strike) ?? [];
-        for (const projectile of fruit.projectiles)
+        for (const projectile of fruit.projectiles) {
             if (
-                projectile.kind === 'berry' &&
-                projectile.mode !== 'basic' &&
-                model.tick < projectile.endTick
+                projectile.kind !== 'berry' ||
+                projectile.mode === 'basic' ||
+                model.tick >= projectile.endTick
             )
-                impacts.push(projectile.to);
-        for (const { x, y, z } of impacts)
+                continue;
+            const { x, y, z } = projectile.to;
             this.withWorldSpriteDepth({ x, y: z, z: y, groundY: z }, () => {
                 this.drawGroundCircle(x, y, spec.lob.radius, {
                     elevation: z,
@@ -7409,48 +7371,7 @@ class GLRenderer {
                     segments: 20,
                 });
             });
-    }
-    drawFruitThrowPreview(shot) {
-        const groundPoint = (x, z) => {
-            const y = this.world.terrain.surfaces.heightAt(x, z);
-            return this.projectRenderWorldPosition({ x, y, z, groundY: y });
-        };
-        const drawLeg = (start, end, edge, band) => {
-            const segments = 16;
-            let a = fruitProjectilePosition(shot, start);
-            for (let i = 1; i <= segments; i++) {
-                const b = fruitProjectilePosition(shot, start + ((end - start) * i) / segments),
-                    dx = b.x - a.x,
-                    dy = b.y - a.y,
-                    length = Math.hypot(dx, dy);
-                if (!length) continue;
-                const nx = (-dy * shot.radius) / length,
-                    ny = (dx * shot.radius) / length,
-                    leftA = groundPoint(a.x + nx, a.y + ny),
-                    leftB = groundPoint(b.x + nx, b.y + ny),
-                    rightB = groundPoint(b.x - nx, b.y - ny),
-                    rightA = groundPoint(a.x - nx, a.y - ny);
-                this.withRenderDepth((leftA.depth + leftB.depth) / 2 - 0.001, () => {
-                    this.quad(
-                        leftA.x,
-                        leftA.y,
-                        leftB.x,
-                        leftB.y,
-                        rightB.x,
-                        rightB.y,
-                        rightA.x,
-                        rightA.y,
-                        band,
-                    );
-                    const from = groundPoint(a.x, a.y),
-                        to = groundPoint(b.x, b.y);
-                    this.line(from.x, from.y, to.x, to.y, Math.max(1.5, 2 * this.sc()), edge);
-                });
-                a = b;
-            }
-        };
-        drawLeg(shot.startTick, shot.turnTick, [0.35, 0.95, 0.53, 0.9], [0.25, 0.82, 0.45, 0.24]);
-        drawLeg(shot.turnTick, shot.endTick, [1, 0.82, 0.27, 0.9], [1, 0.74, 0.24, 0.24]);
+        }
     }
     drawHeroRollTelegraph({ entity, world }, model, spec) {
         const roll = model?.entity?.heroRoll;
@@ -8517,35 +8438,9 @@ UiRegistry.refs.launchRangeText = DomUtil.byId('launchRangeText');
 UiRegistry.refs.launchRangeCost = DomUtil.byId('launchRangeCost');
 UiRegistry.refs.launchRangeStatus = DomUtil.byId('launchRangeStatus');
 UiRegistry.refs.launchRangeBtn?.addEventListener('click', () => LaunchPresentation.upgradeRange());
-UiRegistry.refs.launchCards?.addEventListener('pointerdown', (e) =>
-    LaunchPresentation.pressHeroCard(e),
-);
-UiRegistry.refs.launchCards?.addEventListener('pointermove', (e) =>
-    LaunchPresentation.moveHeroPress(e),
-);
-UiRegistry.refs.launchCards?.addEventListener('pointerout', (e) => {
-    const press = LaunchPresentation.heroPress;
-    if (press?.pointerId === e.pointerId && !press.button.contains(e.relatedTarget))
-        LaunchPresentation.endHeroPress(true);
-});
-for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-    UiRegistry.refs.launchCards?.addEventListener(type, (e) => {
-        if (LaunchPresentation.heroPress?.pointerId === e.pointerId)
-            LaunchPresentation.endHeroPress(type !== 'pointerup');
-    });
-}
-UiRegistry.refs.launchCards?.addEventListener('contextmenu', (e) => {
-    if (e.pointerType !== 'touch' && e.button !== 0) return;
-    const press = LaunchPresentation.heroPress || LaunchPresentation.heroPressClick;
-    if (press?.button.contains(e.target) && !e.target.closest('[data-card-info]'))
-        e.preventDefault();
-});
-UiRegistry.refs.launchCards?.addEventListener('keydown', (e) => LaunchPresentation.heroSkillKey(e));
-window.addEventListener('blur', () => LaunchPresentation.endHeroPress(true));
 UiRegistry.refs.launchCards?.addEventListener('click', (e) => {
     const button = e.target.closest('[data-launch-card]');
-    if (button && !LaunchPresentation.consumeHeroClick(e, button))
-        LaunchPresentation.selectCard(button.dataset.launchCard);
+    if (button) LaunchPresentation.selectCard(button.dataset.launchCard);
 });
 
 const UI_RADIO = Object.freeze({
@@ -10569,14 +10464,11 @@ class BuildMetadataPresentation {
 // 조준 중 예상 착지와 최대 사거리를 표시하고, 실제 착탄 흔적은 권위 사건을 따른다.
 class LaunchPresentation {
     static premiumResourceHint = '미니맵의 ✦ 기름 거점을 확보하세요.';
-    static HERO_SKILL_HOLD_MS = 500;
     static card = null;
     static deckKey = '';
     static lastPower = null;
     static marks = [];
     static hold = null;
-    static heroPress = null;
-    static heroPressClick = null;
     static feedbackTimer = 0;
     static jammedMessage = '적 찹쌀이 포구를 막고 있어 이 대포는 쏠 수 없어요.';
     static feedback(message) {
@@ -10599,8 +10491,6 @@ class LaunchPresentation {
         this.lastPower = null;
         this.marks = [];
         this.hold = null;
-        this.endHeroPress();
-        this.heroPressClick = null;
         clearTimeout(this.feedbackTimer);
         this.feedbackTimer = 0;
         DomUtil.byId('launchFeedback')?.classList.add('hidden');
@@ -10657,8 +10547,6 @@ class LaunchPresentation {
         const on = !!s;
         document.body.classList.toggle('launch-mode', on);
         UiRegistry.refs.launchHand?.classList.toggle('hidden', !on);
-        if (this.heroPress && !this.currentHeroPress(this.heroPress, s, side))
-            this.endHeroPress(true);
         if (!on) return;
         const deck = s.decks?.[side] ?? LaunchRules.starterDeck,
             heroes = s.heroes?.[side],
@@ -10768,29 +10656,11 @@ class LaunchPresentation {
     }
     static presentEvents(snapshot, side) {
         for (const event of snapshot.events || []) {
-            if (event.type === 'heroSkillStarted' && event.side === side && this.active(snapshot)) {
-                const type =
-                    event.heroType ??
-                    Object.entries(snapshot.heroes?.[side] ?? {}).find(
-                        ([, hero]) => hero?.sortieId === event.sortieId,
-                    )?.[0];
-                const button = LaunchRules.isHeroType(type)
-                    ? UiRegistry.refs.launchCards.querySelector(`[data-launch-card="${type}"]`)
-                    : null;
-                if (button) this.presentHeroSpend(button, event.cost);
-                continue;
-            }
-            if (
-                event.type === 'heroSkillRejected' &&
-                event.side === side &&
-                this.active(snapshot)
-            ) {
-                this.feedback(
-                    {
-                        'hero-not-deployed': '출격 중인 영웅이 필요합니다.',
-                        'insufficient-basic-resources': `${RESOURCES[0].name}이 부족합니다.`,
-                    }[event.reason] || '영웅 스킬을 쓸 수 없습니다.',
+            if (event.type === 'heroLevelUp' && event.side === side && this.active(snapshot)) {
+                const button = UiRegistry.refs.launchCards.querySelector(
+                    `[data-launch-card="${event.heroType}"]`,
                 );
+                if (button) this.presentHeroLevelUp(button, event.level);
                 continue;
             }
             if (event.type === 'heroRecovered' && event.side === side && this.active(snapshot)) {
@@ -10808,14 +10678,19 @@ class LaunchPresentation {
             this.marks.push(mark);
         }
     }
-    static presentHeroSpend(button, cost) {
-        button.querySelector('.hero-card-spend')?.remove();
-        const spend = document.createElement('span');
-        spend.className = 'hero-card-spend';
-        spend.setAttribute('aria-hidden', 'true');
-        spend.textContent = `◆ −${cost}`;
-        spend.addEventListener('animationend', () => spend.remove(), { once: true });
-        button.append(spend);
+    // A short flash and a rising level number on the hero card the moment it levels up.
+    static presentHeroLevelUp(button, level) {
+        button.querySelector('.hero-card-level-up')?.remove();
+        const pop = document.createElement('span');
+        pop.className = 'hero-card-level-up';
+        pop.setAttribute('aria-hidden', 'true');
+        pop.textContent = `Lv ${level}!`;
+        pop.addEventListener('animationend', () => pop.remove(), { once: true });
+        button.append(pop);
+        // Restart the card flash even when two levels come close together.
+        button.removeAttribute('data-hero-level-up');
+        void button.offsetWidth;
+        button.setAttribute('data-hero-level-up', '');
     }
     static renderHeroCard(el, s, side, type) {
         el.classList.add('hero-card');
@@ -10845,14 +10720,11 @@ class LaunchPresentation {
         const hpText = `${currentHp}/${maxHp}`;
         health.textContent = `♥ ${hpText}`;
         health.style.setProperty('--hero-hp', `${(100 * currentHp) / maxHp}%`);
-        const skillHint = this.renderHeroSkill(
+        const levelHint = this.renderHeroLevel(
             el,
-            s,
-            side,
-            unit,
-            definition.fruitAttack?.active ?? definition.heroActive,
+            mode === 'dead' ? null : (unit?.heroGrowth ?? s.heroGrowth?.[side]?.[type]),
         );
-        el.title = `${label[1]}${recovering ? ' · 회복 중' : ''}${skillHint}`;
+        el.title = `${label[1]}${recovering ? ' · 회복 중' : ''}${levelHint}`;
         const attackCounter = this.renderAttackCounter(
             el,
             unit?.alive ? (unit.fruitAttack?.combo ?? unit.spinAttackBasicHits ?? 0) : null,
@@ -10862,51 +10734,43 @@ class LaunchPresentation {
         );
         el.setAttribute(
             'aria-label',
-            `${definition.name} · ${label[0]} · 체력 ${hpText}${recovering ? ' · 회복 중' : ''}${attackCounter}${skillHint}`,
+            `${definition.name} · ${label[0]} · 체력 ${hpText}${recovering ? ' · 회복 중' : ''}${attackCounter}${levelHint}`,
         );
         el.classList.toggle('hero-dead', mode === 'dead');
         if (mode === 'advance' || mode === 'return')
             el.setAttribute('aria-pressed', String(mode === 'advance'));
         else el.removeAttribute('aria-pressed');
     }
-    static renderHeroSkill(el, s, side, unit, skill) {
-        let badge = el.querySelector('.hero-card-skill');
-        const deployed = !!skill && !!unit?.alive && this.active(s);
-        el.toggleAttribute('data-hero-skill', deployed);
-        if (!deployed) {
+    // The hero's level and its kills toward the next one (HeroGrowth), beside its name.
+    static renderHeroLevel(el, growth) {
+        let badge = el.querySelector('.hero-card-level');
+        if (!growth) {
             if (badge) badge.hidden = true;
-            el.removeAttribute('aria-keyshortcuts');
             return '';
         }
-        const queued = unit.fruitAttack?.queued ?? unit.heroRollQueued;
-        if (queued) el.removeAttribute('aria-keyshortcuts');
-        else el.setAttribute('aria-keyshortcuts', 'Shift+Enter');
         if (!badge) {
             const name = el.querySelector('b'),
                 row = document.createElement('span');
             row.className = 'hero-card-name';
             badge = document.createElement('span');
-            badge.className = 'hero-card-skill';
+            badge.className = 'hero-card-level';
             badge.setAttribute('aria-hidden', 'true');
             name.before(row);
             row.append(name, badge);
         }
-        const active = unit.fruitAttack?.active;
-        const status = active
-            ? active.kind === 'boomerang'
-                ? s.tick < active.shot.startTick
-                    ? '투척 준비'
-                    : '왕복 중'
-                : '포도알 연사'
-            : { hop: '뛰는 중', roll: '구르는 중', unfold: '자세 펴기' }[unit.heroRoll?.phase];
+        const next = HeroGrowth.nextLevelKills(growth.level);
         badge.hidden = false;
-        badge.textContent = queued ? '발동 예약' : (status ?? `길게 ◆ ${skill.cost}`);
-        badge.toggleAttribute('data-queued', queued);
-        badge.toggleAttribute('data-rolling', !!status);
-        badge.toggleAttribute('data-unavailable', s.wallet?.[side] < skill.cost);
-        if (queued) return ' · 스킬 발동 예약, 조건이 맞으면 자동 발동';
-        if (status) return ` · ${status}`;
-        return ` · 길게 누르기 또는 Shift+Enter로 스킬 사용 · ${ResourceDisplay.costText(skill, true)}`;
+        badge.textContent =
+            next === null
+                ? `Lv${growth.level} ${growth.kills}`
+                : `Lv${growth.level} ${growth.kills}/${next}`;
+        badge.style.setProperty(
+            '--hero-level-progress',
+            next === null ? '100%' : `${(100 * growth.kills) / next}%`,
+        );
+        return next === null
+            ? ` · ${growth.level}레벨 · 처치 ${growth.kills}`
+            : ` · ${growth.level}레벨 · 처치 ${growth.kills}/${next}`;
     }
     static renderAttackCounter(el, current, required) {
         let counter = el.querySelector('.hero-card-counter');
@@ -10991,121 +10855,6 @@ class LaunchPresentation {
         this.render(s, side);
         const warning = this.resourceWarning(s, side, LaunchRules.payload(type));
         if (warning) this.feedback(warning);
-    }
-    static heroSkillInput(s, side, type) {
-        if (
-            !this.active(s) ||
-            UiRuntimeState.value.screen !== 'game' ||
-            UiRuntimeState.value.modal !== 'none'
-        )
-            return null;
-        const hero = s.heroes?.[side]?.[type];
-        if (!hero?.unitId || hero.mode === 'dead') return null;
-        const unit = s.units?.find((entry) => entry.id === hero.unitId);
-        if (!unit?.alive || unit.side !== side) return null;
-        return { sortieId: hero.sortieId, queued: unit.fruitAttack?.queued ?? unit.heroRollQueued };
-    }
-    static currentHeroPress(press, s, side) {
-        const input = this.heroSkillInput(s, side, press.button.dataset.launchCard);
-        return (
-            press.button.isConnected &&
-            MatchLifecycle.activeSession() === press.session &&
-            press.session.inputAvailable() &&
-            input?.sortieId === press.sortieId &&
-            (press.queued || !input.queued)
-        );
-    }
-    static issueHeroSkill(session, sortieId) {
-        if (!session.command({ type: 'ACTIVATE_HERO_SKILL', sortieId }))
-            this.feedback('영웅 스킬 명령을 접수할 수 없습니다.');
-    }
-    static heroSkillKey(e) {
-        if (
-            e.key !== 'Enter' ||
-            !e.shiftKey ||
-            e.altKey ||
-            e.ctrlKey ||
-            e.metaKey ||
-            !e.target.matches('[data-hero-skill]')
-        )
-            return;
-        e.preventDefault();
-        if (e.repeat || this.heroPress) return;
-        const side = ConnectionSideUtil.roleSide(ActiveViewState.role),
-            input = this.heroSkillInput(ActiveViewState.snap, side, e.target.dataset.launchCard),
-            session = MatchLifecycle.activeSession();
-        if (input && !input.queued && session?.inputAvailable())
-            this.issueHeroSkill(session, input.sortieId);
-    }
-    static pressHeroCard(e) {
-        if (!e.isPrimary || e.button !== 0) return;
-        this.endHeroPress();
-        this.heroPressClick = null;
-        const button = e.target.closest('[data-launch-card][data-hero-skill]');
-        if (!button) return;
-        const side = ConnectionSideUtil.roleSide(ActiveViewState.role),
-            input = this.heroSkillInput(ActiveViewState.snap, side, button.dataset.launchCard),
-            session = MatchLifecycle.activeSession();
-        if (!input || !session?.inputAvailable()) return;
-        const press = {
-            button,
-            pointerId: e.pointerId,
-            x: e.clientX,
-            y: e.clientY,
-            session,
-            ...input,
-        };
-        if (!press.queued) {
-            button.style.setProperty('--hero-hold-duration', `${this.HERO_SKILL_HOLD_MS}ms`);
-            button.setAttribute('data-hero-charging', '');
-        }
-        press.timer = setTimeout(() => {
-            // A held card must never fall through to the short-tap toggle.
-            this.endHeroPress(true);
-            const currentSide = ConnectionSideUtil.roleSide(ActiveViewState.role);
-            if (
-                press.queued ||
-                document.hidden ||
-                !this.currentHeroPress(press, ActiveViewState.snap, currentSide)
-            )
-                return;
-            this.issueHeroSkill(session, press.sortieId);
-        }, this.HERO_SKILL_HOLD_MS);
-        this.heroPress = press;
-    }
-    static moveHeroPress(e) {
-        const press = this.heroPress;
-        if (press?.pointerId !== e.pointerId) return;
-        const rect = press.button.getBoundingClientRect();
-        if (
-            Math.hypot(e.clientX - press.x, e.clientY - press.y) > LAUNCH_HOLD_DRAG_PX ||
-            e.clientX < rect.left ||
-            e.clientX >= rect.right ||
-            e.clientY < rect.top ||
-            e.clientY >= rect.bottom
-        )
-            this.endHeroPress(true);
-    }
-    static endHeroPress(suppressClick = false) {
-        const press = this.heroPress;
-        if (!press) return;
-        clearTimeout(press.timer);
-        press.button.removeAttribute('data-hero-charging');
-        this.heroPress = null;
-        if (suppressClick)
-            this.heroPressClick = { button: press.button, pointerId: press.pointerId };
-    }
-    static consumeHeroClick(e, button) {
-        const press = this.heroPressClick;
-        // Keyboard clicks have no pointer and must keep their tap behavior.
-        if (
-            press?.button !== button ||
-            !e.detail ||
-            (e.pointerType && e.pointerId !== press.pointerId)
-        )
-            return false;
-        this.heroPressClick = null;
-        return true;
     }
     static upgradeRange() {
         if (!this.active()) return;

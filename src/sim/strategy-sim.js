@@ -4,6 +4,7 @@ import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { HeroDeployment } from './hero-deployment.js';
 import { CardAmmo } from './card-ammo.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
+import { HeroGrowth } from './hero-growth.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { UnitSpinAttack } from './capabilities/unit-spin-attack.js';
 import { BasicSplash } from './capabilities/basic-splash.js';
@@ -252,6 +253,7 @@ class StrategySim {
             : null;
         this.heroes = this.decks.map((deck) => HeroDeployment.emptySlots(deck));
         this.heroRecovery = this.decks.map((deck) => HeroDeployment.emptySlots(deck));
+        this.heroGrowth = this.decks.map((deck) => HeroGrowth.emptySlots(deck));
         this.cardAmmo = CardAmmo.create(this.decks);
         // Per-side match totals for the result screen: shots fired, grains sent, enemy units killed.
         this.launchStats = { launches: [0, 0], sent: [0, 0], kills: [0, 0] };
@@ -1582,15 +1584,6 @@ class StrategySim {
         const side = ConnectionSideUtil.roleSide(actor);
         if (action.type === 'TOGGLE_HERO')
             return HeroDeployment.toggle(this, side, action.sortieId);
-        if (action.type === 'ACTIVATE_HERO_SKILL') {
-            const hero = HeroDeployment.findSortie(this, side, action.sortieId);
-            const unit = hero?.unitId && this.liveEntityRefById(hero.unitId, 'unit')?.entity;
-            if (!unit)
-                return HeroRollAttack.reject(this, side, action.sortieId, 'hero-not-deployed');
-            return unit.fruitAttack
-                ? FruitHeroAttack.activate(this, unit, action.sortieId)
-                : HeroRollAttack.activate(this, unit, action.sortieId);
-        }
         if (action.type === 'LAUNCH') return this.applyLaunchCommand(side, action);
         if (action.type === 'UPGRADE_LAUNCH_RANGE') return this.upgradeLaunchRange(side);
         return false;
@@ -1909,7 +1902,7 @@ class StrategySim {
             mul = Math.floor((mul * targetDef.rangedReduction) / 100);
         return Math.max(1, Math.floor((base * mul) / 100));
     }
-    emitUnitDeath(target, sourceSide, sourceType) {
+    emitUnitDeath(target, sourceSide, sourceType, sourceEntityId = null) {
         if (!target || target.alive === false) return null;
 
         if (UnitDefinition.get(target.type)?.spinAttack) UnitSpinAttack.cancel(this, target);
@@ -1922,6 +1915,8 @@ class StrategySim {
             this.launchStats.kills[sourceSide]++;
         if ((sourceSide === 0 || sourceSide === 1) && target.side === 1 - sourceSide)
             UnitResultStats.add(this.unitResultStats, sourceSide, sourceType, 'kills');
+        // The killing blow is the one place a hero's kill is counted (HeroGrowth).
+        HeroGrowth.recordKill(this, sourceEntityId, target);
         this.events.push({
             type: 'death',
             id: target.id,
@@ -2077,7 +2072,7 @@ class StrategySim {
 
         if (target.hp <= 0) {
             if (isBuilding) return this.destroyBuilding(target, sourceSide, sourceType);
-            this.emitUnitDeath(target, sourceSide, sourceType);
+            this.emitUnitDeath(target, sourceSide, sourceType, sourceEntityId);
         }
         return null;
     }
@@ -2355,14 +2350,7 @@ class StrategySim {
         this.tickAttackTimers(u);
         if (d.flight && UnitFlight.step(this, u, d.flight, vision[u.side])) return null;
         if (d.stickyCling && StickyCling.heldBuilding(this, u)) return null;
-        if (u.heroRoll || u.fruitAttack?.active) return null;
-        // A pending skill only takes the combat action slot when it can actually start.
-        if (u.heroRollQueued || u.fruitAttack?.queued) {
-            const hero = this.heroes[u.side][u.type];
-            const skill = u.fruitAttack ? FruitHeroAttack : HeroRollAttack;
-            if (hero?.unitId === u.id && skill.tryQueued(this, u, hero.sortieId, vision[u.side]))
-                return null;
-        }
+        if (u.heroRoll) return null;
         if (d.cannonRider && CannonRider.update(this, u, d.cannonRider, vision[u.side]))
             return null;
         if (HeroDeployment.moveReturningUnit(this, u, d)) {
@@ -3135,6 +3123,7 @@ class StrategySim {
                 campaignMission: CampaignMission.snapshot(this.campaignMission),
                 heroes: StateValue.copy(this.heroes),
                 heroRecovery: StateValue.copy(this.heroRecovery),
+                heroGrowth: StateValue.copy(this.heroGrowth),
                 cardAmmo: StateValue.copy(this.cardAmmo),
                 heroReserveHp: this.heroes.map((heroes, side) =>
                     Object.fromEntries(

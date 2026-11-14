@@ -43,5 +43,3 @@ export function createHeroBasicAttackClip({ windup, strike, followThrough }) {
         ],
     };
 }
-
-export { HERO_BASIC_STRIKE_MS };

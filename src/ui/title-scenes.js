@@ -23,9 +23,8 @@ const RANGE_LEVEL = 2;
 // opens. Only that fight and its cannons exist this early, eight ticks before the title opens.
 const LEAD = 8;
 // When the potato and the black beans of the last shot are placed: the potato's cannon grows and the beans pick
-// a cannon to ride about two and a half seconds later. And when the watermelon hero is told to use its skill.
+// a cannon to ride about two and a half seconds later.
 const BEANS_TICK = 28;
-const SKILL_TICK = 64;
 // The shots, as tick ranges of the battle (1-based, after the lead).
 const SHOTS = Object.freeze([
     { from: 1, to: 42 },
@@ -234,18 +233,6 @@ function stageBattle() {
             () => ({ ...along(flank, charge, -50), zoom: 1.25 }),
             () => ({ x: 1885, y: 2310, zoom: 1.65 }),
         ],
-        // Called before every battle tick: the watermelon hero uses its skill through the player's command.
-        command(tick) {
-            if (tick !== SKILL_TICK) return;
-            const hero = sim.heroes[0].watermelon;
-            if (!hero?.unitId) return;
-            sim.queueCommand({
-                tick: sim.tick + 1,
-                seq: ++seq,
-                actor: 'host',
-                action: { type: 'ACTIVATE_HERO_SKILL', sortieId: hero.sortieId },
-            });
-        },
         // Called after every battle tick: catches the opening shell's launch and landing for its camera.
         watch(tick) {
             if (tick === 1) opening = null;
@@ -279,7 +266,6 @@ export function prepareTitleScenes({
     const { sim } = battle;
     const before = (tick) => {
         for (const placement of battle.placements.get(tick) ?? []) placement();
-        battle.command(tick);
     };
     for (let tick = 1 - LEAD; tick <= 0; tick++) {
         before(tick);

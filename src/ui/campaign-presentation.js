@@ -4,8 +4,7 @@ const CUE_SECONDS = 3;
 const ATTACK_GOAL = '적 본진 파괴';
 const HERO_LESSON_GOALS = {
     launch: '전방에 영웅 출격',
-    skill: '영웅 카드를 길게 눌러 스킬 사용',
-    cast: '스킬이 끝날 때까지 지켜보기',
+    fight: '영웅으로 적 처치',
     recover: '영웅 카드를 한 번 눌러 복귀',
     redeploy: '영웅 다시 출격',
     done: '영웅 훈련 완료',
@@ -19,9 +18,7 @@ function formatCountdown(seconds) {
 function missionGoal(stage) {
     if (stage.volleyGoals) return '1·2·3문 사격으로 수비대 3곳 격파';
     if (stage.mission?.heroLesson)
-        return stage.mission.heroLesson.recover
-            ? '출격 · 스킬 · 복귀 · 재출격'
-            : '출격 후 스킬 사용';
+        return stage.mission.heroLesson.recover ? '출격 · 처치 · 복귀 · 재출격' : '출격해 적 처치';
     if (stage.mission?.surviveMs)
         return `${formatCountdown(stage.mission.surviveMs / 1000)} 버티기 · 본진과 지킬 거점 사수`;
     if (stage.mission?.firstCapture) return '전진 거점 완공';

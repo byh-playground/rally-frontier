@@ -29,7 +29,6 @@ import { FP } from '../core/config.js';
 import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { UnitLeapAttack } from './capabilities/unit-leap-attack.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
-import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { RollingBody } from './capabilities/rolling-body.js';
 import { UnitFlight } from './capabilities/unit-flight.js';
 
@@ -315,9 +314,9 @@ class UnitMotion {
             this.heightFP(unit)
         );
     }
-    // Hero rolls and boomerang throws keep their committed path: no impulse or contact bookkeeping touches them.
+    // Hero rolls keep their committed path: no impulse or contact bookkeeping touches them.
     static locked(unit) {
-        return unit.heroRoll?.phase === 'roll' || FruitHeroAttack.blocksMovement(unit);
+        return unit.heroRoll?.phase === 'roll';
     }
 
     constructor(navigation) {
@@ -492,7 +491,7 @@ class UnitMotion {
             definition = UnitDefinition.get(u.type),
             radius = sim.unitRadius(u.type),
             radiusFP = radius * FP,
-            pairs = u.alive && !u.heroRoll && !FruitHeroAttack.blocksMovement(u),
+            pairs = u.alive && !u.heroRoll,
             // A flying unit's own step already placed it; its body stays inactive where it is (no contacts).
             flying = UnitFlight.airborne(u);
         bodies.x[i] = flying ? u.fx : startFx;
@@ -544,7 +543,7 @@ class UnitMotion {
             const rolled = !!a.heroRoll;
             this.markImpact(a, m.kind, m.sourceId, m.originX, m.originY);
             // A cancelled hero roll meets units again from its next cast on (it is in this group, so it recasts).
-            if (rolled && !a.heroRoll && a.alive && !FruitHeroAttack.blocksMovement(a))
+            if (rolled && !a.heroRoll && a.alive)
                 bodies.flags[i] |=
                     UnitDefinition.get(a.type)?.crowdCollision !== false ? PAIRS | SEPARATE : PAIRS;
             return;

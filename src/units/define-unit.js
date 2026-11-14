@@ -15,7 +15,7 @@
 //   visual   body scale, team accent, hit effect family, optional landing husk colors
 //   card     deck card and card detail copy
 //   help     optional in-game help entries { section, summary, paragraphs }; section names a
-//            [data-unit-help] slot in index.html (hero, hero-skill, construction)
+//            [data-unit-help] slot in index.html (hero, construction)
 //   sprite   () => Promise of the art contract (./<id>/sprite.js SPRITE), a lazy import so the
 //            simulation Worker never loads art. Fields:
 //              load, renderer, portrait, groundY, art?, artScale?, heroBasic?, fruitAttack?
