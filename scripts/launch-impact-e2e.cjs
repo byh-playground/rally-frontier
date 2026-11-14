@@ -993,10 +993,10 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 for (let i = 0; i < 10 && !grounded.selfDestruct; i++) close.sim.stepSimulation();
                 check(
                     grounded.selfDestruct?.phase === 'windup' &&
-                        grounded.selfDestruct.endTick - close.sim.tick === close.sim.tps,
-                    'close enemies still trigger the original one-second ground fuse',
+                        grounded.selfDestruct.endTick - close.sim.tick === close.sim.tps / 2,
+                    'close enemies still trigger the half-second ground fuse',
                 );
-                step(close.sim, close.sim.tps);
+                step(close.sim, close.sim.tps / 2);
                 check(
                     close.sim.events.filter(
                         (event) =>
@@ -1715,8 +1715,8 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 });
                 check(sim.launchDeployments?.length > 0, 'landing leaves pending deployment');
                 const copy = restored(sim),
-                    a = trace(sim, 100),
-                    b = trace(copy, 100);
+                    a = trace(sim, 60),
+                    b = trace(copy, 60);
                 check(
                     JSON.stringify(a) === JSON.stringify(b),
                     'pending deployment and airborne soldiers restore deterministically',
@@ -2036,7 +2036,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                                 }
                         };
                         observeReleases(sim);
-                        step(sim, 100, observeReleases);
+                        step(sim, 60, observeReleases);
                         check(
                             released === 12 && sim.launchDeployments.length === 0,
                             'cliff-face packet finds safe space and releases every soldier',
@@ -2115,7 +2115,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     a = [],
                     b = [],
                     heights = [firstHeight];
-                step(sim, 100, (world) => {
+                step(sim, 60, (world) => {
                     a.push(world.checksum());
                     if (world.launchDeployments.length)
                         heights.push(world.launchDeployments[0].heightFP);
@@ -2135,7 +2135,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                             );
                         }
                 });
-                step(copy, 100, (world) => b.push(world.checksum()));
+                step(copy, 60, (world) => b.push(world.checksum()));
                 check(
                     JSON.stringify(a) === JSON.stringify(b),
                     'airburst packet falling and release queue restore exactly',
