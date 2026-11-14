@@ -12,6 +12,8 @@ import { FP } from './core/config.js';
 import { GameRuleRuntime } from './core/game-rules.js';
 import { campaignStage } from './definitions/campaign.js';
 import { LaunchRules } from './sim/launch-rules.js';
+import { HashUtil } from './sim/map-generation.js';
+import { RESOURCE_SCALE } from './units/baseline.js';
 import { BotController } from './ai/bot-controller.js';
 import { UnitDefinition } from './definitions/units.js';
 import { StableSerializationUtil } from './net/lobby-codec.js';
@@ -52,6 +54,13 @@ const STAGES = Object.freeze({
     post: 'postMs',
 });
 const round = (value) => Math.round(value * 100) / 100;
+// The `mix-battle` cards: the ordinary deck (no hero) without the builder sesame, whose edge is outpost work, and
+// without the cards that cannot hit a ground unit (peanut, sticky rice: buildings and cannons only).
+const MIX_POOL = Object.freeze(
+    LaunchRules.deck.filter(
+        (type) => type !== 'sesame' && !UnitDefinition.onlyAttacksBuildings(type),
+    ),
+);
 // How quickly the launch scene's following camera catches up with the squad (ms, exponential).
 const FOLLOW_MS = 400;
 
@@ -1656,7 +1665,184 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
         });
     }
 
+    // Seeded random mixes of the ordinary cards, the same resources a side, crash in the middle of the map.
+    function mixBattle(params) {
+        const scene = 'mix-battle';
+        const sim = createMatchSim(scene, params.map, params.seed);
+        const budget = integer(scene, 'budget', params.budget);
+        const roll = (side, k) =>
+            HashUtil.finish(
+                HashUtil.word(HashUtil.word(HashUtil.word(HashUtil.OFFSET, sim.seed), side), k),
+            );
+        // Without `kinds`, the seed picks 3 or 4 kinds (the same for both sides).
+        const kinds =
+            params.kinds === undefined
+                ? 3 + (roll(2, 0) & 1)
+                : integer(scene, 'kinds', params.kinds);
+        if (kinds < 1 || kinds > MIX_POOL.length)
+            throw new Error(`${scene} needs kinds between 1 and ${MIX_POOL.length}: ${kinds}`);
+        const { center, dir } = baseAxis(sim);
+        const back = { x: -dir.x, y: -dir.y };
+        // Each side: `kinds` cards drawn from the pool (Fisher-Yates on the seeded hash), the budget split evenly,
+        // and each share turned into whole soldiers at the card's resources per soldier (food + oil) / count.
+        const sides = [0, 1].map((side) => {
+            const pool = MIX_POOL.slice();
+            for (let i = pool.length - 1; i > 0; i--) {
+                const j = roll(side, i + 1) % (i + 1);
+                [pool[i], pool[j]] = [pool[j], pool[i]];
+            }
+            const units = pool.slice(0, kinds).map((type) => {
+                const card = LaunchRules.payload(type);
+                const each = (card.cost + card.premiumCost) / RESOURCE_SCALE / card.count;
+                const count = Math.floor(budget / kinds / each);
+                return { type, count, each: round(each), spent: round(count * each) };
+            });
+            return { units, spent: round(units.reduce((sum, unit) => sum + unit.spent, 0)) };
+        });
+        // Interleave the soldiers so each kind spreads through the block, then place both blocks 150 apart.
+        const placed = new Map();
+        for (const [side, facing] of [
+            [0, dir],
+            [1, back],
+        ]) {
+            const order = sides[side].units
+                .flatMap((unit, k) =>
+                    Array.from({ length: unit.count }, (_, j) => ({
+                        type: unit.type,
+                        at: (j + 0.5) / unit.count,
+                        k,
+                    })),
+                )
+                .sort((a, b) => a.at - b.at || a.k - b.k)
+                .map((entry) => entry.type);
+            if (!order.length) throw new Error(`${scene} budget ${budget} buys no soldier`);
+            const columns = Math.ceil(Math.sqrt(order.length)),
+                depth = Math.ceil(order.length / columns) * blockSpacing(sim, order),
+                gap = 75 + depth / 2;
+            const before = sim.units.length;
+            placeBlock(
+                sim,
+                side,
+                order,
+                order.length,
+                { x: center.x - facing.x * gap, y: center.y - facing.y * gap },
+                facing,
+            );
+            // By id: the scene restores the staged state, so the unit objects are replaced.
+            for (const unit of sim.units.slice(before))
+                placed.set(unit.id, { side: unit.side, type: unit.type });
+        }
+        // Damage by the dealer's side and type (display only: it reads hp around the sim's own call), until one side
+        // has no placed soldier left.
+        const dealt = [{}, {}],
+            dealtBuildings = [{}, {}];
+        let end = null;
+        const damage = sim.applyDamage.bind(sim);
+        sim.applyDamage = (side, type, target, building, amount, ...rest) => {
+            const hpBefore = target.hp;
+            const result = damage(side, type, target, building, amount, ...rest);
+            const hit = Math.max(0, hpBefore - target.hp);
+            if (!end && hit > 0 && (side === 0 || side === 1)) {
+                const into = building ? dealtBuildings[side] : dealt[side];
+                into[type] = (into[type] ?? 0) + hit;
+            }
+            return result;
+        };
+        const count = (side) => {
+            const alive = {};
+            let left = 0;
+            for (const [id, unit] of placed)
+                if (unit.side === side && sim.unitById.get(id)?.alive) {
+                    alive[unit.type] = (alive[unit.type] ?? 0) + 1;
+                    left++;
+                }
+            return { alive, left };
+        };
+        const tally = () => [count(0), count(1)];
+        const ROLES = ['host', 'guest'];
+        // Resources still standing: the live placed soldiers at their resources per soldier, over the side's spend.
+        const remaining = (side, alive) =>
+            round(
+                sides[side].units.reduce(
+                    (sum, unit) => sum + (alive[unit.type] ?? 0) * unit.each,
+                    0,
+                ) / Math.max(1, sides[side].spent),
+            );
+        const state = () => {
+            const now = end?.sides ?? tally();
+            const left = [remaining(0, now[0].alive), remaining(1, now[1].alive)];
+            const winner = end
+                ? {
+                      by: 'wipe',
+                      tick: end.tick,
+                      side: now[0].left ? 'host' : now[1].left ? 'guest' : 'draw',
+                  }
+                : {
+                      by: 'resources',
+                      tick: sim.tick,
+                      side: left[0] > left[1] ? 'host' : left[1] > left[0] ? 'guest' : 'draw',
+                  };
+            const byType = (side) =>
+                Object.fromEntries(
+                    sides[side].units.map((unit) => {
+                        const hit = dealt[side][unit.type] ?? 0;
+                        return [
+                            unit.type,
+                            {
+                                placed: unit.count,
+                                alive: now[side].alive[unit.type] ?? 0,
+                                spent: unit.spent,
+                                dealt: hit,
+                                dealtBuildings: dealtBuildings[side][unit.type] ?? 0,
+                                per100: unit.spent ? round((hit * 100) / unit.spent) : null,
+                            },
+                        ];
+                    }),
+                );
+            return {
+                mix: {
+                    budget,
+                    kinds,
+                    pool: MIX_POOL,
+                    winner: { ...winner, remaining: { host: left[0], guest: left[1] } },
+                    sides: Object.fromEntries(
+                        [0, 1].map((side) => [
+                            ROLES[side],
+                            { spent: sides[side].spent, units: byType(side) },
+                        ]),
+                    ),
+                    // Damage from types not placed (spawned by another unit, buildings).
+                    other: [0, 1].map((side) =>
+                        Object.fromEntries(
+                            Object.entries(dealt[side]).filter(
+                                ([type]) => !sides[side].units.some((unit) => unit.type === type),
+                            ),
+                        ),
+                    ),
+                },
+            };
+        };
+        return matchScene(scene, params, sim, {
+            zoom: 1.4,
+            focus: () => center,
+            beforeStep: () => {
+                if (end) return;
+                const now = tally();
+                if (!now[0].left || !now[1].left) end = { tick: sim.tick, sides: now };
+            },
+            extra: () => ({ ...walnutSpeeds(sim), ...state() }),
+        });
+    }
+
     return {
+        /**
+         * 진영마다 seed로 일반 병종 `kinds`개(없으면 seed가 3 또는 4)를 뽑아 같은 자원 `budget`(식량+기름, 카드 표시
+         * 단위)을 똑같이 나눠 인원으로 바꾸고(카드 자원 ÷ 카드 인원), 섞어서 맵 가운데에서 맞부딪친다. 영웅·참깨는
+         * 뺀다. 상태의 `mix`는 진영별 편성·병종별 남은 인원·준 피해(`dealt`, 자원 100당 `per100`)·승자(전멸
+         * `wipe` 또는 지금 남은 자원 비율 `resources`)다.
+         * 예: `?debug=1&scene=mix-battle&map=standard&seed=1&budget=400&tick=1800`
+         */
+        'mix-battle': mixBattle,
         /**
          * 양쪽 걷는 병사 무리가 맵 가운데에서 맞부딪친다. 본진을 잇는 축 위 가운데 앞뒤 250에 진영마다 `units`명을
          * 사각형으로 세우고, `mix`(쉼표로 나눈 병종)를 차례로 채운다. 병사는 평소처럼 적 본진으로 걷는다.
