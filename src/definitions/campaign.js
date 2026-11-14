@@ -42,6 +42,11 @@ const pacing = (firstDecisionMs, tierId) =>
         rampMs: RAMP_MS,
     });
 const SCRIPTED_ONLY = Object.freeze({ disabled: true });
+// Survival defences: the enemy AI launches at one steady interval between the scripted attacks.
+const defendPacing = (firstDecisionMs, intervalMs) =>
+    Object.freeze({ firstDecisionMs, intervalMs });
+// One scripted attack of a survival defence: it arrives `atMs` after the match starts, whatever is still standing.
+const attack = (atMs, ...formations) => ({ atMs, formations });
 const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 
 export const CAMPAIGN_STAGES = Object.freeze([
@@ -163,7 +168,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'basic-pea',
         tier: 'basic-units',
-        enemyPacing: SCRIPTED_ONLY,
+        enemyPacing: defendPacing(30_000, 25_000),
         title: '콩 · 무너지지 않는 앞줄',
         briefing:
             '콩은 튼튼하고 포탄이 넓게 터져요. 몰려오는 쌀·조 떼 한가운데에 콩을 떨어뜨려 막으세요.',
@@ -174,26 +179,36 @@ export const CAMPAIGN_STAGES = Object.freeze([
         seed: 140,
         mode: 'defend',
         mission: {
+            surviveMs: 150_000,
+            guardPoint: 'advance',
             waves: [
-                {
-                    delayMs: 4000,
-                    formations: [{ type: 'rice', x: 1150, y: 1650, count: 20, columns: 5 }],
-                },
-                {
-                    delayMs: 8000,
-                    formations: [
-                        { type: 'rice', x: 900, y: 1650, count: 20, columns: 5 },
-                        { type: 'millet', x: 1400, y: 1600, count: 20, columns: 5 },
-                    ],
-                },
-                {
-                    delayMs: 8000,
-                    formations: [
-                        { type: 'millet', x: 950, y: 1600, count: 20, columns: 5 },
-                        { type: 'rice', x: 1250, y: 1650, count: 30, columns: 6 },
-                        { type: 'millet', x: 1550, y: 1550, count: 20, columns: 5 },
-                    ],
-                },
+                attack(10_000, { type: 'rice', x: 1150, y: 1650, count: 6, columns: 3 }),
+                attack(
+                    35_000,
+                    { type: 'rice', x: 950, y: 1650, count: 8, columns: 4 },
+                    { type: 'millet', x: 1400, y: 1600, count: 6, columns: 3 },
+                ),
+                attack(
+                    60_000,
+                    { type: 'millet', x: 950, y: 1600, count: 10, columns: 5 },
+                    { type: 'rice', x: 1300, y: 1650, count: 12, columns: 4 },
+                ),
+                attack(
+                    85_000,
+                    { type: 'rice', x: 950, y: 1650, count: 16, columns: 4 },
+                    { type: 'millet', x: 1450, y: 1600, count: 12, columns: 4 },
+                ),
+                attack(
+                    110_000,
+                    { type: 'millet', x: 950, y: 1600, count: 16, columns: 4 },
+                    { type: 'rice', x: 1400, y: 1650, count: 20, columns: 5 },
+                ),
+                attack(
+                    130_000,
+                    { type: 'rice', x: 900, y: 1650, count: 20, columns: 5 },
+                    { type: 'millet', x: 1250, y: 1600, count: 24, columns: 6 },
+                    { type: 'rice', x: 1600, y: 1650, count: 20, columns: 5 },
+                ),
             ],
         },
     },
@@ -288,7 +303,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'basic-chestnut',
         tier: 'basic-units',
-        enemyPacing: SCRIPTED_ONLY,
+        enemyPacing: defendPacing(30_000, 25_000),
         title: '밤톨 · 멀리서 깎기',
         briefing:
             '도토리와 콩은 느린 근접이에요. 다가오는 길에 밤톨을 떨어뜨려 붙기 전에 가시로 깎으세요.',
@@ -300,26 +315,38 @@ export const CAMPAIGN_STAGES = Object.freeze([
         mode: 'defend',
         mission: {
             startingPremium: [premiumFor('chestnut') * 4 + premiumFor('corn') * 2, 0],
+            surviveMs: 150_000,
+            guardPoint: 'advance',
             waves: [
-                {
-                    delayMs: 4000,
-                    formations: [{ type: 'pea', x: 1200, y: 1450, count: 12, columns: 6 }],
-                },
-                {
-                    delayMs: 10000,
-                    formations: [
-                        { type: 'acorn', x: 1000, y: 1400, count: 4, columns: 2, spacing: 40 },
-                        { type: 'pea', x: 1400, y: 1450, count: 12, columns: 6 },
-                    ],
-                },
-                {
-                    delayMs: 10000,
-                    formations: [
-                        { type: 'acorn', x: 1200, y: 1350, count: 6, columns: 3, spacing: 40 },
-                        { type: 'pea', x: 900, y: 1450, count: 12, columns: 6 },
-                        { type: 'pea', x: 1500, y: 1450, count: 12, columns: 6 },
-                    ],
-                },
+                attack(10_000, { type: 'pea', x: 1200, y: 1450, count: 6, columns: 3 }),
+                attack(
+                    35_000,
+                    { type: 'acorn', x: 1000, y: 1400, count: 2, columns: 2, spacing: 40 },
+                    { type: 'pea', x: 1400, y: 1450, count: 8, columns: 4 },
+                ),
+                attack(
+                    60_000,
+                    { type: 'acorn', x: 1200, y: 1350, count: 3, columns: 3, spacing: 40 },
+                    { type: 'pea', x: 1000, y: 1450, count: 10, columns: 5 },
+                ),
+                attack(
+                    85_000,
+                    { type: 'acorn', x: 1200, y: 1350, count: 4, columns: 2, spacing: 40 },
+                    { type: 'pea', x: 900, y: 1450, count: 10, columns: 5 },
+                    { type: 'pea', x: 1500, y: 1450, count: 6, columns: 3 },
+                ),
+                attack(
+                    110_000,
+                    { type: 'acorn', x: 1200, y: 1350, count: 4, columns: 2, spacing: 40 },
+                    { type: 'pea', x: 900, y: 1450, count: 12, columns: 6 },
+                    { type: 'pea', x: 1500, y: 1450, count: 10, columns: 5 },
+                ),
+                attack(
+                    130_000,
+                    { type: 'acorn', x: 1200, y: 1350, count: 6, columns: 3, spacing: 40 },
+                    { type: 'pea', x: 900, y: 1450, count: 14, columns: 7 },
+                    { type: 'pea', x: 1500, y: 1450, count: 14, columns: 7 },
+                ),
             ],
         },
     },
@@ -599,7 +626,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         id: 'chili-alley',
         tier: 'new-units',
         group: 'chili',
-        enemyPacing: SCRIPTED_ONLY,
+        enemyPacing: defendPacing(30_000, 25_000),
         title: '고추 · 불길 골목',
         briefing: '콩 앞줄 뒤에서 고추 불줄기로 몰려오는 조 떼를 태우세요.',
         deck: ['chili', 'pea'],
@@ -613,25 +640,36 @@ export const CAMPAIGN_STAGES = Object.freeze([
             formations: [
                 { type: 'pea', x: 1200, y: 2150, count: 12, columns: 6, side: 0, hold: true },
             ],
+            surviveMs: 150_000,
+            guardPoint: 'oil',
             waves: [
-                {
-                    delayMs: 3000,
-                    formations: [{ type: 'millet', x: 1200, y: 1650, count: 20, columns: 5 }],
-                },
-                {
-                    delayMs: 6000,
-                    formations: [
-                        { type: 'millet', x: 1000, y: 1650, count: 20, columns: 5 },
-                        { type: 'redbean', x: 1400, y: 1700, count: 6, columns: 3 },
-                    ],
-                },
-                {
-                    delayMs: 6000,
-                    formations: [
-                        { type: 'millet', x: 1200, y: 1600, count: 30, columns: 6 },
-                        { type: 'redbean', x: 1200, y: 1750, count: 10, columns: 5 },
-                    ],
-                },
+                attack(8_000, { type: 'millet', x: 1200, y: 1650, count: 8, columns: 4 }),
+                attack(
+                    30_000,
+                    { type: 'millet', x: 1000, y: 1650, count: 10, columns: 5 },
+                    { type: 'redbean', x: 1400, y: 1700, count: 2, columns: 2 },
+                ),
+                attack(
+                    55_000,
+                    { type: 'millet', x: 1200, y: 1650, count: 14, columns: 7 },
+                    { type: 'redbean', x: 1400, y: 1700, count: 3, columns: 3 },
+                ),
+                attack(
+                    80_000,
+                    { type: 'millet', x: 1000, y: 1650, count: 16, columns: 4 },
+                    { type: 'redbean', x: 1400, y: 1700, count: 4, columns: 2 },
+                ),
+                attack(
+                    105_000,
+                    { type: 'millet', x: 1200, y: 1600, count: 20, columns: 5 },
+                    { type: 'redbean', x: 1200, y: 1750, count: 5, columns: 5 },
+                ),
+                attack(
+                    128_000,
+                    { type: 'millet', x: 1000, y: 1600, count: 14, columns: 7 },
+                    { type: 'millet', x: 1400, y: 1600, count: 14, columns: 7 },
+                    { type: 'redbean', x: 1200, y: 1750, count: 8, columns: 4 },
+                ),
             ],
         },
     },
@@ -663,7 +701,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         id: 'cotton-storm',
         tier: 'new-units',
         group: 'cotton',
-        enemyPacing: SCRIPTED_ONLY,
+        enemyPacing: defendPacing(30_000, 25_000),
         title: '목화솜 · 번개 사슬',
         briefing:
             '목화솜 번개는 뭉친 적 넷까지 튀어요. 콩 앞줄 뒤에 목화솜을 세우고 몰려오는 쌀·조 떼에 번개를 이으세요.',
@@ -675,26 +713,36 @@ export const CAMPAIGN_STAGES = Object.freeze([
         mode: 'defend',
         mission: {
             startingPremium: [premiumFor('cotton') * 5, 0],
+            surviveMs: 165_000,
+            guardPoint: 'advance',
             waves: [
-                {
-                    delayMs: 5000,
-                    formations: [{ type: 'rice', x: 1200, y: 1600, count: 20, columns: 5 }],
-                },
-                {
-                    delayMs: 8000,
-                    formations: [
-                        { type: 'millet', x: 950, y: 1600, count: 20, columns: 5 },
-                        { type: 'rice', x: 1450, y: 1650, count: 20, columns: 5 },
-                    ],
-                },
-                {
-                    delayMs: 8000,
-                    formations: [
-                        { type: 'rice', x: 1000, y: 1600, count: 25, columns: 5 },
-                        { type: 'millet', x: 1250, y: 1550, count: 25, columns: 5 },
-                        { type: 'rice', x: 1500, y: 1600, count: 25, columns: 5 },
-                    ],
-                },
+                attack(10_000, { type: 'rice', x: 1200, y: 1600, count: 8, columns: 4 }),
+                attack(
+                    35_000,
+                    { type: 'millet', x: 950, y: 1600, count: 8, columns: 4 },
+                    { type: 'rice', x: 1450, y: 1650, count: 8, columns: 4 },
+                ),
+                attack(
+                    60_000,
+                    { type: 'rice', x: 1000, y: 1600, count: 12, columns: 4 },
+                    { type: 'millet', x: 1400, y: 1550, count: 10, columns: 5 },
+                ),
+                attack(
+                    90_000,
+                    { type: 'rice', x: 1000, y: 1600, count: 14, columns: 7 },
+                    { type: 'millet', x: 1400, y: 1550, count: 14, columns: 7 },
+                ),
+                attack(
+                    120_000,
+                    { type: 'rice', x: 1000, y: 1600, count: 18, columns: 6 },
+                    { type: 'millet', x: 1400, y: 1550, count: 18, columns: 6 },
+                ),
+                attack(
+                    145_000,
+                    { type: 'rice', x: 1000, y: 1600, count: 18, columns: 6 },
+                    { type: 'millet', x: 1250, y: 1550, count: 24, columns: 6 },
+                    { type: 'rice', x: 1500, y: 1600, count: 18, columns: 6 },
+                ),
             ],
         },
     },
@@ -765,7 +813,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         id: 'buckwheat-volley',
         tier: 'new-units',
         group: 'buckwheat',
-        enemyPacing: SCRIPTED_ONLY,
+        enemyPacing: defendPacing(30_000, 25_000),
         title: '메밀 · 씨앗 세례',
         briefing:
             '메밀은 몸이 약해도 20명이 씨앗을 쏟아부어요. 콩 앞줄 뒤에 메밀을 세우고 몰려오는 쌀 떼와 밤톨을 쓸어내세요.',
@@ -776,26 +824,36 @@ export const CAMPAIGN_STAGES = Object.freeze([
         seed: 136,
         mode: 'defend',
         mission: {
+            surviveMs: 180_000,
+            guardPoint: 'advance',
             waves: [
-                {
-                    delayMs: 5000,
-                    formations: [{ type: 'rice', x: 1200, y: 1600, count: 20, columns: 5 }],
-                },
-                {
-                    delayMs: 8000,
-                    formations: [
-                        { type: 'rice', x: 1000, y: 1600, count: 20, columns: 5 },
-                        { type: 'chestnut', x: 1450, y: 1650, count: 4, columns: 2, spacing: 36 },
-                    ],
-                },
-                {
-                    delayMs: 8000,
-                    formations: [
-                        { type: 'rice', x: 950, y: 1600, count: 25, columns: 5 },
-                        { type: 'chestnut', x: 1250, y: 1650, count: 6, columns: 3, spacing: 36 },
-                        { type: 'rice', x: 1550, y: 1600, count: 25, columns: 5 },
-                    ],
-                },
+                attack(10_000, { type: 'rice', x: 1200, y: 1600, count: 8, columns: 4 }),
+                attack(
+                    38_000,
+                    { type: 'rice', x: 1000, y: 1600, count: 10, columns: 5 },
+                    { type: 'chestnut', x: 1450, y: 1650, count: 2, columns: 2, spacing: 36 },
+                ),
+                attack(
+                    66_000,
+                    { type: 'rice', x: 1000, y: 1600, count: 14, columns: 7 },
+                    { type: 'chestnut', x: 1450, y: 1650, count: 2, columns: 2, spacing: 36 },
+                ),
+                attack(
+                    94_000,
+                    { type: 'rice', x: 1000, y: 1600, count: 16, columns: 4 },
+                    { type: 'chestnut', x: 1450, y: 1650, count: 3, columns: 3, spacing: 36 },
+                ),
+                attack(
+                    122_000,
+                    { type: 'rice', x: 1000, y: 1600, count: 20, columns: 5 },
+                    { type: 'chestnut', x: 1450, y: 1650, count: 4, columns: 2, spacing: 36 },
+                ),
+                attack(
+                    150_000,
+                    { type: 'rice', x: 950, y: 1600, count: 22, columns: 6 },
+                    { type: 'chestnut', x: 1250, y: 1650, count: 6, columns: 3, spacing: 36 },
+                    { type: 'rice', x: 1550, y: 1600, count: 22, columns: 6 },
+                ),
             ],
         },
     },
