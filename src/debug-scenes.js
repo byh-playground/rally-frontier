@@ -1729,24 +1729,100 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 facing,
             );
             // By id: the scene restores the staged state, so the unit objects are replaced.
-            for (const unit of sim.units.slice(before))
-                placed.set(unit.id, { side: unit.side, type: unit.type });
+            for (const unit of sim.units.slice(before)) {
+                const card = sides[unit.side].units.find((entry) => entry.type === unit.type);
+                placed.set(unit.id, {
+                    side: unit.side,
+                    type: unit.type,
+                    each: card.each,
+                    deathTick: null,
+                    firstHitTick: null,
+                });
+            }
         }
-        // Damage by the dealer's side and type (display only: it reads hp around the sim's own call), until one side
-        // has no placed soldier left.
+        const startTick = sim.tick;
+        // Display only, until one side has no placed soldier left: every record reads hp, `alive` and the sim's own
+        // `hit` event around the sim's call (or the impulse it applied) and changes nothing the sim reads.
+        // Per side and type: unit damage dealt and building damage, damage its soldiers took, the resources of the
+        // enemies it finished, damage past the target's last hp (`over` of `applied`), and per attack (one source id
+        // in one tick) the units it hit (`hits` over `attacks`), knockbacks it gave.
         const dealt = [{}, {}],
-            dealtBuildings = [{}, {}];
+            dealtBuildings = [{}, {}],
+            taken = [{}, {}],
+            killValue = [{}, {}],
+            over = [{}, {}],
+            applied = [{}, {}],
+            hits = [{}, {}],
+            attacks = [{}, {}],
+            knockbacks = [{}, {}];
+        const add = (into, side, type, value) => {
+            into[side][type] = (into[side][type] ?? 0) + value;
+        };
+        // The attack being counted per source id: its tick and units hit so far.
+        const attack = new Map();
+        const closeAttack = (record) => {
+            add(attacks, record.side, record.type, 1);
+            add(hits, record.side, record.type, record.hits);
+        };
         let end = null;
         const damage = sim.applyDamage.bind(sim);
-        sim.applyDamage = (side, type, target, building, amount, ...rest) => {
-            const hpBefore = target.hp;
-            const result = damage(side, type, target, building, amount, ...rest);
+        sim.applyDamage = (side, type, target, building, amount, sourceId, ...rest) => {
+            const hpBefore = target.hp,
+                wasAlive = target.alive !== false,
+                firstEvent = sim.events.length;
+            const result = damage(side, type, target, building, amount, sourceId, ...rest);
+            if (end || (side !== 0 && side !== 1)) return result;
             const hit = Math.max(0, hpBefore - target.hp);
-            if (!end && hit > 0 && (side === 0 || side === 1)) {
-                const into = building ? dealtBuildings[side] : dealt[side];
-                into[type] = (into[type] ?? 0) + hit;
+            if (hit > 0) add(building ? dealtBuildings : dealt, side, type, hit);
+            if (building) return result;
+            let event = null;
+            for (let i = firstEvent; i < sim.events.length && !event; i++)
+                if (sim.events[i].type === 'hit' && sim.events[i].targetId === target.id)
+                    event = sim.events[i];
+            if (!event) return result;
+            const victim = placed.get(target.id);
+            if (victim) add(taken, victim.side, victim.type, hit);
+            if (victim && wasAlive && target.alive === false) {
+                victim.deathTick ??= sim.tick;
+                add(killValue, side, type, victim.each);
+            }
+            add(applied, side, type, event.amount);
+            add(over, side, type, Math.max(0, event.amount - hit));
+            const dealer = placed.get(sourceId);
+            if (dealer && dealer.type === type && hit > 0) dealer.firstHitTick ??= sim.tick;
+            if (sourceId !== null && sourceId !== undefined) {
+                let record = attack.get(sourceId);
+                if (record && record.tick !== sim.tick) {
+                    closeAttack(record);
+                    record = null;
+                }
+                if (!record)
+                    attack.set(sourceId, (record = { tick: sim.tick, side, type, hits: 0 }));
+                record.hits++;
             }
             return result;
+        };
+        // Knockbacks on placed soldiers, credited to the enemy unit (or the unit whose lobbed ball it was). Restoring
+        // a state makes a new UnitMotion, so the wrap is checked again before every step.
+        let watchedMotion = null;
+        const watchMotion = () => {
+            const motion = sim.navigation.motion;
+            if (motion === watchedMotion) return;
+            watchedMotion = motion;
+            const impulse = motion.applyImpulse.bind(motion);
+            motion.applyImpulse = (u, value, impact, ...rest) => {
+                const m = impulse(u, value, impact, ...rest);
+                const victim = placed.get(u.id);
+                if (end || !m || !victim || (impact?.kind ?? 'knockback') !== 'knockback') return m;
+                const sourceId = impact?.sourceId;
+                const source =
+                    placed.get(sourceId) ??
+                    placed.get(
+                        sim.unitLobProjectiles?.find((shot) => shot.id === sourceId)?.sourceId,
+                    );
+                add(knockbacks, 1 - victim.side, source?.type ?? 'other', 1);
+                return m;
+            };
         };
         const count = (side) => {
             const alive = {};
@@ -1782,19 +1858,71 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                       tick: sim.tick,
                       side: left[0] > left[1] ? 'host' : left[1] > left[0] ? 'guest' : 'draw',
                   };
+            const lastTick = end?.tick ?? sim.tick;
+            // Survival and engagement per type, over the placed soldiers.
+            const soldiers = (side, type) => {
+                let lived = 0,
+                    engaged = 0,
+                    firstHit = 0;
+                for (const unit of placed.values())
+                    if (unit.side === side && unit.type === type) {
+                        lived += (unit.deathTick ?? lastTick) - startTick;
+                        if (unit.firstHitTick !== null) {
+                            engaged++;
+                            firstHit += unit.firstHitTick - startTick;
+                        }
+                    }
+                return { lived, engaged, firstHit };
+            };
+            const open = [{}, {}];
+            for (const record of attack.values()) {
+                open[record.side][record.type] ??= { attacks: 0, hits: 0 };
+                open[record.side][record.type].attacks++;
+                open[record.side][record.type].hits += record.hits;
+            }
+            const per100 = (value, spent) => (spent ? round((value * 100) / spent) : null);
             const byType = (side) =>
                 Object.fromEntries(
                     sides[side].units.map((unit) => {
-                        const hit = dealt[side][unit.type] ?? 0;
+                        const type = unit.type,
+                            hit = dealt[side][type] ?? 0,
+                            got = taken[side][type] ?? 0,
+                            alive = now[side].alive[type] ?? 0,
+                            lost = round((unit.count - alive) * unit.each),
+                            killed = round(killValue[side][type] ?? 0),
+                            life = soldiers(side, type),
+                            attackCount =
+                                (attacks[side][type] ?? 0) + (open[side][type]?.attacks ?? 0),
+                            hitCount = (hits[side][type] ?? 0) + (open[side][type]?.hits ?? 0),
+                            appliedTotal = applied[side][type] ?? 0;
                         return [
-                            unit.type,
+                            type,
                             {
                                 placed: unit.count,
-                                alive: now[side].alive[unit.type] ?? 0,
+                                alive,
                                 spent: unit.spent,
                                 dealt: hit,
-                                dealtBuildings: dealtBuildings[side][unit.type] ?? 0,
-                                per100: unit.spent ? round((hit * 100) / unit.spent) : null,
+                                dealtBuildings: dealtBuildings[side][type] ?? 0,
+                                per100: per100(hit, unit.spent),
+                                taken: got,
+                                takenPer100: per100(got, unit.spent),
+                                lifeSeconds: unit.count
+                                    ? round(life.lived / unit.count / sim.tps)
+                                    : null,
+                                killValue: killed,
+                                killPer100: per100(killed, unit.spent),
+                                lost,
+                                exchange: lost ? round(killed / lost) : null,
+                                overkill: appliedTotal
+                                    ? round((over[side][type] ?? 0) / appliedTotal)
+                                    : null,
+                                engaged: unit.count ? round(life.engaged / unit.count) : null,
+                                firstHitSeconds: life.engaged
+                                    ? round(life.firstHit / life.engaged / sim.tps)
+                                    : null,
+                                hitsPerAttack: attackCount ? round(hitCount / attackCount) : null,
+                                knockbacks: knockbacks[side][type] ?? 0,
+                                knockbacksPer100: per100(knockbacks[side][type] ?? 0, unit.spent),
                             },
                         ];
                     }),
@@ -1811,6 +1939,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                             { spent: sides[side].spent, units: byType(side) },
                         ]),
                     ),
+                    // Knockbacks whose source was not a placed soldier or its lobbed ball.
+                    otherKnockbacks: [knockbacks[0].other ?? 0, knockbacks[1].other ?? 0],
                     // Damage from types not placed (spawned by another unit, buildings).
                     other: [0, 1].map((side) =>
                         Object.fromEntries(
@@ -1827,6 +1957,11 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             focus: () => center,
             beforeStep: () => {
                 if (end) return;
+                watchMotion();
+                // Deaths the damage wrapper did not see (no applyDamage call): the tick they were first seen dead.
+                for (const [id, unit] of placed)
+                    if (unit.deathTick === null && !sim.unitById.get(id)?.alive)
+                        unit.deathTick = sim.tick;
                 const now = tally();
                 if (!now[0].left || !now[1].left) end = { tick: sim.tick, sides: now };
             },
@@ -1838,8 +1973,10 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
         /**
          * 진영마다 seed로 일반 병종 `kinds`개(없으면 seed가 3 또는 4)를 뽑아 같은 자원 `budget`(식량+기름, 카드 표시
          * 단위)을 똑같이 나눠 인원으로 바꾸고(카드 자원 ÷ 카드 인원), 섞어서 맵 가운데에서 맞부딪친다. 영웅·참깨는
-         * 뺀다. 상태의 `mix`는 진영별 편성·병종별 남은 인원·준 피해(`dealt`, 자원 100당 `per100`)·승자(전멸
-         * `wipe` 또는 지금 남은 자원 비율 `resources`)다.
+         * 뺀다. 상태의 `mix`는 진영별 편성·병종별 남은 인원·준 피해(`dealt`, 자원 100당 `per100`)·받은 피해
+         * (`taken`)·평균 생존 초(`lifeSeconds`)·처치한 적 자원(`killValue`)과 교환비(`exchange`)·넘친 피해 비율
+         * (`overkill`)·피해를 준 병사 비율(`engaged`)과 첫 피해 초(`firstHitSeconds`)·공격 한 번에 맞힌 수
+         * (`hitsPerAttack`)·넉백 수(`knockbacks`)·승자(전멸 `wipe` 또는 지금 남은 자원 비율 `resources`)다.
          * 예: `?debug=1&scene=mix-battle&map=standard&seed=1&budget=400&tick=1800`
          */
         'mix-battle': mixBattle,
