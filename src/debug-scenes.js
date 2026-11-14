@@ -323,7 +323,7 @@ function createTickLog() {
 // Every knockback (`unit` and `ai-match` scenes), read by `state().knockback`: for each unit the first impulse that
 // throws it (kind 'knockback'), as the change of its impact velocity (speed along the ground, lift), labelled by
 // what gave it: 'blast' (self-destruct), 'spin', 'splash' (a basic attack's splash), 'heroRoll', 'heroLand' (a hero's
-// hop landing), 'leap', 'roll' (a rolling walnut, with the walnut's speed just before as `sourceSpeed`), 'shell' (a
+// hop landing), 'leap', 'roll' (a rolling coconut, with the coconut's speed just before as `sourceSpeed`), 'shell' (a
 // launch shell's landing), 'lob' (a lobbed ball), 'egg' (a lobbed ball's burst) or 'contact' (a flying body bumping
 // into it). Then the highest point, the top ground speed it reached (later impulses add up),
 // the first landing (`airTicks`, `airDist`), how far it travels from where it stood and how many ticks until it
@@ -367,7 +367,7 @@ function createKnockbackProbe(sim, trace = false) {
                 if (event.type === 'unitSelfDestruct') blasts.add(event.sourceId);
                 else if (event.type === 'unitLobExplosion') eggs.add(event.projectileId);
                 else if (event.type === 'heroRollLand') landings.add(event.sourceId);
-                else if (event.type === 'spinBasicImpact') splashes.add(event.sourceId);
+                else if (event.type === 'basicSplashImpact') splashes.add(event.sourceId);
             for (const unit of sim.units) {
                 const m = unit.impactMotion,
                     before = previous.get(unit.id);
@@ -1405,8 +1405,8 @@ function overlap(sim) {
     return { pairs, depth: round(depth), embedded: { terrain, buildings } };
 }
 
-// The walnuts still rolling: how many, and their mean and top speed (world units per second).
-function walnutSpeeds(sim) {
+// The coconuts still rolling: how many, and their mean and top speed (world units per second).
+function coconutSpeeds(sim) {
     let rolling = 0,
         sum = 0,
         top = 0;
@@ -1419,7 +1419,7 @@ function walnutSpeeds(sim) {
         top = Math.max(top, speed);
     }
     return {
-        walnuts: {
+        coconuts: {
             alive: rolling,
             meanSpeed: rolling ? round(sum / rolling) : 0,
             topSpeed: round(top),
@@ -1602,7 +1602,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
         };
     }
 
-    function melee(scene, params, walnuts) {
+    function melee(scene, params, coconuts) {
         const sim = createMatchSim(scene, params.map, params.seed);
         const count = integer(scene, 'units', params.units);
         const types = String(params.mix)
@@ -1626,21 +1626,21 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             { x: center.x + dir.x * 250, y: center.y + dir.y * 250 },
             back,
         );
-        // Each side's walnuts stand in a row behind its block and roll into the fight.
+        // Each side's coconuts stand in a row behind its block and roll into the fight.
         for (const [side, facing] of [
             [0, dir],
             [1, back],
         ])
-            for (let k = 0; k < walnuts; k++) {
-                const across = (k - (walnuts - 1) / 2) * 60,
+            for (let k = 0; k < coconuts; k++) {
+                const across = (k - (coconuts - 1) / 2) * 60,
                     behind = 250 + depth / 2 + 80;
-                const walnut = sim.spawnUnit(
+                const coconut = sim.spawnUnit(
                     side,
-                    'walnut',
+                    'coconut',
                     center.x - facing.x * behind - facing.y * across,
                     center.y - facing.y * behind + facing.x * across,
                 );
-                RollingBody.aim(walnut, facing.x, facing.y);
+                RollingBody.aim(coconut, facing.x, facing.y);
             }
         const breath = breathProbe(sim, types),
             chain = chainProbe(sim, types);
@@ -1657,11 +1657,11 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             extra:
                 breath || chain
                     ? () => ({
-                          ...walnutSpeeds(sim),
+                          ...coconutSpeeds(sim),
                           ...(breath ? { breath: breath.state() } : {}),
                           ...(chain ? { chain: chain.state() } : {}),
                       })
-                    : walnutSpeeds,
+                    : coconutSpeeds,
         });
     }
 
@@ -1965,7 +1965,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 const now = tally();
                 if (!now[0].left || !now[1].left) end = { tick: sim.tick, sides: now };
             },
-            extra: () => ({ ...walnutSpeeds(sim), ...state() }),
+            extra: () => ({ ...coconutSpeeds(sim), ...state() }),
         });
     }
 
@@ -1987,11 +1987,11 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          */
         melee: (params) => melee('melee', params, 0),
         /**
-         * melee에 더해 진영마다 호두 `walnuts`개가 자기 무리 뒤에서 적 쪽으로 굴러 들어간다(PR #327 재현 구성).
-         * 예: `?debug=1&scene=walnut-melee&map=artillery-basin&seed=1&units=150&mix=rice,pea&walnuts=5&tick=300`
+         * melee에 더해 진영마다 코코넛 `coconuts`개가 자기 무리 뒤에서 적 쪽으로 굴러 들어간다(PR #327 재현 구성).
+         * 예: `?debug=1&scene=coconut-melee&map=artillery-basin&seed=1&units=150&mix=rice,pea&coconuts=5&tick=300`
          */
-        'walnut-melee': (params) =>
-            melee('walnut-melee', params, integer('walnut-melee', 'walnuts', params.walnuts)),
+        'coconut-melee': (params) =>
+            melee('coconut-melee', params, integer('coconut-melee', 'coconuts', params.coconuts)),
         /**
          * `count`명의 `unit`이 아군 본진 앞에서 적 본진으로 행군한다(길찾기·아군 밀어내기).
          * 예: `?debug=1&scene=march&map=twin-gates&seed=1&unit=rice&count=60&tick=300`
@@ -2043,7 +2043,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * 나는 병종(민들레씨)은 상태의 `flight`에 이륙·착지·공중 피해·공중 밀림을 낸다. `outposts=1`이면 모든 점령 지점에 더 가까운 본진 쪽의 완성된 거점을 둔다
          * (검은콩 앞쪽 대포 탑승, 찹쌀 거점 포구 막기). `enemyLine=N`은 적을 N 간격 가로 한 줄로, `behind=1`은 적 무리를 아군 본진
          * 쪽에, `front`·`frontCount`는 아군 앞줄을 세운다. 불 뿜는 병종(고추)은 상태의 `breath`에 불줄기 기록을 낸다. 예:
-         * `?debug=1&scene=unit&map=twin-gates&seed=1&unit=walnut&count=1&x=1400&y=2900&tick=150`
+         * `?debug=1&scene=unit&map=twin-gates&seed=1&unit=coconut&count=1&x=1400&y=2900&tick=150`
          */
         unit(params) {
             const scene = 'unit';
@@ -2455,8 +2455,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             });
         },
         /**
-         * 타이틀 뒤 전투(src/ui/title-scenes.js)를 반복한다. 장면은 틱 1~42, 43~72, 73~102이고 굴러가는 호두
-         * 속도(`walnuts`)를 함께 낸다. 예: `?debug=1&scene=title&tick=50`
+         * 타이틀 뒤 전투(src/ui/title-scenes.js)를 반복한다. 장면은 틱 1~42, 43~72, 73~102이고 굴러가는 코코넛
+         * 속도(`coconuts`)를 함께 낸다. 예: `?debug=1&scene=title&tick=50`
          */
         title(params) {
             const stage = openStage(undefined);
@@ -2472,12 +2472,12 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                         advanceTick,
                         onError,
                     }),
-                walnutSpeeds,
+                coconutSpeeds,
             );
         },
         /**
          * 카드 시연(src/ui/unit-showcase.js)을 그대로 연다. 시연처럼 끝나면 처음부터 다시 돈다.
-         * 예: `?debug=1&scene=card&unit=walnut&tick=60`
+         * 예: `?debug=1&scene=card&unit=coconut&tick=60`
          */
         card(params) {
             const type = params.unit;

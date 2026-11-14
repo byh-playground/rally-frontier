@@ -6,6 +6,7 @@ import { CardAmmo } from './card-ammo.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { UnitSpinAttack } from './capabilities/unit-spin-attack.js';
+import { BasicSplash } from './capabilities/basic-splash.js';
 import { UnitSelfDestructAttack } from './capabilities/unit-self-destruct-attack.js';
 import { UnitLeapAttack } from './capabilities/unit-leap-attack.js';
 import { StickyCling } from './capabilities/sticky-cling.js';
@@ -2008,11 +2009,15 @@ class StrategySim {
         if (!isBuilding && sourceSide !== target.side) {
             const terrain = this.terrainAt(target.x, target.y);
             if (terrain.river) dmg = Math.max(1, Math.floor(dmg * 1.5));
-            // A worker assigned to a project under way (the same state a hit turns to 'defend') takes its
-            // construction.damageTakenScale share, floored like the other damage shares.
-            const taken = td?.construction?.damageTakenScale;
-            if (taken && target.constructionWork && this.constructionSite(target)?.construction)
-                dmg = Math.max(1, Math.floor(dmg * taken));
+            // A unit with `damageTaken` takes its scale share, floored like the other damage shares: always, or
+            // with `whileBuilding` only while assigned to a project under way (the state a hit turns to 'defend').
+            const taken = td?.damageTaken;
+            if (
+                taken &&
+                (!taken.whileBuilding ||
+                    (target.constructionWork && this.constructionSite(target)?.construction))
+            )
+                dmg = Math.max(1, Math.floor(dmg * taken.scale));
         }
 
         const flatArmor = this.flatArmorValue(target);
@@ -2604,8 +2609,12 @@ class StrategySim {
             });
             return null;
         }
-        if (d.spinAttack?.rhythm && !found.isBuilding) {
-            UnitSpinAttack.hitBasic(this, u, t, d.spinAttack.rhythm, Math.floor(d.atk));
+        if (d.basicSplash && !found.isBuilding) {
+            if (
+                BasicSplash.hit(this, u, t, d.basicSplash, Math.floor(d.atk)) &&
+                d.spinAttack?.rhythm
+            )
+                UnitSpinAttack.countBasic(u, d.spinAttack.rhythm);
             return null;
         }
         return this.applyDamage(u.side, u.type, t, found.isBuilding, Math.floor(d.atk), u.id, {

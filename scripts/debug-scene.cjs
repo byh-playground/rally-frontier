@@ -3,7 +3,7 @@
 //
 //   node scripts/debug-scene.cjs "<query>" [--ticks N] [--capture out.png] [--compare <checkout>] [--repeat N] [--gpu]
 //
-//   <query>      the address after `?debug=1&`, e.g. "scene=walnut-melee&map=artillery-basin&seed=1&units=150&mix=rice,pea&walnuts=5&tick=100"
+//   <query>      the address after `?debug=1&`, e.g. "scene=coconut-melee&map=artillery-basin&seed=1&units=150&mix=rice,pea&coconuts=5&tick=100"
 //   --ticks N    after the scene is ready, step N more ticks (__bloomDebug.step) before reading the state
 //   --capture    save a screenshot; with --compare the other checkout's goes to <name>-compare.png
 //   --compare    run the same address on another checkout (a worktree path) and print both side by side

@@ -21,7 +21,6 @@ import { SustainedAttack } from './sustained-attack.js';
 // Query lists per call site: a pulse's hits can kill a bursting unit, whose blast queries its own lists.
 const START_QUERY = new IndexList(),
     PULSE_QUERY = new IndexList(),
-    SPLASH_QUERY = new IndexList(),
     SWEEP_QUERY = new IndexList();
 const INACTIVE = Object.freeze({ active: false, winner: null });
 
@@ -276,63 +275,9 @@ export class UnitSpinAttack {
         );
     }
 
-    static hitBasic(sim, unit, target, rhythm, damage) {
-        const grounded = UnitMotion.isGrounded(target),
-            x = target.x,
-            y = target.y,
-            heightFP = this.heightFP(sim, target),
-            capture = {};
-        sim.applyDamage(unit.side, unit.type, target, false, damage, unit.id, { capture });
-        if (!grounded || !(capture.dealt > 0)) return;
-
+    // A basic hit that landed on a soldier (BasicSplash.hit) counts toward the next sweep.
+    static countBasic(unit, rhythm) {
         unit.spinAttackBasicHits = Math.min(unit.spinAttackBasicHits + 1, rhythm.basicsPerSweep);
-        sim.events.push({
-            type: 'spinBasicImpact',
-            side: unit.side,
-            sourceId: unit.id,
-            targetId: target.id,
-            x,
-            y,
-            radius: rhythm.splashRadius,
-            basicHits: unit.spinAttackBasicHits,
-        });
-        const splashDamage = Math.max(1, Math.floor(damage * rhythm.splashDamageRatio));
-        const found = sim.nearbyUnits(
-            x,
-            y,
-            rhythm.splashRadius + sim.maxUnitRadius,
-            1 - unit.side,
-            SPLASH_QUERY,
-        );
-        for (let k = 0; k < found; k++) {
-            const index = SPLASH_QUERY.items[k];
-            const other = sim.units[index];
-            if (!other?.alive || other === target || !UnitMotion.isGrounded(other)) continue;
-            const body = LaunchImpact.distanceToBody(sim, other, x, y, heightFP);
-            if (
-                body.surfaceDistance > rhythm.splashRadius ||
-                !sim.world.terrain.field.polygonSegmentClear(x, y, other.x, other.y, 0)
-            )
-                continue;
-            // The splash shoves away from the struck body, a small area hit by the swinging arm.
-            Knockback.hit(sim, other, {
-                dx: other.x - x,
-                dy: other.y - y,
-                mass: sim.mass(unit),
-                speed: KnockbackRules.swingSpeed,
-                gain: KnockbackRules.gain.splash,
-                strength: KnockbackRules.strength(
-                    body.falloffDistance,
-                    rhythm.splashRadius + sim.unitRadius(other.type),
-                ),
-                sourceId: unit.id,
-                originX: x,
-                originY: y,
-            });
-            sim.applyDamage(unit.side, unit.type, other, false, splashDamage, unit.id, {
-                sourceDamageResolved: true,
-            });
-        }
     }
 
     static hitUnit(sim, unit, target, spec, damage) {

@@ -58,7 +58,7 @@ class EffectObjectFactory {
     static shellFlinch = Object.freeze({ lifeMs: 160, tilt: 0.6, squash: 0.28 });
     static combatLifetimes = Object.freeze({
         thornImpact: 250,
-        spinBasicImpact: 180,
+        basicSplashImpact: 180,
         constructionHit: 220,
         hitscanTravel: 180,
         antiAirHit: 320,

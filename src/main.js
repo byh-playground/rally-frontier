@@ -2726,8 +2726,8 @@ class GLRenderer {
                         e,
                         snapshot,
                     );
-            } else if (e.type === 'spinBasicImpact') {
-                this.addClientFx('spinBasicImpact', e, snapshot, index);
+            } else if (e.type === 'basicSplashImpact') {
+                this.addClientFx('basicSplashImpact', e, snapshot, index);
             } else if (e.type === 'heroRollHit') {
                 this.addClientFx('meleeImpact', e, snapshot, index, { impactScale: 1.5 });
             } else if (e.type === 'fruitBerryLand') {
@@ -7157,7 +7157,7 @@ class GLRenderer {
     drawUnitAttackEffects(entries) {
         for (const fx of this.combatFx) {
             if (
-                (fx.kind !== 'spinBasicImpact' && fx.kind !== 'fruitBerryImpact') ||
+                (fx.kind !== 'basicSplashImpact' && fx.kind !== 'fruitBerryImpact') ||
                 fx.clock.expired
             )
                 continue;

@@ -1,26 +1,18 @@
-// The walnut: a ball that rolls. Only the shell turns; the shade and the face stay upright on it.
+// The walnut's ball sheet: a shell, an upright shade and faces, plus the rolling art (dust, wind, spin arcs,
+// impact star) the coconut borrows until its own art is approved (src/units/coconut/sprite.js).
 // Every piece is an unposed atlas quad placed by its own matrix, built from the battlefield matrix
 // (ground contact at the origin, sheet units, mirrored toward the travel direction).
-import { GRAIN_SIZE, GRAIN_SPRITE_BASE_SCALE, UNIT_RENDER_RADIUS_SCALE } from '../baseline.js';
+import { GRAIN_SIZE } from '../baseline.js';
 import { Walnut } from './index.js';
-import { FP } from '../../core/config.js';
 import { drawUnitQuads } from '../../render/dead-unit-look.js';
 
 const ROOT = new URL('../../../assets/sprites/walnut/', import.meta.url);
 const SHEET_SIZE = [900, 800];
 // Shell radius, ball centre to ground contact, in sheet units.
-const RADIUS = 101;
+export const BALL_RADIUS = 101;
 // Ball diameter (205.5 with the outline) is 1.7 times a plain grain's standing height 343.5 (rice,
 // size GRAIN_SIZE), at their sizes.
-export const WALNUT_ART_SCALE = ((1.7 * 343.5) / 205.5) * (GRAIN_SIZE / Walnut.unit.size);
-// The shell's rolling radius in world units: θ grows by the distance travelled over this.
-const ROLL_RADIUS =
-    Walnut.unit.size *
-    UNIT_RENDER_RADIUS_SCALE *
-    GRAIN_SPRITE_BASE_SCALE *
-    Walnut.visual.visualScale ** 2 *
-    WALNUT_ART_SCALE *
-    RADIUS;
+export const ballArtScale = (size) => ((1.7 * 343.5) / 205.5) * (GRAIN_SIZE / size);
 
 // [x, y, w, h] / pivot inside the cell.
 const CELLS = {
@@ -77,15 +69,8 @@ const CELLS = {
         [110, 90],
     ],
 };
-// The game's 'attack' face is the walnut's rush; its own faces are chosen by speed.
+// The game's 'attack' face is the ball's rush.
 const FACE_ALIAS = { attack: 'rush' };
-
-// Speed stage from s = speed / top speed, with lower thresholds on the way down.
-function walnutSpeedStage(previous, s) {
-    if (previous === 2) return s >= 0.7 ? 2 : s >= 0.35 ? 1 : 0;
-    if (previous === 1) return s >= 0.75 ? 2 : s >= 0.35 ? 1 : 0;
-    return s >= 0.75 ? 2 : s >= 0.4 ? 1 : 0;
-}
 
 async function readAsset(name) {
     const response = await fetch(new URL(name, ROOT), { cache: 'no-cache' });
@@ -134,7 +119,7 @@ export function walnutSpritePortrait(source, width) {
         const [[x, y, w, h], [px, py]] = CELLS[name];
         ctx.drawImage(source, x, y, w, h, -px, -py, w, h);
     };
-    ctx.translate(0, -RADIUS);
+    ctx.translate(0, -BALL_RADIUS);
     ctx.save();
     ctx.rotate((-15 * Math.PI) / 180);
     piece('shell');
@@ -143,69 +128,6 @@ export function walnutSpritePortrait(source, width) {
     ctx.translate(14, 6);
     piece('neutral');
     return canvas.toDataURL('image/png');
-}
-
-// The rolling body's art for this frame (sprite contract `rolling`, RollingBody). The shell turns with
-// the distance the drawn body travels (θ += heading·Δd/R), so pause and replay show the frame they were
-// left on. Speed stage, face, stretch, wall squash and the impact star follow the simulation's
-// velocity and its last bump and wall ticks. `orientation` is -1 when the view is mirrored (guest).
-function prepareRolling(grain, entity, world, renderTick, now, tps, orientation) {
-    const spec = Walnut.unit.rolling,
-        roll = grain.actor.roll,
-        m = entity.impactMotion,
-        vx = (m?.vxFP || 0) / FP,
-        vy = (m?.vyFP || 0) / FP,
-        s = Math.min(1, Math.hypot(vx, vy) / spec.topSpeed);
-    const state = (grain.actor.track ||= {
-        x: world.x,
-        z: world.z,
-        heading: 1,
-        stage: 0,
-        impactTick: null,
-        impactHeading: 1,
-        impactWall: false,
-    });
-    if (Math.abs(vx) > 1) state.heading = Math.sign(vx) * orientation;
-    const travelled = Math.hypot(world.x - state.x, world.z - state.z);
-    // A jump (seek, snap) is not rolling.
-    if (travelled < 60) roll.theta += (state.heading * travelled) / ROLL_RADIUS;
-    state.x = world.x;
-    state.z = world.z;
-    state.stage = walnutSpeedStage(state.stage, s);
-    const bump = entity.rolling?.bumpTick ?? null,
-        wall = entity.rolling?.wallTick ?? null,
-        latest = Math.max(bump ?? -1, wall ?? -1);
-    if (latest >= 0 && latest !== state.impactTick && renderTick >= latest) {
-        // The star sits on the side the walnut was moving toward when it struck.
-        state.impactTick = latest;
-        state.impactWall = latest === wall && latest !== bump;
-        state.impactHeading = roll.heading;
-    }
-    const sinceImpact = state.impactTick === null ? Infinity : renderTick - state.impactTick;
-    roll.heading = state.heading;
-    roll.stage = state.stage;
-    roll.scaleX = 1 + 0.1 * s * s;
-    roll.scaleY = 1 - 0.085 * s * s;
-    roll.squash = state.impactWall ? Math.min(1, Math.max(0, 1 - sinceImpact / 2.5)) : 0;
-    roll.impact =
-        sinceImpact >= 0 && sinceImpact < 0.25 * tps
-            ? {
-                  age: sinceImpact / (0.25 * tps),
-                  side: state.impactHeading * state.heading,
-                  wall: state.impactWall,
-              }
-            : null;
-    roll.face =
-        sinceImpact >= 0 && sinceImpact < 0.3 * tps
-            ? 'bump'
-            : grain.hitUntil > now
-              ? 'hurt'
-              : ['neutral', 'happy', 'rush'][state.stage];
-    // Mirrored toward the travel direction; the ground contact stays on the unit's ground point.
-    if (state.heading < 0) {
-        grain.matrix[0] = -grain.matrix[0];
-        grain.matrix[1] = -grain.matrix[1];
-    }
 }
 
 // a·b for 2D affine matrices [a, b, c, d, e, f]: x' = a x + c y + e, y' = b x + d y + f.
@@ -263,8 +185,9 @@ export class WalnutSpriteRenderer {
         context.onDispose(() => this.dispose());
     }
 
-    // main.js sets the roll state on the actor every frame: shell angle θ, heading (+1 right, -1 left,
-    // already in the matrix), stretch, wall squash 0..1, speed stage, face and the latest impact.
+    // A rolling body's art (the coconut's `rolling.prepare`) sets the roll state on the actor every frame: shell
+    // angle θ, heading (+1 right, -1 left, already in the matrix), stretch, wall squash 0..1, speed stage, face
+    // and the latest impact. A walking walnut leaves it at rest: no turn, no dust, the game's face.
     createActor() {
         const owner = this;
         const actor = {
@@ -279,8 +202,8 @@ export class WalnutSpriteRenderer {
                 scaleX: 1,
                 scaleY: 1,
                 squash: 0,
-                stage: 0,
-                face: 'neutral',
+                stage: null,
+                face: null,
                 impact: null,
             },
             play(name) {
@@ -336,36 +259,41 @@ export class WalnutSpriteRenderer {
         const roll = actor.roll,
             body = this.bodyMatrix(actor, matrix),
             m = this.scratch;
-        multiply(m, body, local(0, -RADIUS, roll.heading, 1, roll.heading * roll.theta));
+        multiply(m, body, local(0, -BALL_RADIUS, roll.heading, 1, roll.heading * roll.theta));
         this.draw('shell', m, depth, 1, 0.05);
-        multiply(m, body, local(0, -RADIUS));
+        multiply(m, body, local(0, -BALL_RADIUS));
         this.draw('shade', m, depth, 1, 0.05);
     }
 
-    // Dust and wind behind the ball: main.js draws them just behind its body, without depth writes.
+    // Dust and wind behind a rolling ball: main.js draws them just behind its body, without depth writes.
     drawBehind(actor, matrix, depth) {
         const { stage, scaleY, squash } = actor.roll,
             m = this.scratch;
-        if (squash > 0) return;
+        if (stage === null || squash > 0) return;
         if (stage === 0) this.draw('dustSlow', matrix, depth);
         else if (stage === 1) {
             this.draw('dustSlow', multiply(m, matrix, local(-14, 0, 1.2, 1.2)), depth);
-            this.draw('streaksMid', multiply(m, matrix, local(0, -RADIUS * scaleY)), depth);
+            this.draw('streaksMid', multiply(m, matrix, local(0, -BALL_RADIUS * scaleY)), depth);
         } else {
             this.draw('dustMax', matrix, depth);
-            this.draw('streaksMax', multiply(m, matrix, local(0, -RADIUS * scaleY)), depth);
+            this.draw('streaksMax', multiply(m, matrix, local(0, -BALL_RADIUS * scaleY)), depth);
         }
     }
 
     // The upright face 14 ahead and 6 below the centre, the spin arcs at top speed, then the impact.
+    // A rolling ball picks its own face; a walking one shows the game's.
     drawFace(actor, matrix, depth, face) {
         const roll = actor.roll,
             body = this.bodyMatrix(actor, matrix),
             m = this.scratch;
-        const name = CELLS[roll.face] ? roll.face : FACE_ALIAS[face] || 'neutral';
-        this.draw(CELLS[name] ? name : 'neutral', multiply(m, body, local(14, 6 - RADIUS)), depth);
+        const name = roll.face ?? FACE_ALIAS[face] ?? face;
+        this.draw(
+            CELLS[name] ? name : 'neutral',
+            multiply(m, body, local(14, 6 - BALL_RADIUS)),
+            depth,
+        );
         if (roll.stage === 2 && !roll.squash)
-            this.draw('arcs', multiply(m, body, local(0, -RADIUS)), depth);
+            this.draw('arcs', multiply(m, body, local(0, -BALL_RADIUS)), depth);
         const impact = roll.impact;
         if (impact && impact.age >= 0 && impact.age < 1) {
             // Pops in, then fades. A wall hit sits flatter against the wall.
@@ -379,7 +307,7 @@ export class WalnutSpriteRenderer {
                     matrix,
                     local(
                         impact.side * (impact.wall ? 82 : 96),
-                        impact.wall ? -111 : -RADIUS,
+                        impact.wall ? -111 : -BALL_RADIUS,
                         size * (impact.wall ? 0.7 : 1),
                         size,
                     ),
@@ -410,14 +338,12 @@ export class WalnutSpriteRenderer {
 }
 
 // This unit's sprite contract (src/units/define-unit.js), loaded only by the page, never the Worker.
-// `rolling` is the self-propelled rolling body's per-frame art (RollingBody); drawBehind draws the dust
-// and wind behind the ball.
+// The walnut walks: no `rolling`, so the ball stays upright and drawBehind draws nothing.
 export const SPRITE = Object.freeze({
     load: loadWalnutSpriteCanvas,
     renderer: WalnutSpriteRenderer,
     portrait: walnutSpritePortrait,
     shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
-    artScale: WALNUT_ART_SCALE,
-    rolling: Object.freeze({ prepare: prepareRolling }),
+    artScale: ballArtScale(Walnut.unit.size),
 });

@@ -16,7 +16,7 @@ export const CAMPAIGN_TIERS = Object.freeze([
 // Stages that share a `group` fold together under one row of their tier (`art` is that row's portrait card).
 export const CAMPAIGN_GROUPS = Object.freeze([
     { id: 'hero', title: '영웅', art: 'watermelon' },
-    { id: 'walnut', title: '호두', art: 'walnut' },
+    { id: 'coconut', title: '코코넛', art: 'coconut' },
     { id: 'black-bean', title: '검은콩', art: 'black-bean' },
     { id: 'potato', title: '감자', art: 'potato' },
     { id: 'sticky-rice', title: '찹쌀', art: 'sticky-rice' },
@@ -423,13 +423,13 @@ export const CAMPAIGN_STAGES = Object.freeze([
         },
     },
     {
-        id: 'walnut-lanes',
+        id: 'coconut-lanes',
         tier: 'new-units',
-        group: 'walnut',
+        group: 'coconut',
         enemyPacing: pacing(30_000, 'new-units'),
-        title: '호두 · 볼링 레인',
-        briefing: '호두는 날아간 방향으로 굴러요. 줄지어 선 쌀 수비대를 옆으로 쓸어 보세요.',
-        deck: ['walnut', 'rice'],
+        title: '코코넛 · 볼링 레인',
+        briefing: '코코넛은 날아간 방향으로 굴러요. 줄지어 선 쌀 수비대를 옆으로 쓸어 보세요.',
+        deck: ['coconut', 'rice'],
         enemyDeck: ['millet'],
         enemyOutposts: ['enemy-front'],
         friendlyOutposts: ['advance', 'oil'],
@@ -437,7 +437,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         mode: 'eliminate',
         layout: { guestY: 900 },
         mission: {
-            startingPremium: [premiumFor('walnut') * 4, 0],
+            startingPremium: [premiumFor('coconut') * 4, 0],
             formations: [
                 { type: 'rice', x: 1100, y: 1650, count: 12, columns: 12, spacing: 28, hold: true },
                 { type: 'rice', x: 1350, y: 1400, count: 12, columns: 12, spacing: 28, hold: true },
@@ -446,14 +446,14 @@ export const CAMPAIGN_STAGES = Object.freeze([
         },
     },
     {
-        id: 'walnut-heavy-wall',
+        id: 'coconut-heavy-wall',
         tier: 'new-units',
-        group: 'walnut',
+        group: 'coconut',
         enemyPacing: pacing(25_000, 'new-units'),
-        title: '호두 · 무거운 벽',
-        briefing: '굴러오는 호두는 무거운 도토리로 받아 멈추고 밤톨 가시로 체력을 깎으세요.',
+        title: '코코넛 · 무거운 벽',
+        briefing: '굴러오는 코코넛은 무거운 도토리로 받아 멈추고 밤톨 가시로 체력을 깎으세요.',
         deck: ['acorn', 'chestnut', 'pea'],
-        enemyDeck: ['walnut', 'pea'],
+        enemyDeck: ['coconut', 'pea'],
         enemyOutposts: ['enemy-front', 'enemy-rear', 'enemy-oil'],
         friendlyOutposts: ['oil'],
         startingLaunchRangeLevel: 1,
@@ -461,7 +461,7 @@ export const CAMPAIGN_STAGES = Object.freeze([
         mode: 'eliminate',
         layout: { guestY: 850 },
         mission: {
-            startingPremium: [premiumFor('acorn') * 2, premiumFor('walnut') * 2],
+            startingPremium: [premiumFor('acorn') * 2, premiumFor('coconut') * 2],
         },
     },
     {

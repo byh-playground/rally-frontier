@@ -48,6 +48,9 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   attackWindupMs로 조준, 표적을 잃으면 거둠, 마지막 발 뒤에는 움직임), 목화솜 연쇄 번개(chainAttack, 끊긴 고리는
   다시 이으며 끝까지 채널링). 수박 휩쓸기(spinAttack.arcSweep)는 대상마다
   한 번 맞히는 공격이라 자기 시간을 쓴다.
+- 근접 평타의 주변 피해는 Definition basicSplash { radius, damageRatio } 하나(BasicSplash)다: 지상 병사에게 피해를 준
+  평타는 그 자리 둘레 radius 안 지상 적 병사에게 내림(피해×damageRatio, 최소 1)과 작은 밀기(gain.splash)를 준다.
+  수박(0.5)과 호두(1)가 쓰고, 수박의 휩쓸기 횟수는 이 평타가 병사에게 맞았을 때만 센다.
 - 화면 밖 병종의 포즈 객체는 재진입 비용을 줄이도록 최대 2초·비표시 512개까지 보관한다.
   보관 중에는 그리지 않고 맵 전환·불연속 리플레이 시킹에서는 즉시 정리한다.
 - 카드 상세와 타이틀은 GameKit의 쇼케이스 표면을 재사용한다. 실제 경기와 시뮬레이션·표현 상태를
@@ -87,7 +90,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   건물 기록이 생기거나 옮겨지거나 사라지면 그 사각형(반경+여유+1칸)만 각 반경 격자에 invalidateRect하고
   격자 전체를 무효화하지 않는다. 그래프와 목표 저장소는 파생 상태이며, 같은 지형·목표·위치에서 같은 경로를 계산한다.
 - 다음 지점은 TerrainNavigation.nextPoint(u, goal, path) 하나로 묻고 방법은 호출부가 고른다(navigation-paths.js).
-  field는 위 공용 흐름장(일반 병력과 호두의 조향), route는 GameKit RouteFinder(A*)로 한 번 찾은 웨이포인트를
+  field는 위 공용 흐름장(일반 병력과 코코넛의 조향), route는 GameKit RouteFinder(A*)로 한 번 찾은 웨이포인트를
   Unit.route { goalA, goalB, layout, cells, index }에 저장해 따라간다(복귀 영웅). 탐색 전에 연결 요소로
   닿지 못하는 목표를 거른다. route는 목표 키가 바뀌었을 때,
   건물 배치가 바뀌어 남은 경로가 막혔을 때, 밀려나 앞뒤 웨이포인트가 모두 보이지 않을 때만 다시 찾는다.
@@ -152,7 +155,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   옮겨 다시 cast한다. 몸-몸 접촉은 LaunchImpactRules.unitContactBudget 하나까지만 풀고, 넘친 접촉은 그 틱에
   겹쳐 지나가 이후 겹침 풀기로 풀린다. 벽·건물·맵 경계 접촉은 상한 없이 항상 푼다. 진영 관계는
   LaunchImpactRules.contactRelations(아군 SOFT·적 SOLID)이고, 도약 중인 몸은 실제 높이 구간이 겹칠 때만 만난다.
-- 접촉 응답의 게임 규칙(호두 반발·넉백 배수·발사각은 KnockbackRules 값, 재타격 대기·피해 대기열·건물 피해, 영웅 구르기 취소)은
+- 접촉 응답의 게임 규칙(코코넛 반발·넉백 배수·발사각은 KnockbackRules 값, 재타격 대기·피해 대기열·건물 피해, 영웅 구르기 취소)은
   RollingBody.respond와 UnitMotion.recordContact가 소유하고 공용 코드는 병종 id를 비교하지 않는다.
   모듈은 틱 사이 상태를 갖지 않으며 저장·복원·체크섬은 유닛의 impactMotion·rolling 상태만 본다.
 - 충격 속도·적분 잔여량·높이·회복 시각과 방출 대기열은 저장·복원한다. 회복 중 자발 이동은 제한하고
@@ -175,8 +178,9 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   적중 시 반동으로 복귀하며, 닿지 못한 돌진은 작업량을 더하지 않는다. 이탈·사망·교전·공중/회복 중에는
   기여하지 않으며 미납 작업을 쌓지 않는다. 체력 증가 후에도 기존 피해는 유지한다.
   배정된 병사는 건설을 우선한다. 실제 피해를 받으면 건설 상태를 응전으로 바꾸고 현재 닿는 적을 공격한다.
-  타격당 작업량은 Definition construction.workPerHit(기본 1, 참깨 2)이다. construction.damageTakenScale이 있는 병종(참깨 0.25)은
-  진행 중인 공사에 배정된 동안(응전 포함) 받는 유닛 피해에 그 비율을 곱해 내림한다(최소 1). 봇은 workerCard 카드(참깨)를
+  타격당 작업량은 Definition construction.workPerHit(기본 1, 참깨 2)이다. Definition damageTaken { scale, whileBuilding? }이
+  있는 병종은 받는 유닛 피해에 scale을 곱해 내림한다(최소 1, StrategySim.applyDamage 한 경로). whileBuilding이면(참깨 0.25)
+  진행 중인 공사에 배정된 동안(응전 포함)만, 없으면(호두 0.5) 늘 적용한다. 봇은 workerCard 카드(참깨)를
   싸움에 내지 않고 지을 거점이 비었을 때 먼저 낸다.
   포탄과 범위 피해도 가해자 식별과 관계없이 응전을 시작한다. 닿는 적이 없으면 공사를 이어간다.
   공사가 시작되어 건물 몸이 생길 때 그 자리에 서 있던 지상 유닛은 유닛 순서대로 가장 가까운 빈 땅으로 옮긴다

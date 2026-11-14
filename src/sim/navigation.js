@@ -589,7 +589,7 @@ class UnitMotion {
     finishImpulseStep(u) {
         const sim = this.navigation.sim,
             m = u.impactMotion;
-        // A rolling walnut's speed is its motor's: drive minus drag, applied before contacts.
+        // A rolling coconut's speed is its motor's: drive minus drag, applied before contacts.
         if (!m || RollingBody.rolling(u)) return;
         const drag =
             m.heightFP > 0 || m.vzFP > 0 ? LaunchImpactRules.airDrag : LaunchImpactRules.groundDrag;

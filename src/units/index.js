@@ -16,12 +16,13 @@ import { Peanut } from './peanut/index.js';
 import { StickyRice } from './sticky-rice/index.js';
 import { Potato } from './potato/index.js';
 import { BlackBean } from './black-bean/index.js';
-import { Walnut } from './walnut/index.js';
+import { Coconut } from './coconut/index.js';
 import { Dandelion } from './dandelion/index.js';
 import { Chili } from './chili/index.js';
 import { Cotton } from './cotton/index.js';
 import { Sesame } from './sesame/index.js';
 import { Buckwheat } from './buckwheat/index.js';
+import { Walnut } from './walnut/index.js';
 
 export const UNITS = Object.freeze([
     Watermelon,
@@ -40,12 +41,13 @@ export const UNITS = Object.freeze([
     StickyRice,
     Potato,
     BlackBean,
-    Walnut,
+    Coconut,
     Dandelion,
     Chili,
     Cotton,
     Sesame,
     Buckwheat,
+    Walnut,
 ]);
 
 const byId = new Map();

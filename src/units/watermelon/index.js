@@ -1,10 +1,10 @@
 import {
+    COCONUT_MASS,
     GRAIN_SIZE,
     GRAIN_SPRITE_BASE_SCALE,
     HERO_MOVE_SPEED,
     HERO_SHELL,
     UNIT_RENDER_RADIUS_SCALE,
-    WALNUT_MASS,
 } from '../baseline.js';
 import { defineUnit } from '../define-unit.js';
 import { VIEW_W } from '../../definitions/world-rules.js';
@@ -33,12 +33,14 @@ export const Watermelon = defineUnit({
         speed: HERO_MOVE_SPEED,
         attackIntervalMs: 500,
         size: WATERMELON_SIZE,
-        // The big rind weighs twice a walnut, so its roll throws harder than a walnut at the same speed.
-        mass: WALNUT_MASS * 2,
+        // The big rind weighs twice a coconut, so its roll throws harder than a coconut at the same speed.
+        mass: COCONUT_MASS * 2,
         sizeClass: 'heavy',
         role: 'bruiser',
         attackVisual: { sourceMotion: 'smash', travel: 'none', impact: 'light' },
         sight: 275,
+        // The basic attack also hits the soldiers around the struck one (BasicSplash).
+        basicSplash: Object.freeze({ radius: 25, damageRatio: 0.5 }),
         heroActive: Object.freeze({
             cost: 100,
             range: 250,
@@ -57,11 +59,7 @@ export const Watermelon = defineUnit({
             activeMs: 500,
             recoverMs: 250,
             arcSweep: true,
-            rhythm: Object.freeze({
-                basicsPerSweep: 4,
-                splashRadius: 25,
-                splashDamageRatio: 0.5,
-            }),
+            rhythm: Object.freeze({ basicsPerSweep: 4 }),
             tangentRatio: 0,
         }),
     },
@@ -96,7 +94,7 @@ export const Watermelon = defineUnit({
             section: 'hero-skill',
             summary: '수박의 액티브 스킬',
             paragraphs: [
-                '수박은 제자리에서 높이 뛰었다가 착지하면서 충격파로 주변 적 병력에 피해를 주고 살짝 밀어내요. 점프 중에는 바닥의 원이 충격파 범위를, 화살표가 구르기 방향과 경로를 알려 줘요. 처음 겨눈 적 방향으로 몸통 지름의 세 배만큼 굴러가며 몸통 폭에 닿은 적을 호두처럼 멀리 쳐 내고(맞고 쓰러진 적도 날아가요), 지형이나 건물에 닿으면 멈춰요.',
+                '수박은 제자리에서 높이 뛰었다가 착지하면서 충격파로 주변 적 병력에 피해를 주고 살짝 밀어내요. 점프 중에는 바닥의 원이 충격파 범위를, 화살표가 구르기 방향과 경로를 알려 줘요. 처음 겨눈 적 방향으로 몸통 지름의 세 배만큼 굴러가며 몸통 폭에 닿은 적을 코코넛처럼 멀리 쳐 내고(맞고 쓰러진 적도 날아가요), 지형이나 건물에 닿으면 멈춰요.',
             ],
         },
     ],
