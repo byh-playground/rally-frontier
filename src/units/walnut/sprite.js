@@ -1,5 +1,5 @@
 // The walnut's ball sheet: a shell, an upright shade and faces, plus the rolling art (dust, wind, spin arcs,
-// impact star) the coconut borrows until its own art is approved (src/units/coconut/sprite.js).
+// impact star) the coconut shares: the renderer and cells are common, each unit loads its own sheet.
 // Every piece is an unposed atlas quad placed by its own matrix, built from the battlefield matrix
 // (ground contact at the origin, sheet units, mirrored toward the travel direction).
 import { GRAIN_SIZE } from '../baseline.js';
@@ -72,40 +72,50 @@ const CELLS = {
 // The game's 'attack' face is the ball's rush.
 const FACE_ALIAS = { attack: 'rush' };
 
-async function readAsset(name) {
-    const response = await fetch(new URL(name, ROOT), { cache: 'no-cache' });
-    if (!response.ok) throw new Error('호두 스프라이트를 불러오지 못했습니다: ' + name);
-    return response;
+// A ball unit's sheet loader: the unit's own `parts.svg` and `manifest.json` (bytes and SHA-256) in `root`,
+// drawn once onto a canvas. Ball units share the cells, so every sheet has the same size.
+export function ballSpriteLoader(root, label) {
+    const readAsset = async (name) => {
+        const response = await fetch(new URL(name, root), { cache: 'no-cache' });
+        if (!response.ok) throw new Error(label + ' 스프라이트를 불러오지 못했습니다: ' + name);
+        return response;
+    };
+    return async function loadBallSpriteCanvas() {
+        const [manifest, bytes] = await Promise.all([
+            readAsset('manifest.json').then((response) => response.json()),
+            readAsset('parts.svg').then((response) => response.arrayBuffer()),
+        ]);
+        const spec = manifest?.assets?.['parts.svg'];
+        const hash = Array.from(
+            new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+            (value) => value.toString(16).padStart(2, '0'),
+        ).join('');
+        if (
+            manifest?.schemaVersion !== 1 ||
+            spec?.bytes !== bytes.byteLength ||
+            spec.sha256 !== hash
+        )
+            throw new Error(label + ' SVG 무결성 오류');
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'image/svg+xml' }));
+        try {
+            const image = new Image();
+            image.src = url;
+            await image.decode();
+            const [width, height] = SHEET_SIZE;
+            if (image.naturalWidth !== width || image.naturalHeight !== height)
+                throw new Error(label + ' 스프라이트 시트 크기가 다릅니다.');
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext('2d').drawImage(image, 0, 0);
+            return canvas;
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    };
 }
 
-export async function loadWalnutSpriteCanvas() {
-    const [manifest, bytes] = await Promise.all([
-        readAsset('manifest.json').then((response) => response.json()),
-        readAsset('parts.svg').then((response) => response.arrayBuffer()),
-    ]);
-    const spec = manifest?.assets?.['parts.svg'];
-    const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (value) =>
-        value.toString(16).padStart(2, '0'),
-    ).join('');
-    if (manifest?.schemaVersion !== 1 || spec?.bytes !== bytes.byteLength || spec.sha256 !== hash)
-        throw new Error('호두 SVG 무결성 오류');
-    const url = URL.createObjectURL(new Blob([bytes], { type: 'image/svg+xml' }));
-    try {
-        const image = new Image();
-        image.src = url;
-        await image.decode();
-        const [width, height] = SHEET_SIZE;
-        if (image.naturalWidth !== width || image.naturalHeight !== height)
-            throw new Error('호두 스프라이트 시트 크기가 다릅니다.');
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        canvas.getContext('2d').drawImage(image, 0, 0);
-        return canvas;
-    } finally {
-        URL.revokeObjectURL(url);
-    }
-}
+export const loadWalnutSpriteCanvas = ballSpriteLoader(ROOT, '호두');
 
 // The deck card: the resting ball turned a little, with its everyday dot-eye face, without speed effects.
 export function walnutSpritePortrait(source, width) {

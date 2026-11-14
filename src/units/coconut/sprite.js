@@ -1,5 +1,5 @@
 // The coconut: a ball that rolls. Only the shell turns; the shade and the face stay upright on it.
-// 임시: until the coconut's own art is approved it borrows the walnut's ball sheet and renderer
+// The coconut has its own sheet (assets/sprites/coconut) and shares the walnut's ball renderer and cells
 // (src/units/walnut/sprite.js); this file keeps only the rolling body's per-frame art.
 import { GRAIN_SPRITE_BASE_SCALE, UNIT_RENDER_RADIUS_SCALE } from '../baseline.js';
 import { Coconut } from './index.js';
@@ -7,10 +7,15 @@ import { FP } from '../../core/config.js';
 import {
     BALL_RADIUS,
     ballArtScale,
-    loadWalnutSpriteCanvas,
+    ballSpriteLoader,
     WalnutSpriteRenderer,
     walnutSpritePortrait,
 } from '../walnut/sprite.js';
+
+const loadCoconutSpriteCanvas = ballSpriteLoader(
+    new URL('../../../assets/sprites/coconut/', import.meta.url),
+    '코코넛',
+);
 
 const COCONUT_ART_SCALE = ballArtScale(Coconut.unit.size);
 // The shell's rolling radius in world units: θ grows by the distance travelled over this.
@@ -96,7 +101,7 @@ function prepareRolling(grain, entity, world, renderTick, now, tps, orientation)
 // `rolling` is the self-propelled rolling body's per-frame art (RollingBody); drawBehind draws the dust
 // and wind behind the ball. The shared loader gives both cards one canvas.
 export const SPRITE = Object.freeze({
-    load: loadWalnutSpriteCanvas,
+    load: loadCoconutSpriteCanvas,
     renderer: WalnutSpriteRenderer,
     portrait: walnutSpritePortrait,
     shell: { draw: 'drawAmmo', depthTest: true },
