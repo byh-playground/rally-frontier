@@ -77,6 +77,9 @@ class Unit {
             data.sustain = SustainedAttack.initialState();
         // A returning hero keeps its own A* route (navigation-paths.js RoutePath).
         if (LaunchRules.isHeroType(data.type) && !Object.hasOwn(data, 'route')) data.route = null;
+        // A hero's growth record (HeroGrowth), handed over when it lands from its shell.
+        if (LaunchRules.isHeroType(data.type) && !Object.hasOwn(data, 'heroGrowth'))
+            data.heroGrowth = null;
         this.status = new StatusComponent(data.status || {});
         delete data.status;
         this.movement = new MovementComponent(data.movement || {});

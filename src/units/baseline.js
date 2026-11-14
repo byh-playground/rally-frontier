@@ -32,6 +32,11 @@ export const FRONT_LINE_BUNDLE_COST = 45;
 // Every hero walks at the same speed.
 export const HERO_MOVE_SPEED = 75;
 
+// A hero grows within one match (HeroGrowth): the enemy soldiers it struck the killing blow on, one each
+// whatever their kind. Reaching HERO_LEVEL_KILLS[n] kills makes it level n + 1 (1 to 6). Recovering keeps the
+// level, dying ends it with the hero.
+export const HERO_LEVEL_KILLS = Object.freeze([0, 10, 25, 45, 70, 100]);
+
 // The leap shared by red beans and popcorn (popcorn lowers the apex).
 export const GRAIN_LEAP = Object.freeze({ range: 150, lift: 500, cooldownMs: 3000 });
 

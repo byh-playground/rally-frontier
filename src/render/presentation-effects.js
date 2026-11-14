@@ -22,6 +22,15 @@ class FloatingTextPresentationDefinition {
             strokeAlpha: 0.8,
             pop: 1,
         }),
+        heroLevelUp: Object.freeze({
+            lifeMs: 1200,
+            baseSize: 24,
+            minSize: 16,
+            rise: 45,
+            alpha: 1,
+            strokeAlpha: 1,
+            pop: 1.35,
+        }),
         dodge: Object.freeze({
             lifeMs: 750,
             baseSize: 15,

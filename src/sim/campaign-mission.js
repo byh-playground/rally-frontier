@@ -1,4 +1,4 @@
-const HERO_LESSON_STEPS = ['launch', 'skill', 'cast', 'recover', 'redeploy', 'done'];
+const HERO_LESSON_STEPS = ['launch', 'fight', 'recover', 'redeploy', 'done'];
 
 // Authored campaign beats issue ordinary spawns, captures and launch commands.
 // Their progress belongs to the authoritative simulation and rolls back with it.
@@ -125,27 +125,13 @@ export class CampaignMission {
                 );
         if (hero?.mode === 'dead') return 'guest';
 
-        if (state.step === 'launch' && landed) state.step = 'skill';
-        if (state.step === 'skill' && heroEvent('heroSkillStarted')) state.step = 'cast';
-        if (state.step === 'cast') {
-            const unit = sim.unitById.get(hero?.unitId),
-                fruit = unit?.fruitAttack;
-            if (
-                !unit?.heroRoll &&
-                !fruit?.active &&
-                !fruit?.projectiles.some(({ mode }) => mode === 'active')
-            )
-                state.step = lesson.recover ? 'recover' : 'done';
-        }
+        if (state.step === 'launch' && landed) state.step = 'fight';
+        // The hero clears the training squad; its kills count toward its level (HeroGrowth).
+        if (state.step === 'fight' && state.targets.every(({ id }) => !sim.unitById.get(id)?.alive))
+            state.step = lesson.recover ? 'recover' : 'done';
         if (state.step === 'recover' && heroEvent('heroRecovered')) state.step = 'redeploy';
         if (state.step === 'redeploy' && landed) state.step = 'done';
         if (state.step === 'done') return 'host';
-
-        if (
-            (state.step === 'launch' || state.step === 'skill') &&
-            state.targets.every(({ id }) => !sim.unitById.get(id)?.alive)
-        )
-            return 'guest';
         return null;
     }
 

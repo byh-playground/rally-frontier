@@ -58,7 +58,6 @@ class RallyCommandCodec {
         MATCH_SURRENDER: [],
         UPGRADE_LAUNCH_RANGE: [],
         TOGGLE_HERO: ['sortieId'],
-        ACTIVATE_HERO_SKILL: ['sortieId'],
         LAUNCH: ['cannonId', 'x', 'y', 'holdMs', 'unitType'],
     });
     static validate(action) {
@@ -84,10 +83,7 @@ class RallyCommandCodec {
                 ['x', 'y', 'holdMs'].some((key) => !Number.isFinite(action[key])))
         )
             throw new Error('발사 명령의 필드가 잘못되었습니다.');
-        if (
-            ['TOGGLE_HERO', 'ACTIVATE_HERO_SKILL'].includes(action.type) &&
-            !HeroDeployment.validSortieId(action.sortieId)
-        )
+        if (action.type === 'TOGGLE_HERO' && !HeroDeployment.validSortieId(action.sortieId))
             throw new Error('영웅 명령의 출격 식별자가 잘못되었습니다.');
         return action;
     }

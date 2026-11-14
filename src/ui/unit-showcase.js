@@ -7,7 +7,6 @@ const SEED = 12345;
 const DURATION_SECONDS = 7;
 const VOLLEY_DISTANCE = 330;
 const LAUNCH_DELAY_SECONDS = 0.4;
-const HERO_SKILL_DELAY_SECONDS = 2;
 // A potato preview runs on until its forward cannon has stood this long.
 const GROWN_CANNON_HOLD_MS = 2000;
 const OPENING_LAUNCH_DELAY_SECONDS = 1.1;
@@ -215,8 +214,6 @@ function prepareVolleyShowcase(
                           : 0,
                   ),
           );
-    const skillTick = sim.msTicks(HERO_SKILL_DELAY_SECONDS * 1000);
-    let skillRequested = false;
     let launchShown = false;
     let centerShot = null;
     const openingCamera = () => {
@@ -271,22 +268,6 @@ function prepareVolleyShowcase(
                 unitType: launchType,
                 ...launchTarget,
             });
-            skillRequested = false;
-        },
-        beforeStep(frame) {
-            const hero = sim.heroes[0][unitType];
-            if (!skillRequested && frame.tick >= skillTick && hero?.unitId) {
-                skillRequested = true;
-                sim.queueCommand({
-                    tick: sim.tick + 1,
-                    seq: 2,
-                    actor: 'host',
-                    action: {
-                        type: 'ACTIVATE_HERO_SKILL',
-                        sortieId: hero.sortieId,
-                    },
-                });
-            }
         },
         render: opening ? undefined : (frame) => frameCamera(frame.timeMs),
         onPresent: opening ? openingCamera : undefined,

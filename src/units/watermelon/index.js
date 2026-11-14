@@ -41,6 +41,8 @@ export const Watermelon = defineUnit({
         sight: 275,
         // The basic attack also hits the soldiers around the struck one (BasicSplash).
         basicSplash: Object.freeze({ radius: 25, damageRatio: 0.5 }),
+        // The hop-and-roll ability (HeroRollAttack). No player command starts it any more; it stays for the
+        // automatic skill planned for a later hero level.
         heroActive: Object.freeze({
             cost: 100,
             range: 250,
@@ -76,10 +78,7 @@ export const Watermelon = defineUnit({
         feature: '범위 평타 4회 → 양팔 360도 휩쓸기',
         land: '영웅 한 명 출격',
         fire: '영웅 단발',
-        notes: [
-            '평타 네 번 뒤 양팔로 적을 휩쓸어요.',
-            '스킬로 뛰어올라 착지한 뒤 적을 향해 굴러요.',
-        ],
+        notes: ['평타 네 번 뒤 양팔로 적을 휩쓸어요.'],
     },
     help: [
         {
@@ -88,13 +87,6 @@ export const Watermelon = defineUnit({
             paragraphs: [
                 '수박의 평타는 맞은 적 주변의 병력에도 피해를 주고 살짝 밀어내요. 병력에게 평타가 네 번 맞으면 다음 공격에 양팔로 몸 주변을 휩쓸어 평타와 같은 피해를 주고 적을 밀어내요.',
                 '수박 카드의 점이 모두 차면 다음 공격에 휩쓸기를 써요.',
-            ],
-        },
-        {
-            section: 'hero-skill',
-            summary: '수박의 액티브 스킬',
-            paragraphs: [
-                '수박은 제자리에서 높이 뛰었다가 착지하면서 충격파로 주변 적 병력에 피해를 주고 살짝 밀어내요. 점프 중에는 바닥의 원이 충격파 범위를, 화살표가 구르기 방향과 경로를 알려 줘요. 처음 겨눈 적 방향으로 몸통 지름의 세 배만큼 굴러가며 몸통 폭에 닿은 적을 코코넛처럼 멀리 쳐 내고(맞고 쓰러진 적도 날아가요), 지형이나 건물에 닿으면 멈춰요.',
             ],
         },
     ],

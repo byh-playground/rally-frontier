@@ -21,8 +21,7 @@ export function unitCardStats(type, rangeLevel, copy) {
         payload = LaunchRules.payload(type),
         burst = unit.burstAttack,
         suicide = unit.selfDestruct,
-        spin = unit.spinAttack,
-        active = unit.heroActive || unit.fruitAttack?.active;
+        spin = unit.spinAttack;
 
     const movement = [
         ['체력', number.format(unit.hp)],
@@ -118,15 +117,6 @@ export function unitCardStats(type, rangeLevel, copy) {
               ['생존·기동', movement],
               ['공격', attack, chain ? copy.notes.slice(1) : []],
           ];
-    if (active)
-        troop.push([
-            '스킬',
-            [
-                ['사거리', number.format(active.range)],
-                ['비용', ResourceDisplay.costText({ cost: active.cost }, true)],
-            ],
-            copy.notes.slice(1),
-        ]);
     if (unit.stickyCling)
         troop.push([
             '스킬',

@@ -320,6 +320,31 @@ function createTickLog() {
     };
 }
 
+// One hero's growth: kills and level now, each level-up, and its sorties (`launch` scene, `hero`).
+function heroProbe(sim, type) {
+    const levelUps = [];
+    let landings = 0;
+    return {
+        observe() {
+            for (const event of sim.events) {
+                if (event.type === 'launchLand' && event.unit === type && event.side === 0)
+                    landings++;
+                if (event.type === 'heroLevelUp' && event.heroType === type)
+                    levelUps.push({ tick: sim.tick, level: event.level, kills: event.kills });
+            }
+        },
+        state() {
+            const slot = sim.heroes[0][type];
+            return {
+                mode: slot?.mode ?? 'docked',
+                landings,
+                growth: sim.unitById.get(slot?.unitId)?.heroGrowth ?? sim.heroGrowth[0][type],
+                levelUps,
+            };
+        },
+    };
+}
+
 // Every knockback (`unit` and `ai-match` scenes), read by `state().knockback`: for each unit the first impulse that
 // throws it (kind 'knockback'), as the change of its impact velocity (speed along the ground, lift), labelled by
 // what gave it: 'blast' (self-destruct), 'spin', 'splash' (a basic attack's splash), 'heroRoll', 'heroLand' (a hero's
@@ -2170,13 +2195,6 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     splash: payload.splash,
                 });
             }
-            // heroSkill=1: the placed heroes are sortied and their active skill (hero roll) is queued.
-            if (flag(scene, 'heroSkill', params.heroSkill))
-                for (const u of sim.units)
-                    if (u.side === 0 && UnitDefinition.get(u.type)?.heroActive) {
-                        sim.heroes[0][u.type] = { sortieId: 'p1', mode: 'advance', unitId: u.id };
-                        u.heroRollQueued = true;
-                    }
             const probe = createKnockbackProbe(sim, flag(scene, 'trace', params.trace)),
                 fight = createFightProbe(sim),
                 flight = createFlightProbe(sim),
@@ -2218,7 +2236,10 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * `zoom`(기본 3)으로 고정하고 `follow=1`이면 대포에서 시작해 쏜 병종의 아군 무리를 부드럽게 따라간다. 상태의 `landing`은 첫 병사가 나온 틱과
          * 살아 있는 그 병종 아군 수, 그 무리의 퍼짐(`nearest`·`pair`·`radius`·`ahead`)이고, `flight`는 `unit`
          * 장면과 같은 나는 병종 기록이다. 예: `?debug=1&scene=launch&map=standard&seed=1&unit=chestnut&zoom=2&tick=20`,
-         * 절벽 옆: `?debug=1&scene=launch&map=twin-gates&seed=1&unit=chestnut&zoom=2&x=820&y=1300&tick=30`
+         * 절벽 옆: `?debug=1&scene=launch&map=twin-gates&seed=1&unit=chestnut&zoom=2&x=820&y=1300&tick=30`.
+         * 영웅이면 상태의 `hero`가 지금 처치 수·레벨(`growth`)과 레벨업 기록(`levelUps`),
+         * 출격 슬롯 상태(`mode`·`landings`)다. `recallMs`를 주면 그 시각에 영웅을 복귀시키고, 회수되면 같은 곳으로
+         * 다시 쏜다. 예: `?debug=1&scene=launch&map=standard&seed=1&unit=watermelon&enemy=rice&enemyCount=30&zoom=2&tick=60`
          */
         launch(params) {
             const scene = 'launch';
@@ -2270,6 +2291,11 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     { x: back.x, y: back.y },
                 );
             queueLaunch(sim, { tick: 10, seq: 1, side: 0, cannon, unitType: type, ...target });
+            const hero = LaunchRules.isHeroType(type) ? heroProbe(sim, type) : null;
+            const recallTick =
+                params.recallMs === undefined
+                    ? null
+                    : sim.msTicks(integer(scene, 'recallMs', params.recallMs));
             // The tick the first soldier of the shot came out (its launchLand event).
             let landTick = null;
             // How the squad stands: mean distance to the nearest and to every other soldier, the farthest
@@ -2337,6 +2363,29 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 beforeStep: () => {
                     if (landTick === null && sim.events.some((e) => e.type === 'launchLand'))
                         landTick = sim.tick;
+                    hero?.observe();
+                    // recallMs: the hero walks back, and is shot at the same point again once recovered.
+                    const slot = sim.heroes[0][type];
+                    if (
+                        recallTick !== null &&
+                        sim.tick + 1 === recallTick &&
+                        slot?.mode === 'advance'
+                    )
+                        sim.queueCommand({
+                            tick: sim.tick + 1,
+                            seq: 2,
+                            actor: 'host',
+                            action: { type: 'TOGGLE_HERO', sortieId: slot.sortieId },
+                        });
+                    if (sim.events.some((e) => e.type === 'heroRecovered' && e.heroType === type))
+                        queueLaunch(sim, {
+                            tick: sim.tick + 1,
+                            seq: 3,
+                            side: 0,
+                            cannon,
+                            unitType: type,
+                            ...target,
+                        });
                     flight.observe();
                     breath?.observe();
                     chain?.observe();
@@ -2347,6 +2396,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     );
                     return {
                         landing: { tick: landTick, units: squad.length, ...spreadOf(squad) },
+                        ...(hero ? { hero: hero.state() } : {}),
                         flight: flight.state(),
                         ...(breath ? { breath: breath.state() } : {}),
                         ...(chain ? { chain: chain.state() } : {}),

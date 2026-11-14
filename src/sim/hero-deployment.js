@@ -1,6 +1,7 @@
 import { UnitDefinition } from '../definitions/units.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
+import { HeroGrowth } from './hero-growth.js';
 import { LaunchRules } from './launch-rules.js';
 import { NavigationGoal, UnitMotion } from './navigation.js';
 
@@ -62,10 +63,12 @@ export class HeroDeployment {
             throw new Error('게임 snapshot의 영웅 슬롯이 잘못되었습니다.');
         if (!Array.isArray(state.heroRecovery) || state.heroRecovery.length !== 2)
             throw new Error('게임 snapshot의 영웅 회복 상태가 잘못되었습니다.');
+        if (!Array.isArray(state.heroGrowth) || state.heroGrowth.length !== 2)
+            throw new Error('게임 snapshot의 영웅 성장 상태가 잘못되었습니다.');
         const sortieIds = new Set();
         for (const [side, heroes] of state.heroes.entries()) {
             const types = state.decks[side].filter((type) => LaunchRules.isHeroType(type));
-            for (const slots of [heroes, state.heroRecovery[side]]) {
+            for (const slots of [heroes, state.heroRecovery[side], state.heroGrowth[side]]) {
                 if (
                     !slots ||
                     typeof slots !== 'object' ||
@@ -78,12 +81,21 @@ export class HeroDeployment {
             for (const type of types) this.validateSlot(state, side, type, sortieIds);
         }
         for (const unit of state.units) {
-            if (
-                unit.alive &&
-                LaunchRules.isHeroType(unit.type) &&
-                state.heroes[unit.side]?.[unit.type]?.unitId !== unit.id
-            )
+            if (!LaunchRules.isHeroType(unit.type)) {
+                if (unit.heroGrowth !== undefined)
+                    throw new Error('게임 snapshot의 영웅 성장 상태가 잘못되었습니다.');
+                continue;
+            }
+            const deployed = state.heroes[unit.side]?.[unit.type]?.unitId === unit.id;
+            if (unit.alive && !deployed)
                 throw new Error('게임 snapshot에 출격 슬롯 없는 영웅이 있습니다.');
+            // The deployed hero holds its growth record; every other hero body holds none.
+            if (
+                unit.alive && deployed
+                    ? !HeroGrowth.valid(unit.heroGrowth)
+                    : unit.heroGrowth !== null
+            )
+                throw new Error('게임 snapshot의 영웅 성장 상태가 잘못되었습니다.');
         }
         const landingIds = new Set();
         const validateArrival = (side, type, sortieId) => {
@@ -111,6 +123,14 @@ export class HeroDeployment {
 
     static validateSlot(state, side, type, sortieIds) {
         const hero = state.heroes[side][type];
+        // The slot keeps the growth record unless the hero is on the field or has fallen.
+        const growth = state.heroGrowth[side][type];
+        if (
+            hero?.unitId != null || hero?.mode === 'dead'
+                ? growth !== null
+                : !HeroGrowth.valid(growth)
+        )
+            throw new Error('게임 snapshot의 영웅 성장 상태가 잘못되었습니다.');
         const maxHp = UnitDefinition.get(type).hp;
         const recovery = state.heroRecovery[side][type];
         if (
@@ -176,6 +196,9 @@ export class HeroDeployment {
         unit.hp = this.reserveHp(sim, side, type);
         sim.heroRecovery[side][type] = null;
         hero.unitId = unit.id;
+        // The growth record goes with the hero onto the field.
+        unit.heroGrowth = sim.heroGrowth[side][type];
+        sim.heroGrowth[side][type] = null;
         return true;
     }
 
@@ -192,14 +215,16 @@ export class HeroDeployment {
     static unitDied(sim, unit) {
         const hero = sim.heroes[unit.side][unit.type];
         if (hero?.unitId !== unit.id) return;
-        this.endSkill(unit);
+        this.endSortie(unit);
         hero.mode = 'dead';
         hero.unitId = null;
     }
 
-    static endSkill(unit) {
+    // The hero body leaves the field (fallen or recovered): its attacks stop and it holds no growth record.
+    static endSortie(unit) {
         if (unit.fruitAttack) FruitHeroAttack.endSortie(unit);
         else if (Object.hasOwn(unit, 'heroRollQueued')) HeroRollAttack.endSortie(unit);
+        unit.heroGrowth = null;
     }
 
     static returnSites(sim, unit) {
@@ -287,17 +312,12 @@ export class HeroDeployment {
             hero.unitId = null;
             return;
         }
-        if (
-            hero.mode !== 'return' ||
-            unit.heroRoll ||
-            unit.fruitAttack?.active ||
-            !UnitMotion.isGrounded(unit)
-        )
-            return;
+        if (hero.mode !== 'return' || unit.heroRoll || !UnitMotion.isGrounded(unit)) return;
         const site = this.returnSites(sim, unit).find(({ arrived }) => arrived);
         if (!site) return;
 
-        this.endSkill(unit);
+        sim.heroGrowth[side][type] = unit.heroGrowth;
+        this.endSortie(unit);
         this.dock(sim, side, type, unit.hp);
         unit.alive = false;
         unit.hp = 0;
