@@ -22,7 +22,8 @@ function missionGoal(stage) {
         return stage.mission.heroLesson.recover
             ? '출격 · 스킬 · 복귀 · 재출격'
             : '출격 후 스킬 사용';
-    if (stage.mission?.waves) return `${stage.mission.waves.length}차 공격 방어`;
+    if (stage.mission?.surviveMs)
+        return `${formatCountdown(stage.mission.surviveMs / 1000)} 버티기 · 본진과 지킬 거점 사수`;
     if (stage.mission?.firstCapture) return '전진 거점 완공';
     return ATTACK_GOAL;
 }
@@ -34,17 +35,23 @@ function currentGoal(stage, snapshot) {
         const step = mission?.heroLessonStep ?? 'launch';
         return { key: `hero-${step}`, label: HERO_LESSON_GOALS[step] };
     }
-    if (stage.mission?.waves) {
-        if (mission?.phase === 'complete') return { key: 'complete', label: '모든 공격 방어 완료' };
+    if (stage.mission?.surviveMs) {
+        if (mission?.phase === 'complete') return { key: 'complete', label: '버티기 성공' };
         const count = stage.mission.waves.length,
-            wave =
-                mission?.phase === 'waiting'
-                    ? mission.waveIndex + 2
-                    : (mission?.waveIndex ?? 0) + 1;
+            wave = (mission?.waveIndex ?? -1) + 1;
         return {
             key: `wave-${wave}`,
-            label: `${wave} / ${count}차 공격 방어`,
-            nextWaveTick: mission?.nextWaveTick,
+            label: wave ? `${wave} / ${count}차 공격` : '공격 대기',
+            timerTick: mission?.endTick,
+            ...(wave && {
+                cue: {
+                    title: `${wave}차 공격`,
+                    text:
+                        wave === count
+                            ? '마지막 공격이에요. 끝까지 버티세요!'
+                            : '지킬 거점을 막으세요.',
+                },
+            }),
         };
     }
     if (stage.mission?.firstCapture && !mission?.firstCaptureComplete)
@@ -179,16 +186,21 @@ export class CampaignPresentation {
             $('campaignObjectiveLabel').textContent = goal.label;
             if (!this.battle.announced.has(goal.key)) {
                 this.battle.announced.add(goal.key);
-                this.showCue('다음 목표', goal.label, tick, tps);
+                this.showCue(
+                    goal.cue?.title ?? '다음 목표',
+                    goal.cue?.text ?? goal.label,
+                    tick,
+                    tps,
+                );
             } else {
                 this.battle.cueEnd = tick;
             }
         }
         this.battle.tick = tick;
         const timer = $('campaignObjectiveTimer');
-        timer.hidden = goal.nextWaveTick == null;
+        timer.hidden = goal.timerTick == null;
         if (!timer.hidden) {
-            const value = formatCountdown((goal.nextWaveTick - tick) / tps);
+            const value = `남은 시간 ${formatCountdown((goal.timerTick - tick) / tps)}`;
             if (timer.textContent !== value) timer.textContent = value;
         }
         $('campaignCue').classList.toggle('hidden', tick >= this.battle.cueEnd);

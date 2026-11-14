@@ -2125,6 +2125,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     mission: sim.campaignMission && {
                         phase: sim.campaignMission.phase,
                         waveIndex: sim.campaignMission.waveIndex,
+                        endTick: sim.campaignMission.endTick,
+                        guardLost: sim.campaignMission.guardLost,
                     },
                 }),
             });

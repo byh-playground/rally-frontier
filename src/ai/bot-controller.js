@@ -223,6 +223,9 @@ class BotController {
     // 모든 AI 공통 결정 간격. 캠페인 적은 첫 결정 뒤 이 값에서 시작해 `endIntervalMs`까지 `rampMs`에 걸쳐 선형으로 길어진다.
     // 지갑이 가득 차면(수입이 버려지는 상태) 어떤 설정이든 기본 간격으로 결정한다.
     static decisionIntervalMs(pacing, tick, tps, walletFull) {
+        // A defence stage's enemy launches at one steady interval between its scripted attacks, full wallet or not:
+        // the scripted waves carry the pressure, so a full wallet must not turn the AI into a second rush.
+        if (pacing?.intervalMs) return pacing.intervalMs;
         if (walletFull || !pacing?.rampMs) return DECISION_INTERVAL_MS;
         const elapsedMs = (tick / tps) * 1000 - pacing.firstDecisionMs;
         const t = Math.min(1, Math.max(0, elapsedMs / pacing.rampMs));

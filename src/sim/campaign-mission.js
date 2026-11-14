@@ -11,16 +11,20 @@ export class CampaignMission {
             for (const [side, amount] of mission.startingPremium.entries())
                 sim.creditResources(side, amount, 'premium');
         const targetIds = this.spawnFormations(sim, mission.formations);
+        if (mission.guardPoint && this.point(sim, mission.guardPoint).owner !== 0)
+            throw new Error(
+                `캠페인 지킬 거점은 아군 시작 거점이어야 합니다: ${mission.guardPoint}`,
+            );
 
+        // A survival defence keeps every timing in sim ticks converted once from the stage's ms.
         return {
             firstCaptureComplete:
                 !mission.firstCapture || this.point(sim, mission.firstCapture).owner === 0,
             waveIndex: -1,
-            phase: mission.waves?.length ? 'waiting' : 'complete',
-            nextWaveTick: mission.waves?.length
-                ? sim.msTicks(mission.waves[0].delayMs, { min: 1 })
-                : null,
-            waveUnitIds: [],
+            phase: mission.surviveMs ? 'defend' : 'complete',
+            nextWaveTick: mission.waves?.length ? this.waveTick(sim, mission.waves[0]) : null,
+            endTick: mission.surviveMs ? sim.msTicks(mission.surviveMs, { min: 1 }) : null,
+            guardLost: false,
             ...(mission.heroLesson && {
                 heroLesson: {
                     step: 'launch',
@@ -61,18 +65,20 @@ export class CampaignMission {
         return enemies;
     }
 
+    static waveTick(sim, wave) {
+        return sim.msTicks(wave.atMs, { min: 1 });
+    }
+
+    // Attacks arrive on the clock: each wave spawns at its own `atMs` whether or not the earlier ones still stand.
     static beforeCommands(sim) {
         const state = sim.campaignMission;
         if (!state) return;
-        const mission = sim.rules.campaign.mission;
-        if (state.phase === 'waiting' && sim.tick >= state.nextWaveTick) {
+        const waves = sim.rules.campaign.mission.waves;
+        while (state.nextWaveTick !== null && sim.tick >= state.nextWaveTick) {
             state.waveIndex++;
-            state.phase = 'wave';
-            state.nextWaveTick = null;
-            state.waveUnitIds = this.spawnFormations(
-                sim,
-                mission.waves[state.waveIndex].formations,
-            );
+            this.spawnFormations(sim, waves[state.waveIndex].formations);
+            const next = waves[state.waveIndex + 1];
+            state.nextWaveTick = next ? this.waveTick(sim, next) : null;
         }
     }
 
@@ -85,21 +91,19 @@ export class CampaignMission {
         if (!state.firstCaptureComplete && this.point(sim, mission.firstCapture).owner === 0)
             state.firstCaptureComplete = true;
 
-        if (
-            state.phase === 'wave' &&
-            state.waveUnitIds.every((id) => !sim.unitById.get(id)?.alive)
-        ) {
-            state.waveUnitIds = [];
-            const nextWave = mission.waves[state.waveIndex + 1];
-            if (nextWave) {
-                state.phase = 'waiting';
-                state.nextWaveTick = sim.tick + sim.msTicks(nextWave.delayMs, { min: 1 });
-            } else state.phase = 'complete';
+        if (state.phase === 'defend') {
+            // Losing the guarded outpost loses the defence; the enemy base falling does not end it early.
+            if (mission.guardPoint && this.point(sim, mission.guardPoint).owner !== 0) {
+                state.guardLost = true;
+                return 'guest';
+            }
+            if (sim.tick < state.endTick) return null;
+            state.phase = 'complete';
         }
+        if (mission.surviveMs) return 'host';
 
-        if (!state.firstCaptureComplete || state.phase === 'waiting' || state.phase === 'wave')
-            return null;
-        return mission.waves?.length && campaign.mode === 'defend' ? 'host' : winner;
+        if (!state.firstCaptureComplete) return null;
+        return winner;
     }
 
     static heroLessonRallyPoint(sim, unit) {
@@ -151,12 +155,22 @@ export class CampaignMission {
 
     static snapshot(state) {
         if (!state) return null;
-        const { firstCaptureComplete, waveIndex, phase, nextWaveTick, heroLesson } = state;
+        const {
+            firstCaptureComplete,
+            waveIndex,
+            phase,
+            nextWaveTick,
+            endTick,
+            guardLost,
+            heroLesson,
+        } = state;
         return {
             firstCaptureComplete,
             waveIndex,
             phase,
             nextWaveTick,
+            endTick,
+            guardLost,
             ...(heroLesson && { heroLessonStep: heroLesson.step }),
         };
     }
@@ -168,7 +182,7 @@ export class CampaignMission {
             throw new Error('게임 snapshot에 캠페인 임무 상태가 있습니다.');
         }
         const waveCount = mission.waves?.length ?? 0;
-        const phases = ['waiting', 'wave', 'complete'];
+        const survive = !!mission.surviveMs;
         if (
             !value ||
             typeof value.firstCaptureComplete !== 'boolean' ||
@@ -176,19 +190,16 @@ export class CampaignMission {
             !Number.isSafeInteger(value.waveIndex) ||
             value.waveIndex < -1 ||
             value.waveIndex >= waveCount ||
-            !phases.includes(value.phase) ||
-            (!waveCount && value.phase !== 'complete') ||
-            (value.phase === 'waiting'
-                ? !Number.isSafeInteger(value.nextWaveTick) ||
-                  value.nextWaveTick <= state.tick ||
-                  value.waveIndex + 1 >= waveCount
+            !['defend', 'complete'].includes(value.phase) ||
+            (!survive && value.phase !== 'complete') ||
+            (value.waveIndex + 1 < waveCount
+                ? !Number.isSafeInteger(value.nextWaveTick) || value.nextWaveTick <= state.tick
                 : value.nextWaveTick !== null) ||
-            (value.phase === 'wave' && value.waveIndex < 0) ||
-            (value.phase === 'complete' && value.waveIndex !== waveCount - 1) ||
-            !Array.isArray(value.waveUnitIds) ||
-            value.waveUnitIds.some((id) => typeof id !== 'string' || !id) ||
-            new Set(value.waveUnitIds).size !== value.waveUnitIds.length ||
-            (value.phase !== 'wave' && value.waveUnitIds.length !== 0)
+            (survive
+                ? !Number.isSafeInteger(value.endTick) || value.endTick < 1
+                : value.endTick !== null) ||
+            typeof value.guardLost !== 'boolean' ||
+            (value.guardLost && (!mission.guardPoint || value.phase !== 'defend'))
         )
             throw new Error('게임 snapshot의 캠페인 임무 상태가 잘못되었습니다.');
         this.validateHeroLesson(value.heroLesson, mission.heroLesson);

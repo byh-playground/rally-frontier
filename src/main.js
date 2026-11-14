@@ -3386,10 +3386,38 @@ class GLRenderer {
                 ctx.fillText(`${payment} · ${workState}`, x, barY + 28, width);
             }
         }
-        const volleyGoals =
+        const campaign =
             UiRuntimeState.value.screen === 'replay'
-                ? ReplayPresentation.replayPlayer?.sim?.rules.campaign?.volleyGoals
-                : campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoals;
+                ? ReplayPresentation.replayPlayer?.sim?.rules.campaign
+                : campaignStage(MatchLifecycle.selectedCampaign);
+        const volleyGoals = campaign?.volleyGoals;
+        // A survival defence marks the outpost the player must keep standing.
+        const guard =
+            campaign?.mission?.guardPoint &&
+            (this.snapshot.capturePoints || []).find((cp) => cp.id === campaign.mission.guardPoint);
+        if (guard) {
+            const [x, y] = this.worldToPx(this.viewX(guard.x), this.viewY(guard.y)),
+                radius = 150 * sc,
+                radiusY = BattlefieldProjection.planarY(150) * sc,
+                held = guard.owner === side;
+            ctx.beginPath();
+            ctx.ellipse(x, y, radius, radiusY, 0, 0, 2 * Math.PI);
+            ctx.setLineDash([10 * ratio, 6 * ratio]);
+            ctx.lineWidth = 3 * ratio;
+            ctx.strokeStyle = held ? '#8fd3ff' : '#ff7a6b';
+            ctx.stroke();
+            ctx.setLineDash([]);
+            const text = held ? '지킬 거점' : '지킬 거점 함락';
+            ctx.font = `900 ${14 * ratio}px system-ui,sans-serif`;
+            const label = labelPosition(x, y, y - radiusY - 10 * ratio, [text], 8 * ratio);
+            if (label) {
+                ctx.lineWidth = 3 * ratio;
+                ctx.strokeStyle = '#13283a';
+                ctx.strokeText(text, label.x, label.y, label.width);
+                ctx.fillStyle = held ? '#d8f1ff' : '#ffd2cc';
+                ctx.fillText(text, label.x, label.y, label.width);
+            }
+        }
         for (const goal of volleyGoals ?? []) {
             const [x, y] = this.worldToPx(this.viewX(goal.x), this.viewY(goal.y)),
                 radius = goal.radius * sc,
@@ -10074,10 +10102,12 @@ class MatchLifecycle {
             UiRegistry.refs.resultText.textContent = mine
                 ? '적 메인 거점을 파괴했습니다.'
                 : '내 메인 거점이 파괴되었습니다.';
-        if (stage && mine && stage.mode === 'defend')
-            UiRegistry.refs.resultText.textContent = stage.mission?.waves
-                ? '모든 공격을 막아 본진을 지켰습니다.'
-                : '제한 시간 동안 본진을 지켰습니다.';
+        if (stage?.mission?.surviveMs && reason === 'base-destroyed')
+            UiRegistry.refs.resultText.textContent = mine
+                ? '제한 시간 동안 본진과 지킬 거점을 지켰습니다.'
+                : ActiveViewState.snap?.campaignMission?.guardLost
+                  ? '지킬 거점이 무너졌습니다.'
+                  : '내 메인 거점이 파괴되었습니다.';
         if (cleared && !next)
             UiRegistry.refs.resultText.textContent = '캠페인을 모두 완료했습니다.';
         const end = ActiveViewState.snap,
