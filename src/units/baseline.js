@@ -60,9 +60,14 @@ export const SINGLE_BUNDLE_SHELL = Object.freeze({
 export const FOOD_CARD_AMMO = Object.freeze({ max: 3, rechargeMs: 5000 });
 export const OIL_CARD_AMMO = Object.freeze({ max: 2, rechargeMs: 5000 });
 
-// A hero flies alone and free, and comes out of the shell on its own (land 'bundle': one soldier at a time).
+// A hero flies alone and free, and comes out of the shell on its own (land 'bundle': one soldier at a time). Its
+// shell has no landing shock (no impact or splash): each hero's payload adds its own landing strike in its place
+// (landingStrike, HeroLandingStrike). The hero looks for its landing spot as far out as the plain shell's splash.
 export const HERO_SHELL = Object.freeze({
-    ...SINGLE_BUNDLE_SHELL,
+    reach: SINGLE_BUNDLE_SHELL.reach,
+    speed: SINGLE_BUNDLE_SHELL.speed,
+    fire: SINGLE_BUNDLE_SHELL.fire,
+    deployRadius: SINGLE_BUNDLE_SHELL.splash,
     cost: 0,
     count: 1,
     land: 'bundle',

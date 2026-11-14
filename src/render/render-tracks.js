@@ -88,6 +88,7 @@ class UnitRenderObject extends RenderField {
                 'heroRoll.phaseEndTick',
                 'heroRoll.dx',
                 'heroRoll.dy',
+                'heroRoll.length',
                 'selfDestruct.phase',
                 'selfDestruct.startTick',
                 'selfDestruct.endTick',

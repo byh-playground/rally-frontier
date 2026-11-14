@@ -2,12 +2,15 @@
 // - 수박의 굴러가기 명령은 출격 식별자와 자원·대상을 검증한 뒤 시작한다. 제자리 도약을 마치고
 //   착지한 틱부터 월드 이동과 충돌을 판정하며, 정지하면 몸을 편다. 각 단계와 이미 맞힌 대상은
 //   저장·복원·리플레이에 포함한다.
+// - 착지 공격(HeroLandingStrike)의 빠지기는 도약 없이 같은 구르기로 시작한다(retreat). 한 번 구르는 거리는
+//   구르기 상태의 `length`다.
 import { FP } from '../../core/config.js';
 import { RallyGamekit } from '../../core/gamekit.js';
 import { SimulationTiming } from '../../core/simulation-timing.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { KnockbackRules } from '../../definitions/knockback-rules.js';
 import { Knockback } from '../knockback.js';
+import { HeroLandingStrike } from './hero-landing-strike.js';
 import { HashUtil } from '../map-generation.js';
 import { UnitMotion } from '../navigation.js';
 import { IndexList } from '../index-list.js';
@@ -95,6 +98,7 @@ export class HeroRollAttack {
             phaseStartTick: sim.tick,
             phaseEndTick: sim.tick + sim.msTicks(spec.hopMs),
             distance: 0,
+            length: spec.rollDistance,
             targetId: target.id,
             dx: distance ? (target.x - unit.x) / distance : Math.cos(angle),
             dy: distance ? (target.y - unit.y) / distance : Math.sin(angle),
@@ -113,6 +117,26 @@ export class HeroRollAttack {
             cost: spec.cost,
         });
         return true;
+    }
+
+    // A roll with no hop and no target, straight along (dx, dy) for `length` (the landing strike's retreat).
+    static retreat(sim, unit, dx, dy, length) {
+        unit.heroRollQueued = false;
+        unit.heroRoll = {
+            startTick: sim.tick,
+            phase: 'roll',
+            phaseStartTick: sim.tick,
+            phaseEndTick: null,
+            distance: 0,
+            length,
+            targetId: null,
+            dx,
+            dy,
+            hitIds: [],
+        };
+        unit.combat.cancelWindup();
+        unit.constructionWork = null;
+        unit.target = null;
     }
 
     static advance(sim, unit) {
@@ -142,7 +166,7 @@ export class HeroRollAttack {
         const { dx, dy } = roll;
         const terrainRadius = sim.unitRadius(unit.type);
         const { rollHitRadius } = spec;
-        const step = Math.min(spec.rollSpeed / sim.tps, spec.rollDistance - roll.distance);
+        const step = Math.min(spec.rollSpeed / sim.tps, roll.length - roll.distance);
         const vx = dx * step;
         const vy = dy * step;
         const motion = sim.navigation.motion;
@@ -210,9 +234,9 @@ export class HeroRollAttack {
         }
 
         advanceTo(wallDistance);
-        roll.distance = Math.min(spec.rollDistance, roll.distance + wallDistance);
-        if (blocked || roll.distance >= spec.rollDistance - STOP_EPSILON) {
-            if (!blocked) roll.distance = spec.rollDistance;
+        roll.distance = Math.min(roll.length, roll.distance + wallDistance);
+        if (blocked || roll.distance >= roll.length - STOP_EPSILON) {
+            if (!blocked) roll.distance = roll.length;
             roll.phase = 'unfold';
             roll.phaseStartTick = sim.tick;
             roll.phaseEndTick = sim.tick + sim.msTicks(spec.unfoldMs);
@@ -223,29 +247,14 @@ export class HeroRollAttack {
         const definition = UnitDefinition.get(unit.type);
         const { radius, damageRatio } = definition.heroActive.landing;
         const { x, y, side } = unit;
-        const impactHeightFP = Math.round(sim.world.terrain.surfaces.heightAt(x, y) * FP);
         // The landing shock shoves the enemies around a little before it hurts them.
-        Knockback.area(sim, {
-            side,
-            sourceId: unit.id,
-            x,
-            y,
-            radius,
-            impactHeightFP,
-            mass: sim.mass(unit),
-            speed: KnockbackRules.impactSpeed,
-            gain: KnockbackRules.gain.splash,
-        });
-        const { hits } = sim.applyAreaDamage({
-            sourceSide: side,
-            sourceType: unit.type,
-            sourceEntityId: unit.id,
+        const hits = HeroLandingStrike.blast(sim, unit, {
             x,
             y,
             radius,
             damage: definition.atk * damageRatio,
-            damageClass: UnitDefinition.damageClass(unit.type),
-            impactHeightFP,
+            knockback: 'splash',
+            impactHeightFP: Math.round(sim.world.terrain.surfaces.heightAt(x, y) * FP),
         });
         sim.events.push({ type: 'heroRollLand', side, sourceId: unit.id, x, y, radius, hits });
     }
@@ -300,7 +309,7 @@ export class HeroRollAttack {
             !spec ||
             !roll ||
             Object.keys(roll).sort().join(',') !==
-                'distance,dx,dy,hitIds,phase,phaseEndTick,phaseStartTick,startTick,targetId' ||
+                'distance,dx,dy,hitIds,length,phase,phaseEndTick,phaseStartTick,startTick,targetId' ||
             !deployed ||
             !this.canDrive(unit, state.tick) ||
             unit.spinAttack ||
@@ -312,13 +321,17 @@ export class HeroRollAttack {
             !['hop', 'roll', 'unfold'].includes(roll.phase) ||
             !Number.isFinite(roll.distance) ||
             roll.distance < 0 ||
-            roll.distance > spec.rollDistance ||
+            !(roll.length > 0) ||
+            roll.distance > roll.length ||
             !Number.isFinite(roll.dx) ||
             !Number.isFinite(roll.dy) ||
             Math.abs(Math.hypot(roll.dx, roll.dy) - 1) > STOP_EPSILON ||
-            typeof roll.targetId !== 'string' ||
-            !roll.targetId ||
-            roll.targetId.length > 256 ||
+            // A retreat roll (no hop) has no target.
+            (roll.targetId === null
+                ? roll.phase === 'hop'
+                : typeof roll.targetId !== 'string' ||
+                  !roll.targetId ||
+                  roll.targetId.length > 256) ||
             !Array.isArray(roll.hitIds) ||
             roll.hitIds.some((id) => typeof id !== 'string' || !id || id.length > 256) ||
             new Set(roll.hitIds).size !== roll.hitIds.length
@@ -326,6 +339,8 @@ export class HeroRollAttack {
             throw new Error('게임 snapshot의 영웅 구르기 상태가 잘못되었습니다.');
 
         const landingTick = roll.startTick + SimulationTiming.msToTicks(spec.hopMs, tps);
+        // The tick the roll itself began: after the hop, or at once for a retreat roll.
+        const rollStartTick = roll.targetId === null ? roll.startTick : landingTick;
         const { phase, phaseStartTick, phaseEndTick, distance } = roll;
         if (
             (phase === 'hop' &&
@@ -335,11 +350,11 @@ export class HeroRollAttack {
                     distance !== 0 ||
                     roll.hitIds.length)) ||
             (phase === 'roll' &&
-                (phaseStartTick !== landingTick ||
+                (phaseStartTick !== rollStartTick ||
                     phaseEndTick !== null ||
-                    distance >= spec.rollDistance - STOP_EPSILON)) ||
+                    distance >= roll.length - STOP_EPSILON)) ||
             (phase === 'unfold' &&
-                (phaseStartTick < landingTick ||
+                (phaseStartTick < rollStartTick ||
                     phaseEndTick !==
                         phaseStartTick + SimulationTiming.msToTicks(spec.unfoldMs, tps) ||
                     state.tick >= phaseEndTick))

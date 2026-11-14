@@ -65,7 +65,20 @@ export const Watermelon = defineUnit({
             tangentRatio: 0,
         }),
     },
-    payload: { ...HERO_SHELL, shellHp: 65 },
+    payload: {
+        ...HERO_SHELL,
+        shellHp: 65,
+        // Landing (HeroLandingStrike): the ground shakes, then the rind rolls two of its widths back home.
+        landingStrike: Object.freeze({
+            radius: 150,
+            damage: 40,
+            knockback: 'area',
+            retreat: Object.freeze({
+                motion: 'roll',
+                distance: WATERMELON_RIND_WORLD_RADIUS * 2 * 2,
+            }),
+        }),
+    },
     visual: {
         family: 'grain',
         billboard: true,
@@ -78,7 +91,10 @@ export const Watermelon = defineUnit({
         feature: '범위 평타 4회 → 양팔 360도 휩쓸기',
         land: '영웅 한 명 출격',
         fire: '영웅 단발',
-        notes: ['평타 네 번 뒤 양팔로 적을 휩쓸어요.'],
+        notes: [
+            '착지하면 땅을 울려 주변 적을 밀치고 본진 쪽으로 굴러 빠져요.',
+            '평타 네 번 뒤 양팔로 적을 휩쓸어요.',
+        ],
     },
     help: [
         {
@@ -87,6 +103,7 @@ export const Watermelon = defineUnit({
             paragraphs: [
                 '수박의 평타는 맞은 적 주변의 병력에도 피해를 주고 살짝 밀어내요. 병력에게 평타가 네 번 맞으면 다음 공격에 양팔로 몸 주변을 휩쓸어 평타와 같은 피해를 주고 적을 밀어내요.',
                 '수박 카드의 점이 모두 차면 다음 공격에 휩쓸기를 써요.',
+                '착지하는 순간 땅을 울려 반경 150 안의 적에게 피해 40을 주고 밀쳐낸 뒤, 껍질 지름 두 배만큼 본진 쪽으로 굴러 빠져요.',
             ],
         },
     ],
