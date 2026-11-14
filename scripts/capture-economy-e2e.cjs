@@ -61,17 +61,6 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
             const check = (value, message, detail) => {
                 if (!value) throw Error(message + (detail ? ': ' + JSON.stringify(detail) : ''));
             };
-            // These scenarios test launches, not the hand cycle (src/sim/hand-cycle.js): the launched card is dealt
-            // into the hand first by swapping it with hand slot 0.
-            const deal = (sim, side, type) => {
-                const { hand, queue } = sim.handCycle[side],
-                    index = sim.decks[side].indexOf(type);
-                if (hand.includes(index)) return;
-                const at = queue.indexOf(index);
-                check(at >= 0, 'the launched card is in the side cycle', type);
-                queue[at] = hand[0];
-                hand[0] = index;
-            };
             const rows = [],
                 seed = 12345;
             function arena(tps = 20, count = 1) {
@@ -247,7 +236,6 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     reach <= LaunchRules.maxReachOf('rice', level) + supportDistance,
                     'launch can reach the deposit or its support area',
                 );
-                deal(sim, side, 'rice');
                 check(
                     sim.applyCommand(actor, {
                         type: 'LAUNCH',
@@ -291,7 +279,6 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     'basic range cannot aim into the oil construction area',
                 );
                 const beforeUpgrade = restore(sim);
-                deal(beforeUpgrade, side, 'rice');
                 check(
                     beforeUpgrade.applyCommand(actor, {
                         type: 'LAUNCH',
@@ -454,7 +441,6 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                             beforeLaunch = sim.events.length,
                             beforeTroops = sim.launchStats.sent[0],
                             beforeWallet = sim.wallet[0];
-                        deal(sim, 0, 'rice');
                         check(
                             primary &&
                                 sim.applyCommand('host', {
@@ -544,7 +530,9 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         if (
                             !winner &&
                             practice.tick % (5 * practice.tps) === 0 &&
-                            practice.wallet[0] >= rice.cost
+                            practice.wallet[0] >= rice.cost &&
+                            // A one-card deck waits for rice's next round (CardAmmo).
+                            practice.cardAmmo[0].rounds[practice.decks[0].indexOf('rice')] > 0
                         ) {
                             let index = volleys.indexOf(0);
                             if (index < 0)
@@ -582,6 +570,62 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                             ),
                         },
                     );
+
+                    // Card ammo (CardAmmo) on practice's one-card deck: a volley spends one round, an empty card
+                    // is refused, an overheat spends none, and one round comes back a recharge after the first use.
+                    {
+                        const ammo = openStage(lesson),
+                            index = ammo.decks[0].indexOf('rice'),
+                            rounds = () => ammo.cardAmmo[0].rounds[index],
+                            spec = LaunchRules.ammo('rice'),
+                            rechargeTicks = (spec.rechargeMs * ammo.tps) / 1000,
+                            firstTick = ammo.tick + 1,
+                            settle = () => {
+                                for (let i = 0; i < 2 * ammo.tps; i++) ammo.stepSimulation();
+                            };
+                        check(rounds() === spec.max, 'a match starts with full ammo', rounds());
+                        ammo.stepSimulation();
+                        for (const [at, goal] of [goals[2], goals[0], goals[1]].entries()) {
+                            launchLesson(ammo, goal, goal.cannons);
+                            check(
+                                rounds() === spec.max - 1 - at,
+                                'each launch, a volley too, spends one round',
+                                { at, rounds: rounds() },
+                            );
+                            settle();
+                        }
+                        const cannon = coveringCannons(ammo, goals[0])[0],
+                            wallet = ammo.wallet[0],
+                            launch = (holdMs) =>
+                                ammo.applyCommand('host', {
+                                    type: 'LAUNCH',
+                                    cannonId: cannon.id,
+                                    unitType: 'rice',
+                                    x: goals[0].x,
+                                    y: goals[0].y,
+                                    holdMs,
+                                });
+                        check(
+                            !launch(LaunchRules.holdFor(distance(cannon, goals[0]), 'rice', 1)) &&
+                                ammo.events.at(-1)?.reason === 'card-out-of-ammo' &&
+                                ammo.wallet[0] === wallet,
+                            'an empty card is refused without spending resources',
+                            ammo.events.at(-1),
+                        );
+                        while (ammo.tick < firstTick + rechargeTicks - 1) ammo.stepSimulation();
+                        check(rounds() === 0, 'no round before the recharge time', ammo.tick);
+                        ammo.stepSimulation();
+                        check(
+                            rounds() === 1,
+                            'one round comes back a recharge after the first use',
+                        );
+                        check(
+                            launch(LaunchRules.chargeMs + LaunchRules.overheatGraceMs + 1) &&
+                                ammo.events.some((event) => event.type === 'launchOverheat') &&
+                                rounds() === 1,
+                            'an overheated launch spends no round',
+                        );
+                    }
 
                     const wrongCount = openStage(lesson);
                     coveringCannons(wrongCount, goals[2])[2].launchReadyTick =
@@ -726,7 +770,6 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 )
                     sim.stepSimulation();
                 const wallet = [sim.wallet[0], sim.premiumWallet[0]];
-                deal(sim, 0, 'corn');
                 check(
                     sim.applyCommand('host', {
                         type: 'LAUNCH',
@@ -861,7 +904,6 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     x: base.x,
                     y: base.y + 2000,
                 };
-                deal(sim, 0, 'pea');
                 check(sim.applyCommand('host', target), 'upgraded cannon accepts normal launch');
                 const fire = sim.events.find((e) => e.type === 'launchFire');
                 check(
@@ -1695,7 +1737,6 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 sim.wallet[0] = 500;
                 const [tower] = smallProjects(sim, start(sim));
                 finish(sim, tower);
-                deal(sim, 0, 'pea');
                 check(
                     sim.applyCommand('host', {
                         type: 'LAUNCH',

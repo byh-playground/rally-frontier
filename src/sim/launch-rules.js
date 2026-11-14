@@ -2,7 +2,7 @@
 import { RangeUtil } from '../core/game-rules.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { StickyCling } from './capabilities/sticky-cling.js';
-import { RESOURCE_SCALE } from '../units/baseline.js';
+import { FOOD_CARD_AMMO, OIL_CARD_AMMO, RESOURCE_SCALE } from '../units/baseline.js';
 import { UNITS } from '../units/index.js';
 
 // 발사전: 대포가 유닛 뭉치를 쏜다. 거리는 누른 시간만으로 정해지고, 조준 중에는 착지 원으로 미리 보인다(D-196).
@@ -137,6 +137,12 @@ class LaunchRules {
     static payload(type) {
         const g = this.grain(type);
         return g ? { count: g.count, cost: g.cost, premiumCost: g.premiumCost || 0 } : null;
+    }
+    // A card's ammo { max, rechargeMs } (CardAmmo): payload.ammo, else the food or oil default. Heroes have none.
+    static ammo(type) {
+        const g = this.grain(type);
+        if (!g || this.isHeroType(type)) return null;
+        return g.ammo ?? (g.premiumCost ? OIL_CARD_AMMO : FOOD_CARD_AMMO);
     }
     static isLaunchCannon(building, side) {
         const definition = BuildingDefinition.get(building.type);

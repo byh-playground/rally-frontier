@@ -591,114 +591,15 @@ button:disabled {
     outline: 3px solid #fff;
     outline-offset: 2px;
 }
-/* One row: the next card, the hand (HandCycle) and the sortie button of a hero out on the field. */
 .launch-cards {
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
     padding-bottom: 4px;
 }
 .launch-card-slot {
     position: relative;
-    flex: 1 1 0;
     min-width: 0;
-    max-width: 104px;
-}
-.launch-card-slot.entering {
-    animation: launch-card-enter 220ms ease-out both;
-}
-@keyframes launch-card-enter {
-    from {
-        opacity: 0;
-        transform: translateY(16px) scale(0.9);
-    }
-    to {
-        opacity: 1;
-        transform: none;
-    }
-}
-@media (prefers-reduced-motion: reduce) {
-    .launch-card-slot.entering {
-        animation: none;
-    }
-}
-.launch-next {
-    flex: 0 0 38px;
-    height: 58px;
-    border: 1.5px dashed #aecb91;
-    border-radius: 10px;
-    background: #f7f5df2e;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    opacity: 0.75;
-}
-.launch-next img {
-    height: 30px;
-    max-width: 32px;
-    object-fit: contain;
-    filter: grayscale(0.4);
-}
-.launch-next small {
-    color: #e5f2e6;
-    font-size: 9px;
-    font-weight: 800;
-}
-.launch-hero-sortie {
-    flex: 0 0 62px;
-    display: flex;
-    justify-content: center;
-}
-.launch-card.hero-orb {
-    width: 58px;
-    height: 58px;
-    padding: 0;
-    border-width: 3px;
-    border-radius: 50%;
-    isolation: isolate;
-}
-.launch-card.hero-orb .launch-card-portrait {
-    top: 50%;
-    height: 40px;
-    transform: translate(-50%, -50%);
-}
-.launch-card.hero-orb b {
-    display: none;
-}
-.launch-card.hero-orb em {
-    bottom: -11px;
-    font-size: 10px;
-}
-/* Health as a ring around the button. */
-.launch-card.hero-orb .hero-card-health {
-    position: absolute;
-    inset: -6px;
-    width: auto;
-    margin: 0;
-    border-radius: 50%;
-    background: conic-gradient(#57c27c var(--hero-hp), #483a39 0);
-    font-size: 0;
-    line-height: 0;
-    z-index: -1;
-    -webkit-mask: radial-gradient(
-        closest-side,
-        transparent calc(100% - 5px),
-        #000 calc(100% - 4px)
-    );
-    mask: radial-gradient(closest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
-}
-.launch-card.hero-orb .hero-card-name {
-    position: absolute;
-    top: -12px;
-    left: 50%;
-    translate: -50% 0;
-}
-.launch-card.hero-orb[data-hero-charging]::before {
-    inset: 0;
-    border-radius: 50%;
 }
 .launch-card {
     position: relative;
@@ -778,6 +679,62 @@ button:disabled {
 .launch-card.unaffordable .launch-card-portrait {
     filter: grayscale(0.55);
     opacity: 0.66;
+}
+/* Card ammo (CardAmmo): round dots and the next round's recharge bar in the top-left corner. */
+.launch-card-ammo {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    z-index: 1;
+    display: grid;
+    gap: 2px;
+    pointer-events: none;
+}
+.launch-card-rounds {
+    display: flex;
+    gap: 2px;
+}
+.launch-card-rounds i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #d36f12;
+    box-shadow: 0 0 0 1px #6b3a08;
+}
+.launch-card-rounds i.spent {
+    background: #f7f5df;
+    box-shadow: 0 0 0 1px #8d8577;
+}
+.launch-card-charge {
+    height: 3px;
+    border-radius: 2px;
+    background: linear-gradient(to right, #2f8c5a calc(var(--ammo-charge, 0) * 100%), #c9c3b2 0);
+}
+.launch-card-charge[data-full] {
+    visibility: hidden;
+}
+.launch-card.ammo-empty {
+    border-style: dashed;
+    border-color: #8d8577;
+    background: #d8d2c3;
+}
+.launch-card.ammo-empty .launch-card-portrait {
+    filter: grayscale(1);
+    opacity: 0.4;
+}
+.launch-card.ammo-empty::after {
+    content: '충전';
+    position: absolute;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #5d5649;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 900;
+    pointer-events: none;
 }
 .launch-card em [data-cost-resource='premium'] {
     color: #754607;
@@ -920,7 +877,8 @@ button:disabled {
     text-align: center;
     white-space: nowrap;
 }
-.hero-card[aria-pressed] em {
+.hero-card[aria-pressed] em,
+.hero-card.hero-dead em {
     min-width: 30px;
     padding: 1px 4px;
     border: 2px solid var(--tray);
@@ -932,6 +890,12 @@ button:disabled {
 }
 .hero-card[aria-pressed='false'] em {
     background: #845023;
+}
+.hero-card.hero-dead {
+    filter: grayscale(0.75) brightness(0.82);
+}
+.hero-card.hero-dead em {
+    background: #65443d;
 }
 
 @media (max-width: 430px) {
