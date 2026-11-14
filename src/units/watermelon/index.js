@@ -41,17 +41,11 @@ export const Watermelon = defineUnit({
         sight: 275,
         // The basic attack also hits the soldiers around the struck one (BasicSplash).
         basicSplash: Object.freeze({ radius: 25, damageRatio: 0.5 }),
-        // The hop-and-roll ability (HeroRollAttack). No player command starts it any more; it stays for the
-        // automatic skill planned for a later hero level.
-        heroActive: Object.freeze({
-            cost: 100,
-            range: 250,
-            hopMs: 500,
-            hopHeight: WATERMELON_SIZE * 3,
-            landing: Object.freeze({ radius: VIEW_W / 6, damageRatio: 1 }),
-            rollSpeed: 250,
-            rollHitRadius: WATERMELON_RIND_WORLD_RADIUS,
-            rollDistance: WATERMELON_RIND_WORLD_RADIUS * 2 * 3,
+        // The rolling rind (HeroRollAttack): the landing strike's retreat roll and the level-5 siege roll. It hits
+        // what the drawn rind touches.
+        rollAttack: Object.freeze({
+            speed: 250,
+            hitRadius: WATERMELON_RIND_WORLD_RADIUS,
             unfoldMs: 100,
             damageRatio: 1,
         }),
@@ -67,6 +61,9 @@ export const Watermelon = defineUnit({
         // Level unlocks (HeroGrowth.unlocked). Level 2: juice splashes from each soldier it finishes and heals it.
         // Level 3: every 50 damage it takes throws 3 seeds at the enemies within 75 (HeroPassive). Level 4: the
         // allies within 150 (not the hero itself, refreshed every 0.5 s) take 75% of enemy damage (HeroAllyAura).
+        // Level 5: with more than 10 enemies within 250 ahead it hops, shakes the ground and rolls 600 at them twice
+        // its size, at most once every 20 s (HeroUltimate siegeRoll). Level 6: 1.5 times the body and a sweep every
+        // second basic hit (awaken).
         growth: Object.freeze({
             2: Object.freeze({ killEffect: Object.freeze({ heal: 15 }) }),
             3: Object.freeze({
@@ -82,6 +79,30 @@ export const Watermelon = defineUnit({
             }),
             4: Object.freeze({
                 allyAura: Object.freeze({ radius: 150, refreshMs: 500, takenScale: 0.75 }),
+            }),
+            5: Object.freeze({
+                ultimate: Object.freeze({
+                    cooldownMs: 20000,
+                    checkMs: 500,
+                    siegeRoll: Object.freeze({
+                        reach: 250,
+                        moreThan: 10,
+                        hopMs: 500,
+                        hopHeight: WATERMELON_SIZE * 3,
+                        landing: Object.freeze({ radius: VIEW_W / 6, damage: 40 }),
+                        distance: 600,
+                        speed: 400,
+                        bodyScale: 2,
+                        damage: 100,
+                        buildingDamage: 400,
+                    }),
+                }),
+            }),
+            6: Object.freeze({
+                awaken: Object.freeze({
+                    bodyScale: 1.5,
+                    spinAttack: Object.freeze({ rhythm: Object.freeze({ basicsPerSweep: 2 }) }),
+                }),
             }),
         }),
     },
@@ -117,6 +138,8 @@ export const Watermelon = defineUnit({
             '2레벨: 막타를 치면 과즙이 튀어 체력 15 회복',
             '3레벨: 피해 50을 받을 때마다 씨앗 3알이 튀어 알마다 피해 10',
             '4레벨: 주변 아군이 받는 피해 25% 감소',
+            '5레벨: 앞에 적이 몰리면 스스로 커져 600 굴러 피해 100, 건물 400',
+            '6레벨: 몸집 1.5배, 평타 두 번마다 휩쓸기',
         ],
     },
     help: [
@@ -130,6 +153,8 @@ export const Watermelon = defineUnit({
                 '2레벨: 수박이 막타로 적 병력을 쓰러뜨리면 과즙이 튀어 체력이 15 차요.',
                 '3레벨: 수박이 피해를 50 받을 때마다 씨앗 3알이 튀어 반경 75 안의 적 병력에게 알마다 피해 10을 줘요.',
                 '4레벨: 수박 둘레 150 안의 아군이 받는 피해가 25% 줄어요. 아군 발밑에 초록 고리가 보여요.',
+                '5레벨: 앞쪽 250 안에 적 병력이 10명보다 많으면 스스로 뛰어올라 땅을 울리고(반경 150, 피해 40) 두 배로 커진 채 그쪽으로 600 굴러가요. 길 위 병력에게 피해 100을 주고 쳐 내며, 부딪힌 적 건물에는 피해 400을 주고 멈춰요. 한 번 쓰면 20초 동안 다시 쓰지 않아요.',
+                '6레벨: 수박이 1.5배로 커지고, 평타 두 번마다 휩쓸기를 써요.',
             ],
         },
     ],

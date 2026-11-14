@@ -81,7 +81,7 @@ export class UnitLobPhysics {
             dy = end.y - shot.y;
         const bodyRadius = isBuilding
             ? BuildingDefinition.get(entity.type)?.size || 30
-            : sim.unitRadius(entity.type);
+            : sim.unitRadius(entity);
         const radius = bodyRadius + spec.radius,
             rx = shot.x - px,
             ry = shot.y - py;
@@ -428,7 +428,7 @@ export class UnitLobPhysics {
                 const i = BODY_QUERY.items[k];
                 const unit = sim.units[i];
                 if (!unit?.alive || (unit.id === shot.sourceId && !shot.clearedSource)) continue;
-                const radius = sim.unitRadius(unit.type),
+                const radius = sim.unitRadius(unit),
                     pad = radius + spec.radius;
                 const coarse = pad + (sim.collisionMaxStepMovementFP || 0) / FP + maxBodySpeed * dt;
                 if (

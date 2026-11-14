@@ -67,7 +67,7 @@ class LaunchImpact {
     static distanceToBody(sim, entity, x, y, impactHeightFP, isBuilding = false) {
         const radius = isBuilding
             ? BuildingDefinition.get(entity.type)?.size || 30
-            : sim.unitRadius(entity.type);
+            : sim.unitRadius(entity);
         const bottom = isBuilding
             ? sim.world.terrain.surfaces.heightAt(entity.x, entity.y)
             : UnitMotion.bottom(sim, entity);
@@ -736,8 +736,8 @@ class LaunchImpact {
             if (u?.alive && u.side === 1 - p.side)
                 add(
                     u,
-                    sim.unitRadius(u.type),
-                    2 * sim.unitRadius(u.type),
+                    sim.unitRadius(u),
+                    2 * sim.unitRadius(u),
                     false,
                     i < sim.collisionStartCount ? sim.collisionStartFx[i] / FP : u.x,
                     i < sim.collisionStartCount ? sim.collisionStartFy[i] / FP : u.y,

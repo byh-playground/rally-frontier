@@ -10,6 +10,7 @@ import { HeroRollAttack } from '../sim/capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from '../sim/capabilities/fruit-hero-attack.js';
 import { HeroAllyAura } from '../sim/capabilities/hero-ally-aura.js';
 import { HeroPassive } from '../sim/capabilities/hero-passive.js';
+import { HeroUltimate } from '../sim/capabilities/hero-ultimate.js';
 import { CannonRider } from '../sim/capabilities/cannon-rider.js';
 import { RollingBody } from '../sim/capabilities/rolling-body.js';
 import { LaunchRules } from '../sim/launch-rules.js';
@@ -282,6 +283,7 @@ class RallySimulationAdapter {
                     FruitHeroAttack.validateState(entity, state, this.session.sim.tps);
                     HeroPassive.validateState(entity, state);
                     HeroAllyAura.validateState(entity, state);
+                    HeroUltimate.validateState(entity, state);
                     CannonRider.validateState(entity);
                     RollingBody.validateState(entity, state);
                 }

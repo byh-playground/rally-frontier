@@ -8,6 +8,7 @@ import { HeroGrowth } from './hero-growth.js';
 import { HeroKillEffect } from './capabilities/hero-kill-effect.js';
 import { HeroPassive } from './capabilities/hero-passive.js';
 import { HeroAllyAura } from './capabilities/hero-ally-aura.js';
+import { HeroUltimate } from './capabilities/hero-ultimate.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { UnitSpinAttack } from './capabilities/unit-spin-attack.js';
 import { BasicSplash } from './capabilities/basic-splash.js';
@@ -130,9 +131,11 @@ class SimulationRuntimeState {
         // Area damage can kill a bursting unit whose blast is area damage again (UnitSelfDestructAttack.drain), so
         // each nesting depth reads its own list.
         sim.areaDamageQueries = { lists: [], depth: 0 };
+        // The widest body any unit reaches, an awakened hero's larger one included (HeroGrowth.bodyScale).
         sim.maxUnitRadius = Math.max(
-            ...Object.values(UnitDefinition.all).map(
-                (d) => (d?.size || 10) * COLLISION_RADIUS_SCALE,
+            ...Object.entries(UnitDefinition.all).map(
+                ([type, d]) =>
+                    (d?.size || 10) * COLLISION_RADIUS_SCALE * HeroGrowth.maxBodyScale(type),
             ),
         );
         sim.targetLevelMemo = new WeakMap();
@@ -678,7 +681,7 @@ class StrategySim {
             reach = BuildingDefinition.get(building.type)?.size || 0;
         for (const u of this.units) {
             if (!u.alive || UnitFlight.airborne(u)) continue;
-            const radius = this.unitRadius(u.type);
+            const radius = this.unitRadius(u);
             if (Math.hypot(u.x - building.x, u.y - building.y) >= radius + reach) continue;
             navigation.sync();
             if (navigation.field.pointClear(u.x, u.y, radius)) continue;
@@ -1190,7 +1193,7 @@ class StrategySim {
         const windupTicks = d.attackIntervalMs == null ? 0 : this.attackWindupTicksFor(d);
         u.combat.cooldownUntil = this.tick + Math.max(1, scheduled.ticks - windupTicks);
         u.combat.moveRecoveryUntil = this.tick + this.attackMoveRecoveryDurationTicks(u, d);
-        if (d.heroActive || d.fruitAttack) u.combat.basicAttackTick = this.tick;
+        if (d.rollAttack || d.fruitAttack) u.combat.basicAttackTick = this.tick;
         u.attackFlash = 1;
     }
 
@@ -1227,13 +1230,13 @@ class StrategySim {
             for (let k = 0; k < count; k++) {
                 const u = this.units[SPAWN_QUERY.items[k]];
                 if (!u?.alive || UnitFlight.airborne(u)) continue;
-                const other = this.unitRadius(u.type);
+                const other = this.unitRadius(u);
                 if (Math.hypot(x - u.x, y - u.y) < ur + other + SPAWN_UNIT_GAP) return false;
             }
         } else {
             for (const u of this.units) {
                 if (!u.alive || UnitFlight.airborne(u)) continue;
-                const other = this.unitRadius(u.type);
+                const other = this.unitRadius(u);
                 if (Math.hypot(x - u.x, y - u.y) < ur + other + SPAWN_UNIT_GAP) return false;
             }
         }
@@ -1262,7 +1265,7 @@ class StrategySim {
     ) {
         if (!anchor) return null;
         const ur = this.unitRadius(type),
-            ar = anchor.type ? this.unitRadius(anchor.type) : 0;
+            ar = anchor.type ? this.unitRadius(anchor) : 0;
         const start = Math.max(ur + ar + SPAWN_UNIT_GAP, Number(baseRadius) || 0);
         const limit = Math.max(start, Number(maxRadius) || start + 48),
             slots = Math.max(8, Math.round(Number(angleSlots) || 12)),
@@ -1763,9 +1766,7 @@ class StrategySim {
         const aggro = defensiveSite ? 0 : this.combatTargetAggroRange(u);
         const queryRange = Math.max(
             aggro,
-            attackRange +
-                this.unitRadius(u.type) +
-                Math.max(this.maxUnitRadius, this.maxBuildingRadius),
+            attackRange + this.unitRadius(u) + Math.max(this.maxUnitRadius, this.maxBuildingRadius),
         );
         let currentInRange = null;
         let inRangeBest = null,
@@ -1840,7 +1841,7 @@ class StrategySim {
         const queryRange2 = queryRange * queryRange;
         const nearRange = Math.min(
                 queryRange,
-                attackRange + this.unitRadius(u.type) + this.maxUnitRadius,
+                attackRange + this.unitRadius(u) + this.maxUnitRadius,
             ),
             nearRange2 = nearRange * nearRange;
         // Hostile units with minD2 < distance² <= maxD2, in grid order.
@@ -2141,7 +2142,7 @@ class StrategySim {
                         ? null
                         : LaunchImpact.distanceToBody(this, e, x, y, impactHeightFP);
                 const d = body ? body.falloffDistance : Math.hypot(e.x - x, e.y - y);
-                if (body ? body.surfaceDistance > radius : d > radius + this.unitRadius(e.type))
+                if (body ? body.surfaceDistance > radius : d > radius + this.unitRadius(e))
                     continue;
                 const mult = strikePeak > 1 ? LaunchRules.strike(d, radius, strikePeak) : 1;
                 result.hits++;
@@ -2617,7 +2618,7 @@ class StrategySim {
                 BasicSplash.hit(this, u, t, d.basicSplash, Math.floor(d.atk)) &&
                 d.spinAttack?.rhythm
             )
-                UnitSpinAttack.countBasic(u, d.spinAttack.rhythm);
+                UnitSpinAttack.countBasic(u, HeroGrowth.spec(u, 'spinAttack').rhythm);
             return null;
         }
         return this.applyDamage(u.side, u.type, t, found.isBuilding, Math.floor(d.atk), u.id, {
@@ -2953,6 +2954,8 @@ class StrategySim {
                 const hero = heroes[type];
                 if (hero?.unitId == null) continue;
                 const unit = this.liveEntityRefById(hero.unitId, 'unit')?.entity;
+                // The level-5 automatic strike checks its trigger and starts before the roll and shots advance.
+                if (unit?.heroUltimate) HeroUltimate.update(this, unit, hero);
                 if (unit?.heroRoll) HeroRollAttack.advance(this, unit);
                 if (unit?.fruitAttack) FruitHeroAttack.update(this, unit);
                 if (unit?.alive && unit.heroPassive) HeroPassive.update(this, unit);

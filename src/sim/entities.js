@@ -11,6 +11,7 @@ import { LaunchImpact } from './launch-impact.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { HeroAllyAura } from './capabilities/hero-ally-aura.js';
 import { HeroPassive } from './capabilities/hero-passive.js';
+import { HeroUltimate } from './capabilities/hero-ultimate.js';
 import { StickyCling } from './capabilities/sticky-cling.js';
 import { CannonRider } from './capabilities/cannon-rider.js';
 import { RollingBody } from './capabilities/rolling-body.js';
@@ -44,10 +45,8 @@ class Unit {
     );
     constructor(spec = {}) {
         const data = Unit.stateContract.create(spec);
-        if (UnitDefinition.get(data.type)?.heroActive) {
-            if (!Object.hasOwn(data, 'heroRoll')) data.heroRoll = null;
-            if (!Object.hasOwn(data, 'heroRollQueued')) data.heroRollQueued = false;
-        }
+        if (UnitDefinition.get(data.type)?.rollAttack && !Object.hasOwn(data, 'heroRoll'))
+            data.heroRoll = null;
         if (UnitDefinition.get(data.type)?.fruitAttack && !Object.hasOwn(data, 'fruitAttack'))
             data.fruitAttack = FruitHeroAttack.initialState();
         // An arc sweep keeps its own spin state; a pulsing spin is timed by its sustain (below).
@@ -88,6 +87,9 @@ class Unit {
         if (passive && !Object.hasOwn(data, 'heroPassive')) data.heroPassive = passive;
         if (HeroAllyAura.declared(data.type) && !Object.hasOwn(data, 'heroAura'))
             data.heroAura = HeroAllyAura.initialState();
+        // The level-5 automatic strike's recharge, trigger checks and a berry rain (HeroUltimate).
+        if (HeroUltimate.declared(data.type) && !Object.hasOwn(data, 'heroUltimate'))
+            data.heroUltimate = HeroUltimate.initialState();
         this.status = new StatusComponent(data.status || {});
         delete data.status;
         this.movement = new MovementComponent(data.movement || {});

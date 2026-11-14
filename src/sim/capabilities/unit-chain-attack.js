@@ -152,7 +152,7 @@ class UnitChainAttack {
         const count = sim.nearbyUnits(
             unit.x,
             unit.y,
-            d.range + sim.unitRadius(unit.type) + sim.maxUnitRadius,
+            d.range + sim.unitRadius(unit) + sim.maxUnitRadius,
             1 - unit.side,
             QUERY,
             true,
@@ -177,7 +177,7 @@ class UnitChainAttack {
     }
     // The nearest enemy unit (ground or flying) in attack reach, else the nearest hostile building in reach.
     static first(sim, unit, d, vision) {
-        const r = d.range + sim.unitRadius(unit.type) + sim.maxUnitRadius;
+        const r = d.range + sim.unitRadius(unit) + sim.maxUnitRadius;
         let best = null,
             bestD2 = Infinity;
         for (let layer = 0; layer < 2; layer++) {
@@ -197,7 +197,7 @@ class UnitChainAttack {
         const count = sim.nearbyBuildingIndices(
             unit.x,
             unit.y,
-            d.range + sim.unitRadius(unit.type) + sim.maxBuildingRadius,
+            d.range + sim.unitRadius(unit) + sim.maxBuildingRadius,
             QUERY,
         );
         for (let k = 0; k < count; k++) {

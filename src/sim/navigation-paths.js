@@ -18,7 +18,7 @@ class FieldPath {
     // by their quantized centre, chase goals by the cell their target stands in.
     nextPoint(u, goal) {
         const nav = this.nav,
-            radius = nav.sim.unitRadius(u.type);
+            radius = nav.sim.unitRadius(u);
         const direct = nav.straightGoal(u, goal, radius);
         if (direct) return direct;
         const point = nav.fieldsFor(radius).next(u.x, u.y, goal, radius);
@@ -36,7 +36,7 @@ class DirectPath {
     nextPoint(u, goal) {
         const nav = this.nav;
         nav.sync();
-        return nav.directGoal(u.x, u.y, goal, nav.sim.unitRadius(u.type));
+        return nav.directGoal(u.x, u.y, goal, nav.sim.unitRadius(u));
     }
 }
 
@@ -57,7 +57,7 @@ class RoutePath {
     }
     nextPoint(u, goal) {
         const nav = this.nav,
-            radius = nav.sim.unitRadius(u.type);
+            radius = nav.sim.unitRadius(u);
         nav.sync();
         const direct = nav.straightGoal(u, goal, radius);
         if (direct) return direct;
@@ -101,7 +101,7 @@ class RoutePath {
     // becomes the route's goal either way, so a caller choosing among goals keeps this one.
     reaches(u, goal) {
         const nav = this.nav,
-            radius = nav.sim.unitRadius(u.type);
+            radius = nav.sim.unitRadius(u);
         nav.sync();
         const fields = nav.fieldsFor(radius);
         if (nav.straightGoal(u, goal, radius)) {
@@ -118,7 +118,7 @@ class RoutePath {
         return !!this.plan(u, goal, fields, radius);
     }
     // Whether the kept route was made for `goal` (the same two-integer key the flow fields use).
-    follows(u, goal, fields = this.nav.fieldsFor(this.nav.sim.unitRadius(u.type))) {
+    follows(u, goal, fields = this.nav.fieldsFor(this.nav.sim.unitRadius(u))) {
         const route = u.route;
         return !!route && route.goalA === fields.keyA(goal) && route.goalB === goal.keyB;
     }

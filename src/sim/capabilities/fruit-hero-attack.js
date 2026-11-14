@@ -18,7 +18,9 @@ const SHOT_KEYS =
     'backHitIds,curve,endTick,from,height,id,kind,mode,outHitIds,radius,returnTo,startTick,targetId,targetIsBuilding,to,turnTick';
 // Kill-effect bounces in flight at once (a landing strike can kill a crowd); the rest of the kills throw none.
 const MAX_BOUNCES = 32;
-const MAX_SHOTS = 16 + MAX_BOUNCES;
+// The level-5 shots in flight at once: a berry rain's falling berries, or the one big boomerang (HeroUltimate).
+const MAX_ULTIMATE = 32;
+const MAX_SHOTS = 16 + MAX_BOUNCES + MAX_ULTIMATE;
 const MAX_HITS = 1024;
 const MAX_POSITION = 1_000_000;
 
@@ -46,7 +48,7 @@ function validHits(ids) {
 function worldPoint(sim, entity, isBuilding = false) {
     const radius = isBuilding
         ? BuildingDefinition.get(entity.type)?.size || 30
-        : sim.unitRadius(entity.type);
+        : sim.unitRadius(entity);
     const bottom = isBuilding
         ? sim.world.terrain.surfaces.heightAt(entity.x, entity.y)
         : UnitMotion.bottom(sim, entity);
@@ -115,7 +117,8 @@ export class FruitHeroAttack {
 
     static basic(sim, unit, target, isBuilding) {
         const definition = UnitDefinition.get(unit.type);
-        const spec = definition.fruitAttack;
+        // The block as the hero's level has it (HeroGrowth.spec): the awakening may change `every` or `twinCurve`.
+        const spec = HeroGrowth.spec(unit, 'fruitAttack');
         const fruit = unit.fruitAttack;
         const startTick = sim.tick;
         const impactTick = startTick + sim.msTicks(spec.basicMs);
@@ -135,22 +138,26 @@ export class FruitHeroAttack {
                   ),
               )
             : worldPoint(sim, target, isBuilding);
-        fruit.projectiles.push(
-            this.makeShot({
-                unit,
-                kind: boomerang ? 'boomerang' : 'berry',
-                mode: piercing ? 'passive' : 'basic',
-                from,
-                to,
-                startTick,
-                turnTick: boomerang ? impactTick : null,
-                endTick: boomerang ? impactTick + sim.msTicks(spec.returnMs) : impactTick,
-                radius: spec.radius,
-                curve: boomerang ? spec.radius : 0,
-                targetId: target.id,
-                targetIsBuilding: isBuilding,
-            }),
-        );
+        // An awakened banana's nth boomerang flies as two, one curving to each side (`twinCurve`).
+        const curves = piercing && spec.twinCurve ? [-spec.twinCurve, spec.twinCurve] : null;
+        for (const [index, curve] of (curves ?? [boomerang ? spec.radius : 0]).entries())
+            fruit.projectiles.push(
+                this.makeShot({
+                    unit,
+                    kind: boomerang ? 'boomerang' : 'berry',
+                    mode: piercing ? 'passive' : 'basic',
+                    index: curves ? index : null,
+                    from,
+                    to,
+                    startTick,
+                    turnTick: boomerang ? impactTick : null,
+                    endTick: boomerang ? impactTick + sim.msTicks(spec.returnMs) : impactTick,
+                    radius: spec.radius,
+                    curve,
+                    targetId: target.id,
+                    targetIsBuilding: isBuilding,
+                }),
+            );
         if (proc && spec.lob) {
             const heading = Math.atan2(target.y - unit.y, target.x - unit.x);
             const dx = Math.cos(heading) * spec.lob.radius;
@@ -182,8 +189,51 @@ export class FruitHeroAttack {
 
     // A kill effect (HeroKillEffect `fillCombo`): the n-hit counter is full, so the next basic is the nth one.
     static fillCombo(unit) {
-        unit.fruitAttack.combo = UnitDefinition.get(unit.type).fruitAttack.every - 1;
+        unit.fruitAttack.combo = HeroGrowth.spec(unit, 'fruitAttack').every - 1;
         return true;
+    }
+
+    // The level-5 boomerang (HeroUltimate `boomerang`): straight out `length` toward `target` and straight back
+    // to where it was thrown, `travelMs` each way, through every enemy on its band.
+    static ultimateBoomerang(sim, unit, target, spec) {
+        const travel = Math.max(1, sim.msTicks(spec.travelMs));
+        const from = worldPoint(sim, unit);
+        unit.fruitAttack.projectiles.push(
+            this.makeShot({
+                unit,
+                kind: 'boomerang',
+                mode: 'ultimate',
+                from,
+                to: this.boomerangTurnPoint(sim, unit, target, spec.length),
+                startTick: sim.tick,
+                turnTick: sim.tick + travel,
+                endTick: sim.tick + 2 * travel,
+                radius: spec.radius,
+            }),
+        );
+        sim.events.push({ type: 'fruitThrow', side: unit.side, sourceId: unit.id, ...from });
+    }
+
+    // One berry of a level-5 rain (HeroUltimate `berryRain`), the `index`th: it falls straight from `dropHeight`
+    // onto (x, y) in `fallMs`.
+    static rainBerry(sim, unit, x, y, spec, index) {
+        const fruit = unit.fruitAttack;
+        if (fruit.projectiles.filter((shot) => shot.mode === 'ultimate').length >= MAX_ULTIMATE)
+            return;
+        const to = impactPoint(sim, x, y);
+        fruit.projectiles.push(
+            this.makeShot({
+                unit,
+                kind: 'berry',
+                mode: 'ultimate',
+                index,
+                from: { x: to.x, y: to.y, z: to.z + spec.dropHeight },
+                to,
+                startTick: sim.tick,
+                endTick: sim.tick + Math.max(1, sim.msTicks(spec.fallMs)),
+                radius: UnitDefinition.get(unit.type).fruitAttack.radius,
+            }),
+        );
     }
 
     // A kill effect (HeroKillEffect `bounce`): one berry hops from where `fallen` died, on the lob's path and time,
@@ -267,7 +317,7 @@ export class FruitHeroAttack {
         const length = Math.max(0, Math.min(reach, limitX, limitY));
         const x = unit.x + ux * length;
         const y = unit.y + uy * length;
-        return { x, y, z: terrain.surfaces.heightAt(x, y) + sim.unitRadius(unit.type) };
+        return { x, y, z: terrain.surfaces.heightAt(x, y) + sim.unitRadius(unit) };
     }
 
     static update(sim, unit) {
@@ -285,17 +335,39 @@ export class FruitHeroAttack {
         if (sim.tick <= shot.startTick) return true;
         const spec = definition.fruitAttack;
         if (shot.mode === 'bounce') return this.advanceBounce(sim, unit, shot);
+        const ultimate =
+            shot.mode === 'ultimate' ? HeroGrowth.declared(unit.type, 'ultimate') : null;
         if (shot.kind === 'berry' && shot.mode !== 'basic') {
             if (sim.tick < shot.endTick) return true;
-            this.landBerry(sim, unit, shot, spec.lob.radius, spec.lob.damage);
+            // A rain berry hits with the rain's own size and damage.
+            if (ultimate)
+                this.landBerry(
+                    sim,
+                    unit,
+                    shot,
+                    ultimate.berryRain.berryRadius,
+                    ultimate.berryRain.damage,
+                    true,
+                );
+            else this.landBerry(sim, unit, shot, spec.lob.radius, spec.lob.damage);
             return false;
         }
 
         const from = fruitProjectilePosition(shot, sim.tick - 1);
         const returning = shot.turnTick !== null && sim.tick > shot.turnTick;
-        if (returning) shot.returnTo = worldPoint(sim, unit);
+        // The big boomerang comes back to where it was thrown; the others follow the hero home.
+        if (returning && !ultimate) shot.returnTo = worldPoint(sim, unit);
         const to = fruitProjectilePosition(shot, sim.tick);
-        if (shot.mode !== 'basic') this.sweep(sim, unit, shot, from, to, returning, definition.atk);
+        if (shot.mode !== 'basic')
+            this.sweep(
+                sim,
+                unit,
+                shot,
+                from,
+                to,
+                returning,
+                ultimate ? ultimate.boomerang.damage : definition.atk,
+            );
         else if (returning && shot.kind === 'boomerang')
             this.echoBasic(sim, unit, shot, from, to, definition.atk);
         if (
@@ -396,7 +468,9 @@ export class FruitHeroAttack {
             });
     }
 
-    static landBerry(sim, unit, shot, radius, damage) {
+    // A rain berry (`rain`, HeroUltimate) hits with the hero's own damage class, so its damage is the same on any
+    // body, and leaves no puddle.
+    static landBerry(sim, unit, shot, radius, damage, rain = false) {
         const { x, y, z } = shot.to;
         const impactHeightFP = Math.round(z * FP);
         const { hits } = sim.applyAreaDamage({
@@ -408,13 +482,15 @@ export class FruitHeroAttack {
             radius,
             damage,
             impactHeightFP,
+            ...(rain ? { damageClass: UnitDefinition.damageClass(unit.type) } : {}),
         });
         // The passive puddle (HeroPassive `puddle`) stays where the lobbed berry came down.
-        HeroPassive.lobLanded(sim, unit, x, y, impactHeightFP);
+        if (!rain) HeroPassive.lobLanded(sim, unit, x, y, impactHeightFP);
         sim.events.push({
             type: 'fruitBerryLand',
             side: unit.side,
             sourceId: unit.id,
+            mode: shot.mode,
             x,
             y,
             zFP: impactHeightFP,
@@ -439,13 +515,59 @@ export class FruitHeroAttack {
             ((!unit.alive || state.heroes?.[unit.side]?.[unit.type]?.unitId !== unit.id) &&
                 (fruit.projectiles.length || fruit.combo)) ||
             fruit.projectiles.filter((shot) => shot.mode === 'bounce').length > MAX_BOUNCES ||
-            fruit.projectiles.some((shot) => !this.validShot(shot, spec, state.tick, tps)) ||
+            fruit.projectiles.filter((shot) => shot.mode === 'ultimate').length > MAX_ULTIMATE ||
+            fruit.projectiles.some(
+                (shot) =>
+                    !this.validShot(
+                        shot,
+                        spec,
+                        state.tick,
+                        tps,
+                        HeroGrowth.declared(unit.type, 'ultimate'),
+                        HeroGrowth.declared(unit.type, 'awaken')?.fruitAttack?.twinCurve,
+                    ),
+            ) ||
             new Set(fruit.projectiles.map((shot) => shot.id)).size !== fruit.projectiles.length
         )
             throw new Error('게임 snapshot의 과일 영웅 공격 상태가 잘못되었습니다.');
     }
 
-    static validShot(shot, spec, tick, tps) {
+    // A level-5 shot (HeroUltimate): the big boomerang, straight out and back to the throw point, or a rain berry
+    // falling straight down.
+    static validUltimateShot(shot, spec, tps, ultimate) {
+        const big = ultimate?.boomerang,
+            rain = ultimate?.berryRain;
+        if (
+            shot.curve !== 0 ||
+            shot.height !== 0 ||
+            shot.targetId !== null ||
+            shot.targetIsBuilding ||
+            shot.returnTo !== null
+        )
+            return false;
+        if (shot.kind === 'boomerang') {
+            const travel = Math.max(1, SimulationTiming.msToTicks(big?.travelMs ?? 0, tps));
+            return (
+                !!big &&
+                shot.radius === big.radius &&
+                shot.turnTick === shot.startTick + travel &&
+                shot.endTick === shot.startTick + 2 * travel
+            );
+        }
+        return (
+            !!rain &&
+            shot.kind === 'berry' &&
+            shot.radius === spec.radius &&
+            shot.turnTick === null &&
+            shot.endTick ===
+                shot.startTick + Math.max(1, SimulationTiming.msToTicks(rain.fallMs, tps)) &&
+            !shot.outHitIds.length &&
+            !shot.backHitIds.length
+        );
+    }
+
+    // `ultimate`: the hero's level-5 spec (its shots); `twinCurve`: the awakened twin boomerangs' curve.
+    static validShot(shot, spec, tick, tps, ultimate = null, twinCurve = null) {
         if (
             !shot ||
             Object.keys(shot).sort().join(',') !== SHOT_KEYS ||
@@ -479,8 +601,13 @@ export class FruitHeroAttack {
                 !shot.outHitIds.length &&
                 !shot.backHitIds.length
             );
+        if (shot.mode === 'ultimate') return this.validUltimateShot(shot, spec, tps, ultimate);
         const boomerang = spec.kind === 'boomerang';
         const lob = !boomerang && shot.mode === 'passive';
+        const curves =
+            boomerang && shot.mode === 'passive' && twinCurve
+                ? [spec.radius, -twinCurve, twinCurve]
+                : [boomerang ? spec.radius : 0];
         const duration = lob ? spec.lob.durationMs : spec.basicMs;
         const outbound = SimulationTiming.msToTicks(duration, tps);
         const returning = boomerang ? SimulationTiming.msToTicks(spec.returnMs, tps) : 0;
@@ -488,7 +615,7 @@ export class FruitHeroAttack {
             shot.kind === (boomerang ? 'boomerang' : 'berry') &&
             (shot.mode === 'basic' || shot.mode === 'passive' || lob) &&
             shot.radius === spec.radius &&
-            shot.curve === (boomerang ? spec.radius : 0) &&
+            curves.includes(shot.curve) &&
             shot.height === (lob ? spec.lob.height : 0) &&
             shot.turnTick === (boomerang ? shot.startTick + outbound : null) &&
             shot.endTick === shot.startTick + outbound + returning &&

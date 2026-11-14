@@ -61,7 +61,7 @@ export class BasicSplash {
                 gain: KnockbackRules.gain.splash,
                 strength: KnockbackRules.strength(
                     body.falloffDistance,
-                    spec.radius + sim.unitRadius(other.type),
+                    spec.radius + sim.unitRadius(other),
                 ),
                 sourceId: unit.id,
                 originX: x,
