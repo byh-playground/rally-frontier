@@ -14,6 +14,9 @@
 //            `growth { <level 2..6>: { <effect>: spec } }` (heroes only): what each hero level unlocks
 //            (HeroGrowth.unlocked), checked by GROWTH_EFFECTS below. Levels raise no stats. Effects:
 //              killEffect { heal?, fillCombo?, bounce? { radius, damage } } (HeroKillEffect)
+//              passive { seedBurst? { takenPerBurst, seeds, radius, damage, flightMs }, echoHit? { ratio },
+//                puddle? { durationMs, tickMs, radius, damage } } (HeroPassive)
+//              allyAura { radius, refreshMs, takenScale?, movePct?, regen? { intervalMs, percent, min } } (HeroAllyAura)
 //   payload  the cannon shell that carries the unit (LaunchRules). A hero's shell has no landing shock (impact,
 //            splash) but `landingStrike { radius, damage, knockback?, scatter? { ring, count }, retreat { motion:
 //            'roll'|'hop', distance } }`, the hero's own strike when it lands (HeroLandingStrike)
@@ -97,6 +100,80 @@ const GROWTH_EFFECTS = Object.freeze({
         )
             throw new Error(
                 `병종 ${id}의 killEffect.bounce는 양수 radius·damage와 fruitAttack.lob이 필요합니다.`,
+            );
+    },
+    // HeroPassive: always on once unlocked.
+    passive(id, spec, unit) {
+        const keys = Object.keys(spec || {});
+        if (keys.length !== 1 || !['seedBurst', 'echoHit', 'puddle'].includes(keys[0]))
+            throw new Error(`병종 ${id}의 passive는 seedBurst·echoHit·puddle 중 하나여야 합니다.`);
+        const positive = (block, fields) =>
+            fields.every((field) => Number.isFinite(block[field]) && block[field] > 0);
+        if (
+            spec.seedBurst &&
+            !(
+                positive(spec.seedBurst, [
+                    'takenPerBurst',
+                    'seeds',
+                    'radius',
+                    'damage',
+                    'flightMs',
+                ]) &&
+                Number.isInteger(spec.seedBurst.takenPerBurst) &&
+                Number.isInteger(spec.seedBurst.seeds)
+            )
+        )
+            throw new Error(
+                `병종 ${id}의 passive.seedBurst는 양수(정수 takenPerBurst·seeds)여야 합니다.`,
+            );
+        if (
+            spec.echoHit &&
+            !(positive(spec.echoHit, ['ratio']) && unit.fruitAttack?.kind === 'boomerang')
+        )
+            throw new Error(
+                `병종 ${id}의 passive.echoHit은 양수 ratio와 부메랑 fruitAttack이 필요합니다.`,
+            );
+        if (
+            spec.puddle &&
+            (!positive(spec.puddle, ['durationMs', 'tickMs', 'radius', 'damage']) ||
+                spec.puddle.tickMs > spec.puddle.durationMs ||
+                !unit.fruitAttack?.lob)
+        )
+            throw new Error(
+                `병종 ${id}의 passive.puddle은 양수 값(tickMs ≤ durationMs)과 fruitAttack.lob이 필요합니다.`,
+            );
+    },
+    // HeroAllyAura: the allies around the hero.
+    allyAura(id, spec) {
+        const effects = ['takenScale', 'movePct', 'regen'].filter(
+            (key) => spec?.[key] !== undefined,
+        );
+        if (
+            !(spec?.radius > 0 && spec.refreshMs > 0) ||
+            !effects.length ||
+            Object.keys(spec).some(
+                (key) => !['radius', 'refreshMs', 'takenScale', 'movePct', 'regen'].includes(key),
+            )
+        )
+            throw new Error(
+                `병종 ${id}의 allyAura는 양수 radius·refreshMs와 takenScale·movePct·regen 중 하나 이상이 필요합니다.`,
+            );
+        if (spec.takenScale !== undefined && !(spec.takenScale > 0 && spec.takenScale < 1))
+            throw new Error(`병종 ${id}의 allyAura.takenScale은 0과 1 사이여야 합니다.`);
+        if (spec.movePct !== undefined && !(Number.isInteger(spec.movePct) && spec.movePct > 100))
+            throw new Error(`병종 ${id}의 allyAura.movePct는 100보다 큰 정수여야 합니다.`);
+        const regen = spec.regen;
+        if (
+            regen !== undefined &&
+            !(
+                regen.intervalMs > 0 &&
+                regen.percent > 0 &&
+                Number.isInteger(regen.min) &&
+                regen.min > 0
+            )
+        )
+            throw new Error(
+                `병종 ${id}의 allyAura.regen은 양수 intervalMs·percent와 양의 정수 min이 필요합니다.`,
             );
     },
 });

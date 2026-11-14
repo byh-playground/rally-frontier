@@ -1,6 +1,8 @@
 import { UnitDefinition } from '../definitions/units.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
+import { HeroAllyAura } from './capabilities/hero-ally-aura.js';
+import { HeroPassive } from './capabilities/hero-passive.js';
 import { HeroGrowth } from './hero-growth.js';
 import { LaunchRules } from './launch-rules.js';
 import { NavigationGoal, UnitMotion } from './navigation.js';
@@ -224,6 +226,8 @@ export class HeroDeployment {
     static endSortie(unit) {
         if (unit.fruitAttack) FruitHeroAttack.endSortie(unit);
         else if (Object.hasOwn(unit, 'heroRollQueued')) HeroRollAttack.endSortie(unit);
+        HeroPassive.endSortie(unit);
+        HeroAllyAura.endSortie(unit);
         unit.heroGrowth = null;
     }
 

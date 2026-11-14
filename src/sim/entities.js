@@ -9,6 +9,8 @@ import {
 import { LaunchRules } from './launch-rules.js';
 import { LaunchImpact } from './launch-impact.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
+import { HeroAllyAura } from './capabilities/hero-ally-aura.js';
+import { HeroPassive } from './capabilities/hero-passive.js';
 import { StickyCling } from './capabilities/sticky-cling.js';
 import { CannonRider } from './capabilities/cannon-rider.js';
 import { RollingBody } from './capabilities/rolling-body.js';
@@ -80,6 +82,12 @@ class Unit {
         // A hero's growth record (HeroGrowth), handed over when it lands from its shell.
         if (LaunchRules.isHeroType(data.type) && !Object.hasOwn(data, 'heroGrowth'))
             data.heroGrowth = null;
+        // What a hero level unlocks keeps its own state on the body: the passive's (HeroPassive) and the ally aura's
+        // targets (HeroAllyAura).
+        const passive = HeroPassive.initialState(data.type);
+        if (passive && !Object.hasOwn(data, 'heroPassive')) data.heroPassive = passive;
+        if (HeroAllyAura.declared(data.type) && !Object.hasOwn(data, 'heroAura'))
+            data.heroAura = HeroAllyAura.initialState();
         this.status = new StatusComponent(data.status || {});
         delete data.status;
         this.movement = new MovementComponent(data.movement || {});

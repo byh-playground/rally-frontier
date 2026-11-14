@@ -8,6 +8,8 @@ import { HeroDeployment } from '../sim/hero-deployment.js';
 import { CardAmmo } from '../sim/card-ammo.js';
 import { HeroRollAttack } from '../sim/capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from '../sim/capabilities/fruit-hero-attack.js';
+import { HeroAllyAura } from '../sim/capabilities/hero-ally-aura.js';
+import { HeroPassive } from '../sim/capabilities/hero-passive.js';
 import { CannonRider } from '../sim/capabilities/cannon-rider.js';
 import { RollingBody } from '../sim/capabilities/rolling-body.js';
 import { LaunchRules } from '../sim/launch-rules.js';
@@ -278,6 +280,8 @@ class RallySimulationAdapter {
                         throw new Error('게임 snapshot의 공격 준비 표적이 잘못되었습니다.');
                     HeroRollAttack.validateState(entity, state, this.session.sim.tps);
                     FruitHeroAttack.validateState(entity, state, this.session.sim.tps);
+                    HeroPassive.validateState(entity, state);
+                    HeroAllyAura.validateState(entity, state);
                     CannonRider.validateState(entity);
                     RollingBody.validateState(entity, state);
                 }

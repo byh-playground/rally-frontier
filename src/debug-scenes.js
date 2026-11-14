@@ -13,7 +13,7 @@ import { GameRuleRuntime } from './core/game-rules.js';
 import { campaignStage } from './definitions/campaign.js';
 import { LaunchRules } from './sim/launch-rules.js';
 import { HashUtil } from './sim/map-generation.js';
-import { RESOURCE_SCALE } from './units/baseline.js';
+import { HERO_LEVEL_KILLS, RESOURCE_SCALE } from './units/baseline.js';
 import { BotController } from './ai/bot-controller.js';
 import { UnitDefinition } from './definitions/units.js';
 import { StableSerializationUtil } from './net/lobby-codec.js';
@@ -327,7 +327,13 @@ function createTickLog() {
 // (`retreat`) and how much of that is toward its own main base (`home`). `killEffects` (HeroKillEffect) counts the
 // kill effects run, the level and kills at the first one, the health they gave back (`heal`), the filled attack
 // counters (`charged`) and how each next basic went out (`nextBasic`: 'passive' is the nth basic), and the bounce
-// berries thrown, landed on a target (`hits`), their damage and the soldiers they finished (`kills`).
+// berries thrown, landed on a target (`hits`), their damage and the soldiers they finished (`kills`). `passive`
+// (HeroPassive) has the tick it first ran (`firstTick`), counts the seed bursts, seeds thrown, their hits and damage, the misses and how many of those had lost their target (`missedFallen`) (`seeds`), the boomerang echo hits and
+// their damage (`echo`), and the puddle damage ticks, the enemies they hit and that damage (`puddle`). `aura`
+// (HeroAllyAura) is the targets now and at most, the hits allies took split by whether they were targets then
+// (`hits`: { buffed, other } of damage amount → count), the allies' move speed percentages counted per tick
+// (`movePct`) and their mean step per tick while moving (`step`: { buffed, other }), and the heals (`heal`: count,
+// allies healed, health restored).
 function heroProbe(sim, type) {
     const levelUps = [];
     const effects = {
@@ -339,6 +345,32 @@ function heroProbe(sim, type) {
         bounce: { thrown: 0, hits: 0, damage: 0, kills: 0 },
     };
     const bounceIds = new Set();
+    const passive = {
+        firstTick: null,
+        bursts: 0,
+        seeds: { thrown: 0, hits: 0, damage: 0, misses: 0, missedFallen: 0 },
+        echo: { hits: 0, damage: 0 },
+        puddle: { pulses: 0, hits: 0, damage: 0 },
+    };
+    const aura = {
+        targets: 0,
+        maxTargets: 0,
+        firstTick: null,
+        hits: { buffed: {}, other: {} },
+        movePct: {},
+        step: { buffed: [0, 0], other: [0, 0] },
+        heal: { count: 0, allies: 0, amount: 0 },
+    };
+    const stepFrom = new Map();
+    const seedTargets = new Map();
+    // The damage of the hit event just before `events[i]` on `targetId`.
+    const hitBefore = (i, targetId) => {
+        for (let k = i - 1; k >= 0; k--) {
+            const before = sim.events[k];
+            if (before.type === 'hit' && before.targetId === targetId) return before.amount;
+        }
+        return 0;
+    };
     let chargedTick = null;
     let landings = 0,
         strike = null,
@@ -386,6 +418,74 @@ function heroProbe(sim, type) {
                     effects.nextBasic[shot.mode] = (effects.nextBasic[shot.mode] ?? 0) + 1;
                     chargedTick = null;
                 }
+            }
+            const heroId = hero?.id;
+            for (const shot of sim.unitThornProjectiles)
+                if (shot.sourceId === heroId) seedTargets.set(shot.id, shot.targetId);
+            sim.events.forEach((event, i) => {
+                if (heroId === undefined || event.side !== 0) return;
+                if (event.type === 'heroSeedBurst' && event.sourceId === heroId) {
+                    passive.firstTick ??= sim.tick;
+                    passive.bursts++;
+                    passive.seeds.thrown += event.seeds;
+                }
+                if (event.type === 'unitThornMiss' && event.sourceId === heroId) {
+                    passive.seeds.misses++;
+                    if (!sim.unitById.get(seedTargets.get(event.projectileId))?.alive)
+                        passive.seeds.missedFallen++;
+                }
+                if (event.type === 'unitThornHit' && event.sourceId === heroId) {
+                    passive.seeds.hits++;
+                    passive.seeds.damage += hitBefore(i, event.targetId);
+                }
+                if (event.type === 'fruitProjectileHit' && event.echo) {
+                    passive.firstTick ??= sim.tick;
+                    passive.echo.hits++;
+                    passive.echo.damage += hitBefore(i, event.targetId);
+                }
+                if (event.type === 'heroPuddlePulse' && event.sourceId === heroId) {
+                    passive.firstTick ??= sim.tick;
+                    passive.puddle.pulses++;
+                    passive.puddle.hits += event.hits;
+                    // The pulse's hits are the hero's hit events right before it.
+                    for (let k = i - 1, left = event.hits; k >= 0 && left > 0; k--) {
+                        const before = sim.events[k];
+                        if (before.type !== 'hit' || before.sourceId !== heroId) continue;
+                        passive.puddle.damage += before.amount;
+                        left--;
+                    }
+                }
+                if (event.type === 'heroAuraHeal' && event.sourceId === heroId) {
+                    aura.heal.count++;
+                    aura.heal.allies += event.healed.length;
+                    aura.heal.amount += event.healed.reduce((sum, h) => sum + h.heal, 0);
+                }
+            });
+            // The aura's targets during the step just run (refreshed at its start), then the hits allies (side 0
+            // soldiers) took in it, split by whether the aura held them.
+            const ids = hero?.alive ? (hero.heroAura?.allyIds ?? []) : [];
+            const auraIds = new Set(ids);
+            for (const event of sim.events) {
+                if (event.type !== 'hit' || event.side !== 0 || event.isBuilding) continue;
+                if (event.targetId === heroId) continue;
+                const bucket = aura.hits[auraIds.has(event.targetId) ? 'buffed' : 'other'];
+                bucket[event.amount] = (bucket[event.amount] ?? 0) + 1;
+            }
+            aura.targets = ids.length;
+            aura.maxTargets = Math.max(aura.maxTargets, ids.length);
+            if (ids.length) aura.firstTick ??= sim.tick;
+            for (const u of sim.units) {
+                if (!u.alive || u.side !== 0 || u === hero) continue;
+                const buffed = auraIds.has(u.id) ? 'buffed' : 'other';
+                const pct = sim.timedModifierPct(u, 'movePct');
+                aura.movePct[pct] = (aura.movePct[pct] ?? 0) + 1;
+                const from = stepFrom.get(u.id);
+                const moved = from ? Math.hypot(u.x - from.x, u.y - from.y) : 0;
+                if (moved > 0.5) {
+                    aura.step[buffed][0] += moved;
+                    aura.step[buffed][1]++;
+                }
+                stepFrom.set(u.id, { x: u.x, y: u.y });
             }
             sim.events.forEach((event, i) => {
                 if (event.type !== 'fruitProjectileHit' || !bounceIds.has(event.projectileId))
@@ -445,6 +545,18 @@ function heroProbe(sim, type) {
                 levelUps,
                 hp: sim.unitById.get(slot?.unitId)?.hp ?? null,
                 killEffects: effects,
+                passive,
+                aura: {
+                    ...aura,
+                    step: {
+                        buffed: aura.step.buffed[1]
+                            ? round(aura.step.buffed[0] / aura.step.buffed[1])
+                            : null,
+                        other: aura.step.other[1]
+                            ? round(aura.step.other[0] / aura.step.other[1])
+                            : null,
+                    },
+                },
             };
         },
     };
@@ -2344,8 +2456,9 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * 장면과 같은 나는 병종 기록이다. 예: `?debug=1&scene=launch&map=standard&seed=1&unit=chestnut&zoom=2&tick=20`,
          * 절벽 옆: `?debug=1&scene=launch&map=twin-gates&seed=1&unit=chestnut&zoom=2&x=820&y=1300&tick=30`.
          * 영웅이면 상태의 `hero`가 지금 처치 수·레벨(`growth`)과 레벨업 기록(`levelUps`),
-         * 출격 슬롯 상태(`mode`·`landings`)·체력(`hp`)·막타 효과(`killEffects`)다. `heroHp`를 주면 그 체력으로
-         * 출격한다. `recallMs`를 주면 그 시각에 영웅을 복귀시키고, 회수되면 같은 곳으로
+         * 출격 슬롯 상태(`mode`·`landings`)·체력(`hp`)·막타 효과(`killEffects`)·패시브(`passive`)·주변 버프(`aura`)다.
+         * `heroHp`를 주면 그 체력으로, `heroLevel`을 주면 그 레벨의 처치 수로 출격한다. `ally`·`allyCount`는 영웅이
+         * 빠지는 자리(착지점에서 본진 쪽 120, 또는 `allyX`·`allyY`)의 아군 무리다. `recallMs`를 주면 그 시각에 영웅을 복귀시키고, 회수되면 같은 곳으로
          * 다시 쏜다. 예: `?debug=1&scene=launch&map=standard&seed=1&unit=watermelon&enemy=rice&enemyCount=30&zoom=2&tick=60`
          */
         launch(params) {
@@ -2397,6 +2510,31 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                           },
                     { x: back.x, y: back.y },
                 );
+            // `ally`·`allyCount`: a friendly block where the hero retreats to (120 back from the landing point toward
+            // home, or `allyX`·`allyY`), for its ally aura (HeroAllyAura).
+            if (params.ally !== undefined)
+                placeBlock(
+                    sim,
+                    0,
+                    [unitType(scene, 'ally', params.ally)],
+                    integer(scene, 'allyCount', params.allyCount),
+                    params.allyX === undefined && params.allyY === undefined
+                        ? { x: target.x + back.x * 120, y: target.y + back.y * 120 }
+                        : {
+                              x: integer(scene, 'allyX', params.allyX),
+                              y: integer(scene, 'allyY', params.allyY),
+                          },
+                    { x: -back.x, y: -back.y },
+                );
+            // `heroLevel`: the hero waits at the cannons with the kills of that level (HeroGrowth) and comes out with it.
+            if (params.heroLevel !== undefined) {
+                const level = integer(scene, 'heroLevel', params.heroLevel);
+                if (!LaunchRules.isHeroType(type) || level < 1 || level > HERO_LEVEL_KILLS.length)
+                    throw new Error(
+                        `${scene} 장면의 heroLevel은 영웅에만, 1~${HERO_LEVEL_KILLS.length}로 씁니다.`,
+                    );
+                sim.heroGrowth[0][type] = { kills: HERO_LEVEL_KILLS[level - 1], level };
+            }
             // `heroHp`: the hero waits at the cannons with this much health and comes out with it (HeroDeployment).
             if (params.heroHp !== undefined) {
                 if (!LaunchRules.isHeroType(type))

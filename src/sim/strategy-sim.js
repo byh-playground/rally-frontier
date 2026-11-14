@@ -6,6 +6,8 @@ import { CardAmmo } from './card-ammo.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { HeroGrowth } from './hero-growth.js';
 import { HeroKillEffect } from './capabilities/hero-kill-effect.js';
+import { HeroPassive } from './capabilities/hero-passive.js';
+import { HeroAllyAura } from './capabilities/hero-ally-aura.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { UnitSpinAttack } from './capabilities/unit-spin-attack.js';
 import { BasicSplash } from './capabilities/basic-splash.js';
@@ -2009,13 +2011,15 @@ class StrategySim {
             if (terrain.river) dmg = Math.max(1, Math.floor(dmg * 1.5));
             // A unit with `damageTaken` takes its scale share, floored like the other damage shares: always, or
             // with `whileBuilding` only while assigned to a project under way (the state a hit turns to 'defend').
+            // A hero's ally aura (HeroAllyAura takenScale) is one more factor of the same share, floored once.
             const taken = td?.damageTaken;
-            if (
-                taken &&
+            const scale =
+                (taken &&
                 (!taken.whileBuilding ||
                     (target.constructionWork && this.constructionSite(target)?.construction))
-            )
-                dmg = Math.max(1, Math.floor(dmg * taken.scale));
+                    ? taken.scale
+                    : 1) * HeroAllyAura.takenScale(this, target);
+            if (scale < 1) dmg = Math.max(1, Math.floor(dmg * scale));
         }
 
         const flatArmor = this.flatArmorValue(target);
@@ -2044,6 +2048,7 @@ class StrategySim {
                 dealt,
             );
         setCapture(dealt, false, damageClass);
+        if (!isBuilding && target.heroPassive) HeroPassive.onDamaged(this, target, dealt);
         if (!isBuilding) {
             target.hitFlash = 4;
             target.combat.recordImpact(this, 4);
@@ -2196,8 +2201,7 @@ class StrategySim {
     }
     timedModifierPct(u, field) {
         let pct = 100;
-        if (!u?.status.timedModifiers) return pct;
-        for (const [key, m] of Object.entries(u.status.timedModifiers)) {
+        for (const [key, m] of Object.entries(u?.status.timedModifiers || {})) {
             if (!m || (!m.persistent && m.until <= this.tick)) {
                 delete u.status.timedModifiers[key];
                 continue;
@@ -2206,6 +2210,8 @@ class StrategySim {
             const one = Math.max(100, Number(m[field]) || 100);
             pct = Math.max(pct, 100 + (one - 100) * stacks);
         }
+        // A hero's ally aura (HeroAllyAura movePct) counts as one more move speed modifier.
+        if (field === 'movePct') pct = Math.max(pct, HeroAllyAura.movePct(this, u));
         return pct;
     }
     engagementGoal(u, target, attackRange) {
@@ -2892,6 +2898,8 @@ class StrategySim {
         let mark = profile ? now() : 0;
         // One O(N) rebuild per tick replaces many O(N) target/id scans below.
         this.rebuildRuntimeIndexes();
+        // Hero ally auras refresh their targets on the fresh index, before anything reads them this tick.
+        HeroAllyAura.update(this);
         const indexMs = profile ? now() - mark : 0;
 
         mark = profile ? now() : 0;
@@ -2947,6 +2955,7 @@ class StrategySim {
                 const unit = this.liveEntityRefById(hero.unitId, 'unit')?.entity;
                 if (unit?.heroRoll) HeroRollAttack.advance(this, unit);
                 if (unit?.fruitAttack) FruitHeroAttack.update(this, unit);
+                if (unit?.alive && unit.heroPassive) HeroPassive.update(this, unit);
             }
         winner = this.updateProjectiles() || winner;
         UnitLobAttack.step(this);

@@ -74,6 +74,15 @@ class EffectObjectFactory {
     // Kill effects (HeroKillEffect), presentation only: juice drops (world units) and the filled-counter ring.
     static heroKillJuice = Object.freeze({ drops: 6, spread: 25, arc: 50, size: 5 });
     static heroKillCharge = Object.freeze({ radius: 25, growth: 1 });
+    // Level passives and auras (HeroPassive, HeroAllyAura), presentation only (world units): the boomerang echo's
+    // gold flash, the grape aura's rising drops, the puddle's purple pool and the ring under an aura's ally.
+    static heroEchoFlash = Object.freeze({ radius: 12, growth: 1.5 });
+    static heroAuraRegen = Object.freeze({ drops: 3, spread: 7, rise: 28, size: 3.5 });
+    static heroPuddle = Object.freeze({
+        fill: [0.5, 0.16, 0.7, 0.42],
+        stroke: [0.78, 0.5, 1, 0.75],
+    });
+    static heroAuraRing = Object.freeze({ scale: 1.25, alpha: 0.85 });
     static defaultCombatLifeMs = 360;
     static sourceMotionFallbackMs = 220;
     static shellFlinch = Object.freeze({ lifeMs: 160, tilt: 0.6, squash: 0.28 });
@@ -82,6 +91,8 @@ class EffectObjectFactory {
         basicSplashImpact: 180,
         heroKillJuice: 500,
         heroKillCharge: 400,
+        heroEchoFlash: 320,
+        heroAuraRegen: 700,
         constructionHit: 220,
         hitscanTravel: 180,
         antiAirHit: 320,

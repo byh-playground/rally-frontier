@@ -69,7 +69,11 @@ class SustainedAttack {
             state.nextTick +
             this.span(sim, state, 'durationPhase', spec.durationMs) +
             this.recoverTicks(sim.tps, spec);
-        state.readyTick = state.endTick + this.span(sim, state, 'cooldownPhase', spec.cooldownMs);
+        // A timed effect that is started once and never again (a hero's lingering puddle, HeroPassive) has no
+        // cooldownMs; it is ready again when it ends.
+        state.readyTick =
+            state.endTick +
+            (spec.cooldownMs ? this.span(sim, state, 'cooldownPhase', spec.cooldownMs) : 0);
         state.uses++;
     }
     // True once per damage tick while the attack's duration runs (consumes it).
