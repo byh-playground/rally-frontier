@@ -11,7 +11,9 @@
 //            floored, at least 1), always or with `whileBuilding` only while assigned to a project under way.
 //            `basicSplash { radius, damageRatio }`: its basic melee hit on a soldier also hits the soldiers
 //            around (BasicSplash). `workerCard` marks a card the bot launches only to build (BotController).
-//   payload  the cannon shell that carries the unit (LaunchRules)
+//   payload  the cannon shell that carries the unit (LaunchRules). A hero's shell has no landing shock (impact,
+//            splash) but `landingStrike { radius, damage, knockback?, scatter? { ring, count }, retreat { motion:
+//            'roll'|'hop', distance } }`, the hero's own strike when it lands (HeroLandingStrike)
 //   visual   body scale, team accent, hit effect family, optional landing husk colors
 //   card     deck card and card detail copy
 //   help     optional in-game help entries { section, summary, paragraphs }; section names a
@@ -159,6 +161,25 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
         throw new Error(`병종 ${id}의 basicSplash는 양수 radius·damageRatio와 atk가 필요합니다.`);
     if (unit.workerCard && !unit.construction)
         throw new Error(`병종 ${id}의 workerCard는 construction이 필요합니다.`);
+    // A hero's shell lands with the hero's landing strike in place of the shell's shock (HeroLandingStrike).
+    const strike = parts.payload.landingStrike;
+    if (hero !== !!strike)
+        throw new Error(
+            `병종 ${id}: 영웅 포탄만 landingStrike를 가지며 영웅 포탄에는 꼭 있어야 합니다.`,
+        );
+    if (strike) {
+        if (parts.payload.impact !== undefined || parts.payload.splash !== undefined)
+            throw new Error(
+                `병종 ${id}의 영웅 포탄은 착탄 충격(impact·splash) 대신 landingStrike를 씁니다.`,
+            );
+        if (
+            !(strike.radius > 0 && strike.damage > 0 && strike.retreat?.distance > 0) ||
+            !['roll', 'hop'].includes(strike.retreat.motion) ||
+            (strike.retreat.motion === 'roll' && !unit.heroActive) ||
+            (strike.scatter && !(strike.scatter.ring > 0 && Number.isInteger(strike.scatter.count)))
+        )
+            throw new Error(`병종 ${id}의 landingStrike가 잘못되었습니다.`);
+    }
     if (Number.isFinite(Number(unit.cooldownMs))) unit.cooldown = Number(unit.cooldownMs) / 1000;
     if (unit.canAttackGround == null) unit.canAttackGround = (unit.atk || 0) > 0;
     return Object.freeze({

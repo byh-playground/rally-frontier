@@ -2623,6 +2623,48 @@ class StrategySim {
         });
     }
 
+    // A shell's landing shock: a shove of everyone it carries, then the area damage on soldiers and buildings.
+    landingShock(p, x, y, radius, impactHeightFP) {
+        if (!p.mortar) LaunchImpact.blast(this, p, x, y, radius, impactHeightFP);
+        const blast = this.applyAreaDamage({
+            sourceSide: p.side,
+            sourceType: p.type,
+            sourceEntityId: p.owner || null,
+            x: x,
+            y: y,
+            radius,
+            damage: p.splashUnitDamage ?? p.damage,
+            damageClass: p.damageClass || 'normal',
+            damageDelivery: p.payload ? 'launch-shell' : undefined,
+            suppressImpactFx: true,
+            strikePeak: p.mortar ? 1 : LaunchRules.unitImpactPeak,
+            impactHeightFP,
+        });
+        for (const b of this.buildings) {
+            if (!b || b.alive === false || b.side === p.side) continue;
+            const body = LaunchImpact.distanceToBody(this, b, x, y, impactHeightFP, true);
+            if (body.surfaceDistance > radius) continue;
+            const mult = p.mortar
+                ? 1
+                : LaunchRules.strike(body.falloffDistance, radius, LaunchRules.buildingImpactPeak);
+            blast.hits++;
+            blast.peak = Math.max(blast.peak, mult);
+            this.applyDamage(
+                p.side,
+                p.type,
+                b,
+                true,
+                Math.max(1, Math.floor((p.splashBuildingDamage ?? p.damage) * mult)),
+                p.owner || null,
+                {
+                    damageClass: p.damageClass || 'normal',
+                    sourceDamageResolved: true,
+                    suppressImpactFx: true,
+                },
+            );
+        }
+        return blast;
+    }
     updateProjectiles() {
         for (const p of this.projectiles) {
             if (!p.alive) continue;
@@ -2646,57 +2688,12 @@ class StrategySim {
                 const impactHeightFP =
                     contact?.impactHeightFP ??
                     Math.round(this.world.terrain.surfaces.heightAt(aimX, aimY) * FP);
-                const radius = Math.max(1, p.splash || 1);
-                if (!p.mortar) LaunchImpact.blast(this, p, aimX, aimY, radius, impactHeightFP);
                 if (p.payload) LaunchImpact.enqueue(this, p, aimX, aimY, impactHeightFP);
-                const blast = this.applyAreaDamage({
-                    sourceSide: p.side,
-                    sourceType: p.type,
-                    sourceEntityId: p.owner || null,
-                    x: aimX,
-                    y: aimY,
-                    radius,
-                    damage: p.splashUnitDamage ?? p.damage,
-                    damageClass: p.damageClass || 'normal',
-                    damageDelivery: p.payload ? 'launch-shell' : undefined,
-                    suppressImpactFx: true,
-                    strikePeak: p.mortar ? 1 : LaunchRules.unitImpactPeak,
-                    impactHeightFP,
-                });
-                for (const b of this.buildings) {
-                    if (!b || b.alive === false || b.side === p.side) continue;
-                    const body = LaunchImpact.distanceToBody(
-                        this,
-                        b,
-                        aimX,
-                        aimY,
-                        impactHeightFP,
-                        true,
-                    );
-                    if (body.surfaceDistance > radius) continue;
-                    const mult = p.mortar
-                        ? 1
-                        : LaunchRules.strike(
-                              body.falloffDistance,
-                              radius,
-                              LaunchRules.buildingImpactPeak,
-                          );
-                    blast.hits++;
-                    blast.peak = Math.max(blast.peak, mult);
-                    this.applyDamage(
-                        p.side,
-                        p.type,
-                        b,
-                        true,
-                        Math.max(1, Math.floor((p.splashBuildingDamage ?? p.damage) * mult)),
-                        p.owner || null,
-                        {
-                            damageClass: p.damageClass || 'normal',
-                            sourceDamageResolved: true,
-                            suppressImpactFx: true,
-                        },
-                    );
-                }
+                // A shell without a landing shock (a hero's: splash 0, its landing strike replaces it) only lands.
+                const radius = p.splash,
+                    blast = radius
+                        ? this.landingShock(p, aimX, aimY, radius, impactHeightFP)
+                        : { hits: 0, peak: 1 };
                 this.events.push({
                     type: p.mortar ? 'mortarImpact' : 'launchImpact',
                     side: p.side,

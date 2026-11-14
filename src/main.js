@@ -2727,6 +2727,24 @@ class GLRenderer {
                     );
             } else if (e.type === 'basicSplashImpact') {
                 this.addClientFx('basicSplashImpact', e, snapshot, index);
+            } else if (e.type === 'heroLandingStrike') {
+                // Each circle of a hero's landing strike: berries for a scattered strike, a shock ring otherwise.
+                const berries = !!LaunchRules.grain(e.unit)?.landingStrike?.scatter;
+                for (const blast of e.blasts)
+                    this.addClientFx(
+                        berries ? 'fruitBerryImpact' : 'launchBlast',
+                        { ...blast, unit: e.unit, sourceId: e.sourceId },
+                        snapshot,
+                        index,
+                        berries
+                            ? {}
+                            : {
+                                  peak: 1,
+                                  hits: blast.hits,
+                                  groundRing: true,
+                                  impactHeightFP: e.impactHeightFP,
+                              },
+                    );
             } else if (e.type === 'heroRollHit') {
                 this.addClientFx('meleeImpact', e, snapshot, index, { impactScale: 1.5 });
             } else if (e.type === 'fruitBerryLand') {
@@ -2885,8 +2903,9 @@ class GLRenderer {
         const dx = Number(e.dirX),
             dy = Number(e.dirY),
             angle = Number.isFinite(dx) && Number.isFinite(dy) ? Math.atan2(dy, dx) : 0;
-        // An ear-burst landing (sprite.landing) scatters instead of a blast ring and husk.
-        if (GRAIN_SPRITES[e.unit]?.landing !== 'ear-burst') {
+        // An ear-burst landing (sprite.landing) scatters instead of a blast ring and husk, and a shell without a
+        // landing shock (a hero's, radius 0) draws none: its hero's landing strike draws its own.
+        if (e.radius > 0 && GRAIN_SPRITES[e.unit]?.landing !== 'ear-burst') {
             this.addClientFx('launchBlast', e, snapshot, index, {
                 peak,
                 hits,
@@ -5476,7 +5495,7 @@ class GLRenderer {
                     p.y + r * 0.55,
                     scale,
                     heading,
-                    roll.distance / UnitDefinition.get(u.type).heroActive.rollDistance,
+                    roll.distance / roll.length,
                     actor.rollTuck,
                     roll.phase === 'unfold' ? rollProgress : 0,
                 );
@@ -7553,7 +7572,7 @@ class GLRenderer {
             for (const [groupIndex, { shots }] of groups.entries()) {
                 for (const [index, shot] of shots.entries()) {
                     // Equal-radius shells on the same point share a ring and show all their turns.
-                    const key = `${shot.x},${shot.y},${shot.splash}`;
+                    const key = `${shot.x},${shot.y},${LaunchRules.landingArea(hold.card, shot)}`;
                     if (!rings.has(key))
                         rings.set(key, { shot, order: new Set(), primary: groupIndex === 0 });
                     if (ordered) rings.get(key).order.add(index + 1);
@@ -7561,13 +7580,14 @@ class GLRenderer {
             }
             let ringIndex = 0;
             for (const { shot, order, primary } of rings.values()) {
-                this.drawGroundCircle(shot.x, shot.y, shot.splash, {
+                const area = LaunchRules.landingArea(hold.card, shot);
+                this.drawGroundCircle(shot.x, shot.y, area, {
                     stroke: primary ? color : [color[0], color[1], color[2], color[3] * 0.4],
                     width: primary ? w : Math.max(1, 2 * sc),
                     segments: 40,
                 });
                 if (primary && (rings.size === 1 || !ordered)) {
-                    this.drawGroundCircle(shot.x, shot.y, shot.splash * (1 - Math.SQRT1_2), {
+                    this.drawGroundCircle(shot.x, shot.y, area * (1 - Math.SQRT1_2), {
                         stroke: [color[0], color[1], color[2], 0.6],
                         width: Math.max(1.5, 2 * sc),
                         segments: 24,
@@ -7576,8 +7596,8 @@ class GLRenderer {
                 if (order.size) {
                     // Stagger the labels so concentric rings stay legible when zoomed out.
                     const angle = (ringIndex * 2 * Math.PI) / 3;
-                    const ox = Math.cos(angle) * shot.splash,
-                        oy = Math.sin(angle) * shot.splash;
+                    const ox = Math.cos(angle) * area,
+                        oy = Math.sin(angle) * area;
                     const wx = shot.x + ox,
                         wy = shot.y + oy;
                     const [x, y] = project(
@@ -11011,7 +11031,11 @@ class LaunchPresentation {
         );
         const vw = r.viewWorldW(),
             vh = r.viewWorldH(),
-            points = shots.map((shot) => ({ x: shot.x, y: shot.y, radius: shot.splash }));
+            points = shots.map((shot) => ({
+                x: shot.x,
+                y: shot.y,
+                radius: LaunchRules.landingArea(preview.hold.card, shot),
+            }));
         let minX = Infinity,
             minY = Infinity,
             maxX = -Infinity,

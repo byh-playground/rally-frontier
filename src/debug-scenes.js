@@ -320,24 +320,77 @@ function createTickLog() {
     };
 }
 
-// One hero's growth: kills and level now, each level-up, and its sorties (`launch` scene, `hero`).
+// One hero's growth: kills and level now, each level-up, and its sorties (`launch` scene, `hero`). `strike` is its
+// first landing strike (HeroLandingStrike): tick, enemies hit in all and per circle, damage per hit, the hits of its
+// shell's own landing shock (`shellHits`, 0 for a hero shell), how far from the landing point the hero came out
+// (`spawn`), and once its retreat (roll or hop) has settled, the tick and how far it went from where it came out
+// (`retreat`) and how much of that is toward its own main base (`home`).
 function heroProbe(sim, type) {
     const levelUps = [];
-    let landings = 0;
+    let landings = 0,
+        strike = null,
+        shellHits = null;
     return {
         observe() {
             for (const event of sim.events) {
+                if (event.type === 'launchImpact' && event.unit === type && event.side === 0)
+                    shellHits ??= event.hits;
+                if (event.type === 'heroLandingStrike' && event.unit === type && event.side === 0)
+                    strike ??= {
+                        tick: sim.tick,
+                        x: event.x,
+                        y: event.y,
+                        unit: sim.unitById.get(event.sourceId),
+                        hits: event.hits,
+                        perBlast: event.blasts.map((blast) => blast.hits),
+                        damage: event.damage,
+                    };
                 if (event.type === 'launchLand' && event.unit === type && event.side === 0)
                     landings++;
                 if (event.type === 'heroLevelUp' && event.heroType === type)
                     levelUps.push({ tick: sim.tick, level: event.level, kills: event.kills });
             }
+            const hero = strike?.unit;
+            if (!hero || strike.settled) return;
+            if (strike.from === undefined) {
+                strike.from = { x: hero.x, y: hero.y };
+                strike.spawn = Math.hypot(hero.x - strike.x, hero.y - strike.y);
+                return;
+            }
+            // The retreat has settled once the hero neither rolls nor moves from an impulse.
+            if (hero.alive && (hero.heroRoll || hero.impactMotion)) return;
+            const base = sim.buildings.find(
+                (b) => b.side === 0 && BuildingDefinition.isMainBase(b.type),
+            );
+            const dx = hero.x - strike.from.x,
+                dy = hero.y - strike.from.y;
+            strike.settled = {
+                tick: sim.tick,
+                distance: Math.hypot(dx, dy),
+                home:
+                    (dx * (base.x - strike.from.x) + dy * (base.y - strike.from.y)) /
+                    Math.hypot(base.x - strike.from.x, base.y - strike.from.y),
+            };
         },
         state() {
             const slot = sim.heroes[0][type];
+            const round = (v) => Math.round(v * 10) / 10;
             return {
                 mode: slot?.mode ?? 'docked',
                 landings,
+                strike: strike && {
+                    tick: strike.tick,
+                    hits: strike.hits,
+                    perBlast: strike.perBlast,
+                    damage: strike.damage,
+                    shellHits,
+                    spawn: round(strike.spawn),
+                    retreat: strike.settled && {
+                        tick: strike.settled.tick,
+                        distance: round(strike.settled.distance),
+                        home: round(strike.settled.home),
+                    },
+                },
                 growth: sim.unitById.get(slot?.unitId)?.heroGrowth ?? sim.heroGrowth[0][type],
                 levelUps,
             };
@@ -348,7 +401,7 @@ function heroProbe(sim, type) {
 // Every knockback (`unit` and `ai-match` scenes), read by `state().knockback`: for each unit the first impulse that
 // throws it (kind 'knockback'), as the change of its impact velocity (speed along the ground, lift), labelled by
 // what gave it: 'blast' (self-destruct), 'spin', 'splash' (a basic attack's splash), 'heroRoll', 'heroLand' (a hero's
-// hop landing), 'leap', 'roll' (a rolling coconut, with the coconut's speed just before as `sourceSpeed`), 'shell' (a
+// hop landing or landing strike), 'leap', 'roll' (a rolling coconut, with the coconut's speed just before as `sourceSpeed`), 'shell' (a
 // launch shell's landing), 'lob' (a lobbed ball), 'egg' (a lobbed ball's burst) or 'contact' (a flying body bumping
 // into it). Then the highest point, the top ground speed it reached (later impulses add up),
 // the first landing (`airTicks`, `airDist`), how far it travels from where it stood and how many ticks until it
@@ -391,7 +444,8 @@ function createKnockbackProbe(sim, trace = false) {
             for (const event of sim.events)
                 if (event.type === 'unitSelfDestruct') blasts.add(event.sourceId);
                 else if (event.type === 'unitLobExplosion') eggs.add(event.projectileId);
-                else if (event.type === 'heroRollLand') landings.add(event.sourceId);
+                else if (event.type === 'heroRollLand' || event.type === 'heroLandingStrike')
+                    landings.add(event.sourceId);
                 else if (event.type === 'basicSplashImpact') splashes.add(event.sourceId);
             for (const unit of sim.units) {
                 const m = unit.impactMotion,

@@ -1,5 +1,6 @@
 import { CannonRider } from './capabilities/cannon-rider.js';
 import { HeroDeployment } from './hero-deployment.js';
+import { HeroLandingStrike } from './capabilities/hero-landing-strike.js';
 import { UnitMotion } from './navigation.js';
 import { FP } from '../core/config.js';
 import { LaunchRules } from './launch-rules.js';
@@ -374,41 +375,53 @@ class LaunchImpact {
                 // How the soldier flew decides when it picks a cannon again.
                 CannonRider.land(sim, u, UnitDefinition.get(u.type).cannonRider, group.ride);
             }
-            const enemy = sim.buildings.find(
-                (b) =>
-                    b.side === 1 - group.side &&
-                    b.alive !== false &&
-                    BuildingDefinition.isMainBase(b.type),
-            ) || { x: group.x, y: group.y - 1 };
-            let dx = enemy.x - group.x,
-                dy = enemy.y - group.y,
-                length = Math.hypot(dx, dy) || 1;
-            dx /= length;
-            dy /= length;
             if (!HeroDeployment.land(sim, group, u) && group.holdPointId)
                 u.launchHoldPointId = group.holdPointId;
             const fallDamage = this.applyEmergencyDropDamage(group, u);
             this.rush(sim, u, grain);
-            this.start(sim, u, {
-                kind: 'deploy',
-                dx,
-                dy,
-                speed: LaunchImpactRules.deploymentSpeed,
-                lift: fallDamage == null ? LaunchImpactRules.deploymentLift : 0,
-                sourceId: group.projectileId,
-                originX: group.x,
-                originY: group.y,
-                initialHeightFP: Math.max(
-                    0,
-                    group.heightFP +
-                        Math.round(
-                            (sim.world.terrain.surfaces.heightAt(group.x, group.y) -
-                                sim.world.terrain.surfaces.heightAt(u.x, u.y)) *
-                                FP,
-                        ),
-                ),
-                initialVzFP: group.vzFP,
-            });
+            const initialHeightFP = Math.max(
+                0,
+                group.heightFP +
+                    Math.round(
+                        (sim.world.terrain.surfaces.heightAt(group.x, group.y) -
+                            sim.world.terrain.surfaces.heightAt(u.x, u.y)) *
+                            FP,
+                    ),
+            );
+            // A hero's shell carries its landing strike: the hero strikes where the shell came down and backs off
+            // toward its own base. Every other soldier steps out toward the enemy main base.
+            if (grain.landingStrike)
+                HeroLandingStrike.land(
+                    sim,
+                    u,
+                    grain.landingStrike,
+                    group.x,
+                    group.y,
+                    Math.round(sim.world.terrain.surfaces.heightAt(group.x, group.y) * FP) +
+                        group.heightFP,
+                    { heightFP: initialHeightFP, vzFP: group.vzFP },
+                );
+            else {
+                const enemy = sim.buildings.find(
+                    (b) =>
+                        b.side === 1 - group.side &&
+                        b.alive !== false &&
+                        BuildingDefinition.isMainBase(b.type),
+                ) || { x: group.x, y: group.y - 1 };
+                const length = Math.hypot(enemy.x - group.x, enemy.y - group.y) || 1;
+                this.start(sim, u, {
+                    kind: 'deploy',
+                    dx: (enemy.x - group.x) / length,
+                    dy: (enemy.y - group.y) / length,
+                    speed: LaunchImpactRules.deploymentSpeed,
+                    lift: fallDamage == null ? LaunchImpactRules.deploymentLift : 0,
+                    sourceId: group.projectileId,
+                    originX: group.x,
+                    originY: group.y,
+                    initialHeightFP,
+                    initialVzFP: group.vzFP,
+                });
+            }
             sim.events.push({
                 type: 'launchLand',
                 side: group.side,

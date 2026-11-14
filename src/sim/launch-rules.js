@@ -221,7 +221,8 @@ class LaunchRules {
         const height = RangeUtil.clamp(Math.round(distance * 0.3), 80, 600);
         return Math.round(height * (this.grain(type)?.arcScale ?? 1) * this.shellFlight.arcScale);
     }
-    // A single cannon's shell stats are independent of aim and map position.
+    // A single cannon's shell stats are independent of aim and map position. `impact` and `splash` are the shell's
+    // landing shock; a hero's shell has none (0), its landing strike (payload.landingStrike) replaces it.
     static volleyStats(type) {
         const g = this.grain(type),
             fire = g.fire,
@@ -230,12 +231,23 @@ class LaunchRules {
             extra = g.count % count,
             impactScale = fire.mode === 'shotgun' ? fire.impactScale : 1,
             splashScale = fire.mode === 'shotgun' ? fire.splashScale : 1;
+        const shock = !g.landingStrike;
         return Array.from({ length: count }, (_, i) => ({
             delayMs: fire.mode === 'burst' ? i * fire.gapMs : 0,
             count: base + (i < extra ? 1 : 0),
-            impact: fire.impacts?.[i] ?? Math.max(1, Math.round(g.impact * impactScale)),
-            splash: fire.splashes?.[i] ?? Math.max(1, Math.round(g.splash * splashScale)),
+            impact: shock
+                ? (fire.impacts?.[i] ?? Math.max(1, Math.round(g.impact * impactScale)))
+                : 0,
+            splash: shock
+                ? (fire.splashes?.[i] ?? Math.max(1, Math.round(g.splash * splashScale)))
+                : 0,
         }));
+    }
+    // How far from a shell's landing point its landing reaches, drawn as its aim ring: its shock, or for a hero
+    // the circles of its landing strike (HeroLandingStrike).
+    static landingArea(type, shot) {
+        const strike = this.grain(type).landingStrike;
+        return strike ? (strike.scatter?.ring ?? 0) + strike.radius : shot.splash;
     }
     // 산탄은 부채꼴로 흩어지고, 연사는 같은 곳에 gapMs 간격으로 떨어진다.
     static volley(type, aim, cannon, world) {

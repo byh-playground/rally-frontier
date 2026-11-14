@@ -205,11 +205,26 @@ export function unitCardStats(type, rangeLevel, copy) {
         ['최대 발사 거리', number.format(LaunchRules.maxReachOf(type, rangeLevel))],
     ];
     if (grain.fire.mode === 'burst') firing.push(['발사 간격', seconds(grain.fire.gapMs)]);
+    // A hero's shell has no landing shock: its landing strike (HeroLandingStrike) takes its place.
+    const strike = grain.landingStrike;
     const shellStats = [
         ['포탄 체력 · 발당', number.format(grain.shellHp)],
         ['기준 비행 속도', number.format(LaunchRules.shellSpeed(type))],
-        ['착탄 위력 · 발당', perShell(shots, 'impact')],
-        ['착탄 반경 · 발당', perShell(shots, 'splash')],
+        ...(strike
+            ? [
+                  [
+                      '착지 공격',
+                      `${strike.scatter ? `${number.format(strike.scatter.count + 1)}곳 · ` : ''}반경 ${number.format(strike.radius)} · 피해 ${number.format(strike.damage)}`,
+                  ],
+                  [
+                      '착지 뒤 빠지기',
+                      `${strike.retreat.motion === 'roll' ? '굴러서' : '뛰어서'} ${number.format(Math.round(strike.retreat.distance))}`,
+                  ],
+              ]
+            : [
+                  ['착탄 위력 · 발당', perShell(shots, 'impact')],
+                  ['착탄 반경 · 발당', perShell(shots, 'splash')],
+              ]),
     ];
     const shell = [
         ['투입', deployment],
