@@ -1,6 +1,7 @@
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { KnockbackRules } from '../definitions/knockback-rules.js';
 import { UnitDefinition } from '../definitions/units.js';
+import { HeroGrowth } from '../sim/hero-growth.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { ResourceDisplay } from './resource-display.js';
 
@@ -13,8 +14,12 @@ const perShell = (shots, key) => {
         : values.map((value) => number.format(value)).join(' / ');
 };
 
-export function unitCardStats(type, rangeLevel, copy) {
+// `heroLevel`: a hero's level in the match on screen; its health and attack are that level's (HeroGrowth).
+export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
     const unit = UnitDefinition.get(type),
+        hero = LaunchRules.isHeroType(type),
+        hp = hero ? HeroGrowth.maxHp(type, heroLevel) : unit.hp,
+        atk = hero ? HeroGrowth.atkAt(type, heroLevel) : unit.atk,
         grain = LaunchRules.grain(type),
         siege = UnitDefinition.onlyAttacksBuildings(type),
         shots = LaunchRules.volleyStats(type),
@@ -24,7 +29,8 @@ export function unitCardStats(type, rangeLevel, copy) {
         spin = unit.spinAttack;
 
     const movement = [
-        ['체력', number.format(unit.hp)],
+        ...(hero ? [['레벨', `${number.format(heroLevel)}레벨`]] : []),
+        ['체력', number.format(hp)],
         ['이동속도', number.format(unit.speed)],
     ];
     if (unit.damageTaken && !unit.damageTaken.whileBuilding)
@@ -42,9 +48,9 @@ export function unitCardStats(type, rangeLevel, copy) {
     // cooldown, and the damage per second while it lasts.
     const sustained = sustain
         ? [
-              ['지속 중 초당 피해', number.format((unit.atk * 1000) / sustain.tickMs)],
+              ['지속 중 초당 피해', number.format((atk * 1000) / sustain.tickMs)],
               ['지속 시간', seconds(sustain.durationMs)],
-              ['피해 간격', `${seconds(sustain.tickMs)} · ${number.format(unit.atk)}`],
+              ['피해 간격', `${seconds(sustain.tickMs)} · ${number.format(atk)}`],
               ['재사용 대기', seconds(sustain.cooldownMs)],
           ]
         : [];
@@ -67,7 +73,7 @@ export function unitCardStats(type, rangeLevel, copy) {
           : [
                 [
                     suicide ? '자폭 피해' : siege ? '건물 공격력' : '기본 공격력',
-                    number.format(suicide?.damage ?? unit.atk),
+                    number.format(suicide?.damage ?? atk),
                 ],
                 [
                     suicide ? '자폭 반경' : siege ? '건물 돌격 거리' : '지상 공격 사거리',
@@ -77,7 +83,7 @@ export function unitCardStats(type, rangeLevel, copy) {
     attack.unshift(...sustained);
     if (unit.canAttackAir)
         attack.push(
-            ['대공 공격력', number.format(unit.atk * (burst?.airDamageMultiplier ?? 1))],
+            ['대공 공격력', number.format(atk * (burst?.airDamageMultiplier ?? 1))],
             ['대공 사거리', number.format(burst?.airRange ?? unit.range)],
         );
     if (spin && !spin.arcSweep) attack.push(['회전 공격 반경', number.format(spin.radius)]);
@@ -98,7 +104,7 @@ export function unitCardStats(type, rangeLevel, copy) {
               [
                   '생존',
                   [
-                      ['체력', number.format(unit.hp)],
+                      ['체력', number.format(hp)],
                       ['시야', number.format(unit.sight)],
                   ],
               ],
@@ -214,7 +220,7 @@ export function unitCardStats(type, rangeLevel, copy) {
             ? [
                   [
                       '착지 공격',
-                      `${strike.scatter ? `${number.format(strike.scatter.count + 1)}곳 · ` : ''}반경 ${number.format(strike.radius)} · 피해 ${number.format(strike.damage)}`,
+                      `${strike.scatter ? `${number.format(strike.scatter.count + 1)}곳 · ` : ''}반경 ${number.format(strike.radius)} · 피해 ${strike.atkRatio ? `공격 ×${number.format(strike.atkRatio)}` : number.format(strike.damage)}`,
                   ],
                   [
                       '착지 뒤 빠지기',

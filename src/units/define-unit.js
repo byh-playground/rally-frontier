@@ -391,7 +391,11 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
                 `병종 ${id}의 영웅 포탄은 착탄 충격(impact·splash) 대신 landingStrike를 씁니다.`,
             );
         if (
-            !(strike.radius > 0 && strike.damage > 0 && strike.retreat?.distance > 0) ||
+            !(
+                strike.radius > 0 &&
+                strike.damage > 0 !== strike.atkRatio > 0 &&
+                strike.retreat?.distance > 0
+            ) ||
             !['roll', 'hop'].includes(strike.retreat.motion) ||
             (strike.retreat.motion === 'roll' && !unit.rollAttack) ||
             (strike.scatter && !(strike.scatter.ring > 0 && Number.isInteger(strike.scatter.count)))

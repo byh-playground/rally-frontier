@@ -3,11 +3,14 @@
 // (`unit.heroGrowth`) while it is on the field, the deployment slot (`sim.heroGrowth[side][type]`) while it waits
 // at the cannons. HeroDeployment hands it over on landing and on recovery; a fallen hero takes it with it.
 // A hero Definition declares what each level unlocks in `growth { <level>: { <effect>: spec } }` (levels 2 to
-// maxLevel); `unlocked` gives the spec of an effect once the hero's level reaches it. Levels raise no stats.
+// maxLevel); `unlocked` gives the spec of an effect once the hero's level reaches it. Each level also raises the
+// hero's health and attack by a share of its level-1 values (HERO_LEVEL_HP_PCT, HERO_LEVEL_ATK_PCT): `maxHp` and
+// `atk` give them, the body's `maxHp` follows its level (set on landing and on each level-up), and every hero damage
+// path reads `atk(unit, definition)` instead of the Definition's `atk`.
 // The awakening (`awaken`, level 6) overrides blocks of the hero's own Definition (`spinAttack`, `fruitAttack`) and its
 // body scale; ability code reads the block through `spec(hero, block)` (the effective spec for its level) and the body
 // through `bodyScale`, so no ability branches on the awakening itself.
-import { HERO_LEVEL_KILLS } from '../units/baseline.js';
+import { HERO_LEVEL_ATK_PCT, HERO_LEVEL_HP_PCT, HERO_LEVEL_KILLS } from '../units/baseline.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { LaunchRules } from './launch-rules.js';
 
@@ -51,6 +54,33 @@ export class HeroGrowth {
     // Kills needed for the next level, or null at the top level.
     static nextLevelKills(level) {
         return level < this.maxLevel ? HERO_LEVEL_KILLS[level] : null;
+    }
+
+    // The hero's full health at `level`: the Definition's level-1 health plus HERO_LEVEL_HP_PCT of it per level above
+    // 1, floored (an integer, the deterministic sim).
+    static maxHp(type, level = 1) {
+        return Math.floor(
+            (UnitDefinition.get(type).hp * (100 + HERO_LEVEL_HP_PCT * (level - 1))) / 100,
+        );
+    }
+
+    // The hero's attack at `level`, the same way with HERO_LEVEL_ATK_PCT.
+    static atkAt(type, level = 1) {
+        return Math.floor(
+            (UnitDefinition.get(type).atk * (100 + HERO_LEVEL_ATK_PCT * (level - 1))) / 100,
+        );
+    }
+
+    // The attack `unit` hits with: a deployed hero's at its level, every other unit's Definition `atk`. Effects that
+    // scale the basic hit (the boomerang's echo, the retreat roll) multiply this value.
+    static atk(unit, definition = UnitDefinition.get(unit.type)) {
+        const level = unit?.heroGrowth?.level;
+        return level ? this.atkAt(unit.type, level) : definition.atk;
+    }
+
+    // The full health of a hero waiting at the cannons: its slot's growth record, level 1 without one.
+    static slotMaxHp(state, side, type) {
+        return this.maxHp(type, state.heroGrowth[side][type]?.level ?? 1);
     }
 
     // The spec of `effect` the hero's current level has unlocked (the highest level up to it that declares it), or
@@ -120,6 +150,11 @@ export class HeroGrowth {
         const level = this.levelFor(growth.kills);
         if (level === growth.level) return;
         growth.level = level;
+        // The full health rises to the new level's and the current health by the same amount.
+        const maxHp = this.maxHp(hero.type, level),
+            hpGain = maxHp - hero.maxHp;
+        hero.hp += hpGain;
+        hero.maxHp = maxHp;
         sim.events.push({
             type: 'heroLevelUp',
             side: hero.side,
@@ -127,6 +162,9 @@ export class HeroGrowth {
             unitId: hero.id,
             level,
             kills: growth.kills,
+            hp: hero.hp,
+            maxHp,
+            hpGain,
             x: hero.x,
             y: hero.y,
         });

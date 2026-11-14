@@ -2436,7 +2436,7 @@ class StrategySim {
                 if (d.burstAttack) UnitBurstAttack.start(this, u, shell, 'projectile', d);
                 else {
                     this.commitAttackTiming(u, d, this.attackCooldown(u, d));
-                    LaunchInterception.hit(this, u, shell, d.atk);
+                    LaunchInterception.hit(this, u, shell, HeroGrowth.atk(u, d));
                 }
             }
             return null;
@@ -2602,26 +2602,25 @@ class StrategySim {
             FruitHeroAttack.basic(this, u, t, found.isBuilding);
             return null;
         }
+        // A deployed hero hits with its level's attack (HeroGrowth.atk), every other unit with its Definition's.
+        const atk = HeroGrowth.atk(u, d);
         if (d.lobAttack) {
-            UnitLobAttack.launch(this, u, t, d.lobAttack, d.atk);
+            UnitLobAttack.launch(this, u, t, d.lobAttack, atk);
             return null;
         }
         if (d.thornAttack) {
             UnitThornAttack.launch(this, u, t, found.isBuilding, {
                 ...d.thornAttack,
-                damage: Math.floor(d.atk),
+                damage: Math.floor(atk),
             });
             return null;
         }
         if (d.basicSplash && !found.isBuilding) {
-            if (
-                BasicSplash.hit(this, u, t, d.basicSplash, Math.floor(d.atk)) &&
-                d.spinAttack?.rhythm
-            )
+            if (BasicSplash.hit(this, u, t, d.basicSplash, Math.floor(atk)) && d.spinAttack?.rhythm)
                 UnitSpinAttack.countBasic(u, HeroGrowth.spec(u, 'spinAttack').rhythm);
             return null;
         }
-        return this.applyDamage(u.side, u.type, t, found.isBuilding, Math.floor(d.atk), u.id, {
+        return this.applyDamage(u.side, u.type, t, found.isBuilding, Math.floor(atk), u.id, {
             damageClass: UnitDefinition.damageClass(u.type),
         });
     }

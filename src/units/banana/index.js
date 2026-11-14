@@ -64,7 +64,7 @@ export const Banana = defineUnit({
         // Landing (HeroLandingStrike): one turn with the boomerang in hand at twice the basic hit, then a hop back.
         landingStrike: Object.freeze({
             radius: 100,
-            damage: BANANA_ATK * 2,
+            atkRatio: 2,
             retreat: Object.freeze({ motion: 'hop', distance: 100 }),
         }),
     },
