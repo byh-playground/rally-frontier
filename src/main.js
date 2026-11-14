@@ -2749,6 +2749,23 @@ class GLRenderer {
                 this.addClientFx('meleeImpact', e, snapshot, index, { impactScale: 1.5 });
             } else if (e.type === 'fruitBerryLand') {
                 this.addClientFx('fruitBerryImpact', e, snapshot, index);
+            } else if (e.type === 'heroKillEffect') {
+                // A hero's kill effect (HeroKillEffect): juice drops fly from the fallen soldier into a healing hero,
+                // a gold ring marks a filled attack counter. A bounce berry draws as its own fruit shot.
+                if (e.heal !== null)
+                    this.addClientFx(
+                        'heroKillJuice',
+                        { ...e, x2: e.heroX, y2: e.heroY },
+                        snapshot,
+                        index,
+                    );
+                if (e.charged)
+                    this.addClientFx(
+                        'heroKillCharge',
+                        { ...e, x: e.heroX, y: e.heroY },
+                        snapshot,
+                        index,
+                    );
             } else if (e.type === 'unitThornHit') {
                 this.addClientFx('thornImpact', e, snapshot, index, {
                     id: 'thorn-impact:' + e.projectileId,
@@ -3101,6 +3118,15 @@ class GLRenderer {
                 }
                 kind = 'heroLevelUp';
                 text = `Lv ${e.level}!`;
+            } else if (e.type === 'heroKillEffect' && e.heal > 0) {
+                // The health a kill effect gave back rises green above the hero.
+                if (!this.eventVisible(e)) {
+                    index++;
+                    continue;
+                }
+                kind = 'heroHeal';
+                amount = e.heal;
+                text = `+${e.heal}`;
             }
 
             if (!kind) {
@@ -3114,7 +3140,8 @@ class GLRenderer {
             const seed = HashUtil.hash(
                 `${eventTick}|${index}|${kind}|${Math.round(e.x)}|${Math.round(e.y)}|${amount}`,
             );
-            const group = kind === 'dodge' ? null : this.areaHitGroups.get(e.sourceId);
+            const group =
+                kind === 'dodge' || kind === 'heroHeal' ? null : this.areaHitGroups.get(e.sourceId);
             const grouped = group?.tick === eventTick;
             if (grouped && group.float?.group === group) {
                 // One number per burst: "-40 ×6" (or the total when the amounts differ).
@@ -3128,14 +3155,33 @@ class GLRenderer {
                 index++;
                 continue;
             }
+            // A hero's heals in one tick (a landing that finishes a crowd) add up to one green number.
+            const heal =
+                kind === 'heroHeal' &&
+                this.floatFx.findLast(
+                    (f) =>
+                        f.kind === 'heroHeal' &&
+                        f.presentationTick === eventTick &&
+                        f.group?.sourceId === e.sourceId,
+                );
+            if (heal) {
+                heal.amount += amount;
+                heal.text = `+${heal.amount}`;
+                index++;
+                continue;
+            }
             const f = this.floatFxPool.acquire();
-            f.x = e.x;
-            f.y = e.y;
+            f.x = kind === 'heroHeal' ? e.heroX : e.x;
+            f.y = kind === 'heroHeal' ? e.heroY : e.y;
             f.kind = kind;
             f.text = text;
             f.amount = amount;
             f.jitter = ((seed % 1000) / 1000 - 0.5) * 34;
             f.lane = (seed >>> 10) % 4;
+            if (kind === 'heroHeal') {
+                f.presentationTick = eventTick;
+                f.group = { sourceId: e.sourceId };
+            }
             if (grouped) {
                 f.x = group.x;
                 f.y = group.y;
@@ -4520,6 +4566,9 @@ class GLRenderer {
             } else if (f.kind === 'heroLevelUp') {
                 fill = '#ffe066';
                 stroke = '#5c3d00';
+            } else if (f.kind === 'heroHeal') {
+                fill = '#8ef08a';
+                stroke = '#124d16';
             }
 
             ctx.save();
@@ -7151,6 +7200,10 @@ class GLRenderer {
     // spin interval and contact pulses remain owned by the simulation.
     drawUnitAttackEffects(entries) {
         for (const fx of this.combatFx) {
+            if (fx.kind === 'heroKillJuice' || fx.kind === 'heroKillCharge') {
+                this.drawHeroKillEffect(fx);
+                continue;
+            }
             if (
                 (fx.kind !== 'basicSplashImpact' && fx.kind !== 'fruitBerryImpact') ||
                 fx.clock.expired
@@ -7369,6 +7422,45 @@ class GLRenderer {
             previous = current;
         }
     }
+    // A kill effect's mark (HeroKillEffect): green juice drops arcing from the fallen soldier into the hero, or a
+    // gold ring widening around a hero whose attack counter just filled.
+    drawHeroKillEffect(fx) {
+        if (fx.clock.expired) return;
+        const t = fx.clock.ageMs / EffectObjectFactory.combatLife(fx);
+        if (t >= 1) return;
+        const fade = 1 - t,
+            surfaces = this.world.terrain.surfaces;
+        if (fx.kind === 'heroKillCharge') {
+            const elevation = surfaces.heightAt(fx.x, fx.y),
+                { radius, growth } = EffectObjectFactory.heroKillCharge;
+            this.withWorldSpriteDepth({ x: fx.x, y: elevation, z: fx.y, groundY: 0 }, () =>
+                this.drawGroundCircle(fx.x, fx.y, radius * (1 + growth * t), {
+                    elevation,
+                    stroke: [1, 0.85, 0.33, fade],
+                    width: Math.max(1, 3 * this.sc()),
+                    segments: 20,
+                }),
+            );
+            return;
+        }
+        const { drops, spread, arc, size } = EffectObjectFactory.heroKillJuice,
+            travel = t * (2 - t);
+        for (let i = 0; i < drops; i++) {
+            // Each drop leaves on its own side of the line and closes in on the hero.
+            const side = ((i % 2) * 2 - 1) * (1 + Math.floor(i / 2)),
+                dx = fx.x2 - fx.x,
+                dy = fx.y2 - fx.y,
+                length = Math.hypot(dx, dy) || 1,
+                lateral = (spread * side * 4 * travel * (1 - travel)) / length,
+                x = fx.x + dx * travel - dy * lateral,
+                y = fx.y + dy * travel + dx * lateral,
+                height = surfaces.heightAt(x, y) + arc * 4 * travel * (1 - travel) + size;
+            this.withWorldSpriteDepth({ x, y: height, z: y, groundY: 0 }, () => {
+                const [px, py] = this.worldToPx(this.viewX(x), this.viewY(y), height);
+                this.circle(px, py, size * this.sc(), [0.36, 0.84, 0.35, fade], 8);
+            });
+        }
+    }
     // Where the grape's lobbed berries (the fourth basic's three) will land.
     drawFruitAttackEffect(model, spec) {
         const fruit = model?.entity.fruitAttack;
@@ -7377,6 +7469,7 @@ class GLRenderer {
             if (
                 projectile.kind !== 'berry' ||
                 projectile.mode === 'basic' ||
+                projectile.mode === 'bounce' ||
                 model.tick >= projectile.endTick
             )
                 continue;

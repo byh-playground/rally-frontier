@@ -28,6 +28,10 @@ export const Banana = defineUnit({
             passiveFollowThrough: 75,
             radius: 10,
         }),
+        // Level unlocks (HeroGrowth.unlocked). Level 2: a killing blow fills the n-hit counter at once.
+        growth: Object.freeze({
+            2: Object.freeze({ killEffect: Object.freeze({ fillCombo: true }) }),
+        }),
     },
     payload: {
         ...HERO_SHELL,
@@ -54,6 +58,7 @@ export const Banana = defineUnit({
         notes: [
             '착지하면 부메랑을 들고 한 바퀴 돌아 주변 적을 베고 뒤로 뛰어 빠져요.',
             '네 번째 평타의 금빛 부메랑이 적을 왕복 관통해요.',
+            '2레벨: 막타를 치면 다음 평타가 바로 금빛 부메랑',
         ],
     },
     help: [
@@ -63,6 +68,7 @@ export const Banana = defineUnit({
             paragraphs: [
                 '작은 부메랑으로 적 한 명을 맞혀요. 네 번째 평타는 첫 표적 뒤까지 날아가며 나갈 때와 돌아올 때 경로의 적을 맞혀요.',
                 '착지하는 순간 부메랑을 들고 한 바퀴 돌아 반경 100 안의 적에게 평타 두 배 피해를 준 뒤, 본진 쪽으로 100 뛰어 빠져요.',
+                '2레벨: 바나나가 막타로 적 병력을 쓰러뜨리면 카드의 점이 모두 차서 다음 평타가 곧바로 금빛 부메랑이 돼요.',
             ],
         },
     ],

@@ -3,17 +3,21 @@ import { SimulationTiming } from '../../core/simulation-timing.js';
 import { BuildingDefinition } from '../../definitions/buildings.js';
 import { fruitProjectilePosition } from '../../definitions/fruit-hero-trajectory.js';
 import { UnitDefinition } from '../../definitions/units.js';
+import { HeroGrowth } from '../hero-growth.js';
 import { HashUtil } from '../map-generation.js';
 import { UnitMotion } from '../navigation.js';
 import { UnitThornAttack } from './unit-thorn-attack.js';
 import { IndexList } from '../index-list.js';
 
 const SWEEP_QUERY = new IndexList();
+const BOUNCE_QUERY = new IndexList();
 
 const STATE_KEYS = 'combo,projectiles';
 const SHOT_KEYS =
     'backHitIds,curve,endTick,from,height,id,kind,mode,outHitIds,radius,returnTo,startTick,targetId,targetIsBuilding,to,turnTick';
-const MAX_SHOTS = 16;
+// Kill-effect bounces in flight at once (a landing strike can kill a crowd); the rest of the kills throw none.
+const MAX_BOUNCES = 32;
+const MAX_SHOTS = 16 + MAX_BOUNCES;
 const MAX_HITS = 1024;
 const MAX_POSITION = 1_000_000;
 
@@ -175,6 +179,80 @@ export class FruitHeroAttack {
         });
     }
 
+    // A kill effect (HeroKillEffect `fillCombo`): the n-hit counter is full, so the next basic is the nth one.
+    static fillCombo(unit) {
+        unit.fruitAttack.combo = UnitDefinition.get(unit.type).fruitAttack.every - 1;
+        return true;
+    }
+
+    // A kill effect (HeroKillEffect `bounce`): one berry hops from where `fallen` died, on the lob's path and time,
+    // to the nearest living ground enemy within `radius`, and hits it alone when it comes down (the path follows
+    // the target). Returns the target id, or null when there is none (or no room for another shot).
+    static bounce(sim, unit, fallen, { radius }) {
+        const fruit = unit.fruitAttack;
+        if (fruit.projectiles.filter((shot) => shot.mode === 'bounce').length >= MAX_BOUNCES)
+            return null;
+        const found = sim.nearbyUnits(fallen.x, fallen.y, radius, 1 - unit.side, BOUNCE_QUERY);
+        let target = null,
+            best = Infinity;
+        for (let k = 0; k < found; k++) {
+            const candidate = sim.units[BOUNCE_QUERY.items[k]];
+            if (!candidate?.alive || !sim.canAttackEntity(unit.type, candidate, false)) continue;
+            const d2 = (candidate.x - fallen.x) ** 2 + (candidate.y - fallen.y) ** 2;
+            if (d2 > radius * radius) continue;
+            if (d2 < best || (d2 === best && candidate.id < target.id)) {
+                target = candidate;
+                best = d2;
+            }
+        }
+        if (!target) return null;
+        const spec = UnitDefinition.get(unit.type).fruitAttack;
+        // Shots of one hero started this tick are told apart by their order; none ends in its first tick.
+        const index = fruit.projectiles.filter(
+            (shot) => shot.mode === 'bounce' && shot.startTick === sim.tick,
+        ).length;
+        fruit.projectiles.push(
+            this.makeShot({
+                unit,
+                kind: 'berry',
+                mode: 'bounce',
+                index,
+                from: worldPoint(sim, fallen),
+                to: worldPoint(sim, target),
+                startTick: sim.tick,
+                endTick: sim.tick + sim.msTicks(spec.lob.durationMs),
+                radius: spec.radius,
+                height: spec.lob.height,
+                targetId: target.id,
+            }),
+        );
+        return target.id;
+    }
+
+    // A bounce berry in flight: it follows its target, and hits it alone (no kill effect) when it comes down.
+    static advanceBounce(sim, unit, shot) {
+        const target = sim.liveEntityRefById(shot.targetId, 'unit')?.entity;
+        if (target) shot.to = worldPoint(sim, target);
+        if (sim.tick < shot.endTick) return true;
+        const bounce = HeroGrowth.unlocked(unit, 'killEffect')?.bounce;
+        if (!target || !bounce) return false;
+        const capture = {};
+        sim.applyDamage(unit.side, unit.type, target, false, bounce.damage, unit.id, {
+            capture,
+            heroKillEffect: false,
+        });
+        if (capture.dealt > 0)
+            sim.events.push({
+                type: 'fruitProjectileHit',
+                side: unit.side,
+                sourceId: unit.id,
+                targetId: target.id,
+                projectileId: shot.id,
+                ...shot.to,
+            });
+        return false;
+    }
+
     static boomerangTurnPoint(sim, unit, target, reach) {
         const dx = target.x - unit.x;
         const dy = target.y - unit.y;
@@ -205,6 +283,7 @@ export class FruitHeroAttack {
     static advanceShot(sim, unit, shot, definition) {
         if (sim.tick <= shot.startTick) return true;
         const spec = definition.fruitAttack;
+        if (shot.mode === 'bounce') return this.advanceBounce(sim, unit, shot);
         if (shot.kind === 'berry' && shot.mode !== 'basic') {
             if (sim.tick < shot.endTick) return true;
             this.landBerry(sim, unit, shot, spec.lob.radius, spec.lob.damage);
@@ -331,6 +410,7 @@ export class FruitHeroAttack {
             fruit.projectiles.length > MAX_SHOTS ||
             ((!unit.alive || state.heroes?.[unit.side]?.[unit.type]?.unitId !== unit.id) &&
                 (fruit.projectiles.length || fruit.combo)) ||
+            fruit.projectiles.filter((shot) => shot.mode === 'bounce').length > MAX_BOUNCES ||
             fruit.projectiles.some((shot) => !this.validShot(shot, spec, state.tick, tps)) ||
             new Set(fruit.projectiles.map((shot) => shot.id)).size !== fruit.projectiles.length
         )
@@ -354,6 +434,23 @@ export class FruitHeroAttack {
             typeof shot.targetIsBuilding !== 'boolean'
         )
             return false;
+        // A kill-effect bounce (HeroKillEffect): one berry on the lob's path and time at one ground target.
+        if (shot.mode === 'bounce')
+            return (
+                !!spec.lob &&
+                shot.kind === 'berry' &&
+                shot.radius === spec.radius &&
+                shot.curve === 0 &&
+                shot.height === spec.lob.height &&
+                shot.turnTick === null &&
+                shot.endTick ===
+                    shot.startTick + SimulationTiming.msToTicks(spec.lob.durationMs, tps) &&
+                validId(shot.targetId) &&
+                !shot.targetIsBuilding &&
+                shot.returnTo === null &&
+                !shot.outHitIds.length &&
+                !shot.backHitIds.length
+            );
         const boomerang = spec.kind === 'boomerang';
         const lob = !boomerang && shot.mode === 'passive';
         const duration = lob ? spec.lob.durationMs : spec.basicMs;

@@ -22,6 +22,15 @@ class FloatingTextPresentationDefinition {
             strokeAlpha: 0.8,
             pop: 1,
         }),
+        heroHeal: Object.freeze({
+            lifeMs: 800,
+            baseSize: 17,
+            minSize: 11,
+            rise: 35,
+            alpha: 1,
+            strokeAlpha: 0.9,
+            pop: 1.15,
+        }),
         heroLevelUp: Object.freeze({
             lifeMs: 1200,
             baseSize: 24,
@@ -62,12 +71,17 @@ class EffectObjectFactory {
         shakeMs: 110,
     });
     static milletBurstLifeMs = 600;
+    // Kill effects (HeroKillEffect), presentation only: juice drops (world units) and the filled-counter ring.
+    static heroKillJuice = Object.freeze({ drops: 6, spread: 25, arc: 50, size: 5 });
+    static heroKillCharge = Object.freeze({ radius: 25, growth: 1 });
     static defaultCombatLifeMs = 360;
     static sourceMotionFallbackMs = 220;
     static shellFlinch = Object.freeze({ lifeMs: 160, tilt: 0.6, squash: 0.28 });
     static combatLifetimes = Object.freeze({
         thornImpact: 250,
         basicSplashImpact: 180,
+        heroKillJuice: 500,
+        heroKillCharge: 400,
         constructionHit: 220,
         hitscanTravel: 180,
         antiAirHit: 320,

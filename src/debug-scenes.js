@@ -324,9 +324,22 @@ function createTickLog() {
 // first landing strike (HeroLandingStrike): tick, enemies hit in all and per circle, damage per hit, the hits of its
 // shell's own landing shock (`shellHits`, 0 for a hero shell), how far from the landing point the hero came out
 // (`spawn`), and once its retreat (roll or hop) has settled, the tick and how far it went from where it came out
-// (`retreat`) and how much of that is toward its own main base (`home`).
+// (`retreat`) and how much of that is toward its own main base (`home`). `killEffects` (HeroKillEffect) counts the
+// kill effects run, the level and kills at the first one, the health they gave back (`heal`), the filled attack
+// counters (`charged`) and how each next basic went out (`nextBasic`: 'passive' is the nth basic), and the bounce
+// berries thrown, landed on a target (`hits`), their damage and the soldiers they finished (`kills`).
 function heroProbe(sim, type) {
     const levelUps = [];
+    const effects = {
+        count: 0,
+        first: null,
+        heal: 0,
+        charged: 0,
+        nextBasic: {},
+        bounce: { thrown: 0, hits: 0, damage: 0, kills: 0 },
+    };
+    const bounceIds = new Set();
+    let chargedTick = null;
     let landings = 0,
         strike = null,
         shellHits = null;
@@ -349,8 +362,45 @@ function heroProbe(sim, type) {
                     landings++;
                 if (event.type === 'heroLevelUp' && event.heroType === type)
                     levelUps.push({ tick: sim.tick, level: event.level, kills: event.kills });
+                if (event.type === 'heroKillEffect' && event.unit === type && event.side === 0) {
+                    effects.count++;
+                    effects.first ??= { tick: sim.tick, level: event.level, kills: event.kills };
+                    effects.heal += event.heal ?? 0;
+                    if (event.charged) {
+                        effects.charged++;
+                        chargedTick ??= sim.tick;
+                    }
+                    if (event.bounceTargetId) effects.bounce.thrown++;
+                }
             }
             const hero = strike?.unit;
+            for (const shot of hero?.fruitAttack?.projectiles ?? []) {
+                if (shot.mode === 'bounce') bounceIds.add(shot.id);
+                // The first basic thrown after a filled counter.
+                if (
+                    chargedTick !== null &&
+                    shot.startTick === sim.tick &&
+                    sim.tick > chargedTick &&
+                    shot.mode !== 'bounce'
+                ) {
+                    effects.nextBasic[shot.mode] = (effects.nextBasic[shot.mode] ?? 0) + 1;
+                    chargedTick = null;
+                }
+            }
+            sim.events.forEach((event, i) => {
+                if (event.type !== 'fruitProjectileHit' || !bounceIds.has(event.projectileId))
+                    return;
+                effects.bounce.hits++;
+                for (let k = i - 1; k >= 0; k--) {
+                    const before = sim.events[k];
+                    if (before.type === 'death' && before.id === event.targetId)
+                        effects.bounce.kills++;
+                    if (before.type === 'hit' && before.targetId === event.targetId) {
+                        effects.bounce.damage += before.amount;
+                        break;
+                    }
+                }
+            });
             if (!hero || strike.settled) return;
             if (strike.from === undefined) {
                 strike.from = { x: hero.x, y: hero.y };
@@ -393,6 +443,8 @@ function heroProbe(sim, type) {
                 },
                 growth: sim.unitById.get(slot?.unitId)?.heroGrowth ?? sim.heroGrowth[0][type],
                 levelUps,
+                hp: sim.unitById.get(slot?.unitId)?.hp ?? null,
+                killEffects: effects,
             };
         },
     };
@@ -2292,7 +2344,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * 장면과 같은 나는 병종 기록이다. 예: `?debug=1&scene=launch&map=standard&seed=1&unit=chestnut&zoom=2&tick=20`,
          * 절벽 옆: `?debug=1&scene=launch&map=twin-gates&seed=1&unit=chestnut&zoom=2&x=820&y=1300&tick=30`.
          * 영웅이면 상태의 `hero`가 지금 처치 수·레벨(`growth`)과 레벨업 기록(`levelUps`),
-         * 출격 슬롯 상태(`mode`·`landings`)다. `recallMs`를 주면 그 시각에 영웅을 복귀시키고, 회수되면 같은 곳으로
+         * 출격 슬롯 상태(`mode`·`landings`)·체력(`hp`)·막타 효과(`killEffects`)다. `heroHp`를 주면 그 체력으로
+         * 출격한다. `recallMs`를 주면 그 시각에 영웅을 복귀시키고, 회수되면 같은 곳으로
          * 다시 쏜다. 예: `?debug=1&scene=launch&map=standard&seed=1&unit=watermelon&enemy=rice&enemyCount=30&zoom=2&tick=60`
          */
         launch(params) {
@@ -2344,6 +2397,15 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                           },
                     { x: back.x, y: back.y },
                 );
+            // `heroHp`: the hero waits at the cannons with this much health and comes out with it (HeroDeployment).
+            if (params.heroHp !== undefined) {
+                if (!LaunchRules.isHeroType(type))
+                    throw new Error(`${scene} 장면의 heroHp는 영웅에만 씁니다.`);
+                sim.heroRecovery[0][type] = {
+                    hp: integer(scene, 'heroHp', params.heroHp),
+                    startedAtTick: null,
+                };
+            }
             queueLaunch(sim, { tick: 10, seq: 1, side: 0, cannon, unitType: type, ...target });
             const hero = LaunchRules.isHeroType(type) ? heroProbe(sim, type) : null;
             const recallTick =
