@@ -11,6 +11,9 @@
 //            floored, at least 1), always or with `whileBuilding` only while assigned to a project under way.
 //            `basicSplash { radius, damageRatio }`: its basic melee hit on a soldier also hits the soldiers
 //            around (BasicSplash). `workerCard` marks a card the bot launches only to build (BotController).
+//            `growth { <level 2..6>: { <effect>: spec } }` (heroes only): what each hero level unlocks
+//            (HeroGrowth.unlocked), checked by GROWTH_EFFECTS below. Levels raise no stats. Effects:
+//              killEffect { heal?, fillCombo?, bounce? { radius, damage } } (HeroKillEffect)
 //   payload  the cannon shell that carries the unit (LaunchRules). A hero's shell has no landing shock (impact,
 //            splash) but `landingStrike { radius, damage, knockback?, scatter? { ring, count }, retreat { motion:
 //            'roll'|'hop', distance } }`, the hero's own strike when it lands (HeroLandingStrike)
@@ -50,7 +53,7 @@
 //            through drawUnitQuads(context, this.paint, …) (render/dead-unit-look.js): main.js sets
 //            `paint` around a stopped, greying corpse's drawBody/drawFace (null otherwise), and its `hurt` face is every corpse's.
 import { COLLISION_RADIUS_SCALE } from '../definitions/world-rules.js';
-import { GRAIN_SIZE } from './baseline.js';
+import { GRAIN_SIZE, HERO_LEVEL_KILLS } from './baseline.js';
 import { SustainedAttack } from '../sim/capabilities/sustained-attack.js';
 
 const REQUIRED = ['unit', 'payload', 'visual', 'card'];
@@ -71,6 +74,48 @@ const BREATH_EXCLUSIVE = [
     'selfDestruct',
     'canAttackAir',
 ];
+
+// The effects a hero level can unlock (Definition `unit.growth[level]`) and each one's check.
+const GROWTH_EFFECTS = Object.freeze({
+    // HeroKillEffect: the hero's killing blow on an enemy soldier.
+    killEffect(id, spec, unit) {
+        const keys = Object.keys(spec || {});
+        if (!keys.length || keys.some((key) => !['heal', 'fillCombo', 'bounce'].includes(key)))
+            throw new Error(
+                `병종 ${id}의 killEffect는 heal·fillCombo·bounce 중 하나 이상이어야 합니다.`,
+            );
+        if (spec.heal !== undefined && !(Number.isInteger(spec.heal) && spec.heal > 0))
+            throw new Error(`병종 ${id}의 killEffect.heal은 양의 정수여야 합니다.`);
+        if (spec.fillCombo !== undefined && (spec.fillCombo !== true || !unit.fruitAttack))
+            throw new Error(
+                `병종 ${id}의 killEffect.fillCombo는 true이고 fruitAttack이 있어야 합니다.`,
+            );
+        const bounce = spec.bounce;
+        if (
+            bounce !== undefined &&
+            (!(bounce.radius > 0 && bounce.damage > 0) || !unit.fruitAttack?.lob)
+        )
+            throw new Error(
+                `병종 ${id}의 killEffect.bounce는 양수 radius·damage와 fruitAttack.lob이 필요합니다.`,
+            );
+    },
+});
+
+function validateGrowth(id, growth, unit, hero) {
+    if (!hero) throw new Error(`병종 ${id}: growth(레벨 해금 효과)는 영웅만 가집니다.`);
+    for (const [level, unlocks] of Object.entries(growth)) {
+        const number = Number(level);
+        if (!Number.isInteger(number) || number < 2 || number > HERO_LEVEL_KILLS.length)
+            throw new Error(
+                `병종 ${id}의 growth 레벨은 2~${HERO_LEVEL_KILLS.length}이어야 합니다.`,
+            );
+        for (const [effect, spec] of Object.entries(unlocks)) {
+            if (!Object.hasOwn(GROWTH_EFFECTS, effect))
+                throw new Error(`병종 ${id}의 growth[${level}].${effect}는 없는 효과입니다.`);
+            GROWTH_EFFECTS[effect](id, spec, unit);
+        }
+    }
+}
 
 export function defineUnit({ id, hero = false, help = [], ...parts }) {
     if (typeof id !== 'string' || !id) throw new Error('병종 id가 필요합니다.');
@@ -159,6 +204,7 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
         !(Number(splash.radius) > 0 && Number(splash.damageRatio) > 0 && unit.atk > 0)
     )
         throw new Error(`병종 ${id}의 basicSplash는 양수 radius·damageRatio와 atk가 필요합니다.`);
+    if (unit.growth !== undefined) validateGrowth(id, unit.growth, unit, hero);
     if (unit.workerCard && !unit.construction)
         throw new Error(`병종 ${id}의 workerCard는 construction이 필요합니다.`);
     // A hero's shell lands with the hero's landing strike in place of the shell's shock (HeroLandingStrike).

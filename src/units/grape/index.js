@@ -25,6 +25,13 @@ export const Grape = defineUnit({
             radius: 5,
             lob: Object.freeze({ durationMs: 500, height: 100, radius: 50, damage: 20 }),
         }),
+        // Level unlocks (HeroGrowth.unlocked). Level 2: a berry hops from each soldier it finishes to the nearest
+        // enemy, on the lob's path (a hopped berry's own kill hops no further).
+        growth: Object.freeze({
+            2: Object.freeze({
+                killEffect: Object.freeze({ bounce: Object.freeze({ radius: 100, damage: 20 }) }),
+            }),
+        }),
     },
     payload: {
         ...HERO_SHELL,
@@ -53,6 +60,7 @@ export const Grape = defineUnit({
         notes: [
             '착지하면 송이가 터져 포도알 여덟 개가 흩어지고 반동으로 뒤로 튀어 빠져요.',
             '네 번째 평타마다 표적의 앞·중앙·뒤에 곡사탄을 던져요.',
+            '2레벨: 막타를 치면 포도알이 튀어 근처 적 한 명에게 피해 20',
         ],
     },
     help: [
@@ -62,6 +70,7 @@ export const Grape = defineUnit({
             paragraphs: [
                 '평타로 적 한 명을 맞혀요. 네 번째 평타에는 표적의 앞·중앙·뒤에 곡사탄을 한 알씩 더 던져 주변 적에게 피해를 줘요.',
                 '착지하는 순간 송이가 터져 가운데 한 알과 둘레 일곱 알이 흩어져요. 알마다 반경 50 안의 적에게 피해 25를 주고, 반동으로 본진 쪽으로 100 튀어 빠져요.',
+                '2레벨: 포도가 막타로 적 병력을 쓰러뜨리면 그 자리에서 포도알 하나가 튀어 반경 100 안의 가장 가까운 적 한 명에게 피해 20을 줘요. 튄 알이 쓰러뜨린 적은 처치로 세지만 다시 튀지 않아요.',
             ],
         },
     ],

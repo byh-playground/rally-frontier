@@ -5,6 +5,7 @@ import { HeroDeployment } from './hero-deployment.js';
 import { CardAmmo } from './card-ammo.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { HeroGrowth } from './hero-growth.js';
+import { HeroKillEffect } from './capabilities/hero-kill-effect.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { UnitSpinAttack } from './capabilities/unit-spin-attack.js';
 import { BasicSplash } from './capabilities/basic-splash.js';
@@ -1902,7 +1903,8 @@ class StrategySim {
             mul = Math.floor((mul * targetDef.rangedReduction) / 100);
         return Math.max(1, Math.floor((base * mul) / 100));
     }
-    emitUnitDeath(target, sourceSide, sourceType, sourceEntityId = null) {
+    // `heroKillEffect` false: the killing blow came from a hero's kill effect, which does not set off another one.
+    emitUnitDeath(target, sourceSide, sourceType, sourceEntityId = null, heroKillEffect = true) {
         if (!target || target.alive === false) return null;
 
         if (UnitDefinition.get(target.type)?.spinAttack) UnitSpinAttack.cancel(this, target);
@@ -1915,8 +1917,9 @@ class StrategySim {
             this.launchStats.kills[sourceSide]++;
         if ((sourceSide === 0 || sourceSide === 1) && target.side === 1 - sourceSide)
             UnitResultStats.add(this.unitResultStats, sourceSide, sourceType, 'kills');
-        // The killing blow is the one place a hero's kill is counted (HeroGrowth).
-        HeroGrowth.recordKill(this, sourceEntityId, target);
+        // The killing blow is the one place a hero's kill is counted (HeroGrowth) and its kill effect runs.
+        const hero = HeroGrowth.recordKill(this, sourceEntityId, target);
+        if (hero && heroKillEffect) HeroKillEffect.onKill(this, hero, target);
         this.events.push({
             type: 'death',
             id: target.id,
@@ -2072,7 +2075,13 @@ class StrategySim {
 
         if (target.hp <= 0) {
             if (isBuilding) return this.destroyBuilding(target, sourceSide, sourceType);
-            this.emitUnitDeath(target, sourceSide, sourceType, sourceEntityId);
+            this.emitUnitDeath(
+                target,
+                sourceSide,
+                sourceType,
+                sourceEntityId,
+                options?.heroKillEffect !== false,
+            );
         }
         return null;
     }
