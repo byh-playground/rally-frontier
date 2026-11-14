@@ -8,7 +8,7 @@ export const Pea = defineUnit({
         construction: { range: 5, workPerHit: 1 },
         name: '콩',
         mass: 225,
-        hp: 75,
+        hp: 110,
         atk: 10,
         range: 25,
         speed: 50,

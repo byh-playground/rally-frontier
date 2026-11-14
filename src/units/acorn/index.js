@@ -15,7 +15,7 @@ export const Acorn = defineUnit({
         requiresContactTerrain: true,
         construction: { range: 5, workPerHit: 1 },
         name: '도토리',
-        hp: 75,
+        hp: 150,
         atk: 13,
         range: ACORN_SPIN_RADIUS - ACORN_SIZE * COLLISION_RADIUS_SCALE,
         speed: 50,

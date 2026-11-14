@@ -6,7 +6,7 @@ export const Popcorn = defineUnit({
     unit: {
         ...BASIC_MELEE,
         name: '팝콘',
-        hp: 3,
+        hp: 15,
         speed: 100,
         leapAttack: Object.freeze({
             ...GRAIN_LEAP,
@@ -14,7 +14,7 @@ export const Popcorn = defineUnit({
         }),
         selfDestruct: Object.freeze({
             onLeapLanding: true,
-            windupMs: 1000,
+            windupMs: 500,
             radius: 80,
             damage: 40,
             // Every grounded enemy inside the radius is thrown as hard as one at the centre.
