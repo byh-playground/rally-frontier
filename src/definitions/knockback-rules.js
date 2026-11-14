@@ -5,22 +5,22 @@
 import { BASIC_MELEE } from '../units/baseline.js';
 
 class KnockbackRules {
-    // The bounce of a hit; the walnut's contact exchange reads the same value.
+    // The bounce of a hit; the coconut's contact exchange reads the same value.
     static restitution = 0.5;
-    // Lift per ground speed of every knockback: about 32 degrees, the walnut's launch angle.
+    // Lift per ground speed of every knockback: about 32 degrees, the coconut's launch angle.
     static liftRatio = 0.625;
     // How hard each kind of hit throws:
-    // - roll: a rolling body (walnut, watermelon's roll), three times the plain exchange.
+    // - roll: a rolling body (coconut, watermelon's roll), three times the plain exchange.
     // - area: a body landing on an area (a launch shell, a leap's landing).
     // - basic: a repeated basic attack (acorn's and watermelon's spin).
     // - burst: an explosion (popcorn's self-destruct, corn's egg); a small light body that bursts throws
     //   twice what its mass alone would.
-    // - splash: the shock that comes with a damage area (watermelon's hop landing, its basic attack's
+    // - splash: the shock that comes with a damage area (watermelon's hop landing, a basic attack's
     //   splash), a quarter of an area hit.
     static gain = Object.freeze({ roll: 3, area: 1, basic: 1, burst: 2, splash: 0.25 });
     // An area hit fades with the distance d from its centre to max(edgeStrength, 1 - d / reach).
     static edgeStrength = 0.25;
-    // A swinging arm: a plain soldier's walk times four, the walnut's top speed.
+    // A swinging arm: a plain soldier's walk times four, the coconut's top speed.
     static swingSpeed = BASIC_MELEE.speed * 4;
     // A shell, an explosion or a shockwave meeting the ground.
     static impactSpeed = 400;

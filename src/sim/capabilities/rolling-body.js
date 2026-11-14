@@ -1,12 +1,12 @@
 // Contract (index.html Development Contract에서 능력 모듈로 옮긴 형식):
-// - 호두(Unit Definition rolling)는 한 번에 한 알을 싣는 묶음 투입탄이다(인구 예외 없음).
+// - 코코넛(Unit Definition rolling)은 한 번에 한 알을 싣는 묶음 투입탄이다(인구 예외 없음).
 //   일반 교전·이동 AI를 쓰지 않고 RollingBody가 매 틱 impactMotion 속도를 직접 쓴다.
 //   착지 충격이 끝나면(땅에 닿고 XY 속도 0) 발사 방향으로 최고 속도×launchSpeedRatio로 차고 나간다(kicked).
 //   속도는 speed += (top·drag·max(0, 진행 방향·목표 방향) − drag·speed)/tps로, 구동−저항의 평형이 최고 속도다.
 //   목표는 시야 안의 가장 가까운 적 병사·건물(같으면 id 번호, 병사 먼저), 없으면 적 본진, 없으면 깃발이다.
 //   조향 방향은 목표 직선이 아니라 공용 흐름장(TerrainNavigation.nextPoint, 'field')이 주는 다음 지점이다:
-//   목표의 접촉 원(병사는 접촉 거리, 건물은 공격 도달 거리)까지 직선이 열려 있으면 직선, 막혔으면 호두 반경
-//   묶음의 흐름장. 건물·깃발은 고정 목표라 같은 목표로 가는 호두가 흐름장을 함께 쓰고, 병사는 선 칸 단위의
+//   목표의 접촉 원(병사는 접촉 거리, 건물은 공격 도달 거리)까지 직선이 열려 있으면 직선, 막혔으면 코코넛 반경
+//   묶음의 흐름장. 건물·깃발은 고정 목표라 같은 목표로 가는 코코넛이 흐름장을 함께 쓰고, 병사는 선 칸 단위의
 //   추격 목표다. 원 안에 들면 목표 자체를 향한다. 보이는 적에게 땅으로 닿을 수 없으면 적 본진(없으면 깃발)으로
 //   가는 길을 따르고, 그것도 없으면 목표를 곧장 향한다. 길찾기는 조향 방향만 정하고 물리는 그대로다.
 //   회전 한도는 turnRateSlow에서 turnRateTop으로 속도 비율에 따라 선형으로 줄어든다(빠를수록 크게 돈다).
@@ -14,19 +14,19 @@
 //   적과는 질량·반발 e(KnockbackRules.restitution)의 운동량 교환 J=−(1+e)·v_n/(1/M+1/m)로 양쪽 속도가 바뀌고,
 //   맞은 적은 공용 넉백 발사각(KnockbackRules.liftRatio)으로 띄워지며
 //   (재타격 대기 밖의 첫 타격은 구르는 몸 배수 KnockbackRules.gain.roll배의 속도·띄움, 같은 접촉의 반복은 1배)
-//   피해는 round(J·damagePerImpulse)다. 호두가 낀 쌍도 다른 몸끼리와 같은 틱당 접촉 예산을 쓴다(넘치면 겹쳐 지나감).
+//   피해는 round(J·damagePerImpulse)다. 코코넛이 낀 쌍도 다른 몸끼리와 같은 틱당 접촉 예산을 쓴다(넘치면 겹쳐 지나감).
 //   아군은 접촉이 아니다: 모든 몸이 움직이고 겹침 풀기까지 끝난 뒤 겹친 지상 아군을
-//   호두 밖으로 위치만 밀어낸다(pushAllies). 아군은 피해·속도 변화가 없고 호두 속도도 그대로다.
+//   코코넛 밖으로 위치만 밀어낸다(pushAllies). 아군은 피해·속도 변화가 없고 코코넛 속도도 그대로다.
 //   같은 표적 재타격은 rehitMs 뒤에만, 연쇄 피해는 없다(맞은 적끼리의 충돌은 일반 접촉이다).
 //   벽·건물은 wallRestitution으로 반사하고, 적 건물은 진입 속도에 비례한 피해
 //   (최고 속도 정면에서 buildingDamageAtTop)를 받는다. 0시간 접촉이 반복되면(맵 끝에 눌린 적 등) 함께 멈추지 않고
 //   한도에서 한 번 벽처럼 튕기고, 그래도 반복되면 일반 몸처럼 붙는다. 피해는 접촉 해소 뒤 flushHits에서 한 번에 적용하고 rollingImpact 이벤트를 낸다.
 //   Unit.rolling 전체가 권위 상태다. 껍데기 회전 θ·속도 단계·표정·늘어남은 렌더가 위치 변화로 누적하는
 //   연출(스프라이트 계약 rolling)이며 권위 상태가 아니다. 봇은 일반 지상 병력과 같은 규칙으로 쏜다.
-// A walnut never stops: after landing it rolls, speeds up and bowls enemies over.
+// A coconut never stops: after landing it rolls, speeds up and bowls enemies over.
 // Unit.rolling { kicked, dx, dy, hits, bumpTick, wallTick } is its only own state. The rolling velocity lives in
 // the shared impact motion (impactMotion, kind 'roll'), so the contact solve moves it and casts it against walls,
-// buildings and units like a knocked body. The walnut's own rules are small: it keeps its motion record while it
+// buildings and units like a knocked body. The coconut's own rules are small: it keeps its motion record while it
 // lives, gets its velocity from this motor instead of the ground drag, answers its contacts here (strike gain,
 // rehit window, damage queue, its own restitution, one bounce off a stuck contact), and moves overlapping allies
 // aside afterwards.
@@ -46,7 +46,7 @@ const DEGREE = Math.PI / 180;
 // and HIT_NUMBERS numbers (amount, x, y, nx, ny, building 0/1); the arrays only grow, `count` is the live length.
 const pendingHits = new WeakMap();
 const HIT_NUMBERS = 6;
-// Reused every step: the unit indices near a walnut, and the goal it asks the flow field about
+// Reused every step: the unit indices near a coconut, and the goal it asks the flow field about
 // (made on first use, since this module and navigation.js import each other).
 const NEARBY = new IndexList();
 let steerGoal = null;
@@ -69,7 +69,7 @@ class RollingBody {
             wallTick: null,
         };
     }
-    // A live walnut on the ground, rolling under its own drive. A push that does not lift it keeps it
+    // A live coconut on the ground, rolling under its own drive. A push that does not lift it keeps it
     // rolling; the motor marks the motion 'roll' again on its next step.
     static rolling(unit) {
         return (
@@ -148,7 +148,7 @@ class RollingBody {
     // The next point of the shared flow field to the target's contact disc (a clear straight line in the
     // ray range is taken straight, as for every army unit); the target itself once inside the disc; null
     // when the ground does not lead there. A unit's disc is a chase goal keyed by the cell it stands in;
-    // a building's disc and the flag's point are fixed, so every walnut heading there shares one field.
+    // a building's disc and the flag's point are fixed, so every coconut heading there shares one field.
     static wayTo(sim, unit, target) {
         const goal = (steerGoal ??= NavigationGoal.point(0, 0)).reset(
                 target.x,
@@ -164,7 +164,7 @@ class RollingBody {
         return point;
     }
     // The motor, once per tick before contacts: turn toward the goal, then drive minus drag.
-    // The heading is the direction of travel, so a bounce turns the walnut with it.
+    // The heading is the direction of travel, so a bounce turns the coconut with it.
     static step(sim, unit, vision) {
         const spec = this.spec(unit),
             state = unit.rolling;
@@ -172,7 +172,7 @@ class RollingBody {
         const tps = sim.tps,
             mass = sim.mass(unit);
         const m = unit.impactMotion;
-        // A knocked walnut coasts on the shared drag until it has settled from its own landing.
+        // A knocked coconut coasts on the shared drag until it has settled from its own landing.
         if (!state.kicked && m && (m.vxFP || m.vyFP || sim.tick < m.endTick)) return;
         let vx = (m?.vxFP || 0) / FP,
             vy = (m?.vyFP || 0) / FP,
@@ -222,7 +222,7 @@ class RollingBody {
                 hx = nx / length;
                 hy = ny / length;
             }
-            // Drive pushes only along the heading's share of the goal: a walnut facing away coasts
+            // Drive pushes only along the heading's share of the goal: a coconut facing away coasts
             // and turns, it never drives away from what it chases.
             const along = Math.max(0, hx * gx + hy * gy),
                 drive = spec.topSpeed * spec.drag * along;
@@ -279,11 +279,11 @@ class RollingBody {
         numbers[at + 5] = building ? 1 : 0;
     }
     // A contact the solver hands over with at least one rolling body; false leaves it to the standard response.
-    // Walls and buildings: hostile building damage from the entry speed, then a bounce with the walnut's own
+    // Walls and buildings: hostile building damage from the entry speed, then a bounce with the coconut's own
     // restitution. A zero-time repeat at the limit bounces the rolling body once; later repeats stick as usual.
     // An enemy: momentum exchange with the knockback restitution, the struck body thrown by the rolling gain times
-    // the impulse on a strike outside the rehit window (the walnut loses speed from the plain exchange only), lifted
-    // at the shared knockback angle so it flies off ahead of the walnut, and the impulse sets the damage. The normal points from j to i.
+    // the impulse on a strike outside the rehit window (the coconut loses speed from the plain exchange only), lifted
+    // at the shared knockback angle so it flies off ahead of the coconut, and the impulse sets the damage. The normal points from j to i.
     static respond(motion, ev) {
         const sim = motion.navigation.sim,
             solver = motion.contacts,
@@ -389,9 +389,9 @@ class RollingBody {
         return true;
     }
     // Allies are not contacts: once every body has moved and separated, a ground ally overlapping a rolling body is
-    // moved straight out of it, along the terrain. No velocity is exchanged, so the walnut keeps its speed and the
+    // moved straight out of it, along the terrain. No velocity is exchanged, so the coconut keeps its speed and the
     // ally takes no damage and is not flung through its own crowd. The solver's ally separation splits by mass and
-    // is capped per pass, so it would leave allies inside a fast walnut; this rule stays the walnut's own.
+    // is capped per pass, so it would leave allies inside a fast coconut; this rule stays the coconut's own.
     static pushAllies(sim) {
         const units = sim.units,
             motion = sim.navigation.motion;
@@ -419,7 +419,7 @@ class RollingBody {
                     dx /= distance;
                     dy /= distance;
                 } else {
-                    // Dead centre: aside, to the walnut's left.
+                    // Dead centre: aside, to the coconut's left.
                     dx = -u.rolling.dy;
                     dy = u.rolling.dx;
                 }
@@ -432,7 +432,7 @@ class RollingBody {
             }
         }
     }
-    // A wall or building contact, before the bounce removes the inward speed. (x, y) is the walnut at the contact.
+    // A wall or building contact, before the bounce removes the inward speed. (x, y) is the coconut at the contact.
     static hitSurface(sim, unit, obstacleId, nx, ny, inwardSpeed, x, y) {
         const spec = this.spec(unit);
         const building = obstacleId == null ? null : sim.buildingById.get(obstacleId),

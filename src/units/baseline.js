@@ -35,8 +35,8 @@ export const HERO_MOVE_SPEED = 75;
 // The leap shared by red beans and popcorn (popcorn lowers the apex).
 export const GRAIN_LEAP = Object.freeze({ range: 150, lift: 500, cooldownMs: 3000 });
 
-// The walnut's mass; the watermelon is twice as heavy.
-export const WALNUT_MASS = 1600;
+// The coconut's mass; the walnut weighs the same and the watermelon is twice as heavy.
+export const COCONUT_MASS = 1600;
 
 // A single shell that drops one squad: corn's original deployment, reused by most single-shot cards.
 // Its squad bursts out of the impact all at once (land 'burst', millet's landing); `spreadAcross` > 1

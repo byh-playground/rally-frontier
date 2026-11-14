@@ -6,9 +6,11 @@
 //            (stickyCling, leapAttack, spinAttack, ...); the simulation reads it directly. A sustained attack
 //            (breathAttack, a pulsing spinAttack, burstAttack, chainAttack) also has `sustain { durationMs, tickMs, cooldownMs,
 //            windupMs?, recoverMs? }`, the shared timing of every damage-over-time attack (SustainedAttack) in
-//            place of the unit's cooldownMs. `construction { range, workPerHit, damageTakenScale? }`: work added
-//            per hit, and the share of damage it takes while assigned to a project under way (StrategySim.applyDamage,
-//            floored, at least 1). `workerCard` marks a card the bot launches only to build (BotController).
+//            place of the unit's cooldownMs. `construction { range, workPerHit }`: work added per hit.
+//            `damageTaken { scale, whileBuilding? }`: the share of enemy damage it takes (StrategySim.applyDamage,
+//            floored, at least 1), always or with `whileBuilding` only while assigned to a project under way.
+//            `basicSplash { radius, damageRatio }`: its basic melee hit on a soldier also hits the soldiers
+//            around (BasicSplash). `workerCard` marks a card the bot launches only to build (BotController).
 //   payload  the cannon shell that carries the unit (LaunchRules)
 //   visual   body scale, team accent, hit effect family, optional landing husk colors
 //   card     deck card and card detail copy
@@ -141,12 +143,20 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
             if (hero || unit[other])
                 throw new Error(`병종 ${id}의 chainAttack은 영웅·${other}와 함께 쓸 수 없습니다.`);
     }
-    // A worker that takes less damage while it builds keeps a share in (0, 1].
-    const taken = unit.construction?.damageTakenScale;
-    if (taken !== undefined && !(Number(taken) > 0 && Number(taken) <= 1))
-        throw new Error(
-            `병종 ${id}의 construction.damageTakenScale은 0보다 크고 1 이하여야 합니다.`,
-        );
+    // A unit that takes less damage keeps a share in (0, 1]; only a builder can limit it to building.
+    const taken = unit.damageTaken;
+    if (taken !== undefined) {
+        if (!(Number(taken.scale) > 0 && Number(taken.scale) <= 1))
+            throw new Error(`병종 ${id}의 damageTaken.scale은 0보다 크고 1 이하여야 합니다.`);
+        if (taken.whileBuilding && !unit.construction)
+            throw new Error(`병종 ${id}의 damageTaken.whileBuilding은 construction이 필요합니다.`);
+    }
+    const splash = unit.basicSplash;
+    if (
+        splash !== undefined &&
+        !(Number(splash.radius) > 0 && Number(splash.damageRatio) > 0 && unit.atk > 0)
+    )
+        throw new Error(`병종 ${id}의 basicSplash는 양수 radius·damageRatio와 atk가 필요합니다.`);
     if (unit.workerCard && !unit.construction)
         throw new Error(`병종 ${id}의 workerCard는 construction이 필요합니다.`);
     if (Number.isFinite(Number(unit.cooldownMs))) unit.cooldown = Number(unit.cooldownMs) / 1000;

@@ -9,7 +9,8 @@ export const Sesame = defineUnit({
     id: 'sesame',
     unit: {
         ...BASIC_MELEE,
-        construction: { range: 5, workPerHit: 2, damageTakenScale: 0.25 },
+        construction: { range: 5, workPerHit: 2 },
+        damageTaken: { scale: 0.25, whileBuilding: true },
         name: '참깨',
         hp: 8,
         atk: 1,

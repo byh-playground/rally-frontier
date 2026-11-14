@@ -363,7 +363,7 @@ export class LaunchScreens {
         const row = this.campaignRow({
             depth,
             key: `stage-${stage.id}`,
-            // Under a group row the shared "영웅 …"·"호두 …" prefix is redundant and would crowd the row on a phone.
+            // Under a group row the shared "영웅 …"·"코코넛 …" prefix is redundant and would crowd the row on a phone.
             title: stage.group ? stage.title.split(' · ').pop() : stage.title,
             art: stage.nodeMark ? null : (stage.rewardCard ?? stage.deck[0]),
             mark: stage.nodeMark,

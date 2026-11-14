@@ -28,6 +28,8 @@ export function unitCardStats(type, rangeLevel, copy) {
         ['체력', number.format(unit.hp)],
         ['이동속도', number.format(unit.speed)],
     ];
+    if (unit.damageTaken && !unit.damageTaken.whileBuilding)
+        movement.push(['받는 피해', `${number.format(unit.damageTaken.scale * 100)}%`]);
     if (unit.flight)
         movement.push(
             ['비행 속도(한 번)', number.format(unit.flight.speed)],
@@ -83,6 +85,11 @@ export function unitCardStats(type, rangeLevel, copy) {
     else if (!suicide && !sustain)
         attack.push(['기본 공격 주기', seconds(unit.attackIntervalMs ?? unit.cooldownMs)]);
     if (unit.leapAttack) attack.push(['도약 발동 거리', number.format(unit.leapAttack.range)]);
+    if (unit.basicSplash)
+        attack.push([
+            '평타 주변 피해',
+            `반경 ${number.format(unit.basicSplash.radius)} · ${number.format(unit.basicSplash.damageRatio * 100)}%`,
+        ]);
 
     const grows = unit.growsCannon,
         cannon = grows && BuildingDefinition.get(grows.building);
@@ -130,13 +137,14 @@ export function unitCardStats(type, rangeLevel, copy) {
             copy.notes.slice(1),
         ]);
     // A building specialist: work per hit above the plain soldier's, and the damage share while it builds.
-    const construction = unit.construction;
-    if (construction?.damageTakenScale)
+    const construction = unit.construction,
+        taken = unit.damageTaken;
+    if (taken?.whileBuilding)
         troop.push([
             '건설',
             [
                 ['타격당 작업량', number.format(construction.workPerHit)],
-                ['건설 중 받는 피해', `${number.format(construction.damageTakenScale * 100)}%`],
+                ['건설 중 받는 피해', `${number.format(taken.scale * 100)}%`],
             ],
             copy.notes.slice(1),
         ]);

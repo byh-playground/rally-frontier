@@ -63,7 +63,7 @@ const VANGUARD = Object.freeze([
     'rice',
     'chestnut',
 ]);
-// The flank fight: heavier hitters, so the walnuts' victims fly among chestnuts, red beans and popcorn.
+// The flank fight: heavier hitters, so the coconuts' victims fly among chestnuts, red beans and popcorn.
 const FLANK = Object.freeze(['chestnut', 'pea', 'millet', 'popcorn', 'rice', 'redbean', 'corn']);
 // The last shot's attackers: few of each, every one doing something of its own.
 const ASSAULT = Object.freeze(['redbean', 'rice', 'popcorn', 'chestnut', 'pea', 'millet', 'corn']);
@@ -180,8 +180,8 @@ function stageBattle() {
         };
     };
 
-    // Shot 1: a loose fight out on the east flank. Three walnuts set off far out on three sides of the host's half
-    // (left, below, lower right) and come in near full speed, one after another, into the enemy ranks. A walnut
+    // Shot 1: a loose fight out on the east flank. Three coconuts set off far out on three sides of the host's half
+    // (left, below, lower right) and come in near full speed, one after another, into the enemy ranks. A coconut
     // with no enemy in sight rolls for the enemy main base, so none can come from the enemy's side.
     const flank = { x: 3400, y: 2700 };
     const charge = toward(flank, guestBase);
@@ -204,7 +204,7 @@ function stageBattle() {
                 y: flank.y + Math.sin(angle) * 900,
             };
             const heading = toward(start, flank);
-            RollingBody.aim(sim.spawnUnit(0, 'walnut', start.x, start.y), heading.x, heading.y);
+            RollingBody.aim(sim.spawnUnit(0, 'coconut', start.x, start.y), heading.x, heading.y);
         });
 
     // Shot 2: the host storms the middle outpost from the west. The outpost's mortar answers; peanuts ram its
