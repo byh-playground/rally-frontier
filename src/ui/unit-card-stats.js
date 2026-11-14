@@ -220,7 +220,7 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
             ? [
                   [
                       '착지 공격',
-                      `${strike.scatter ? `${number.format(strike.scatter.count + 1)}곳 · ` : ''}반경 ${number.format(strike.radius)} · 피해 ${number.format(strike.damage)}`,
+                      `${strike.scatter ? `${number.format(strike.scatter.count + 1)}곳 · ` : ''}반경 ${number.format(strike.radius)} · 피해 ${strike.atkRatio ? `공격 ×${number.format(strike.atkRatio)}` : number.format(strike.damage)}`,
                   ],
                   [
                       '착지 뒤 빠지기',
