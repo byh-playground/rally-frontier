@@ -4,6 +4,7 @@ import { BuildingDefinition } from '../../definitions/buildings.js';
 import { fruitProjectilePosition } from '../../definitions/fruit-hero-trajectory.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { HeroGrowth } from '../hero-growth.js';
+import { HeroPassive } from './hero-passive.js';
 import { HashUtil } from '../map-generation.js';
 import { UnitMotion } from '../navigation.js';
 import { UnitThornAttack } from './unit-thorn-attack.js';
@@ -295,6 +296,8 @@ export class FruitHeroAttack {
         if (returning) shot.returnTo = worldPoint(sim, unit);
         const to = fruitProjectilePosition(shot, sim.tick);
         if (shot.mode !== 'basic') this.sweep(sim, unit, shot, from, to, returning, definition.atk);
+        else if (returning && shot.kind === 'boomerang')
+            this.echoBasic(sim, unit, shot, from, to, definition.atk);
         if (
             unit.alive &&
             !returning &&
@@ -313,6 +316,24 @@ export class FruitHeroAttack {
             }
         }
         return sim.tick < shot.endTick;
+    }
+
+    // A basic boomerang on its way back (HeroPassive `echoHit`): it hits the soldier it struck on the way out once
+    // more, for `ratio` times the damage.
+    static echoBasic(sim, unit, shot, from, to, damage) {
+        const ratio = HeroPassive.echoRatio(unit);
+        if (
+            ratio === null ||
+            shot.targetIsBuilding ||
+            !shot.outHitIds.includes(shot.targetId) ||
+            shot.backHitIds.includes(shot.targetId)
+        )
+            return;
+        const target = sim.liveEntityRefById(shot.targetId, 'unit')?.entity;
+        const point = target && this.contact(sim, shot, from, to, target, false);
+        if (!point) return;
+        shot.backHitIds.push(target.id);
+        this.hit(sim, unit, shot, target, point, false, damage * ratio, true);
     }
 
     static contact(sim, shot, from, to, target, targetIsBuilding) {
@@ -344,11 +365,14 @@ export class FruitHeroAttack {
             });
         }
         contacts.sort((a, b) => a.distance - b.distance || (a.target.id < b.target.id ? -1 : 1));
+        // On the way back a soldier struck on the way out takes the echo (HeroPassive `echoHit`).
+        const ratio = returning ? HeroPassive.echoRatio(unit) : null;
         for (const { target, point } of contacts) {
             if (!unit.alive) return;
             if (!target.alive) continue;
             hits.push(target.id);
-            this.hit(sim, unit, shot, target, point, false, damage);
+            const echo = ratio !== null && shot.outHitIds.includes(target.id);
+            this.hit(sim, unit, shot, target, point, false, echo ? damage * ratio : damage, echo);
         }
     }
 
@@ -358,7 +382,8 @@ export class FruitHeroAttack {
         return capture.dealt > 0;
     }
 
-    static hit(sim, unit, shot, target, point, isBuilding, damage) {
+    // `echo`: the boomerang's return hit on a soldier it struck on the way out (HeroPassive `echoHit`).
+    static hit(sim, unit, shot, target, point, isBuilding, damage, echo = false) {
         if (this.damage(sim, unit, target, isBuilding, damage))
             sim.events.push({
                 type: 'fruitProjectileHit',
@@ -366,6 +391,7 @@ export class FruitHeroAttack {
                 sourceId: unit.id,
                 targetId: target.id,
                 projectileId: shot.id,
+                echo,
                 ...point,
             });
     }
@@ -383,6 +409,8 @@ export class FruitHeroAttack {
             damage,
             impactHeightFP,
         });
+        // The passive puddle (HeroPassive `puddle`) stays where the lobbed berry came down.
+        HeroPassive.lobLanded(sim, unit, x, y, impactHeightFP);
         sim.events.push({
             type: 'fruitBerryLand',
             side: unit.side,
@@ -472,7 +500,12 @@ export class FruitHeroAttack {
                 (boomerang && tick > shot.turnTick && validPoint(shot.returnTo))) &&
             (tick > shot.startTick || !shot.outHitIds.length) &&
             (!shot.backHitIds.length ||
-                (boomerang && tick > shot.turnTick && shot.mode === 'passive'))
+                (boomerang &&
+                    tick > shot.turnTick &&
+                    (shot.mode === 'passive' ||
+                        (shot.backHitIds.length === 1 &&
+                            shot.backHitIds[0] === shot.targetId &&
+                            shot.outHitIds.includes(shot.targetId)))))
         );
     }
 }

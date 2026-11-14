@@ -13,7 +13,9 @@ const CAST_HIT = { t: 0, nx: 0, ny: 0, degenerate: false };
 // The base chestnut attack has a committed aim and checks only its original
 // target. It is independent of cannon-deployment shells and corn explosives.
 export class UnitThornAttack {
-    static launch(sim, source, target, isBuilding, spec) {
+    // `index` tells apart several shots one source starts in a tick (a hero's seed burst, HeroPassive); `aim` false
+    // leaves the thrower's pose fields alone (a source without a throwing pose).
+    static launch(sim, source, target, isBuilding, spec, { index = null, aim = true } = {}) {
         if (
             !source ||
             !target ||
@@ -46,7 +48,7 @@ export class UnitThornAttack {
                     ? terrain.heightAt(target.x, target.y)
                     : UnitMotion.bottom(sim, target)) + spec.targetHeight;
         const shot = {
-            id: `thorn:${source.id}:${sim.tick}`,
+            id: `thorn:${source.id}:${sim.tick}${index === null ? '' : `:${index}`}`,
             sourceId: source.id,
             sourceType: source.type,
             side: source.side,
@@ -66,8 +68,10 @@ export class UnitThornAttack {
             radius: spec.radius,
             damage: spec.damage,
         };
-        source.combat.thornAimX = target.x;
-        source.combat.thornLaunchTick = startTick;
+        if (aim) {
+            source.combat.thornAimX = target.x;
+            source.combat.thornLaunchTick = startTick;
+        }
         sim.unitThornProjectiles.push(shot);
         return shot;
     }

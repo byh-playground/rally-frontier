@@ -22,6 +22,7 @@ import {
 import { LaunchRules } from './sim/launch-rules.js';
 import { StickyCling } from './sim/capabilities/sticky-cling.js';
 import { SustainedAttack } from './sim/capabilities/sustained-attack.js';
+import { HeroPassive } from './sim/capabilities/hero-passive.js';
 import { UnitSpinAttack } from './sim/capabilities/unit-spin-attack.js';
 import { ForwardCannon } from './sim/capabilities/forward-cannon.js';
 import { CannonRider } from './sim/capabilities/cannon-rider.js';
@@ -2749,6 +2750,18 @@ class GLRenderer {
                 this.addClientFx('meleeImpact', e, snapshot, index, { impactScale: 1.5 });
             } else if (e.type === 'fruitBerryLand') {
                 this.addClientFx('fruitBerryImpact', e, snapshot, index);
+            } else if (e.type === 'fruitProjectileHit' && e.echo) {
+                // A boomerang's doubled return hit (HeroPassive echoHit) flashes gold where it struck.
+                this.addClientFx('heroEchoFlash', e, snapshot, index);
+            } else if (e.type === 'heroAuraHeal') {
+                // Each ally a grape aura healed (HeroAllyAura regen) sends up purple drops.
+                for (const healed of e.healed)
+                    this.addClientFx(
+                        'heroAuraRegen',
+                        { ...healed, side: e.side, sourceId: e.sourceId, unit: e.unit },
+                        snapshot,
+                        index,
+                    );
             } else if (e.type === 'heroKillEffect') {
                 // A hero's kill effect (HeroKillEffect): juice drops fly from the fallen soldier into a healing hero,
                 // a gold ring marks a filled attack counter. A bounce berry draws as its own fruit shot.
@@ -7200,7 +7213,12 @@ class GLRenderer {
     // spin interval and contact pulses remain owned by the simulation.
     drawUnitAttackEffects(entries) {
         for (const fx of this.combatFx) {
-            if (fx.kind === 'heroKillJuice' || fx.kind === 'heroKillCharge') {
+            if (
+                fx.kind === 'heroKillJuice' ||
+                fx.kind === 'heroKillCharge' ||
+                fx.kind === 'heroEchoFlash' ||
+                fx.kind === 'heroAuraRegen'
+            ) {
                 this.drawHeroKillEffect(fx);
                 continue;
             }
@@ -7234,6 +7252,8 @@ class GLRenderer {
                 this.drawHeroRollTelegraph(entry, model, definition.heroActive);
             if (definition.fruitAttack && entry.entity.alive)
                 this.drawFruitAttackEffect(model, definition.fruitAttack);
+            if (definition.growth && entry.entity.alive)
+                this.drawHeroGrowthEffects(entry.entity.type, model, entries);
             // Heroes without a spin (banana, grape) only draw their own telegraphs above.
             const spin =
                     spec && model?.entity
@@ -7430,6 +7450,32 @@ class GLRenderer {
         if (t >= 1) return;
         const fade = 1 - t,
             surfaces = this.world.terrain.surfaces;
+        if (fx.kind === 'heroEchoFlash') {
+            const elevation = surfaces.heightAt(fx.x, fx.y),
+                { radius, growth } = EffectObjectFactory.heroEchoFlash;
+            this.withWorldSpriteDepth({ x: fx.x, y: elevation, z: fx.y, groundY: 0 }, () =>
+                this.drawGroundCircle(fx.x, fx.y, radius * (1 + growth * t), {
+                    elevation,
+                    fill: [1, 0.88, 0.35, 0.55 * fade],
+                    stroke: [1, 0.95, 0.6, fade],
+                    width: Math.max(1.5, 3 * this.sc()),
+                    segments: 16,
+                }),
+            );
+            return;
+        }
+        if (fx.kind === 'heroAuraRegen') {
+            const { drops, spread, rise, size } = EffectObjectFactory.heroAuraRegen;
+            for (let i = 0; i < drops; i++) {
+                const x = fx.x + (i - (drops - 1) / 2) * spread,
+                    height = surfaces.heightAt(x, fx.y) + 10 + rise * t + (i % 2) * 6;
+                this.withWorldSpriteDepth({ x, y: height, z: fx.y, groundY: 0 }, () => {
+                    const [px, py] = this.worldToPx(this.viewX(x), this.viewY(fx.y), height);
+                    this.circle(px, py, size * this.sc(), [0.72, 0.42, 0.95, fade], 8);
+                });
+            }
+            return;
+        }
         if (fx.kind === 'heroKillCharge') {
             const elevation = surfaces.heightAt(fx.x, fx.y),
                 { radius, growth } = EffectObjectFactory.heroKillCharge;
@@ -7459,6 +7505,55 @@ class GLRenderer {
                 const [px, py] = this.worldToPx(this.viewX(x), this.viewY(y), height);
                 this.circle(px, py, size * this.sc(), [0.36, 0.84, 0.35, fade], 8);
             });
+        }
+    }
+    // What a hero's level keeps on the ground (HeroPassive puddles, HeroAllyAura targets): the purple puddles, and a
+    // ring of the hero's colour under each ally its aura holds.
+    drawHeroGrowthEffects(type, model, entries) {
+        const hero = model?.entity;
+        const puddles = hero?.heroPassive?.puddles;
+        if (puddles?.length) {
+            const spec = HeroPassive.declared(type).puddle,
+                { fill, stroke } = EffectObjectFactory.heroPuddle;
+            for (const { x, y, zFP, sustain } of puddles) {
+                if (model.tick >= sustain.endTick) continue;
+                // The pool shrinks a little as it dries.
+                const left = (sustain.endTick - model.tick) / (sustain.endTick - sustain.startTick),
+                    z = zFP / FP;
+                this.withWorldSpriteDepth({ x, y: z, z: y, groundY: z }, () =>
+                    this.drawGroundCircle(x, y, spec.radius * (0.8 + 0.2 * left), {
+                        elevation: z,
+                        fill: [fill[0], fill[1], fill[2], fill[3] * (0.5 + 0.5 * left)],
+                        stroke,
+                        width: Math.max(1, 2 * this.sc()),
+                        segments: 24,
+                    }),
+                );
+            }
+        }
+        const ids = hero?.heroAura?.allyIds;
+        if (!ids?.length) return;
+        const accent = UnitVisualDefinition.get(type)?.accent || [1, 1, 1, 1],
+            { scale, alpha } = EffectObjectFactory.heroAuraRing,
+            wanted = new Set(ids);
+        for (const entry of entries) {
+            if (entry.kind !== 'unit' || !wanted.has(entry.entity.id) || !entry.entity.alive)
+                continue;
+            const { x, z, groundY } = entry.world;
+            this.withWorldSpriteDepth({ ...entry.world, y: groundY }, () =>
+                this.drawGroundCircle(
+                    x,
+                    z,
+                    InteractionGeometry.unitRadius(entry.entity.type) * scale,
+                    {
+                        elevation: groundY,
+                        fill: [accent[0], accent[1], accent[2], 0.25 * alpha],
+                        stroke: [accent[0], accent[1], accent[2], alpha],
+                        width: Math.max(1, 2 * this.sc()),
+                        segments: 16,
+                    },
+                ),
+            );
         }
     }
     // Where the grape's lobbed berries (the fourth basic's three) will land.

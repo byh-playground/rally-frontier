@@ -65,8 +65,24 @@ export const Watermelon = defineUnit({
             tangentRatio: 0,
         }),
         // Level unlocks (HeroGrowth.unlocked). Level 2: juice splashes from each soldier it finishes and heals it.
+        // Level 3: every 50 damage it takes throws 3 seeds at the enemies within 75 (HeroPassive). Level 4: the
+        // allies within 150 (not the hero itself, refreshed every 0.5 s) take 75% of enemy damage (HeroAllyAura).
         growth: Object.freeze({
             2: Object.freeze({ killEffect: Object.freeze({ heal: 15 }) }),
+            3: Object.freeze({
+                passive: Object.freeze({
+                    seedBurst: Object.freeze({
+                        takenPerBurst: 50,
+                        seeds: 3,
+                        radius: 75,
+                        damage: 10,
+                        flightMs: 250,
+                    }),
+                }),
+            }),
+            4: Object.freeze({
+                allyAura: Object.freeze({ radius: 150, refreshMs: 500, takenScale: 0.75 }),
+            }),
         }),
     },
     payload: {
@@ -99,6 +115,8 @@ export const Watermelon = defineUnit({
             '착지하면 땅을 울려 주변 적을 밀치고 본진 쪽으로 굴러 빠져요.',
             '평타 네 번 뒤 양팔로 적을 휩쓸어요.',
             '2레벨: 막타를 치면 과즙이 튀어 체력 15 회복',
+            '3레벨: 피해 50을 받을 때마다 씨앗 3알이 튀어 알마다 피해 10',
+            '4레벨: 주변 아군이 받는 피해 25% 감소',
         ],
     },
     help: [
@@ -110,6 +128,8 @@ export const Watermelon = defineUnit({
                 '수박 카드의 점이 모두 차면 다음 공격에 휩쓸기를 써요.',
                 '착지하는 순간 땅을 울려 반경 150 안의 적에게 피해 40을 주고 밀쳐낸 뒤, 껍질 지름 두 배만큼 본진 쪽으로 굴러 빠져요.',
                 '2레벨: 수박이 막타로 적 병력을 쓰러뜨리면 과즙이 튀어 체력이 15 차요.',
+                '3레벨: 수박이 피해를 50 받을 때마다 씨앗 3알이 튀어 반경 75 안의 적 병력에게 알마다 피해 10을 줘요.',
+                '4레벨: 수박 둘레 150 안의 아군이 받는 피해가 25% 줄어요. 아군 발밑에 초록 고리가 보여요.',
             ],
         },
     ],

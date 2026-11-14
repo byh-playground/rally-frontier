@@ -28,6 +28,9 @@ class UnitRenderObject extends RenderField {
         'entity.sustain.nextTick': RenderField.STEP,
         'entity.sustain.readyTick': RenderField.STEP,
         'entity.fruitAttack': RenderField.STEP,
+        // A hero level's ground marks: its passive puddles (HeroPassive) and its ally aura's targets (HeroAllyAura).
+        'entity.heroPassive': RenderField.STEP,
+        'entity.heroAura': RenderField.STEP,
         // A chain's links (UnitChainAttack): who it holds, slot by slot, so a sampled tick keeps its own links.
         'entity.chain.count': RenderField.STEP,
         'entity.chain.building': RenderField.STEP,
