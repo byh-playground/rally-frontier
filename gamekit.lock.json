@@ -98,6 +98,10 @@
         "metrics": {
             "file": "metrics.js",
             "sha256": "6c64b88b29c72cd65eb3137f046174d8932ca39a0082a09645937891093499c0"
+        },
+        "save": {
+            "file": "save.js",
+            "sha256": "540b2af25e91bd6b5683c3ae8f80484a951baea9dc90452233dd72c26a4696ed"
         }
     },
     "distManifestSha256": "aca15465170a5b6c51f920f517c18dc9e184dbf28b137d1fd55063d141b41b69"

@@ -392,11 +392,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                         first = campaignStage('first'),
                         nextTier = campaignStage('basic-pea'),
                         goals = lesson.volleyGoals;
-                    const storage = new Map();
-                    const progress = new CampaignProgress({
-                        getItem: (key) => storage.get(key),
-                        setItem: (key, value) => storage.set(key, value),
-                    });
+                    const progress = new CampaignProgress();
                     check(!progress.canStart(lesson), 'practice opens after the first stage');
                     check(
                         !progress.canStart(nextTier),

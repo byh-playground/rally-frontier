@@ -28,6 +28,7 @@ const moduleFiles = Object.freeze({
     scenario: 'scenario.js',
     boot: 'boot.js',
     metrics: 'metrics.js',
+    save: 'save.js',
 });
 const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 const cacheDirectory = (root) => path.join(root, '.cache', 'gamekit');
