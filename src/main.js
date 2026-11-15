@@ -89,6 +89,7 @@ import { RallyUsageMetrics } from './session/usage-metrics.js';
 import { LaunchScreens } from './ui/launch-screens.js';
 import { createShowcaseHost } from './ui/showcase-host.js';
 import { DeckEditor } from './ui/deck-editor.js';
+import { loadPlayerSave, openPlayerSaves, updatePlayerSave } from './ui/player-saves.js';
 import { CampaignProgress } from './ui/campaign-progress.js';
 import { CampaignPresentation } from './ui/campaign-presentation.js';
 import { grainPortrait } from './ui/grain-portrait.js';
@@ -11258,13 +11259,14 @@ class LaunchPresentation {
         if (!active.size) hold.volleyHintUntil = 0;
         else if (!this.volleyHintSeen) {
             this.volleyHintSeen = true;
-            const key = 'ssalkongpang.volley-aim-hint.v1';
-            try {
-                if (localStorage.getItem(key) === '1') return false;
-                localStorage.setItem(key, '1');
-            } catch {
-                // The in-memory flag still prevents repeats on this page.
-            }
+            // Shown once per device (the hints record of src/ui/player-saves.js); a failed save only skips that.
+            const hints = playerSaves.hints;
+            if (hints.data?.volleyAim) return false;
+            if (hints.data && !hints.locked)
+                void updatePlayerSave(hints, (draft) => {
+                    if (draft.volleyAim) return false;
+                    draft.volleyAim = true;
+                }).catch((error) => console.warn('안내 표시 기록 저장 실패', error));
             hold.volleyHintUntil = now + 2600;
         }
         return now < (hold.volleyHintUntil || 0);
@@ -12258,13 +12260,24 @@ const createShowcaseRenderer = (canvas, fxCanvas) =>
 let campaignProgress;
 // Game metrics (src/session/usage-metrics.js). Only the title app creates it, so a debug address sends nothing.
 let usageMetrics = null;
-// A debug address (`?debug=1&scene=…`) opens one scene of src/debug-scenes.js instead of the title and match flow,
-// so it never reads or writes the saved campaign progress or deck.
-if (new URLSearchParams(location.search).has('debug'))
-    void AppLifecycle.openDebugScene(createShowcaseRenderer);
-else startTitleApp();
+// A debug address (`?debug=1&scene=…`) opens one scene of src/debug-scenes.js instead of the title and match flow.
+// It and automated tests (navigator.webdriver) keep the player saves in memory, so they never touch the real ones.
+const debugAddress = new URLSearchParams(location.search).has('debug');
+const playerSaves = openPlayerSaves(RallyGamekit, {
+    isolated: debugAddress || navigator.webdriver === true,
+});
+if (debugAddress) void AppLifecycle.openDebugScene(createShowcaseRenderer);
+else void startTitleApp();
 
-function startTitleApp() {
+async function startTitleApp() {
+    campaignProgress = new CampaignProgress(playerSaves.campaign);
+    // The title screens and the deck read the unlocks, so the records load before the boot and the screens start.
+    await Promise.all([
+        campaignProgress.load(),
+        loadPlayerSave(playerSaves.decks, '덱 편성'),
+        loadPlayerSave(playerSaves.hints, '안내 표시'),
+    ]);
+    playerSaves.campaign.onExternalChange(() => void campaignProgress.load());
     // Automated tests (navigator.webdriver) keep the batches in memory instead of the collection server.
     usageMetrics = new RallyUsageMetrics({
         gamekit: RallyGamekit,
@@ -12278,15 +12291,8 @@ function startTitleApp() {
     const leaveSetup = () => {
         audioSystem.unlock();
     };
-    let campaignStorage;
-    try {
-        campaignStorage = window.localStorage;
-    } catch (error) {
-        console.warn('캠페인 진행 저장소를 열 수 없습니다.', error);
-    }
-    campaignProgress = new CampaignProgress(campaignStorage);
-    addEventListener('storage', () => campaignProgress.sync());
     DeckEditor.install({
+        store: playerSaves.decks,
         types: () => LaunchRules.deck,
         heroes: () => LaunchRules.heroTypes,
         starter: () => LaunchRules.starterDeck,

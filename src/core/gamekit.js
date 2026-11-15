@@ -1,6 +1,6 @@
 // Both realms load the pinned simulation and session SDK; the page also prepares its art.
 // prettier-ignore
-const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","navigation":"navigation.js","objectPool":"object-pool.js","geometry":"geometry.js","spatial":"spatial.js","face":"face.js","pathfield":"pathfield.js","vision":"vision.js","contactSolver":"contact-solver.js","scenario":"scenario.js","boot":"boot.js","metrics":"metrics.js"});
+const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","navigation":"navigation.js","objectPool":"object-pool.js","geometry":"geometry.js","spatial":"spatial.js","face":"face.js","pathfield":"pathfield.js","vision":"vision.js","contactSolver":"contact-solver.js","scenario":"scenario.js","boot":"boot.js","metrics":"metrics.js","save":"save.js"});
 const SESSION_MODULE_NAMES = new Set([
     'rollback',
     'deterministic',
@@ -235,6 +235,9 @@ try {
             'createScenario',
             'createScenarioSurface',
             'createMetrics',
+            'createSave',
+            'localStorageAdapter',
+            'memoryAdapter',
         );
     for (const name of requiredGameKit)
         if (typeof RallyGamekit[name] !== 'function')

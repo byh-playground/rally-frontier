@@ -1,18 +1,9 @@
 import { ResourceDisplay } from './resource-display.js';
+import { updatePlayerSave } from './player-saves.js';
 
-// Saved player loadouts are local preferences; the match owns its immutable copy.
-const STORAGE_KEY = 'ssalkongpang.decks.v1';
+// Saved player loadouts are local preferences (the decks record of src/ui/player-saves.js);
+// the match owns its immutable copy.
 const DECK_COUNT = 3;
-const LOADOUT_VERSION = 3;
-
-function readSavedLoadouts() {
-    try {
-        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-        return saved?.version === LOADOUT_VERSION ? saved : null;
-    } catch {
-        return null;
-    }
-}
 
 export class DeckEditor {
     static install({
@@ -29,6 +20,7 @@ export class DeckEditor {
         isUnlocked,
         isTemporary = () => false,
         unlockHint,
+        store = null,
     }) {
         if (this.initialized) return;
         this.initialized = true;
@@ -45,6 +37,7 @@ export class DeckEditor {
         this.isUnlocked = isUnlocked;
         this.isTemporary = isTemporary;
         this.unlockHint = unlockHint;
+        this.store = store;
         this.filter = 'grain';
         this.selectedSlot = null;
         this.dialog = document.getElementById('deckDialog');
@@ -84,7 +77,7 @@ export class DeckEditor {
             available = new Set(
                 [...heroes, ...this.types()].filter((type) => this.isUnlocked(type)),
             ),
-            saved = readSavedLoadouts();
+            saved = this.store?.data;
         const selected = Number.isInteger(saved?.selected)
             ? Math.max(0, Math.min(DECK_COUNT - 1, saved.selected))
             : 0;
@@ -108,14 +101,22 @@ export class DeckEditor {
             });
             return seen.size ? slots : starterSlots();
         });
-        return { version: LOADOUT_VERSION, selected, decks };
+        return { selected, decks };
     }
 
-    static save() {
+    // Resolves true once the loadouts are in the device save, false when they can only last for this page.
+    static async save() {
+        const store = this.store;
+        if (!store || store.locked) return false;
+        const { selected, decks } = structuredClone(this.state);
         try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+            await updatePlayerSave(store, (draft) => {
+                draft.selected = selected;
+                draft.decks = decks;
+            });
             return true;
-        } catch {
+        } catch (error) {
+            console.warn('덱 저장 실패', error);
             return false;
         }
     }
@@ -332,13 +333,18 @@ export class DeckEditor {
     }
 
     static persistAndRefresh() {
-        const temporary = this.isTemporary(),
-            saved = !temporary && this.save();
+        const notice = document.getElementById('deckNotice');
         this.refresh();
-        document.getElementById('deckNotice').textContent = temporary
-            ? '디버그 덱은 이번 접속에서만 유지돼요.'
-            : saved
-              ? '이 기기에 저장됐어요.'
-              : '이 기기에 저장할 수 없어 이번에만 유지돼요.';
+        if (this.isTemporary()) {
+            notice.textContent = '디버그 덱은 이번 접속에서만 유지돼요.';
+            return;
+        }
+        const pending = (this.pendingSave = this.save());
+        void pending.then((saved) => {
+            if (pending !== this.pendingSave) return;
+            notice.textContent = saved
+                ? '이 기기에 저장됐어요.'
+                : '이 기기에 저장할 수 없어 이번에만 유지돼요.';
+        });
     }
 }

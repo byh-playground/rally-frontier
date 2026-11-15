@@ -1,6 +1,6 @@
 import { CAMPAIGN_STAGES, campaignTier } from '../definitions/campaign.js';
+import { loadPlayerSave, updatePlayerSave } from './player-saves.js';
 
-const PROGRESS_KEY = 'ssalkongpang.campaign.v1';
 const REWARD_STAGES = new Map(
     CAMPAIGN_STAGES.filter((stage) => stage.rewardCard).map((stage) => [stage.rewardCard, stage]),
 );
@@ -8,30 +8,33 @@ const REWARD_STAGES = new Map(
 export class CampaignProgress {
     #debugUnlocked = false;
 
-    constructor(storage) {
-        this.storage = storage;
+    // `save` is the campaign record of src/ui/player-saves.js; without one, progress lasts for this page only.
+    constructor(save = null) {
+        this.save = save;
         this.completed = new Set();
-        this.sync();
     }
 
+    // Takes the cleared stages of the loaded record (another tab may have added some).
     sync() {
-        let saved;
-        try {
-            saved = JSON.parse(this.storage?.getItem(PROGRESS_KEY) || 'null');
-        } catch {
-            return;
-        }
-        if (!Array.isArray(saved?.completed)) return;
+        const saved = this.save?.data?.completed;
+        if (!saved) return;
         for (const stage of CAMPAIGN_STAGES)
-            if (saved.completed.includes(stage.id)) this.completed.add(stage.id);
+            if (saved.includes(stage.id)) this.completed.add(stage.id);
     }
 
-    save() {
-        try {
-            this.storage?.setItem(PROGRESS_KEY, JSON.stringify({ completed: [...this.completed] }));
-        } catch (error) {
-            console.warn('캠페인 진행 저장 실패', error);
-        }
+    async load() {
+        if (this.save && (await loadPlayerSave(this.save, '캠페인 진행'))) this.sync();
+    }
+
+    persist(id) {
+        if (!this.save || this.save.locked) return;
+        updatePlayerSave(this.save, (draft) => {
+            if (draft.completed.includes(id)) return false;
+            draft.completed.push(id);
+        }).then(
+            () => this.sync(),
+            (error) => console.warn('캠페인 진행 저장 실패', error),
+        );
     }
 
     // First stage in definition order that can be started now and is not cleared yet.
@@ -89,10 +92,9 @@ export class CampaignProgress {
 
     complete(stage) {
         if (this.#debugUnlocked) return null;
-        this.sync();
         if (!stage || this.isComplete(stage) || !this.canStart(stage)) return null;
         this.completed.add(stage.id);
-        this.save();
+        this.persist(stage.id);
         return stage.rewardCard ?? null;
     }
 }
