@@ -1653,7 +1653,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                     mortar,
                 );
                 let shellHit;
-                for (let i = 0; i <= sim.msTicks(mortar.flightMs) && !shellHit; i++) {
+                for (let i = 0; i <= sim.time.ceilTicks(mortar.flightMs) && !shellHit; i++) {
                     step(sim, 1);
                     shellHit = sim.events.find((e) => e.type === 'hit' && e.targetId === worker.id);
                     check(
@@ -1829,7 +1829,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
                 sim.importState(state);
                 const ally = spot();
                 const firstShotTick = sim.tick + 1,
-                    attackInterval = sim.msTicks(500);
+                    attackInterval = sim.time.ceilTicks(500);
                 const hits = [];
                 step(sim, 4 * attackInterval, (s) =>
                     hits.push(

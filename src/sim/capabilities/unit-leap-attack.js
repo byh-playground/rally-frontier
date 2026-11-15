@@ -84,7 +84,7 @@ export class UnitLeapAttack {
     static land(sim, unit, spec, damage) {
         const state = unit.leapAttack;
         state.phase = 'ready';
-        state.cooldownUntil = sim.tick + sim.msTicks(spec.cooldownMs);
+        state.cooldownUntil = sim.tick + sim.time.ceilTicks(spec.cooldownMs);
         const impact = spec.impact;
         if (!impact) return;
         const heightFP = Math.round(sim.world.terrain.surfaces.heightAt(unit.x, unit.y) * FP);

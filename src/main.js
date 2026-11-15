@@ -7737,9 +7737,8 @@ class GLRenderer {
             sc = this.sc(),
             now = performance.now();
         const cannons = LaunchRules.launchCannons(s, side),
-            reloadTicks = SimulationTiming.msToTicks(
+            reloadTicks = SimulationTiming.time(s.tps || ActiveSimulationTiming.tps()).ceilTicks(
                 LaunchRules.reloadMs,
-                s.tps || ActiveSimulationTiming.tps(),
             );
         const preview = this.launchPreview,
             hold = preview?.hold,
@@ -10794,7 +10793,7 @@ class LaunchPresentation {
         if (!ammo || index < 0)
             return { max: spec.max, rounds: spec.max, waitTicks: 0, progress: 0 };
         const ready = ammo.readyTick[index],
-            total = SimulationTiming.msToTicks(spec.rechargeMs, s.tps || SIM_TPS),
+            total = SimulationTiming.time(s.tps || SIM_TPS).ceilTicks(spec.rechargeMs),
             waitTicks = ready ? Math.max(0, ready - s.tick) : 0;
         return {
             max: spec.max,

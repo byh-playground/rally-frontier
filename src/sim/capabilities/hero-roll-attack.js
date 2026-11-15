@@ -55,7 +55,7 @@ export class HeroRollAttack {
     static siege(sim, unit, dx, dy, spec) {
         this.start(sim, unit, 'siege', dx, dy, spec.distance);
         unit.heroRoll.phase = 'hop';
-        unit.heroRoll.phaseEndTick = sim.tick + sim.msTicks(spec.hopMs);
+        unit.heroRoll.phaseEndTick = sim.tick + sim.time.ceilTicks(spec.hopMs);
         unit.combat.attackArcTargetId = null;
         unit.combat.attackArcUntilTick = 0;
     }
@@ -214,7 +214,7 @@ export class HeroRollAttack {
             if (!blocked && !struck) roll.distance = roll.length;
             roll.phase = 'unfold';
             roll.phaseStartTick = sim.tick;
-            roll.phaseEndTick = sim.tick + sim.msTicks(definition.rollAttack.unfoldMs);
+            roll.phaseEndTick = sim.tick + sim.time.ceilTicks(definition.rollAttack.unfoldMs);
         }
     }
 
@@ -363,7 +363,7 @@ export class HeroRollAttack {
         // The tick the roll itself began: after the hop, or at once for a retreat roll.
         const rollStartTick =
             roll.mode === 'siege'
-                ? roll.startTick + SimulationTiming.msToTicks(siege.hopMs, tps)
+                ? roll.startTick + SimulationTiming.time(tps).ceilTicks(siege.hopMs)
                 : roll.startTick;
         const { phase, phaseStartTick, phaseEndTick, distance } = roll;
         if (
@@ -380,7 +380,7 @@ export class HeroRollAttack {
             (phase === 'unfold' &&
                 (phaseStartTick < rollStartTick ||
                     phaseEndTick !==
-                        phaseStartTick + SimulationTiming.msToTicks(body.unfoldMs, tps) ||
+                        phaseStartTick + SimulationTiming.time(tps).ceilTicks(body.unfoldMs) ||
                     state.tick >= phaseEndTick))
         )
             throw new Error('게임 snapshot의 영웅 구르기 단계가 잘못되었습니다.');

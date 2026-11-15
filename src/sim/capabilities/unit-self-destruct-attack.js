@@ -20,7 +20,7 @@ export class UnitSelfDestructAttack {
         unit.selfDestruct = {
             phase: 'windup',
             startTick: sim.tick,
-            endTick: sim.tick + sim.msTicks(spec.windupMs),
+            endTick: sim.tick + sim.time.ceilTicks(spec.windupMs),
         };
         unit.combat.cancelWindup();
         unit.constructionWork = null;

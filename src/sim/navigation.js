@@ -434,8 +434,8 @@ class UnitMotion {
         m.originX = originX;
         m.originY = originY;
         m.startTick = sim.tick;
-        m.endTick = sim.tick + sim.msTicks(Math.max(250, Math.round(flightSeconds * 1000)));
-        m.recoverUntilTick = m.endTick + sim.msTicks(LaunchImpactRules.recoveryMs);
+        m.endTick = sim.tick + sim.time.ceilTicks(Math.max(250, Math.round(flightSeconds * 1000)));
+        m.recoverUntilTick = m.endTick + sim.time.ceilTicks(LaunchImpactRules.recoveryMs);
         if (u.heroRoll) HeroRollAttack.cancel(u);
         if (!UnitMotion.isGrounded(u)) {
             u.combat.cancelWindup();
@@ -458,7 +458,7 @@ class UnitMotion {
                 m.vzFP = 0;
                 m.remainderZ = 0;
                 m.endTick = sim.tick;
-                m.recoverUntilTick = sim.tick + sim.msTicks(LaunchImpactRules.recoveryMs);
+                m.recoverUntilTick = sim.tick + sim.time.ceilTicks(LaunchImpactRules.recoveryMs);
             }
         }
         if (m.heightFP === 0 && m.vzFP < 0) {

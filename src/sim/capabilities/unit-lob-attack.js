@@ -62,7 +62,6 @@ export class UnitLobAttack {
     static launch(sim, source, target, spec, attack) {
         source.combat.lobLaunchTick = sim.tick + 1;
         const count = Math.max(1, Math.trunc(spec.shots));
-        const gap = Math.max(0, sim.msTicks(spec.shotGapMs));
         const direction = target.x < source.x ? -1 : 1;
         const launchX = source.x + direction * spec.launchOffsetX,
             launchY = source.y;
@@ -88,7 +87,8 @@ export class UnitLobAttack {
                 vxFP: Math.round((dx / duration) * FP),
                 vyFP: Math.round((dy / duration) * FP),
                 vzFP: Math.round(vz * FP),
-                startTick: sim.tick + 1 + slot * gap,
+                // Each egg's own offset from the first, so the gaps average shotGapMs.
+                startTick: sim.tick + 1 + sim.time.ceilTicks(slot * spec.shotGapMs),
                 landedAtTick: null,
                 landedAtSubtick: null,
                 explodeTick: null,
@@ -102,7 +102,7 @@ export class UnitLobAttack {
         if (shot.landedAtTick !== null) return;
         shot.landedAtTick = sim.tick;
         shot.landedAtSubtick = Math.max(0, Math.min(1000000, Math.round(elapsed * 1000000)));
-        shot.explodeTick = sim.tick + sim.msTicks(spec.fuseMs);
+        shot.explodeTick = sim.tick + sim.time.ceilTicks(spec.fuseMs);
         sim.events.push({
             type: 'unitLobLand',
             side: shot.side,

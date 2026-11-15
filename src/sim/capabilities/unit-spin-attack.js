@@ -133,13 +133,13 @@ export class UnitSpinAttack {
         if (!this.canStart(sim, unit, d, vision)) return false;
         const spec = d.spinAttack;
         if (spec.arcSweep) {
-            const activeStartTick = sim.tick + Math.max(1, sim.msTicks(spec.windupMs));
-            const activeEndTick = activeStartTick + Math.max(1, sim.msTicks(spec.activeMs));
+            const activeStartTick = sim.tick + Math.max(1, sim.time.ceilTicks(spec.windupMs));
+            const activeEndTick = activeStartTick + Math.max(1, sim.time.ceilTicks(spec.activeMs));
             unit.spinAttack = {
                 startTick: sim.tick,
                 activeStartTick,
                 activeEndTick,
-                endTick: activeEndTick + Math.max(1, sim.msTicks(spec.recoverMs)),
+                endTick: activeEndTick + Math.max(1, sim.time.ceilTicks(spec.recoverMs)),
                 hitIds: {},
                 lastUpdatedTick: sim.tick - 1,
             };

@@ -52,7 +52,7 @@ export class ContactMelee {
                 u.contactAttack = {
                     phase: 'charge',
                     targetId: t.id,
-                    untilTick: sim.tick + sim.msTicks(ConstructionRules.chargeTimeoutMs),
+                    untilTick: sim.tick + sim.time.ceilTicks(ConstructionRules.chargeTimeoutMs),
                 };
             if (sim.tick >= u.contactAttack.untilTick) {
                 u.combat.cancelWindup();
@@ -117,7 +117,9 @@ export class ContactMelee {
                 // At least two ticks: the first one is the step back, so a short interval still separates the pair.
                 Math.max(
                     2,
-                    Math.round(sim.msTicks(cooldownMs) * ConstructionRules.phaseRatios.recoverEnd),
+                    Math.round(
+                        sim.time.ceilTicks(cooldownMs) * ConstructionRules.phaseRatios.recoverEnd,
+                    ),
                 ),
         };
     }

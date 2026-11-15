@@ -318,7 +318,7 @@ class LaunchImpact {
     static rush(sim, u, grain) {
         if (grain.rushMs)
             sim.setTimedModifier(u, 'launchRush', {
-                durationTicks: sim.msTicks(grain.rushMs),
+                durationTicks: sim.time.ceilTicks(grain.rushMs),
                 movePct: grain.rushPct,
             });
     }
@@ -344,7 +344,8 @@ class LaunchImpact {
             if (grain.land === 'burst') {
                 if (!this.deployBurst(sim, group, grain)) {
                     group.nextTick =
-                        sim.tick + Math.max(1, sim.msTicks(LaunchImpactRules.deploymentRetryMs));
+                        sim.tick +
+                        Math.max(1, sim.time.ceilTicks(LaunchImpactRules.deploymentRetryMs));
                     sim.launchDeployments[write++] = group;
                 }
                 continue;
@@ -363,7 +364,7 @@ class LaunchImpact {
             if (!spot) {
                 if (HeroDeployment.landingFailed(sim, group)) continue;
                 group.nextTick =
-                    sim.tick + Math.max(1, sim.msTicks(LaunchImpactRules.deploymentRetryMs));
+                    sim.tick + Math.max(1, sim.time.ceilTicks(LaunchImpactRules.deploymentRetryMs));
                 sim.launchDeployments[write++] = group;
                 continue;
             }
@@ -441,7 +442,8 @@ class LaunchImpact {
                 ...(fallDamage == null ? {} : { fallDamage }),
             });
             group.index++;
-            group.nextTick = sim.tick + Math.max(1, sim.msTicks(LaunchImpactRules.deploymentGapMs));
+            group.nextTick =
+                sim.tick + Math.max(1, sim.time.ceilTicks(LaunchImpactRules.deploymentGapMs));
             if (group.index < group.count) sim.launchDeployments[write++] = group;
         }
         sim.launchDeployments.length = write;

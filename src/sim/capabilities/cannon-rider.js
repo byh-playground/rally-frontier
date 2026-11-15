@@ -105,7 +105,9 @@ class CannonRider {
             ...this.initialState(),
             readyTick:
                 sim.tick +
-                (flight === 'hop' || flight === 'front' ? 0 : sim.msTicks(spec.reboardDelayMs)),
+                (flight === 'hop' || flight === 'front'
+                    ? 0
+                    : sim.time.ceilTicks(spec.reboardDelayMs)),
         };
     }
 
@@ -353,7 +355,7 @@ class CannonRider {
         const ride = unit.cannonRide;
         ride.phase = 'board';
         ride.cannonId = cannon.id;
-        ride.launchTick = sim.tick + sim.msTicks(spec.boardMs);
+        ride.launchTick = sim.tick + sim.time.ceilTicks(spec.boardMs);
         ride.aimX = target.x;
         ride.aimY = target.y;
         ride.flight = target.flight;

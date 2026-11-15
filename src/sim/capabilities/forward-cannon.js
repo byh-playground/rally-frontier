@@ -19,7 +19,7 @@ import { UnitMotion } from '../navigation.js';
 
 class ForwardCannon {
     static plant(sim, unit, spec) {
-        unit.cannonTick = sim.tick + sim.msTicks(spec.delayMs);
+        unit.cannonTick = sim.tick + sim.time.ceilTicks(spec.delayMs);
     }
     // Presentation: milliseconds the soldier has been rooting, from its cannonTick in any snapshot. Null for every other unit.
     static rootingMs(type, cannonTick, tick, tps) {

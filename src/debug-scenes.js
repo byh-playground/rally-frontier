@@ -912,6 +912,8 @@ function createOutpostProbe(sim) {
 // gap] (gap: centre distance to the target minus both body radii when it left the hand). `taken`: the damage of each
 // hit on a unit before the end, by the target's type, split by whether it was building then (`building`, an assigned
 // project under way) or not (`other`), as { damage: hits }.
+// `swings`: basic attack commits (the sim's attack timing) before the end, by the attacker's type, as the count and
+// the ticks between one unit's consecutive commits (`gaps`, { ticks: count }).
 // The events that mark a sustained attack's start, damage ticks and end (fight.beats); BEAT_LOG first ones kept.
 const BEAT_EVENTS = [
         'spinStart',
@@ -930,7 +932,21 @@ function createFightProbe(sim) {
         thrown = new Set(),
         landed = new Map(),
         throws = { count: 0, first: [] },
-        taken = {};
+        taken = {},
+        swings = {},
+        lastSwing = new Map();
+    const commitAttackTiming = sim.commitAttackTiming.bind(sim);
+    sim.commitAttackTiming = (unit, ...rest) => {
+        const result = commitAttackTiming(unit, ...rest);
+        if (end) return result;
+        const byType = (swings[unit.type] ??= { count: 0, gaps: {} }),
+            last = lastSwing.get(unit.id);
+        byType.count++;
+        if (last !== undefined)
+            byType.gaps[sim.tick - last] = (byType.gaps[sim.tick - last] ?? 0) + 1;
+        lastSwing.set(unit.id, sim.tick);
+        return result;
+    };
     const damage = sim.applyDamage.bind(sim);
     sim.applyDamage = (side, type, target, building, amount, ...rest) => {
         const hpBefore = target.hp;
@@ -1042,6 +1058,7 @@ function createFightProbe(sim) {
                 beats,
                 throws,
                 taken,
+                swings,
                 now: { host: now[0], guest: now[1] },
                 lobs: {
                     ...lobs,
@@ -2499,6 +2516,12 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                         facing,
                         integer(scene, 'enemyLine', params.enemyLine),
                     );
+                // enemyIdle=1: the enemy block stands still and never attacks (an attack-rhythm target, `fight.swings`).
+                if (flag(scene, 'enemyIdle', params.enemyIdle))
+                    for (const unit of sim.units)
+                        if (unit.side === 1)
+                            unit.combat.moveRecoveryUntil = unit.combat.cooldownUntil =
+                                Number.MAX_SAFE_INTEGER;
             }
             // support=<type>&supportCount=N: a second enemy block 100 behind the first (anti-air escorts behind a front).
             if (params.support !== undefined || params.supportCount !== undefined) {
@@ -2649,7 +2672,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             const enemyEvery =
                 params.enemyEveryMs === undefined
                     ? null
-                    : sim.msTicks(integer(scene, 'enemyEveryMs', params.enemyEveryMs));
+                    : sim.time.ceilTicks(integer(scene, 'enemyEveryMs', params.enemyEveryMs));
             // `ally`·`allyCount`: a friendly block where the hero retreats to (120 back from the landing point toward
             // home, or `allyX`·`allyY`), for its ally aura (HeroAllyAura).
             if (params.ally !== undefined)
@@ -2689,7 +2712,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             const recallTick =
                 params.recallMs === undefined
                     ? null
-                    : sim.msTicks(integer(scene, 'recallMs', params.recallMs));
+                    : sim.time.ceilTicks(integer(scene, 'recallMs', params.recallMs));
             // The tick the first soldier of the shot came out (its launchLand event).
             let landTick = null;
             // How the squad stands: mean distance to the nearest and to every other soldier, the farthest

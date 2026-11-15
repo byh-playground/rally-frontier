@@ -5,7 +5,7 @@
 //
 // State (authoritative, StateContract save/checksum/replay): sim.cardAmmo[side] = { rounds, readyTick, phase },
 // integer arrays by deck card index. rounds is the rounds left, readyTick the tick the next round arrives (0 when
-// full), phase the accumulating timer's carry (SimulationTiming.timerTotal). Hero entries stay 0.
+// full), phase the accumulating timer's carry (SimulationTiming.carriedTicks, tickTime units). Hero entries stay 0.
 //
 // A volley spends one round however many cannons join; a launch refused before it fires (overheat, reload…)
 // spends none; a spent round is the presentation event cardAmmoSpent. update() runs once per tick, in place,
@@ -30,9 +30,9 @@ export class CardAmmo {
     }
 
     static schedule(sim, ammo, index, rechargeMs, fromTick) {
-        const total = SimulationTiming.timerTotal(rechargeMs, sim.tps, ammo.phase[index]);
-        ammo.readyTick[index] = fromTick + Math.max(1, Math.floor(total / 1000));
-        ammo.phase[index] = total % 1000;
+        const timer = SimulationTiming.carriedTicks(sim.time, rechargeMs, ammo.phase[index]);
+        ammo.readyTick[index] = fromTick + timer.ticks;
+        ammo.phase[index] = timer.carry;
     }
 
     // One round of `type` is spent (a launch that fired). A full card starts recharging now.

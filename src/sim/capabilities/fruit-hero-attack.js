@@ -121,7 +121,7 @@ export class FruitHeroAttack {
         const spec = HeroGrowth.spec(unit, 'fruitAttack');
         const fruit = unit.fruitAttack;
         const startTick = sim.tick;
-        const impactTick = startTick + sim.msTicks(spec.basicMs);
+        const impactTick = startTick + sim.time.ceilTicks(spec.basicMs);
         const from = worldPoint(sim, unit);
         fruit.combo = (fruit.combo + 1) % spec.every;
         const proc = fruit.combo === 0;
@@ -151,7 +151,9 @@ export class FruitHeroAttack {
                     to,
                     startTick,
                     turnTick: boomerang ? impactTick : null,
-                    endTick: boomerang ? impactTick + sim.msTicks(spec.returnMs) : impactTick,
+                    endTick: boomerang
+                        ? impactTick + sim.time.ceilTicks(spec.returnMs)
+                        : impactTick,
                     radius: spec.radius,
                     curve,
                     targetId: target.id,
@@ -181,7 +183,7 @@ export class FruitHeroAttack {
             from,
             to,
             startTick: sim.tick,
-            endTick: sim.tick + sim.msTicks(spec.lob.durationMs),
+            endTick: sim.tick + sim.time.ceilTicks(spec.lob.durationMs),
             radius: spec.radius,
             height: spec.lob.height,
         });
@@ -196,7 +198,7 @@ export class FruitHeroAttack {
     // The level-5 boomerang (HeroUltimate `boomerang`): straight out `length` toward `target` and straight back
     // to where it was thrown, `travelMs` each way, through every enemy on its band.
     static ultimateBoomerang(sim, unit, target, spec) {
-        const travel = Math.max(1, sim.msTicks(spec.travelMs));
+        const travel = Math.max(1, sim.time.ceilTicks(spec.travelMs));
         const from = worldPoint(sim, unit);
         unit.fruitAttack.projectiles.push(
             this.makeShot({
@@ -230,7 +232,7 @@ export class FruitHeroAttack {
                 from: { x: to.x, y: to.y, z: to.z + spec.dropHeight },
                 to,
                 startTick: sim.tick,
-                endTick: sim.tick + Math.max(1, sim.msTicks(spec.fallMs)),
+                endTick: sim.tick + Math.max(1, sim.time.ceilTicks(spec.fallMs)),
                 radius: UnitDefinition.get(unit.type).fruitAttack.radius,
             }),
         );
@@ -271,7 +273,7 @@ export class FruitHeroAttack {
                 from: worldPoint(sim, fallen),
                 to: worldPoint(sim, target),
                 startTick: sim.tick,
-                endTick: sim.tick + sim.msTicks(spec.lob.durationMs),
+                endTick: sim.tick + sim.time.ceilTicks(spec.lob.durationMs),
                 radius: spec.radius,
                 height: spec.lob.height,
                 targetId: target.id,
@@ -555,7 +557,7 @@ export class FruitHeroAttack {
         )
             return false;
         if (shot.kind === 'boomerang') {
-            const travel = Math.max(1, SimulationTiming.msToTicks(big?.travelMs ?? 0, tps));
+            const travel = Math.max(1, SimulationTiming.time(tps).ceilTicks(big?.travelMs ?? 0));
             return (
                 !!big &&
                 shot.radius === big.radius &&
@@ -569,7 +571,7 @@ export class FruitHeroAttack {
             shot.radius === spec.radius &&
             shot.turnTick === null &&
             shot.endTick ===
-                shot.startTick + Math.max(1, SimulationTiming.msToTicks(rain.fallMs, tps)) &&
+                shot.startTick + Math.max(1, SimulationTiming.time(tps).ceilTicks(rain.fallMs)) &&
             !shot.outHitIds.length &&
             !shot.backHitIds.length
         );
@@ -603,7 +605,7 @@ export class FruitHeroAttack {
                 shot.height === spec.lob.height &&
                 shot.turnTick === null &&
                 shot.endTick ===
-                    shot.startTick + SimulationTiming.msToTicks(spec.lob.durationMs, tps) &&
+                    shot.startTick + SimulationTiming.time(tps).ceilTicks(spec.lob.durationMs) &&
                 validId(shot.targetId) &&
                 !shot.targetIsBuilding &&
                 shot.returnTo === null &&
@@ -618,8 +620,8 @@ export class FruitHeroAttack {
                 ? [spec.radius, -twinCurve, twinCurve]
                 : [boomerang ? spec.radius : 0];
         const duration = lob ? spec.lob.durationMs : spec.basicMs;
-        const outbound = SimulationTiming.msToTicks(duration, tps);
-        const returning = boomerang ? SimulationTiming.msToTicks(spec.returnMs, tps) : 0;
+        const outbound = SimulationTiming.time(tps).ceilTicks(duration);
+        const returning = boomerang ? SimulationTiming.time(tps).ceilTicks(spec.returnMs) : 0;
         return (
             shot.kind === (boomerang ? 'boomerang' : 'berry') &&
             (shot.mode === 'basic' || shot.mode === 'passive' || lob) &&

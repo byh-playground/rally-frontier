@@ -365,7 +365,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 const copy = restored(sim);
                 const collect = (world) => {
                     const result = [];
-                    step(world, world.msTicks(LaunchRules.volleyMs('acorn')), (s) => {
+                    step(world, world.time.ceilTicks(LaunchRules.volleyMs('acorn')), (s) => {
                         for (const event of s.events) {
                             if (event.type !== 'launchFire') continue;
                             const p = s.projectiles.find(
@@ -436,7 +436,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     { first, hostileHp: hostile.hp, foeHp: foe.hp },
                 );
                 const copy = restored(sim);
-                const cooldown = sim.msTicks(definition.cooldownMs);
+                const cooldown = sim.time.ceilTicks(definition.cooldownMs);
                 function throughInterception(world) {
                     const timeline = [];
                     step(world, cooldown, (s) =>
@@ -2278,7 +2278,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                 ];
                 sim.importState(sealed);
                 shell(sim, x, y);
-                step(sim, sim.msTicks(2000));
+                step(sim, sim.time.ceilTicks(2000));
                 const pending = () =>
                     sim.launchDeployments.reduce(
                         (total, group) => total + group.count - group.index,

@@ -65,9 +65,8 @@ class ReplayRecorder {
         this.commands = [];
         this.checkpoints = [];
         this.result = null;
-        this.nextCheckpointTick = SimulationTiming.msToTicks(
+        this.nextCheckpointTick = SimulationTiming.time(sim?.tps || SIM_TPS).ceilTicks(
             REPLAY_CHECKPOINT_MS,
-            sim?.tps || SIM_TPS,
         );
         if (sim) this.captureCheckpoint(sim, true);
     }
@@ -101,9 +100,8 @@ class ReplayRecorder {
         )
             this.checkpoints[this.checkpoints.length - 1] = entry;
         else this.checkpoints.push(entry);
-        const checkpointTicks = SimulationTiming.msToTicks(
+        const checkpointTicks = SimulationTiming.time(sim?.tps || SIM_TPS).ceilTicks(
             REPLAY_CHECKPOINT_MS,
-            sim?.tps || SIM_TPS,
         );
         this.nextCheckpointTick = (Math.floor(sim.tick / checkpointTicks) + 1) * checkpointTicks;
     }
