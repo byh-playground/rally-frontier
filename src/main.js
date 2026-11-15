@@ -84,7 +84,8 @@ import {
 } from './core/config.js';
 import { BUILD_META } from './core/build-info.js';
 import { PRODUCT_VERSION } from './core/product-version.js';
-import { RallyBoot, RallyGamekit } from './core/gamekit.js';
+import { RallyBoot, RallyBootMarks, RallyGamekit } from './core/gamekit.js';
+import { RallyUsageMetrics } from './session/usage-metrics.js';
 import { LaunchScreens } from './ui/launch-screens.js';
 import { createShowcaseHost } from './ui/showcase-host.js';
 import { DeckEditor } from './ui/deck-editor.js';
@@ -9853,6 +9854,21 @@ class MatchLifecycle {
                 }
             }
         };
+        // The match on screen is the one the metrics count (the AI's own session is not).
+        const simulationStarted = sess.onSimulationStarted;
+        sess.onSimulationStarted = (started) => {
+            simulationStarted?.(started);
+            if (!isCurrent()) return;
+            const stageId = started.matchConfig?.campaignStage ?? null;
+            usageMetrics?.matchStarted(started, {
+                mode: stageId
+                    ? 'campaign'
+                    : SinglePlayerModeUtil.isSinglePlayer()
+                      ? 'ai'
+                      : 'friend',
+                stageId,
+            });
+        };
         sess.onResult = (w, reason = 'base-destroyed') => {
             // Authoritative result must not depend on which role is currently displayed.
             if (isCurrent()) MatchLifecycle.presentMatchResult(w, reason, r);
@@ -10227,6 +10243,11 @@ class MatchLifecycle {
             stage && mine && (reason === 'base-destroyed' || reason === 'volley-practice');
         const reward = cleared ? campaignProgress.complete(stage) : null;
         const next = cleared ? campaignProgress.nextAfter(stage) : null;
+        usageMetrics?.matchEnded(ActiveViewState.session, {
+            result: draw ? 'draw' : mine ? 'win' : 'loss',
+            reason,
+            cleared: !!cleared,
+        });
         LaunchScreens.renderCampaignResult(reward, next);
         UiRegistry.refs.resultTitle.textContent = draw ? '무승부' : mine ? '승리' : '패배';
         if (reason === 'surrender')
@@ -10459,6 +10480,7 @@ class AppLifecycle {
         if (AppLifecycle.bootGateFinished) return;
         AppLifecycle.bootGateFinished = true;
         RallyBoot.complete();
+        usageMetrics?.bootReady(RallyBootMarks);
         AppLifecycle.setBootState('게임 준비 완료');
         requestAnimationFrame(() => {
             UiRegistry.refs.bootGate?.classList.add('ready');
@@ -12229,6 +12251,8 @@ if (UiRegistry.refs.bootRetryBtn)
 const createShowcaseRenderer = (canvas, fxCanvas) =>
     new GLRenderer(canvas, { deferLoop: true, showcase: true, fxCanvas });
 let campaignProgress;
+// Game metrics (src/session/usage-metrics.js). Only the title app creates it, so a debug address sends nothing.
+let usageMetrics = null;
 // A debug address (`?debug=1&scene=…`) opens one scene of src/debug-scenes.js instead of the title and match flow,
 // so it never reads or writes the saved campaign progress or deck.
 if (new URLSearchParams(location.search).has('debug'))
@@ -12236,6 +12260,12 @@ if (new URLSearchParams(location.search).has('debug'))
 else startTitleApp();
 
 function startTitleApp() {
+    // Automated tests (navigator.webdriver) keep the batches in memory instead of the collection server.
+    usageMetrics = new RallyUsageMetrics({
+        gamekit: RallyGamekit,
+        version: PRODUCT_VERSION,
+        isolated: navigator.webdriver === true,
+    });
     AppLifecycle.runBootAndStartApp();
     const dev = readDevQuery(location.search);
     if (dev.tps) UiController.setStartSimulationTps(dev.tps);
@@ -12286,6 +12316,7 @@ function startTitleApp() {
             selectCampaign: (id) => {
                 MatchLifecycle.selectedCampaign = id;
             },
+            onScreen: (screen) => usageMetrics?.screen(screen),
             inMatch: () => UiRuntimeState.value.screen === 'game',
             hasResult: () => UiRuntimeState.value.screen === 'result',
             startAiMatch: () => {

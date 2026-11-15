@@ -698,6 +698,8 @@ class GameSession {
         });
         this.simEnded = false;
         this.matchResult = null;
+        // Game metrics id of this match: the host makes it in GAME_START, the guest takes it from there.
+        this.metricsMatchId = null;
         this.simulationFatal = false;
         this.simulationFatalInfo = null;
         this.disconnectGraceDeadlineAt = 0;
@@ -1094,6 +1096,8 @@ class GameSession {
             if (m.roundRules && typeof m.roundRules === 'object')
                 this.roundRules = StateValue.copy(m.roundRules);
             this.netcodeMode = netcodeMode(m.netcodeMode);
+            if (typeof m.matchId === 'string' && /^[\w-]{1,64}$/.test(m.matchId))
+                this.metricsMatchId = m.matchId;
             this.startSim(m.seed);
             return;
         }
@@ -1124,8 +1128,11 @@ class GameSession {
         return HashUtil.hash(`${roomCode}|launch`);
     }
     sendGameStart() {
+        // One id per match for game metrics, shared with the guest so the server counts the match once.
+        this.metricsMatchId ??= globalThis.crypto?.randomUUID?.() ?? null;
         return this.transport.send({
             type: 'GAME_START',
+            matchId: this.metricsMatchId,
             gameVersion: PRODUCT_VERSION,
             seed: this.roundRules.campaign?.seed ?? GameSession.matchSeed(this.roomCode),
             matchConfig: this.matchConfig,

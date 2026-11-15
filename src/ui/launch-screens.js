@@ -14,7 +14,7 @@ export class LaunchScreens {
     static grainInfo(type) {
         return unitCard(type)?.card || { role: '병사', feature: '', land: '', fire: '', notes: [] };
     }
-    // actions: { inMatch(), hasResult(), startAiMatch(), openMenu(), closeMenu(), grains(), grainName(type), grainStats(type),
+    // actions: { onScreen(screen), inMatch(), hasResult(), startAiMatch(), openMenu(), closeMenu(), grains(), grainName(type), grainStats(type),
     //           portraitSource(type), toggleSound(), soundOn(), createRoom(), joinRoom(code), leaveToTitle() }
     static install({ createNavigation, showcaseSurface, actions }) {
         this.actions = actions;
@@ -108,6 +108,8 @@ export class LaunchScreens {
             this.replace('');
             return;
         }
+        // The one screen-entry point for metrics: after the redirects above, on the address that stays.
+        A.onScreen(SCREEN);
         const MENU = SCREEN === 'play' && ITEM === 'menu';
         if (MENU) {
             A.openMenu();
