@@ -178,6 +178,7 @@ class StrategySim {
                 'chargedHeldIds',
                 'world',
                 'tps',
+                'time',
                 'disposed',
                 'runtimeEpoch',
                 'commandReceipts',
@@ -219,6 +220,7 @@ class StrategySim {
             10,
             30,
         );
+        this.time = SimulationTiming.time(this.tps);
         this.mapDescriptor = MapGeneration.generateMapDescriptor({
             rules: this.rules,
             seed: this.seed,
@@ -333,12 +335,6 @@ class StrategySim {
         if (this.disposed) return false;
         this.disposed = true;
         return true;
-    }
-    msTicks(ms, options) {
-        return SimulationTiming.msToTicks(ms, this.tps, options);
-    }
-    ticksMs(ticks) {
-        return SimulationTiming.ticksToMs(ticks, this.tps);
     }
     terrainAt(x, y) {
         return TerrainQuery.at(this.mapDescriptor, x, y, this.world.terrain.surfaces);
@@ -589,7 +585,7 @@ class StrategySim {
         if (!ctx || ctx.sourceLevel <= ctx.targetLevel) return false;
         const side = target.side;
         if (side !== 0 && side !== 1) return false;
-        const until = this.tick + this.msTicks(TERRAIN_ATTACK_REVEAL_MS);
+        const until = this.tick + this.time.ceilTicks(TERRAIN_ATTACK_REVEAL_MS);
         if (ctx.source instanceof Unit)
             ctx.source.status[side === 0 ? 'terrainRevealUntil0' : 'terrainRevealUntil1'] =
                 Math.max(
@@ -732,7 +728,7 @@ class StrategySim {
                     phaseStartedAtTick: this.tick,
                     phaseEndsAtTick: null,
                     cycleStartedAtTick: null,
-                    nextHitTick: this.tick + this.msTicks(ConstructionRules.cooldownMs),
+                    nextHitTick: this.tick + this.time.ceilTicks(ConstructionRules.cooldownMs),
                     lastHitTick: null,
                 };
             }
@@ -791,7 +787,7 @@ class StrategySim {
                 Math.max(
                     1,
                     Math.round(
-                        this.msTicks(ConstructionRules.cooldownMs) *
+                        this.time.ceilTicks(ConstructionRules.cooldownMs) *
                             ConstructionRules.phaseRatios.recoverEnd,
                     ),
                 ),
@@ -811,7 +807,7 @@ class StrategySim {
                 this.resetConstructionCycle(work, 'approach', work.nextHitTick);
             return true;
         }
-        const cycle = this.msTicks(ConstructionRules.cooldownMs),
+        const cycle = this.time.ceilTicks(ConstructionRules.cooldownMs),
             recoverTicks = Math.max(
                 1,
                 Math.round(cycle * ConstructionRules.phaseRatios.recoverEnd),
@@ -891,7 +887,7 @@ class StrategySim {
                 work,
                 'strike',
                 this.tick,
-                this.tick + this.msTicks(ConstructionRules.chargeTimeoutMs),
+                this.tick + this.time.ceilTicks(ConstructionRules.chargeTimeoutMs),
             );
         }
         if (work.phase === 'strike') {
@@ -978,7 +974,7 @@ class StrategySim {
                 b.hp += ConstructionRules.healthAt(progress, b.maxHp) - beforeHp;
                 work.lastHitTick = this.tick;
                 work.cycleStartedAtTick = this.tick;
-                work.nextHitTick = this.tick + this.msTicks(ConstructionRules.cooldownMs);
+                work.nextHitTick = this.tick + this.time.ceilTicks(ConstructionRules.cooldownMs);
                 this.beginConstructionRecovery(u, b, work);
                 const dx = u.x - b.x,
                     dy = u.y - b.y,
@@ -1107,7 +1103,7 @@ class StrategySim {
         const ms = Number.isFinite(Number(d?.attackWindupMs))
             ? Math.max(0, Math.round(Number(d.attackWindupMs)))
             : DEFAULT_ATTACK_WINDUP_MS;
-        return SimulationTiming.msToTicks(ms, this.tps);
+        return this.time.ceilTicks(ms);
     }
     attackMoveRecoveryDurationTicks(u, d) {
         const ms = Number.isFinite(Number(d?.attackMoveRecoveryMs))
@@ -1115,7 +1111,7 @@ class StrategySim {
             : d?.projectile
               ? DEFAULT_RANGED_MOVE_RECOVERY_MS
               : DEFAULT_MELEE_MOVE_RECOVERY_MS;
-        return SimulationTiming.msToTicks(ms, this.tps, { min: 0 });
+        return this.time.ceilTicks(ms);
     }
 
     tickAttackTimers(u) {
@@ -1183,13 +1179,12 @@ class StrategySim {
             : Math.max(1, Math.round(Number(cooldown || 0) * 1000));
         const effectiveMs =
             d.attackIntervalMs ?? Math.max(1, cooldownMs + this.attackCooldownJitterMs(u));
-        const scheduled = SimulationTiming.timerTicksWithPhase(
+        const scheduled = SimulationTiming.carriedTicks(
+            this.time,
             effectiveMs,
-            this.tps,
             u.combat.attackCooldownPhase || 0,
-            { min: 1 },
         );
-        u.combat.attackCooldownPhase = scheduled.phase;
+        u.combat.attackCooldownPhase = scheduled.carry;
         const windupTicks = d.attackIntervalMs == null ? 0 : this.attackWindupTicksFor(d);
         u.combat.cooldownUntil = this.tick + Math.max(1, scheduled.ticks - windupTicks);
         u.combat.moveRecoveryUntil = this.tick + this.attackMoveRecoveryDurationTicks(u, d);
@@ -1331,7 +1326,7 @@ class StrategySim {
             return reject('insufficient-premium-resources');
         const holdMs = Math.max(0, Math.round(action.holdMs));
         if (LaunchRules.overheated(holdMs)) {
-            cannon.launchReadyTick = this.tick + this.msTicks(LaunchRules.overheatMs);
+            cannon.launchReadyTick = this.tick + this.time.ceilTicks(LaunchRules.overheatMs);
             this.events.push({
                 type: 'launchOverheat',
                 side,
@@ -1367,7 +1362,8 @@ class StrategySim {
         CardAmmo.spend(this, side, action.unitType);
         // The cannon is busy until the last shell of the volley has left, plus the reload.
         const readyTick =
-            this.tick + this.msTicks(LaunchRules.volleyMs(action.unitType) + LaunchRules.reloadMs);
+            this.tick +
+            this.time.ceilTicks(LaunchRules.volleyMs(action.unitType) + LaunchRules.reloadMs);
         const power = LaunchRules.power(holdMs),
             mode = grain.fire.mode,
             eventsBeforeVolley = this.events.length;
@@ -1395,7 +1391,10 @@ class StrategySim {
                     ...shot,
                 };
                 if (shot.delayMs > 0)
-                    launcher.salvo.push({ tick: this.tick + this.msTicks(shot.delayMs), ...fire });
+                    launcher.salvo.push({
+                        tick: this.tick + this.time.ceilTicks(shot.delayMs),
+                        ...fire,
+                    });
                 else this.fireLaunchShell(fire);
             });
         }
@@ -1691,7 +1690,7 @@ class StrategySim {
         return Number(d.aggroRange) || COMBAT_AGGRO_RANGE;
     }
     combatTargetRefreshDue(u) {
-        const interval = this.msTicks(COMBAT_TARGET_REFRESH_MS);
+        const interval = this.time.ceilTicks(COMBAT_TARGET_REFRESH_MS);
         return this.tick % interval === (HashUtil.hash(String(u.id)) >>> 0) % interval;
     }
     retainedCombatTarget(u, visibleSources) {
@@ -2301,7 +2300,14 @@ class StrategySim {
             }
             b.targetId = target?.id ?? null;
             if (!target) continue;
-            b.startCooldownUntil(this.tick + this.msTicks(d.cooldownMs));
+            // A tower fires back to back while it has a target: the carry keeps its average at cooldownMs.
+            const shot = SimulationTiming.carriedTicks(
+                this.time,
+                d.cooldownMs,
+                b.attackCooldownPhase || 0,
+            );
+            b.attackCooldownPhase = shot.carry;
+            b.startCooldownUntil(this.tick + shot.ticks);
             if (shell) {
                 LaunchInterception.hit(this, b, shell, d.atk);
                 continue;
@@ -2790,7 +2796,7 @@ class StrategySim {
             b.winner = winner;
         }
 
-        if (this.tick % this.msTicks(BALANCE_SAMPLE_EVERY_MS) !== 0) return;
+        if (this.tick % this.time.ceilTicks(BALANCE_SAMPLE_EVERY_MS) !== 0) return;
 
         const army = [0, 0];
         for (const u of this.units) if (u?.alive && (u.side === 0 || u.side === 1)) army[u.side]++;
@@ -2802,7 +2808,7 @@ class StrategySim {
         b.samples++;
         b.lastSampleTick = this.tick;
 
-        if (this.tick % SimulationTiming.msToTicks(BALANCE_HISTORY_EVERY_MS, this.tps) === 0) {
+        if (this.tick % this.time.ceilTicks(BALANCE_HISTORY_EVERY_MS) === 0) {
             b.history.push({
                 tick: this.tick,
                 tps: this.tps,
@@ -2817,7 +2823,7 @@ class StrategySim {
     cleanupDeadEntities() {
         // Death information is already emitted as an event in the death tick.
         // Keeping every corpse forever makes target scans, snapshots and checksums grow without bound.
-        if (this.tick % this.msTicks(DEAD_ENTITY_CLEANUP_MS) !== 0) return;
+        if (this.tick % this.time.ceilTicks(DEAD_ENTITY_CLEANUP_MS) !== 0) return;
 
         this.units = this.units.filter((u) => u.alive || u.impactMotion);
 
@@ -2849,7 +2855,7 @@ class StrategySim {
     }
     stepSimulation() {
         const profile =
-            (this.tick + 1) % this.msTicks(PERF_SAMPLE_EVERY_MS) === 0 &&
+            (this.tick + 1) % this.time.ceilTicks(PERF_SAMPLE_EVERY_MS) === 0 &&
             typeof performance !== 'undefined';
         const now = profile ? () => performance.now() : null;
         const stepStart = profile ? now() : 0;
@@ -3111,6 +3117,7 @@ class StrategySim {
             10,
             30,
         );
+        this.time = SimulationTiming.time(this.tps);
         this.units = (copy.units || []).map(Unit.fromState);
         this.buildings = (copy.buildings || []).map(Building.fromState);
         this.projectiles = (copy.projectiles || []).map(Projectile.fromState);

@@ -39,7 +39,6 @@ import {
 import { netcodeMode } from '../core/config.js';
 import { PRODUCT_VERSION } from '../core/product-version.js';
 import { RallyStateCodec } from '../core/rally-state-codec.js';
-import { SimulationTiming } from '../core/simulation-timing.js';
 import {
     createFramePresentationJournal,
     configureFramePresentationJournal,
@@ -1804,12 +1803,6 @@ class GameSession {
             10,
             30,
         );
-    }
-    msTicks(ms, options) {
-        return SimulationTiming.msToTicks(ms, this.simulationTps(), options);
-    }
-    ticksMs(ticks) {
-        return SimulationTiming.ticksToMs(ticks, this.simulationTps());
     }
 }
 

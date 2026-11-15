@@ -23,7 +23,7 @@ export class CampaignMission {
             waveIndex: -1,
             phase: mission.surviveMs ? 'defend' : 'complete',
             nextWaveTick: mission.waves?.length ? this.waveTick(sim, mission.waves[0]) : null,
-            endTick: mission.surviveMs ? sim.msTicks(mission.surviveMs, { min: 1 }) : null,
+            endTick: mission.surviveMs ? Math.max(1, sim.time.ceilTicks(mission.surviveMs)) : null,
             guardLost: false,
             ...(mission.heroLesson && {
                 heroLesson: {
@@ -66,7 +66,7 @@ export class CampaignMission {
     }
 
     static waveTick(sim, wave) {
-        return sim.msTicks(wave.atMs, { min: 1 });
+        return Math.max(1, sim.time.ceilTicks(wave.atMs));
     }
 
     // Attacks arrive on the clock: each wave spawns at its own `atMs` whether or not the earlier ones still stand.

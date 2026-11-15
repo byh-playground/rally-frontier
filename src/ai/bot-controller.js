@@ -198,10 +198,7 @@ class BotController {
         const tps = snapshot.tps || SIM_TPS;
         const pacing = this.side === 1 ? this.session.sim?.rules?.campaign?.enemyPacing : null;
         if (pacing?.disabled) return;
-        if (
-            pacing &&
-            snapshot.tick < SimulationTiming.msToTicks(pacing.firstDecisionMs, tps, { min: 0 })
-        )
+        if (pacing && snapshot.tick < SimulationTiming.time(tps).ceilTicks(pacing.firstDecisionMs))
             return;
 
         const state = this.commandExecutor.begin(snapshot);
@@ -212,7 +209,10 @@ class BotController {
                 tps,
                 state.wallet[this.side] >= LaunchRules.walletCap,
             );
-            if (state.tick - this.lastLaunchTick >= SimulationTiming.msToTicks(intervalMs, tps)) {
+            if (
+                state.tick - this.lastLaunchTick >=
+                SimulationTiming.time(tps).ceilTicks(intervalMs)
+            ) {
                 this.lastLaunchTick = state.tick;
                 this.runLaunch(state);
             }
@@ -229,7 +229,7 @@ class BotController {
         if (walletFull || !pacing?.rampMs) return DECISION_INTERVAL_MS;
         const elapsedMs = (tick / tps) * 1000 - pacing.firstDecisionMs;
         const t = Math.min(1, Math.max(0, elapsedMs / pacing.rampMs));
-        return DECISION_INTERVAL_MS + (pacing.endIntervalMs - DECISION_INTERVAL_MS) * t;
+        return Math.round(DECISION_INTERVAL_MS + (pacing.endIntervalMs - DECISION_INTERVAL_MS) * t);
     }
     static distance(a, b) {
         return Math.hypot(a.x - b.x, a.y - b.y);

@@ -8,6 +8,8 @@
 //   한 번만 내림한다(StrategySim.applyDamage, 최소 1). `movePct`: 대상의 이동 속도 백분율. 시한 효과의 이동 속도
 //   (StrategySim.timedModifierPct 'movePct')와 같은 자리에서 가장 큰 값을 쓴다. `regen { intervalMs, percent, min }`:
 //   intervalMs마다(처음은 켜진 틱) 대상이 최대 체력의 percent%(내림, 최소 min)를 최대 체력까지 회복한다.
+// - 갱신·회복 주기는 tickTime `every` 누적값(`refreshClock`·`regenClock`, ms×TPS 정수, 나머지 이월)이라 틱에 안 맞는
+//   ms도 평균이 그 ms다. null은 아직 한 번도 돌지 않은 상태로, 켜진 첫 틱에 바로 돌고 0에서 센다.
 // - 회복마다 `heroAuraHeal` 사건을 낸다. 발밑 표시는 영웅 상태의 `allyIds`를 읽는다.
 import { UnitDefinition } from '../../definitions/units.js';
 import { HeroGrowth } from '../hero-growth.js';
@@ -15,8 +17,10 @@ import { IndexList } from '../index-list.js';
 import { LaunchRules } from '../launch-rules.js';
 
 const ALLY_QUERY = new IndexList();
-const STATE_KEYS = 'allyIds,refreshTick,regenTick';
+const STATE_KEYS = 'allyIds,refreshClock,regenClock';
 const MAX_ALLIES = 4096;
+
+const validClock = (clock) => clock === null || (Number.isSafeInteger(clock) && clock >= 0);
 
 function hasId(sorted, id) {
     let low = 0,
@@ -38,7 +42,7 @@ export class HeroAllyAura {
     }
 
     static initialState() {
-        return { refreshTick: 0, regenTick: 0, allyIds: [] };
+        return { refreshClock: null, regenClock: null, allyIds: [] };
     }
 
     static endSortie(unit) {
@@ -57,14 +61,22 @@ export class HeroAllyAura {
                 const spec = HeroGrowth.unlocked(unit, 'allyAura');
                 if (!spec) continue;
                 const aura = unit.heroAura;
-                if (sim.tick >= aura.refreshTick) {
+                if (aura.refreshClock === null || sim.time.fires(aura.refreshClock, spec.refreshMs))
                     aura.allyIds = this.query(sim, unit, spec.radius);
-                    aura.refreshTick = sim.tick + sim.msTicks(spec.refreshMs);
-                }
-                if (spec.regen && sim.tick >= aura.regenTick) {
+                aura.refreshClock =
+                    aura.refreshClock === null
+                        ? 0
+                        : sim.time.every(aura.refreshClock, spec.refreshMs);
+                if (!spec.regen) continue;
+                if (
+                    aura.regenClock === null ||
+                    sim.time.fires(aura.regenClock, spec.regen.intervalMs)
+                )
                     this.regen(sim, unit, aura.allyIds, spec.regen);
-                    aura.regenTick = sim.tick + sim.msTicks(spec.regen.intervalMs);
-                }
+                aura.regenClock =
+                    aura.regenClock === null
+                        ? 0
+                        : sim.time.every(aura.regenClock, spec.regen.intervalMs);
             }
     }
 
@@ -137,17 +149,15 @@ export class HeroAllyAura {
             !this.declared(unit.type) ||
             !aura ||
             Object.keys(aura).sort().join(',') !== STATE_KEYS ||
-            !Number.isSafeInteger(aura.refreshTick) ||
-            aura.refreshTick < 0 ||
-            !Number.isSafeInteger(aura.regenTick) ||
-            aura.regenTick < 0 ||
+            !validClock(aura.refreshClock) ||
+            !validClock(aura.regenClock) ||
             !Array.isArray(ids) ||
             ids.length > MAX_ALLIES ||
             ids.some(
                 (id, i) =>
                     typeof id !== 'string' || !id || id === unit.id || (i > 0 && ids[i - 1] >= id),
             ) ||
-            (!deployed && (ids.length || aura.refreshTick || aura.regenTick))
+            (!deployed && (ids.length || aura.refreshClock !== null || aura.regenClock !== null))
         )
             throw new Error('게임 snapshot의 영웅 주변 버프 상태가 잘못되었습니다.');
     }

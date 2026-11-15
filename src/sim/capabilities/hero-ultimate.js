@@ -27,7 +27,7 @@ import { HeroLandingStrike } from './hero-landing-strike.js';
 import { HeroRollAttack } from './hero-roll-attack.js';
 
 const ENEMY_QUERY = new IndexList();
-const STATE_KEYS = 'checkTick,rain,readyTick';
+const STATE_KEYS = 'checkClock,rain,readyTick';
 const RAIN_KEYS = 'dropped,endTick,startTick,x,y';
 // The nearest enemies a boomerang line or a berry rain is aimed at, at most.
 const MAX_CANDIDATES = 16;
@@ -44,7 +44,7 @@ export class HeroUltimate {
     }
 
     static initialState() {
-        return { checkTick: 0, readyTick: 0, rain: null };
+        return { checkClock: null, readyTick: 0, rain: null };
     }
 
     static endSortie(unit) {
@@ -58,14 +58,17 @@ export class HeroUltimate {
         const spec = HeroGrowth.unlocked(unit, 'ultimate');
         if (!spec) return;
         if (state.rain) this.advanceRain(sim, unit, state, spec.berryRain);
-        if (sim.tick < state.checkTick) return;
-        state.checkTick = sim.tick + sim.msTicks(spec.checkMs);
+        // The check runs every checkMs (a tickTime `every` clock, carried), the first time on the first tick.
+        const due = state.checkClock === null || sim.time.fires(state.checkClock, spec.checkMs);
+        state.checkClock =
+            state.checkClock === null ? 0 : sim.time.every(state.checkClock, spec.checkMs);
+        if (!due) return;
         if (sim.tick < state.readyTick || hero.mode !== 'advance' || !UnitMotion.isGrounded(unit))
             return;
         const kind = spec.siegeRoll ? 'siegeRoll' : spec.boomerang ? 'boomerang' : 'berryRain';
         const aim = this[kind](sim, unit, spec[kind], state);
         if (!aim) return;
-        state.readyTick = sim.tick + sim.msTicks(spec.cooldownMs);
+        state.readyTick = sim.tick + sim.time.ceilTicks(spec.cooldownMs);
         sim.events.push({
             type: 'heroUltimate',
             side: unit.side,
@@ -212,7 +215,7 @@ export class HeroUltimate {
             x,
             y,
             startTick: sim.tick,
-            endTick: sim.tick + Math.max(1, sim.msTicks(spec.durationMs)),
+            endTick: sim.tick + Math.max(1, sim.time.ceilTicks(spec.durationMs)),
             dropped: 0,
         };
         this.advanceRain(sim, unit, state, spec);
@@ -254,11 +257,11 @@ export class HeroUltimate {
             spec &&
             ultimate &&
             Object.keys(ultimate).sort().join(',') === STATE_KEYS &&
-            Number.isSafeInteger(ultimate.checkTick) &&
-            ultimate.checkTick >= 0 &&
+            (ultimate.checkClock === null ||
+                (Number.isSafeInteger(ultimate.checkClock) && ultimate.checkClock >= 0)) &&
             Number.isSafeInteger(ultimate.readyTick) &&
             ultimate.readyTick >= 0 &&
-            (deployed || (!ultimate.checkTick && !ultimate.readyTick && rain === null)) &&
+            (deployed || (ultimate.checkClock === null && !ultimate.readyTick && rain === null)) &&
             (rain === null ||
                 (!!spec.berryRain &&
                     !!rain &&

@@ -129,13 +129,15 @@ function createArena(unitType, opening, interception) {
             building.cooldownUntil =
                 grows || rider || roller
                     ? Number.MAX_SAFE_INTEGER
-                    : sim.msTicks(interception?.durationMs ?? DURATION_SECONDS * 1000);
+                    : sim.time.ceilTicks(
+                          interception?.durationMs ?? Math.round(DURATION_SECONDS * 1000),
+                      );
     }
     if (interception) state.launchRangeLevel[1] = interception.rangeLevel;
     sim.importState(state);
     if (wrapsOutpost) {
         const outpost = buildOutpost(sim, { id: 'showcase', ...guest }, 1);
-        outpost.cooldownUntil = sim.msTicks(DURATION_SECONDS * 1000);
+        outpost.cooldownUntil = sim.time.ceilTicks(Math.round(DURATION_SECONDS * 1000));
     }
     sim.creditResources(0, LaunchRules.premiumWalletCap, 'premium');
     if (interception) {
@@ -194,25 +196,29 @@ function prepareVolleyShowcase(
     const launchDelayMs =
         interception?.launchDelayMs ??
         (opening ? OPENING_LAUNCH_DELAY_SECONDS : LAUNCH_DELAY_SECONDS) * 1000;
-    const launchTick = sim.msTicks(launchDelayMs);
+    const launchTick = sim.time.ceilTicks(Math.round(launchDelayMs));
     const endTick = opening
         ? launchTick +
-          sim.msTicks(
-              (distance / LaunchRules.shellSpeed(unitType)) * 1000 + OPENING_LANDING_HOLD_MS,
+          sim.time.ceilTicks(
+              Math.ceil(
+                  (distance / LaunchRules.shellSpeed(unitType)) * 1000 + OPENING_LANDING_HOLD_MS,
+              ),
           )
-        : sim.msTicks(
-              interception?.durationMs ??
-                  rider?.durationMs ??
-                  roller?.durationMs ??
-                  Math.max(
-                      DURATION_SECONDS * 1000,
-                      unit?.growsCannon
-                          ? launchDelayMs +
-                                (distance / LaunchRules.shellSpeed(unitType)) * 1000 +
-                                unit.growsCannon.delayMs +
-                                GROWN_CANNON_HOLD_MS
-                          : 0,
-                  ),
+        : sim.time.ceilTicks(
+              Math.ceil(
+                  interception?.durationMs ??
+                      rider?.durationMs ??
+                      roller?.durationMs ??
+                      Math.max(
+                          DURATION_SECONDS * 1000,
+                          unit?.growsCannon
+                              ? launchDelayMs +
+                                    (distance / LaunchRules.shellSpeed(unitType)) * 1000 +
+                                    unit.growsCannon.delayMs +
+                                    GROWN_CANNON_HOLD_MS
+                              : 0,
+                      ),
+              ),
           );
     let launchShown = false;
     let centerShot = null;

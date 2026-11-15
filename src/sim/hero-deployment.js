@@ -212,7 +212,7 @@ export class HeroDeployment {
         const { side, type } = group;
         const hero = sim.heroes[side][type];
         if (!hero || hero.sortieId !== group.projectileId) return false;
-        group.heroRetryUntil ??= sim.tick + sim.msTicks(LANDING_GRACE_MS);
+        group.heroRetryUntil ??= sim.tick + sim.time.ceilTicks(LANDING_GRACE_MS);
         if (sim.tick < group.heroRetryUntil) return false;
         this.dock(sim, side, type, this.reserveHp(sim, side, type));
         return true;

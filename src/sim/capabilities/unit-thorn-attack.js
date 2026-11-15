@@ -41,7 +41,7 @@ export class UnitThornAttack {
             travel = Math.max(0, distance - radius + spec.radius),
             terrain = sim.world.terrain.surfaces,
             startTick = sim.tick + 1,
-            durationTicks = Math.max(1, sim.msTicks(spec.durationMs)),
+            durationTicks = Math.max(1, sim.time.ceilTicks(spec.durationMs)),
             fromZ = UnitMotion.bottom(sim, source) + spec.launchHeight,
             targetZ =
                 (isBuilding

@@ -245,7 +245,7 @@ class RollingBody {
         }
         // hits is a flat list of (key, tick) pairs; drop the ones past the rehit window.
         const hits = state.hits,
-            since = sim.tick - sim.msTicks(spec.rehitMs);
+            since = sim.tick - sim.time.ceilTicks(spec.rehitMs);
         let write = 0;
         for (let k = 0; k < hits.length; k += 2)
             if (hits[k + 1] > since) {
@@ -257,7 +257,7 @@ class RollingBody {
     // A strike on `key` outside the rehit window is recorded and counts; one inside it does not.
     static mayHit(sim, unit, key) {
         const hits = unit.rolling.hits,
-            since = sim.tick - sim.msTicks(this.spec(unit).rehitMs);
+            since = sim.tick - sim.time.ceilTicks(this.spec(unit).rehitMs);
         for (let k = 0; k < hits.length; k += 2)
             if (hits[k] === key && hits[k + 1] > since) return false;
         hits.push(key, sim.tick);

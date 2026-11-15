@@ -53,11 +53,14 @@ class StickyCling {
         const spec = UnitDefinition.get(unit.type)?.stickyCling;
         if (!spec || !this.canHold(unit, building) || this.clingerOf(sim, building)) return false;
         const cling = unit.stickyCling;
-        if (cling.buildingId != null && sim.tick < cling.endTick + sim.msTicks(spec.cooldownMs))
+        if (
+            cling.buildingId != null &&
+            sim.tick < cling.endTick + sim.time.ceilTicks(spec.cooldownMs)
+        )
             return false;
         unit.stickyCling = {
             buildingId: building.id,
-            endTick: sim.tick + sim.msTicks(spec.durationMs),
+            endTick: sim.tick + sim.time.ceilTicks(spec.durationMs),
         };
         unit.contactAttack = null;
         return true;
