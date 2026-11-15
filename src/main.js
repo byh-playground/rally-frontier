@@ -8040,6 +8040,10 @@ class GLRenderer {
                 return;
             }
             const frameStarted = performance.now();
+            // Monotonic performance.now(), not the rAF timestamp: the ticker pulses the same
+            // deferred accumulator, whose timestamps must not regress.
+            if (!this.showcase && BACKGROUND_TICK_SESSIONS.size)
+                AppLifecycle.pulseBackgroundSessions(frameStarted, { frame: true });
             this._framePresentationAt = frameStarted;
             this.resize();
             // DOM viewport synchronization is once per frame, not once per terrain/Fog vertex.
@@ -10375,10 +10379,12 @@ class AppLifecycle {
         return ActiveViewState.session ? [ActiveViewState.session] : [];
     }
 
-    static pulseBackgroundSessions(now = performance.now()) {
+    // `frame` comes from the match renderer's rAF (GLRenderer.loop): simloop observes input, runs
+    // the due ticks and publishes before that frame draws. The ticker below only pulses.
+    static pulseBackgroundSessions(now = performance.now(), options) {
         for (const sess of [...BACKGROUND_TICK_SESSIONS]) {
             try {
-                measureSessionPulse(sess, now);
+                measureSessionPulse(sess, now, options);
             } catch (err) {
                 try {
                     if (typeof sess?.enterSimulationFatal === 'function') {
