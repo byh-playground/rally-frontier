@@ -90,6 +90,18 @@ SVG는 원본 manifest의 SHA-256 검증 후 고정 GameKit 로더가 시작 시
 
 기본 netcode는 lockstep이며 `?netcode=lockstep|rollback`은 다음 경기의 모드를 고릅니다. 친구 대전의 참가자는 방장이 보낸 동기화 모드를 경기 시작 전에 적용합니다. Nostr는 발견·협상, gameplay는 실제 RTCDataChannel의 바이너리입니다. 별도 게임 서버나 TURN fallback은 없습니다. 방 코드는 실제 Nostr 신호 준비와 코드 확보가 끝난 뒤 표시합니다. 방 준비 취소는 진행 중인 연결도 종료하고, 재시도는 새 방을 만듭니다. 첫 시작 메시지를 보내지 못하면 방장은 시뮬레이션을 시작하지 않으며 재연결한 참가자의 HELLO에 시작 정보를 다시 보냅니다. 싱글도 같은 실제 WebRTC·Session을 쓰며 AI 세션은 Worker에서 실행합니다. 양쪽 세션 관찰용 UI 검사는 in-page AI를 사용하고 Worker 경로는 별도로 검증합니다.
 
+## 게임 지표
+
+GameKit metrics로 `rally-frontier` 게임 이름의 사용 지표를 수집 서버(`bloom-metrics.byh-playground.workers.dev`)에 보냅니다. 보내는 곳은 [`src/session/usage-metrics.js`](src/session/usage-metrics.js) 한 곳입니다. 디버그 장면(`?debug=1&scene=`)은 지표 객체를 만들지 않고, 자동 시험(`navigator.webdriver`)은 메모리에만 남깁니다. 기기 ID는 브라우저 저장소에 두지 않습니다.
+
+| 이벤트                                        | 보내는 지점                                      | props·summary                                                                                         |
+| --------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `screen:<main·friend·help·play·result>:enter` | 주소의 화면이 바뀔 때(`LaunchScreens.apply`)     | 없음                                                                                                  |
+| `boot:ready:done`                             | 로딩 완료(`finishBootGate`) 한 번                | `loadMs`·`pre`(첫 단계 전)·`sdk`·`units`·`sprites`·`gfx`·`title`, GameKit boot 단계 ms를 100ms 단위로 |
+| `match:<campaign·ai·friend>:start`            | 화면의 경기 시뮬레이션 시작(`beginMatch`)        | `matchId`(친구 대전은 방장이 `GAME_START`로 넘긴 같은 값)                                             |
+| 경기 기록(`recordMatch`)                      | 결과가 정해질 때. 연결 만료로 중단된 경기는 빠짐 | `result`(win·loss·draw)·`reason`·`ticks`·`durationMs`, 캠페인은 `stageId`·`cleared`                   |
+| `campaign:<판 id>:start`·`clear`              | 캠페인 경기 시작, 클리어                         | 없음                                                                                                  |
+
 ## 병종 추가
 
 1. `src/units/<id>/index.js`에서 `defineUnit({ id, unit, payload, visual, card, help, sprite })`를 내보냅니다. 그림이 있으면 같은 폴더의 `sprite.js`에 둡니다.

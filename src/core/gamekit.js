@@ -1,6 +1,6 @@
 // Both realms load the pinned simulation and session SDK; the page also prepares its art.
 // prettier-ignore
-const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","navigation":"navigation.js","objectPool":"object-pool.js","geometry":"geometry.js","spatial":"spatial.js","face":"face.js","pathfield":"pathfield.js","vision":"vision.js","contactSolver":"contact-solver.js","scenario":"scenario.js","boot":"boot.js"});
+const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","navigation":"navigation.js","objectPool":"object-pool.js","geometry":"geometry.js","spatial":"spatial.js","face":"face.js","pathfield":"pathfield.js","vision":"vision.js","contactSolver":"contact-solver.js","scenario":"scenario.js","boot":"boot.js","metrics":"metrics.js"});
 const SESSION_MODULE_NAMES = new Set([
     'rollback',
     'deterministic',
@@ -23,6 +23,8 @@ const RALLY_VECTOR_ASSET_MANIFEST_URL = new URL('assets/units/manifest.json', RA
     .href;
 let RALLY_NETCODE_URL = RALLY_GAMEKIT_SOURCE.lock;
 let RallyNetcode, RallyGamekit, RallyBoot;
+// Boot stage id → { begin, end } in performance.now() ms, filled by a RallyBoot listener (page realm only).
+const RallyBootMarks = {};
 // Startup stages and their share of the bar: measured wall time on a desktop build, in tenths of a second, with the
 // SDK raised for a real CDN. Counts are real work items; the bar never estimates time. `graphics` is one synchronous
 // GPU frame, so it has no count and fills when it ends.
@@ -163,6 +165,13 @@ try {
         stages: SIM_WORKER ? RALLY_BOOT_STAGES.slice(0, 1) : RALLY_BOOT_STAGES,
     });
     if (!SIM_WORKER) {
+        // Usage metrics read the stage times from here: first and last change of each boot stage (page clock).
+        RallyBoot.subscribe((state) => {
+            if (!state.stage) return;
+            const at = performance.now();
+            const mark = (RallyBootMarks[state.stage] ??= { begin: at, end: at });
+            mark.end = at;
+        });
         // The inline source-file counter (index.html) owned the status line until now.
         globalThis.__RALLY_SOURCE_PROGRESS__?.disconnect();
         bootModule.bindBootProgress(RallyBoot, {
@@ -225,6 +234,7 @@ try {
             'createNavigation',
             'createScenario',
             'createScenarioSurface',
+            'createMetrics',
         );
     for (const name of requiredGameKit)
         if (typeof RallyGamekit[name] !== 'function')
@@ -292,4 +302,4 @@ try {
     await new Promise(() => {});
 }
 
-export { RallyBoot, RallyGamekit, RallyNetcode };
+export { RallyBoot, RallyBootMarks, RallyGamekit, RallyNetcode };

@@ -27,6 +27,7 @@ const moduleFiles = Object.freeze({
     contactSolver: 'contact-solver.js',
     scenario: 'scenario.js',
     boot: 'boot.js',
+    metrics: 'metrics.js',
 });
 const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 const cacheDirectory = (root) => path.join(root, '.cache', 'gamekit');

@@ -1,19 +1,19 @@
 {
     "repository": "byh-playground/bloom-gamekit",
-    "sourceCommit": "8cc67002398827e26852c2be06ab08c9e4f80d04",
-    "distCommit": "5070c9ecbeea412ed1b2309e5d9569bd500cafe5",
+    "sourceCommit": "4f03df515a9e64b22731129a4b229f285b8b7e1e",
+    "distCommit": "d63dce2301e5631adb11b855ef844394436b4d6a",
     "modules": {
         "rollback": {
             "file": "rollback.js",
-            "sha256": "8751138b6d4de6bbafa0542491465c5c9a0f719ba4a26a95c7e04293c0c13b62"
+            "sha256": "ab2d576dd2684afda3fbd153d27ba35d688f27a1554194e042bae8b195c36bcb"
         },
         "deterministic": {
             "file": "deterministic.js",
-            "sha256": "1ee3c5d0766bf9e8fbed64516b6f0eb87b8fe33fff49bfdc283e58224f07cdf6"
+            "sha256": "540b85c7dbd6eaba6724d82e4865c2784c68e799e75390ea1a56d20433fbe0ec"
         },
         "simloop": {
             "file": "simloop.js",
-            "sha256": "c9bd2330e00f1ec964d317cbc075b42099a220cc3ed05d5bc8ca352ca5f93f76"
+            "sha256": "c7595b1beb7c56b01061393429eb73a095c1126a9832a55069bd7bfaa0d75295"
         },
         "transport": {
             "file": "transport.js",
@@ -53,7 +53,7 @@
         },
         "debug": {
             "file": "debug-tools.js",
-            "sha256": "eb27443696f03d53bff91e8bcca0a8c450654aaf1ac28eefea2651775f1d195e"
+            "sha256": "a0856426d7602ae54cbfd98923a26a03cab39009955311b9a168d27f31019373"
         },
         "navigation": {
             "file": "navigation.js",
@@ -89,12 +89,16 @@
         },
         "scenario": {
             "file": "scenario.js",
-            "sha256": "68459591fe6f7a58eb4470430683413e1546f2c5816e1d529f9c72560305eb77"
+            "sha256": "44972ca8b0c410407e057385e64473fde51d98ae94819e9094011eb273830d0d"
         },
         "boot": {
             "file": "boot.js",
             "sha256": "9352ec017b633be6fbdefc0a98b6cdf47f47ac99385b0277da96964215c874d9"
+        },
+        "metrics": {
+            "file": "metrics.js",
+            "sha256": "6c64b88b29c72cd65eb3137f046174d8932ca39a0082a09645937891093499c0"
         }
     },
-    "distManifestSha256": "4489e7ba9e5d5bf00c57df5de6dcee1640c37376f8eb7643f1f477eb66ca4788"
+    "distManifestSha256": "aca15465170a5b6c51f920f517c18dc9e184dbf28b137d1fd55063d141b41b69"
 }
