@@ -75,16 +75,16 @@ function recordTiming(stats, key, ms) {
     row.samples++;
 }
 
-function measureSessionPulse(session, now) {
+function measureSessionPulse(session, now, options) {
     const stats = session.performanceStats;
     if (!stats || !session.sim || session.simEnded || session.simulationFatal)
-        return session.advanceSimulation(now);
+        return session.advanceSimulation(now, options);
     const started = performance.now();
     if (stats.lastPulseAt !== null)
         recordTiming(stats.timings, 'pulseGap', started - stats.lastPulseAt);
     stats.lastPulseAt = started;
     try {
-        return session.advanceSimulation(now);
+        return session.advanceSimulation(now, options);
     } finally {
         recordTiming(stats.timings, 'pulse', performance.now() - started);
     }

@@ -1287,8 +1287,8 @@ class GameSession {
                 this.driverPulseAdvances++;
                 this.reconcileNetcodeProgress();
             },
-            render: (frame) => {
-                this.driverLastAlpha = frame.alpha;
+            // Display interpolation is the presentation timeline (emitRenderTargets), not alpha.
+            render: () => {
                 this.reconcileNetcodeProgress();
                 this.reconcileNetcodePresentation();
                 this.publishNetcodeSnapshot(this.netcodeNow);
@@ -1628,10 +1628,13 @@ class GameSession {
             }
         }
     }
-    advanceSimulation(now = performance.now()) {
+    // simloop owns pacing, accumulation, bounded catchup and polling during holds. The page's
+    // rAF calls `frame` (observe input → due ticks → publish); the background ticker and the
+    // AI Worker call `pulse` on the same accumulator, so ticks are never run twice.
+    advanceSimulation(now = performance.now(), { frame = false } = {}) {
         if (!this.sim || this.simEnded || this.simulationFatal) return;
-        // Library owns pacing, accumulation, bounded catchup, and polling during holds.
-        this.netcodeLoop.pulse(now);
+        if (frame) this.netcodeLoop.frame(now);
+        else this.netcodeLoop.pulse(now);
     }
     enterSimulationFatal(
         err,
