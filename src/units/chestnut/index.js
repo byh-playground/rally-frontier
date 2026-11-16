@@ -13,7 +13,7 @@ export const Chestnut = defineUnit({
         minRange: 40,
         speed: 75,
         cooldownMs: 1000,
-        attackWindupMs: 280,
+        attackWindupMs: 300,
         size: 10,
         sizeClass: 'light',
         role: 'ranged',

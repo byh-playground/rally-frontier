@@ -14,7 +14,7 @@ export const Corn = defineUnit({
         minRange: 40,
         speed: 50,
         cooldownMs: 1500,
-        attackWindupMs: 380,
+        attackWindupMs: 400,
         size: 10,
         sizeClass: 'light',
         role: 'ranged',

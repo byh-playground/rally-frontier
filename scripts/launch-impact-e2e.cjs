@@ -660,7 +660,7 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                             [0, 0, 60, 25, 2],
                             [0, 0, 40, 40, 2],
                         ],
-                        450,
+                        500,
                     ],
                     ['corn', 100, 50, [[0, 0, 65, 25, 6]], 0, 440, 191],
                     ['chestnut', 125, 25, [[0, 0, 50, 10, 10]], 0, 800, 91],

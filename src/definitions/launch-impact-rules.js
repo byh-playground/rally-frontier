@@ -40,7 +40,7 @@ class LaunchImpactRules {
     static remainderScale = 10000;
     static airDrag = 0.4;
     static groundDrag = 5;
-    static recoveryMs = 250;
+    static recoveryMs = 300;
     static deploymentGapMs = 100;
     static deploymentRetryMs = 100;
     static deploymentSpeed = 250;
