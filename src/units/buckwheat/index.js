@@ -25,7 +25,7 @@ export const Buckwheat = defineUnit({
         damageClass: 'ranged',
         attackVisual: { sourceMotion: null, travel: 'thorn', impact: 'light' },
         thornAttack: Object.freeze({
-            durationMs: 250,
+            durationMs: 300,
             radius: 2,
             launchHeight: 12,
             targetHeight: 8,

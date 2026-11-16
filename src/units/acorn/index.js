@@ -55,7 +55,7 @@ export const Acorn = defineUnit({
         fire: Object.freeze({
             mode: 'burst',
             shots: 3,
-            gapMs: 450,
+            gapMs: 500,
             impacts: Object.freeze([15, 25, 40]),
             splashes: Object.freeze([90, 60, 40]),
         }),
