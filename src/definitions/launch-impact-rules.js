@@ -41,7 +41,7 @@ class LaunchImpactRules {
     static airDrag = 0.4;
     static groundDrag = 5;
     static recoveryMs = 250;
-    static deploymentGapMs = 50;
+    static deploymentGapMs = 100;
     static deploymentRetryMs = 100;
     static deploymentSpeed = 250;
     // A burst throws its outer soldier at deploymentSpeed × √(squad / burstSquad), so a smaller squad
