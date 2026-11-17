@@ -2629,6 +2629,33 @@ class StrategySim {
             }
         }
 
+        // A flame that burns the blight (BlightField): with no enemy in its attack reach it stands and burns the
+        // nearest blighted cell its flame reaches, instead of walking on into the field.
+        if (
+            d.breathAttack &&
+            BlightField.burner(this, u, d.breathAttack) &&
+            !activeSite &&
+            !(found && this.combatTargetInAttackRange(u, found))
+        ) {
+            const cell = BlightField.nearestBlighted(
+                this,
+                u,
+                UnitBreathAttack.length(u, d.breathAttack),
+            );
+            if (cell >= 0) {
+                u.combat.cancelWindup();
+                u.constructionWork = null;
+                u.target = null;
+                return UnitBreathAttack.burnGround(
+                    this,
+                    u,
+                    BlightField.cellX(this, cell),
+                    BlightField.cellY(this, cell),
+                    d,
+                );
+            }
+        }
+
         let moveSpeed = d.speed;
         const cooldown = this.attackCooldown(u, d);
         // 공통 전투 이동/공속 보정.

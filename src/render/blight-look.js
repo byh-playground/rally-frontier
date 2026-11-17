@@ -366,7 +366,18 @@ class BlightFieldLook {
         this.shown = new Uint8Array(0);
         this.from = new Uint8Array(0);
         this.changedAt = new Float64Array(0);
+        // The cells that are not clean, in index order: marked[0 .. markedCount). Remade when a cell changes, so a
+        // frame walks only the stained cells.
+        this.marked = new Int32Array(0);
+        this.markedCount = 0;
         this.color = [0, 0, 0, 0];
+    }
+    mark() {
+        const shown = this.shown;
+        if (this.marked.length < shown.length) this.marked = new Int32Array(shown.length);
+        let count = 0;
+        for (let i = 0; i < shown.length; i++) if (shown[i] !== CLEAN) this.marked[count++] = i;
+        this.markedCount = count;
     }
     // The next grid followed starts unchanged (a match restarted or wound back).
     reset() {
@@ -386,14 +397,18 @@ class BlightFieldLook {
             this.shown = Uint8Array.from(cells);
             this.from = Uint8Array.from(cells);
             this.changedAt = new Float64Array(cells.length).fill(-Infinity);
+            this.mark();
             return;
         }
+        let changed = false;
         for (let i = 0; i < cells.length; i++) {
             if (cells[i] === this.shown[i]) continue;
             this.from[i] = this.shown[i];
             this.shown[i] = cells[i];
             this.changedAt[i] = now;
+            changed = true;
         }
+        if (changed) this.mark();
     }
     tint(color, alpha) {
         const c = this.color;
@@ -408,9 +423,10 @@ class BlightFieldLook {
         if (field.cells !== this.cells) return;
         const look = BLIGHT_LOOK.field,
             { cellSize: size, col0, row0, cols } = field,
-            { shown, from, changedAt } = this;
+            { shown, from, changedAt, marked, markedCount } = this;
         // The blots first, so no lump is covered by the next cell's blot.
-        for (let i = 0; i < shown.length; i++) {
+        for (let k = 0; k < markedCount; k++) {
+            const i = marked[k];
             if (shown[i] !== BLIGHTED) continue;
             const col = i % cols,
                 age = now - changedAt[i],
@@ -426,10 +442,10 @@ class BlightFieldLook {
                 look.blotColor,
             );
         }
-        for (let i = 0; i < shown.length; i++) {
-            const state = shown[i];
-            if (state === CLEAN) continue;
-            const col = i % cols,
+        for (let k = 0; k < markedCount; k++) {
+            const i = marked[k],
+                state = shown[i],
+                col = i % cols,
                 gx = col0 + col,
                 gy = row0 + (i - col) / cols,
                 age = now - changedAt[i];

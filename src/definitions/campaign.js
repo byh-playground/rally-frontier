@@ -62,8 +62,9 @@ const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 //     blightFields: [{ x: 1500, y: 2790 }],
 //     braziers: [{ x: 1580, y: 2700, radius: 125 }],
 // A field is blighted ground in 25-unit cells: radius 100 at the start, 25 wider every 10 seconds up to 200. The
-// player's ground soldiers and heroes standing on it lose 1 health a second; flying units, buildings and the enemy
-// lose none. A cell the player's flame (chili) reaches is purified and is never blighted again. A brazier lights
+// player's ground soldiers and heroes standing on it lose 5 health a second; flying units, buildings and the enemy
+// lose none. The player's chili burns it: each damage tick of its flame purifies the one nearest blighted cell the
+// flame reaches, for good, and with no enemy in reach it stops at the field's edge and burns it by itself. A brazier lights
 // when the player's side alone holds its place (the capture point's presence rule) and then keeps every cell within
 // its `radius` purified. The match start rejects fields on a stage without `blight: true` and braziers on a stage
 // without fields. No stage declares either yet.

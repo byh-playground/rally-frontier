@@ -16,9 +16,12 @@
 //   BLIGHTED cell takes `damage` through StrategySim.applyDamage (source side the blight's, source 'blight-field').
 //   A flying unit, a building and the blight's own side take none. One `blightFieldPulse` event (the middle of the
 //   hurt units, how many) comes before that tick's hits, so the presentation shows one number for them.
-// - Fire purifies. A burn of the player's flame (UnitBreathAttack.pulse → `burn`) purifies each BLIGHTED cell whose
-//   middle is within half a cell of the flame's sector and in clear terrain line from the unit (the wall rule the
-//   flame's own hits use). A brazier lights the first tick the player's side alone holds its place, by the capture
+// - Fire purifies. Each burn (damage tick) of a player's flame that burns the blight (Unit Definition
+//   `breathAttack.blightBurn { cellsPerPulse }`, chili; UnitBreathAttack.pulse → `burn`) purifies `cellsPerPulse`
+//   BLIGHTED cells of those whose middle is within half a cell of the flame's sector and in clear terrain line from
+//   the unit: the nearest first, the lower index in a tie. A longer flame reaches farther and burns no more cells a
+//   tick. With no enemy in its attack reach such a unit stands and aims its flame at the nearest blighted cell in
+//   reach (`nearestBlighted`), on the flame's own sustain timing. A brazier lights the first tick the player's side alone holds its place, by the capture
 //   point's presence rule (StrategySim.capturePresence), and stays lit: every cell within its radius becomes
 //   PURIFIED, clean ones too, so the field never grows into a lit brazier's ground.
 // - This is a mission area, not an attack: it uses no `sustain`, has no unit and nobody can target it.
@@ -240,13 +243,63 @@ export class BlightField {
             );
     }
 
-    // A burn of a flame (UnitBreathAttack.pulse): the sector from `unit` along the unit vector (ux, uy), half-angle
-    // cosine `c` and sine `s`, `length` long; `flame.sectorTouches` is the flame's own sector test. Only the
-    // player's fire purifies.
-    static burn(sim, unit, flame, ux, uy, c, s, length) {
+    // Can this unit's flame purify the field? A flame that burns the blight (`breathAttack.blightBurn`) on the
+    // player's side, in a match with fields.
+    static burner(sim, unit, spec) {
+        return !!spec.blightBurn && !!sim.blightField && unit.side !== Blight.ENEMY_SIDE;
+    }
+
+    // The blighted cell nearest to `unit` whose middle is within `reach` of it and in clear terrain line, or -1:
+    // what a burner's flame aims at when no enemy is in its reach (StrategySim.updateCombat). The lower cell index
+    // wins a tie. `cellX`·`cellY` give the cell's middle.
+    static nearestBlighted(sim, unit, reach) {
+        const state = sim.blightField,
+            size = RULE.cellSize,
+            { col0, row0, cols, rows, cells } = state,
+            fromCol = Math.max(0, Math.floor((unit.x - reach) / size) - col0),
+            toCol = Math.min(cols - 1, Math.floor((unit.x + reach) / size) - col0),
+            fromRow = Math.max(0, Math.floor((unit.y - reach) / size) - row0),
+            toRow = Math.min(rows - 1, Math.floor((unit.y + reach) / size) - row0),
+            terrain = sim.world.terrain.field;
+        let best = -1,
+            bestDistance2 = reach * reach;
+        for (let row = fromRow; row <= toRow; row++) {
+            const cy = (row0 + row + 0.5) * size,
+                dy = cy - unit.y;
+            for (let col = fromCol; col <= toCol; col++) {
+                const index = row * cols + col;
+                if (cells[index] !== BLIGHTED) continue;
+                const cx = (col0 + col + 0.5) * size,
+                    dx = cx - unit.x,
+                    distance2 = dx * dx + dy * dy;
+                // Rows and columns run in index order, so a strict comparison keeps the lower index of a tie.
+                if (
+                    (best < 0 ? distance2 > bestDistance2 : distance2 >= bestDistance2) ||
+                    !terrain.polygonSegmentClear(unit.x, unit.y, cx, cy, 0)
+                )
+                    continue;
+                best = index;
+                bestDistance2 = distance2;
+            }
+        }
+        return best;
+    }
+    static cellX(sim, index) {
         const state = sim.blightField;
-        if (!state || unit.side === Blight.ENEMY_SIDE) return;
-        const size = RULE.cellSize,
+        return (state.col0 + (index % state.cols) + 0.5) * RULE.cellSize;
+    }
+    static cellY(sim, index) {
+        const state = sim.blightField;
+        return (state.row0 + Math.floor(index / state.cols) + 0.5) * RULE.cellSize;
+    }
+
+    // A burn of a burner's flame (UnitBreathAttack.pulse): the sector from `unit` along the unit vector (ux, uy),
+    // half-angle cosine `c` and sine `s`, `length` long; `flame.sectorTouches` is the flame's own sector test. It
+    // purifies `count` blighted cells (`blightBurn.cellsPerPulse`) of those whose middle is within half a cell of
+    // the sector and in clear terrain line: the nearest first, the lower cell index first in a tie.
+    static burn(sim, unit, flame, ux, uy, c, s, length, count) {
+        const state = sim.blightField,
+            size = RULE.cellSize,
             reach = length + size / 2,
             { col0, row0, cols, rows, cells } = state,
             fromCol = Math.max(0, Math.floor((unit.x - reach) / size) - col0),
@@ -254,18 +307,29 @@ export class BlightField {
             fromRow = Math.max(0, Math.floor((unit.y - reach) / size) - row0),
             toRow = Math.min(rows - 1, Math.floor((unit.y + reach) / size) - row0),
             terrain = sim.world.terrain.field;
-        for (let row = fromRow; row <= toRow; row++) {
-            const cy = (row0 + row + 0.5) * size;
-            for (let col = fromCol; col <= toCol; col++) {
-                const index = row * cols + col;
-                if (cells[index] !== BLIGHTED) continue;
-                const cx = (col0 + col + 0.5) * size;
-                if (
-                    flame.sectorTouches(ux, uy, c, s, length, cx - unit.x, cy - unit.y, size / 2) &&
-                    terrain.polygonSegmentClear(unit.x, unit.y, cx, cy, 0)
-                )
-                    cells[index] = PURIFIED;
+        for (let burned = 0; burned < count; burned++) {
+            let best = -1,
+                bestDistance2 = Infinity;
+            for (let row = fromRow; row <= toRow; row++) {
+                const cy = (row0 + row + 0.5) * size,
+                    dy = cy - unit.y;
+                for (let col = fromCol; col <= toCol; col++) {
+                    const index = row * cols + col;
+                    if (cells[index] !== BLIGHTED) continue;
+                    const dx = (col0 + col + 0.5) * size - unit.x,
+                        distance2 = dx * dx + dy * dy;
+                    if (
+                        distance2 >= bestDistance2 ||
+                        !flame.sectorTouches(ux, uy, c, s, length, dx, dy, size / 2) ||
+                        !terrain.polygonSegmentClear(unit.x, unit.y, unit.x + dx, cy, 0)
+                    )
+                        continue;
+                    best = index;
+                    bestDistance2 = distance2;
+                }
             }
+            if (best < 0) return;
+            cells[best] = PURIFIED;
         }
     }
 

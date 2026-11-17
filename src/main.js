@@ -1895,25 +1895,39 @@ class GLRenderer {
     }
     // A disc lying on the ground around the world ground point (wx, wz), `radius` world units: flattened by the
     // ground projection, every vertex at its own row's depth so it lies on raised ground as on the plain (a ground
-    // mark, just over the terrain surface).
+    // mark, just over the terrain surface). Nothing is allocated: the projection writes into two kept records.
     groundDisc(wx, wz, radius, c, n = 10) {
-        const sc = this.sc(),
-            r = radius * sc,
-            [x, y] = this.worldToPx(this.viewX(wx), this.viewY(wz));
+        const world = (this._groundDiscWorld ??= { x: 0, y: 0, z: 0, groundY: 0 }),
+            point = (this._groundDiscPoint ??= {});
+        world.x = wx;
+        world.z = wz;
+        world.y = this.world.terrain.surfaces.heightAt(wx, wz);
+        this.projectRenderWorldPosition(world, point);
+        const r = radius * this.sc(),
+            x = point.x,
+            y = point.y;
         if (r <= 0 || x < -r || y < -r || x > this.canvas.width + r || y > this.canvas.height + r)
             return;
         const pts = this.geometryTemplates.regularPolygon(n, 0),
             ry = BattlefieldProjection.planarY(r),
             previous = this._renderDepth,
-            depth = this.renderDepthForWorld({ z: wz }) - 0.0004,
+            depth = point.depth - 0.0004,
             // A vertex lower on the screen is nearer: its row's depth is smaller.
-            perRow = (radius / this.world.height) * GLRenderer.DEPTH_PROJECTION.viewSpan;
+            perRow = (radius / this.world.height) * GLRenderer.DEPTH_PROJECTION.viewSpan,
+            ax = x + pts[0] * r,
+            ay = y + pts[1] * ry,
+            ad = depth - pts[1] * perRow;
         this.geometryTemplateHits++;
-        for (let i = 1; i < n - 1; i++)
-            for (const k of [0, i * 2, (i + 1) * 2]) {
-                this.setRenderDepth(depth - pts[k + 1] * perRow);
-                this.v(x + pts[k] * r, y + pts[k + 1] * ry, c);
-            }
+        for (let i = 1; i < n - 1; i++) {
+            const i1 = i * 2,
+                i2 = i1 + 2;
+            this.setRenderDepth(ad);
+            this.v(ax, ay, c);
+            this.setRenderDepth(depth - pts[i1 + 1] * perRow);
+            this.v(x + pts[i1] * r, y + pts[i1 + 1] * ry, c);
+            this.setRenderDepth(depth - pts[i2 + 1] * perRow);
+            this.v(x + pts[i2] * r, y + pts[i2 + 1] * ry, c);
+        }
         this._renderDepth = previous;
     }
     line(x1, y1, x2, y2, w, c) {
