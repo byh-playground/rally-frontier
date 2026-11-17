@@ -10850,6 +10850,14 @@ class MatchLifecycle {
             UiRegistry.refs.resultText.textContent = mine
                 ? '적 메인 거점을 파괴했습니다.'
                 : '내 메인 거점이 파괴되었습니다.';
+        // A stage won on its boss (BlightBoss): the blight left the hero.
+        if (
+            mine &&
+            reason === 'base-destroyed' &&
+            ActiveViewState.snap?.blightBoss?.subduedTick != null
+        )
+            UiRegistry.refs.resultText.textContent =
+                '깜부기가 떨어져 나가 영웅이 정신을 차렸습니다.';
         if (stage?.mission?.surviveMs && reason === 'base-destroyed')
             UiRegistry.refs.resultText.textContent = mine
                 ? '제한 시간 동안 본진과 지킬 거점을 지켰습니다.'

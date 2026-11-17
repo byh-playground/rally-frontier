@@ -38,6 +38,7 @@ import {
     VisibilityPolicy,
 } from './entities.js';
 import { StateContract, StateValue } from './components.js';
+import { BlightBoss } from './blight-boss.js';
 import { BlightField } from './blight-field.js';
 import { CampaignMission } from './campaign-mission.js';
 import { Blight } from './blight.js';
@@ -359,6 +360,8 @@ class StrategySim {
         BlightField.initialize(this);
         // A blighted stage's spore clouds (SporeCloud): only in a stage that declares them.
         SporeCloud.initialize(this);
+        // A blighted stage's boss and its escorts (BlightBoss): only in a stage that declares one.
+        BlightBoss.initialize(this);
         // Loading: every radius bucket's chunk and portal structure, before the first tick asks for a field.
         this.navigation.prepare();
     }
@@ -1760,7 +1763,8 @@ class StrategySim {
             target.alive !== false &&
             target.side !== attackerSide &&
             !UnitFlight.airborne(target) &&
-            !SporeSac.bound(target)
+            !SporeSac.bound(target) &&
+            !BlightBoss.subdued(target)
         );
     }
     targetLevel(target) {
@@ -1775,6 +1779,8 @@ class StrategySim {
         if (!target || target.alive === false || target.side === attackerSide) return false;
         // A spore sac's captive is nobody's target (SporeSac); a building has no such cell.
         if (target.sporeSac !== undefined) return false;
+        // Nor is a subdued boss (BlightBoss).
+        if (BlightBoss.subdued(target)) return false;
         if (this._perfCollect) this._perfCollect.visibilityChecks++;
         return sources.visibleAt(target.x, target.y, this.targetLevel(target));
     }
@@ -2209,6 +2215,8 @@ class StrategySim {
 
         if (target.hp <= 0) {
             if (isBuilding) return this.destroyBuilding(target, sourceSide, sourceType);
+            // The blight's boss is not killed: at 0 health it is subdued (BlightBoss).
+            if (BlightBoss.subdue(this, target)) return null;
             this.emitUnitDeath(
                 target,
                 sourceSide,
@@ -2353,7 +2361,8 @@ class StrategySim {
             !!e?.alive &&
             (attackerSide === 0 || attackerSide === 1) &&
             e.side === 1 - attackerSide &&
-            !SporeSac.bound(e)
+            !SporeSac.bound(e) &&
+            !BlightBoss.subdued(e)
         );
     }
     combatTargetInAttackRange(u, found, attackRange = null) {
@@ -3125,8 +3134,9 @@ class StrategySim {
         this.updateBuildingCombat(vision);
         const pendingContactAttacks = [];
         for (const u of this.units) {
-            // A spore sac's captive takes no turn: it stands where it is bound (SporeSac).
-            if (!u.alive || SporeSac.bound(u)) continue;
+            // A spore sac's captive takes no turn: it stands where it is bound (SporeSac). Nor does a subdued boss
+            // (BlightBoss).
+            if (!u.alive || SporeSac.bound(u) || BlightBoss.subdued(u)) continue;
             winner = this.updateCombat(u, vision, pendingContactAttacks) || winner;
         }
         const combatMs = profile ? now() - mark : 0;
@@ -3154,6 +3164,8 @@ class StrategySim {
                 const hero = heroes[type];
                 if (hero?.unitId == null) continue;
                 const unit = this.liveEntityRefById(hero.unitId, 'unit')?.entity;
+                // A subdued boss uses no ability (BlightBoss).
+                if (unit && BlightBoss.subdued(unit)) continue;
                 // The level-5 automatic strike checks its trigger and starts before the roll and shots advance.
                 if (unit?.heroUltimate) HeroUltimate.update(this, unit, hero);
                 if (unit?.heroRoll) HeroRollAttack.advance(this, unit);
@@ -3166,6 +3178,8 @@ class StrategySim {
         LaunchImpact.deploy(this);
         this.resolveConstructionHits();
         HeroDeployment.settle(this);
+        // A boss whose landing failed is fired again (BlightBoss).
+        BlightBoss.settle(this);
         const projectileMs = profile ? now() - mark : 0;
 
         mark = profile ? now() : 0;
@@ -3180,7 +3194,11 @@ class StrategySim {
             this.updateVolleyPractice();
             winner = this.campaignVolleyPractice.complete ? 'host' : null;
         }
-        if (!this.netcodeMatchResult) winner = CampaignMission.resolve(this, winner);
+        if (!this.netcodeMatchResult) {
+            winner = CampaignMission.resolve(this, winner);
+            // A subdued boss wins the stage unless the player's main base fell (BlightBoss).
+            winner = BlightBoss.resolve(this, winner);
+        }
         this.updateBalanceTelemetry(winner);
         this.cleanupDeadEntities();
         const postMs = profile ? now() - mark : 0;
@@ -3355,6 +3373,7 @@ class StrategySim {
                 campaignMission: CampaignMission.snapshot(this.campaignMission),
                 blightField: BlightField.view(this),
                 sporeCloud: SporeCloud.view(this),
+                blightBoss: BlightBoss.view(this),
                 heroes: StateValue.copy(this.heroes),
                 heroRecovery: StateValue.copy(this.heroRecovery),
                 heroGrowth: StateValue.copy(this.heroGrowth),

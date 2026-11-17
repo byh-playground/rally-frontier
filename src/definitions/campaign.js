@@ -78,6 +78,15 @@ const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 // so. A formation is a wave's (`spacing` too) without `side` and `hold`, and never a hero. The match start rejects
 // a declaration on a stage without `blight: true`, an `atMs` or `everyMs` shorter than `warnMs`, and a place
 // outside the map. No stage declares one yet.
+// A blighted stage may declare its boss (sim/blight-boss.js), a hero the blight rules, and the escorts beside it:
+//     boss: { type: 'watermelon', level: 5, x: 1400, y: 2500,
+//             escorts: [{ type: 'rice', x: 1400, y: 2380, count: 12, columns: 4 }] },
+// At the start the enemy main base fires the hero at (x, y) on the ordinary hero sortie, at the kills of `level`
+// (5: 70 kills, so it awakens at 100, 30 more). The escorts (wave formations without `side`, never a hero) stand
+// from the first tick. The boss does not die: at 0 health the blight leaves it and the stage is won; the player's
+// main base falling still loses it, on that same tick too. `type` must be a hero card of `enemyDeck`. A stage that
+// rewards the hero it frees (`rewardCard`) names the same card. The match start rejects a boss on a stage without
+// `blight: true`, a soldier card or a card the enemy deck lacks, and a place outside the map. No stage declares one yet.
 export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'first',

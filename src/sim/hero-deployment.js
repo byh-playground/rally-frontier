@@ -228,12 +228,18 @@ export class HeroDeployment {
 
     // The hero body leaves the field (fallen or recovered): its attacks stop and it holds no growth record.
     static endSortie(unit) {
+        this.stopAbilities(unit);
+        unit.heroGrowth = null;
+    }
+
+    // Every hero ability the body has running stops (its roll, shots, passive, automatic strike, ally aura); the
+    // growth record stays with it (a subdued boss, BlightBoss).
+    static stopAbilities(unit) {
         if (unit.fruitAttack) FruitHeroAttack.endSortie(unit);
         HeroRollAttack.cancel(unit);
         HeroPassive.endSortie(unit);
         HeroUltimate.endSortie(unit);
         HeroAllyAura.endSortie(unit);
-        unit.heroGrowth = null;
     }
 
     static returnSites(sim, unit) {

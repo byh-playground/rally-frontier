@@ -17,6 +17,7 @@ import { HashUtil } from './sim/map-generation.js';
 import { HERO_LEVEL_KILLS, RESOURCE_SCALE } from './units/baseline.js';
 import { BotController } from './ai/bot-controller.js';
 import { Blight } from './sim/blight.js';
+import { BlightBoss } from './sim/blight-boss.js';
 import { BlightField } from './sim/blight-field.js';
 import { SporeCloud } from './sim/spore-cloud.js';
 import { SporeSac } from './sim/spore-sac.js';
@@ -93,8 +94,8 @@ function flag(scene, name, text) {
 // A match on one of the PvP maps (game-rules.js presets), with both sides' decks at the starter deck, or both at
 // `deck` (comma-separated cards, LaunchRules.normalizeDeck checks it). `upgrades` and `blight` (see stagedMatch) turn
 // on the host side's campaign upgrades and the guest side's blight; `sporeSacs` is the stage's spore sac declaration,
-// `fields` its blight fields and braziers (blightFieldDeclaration) and `sporeClouds` its spore clouds
-// (sporeCloudDeclaration).
+// `fields` its blight fields and braziers (blightFieldDeclaration), `sporeClouds` its spore clouds
+// (sporeCloudDeclaration) and `boss` its boss (bossDeclaration): the guest deck then carries the boss as its hero.
 function createMatchSim(
     scene,
     map,
@@ -105,16 +106,116 @@ function createMatchSim(
     sporeSacs = undefined,
     fields = undefined,
     sporeClouds = undefined,
+    boss = undefined,
 ) {
     const rules = GameRuleRuntime.resolveMatchRules({ presetId: map }),
-        cards = deck === undefined ? LaunchRules.starterDeck : String(deck).split(',');
-    return stagedMatch(scene, integer(scene, 'seed', seed), rules, map, [cards, cards], {
+        cards = deck === undefined ? LaunchRules.starterDeck : String(deck).split(','),
+        guest =
+            boss === undefined
+                ? cards
+                : [boss.type, ...cards.filter((type) => !LaunchRules.isHeroType(type))].slice(
+                      0,
+                      LaunchRules.deckLimit,
+                  );
+    return stagedMatch(scene, integer(scene, 'seed', seed), rules, map, [cards, guest], {
         upgrades,
         blight,
         sporeSacs,
         fields,
         sporeClouds,
+        boss,
     });
+}
+
+// `boss=<hero>&bossX&bossY` (the `unit` scene, with `blight=1`): the stage's boss (BlightBoss) at level `bossLevel`
+// (default 5), fired from the enemy main base at (bossX, bossY) at the start, with `escort=<type>&escortCount=N`
+// escorts standing 120 toward the enemy base from it (none without `escort`). Returns that declaration, or undefined
+// without `boss`.
+function bossDeclaration(scene, params) {
+    if (params.boss === undefined) return undefined;
+    const type = unitType(scene, 'boss', params.boss);
+    if (!LaunchRules.isHeroType(type)) throw new Error(`${scene} needs a hero for boss: ${type}`);
+    const x = integer(scene, 'bossX', params.bossX),
+        y = integer(scene, 'bossY', params.bossY);
+    return {
+        type,
+        level: params.bossLevel === undefined ? 5 : integer(scene, 'bossLevel', params.bossLevel),
+        x,
+        y,
+        ...(params.escort !== undefined && {
+            escorts: [
+                {
+                    type: unitType(scene, 'escort', params.escort),
+                    x,
+                    y: y - 120,
+                    count: integer(scene, 'escortCount', params.escortCount),
+                },
+            ],
+        }),
+    };
+}
+
+// The scene's boss (every scene with one, `boss`): its level, kills, kills left to its awakening, health and
+// attack now, the tick it landed and its landing strike's hits, its automatic strikes ([tick, kind] each), its
+// level-ups ([tick, level, kills]), the tick it was subdued, whether it is still alive (a subdued boss is), whether
+// it is still blighted and the tick the blight left it, and the outcome: the first tick the match had a winner, the
+// winner and why (`boss-subdued`, or `base-destroyed` for either main base).
+function createBossProbe() {
+    let landedTick = null,
+        strikeHits = null,
+        freedTick = null,
+        outcome = null,
+        seenTick = -1;
+    const ultimates = [],
+        levelUps = [];
+    return {
+        observe(sim) {
+            if (!sim.blightBoss || seenTick === sim.tick) return;
+            seenTick = sim.tick;
+            const type = sim.rules.campaign.boss.type;
+            for (const event of sim.events) {
+                if (event.side !== 1) continue;
+                if (event.type === 'launchLand' && event.unit === type) landedTick ??= sim.tick;
+                else if (event.type === 'heroLandingStrike' && event.unit === type)
+                    strikeHits ??= event.hits;
+                else if (event.type === 'heroUltimate' && event.unit === type)
+                    ultimates.push([sim.tick, event.kind]);
+                else if (event.type === 'heroLevelUp' && event.heroType === type)
+                    levelUps.push([sim.tick, event.level, event.kills]);
+                else if (event.type === 'blightFreed' && event.unitType === type)
+                    freedTick ??= sim.tick;
+            }
+            if (outcome) return;
+            const winner = BlightBoss.resolve(sim, sim.baseOutcome());
+            if (winner)
+                outcome = {
+                    tick: sim.tick,
+                    winner,
+                    reason:
+                        winner === 'host' && sim.blightBoss.subduedTick !== null
+                            ? 'boss-subdued'
+                            : 'base-destroyed',
+                };
+        },
+        state(sim) {
+            const unit = BlightBoss.unit(sim);
+            return {
+                ...BlightBoss.view(sim),
+                atk: unit ? HeroGrowth.atk(unit) : null,
+                x: unit ? round(unit.x) : null,
+                y: unit ? round(unit.y) : null,
+                target: unit ? unit.target : null,
+                alive: unit ? unit.alive : null,
+                blighted: unit ? Blight.is(unit) : null,
+                landedTick,
+                strikeHits,
+                ultimates,
+                levelUps,
+                freedTick,
+                outcome,
+            };
+        },
+    };
 }
 
 // `cloud=<x>,<y>` (the `unit` and `launch` scenes, with `blight=1`): one spore cloud that brings `cloudCount`
@@ -456,7 +557,7 @@ function stagedMatch(
     rules,
     map,
     decks,
-    { upgrades, blight, sporeSacs, fields, sporeClouds },
+    { upgrades, blight, sporeSacs, fields, sporeClouds, boss },
 ) {
     const blighted = flag(scene, 'blight', blight);
     if (
@@ -464,7 +565,8 @@ function stagedMatch(
         !blighted &&
         sporeSacs === undefined &&
         fields === undefined &&
-        sporeClouds === undefined
+        sporeClouds === undefined &&
+        boss === undefined
     )
         return new StrategySim(seed, rules, decks);
     rules.campaign = {
@@ -477,6 +579,7 @@ function stagedMatch(
         ...(sporeSacs && { sporeSacs }),
         ...fields,
         ...(sporeClouds && { sporeClouds }),
+        ...(boss && { boss }),
     };
     return new StrategySim(seed, rules, decks, [
         upgrades === undefined ? [] : String(upgrades).split(','),
@@ -2462,6 +2565,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
         const blight = createBlightProbe(),
             field = createBlightFieldProbe(),
             cloud = createSporeCloudProbe(),
+            boss = createBossProbe(),
             freeAtMs =
                 params.freeAtMs === undefined ? null : integer(name, 'freeAtMs', params.freeAtMs);
         let failure = null;
@@ -2479,6 +2583,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     blight.observe(run.sim);
                     field.observe(run.sim);
                     cloud.observe(run.sim);
+                    boss.observe(run.sim);
                     log.record(run.sim);
                 },
                 (error) => {
@@ -2515,6 +2620,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 blight: blight.state(run.sim),
                 ...(run.sim.blightField ? { blightField: field.state(run.sim) } : {}),
                 ...(run.sim.sporeCloud ? { sporeCloud: cloud.state(run.sim) } : {}),
+                ...(run.sim.blightBoss ? { boss: boss.state(run.sim) } : {}),
                 ...extra(run.sim),
                 ...log.state(times),
                 overlap: overlap(run.sim),
@@ -3046,6 +3152,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 sporeSacDeclaration(scene, params),
                 blightFieldDeclaration(scene, params),
                 sporeCloudDeclaration(scene, params),
+                bossDeclaration(scene, params),
             );
             if (flag(scene, 'outposts', params.outposts)) completeOutposts(sim);
             const sac = createSporeSacProbe(scene, sim);
