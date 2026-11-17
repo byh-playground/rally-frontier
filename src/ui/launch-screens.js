@@ -1,5 +1,6 @@
 import { ResourceDisplay } from './resource-display.js';
 import { CAMPAIGN_GROUPS, CAMPAIGN_STAGES, CAMPAIGN_TIERS } from '../definitions/campaign.js';
+import { CAMPAIGN_DIFFICULTIES } from '../definitions/campaign-pace.js';
 import { CampaignPresentation } from './campaign-presentation.js';
 import { unitCardStats } from './unit-card-stats.js';
 import './grain-portrait.js';
@@ -197,6 +198,7 @@ export class LaunchScreens {
             this.campaignOpen = this.initialCampaignOpen();
             this.renderCampaignList();
             $('campaignSunshine').textContent = `☀ ${A.sunshine()}`;
+            this.renderCampaignDifficulty();
             campaignDialog.showModal();
         };
         $('campaignCloseBtn').onclick = () => campaignDialog.close();
@@ -264,6 +266,28 @@ export class LaunchScreens {
         const opened = CAMPAIGN_TIERS.filter((tier) => progress.isTierOpen(tier.id));
         return { tier: opened.at(-1)?.id ?? null, group: null };
     }
+    // The difficulty toggle above the list: one of three, remembered in the roster save.
+    static renderCampaignDifficulty() {
+        const picked = this.actions.difficulty();
+        this.$('campaignDifficulty').replaceChildren(
+            ...CAMPAIGN_DIFFICULTIES.map(({ id, title }) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'campaign-difficulty-option';
+                button.textContent = title;
+                button.dataset.difficulty = id;
+                button.setAttribute('aria-pressed', String(id === picked));
+                button.onclick = async () => {
+                    if (id !== this.actions.difficulty()) await this.actions.setDifficulty(id);
+                    this.renderCampaignDifficulty();
+                    this.$('campaignDifficulty')
+                        .querySelector(`[data-difficulty="${id}"]`)
+                        ?.focus();
+                };
+                return button;
+            }),
+        );
+    }
     static renderCampaignList(focusKey) {
         const list = this.$('campaignStages');
         list.replaceChildren(...CAMPAIGN_TIERS.map((tier) => this.campaignTierSection(tier)));
@@ -318,7 +342,7 @@ export class LaunchScreens {
         return section;
     }
     // One list row. `expanded` is undefined for leaves; folding rows show an arrow and report aria-expanded.
-    static campaignRow({ depth, key, title, expanded, art, mark, meta }) {
+    static campaignRow({ depth, key, title, expanded, art, mark, meta, hardMark = false }) {
         const row = document.createElement('button');
         row.type = 'button';
         row.className = 'campaign-row';
@@ -356,6 +380,14 @@ export class LaunchScreens {
             note.textContent = meta;
             row.append(note);
         }
+        // The small mark of a stage cleared on hard.
+        if (hardMark) {
+            const star = document.createElement('span');
+            star.className = 'campaign-row-hard';
+            star.setAttribute('aria-hidden', 'true');
+            star.textContent = '★';
+            row.append(star);
+        }
         return row;
     }
     static campaignStageRow(stage, depth) {
@@ -363,6 +395,7 @@ export class LaunchScreens {
         const locked = !progress.canStart(stage);
         const done = progress.isComplete(stage);
         const reward = stage.rewardCard ? `보상 ${this.actions.grainName(stage.rewardCard)}` : '';
+        const hard = done && this.actions.isHardCleared(stage.id);
         const row = this.campaignRow({
             depth,
             key: `stage-${stage.id}`,
@@ -371,6 +404,7 @@ export class LaunchScreens {
             art: stage.nodeMark ? null : (stage.rewardCard ?? stage.deck[0]),
             mark: stage.nodeMark,
             meta: done ? '완료' : reward,
+            hardMark: hard,
         });
         row.classList.add('is-stage');
         if (locked) row.classList.add('is-locked');
@@ -381,7 +415,7 @@ export class LaunchScreens {
         row.disabled = locked;
         row.setAttribute(
             'aria-label',
-            `${stage.title}, ${locked ? '잠김' : done ? '완료' : '도전 가능'}`,
+            `${stage.title}, ${locked ? '잠김' : done ? (hard ? '어려움으로 완료' : '완료') : '도전 가능'}`,
         );
         row.onclick = () => this.showCampaignBriefing(stage);
         return row;

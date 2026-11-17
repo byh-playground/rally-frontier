@@ -182,6 +182,8 @@ class BotController {
         this.side = ConnectionSideUtil.roleSide(this.role);
         this.enabled = true;
         this.lastLaunchTick = -99999;
+        // The decision interval in ticks at the last decision check (read by the debug scenes).
+        this.decisionIntervalTicks = null;
     }
 
     stop() {
@@ -196,23 +198,27 @@ class BotController {
             return;
         }
         const tps = snapshot.tps || SIM_TPS;
-        const pacing = this.side === 1 ? this.session.sim?.rules?.campaign?.enemyPacing : null;
+        const campaign = this.side === 1 ? this.session.sim?.rules?.campaign : null;
+        const pacing = campaign?.enemyPacing;
         if (pacing?.disabled) return;
         if (pacing && snapshot.tick < SimulationTiming.time(tps).ceilTicks(pacing.firstDecisionMs))
             return;
 
         const state = this.commandExecutor.begin(snapshot);
         try {
+            // A campaign enemy keeps its stage's interval whatever its wallet holds, so the difficulty means something.
             const intervalMs = BotController.decisionIntervalMs(
                 pacing,
                 state.tick,
                 tps,
-                state.wallet[this.side] >= LaunchRules.walletCap,
+                !campaign && state.wallet[this.side] >= LaunchRules.walletCap,
+                campaign?.pace?.decisionScale,
             );
-            if (
-                state.tick - this.lastLaunchTick >=
-                SimulationTiming.time(tps).ceilTicks(intervalMs)
-            ) {
+            this.decisionIntervalTicks = Math.max(
+                1,
+                SimulationTiming.time(tps).ceilTicks(intervalMs),
+            );
+            if (state.tick - this.lastLaunchTick >= this.decisionIntervalTicks) {
                 this.lastLaunchTick = state.tick;
                 this.runLaunch(state);
             }
@@ -221,8 +227,12 @@ class BotController {
         }
     }
     // 모든 AI 공통 결정 간격. 캠페인 적은 첫 결정 뒤 이 값에서 시작해 `endIntervalMs`까지 `rampMs`에 걸쳐 선형으로 길어진다.
-    // 지갑이 가득 차면(수입이 버려지는 상태) 어떤 설정이든 기본 간격으로 결정한다.
-    static decisionIntervalMs(pacing, tick, tps, walletFull) {
+    // 지갑이 가득 차면(수입이 버려지는 상태) 어떤 설정이든 기본 간격으로 결정한다(캠페인 적은 제외: 호출하는 쪽이 `walletFull`을 false로 준다).
+    // `scale` is the campaign pace's decision multiplier (definitions/campaign-pace.js); absent means x1.
+    static decisionIntervalMs(pacing, tick, tps, walletFull, scale = 1) {
+        return Math.round(BotController.baseIntervalMs(pacing, tick, tps, walletFull) * scale);
+    }
+    static baseIntervalMs(pacing, tick, tps, walletFull) {
         // A defence stage's enemy launches at one steady interval between its scripted attacks, full wallet or not:
         // the scripted waves carry the pressure, so a full wallet must not turn the AI into a second rush.
         if (pacing?.intervalMs) return pacing.intervalMs;

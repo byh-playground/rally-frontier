@@ -1,3 +1,4 @@
+import { isDifficulty } from '../definitions/campaign-pace.js';
 import { newRosterRecord } from '../definitions/roster.js';
 
 // Player records on this device, kept through the GameKit save module. Only this file picks the storage:
@@ -55,7 +56,8 @@ function validateRoster(data) {
         !Number.isInteger(progress.sunshine) ||
         progress.sunshine < 0 ||
         !isStringList(progress.upgrades) ||
-        !isStringList(progress.regionOrder)
+        !isStringList(progress.regionOrder) ||
+        !isDifficulty(progress.difficulty)
     )
         throw new TypeError('roster record');
 }

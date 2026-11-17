@@ -274,6 +274,9 @@ class StrategySim {
         }));
         const campaign = this.rules.campaign;
         this.launchRangeLevel = [campaign?.startingLaunchRangeLevel ?? 0, 0];
+        // The campaign enemy's starting resources follow the match's pace (definitions/campaign-pace.js).
+        if (campaign?.pace)
+            this.wallet[1] = Math.round(this.wallet[1] * campaign.pace.resourceScale);
         this.launchDeployments = [];
         this.campaignVolleyPractice = campaign?.volleyGoals
             ? {

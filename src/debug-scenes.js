@@ -11,6 +11,7 @@ import { BuildingDefinition } from './definitions/buildings.js';
 import { FP } from './core/config.js';
 import { GameRuleRuntime } from './core/game-rules.js';
 import { campaignStage } from './definitions/campaign.js';
+import { NEUTRAL_PACE, campaignPace, stageRules } from './definitions/campaign-pace.js';
 import { HeroGrowth } from './sim/hero-growth.js';
 import { LaunchRules } from './sim/launch-rules.js';
 import { HashUtil } from './sim/map-generation.js';
@@ -812,6 +813,7 @@ function attachBots(sim, roles = ['host', 'guest']) {
         for (const bot of bots) bot.handleSnapshot(snapshot);
     };
     decide.fired = fired;
+    decide.roles = Object.fromEntries(roles.map((role, i) => [role, bots[i]]));
     return decide;
 }
 
@@ -3615,6 +3617,9 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * 수, `points`는 점령 지점별 소유(0 플레이어, 1 적), `mission`은 캠페인 임무 상태다. 승패가 난 뒤에도 틱은
          * 계속 돈다. 예: `?debug=1&scene=campaign&stage=potato-uproot&tick=600`
          * `upgrades=rice,pea`는 플레이어 편에 그 카드의 병종 강화를 켠다(경기 시작 때 한 번 복사되는 값).
+         * `difficulty=easy|normal|hard`(없으면 normal)와 `regionPlace=1|2|3`(그 고장이 몇 번째로 열렸는지, 없으면 고장 없음)은
+         * 적 세기(`campaignPace`)를 정한다. 상태의 `pace`: 적용된 배율 `applied`, 적 AI의 결정 간격 틱 `decisionTicks`(마지막으로
+         * 정한 값), 경기 시작 때 양쪽 지갑 `startWallet`. 예: `?debug=1&scene=campaign&stage=potato-uproot&difficulty=hard&regionPlace=3&tick=100`
          */
         campaign(params) {
             const stage = campaignStage(params.stage);
@@ -3622,9 +3627,16 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             if (params.player !== undefined && params.player !== 'bot')
                 throw new Error(`campaign takes player=bot or nothing: ${params.player}`);
             const rules = GameRuleRuntime.resolveMatchRules({ presetId: stage.map ?? 'standard' });
-            rules.campaign = flag('campaign', 'blight', params.blight)
-                ? { ...stage, blight: true }
-                : stage;
+            const difficulty = params.difficulty ?? 'normal',
+                place =
+                    params.regionPlace === undefined
+                        ? 0
+                        : integer('campaign', 'regionPlace', params.regionPlace);
+            const pace = campaignPace(difficulty, place);
+            rules.campaign = stageRules(
+                flag('campaign', 'blight', params.blight) ? { ...stage, blight: true } : stage,
+                pace,
+            );
             const upgrades = params.upgrades === undefined ? [] : params.upgrades.split(',');
             const sim = new StrategySim(
                 stage.seed,
@@ -3632,6 +3644,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 [stage.deck, stage.enemyDeck],
                 [upgrades, []],
             );
+            const startWallet = sim.wallet.slice();
             const bots = attachBots(sim, params.player === 'bot' ? ['host', 'guest'] : ['guest']),
                 ammo = createAmmoProbe(sim);
             let result = null;
@@ -3651,6 +3664,13 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 extra: () => ({
                     stage: stage.id,
                     map: sim.mapDescriptor.topology,
+                    pace: {
+                        difficulty,
+                        regionPlace: place,
+                        applied: sim.rules.campaign.pace ?? NEUTRAL_PACE,
+                        decisionTicks: bots.roles.guest?.decisionIntervalTicks ?? null,
+                        startWallet,
+                    },
                     result,
                     fired: bots.fired,
                     ammo: ammo.state(),

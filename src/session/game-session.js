@@ -1,4 +1,5 @@
 import { campaignStage } from '../definitions/campaign.js';
+import { stageRules } from '../definitions/campaign-pace.js';
 // Command lockstep session around the simulation.
 import { GameRuleRuntime, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { StrategySim } from '../sim/strategy-sim.js';
@@ -629,7 +630,7 @@ class GameSession {
         if (this.matchConfig.campaignStage) {
             const stage = campaignStage(this.matchConfig.campaignStage);
             if (!stage) throw new Error('알 수 없는 캠페인 스테이지입니다.');
-            this.roundRules.campaign = stage;
+            this.roundRules.campaign = stageRules(stage, this.matchConfig.campaignPace);
         }
         this.runtimeSeq = 0;
         this.sim = null;
@@ -1097,8 +1098,11 @@ class GameSession {
             if (!matchesDeckSelection(this.deckSelection, decks[1])) return;
             this.matchDecks = decks;
             if (m.matchConfig) this.applyMatchConfig(m.matchConfig, { authoritative: true });
-            if (m.roundRules && typeof m.roundRules === 'object')
+            if (m.roundRules && typeof m.roundRules === 'object') {
+                // Only a campaign stage match carries campaign rules (and its pace); any other start is refused.
+                if (m.roundRules.campaign && !this.matchConfig.campaignStage) return;
                 this.roundRules = StateValue.copy(m.roundRules);
+            }
             this.netcodeMode = netcodeMode(m.netcodeMode);
             if (typeof m.matchId === 'string' && /^[\w-]{1,64}$/.test(m.matchId))
                 this.metricsMatchId = m.matchId;

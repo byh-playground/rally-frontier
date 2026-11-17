@@ -10344,6 +10344,8 @@ class MatchLifecycle {
             campaignStage: stage?.id ?? null,
             // The player is the host side; the match copies the list now, later saves do not reach it.
             campaignUpgrades: stage ? [roster.openUpgrades, []] : null,
+            // How hard the stage's enemy plays (difficulty and region order), copied now like the upgrades.
+            campaignPace: stage ? roster.paceFor(stage) : null,
         };
     }
     static createSession(role, transport, roomCode, config, deck, deckOptions) {
@@ -12926,6 +12928,9 @@ async function startTitleApp() {
         actions: {
             campaignProgress,
             sunshine: () => roster.sunshine,
+            difficulty: () => roster.difficulty,
+            setDifficulty: (id) => roster.setDifficulty(id),
+            isHardCleared: (stageId) => roster.isHardCleared(stageId),
             startCampaignStage: (stage) => {
                 leaveSetup();
                 MatchLifecycle.startCampaignStage(stage);
