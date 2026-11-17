@@ -276,8 +276,7 @@ export class LaunchScreens {
                 button.className = 'campaign-difficulty-option';
                 button.textContent = title;
                 button.dataset.difficulty = id;
-                button.setAttribute('role', 'radio');
-                button.setAttribute('aria-checked', String(id === picked));
+                button.setAttribute('aria-pressed', String(id === picked));
                 button.onclick = async () => {
                     if (id !== this.actions.difficulty()) await this.actions.setDifficulty(id);
                     this.renderCampaignDifficulty();

@@ -37,6 +37,17 @@ export function campaignPace(difficultyId, place = 0) {
     };
 }
 
+// A defence wave's enemy formations with their head counts scaled by the pace's resource multiplier (rounded, at
+// least 1). Neutral pace returns the formations untouched; a formation of the player's side is never scaled.
+export function scaleFormations(formations, pace) {
+    if (isNeutralPace(pace)) return formations;
+    return formations.map((formation) =>
+        (formation.side ?? 1) === 1
+            ? { ...formation, count: Math.max(1, Math.round(formation.count * pace.resourceScale)) }
+            : formation,
+    );
+}
+
 // The pace the sim reads. Absent from a stage's rules = x1·x1, so a normal difficulty on a 1st-step stage runs exactly
 // as a match without this module did; any other pace is part of the match's rules (snapshot, replay, match identity).
 export function isNeutralPace(pace) {

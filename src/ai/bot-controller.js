@@ -214,7 +214,10 @@ class BotController {
                 !campaign && state.wallet[this.side] >= LaunchRules.walletCap,
                 campaign?.pace?.decisionScale,
             );
-            this.decisionIntervalTicks = SimulationTiming.time(tps).ceilTicks(intervalMs);
+            this.decisionIntervalTicks = Math.max(
+                1,
+                SimulationTiming.time(tps).ceilTicks(intervalMs),
+            );
             if (state.tick - this.lastLaunchTick >= this.decisionIntervalTicks) {
                 this.lastLaunchTick = state.tick;
                 this.runLaunch(state);

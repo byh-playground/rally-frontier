@@ -1098,8 +1098,11 @@ class GameSession {
             if (!matchesDeckSelection(this.deckSelection, decks[1])) return;
             this.matchDecks = decks;
             if (m.matchConfig) this.applyMatchConfig(m.matchConfig, { authoritative: true });
-            if (m.roundRules && typeof m.roundRules === 'object')
+            if (m.roundRules && typeof m.roundRules === 'object') {
+                // Only a campaign stage match carries campaign rules (and its pace); any other start is refused.
+                if (m.roundRules.campaign && !this.matchConfig.campaignStage) return;
                 this.roundRules = StateValue.copy(m.roundRules);
+            }
             this.netcodeMode = netcodeMode(m.netcodeMode);
             if (typeof m.matchId === 'string' && /^[\w-]{1,64}$/.test(m.matchId))
                 this.metricsMatchId = m.matchId;

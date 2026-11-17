@@ -54,7 +54,11 @@ export class Roster {
 
     // How hard the stage's enemy plays now: what a campaign match copies at its start (matchConfig.campaignPace).
     paceFor(stage) {
-        return campaignPace(this.difficulty, stage.region ? this.regionPlace(stage.region) : 0);
+        if (!stage.region) return campaignPace(this.difficulty, 0);
+        // A region not opened yet takes the next place; an opened one keeps its saved place.
+        const place =
+            this.regionPlace(stage.region) || (this.campaign?.regionOrder.length ?? 0) + 1;
+        return campaignPace(this.difficulty, place);
     }
 
     // Remembers the difficulty. Resolves false when the save failed.

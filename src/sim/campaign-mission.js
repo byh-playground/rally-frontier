@@ -1,3 +1,4 @@
+import { scaleFormations } from '../definitions/campaign-pace.js';
 const HERO_LESSON_STEPS = ['launch', 'fight', 'recover', 'redeploy', 'done'];
 // The gap between the soldiers of a formation that names none.
 const FORMATION_SPACING = 34;
@@ -92,7 +93,10 @@ export class CampaignMission {
         const waves = sim.rules.campaign.mission.waves;
         while (state.nextWaveTick !== null && sim.tick >= state.nextWaveTick) {
             state.waveIndex++;
-            this.spawnFormations(sim, waves[state.waveIndex].formations);
+            this.spawnFormations(
+                sim,
+                scaleFormations(waves[state.waveIndex].formations, sim.rules.campaign.pace),
+            );
             const next = waves[state.waveIndex + 1];
             state.nextWaveTick = next ? this.waveTick(sim, next) : null;
         }
