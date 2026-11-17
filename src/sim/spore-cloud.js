@@ -45,13 +45,14 @@ export class SporeCloud {
             if (!Array.isArray(formations) || !formations.length)
                 throw new Error('포자 구름 선언에는 비어 있지 않은 formations 목록이 필요합니다.');
             for (const formation of formations) {
-                const { type, x, y, count, side } = formation ?? {};
+                const { type, x, y, count, side, hold } = formation ?? {};
                 if (
                     !UnitDefinition.get(type) ||
                     LaunchRules.isHeroType(type) ||
                     !Number.isSafeInteger(count) ||
                     count < 1 ||
-                    side !== undefined
+                    side !== undefined ||
+                    hold !== undefined
                 )
                     throw new Error(
                         `포자 구름에서 나올 수 없는 병사 선언입니다: ${type} × ${count}`,

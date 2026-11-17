@@ -179,7 +179,8 @@ export class CampaignPresentation {
                 goal: goal.key,
                 announced: new Set([goal.key]),
                 cueEnd: 0,
-                cloudWarnTick: -1,
+                cueTitle: '',
+                cueText: '',
             };
             $('campaignObjective').classList.remove('hidden');
             $('campaignObjectiveLabel').textContent = goal.label;
@@ -199,22 +200,6 @@ export class CampaignPresentation {
                 this.battle.cueEnd = tick;
             }
         }
-        // A spore cloud drifting in (SporeCloud, the snapshot's `sporeCloud.coming`) is announced once, for as
-        // long as its warning runs.
-        const coming = snapshot.sporeCloud?.coming;
-        let warned = -1,
-            arrives = 0;
-        if (coming)
-            for (const cloud of coming)
-                if (cloud.warnTick > warned) {
-                    warned = cloud.warnTick;
-                    arrives = cloud.arriveTick;
-                }
-        if (warned > this.battle.cloudWarnTick) {
-            this.battle.cloudWarnTick = warned;
-            this.showCue('포자 구름', '포자 구름이 몰려와요', tick, tps);
-            this.battle.cueEnd = Math.max(this.battle.cueEnd, arrives);
-        }
         this.battle.tick = tick;
         const timer = $('campaignObjectiveTimer');
         timer.hidden = goal.timerTick == null;
@@ -222,13 +207,25 @@ export class CampaignPresentation {
             const value = `남은 시간 ${formatCountdown((goal.timerTick - tick) / tps)}`;
             if (timer.textContent !== value) timer.textContent = value;
         }
-        $('campaignCue').classList.toggle('hidden', tick >= this.battle.cueEnd);
+        // The cue line shows the goal's cue while that runs. After it, a spore cloud drifting in (SporeCloud, the
+        // snapshot's `sporeCloud.coming`) is announced for as long as any cloud is under warning. The cloud keeps
+        // no record of its own: it never uses up a goal's cue.
+        const goalCue = tick < this.battle.cueEnd,
+            cloudCue = !goalCue && snapshot.sporeCloud?.coming.length > 0;
+        if (goalCue || cloudCue) {
+            const title = goalCue ? this.battle.cueTitle : '포자 구름',
+                text = goalCue ? this.battle.cueText : '포자 구름이 몰려와요';
+            if ($('campaignCueTitle').textContent !== title)
+                $('campaignCueTitle').textContent = title;
+            if ($('campaignCueText').textContent !== text) $('campaignCueText').textContent = text;
+        }
+        $('campaignCue').classList.toggle('hidden', !goalCue && !cloudCue);
     }
 
     static showCue(title, text, tick, tps) {
         this.battle.cueEnd = tick + Math.ceil(CUE_SECONDS * tps);
-        this.$('campaignCueTitle').textContent = title;
-        this.$('campaignCueText').textContent = text;
+        this.battle.cueTitle = title;
+        this.battle.cueText = text;
     }
 
     static clearBattle() {
