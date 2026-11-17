@@ -23,6 +23,12 @@ export const StickyRice = defineUnit({
         sight: 275,
         // One soldier at a time holds a completed enemy outpost's muzzle shut.
         stickyCling: Object.freeze({ durationMs: 1000, cooldownMs: 5000 }),
+        // 캠페인 강화: 포구에 2초 붙는다(기본 1초). 재사용 대기는 그대로 붙기가 끝난 뒤 5초다.
+        campaignUpgrade: {
+            name: '오래 붙기',
+            summary: '적 거점 포구에 2초 동안 붙어요.',
+            longCling: { durationMs: 2000 },
+        },
     },
     // 비용·인원은 확정, 포탄 성능은 땅콩의 초안을 따른다.
     payload: {

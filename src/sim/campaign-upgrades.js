@@ -32,7 +32,7 @@ const SOLDIER_START = Object.fromEntries(
 // An effect kept per soldier has `unit.campaignUpgrade = { charges }` (or `{ attacks }`, `{ taken }`, the second
 // thorn's `{ followTick, followId, followBuilding }`, `{ breathScale }`), given when the soldier is created
 // (StrategySim.spawnUnit) and only in a match where the upgrade is on. `chainCharge` adds `chaining` to a soldier the
-// first time it chains (UpgradeChainCharge).
+// first time it chains (UpgradeChainCharge). `chainLinks` adds no cell: the soldier's own `chain.ids` is created longer.
 export class CampaignUpgrades {
     static none() {
         return [[], []];

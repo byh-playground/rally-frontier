@@ -56,6 +56,17 @@
 //                the attack interval unchanged (UpgradeDoubleShot; needs thornAttack)
 //              longBreath { lengthScale }: its flame is `lengthScale` times as long, the arc unchanged
 //                (UnitBreathAttack.length; needs breathAttack)
+//              interceptFan { shots, arcDegrees }: each burst shot at an air target is `shots` seeds, the others
+//                hitting the other air targets inside the `arcDegrees` fan around the aim (UpgradeInterceptFan;
+//                needs burstAttack·canAttackAir)
+//              chainLinks { links }: its chain holds `links` enemies instead of chainAttack.links
+//                (UnitChainAttack.links; needs chainAttack)
+//              heavyShock { radiusScale }: its shell's landing shock damages within `radiusScale` times the
+//                radius, the damage and the shove unchanged (UpgradeHeavyShock; needs payload impact·splash)
+//              swiftFlight { speedScale }: it flies `speedScale` times as fast, the climb unchanged
+//                (UnitFlight.speed; needs flight)
+//              longCling { durationMs }: it holds a muzzle for `durationMs` instead of stickyCling.durationMs
+//                (StickyCling.tryBegin; needs stickyCling)
 //   payload  the cannon shell that carries the unit (LaunchRules). A hero's shell has no landing shock (impact,
 //            splash) but `landingStrike { radius, damage, knockback?, scatter? { ring, count }, retreat { motion:
 //            'roll'|'hop', distance } }`, the hero's own strike when it lands (HeroLandingStrike)
@@ -487,6 +498,59 @@ const CAMPAIGN_UPGRADE_EFFECTS = Object.freeze({
         )
             throw new Error(
                 `병종 ${id}의 longBreath는 1보다 큰 lengthScale과 breathAttack이 필요합니다.`,
+            );
+    },
+    // UpgradeInterceptFan: more seeds on a burst shot at an air target.
+    interceptFan(id, spec, unit) {
+        if (
+            Object.keys(spec).sort().join(',') !== 'arcDegrees,shots' ||
+            !(Number.isInteger(spec.shots) && spec.shots > 1) ||
+            !(spec.arcDegrees > 0 && spec.arcDegrees <= 180) ||
+            !unit.burstAttack ||
+            !unit.canAttackAir
+        )
+            throw new Error(
+                `병종 ${id}의 interceptFan은 shots(2 이상의 정수)·arcDegrees(0 초과 180 이하)와 burstAttack·canAttackAir가 필요합니다.`,
+            );
+    },
+    // UnitChainAttack: how many enemies the chain holds.
+    chainLinks(id, spec, unit) {
+        if (
+            Object.keys(spec).join(',') !== 'links' ||
+            !unit.chainAttack ||
+            !(Number.isInteger(spec.links) && spec.links > unit.chainAttack.links)
+        )
+            throw new Error(
+                `병종 ${id}의 chainLinks는 chainAttack과 그 links보다 큰 정수 links가 필요합니다.`,
+            );
+    },
+    // UpgradeHeavyShock: the shell's landing shock.
+    heavyShock(id, spec, unit, payload) {
+        if (
+            Object.keys(spec).join(',') !== 'radiusScale' ||
+            !(spec.radiusScale > 1) ||
+            !(payload.impact > 0 && payload.splash > 0)
+        )
+            throw new Error(
+                `병종 ${id}의 heavyShock은 1보다 큰 radiusScale과 포탄의 impact·splash가 필요합니다.`,
+            );
+    },
+    // UnitFlight: the flight's speed.
+    swiftFlight(id, spec, unit) {
+        if (Object.keys(spec).join(',') !== 'speedScale' || !(spec.speedScale > 1) || !unit.flight)
+            throw new Error(
+                `병종 ${id}의 swiftFlight는 1보다 큰 speedScale과 flight가 필요합니다.`,
+            );
+    },
+    // StickyCling: how long it holds a muzzle.
+    longCling(id, spec, unit) {
+        if (
+            Object.keys(spec).join(',') !== 'durationMs' ||
+            !unit.stickyCling ||
+            !(spec.durationMs > unit.stickyCling.durationMs)
+        )
+            throw new Error(
+                `병종 ${id}의 longCling은 stickyCling과 그 durationMs보다 긴 durationMs가 필요합니다.`,
             );
     },
 });

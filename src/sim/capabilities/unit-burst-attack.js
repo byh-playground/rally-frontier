@@ -6,6 +6,7 @@
 // - 보이는 적 투입탄을 우선하고 지상 표적도 공격한다. 멈춰서 한 표적에 연사한다. 쏠 발이 남은 동안만 서 있고
 //   마지막 발 뒤에는 (재장전 중이라도) 움직일 수 있다. 고정한 표적이 죽거나 보이지 않거나 사거리를 벗어나거나
 //   넘어지면 연사를 거둔다(SustainedAttack.cut: 그 틱에 끝나고 재장전을 그 틱부터 처음부터 센다).
+// - 캠페인 강화 `interceptFan`이 켜진 편은 공중 표적을 쏘는 발마다 부채꼴로 씨앗이 더 나간다(UpgradeInterceptFan).
 // - combat.burstAttack { targetId, targetKind, aimX, aimY, aimHeightFP }는 고정한 표적과 조준점이다(재장전이
 //   끝나면 지운다). 총과 두 손은 표적 방향을 공유한다. 사격 수·마지막 사격 틱은 Unit.sustain에서 읽어 총구가
 //   반동하고 탄띠가 줄어든다(SustainedAttack.tickCount·lastTick).
@@ -16,13 +17,14 @@ import { UnitDefinition } from '../../definitions/units.js';
 import { LaunchImpact } from '../launch-impact.js';
 import { LaunchInterception } from '../launch-interception.js';
 import { SustainedAttack } from './sustained-attack.js';
+import { UpgradeInterceptFan } from './upgrade-intercept-fan.js';
 
 const INACTIVE = Object.freeze({ active: false, winner: null });
 
 // A burst commits to one target. The normal combat loop chooses and prepares
 // its first shot; subsequent shots keep that target while it remains legal.
 export class UnitBurstAttack {
-    static start(sim, unit, target, targetKind, definition) {
+    static start(sim, unit, target, targetKind, definition, vision) {
         unit.combat.burstAttack = {
             targetId: target.id,
             targetKind,
@@ -31,7 +33,7 @@ export class UnitBurstAttack {
             aimHeightFP: this.aimHeightFP(sim, target, targetKind),
         };
         SustainedAttack.start(sim, unit.sustain, definition.sustain);
-        return this.shoot(sim, unit, target, definition);
+        return this.shoot(sim, unit, target, definition, vision);
     }
 
     // True (`active`) while shots remain: the unit stands and keeps its target.
@@ -51,7 +53,7 @@ export class UnitBurstAttack {
         burst.aimX = target.x;
         burst.aimY = target.y;
         burst.aimHeightFP = this.aimHeightFP(sim, target, burst.targetKind);
-        return { active: true, winner: this.shoot(sim, unit, target, definition) };
+        return { active: true, winner: this.shoot(sim, unit, target, definition, vision) };
     }
 
     static cancel(sim, unit, definition) {
@@ -96,8 +98,9 @@ export class UnitBurstAttack {
         );
     }
 
-    // One shot on this tick's damage tick, if it is one.
-    static shoot(sim, unit, target, definition) {
+    // One shot on this tick's damage tick, if it is one. A shot at an air target fans out with the campaign upgrade
+    // interceptFan (UpgradeInterceptFan).
+    static shoot(sim, unit, target, definition, vision) {
         if (!SustainedAttack.takeTick(sim, unit.sustain, definition.sustain)) return null;
         const spec = definition.burstAttack,
             burst = unit.combat.burstAttack;
@@ -119,9 +122,11 @@ export class UnitBurstAttack {
             targetKind: burst.targetKind,
         });
         let winner = null;
-        if (burst.targetKind === 'projectile')
-            LaunchInterception.hit(sim, unit, target, definition.atk * spec.airDamageMultiplier);
-        else
+        if (burst.targetKind === 'projectile') {
+            const damage = definition.atk * spec.airDamageMultiplier;
+            LaunchInterception.hit(sim, unit, target, damage);
+            UpgradeInterceptFan.fire(sim, unit, target, definition, vision, damage);
+        } else
             winner = sim.applyDamage(
                 unit.side,
                 unit.type,

@@ -23,6 +23,7 @@ import { LaunchRules } from './sim/launch-rules.js';
 import { StickyCling } from './sim/capabilities/sticky-cling.js';
 import { SustainedAttack } from './sim/capabilities/sustained-attack.js';
 import { UnitBreathAttack } from './sim/capabilities/unit-breath-attack.js';
+import { UnitChainAttack } from './sim/capabilities/unit-chain-attack.js';
 import { HeroPassive } from './sim/capabilities/hero-passive.js';
 import { UnitSpinAttack } from './sim/capabilities/unit-spin-attack.js';
 import { ForwardCannon } from './sim/capabilities/forward-cannon.js';
@@ -2832,7 +2833,8 @@ class GLRenderer {
                 this.launchFireFx(e, snapshot, index);
             } else if (e.type === 'antiAirHit') {
                 this.antiAirHitFx(e, snapshot, index);
-            } else if (e.type === 'unitBurstShot') {
+            } else if (e.type === 'unitBurstShot' || e.type === 'upgradeFanShot') {
+                // A burst's seed, and the campaign upgrade's fan seeds beside it (UpgradeInterceptFan).
                 this.addClientFx('unitBurstShot', e, snapshot, index, {
                     impactHeightFP: e.heightFP,
                     sourceHeightFP: e.fromHeightFP,
@@ -4411,7 +4413,8 @@ class GLRenderer {
     prepareChainBolt(u, entity, grain, world, renderTick, now, grounded) {
         const art = GRAIN_SPRITES[u.type].chain,
             d = UnitDefinition.get(u.type),
-            links = d.chainAttack.links,
+            // Room for the campaign upgrade's longer chain too (chainLinks).
+            links = UnitChainAttack.capacity(u.type, d.chainAttack),
             tps = this.snapshot.tps || SIM_TPS,
             tickMs = 1000 / tps,
             chain = entity.chain,

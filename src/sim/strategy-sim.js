@@ -21,6 +21,7 @@ import { UpgradeDoubleShot } from './capabilities/upgrade-double-shot.js';
 import { UpgradeEchoShock } from './capabilities/upgrade-echo-shock.js';
 import { UpgradeExtraShot } from './capabilities/upgrade-extra-shot.js';
 import { UpgradeExtraSoldiers } from './capabilities/upgrade-extra-soldiers.js';
+import { UpgradeHeavyShock } from './capabilities/upgrade-heavy-shock.js';
 import { UpgradeHeavyThorn } from './capabilities/upgrade-heavy-thorn.js';
 import { UpgradeShellShards } from './capabilities/upgrade-shell-shards.js';
 import { UpgradeHitBlock } from './capabilities/upgrade-hit-block.js';
@@ -1088,6 +1089,9 @@ class StrategySim {
         // A campaign upgrade counted per soldier (CampaignUpgrades): only in a match that has it on.
         const upgrade = CampaignUpgrades.soldierState(this, side, type);
         if (upgrade) u.campaignUpgrade = upgrade;
+        // Campaign upgrade `chainLinks`: its chain is created with more links (UnitChainAttack.links).
+        const chainLinks = d.chainAttack && CampaignUpgrades.effect(this, side, type, 'chainLinks');
+        if (chainLinks) u.chain = UnitChainAttack.initialState(chainLinks);
         this.units.push(u);
         this.ensureCollisionBuffers(this.units.length);
         const birth = this.units.length - 1;
@@ -2482,7 +2486,8 @@ class StrategySim {
             if (targetKind !== 'projectile' || u.combat.attackWindupTargetId !== shell.id)
                 u.combat.cancelWindup();
             if (this.attackReadyAfterWindup(u, shell, 'projectile', d)) {
-                if (d.burstAttack) UnitBurstAttack.start(this, u, shell, 'projectile', d);
+                if (d.burstAttack)
+                    UnitBurstAttack.start(this, u, shell, 'projectile', d, vision[u.side]);
                 else {
                     this.commitAttackTiming(u, d, this.attackCooldown(u, d));
                     LaunchInterception.hit(this, u, shell, HeroGrowth.atk(u, d));
@@ -2649,7 +2654,14 @@ class StrategySim {
         if (!this.attackReadyAfterWindup(u, t, found.isBuilding ? 'building' : 'unit', d))
             return null;
         if (d.burstAttack)
-            return UnitBurstAttack.start(this, u, t, found.isBuilding ? 'building' : 'unit', d);
+            return UnitBurstAttack.start(
+                this,
+                u,
+                t,
+                found.isBuilding ? 'building' : 'unit',
+                d,
+                vision[u.side],
+            );
         this.commitAttackTiming(u, d, cooldown);
         if (u.fruitAttack) {
             FruitHeroAttack.basic(this, u, t, found.isBuilding);
@@ -2697,9 +2709,13 @@ class StrategySim {
     }
 
     // A shell's landing shock: a shove of everyone it carries, then the area damage on soldiers and buildings.
-    // `scale` is the share of the shove and the damage a repeated shock keeps (UpgradeEchoShock).
+    // `scale` is the share of the shove and the damage a repeated shock keeps (UpgradeEchoShock). The campaign upgrade
+    // heavyShock widens the damage's radius, not the shove's (UpgradeHeavyShock); the returned `radius` is the
+    // damage's.
     landingShock(p, x, y, radius, impactHeightFP, scale = 1) {
         if (!p.mortar) LaunchImpact.blast(this, p, x, y, radius, impactHeightFP, scale);
+        const heavy = UpgradeHeavyShock.spec(this, p);
+        if (heavy) radius *= heavy.radiusScale;
         const blast = this.applyAreaDamage({
             sourceSide: p.side,
             sourceType: p.type,
@@ -2737,6 +2753,8 @@ class StrategySim {
                 },
             );
         }
+        blast.radius = radius;
+        blast.heavy = !!heavy;
         return blast;
     }
     updateProjectiles() {
@@ -2767,15 +2785,15 @@ class StrategySim {
                 const radius = p.splash,
                     blast = radius
                         ? this.landingShock(p, aimX, aimY, radius, impactHeightFP)
-                        : { hits: 0, peak: 1 };
+                        : { hits: 0, peak: 1, radius, heavy: false };
                 if (radius) UpgradeEchoShock.queue(this, p, aimX, aimY, radius, impactHeightFP);
-                this.events.push({
+                const impact = {
                     type: p.mortar ? 'mortarImpact' : 'launchImpact',
                     side: p.side,
                     unit: p.type,
                     x: aimX,
                     y: aimY,
-                    radius,
+                    radius: blast.radius,
                     hits: blast.hits,
                     peak: Math.round(blast.peak * 100) / 100,
                     projectileId: p.id,
@@ -2787,7 +2805,9 @@ class StrategySim {
                     dirY:
                         (p.lockedAimY - p.launchY) /
                         (Math.hypot(p.lockedAimX - p.launchX, p.lockedAimY - p.launchY) || 1),
-                });
+                };
+                if (blast.heavy) impact.heavy = true;
+                this.events.push(impact);
                 continue;
             }
             p.x = toX;

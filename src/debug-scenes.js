@@ -128,6 +128,12 @@ function upgradedMatch(seed, rules, map, decks, upgrades) {
 // damage (`bigPops`), the ticks the host side's forward cannons stood up, first 8
 // (`cannonTicks`), the most host soldiers on the field at once (`fielded`), second thorns thrown (`followShots`) and
 // the longest flame among the host side's living soldiers (`breathLength`, null without one).
+// The wind cards: the fan's extra seeds and the ones that hit (`fanShots`·`fanHits`), the most links a living host
+// soldier's chain can hold (`chainLinks`, null without one), the host side's landing shocks, the bodies they hit,
+// the last one's damage radius and how many had the upgrade (`shocks`·`shockHits`·`shockRadius`·`heavyShocks`), and
+// the host side's muzzle clings: how many began, each one's length in ticks (first 8) and the ticks an enemy cannon
+// was held (`clings`·`clingLengths`·`clingTicks`). `flightSpeed` is the fastest flight speed among
+// the host side's living fliers (UnitFlight.speed, null without one).
 function createUpgradeProbe(sim) {
     const counts = {
         blocked: 0,
@@ -151,8 +157,18 @@ function createUpgradeProbe(sim) {
         cannonTicks: [],
         fielded: 0,
         followShots: 0,
+        fanShots: 0,
+        fanHits: 0,
+        shocks: 0,
+        shockHits: 0,
+        shockRadius: null,
+        heavyShocks: 0,
+        clings: 0,
+        clingLengths: [],
+        clingTicks: 0,
     };
     const round = (value) => Math.round(value * 10) / 10,
+        clingEnds = new Map(),
         rollSpeed = new Map(),
         speedOf = (u) => Math.hypot(u.impactMotion?.vxFP || 0, u.impactMotion?.vyFP || 0) / FP;
     const step = sim.step.bind(sim);
@@ -164,6 +180,16 @@ function createUpgradeProbe(sim) {
             if (u.alive && u.rolling.wallTick === sim.tick && counts.wallBounces.length < 8)
                 counts.wallBounces.push([sim.tick, round(rollSpeed.get(u.id) ?? 0), round(speed)]);
             rollSpeed.set(u.id, speed);
+        }
+        for (const u of sim.units) {
+            const cling = u.side === 0 && u.alive && u.stickyCling;
+            if (!cling || cling.buildingId == null || sim.tick >= cling.endTick) continue;
+            counts.clingTicks++;
+            if (clingEnds.get(u.id) === cling.endTick) continue;
+            clingEnds.set(u.id, cling.endTick);
+            counts.clings++;
+            // The cling began in the step just run: the ticks left until endTick are its whole length.
+            if (counts.clingLengths.length < 8) counts.clingLengths.push(cling.endTick - sim.tick);
         }
         counts.fielded = Math.max(
             counts.fielded,
@@ -193,7 +219,15 @@ function createUpgradeProbe(sim) {
                 counts.shardBursts++;
                 counts.shardHits += e.hits;
             } else if (e.type === 'upgradeWallRebound') counts.wallRebounds++;
-            else if (e.type === 'upgradeHitBlock') counts.blocked++;
+            else if (e.type === 'upgradeFanShot') {
+                counts.fanShots++;
+                if (e.targetId || e.projectileId) counts.fanHits++;
+            } else if (e.type === 'launchImpact' && e.side === 0 && e.radius) {
+                counts.shocks++;
+                counts.shockHits += e.hits;
+                counts.shockRadius = e.radius;
+                if (e.heavy) counts.heavyShocks++;
+            } else if (e.type === 'upgradeHitBlock') counts.blocked++;
             else if (e.type === 'upgradeEchoShock') {
                 counts.echoShocks++;
                 counts.echoHits += e.hits;
@@ -214,6 +248,17 @@ function createUpgradeProbe(sim) {
                 const spec = u.alive && u.side === 0 && UnitDefinition.get(u.type).breathAttack;
                 return spec ? Math.max(longest ?? 0, UnitBreathAttack.length(u, spec)) : longest;
             }, null),
+            flightSpeed: sim.units.reduce((fastest, u) => {
+                const spec = u.alive && u.side === 0 && UnitDefinition.get(u.type).flight;
+                return spec ? Math.max(fastest ?? 0, UnitFlight.speed(sim, u, spec)) : fastest;
+            }, null),
+            chainLinks: sim.units.reduce(
+                (most, u) =>
+                    u.alive && u.side === 0 && u.chain
+                        ? Math.max(most ?? 0, UnitChainAttack.links(u.chain))
+                        : most,
+                null,
+            ),
             buildingDamage: Object.values(sim.unitResultStats[0]).reduce(
                 (sum, entry) => sum + entry.buildingDamage,
                 0,
@@ -2570,7 +2615,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * `upgrades=rice,millet`는 `unit` 편에 그 카드의 캠페인 병종 강화를 켜고(없으면 지금까지와 같은 경기), 상태의
          * `upgrade`가 강화가 한 일(막은 피격·남은 병사별 횟수·두 번째 충격·도약 착지 반경과 맞은 수·두 배로 들어간 첫 일격 수·
          * 굵은 가시·쏜 포탄 수·연쇄 돌진·껍질 파편·벽 반사·닿아서 터진 알·큰 자폭·전진 대포가 선 틱·한 번에 선
-         * 아군 수·이어 던진 가시·불줄기 길이, createUpgradeProbe)을 낸다.
+         * 아군 수·이어 던진 가시·불줄기 길이·부채 씨앗·번개 줄 수·착탄 충격·포구 붙기, createUpgradeProbe)을 낸다.
          */
         unit(params) {
             const scene = 'unit';

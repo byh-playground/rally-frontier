@@ -8,6 +8,12 @@ export const Dandelion = defineUnit({
         ...BASIC_MELEE,
         name: '민들레씨',
         flight: Object.freeze({ speed: 200, altitude: 120, climbSpeed: 150 }),
+        // 캠페인 강화: 나는 속도 1.5배(200 → 300). 떠오르는 속도·체력·착지 뒤 이동과 공격은 그대로다.
+        campaignUpgrade: {
+            name: '센 바람',
+            summary: '더 빨리 날아가요.',
+            swiftFlight: { speedScale: 1.5 },
+        },
     },
     payload: {
         ...SINGLE_BUNDLE_SHELL,
