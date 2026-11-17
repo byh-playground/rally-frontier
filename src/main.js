@@ -1238,6 +1238,8 @@ class GLRenderer {
         this.blightFieldArt = new BlightFieldLook();
         this.blightFieldDisc = (x, y, radius, color) => this.groundDisc(x, y, radius, color, 8);
         this.blightTimeMs = 0;
+        // A spore cloud's ground mark (drawSporeCloudGround): one colour record for every cloud.
+        this.sporeCloudColor = [0, 0, 0, 0];
         this.grainFaces = new RallyGamekit.FaceOverlay(this.vectorContext, {
             faces: GRAIN_FACE_IDS,
         }); // 메시 통계가 첫 유닛 그리기 전에도 null이 아니도록 미리 만든다.
@@ -2888,6 +2890,9 @@ class GLRenderer {
                     BlightLook.freeMs,
                 );
                 this.blightFreed.set(e.id, freed);
+            } else if (e.type === 'sporeCloudArrive') {
+                // A spore cloud's soldiers have appeared (SporeCloud): the cloud lifts off them.
+                this.addClientFx('sporeCloudLift', e, snapshot, index);
             } else if (e.type === 'death') {
                 // A unit that dies flying has no burst: it greys and fades where it stops (DeadUnitLook).
                 if (!DeadUnitLook.flying(this.renderState.entity('unit', e.id)))
@@ -4075,6 +4080,15 @@ class GLRenderer {
                 burst(fx, x, y, t, 11, '#3b2152', 74, 3.6, 0.6, fx.seed + 1);
                 burst(fx, x, y, t, 5, '#8a4a96', 58, 2.6, 0.6, fx.seed + 2);
                 ring(x, y, (14 + 60 * ease) * sc, 3 * sc, '#3b2152', 0.5 * (1 - t), 0.72);
+            } else if (fx.kind === 'sporeCloudLift') {
+                // A spore cloud lifting off the soldiers it brought (SporeCloud): its soot is blown outward and
+                // thins, and the ring that closed on the place opens again.
+                const reach = fx.radius || 60;
+                dot(x, y, reach * (0.7 + 0.5 * ease) * sc, '#1a0f22', Math.max(0, 0.42 - t * 0.9));
+                burst(fx, x, y, t, 26, '#1a0f22', reach * 2.2, 5.4, 0.6);
+                burst(fx, x, y, t, 16, '#3b2152', reach * 1.7, 4.2, 0.6, fx.seed + 1);
+                burst(fx, x, y, t, 8, '#8a4a96', reach * 1.3, 3, 0.6, fx.seed + 2);
+                ring(x, y, reach * (1 + 1.2 * ease) * sc, 3 * sc, '#8a4a96', 0.7 * (1 - t), 0.72);
             } else if (fx.kind === 'buildingBurst') {
                 burst(fx, x, y, t, 13, '#6a6259', 72, 4.8, 0.48);
                 burst(fx, x, y, t, 7, '#d2aa63', 58, 3.3, 0.52);
@@ -5990,8 +6004,9 @@ class GLRenderer {
     // just in front of its own body so a nearer body still covers it. One quad stream whatever the unit count.
     drawBlightSoot(entries) {
         const art = this.effectArt.thorn,
-            mounted = this.blightMounted;
-        if ((!this.blightShown && !mounted.length) || !art) {
+            mounted = this.blightMounted,
+            clouds = this.snapshot.sporeCloud?.coming;
+        if ((!this.blightShown && !mounted.length && !clouds?.length) || !art) {
             mounted.length = 0;
             return;
         }
@@ -6039,6 +6054,46 @@ class GLRenderer {
             );
         }
         mounted.length = 0;
+        if (clouds?.length) this.drawSporeClouds(art, clouds);
+    }
+    // The spore clouds drifting in (SporeCloud, BlightLook.drawCloud), in the soot's own quad stream: each comes
+    // down the wind to its place and thickens until its soldiers appear. Hidden where the viewer cannot see.
+    drawSporeClouds(art, clouds) {
+        const look = BLIGHT_LOOK.cloud,
+            sc = this.sc(),
+            [windX, windY] = look.wind,
+            surfaces = this.world.terrain.surfaces;
+        for (const cloud of clouds) {
+            const { x, y, radius } = cloud;
+            if (!this.visibleRaw(x, y)) continue;
+            const near = this.sporeCloudProgress(cloud, this.blightTimeMs),
+                // It slows as it comes in.
+                left = (1 - near) * (1 - near),
+                wx = x - windX * look.drift * left,
+                wy = y - windY * look.drift * left;
+            if (!this.onScreenAuth(wx, wy, radius + look.streak)) continue;
+            const height = surfaces.heightAt(x, y) + look.lift * left,
+                [cx, cy] = this.worldToPx(this.viewX(wx), this.viewY(wy), height),
+                [tx, ty] = this.worldToPx(
+                    this.viewX(wx + windX * look.streak),
+                    this.viewY(wy + windY * look.streak),
+                    height,
+                );
+            this.blightArt.drawCloud(
+                art,
+                // In front of everything standing on the ground it covers.
+                this.renderDepthForWorld({ z: y + radius }) - GRAIN_DEPTH_RANK_STEP,
+                (x * 8192 + y) * 4096 + (cloud.warnTick % 4096),
+                cx,
+                cy,
+                radius * sc,
+                BattlefieldProjection.planarY(radius) * sc,
+                tx - cx,
+                ty - cy,
+                this.blightTimeMs,
+                near,
+            );
+        }
     }
     grainBodyOpaque(grain) {
         const expression = grain.actor.currentExpression,
@@ -7190,6 +7245,7 @@ class GLRenderer {
         this.drawStrategicMap();
         // The blight field and its braziers go into this same triangle stream: no draw of their own.
         this.drawBlightField();
+        this.drawSporeCloudGround();
         this.flush();
         this.passState.depthWrite = true;
     }
@@ -7254,6 +7310,69 @@ class GLRenderer {
                     py - height * 0.6,
                     flame.inner,
                 );
+            }
+        }
+        this._renderDepth = previous;
+    }
+    // How far a spore cloud's warning has run on the display clock, 0..1 (SporeCloud, the snapshot's
+    // `sporeCloud.coming`): 0 as the warning begins, 1 as its soldiers appear.
+    sporeCloudProgress(cloud, displayMs) {
+        const tickMs = this.presentationTargetIntervalMs();
+        return RangeUtil.clamp(
+            (displayMs - cloud.warnTick * tickMs) /
+                Math.max(1, (cloud.arriveTick - cloud.warnTick) * tickMs),
+            0,
+            1,
+        );
+    }
+    // The ground a spore cloud is about to settle on, a placeholder (BLIGHT_LOOK.cloud): a darkening stain and a
+    // ring closing on it, in the ground pass's own triangle stream. Hidden where the viewer cannot see, as an
+    // enemy soldier there is.
+    drawSporeCloudGround() {
+        const coming = this.snapshot?.sporeCloud?.coming;
+        if (!coming?.length) return;
+        const look = BLIGHT_LOOK.cloud,
+            now = this.renderState.frame(this.presentationNow()).timeMs,
+            width = Math.max(1, look.ringWidth * this.sc()),
+            color = this.sporeCloudColor,
+            previous = this._renderDepth,
+            surfaces = this.world.terrain.surfaces;
+        for (const cloud of coming) {
+            const { x, y, radius } = cloud;
+            if (!this.onScreenAuth(x, y, radius * look.ringFrom) || !this.visibleRaw(x, y))
+                continue;
+            const near = this.sporeCloudProgress(cloud, now);
+            color[0] = look.stain[0];
+            color[1] = look.stain[1];
+            color[2] = look.stain[2];
+            color[3] = look.stainAlpha[0] + (look.stainAlpha[1] - look.stainAlpha[0]) * near;
+            this.groundDisc(x, y, radius, color, 20);
+            color[0] = look.ring[0];
+            color[1] = look.ring[1];
+            color[2] = look.ring[2];
+            color[3] = look.ringAlpha[0] + (look.ringAlpha[1] - look.ringAlpha[0]) * near;
+            // The ring, piece by piece at each piece's own height and depth (as a brazier's line is).
+            const reach = radius * (look.ringFrom - (look.ringFrom - 1) * near);
+            let fromX = 0,
+                fromY = 0,
+                fromDepth = 0;
+            for (let i = 0; i <= look.ringSegments; i++) {
+                const angle = (i / look.ringSegments) * Math.PI * 2,
+                    wx = x + Math.cos(angle) * reach,
+                    wz = y + Math.sin(angle) * reach,
+                    [toX, toY] = this.worldToPx(
+                        this.viewX(wx),
+                        this.viewY(wz),
+                        surfaces.heightAt(wx, wz),
+                    ),
+                    depth = this.renderDepthForWorld({ z: wz });
+                if (i) {
+                    this.setRenderDepth(Math.min(depth, fromDepth) - 0.0004);
+                    this.line(fromX, fromY, toX, toY, width, color);
+                }
+                fromX = toX;
+                fromY = toY;
+                fromDepth = depth;
             }
         }
         this._renderDepth = previous;

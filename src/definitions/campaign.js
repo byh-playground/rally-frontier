@@ -68,6 +68,16 @@ const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 // when the player's side alone holds its place (the capture point's presence rule) and then keeps every cell within
 // its `radius` purified. The match start rejects fields on a stage without `blight: true` and braziers on a stage
 // without fields. No stage declares either yet.
+// A blighted stage may declare its spore clouds (sim/spore-cloud.js): a cloud is a defence wave (`mission.waves`,
+// `{ atMs, formations }`) that repeats and is announced.
+//     sporeClouds: [{ atMs: 10_000, everyMs: 30_000, warnMs: 5_000, times: 4,
+//                     formations: [{ type: 'rice', x: 1400, y: 1700, count: 10, columns: 5 }] }],
+// Its soldiers (blighted, as every enemy of the stage) first appear at `atMs` and again every `everyMs`, `times`
+// times in all (without `times`, for as long as the match runs), and march on the player as a wave's do. Each
+// arrival is announced `warnMs` before it: a cloud drifts in to each formation's place and the battle screen says
+// so. A formation is a wave's (`spacing` too) without `side` and `hold`, and never a hero. The match start rejects
+// a declaration on a stage without `blight: true`, an `atMs` or `everyMs` shorter than `warnMs`, and a place
+// outside the map. No stage declares one yet.
 export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'first',

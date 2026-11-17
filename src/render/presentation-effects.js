@@ -125,6 +125,7 @@ class EffectObjectFactory {
         emergencyLanding: 320,
         buildingBurst: 620,
         sporeSacBurst: 760,
+        sporeCloudLift: 900,
         launchMuzzle: 900,
         launchBlast: 820,
         launchBundleBreak: 680,

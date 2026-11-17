@@ -1,4 +1,6 @@
 const HERO_LESSON_STEPS = ['launch', 'fight', 'recover', 'redeploy', 'done'];
+// The gap between the soldiers of a formation that names none.
+const FORMATION_SPACING = 34;
 
 // Authored campaign beats issue ordinary spawns, captures and launch commands.
 // Their progress belongs to the authoritative simulation and rolls back with it.
@@ -49,7 +51,16 @@ export class CampaignMission {
     static spawnFormations(sim, formations = []) {
         const enemies = [];
         for (const formation of formations) {
-            const { type, x, y, count, columns = count, spacing = 34, side = 1, hold } = formation;
+            const {
+                type,
+                x,
+                y,
+                count,
+                columns = count,
+                spacing = FORMATION_SPACING,
+                side = 1,
+                hold,
+            } = formation;
             const rows = Math.ceil(count / columns);
             for (let i = 0; i < count; i++) {
                 const row = Math.floor(i / columns),
@@ -63,6 +74,11 @@ export class CampaignMission {
             }
         }
         return enemies;
+    }
+
+    // The ground one formation stands on, as a circle around its middle (what a spore cloud covers, SporeCloud).
+    static formationRadius({ count, columns = count, spacing = FORMATION_SPACING }) {
+        return (Math.hypot(Math.min(columns, count), Math.ceil(count / columns)) * spacing) / 2;
     }
 
     static waveTick(sim, wave) {
