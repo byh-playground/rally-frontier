@@ -18,6 +18,7 @@ import { HERO_LEVEL_KILLS, RESOURCE_SCALE } from './units/baseline.js';
 import { BotController } from './ai/bot-controller.js';
 import { Blight } from './sim/blight.js';
 import { BlightField } from './sim/blight-field.js';
+import { SporeCloud } from './sim/spore-cloud.js';
 import { SporeSac } from './sim/spore-sac.js';
 import { UnitDefinition } from './definitions/units.js';
 import { StableSerializationUtil } from './net/lobby-codec.js';
@@ -91,8 +92,9 @@ function flag(scene, name, text) {
 
 // A match on one of the PvP maps (game-rules.js presets), with both sides' decks at the starter deck, or both at
 // `deck` (comma-separated cards, LaunchRules.normalizeDeck checks it). `upgrades` and `blight` (see stagedMatch) turn
-// on the host side's campaign upgrades and the guest side's blight; `sporeSacs` is the stage's spore sac declaration
-// and `fields` its blight fields and braziers (blightFieldDeclaration).
+// on the host side's campaign upgrades and the guest side's blight; `sporeSacs` is the stage's spore sac declaration,
+// `fields` its blight fields and braziers (blightFieldDeclaration) and `sporeClouds` its spore clouds
+// (sporeCloudDeclaration).
 function createMatchSim(
     scene,
     map,
@@ -102,6 +104,7 @@ function createMatchSim(
     blight = undefined,
     sporeSacs = undefined,
     fields = undefined,
+    sporeClouds = undefined,
 ) {
     const rules = GameRuleRuntime.resolveMatchRules({ presetId: map }),
         cards = deck === undefined ? LaunchRules.starterDeck : String(deck).split(',');
@@ -110,7 +113,85 @@ function createMatchSim(
         blight,
         sporeSacs,
         fields,
+        sporeClouds,
     });
+}
+
+// `cloud=<x>,<y>` (the `unit` and `launch` scenes, with `blight=1`): one spore cloud that brings `cloudCount`
+// (default 10) blighted `cloudUnit` soldiers (default rice) to (x, y), first at `cloudFirstMs` (default 10000) and
+// again every `cloudEveryMs` (default 30000), each arrival announced `cloudWarnMs` (default 5000) before it,
+// `cloudTimes` times in all (without it, for as long as the scene runs): a stage's `sporeClouds` declaration
+// (SporeCloud). Returns that declaration, or undefined without `cloud`.
+function sporeCloudDeclaration(scene, params) {
+    if (params.cloud === undefined) return undefined;
+    const place = /^(\d+),(\d+)$/.exec(params.cloud);
+    if (!place) throw new Error(`${scene} needs cloud=<x>,<y>: ${params.cloud}`);
+    const number = (name, fallback) =>
+            params[name] === undefined ? fallback : integer(scene, name, params[name]),
+        count = number('cloudCount', 10);
+    return [
+        {
+            atMs: number('cloudFirstMs', 10_000),
+            everyMs: number('cloudEveryMs', 30_000),
+            warnMs: number('cloudWarnMs', 5000),
+            ...(params.cloudTimes !== undefined && { times: number('cloudTimes') }),
+            formations: [
+                {
+                    type:
+                        params.cloudUnit === undefined
+                            ? 'rice'
+                            : unitType(scene, 'cloudUnit', params.cloudUnit),
+                    x: Number(place[1]),
+                    y: Number(place[2]),
+                    count,
+                    columns: Math.min(count, 5),
+                },
+            ],
+        },
+    ];
+}
+
+// What a stage's spore clouds did (every scene with clouds, `sporeCloud`): the ticks a warning began (`warnTicks`)
+// and the ticks soldiers appeared (`arriveTicks`), for each arrival the units that were new on that tick
+// (`arrivals`: how many `soldiers`, how many of them blighted `blighted` and on the blight's side `enemy`, by type
+// `types`), their total (`soldiers`), how many times each declared cloud has arrived (`arrived`, the sim's state)
+// and the clouds under warning now (`coming`, what the renderer draws).
+function createSporeCloudProbe() {
+    const known = new Set(),
+        warnTicks = [],
+        arriveTicks = [],
+        arrivals = [];
+    return {
+        observe(sim) {
+            if (!sim.sporeCloud) return;
+            let arrived = false;
+            for (const event of sim.events)
+                if (event.type === 'sporeCloudWarn') warnTicks.push(sim.tick);
+                else if (event.type === 'sporeCloudArrive') arrived = true;
+            if (arrived) {
+                const fresh = sim.units.filter((unit) => !known.has(unit.id)),
+                    types = {};
+                for (const unit of fresh) types[unit.type] = (types[unit.type] || 0) + 1;
+                arriveTicks.push(sim.tick);
+                arrivals.push({
+                    tick: sim.tick,
+                    soldiers: fresh.length,
+                    blighted: fresh.filter((unit) => Blight.is(unit)).length,
+                    enemy: fresh.filter((unit) => unit.side === Blight.ENEMY_SIDE).length,
+                    types,
+                });
+            }
+            for (const unit of sim.units) known.add(unit.id);
+        },
+        state: (sim) => ({
+            warnTicks,
+            arriveTicks,
+            arrivals,
+            soldiers: arrivals.reduce((sum, arrival) => sum + arrival.soldiers, 0),
+            arrived: sim.sporeCloud.arrived.slice(),
+            coming: SporeCloud.view(sim).coming,
+        }),
+    };
 }
 
 // `field=<x>,<y>` (several: `field=<x>,<y>;<x>,<y>`) and `brazier=<x>,<y>,<radius>` (several the same way), in the
@@ -369,9 +450,22 @@ function createSporeSacProbe(scene, sim) {
 // created for the guest side is blighted (Blight, as a campaign stage's `blight: true`). Only a campaign match may
 // carry either, so the match then runs as a bare campaign stage on the same map: no outposts, no mission, the same
 // decks. Without both parameters a scene keeps its plain match, tick for tick.
-function stagedMatch(scene, seed, rules, map, decks, { upgrades, blight, sporeSacs, fields }) {
+function stagedMatch(
+    scene,
+    seed,
+    rules,
+    map,
+    decks,
+    { upgrades, blight, sporeSacs, fields, sporeClouds },
+) {
     const blighted = flag(scene, 'blight', blight);
-    if (upgrades === undefined && !blighted && sporeSacs === undefined && fields === undefined)
+    if (
+        upgrades === undefined &&
+        !blighted &&
+        sporeSacs === undefined &&
+        fields === undefined &&
+        sporeClouds === undefined
+    )
         return new StrategySim(seed, rules, decks);
     rules.campaign = {
         id: upgrades === undefined ? 'debug-blight' : 'debug-upgrades',
@@ -382,6 +476,7 @@ function stagedMatch(scene, seed, rules, map, decks, { upgrades, blight, sporeSa
         ...(blighted && { blight: true }),
         ...(sporeSacs && { sporeSacs }),
         ...fields,
+        ...(sporeClouds && { sporeClouds }),
     };
     return new StrategySim(seed, rules, decks, [
         upgrades === undefined ? [] : String(upgrades).split(','),
@@ -2366,6 +2461,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
         // `freeAtMs`: every blighted unit `freeable` lets go is freed once, right after the tick at that time.
         const blight = createBlightProbe(),
             field = createBlightFieldProbe(),
+            cloud = createSporeCloudProbe(),
             freeAtMs =
                 params.freeAtMs === undefined ? null : integer(name, 'freeAtMs', params.freeAtMs);
         let failure = null;
@@ -2382,6 +2478,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                             if (freeable(unit)) Blight.free(run.sim, unit);
                     blight.observe(run.sim);
                     field.observe(run.sim);
+                    cloud.observe(run.sim);
                     log.record(run.sim);
                 },
                 (error) => {
@@ -2417,6 +2514,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 render: renderStats(stage.renderer),
                 blight: blight.state(run.sim),
                 ...(run.sim.blightField ? { blightField: field.state(run.sim) } : {}),
+                ...(run.sim.sporeCloud ? { sporeCloud: cloud.state(run.sim) } : {}),
                 ...extra(run.sim),
                 ...log.state(times),
                 overlap: overlap(run.sim),
@@ -2947,6 +3045,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 params.blight,
                 sporeSacDeclaration(scene, params),
                 blightFieldDeclaration(scene, params),
+                sporeCloudDeclaration(scene, params),
             );
             if (flag(scene, 'outposts', params.outposts)) completeOutposts(sim);
             const sac = createSporeSacProbe(scene, sim);
@@ -3148,6 +3247,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     blight: params.blight,
                     sporeSacs: sporeSacDeclaration(scene, params),
                     fields: blightFieldDeclaration(scene, params),
+                    sporeClouds: sporeCloudDeclaration(scene, params),
                 },
             );
             const sac = createSporeSacProbe(scene, sim);

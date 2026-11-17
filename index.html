@@ -291,6 +291,21 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   정화한 채로 둔다. 그림은 플레이스홀더다(`BlightFieldLook`: 칸마다 검보라 얼룩·덩어리, 번질 때 부풀며 보랏빛 번쩍임, 탈 때
   불씨가 사그라들고 재 자국이 남음. 화로는 돌 그릇과 정화 반경 선, 불이 붙으면 불꽃과 실선). 전부 땅 패스의 삼각형 묶음
   하나에 들어가 드로우콜이 칸 수와 무관하고, 새 셰이더·아틀라스·프로그램을 쓰지 않는다.
+  포자 구름(`src/sim/spore-cloud.js`)은 바람에 실려 와 감염 병사를 데려오는 구름이다. 감염을 선언한 스테이지만
+  `sporeClouds: [{ atMs, everyMs, warnMs, times?, formations }]`를 선언한다(감염 없는 스테이지, `warnMs`보다 짧은
+  `atMs`·`everyMs`, 맵 밖 자리, 영웅은 경기 시작에서 실패). 구름은 되풀이되고 예고되는 방어전 공격(`waves`의
+  `{ atMs, formations }`)이다: 병사는 `atMs`에 처음, 그 뒤 `everyMs`마다, 모두 `times`번(없으면 경기가 끝날 때까지)
+  `formations` 자리에 나타나고, 방어전 공격과 같은 `CampaignMission.spawnFormations`로 같은 자리(틱의 명령 앞)에서
+  생겨 보통 적 병사(감염 상태)로 행군한다. 권위 상태는 `sim.sporeCloud { arrived }`(선언별 온 횟수) 하나이고, 예고 틱과
+  출현 틱은 틱 수를 더해 가지 않고 경기 시각(ms)에서 그때마다 구한다(`ceilTicks(atMs + n × everyMs - warnMs)`,
+  `ceilTicks(atMs + n × everyMs)`). 구름을 선언하지 않은 경기에는 이 칸이 없어 결과가 그대로다. 구름 자체는 판정이
+  없다: sim은 예고 틱에 `sporeCloudWarn { cloud, arriveTick }`, 출현 틱에 대형마다
+  `sporeCloudArrive { cloud, x, y, radius }`를 내고, 스냅샷의 `sporeCloud.coming`(예고 중인 대형마다 자리·반경·예고
+  틱·출현 틱)이 그림과 안내의 원본이라 예고 도중 복원해도 같은 그림이다. 그림은 플레이스홀더다: 예고 동안 출현 자리의
+  땅 얼룩이 짙어지고 고리가 바깥에서 조여 오며(땅 패스의 삼각형 묶음), 검보라 입자 구름이 바람 방향(`BLIGHT_LOOK.cloud.wind`)
+  위쪽에서 흘러와 내려앉으며 짙어지고(`BlightLook.drawCloud`, 감염 입자와 같은 아틀라스 입자·같은 묶음), 출현 순간
+  `sporeCloudLift` 이펙트로 걷힌다. 보는 편의 시야 밖 자리의 구름은 적 병사처럼 그리지 않는다. 전투 화면은 예고 동안
+  안내 한 줄('포자 구름이 몰려와요', `CampaignPresentation`의 기존 안내 칸)을 보인다. 새 셰이더·아틀라스·프로그램은 없다.
   방어전은 스테이지의 제한 시간(`surviveMs`)을 버티면 이기고, 본진이나 지킬 거점(`guardPoint`, 아군 시작 거점)이
   무너지면 진다. 적을 빨리 잡아도, 적 본진을 부숴도 일찍 끝나지 않는다. 공격(`waves`)은 각자 정해진 시각(`atMs`)에
   오며 앞 공격이 남아 있어도 쌓인다. 전투 중 화면은 남은 시간·N차 공격과 지킬 거점 표시를 보인다.

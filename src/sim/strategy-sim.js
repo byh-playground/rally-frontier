@@ -41,6 +41,7 @@ import { StateContract, StateValue } from './components.js';
 import { BlightField } from './blight-field.js';
 import { CampaignMission } from './campaign-mission.js';
 import { Blight } from './blight.js';
+import { SporeCloud } from './spore-cloud.js';
 import { SporeSac } from './spore-sac.js';
 import { CampaignUpgrades } from './campaign-upgrades.js';
 import { UnitResultStats } from './unit-result-stats.js';
@@ -356,6 +357,8 @@ class StrategySim {
         SporeSac.initialize(this);
         // A blighted stage's blight fields and braziers (BlightField): only in a stage that declares them.
         BlightField.initialize(this);
+        // A blighted stage's spore clouds (SporeCloud): only in a stage that declares them.
+        SporeCloud.initialize(this);
         // Loading: every radius bucket's chunk and portal structure, before the first tick asks for a field.
         this.navigation.prepare();
     }
@@ -3073,6 +3076,8 @@ class StrategySim {
         this.events = [];
 
         CampaignMission.beforeCommands(this);
+        // A spore cloud's soldiers appear where a wave's do (SporeCloud).
+        SporeCloud.beforeCommands(this);
         const cmds = this.scheduled.get(this.tick) || [];
         for (const c of cmds) {
             const applied = this.applyCommand(c.actor, c.action) === true;
@@ -3349,6 +3354,7 @@ class StrategySim {
                 launchDeployments: StateValue.copy(this.launchDeployments),
                 campaignMission: CampaignMission.snapshot(this.campaignMission),
                 blightField: BlightField.view(this),
+                sporeCloud: SporeCloud.view(this),
                 heroes: StateValue.copy(this.heroes),
                 heroRecovery: StateValue.copy(this.heroRecovery),
                 heroGrowth: StateValue.copy(this.heroGrowth),

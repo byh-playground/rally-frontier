@@ -126,6 +126,41 @@ const BLIGHT_LOOK = Object.freeze({
         }),
         keptAlpha: 0.16,
     }),
+    // The spore cloud (sim/spore-cloud.js), a placeholder: soot drifting in on the wind to where blighted soldiers
+    // are about to stand. Distances are world units.
+    cloud: Object.freeze({
+        // The wind blows along this unit vector on the ground (toward the player's end of the map and across it),
+        // and the cloud starts `drift` upwind of its place and `lift` above the ground.
+        wind: Object.freeze([-0.5, 0.866]),
+        drift: 420,
+        lift: 70,
+        // Its body is `puffs` large dim motes and its soot `motes` small ones when it is thickest, `thin` of them
+        // when it first shows. Each lives `lifeMs` and streams `streak` downwind while it does; sizes are a share
+        // of the cloud's radius, alphas run from the thin cloud's to the thick one's.
+        thin: 0.35,
+        streak: 110,
+        puffs: Object.freeze({
+            count: 22,
+            lifeMs: Object.freeze([2200, 3400]),
+            size: Object.freeze([0.7, 1.25]),
+            alpha: Object.freeze([0.22, 0.6]),
+        }),
+        motes: Object.freeze({
+            count: 70,
+            lifeMs: Object.freeze([1300, 2100]),
+            size: Object.freeze([0.14, 0.42]),
+            alpha: Object.freeze([0.4, 0.9]),
+        }),
+        // The ground it will settle on: a stain that darkens, inside a ring that closes in from `ringFrom` radii
+        // as the arrival nears.
+        stain: Object.freeze([0.115, 0.055, 0.16]),
+        stainAlpha: Object.freeze([0.22, 0.6]),
+        ring: Object.freeze([0.54, 0.29, 0.59]),
+        ringAlpha: Object.freeze([0.45, 0.95]),
+        ringFrom: 2,
+        ringWidth: 4,
+        ringSegments: 40,
+    }),
     // The field's brazier, a placeholder. Radii are world units: a stone ring, its bowl, coals; a line marks the
     // ground it purifies. Lit, the coals glow, the ground inside the line is warm and a flame flickers.
     brazier: Object.freeze({
@@ -333,6 +368,73 @@ class BlightLook {
                 base * (0.8 + 0.5 * r2) * (0.9 + 0.3 * t),
                 spec.alpha * (1 - t * t),
                 r1,
+            );
+        }
+    }
+    // A spore cloud at `timeMs`, `thick` 0..1 (0 as its warning begins, 1 as its soldiers appear). (cx, cy): its
+    // middle on screen now, (rx, ry): its radii in canvas pixels, (sx, sy): how far a mote streams downwind over
+    // its life, in canvas pixels. Every mote is a function of (seed, time), as a body's soot is.
+    drawCloud(art, depth, seed, cx, cy, rx, ry, sx, sy, timeMs, thick) {
+        const spec = BLIGHT_LOOK.cloud,
+            share = spec.thin + (1 - spec.thin) * thick;
+        // The large dim motes first, so the small ones lie over them. A large one is never the glint colour.
+        this.cloudLayer(
+            art,
+            depth,
+            seed,
+            cx,
+            cy,
+            rx,
+            ry,
+            sx,
+            sy,
+            timeMs,
+            thick,
+            share,
+            spec.puffs,
+            0.9,
+        );
+        this.cloudLayer(
+            art,
+            depth,
+            seed + 1,
+            cx,
+            cy,
+            rx,
+            ry,
+            sx,
+            sy,
+            timeMs,
+            thick,
+            share,
+            spec.motes,
+            1,
+        );
+    }
+    cloudLayer(art, depth, seed, cx, cy, rx, ry, sx, sy, timeMs, thick, share, layer, colors) {
+        const count = Math.round(layer.count * share),
+            alpha = layer.alpha[0] + (layer.alpha[1] - layer.alpha[0]) * thick;
+        for (let i = 0; i < count; i++) {
+            const life =
+                    layer.lifeMs[0] + (layer.lifeMs[1] - layer.lifeMs[0]) * chance(seed, 60, i),
+                at = timeMs + chance(seed, 61, i) * life,
+                cycle = Math.floor(at / life),
+                u = at / life - cycle,
+                r1 = chance(seed, 62 + i, cycle),
+                r2 = chance(seed, 162 + i, cycle),
+                r3 = chance(seed, 262 + i, cycle),
+                // Its home in the cloud: even over the disc.
+                far = Math.sqrt(r1) * 0.95,
+                angle = r2 * Math.PI * 2,
+                fadeOut = Math.min(1, Math.max(0, (u - 0.6) / 0.4));
+            this.mote(
+                art,
+                depth,
+                cx + Math.cos(angle) * far * rx + sx * (u - 0.6),
+                cy + Math.sin(angle) * far * ry + sy * (u - 0.6) - ry * 0.6 * r3,
+                rx * (layer.size[0] + (layer.size[1] - layer.size[0]) * r3 * r3),
+                alpha * Math.min(1, u / 0.15) * (1 - fadeOut * fadeOut),
+                r3 * colors,
             );
         }
     }

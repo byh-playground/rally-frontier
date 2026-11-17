@@ -174,7 +174,13 @@ export class CampaignPresentation {
         const goal = currentGoal(stage, snapshot);
         const $ = this.$;
         if (this.battle?.stage !== stage || tick < this.battle.tick) {
-            this.battle = { stage, goal: goal.key, announced: new Set([goal.key]), cueEnd: 0 };
+            this.battle = {
+                stage,
+                goal: goal.key,
+                announced: new Set([goal.key]),
+                cueEnd: 0,
+                cloudWarnTick: -1,
+            };
             $('campaignObjective').classList.remove('hidden');
             $('campaignObjectiveLabel').textContent = goal.label;
             this.showCue('전투 목표', missionGoal(stage), tick, tps);
@@ -192,6 +198,22 @@ export class CampaignPresentation {
             } else {
                 this.battle.cueEnd = tick;
             }
+        }
+        // A spore cloud drifting in (SporeCloud, the snapshot's `sporeCloud.coming`) is announced once, for as
+        // long as its warning runs.
+        const coming = snapshot.sporeCloud?.coming;
+        let warned = -1,
+            arrives = 0;
+        if (coming)
+            for (const cloud of coming)
+                if (cloud.warnTick > warned) {
+                    warned = cloud.warnTick;
+                    arrives = cloud.arriveTick;
+                }
+        if (warned > this.battle.cloudWarnTick) {
+            this.battle.cloudWarnTick = warned;
+            this.showCue('포자 구름', '포자 구름이 몰려와요', tick, tps);
+            this.battle.cueEnd = Math.max(this.battle.cueEnd, arrives);
         }
         this.battle.tick = tick;
         const timer = $('campaignObjectiveTimer');
