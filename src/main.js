@@ -2787,6 +2787,8 @@ class GLRenderer {
             } else if (e.type === 'unitThornHit') {
                 this.addClientFx('thornImpact', e, snapshot, index, {
                     id: 'thorn-impact:' + e.projectileId,
+                    // A heavy thorn (campaign upgrade heavyThorn) bursts as much larger as it is thicker.
+                    impactScale: e.heavy ?? 1,
                     impactHeightFP: e.zFP,
                     eventTick: Number.isFinite(Number(e.presentationTick))
                         ? Number(e.presentationTick)
@@ -2847,6 +2849,13 @@ class GLRenderer {
                 });
             } else if (e.type === 'upgradeHitBlock') {
                 this.addClientFx('upgradeHitBlock', e, snapshot, index);
+            } else if (e.type === 'upgradeChainCharge' || e.type === 'upgradeWallRebound') {
+                // A peanut chain starting (UpgradeChainCharge), a coconut's lossless bounce (RollingBody wallRebound).
+                this.addClientFx(e.type, e, snapshot, index);
+            } else if (e.type === 'upgradeShellShards') {
+                // A walnut's shell shards (UpgradeShellShards): the flying shards and the reach on the ground.
+                this.addClientFx('upgradeShellShards', e, snapshot, index);
+                this.addClientFx('upgradeShardRing', e, snapshot, index);
             } else if (e.type === 'upgradeFirstStrike') {
                 // A campaign upgrade's doubled strike (UpgradeFirstStrike): the heavier hit mark, on that hit alone.
                 this.addClientFx('meleeImpact', e, snapshot, index, { impactScale: 1.5 });
@@ -3855,6 +3864,21 @@ class GLRenderer {
                 dot(x, y, (6 + 6 * (1 - t)) * sc, '#fff6cf', Math.max(0, 0.8 - t * 1.6));
                 ring(x, y, (9 + 18 * ease) * sc, 3 * sc, '#f6dc7c', 0.9 * (1 - t));
                 burst(fx, x, y, t, 6, '#e9c75f', 30, 2.4);
+            } else if (fx.kind === 'upgradeChainCharge') {
+                // A peanut chain starting (UpgradeChainCharge): a hot flash where the building fell.
+                dot(x, y, (8 + 8 * (1 - t)) * sc, '#fff1c4', Math.max(0, 0.85 - t * 1.7));
+                ring(x, y, (10 + 30 * ease) * sc, 4 * sc, '#ff9a3d', 0.95 * (1 - t), 0.72);
+                burst(fx, x, y, t, 8, '#ffb347', 46, 2.6);
+            } else if (fx.kind === 'upgradeShellShards') {
+                // A walnut's shell shards (UpgradeShellShards): brown shell pieces flying off the body.
+                dot(x, y, (8 + 6 * (1 - t)) * sc, '#f4dfb5', Math.max(0, 0.8 - t * 1.6));
+                burst(fx, x, y, t, 12, '#8a5a2b', 64, 3.2);
+                burst(fx, x, y, t, 6, '#d9b27a', 44, 2.4, 0.72, fx.seed + 1);
+            } else if (fx.kind === 'upgradeWallRebound') {
+                // A coconut's lossless bounce (RollingBody wallRebound): a bright ring off the wall.
+                dot(x, y, (7 + 5 * (1 - t)) * sc, '#ffffff', Math.max(0, 0.85 - t * 1.7));
+                ring(x, y, (8 + 26 * ease) * sc, 4 * sc, '#8fe3ff', 0.95 * (1 - t), 0.72);
+                burst(fx, x, y, t, 6, '#c9f2ff', 40, 2.4);
             } else if (fx.kind === 'deathBurst') {
                 const vd =
                     UnitVisualDefinition.get(fx.entity) ||
@@ -6166,7 +6190,8 @@ class GLRenderer {
             }),
             point = this.projectRenderWorldPosition(world),
             angle = Math.atan2(to.y - from.y, to.x - from.x),
-            length = 32 * this.sc(),
+            // A heavy thorn (campaign upgrade heavyThorn) is drawn as much larger as it is thicker.
+            length = 32 * this.sc() * (shot.heavy ?? 1),
             directionX = Math.cos(angle),
             directionY = Math.sin(angle),
             cosine = directionX * length,
@@ -6211,9 +6236,10 @@ class GLRenderer {
             p = this.projectRenderWorldPosition(world),
             m = this._vectorUnitMatrix,
             context = this.vectorContext,
-            distance = (5 + 20 * t) * this.sc(),
-            width = 10 * this.sc(),
-            height = Math.max(1, 2.5 * this.sc());
+            scale = fx.impactScale ?? 1,
+            distance = (5 + 20 * t) * this.sc() * scale,
+            width = 10 * this.sc() * scale,
+            height = Math.max(1, 2.5 * this.sc() * scale);
         context.depthTest = !!this.passState.depthEnabled;
         context.depthWrite = false;
         context.depthFunc = this.passState.depthFunc || 'lequal';
@@ -7267,25 +7293,33 @@ class GLRenderer {
             if (
                 (fx.kind !== 'basicSplashImpact' &&
                     fx.kind !== 'fruitBerryImpact' &&
-                    fx.kind !== 'upgradeLeapRing') ||
+                    fx.kind !== 'upgradeLeapRing' &&
+                    fx.kind !== 'upgradeShardRing') ||
                 fx.clock.expired
             )
                 continue;
             const fade = 1 - fx.clock.ageMs / EffectObjectFactory.combatLife(fx);
             if (fade <= 0) continue;
             const elevation = this.world.terrain.surfaces.heightAt(fx.x, fx.y);
-            const wide = fx.kind === 'upgradeLeapRing';
+            // A campaign upgrade's reach (팥 착지 고리, 호두 껍질 파편) is drawn filled and thicker.
+            const tint =
+                fx.kind === 'upgradeLeapRing'
+                    ? EffectObjectFactory.upgradeReachTint.leap
+                    : fx.kind === 'upgradeShardRing'
+                      ? EffectObjectFactory.upgradeReachTint.shards
+                      : null;
+            const wide = tint !== null;
             const stroke =
                 fx.kind === 'fruitBerryImpact'
                     ? [0.75, 0.45, 1, fade]
                     : wide
-                      ? [1, 0.5, 0.42, fade]
+                      ? [tint[0], tint[1], tint[2], fade]
                       : [1, 0.77, 0.44, fade];
             this.withWorldSpriteDepth({ x: fx.x, y: elevation, z: fx.y, groundY: 0 }, () =>
                 this.drawGroundCircle(fx.x, fx.y, fx.radius, {
                     elevation,
                     stroke,
-                    ...(wide ? { fill: [1, 0.5, 0.42, 0.18 * fade] } : {}),
+                    ...(wide ? { fill: [tint[0], tint[1], tint[2], 0.18 * fade] } : {}),
                     width: Math.max(1, (wide ? 3 : 2) * this.sc()),
                     segments: wide ? 28 : 20,
                 }),
@@ -7303,6 +7337,25 @@ class GLRenderer {
             ) {
                 const { x, z, groundY } = entry.world,
                     { scale, stroke, fill } = EffectObjectFactory.upgradeArmorRing;
+                this.withWorldSpriteDepth({ ...entry.world, y: groundY }, () =>
+                    this.drawGroundCircle(
+                        x,
+                        z,
+                        InteractionGeometry.unitRadius(entry.entity) * scale,
+                        {
+                            elevation: groundY,
+                            fill,
+                            stroke,
+                            width: Math.max(1.5, 3 * this.sc()),
+                            segments: 16,
+                        },
+                    ),
+                );
+            }
+            // A soldier running its campaign upgrade's chain (UpgradeChainCharge) leaves a hot ring under it.
+            if (entry.entity.alive && entry.entity.campaignUpgrade?.chaining) {
+                const { x, z, groundY } = entry.world,
+                    { scale, stroke, fill } = EffectObjectFactory.upgradeChainRing;
                 this.withWorldSpriteDepth({ ...entry.world, y: groundY }, () =>
                     this.drawGroundCircle(
                         x,

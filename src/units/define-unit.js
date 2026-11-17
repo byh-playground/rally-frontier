@@ -33,6 +33,18 @@
 //                leapAttack.impact)
 //              firstStrike { hits, damageScale }: each soldier's first `hits` contact hits deal `damageScale` times
 //                their damage, as the one hit (UpgradeFirstStrike; needs contactMelee)
+//              heavyThorn { every, radiusScale, damageScale }: each soldier's every `every`th thorn is
+//                `radiusScale` times as thick and deals `damageScale` times its damage (UpgradeHeavyThorn; needs
+//                thornAttack)
+//              extraShot { shots, soldiers }: a burst fires `shots` more shells like its last one, `gapMs` apart,
+//                carrying `soldiers` more soldiers in all (UpgradeExtraShot; needs payload fire.mode 'burst')
+//              chainCharge { approachSpeedScale }: when its hit destroys a building, the soldiers after that building
+//                run on at `approachSpeedScale` times their walk to the next hit, no wait (UpgradeChainCharge;
+//                needs contactMelee·contactRebound)
+//              shellShards { takenRatio, radius, damage }: every `takenRatio` of its health taken, `damage` to the
+//                enemy soldiers within `radius` of its body (UpgradeShellShards)
+//              wallRebound { restitution }: its bounce off walls and buildings keeps `restitution` of the speed
+//                instead of rolling.wallRestitution (RollingBody; needs rolling)
 //   payload  the cannon shell that carries the unit (LaunchRules). A hero's shell has no landing shock (impact,
 //            splash) but `landingStrike { radius, damage, knockback?, scatter? { ring, count }, retreat { motion:
 //            'roll'|'hop', distance } }`, the hero's own strike when it lands (HeroLandingStrike)
@@ -341,6 +353,66 @@ const CAMPAIGN_UPGRADE_EFFECTS = Object.freeze({
         )
             throw new Error(
                 `병종 ${id}의 firstStrike는 hits(양의 정수)·1보다 큰 damageScale과 contactMelee가 필요합니다.`,
+            );
+    },
+    // UpgradeHeavyThorn: every `every`th thorn.
+    heavyThorn(id, spec, unit) {
+        if (
+            Object.keys(spec).sort().join(',') !== 'damageScale,every,radiusScale' ||
+            !(Number.isInteger(spec.every) && spec.every > 1) ||
+            !(spec.radiusScale > 1) ||
+            !(spec.damageScale > 1) ||
+            !unit.thornAttack
+        )
+            throw new Error(
+                `병종 ${id}의 heavyThorn은 every(2 이상의 정수)·1보다 큰 radiusScale·damageScale과 thornAttack이 필요합니다.`,
+            );
+    },
+    // UpgradeExtraShot: more shells after a burst's last one.
+    extraShot(id, spec, unit, payload) {
+        if (
+            Object.keys(spec).sort().join(',') !== 'shots,soldiers' ||
+            !(Number.isInteger(spec.shots) && spec.shots > 0) ||
+            !(Number.isInteger(spec.soldiers) && spec.soldiers >= spec.shots) ||
+            payload.fire?.mode !== 'burst'
+        )
+            throw new Error(
+                `병종 ${id}의 extraShot은 shots(양의 정수)·soldiers(shots 이상의 정수)와 포탄의 fire.mode 'burst'가 필요합니다.`,
+            );
+    },
+    // UpgradeChainCharge: after a building falls to its hit.
+    chainCharge(id, spec, unit) {
+        if (
+            Object.keys(spec).join(',') !== 'approachSpeedScale' ||
+            !(spec.approachSpeedScale > 1) ||
+            !unit.contactMelee ||
+            !unit.contactRebound
+        )
+            throw new Error(
+                `병종 ${id}의 chainCharge는 1보다 큰 approachSpeedScale과 contactMelee·contactRebound가 필요합니다.`,
+            );
+    },
+    // UpgradeShellShards: the damage it has taken.
+    shellShards(id, spec) {
+        if (
+            Object.keys(spec).sort().join(',') !== 'damage,radius,takenRatio' ||
+            !(spec.takenRatio > 0 && spec.takenRatio <= 1) ||
+            !(spec.radius > 0) ||
+            !(spec.damage > 0)
+        )
+            throw new Error(
+                `병종 ${id}의 shellShards는 takenRatio(0 초과 1 이하)·양수 radius·damage가 필요합니다.`,
+            );
+    },
+    // RollingBody: the bounce off walls and buildings.
+    wallRebound(id, spec, unit) {
+        if (
+            Object.keys(spec).join(',') !== 'restitution' ||
+            !unit.rolling ||
+            !(spec.restitution > unit.rolling.wallRestitution && spec.restitution <= 1)
+        )
+            throw new Error(
+                `병종 ${id}의 wallRebound는 rolling과 그 wallRestitution보다 크고 1 이하인 restitution이 필요합니다.`,
             );
     },
 });

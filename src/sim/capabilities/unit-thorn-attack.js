@@ -191,6 +191,7 @@ export class UnitThornAttack {
                     targetId: shot.targetId,
                     projectileId: shot.id,
                     ...hit,
+                    ...(shot.heavy ? { heavy: shot.heavy } : null),
                 });
                 continue;
             }

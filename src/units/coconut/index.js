@@ -58,6 +58,12 @@ export const Coconut = defineUnit({
             buildingDamageAtTop: 40,
             rehitMs: 500,
         }),
+        // 캠페인 강화: 벽·건물에서 튕길 때 속도를 잃지 않는다(반발 0.6 → 1).
+        campaignUpgrade: {
+            name: '반사 가속',
+            summary: '벽에 부딪혀도 속도를 잃지 않고 튕겨 나와요.',
+            wallRebound: { restitution: 1 },
+        },
     },
     // 비용(식량 50·기름 75)·한 발에 하나는 확정, 포탄 체력·위력·반경은 찹쌀과 같은 초안이다.
     // The shell's flight direction becomes the coconut's first rolling heading.

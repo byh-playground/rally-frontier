@@ -28,6 +28,12 @@ export const Chestnut = defineUnit({
             targetHeight: 10,
         }),
         sight: 275,
+        // 캠페인 강화: 병사마다 3번째 가시가 두 배 굵고 피해가 2배(10 → 20)다.
+        campaignUpgrade: {
+            name: '굵은 가시',
+            summary: '세 번째 가시가 굵어져 두 배로 아파요.',
+            heavyThorn: { every: 3, radiusScale: 2, damageScale: 2 },
+        },
     },
     payload: {
         shellHp: 25,

@@ -40,6 +40,13 @@ export const Acorn = defineUnit({
             maxUnitHitsPerPulse: 3,
             tangentRatio: 0.5,
         }),
+        // 캠페인 강화: 3연발 뒤 같은 조준점에 네 번째 발(세 번째 발과 같은 위력 40·범위 40, 0.5초 뒤)이 나가고
+        // 두 명이 더 나온다(6 → 8명).
+        campaignUpgrade: {
+            name: '네 번째 포탄',
+            summary: '한 발을 더 쏴서 두 명이 더 나와요.',
+            extraShot: { shots: 1, soldiers: 2 },
+        },
     },
     // 도토리는 한 발당 두 병사씩 세 발을 쏜다.
     payload: {
