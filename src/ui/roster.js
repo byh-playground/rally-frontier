@@ -1,10 +1,11 @@
-import { SUNSHINE } from '../definitions/roster.js';
+import { SUNSHINE, startingOwned } from '../definitions/roster.js';
 import { loadPlayerSave, updatePlayerSave } from './player-saves.js';
 
 // The roster record of src/ui/player-saves.js: the single source of which cards the player owns, plus the new
-// campaign's progress and sunshine. Without a save, it lasts for this page only.
+// campaign's progress and sunshine. Without a save, it lasts for this page only. Until the record loads (or when it
+// cannot be read) the player owns the starting set.
 export class Roster {
-    #owned = new Set();
+    #owned = new Set(startingOwned());
 
     constructor(save = null) {
         this.save = save;
@@ -50,15 +51,19 @@ export class Roster {
         return [...(this.campaign?.upgrades ?? [])];
     }
 
-    // The one way a card is added (a stage reward). Resolves once it is in the device save.
+    // The one way a card is added (a stage reward). Resolves true once it is in the device save; a failed save
+    // leaves the roster as it was.
     async grant(types) {
-        for (const type of types) this.#owned.add(type);
+        if (!this.save) {
+            for (const type of types) this.#owned.add(type);
+            return true;
+        }
         return this.#write((draft) => this.#addOwned(draft, types));
     }
 
     // Records one stage result of the new campaign in a single save: progress marks, sunshine, owned cards, and the
     // region's place. `result` = { stageId, cleared, sideGoal, hard, opensRegion?, grants? }. Each item pays and
-    // marks only the first time. Resolves { sunshine } paid by this result.
+    // marks only the first time. Resolves { sunshine } paid by this result (0 when the save failed).
     async recordClear({
         stageId,
         cleared,
@@ -69,7 +74,8 @@ export class Roster {
     }) {
         const paid = { sunshine: 0 };
         if (!cleared) return paid;
-        await this.#write((draft) => {
+        const saved = await this.#write((draft) => {
+            paid.sunshine = 0;
             const progress = draft.campaign;
             const mark = (list, amount) => {
                 if (list.includes(stageId)) return;
@@ -84,13 +90,15 @@ export class Roster {
                 progress.regionOrder.push(opensRegion);
             this.#addOwned(draft, grants);
         });
-        return paid;
+        return saved ? paid : { sunshine: 0 };
     }
 
-    // Opens the upgrade of an owned card for the sunshine price. Resolves false when it cannot be paid or is open.
+    // Opens the upgrade of an owned card for the sunshine price. Resolves false when it cannot be paid, is already
+    // open, or the save failed.
     async openUpgrade(type) {
         let opened = false;
-        await this.#write((draft) => {
+        const saved = await this.#write((draft) => {
+            opened = false;
             const progress = draft.campaign;
             if (
                 !draft.owned.includes(type) ||
@@ -102,21 +110,23 @@ export class Roster {
             progress.upgrades.push(type);
             opened = true;
         });
-        return opened;
+        return saved && opened;
     }
 
     #addOwned(draft, types) {
         for (const type of types) if (!draft.owned.includes(type)) draft.owned.push(type);
     }
 
+    // Resolves whether the change reached the device save; the owned set follows the saved record only.
     async #write(mutate) {
-        if (!this.save || this.save.locked) return;
+        if (!this.save || this.save.locked) return false;
         try {
             await updatePlayerSave(this.save, mutate);
         } catch (error) {
             console.warn('소유 목록 저장 실패', error);
-            return;
+            return false;
         }
         this.sync();
+        return true;
     }
 }
