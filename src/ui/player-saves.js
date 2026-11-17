@@ -1,6 +1,9 @@
+import { newRosterRecord } from '../definitions/roster.js';
+
 // Player records on this device, kept through the GameKit save module. Only this file picks the storage:
 // a debug address (`?debug=1&scene=…`) and automated tests (navigator.webdriver) keep every record in memory,
 // so they neither read nor write the real saves.
+//   roster: the owned cards plus the new campaign's progress and sunshine (the single source of what is owned).
 //   campaign: cleared stage ids. decks: the three loadouts and the selected one. hints: one-time notices seen.
 // Each record lives at `ssalkongpang/<key>` with the module's schema and revision. When it does not exist yet,
 // `create()` copies the record the game kept before the save module (the old keys stay untouched).
@@ -39,6 +42,22 @@ function validateDecks(data) {
         )
     )
         throw new TypeError('deck record');
+}
+
+function validateRoster(data) {
+    const progress = data.campaign;
+    if (
+        !isStringList(data.owned) ||
+        !progress ||
+        !isStringList(progress.firstCleared) ||
+        !isStringList(progress.sideGoalCleared) ||
+        !isStringList(progress.hardCleared) ||
+        !Number.isInteger(progress.sunshine) ||
+        progress.sunshine < 0 ||
+        !isStringList(progress.upgrades) ||
+        !isStringList(progress.regionOrder)
+    )
+        throw new TypeError('roster record');
 }
 
 function validateHints(data) {
@@ -96,7 +115,14 @@ export function openPlayerSaves(gamekit, { isolated }) {
         create: () => ({ volleyAim: legacy(LEGACY_KEYS.volleyAimHint) === 1 }),
         validate: validateHints,
     });
-    return { campaign, decks, hints };
+    const roster = gamekit.createSave({
+        adapter,
+        key: 'roster',
+        version: 1,
+        create: newRosterRecord,
+        validate: validateRoster,
+    });
+    return { campaign, decks, hints, roster };
 }
 
 // Loads a record; an unreadable one stays locked (the module never overwrites it) and the game runs on defaults.
