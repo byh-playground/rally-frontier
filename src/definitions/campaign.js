@@ -49,6 +49,8 @@ const defendPacing = (firstDecisionMs, intervalMs) =>
 const attack = (atMs, ...formations) => ({ atMs, formations });
 const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 
+// A stage may declare `blight: true`: every soldier and hero then created for its enemy side is blighted
+// (sim/blight.js). No stage declares it yet.
 export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'first',

@@ -76,6 +76,7 @@ import { GRAIN_SPRITES } from './render/grain-sprite-registry.js';
 import { heroBasicAttackElapsedMs } from './render/hero-basic-motion.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
 import { DEAD_UNIT_LOOK, DeadUnitLook } from './render/dead-unit-look.js';
+import { BlightLook } from './render/blight-look.js';
 import {
     CONFIG,
     FP,
@@ -1220,6 +1221,13 @@ class GLRenderer {
         this.vectorContext.acquireMeshRenderer();
         this.grainTeamRing = this.vectorContext.createMesh(buildGrainTeamRing());
         this.grainTeamRingMatrix = new Float32Array(6);
+        // The blight mark (BlightLook): units being freed (unit id -> { clock }), this frame's marked grains, and
+        // this frame's rings as flat numbers (x, y, rx, ry, depth, seed, freeing) noted while the team rings draw.
+        this.blightArt = new BlightLook(this.vectorContext);
+        this.blightFreed = new Map();
+        this.blightShown = 0;
+        this.blightRings = [];
+        this.blightTimeMs = 0;
         this.grainFaces = new RallyGamekit.FaceOverlay(this.vectorContext, {
             faces: GRAIN_FACE_IDS,
         }); // 메시 통계가 첫 유닛 그리기 전에도 null이 아니도록 미리 만든다.
@@ -1557,6 +1565,8 @@ class GLRenderer {
             if (this.canvas.clientWidth > 0 && this.canvas.clientHeight > 0) {
                 C.drawMesh(this.grainTeamRing);
                 C.flush('grain-team-ring-preparation');
+                this.blightArt.prepare(C);
+                C.flush('blight-ring-preparation');
             }
             for (const [id, source] of Object.entries(globalThis.RallyVectorAssets)) {
                 holds.push(RallyGamekit.holdVectorAsset(C, source));
@@ -2301,6 +2311,13 @@ class GLRenderer {
     }
 
     // A flying corpse keeps a plain ground shadow (its height stays readable) but loses its team ring.
+    // The blight mark of a displayed unit (sim/blight.js): -1 none, 0 blighted, up to 1 while it is being freed
+    // (1: the mark is gone).
+    blightFreeing(u) {
+        const freed = this.blightFreed.get(u.id);
+        if (freed) return Math.min(1, Math.max(0, freed.clock.ageMs) / BlightLook.freeMs);
+        return u.blighted === true ? 0 : -1;
+    }
     usesTeamRing(u) {
         return !!UnitVisualDefinition.get(u.type)?.billboard && !this.corpseIds.has(u.id);
     }
@@ -2345,6 +2362,10 @@ class GLRenderer {
             C.globalAlpha = 0.85;
             try {
                 C.drawMesh(this.grainTeamRing, { transform: m });
+                // The blight's ring lies around this one; it is drawn after every team ring (drawBlightRings).
+                const grain = this.blightShown ? this.grainActors.get(u.id) : null;
+                if (grain && grain.frame === this.grainActorFrame && grain.blight >= 0)
+                    this.blightRings.push(m[4], m[5], rx, ry, C.depth, grain.idSeed, grain.blight);
             } finally {
                 C.forceColor = previousColor;
                 C.globalAlpha = previousAlpha;
@@ -2798,6 +2819,15 @@ class GLRenderer {
                         : snapshot.tick,
                     thornReplayClock: null,
                 });
+            } else if (e.type === 'blightFreed') {
+                // A unit freed from the blight (Blight.free): its soot is blown off over BlightLook.freeMs.
+                const freed = {};
+                EffectObjectFactory.attachClock(
+                    freed,
+                    snapshot.presentationClock,
+                    BlightLook.freeMs,
+                );
+                this.blightFreed.set(e.id, freed);
             } else if (e.type === 'death') {
                 // A unit that dies flying has no burst: it greys and fades where it stops (DeadUnitLook).
                 if (!DeadUnitLook.flying(this.renderState.entity('unit', e.id)))
@@ -5197,6 +5227,11 @@ class GLRenderer {
         const displayMs =
             this.renderState.frame(now)?.timeMs ??
             this.snapshot.tick * this.presentationTargetIntervalMs();
+        this.blightTimeMs = displayMs;
+        this.blightShown = 0;
+        for (const [id, freed] of this.blightFreed)
+            if (freed.clock.expired || freed.clock.ageMs >= BlightLook.freeMs)
+                this.blightFreed.delete(id);
         let rank = 0;
         for (const { kind, entity: u, world, depth } of entries) {
             if (kind !== 'unit' || !this.hasGrainArt(u)) continue;
@@ -5650,6 +5685,29 @@ class GLRenderer {
             );
             grain.depth = RangeUtil.clamp(depth, -0.98, 0.98) - ++rank * GRAIN_DEPTH_RANK_STEP;
             grain.corpse = this.corpseIds.has(u.id);
+            // The blight mark: none (-1) on a corpse, so a dying unit drops its soot and ring at once.
+            const dead = grain.corpse || u.alive === false,
+                marked = dead ? -1 : this.blightFreeing(u);
+            let blight = marked < 1 ? marked : -1;
+            if (blight >= 0) grain.blightLostMs = -1;
+            else if (
+                !dead &&
+                marked < 0 &&
+                grain.blight === 0 &&
+                grain.blightFrame === this.grainActorFrame - 1
+            ) {
+                // The freed state reaches the display before its `blightFreed` event (events wait for the display
+                // time, which trails the newest state): the mark holds until the event starts the blow-off.
+                if (grain.blightLostMs < 0) grain.blightLostMs = displayMs;
+                const waited = displayMs - grain.blightLostMs;
+                if (waited >= 0 && waited < BlightLook.eventWaitMs) blight = 0;
+            }
+            grain.blight = blight;
+            grain.blightFrame = this.grainActorFrame;
+            if (grain.blight >= 0) {
+                grain.bodyHalf = p.y + r * 0.55 - grain.anchorY;
+                this.blightShown++;
+            }
             grain.stoppedMs = grain.corpse ? this.corpseStoppedMs(u.id, now) : -1;
             grain.face = grain.corpse
                 ? DEAD_UNIT_LOOK.face
@@ -5780,6 +5838,65 @@ class GLRenderer {
         C.depthWrite = false;
         C.depthFunc = 'lequal';
     }
+    // The blight's broken rings, one stretch of the ring batch after every team ring (noted by drawUnitShadow).
+    drawBlightRings() {
+        const rings = this.blightRings;
+        if (!rings.length) return;
+        const C = this.vectorContext,
+            previousColor = C.forceColor,
+            previousAlpha = C.globalAlpha,
+            previousDepth = C.depth;
+        C.depthTest = !!this.passState.depthEnabled;
+        C.depthWrite = false;
+        C.depthFunc = this.passState.depthFunc || 'lequal';
+        for (let i = 0; i < rings.length; i += 7) {
+            C.depth = rings[i + 4];
+            this.blightArt.drawRing(
+                C,
+                rings[i],
+                rings[i + 1],
+                rings[i + 2],
+                rings[i + 3],
+                rings[i + 5],
+                rings[i + 6],
+            );
+        }
+        rings.length = 0;
+        C.forceColor = previousColor;
+        C.globalAlpha = previousAlpha;
+        C.depth = previousDepth;
+        C.depthTest = false;
+    }
+    // The blight's soot on the marked grains, after every grain: each mote is the shared atlas particle, depth-tested
+    // just in front of its own body so a nearer body still covers it. One quad stream whatever the unit count.
+    drawBlightSoot(entries) {
+        const art = this.effectArt.thorn;
+        if (!this.blightShown || !art) return;
+        const C = this.vectorContext,
+            px = this.canvas.clientWidth > 0 ? this.canvas.width / this.canvas.clientWidth : 1,
+            unit = this.sc();
+        C.depthTest = !!this.passState.depthEnabled;
+        C.depthWrite = false;
+        C.depthFunc = this.passState.depthFunc || 'lequal';
+        for (const { kind, entity: u } of entries) {
+            if (kind !== 'unit') continue;
+            const grain = this.grainActors.get(u.id);
+            if (!grain || grain.frame !== this.grainActorFrame || grain.blight < 0) continue;
+            this.blightArt.drawMotes(
+                art,
+                grain.depth - GRAIN_DEPTH_RANK_STEP * 0.75,
+                u.type,
+                grain.idSeed,
+                grain.anchorX,
+                grain.anchorY,
+                grain.bodyHalf,
+                px,
+                unit,
+                this.blightTimeMs,
+                grain.blight,
+            );
+        }
+    }
     grainBodyOpaque(grain) {
         const expression = grain.actor.currentExpression,
             cache = this.grainOpaqueCoverage;
@@ -5888,6 +6005,10 @@ class GLRenderer {
                 sprite: !!record.sprite,
                 ground: record.ground,
                 matrix: new Float64Array(6),
+                idSeed: HashUtil.hash(u.id),
+                blight: -1,
+                blightFrame: 0,
+                blightLostMs: -1,
                 depth: 0,
                 face: 'neutral',
                 bodyDrawn: false,
@@ -6951,7 +7072,10 @@ class GLRenderer {
                     this.reportEntityRenderError('unit-shadow', u, err);
                 }
             }
-            if (ringPhase) this.flushVectorMesh('grain-ring-end');
+            if (ringPhase) {
+                this.drawBlightRings();
+                this.flushVectorMesh('grain-ring-end');
+            }
         }
         for (const { kind, entity, world } of this.worldSpriteFrame) {
             if (kind !== 'projectile') continue;
@@ -7268,6 +7392,7 @@ class GLRenderer {
                 else this.drawProjectileSafely(entity, world);
             });
         }
+        this.drawBlightSoot(entries);
         this.flushVectorMesh('world-pass-end');
         this.pruneGrainActors();
         const C = this.vectorContext;
