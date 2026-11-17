@@ -10,10 +10,15 @@
 // 30 after its 70. The escorts are ordinary enemy formations (CampaignMission.spawnFormations) standing from the
 // first tick. The boss must be a hero card of the stage's enemy deck; the enemy AI never launches or recalls a hero,
 // so the boss is never recovered and never comes out again.
+// The boss's shell is the ordinary hero shell (LaunchRules.volley: no shock of its own). Its landing strike shows its
+// shock but hurts and shoves nobody (`landsHarmless`, HeroLandingStrike.land): the fight starts with the player's
+// soldiers standing. A boss with no open ground where its shell came down keeps waiting there for it
+// (`waitsToLand`, HeroDeployment.landingFailed) instead of going back to the cannons, so it always comes out once.
 // The boss does not die: the hit that would take its health to 0 subdues it instead (StrategySim.applyDamage). Its
 // health stays 0, the blight leaves it (Blight.free: the freeing presentation) and it stands where it is: it takes no
-// turn and uses no hero ability, nobody targets it and nothing hurts it. A subdued boss wins the match for the player
-// (`resolve`), apart from the enemy main base falling; the player's own main base falling on the same tick loses it.
+// turn, uses no hero ability and counts no kill (HeroGrowth.recordKill), nobody targets it and nothing hurts it.
+// Only a subdued boss wins the stage (`resolve`): the enemy main base falling does not end it, the player's own main
+// base falling loses it (that same tick too). A boss stage has no survival defence, hero lesson or volley goals.
 // `sim.blightBoss { subduedTick }` is the only state (null until subdued) and `unit.subdued` marks the body. Both
 // exist only in a stage that declares a boss, so every other match's state and checksum are what they were.
 import { UnitDefinition } from '../definitions/units.js';
@@ -44,6 +49,11 @@ export class BlightBoss {
         if (!Number.isSafeInteger(level) || level < 1 || level > HeroGrowth.maxLevel)
             throw new Error(`보스 레벨은 1~${HeroGrowth.maxLevel}의 정수여야 합니다: ${level}`);
         if (!this.onMap(sim, x, y)) throw new Error('보스 선언에는 맵 안의 x, y가 필요합니다.');
+        const { mission, volleyGoals } = sim.rules.campaign;
+        if (mission?.surviveMs || mission?.heroLesson || volleyGoals)
+            throw new Error(
+                '보스 판은 보스를 쓰러뜨려야 이기므로 버티기·영웅 수업·발사 목표 임무와 함께 둘 수 없습니다.',
+            );
         if (escorts !== undefined) {
             if (!Array.isArray(escorts) || !escorts.length)
                 throw new Error('보스 호위(escorts)는 비어 있지 않은 목록이어야 합니다.');
@@ -89,36 +99,35 @@ export class BlightBoss {
         this.fire(sim, boss);
     }
 
-    // After the tick's landings (StrategySim.step, after HeroDeployment.settle): a boss that found no open ground
-    // where its shell came down went back to the cannons (HeroDeployment.landingFailed), and the enemy main base
-    // fires it at its place again, while that base stands.
-    static settle(sim) {
-        if (!sim.blightBoss) return;
-        const boss = sim.rules.campaign.boss;
-        if (sim.heroes[SIDE][boss.type] !== null) return;
-        const base = sim.buildingById.get(BASE_ID);
-        if (base && base.alive !== false && base.hp > 0) this.fire(sim, boss);
-    }
-
-    // The enemy main base fires the boss at its place (the slot keeps its growth and health).
+    // The enemy main base fires the boss at its place with the ordinary hero shell (LaunchRules.volley).
     static fire(sim, boss) {
-        const grain = LaunchRules.grain(boss.type);
+        const cannon =
+                sim.buildingById.get(BASE_ID) || sim.buildings.find(({ id }) => id === BASE_ID),
+            [shot] = LaunchRules.volley(boss.type, boss, cannon, sim.world);
         sim.fireLaunchShell({
             side: SIDE,
             cannonId: BASE_ID,
             type: boss.type,
-            mode: 'single',
+            mode: LaunchRules.grain(boss.type).fire.mode,
             shot: 0,
             shots: 1,
-            power: 1,
+            power: LaunchRules.power(0),
             holdMs: 0,
             arcDistance: null,
-            x: boss.x,
-            y: boss.y,
-            count: grain.count,
-            impact: grain.impact,
-            splash: grain.splash,
+            ...shot,
         });
+    }
+
+    // Is this landing deployment the boss's sortie? (HeroDeployment.landingFailed: it keeps waiting for open ground.)
+    static waitsToLand(sim, group) {
+        return (
+            !!sim.blightBoss && group.side === SIDE && group.type === sim.rules.campaign.boss.type
+        );
+    }
+
+    // Does this hero's landing strike hurt and shove nobody? The boss's does not (HeroLandingStrike.land).
+    static landsHarmless(sim, unit) {
+        return !!sim.blightBoss && unit === this.unit(sim);
     }
 
     // Is this unit the subdued boss? (Out of the fight: no turn, no ability, no target, StrategySim.)
@@ -157,12 +166,12 @@ export class BlightBoss {
         return true;
     }
 
-    // The match's winner with the boss counted (StrategySim.step, after the mission): a subdued boss wins for the
-    // player unless the player's main base has fallen (that same tick too). A read: it changes nothing.
+    // The match's winner with the boss counted (StrategySim.step, from the main bases, before the mission): the
+    // player's main base falling (a draw too) loses, a subdued boss wins, nothing else ends it. A read.
     static resolve(sim, winner) {
-        if (sim.blightBoss?.subduedTick == null || winner === 'guest' || winner === 'draw')
-            return winner;
-        return 'host';
+        if (!sim.blightBoss) return winner;
+        if (winner === 'guest' || winner === 'draw') return 'guest';
+        return sim.blightBoss.subduedTick !== null ? 'host' : null;
     }
 
     // What the battle screen reads (StrategySim.snapshot): the boss's level, kills, the kills still between it and

@@ -83,10 +83,12 @@ const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 //             escorts: [{ type: 'rice', x: 1400, y: 2380, count: 12, columns: 4 }] },
 // At the start the enemy main base fires the hero at (x, y) on the ordinary hero sortie, at the kills of `level`
 // (5: 70 kills, so it awakens at 100, 30 more). The escorts (wave formations without `side`, never a hero) stand
-// from the first tick. The boss does not die: at 0 health the blight leaves it and the stage is won; the player's
-// main base falling still loses it, on that same tick too. `type` must be a hero card of `enemyDeck`. A stage that
+// from the first tick. Its landing strike hurts nobody. The boss does not die: at 0 health the blight leaves it and
+// the stage is won, the only way to win it (the enemy main base falling does not end it); the player's main base
+// falling still loses it, on that same tick too. `type` must be a hero card of `enemyDeck`. A stage that
 // rewards the hero it frees (`rewardCard`) names the same card. The match start rejects a boss on a stage without
-// `blight: true`, a soldier card or a card the enemy deck lacks, and a place outside the map. No stage declares one yet.
+// `blight: true`, a soldier card or a card the enemy deck lacks, a place outside the map, and a boss beside a
+// survival defence (`mission.surviveMs`), a hero lesson or volley goals. No stage declares one yet.
 export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'first',

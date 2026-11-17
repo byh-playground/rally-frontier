@@ -1,3 +1,4 @@
+import { BlightBoss } from './blight-boss.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { HeroAllyAura } from './capabilities/hero-ally-aura.js';
@@ -212,6 +213,8 @@ export class HeroDeployment {
         const { side, type } = group;
         const hero = sim.heroes[side][type];
         if (!hero || hero.sortieId !== group.projectileId) return false;
+        // The blight's boss never goes back to the cannons: it waits for open ground (BlightBoss).
+        if (BlightBoss.waitsToLand(sim, group)) return false;
         group.heroRetryUntil ??= sim.tick + sim.time.ceilTicks(LANDING_GRACE_MS);
         if (sim.tick < group.heroRetryUntil) return false;
         this.dock(sim, side, type, this.reserveHp(sim, side, type));

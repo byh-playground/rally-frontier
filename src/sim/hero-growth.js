@@ -12,6 +12,7 @@
 // through `bodyScale`, so no ability branches on the awakening itself.
 import { HERO_LEVEL_ATK_PCT, HERO_LEVEL_HP_PCT, HERO_LEVEL_KILLS } from '../units/baseline.js';
 import { UnitDefinition } from '../definitions/units.js';
+import { BlightBoss } from './blight-boss.js';
 import { LaunchRules } from './launch-rules.js';
 
 const GROWTH_KEYS = 'kills,level';
@@ -134,13 +135,14 @@ export class HeroGrowth {
     }
 
     // The killing blow on `target` came from the entity `sourceEntityId`. Only a living deployed hero of the other
-    // side counts it; a blow from an ally beside it, or a building, gives the hero nothing. Returns the hero that
-    // counted it (its level already raised), or null.
+    // side counts it; a blow from an ally beside it, or a building, gives the hero nothing, nor does one from a
+    // subdued boss (BlightBoss: no kill, no level, no kill effect). Returns the hero that counted it (its level
+    // already raised), or null.
     static recordKill(sim, sourceEntityId, target) {
         if (!sourceEntityId) return;
         const hero = sim.liveEntityRefById(sourceEntityId, 'unit')?.entity;
         const growth = hero?.heroGrowth;
-        if (!growth || hero.side !== 1 - target.side) return null;
+        if (!growth || hero.side !== 1 - target.side || BlightBoss.subdued(hero)) return null;
         growth.kills++;
         this.levelUp(sim, hero, growth);
         return hero;

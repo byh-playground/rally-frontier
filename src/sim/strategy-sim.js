@@ -3181,8 +3181,6 @@ class StrategySim {
         LaunchImpact.deploy(this);
         this.resolveConstructionHits();
         HeroDeployment.settle(this);
-        // A boss whose landing failed is fired again (BlightBoss).
-        BlightBoss.settle(this);
         const projectileMs = profile ? now() - mark : 0;
 
         mark = profile ? now() : 0;
@@ -3198,9 +3196,9 @@ class StrategySim {
             winner = this.campaignVolleyPractice.complete ? 'host' : null;
         }
         if (!this.netcodeMatchResult) {
-            winner = CampaignMission.resolve(this, winner);
-            // A subdued boss wins the stage unless the player's main base fell (BlightBoss).
+            // A boss stage is won only on its subdued boss; the player's main base falling loses it (BlightBoss).
             winner = BlightBoss.resolve(this, winner);
+            winner = CampaignMission.resolve(this, winner);
         }
         this.updateBalanceTelemetry(winner);
         this.cleanupDeadEntities();

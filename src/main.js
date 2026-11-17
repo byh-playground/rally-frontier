@@ -10822,7 +10822,11 @@ class MatchLifecycle {
             mine = !draw && winner === viewRole;
         const stage = campaignStage(MatchLifecycle.selectedCampaign);
         const cleared =
-            stage && mine && (reason === 'base-destroyed' || reason === 'volley-practice');
+            stage &&
+            mine &&
+            (reason === 'base-destroyed' ||
+                reason === 'volley-practice' ||
+                reason === 'boss-subdued');
         const reward = cleared ? campaignProgress.complete(stage) : null;
         const next = cleared ? campaignProgress.nextAfter(stage) : null;
         usageMetrics?.matchEnded(ActiveViewState.session, {
@@ -10839,6 +10843,10 @@ class MatchLifecycle {
         else if (reason === 'disconnect-timeout')
             UiRegistry.refs.resultText.textContent =
                 '연결을 60초 안에 복구하지 못해 경기가 중단되었습니다.';
+        // A stage won on its boss (BlightBoss) says so first: it outranks the defence and every other text.
+        else if (reason === 'boss-subdued')
+            UiRegistry.refs.resultText.textContent =
+                '깜부기가 떨어져 나가 영웅이 정신을 차렸습니다.';
         else if (reason === 'volley-practice')
             UiRegistry.refs.resultText.textContent =
                 '1·2·3문 사격으로 적 수비대 세 곳을 모두 격파했습니다.';
@@ -10852,21 +10860,13 @@ class MatchLifecycle {
             UiRegistry.refs.resultText.textContent = mine
                 ? '적 메인 거점을 파괴했습니다.'
                 : '내 메인 거점이 파괴되었습니다.';
-        // A stage won on its boss (BlightBoss): the blight left the hero.
-        if (
-            mine &&
-            reason === 'base-destroyed' &&
-            ActiveViewState.snap?.blightBoss?.subduedTick != null
-        )
-            UiRegistry.refs.resultText.textContent =
-                '깜부기가 떨어져 나가 영웅이 정신을 차렸습니다.';
         if (stage?.mission?.surviveMs && reason === 'base-destroyed')
             UiRegistry.refs.resultText.textContent = mine
                 ? '제한 시간 동안 본진과 지킬 거점을 지켰습니다.'
                 : ActiveViewState.snap?.campaignMission?.guardLost
                   ? '지킬 거점이 무너졌습니다.'
                   : '내 메인 거점이 파괴되었습니다.';
-        if (cleared && !next)
+        if (cleared && !next && reason !== 'boss-subdued')
             UiRegistry.refs.resultText.textContent = '캠페인을 모두 완료했습니다.';
         const end = ActiveViewState.snap,
             stats = end?.launchStats,
