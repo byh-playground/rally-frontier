@@ -38,6 +38,7 @@ import {
     VisibilityPolicy,
 } from './entities.js';
 import { StateContract, StateValue } from './components.js';
+import { BlightField } from './blight-field.js';
 import { CampaignMission } from './campaign-mission.js';
 import { Blight } from './blight.js';
 import { SporeSac } from './spore-sac.js';
@@ -353,6 +354,8 @@ class StrategySim {
         if (missionState) this.campaignMission = missionState;
         // A blighted stage's spore sacs and their captives (SporeSac): only in a stage that declares them.
         SporeSac.initialize(this);
+        // A blighted stage's blight fields and braziers (BlightField): only in a stage that declares them.
+        BlightField.initialize(this);
         // Loading: every radius bucket's chunk and portal structure, before the first tick asks for a field.
         this.navigation.prepare();
     }
@@ -1026,30 +1029,37 @@ class StrategySim {
         }
     }
 
+    // The side that alone holds the place (x, y) this tick, or null: living ground soldiers within CAPTURE_RADIUS
+    // in clear terrain line count, and a side holds it when it has one there and the other side has none. The one
+    // presence rule of a capture point and of a blight field's brazier (BlightField).
+    capturePresence(x, y) {
+        let hostPresence = 0,
+            guestPresence = 0;
+        const count = this.nearbyUnits(x, y, CAPTURE_RADIUS, null, CAPTURE_QUERY);
+        for (let k = 0; k < count; k++) {
+            const u = this.units[CAPTURE_QUERY.items[k]];
+            if (
+                !u?.alive ||
+                (u.side !== 0 && u.side !== 1) ||
+                !!UnitDefinition.get(u.type)?.captureExcluded ||
+                UnitFlight.airborne(u) ||
+                SporeSac.bound(u)
+            )
+                continue;
+            if (Math.hypot(u.x - x, u.y - y) > CAPTURE_RADIUS) continue;
+            if (!this.world.terrain.field.polygonSegmentClear(u.x, u.y, x, y, 0)) continue;
+            if (u.side === 0) hostPresence++;
+            else guestPresence++;
+        }
+        if (hostPresence > 0 && guestPresence === 0) return 0;
+        if (guestPresence > 0 && hostPresence === 0) return 1;
+        return null;
+    }
     updateCapturePoints() {
         for (const cp of this.capturePoints) {
             if (cp.owner != null || !cp.enabled) continue;
-            let hostPresence = 0,
-                guestPresence = 0;
-            const count = this.nearbyUnits(cp.x, cp.y, CAPTURE_RADIUS, null, CAPTURE_QUERY);
-            for (let k = 0; k < count; k++) {
-                const u = this.units[CAPTURE_QUERY.items[k]];
-                if (
-                    !u?.alive ||
-                    (u.side !== 0 && u.side !== 1) ||
-                    !!UnitDefinition.get(u.type)?.captureExcluded ||
-                    UnitFlight.airborne(u) ||
-                    SporeSac.bound(u)
-                )
-                    continue;
-                if (Math.hypot(u.x - cp.x, u.y - cp.y) > CAPTURE_RADIUS) continue;
-                if (!this.world.terrain.field.polygonSegmentClear(u.x, u.y, cp.x, cp.y, 0))
-                    continue;
-                if (u.side === 0) hostPresence++;
-                else guestPresence++;
-            }
-            if (hostPresence > 0 && guestPresence === 0) this.spawnOutpost(cp, 0);
-            else if (guestPresence > 0 && hostPresence === 0) this.spawnOutpost(cp, 1);
+            const side = this.capturePresence(cp.x, cp.y);
+            if (side !== null) this.spawnOutpost(cp, side);
         }
         this.assignConstructionWorkers();
     }
@@ -2190,6 +2200,8 @@ class StrategySim {
             isBuilding: !!isBuilding,
             damageClass,
             suppressImpactFx: !!options?.suppressImpactFx,
+            // Ground that hurts (BlightField): the presentation does not shake the screen for it.
+            ambient: !!options?.ambient,
         });
 
         if (target.hp <= 0) {
@@ -3062,6 +3074,7 @@ class StrategySim {
         CardAmmo.update(this);
         ForwardCannon.decay(this);
         this.updateCapturePoints();
+        BlightField.update(this);
         this.updateLaunchSalvos();
         let winner = null;
         const worldMs = profile ? now() - mark : 0;
@@ -3308,6 +3321,7 @@ class StrategySim {
                 mapDescriptor: this.mapDescriptor,
                 launchDeployments: StateValue.copy(this.launchDeployments),
                 campaignMission: CampaignMission.snapshot(this.campaignMission),
+                blightField: BlightField.view(this),
                 heroes: StateValue.copy(this.heroes),
                 heroRecovery: StateValue.copy(this.heroRecovery),
                 heroGrowth: StateValue.copy(this.heroGrowth),

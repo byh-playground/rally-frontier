@@ -17,6 +17,7 @@ import { HashUtil } from './sim/map-generation.js';
 import { HERO_LEVEL_KILLS, RESOURCE_SCALE } from './units/baseline.js';
 import { BotController } from './ai/bot-controller.js';
 import { Blight } from './sim/blight.js';
+import { BlightField } from './sim/blight-field.js';
 import { SporeSac } from './sim/spore-sac.js';
 import { UnitDefinition } from './definitions/units.js';
 import { StableSerializationUtil } from './net/lobby-codec.js';
@@ -90,7 +91,8 @@ function flag(scene, name, text) {
 
 // A match on one of the PvP maps (game-rules.js presets), with both sides' decks at the starter deck, or both at
 // `deck` (comma-separated cards, LaunchRules.normalizeDeck checks it). `upgrades` and `blight` (see stagedMatch) turn
-// on the host side's campaign upgrades and the guest side's blight; `sporeSacs` is the stage's spore sac declaration.
+// on the host side's campaign upgrades and the guest side's blight; `sporeSacs` is the stage's spore sac declaration
+// and `fields` its blight fields and braziers (blightFieldDeclaration).
 function createMatchSim(
     scene,
     map,
@@ -99,6 +101,7 @@ function createMatchSim(
     upgrades = undefined,
     blight = undefined,
     sporeSacs = undefined,
+    fields = undefined,
 ) {
     const rules = GameRuleRuntime.resolveMatchRules({ presetId: map }),
         cards = deck === undefined ? LaunchRules.starterDeck : String(deck).split(',');
@@ -106,7 +109,117 @@ function createMatchSim(
         upgrades,
         blight,
         sporeSacs,
+        fields,
     });
+}
+
+// `field=<x>,<y>` (several: `field=<x>,<y>;<x>,<y>`) and `brazier=<x>,<y>,<radius>` (several the same way), in the
+// `unit` and `launch` scenes with `blight=1`: the stage's blight fields and braziers, as its `blightFields` and
+// `braziers` declarations (BlightField). Returns those two declarations, or undefined without either; a `brazier`
+// without a field is passed on so the match start rejects it as it rejects a stage's.
+function blightFieldDeclaration(scene, params) {
+    const places = (name, pattern, read) =>
+        params[name] === undefined
+            ? undefined
+            : String(params[name])
+                  .split(';')
+                  .map((text) => {
+                      const place = pattern.exec(text);
+                      if (!place) throw new Error(`${scene} cannot read ${name}=${params[name]}`);
+                      return read(place);
+                  });
+    const blightFields = places('field', /^(\d+),(\d+)$/, ([, x, y]) => ({
+            x: Number(x),
+            y: Number(y),
+        })),
+        braziers = places('brazier', /^(\d+),(\d+),(\d+)$/, ([, x, y, radius]) => ({
+            x: Number(x),
+            y: Number(y),
+            radius: Number(radius),
+        }));
+    if (!blightFields && !braziers) return undefined;
+    return { ...(blightFields && { blightFields }), ...(braziers && { braziers }) };
+}
+
+// What a stage's blight fields did (every scene with fields, `blightField`): the cells blighted and purified now,
+// the radius now and each tick it changed (`radiusLog`: [tick, radius]), the braziers with whether each is lit and
+// the tick it lit, the field's hits: damage dealt (`dealt`), hits (`hits`), units hurt (`hurtUnits`), the most one
+// unit lost (`mostOnOneUnit`), hits by the target's side (`hitsBySide`), on a flying unit (`airHits`) and on a
+// building (`buildingHits`), 0 for the guest side, the air and buildings by the rule; who stands on a blighted cell
+// now (`standing`: the host's ground units the field hurts `hurt`, the guest's `guest`, flying units of either side
+// `flying`); and the cells that were purified once and are not now (`reblighted`, 0 by the rule).
+function createBlightFieldProbe() {
+    const lost = new Map(),
+        radiusLog = [],
+        litTicks = [],
+        hitsBySide = [0, 0],
+        purified = new Set();
+    let dealt = 0,
+        hits = 0,
+        airHits = 0,
+        buildingHits = 0,
+        reblighted = 0;
+    return {
+        observe(sim) {
+            const state = sim.blightField;
+            if (!state) return;
+            if (radiusLog.at(-1)?.[1] !== state.radius) radiusLog.push([sim.tick, state.radius]);
+            state.lit.forEach((lit, i) => {
+                if (lit && litTicks[i] === undefined) litTicks[i] = sim.tick;
+            });
+            for (const index of purified)
+                if (state.cells[index] !== BlightField.PURIFIED) {
+                    reblighted++;
+                    purified.delete(index);
+                }
+            state.cells.forEach((cell, index) => {
+                if (cell === BlightField.PURIFIED) purified.add(index);
+            });
+            for (const event of sim.events) {
+                if (event.type !== 'hit' || event.sourceId !== BlightField.SOURCE) continue;
+                hits++;
+                dealt += event.amount;
+                if (event.isBuilding) buildingHits++;
+                else {
+                    hitsBySide[event.side]++;
+                    if (UnitFlight.airborne(sim.unitById.get(event.targetId))) airHits++;
+                    lost.set(event.targetId, (lost.get(event.targetId) || 0) + event.amount);
+                }
+            }
+        },
+        state(sim) {
+            const state = sim.blightField,
+                count = (cell) => state.cells.reduce((n, value) => n + (value === cell ? 1 : 0), 0),
+                standing = { hurt: 0, guest: 0, flying: 0 };
+            for (const unit of sim.units) {
+                if (!unit.alive || BlightField.at(sim, unit.x, unit.y) !== BlightField.BLIGHTED)
+                    continue;
+                if (UnitFlight.airborne(unit)) standing.flying++;
+                else if (BlightField.harms(sim, unit)) standing.hurt++;
+                else standing.guest++;
+            }
+            return {
+                blighted: count(BlightField.BLIGHTED),
+                purified: count(BlightField.PURIFIED),
+                reblighted,
+                radius: state.radius,
+                radiusLog,
+                braziers: (sim.rules.campaign.braziers ?? []).map((brazier, i) => ({
+                    ...brazier,
+                    lit: state.lit[i],
+                    litTick: litTicks[i] ?? null,
+                })),
+                dealt,
+                hits,
+                hurtUnits: lost.size,
+                mostOnOneUnit: Math.max(0, ...lost.values()),
+                hitsBySide,
+                airHits,
+                buildingHits,
+                standing,
+            };
+        },
+    };
 }
 
 // `sac=<x>,<y>&captive=<type>&captiveCount=N` (the `unit` and `launch` scenes, with `blight=1`): one spore sac at
@@ -256,9 +369,9 @@ function createSporeSacProbe(scene, sim) {
 // created for the guest side is blighted (Blight, as a campaign stage's `blight: true`). Only a campaign match may
 // carry either, so the match then runs as a bare campaign stage on the same map: no outposts, no mission, the same
 // decks. Without both parameters a scene keeps its plain match, tick for tick.
-function stagedMatch(scene, seed, rules, map, decks, { upgrades, blight, sporeSacs }) {
+function stagedMatch(scene, seed, rules, map, decks, { upgrades, blight, sporeSacs, fields }) {
     const blighted = flag(scene, 'blight', blight);
-    if (upgrades === undefined && !blighted && sporeSacs === undefined)
+    if (upgrades === undefined && !blighted && sporeSacs === undefined && fields === undefined)
         return new StrategySim(seed, rules, decks);
     rules.campaign = {
         id: upgrades === undefined ? 'debug-blight' : 'debug-upgrades',
@@ -268,6 +381,7 @@ function stagedMatch(scene, seed, rules, map, decks, { upgrades, blight, sporeSa
         enemyOutposts: [],
         ...(blighted && { blight: true }),
         ...(sporeSacs && { sporeSacs }),
+        ...fields,
     };
     return new StrategySim(seed, rules, decks, [
         upgrades === undefined ? [] : String(upgrades).split(','),
@@ -2251,6 +2365,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
         const times = flag(name, 'times', params.times);
         // `freeAtMs`: every blighted unit `freeable` lets go is freed once, right after the tick at that time.
         const blight = createBlightProbe(),
+            field = createBlightFieldProbe(),
             freeAtMs =
                 params.freeAtMs === undefined ? null : integer(name, 'freeAtMs', params.freeAtMs);
         let failure = null;
@@ -2266,6 +2381,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                         for (const unit of run.sim.units)
                             if (freeable(unit)) Blight.free(run.sim, unit);
                     blight.observe(run.sim);
+                    field.observe(run.sim);
                     log.record(run.sim);
                 },
                 (error) => {
@@ -2300,6 +2416,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 units: { host: alive(0), guest: alive(1) },
                 render: renderStats(stage.renderer),
                 blight: blight.state(run.sim),
+                ...(run.sim.blightField ? { blightField: field.state(run.sim) } : {}),
                 ...extra(run.sim),
                 ...log.state(times),
                 overlap: overlap(run.sim),
@@ -2829,6 +2946,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 params.upgrades,
                 params.blight,
                 sporeSacDeclaration(scene, params),
+                blightFieldDeclaration(scene, params),
             );
             if (flag(scene, 'outposts', params.outposts)) completeOutposts(sim);
             const sac = createSporeSacProbe(scene, sim);
@@ -3029,6 +3147,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     upgrades: params.upgrades,
                     blight: params.blight,
                     sporeSacs: sporeSacDeclaration(scene, params),
+                    fields: blightFieldDeclaration(scene, params),
                 },
             );
             const sac = createSporeSacProbe(scene, sim);

@@ -93,6 +93,66 @@ const BLIGHT_LOOK = Object.freeze({
             [0.42, 0.18, 0.14, '#3b2152'],
         ]),
     }),
+    // The blight field's ground (sim/blight-field.js), a placeholder. Radii are in cells, colours are RGBA.
+    field: Object.freeze({
+        // Every blighted cell is one dark blot wide enough to close over its neighbours, with a smaller violet lump
+        // and, on some cells, a dull glint: at a hashed place in the cell, so the ground reads as one stain.
+        blot: 0.9,
+        blotColor: Object.freeze([0.115, 0.055, 0.16, 0.94]),
+        lump: Object.freeze({
+            radius: 0.34,
+            spread: 0.3,
+            color: Object.freeze([0.23, 0.13, 0.32, 0.9]),
+        }),
+        glint: Object.freeze({
+            chance: 0.22,
+            radius: 0.11,
+            spread: 0.36,
+            color: Object.freeze([0.54, 0.29, 0.59, 0.85]),
+        }),
+        // A cell the field has just spread to swells up from a small blot over this long, under a violet flash.
+        spreadMs: 700,
+        spreadFrom: 0.25,
+        spreadFlash: Object.freeze([0.62, 0.3, 0.72, 0.7]),
+        // A cell fire has just purified glows as an ember for this long, then stays as a pale ash mark (a cell a
+        // brazier kept clean has only the fainter mark).
+        burnMs: 600,
+        ember: Object.freeze([1, 0.52, 0.12, 0.9]),
+        emberCore: Object.freeze([1, 0.86, 0.4, 0.9]),
+        ash: Object.freeze({
+            radius: 0.4,
+            spread: 0.2,
+            color: Object.freeze([0.3, 0.27, 0.24, 0.3]),
+        }),
+        keptAlpha: 0.16,
+    }),
+    // The field's brazier, a placeholder. Radii are world units: a stone ring, its bowl, coals; a line marks the
+    // ground it purifies. Lit, the coals glow, the ground inside the line is warm and a flame flickers.
+    brazier: Object.freeze({
+        stone: Object.freeze({ radius: 30, color: Object.freeze([0.2, 0.19, 0.18, 0.92]) }),
+        bowl: Object.freeze({ radius: 22, color: Object.freeze([0.36, 0.33, 0.3, 1]) }),
+        coal: Object.freeze({
+            radius: 15,
+            unlit: Object.freeze([0.1, 0.09, 0.09, 1]),
+            lit: Object.freeze([1, 0.5, 0.1, 1]),
+        }),
+        reach: Object.freeze({
+            width: 2,
+            unlit: Object.freeze([1, 0.72, 0.3, 0.65]),
+            lit: Object.freeze([1, 0.6, 0.18, 0.8]),
+            // The line is this many straight pieces, and this many times as wide once lit.
+            segments: 48,
+            litWidth: 2,
+        }),
+        // The flame: tongues `width` wide and up to `height` tall (world units), swaying every `swayMs`.
+        flame: Object.freeze({
+            width: 13,
+            height: 46,
+            swayMs: 420,
+            outer: Object.freeze([1, 0.45, 0.08, 0.95]),
+            inner: Object.freeze([1, 0.85, 0.35, 0.95]),
+        }),
+    }),
 });
 
 function mesh(vertices, indices) {
@@ -294,4 +354,138 @@ class BlightLook {
     }
 }
 
-export { BLIGHT_LOOK, BlightLook };
+// The blight field's ground on screen (sim/blight-field.js, the snapshot's `blightField`), a placeholder made of
+// plain discs. It keeps which state each cell was last shown in and when that changed (the tick's time), so a cell the
+// field spread to swells in and a purified one glows out; a cell's lump, glint and ash places are hashes of its grid
+// position, so the same tick draws the same stain. Nothing is drawn per cell on its own: every disc goes into the
+// ground pass's one triangle stream.
+class BlightFieldLook {
+    constructor() {
+        this.cells = null;
+        this.grid = -1;
+        this.shown = new Uint8Array(0);
+        this.from = new Uint8Array(0);
+        this.changedAt = new Float64Array(0);
+        this.color = [0, 0, 0, 0];
+    }
+    // The next grid followed starts unchanged (a match restarted or wound back).
+    reset() {
+        this.cells = null;
+        this.grid = -1;
+    }
+    // Each new snapshot: notes the cells that changed since the last one, at `now` (the snapshot's own time on the
+    // display clock). A new grid (another match) starts unchanged.
+    follow(field, now) {
+        const cells = field.cells;
+        if (cells === this.cells) return;
+        this.cells = cells;
+        // One number for the grid's place and width (cells are 25 units, a map is a few hundred cells a side).
+        const grid = (field.col0 * 4096 + field.row0) * 4096 + field.cols;
+        if (grid !== this.grid || cells.length !== this.shown.length) {
+            this.grid = grid;
+            this.shown = Uint8Array.from(cells);
+            this.from = Uint8Array.from(cells);
+            this.changedAt = new Float64Array(cells.length).fill(-Infinity);
+            return;
+        }
+        for (let i = 0; i < cells.length; i++) {
+            if (cells[i] === this.shown[i]) continue;
+            this.from[i] = this.shown[i];
+            this.shown[i] = cells[i];
+            this.changedAt[i] = now;
+        }
+    }
+    tint(color, alpha) {
+        const c = this.color;
+        c[0] = color[0];
+        c[1] = color[1];
+        c[2] = color[2];
+        c[3] = color[3] * alpha;
+        return c;
+    }
+    // `disc(wx, wy, radius, colour)` draws a disc lying on the ground at a world point, `radius` world units.
+    draw(field, now, disc) {
+        if (field.cells !== this.cells) return;
+        const look = BLIGHT_LOOK.field,
+            { cellSize: size, col0, row0, cols } = field,
+            { shown, from, changedAt } = this;
+        // The blots first, so no lump is covered by the next cell's blot.
+        for (let i = 0; i < shown.length; i++) {
+            if (shown[i] !== BLIGHTED) continue;
+            const col = i % cols,
+                age = now - changedAt[i],
+                grown =
+                    age < look.spreadMs
+                        ? look.spreadFrom +
+                          (1 - look.spreadFrom) * easeOut(Math.max(0, age) / look.spreadMs)
+                        : 1;
+            disc(
+                (col0 + col + 0.5) * size,
+                (row0 + (i - col) / cols + 0.5) * size,
+                size * look.blot * grown,
+                look.blotColor,
+            );
+        }
+        for (let i = 0; i < shown.length; i++) {
+            const state = shown[i];
+            if (state === CLEAN) continue;
+            const col = i % cols,
+                gx = col0 + col,
+                gy = row0 + (i - col) / cols,
+                age = now - changedAt[i];
+            if (state === BLIGHTED) {
+                const spreading = age < look.spreadMs ? 1 - Math.max(0, age) / look.spreadMs : 0;
+                disc(
+                    (gx + 0.5 + (chance(gx, gy, 1) - 0.5) * look.lump.spread) * size,
+                    (gy + 0.5 + (chance(gx, gy, 2) - 0.5) * look.lump.spread) * size,
+                    size * look.lump.radius * (1 - spreading * 0.5),
+                    look.lump.color,
+                );
+                if (spreading > 0)
+                    disc(
+                        (gx + 0.5) * size,
+                        (gy + 0.5) * size,
+                        size * look.blot * 0.7,
+                        this.tint(look.spreadFlash, spreading),
+                    );
+                if (chance(gx, gy, 3) < look.glint.chance)
+                    disc(
+                        (gx + 0.5 + (chance(gx, gy, 4) - 0.5) * look.glint.spread) * size,
+                        (gy + 0.5 + (chance(gx, gy, 5) - 0.5) * look.glint.spread) * size,
+                        size * look.glint.radius,
+                        look.glint.color,
+                    );
+                continue;
+            }
+            // Purified: the ash mark, and over it the ember while the burn is fresh.
+            const x = (gx + 0.5 + (chance(gx, gy, 6) - 0.5) * look.ash.spread) * size,
+                y = (gy + 0.5 + (chance(gx, gy, 7) - 0.5) * look.ash.spread) * size,
+                burned = from[i] === BLIGHTED,
+                burning = burned && age < look.burnMs ? 1 - Math.max(0, age) / look.burnMs : 0;
+            disc(
+                x,
+                y,
+                size * look.ash.radius,
+                this.tint(
+                    look.ash.color,
+                    burned ? 1 - burning : look.keptAlpha / look.ash.color[3],
+                ),
+            );
+            if (burning > 0) {
+                disc(
+                    x,
+                    y,
+                    size * look.blot * (0.55 + 0.45 * burning),
+                    this.tint(look.ember, burning),
+                );
+                disc(x, y, size * look.blot * 0.45 * burning, this.tint(look.emberCore, burning));
+            }
+        }
+    }
+}
+// The cell states of sim/blight-field.js (BlightField.CLEAN, BLIGHTED; anything else is purified), as the snapshot
+// carries them.
+const CLEAN = 0,
+    BLIGHTED = 1;
+
+export { BLIGHT_LOOK, BlightFieldLook, BlightLook };

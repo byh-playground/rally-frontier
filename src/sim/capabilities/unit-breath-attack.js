@@ -16,12 +16,15 @@
 //   길이가 그 배수이고(UnitBreathAttack.length) 공격 사거리도 늘어난 길이만큼 길다(range). 각도는 그대로다.
 // - 지상 적만 탄다: 적 진영의 지상 층(공간 격자 그룹)만 질의하고 canTargetUnit이 나는 유닛을 거른다. 아군·투입탄·
 //   나는 적에는 닿지 않는다. 넉백은 없다. 피해는 applyDamage(피해 종류·출처·통계·숫자)를 지난다.
+// - 감염 밭(BlightField)이 있는 판에서 플레이어 편의 불은 피해 틱마다 같은 부채꼴(sectorTouches)에 가운데가 반 칸
+//   안으로 닿고 지형 선이 트인 감염 칸을 정화한다. 적이 맞았는지와 무관하다.
 // - Unit.breath { aimX, aimY (AIM_UNIT 길이 정수 벡터), pulses }와 Unit.sustain(뿜는 중·남은 틱·대기)이 권위
 //   상태다(저장·해시). 피해 틱마다 breathPulse 사건(불줄기 가운데 점, 맞힌 수)을 그 회차의 hit보다 먼저 낸다(피해
 //   숫자 합치기).
 // - 그림: 불줄기는 sprite 계약의 `breath.drawFlame`으로 main.js가 그린다(sustain.active인 동안, 보간한 조준).
 //   대기 중(sustain.readyTick 전)에는 입을 다물고 연기를 낸다.
 import { COLLISION_RADIUS_SCALE } from '../../definitions/world-rules.js';
+import { BlightField } from '../blight-field.js';
 import { InteractionGeometry } from '../navigation.js';
 import { IndexList } from '../index-list.js';
 import { SustainedAttack } from './sustained-attack.js';
@@ -239,6 +242,20 @@ class UnitBreathAttack {
             }
         }
         event.hits = hits;
+        // The player's flame purifies the blighted ground it reaches (BlightField), enemy in it or not.
+        if (sim.blightField) {
+            const half = (spec.arcDegrees * DEGREE) / 2;
+            BlightField.burn(
+                sim,
+                unit,
+                this,
+                breath.aimX / aim,
+                breath.aimY / aim,
+                Math.cos(half),
+                Math.sin(half),
+                length,
+            );
+        }
         return winner;
     }
 }

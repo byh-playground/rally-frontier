@@ -76,7 +76,7 @@ import { GRAIN_SPRITES } from './render/grain-sprite-registry.js';
 import { heroBasicAttackElapsedMs } from './render/hero-basic-motion.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
 import { DEAD_UNIT_LOOK, DeadUnitLook } from './render/dead-unit-look.js';
-import { BLIGHT_LOOK, BlightLook } from './render/blight-look.js';
+import { BLIGHT_LOOK, BlightFieldLook, BlightLook } from './render/blight-look.js';
 import {
     CONFIG,
     FP,
@@ -1233,6 +1233,10 @@ class GLRenderer {
         // The units freed on the newest freeing tick ({ tick, count }), shared by their `blightFreed` records.
         this.blightFreedTogether = null;
         this.sporeSacDisc = (x, y, radius, color) => this.circle(x, y, radius, color, 18);
+        // The blight field's ground (BlightFieldLook): which state each cell was last shown in, and the ground
+        // disc it draws with.
+        this.blightFieldArt = new BlightFieldLook();
+        this.blightFieldDisc = (x, y, radius, color) => this.groundDisc(x, y, radius, color, 8);
         this.blightTimeMs = 0;
         this.grainFaces = new RallyGamekit.FaceOverlay(this.vectorContext, {
             faces: GRAIN_FACE_IDS,
@@ -1889,6 +1893,29 @@ class GLRenderer {
     circle(x, y, r, c, n = 10) {
         this.regularPolygon(x, y, r, c, n, 0);
     }
+    // A disc lying on the ground around the world ground point (wx, wz), `radius` world units: flattened by the
+    // ground projection, every vertex at its own row's depth so it lies on raised ground as on the plain (a ground
+    // mark, just over the terrain surface).
+    groundDisc(wx, wz, radius, c, n = 10) {
+        const sc = this.sc(),
+            r = radius * sc,
+            [x, y] = this.worldToPx(this.viewX(wx), this.viewY(wz));
+        if (r <= 0 || x < -r || y < -r || x > this.canvas.width + r || y > this.canvas.height + r)
+            return;
+        const pts = this.geometryTemplates.regularPolygon(n, 0),
+            ry = BattlefieldProjection.planarY(r),
+            previous = this._renderDepth,
+            depth = this.renderDepthForWorld({ z: wz }) - 0.0004,
+            // A vertex lower on the screen is nearer: its row's depth is smaller.
+            perRow = (radius / this.world.height) * GLRenderer.DEPTH_PROJECTION.viewSpan;
+        this.geometryTemplateHits++;
+        for (let i = 1; i < n - 1; i++)
+            for (const k of [0, i * 2, (i + 1) * 2]) {
+                this.setRenderDepth(depth - pts[k + 1] * perRow);
+                this.v(x + pts[k] * r, y + pts[k + 1] * ry, c);
+            }
+        this._renderDepth = previous;
+    }
     line(x1, y1, x2, y2, w, c) {
         const dx = x2 - x1,
             dy = y2 - y1,
@@ -2423,8 +2450,15 @@ class GLRenderer {
             this.milletBursts.length = 0;
             for (const track of this.corpseTracks.values()) this.releaseCorpse(track);
             this.corpseTracks.clear();
+            this.blightFieldArt.reset();
         }
         if (snapTargets || !old) this.resetFogTransition();
+        // The blight field's cells that changed on this tick (BlightFieldLook), at the tick's own time.
+        if (s.blightField)
+            this.blightFieldArt.follow(
+                s.blightField,
+                s.tick * this.presentationTargetIntervalMs(s),
+            );
         this.world = WorldContext.forState(s);
         if (!old || old.mapDescriptor?.seed !== s.mapDescriptor?.seed)
             this.cameraTop = this.clampCameraTop(Infinity);
@@ -2753,7 +2787,8 @@ class GLRenderer {
                     this.addClientFx('meleeImpact', e, snapshot, index, {
                         impactScale: impactPreset.scale,
                     });
-                if (e.side === mySide)
+                // Ground that hurts every second (BlightField, `ambient`) does not shake the screen.
+                if (e.side === mySide && !e.ambient)
                     this.triggerClientShake(
                         1.5,
                         90,
@@ -3225,7 +3260,9 @@ class GLRenderer {
             if (
                 e.type === 'unitSelfDestruct' ||
                 e.type === 'breathPulse' ||
-                e.type === 'chainPulse'
+                e.type === 'chainPulse' ||
+                // The blight field's harm (BlightField): one number for everything it hurt this second.
+                e.type === 'blightFieldPulse'
             ) {
                 this.openAreaHitGroup(e, this.presentationEventTick(e, snapshot));
                 index++;
@@ -7137,8 +7174,75 @@ class GLRenderer {
         TerrainPresentation.drawSurfaceEdges(this);
         this.setRenderDepth(0.969);
         this.drawStrategicMap();
+        // The blight field and its braziers go into this same triangle stream: no draw of their own.
+        this.drawBlightField();
         this.flush();
         this.passState.depthWrite = true;
+    }
+    // A stage's blight field (sim/blight-field.js, the snapshot's `blightField`): the stained ground and the
+    // braziers, placeholders (BlightFieldLook, BLIGHT_LOOK.brazier), flat on the ground under every unit.
+    drawBlightField() {
+        const field = this.snapshot?.blightField;
+        if (!field) return;
+        // The display's place in tick time, so the same tick draws the same stain.
+        const now = this.renderState.frame(this.presentationNow()).timeMs;
+        this.blightFieldArt.draw(field, now, this.blightFieldDisc);
+        const look = BLIGHT_LOOK.brazier,
+            sc = this.sc(),
+            previous = this._renderDepth,
+            surfaces = this.world.terrain.surfaces;
+        for (const [index, { x, y, radius, lit }] of field.braziers.entries()) {
+            if (!this.onScreenAuth(x, y, radius)) continue;
+            // The line around the ground it purifies, piece by piece at each piece's own height and depth.
+            const { segments, width, litWidth } = look.reach,
+                color = lit ? look.reach.lit : look.reach.unlit,
+                stroke = Math.max(1, width * sc) * (lit ? litWidth : 1);
+            let from = null,
+                fromDepth = 0;
+            for (let i = 0; i <= segments; i++) {
+                const angle = (i / segments) * Math.PI * 2,
+                    wx = x + Math.cos(angle) * radius,
+                    wz = y + Math.sin(angle) * radius,
+                    to = this.worldToPx(this.viewX(wx), this.viewY(wz), surfaces.heightAt(wx, wz));
+                // Unlit, every other piece is left out: a dashed line.
+                // Each piece at the depth of its nearer end, so neither end sinks into raised ground.
+                const depth = this.renderDepthForWorld({ z: wz });
+                if (from && (lit || i % 2)) {
+                    this.setRenderDepth(Math.min(depth, fromDepth) - 0.0004);
+                    this.line(from[0], from[1], to[0], to[1], stroke, color);
+                }
+                from = to;
+                fromDepth = depth;
+            }
+            this.groundDisc(x, y, look.stone.radius, look.stone.color, 14);
+            this.groundDisc(x, y, look.bowl.radius, look.bowl.color, 14);
+            this.groundDisc(x, y, look.coal.radius, lit ? look.coal.lit : look.coal.unlit, 12);
+            if (!lit) continue;
+            // Three tongues of flame standing on the coals, each swaying on its own beat.
+            const flame = look.flame,
+                half = (flame.width * sc) / 2,
+                [px, py] = this.worldToPx(this.viewX(x), this.viewY(y));
+            this.setRenderDepth(this.renderDepthForWorld({ z: y }) - 0.0006);
+            for (let tongue = -1; tongue <= 1; tongue++) {
+                const beat = Math.sin(
+                        (now / flame.swayMs) * Math.PI * 2 + tongue * 2.1 + index * 1.3,
+                    ),
+                    baseX = px + tongue * half * 1.5,
+                    height = flame.height * sc * (tongue ? 0.68 : 1) * (0.86 + 0.14 * beat),
+                    tipX = baseX + beat * half * 0.7;
+                this.tri(baseX - half, py, baseX + half, py, tipX, py - height, flame.outer);
+                this.tri(
+                    baseX - half * 0.5,
+                    py,
+                    baseX + half * 0.5,
+                    py,
+                    tipX,
+                    py - height * 0.6,
+                    flame.inner,
+                );
+            }
+        }
+        this._renderDepth = previous;
     }
     renderShadowPass(visibleUnits) {
         if (!this.snapshot) return;
