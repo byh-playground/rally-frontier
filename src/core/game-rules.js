@@ -81,12 +81,16 @@ class GameRuleRuntime {
             10,
             30,
         );
+        const campaignStage = typeof src.campaignStage === 'string' ? src.campaignStage : null;
         return {
-            schemaVersion: 5,
+            schemaVersion: 6,
             presetId,
             overrides,
             simulationTps,
-            campaignStage: typeof src.campaignStage === 'string' ? src.campaignStage : null,
+            campaignStage,
+            // The card upgrades each side has on, [hostCards, guestCards]; only a campaign stage carries any
+            // (the sim checks the ids), so no other match start reaches them.
+            campaignUpgrades: campaignStage ? structuredClone(src.campaignUpgrades ?? null) : null,
         };
     }
     static mergeGameRules(base, override) {

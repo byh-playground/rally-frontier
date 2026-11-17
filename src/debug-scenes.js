@@ -2879,6 +2879,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * 경기 AI(기본 결정 간격)가 둔다. 상태의 `result`는 처음 정해진 승패와 그 틱, `fired`는 양쪽이 쏜 카드별 발사
          * 수, `points`는 점령 지점별 소유(0 플레이어, 1 적), `mission`은 캠페인 임무 상태다. 승패가 난 뒤에도 틱은
          * 계속 돈다. 예: `?debug=1&scene=campaign&stage=potato-uproot&tick=600`
+         * `upgrades=rice,pea`는 플레이어 편에 그 카드의 병종 강화를 켠다(경기 시작 때 한 번 복사되는 값).
          */
         campaign(params) {
             const stage = campaignStage(params.stage);
@@ -2887,7 +2888,13 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 throw new Error(`campaign takes player=bot or nothing: ${params.player}`);
             const rules = GameRuleRuntime.resolveMatchRules({ presetId: stage.map ?? 'standard' });
             rules.campaign = stage;
-            const sim = new StrategySim(stage.seed, rules, [stage.deck, stage.enemyDeck]);
+            const upgrades = params.upgrades === undefined ? [] : params.upgrades.split(',');
+            const sim = new StrategySim(
+                stage.seed,
+                rules,
+                [stage.deck, stage.enemyDeck],
+                [upgrades, []],
+            );
             const bots = attachBots(sim, params.player === 'bot' ? ['host', 'guest'] : ['guest']),
                 ammo = createAmmoProbe(sim);
             let result = null;

@@ -111,9 +111,11 @@ class RallySimulationAdapter {
         this.identity = { seed: sim.seed, rules: sim.rules, mapDescriptor: sim.mapDescriptor };
         StateValue.freeze(this.identity.rules);
         this.deckSignature = JSON.stringify(LaunchRules.normalizeDeckPair(sim.decks));
+        this.upgradeSignature = JSON.stringify(sim.campaignUpgrades);
         const encoded = StableSerializationUtil.stableStringify({
             ...this.identity,
             decks: sim.decks,
+            campaignUpgrades: sim.campaignUpgrades,
         });
         this.matchId = `${PRODUCT_VERSION}:${encoded.length}:${HashUtil.hash(encoded)}:${HashUtil.hash('ssalkongpang-state|' + encoded)}`;
         this.mapFingerprint = sim.mapFingerprint();
@@ -200,6 +202,8 @@ class RallySimulationAdapter {
             throw new Error('게임 snapshot의 tick/seed가 잘못되었습니다.');
         if (JSON.stringify(LaunchRules.normalizeDeckPair(state.decks)) !== this.deckSignature)
             throw new Error('게임 snapshot의 덱이 경기 시작과 다릅니다.');
+        if (JSON.stringify(state.campaignUpgrades) !== this.upgradeSignature)
+            throw new Error('게임 snapshot의 병종 강화가 경기 시작과 다릅니다.');
         UnitResultStats.validate(state.unitResultStats);
         for (const [key, shape] of Object.entries(this.rootShape)) {
             if (!Object.prototype.hasOwnProperty.call(state, key))
@@ -530,6 +534,7 @@ class RallySynctestDiagnostics {
                 seed: session.sim.seed,
                 rules: session.sim.rules,
                 decks: session.sim.decks,
+                campaignUpgrades: session.sim.campaignUpgrades,
             });
             const adapter = new RallySimulationAdapter({ sim });
             adapter.load(replay.initialState);
@@ -1154,6 +1159,7 @@ class GameSession {
             seed,
             rules: this.roundRules,
             decks: this.matchDecks,
+            campaignUpgrades: this.matchConfig.campaignUpgrades ?? undefined,
         });
         this.presentationDisplayConfigured = configureFramePresentationJournal(
             this.presentationJournal,

@@ -45,6 +45,11 @@ export class Roster {
         return !!this.campaign?.upgrades.includes(type);
     }
 
+    // The cards whose upgrade is open: what a campaign match copies at its start.
+    get openUpgrades() {
+        return [...(this.campaign?.upgrades ?? [])];
+    }
+
     // The one way a card is added (a stage reward). Resolves once it is in the device save.
     async grant(types) {
         for (const type of types) this.#owned.add(type);

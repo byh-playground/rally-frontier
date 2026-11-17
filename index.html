@@ -231,6 +231,8 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
 6. SESSION, VERIFICATION AND RELEASE
 - 캠페인은 고정 스테이지별 맵 seed·병종 풀·거점·목표를 경기 규칙으로 전달한다.
   첫 거점 완공과 방어전 버티기는 캠페인 시뮬레이션이 판정한다.
+  병종 강화(`roster.campaign.upgrades`)는 캠페인 경기 시작 때 한 번 `matchConfig.campaignUpgrades`([플레이어 편, 적 편] 카드 id)로 복사되고, `sim.campaignUpgrades`로 snapshot·리플레이·롤백에 같이 저장된다.
+  대전·친구 대전·AI 대전은 이 값이 비어 있고(캠페인 스테이지가 아니면 `normalizeMatchConfig`가 버리고 sim이 거부한다), 능력 코드는 `CampaignUpgrades.has(sim, side, type)` 한 곳만 읽는다.
   방어전은 스테이지의 제한 시간(`surviveMs`)을 버티면 이기고, 본진이나 지킬 거점(`guardPoint`, 아군 시작 거점)이
   무너지면 진다. 적을 빨리 잡아도, 적 본진을 부숴도 일찍 끝나지 않는다. 공격(`waves`)은 각자 정해진 시각(`atMs`)에
   오며 앞 공격이 남아 있어도 쌓인다. 전투 중 화면은 남은 시간·N차 공격과 지킬 거점 표시를 보인다.
