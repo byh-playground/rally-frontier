@@ -84,8 +84,9 @@ class LaunchImpact {
             ),
         };
     }
-    // A launch shell lands as one body: everyone it carries, at the landing speed.
-    static blast(sim, p, x, y, radius, impactHeightFP) {
+    // A launch shell lands as one body: everyone it carries, at the landing speed. `scale` is the share a repeated
+    // shock keeps (UpgradeEchoShock).
+    static blast(sim, p, x, y, radius, impactHeightFP, scale = 1) {
         Knockback.area(sim, {
             side: p.side,
             sourceId: p.id,
@@ -96,7 +97,7 @@ class LaunchImpact {
             // sim.mass reads the payload's unit type.
             mass: p.payload.count * sim.mass(p.payload),
             speed: KnockbackRules.impactSpeed,
-            gain: KnockbackRules.gain.area,
+            gain: KnockbackRules.gain.area * scale,
         });
     }
     static deploymentOrigin(sim, p, x, y) {

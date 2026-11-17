@@ -16,6 +16,8 @@ import { UnitSelfDestructAttack } from './capabilities/unit-self-destruct-attack
 import { UnitLeapAttack } from './capabilities/unit-leap-attack.js';
 import { StickyCling } from './capabilities/sticky-cling.js';
 import { ContactMelee } from './capabilities/contact-melee.js';
+import { UpgradeEchoShock } from './capabilities/upgrade-echo-shock.js';
+import { UpgradeHitBlock } from './capabilities/upgrade-hit-block.js';
 import { ForwardCannon } from './capabilities/forward-cannon.js';
 import { CannonRider } from './capabilities/cannon-rider.js';
 import { RollingBody } from './capabilities/rolling-body.js';
@@ -1077,6 +1079,9 @@ class StrategySim {
         });
         if (d.growsCannon) ForwardCannon.plant(this, u, d.growsCannon);
         if (d.cannonRider) CannonRider.land(this, u, d.cannonRider);
+        // A campaign upgrade counted per soldier (CampaignUpgrades): only in a match that has it on.
+        const upgrade = CampaignUpgrades.soldierState(this, side, type);
+        if (upgrade) u.campaignUpgrade = upgrade;
         this.units.push(u);
         this.ensureCollisionBuffers(this.units.length);
         const birth = this.units.length - 1;
@@ -2012,6 +2017,11 @@ class StrategySim {
             setCapture(0, true);
             return null;
         }
+        // A campaign upgrade's block (UpgradeHitBlock) takes the whole hit: no damage, no hit event.
+        if (!isBuilding && UpgradeHitBlock.absorb(this, target)) {
+            setCapture(0, true, damageClass);
+            return null;
+        }
         const td = isBuilding
             ? { sizeClass: 'heavy', role: 'building' }
             : UnitDefinition.get(target.type);
@@ -2657,8 +2667,9 @@ class StrategySim {
     }
 
     // A shell's landing shock: a shove of everyone it carries, then the area damage on soldiers and buildings.
-    landingShock(p, x, y, radius, impactHeightFP) {
-        if (!p.mortar) LaunchImpact.blast(this, p, x, y, radius, impactHeightFP);
+    // `scale` is the share of the shove and the damage a repeated shock keeps (UpgradeEchoShock).
+    landingShock(p, x, y, radius, impactHeightFP, scale = 1) {
+        if (!p.mortar) LaunchImpact.blast(this, p, x, y, radius, impactHeightFP, scale);
         const blast = this.applyAreaDamage({
             sourceSide: p.side,
             sourceType: p.type,
@@ -2666,7 +2677,7 @@ class StrategySim {
             x: x,
             y: y,
             radius,
-            damage: p.splashUnitDamage ?? p.damage,
+            damage: (p.splashUnitDamage ?? p.damage) * scale,
             damageClass: p.damageClass || 'normal',
             damageDelivery: p.payload ? 'launch-shell' : undefined,
             suppressImpactFx: true,
@@ -2687,7 +2698,7 @@ class StrategySim {
                 p.type,
                 b,
                 true,
-                Math.max(1, Math.floor((p.splashBuildingDamage ?? p.damage) * mult)),
+                Math.max(1, Math.floor((p.splashBuildingDamage ?? p.damage) * mult * scale)),
                 p.owner || null,
                 {
                     damageClass: p.damageClass || 'normal',
@@ -2727,6 +2738,7 @@ class StrategySim {
                     blast = radius
                         ? this.landingShock(p, aimX, aimY, radius, impactHeightFP)
                         : { hits: 0, peak: 1 };
+                if (radius) UpgradeEchoShock.queue(this, p, aimX, aimY, radius, impactHeightFP);
                 this.events.push({
                     type: p.mortar ? 'mortarImpact' : 'launchImpact',
                     side: p.side,
@@ -2752,6 +2764,7 @@ class StrategySim {
             p.y = toY;
         }
         this.projectiles = this.projectiles.filter((p) => p.alive);
+        UpgradeEchoShock.update(this);
         return null;
     }
     radiusFP(u) {
@@ -3120,12 +3133,16 @@ class StrategySim {
         const copy = StateValue.copy(source),
             scheduled = copy.scheduled || [];
         delete copy.scheduled;
-        if (rollback) {
-            Object.assign(copy, retained);
-            for (const key of StrategySim.stateContract.keys(this, 'save'))
-                if (!Object.prototype.hasOwnProperty.call(copy, key) && key !== 'scheduled')
-                    delete this[key];
-        }
+        if (rollback) Object.assign(copy, retained);
+        // A saved field the restored state does not have (an optional one, created after that state was taken) goes
+        // away, in a rollback and in a full restore alike. The match identity stays when a state leaves it out.
+        for (const key of StrategySim.stateContract.keys(this, 'save'))
+            if (
+                !Object.prototype.hasOwnProperty.call(copy, key) &&
+                !Object.prototype.hasOwnProperty.call(retained, key) &&
+                key !== 'scheduled'
+            )
+                delete this[key];
         Object.assign(this, copy);
         if (!copy.campaignMission) delete this.campaignMission;
         StateValue.freeze(this.decks);

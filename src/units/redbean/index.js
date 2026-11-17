@@ -27,6 +27,12 @@ export const Redbean = defineUnit({
                 knockbackFalloff: false,
             }),
         }),
+        // 캠페인 강화: 도약 착지 충격의 반경이 1.5배(50 → 75)가 된다. 피해는 그대로다.
+        campaignUpgrade: {
+            name: '큰 착지 고리',
+            summary: '도약 착지 충격이 1.5배 넓게 퍼져요.',
+            leapImpact: { radiusScale: 1.5 },
+        },
     },
     // 연사: 같은 곳에 시간차로 세 번 떨어진다.
     payload: {

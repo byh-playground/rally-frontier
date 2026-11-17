@@ -14,6 +14,12 @@ export const Millet = defineUnit({
         attackIntervalMs: 350,
         contactMelee: true,
         attackVisual: { ...BASIC_MELEE.attackVisual, sourceMotion: null },
+        // 캠페인 강화: 병사마다 첫 유효 접촉 한 번의 피해가 2배(8 → 16)로 들어간다.
+        campaignUpgrade: {
+            name: '첫 일격',
+            summary: '병사마다 첫 공격이 두 배로 들어가요.',
+            firstStrike: { hits: 1, damageScale: 2 },
+        },
     },
     payload: {
         ...SINGLE_BUNDLE_SHELL,

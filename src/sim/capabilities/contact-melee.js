@@ -15,6 +15,7 @@ import { UnitDefinition } from '../../definitions/units.js';
 import { ConstructionRules } from '../construction-rules.js';
 import { InteractionGeometry, NavigationGoal } from '../navigation.js';
 import { StickyCling } from './sticky-cling.js';
+import { UpgradeFirstStrike } from './upgrade-first-strike.js';
 
 export class ContactMelee {
     // A soldier backing off after a hit keeps retreating until its recovery ends.
@@ -190,7 +191,7 @@ export class ContactMelee {
                     u.type,
                     target,
                     attack.isBuilding,
-                    Math.floor(definition.atk),
+                    Math.floor(definition.atk * UpgradeFirstStrike.damageScale(sim, u, target)),
                     u.id,
                     { damageClass: UnitDefinition.damageClass(u.type) },
                 ) || winner;

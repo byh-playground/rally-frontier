@@ -1,10 +1,26 @@
 import { LaunchRules } from './launch-rules.js';
+import { UNITS } from '../units/index.js';
+
+// Each card's declared upgrade (Definition `campaignUpgrade`, src/units/define-unit.js), and for an effect counted
+// per soldier (`hits`) how many each soldier starts with.
+const DECLARED = Object.fromEntries(UNITS.map((card) => [card.id, card.unit.campaignUpgrade]));
+const SOLDIER_CHARGES = Object.fromEntries(
+    UNITS.map((card) => [
+        card.id,
+        (card.unit.campaignUpgrade?.firstHitBlock ?? card.unit.campaignUpgrade?.firstStrike)
+            ?.hits ?? 0,
+    ]),
+);
 
 // Campaign-only card upgrades (the roster's `campaign.upgrades`, opened with sunshine). A match carries which upgrades
 // are on for each side as `sim.campaignUpgrades = [hostCards, guestCards]`: sorted card ids, copied once when the
 // match starts and never changed by the sim, so a save opened mid-match cannot reach it. It is part of the match
 // identity (snapshot, replay and rollback check it the way they check the decks) and only a campaign stage may
 // carry any. Ability code asks `CampaignUpgrades.has(sim, side, type)`; this class is the only reader.
+// What an upgrade does is the card's own declaration: ability code takes its numbers from
+// `CampaignUpgrades.effect(sim, side, type, '<effect>')` (null while off, so an off match runs exactly as before).
+// An effect counted per soldier keeps `unit.campaignUpgrade = { charges }`, given when the soldier is created
+// (StrategySim.spawnUnit) and only in a match where the upgrade is on.
 export class CampaignUpgrades {
     static none() {
         return [[], []];
@@ -37,5 +53,21 @@ export class CampaignUpgrades {
     // Is the card's upgrade on for this side in this match? Allocation-free, safe in the tick path.
     static has(sim, side, type) {
         return sim.campaignUpgradeSets[side].has(type);
+    }
+
+    // The card's declared `effect` spec whether or not any match has it on (card copy, drawing), or null.
+    static declared(type, effect) {
+        return DECLARED[type]?.[effect] ?? null;
+    }
+
+    // The `effect` spec of the card's upgrade when it is on for this side in this match, else null.
+    static effect(sim, side, type, effect) {
+        return sim.campaignUpgradeSets[side].has(type) ? (DECLARED[type]?.[effect] ?? null) : null;
+    }
+
+    // The per-soldier state of a soldier created now, or null (off, or an effect that counts nothing per soldier).
+    static soldierState(sim, side, type) {
+        const charges = SOLDIER_CHARGES[type];
+        return charges && this.has(sim, side, type) ? { charges } : null;
     }
 }
