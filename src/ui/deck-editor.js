@@ -20,6 +20,9 @@ export class DeckEditor {
         isUnlocked,
         isTemporary = () => false,
         unlockHint,
+        upgradeOf = () => null,
+        openUpgrade = async () => false,
+        sunshine = () => 0,
         store = null,
     }) {
         if (this.initialized) return;
@@ -37,6 +40,9 @@ export class DeckEditor {
         this.isUnlocked = isUnlocked;
         this.isTemporary = isTemporary;
         this.unlockHint = unlockHint;
+        this.upgradeOf = upgradeOf;
+        this.openUpgrade = openUpgrade;
+        this.sunshine = sunshine;
         this.store = store;
         this.filter = 'grain';
         this.selectedSlot = null;
@@ -142,6 +148,7 @@ export class DeckEditor {
             tabs = document.getElementById('deckTabs');
         document.getElementById('deckSummary').textContent =
             `덱 ${this.state.selected + 1} · ${deck.length}/${this.limit}칸`;
+        document.getElementById('deckSunshine').textContent = `☀ ${this.sunshine()}`;
         document.getElementById('deckCount').textContent = `${deck.length} / ${this.limit}칸`;
         tabs.replaceChildren();
         for (let index = 0; index < DECK_COUNT; index++) {
@@ -184,10 +191,54 @@ export class DeckEditor {
             this.detailTrigger = button;
             this.details.setAttribute('aria-label', `${this.nameOf(type)} 상세`);
             this.closeDetails = this.renderDetails(type, this.detailsContent);
+            this.renderUpgrade(type);
             this.details.showModal();
             this.detailsContent.querySelector('[data-sheet-close]')?.focus();
         });
         return button;
+    }
+
+    // The card's campaign-only upgrade, drawn above the close button of its detail sheet. A card whose definition has
+    // no upgrade gets no section; an open one shows its state, an unopened one the price button (disabled while the
+    // sunshine falls short). A failed save leaves the section as it was.
+    static renderUpgrade(type) {
+        const upgrade = this.upgradeOf(type);
+        if (!upgrade) return;
+        const section = document.createElement('section');
+        section.className = 'deck-upgrade';
+        const draw = () => {
+            const missing = upgrade.price - this.sunshine(),
+                open = upgrade.open(),
+                state = document.createElement(open ? 'p' : 'button'),
+                title = document.createElement('div'),
+                name = document.createElement('b'),
+                summary = document.createElement('span'),
+                note = document.createElement('small');
+            name.textContent = upgrade.name;
+            summary.textContent = upgrade.summary;
+            title.append(name, summary);
+            note.textContent = '강화는 캠페인에서만 적용돼요.';
+            if (open) {
+                state.className = 'deck-upgrade-state';
+                state.textContent = '캠페인에서 적용 중';
+            } else {
+                state.type = 'button';
+                state.className = 'launch-btn primary deck-upgrade-open';
+                state.disabled = missing > 0;
+                state.textContent =
+                    missing > 0
+                        ? `햇살 ${upgrade.price} · ${missing} 모자라요`
+                        : `햇살 ${upgrade.price} · 강화 열기`;
+                state.addEventListener('click', async () => {
+                    state.disabled = true;
+                    if (await this.openUpgrade(type)) this.refresh();
+                    draw();
+                });
+            }
+            section.replaceChildren(title, state, note);
+        };
+        draw();
+        this.detailsContent.querySelector('[data-sheet-close]')?.before(section);
     }
 
     static renderSlots() {

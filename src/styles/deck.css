@@ -348,3 +348,43 @@ button.deck-slot {
         font-size: 16px;
     }
 }
+.sunshine-balance {
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #f5ecc0;
+    color: #7a5a12;
+    font-size: 13px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+.deck-upgrade {
+    display: grid;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid #c5d8b5;
+    border-radius: 12px;
+    background: #f5f8e7;
+}
+.deck-upgrade > div {
+    display: grid;
+    gap: 2px;
+}
+.deck-upgrade b {
+    font-size: 15px;
+}
+.deck-upgrade span,
+.deck-upgrade small {
+    color: #5d7050;
+    font-size: 12px;
+}
+.deck-upgrade .deck-upgrade-open {
+    height: 40px;
+    font-size: 15px;
+}
+.launch-sheet-panel p.deck-upgrade-state {
+    margin: 0;
+    color: #365b3e;
+    font-size: 14px;
+    font-weight: 800;
+}

@@ -196,6 +196,7 @@ export class LaunchScreens {
                 : '캠페인';
             this.campaignOpen = this.initialCampaignOpen();
             this.renderCampaignList();
+            $('campaignSunshine').textContent = `☀ ${A.sunshine()}`;
             campaignDialog.showModal();
         };
         $('campaignCloseBtn').onclick = () => campaignDialog.close();
