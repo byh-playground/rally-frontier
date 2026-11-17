@@ -22,6 +22,7 @@ import {
 import { LaunchRules } from './sim/launch-rules.js';
 import { StickyCling } from './sim/capabilities/sticky-cling.js';
 import { SustainedAttack } from './sim/capabilities/sustained-attack.js';
+import { UnitBreathAttack } from './sim/capabilities/unit-breath-attack.js';
 import { HeroPassive } from './sim/capabilities/hero-passive.js';
 import { UnitSpinAttack } from './sim/capabilities/unit-spin-attack.js';
 import { ForwardCannon } from './sim/capabilities/forward-cannon.js';
@@ -2568,6 +2569,7 @@ class GLRenderer {
                 radius: event.radius,
                 side: event.side,
                 selfDestruct,
+                big: selfDestruct && !!event.big,
                 lifeMs,
                 seed: HashUtil.hash(
                     String(event.projectileId || event.sourceId || '') + '|' + tick,
@@ -2802,6 +2804,7 @@ class GLRenderer {
             } else if (e.type === 'unitSelfDestruct') {
                 this.addClientFx('selfDestructBurst', e, snapshot, index, {
                     impactHeightFP: e.zFP,
+                    big: !!e.big,
                 });
                 this.triggerSelfDestructShake(e, snapshot, index);
             } else if (e.type === 'buildingDeath') {
@@ -3896,9 +3899,12 @@ class GLRenderer {
                     radius = fx.radius * burst.radiusScale * sc,
                     ground = BattlefieldProjection.groundScale,
                     reach = radius * (0.3 + 0.7 * ease),
-                    fade = 1 - t;
-                if (t < 0.3) {
-                    ctx.globalAlpha = 0.3 * (1 - t / 0.3);
+                    fade = 1 - t,
+                    // The campaign upgrade's burst flashes brighter and longer inside the same ring.
+                    flashShare = fx.big ? burst.big.flashShare : 0.3,
+                    flashAlpha = fx.big ? burst.big.flashAlpha : 0.3;
+                if (t < flashShare) {
+                    ctx.globalAlpha = flashAlpha * (1 - t / flashShare);
                     ctx.fillStyle = '#ffe9a8';
                     ctx.beginPath();
                     ctx.ellipse(x, y, reach, reach * ground, 0, 0, Math.PI * 2);
@@ -5416,7 +5422,8 @@ class GLRenderer {
                         startedAt: 0,
                         stoppedAt: null,
                         seed: HashUtil.hash(u.id) % 997,
-                        length: spec.length,
+                        // The soldier's own length (campaign upgrade longBreath), fixed when it is created.
+                        length: UnitBreathAttack.length(entity, spec),
                         halfArc: (spec.arcDegrees * Math.PI) / 360,
                     }),
                     ax = breath.aimX / 10000,
@@ -6621,7 +6628,11 @@ class GLRenderer {
                 world.y = (Number(burst.zFP) || 0) / FP + 10;
                 this.projectRenderWorldPosition(world, point);
                 // The puff keeps its original timing; the kernels and the ground ring last the burst's whole life.
-                const puff = burst.radius * spec.radiusScale * spec.puffScale,
+                const puff =
+                        burst.radius *
+                        spec.radiusScale *
+                        spec.puffScale *
+                        (burst.big ? spec.big.puffScale : 1),
                     size = Math.max(4, (30 + (puff - 30) * Math.min(1, t * 3)) * sc);
                 matrix[0] = size;
                 matrix[1] = 0;

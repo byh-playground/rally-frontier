@@ -45,6 +45,17 @@
 //                enemy soldiers within `radius` of its body (UpgradeShellShards)
 //              wallRebound { restitution }: its bounce off walls and buildings keeps `restitution` of the speed
 //                instead of rolling.wallRestitution (RollingBody; needs rolling)
+//              contactFuse { buildings }: its thrown egg goes off the moment it touches an enemy soldier on the
+//                ground, and an enemy building too when `buildings` (UnitLobAttack; needs lobAttack)
+//              bigPop { damageScale }: its self-destruct deals `damageScale` times its damage, same radius and
+//                knockback (UnitSelfDestructAttack; needs selfDestruct)
+//              quickRoot { delayMs }: it stands up as its cannon after `delayMs` instead of growsCannon.delayMs
+//                (ForwardCannon; needs growsCannon)
+//              extraSoldiers { soldiers }: a launch carries `soldiers` more soldiers (UpgradeExtraSoldiers)
+//              doubleShot { gapMs }: every thorn it throws is followed by one more at the same target `gapMs` later,
+//                the attack interval unchanged (UpgradeDoubleShot; needs thornAttack)
+//              longBreath { lengthScale }: its flame is `lengthScale` times as long, the arc unchanged
+//                (UnitBreathAttack.length; needs breathAttack)
 //   payload  the cannon shell that carries the unit (LaunchRules). A hero's shell has no landing shock (impact,
 //            splash) but `landingStrike { radius, damage, knockback?, scatter? { ring, count }, retreat { motion:
 //            'roll'|'hop', distance } }`, the hero's own strike when it lands (HeroLandingStrike)
@@ -413,6 +424,69 @@ const CAMPAIGN_UPGRADE_EFFECTS = Object.freeze({
         )
             throw new Error(
                 `병종 ${id}의 wallRebound는 rolling과 그 wallRestitution보다 크고 1 이하인 restitution이 필요합니다.`,
+            );
+    },
+    // UnitLobAttack: the thrown egg's fuse on an enemy body.
+    contactFuse(id, spec, unit) {
+        if (
+            Object.keys(spec).join(',') !== 'buildings' ||
+            typeof spec.buildings !== 'boolean' ||
+            !unit.lobAttack
+        )
+            throw new Error(
+                `병종 ${id}의 contactFuse는 buildings(참·거짓)와 lobAttack이 필요합니다.`,
+            );
+    },
+    // UnitSelfDestructAttack: the burst's damage.
+    bigPop(id, spec, unit) {
+        if (
+            Object.keys(spec).join(',') !== 'damageScale' ||
+            !(spec.damageScale > 1) ||
+            !unit.selfDestruct
+        )
+            throw new Error(
+                `병종 ${id}의 bigPop은 1보다 큰 damageScale과 selfDestruct가 필요합니다.`,
+            );
+    },
+    // ForwardCannon: the time until the cannon stands.
+    quickRoot(id, spec, unit) {
+        if (
+            Object.keys(spec).join(',') !== 'delayMs' ||
+            !unit.growsCannon ||
+            !(spec.delayMs > 0 && spec.delayMs < unit.growsCannon.delayMs)
+        )
+            throw new Error(
+                `병종 ${id}의 quickRoot는 growsCannon과 그 delayMs보다 짧은 양수 delayMs가 필요합니다.`,
+            );
+    },
+    // UpgradeExtraSoldiers: the soldiers a launch carries.
+    extraSoldiers(id, spec) {
+        if (
+            Object.keys(spec).join(',') !== 'soldiers' ||
+            !(Number.isInteger(spec.soldiers) && spec.soldiers > 0)
+        )
+            throw new Error(`병종 ${id}의 extraSoldiers는 soldiers(양의 정수)만 가집니다.`);
+    },
+    // UpgradeDoubleShot: a second thorn after each one.
+    doubleShot(id, spec, unit) {
+        if (
+            Object.keys(spec).join(',') !== 'gapMs' ||
+            !unit.thornAttack ||
+            !(spec.gapMs > 0 && spec.gapMs < (unit.attackIntervalMs ?? unit.cooldownMs))
+        )
+            throw new Error(
+                `병종 ${id}의 doubleShot은 thornAttack과 공격 간격보다 짧은 양수 gapMs가 필요합니다.`,
+            );
+    },
+    // UnitBreathAttack: the flame's length.
+    longBreath(id, spec, unit) {
+        if (
+            Object.keys(spec).join(',') !== 'lengthScale' ||
+            !(spec.lengthScale > 1) ||
+            !unit.breathAttack
+        )
+            throw new Error(
+                `병종 ${id}의 longBreath는 1보다 큰 lengthScale과 breathAttack이 필요합니다.`,
             );
     },
 });

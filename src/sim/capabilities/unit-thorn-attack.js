@@ -166,6 +166,7 @@ export class UnitThornAttack {
                     sourceId: shot.sourceId,
                     projectileId: shot.id,
                     ...from,
+                    ...(shot.follow ? { follow: true } : null),
                 });
             const target = shot.targetIsBuilding
                 ? sim.buildingById.get(shot.targetId)

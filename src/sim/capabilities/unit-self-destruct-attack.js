@@ -9,6 +9,7 @@ import { LaunchImpact } from '../launch-impact.js';
 import { Knockback } from '../knockback.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { IndexList } from '../index-list.js';
+import { CampaignUpgrades } from '../campaign-upgrades.js';
 
 // drain never runs inside itself (_drainingSelfDestruct), so one list serves every burst.
 const BURST_BUILDING_QUERY = new IndexList();
@@ -70,7 +71,11 @@ export class UnitSelfDestructAttack {
             const queue = sim._selfDestructQueue || [];
             for (let i = 0; i < queue.length; i++) {
                 const burst = queue[i],
-                    { x, y, side, sourceId, sourceType, mass, heightFP, spec } = burst;
+                    { x, y, side, sourceId, sourceType, mass, heightFP, spec } = burst,
+                    // Campaign upgrade `bigPop { damageScale }` (팝콘 · 왕 팝콘): the burst's damage times
+                    // `damageScale` (floored), same radius and shove; the event carries `big` (presentation only).
+                    big = CampaignUpgrades.effect(sim, side, sourceType, 'bigPop'),
+                    damage = big ? Math.floor(spec.damage * big.damageScale) : spec.damage;
                 sim.events.push({
                     type: 'unitSelfDestruct',
                     side,
@@ -80,6 +85,7 @@ export class UnitSelfDestructAttack {
                     y,
                     zFP: heightFP,
                     radius: spec.radius,
+                    ...(big ? { big: true } : null),
                 });
                 Knockback.area(sim, {
                     side,
@@ -100,7 +106,7 @@ export class UnitSelfDestructAttack {
                     x,
                     y,
                     radius: spec.radius,
-                    damage: spec.damage,
+                    damage,
                     damageClass: 'normal',
                     impactHeightFP: heightFP,
                     suppressImpactFx: true,
@@ -120,7 +126,7 @@ export class UnitSelfDestructAttack {
                             .surfaceDistance > spec.radius
                     )
                         continue;
-                    sim.applyDamage(side, sourceType, building, true, spec.damage, sourceId, {
+                    sim.applyDamage(side, sourceType, building, true, damage, sourceId, {
                         damageClass: 'normal',
                         sourceDamageResolved: true,
                         suppressImpactFx: true,

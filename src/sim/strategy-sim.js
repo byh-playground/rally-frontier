@@ -17,8 +17,10 @@ import { UnitLeapAttack } from './capabilities/unit-leap-attack.js';
 import { StickyCling } from './capabilities/sticky-cling.js';
 import { ContactMelee } from './capabilities/contact-melee.js';
 import { UpgradeChainCharge } from './capabilities/upgrade-chain-charge.js';
+import { UpgradeDoubleShot } from './capabilities/upgrade-double-shot.js';
 import { UpgradeEchoShock } from './capabilities/upgrade-echo-shock.js';
 import { UpgradeExtraShot } from './capabilities/upgrade-extra-shot.js';
+import { UpgradeExtraSoldiers } from './capabilities/upgrade-extra-soldiers.js';
 import { UpgradeHeavyThorn } from './capabilities/upgrade-heavy-thorn.js';
 import { UpgradeShellShards } from './capabilities/upgrade-shell-shards.js';
 import { UpgradeHitBlock } from './capabilities/upgrade-hit-block.js';
@@ -1379,6 +1381,8 @@ class StrategySim {
         );
         // Campaign upgrade `extraShot`: the burst fires more shells after its last one.
         UpgradeExtraShot.apply(this, side, action.unitType, volley);
+        // Campaign upgrade `extraSoldiers`: the launch carries more soldiers.
+        UpgradeExtraSoldiers.apply(this, side, action.unitType, volley);
         this.wallet[side] -= grain.cost;
         this.premiumWallet[side] -= grain.premiumCost || 0;
         // One round however many cannons join the volley.
@@ -1707,7 +1711,9 @@ class StrategySim {
         return !best || String(id) < String(best.entity?.id ?? best.id ?? '');
     }
     basicAttackRange(u) {
-        return UnitDefinition.get(u.type).range;
+        const d = UnitDefinition.get(u.type);
+        // A flame's reach follows its length (campaign upgrade longBreath, UnitBreathAttack.range).
+        return d.breathAttack ? UnitBreathAttack.range(u, d) : d.range;
     }
     isHostileCombatBuilding(side, b) {
         return !!b && b.alive !== false && b.hp > 0 && b.side === 1 - side;
@@ -2261,7 +2267,7 @@ class StrategySim {
         if (!u || !found?.entity) return false;
         const d = UnitDefinition.get(u.type),
             t = found.entity;
-        const range = attackRange ?? d.range,
+        const range = attackRange ?? this.basicAttackRange(u),
             dist = Math.hypot(t.x - u.x, t.y - u.y);
         const max = this.interactionDistance(u, t, 'attack', range),
             min = this.interactionDistance(u, t, 'combat-contact') + (d.minRange || 0);
@@ -2439,6 +2445,8 @@ class StrategySim {
             }
             return null;
         }
+        // A campaign upgrade's second thorn (UpgradeDoubleShot) leaves on its own tick, between two attacks.
+        if (d.thornAttack && u.campaignUpgrade) UpgradeDoubleShot.update(this, u, d);
         if (d.burstAttack && u.combat.burstAttack) {
             const burst = UnitBurstAttack.update(this, u, d, vision[u.side]);
             if (burst.active) return burst.winner;
@@ -2662,6 +2670,7 @@ class StrategySim {
                     damage: Math.floor(atk),
                 }),
             );
+            UpgradeDoubleShot.arm(this, u, t, found.isBuilding);
             return null;
         }
         if (d.basicSplash && !found.isBuilding) {

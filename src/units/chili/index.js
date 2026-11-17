@@ -35,6 +35,12 @@ export const Chili = defineUnit({
             turnDegreesPerSecond: 90,
             buildingDamageScale: 0.5,
         }),
+        // 캠페인 강화: 불줄기 길이가 1.5배(225 → 337.5)가 된다. 각도 30°는 그대로다.
+        campaignUpgrade: {
+            name: '긴 불줄기',
+            summary: '불줄기가 1.5배 길어져요. 폭(각도)은 그대로예요.',
+            longBreath: { lengthScale: 1.5 },
+        },
     },
     payload: {
         ...SINGLE_BUNDLE_SHELL,

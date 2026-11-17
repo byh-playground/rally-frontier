@@ -69,6 +69,9 @@ class EffectObjectFactory {
         kernels: 10,
         shakeIntensity: 1.2,
         shakeMs: 110,
+        // A burst with the campaign upgrade bigPop (event `big`): a larger puff and a brighter, longer flash. The
+        // ground ring stays at the real radius, which the upgrade does not change.
+        big: Object.freeze({ puffScale: 1.3, flashAlpha: 0.6, flashShare: 0.45 }),
     });
     static milletBurstLifeMs = 600;
     // Kill effects (HeroKillEffect), presentation only: juice drops (world units) and the filled-counter ring.

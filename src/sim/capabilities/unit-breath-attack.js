@@ -12,7 +12,8 @@
 //   재사용 대기를 그 틱부터 처음부터 다시 센다(표적이 죽은 것은 끊김이 아니다).
 // - 불줄기의 반지름 방향 끝은 기존 공격 사거리(InteractionGeometry.reach, Definition range = length - 자기 반경)와
 //   같고, 지형 선(벽·절벽)은 표적마다 기존 판정(sim.interactionDistance, requiresTerrainLine)을 다시 쓴다. 그래서
-//   불줄기가 닿는 적과 "사거리 안" 표적이 같은 규칙이다.
+//   불줄기가 닿는 적과 "사거리 안" 표적이 같은 규칙이다. 캠페인 강화 `longBreath { lengthScale }`가 켜진 편의 병사는
+//   길이가 그 배수이고(UnitBreathAttack.length) 공격 사거리도 늘어난 길이만큼 길다(range). 각도는 그대로다.
 // - 지상 적만 탄다: 적 진영의 지상 층(공간 격자 그룹)만 질의하고 canTargetUnit이 나는 유닛을 거른다. 아군·투입탄·
 //   나는 적에는 닿지 않는다. 넉백은 없다. 피해는 applyDamage(피해 종류·출처·통계·숫자)를 지난다.
 // - Unit.breath { aimX, aimY (AIM_UNIT 길이 정수 벡터), pulses }와 Unit.sustain(뿜는 중·남은 틱·대기)이 권위
@@ -36,6 +37,16 @@ const HIT = Object.freeze({ suppressImpactFx: true });
 class UnitBreathAttack {
     static initialState() {
         return { aimX: 0, aimY: 0, pulses: 0 };
+    }
+    // The flame's length for this soldier: campaign upgrade `longBreath { lengthScale }` (고추 · 긴 불줄기) gives the
+    // soldiers of a side that has it on `unit.campaignUpgrade.breathScale` when they are created (CampaignUpgrades).
+    // The judgment, the attack reach, the drawn flame and the debug check all read the length here.
+    static length(unit, spec) {
+        return spec.length * (unit.campaignUpgrade?.breathScale ?? 1);
+    }
+    // Its attack reach from the body's edge: the Definition's `range` moved out with the flame's tip.
+    static range(unit, d) {
+        return d.range + this.length(unit, d.breathAttack) - d.breathAttack.length;
     }
     // A placed unit (debug and card scenes) starts aiming along its facing.
     static aim(unit, x, y) {
@@ -104,9 +115,11 @@ class UnitBreathAttack {
     // so a unit is its body radius and a building its reach envelope; a blocked terrain line never touches.
     static touches(sim, unit, entity, d) {
         const spec = d.breathAttack,
+            length = this.length(unit, spec),
+            range = this.range(unit, d),
             px = entity.x - unit.x,
             py = entity.y - unit.y,
-            reach = InteractionGeometry.reach(unit, entity, 'attack', d.range);
+            reach = InteractionGeometry.reach(unit, entity, 'attack', range);
         if (px * px + py * py > reach * reach) return false;
         const breath = unit.breath,
             aim = Math.sqrt(breath.aimX * breath.aimX + breath.aimY * breath.aimY);
@@ -118,15 +131,15 @@ class UnitBreathAttack {
                 breath.aimY / aim,
                 Math.cos(half),
                 Math.sin(half),
-                spec.length,
+                length,
                 px,
                 py,
-                reach - spec.length,
+                reach - length,
             )
         )
             return false;
         // The shared range check returns -1 when the terrain line to the target is blocked.
-        return sim.interactionDistance(unit, entity, 'attack', d.range) >= 0;
+        return sim.interactionDistance(unit, entity, 'attack', range) >= 0;
     }
     // A circle at (px, py) of radius r against the sector from the origin along the unit vector (ux, uy), half-angle
     // with cosine c and sine s (below 90°), of radius `length`: inside the wedge it reaches length + r, outside it must
@@ -157,6 +170,7 @@ class UnitBreathAttack {
     // One burn: every enemy ground unit and building the flame touches.
     static pulse(sim, unit, d) {
         const spec = d.breathAttack,
+            length = this.length(unit, spec),
             breath = unit.breath,
             aim = Math.sqrt(breath.aimX * breath.aimX + breath.aimY * breath.aimY),
             pulse = breath.pulses++,
@@ -169,8 +183,8 @@ class UnitBreathAttack {
             type: 'breathPulse',
             side: unit.side,
             sourceId: unit.id,
-            x: unit.x + (breath.aimX / aim) * (spec.length / 2),
-            y: unit.y + (breath.aimY / aim) * (spec.length / 2),
+            x: unit.x + (breath.aimX / aim) * (length / 2),
+            y: unit.y + (breath.aimY / aim) * (length / 2),
             hits: 0,
         };
         sim.events.push(event);
@@ -179,7 +193,7 @@ class UnitBreathAttack {
         const units = sim.nearbyUnits(
             unit.x,
             unit.y,
-            spec.length + sim.maxUnitRadius,
+            length + sim.maxUnitRadius,
             1 - unit.side,
             UNIT_QUERY,
         );
@@ -200,7 +214,7 @@ class UnitBreathAttack {
             const buildings = sim.nearbyBuildingIndices(
                 unit.x,
                 unit.y,
-                spec.length + sim.maxBuildingRadius * COLLISION_RADIUS_SCALE,
+                length + sim.maxBuildingRadius * COLLISION_RADIUS_SCALE,
                 BUILDING_QUERY,
             );
             for (let k = 0; k < buildings; k++) {

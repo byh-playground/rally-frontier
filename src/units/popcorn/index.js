@@ -20,6 +20,12 @@ export const Popcorn = defineUnit({
             // Every grounded enemy inside the radius is thrown as hard as one at the centre.
             knockbackFalloff: false,
         }),
+        // 캠페인 강화: 자폭 피해가 1.5배(40 → 60)가 된다. 반경과 넉백은 그대로다.
+        campaignUpgrade: {
+            name: '왕 팝콘',
+            summary: '더 크게 터져서 더 아파요. 폭발 피해가 1.5배예요.',
+            bigPop: { damageScale: 1.5 },
+        },
     },
     payload: {
         ...SINGLE_BUNDLE_SHELL,

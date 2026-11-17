@@ -2,7 +2,8 @@
 // - 감자(Unit Definition growsCannon)는 대포 하나당 한 알을 싣는 단발 투입탄이다(일제사격도 참여 대포마다
 //   한 알, 비용은 한 번). 병사가 생기는 틱에 Unit.cannonTick(전진 대포가 서는 틱)만 정하고, 그때까지 이동·공격하지
 //   않으며 피격될 수 있다. 그 전에 쓰러지면 아무것도 남지 않는다. 공중에 떠 있으면 착지한 뒤에 선다.
-//   파기·뿌리 단계는 cannonTick에서 계산하는 연출일 뿐 권위 상태가 아니다(ForwardCannon.stage).
+//   파기·뿌리 단계는 cannonTick에서 계산하는 연출일 뿐 권위 상태가 아니다(ForwardCannon.stage). 캠페인 강화
+//   `quickRoot { delayMs }`가 켜진 편은 그 시간 뒤에 서고, 연출은 남은 시간만큼 뒤쪽 단계에서 시작한다.
 // - 전진 대포는 Building Definition 'forward-cannon'의 일반 건물이다. 거점 대포와 같은 발사 규칙(재장전·비용·연쇄)을
 //   쓰고 포탑·생산·점령·수입·승패 판정이 없다. 선 틱(Building.decayStartTick)부터 정수 단위로 체력이 줄어
 //   0이 되면 파괴되며 적 피해도 받는다. 찹쌀은 붙지 않는다. 영웅은 발사 대포인 전진 대포로도 회수된다.
@@ -16,10 +17,13 @@ import { BuildingDefinition } from '../../definitions/buildings.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { Building } from '../entities.js';
 import { UnitMotion } from '../navigation.js';
+import { CampaignUpgrades } from '../campaign-upgrades.js';
 
 class ForwardCannon {
+    // Campaign upgrade `quickRoot { delayMs }` (감자 · 빠른 설치): that side's potatoes stand up after its `delayMs`.
     static plant(sim, unit, spec) {
-        unit.cannonTick = sim.tick + sim.time.ceilTicks(spec.delayMs);
+        const quick = CampaignUpgrades.effect(sim, unit.side, unit.type, 'quickRoot');
+        unit.cannonTick = sim.tick + sim.time.ceilTicks((quick ?? spec).delayMs);
     }
     // Presentation: milliseconds the soldier has been rooting, from its cannonTick in any snapshot. Null for every other unit.
     static rootingMs(type, cannonTick, tick, tps) {
