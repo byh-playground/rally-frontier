@@ -2,6 +2,20 @@ import { DEFAULT_DIFFICULTY, campaignPace, isDifficulty } from '../definitions/c
 import { SUNSHINE, startingOwned } from '../definitions/roster.js';
 import { loadPlayerSave, updatePlayerSave } from './player-saves.js';
 
+// The arguments of Roster.recordClear for one finished match of a new-campaign stage (a stage that declares `act`,
+// campaign.js): `cleared` the stage was won, `sideGoal` the confirmed end state's side goal (SideGoal, the snapshot's
+// `sideGoal`, absent on a stage without one) and `difficulty` the one the match started on.
+export function clearRecord(stage, { cleared, sideGoal, difficulty }) {
+    return {
+        stageId: stage.id,
+        cleared,
+        sideGoal: sideGoal?.status === 'met',
+        hard: difficulty === 'hard',
+        ...(stage.region && { opensRegion: stage.region }),
+        grants: stage.rewardCard ? [stage.rewardCard] : [],
+    };
+}
+
 // The roster record of src/ui/player-saves.js: the single source of which cards the player owns, plus the new
 // campaign's progress and sunshine. Without a save, it lasts for this page only. Until the record loads (or when it
 // cannot be read) the player owns the starting set.
@@ -89,8 +103,9 @@ export class Roster {
     }
 
     // Records one stage result of the new campaign in a single save: progress marks, sunshine, owned cards, and the
-    // region's place. `result` = { stageId, cleared, sideGoal, hard, opensRegion?, grants? }. Each item pays and
-    // marks only the first time. Resolves { sunshine } paid by this result (0 when the save failed).
+    // region's place. `result` = { stageId, cleared, sideGoal, hard, opensRegion?, grants? } (clearRecord). Each item
+    // pays and marks only the first time. Resolves { sunshine, paid } for this result: the total and the SUNSHINE keys
+    // it paid, in order (firstClear, sideGoal, hardFirstClear); nothing when the save failed.
     async recordClear({
         stageId,
         cleared,
@@ -99,25 +114,27 @@ export class Roster {
         opensRegion,
         grants = [],
     }) {
-        const paid = { sunshine: 0 };
-        if (!cleared) return paid;
+        const result = { sunshine: 0, paid: [] };
+        if (!cleared) return result;
         const saved = await this.#write((draft) => {
-            paid.sunshine = 0;
+            result.sunshine = 0;
+            result.paid = [];
             const progress = draft.campaign;
-            const mark = (list, amount) => {
+            const mark = (list, key) => {
                 if (list.includes(stageId)) return;
                 list.push(stageId);
-                progress.sunshine += amount;
-                paid.sunshine += amount;
+                progress.sunshine += SUNSHINE[key];
+                result.sunshine += SUNSHINE[key];
+                result.paid.push(key);
             };
-            mark(progress.firstCleared, SUNSHINE.firstClear);
-            if (sideGoal) mark(progress.sideGoalCleared, SUNSHINE.sideGoal);
-            if (hard) mark(progress.hardCleared, SUNSHINE.hardFirstClear);
+            mark(progress.firstCleared, 'firstClear');
+            if (sideGoal) mark(progress.sideGoalCleared, 'sideGoal');
+            if (hard) mark(progress.hardCleared, 'hardFirstClear');
             if (opensRegion && !progress.regionOrder.includes(opensRegion))
                 progress.regionOrder.push(opensRegion);
             this.#addOwned(draft, grants);
         });
-        return saved ? paid : { sunshine: 0 };
+        return saved ? result : { sunshine: 0, paid: [] };
     }
 
     // Opens the upgrade of an owned card for the sunshine price. Resolves false when it cannot be paid, is already

@@ -3,6 +3,7 @@
 import { RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { StateValue } from '../sim/components.js';
 import { LaunchRules } from '../sim/launch-rules.js';
+import { CampaignMission } from '../sim/campaign-mission.js';
 import { ConnectionSideUtil, StableSerializationUtil } from '../net/lobby-codec.js';
 import { HashUtil } from '../sim/map-generation.js';
 import { BuildingDefinition } from '../definitions/buildings.js';
@@ -201,7 +202,11 @@ class BotController {
         const campaign = this.side === 1 ? this.session.sim?.rules?.campaign : null;
         const pacing = campaign?.enemyPacing;
         if (pacing?.disabled) return;
-        if (pacing && snapshot.tick < SimulationTiming.time(tps).ceilTicks(pacing.firstDecisionMs))
+        // A campaign enemy plays on the mission's clock: not at all while the stage's practice runs, and its first
+        // decision and ramp count from the practice's end (CampaignMission.clock, the match tick without a practice).
+        if (campaign && CampaignMission.startTick(snapshot) === null) return;
+        const missionTick = campaign ? CampaignMission.clock(snapshot) : snapshot.tick;
+        if (pacing && missionTick < SimulationTiming.time(tps).ceilTicks(pacing.firstDecisionMs))
             return;
 
         const state = this.commandExecutor.begin(snapshot);
@@ -209,7 +214,7 @@ class BotController {
             // A campaign enemy keeps its stage's interval whatever its wallet holds, so the difficulty means something.
             const intervalMs = BotController.decisionIntervalMs(
                 pacing,
-                state.tick,
+                missionTick,
                 tps,
                 !campaign && state.wallet[this.side] >= LaunchRules.walletCap,
                 campaign?.pace?.decisionScale,

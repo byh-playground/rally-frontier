@@ -160,6 +160,33 @@
     white-space: nowrap;
 }
 
+/* The side goal (SideGoal) takes a second row of the objective chip. */
+.campaign-objective.has-side {
+    flex-wrap: wrap;
+    row-gap: 3px;
+}
+
+.campaign-objective-side {
+    display: flex;
+    flex: 1 0 100%;
+    gap: 6px;
+    min-width: 0;
+}
+
+.campaign-objective-side[hidden] {
+    display: none;
+}
+
+#campaignObjectiveSideText {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.campaign-objective.has-side:not(.hidden) ~ .enemy-base-arrow {
+    top: 108px;
+}
+
 .campaign-objective:not(.hidden) ~ .enemy-base-arrow {
     top: 89px;
     left: 10px;

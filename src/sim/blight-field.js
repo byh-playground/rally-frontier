@@ -10,6 +10,9 @@
 //         lit }                       one boolean per declared brazier
 //   It is plain data (the state codec takes no typed array), made once at the match start and changed in place: no
 //   tick allocates. A match without fields has no such cell, so its state and checksum are what they were.
+// - Growth runs on the mission's clock (CampaignMission): while a stage's practice runs the radius stays as it
+//   started, and it widens `growEveryMs` after the practice ends as it would after a match start. Harm keeps its own
+//   clock: it is not a mission timing.
 // - Spread: at the start and each time the radius grows, every CLEAN cell whose middle is within the radius of a
 //   field's middle becomes BLIGHTED. A PURIFIED cell is skipped for the rest of the match.
 // - Harm: every `damageEveryMs`, each living ground soldier or hero of the player's side whose position is on a
@@ -27,6 +30,7 @@
 // - This is a mission area, not an attack: it uses no `sustain`, has no unit and nobody can target it.
 import { BlightFieldDefinition as RULE } from '../definitions/blight-field.js';
 import { Blight } from './blight.js';
+import { CampaignMission } from './campaign-mission.js';
 import { UnitFlight } from './capabilities/unit-flight.js';
 import { IndexList } from './index-list.js';
 
@@ -181,7 +185,14 @@ export class BlightField {
                 BlightField.purifyCell,
             );
         }
-        state.growClock = sim.time.every(state.growClock, RULE.growEveryMs, BlightField.grow, sim);
+        // The fields widen on the mission's clock: not while a practice holds it (CampaignMission.startTick).
+        if (CampaignMission.startTick(sim) !== null)
+            state.growClock = sim.time.every(
+                state.growClock,
+                RULE.growEveryMs,
+                BlightField.grow,
+                sim,
+            );
         state.damageClock = sim.time.every(
             state.damageClock,
             RULE.damageEveryMs,

@@ -24,6 +24,20 @@
     display: none;
 }
 
+/* The sunshine this result paid (Roster.recordClear), one line under the title. */
+.result-sunshine {
+    order: 2;
+    margin: 0;
+    color: #8a5a00;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+
+.result-sunshine[hidden] {
+    display: none;
+}
+
 .result-campaign-reward img {
     width: 56px;
     height: 56px;

@@ -330,6 +330,28 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   방어전은 스테이지의 제한 시간(`surviveMs`)을 버티면 이기고, 본진이나 지킬 거점(`guardPoint`, 아군 시작 거점)이
   무너지면 진다. 적을 빨리 잡아도, 적 본진을 부숴도 일찍 끝나지 않는다. 공격(`waves`)은 각자 정해진 시각(`atMs`)에
   오며 앞 공격이 남아 있어도 쌓인다. 전투 중 화면은 남은 시간·N차 공격과 지킬 거점 표시를 보인다.
+  임무 시계(`CampaignMission.clock(sim)`)는 스테이지가 ms로 선언한 모든 시각(방어전 공격·버티기 끝·포자 구름·감염 밭이
+  넓어지는 박자·보조 목표 제한 시간)과 적 AI의 첫 결정·결정 간격이 읽는 한 곳이다: 익히기가 없으면 경기 틱 그대로,
+  익히기가 있으면 익히기가 끝난 틱부터 센 틱이고 익히기 동안은 0이다(`CampaignMission.startTick`이 null). 익히기 단계
+  (`src/sim/campaign-practice.js`)는 새 카드가 합류하는 스테이지가 `practice: { card, cue, targets }`로 선언한다(`card`는
+  플레이어 덱의 카드, `cue`는 안내 한 줄, `targets`는 `side`·`hold`·영웅이 없는 방어전 공격 대형). 표적은 경기 시작에 서는
+  보통 적 병사(감염 스테이지면 감염)이고 안개 너머로 보이며 차례를 쓰지 않는다(이동·표적·공격 없음, 맞고 밀리고 죽는 것은
+  보통 적과 같다). 포탑은 표적을 겨누지 않아 플레이어가 쏜 포탄과 나온 병사만 표적을 쓰러뜨린다. 마지막 표적이 쓰러진
+  틱에 익히기가 끝난다. 익히기 동안 임무 시계가 멈춰 공격·구름·밭 번짐·버티기 초읽기가 오지 않고 적 AI가 두지 않으며
+  보스와 호위는 익히기가 끝난 틱에 나온다(`BlightBoss.start`). 적 건물은 피해를 받지 않고 플레이어는 이길 수 없다(지는
+  것은 그대로). `introducedEnemy`·`mission.formations`·`volleyGoals`처럼 경기 시작부터 서 있는 적 병사와 함께 선언하면
+  경기 시작에서 실패한다. 경기 틱(경제·탄약·밭의 피해)은 그대로 돌아 한 판이 하나의 결정적 실행이다.
+  전투 화면은 목표 칸에 '써 보기 · 남은 표적 N'과 `cue` 안내를 보이고, 끝나면 '전투 목표' 안내로 넘어간다. 보조 목표
+  (`src/sim/side-goal.js`)는 스테이지마다 하나까지 `sideGoal: { kind, … }`로 선언하는 선택 목표이고 처음 달성할 때만 햇살
+  25를 준다(`SUNSHINE.sideGoal`, 다시 깨도 `Roster.recordClear`가 다시 주지 않음). 종류는 `SideGoal.KINDS` 표 하나다:
+  `freeCaptives`(포로 전원 또는 `count`명 구하기, 포자 주머니 판만)·`burnFields`(감염 칸 0, 감염 밭 판만)·`withinMs`(임무
+  시계로 `ms` 안에 이기기)·`keepAlive`(본진 또는 `point` 거점이 `hpRatio` 아래로 내려가지 않고 이기기). sim이 매 틱 승패
+  뒤에 결정적으로 판정해 `sim.sideGoal { status: open|met|missed, tick }`에 두고, 정해진 상태는 바뀌지 않는다. 목표 칸은
+  보조 목표 한 줄(진행 표시 예: '포로 구하기 3/10', '3:00 안에 이기기 · 남은 2:53')을 보이고 달성한 순간 짧은 안내('보조
+  목표 달성')를 띄운다. `sim.campaignPractice { doneTick }`·`unit.practiceTarget`·`sim.sideGoal`은 선언한 스테이지에만
+  있어 그 밖의 경기 상태와 체크섬은 그대로다. 결과는 `clearRecord(stage, { cleared, sideGoal, difficulty })` 한 함수로
+  `recordClear` 인자를 만들고, 그 호출은 새 캠페인 스테이지(`act` 칸을 선언한 판)에서만 해 결과 화면 제목 아래에 받은 햇살
+  한 줄('☀ +75 · 처음 클리어 50 · 보조 목표 25')을 보인다. 지금 `act`를 선언한 스테이지는 없다.
   스테이지 해금은 로컬에 저장하며 실패·이탈은 해금하지 않는다.
   캠페인 전용 맵은 중앙 전선과 스테이지별 적 방어선을 사용한다. 스테이지가 대전 맵(`map`: game-rules.js 프리셋 id,
   둑길 평원 포함)을 고르면 그 맵과 점령 지점 id로 시작 거점·수비대를 둔다(standard는 스테이지 seed로 고정). 첫 전진 거점은 사거리 강화 전
@@ -1128,6 +1150,10 @@ END OF DEVELOPMENT CONTRACT
                     <span class="campaign-objective-tag">목표</span>
                     <span id="campaignObjectiveLabel" role="status" aria-atomic="true"></span>
                     <span id="campaignObjectiveTimer" aria-live="off" hidden></span>
+                    <span id="campaignObjectiveSide" class="campaign-objective-side" hidden>
+                        <span class="campaign-objective-tag">보조</span>
+                        <span id="campaignObjectiveSideText" aria-live="off"></span>
+                    </span>
                 </div>
                 <div id="minimapWrap" class="minimap">
                     <canvas id="minimapCanvas" aria-label="미니맵"></canvas>
@@ -1315,6 +1341,7 @@ END OF DEVELOPMENT CONTRACT
             <div class="result-card">
                 <p id="resultText" class="result-why"></p>
                 <h2 id="resultTitle">승리</h2>
+                <p id="resultSunshine" class="result-sunshine" hidden></p>
                 <section id="resultCampaignReward" class="result-campaign-reward" hidden>
                     <img id="resultRewardPortrait" alt="" />
                     <div>

@@ -14,12 +14,15 @@ import { campaignStage } from './definitions/campaign.js';
 import { NEUTRAL_PACE, campaignPace, stageRules } from './definitions/campaign-pace.js';
 import { HeroGrowth } from './sim/hero-growth.js';
 import { LaunchRules } from './sim/launch-rules.js';
-import { HashUtil } from './sim/map-generation.js';
+import { HashUtil, MapGeneration } from './sim/map-generation.js';
 import { HERO_LEVEL_KILLS, RESOURCE_SCALE } from './units/baseline.js';
 import { BotController } from './ai/bot-controller.js';
 import { Blight } from './sim/blight.js';
 import { BlightBoss } from './sim/blight-boss.js';
 import { BlightField } from './sim/blight-field.js';
+import { CampaignMission } from './sim/campaign-mission.js';
+import { CampaignPractice } from './sim/campaign-practice.js';
+import { SideGoal } from './sim/side-goal.js';
 import { SporeCloud } from './sim/spore-cloud.js';
 import { SporeSac } from './sim/spore-sac.js';
 import { UnitDefinition } from './definitions/units.js';
@@ -97,6 +100,8 @@ function flag(scene, name, text) {
 // on the host side's campaign upgrades and the guest side's blight; `sporeSacs` is the stage's spore sac declaration,
 // `fields` its blight fields and braziers (blightFieldDeclaration), `sporeClouds` its spore clouds
 // (sporeCloudDeclaration) and `boss` its boss (bossDeclaration): the guest deck then carries the boss as its hero.
+// `practice` is the stage's practice (practiceDeclaration, a function of the host deck and the map's spawns) and
+// `sideGoal` its side goal (sideGoalDeclaration).
 function createMatchSim(
     scene,
     map,
@@ -108,6 +113,8 @@ function createMatchSim(
     fields = undefined,
     sporeClouds = undefined,
     boss = undefined,
+    practice = undefined,
+    sideGoal = undefined,
 ) {
     const rules = GameRuleRuntime.resolveMatchRules({ presetId: map }),
         cards = deck === undefined ? LaunchRules.starterDeck : String(deck).split(','),
@@ -125,7 +132,58 @@ function createMatchSim(
         fields,
         sporeClouds,
         boss,
+        practice: practice?.(cards, spawnsOf(rules, integer(scene, 'seed', seed))),
+        sideGoal,
     });
+}
+
+// The map's { host, guest } spawns for these rules and seed, before the match is made.
+function spawnsOf(rules, seed) {
+    return MapGeneration.generateMapDescriptor({ rules, seed, roundNumber: rules.roundNumber || 1 })
+        .spawns;
+}
+
+// `practice=<type>&practiceCount=N`: the stage's practice (CampaignPractice) with N `type` soldiers as its targets,
+// standing in a square block around `place(spawns)` (the map's { host, guest } spawns), the host deck's first card
+// as its card. Returns a function of (host deck, spawns) that makes the declaration, or undefined without `practice`.
+function practiceDeclaration(scene, params, place) {
+    if (params.practice === undefined) return undefined;
+    const type = unitType(scene, 'practice', params.practice),
+        count = integer(scene, 'practiceCount', params.practiceCount);
+    return (deck, spawns) => ({
+        card: deck[0],
+        cue: '디버그 익히기: 표적을 모두 쓰러뜨려요',
+        targets: [{ type, ...place(spawns), count, columns: Math.ceil(Math.sqrt(count)) }],
+    });
+}
+
+// `sideGoal=<kind>[,<value>]`: the stage's side goal (SideGoal). The value is `count` of freeCaptives, `ms` of
+// withinMs and `hpRatio` of keepAlive (the main base), e.g. `sideGoal=freeCaptives`, `sideGoal=freeCaptives,6`,
+// `sideGoal=burnFields`, `sideGoal=withinMs,60000`, `sideGoal=keepAlive,0.9`. Returns that declaration, or undefined.
+function sideGoalDeclaration(scene, params) {
+    if (params.sideGoal === undefined) return undefined;
+    const [kind, value] = String(params.sideGoal).split(','),
+        number = () => positive(scene, 'sideGoal', value);
+    if (kind === 'freeCaptives')
+        return { kind, ...(value !== undefined && { count: integer(scene, 'sideGoal', value) }) };
+    if (kind === 'burnFields') return { kind };
+    if (kind === 'withinMs') return { kind, ms: number() };
+    if (kind === 'keepAlive') return { kind, hpRatio: number() };
+    throw new Error(
+        `${scene} takes sideGoal=<${SideGoal.KINDS.join('|')}>[,value]: ${params.sideGoal}`,
+    );
+}
+
+// The practice and the side goal (every scene with one): `practice` is the tick it ended (null while it runs), the
+// targets still standing and the mission's clock now (CampaignMission.clock); `sideGoal` is the goal with its status
+// ('open', 'met', 'missed'), the tick it stopped being open and its progress (SideGoal.view).
+function missionDevicesState(sim) {
+    return {
+        ...(sim.campaignPractice && {
+            practice: { ...CampaignPractice.view(sim), clock: CampaignMission.clock(sim) },
+        }),
+        ...(sim.sideGoal && { sideGoal: SideGoal.view(sim) }),
+    };
 }
 
 // `boss=<hero>&bossX&bossY` (the `unit` scene, with `blight=1`): the stage's boss (BlightBoss) at level `bossLevel`
@@ -558,7 +616,7 @@ function stagedMatch(
     rules,
     map,
     decks,
-    { upgrades, blight, sporeSacs, fields, sporeClouds, boss },
+    { upgrades, blight, sporeSacs, fields, sporeClouds, boss, practice, sideGoal },
 ) {
     const blighted = flag(scene, 'blight', blight);
     if (
@@ -567,7 +625,9 @@ function stagedMatch(
         sporeSacs === undefined &&
         fields === undefined &&
         sporeClouds === undefined &&
-        boss === undefined
+        boss === undefined &&
+        practice === undefined &&
+        sideGoal === undefined
     )
         return new StrategySim(seed, rules, decks);
     rules.campaign = {
@@ -581,6 +641,8 @@ function stagedMatch(
         ...fields,
         ...(sporeClouds && { sporeClouds }),
         ...(boss && { boss }),
+        ...(practice && { practice }),
+        ...(sideGoal && { sideGoal }),
     };
     return new StrategySim(seed, rules, decks, [
         upgrades === undefined ? [] : String(upgrades).split(','),
@@ -2623,6 +2685,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 ...(run.sim.blightField ? { blightField: field.state(run.sim) } : {}),
                 ...(run.sim.sporeCloud ? { sporeCloud: cloud.state(run.sim) } : {}),
                 ...(run.sim.blightBoss ? { boss: boss.state(run.sim) } : {}),
+                ...missionDevicesState(run.sim),
                 ...extra(run.sim),
                 ...log.state(times),
                 overlap: overlap(run.sim),
@@ -3155,6 +3218,19 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 blightFieldDeclaration(scene, params),
                 sporeCloudDeclaration(scene, params),
                 bossDeclaration(scene, params),
+                // practice=<type>&practiceCount=N: the targets stand where the enemy block would (`gap` toward the
+                // guest base from x, y).
+                practiceDeclaration(scene, params, ({ guest }) => {
+                    const x = integer(scene, 'x', params.x),
+                        y = integer(scene, 'y', params.y),
+                        gap = params.gap === undefined ? 300 : integer(scene, 'gap', params.gap),
+                        length = Math.hypot(guest.x - x, guest.y - y);
+                    return {
+                        x: Math.round(x + ((guest.x - x) / length) * gap),
+                        y: Math.round(y + ((guest.y - y) / length) * gap),
+                    };
+                }),
+                sideGoalDeclaration(scene, params),
             );
             if (flag(scene, 'outposts', params.outposts)) completeOutposts(sim);
             const sac = createSporeSacProbe(scene, sim);
@@ -3633,8 +3709,28 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                         ? 0
                         : integer('campaign', 'regionPlace', params.regionPlace);
             const pace = campaignPace(difficulty, place);
+            // practice=<type>&practiceCount=N: practice targets 300 from the player's main base toward the enemy's
+            // (towers never aim at them: with `player=bot` the player's AI brings them down, without it nothing does).
+            // sideGoal=<kind>[,value]: the stage's
+            // side goal in place of its own.
+            const practice = practiceDeclaration('campaign', params, ({ host, guest }) => {
+                    const length = Math.hypot(guest.x - host.x, guest.y - host.y);
+                    return {
+                        x: Math.round(host.x + ((guest.x - host.x) / length) * 300),
+                        y: Math.round(host.y + ((guest.y - host.y) / length) * 300),
+                    };
+                }),
+                sideGoal = sideGoalDeclaration('campaign', params);
+            rules.campaign = stage;
             rules.campaign = stageRules(
-                flag('campaign', 'blight', params.blight) ? { ...stage, blight: true } : stage,
+                {
+                    ...stage,
+                    ...(flag('campaign', 'blight', params.blight) && { blight: true }),
+                    ...(practice && {
+                        practice: practice(stage.deck, spawnsOf(rules, stage.seed)),
+                    }),
+                    ...(sideGoal && { sideGoal }),
+                },
                 pace,
             );
             const upgrades = params.upgrades === undefined ? [] : params.upgrades.split(',');
@@ -3688,6 +3784,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                         waveIndex: sim.campaignMission.waveIndex,
                         endTick: sim.campaignMission.endTick,
                         guardLost: sim.campaignMission.guardLost,
+                        clock: CampaignMission.clock(sim),
+                        nextWaveTick: sim.campaignMission.nextWaveTick,
                     },
                 }),
             });
