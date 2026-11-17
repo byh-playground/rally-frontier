@@ -9,8 +9,10 @@ export class CampaignProgress {
     #debugUnlocked = false;
 
     // `save` is the campaign record of src/ui/player-saves.js; without one, progress lasts for this page only.
-    constructor(save = null) {
+    // `roster` (src/ui/roster.js) receives the card a stage rewards.
+    constructor(save = null, roster = null) {
         this.save = save;
+        this.roster = roster;
         this.completed = new Set();
     }
 
@@ -85,15 +87,11 @@ export class CampaignProgress {
         return REWARD_STAGES.get(card) || null;
     }
 
-    isUnlocked(card) {
-        const stage = this.unlockStage(card);
-        return this.#debugUnlocked || !stage || this.isComplete(stage);
-    }
-
     complete(stage) {
         if (this.#debugUnlocked) return null;
         if (!stage || this.isComplete(stage) || !this.canStart(stage)) return null;
         this.completed.add(stage.id);
+        if (stage.rewardCard) void this.roster?.grant([stage.rewardCard]);
         this.persist(stage.id);
         return stage.rewardCard ?? null;
     }

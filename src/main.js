@@ -91,6 +91,7 @@ import { createShowcaseHost } from './ui/showcase-host.js';
 import { DeckEditor } from './ui/deck-editor.js';
 import { loadPlayerSave, openPlayerSaves, updatePlayerSave } from './ui/player-saves.js';
 import { CampaignProgress } from './ui/campaign-progress.js';
+import { Roster } from './ui/roster.js';
 import { CampaignPresentation } from './ui/campaign-presentation.js';
 import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
@@ -12258,6 +12259,7 @@ if (UiRegistry.refs.bootRetryBtn)
 const createShowcaseRenderer = (canvas, fxCanvas) =>
     new GLRenderer(canvas, { deferLoop: true, showcase: true, fxCanvas });
 let campaignProgress;
+let roster;
 // Game metrics (src/session/usage-metrics.js). Only the title app creates it, so a debug address sends nothing.
 let usageMetrics = null;
 // A debug address (`?debug=1&scene=…`) opens one scene of src/debug-scenes.js instead of the title and match flow.
@@ -12270,14 +12272,17 @@ if (debugAddress) void AppLifecycle.openDebugScene(createShowcaseRenderer);
 else void startTitleApp();
 
 async function startTitleApp() {
-    campaignProgress = new CampaignProgress(playerSaves.campaign);
+    roster = new Roster(playerSaves.roster);
+    campaignProgress = new CampaignProgress(playerSaves.campaign, roster);
     // The title screens and the deck read the unlocks, so the records load before the boot and the screens start.
     await Promise.all([
         campaignProgress.load(),
+        roster.load(),
         loadPlayerSave(playerSaves.decks, '덱 편성'),
         loadPlayerSave(playerSaves.hints, '안내 표시'),
     ]);
     playerSaves.campaign.onExternalChange(() => void campaignProgress.load());
+    playerSaves.roster.onExternalChange(() => void roster.load());
     // Automated tests (navigator.webdriver) keep the batches in memory instead of the collection server.
     usageMetrics = new RallyUsageMetrics({
         gamekit: RallyGamekit,
@@ -12301,7 +12306,7 @@ async function startTitleApp() {
         nameOf: (type) => UnitDefinition.get(type)?.name || type,
         statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
         infoOf: (type) => LaunchScreens.grainInfo(type),
-        isUnlocked: (type) => campaignProgress.isUnlocked(type),
+        isUnlocked: (type) => campaignProgress.debugUnlocked || roster.owns(type),
         isTemporary: () => campaignProgress.debugUnlocked,
         unlockHint: (type) => {
             const stage = campaignProgress.unlockStage(type);
