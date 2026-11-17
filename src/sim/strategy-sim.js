@@ -16,9 +16,9 @@ import { UnitSelfDestructAttack } from './capabilities/unit-self-destruct-attack
 import { UnitLeapAttack } from './capabilities/unit-leap-attack.js';
 import { StickyCling } from './capabilities/sticky-cling.js';
 import { ContactMelee } from './capabilities/contact-melee.js';
-import { UpgradeBurstSpread } from './capabilities/upgrade-burst-spread.js';
 import { UpgradeChainCharge } from './capabilities/upgrade-chain-charge.js';
 import { UpgradeEchoShock } from './capabilities/upgrade-echo-shock.js';
+import { UpgradeExtraShot } from './capabilities/upgrade-extra-shot.js';
 import { UpgradeHeavyThorn } from './capabilities/upgrade-heavy-thorn.js';
 import { UpgradeShellShards } from './capabilities/upgrade-shell-shards.js';
 import { UpgradeHitBlock } from './capabilities/upgrade-hit-block.js';
@@ -1377,8 +1377,8 @@ class StrategySim {
             this,
             level,
         );
-        // Campaign upgrade `burstSpread`: the burst's shells land in a row across the aim.
-        UpgradeBurstSpread.apply(this, side, action.unitType, volley, aim);
+        // Campaign upgrade `extraShot`: the burst fires more shells after its last one.
+        UpgradeExtraShot.apply(this, side, action.unitType, volley);
         this.wallet[side] -= grain.cost;
         this.premiumWallet[side] -= grain.premiumCost || 0;
         // One round however many cannons join the volley.
@@ -1386,7 +1386,11 @@ class StrategySim {
         // The cannon is busy until the last shell of the volley has left, plus the reload.
         const readyTick =
             this.tick +
-            this.time.ceilTicks(LaunchRules.volleyMs(action.unitType) + LaunchRules.reloadMs);
+            this.time.ceilTicks(
+                LaunchRules.volleyMs(action.unitType) +
+                    UpgradeExtraShot.ms(this, side, action.unitType) +
+                    LaunchRules.reloadMs,
+            );
         const power = LaunchRules.power(holdMs),
             mode = grain.fire.mode,
             eventsBeforeVolley = this.events.length;

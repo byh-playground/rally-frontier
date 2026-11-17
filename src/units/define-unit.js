@@ -33,10 +33,11 @@
 //                leapAttack.impact)
 //              firstStrike { hits, damageScale }: each soldier's first `hits` contact hits deal `damageScale` times
 //                their damage, as the one hit (UpgradeFirstStrike; needs contactMelee)
-//              heavyThorn { every, radiusScale, knockbackSpeed }: each soldier's every `every`th thorn is
-//                `radiusScale` times as thick and shoves the soldier it hits (UpgradeHeavyThorn; needs thornAttack)
-//              burstSpread { spacing }: a burst's shells land in a row across the aim, `spacing` apart
-//                (UpgradeBurstSpread; needs payload fire.mode 'burst')
+//              heavyThorn { every, radiusScale, damageScale }: each soldier's every `every`th thorn is
+//                `radiusScale` times as thick and deals `damageScale` times its damage (UpgradeHeavyThorn; needs
+//                thornAttack)
+//              extraShot { shots, soldiers }: a burst fires `shots` more shells like its last one, `gapMs` apart,
+//                carrying `soldiers` more soldiers in all (UpgradeExtraShot; needs payload fire.mode 'burst')
 //              chainCharge { approachSpeedScale }: when its hit destroys a building, the soldiers after that building
 //                run on at `approachSpeedScale` times their walk to the next hit, no wait (UpgradeChainCharge;
 //                needs contactMelee·contactRebound)
@@ -357,25 +358,26 @@ const CAMPAIGN_UPGRADE_EFFECTS = Object.freeze({
     // UpgradeHeavyThorn: every `every`th thorn.
     heavyThorn(id, spec, unit) {
         if (
-            Object.keys(spec).sort().join(',') !== 'every,knockbackSpeed,radiusScale' ||
+            Object.keys(spec).sort().join(',') !== 'damageScale,every,radiusScale' ||
             !(Number.isInteger(spec.every) && spec.every > 1) ||
             !(spec.radiusScale > 1) ||
-            !(spec.knockbackSpeed > 0) ||
+            !(spec.damageScale > 1) ||
             !unit.thornAttack
         )
             throw new Error(
-                `병종 ${id}의 heavyThorn은 every(2 이상의 정수)·1보다 큰 radiusScale·양수 knockbackSpeed와 thornAttack이 필요합니다.`,
+                `병종 ${id}의 heavyThorn은 every(2 이상의 정수)·1보다 큰 radiusScale·damageScale과 thornAttack이 필요합니다.`,
             );
     },
-    // UpgradeBurstSpread: where a burst's shells land.
-    burstSpread(id, spec, unit, payload) {
+    // UpgradeExtraShot: more shells after a burst's last one.
+    extraShot(id, spec, unit, payload) {
         if (
-            Object.keys(spec).join(',') !== 'spacing' ||
-            !(spec.spacing > 0) ||
+            Object.keys(spec).sort().join(',') !== 'shots,soldiers' ||
+            !(Number.isInteger(spec.shots) && spec.shots > 0) ||
+            !(Number.isInteger(spec.soldiers) && spec.soldiers >= spec.shots) ||
             payload.fire?.mode !== 'burst'
         )
             throw new Error(
-                `병종 ${id}의 burstSpread는 양수 spacing과 포탄의 fire.mode 'burst'가 필요합니다.`,
+                `병종 ${id}의 extraShot은 shots(양의 정수)·soldiers(shots 이상의 정수)와 포탄의 fire.mode 'burst'가 필요합니다.`,
             );
     },
     // UpgradeChainCharge: after a building falls to its hit.

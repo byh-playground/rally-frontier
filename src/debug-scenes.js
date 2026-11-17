@@ -118,8 +118,8 @@ function upgradedMatch(seed, rules, map, decks, upgrades) {
 // soldiers still holding a per-soldier charge (`charged`), second landing shocks and the bodies they hit
 // (`echoShocks`·`echoHits`), leap landings with their last radius and the soldiers they struck
 // (`leapLandings`·`leapRadius`·`leapStruck`), and doubled first strikes (`firstStrikes`). `on` is the host side's upgrades.
-// The nut cards: heavy thorns that hit and how far the soldier each one hit was thrown, for the first 6
-// (`heavyHits`·`heavyPushes`), where the host side's shells were aimed, first 6 (`shellAims`), chains started, the
+// The nut cards: heavy thorns that hit and the damage they dealt (`heavyHits`·`heavyDamage`), the host side's
+// shells fired (`shellsFired`), chains started, the
 // soldiers they set running and the soldiers running now (`chains`·`chained`·`chaining`), shard bursts and the bodies
 // they hit (`shardBursts`·`shardHits`), bounces the upgrade showed (`wallRebounds`) and, upgrade or not, the host
 // side's rolling bodies' speed before and after each tick they touched a wall or building, first 8 (`wallBounces`:
@@ -134,8 +134,8 @@ function createUpgradeProbe(sim) {
         leapStruck: 0,
         firstStrikes: 0,
         heavyHits: 0,
-        heavyPushes: [],
-        shellAims: [],
+        heavyDamage: 0,
+        shellsFired: 0,
         chains: 0,
         chained: 0,
         shardBursts: 0,
@@ -144,20 +144,11 @@ function createUpgradeProbe(sim) {
         wallBounces: [],
     };
     const round = (value) => Math.round(value * 10) / 10,
-        // A heavy thorn's target while it flies: [unit, x, y where it stood when hit].
-        pushed = [],
         rollSpeed = new Map(),
         speedOf = (u) => Math.hypot(u.impactMotion?.vxFP || 0, u.impactMotion?.vyFP || 0) / FP;
     const step = sim.step.bind(sim);
     sim.step = (...rest) => {
         const winner = step(...rest);
-        for (let k = pushed.length - 1; k >= 0; k--) {
-            const [unit, x, y] = pushed[k];
-            if (unit.impactMotion && (unit.impactMotion.vxFP || unit.impactMotion.vyFP)) continue;
-            if (counts.heavyPushes.length < 6)
-                counts.heavyPushes.push(round(Math.hypot(unit.x - x, unit.y - y)));
-            pushed.splice(k, 1);
-        }
         for (const u of sim.units) {
             if (u.side !== 0 || !u.rolling) continue;
             const speed = speedOf(u);
@@ -168,10 +159,15 @@ function createUpgradeProbe(sim) {
         for (const e of sim.events) {
             if (e.type === 'unitThornHit' && e.heavy) {
                 counts.heavyHits++;
-                const unit = sim.unitById.get(e.targetId);
-                if (unit) pushed.push([unit, unit.x, unit.y]);
+                // The thorn's own hit: the last `hit` event on that target before this one.
+                for (let k = sim.events.indexOf(e) - 1; k >= 0; k--) {
+                    const hit = sim.events[k];
+                    if (hit.type !== 'hit' || hit.targetId !== e.targetId) continue;
+                    counts.heavyDamage += hit.amount;
+                    break;
+                }
             } else if (e.type === 'launchFire' && e.side === 0) {
-                if (counts.shellAims.length < 6) counts.shellAims.push([e.aimX, e.aimY]);
+                counts.shellsFired++;
             } else if (e.type === 'upgradeChainCharge') {
                 counts.chains++;
                 counts.chained += e.count;
@@ -2549,7 +2545,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * `?debug=1&scene=unit&map=twin-gates&seed=1&unit=coconut&count=1&x=1400&y=2900&tick=150`
          * `upgrades=rice,millet`는 `unit` 편에 그 카드의 캠페인 병종 강화를 켜고(없으면 지금까지와 같은 경기), 상태의
          * `upgrade`가 강화가 한 일(막은 피격·남은 병사별 횟수·두 번째 충격·도약 착지 반경과 맞은 수·두 배로 들어간 첫 일격 수·
-         * 굵은 가시·포탄 조준점·연쇄 돌진·껍질 파편·벽 반사, createUpgradeProbe)을 낸다.
+         * 굵은 가시·쏜 포탄 수·연쇄 돌진·껍질 파편·벽 반사, createUpgradeProbe)을 낸다.
          */
         unit(params) {
             const scene = 'unit';

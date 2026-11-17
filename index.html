@@ -237,7 +237,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   능력 코드는 수치를 `CampaignUpgrades.effect(sim, side, type, '<효과>')`로 받고(꺼져 있으면 null이라 꺼진 경기는 결과가 그대로다),
   병사마다 세는 효과는 병사가 생길 때 `unit.campaignUpgrade.charges`(또는 `attacks`·`taken`)를 받는다. 효과: `firstHitBlock`(쌀, 첫 피격 막기)·
   `echoShock`(콩, 착탄 충격 한 번 더)·`leapImpact`(팥, 착지 반경 배수)·`firstStrike`(조, 첫 접촉 피해 배수)·
-  `heavyThorn`(밤톨, N번째 가시가 굵고 맞은 적 하나를 밂)·`burstSpread`(도토리, 연사 착탄점을 좌우 한 줄로)·
+  `heavyThorn`(밤톨, N번째 가시가 굵고 피해 배수)·`extraShot`(도토리, 연사 뒤 같은 조준점에 포탄과 인원 추가)·
   `chainCharge`(땅콩, 건물을 부수면 그 건물을 노리던 병사가 다음 유효타까지 이어 달림, `unit.campaignUpgrade.chaining`)·
   `shellShards`(호두, 받은 피해가 쌓일 때마다 주변 범위 피해)·`wallRebound`(코코넛, 벽·건물 반사의 반발 계수 교체).
   강화가 꺼진 경기에는 이 상태 칸이 하나도 생기지 않는다.

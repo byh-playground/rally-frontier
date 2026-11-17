@@ -28,12 +28,11 @@ export const Chestnut = defineUnit({
             targetHeight: 10,
         }),
         sight: 275,
-        // 캠페인 강화: 병사마다 3번째 가시가 두 배 굵고, 맞은 적 병사 하나를 뒤로 민다(피해는 그대로 10).
-        // 미는 세기는 밤톨 한 알이 속도 200으로 친 것: 막힘 없이 밀린 쌀이 57쯤 물러난다.
+        // 캠페인 강화: 병사마다 3번째 가시가 두 배 굵고 피해가 2배(10 → 20)다.
         campaignUpgrade: {
             name: '굵은 가시',
-            summary: '세 번째 가시마다 굵은 가시가 나가 맞은 적을 뒤로 밀어요.',
-            heavyThorn: { every: 3, radiusScale: 2, knockbackSpeed: 200 },
+            summary: '세 번째 가시가 굵어져 두 배로 아파요.',
+            heavyThorn: { every: 3, radiusScale: 2, damageScale: 2 },
         },
     },
     payload: {
