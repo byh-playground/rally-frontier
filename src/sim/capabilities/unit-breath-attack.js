@@ -16,12 +16,18 @@
 //   길이가 그 배수이고(UnitBreathAttack.length) 공격 사거리도 늘어난 길이만큼 길다(range). 각도는 그대로다.
 // - 지상 적만 탄다: 적 진영의 지상 층(공간 격자 그룹)만 질의하고 canTargetUnit이 나는 유닛을 거른다. 아군·투입탄·
 //   나는 적에는 닿지 않는다. 넉백은 없다. 피해는 applyDamage(피해 종류·출처·통계·숫자)를 지난다.
+// - 감염 밭(BlightField)을 태우는 불(Definition `breathAttack.blightBurn { cellsPerPulse }`, 고추): 밭이 있는 판에서
+//   플레이어 편이면 피해 틱마다 같은 부채꼴(sectorTouches)에 가운데가 반 칸 안으로 닿고 지형 선이 트인 감염 칸을
+//   가까운 순으로 `cellsPerPulse`개 정화한다(적이 맞았는지와 무관, 긴 불줄기는 닿는 범위만 넓다). 공격 사거리 안에
+//   적이 없고 불줄기 길이 안에 감염 칸이 있으면(StrategySim.updateCombat) 걷지 않고 가장 가까운 칸을 겨눠 같은
+//   지속 피해 문법으로 스스로 뿜는다(burnGround). 적이 사거리에 들어오면 적이 먼저다. 밭이 없는 경기는 그대로다.
 // - Unit.breath { aimX, aimY (AIM_UNIT 길이 정수 벡터), pulses }와 Unit.sustain(뿜는 중·남은 틱·대기)이 권위
 //   상태다(저장·해시). 피해 틱마다 breathPulse 사건(불줄기 가운데 점, 맞힌 수)을 그 회차의 hit보다 먼저 낸다(피해
 //   숫자 합치기).
 // - 그림: 불줄기는 sprite 계약의 `breath.drawFlame`으로 main.js가 그린다(sustain.active인 동안, 보간한 조준).
 //   대기 중(sustain.readyTick 전)에는 입을 다물고 연기를 낸다.
 import { COLLISION_RADIUS_SCALE } from '../../definitions/world-rules.js';
+import { BlightField } from '../blight-field.js';
 import { InteractionGeometry } from '../navigation.js';
 import { IndexList } from '../index-list.js';
 import { SustainedAttack } from './sustained-attack.js';
@@ -106,6 +112,38 @@ class UnitBreathAttack {
         this.turnToward(sim, unit.breath, d.breathAttack, target.x - unit.x, target.y - unit.y);
         if (!SustainedAttack.advance(sim, sustain)) {
             if (!SustainedAttack.ready(sim, sustain) || !this.touches(sim, unit, target, d))
+                return null;
+            SustainedAttack.start(sim, sustain, d.sustain);
+        }
+        return SustainedAttack.takeTick(sim, sustain, d.sustain) ? this.pulse(sim, unit, d) : null;
+    }
+    // No enemy in attack reach and a blighted cell in the flame's reach (BlightField.nearestBlighted, its middle at
+    // (x, y)): the unit stands and turns toward it as toward a target, and a ready breath starts once the cell's
+    // middle is inside the flame, then runs its whole duration on the same sustain timing.
+    static burnGround(sim, unit, x, y, d) {
+        const sustain = unit.sustain,
+            spec = d.breathAttack,
+            breath = unit.breath,
+            px = x - unit.x,
+            py = y - unit.y;
+        this.turnToward(sim, breath, spec, px, py);
+        if (!SustainedAttack.advance(sim, sustain)) {
+            const aim = Math.sqrt(breath.aimX * breath.aimX + breath.aimY * breath.aimY),
+                half = (spec.arcDegrees * DEGREE) / 2;
+            if (
+                !SustainedAttack.ready(sim, sustain) ||
+                !aim ||
+                !this.sectorTouches(
+                    breath.aimX / aim,
+                    breath.aimY / aim,
+                    Math.cos(half),
+                    Math.sin(half),
+                    this.length(unit, spec),
+                    px,
+                    py,
+                    0,
+                )
+            )
                 return null;
             SustainedAttack.start(sim, sustain, d.sustain);
         }
@@ -239,6 +277,22 @@ class UnitBreathAttack {
             }
         }
         event.hits = hits;
+        // A flame that burns the blight purifies the nearest blighted ground it reaches (BlightField), enemy in it
+        // or not.
+        if (BlightField.burner(sim, unit, spec)) {
+            const half = (spec.arcDegrees * DEGREE) / 2;
+            BlightField.burn(
+                sim,
+                unit,
+                this,
+                breath.aimX / aim,
+                breath.aimY / aim,
+                Math.cos(half),
+                Math.sin(half),
+                length,
+                spec.blightBurn.cellsPerPulse,
+            );
+        }
         return winner;
     }
 }

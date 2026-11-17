@@ -34,6 +34,9 @@ export const Chili = defineUnit({
             arcDegrees: 30,
             turnDegreesPerSecond: 90,
             buildingDamageScale: 0.5,
+            // 감염 밭(BlightField)을 태운다: 피해 틱 한 번에 감염 칸 하나를 정화하고, 공격할 적이 사거리에 없으면
+            // 불줄기가 닿는 가장 가까운 감염 칸을 겨눠 스스로 뿜는다.
+            blightBurn: Object.freeze({ cellsPerPulse: 1 }),
         }),
         // 캠페인 강화: 불줄기 길이가 1.5배(225 → 337.5)가 된다. 각도 30°는 그대로다.
         campaignUpgrade: {

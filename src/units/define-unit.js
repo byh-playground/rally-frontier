@@ -614,6 +614,16 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
                 throw new Error(`병종 ${id}의 breathAttack.${key}는 양수여야 합니다.`);
         if (spec.arcDegrees >= 180)
             throw new Error(`병종 ${id}의 breathAttack.arcDegrees는 180보다 작아야 합니다.`);
+        if (
+            spec.blightBurn !== undefined &&
+            !(
+                Number.isSafeInteger(spec.blightBurn?.cellsPerPulse) &&
+                spec.blightBurn.cellsPerPulse > 0
+            )
+        )
+            throw new Error(
+                `병종 ${id}의 breathAttack.blightBurn.cellsPerPulse는 양의 정수여야 합니다.`,
+            );
         if (!(unit.atk > 0) || !unit.sustain)
             throw new Error(
                 `병종 ${id}의 breathAttack은 atk(피해 틱당 피해)와 sustain이 필요합니다.`,
