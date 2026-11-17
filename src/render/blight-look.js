@@ -115,6 +115,8 @@ class BlightLook {
         this.moteColors = [rgb(soot), rgb(violet), rgb(glint)];
         this.ring = context.createMesh(buildRing());
         this.matrix = new Float32Array(6);
+        // One options record for every ring draw (nothing is allocated per ring).
+        this.ringDraw = { transform: this.matrix };
     }
     // Boot: the ring mesh is uploaded and drawn once, so a match never prepares it.
     prepare(C) {
@@ -139,7 +141,7 @@ class BlightLook {
         m[5] = y;
         C.forceColor = this.ringColor;
         C.globalAlpha = BLIGHT_LOOK.ringAlpha * (1 - freeing);
-        C.drawMesh(this.ring, { transform: m });
+        C.drawMesh(this.ring, this.ringDraw);
     }
     // The motes of one body at `timeMs`. `art` is the shared particle (drawParticle(matrix, depth, color, alpha)).
     // (cx, cy): the body's middle on screen, half: its half height in canvas pixels, px: one CSS pixel, unit: one

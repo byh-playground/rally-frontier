@@ -1227,6 +1227,8 @@ class GLRenderer {
         this.blightFreed = new Map();
         this.blightShown = 0;
         this.blightRings = [];
+        // Blighted soldiers on a muzzle this frame, as flat records (unit, x, y, half, depth, freeing).
+        this.blightMounted = [];
         this.blightTimeMs = 0;
         this.grainFaces = new RallyGamekit.FaceOverlay(this.vectorContext, {
             faces: GRAIN_FACE_IDS,
@@ -3035,7 +3037,31 @@ class GLRenderer {
     drawStickyWrap(b, cannon) {
         const clinger = this.stickyClingers.get(b.id);
         // The clinging soldier's own renderer draws the wrap; poses are stored as renderer, cannon pairs.
-        if (clinger) this.stickyWrapPoses.push(this.spriteRenderers[clinger.type], cannon);
+        if (clinger) {
+            this.stickyWrapPoses.push(this.spriteRenderers[clinger.type], cannon);
+            this.noteMountedBlight(clinger, cannon);
+        }
+    }
+    // A blighted soldier on a muzzle (clinging to it or riding it) is not in the grain list: its soot is noted here
+    // from the cannon's pose and drawn with every other mote (drawBlightSoot). It has no ring, as it does not stand
+    // on the ground.
+    noteMountedBlight(u, cannon) {
+        const freeing = this.blightFreeing(u);
+        if (freeing < 0 || freeing >= 1) return;
+        if (u.side !== this.mySide() && !this.visibleRaw(u.x, u.y)) return;
+        const half =
+            this.unitRenderRadius(u) *
+            GRAIN_SPRITE_BASE_SCALE *
+            (UnitVisualDefinition.get(u.type)?.visualScale || 1) *
+            150;
+        this.blightMounted.push(
+            u,
+            cannon.muzzle.x + cannon.muzzleDir.x * half * 0.5,
+            cannon.muzzle.y + cannon.muzzleDir.y * half * 0.5,
+            half,
+            this._renderDepth ?? 0,
+            freeing,
+        );
     }
     drawStickyWrapOverlay() {
         const poses = this.stickyWrapPoses;
@@ -3046,6 +3072,7 @@ class GLRenderer {
     // BuildingArt.draw calls this inside the cannon's own part order: 'body' where the barrel
     // occludes it correctly, 'hands' on the rim after the whole cannon.
     drawCannonRider(rider, pose, part) {
+        if (part === 'body') this.noteMountedBlight(rider, pose);
         const C = this.vectorContext;
         C.depthTest = !!this.passState.depthEnabled;
         C.depthWrite = false;
@@ -5870,8 +5897,12 @@ class GLRenderer {
     // The blight's soot on the marked grains, after every grain: each mote is the shared atlas particle, depth-tested
     // just in front of its own body so a nearer body still covers it. One quad stream whatever the unit count.
     drawBlightSoot(entries) {
-        const art = this.effectArt.thorn;
-        if (!this.blightShown || !art) return;
+        const art = this.effectArt.thorn,
+            mounted = this.blightMounted;
+        if ((!this.blightShown && !mounted.length) || !art) {
+            mounted.length = 0;
+            return;
+        }
         const C = this.vectorContext,
             px = this.canvas.clientWidth > 0 ? this.canvas.width / this.canvas.clientWidth : 1,
             unit = this.sc();
@@ -5896,6 +5927,23 @@ class GLRenderer {
                 grain.blight,
             );
         }
+        for (let i = 0; i < mounted.length; i += 6) {
+            const u = mounted[i];
+            this.blightArt.drawMotes(
+                art,
+                mounted[i + 4] - GRAIN_DEPTH_RANK_STEP,
+                u.type,
+                HashUtil.hash(u.id),
+                mounted[i + 1],
+                mounted[i + 2],
+                mounted[i + 3],
+                px,
+                unit,
+                this.blightTimeMs,
+                mounted[i + 5],
+            );
+        }
+        mounted.length = 0;
     }
     grainBodyOpaque(grain) {
         const expression = grain.actor.currentExpression,
