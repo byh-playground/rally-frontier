@@ -40,6 +40,12 @@ export const Acorn = defineUnit({
             maxUnitHitsPerPulse: 3,
             tangentRatio: 0.5,
         }),
+        // 캠페인 강화: 세 발이 조준점을 가운데로 좌우 한 줄에 100 간격으로 떨어진다(인원·위력·범위는 그대로).
+        campaignUpgrade: {
+            name: '분산 포격',
+            summary: '세 발이 좌우로 벌어져 더 넓은 자리에 떨어져요.',
+            burstSpread: { spacing: 100 },
+        },
     },
     // 도토리는 한 발당 두 병사씩 세 발을 쏜다.
     payload: {

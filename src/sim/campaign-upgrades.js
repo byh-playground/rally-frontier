@@ -1,14 +1,25 @@
 import { LaunchRules } from './launch-rules.js';
 import { UNITS } from '../units/index.js';
 
-// Each card's declared upgrade (Definition `campaignUpgrade`, src/units/define-unit.js), and for an effect counted
-// per soldier (`hits`) how many each soldier starts with.
+// Each card's declared upgrade (Definition `campaignUpgrade`, src/units/define-unit.js), and for an effect that keeps
+// something per soldier the name of that state: `charges` (how many `hits` are left), `attacks` (thorns thrown
+// since the last heavy one) or `taken` (damage taken toward the next shards).
 const DECLARED = Object.fromEntries(UNITS.map((card) => [card.id, card.unit.campaignUpgrade]));
 const SOLDIER_CHARGES = Object.fromEntries(
     UNITS.map((card) => [
         card.id,
         (card.unit.campaignUpgrade?.firstHitBlock ?? card.unit.campaignUpgrade?.firstStrike)
             ?.hits ?? 0,
+    ]),
+);
+const SOLDIER_COUNTER = Object.fromEntries(
+    UNITS.map((card) => [
+        card.id,
+        card.unit.campaignUpgrade?.heavyThorn
+            ? 'attacks'
+            : card.unit.campaignUpgrade?.shellShards
+              ? 'taken'
+              : null,
     ]),
 );
 
@@ -19,8 +30,9 @@ const SOLDIER_CHARGES = Object.fromEntries(
 // carry any. Ability code asks `CampaignUpgrades.has(sim, side, type)`; this class is the only reader.
 // What an upgrade does is the card's own declaration: ability code takes its numbers from
 // `CampaignUpgrades.effect(sim, side, type, '<effect>')` (null while off, so an off match runs exactly as before).
-// An effect counted per soldier keeps `unit.campaignUpgrade = { charges }`, given when the soldier is created
-// (StrategySim.spawnUnit) and only in a match where the upgrade is on.
+// An effect counted per soldier keeps `unit.campaignUpgrade = { charges }` (or `{ attacks }`, `{ taken }`), given when
+// the soldier is created (StrategySim.spawnUnit) and only in a match where the upgrade is on. `chainCharge` adds
+// `chaining` to a soldier the first time it chains (UpgradeChainCharge).
 export class CampaignUpgrades {
     static none() {
         return [[], []];
@@ -67,7 +79,9 @@ export class CampaignUpgrades {
 
     // The per-soldier state of a soldier created now, or null (off, or an effect that counts nothing per soldier).
     static soldierState(sim, side, type) {
-        const charges = SOLDIER_CHARGES[type];
-        return charges && this.has(sim, side, type) ? { charges } : null;
+        if (!this.has(sim, side, type)) return null;
+        const charges = SOLDIER_CHARGES[type],
+            counter = SOLDIER_COUNTER[type];
+        return charges ? { charges } : counter ? { [counter]: 0 } : null;
     }
 }

@@ -90,6 +90,14 @@ class EffectObjectFactory {
         stroke: [0.98, 0.86, 0.42, 0.95],
         fill: [0.98, 0.86, 0.42, 0.22],
     });
+    // A soldier running a campaign upgrade's chain (UpgradeChainCharge), presentation only: the ring under it.
+    static upgradeChainRing = Object.freeze({
+        scale: 1.6,
+        stroke: [1, 0.6, 0.24, 0.95],
+        fill: [1, 0.6, 0.24, 0.28],
+    });
+    // The ground ring of a campaign upgrade's reach: a widened leap landing, a walnut's shell shards.
+    static upgradeReachTint = Object.freeze({ leap: [1, 0.5, 0.42], shards: [0.62, 0.4, 0.2] });
     static defaultCombatLifeMs = 360;
     static sourceMotionFallbackMs = 220;
     static shellFlinch = Object.freeze({ lifeMs: 160, tilt: 0.6, squash: 0.28 });
@@ -102,6 +110,10 @@ class EffectObjectFactory {
         heroAuraRegen: 700,
         upgradeHitBlock: 320,
         upgradeLeapRing: 400,
+        upgradeChainCharge: 360,
+        upgradeShellShards: 420,
+        upgradeShardRing: 420,
+        upgradeWallRebound: 320,
         constructionHit: 220,
         hitscanTravel: 180,
         antiAirHit: 320,

@@ -5,6 +5,7 @@ import { UnitMotion } from '../navigation.js';
 import { FP } from '../../core/config.js';
 import { RallyGamekit } from '../../core/gamekit.js';
 import { BuildingDefinition } from '../../definitions/buildings.js';
+import { UpgradeHeavyThorn } from './upgrade-heavy-thorn.js';
 
 const { SweptCircleContact } = RallyGamekit;
 // Out buffer of the thorn's swept test; only whether it hit is read.
@@ -175,6 +176,8 @@ export class UnitThornAttack {
                     ? this.contact(sim, shot, from, to, target)
                     : null;
             if (hit) {
+                // Campaign upgrade `heavyThorn`: the heavy thorn shoves the soldier it hits.
+                if (shot.heavy) UpgradeHeavyThorn.strike(sim, shot, target);
                 sim.applyDamage(
                     shot.side,
                     shot.sourceType,
@@ -191,6 +194,7 @@ export class UnitThornAttack {
                     targetId: shot.targetId,
                     projectileId: shot.id,
                     ...hit,
+                    ...(shot.heavy ? { heavy: shot.heavy } : null),
                 });
                 continue;
             }

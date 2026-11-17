@@ -15,6 +15,7 @@ import { UnitDefinition } from '../../definitions/units.js';
 import { ConstructionRules } from '../construction-rules.js';
 import { InteractionGeometry, NavigationGoal } from '../navigation.js';
 import { StickyCling } from './sticky-cling.js';
+import { UpgradeChainCharge } from './upgrade-chain-charge.js';
 import { UpgradeFirstStrike } from './upgrade-first-strike.js';
 
 export class ContactMelee {
@@ -42,8 +43,10 @@ export class ContactMelee {
         if (u.contactAttack?.phase === 'charge') u.contactAttack = null;
     }
     static charge(sim, u, t, found, d, dist, moveSpeed, cooldown, pending) {
-        if (!u.combat.windupPending() && !u.combat.cooldownActive(sim))
+        if (!u.combat.windupPending() && !u.combat.cooldownActive(sim)) {
             sim.startAttackWindup(u, t, found.isBuilding ? 'building' : 'unit', d);
+            UpgradeChainCharge.skipWindup(sim, u);
+        }
         const contact = found.isBuilding
             ? sim.buildingClearanceDistance(u, t)
             : InteractionGeometry.contact(u, t);
@@ -178,13 +181,17 @@ export class ContactMelee {
             }
             sim.commitAttackTiming(u, definition, attack.cooldown);
             u.combat.contactHitTick = sim.tick;
-            ContactMelee.beginRecovery(
-                sim,
-                u,
-                target,
-                definition.attackIntervalMs ?? definition.cooldownMs,
-                definition.contactRebound,
-            );
+            // Campaign upgrade `chainCharge`: the recovery waits for the hit, a building it destroys starts a chain.
+            UpgradeChainCharge.land(u);
+            const chain = UpgradeChainCharge.spec(sim, u, attack.isBuilding);
+            if (!chain)
+                ContactMelee.beginRecovery(
+                    sim,
+                    u,
+                    target,
+                    definition.attackIntervalMs ?? definition.cooldownMs,
+                    definition.contactRebound,
+                );
             winner =
                 sim.applyDamage(
                     u.side,
@@ -195,6 +202,17 @@ export class ContactMelee {
                     u.id,
                     { damageClass: UnitDefinition.damageClass(u.type) },
                 ) || winner;
+            if (chain) {
+                if (target.alive === false) UpgradeChainCharge.begin(sim, u, target);
+                else
+                    ContactMelee.beginRecovery(
+                        sim,
+                        u,
+                        target,
+                        definition.attackIntervalMs ?? definition.cooldownMs,
+                        definition.contactRebound,
+                    );
+            }
         }
         return winner;
     }

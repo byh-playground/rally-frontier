@@ -16,7 +16,11 @@ import { UnitSelfDestructAttack } from './capabilities/unit-self-destruct-attack
 import { UnitLeapAttack } from './capabilities/unit-leap-attack.js';
 import { StickyCling } from './capabilities/sticky-cling.js';
 import { ContactMelee } from './capabilities/contact-melee.js';
+import { UpgradeBurstSpread } from './capabilities/upgrade-burst-spread.js';
+import { UpgradeChainCharge } from './capabilities/upgrade-chain-charge.js';
 import { UpgradeEchoShock } from './capabilities/upgrade-echo-shock.js';
+import { UpgradeHeavyThorn } from './capabilities/upgrade-heavy-thorn.js';
+import { UpgradeShellShards } from './capabilities/upgrade-shell-shards.js';
 import { UpgradeHitBlock } from './capabilities/upgrade-hit-block.js';
 import { ForwardCannon } from './capabilities/forward-cannon.js';
 import { CannonRider } from './capabilities/cannon-rider.js';
@@ -1373,6 +1377,8 @@ class StrategySim {
             this,
             level,
         );
+        // Campaign upgrade `burstSpread`: the burst's shells land in a row across the aim.
+        UpgradeBurstSpread.apply(this, side, action.unitType, volley, aim);
         this.wallet[side] -= grain.cost;
         this.premiumWallet[side] -= grain.premiumCost || 0;
         // One round however many cannons join the volley.
@@ -2071,6 +2077,9 @@ class StrategySim {
             );
         setCapture(dealt, false, damageClass);
         if (!isBuilding && target.heroPassive) HeroPassive.onDamaged(this, target, dealt);
+        // A campaign upgrade that counts the damage taken (UpgradeShellShards).
+        if (!isBuilding && target.campaignUpgrade)
+            UpgradeShellShards.onDamaged(this, target, dealt);
         if (!isBuilding) {
             target.hitFlash = 4;
             target.combat.recordImpact(this, 4);
@@ -2532,7 +2541,7 @@ class StrategySim {
             if (this.updateConstructionWork(u, d, moveSpeed)) return null;
             const f = this.unitRallyPoint(u);
             if (d.breathAttack) UnitBreathAttack.idle(this, u, d.breathAttack, f.x, f.y);
-            this.moveToward(u, f.x, f.y, moveSpeed);
+            this.moveToward(u, f.x, f.y, moveSpeed * UpgradeChainCharge.approachScale(this, u));
             return null;
         }
 
@@ -2582,7 +2591,11 @@ class StrategySim {
                 UnitLeapAttack.start(this, u, t, d.leapAttack, max)
             )
                 return null;
-            this.moveToGoal(u, this.engagementGoal(u, t, attackRange), moveSpeed);
+            this.moveToGoal(
+                u,
+                this.engagementGoal(u, t, attackRange),
+                moveSpeed * UpgradeChainCharge.approachScale(this, u),
+            );
             return null;
         }
         // In reach: it stands and turns; its breath runs on its own sustain timing (SustainedAttack).
@@ -2637,10 +2650,14 @@ class StrategySim {
             return null;
         }
         if (d.thornAttack) {
-            UnitThornAttack.launch(this, u, t, found.isBuilding, {
-                ...d.thornAttack,
-                damage: Math.floor(atk),
-            });
+            UpgradeHeavyThorn.arm(
+                this,
+                u,
+                UnitThornAttack.launch(this, u, t, found.isBuilding, {
+                    ...d.thornAttack,
+                    damage: Math.floor(atk),
+                }),
+            );
             return null;
         }
         if (d.basicSplash && !found.isBuilding) {

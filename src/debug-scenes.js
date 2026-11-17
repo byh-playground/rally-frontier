@@ -118,6 +118,12 @@ function upgradedMatch(seed, rules, map, decks, upgrades) {
 // soldiers still holding a per-soldier charge (`charged`), second landing shocks and the bodies they hit
 // (`echoShocks`·`echoHits`), leap landings with their last radius and the soldiers they struck
 // (`leapLandings`·`leapRadius`·`leapStruck`), and doubled first strikes (`firstStrikes`). `on` is the host side's upgrades.
+// The nut cards: heavy thorns that hit and how far the soldier each one hit was thrown, for the first 6
+// (`heavyHits`·`heavyPushes`), where the host side's shells were aimed, first 6 (`shellAims`), chains started, the
+// soldiers they set running and the soldiers running now (`chains`·`chained`·`chaining`), shard bursts and the bodies
+// they hit (`shardBursts`·`shardHits`), bounces the upgrade showed (`wallRebounds`) and, upgrade or not, the host
+// side's rolling bodies' speed before and after each tick they touched a wall or building, first 8 (`wallBounces`:
+// [tick, before, after]). `buildingDamage` is the host side's damage to buildings so far.
 function createUpgradeProbe(sim) {
     const counts = {
         blocked: 0,
@@ -127,12 +133,53 @@ function createUpgradeProbe(sim) {
         leapRadius: null,
         leapStruck: 0,
         firstStrikes: 0,
+        heavyHits: 0,
+        heavyPushes: [],
+        shellAims: [],
+        chains: 0,
+        chained: 0,
+        shardBursts: 0,
+        shardHits: 0,
+        wallRebounds: 0,
+        wallBounces: [],
     };
+    const round = (value) => Math.round(value * 10) / 10,
+        // A heavy thorn's target while it flies: [unit, x, y where it stood when hit].
+        pushed = [],
+        rollSpeed = new Map(),
+        speedOf = (u) => Math.hypot(u.impactMotion?.vxFP || 0, u.impactMotion?.vyFP || 0) / FP;
     const step = sim.step.bind(sim);
     sim.step = (...rest) => {
         const winner = step(...rest);
+        for (let k = pushed.length - 1; k >= 0; k--) {
+            const [unit, x, y] = pushed[k];
+            if (unit.impactMotion && (unit.impactMotion.vxFP || unit.impactMotion.vyFP)) continue;
+            if (counts.heavyPushes.length < 6)
+                counts.heavyPushes.push(round(Math.hypot(unit.x - x, unit.y - y)));
+            pushed.splice(k, 1);
+        }
+        for (const u of sim.units) {
+            if (u.side !== 0 || !u.rolling) continue;
+            const speed = speedOf(u);
+            if (u.alive && u.rolling.wallTick === sim.tick && counts.wallBounces.length < 8)
+                counts.wallBounces.push([sim.tick, round(rollSpeed.get(u.id) ?? 0), round(speed)]);
+            rollSpeed.set(u.id, speed);
+        }
         for (const e of sim.events) {
-            if (e.type === 'upgradeHitBlock') counts.blocked++;
+            if (e.type === 'unitThornHit' && e.heavy) {
+                counts.heavyHits++;
+                const unit = sim.unitById.get(e.targetId);
+                if (unit) pushed.push([unit, unit.x, unit.y]);
+            } else if (e.type === 'launchFire' && e.side === 0) {
+                if (counts.shellAims.length < 6) counts.shellAims.push([e.aimX, e.aimY]);
+            } else if (e.type === 'upgradeChainCharge') {
+                counts.chains++;
+                counts.chained += e.count;
+            } else if (e.type === 'upgradeShellShards') {
+                counts.shardBursts++;
+                counts.shardHits += e.hits;
+            } else if (e.type === 'upgradeWallRebound') counts.wallRebounds++;
+            else if (e.type === 'upgradeHitBlock') counts.blocked++;
             else if (e.type === 'upgradeEchoShock') {
                 counts.echoShocks++;
                 counts.echoHits += e.hits;
@@ -148,6 +195,11 @@ function createUpgradeProbe(sim) {
         state: () => ({
             on: sim.campaignUpgrades[0],
             charged: sim.units.filter((u) => u.alive && u.campaignUpgrade?.charges > 0).length,
+            chaining: sim.units.filter((u) => u.alive && u.campaignUpgrade?.chaining).length,
+            buildingDamage: Object.values(sim.unitResultStats[0]).reduce(
+                (sum, entry) => sum + entry.buildingDamage,
+                0,
+            ),
             ...counts,
         }),
     };
@@ -2496,7 +2548,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * 쪽에, `front`·`frontCount`는 아군 앞줄을 세운다. 불 뿜는 병종(고추)은 상태의 `breath`에 불줄기 기록을 낸다. 예:
          * `?debug=1&scene=unit&map=twin-gates&seed=1&unit=coconut&count=1&x=1400&y=2900&tick=150`
          * `upgrades=rice,millet`는 `unit` 편에 그 카드의 캠페인 병종 강화를 켜고(없으면 지금까지와 같은 경기), 상태의
-         * `upgrade`가 강화가 한 일(막은 피격·남은 병사별 횟수·두 번째 충격·도약 착지 반경과 맞은 수·두 배로 들어간 첫 일격 수)을 낸다.
+         * `upgrade`가 강화가 한 일(막은 피격·남은 병사별 횟수·두 번째 충격·도약 착지 반경과 맞은 수·두 배로 들어간 첫 일격 수·
+         * 굵은 가시·포탄 조준점·연쇄 돌진·껍질 파편·벽 반사, createUpgradeProbe)을 낸다.
          */
         unit(params) {
             const scene = 'unit';

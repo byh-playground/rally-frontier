@@ -25,6 +25,13 @@ export const Peanut = defineUnit({
         role: 'bruiser',
         attackVisual: { sourceMotion: null, travel: 'none', impact: 'light' },
         sight: 275,
+        // 캠페인 강화: 들이받아 건물을 부수면 그 건물을 노리던 땅콩이 모두 튀거나 쉬지 않고 다음 건물까지
+        // 돌진 속도(걸음의 2배, 200)로 달려 선딜 없이 들이받는다.
+        campaignUpgrade: {
+            name: '연쇄 돌진',
+            summary: '건물을 부수면 쉬지 않고 다음 건물로 내달려요.',
+            chainCharge: { approachSpeedScale: 2 },
+        },
     },
     payload: {
         ...SINGLE_BUNDLE_SHELL,

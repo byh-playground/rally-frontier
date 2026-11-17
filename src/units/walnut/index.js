@@ -29,6 +29,13 @@ export const Walnut = defineUnit({
         sight: 275,
         damageTaken: Object.freeze({ scale: 0.5 }),
         basicSplash: Object.freeze({ radius: 25, damageRatio: 0.5 }),
+        // 캠페인 강화: 받은 피해가 최대 체력의 25%(200) 쌓일 때마다 몸 둘레 50 안의 적 병사에게 10의 범위 피해(평타 5의 두 배).
+        // 한 알이 쓰러질 때까지 네 번 튄다.
+        campaignUpgrade: {
+            name: '껍질 파편',
+            summary: '피해가 쌓일 때마다 껍질 파편이 튀어 주변 적을 다치게 해요.',
+            shellShards: { takenRatio: 0.25, radius: 50, damage: 10 },
+        },
     },
     // 포탄 체력·위력·반경은 코코넛과 같은 초안이다. 탄약은 식량 카드 기본값.
     payload: {

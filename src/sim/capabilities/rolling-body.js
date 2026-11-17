@@ -34,6 +34,7 @@ import { BuildingDefinition } from '../../definitions/buildings.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { FP } from '../../core/config.js';
 import { KnockbackRules } from '../../definitions/knockback-rules.js';
+import { CampaignUpgrades } from '../campaign-upgrades.js';
 import { EntityKey } from '../entities.js';
 import { InteractionGeometry, NavigationGoal, UnitMotion } from '../navigation.js';
 import { RallyGamekit } from '../../core/gamekit.js';
@@ -298,6 +299,18 @@ class RollingBody {
         if (!rollingA && !rollingB) return false;
         if (b === null) {
             if (ev.stuck) return false;
+            // Campaign upgrade `wallRebound`: the bounce keeps `restitution` of the speed. A bounce that is not the
+            // next tick of the same contact (rolling.wallTick) shows it (`upgradeWallRebound`, presentation only).
+            const rebound = CampaignUpgrades.effect(sim, a.side, a.type, 'wallRebound');
+            if (rebound && !(sim.tick - a.rolling.wallTick <= 1))
+                sim.events.push({
+                    type: 'upgradeWallRebound',
+                    side: a.side,
+                    sourceId: a.id,
+                    x: bodies.x[i] / FP - ev.nx * sim.unitRadius(a),
+                    y: bodies.y[i] / FP - ev.ny * sim.unitRadius(a),
+                    speed: Math.round(solver.closing(ev)),
+                });
             this.hitSurface(
                 sim,
                 a,
@@ -308,7 +321,7 @@ class RollingBody {
                 bodies.x[i] / FP,
                 bodies.y[i] / FP,
             );
-            solver.reflect(ev, this.spec(a).wallRestitution);
+            solver.reflect(ev, rebound ? rebound.restitution : this.spec(a).wallRestitution);
             motion.recordContact(ev);
             return true;
         }
