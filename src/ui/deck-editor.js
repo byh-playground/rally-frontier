@@ -148,7 +148,7 @@ export class DeckEditor {
             tabs = document.getElementById('deckTabs');
         document.getElementById('deckSummary').textContent =
             `덱 ${this.state.selected + 1} · ${deck.length}/${this.limit}칸`;
-        document.getElementById('deckSunshine').textContent = `☀ ${this.sunshine()}`;
+        this.paintSunshine();
         document.getElementById('deckCount').textContent = `${deck.length} / ${this.limit}칸`;
         tabs.replaceChildren();
         for (let index = 0; index < DECK_COUNT; index++) {
@@ -212,12 +212,12 @@ export class DeckEditor {
                 state = document.createElement(open ? 'p' : 'button'),
                 title = document.createElement('div'),
                 name = document.createElement('b'),
-                summary = document.createElement('span'),
-                note = document.createElement('small');
+                tag = document.createElement('small'),
+                summary = document.createElement('span');
             name.textContent = upgrade.name;
+            tag.textContent = '캠페인 강화';
             summary.textContent = upgrade.summary;
-            title.append(name, summary);
-            note.textContent = '강화는 캠페인에서만 적용돼요.';
+            title.append(name, tag, summary);
             if (open) {
                 state.className = 'deck-upgrade-state';
                 state.textContent = '캠페인에서 적용 중';
@@ -231,14 +231,18 @@ export class DeckEditor {
                         : `햇살 ${upgrade.price} · 강화 열기`;
                 state.addEventListener('click', async () => {
                     state.disabled = true;
-                    if (await this.openUpgrade(type)) this.refresh();
+                    if (await this.openUpgrade(type)) this.paintSunshine();
                     draw();
                 });
             }
-            section.replaceChildren(title, state, note);
+            section.replaceChildren(title, state);
         };
         draw();
         this.detailsContent.querySelector('[data-sheet-close]')?.before(section);
+    }
+
+    static paintSunshine() {
+        document.getElementById('deckSunshine').textContent = `☀ ${this.sunshine()}`;
     }
 
     static renderSlots() {

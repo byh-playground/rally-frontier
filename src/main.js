@@ -12319,7 +12319,13 @@ async function startTitleApp() {
         sunshine: () => roster.sunshine,
         upgradeOf: (type) => {
             const upgrade = UnitDefinition.get(type)?.campaignUpgrade;
-            if (!upgrade || !roster.owns(type) || LaunchRules.heroTypes.includes(type)) return null;
+            if (
+                !upgrade ||
+                campaignProgress.debugUnlocked ||
+                !roster.owns(type) ||
+                LaunchRules.heroTypes.includes(type)
+            )
+                return null;
             return {
                 name: upgrade.name,
                 summary: upgrade.summary,
