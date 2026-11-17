@@ -3005,8 +3005,6 @@ class StrategySim {
             )
                 UnitSelfDestructAttack.detonate(this, u, definition.selfDestruct);
         }
-        // Campaign upgrade `echoBurst`: the bursts that are due go off again.
-        UnitSelfDestructAttack.echoes(this);
         const collisionMs = profile ? now() - mark : 0;
 
         // Projectile hits inject velocity at this boundary. Both horizontal and vertical integration start next tick.

@@ -11,6 +11,7 @@ import { LaunchImpact } from '../launch-impact.js';
 import { Knockback } from '../knockback.js';
 import { IndexList } from '../index-list.js';
 import { CampaignUpgrades } from '../campaign-upgrades.js';
+import { UnitFlight } from './unit-flight.js';
 
 const EXPLOSION_BUILDING_QUERY = new IndexList();
 // A blocked shot pair is retried once either shot changes: both revisions as one number. A revision counts the
@@ -252,7 +253,8 @@ export class UnitLobAttack {
         return true;
     }
     // Campaign upgrade `contactFuse { buildings }` (옥수수 · 접촉 신관): is `hit` an enemy body that sets the egg off
-    // at once? An enemy soldier always does, in the air or on the ground; an enemy building when `buildings`.
+    // at once? An enemy soldier the blast can hurt does (not a flying one: area damage passes it by), wherever the
+    // egg is; an enemy building when `buildings`.
     static contactFuse(sim, shot, hit) {
         if (hit.kind !== 'body') return false;
         const spec = CampaignUpgrades.effect(sim, shot.side, shot.sourceType, 'contactFuse');
@@ -263,7 +265,7 @@ export class UnitLobAttack {
                 sim.isHostileCombatBuilding(shot.side, sim.buildingById.get(hit.id))
             );
         const unit = sim.unitById.get(hit.id);
-        return !!unit && unit.alive && unit.side !== shot.side;
+        return !!unit && unit.alive && unit.side !== shot.side && !UnitFlight.airborne(unit);
     }
     // `subtick` is the moment inside the tick the egg goes off (the renderer retires the egg there): its landing's
     // for a fuse, the contact's own for a contact fuse (`contact`, marked on the event for presentation).

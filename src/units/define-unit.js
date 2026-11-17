@@ -45,10 +45,10 @@
 //                enemy soldiers within `radius` of its body (UpgradeShellShards)
 //              wallRebound { restitution }: its bounce off walls and buildings keeps `restitution` of the speed
 //                instead of rolling.wallRestitution (RollingBody; needs rolling)
-//              contactFuse { buildings }: its thrown egg goes off the moment it touches an enemy soldier, and an
-//                enemy building too when `buildings` (UnitLobAttack; needs lobAttack)
-//              echoBurst { delayMs, damageRatio }: its self-destruct goes off again at the same spot after `delayMs`,
-//                same radius, `damageRatio` of the damage, no knockback (UpgradeEchoBurst; needs selfDestruct)
+//              contactFuse { buildings }: its thrown egg goes off the moment it touches an enemy soldier on the
+//                ground, and an enemy building too when `buildings` (UnitLobAttack; needs lobAttack)
+//              bigPop { damageScale }: its self-destruct deals `damageScale` times its damage, same radius and
+//                knockback (UnitSelfDestructAttack; needs selfDestruct)
 //              quickRoot { delayMs }: it stands up as its cannon after `delayMs` instead of growsCannon.delayMs
 //                (ForwardCannon; needs growsCannon)
 //              extraSoldiers { soldiers }: a launch carries `soldiers` more soldiers (UpgradeExtraSoldiers)
@@ -437,15 +437,15 @@ const CAMPAIGN_UPGRADE_EFFECTS = Object.freeze({
                 `병종 ${id}의 contactFuse는 buildings(참·거짓)와 lobAttack이 필요합니다.`,
             );
     },
-    // UpgradeEchoBurst: the self-destruct, once more.
-    echoBurst(id, spec, unit) {
+    // UnitSelfDestructAttack: the burst's damage.
+    bigPop(id, spec, unit) {
         if (
-            Object.keys(spec).sort().join(',') !== 'damageRatio,delayMs' ||
-            !(spec.delayMs > 0 && spec.damageRatio > 0 && spec.damageRatio <= 1) ||
+            Object.keys(spec).join(',') !== 'damageScale' ||
+            !(spec.damageScale > 1) ||
             !unit.selfDestruct
         )
             throw new Error(
-                `병종 ${id}의 echoBurst는 양수 delayMs·damageRatio(1 이하)와 selfDestruct가 필요합니다.`,
+                `병종 ${id}의 bigPop은 1보다 큰 damageScale과 selfDestruct가 필요합니다.`,
             );
     },
     // ForwardCannon: the time until the cannon stands.

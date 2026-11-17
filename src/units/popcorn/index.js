@@ -20,11 +20,11 @@ export const Popcorn = defineUnit({
             // Every grounded enemy inside the radius is thrown as hard as one at the centre.
             knockbackFalloff: false,
         }),
-        // 캠페인 강화: 자폭한 자리에서 0.5초 뒤 같은 범위로 절반 피해(20)의 폭발이 한 번 더 난다(넉백 없음).
+        // 캠페인 강화: 자폭 피해가 1.5배(40 → 60)가 된다. 반경과 넉백은 그대로다.
         campaignUpgrade: {
-            name: '잔여 알',
-            summary: '터진 자리에서 0.5초 뒤 절반 피해의 폭발이 한 번 더 나요.',
-            echoBurst: { delayMs: 500, damageRatio: 0.5 },
+            name: '왕 팝콘',
+            summary: '더 크게 터져서 더 아파요. 폭발 피해가 1.5배예요.',
+            bigPop: { damageScale: 1.5 },
         },
     },
     payload: {

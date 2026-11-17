@@ -9,7 +9,7 @@ import { LaunchImpact } from '../launch-impact.js';
 import { Knockback } from '../knockback.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { IndexList } from '../index-list.js';
-import { UpgradeEchoBurst } from './upgrade-echo-burst.js';
+import { CampaignUpgrades } from '../campaign-upgrades.js';
 
 // drain never runs inside itself (_drainingSelfDestruct), so one list serves every burst.
 const BURST_BUILDING_QUERY = new IndexList();
@@ -49,26 +49,6 @@ export class UnitSelfDestructAttack {
         }
     }
 
-    // Campaign upgrade `echoBurst`: every burst that is due goes off again where it was (UpgradeEchoBurst), damage only.
-    static echoes(sim) {
-        let burst = UpgradeEchoBurst.takeDue(sim);
-        if (!burst) return;
-        const queue = (sim._selfDestructQueue ||= []);
-        for (; burst; burst = UpgradeEchoBurst.takeDue(sim))
-            queue.push({
-                x: burst.x,
-                y: burst.y,
-                side: burst.side,
-                sourceId: burst.sourceId,
-                sourceType: burst.sourceType,
-                mass: 0,
-                heightFP: burst.heightFP,
-                spec: UnitDefinition.get(burst.sourceType).selfDestruct,
-                echoDamageRatio: burst.damageRatio,
-            });
-        this.drain(sim);
-    }
-
     static commit(sim, unit, spec) {
         if (unit.selfDestruct?.phase !== 'windup') return;
         unit.selfDestruct.phase = 'committed';
@@ -92,10 +72,11 @@ export class UnitSelfDestructAttack {
             for (let i = 0; i < queue.length; i++) {
                 const burst = queue[i],
                     { x, y, side, sourceId, sourceType, mass, heightFP, spec } = burst,
-                    // A campaign upgrade's second burst (echoes): its share of the damage, no shove, no echo of its own.
-                    echo = burst.echoDamageRatio ?? null,
-                    damage = echo === null ? spec.damage : Math.floor(spec.damage * echo);
-                const event = {
+                    // Campaign upgrade `bigPop { damageScale }` (팝콘 · 왕 팝콘): the burst's damage times
+                    // `damageScale` (floored), same radius and shove; the event carries `big` (presentation only).
+                    big = CampaignUpgrades.effect(sim, side, sourceType, 'bigPop'),
+                    damage = big ? Math.floor(spec.damage * big.damageScale) : spec.damage;
+                sim.events.push({
                     type: 'unitSelfDestruct',
                     side,
                     sourceId,
@@ -104,24 +85,21 @@ export class UnitSelfDestructAttack {
                     y,
                     zFP: heightFP,
                     radius: spec.radius,
-                };
-                sim.events.push(event);
-                if (echo === null) {
-                    Knockback.area(sim, {
-                        side,
-                        sourceId,
-                        x,
-                        y,
-                        radius: spec.radius,
-                        impactHeightFP: heightFP,
-                        mass,
-                        speed: KnockbackRules.impactSpeed,
-                        gain: KnockbackRules.gain.burst,
-                        falloff: spec.knockbackFalloff,
-                    });
-                    UpgradeEchoBurst.queue(sim, side, sourceId, sourceType, x, y, heightFP);
-                }
-                const blast = sim.applyAreaDamage({
+                    ...(big ? { big: true } : null),
+                });
+                Knockback.area(sim, {
+                    side,
+                    sourceId,
+                    x,
+                    y,
+                    radius: spec.radius,
+                    impactHeightFP: heightFP,
+                    mass,
+                    speed: KnockbackRules.impactSpeed,
+                    gain: KnockbackRules.gain.burst,
+                    falloff: spec.knockbackFalloff,
+                });
+                sim.applyAreaDamage({
                     sourceSide: side,
                     sourceType,
                     sourceEntityId: sourceId,
@@ -133,11 +111,6 @@ export class UnitSelfDestructAttack {
                     impactHeightFP: heightFP,
                     suppressImpactFx: true,
                 });
-                // Presentation only: the second burst is marked, with the soldiers it hit.
-                if (echo !== null) {
-                    event.echo = true;
-                    event.hits = blast.hits;
-                }
                 const buildingCount = sim.nearbyBuildingIndices(
                     x,
                     y,
