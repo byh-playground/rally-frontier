@@ -1,3 +1,4 @@
+import { BlightBoss } from './blight-boss.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { FruitHeroAttack } from './capabilities/fruit-hero-attack.js';
 import { HeroAllyAura } from './capabilities/hero-ally-aura.js';
@@ -212,6 +213,8 @@ export class HeroDeployment {
         const { side, type } = group;
         const hero = sim.heroes[side][type];
         if (!hero || hero.sortieId !== group.projectileId) return false;
+        // The blight's boss never goes back to the cannons: it waits for open ground (BlightBoss).
+        if (BlightBoss.waitsToLand(sim, group)) return false;
         group.heroRetryUntil ??= sim.tick + sim.time.ceilTicks(LANDING_GRACE_MS);
         if (sim.tick < group.heroRetryUntil) return false;
         this.dock(sim, side, type, this.reserveHp(sim, side, type));
@@ -228,12 +231,18 @@ export class HeroDeployment {
 
     // The hero body leaves the field (fallen or recovered): its attacks stop and it holds no growth record.
     static endSortie(unit) {
+        this.stopAbilities(unit);
+        unit.heroGrowth = null;
+    }
+
+    // Every hero ability the body has running stops (its roll, shots, passive, automatic strike, ally aura); the
+    // growth record stays with it (a subdued boss, BlightBoss).
+    static stopAbilities(unit) {
         if (unit.fruitAttack) FruitHeroAttack.endSortie(unit);
         HeroRollAttack.cancel(unit);
         HeroPassive.endSortie(unit);
         HeroUltimate.endSortie(unit);
         HeroAllyAura.endSortie(unit);
-        unit.heroGrowth = null;
     }
 
     static returnSites(sim, unit) {

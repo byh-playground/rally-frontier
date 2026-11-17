@@ -2,6 +2,7 @@ import { campaignBriefingLines } from './campaign-copy.js';
 
 const CUE_SECONDS = 3;
 const ATTACK_GOAL = '적 본진 파괴';
+const BOSS_GOAL = '깜부기에 지배당한 영웅 쓰러뜨리기';
 const HERO_LESSON_GOALS = {
     launch: '전방에 영웅 출격',
     fight: '영웅으로 적 처치',
@@ -16,6 +17,7 @@ function formatCountdown(seconds) {
 }
 
 function missionGoal(stage) {
+    if (stage.boss) return `${BOSS_GOAL} · 본진 사수`;
     if (stage.volleyGoals) return '1·2·3문 사격으로 수비대 3곳 격파';
     if (stage.mission?.heroLesson)
         return stage.mission.heroLesson.recover ? '출격 · 처치 · 복귀 · 재출격' : '출격해 적 처치';
@@ -26,6 +28,19 @@ function missionGoal(stage) {
 }
 
 function currentGoal(stage, snapshot) {
+    // The boss (BlightBoss, the snapshot's `blightBoss`): the objective's second line counts the kills left to its
+    // awakening, and the awakening is the next goal with its own cue.
+    if (stage.boss) {
+        const left = snapshot.blightBoss?.untilAwaken ?? 0;
+        return left
+            ? { key: 'boss', label: BOSS_GOAL, detail: `각성까지 ${left}명` }
+            : {
+                  key: 'boss-awakened',
+                  label: BOSS_GOAL,
+                  detail: '각성했어요',
+                  cue: { title: '영웅 각성', text: '깜부기 영웅이 각성했어요. 계속 몰아붙이세요!' },
+              };
+    }
     if (stage.volleyGoals) return { key: 'volley', label: missionGoal(stage) };
     const mission = snapshot.campaignMission;
     if (stage.mission?.heroLesson) {
@@ -201,12 +216,14 @@ export class CampaignPresentation {
             }
         }
         this.battle.tick = tick;
-        const timer = $('campaignObjectiveTimer');
-        timer.hidden = goal.timerTick == null;
-        if (!timer.hidden) {
-            const value = `남은 시간 ${formatCountdown((goal.timerTick - tick) / tps)}`;
-            if (timer.textContent !== value) timer.textContent = value;
-        }
+        // The objective's second line: the survival countdown, or the goal's own detail (the boss's awakening).
+        const timer = $('campaignObjectiveTimer'),
+            detail =
+                goal.timerTick == null
+                    ? goal.detail
+                    : `남은 시간 ${formatCountdown((goal.timerTick - tick) / tps)}`;
+        timer.hidden = detail == null;
+        if (!timer.hidden && timer.textContent !== detail) timer.textContent = detail;
         // The cue line shows the goal's cue while that runs. After it, a spore cloud drifting in (SporeCloud, the
         // snapshot's `sporeCloud.coming`) is announced for as long as any cloud is under warning. The cloud keeps
         // no record of its own: it never uses up a goal's cue.

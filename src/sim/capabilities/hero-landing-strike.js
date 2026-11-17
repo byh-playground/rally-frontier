@@ -4,6 +4,7 @@
 // - 공격은 원 하나(가운데) 또는 가운데 하나와 `scatter.ring` 고리 위 `scatter.count`개의 원이고, 원마다 따로
 //   `radius` 안의 지상 적 병력에게 `damage`(또는 영웅 레벨 공격 × `atkRatio`)를 준다. `knockback`(KnockbackRules.gain의 이름)이 있으면 피해 전에
 //   영웅 몸무게로 밀어낸다. 처치는 영웅의 막타다(HeroGrowth).
+// - 깜부기 보스의 착지(BlightBoss.landsHarmless)는 같은 원과 사건을 내지만 피해·밀어내기가 없다(맞은 수 0).
 // - 빠지기는 `retreat.motion`이 'roll'이면 영웅의 구르기(HeroRollAttack)를 본진 쪽으로 `distance`만큼, 'hop'이면
 //   본진 쪽으로 뛰어 `distance`만큼 간다. 공격은 한 틱에 끝나므로 따로 저장할 상태가 없다.
 import { FP } from '../../core/config.js';
@@ -11,6 +12,7 @@ import { BuildingDefinition } from '../../definitions/buildings.js';
 import { KnockbackRules } from '../../definitions/knockback-rules.js';
 import { LaunchImpactRules } from '../../definitions/launch-impact-rules.js';
 import { UnitDefinition } from '../../definitions/units.js';
+import { BlightBoss } from '../blight-boss.js';
 import { Knockback } from '../knockback.js';
 import { HeroGrowth } from '../hero-growth.js';
 import { HeroRollAttack } from './hero-roll-attack.js';
@@ -80,17 +82,21 @@ export class HeroLandingStrike {
     // and its vertical speed then, as LaunchImpact.deploy gives every released soldier.
     static land(sim, unit, strike, x, y, impactHeightFP, release) {
         const { dx, dy } = this.homeDirection(sim, unit.side, x, y);
-        const damage = this.damage(unit, strike);
+        // The blight's boss lands showing its shock but hurting and shoving nobody (BlightBoss).
+        const harmless = BlightBoss.landsHarmless(sim, unit),
+            damage = harmless ? 0 : this.damage(unit, strike);
         const blasts = this.points(strike, x, y, dx, dy).map((point) => ({
             ...point,
             radius: strike.radius,
-            hits: this.blast(sim, unit, {
-                ...point,
-                radius: strike.radius,
-                damage,
-                knockback: strike.knockback,
-                impactHeightFP,
-            }),
+            hits: harmless
+                ? 0
+                : this.blast(sim, unit, {
+                      ...point,
+                      radius: strike.radius,
+                      damage,
+                      knockback: strike.knockback,
+                      impactHeightFP,
+                  }),
         }));
         sim.events.push({
             type: 'heroLandingStrike',

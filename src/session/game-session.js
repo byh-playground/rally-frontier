@@ -1322,7 +1322,9 @@ class GameSession {
                     ? 'draw'
                     : frame.winner === 'host' && this.sim.campaignVolleyPractice?.complete
                       ? 'volley-practice'
-                      : 'base-destroyed');
+                      : frame.winner === 'host' && this.sim.blightBoss?.subduedTick != null
+                        ? 'boss-subdued'
+                        : 'base-destroyed');
         }
         if (
             this.publishConfirmedSnapshots &&

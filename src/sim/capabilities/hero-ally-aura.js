@@ -12,6 +12,7 @@
 //   ms도 평균이 그 ms다. null은 아직 한 번도 돌지 않은 상태로, 켜진 첫 틱에 바로 돌고 0에서 센다.
 // - 회복마다 `heroAuraHeal` 사건을 낸다. 발밑 표시는 영웅 상태의 `allyIds`를 읽는다.
 import { UnitDefinition } from '../../definitions/units.js';
+import { BlightBoss } from '../blight-boss.js';
 import { HeroGrowth } from '../hero-growth.js';
 import { IndexList } from '../index-list.js';
 import { LaunchRules } from '../launch-rules.js';
@@ -57,7 +58,8 @@ export class HeroAllyAura {
                 const unitId = heroes[type]?.unitId;
                 if (unitId == null) continue;
                 const unit = sim.unitById.get(unitId);
-                if (!unit?.alive || !unit.heroAura) continue;
+                // A subdued boss (BlightBoss) has stopped its aura.
+                if (!unit?.alive || !unit.heroAura || BlightBoss.subdued(unit)) continue;
                 const spec = HeroGrowth.unlocked(unit, 'allyAura');
                 if (!spec) continue;
                 const aura = unit.heroAura;
