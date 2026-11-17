@@ -91,7 +91,19 @@ class GameRuleRuntime {
             // The card upgrades each side has on, [hostCards, guestCards]; only a campaign stage carries any
             // (the sim checks the ids), so no other match start reaches them.
             campaignUpgrades: campaignStage ? structuredClone(src.campaignUpgrades ?? null) : null,
+            // How hard the stage's enemy plays, { decisionScale, resourceScale } (definitions/campaign-pace.js),
+            // copied once at the match start; only a campaign stage carries one.
+            campaignPace: campaignStage
+                ? GameRuleRuntime.normalizeCampaignPace(src.campaignPace)
+                : null,
         };
+    }
+    static normalizeCampaignPace(pace) {
+        if (pace == null) return null;
+        const scales = ['decisionScale', 'resourceScale'].map((key) => pace[key]);
+        if (!scales.every((scale) => Number.isFinite(scale) && scale > 0 && scale <= 4))
+            throw new Error('캠페인 적 세기 배율은 0보다 크고 4 이하인 수여야 합니다.');
+        return { decisionScale: scales[0], resourceScale: scales[1] };
     }
     static mergeGameRules(base, override) {
         if (!override || typeof override !== 'object') return structuredClone(base);

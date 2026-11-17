@@ -1676,6 +1676,35 @@ body.result-mode .p2p-health {
 .campaign-dialog .deck-panel {
     padding: clamp(12px, 4vw, 20px);
 }
+.campaign-difficulty {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    margin-top: 4px;
+}
+.campaign-difficulty-option {
+    min-height: 28px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 700;
+}
+.campaign-difficulty-option[aria-pressed='true'] {
+    background: var(--green);
+    color: #fff;
+}
+.campaign-difficulty-option:focus-visible {
+    outline: 2px solid var(--green);
+    outline-offset: 1px;
+}
+.campaign-row-hard {
+    flex: none;
+    color: #c98a00;
+    font-size: 12px;
+}
 .campaign-stages {
     display: flex;
     flex-direction: column;
@@ -1757,4 +1786,17 @@ body.result-mode .p2p-health {
 }
 .campaign-row.is-done .campaign-row-meta {
     color: var(--green);
+}
+/* A short phone screen: tighter rows so the longest opened list still fits without scrolling. */
+@media (max-height: 600px) {
+    .campaign-row {
+        min-height: 26px;
+    }
+    .campaign-row-art {
+        width: 26px;
+        height: 22px;
+    }
+    .campaign-row-art img {
+        height: 22px;
+    }
 }
