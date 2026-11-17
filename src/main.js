@@ -92,6 +92,7 @@ import { DeckEditor } from './ui/deck-editor.js';
 import { loadPlayerSave, openPlayerSaves, updatePlayerSave } from './ui/player-saves.js';
 import { CampaignProgress } from './ui/campaign-progress.js';
 import { Roster } from './ui/roster.js';
+import { SUNSHINE } from './definitions/roster.js';
 import { CampaignPresentation } from './ui/campaign-presentation.js';
 import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
@@ -12315,6 +12316,24 @@ async function startTitleApp() {
             return stage ? `${stage.title} 클리어 시 해금` : '';
         },
         renderDetails: (type, host) => LaunchScreens.renderCardDetail(type, host),
+        sunshine: () => roster.sunshine,
+        upgradeOf: (type) => {
+            const upgrade = UnitDefinition.get(type)?.campaignUpgrade;
+            if (
+                !upgrade ||
+                campaignProgress.debugUnlocked ||
+                !roster.owns(type) ||
+                LaunchRules.heroTypes.includes(type)
+            )
+                return null;
+            return {
+                name: upgrade.name,
+                summary: upgrade.summary,
+                price: SUNSHINE.openUpgrade,
+                open: () => roster.hasUpgrade(type),
+            };
+        },
+        openUpgrade: (type) => roster.openUpgrade(type),
         portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
     });
     const showcaseSurface = createShowcaseHost(createShowcaseRenderer);
@@ -12326,6 +12345,7 @@ async function startTitleApp() {
         showcaseSurface,
         actions: {
             campaignProgress,
+            sunshine: () => roster.sunshine,
             startCampaignStage: (stage) => {
                 leaveSetup();
                 MatchLifecycle.startCampaignStage(stage);
