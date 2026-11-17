@@ -2,6 +2,7 @@
 // holds these; this file is where the starting set and the amounts are defined.
 import { LaunchRules } from '../sim/launch-rules.js';
 import { CAMPAIGN_STAGES } from './campaign.js';
+import { DEFAULT_DIFFICULTY } from './campaign-pace.js';
 
 // Sunshine paid once per item: the first clear of a stage, its side goal, and its first clear on hard.
 export const SUNSHINE = Object.freeze({
@@ -28,6 +29,7 @@ export function newRosterRecord() {
             sunshine: 0,
             upgrades: [], // card ids whose upgrade is open
             regionOrder: [], // region ids in the order the player first cleared their first stage
+            difficulty: DEFAULT_DIFFICULTY, // the enemy's difficulty the player picked last (campaign-pace.js)
         },
     };
 }

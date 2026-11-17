@@ -1,3 +1,4 @@
+import { DEFAULT_DIFFICULTY, campaignPace, isDifficulty } from '../definitions/campaign-pace.js';
 import { SUNSHINE, startingOwned } from '../definitions/roster.js';
 import { loadPlayerSave, updatePlayerSave } from './player-saves.js';
 
@@ -40,6 +41,28 @@ export class Roster {
     // 1-based place of a region in the order it was first cleared, or 0 while it is not.
     regionPlace(regionId) {
         return (this.campaign?.regionOrder.indexOf(regionId) ?? -1) + 1;
+    }
+
+    // The difficulty picked last on the campaign screen.
+    get difficulty() {
+        return this.campaign?.difficulty ?? DEFAULT_DIFFICULTY;
+    }
+
+    isHardCleared(stageId) {
+        return !!this.campaign?.hardCleared.includes(stageId);
+    }
+
+    // How hard the stage's enemy plays now: what a campaign match copies at its start (matchConfig.campaignPace).
+    paceFor(stage) {
+        return campaignPace(this.difficulty, stage.region ? this.regionPlace(stage.region) : 0);
+    }
+
+    // Remembers the difficulty. Resolves false when the save failed.
+    setDifficulty(id) {
+        if (!isDifficulty(id)) throw new RangeError(`알 수 없는 난이도: ${id}`);
+        return this.#write((draft) => {
+            draft.campaign.difficulty = id;
+        });
     }
 
     hasUpgrade(type) {
