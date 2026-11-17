@@ -16,6 +16,7 @@ import { LaunchRules } from './sim/launch-rules.js';
 import { HashUtil } from './sim/map-generation.js';
 import { HERO_LEVEL_KILLS, RESOURCE_SCALE } from './units/baseline.js';
 import { BotController } from './ai/bot-controller.js';
+import { Blight } from './sim/blight.js';
 import { UnitDefinition } from './definitions/units.js';
 import { StableSerializationUtil } from './net/lobby-codec.js';
 import { RollingBody } from './sim/capabilities/rolling-body.js';
@@ -87,31 +88,61 @@ function flag(scene, name, text) {
 }
 
 // A match on one of the PvP maps (game-rules.js presets), with both sides' decks at the starter deck, or both at
-// `deck` (comma-separated cards, LaunchRules.normalizeDeck checks it). `upgrades` (see upgradedMatch) turns on the
-// host side's campaign upgrades.
-function createMatchSim(scene, map, seed, deck = undefined, upgrades = undefined) {
-    const rules = GameRuleRuntime.resolveMatchRules({ presetId: map });
-    if (upgrades !== undefined) {
-        const cards = deck === undefined ? LaunchRules.starterDeck : String(deck).split(',');
-        return upgradedMatch(integer(scene, 'seed', seed), rules, map, [cards, cards], upgrades);
-    }
-    if (deck === undefined) return new StrategySim(integer(scene, 'seed', seed), rules);
-    const cards = String(deck).split(',');
-    return new StrategySim(integer(scene, 'seed', seed), rules, [cards, cards]);
+// `deck` (comma-separated cards, LaunchRules.normalizeDeck checks it). `upgrades` and `blight` (see stagedMatch) turn
+// on the host side's campaign upgrades and the guest side's blight.
+function createMatchSim(
+    scene,
+    map,
+    seed,
+    deck = undefined,
+    upgrades = undefined,
+    blight = undefined,
+) {
+    const rules = GameRuleRuntime.resolveMatchRules({ presetId: map }),
+        cards = deck === undefined ? LaunchRules.starterDeck : String(deck).split(',');
+    return stagedMatch(scene, integer(scene, 'seed', seed), rules, map, [cards, cards], {
+        upgrades,
+        blight,
+    });
 }
 
-// `upgrades=rice,pea`: the host side's campaign upgrades for those cards (CampaignUpgrades). Only a campaign match
-// may carry any, so the match then runs as a bare campaign stage on the same map: no outposts, no mission, the
-// same decks. Without the parameter a scene keeps its plain match, tick for tick.
-function upgradedMatch(seed, rules, map, decks, upgrades) {
+// `upgrades=rice,pea`: the host side's campaign upgrades for those cards (CampaignUpgrades). `blight=1`: every unit
+// created for the guest side is blighted (Blight, as a campaign stage's `blight: true`). Only a campaign match may
+// carry either, so the match then runs as a bare campaign stage on the same map: no outposts, no mission, the same
+// decks. Without both parameters a scene keeps its plain match, tick for tick.
+function stagedMatch(scene, seed, rules, map, decks, { upgrades, blight }) {
+    const blighted = flag(scene, 'blight', blight);
+    if (upgrades === undefined && !blighted) return new StrategySim(seed, rules, decks);
     rules.campaign = {
-        id: 'debug-upgrades',
+        id: upgrades === undefined ? 'debug-blight' : 'debug-upgrades',
         map,
         deck: decks[0],
         enemyDeck: decks[1],
         enemyOutposts: [],
+        ...(blighted && { blight: true }),
     };
-    return new StrategySim(seed, rules, decks, [String(upgrades).split(','), []]);
+    return new StrategySim(seed, rules, decks, [
+        upgrades === undefined ? [] : String(upgrades).split(','),
+        [],
+    ]);
+}
+
+// What the blight did (every scene's `blight`): living blighted units per side and the units freed so far.
+function createBlightProbe() {
+    let freed = 0;
+    return {
+        observe(sim) {
+            for (const event of sim.events) if (event.type === 'blightFreed') freed++;
+        },
+        state: (sim) => ({
+            blighted: [0, 1].map(
+                (side) =>
+                    sim.units.filter((unit) => unit.alive && unit.side === side && Blight.is(unit))
+                        .length,
+            ),
+            freed,
+        }),
+    };
 }
 
 // What the campaign upgrades did, counted from each step's events: hits a block swallowed (`blocked`) and the living
@@ -2067,9 +2098,13 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
     }
 
     // The debug-host handle of one scene. `open(advanceTick, onError)` builds the prepareSimScene handle.
-    function host(stage, name, params, open, extra = () => ({})) {
+    function host(stage, name, params, open, extra = () => ({}), freeable = () => true) {
         const log = createTickLog();
         const times = flag(name, 'times', params.times);
+        // `freeAtMs`: every blighted unit `freeable` lets go is freed once, right after the tick at that time.
+        const blight = createBlightProbe(),
+            freeAtMs =
+                params.freeAtMs === undefined ? null : integer(name, 'freeAtMs', params.freeAtMs);
         let failure = null;
         let run;
         // Real time to build the scene (staging, any ticks run before it shows, the first snapshot).
@@ -2079,6 +2114,10 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             run = open(
                 () => {
                     stage.realTime(() => run.sim.step());
+                    if (freeAtMs !== null && run.sim.tick === run.sim.time.ceilTicks(freeAtMs))
+                        for (const unit of run.sim.units)
+                            if (freeable(unit)) Blight.free(run.sim, unit);
+                    blight.observe(run.sim);
                     log.record(run.sim);
                 },
                 (error) => {
@@ -2112,6 +2151,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 openMs,
                 units: { host: alive(0), guest: alive(1) },
                 render: renderStats(stage.renderer),
+                blight: blight.state(run.sim),
                 ...extra(run.sim),
                 ...log.state(times),
                 overlap: overlap(run.sim),
@@ -2171,7 +2211,14 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
     }
 
     function melee(scene, params, coconuts) {
-        const sim = createMatchSim(scene, params.map, params.seed);
+        const sim = createMatchSim(
+            scene,
+            params.map,
+            params.seed,
+            undefined,
+            undefined,
+            params.blight,
+        );
         const count = integer(scene, 'units', params.units);
         const types = String(params.mix)
             .split(',')
@@ -2236,7 +2283,14 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
     // Seeded random mixes of the ordinary cards, the same resources a side, crash in the middle of the map.
     function mixBattle(params) {
         const scene = 'mix-battle';
-        const sim = createMatchSim(scene, params.map, params.seed);
+        const sim = createMatchSim(
+            scene,
+            params.map,
+            params.seed,
+            undefined,
+            undefined,
+            params.blight,
+        );
         const budget = integer(scene, 'budget', params.budget);
         const roll = (side, k) =>
             HashUtil.finish(
@@ -2619,7 +2673,14 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          */
         unit(params) {
             const scene = 'unit';
-            const sim = createMatchSim(scene, params.map, params.seed, undefined, params.upgrades);
+            const sim = createMatchSim(
+                scene,
+                params.map,
+                params.seed,
+                undefined,
+                params.upgrades,
+                params.blight,
+            );
             if (flag(scene, 'outposts', params.outposts)) completeOutposts(sim);
             const { guest } = baseAxis(sim);
             const at = { x: integer(scene, 'x', params.x), y: integer(scene, 'y', params.y) };
@@ -2806,16 +2867,14 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 params.enemy === undefined ? undefined : unitType(scene, 'enemy', params.enemy);
             const decks = [[type], [enemy ?? type]],
                 rules = GameRuleRuntime.resolveMatchRules({ presetId: params.map });
-            const sim =
-                params.upgrades === undefined
-                    ? new StrategySim(integer(scene, 'seed', params.seed), rules, decks)
-                    : upgradedMatch(
-                          integer(scene, 'seed', params.seed),
-                          rules,
-                          params.map,
-                          decks,
-                          params.upgrades,
-                      );
+            const sim = stagedMatch(
+                scene,
+                integer(scene, 'seed', params.seed),
+                rules,
+                params.map,
+                decks,
+                params,
+            );
             const { host, center, dir } = baseAxis(sim);
             const across =
                 params.across === undefined ? 400 : integer(scene, 'across', params.across);
@@ -3078,7 +3137,9 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             if (params.player !== undefined && params.player !== 'bot')
                 throw new Error(`campaign takes player=bot or nothing: ${params.player}`);
             const rules = GameRuleRuntime.resolveMatchRules({ presetId: stage.map ?? 'standard' });
-            rules.campaign = stage;
+            rules.campaign = flag('campaign', 'blight', params.blight)
+                ? { ...stage, blight: true }
+                : stage;
             const upgrades = params.upgrades === undefined ? [] : params.upgrades.split(',');
             const sim = new StrategySim(
                 stage.seed,
@@ -3125,6 +3186,97 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     },
                 }),
             });
+        },
+        /**
+         * 깜부기 감염 표시(src/render/blight-look.js)를 한 화면에서 본다. 병종(`mix`, 기본 쌀·콩·밤·호두·옥수수·
+         * 민들레씨)을 세 줄로 세운다: 깨끗함(장면을 열 때 해방) / 감염 / 감염됐다가 `freeAtMs`(없으면 안 함)에 해방.
+         * 그 아래에 감염·깨끗함이 섞인 무리 20명을 둔다. 전부 적 진영이고(감염은 진영 표시와 별개) 제자리에 서 있다.
+         * `zoom`(기본 1.6), `focusY`(카메라를 아래로 옮길 월드 거리), `across`(본진 축에서 옆으로 옮길 거리).
+         * 예: `?debug=1&scene=blight-look&zoom=3&focusY=20&freeAtMs=1000&tick=13`
+         */
+        'blight-look'(params) {
+            const scene = 'blight-look';
+            const sim = createMatchSim(
+                scene,
+                params.map ?? 'standard',
+                params.seed ?? '1',
+                undefined,
+                undefined,
+                '1',
+            );
+            const { center, dir } = baseAxis(sim);
+            const types = (params.mix ?? 'rice,pea,chestnut,walnut,corn,dandelion')
+                .split(',')
+                .map((type) => unitType(scene, 'mix', type));
+            const across = params.across === undefined ? -420 : Number(params.across);
+            const at = { x: center.x - dir.y * across + 90, y: center.y + dir.x * across + 70 };
+            // A slot as wide as the body, so a large one (walnut, a hero) does not cover its neighbours.
+            const widths = types.map((type) => Math.max(34, sim.unitRadius(type) * 2 + 22)),
+                total = widths.reduce((sum, width) => sum + width, 0),
+                gapY = 132;
+            const lastRow = new Set();
+            for (let row = 0; row < 3; row++) {
+                let x = at.x - total / 2;
+                types.forEach((type, column) => {
+                    const unit = sim.spawnUnit(
+                        1,
+                        type,
+                        x + widths[column] / 2,
+                        at.y + (row - 1.6) * gapY,
+                    );
+                    x += widths[column];
+                    if (!row) Blight.free(sim, unit);
+                    if (row === 2) lastRow.add(unit.id);
+                });
+            }
+            // The crowd: 20 soldiers, half of them blighted and mixed in.
+            const crowd = ['rice', 'pea', 'rice', 'pea', 'chestnut'];
+            for (let i = 0; i < 20; i++) {
+                const column = i % 7,
+                    line = Math.floor(i / 7);
+                const unit = sim.spawnUnit(
+                    1,
+                    crowd[i % crowd.length],
+                    at.x + (column - 3) * 30 + (line % 2) * 14,
+                    at.y + 1.95 * gapY + line * 26,
+                );
+                if ((i * 7 + 3) % 20 >= 10) Blight.free(sim, unit);
+            }
+            // Everyone stands still and never attacks, so the layout holds.
+            for (const unit of sim.units)
+                unit.combat.moveRecoveryUntil = unit.combat.cooldownUntil = Number.MAX_SAFE_INTEGER;
+            const focus = { x: at.x - 4, y: at.y + (params.focusY ? Number(params.focusY) : 0) };
+            const stage = openStage(params.fog);
+            const camera = () =>
+                centerCamera(
+                    stage.renderer,
+                    focus.x,
+                    focus.y,
+                    sim.world.terrain.surfaces.heightAt(focus.x, focus.y),
+                );
+            stage.renderer.replayZoom =
+                params.zoom === undefined ? 1.6 : positive(scene, 'zoom', params.zoom);
+            return host(
+                stage,
+                scene,
+                params,
+                (advanceTick, onError) =>
+                    prepareSimScene({
+                        renderer: stage.renderer,
+                        createScenario,
+                        createPresentationView,
+                        sim,
+                        seed: sim.seed,
+                        endTick: Number.MAX_SAFE_INTEGER,
+                        loop: false,
+                        advanceTick,
+                        start: camera,
+                        render: camera,
+                        onError,
+                    }),
+                undefined,
+                (unit) => lastRow.has(unit.id),
+            );
         },
         /**
          * 타이틀 뒤 전투(src/ui/title-scenes.js)를 반복한다. 장면은 틱 1~42, 43~72, 73~102이고 굴러가는 코코넛

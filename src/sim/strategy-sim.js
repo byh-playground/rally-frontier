@@ -39,6 +39,7 @@ import {
 } from './entities.js';
 import { StateContract, StateValue } from './components.js';
 import { CampaignMission } from './campaign-mission.js';
+import { Blight } from './blight.js';
 import { CampaignUpgrades } from './campaign-upgrades.js';
 import { UnitResultStats } from './unit-result-stats.js';
 import { RallyStateCodec } from '../core/rally-state-codec.js';
@@ -1092,6 +1093,8 @@ class StrategySim {
         // Campaign upgrade `chainLinks`: its chain is created with more links (UnitChainAttack.links).
         const chainLinks = d.chainAttack && CampaignUpgrades.effect(this, side, type, 'chainLinks');
         if (chainLinks) u.chain = UnitChainAttack.initialState(chainLinks);
+        // A blighted stage's enemy is created blighted (Blight): only in a stage that declares it.
+        Blight.mark(this, u);
         this.units.push(u);
         this.ensureCollisionBuffers(this.units.length);
         const birth = this.units.length - 1;
