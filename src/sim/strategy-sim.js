@@ -40,6 +40,7 @@ import {
 import { StateContract, StateValue } from './components.js';
 import { CampaignMission } from './campaign-mission.js';
 import { Blight } from './blight.js';
+import { SporeSac } from './spore-sac.js';
 import { CampaignUpgrades } from './campaign-upgrades.js';
 import { UnitResultStats } from './unit-result-stats.js';
 import { RallyStateCodec } from '../core/rally-state-codec.js';
@@ -350,6 +351,8 @@ class StrategySim {
         }
         const missionState = CampaignMission.initialize(this);
         if (missionState) this.campaignMission = missionState;
+        // A blighted stage's spore sacs and their captives (SporeSac): only in a stage that declares them.
+        SporeSac.initialize(this);
         // Loading: every radius bucket's chunk and portal structure, before the first tick asks for a field.
         this.navigation.prepare();
     }
@@ -1087,12 +1090,7 @@ class StrategySim {
         });
         if (d.growsCannon) ForwardCannon.plant(this, u, d.growsCannon);
         if (d.cannonRider) CannonRider.land(this, u, d.cannonRider);
-        // A campaign upgrade counted per soldier (CampaignUpgrades): only in a match that has it on.
-        const upgrade = CampaignUpgrades.soldierState(this, side, type);
-        if (upgrade) u.campaignUpgrade = upgrade;
-        // Campaign upgrade `chainLinks`: its chain is created with more links (UnitChainAttack.links).
-        const chainLinks = d.chainAttack && CampaignUpgrades.effect(this, side, type, 'chainLinks');
-        if (chainLinks) u.chain = UnitChainAttack.initialState(chainLinks);
+        this.giveCampaignUpgrade(u);
         // A blighted stage's enemy is created blighted (Blight): only in a stage that declares it.
         Blight.mark(this, u);
         this.units.push(u);
@@ -1103,6 +1101,57 @@ class StrategySim {
         this.collisionStartCount = this.units.length;
         this.addRuntimeUnit(u);
         return u;
+    }
+    // What its side's campaign upgrades give a soldier when it joins that side (created, or changed side).
+    giveCampaignUpgrade(u) {
+        const d = UnitDefinition.get(u.type);
+        // A campaign upgrade counted per soldier (CampaignUpgrades): only in a match that has it on.
+        const upgrade = CampaignUpgrades.soldierState(this, u.side, u.type);
+        if (upgrade) u.campaignUpgrade = upgrade;
+        // Campaign upgrade `chainLinks`: its chain is created with more links (UnitChainAttack.links).
+        const chainLinks =
+            d.chainAttack && CampaignUpgrades.effect(this, u.side, u.type, 'chainLinks');
+        if (chainLinks) u.chain = UnitChainAttack.initialState(chainLinks);
+    }
+    // A living soldier joins `side` where it stands (Blight.convert): its id, health, place and motion stay.
+    // Everything that named its old enemies or served its old side ends here, so from the next thing it does it is
+    // an ordinary soldier of the new side: it picks a target again, marches to that side's rally point, builds,
+    // rides and clings for it, and carries that side's campaign upgrades. Its old allies stop being its targets
+    // through the same per-tick checks that drop any target (canTargetUnit, isHostileCombatUnit), and a hit already
+    // on its way to it from the side it joins does nothing (applyDamage). A hero or a soldier that grows a building
+    // is tied to its side by more than this (deployment slot, forward cannon) and cannot change side.
+    changeUnitSide(u, side) {
+        const d = UnitDefinition.get(u.type),
+            from = u.side;
+        if (!u.alive || (side !== 0 && side !== 1) || side === from)
+            throw new Error(`편을 바꿀 수 없는 유닛입니다: ${u.id} (${from} -> ${side})`);
+        if (LaunchRules.isHeroType(u.type) || d.growsCannon)
+            throw new Error(`편을 바꿀 수 없는 병종입니다: ${u.type}`);
+        // The attack it was making: the wind-up, a locked burst, a running spin, breath or chain, a charge, a fuse.
+        u.target = null;
+        u.combat.cancelWindup();
+        delete u.combat.burstAttack;
+        if (d.spinAttack) UnitSpinAttack.cancel(this, u);
+        if (d.burstAttack) UnitBurstAttack.cancel(this, u, d);
+        if (d.breathAttack) UnitBreathAttack.stop(this, u, d);
+        if (d.chainAttack) UnitChainAttack.stop(this, u, d);
+        if (d.contactMelee) u.contactAttack = null;
+        if (d.selfDestruct) u.selfDestruct = null;
+        // What it was doing for its old side: a construction job, a muzzle it held, a cannon it rode, its post.
+        u.constructionWork = null;
+        if (d.stickyCling) u.stickyCling = StickyCling.initialState();
+        if (d.cannonRider) CannonRider.land(this, u, d.cannonRider);
+        delete u.holdPost;
+        if (u.launchHoldPointId) u.launchHoldPointId = null;
+        delete u.campaignUpgrade;
+        HeroAllyAura.forget(this, from, u.id);
+        // Its shots still in the air go with it, so they pass through the side it joins.
+        for (const shot of this.unitThornProjectiles) if (shot.sourceId === u.id) shot.side = side;
+        for (const shot of this.unitLobProjectiles) if (shot.sourceId === u.id) shot.side = side;
+        u.side = side;
+        this.giveCampaignUpgrade(u);
+        // The side's layer of the spatial index (StrategySim.spatialGroup); the per-id indexes do not hold the side.
+        this.syncUnitSpatial(u);
     }
     unitRadius(type) {
         return InteractionGeometry.unitRadius(type);
@@ -2155,6 +2204,8 @@ class StrategySim {
         });
         if (BuildingDefinition.get(target.type)?.isOutpost)
             this.releaseCaptureForOutpost(target.id);
+        // A spore sac frees its captives the moment it bursts (SporeSac).
+        if (BuildingDefinition.get(target.type)?.sporeSac) SporeSac.burst(this, target);
         if (BuildingDefinition.get(target.type)?.isMainBase)
             return target.side === 0 ? 'guest' : 'host';
         return null;
@@ -2421,7 +2472,12 @@ class StrategySim {
         if (d.flight && UnitFlight.step(this, u, d.flight, vision[u.side])) return null;
         if (d.stickyCling && StickyCling.heldBuilding(this, u)) return null;
         if (u.heroRoll) return null;
-        if (d.cannonRider && CannonRider.update(this, u, d.cannonRider, vision[u.side]))
+        // A soldier keeping a post (a garrison, a spore sac's captive) does not leave it for a cannon.
+        if (
+            d.cannonRider &&
+            !u.holdPost &&
+            CannonRider.update(this, u, d.cannonRider, vision[u.side])
+        )
             return null;
         if (HeroDeployment.moveReturningUnit(this, u, d)) {
             UnitSpinAttack.cancel(this, u);

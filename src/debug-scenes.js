@@ -17,6 +17,7 @@ import { HashUtil } from './sim/map-generation.js';
 import { HERO_LEVEL_KILLS, RESOURCE_SCALE } from './units/baseline.js';
 import { BotController } from './ai/bot-controller.js';
 import { Blight } from './sim/blight.js';
+import { SporeSac } from './sim/spore-sac.js';
 import { UnitDefinition } from './definitions/units.js';
 import { StableSerializationUtil } from './net/lobby-codec.js';
 import { RollingBody } from './sim/capabilities/rolling-body.js';
@@ -89,7 +90,7 @@ function flag(scene, name, text) {
 
 // A match on one of the PvP maps (game-rules.js presets), with both sides' decks at the starter deck, or both at
 // `deck` (comma-separated cards, LaunchRules.normalizeDeck checks it). `upgrades` and `blight` (see stagedMatch) turn
-// on the host side's campaign upgrades and the guest side's blight.
+// on the host side's campaign upgrades and the guest side's blight; `sporeSacs` is the stage's spore sac declaration.
 function createMatchSim(
     scene,
     map,
@@ -97,22 +98,190 @@ function createMatchSim(
     deck = undefined,
     upgrades = undefined,
     blight = undefined,
+    sporeSacs = undefined,
 ) {
     const rules = GameRuleRuntime.resolveMatchRules({ presetId: map }),
         cards = deck === undefined ? LaunchRules.starterDeck : String(deck).split(',');
     return stagedMatch(scene, integer(scene, 'seed', seed), rules, map, [cards, cards], {
         upgrades,
         blight,
+        sporeSacs,
     });
+}
+
+// `sac=<x>,<y>&captive=<type>&captiveCount=N` (the `unit` and `launch` scenes, with `blight=1`): one spore sac at
+// (x, y) with N blighted soldiers of that type bound to it, as a stage's `sporeSacs` declaration (SporeSac). Returns
+// that declaration, or undefined without `sac`.
+function sporeSacDeclaration(scene, params) {
+    if (params.sac === undefined) return undefined;
+    const place = /^(\d+),(\d+)$/.exec(params.sac);
+    if (!place) throw new Error(`${scene} needs sac=<x>,<y>: ${params.sac}`);
+    return [
+        {
+            x: Number(place[1]),
+            y: Number(place[2]),
+            captives: [
+                {
+                    type: unitType(scene, 'captive', params.captive),
+                    count: integer(scene, 'captiveCount', params.captiveCount),
+                },
+            ],
+        },
+    ];
+}
+
+// The scene's spore sac (sporeSacDeclaration), or null. `captiveFar=N` binds N more soldiers of the captive type to
+// it who stand still 220 from it, outside the reach it frees (150). State (`sporeSac`): `sacs` (health, and the tick it
+// was destroyed), `bound` (the captives now: still blighted enemies `held`, of those the ones in reach `heldInReach`,
+// `converted`, `dead`), `converted` (how many joined the host side, by type, the ticks it happened, and `residues`: how many still carried
+// something of their old side at the end of that tick: the blight, the post, a job, a target, link, muzzle or cannon
+// of the wrong side, a charge or a fuse; 0 expected; `before`: how many captives held a muzzle, were aboard a cannon
+// or ran a sustained attack one tick before the sac burst), hits after
+// that between a converted soldier and the host side in either direction (`allyHits`, 0 when none hurt the other),
+// hits converted soldiers landed on the guest side (`convertedHits`), blighted guest units bound to no sac still
+// alive (`unbound`) and the host heroes' kills (`heroKills`).
+function createSporeSacProbe(scene, sim, params) {
+    const sac = sim.buildings.find((b) => BuildingDefinition.get(b.type).sporeSac);
+    if (!sac) {
+        if (params.captiveFar !== undefined) throw new Error(`${scene}: captiveFar needs sac`);
+        return null;
+    }
+    if (params.captiveFar !== undefined) {
+        const far = integer(scene, 'captiveFar', params.captiveFar);
+        for (let i = 0; i < far; i++) {
+            const unit = sim.spawnUnit(
+                sac.side,
+                params.captive,
+                sac.x + 220,
+                sac.y + (i - (far - 1) / 2) * 34,
+            );
+            SporeSac.bind(sim, sac, unit);
+            // It stands still and never attacks, so it is still out of reach when the sac bursts.
+            unit.combat.moveRecoveryUntil = unit.combat.cooldownUntil = Number.MAX_SAFE_INTEGER;
+        }
+    }
+    // The scene runner may restore the simulation, so the sac is read by id each time (gone once cleaned up).
+    const { id, x, y, side, type, maxHp } = sac,
+        bound = [...sac.captives],
+        converted = new Set(),
+        types = {},
+        ticks = [],
+        reach = SporeSac.spec().freeRadius;
+    // Is anything of its old side left on a soldier that has just joined the host side?
+    const residue = (unit) => {
+        const ally = (entityId) => {
+            const entity = sim.unitById.get(entityId) ?? sim.buildingById.get(entityId);
+            return !!entity && entity.side === unit.side;
+        };
+        return (
+            Blight.is(unit) ||
+            unit.holdPost !== undefined ||
+            unit.constructionWork !== null ||
+            (unit.target !== null && ally(unit.target)) ||
+            (unit.combat.attackWindupTargetId !== null && ally(unit.combat.attackWindupTargetId)) ||
+            (unit.combat.burstAttack !== undefined && ally(unit.combat.burstAttack.targetId)) ||
+            (unit.chain?.ids.some((linked) => linked !== null && ally(linked)) ?? false) ||
+            (unit.stickyCling?.buildingId != null && ally(unit.stickyCling.buildingId)) ||
+            (unit.cannonRide?.cannonId != null && !ally(unit.cannonRide.cannonId)) ||
+            (unit.contactAttack ?? null) !== null ||
+            (unit.selfDestruct ?? null) !== null
+        );
+    };
+    // What the captives were in the middle of: holding a muzzle, aboard a cannon, running a sustained attack.
+    const engaged = () => {
+        const count = { clinging: 0, riding: 0, sustaining: 0 };
+        for (const boundId of bound) {
+            const unit = sim.unitById.get(boundId);
+            if (!unit?.alive) continue;
+            if (unit.stickyCling?.buildingId != null && sim.tick < unit.stickyCling.endTick)
+                count.clinging++;
+            if (unit.cannonRide?.phase === 'board') count.riding++;
+            if (unit.sustain?.active) count.sustaining++;
+        }
+        return count;
+    };
+    let brokenTick = null,
+        before = null,
+        last = engaged(),
+        residues = 0,
+        allyHits = 0,
+        convertedHits = 0,
+        seenTick = -1;
+    const observe = () => {
+        if (seenTick === sim.tick) return;
+        seenTick = sim.tick;
+        for (const event of sim.events) {
+            if (event.type === 'buildingDeath' && event.entity === type) {
+                brokenTick = sim.tick;
+                before = last;
+            } else if (event.type === 'blightFreed' && sim.unitById.get(event.id)?.side === 0) {
+                converted.add(event.id);
+                if (residue(sim.unitById.get(event.id))) residues++;
+                types[event.unitType] = (types[event.unitType] || 0) + 1;
+                if (ticks.at(-1) !== sim.tick) ticks.push(sim.tick);
+            } else if (event.type === 'hit' && !event.isBuilding) {
+                const fromConverted = converted.has(event.sourceId),
+                    toConverted = converted.has(event.targetId);
+                if ((fromConverted && event.side === 0) || (toConverted && event.sourceSide === 0))
+                    allyHits++;
+                else if (fromConverted && event.side === 1) convertedHits++;
+            }
+        }
+        last = engaged();
+    };
+    return {
+        observe,
+        state() {
+            observe();
+            const units = bound.map((id) => sim.unitById.get(id)),
+                held = units.filter((u) => u?.alive && u.side === side && Blight.is(u));
+            return {
+                sacs: [
+                    {
+                        id,
+                        x,
+                        y,
+                        hp: Math.max(0, sim.buildingById.get(id)?.hp ?? 0),
+                        maxHp,
+                        brokenTick,
+                    },
+                ],
+                bound: {
+                    total: bound.length,
+                    held: held.length,
+                    heldInReach: held.filter((u) => Math.hypot(u.x - x, u.y - y) <= reach).length,
+                    converted: units.filter((u) => u?.alive && converted.has(u.id)).length,
+                    dead: units.filter((u) => !u?.alive).length,
+                },
+                converted: { count: converted.size, types, ticks, residues, before },
+                allyHits,
+                convertedHits,
+                unbound: sim.units.filter(
+                    (u) => u.alive && u.side === side && Blight.is(u) && !bound.includes(u.id),
+                ).length,
+                // A hero's record is in its slot while it waits and on its body while it is out (HeroGrowth).
+                heroKills: Object.fromEntries(
+                    Object.keys(sim.heroGrowth[0]).map((hero) => [
+                        hero,
+                        (
+                            sim.heroGrowth[0][hero] ??
+                            sim.unitById.get(sim.heroes[0][hero]?.unitId)?.heroGrowth
+                        )?.kills ?? null,
+                    ]),
+                ),
+            };
+        },
+    };
 }
 
 // `upgrades=rice,pea`: the host side's campaign upgrades for those cards (CampaignUpgrades). `blight=1`: every unit
 // created for the guest side is blighted (Blight, as a campaign stage's `blight: true`). Only a campaign match may
 // carry either, so the match then runs as a bare campaign stage on the same map: no outposts, no mission, the same
 // decks. Without both parameters a scene keeps its plain match, tick for tick.
-function stagedMatch(scene, seed, rules, map, decks, { upgrades, blight }) {
+function stagedMatch(scene, seed, rules, map, decks, { upgrades, blight, sporeSacs }) {
     const blighted = flag(scene, 'blight', blight);
-    if (upgrades === undefined && !blighted) return new StrategySim(seed, rules, decks);
+    if (upgrades === undefined && !blighted && sporeSacs === undefined)
+        return new StrategySim(seed, rules, decks);
     rules.campaign = {
         id: upgrades === undefined ? 'debug-blight' : 'debug-upgrades',
         map,
@@ -120,6 +289,7 @@ function stagedMatch(scene, seed, rules, map, decks, { upgrades, blight }) {
         enemyDeck: decks[1],
         enemyOutposts: [],
         ...(blighted && { blight: true }),
+        ...(sporeSacs && { sporeSacs }),
     };
     return new StrategySim(seed, rules, decks, [
         upgrades === undefined ? [] : String(upgrades).split(','),
@@ -2680,8 +2850,10 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 undefined,
                 params.upgrades,
                 params.blight,
+                sporeSacDeclaration(scene, params),
             );
             if (flag(scene, 'outposts', params.outposts)) completeOutposts(sim);
+            const sac = createSporeSacProbe(scene, sim, params);
             const { guest } = baseAxis(sim);
             const at = { x: integer(scene, 'x', params.x), y: integer(scene, 'y', params.y) };
             const length = Math.hypot(guest.x - at.x, guest.y - at.y);
@@ -2828,8 +3000,10 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     outposts.observe();
                     breath?.observe();
                     chain?.observe();
+                    sac?.observe();
                 },
                 extra: () => ({
+                    ...(sac ? { sporeSac: sac.state() } : {}),
                     knockback: probe.state(),
                     outside: probe.outside(),
                     fight: fight.state(),
@@ -2873,8 +3047,13 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 rules,
                 params.map,
                 decks,
-                params,
+                {
+                    upgrades: params.upgrades,
+                    blight: params.blight,
+                    sporeSacs: sporeSacDeclaration(scene, params),
+                },
             );
+            const sac = createSporeSacProbe(scene, sim, params);
             const { host, center, dir } = baseAxis(sim);
             const across =
                 params.across === undefined ? 400 : integer(scene, 'across', params.across);
@@ -3062,12 +3241,14 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     flight.observe();
                     breath?.observe();
                     chain?.observe();
+                    sac?.observe();
                 },
                 extra: () => {
                     const squad = sim.units.filter(
                         (u) => u.alive && u.side === 0 && u.type === type,
                     );
                     return {
+                        ...(sac ? { sporeSac: sac.state() } : {}),
                         landing: { tick: landTick, units: squad.length, ...spreadOf(squad) },
                         ...(hero ? { hero: hero.state() } : {}),
                         flight: flight.state(),

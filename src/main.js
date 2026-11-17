@@ -76,7 +76,7 @@ import { GRAIN_SPRITES } from './render/grain-sprite-registry.js';
 import { heroBasicAttackElapsedMs } from './render/hero-basic-motion.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
 import { DEAD_UNIT_LOOK, DeadUnitLook } from './render/dead-unit-look.js';
-import { BlightLook } from './render/blight-look.js';
+import { BLIGHT_LOOK, BlightLook } from './render/blight-look.js';
 import {
     CONFIG,
     FP,
@@ -406,6 +406,7 @@ const BUILDING_VISUAL_RENDER_FNS = Object.freeze({
         renderer.drawStickyWrap(b, renderer.buildingArt.draw(b, renderer.cannonArtOptions(b))),
     'forward-cannon': (renderer, { b }) =>
         renderer.buildingArt.draw(b, renderer.cannonArtOptions(b)),
+    'spore-sac': (renderer, { b }) => renderer.drawSporeSac(b),
 });
 class TerrainPresentation {
     static colors = Object.freeze({
@@ -1229,6 +1230,9 @@ class GLRenderer {
         this.blightRings = [];
         // Blighted soldiers on a muzzle this frame, as flat records (unit, x, y, half, depth, freeing).
         this.blightMounted = [];
+        // The units freed on the newest freeing tick ({ tick, count }), shared by their `blightFreed` records.
+        this.blightFreedTogether = null;
+        this.sporeSacDisc = (x, y, radius, color) => this.circle(x, y, radius, color, 18);
         this.blightTimeMs = 0;
         this.grainFaces = new RallyGamekit.FaceOverlay(this.vectorContext, {
             faces: GRAIN_FACE_IDS,
@@ -2822,8 +2826,13 @@ class GLRenderer {
                     thornReplayClock: null,
                 });
             } else if (e.type === 'blightFreed') {
-                // A unit freed from the blight (Blight.free): its soot is blown off over BlightLook.freeMs.
-                const freed = {};
+                // A unit freed from the blight (Blight.free): its soot is blown off over BlightLook.freeMs. The units
+                // freed on one tick share one `together` record, which thins each one's soot (BlightLook.freeMotes).
+                let together = this.blightFreedTogether;
+                if (together?.tick !== e.presentationTick)
+                    together = this.blightFreedTogether = { tick: e.presentationTick, count: 0 };
+                together.count++;
+                const freed = { together };
                 EffectObjectFactory.attachClock(
                     freed,
                     snapshot.presentationClock,
@@ -2841,7 +2850,13 @@ class GLRenderer {
                 });
                 this.triggerSelfDestructShake(e, snapshot, index);
             } else if (e.type === 'buildingDeath') {
-                this.addClientFx('buildingBurst', e, snapshot, index);
+                // A spore sac bursts into soot; every other building breaks into rubble.
+                this.addClientFx(
+                    BuildingDefinition.get(e.entity)?.sporeSac ? 'sporeSacBurst' : 'buildingBurst',
+                    e,
+                    snapshot,
+                    index,
+                );
                 this.triggerClientShake(
                     3.5,
                     180,
@@ -3041,6 +3056,18 @@ class GLRenderer {
             this.stickyWrapPoses.push(this.spriteRenderers[clinger.type], cannon);
             this.noteMountedBlight(clinger, cannon);
         }
+    }
+    // The blight's spore sac (sim/spore-sac.js), a placeholder (BlightLook.drawSac): a pouch standing on its ground
+    // shadow. Its soot is noted like a mounted soldier's and drawn with every other mote (drawBlightSoot).
+    drawSporeSac(b) {
+        const { size } = BuildingDefinition.get(b.type),
+            look = BLIGHT_LOOK.sac,
+            radius = size * this.sc(),
+            [x, groundY] = this.worldToPx(this.viewX(b.x), this.viewY(b.y)),
+            y = groundY - radius * look.lift;
+        this.drawGroundCircle(b.x, b.y, size * 1.15, { fill: look.shadow, segments: 20 });
+        this.blightArt.drawSac(this.sporeSacDisc, x, y, radius);
+        this.blightMounted.push(b, x, y, radius, this._renderDepth ?? 0, 0);
     }
     // A blighted soldier on a muzzle (clinging to it or riding it) is not in the grain list: its soot is noted here
     // from the cannon's pose and drawn with every other mote (drawBlightSoot). It has no ring, as it does not stand
@@ -3983,6 +4010,13 @@ class GLRenderer {
                         fade,
                     );
                 }
+            } else if (fx.kind === 'sporeSacBurst') {
+                // A spore sac bursting (SporeSac.burst): its soot is thrown out and thins as it spreads.
+                dot(x, y, (16 + 10 * ease) * sc, '#2a1140', Math.max(0, 0.6 - t * 1.5));
+                burst(fx, x, y, t, 18, '#1a0f22', 96, 4.6, 0.6);
+                burst(fx, x, y, t, 11, '#3b2152', 74, 3.6, 0.6, fx.seed + 1);
+                burst(fx, x, y, t, 5, '#8a4a96', 58, 2.6, 0.6, fx.seed + 2);
+                ring(x, y, (14 + 60 * ease) * sc, 3 * sc, '#3b2152', 0.5 * (1 - t), 0.72);
             } else if (fx.kind === 'buildingBurst') {
                 burst(fx, x, y, t, 13, '#6a6259', 72, 4.8, 0.48);
                 burst(fx, x, y, t, 7, '#d2aa63', 58, 3.3, 0.52);
@@ -5925,6 +5959,9 @@ class GLRenderer {
                 unit,
                 this.blightTimeMs,
                 grain.blight,
+                grain.blight > 0
+                    ? BlightLook.freeMotes(this.blightFreed.get(u.id)?.together.count ?? 1)
+                    : undefined,
             );
         }
         for (let i = 0; i < mounted.length; i += 6) {

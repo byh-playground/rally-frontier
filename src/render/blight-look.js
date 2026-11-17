@@ -65,8 +65,30 @@ const BLIGHT_LOOK = Object.freeze({
         alpha: 0.92,
         // The puff: every `everyMs` (each unit at its own moment) `count` motes burst from one shoulder for `ms`.
         puff: Object.freeze({ everyMs: 3200, ms: 600, count: 4, reach: 0.7, minReachPx: 11 }),
-        // Freed: this many motes are swept off sideways and up, as far as `reach`.
-        free: Object.freeze({ count: 9, reach: 1.7, minReachPx: 26 }),
+        // Freed: this many motes are swept off sideways and up, as far as `reach`. Units freed on one tick (a spore
+        // sac's captives) share `crowd` units' worth of motes, never fewer than `minCount` each, so a freed crowd
+        // is not covered in soot.
+        free: Object.freeze({ count: 9, crowd: 4, minCount: 3, reach: 1.7, minReachPx: 26 }),
+    }),
+    // The spore sac (sim/spore-sac.js), a placeholder: a lumpy near-black violet pouch. Each lump is a disc
+    // (x, y, radius in sac radii from the sac's middle, colour); the blight's soot rises from it like from a body.
+    sac: Object.freeze({
+        // The sac's middle stands this many radii above its ground point.
+        lift: 0.8,
+        shadow: Object.freeze([0.06, 0.03, 0.09, 0.32]),
+        lumps: Object.freeze([
+            [0, 0, 1.08, '#1a0f22'],
+            [-0.62, 0.34, 0.6, '#1a0f22'],
+            [0.66, 0.3, 0.56, '#1a0f22'],
+            [0.1, -0.7, 0.52, '#1a0f22'],
+            [0, 0, 1, '#2a1140'],
+            [-0.6, 0.32, 0.52, '#2a1140'],
+            [0.64, 0.28, 0.48, '#2a1140'],
+            [0.1, -0.68, 0.44, '#2a1140'],
+            [-0.26, -0.24, 0.52, '#3b2152'],
+            [-0.36, -0.36, 0.2, '#8a4a96'],
+            [0.42, 0.18, 0.14, '#3b2152'],
+        ]),
     }),
 });
 
@@ -109,7 +131,15 @@ const easeOut = (t) => 1 - (1 - t) * (1 - t);
 class BlightLook {
     static freeMs = BLIGHT_LOOK.freeMs;
     static eventWaitMs = BLIGHT_LOOK.eventWaitMs;
+    // How many motes each of `together` units freed on one tick blows off.
+    static freeMotes(together) {
+        const { count, crowd, minCount } = BLIGHT_LOOK.motes.free;
+        return together <= crowd
+            ? count
+            : Math.max(minCount, Math.round((count * crowd) / together));
+    }
     constructor(context) {
+        this.sacLumps = BLIGHT_LOOK.sac.lumps.map(([x, y, r, color]) => [x, y, r, rgb(color)]);
         const { soot, violet, glint, ring } = BLIGHT_LOOK.colors;
         this.ringColor = rgb(ring);
         this.moteColors = [rgb(soot), rgb(violet), rgb(glint)];
@@ -145,8 +175,22 @@ class BlightLook {
     }
     // The motes of one body at `timeMs`. `art` is the shared particle (drawParticle(matrix, depth, color, alpha)).
     // (cx, cy): the body's middle on screen, half: its half height in canvas pixels, px: one CSS pixel, unit: one
-    // view unit (so a threshold means the same body at any zoom and canvas size).
-    drawMotes(art, depth, type, seed, cx, cy, half, px, unit, timeMs, freeing) {
+    // view unit (so a threshold means the same body at any zoom and canvas size). `freeMotes`: the motes a freed
+    // unit blows off (BlightLook.freeMotes).
+    drawMotes(
+        art,
+        depth,
+        type,
+        seed,
+        cx,
+        cy,
+        half,
+        px,
+        unit,
+        timeMs,
+        freeing,
+        freeMotes = BLIGHT_LOOK.motes.free.count,
+    ) {
         const spec = BLIGHT_LOOK.motes,
             halfW = BlightLook.halfWidth(type, half),
             base = Math.max(
@@ -159,7 +203,7 @@ class BlightLook {
             const wind = chance(seed, 3, 0) < 0.5 ? -1 : 1,
                 reach = Math.max(spec.free.minReachPx * px, half * spec.free.reach),
                 go = easeOut(freeing);
-            for (let i = 0; i < spec.free.count; i++) {
+            for (let i = 0; i < freeMotes; i++) {
                 const r1 = chance(seed, 4, i),
                     r2 = chance(seed, 5, i),
                     r3 = chance(seed, 6, i),
@@ -228,6 +272,11 @@ class BlightLook {
                 r1,
             );
         }
+    }
+    // The spore sac at (x, y) on screen, `radius` canvas pixels: `disc(x, y, radius, colour)` draws one lump.
+    drawSac(disc, x, y, radius) {
+        for (const [dx, dy, r, color] of this.sacLumps)
+            disc(x + dx * radius, y + dy * radius, r * radius, color);
     }
     mote(art, depth, x, y, size, alpha, pick) {
         if (alpha <= 0.02) return;

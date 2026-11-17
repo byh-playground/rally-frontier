@@ -80,6 +80,17 @@ export class HeroAllyAura {
             }
     }
 
+    // A soldier left `side` (StrategySim.changeUnitSide): that side's hero auras drop it at once, not at their
+    // next refresh.
+    static forget(sim, side, id) {
+        for (const type of LaunchRules.heroTypes) {
+            const unitId = sim.heroes[side][type]?.unitId;
+            const aura = unitId == null ? null : sim.unitById.get(unitId)?.heroAura;
+            if (aura && hasId(aura.allyIds, id))
+                aura.allyIds = aura.allyIds.filter((ally) => ally !== id);
+        }
+    }
+
     static query(sim, unit, radius) {
         const found = sim.nearbyUnits(unit.x, unit.y, radius, unit.side, ALLY_QUERY);
         const ids = [];
