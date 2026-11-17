@@ -95,7 +95,7 @@ import { createShowcaseHost } from './ui/showcase-host.js';
 import { DeckEditor } from './ui/deck-editor.js';
 import { loadPlayerSave, openPlayerSaves, updatePlayerSave } from './ui/player-saves.js';
 import { CampaignProgress } from './ui/campaign-progress.js';
-import { Roster } from './ui/roster.js';
+import { Roster, clearRecord } from './ui/roster.js';
 import { SUNSHINE } from './definitions/roster.js';
 import { CampaignPresentation } from './ui/campaign-presentation.js';
 import { grainPortrait } from './ui/grain-portrait.js';
@@ -10330,6 +10330,9 @@ class SinglePlayerModeUtil {
 class MatchLifecycle {
     static singleMatch = null;
     static selectedCampaign = null;
+    static campaignDifficulty = null;
+    // The result screen whose sunshine line a pending save may still fill (presentMatchResult).
+    static sunshineToken = null;
 
     static activeSession() {
         return ReplayPresentation.replayPlayer || ActiveViewState.session;
@@ -10808,6 +10811,8 @@ class MatchLifecycle {
         if (!stage || !campaignProgress.canStart(stage)) return;
         this.disposeMatches('campaign-stage-change');
         this.selectedCampaign = stage.id;
+        // The difficulty the match starts on: a result on hard pays its sunshine (clearRecord).
+        this.campaignDifficulty = roster.difficulty;
         this.startSinglePlayerWebRTC('host');
     }
     static presentMatchResult(winner, reason = 'base-destroyed', sourceRole = null) {
@@ -10829,6 +10834,23 @@ class MatchLifecycle {
                 reason === 'boss-subdued');
         const reward = cleared ? campaignProgress.complete(stage) : null;
         const next = cleared ? campaignProgress.nextAfter(stage) : null;
+        // A new-campaign stage (`act`) records its result in the roster and shows the sunshine it paid. The side goal
+        // comes from the confirmed end state (SideGoal, the snapshot's `sideGoal`).
+        const sunshineToken = (MatchLifecycle.sunshineToken = {});
+        LaunchScreens.renderCampaignSunshine(null);
+        if (cleared && stage.act)
+            void roster
+                .recordClear(
+                    clearRecord(stage, {
+                        cleared: true,
+                        sideGoal: ActiveViewState.snap?.sideGoal,
+                        difficulty: MatchLifecycle.campaignDifficulty,
+                    }),
+                )
+                .then((result) => {
+                    if (MatchLifecycle.sunshineToken === sunshineToken)
+                        LaunchScreens.renderCampaignSunshine(result);
+                });
         usageMetrics?.matchEnded(ActiveViewState.session, {
             result: draw ? 'draw' : mine ? 'win' : 'loss',
             reason,

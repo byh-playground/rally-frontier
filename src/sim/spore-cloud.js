@@ -9,8 +9,9 @@
 // player as a wave's do: they are spawned by the wave's own CampaignMission.spawnFormations, at the wave's place in
 // the tick (before the tick's commands).
 // The cloud itself is presentation only and judges nothing. The simulation knows two ticks of each arrival, both
-// taken from the match's ms on the wave's rule (`ceilTicks`, never a tick count added up): the tick its warning
-// begins (`sporeCloudWarn`) and the tick its soldiers appear (`sporeCloudArrive`).
+// taken from the match's ms on the wave's rule (`ceilTicks`, never a tick count added up) on the mission's clock
+// (CampaignMission.clock, held while a practice runs): the tick its warning begins (`sporeCloudWarn`) and the tick its
+// soldiers appear (`sporeCloudArrive`).
 // `sim.sporeCloud { arrived }` is the only state: how many times each declared cloud has arrived. It exists only in
 // a stage that declares clouds, so every other match's state and checksum are what they were.
 import { UnitDefinition } from '../definitions/units.js';
@@ -77,7 +78,8 @@ export class SporeCloud {
         if (clouds) sim.sporeCloud = { arrived: clouds.map(() => 0) };
     }
 
-    // The tick the cloud's arrival number `index` (0 the first) appears, and the tick its warning begins.
+    // The tick the cloud's arrival number `index` (0 the first) appears, and the tick its warning begins, both on the
+    // mission's clock (CampaignMission.clock: the match tick unless a practice held the mission back).
     static arriveTick(sim, cloud, index) {
         return Math.max(1, sim.time.ceilTicks(cloud.atMs + index * cloud.everyMs));
     }
@@ -90,14 +92,20 @@ export class SporeCloud {
     static beforeCommands(sim) {
         const state = sim.sporeCloud;
         if (!state) return;
-        const clouds = sim.rules.campaign.sporeClouds;
+        const clouds = sim.rules.campaign.sporeClouds,
+            clock = CampaignMission.clock(sim),
+            start = CampaignMission.startTick(sim);
         for (let i = 0; i < clouds.length; i++) {
             const cloud = clouds[i];
             while (cloud.times === undefined || state.arrived[i] < cloud.times) {
                 const arriveTick = this.arriveTick(sim, cloud, state.arrived[i]);
-                if (sim.tick < arriveTick) {
-                    if (sim.tick === this.warnTick(sim, cloud, state.arrived[i]))
-                        sim.events.push({ type: 'sporeCloudWarn', cloud: i, arriveTick });
+                if (clock < arriveTick) {
+                    if (clock === this.warnTick(sim, cloud, state.arrived[i]))
+                        sim.events.push({
+                            type: 'sporeCloudWarn',
+                            cloud: i,
+                            arriveTick: start + arriveTick,
+                        });
                     break;
                 }
                 CampaignMission.spawnFormations(sim, cloud.formations);
@@ -116,25 +124,27 @@ export class SporeCloud {
     }
 
     // What the renderer reads (StrategySim.snapshot): the clouds drifting in now, one per formation of each
-    // arrival under warning, with the tick its warning began and the tick it arrives.
+    // arrival under warning, with the match tick its warning began and the match tick it arrives.
     static view(sim) {
         const state = sim.sporeCloud;
         if (!state) return undefined;
         const coming = [],
-            clouds = sim.rules.campaign.sporeClouds;
+            clouds = sim.rules.campaign.sporeClouds,
+            clock = CampaignMission.clock(sim),
+            start = CampaignMission.startTick(sim);
         for (let i = 0; i < clouds.length; i++) {
             const cloud = clouds[i];
             if (cloud.times !== undefined && state.arrived[i] >= cloud.times) continue;
             const warnTick = this.warnTick(sim, cloud, state.arrived[i]);
-            if (sim.tick < warnTick) continue;
+            if (clock < warnTick) continue;
             const arriveTick = this.arriveTick(sim, cloud, state.arrived[i]);
             for (const formation of cloud.formations)
                 coming.push({
                     x: formation.x,
                     y: formation.y,
                     radius: CampaignMission.formationRadius(formation),
-                    warnTick,
-                    arriveTick,
+                    warnTick: start + warnTick,
+                    arriveTick: start + arriveTick,
                 });
         }
         return { coming };

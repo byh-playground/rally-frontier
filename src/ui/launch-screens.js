@@ -1,10 +1,18 @@
 import { ResourceDisplay } from './resource-display.js';
 import { CAMPAIGN_GROUPS, CAMPAIGN_STAGES, CAMPAIGN_TIERS } from '../definitions/campaign.js';
 import { CAMPAIGN_DIFFICULTIES } from '../definitions/campaign-pace.js';
+import { SUNSHINE } from '../definitions/roster.js';
 import { CampaignPresentation } from './campaign-presentation.js';
 import { unitCardStats } from './unit-card-stats.js';
 import './grain-portrait.js';
 import { UNITS, unitCard } from '../units/index.js';
+
+// The result line's name of each sunshine item (definitions/roster.js SUNSHINE).
+const SUNSHINE_LABELS = Object.freeze({
+    firstClear: '처음 클리어',
+    sideGoal: '보조 목표',
+    hardFirstClear: '어려움',
+});
 
 // Launch match screens (title, friend, help, in-game HUD and cards, match menu, result) and their addresses.
 // Routes: #/ title, #/friend, #/help, #/play, #/play/menu, #/play/help, #/play/<grain> card detail, #/result.
@@ -445,6 +453,16 @@ export class LaunchScreens {
             },
             () => {},
         );
+    }
+    // The sunshine a new-campaign result paid (Roster.recordClear: { sunshine, paid }), one line on the result screen;
+    // nothing paid (a replay of a cleared stage, or no result yet) hides it.
+    static renderCampaignSunshine(result) {
+        const line = this.$('resultSunshine');
+        line.hidden = !result?.sunshine;
+        if (line.hidden) return;
+        line.textContent = `☀ +${result.sunshine} · ${result.paid
+            .map((key) => `${SUNSHINE_LABELS[key]} ${SUNSHINE[key]}`)
+            .join(' · ')}`;
     }
     static closeSheet() {
         const ROUTE = this.navigation.snapshot();

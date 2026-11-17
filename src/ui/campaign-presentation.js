@@ -1,3 +1,4 @@
+import { CampaignMission } from '../sim/campaign-mission.js';
 import { campaignBriefingLines } from './campaign-copy.js';
 
 const CUE_SECONDS = 3;
@@ -27,7 +28,34 @@ function missionGoal(stage) {
     return ATTACK_GOAL;
 }
 
+// The side goal's line under the objective (SideGoal, the snapshot's `sideGoal`): what it asks and how far it is.
+function sideGoalLine(goal, tick, tps) {
+    const percent = (ratio) => `${Math.round(ratio * 100)}%`;
+    let text;
+    if (goal.kind === 'freeCaptives') text = `포로 구하기 ${goal.freed}/${goal.need}`;
+    else if (goal.kind === 'burnFields')
+        text = goal.blighted ? `감염 밭 태우기 · 남은 ${goal.blighted}칸` : '감염 밭 태우기';
+    else if (goal.kind === 'withinMs')
+        text = `${formatCountdown(goal.ms / 1000)} 안에 이기기 · 남은 ${formatCountdown(
+            goal.deadlineTick === null ? goal.ms / 1000 : (goal.deadlineTick - tick) / tps,
+        )}`;
+    else
+        text = `${goal.point === undefined ? '본진' : '거점'} ${percent(goal.hpRatio)} 지키기 · 지금 ${percent(goal.hpNow)}`;
+    if (goal.status === 'met') return `✓ ${text.split(' · ')[0]}`;
+    if (goal.status === 'missed') return `✗ ${text.split(' · ')[0]}`;
+    return text;
+}
+
 function currentGoal(stage, snapshot) {
+    // A practice (CampaignPractice, the snapshot's `campaignPractice`) comes before every other goal: its cue stays
+    // on the battle screen until the last target is down.
+    const practice = snapshot.campaignPractice;
+    if (practice && practice.doneTick === null)
+        return {
+            key: 'practice',
+            label: `써 보기 · 남은 표적 ${practice.left}`,
+            cue: { title: '써 보기', text: stage.practice.cue },
+        };
     // The boss (BlightBoss, the snapshot's `blightBoss`): the objective's second line counts the kills left to its
     // awakening, and the awakening is the next goal with its own cue.
     if (stage.boss) {
@@ -54,7 +82,8 @@ function currentGoal(stage, snapshot) {
         return {
             key: `wave-${wave}`,
             label: wave ? `${wave} / ${count}차 공격` : '공격 대기',
-            timerTick: mission?.endTick,
+            // Ticks left on the mission's clock (held while a practice runs).
+            timerTicks: mission ? mission.endTick - CampaignMission.clock(snapshot) : null,
             ...(wave && {
                 cue: {
                     title: `${wave}차 공격`,
@@ -188,22 +217,26 @@ export class CampaignPresentation {
         const tick = snapshot.tick;
         const goal = currentGoal(stage, snapshot);
         const $ = this.$;
+        const side = snapshot.sideGoal;
         if (this.battle?.stage !== stage || tick < this.battle.tick) {
             this.battle = {
                 stage,
                 goal: goal.key,
                 announced: new Set([goal.key]),
+                sideStatus: side?.status,
                 cueEnd: 0,
                 cueTitle: '',
                 cueText: '',
             };
             $('campaignObjective').classList.remove('hidden');
-            $('campaignObjectiveLabel').textContent = goal.label;
-            this.showCue('전투 목표', missionGoal(stage), tick, tps);
+            if (goal.key === 'practice') this.showCue(goal.cue.title, goal.cue.text, tick, tps);
+            else this.showCue('전투 목표', missionGoal(stage), tick, tps);
         } else if (this.battle.goal !== goal.key) {
+            const after = this.battle.goal;
             this.battle.goal = goal.key;
-            $('campaignObjectiveLabel').textContent = goal.label;
-            if (!this.battle.announced.has(goal.key)) {
+            // The practice is over: the stage's own mission starts now.
+            if (after === 'practice') this.showCue('전투 목표', missionGoal(stage), tick, tps);
+            else if (!this.battle.announced.has(goal.key)) {
                 this.battle.announced.add(goal.key);
                 this.showCue(
                     goal.cue?.title ?? '다음 목표',
@@ -215,23 +248,44 @@ export class CampaignPresentation {
                 this.battle.cueEnd = tick;
             }
         }
+        if ($('campaignObjectiveLabel').textContent !== goal.label)
+            $('campaignObjectiveLabel').textContent = goal.label;
         this.battle.tick = tick;
         // The objective's second line: the survival countdown, or the goal's own detail (the boss's awakening).
         const timer = $('campaignObjectiveTimer'),
             detail =
-                goal.timerTick == null
+                goal.timerTicks == null
                     ? goal.detail
-                    : `남은 시간 ${formatCountdown((goal.timerTick - tick) / tps)}`;
+                    : `남은 시간 ${formatCountdown(goal.timerTicks / tps)}`;
         timer.hidden = detail == null;
         if (!timer.hidden && timer.textContent !== detail) timer.textContent = detail;
+        // The side goal's own line, and a short cue the moment it is met.
+        const sideLine = $('campaignObjectiveSide'),
+            sideText = side ? sideGoalLine(side, tick, tps) : null;
+        sideLine.hidden = sideText == null;
+        $('campaignObjective').classList.toggle('has-side', sideText != null);
+        const sideValue = $('campaignObjectiveSideText');
+        if (sideText != null && sideValue.textContent !== sideText)
+            sideValue.textContent = sideText;
+        if (side && side.status !== this.battle.sideStatus) {
+            this.battle.sideStatus = side.status;
+            if (side.status === 'met')
+                this.showCue('보조 목표 달성', sideGoalLine(side, tick, tps).slice(2), tick, tps);
+        }
         // The cue line shows the goal's cue while that runs. After it, a spore cloud drifting in (SporeCloud, the
         // snapshot's `sporeCloud.coming`) is announced for as long as any cloud is under warning. The cloud keeps
         // no record of its own: it never uses up a goal's cue.
-        const goalCue = tick < this.battle.cueEnd,
+        // A running practice keeps its own cue on whenever no newer cue runs.
+        const shortCue = tick < this.battle.cueEnd,
+            goalCue = shortCue || goal.key === 'practice',
             cloudCue = !goalCue && snapshot.sporeCloud?.coming.length > 0;
         if (goalCue || cloudCue) {
-            const title = goalCue ? this.battle.cueTitle : '포자 구름',
-                text = goalCue ? this.battle.cueText : '포자 구름이 몰려와요';
+            const title = shortCue ? this.battle.cueTitle : goalCue ? goal.cue.title : '포자 구름',
+                text = shortCue
+                    ? this.battle.cueText
+                    : goalCue
+                      ? goal.cue.text
+                      : '포자 구름이 몰려와요';
             if ($('campaignCueTitle').textContent !== title)
                 $('campaignCueTitle').textContent = title;
             if ($('campaignCueText').textContent !== text) $('campaignCueText').textContent = text;

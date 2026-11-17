@@ -89,6 +89,27 @@ const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 // rewards the hero it frees (`rewardCard`) names the same card. The match start rejects a boss on a stage without
 // `blight: true`, a soldier card or a card the enemy deck lacks, a place outside the map, and a boss beside a
 // survival defence (`mission.surviveMs`), a hero lesson or volley goals. No stage declares one yet.
+// A stage where a new card joins may declare a practice step (sim/campaign-practice.js): the player first tries the
+// card on targets that stand still, and the stage's own mission begins when they are all down. The stage stays one
+// match:
+//     practice: { card: 'pea', cue: '콩을 쏴서 허수아비를 쓰러뜨려요',
+//                 targets: [{ type: 'rice', x: 1300, y: 2500, count: 6, columns: 3 }] },
+// `targets` are wave formations without `side` and `hold`, never a hero: enemy soldiers that never move or attack but
+// can be hit and killed (blighted on a blighted stage). `card` must be in `deck`; `cue` is the battle screen's one line
+// while the practice runs. Until the last target is down the enemy AI makes no decision and the mission's clock
+// (CampaignMission.clock) stands at 0: defence waves, the survival countdown, spore clouds and blight field growth all
+// count their ms from that tick. The match start rejects a card outside `deck`, an empty cue and a place outside the
+// map. No stage declares one yet.
+// A stage may declare one side goal (sim/side-goal.js), paid once with sunshine (SUNSHINE.sideGoal) beside the clear;
+// winning without it is still winning. Its kinds: `{ kind: 'freeCaptives', count? }` (the spore sacs' captives freed,
+// all or at least `count`), `{ kind: 'burnFields' }` (no blighted cell left), `{ kind: 'withinMs', ms }` (won within
+// `ms` on the mission's clock) and `{ kind: 'keepAlive', hpRatio, point? }` (won with the main base, or the player's
+// starting outpost on `point`, never below `hpRatio` of its health). The match start rejects another kind and a goal
+// its stage cannot judge (captives without sacs, fields without fields, a point the player does not hold). No stage
+// declares one yet.
+// A stage of the new campaign declares `act` (1, 2 or 3, the act it belongs to): its won result is recorded in the
+// roster (Roster.recordClear: progress, sunshine, owned cards) and the result screen shows the sunshine it paid. No
+// stage declares one yet.
 export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'first',

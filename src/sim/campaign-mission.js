@@ -19,7 +19,8 @@ export class CampaignMission {
                 `캠페인 지킬 거점은 아군 시작 거점이어야 합니다: ${mission.guardPoint}`,
             );
 
-        // A survival defence keeps every timing in sim ticks converted once from the stage's ms.
+        // A survival defence keeps every timing in ticks of the mission's clock (`clock`) converted once from the
+        // stage's ms.
         return {
             firstCaptureComplete:
                 !mission.firstCapture || this.point(sim, mission.firstCapture).owner === 0,
@@ -82,6 +83,21 @@ export class CampaignMission {
         return (Math.hypot(Math.min(columns, count), Math.ceil(count / columns)) * spacing) / 2;
     }
 
+    // The mission's clock, the one place every mission timing a stage declares in ms reads its tick from (defence
+    // waves, the survival countdown, spore clouds, blight field growth, the enemy AI's start, a side goal's time).
+    // `startTick` is the match tick the mission started: 0, or in a stage with a practice (CampaignPractice) the tick
+    // the practice ended, null while it runs. `clock` is the ticks since then: the match tick itself in every match
+    // without a practice, held at 0 while a practice runs. Both read `tick` and `campaignPractice` only, so they take
+    // the simulation, its saved state or its snapshot alike.
+    static startTick(sim) {
+        return sim.campaignPractice ? sim.campaignPractice.doneTick : 0;
+    }
+    static clock(sim) {
+        const start = this.startTick(sim);
+        return start === null ? 0 : sim.tick - start;
+    }
+
+    // A wave's tick on the mission's clock.
     static waveTick(sim, wave) {
         return Math.max(1, sim.time.ceilTicks(wave.atMs));
     }
@@ -90,8 +106,9 @@ export class CampaignMission {
     static beforeCommands(sim) {
         const state = sim.campaignMission;
         if (!state) return;
-        const waves = sim.rules.campaign.mission.waves;
-        while (state.nextWaveTick !== null && sim.tick >= state.nextWaveTick) {
+        const waves = sim.rules.campaign.mission.waves,
+            clock = this.clock(sim);
+        while (state.nextWaveTick !== null && clock >= state.nextWaveTick) {
             state.waveIndex++;
             this.spawnFormations(
                 sim,
@@ -117,7 +134,7 @@ export class CampaignMission {
                 state.guardLost = true;
                 return 'guest';
             }
-            if (sim.tick < state.endTick) return null;
+            if (this.clock(sim) < state.endTick) return null;
             state.phase = 'complete';
         }
         if (mission.surviveMs) return 'host';
@@ -199,7 +216,8 @@ export class CampaignMission {
             !['defend', 'complete'].includes(value.phase) ||
             (!survive && value.phase !== 'complete') ||
             (value.waveIndex + 1 < waveCount
-                ? !Number.isSafeInteger(value.nextWaveTick) || value.nextWaveTick <= state.tick
+                ? !Number.isSafeInteger(value.nextWaveTick) ||
+                  value.nextWaveTick <= this.clock(state)
                 : value.nextWaveTick !== null) ||
             (survive
                 ? !Number.isSafeInteger(value.endTick) || value.endTick < 1
