@@ -1,6 +1,7 @@
 // Deterministic replay recording, checkpoints, and payload validation.
 import { GameRuleDefinition, SIM_TPS } from '../core/game-rules.js';
 import { LaunchRules } from '../sim/launch-rules.js';
+import { CampaignUpgrades } from '../sim/campaign-upgrades.js';
 import { RallyStateCodec } from '../core/rally-state-codec.js';
 import { CloneUtil } from '../sim/map-generation.js';
 import { PRODUCT_VERSION } from '../core/product-version.js';
@@ -45,6 +46,7 @@ class ReplayPolicy {
         if (!Array.isArray(data.commands) || !Number.isFinite(Number(data.seed)))
             throw new Error('리플레이 데이터가 손상되었습니다.');
         LaunchRules.normalizeDeckPair(data.decks);
+        CampaignUpgrades.normalizePair(data.campaignUpgrades, !!data.rules?.campaign);
         return data;
     }
 }
@@ -61,6 +63,10 @@ class ReplayRecorder {
         this.rules = CloneUtil.clone(rules || sim?.rules || GameRuleDefinition.current);
         this.decks = LaunchRules.normalizeDeckPair(
             sim?.decks ?? [LaunchRules.starterDeck, LaunchRules.starterDeck],
+        );
+        this.campaignUpgrades = CampaignUpgrades.normalizePair(
+            sim?.campaignUpgrades ?? CampaignUpgrades.none(),
+            !!this.rules.campaign,
         );
         this.commands = [];
         this.checkpoints = [];
@@ -134,6 +140,7 @@ class ReplayRecorder {
             seed: this.seed,
             rules: CloneUtil.clone(this.rules),
             decks: this.decks.map((deck) => deck.slice()),
+            campaignUpgrades: this.campaignUpgrades.map((cards) => cards.slice()),
             commands: CloneUtil.clone(this.commands),
             checkpoints: CloneUtil.clone(this.checkpoints),
             result: CloneUtil.clone(result),

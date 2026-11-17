@@ -9769,6 +9769,8 @@ class MatchLifecycle {
                 : PVP_MAP_POOL[Math.floor(Math.random() * PVP_MAP_POOL.length)],
             simulationTps: UiRuntimeState.value.settings.simulationTps,
             campaignStage: stage?.id ?? null,
+            // The player is the host side; the match copies the list now, later saves do not reach it.
+            campaignUpgrades: stage ? [roster.openUpgrades, []] : null,
         };
     }
     static createSession(role, transport, roomCode, config, deck, deckOptions) {

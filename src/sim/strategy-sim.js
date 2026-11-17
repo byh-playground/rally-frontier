@@ -30,6 +30,7 @@ import {
 } from './entities.js';
 import { StateContract, StateValue } from './components.js';
 import { CampaignMission } from './campaign-mission.js';
+import { CampaignUpgrades } from './campaign-upgrades.js';
 import { UnitResultStats } from './unit-result-stats.js';
 import { RallyStateCodec } from '../core/rally-state-codec.js';
 import { LaunchRules } from './launch-rules.js';
@@ -176,6 +177,7 @@ class StrategySim {
             presentation: ['events', 'perfStats', 'balanceStats', '_perfCollect'],
             derived: [
                 'chargedHeldIds',
+                'campaignUpgradeSets',
                 'world',
                 'tps',
                 'time',
@@ -204,17 +206,27 @@ class StrategySim {
             ],
         },
     );
-    static createForMatch({ seed, rules = GameRuleDefinition.current, decks } = {}) {
-        return new StrategySim(seed, rules, decks);
+    static createForMatch({
+        seed,
+        rules = GameRuleDefinition.current,
+        decks,
+        campaignUpgrades,
+    } = {}) {
+        return new StrategySim(seed, rules, decks, campaignUpgrades);
     }
     constructor(
         seed,
         rules = GameRuleDefinition.current,
         decks = [LaunchRules.starterDeck, LaunchRules.starterDeck],
+        campaignUpgrades = CampaignUpgrades.none(),
     ) {
         this.seed = seed >>> 0;
         this.decks = StateValue.freeze(LaunchRules.normalizeDeckPair(decks));
         this.rules = rules || GameRuleDefinition.current;
+        this.campaignUpgrades = StateValue.freeze(
+            CampaignUpgrades.normalizePair(campaignUpgrades, !!this.rules.campaign),
+        );
+        CampaignUpgrades.index(this);
         this.tps = RangeUtil.clamp(
             Math.round(Number(this.rules?.simulation?.tps) || SIM_TPS),
             10,
@@ -3082,6 +3094,7 @@ class StrategySim {
             mapDescriptor: this.mapDescriptor,
             rules: this.rules,
             decks: this.decks,
+            campaignUpgrades: this.campaignUpgrades,
         };
         const retainedNavigation =
             rollback && this.navigation instanceof TerrainNavigation ? this.navigation : null;
@@ -3097,7 +3110,13 @@ class StrategySim {
         this.disposed = false;
         const source = { ...s };
         if (rollback) for (const key of Object.keys(retained)) delete source[key];
-        else source.decks = LaunchRules.normalizeDeckPair(s.decks);
+        else {
+            source.decks = LaunchRules.normalizeDeckPair(s.decks);
+            source.campaignUpgrades = CampaignUpgrades.normalizePair(
+                s.campaignUpgrades,
+                !!(s.rules ?? this.rules).campaign,
+            );
+        }
         const copy = StateValue.copy(source),
             scheduled = copy.scheduled || [];
         delete copy.scheduled;
@@ -3110,6 +3129,8 @@ class StrategySim {
         Object.assign(this, copy);
         if (!copy.campaignMission) delete this.campaignMission;
         StateValue.freeze(this.decks);
+        StateValue.freeze(this.campaignUpgrades);
+        CampaignUpgrades.index(this);
         StateValue.freeze(this.mapDescriptor);
         this.world = WorldContext.fromMap(this.mapDescriptor);
         this.tps = RangeUtil.clamp(

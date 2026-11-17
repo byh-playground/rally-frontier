@@ -101,6 +101,8 @@ class ReplayPlayer {
             const decks = LaunchRules.normalizeDeckPair(cp.state.decks);
             if (JSON.stringify(decks) !== JSON.stringify(sim.decks))
                 throw new Error('리플레이 체크포인트의 덱이 경기 시작과 다릅니다.');
+            if (JSON.stringify(cp.state.campaignUpgrades) !== JSON.stringify(sim.campaignUpgrades))
+                throw new Error('리플레이 체크포인트의 병종 강화가 경기 시작과 다릅니다.');
             sim.importState(cp.state);
             sim.scheduled = new Map();
             const stateTick = Number(sim.tick) || 0;
@@ -125,6 +127,7 @@ class ReplayPlayer {
             Number(this.data.seed) >>> 0,
             this.data.rules || GameRuleDefinition.current,
             this.data.decks,
+            this.data.campaignUpgrades,
         );
         try {
             this.resetAtCheckpoint(candidate, targetTick);
