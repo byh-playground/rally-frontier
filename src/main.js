@@ -10835,10 +10835,10 @@ class MatchLifecycle {
         const reward = cleared ? campaignProgress.complete(stage) : null;
         const next = cleared ? campaignProgress.nextAfter(stage) : null;
         // A new-campaign stage (`act`) records its result in the roster and shows the sunshine it paid. The side goal
-        // comes from the confirmed end state (SideGoal, the snapshot's `sideGoal`).
+        // comes from the confirmed end state (SideGoal, the snapshot's `sideGoal`). The debug unlock records nothing.
         const sunshineToken = (MatchLifecycle.sunshineToken = {});
         LaunchScreens.renderCampaignSunshine(null);
-        if (cleared && stage.act)
+        if (cleared && stage.act && campaignProgress.records)
             void roster
                 .recordClear(
                     clearRecord(stage, {

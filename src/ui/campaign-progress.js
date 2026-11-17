@@ -87,8 +87,13 @@ export class CampaignProgress {
         return REWARD_STAGES.get(card) || null;
     }
 
+    // Does a result count? Not under the debug unlock, which saves nothing (no progress, reward or sunshine).
+    get records() {
+        return !this.#debugUnlocked;
+    }
+
     complete(stage) {
-        if (this.#debugUnlocked) return null;
+        if (!this.records) return null;
         if (!stage || this.isComplete(stage) || !this.canStart(stage)) return null;
         this.completed.add(stage.id);
         if (stage.rewardCard) void this.roster?.grant([stage.rewardCard]);

@@ -7,11 +7,17 @@
 // no turn (StrategySim.stepSimulation: no move, no target, no attack), the way a spore sac's captive takes none, but it
 // stays an ordinary enemy: anything can target it, hit it, push it and kill it. `card` must be a card of the player's
 // deck; `cue` is the battle screen's one line while the practice runs.
+// Only the player brings the targets down: towers never aim at them (StrategySim.updateBuildingCombat), so they fall to
+// the shells the player fires and the soldiers that come out of them.
 // While the practice runs the mission's clock stands at 0 (CampaignMission.clock): no defence wave, spore cloud, blight
-// field growth or survival countdown advances, and the enemy AI makes no decision (BotController). The match's own
-// ticks run on as always (the economy, ammunition, the field's harm), so the simulation stays one deterministic run.
-// The tick the last target is down ends it: the mission's clock counts from that tick, so every timing the stage
-// declares in ms runs as it would from a match start.
+// field growth or survival countdown advances, the enemy AI makes no decision (BotController) and the boss and its
+// escorts have not come out yet (BlightBoss.start). The enemy's buildings take no damage (`shields`) and the player
+// cannot win (`resolve`): the practice cannot be skipped by going for the enemy's base. The player can still lose.
+// The match's own ticks run on as always (the economy, ammunition, the field's harm), so the simulation stays one
+// deterministic run. The tick the last target is down ends it: the mission's clock counts from that tick, so every
+// timing the stage declares in ms runs as it would from a match start.
+// No enemy soldier stands from the first tick but the targets: a practice cannot be declared with `introducedEnemy`,
+// `mission.formations` or `volleyGoals` (their soldiers would march on or fight the player while it runs).
 // `sim.campaignPractice { doneTick }` (null while it runs) is the only state and `unit.practiceTarget` marks a target.
 // Both exist only in a stage that declares a practice, so every other match's state and checksum are what they were.
 import { UnitDefinition } from '../definitions/units.js';
@@ -25,6 +31,11 @@ export class CampaignPractice {
         const practice = sim.rules.campaign?.practice;
         if (practice === undefined) return null;
         const { card, cue, targets } = practice ?? {};
+        const campaign = sim.rules.campaign;
+        if (campaign.introducedEnemy || campaign.mission?.formations || campaign.volleyGoals)
+            throw new Error(
+                '익히기는 경기 시작부터 서 있는 적 병사(introducedEnemy·mission.formations·volleyGoals)와 함께 둘 수 없습니다.',
+            );
         if (!sim.decks[1 - Blight.ENEMY_SIDE].includes(card))
             throw new Error(`익히기 카드는 플레이어 덱(deck)에 있어야 합니다: ${card}`);
         if (typeof cue !== 'string' || !cue)
@@ -73,13 +84,29 @@ export class CampaignPractice {
         return unit.practiceTarget === true;
     }
 
+    // Is a practice running now? (Never in a match without one.)
+    static running(sim) {
+        return !!sim.campaignPractice && sim.campaignPractice.doneTick === null;
+    }
+
+    // Does this building take no damage now? The enemy's buildings, while the practice runs (StrategySim.applyDamage).
+    static shields(sim, building) {
+        return building.side === Blight.ENEMY_SIDE && this.running(sim);
+    }
+
+    // The match's winner with the practice counted (StrategySim.stepSimulation, last): no win while it runs. A read.
+    static resolve(sim, winner) {
+        return winner === 'host' && this.running(sim) ? null : winner;
+    }
+
     // One tick (StrategySim.stepSimulation, before the match's winner): the tick no target is left alive ends the
-    // practice and starts the mission's clock.
+    // practice and starts the mission's clock. Returns true on that tick only (the mission starts: BlightBoss.start).
     static update(sim) {
         const state = sim.campaignPractice;
-        if (!state || state.doneTick !== null) return;
-        for (const unit of sim.units) if (unit.alive && unit.practiceTarget) return;
+        if (!state || state.doneTick !== null) return false;
+        for (const unit of sim.units) if (unit.alive && unit.practiceTarget) return false;
         state.doneTick = sim.tick;
+        return true;
     }
 
     // What the battle screen and the enemy AI read (StrategySim.snapshot): the tick it ended (null while it runs)

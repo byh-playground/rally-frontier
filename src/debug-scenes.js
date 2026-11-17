@@ -3710,7 +3710,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                         : integer('campaign', 'regionPlace', params.regionPlace);
             const pace = campaignPace(difficulty, place);
             // practice=<type>&practiceCount=N: practice targets 300 from the player's main base toward the enemy's
-            // (inside its tower's reach, so they fall without the player). sideGoal=<kind>[,value]: the stage's
+            // (towers never aim at them: with `player=bot` the player's AI brings them down, without it nothing does).
+            // sideGoal=<kind>[,value]: the stage's
             // side goal in place of its own.
             const practice = practiceDeclaration('campaign', params, ({ host, guest }) => {
                     const length = Math.hypot(guest.x - host.x, guest.y - host.y);

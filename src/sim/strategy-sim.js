@@ -2102,6 +2102,11 @@ class StrategySim {
             setCapture(0, true, options?.damageClass || UnitDefinition.damageClass(sourceType));
             return null;
         }
+        // The enemy's buildings take no damage while a practice runs (CampaignPractice).
+        if (isBuilding && CampaignPractice.shields(this, target)) {
+            setCapture(0, true, options?.damageClass || UnitDefinition.damageClass(sourceType));
+            return null;
+        }
         const damageClass = options?.damageClass || UnitDefinition.damageClass(sourceType);
         const sourceDamageResolved = !!options?.sourceDamageResolved;
         if (!sourceDamageResolved && sourceEntityId) {
@@ -2435,7 +2440,12 @@ class StrategySim {
                 const unitCount = this.nearbyHostileUnits(b.side, b.x, b.y, d.range, TOWER_QUERY);
                 for (let k = 0; k < unitCount; k++) {
                     const e = this.units[TOWER_QUERY.items[k]];
-                    if (this.canTargetUnit(b.side, e, vision[b.side])) consider(e, false);
+                    // A practice target falls to the player only, never to a tower (CampaignPractice).
+                    if (
+                        this.canTargetUnit(b.side, e, vision[b.side]) &&
+                        !CampaignPractice.target(e)
+                    )
+                        consider(e, false);
                 }
                 if (!target) {
                     const count = this.nearbyBuildingIndices(
@@ -3193,8 +3203,8 @@ class StrategySim {
         LaunchImpact.deploy(this);
         this.resolveConstructionHits();
         HeroDeployment.settle(this);
-        // The tick the last practice target is down starts the mission's clock (CampaignPractice).
-        CampaignPractice.update(this);
+        // The tick the last practice target is down starts the mission's clock (CampaignPractice) and the boss comes.
+        if (CampaignPractice.update(this)) BlightBoss.start(this);
         const projectileMs = profile ? now() - mark : 0;
 
         mark = profile ? now() : 0;
@@ -3213,6 +3223,8 @@ class StrategySim {
             // A boss stage is won only on its subdued boss; the player's main base falling loses it (BlightBoss).
             winner = BlightBoss.resolve(this, winner);
             winner = CampaignMission.resolve(this, winner);
+            // No win while a practice runs (CampaignPractice); a loss stands.
+            winner = CampaignPractice.resolve(this, winner);
         }
         // The side goal is judged on the tick's final world and winner (SideGoal).
         SideGoal.update(this, winner);

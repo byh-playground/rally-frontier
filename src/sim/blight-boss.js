@@ -7,8 +7,8 @@
 // HeroDeployment.land bring it out with that level's health, attack and growth (landing strike, kill effect,
 // passive, ally aura, automatic strike), blighted as every unit of the blight's side is (Blight.mark). It levels on
 // the player's soldiers it strikes down as any hero does, so a level-5 boss awakens (level 6) at the 100th kill,
-// 30 after its 70. The escorts are ordinary enemy formations (CampaignMission.spawnFormations) standing from the
-// first tick. The boss must be a hero card of the stage's enemy deck; the enemy AI never launches or recalls a hero,
+// 30 after its 70. The escorts are ordinary enemy formations (CampaignMission.spawnFormations). Both come at the
+// mission's start (`start`): the first tick, or in a stage with a practice the tick it ends. The boss must be a hero card of the stage's enemy deck; the enemy AI never launches or recalls a hero,
 // so the boss is never recovered and never comes out again.
 // The boss's shell is the ordinary hero shell (LaunchRules.volley: no shock of its own). Its landing strike shows its
 // shock but hurts and shoves nobody (`landsHarmless`, HeroLandingStrike.land): the fight starts with the player's
@@ -25,6 +25,7 @@ import { UnitDefinition } from '../definitions/units.js';
 import { HERO_LEVEL_KILLS } from '../units/baseline.js';
 import { Blight } from './blight.js';
 import { CampaignMission } from './campaign-mission.js';
+import { CampaignPractice } from './campaign-practice.js';
 import { HeroDeployment } from './hero-deployment.js';
 import { HeroGrowth } from './hero-growth.js';
 import { LaunchRules } from './launch-rules.js';
@@ -85,17 +86,25 @@ export class BlightBoss {
         );
     }
 
-    // Match start (StrategySim constructor, after the main bases): the escorts stand and the enemy main base fires
-    // the boss, its slot holding the kills of its level.
+    // Match start (StrategySim constructor, after the main bases): the boss's slot holds the kills of its level, and
+    // the mission starts now unless a practice runs first (CampaignPractice: then `start` comes the tick it ends).
     static initialize(sim) {
         const boss = this.declared(sim);
         if (!boss) return;
         sim.blightBoss = { subduedTick: null };
-        CampaignMission.spawnFormations(sim, boss.escorts);
         sim.heroGrowth[SIDE][boss.type] = {
             kills: HERO_LEVEL_KILLS[boss.level - 1],
             level: boss.level,
         };
+        if (!CampaignPractice.declared(sim)) this.start(sim);
+    }
+
+    // The mission starts (the match start, or the tick the practice ends): the escorts stand and the enemy main base
+    // fires the boss. Nothing without a boss.
+    static start(sim) {
+        if (!sim.blightBoss) return;
+        const boss = sim.rules.campaign.boss;
+        CampaignMission.spawnFormations(sim, boss.escorts);
         this.fire(sim, boss);
     }
 
