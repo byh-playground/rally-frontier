@@ -32,6 +32,8 @@ export class UpgradeEchoShock {
         });
     }
     // Lands every shock that is due. They wait in landing order and share one delay, so the due ones are in front.
+    // That holds while every echoShock card has the same delayMs (pea alone now): a second delay needs the queue
+    // read by dueTick first.
     static update(sim) {
         const shocks = sim.upgradeEchoShocks;
         while (shocks?.length && shocks[0].dueTick <= sim.tick) {

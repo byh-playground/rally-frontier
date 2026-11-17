@@ -117,7 +117,7 @@ function upgradedMatch(seed, rules, map, decks, upgrades) {
 // What the campaign upgrades did, counted from each step's events: hits a block swallowed (`blocked`) and the living
 // soldiers still holding a per-soldier charge (`charged`), second landing shocks and the bodies they hit
 // (`echoShocks`·`echoHits`), leap landings with their last radius and the soldiers they struck
-// (`leapLandings`·`leapRadius`·`leapStruck`), and contact shoves (`shoved`). `on` is the host side's upgrades.
+// (`leapLandings`·`leapRadius`·`leapStruck`), and doubled first strikes (`firstStrikes`). `on` is the host side's upgrades.
 function createUpgradeProbe(sim) {
     const counts = {
         blocked: 0,
@@ -126,7 +126,7 @@ function createUpgradeProbe(sim) {
         leapLandings: 0,
         leapRadius: null,
         leapStruck: 0,
-        shoved: 0,
+        firstStrikes: 0,
     };
     const step = sim.step.bind(sim);
     sim.step = (...rest) => {
@@ -140,7 +140,7 @@ function createUpgradeProbe(sim) {
                 counts.leapLandings++;
                 counts.leapRadius = e.radius;
                 counts.leapStruck += e.struck;
-            } else if (e.type === 'upgradeContactShove') counts.shoved++;
+            } else if (e.type === 'upgradeFirstStrike') counts.firstStrikes++;
         }
         return winner;
     };
@@ -2496,7 +2496,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * 쪽에, `front`·`frontCount`는 아군 앞줄을 세운다. 불 뿜는 병종(고추)은 상태의 `breath`에 불줄기 기록을 낸다. 예:
          * `?debug=1&scene=unit&map=twin-gates&seed=1&unit=coconut&count=1&x=1400&y=2900&tick=150`
          * `upgrades=rice,millet`는 `unit` 편에 그 카드의 캠페인 병종 강화를 켜고(없으면 지금까지와 같은 경기), 상태의
-         * `upgrade`가 강화가 한 일(막은 피격·남은 병사별 횟수·두 번째 충격·도약 착지 반경과 맞은 수·밀친 수)을 낸다.
+         * `upgrade`가 강화가 한 일(막은 피격·남은 병사별 횟수·두 번째 충격·도약 착지 반경과 맞은 수·두 배로 들어간 첫 일격 수)을 낸다.
          */
         unit(params) {
             const scene = 'unit';

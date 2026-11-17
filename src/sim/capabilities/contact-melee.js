@@ -15,7 +15,7 @@ import { UnitDefinition } from '../../definitions/units.js';
 import { ConstructionRules } from '../construction-rules.js';
 import { InteractionGeometry, NavigationGoal } from '../navigation.js';
 import { StickyCling } from './sticky-cling.js';
-import { UpgradeContactShove } from './upgrade-contact-shove.js';
+import { UpgradeFirstStrike } from './upgrade-first-strike.js';
 
 export class ContactMelee {
     // A soldier backing off after a hit keeps retreating until its recovery ends.
@@ -185,14 +185,13 @@ export class ContactMelee {
                 definition.attackIntervalMs ?? definition.cooldownMs,
                 definition.contactRebound,
             );
-            if (!attack.isBuilding) UpgradeContactShove.onContactHit(sim, u, target, dx, dy);
             winner =
                 sim.applyDamage(
                     u.side,
                     u.type,
                     target,
                     attack.isBuilding,
-                    Math.floor(definition.atk),
+                    Math.floor(definition.atk * UpgradeFirstStrike.damageScale(sim, u, target)),
                     u.id,
                     { damageClass: UnitDefinition.damageClass(u.type) },
                 ) || winner;

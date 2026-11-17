@@ -236,7 +236,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   강화가 하는 일은 병종 정의의 `campaignUpgrade { name, summary, <효과 하나>: 수치 }`가 선언하고 `defineUnit`이 효과 종류와 필드를 검사한다.
   능력 코드는 수치를 `CampaignUpgrades.effect(sim, side, type, '<효과>')`로 받고(꺼져 있으면 null이라 꺼진 경기는 결과가 그대로다),
   병사마다 세는 효과는 병사가 생길 때 `unit.campaignUpgrade.charges`를 받는다. 효과: `firstHitBlock`(쌀, 첫 피격 막기)·
-  `echoShock`(콩, 착탄 충격 한 번 더)·`leapImpact`(팥, 착지 반경 배수)·`contactShove`(조, 첫 접촉 밀치기).
+  `echoShock`(콩, 착탄 충격 한 번 더)·`leapImpact`(팥, 착지 반경 배수)·`firstStrike`(조, 첫 접촉 피해 배수).
   방어전은 스테이지의 제한 시간(`surviveMs`)을 버티면 이기고, 본진이나 지킬 거점(`guardPoint`, 아군 시작 거점)이
   무너지면 진다. 적을 빨리 잡아도, 적 본진을 부숴도 일찍 끝나지 않는다. 공격(`waves`)은 각자 정해진 시각(`atMs`)에
   오며 앞 공격이 남아 있어도 쌓인다. 전투 중 화면은 남은 시간·N차 공격과 지킬 거점 표시를 보인다.

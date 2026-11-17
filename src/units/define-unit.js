@@ -31,8 +31,8 @@
 //                `ratio` of its damage and knockback (UpgradeEchoShock; needs payload impact·splash)
 //              leapImpact { radiusScale }: the leap landing's radius times `radiusScale` (UnitLeapAttack; needs
 //                leapAttack.impact)
-//              contactShove { hits, knockback }: each soldier's first `hits` contact hits on an enemy soldier also
-//                throw it along the charge, `knockback` a KnockbackRules.gain name (UpgradeContactShove; needs contactMelee)
+//              firstStrike { hits, damageScale }: each soldier's first `hits` contact hits deal `damageScale` times
+//                their damage, as the one hit (UpgradeFirstStrike; needs contactMelee)
 //   payload  the cannon shell that carries the unit (LaunchRules). A hero's shell has no landing shock (impact,
 //            splash) but `landingStrike { radius, damage, knockback?, scatter? { ring, count }, retreat { motion:
 //            'roll'|'hop', distance } }`, the hero's own strike when it lands (HeroLandingStrike)
@@ -72,7 +72,6 @@
 //            through drawUnitQuads(context, this.paint, …) (render/dead-unit-look.js): main.js sets
 //            `paint` around a stopped, greying corpse's drawBody/drawFace (null otherwise), and its `hurt` face is every corpse's.
 import { COLLISION_RADIUS_SCALE } from '../definitions/world-rules.js';
-import { KnockbackRules } from '../definitions/knockback-rules.js';
 import { GRAIN_SIZE, HERO_LEVEL_KILLS } from './baseline.js';
 import { SustainedAttack } from '../sim/capabilities/sustained-attack.js';
 
@@ -332,16 +331,16 @@ const CAMPAIGN_UPGRADE_EFFECTS = Object.freeze({
                 `병종 ${id}의 leapImpact는 1보다 큰 radiusScale과 leapAttack.impact가 필요합니다.`,
             );
     },
-    // UpgradeContactShove: the soldier's first contact hits on enemy soldiers.
-    contactShove(id, spec, unit) {
+    // UpgradeFirstStrike: the soldier's first contact hits.
+    firstStrike(id, spec, unit) {
         if (
-            Object.keys(spec).sort().join(',') !== 'hits,knockback' ||
+            Object.keys(spec).sort().join(',') !== 'damageScale,hits' ||
             !(Number.isInteger(spec.hits) && spec.hits > 0) ||
-            !Object.hasOwn(KnockbackRules.gain, spec.knockback) ||
+            !(spec.damageScale > 1) ||
             !unit.contactMelee
         )
             throw new Error(
-                `병종 ${id}의 contactShove는 hits(양의 정수)·knockback(KnockbackRules.gain 이름)과 contactMelee가 필요합니다.`,
+                `병종 ${id}의 firstStrike는 hits(양의 정수)·1보다 큰 damageScale과 contactMelee가 필요합니다.`,
             );
     },
 });

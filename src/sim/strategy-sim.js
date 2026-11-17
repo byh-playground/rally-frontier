@@ -3133,12 +3133,16 @@ class StrategySim {
         const copy = StateValue.copy(source),
             scheduled = copy.scheduled || [];
         delete copy.scheduled;
-        if (rollback) {
-            Object.assign(copy, retained);
-            for (const key of StrategySim.stateContract.keys(this, 'save'))
-                if (!Object.prototype.hasOwnProperty.call(copy, key) && key !== 'scheduled')
-                    delete this[key];
-        }
+        if (rollback) Object.assign(copy, retained);
+        // A saved field the restored state does not have (an optional one, created after that state was taken) goes
+        // away, in a rollback and in a full restore alike. The match identity stays when a state leaves it out.
+        for (const key of StrategySim.stateContract.keys(this, 'save'))
+            if (
+                !Object.prototype.hasOwnProperty.call(copy, key) &&
+                !Object.prototype.hasOwnProperty.call(retained, key) &&
+                key !== 'scheduled'
+            )
+                delete this[key];
         Object.assign(this, copy);
         if (!copy.campaignMission) delete this.campaignMission;
         StateValue.freeze(this.decks);

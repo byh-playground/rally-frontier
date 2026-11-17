@@ -7,7 +7,7 @@ const DECLARED = Object.fromEntries(UNITS.map((card) => [card.id, card.unit.camp
 const SOLDIER_CHARGES = Object.fromEntries(
     UNITS.map((card) => [
         card.id,
-        (card.unit.campaignUpgrade?.firstHitBlock ?? card.unit.campaignUpgrade?.contactShove)
+        (card.unit.campaignUpgrade?.firstHitBlock ?? card.unit.campaignUpgrade?.firstStrike)
             ?.hits ?? 0,
     ]),
 );

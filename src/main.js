@@ -2847,8 +2847,8 @@ class GLRenderer {
                 });
             } else if (e.type === 'upgradeHitBlock') {
                 this.addClientFx('upgradeHitBlock', e, snapshot, index);
-            } else if (e.type === 'upgradeContactShove') {
-                // A campaign upgrade's shove (UpgradeContactShove): a heavier hit mark on the thrown soldier.
+            } else if (e.type === 'upgradeFirstStrike') {
+                // A campaign upgrade's doubled strike (UpgradeFirstStrike): the heavier hit mark, on that hit alone.
                 this.addClientFx('meleeImpact', e, snapshot, index, { impactScale: 1.5 });
             } else if (
                 e.type === 'leapLand' ||
