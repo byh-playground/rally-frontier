@@ -26,11 +26,11 @@ export const BlackBean = defineUnit({
             // 초안: 대포를 고르는 직선거리 상한은 그 진영 발사 사거리의 2배다.
             cannonSearchReachMultiplier: 2,
         }),
-        // 캠페인 강화: 착탄 충격의 피해 2배(25 → 50), 피해 반경 1.5배(80 → 120). 넉백은 그대로다.
+        // 캠페인 강화: 착탄 충격의 피해 반경 1.5배(80 → 120). 피해량과 넉백은 그대로다.
         campaignUpgrade: {
-            name: '묵직한 착탄',
-            summary: '착탄 충격의 피해가 2배, 범위가 1.5배예요.',
-            heavyShock: { damageScale: 2, radiusScale: 1.5 },
+            name: '넓은 착탄',
+            summary: '착탄 충격이 더 넓게 퍼져요.',
+            heavyShock: { radiusScale: 1.5 },
         },
     },
     // 비용·인원은 확정, 포탄 체력·위력·반경은 찹쌀과 같은 초안이다.

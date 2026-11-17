@@ -26,8 +26,7 @@
 //            `campaignUpgrade { name, summary, <effect>: spec }`: the card's campaign-only upgrade, exactly one
 //            effect (CAMPAIGN_UPGRADE_EFFECTS below checks it). On for a side for a whole match when the match start
 //            carries the card (CampaignUpgrades.has); off, nothing reads it. `name`·`summary` are the card detail copy.
-//              firstHitBlock { hits, whileFlying? }: each soldier's first `hits` enemy hits deal nothing, with
-//                `whileFlying` only the ones it takes in the air (UpgradeHitBlock; whileFlying needs flight)
+//              firstHitBlock { hits }: each soldier's first `hits` enemy hits deal nothing (UpgradeHitBlock)
 //              echoShock { delayMs, ratio }: the shell's landing shock again at the same spot after `delayMs`, at
 //                `ratio` of its damage and knockback (UpgradeEchoShock; needs payload impact·splash)
 //              leapImpact { radiusScale }: the leap landing's radius times `radiusScale` (UnitLeapAttack; needs
@@ -62,9 +61,10 @@
 //                needs burstAttack·canAttackAir)
 //              chainLinks { links }: its chain holds `links` enemies instead of chainAttack.links
 //                (UnitChainAttack.links; needs chainAttack)
-//              heavyShock { damageScale, radiusScale }: its shell's landing shock deals `damageScale` times the
-//                damage within `radiusScale` times the radius, the shove unchanged (UpgradeHeavyShock; needs
-//                payload impact·splash)
+//              heavyShock { radiusScale }: its shell's landing shock damages within `radiusScale` times the
+//                radius, the damage and the shove unchanged (UpgradeHeavyShock; needs payload impact·splash)
+//              swiftFlight { speedScale }: it flies `speedScale` times as fast, the climb unchanged
+//                (UnitFlight.speed; needs flight)
 //              longCling { durationMs }: it holds a muzzle for `durationMs` instead of stickyCling.durationMs
 //                (StickyCling.tryBegin; needs stickyCling)
 //   payload  the cannon shell that carries the unit (LaunchRules). A hero's shell has no landing shock (impact,
@@ -336,16 +336,12 @@ function validateGrowth(id, growth, unit, hero) {
 // The effects a campaign upgrade can be (Definition `campaignUpgrade.<effect>`) and each one's check.
 const CAMPAIGN_UPGRADE_EFFECTS = Object.freeze({
     // UpgradeHitBlock: the soldier's first enemy hits.
-    firstHitBlock(id, spec, unit) {
-        const { hits, whileFlying, ...more } = spec;
+    firstHitBlock(id, spec) {
         if (
-            Object.keys(more).length ||
-            !(Number.isInteger(hits) && hits > 0) ||
-            (whileFlying !== undefined && !(whileFlying === true && unit.flight))
+            Object.keys(spec).join(',') !== 'hits' ||
+            !(Number.isInteger(spec.hits) && spec.hits > 0)
         )
-            throw new Error(
-                `병종 ${id}의 firstHitBlock은 hits(양의 정수)와, 나는 병종(flight)이면 whileFlying(true)만 가집니다.`,
-            );
+            throw new Error(`병종 ${id}의 firstHitBlock은 hits(양의 정수)만 가집니다.`);
     },
     // UpgradeEchoShock: the shell's landing shock, once more.
     echoShock(id, spec, unit, payload) {
@@ -531,13 +527,19 @@ const CAMPAIGN_UPGRADE_EFFECTS = Object.freeze({
     // UpgradeHeavyShock: the shell's landing shock.
     heavyShock(id, spec, unit, payload) {
         if (
-            Object.keys(spec).sort().join(',') !== 'damageScale,radiusScale' ||
-            !(spec.damageScale >= 1 && spec.radiusScale >= 1) ||
-            !(spec.damageScale > 1 || spec.radiusScale > 1) ||
+            Object.keys(spec).join(',') !== 'radiusScale' ||
+            !(spec.radiusScale > 1) ||
             !(payload.impact > 0 && payload.splash > 0)
         )
             throw new Error(
-                `병종 ${id}의 heavyShock은 1 이상(하나는 1 초과)의 damageScale·radiusScale과 포탄의 impact·splash가 필요합니다.`,
+                `병종 ${id}의 heavyShock은 1보다 큰 radiusScale과 포탄의 impact·splash가 필요합니다.`,
+            );
+    },
+    // UnitFlight: the flight's speed.
+    swiftFlight(id, spec, unit) {
+        if (Object.keys(spec).join(',') !== 'speedScale' || !(spec.speedScale > 1) || !unit.flight)
+            throw new Error(
+                `병종 ${id}의 swiftFlight는 1보다 큰 speedScale과 flight가 필요합니다.`,
             );
     },
     // StickyCling: how long it holds a muzzle.

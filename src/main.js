@@ -24,7 +24,6 @@ import { StickyCling } from './sim/capabilities/sticky-cling.js';
 import { SustainedAttack } from './sim/capabilities/sustained-attack.js';
 import { UnitBreathAttack } from './sim/capabilities/unit-breath-attack.js';
 import { UnitChainAttack } from './sim/capabilities/unit-chain-attack.js';
-import { UnitFlight } from './sim/capabilities/unit-flight.js';
 import { HeroPassive } from './sim/capabilities/hero-passive.js';
 import { UnitSpinAttack } from './sim/capabilities/unit-spin-attack.js';
 import { ForwardCannon } from './sim/capabilities/forward-cannon.js';
@@ -2854,11 +2853,7 @@ class GLRenderer {
                     impactHeightFP: e.impactHeightFP,
                 });
             } else if (e.type === 'upgradeHitBlock') {
-                // A block in the air (the dandelion's fluff) bursts at the body's height, in the fluff's white.
-                this.addClientFx('upgradeHitBlock', e, snapshot, index, {
-                    impactHeightFP: e.flying ? e.heightFP : null,
-                    fluff: !!e.flying,
-                });
+                this.addClientFx('upgradeHitBlock', e, snapshot, index);
             } else if (e.type === 'upgradeChainCharge' || e.type === 'upgradeWallRebound') {
                 // A peanut chain starting (UpgradeChainCharge), a coconut's lossless bounce (RollingBody wallRebound).
                 this.addClientFx(e.type, e, snapshot, index);
@@ -3870,17 +3865,10 @@ class GLRenderer {
                 }
                 burst(fx, x, y, t, 5, '#ffd26a', 34, 2.2);
             } else if (fx.kind === 'upgradeHitBlock') {
-                // A campaign upgrade's block (UpgradeHitBlock): the husk snaps outward and its chaff flies off. In the
-                // air it is the dandelion's fluff coat: a wider white puff.
-                if (fx.fluff) {
-                    dot(x, y, (9 + 9 * (1 - t)) * sc, '#ffffff', Math.max(0, 0.9 - t * 1.6));
-                    ring(x, y, (11 + 26 * ease) * sc, 4 * sc, '#ffffff', 0.95 * (1 - t));
-                    burst(fx, x, y, t, 10, '#f4f8ff', 42, 2.8);
-                } else {
-                    dot(x, y, (6 + 6 * (1 - t)) * sc, '#fff6cf', Math.max(0, 0.8 - t * 1.6));
-                    ring(x, y, (9 + 18 * ease) * sc, 3 * sc, '#f6dc7c', 0.9 * (1 - t));
-                    burst(fx, x, y, t, 6, '#e9c75f', 30, 2.4);
-                }
+                // A campaign upgrade's block (UpgradeHitBlock): the husk snaps outward and its chaff flies off.
+                dot(x, y, (6 + 6 * (1 - t)) * sc, '#fff6cf', Math.max(0, 0.8 - t * 1.6));
+                ring(x, y, (9 + 18 * ease) * sc, 3 * sc, '#f6dc7c', 0.9 * (1 - t));
+                burst(fx, x, y, t, 6, '#e9c75f', 30, 2.4);
             } else if (fx.kind === 'upgradeChainCharge') {
                 // A peanut chain starting (UpgradeChainCharge): a hot flash where the building fell.
                 dot(x, y, (8 + 8 * (1 - t)) * sc, '#fff1c4', Math.max(0, 0.85 - t * 1.7));
@@ -7355,26 +7343,21 @@ class GLRenderer {
         for (const entry of entries) {
             if (entry.kind !== 'unit') continue;
             const definition = UnitDefinition.get(entry.entity.type);
-            // A soldier still holding its campaign upgrade's block (UpgradeHitBlock) stands in a husk ring. A block
-            // that only works in the air (`whileFlying`, the dandelion's fluff coat) is a white ring around the
-            // flying body, gone once it lands.
-            const block =
-                entry.entity.alive && entry.entity.campaignUpgrade?.charges > 0
-                    ? CampaignUpgrades.declared(entry.entity.type, 'firstHitBlock')
-                    : null;
-            if (block && (!block.whileFlying || UnitFlight.airborne(entry.entity))) {
+            // A soldier still holding its campaign upgrade's block (UpgradeHitBlock) stands in a husk ring.
+            if (
+                entry.entity.alive &&
+                entry.entity.campaignUpgrade?.charges > 0 &&
+                CampaignUpgrades.declared(entry.entity.type, 'firstHitBlock')
+            ) {
                 const { x, z, groundY } = entry.world,
-                    elevation = block.whileFlying ? entry.world.y : groundY,
-                    { scale, stroke, fill } = block.whileFlying
-                        ? EffectObjectFactory.upgradeFluffRing
-                        : EffectObjectFactory.upgradeArmorRing;
-                this.withWorldSpriteDepth({ ...entry.world, y: elevation }, () =>
+                    { scale, stroke, fill } = EffectObjectFactory.upgradeArmorRing;
+                this.withWorldSpriteDepth({ ...entry.world, y: groundY }, () =>
                     this.drawGroundCircle(
                         x,
                         z,
                         InteractionGeometry.unitRadius(entry.entity) * scale,
                         {
-                            elevation,
+                            elevation: groundY,
                             fill,
                             stroke,
                             width: Math.max(1.5, 3 * this.sc()),

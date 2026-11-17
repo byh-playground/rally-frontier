@@ -15,6 +15,7 @@
 //   고도는 지면 위 몸 높이에 더해진다(UnitMotion.heightFP). 내려앉기와 나는 동안의 죽음은 고도를 넉백 높이(impactMotion)로 바꿔 공용 중력으로
 //   떨어뜨린다. 그래서 낙하·죽은 몸 표현(DeadUnitLook)이 지상 넉백과 같다.
 import { FP } from '../../core/config.js';
+import { CampaignUpgrades } from '../campaign-upgrades.js';
 import { UnitMotion } from '../navigation.js';
 
 // Phases: 'wait' (on the ground after the launch, not flown yet), 'fly', 'alight' (flying to the open spot it lands on),
@@ -45,6 +46,12 @@ class UnitFlight {
         if (!unit.flight) return;
         unit.flight.originFx = Math.round(x * FP);
         unit.flight.originFy = Math.round(y * FP);
+    }
+    // Its flight speed: the Definition's, times the campaign upgrade swiftFlight's `speedScale` when that is on for its
+    // side (민들레씨 · 센 바람). The climb is unchanged. Every flight step reads the speed here.
+    static speed(sim, unit, spec) {
+        const swift = CampaignUpgrades.effect(sim, unit.side, unit.type, 'swiftFlight');
+        return swift ? spec.speed * swift.speedScale : spec.speed;
     }
     // In the air: out of ground targeting, damage, knockback, contacts, capture and construction.
     static airborne(unit) {
@@ -78,7 +85,15 @@ class UnitFlight {
             flight.altitudeFP + Math.round((spec.climbSpeed * FP) / sim.tps),
         );
         if (flight.phase === ALIGHT) {
-            if (this.flyToward(sim, unit, flight.landFx / FP, flight.landFy / FP, spec.speed))
+            if (
+                this.flyToward(
+                    sim,
+                    unit,
+                    flight.landFx / FP,
+                    flight.landFy / FP,
+                    this.speed(sim, unit, spec),
+                )
+            )
                 this.land(sim, unit);
             return true;
         }
@@ -106,7 +121,8 @@ class UnitFlight {
             gx = rally.x;
             gy = rally.y;
         }
-        if (this.flyToward(sim, unit, gx + ox, gy + oy, spec.speed)) this.alight(sim, unit);
+        if (this.flyToward(sim, unit, gx + ox, gy + oy, this.speed(sim, unit, spec)))
+            this.alight(sim, unit);
         return true;
     }
     // The walking soldier's own choice: a full pick on its refresh tick, the kept target otherwise. A flier holding

@@ -2710,15 +2710,12 @@ class StrategySim {
 
     // A shell's landing shock: a shove of everyone it carries, then the area damage on soldiers and buildings.
     // `scale` is the share of the shove and the damage a repeated shock keeps (UpgradeEchoShock). The campaign upgrade
-    // heavyShock scales the damage and its radius, not the shove (UpgradeHeavyShock); the returned `radius` is the
+    // heavyShock widens the damage's radius, not the shove's (UpgradeHeavyShock); the returned `radius` is the
     // damage's.
     landingShock(p, x, y, radius, impactHeightFP, scale = 1) {
         if (!p.mortar) LaunchImpact.blast(this, p, x, y, radius, impactHeightFP, scale);
         const heavy = UpgradeHeavyShock.spec(this, p);
-        if (heavy) {
-            radius *= heavy.radiusScale;
-            scale *= heavy.damageScale;
-        }
+        if (heavy) radius *= heavy.radiusScale;
         const blast = this.applyAreaDamage({
             sourceSide: p.side,
             sourceType: p.type,

@@ -132,7 +132,8 @@ function upgradedMatch(seed, rules, map, decks, upgrades) {
 // soldier's chain can hold (`chainLinks`, null without one), the host side's landing shocks, the bodies they hit,
 // the last one's damage radius and how many had the upgrade (`shocks`·`shockHits`·`shockRadius`·`heavyShocks`), and
 // the host side's muzzle clings: how many began, each one's length in ticks (first 8) and the ticks an enemy cannon
-// was held (`clings`·`clingLengths`·`clingTicks`). `blocked`·`charged` also count the dandelion's fluff coat.
+// was held (`clings`·`clingLengths`·`clingTicks`). `flightSpeed` is the fastest flight speed among
+// the host side's living fliers (UnitFlight.speed, null without one).
 function createUpgradeProbe(sim) {
     const counts = {
         blocked: 0,
@@ -246,6 +247,10 @@ function createUpgradeProbe(sim) {
             breathLength: sim.units.reduce((longest, u) => {
                 const spec = u.alive && u.side === 0 && UnitDefinition.get(u.type).breathAttack;
                 return spec ? Math.max(longest ?? 0, UnitBreathAttack.length(u, spec)) : longest;
+            }, null),
+            flightSpeed: sim.units.reduce((fastest, u) => {
+                const spec = u.alive && u.side === 0 && UnitDefinition.get(u.type).flight;
+                return spec ? Math.max(fastest ?? 0, UnitFlight.speed(sim, u, spec)) : fastest;
             }, null),
             chainLinks: sim.units.reduce(
                 (most, u) =>

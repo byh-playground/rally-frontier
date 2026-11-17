@@ -93,13 +93,6 @@ class EffectObjectFactory {
         stroke: [0.98, 0.86, 0.42, 0.95],
         fill: [0.98, 0.86, 0.42, 0.22],
     });
-    // The same block while it only works in the air (`firstHitBlock.whileFlying`, the dandelion's fluff coat): a white
-    // ring around the flying body at its height.
-    static upgradeFluffRing = Object.freeze({
-        scale: 1.8,
-        stroke: [1, 1, 1, 0.95],
-        fill: [1, 1, 1, 0.28],
-    });
     // A soldier running a campaign upgrade's chain (UpgradeChainCharge), presentation only: the ring under it.
     static upgradeChainRing = Object.freeze({
         scale: 1.6,
