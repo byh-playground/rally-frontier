@@ -739,6 +739,7 @@ class StrategySim {
                 const u = this.units[near.items[k]];
                 if (
                     !u?.alive ||
+                    SporeSac.bound(u) ||
                     !UnitDefinition.get(u.type)?.construction ||
                     Math.hypot(u.x - b.x, u.y - b.y) > CAPTURE_RADIUS
                 )
@@ -1037,7 +1038,8 @@ class StrategySim {
                     !u?.alive ||
                     (u.side !== 0 && u.side !== 1) ||
                     !!UnitDefinition.get(u.type)?.captureExcluded ||
-                    UnitFlight.airborne(u)
+                    UnitFlight.airborne(u) ||
+                    SporeSac.bound(u)
                 )
                     continue;
                 if (Math.hypot(u.x - cp.x, u.y - cp.y) > CAPTURE_RADIUS) continue;
@@ -1118,16 +1120,18 @@ class StrategySim {
     // an ordinary soldier of the new side: it picks a target again, marches to that side's rally point, builds,
     // rides and clings for it, and carries that side's campaign upgrades. Its old allies stop being its targets
     // through the same per-tick checks that drop any target (canTargetUnit, isHostileCombatUnit), and a hit already
-    // on its way to it from the side it joins does nothing (applyDamage). A hero or a soldier that grows a building
-    // is tied to its side by more than this (deployment slot, forward cannon) and cannot change side.
+    // on its way to it from the side it joins does nothing (applyDamage). A leap it was making keeps its motion and
+    // lands without its landing attack or burst. A hero is tied to its side by its deployment slot and cannot
+    // change side.
     changeUnitSide(u, side) {
         const d = UnitDefinition.get(u.type),
             from = u.side;
         if (!u.alive || (side !== 0 && side !== 1) || side === from)
             throw new Error(`편을 바꿀 수 없는 유닛입니다: ${u.id} (${from} -> ${side})`);
-        if (LaunchRules.isHeroType(u.type) || d.growsCannon)
+        if (LaunchRules.isHeroType(u.type))
             throw new Error(`편을 바꿀 수 없는 병종입니다: ${u.type}`);
-        // The attack it was making: the wind-up, a locked burst, a running spin, breath or chain, a charge, a fuse.
+        // The attack it was making: the wind-up, a locked burst, a running spin, breath or chain, a charge, a fuse,
+        // a leap (pending or in the air: the body flies on, the landing is no attack).
         u.target = null;
         u.combat.cancelWindup();
         delete u.combat.burstAttack;
@@ -1137,6 +1141,7 @@ class StrategySim {
         if (d.chainAttack) UnitChainAttack.stop(this, u, d);
         if (d.contactMelee) u.contactAttack = null;
         if (d.selfDestruct) u.selfDestruct = null;
+        if (d.leapAttack) u.leapAttack = { phase: 'ready', cooldownUntil: 0 };
         // What it was doing for its old side: a construction job, a muzzle it held, a cannon it rode, its post.
         u.constructionWork = null;
         if (d.stickyCling) u.stickyCling = StickyCling.initialState();
@@ -1149,7 +1154,11 @@ class StrategySim {
         for (const shot of this.unitThornProjectiles) if (shot.sourceId === u.id) shot.side = side;
         for (const shot of this.unitLobProjectiles) if (shot.sourceId === u.id) shot.side = side;
         u.side = side;
+        // Its chain is made again with the links of the side it joins (the Definition's, or that side's upgrade).
+        if (d.chainAttack) u.chain = UnitChainAttack.initialState(d.chainAttack);
         this.giveCampaignUpgrade(u);
+        // A soldier that grows a cannon (potato) roots again, for the side it joined.
+        if (d.growsCannon) ForwardCannon.plant(this, u, d.growsCannon);
         // The side's layer of the spatial index (StrategySim.spatialGroup); the per-id indexes do not hold the side.
         this.syncUnitSpatial(u);
     }
@@ -1737,7 +1746,8 @@ class StrategySim {
             !!target &&
             target.alive !== false &&
             target.side !== attackerSide &&
-            !UnitFlight.airborne(target)
+            !UnitFlight.airborne(target) &&
+            !SporeSac.bound(target)
         );
     }
     targetLevel(target) {
@@ -1750,6 +1760,8 @@ class StrategySim {
     }
     canSeeCombatTarget(attackerSide, target, sources) {
         if (!target || target.alive === false || target.side === attackerSide) return false;
+        // A spore sac's captive is nobody's target (SporeSac); a building has no such cell.
+        if (target.sporeSac !== undefined) return false;
         if (this._perfCollect) this._perfCollect.visibilityChecks++;
         return sources.visibleAt(target.x, target.y, this.targetLevel(target));
     }
@@ -2057,6 +2069,11 @@ class StrategySim {
             return null;
         }
         if (!target || target.alive === false || target.hp <= 0) return null;
+        // A spore sac's captive takes no damage of any kind while it is bound (SporeSac).
+        if (!isBuilding && SporeSac.bound(target)) {
+            setCapture(0, true, options?.damageClass || UnitDefinition.damageClass(sourceType));
+            return null;
+        }
         const damageClass = options?.damageClass || UnitDefinition.damageClass(sourceType);
         const sourceDamageResolved = !!options?.sourceDamageResolved;
         if (!sourceDamageResolved && sourceEntityId) {
@@ -2318,7 +2335,10 @@ class StrategySim {
     }
     isHostileCombatUnit(attackerSide, e) {
         return (
-            !!e?.alive && (attackerSide === 0 || attackerSide === 1) && e.side === 1 - attackerSide
+            !!e?.alive &&
+            (attackerSide === 0 || attackerSide === 1) &&
+            e.side === 1 - attackerSide &&
+            !SporeSac.bound(e)
         );
     }
     combatTargetInAttackRange(u, found, attackRange = null) {
@@ -2472,12 +2492,7 @@ class StrategySim {
         if (d.flight && UnitFlight.step(this, u, d.flight, vision[u.side])) return null;
         if (d.stickyCling && StickyCling.heldBuilding(this, u)) return null;
         if (u.heroRoll) return null;
-        // A soldier keeping a post (a garrison, a spore sac's captive) does not leave it for a cannon.
-        if (
-            d.cannonRider &&
-            !u.holdPost &&
-            CannonRider.update(this, u, d.cannonRider, vision[u.side])
-        )
+        if (d.cannonRider && CannonRider.update(this, u, d.cannonRider, vision[u.side]))
             return null;
         if (HeroDeployment.moveReturningUnit(this, u, d)) {
             UnitSpinAttack.cancel(this, u);
@@ -3065,7 +3080,8 @@ class StrategySim {
         this.updateBuildingCombat(vision);
         const pendingContactAttacks = [];
         for (const u of this.units) {
-            if (!u.alive) continue;
+            // A spore sac's captive takes no turn: it stands where it is bound (SporeSac).
+            if (!u.alive || SporeSac.bound(u)) continue;
             winner = this.updateCombat(u, vision, pendingContactAttacks) || winner;
         }
         const combatMs = profile ? now() - mark : 0;

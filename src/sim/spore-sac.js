@@ -1,12 +1,15 @@
 // The blight's spore sac (포자 주머니): an enemy building (BuildingDefinition 'spore-sac', health 100) that does
 // not attack. A blighted stage declares its sacs (campaign.js `sporeSacs: [{ x, y, captives: [{ type, count }] }]`)
-// and each stands from the first tick with its captives around it: blighted soldiers bound to that sac, who keep
-// their post there and fight what comes into reach (`unit.holdPost`, as a mission garrison).
-// `sac.captives` (the bound soldiers' ids, in the order they were bound) is the only record of the binding; it
-// rides on the building, so snapshot, replay and rollback carry it. When the sac is destroyed
-// (StrategySim.destroyBuilding) every captive that is alive, still blighted and within `freeRadius` of the sac
-// is freed and joins the other side (Blight.convert). A captive out of reach, a blighted soldier bound to no sac
-// and every hero stay as they are. A freed soldier is nobody's kill: no hero growth, no kill count.
+// and each stands from the first tick with its captives around it: blighted soldiers bound to that sac.
+// `unit.sporeSac` (the sac's id) is the only record of the binding and exists exactly while the sac stands, so
+// `SporeSac.bound(unit)` is one cell read. A bound soldier takes no part in the fight: it does not move, pick a
+// target, attack, capture or build, nobody targets it, and no hit, area damage, landing shock, sustained damage,
+// knockback or body contact hurts or moves it. The exclusions sit at the shared entry points (the unit's turn in
+// StrategySim.stepSimulation, canTargetUnit / isHostileCombatUnit / canSeeCombatTarget, applyDamage, capture and
+// construction presence, UnitMotion.locked and the contact commit, LaunchRules.population), not per unit type.
+// When the sac is destroyed (StrategySim.destroyBuilding) every living captive is freed and joins the other side
+// (Blight.convert), wherever it stands. A blighted soldier bound to no sac and every hero stay as they are. A
+// freed soldier is nobody's kill: no hero growth, no kill count.
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { Blight } from './blight.js';
@@ -16,16 +19,14 @@ import { LaunchRules } from './launch-rules.js';
 const TYPE = 'spore-sac';
 
 export class SporeSac {
-    static spec() {
-        return BuildingDefinition.get(TYPE).sporeSac;
+    // Is this unit bound to a standing spore sac?
+    static bound(unit) {
+        return unit.sporeSac !== undefined;
     }
 
-    // A soldier a sac can hold: one that keeps a post on foot and changes side as a single body. Not a hero (its
-    // deployment slot belongs to its side), not one that grows into a building (potato), not a body that never
-    // stops rolling (the `rolling` capability).
+    // A soldier a sac can hold: any card's soldier but a hero, whose deployment slot belongs to its side.
     static canBind(type) {
-        const d = UnitDefinition.get(type);
-        return !!d && !LaunchRules.isHeroType(type) && !d.growsCannon && !d.rolling;
+        return !!UnitDefinition.get(type) && !LaunchRules.isHeroType(type);
     }
 
     // The stage's declared sacs, checked: only a blighted stage has them, each with a place and its captives.
@@ -62,7 +63,7 @@ export class SporeSac {
     }
 
     // One sac at (x, y) for the blight's side, its captives in rings around it: the first `ringRadius` out, each
-    // next one `spacing` farther, soldiers `spacing` apart, every ring inside `freeRadius`.
+    // next one `spacing` farther, soldiers `spacing` apart.
     static place(sim, { x, y, captives }) {
         const d = BuildingDefinition.get(TYPE),
             spec = d.sporeSac,
@@ -75,7 +76,6 @@ export class SporeSac {
                     y,
                     hp: d.hp,
                     maxHp: d.hp,
-                    captives: [],
                 }),
             );
         sim.releaseUnitsInside(sac);
@@ -89,10 +89,6 @@ export class SporeSac {
             for (let i = 0; i < count; i++) {
                 if (inRing === ringCount) {
                     if (placed) radius += spec.spacing;
-                    if (radius > spec.freeRadius)
-                        throw new Error(
-                            `포자 주머니 둘레에 묶인 병사 ${total}명을 세울 자리가 없습니다.`,
-                        );
                     ringCount = Math.min(
                         total - placed,
                         Math.floor((2 * Math.PI * radius) / spec.spacing),
@@ -116,24 +112,21 @@ export class SporeSac {
         return sac;
     }
 
-    // Binds a blighted soldier of the sac's side to it: it keeps its post where it stands.
+    // Binds a blighted soldier of the sac's side to it, where it stands.
     static bind(sim, sac, unit) {
         if (!this.canBind(unit.type) || unit.side !== sac.side || !Blight.is(unit))
             throw new Error(`포자 주머니에 묶을 수 없는 병사입니다: ${unit.type}`);
-        unit.holdPost = { x: unit.x, y: unit.y };
-        sac.captives.push(unit.id);
+        unit.sporeSac = sac.id;
     }
 
-    // The sac was destroyed: its captives in reach are freed and join the side it stood against, in binding order.
+    // The sac was destroyed: every captive is unbound and the living ones are freed and join the side the sac
+    // stood against, in unit order.
     static burst(sim, sac) {
-        const reach = this.spec().freeRadius,
-            side = 1 - sac.side;
-        for (const id of sac.captives) {
-            const unit = sim.unitById.get(id);
-            if (!unit?.alive) continue;
-            const dx = unit.x - sac.x,
-                dy = unit.y - sac.y;
-            if (dx * dx + dy * dy <= reach * reach) Blight.convert(sim, unit, side);
+        const side = 1 - sac.side;
+        for (const unit of sim.units) {
+            if (unit.sporeSac !== sac.id) continue;
+            delete unit.sporeSac;
+            if (unit.alive) Blight.convert(sim, unit, side);
         }
     }
 }

@@ -53,10 +53,10 @@ const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 // (sim/blight.js). No stage declares it yet.
 // A blighted stage may declare its spore sacs (sim/spore-sac.js), each with the blighted soldiers bound to it:
 //     sporeSacs: [{ x: 1400, y: 2600, captives: [{ type: 'rice', count: 8 }, { type: 'pea', count: 4 }] }],
-// The sac is an enemy building (health 100, no attack) and its captives keep their post in rings around it. When it
-// is destroyed, the captives that are alive and within 150 of it are freed and join the player's side. A captive
-// is an ordinary soldier: no hero, potato (it grows a building) or rolling body (the `rolling` capability). The match start
-// rejects a declaration on a stage without `blight: true`. No stage declares one yet.
+// The sac is an enemy building (health 100, no attack). Its captives stand in rings around it and take no part in
+// the fight while it stands: they do not move or attack, nobody targets them and nothing hurts or pushes them.
+// When it is destroyed every living captive is freed and joins the player's side. A captive is any soldier but a
+// hero. The match start rejects a declaration on a stage without `blight: true`. No stage declares one yet.
 export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'first',

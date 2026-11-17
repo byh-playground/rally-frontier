@@ -76,6 +76,9 @@ const BLIGHT_LOOK = Object.freeze({
         // The sac's middle stands this many radii above its ground point.
         lift: 0.8,
         shadow: Object.freeze([0.06, 0.03, 0.09, 0.32]),
+        // The thread from the sac to each captive's feet (colour, width in view units).
+        tether: Object.freeze([0.165, 0.067, 0.251, 0.6]),
+        tetherWidth: 2,
         lumps: Object.freeze([
             [0, 0, 1.08, '#1a0f22'],
             [-0.62, 0.34, 0.6, '#1a0f22'],

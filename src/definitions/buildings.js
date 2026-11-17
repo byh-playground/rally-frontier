@@ -69,17 +69,13 @@ class BuildingDefinition {
             sight: 275,
         },
         // The blight's spore sac (sim/spore-sac.js): it does not attack, launch, produce or hold a capture point,
-        // and it is no main base. Destroying it frees its captives: the bound blighted soldiers that are alive and
-        // within `freeRadius` of it join the other side.
+        // and it is no main base. Destroying it frees its captives: every living blighted soldier bound to it joins
+        // the other side.
         'spore-sac': {
             name: '포자 주머니',
             visualCategory: 'spore-sac',
-            sporeSac: Object.freeze({
-                freeRadius: 150,
-                // 초안: the captives stand in rings around the sac, the first this far out, `spacing` apart.
-                ringRadius: 75,
-                spacing: 34,
-            }),
+            // 초안: the captives stand in rings around the sac, the first this far out, `spacing` apart.
+            sporeSac: Object.freeze({ ringRadius: 75, spacing: 34 }),
             hp: 100,
             // 초안: 전진 대포와 같은 몸 크기.
             size: 30,

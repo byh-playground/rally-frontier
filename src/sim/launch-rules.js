@@ -171,12 +171,13 @@ class LaunchRules {
             !this.jammed(state, cannon)
         );
     }
-    // Live units plus every already-authorized soldier who has not spawned yet.
+    // Live units plus every already-authorized soldier who has not spawned yet. A spore sac's captive
+    // (sim/spore-sac.js `unit.sporeSac`) is in nobody's army while it is bound.
     static population(state, side) {
         let alive = 0,
             reserved = 0;
         for (const unit of state?.units || [])
-            if (unit.side === side && unit.alive !== false) alive++;
+            if (unit.side === side && unit.alive !== false && unit.sporeSac === undefined) alive++;
         for (const projectile of state?.projectiles || [])
             if (projectile.side === side && projectile.alive !== false && projectile.payload)
                 reserved += projectile.payload.count;

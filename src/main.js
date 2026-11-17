@@ -3058,7 +3058,7 @@ class GLRenderer {
         }
     }
     // The blight's spore sac (sim/spore-sac.js), a placeholder (BlightLook.drawSac): a pouch standing on its ground
-    // shadow. Its soot is noted like a mounted soldier's and drawn with every other mote (drawBlightSoot).
+    // shadow, a thread to each of its captives. Its soot is noted like a mounted soldier's and drawn with every other mote (drawBlightSoot).
     drawSporeSac(b) {
         const { size } = BuildingDefinition.get(b.type),
             look = BLIGHT_LOOK.sac,
@@ -3066,6 +3066,13 @@ class GLRenderer {
             [x, groundY] = this.worldToPx(this.viewX(b.x), this.viewY(b.y)),
             y = groundY - radius * look.lift;
         this.drawGroundCircle(b.x, b.y, size * 1.15, { fill: look.shadow, segments: 20 });
+        // Each captive (SporeSac `unit.sporeSac`) is tied to the sac by a thin thread along the ground.
+        const width = Math.max(1, look.tetherWidth * this.sc());
+        for (const u of this.snapshot.units) {
+            if (u.sporeSac !== b.id || !u.alive) continue;
+            const [ux, uy] = this.worldToPx(this.viewX(u.x), this.viewY(u.y));
+            this.line(x, groundY, ux, uy, width, look.tether);
+        }
         this.blightArt.drawSac(this.sporeSacDisc, x, y, radius);
         this.blightMounted.push(b, x, y, radius, this._renderDepth ?? 0, 0);
     }
