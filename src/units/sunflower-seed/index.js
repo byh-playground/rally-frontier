@@ -26,6 +26,12 @@ export const SunflowerSeed = defineUnit({
             airDamageMultiplier: 2,
         }),
         sight: 325,
+        // 캠페인 강화: 공중 표적을 쏘는 발마다 60도 부채꼴로 3발, 옆의 두 발은 부채꼴 안의 다른 공중 표적을 맞힌다.
+        campaignUpgrade: {
+            name: '요격 부채',
+            summary: '공중의 적을 쏠 때 부채꼴로 3발씩 쏴 옆의 투입탄과 나는 적도 맞혀요.',
+            interceptFan: { shots: 3, arcDegrees: 60 },
+        },
     },
     payload: {
         ...SINGLE_BUNDLE_SHELL,

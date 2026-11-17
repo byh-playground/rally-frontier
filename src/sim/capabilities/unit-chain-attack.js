@@ -3,7 +3,8 @@
 //   (Definition range, 다른 원거리 병종과 같은 InteractionGeometry.reach) 안의 첫 표적에 번개를 잇고, 그 표적에서
 //   중심 거리 `bounceRange` 안의 가장 가까운 적으로 튀어 모두 `links`명까지 잇는다. `sustain.durationMs` 동안
 //   `sustain.tickMs`마다 이어진 표적 모두에게 `atk`를 준다(튀어도 감쇠 없음, 건물은 `buildingDamageScale`배를 회차마다
-//   누적해 내림). 끝나면 `sustain.cooldownMs` 동안 다시 잇지 못한다.
+//   누적해 내림). 끝나면 `sustain.cooldownMs` 동안 다시 잇지 못한다. 캠페인 강화 `chainLinks { links }`가 켜진 편의
+//   병사는 생길 때 그 수만큼의 줄을 받는다(Unit.chain.ids의 길이가 그 병사가 잇는 수다, UnitChainAttack.links).
 // - 첫 표적은 평소 표적 선택(pickCombatTarget, 다른 원거리 병종과 같은 우선순위)이 고른 지상 유닛·건물이 사거리 안이면
 //   그것이고, 아니면 사거리 안의 가장 가까운 나는 적(UnitFlight, 민들레씨)이다. 튀는 표적은 유닛만이고 땅·공중 층을
 //   모두 본다(땅↔공중으로 튐). 동률은 기존 규칙(StrategySim.targetChoiceBetter)이다. 적 투입탄은 노리지 않는다.
@@ -21,6 +22,7 @@
 //   피해 틱마다 chainPulse 사건(첫 표적 자리, 맞힌 수, 공중 맞힌 수)을 그 회차의 hit보다 먼저 낸다(피해 숫자 합치기).
 // - 그림: 번개는 sprite 계약의 `chain.drawBolt`로 main.js가 그린다(Unit.chain의 연결을 읽음). 대기 끝 직전
 //   (readyTick 전 telegraphMs)에는 예고, 채널링 중에는 공격 얼굴과 부풀며 떨리는 몸(actor.setChannel)이다.
+import { CampaignUpgrades } from '../campaign-upgrades.js';
 import { UnitFlight } from './unit-flight.js';
 import { IndexList } from '../index-list.js';
 import { SustainedAttack } from './sustained-attack.js';
@@ -35,14 +37,24 @@ const AIR_HIT = Object.freeze({
 });
 
 class UnitChainAttack {
-    static initialState(spec) {
+    // `links`: how many enemies this soldier's chain holds (Definition chainAttack.links, or the links of the
+    // campaign upgrade chainLinks when it is on for its side: StrategySim.spawnUnit).
+    static initialState({ links }) {
         return {
-            ids: new Array(spec.links).fill(null),
+            ids: new Array(links).fill(null),
             count: 0,
             building: false,
             pulses: 0,
             relinks: 0,
         };
+    }
+    // The most enemies this soldier's chain holds: the slots it was created with.
+    static links(chain) {
+        return chain.ids.length;
+    }
+    // The most links a soldier of this card can ever hold (drawing buffers, render tracks).
+    static capacity(type, spec) {
+        return Math.max(spec.links, CampaignUpgrades.declared(type, 'chainLinks')?.links ?? 0);
     }
     // Is a channel still running this tick? An ended one drops its links.
     static channeling(sim, unit) {
@@ -131,7 +143,7 @@ class UnitChainAttack {
     // Adds links until `links` or no enemy is left to reach: a first one in attack reach, then bounces.
     static fill(sim, unit, d, vision, counting) {
         const chain = unit.chain,
-            links = d.chainAttack.links;
+            links = this.links(chain);
         while (chain.count < links) {
             const next =
                 chain.count === 0

@@ -14,6 +14,7 @@ import { LaunchImpactRules } from '../../definitions/launch-impact-rules.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { ConstructionRules } from '../construction-rules.js';
 import { InteractionGeometry, NavigationGoal } from '../navigation.js';
+import { CampaignUpgrades } from '../campaign-upgrades.js';
 import { StickyCling } from './sticky-cling.js';
 import { UpgradeChainCharge } from './upgrade-chain-charge.js';
 import { UpgradeFirstStrike } from './upgrade-first-strike.js';
@@ -164,7 +165,16 @@ export class ContactMelee {
             )
                 continue;
             u.combat.cancelWindup();
-            if (attack.isBuilding && StickyCling.tryBegin(sim, u, target)) continue;
+            if (
+                attack.isBuilding &&
+                StickyCling.tryBegin(
+                    sim,
+                    u,
+                    target,
+                    CampaignUpgrades.effect(sim, u.side, u.type, 'longCling'),
+                )
+            )
+                continue;
             const definition = UnitDefinition.get(u.type);
             const dx = target.x - attack.fromX,
                 dy = target.y - attack.fromY,

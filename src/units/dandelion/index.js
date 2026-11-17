@@ -8,6 +8,12 @@ export const Dandelion = defineUnit({
         ...BASIC_MELEE,
         name: '민들레씨',
         flight: Object.freeze({ speed: 200, altitude: 120, climbSpeed: 150 }),
+        // 캠페인 강화: 병사마다 나는 동안 맞는 첫 공격(대공) 한 번을 통째로 막는다.
+        campaignUpgrade: {
+            name: '솜털막',
+            summary: '나는 동안 대공 공격 한 번을 막아요.',
+            firstHitBlock: { hits: 1, whileFlying: true },
+        },
     },
     payload: {
         ...SINGLE_BUNDLE_SHELL,

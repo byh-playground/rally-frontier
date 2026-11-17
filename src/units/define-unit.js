@@ -26,7 +26,8 @@
 //            `campaignUpgrade { name, summary, <effect>: spec }`: the card's campaign-only upgrade, exactly one
 //            effect (CAMPAIGN_UPGRADE_EFFECTS below checks it). On for a side for a whole match when the match start
 //            carries the card (CampaignUpgrades.has); off, nothing reads it. `name`·`summary` are the card detail copy.
-//              firstHitBlock { hits }: each soldier's first `hits` enemy hits deal nothing (UpgradeHitBlock)
+//              firstHitBlock { hits, whileFlying? }: each soldier's first `hits` enemy hits deal nothing, with
+//                `whileFlying` only the ones it takes in the air (UpgradeHitBlock; whileFlying needs flight)
 //              echoShock { delayMs, ratio }: the shell's landing shock again at the same spot after `delayMs`, at
 //                `ratio` of its damage and knockback (UpgradeEchoShock; needs payload impact·splash)
 //              leapImpact { radiusScale }: the leap landing's radius times `radiusScale` (UnitLeapAttack; needs
@@ -56,6 +57,16 @@
 //                the attack interval unchanged (UpgradeDoubleShot; needs thornAttack)
 //              longBreath { lengthScale }: its flame is `lengthScale` times as long, the arc unchanged
 //                (UnitBreathAttack.length; needs breathAttack)
+//              interceptFan { shots, arcDegrees }: each burst shot at an air target is `shots` seeds, the others
+//                hitting the other air targets inside the `arcDegrees` fan around the aim (UpgradeInterceptFan;
+//                needs burstAttack·canAttackAir)
+//              chainLinks { links }: its chain holds `links` enemies instead of chainAttack.links
+//                (UnitChainAttack.links; needs chainAttack)
+//              heavyShock { damageScale, radiusScale }: its shell's landing shock deals `damageScale` times the
+//                damage within `radiusScale` times the radius, the shove unchanged (UpgradeHeavyShock; needs
+//                payload impact·splash)
+//              longCling { durationMs }: it holds a muzzle for `durationMs` instead of stickyCling.durationMs
+//                (StickyCling.tryBegin; needs stickyCling)
 //   payload  the cannon shell that carries the unit (LaunchRules). A hero's shell has no landing shock (impact,
 //            splash) but `landingStrike { radius, damage, knockback?, scatter? { ring, count }, retreat { motion:
 //            'roll'|'hop', distance } }`, the hero's own strike when it lands (HeroLandingStrike)
@@ -325,12 +336,16 @@ function validateGrowth(id, growth, unit, hero) {
 // The effects a campaign upgrade can be (Definition `campaignUpgrade.<effect>`) and each one's check.
 const CAMPAIGN_UPGRADE_EFFECTS = Object.freeze({
     // UpgradeHitBlock: the soldier's first enemy hits.
-    firstHitBlock(id, spec) {
+    firstHitBlock(id, spec, unit) {
+        const { hits, whileFlying, ...more } = spec;
         if (
-            Object.keys(spec).join(',') !== 'hits' ||
-            !(Number.isInteger(spec.hits) && spec.hits > 0)
+            Object.keys(more).length ||
+            !(Number.isInteger(hits) && hits > 0) ||
+            (whileFlying !== undefined && !(whileFlying === true && unit.flight))
         )
-            throw new Error(`병종 ${id}의 firstHitBlock은 hits(양의 정수)만 가집니다.`);
+            throw new Error(
+                `병종 ${id}의 firstHitBlock은 hits(양의 정수)와, 나는 병종(flight)이면 whileFlying(true)만 가집니다.`,
+            );
     },
     // UpgradeEchoShock: the shell's landing shock, once more.
     echoShock(id, spec, unit, payload) {
@@ -487,6 +502,53 @@ const CAMPAIGN_UPGRADE_EFFECTS = Object.freeze({
         )
             throw new Error(
                 `병종 ${id}의 longBreath는 1보다 큰 lengthScale과 breathAttack이 필요합니다.`,
+            );
+    },
+    // UpgradeInterceptFan: more seeds on a burst shot at an air target.
+    interceptFan(id, spec, unit) {
+        if (
+            Object.keys(spec).sort().join(',') !== 'arcDegrees,shots' ||
+            !(Number.isInteger(spec.shots) && spec.shots > 1) ||
+            !(spec.arcDegrees > 0 && spec.arcDegrees <= 180) ||
+            !unit.burstAttack ||
+            !unit.canAttackAir
+        )
+            throw new Error(
+                `병종 ${id}의 interceptFan은 shots(2 이상의 정수)·arcDegrees(0 초과 180 이하)와 burstAttack·canAttackAir가 필요합니다.`,
+            );
+    },
+    // UnitChainAttack: how many enemies the chain holds.
+    chainLinks(id, spec, unit) {
+        if (
+            Object.keys(spec).join(',') !== 'links' ||
+            !unit.chainAttack ||
+            !(Number.isInteger(spec.links) && spec.links > unit.chainAttack.links)
+        )
+            throw new Error(
+                `병종 ${id}의 chainLinks는 chainAttack과 그 links보다 큰 정수 links가 필요합니다.`,
+            );
+    },
+    // UpgradeHeavyShock: the shell's landing shock.
+    heavyShock(id, spec, unit, payload) {
+        if (
+            Object.keys(spec).sort().join(',') !== 'damageScale,radiusScale' ||
+            !(spec.damageScale >= 1 && spec.radiusScale >= 1) ||
+            !(spec.damageScale > 1 || spec.radiusScale > 1) ||
+            !(payload.impact > 0 && payload.splash > 0)
+        )
+            throw new Error(
+                `병종 ${id}의 heavyShock은 1 이상(하나는 1 초과)의 damageScale·radiusScale과 포탄의 impact·splash가 필요합니다.`,
+            );
+    },
+    // StickyCling: how long it holds a muzzle.
+    longCling(id, spec, unit) {
+        if (
+            Object.keys(spec).join(',') !== 'durationMs' ||
+            !unit.stickyCling ||
+            !(spec.durationMs > unit.stickyCling.durationMs)
+        )
+            throw new Error(
+                `병종 ${id}의 longCling은 stickyCling과 그 durationMs보다 긴 durationMs가 필요합니다.`,
             );
     },
 });

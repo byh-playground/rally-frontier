@@ -29,6 +29,12 @@ export const Cotton = defineUnit({
             bounceRange: 100,
             buildingDamageScale: 0.5,
         }),
+        // 캠페인 강화: 번개가 6명까지 이어진다(피해·튀는 거리는 그대로).
+        campaignUpgrade: {
+            name: '번개 6명',
+            summary: '번개가 6명까지 이어져요.',
+            chainLinks: { links: 6 },
+        },
     },
     payload: {
         ...SINGLE_BUNDLE_SHELL,

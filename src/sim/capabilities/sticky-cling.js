@@ -48,8 +48,10 @@ class StickyCling {
         const building = (state?.buildings || []).find((candidate) => candidate.id === id);
         return building && this.holds(state, unit, building) ? building : null;
     }
-    // A confirmed building contact becomes a cling when the soldier is ready and the muzzle is free.
-    static tryBegin(sim, unit, building) {
+    // A confirmed building contact becomes a cling when the soldier is ready and the muzzle is free. `longCling` is
+    // the campaign upgrade's spec when it is on for the soldier's side (찹쌀 · 오래 붙기: its durationMs replaces the
+    // Definition's; the cooldown still counts from the cling's end), else null.
+    static tryBegin(sim, unit, building, longCling = null) {
         const spec = UnitDefinition.get(unit.type)?.stickyCling;
         if (!spec || !this.canHold(unit, building) || this.clingerOf(sim, building)) return false;
         const cling = unit.stickyCling;
@@ -60,7 +62,7 @@ class StickyCling {
             return false;
         unit.stickyCling = {
             buildingId: building.id,
-            endTick: sim.tick + sim.time.ceilTicks(spec.durationMs),
+            endTick: sim.tick + sim.time.ceilTicks(longCling?.durationMs ?? spec.durationMs),
         };
         unit.contactAttack = null;
         return true;
