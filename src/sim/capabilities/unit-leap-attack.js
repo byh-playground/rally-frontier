@@ -6,6 +6,7 @@ import { UnitMotion } from '../navigation.js';
 import { FP } from '../../core/config.js';
 import { LaunchImpactRules } from '../../definitions/launch-impact-rules.js';
 import { KnockbackRules } from '../../definitions/knockback-rules.js';
+import { CampaignUpgrades } from '../campaign-upgrades.js';
 import { LaunchImpact } from '../launch-impact.js';
 import { Knockback } from '../knockback.js';
 import { IndexList } from '../index-list.js';
@@ -87,6 +88,10 @@ export class UnitLeapAttack {
         state.cooldownUntil = sim.tick + sim.time.ceilTicks(spec.cooldownMs);
         const impact = spec.impact;
         if (!impact) return;
+        // Campaign upgrade `leapImpact`: the landing reaches `radiusScale` times as far, the damage unchanged.
+        const radius =
+            impact.radius *
+            (CampaignUpgrades.effect(sim, unit.side, unit.type, 'leapImpact')?.radiusScale ?? 1);
         const heightFP = Math.round(sim.world.terrain.surfaces.heightAt(unit.x, unit.y) * FP);
         // The body comes down at the speed it leapt up with and throws the grounded enemies around it first.
         if (sim.canAttackEntity(unit.type, null))
@@ -95,7 +100,7 @@ export class UnitLeapAttack {
                 sourceId: unit.id,
                 x: unit.x,
                 y: unit.y,
-                radius: impact.radius,
+                radius,
                 impactHeightFP: heightFP,
                 mass: sim.mass(unit),
                 speed: spec.lift,
@@ -105,10 +110,11 @@ export class UnitLeapAttack {
         const found = sim.nearbyUnits(
             unit.x,
             unit.y,
-            impact.radius + sim.maxUnitRadius,
+            radius + sim.maxUnitRadius,
             1 - unit.side,
             IMPACT_QUERY,
         );
+        let struck = 0;
         for (let k = 0; k < found; k++) {
             const index = IMPACT_QUERY.items[k];
             const target = sim.units[index];
@@ -120,9 +126,10 @@ export class UnitLeapAttack {
                 continue;
             if (
                 LaunchImpact.distanceToBody(sim, target, unit.x, unit.y, heightFP).surfaceDistance >
-                impact.radius
+                radius
             )
                 continue;
+            struck++;
             sim.applyDamage(
                 unit.side,
                 unit.type,
@@ -138,7 +145,10 @@ export class UnitLeapAttack {
             sourceId: unit.id,
             x: unit.x,
             y: unit.y,
-            radius: impact.radius,
+            radius,
+            struck,
+            // The landing reached past its Definition radius (campaign upgrade `leapImpact`): drawn with its ring.
+            widened: radius > impact.radius,
         });
     }
 }

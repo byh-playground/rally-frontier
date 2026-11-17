@@ -27,6 +27,7 @@ import { UnitSpinAttack } from './sim/capabilities/unit-spin-attack.js';
 import { ForwardCannon } from './sim/capabilities/forward-cannon.js';
 import { CannonRider } from './sim/capabilities/cannon-rider.js';
 import { CampaignMission } from './sim/campaign-mission.js';
+import { CampaignUpgrades } from './sim/campaign-upgrades.js';
 import { ConstructionRules } from './sim/construction-rules.js';
 import { LaunchImpactRules } from './definitions/launch-impact-rules.js';
 import { fruitProjectilePosition } from './definitions/fruit-hero-trajectory.js';
@@ -2837,6 +2838,18 @@ class GLRenderer {
                 });
             } else if (e.type === 'launchImpact') {
                 this.launchImpactFx(e, snapshot, index);
+            } else if (e.type === 'upgradeEchoShock') {
+                // A campaign upgrade's second landing shock (UpgradeEchoShock): the landing's blast ring again.
+                this.addClientFx('launchBlast', e, snapshot, index, {
+                    peak: e.peak,
+                    hits: e.hits,
+                    impactHeightFP: e.impactHeightFP,
+                });
+            } else if (e.type === 'upgradeHitBlock') {
+                this.addClientFx('upgradeHitBlock', e, snapshot, index);
+            } else if (e.type === 'upgradeContactShove') {
+                // A campaign upgrade's shove (UpgradeContactShove): a heavier hit mark on the thrown soldier.
+                this.addClientFx('meleeImpact', e, snapshot, index, { impactScale: 1.5 });
             } else if (
                 e.type === 'leapLand' ||
                 e.type === 'heroRollLand' ||
@@ -2848,6 +2861,8 @@ class GLRenderer {
                     groundRing: e.type !== 'leapLand',
                     impactHeightFP: e.impactHeightFP,
                 });
+                // A leap landing widened by its campaign upgrade also marks its whole reach on the ground.
+                if (e.widened) this.addClientFx('upgradeLeapRing', e, snapshot, index);
             } else if (e.type === 'launchOverheat') {
                 const b = e.presentationSource,
                     aim = b ? this.cannonAim(b) : { dx: 0, dy: -1 };
@@ -3835,6 +3850,11 @@ class GLRenderer {
                     ctx.stroke();
                 }
                 burst(fx, x, y, t, 5, '#ffd26a', 34, 2.2);
+            } else if (fx.kind === 'upgradeHitBlock') {
+                // A campaign upgrade's block (UpgradeHitBlock): the husk snaps outward and its chaff flies off.
+                dot(x, y, (6 + 6 * (1 - t)) * sc, '#fff6cf', Math.max(0, 0.8 - t * 1.6));
+                ring(x, y, (9 + 18 * ease) * sc, 3 * sc, '#f6dc7c', 0.9 * (1 - t));
+                burst(fx, x, y, t, 6, '#e9c75f', 30, 2.4);
             } else if (fx.kind === 'deathBurst') {
                 const vd =
                     UnitVisualDefinition.get(fx.entity) ||
@@ -7245,21 +7265,29 @@ class GLRenderer {
                 continue;
             }
             if (
-                (fx.kind !== 'basicSplashImpact' && fx.kind !== 'fruitBerryImpact') ||
+                (fx.kind !== 'basicSplashImpact' &&
+                    fx.kind !== 'fruitBerryImpact' &&
+                    fx.kind !== 'upgradeLeapRing') ||
                 fx.clock.expired
             )
                 continue;
             const fade = 1 - fx.clock.ageMs / EffectObjectFactory.combatLife(fx);
             if (fade <= 0) continue;
             const elevation = this.world.terrain.surfaces.heightAt(fx.x, fx.y);
+            const wide = fx.kind === 'upgradeLeapRing';
             const stroke =
-                fx.kind === 'fruitBerryImpact' ? [0.75, 0.45, 1, fade] : [1, 0.77, 0.44, fade];
+                fx.kind === 'fruitBerryImpact'
+                    ? [0.75, 0.45, 1, fade]
+                    : wide
+                      ? [1, 0.5, 0.42, fade]
+                      : [1, 0.77, 0.44, fade];
             this.withWorldSpriteDepth({ x: fx.x, y: elevation, z: fx.y, groundY: 0 }, () =>
                 this.drawGroundCircle(fx.x, fx.y, fx.radius, {
                     elevation,
                     stroke,
-                    width: Math.max(1, 2 * this.sc()),
-                    segments: 20,
+                    ...(wide ? { fill: [1, 0.5, 0.42, 0.18 * fade] } : {}),
+                    width: Math.max(1, (wide ? 3 : 2) * this.sc()),
+                    segments: wide ? 28 : 20,
                 }),
             );
         }
@@ -7267,6 +7295,29 @@ class GLRenderer {
         for (const entry of entries) {
             if (entry.kind !== 'unit') continue;
             const definition = UnitDefinition.get(entry.entity.type);
+            // A soldier still holding its campaign upgrade's block (UpgradeHitBlock) stands in a husk ring.
+            if (
+                entry.entity.alive &&
+                entry.entity.campaignUpgrade?.charges > 0 &&
+                CampaignUpgrades.declared(entry.entity.type, 'firstHitBlock')
+            ) {
+                const { x, z, groundY } = entry.world,
+                    { scale, stroke, fill } = EffectObjectFactory.upgradeArmorRing;
+                this.withWorldSpriteDepth({ ...entry.world, y: groundY }, () =>
+                    this.drawGroundCircle(
+                        x,
+                        z,
+                        InteractionGeometry.unitRadius(entry.entity) * scale,
+                        {
+                            elevation: groundY,
+                            fill,
+                            stroke,
+                            width: Math.max(1.5, 3 * this.sc()),
+                            segments: 16,
+                        },
+                    ),
+                );
+            }
             const spec = definition?.spinAttack;
             if (!spec && !definition?.rollAttack && !definition?.fruitAttack) continue;
             const model = this.renderState.model('unit', entry.entity.id, now);

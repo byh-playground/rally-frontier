@@ -4,7 +4,17 @@ import { defineUnit } from '../define-unit.js';
 export const Rice = defineUnit({
     id: 'rice',
     // 걷는 속도만 기본 근접보다 빠르다(민들레씨와 달리 쌀을 쓰는 이유).
-    unit: { ...BASIC_MELEE, name: '쌀', speed: 100 },
+    unit: {
+        ...BASIC_MELEE,
+        name: '쌀',
+        speed: 100,
+        // 캠페인 강화: 병사마다 첫 피격 한 번을 통째로 막는다.
+        campaignUpgrade: {
+            name: '왕겨 갑옷',
+            summary: '병사마다 첫 피격 한 번을 막아요.',
+            firstHitBlock: { hits: 1 },
+        },
+    },
     // 산탄: 한 번에 여러 갈래, 갈래마다 폭발은 작다.
     payload: {
         cost: 35 * RESOURCE_SCALE,

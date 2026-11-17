@@ -83,6 +83,13 @@ class EffectObjectFactory {
         stroke: [0.78, 0.5, 1, 0.75],
     });
     static heroAuraRing = Object.freeze({ scale: 1.25, alpha: 0.85 });
+    // A campaign upgrade's block (UpgradeHitBlock), presentation only: the husk-coloured ring under a soldier that
+    // still holds one (radius in body radii).
+    static upgradeArmorRing = Object.freeze({
+        scale: 1.5,
+        stroke: [0.98, 0.86, 0.42, 0.95],
+        fill: [0.98, 0.86, 0.42, 0.22],
+    });
     static defaultCombatLifeMs = 360;
     static sourceMotionFallbackMs = 220;
     static shellFlinch = Object.freeze({ lifeMs: 160, tilt: 0.6, squash: 0.28 });
@@ -93,6 +100,8 @@ class EffectObjectFactory {
         heroKillCharge: 400,
         heroEchoFlash: 320,
         heroAuraRegen: 700,
+        upgradeHitBlock: 320,
+        upgradeLeapRing: 400,
         constructionHit: 220,
         hitscanTravel: 180,
         antiAirHit: 320,

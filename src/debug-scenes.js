@@ -87,12 +87,70 @@ function flag(scene, name, text) {
 }
 
 // A match on one of the PvP maps (game-rules.js presets), with both sides' decks at the starter deck, or both at
-// `deck` (comma-separated cards, LaunchRules.normalizeDeck checks it).
-function createMatchSim(scene, map, seed, deck = undefined) {
+// `deck` (comma-separated cards, LaunchRules.normalizeDeck checks it). `upgrades` (see upgradedMatch) turns on the
+// host side's campaign upgrades.
+function createMatchSim(scene, map, seed, deck = undefined, upgrades = undefined) {
     const rules = GameRuleRuntime.resolveMatchRules({ presetId: map });
+    if (upgrades !== undefined) {
+        const cards = deck === undefined ? LaunchRules.starterDeck : String(deck).split(',');
+        return upgradedMatch(integer(scene, 'seed', seed), rules, map, [cards, cards], upgrades);
+    }
     if (deck === undefined) return new StrategySim(integer(scene, 'seed', seed), rules);
     const cards = String(deck).split(',');
     return new StrategySim(integer(scene, 'seed', seed), rules, [cards, cards]);
+}
+
+// `upgrades=rice,pea`: the host side's campaign upgrades for those cards (CampaignUpgrades). Only a campaign match
+// may carry any, so the match then runs as a bare campaign stage on the same map: no outposts, no mission, the
+// same decks. Without the parameter a scene keeps its plain match, tick for tick.
+function upgradedMatch(seed, rules, map, decks, upgrades) {
+    rules.campaign = {
+        id: 'debug-upgrades',
+        map,
+        deck: decks[0],
+        enemyDeck: decks[1],
+        enemyOutposts: [],
+    };
+    return new StrategySim(seed, rules, decks, [String(upgrades).split(','), []]);
+}
+
+// What the campaign upgrades did, counted from each step's events: hits a block swallowed (`blocked`) and the living
+// soldiers still holding a per-soldier charge (`charged`), second landing shocks and the bodies they hit
+// (`echoShocks`·`echoHits`), leap landings with their last radius and the soldiers they struck
+// (`leapLandings`·`leapRadius`·`leapStruck`), and contact shoves (`shoved`). `on` is the host side's upgrades.
+function createUpgradeProbe(sim) {
+    const counts = {
+        blocked: 0,
+        echoShocks: 0,
+        echoHits: 0,
+        leapLandings: 0,
+        leapRadius: null,
+        leapStruck: 0,
+        shoved: 0,
+    };
+    const step = sim.step.bind(sim);
+    sim.step = (...rest) => {
+        const winner = step(...rest);
+        for (const e of sim.events) {
+            if (e.type === 'upgradeHitBlock') counts.blocked++;
+            else if (e.type === 'upgradeEchoShock') {
+                counts.echoShocks++;
+                counts.echoHits += e.hits;
+            } else if (e.type === 'leapLand') {
+                counts.leapLandings++;
+                counts.leapRadius = e.radius;
+                counts.leapStruck += e.struck;
+            } else if (e.type === 'upgradeContactShove') counts.shoved++;
+        }
+        return winner;
+    };
+    return {
+        state: () => ({
+            on: sim.campaignUpgrades[0],
+            charged: sim.units.filter((u) => u.alive && u.campaignUpgrade?.charges > 0).length,
+            ...counts,
+        }),
+    };
 }
 
 // Every capture point gets a completed outpost of the side whose main base is nearer.
@@ -2437,10 +2495,12 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * (검은콩 앞쪽 대포 탑승, 찹쌀 거점 포구 막기). `enemyLine=N`은 적을 N 간격 가로 한 줄로, `behind=1`은 적 무리를 아군 본진
          * 쪽에, `front`·`frontCount`는 아군 앞줄을 세운다. 불 뿜는 병종(고추)은 상태의 `breath`에 불줄기 기록을 낸다. 예:
          * `?debug=1&scene=unit&map=twin-gates&seed=1&unit=coconut&count=1&x=1400&y=2900&tick=150`
+         * `upgrades=rice,millet`는 `unit` 편에 그 카드의 캠페인 병종 강화를 켜고(없으면 지금까지와 같은 경기), 상태의
+         * `upgrade`가 강화가 한 일(막은 피격·남은 병사별 횟수·두 번째 충격·도약 착지 반경과 맞은 수·밀친 수)을 낸다.
          */
         unit(params) {
             const scene = 'unit';
-            const sim = createMatchSim(scene, params.map, params.seed);
+            const sim = createMatchSim(scene, params.map, params.seed, undefined, params.upgrades);
             if (flag(scene, 'outposts', params.outposts)) completeOutposts(sim);
             const { guest } = baseAxis(sim);
             const at = { x: integer(scene, 'x', params.x), y: integer(scene, 'y', params.y) };
@@ -2575,7 +2635,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 rider = createRiderProbe(sim),
                 outposts = createOutpostProbe(sim),
                 breath = breathProbe(sim, [...new Set(sim.units.map((u) => u.type))]),
-                chain = chainProbe(sim, [...new Set(sim.units.map((u) => u.type))]);
+                chain = chainProbe(sim, [...new Set(sim.units.map((u) => u.type))]),
+                upgrade = createUpgradeProbe(sim);
             return matchScene(scene, params, sim, {
                 zoom: params.zoom === undefined ? 1.6 : positive(scene, 'zoom', params.zoom),
                 focus: followUnits(sim, at),
@@ -2595,6 +2656,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     flight: flight.state(),
                     rider: rider.state(),
                     outposts: outposts.state(),
+                    upgrade: upgrade.state(),
                     enemySpread: spread(sim, 1),
                     ...(breath ? { breath: breath.state() } : {}),
                     ...(chain ? { chain: chain.state() } : {}),
@@ -2616,17 +2678,25 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * `heroHp`를 주면 그 체력으로, `heroLevel`을 주면 그 레벨의 처치 수로 출격한다. `ally`·`allyCount`는 영웅이
          * 빠지는 자리(착지점에서 본진 쪽 120, 또는 `allyX`·`allyY`)의 아군 무리다. `recallMs`를 주면 그 시각에 영웅을 복귀시키고, 회수되면 같은 곳으로
          * 다시 쏜다. 예: `?debug=1&scene=launch&map=standard&seed=1&unit=watermelon&enemy=rice&enemyCount=30&zoom=2&tick=60`
+         * `upgrades=pea`는 쏘는 편에 그 카드의 캠페인 병종 강화를 켜고 상태의 `upgrade`에 강화가 한 일을 낸다(`unit` 장면과 같음).
          */
         launch(params) {
             const scene = 'launch';
             const type = unitType(scene, 'unit', params.unit);
             const enemy =
                 params.enemy === undefined ? undefined : unitType(scene, 'enemy', params.enemy);
-            const sim = new StrategySim(
-                integer(scene, 'seed', params.seed),
-                GameRuleRuntime.resolveMatchRules({ presetId: params.map }),
-                [[type], [enemy ?? type]],
-            );
+            const decks = [[type], [enemy ?? type]],
+                rules = GameRuleRuntime.resolveMatchRules({ presetId: params.map });
+            const sim =
+                params.upgrades === undefined
+                    ? new StrategySim(integer(scene, 'seed', params.seed), rules, decks)
+                    : upgradedMatch(
+                          integer(scene, 'seed', params.seed),
+                          rules,
+                          params.map,
+                          decks,
+                          params.upgrades,
+                      );
             const { host, center, dir } = baseAxis(sim);
             const across =
                 params.across === undefined ? 400 : integer(scene, 'across', params.across);
@@ -2751,7 +2821,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             };
             const flight = createFlightProbe(sim),
                 breath = breathProbe(sim, [type]),
-                chain = chainProbe(sim, [type]);
+                chain = chainProbe(sim, [type]),
+                upgrade = createUpgradeProbe(sim);
             // follow=1: the camera eases toward the squad's centre on the clock (time constant FOLLOW_MS), so frames
             // drawn between ticks do not jump with the tick-rate centre.
             // It starts on the cannon, and holds there until the shot's first soldier is out.
@@ -2822,6 +2893,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                         landing: { tick: landTick, units: squad.length, ...spreadOf(squad) },
                         ...(hero ? { hero: hero.state() } : {}),
                         flight: flight.state(),
+                        upgrade: upgrade.state(),
                         ...(breath ? { breath: breath.state() } : {}),
                         ...(chain ? { chain: chain.state() } : {}),
                     };

@@ -18,6 +18,12 @@ export const Pea = defineUnit({
         role: 'bruiser',
         attackVisual: { sourceMotion: 'smash', travel: 'none', impact: 'light' },
         sight: 275,
+        // 캠페인 강화: 착탄 충격이 0.5초 뒤 같은 자리에서 절반 세기(피해·넉백)로 한 번 더 난다.
+        campaignUpgrade: {
+            name: '두 번째 충격파',
+            summary: '착탄 0.5초 뒤 같은 자리에 절반 세기의 충격이 한 번 더 나요.',
+            echoShock: { delayMs: 500, ratio: 0.5 },
+        },
     },
     // 단발: 폭발이 크고 중심 강타가 가장 세다.
     payload: {

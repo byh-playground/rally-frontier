@@ -23,6 +23,16 @@
 //                overrides of the hero's own blocks, read through HeroGrowth.spec and HeroGrowth.bodyScale
 //            `rollAttack { speed, hitRadius, unfoldMs, damageRatio }` (a hero): its rolling body (HeroRollAttack),
 //            the landing strike's retreat roll and the siege roll.
+//            `campaignUpgrade { name, summary, <effect>: spec }`: the card's campaign-only upgrade, exactly one
+//            effect (CAMPAIGN_UPGRADE_EFFECTS below checks it). On for a side for a whole match when the match start
+//            carries the card (CampaignUpgrades.has); off, nothing reads it. `name`·`summary` are the card detail copy.
+//              firstHitBlock { hits }: each soldier's first `hits` enemy hits deal nothing (UpgradeHitBlock)
+//              echoShock { delayMs, ratio }: the shell's landing shock again at the same spot after `delayMs`, at
+//                `ratio` of its damage and knockback (UpgradeEchoShock; needs payload impact·splash)
+//              leapImpact { radiusScale }: the leap landing's radius times `radiusScale` (UnitLeapAttack; needs
+//                leapAttack.impact)
+//              contactShove { hits, knockback }: each soldier's first `hits` contact hits on an enemy soldier also
+//                throw it along the charge, `knockback` a KnockbackRules.gain name (UpgradeContactShove; needs contactMelee)
 //   payload  the cannon shell that carries the unit (LaunchRules). A hero's shell has no landing shock (impact,
 //            splash) but `landingStrike { radius, damage, knockback?, scatter? { ring, count }, retreat { motion:
 //            'roll'|'hop', distance } }`, the hero's own strike when it lands (HeroLandingStrike)
@@ -62,6 +72,7 @@
 //            through drawUnitQuads(context, this.paint, …) (render/dead-unit-look.js): main.js sets
 //            `paint` around a stopped, greying corpse's drawBody/drawFace (null otherwise), and its `hurt` face is every corpse's.
 import { COLLISION_RADIUS_SCALE } from '../definitions/world-rules.js';
+import { KnockbackRules } from '../definitions/knockback-rules.js';
 import { GRAIN_SIZE, HERO_LEVEL_KILLS } from './baseline.js';
 import { SustainedAttack } from '../sim/capabilities/sustained-attack.js';
 
@@ -289,6 +300,67 @@ function validateGrowth(id, growth, unit, hero) {
     }
 }
 
+// The effects a campaign upgrade can be (Definition `campaignUpgrade.<effect>`) and each one's check.
+const CAMPAIGN_UPGRADE_EFFECTS = Object.freeze({
+    // UpgradeHitBlock: the soldier's first enemy hits.
+    firstHitBlock(id, spec) {
+        if (
+            Object.keys(spec).join(',') !== 'hits' ||
+            !(Number.isInteger(spec.hits) && spec.hits > 0)
+        )
+            throw new Error(`병종 ${id}의 firstHitBlock은 hits(양의 정수)만 가집니다.`);
+    },
+    // UpgradeEchoShock: the shell's landing shock, once more.
+    echoShock(id, spec, unit, payload) {
+        if (
+            Object.keys(spec).sort().join(',') !== 'delayMs,ratio' ||
+            !(spec.delayMs > 0 && spec.ratio > 0 && spec.ratio <= 1) ||
+            !(payload.impact > 0 && payload.splash > 0)
+        )
+            throw new Error(
+                `병종 ${id}의 echoShock은 양수 delayMs·ratio(1 이하)와 포탄의 impact·splash가 필요합니다.`,
+            );
+    },
+    // UnitLeapAttack: the landing's reach.
+    leapImpact(id, spec, unit) {
+        if (
+            Object.keys(spec).join(',') !== 'radiusScale' ||
+            !(spec.radiusScale > 1) ||
+            !unit.leapAttack?.impact
+        )
+            throw new Error(
+                `병종 ${id}의 leapImpact는 1보다 큰 radiusScale과 leapAttack.impact가 필요합니다.`,
+            );
+    },
+    // UpgradeContactShove: the soldier's first contact hits on enemy soldiers.
+    contactShove(id, spec, unit) {
+        if (
+            Object.keys(spec).sort().join(',') !== 'hits,knockback' ||
+            !(Number.isInteger(spec.hits) && spec.hits > 0) ||
+            !Object.hasOwn(KnockbackRules.gain, spec.knockback) ||
+            !unit.contactMelee
+        )
+            throw new Error(
+                `병종 ${id}의 contactShove는 hits(양의 정수)·knockback(KnockbackRules.gain 이름)과 contactMelee가 필요합니다.`,
+            );
+    },
+});
+
+function validateCampaignUpgrade(id, upgrade, unit, payload) {
+    const { name, summary, ...effects } = upgrade;
+    if (typeof name !== 'string' || !name || typeof summary !== 'string' || !summary)
+        throw new Error(`병종 ${id}의 campaignUpgrade는 name·summary가 필요합니다.`);
+    const [effect, ...more] = Object.keys(effects);
+    if (!effect || more.length || !Object.hasOwn(CAMPAIGN_UPGRADE_EFFECTS, effect))
+        throw new Error(
+            `병종 ${id}의 campaignUpgrade는 효과 하나(${Object.keys(CAMPAIGN_UPGRADE_EFFECTS).join('·')})여야 합니다.`,
+        );
+    if (!effects[effect] || typeof effects[effect] !== 'object')
+        throw new Error(`병종 ${id}의 campaignUpgrade.${effect}가 잘못되었습니다.`);
+    CAMPAIGN_UPGRADE_EFFECTS[effect](id, effects[effect], unit, payload);
+    return Object.freeze({ name, summary, [effect]: Object.freeze({ ...effects[effect] }) });
+}
+
 export function defineUnit({ id, hero = false, help = [], ...parts }) {
     if (typeof id !== 'string' || !id) throw new Error('병종 id가 필요합니다.');
     for (const key of REQUIRED)
@@ -377,6 +449,13 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
     )
         throw new Error(`병종 ${id}의 basicSplash는 양수 radius·damageRatio와 atk가 필요합니다.`);
     if (unit.growth !== undefined) validateGrowth(id, unit.growth, unit, hero);
+    if (unit.campaignUpgrade !== undefined)
+        unit.campaignUpgrade = validateCampaignUpgrade(
+            id,
+            unit.campaignUpgrade,
+            unit,
+            parts.payload,
+        );
     if (unit.workerCard && !unit.construction)
         throw new Error(`병종 ${id}의 workerCard는 construction이 필요합니다.`);
     // A hero's shell lands with the hero's landing strike in place of the shell's shock (HeroLandingStrike).
