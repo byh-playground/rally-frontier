@@ -32,6 +32,10 @@ import { UnitLeapAttack } from './capabilities/unit-leap-attack.js';
 import { HeroRollAttack } from './capabilities/hero-roll-attack.js';
 import { RollingBody } from './capabilities/rolling-body.js';
 import { UnitFlight } from './capabilities/unit-flight.js';
+import { SporeSac } from './spore-sac.js';
+
+// The contact mass of a body that must not be pushed (a spore sac's captive).
+const CAPTIVE_MASS = 1e9;
 
 // Interaction geometry owns the legal arrival set; the flow field only leads units to it.
 // Goal regions are continuous (discs/annuli), not a fixed number of radial probes.
@@ -323,9 +327,10 @@ class UnitMotion {
             this.heightFP(unit)
         );
     }
-    // Hero rolls keep their committed path: no impulse or contact bookkeeping touches them.
+    // Hero rolls keep their committed path: no impulse or contact bookkeeping touches them. Nor does any touch a
+    // spore sac's captive (SporeSac.bound): it stands where it is bound.
     static locked(unit) {
-        return unit.heroRoll?.phase === 'roll';
+        return unit.heroRoll?.phase === 'roll' || SporeSac.bound(unit);
     }
 
     constructor(navigation) {
@@ -512,7 +517,8 @@ class UnitMotion {
         bodies.rx[i] = m ? m.remainderX : 0;
         bodies.ry[i] = m ? m.remainderY : 0;
         bodies.radius[i] = radius;
-        bodies.mass[i] = sim.mass(u);
+        // A spore sac's captive is not pushed: the other body takes the whole contact (and commitBody keeps it).
+        bodies.mass[i] = SporeSac.bound(u) ? CAPTIVE_MASS : sim.mass(u);
         bodies.key[i] = EntityKey.number(u.id);
         bodies.group[i] = u.side === 0 || u.side === 1 ? u.side : 2;
         bodies.z[i] = vertical ? UnitMotion.bottom(sim, u) : 0;
@@ -578,6 +584,7 @@ class UnitMotion {
             );
     }
     commitBody(bodies, i, u) {
+        if (SporeSac.bound(u)) return;
         const fx = bodies.x[i],
             fy = bodies.y[i],
             m = u.impactMotion;

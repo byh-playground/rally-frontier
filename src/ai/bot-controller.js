@@ -449,7 +449,10 @@ class BotController {
         );
         if (!cannons.length) return;
         const base = buildings.find((b) => b.type === main),
-            enemies = state.units.filter((u) => u.alive && u.side === 1 - side),
+            // A spore sac's captive (`unit.sporeSac`) is no threat and no target while it is bound.
+            enemies = state.units.filter(
+                (u) => u.alive && u.side === 1 - side && u.sporeSac === undefined,
+            ),
             hostile = state.buildings.filter((b) => b.alive !== false && b.side === 1 - side),
             enemyBase = hostile.find((b) => b.type === main),
             hasIncome =

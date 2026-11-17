@@ -40,6 +40,7 @@ import {
 import { StateContract, StateValue } from './components.js';
 import { CampaignMission } from './campaign-mission.js';
 import { Blight } from './blight.js';
+import { SporeSac } from './spore-sac.js';
 import { CampaignUpgrades } from './campaign-upgrades.js';
 import { UnitResultStats } from './unit-result-stats.js';
 import { RallyStateCodec } from '../core/rally-state-codec.js';
@@ -350,6 +351,8 @@ class StrategySim {
         }
         const missionState = CampaignMission.initialize(this);
         if (missionState) this.campaignMission = missionState;
+        // A blighted stage's spore sacs and their captives (SporeSac): only in a stage that declares them.
+        SporeSac.initialize(this);
         // Loading: every radius bucket's chunk and portal structure, before the first tick asks for a field.
         this.navigation.prepare();
     }
@@ -736,6 +739,7 @@ class StrategySim {
                 const u = this.units[near.items[k]];
                 if (
                     !u?.alive ||
+                    SporeSac.bound(u) ||
                     !UnitDefinition.get(u.type)?.construction ||
                     Math.hypot(u.x - b.x, u.y - b.y) > CAPTURE_RADIUS
                 )
@@ -1034,7 +1038,8 @@ class StrategySim {
                     !u?.alive ||
                     (u.side !== 0 && u.side !== 1) ||
                     !!UnitDefinition.get(u.type)?.captureExcluded ||
-                    UnitFlight.airborne(u)
+                    UnitFlight.airborne(u) ||
+                    SporeSac.bound(u)
                 )
                     continue;
                 if (Math.hypot(u.x - cp.x, u.y - cp.y) > CAPTURE_RADIUS) continue;
@@ -1087,12 +1092,7 @@ class StrategySim {
         });
         if (d.growsCannon) ForwardCannon.plant(this, u, d.growsCannon);
         if (d.cannonRider) CannonRider.land(this, u, d.cannonRider);
-        // A campaign upgrade counted per soldier (CampaignUpgrades): only in a match that has it on.
-        const upgrade = CampaignUpgrades.soldierState(this, side, type);
-        if (upgrade) u.campaignUpgrade = upgrade;
-        // Campaign upgrade `chainLinks`: its chain is created with more links (UnitChainAttack.links).
-        const chainLinks = d.chainAttack && CampaignUpgrades.effect(this, side, type, 'chainLinks');
-        if (chainLinks) u.chain = UnitChainAttack.initialState(chainLinks);
+        this.giveCampaignUpgrade(u);
         // A blighted stage's enemy is created blighted (Blight): only in a stage that declares it.
         Blight.mark(this, u);
         this.units.push(u);
@@ -1103,6 +1103,64 @@ class StrategySim {
         this.collisionStartCount = this.units.length;
         this.addRuntimeUnit(u);
         return u;
+    }
+    // What its side's campaign upgrades give a soldier when it joins that side (created, or changed side).
+    giveCampaignUpgrade(u) {
+        const d = UnitDefinition.get(u.type);
+        // A campaign upgrade counted per soldier (CampaignUpgrades): only in a match that has it on.
+        const upgrade = CampaignUpgrades.soldierState(this, u.side, u.type);
+        if (upgrade) u.campaignUpgrade = upgrade;
+        // Campaign upgrade `chainLinks`: its chain is created with more links (UnitChainAttack.links).
+        const chainLinks =
+            d.chainAttack && CampaignUpgrades.effect(this, u.side, u.type, 'chainLinks');
+        if (chainLinks) u.chain = UnitChainAttack.initialState(chainLinks);
+    }
+    // A living soldier joins `side` where it stands (Blight.convert): its id, health, place and motion stay.
+    // Everything that named its old enemies or served its old side ends here, so from the next thing it does it is
+    // an ordinary soldier of the new side: it picks a target again, marches to that side's rally point, builds,
+    // rides and clings for it, and carries that side's campaign upgrades. Its old allies stop being its targets
+    // through the same per-tick checks that drop any target (canTargetUnit, isHostileCombatUnit), and a hit already
+    // on its way to it from the side it joins does nothing (applyDamage). A leap it was making keeps its motion and
+    // lands without its landing attack or burst. A hero is tied to its side by its deployment slot and cannot
+    // change side.
+    changeUnitSide(u, side) {
+        const d = UnitDefinition.get(u.type),
+            from = u.side;
+        if (!u.alive || (side !== 0 && side !== 1) || side === from)
+            throw new Error(`편을 바꿀 수 없는 유닛입니다: ${u.id} (${from} -> ${side})`);
+        if (LaunchRules.isHeroType(u.type))
+            throw new Error(`편을 바꿀 수 없는 병종입니다: ${u.type}`);
+        // The attack it was making: the wind-up, a locked burst, a running spin, breath or chain, a charge, a fuse,
+        // a leap (pending or in the air: the body flies on, the landing is no attack).
+        u.target = null;
+        u.combat.cancelWindup();
+        delete u.combat.burstAttack;
+        if (d.spinAttack) UnitSpinAttack.cancel(this, u);
+        if (d.burstAttack) UnitBurstAttack.cancel(this, u, d);
+        if (d.breathAttack) UnitBreathAttack.stop(this, u, d);
+        if (d.chainAttack) UnitChainAttack.stop(this, u, d);
+        if (d.contactMelee) u.contactAttack = null;
+        if (d.selfDestruct) u.selfDestruct = null;
+        if (d.leapAttack) u.leapAttack = { phase: 'ready', cooldownUntil: 0 };
+        // What it was doing for its old side: a construction job, a muzzle it held, a cannon it rode, its post.
+        u.constructionWork = null;
+        if (d.stickyCling) u.stickyCling = StickyCling.initialState();
+        if (d.cannonRider) CannonRider.land(this, u, d.cannonRider);
+        delete u.holdPost;
+        if (u.launchHoldPointId) u.launchHoldPointId = null;
+        delete u.campaignUpgrade;
+        HeroAllyAura.forget(this, from, u.id);
+        // Its shots still in the air go with it, so they pass through the side it joins.
+        for (const shot of this.unitThornProjectiles) if (shot.sourceId === u.id) shot.side = side;
+        for (const shot of this.unitLobProjectiles) if (shot.sourceId === u.id) shot.side = side;
+        u.side = side;
+        // Its chain is made again with the links of the side it joins (the Definition's, or that side's upgrade).
+        if (d.chainAttack) u.chain = UnitChainAttack.initialState(d.chainAttack);
+        this.giveCampaignUpgrade(u);
+        // A soldier that grows a cannon (potato) roots again, for the side it joined.
+        if (d.growsCannon) ForwardCannon.plant(this, u, d.growsCannon);
+        // The side's layer of the spatial index (StrategySim.spatialGroup); the per-id indexes do not hold the side.
+        this.syncUnitSpatial(u);
     }
     unitRadius(type) {
         return InteractionGeometry.unitRadius(type);
@@ -1688,7 +1746,8 @@ class StrategySim {
             !!target &&
             target.alive !== false &&
             target.side !== attackerSide &&
-            !UnitFlight.airborne(target)
+            !UnitFlight.airborne(target) &&
+            !SporeSac.bound(target)
         );
     }
     targetLevel(target) {
@@ -1701,6 +1760,8 @@ class StrategySim {
     }
     canSeeCombatTarget(attackerSide, target, sources) {
         if (!target || target.alive === false || target.side === attackerSide) return false;
+        // A spore sac's captive is nobody's target (SporeSac); a building has no such cell.
+        if (target.sporeSac !== undefined) return false;
         if (this._perfCollect) this._perfCollect.visibilityChecks++;
         return sources.visibleAt(target.x, target.y, this.targetLevel(target));
     }
@@ -2008,6 +2069,11 @@ class StrategySim {
             return null;
         }
         if (!target || target.alive === false || target.hp <= 0) return null;
+        // A spore sac's captive takes no damage of any kind while it is bound (SporeSac).
+        if (!isBuilding && SporeSac.bound(target)) {
+            setCapture(0, true, options?.damageClass || UnitDefinition.damageClass(sourceType));
+            return null;
+        }
         const damageClass = options?.damageClass || UnitDefinition.damageClass(sourceType);
         const sourceDamageResolved = !!options?.sourceDamageResolved;
         if (!sourceDamageResolved && sourceEntityId) {
@@ -2155,6 +2221,8 @@ class StrategySim {
         });
         if (BuildingDefinition.get(target.type)?.isOutpost)
             this.releaseCaptureForOutpost(target.id);
+        // A spore sac frees its captives the moment it bursts (SporeSac).
+        if (BuildingDefinition.get(target.type)?.sporeSac) SporeSac.burst(this, target);
         if (BuildingDefinition.get(target.type)?.isMainBase)
             return target.side === 0 ? 'guest' : 'host';
         return null;
@@ -2267,7 +2335,10 @@ class StrategySim {
     }
     isHostileCombatUnit(attackerSide, e) {
         return (
-            !!e?.alive && (attackerSide === 0 || attackerSide === 1) && e.side === 1 - attackerSide
+            !!e?.alive &&
+            (attackerSide === 0 || attackerSide === 1) &&
+            e.side === 1 - attackerSide &&
+            !SporeSac.bound(e)
         );
     }
     combatTargetInAttackRange(u, found, attackRange = null) {
@@ -3009,7 +3080,8 @@ class StrategySim {
         this.updateBuildingCombat(vision);
         const pendingContactAttacks = [];
         for (const u of this.units) {
-            if (!u.alive) continue;
+            // A spore sac's captive takes no turn: it stands where it is bound (SporeSac).
+            if (!u.alive || SporeSac.bound(u)) continue;
             winner = this.updateCombat(u, vision, pendingContactAttacks) || winner;
         }
         const combatMs = profile ? now() - mark : 0;

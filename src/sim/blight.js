@@ -3,8 +3,8 @@
 // blighted; the declaration rides in `sim.rules.campaign`, so the match start, snapshot, replay and rollback carry
 // it as they carry the stage. No other match has the cell (a plain match's state is unchanged), and buildings are
 // never blighted. Being blighted is not being hostile: a versus opponent is hostile and not blighted.
-// This class is the only writer of the cell. `free` is where a soldier leaves the blight; joining the freeing
-// side is added on top of it (the spore pouch), not here.
+// This class is the only writer of the cell. `free` is where a soldier leaves the blight; `convert` frees it and
+// has it join the freeing side (a spore sac's captives, sim/spore-sac.js).
 export class Blight {
     // The side a blighted stage's enemy plays (the campaign player is side 0).
     static ENEMY_SIDE = 1;
@@ -36,6 +36,15 @@ export class Blight {
             x: unit.x,
             y: unit.y,
         });
+        return true;
+    }
+
+    // Frees one blighted soldier and has it join `side` where it stands (StrategySim.changeUnitSide keeps its id,
+    // health and place and ends what tied it to its old side). Returns whether it did; a unit that is dead or not
+    // blighted stays as it is. It is not a kill: no death, no kill count, no hero growth.
+    static convert(sim, unit, side) {
+        if (!this.free(sim, unit)) return false;
+        sim.changeUnitSide(unit, side);
         return true;
     }
 }

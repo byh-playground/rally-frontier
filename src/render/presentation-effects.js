@@ -124,6 +124,7 @@ class EffectObjectFactory {
         shellIntercepted: 420,
         emergencyLanding: 320,
         buildingBurst: 620,
+        sporeSacBurst: 760,
         launchMuzzle: 900,
         launchBlast: 820,
         launchBundleBreak: 680,
