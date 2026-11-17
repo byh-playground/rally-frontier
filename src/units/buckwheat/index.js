@@ -31,6 +31,12 @@ export const Buckwheat = defineUnit({
             targetHeight: 8,
         }),
         sight: 275,
+        // 캠페인 강화: 씨앗을 던질 때마다 0.2초 뒤 같은 적에게 한 발 더 던진다. 던지기 간격 0.5초는 그대로다.
+        campaignUpgrade: {
+            name: '두 발 연사',
+            summary: '씨앗을 0.2초 간격으로 두 발씩 이어 던져요.',
+            doubleShot: { gapMs: 200 },
+        },
     },
     payload: {
         ...SINGLE_BUNDLE_SHELL,

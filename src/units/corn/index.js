@@ -37,6 +37,12 @@ export const Corn = defineUnit({
             explosionRadius: 50,
         }),
         sight: 275,
+        // 캠페인 강화: 던진 알이 적 병사나 적 건물에 닿으면 0.5초 지연 없이 그 자리에서 바로 터진다.
+        campaignUpgrade: {
+            name: '접촉 신관',
+            summary: '던진 알이 적에게 닿는 순간 바로 터져요.',
+            contactFuse: { buildings: true },
+        },
     },
     // Provisional corn deployment: a single shell releases one grouped squad.
     payload: {

@@ -10,6 +10,7 @@ import { KnockbackRules } from '../../definitions/knockback-rules.js';
 import { LaunchImpact } from '../launch-impact.js';
 import { Knockback } from '../knockback.js';
 import { IndexList } from '../index-list.js';
+import { CampaignUpgrades } from '../campaign-upgrades.js';
 
 const EXPLOSION_BUILDING_QUERY = new IndexList();
 // A blocked shot pair is retried once either shot changes: both revisions as one number. A revision counts the
@@ -250,7 +251,23 @@ export class UnitLobAttack {
             });
         return true;
     }
-    static explode(sim, shot) {
+    // Campaign upgrade `contactFuse { buildings }` (옥수수 · 접촉 신관): is `hit` an enemy body that sets the egg off
+    // at once? An enemy soldier always does, in the air or on the ground; an enemy building when `buildings`.
+    static contactFuse(sim, shot, hit) {
+        if (hit.kind !== 'body') return false;
+        const spec = CampaignUpgrades.effect(sim, shot.side, shot.sourceType, 'contactFuse');
+        if (!spec) return false;
+        if (hit.isBuilding)
+            return (
+                spec.buildings &&
+                sim.isHostileCombatBuilding(shot.side, sim.buildingById.get(hit.id))
+            );
+        const unit = sim.unitById.get(hit.id);
+        return !!unit && unit.alive && unit.side !== shot.side;
+    }
+    // `subtick` is the moment inside the tick the egg goes off (the renderer retires the egg there): its landing's
+    // for a fuse, the contact's own for a contact fuse (`contact`, marked on the event for presentation).
+    static explode(sim, shot, subtick = shot.landedAtSubtick, contact = false) {
         const x = shot.x,
             y = shot.y,
             radius = shot.spec.explosionRadius,
@@ -264,8 +281,9 @@ export class UnitLobAttack {
             x,
             y,
             zFP: shot.zFP,
-            subtick: shot.landedAtSubtick,
+            subtick,
             radius,
+            ...(contact ? { contact: true } : null),
         });
         // The egg bursts: a small throw, since the egg weighs little.
         Knockback.area(sim, {
@@ -713,6 +731,23 @@ export class UnitLobAttack {
                 if (e.kind === 'contact') {
                     const hit = e.hit,
                         key = shot.id + '|' + hit.key;
+                    if (this.contactFuse(sim, shot, hit)) {
+                        this.explode(
+                            sim,
+                            shot,
+                            Math.max(
+                                0,
+                                Math.min(
+                                    1000000,
+                                    Math.round(((sub * slice + e.at) / dt) * 1000000),
+                                ),
+                            ),
+                            true,
+                        );
+                        shot.expired = true;
+                        a.rev++;
+                        continue;
+                    }
                     a.processed.add(hit.key);
                     const target = motionAt((sub * slice + e.at) / dt)(
                         sim.unitById.get(hit.id) || {},

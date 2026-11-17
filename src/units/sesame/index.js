@@ -17,6 +17,12 @@ export const Sesame = defineUnit({
         speed: 100,
         size: GRAIN_SIZE * 0.6,
         workerCard: true,
+        // 캠페인 강화: 한 번 발사에 10명이 더 나와 40명이 된다.
+        campaignUpgrade: {
+            name: '일손 늘리기',
+            summary: '한 번에 10명이 더 나와 40명이 돼요.',
+            extraSoldiers: { soldiers: 10 },
+        },
     },
     payload: {
         ...SINGLE_BUNDLE_SHELL,

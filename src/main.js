@@ -22,6 +22,7 @@ import {
 import { LaunchRules } from './sim/launch-rules.js';
 import { StickyCling } from './sim/capabilities/sticky-cling.js';
 import { SustainedAttack } from './sim/capabilities/sustained-attack.js';
+import { UnitBreathAttack } from './sim/capabilities/unit-breath-attack.js';
 import { HeroPassive } from './sim/capabilities/hero-passive.js';
 import { UnitSpinAttack } from './sim/capabilities/unit-spin-attack.js';
 import { ForwardCannon } from './sim/capabilities/forward-cannon.js';
@@ -5416,7 +5417,8 @@ class GLRenderer {
                         startedAt: 0,
                         stoppedAt: null,
                         seed: HashUtil.hash(u.id) % 997,
-                        length: spec.length,
+                        // The soldier's own length (campaign upgrade longBreath), fixed when it is created.
+                        length: UnitBreathAttack.length(entity, spec),
                         halfArc: (spec.arcDegrees * Math.PI) / 360,
                     }),
                     ax = breath.aimX / 10000,

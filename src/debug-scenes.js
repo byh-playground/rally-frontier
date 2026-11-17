@@ -124,6 +124,10 @@ function upgradedMatch(seed, rules, map, decks, upgrades) {
 // they hit (`shardBursts`·`shardHits`), bounces the upgrade showed (`wallRebounds`) and, upgrade or not, the host
 // side's rolling bodies' speed before and after each tick they touched a wall or building, first 8 (`wallBounces`:
 // [tick, before, after]). `buildingDamage` is the host side's damage to buildings so far.
+// The field cards: thrown eggs set off by touching an enemy (`contactBursts`), second self-destruct bursts and the
+// soldiers they hit (`echoBursts`·`echoBurstHits`), the ticks the host side's forward cannons stood up, first 8
+// (`cannonTicks`), the most host soldiers on the field at once (`fielded`), second thorns thrown (`followShots`) and
+// the longest flame among the host side's living soldiers (`breathLength`, null without one).
 function createUpgradeProbe(sim) {
     const counts = {
         blocked: 0,
@@ -142,6 +146,12 @@ function createUpgradeProbe(sim) {
         shardHits: 0,
         wallRebounds: 0,
         wallBounces: [],
+        contactBursts: 0,
+        echoBursts: 0,
+        echoBurstHits: 0,
+        cannonTicks: [],
+        fielded: 0,
+        followShots: 0,
     };
     const round = (value) => Math.round(value * 10) / 10,
         rollSpeed = new Map(),
@@ -156,8 +166,19 @@ function createUpgradeProbe(sim) {
                 counts.wallBounces.push([sim.tick, round(rollSpeed.get(u.id) ?? 0), round(speed)]);
             rollSpeed.set(u.id, speed);
         }
+        counts.fielded = Math.max(
+            counts.fielded,
+            sim.units.reduce((sum, u) => sum + (u.alive && u.side === 0 ? 1 : 0), 0),
+        );
         for (const e of sim.events) {
-            if (e.type === 'unitThornHit' && e.heavy) {
+            if (e.type === 'unitLobExplosion' && e.contact) counts.contactBursts++;
+            else if (e.type === 'unitSelfDestruct' && e.echo) {
+                counts.echoBursts++;
+                counts.echoBurstHits += e.hits;
+            } else if (e.type === 'forwardCannonRooted' && e.side === 0) {
+                if (counts.cannonTicks.length < 8) counts.cannonTicks.push(sim.tick);
+            } else if (e.type === 'unitThornLaunch' && e.follow) counts.followShots++;
+            else if (e.type === 'unitThornHit' && e.heavy) {
                 counts.heavyHits++;
                 // The thorn's own hit: the last `hit` event on that target before this one.
                 for (let k = sim.events.indexOf(e) - 1; k >= 0; k--) {
@@ -192,6 +213,10 @@ function createUpgradeProbe(sim) {
             on: sim.campaignUpgrades[0],
             charged: sim.units.filter((u) => u.alive && u.campaignUpgrade?.charges > 0).length,
             chaining: sim.units.filter((u) => u.alive && u.campaignUpgrade?.chaining).length,
+            breathLength: sim.units.reduce((longest, u) => {
+                const spec = u.alive && u.side === 0 && UnitDefinition.get(u.type).breathAttack;
+                return spec ? Math.max(longest ?? 0, UnitBreathAttack.length(u, spec)) : longest;
+            }, null),
             buildingDamage: Object.values(sim.unitResultStats[0]).reduce(
                 (sum, entry) => sum + entry.buildingDamage,
                 0,
@@ -1504,12 +1529,14 @@ function createBreathProbe(sim) {
         let offset = Math.abs(
             Math.atan2(Math.sin(Math.atan2(dy, dx) - aim), Math.cos(Math.atan2(dy, dx) - aim)),
         );
-        if (offset <= half) return dist - spec.length - r;
+        // The soldier's own flame length (campaign upgrade longBreath).
+        const length = UnitBreathAttack.length(source, spec);
+        if (offset <= half) return dist - length - r;
         offset -= half;
         if (offset >= Math.PI / 2) return dist - r;
         const along = dist * Math.cos(offset),
             across = dist * Math.sin(offset);
-        return (along <= spec.length ? across : Math.hypot(along - spec.length, across)) - r;
+        return (along <= length ? across : Math.hypot(along - length, across)) - r;
     };
     const finish = () => {
         if (!pulse) return;
@@ -2545,7 +2572,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * `?debug=1&scene=unit&map=twin-gates&seed=1&unit=coconut&count=1&x=1400&y=2900&tick=150`
          * `upgrades=rice,millet`는 `unit` 편에 그 카드의 캠페인 병종 강화를 켜고(없으면 지금까지와 같은 경기), 상태의
          * `upgrade`가 강화가 한 일(막은 피격·남은 병사별 횟수·두 번째 충격·도약 착지 반경과 맞은 수·두 배로 들어간 첫 일격 수·
-         * 굵은 가시·쏜 포탄 수·연쇄 돌진·껍질 파편·벽 반사, createUpgradeProbe)을 낸다.
+         * 굵은 가시·쏜 포탄 수·연쇄 돌진·껍질 파편·벽 반사·닿아서 터진 알·두 번째 자폭·전진 대포가 선 틱·한 번에 선
+         * 아군 수·이어 던진 가시·불줄기 길이, createUpgradeProbe)을 낸다.
          */
         unit(params) {
             const scene = 'unit';

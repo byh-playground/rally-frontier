@@ -19,6 +19,12 @@ export const Potato = defineUnit({
         sight: 275,
         // digMs: the art shows digging in until then, rooting after it, until the cannon stands.
         growsCannon: Object.freeze({ delayMs: 5000, digMs: 2000, building: 'forward-cannon' }),
+        // 캠페인 강화: 착지 5초가 아니라 2초 뒤에 전진 대포가 된다.
+        campaignUpgrade: {
+            name: '빠른 설치',
+            summary: '착지 2초 만에 전진 대포가 돼요(원래 5초).',
+            quickRoot: { delayMs: 2000 },
+        },
     },
     // 비용·사거리(일반의 75%)·대포당 한 명은 확정, 포탄 체력·위력·반경은 찹쌀과 같은 초안이다.
     // Every cannon in a volley carries its own potato, so the volley grows one cannon per participant.
