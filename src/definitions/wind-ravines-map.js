@@ -51,7 +51,6 @@ export function windRavinesMapLayout() {
         width,
         height,
         spawns: { host, guest },
-        biome: 'frontier',
         topology: 'wind-ravines',
         flags: [guest, host].map((p) => ({ ...p, forced: false })),
         laneControlPoints: { top, mid: [], bot: turnedLane(turn, top) },

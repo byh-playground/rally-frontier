@@ -77,6 +77,7 @@ import { heroBasicAttackElapsedMs } from './render/hero-basic-motion.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
 import { DEAD_UNIT_LOOK, DeadUnitLook } from './render/dead-unit-look.js';
 import { BLIGHT_LOOK, BlightFieldLook, BlightLook } from './render/blight-look.js';
+import { mapLookFor } from './render/map-look.js';
 import {
     CONFIG,
     FP,
@@ -414,6 +415,7 @@ class TerrainPresentation {
         highGround: Object.freeze([0.64, 0.72, 0.47, 1]),
         rampLow: Object.freeze([0.66, 0.62, 0.42, 1]),
         rampHigh: Object.freeze([0.69, 0.69, 0.44, 1]),
+        cliff: Object.freeze([0.31, 0.37, 0.25, 1]),
     });
     static css(color) {
         return `rgba(${Math.round(color[0] * 255)},${Math.round(color[1] * 255)},${Math.round(color[2] * 255)},${color[3] ?? 1})`;
@@ -567,7 +569,8 @@ class TerrainPresentation {
             r.begin();
         }
     }
-    static drawSurfaces(r) {
+    // `palette` is the theme's raised-ground colours for a themed map (render/map-look.js).
+    static drawSurfaces(r, palette = this.colors) {
         const atlas = r.world.terrain.surfaces;
         if (!atlas.layers.length && !atlas.bridges.length) return;
         const previous = r._renderDepth,
@@ -592,9 +595,9 @@ class TerrainPresentation {
                         dy = f.b.y - f.a.y,
                         light = (dx - dy) / (Math.hypot(dx, dy) || 1);
                     colors = patch.vertices.map(() => [
-                        0.31 + light * 0.035,
-                        0.37 + light * 0.035,
-                        0.25 + light * 0.025,
+                        palette.cliff[0] + light * 0.035,
+                        palette.cliff[1] + light * 0.035,
+                        palette.cliff[2] + light * 0.025,
                         1,
                     ]);
                 } else if (patch.kind === 'ramp')
@@ -606,19 +609,17 @@ class TerrainPresentation {
                             0,
                             1,
                         );
-                        return this.colors.rampLow.map(
-                            (c, i) => c + (this.colors.rampHigh[i] - c) * t,
-                        );
+                        return palette.rampLow.map((c, i) => c + (palette.rampHigh[i] - c) * t);
                     });
                 // The level-0 underlay already owns its grass/water markings. Write the
                 // exact floor depth without repainting those colors; authored depressions remain opaque.
                 else
                     colors = patch.vertices.map(() =>
                         patch.id === 'low-ground'
-                            ? [...this.colors.lowGround.slice(0, 3), 0]
+                            ? [...palette.lowGround.slice(0, 3), 0]
                             : patch.level === 0
-                              ? this.colors.lowGround
-                              : this.colors.highGround,
+                              ? palette.lowGround
+                              : palette.highGround,
                     );
                 colorCache.set(patch, colors);
             }
@@ -1154,6 +1155,10 @@ class FogVisibilityGrid {
 const DEFAULT_LIVE_ZOOM = 1.5;
 const MAX_LIVE_ZOOM = 2;
 
+const FOG_COLOR = Object.freeze({
+    live: Object.freeze([0.025, 0.045, 0.048, 0.88]),
+    replay: Object.freeze([0.008, 0.012, 0.018, 0.96]),
+});
 class GLRenderer {
     static DEPTH_PROJECTION = Object.freeze({
         offset: 0.88,
@@ -1331,6 +1336,9 @@ class GLRenderer {
         this.renderStage = 'init';
         this.renderEntity = null;
         this.renderFatalReported = false;
+        // How this map's ground and scenery are drawn (render/map-look.js), rebuilt by syncMapLook.
+        this.mapLook = mapLookFor(this, null);
+        this.mapLookKey = '';
 
         // Game shaders express Rally's terrain/depth/fog policy. Gamekit owns GPU resources and submission.
         const vs = `attribute vec3 a;attribute vec4 ac;uniform vec2 r;varying lowp vec4 vc;void main(){vec2 p=a.xy/r*2.0-1.0;gl_Position=vec4(p.x,-p.y,a.z,1.0);vc=ac;}`,
@@ -1375,6 +1383,21 @@ class GLRenderer {
             },
         });
         this.fogBuf = this.device.createVertexBuffer({ capacityBytes: 5 * 8192 * 4 });
+        // A themed map's ground (render/map-look.js): one static mesh of world ground points, each with a
+        // screen-space offset, drawn with the camera as uniforms. The buffer is the renderer's and is refilled
+        // when a map loads.
+        this.groundMeshPipeline = this.device.createPipeline({
+            vertex: `attribute vec2 a;attribute vec2 off;attribute vec4 ac;uniform vec2 r;uniform vec2 o;uniform vec2 ex;uniform vec2 ey;uniform float sc;uniform float depth;varying lowp vec4 vc;void main(){vec2 s=o+a.x*ex+a.y*ey+off*sc;vec2 p=s/r*2.0-1.0;gl_Position=vec4(p.x,-p.y,depth,1.0);vc=ac;}`,
+            fragment: fs,
+            stride: 32,
+            attributes: [
+                { name: 'a', size: 2, offset: 0 },
+                { name: 'off', size: 2, offset: 8 },
+                { name: 'ac', size: 4, offset: 16 },
+            ],
+            uniforms: { r: '2f', o: '2f', ex: '2f', ey: '2f', sc: '1f', depth: '1f' },
+        });
+        this.groundMeshBuffer = this.device.createVertexBuffer({ capacityBytes: 4 });
         this.fogFrame = new ReusableFloat32Buffer(5 * 8192);
         this.fogTextures = new Map();
         this._fogTextureKey = null;
@@ -1474,6 +1497,7 @@ class GLRenderer {
         this.onShowcaseError = null;
         this.onShowcaseFirstFrame = null;
         this.snapshot = null;
+        this.syncMapLook();
         this.world = WorldContext.standard;
         this.renderState.reset();
         this.renderEntity = null;
@@ -2451,6 +2475,19 @@ class GLRenderer {
         if (!this.snapshot) return;
         for (const side of [0, 1]) VisibilityPolicy.field(this, side, this.snapshot);
     }
+    // The map's look belongs to the map alone: it is built when a map's first snapshot arrives, before that
+    // map's first frame, and never again for that map (turning the view only changes the projection).
+    syncMapLook() {
+        const descriptor = this.snapshot?.mapDescriptor || null,
+            key = descriptor
+                ? `${descriptor.topology}|${descriptor.seed}|${descriptor.width}x${descriptor.height}|${descriptor.theme}`
+                : '';
+        if (key === this.mapLookKey) return;
+        this.mapLookKey = key;
+        this.mapLook.dispose(this);
+        this.mapLook = mapLookFor(this, descriptor);
+        this.perfStats.mapLook = this.mapLook.stats || null;
+    }
     setSnapshot(s, { liveTargets = false, snapTargets = false } = {}) {
         const old = this.snapshot;
         if (
@@ -2479,6 +2516,7 @@ class GLRenderer {
         if (!old || old.mapDescriptor?.seed !== s.mapDescriptor?.seed)
             this.cameraTop = this.clampCameraTop(Infinity);
         this.snapshot = s;
+        this.syncMapLook();
         this.buildingArt.prune(s.buildings);
         this.stickyClingers.clear();
         this.mountedUnitIds.clear();
@@ -4885,6 +4923,10 @@ class GLRenderer {
 
     drawStrategicMap() {
         if (!this.snapshot) return;
+        this.drawLaneTints();
+        this.drawCapturePointMarks();
+    }
+    drawLaneTints() {
         const sc = this.sc();
         const laneDefs = [
             { id: 'top', col: [0.35, 0.62, 0.9, 0.13] },
@@ -4909,7 +4951,10 @@ class GLRenderer {
                 );
             }
         }
-
+    }
+    // Who holds each capture point, as discs on the ground.
+    drawCapturePointMarks() {
+        if (!this.snapshot) return;
         for (const cp of this.snapshot.capturePoints || []) {
             const base =
                 cp.owner != null
@@ -5037,6 +5082,15 @@ class GLRenderer {
         const terrain = MapGeneration.mapTerrainDescriptor(mapDesc);
         // renderGroundPass owns depth writes here; avoid GPU state readbacks between batches.
         TerrainPresentation.drawWorld(this, terrain, true);
+        TerrainPresentation.drawRiverSurfaces(this, mapDesc, true);
+        TerrainPresentation.drawBridges(this, true);
+    }
+    // The terrain a themed map still draws itself over its baked ground: raised layers, water, bridges.
+    drawTerrainSurfaces(colors) {
+        TerrainPresentation.drawSurfaces(this, colors);
+        this.flush();
+        this.begin();
+        const mapDesc = this.snapshot?.mapDescriptor || null;
         TerrainPresentation.drawRiverSurfaces(this, mapDesc, true);
         TerrainPresentation.drawBridges(this, true);
     }
@@ -7158,6 +7212,43 @@ class GLRenderer {
         this.perfStats.bufferUploadBytes = (this.perfStats.bufferUploadBytes || 0) + d.byteLength;
         this.fogFrame.reset();
     }
+    fogColor() {
+        return this.replayVisionMode ? FOG_COLOR.replay : FOG_COLOR.live;
+    }
+    // Brings the fog masks up to this frame's snapshot before the fog pass, for readers of fogAmountAt.
+    prepareFogAmount() {
+        if (!this.replayObserverAll && this.snapshot) this.ensureFogTextures();
+    }
+    // How much fog lies on the ground at a world point (0 = clear), from the very masks and transition the fog
+    // is drawn with (the mask it is leaving, the mask it is reaching, and how far between): a thing standing in
+    // front of the fog darkens and clears together with the ground under it.
+    fogAmountAt(x, y) {
+        if (this.replayObserverAll || !this.snapshot) return 0;
+        const record = this.fogMaskRecords.get(
+            `level:${this.world.terrain.surfaces.levelAt(x, y)}`,
+        );
+        if (!record) return 0;
+        const { w, h } = this.fogMaskSize,
+            fx = RangeUtil.clamp(x / this.world.width, 0, 1) * (w - 1),
+            fy = RangeUtil.clamp(y / this.world.height, 0, 1) * (h - 1),
+            i = Math.min(w - 2, Math.floor(fx)),
+            j = Math.min(h - 2, Math.floor(fy)),
+            tx = fx - i,
+            ty = fy - j,
+            k = j * w + i,
+            sample = (mask) =>
+                (mask[k] * (1 - tx) + mask[k + 1] * tx) * (1 - ty) +
+                (mask[k + w] * (1 - tx) + mask[k + w + 1] * tx) * ty,
+            reached = sample(record.target),
+            // Without a running transition the fog draws its target mask alone.
+            amount = this._fogTransitionStartedAt == null ? 1 : this.fogTransitionAmount(),
+            visible =
+                (amount < 1 ? sample(record.from) * (1 - amount) + reached * amount : reached) /
+                255,
+            // The fog shader's edge: smoothstep(0.12, 0.88, visible).
+            t = RangeUtil.clamp((visible - 0.12) / 0.76, 0, 1);
+        return this.fogColor()[3] * (1 - t * t * (3 - 2 * t));
+    }
     drawFog() {
         if (this.replayObserverAll || !this.snapshot) {
             this.resetFogTransition();
@@ -7165,9 +7256,7 @@ class GLRenderer {
         }
         this.ensureFogTextures();
         const gl = this.gl,
-            color = this.replayVisionMode
-                ? [0.008, 0.012, 0.018, 0.96]
-                : [0.025, 0.045, 0.048, 0.88];
+            color = this.fogColor();
         // Reuse terrain's projected spatial index and orientation filter. Tessellation
         // is built once; offscreen triangles never enter the per-frame Fog upload.
         const mesh = TerrainSurfaceProjection.forAtlas(
@@ -7236,13 +7325,13 @@ class GLRenderer {
         this.passState.depthWrite = true;
         this.setRenderDepth(0.97);
         this.begin();
-        this.drawGround();
+        this.mapLook.drawGround(this);
         this.flush();
         this.passState.depthWrite = false;
         this.begin();
         TerrainPresentation.drawSurfaceEdges(this);
         this.setRenderDepth(0.969);
-        this.drawStrategicMap();
+        this.mapLook.drawGroundMarks(this);
         // The blight field and its braziers go into this same triangle stream: no draw of their own.
         this.drawBlightField();
         this.drawSporeCloudGround();
@@ -7667,6 +7756,8 @@ class GLRenderer {
         this.renderTerrainOcclusionDepth();
         this.terrainOccludedBodyFrame.reset();
         this.begin();
+        // The map's standing props are opaque and write depth, so they go first, in the pass's first batch.
+        this.mapLook.drawProps(this);
         // Terrain alone owns the depth buffer. Each billboard's authored painter
         // order must never compete with its own coplanar component triangles.
         let lastPainter = null;

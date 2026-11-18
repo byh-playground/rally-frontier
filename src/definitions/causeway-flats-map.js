@@ -51,7 +51,6 @@ export function causewayFlatsMapLayout() {
         width,
         height,
         spawns: { host, guest },
-        biome: 'frontier',
         topology: 'causeway-flats',
         flags: [guest, host].map((p) => ({ ...p, forced: false })),
         laneControlPoints: {

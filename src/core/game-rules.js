@@ -34,7 +34,6 @@ class GameRuleDefinition {
             generatorVersion: 11,
             width: 4200,
             height: 4800,
-            biome: 'frontier',
             topology: 'mixed',
             symmetry: 'rotational-180',
             openness: 0.5,

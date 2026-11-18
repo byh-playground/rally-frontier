@@ -507,7 +507,6 @@ class MapGeneration {
             seed: MapGeneration.mapRuleSeed(baseSeed, rules, roundNumber),
             width,
             height,
-            biome: m.biome || 'frontier',
             topology: m.topology || 'standard',
             symmetry: m.symmetry || 'diagonal',
             spawns: {
@@ -660,7 +659,6 @@ class MapGeneration {
             seed,
             width,
             height,
-            biome: m.biome || 'frontier',
             topology,
             terrainArchetype,
             symmetry: 'rotational-terrain',

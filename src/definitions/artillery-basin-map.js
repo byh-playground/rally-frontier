@@ -109,7 +109,6 @@ export function artilleryBasinMapLayout() {
         width,
         height,
         spawns: { host, guest },
-        biome: 'frontier',
         topology: 'artillery-basin',
         flags: [guest, host].map((p) => ({ ...p, forced: false })),
         laneControlPoints: {
