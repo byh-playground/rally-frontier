@@ -10856,7 +10856,8 @@ class MatchLifecycle {
             reason,
             cleared: !!cleared,
         });
-        LaunchScreens.renderCampaignResult(reward, next);
+        // The story assumes the stage was won, so a loss shows no story.
+        LaunchScreens.renderCampaignResult(reward, next, cleared ? stage : null);
         UiRegistry.refs.resultTitle.textContent = draw ? '무승부' : mine ? '승리' : '패배';
         if (reason === 'surrender')
             UiRegistry.refs.resultText.textContent = mine
@@ -10888,7 +10889,7 @@ class MatchLifecycle {
                 : ActiveViewState.snap?.campaignMission?.guardLost
                   ? '지킬 거점이 무너졌습니다.'
                   : '내 메인 거점이 파괴되었습니다.';
-        if (cleared && !next && reason !== 'boss-subdued')
+        if (cleared && !next && !stage.act && reason !== 'boss-subdued')
             UiRegistry.refs.resultText.textContent = '캠페인을 모두 완료했습니다.';
         const end = ActiveViewState.snap,
             stats = end?.launchStats,
@@ -12949,6 +12950,11 @@ async function startTitleApp() {
         showcaseSurface,
         actions: {
             campaignProgress,
+            // `?campaign=acts`: the new campaign screen (CampaignScreen) reads the roster's record.
+            campaignActs: dev.campaignActs,
+            roster,
+            openCampaignStage: (chapterId, stageId) =>
+                reloadAt(`#/campaign/${chapterId}?stage=${encodeURIComponent(stageId)}`),
             sunshine: () => roster.sunshine,
             difficulty: () => roster.difficulty,
             setDifficulty: (id) => roster.setDifficulty(id),

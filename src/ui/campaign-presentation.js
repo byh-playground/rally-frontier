@@ -28,6 +28,20 @@ function missionGoal(stage) {
     return ATTACK_GOAL;
 }
 
+// The main goal on the new campaign's briefing: a stage that asks for the first outpost first still ends on the base.
+export function briefGoal(stage) {
+    return stage.mission?.firstCapture ? `전진 거점 짓고 ${ATTACK_GOAL}` : missionGoal(stage);
+}
+
+// The side goal as the briefing states it, before the match (the declaration, campaign.js `sideGoal`).
+export function sideGoalBrief(goal) {
+    if (goal.kind === 'freeCaptives')
+        return goal.count === undefined ? '포로 모두 구하기' : `포로 ${goal.count}명 구하기`;
+    if (goal.kind === 'burnFields') return '감염 밭 모두 태우기';
+    if (goal.kind === 'withinMs') return `${formatCountdown(goal.ms / 1000)} 안에 이기기`;
+    return `${goal.point === undefined ? '본진' : '지킬 거점'} 체력 ${Math.round(goal.hpRatio * 100)}% 넘게 지키기`;
+}
+
 // The side goal's line under the objective (SideGoal, the snapshot's `sideGoal`): what it asks and how far it is.
 function sideGoalLine(goal, tick, tps) {
     const percent = (ratio) => `${Math.round(ratio * 100)}%`;
@@ -81,7 +95,8 @@ function currentGoal(stage, snapshot) {
             wave = (mission?.waveIndex ?? -1) + 1;
         return {
             key: `wave-${wave}`,
-            label: wave ? `${wave} / ${count}차 공격` : '공격 대기',
+            // A defence whose attacks all come by spore cloud (SporeCloud) has no waves to count.
+            label: wave ? `${wave} / ${count}차 공격` : count ? '공격 대기' : '버티기',
             // Ticks left on the mission's clock (held while a practice runs).
             timerTicks: mission ? mission.endTick - CampaignMission.clock(snapshot) : null,
             ...(wave && {

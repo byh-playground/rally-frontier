@@ -1,4 +1,5 @@
 import { CAMPAIGN_STAGES, campaignTier } from '../definitions/campaign.js';
+import { CampaignActs } from './campaign-acts.js';
 import { loadPlayerSave, updatePlayerSave } from './player-saves.js';
 
 const REWARD_STAGES = new Map(
@@ -47,7 +48,13 @@ export class CampaignProgress {
     }
 
     // The debug unlock saves nothing, so there the next stage is simply the following one in definition order.
+    // A new-campaign stage's next is the next open stage once it counts as cleared (its record is still saving).
     nextAfter(stage) {
+        if (stage.act)
+            return CampaignActs.next(
+                new Set([...(this.roster?.clearedStages ?? []), stage.id]),
+                CampaignActs.chapterOf(stage),
+            );
         return this.#debugUnlocked
             ? CAMPAIGN_STAGES[CAMPAIGN_STAGES.indexOf(stage) + 1] || null
             : this.nextStage;
@@ -76,6 +83,12 @@ export class CampaignProgress {
     }
 
     canStart(stage) {
+        // A new-campaign stage (`act`) opens by the act rules on the roster's record (CampaignActs).
+        if (stage.act)
+            return (
+                this.#debugUnlocked ||
+                CampaignActs.isOpen(stage, this.roster?.clearedStages ?? new Set())
+            );
         return (
             this.#debugUnlocked ||
             (this.isTierOpen(stage.tier) &&
@@ -92,8 +105,9 @@ export class CampaignProgress {
         return !this.#debugUnlocked;
     }
 
+    // A new-campaign stage's result is recorded in the roster instead (Roster.recordClear).
     complete(stage) {
-        if (!this.records) return null;
+        if (!this.records || stage?.act) return null;
         if (!stage || this.isComplete(stage) || !this.canStart(stage)) return null;
         this.completed.add(stage.id);
         if (stage.rewardCard) void this.roster?.grant([stage.rewardCard]);
