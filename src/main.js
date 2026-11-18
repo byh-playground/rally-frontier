@@ -1383,20 +1383,21 @@ class GLRenderer {
             },
         });
         this.fogBuf = this.device.createVertexBuffer({ capacityBytes: 5 * 8192 * 4 });
-        // A themed map's baked ground (render/map-look.js): one textured quad per ground texture on screen.
-        this.groundTexturePipeline = this.device.createPipeline({
-            vertex: `attribute vec3 a;attribute vec2 uv;uniform vec2 r;varying highp vec2 vuv;void main(){vec2 p=a.xy/r*2.0-1.0;gl_Position=vec4(p.x,-p.y,a.z,1.0);vuv=uv;}`,
-            fragment: `precision highp float;varying highp vec2 vuv;uniform sampler2D tex;void main(){gl_FragColor=vec4(texture2D(tex,vuv).rgb,1.0);}`,
-            stride: 20,
+        // A themed map's ground (render/map-look.js): one static mesh of world ground points, each with a
+        // screen-space offset, drawn with the camera as uniforms. The buffer is the renderer's and is refilled
+        // when a map loads.
+        this.groundMeshPipeline = this.device.createPipeline({
+            vertex: `attribute vec2 a;attribute vec2 off;attribute vec4 ac;uniform vec2 r;uniform vec2 o;uniform vec2 ex;uniform vec2 ey;uniform float sc;uniform float depth;varying lowp vec4 vc;void main(){vec2 s=o+a.x*ex+a.y*ey+off*sc;vec2 p=s/r*2.0-1.0;gl_Position=vec4(p.x,-p.y,depth,1.0);vc=ac;}`,
+            fragment: fs,
+            stride: 32,
             attributes: [
-                { name: 'a', size: 3, offset: 0 },
-                { name: 'uv', size: 2, offset: 12 },
+                { name: 'a', size: 2, offset: 0 },
+                { name: 'off', size: 2, offset: 8 },
+                { name: 'ac', size: 4, offset: 16 },
             ],
-            uniforms: { r: '2f', tex: '1i' },
+            uniforms: { r: '2f', o: '2f', ex: '2f', ey: '2f', sc: '1f', depth: '1f' },
         });
-        this.groundTextureBuffer = this.device.createVertexBuffer({
-            capacityBytes: 5 * 6 * 16 * 4,
-        });
+        this.groundMeshBuffer = this.device.createVertexBuffer({ capacityBytes: 4 });
         this.fogFrame = new ReusableFloat32Buffer(5 * 8192);
         this.fogTextures = new Map();
         this._fogTextureKey = null;
@@ -2474,12 +2475,12 @@ class GLRenderer {
         if (!this.snapshot) return;
         for (const side of [0, 1]) VisibilityPolicy.field(this, side, this.snapshot);
     }
-    // The map's look belongs to the map and to which way up the viewer sees it: it is built when a map's first
-    // snapshot arrives, before that map's first frame, and again only if the view is turned (a replay).
+    // The map's look belongs to the map alone: it is built when a map's first snapshot arrives, before that
+    // map's first frame, and never again for that map (turning the view only changes the projection).
     syncMapLook() {
         const descriptor = this.snapshot?.mapDescriptor || null,
             key = descriptor
-                ? `${descriptor.generator}|${descriptor.seed}|${descriptor.theme}|${this.orientationRole()}`
+                ? `${descriptor.topology}|${descriptor.seed}|${descriptor.width}x${descriptor.height}|${descriptor.theme}`
                 : '';
         if (key === this.mapLookKey) return;
         this.mapLookKey = key;
@@ -7214,22 +7215,35 @@ class GLRenderer {
     fogColor() {
         return this.replayVisionMode ? FOG_COLOR.replay : FOG_COLOR.live;
     }
-    // How much fog lies on the ground at a world point (0 = clear), read from the mask the fog is drawn with:
-    // a thing standing in front of the fog must darken with the ground under it.
+    // Brings the fog masks up to this frame's snapshot before the fog pass, for readers of fogAmountAt.
+    prepareFogAmount() {
+        if (!this.replayObserverAll && this.snapshot) this.ensureFogTextures();
+    }
+    // How much fog lies on the ground at a world point (0 = clear), from the very masks and transition the fog
+    // is drawn with (the mask it is leaving, the mask it is reaching, and how far between): a thing standing in
+    // front of the fog darkens and clears together with the ground under it.
     fogAmountAt(x, y) {
         if (this.replayObserverAll || !this.snapshot) return 0;
-        const grid = this.fogVisibilityGrid(),
-            mask = grid.atLevel(this.world.terrain.surfaces.levelAt(x, y)),
-            fx = RangeUtil.clamp(x / grid.width, 0, 1) * (grid.w - 1),
-            fy = RangeUtil.clamp(y / grid.height, 0, 1) * (grid.h - 1),
-            i = Math.min(grid.w - 2, Math.floor(fx)),
-            j = Math.min(grid.h - 2, Math.floor(fy)),
+        const record = this.fogMaskRecords.get(
+            `level:${this.world.terrain.surfaces.levelAt(x, y)}`,
+        );
+        if (!record) return 0;
+        const { w, h } = this.fogMaskSize,
+            fx = RangeUtil.clamp(x / this.world.width, 0, 1) * (w - 1),
+            fy = RangeUtil.clamp(y / this.world.height, 0, 1) * (h - 1),
+            i = Math.min(w - 2, Math.floor(fx)),
+            j = Math.min(h - 2, Math.floor(fy)),
             tx = fx - i,
             ty = fy - j,
-            k = j * grid.w + i,
+            k = j * w + i,
+            sample = (mask) =>
+                (mask[k] * (1 - tx) + mask[k + 1] * tx) * (1 - ty) +
+                (mask[k + w] * (1 - tx) + mask[k + w + 1] * tx) * ty,
+            reached = sample(record.target),
+            // Without a running transition the fog draws its target mask alone.
+            amount = this._fogTransitionStartedAt == null ? 1 : this.fogTransitionAmount(),
             visible =
-                ((mask[k] * (1 - tx) + mask[k + 1] * tx) * (1 - ty) +
-                    (mask[k + grid.w] * (1 - tx) + mask[k + grid.w + 1] * tx) * ty) /
+                (amount < 1 ? sample(record.from) * (1 - amount) + reached * amount : reached) /
                 255,
             // The fog shader's edge: smoothstep(0.12, 0.88, visible).
             t = RangeUtil.clamp((visible - 0.12) / 0.76, 0, 1);
@@ -7311,7 +7325,6 @@ class GLRenderer {
         this.passState.depthWrite = true;
         this.setRenderDepth(0.97);
         this.begin();
-        this.syncMapLook();
         this.mapLook.drawGround(this);
         this.flush();
         this.passState.depthWrite = false;

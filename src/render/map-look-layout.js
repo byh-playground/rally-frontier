@@ -1,7 +1,8 @@
 // A themed map's layout: everything the look draws, derived from the map's own geometry (size, spawns, lanes, capture
 // points, blockers) by a theme's rules (definitions/map-themes.js). Pure data, no canvas and no renderer.
-// Coordinates are VIEW coordinates: the geometry is turned for the guest first (mapViewGeometry), so "up the screen"
-// and "left" mean the same thing for both players and lighting never has to be flipped.
+// Coordinates are WORLD coordinates: the layout is built once per map and is the same for both players; only the
+// projection turns it for the guest. Anything that must look the same way up for both (shadows, height, highlights)
+// is expressed by the drawing code as a screen-space offset, never baked into these positions.
 // Every random choice comes from a hash of the map id, the theme id and a tag: the same map draws the same picture.
 
 const TAU = Math.PI * 2;
@@ -30,29 +31,20 @@ export function randomSource(seedText) {
     };
 }
 
-// The part of a map descriptor the look reads, as the viewer sees it (turned half a turn for the guest).
-export function mapViewGeometry(descriptor, guest) {
-    const { width, height } = descriptor,
-        turn = guest ? (p) => ({ ...p, x: width - p.x, y: height - p.y }) : (p) => p;
+// The part of a map descriptor the look reads.
+export function mapGeometry(descriptor) {
     return {
-        width,
-        height,
-        spawns: ['host', 'guest'].map((role) => ({ role, ...turn(descriptor.spawns[role]) })),
+        width: descriptor.width,
+        height: descriptor.height,
+        spawns: ['host', 'guest'].map((role) => ({ role, ...descriptor.spawns[role] })),
         lanes: Object.entries(descriptor.laneControlPoints).map(([key, points]) => ({
             key,
-            points: points.map(turn),
+            points,
         })),
-        capturePoints: descriptor.capturePoints.map(turn),
-        blockers: (descriptor.terrain?.blockers || []).map((blocker) => ({
-            kind: blocker.kind,
-            points: blocker.points.map(turn),
-        })),
-        // Raised ground: each layer's outline, and the ramps cut into its edges (a ramp names a layer edge by index,
-        // which a half turn keeps).
-        layers: (descriptor.terrain?.layers || []).map((layer) => ({
-            ...layer,
-            points: layer.points.map(turn),
-        })),
+        capturePoints: descriptor.capturePoints,
+        blockers: descriptor.terrain?.blockers || [],
+        // Raised ground: each layer's outline, and the ramps cut into its edges.
+        layers: descriptor.terrain?.layers || [],
         ramps: descriptor.terrain?.ramps || [],
     };
 }
@@ -398,8 +390,9 @@ export function buildMapLook(geometry, theme, seedText) {
         }
         for (const stone of stones) {
             stone.seed = Math.floor(rockRandom() * 0xffffffff);
-            // Draw order: a stone's front edge, a stacked stone just after the one under it.
-            stone.front = stone.y + stone.r * 0.3 + (stone.lift ? 1 : 0);
+            // Draw order, as a distance towards the viewer from the stone's centre: its front edge, a stacked
+            // stone just after the one under it.
+            stone.front = stone.r * 0.3 + (stone.lift ? 1 : 0);
         }
         // A tool leaning among the stones: the free spot nearest the polygon's edge.
         const tool = theme.blockers.tools[index];
@@ -420,7 +413,11 @@ export function buildMapLook(geometry, theme, seedText) {
                 kind: tool,
                 x: lean.x,
                 y: lean.y,
-                front: Math.max(...stones.map((s) => s.front), lean.y) + 1,
+                // In front of every stone of the pile, whichever way up the map is seen: [host, guest].
+                front: [
+                    Math.max(...stones.map((s) => s.y + s.front), lean.y) + 1 - lean.y,
+                    lean.y - Math.min(...stones.map((s) => s.y - s.front), lean.y) + 1,
+                ],
             },
         };
     });
@@ -497,7 +494,21 @@ export function buildMapLook(geometry, theme, seedText) {
                 rotation = direction + (dirtRandom() - 0.5),
                 fill = blobPoints(px, py, r, r * 0.62, rotation, dirtRandom, 1.4);
             parts.push({
+                x: px,
+                y: py,
+                r,
                 fill,
+                // A few pebbly flecks, kept well inside the lobe.
+                flecks: Array.from({ length: 3 + Math.floor(dirtRandom() * 3) }, () => {
+                    const angle = dirtRandom() * TAU,
+                        reach = dirtRandom() * 0.5;
+                    return {
+                        x: px + Math.cos(angle + rotation) * r * reach,
+                        y: py + Math.sin(angle + rotation) * r * reach * 0.6,
+                        size: 5 + dirtRandom() * 7,
+                        light: dirtRandom() < 0.4,
+                    };
+                }),
                 // The same outline a little larger: a thin darker rim instead of a blurred halo.
                 rim: fill.map(([fx, fy]) => [px + (fx - px) * 1.07, py + (fy - py) * 1.09]),
                 light:
@@ -662,7 +673,7 @@ export function buildMapLook(geometry, theme, seedText) {
     )
         columns.push(x);
     for (
-        let y = -margin.side - 300;
+        let y = -margin.far - 300;
         y < H + margin.far + 300;
         y += lerp(paddyRule.depth[0], paddyRule.depth[1], paddyRandom())
     )

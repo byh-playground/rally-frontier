@@ -133,11 +133,13 @@ export function buildMapProps(look, theme, projection, seedText) {
         };
         return at;
     };
+    // `front` is how far towards the viewer the prop's draw-order line lies from its foot: one distance, or
+    // [seen by the host, seen by the guest] when the two differ.
     const add = (x, y, front, shape) =>
         props.push({
             x,
             y,
-            front,
+            front: Array.isArray(front) ? front : [front, front],
             // Fog covers the field only: a prop beyond the boundary is always lit.
             fogged: insideMap(x, y),
             parts: shape.parts,
@@ -348,20 +350,25 @@ export function buildMapProps(look, theme, projection, seedText) {
             tint(prop.x, prop.y),
             random('prop:' + props.length),
         );
-        add(prop.x, prop.y, prop.y, shape);
+        add(prop.x, prop.y, 0, shape);
     }
 
-    // Fences: every post carries the two rails to the next post.
+    // Fences: posts, and between two posts a pair of rails. A rail is built about the middle of its span, so it is
+    // the same shape whichever way up the map is seen.
     for (const fence of look.fences)
         fence.forEach(([x, y], i) => {
-            const s = new PropShape(1),
-                c = tint(x, y),
-                next = fence[i + 1];
-            if (next)
-                for (const h of [12, 26])
-                    s.line(c(p.rail), 0, -h, next[0] - x, (next[1] - y) * GS - h, 3.4);
-            s.rect(c(p.post), -3.5, -34, 7, 34);
-            add(x, y, y, s);
+            const next = fence[i + 1];
+            if (next) {
+                const mx = (x + next[0]) / 2,
+                    my = (y + next[1]) / 2,
+                    hx = (next[0] - x) / 2,
+                    hy = ((next[1] - y) / 2) * GS,
+                    rails = new PropShape(1),
+                    c = tint(mx, my);
+                for (const h of [12, 26]) rails.line(c(p.rail), -hx, -hy - h, hx, hy - h, 3.4);
+                add(mx, my, -1, rails);
+            }
+            add(x, y, 0, new PropShape(1).rect(tint(x, y)(p.post), -3.5, -34, 7, 34));
         });
 
     // Stone piles: each stone a chipped block (a footprint, side faces lit from the upper left, a bright top).
@@ -464,9 +471,9 @@ export function buildMapProps(look, theme, projection, seedText) {
             ]);
             s.parts[s.parts.length - 1].team = base.side;
             s.disc(c(p.finial), 0, -71, 2.6, 2.6, 8);
-            add(flag.x, flag.y, flag.y, s);
+            add(flag.x, flag.y, 0, s);
         }
 
-    // Far to near, so equal depths still paint in order.
-    return props.sort((a, b) => a.front - b.front);
+    // Far to near as the host sees them (the guest walks the list backwards), so equal depths still paint in order.
+    return props.sort((a, b) => a.y + a.front[0] - (b.y + b.front[0]));
 }

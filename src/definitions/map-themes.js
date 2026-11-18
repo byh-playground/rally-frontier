@@ -178,7 +178,8 @@ export const MAP_THEMES = Object.freeze({
             kinds: { tuft: 0.5, straw: 0.28, pebble: 0.22 },
         },
         outside: {
-            // How far beyond the map the ground is baked: sideways and up the screen, and down the screen.
+            // How far beyond the boundary the scenery reaches before it has dissolved into the haze: to the left and
+            // right (`side`), and up and down the map (`far`, the direction a zoomed-out camera can look past the map).
             margin: { side: 640, far: 2600 },
             paddy: {
                 width: [470, 630],

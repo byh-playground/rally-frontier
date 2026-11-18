@@ -2553,7 +2553,9 @@ function coconutSpeeds(sim) {
 export function createDebugScenes({ createRenderer, createScenario, createPresentationView }) {
     // A full-window surface drawn by the match renderer under the virtual clock. `fog` (host|guest) draws that
     // side's fog of war; without it the scene shows everything, as the card previews do.
-    function openStage(fog) {
+    function openStage(fog, view = 'host') {
+        if (view !== 'host' && view !== 'guest')
+            throw new Error(`view must be host or guest: ${view}`);
         if (fog !== undefined && fog !== 'host' && fog !== 'guest')
             throw new Error(`fog must be host or guest: ${fog}`);
         const realNow = performance.now.bind(performance);
@@ -2579,7 +2581,8 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
         }
         const { renderer } = surface;
         renderer.role = fog ?? 'host';
-        renderer.replayOrientationRole = 'host';
+        // Which way up the map is drawn (`view=guest` turns it half a turn, as the guest sees it).
+        renderer.replayOrientationRole = view;
         renderer.replayObserverAll = !fog;
         return {
             renderer,
@@ -2620,7 +2623,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             programs: renderer.device.pipelines.size,
             textures: renderer.device.stats.textureCount,
             textureBytes: renderer.device.stats.gpuTextureBytes,
-            // A themed map's baked look (render/map-look.js): ground textures, their texels, standing props.
+            // A themed map's look (render/map-look.js): its ground mesh, its standing props, what the layout placed.
             mapLook: rp.mapLook,
             flushReasons: mesh.flushReasons,
             drawDispatchReasons: mesh.drawDispatchReasons,
@@ -2706,10 +2709,11 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
 
     // A scene on a match map: the camera holds `zoom` and follows `focus()` at its terrain height.
     function matchScene(name, params, sim, { zoom, focus, beforeStep, isComplete, extra }) {
-        const stage = openStage(params.fog);
+        const stage = openStage(params.fog, params.view);
         const camera = () => {
-            const { x, y } = focus();
-            centerCamera(stage.renderer, x, y, sim.world.terrain.surfaces.heightAt(x, y));
+            const { x, y } = focus(),
+                r = stage.renderer;
+            centerCamera(r, r.viewX(x), r.viewY(y), sim.world.terrain.surfaces.heightAt(x, y));
         };
         stage.renderer.replayZoom = zoom;
         return host(
