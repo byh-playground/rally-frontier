@@ -61,12 +61,19 @@ export class CampaignActs {
         return index === 0 || cleared.has(chapter.stages[index - 1].id);
     }
 
-    // The stage to play next: the first open, uncleared stage of `chapter` (when given), else of the whole campaign.
-    static next(cleared, chapter = null) {
-        const open = (stage) => !cleared.has(stage.id) && this.isOpen(stage, cleared);
+    // The first open, uncleared stage inside `chapter` only, or null when the chapter has none left.
+    static nextIn(chapter, cleared) {
         return (
-            chapter?.stages.find(open) ??
-            CHAPTERS.flatMap((other) => other.stages).find(open) ??
+            chapter.stages.find((stage) => !cleared.has(stage.id) && this.isOpen(stage, cleared)) ??
+            null
+        );
+    }
+
+    // The stage to play next after a clear: the next one of `chapter` (when given), else of the whole campaign.
+    static next(cleared, chapter = null) {
+        return (
+            (chapter && this.nextIn(chapter, cleared)) ??
+            CHAPTERS.map((other) => this.nextIn(other, cleared)).find(Boolean) ??
             null
         );
     }

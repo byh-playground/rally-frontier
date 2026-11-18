@@ -149,8 +149,8 @@ export class CampaignScreen {
         const stages = chapter.stages,
             picked =
                 stages.find((stage) => stage.id === stageId) ??
-                CampaignActs.next(this.cleared, chapter) ??
-                stages[0];
+                CampaignActs.nextIn(chapter, this.cleared) ??
+                stages.at(-1);
         const roster = this.actions.roster,
             done = this.clearedCount(chapter);
         const kicker = chapter.region

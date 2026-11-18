@@ -475,7 +475,7 @@ export class LaunchScreens {
             this.actions.startCampaignStage(stage);
         });
     }
-    // `stage` is the match's campaign stage (null outside the campaign): a new-campaign stage shows its story.
+    // `stage` is the won campaign stage (null outside the campaign or on a loss): a new-campaign stage shows its story.
     static renderCampaignResult(reward, nextStage, stage = null) {
         const $ = this.$;
         const story = $('resultCampaignStory');

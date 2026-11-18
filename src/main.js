@@ -10856,7 +10856,8 @@ class MatchLifecycle {
             reason,
             cleared: !!cleared,
         });
-        LaunchScreens.renderCampaignResult(reward, next, stage);
+        // The story assumes the stage was won, so a loss shows no story.
+        LaunchScreens.renderCampaignResult(reward, next, cleared ? stage : null);
         UiRegistry.refs.resultTitle.textContent = draw ? '무승부' : mine ? '승리' : '패배';
         if (reason === 'surrender')
             UiRegistry.refs.resultText.textContent = mine

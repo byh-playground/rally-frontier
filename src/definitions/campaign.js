@@ -975,7 +975,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
             targets: [{ type: 'rice', x: 690, y: 2890, count: 3, columns: 3 }],
         },
         mission: { firstCapture: 'natural-1' },
-        sideGoal: { kind: 'withinMs', ms: 180_000 },
+        sideGoal: { kind: 'withinMs', ms: 300_000 },
     },
     {
         id: 'paddy-stained-beans',
