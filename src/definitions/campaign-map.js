@@ -73,7 +73,6 @@ export function campaignMapLayout(stage) {
         width,
         height,
         spawns,
-        biome: 'frontier',
         topology: 'campaign-front',
         flags: [spawns.guest, spawns.host].map((p) => ({ ...p, forced: false })),
         laneControlPoints: {

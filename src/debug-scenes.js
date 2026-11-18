@@ -2616,6 +2616,12 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             vectorDraws: rp.vectorAssetDrawCalls,
             vectorInstances: rp.vectorAssetInstances,
             uploadBytes: rp.bufferUploadBytes,
+            // GPU resources alive now: a count that grows between two ticks of a match is a first-use load.
+            programs: renderer.device.pipelines.size,
+            textures: renderer.device.stats.textureCount,
+            textureBytes: renderer.device.stats.gpuTextureBytes,
+            // A themed map's baked look (render/map-look.js): ground textures, their texels, standing props.
+            mapLook: rp.mapLook,
             flushReasons: mesh.flushReasons,
             drawDispatchReasons: mesh.drawDispatchReasons,
         };

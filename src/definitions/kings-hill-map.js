@@ -54,7 +54,6 @@ export function kingsHillMapLayout() {
         width,
         height,
         spawns: { host, guest },
-        biome: 'frontier',
         topology: 'kings-hill',
         flags: [guest, host].map((p) => ({ ...p, forced: false })),
         laneControlPoints: {

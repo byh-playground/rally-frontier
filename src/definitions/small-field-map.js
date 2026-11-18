@@ -38,7 +38,7 @@ export function smallFieldMapLayout() {
         width,
         height,
         spawns: { host, guest },
-        biome: 'frontier',
+        theme: 'paddy',
         topology: 'small-field',
         flags: [guest, host].map((p) => ({ ...p, forced: false })),
         laneControlPoints: {
