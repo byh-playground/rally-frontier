@@ -7236,9 +7236,11 @@ class GLRenderer {
     // front of the fog darkens and clears together with the ground under it.
     fogAmountAt(x, y) {
         if (this.replayObserverAll || !this.snapshot) return 0;
-        const record = this.fogMaskRecords.get(
-            `level:${this.world.terrain.surfaces.levelAt(x, y)}`,
-        );
+        // A point beyond the map takes the ground-level fog of the nearest map edge (the clamps below).
+        const inside = x >= 0 && y >= 0 && x <= this.world.width && y <= this.world.height,
+            record = this.fogMaskRecords.get(
+                `level:${inside ? this.world.terrain.surfaces.levelAt(x, y) : 0}`,
+            );
         if (!record) return 0;
         const { w, h } = this.fogMaskSize,
             fx = RangeUtil.clamp(x / this.world.width, 0, 1) * (w - 1),
@@ -7298,6 +7300,7 @@ class GLRenderer {
                 this.fogPreviousTextures.get(`level:${level}`),
             );
         }
+        this.mapLook.drawOutsideFog(this, color);
         this.passState.depthEnabled = false;
         this.passState.depthWrite = false;
     }

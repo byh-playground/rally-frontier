@@ -10,6 +10,10 @@ import { GROUND_VERTEX_FLOATS, buildGroundMesh } from './map-look-ground.js';
 import { buildMapProps } from './map-look-props.js';
 
 const BAND_STEP = 0.09;
+// The fog beyond the map reaches farther than any camera shows, at a depth between the baked ground (0.97) and
+// everything standing on it.
+const OUTSIDE_FOG_REACH = 100000;
+const OUTSIDE_FOG_DEPTH = 0.96;
 
 const LEGACY_MAP_LOOK = Object.freeze({
     // The camera stops at the map's edges.
@@ -17,6 +21,7 @@ const LEGACY_MAP_LOOK = Object.freeze({
     drawGround: (r) => r.drawGround(),
     drawGroundMarks: (r) => r.drawStrategicMap(),
     drawProps() {},
+    drawOutsideFog() {},
     dispose() {},
 });
 
@@ -128,7 +133,8 @@ class ThemedMapLook {
         r.drawCapturePointMarks();
     }
     // Standing props, far to near, each at the depth of its foot: units behind one are hidden, units in front
-    // of it cover it. A prop on fogged ground is darkened like the ground under it.
+    // of it cover it. A prop on fogged ground is darkened like the ground under it (beyond the map: like the
+    // nearest map edge, as drawOutsideFog darkens the ground there).
     drawProps(r) {
         const sc = r.sc(),
             width = r.canvas.width,
@@ -159,7 +165,7 @@ class ThemedMapLook {
                     z: guest ? prop.y - prop.front[1] : prop.y + prop.front[0],
                 }) - 0.0005,
             );
-            const shade = prop.fogged ? r.fogAmountAt(prop.x, prop.y) : 0;
+            const shade = r.fogAmountAt(prop.x, prop.y);
             for (const part of prop.parts) {
                 let color = part.team == null ? part.color : r.factionColor(part.team);
                 if (shade > 0) {
@@ -179,6 +185,36 @@ class ThemedMapLook {
             }
         }
         r._renderDepth = previous;
+    }
+    // The fog over the scenery beyond the map, inside the renderer's fog pass: the ground-level fog mask (and its
+    // transition) stretched outwards, so every point outside is as fogged as the nearest point of the map's edge.
+    drawOutsideFog(r, color) {
+        const W = r.world.width,
+            H = r.world.height,
+            xs = [-OUTSIDE_FOG_REACH, 0, W, W + OUTSIDE_FOG_REACH],
+            ys = [-OUTSIDE_FOG_REACH, 0, H, H + OUTSIDE_FOG_REACH],
+            vertex = (x, y) => {
+                const p = this.project(r, x, y);
+                r.fogFrame.push5(
+                    p.x,
+                    p.y,
+                    OUTSIDE_FOG_DEPTH,
+                    Math.min(1, Math.max(0, x / W)),
+                    Math.min(1, Math.max(0, y / H)),
+                );
+            };
+        // The eight rectangles around the map: four sides and four corners.
+        for (let i = 0; i < 3; i++)
+            for (let j = 0; j < 3; j++) {
+                if (i === 1 && j === 1) continue;
+                vertex(xs[i], ys[j]);
+                vertex(xs[i + 1], ys[j]);
+                vertex(xs[i + 1], ys[j + 1]);
+                vertex(xs[i], ys[j]);
+                vertex(xs[i + 1], ys[j + 1]);
+                vertex(xs[i], ys[j + 1]);
+            }
+        r.flushFog(r.fogTextures.get('level:0'), color, r.fogPreviousTextures.get('level:0'));
     }
     dispose(r) {
         r.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);

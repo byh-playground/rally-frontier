@@ -112,7 +112,6 @@ export function buildMapProps(look, theme, projection, seedText) {
         { width: W, height: H } = look,
         random = randomSource(seedText),
         props = [];
-    const insideMap = (x, y) => x >= 0 && y >= 0 && x <= W && y <= H;
     // Colours at a place: beyond the boundary they drift towards the haze, like the ground under them.
     const tint = (x, y) => {
         const amount = clamp(
@@ -140,8 +139,6 @@ export function buildMapProps(look, theme, projection, seedText) {
             x,
             y,
             front: Array.isArray(front) ? front : [front, front],
-            // Fog covers the field only: a prop beyond the boundary is always lit.
-            fogged: insideMap(x, y),
             parts: shape.parts,
             left: shape.left,
             right: shape.right,
