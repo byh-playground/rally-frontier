@@ -181,6 +181,9 @@ export const MAP_THEMES = Object.freeze({
             // How far beyond the boundary the scenery reaches before it has dissolved into the haze: to the left and
             // right (`side`), and up and down the map (`far`, the direction a zoomed-out camera can look past the map).
             margin: { side: 640, far: 2600 },
+            // Fog over unseen scenery beyond the map: its strength against the fog on the map (0..1), reached this
+            // far from the map's edge.
+            fog: { strength: 0.45, fadeDistance: 128 },
             paddy: {
                 width: [470, 630],
                 depth: [360, 480],
@@ -199,6 +202,8 @@ export const MAP_THEMES = Object.freeze({
             ],
         },
         // One landmark behind each base, beyond the map edge that base backs onto, in spawn order.
-        landmarks: { kinds: ['windmill', 'barn'], offset: 500, inset: 400 },
+        landmarks: { kinds: ['windmill', 'barn'], offset: 260, inset: 400 },
+        // The match camera may go past each map edge until this share of the view (0..1) shows the scenery outside.
+        camera: { margin: 0.2 },
     },
 });

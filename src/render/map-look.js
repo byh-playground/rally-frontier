@@ -10,11 +10,20 @@ import { GROUND_VERTEX_FLOATS, buildGroundMesh } from './map-look-ground.js';
 import { buildMapProps } from './map-look-props.js';
 
 const BAND_STEP = 0.09;
+// The fog beyond the map reaches farther than any camera shows, at a depth between the baked ground (0.97) and
+// everything standing on it.
+const OUTSIDE_FOG_REACH = 100000;
+const OUTSIDE_FOG_DEPTH = 0.96;
 
 const LEGACY_MAP_LOOK = Object.freeze({
+    // The camera stops at the map's edges, and so does the fog.
+    cameraMargin: 0,
+    fogReach: 0,
+    unseenFogMask: () => 0,
     drawGround: (r) => r.drawGround(),
     drawGroundMarks: (r) => r.drawStrategicMap(),
     drawProps() {},
+    drawOutsideFog() {},
     dispose() {},
 });
 
@@ -30,6 +39,12 @@ class ThemedMapLook {
         const seed = `${descriptor.topology}:${descriptor.theme}`,
             look = buildMapLook(mapGeometry(descriptor), theme, seed);
         this.bases = look.bases;
+        this.cameraMargin = theme.camera.margin;
+        // Sight circles go on this far beyond the map's edge: the reach of the scenery to its sides.
+        this.fogReach = theme.outside.margin.side;
+        this.outsideFog = theme.outside.fog;
+        this.width = look.width;
+        this.height = look.height;
         this.props = buildMapProps(look, theme, BattlefieldProjection, seed);
         // Raised ground keeps its mesh (depth, cliffs, ramps) and takes the theme's colours.
         this.terrainColors = Object.fromEntries(
@@ -125,7 +140,8 @@ class ThemedMapLook {
         r.drawCapturePointMarks();
     }
     // Standing props, far to near, each at the depth of its foot: units behind one are hidden, units in front
-    // of it cover it. A prop on fogged ground is darkened like the ground under it.
+    // of it cover it. A prop on fogged ground is darkened like the ground under it (beyond the map too,
+    // where drawOutsideFog darkens the ground).
     drawProps(r) {
         const sc = r.sc(),
             width = r.canvas.width,
@@ -156,7 +172,7 @@ class ThemedMapLook {
                     z: guest ? prop.y - prop.front[1] : prop.y + prop.front[0],
                 }) - 0.0005,
             );
-            const shade = prop.fogged ? r.fogAmountAt(prop.x, prop.y) : 0;
+            const shade = r.fogAmountAt(prop.x, prop.y);
             for (const part of prop.parts) {
                 let color = part.team == null ? part.color : r.factionColor(part.team);
                 if (shade > 0) {
@@ -176,6 +192,53 @@ class ThemedMapLook {
             }
         }
         r._renderDepth = previous;
+    }
+    // The fog mask value (0..255, the fog shader's visibility) of an unseen point: full fog on the map, easing over
+    // the theme's fade distance to the thinner fog of the scenery outside. The mask's own filtering and transition
+    // carry it, so the ground and the props standing beyond the map thin out together.
+    unseenFogMask(x, y) {
+        const { strength, fadeDistance } = this.outsideFog,
+            distance = Math.hypot(
+                Math.max(0, -x, x - this.width),
+                Math.max(0, -y, y - this.height),
+            ),
+            t = Math.min(1, distance / fadeDistance),
+            // The share of the fog taken away here, and the visibility whose smoothstep(0.12, 0.88) is that share.
+            cleared = (1 - strength) * t * t * (3 - 2 * t),
+            edge = 0.5 - Math.sin(Math.asin(1 - 2 * cleared) / 3);
+        return Math.round((0.12 + 0.76 * edge) * 255 * Math.sign(cleared));
+    }
+    // The fog over the scenery beyond the map, inside the renderer's fog pass. The ground-level fog mask reaches
+    // `r.fogPad()` beyond the map (sight circles go on across the edge), so the ground there is covered with that
+    // mask as the field is; past the mask's reach nothing is ever seen and its dark edge goes on.
+    drawOutsideFog(r, color) {
+        const W = r.world.width,
+            H = r.world.height,
+            pad = r.fogPad(),
+            xs = [-OUTSIDE_FOG_REACH, -pad, 0, W, W + pad, W + OUTSIDE_FOG_REACH],
+            ys = [-OUTSIDE_FOG_REACH, -pad, 0, H, H + pad, H + OUTSIDE_FOG_REACH],
+            vertex = (x, y) => {
+                const p = this.project(r, x, y);
+                r.fogFrame.push5(
+                    p.x,
+                    p.y,
+                    OUTSIDE_FOG_DEPTH,
+                    Math.min(1, Math.max(0, (x + pad) / (W + pad * 2))),
+                    Math.min(1, Math.max(0, (y + pad) / (H + pad * 2))),
+                );
+            };
+        // Every rectangle of the 5 x 5 around the map but the map itself.
+        for (let i = 0; i < 5; i++)
+            for (let j = 0; j < 5; j++) {
+                if (i === 2 && j === 2) continue;
+                vertex(xs[i], ys[j]);
+                vertex(xs[i + 1], ys[j]);
+                vertex(xs[i + 1], ys[j + 1]);
+                vertex(xs[i], ys[j]);
+                vertex(xs[i + 1], ys[j + 1]);
+                vertex(xs[i], ys[j + 1]);
+            }
+        r.flushFog(r.fogTextures.get('level:0'), color, r.fogPreviousTextures.get('level:0'));
     }
     dispose(r) {
         r.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
