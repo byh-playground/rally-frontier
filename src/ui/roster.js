@@ -66,6 +66,15 @@ export class Roster {
         return !!this.campaign?.hardCleared.includes(stageId);
     }
 
+    isSideGoalCleared(stageId) {
+        return !!this.campaign?.sideGoalCleared.includes(stageId);
+    }
+
+    // The new campaign's stages cleared at least once (what CampaignActs opens the next stages from).
+    get clearedStages() {
+        return new Set(this.campaign?.firstCleared ?? []);
+    }
+
     // How hard the stage's enemy plays now: what a campaign match copies at its start (matchConfig.campaignPace).
     paceFor(stage) {
         if (!stage.region) return campaignPace(this.difficulty, 0);

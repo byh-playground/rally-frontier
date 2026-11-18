@@ -1,0 +1,474 @@
+/* The new campaign's screens (src/ui/campaign-screen.js, mockup docs/campaign-ux-mockup/b.html). One column at the
+   game's width, no scroll: a short screen drops the blurbs and shrinks the pieces instead. */
+.campaign-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    margin: 0 auto;
+    width: var(--col-w);
+    display: flex;
+    flex-direction: column;
+    background: #fbf8e9;
+    color: #293c2d;
+    overflow: hidden;
+    word-break: keep-all;
+}
+.campaign-screen.hidden {
+    display: none;
+}
+.cs-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    padding-top: calc(8px + env(safe-area-inset-top, 0px));
+    border-bottom: 1px solid #c5d8b5;
+}
+.cs-head h2 {
+    margin: 0;
+    font-size: 21px;
+}
+.cs-back {
+    font-size: 28px;
+    line-height: 1;
+    padding-bottom: 3px;
+}
+.cs-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px calc(12px + var(--safe-bottom));
+}
+
+/* Portraits: a freed unit wears its own colors, one not yet freed the blight's tint. */
+.cs-portrait {
+    width: var(--s);
+    height: var(--s);
+    object-fit: contain;
+    display: block;
+}
+.cs-portrait.is-blighted {
+    filter: grayscale(1) sepia(1) hue-rotate(225deg) saturate(1.6) brightness(0.55) contrast(1.15);
+}
+
+/* Placeholder captain: a circle with a face. */
+.cs-captain {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    fill: #f1d38a;
+    stroke: #c79b3c;
+    stroke-width: 2;
+}
+.cs-captain .eye {
+    fill: #6b4a12;
+    stroke: none;
+}
+.cs-captain path {
+    fill: none;
+    stroke: #6b4a12;
+    stroke-linecap: round;
+}
+
+/* Clear marks: clear, side goal, hard. */
+.cs-pips {
+    display: inline-flex;
+    gap: 3px;
+}
+.cs-pip {
+    font-style: normal;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 10px;
+    font-weight: 900;
+    color: #a8b39b;
+    border: 1.5px solid #cfd9c2;
+    background: #fff;
+    flex: none;
+}
+.cs-pip.is-on {
+    background: #f7c957;
+    border-color: #c99a24;
+    color: #6b4a12;
+}
+.cs-pips.is-small .cs-pip {
+    width: 13px;
+    height: 13px;
+    font-size: 7px;
+    border-width: 1px;
+}
+
+/* Home: act rows and region cards. */
+.cs-act {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid #c5d8b5;
+    border-radius: 14px;
+    background: #f5f8e7;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+}
+.cs-act h3 {
+    margin: 0;
+    font-size: 15px;
+}
+.cs-meta {
+    margin: 0;
+    font-size: 12px;
+    color: #596d58;
+    font-weight: 700;
+}
+.cs-row {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+}
+.cs-act.is-locked {
+    background: #3d2b4a;
+    border-color: #2a2030;
+    color: #e4d6ef;
+}
+.cs-act.is-locked .cs-meta {
+    color: #cbb8db;
+}
+.cs-lock {
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: #4a3b55;
+    color: #e4d6ef;
+    font-weight: 800;
+}
+.cs-label {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 8px;
+    margin: 2px 2px -4px;
+}
+.cs-label b {
+    font-size: 15px;
+    white-space: nowrap;
+}
+.cs-label span {
+    font-size: 12px;
+    color: #596d58;
+    font-weight: 700;
+}
+.cs-regions {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+.cs-region {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px 10px;
+    border-radius: 16px;
+    border: 2px solid #2a2030;
+    background: #3d2b4a;
+    color: #efe3f7;
+    overflow: hidden;
+    text-align: center;
+    font: inherit;
+}
+.cs-band {
+    align-self: stretch;
+    margin: 0 -6px;
+    padding: 7px 4px 5px;
+    background: linear-gradient(#5a4268, #4a3b55);
+    font-weight: 900;
+    font-size: 15px;
+}
+.cs-region.is-freed .cs-band {
+    background: #b9d98a;
+    color: #263c2a;
+}
+.cs-blurb {
+    font-size: 12px;
+    line-height: 1.35;
+    color: #e4d6ef;
+}
+.cs-boss {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+}
+.cs-prog {
+    font-size: 13px;
+    font-weight: 900;
+}
+.cs-bar {
+    align-self: stretch;
+    height: 6px;
+    border-radius: 3px;
+    background: #2a2030;
+    overflow: hidden;
+}
+.cs-bar i {
+    display: block;
+    height: 100%;
+    background: #f7c957;
+}
+.cs-order {
+    font-size: 11px;
+    font-weight: 800;
+    color: #cbb8db;
+}
+
+/* Act or region screen: the row of stage dots and the picked stage's briefing. */
+.cs-kicker {
+    margin: 0;
+    color: #799167;
+    font-size: 12px;
+    font-weight: 800;
+}
+.cs-track {
+    flex: none;
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 4px 2px 0;
+}
+.cs-track::before {
+    content: '';
+    position: absolute;
+    left: 24px;
+    right: 24px;
+    top: 27px;
+    border-top: 3px dashed #c9b38d;
+}
+.cs-node {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+}
+.cs-disc {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: #2a2030;
+    border: 2.5px solid #6b5a77;
+}
+.cs-node.is-done .cs-disc {
+    background: #fffaf0;
+    border-color: #3e7447;
+}
+.cs-node.is-picked .cs-disc {
+    background: #fffaf0;
+    border-color: #c99a24;
+    box-shadow: 0 0 0 4px #f7c957;
+}
+.cs-num {
+    font-size: 11px;
+    font-weight: 800;
+    color: #596d58;
+}
+.cs-brief {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 12px;
+    border: 1px solid #c5d8b5;
+    border-radius: 16px;
+    background: #fffdf5;
+}
+.cs-title {
+    margin: 0;
+    font-size: 23px;
+    line-height: 1.2;
+}
+.cs-story {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    font-size: 14px;
+    line-height: 1.4;
+    text-align: left;
+}
+.cs-story p {
+    margin: 0;
+}
+.cs-say {
+    color: #754625;
+    font-weight: 700;
+}
+.cs-goals {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+    font-size: 14px;
+}
+.cs-goals li {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.cs-goals b {
+    flex: none;
+    min-width: 52px;
+    text-align: center;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: #3e7447;
+    color: #fff;
+    font-size: 12px;
+}
+.cs-goals b.is-side {
+    background: #e8efd9;
+    color: #416445;
+}
+.cs-reward {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 10px;
+    border: 1px solid #c5d8b5;
+    border-radius: 12px;
+    background: #f5f8e7;
+}
+.cs-join {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 58px;
+    font-size: 11px;
+    color: #596d58;
+    font-weight: 700;
+}
+.cs-join span {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.cs-join b {
+    color: #263c2a;
+    font-size: 14px;
+}
+.cs-reward ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    flex: 1;
+    display: grid;
+    gap: 3px;
+    font-size: 13px;
+}
+.cs-reward li {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.cs-reward li span {
+    flex: 1;
+}
+.cs-reward li em {
+    font-style: normal;
+    font-weight: 800;
+    color: #7a5a12;
+    font-variant-numeric: tabular-nums;
+}
+.cs-reward li.is-got em {
+    color: #a8b39b;
+    text-decoration: line-through;
+}
+.cs-go-row {
+    margin-top: auto;
+    display: grid;
+    gap: 8px;
+}
+.cs-go-row .campaign-difficulty {
+    margin: 0;
+}
+.cs-go-row .campaign-difficulty-option {
+    min-height: 36px;
+}
+.cs-go {
+    width: 100%;
+    height: 56px;
+}
+
+/* The story on the result screen, under the sunshine line. */
+.result-campaign-story {
+    order: 2;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: #fffdf5;
+}
+.result-campaign-story[hidden] {
+    display: none;
+}
+
+@media (max-height: 640px) {
+    .cs-body {
+        gap: 7px;
+        padding-top: 7px;
+    }
+    .cs-blurb {
+        display: none;
+    }
+    .cs-brief {
+        gap: 6px;
+        padding: 9px;
+    }
+    .cs-title {
+        font-size: 19px;
+    }
+    .cs-brief .cs-captain {
+        display: none;
+    }
+    .cs-go {
+        height: 46px;
+    }
+    .cs-disc {
+        width: 36px;
+        height: 36px;
+    }
+    .cs-track::before {
+        top: 22px;
+    }
+    .cs-act {
+        padding: 5px 8px;
+    }
+}
+.cs-disc .cs-portrait {
+    max-width: 82%;
+    max-height: 82%;
+}
+.cs-node {
+    z-index: 1;
+}
+.cs-node:disabled .cs-portrait {
+    opacity: 0.35;
+}

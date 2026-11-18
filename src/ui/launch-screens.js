@@ -2,7 +2,9 @@ import { ResourceDisplay } from './resource-display.js';
 import { CAMPAIGN_GROUPS, CAMPAIGN_STAGES, CAMPAIGN_TIERS } from '../definitions/campaign.js';
 import { CAMPAIGN_DIFFICULTIES } from '../definitions/campaign-pace.js';
 import { SUNSHINE } from '../definitions/roster.js';
+import { CampaignActs } from './campaign-acts.js';
 import { CampaignPresentation } from './campaign-presentation.js';
+import { CampaignScreen, storyMarkup } from './campaign-screen.js';
 import { unitCardStats } from './unit-card-stats.js';
 import './grain-portrait.js';
 import { UNITS, unitCard } from '../units/index.js';
@@ -15,7 +17,8 @@ const SUNSHINE_LABELS = Object.freeze({
 });
 
 // Launch match screens (title, friend, help, in-game HUD and cards, match menu, result) and their addresses.
-// Routes: #/ title, #/friend, #/help, #/play, #/play/menu, #/play/help, #/play/<grain> card detail, #/result.
+// Routes: #/ title, #/friend, #/help, #/play, #/play/menu, #/play/help, #/play/<grain> card detail, #/result, and
+// with `?campaign=acts` (dev-query.js) the new campaign: #/campaign, #/campaign/<chapter>?stage=<id> (CampaignScreen).
 // The game owns matches; this module owns which screen and sheet the address shows, and asks the game through `actions`.
 const SCREENS = new Set(['', 'friend', 'help', 'play', 'result']);
 
@@ -41,7 +44,27 @@ export class LaunchScreens {
         });
         this.navigation = createNavigation({
             normalize: (route) =>
-                SCREENS.has(route.screen) ? route : { screen: '', item: '', query: '' },
+                SCREENS.has(route.screen) || (route.screen === 'campaign' && actions.campaignActs)
+                    ? route
+                    : { screen: '', item: '', query: '' },
+        });
+        CampaignScreen.install({
+            actions,
+            nav: {
+                title: () => this.go(''),
+                home: () => this.go('campaign'),
+                // Picking another stage of the same chapter replaces the address; a new chapter is a step.
+                chapter: (id, stageId) => {
+                    const route = {
+                        screen: 'campaign',
+                        item: id,
+                        query: stageId ? `stage=${encodeURIComponent(stageId)}` : '',
+                    };
+                    if (this.navigation.snapshot().item === id) this.navigation.replace(route);
+                    else this.navigation.navigate(route);
+                },
+            },
+            difficulty: (host) => this.renderCampaignDifficulty(host),
         });
         this.renderUnitHelp();
         this.bindButtons();
@@ -126,6 +149,12 @@ export class LaunchScreens {
             A.closeMenu();
         }
         this.$('matchMenuSoundBtn').textContent = A.soundOn() ? '소리 끄기' : '소리 켜기';
+        const CAMPAIGN = SCREEN === 'campaign';
+        if (CAMPAIGN && !CampaignScreen.render(ITEM, route.query)) {
+            this.replace('campaign');
+            return;
+        }
+        CampaignScreen.show(CAMPAIGN);
         if (SCREEN === 'friend') this.syncFriendDeckChoice();
         this.showSheet('friendSheet', SCREEN === 'friend');
         this.showSheet(
@@ -197,6 +226,10 @@ export class LaunchScreens {
         });
         window.addEventListener('blur', cancelCampaignHold);
         campaignButton.onclick = () => {
+            if (A.campaignActs) {
+                this.go('campaign');
+                return;
+            }
             if (campaignDialog.open) return;
             const progress = A.campaignProgress;
             progress.sync();
@@ -262,7 +295,14 @@ export class LaunchScreens {
         );
         $('resultTitleBtn').onclick = () => A.leaveToTitle();
         $('resultDeckBtn').onclick = () => A.openRewardDeck(this.resultReward);
-        $('resultNextCampaignBtn').onclick = () => this.showCampaignBriefing(this.resultNextStage);
+        // A new-campaign stage's next opens on its chapter's screen, the old one on the briefing dialog.
+        $('resultNextCampaignBtn').onclick = () =>
+            this.resultNextStage?.act
+                ? A.openCampaignStage(
+                      CampaignActs.chapterOf(this.resultNextStage).id,
+                      this.resultNextStage.id,
+                  )
+                : this.showCampaignBriefing(this.resultNextStage);
     }
     // Depth list: tiers (depth 0) fold open to their stages (depth 1); a stage group (`CAMPAIGN_GROUPS`, depth 1)
     // folds open to its stages (depth 2). Only one tier and one group are open at a time, so the whole list fits
@@ -274,10 +314,11 @@ export class LaunchScreens {
         const opened = CAMPAIGN_TIERS.filter((tier) => progress.isTierOpen(tier.id));
         return { tier: opened.at(-1)?.id ?? null, group: null };
     }
-    // The difficulty toggle above the list: one of three, remembered in the roster save.
-    static renderCampaignDifficulty() {
+    // The difficulty toggle (above the list, or on the new campaign's briefing): one of three, remembered in the
+    // roster save.
+    static renderCampaignDifficulty(host = this.$('campaignDifficulty')) {
         const picked = this.actions.difficulty();
-        this.$('campaignDifficulty').replaceChildren(
+        host.replaceChildren(
             ...CAMPAIGN_DIFFICULTIES.map(({ id, title }) => {
                 const button = document.createElement('button');
                 button.type = 'button';
@@ -287,10 +328,8 @@ export class LaunchScreens {
                 button.setAttribute('aria-pressed', String(id === picked));
                 button.onclick = async () => {
                     if (id !== this.actions.difficulty()) await this.actions.setDifficulty(id);
-                    this.renderCampaignDifficulty();
-                    this.$('campaignDifficulty')
-                        .querySelector(`[data-difficulty="${id}"]`)
-                        ?.focus();
+                    this.renderCampaignDifficulty(host);
+                    host.querySelector(`[data-difficulty="${id}"]`)?.focus();
                 };
                 return button;
             }),
@@ -436,8 +475,12 @@ export class LaunchScreens {
             this.actions.startCampaignStage(stage);
         });
     }
-    static renderCampaignResult(reward, nextStage) {
+    // `stage` is the match's campaign stage (null outside the campaign): a new-campaign stage shows its story.
+    static renderCampaignResult(reward, nextStage, stage = null) {
         const $ = this.$;
+        const story = $('resultCampaignStory');
+        story.hidden = !stage?.story;
+        story.innerHTML = stage?.story ? storyMarkup(stage) : '';
         this.resultReward = reward;
         this.resultNextStage = nextStage;
         $('resultCampaignReward').hidden = !reward;

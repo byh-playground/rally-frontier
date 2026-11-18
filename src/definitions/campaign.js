@@ -50,13 +50,13 @@ const attack = (atMs, ...formations) => ({ atMs, formations });
 const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 
 // A stage may declare `blight: true`: every soldier and hero then created for its enemy side is blighted
-// (sim/blight.js). No stage declares it yet.
+// (sim/blight.js). The new campaign's stages declare it.
 // A blighted stage may declare its spore sacs (sim/spore-sac.js), each with the blighted soldiers bound to it:
 //     sporeSacs: [{ x: 1400, y: 2600, captives: [{ type: 'rice', count: 8 }, { type: 'pea', count: 4 }] }],
 // The sac is an enemy building (health 100, no attack). Its captives stand in rings around it and take no part in
 // the fight while it stands: they do not move or attack, nobody targets them and nothing hurts or pushes them.
 // When it is destroyed every living captive is freed and joins the player's side. A captive is any soldier but a
-// hero. The match start rejects a declaration on a stage without `blight: true`. No stage declares one yet.
+// hero. The match start rejects a declaration on a stage without `blight: true`. paddy-stained-beans declares one.
 // A blighted stage may declare its blight fields (sim/blight-field.js, numbers in definitions/blight-field.js) and,
 // for a stage without fire of its own, braziers:
 //     blightFields: [{ x: 1500, y: 2790 }],
@@ -77,7 +77,7 @@ const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 // arrival is announced `warnMs` before it: a cloud drifts in to each formation's place and the battle screen says
 // so. A formation is a wave's (`spacing` too) without `side` and `hold`, and never a hero. The match start rejects
 // a declaration on a stage without `blight: true`, an `atMs` or `everyMs` shorter than `warnMs`, and a place
-// outside the map. No stage declares one yet.
+// outside the map. paddy-hold-the-line declares three.
 // A blighted stage may declare its boss (sim/blight-boss.js), a hero the blight rules, and the escorts beside it:
 //     boss: { type: 'watermelon', level: 5, x: 1400, y: 2500,
 //             escorts: [{ type: 'rice', x: 1400, y: 2380, count: 12, columns: 4 }] },
@@ -99,17 +99,17 @@ const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 // while the practice runs. Until the last target is down the enemy AI makes no decision and the mission's clock
 // (CampaignMission.clock) stands at 0: defence waves, the survival countdown, spore clouds and blight field growth all
 // count their ms from that tick. The match start rejects a card outside `deck`, an empty cue and a place outside the
-// map. No stage declares one yet.
+// map. The new campaign's act 1 stages declare one.
 // A stage may declare one side goal (sim/side-goal.js), paid once with sunshine (SUNSHINE.sideGoal) beside the clear;
 // winning without it is still winning. Its kinds: `{ kind: 'freeCaptives', count? }` (the spore sacs' captives freed,
 // all or at least `count`), `{ kind: 'burnFields' }` (no blighted cell left), `{ kind: 'withinMs', ms }` (won within
 // `ms` on the mission's clock) and `{ kind: 'keepAlive', hpRatio, point? }` (won with the main base, or the player's
 // starting outpost on `point`, never below `hpRatio` of its health). The match start rejects another kind and a goal
-// its stage cannot judge (captives without sacs, fields without fields, a point the player does not hold). No stage
-// declares one yet.
+// its stage cannot judge (captives without sacs, fields without fields, a point the player does not hold). The new
+// campaign's act 1 stages declare one each.
 // A stage of the new campaign declares `act` (1, 2 or 3, the act it belongs to): its won result is recorded in the
-// roster (Roster.recordClear: progress, sunshine, owned cards) and the result screen shows the sunshine it paid. No
-// stage declares one yet.
+// roster (Roster.recordClear: progress, sunshine, owned cards) and the result screen shows the sunshine it paid. Those
+// stages are CAMPAIGN_ACT_STAGES below.
 export const CAMPAIGN_STAGES = Object.freeze([
     {
         id: 'first',
@@ -942,6 +942,156 @@ export const CAMPAIGN_STAGES = Object.freeze([
         },
     },
 ]);
+// The new campaign (재구성 초안 docs/campaign-stage-draft): act 1 in order, then act 2's three regions (a stage of
+// act 2 also declares `region`, campaign-pace.js), then act 3. Which stage is open is computed from these
+// declarations and the roster's cleared stages (src/ui/campaign-acts.js); a region with no stage here does not show.
+// Every stage of it declares its story for the briefing and the result: `story.text` the one-line story and
+// `story.captain` the captain's line, shown together (no dialogue to step through).
+export const CAMPAIGN_REGIONS = Object.freeze([
+    { id: 'nut-forest', title: '견과 숲', blurb: '단단한 껍질들이 깜부기에 갇혔어요.' },
+    { id: 'field-town', title: '밭 마을', blurb: '밭 곡식들이 깜부기 장단에 춤춰요.' },
+    { id: 'wind-hill', title: '바람 언덕', blurb: '바람 타고 포자가 날아다녀요.' },
+]);
+export const CAMPAIGN_ACT_STAGES = Object.freeze([
+    {
+        id: 'paddy-first-shot',
+        act: 1,
+        map: 'small-field',
+        title: '첫 발사',
+        story: {
+            text: '정찰병이 첫 대포 투입으로 길을 연다.',
+            captain: '착지는 네 몫이다. 발사는 내 공이다!',
+        },
+        deck: ['rice'],
+        enemyDeck: ['rice'],
+        rewardCard: 'rice',
+        enemyOutposts: [],
+        seed: 200,
+        blight: true,
+        enemyPacing: defendPacing(45_000, 30_000),
+        practice: {
+            card: 'rice',
+            cue: '쌀을 쏴서 깜부기 쌀 셋을 쓰러뜨려요',
+            targets: [{ type: 'rice', x: 690, y: 2890, count: 3, columns: 3 }],
+        },
+        mission: { firstCapture: 'natural-1' },
+        sideGoal: { kind: 'withinMs', ms: 180_000 },
+    },
+    {
+        id: 'paddy-stained-beans',
+        act: 1,
+        map: 'small-field',
+        title: '물든 콩밭',
+        story: {
+            text: '콩밭의 포자 주머니를 깨자 콩들이 돌아온다.',
+            captain: '콩 심은 데 콩 나고, 주머니 깬 데 지원군 난다!',
+        },
+        deck: ['pea', 'rice'],
+        enemyDeck: ['rice', 'millet'],
+        rewardCard: 'pea',
+        enemyOutposts: ['natural-2'],
+        friendlyOutposts: ['natural-1'],
+        seed: 201,
+        blight: true,
+        enemyPacing: defendPacing(30_000, 25_000),
+        practice: {
+            card: 'pea',
+            cue: '콩을 쏴서 깜부기 조 여덟을 한꺼번에 맞혀요',
+            targets: [{ type: 'millet', x: 690, y: 2890, count: 8, columns: 4 }],
+        },
+        mission: {
+            waves: [attack(10_000, { type: 'rice', x: 1600, y: 1500, count: 12, columns: 4 })],
+        },
+        sporeSacs: [{ x: 1200, y: 2200, captives: [{ type: 'pea', count: 12 }] }],
+        sideGoal: { kind: 'freeCaptives', count: 12 },
+    },
+    {
+        id: 'paddy-redbean-pass',
+        act: 1,
+        map: 'twin-gates',
+        title: '팥죽 고개',
+        story: {
+            text: '고개 뒤 포대를 팥이 뛰어넘어 덮친다.',
+            captain: '고개는 숙이지 말고, 넘어가!',
+        },
+        deck: ['redbean', 'rice', 'pea'],
+        enemyDeck: ['sunflower-seed', 'chestnut'],
+        rewardCard: 'redbean',
+        enemyOutposts: ['natural-2'],
+        friendlyOutposts: ['natural-1'],
+        startingLaunchRangeLevel: 1,
+        seed: 202,
+        blight: true,
+        enemyPacing: defendPacing(30_000, 25_000),
+        practice: {
+            card: 'redbean',
+            cue: '팥을 해바라기씨 바로 앞에 떨어뜨려 덮쳐요',
+            targets: [{ type: 'sunflower-seed', x: 560, y: 3200, count: 2, columns: 2 }],
+        },
+        mission: {
+            startingPremium: [0, premiumFor('sunflower-seed') * 3 + premiumFor('chestnut') * 2],
+            waves: [
+                attack(1_000, {
+                    type: 'sunflower-seed',
+                    x: 480,
+                    y: 1150,
+                    count: 4,
+                    columns: 4,
+                    hold: true,
+                }),
+            ],
+        },
+        sideGoal: { kind: 'withinMs', ms: 240_000 },
+    },
+    {
+        id: 'paddy-hold-the-line',
+        act: 1,
+        map: 'small-field',
+        title: '논두렁 사수',
+        story: {
+            text: '바람을 타고 온 첫 포자 구름을 막는다.',
+            captain: '하늘에서 오는 건 비만인 줄 알았는데!',
+        },
+        deck: ['millet', 'pea', 'redbean', 'rice'],
+        enemyDeck: ['corn', 'rice'],
+        rewardCard: 'millet',
+        enemyOutposts: [],
+        friendlyOutposts: ['west-1'],
+        seed: 203,
+        blight: true,
+        enemyPacing: SCRIPTED_ONLY,
+        practice: {
+            card: 'millet',
+            cue: '빠른 조를 옥수수 바로 옆에 내려 들이받아요',
+            targets: [{ type: 'corn', x: 690, y: 2890, count: 2, columns: 2, spacing: 40 }],
+        },
+        mission: { surviveMs: 120_000, guardPoint: 'west-1', waves: [] },
+        // Three attacks from three ways, each announced 5 s ahead; all three places sit in the opening view.
+        sporeClouds: [
+            sporeAttack(20_000, 300, 1650),
+            sporeAttack(50_000, 600, 1700),
+            sporeAttack(80_000, 720, 2050),
+        ],
+        sideGoal: { kind: 'keepAlive', hpRatio: 0.5, point: 'west-1' },
+    },
+]);
+// One announced attack of act 1's defence: corn 2 and rice 6 brought by a spore cloud that comes once.
+function sporeAttack(atMs, x, y) {
+    return {
+        atMs,
+        everyMs: atMs,
+        warnMs: 5_000,
+        times: 1,
+        formations: [
+            { type: 'corn', x, y: y - 40, count: 2, columns: 2, spacing: 40 },
+            { type: 'rice', x, y: y + 30, count: 6, columns: 3 },
+        ],
+    };
+}
 export function campaignStage(id) {
-    return CAMPAIGN_STAGES.find((stage) => stage.id === id) || null;
+    return (
+        CAMPAIGN_STAGES.find((stage) => stage.id === id) ||
+        CAMPAIGN_ACT_STAGES.find((stage) => stage.id === id) ||
+        null
+    );
 }

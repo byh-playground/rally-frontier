@@ -4,10 +4,13 @@
 //   ?tps=10|15|20|30                 simulation ticks per second
 //   ?netcode=lockstep|rollback       sync mode of the next match
 //   ?role=host|guest                 the human's side in the AI match (#/play)
+//   ?campaign=acts                   the title's 캠페인 opens the new campaign screen (#/campaign) in place of the
+//                                    34-stage list, until the new campaign replaces it
 const CHOICES = Object.freeze({
     tps: ['10', '15', '20', '30'],
     netcode: ['lockstep', 'rollback'],
     role: ['host', 'guest'],
+    campaign: ['acts'],
 });
 
 export function readDevQuery(search) {
@@ -27,5 +30,6 @@ export function readDevQuery(search) {
         tps: TPS && Number(TPS),
         netcode: pick('netcode'),
         role: pick('role'),
+        campaignActs: pick('campaign') === 'acts',
     };
 }
