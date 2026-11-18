@@ -19,6 +19,7 @@ const LEGACY_MAP_LOOK = Object.freeze({
     // The camera stops at the map's edges, and so does the fog.
     cameraMargin: 0,
     fogReach: 0,
+    unseenFogMask: () => 0,
     drawGround: (r) => r.drawGround(),
     drawGroundMarks: (r) => r.drawStrategicMap(),
     drawProps() {},
@@ -41,6 +42,9 @@ class ThemedMapLook {
         this.cameraMargin = theme.camera.margin;
         // Sight circles go on this far beyond the map's edge: the reach of the scenery to its sides.
         this.fogReach = theme.outside.margin.side;
+        this.outsideFog = theme.outside.fog;
+        this.width = look.width;
+        this.height = look.height;
         this.props = buildMapProps(look, theme, BattlefieldProjection, seed);
         // Raised ground keeps its mesh (depth, cliffs, ramps) and takes the theme's colours.
         this.terrainColors = Object.fromEntries(
@@ -188,6 +192,21 @@ class ThemedMapLook {
             }
         }
         r._renderDepth = previous;
+    }
+    // The fog mask value (0..255, the fog shader's visibility) of an unseen point: full fog on the map, easing over
+    // the theme's fade distance to the thinner fog of the scenery outside. The mask's own filtering and transition
+    // carry it, so the ground and the props standing beyond the map thin out together.
+    unseenFogMask(x, y) {
+        const { strength, fadeDistance } = this.outsideFog,
+            distance = Math.hypot(
+                Math.max(0, -x, x - this.width),
+                Math.max(0, -y, y - this.height),
+            ),
+            t = Math.min(1, distance / fadeDistance),
+            // The share of the fog taken away here, and the visibility whose smoothstep(0.12, 0.88) is that share.
+            cleared = (1 - strength) * t * t * (3 - 2 * t),
+            edge = 0.5 - Math.sin(Math.asin(1 - 2 * cleared) / 3);
+        return Math.round((0.12 + 0.76 * edge) * 255 * Math.sign(cleared));
     }
     // The fog over the scenery beyond the map, inside the renderer's fog pass. The ground-level fog mask reaches
     // `r.fogPad()` beyond the map (sight circles go on across the edge), so the ground there is covered with that

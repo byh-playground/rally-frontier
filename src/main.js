@@ -1103,6 +1103,10 @@ class FogVisibilityGrid {
         this.x = Float64Array.from({ length: this.w }, (_, i) => (i / (this.w - 1)) * spanX - pad);
         this.y = Float64Array.from({ length: this.h }, (_, j) => (j / (this.h - 1)) * spanY - pad);
         this.ceilings = new Float64Array(this.w * this.h);
+        // What an unseen grid point's mask holds: 0 (full fog) on the map, the map look's thinner fog beyond it.
+        this.unseen = Uint8Array.from(this.ceilings, (_, k) =>
+            renderer.mapLook.unseenFogMask(this.x[k % this.w], this.y[Math.floor(k / this.w)]),
+        );
         this.groundLevels = null;
         this.guestGroundLevels = null;
         this.masks = new Map();
@@ -1160,7 +1164,9 @@ class FogVisibilityGrid {
     atLevel(level) {
         let mask = this.masks.get(level);
         if (mask) return mask;
-        mask = Uint8Array.from(this.ceilings, (ceiling) => (ceiling >= level ? 255 : 0));
+        mask = Uint8Array.from(this.ceilings, (ceiling, k) =>
+            ceiling >= level ? 255 : this.unseen[k],
+        );
         this.masks.set(level, mask);
         return mask;
     }
