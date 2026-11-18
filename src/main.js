@@ -50,7 +50,7 @@ import {
 import { MapGeometry } from './sim/map-geometry.js';
 import { CAPTURE_RADIUS, LANE_CONTROL_POINTS } from './definitions/combat-rules.js';
 import { PerformanceTelemetry } from './diagnostics/performance-telemetry.js';
-import { VIEW_H, VIEW_W } from './definitions/world-rules.js';
+import { VIEW_H, VIEW_W, VISION_CELL } from './definitions/world-rules.js';
 import { WorldContext } from './sim/world-context.js';
 import {
     InteractionGeometry,
@@ -103,6 +103,8 @@ import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
 import { AudioSystem } from './audio/audio-system.js';
 const {
+    VisionField,
+    VisionMap,
     insetPolygonTowardCenter,
     pointInSimplePolygon,
     polylineToRibbonPolygon,
@@ -1044,16 +1046,62 @@ class TerrainPresentation {
     }
 }
 
+// The side vision fields painted again for the fog alone, on the terrain's vision raster widened by `pad` of flat
+// open ground on every side: a sight circle that crosses the map's edge goes on over the scenery outside. Combat,
+// AI and entity visibility never read these; they keep the fields on the terrain's own raster.
+class OutsideFogVision {
+    constructor(terrainMap, pad) {
+        const cell = terrainMap.cellSize,
+            cells = pad / cell,
+            cols = terrainMap.cols + cells * 2,
+            rows = terrainMap.rows + cells * 2,
+            level = new Int8Array(cols * rows),
+            blocked = new Uint8Array(cols * rows);
+        for (let row = 0; row < terrainMap.rows; row++) {
+            const from = row * terrainMap.cols,
+                to = (row + cells) * cols + cells;
+            level.set(terrainMap.level.subarray(from, from + terrainMap.cols), to);
+            blocked.set(terrainMap.blocked.subarray(from, from + terrainMap.cols), to);
+        }
+        this.terrainMap = terrainMap;
+        this.pad = pad;
+        const map = new VisionMap({
+            width: cols * cell,
+            height: rows * cell,
+            cellSize: cell,
+            level,
+            blocked,
+        });
+        this.fields = [new VisionField(map), new VisionField(map)];
+        // VisibilityPolicy.observe names observers in map coordinates.
+        this.observers = this.fields.map((field) => ({
+            observe: (id, x, y, radius, observerLevel, xray) =>
+                field.observe(id, x + pad, y + pad, radius, observerLevel, xray),
+        }));
+    }
+    update(state) {
+        for (const side of [0, 1]) {
+            this.fields[side].begin();
+            VisibilityPolicy.observe(this.observers[side], state, side);
+            this.fields[side].end();
+        }
+    }
+}
+
+// Fog visibility sampled on a grid of `step` over the map and `pad` beyond each of its edges.
 class FogVisibilityGrid {
-    constructor(renderer, step) {
+    constructor(renderer, step, pad) {
         this.atlas = renderer.world.terrain.surfaces;
         this.width = renderer.world.width;
         this.height = renderer.world.height;
         this.step = step;
-        this.w = Math.max(2, Math.ceil(this.width / step) + 1);
-        this.h = Math.max(2, Math.ceil(this.height / step) + 1);
-        this.x = Float64Array.from({ length: this.w }, (_, i) => (i / (this.w - 1)) * this.width);
-        this.y = Float64Array.from({ length: this.h }, (_, j) => (j / (this.h - 1)) * this.height);
+        this.pad = pad;
+        const spanX = this.width + pad * 2,
+            spanY = this.height + pad * 2;
+        this.w = Math.max(2, Math.ceil(spanX / step) + 1);
+        this.h = Math.max(2, Math.ceil(spanY / step) + 1);
+        this.x = Float64Array.from({ length: this.w }, (_, i) => (i / (this.w - 1)) * spanX - pad);
+        this.y = Float64Array.from({ length: this.h }, (_, j) => (j / (this.h - 1)) * spanY - pad);
         this.ceilings = new Float64Array(this.w * this.h);
         this.groundLevels = null;
         this.guestGroundLevels = null;
@@ -1061,20 +1109,20 @@ class FogVisibilityGrid {
         this.groundMasks = new Map();
         this.generation = 0;
     }
-    sameGeometry(renderer, step) {
+    sameGeometry(renderer, step, pad) {
         return (
             this.atlas === renderer.world.terrain.surfaces &&
             this.width === renderer.world.width &&
             this.height === renderer.world.height &&
-            this.step === step
+            this.step === step &&
+            this.pad === pad
         );
     }
     update(renderer) {
         const sides = renderer.replayVisionSides(),
-            sideKey = sides.join(',');
-        const revisionKey = sides
-            .map((side) => renderer.visionFields[side]?.revision ?? -1)
-            .join(',');
+            sideKey = sides.join(','),
+            fields = renderer.fogFields(this.pad);
+        const revisionKey = sides.map((side) => fields[side]?.revision ?? -1).join(',');
         if (
             this.snapshot === renderer.snapshot &&
             this.tick === renderer.snapshot.tick &&
@@ -1086,7 +1134,7 @@ class FogVisibilityGrid {
         this.snapshot = renderer.snapshot;
         this.tick = renderer.snapshot.tick;
         this.revisionKey = revisionKey;
-        this.fields = renderer.visionFields;
+        this.fields = fields;
         this.sideKey = sideKey;
         this.sides = sides;
         this.observer = renderer.replayObserverAll;
@@ -1103,7 +1151,10 @@ class FogVisibilityGrid {
         if (this.observer) return Infinity;
         let best = -Infinity;
         for (const side of this.sides)
-            best = Math.max(best, this.fields[side]?.ceilingAt(x, y) ?? -Infinity);
+            best = Math.max(
+                best,
+                this.fields[side]?.ceilingAt(x + this.pad, y + this.pad) ?? -Infinity,
+            );
         return best;
     }
     atLevel(level) {
@@ -1281,6 +1332,8 @@ class GLRenderer {
 
         // Render-only visibility spatial cache.
         this.visionFields = [null, null];
+        // The fog's own widened fields on a map whose look shows scenery beyond the map (OutsideFogVision).
+        this.outsideFogVision = null;
         this.fogVisibilityGrids = new Map();
         this.visibleUnitFrame = [];
         // Dead units the simulation still moves (DeadUnitLook): ids drawn as corpses this frame (flying, sliding,
@@ -1512,6 +1565,7 @@ class GLRenderer {
         this.worldSpriteFrame.length = 0;
         this.worldSpritePool.length = 0;
         this.visionFields.fill(null);
+        this.outsideFogVision = null;
         this.fogVisibilityGrids.clear();
         this.fogSurfaces = null;
         this._fogSurfaceAtlas = null;
@@ -2486,6 +2540,22 @@ class GLRenderer {
     rebuildVisibilityCache() {
         if (!this.snapshot) return;
         for (const side of [0, 1]) VisibilityPolicy.field(this, side, this.snapshot);
+        const pad = this.fogPad();
+        if (!pad) this.outsideFogVision = null;
+        else {
+            const map = this.world.terrain.ensureVisionMap();
+            if (this.outsideFogVision?.terrainMap !== map || this.outsideFogVision.pad !== pad)
+                this.outsideFogVision = new OutsideFogVision(map, pad);
+            this.outsideFogVision.update(this.snapshot);
+        }
+    }
+    // How far beyond the map the fog mask reaches: the map look's fog reach in whole vision cells (0 = map only).
+    fogPad() {
+        return Math.ceil(this.mapLook.fogReach / VISION_CELL) * VISION_CELL;
+    }
+    // The vision fields a fog grid of that pad samples, in coordinates moved by the pad.
+    fogFields(pad) {
+        return pad ? this.outsideFogVision.fields : this.visionFields;
     }
     // The map's look belongs to the map alone: it is built when a map's first snapshot arrives, before that
     // map's first frame, and never again for that map (turning the view only changes the projection).
@@ -7107,27 +7177,33 @@ class GLRenderer {
                   1,
               );
     }
-    fogVisibilityGrid(step = this.fogMaskStep || 64) {
+    // The minimap reads the map alone (pad 0); the battlefield's fog also covers `fogPad()` beyond the map.
+    fogVisibilityGrid(step = this.fogMaskStep || 64, pad = 0) {
         const activeStep = this.fogMaskStep || 64;
-        for (const key of this.fogVisibilityGrids.keys())
-            if (key !== 64 && key !== activeStep) this.fogVisibilityGrids.delete(key);
-        let field = this.fogVisibilityGrids.get(step);
-        if (!field || !field.sameGeometry(this, step)) {
-            field = new FogVisibilityGrid(this, step);
-            this.fogVisibilityGrids.set(step, field);
+        for (const [key, grid] of this.fogVisibilityGrids)
+            if (grid.step !== 64 && grid.step !== activeStep) this.fogVisibilityGrids.delete(key);
+        // Steps and pads are whole numbers far below 2^20.
+        const key = step * 1048576 + pad;
+        let field = this.fogVisibilityGrids.get(key);
+        if (!field || !field.sameGeometry(this, step, pad)) {
+            field = new FogVisibilityGrid(this, step, pad);
+            this.fogVisibilityGrids.set(key, field);
         }
         return field.update(this);
     }
     fogVisionRevision() {
-        return this.visionFields.map((field) => field?.revision ?? -1).join(',');
+        return this.fogFields(this.fogPad())
+            .map((field) => field?.revision ?? -1)
+            .join(',');
     }
     ensureFogTextures() {
         if (!this.snapshot) return null;
         const gl = this.gl,
             atlas = this.world.terrain.surfaces,
             step = this.fogMaskStep || 64,
-            w = Math.max(2, Math.ceil(this.world.width / step) + 1),
-            h = Math.max(2, Math.ceil(this.world.height / step) + 1),
+            pad = this.fogPad(),
+            w = Math.max(2, Math.ceil((this.world.width + pad * 2) / step) + 1),
+            h = Math.max(2, Math.ceil((this.world.height + pad * 2) / step) + 1),
             key = `${this.snapshot.tick}|${this.replayVisionMode || this.mySide()}|${this.replayObserverAll ? 1 : 0}|${this.world.width}x${this.world.height}|${atlas.maxLevel}|${w}x${h}`;
         this.prepareFogSurfaces(atlas);
         if (this._fogTextureKey === key && this._fogVisionRevision === this.fogVisionRevision())
@@ -7161,7 +7237,7 @@ class GLRenderer {
             } else this.device.updateTexture(tex, { width: w, height: h, data });
             return tex;
         };
-        const visibility = this.fogVisibilityGrid(step);
+        const visibility = this.fogVisibilityGrid(step, pad);
         // Levels need not be contiguous: only surfaces that exist need a texture.
         for (const level of this.fogSurfaces.keys()) {
             const id = `level:${level}`,
@@ -7190,8 +7266,9 @@ class GLRenderer {
     }
     fogVertex(world, bridgeId = null) {
         const q = this.projectRenderWorldPosition(world),
-            u = RangeUtil.clamp(world.x / this.world.width, 0, 1),
-            v = RangeUtil.clamp(world.z / this.world.height, 0, 1);
+            pad = this.fogPad(),
+            u = RangeUtil.clamp((world.x + pad) / (this.world.width + pad * 2), 0, 1),
+            v = RangeUtil.clamp((world.z + pad) / (this.world.height + pad * 2), 0, 1);
         // Slight camera-facing bias keeps the transparent fog coplanar with terrain without z-fighting.
         this.fogFrame.push5(
             q.x,
@@ -7236,15 +7313,16 @@ class GLRenderer {
     // front of the fog darkens and clears together with the ground under it.
     fogAmountAt(x, y) {
         if (this.replayObserverAll || !this.snapshot) return 0;
-        // A point beyond the map takes the ground-level fog of the nearest map edge (the clamps below).
+        // A point beyond the map stands on ground level; past the mask's reach it takes the mask's edge.
         const inside = x >= 0 && y >= 0 && x <= this.world.width && y <= this.world.height,
             record = this.fogMaskRecords.get(
                 `level:${inside ? this.world.terrain.surfaces.levelAt(x, y) : 0}`,
             );
         if (!record) return 0;
         const { w, h } = this.fogMaskSize,
-            fx = RangeUtil.clamp(x / this.world.width, 0, 1) * (w - 1),
-            fy = RangeUtil.clamp(y / this.world.height, 0, 1) * (h - 1),
+            pad = this.fogPad(),
+            fx = RangeUtil.clamp((x + pad) / (this.world.width + pad * 2), 0, 1) * (w - 1),
+            fy = RangeUtil.clamp((y + pad) / (this.world.height + pad * 2), 0, 1) * (h - 1),
             i = Math.min(w - 2, Math.floor(fx)),
             j = Math.min(h - 2, Math.floor(fy)),
             tx = fx - i,

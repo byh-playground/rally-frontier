@@ -16,8 +16,9 @@ const OUTSIDE_FOG_REACH = 100000;
 const OUTSIDE_FOG_DEPTH = 0.96;
 
 const LEGACY_MAP_LOOK = Object.freeze({
-    // The camera stops at the map's edges.
+    // The camera stops at the map's edges, and so does the fog.
     cameraMargin: 0,
+    fogReach: 0,
     drawGround: (r) => r.drawGround(),
     drawGroundMarks: (r) => r.drawStrategicMap(),
     drawProps() {},
@@ -38,6 +39,8 @@ class ThemedMapLook {
             look = buildMapLook(mapGeometry(descriptor), theme, seed);
         this.bases = look.bases;
         this.cameraMargin = theme.camera.margin;
+        // Sight circles go on this far beyond the map's edge: the reach of the scenery to its sides.
+        this.fogReach = theme.outside.margin.side;
         this.props = buildMapProps(look, theme, BattlefieldProjection, seed);
         // Raised ground keeps its mesh (depth, cliffs, ramps) and takes the theme's colours.
         this.terrainColors = Object.fromEntries(
@@ -133,8 +136,8 @@ class ThemedMapLook {
         r.drawCapturePointMarks();
     }
     // Standing props, far to near, each at the depth of its foot: units behind one are hidden, units in front
-    // of it cover it. A prop on fogged ground is darkened like the ground under it (beyond the map: like the
-    // nearest map edge, as drawOutsideFog darkens the ground there).
+    // of it cover it. A prop on fogged ground is darkened like the ground under it (beyond the map too,
+    // where drawOutsideFog darkens the ground).
     drawProps(r) {
         const sc = r.sc(),
             width = r.canvas.width,
@@ -186,27 +189,29 @@ class ThemedMapLook {
         }
         r._renderDepth = previous;
     }
-    // The fog over the scenery beyond the map, inside the renderer's fog pass: the ground-level fog mask (and its
-    // transition) stretched outwards, so every point outside is as fogged as the nearest point of the map's edge.
+    // The fog over the scenery beyond the map, inside the renderer's fog pass. The ground-level fog mask reaches
+    // `r.fogPad()` beyond the map (sight circles go on across the edge), so the ground there is covered with that
+    // mask as the field is; past the mask's reach nothing is ever seen and its dark edge goes on.
     drawOutsideFog(r, color) {
         const W = r.world.width,
             H = r.world.height,
-            xs = [-OUTSIDE_FOG_REACH, 0, W, W + OUTSIDE_FOG_REACH],
-            ys = [-OUTSIDE_FOG_REACH, 0, H, H + OUTSIDE_FOG_REACH],
+            pad = r.fogPad(),
+            xs = [-OUTSIDE_FOG_REACH, -pad, 0, W, W + pad, W + OUTSIDE_FOG_REACH],
+            ys = [-OUTSIDE_FOG_REACH, -pad, 0, H, H + pad, H + OUTSIDE_FOG_REACH],
             vertex = (x, y) => {
                 const p = this.project(r, x, y);
                 r.fogFrame.push5(
                     p.x,
                     p.y,
                     OUTSIDE_FOG_DEPTH,
-                    Math.min(1, Math.max(0, x / W)),
-                    Math.min(1, Math.max(0, y / H)),
+                    Math.min(1, Math.max(0, (x + pad) / (W + pad * 2))),
+                    Math.min(1, Math.max(0, (y + pad) / (H + pad * 2))),
                 );
             };
-        // The eight rectangles around the map: four sides and four corners.
-        for (let i = 0; i < 3; i++)
-            for (let j = 0; j < 3; j++) {
-                if (i === 1 && j === 1) continue;
+        // Every rectangle of the 5 x 5 around the map but the map itself.
+        for (let i = 0; i < 5; i++)
+            for (let j = 0; j < 5; j++) {
+                if (i === 2 && j === 2) continue;
                 vertex(xs[i], ys[j]);
                 vertex(xs[i + 1], ys[j]);
                 vertex(xs[i + 1], ys[j + 1]);
