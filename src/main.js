@@ -1627,6 +1627,7 @@ class GLRenderer {
             this.canvas.width = w;
             this.canvas.height = h;
             this.cameraTop = this.clampCameraTop(this.cameraTop);
+            this.cameraLeft = this.clampCameraLeft(this.cameraLeft);
         }
         if (this.fxCanvas && (this.fxCanvas.width !== w || this.fxCanvas.height !== h)) {
             this.fxCanvas.width = w;
