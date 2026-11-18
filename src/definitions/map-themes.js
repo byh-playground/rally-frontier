@@ -199,6 +199,8 @@ export const MAP_THEMES = Object.freeze({
             ],
         },
         // One landmark behind each base, beyond the map edge that base backs onto, in spawn order.
-        landmarks: { kinds: ['windmill', 'barn'], offset: 500, inset: 400 },
+        landmarks: { kinds: ['windmill', 'barn'], offset: 260, inset: 400 },
+        // The match camera may go past each map edge until this share of the view (0..1) shows the scenery outside.
+        camera: { margin: 0.2 },
     },
 });

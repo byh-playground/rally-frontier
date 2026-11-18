@@ -1704,12 +1704,24 @@ class GLRenderer {
     viewWorldH() {
         return this.canvas.height / this.sc();
     }
+    // How far the camera may go. A themed map lets a share of what the canvas shows (the theme's camera.margin)
+    // lie beyond each map edge, so the scenery outside shows at the edges; a map without a theme stops at the map.
+    clampCameraLeft(left) {
+        // A canvas wider than the design view already shows `aside` past the map's side edges.
+        const view = this.viewWorldW(),
+            shown = this.canvas.width / this.sc(),
+            aside = (shown - view) / 2,
+            min = Math.min(0, aside - this.mapLook.cameraMargin * shown);
+        return RangeUtil.clamp(left, min, Math.max(min, this.world.width - view - min));
+    }
     clampCameraTop(top) {
         const atlas = this.world.terrain.surfaces,
-            min = BattlefieldProjection.planarY(0, atlas.maxHeight);
+            view = this.viewWorldH(),
+            margin = this.mapLook.cameraMargin * view,
+            min = BattlefieldProjection.planarY(0, atlas.maxHeight) - margin;
         const max = Math.max(
             min,
-            BattlefieldProjection.planarY(this.world.height, atlas.minHeight) - this.viewWorldH(),
+            BattlefieldProjection.planarY(this.world.height, atlas.minHeight) + margin - view,
         );
         return RangeUtil.clamp(top, min, max);
     }
@@ -2513,10 +2525,10 @@ class GLRenderer {
                 s.tick * this.presentationTargetIntervalMs(s),
             );
         this.world = WorldContext.forState(s);
-        if (!old || old.mapDescriptor?.seed !== s.mapDescriptor?.seed)
-            this.cameraTop = this.clampCameraTop(Infinity);
         this.snapshot = s;
         this.syncMapLook();
+        if (!old || old.mapDescriptor?.seed !== s.mapDescriptor?.seed)
+            this.cameraTop = this.clampCameraTop(Infinity);
         this.buildingArt.prune(s.buildings);
         this.stickyClingers.clear();
         this.mountedUnitIds.clear();
@@ -8879,11 +8891,7 @@ class MiniMap {
             // 탭한 지점이 화면 중앙에 오도록 즉시 점프.
             const vw = this.renderer.viewWorldW(),
                 vh = this.renderer.viewWorldH();
-            this.renderer.cameraLeft = RangeUtil.clamp(
-                viewWorldX - vw / 2,
-                0,
-                Math.max(0, this.renderer.world.width - vw),
-            );
+            this.renderer.cameraLeft = this.renderer.clampCameraLeft(viewWorldX - vw / 2);
             const elevation = this.renderer.world.terrain.surfaces.heightAt(
                 this.renderer.viewX(viewWorldX),
                 this.renderer.viewY(viewWorldY),
@@ -10187,10 +10195,8 @@ class ReplayPresentation {
         if (preserveCenter) {
             const vw = ActiveViewState.renderer.viewWorldW(),
                 vh = ActiveViewState.renderer.viewWorldH();
-            ActiveViewState.renderer.cameraLeft = RangeUtil.clamp(
+            ActiveViewState.renderer.cameraLeft = ActiveViewState.renderer.clampCameraLeft(
                 oldCenterX - vw / 2,
-                0,
-                Math.max(0, (ActiveViewState.renderer?.world || WorldContext.standard).width - vw),
             );
             ActiveViewState.renderer.cameraTop = ActiveViewState.renderer.clampCameraTop(
                 oldCenterY - vh / 2,
@@ -10227,11 +10233,7 @@ class ReplayPresentation {
         const renderer = ActiveViewState.renderer,
             vw = renderer.viewWorldW(),
             vh = renderer.viewWorldH();
-        renderer.cameraLeft = RangeUtil.clamp(
-            x - vw / 2,
-            0,
-            Math.max(0, (renderer.world || WorldContext.standard).width - vw),
-        );
+        renderer.cameraLeft = renderer.clampCameraLeft(x - vw / 2);
         renderer.cameraTop = renderer.clampCameraTop(y - vh / 2);
         ActiveViewState.minimap?.draw();
     }
@@ -12027,11 +12029,7 @@ class LaunchPresentation {
             elapsed = Math.min(100, now - (this.followAt ?? now));
         this.followAt = now;
         camera.follow(left + vw / 2, top + halfH, elapsed, this.FOLLOW_HALF_LIFE_MS);
-        r.cameraLeft = RangeUtil.clamp(
-            camera.camera.x - vw / 2,
-            0,
-            Math.max(0, r.world.width - vw),
-        );
+        r.cameraLeft = r.clampCameraLeft(camera.camera.x - vw / 2);
         r.cameraTop = r.clampCameraTop(camera.camera.y - halfH);
         // Convert the highest ring edge from projected world coordinates to CSS pixels.
         const [lx] = r.worldToPx(r.viewX(aim.x), r.viewY(aim.y)),
@@ -12131,11 +12129,7 @@ class BattlePresentation {
             r.replayZoom = RangeUtil.clamp(value, 0.6, MAX_LIVE_ZOOM);
             const scale = r.sc(),
                 vw = r.viewWorldW();
-            r.cameraLeft = RangeUtil.clamp(
-                point.x - (px - r.canvas.width / 2) / scale - vw / 2,
-                0,
-                Math.max(0, r.world.width - vw),
-            );
+            r.cameraLeft = r.clampCameraLeft(point.x - (px - r.canvas.width / 2) / scale - vw / 2);
             r.cameraTop = r.clampCameraTop(point.y - py / scale);
             ActiveViewState.minimap?.draw();
         };
@@ -12228,11 +12222,7 @@ class BattlePresentation {
                         dx = ((e.clientX - drag.x) * UiRegistry.refs.canvas.width) / rect.width,
                         dy = ((e.clientY - drag.y) * UiRegistry.refs.canvas.height) / rect.height,
                         scale = r.sc();
-                    r.cameraLeft = RangeUtil.clamp(
-                        drag.left - dx / scale,
-                        0,
-                        Math.max(0, (r.world || WorldContext.standard).width - r.viewWorldW()),
-                    );
+                    r.cameraLeft = r.clampCameraLeft(drag.left - dx / scale);
                     r.cameraTop = r.clampCameraTop(drag.top - dy / scale);
                 }
             }
@@ -12355,7 +12345,7 @@ class BattlePresentation {
                 x = middle('x'),
                 y = middle('y'),
                 height = r.world.terrain.surfaces.heightAt(x, y);
-            r.cameraLeft = RangeUtil.clamp(r.viewX(x) - width / 2, 0, r.world.width - width);
+            r.cameraLeft = r.clampCameraLeft(r.viewX(x) - width / 2);
             r.cameraTop = r.clampCameraTop(
                 BattlefieldProjection.planarY(r.viewY(y), height) - r.viewWorldH() / 2,
             );

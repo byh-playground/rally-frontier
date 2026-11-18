@@ -12,6 +12,8 @@ import { buildMapProps } from './map-look-props.js';
 const BAND_STEP = 0.09;
 
 const LEGACY_MAP_LOOK = Object.freeze({
+    // The camera stops at the map's edges.
+    cameraMargin: 0,
     drawGround: (r) => r.drawGround(),
     drawGroundMarks: (r) => r.drawStrategicMap(),
     drawProps() {},
@@ -30,6 +32,7 @@ class ThemedMapLook {
         const seed = `${descriptor.topology}:${descriptor.theme}`,
             look = buildMapLook(mapGeometry(descriptor), theme, seed);
         this.bases = look.bases;
+        this.cameraMargin = theme.camera.margin;
         this.props = buildMapProps(look, theme, BattlefieldProjection, seed);
         // Raised ground keeps its mesh (depth, cliffs, ramps) and takes the theme's colours.
         this.terrainColors = Object.fromEntries(
