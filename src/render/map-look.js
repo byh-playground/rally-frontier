@@ -1,8 +1,10 @@
 // How the battlefield renderer shows a map's ground and scenery. A map that names a theme (definitions/map-themes.js)
 // gets a ThemedMapLook: its ground is one static mesh and its standing props are triangle fans, both built once in
 // world coordinates when the map loads. A frame draws the mesh with the camera as uniforms and copies the visible
-// props' vertices; turning the view for the guest or a replay rebuilds nothing. A map without a theme keeps the
-// renderer's own drawGround. mapLookFor is the one place that tells the two apart.
+// props' vertices; turning the view for the guest or a replay rebuilds nothing. Raised ground (the map's terrain
+// layers and ramps) is painted into that same mesh by the theme; the renderer only adds its depth, so a hill still
+// hides what stands behind it. A map without a theme keeps the renderer's own drawGround and terrain colours.
+// mapLookFor is the one place that tells the two apart.
 import { MAP_THEMES } from '../definitions/map-themes.js';
 import { BattlefieldProjection } from '../sim/terrain.js';
 import { buildMapLook, mapGeometry } from './map-look-layout.js';
@@ -21,6 +23,7 @@ const LEGACY_MAP_LOOK = Object.freeze({
     fogReach: 0,
     unseenFogMask: () => 0,
     drawGround: (r) => r.drawGround(),
+    drawTerrainEdges: (r) => r.drawTerrainEdges(),
     drawGroundMarks: (r) => r.drawStrategicMap(),
     drawProps() {},
     drawOutsideFog() {},
@@ -46,15 +49,8 @@ class ThemedMapLook {
         this.width = look.width;
         this.height = look.height;
         this.props = buildMapProps(look, theme, BattlefieldProjection, seed);
-        // Raised ground keeps its mesh (depth, cliffs, ramps) and takes the theme's colours.
-        this.terrainColors = Object.fromEntries(
-            Object.entries(theme.palette.terrain).map(([name, hex]) => [
-                name,
-                [...[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255), 1],
-            ]),
-        );
         // The ground mesh stays in memory: the GPU copy is lost with the context and uploaded again from here.
-        this.ground = buildGroundMesh(look, theme, BattlefieldProjection);
+        this.ground = buildGroundMesh(look, theme, BattlefieldProjection, seed);
         this.uploaded = false;
         this.onContextRestored = () => (this.uploaded = false);
         r.canvas.addEventListener('webglcontextrestored', this.onContextRestored);
@@ -74,10 +70,11 @@ class ThemedMapLook {
         r.device.uploadVertices(r.groundMeshBuffer, this.ground);
         this.uploaded = true;
     }
-    // A world ground point on the screen.
-    project(r, x, y) {
+    // A world point on the screen: a ground point, `height` above the level ground.
+    project(r, x, y, height = 0) {
         const world = this.world;
         world.x = x;
+        world.y = height;
         world.z = y;
         return r.projectRenderWorldPosition(world, this.point);
     }
@@ -106,8 +103,10 @@ class ThemedMapLook {
             },
         );
         r.perfStats.drawCalls++;
-        r.drawTerrainSurfaces(this.terrainColors);
+        r.drawTerrainDepth();
     }
+    // The theme paints its own walls and ramp treads into the ground mesh.
+    drawTerrainEdges() {}
     // Ground marks that change during a match: each base's band in the viewer's colour for that side, and the
     // capture points' ownership.
     drawGroundMarks(r) {
@@ -125,10 +124,15 @@ class ThemedMapLook {
                         sin = Math.sin(angle),
                         inner = band.radius - band.width / 2,
                         outer = band.radius + band.width / 2;
-                    let p = this.project(r, base.x + cos * inner, base.y + sin * inner);
+                    let p = this.project(
+                        r,
+                        base.x + cos * inner,
+                        base.y + sin * inner,
+                        base.height,
+                    );
                     const ix = p.x,
                         iy = p.y;
-                    p = this.project(r, base.x + cos * outer, base.y + sin * outer);
+                    p = this.project(r, base.x + cos * outer, base.y + sin * outer, base.height);
                     if (i) r.quad(innerX, innerY, outerX, outerY, p.x, p.y, ix, iy, color);
                     innerX = ix;
                     innerY = iy;
@@ -156,7 +160,7 @@ class ThemedMapLook {
         for (let index = 0; index < props.length; index++) {
             // Far to near: the list is in the host's order.
             const prop = props[guest ? props.length - 1 - index : index],
-                p = this.project(r, prop.x, prop.y),
+                p = this.project(r, prop.x, prop.y, prop.height),
                 x = p.x,
                 y = p.y;
             if (

@@ -1,6 +1,8 @@
 // Map themes: how a map looks. A map definition names one theme (`theme: 'paddy'`) and nothing else about its looks;
 // the ground, roads, yards, boundary, outside scenery, rocks, decoration and landmarks are all derived from the map's
-// own geometry by these rules (src/render/map-look-layout.js). A theme is a palette plus rule numbers: no coordinates.
+// own geometry by these rules (src/render/map-look-layout.js). Raised ground is the same: the map says where its
+// layers and ramps are (`terrain`), the theme says how a hilltop, a retaining wall and a ramp look.
+// A theme is a palette plus rule numbers: no coordinates.
 // Lengths are world units, `per1000Edge` counts are per 1000 units of map boundary, `perMillion` per 1,000,000 units²
 // of map area, and shares/chances are 0..1.
 export const MAP_THEMES = Object.freeze({
@@ -17,14 +19,29 @@ export const MAP_THEMES = Object.freeze({
                 bladeDark: '#688048',
             },
             dirt: { rim: '#aa9f6c', fill: '#c5b986', light: '#d3c89a' },
-            // Raised ground (terrain layers and ramps): the top of a plateau, a depression's floor, a cliff face
-            // (lit by its direction) and a ramp from its foot to its head.
+            // Raised ground (terrain layers and ramps): a wash of lighter grass on a hilltop; a retaining wall of
+            // earth (foot to top) under courses of stone (lowest first), its parapet and cap stones; the shadows it
+            // casts; a ramp of bare earth from its foot to its head, with log treads.
             terrain: {
-                lowGround: '#8fa66a',
-                highGround: '#9aab66',
-                cliff: '#74805a',
-                rampLow: '#b0a070',
-                rampHigh: '#b8ad78',
+                top: '#d4e28c',
+                earth: ['#6f5f41', '#9b8558'],
+                courses: [
+                    ['#8f8974', '#9a937c'],
+                    ['#b3ab92', '#a59d85'],
+                ],
+                stoneLight: '#e2dcc4',
+                foot: '#3a3422',
+                parapet: '#7b7058',
+                caps: ['#c3bda5', '#b2ac94', '#cfc9b2'],
+                capShade: '#403c2a',
+                capLight: '#f0ecd8',
+                shadow: '#30381c',
+                shade: '#2e361a',
+                rampMouth: '#b4a06e',
+                rampLow: '#96804f',
+                rampHigh: '#c8b17e',
+                tread: '#705834',
+                treadLight: '#e2d0a0',
             },
             road: {
                 shoulder: '#b2ac70',
@@ -147,6 +164,30 @@ export const MAP_THEMES = Object.freeze({
             radius: [62, 128],
             baseClearance: 300,
             yardClearance: 130,
+            terrainClearance: 160,
+        },
+        // Raised ground. Heights are the map's own (a terrain level), these are only how a wall and a ramp are built.
+        terrain: {
+            // How strongly the hilltop wash covers the grass (0..1).
+            topTint: 0.44,
+            // A wall face: courses of stones this long, and a parapet this high above the hilltop.
+            wall: { courses: 2, stone: [44, 78], parapet: 15 },
+            // Cap stones along the parapet: their length, the gap between two, their thickness on screen.
+            cap: { length: [26, 44], gap: 4, thickness: 11 },
+            // A wall's shadow on the low ground (offset on screen, towards the lower right), and the shade behind a
+            // wall seen from its back.
+            shadow: {
+                offset: [24, 20],
+                width: 40,
+                feather: 24,
+                alpha: 0.28,
+                backFeather: 46,
+                backAlpha: 0.3,
+            },
+            // Log treads this far apart up a ramp, and how far the bare earth spreads from its foot.
+            ramp: { treadSpacing: 34, mouth: 64 },
+            // Decoration stays this far from a cliff, a ramp wall and a ramp.
+            decorClearance: 60,
         },
         base: {
             radius: 245,

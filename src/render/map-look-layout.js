@@ -4,6 +4,7 @@
 // projection turns it for the guest. Anything that must look the same way up for both (shadows, height, highlights)
 // is expressed by the drawing code as a screen-space offset, never baked into these positions.
 // Every random choice comes from a hash of the map id, the theme id and a tag: the same map draws the same picture.
+import { TerrainSurfaceAtlas } from '../sim/terrain.js';
 
 const TAU = Math.PI * 2;
 export const lerp = (a, b, t) => a + (b - a) * t;
@@ -43,9 +44,8 @@ export function mapGeometry(descriptor) {
         })),
         capturePoints: descriptor.capturePoints,
         blockers: descriptor.terrain?.blockers || [],
-        // Raised ground: each layer's outline, and the ramps cut into its edges.
-        layers: descriptor.terrain?.layers || [],
-        ramps: descriptor.terrain?.ramps || [],
+        // Raised ground, as the simulation builds it from the map's layers and ramps: tops, cliff faces, ramps.
+        surfaces: TerrainSurfaceAtlas.fromMap(descriptor),
     };
 }
 
@@ -89,6 +89,54 @@ function segmentDistance(px, py, ax, ay, bx, by) {
         vy = by - ay,
         t = clamp(((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy || 1), 0, 1);
     return Math.hypot(px - ax - vx * t, py - ay - vy * t);
+}
+
+// Raised ground as the look paints it, from the terrain atlas of the map (sim/terrain.js): the flat tops and the
+// ramps as triangles with a height at each corner, the vertical faces between two heights, and the rims (the top
+// lines of those faces, joined into runs) a theme lines with a wall. A face on the map's own edge has no rim: the
+// boundary stands there. Heights are world heights, as units and buildings stand on them.
+function raisedGround(surfaces, W, H) {
+    const onBorder = (a, b) =>
+        (a.x === b.x && (a.x === 0 || a.x === W)) || (a.y === b.y && (a.y === 0 || a.y === H));
+    const triangles = [];
+    for (const patch of surfaces.renderSurfaceMesh) {
+        if (patch.kind === 'cliff' || patch.id === 'low-ground') continue;
+        for (const indices of patch.triangles) {
+            const corners = indices.map((i) => patch.vertices[i]);
+            triangles.push({
+                ramp: patch.kind === 'ramp',
+                points: corners.map((v) => [v.x, v.z]),
+                heights: corners.map((v) => v.y),
+            });
+        }
+    }
+    const faces = surfaces.renderFaces.map((face) => ({
+        a: [face.a.x, face.a.y],
+        b: [face.b.x, face.b.y],
+        low: [face.lowA, face.lowB],
+        high: [face.highA ?? face.high, face.highB ?? face.high],
+    }));
+    // Faces come in order round each layer: one that starts where the last ended continues its rim.
+    const rims = [];
+    let rim = null,
+        end = null;
+    for (const face of surfaces.renderFaces) {
+        if (onBorder(face.a, face.b)) {
+            rim = end = null;
+            continue;
+        }
+        const height = Math.max(face.highA ?? face.high, face.highB ?? face.high);
+        if (!rim || end !== face.a || rim.height !== height)
+            rims.push((rim = { height, points: [[face.a.x, face.a.y]] }));
+        rim.points.push([face.b.x, face.b.y]);
+        end = face.b;
+    }
+    const ramps = surfaces.ramps.map((ramp) => ({
+        low: [ramp.lowA, ramp.lowB].map((p) => [p.x, p.y]),
+        high: [ramp.highA, ramp.highB].map((p) => [p.x, p.y]),
+        outline: [ramp.lowA, ramp.lowB, ramp.highB, ramp.highA].map((p) => [p.x, p.y]),
+    }));
+    return { triangles, faces, rims, ramps, heightAt: (x, y) => surfaces.heightAt(x, y) };
 }
 
 function polygonEdgeDistance(x, y, points) {
@@ -195,6 +243,20 @@ export function buildMapLook(geometry, theme, seedText) {
         blockerPolygons = geometry.blockers.map((b) => b.points.map((p) => [p.x, p.y]));
     const insideMap = (x, y, inset = 0) => x > inset && y > inset && x < W - inset && y < H - inset;
     const insideBlocker = (x, y) => blockerPolygons.some((points) => pointInPolygon(x, y, points));
+    // ---- raised ground ----
+    const terrain = raisedGround(geometry.surfaces, W, H),
+        { heightAt } = terrain;
+    const onRamp = (x, y) => terrain.ramps.some((ramp) => pointInPolygon(x, y, ramp.outline));
+    // Distance to the nearest cliff, ramp wall or ramp: decoration keeps clear of them.
+    const terrainEdgeDistance = (x, y) => {
+        if (onRamp(x, y)) return 0;
+        let distance = Infinity;
+        for (const { a, b } of terrain.faces)
+            distance = Math.min(distance, segmentDistance(x, y, a[0], a[1], b[0], b[1]));
+        for (const ramp of terrain.ramps)
+            distance = Math.min(distance, polygonEdgeDistance(x, y, ramp.outline));
+        return distance;
+    };
     // A point `t` (0..1) of the way round the boundary, pushed `out` units outward.
     const boundaryPoint = (t, out) => {
         let left = (((t % 1) + 1) % 1) * edge;
@@ -256,6 +318,7 @@ export function buildMapLook(geometry, theme, seedText) {
             side: index,
             x: spawn.x,
             y: spawn.y,
+            height: heightAt(spawn.x, spawn.y),
             radius,
             rim: blobPoints(spawn.x, spawn.y, radius + 22, radius + 22, 0, R, 0.35),
             fill: blobPoints(spawn.x, spawn.y, radius, radius, 0, R, 0.25),
@@ -276,11 +339,9 @@ export function buildMapLook(geometry, theme, seedText) {
             flags: Array.from({ length: flags.count }, (_, i) => {
                 const offset = flags.count > 1 ? (i / (flags.count - 1)) * 2 - 1 : 0,
                     angle = back + offset * flags.spread;
-                return {
-                    x: spawn.x + Math.cos(angle) * (radius - flags.inset),
-                    y: spawn.y + Math.sin(angle) * (radius - flags.inset),
-                    scale: offset === 0 ? 0.85 : 0.72,
-                };
+                const x = spawn.x + Math.cos(angle) * (radius - flags.inset),
+                    y = spawn.y + Math.sin(angle) * (radius - flags.inset);
+                return { x, y, height: heightAt(x, y), scale: offset === 0 ? 0.85 : 0.72 };
             }),
         };
     });
@@ -333,9 +394,11 @@ export function buildMapLook(geometry, theme, seedText) {
         return { kind: 'paving', x, y, radius, sides: contested?.sides ?? 0, rings };
     });
 
-    // Where decoration must not go: on or beside a road, a base, a yard.
+    // Where decoration must not go: on or beside a road, a base, a yard, a cliff or a ramp.
+    const terrainClearance = theme.terrain.decorClearance;
     const reserved = (x, y, pad = 0) =>
         laneDistance(x, y) < 40 + pad ||
+        terrainEdgeDistance(x, y) < terrainClearance + pad ||
         bases.some((b) => Math.hypot(x - b.x, y - b.y) < b.radius + 70 + pad) ||
         yards.some((yard) => Math.hypot(x - yard.x, y - yard.y) < yard.radius + 75 + pad);
 
@@ -344,6 +407,8 @@ export function buildMapLook(geometry, theme, seedText) {
     const rocks = blockerPolygons.map((points, index) => {
         const cx = points.reduce((sum, p) => sum + p[0], 0) / points.length,
             cy = points.reduce((sum, p) => sum + p[1], 0) / points.length,
+            // The pile stands on the ground its middle is on: where the polygon runs into a hill, no stone.
+            height = heightAt(cx, cy),
             ux = points[1][0] - points[0][0],
             uy = points[1][1] - points[0][1],
             length = Math.hypot(ux, uy) || 1,
@@ -374,6 +439,7 @@ export function buildMapLook(geometry, theme, seedText) {
                     r = target * (0.9 + rockRandom() * 0.2);
                 if (!pointInPolygon(x, y, points) || polygonEdgeDistance(x, y, points) < r)
                     continue;
+                if (heightAt(x, y) !== height || terrainEdgeDistance(x, y) < r) continue;
                 if (stones.some((s) => Math.hypot(s.x - x, s.y - y) < (s.r + r) * 0.62)) continue;
                 stones.push({ x, y, r, lift: 0, height: r * (0.62 + rockRandom() * 0.3) });
                 break;
@@ -401,7 +467,7 @@ export function buildMapLook(geometry, theme, seedText) {
             for (let attempt = 0; attempt < 200; attempt++) {
                 const x = lerp(minX, maxX, rockRandom()),
                     y = lerp(minY, maxY, rockRandom());
-                if (!pointInPolygon(x, y, points)) continue;
+                if (!pointInPolygon(x, y, points) || heightAt(x, y) !== height) continue;
                 const distance = polygonEdgeDistance(x, y, points);
                 if (distance > 26 && (!lean || distance < lean.distance)) lean = { x, y, distance };
             }
@@ -454,7 +520,7 @@ export function buildMapLook(geometry, theme, seedText) {
                 y = gy + bladeRandom() * spacing,
                 light = bladeRandom() < 0.55,
                 size = (0.7 + bladeRandom() * 0.6) * 0.72;
-            if (laneDistance(x, y) >= 30) blades.push({ x, y, light, size });
+            if (laneDistance(x, y) >= 30 && !onRamp(x, y)) blades.push({ x, y, light, size });
         }
 
     const dirtRandom = random('dirt'),
@@ -472,7 +538,7 @@ export function buildMapLook(geometry, theme, seedText) {
             x = clamp(p[0] + (dirtRandom() - 0.5) * dirtRule.laneSpread, 150, W - 150),
             y = clamp(p[1] + (dirtRandom() - 0.5) * dirtRule.laneSpread, 150, H - 150);
         if (dirtCentres.some((q) => Math.hypot(q[0] - x, q[1] - y) < dirtRule.spacing)) continue;
-        if (insideBlocker(x, y)) continue;
+        if (insideBlocker(x, y) || terrainEdgeDistance(x, y) < dirtRule.terrainClearance) continue;
         if (
             bases.some((b) => Math.hypot(x - b.x, y - b.y) < b.radius + dirtRule.baseClearance) ||
             yards.some(
@@ -561,7 +627,10 @@ export function buildMapLook(geometry, theme, seedText) {
     // On the bank, at its foot and in the grass beyond it.
     place('outside', Math.round(clusterTotal * decorRule.share.outside), () => {
         const [x, y] = boundaryPoint(decorRandom(), -60 + decorRandom() * 330);
-        return insideMap(x, y) && laneDistance(x, y) < 60 ? null : [x, y];
+        return insideMap(x, y) &&
+            (laneDistance(x, y) < 60 || terrainEdgeDistance(x, y) < terrainClearance)
+            ? null
+            : [x, y];
     });
     // Around the blockers, never on walkable-looking ground further than their bed.
     if (blockerPolygons.length)
@@ -744,10 +813,7 @@ export function buildMapLook(geometry, theme, seedText) {
         props,
         fences,
         paddies,
-        // Raised ground as the viewer sees it. Nothing is painted from it yet: the renderer still draws tops, cliffs
-        // and ramps from the terrain mesh in the theme's `terrain` colours (map-look.js, drawTerrainSurfaces). A
-        // theme's painted tops, cliff faces and ramp treads are derived from these outlines here.
-        terrain: { layers: geometry.layers, ramps: geometry.ramps },
+        terrain,
         counts: {
             clusters: clusterCounts,
             small: small.length,

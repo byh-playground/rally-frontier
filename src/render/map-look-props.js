@@ -134,10 +134,12 @@ export function buildMapProps(look, theme, projection, seedText) {
     };
     // `front` is how far towards the viewer the prop's draw-order line lies from its foot: one distance, or
     // [seen by the host, seen by the guest] when the two differ.
+    // A prop stands at the height of the ground under its foot.
     const add = (x, y, front, shape) =>
         props.push({
             x,
             y,
+            height: look.terrain.heightAt(x, y),
             front: Array.isArray(front) ? front : [front, front],
             parts: shape.parts,
             left: shape.left,

@@ -5,11 +5,17 @@
 // A vertex is [x, y, ox, oy, r, g, b, a]: a WORLD ground point plus an offset in SCREEN space (world units, x right,
 // y down). The offset is how height, shadow direction and highlights stay the same way up for both players: the
 // renderer turns the ground point for the guest and adds the offset afterwards.
+// Raised ground (the layout's `terrain`) is the same picture lifted: everything painted on the field is cut along the
+// tops and ramps and each piece is offset upwards by the height of the ground under it, so a road or a yard runs on
+// over a hill and up a ramp. Surfaces are painted from the lowest to the highest with the walls between them: a
+// higher surface hides what lies behind its far edge, and a wall is hidden by the top it carries unless it faces the
+// viewer. That order holds for both players, so the mesh is still built once.
 import { PROP_SHADOWS } from './map-look-props.js';
-import { clamp, lerp, pointInPolygon } from './map-look-layout.js';
+import { clamp, lerp, pointInPolygon, randomSource } from './map-look-layout.js';
 
 const TAU = Math.PI * 2;
 export const GROUND_VERTEX_FLOATS = 8;
+const TRIANGLE_FLOATS = GROUND_VERTEX_FLOATS * 3;
 
 const channels = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
 const rgba = (hex, alpha = 1) => [...channels(hex), alpha];
@@ -81,7 +87,9 @@ function arcPoints(cx, cy, rx, ry, start, end, rotation = 0, step = 0.12) {
 }
 
 class GroundMesh {
-    constructor() {
+    // `heightScale`: how far up the screen one unit of height is drawn.
+    constructor(heightScale) {
+        this.heightScale = heightScale;
         this.data = [];
         // Screen-space offset of the vertices being added, and the world rectangle they are clipped to.
         this.ox = 0;
@@ -94,6 +102,17 @@ class GroundMesh {
         return this.anchor
             ? [this.anchor[0], this.anchor[1], x, y, color[0], color[1], color[2], color[3]]
             : [x, y, this.ox, this.oy, color[0], color[1], color[2], color[3]];
+    }
+    // A vertex standing `height` above the ground point (x, y).
+    lifted(x, y, height, color) {
+        return [x, y, 0, -this.heightScale * height, color[0], color[1], color[2], color[3]];
+    }
+    // A quad of [x, y, height] corners.
+    liftedQuad(a, b, c, d, ca, cb = ca, cc = cb, cd = ca) {
+        const va = this.lifted(...a, ca),
+            vc = this.lifted(...c, cc);
+        this.triangle(va, this.lifted(...b, cb), vc);
+        this.triangle(va, vc, this.lifted(...d, cd));
     }
     triangle(a, b, c) {
         if (!this.clip) return this.data.push(...a, ...b, ...c);
@@ -247,13 +266,168 @@ class GroundMesh {
     }
 }
 
+// Cuts the field's triangles (`ranges` of `data`) along the raised surfaces. Returns the triangles left on the low
+// ground (`low`: one wholly on raised ground is dropped, it would never be seen) and, per surface height in rising
+// order, the pieces on ramps reaching that height and on tops at that height, each vertex offset up the screen by the
+// height of the surface under it. Pieces keep the paint order of the triangles they were cut from.
+function raiseField(data, ranges, surfaces, heightScale) {
+    const CELL = 128,
+        grid = new Map(),
+        tiers = new Map();
+    const tierOf = (height) => {
+        if (!tiers.has(height)) tiers.set(height, { height, ramps: [], tops: [] });
+        return tiers.get(height);
+    };
+    for (const surface of surfaces) {
+        const [[x0, y0], [x1, y1], [x2, y2]] = surface.points,
+            [h0, h1, h2] = surface.heights,
+            den = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0),
+            tier = tierOf(Math.max(h0, h1, h2)),
+            plane = {
+                points: surface.points,
+                // Which way round the corners go: a point inside is on this side of every edge.
+                side: Math.sign(den),
+                x0,
+                y0,
+                h0,
+                gx: ((h1 - h0) * (y2 - y0) - (h2 - h0) * (y1 - y0)) / den,
+                gy: ((x1 - x0) * (h2 - h0) - (x2 - x0) * (h1 - h0)) / den,
+                flat: !surface.ramp,
+                out: surface.ramp ? tier.ramps : tier.tops,
+                stamp: -1,
+            };
+        const xs = surface.points.map((q) => q[0]),
+            ys = surface.points.map((q) => q[1]);
+        plane.bounds = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+        for (let cx = Math.floor(plane.bounds[0] / CELL); cx <= plane.bounds[2] / CELL; cx++)
+            for (let cy = Math.floor(plane.bounds[1] / CELL); cy <= plane.bounds[3] / CELL; cy++) {
+                const key = cx * 4096 + cy;
+                if (!grid.has(key)) grid.set(key, []);
+                grid.get(key).push(plane);
+            }
+    }
+    const edgeSide = (plane, i, x, y) => {
+        const a = plane.points[i],
+            b = plane.points[(i + 1) % 3];
+        return plane.side * ((b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]));
+    };
+    const emit = (plane, vertex) => {
+        const height =
+            plane.h0 + plane.gx * (vertex[0] - plane.x0) + plane.gy * (vertex[1] - plane.y0);
+        plane.out.push(
+            vertex[0],
+            vertex[1],
+            vertex[2],
+            vertex[3] - heightScale * height,
+            vertex[4],
+            vertex[5],
+            vertex[6],
+            vertex[7],
+        );
+    };
+    const low = [];
+    let at = 0,
+        stamp = 0;
+    const keep = (to) => {
+        for (let i = at; i < to; i++) low.push(data[i]);
+        at = to;
+    };
+    for (const [from, to] of ranges) {
+        keep(from);
+        for (let offset = from; offset < to; offset += TRIANGLE_FLOATS) {
+            const corners = [0, 1, 2].map((k) =>
+                    data.slice(
+                        offset + k * GROUND_VERTEX_FLOATS,
+                        offset + (k + 1) * GROUND_VERTEX_FLOATS,
+                    ),
+                ),
+                [a, b, c] = corners,
+                minX = Math.min(a[0], b[0], c[0]),
+                maxX = Math.max(a[0], b[0], c[0]),
+                minY = Math.min(a[1], b[1], c[1]),
+                maxY = Math.max(a[1], b[1], c[1]),
+                area = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2;
+            // The pieces of this triangle as [surface, corner, corner, corner], and the one flat top they all lie
+            // on (null once they lie on a ramp or on two tops).
+            const pieces = [];
+            let covered = 0,
+                top;
+            stamp++;
+            for (let cx = Math.floor(minX / CELL); cx <= maxX / CELL; cx++)
+                for (let cy = Math.floor(minY / CELL); cy <= maxY / CELL; cy++)
+                    for (const plane of grid.get(cx * 4096 + cy) || []) {
+                        if (plane.stamp === stamp) continue;
+                        plane.stamp = stamp;
+                        const bounds = plane.bounds;
+                        if (
+                            maxX < bounds[0] ||
+                            minX > bounds[2] ||
+                            maxY < bounds[1] ||
+                            minY > bounds[3]
+                        )
+                            continue;
+                        // An upright shape stands on one ground point: it goes with the surface under that point.
+                        if (area < 1e-6) {
+                            if ([0, 1, 2].every((i) => edgeSide(plane, i, a[0], a[1]) >= 0)) {
+                                for (const vertex of corners) emit(plane, vertex);
+                                covered = Infinity;
+                            }
+                            continue;
+                        }
+                        let polygon = corners;
+                        for (let i = 0; i < 3 && polygon.length >= 3; i++) {
+                            const out = [];
+                            for (let k = 0; k < polygon.length; k++) {
+                                const v = polygon[k],
+                                    w = polygon[(k + 1) % polygon.length],
+                                    dv = edgeSide(plane, i, v[0], v[1]),
+                                    dw = edgeSide(plane, i, w[0], w[1]);
+                                if (dv >= 0) out.push(v);
+                                if (dv >= 0 !== dw >= 0) {
+                                    const t = dv / (dv - dw);
+                                    out.push(v.map((value, n) => value + (w[n] - value) * t));
+                                }
+                            }
+                            polygon = out;
+                        }
+                        for (let k = 1; k < polygon.length - 1; k++) {
+                            const [p, q, r] = [polygon[0], polygon[k], polygon[k + 1]];
+                            covered +=
+                                Math.abs(
+                                    (q[0] - p[0]) * (r[1] - p[1]) - (r[0] - p[0]) * (q[1] - p[1]),
+                                ) / 2;
+                            pieces.push([plane, p, q, r]);
+                        }
+                        if (polygon.length >= 3)
+                            top =
+                                plane.flat && (top === undefined || top === plane.out)
+                                    ? plane.out
+                                    : null;
+                    }
+            const whole = covered >= area * (1 - 1e-6);
+            // A triangle wholly on one flat top is lifted as it is; one that crosses an edge goes in pieces.
+            if (whole && top && pieces.length)
+                for (const vertex of corners) emit(pieces[0][0], vertex);
+            else
+                for (const [plane, ...piece] of pieces)
+                    for (const vertex of piece) emit(plane, vertex);
+            if (!whole || !covered)
+                for (let i = offset; i < offset + TRIANGLE_FLOATS; i++) low.push(data[i]);
+        }
+        at = to;
+    }
+    keep(data.length);
+    return { low, tiers: [...tiers.values()].sort((u, v) => u.height - v.height) };
+}
+
 // The ground mesh of a themed map: Float32Array of GROUND_VERTEX_FLOATS per vertex, three vertices a triangle,
 // in paint order.
-export function buildGroundMesh(look, theme, projection) {
+export function buildGroundMesh(look, theme, projection, seedText) {
     const GS = projection.groundScale,
         HS = projection.heightScale,
         pal = theme.palette,
-        mesh = new GroundMesh(),
+        terrain = look.terrain,
+        mesh = new GroundMesh(HS),
         { width: W, height: H } = look,
         { side, far } = look.margin,
         map = [0, 0, W, H];
@@ -381,6 +555,8 @@ export function buildGroundMesh(look, theme, projection) {
     frame(around(side, far), around(reach, reach), haze, haze);
 
     // ---- the field: grass, slow colour drift, a few brushed blades ----
+    // Everything from here on lies on the field (but the boundary bank) and is lifted onto raised ground at the end.
+    const field = [[mesh.data.length, 0]];
     mesh.quad(...around(0, 0), rgba(pal.grass.base));
     mesh.clipped(map, () => {
         for (const blotch of look.blotches)
@@ -452,6 +628,48 @@ export function buildGroundMesh(look, theme, projection) {
         }
     });
 
+    // ---- raised ground: lighter grass on the tops, bare earth on the ramps and at their feet ----
+    const rise = pal.terrain,
+        rampRule = theme.terrain.ramp;
+    const topTint = rgba(rise.top, theme.terrain.topTint);
+    for (const surface of terrain.triangles)
+        if (!surface.ramp)
+            mesh.triangle(...surface.points.map(([x, y]) => mesh.vertex(x, y, topTint)));
+    for (const ramp of terrain.ramps) {
+        const [a, b] = ramp.low,
+            [c, d] = ramp.high,
+            width = Math.hypot(b[0] - a[0], b[1] - a[1]),
+            run = Math.hypot(c[0] - a[0], c[1] - a[1]),
+            // Out of the hill, from the ramp's head to its foot.
+            ox = (a[0] - c[0]) / run,
+            oy = (a[1] - c[1]) / run,
+            reach = rampRule.mouth;
+        mesh.soft(
+            arcPoints(
+                (a[0] + b[0]) / 2 + ox * reach * 0.6,
+                (a[1] + b[1]) / 2 + oy * reach * 0.6,
+                width / 2 + 24,
+                reach,
+                0,
+                TAU,
+                Math.atan2(b[1] - a[1], b[0] - a[0]),
+                TAU / 20,
+            ).slice(0, -1),
+            rgba(rise.rampMouth, 0.62),
+            28,
+        );
+        mesh.quad(
+            a,
+            b,
+            d,
+            c,
+            rgba(rise.rampLow),
+            rgba(rise.rampLow),
+            rgba(rise.rampHigh),
+            rgba(rise.rampHigh),
+        );
+    }
+
     // ---- roads: soft shoulder, edge, dirt, a lighter crown, two wheel ruts ----
     const road = pal.road,
         lanes = look.lanes;
@@ -483,6 +701,25 @@ export function buildGroundMesh(look, theme, projection) {
                 rgba(road.rut, 0.28),
             );
 
+    // ---- ramp treads: logs laid across the slope, over the road that climbs it ----
+    for (const ramp of terrain.ramps) {
+        const [a, b] = ramp.low,
+            [c, d] = ramp.high,
+            run = Math.hypot(c[0] - a[0], c[1] - a[1]),
+            steps = Math.max(4, Math.round(run / rampRule.treadSpacing)),
+            at = (t, v) => [
+                lerp(lerp(a[0], b[0], t), lerp(c[0], d[0], t), v),
+                lerp(lerp(a[1], b[1], t), lerp(c[1], d[1], t), v),
+            ];
+        for (let k = 1; k < steps; k++) {
+            const v = k / steps,
+                edge = 0.25 / steps;
+            mesh.stroke([at(0.04, v), at(0.96, v)], 9, rgba(rise.tread, 0.6));
+            mesh.stroke([at(0.04, v + edge), at(0.96, v + edge)], 4, rgba(rise.treadLight, 0.6));
+        }
+    }
+    field[0][1] = mesh.data.length;
+
     // ---- the boundary: a low earth bank, its top raised above its side on screen ----
     {
         const { offset: o, width, height } = theme.boundary.bank,
@@ -512,6 +749,7 @@ export function buildGroundMesh(look, theme, projection) {
         );
     }
 
+    field.push([mesh.data.length, 0]);
     // Moves the centre vertex of every fan triangle added since `from` by a screen offset.
     function shiftCentres(from, ox, oy) {
         for (let i = from; i < mesh.data.length; i += GROUND_VERTEX_FLOATS * 3) {
@@ -841,5 +1079,176 @@ export function buildGroundMesh(look, theme, projection) {
             ),
         );
     }
-    return new Float32Array(mesh.data);
+    field[1][1] = mesh.data.length;
+    if (!terrain.triangles.length) return new Float32Array(mesh.data);
+
+    // ---- raised ground: the field lifted onto it, between its shadows, walls and cap stones ----
+    const { low, tiers } = raiseField(mesh.data, field, terrain.triangles, HS),
+        wallRule = theme.terrain.wall,
+        shadowRule = theme.terrain.shadow,
+        R = randomSource(seedText)('terrain'),
+        out = low;
+    const append = (values) => {
+        for (let i = 0; i < values.length; i++) out.push(values[i]);
+    };
+    // On the low ground: each wall's shadow towards the lower right of the screen, and a shade along its top line
+    // that shows on the ground behind a wall seen from its back.
+    const shadows = new GroundMesh(HS);
+    for (const rim of terrain.rims) {
+        // A soft band cannot follow a rounded corner's short steps without folding over itself: the corner is
+        // taken as one bend.
+        const line = rim.points.filter(
+            ([x, y], i, points) =>
+                i === points.length - 1 ||
+                !i ||
+                Math.hypot(x - points[i - 1][0], y - points[i - 1][1]) >= shadowRule.width,
+        );
+        shadows.offset(shadowRule.offset[0], shadowRule.offset[1] * GS, () =>
+            shadows.stroke(line, shadowRule.width, rgba(rise.shadow, shadowRule.alpha), {
+                feather: shadowRule.feather,
+            }),
+        );
+        shadows.offset(0, -HS * rim.height, () =>
+            shadows.stroke(line, 0, rgba(rise.shade, shadowRule.backAlpha), {
+                feather: shadowRule.backFeather,
+            }),
+        );
+    }
+    append(shadows.data);
+    for (const tier of tiers) {
+        append(tier.ramps);
+        // The walls up to this height: earth, courses of stone, a dark foot.
+        const walls = new GroundMesh(HS);
+        for (const face of terrain.faces) {
+            if (Math.max(...face.high) !== tier.height) continue;
+            const { a, b } = face,
+                length = Math.hypot(b[0] - a[0], b[1] - a[1]),
+                at = (distance, v) => {
+                    const t = distance / length;
+                    return [
+                        lerp(a[0], b[0], t),
+                        lerp(a[1], b[1], t),
+                        lerp(
+                            lerp(face.low[0], face.low[1], t),
+                            lerp(face.high[0], face.high[1], t),
+                            v,
+                        ),
+                    ];
+                },
+                earthLow = rgba(rise.earth[0]),
+                earthHigh = rgba(rise.earth[1]);
+            walls.liftedQuad(
+                at(0, 0),
+                at(length, 0),
+                at(length, 1),
+                at(0, 1),
+                earthLow,
+                earthLow,
+                earthHigh,
+                earthHigh,
+            );
+            for (let course = 0; course < wallRule.courses; course++) {
+                const v0 = (course + 0.1) / wallRule.courses,
+                    v1 = (course + 0.94) / wallRule.courses,
+                    tones = rise.courses[Math.min(course, rise.courses.length - 1)];
+                // Every other course starts half a stone back.
+                let from = course % 2 ? -wallRule.stone[0] / 2 : 0;
+                while (from < length) {
+                    const width = lerp(wallRule.stone[0], wallRule.stone[1], R()),
+                        t0 = Math.max(0, from + 3),
+                        t1 = Math.min(length, from + width - 3),
+                        tone = rgba(tones[Math.floor(R() * tones.length)]);
+                    if (t1 > t0 + 8) {
+                        walls.liftedQuad(
+                            at(t0, v0),
+                            at(t1, v0),
+                            at(t1 - 3, v1),
+                            at(t0 + 3, v1),
+                            tone,
+                        );
+                        walls.liftedQuad(
+                            at(t0 + 3, v1 - 0.12 / wallRule.courses),
+                            at(t1 - 3, v1 - 0.12 / wallRule.courses),
+                            at(t1 - 3, v1),
+                            at(t0 + 3, v1),
+                            rgba(rise.stoneLight, 0.5),
+                        );
+                    }
+                    from += width;
+                }
+            }
+            walls.liftedQuad(
+                at(0, 0),
+                at(length, 0),
+                at(length, 0.12),
+                at(0, 0.12),
+                rgba(rise.foot, 0.55),
+            );
+        }
+        append(walls.data);
+        append(tier.tops);
+        // Along every rim: a low stone parapet, seen from outside over a wall facing the viewer and from inside
+        // over one facing away, and a row of cap stones on it.
+        const caps = new GroundMesh(HS),
+            capRule = theme.terrain.cap,
+            capHeight = tier.height + wallRule.parapet;
+        for (const rim of terrain.rims) {
+            if (rim.height !== tier.height) continue;
+            for (let i = 0; i < rim.points.length - 1; i++) {
+                const [x0, y0] = rim.points[i],
+                    [x1, y1] = rim.points[i + 1];
+                caps.liftedQuad(
+                    [x0, y0, tier.height],
+                    [x1, y1, tier.height],
+                    [x1, y1, capHeight],
+                    [x0, y0, capHeight],
+                    rgba(rise.parapet),
+                );
+            }
+            // Stones follow the rim by distance, each lying along the stretch it sits on.
+            let next = capRule.length[0] / 2,
+                walked = 0;
+            for (let i = 0; i < rim.points.length - 1; i++) {
+                const [x0, y0] = rim.points[i],
+                    [x1, y1] = rim.points[i + 1],
+                    length = Math.hypot(x1 - x0, y1 - y0),
+                    // The stretch as it lies on the screen.
+                    sx = (x1 - x0) / (length || 1),
+                    sy = ((y1 - y0) / (length || 1)) * GS,
+                    angle = Math.atan2(sy, sx),
+                    squash = Math.hypot(sx, sy);
+                while (next <= walked + length) {
+                    const t = (next - walked) / length,
+                        size = lerp(capRule.length[0], capRule.length[1], R()),
+                        rx = Math.max(capRule.thickness, (size / 2) * squash),
+                        ry = capRule.thickness,
+                        tone = rise.caps[Math.floor(R() * rise.caps.length)],
+                        up = -HS * capHeight,
+                        oval = (dx, dy, kx, ky, color) =>
+                            caps.fill(
+                                arcPoints(
+                                    dx,
+                                    up + dy,
+                                    rx * kx,
+                                    ry * ky,
+                                    0,
+                                    TAU,
+                                    angle,
+                                    TAU / 10,
+                                ).slice(0, -1),
+                                color,
+                            );
+                    caps.upright(lerp(x0, x1, t), lerp(y0, y1, t), () => {
+                        oval(3, 5, 1, 1, rgba(rise.capShade, 0.5));
+                        oval(0, 0, 1, 1, rgba(tone));
+                        oval(-2, -3, 0.5, 0.42, rgba(rise.capLight, 0.6));
+                    });
+                    next += size + capRule.gap;
+                }
+                walked += length;
+            }
+        }
+        append(caps.data);
+    }
+    return new Float32Array(out);
 }
