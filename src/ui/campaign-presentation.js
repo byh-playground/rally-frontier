@@ -39,6 +39,8 @@ export function sideGoalBrief(goal) {
         return goal.count === undefined ? '포로 모두 구하기' : `포로 ${goal.count}명 구하기`;
     if (goal.kind === 'burnFields') return '감염 밭 모두 태우기';
     if (goal.kind === 'withinMs') return `${formatCountdown(goal.ms / 1000)} 안에 이기기`;
+    if (goal.kind === 'lossesAtMost') return `병력 손실 ${goal.count}명 이하로 이기기`;
+    if (goal.kind === 'allReinforcements') return '주머니를 모두 깨서 증원 가득 받기';
     return `${goal.point === undefined ? '본진' : '지킬 거점'} 체력 ${Math.round(goal.hpRatio * 100)}% 넘게 지키기`;
 }
 
@@ -53,6 +55,9 @@ function sideGoalLine(goal, tick, tps) {
         text = `${formatCountdown(goal.ms / 1000)} 안에 이기기 · 남은 ${formatCountdown(
             goal.deadlineTick === null ? goal.ms / 1000 : (goal.deadlineTick - tick) / tps,
         )}`;
+    else if (goal.kind === 'allReinforcements') text = `증원 주머니 ${goal.broken}/${goal.total}`;
+    else if (goal.kind === 'lossesAtMost')
+        text = `병력 손실 ${goal.count}명 이하 · 지금 ${goal.lost}명`;
     else
         text = `${goal.point === undefined ? '본진' : '거점'} ${percent(goal.hpRatio)} 지키기 · 지금 ${percent(goal.hpNow)}`;
     if (goal.status === 'met') return `✓ ${text.split(' · ')[0]}`;

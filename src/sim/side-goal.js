@@ -4,6 +4,9 @@
 //     sideGoal: { kind: 'freeCaptives', count: 6 }       at least `count` of them
 //     sideGoal: { kind: 'burnFields' }                   no blighted cell of the stage's blight fields left
 //     sideGoal: { kind: 'withinMs', ms: 180_000 }        won within `ms` on the mission's clock
+//     sideGoal: { kind: 'lossesAtMost', count: 12 }       won with no more than `count` of the player's soldiers lost
+//     sideGoal: { kind: 'allReinforcements' }             every sac of a boss stage broken by the time the reinforcements
+//                                                         come (SporeSac), and the stage won
 //     sideGoal: { kind: 'keepAlive', hpRatio: 0.5 }      won with the main base never below `hpRatio` of its health
 //     sideGoal: { kind: 'keepAlive', hpRatio: 0.5, point: 'advance' }   the same for the outpost on a capture point
 //                                                                      the player holds at the start
@@ -12,6 +15,8 @@
 // - `freeCaptives` and `burnFields` are met the first tick their condition holds, whatever comes after;
 // - `withinMs` is missed the first tick the mission's clock (CampaignMission.clock) passes `ms`, and met on the tick
 //   the player wins before that;
+// - `lossesAtMost` is missed the first tick more than `count` of the player's soldiers have died (the enemy's kills of
+//   them, `launchStats.kills[1]`), and met on the tick the player wins before that;
 // - `keepAlive` is missed the first tick the building is gone or below `hpRatio`, and met on the tick the player wins
 //   before that.
 // `sim.sideGoal { status, tick }` is the only state: status 'open', 'met' or 'missed', and the tick it stopped being
@@ -108,6 +113,37 @@ const KINDS = Object.freeze({
         progress(sim, goal) {
             const start = CampaignMission.startTick(sim);
             return { deadlineTick: start === null ? null : start + sim.time.ceilTicks(goal.ms) };
+        },
+    },
+    lossesAtMost: {
+        check(sim, goal) {
+            if (!Number.isSafeInteger(goal.count) || goal.count < 0)
+                throw new Error(
+                    `병력 손실 보조 목표의 count는 0 이상의 정수여야 합니다: ${goal.count}`,
+                );
+        },
+        judge(sim, goal, won) {
+            if (sim.launchStats.kills[1] > goal.count) return 'missed';
+            return won ? 'met' : null;
+        },
+        progress: (sim) => ({ lost: sim.launchStats.kills[1] }),
+    },
+    allReinforcements: {
+        check(sim) {
+            if (!sim.sporeReinforce)
+                throw new Error(
+                    '증원 모두 받기 보조 목표는 증원 주머니(sporeReinforceMs)를 선언한 판에만 둘 수 있습니다.',
+                );
+        },
+        // Missed the tick the reinforcements come with a sac standing, or when the stage is won with one standing.
+        judge(sim, goal, won) {
+            const { done, broken, total } = SporeSac.view(sim);
+            if (broken < total && (done || won)) return 'missed';
+            return won ? 'met' : null;
+        },
+        progress: (sim) => {
+            const { broken, total } = SporeSac.view(sim);
+            return { broken, total };
         },
     },
     keepAlive: {

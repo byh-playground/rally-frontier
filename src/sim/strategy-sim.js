@@ -3106,6 +3106,8 @@ class StrategySim {
         CampaignMission.beforeCommands(this);
         // A spore cloud's soldiers appear where a wave's do (SporeCloud).
         SporeCloud.beforeCommands(this);
+        // The player's reinforcements from the sacs it broke come at their time (SporeSac).
+        SporeSac.beforeCommands(this);
         const cmds = this.scheduled.get(this.tick) || [];
         for (const c of cmds) {
             const applied = this.applyCommand(c.actor, c.action) === true;
@@ -3402,6 +3404,7 @@ class StrategySim {
                 campaignMission: CampaignMission.snapshot(this.campaignMission),
                 blightField: BlightField.view(this),
                 sporeCloud: SporeCloud.view(this),
+                sporeReinforce: SporeSac.view(this),
                 blightBoss: BlightBoss.view(this),
                 campaignPractice: CampaignPractice.view(this),
                 sideGoal: SideGoal.view(this),
