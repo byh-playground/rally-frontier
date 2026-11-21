@@ -51,6 +51,7 @@ export function causewayFlatsMapLayout() {
         width,
         height,
         spawns: { host, guest },
+        theme: 'paddy',
         topology: 'causeway-flats',
         flags: [guest, host].map((p) => ({ ...p, forced: false })),
         laneControlPoints: {

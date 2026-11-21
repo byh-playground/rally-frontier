@@ -1,10 +1,9 @@
-// How the battlefield renderer shows a map's ground and scenery. A map that names a theme (definitions/map-themes.js)
-// gets a ThemedMapLook: its ground is one static mesh and its standing props are triangle fans, both built once in
+// How the battlefield renderer shows a map's ground and scenery. Every map names a theme (definitions/map-themes.js)
+// and gets a MapLook: its ground is one static mesh and its standing props are triangle fans, both built once in
 // world coordinates when the map loads. A frame draws the mesh with the camera as uniforms and copies the visible
-// props' vertices; turning the view for the guest or a replay rebuilds nothing. Raised ground (the map's terrain
-// layers and ramps) is painted into that same mesh by the theme; the renderer only adds its depth, so a hill still
-// hides what stands behind it. A map without a theme keeps the renderer's own drawGround and terrain colours.
-// mapLookFor is the one place that tells the two apart.
+// props' vertices; turning the view for the guest or a replay rebuilds nothing. Terrain (the map's layers, ramps,
+// water and bridges) is painted into that same mesh by the theme; the renderer only adds the depth of its surfaces,
+// so a hill still hides what stands behind it. Before a map's first snapshot the renderer has no map and draws none.
 import { MAP_THEMES } from '../definitions/map-themes.js';
 import { BattlefieldProjection } from '../sim/terrain.js';
 import { buildMapLook, mapGeometry } from './map-look-layout.js';
@@ -17,24 +16,23 @@ const BAND_STEP = 0.09;
 const OUTSIDE_FOG_REACH = 100000;
 const OUTSIDE_FOG_DEPTH = 0.96;
 
-const LEGACY_MAP_LOOK = Object.freeze({
-    // The camera stops at the map's edges, and so does the fog.
+// The renderer before any map has arrived: nothing to draw.
+const NO_MAP = Object.freeze({
     cameraMargin: 0,
     fogReach: 0,
     unseenFogMask: () => 0,
-    drawGround: (r) => r.drawGround(),
-    drawTerrainEdges: (r) => r.drawTerrainEdges(),
-    drawGroundMarks: (r) => r.drawStrategicMap(),
+    drawGround() {},
+    drawGroundMarks() {},
     drawProps() {},
     drawOutsideFog() {},
     dispose() {},
 });
 
 export function mapLookFor(r, descriptor) {
-    return descriptor?.theme ? new ThemedMapLook(r, descriptor) : LEGACY_MAP_LOOK;
+    return descriptor ? new MapLook(r, descriptor) : NO_MAP;
 }
 
-class ThemedMapLook {
+class MapLook {
     constructor(r, descriptor) {
         const theme = MAP_THEMES[descriptor.theme];
         if (!theme) throw new Error(`Unknown map theme: ${descriptor.theme}`);
@@ -105,8 +103,6 @@ class ThemedMapLook {
         r.perfStats.drawCalls++;
         r.drawTerrainDepth();
     }
-    // The theme paints its own walls and ramp treads into the ground mesh.
-    drawTerrainEdges() {}
     // Ground marks that change during a match: each base's band in the viewer's colour for that side, and the
     // capture points' ownership.
     drawGroundMarks(r) {
@@ -174,11 +170,10 @@ class ThemedMapLook {
                 y + prop.top * sc > height
             )
                 continue;
-            // Depth at the prop's draw-order line: its foot moved towards the viewer.
+            // Depth at the prop's draw-order line: its foot moved towards the viewer (on a bridge, a row of the
+            // deck: the soldiers crossing are ordered with its railings).
             r.setRenderDepth(
-                r.renderDepthForWorld({
-                    z: guest ? prop.y - prop.front[1] : prop.y + prop.front[0],
-                }) - 0.0005,
+                r.propDepth(guest ? prop.y - prop.front[1] : prop.y + prop.front[0], prop.bridgeId),
             );
             const shade = r.fogAmountAt(prop.x, prop.y);
             for (const part of prop.parts) {

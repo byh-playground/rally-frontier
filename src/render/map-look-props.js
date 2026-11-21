@@ -1,4 +1,5 @@
-// The standing props of a themed map (map-look-layout.js): stone piles, trees, flags, fences, farm things, landmarks.
+// The standing props of a map (map-look-layout.js): stone piles, trees, flags, fences, bridge railings, farm things,
+// landmarks.
 // Each prop is built once as flat-coloured triangle fans in its own upright frame (x right, y down, world units, the
 // foot at the origin), so drawing one is a projection of its foot and a copy of its vertices. Every part is opaque:
 // props write depth and are hidden by, or hide, the units around them. Their soft shadows are painted on the ground.
@@ -134,12 +135,14 @@ export function buildMapProps(look, theme, projection, seedText) {
     };
     // `front` is how far towards the viewer the prop's draw-order line lies from its foot: one distance, or
     // [seen by the host, seen by the guest] when the two differ.
-    // A prop stands at the height of the ground under its foot.
+    // A prop stands at the height of the ground under its foot; one on a bridge deck belongs to that deck's layer
+    // (`bridgeId`), as the units crossing the bridge do.
     const add = (x, y, front, shape) =>
         props.push({
             x,
             y,
             height: look.terrain.heightAt(x, y),
+            bridgeId: look.terrain.bridgeAt(x, y),
             front: Array.isArray(front) ? front : [front, front],
             parts: shape.parts,
             left: shape.left,

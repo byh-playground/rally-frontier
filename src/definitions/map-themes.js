@@ -1,7 +1,8 @@
 // Map themes: how a map looks. A map definition names one theme (`theme: 'paddy'`) and nothing else about its looks;
 // the ground, roads, yards, boundary, outside scenery, rocks, decoration and landmarks are all derived from the map's
-// own geometry by these rules (src/render/map-look-layout.js). Raised ground is the same: the map says where its
-// layers and ramps are (`terrain`), the theme says how a hilltop, a retaining wall and a ramp look.
+// own geometry by these rules (src/render/map-look-layout.js). Terrain is the same: the map says where its layers,
+// ramps, water and bridges are (`terrain`), the theme says how a hilltop, a sunken floor, a retaining wall, a ramp, a
+// river and a bridge look.
 // A theme is a palette plus rule numbers: no coordinates.
 // Lengths are world units, `per1000Edge` counts are per 1000 units of map boundary, `perMillion` per 1,000,000 units²
 // of map area, and shares/chances are 0..1.
@@ -24,6 +25,10 @@ export const MAP_THEMES = Object.freeze({
             // casts; a ramp of bare earth from its foot to its head, with log treads.
             terrain: {
                 top: '#d4e28c',
+                // Ground below the field (a negative terrain level): a wash of damper grass on its floor, and a
+                // sloped bank (a layer with an inner outline) from damp earth at its foot up into the grass.
+                low: '#587648',
+                bank: '#8a8458',
                 earth: ['#6f5f41', '#9b8558'],
                 courses: [
                     ['#8f8974', '#9a937c'],
@@ -42,6 +47,28 @@ export const MAP_THEMES = Object.freeze({
                 rampHigh: '#c8b17e',
                 tread: '#705834',
                 treadLight: '#e2d0a0',
+            },
+            // A river: wet earth along its shore, shallows fading into the deeper middle, a bright line where the
+            // water meets the shore, short ripples, and the pale shallows where a road wades through.
+            water: {
+                shore: '#8f8a62',
+                deep: '#7da69d',
+                shallow: '#a6c2b0',
+                edge: '#d6e6d6',
+                ripple: '#dbeadf',
+                rippleShade: '#6a968e',
+                ford: '#bcc8a4',
+            },
+            // A timber bridge: its shadow on what lies under it, dark gaps between planks of three tones, a beam
+            // along each side, and the timber and piles of a side seen where the deck stands above its ground.
+            bridge: {
+                shadow: '#34402e',
+                gap: '#6e5636',
+                planks: ['#b08a58', '#a37e50', '#b89462'],
+                beam: '#84653e',
+                beamLight: '#d2b382',
+                side: '#7a5e3a',
+                pile: '#5a452c',
             },
             road: {
                 shoulder: '#b2ac70',
@@ -168,10 +195,12 @@ export const MAP_THEMES = Object.freeze({
         },
         // Raised ground. Heights are the map's own (a terrain level), these are only how a wall and a ramp are built.
         terrain: {
-            // How strongly the hilltop wash covers the grass (0..1).
-            topTint: 0.44,
-            // A wall face: courses of stones this long, and a parapet this high above the hilltop.
-            wall: { courses: 2, stone: [44, 78], parapet: 15 },
+            // How strongly the hilltop wash covers the grass (0..1), and the wash of a sunken floor.
+            topTint: 0.52,
+            lowTint: 0.56,
+            // A wall face: one course of stones per this much height, stones this long, and a parapet this high
+            // above the ground the wall holds up.
+            wall: { courseHeight: 24, stone: [44, 78], parapet: 15 },
             // Cap stones along the parapet: their length, the gap between two, their thickness on screen.
             cap: { length: [26, 44], gap: 4, thickness: 11 },
             // A wall's shadow on the low ground (offset on screen, towards the lower right), and the shade behind a
@@ -180,14 +209,33 @@ export const MAP_THEMES = Object.freeze({
                 offset: [24, 20],
                 width: 40,
                 feather: 24,
-                alpha: 0.28,
+                alpha: 0.34,
                 backFeather: 46,
-                backAlpha: 0.3,
+                backAlpha: 0.36,
             },
             // Log treads this far apart up a ramp, and how far the bare earth spreads from its foot.
             ramp: { treadSpacing: 34, mouth: 64 },
-            // Decoration stays this far from a cliff, a ramp wall and a ramp.
+            // Decoration stays this far from a cliff, a ramp wall, a ramp, a bank, water and a bridge.
             decorClearance: 60,
+        },
+        // Water (the map's river polygons). Its shore band, how far the shallows reach in from the shore, ripples
+        // per 1,000,000 units² of water (their length, the gap between two, their distance from the shore), and
+        // how softly a ford's edge fades.
+        water: {
+            shore: { width: 30, feather: 14 },
+            shallows: 46,
+            ripples: { perMillion: 70, length: [26, 54], spacing: 70, clearance: 28 },
+            ford: { feather: 26 },
+        },
+        // A bridge deck (the map's bridges): planks this long across it, a beam this wide along each side, piles
+        // this far apart under a raised side, a railing this far in from each side with posts this far apart, and
+        // the deck's shadow (offset on screen, towards the lower right).
+        bridges: {
+            plank: 24,
+            beam: 9,
+            pileSpacing: 70,
+            rail: { inset: 7, postSpacing: 90 },
+            shadow: { offset: [16, 14], feather: 14, alpha: 0.26 },
         },
         base: {
             radius: 245,
@@ -205,8 +253,15 @@ export const MAP_THEMES = Object.freeze({
             // One fence per map side, on the stretch farthest from every road.
             fences: { length: 0.32, offset: 130, postSpacing: 110 },
         },
-        // A blocker is filled with a pile of stones that never leaves its polygon.
+        // A blocker is filled with piles of stones that never leave its polygon. A polygon thicker than
+        // `stoneScale.thickness` (its area over half its outline) gets bigger stones, up to `stoneScale.max` times;
+        // one pile of these stones goes on every `pileArea` units² of it (scaled with the stones, at least one).
         blockers: {
+            pileArea: 60000,
+            stoneScale: { thickness: 150, max: 1.5 },
+            // A polygon with scaled stones also gets a row of its smallest stones just inside its outline, so no
+            // bare bed is left between the piles and the edge that blocks.
+            edgeStones: 6,
             stoneRadii: [74, 68, 62, 58, 54, 50, 46, 42, 38, 34, 30, 28, 26, 24, 22, 20],
             stacked: 4,
             // One farm tool leaning inside the first blocker.

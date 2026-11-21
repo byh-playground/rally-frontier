@@ -1,15 +1,16 @@
-// Builds a themed map's ground (map-look-layout.js) as ONE static triangle mesh, once when the map loads: grass, dirt,
-// roads, yards, the boundary bank, the paddies outside, low decoration and the shadows of standing props. Every shape
-// is flat-coloured or shaded by its vertex colours: hard edges stay sharp at any zoom, soft things (colour drift,
-// shadows, highlights) are gradients between vertices, and nothing is rasterised into a texture.
+// Builds a map's ground (map-look-layout.js) as ONE static triangle mesh, once when the map loads: grass, dirt, roads,
+// water, bridge decks, yards, the boundary bank, the paddies outside, low decoration and the shadows of standing
+// props. Every shape is flat-coloured or shaded by its vertex colours: hard edges stay sharp at any zoom, soft things
+// (colour drift, shadows, highlights) are gradients between vertices, and nothing is rasterised into a texture.
 // A vertex is [x, y, ox, oy, r, g, b, a]: a WORLD ground point plus an offset in SCREEN space (world units, x right,
 // y down). The offset is how height, shadow direction and highlights stay the same way up for both players: the
 // renderer turns the ground point for the guest and adds the offset afterwards.
-// Raised ground (the layout's `terrain`) is the same picture lifted: everything painted on the field is cut along the
-// tops and ramps and each piece is offset upwards by the height of the ground under it, so a road or a yard runs on
-// over a hill and up a ramp. Surfaces are painted from the lowest to the highest with the walls between them: a
-// higher surface hides what lies behind its far edge, and a wall is hidden by the top it carries unless it faces the
-// viewer. That order holds for both players, so the mesh is still built once.
+// Ground off the field's level (the layout's `terrain`) is the same picture lifted or lowered: everything painted on
+// the field is cut along the tops, floors, decks, ramps and banks and each piece is offset on the screen by the height
+// of the ground under it, so a road or a yard runs on over a hill and up a ramp, and a river lies on the floor of
+// its bed. Surfaces are painted from the lowest to the highest with the walls between them: a higher surface hides
+// what lies behind its far edge, and a wall is hidden by the top it carries unless it faces the viewer. That order
+// holds for both players, so the mesh is still built once.
 import { PROP_SHADOWS } from './map-look-props.js';
 import { clamp, lerp, pointInPolygon, randomSource } from './map-look-layout.js';
 
@@ -72,6 +73,33 @@ function clipHalfPlane(points, nx, ny, limit) {
     }
     return out;
 }
+// A closed outline moved `distance` outward along its normals (inward when negative), mitred at every corner.
+function grown(points, distance) {
+    const n = points.length;
+    let area = 0;
+    for (let i = 0; i < n; i++) {
+        const a = points[i],
+            b = points[(i + 1) % n];
+        area += a[0] * b[1] - b[0] * a[1];
+    }
+    const sign = area >= 0 ? 1 : -1;
+    return points.map((p, i) => {
+        const before = points[(i + n - 1) % n],
+            after = points[(i + 1) % n],
+            al = Math.hypot(p[0] - before[0], p[1] - before[1]) || 1,
+            bl = Math.hypot(after[0] - p[0], after[1] - p[1]) || 1,
+            // The outward normals of the two edges at this corner.
+            ax = (sign * (p[1] - before[1])) / al,
+            ay = (-sign * (p[0] - before[0])) / al,
+            bx = (sign * (after[1] - p[1])) / bl,
+            by = (-sign * (after[0] - p[0])) / bl,
+            length = Math.hypot(ax + bx, ay + by) || 1,
+            nx = (ax + bx) / length,
+            ny = (ay + by) / length,
+            mitre = Math.min(2, 1 / Math.max(0.2, nx * ax + ny * ay));
+        return [p[0] + nx * distance * mitre, p[1] + ny * distance * mitre];
+    });
+}
 function arcPoints(cx, cy, rx, ry, start, end, rotation = 0, step = 0.12) {
     const count = Math.max(2, Math.ceil(Math.abs(end - start) / step)),
         cos = Math.cos(rotation),
@@ -86,11 +114,60 @@ function arcPoints(cx, cy, rx, ry, start, end, rotation = 0, step = 0.12) {
     return out;
 }
 
+// Numbers collected in a typed array that grows as they arrive: `array` holds `length` of them. The field is
+// collected as doubles (it is cut again before it is final); what is final goes straight into 32-bit floats, so no
+// second copy of the mesh is ever held as plain numbers.
+class Floats {
+    constructor(Type, capacity = 1 << 16) {
+        this.array = new Type(capacity);
+        this.length = 0;
+    }
+    reserve(count) {
+        if (this.length + count <= this.array.length) return;
+        const grown = new this.array.constructor(
+            Math.max(this.array.length * 2, this.length + count),
+        );
+        grown.set(this.array.subarray(0, this.length));
+        this.array = grown;
+    }
+    // Three vertices, each GROUND_VERTEX_FLOATS numbers.
+    triangle(a, b, c) {
+        this.reserve(TRIANGLE_FLOATS);
+        this.array.set(a, this.length);
+        this.array.set(b, this.length + GROUND_VERTEX_FLOATS);
+        this.array.set(c, this.length + GROUND_VERTEX_FLOATS * 2);
+        this.length += TRIANGLE_FLOATS;
+    }
+    vertex(x, y, ox, oy, r, g, b, a) {
+        this.reserve(GROUND_VERTEX_FLOATS);
+        const array = this.array,
+            at = this.length;
+        array[at] = x;
+        array[at + 1] = y;
+        array[at + 2] = ox;
+        array[at + 3] = oy;
+        array[at + 4] = r;
+        array[at + 5] = g;
+        array[at + 6] = b;
+        array[at + 7] = a;
+        this.length = at + GROUND_VERTEX_FLOATS;
+    }
+    // The numbers `from`..`to` of another typed array.
+    copy(source, from, to) {
+        this.reserve(to - from);
+        this.array.set(source.subarray(from, to), this.length);
+        this.length += to - from;
+    }
+    take(other) {
+        this.copy(other.array, 0, other.length);
+    }
+}
+
 class GroundMesh {
-    // `heightScale`: how far up the screen one unit of height is drawn.
-    constructor(heightScale) {
+    // `heightScale`: how far up the screen one unit of height is drawn. `data`: where the triangles go.
+    constructor(heightScale, data = new Floats(Float64Array)) {
         this.heightScale = heightScale;
-        this.data = [];
+        this.data = data;
         // Screen-space offset of the vertices being added, and the world rectangle they are clipped to.
         this.ox = 0;
         this.oy = 0;
@@ -115,7 +192,7 @@ class GroundMesh {
         this.triangle(va, vc, this.lifted(...d, cd));
     }
     triangle(a, b, c) {
-        if (!this.clip) return this.data.push(...a, ...b, ...c);
+        if (!this.clip) return this.data.triangle(a, b, c);
         // Clip to the rectangle, carrying colour across each cut.
         let polygon = [a, b, c];
         const [x0, y0, x1, y1] = this.clip;
@@ -141,7 +218,7 @@ class GroundMesh {
             if (polygon.length < 3) return 0;
         }
         for (let i = 1; i < polygon.length - 1; i++)
-            this.data.push(...polygon[0], ...polygon[i], ...polygon[i + 1]);
+            this.data.triangle(polygon[0], polygon[i], polygon[i + 1]);
         return 0;
     }
     // Runs `build` with every vertex offset on screen by (ox, oy).
@@ -258,6 +335,24 @@ class GroundMesh {
             }
         }
     }
+    // A polygon of any shape, by its triangles (index triples into `points`).
+    triangles(points, triangles, color) {
+        for (const [a, b, c] of triangles)
+            this.triangle(
+                this.vertex(points[a][0], points[a][1], color),
+                this.vertex(points[b][0], points[b][1], color),
+                this.vertex(points[c][0], points[c][1], color),
+            );
+    }
+    // The band between a closed outline and the same outline moved `reach` outward (inward when negative),
+    // shaded from `color` on the outline to `far`.
+    fringe(points, reach, color, far = clear(color)) {
+        const other = grown(points, reach);
+        for (let i = 0; i < points.length; i++) {
+            const j = (i + 1) % points.length;
+            this.quad(points[i], points[j], other[j], other[i], color, color, far, far);
+        }
+    }
     // The part of a ring between two radii and two angles.
     band(x, y, inner, outer, start, end, color) {
         const a = arcPoints(x, y, inner, inner, start, end),
@@ -266,16 +361,17 @@ class GroundMesh {
     }
 }
 
-// Cuts the field's triangles (`ranges` of `data`) along the raised surfaces. Returns the triangles left on the low
-// ground (`low`: one wholly on raised ground is dropped, it would never be seen) and, per surface height in rising
-// order, the pieces on ramps reaching that height and on tops at that height, each vertex offset up the screen by the
-// height of the surface under it. Pieces keep the paint order of the triangles they were cut from.
-function raiseField(data, ranges, surfaces, heightScale) {
+// Cuts the field's triangles (`ranges` of `field`) along the terrain's surfaces. The triangles left on the field go
+// to `low` (one wholly on a surface is dropped, it would never be seen); returned are, per surface height in rising
+// order, the pieces on ramps reaching that height and on tops at that height, each vertex offset on the screen by
+// the height of the surface under it. Pieces keep the paint order of the triangles they were cut from.
+function raiseField(field, ranges, surfaces, heightScale, low) {
+    const data = field.array;
     const CELL = 128,
         grid = new Map(),
         tiers = new Map();
     const tierOf = (height) => {
-        if (!tiers.has(height)) tiers.set(height, { height, ramps: [], tops: [] });
+        if (!tiers.has(height)) tiers.set(height, emptyTier(height));
         return tiers.get(height);
     };
     for (const surface of surfaces) {
@@ -314,7 +410,7 @@ function raiseField(data, ranges, surfaces, heightScale) {
     const emit = (plane, vertex) => {
         const height =
             plane.h0 + plane.gx * (vertex[0] - plane.x0) + plane.gy * (vertex[1] - plane.y0);
-        plane.out.push(
+        plane.out.vertex(
             vertex[0],
             vertex[1],
             vertex[2],
@@ -325,11 +421,10 @@ function raiseField(data, ranges, surfaces, heightScale) {
             vertex[7],
         );
     };
-    const low = [];
     let at = 0,
         stamp = 0;
     const keep = (to) => {
-        for (let i = at; i < to; i++) low.push(data[i]);
+        low.copy(data, at, to);
         at = to;
     };
     for (const [from, to] of ranges) {
@@ -411,16 +506,21 @@ function raiseField(data, ranges, surfaces, heightScale) {
             else
                 for (const [plane, ...piece] of pieces)
                     for (const vertex of piece) emit(plane, vertex);
-            if (!whole || !covered)
-                for (let i = offset; i < offset + TRIANGLE_FLOATS; i++) low.push(data[i]);
+            if (!whole || !covered) low.copy(data, offset, offset + TRIANGLE_FLOATS);
         }
         at = to;
     }
-    keep(data.length);
-    return { low, tiers: [...tiers.values()].sort((u, v) => u.height - v.height) };
+    keep(field.length);
+    return [...tiers.values()].sort((u, v) => u.height - v.height);
 }
+// One stage of the terrain's painting: the pieces of the field on ramps reaching `height` and on tops at it.
+const emptyTier = (height) => ({
+    height,
+    ramps: new Floats(Float32Array),
+    tops: new Floats(Float32Array),
+});
 
-// The ground mesh of a themed map: Float32Array of GROUND_VERTEX_FLOATS per vertex, three vertices a triangle,
+// The ground mesh of a map: Float32Array of GROUND_VERTEX_FLOATS per vertex, three vertices a triangle,
 // in paint order.
 export function buildGroundMesh(look, theme, projection, seedText) {
     const GS = projection.groundScale,
@@ -628,13 +728,25 @@ export function buildGroundMesh(look, theme, projection, seedText) {
         }
     });
 
-    // ---- raised ground: lighter grass on the tops, bare earth on the ramps and at their feet ----
+    // ---- terrain: lighter grass on the tops, damper grass on sunken floors and down their banks, bare earth on
+    // the ramps and at their feet ----
     const rise = pal.terrain,
         rampRule = theme.terrain.ramp;
-    const topTint = rgba(rise.top, theme.terrain.topTint);
-    for (const surface of terrain.triangles)
-        if (!surface.ramp)
-            mesh.triangle(...surface.points.map(([x, y]) => mesh.vertex(x, y, topTint)));
+    const topTint = rgba(rise.top, theme.terrain.topTint),
+        lowTint = rgba(rise.low, theme.terrain.lowTint);
+    for (const surface of terrain.triangles) {
+        // A surface at the field's own level (the field itself, a bridge deck) keeps the field's grass.
+        if (surface.ramp || !surface.heights[0]) continue;
+        const tint = surface.heights[0] > 0 ? topTint : lowTint;
+        mesh.triangle(...surface.points.map(([x, y]) => mesh.vertex(x, y, tint)));
+    }
+    for (const bank of terrain.banks) {
+        const [a, b] = bank.low,
+            [c, d] = bank.high,
+            foot = rgba(rise.bank, 0.8),
+            head = rgba(rise.bank, 0);
+        mesh.quad(a, b, d, c, foot, foot, head, head);
+    }
     for (const ramp of terrain.ramps) {
         const [a, b] = ramp.low,
             [c, d] = ramp.high,
@@ -718,6 +830,85 @@ export function buildGroundMesh(look, theme, projection, seedText) {
             mesh.stroke([at(0.04, v + edge), at(0.96, v + edge)], 4, rgba(rise.treadLight, 0.6));
         }
     }
+
+    // ---- water: a wet shore, the deep middle, shallows in from the shore, a bright water line, ripples; a road
+    // that wades through shows as paler shallows ----
+    const waterRule = theme.water,
+        wet = pal.water;
+    mesh.clipped(map, () => {
+        for (const { outline, triangles, ripples } of look.water) {
+            mesh.stroke(outline, waterRule.shore.width, rgba(wet.shore), {
+                closed: true,
+                feather: waterRule.shore.feather,
+            });
+            mesh.triangles(outline, triangles, rgba(wet.deep));
+            mesh.fringe(outline, -waterRule.shallows, rgba(wet.shallow));
+            mesh.stroke(grown(outline, -3), 5, rgba(wet.edge, 0.55), { closed: true });
+            for (const { x, y, angle, length } of ripples) {
+                const hx = (Math.cos(angle) * length) / 2,
+                    hy = (Math.sin(angle) * length) / 2;
+                // A darker line under a lighter one, on the screen for both players.
+                mesh.offset(0, 5 * GS, () =>
+                    mesh.stroke(
+                        [
+                            [x - hx * 0.7, y - hy * 0.7],
+                            [x + hx * 0.7, y + hy * 0.7],
+                        ],
+                        3,
+                        rgba(wet.rippleShade, 0.3),
+                    ),
+                );
+                mesh.stroke(
+                    [
+                        [x - hx, y - hy],
+                        [x + hx, y + hy],
+                    ],
+                    3.5,
+                    rgba(wet.ripple, 0.5),
+                );
+            }
+        }
+        for (const ford of look.fords)
+            mesh.stroke(ford.points, ford.width * 0.5, rgba(wet.ford, 0.6), {
+                feather: waterRule.ford.feather,
+            });
+    });
+
+    // ---- bridge decks: a shadow on what lies under and beside the deck, planks across it, a beam along each
+    // side ----
+    const bridgeRule = theme.bridges,
+        timber = pal.bridge,
+        plankRandom = randomSource(seedText)('planks');
+    for (const bridge of look.bridges) {
+        const [p0, p1, p2, p3] = bridge.corners,
+            // The part of the deck between `t0` and `t1` of the way along it and `v0` and `v1` of the way across.
+            strip = (t0, t1, v0, v1, color) => {
+                const at = (t, v) => [
+                    lerp(lerp(p0[0], p1[0], t), lerp(p3[0], p2[0], t), v),
+                    lerp(lerp(p0[1], p1[1], t), lerp(p3[1], p2[1], t), v),
+                ];
+                mesh.quad(at(t0, v0), at(t1, v0), at(t1, v1), at(t0, v1), color);
+            },
+            planks = Math.max(1, Math.round(bridge.length / bridgeRule.plank)),
+            beam = bridgeRule.beam / bridge.width,
+            { offset, feather, alpha } = bridgeRule.shadow;
+        mesh.offset(offset[0], offset[1] * GS, () =>
+            mesh.soft(bridge.corners, rgba(timber.shadow, alpha), feather),
+        );
+        strip(0, 1, 0, 1, rgba(timber.gap));
+        for (let k = 0; k < planks; k++)
+            strip(
+                (k + 0.07) / planks,
+                (k + 0.93) / planks,
+                0,
+                1,
+                rgba(timber.planks[Math.floor(plankRandom() * timber.planks.length)]),
+            );
+        for (const v of [0, 1 - beam]) {
+            strip(0, 1, v, v + beam, rgba(timber.beam));
+            strip(0, 1, v + beam * 0.2, v + beam * 0.5, rgba(timber.beamLight, 0.5));
+        }
+    }
     field[0][1] = mesh.data.length;
 
     // ---- the boundary: a low earth bank, its top raised above its side on screen ----
@@ -753,8 +944,8 @@ export function buildGroundMesh(look, theme, projection, seedText) {
     // Moves the centre vertex of every fan triangle added since `from` by a screen offset.
     function shiftCentres(from, ox, oy) {
         for (let i = from; i < mesh.data.length; i += GROUND_VERTEX_FLOATS * 3) {
-            mesh.data[i + 2] += ox;
-            mesh.data[i + 3] += oy;
+            mesh.data.array[i + 2] += ox;
+            mesh.data.array[i + 3] += oy;
         }
     }
     // Light from the upper left of the screen: the highlight's middle is offset, its edge is the shape's own.
@@ -764,6 +955,11 @@ export function buildGroundMesh(look, theme, projection, seedText) {
         shiftCentres(from, ox, oy);
     };
 
+    // ---- capture point yards: under the base yards, so a yard that reaches into a base's yard is cut by it ----
+    for (const yard of look.yards) {
+        if (yard.kind === 'straw') strawYard(yard);
+        else pavingYard(yard);
+    }
     // ---- base yards: packed earth with the cannon's wheel ruts ----
     for (const base of look.bases) {
         const c = pal.base,
@@ -786,11 +982,6 @@ export function buildGroundMesh(look, theme, projection, seedText) {
                 6,
                 rgba(c.rut, rut.ring === 2 ? 0.18 : 0.3),
             );
-    }
-    // ---- capture point yards ----
-    for (const yard of look.yards) {
-        if (yard.kind === 'straw') strawYard(yard);
-        else pavingYard(yard);
     }
 
     function strawYard(yard) {
@@ -1003,16 +1194,23 @@ export function buildGroundMesh(look, theme, projection, seedText) {
 
     // ---- blockers: a bed of bare earth, and the stone pile's shadow towards the lower right of the screen ----
     for (const rock of look.rocks) {
-        const centre = centroid(rock.points);
-        mesh.soft(smooth(rock.bed), rgba(pal.rock.bed, 0.55), 26, centre);
-        mesh.offset(30, 26 * GS, () =>
-            mesh.soft(
-                scaled(rock.points, centre[0], centre[1], 0.92),
-                rgba(pal.rock.shadow, 0.34),
-                22,
-                centre,
-            ),
-        );
+        const centre = centroid(rock.points),
+            bed = rgba(pal.rock.bed, 0.55),
+            shadow = rgba(pal.rock.shadow, 0.34);
+        if (rock.bed) {
+            mesh.soft(smooth(rock.bed), bed, 26, centre);
+            mesh.offset(30, 26 * GS, () =>
+                mesh.soft(scaled(rock.points, centre[0], centre[1], 0.92), shadow, 22, centre),
+            );
+        } else {
+            // A polygon that is not convex: its own outline, fading outward.
+            mesh.triangles(rock.points, rock.triangles, bed);
+            mesh.fringe(rock.points, 40, bed);
+            mesh.offset(30, 26 * GS, () => {
+                mesh.triangles(rock.points, rock.triangles, shadow);
+                mesh.fringe(rock.points, 22, shadow);
+            });
+        }
     }
 
     // ---- low decoration lying on the ground, and the shadows of the standing props ----
@@ -1080,45 +1278,37 @@ export function buildGroundMesh(look, theme, projection, seedText) {
         );
     }
     field[1][1] = mesh.data.length;
-    if (!terrain.triangles.length) return new Float32Array(mesh.data);
+    if (!terrain.triangles.length)
+        return new Float32Array(mesh.data.array.subarray(0, mesh.data.length));
 
-    // ---- raised ground: the field lifted onto it, between its shadows, walls and cap stones ----
-    const { low, tiers } = raiseField(mesh.data, field, terrain.triangles, HS),
+    // ---- terrain: the field laid onto its surfaces, between their walls, cap stones and shadows ----
+    // Everything from here on is final and is written straight into the mesh's own floats, in paint order.
+    const out = new Floats(Float32Array, mesh.data.length),
+        tiers = raiseField(mesh.data, field, terrain.triangles, HS, out),
         wallRule = theme.terrain.wall,
         shadowRule = theme.terrain.shadow,
-        R = randomSource(seedText)('terrain'),
-        out = low;
-    const append = (values) => {
-        for (let i = 0; i < values.length; i++) out.push(values[i]);
-    };
-    // On the low ground: each wall's shadow towards the lower right of the screen, and a shade along its top line
-    // that shows on the ground behind a wall seen from its back.
-    const shadows = new GroundMesh(HS);
-    for (const rim of terrain.rims) {
-        // A soft band cannot follow a rounded corner's short steps without folding over itself: the corner is
-        // taken as one bend.
-        const line = rim.points.filter(
-            ([x, y], i, points) =>
-                i === points.length - 1 ||
-                !i ||
-                Math.hypot(x - points[i - 1][0], y - points[i - 1][1]) >= shadowRule.width,
-        );
-        shadows.offset(shadowRule.offset[0], shadowRule.offset[1] * GS, () =>
-            shadows.stroke(line, shadowRule.width, rgba(rise.shadow, shadowRule.alpha), {
-                feather: shadowRule.feather,
-            }),
-        );
-        shadows.offset(0, -HS * rim.height, () =>
-            shadows.stroke(line, 0, rgba(rise.shade, shadowRule.backAlpha), {
-                feather: shadowRule.backFeather,
-            }),
-        );
+        R = randomSource(seedText)('terrain');
+    // The field has been cut and copied: its doubles are not needed any more.
+    mesh.data = null;
+    // The field's own level is a stage of the painting even when nothing was cut onto it: walls stand on it and
+    // their shadows fall on it.
+    if (!tiers.some((tier) => tier.height === 0)) {
+        tiers.push(emptyTier(0));
+        tiers.sort((u, v) => u.height - v.height);
     }
-    append(shadows.data);
-    for (const tier of tiers) {
-        append(tier.ramps);
-        // The walls up to this height: earth, courses of stone, a dark foot.
-        const walls = new GroundMesh(HS);
+    tiers.forEach((tier, index) => {
+        out.take(tier.ramps);
+        tier.ramps = null;
+        // The walls up to this height: earth, courses of stone, a dark foot. A wall has a course of stones per
+        // `courseHeight` of the step up from the surface below.
+        const walls = new GroundMesh(HS, out),
+            courses = Math.max(
+                1,
+                Math.round(
+                    (tier.height - (tiers[index - 1]?.height ?? tier.height)) /
+                        wallRule.courseHeight,
+                ),
+            );
         for (const face of terrain.faces) {
             if (Math.max(...face.high) !== tier.height) continue;
             const { a, b } = face,
@@ -1137,6 +1327,32 @@ export function buildGroundMesh(look, theme, projection, seedText) {
                 },
                 earthLow = rgba(rise.earth[0]),
                 earthHigh = rgba(rise.earth[1]);
+            // The side of a bridge: timber on piles, a beam under the deck.
+            if (face.bridge) {
+                walls.liftedQuad(
+                    at(0, 0),
+                    at(length, 0),
+                    at(length, 1),
+                    at(0, 1),
+                    rgba(timber.side),
+                );
+                for (let d = bridgeRule.pileSpacing / 2; d < length; d += bridgeRule.pileSpacing)
+                    walls.liftedQuad(
+                        at(d - 5, 0),
+                        at(d + 5, 0),
+                        at(d + 5, 1),
+                        at(d - 5, 1),
+                        rgba(timber.pile),
+                    );
+                walls.liftedQuad(
+                    at(0, 0.7),
+                    at(length, 0.7),
+                    at(length, 1),
+                    at(0, 1),
+                    rgba(timber.beam),
+                );
+                continue;
+            }
             walls.liftedQuad(
                 at(0, 0),
                 at(length, 0),
@@ -1147,9 +1363,9 @@ export function buildGroundMesh(look, theme, projection, seedText) {
                 earthHigh,
                 earthHigh,
             );
-            for (let course = 0; course < wallRule.courses; course++) {
-                const v0 = (course + 0.1) / wallRule.courses,
-                    v1 = (course + 0.94) / wallRule.courses,
+            for (let course = 0; course < courses; course++) {
+                const v0 = (course + 0.1) / courses,
+                    v1 = (course + 0.94) / courses,
                     tones = rise.courses[Math.min(course, rise.courses.length - 1)];
                 // Every other course starts half a stone back.
                 let from = course % 2 ? -wallRule.stone[0] / 2 : 0;
@@ -1167,8 +1383,8 @@ export function buildGroundMesh(look, theme, projection, seedText) {
                             tone,
                         );
                         walls.liftedQuad(
-                            at(t0 + 3, v1 - 0.12 / wallRule.courses),
-                            at(t1 - 3, v1 - 0.12 / wallRule.courses),
+                            at(t0 + 3, v1 - 0.12 / courses),
+                            at(t1 - 3, v1 - 0.12 / courses),
                             at(t1 - 3, v1),
                             at(t0 + 3, v1),
                             rgba(rise.stoneLight, 0.5),
@@ -1185,11 +1401,11 @@ export function buildGroundMesh(look, theme, projection, seedText) {
                 rgba(rise.foot, 0.55),
             );
         }
-        append(walls.data);
-        append(tier.tops);
+        out.take(tier.tops);
+        tier.tops = null;
         // Along every rim: a low stone parapet, seen from outside over a wall facing the viewer and from inside
         // over one facing away, and a row of cap stones on it.
-        const caps = new GroundMesh(HS),
+        const caps = new GroundMesh(HS, out),
             capRule = theme.terrain.cap,
             capHeight = tier.height + wallRule.parapet;
         for (const rim of terrain.rims) {
@@ -1248,7 +1464,31 @@ export function buildGroundMesh(look, theme, projection, seedText) {
                 walked += length;
             }
         }
-        append(caps.data);
-    }
-    return new Float32Array(out);
+        // On this surface: the shadow of each wall standing on it, towards the lower right of the screen, and a
+        // shade along the wall's top line that shows on the ground behind a wall seen from its back.
+        const shadows = new GroundMesh(HS, out),
+            above = tiers[index + 1]?.height ?? Infinity;
+        for (const rim of terrain.rims) {
+            if (rim.low < tier.height || rim.low >= above) continue;
+            // A soft band cannot follow a rounded corner's short steps without folding over itself: the corner
+            // is taken as one bend.
+            const line = rim.points.filter(
+                ([x, y], i, points) =>
+                    i === points.length - 1 ||
+                    !i ||
+                    Math.hypot(x - points[i - 1][0], y - points[i - 1][1]) >= shadowRule.width,
+            );
+            shadows.offset(shadowRule.offset[0], shadowRule.offset[1] * GS - HS * tier.height, () =>
+                shadows.stroke(line, shadowRule.width, rgba(rise.shadow, shadowRule.alpha), {
+                    feather: shadowRule.feather,
+                }),
+            );
+            shadows.offset(0, -HS * rim.height, () =>
+                shadows.stroke(line, 0, rgba(rise.shade, shadowRule.backAlpha), {
+                    feather: shadowRule.backFeather,
+                }),
+            );
+        }
+    });
+    return out.array.slice(0, out.length);
 }

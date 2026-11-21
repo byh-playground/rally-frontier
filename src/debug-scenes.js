@@ -2623,7 +2623,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             programs: renderer.device.pipelines.size,
             textures: renderer.device.stats.textureCount,
             textureBytes: renderer.device.stats.gpuTextureBytes,
-            // A themed map's look (render/map-look.js): its ground mesh, its standing props, what the layout placed.
+            // The map's look (render/map-look.js): its ground mesh, its standing props, what the layout placed.
             mapLook: rp.mapLook,
             flushReasons: mesh.flushReasons,
             drawDispatchReasons: mesh.drawDispatchReasons,
