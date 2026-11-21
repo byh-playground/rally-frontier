@@ -7,17 +7,17 @@
 // save changed mid-match does not reach it. A stage belongs to a region when it declares `region: '<region id>'`
 // (nut-forest, field-town, wind-hill); the other stages have none and always take step 1. All numbers are first drafts.
 export const CAMPAIGN_DIFFICULTIES = Object.freeze([
-    { id: 'easy', title: '쉬움', incomeScale: 0.6 },
-    { id: 'normal', title: '보통', incomeScale: 1 },
-    { id: 'hard', title: '어려움', incomeScale: 1.4 },
+    { id: 'easy', title: '쉬움', incomeScale: 0.5 },
+    { id: 'normal', title: '보통', incomeScale: 0.8 },
+    { id: 'hard', title: '어려움', incomeScale: 1 },
 ]);
 export const DEFAULT_DIFFICULTY = 'normal';
 
 // Index 0 is the 1st region the player opened (and every stage that belongs to no region).
 export const REGION_STEPS = Object.freeze([
     { incomeScale: 1 },
+    { incomeScale: 1.05 },
     { incomeScale: 1.1 },
-    { incomeScale: 1.25 },
 ]);
 
 export function isDifficulty(id) {
