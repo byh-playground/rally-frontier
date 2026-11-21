@@ -101,6 +101,7 @@ import { SUNSHINE } from './definitions/roster.js';
 import { CampaignPresentation } from './ui/campaign-presentation.js';
 import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
+import { CampaignActs } from './ui/campaign-acts.js';
 import { AudioSystem } from './audio/audio-system.js';
 const {
     VisionField,
@@ -12622,6 +12623,7 @@ async function startTitleApp() {
     });
     AppLifecycle.runBootAndStartApp();
     const dev = readDevQuery(location.search);
+    CampaignActs.unlockAll = dev.unlockAll;
     if (dev.tps) UiController.setStartSimulationTps(dev.tps);
     if (dev.netcode) setNetcodeMode(dev.netcode);
     const leaveSetup = () => {

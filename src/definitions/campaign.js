@@ -1278,12 +1278,237 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         ],
         sideGoal: { kind: 'allReinforcements' },
     },
+    {
+        id: 'fields-kernel-rain',
+        act: 2,
+        region: 'field-town',
+        map: 'artillery-basin',
+        title: '알맹이 비',
+        story: {
+            text: '옥수수 곡사탄으로 분지의 밀집 진지를 연다.',
+            captain: '알알이 설명하겠다. 저기다 던져!',
+        },
+        deck: ['corn', 'pea', 'redbean', 'rice'],
+        enemyDeck: ['pea', 'rice'],
+        rewardCard: 'corn',
+        enemyOutposts: ['basin-natural-2'],
+        friendlyOutposts: ['basin-oil-1'],
+        seed: 210,
+        blight: true,
+        enemyPacing: defendPacing(30_000, 25_000),
+        practice: {
+            card: 'corn',
+            cue: '옥수수를 쏴서 뭉친 깜부기 콩 셋을 한꺼번에 맞혀요',
+            targets: [{ type: 'pea', x: 820, y: 3470, count: 3, columns: 3, spacing: 40 }],
+        },
+        mission: {
+            startingPremium: [premiumFor('corn') * 3, 0],
+            // The low floor of the basin: a tight clump the player's shells can reach over the rim.
+            waves: [
+                attack(1_000, { type: 'pea', x: 1800, y: 2300, count: 6, columns: 3, hold: true }),
+            ],
+        },
+        sideGoal: { kind: 'withinMs', ms: 240_000 },
+    },
+    {
+        id: 'fields-pop-the-line',
+        act: 2,
+        region: 'field-town',
+        map: 'small-field',
+        title: '팡! 하고 빈틈',
+        story: {
+            text: '팝콘이 막힌 전열에 틈을 만든다.',
+            captain: '작전명은 조용히… 취소다. 팡!',
+        },
+        deck: ['popcorn', 'corn', 'pea', 'redbean', 'rice'],
+        enemyDeck: ['pea', 'millet'],
+        rewardCard: 'popcorn',
+        enemyOutposts: ['natural-2'],
+        friendlyOutposts: ['natural-1'],
+        seed: 211,
+        blight: true,
+        enemyPacing: defendPacing(30_000, 20_000),
+        practice: {
+            card: 'popcorn',
+            cue: '팝콘을 터뜨려서 촘촘한 깜부기 콩 여섯을 쓰러뜨려요',
+            targets: [{ type: 'pea', x: 800, y: 3290, count: 6, columns: 3, spacing: 36 }],
+        },
+        mission: { startingPremium: [premiumFor('corn') * 2, 0] },
+        sideGoal: { kind: 'keepAlive', hpRatio: 0.75 },
+    },
+    {
+        id: 'fields-forward-battery',
+        act: 2,
+        region: 'field-town',
+        map: 'artillery-basin',
+        title: '한 발 더 앞으로',
+        story: {
+            text: '감자 대포가 닿지 않던 고지까지 발사망을 잇는다.',
+            captain: '전진기지라더니 진짜 뿌리를 내렸군.',
+        },
+        deck: ['potato', 'popcorn', 'corn', 'pea', 'redbean', 'rice'],
+        enemyDeck: ['chestnut', 'rice'],
+        rewardCard: 'potato',
+        // The far rim's outposts are the stage's point: the shells reach them from a forward cannon.
+        enemyOutposts: ['basin-rim-2', 'basin-edge-2', 'basin-natural-2'],
+        friendlyOutposts: ['basin-oil-1'],
+        seed: 212,
+        blight: true,
+        enemyPacing: defendPacing(30_000, 25_000),
+        practice: {
+            card: 'potato',
+            cue: '감자를 쏴서 빈터에 전진 대포를 세워요',
+            forwardCannon: true,
+        },
+        mission: {
+            startingPremium: [
+                premiumFor('potato') * 3 + premiumFor('corn') * 2,
+                premiumFor('chestnut') * 3,
+            ],
+        },
+        sideGoal: { kind: 'withinMs', ms: 300_000 },
+    },
+    {
+        id: 'fields-sesame-crew',
+        act: 2,
+        region: 'field-town',
+        map: 'standard',
+        title: '깨알 공사대',
+        story: {
+            text: '포로가 된 참깨 공사대를 되찾는다.',
+            captain: '작다고 얕보지 마라. 공사는 저 친구들이 다 한다.',
+        },
+        deck: ['sesame', 'potato', 'corn', 'pea', 'redbean', 'rice'],
+        enemyDeck: ['rice', 'buckwheat'],
+        rewardCard: 'sesame',
+        enemyOutposts: ['natural-2'],
+        seed: 213,
+        blight: true,
+        enemyPacing: defendPacing(30_000, 20_000),
+        practice: {
+            card: 'sesame',
+            cue: '참깨를 빈 거점 둘레에 내려 첫 거점을 지어요',
+            built: 'natural-1',
+        },
+        mission: { startingPremium: [premiumFor('potato') * 3 + premiumFor('corn') * 2, 0] },
+        sporeSacs: [{ x: 1500, y: 3000, captives: [{ type: 'sesame', count: 30 }] }],
+        sideGoal: { kind: 'freeCaptives', count: 30 },
+    },
+    {
+        id: 'fields-triangle-volley',
+        act: 2,
+        region: 'field-town',
+        map: 'small-field',
+        title: '세모 탄막',
+        story: {
+            text: '메밀 탄막으로 접근하는 작은 떼를 막는다.',
+            captain: '작은 세모도 모이면 큰 문제지. 적한테.',
+        },
+        deck: ['buckwheat', 'sesame', 'corn', 'pea', 'redbean', 'rice'],
+        enemyDeck: ['rice', 'millet'],
+        rewardCard: 'buckwheat',
+        enemyOutposts: [],
+        friendlyOutposts: ['west-1'],
+        seed: 214,
+        blight: true,
+        enemyPacing: SCRIPTED_ONLY,
+        practice: {
+            card: 'buckwheat',
+            cue: '메밀을 콩 뒤에서 쏴서 깜부기 쌀 여섯을 쓰러뜨려요',
+            targets: [{ type: 'rice', x: 800, y: 3290, count: 6, columns: 3 }],
+        },
+        mission: {
+            startingPremium: [premiumFor('corn') * 2, 0],
+            surviveMs: 150_000,
+            guardPoint: 'west-1',
+            // A wave every 30 s, rice and millet in turn, from the low ground north of the guarded hill.
+            waves: [
+                attack(30_000, { type: 'rice', x: 590, y: 1490, count: 12, columns: 4 }),
+                attack(60_000, { type: 'millet', x: 910, y: 1930, count: 8, columns: 4 }),
+                attack(90_000, { type: 'rice', x: 340, y: 1500, count: 12, columns: 4 }),
+                attack(120_000, { type: 'millet', x: 590, y: 1490, count: 8, columns: 4 }),
+            ],
+        },
+        sideGoal: { kind: 'keepAlive', hpRatio: 0.5, point: 'west-1' },
+    },
+    {
+        id: 'fields-burn-a-road',
+        act: 2,
+        region: 'field-town',
+        map: 'causeway-flats',
+        title: '불길로 낸 길',
+        story: {
+            text: '고추가 감염 밭을 태워 마을 길을 되찾는다.',
+            captain: '매운맛은 적에게, 안전한 길은 우리에게!',
+        },
+        deck: ['chili', 'pea', 'buckwheat', 'sesame', 'potato', 'redbean', 'rice'],
+        enemyDeck: ['rice', 'millet'],
+        rewardCard: 'chili',
+        enemyOutposts: ['natural-2'],
+        friendlyOutposts: ['natural-1'],
+        seed: 215,
+        blight: true,
+        enemyPacing: defendPacing(30_000, 25_000),
+        practice: {
+            card: 'chili',
+            cue: '고추를 내려 불줄기로 깜부기 쌀 여섯을 태워요',
+            targets: [{ type: 'rice', x: 811, y: 3559, count: 6, columns: 3 }],
+        },
+        mission: { startingPremium: [premiumFor('chili') * 3 + premiumFor('potato') * 2, 0] },
+        // One on each causeway road, both outside the opening view.
+        blightFields: [
+            { x: 1050, y: 2100 },
+            { x: 2300, y: 3300 },
+        ],
+        sideGoal: { kind: 'burnFields' },
+    },
+    {
+        id: 'fields-banana-bend',
+        act: 2,
+        region: 'field-town',
+        map: 'small-field',
+        title: '돌아오는 칼날',
+        story: {
+            text: '바나나 수호자의 돌아오는 칼날을 버텨 해방한다.',
+            captain: '다녀온 칼날이 또 온다. 인사는 한 번만 해!',
+        },
+        deck: ['redbean', 'pea', 'buckwheat', 'corn', 'sesame', 'chili'],
+        enemyDeck: ['banana', 'rice'],
+        rewardCard: 'banana',
+        enemyOutposts: [],
+        friendlyOutposts: ['natural-1'],
+        seed: 216,
+        blight: true,
+        enemyPacing: SCRIPTED_ONLY,
+        boss: { type: 'banana', level: 5, x: 1900, y: 1300 },
+        mission: {
+            startingPremium: [premiumFor('corn') * 2 + premiumFor('chili') * 3, 0],
+            waves: [
+                attack(1_000, { type: 'rice', x: 1900, y: 1400, count: 4, columns: 4, hold: true }),
+            ],
+        },
+        // Redbeans 100 and buckwheat 20 in all, in three helps; the sacs broken when they come bring theirs.
+        sporeReinforceMs: 75_000,
+        sporeSacs: [
+            { x: 1100, y: 2150, captives: [], reinforce: bananaHelp(1100, 2150) },
+            { x: 1900, y: 2400, captives: [], reinforce: bananaHelp(1900, 2400) },
+            { x: 1500, y: 1250, captives: [], reinforce: bananaHelp(1500, 1250) },
+        ],
+        sideGoal: { kind: 'allReinforcements' },
+    },
 ]);
 // What one broken sac of the nut forest's boss stage brings the player: 30 redbeans and 3 chestnuts where it stood.
 function sacHelp(x, y) {
     return [
         { type: 'redbean', x, y, count: 30, columns: 6 },
         { type: 'chestnut', x, y: y + 90, count: 3, columns: 3 },
+    ];
+}
+// What one broken sac of the field town's boss stage brings the player: 33 redbeans and 7 buckwheat where it stood.
+function bananaHelp(x, y) {
+    return [
+        { type: 'redbean', x, y, count: 33, columns: 6 },
+        { type: 'buckwheat', x, y: y + 100, count: 7, columns: 7 },
     ];
 }
 // One announced attack of act 1's defence: corn 2 and rice 6 brought by a spore cloud that comes once.
