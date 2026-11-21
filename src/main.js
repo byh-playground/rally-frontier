@@ -10568,7 +10568,14 @@ class MatchLifecycle {
             (reason === 'base-destroyed' ||
                 reason === 'volley-practice' ||
                 reason === 'boss-subdued');
-        const reward = cleared ? campaignProgress.complete(stage) : null;
+        // The card a first clear rewards (Roster.recordClear grants it), told on the result.
+        const reward =
+            cleared &&
+            stage.rewardCard &&
+            campaignProgress.records &&
+            !roster.clearedStages.has(stage.id)
+                ? stage.rewardCard
+                : null;
         const next = cleared ? campaignProgress.nextAfter(stage) : null;
         // A new-campaign stage (`act`) records its result in the roster and shows the sunshine it paid. The side goal
         // comes from the confirmed end state (SideGoal, the snapshot's `sideGoal`). The debug unlock records nothing.
@@ -12605,15 +12612,13 @@ else void startTitleApp();
 
 async function startTitleApp() {
     roster = new Roster(playerSaves.roster);
-    campaignProgress = new CampaignProgress(playerSaves.campaign, roster);
+    campaignProgress = new CampaignProgress(roster);
     // The title screens and the deck read the unlocks, so the records load before the boot and the screens start.
     await Promise.all([
-        campaignProgress.load(),
         roster.load(),
         loadPlayerSave(playerSaves.decks, '덱 편성'),
         loadPlayerSave(playerSaves.hints, '안내 표시'),
     ]);
-    playerSaves.campaign.onExternalChange(() => void campaignProgress.load());
     playerSaves.roster.onExternalChange(() => void roster.load());
     // Automated tests (navigator.webdriver) keep the batches in memory instead of the collection server.
     usageMetrics = new RallyUsageMetrics({
@@ -12623,7 +12628,9 @@ async function startTitleApp() {
     });
     AppLifecycle.runBootAndStartApp();
     const dev = readDevQuery(location.search);
+    // `?unlock=all` (testing): every stage opens, every card is usable, and nothing is recorded.
     CampaignActs.unlockAll = dev.unlockAll;
+    if (dev.unlockAll) campaignProgress.enableDebugUnlock();
     if (dev.tps) UiController.setStartSimulationTps(dev.tps);
     if (dev.netcode) setNetcodeMode(dev.netcode);
     const leaveSetup = () => {
@@ -12675,8 +12682,6 @@ async function startTitleApp() {
         showcaseSurface,
         actions: {
             campaignProgress,
-            // `?campaign=acts`: the new campaign screen (CampaignScreen) reads the roster's record.
-            campaignActs: dev.campaignActs,
             roster,
             openCampaignStage: (chapterId, stageId) =>
                 reloadAt(`#/campaign/${chapterId}?stage=${encodeURIComponent(stageId)}`),
