@@ -411,7 +411,6 @@ const nutForest = {
             ringLight: '#d2cfb2',
             ringDark: '#b0ac92',
             line: '#90927c',
-            heart: '#9c9e86',
             crack: '#7c7e68',
             light: '#ecead6',
             mark: '#8a6c40',

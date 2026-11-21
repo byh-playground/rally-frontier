@@ -1,5 +1,5 @@
 import { RESOURCES, ResourceDisplay } from './ui/resource-display.js';
-import { campaignStage, campaignStageTheme } from './definitions/campaign.js';
+import { campaignStage } from './definitions/campaign.js';
 import { PVP_MAP_POOL, RangeUtil, SIM_TPS } from './core/game-rules.js';
 import { SimulationTiming } from './core/simulation-timing.js';
 import {
@@ -2236,10 +2236,7 @@ class GLRenderer {
     // map's first frame, and never again for that map (turning the view only changes the projection).
     syncMapLook() {
         const descriptor = this.snapshot?.mapDescriptor || null,
-            theme =
-                this.mapThemeOverride ??
-                campaignStageTheme(campaignStage(this.snapshot?.rules?.campaignStage)) ??
-                descriptor?.theme,
+            theme = this.mapThemeOverride ?? descriptor?.theme,
             key = descriptor
                 ? `${descriptor.topology}|${descriptor.seed}|${descriptor.width}x${descriptor.height}|${theme}`
                 : '';

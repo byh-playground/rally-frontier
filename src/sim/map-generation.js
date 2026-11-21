@@ -10,6 +10,7 @@ import {
 } from './map-geometry.js';
 import { LANE_CONTROL_POINTS } from '../definitions/combat-rules.js';
 import { campaignMapLayout } from '../definitions/campaign-map.js';
+import { campaignStageTheme } from '../definitions/campaign.js';
 import { artilleryBasinMapLayout } from '../definitions/artillery-basin-map.js';
 import { causewayFlatsMapLayout } from '../definitions/causeway-flats-map.js';
 import { kingsHillMapLayout } from '../definitions/kings-hill-map.js';
@@ -980,6 +981,8 @@ class MapGeneration {
         const generator = MAP_GENERATORS[id] || MAP_GENERATORS['fixed-standard'];
         const out = generator(rules, seed, roundNumber);
         out.generator = id in MAP_GENERATORS ? id : 'fixed-standard';
+        // A campaign stage in a region looks like that region (campaign.js), whichever map it plays.
+        out.theme = campaignStageTheme(rules?.campaign) ?? out.theme;
         this.descriptorCache = { key, descriptor: out };
         return out;
     }
