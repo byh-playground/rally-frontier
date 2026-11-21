@@ -109,6 +109,7 @@ export function artilleryBasinMapLayout() {
         width,
         height,
         spawns: { host, guest },
+        theme: 'paddy',
         topology: 'artillery-basin',
         flags: [guest, host].map((p) => ({ ...p, forced: false })),
         laneControlPoints: {

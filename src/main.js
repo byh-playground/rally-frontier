@@ -417,7 +417,6 @@ class TerrainPresentation {
         highGround: Object.freeze([0.64, 0.72, 0.47, 1]),
         rampLow: Object.freeze([0.66, 0.62, 0.42, 1]),
         rampHigh: Object.freeze([0.69, 0.69, 0.44, 1]),
-        cliff: Object.freeze([0.31, 0.37, 0.25, 1]),
     });
     static css(color) {
         return `rgba(${Math.round(color[0] * 255)},${Math.round(color[1] * 255)},${Math.round(color[2] * 255)},${color[3] ?? 1})`;
@@ -494,88 +493,11 @@ class TerrainPresentation {
         this.riverSurfaceCache.set(atlas, mesh);
         return mesh;
     }
-    static drawRiverSurfaces(r, map, restoreDepthWrite = null) {
-        const mesh = this.riverSurfaceMesh(map, r.world.terrain.surfaces);
-        if (!mesh.length) return;
-        const projection = TerrainSurfaceProjection.forAtlas(
-            r.world.terrain.surfaces,
-        ).projectedTriangleMesh(mesh, r.orientationRole() === 'guest');
-        const a = r.projectedCoordinatesAtScreen(0, 0),
-            b = r.projectedCoordinatesAtScreen(r.canvas.width, r.canvas.height);
-        const visible = projection.index
-            .query(a.x, a.y, b.x, b.y, 1 / r.sc())
-            .sort((a, b) => a.order - b.order);
-        r.perfStats.riverVisibleTriangles = visible.length;
-        r.perfStats.riverTotalTriangles = mesh.length;
-        const previous = r._renderDepth,
-            depthWrite = restoreDepthWrite ?? r.passState.depthWrite;
-        r.passState.depthWrite = false;
-        r.begin();
-        try {
-            for (const { tri } of visible)
-                for (const v of tri.vertices) {
-                    const p = r.projectRenderWorldPosition(v);
-                    r.setRenderDepth(p.depth - 0.0001);
-                    r.v(p.x, p.y, tri.color);
-                }
-            r.flush();
-        } finally {
-            r.passState.depthWrite = depthWrite;
-            r.setRenderDepth(previous);
-            r.begin();
-        }
-    }
-    static drawBridges(r, restoreDepthWrite = null) {
-        const sc = r.sc(),
-            previous = r._renderDepth,
-            depthWrite = restoreDepthWrite ?? r.passState.depthWrite;
-        r.passState.depthWrite = false;
-        r.begin();
-        try {
-            // 다리: 실제 lane×river crossing descriptor를 그대로 사용. 다리 footprint는 평지 판정이다.
-            for (const br of r.world.terrain.surfaces.bridges) {
-                const deck = { x: br.x, y: br.elevation, z: br.y, groundY: 0, bridgeId: br.id };
-                r.withWorldSpriteDepth(deck, () => {
-                    const corners = br.points.map(({ x, y }) => {
-                        const point = r.projectRenderWorldPosition({ ...deck, x, z: y });
-                        return [point.x, point.y];
-                    });
-                    r.poly(corners, [0.58, 0.45, 0.28, 1]);
-                    // Interpolation of projected deck edges preserves the affine ground projection.
-                    const [a, b, c, d] = corners;
-                    for (let i = -2; i <= 2; i++) {
-                        const t = 0.5 + i / 5;
-                        const x0 = a[0] + (b[0] - a[0]) * t;
-                        const y0 = a[1] + (b[1] - a[1]) * t;
-                        const x1 = d[0] + (c[0] - d[0]) * t;
-                        const y1 = d[1] + (c[1] - d[1]) * t;
-                        const dx = (x1 - x0) * 0.04;
-                        const dy = (y1 - y0) * 0.04;
-                        r.line(
-                            x0 + dx,
-                            y0 + dy,
-                            x1 - dx,
-                            y1 - dy,
-                            Math.max(1, 1.4 * sc),
-                            [0.76, 0.64, 0.42, 0.5],
-                        );
-                    }
-                    r.line(...a, ...b, Math.max(1.2, 1.8 * sc), [0.34, 0.27, 0.18, 0.75]);
-                    r.line(...d, ...c, Math.max(1.2, 1.8 * sc), [0.34, 0.27, 0.18, 0.75]);
-                });
-            }
-            r.flush();
-        } finally {
-            r.passState.depthWrite = depthWrite;
-            r.setRenderDepth(previous);
-            r.begin();
-        }
-    }
-    // `depthOnly`: a themed map paints raised ground into its own ground mesh (render/map-look.js) and takes only
-    // the depth of these surfaces, so a hill hides what stands behind it.
-    static drawSurfaces(r, depthOnly = false) {
-        const palette = this.colors,
-            atlas = r.world.terrain.surfaces;
+    // The depth of the terrain's surfaces (raised and sunken ground, ramps, bridge decks), so a hill hides what
+    // stands behind it. Their colours are the map look's: its ground mesh (render/map-look.js) paints the tops,
+    // floors, walls, ramps, water and bridges.
+    static drawSurfaceDepth(r) {
+        const atlas = r.world.terrain.surfaces;
         if (!atlas.layers.length && !atlas.bridges.length) return;
         const previous = r._renderDepth,
             mesh = TerrainSurfaceProjection.forAtlas(atlas).renderProjectedSurfaceMesh(
@@ -586,122 +508,19 @@ class TerrainPresentation {
         const visible = mesh.index
             .query(a.x, a.y, b.x, b.y, 1 / r.sc())
             .sort((a, b) => a.order - b.order);
-        r.perfStats.terrainVisibleTriangles = visible.length;
-        r.perfStats.terrainTotalTriangles = mesh.triangles.length;
-        const colorCache = mesh.colors || (mesh.colors = new Map());
         for (const tri of visible) {
-            const patch = tri.patch;
-            let colors = colorCache.get(patch);
-            if (!colors) {
-                if (depthOnly) colors = patch.vertices.map(() => [0, 0, 0, 0]);
-                else if (patch.kind === 'cliff') {
-                    const f = patch.face,
-                        dx = f.b.x - f.a.x,
-                        dy = f.b.y - f.a.y,
-                        light = (dx - dy) / (Math.hypot(dx, dy) || 1);
-                    colors = patch.vertices.map(() => [
-                        palette.cliff[0] + light * 0.035,
-                        palette.cliff[1] + light * 0.035,
-                        palette.cliff[2] + light * 0.025,
-                        1,
-                    ]);
-                } else if (patch.kind === 'ramp')
-                    colors = patch.vertices.map((v) => {
-                        const t = RangeUtil.clamp(
-                            (v.y - TerrainSurfaceAtlas.elevationForLevel(patch.lowLevel)) /
-                                (TerrainSurfaceAtlas.elevationForLevel(patch.highLevel) -
-                                    TerrainSurfaceAtlas.elevationForLevel(patch.lowLevel)),
-                            0,
-                            1,
-                        );
-                        return palette.rampLow.map((c, i) => c + (palette.rampHigh[i] - c) * t);
-                    });
-                // The level-0 underlay already owns its grass/water markings. Write the
-                // exact floor depth without repainting those colors; authored depressions remain opaque.
-                else
-                    colors = patch.vertices.map(() =>
-                        patch.id === 'low-ground'
-                            ? [...palette.lowGround.slice(0, 3), 0]
-                            : patch.level === 0
-                              ? palette.lowGround
-                              : palette.highGround,
-                    );
-                colorCache.set(patch, colors);
-            }
-            const bridge = patch.bridge ? atlas.bridges.find((b) => b.id === patch.id) : null,
+            const patch = tri.patch,
+                bridge = patch.bridge ? atlas.bridges.find((b) => b.id === patch.id) : null,
                 deckDepth = bridge ? r.bridgeDepth(bridge) : null;
             for (let i = 0; i < 3; i++) {
                 const p = r.projectRenderWorldPosition(tri.vertices[i]);
                 r.setRenderDepth(deckDepth ?? p.depth);
-                r.v(p.x, p.y, colors[tri.indices[i]]);
+                r.v(p.x, p.y, TerrainPresentation.depthOnlyColor);
             }
         }
         r.setRenderDepth(previous);
     }
-    static surfaceLine(r, a, b, ha, hb, width, color) {
-        const previous = r._renderDepth;
-        const p = r.projectRenderWorldPosition({ x: a.x, y: ha, z: a.y, groundY: 0 }),
-            q = r.projectRenderWorldPosition({ x: b.x, y: hb, z: b.y, groundY: 0 });
-        const dx = q.x - p.x,
-            dy = q.y - p.y,
-            len = Math.hypot(dx, dy) || 1,
-            nx = ((-dy / len) * width) / 2,
-            ny = ((dx / len) * width) / 2;
-        const v = [
-            { x: p.x + nx, y: p.y + ny, d: p.depth },
-            { x: q.x + nx, y: q.y + ny, d: q.depth },
-            { x: q.x - nx, y: q.y - ny, d: q.depth },
-            { x: p.x - nx, y: p.y - ny, d: p.depth },
-        ];
-        for (const i of [0, 1, 2, 0, 2, 3]) {
-            const p = v[i];
-            r.setRenderDepth(p.d - 0.0008);
-            r.v(p.x, p.y, color);
-        }
-        r.setRenderDepth(previous);
-    }
-    static drawSurfaceEdges(r) {
-        const atlas = r.world.terrain.surfaces;
-        if (!atlas.layers.length && !atlas.bridges.length) return;
-        const sc = r.sc(),
-            previous = r._renderDepth;
-        // Endpoint depths preserve picking/render alignment on every ramp orientation.
-        const edge = (...args) => this.surfaceLine(r, ...args);
-        for (const f of atlas.renderFaces || atlas.faces)
-            edge(
-                f.a,
-                f.b,
-                f.highA ?? f.high,
-                f.highB ?? f.high,
-                Math.max(1, 3 * sc),
-                [0.8, 0.83, 0.6, 1],
-            );
-        for (const ramp of atlas.ramps) {
-            edge(
-                ramp.lowA,
-                ramp.lowB,
-                ramp.lowElevation,
-                ramp.lowElevation,
-                Math.max(0.8, 1.5 * sc),
-                [0.78, 0.73, 0.53, 1],
-            );
-            edge(
-                ramp.highA,
-                ramp.highB,
-                ramp.highElevation,
-                ramp.highElevation,
-                Math.max(0.8, 1.5 * sc),
-                [0.86, 0.81, 0.6, 1],
-            );
-            for (const t of [0.25, 0.5, 0.75]) {
-                const a = TerrainSurfaceAtlas.lerp(ramp.lowA, ramp.highA, t),
-                    b = TerrainSurfaceAtlas.lerp(ramp.lowB, ramp.highB, t),
-                    h = ramp.lowElevation + (ramp.highElevation - ramp.lowElevation) * t;
-                edge(a, b, h, h, Math.max(0.6, 1.1 * sc), [0.84, 0.79, 0.57, 0.28]);
-            }
-        }
-        r.setRenderDepth(previous);
-    }
+    static depthOnlyColor = Object.freeze([0, 0, 0, 0]);
     static drawSurfaceMini(c, map, pt, scale) {
         const atlas = TerrainSurfaceAtlas.fromMap(map);
         if (!atlas.layers.length) return;
@@ -741,181 +560,6 @@ class TerrainPresentation {
             c.lineTo(...b);
             c.stroke();
         }
-    }
-
-    static polygonMesh(points) {
-        return triangulatePolygon(points);
-    }
-    static fillMesh(r, points, triangles, color) {
-        for (const [a, b, c] of triangles) r.tri(...points[a], ...points[b], ...points[c], color);
-    }
-
-    static drawWorld(r, terrain, restoreDepthWrite = null) {
-        const depthWrite = restoreDepthWrite ?? r.passState.depthWrite;
-        this.drawSurfaces(r);
-        // Only solid terrain owns occlusion. Ground decoration must not hide Fog.
-        r.flush();
-        r.begin();
-        r.passState.depthWrite = false;
-        const sc = r.sc(),
-            pt = (p) => r.worldToPx(r.viewX(p.x), r.viewY(p.y));
-        for (const road of terrain.roads || []) {
-            const width = road.width * sc,
-                atlas = r.world.terrain.surfaces;
-            for (let i = 0; i < road.points.length - 1; i++) {
-                const a = road.points[i],
-                    b = road.points[i + 1],
-                    ha = atlas.heightAt(a.x, a.y),
-                    hb = atlas.heightAt(b.x, b.y);
-                this.surfaceLine(r, a, b, ha, hb, width, [0.73, 0.68, 0.5, 0.42]);
-                this.surfaceLine(r, a, b, ha, hb, width * 0.74, [0.84, 0.79, 0.62, 0.42]);
-            }
-            for (const p of road.points) {
-                const q = pt(p);
-                r.withWorldSpriteDepth(
-                    { x: p.x, y: atlas.heightAt(p.x, p.y), z: p.y, groundY: 0 },
-                    () => r.circle(q[0], q[1], width * 0.37, [0.84, 0.79, 0.62, 0.25], 16),
-                );
-            }
-        }
-        for (const block of terrain.blockers || []) {
-            const points = block.points.map(pt),
-                roots = block.kind === 'roots';
-            const center = points.reduce(
-                (p, q) => [p[0] + q[0] / points.length, p[1] + q[1] / points.length],
-                [0, 0],
-            );
-            const minX = Math.min(...points.map((p) => p[0])),
-                maxX = Math.max(...points.map((p) => p[0])),
-                minY = Math.min(...points.map((p) => p[1])),
-                maxY = Math.max(...points.map((p) => p[1]));
-            if (
-                maxX < -40 ||
-                minX > r.canvas.width + 40 ||
-                maxY < -40 ||
-                minY > r.canvas.height + 40
-            )
-                continue;
-            // The flat footprint takes the depth of its corner nearest the camera: ground drawn with depth (a map
-            // with raised layers) in front of the centre would otherwise hide the near half of the rock.
-            const groundDepth = (p) =>
-                r.renderDepthForWorld({
-                    x: p.x,
-                    y: r.world.terrain.surfaces.heightAt(p.x, p.y),
-                    z: p.y,
-                    groundY: 0,
-                });
-            const anchor = block.points.reduce((best, p) =>
-                groundDepth(p) < groundDepth(best) ? p : best,
-            );
-            r.withWorldSpriteDepth(
-                {
-                    x: anchor.x,
-                    y: r.world.terrain.surfaces.heightAt(anchor.x, anchor.y),
-                    z: anchor.y,
-                    groundY: 0,
-                },
-                () => {
-                    const mesh = TerrainPresentation.polygonMesh(block.points);
-                    if (!mesh.convex) {
-                        TerrainPresentation.fillMesh(
-                            r,
-                            points.map((p) => [p[0] + 7 * sc, p[1] + 12 * sc]),
-                            mesh.triangles,
-                            [0.12, 0.17, 0.12, 0.24],
-                        );
-                        TerrainPresentation.fillMesh(
-                            r,
-                            points,
-                            mesh.triangles,
-                            roots ? [0.47, 0.43, 0.28, 1] : [0.49, 0.55, 0.44, 1],
-                        );
-                        for (let i = 0; i < points.length; i++) {
-                            const a = points[i],
-                                b = points[(i + 1) % points.length];
-                            r.line(
-                                a[0],
-                                a[1],
-                                b[0],
-                                b[1],
-                                Math.max(1, 3 * sc),
-                                [0.7, 0.73, 0.59, 0.8],
-                            );
-                        }
-                        return;
-                    }
-                    r.poly(
-                        points.map((p) => [p[0] + 7 * sc, p[1] + 12 * sc]),
-                        [0.12, 0.17, 0.12, 0.24],
-                    );
-                    r.poly(points, roots ? [0.27, 0.26, 0.17, 1] : [0.24, 0.31, 0.26, 1]);
-                    const inner = points.map((p) => [
-                        center[0] + (p[0] - center[0]) * 0.93,
-                        center[1] + (p[1] - center[1]) * 0.9 - 3 * sc,
-                    ]);
-                    r.poly(inner, roots ? [0.47, 0.43, 0.28, 1] : [0.49, 0.55, 0.44, 1]);
-                    const top = inner.map((p) => [
-                        center[0] + (p[0] - center[0]) * 0.85,
-                        center[1] + (p[1] - center[1]) * 0.78,
-                    ]);
-                    r.poly(top, roots ? [0.55, 0.51, 0.32, 1] : [0.58, 0.62, 0.49, 1]);
-                    for (let i = 0; i < inner.length; i++) {
-                        const a = inner[i],
-                            b = inner[(i + 1) % inner.length];
-                        r.line(
-                            a[0],
-                            a[1],
-                            b[0],
-                            b[1],
-                            Math.max(1, 3 * sc),
-                            roots ? [0.66, 0.61, 0.37, 0.8] : [0.7, 0.73, 0.59, 0.8],
-                        );
-                        if (i % 2 === 0) {
-                            const c = points[i];
-                            r.line(
-                                a[0],
-                                a[1],
-                                c[0],
-                                c[1],
-                                Math.max(1, 3 * sc),
-                                [0.17, 0.22, 0.16, 0.6],
-                            );
-                        }
-                    }
-                    if (roots) {
-                        for (let i = 0; i < top.length; i += 2) {
-                            const a = top[i],
-                                b = top[(i + 3) % top.length];
-                            r.line(
-                                a[0],
-                                a[1],
-                                center[0],
-                                center[1],
-                                Math.max(2, 14 * sc),
-                                [0.37, 0.34, 0.2, 0.6],
-                            );
-                            r.line(
-                                center[0],
-                                center[1],
-                                b[0],
-                                b[1],
-                                Math.max(2, 9 * sc),
-                                [0.67, 0.61, 0.36, 0.6],
-                            );
-                        }
-                    } else {
-                        for (let i = 0; i < top.length; i += 3) {
-                            const a = top[i],
-                                b = top[(i + 1) % top.length];
-                            r.poly([a, b, center], [0.68, 0.71, 0.57, 0.23]);
-                        }
-                    }
-                },
-            );
-        }
-        r.flush();
-        r.begin();
-        r.passState.depthWrite = depthWrite;
     }
     static miniRiverCache = new WeakMap();
     static drawMiniBridges(c, terrain, pt, style) {
@@ -1445,7 +1089,7 @@ class GLRenderer {
             },
         });
         this.fogBuf = this.device.createVertexBuffer({ capacityBytes: 5 * 8192 * 4 });
-        // A themed map's ground (render/map-look.js): one static mesh of world ground points, each with a
+        // A map's ground (render/map-look.js): one static mesh of world ground points, each with a
         // screen-space offset, drawn with the camera as uniforms. The buffer is the renderer's and is refilled
         // when a map loads.
         this.groundMeshPipeline = this.device.createPipeline({
@@ -1768,8 +1412,8 @@ class GLRenderer {
     viewWorldH() {
         return this.canvas.height / this.sc();
     }
-    // How far the camera may go. A themed map lets a share of what the canvas shows (the theme's camera.margin)
-    // lie beyond each map edge, so the scenery outside shows at the edges; a map without a theme stops at the map.
+    // How far the camera may go. A share of what the canvas shows (the map theme's camera.margin) may lie beyond
+    // each map edge, so the scenery outside shows at the edges.
     clampCameraLeft(left) {
         // A canvas wider than the design view already shows `aside` past the map's side edges.
         const view = this.viewWorldW(),
@@ -5013,37 +4657,6 @@ class GLRenderer {
         );
     }
 
-    drawStrategicMap() {
-        if (!this.snapshot) return;
-        this.drawLaneTints();
-        this.drawCapturePointMarks();
-    }
-    drawLaneTints() {
-        const sc = this.sc();
-        const laneDefs = [
-            { id: 'top', col: [0.35, 0.62, 0.9, 0.13] },
-            { id: 'mid', col: [0.94, 0.76, 0.28, 0.15] },
-            { id: 'bot', col: [0.48, 0.78, 0.42, 0.13] },
-        ];
-
-        const mapDesc = this.snapshot.mapDescriptor || null;
-        const lanePoints = mapDesc?.laneControlPoints || LANE_CONTROL_POINTS;
-        for (const lane of laneDefs) {
-            const pts = lanePoints[lane.id].map((p) =>
-                this.worldToPx(this.viewX(p.x), this.viewY(p.y)),
-            );
-            for (let i = 0; i < pts.length - 1; i++) {
-                this.line(
-                    pts[i][0],
-                    pts[i][1],
-                    pts[i + 1][0],
-                    pts[i + 1][1],
-                    Math.max(26, 58 * sc),
-                    lane.col,
-                );
-            }
-        }
-    }
     // Who holds each capture point, as discs on the ground.
     drawCapturePointMarks() {
         if (!this.snapshot) return;
@@ -5095,115 +4708,10 @@ class GLRenderer {
             ) - 0.0005
         );
     }
-    drawGroundGrid() {
-        // The underlay grid belongs to the level-zero world plane. Its height and
-        // phase must never come from terrain sampled at a moving viewport edge.
-        const step = 220,
-            topLeft = this.projectedCoordinatesAtScreen(0, 0),
-            bottomRight = this.projectedCoordinatesAtScreen(this.canvas.width, this.canvas.height),
-            topY = BattlefieldProjection.viewYFromPlane(topLeft.y),
-            bottomY = BattlefieldProjection.viewYFromPlane(bottomRight.y),
-            guest = this.orientationRole() === 'guest',
-            phaseX = guest ? this.world.width % step : 0,
-            phaseY = guest ? this.world.height % step : 0,
-            point = (x, z) =>
-                this.projectRenderWorldPosition({
-                    x: this.viewX(x),
-                    y: 0,
-                    z: this.viewY(z),
-                    groundY: 0,
-                });
-        for (
-            let y = Math.floor((topY - phaseY) / step) * step + phaseY;
-            y <= bottomY + step;
-            y += step
-        ) {
-            const a = point(topLeft.x, y),
-                b = point(bottomRight.x, y);
-            this.line(a.x, a.y, b.x, b.y, 1, [1, 1, 1, 0.035]);
-        }
-        for (
-            let x = Math.floor((topLeft.x - phaseX) / step) * step + phaseX;
-            x <= bottomRight.x + step;
-            x += step
-        ) {
-            const a = point(x, topY),
-                b = point(x, bottomY);
-            this.line(a.x, a.y, b.x, b.y, 1, [1, 1, 1, 0.03]);
-        }
-    }
-    drawGround() {
-        const sc = this.sc(),
-            vw = this.viewWorldW(),
-            vh = this.viewWorldH(),
-            ox = (this.canvas.width - vw * sc) / 2;
-
-        // Brighter low-detail grass base: clean enough for tiny units to read.
-        this.rect(
-            0,
-            0,
-            this.canvas.width,
-            this.canvas.height,
-            TerrainPresentation.colors.lowGround,
-        );
-
-        // 자연스러운 큰 지면 색 덩어리
-        for (const b of [
-            { x: 520, y: 3520, r: 500, c: [0.55, 0.67, 0.53, 0.52] },
-            { x: 970, y: 1350, r: 470, c: [0.61, 0.72, 0.57, 0.48] },
-            { x: 1810, y: 2070, r: 560, c: [0.69, 0.75, 0.6, 0.4] },
-            { x: 2710, y: 3100, r: 520, c: [0.58, 0.69, 0.54, 0.48] },
-            { x: 3020, y: 820, r: 450, c: [0.65, 0.72, 0.58, 0.4] },
-        ]) {
-            this.drawGroundCircle(b.x, b.y, b.r, { fill: b.c, elevation: 0, segments: 28 });
-        }
-
-        this.drawGroundGrid();
-
-        // TOP / MID / BOT 길은 밝은 흙길 느낌. 절차맵 descriptor를 그대로 사용한다.
-        const mapDesc = this.snapshot?.mapDescriptor || null;
-        const groundLanePoints = mapDesc?.laneControlPoints || LANE_CONTROL_POINTS;
-        for (const lane of mapDesc?.terrain?.roads?.length
-            ? []
-            : [
-                  { id: 'top', col: [0.88, 0.84, 0.67, 0.24] },
-                  { id: 'mid', col: [0.91, 0.86, 0.69, 0.23] },
-                  { id: 'bot', col: [0.87, 0.83, 0.66, 0.24] },
-              ]) {
-            const pts = groundLanePoints[lane.id].map((p) =>
-                this.worldToPx(this.viewX(p.x), this.viewY(p.y)),
-            );
-            for (let i = 0; i < pts.length - 1; i++) {
-                this.line(
-                    pts[i][0],
-                    pts[i][1],
-                    pts[i + 1][0],
-                    pts[i + 1][1],
-                    Math.max(38, 96 * sc),
-                    lane.col,
-                );
-            }
-        }
-
-        const terrain = MapGeneration.mapTerrainDescriptor(mapDesc);
-        // renderGroundPass owns depth writes here; avoid GPU state readbacks between batches.
-        TerrainPresentation.drawWorld(this, terrain, true);
-        TerrainPresentation.drawRiverSurfaces(this, mapDesc, true);
-        TerrainPresentation.drawBridges(this, true);
-    }
-    // What a themed map still takes from the terrain over its baked ground: the depth of raised ground, and the
-    // water and bridges drawn as on any map.
+    // What the map's look takes from the terrain over its baked ground: the depth of raised and sunken ground and
+    // of bridge decks.
     drawTerrainDepth() {
-        TerrainPresentation.drawSurfaces(this, true);
-        this.flush();
-        this.begin();
-        const mapDesc = this.snapshot?.mapDescriptor || null;
-        TerrainPresentation.drawRiverSurfaces(this, mapDesc, true);
-        TerrainPresentation.drawBridges(this, true);
-    }
-    // The top lines of cliffs and the treads of ramps, on a map that draws its terrain from the mesh.
-    drawTerrainEdges() {
-        TerrainPresentation.drawSurfaceEdges(this);
+        TerrainPresentation.drawSurfaceDepth(this);
     }
     drawConstructionScaffold(building) {
         const radius = BuildingDefinition.get(building.type).size,
@@ -7451,7 +6959,6 @@ class GLRenderer {
         this.flush();
         this.passState.depthWrite = false;
         this.begin();
-        this.mapLook.drawTerrainEdges(this);
         this.setRenderDepth(0.969);
         this.mapLook.drawGroundMarks(this);
         // The blight field and its braziers go into this same triangle stream: no draw of their own.

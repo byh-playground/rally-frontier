@@ -54,6 +54,7 @@ export function kingsHillMapLayout() {
         width,
         height,
         spawns: { host, guest },
+        theme: 'paddy',
         topology: 'kings-hill',
         flags: [guest, host].map((p) => ({ ...p, forced: false })),
         laneControlPoints: {

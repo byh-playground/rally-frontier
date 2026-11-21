@@ -507,6 +507,7 @@ class MapGeneration {
             seed: MapGeneration.mapRuleSeed(baseSeed, rules, roundNumber),
             width,
             height,
+            theme: 'paddy',
             topology: m.topology || 'standard',
             symmetry: m.symmetry || 'diagonal',
             spawns: {
@@ -659,6 +660,7 @@ class MapGeneration {
             seed,
             width,
             height,
+            theme: 'paddy',
             topology,
             terrainArchetype,
             symmetry: 'rotational-terrain',

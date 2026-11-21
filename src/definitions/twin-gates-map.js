@@ -63,6 +63,7 @@ export function twinGatesMapLayout() {
         width,
         height,
         spawns: { host, guest },
+        theme: 'paddy',
         topology: 'twin-gates',
         flags: [guest, host].map((p) => ({ ...p, forced: false })),
         laneControlPoints: { top, mid: [], bot },
