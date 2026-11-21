@@ -664,8 +664,26 @@ export function buildGroundMesh(look, theme, projection, seedText) {
                 });
         mesh.upright(x, y, () => {
             mesh.fill(ring(1, r * 0.1, r * 0.17), hazed(o.canopyShade, x, y, 0.75));
-            mesh.fill(ring(1, 0, 0), hazed(o.canopy[Math.floor(top.tone * o.canopy.length)], x, y));
-            mesh.fill(ring(0.58, -r * 0.2, -r * 0.2), hazed(o.canopyLight, x, y, 0.8));
+            const crown = hazed(o.canopy[Math.floor(top.tone * o.canopy.length)], x, y);
+            mesh.fill(ring(1, 0, 0), crown);
+            // Leaf clumps: a ring of lobes, each with its own shade and lit patch, so a close treetop is not one flat blot.
+            for (let i = 0; i < 5; i++) {
+                const a = top.turn + (i / 5) * TAU + top.tone,
+                    lx = Math.cos(a) * r * 0.5,
+                    ly = Math.sin(a) * r * 0.5 * 0.8,
+                    lobe = (k, dx, dy) =>
+                        Array.from({ length: 10 }, (_, j) => {
+                            const b = (j / 10) * TAU;
+                            return [
+                                lx + dx + Math.cos(b) * r * k,
+                                ly + dy + Math.sin(b) * r * k * 0.8,
+                            ];
+                        });
+                mesh.fill(lobe(0.36, r * 0.05, r * 0.07), hazed(o.canopyShade, x, y, 0.6));
+                mesh.fill(lobe(0.34, 0, 0), crown);
+                mesh.fill(lobe(0.17, -r * 0.08, -r * 0.09), hazed(o.canopyLight, x, y, 0.8));
+            }
+            mesh.fill(ring(0.4, -r * 0.2, -r * 0.2), hazed(o.canopyLight, x, y, 0.8));
         });
     }
     frame(around(side * 0.45, far * 0.3), around(side, far), clear(haze), haze);
