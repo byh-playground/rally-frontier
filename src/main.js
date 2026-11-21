@@ -1047,6 +1047,9 @@ class GLRenderer {
         // How this map's ground and scenery are drawn (render/map-look.js), rebuilt by syncMapLook.
         this.mapLook = mapLookFor(this, null);
         this.mapLookKey = '';
+        // A debug scene may draw its map in another theme (`theme=<name>`): the renderer's choice alone, the
+        // simulation and the map descriptor keep the map's own.
+        this.mapThemeOverride = null;
 
         // Game shaders express Rally's terrain/depth/fog policy. Gamekit owns GPU resources and submission.
         const vs = `attribute vec3 a;attribute vec4 ac;uniform vec2 r;varying lowp vec4 vc;void main(){vec2 p=a.xy/r*2.0-1.0;gl_Position=vec4(p.x,-p.y,a.z,1.0);vc=ac;}`,
@@ -2233,13 +2236,17 @@ class GLRenderer {
     // map's first frame, and never again for that map (turning the view only changes the projection).
     syncMapLook() {
         const descriptor = this.snapshot?.mapDescriptor || null,
+            theme = this.mapThemeOverride ?? descriptor?.theme,
             key = descriptor
-                ? `${descriptor.topology}|${descriptor.seed}|${descriptor.width}x${descriptor.height}|${descriptor.theme}`
+                ? `${descriptor.topology}|${descriptor.seed}|${descriptor.width}x${descriptor.height}|${theme}`
                 : '';
         if (key === this.mapLookKey) return;
         this.mapLookKey = key;
         this.mapLook.dispose(this);
-        this.mapLook = mapLookFor(this, descriptor);
+        this.mapLook = mapLookFor(
+            this,
+            descriptor && theme !== descriptor.theme ? { ...descriptor, theme } : descriptor,
+        );
         this.perfStats.mapLook = this.mapLook.stats || null;
     }
     setSnapshot(s, { liveTargets = false, snapTargets = false } = {}) {

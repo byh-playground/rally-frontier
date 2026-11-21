@@ -8,6 +8,7 @@
  * 시간은 실제 시계로 잰다(StrategySim.step의 기존 계측).
  */
 import { BuildingDefinition } from './definitions/buildings.js';
+import { MAP_THEMES } from './definitions/map-themes.js';
 import { FP } from './core/config.js';
 import { GameRuleRuntime } from './core/game-rules.js';
 import { campaignStage } from './definitions/campaign.js';
@@ -2552,8 +2553,12 @@ function coconutSpeeds(sim) {
 
 export function createDebugScenes({ createRenderer, createScenario, createPresentationView }) {
     // A full-window surface drawn by the match renderer under the virtual clock. `fog` (host|guest) draws that
-    // side's fog of war; without it the scene shows everything, as the card previews do.
-    function openStage(fog, view = 'host') {
+    // side's fog of war; without it the scene shows everything, as the card previews do. `theme` draws the scene's
+    // map in that map theme (definitions/map-themes.js) instead of the map's own: the renderer's choice alone, the
+    // simulation and its checksum never see it.
+    function openStage(fog, view = 'host', theme = undefined) {
+        if (theme !== undefined && !Object.hasOwn(MAP_THEMES, theme))
+            throw new Error(`theme must be one of ${Object.keys(MAP_THEMES).join(', ')}: ${theme}`);
         if (view !== 'host' && view !== 'guest')
             throw new Error(`view must be host or guest: ${view}`);
         if (fog !== undefined && fog !== 'host' && fog !== 'guest')
@@ -2584,6 +2589,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
         // Which way up the map is drawn (`view=guest` turns it half a turn, as the guest sees it).
         renderer.replayOrientationRole = view;
         renderer.replayObserverAll = !fog;
+        renderer.mapThemeOverride = theme ?? null;
         return {
             renderer,
             realNow,
@@ -2709,7 +2715,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
 
     // A scene on a match map: the camera holds `zoom` and follows `focus()` at its terrain height.
     function matchScene(name, params, sim, { zoom, focus, beforeStep, isComplete, extra }) {
-        const stage = openStage(params.fog, params.view);
+        const stage = openStage(params.fog, params.view, params.theme);
         const camera = () => {
             const { x, y } = focus(),
                 r = stage.renderer;
@@ -3859,7 +3865,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             for (const unit of sim.units)
                 unit.combat.moveRecoveryUntil = unit.combat.cooldownUntil = Number.MAX_SAFE_INTEGER;
             const focus = { x: at.x - 4, y: at.y + (params.focusY ? Number(params.focusY) : 0) };
-            const stage = openStage(params.fog);
+            const stage = openStage(params.fog, undefined, params.theme);
             const camera = () =>
                 centerCamera(
                     stage.renderer,
@@ -3896,7 +3902,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * 속도(`coconuts`)를 함께 낸다. 예: `?debug=1&scene=title&tick=50`
          */
         title(params) {
-            const stage = openStage(undefined);
+            const stage = openStage(undefined, undefined, params.theme);
             return host(
                 stage,
                 'title',
@@ -3918,7 +3924,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          */
         card(params) {
             const type = params.unit;
-            const stage = openStage(undefined);
+            const stage = openStage(undefined, undefined, params.theme);
             return host(stage, 'card', params, (advanceTick, onError) =>
                 prepareUnitShowcase({
                     renderer: stage.renderer,

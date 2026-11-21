@@ -651,6 +651,23 @@ export function buildGroundMesh(look, theme, projection, seedText) {
             hazed(o.bundShade, mx, my, 0.35),
         );
     }
+    // Treetops beyond the map, seen from above (upright on the screen for both players): a shade towards the lower
+    // right, the crown, a lit patch towards the upper left.
+    for (const top of look.canopy) {
+        const o = pal.outside,
+            { x, y, r } = top,
+            ring = (k, dx, dy) =>
+                Array.from({ length: 18 }, (_, i) => {
+                    const a = top.turn + (i / 18) * TAU,
+                        bump = 1 + Math.sin(a * 3 + top.turn * 5) * 0.09;
+                    return [dx + Math.cos(a) * r * k * bump, dy + Math.sin(a) * r * k * bump * 0.8];
+                });
+        mesh.upright(x, y, () => {
+            mesh.fill(ring(1, r * 0.1, r * 0.17), hazed(o.canopyShade, x, y, 0.75));
+            mesh.fill(ring(1, 0, 0), hazed(o.canopy[Math.floor(top.tone * o.canopy.length)], x, y));
+            mesh.fill(ring(0.58, -r * 0.2, -r * 0.2), hazed(o.canopyLight, x, y, 0.8));
+        });
+    }
     frame(around(side * 0.45, far * 0.3), around(side, far), clear(haze), haze);
     frame(around(side, far), around(reach, reach), haze, haze);
 
@@ -688,8 +705,10 @@ export function buildGroundMesh(look, theme, projection, seedText) {
         });
     }
 
-    // ---- dry dirt patches: a crisp rim and fill, then a little shading and a few flecks inside ----
-    mesh.clipped(map, () => {
+    // ---- patches beside the roads, by the theme's kind ----
+    mesh.clipped(map, { earth: earthPatches, leaves: leafLitter }[theme.dirt.kind]);
+    // Dry dirt: a crisp rim and fill, then a little shading and a few flecks inside.
+    function earthPatches() {
         const rim = mix(pal.grass.base, pal.dirt.rim, 0.6),
             fill = rgba(pal.dirt.fill);
         for (const parts of look.dirt) {
@@ -726,7 +745,38 @@ export function buildGroundMesh(look, theme, projection, seedText) {
                     );
             }
         }
-    });
+    }
+    // Fallen leaves: a faint warm bed, then the leaves lying on it, each a pointed oval with a rib.
+    function leafLitter() {
+        const c = pal.litter;
+        for (const parts of look.dirt) {
+            for (const part of parts)
+                mesh.soft(smooth(part.fill), rgba(c.bed, 0.4), 34, [part.x, part.y]);
+            for (const part of parts)
+                for (const leaf of part.leaves) {
+                    const cos = Math.cos(leaf.angle),
+                        sin = Math.sin(leaf.angle),
+                        s = leaf.size,
+                        at = (u, v) => [
+                            leaf.x + (u * cos - v * sin) * s,
+                            leaf.y + (u * sin + v * cos) * s,
+                        ];
+                    mesh.fill(
+                        [
+                            at(-0.5, 0),
+                            at(-0.16, 0.3),
+                            at(0.24, 0.25),
+                            at(0.6, 0),
+                            at(0.24, -0.25),
+                            at(-0.16, -0.3),
+                        ],
+                        rgba(c.leaves[Math.floor(leaf.tone * c.leaves.length)]),
+                        at(0, 0),
+                    );
+                    mesh.stroke([at(-0.64, 0), at(0.46, 0)], 2, rgba(c.rib, 0.5));
+                }
+        }
+    }
 
     // ---- terrain: lighter grass on the tops, damper grass on sunken floors and down their banks, bare earth on
     // the ramps and at their feet ----
@@ -782,7 +832,7 @@ export function buildGroundMesh(look, theme, projection, seedText) {
         );
     }
 
-    // ---- roads: soft shoulder, edge, dirt, a lighter crown, two wheel ruts ----
+    // ---- roads: soft shoulder, edge, dirt, a lighter crown, the theme's marks ----
     const road = pal.road,
         lanes = look.lanes;
     for (const lane of lanes)
@@ -795,23 +845,60 @@ export function buildGroundMesh(look, theme, projection, seedText) {
         mesh.stroke(lane.points, lane.width * 0.2, rgba(road.crown, 0.6), {
             feather: lane.width * 0.2,
         });
-    for (const lane of lanes)
-        for (const rutSide of [-0.2, 0.2])
-            mesh.stroke(
-                lane.points.map((p, i) => {
-                    const a = lane.points[Math.max(0, i - 1)],
-                        b = lane.points[Math.min(lane.points.length - 1, i + 1)],
-                        tx = b[0] - a[0],
-                        ty = b[1] - a[1],
-                        length = Math.hypot(tx, ty) || 1;
-                    return [
-                        p[0] - (ty / length) * rutSide * lane.width,
-                        p[1] + (tx / length) * rutSide * lane.width,
-                    ];
-                }),
-                5,
-                rgba(road.rut, 0.28),
-            );
+    ({ ruts: wheelRuts, roots: pathRoots })[theme.lanes.marks]();
+    // Two wheel ruts along every road.
+    function wheelRuts() {
+        for (const lane of lanes) for (const rutSide of [-0.2, 0.2]) rutLine(lane, rutSide);
+    }
+    function rutLine(lane, rutSide) {
+        mesh.stroke(
+            lane.points.map((p, i) => {
+                const a = lane.points[Math.max(0, i - 1)],
+                    b = lane.points[Math.min(lane.points.length - 1, i + 1)],
+                    tx = b[0] - a[0],
+                    ty = b[1] - a[1],
+                    length = Math.hypot(tx, ty) || 1;
+                return [
+                    p[0] - (ty / length) * rutSide * lane.width,
+                    p[1] + (tx / length) * rutSide * lane.width,
+                ];
+            }),
+            5,
+            rgba(road.rut, 0.28),
+        );
+    }
+    // Roots reaching into a path from its edges, here and there along it.
+    function pathRoots() {
+        const R = randomSource(seedText)('roots');
+        for (const lane of lanes) {
+            let walked = 0,
+                next = 60 + R() * 120;
+            for (let i = 0; i < lane.points.length - 1; i++) {
+                const a = lane.points[i],
+                    b = lane.points[i + 1],
+                    length = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1,
+                    tx = (b[0] - a[0]) / length,
+                    ty = (b[1] - a[1]) / length;
+                for (; next <= walked + length; next += 130 + R() * 190) {
+                    const t = (next - walked) / length,
+                        half = lane.width / 2,
+                        from = (R() < 0.5 ? -1 : 1) * (half + 8),
+                        to = from * (0.6 - R() * 0.4),
+                        lean = (R() - 0.5) * 44,
+                        at = (across, along) => [
+                            lerp(a[0], b[0], t) - ty * across + tx * along,
+                            lerp(a[1], b[1], t) + tx * across + ty * along,
+                        ];
+                    mesh.stroke(
+                        [at(from, 0), at((from + to) / 2, lean * 0.7), at(to, lean)],
+                        5,
+                        rgba(road.root, 0.42),
+                    );
+                }
+                walked += length;
+            }
+        }
+    }
 
     // ---- ramp treads: logs laid across the slope, over the road that climbs it ----
     for (const ramp of terrain.ramps) {
@@ -956,10 +1043,8 @@ export function buildGroundMesh(look, theme, projection, seedText) {
     };
 
     // ---- capture point yards: under the base yards, so a yard that reaches into a base's yard is cut by it ----
-    for (const yard of look.yards) {
-        if (yard.kind === 'straw') strawYard(yard);
-        else pavingYard(yard);
-    }
+    const yardPainters = { straw: strawYard, paving: pavingYard, rings: ringsYard };
+    for (const yard of look.yards) yardPainters[yard.kind](yard);
     // ---- base yards: packed earth with the cannon's wheel ruts ----
     for (const base of look.bases) {
         const c = pal.base,
@@ -982,6 +1067,145 @@ export function buildGroundMesh(look, theme, projection, seedText) {
                 6,
                 rgba(c.rut, rut.ring === 2 ? 0.18 : 0.3),
             );
+        if (theme.base.border) logBorder(base, theme.base.border);
+    }
+    // A border of logs laid end to end round a base yard, along the stretches its band runs (open at the exits):
+    // each log a shadow, the trunk, a lit strip towards the top of the screen, and its two cut ends.
+    function logBorder(base, { log, width }) {
+        const c = pal.base,
+            radius = base.radius + width * 0.4;
+        for (const arc of base.band) {
+            const count = Math.max(1, Math.round(((arc.end - arc.start) * radius) / log)),
+                gap = 5 / radius;
+            for (let i = 0; i < count; i++) {
+                const ends = [i, i + 1].map((k, n) => {
+                    const a = lerp(arc.start, arc.end, k / count) + (n ? -gap : gap);
+                    return [base.x + Math.cos(a) * radius, base.y + Math.sin(a) * radius];
+                });
+                mesh.offset(5, 6 * GS, () => mesh.stroke(ends, width, rgba(c.logLine, 0.3)));
+                mesh.stroke(ends, width, rgba(c.log));
+                mesh.offset(0, -width * 0.2, () =>
+                    mesh.stroke(ends, width * 0.3, rgba(c.logLight, 0.7)),
+                );
+                for (const [ex, ey] of ends)
+                    mesh.fill(
+                        arcPoints(ex, ey, width * 0.5, width * 0.5, 0, TAU, 0, TAU / 8).slice(
+                            0,
+                            -1,
+                        ),
+                        rgba(c.logEnd),
+                    );
+            }
+        }
+    }
+    // The marks under a yard's building: a head of grain, a drop of oil.
+    function grainMark(x, y, color) {
+        mesh.upright(x, y, () => {
+            for (let k = 0; k < 5; k++) {
+                const a = (k / 5) * TAU - Math.PI / 2;
+                mesh.fill(
+                    arcPoints(
+                        Math.cos(a) * 30 * GS,
+                        Math.sin(a) * 30 * GS,
+                        22 * GS,
+                        10 * GS,
+                        0,
+                        TAU,
+                        a,
+                        TAU / 12,
+                    ).slice(0, -1),
+                    color,
+                );
+            }
+        });
+    }
+    function oilMark(x, y, radius, c) {
+        mesh.fill(
+            arcPoints(x, y, radius * 0.3, radius * 0.3, 0, TAU, 0, TAU / 24).slice(0, -1),
+            rgba(c.markBed, 0.22),
+        );
+        const drop = (cx, cy, s, color) => {
+            mesh.fill(
+                [
+                    [cx, cy - s * 1.25],
+                    [cx + s * 0.3, cy - s * 0.7],
+                    ...arcPoints(cx, cy + s * 0.3, s * 0.85, s * 0.85, 0, Math.PI, 0, 0.4),
+                    [cx - s * 0.3, cy - s * 0.7],
+                ],
+                color,
+                [cx, cy + s * 0.2],
+            );
+        };
+        mesh.upright(x, y, () => {
+            drop(0, 4, radius * 0.125, rgba(c.mark, 0.5));
+            drop(-5, -2, radius * 0.042, rgba(c.markLight, 0.45));
+        });
+    }
+    // A slice of a great trunk (a stump when it has roots): roots flaring from the bark, the bark, pale wood in
+    // growth rings about the heart, cracks running out from it, and the resource's mark.
+    function ringsYard(yard) {
+        const c = pal.rings,
+            { x, y, radius, bark } = yard,
+            centre = [x, y],
+            outline = smooth(yard.fill, 2),
+            heart = [x + yard.heart[0], y + yard.heart[1]],
+            polar = (angle, r) => [x + Math.cos(angle) * r, y + Math.sin(angle) * r],
+            BANDS = 7;
+        mesh.offset(12, 12 * GS, () =>
+            mesh.soft(
+                scaled(outline, x, y, 1 + (bark + 6) / radius),
+                rgba(c.shadow, 0.24),
+                10,
+                centre,
+            ),
+        );
+        for (const [angle, half, length] of yard.roots) {
+            mesh.fill(
+                [
+                    polar(angle - half, radius),
+                    polar(angle - half * 0.35, radius + length * 0.7),
+                    polar(angle, radius + length),
+                    polar(angle + half * 0.35, radius + length * 0.7),
+                    polar(angle + half, radius),
+                ],
+                rgba(c.bark),
+                polar(angle, radius + length * 0.3),
+            );
+            mesh.stroke(
+                [polar(angle, radius), polar(angle, radius + length * 0.75)],
+                4,
+                rgba(c.barkLight, 0.6),
+            );
+        }
+        mesh.fill(scaled(outline, x, y, 1 + bark / radius), rgba(c.bark), centre);
+        mesh.stroke(
+            scaled(outline, x, y, 1 + (bark * 0.55) / radius),
+            bark * 0.3,
+            rgba(c.barkLight, 0.6),
+            { closed: true },
+        );
+        mesh.fill(outline, rgba(c.fill), centre);
+        for (let k = BANDS; k >= 1; k--) {
+            const s = k / (BANDS + 1),
+                band = outline.map(([px, py]) => [
+                    heart[0] + (px - heart[0]) * s,
+                    heart[1] + (py - heart[1]) * s,
+                ]);
+            mesh.fill(band, mix(c.fill, k % 2 ? c.ringDark : c.ringLight, 0.55), heart);
+            mesh.stroke(band, 2.5, rgba(c.line, 0.4), { closed: true });
+        }
+        for (const crack of yard.cracks)
+            mesh.stroke(
+                [crack.from, crack.to].map((k) => [
+                    heart[0] + Math.cos(crack.angle) * radius * k,
+                    heart[1] + Math.sin(crack.angle) * radius * k,
+                ]),
+                3.5,
+                rgba(c.crack, 0.4),
+            );
+        highlight(outline, centre, rgba(c.light, 0.4), -70, -80 * GS);
+        if (yard.mark === 'oil') oilMark(x, y, radius, c);
+        else grainMark(x, y, rgba(c.mark, 0.5));
     }
 
     function strawYard(yard) {
@@ -1103,24 +1327,7 @@ export function buildGroundMesh(look, theme, projection, seedText) {
             run += length;
         }
         // A grain mark in the middle, under the building.
-        mesh.upright(x, y, () => {
-            for (let k = 0; k < 5; k++) {
-                const a = (k / 5) * TAU - Math.PI / 2;
-                mesh.fill(
-                    arcPoints(
-                        Math.cos(a) * 30 * GS,
-                        Math.sin(a) * 30 * GS,
-                        22 * GS,
-                        10 * GS,
-                        0,
-                        TAU,
-                        a,
-                        TAU / 12,
-                    ).slice(0, -1),
-                    rgba(c.mark, 0.45),
-                );
-            }
-        });
+        grainMark(x, y, rgba(c.mark, 0.45));
     }
 
     function pavingYard(yard) {
@@ -1170,26 +1377,7 @@ export function buildGroundMesh(look, theme, projection, seedText) {
         highlight(outline(radius), centre, rgba(c.light, 0.22), -radius * 0.5, -radius * 0.5 * GS);
         mesh.stroke(outline(radius - 4), 5, rgba(c.light, 0.45), { closed: true });
         // An oil-drop mark in the middle, under the building.
-        mesh.fill(
-            arcPoints(x, y, radius * 0.3, radius * 0.3, 0, TAU, 0, TAU / 24).slice(0, -1),
-            rgba(c.markBed, 0.22),
-        );
-        const drop = (cx, cy, s, color) => {
-            mesh.fill(
-                [
-                    [cx, cy - s * 1.25],
-                    [cx + s * 0.3, cy - s * 0.7],
-                    ...arcPoints(cx, cy + s * 0.3, s * 0.85, s * 0.85, 0, Math.PI, 0, 0.4),
-                    [cx - s * 0.3, cy - s * 0.7],
-                ],
-                color,
-                [cx, cy + s * 0.2],
-            );
-        };
-        mesh.upright(x, y, () => {
-            drop(0, 4, radius * 0.125, rgba(c.mark, 0.5));
-            drop(-5, -2, radius * 0.042, rgba(c.markLight, 0.45));
-        });
+        oilMark(x, y, radius, c);
     }
 
     // ---- blockers: a bed of bare earth, and the stone pile's shadow towards the lower right of the screen ----
@@ -1236,6 +1424,43 @@ export function buildGroundMesh(look, theme, projection, seedText) {
                         2.4 * s,
                         color,
                     );
+            } else if (item.kind === 'mushroom') {
+                const cap = hazed(d.mushroomCap[tone], item.x, item.y);
+                mesh.fill(
+                    [
+                        [-2.2 * s, 0],
+                        [2.2 * s, 0],
+                        [1.8 * s, -8 * s],
+                        [-1.8 * s, -8 * s],
+                    ],
+                    hazed(d.mushroomStem, item.x, item.y),
+                );
+                mesh.fill(arcPoints(0, -7 * s, 8 * s, 7 * s, Math.PI, TAU, 0, 0.4), cap, [
+                    0,
+                    -9 * s,
+                ]);
+                for (const [dx, dy] of [
+                    [-3.4, -9.4],
+                    [2.6, -10.6],
+                ])
+                    mesh.fill(
+                        arcPoints(dx * s, dy * s, 1.5 * s, 1.2 * s, 0, TAU, 0, TAU / 6).slice(
+                            0,
+                            -1,
+                        ),
+                        hazed(d.mushroomSpot, item.x, item.y, 0.85),
+                    );
+            } else if (item.kind === 'acorn') {
+                const oval = (cx, cy, rx, ry, color) =>
+                    mesh.fill(arcPoints(cx, cy, rx, ry, 0, TAU, 0, TAU / 10).slice(0, -1), color);
+                oval(2 * s, 0.6 * s, 5.5 * s, 2.4 * s, rgba(pal.rock.shadow, 0.22));
+                oval(0, -5 * s, 4.6 * s, 5.6 * s, hazed(d.acorn[tone], item.x, item.y));
+                oval(-1.4 * s, -5.4 * s, 1.3 * s, 2.2 * s, rgba(d.acornLight, 0.6));
+                mesh.fill(
+                    arcPoints(0, -7.6 * s, 5.2 * s, 3.8 * s, Math.PI, TAU, 0, 0.4),
+                    hazed(d.acornCap, item.x, item.y),
+                    [0, -9 * s],
+                );
             } else if (item.kind === 'straw') {
                 const color = hazed(d.straw[tone], item.x, item.y);
                 for (let k = 0; k < 3; k++) {

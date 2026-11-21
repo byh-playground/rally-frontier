@@ -18,6 +18,11 @@ export const PROP_SHADOWS = Object.freeze({
     windmill: { dx: 66, dy: 10, width: 187, alpha: 0.18 },
     barn: { dx: 55, dy: 10, width: 242, alpha: 0.2 },
     flag: { dx: 10, dy: 2, width: 26, alpha: 0.2 },
+    pine: { dx: 34, dy: 8, width: 104, alpha: 0.2 },
+    log: { dx: 10, dy: 4, width: 104, alpha: 0.2 },
+    stump: { dx: 10, dy: 3, width: 54, alpha: 0.2 },
+    hollowTree: { dx: 62, dy: 10, width: 210, alpha: 0.2 },
+    cabin: { dx: 50, dy: 10, width: 200, alpha: 0.2 },
 });
 
 // Collects one prop's parts. A fan is star-shaped about its first vertex.
@@ -171,6 +176,170 @@ export function buildMapProps(look, theme, projection, seedText) {
             for (const [dx, dy, r] of canopy)
                 s.disc(c(p.leafLight), dx - r * 0.22, dy - r * 0.24, r * 0.7, r * 0.7, 14);
             s.disc(c(p.leafTop, 0.1), -12, -118, 14, 14, 12);
+            return s;
+        },
+        // A conifer: three tiers of boughs, each lit on its left.
+        pine(prop, c) {
+            const s = new PropShape(prop.scale);
+            s.polygon(c(p.trunk), [
+                [-6, 0],
+                [-4, -40],
+                [4, -40],
+                [6, 0],
+            ]);
+            for (const [w, foot, tip] of [
+                [48, -28, -84],
+                [39, -62, -118],
+                [29, -96, -152],
+            ]) {
+                const boughs = [
+                    [0, tip],
+                    [w, foot],
+                    [w * 0.5, foot + 7],
+                    [0, foot + 2],
+                    [-w * 0.5, foot + 7],
+                    [-w, foot],
+                ];
+                s.blob(c(p.pine), 0, (foot + tip) / 2, boughs);
+                s.polygon(c(p.pineLight), [
+                    [0, tip],
+                    [-w * 0.12, foot + 1],
+                    [-w * 0.5, foot + 5],
+                    [-w * 0.86, foot - 1],
+                ]);
+                s.path(c.line(p.pineLine, p.pine), boughs, 1.4, true);
+            }
+            return s;
+        },
+        // A fallen log lying across the view: bark, a lit strip along its top, moss, its cut end with rings.
+        log(prop, c) {
+            const s = new PropShape(prop.scale),
+                side = [
+                    [-46, -4],
+                    [-50, -15],
+                    [-46, -26],
+                    [38, -26],
+                    [38, -4],
+                ];
+            s.polygon(c(p.wood), side);
+            s.rect(c(p.woodDark), -46, -11, 84, 7);
+            s.rect(c(p.rail, -0.05), -46, -26, 84, 4);
+            s.polygon(c(p.moss), [
+                [-30, -25],
+                [-22, -31],
+                [-6, -32],
+                [6, -27],
+                [0, -22],
+                [-20, -21],
+            ]);
+            s.path(c.line(p.woodLine, p.wood), side, 1.3, true);
+            s.disc(c.line(p.woodLine, p.woodEnd), 38, -15, 9.2, 12.2, 14);
+            s.disc(c(p.woodEnd), 38, -15, 8, 11, 14);
+            s.disc(c(p.woodRing), 38, -15, 4.6, 6.4, 12);
+            s.disc(c(p.woodEnd), 38, -15, 2.2, 3.2, 10);
+            return s;
+        },
+        // A stump: flared bark and the pale cut top with a ring.
+        stump(prop, c) {
+            const s = new PropShape(prop.scale),
+                bark = [
+                    [-26, 2],
+                    [-17, -8],
+                    [-15, -26],
+                    [15, -26],
+                    [17, -8],
+                    [26, 2],
+                    [0, 4],
+                ];
+            s.blob(c(p.trunk), 0, -12, bark);
+            s.polygon(c(p.woodDark), [
+                [4, -26],
+                [15, -26],
+                [17, -8],
+                [26, 2],
+                [6, 4],
+            ]);
+            s.path(c.line(p.trunkLine, p.trunk), bark, 1.3, true);
+            s.disc(c(p.woodEnd), 0, -26, 15.6, 6.6, 14);
+            s.disc(c(p.woodRing), 0, -26, 9, 3.8, 12);
+            s.disc(c(p.woodEnd), 0, -26, 4.6, 2, 10);
+            return s;
+        },
+        // The great hollow tree: a thick trunk on spreading roots with a dark hollow, under a broad crown.
+        hollowTree(prop, c) {
+            const s = new PropShape(prop.scale),
+                trunk = [
+                    [-66, 0],
+                    [-42, -10],
+                    [-35, -58],
+                    [-40, -128],
+                    [40, -128],
+                    [35, -58],
+                    [44, -10],
+                    [70, 0],
+                    [34, 5],
+                    [0, 2],
+                    [-32, 5],
+                ],
+                crown = [
+                    [-88, -122, 32],
+                    [86, -126, 32],
+                    [-52, -146, 44],
+                    [50, -150, 42],
+                    [0, -164, 46],
+                    [-4, -132, 40],
+                ];
+            s.blob(c(p.trunk), 0, -60, trunk);
+            s.polygon(c(p.woodDark), [
+                [14, -128],
+                [40, -128],
+                [35, -58],
+                [44, -10],
+                [34, 5],
+                [18, -40],
+            ]);
+            s.polygon(c(p.woodDark), [
+                [44, -10],
+                [70, 0],
+                [34, 5],
+            ]);
+            s.path(c.line(p.trunkLine, p.trunk), trunk, 1.4, true);
+            s.disc(c(p.hollow), -6, -34, 18, 27, 16);
+            s.rect(c(p.hollow), -24, -34, 36, 28);
+            s.disc(c(p.moss), -40, -4, 12, 5, 10);
+            s.disc(c(p.moss), 46, -3, 14, 5, 10);
+            for (const [dx, dy, r] of crown) s.disc(c.line(p.leafLine, p.leaf), dx, dy, r + 1.4);
+            for (const [dx, dy, r] of crown) s.disc(c(p.leaf), dx, dy, r);
+            for (const [dx, dy, r] of crown)
+                s.disc(c(p.leafLight), dx - r * 0.22, dy - r * 0.24, r * 0.7, r * 0.7, 14);
+            s.disc(c(p.leafTop, 0.1), -14, -184, 16, 16, 12);
+            return s;
+        },
+        // A log cabin: walls of stacked logs with their cut ends at the corners, a mossy roof, a lit window.
+        cabin(prop, c) {
+            const s = new PropShape(1.1 * prop.scale),
+                roof = [
+                    [-88, -54],
+                    [0, -114],
+                    [88, -54],
+                ];
+            s.rect(c(p.chimney), 34, -108, 16, 40);
+            s.rect(c(p.wood), -70, -58, 140, 58);
+            s.rect(c(p.woodDark), 22, -58, 48, 58);
+            for (let y = -50; y < 0; y += 10)
+                s.line(c.line(p.woodLine, p.wood), -70, y, 70, y, 1.1);
+            for (let y = -54; y < 0; y += 10)
+                for (const x of [-70, 70]) s.disc(c(p.woodEnd), x, y + 4, 4.4, 4.4, 8);
+            s.rect(c(p.door), -16, -38, 24, 38);
+            s.rect(c(p.window), 32, -42, 20, 16);
+            s.line(c.line(p.woodLine, p.wood), 42, -42, 42, -26, 1.2);
+            s.polygon(c(p.cabinRoof), roof);
+            s.polygon(c(p.cabinRoofLight), [
+                [0, -114],
+                [-88, -54],
+                [-26, -54],
+            ]);
+            s.path(c.line(p.cabinRoofLine, p.cabinRoof), roof, 1.4, true);
             return s;
         },
         stack(prop, c) {
@@ -385,6 +554,7 @@ export function buildMapProps(look, theme, projection, seedText) {
                 lift = -HS * stone.lift,
                 rise = -HS * stone.height,
                 [low, high] = (R() < 0.5 ? pal.rock.warm : pal.rock.cool).map(channels),
+                mossShare = theme.blockers.moss,
                 shade = (l) => [
                     lerp(low[0], high[0], l),
                     lerp(low[1], high[1], l),
@@ -439,11 +609,16 @@ export function buildMapProps(look, theme, projection, seedText) {
                     top[j],
                     top[i],
                 ]);
-            s.polygon(shade(0.86), top);
+            // A theme with mossy blockers: moss on the top of that share of the stones, in place of bare stone.
+            const moss =
+                mossShare && R() < mossShare
+                    ? pal.rock.moss.map((hex) => [...channels(hex), 1])
+                    : [shade(0.86), shade(1)];
+            s.polygon(moss[0], top);
             let corner = 0;
             for (let i = 1; i < count; i++)
                 if (top[i][0] + top[i][1] < top[corner][0] + top[corner][1]) corner = i;
-            s.polygon(shade(1), [
+            s.polygon(moss[1], [
                 [
                     top.reduce((sum, t) => sum + t[0], 0) / count,
                     top.reduce((sum, t) => sum + t[1], 0) / count,
