@@ -948,7 +948,13 @@ export const CAMPAIGN_STAGES = Object.freeze([
 // Every stage of it declares its story for the briefing and the result: `story.text` the one-line story and
 // `story.captain` the captain's line, shown together (no dialogue to step through).
 export const CAMPAIGN_REGIONS = Object.freeze([
-    { id: 'nut-forest', title: '견과 숲', blurb: '단단한 껍질들이 깜부기에 갇혔어요.' },
+    // `theme` is the map look of the region's stages (map-themes.js); a region without one keeps its map's own.
+    {
+        id: 'nut-forest',
+        title: '견과 숲',
+        blurb: '단단한 껍질들이 깜부기에 갇혔어요.',
+        theme: 'nut-forest',
+    },
     { id: 'field-town', title: '밭 마을', blurb: '밭 곡식들이 깜부기 장단에 춤춰요.' },
     { id: 'wind-hill', title: '바람 언덕', blurb: '바람 타고 포자가 날아다녀요.' },
 ]);
@@ -1088,6 +1094,14 @@ function sporeAttack(atMs, x, y) {
             { type: 'rice', x, y: y + 30, count: 6, columns: 3 },
         ],
     };
+}
+// The map look a stage asks for: its region's theme, else its own `theme`, else null (the map's own).
+export function campaignStageTheme(stage) {
+    return (
+        CAMPAIGN_REGIONS.find((region) => region.id === stage?.region)?.theme ??
+        stage?.theme ??
+        null
+    );
 }
 export function campaignStage(id) {
     return (
