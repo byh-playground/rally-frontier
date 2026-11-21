@@ -571,9 +571,11 @@ class TerrainPresentation {
             r.begin();
         }
     }
-    // `palette` is the theme's raised-ground colours for a themed map (render/map-look.js).
-    static drawSurfaces(r, palette = this.colors) {
-        const atlas = r.world.terrain.surfaces;
+    // `depthOnly`: a themed map paints raised ground into its own ground mesh (render/map-look.js) and takes only
+    // the depth of these surfaces, so a hill hides what stands behind it.
+    static drawSurfaces(r, depthOnly = false) {
+        const palette = this.colors,
+            atlas = r.world.terrain.surfaces;
         if (!atlas.layers.length && !atlas.bridges.length) return;
         const previous = r._renderDepth,
             mesh = TerrainSurfaceProjection.forAtlas(atlas).renderProjectedSurfaceMesh(
@@ -591,7 +593,8 @@ class TerrainPresentation {
             const patch = tri.patch;
             let colors = colorCache.get(patch);
             if (!colors) {
-                if (patch.kind === 'cliff') {
+                if (depthOnly) colors = patch.vertices.map(() => [0, 0, 0, 0]);
+                else if (patch.kind === 'cliff') {
                     const f = patch.face,
                         dx = f.b.x - f.a.x,
                         dy = f.b.y - f.a.y,
@@ -5044,7 +5047,9 @@ class GLRenderer {
     // Who holds each capture point, as discs on the ground.
     drawCapturePointMarks() {
         if (!this.snapshot) return;
+        const previous = this._renderDepth;
         for (const cp of this.snapshot.capturePoints || []) {
+            this.setRenderDepth(this.groundMarkDepth(cp.y, CAPTURE_RADIUS));
             const base =
                 cp.owner != null
                     ? this.factionColor(cp.owner, { alpha: 0.18 })
@@ -5077,6 +5082,18 @@ class GLRenderer {
                 });
             }
         }
+        this.setRenderDepth(previous);
+    }
+    // The depth for a flat mark of `radius` on the ground around world row `z`: its edge nearest the viewer, a
+    // little in front, so the mark passes the depth raised ground has written under it (depth follows the ground
+    // row alone, never the height).
+    groundMarkDepth(z, radius) {
+        return (
+            Math.min(
+                this.renderDepthForWorld({ z: z - radius }),
+                this.renderDepthForWorld({ z: z + radius }),
+            ) - 0.0005
+        );
     }
     drawGroundGrid() {
         // The underlay grid belongs to the level-zero world plane. Its height and
@@ -5174,14 +5191,19 @@ class GLRenderer {
         TerrainPresentation.drawRiverSurfaces(this, mapDesc, true);
         TerrainPresentation.drawBridges(this, true);
     }
-    // The terrain a themed map still draws itself over its baked ground: raised layers, water, bridges.
-    drawTerrainSurfaces(colors) {
-        TerrainPresentation.drawSurfaces(this, colors);
+    // What a themed map still takes from the terrain over its baked ground: the depth of raised ground, and the
+    // water and bridges drawn as on any map.
+    drawTerrainDepth() {
+        TerrainPresentation.drawSurfaces(this, true);
         this.flush();
         this.begin();
         const mapDesc = this.snapshot?.mapDescriptor || null;
         TerrainPresentation.drawRiverSurfaces(this, mapDesc, true);
         TerrainPresentation.drawBridges(this, true);
+    }
+    // The top lines of cliffs and the treads of ramps, on a map that draws its terrain from the mesh.
+    drawTerrainEdges() {
+        TerrainPresentation.drawSurfaceEdges(this);
     }
     drawConstructionScaffold(building) {
         const radius = BuildingDefinition.get(building.type).size,
@@ -7429,7 +7451,7 @@ class GLRenderer {
         this.flush();
         this.passState.depthWrite = false;
         this.begin();
-        TerrainPresentation.drawSurfaceEdges(this);
+        this.mapLook.drawTerrainEdges(this);
         this.setRenderDepth(0.969);
         this.mapLook.drawGroundMarks(this);
         // The blight field and its braziers go into this same triangle stream: no draw of their own.
