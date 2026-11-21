@@ -534,9 +534,38 @@ export function buildMapLook(geometry, theme, seedText) {
             .forEach(({ id }, index) => variantOf.set(id, index % rule.variants));
     }
     const yards = geometry.capturePoints.map((point) => {
-        const rule = theme.yards[point.resourceType],
+        const resourceRule = theme.yards[point.resourceType],
+            // A point no side starts with (stage 0) is the contested one: its own size, outline and even kind.
+            contested = point.stage === 0 ? resourceRule.contested : null,
+            rule = contested ? { ...resourceRule, ...contested } : resourceRule,
             R = random('yard:' + point.id),
             { x, y } = point;
+        if (rule.kind === 'rings') {
+            // A slice of a great trunk: a nearly round outline, cracks running out from the heart, and (a stump)
+            // roots flaring from the bark, each [angle, half width as an angle, length].
+            const radius = rule.radius,
+                turn = R() * TAU;
+            return {
+                kind: 'rings',
+                x,
+                y,
+                radius,
+                bark: rule.bark,
+                mark: rule.mark,
+                fill: blobPoints(x, y, radius, radius * 0.97, turn, R, 0.16, 28),
+                heart: [(R() - 0.5) * radius * 0.16, (R() - 0.5) * radius * 0.16],
+                cracks: Array.from({ length: 3 + Math.floor(R() * 2) }, (_, i) => ({
+                    angle: turn + (i + R() * 0.6) * (TAU / 4),
+                    from: 0.12 + R() * 0.2,
+                    to: 0.72 + R() * 0.26,
+                })),
+                roots: Array.from({ length: rule.roots }, (_, i) => [
+                    turn + ((i + 0.2 + R() * 0.6) / rule.roots) * TAU,
+                    0.1 + R() * 0.05,
+                    46 + R() * 34,
+                ]),
+            };
+        }
         if (rule.kind === 'straw') {
             const radius = rule.radius;
             return {
@@ -549,9 +578,7 @@ export function buildMapLook(geometry, theme, seedText) {
                 fill: blobPoints(x, y, radius, radius * 0.96, R() * 3, R, 0.35),
             };
         }
-        // A point no side starts with (stage 0) is the contested one: its own size and outline.
-        const contested = point.stage === 0 ? rule.contested : null,
-            radius = contested?.radius ?? rule.radius,
+        const radius = rule.radius,
             rings = (
                 contested
                     ? [
@@ -567,7 +594,7 @@ export function buildMapLook(geometry, theme, seedText) {
                 outer: outer * radius,
                 stones: Array.from({ length: count }, () => Math.floor(R() * 3)),
             }));
-        return { kind: 'paving', x, y, radius, sides: contested?.sides ?? 0, rings };
+        return { kind: 'paving', x, y, radius, sides: rule.sides ?? 0, rings };
     });
 
     // Where decoration must not go: on or beside a road, a base, a yard, a cliff or a ramp.
@@ -760,7 +787,8 @@ export function buildMapLook(geometry, theme, seedText) {
                 blades.push({ x, y, light, size });
         }
 
-    const dirtRandom = random('dirt'),
+    const leafRandom = random('leaves'),
+        dirtRandom = random('dirt'),
         dirtRule = theme.dirt,
         dirtCentres = [],
         dirt = [];
@@ -828,6 +856,26 @@ export function buildMapLook(geometry, theme, seedText) {
                         : null,
             });
         }
+        // Fallen leaves: scattered over each lobe, thinning towards its edge, lying every way.
+        if (dirtRule.kind === 'leaves')
+            for (const part of parts) {
+                const [few, many] = dirtRule.leaves,
+                    [small, large] = dirtRule.leafSize;
+                part.leaves = Array.from(
+                    { length: Math.round(lerp(few, many, leafRandom())) },
+                    () => {
+                        const angle = leafRandom() * TAU,
+                            reach = Math.sqrt(leafRandom()) * 1.05;
+                        return {
+                            x: part.x + Math.cos(angle) * part.r * reach,
+                            y: part.y + Math.sin(angle) * part.r * reach * 0.62,
+                            angle: leafRandom() * TAU,
+                            size: lerp(small, large, leafRandom()),
+                            tone: leafRandom(),
+                        };
+                    },
+                );
+            }
         dirt.push(parts);
     }
 
@@ -967,75 +1015,99 @@ export function buildMapLook(geometry, theme, seedText) {
     // A bridge's railings are fences too.
     for (const bridge of bridges) fences.push(...bridge.rails);
 
-    // ---- paddies beyond the bank ----
+    // ---- treetops beyond the map (a theme with `outside.canopy`): one in every cell of a grid, moved about in
+    // its cell, none nearer the map than the rule's clearance ----
+    const { margin } = theme.outside,
+        canopyRule = theme.outside.canopy,
+        canopy = [];
+    if (canopyRule) {
+        const canopyRandom = random('canopy'),
+            { spacing: cell, radius: reach, clearance: free } = canopyRule;
+        for (let cx = -margin.side - 300; cx < W + margin.side + 300; cx += cell)
+            for (let cy = -margin.far - 300; cy < H + margin.far + 300; cy += cell * 0.8) {
+                const x = cx + canopyRandom() * cell,
+                    y = cy + canopyRandom() * cell * 0.8,
+                    r = lerp(reach[0], reach[1], canopyRandom()),
+                    tone = canopyRandom(),
+                    turn = canopyRandom() * TAU;
+                if (x > -free && x < W + free && y > -free && y < H + free) continue;
+                canopy.push({ x, y, r, tone, turn });
+            }
+        // Far to near, as the host sees them.
+        canopy.sort((a, b) => a.y - b.y);
+    }
+
+    // ---- paddies beyond the bank (a theme with `outside.paddy`) ----
     const paddyRandom = random('paddies'),
         paddyRule = theme.outside.paddy,
-        { margin } = theme.outside,
         columns = [],
         rows = [],
         paddies = [];
-    for (
-        let x = -margin.side - 300;
-        x < W + margin.side + 300;
-        x += lerp(paddyRule.width[0], paddyRule.width[1], paddyRandom())
-    )
-        columns.push(x);
-    for (
-        let y = -margin.far - 300;
-        y < H + margin.far + 300;
-        y += lerp(paddyRule.depth[0], paddyRule.depth[1], paddyRandom())
-    )
-        rows.push(y);
-    const jitters = new Map();
-    const jitter = (i, j) => {
-        const key = i * 1000 + j;
-        if (!jitters.has(key))
-            jitters.set(key, [(paddyRandom() - 0.5) * 50, (paddyRandom() - 0.5) * 40]);
-        return jitters.get(key);
-    };
-    const clear = paddyRule.clearance + 40;
-    for (let i = 0; i < columns.length - 1; i++)
-        for (let j = 0; j < rows.length - 1; j++) {
-            const x0 = columns[i],
-                x1 = columns[i + 1],
-                y0 = rows[j],
-                y1 = rows[j + 1];
-            if (x1 > -clear && x0 < W + clear && y1 > -clear && y0 < H + clear) continue;
-            const g = paddyRule.bund,
-                quad = [
-                    [x0, y0, i, j],
-                    [x1, y0, i + 1, j],
-                    [x1, y1, i + 1, j + 1],
-                    [x0, y1, i, j + 1],
-                ].map(([x, y, ci, cj]) => {
-                    const [jx, jy] = jitter(ci, cj);
-                    return [x + jx, y + jy];
-                }),
-                roll = paddyRandom(),
-                kind =
-                    roll < paddyRule.water
-                        ? 'water'
-                        : roll > 1 - paddyRule.fallow
-                          ? 'fallow'
-                          : 'green',
-                wide = x1 - x0 > y1 - y0;
-            paddies.push({
-                quad,
-                inner: [
-                    [quad[0][0] + g, quad[0][1] + g],
-                    [quad[1][0] - g, quad[1][1] + g],
-                    [quad[2][0] - g, quad[2][1] - g],
-                    [quad[3][0] + g, quad[3][1] - g],
-                ],
-                x0,
-                x1,
-                y0,
-                y1,
-                kind,
-                // Seedling rows run along the long side more often than not.
-                rowsAcross: kind === 'fallow' || paddyRandom() < (wide ? 0.7 : 0.3),
-            });
-        }
+    if (paddyRule) layPaddies();
+    function layPaddies() {
+        for (
+            let x = -margin.side - 300;
+            x < W + margin.side + 300;
+            x += lerp(paddyRule.width[0], paddyRule.width[1], paddyRandom())
+        )
+            columns.push(x);
+        for (
+            let y = -margin.far - 300;
+            y < H + margin.far + 300;
+            y += lerp(paddyRule.depth[0], paddyRule.depth[1], paddyRandom())
+        )
+            rows.push(y);
+        const jitters = new Map();
+        const jitter = (i, j) => {
+            const key = i * 1000 + j;
+            if (!jitters.has(key))
+                jitters.set(key, [(paddyRandom() - 0.5) * 50, (paddyRandom() - 0.5) * 40]);
+            return jitters.get(key);
+        };
+        const clear = paddyRule.clearance + 40;
+        for (let i = 0; i < columns.length - 1; i++)
+            for (let j = 0; j < rows.length - 1; j++) {
+                const x0 = columns[i],
+                    x1 = columns[i + 1],
+                    y0 = rows[j],
+                    y1 = rows[j + 1];
+                if (x1 > -clear && x0 < W + clear && y1 > -clear && y0 < H + clear) continue;
+                const g = paddyRule.bund,
+                    quad = [
+                        [x0, y0, i, j],
+                        [x1, y0, i + 1, j],
+                        [x1, y1, i + 1, j + 1],
+                        [x0, y1, i, j + 1],
+                    ].map(([x, y, ci, cj]) => {
+                        const [jx, jy] = jitter(ci, cj);
+                        return [x + jx, y + jy];
+                    }),
+                    roll = paddyRandom(),
+                    kind =
+                        roll < paddyRule.water
+                            ? 'water'
+                            : roll > 1 - paddyRule.fallow
+                              ? 'fallow'
+                              : 'green',
+                    wide = x1 - x0 > y1 - y0;
+                paddies.push({
+                    quad,
+                    inner: [
+                        [quad[0][0] + g, quad[0][1] + g],
+                        [quad[1][0] - g, quad[1][1] + g],
+                        [quad[2][0] - g, quad[2][1] - g],
+                        [quad[3][0] + g, quad[3][1] - g],
+                    ],
+                    x0,
+                    x1,
+                    y0,
+                    y1,
+                    kind,
+                    // Seedling rows run along the long side more often than not.
+                    rowsAcross: kind === 'fallow' || paddyRandom() < (wide ? 0.7 : 0.3),
+                });
+            }
+    }
 
     return {
         width: W,
@@ -1055,6 +1127,7 @@ export function buildMapLook(geometry, theme, seedText) {
         props,
         fences,
         paddies,
+        canopy,
         terrain,
         counts: {
             clusters: clusterCounts,
@@ -1062,6 +1135,7 @@ export function buildMapLook(geometry, theme, seedText) {
             stones: rocks.reduce((sum, rock) => sum + rock.stones.length, 0),
             dirt: dirt.length,
             paddies: paddies.length,
+            canopy: canopy.length,
             water: water.length,
             ripples: water.reduce((sum, w) => sum + w.ripples.length, 0),
             bridges: bridges.length,
