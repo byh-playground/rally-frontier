@@ -566,6 +566,20 @@ export function buildMapLook(geometry, theme, seedText) {
                 ]),
             };
         }
+        if (rule.kind === 'furrows') {
+            // A tilled plot: a roughly round bed, its rows running along `turn`, a crop by variant.
+            const radius = rule.radius;
+            return {
+                kind: 'furrows',
+                x,
+                y,
+                radius,
+                variant: variantOf.get(point.id),
+                turn: R() * Math.PI,
+                rim: blobPoints(x, y, radius + 16, radius + 14, R() * 3, R, 0.3),
+                fill: blobPoints(x, y, radius, radius * 0.96, R() * 3, R, 0.3),
+            };
+        }
         if (rule.kind === 'straw') {
             const radius = rule.radius;
             return {

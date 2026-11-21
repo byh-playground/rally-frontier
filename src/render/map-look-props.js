@@ -23,6 +23,9 @@ export const PROP_SHADOWS = Object.freeze({
     stump: { dx: 10, dy: 3, width: 54, alpha: 0.2 },
     hollowTree: { dx: 62, dy: 10, width: 210, alpha: 0.2 },
     cabin: { dx: 50, dy: 10, width: 200, alpha: 0.2 },
+    cottage: { dx: 52, dy: 10, width: 210, alpha: 0.2 },
+    silo: { dx: 40, dy: 10, width: 130, alpha: 0.2 },
+    beacon: { dx: 44, dy: 10, width: 120, alpha: 0.2 },
 });
 
 // Collects one prop's parts. A fan is star-shaped about its first vertex.
@@ -340,6 +343,98 @@ export function buildMapProps(look, theme, projection, seedText) {
                 [-26, -54],
             ]);
             s.path(c.line(p.cabinRoofLine, p.cabinRoof), roof, 1.4, true);
+            return s;
+        },
+        // A village cottage: plastered walls, a tiled roof with a chimney, a door and a lit window.
+        cottage(prop, c) {
+            const s = new PropShape(1.15 * prop.scale),
+                roof = [
+                    [-96, -58],
+                    [-52, -112],
+                    [52, -112],
+                    [96, -58],
+                ];
+            s.rect(c(p.chimneyBrick), 38, -128, 18, 46);
+            s.rect(c(p.chimneyCap), 35, -132, 24, 7);
+            s.rect(c(p.wall), -78, -62, 156, 62);
+            s.rect(c(p.wallShade), 30, -62, 48, 62);
+            s.rect(c(p.wallLine), -78, -2, 156, 3);
+            s.rect(c(p.door), -50, -42, 26, 42);
+            s.rect(c(p.window), 2, -44, 22, 20);
+            s.line(c.line(p.wallLine, p.wall), 13, -44, 13, -24, 1.2);
+            s.line(c.line(p.wallLine, p.wall), 2, -34, 24, -34, 1.2);
+            s.rect(c(p.window), 44, -44, 22, 20);
+            s.polygon(c(p.tile), roof);
+            for (const y of [-72, -84, -98]) {
+                const inset = (y + 58) * -0.82;
+                s.line(c.line(p.tileLine, p.tile), -96 + inset * 0.5, y, 96 - inset * 0.5, y, 1.4);
+            }
+            s.polygon(c(p.tileLight), [
+                [-52, -112],
+                [-96, -58],
+                [-60, -58],
+                [-30, -112],
+            ]);
+            s.path(c.line(p.tileLine, p.tile), roof, 1.5, true);
+            return s;
+        },
+        // A hilltop beacon: a tapering tower of pale stone with a brazier and its flame on top.
+        beacon(prop, c) {
+            const s = new PropShape(1.15 * prop.scale),
+                tower = [
+                    [-34, 0],
+                    [-24, -150],
+                    [24, -150],
+                    [34, 0],
+                ];
+            s.polygon(c(p.beaconWall), tower);
+            s.polygon(c(p.beaconShade), [
+                [12, 0],
+                [10, -150],
+                [24, -150],
+                [34, 0],
+            ]);
+            for (let y = -126; y < 0; y += 26) {
+                const half = 34 - (-y / 150) * 10;
+                s.line(c.line(p.beaconLine, p.beaconWall), -half, y, half, y, 1.3);
+            }
+            s.rect(c(p.door), -9, -28, 18, 28);
+            s.polygon(c(p.beaconRim), [
+                [-34, -150],
+                [34, -150],
+                [40, -168],
+                [-40, -168],
+            ]);
+            s.polygon(c(p.beaconFire), [
+                [-18, -168],
+                [18, -168],
+                [8, -198],
+                [0, -224],
+                [-10, -196],
+            ]);
+            s.polygon(c(p.beaconFireLight), [
+                [-8, -168],
+                [8, -168],
+                [3, -190],
+                [0, -204],
+                [-4, -188],
+            ]);
+            return s;
+        },
+        // A grain silo: banded metal cylinder with a domed cap and a ladder.
+        silo(prop, c) {
+            const s = new PropShape(1.1 * prop.scale);
+            s.rect(c(p.siloWall), -34, -150, 68, 150);
+            s.rect(c(p.siloShade), 12, -150, 22, 150);
+            for (let y = -130; y < 0; y += 24)
+                s.line(c.line(p.siloLine, p.siloWall), -34, y, 34, y, 1.3);
+            s.disc(c(p.siloShade), 0, -150, 36, 14, 18);
+            s.disc(c(p.siloCap), 0, -158, 34, 24, 18);
+            s.disc(c(p.siloCapLight), -8, -164, 16, 10, 14);
+            s.rect(c(p.door), -9, -26, 18, 26);
+            s.line(c.line(p.siloLine, p.siloWall), -26, -140, -26, -6, 1.6);
+            for (let y = -128; y < -8; y += 16)
+                s.line(c.line(p.siloLine, p.siloWall), -30, y, -22, y, 1.2);
             return s;
         },
         stack(prop, c) {
