@@ -955,6 +955,11 @@ export function buildGroundMesh(look, theme, projection, seedText) {
         shiftCentres(from, ox, oy);
     };
 
+    // ---- capture point yards: under the base yards, so a yard that reaches into a base's yard is cut by it ----
+    for (const yard of look.yards) {
+        if (yard.kind === 'straw') strawYard(yard);
+        else pavingYard(yard);
+    }
     // ---- base yards: packed earth with the cannon's wheel ruts ----
     for (const base of look.bases) {
         const c = pal.base,
@@ -977,11 +982,6 @@ export function buildGroundMesh(look, theme, projection, seedText) {
                 6,
                 rgba(c.rut, rut.ring === 2 ? 0.18 : 0.3),
             );
-    }
-    // ---- capture point yards ----
-    for (const yard of look.yards) {
-        if (yard.kind === 'straw') strawYard(yard);
-        else pavingYard(yard);
     }
 
     function strawYard(yard) {
@@ -1205,7 +1205,7 @@ export function buildGroundMesh(look, theme, projection, seedText) {
         } else {
             // A polygon that is not convex: its own outline, fading outward.
             mesh.triangles(rock.points, rock.triangles, bed);
-            mesh.fringe(rock.points, 70, bed);
+            mesh.fringe(rock.points, 40, bed);
             mesh.offset(30, 26 * GS, () => {
                 mesh.triangles(rock.points, rock.triangles, shadow);
                 mesh.fringe(rock.points, 22, shadow);

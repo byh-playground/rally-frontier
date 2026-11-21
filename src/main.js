@@ -864,6 +864,8 @@ const FOG_COLOR = Object.freeze({
     replay: Object.freeze([0.008, 0.012, 0.018, 0.96]),
 });
 class GLRenderer {
+    // How much depth the rows of one bridge deck are spread over (bridgeRowDepth).
+    static BRIDGE_ROW_DEPTH = 0.002;
     static DEPTH_PROJECTION = Object.freeze({
         offset: 0.88,
         viewSpan: 1.72,
@@ -1556,7 +1558,7 @@ class GLRenderer {
             : 0;
         return (
             (bridge && height >= bridge.elevation - 0.01
-                ? this.bridgeDepth(bridge)
+                ? this.bridgeRowDepth(bridge, world.z)
                 : this.renderDepthForWorld(world)) - bias
         );
     }
@@ -1981,6 +1983,22 @@ class GLRenderer {
         const vz = Math.max(this.viewY(bridge.minY), this.viewY(bridge.maxY)),
             d = GLRenderer.DEPTH_PROJECTION;
         return RangeUtil.clamp(d.offset - (vz / this.world.height) * d.viewSpan, d.min, d.max);
+    }
+    // The depth of what stands on a deck at world row `z`: all of it in front of the deck (and so of what the deck
+    // hides), and within the deck the row nearer the viewer in front, so a railing on the viewer's side covers the
+    // soldiers behind it and the far railing is covered by them.
+    bridgeRowDepth(bridge, z) {
+        const a = this.viewY(bridge.minY),
+            b = this.viewY(bridge.maxY),
+            far = Math.min(a, b),
+            row = RangeUtil.clamp((this.viewY(z) - far) / (Math.abs(b - a) || 1), 0, 1);
+        return this.bridgeDepth(bridge) - GLRenderer.BRIDGE_ROW_DEPTH * row;
+    }
+    // The depth of a standing prop of the map's look at its draw-order row: on a bridge, a row of that deck.
+    propDepth(z, bridgeId) {
+        const bridge =
+            bridgeId && this.world.terrain.surfaces.bridges.find((b) => b.id === bridgeId);
+        return (bridge ? this.bridgeRowDepth(bridge, z) : this.renderDepthForWorld({ z })) - 0.0005;
     }
     renderBridgeAt(x, z) {
         const atlas = this.world.terrain.surfaces;

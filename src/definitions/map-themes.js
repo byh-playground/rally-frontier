@@ -27,7 +27,7 @@ export const MAP_THEMES = Object.freeze({
                 top: '#d4e28c',
                 // Ground below the field (a negative terrain level): a wash of damper grass on its floor, and a
                 // sloped bank (a layer with an inner outline) from damp earth at its foot up into the grass.
-                low: '#6f8a58',
+                low: '#587648',
                 bank: '#8a8458',
                 earth: ['#6f5f41', '#9b8558'],
                 courses: [
@@ -196,8 +196,8 @@ export const MAP_THEMES = Object.freeze({
         // Raised ground. Heights are the map's own (a terrain level), these are only how a wall and a ramp are built.
         terrain: {
             // How strongly the hilltop wash covers the grass (0..1), and the wash of a sunken floor.
-            topTint: 0.44,
-            lowTint: 0.34,
+            topTint: 0.52,
+            lowTint: 0.56,
             // A wall face: one course of stones per this much height, stones this long, and a parapet this high
             // above the ground the wall holds up.
             wall: { courseHeight: 24, stone: [44, 78], parapet: 15 },
@@ -209,9 +209,9 @@ export const MAP_THEMES = Object.freeze({
                 offset: [24, 20],
                 width: 40,
                 feather: 24,
-                alpha: 0.28,
+                alpha: 0.34,
                 backFeather: 46,
-                backAlpha: 0.3,
+                backAlpha: 0.36,
             },
             // Log treads this far apart up a ramp, and how far the bare earth spreads from its foot.
             ramp: { treadSpacing: 34, mouth: 64 },
@@ -258,7 +258,10 @@ export const MAP_THEMES = Object.freeze({
         // one pile of these stones goes on every `pileArea` units² of it (scaled with the stones, at least one).
         blockers: {
             pileArea: 60000,
-            stoneScale: { thickness: 150, max: 2.5 },
+            stoneScale: { thickness: 150, max: 1.5 },
+            // A polygon with scaled stones also gets a row of its smallest stones just inside its outline, so no
+            // bare bed is left between the piles and the edge that blocks.
+            edgeStones: 6,
             stoneRadii: [74, 68, 62, 58, 54, 50, 46, 42, 38, 34, 30, 28, 26, 24, 22, 20],
             stacked: 4,
             // One farm tool leaning inside the first blocker.

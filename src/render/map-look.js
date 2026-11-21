@@ -170,12 +170,10 @@ class MapLook {
                 y + prop.top * sc > height
             )
                 continue;
-            // Depth at the prop's draw-order line: its foot moved towards the viewer (on a bridge, the deck's).
+            // Depth at the prop's draw-order line: its foot moved towards the viewer (on a bridge, a row of the
+            // deck: the soldiers crossing are ordered with its railings).
             r.setRenderDepth(
-                r.renderDepthForWorld({
-                    z: guest ? prop.y - prop.front[1] : prop.y + prop.front[0],
-                    bridgeId: prop.bridgeId,
-                }) - 0.0005,
+                r.propDepth(guest ? prop.y - prop.front[1] : prop.y + prop.front[0], prop.bridgeId),
             );
             const shade = r.fogAmountAt(prop.x, prop.y);
             for (const part of prop.parts) {

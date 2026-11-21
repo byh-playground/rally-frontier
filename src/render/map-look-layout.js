@@ -36,6 +36,41 @@ export function randomSource(seedText) {
     };
 }
 
+// A river that ends inside the map ends round: the straight edge of its outline across such an end of its path
+// (`ends`) becomes a half circle. Only the picture: the simulation's water keeps the map's own polygon.
+function roundedEnds(outline, ends) {
+    const n = outline.length,
+        turn =
+            outline.reduce((sum, p, i) => {
+                const q = outline[(i + 1) % n];
+                return sum + p[0] * q[1] - q[0] * p[1];
+            }, 0) >= 0
+                ? 1
+                : -1,
+        out = [];
+    outline.forEach((a, i) => {
+        out.push(a);
+        const b = outline[(i + 1) % n],
+            mx = (a[0] + b[0]) / 2,
+            my = (a[1] + b[1]) / 2;
+        const r = Math.hypot(b[0] - a[0], b[1] - a[1]) / 2;
+        // The edge across an end: the path's end lies nearer its middle than its own corners do.
+        if (!ends.some((end) => Math.hypot(end.x - mx, end.y - my) < r)) return;
+        const ux = (b[0] - a[0]) / (2 * r),
+            uy = (b[1] - a[1]) / (2 * r),
+            // Outward from the polygon.
+            nx = turn * uy,
+            ny = -turn * ux;
+        for (let k = 1; k < 8; k++) {
+            const t = (k / 8) * Math.PI,
+                along = -Math.cos(t) * r,
+                outward = Math.sin(t) * r;
+            out.push([mx + along * ux + outward * nx, my + along * uy + outward * ny]);
+        }
+    });
+    return out;
+}
+
 // The part of a map descriptor the look reads.
 export function mapGeometry(descriptor) {
     const terrain = descriptor.terrain,
@@ -60,7 +95,18 @@ export function mapGeometry(descriptor) {
             .map(([key, points]) => ({ key, points })),
         capturePoints: descriptor.capturePoints,
         blockers: terrain.blockers || [],
-        water: water.map((points) => points.map((p) => [p.x, p.y])),
+        water: water.map((points) =>
+            roundedEnds(
+                points.map((p) => [p.x, p.y]),
+                [terrain.riverPath, ...(terrain.riverBranches || [])]
+                    .filter((path) => path?.length > 1)
+                    .flatMap((path) => [path[0], path[path.length - 1]])
+                    .filter(
+                        (p) =>
+                            p.x > 0 && p.y > 0 && p.x < descriptor.width && p.y < descriptor.height,
+                    ),
+            ),
+        ),
         // Raised and sunken ground and bridge decks, as the simulation builds them from the map's layers, ramps
         // and bridges: tops, floors, cliff faces, ramps, banks, decks.
         surfaces: TerrainSurfaceAtlas.fromMap(descriptor),
@@ -536,13 +582,12 @@ export function buildMapLook(geometry, theme, seedText) {
     const rockRandom = random('rocks');
     const rocks = blockerPolygons.map((points, index) => {
         const mesh = triangulatePolygon(points.map(([x, y]) => ({ x, y }))),
-            polygonArea =
-                Math.abs(
-                    points.reduce((sum, p, i) => {
-                        const q = points[(i + 1) % points.length];
-                        return sum + p[0] * q[1] - q[0] * p[1];
-                    }, 0),
-                ) / 2,
+            signedArea =
+                points.reduce((sum, p, i) => {
+                    const q = points[(i + 1) % points.length];
+                    return sum + p[0] * q[1] - q[0] * p[1];
+                }, 0) / 2,
+            polygonArea = Math.abs(signedArea),
             outlineLength = points.reduce((sum, p, i) => {
                 const q = points[(i + 1) % points.length];
                 return sum + Math.hypot(q[0] - p[0], q[1] - p[1]);
@@ -596,6 +641,33 @@ export function buildMapLook(geometry, theme, seedText) {
                     stones.push({ x, y, r, lift: 0, height: r * (0.62 + rockRandom() * 0.3) });
                     break;
                 }
+        // A polygon with scaled stones: a row of its smallest stones just inside every edge.
+        if (stoneSize > 1) {
+            const radii = theme.blockers.stoneRadii.slice(-theme.blockers.edgeStones),
+                turn = signedArea >= 0 ? 1 : -1;
+            points.forEach((a, i) => {
+                const b = points[(i + 1) % points.length],
+                    span = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1,
+                    ex = (b[0] - a[0]) / span,
+                    ey = (b[1] - a[1]) / span;
+                for (let walked = 0; walked < span;) {
+                    const r =
+                            radii[Math.floor(rockRandom() * radii.length)] *
+                            stoneSize *
+                            (0.9 + rockRandom() * 0.2),
+                        // Along the edge, then inward by the stone's own radius.
+                        x = a[0] + ex * (walked + r) - turn * ey * (r + 1),
+                        y = a[1] + ey * (walked + r) + turn * ex * (r + 1);
+                    walked += r * 1.7;
+                    if (!pointInPolygon(x, y, points) || polygonEdgeDistance(x, y, points) < r)
+                        continue;
+                    if (heightAt(x, y) !== height || terrainEdgeDistance(x, y) < r) continue;
+                    if (stones.some((s) => Math.hypot(s.x - x, s.y - y) < (s.r + r) * 0.62))
+                        continue;
+                    stones.push({ x, y, r, lift: 0, height: r * (0.62 + rockRandom() * 0.3) });
+                }
+            });
+        }
         // Smaller stones resting on the biggest ones; their footprint is still inside the polygon.
         for (const under of [...stones]
             .sort((a, b) => b.r - a.r)
