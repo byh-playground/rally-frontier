@@ -118,7 +118,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         enemyOutposts: [],
         seed: 200,
         blight: true,
-        enemyPacing: defendPacing(45_000, 30_000),
+        enemyPacing: defendPacing(30_000, 12_000),
         practice: {
             card: 'rice',
             cue: '쌀을 쏴서 깜부기 쌀 셋을 쓰러뜨려요',
@@ -143,7 +143,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         friendlyOutposts: ['natural-1'],
         seed: 201,
         blight: true,
-        enemyPacing: defendPacing(30_000, 25_000),
+        enemyPacing: defendPacing(20_000, 12_000),
         practice: {
             card: 'pea',
             cue: '콩을 쏴서 깜부기 조 여덟을 한꺼번에 맞혀요',
@@ -172,7 +172,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         startingLaunchRangeLevel: 1,
         seed: 202,
         blight: true,
-        enemyPacing: defendPacing(30_000, 25_000),
+        enemyPacing: defendPacing(20_000, 12_000),
         practice: {
             card: 'redbean',
             cue: '팥을 해바라기씨 바로 앞에 떨어뜨려 덮쳐요',
@@ -243,7 +243,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         startingLaunchRangeLevel: 1,
         seed: 204,
         blight: true,
-        enemyPacing: defendPacing(30_000, 25_000),
+        enemyPacing: defendPacing(20_000, 12_000),
         practice: {
             card: 'chestnut',
             cue: '밤톨을 쏴서 깜부기 콩 둘을 쓰러뜨려요',
@@ -269,7 +269,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         friendlyOutposts: ['natural-1'],
         seed: 205,
         blight: true,
-        enemyPacing: defendPacing(30_000, 20_000),
+        enemyPacing: defendPacing(20_000, 9_000),
         practice: {
             card: 'acorn',
             cue: '도토리를 쏴서 빽빽한 깜부기 쌀 열둘을 한꺼번에 쓸어요',
@@ -302,7 +302,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         friendlyOutposts: ['basin-oil-1'],
         seed: 208,
         blight: true,
-        enemyPacing: defendPacing(30_000, 25_000),
+        enemyPacing: defendPacing(20_000, 12_000),
         practice: {
             card: 'peanut',
             cue: '땅콩을 쏴서 깜부기가 차지한 거점을 부숴요',
@@ -334,7 +334,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         friendlyOutposts: ['natural-1'],
         seed: 206,
         blight: true,
-        enemyPacing: defendPacing(30_000, 20_000),
+        enemyPacing: defendPacing(20_000, 9_000),
         practice: {
             card: 'walnut',
             cue: '단단한 호두를 메밀 앞에 내려 가시를 받아내요',
@@ -363,7 +363,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         startingLaunchRangeLevel: 1,
         seed: 207,
         blight: true,
-        enemyPacing: defendPacing(20_000, 15_000),
+        enemyPacing: defendPacing(15_000, 6_000),
         practice: {
             card: 'coconut',
             cue: '코코넛을 굴려서 길게 늘어선 깜부기 쌀을 밀어내요',
@@ -424,7 +424,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         friendlyOutposts: ['basin-oil-1'],
         seed: 210,
         blight: true,
-        enemyPacing: defendPacing(30_000, 25_000),
+        enemyPacing: defendPacing(20_000, 12_000),
         practice: {
             card: 'corn',
             cue: '옥수수를 쏴서 뭉친 깜부기 콩 셋을 한꺼번에 맞혀요',
@@ -456,7 +456,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         friendlyOutposts: ['natural-1'],
         seed: 211,
         blight: true,
-        enemyPacing: defendPacing(30_000, 20_000),
+        enemyPacing: defendPacing(20_000, 9_000),
         practice: {
             card: 'popcorn',
             cue: '팝콘을 터뜨려서 촘촘한 깜부기 콩 여섯을 쓰러뜨려요',
@@ -483,7 +483,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         friendlyOutposts: ['basin-oil-1'],
         seed: 212,
         blight: true,
-        enemyPacing: defendPacing(30_000, 25_000),
+        enemyPacing: defendPacing(20_000, 12_000),
         practice: {
             card: 'potato',
             cue: '감자를 쏴서 빈터에 전진 대포를 세워요',
@@ -513,7 +513,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         enemyOutposts: ['natural-2'],
         seed: 213,
         blight: true,
-        enemyPacing: defendPacing(30_000, 20_000),
+        enemyPacing: defendPacing(20_000, 9_000),
         practice: {
             card: 'sesame',
             cue: '참깨를 빈 거점 둘레에 내려 첫 거점을 지어요',
@@ -577,7 +577,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         friendlyOutposts: ['natural-1'],
         seed: 215,
         blight: true,
-        enemyPacing: defendPacing(30_000, 25_000),
+        enemyPacing: defendPacing(20_000, 12_000),
         practice: {
             card: 'chili',
             cue: '고추를 내려 불줄기로 깜부기 쌀 여섯을 태워요',
@@ -642,7 +642,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         friendlyOutposts: ['ravine-1'],
         seed: 217,
         blight: true,
-        enemyPacing: defendPacing(30_000, 25_000),
+        enemyPacing: defendPacing(20_000, 12_000),
         // The target stands just north of the middle wall, in reach of the forward cannon south of it.
         practice: {
             card: 'dandelion',
@@ -708,7 +708,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         friendlyOutposts: ['natural-1'],
         seed: 219,
         blight: true,
-        enemyPacing: defendPacing(30_000, 20_000),
+        enemyPacing: defendPacing(20_000, 9_000),
         practice: {
             card: 'cotton',
             cue: '목화솜을 쏴서 흩어진 깜부기 쌀 넷을 번개로 이어 쓰러뜨려요',
@@ -737,7 +737,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         friendlyOutposts: ['basin-oil-1', 'basin-shoulder-1'],
         seed: 220,
         blight: true,
-        enemyPacing: defendPacing(30_000, 20_000),
+        enemyPacing: defendPacing(20_000, 9_000),
         practice: {
             card: 'black-bean',
             cue: '검은콩을 쏴서 깜부기 쌀 넷을 쓰러뜨려요',
@@ -766,7 +766,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         friendlyOutposts: ['basin-oil-1'],
         seed: 221,
         blight: true,
-        enemyPacing: defendPacing(30_000, 25_000),
+        enemyPacing: defendPacing(20_000, 12_000),
         practice: {
             card: 'sticky-rice',
             cue: '찹쌀을 쏴서 적 거점의 포구에 붙여요',
@@ -867,7 +867,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         startingLaunchRangeLevel: 1,
         seed: 224,
         blight: true,
-        enemyPacing: defendPacing(30_000, 20_000),
+        enemyPacing: defendPacing(20_000, 9_000),
         mission: {
             startingPremium: [
                 premiumFor('black-bean') * 3 + premiumFor('chestnut') * 3,
