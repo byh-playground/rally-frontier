@@ -1061,7 +1061,12 @@ export function buildGroundMesh(look, theme, projection, seedText) {
     };
 
     // ---- capture point yards: under the base yards, so a yard that reaches into a base's yard is cut by it ----
-    const yardPainters = { straw: strawYard, paving: pavingYard, rings: ringsYard };
+    const yardPainters = {
+        straw: strawYard,
+        furrows: furrowsYard,
+        paving: pavingYard,
+        rings: ringsYard,
+    };
     for (const yard of look.yards) yardPainters[yard.kind](yard);
     // ---- base yards: packed earth with the cannon's wheel ruts ----
     for (const base of look.bases) {
@@ -1346,6 +1351,104 @@ export function buildGroundMesh(look, theme, projection, seedText) {
         }
         // A grain mark in the middle, under the building.
         grainMark(x, y, rgba(c.mark, 0.45));
+    }
+
+    // A tilled plot of the village: dark rows of turned soil with a crop standing in them (by variant: green
+    // sprouts, golden grain, round cabbages), a low hedge of stones round it.
+    function furrowsYard(yard) {
+        const c = pal.furrows,
+            { x, y, radius } = yard,
+            centre = [x, y],
+            outline = smooth(yard.fill),
+            cos = Math.cos(yard.turn),
+            sin = Math.sin(yard.turn),
+            span = radius + 40,
+            pitch = 34,
+            inside = (px, py) => pointInPolygon(px, py, outline);
+        mesh.soft(smooth(yard.rim), rgba(c.rim, 0.5), 12, centre);
+        mesh.fill(outline, rgba(c.soil), centre);
+        // Rows: a ridge band and a furrow line, then the crop along the ridge.
+        for (let row = -7; row <= 7; row++) {
+            const offset = row * pitch,
+                nx = -sin,
+                ny = cos,
+                ox = x + nx * offset,
+                oy = y + ny * offset,
+                band = clipHalfPlane(
+                    clipHalfPlane(outline, nx, ny, nx * ox + ny * oy + 7),
+                    -nx,
+                    -ny,
+                    -(nx * ox + ny * oy - 7),
+                );
+            if (band.length >= 3) mesh.fill(band, rgba(c.furrow, 0.55));
+            const ridge = clipHalfPlane(
+                clipHalfPlane(outline, nx, ny, nx * ox + ny * oy + 20),
+                -nx,
+                -ny,
+                -(nx * ox + ny * oy + 9),
+            );
+            if (ridge.length >= 3) mesh.fill(ridge, rgba(c.ridge, 0.4));
+            for (let along = -span; along < span; along += 30) {
+                const px = ox + cos * along + nx * 14,
+                    py = oy + sin * along + ny * 14;
+                if (!inside(px, py)) continue;
+                mesh.upright(px, py, () => {
+                    if (yard.variant === 1) {
+                        // Grain: three thin stalks with a head.
+                        for (const dx of [-4, 0, 4]) {
+                            mesh.fill(
+                                [
+                                    [dx - 1.3, 0],
+                                    [dx + 1.3, 0],
+                                    [dx + 0.6, -16 * GS],
+                                    [dx - 0.6, -16 * GS],
+                                ],
+                                rgba(c.grain),
+                            );
+                            mesh.fill(
+                                arcPoints(dx, -18 * GS, 2.4, 5 * GS, 0, TAU, 0, TAU / 8).slice(
+                                    0,
+                                    -1,
+                                ),
+                                rgba(c.grainLight),
+                            );
+                        }
+                    } else if (yard.variant === 2) {
+                        // Cabbage: a round head with a lit patch.
+                        mesh.fill(
+                            arcPoints(0, -6 * GS, 9, 8 * GS, 0, TAU, 0, TAU / 12).slice(0, -1),
+                            rgba(c.cabbage),
+                        );
+                        mesh.fill(
+                            arcPoints(-2, -8 * GS, 5, 4 * GS, 0, TAU, 0, TAU / 10).slice(0, -1),
+                            rgba(c.cabbageLight),
+                        );
+                    } else {
+                        // Sprouts: two small leaves.
+                        for (const dx of [-3.5, 3.5]) {
+                            mesh.fill(
+                                [
+                                    [0, 0],
+                                    [dx * 1.6, -3 * GS],
+                                    [dx, -11 * GS],
+                                    [dx * 0.2, -4 * GS],
+                                ],
+                                rgba(c.sprout),
+                            );
+                        }
+                        mesh.fill(
+                            arcPoints(0, -9 * GS, 2, 2 * GS, 0, TAU, 0, TAU / 6).slice(0, -1),
+                            rgba(c.sproutLight),
+                        );
+                    }
+                });
+            }
+        }
+        highlight(outline, centre, rgba(c.light, 0.35), -70, -80 * GS);
+        // A low fieldstone border.
+        mesh.stroke(outline, 8, rgba(c.border, 0.75), { closed: true });
+        mesh.stroke(outline, 3, rgba(c.borderLight, 0.5), { closed: true });
+        grainMark(x, y, rgba(c.mark, 0.4));
     }
 
     function pavingYard(yard) {
