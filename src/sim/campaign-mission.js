@@ -1,5 +1,4 @@
 import { scaleFormations } from '../definitions/campaign-pace.js';
-const HERO_LESSON_STEPS = ['launch', 'fight', 'recover', 'redeploy', 'done'];
 // The gap between the soldiers of a formation that names none.
 const FORMATION_SPACING = 34;
 
@@ -13,7 +12,7 @@ export class CampaignMission {
         if (mission.startingPremium)
             for (const [side, amount] of mission.startingPremium.entries())
                 sim.creditResources(side, amount, 'premium');
-        const targetIds = this.spawnFormations(sim, mission.formations);
+        this.spawnFormations(sim, mission.formations);
         if (mission.guardPoint && this.point(sim, mission.guardPoint).owner !== 0)
             throw new Error(
                 `캠페인 지킬 거점은 아군 시작 거점이어야 합니다: ${mission.guardPoint}`,
@@ -29,18 +28,6 @@ export class CampaignMission {
             nextWaveTick: mission.waves?.length ? this.waveTick(sim, mission.waves[0]) : null,
             endTick: mission.surviveMs ? Math.max(1, sim.time.ceilTicks(mission.surviveMs)) : null,
             guardLost: false,
-            ...(mission.heroLesson && {
-                heroLesson: {
-                    step: 'launch',
-                    targets: sim.units
-                        .filter(({ id }) => targetIds.includes(id))
-                        .map((unit) => {
-                            unit.status.terrainRevealUntil0 = Number.MAX_SAFE_INTEGER;
-                            const { id, x, y } = unit;
-                            return { id, x, y };
-                        }),
-                },
-            }),
         };
     }
 
@@ -124,7 +111,6 @@ export class CampaignMission {
         if (!state || winner === 'guest' || winner === 'draw') return winner;
         const campaign = sim.rules.campaign,
             mission = campaign.mission;
-        if (mission.heroLesson) return this.resolveHeroLesson(sim, mission.heroLesson);
         if (!state.firstCaptureComplete && this.point(sim, mission.firstCapture).owner === 0)
             state.firstCaptureComplete = true;
 
@@ -143,50 +129,9 @@ export class CampaignMission {
         return winner;
     }
 
-    static heroLessonRallyPoint(sim, unit) {
-        if (unit.side !== 1) return null;
-        return sim.campaignMission?.heroLesson?.targets.find(({ id }) => id === unit.id) ?? null;
-    }
-
-    static resolveHeroLesson(sim, lesson) {
-        const state = sim.campaignMission.heroLesson,
-            hero = sim.heroes[0][lesson.type],
-            landed = sim.events.some(
-                (event) =>
-                    event.type === 'launchLand' && event.side === 0 && event.unit === lesson.type,
-            ),
-            heroEvent = (type) =>
-                sim.events.some(
-                    (event) =>
-                        event.type === type && event.side === 0 && event.heroType === lesson.type,
-                );
-        if (hero?.mode === 'dead') return 'guest';
-
-        if (state.step === 'launch' && landed) state.step = 'fight';
-        // The hero clears the training squad; its kills count toward its level (HeroGrowth).
-        if (state.step === 'fight' && state.targets.every(({ id }) => !sim.unitById.get(id)?.alive))
-            state.step = lesson.recover ? 'recover' : 'done';
-        if (state.step === 'recover' && heroEvent('heroRecovered')) state.step = 'redeploy';
-        if (state.step === 'redeploy' && landed) state.step = 'done';
-        if (state.step === 'done') return 'host';
-        return null;
-    }
-
-    static volleyGoalContains(goal, position) {
-        return Math.hypot(position.x - goal.x, position.y - goal.y) <= goal.radius;
-    }
-
     static snapshot(state) {
         if (!state) return null;
-        const {
-            firstCaptureComplete,
-            waveIndex,
-            phase,
-            nextWaveTick,
-            endTick,
-            guardLost,
-            heroLesson,
-        } = state;
+        const { firstCaptureComplete, waveIndex, phase, nextWaveTick, endTick, guardLost } = state;
         return {
             firstCaptureComplete,
             waveIndex,
@@ -194,7 +139,6 @@ export class CampaignMission {
             nextWaveTick,
             endTick,
             guardLost,
-            ...(heroLesson && { heroLessonStep: heroLesson.step }),
         };
     }
 
@@ -226,28 +170,5 @@ export class CampaignMission {
             (value.guardLost && (!mission.guardPoint || value.phase !== 'defend'))
         )
             throw new Error('게임 snapshot의 캠페인 임무 상태가 잘못되었습니다.');
-        this.validateHeroLesson(value.heroLesson, mission.heroLesson);
-    }
-
-    static validateHeroLesson(value, lesson) {
-        if (!lesson && value == null) return;
-        if (
-            !lesson ||
-            !value ||
-            !HERO_LESSON_STEPS.includes(value.step) ||
-            (!lesson.recover && ['recover', 'redeploy'].includes(value.step)) ||
-            !Array.isArray(value.targets) ||
-            !value.targets.length ||
-            value.targets.some(
-                (target) =>
-                    !target ||
-                    typeof target.id !== 'string' ||
-                    !target.id ||
-                    !Number.isFinite(target.x) ||
-                    !Number.isFinite(target.y),
-            ) ||
-            new Set(value.targets.map(({ id }) => id)).size !== value.targets.length
-        )
-            throw new Error('게임 snapshot의 영웅 훈련 상태가 잘못되었습니다.');
     }
 }

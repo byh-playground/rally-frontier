@@ -5,12 +5,11 @@ import { newRosterRecord } from '../definitions/roster.js';
 // a debug address (`?debug=1&scene=…`) and automated tests (navigator.webdriver) keep every record in memory,
 // so they neither read nor write the real saves.
 //   roster: the owned cards plus the new campaign's progress and sunshine (the single source of what is owned).
-//   campaign: cleared stage ids. decks: the three loadouts and the selected one. hints: one-time notices seen.
+//   decks: the three loadouts and the selected one. hints: one-time notices seen.
 // Each record lives at `ssalkongpang/<key>` with the module's schema and revision. When it does not exist yet,
 // `create()` copies the record the game kept before the save module (the old keys stay untouched).
 const PREFIX = 'ssalkongpang/';
 const LEGACY_KEYS = Object.freeze({
-    campaign: 'ssalkongpang.campaign.v1',
     decks: 'ssalkongpang.decks.v1',
     volleyAimHint: 'ssalkongpang.volley-aim-hint.v1',
 });
@@ -27,10 +26,6 @@ function readLegacy(key) {
 
 const isStringList = (value) =>
     Array.isArray(value) && value.every((item) => typeof item === 'string');
-
-function validateCampaign(data) {
-    if (!isStringList(data.completed)) throw new TypeError('campaign record: completed');
-}
 
 function validateDecks(data) {
     if (
@@ -81,16 +76,6 @@ function openAdapter(gamekit, isolated) {
 
 export function openPlayerSaves(gamekit, { isolated }) {
     const { adapter, legacy } = openAdapter(gamekit, isolated);
-    const campaign = gamekit.createSave({
-        adapter,
-        key: 'campaign',
-        version: 1,
-        create: () => {
-            const old = legacy(LEGACY_KEYS.campaign);
-            return { completed: isStringList(old?.completed) ? [...old.completed] : [] };
-        },
-        validate: validateCampaign,
-    });
     const decks = gamekit.createSave({
         adapter,
         key: 'decks',
@@ -124,7 +109,7 @@ export function openPlayerSaves(gamekit, { isolated }) {
         create: newRosterRecord,
         validate: validateRoster,
     });
-    return { campaign, decks, hints, roster };
+    return { decks, hints, roster };
 }
 
 // Loads a record; an unreadable one stays locked (the module never overwrites it) and the game runs on defaults.

@@ -1,17 +1,8 @@
 import { CampaignMission } from '../sim/campaign-mission.js';
-import { campaignBriefingLines } from './campaign-copy.js';
 
 const CUE_SECONDS = 3;
 const ATTACK_GOAL = '적 본진 파괴';
 const BOSS_GOAL = '깜부기에 지배당한 영웅 쓰러뜨리기';
-const HERO_LESSON_GOALS = {
-    launch: '전방에 영웅 출격',
-    fight: '영웅으로 적 처치',
-    recover: '영웅 카드를 한 번 눌러 복귀',
-    redeploy: '영웅 다시 출격',
-    done: '영웅 훈련 완료',
-};
-
 function formatCountdown(seconds) {
     const value = Math.max(0, Math.ceil(seconds));
     return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
@@ -19,9 +10,6 @@ function formatCountdown(seconds) {
 
 function missionGoal(stage) {
     if (stage.boss) return `${BOSS_GOAL} · 본진 사수`;
-    if (stage.volleyGoals) return '1·2·3문 사격으로 수비대 3곳 격파';
-    if (stage.mission?.heroLesson)
-        return stage.mission.heroLesson.recover ? '출격 · 처치 · 복귀 · 재출격' : '출격해 적 처치';
     if (stage.mission?.surviveMs)
         return `${formatCountdown(stage.mission.surviveMs / 1000)} 버티기 · 본진과 지킬 거점 사수`;
     if (stage.mission?.firstCapture) return '전진 거점 완공';
@@ -88,12 +76,7 @@ function currentGoal(stage, snapshot) {
                   cue: { title: '영웅 각성', text: '깜부기 영웅이 각성했어요. 계속 몰아붙이세요!' },
               };
     }
-    if (stage.volleyGoals) return { key: 'volley', label: missionGoal(stage) };
     const mission = snapshot.campaignMission;
-    if (stage.mission?.heroLesson) {
-        const step = mission?.heroLessonStep ?? 'launch';
-        return { key: `hero-${step}`, label: HERO_LESSON_GOALS[step] };
-    }
     if (stage.mission?.surviveMs) {
         if (mission?.phase === 'complete') return { key: 'complete', label: '버티기 성공' };
         const count = stage.mission.waves.length,
@@ -121,112 +104,8 @@ function currentGoal(stage, snapshot) {
 }
 
 export class CampaignPresentation {
-    static install(find, { openOpening, onOpeningClosed }) {
+    static install(find) {
         this.$ = find;
-        this.openOpening = openOpening;
-        this.onOpeningClosed = onOpeningClosed;
-        const dialog = find('campaignBriefingDialog');
-        find('campaignBriefingBack').onclick = () => dialog.close();
-        find('campaignBriefingNext').onclick = () => this.advanceBriefing();
-        find('campaignBriefingSkip').onclick = () => this.finishBriefing();
-        dialog.addEventListener('close', () => {
-            if (!dialog.open) {
-                this.briefing = null;
-                this.closeOpening();
-            }
-        });
-    }
-
-    static showBriefing(stage, start) {
-        this.briefing = { lines: campaignBriefingLines(stage), index: 0, start };
-        this.$('campaignBriefingTitle').textContent = stage.title;
-        this.$('campaignBriefingObjective').textContent = missionGoal(stage);
-        this.renderBriefingLine();
-        const dialog = this.$('campaignBriefingDialog');
-        if (!dialog.open) dialog.showModal();
-    }
-
-    static renderBriefingLine() {
-        this.closeOpening();
-        const { lines, index } = this.briefing;
-        const line = lines[index];
-        const last = index === lines.length - 1;
-        this.$('campaignBriefingSpeaker').textContent = line.speaker;
-        this.$('campaignBriefingLine').textContent = line.text;
-        this.$('campaignBriefingProgress').textContent = `${index + 1} / ${lines.length}`;
-        const next = this.$('campaignBriefingNext');
-        next.textContent = last ? '전투 시작' : '다음';
-        next.disabled = false;
-        this.$('campaignBriefingSkip').hidden = last;
-        if (!line.interruptedByLaunch) return;
-        if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-            this.$('campaignBriefingLine').textContent = line.interruptedByLaunch;
-        } else {
-            void this.playOpening(this.briefing, line);
-        }
-    }
-
-    static async playOpening(briefing, line) {
-        const panel = this.$('campaignBriefingScene');
-        const next = this.$('campaignBriefingNext');
-        const index = briefing.index;
-        const current = () =>
-            this.briefing === briefing &&
-            briefing.index === index &&
-            this.$('campaignBriefingDialog').open;
-        panel.hidden = false;
-        next.disabled = true;
-        const finish = () => {
-            if (current()) this.advanceBriefing();
-        };
-        try {
-            this.opening = this.openOpening(panel, {
-                onLaunch: () => {
-                    if (current())
-                        this.$('campaignBriefingLine').textContent = line.interruptedByLaunch;
-                },
-                onComplete: finish,
-                onError: finish,
-            });
-            this.syncOpening();
-            await this.opening.ready;
-        } catch (error) {
-            console.error(error);
-            finish();
-        }
-    }
-
-    static syncOpening() {
-        this.opening?.setActive(!document.hidden);
-    }
-
-    static closeOpening() {
-        const mount = this.opening;
-        this.opening = null;
-        this.$('campaignBriefingScene').hidden = true;
-        if (mount) {
-            mount.dispose();
-            this.onOpeningClosed();
-        }
-    }
-
-    static advanceBriefing() {
-        const briefing = this.briefing;
-        if (!briefing) return;
-        if (briefing.index + 1 >= briefing.lines.length) this.finishBriefing();
-        else {
-            briefing.index++;
-            this.renderBriefingLine();
-        }
-    }
-
-    static finishBriefing() {
-        const briefing = this.briefing;
-        if (!briefing) return;
-        this.briefing = null;
-        this.closeOpening();
-        this.$('campaignBriefingDialog').close();
-        briefing.start();
     }
 
     static renderBattle(stage, snapshot, tps) {

@@ -18,7 +18,7 @@
 // health stays 0, the blight leaves it (Blight.free: the freeing presentation) and it stands where it is: it takes no
 // turn, uses no hero ability and counts no kill (HeroGrowth.recordKill), nobody targets it and nothing hurts it.
 // Only a subdued boss wins the stage (`resolve`): the enemy main base falling does not end it, the player's own main
-// base falling loses it (that same tick too). A boss stage has no survival defence, hero lesson or volley goals.
+// base falling loses it (that same tick too). A boss stage has no survival defence.
 // `sim.blightBoss { subduedTick }` is the only state (null until subdued) and `unit.subdued` marks the body. Both
 // exist only in a stage that declares a boss, so every other match's state and checksum are what they were.
 import { UnitDefinition } from '../definitions/units.js';
@@ -50,8 +50,8 @@ export class BlightBoss {
         if (!Number.isSafeInteger(level) || level < 1 || level > HeroGrowth.maxLevel)
             throw new Error(`보스 레벨은 1~${HeroGrowth.maxLevel}의 정수여야 합니다: ${level}`);
         if (!this.onMap(sim, x, y)) throw new Error('보스 선언에는 맵 안의 x, y가 필요합니다.');
-        const { mission, volleyGoals } = sim.rules.campaign;
-        if (mission?.surviveMs || mission?.heroLesson || volleyGoals)
+        const { mission } = sim.rules.campaign;
+        if (mission?.surviveMs)
             throw new Error(
                 '보스 판은 보스를 쓰러뜨려야 이기므로 버티기·영웅 수업·발사 목표 임무와 함께 둘 수 없습니다.',
             );

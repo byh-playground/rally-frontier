@@ -214,9 +214,6 @@ class BotController {
             // A campaign enemy keeps its stage's interval whatever its wallet holds, so the difficulty means something.
             const intervalMs = BotController.decisionIntervalMs(
                 pacing,
-                missionTick,
-                tps,
-                !campaign && state.wallet[this.side] >= LaunchRules.walletCap,
                 campaign?.pace?.decisionScale,
             );
             this.decisionIntervalTicks = Math.max(
@@ -231,20 +228,12 @@ class BotController {
             this.commandExecutor.flush();
         }
     }
-    // 모든 AI 공통 결정 간격. 캠페인 적은 첫 결정 뒤 이 값에서 시작해 `endIntervalMs`까지 `rampMs`에 걸쳐 선형으로 길어진다.
-    // 지갑이 가득 차면(수입이 버려지는 상태) 어떤 설정이든 기본 간격으로 결정한다(캠페인 적은 제외: 호출하는 쪽이 `walletFull`을 false로 준다).
+    // 모든 AI 공통 결정 간격. 캠페인 적은 판이 정한 고정 간격(`enemyPacing.intervalMs`)을 쓴다.
     // `scale` is the campaign pace's decision multiplier (definitions/campaign-pace.js); absent means x1.
-    static decisionIntervalMs(pacing, tick, tps, walletFull, scale = 1) {
-        return Math.round(BotController.baseIntervalMs(pacing, tick, tps, walletFull) * scale);
-    }
-    static baseIntervalMs(pacing, tick, tps, walletFull) {
-        // A defence stage's enemy launches at one steady interval between its scripted attacks, full wallet or not:
-        // the scripted waves carry the pressure, so a full wallet must not turn the AI into a second rush.
-        if (pacing?.intervalMs) return pacing.intervalMs;
-        if (walletFull || !pacing?.rampMs) return DECISION_INTERVAL_MS;
-        const elapsedMs = (tick / tps) * 1000 - pacing.firstDecisionMs;
-        const t = Math.min(1, Math.max(0, elapsedMs / pacing.rampMs));
-        return Math.round(DECISION_INTERVAL_MS + (pacing.endIntervalMs - DECISION_INTERVAL_MS) * t);
+    static decisionIntervalMs(pacing, scale = 1) {
+        // A defence stage's enemy launches at one steady interval between its scripted attacks: the scripted waves
+        // carry the pressure, so a full wallet must not turn the AI into a second rush.
+        return Math.round((pacing?.intervalMs ?? DECISION_INTERVAL_MS) * scale);
     }
     static distance(a, b) {
         return Math.hypot(a.x - b.x, a.y - b.y);
