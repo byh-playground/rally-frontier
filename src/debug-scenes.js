@@ -3711,7 +3711,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * 계속 돈다. 예: `?debug=1&scene=campaign&stage=potato-uproot&tick=600`
          * `upgrades=rice,pea`는 플레이어 편에 그 카드의 병종 강화를 켠다(경기 시작 때 한 번 복사되는 값).
          * `difficulty=easy|normal|hard`(없으면 normal)와 `regionPlace=1|2|3`(그 고장이 몇 번째로 열렸는지, 없으면 고장 없음)은
-         * 적 세기(`campaignPace`)를 정한다. 상태의 `pace`: 적용된 배율 `applied`, 적 AI의 결정 간격 틱 `decisionTicks`(마지막으로
+         * 적 세기(`campaignPace`)를 정한다. 상태의 `pace`: 적용된 수입 배율 `applied`, 적 AI의 결정 간격 틱 `decisionTicks`(마지막으로
          * 정한 값), 경기 시작 때 양쪽 지갑 `startWallet`. 예: `?debug=1&scene=campaign&stage=potato-uproot&difficulty=hard&regionPlace=3&tick=100`
          */
         campaign(params) {
