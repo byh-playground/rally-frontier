@@ -9,13 +9,6 @@ const VOLLEY_DISTANCE = 330;
 const LAUNCH_DELAY_SECONDS = 0.4;
 // A potato preview runs on until its forward cannon has stood this long.
 const GROWN_CANNON_HOLD_MS = 2000;
-const OPENING_LAUNCH_DELAY_SECONDS = 1.1;
-const OPENING_SHOT_DISTANCE = 1400;
-const OPENING_RANGE_LEVEL = 2;
-const OPENING_ZOOM = 5.4;
-const OPENING_LANDING_ZOOM = 3.6;
-const OPENING_LANDING_APPROACH = 400;
-const OPENING_LANDING_HOLD_MS = 1800;
 const INTERCEPTION = Object.freeze({
     durationMs: 4500,
     launchDelayMs: 800,
@@ -69,36 +62,32 @@ const ROLLER = Object.freeze({
     zoom: 3,
 });
 
-function createArena(unitType, opening, interception) {
+function createArena(unitType, interception) {
     const sim = new StrategySim(SEED, undefined, [[unitType], [interception?.launchType ?? 'pea']]);
     const { x, y } = sim.world.center;
     const state = sim.exportState();
     const siege = UnitDefinition.onlyAttacksBuildings(unitType),
         grows = UnitDefinition.get(unitType)?.growsCannon,
-        rider = !opening && UnitDefinition.get(unitType)?.cannonRider ? CANNON_RIDER : null,
-        roller = !opening && UnitDefinition.get(unitType)?.rolling ? ROLLER : null;
+        rider = UnitDefinition.get(unitType)?.cannonRider ? CANNON_RIDER : null,
+        roller = UnitDefinition.get(unitType)?.rolling ? ROLLER : null;
     // A muzzle-wrapping unit can only hold a completed outpost, so the main base moves out of its sight.
     const wrapsOutpost = !!UnitDefinition.get(unitType)?.stickyCling;
     const host = { x: x - VOLLEY_DISTANCE, y };
     const guest = {
-        x: opening
-            ? host.x + OPENING_SHOT_DISTANCE
-            : rider
-              ? host.x + rider.guestDistance
-              : roller
-                ? x + roller.baseOffset
-                : x + (siege ? 150 : 460),
+        x: rider
+            ? host.x + rider.guestDistance
+            : roller
+              ? x + roller.baseOffset
+              : x + (siege ? 150 : 460),
         y,
     };
     const base = wrapsOutpost ? { x: guest.x + 700, y } : guest;
-    const target = opening
-        ? guest
-        : rider
-          ? { x: host.x + rider.launchDistance, y }
-          : roller
-            ? { x: x + roller.landOffset, y }
-            : { x, y };
-    state.launchRangeLevel[0] = opening ? OPENING_RANGE_LEVEL : 0;
+    const target = rider
+        ? { x: host.x + rider.launchDistance, y }
+        : roller
+          ? { x: x + roller.landOffset, y }
+          : { x, y };
+    state.launchRangeLevel[0] = 0;
     state.mapDescriptor = {
         ...state.mapDescriptor,
         spawns: { host, guest: base },
@@ -156,7 +145,7 @@ function createArena(unitType, opening, interception) {
             const pin = sim.spawnUnit(1, roller.pinType, x + dx, y + dy);
             pin.combat.moveRecoveryUntil = pin.combat.cooldownUntil = Number.MAX_SAFE_INTEGER;
         }
-    } else if (!opening && !siege && !grows) {
+    } else if (!siege && !grows) {
         for (const [dx, dy] of DEFENDERS) sim.spawnUnit(1, 'pea', x + dx, y + dy);
     }
     return { sim, x, y, host, target, rider, roller };
@@ -167,75 +156,41 @@ export function prepareUnitShowcase(options) {
     return prepareVolleyShowcase(options);
 }
 
-export function prepareCampaignOpening(options) {
-    return prepareVolleyShowcase({ ...options, unitType: 'rice' }, true);
-}
-
-function prepareVolleyShowcase(
-    {
-        renderer,
-        createScenario,
-        createPresentationView,
-        unitType,
-        advanceTick,
-        onError,
-        onLaunch,
-        onComplete,
-    },
-    opening = false,
-) {
+function prepareVolleyShowcase({
+    renderer,
+    createScenario,
+    createPresentationView,
+    unitType,
+    advanceTick,
+    onError,
+}) {
     if (!LaunchRules.grain(unitType)) throw new Error('알 수 없는 병종 소개 장면입니다.');
     const unit = UnitDefinition.get(unitType);
-    const interception = !opening && unit?.burstAttack && unit.canAttackAir ? INTERCEPTION : null;
-    const { sim, x, y, host, target, rider, roller } = createArena(unitType, opening, interception);
+    const interception = unit?.burstAttack && unit.canAttackAir ? INTERCEPTION : null;
+    const { sim, x, y, host, target, rider, roller } = createArena(unitType, interception);
     const side = interception ? 1 : 0;
     const cannon = sim.launchCannons(side)[0];
     const launchTarget = interception ? { x: x + interception.aimOffset, y } : target;
     const launchType = interception?.launchType ?? unitType;
     const distance = Math.hypot(launchTarget.x - cannon.x, launchTarget.y - cannon.y);
-    const launchDelayMs =
-        interception?.launchDelayMs ??
-        (opening ? OPENING_LAUNCH_DELAY_SECONDS : LAUNCH_DELAY_SECONDS) * 1000;
+    const launchDelayMs = interception?.launchDelayMs ?? LAUNCH_DELAY_SECONDS * 1000;
     const launchTick = sim.time.ceilTicks(Math.round(launchDelayMs));
-    const endTick = opening
-        ? launchTick +
-          sim.time.ceilTicks(
-              Math.ceil(
-                  (distance / LaunchRules.shellSpeed(unitType)) * 1000 + OPENING_LANDING_HOLD_MS,
-              ),
-          )
-        : sim.time.ceilTicks(
-              Math.ceil(
-                  interception?.durationMs ??
-                      rider?.durationMs ??
-                      roller?.durationMs ??
-                      Math.max(
-                          DURATION_SECONDS * 1000,
-                          unit?.growsCannon
-                              ? launchDelayMs +
-                                    (distance / LaunchRules.shellSpeed(unitType)) * 1000 +
-                                    unit.growsCannon.delayMs +
-                                    GROWN_CANNON_HOLD_MS
-                              : 0,
-                      ),
-              ),
-          );
-    let launchShown = false;
-    let centerShot = null;
-    const openingCamera = () => {
-        const shot =
-            centerShot && renderer.renderState.entity('projectile', centerShot.projectileId);
-        const position = shot && renderer.resolveRenderWorldPosition(shot, 'projectile');
-        const shotX = position?.x ?? centerShot?.aimX;
-        const approach =
-            shotX == null
-                ? 0
-                : Math.max(0, 1 - Math.abs(target.x - shotX) / OPENING_LANDING_APPROACH);
-        const focusX = shotX == null ? host.x + 55 : shotX + (target.x - shotX) * approach * 0.5;
-        const focusY = position?.z ?? centerShot?.aimY ?? y;
-        renderer.replayZoom = OPENING_ZOOM + (OPENING_LANDING_ZOOM - OPENING_ZOOM) * approach;
-        centerCamera(renderer, focusX, focusY, (position?.y ?? 0) * (1 - approach * 0.5));
-    };
+    const endTick = sim.time.ceilTicks(
+        Math.ceil(
+            interception?.durationMs ??
+                rider?.durationMs ??
+                roller?.durationMs ??
+                Math.max(
+                    DURATION_SECONDS * 1000,
+                    unit?.growsCannon
+                        ? launchDelayMs +
+                              (distance / LaunchRules.shellSpeed(unitType)) * 1000 +
+                              unit.growsCannon.delayMs +
+                              GROWN_CANNON_HOLD_MS
+                        : 0,
+                ),
+        ),
+    );
     const frameCamera = (timeMs) => {
         const progress = roller
             ? Math.max(0, Math.min(1, (timeMs - roller.cameraMs[0]) / roller.cameraMs[1]))
@@ -253,7 +208,7 @@ function prepareVolleyShowcase(
 
     renderer.role = 'host';
     renderer.replayObserverAll = true;
-    renderer.replayZoom = opening ? OPENING_ZOOM : (interception?.zoom ?? roller?.zoom ?? 4);
+    renderer.replayZoom = interception?.zoom ?? roller?.zoom ?? 4;
     const scene = prepareSimScene({
         renderer,
         createScenario,
@@ -261,11 +216,10 @@ function prepareVolleyShowcase(
         sim,
         seed: SEED,
         endTick,
-        loop: !opening,
+        loop: true,
         advanceTick,
         start() {
-            if (opening) openingCamera();
-            else frameCamera(0);
+            frameCamera(0);
             queueLaunch(sim, {
                 tick: launchTick,
                 seq: 1,
@@ -275,25 +229,8 @@ function prepareVolleyShowcase(
                 ...launchTarget,
             });
         },
-        render: opening ? undefined : (frame) => frameCamera(frame.timeMs),
-        onPresent: opening ? openingCamera : undefined,
-        onEnd: opening ? () => onComplete?.() : undefined,
+        render: (frame) => frameCamera(frame.timeMs),
         onError,
     });
-    if (opening) {
-        const { start } = scene.view;
-        scene.view.start = (record, at, age) => {
-            const handle = start(record, at, age);
-            const fire = record.payload;
-            if (fire.type === 'launchFire' && fire.side === 0) {
-                if (fire.shot === Math.floor(fire.shots / 2)) centerShot = fire;
-                if (!launchShown) {
-                    launchShown = true;
-                    onLaunch?.(fire);
-                }
-            }
-            return handle;
-        };
-    }
     return scene;
 }

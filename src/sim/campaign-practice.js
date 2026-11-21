@@ -28,8 +28,8 @@
 // The match's own ticks run on as always (the economy, ammunition, the field's harm), so the simulation stays one
 // deterministic run. The tick the last target is down ends it: the mission's clock counts from that tick, so every
 // timing the stage declares in ms runs as it would from a match start.
-// No enemy soldier stands from the first tick but the targets: a practice cannot be declared with `introducedEnemy`,
-// `mission.formations` or `volleyGoals` (their soldiers would march on or fight the player while it runs).
+// No enemy soldier stands from the first tick but the targets: a practice cannot be declared with
+// `mission.formations` (their soldiers would march on or fight the player while it runs).
 // `sim.campaignPractice { doneTick }` (null while it runs) is the only state and `unit.practiceTarget` marks a target.
 // Both exist only in a stage that declares a practice, so every other match's state and checksum are what they were.
 import { UnitDefinition } from '../definitions/units.js';
@@ -46,9 +46,9 @@ export class CampaignPractice {
         const { card, cue, building, built, forwardCannon, clamp } = practice ?? {};
         const targets = practice.targets ?? [];
         const campaign = sim.rules.campaign;
-        if (campaign.introducedEnemy || campaign.mission?.formations || campaign.volleyGoals)
+        if (campaign.mission?.formations)
             throw new Error(
-                '익히기는 경기 시작부터 서 있는 적 병사(introducedEnemy·mission.formations·volleyGoals)와 함께 둘 수 없습니다.',
+                '익히기는 경기 시작부터 서 있는 적 병사(mission.formations)와 함께 둘 수 없습니다.',
             );
         if (!sim.decks[1 - Blight.ENEMY_SIDE].includes(card))
             throw new Error(`익히기 카드는 플레이어 덱(deck)에 있어야 합니다: ${card}`);

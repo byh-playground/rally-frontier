@@ -1,4 +1,3 @@
-.campaign-briefing,
 .campaign-objective,
 .campaign-cue {
     --campaign-paper: #fff7e9;
@@ -6,128 +5,6 @@
     --campaign-ink: #2d251f;
     --campaign-accent: #754625;
     --campaign-edge: #d7c3aa;
-}
-
-.campaign-briefing {
-    border-color: var(--campaign-edge);
-    background: var(--campaign-paper);
-    color: var(--campaign-ink);
-    box-shadow: 0 18px 60px #251c166b;
-}
-
-.campaign-briefing::backdrop {
-    background: #29231db3;
-}
-
-.campaign-briefing .deck-panel {
-    padding: clamp(14px, 5vw, 24px);
-}
-
-.campaign-briefing-kicker,
-.campaign-briefing-progress {
-    margin: 0;
-    color: #675448;
-    font-size: 12px;
-    font-weight: 800;
-}
-
-.campaign-briefing .deck-close {
-    flex: none;
-    width: 44px;
-    height: 44px;
-    background: var(--campaign-inset);
-    color: var(--campaign-ink);
-}
-
-.campaign-briefing-objective {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin: 14px 0 10px;
-    padding: 8px 11px;
-    border: 1px solid var(--campaign-edge);
-    border-radius: 10px;
-    background: var(--campaign-paper);
-    font-size: 13px;
-}
-
-.campaign-briefing-objective strong {
-    flex: none;
-    color: var(--campaign-accent);
-}
-
-.campaign-briefing-scene {
-    position: relative;
-    aspect-ratio: 16 / 9;
-    margin-bottom: 10px;
-    overflow: hidden;
-    border: 1px solid var(--campaign-edge);
-    border-radius: 12px;
-    background: var(--campaign-inset);
-    pointer-events: none;
-}
-
-.campaign-briefing-scene::before {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    color: var(--campaign-accent);
-    font-size: 13px;
-    content: '전장 준비 중';
-}
-
-.campaign-briefing-dialogue {
-    min-height: 102px;
-    padding: 14px;
-    border-radius: 14px;
-    background: var(--campaign-inset);
-    color: var(--campaign-ink);
-    word-break: keep-all;
-    overflow-wrap: anywhere;
-}
-
-#campaignBriefingSpeaker {
-    margin: 0 0 5px;
-    color: var(--campaign-accent);
-    font-size: 13px;
-    font-weight: 800;
-}
-
-#campaignBriefingLine {
-    margin: 0;
-    font-size: 16px;
-    line-height: 1.5;
-}
-
-.campaign-briefing-progress {
-    margin: 8px 2px 10px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-}
-
-.campaign-briefing-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.campaign-briefing-actions .launch-btn {
-    flex: 1 1 100px;
-    height: 48px;
-    font-size: 14px;
-}
-
-.campaign-briefing-actions .secondary {
-    border-color: var(--campaign-edge);
-    background: var(--campaign-paper);
-    color: var(--campaign-ink);
-}
-
-.campaign-briefing-actions .primary {
-    background: var(--campaign-accent);
-    color: var(--campaign-paper);
-    box-shadow: 0 3px 0 #4d2e1b;
 }
 
 .campaign-objective {
@@ -247,11 +124,6 @@
         display: none;
     }
 
-    .campaign-briefing-dialogue {
-        min-height: 0;
-        padding: 10px 12px;
-    }
-
     .campaign-cue {
         right: auto;
         bottom: 8px;
@@ -259,40 +131,6 @@
         max-width: calc(100% - 114px);
         padding: 5px 8px;
         font-size: 12px;
-    }
-}
-
-@media (orientation: landscape) and (max-height: 500px) {
-    .campaign-briefing .deck-panel:has(.campaign-briefing-scene:not([hidden])) {
-        display: grid;
-        grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-        column-gap: 10px;
-        padding: 10px 14px;
-    }
-
-    .campaign-briefing
-        .deck-panel:has(.campaign-briefing-scene:not([hidden]))
-        > :not(.campaign-briefing-scene, .campaign-briefing-dialogue) {
-        grid-column: 1 / -1;
-    }
-
-    .campaign-briefing
-        .deck-panel:has(.campaign-briefing-scene:not([hidden]))
-        .campaign-briefing-objective {
-        margin-block: 8px;
-    }
-
-    .campaign-briefing
-        .deck-panel:has(.campaign-briefing-scene:not([hidden]))
-        .campaign-briefing-progress {
-        margin-block: 5px 6px;
-    }
-
-    .campaign-briefing-scene {
-        align-self: center;
-        justify-self: center;
-        width: min(100%, 52dvh);
-        margin-bottom: 0;
     }
 }
 

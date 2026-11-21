@@ -9,7 +9,6 @@ import {
     RIVER_PATH,
 } from './map-geometry.js';
 import { LANE_CONTROL_POINTS } from '../definitions/combat-rules.js';
-import { campaignMapLayout } from '../definitions/campaign-map.js';
 import { campaignStageTheme } from '../definitions/campaign.js';
 import { artilleryBasinMapLayout } from '../definitions/artillery-basin-map.js';
 import { causewayFlatsMapLayout } from '../definitions/causeway-flats-map.js';
@@ -936,14 +935,6 @@ class MapGeneration {
         };
         return best;
     }
-    static fixedCampaignMapDescriptor(rules, baseSeed, roundNumber) {
-        return {
-            schemaVersion: MAP_DESCRIPTOR_SCHEMA_VERSION,
-            generatorVersion: 1,
-            seed: MapGeneration.mapRuleSeed(baseSeed, rules, roundNumber),
-            ...campaignMapLayout(rules.campaign),
-        };
-    }
     // A fixed map has no candidates to choose from, so the authored layout must pass the procedural map's pad and
     // ground checks as it is: a pad off buildable ground or out of walking reach fails the descriptor here.
     static fixedPvpMapDescriptor(layout, rules, baseSeed, roundNumber) {
@@ -971,11 +962,7 @@ class MapGeneration {
         seed = 0,
         roundNumber = 1,
     } = {}) {
-        // A campaign stage plays on the campaign front unless it names a PvP map (`map`, a preset of game-rules.js).
-        const id =
-            rules?.campaign && !rules.campaign.map
-                ? 'fixed-campaign'
-                : rules?.map?.generator || 'fixed-standard';
+        const id = rules?.map?.generator || 'fixed-standard';
         const key = JSON.stringify([id, seed >>> 0, roundNumber || 1, rules]);
         if (this.descriptorCache?.key === key) return this.descriptorCache.descriptor;
         const generator = MAP_GENERATORS[id] || MAP_GENERATORS['fixed-standard'];
@@ -1109,7 +1096,6 @@ class MapGeneration {
 
 const MAP_GENERATORS = {
     'fixed-standard': MapGeneration.fixedStandardMapDescriptor,
-    'fixed-campaign': MapGeneration.fixedCampaignMapDescriptor,
     'procedural-frontier': MapGeneration.proceduralFrontierMapDescriptor,
     'fixed-twin-gates': (rules, seed, round) =>
         MapGeneration.fixedPvpMapDescriptor(twinGatesMapLayout, rules, seed, round),

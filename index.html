@@ -310,7 +310,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   떠 있는 동안은 그것이 먼저이고, 끝난 뒤에도 예고 중인 구름이 하나라도 있으면 구름 안내가 뜬다. 새 셰이더·아틀라스·프로그램은 없다.
   보스(`src/sim/blight-boss.js`)는 깜부기에 지배당한 영웅이다. 감염을 선언한 스테이지만
   `boss: { type, level, x, y, escorts? }`를 선언한다(감염 없는 스테이지, 영웅이 아닌 병종, 적 덱에 없는 영웅, 맵 밖 자리,
-  영웅·`side`가 든 호위, 버티기(`surviveMs`)·영웅 수업(`heroLesson`)·발사 목표(`volleyGoals`)와 함께 둔 보스는 경기 시작에서 실패). 경기 시작에 호위(`escorts`, 방어전 공격의 대형)가 서고, 적 본진이 보스를
+  영웅·`side`가 든 호위, 버티기(`surviveMs`)와 함께 둔 보스는 경기 시작에서 실패). 경기 시작에 호위(`escorts`, 방어전 공격의 대형)가 서고, 적 본진이 보스를
   일반 영웅 포탄(`LaunchRules.volley`, 자체 착탄 충격 없음)으로 (x, y)에 쏜다: 출격 슬롯이 `level`의 처치 수(5레벨은 70)를 들고 기다리다가
   `fireLaunchShell` → 착지(`HeroDeployment.land`)로 그 레벨의 체력·공격·성장 효과(착지 공격·막타 효과·패시브·주변 버프·자동
   한 방)를 가진 감염 영웅(입자·고리)으로 나온다. 레벨은 보통 영웅처럼 막타로 오르므로 5레벨 보스는 플레이어 병사 30명을 더
@@ -339,7 +339,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   보통 적과 같다). 포탑은 표적을 겨누지 않아 플레이어가 쏜 포탄과 나온 병사만 표적을 쓰러뜨린다. 마지막 표적이 쓰러진
   틱에 익히기가 끝난다. 익히기 동안 임무 시계가 멈춰 공격·구름·밭 번짐·버티기 초읽기가 오지 않고 적 AI가 두지 않으며
   보스와 호위는 익히기가 끝난 틱에 나온다(`BlightBoss.start`). 적 건물은 피해를 받지 않고 플레이어는 이길 수 없다(지는
-  것은 그대로). `introducedEnemy`·`mission.formations`·`volleyGoals`처럼 경기 시작부터 서 있는 적 병사와 함께 선언하면
+  것은 그대로). `mission.formations`처럼 경기 시작부터 서 있는 적 병사와 함께 선언하면
   경기 시작에서 실패한다. 경기 틱(경제·탄약·밭의 피해)은 그대로 돌아 한 판이 하나의 결정적 실행이다.
   전투 화면은 목표 칸에 '써 보기 · 남은 표적 N'과 `cue` 안내를 보이고, 끝나면 '전투 목표' 안내로 넘어간다. 보조 목표
   (`src/sim/side-goal.js`)는 스테이지마다 하나까지 `sideGoal: { kind, … }`로 선언하는 선택 목표이고 처음 달성할 때만 햇살
@@ -351,42 +351,22 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   목표 달성')를 띄운다. `sim.campaignPractice { doneTick }`·`unit.practiceTarget`·`sim.sideGoal`은 선언한 스테이지에만
   있어 그 밖의 경기 상태와 체크섬은 그대로다. 결과는 `clearRecord(stage, { cleared, sideGoal, difficulty })` 한 함수로
   `recordClear` 인자를 만들고, 그 호출은 새 캠페인 스테이지(`act` 칸을 선언한 판)에서만 해 결과 화면 제목 아래에 받은 햇살
-  한 줄('☀ +75 · 처음 클리어 50 · 보조 목표 25')을 보인다. 새 캠페인 스테이지는 34판(`CAMPAIGN_STAGES`)과 따로
-  `CAMPAIGN_ACT_STAGES`에 두며 27판이다(`campaignStage(id)`가 두 목록을 찾음, 옛 34판은 곧 지움). 처음 가진 카드는 쌀 하나이고 나머지는 그 카드를 `rewardCard`로 둔 판을 처음 깰 때 얻는다. 테스트용 `?unlock=all`은 모든 판을 열고 아무것도 기록하지 않는다. 어느 판이 열렸는지는 미리 만든
+  한 줄('☀ +75 · 처음 클리어 50 · 보조 목표 25')을 보인다. 캠페인 판은 `CAMPAIGN_ACT_STAGES`에 두며 27판(1막 4·견과 숲 6·밭 마을 7·바람 언덕 6·막간 1·3막 3)이다. 처음 가진 카드는 쌀 하나이고
+  나머지는 그 카드를 `rewardCard`로 둔 판을 처음 깰 때 얻는다. 테스트용 `?unlock=all`은 모든 판을 열고 카드를 다 쓰게 하며 아무것도
+  기록하지 않는다. 어느 판이 열렸는지는 미리 만든
   목록 없이 판 정의와 `Roster.clearedStages`(처음 클리어 기록)로 `src/ui/campaign-acts.js`가 계산한다: 1막은 순서대로,
   1막을 다 깨면 2막 세 고장(`region`)이 함께 열리고 고장 안은 순서대로, 세 고장의 마지막 판(보스)을 다 깨면 3막(막간
   먼저)이 순서대로. 판이 없는 고장·막은 화면에 나오지 않는다. 새 선택 화면(고장 카드형, `src/ui/campaign-screen.js`)은
   타이틀의 캠페인 버튼이 열며 주소는 `#/campaign`(첫 화면)·`#/campaign/<막·고장>?stage=<id>`(판 점
   줄과 브리핑·난이도·출격)이다. 판은 `story { text, captain }`(한 줄 이야기·대장 대사)를 선언하고 브리핑과 결과 화면이
   두 줄을 함께 보인다.
-  스테이지 해금은 로컬에 저장하며 실패·이탈은 해금하지 않는다.
-  캠페인 전용 맵은 중앙 전선과 스테이지별 적 방어선을 사용한다. 스테이지가 대전 맵(`map`: game-rules.js 프리셋 id,
-  둑길 평원 포함)을 고르면 그 맵과 점령 지점 id로 시작 거점·수비대를 둔다(standard는 스테이지 seed로 고정). 첫 전진 거점은 사거리 강화 전
-  쌀 착지점에서 병사가 건설할 수 있다. 측면 기름 거점은 그 거점을 아군 시작 거점으로 주는 스테이지에만 둔다.
-  캠페인의 적 출격 판단 시작 시점과 간격은 스테이지 설정을 따른다.
-  캠페인은 기초·기본 병종·새 병종 세 단계이며, 선택 화면은 들여쓰기 깊이로 구조를 보이는 접이식 목록이다(한 번에 한 단계와 한 묶음만 펼침, 연결선 없음).
-  묶음(`CAMPAIGN_GROUPS`: 영웅, 새 병종의 병종별 "써 보기"·"상대하기")은 단계 아래 한 줄로 접힌다. 기본 병종 단계는 묶음 없이 아홉 판을 바로 나열하고,
-  판마다 플레이어 덱의 첫 카드를 그 카드가 잡는 적과 맞붙여 소개한다. 기본 병종·새 병종 단계는 플레이어 덱이 적 덱의 카운터이고
-  적 덱은 플레이어 카드의 카운터를 들지 않는다. 새 병종 9종은 보상 없이 처음부터 열려 있고,
-  새 병종 단계의 적 덱은 검은콩·목화솜 판의 쌀·조 떼와 민들레씨 하늘 지키기·목화솜 하늘까지 판의 민들레씨·쌀 덱을 빼면 서로 두 장 이상 겹치지 않는다. 한 단계 안의 스테이지는 순서 없이 할 수 있고,
-  앞 단계에서 하나만 깨면 다음 단계 전체가 열린다(`CAMPAIGN_TIERS`, `CampaignProgress.canStart`). 영웅 훈련 셋과
-  일제사격 연습은 첫 진격 뒤 열린다. 결과 화면의 다음 스테이지는 지금 시작할 수 있고 아직 깨지 않은 첫 스테이지다.
-  일제사격 연습은 기초 단계의 스테이지다. 시작 브리핑은 겹치는 사거리와 대포 수에 따른
-  병력 보너스를 안내한다. 사거리가 고정된 미리 완공된 대포로 각 표시에 맞게 1·2·3문 사격을 착탄시키고
-  세 수비대를 격파하면 완료한다. 조준 중 목표 대포 수와 실제 참여 수를 표시한다.
-  연습 완료 여부는 병종 카드 해금에 영향을 주지 않는다.
-  전투 전 대화는 표시 전용이며 시작 또는 건너뛰기를 선택한 뒤에만 경기를 연다.
-  첫 브리핑의 발사 장면은 공용 GameKit 쇼케이스 화면에서 재생하는 표시 전용 연출이다.
-  카메라가 적 포탑으로 향하는 가운데 쌀탄을 따라가며, 착탄 장면 뒤에 조작 안내를 표시한다.
-  전투 중 목표와 공격 진행은 현재 경기 스냅샷을 읽어 표시한다.
-  스테이지별 도입 병력과 시작 기름을 적용한다.
-  캠페인 양측의 덱은 스테이지 설정을 따른다. 일반 병종은 모두 처음부터 열려 있고, 보상으로 해금하는 카드는 영웅 바나나·포도뿐이다.
-  처음 배치된 적 수비대는 제자리를 지키다 사거리 안의 적과 교전하고 끝나면 자리로 돌아간다.
-  기름이 필요한 병종을 쓰는 적 스테이지에는 적의 기름 거점이나 시작 기름을 두어,
-  적이 그 병종을 계속 출격하고 플레이어가 점령하면 공급이 끊긴다.
-  난이도는 적 AI의 결정 간격(`enemyPacing`)으로 조절한다. 캠페인 적은 첫 결정 뒤 공통 기본 간격(1초)으로 몰아붙이다가 `rampMs`에 걸쳐 단계별 `endIntervalMs`까지 선형으로 느려지고, 후반 단계일수록 끝 간격이 짧다(15초→12초→10초). 지갑이 가득 차면 모든 AI가 설정과 무관하게 기본 간격으로 결정한다. 방어전의 적은 예외로 첫 결정 뒤 한 간격(`intervalMs`)으로만 결정하며, 지갑이 가득 차도 앞당기지 않는다(압박은 정해진 공격이 맡음).
-  수박은 기본 영웅이며 기초 단계의 영웅 훈련에서 출격·처치·회수를 배운다. 바나나와 포도는 각각의 훈련 완료로 해금한다.
-  타이틀의 캠페인 버튼을 1초 누르면 현재 페이지에서만 디버그 해금을 켠다. 이 모드의 클리어와 덱 편집은 저장하지 않는다.
+  판의 클리어 기록은 로컬 roster에 저장하며 실패·이탈은 기록하지 않는다.
+  모든 판은 대전 맵(`map`: game-rules.js 프리셋 id)을 고르고 그 맵과 점령 지점 id로 시작 거점·수비대를 둔다. 맵 겉모습은 고장(`region`)이나
+  판의 `theme`이 정한다(`campaignStageTheme`, map-themes.js).
+  캠페인 적의 출격 판단은 판의 `enemyPacing`을 따른다: `{ firstDecisionMs, intervalMs }`(첫 결정 뒤 한 간격으로만 결정하며 지갑이 가득 차도
+  앞당기지 않음)이거나 `{ disabled: true }`(정해진 공격과 구름만). 난이도는 `campaign-pace.js` 배율로 조절한다.
+  각 판은 양측 덱·시작 기름(`mission.startingPremium`)·시작 거점(`friendlyOutposts`·`enemyOutposts`)을 선언하고, 기름이 필요한 병종을 쓰는 쪽에는
+  시작 기름을 둔다. 전투 중 목표와 공격 진행은 현재 경기 스냅샷을 읽어 표시한다.
   덱 편성의 잠긴 카드에는 해금 조건을 표시하고 장착 버튼을 비활성화한다. 별도 정보 버튼은 병종 소개를 연다.
 - 영웅은 플레이어가 쓰는 액티브 스킬이 없다. 5레벨 자동 한 방만 영웅이 스스로 쓴다(아래).
 - 영웅은 판 안에서 성장한다(src/sim/hero-growth.js HeroGrowth). 영웅이 막타를 친 적 병력 1명이 처치 1이며
@@ -945,57 +925,6 @@ END OF DEVELOPMENT CONTRACT
             </div>
         </section>
 
-        <dialog
-            id="campaignBriefingDialog"
-            class="deck-dialog campaign-briefing"
-            aria-labelledby="campaignBriefingTitle"
-            aria-describedby="campaignBriefingObjective"
-        >
-            <div class="deck-panel">
-                <header class="deck-header">
-                    <div>
-                        <p class="campaign-briefing-kicker">전투 브리핑</p>
-                        <h2 id="campaignBriefingTitle"></h2>
-                    </div>
-                    <button
-                        id="campaignBriefingBack"
-                        class="deck-close"
-                        type="button"
-                        aria-label="캠페인 대화 닫기"
-                    >
-                        ×
-                    </button>
-                </header>
-                <p class="campaign-briefing-objective">
-                    <strong>목표</strong>
-                    <span id="campaignBriefingObjective"></span>
-                </p>
-                <div
-                    id="campaignBriefingScene"
-                    class="campaign-briefing-scene"
-                    aria-hidden="true"
-                    hidden
-                ></div>
-                <div class="campaign-briefing-dialogue" aria-live="polite" aria-atomic="true">
-                    <p id="campaignBriefingSpeaker"></p>
-                    <p id="campaignBriefingLine"></p>
-                </div>
-                <p id="campaignBriefingProgress" class="campaign-briefing-progress"></p>
-                <div class="campaign-briefing-actions">
-                    <button id="campaignBriefingSkip" class="launch-btn secondary" type="button">
-                        바로 시작
-                    </button>
-                    <button
-                        id="campaignBriefingNext"
-                        class="launch-btn primary"
-                        type="button"
-                        autofocus
-                    >
-                        다음
-                    </button>
-                </div>
-            </div>
-        </dialog>
         <section
             id="campaignScreen"
             class="campaign-screen hidden"
@@ -1452,8 +1381,8 @@ END OF DEVELOPMENT CONTRACT
                     <section class="help-rule">
                         <h3>목표와 조작</h3>
                         <p>
-                            덱에서 병사를 골라 출전하고, 적 본진을 부수면 승리해요. 잠긴 영웅은
-                            캠페인 영웅 훈련을 처음 깨면 대전 덱에 넣을 수 있어요.
+                            덱에서 병사를 골라 출전하고, 적 본진을 부수면 승리해요. 잠긴 카드는
+                            캠페인에서 그 카드가 합류하는 판을 처음 깨면 덱에 넣을 수 있어요.
                         </p>
                         <details>
                             <summary>화면 이동과 무승부</summary>

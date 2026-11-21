@@ -280,16 +280,6 @@ class StrategySim {
         if (campaign?.pace)
             this.wallet[1] = Math.round(this.wallet[1] * campaign.pace.resourceScale);
         this.launchDeployments = [];
-        this.campaignVolleyPractice = campaign?.volleyGoals
-            ? {
-                  goals: campaign.volleyGoals.map(() => ({
-                      projectileIds: [],
-                      garrisonIds: [],
-                      landed: false,
-                  })),
-                  complete: false,
-              }
-            : null;
         this.heroes = this.decks.map((deck) => HeroDeployment.emptySlots(deck));
         this.heroRecovery = this.decks.map((deck) => HeroDeployment.emptySlots(deck));
         this.heroGrowth = this.decks.map((deck) => HeroGrowth.emptySlots(deck));
@@ -317,7 +307,6 @@ class StrategySim {
         this.createBase(1);
         // Campaign positions use ordinary outpost ownership and construction completion.
         if (campaign) {
-            const enemyPoints = [];
             for (const [side, ids] of [
                 campaign.friendlyOutposts ?? [],
                 campaign.enemyOutposts,
@@ -328,34 +317,13 @@ class StrategySim {
                     const outpost = this.spawnOutpost(point, side);
                     outpost.hp = outpost.maxHp;
                     this.completeConstruction(outpost);
-                    if (side === 1) enemyPoints.push(point);
                 }
-            }
-            if (campaign.introducedEnemy && !campaign.mission?.formations) {
-                const [front] = enemyPoints;
-                for (let i = 0; i < 3; i++)
-                    this.spawnUnit(
-                        1,
-                        campaign.introducedEnemy,
-                        front.x + (i - 1) * 50,
-                        front.y + 100,
-                    );
             }
         }
         // Landed units march straight to the enemy main base.
         for (const side of [0, 1]) {
             const enemy = this.buildings.find((b) => b.id === 'base' + (1 - side));
             this.flags[side] = { x: enemy.x, y: enemy.y, forced: false };
-        }
-        for (const [index, { x, y, garrison }] of (campaign?.volleyGoals ?? []).entries()) {
-            const rows = Math.ceil(garrison.count / garrison.columns);
-            for (let i = 0; i < garrison.count; i++) {
-                const dx = ((i % garrison.columns) - (garrison.columns - 1) / 2) * garrison.spacing,
-                    dy = (Math.floor(i / garrison.columns) - (rows - 1) / 2) * garrison.spacing;
-                const defender = this.spawnUnit(1, garrison.type, x + dx, y + dy);
-                defender.status.terrainRevealUntil0 = Number.MAX_SAFE_INTEGER;
-                this.campaignVolleyPractice.goals[index].garrisonIds.push(defender.id);
-            }
         }
         const missionState = CampaignMission.initialize(this);
         if (missionState) this.campaignMission = missionState;
@@ -1519,50 +1487,9 @@ class StrategySim {
                 else this.fireLaunchShell(fire);
             });
         }
-        if (
-            this.campaignVolleyPractice &&
-            side === 0 &&
-            this.rules.campaign.deck.includes(action.unitType)
-        ) {
-            const index = this.rules.campaign.volleyGoals.findIndex(
-                (goal) =>
-                    volley.length === goal.cannons && CampaignMission.volleyGoalContains(goal, aim),
-            );
-            const progress = this.campaignVolleyPractice.goals[index];
-            if (progress && !progress.landed) {
-                for (let i = eventsBeforeVolley; i < this.events.length; i++) {
-                    const event = this.events[i];
-                    if (event.type === 'launchFire')
-                        progress.projectileIds.push(event.projectileId);
-                }
-            }
-        }
         this.launchStats.launches[side]++;
         this.launchStats.sent[side] += LaunchRules.volleyPassengerCount(volley);
         return true;
-    }
-    updateVolleyPractice() {
-        const practice = this.campaignVolleyPractice;
-        if (!practice || practice.complete) return;
-        for (const [index, progress] of practice.goals.entries()) {
-            if (!progress.projectileIds.length) continue;
-            const goal = this.rules.campaign.volleyGoals[index];
-            progress.landed ||= this.events.some(
-                (event) =>
-                    event.type === 'launchImpact' &&
-                    progress.projectileIds.includes(event.projectileId) &&
-                    CampaignMission.volleyGoalContains(goal, event),
-            );
-            const pending = new Set(this.projectiles.map((shell) => shell.id));
-            for (const group of this.launchDeployments) pending.add(group.projectileId);
-            progress.projectileIds = progress.projectileIds.filter((id) => pending.has(id));
-        }
-        practice.complete = practice.goals.every(
-            (progress) =>
-                progress.landed &&
-                !progress.projectileIds.length &&
-                progress.garrisonIds.every((id) => !this.unitById.get(id)?.alive),
-        );
     }
     fireLaunchShell({
         side,
@@ -1684,7 +1611,6 @@ class StrategySim {
         }
     }
     upgradeLaunchRange(side) {
-        if (side === 0 && this.campaignVolleyPractice) return false;
         const level = this.launchRangeLevel[side],
             cost = LaunchRules.upgradeCost(level),
             premiumCost = LaunchRules.upgradePremiumCost(level);
@@ -2396,13 +2322,7 @@ class StrategySim {
             if (cp && cp.owner == null && cp.enabled) return { x: cp.x, y: cp.y, forced: false };
             u.launchHoldPointId = null;
         }
-        if (u.side === 1 && this.campaignVolleyPractice) {
-            const index = this.campaignVolleyPractice.goals.findIndex((goal) =>
-                goal.garrisonIds.includes(u.id),
-            );
-            if (index >= 0) return this.rules.campaign.volleyGoals[index];
-        }
-        return CampaignMission.heroLessonRallyPoint(this, u) ?? this.flags[u.side];
+        return this.flags[u.side];
     }
     updateBuildingCombat(vision) {
         for (const b of this.buildings) {
@@ -3213,14 +3133,6 @@ class StrategySim {
         // Combat damage reports are not victory authority. Resolve once from the final world state.
         winner = this.netcodeMatchResult?.winner || this.baseOutcome();
         const campaign = this.rules.campaign;
-        if (
-            this.campaignVolleyPractice &&
-            !this.netcodeMatchResult &&
-            (!winner || winner === 'host')
-        ) {
-            this.updateVolleyPractice();
-            winner = this.campaignVolleyPractice.complete ? 'host' : null;
-        }
         if (!this.netcodeMatchResult) {
             // A boss stage is won only on its subdued boss; the player's main base falling loses it (BlightBoss).
             winner = BlightBoss.resolve(this, winner);

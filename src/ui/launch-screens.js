@@ -31,16 +31,7 @@ export class LaunchScreens {
         this.actions = actions;
         this.showcaseSurface = showcaseSurface;
         this.$ = (id) => document.getElementById(id);
-        CampaignPresentation.install(this.$, {
-            openOpening: (container, events) => {
-                this.closeTitleBattle();
-                return this.showcaseSurface.mount({
-                    container,
-                    scene: { kind: 'campaign-opening', ...events },
-                });
-            },
-            onOpeningClosed: () => this.syncTitleBattle?.(),
-        });
+        CampaignPresentation.install(this.$);
         this.navigation = createNavigation({
             normalize: (route) =>
                 SCREENS.has(route.screen) || route.screen === 'campaign'
@@ -323,7 +314,6 @@ export class LaunchScreens {
             matchMedia('(prefers-reduced-motion: reduce)').matches ||
             this.$('lobby').classList.contains('hidden') ||
             this.cardDetail?.mount ||
-            CampaignPresentation.opening ||
             this.titleBattleMount ||
             this.titleBattleFailed
         )
@@ -356,7 +346,6 @@ export class LaunchScreens {
             const active =
                 !document.hidden &&
                 !this.cardDetail?.mount &&
-                !CampaignPresentation.opening &&
                 !document.body.classList.contains('boot-loading') &&
                 lobbyVisible &&
                 !MOTION.matches;
@@ -364,7 +353,6 @@ export class LaunchScreens {
                 void this.prepareTitleBattle();
             this.titleBattleMount?.setActive(active);
             this.cardDetail?.syncPlayback?.();
-            CampaignPresentation.syncOpening();
         };
         this.syncTitleBattle = sync;
         new MutationObserver(sync).observe(LOBBY, { attributes: true, attributeFilter: ['class'] });
@@ -552,26 +540,11 @@ ${panels.map((body, index) => `<section class="unit-info-panel" role="tabpanel" 
         maxReach,
         cannonCount,
         passengerCount,
-        { showVolleyHint = false, requiredCannons } = {},
+        { showVolleyHint = false } = {},
     ) {
         const LABEL = this.$('aimLabel');
         LABEL.classList.toggle('hidden', !at);
         if (!at) {
-            return;
-        }
-        if (requiredCannons != null) {
-            const status =
-                cannonCount === requiredCannons
-                    ? '충족'
-                    : cannonCount < requiredCannons
-                      ? '부족'
-                      : '초과';
-            const text = `목표 ${requiredCannons}문 · 현재 ${cannonCount}문 · ${status}`;
-            LABEL.classList.remove('shared');
-            if (LABEL.textContent !== text) LABEL.textContent = text;
-            const half = LABEL.offsetWidth / 2,
-                x = Math.max(half, Math.min(at.x, LABEL.parentElement.clientWidth - half));
-            LABEL.style.transform = `translate(${Math.round(x)}px,${Math.round(at.y)}px) translate(-50%,-100%)`;
             return;
         }
         const SHARED = cannonCount > 1,

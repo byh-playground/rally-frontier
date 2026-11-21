@@ -364,38 +364,6 @@ class RallySimulationAdapter {
         HeroDeployment.validate(state);
         CardAmmo.validate(state);
         CampaignMission.validate(state, this.session.sim.rules.campaign?.mission);
-        const practice = state.campaignVolleyPractice,
-            volleyGoals = this.session.sim.rules.campaign?.volleyGoals;
-        const validIds = (ids) =>
-            Array.isArray(ids) &&
-            ids.every((id) => typeof id === 'string' && id) &&
-            new Set(ids).size === ids.length;
-        if (
-            volleyGoals
-                ? !practice ||
-                  !Array.isArray(practice.goals) ||
-                  practice.goals.length !== volleyGoals.length ||
-                  typeof practice.complete !== 'boolean' ||
-                  practice.goals.some(
-                      (progress, index) =>
-                          !progress ||
-                          !validIds(progress.projectileIds) ||
-                          !validIds(progress.garrisonIds) ||
-                          progress.garrisonIds.length !== volleyGoals[index].garrison.count ||
-                          typeof progress.landed !== 'boolean' ||
-                          (practice.complete &&
-                              (!progress.landed ||
-                                  progress.projectileIds.length > 0 ||
-                                  state.units.some(
-                                      (unit) =>
-                                          unit.alive && progress.garrisonIds.includes(unit.id),
-                                  ))),
-                  ) ||
-                  !validIds(practice.goals.flatMap((progress) => progress.garrisonIds)) ||
-                  !validIds(practice.goals.flatMap((progress) => progress.projectileIds))
-                : practice !== null
-        )
-            throw new Error('게임 snapshot의 일제사격 연습 상태가 잘못되었습니다.');
         if (
             state.netcodeMatchResult !== undefined &&
             (!state.netcodeMatchResult ||
@@ -1320,11 +1288,9 @@ class GameSession {
                 this.sim.netcodeMatchResult?.reason ||
                 (frame.winner === 'draw'
                     ? 'draw'
-                    : frame.winner === 'host' && this.sim.campaignVolleyPractice?.complete
-                      ? 'volley-practice'
-                      : frame.winner === 'host' && this.sim.blightBoss?.subduedTick != null
-                        ? 'boss-subdued'
-                        : 'base-destroyed');
+                    : frame.winner === 'host' && this.sim.blightBoss?.subduedTick != null
+                      ? 'boss-subdued'
+                      : 'base-destroyed');
         }
         if (
             this.publishConfirmedSnapshots &&

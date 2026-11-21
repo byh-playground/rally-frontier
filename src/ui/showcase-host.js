@@ -26,13 +26,7 @@ export function createShowcaseSurface(createRenderer) {
 async function prepareShowcaseScene({ surface, scene, signal, present }) {
     const { renderer } = surface;
     let prepare = prepareTitleScenes;
-    if (scene.kind !== 'title') {
-        const scenes = await import('./unit-showcase.js');
-        prepare =
-            scene.kind === 'campaign-opening'
-                ? scenes.prepareCampaignOpening
-                : scenes.prepareUnitShowcase;
-    }
+    if (scene.kind !== 'title') prepare = (await import('./unit-showcase.js')).prepareUnitShowcase;
     signal.throwIfAborted();
     const owner = {};
     surface.sceneOwner = owner;

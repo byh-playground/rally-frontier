@@ -28,7 +28,6 @@ import { HeroPassive } from './sim/capabilities/hero-passive.js';
 import { UnitSpinAttack } from './sim/capabilities/unit-spin-attack.js';
 import { ForwardCannon } from './sim/capabilities/forward-cannon.js';
 import { CannonRider } from './sim/capabilities/cannon-rider.js';
-import { CampaignMission } from './sim/campaign-mission.js';
 import { CampaignUpgrades } from './sim/campaign-upgrades.js';
 import { ConstructionRules } from './sim/construction-rules.js';
 import { LaunchImpactRules } from './definitions/launch-impact-rules.js';
@@ -3455,7 +3454,6 @@ class GLRenderer {
             UiRuntimeState.value.screen === 'replay'
                 ? ReplayPresentation.replayPlayer?.sim?.rules.campaign
                 : campaignStage(MatchLifecycle.selectedCampaign);
-        const volleyGoals = campaign?.volleyGoals;
         // A survival defence marks the outpost the player must keep standing.
         const guard =
             campaign?.mission?.guardPoint &&
@@ -3480,28 +3478,6 @@ class GLRenderer {
                 ctx.strokeStyle = '#13283a';
                 ctx.strokeText(text, label.x, label.y, label.width);
                 ctx.fillStyle = held ? '#d8f1ff' : '#ffd2cc';
-                ctx.fillText(text, label.x, label.y, label.width);
-            }
-        }
-        for (const goal of volleyGoals ?? []) {
-            const [x, y] = this.worldToPx(this.viewX(goal.x), this.viewY(goal.y)),
-                radius = goal.radius * sc,
-                radiusY = BattlefieldProjection.planarY(goal.radius) * sc;
-            ctx.beginPath();
-            ctx.ellipse(x, y, radius, radiusY, 0, 0, 2 * Math.PI);
-            ctx.fillStyle = 'rgba(255,211,97,.18)';
-            ctx.fill();
-            ctx.lineWidth = 2 * ratio;
-            ctx.strokeStyle = '#ffe09b';
-            ctx.stroke();
-            const text = goal.cannons === 1 ? '1문 사격' : `${goal.cannons}문 일제사격`;
-            ctx.font = `900 ${13 * ratio}px system-ui,sans-serif`;
-            const label = labelPosition(x, y, y - radiusY - 10 * ratio, [text], 8 * ratio);
-            if (label) {
-                ctx.lineWidth = 3 * ratio;
-                ctx.strokeStyle = '#302a20';
-                ctx.strokeText(text, label.x, label.y, label.width);
-                ctx.fillStyle = '#fff0bb';
                 ctx.fillText(text, label.x, label.y, label.width);
             }
         }
@@ -10562,12 +10538,7 @@ class MatchLifecycle {
         const draw = reason === 'draw' || !winner,
             mine = !draw && winner === viewRole;
         const stage = campaignStage(MatchLifecycle.selectedCampaign);
-        const cleared =
-            stage &&
-            mine &&
-            (reason === 'base-destroyed' ||
-                reason === 'volley-practice' ||
-                reason === 'boss-subdued');
+        const cleared = stage && mine && (reason === 'base-destroyed' || reason === 'boss-subdued');
         // The card a first clear rewards (Roster.recordClear grants it), told on the result.
         const reward =
             cleared &&
@@ -10613,15 +10584,8 @@ class MatchLifecycle {
         else if (reason === 'boss-subdued')
             UiRegistry.refs.resultText.textContent =
                 '깜부기가 떨어져 나가 영웅이 정신을 차렸습니다.';
-        else if (reason === 'volley-practice')
-            UiRegistry.refs.resultText.textContent =
-                '1·2·3문 사격으로 적 수비대 세 곳을 모두 격파했습니다.';
         else if (reason === 'draw')
             UiRegistry.refs.resultText.textContent = '양쪽 메인 거점이 같은 tick에 파괴되었습니다.';
-        else if (stage?.mission?.heroLesson)
-            UiRegistry.refs.resultText.textContent = mine
-                ? '영웅 훈련을 마쳤습니다.'
-                : '영웅 훈련을 다시 시도해 보세요.';
         else
             UiRegistry.refs.resultText.textContent = mine
                 ? '적 메인 거점을 파괴했습니다.'
@@ -11232,39 +11196,30 @@ class LaunchPresentation {
         const level = s.launchRangeLevel?.[side] ?? 0,
             cost = LaunchRules.upgradeCost(level),
             premiumCost = LaunchRules.upgradePremiumCost(level),
-            fixedRange = !!(ReplayPresentation.replayPlayer
-                ? ReplayPresentation.replayPlayer.sim?.rules.campaign?.volleyGoals
-                : campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoals),
             maxed = cost == null,
             price = { cost, premiumCost },
-            warning = maxed || fixedRange ? '' : this.resourceWarning(s, side, price),
+            warning = maxed ? '' : this.resourceWarning(s, side, price),
             rangeButton = UiRegistry.refs.launchRangeBtn;
         UiRegistry.refs.launchReachText.textContent = this.card
             ? `${UnitDefinition.get(this.card).name} 최대 발사 ${LaunchRules.maxReachOf(this.card, level).toLocaleString('ko-KR')}`
             : '발사할 카드 없음';
-        UiRegistry.refs.launchRangeText.textContent = fixedRange
-            ? `사거리 ×${LaunchRules.rangeMultiplier(level)}`
-            : maxed
-              ? `사거리 ×${LaunchRules.rangeMultiplier(level)} · 최대`
-              : `사거리 ×${LaunchRules.rangeMultiplier(level)} → ×${LaunchRules.rangeMultiplier(level + 1)}`;
-        UiRegistry.refs.launchRangeCost.textContent = fixedRange
-            ? '연습 중 고정'
-            : maxed
-              ? '강화 완료'
-              : ResourceDisplay.costText(price);
+        UiRegistry.refs.launchRangeText.textContent = maxed
+            ? `사거리 ×${LaunchRules.rangeMultiplier(level)} · 최대`
+            : `사거리 ×${LaunchRules.rangeMultiplier(level)} → ×${LaunchRules.rangeMultiplier(level + 1)}`;
+        UiRegistry.refs.launchRangeCost.textContent = maxed
+            ? '강화 완료'
+            : ResourceDisplay.costText(price);
         UiRegistry.refs.launchRangeStatus.hidden = !warning;
         UiRegistry.refs.launchRangeStatus.textContent = warning
             ? ResourceDisplay.shortageText(price, balance)
             : '';
-        rangeButton.disabled = fixedRange || maxed || !!ReplayPresentation.replayPlayer;
+        rangeButton.disabled = maxed || !!ReplayPresentation.replayPlayer;
         rangeButton.setAttribute('aria-disabled', String(rangeButton.disabled || !!warning));
         rangeButton.title =
             warning ||
-            (fixedRange
-                ? '일제사격 연습에서는 발사 사거리가 고정됩니다.'
-                : maxed
-                  ? '모든 대포의 발사 사거리가 최대로 강화됐습니다.'
-                  : `모든 대포의 발사 사거리 강화 · ${ResourceDisplay.costText(price, true)}`);
+            (maxed
+                ? '모든 대포의 발사 사거리가 최대로 강화됐습니다.'
+                : `모든 대포의 발사 사거리 강화 · ${ResourceDisplay.costText(price, true)}`);
         this.renderHud(s, side);
         for (const event of s.events || [])
             if (event.type === 'launchRejected' && event.side === side)
@@ -11641,9 +11596,6 @@ class LaunchPresentation {
             return;
         }
         const { aim, shots, groups } = preview;
-        const practiceGoal = campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoals?.find(
-            (goal) => CampaignMission.volleyGoalContains(goal, aim),
-        );
         const vw = r.viewWorldW(),
             vh = r.viewWorldH(),
             points = shots.map((shot) => ({
@@ -11694,7 +11646,7 @@ class LaunchPresentation {
             ),
             groups.length,
             LaunchRules.volleyPassengerCount(groups),
-            { showVolleyHint, requiredCannons: practiceGoal?.cannons },
+            { showVolleyHint },
         );
     }
     static cancel() {
@@ -11980,13 +11932,10 @@ class BattlePresentation {
         LaunchPresentation.render(s, side);
         if (enteringGame) {
             const r = ActiveViewState.renderer;
-            const base = r.world.bases[side],
-                volleyGoals = campaignStage(MatchLifecycle.selectedCampaign)?.volleyGoals;
-            r.replayZoom = volleyGoals ? 0.6 : DEFAULT_LIVE_ZOOM;
+            const base = r.world.bases[side];
+            r.replayZoom = DEFAULT_LIVE_ZOOM;
             r.resize();
-            const points = volleyGoals
-                    ? [...LaunchRules.launchCannons(s, side), ...volleyGoals]
-                    : [base],
+            const points = [base],
                 middle = (key) => {
                     const values = points.map((point) => point[key]);
                     return (Math.min(...values) + Math.max(...values)) / 2;
