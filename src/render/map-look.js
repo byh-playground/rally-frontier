@@ -110,8 +110,11 @@ class ThemedMapLook {
     // Ground marks that change during a match: each base's band in the viewer's colour for that side, and the
     // capture points' ownership.
     drawGroundMarks(r) {
+        const previous = r._renderDepth;
         for (const base of this.bases) {
             const color = r.factionColor(base.side, { alpha: 0.55 });
+            // Raised ground has written its depth: the band lies on it, just in front of the surface under it.
+            r.setRenderDepth(r.groundMarkDepth(base.y, base.radius));
             for (const band of base.band) {
                 const steps = Math.max(2, Math.ceil((band.end - band.start) / BAND_STEP));
                 let innerX = 0,
@@ -141,6 +144,7 @@ class ThemedMapLook {
                 }
             }
         }
+        r.setRenderDepth(previous);
         r.drawCapturePointMarks();
     }
     // Standing props, far to near, each at the depth of its foot: units behind one are hidden, units in front

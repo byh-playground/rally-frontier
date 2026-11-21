@@ -5047,7 +5047,9 @@ class GLRenderer {
     // Who holds each capture point, as discs on the ground.
     drawCapturePointMarks() {
         if (!this.snapshot) return;
+        const previous = this._renderDepth;
         for (const cp of this.snapshot.capturePoints || []) {
+            this.setRenderDepth(this.groundMarkDepth(cp.y, CAPTURE_RADIUS));
             const base =
                 cp.owner != null
                     ? this.factionColor(cp.owner, { alpha: 0.18 })
@@ -5080,6 +5082,18 @@ class GLRenderer {
                 });
             }
         }
+        this.setRenderDepth(previous);
+    }
+    // The depth for a flat mark of `radius` on the ground around world row `z`: its edge nearest the viewer, a
+    // little in front, so the mark passes the depth raised ground has written under it (depth follows the ground
+    // row alone, never the height).
+    groundMarkDepth(z, radius) {
+        return (
+            Math.min(
+                this.renderDepthForWorld({ z: z - radius }),
+                this.renderDepthForWorld({ z: z + radius }),
+            ) - 0.0005
+        );
     }
     drawGroundGrid() {
         // The underlay grid belongs to the level-zero world plane. Its height and

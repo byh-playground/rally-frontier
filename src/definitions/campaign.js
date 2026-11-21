@@ -972,7 +972,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         practice: {
             card: 'rice',
             cue: '쌀을 쏴서 깜부기 쌀 셋을 쓰러뜨려요',
-            targets: [{ type: 'rice', x: 1010, y: 2815, count: 3, columns: 3 }],
+            targets: [{ type: 'rice', x: 800, y: 3290, count: 3, columns: 3 }],
         },
         mission: { firstCapture: 'natural-1' },
         sideGoal: { kind: 'withinMs', ms: 300_000 },
@@ -997,7 +997,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         practice: {
             card: 'pea',
             cue: '콩을 쏴서 깜부기 조 여덟을 한꺼번에 맞혀요',
-            targets: [{ type: 'millet', x: 1010, y: 2815, count: 8, columns: 4 }],
+            targets: [{ type: 'millet', x: 800, y: 3290, count: 8, columns: 4 }],
         },
         mission: {
             waves: [attack(10_000, { type: 'rice', x: 1600, y: 1500, count: 12, columns: 4 })],
@@ -1063,7 +1063,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         practice: {
             card: 'millet',
             cue: '빠른 조를 옥수수 바로 옆에 내려 들이받아요',
-            targets: [{ type: 'corn', x: 1010, y: 2815, count: 2, columns: 2, spacing: 40 }],
+            targets: [{ type: 'corn', x: 800, y: 3290, count: 2, columns: 2, spacing: 40 }],
         },
         mission: { surviveMs: 120_000, guardPoint: 'west-1', waves: [] },
         // Three attacks from three ways, each announced 5 s ahead, on the low ground before the guarded hill's north
