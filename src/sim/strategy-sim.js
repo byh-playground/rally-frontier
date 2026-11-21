@@ -276,9 +276,8 @@ class StrategySim {
         }));
         const campaign = this.rules.campaign;
         this.launchRangeLevel = [campaign?.startingLaunchRangeLevel ?? 0, 0];
-        // The campaign enemy's starting resources follow the match's pace (definitions/campaign-pace.js).
-        if (campaign?.pace)
-            this.wallet[1] = Math.round(this.wallet[1] * campaign.pace.resourceScale);
+        // The campaign enemy's starting wallet and income follow the match's pace (definitions/campaign-pace.js).
+        if (campaign?.pace) this.wallet[1] = Math.round(this.wallet[1] * campaign.pace.incomeScale);
         this.launchDeployments = [];
         this.heroes = this.decks.map((deck) => HeroDeployment.emptySlots(deck));
         this.heroRecovery = this.decks.map((deck) => HeroDeployment.emptySlots(deck));
@@ -1599,7 +1598,13 @@ class StrategySim {
                 if (wallet[point.owner] >= cap) continue;
                 // Carry fractional production in hundredths so wallet credits stay whole.
                 const wholeUnit = this.tps * 100;
-                channel.miningCarry += LaunchRules.productionRateHundredths(channel, efficiency);
+                let rate = LaunchRules.productionRateHundredths(channel, efficiency);
+                // The campaign enemy's income rate is the stage's difficulty (campaign-pace.js), in whole thousandths.
+                if (point.owner === 1 && this.rules.campaign?.pace)
+                    rate = Math.round(
+                        (rate * Math.round(this.rules.campaign.pace.incomeScale * 1000)) / 1000,
+                    );
+                channel.miningCarry += rate;
                 const gained = Math.min(
                     Math.floor(channel.miningCarry / wholeUnit),
                     cap - wallet[point.owner],

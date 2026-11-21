@@ -231,7 +231,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
 6. SESSION, VERIFICATION AND RELEASE
 - 캠페인은 고정 스테이지별 맵 seed·병종 풀·거점·목표를 경기 규칙으로 전달한다.
   첫 거점 완공과 방어전 버티기는 캠페인 시뮬레이션이 판정한다.
-  적 세기(`roster.campaign.difficulty`와 고장 순번 `Roster.regionPlace`)는 캠페인 경기 시작 때 한 번 `matchConfig.campaignPace`({ decisionScale, resourceScale })로 복사되고, 1배·1배가 아니면 `rules.campaign.pace`로 snapshot·리플레이에 실린다. 적 AI의 결정 간격과 적 시작 지갑만 읽으며(`definitions/campaign-pace.js`), 캠페인 적은 지갑이 가득 차도 간격을 앞당기지 않는다.
+  적 세기(`roster.campaign.difficulty`와 고장 순번 `Roster.regionPlace`)는 캠페인 경기 시작 때 한 번 `matchConfig.campaignPace`({ incomeScale })로 복사되고, 1배가 아니면 `rules.campaign.pace`로 snapshot·리플레이에 실린다. 적의 수입 비율(적 시작 지갑·적 진영의 식량·기름 수입·정해진 공격의 병력 수)만 읽으며(`definitions/campaign-pace.js`), 적 AI의 행동(결정 간격 포함)은 대전 AI와 같다.
   병종 강화(`roster.campaign.upgrades`)는 캠페인 경기 시작 때 한 번 `matchConfig.campaignUpgrades`([플레이어 편, 적 편] 카드 id)로 복사되고, `sim.campaignUpgrades`로 snapshot·리플레이·롤백에 같이 저장된다.
   대전·친구 대전·AI 대전은 이 값이 비어 있고(캠페인 스테이지가 아니면 `normalizeMatchConfig`가 버리고 sim이 거부한다), 능력 코드는 `CampaignUpgrades.has(sim, side, type)` 한 곳만 읽는다.
   강화가 하는 일은 병종 정의의 `campaignUpgrade { name, summary, <효과 하나>: 수치 }`가 선언하고 `defineUnit`이 효과 종류와 필드를 검사한다.
@@ -363,8 +363,8 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   판의 클리어 기록은 로컬 roster에 저장하며 실패·이탈은 기록하지 않는다.
   모든 판은 대전 맵(`map`: game-rules.js 프리셋 id)을 고르고 그 맵과 점령 지점 id로 시작 거점·수비대를 둔다. 맵 겉모습은 고장(`region`)이나
   판의 `theme`이 정한다(`campaignStageTheme`, map-themes.js).
-  캠페인 적의 출격 판단은 판의 `enemyPacing`을 따른다: `{ firstDecisionMs, intervalMs }`(첫 결정 뒤 한 간격으로만 결정하며 지갑이 가득 차도
-  앞당기지 않음)이거나 `{ disabled: true }`(정해진 공격과 구름만). 난이도는 `campaign-pace.js` 배율로 조절한다.
+  캠페인 적은 대전 AI와 똑같이 판단한다(익히기 동안만 쉬고, 정해진 공격과 구름만 쓰는 판은 `enemyPacing: { disabled: true }`로 AI를 끔).
+  난이도는 적의 수입 비율(`campaign-pace.js`: 쉬움 0.6·보통 1·어려움 1.4, 고장 순번 ×1·1.1·1.25) 하나로 조절한다.
   각 판은 양측 덱·시작 기름(`mission.startingPremium`)·시작 거점(`friendlyOutposts`·`enemyOutposts`)을 선언하고, 기름이 필요한 병종을 쓰는 쪽에는
   시작 기름을 둔다. 전투 중 목표와 공격 진행은 현재 경기 스냅샷을 읽어 표시한다.
   덱 편성의 잠긴 카드에는 해금 조건을 표시하고 장착 버튼을 비활성화한다. 별도 정보 버튼은 병종 소개를 연다.

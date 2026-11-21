@@ -200,25 +200,16 @@ class BotController {
         }
         const tps = snapshot.tps || SIM_TPS;
         const campaign = this.side === 1 ? this.session.sim?.rules?.campaign : null;
-        const pacing = campaign?.enemyPacing;
-        if (pacing?.disabled) return;
-        // A campaign enemy plays on the mission's clock: not at all while the stage's practice runs, and its first
-        // decision and ramp count from the practice's end (CampaignMission.clock, the match tick without a practice).
+        // A stage that carries its whole pressure in scripted attacks and clouds keeps the enemy AI off.
+        if (campaign?.enemyPacing?.disabled) return;
+        // A campaign enemy does not play while the stage's practice runs (CampaignMission.startTick is null then).
         if (campaign && CampaignMission.startTick(snapshot) === null) return;
-        const missionTick = campaign ? CampaignMission.clock(snapshot) : snapshot.tick;
-        if (pacing && missionTick < SimulationTiming.time(tps).ceilTicks(pacing.firstDecisionMs))
-            return;
 
         const state = this.commandExecutor.begin(snapshot);
         try {
-            // A campaign enemy keeps its stage's interval whatever its wallet holds, so the difficulty means something.
-            const intervalMs = BotController.decisionIntervalMs(
-                pacing,
-                campaign?.pace?.decisionScale,
-            );
             this.decisionIntervalTicks = Math.max(
                 1,
-                SimulationTiming.time(tps).ceilTicks(intervalMs),
+                SimulationTiming.time(tps).ceilTicks(DECISION_INTERVAL_MS),
             );
             if (state.tick - this.lastLaunchTick >= this.decisionIntervalTicks) {
                 this.lastLaunchTick = state.tick;
@@ -227,13 +218,6 @@ class BotController {
         } finally {
             this.commandExecutor.flush();
         }
-    }
-    // 모든 AI 공통 결정 간격. 캠페인 적은 판이 정한 고정 간격(`enemyPacing.intervalMs`)을 쓴다.
-    // `scale` is the campaign pace's decision multiplier (definitions/campaign-pace.js); absent means x1.
-    static decisionIntervalMs(pacing, scale = 1) {
-        // A defence stage's enemy launches at one steady interval between its scripted attacks: the scripted waves
-        // carry the pressure, so a full wallet must not turn the AI into a second rush.
-        return Math.round((pacing?.intervalMs ?? DECISION_INTERVAL_MS) * scale);
     }
     static distance(a, b) {
         return Math.hypot(a.x - b.x, a.y - b.y);
