@@ -352,11 +352,11 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   있어 그 밖의 경기 상태와 체크섬은 그대로다. 결과는 `clearRecord(stage, { cleared, sideGoal, difficulty })` 한 함수로
   `recordClear` 인자를 만들고, 그 호출은 새 캠페인 스테이지(`act` 칸을 선언한 판)에서만 해 결과 화면 제목 아래에 받은 햇살
   한 줄('☀ +75 · 처음 클리어 50 · 보조 목표 25')을 보인다. 새 캠페인 스테이지는 34판(`CAMPAIGN_STAGES`)과 따로
-  `CAMPAIGN_ACT_STAGES`에 두며 지금은 1막 4판이다(`campaignStage(id)`가 두 목록을 찾음). 어느 판이 열렸는지는 미리 만든
+  `CAMPAIGN_ACT_STAGES`에 두며 27판이다(`campaignStage(id)`가 두 목록을 찾음, 옛 34판은 곧 지움). 처음 가진 카드는 쌀 하나이고 나머지는 그 카드를 `rewardCard`로 둔 판을 처음 깰 때 얻는다. 테스트용 `?unlock=all`은 모든 판을 열고 아무것도 기록하지 않는다. 어느 판이 열렸는지는 미리 만든
   목록 없이 판 정의와 `Roster.clearedStages`(처음 클리어 기록)로 `src/ui/campaign-acts.js`가 계산한다: 1막은 순서대로,
   1막을 다 깨면 2막 세 고장(`region`)이 함께 열리고 고장 안은 순서대로, 세 고장의 마지막 판(보스)을 다 깨면 3막(막간
   먼저)이 순서대로. 판이 없는 고장·막은 화면에 나오지 않는다. 새 선택 화면(고장 카드형, `src/ui/campaign-screen.js`)은
-  `?campaign=acts`일 때만 타이틀의 캠페인 버튼이 열며 주소는 `#/campaign`(첫 화면)·`#/campaign/<막·고장>?stage=<id>`(판 점
+  타이틀의 캠페인 버튼이 열며 주소는 `#/campaign`(첫 화면)·`#/campaign/<막·고장>?stage=<id>`(판 점
   줄과 브리핑·난이도·출격)이다. 판은 `story { text, captain }`(한 줄 이야기·대장 대사)를 선언하고 브리핑과 결과 화면이
   두 줄을 함께 보인다.
   스테이지 해금은 로컬에 저장하며 실패·이탈은 해금하지 않는다.
@@ -945,33 +945,6 @@ END OF DEVELOPMENT CONTRACT
             </div>
         </section>
 
-        <dialog
-            id="campaignDialog"
-            class="deck-dialog campaign-dialog"
-            aria-labelledby="campaignTitle"
-        >
-            <div class="deck-panel">
-                <header class="deck-header">
-                    <h2 id="campaignTitle">캠페인</h2>
-                    <span id="campaignSunshine" class="sunshine-balance" aria-label="햇살"></span>
-                    <button
-                        id="campaignCloseBtn"
-                        class="deck-close"
-                        type="button"
-                        aria-label="닫기"
-                    >
-                        ×
-                    </button>
-                </header>
-                <div
-                    id="campaignDifficulty"
-                    class="campaign-difficulty"
-                    role="group"
-                    aria-label="적 난이도"
-                ></div>
-                <div id="campaignStages" class="campaign-stages"></div>
-            </div>
-        </dialog>
         <dialog
             id="campaignBriefingDialog"
             class="deck-dialog campaign-briefing"

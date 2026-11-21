@@ -1,5 +1,4 @@
 import { ResourceDisplay } from './resource-display.js';
-import { CAMPAIGN_GROUPS, CAMPAIGN_STAGES, CAMPAIGN_TIERS } from '../definitions/campaign.js';
 import { CAMPAIGN_DIFFICULTIES } from '../definitions/campaign-pace.js';
 import { SUNSHINE } from '../definitions/roster.js';
 import { CampaignActs } from './campaign-acts.js';
@@ -18,7 +17,7 @@ const SUNSHINE_LABELS = Object.freeze({
 
 // Launch match screens (title, friend, help, in-game HUD and cards, match menu, result) and their addresses.
 // Routes: #/ title, #/friend, #/help, #/play, #/play/menu, #/play/help, #/play/<grain> card detail, #/result, and
-// with `?campaign=acts` (dev-query.js) the new campaign: #/campaign, #/campaign/<chapter>?stage=<id> (CampaignScreen).
+// and the campaign: #/campaign, #/campaign/<chapter>?stage=<id> (CampaignScreen).
 // The game owns matches; this module owns which screen and sheet the address shows, and asks the game through `actions`.
 const SCREENS = new Set(['', 'friend', 'help', 'play', 'result']);
 
@@ -44,7 +43,7 @@ export class LaunchScreens {
         });
         this.navigation = createNavigation({
             normalize: (route) =>
-                SCREENS.has(route.screen) || (route.screen === 'campaign' && actions.campaignActs)
+                SCREENS.has(route.screen) || route.screen === 'campaign'
                     ? route
                     : { screen: '', item: '', query: '' },
         });
@@ -196,53 +195,7 @@ export class LaunchScreens {
             if (this.navigation.snapshot().screen === 'play') A.startAiMatch();
             else this.go('play');
         };
-        const campaignButton = $('campaignBtn'),
-            campaignDialog = $('campaignDialog');
-        let campaignHoldTimer = null;
-        const cancelCampaignHold = () => {
-            clearTimeout(campaignHoldTimer);
-            campaignHoldTimer = null;
-        };
-        campaignButton.addEventListener('pointerdown', (event) => {
-            if (!event.isPrimary || event.button !== 0) return;
-            cancelCampaignHold();
-            campaignHoldTimer = setTimeout(() => {
-                campaignHoldTimer = null;
-                A.campaignProgress.enableDebugUnlock();
-                campaignButton.click();
-            }, 1000);
-        });
-        for (const type of ['pointerup', 'pointerleave', 'pointercancel', 'lostpointercapture'])
-            campaignButton.addEventListener(type, (event) => {
-                if (event.isPrimary) cancelCampaignHold();
-            });
-        campaignButton.addEventListener('pointermove', (event) => {
-            if (campaignHoldTimer === null || !event.isPrimary) return;
-            if (!campaignButton.contains(document.elementFromPoint(event.clientX, event.clientY)))
-                cancelCampaignHold();
-        });
-        campaignButton.addEventListener('contextmenu', (event) => {
-            if (campaignHoldTimer !== null || event.pointerType === 'touch') event.preventDefault();
-        });
-        window.addEventListener('blur', cancelCampaignHold);
-        campaignButton.onclick = () => {
-            if (A.campaignActs) {
-                this.go('campaign');
-                return;
-            }
-            if (campaignDialog.open) return;
-            const progress = A.campaignProgress;
-            progress.sync();
-            $('campaignTitle').textContent = progress.debugUnlocked
-                ? '캠페인 · 디버그 해금'
-                : '캠페인';
-            this.campaignOpen = this.initialCampaignOpen();
-            this.renderCampaignList();
-            $('campaignSunshine').textContent = `☀ ${A.sunshine()}`;
-            this.renderCampaignDifficulty();
-            campaignDialog.showModal();
-        };
-        $('campaignCloseBtn').onclick = () => campaignDialog.close();
+        $('campaignBtn').onclick = () => this.go('campaign');
         $('friendMatchBtn').onclick = () => this.go('friend');
         $('titleHelpBtn').onclick = () => this.go('help');
         $('friendCreateBtn').onclick = () => {
@@ -295,28 +248,16 @@ export class LaunchScreens {
         );
         $('resultTitleBtn').onclick = () => A.leaveToTitle();
         $('resultDeckBtn').onclick = () => A.openRewardDeck(this.resultReward);
-        // A new-campaign stage's next opens on its chapter's screen, the old one on the briefing dialog.
+        // The next stage opens on its chapter's screen.
         $('resultNextCampaignBtn').onclick = () =>
-            this.resultNextStage?.act
-                ? A.openCampaignStage(
-                      CampaignActs.chapterOf(this.resultNextStage).id,
-                      this.resultNextStage.id,
-                  )
-                : this.showCampaignBriefing(this.resultNextStage);
-    }
-    // Depth list: tiers (depth 0) fold open to their stages (depth 1); a stage group (`CAMPAIGN_GROUPS`, depth 1)
-    // folds open to its stages (depth 2). Only one tier and one group are open at a time, so the whole list fits
-    // without scrolling.
-    static initialCampaignOpen() {
-        const progress = this.actions.campaignProgress;
-        const next = progress.nextStage;
-        if (next) return { tier: next.tier, group: next.group ?? null };
-        const opened = CAMPAIGN_TIERS.filter((tier) => progress.isTierOpen(tier.id));
-        return { tier: opened.at(-1)?.id ?? null, group: null };
+            A.openCampaignStage(
+                CampaignActs.chapterOf(this.resultNextStage).id,
+                this.resultNextStage.id,
+            );
     }
     // The difficulty toggle (above the list, or on the new campaign's briefing): one of three, remembered in the
     // roster save.
-    static renderCampaignDifficulty(host = this.$('campaignDifficulty')) {
+    static renderCampaignDifficulty(host) {
         const picked = this.actions.difficulty();
         host.replaceChildren(
             ...CAMPAIGN_DIFFICULTIES.map(({ id, title }) => {
@@ -334,146 +275,6 @@ export class LaunchScreens {
                 return button;
             }),
         );
-    }
-    static renderCampaignList(focusKey) {
-        const list = this.$('campaignStages');
-        list.replaceChildren(...CAMPAIGN_TIERS.map((tier) => this.campaignTierSection(tier)));
-        if (focusKey) list.querySelector(`[data-key="${focusKey}"]`)?.focus();
-    }
-    static campaignTierSection(tier) {
-        const progress = this.actions.campaignProgress;
-        const open = progress.isTierOpen(tier.id);
-        const expanded = this.campaignOpen.tier === tier.id;
-        const stages = CAMPAIGN_STAGES.filter((stage) => stage.tier === tier.id);
-        const section = document.createElement('section');
-        section.className = `campaign-tier${open ? '' : ' is-locked'}`;
-        const done = stages.filter((stage) => progress.isComplete(stage)).length;
-        const row = this.campaignRow({
-            depth: 0,
-            key: `tier-${tier.id}`,
-            title: tier.title,
-            expanded,
-            meta: open ? `${done}/${stages.length}` : '🔒 앞 단계에서 하나만 깨면 열려요',
-        });
-        row.classList.add('is-tier');
-        row.onclick = () => {
-            this.campaignOpen = { ...this.campaignOpen, tier: expanded ? null : tier.id };
-            this.renderCampaignList(`tier-${tier.id}`);
-        };
-        section.append(row);
-        if (!expanded) return section;
-        for (const stage of stages.filter((stage) => !stage.group))
-            section.append(this.campaignStageRow(stage, 1));
-        for (const group of CAMPAIGN_GROUPS) {
-            const members = stages.filter((stage) => stage.group === group.id);
-            if (!members.length) continue;
-            const key = `group-${tier.id}-${group.id}`,
-                groupOpen = this.campaignOpen.group === group.id;
-            const groupRow = this.campaignRow({
-                depth: 1,
-                key,
-                title: group.title,
-                expanded: groupOpen,
-                art: group.art,
-                meta: `${members.filter((stage) => progress.isComplete(stage)).length}/${members.length}`,
-            });
-            groupRow.classList.add('is-tier');
-            groupRow.onclick = () => {
-                this.campaignOpen = { ...this.campaignOpen, group: groupOpen ? null : group.id };
-                this.renderCampaignList(key);
-            };
-            section.append(groupRow);
-            if (groupOpen)
-                for (const stage of members) section.append(this.campaignStageRow(stage, 2));
-        }
-        return section;
-    }
-    // One list row. `expanded` is undefined for leaves; folding rows show an arrow and report aria-expanded.
-    static campaignRow({ depth, key, title, expanded, art, mark, meta, hardMark = false }) {
-        const row = document.createElement('button');
-        row.type = 'button';
-        row.className = 'campaign-row';
-        row.dataset.key = key;
-        row.style.setProperty('--depth', depth);
-        const lead = document.createElement('span');
-        lead.className = 'campaign-row-lead';
-        lead.setAttribute('aria-hidden', 'true');
-        if (expanded !== undefined) {
-            lead.textContent = expanded ? '▾' : '▸';
-            row.setAttribute('aria-expanded', String(expanded));
-        }
-        row.append(lead);
-        if (art || mark) {
-            const image = document.createElement('span');
-            image.className = 'campaign-row-art';
-            if (mark) image.textContent = mark;
-            else {
-                const img = document.createElement('img');
-                img.alt = '';
-                this.actions.portraitSource(art).then((src) => {
-                    img.src = src;
-                });
-                image.append(img);
-            }
-            row.append(image);
-        }
-        const name = document.createElement('span');
-        name.className = 'campaign-row-title';
-        name.textContent = title;
-        row.append(name);
-        if (meta) {
-            const note = document.createElement('span');
-            note.className = 'campaign-row-meta';
-            note.textContent = meta;
-            row.append(note);
-        }
-        // The small mark of a stage cleared on hard.
-        if (hardMark) {
-            const star = document.createElement('span');
-            star.className = 'campaign-row-hard';
-            star.setAttribute('aria-hidden', 'true');
-            star.textContent = '★';
-            row.append(star);
-        }
-        return row;
-    }
-    static campaignStageRow(stage, depth) {
-        const progress = this.actions.campaignProgress;
-        const locked = !progress.canStart(stage);
-        const done = progress.isComplete(stage);
-        const reward = stage.rewardCard ? `보상 ${this.actions.grainName(stage.rewardCard)}` : '';
-        const hard = done && this.actions.isHardCleared(stage.id);
-        const row = this.campaignRow({
-            depth,
-            key: `stage-${stage.id}`,
-            // Under a group row the shared "영웅 …"·"코코넛 …" prefix is redundant and would crowd the row on a phone.
-            title: stage.group ? stage.title.split(' · ').pop() : stage.title,
-            art: stage.nodeMark ? null : (stage.rewardCard ?? stage.deck[0]),
-            mark: stage.nodeMark,
-            meta: done ? '완료' : reward,
-            hardMark: hard,
-        });
-        row.classList.add('is-stage');
-        if (locked) row.classList.add('is-locked');
-        if (done) {
-            row.classList.add('is-done');
-            row.querySelector('.campaign-row-lead').textContent = '✓';
-        }
-        row.disabled = locked;
-        row.setAttribute(
-            'aria-label',
-            `${stage.title}, ${locked ? '잠김' : done ? (hard ? '어려움으로 완료' : '완료') : '도전 가능'}`,
-        );
-        row.onclick = () => this.showCampaignBriefing(stage);
-        return row;
-    }
-    static showCampaignBriefing(stage) {
-        if (!stage || !this.actions.campaignProgress.canStart(stage)) return;
-        CampaignPresentation.showBriefing(stage, () => {
-            const list = this.$('campaignDialog');
-            if (list.open) list.close();
-            this.actions.startCampaignStage(stage);
-        });
     }
     // `stage` is the won campaign stage (null outside the campaign or on a loss): a new-campaign stage shows its story.
     static renderCampaignResult(reward, nextStage, stage = null) {

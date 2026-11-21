@@ -15,8 +15,7 @@
     box-shadow: 0 18px 60px #251c166b;
 }
 
-.campaign-briefing::backdrop,
-.campaign-dialog::backdrop {
+.campaign-briefing::backdrop {
     background: #29231db3;
 }
 

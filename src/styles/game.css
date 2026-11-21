@@ -1670,12 +1670,6 @@ body.result-mode .p2p-health {
     font-weight: 700;
 }
 
-.campaign-dialog {
-    width: min(460px, calc(100% - 16px));
-}
-.campaign-dialog .deck-panel {
-    padding: clamp(12px, 4vw, 20px);
-}
 .campaign-difficulty {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -1699,104 +1693,4 @@ body.result-mode .p2p-health {
 .campaign-difficulty-option:focus-visible {
     outline: 2px solid var(--green);
     outline-offset: 1px;
-}
-.campaign-row-hard {
-    flex: none;
-    color: #c98a00;
-    font-size: 12px;
-}
-.campaign-stages {
-    display: flex;
-    flex-direction: column;
-    margin-top: 6px;
-}
-.campaign-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    min-height: 36px;
-    padding: 2px 4px 2px calc(4px + var(--depth, 0) * 20px);
-    border: 0;
-    border-radius: 8px;
-    background: none;
-    color: var(--ink);
-    font: inherit;
-    font-size: 14px;
-    text-align: left;
-}
-.campaign-row.is-tier {
-    font-weight: 800;
-}
-.campaign-tier + .campaign-tier {
-    border-top: 1px solid var(--line);
-}
-.campaign-tier.is-locked > .campaign-row {
-    opacity: 0.55;
-}
-.campaign-row-lead {
-    flex: none;
-    width: 14px;
-    color: var(--green);
-    font-size: 13px;
-    font-weight: 800;
-    text-align: center;
-}
-.campaign-row-art {
-    display: grid;
-    flex: none;
-    place-items: center;
-    width: 30px;
-    height: 28px;
-    color: var(--green);
-    font-size: 11px;
-    font-weight: 800;
-    white-space: nowrap;
-}
-.campaign-row-art img {
-    width: auto;
-    max-width: 100%;
-    height: 28px;
-    object-fit: contain;
-}
-.campaign-row-title {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.campaign-row-meta {
-    flex: none;
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 600;
-}
-.campaign-row.is-stage:not(.is-locked):not(.is-done) .campaign-row-title {
-    font-weight: 700;
-}
-.campaign-row.is-stage:not(.is-locked):hover,
-.campaign-row.is-tier:hover,
-.campaign-row:focus-visible {
-    background: #f1f6df;
-}
-.campaign-row.is-locked {
-    opacity: 0.45;
-    filter: grayscale(0.8);
-}
-.campaign-row.is-done .campaign-row-meta {
-    color: var(--green);
-}
-/* A short phone screen: tighter rows so the longest opened list still fits without scrolling. */
-@media (max-height: 600px) {
-    .campaign-row {
-        min-height: 26px;
-    }
-    .campaign-row-art {
-        width: 26px;
-        height: 22px;
-    }
-    .campaign-row-art img {
-        height: 22px;
-    }
 }
