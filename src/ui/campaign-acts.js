@@ -28,6 +28,8 @@ const CHAPTERS = Object.freeze(
 
 export class CampaignActs {
     static chapters = CHAPTERS;
+    // `?unlock=all` (dev-query.js): every chapter and stage is open, whatever was cleared. Testing only.
+    static unlockAll = false;
 
     static chapter(id) {
         return CHAPTERS.find((chapter) => chapter.id === id) ?? null;
@@ -43,6 +45,7 @@ export class CampaignActs {
     }
 
     static isChapterOpen(chapter, cleared) {
+        if (this.unlockAll) return true;
         const done = (act) =>
             CHAPTERS.filter((other) => other.act === act).every((other) =>
                 act === 2
@@ -55,6 +58,7 @@ export class CampaignActs {
     }
 
     static isOpen(stage, cleared) {
+        if (this.unlockAll) return !!this.chapterOf(stage);
         const chapter = this.chapterOf(stage);
         if (!chapter || !this.isChapterOpen(chapter, cleared)) return false;
         const index = chapter.stages.indexOf(stage);

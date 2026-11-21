@@ -7,6 +7,13 @@
 // no turn (StrategySim.stepSimulation: no move, no target, no attack), the way a spore sac's captive takes none, but it
 // stays an ordinary enemy: anything can target it, hit it, push it and kill it. `card` must be a card of the player's
 // deck; `cue` is the battle screen's one line while the practice runs.
+// Other goals a practice may declare instead of (or beside) targets, for the cards that do not kill soldiers; the
+// practice ends on the tick every goal it declares has held (a goal that held stays held):
+//     built: '<point id>'          the player's outpost on that empty capture point is complete (참깨)
+//     forwardCannon: true          one of the player's forward cannons stands (감자)
+//     clamp: '<point id>'          a sticky-rice soldier holds the muzzle of the enemy outpost on that point (찹쌀),
+//                                  a point of the stage's `enemyOutposts`
+// `sim.campaignPractice` then also holds `cannon` / `clamped` (set once), only in a stage declaring that goal.
 // A practice may also name an enemy outpost to bring down (`building`, the id of a capture point in the stage's
 // `enemyOutposts`): the one building of the enemy that takes damage while the practice runs (for a card that only
 // attacks buildings), and the practice ends when it is destroyed and every target (if any) is down. `targets` may then
@@ -29,13 +36,14 @@ import { UnitDefinition } from '../definitions/units.js';
 import { Blight } from './blight.js';
 import { CampaignMission } from './campaign-mission.js';
 import { LaunchRules } from './launch-rules.js';
+import { StickyCling } from './capabilities/sticky-cling.js';
 
 export class CampaignPractice {
     // The stage's declared practice, checked, or null.
     static declared(sim) {
         const practice = sim.rules.campaign?.practice;
         if (practice === undefined) return null;
-        const { card, cue, building } = practice ?? {};
+        const { card, cue, building, built, forwardCannon, clamp } = practice ?? {};
         const targets = practice.targets ?? [];
         const campaign = sim.rules.campaign;
         if (campaign.introducedEnemy || campaign.mission?.formations || campaign.volleyGoals)
@@ -46,7 +54,28 @@ export class CampaignPractice {
             throw new Error(`익히기 카드는 플레이어 덱(deck)에 있어야 합니다: ${card}`);
         if (typeof cue !== 'string' || !cue)
             throw new Error('익히기 선언에는 전투 화면에 띄울 안내 한 줄(cue)이 필요합니다.');
-        if (!Array.isArray(targets) || (!targets.length && building === undefined))
+        if (built !== undefined) {
+            CampaignMission.point(sim, built);
+            if (
+                campaign.enemyOutposts?.includes(built) ||
+                campaign.friendlyOutposts?.includes(built)
+            )
+                throw new Error(`익히기로 지을 점령 지점(built)은 비어 있어야 합니다: ${built}`);
+        }
+        if (clamp !== undefined && !campaign.enemyOutposts?.includes(clamp))
+            throw new Error(
+                `익히기 포구 막기(clamp)는 적 거점(enemyOutposts)이어야 합니다: ${clamp}`,
+            );
+        if (forwardCannon !== undefined && forwardCannon !== true)
+            throw new Error('익히기 forwardCannon은 true만 쓸 수 있습니다.');
+        if (
+            !Array.isArray(targets) ||
+            (!targets.length &&
+                building === undefined &&
+                built === undefined &&
+                clamp === undefined &&
+                forwardCannon === undefined)
+        )
             throw new Error(
                 '익히기 선언에는 비어 있지 않은 targets 목록이나 building이 필요합니다.',
             );
@@ -82,7 +111,11 @@ export class CampaignPractice {
     static initialize(sim) {
         const practice = this.declared(sim);
         if (!practice) return;
-        sim.campaignPractice = { doneTick: null };
+        sim.campaignPractice = {
+            doneTick: null,
+            ...(practice.forwardCannon && { cannon: false }),
+            ...(practice.clamp !== undefined && { clamped: false }),
+        };
         const ids = new Set(CampaignMission.spawnFormations(sim, practice.targets ?? []));
         for (const unit of sim.units) {
             if (!ids.has(unit.id)) continue;
@@ -99,6 +132,35 @@ export class CampaignPractice {
     // Is a practice running now? (Never in a match without one.)
     static running(sim) {
         return !!sim.campaignPractice && sim.campaignPractice.doneTick === null;
+    }
+
+    // The goals beside the targets that still have not held (see the top): the player's outpost not complete yet, the
+    // forward cannon not up, the muzzle not held. Latches `cannon` and `clamped` once they hold.
+    static goalsLeft(sim, latch = false) {
+        const practice = sim.rules.campaign.practice,
+            state = sim.campaignPractice;
+        let left = 0;
+        if (practice.built !== undefined) {
+            const point = CampaignMission.point(sim, practice.built),
+                outpost = sim.buildings.find((candidate) => candidate.id === point.outpostId);
+            if (!(point.owner === 0 && outpost && outpost.alive !== false && !outpost.construction))
+                left++;
+        }
+        if (state.cannon === false) {
+            const stands = sim.buildings.some(
+                (b) => b.type === 'forward-cannon' && b.side === 0 && b.alive !== false,
+            );
+            if (stands && latch) state.cannon = true;
+            else if (!stands) left++;
+        }
+        if (state.clamped === false) {
+            const point = CampaignMission.point(sim, practice.clamp),
+                outpost = sim.buildings.find((candidate) => candidate.id === point.outpostId);
+            if (outpost && StickyCling.clingerOf(sim, outpost)) {
+                if (latch) state.clamped = true;
+            } else left++;
+        }
+        return left;
     }
 
     // The enemy outpost the practice asks to bring down, or null (alive or not).
@@ -129,9 +191,12 @@ export class CampaignPractice {
     static update(sim) {
         const state = sim.campaignPractice;
         if (!state || state.doneTick !== null) return false;
+        // Latched first: a goal that holds for a moment (a cannon that stands, a held muzzle) must not be missed.
+        const goalsLeft = this.goalsLeft(sim, true);
         for (const unit of sim.units) if (unit.alive && unit.practiceTarget) return false;
         const outpost = this.building(sim);
         if (outpost && outpost.alive !== false) return false;
+        if (goalsLeft) return false;
         state.doneTick = sim.tick;
         return true;
     }
@@ -145,6 +210,7 @@ export class CampaignPractice {
         for (const unit of sim.units) if (unit.alive && unit.practiceTarget) left++;
         const outpost = this.building(sim);
         if (outpost && outpost.alive !== false) left++;
+        if (state.doneTick === null) left += this.goalsLeft(sim);
         return { doneTick: state.doneTick, left };
     }
 }
