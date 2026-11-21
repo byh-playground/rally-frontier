@@ -114,11 +114,60 @@ function arcPoints(cx, cy, rx, ry, start, end, rotation = 0, step = 0.12) {
     return out;
 }
 
+// Numbers collected in a typed array that grows as they arrive: `array` holds `length` of them. The field is
+// collected as doubles (it is cut again before it is final); what is final goes straight into 32-bit floats, so no
+// second copy of the mesh is ever held as plain numbers.
+class Floats {
+    constructor(Type, capacity = 1 << 16) {
+        this.array = new Type(capacity);
+        this.length = 0;
+    }
+    reserve(count) {
+        if (this.length + count <= this.array.length) return;
+        const grown = new this.array.constructor(
+            Math.max(this.array.length * 2, this.length + count),
+        );
+        grown.set(this.array.subarray(0, this.length));
+        this.array = grown;
+    }
+    // Three vertices, each GROUND_VERTEX_FLOATS numbers.
+    triangle(a, b, c) {
+        this.reserve(TRIANGLE_FLOATS);
+        this.array.set(a, this.length);
+        this.array.set(b, this.length + GROUND_VERTEX_FLOATS);
+        this.array.set(c, this.length + GROUND_VERTEX_FLOATS * 2);
+        this.length += TRIANGLE_FLOATS;
+    }
+    vertex(x, y, ox, oy, r, g, b, a) {
+        this.reserve(GROUND_VERTEX_FLOATS);
+        const array = this.array,
+            at = this.length;
+        array[at] = x;
+        array[at + 1] = y;
+        array[at + 2] = ox;
+        array[at + 3] = oy;
+        array[at + 4] = r;
+        array[at + 5] = g;
+        array[at + 6] = b;
+        array[at + 7] = a;
+        this.length = at + GROUND_VERTEX_FLOATS;
+    }
+    // The numbers `from`..`to` of another typed array.
+    copy(source, from, to) {
+        this.reserve(to - from);
+        this.array.set(source.subarray(from, to), this.length);
+        this.length += to - from;
+    }
+    take(other) {
+        this.copy(other.array, 0, other.length);
+    }
+}
+
 class GroundMesh {
-    // `heightScale`: how far up the screen one unit of height is drawn.
-    constructor(heightScale) {
+    // `heightScale`: how far up the screen one unit of height is drawn. `data`: where the triangles go.
+    constructor(heightScale, data = new Floats(Float64Array)) {
         this.heightScale = heightScale;
-        this.data = [];
+        this.data = data;
         // Screen-space offset of the vertices being added, and the world rectangle they are clipped to.
         this.ox = 0;
         this.oy = 0;
@@ -143,7 +192,7 @@ class GroundMesh {
         this.triangle(va, vc, this.lifted(...d, cd));
     }
     triangle(a, b, c) {
-        if (!this.clip) return this.data.push(...a, ...b, ...c);
+        if (!this.clip) return this.data.triangle(a, b, c);
         // Clip to the rectangle, carrying colour across each cut.
         let polygon = [a, b, c];
         const [x0, y0, x1, y1] = this.clip;
@@ -169,7 +218,7 @@ class GroundMesh {
             if (polygon.length < 3) return 0;
         }
         for (let i = 1; i < polygon.length - 1; i++)
-            this.data.push(...polygon[0], ...polygon[i], ...polygon[i + 1]);
+            this.data.triangle(polygon[0], polygon[i], polygon[i + 1]);
         return 0;
     }
     // Runs `build` with every vertex offset on screen by (ox, oy).
@@ -312,16 +361,17 @@ class GroundMesh {
     }
 }
 
-// Cuts the field's triangles (`ranges` of `data`) along the terrain's surfaces. Returns the triangles left on the
-// field (`low`: one wholly on a surface is dropped, it would never be seen) and, per surface height in rising order,
-// the pieces on ramps reaching that height and on tops at that height, each vertex offset on the screen by the
-// height of the surface under it. Pieces keep the paint order of the triangles they were cut from.
-function raiseField(data, ranges, surfaces, heightScale) {
+// Cuts the field's triangles (`ranges` of `field`) along the terrain's surfaces. The triangles left on the field go
+// to `low` (one wholly on a surface is dropped, it would never be seen); returned are, per surface height in rising
+// order, the pieces on ramps reaching that height and on tops at that height, each vertex offset on the screen by
+// the height of the surface under it. Pieces keep the paint order of the triangles they were cut from.
+function raiseField(field, ranges, surfaces, heightScale, low) {
+    const data = field.array;
     const CELL = 128,
         grid = new Map(),
         tiers = new Map();
     const tierOf = (height) => {
-        if (!tiers.has(height)) tiers.set(height, { height, ramps: [], tops: [] });
+        if (!tiers.has(height)) tiers.set(height, emptyTier(height));
         return tiers.get(height);
     };
     for (const surface of surfaces) {
@@ -360,7 +410,7 @@ function raiseField(data, ranges, surfaces, heightScale) {
     const emit = (plane, vertex) => {
         const height =
             plane.h0 + plane.gx * (vertex[0] - plane.x0) + plane.gy * (vertex[1] - plane.y0);
-        plane.out.push(
+        plane.out.vertex(
             vertex[0],
             vertex[1],
             vertex[2],
@@ -371,11 +421,10 @@ function raiseField(data, ranges, surfaces, heightScale) {
             vertex[7],
         );
     };
-    const low = [];
     let at = 0,
         stamp = 0;
     const keep = (to) => {
-        for (let i = at; i < to; i++) low.push(data[i]);
+        low.copy(data, at, to);
         at = to;
     };
     for (const [from, to] of ranges) {
@@ -457,14 +506,19 @@ function raiseField(data, ranges, surfaces, heightScale) {
             else
                 for (const [plane, ...piece] of pieces)
                     for (const vertex of piece) emit(plane, vertex);
-            if (!whole || !covered)
-                for (let i = offset; i < offset + TRIANGLE_FLOATS; i++) low.push(data[i]);
+            if (!whole || !covered) low.copy(data, offset, offset + TRIANGLE_FLOATS);
         }
         at = to;
     }
-    keep(data.length);
-    return { low, tiers: [...tiers.values()].sort((u, v) => u.height - v.height) };
+    keep(field.length);
+    return [...tiers.values()].sort((u, v) => u.height - v.height);
 }
+// One stage of the terrain's painting: the pieces of the field on ramps reaching `height` and on tops at it.
+const emptyTier = (height) => ({
+    height,
+    ramps: new Floats(Float32Array),
+    tops: new Floats(Float32Array),
+});
 
 // The ground mesh of a map: Float32Array of GROUND_VERTEX_FLOATS per vertex, three vertices a triangle,
 // in paint order.
@@ -890,8 +944,8 @@ export function buildGroundMesh(look, theme, projection, seedText) {
     // Moves the centre vertex of every fan triangle added since `from` by a screen offset.
     function shiftCentres(from, ox, oy) {
         for (let i = from; i < mesh.data.length; i += GROUND_VERTEX_FLOATS * 3) {
-            mesh.data[i + 2] += ox;
-            mesh.data[i + 3] += oy;
+            mesh.data.array[i + 2] += ox;
+            mesh.data.array[i + 3] += oy;
         }
     }
     // Light from the upper left of the screen: the highlight's middle is offset, its edge is the shape's own.
@@ -1224,28 +1278,30 @@ export function buildGroundMesh(look, theme, projection, seedText) {
         );
     }
     field[1][1] = mesh.data.length;
-    if (!terrain.triangles.length) return new Float32Array(mesh.data);
+    if (!terrain.triangles.length)
+        return new Float32Array(mesh.data.array.subarray(0, mesh.data.length));
 
     // ---- terrain: the field laid onto its surfaces, between their walls, cap stones and shadows ----
-    const { low, tiers } = raiseField(mesh.data, field, terrain.triangles, HS),
+    // Everything from here on is final and is written straight into the mesh's own floats, in paint order.
+    const out = new Floats(Float32Array, mesh.data.length),
+        tiers = raiseField(mesh.data, field, terrain.triangles, HS, out),
         wallRule = theme.terrain.wall,
         shadowRule = theme.terrain.shadow,
-        R = randomSource(seedText)('terrain'),
-        out = low;
-    const append = (values) => {
-        for (let i = 0; i < values.length; i++) out.push(values[i]);
-    };
+        R = randomSource(seedText)('terrain');
+    // The field has been cut and copied: its doubles are not needed any more.
+    mesh.data = null;
     // The field's own level is a stage of the painting even when nothing was cut onto it: walls stand on it and
     // their shadows fall on it.
     if (!tiers.some((tier) => tier.height === 0)) {
-        tiers.push({ height: 0, ramps: [], tops: [] });
+        tiers.push(emptyTier(0));
         tiers.sort((u, v) => u.height - v.height);
     }
     tiers.forEach((tier, index) => {
-        append(tier.ramps);
+        out.take(tier.ramps);
+        tier.ramps = null;
         // The walls up to this height: earth, courses of stone, a dark foot. A wall has a course of stones per
         // `courseHeight` of the step up from the surface below.
-        const walls = new GroundMesh(HS),
+        const walls = new GroundMesh(HS, out),
             courses = Math.max(
                 1,
                 Math.round(
@@ -1345,11 +1401,11 @@ export function buildGroundMesh(look, theme, projection, seedText) {
                 rgba(rise.foot, 0.55),
             );
         }
-        append(walls.data);
-        append(tier.tops);
+        out.take(tier.tops);
+        tier.tops = null;
         // Along every rim: a low stone parapet, seen from outside over a wall facing the viewer and from inside
         // over one facing away, and a row of cap stones on it.
-        const caps = new GroundMesh(HS),
+        const caps = new GroundMesh(HS, out),
             capRule = theme.terrain.cap,
             capHeight = tier.height + wallRule.parapet;
         for (const rim of terrain.rims) {
@@ -1408,10 +1464,9 @@ export function buildGroundMesh(look, theme, projection, seedText) {
                 walked += length;
             }
         }
-        append(caps.data);
         // On this surface: the shadow of each wall standing on it, towards the lower right of the screen, and a
         // shade along the wall's top line that shows on the ground behind a wall seen from its back.
-        const shadows = new GroundMesh(HS),
+        const shadows = new GroundMesh(HS, out),
             above = tiers[index + 1]?.height ?? Infinity;
         for (const rim of terrain.rims) {
             if (rim.low < tier.height || rim.low >= above) continue;
@@ -1434,7 +1489,6 @@ export function buildGroundMesh(look, theme, projection, seedText) {
                 }),
             );
         }
-        append(shadows.data);
     });
-    return new Float32Array(out);
+    return out.array.slice(0, out.length);
 }
