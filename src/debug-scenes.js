@@ -160,7 +160,7 @@ function practiceDeclaration(scene, params, place) {
 
 // `sideGoal=<kind>[,<value>]`: the stage's side goal (SideGoal). The value is `count` of freeCaptives, `ms` of
 // withinMs and `hpRatio` of keepAlive (the main base), e.g. `sideGoal=freeCaptives`, `sideGoal=freeCaptives,6`,
-// `sideGoal=burnFields`, `sideGoal=withinMs,60000`, `sideGoal=keepAlive,0.9`. Returns that declaration, or undefined.
+// `sideGoal=burnFields`, `sideGoal=withinMs,60000`, `sideGoal=keepAlive,0.9`, `sideGoal=lossesAtMost,10`. Returns that declaration, or undefined.
 function sideGoalDeclaration(scene, params) {
     if (params.sideGoal === undefined) return undefined;
     const [kind, value] = String(params.sideGoal).split(','),
@@ -169,6 +169,7 @@ function sideGoalDeclaration(scene, params) {
         return { kind, ...(value !== undefined && { count: integer(scene, 'sideGoal', value) }) };
     if (kind === 'burnFields') return { kind };
     if (kind === 'withinMs') return { kind, ms: number() };
+    if (kind === 'lossesAtMost') return { kind, count: integer(scene, 'sideGoal', value) };
     if (kind === 'keepAlive') return { kind, hpRatio: number() };
     throw new Error(
         `${scene} takes sideGoal=<${SideGoal.KINDS.join('|')}>[,value]: ${params.sideGoal}`,

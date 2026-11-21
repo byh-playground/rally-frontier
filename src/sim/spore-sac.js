@@ -10,10 +10,16 @@
 // When the sac is destroyed (StrategySim.destroyBuilding) every living captive is freed and joins the other side
 // (Blight.convert), wherever it stands. A blighted soldier bound to no sac and every hero stay as they are. A
 // freed soldier is nobody's kill: no hero growth, no kill count.
+// A boss stage may turn its sacs into the player's reinforcements (campaign.js): a sac declares `reinforce: [{ type,
+// count, x, y, columns? }]` (wave formations for the player's side) and the stage `sporeReinforceMs`. When the
+// mission's clock reaches that time, once, every sac that has been destroyed by then brings its formations and a sac
+// still standing brings nothing: the more sacs the player broke, the larger the help. `sim.sporeReinforce { done, ids,
+// broken }` (the sacs' ids in declaration order; how many were broken when it came) exists only in such a stage.
 import { BuildingDefinition } from '../definitions/buildings.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { Blight } from './blight.js';
 import { Building } from './entities.js';
+import { CampaignMission } from './campaign-mission.js';
 import { LaunchRules } from './launch-rules.js';
 
 const TYPE = 'spore-sac';
@@ -44,6 +50,28 @@ export class SporeSac {
                 !Array.isArray(sac.captives)
             )
                 throw new Error('포자 주머니 선언에는 x, y와 captives 목록이 필요합니다.');
+            if (sac.reinforce !== undefined) {
+                if (!Number.isFinite(sim.rules.campaign.sporeReinforceMs))
+                    throw new Error('주머니의 증원(reinforce)에는 sporeReinforceMs가 필요합니다.');
+                if (!Array.isArray(sac.reinforce) || !sac.reinforce.length)
+                    throw new Error('주머니 증원은 비어 있지 않은 목록이어야 합니다.');
+                for (const formation of sac.reinforce) {
+                    const { type, x, y, count, side, hold } = formation ?? {};
+                    if (
+                        !UnitDefinition.get(type) ||
+                        LaunchRules.isHeroType(type) ||
+                        !Number.isSafeInteger(count) ||
+                        count < 1 ||
+                        side !== undefined ||
+                        hold !== undefined ||
+                        !Number.isFinite(x) ||
+                        !Number.isFinite(y)
+                    )
+                        throw new Error(
+                            `주머니 증원으로 둘 수 없는 병사 선언입니다: ${type} × ${count}`,
+                        );
+                }
+            }
             for (const group of sac.captives)
                 if (
                     !this.canBind(group?.type) ||
@@ -59,7 +87,58 @@ export class SporeSac {
 
     // Match start (StrategySim constructor): every declared sac and its captives.
     static initialize(sim) {
-        for (const sac of this.declared(sim)) this.place(sim, sac);
+        const ids = [];
+        for (const sac of this.declared(sim)) ids.push(this.place(sim, sac).id);
+        if (sim.rules.campaign?.sporeReinforceMs !== undefined)
+            sim.sporeReinforce = { done: false, ids, broken: 0 };
+    }
+
+    // Is this sac broken (destroyed) now?
+    static broken(sim, id) {
+        const sac = sim.buildings.find((building) => building.id === id);
+        return !sac || sac.alive === false;
+    }
+
+    // One tick (StrategySim.stepSimulation, before the tick's commands): when the mission's clock reaches the stage's
+    // `sporeReinforceMs`, the broken sacs bring their reinforcements, once.
+    static beforeCommands(sim) {
+        const state = sim.sporeReinforce;
+        if (!state || state.done) return;
+        const campaign = sim.rules.campaign;
+        if (CampaignMission.clock(sim) < sim.time.ceilTicks(campaign.sporeReinforceMs)) return;
+        state.done = true;
+        campaign.sporeSacs.forEach((sac, i) => {
+            if (!sac.reinforce || !this.broken(sim, state.ids[i])) return;
+            state.broken++;
+            CampaignMission.spawnFormations(
+                sim,
+                sac.reinforce.map((formation) => ({ ...formation, side: 0 })),
+            );
+            sim.events.push({ type: 'sporeReinforce', sac: i, x: sac.x, y: sac.y });
+        });
+    }
+
+    // What the battle screen and the side goal read (StrategySim.snapshot): whether the reinforcements came, how many
+    // sacs brought them, and how many sacs bring them in all. Undefined without them.
+    static view(sim) {
+        const state = sim.sporeReinforce;
+        if (!state) return undefined;
+        const total = sim.rules.campaign.sporeSacs.filter((sac) => sac.reinforce).length;
+        let broken = state.broken;
+        if (!state.done)
+            for (let i = 0; i < state.ids.length; i++)
+                if (sim.rules.campaign.sporeSacs[i].reinforce && this.broken(sim, state.ids[i]))
+                    broken++;
+        return {
+            done: state.done,
+            broken,
+            total,
+            atTick:
+                CampaignMission.startTick(sim) === null
+                    ? null
+                    : CampaignMission.startTick(sim) +
+                      sim.time.ceilTicks(sim.rules.campaign.sporeReinforceMs),
+        };
     }
 
     // One sac at (x, y) for the blight's side, its captives in rings around it: the first `ringRadius` out, each

@@ -100,11 +100,16 @@ const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 // (CampaignMission.clock) stands at 0: defence waves, the survival countdown, spore clouds and blight field growth all
 // count their ms from that tick. The match start rejects a card outside `deck`, an empty cue and a place outside the
 // map. The new campaign's act 1 stages declare one.
+// A practice may name an enemy outpost to bring down instead of (or beside) soldier targets: `building: '<point id>'`, a
+// point of `enemyOutposts` (nuts-crack-the-gate: peanuts only attack buildings). A boss stage may declare sacs that
+// bring the player reinforcements (sim/spore-sac.js): `sporeReinforceMs` and, on each sac, `reinforce: [{ type, count,
+// x, y }]`; the sacs broken when that time comes bring theirs (nuts-watermelon-warden).
 // A stage may declare one side goal (sim/side-goal.js), paid once with sunshine (SUNSHINE.sideGoal) beside the clear;
 // winning without it is still winning. Its kinds: `{ kind: 'freeCaptives', count? }` (the spore sacs' captives freed,
 // all or at least `count`), `{ kind: 'burnFields' }` (no blighted cell left), `{ kind: 'withinMs', ms }` (won within
 // `ms` on the mission's clock) and `{ kind: 'keepAlive', hpRatio, point? }` (won with the main base, or the player's
-// starting outpost on `point`, never below `hpRatio` of its health). The match start rejects another kind and a goal
+// starting outpost on `point`, never below `hpRatio` of its health). `{ kind: 'lossesAtMost', count }` (won with at most `count` of the player's soldiers lost) and
+// `{ kind: 'allReinforcements' }` (a boss stage's sacs all broken when its reinforcements come). The match start rejects another kind and a goal
 // its stage cannot judge (captives without sacs, fields without fields, a point the player does not hold). The new
 // campaign's act 1 stages declare one each.
 // A stage of the new campaign declares `act` (1, 2 or 3, the act it belongs to): its won result is recorded in the
@@ -1091,7 +1096,196 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         ],
         sideGoal: { kind: 'keepAlive', hpRatio: 0.5, point: 'west-1' },
     },
+    {
+        id: 'nuts-thorn-watch',
+        act: 2,
+        region: 'nut-forest',
+        map: 'twin-gates',
+        title: '가시 초소',
+        story: {
+            text: '밤톨 초소가 느린 감염 병력을 깎아낸다.',
+            captain: '가시 돋친 말은 금지다. 가시 돋친 탄은 허가!',
+        },
+        deck: ['chestnut', 'pea', 'redbean', 'rice'],
+        enemyDeck: ['pea', 'acorn'],
+        rewardCard: 'chestnut',
+        enemyOutposts: ['natural-2'],
+        friendlyOutposts: ['natural-1'],
+        startingLaunchRangeLevel: 1,
+        seed: 204,
+        blight: true,
+        enemyPacing: defendPacing(30_000, 25_000),
+        practice: {
+            card: 'chestnut',
+            cue: '밤톨을 쏴서 깜부기 콩 둘을 쓰러뜨려요',
+            targets: [{ type: 'pea', x: 560, y: 3200, count: 2, columns: 2 }],
+        },
+        mission: { startingPremium: [premiumFor('chestnut') * 3, premiumFor('acorn') * 3] },
+        sideGoal: { kind: 'lossesAtMost', count: 25 },
+    },
+    {
+        id: 'nuts-whirling-path',
+        act: 2,
+        region: 'nut-forest',
+        map: 'small-field',
+        title: '빙글 숲길',
+        story: {
+            text: '도토리가 좁은 숲길의 떼를 쓸어낸다.',
+            captain: '돌아라! 내 월급 얘기는 돌리지 말고!',
+        },
+        deck: ['acorn', 'chestnut', 'pea', 'rice', 'redbean'],
+        enemyDeck: ['rice', 'millet'],
+        rewardCard: 'acorn',
+        enemyOutposts: ['natural-2'],
+        friendlyOutposts: ['natural-1'],
+        seed: 205,
+        blight: true,
+        enemyPacing: defendPacing(30_000, 20_000),
+        practice: {
+            card: 'acorn',
+            cue: '도토리를 쏴서 빽빽한 깜부기 쌀 열둘을 한꺼번에 쓸어요',
+            targets: [{ type: 'rice', x: 800, y: 3290, count: 12, columns: 4 }],
+        },
+        mission: { startingPremium: [premiumFor('acorn') * 3 + premiumFor('chestnut') * 2, 0] },
+        sideGoal: { kind: 'withinMs', ms: 240_000 },
+    },
+    {
+        id: 'nuts-crack-the-gate',
+        act: 2,
+        region: 'nut-forest',
+        map: 'artillery-basin',
+        title: '껍질 문을 깨라',
+        story: {
+            text: '땅콩 철거대가 포로를 가둔 문을 부순다.',
+            captain: '문 좀 열어 달랬더니 건물을 여는군!',
+        },
+        deck: ['peanut', 'acorn', 'chestnut', 'pea', 'rice'],
+        enemyDeck: ['chestnut', 'rice'],
+        rewardCard: 'peanut',
+        // The first of them is the practice's building, standing in the opening view.
+        enemyOutposts: [
+            'basin-natural-1',
+            'basin-natural-2',
+            'basin-shoulder-2',
+            'basin-edge-2',
+            'basin-rim-2',
+        ],
+        friendlyOutposts: ['basin-oil-1'],
+        seed: 208,
+        blight: true,
+        enemyPacing: defendPacing(30_000, 25_000),
+        practice: {
+            card: 'peanut',
+            cue: '땅콩을 쏴서 깜부기가 차지한 거점을 부숴요',
+            building: 'basin-natural-1',
+        },
+        mission: {
+            startingPremium: [
+                premiumFor('acorn') * 3 + premiumFor('chestnut') * 2,
+                premiumFor('chestnut') * 3,
+            ],
+        },
+        sporeSacs: [{ x: 1650, y: 3000, captives: [{ type: 'peanut', count: 5 }] }],
+        sideGoal: { kind: 'freeCaptives', count: 5 },
+    },
+    {
+        id: 'nuts-last-shell',
+        act: 2,
+        region: 'nut-forest',
+        map: 'causeway-flats',
+        title: '마지막 껍질',
+        story: {
+            text: '호두가 버티는 동안 화로로 둑길을 되찾는다.',
+            captain: '단단하다고 불판 위에서 낮잠 자진 마라.',
+        },
+        deck: ['walnut', 'chestnut', 'peanut', 'pea', 'rice', 'redbean'],
+        enemyDeck: ['rice', 'buckwheat'],
+        rewardCard: 'walnut',
+        enemyOutposts: ['natural-2'],
+        friendlyOutposts: ['natural-1'],
+        seed: 206,
+        blight: true,
+        enemyPacing: defendPacing(30_000, 20_000),
+        practice: {
+            card: 'walnut',
+            cue: '단단한 호두를 메밀 앞에 내려 가시를 받아내요',
+            targets: [{ type: 'buckwheat', x: 811, y: 3559, count: 3, columns: 3 }],
+        },
+        mission: { startingPremium: [premiumFor('chestnut') * 3, 0] },
+        blightFields: [{ x: 1020, y: 1840 }],
+        braziers: [{ x: 1090, y: 1930, radius: 125 }],
+        sideGoal: { kind: 'burnFields' },
+    },
+    {
+        id: 'nuts-rolling-hollow',
+        act: 2,
+        region: 'nut-forest',
+        map: 'twin-gates',
+        title: '굴러가는 골짜기',
+        story: {
+            text: '코코넛이 관문 사이 감염 무리를 밀어낸다.',
+            captain: '이번 작전은 굴러가기만 해도 성공이다!',
+        },
+        deck: ['coconut', 'walnut', 'chestnut', 'peanut', 'pea', 'redbean'],
+        enemyDeck: ['rice', 'millet'],
+        rewardCard: 'coconut',
+        enemyOutposts: ['natural-2'],
+        friendlyOutposts: ['natural-1'],
+        startingLaunchRangeLevel: 1,
+        seed: 207,
+        blight: true,
+        enemyPacing: defendPacing(20_000, 15_000),
+        practice: {
+            card: 'coconut',
+            cue: '코코넛을 굴려서 길게 늘어선 깜부기 쌀을 밀어내요',
+            targets: [{ type: 'rice', x: 560, y: 3200, count: 12, columns: 12, spacing: 40 }],
+        },
+        mission: { startingPremium: [premiumFor('coconut') * 3 + premiumFor('chestnut') * 2, 0] },
+        sideGoal: { kind: 'withinMs', ms: 300_000 },
+    },
+    {
+        id: 'nuts-watermelon-warden',
+        act: 2,
+        region: 'nut-forest',
+        map: 'small-field',
+        title: '수박 숲지기',
+        story: {
+            text: '숲지기 수박의 깜부기를 떼어낸다.',
+            captain: '껍질은 두꺼워도 마음까지 닫힌 건 아니다!',
+        },
+        // The hero the stage frees is not lent beforehand: the guardian is its own lesson.
+        deck: ['redbean', 'chestnut', 'walnut', 'peanut', 'pea', 'rice'],
+        enemyDeck: ['watermelon', 'rice'],
+        rewardCard: 'watermelon',
+        enemyOutposts: [],
+        friendlyOutposts: ['natural-1'],
+        seed: 209,
+        blight: true,
+        enemyPacing: SCRIPTED_ONLY,
+        boss: { type: 'watermelon', level: 5, x: 1900, y: 1300 },
+        mission: {
+            startingPremium: [premiumFor('chestnut') * 3, 0],
+            waves: [
+                attack(1_000, { type: 'rice', x: 1900, y: 1400, count: 4, columns: 4, hold: true }),
+            ],
+        },
+        // Three sacs on the way; the ones broken when the reinforcements come each bring redbeans and chestnuts.
+        sporeReinforceMs: 75_000,
+        sporeSacs: [
+            { x: 1100, y: 2150, captives: [], reinforce: sacHelp(1100, 2150) },
+            { x: 1900, y: 2400, captives: [], reinforce: sacHelp(1900, 2400) },
+            { x: 1500, y: 1250, captives: [], reinforce: sacHelp(1500, 1250) },
+        ],
+        sideGoal: { kind: 'allReinforcements' },
+    },
 ]);
+// What one broken sac of the nut forest's boss stage brings the player: 30 redbeans and 3 chestnuts where it stood.
+function sacHelp(x, y) {
+    return [
+        { type: 'redbean', x, y, count: 30, columns: 6 },
+        { type: 'chestnut', x, y: y + 90, count: 3, columns: 3 },
+    ];
+}
 // One announced attack of act 1's defence: corn 2 and rice 6 brought by a spore cloud that comes once.
 function sporeAttack(atMs, x, y) {
     return {
