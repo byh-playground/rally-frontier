@@ -308,23 +308,57 @@
 }
 .cs-story {
     display: flex;
+    flex-direction: column;
     gap: 8px;
-    align-items: flex-start;
-    font-size: 14px;
-    line-height: 1.4;
     text-align: left;
 }
 .cs-story p {
     margin: 0;
 }
-.cs-story p.cs-brief-line {
-    margin-top: 4px;
-    color: #4a3a2a;
+/* The main story: the level the player should remember. */
+.cs-story .cs-main {
+    padding-left: 10px;
+    border-left: 4px solid #548c55;
+    color: #2b4a30;
+    font-size: 17px;
+    font-weight: 800;
+    line-height: 1.45;
 }
-.cs-story p.cs-say {
-    margin-top: 4px;
+/* The sub level: the mission line and the commander's tip, smaller and quieter. */
+.cs-sub {
+    display: grid;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: #f4f1e3;
+    color: #5a5446;
+    font-size: 13px;
+    line-height: 1.4;
+}
+.cs-sub b {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 0 6px;
+    border-radius: 6px;
+    background: #e3ddc6;
+    color: #5a5446;
+    font-size: 11px;
+    font-weight: 800;
+}
+.cs-sub .cs-say {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
     color: #754625;
     font-weight: 700;
+}
+.cs-sub .cs-say b {
+    background: #f1d9a6;
+    color: #6b4a12;
+}
+.cs-sub .cs-captain {
+    width: 22px;
+    height: 22px;
 }
 .cs-goals {
     list-style: none;
@@ -426,6 +460,8 @@
 /* The story on the result screen, under the sunshine line. */
 .result-campaign-story {
     order: 2;
+    display: grid;
+    gap: 8px;
     padding: 10px;
     border: 1px solid var(--line);
     border-radius: 14px;
@@ -449,9 +485,6 @@
     }
     .cs-title {
         font-size: 19px;
-    }
-    .cs-brief .cs-captain {
-        display: none;
     }
     .cs-go {
         height: 46px;

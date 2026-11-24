@@ -24,12 +24,14 @@ const escape = (text) =>
         (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
     );
 
-// The story block of the briefing (the story line, the mission line `brief` and the commander's tip) and of the
-// result (`result: true`: the stage's `after` when it declares one, else the story line and the tip).
+// The story block, in two levels so the main story is the one thing a player keeps: the main story line first and
+// large, then a quiet sub block under it (the mission line `brief`, the briefing only, and the commander's tip).
+// The result (`result: true`) tells the stage's `after` as the main story when it declares one.
 export function storyMarkup(stage, { brief = false, result = false } = {}) {
     const { text, brief: mission, captain, after } = stage.story;
-    if (result && after) return `${CAPTAIN_MARKUP}<div><p>${escape(after)}</p></div>`;
-    return `${CAPTAIN_MARKUP}<div><p>${escape(text)}</p>${brief ? `<p class="cs-brief-line">${escape(mission)}</p>` : ''}<p class="cs-say">사령관: “${escape(captain)}”</p></div>`;
+    if (result && after) return `<p class="cs-main">${escape(after)}</p>`;
+    const sub = `${brief ? `<p class="cs-brief-line"><b>작전</b><span>${escape(mission)}</span></p>` : ''}<p class="cs-say">${CAPTAIN_MARKUP}<span><b>사령관</b>${escape(captain)}</span></p>`;
+    return `<p class="cs-main">${escape(text)}</p><div class="cs-sub">${sub}</div>`;
 }
 
 export class CampaignScreen {

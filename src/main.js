@@ -1439,6 +1439,18 @@ class GLRenderer {
         );
         return RangeUtil.clamp(top, min, max);
     }
+    // The replay's view state (perspective, vision, zoom, frame hook) belongs to the replay alone: a replay leaves
+    // none of it for the next match on this renderer.
+    endReplay() {
+        this.replayObserverAll = false;
+        this.replayPerspectiveSide = null;
+        this.replayVisionMode = null;
+        this.replayOrientationRole = null;
+        this.replayZoom = 1;
+        this.onPresentationFrame = null;
+        this.snapshot = null;
+        this.resetFogTransition();
+    }
     orientationRole() {
         return this.replayOrientationRole || this.role;
     }
@@ -10015,8 +10027,9 @@ class ReplayPresentation {
         ReplayPresentation.replayPlayer?.stop();
         ReplayPresentation.replayPlayer = null;
         ReplayPresentation.replayLoadedData = null;
-        UiController.setUiScreen('lobby');
-        location.reload();
+        ActiveViewState.renderer?.endReplay();
+        MatchLifecycle.leaveMatch();
+        LaunchScreens.replace('');
     }
 }
 
@@ -10311,6 +10324,7 @@ class MatchLifecycle {
         ActiveViewState.roomCode = '';
         // What the match left on the lobby: the connection status line and the connection health badge.
         ConnectionPresentation.hideP2PHealth();
+        MatchLifecycle.cancelOnlinePreparation();
         UiRegistry.refs.singleStatus.textContent = '';
         UiController.setElementVisible(UiRegistry.refs.singleStatus, false);
         UiController.setUiScreen('lobby');
@@ -12247,18 +12261,17 @@ UiRegistry.refs.replayZoomInBtn?.addEventListener('click', () =>
 );
 UiRegistry.refs.replayExitBtn?.addEventListener('click', ReplayPresentation.stopReplay);
 
-// A rematch of the AI starts a fresh match on the same page; a friend match reloads back to the friend sheet.
-const reloadAt = (hash) => {
-    history.replaceState(null, '', location.pathname + location.search + hash);
-    location.reload();
-};
+// A rematch of the AI starts a fresh match on the same page; a friend match goes back to the friend sheet.
 UiController.bindImmediateButton(UiRegistry.refs.rematch, () => {
     const stage = campaignStage(MatchLifecycle.selectedCampaign);
     if (stage) MatchLifecycle.startCampaignStage(stage);
     else if (MatchLifecycle.singleMatch) {
         MatchLifecycle.leaveMatch();
         LaunchScreens.actions.startAiMatch();
-    } else reloadAt('#/friend');
+    } else {
+        MatchLifecycle.leaveMatch();
+        LaunchScreens.replace('friend');
+    }
 });
 BattlePresentation.setupCanvas();
 
