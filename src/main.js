@@ -6763,7 +6763,9 @@ class GLRenderer {
             amount = this.fogTransitionAmount(now);
         const upload = (textures, id, data) => {
             let tex = textures.get(id);
-            if (tex && (this.fogMaskSize?.w !== w || this.fogMaskSize?.h !== h)) {
+            // A texture left from another map (the renderer outlives a match) has its own size: compare that, not the
+            // last mask size, which the other texture map may already have moved to this map's.
+            if (tex && (tex.width !== w || tex.height !== h)) {
                 this.device.deleteTexture(tex);
                 textures.delete(id);
                 tex = null;
@@ -10170,7 +10172,11 @@ class MatchLifecycle {
         sess.onResult = (w, reason = 'base-destroyed') => {
             // Authoritative result must not depend on which role is currently displayed.
             if (isCurrent()) MatchLifecycle.presentMatchResult(w, reason, r);
-            if (sess.leaveAfterResult) setTimeout(() => location.reload(), 0);
+            if (sess.leaveAfterResult)
+                setTimeout(() => {
+                    MatchLifecycle.leaveMatch();
+                    LaunchScreens.replace('');
+                }, 0);
         };
 
         trans.onPeerReady = () => {
@@ -10294,6 +10300,20 @@ class MatchLifecycle {
         ActiveViewState.snap = null;
         if (errors.length)
             throw new AggregateError(errors, '세션 종료 처리 중 오류가 발생했습니다.');
+    }
+    // Leaves a finished match for the menus without reloading the page: the sessions and the AI end and the lobby
+    // shows, while the loaded sprites, GPU resources and sounds stay. Every way out of a match to a menu (next stage,
+    // title, the AI rematch) goes through here; a new match starts from a clean state exactly as after `disposeMatches`.
+    static leaveMatch() {
+        MatchLifecycle.closeMatchMenu();
+        MatchLifecycle.disposeMatches('leave-to-menu');
+        MatchLifecycle.selectedCampaign = null;
+        ActiveViewState.roomCode = '';
+        // What the match left on the lobby: the connection status line and the connection health badge.
+        ConnectionPresentation.hideP2PHealth();
+        UiRegistry.refs.singleStatus.textContent = '';
+        UiController.setElementVisible(UiRegistry.refs.singleStatus, false);
+        UiController.setUiScreen('lobby');
     }
     static setJoinBusy(busy) {
         this.joinBusy = !!busy;
@@ -12227,7 +12247,7 @@ UiRegistry.refs.replayZoomInBtn?.addEventListener('click', () =>
 );
 UiRegistry.refs.replayExitBtn?.addEventListener('click', ReplayPresentation.stopReplay);
 
-// A rematch reloads into a fresh match: the AI starts again from #/play, a friend match goes back to the friend sheet.
+// A rematch of the AI starts a fresh match on the same page; a friend match reloads back to the friend sheet.
 const reloadAt = (hash) => {
     history.replaceState(null, '', location.pathname + location.search + hash);
     location.reload();
@@ -12235,7 +12255,10 @@ const reloadAt = (hash) => {
 UiController.bindImmediateButton(UiRegistry.refs.rematch, () => {
     const stage = campaignStage(MatchLifecycle.selectedCampaign);
     if (stage) MatchLifecycle.startCampaignStage(stage);
-    else reloadAt(MatchLifecycle.singleMatch ? '#/play' : '#/friend');
+    else if (MatchLifecycle.singleMatch) {
+        MatchLifecycle.leaveMatch();
+        LaunchScreens.actions.startAiMatch();
+    } else reloadAt('#/friend');
 });
 BattlePresentation.setupCanvas();
 
@@ -12634,8 +12657,15 @@ async function startTitleApp() {
         actions: {
             campaignProgress,
             roster,
-            openCampaignStage: (chapterId, stageId) =>
-                reloadAt(`#/campaign/${chapterId}?stage=${encodeURIComponent(stageId)}`),
+            // The next stage opens on its chapter's briefing, on the same page.
+            openCampaignStage: (chapterId, stageId) => {
+                MatchLifecycle.leaveMatch();
+                LaunchScreens.navigation.replace({
+                    screen: 'campaign',
+                    item: chapterId,
+                    query: `stage=${encodeURIComponent(stageId)}`,
+                });
+            },
             sunshine: () => roster.sunshine,
             difficulty: () => roster.difficulty,
             setDifficulty: (id) => roster.setDifficulty(id),
@@ -12698,7 +12728,10 @@ async function startTitleApp() {
                 UiRegistry.refs.room.value = code;
                 MatchLifecycle.submitJoinRoom(deckMode);
             },
-            leaveToTitle: () => reloadAt('#/'),
+            leaveToTitle: () => {
+                MatchLifecycle.leaveMatch();
+                LaunchScreens.replace('');
+            },
         },
     });
 }
