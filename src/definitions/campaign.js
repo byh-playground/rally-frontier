@@ -81,25 +81,26 @@ const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 // declarations and the roster's cleared stages (src/ui/campaign-acts.js); a region with no stage here does not show.
 // Every stage of it declares its story for the briefing and the result: `story.text` the story line that follows the
 // stage before it, `story.brief` the mission line (the rules this stage teaches; the briefing only) and
-// `story.captain` the commander's one-line tip, shown together (no dialogue to step through).
+// `story.captain` the commander's one-line tip, shown together (no dialogue to step through). A stage may add
+// `story.after`: what the result screen tells after the win instead of the briefing's three lines.
 export const CAMPAIGN_REGIONS = Object.freeze([
     // `theme` is the map look of the region's stages (map-themes.js); a region without one keeps its map's own.
     {
         id: 'nut-forest',
         title: '견과 숲',
-        blurb: '단단한 껍질들이 깜부기에 갇혔어요.',
+        blurb: '밤톨·도토리·땅콩·호두·코코넛. 단단한 적을 거리·범위·공성으로 무너뜨려요.',
         theme: 'nut-forest',
     },
     {
         id: 'field-town',
         title: '밭 마을',
-        blurb: '밭 곡식들이 깜부기 장단에 춤춰요.',
+        blurb: '옥수수·팝콘·감자·참깨·메밀·고추. 진지를 세우고 길을 열어요.',
         theme: 'field-town',
     },
     {
         id: 'wind-hill',
         title: '바람 언덕',
-        blurb: '바람 타고 포자가 날아다녀요.',
+        blurb: '민들레씨·해바라기씨·목화솜·검은콩·찹쌀. 벽을 넘고 하늘과 대포망을 지켜요.',
         theme: 'wind-hill',
     },
 ]);
@@ -387,6 +388,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
             text: '견과 숲의 수호자 수박이 깜부기에 지배당해 숲 깊은 곳을 막고 있다.',
             brief: '수박 수호자는 5레벨 영웅으로, 아군 병사를 30명 쓰러뜨리면 각성한다. 포자 주머니 세 개를 75초 안에 부수면 부순 개수만큼 지원군이 온다. 수호자를 쓰러뜨리면 해방된다.',
             captain: '병력을 한꺼번에 투입하면 각성만 앞당깁니다. 나눠서 투입하세요.',
+            after: '숲지기 수박의 깜부기가 떨어져 나갔다. 수박이 부대에 합류한다.',
         },
         // The hero the stage frees is not lent beforehand: the guardian is its own lesson.
         deck: ['redbean', 'chestnut', 'walnut', 'peanut', 'pea', 'rice'],
@@ -610,6 +612,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
             text: '밭 마을의 수호자 바나나가 깜부기에 지배당해 길 끝을 막고 있다.',
             brief: '바나나 수호자는 5레벨 영웅으로, 네 번째 평타의 부메랑이 적을 왕복 관통한다. 포자 주머니 세 개를 75초 안에 부수면 부순 개수만큼 지원군이 온다. 수호자를 쓰러뜨리면 해방된다.',
             captain: '병력을 한 줄로 늘어세우지 마세요.',
+            after: '바나나 수호자가 깜부기에서 풀려나 부대에 합류한다.',
         },
         deck: ['redbean', 'pea', 'buckwheat', 'corn', 'sesame', 'chili'],
         enemyDeck: ['banana', 'rice'],
@@ -803,6 +806,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
             text: '바람 언덕의 수호자 포도가 깜부기에 지배당해 언덕 위에서 기다린다.',
             brief: '포도 수호자는 5레벨 영웅으로, 네 번째 평타마다 표적의 앞·중앙·뒤에 곡사탄을 던진다. 포자 주머니 세 개를 75초 안에 부수면 부순 개수만큼 지원군이 온다. 수호자를 쓰러뜨리면 해방된다.',
             captain: '병력이 뭉쳐 있으면 곡사탄 세 알에 한꺼번에 맞습니다. 나눠서 투입하세요.',
+            after: '포도 수호자가 깜부기에서 풀려나 부대에 합류한다.',
         },
         deck: ['redbean', 'sunflower-seed', 'cotton', 'sticky-rice', 'pea', 'rice'],
         enemyDeck: ['grape', 'rice'],
@@ -843,6 +847,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
             text: '세 고장의 수호자를 해방한 부대가 후미와 합류한다. 포자 구름이 세 방향에서 몰려온다.',
             brief: '포자 구름이 세 방향에서 차례로 도착하고, 구름마다 쌀·조·민들레씨가 섞여 있다. 5초 전에 예고 표시가 뜬다. 100초 동안 앞 거점을 지킨다.',
             captain: '나는 병력은 해바라기씨와 목화솜으로 막으세요.',
+            after: '100초를 버텨 냈지만 후미를 지키던 대장과 무전이 끊겼다. 대장이 있던 자리에는 검은 가루가 묻은 초상만 남았다.',
         },
         deck: ['watermelon', 'pea', 'redbean', 'sunflower-seed', 'cotton', 'sesame', 'rice'],
         enemyDeck: ['rice', 'millet', 'dandelion'],
@@ -955,6 +960,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
             text: '검은 이삭에게 지배당한 대장이 곳간 깊은 곳에서 기다린다.',
             brief: '감염된 대장은 5레벨 영웅이다. 고추 6명이 진입로의 감염 밭을 태운 뒤 팥 100명과 호두 2명이 합류한다. 대장을 쓰러뜨리면 감염이 풀린다.',
             captain: '밭은 10초마다 넓어집니다. 고추로 진입로를 먼저 여세요.',
+            after: '검은 이삭이 대장에게서 떨어져 나갔다. 대장이 햇볕 아래로 돌아온다.',
         },
         deck: [
             'grape',
