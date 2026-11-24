@@ -97,6 +97,13 @@ export class Roster {
         });
     }
 
+    // Forgets the player's picks for a stage's deck: it is the recommended deck again. Resolves false when the save failed.
+    resetCampaignDeck(stageId) {
+        return this.#write((draft) => {
+            delete draft.campaign.decks?.[stageId];
+        });
+    }
+
     // Remembers the difficulty. Resolves false when the save failed.
     setDifficulty(id) {
         if (!isDifficulty(id)) throw new RangeError(`알 수 없는 난이도: ${id}`);

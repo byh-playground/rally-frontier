@@ -250,7 +250,7 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   강화가 꺼진 경기에는 이 상태 칸이 하나도 생기지 않는다.
   캠페인에 들고 가는 덱은 유저가 판마다 편성한다(`src/definitions/campaign-deck.js`, 편성 창 `src/ui/campaign-deck.js`): 판의 `deck`은 추천 덱이고,
   판이 가르치는 카드(`practice.card`·`rewardCard`)는 필수, 최대 8칸·영웅 1명, 고를 수 있는 카드는 가진 카드와 그 판의 추천 덱이다. 편성은 `roster.campaign.decks[판 id]`에
-  저장하고 경기는 시작 때 `resolveCampaignDeck`으로 정리한 덱을 한 번 복사한다. 병종 강화의 상태·열기는 이 편성 창에만 있고 대전 덱 화면에는 캠페인 요소가 없다.
+  저장하고 경기는 시작 때 `resolveCampaignDeck`으로 정리한 덱을 한 번 복사한다. 병종 강화는 캠페인 화면 머리의 강화 시트(`src/ui/campaign-upgrades.js`)에서만 열고(강화는 판이 아니라 병종에 영구히 속한다), 편성 창은 열린 강화를 ★로만 표시한다. 대전 덱 화면에는 캠페인 요소가 없다.
   깜부기 감염(`src/sim/blight.js`)은 유닛 상태 한 칸 `unit.blighted = true`다(건물은 없음). 스테이지 정의가 `blight: true`를
   선언하면 그 경기에서 적 편(`Blight.ENEMY_SIDE`)으로 생기는 병사·영웅이 감염 상태로 생긴다(`StrategySim.spawnUnit`).
   선언은 `rules.campaign`에 실려 경기 시작 정보·snapshot·리플레이·롤백을 스테이지와 같이 타고, 선언이 없는 경기(대전·
@@ -944,9 +944,56 @@ END OF DEVELOPMENT CONTRACT
                 </button>
                 <h2 id="campaignScreenTitle">캠페인</h2>
                 <span id="campaignScreenSunshine" class="sunshine-balance" aria-label="햇살"></span>
+                <button id="campaignScreenUpgradeBtn" class="launch-btn cs-upgrade" type="button">
+                    강화
+                </button>
             </header>
             <div id="campaignScreenBody" class="cs-body"></div>
         </section>
+        <dialog
+            id="campaignUpgradeDialog"
+            class="deck-dialog"
+            aria-labelledby="campaignUpgradeTitle"
+        >
+            <div class="deck-panel">
+                <header class="deck-header">
+                    <div>
+                        <p class="deck-kicker">캠페인 전용</p>
+                        <h2 id="campaignUpgradeTitle">병종 강화</h2>
+                    </div>
+                    <span
+                        id="campaignUpgradeSunshine"
+                        class="sunshine-balance"
+                        aria-label="햇살"
+                    ></span>
+                    <button
+                        id="campaignUpgradeCloseBtn"
+                        class="deck-close"
+                        type="button"
+                        aria-label="병종 강화 닫기"
+                    >
+                        ×
+                    </button>
+                </header>
+                <p class="deck-intro">
+                    햇살로 열면 캠페인에서 늘 적용돼요. 대전에는 영향이 없어요.
+                </p>
+                <div
+                    id="campaignUpgradeList"
+                    class="campaign-upgrade-list"
+                    role="group"
+                    aria-label="병종 강화 목록"
+                ></div>
+                <p id="campaignUpgradeNotice" class="deck-notice" aria-live="polite"></p>
+                <button
+                    id="campaignUpgradeDoneBtn"
+                    class="launch-btn primary deck-done"
+                    type="button"
+                >
+                    완료
+                </button>
+            </div>
+        </dialog>
         <dialog id="campaignDeckDialog" class="deck-dialog" aria-labelledby="campaignDeckTitle">
             <div class="deck-panel">
                 <header class="deck-header">
@@ -954,11 +1001,6 @@ END OF DEVELOPMENT CONTRACT
                         <p id="campaignDeckKicker" class="deck-kicker">캠페인 전용 덱</p>
                         <h2 id="campaignDeckTitle">덱 편성</h2>
                     </div>
-                    <span
-                        id="campaignDeckSunshine"
-                        class="sunshine-balance"
-                        aria-label="햇살"
-                    ></span>
                     <button
                         id="campaignDeckCloseBtn"
                         class="deck-close"
@@ -969,8 +1011,8 @@ END OF DEVELOPMENT CONTRACT
                     </button>
                 </header>
                 <p class="deck-intro">
-                    이 판에서만 쓰는 덱이고 대전 덱과 따로 저장돼요. 병종 강화는 햇살로 열며
-                    캠페인에서만 적용돼요. 필수 카드는 뺄 수 없어요.
+                    이 판에서만 쓰는 덱이고 대전 덱과 따로 저장돼요. ★는 열어 둔 캠페인 강화예요.
+                    필수 카드는 뺄 수 없어요.
                 </p>
                 <div class="deck-section-head">
                     <h3>내 덱</h3>
@@ -984,11 +1026,13 @@ END OF DEVELOPMENT CONTRACT
                 ></div>
                 <div class="deck-section-head">
                     <h3>카드 목록</h3>
-                    <span>눌러서 추가하거나 제외</span>
+                    <button id="campaignDeckResetBtn" class="deck-reset" type="button">
+                        추천 덱으로
+                    </button>
                 </div>
                 <div
                     id="campaignDeckCollection"
-                    class="campaign-deck-collection"
+                    class="deck-collection"
                     role="group"
                     aria-label="카드 목록"
                 ></div>

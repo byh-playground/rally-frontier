@@ -94,6 +94,7 @@ import { LaunchScreens } from './ui/launch-screens.js';
 import { createShowcaseHost } from './ui/showcase-host.js';
 import { DeckEditor } from './ui/deck-editor.js';
 import { CampaignDeck } from './ui/campaign-deck.js';
+import { CampaignUpgradeSheet } from './ui/campaign-upgrades.js';
 import { loadPlayerSave, openPlayerSaves, updatePlayerSave } from './ui/player-saves.js';
 import { CampaignProgress } from './ui/campaign-progress.js';
 import { Roster, clearRecord } from './ui/roster.js';
@@ -12612,7 +12613,16 @@ async function startTitleApp() {
         nameOf: (type) => UnitDefinition.get(type)?.name || type,
         statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
         portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
+    });
+    CampaignUpgradeSheet.install({
+        roster,
+        owns: (type) => campaignProgress.debugUnlocked || roster.owns(type),
+        temporary: () => campaignProgress.debugUnlocked,
+        heroTypes: LaunchRules.heroTypes,
+        nameOf: (type) => UnitDefinition.get(type)?.name || type,
+        portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
         upgradeOf: (type) => UnitDefinition.get(type)?.campaignUpgrade ?? null,
+        cards: () => LaunchRules.deck,
     });
     const showcaseSurface = createShowcaseHost(createShowcaseRenderer);
     addEventListener('pagehide', (event) => {
@@ -12636,6 +12646,7 @@ async function startTitleApp() {
             },
             openRewardDeck: (type) => DeckEditor.open(type),
             openCampaignDeck: (stage, done) => CampaignDeck.open(stage, done),
+            openCampaignUpgrades: (done) => CampaignUpgradeSheet.open(done),
             campaignDeckOf: (stage) => CampaignDeck.deckOf(stage),
             selectCampaign: (id) => {
                 MatchLifecycle.selectedCampaign = id;
