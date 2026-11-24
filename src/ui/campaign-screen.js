@@ -23,10 +23,11 @@ const escape = (text) =>
         (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
     );
 
-// The story block shared by the briefing and the result: the story line, the mission line (`brief`, the briefing
-// only: the result has no use for the rules) and the commander's tip, together.
-export function storyMarkup(stage, { brief = false } = {}) {
-    const { text, brief: mission, captain } = stage.story;
+// The story block of the briefing (the story line, the mission line `brief` and the commander's tip) and of the
+// result (`result: true`: the stage's `after` when it declares one, else the story line and the tip).
+export function storyMarkup(stage, { brief = false, result = false } = {}) {
+    const { text, brief: mission, captain, after } = stage.story;
+    if (result && after) return `${CAPTAIN_MARKUP}<div><p>${escape(after)}</p></div>`;
     return `${CAPTAIN_MARKUP}<div><p>${escape(text)}</p>${brief ? `<p class="cs-brief-line">${escape(mission)}</p>` : ''}<p class="cs-say">사령관: “${escape(captain)}”</p></div>`;
 }
 

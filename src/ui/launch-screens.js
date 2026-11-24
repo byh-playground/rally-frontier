@@ -272,7 +272,7 @@ export class LaunchScreens {
         const $ = this.$;
         const story = $('resultCampaignStory');
         story.hidden = !stage?.story;
-        story.innerHTML = stage?.story ? storyMarkup(stage) : '';
+        story.innerHTML = stage?.story ? storyMarkup(stage, { result: true }) : '';
         this.resultReward = reward;
         this.resultNextStage = nextStage;
         $('resultCampaignReward').hidden = !reward;
