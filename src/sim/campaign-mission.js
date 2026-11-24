@@ -65,6 +65,26 @@ export class CampaignMission {
         return enemies;
     }
 
+    // An attack wave arrives the way every attack in the game does: the enemy's main cannon fires it at the
+    // formation's place (StrategySim.fireScriptedVolley), so the player sees where it comes from and can shoot the
+    // shells down. A garrison (`hold`), a hero, a formation of the player's side, or any formation when the enemy has
+    // no cannon left, is placed on the ground as before.
+    static launchWave(sim, formations = []) {
+        const cannon = sim.launchCannons(1)[0],
+            placed = [];
+        for (const formation of formations) {
+            const { type, x, y, count, side = 1, hold } = formation;
+            if (
+                !cannon ||
+                hold ||
+                side !== 1 ||
+                !sim.fireScriptedVolley(1, cannon, type, { x, y }, count)
+            )
+                placed.push(formation);
+        }
+        return this.spawnFormations(sim, placed);
+    }
+
     // The ground one formation stands on, as a circle around its middle (what a spore cloud covers, SporeCloud).
     static formationRadius({ count, columns = count, spacing = FORMATION_SPACING }) {
         return (Math.hypot(Math.min(columns, count), Math.ceil(count / columns)) * spacing) / 2;
@@ -97,7 +117,7 @@ export class CampaignMission {
             clock = this.clock(sim);
         while (state.nextWaveTick !== null && clock >= state.nextWaveTick) {
             state.waveIndex++;
-            this.spawnFormations(
+            this.launchWave(
                 sim,
                 scaleFormations(waves[state.waveIndex].formations, sim.rules.campaign.pace),
             );

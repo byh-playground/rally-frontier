@@ -5,7 +5,8 @@ import { LaunchRules } from '../sim/launch-rules.js';
 // A stage whose whole pressure is scripted attacks and clouds keeps the enemy AI off (`enemyPacing: SCRIPTED_ONLY`);
 // every other stage's enemy plays as the match AI does, and the difficulty is its income rate (campaign-pace.js).
 const SCRIPTED_ONLY = Object.freeze({ disabled: true });
-// One scripted attack of a survival defence: it arrives `atMs` after the match starts, whatever is still standing.
+// One scripted attack of a survival defence: it is fired `atMs` after the match starts, whatever is still standing, by the
+// enemy's main cannon at each formation's place (CampaignMission.launchWave; a `hold` garrison is placed on the ground).
 const attack = (atMs, ...formations) => ({ atMs, formations });
 const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 

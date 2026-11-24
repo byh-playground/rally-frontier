@@ -1560,6 +1560,48 @@ class StrategySim {
             shots,
         });
     }
+    // A scripted attack's launch (CampaignMission.launchWave): the cannon fires the card's own shells at `aim`, carrying
+    // `count` soldiers in all. It is an ordinary shell in the air (it can be seen, shot down by air defence and lands
+    // with the card's shock) but costs the side nothing: no wallet, deck, ammo, reload or range check. False when
+    // the card cannot be fired this way (a hero or an unknown card), so the caller can place the soldiers itself.
+    fireScriptedVolley(side, cannon, type, aim, count) {
+        const grain = LaunchRules.grain(type);
+        if (!grain || LaunchRules.isHeroType(type)) return false;
+        const shots = LaunchRules.volley(type, aim, cannon, this.world),
+            base = Math.floor(count / shots.length),
+            extra = count % shots.length,
+            mode = grain.fire.mode,
+            arcDistance =
+                mode === 'split'
+                    ? Math.max(
+                          1,
+                          Math.hypot(aim.x - cannon.x, aim.y - cannon.y) -
+                              LaunchRules.muzzleReach(cannon),
+                      )
+                    : null;
+        // Every shell keeps at least one soldier: a small attack fires fewer shells than the card does.
+        const carrying = shots
+            .map((shot, i) => ({ ...shot, count: base + (i < extra ? 1 : 0) }))
+            .filter((shot) => shot.count > 0);
+        carrying.forEach((shot, i) => {
+            const fire = {
+                side,
+                cannonId: cannon.id,
+                type,
+                mode,
+                shot: i,
+                shots: carrying.length,
+                power: 1,
+                holdMs: LaunchRules.chargeMs,
+                arcDistance,
+                ...shot,
+            };
+            if (shot.delayMs > 0)
+                cannon.salvo.push({ tick: this.tick + this.time.ceilTicks(shot.delayMs), ...fire });
+            else this.fireLaunchShell(fire);
+        });
+        return true;
+    }
     // Delayed shells of a burst leave on their scheduled tick, in order.
     updateLaunchSalvos() {
         for (const cannon of this.buildings) {
