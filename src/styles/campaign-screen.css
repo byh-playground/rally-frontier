@@ -477,3 +477,83 @@
 .cs-node:disabled .cs-portrait {
     opacity: 0.35;
 }
+
+/* The stage's deck button in the briefing and the campaign deck sheet (src/ui/campaign-deck.js). */
+.cs-deck {
+    width: 100%;
+    height: 38px;
+    font-size: 14px;
+}
+.campaign-deck-collection {
+    display: grid;
+    gap: 6px;
+}
+.campaign-deck-row {
+    display: grid;
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid #d5e2c4;
+    border-radius: 12px;
+    background: #f9fbf1;
+}
+.campaign-deck-pick {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 4px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+}
+.campaign-deck-pick img {
+    width: 36px;
+    height: 36px;
+    object-fit: contain;
+}
+.campaign-deck-pick[aria-pressed='true'] {
+    background: #e4efd2;
+}
+.campaign-deck-pick:disabled {
+    opacity: 1;
+}
+.campaign-deck-upgrade {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px 8px;
+    padding: 4px 6px;
+    border-top: 1px dashed #c5d8b5;
+}
+.campaign-deck-upgrade p {
+    display: grid;
+    margin: 0;
+}
+.campaign-deck-upgrade b {
+    font-size: 13px;
+}
+.campaign-deck-upgrade span {
+    color: #5d7050;
+    font-size: 12px;
+}
+.campaign-deck-upgrade em {
+    color: #365b3e;
+    font-size: 13px;
+    font-style: normal;
+    font-weight: 800;
+}
+.campaign-deck-open.launch-btn {
+    height: 32px;
+    padding: 0 10px;
+    font-size: 13px;
+}
+.campaign-deck-mark {
+    min-width: 24px;
+    color: #365b3e;
+    font-size: 13px;
+    font-weight: 800;
+    text-align: center;
+}

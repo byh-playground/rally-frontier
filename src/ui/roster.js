@@ -85,6 +85,18 @@ export class Roster {
         return campaignPace(this.difficulty, place, scale);
     }
 
+    // The card ids the player saved for a stage's deck, or null when it never edited it (campaign-deck.js resolves it).
+    savedDeck(stageId) {
+        return this.campaign?.decks?.[stageId] ?? null;
+    }
+
+    // Remembers the player's picks for a stage's deck. Resolves false when the save failed.
+    setCampaignDeck(stageId, cards) {
+        return this.#write((draft) => {
+            (draft.campaign.decks ??= {})[stageId] = [...cards];
+        });
+    }
+
     // Remembers the difficulty. Resolves false when the save failed.
     setDifficulty(id) {
         if (!isDifficulty(id)) throw new RangeError(`알 수 없는 난이도: ${id}`);

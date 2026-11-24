@@ -40,6 +40,17 @@ function validateDecks(data) {
         throw new TypeError('deck record');
 }
 
+// `decks` is optional: a record saved before the campaign deck existed has none.
+function isDeckMap(decks) {
+    return (
+        decks === undefined ||
+        (!!decks &&
+            typeof decks === 'object' &&
+            !Array.isArray(decks) &&
+            Object.values(decks).every(isStringList))
+    );
+}
+
 function validateRoster(data) {
     const progress = data.campaign;
     if (
@@ -52,7 +63,8 @@ function validateRoster(data) {
         progress.sunshine < 0 ||
         !isStringList(progress.upgrades) ||
         !isStringList(progress.regionOrder) ||
-        !isDifficulty(progress.difficulty)
+        !isDifficulty(progress.difficulty) ||
+        !isDeckMap(progress.decks)
     )
         throw new TypeError('roster record');
 }

@@ -93,10 +93,10 @@ import { RallyUsageMetrics } from './session/usage-metrics.js';
 import { LaunchScreens } from './ui/launch-screens.js';
 import { createShowcaseHost } from './ui/showcase-host.js';
 import { DeckEditor } from './ui/deck-editor.js';
+import { CampaignDeck } from './ui/campaign-deck.js';
 import { loadPlayerSave, openPlayerSaves, updatePlayerSave } from './ui/player-saves.js';
 import { CampaignProgress } from './ui/campaign-progress.js';
 import { Roster, clearRecord } from './ui/roster.js';
-import { SUNSHINE } from './definitions/roster.js';
 import { CampaignPresentation } from './ui/campaign-presentation.js';
 import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
@@ -10374,7 +10374,7 @@ class MatchLifecycle {
             humanTransport,
             token,
             configFor(humanRole),
-            stage?.deck ?? DeckEditor.getDeck(),
+            stage ? CampaignDeck.deckOf(stage) : DeckEditor.getDeck(),
         );
         // CONFIG.single.botWorker runs the AI session in src/sim-worker.js; its WebRTC transport stays here.
         const botDeck = stage?.enemyDeck;
@@ -12602,25 +12602,17 @@ async function startTitleApp() {
             return stage ? `${stage.title} 클리어 시 해금` : '';
         },
         renderDetails: (type, host) => LaunchScreens.renderCardDetail(type, host),
-        sunshine: () => roster.sunshine,
-        upgradeOf: (type) => {
-            const upgrade = UnitDefinition.get(type)?.campaignUpgrade;
-            if (
-                !upgrade ||
-                campaignProgress.debugUnlocked ||
-                !roster.owns(type) ||
-                LaunchRules.heroTypes.includes(type)
-            )
-                return null;
-            return {
-                name: upgrade.name,
-                summary: upgrade.summary,
-                price: SUNSHINE.openUpgrade,
-                open: () => roster.hasUpgrade(type),
-            };
-        },
-        openUpgrade: (type) => roster.openUpgrade(type),
         portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
+    });
+    CampaignDeck.install({
+        roster,
+        owns: (type) => campaignProgress.debugUnlocked || roster.owns(type),
+        temporary: () => campaignProgress.debugUnlocked,
+        heroTypes: LaunchRules.heroTypes,
+        nameOf: (type) => UnitDefinition.get(type)?.name || type,
+        statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
+        portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
+        upgradeOf: (type) => UnitDefinition.get(type)?.campaignUpgrade ?? null,
     });
     const showcaseSurface = createShowcaseHost(createShowcaseRenderer);
     addEventListener('pagehide', (event) => {
@@ -12643,6 +12635,8 @@ async function startTitleApp() {
                 MatchLifecycle.startCampaignStage(stage);
             },
             openRewardDeck: (type) => DeckEditor.open(type),
+            openCampaignDeck: (stage, done) => CampaignDeck.open(stage, done),
+            campaignDeckOf: (stage) => CampaignDeck.deckOf(stage),
             selectCampaign: (id) => {
                 MatchLifecycle.selectedCampaign = id;
             },
