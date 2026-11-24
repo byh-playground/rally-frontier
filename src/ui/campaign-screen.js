@@ -23,9 +23,11 @@ const escape = (text) =>
         (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
     );
 
-// The story block shared by the briefing and the result: the one-line story and the captain's line, together.
-export function storyMarkup(stage) {
-    return `${CAPTAIN_MARKUP}<div><p>${escape(stage.story.text)}</p><p class="cs-say">대장: “${escape(stage.story.captain)}”</p></div>`;
+// The story block shared by the briefing and the result: the story line, the mission line (`brief`, the briefing
+// only: the result has no use for the rules) and the commander's tip, together.
+export function storyMarkup(stage, { brief = false } = {}) {
+    const { text, brief: mission, captain } = stage.story;
+    return `${CAPTAIN_MARKUP}<div><p>${escape(text)}</p>${brief ? `<p class="cs-brief-line">${escape(mission)}</p>` : ''}<p class="cs-say">사령관: “${escape(captain)}”</p></div>`;
 }
 
 export class CampaignScreen {
@@ -217,7 +219,7 @@ export class CampaignScreen {
                 `<li class="${got[i] ? 'is-got' : ''}"><i class="cs-pip${got[i] ? ' is-on' : ''}">${glyph}</i><span>${label}</span><em>☀ ${SUNSHINE[key]}</em></li>`,
         ).join('');
         return `<div><p class="cs-kicker">${index + 1}판</p><h3 id="csStageTitle" class="cs-title">${escape(stage.title)}</h3></div>
-<div class="cs-story">${storyMarkup(stage)}</div>
+<div class="cs-story">${storyMarkup(stage, { brief: true })}</div>
 ${goals}
 <div class="cs-reward">${reward}<ul>${rows}</ul></div>
 <div class="cs-go-row"><div class="campaign-difficulty" role="group" aria-label="적 난이도"></div><button type="button" class="launch-btn primary cs-go">출격</button></div>`;

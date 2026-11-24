@@ -317,7 +317,12 @@
 .cs-story p {
     margin: 0;
 }
-.cs-say {
+.cs-story p.cs-brief-line {
+    margin-top: 4px;
+    color: #4a3a2a;
+}
+.cs-story p.cs-say {
+    margin-top: 4px;
     color: #754625;
     font-weight: 700;
 }
