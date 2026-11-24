@@ -139,3 +139,57 @@
         animation: none;
     }
 }
+
+/* A spore cloud coming from off screen: a badge on the screen edge pointing at its place, with the seconds left. */
+.cloud-alerts {
+    position: absolute;
+    inset: 0;
+    z-index: 7;
+    pointer-events: none;
+}
+.cloud-alert {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    margin: -23px 0 0 -23px;
+    border: 3px solid #fff;
+    border-radius: 50%;
+    background: #6a3a8c;
+    color: #fff;
+    box-shadow:
+        0 0 0 3px #ff5a5a,
+        0 4px 10px #0007;
+    pointer-events: auto;
+    animation: cloud-alert-pulse 0.7s ease-in-out infinite alternate;
+}
+.cloud-alert i {
+    position: absolute;
+    inset: -20px 0 auto;
+    margin: 0 auto;
+    width: 18px;
+    height: 18px;
+    background: #ff5a5a;
+    filter: drop-shadow(0 0 2px #fff);
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    transform-origin: 50% 43px;
+}
+.cloud-alert b {
+    font-size: 18px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+@keyframes cloud-alert-pulse {
+    from {
+        transform: scale(1);
+    }
+    to {
+        transform: scale(1.12);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .cloud-alert {
+        animation: none;
+    }
+}

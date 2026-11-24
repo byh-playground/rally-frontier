@@ -221,7 +221,8 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         },
         mission: { surviveMs: 120_000, guardPoint: 'west-1', waves: [] },
         // Three attacks from three ways, each announced 5 s ahead, on the low ground before the guarded hill's north
-        // and east ramps; all three places sit in the opening view.
+        // and east ramps. The places sit off the opening screen, so each warning shows as a screen-edge badge with the
+        // seconds left, a minimap ping and the cloud itself (also in the fog).
         sporeClouds: [
             sporeAttack(20_000, 340, 1500),
             sporeAttack(50_000, 590, 1490),
