@@ -7,7 +7,8 @@
 // `times`, for as long as the match runs), and each arrival is announced `warnMs` before it. The soldiers are
 // ordinary enemy soldiers, blighted as every unit created for the blight's side is (Blight.mark), and march on the
 // player as a wave's do: they are spawned by the wave's own CampaignMission.spawnFormations, at the wave's place in
-// the tick (before the tick's commands).
+// the tick (before the tick's commands). Their head counts follow the stage's pace as a wave's do
+// (campaign-pace.js `scaleFormations`), so the difficulty reaches a stage whose enemy only comes by cloud.
 // The cloud itself is presentation only and judges nothing. The simulation knows two ticks of each arrival, both
 // taken from the match's ms on the wave's rule (`ceilTicks`, never a tick count added up) on the mission's clock
 // (CampaignMission.clock, held while a practice runs): the tick its warning begins (`sporeCloudWarn`) and the tick its
@@ -16,6 +17,7 @@
 // a stage that declares clouds, so every other match's state and checksum are what they were.
 import { UnitDefinition } from '../definitions/units.js';
 import { Blight } from './blight.js';
+import { scaleFormations } from '../definitions/campaign-pace.js';
 import { CampaignMission } from './campaign-mission.js';
 import { LaunchRules } from './launch-rules.js';
 
@@ -108,7 +110,10 @@ export class SporeCloud {
                         });
                     break;
                 }
-                CampaignMission.spawnFormations(sim, cloud.formations);
+                CampaignMission.spawnFormations(
+                    sim,
+                    scaleFormations(cloud.formations, sim.rules.campaign.pace),
+                );
                 state.arrived[i]++;
                 for (const formation of cloud.formations)
                     sim.events.push({

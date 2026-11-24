@@ -347,7 +347,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         },
         mission: { startingPremium: [premiumFor('chestnut') * 3, 0] },
         blightFields: [{ x: 1020, y: 1840 }],
-        braziers: [{ x: 1090, y: 1930, radius: 125 }],
+        braziers: [{ x: 1020, y: 1840, radius: 200 }],
         sideGoal: { kind: 'burnFields' },
     },
     {
@@ -416,7 +416,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
     {
         id: 'fields-kernel-rain',
         act: 2,
-        paceScale: 0.8,
+        paceScale: 0.7,
         region: 'field-town',
         map: 'artillery-basin',
         title: '알맹이 비',
@@ -444,7 +444,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
                 attack(1_000, { type: 'pea', x: 1800, y: 2300, count: 6, columns: 3, hold: true }),
             ],
         },
-        sideGoal: { kind: 'withinMs', ms: 240_000 },
+        sideGoal: { kind: 'withinMs', ms: 270_000 },
     },
     {
         id: 'fields-pop-the-line',
@@ -475,7 +475,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
     {
         id: 'fields-forward-battery',
         act: 2,
-        paceScale: 0.7,
+        paceScale: 0.6,
         region: 'field-town',
         map: 'artillery-basin',
         title: '한 발 더 앞으로',
@@ -503,7 +503,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
                 premiumFor('chestnut') * 3,
             ],
         },
-        sideGoal: { kind: 'withinMs', ms: 300_000 },
+        sideGoal: { kind: 'withinMs', ms: 360_000 },
     },
     {
         id: 'fields-sesame-crew',
@@ -661,7 +661,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         },
         mission: {},
         blightFields: [{ x: 2000, y: 1700 }],
-        braziers: [{ x: 2080, y: 1760, radius: 125 }],
+        braziers: [{ x: 2000, y: 1700, radius: 200 }],
         sideGoal: { kind: 'burnFields' },
     },
     {
