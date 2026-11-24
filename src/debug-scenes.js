@@ -3725,7 +3725,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     params.regionPlace === undefined
                         ? 0
                         : integer('campaign', 'regionPlace', params.regionPlace);
-            const pace = campaignPace(difficulty, place);
+            const pace = campaignPace(difficulty, place, stage.paceScale ?? 1);
             // practice=<type>&practiceCount=N: practice targets 300 from the player's main base toward the enemy's
             // (towers never aim at them: with `player=bot` the player's AI brings them down, without it nothing does).
             // sideGoal=<kind>[,value]: the stage's

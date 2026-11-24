@@ -105,6 +105,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
     {
         id: 'paddy-first-shot',
         act: 1,
+        paceScale: 0.8,
         map: 'small-field',
         title: '첫 발사',
         story: {
@@ -275,6 +276,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
     {
         id: 'nuts-crack-the-gate',
         act: 2,
+        paceScale: 0.8,
         region: 'nut-forest',
         map: 'artillery-basin',
         title: '껍질 문을 깨라',
@@ -313,6 +315,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
     {
         id: 'nuts-last-shell',
         act: 2,
+        paceScale: 0.8,
         region: 'nut-forest',
         map: 'causeway-flats',
         title: '마지막 껍질',
@@ -401,6 +404,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
     {
         id: 'fields-kernel-rain',
         act: 2,
+        paceScale: 0.8,
         region: 'field-town',
         map: 'artillery-basin',
         title: '알맹이 비',
@@ -457,6 +461,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
     {
         id: 'fields-forward-battery',
         act: 2,
+        paceScale: 0.7,
         region: 'field-town',
         map: 'artillery-basin',
         title: '한 발 더 앞으로',
@@ -679,6 +684,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
     {
         id: 'winds-linked-lightning',
         act: 2,
+        paceScale: 0.9,
         region: 'wind-hill',
         map: 'kings-hill',
         title: '이어지는 번개',
@@ -734,6 +740,7 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
     {
         id: 'winds-silence-the-muzzle',
         act: 2,
+        paceScale: 0.5,
         region: 'wind-hill',
         map: 'artillery-basin',
         title: '입 다물 대포',
