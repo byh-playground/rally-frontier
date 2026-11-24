@@ -1,4 +1,5 @@
 import { SUNSHINE } from '../definitions/roster.js';
+import { CAMPAIGN_DECK_LIMIT } from '../definitions/campaign-deck.js';
 import { CampaignActs } from './campaign-acts.js';
 import { briefGoal, sideGoalBrief } from './campaign-presentation.js';
 
@@ -179,6 +180,8 @@ export class CampaignScreen {
         for (const node of body.querySelectorAll('[data-stage]'))
             node.onclick = () => this.nav.chapter(chapter.id, node.dataset.stage);
         this.difficulty(body.querySelector('.campaign-difficulty'));
+        body.querySelector('.cs-deck').onclick = () =>
+            this.actions.openCampaignDeck(picked, () => this.renderChapter(chapter, picked.id));
         const launch = body.querySelector('.cs-go');
         launch.disabled = !CampaignActs.isOpen(picked, this.cleared);
         launch.onclick = () => this.actions.startCampaignStage(picked);
@@ -223,6 +226,7 @@ export class CampaignScreen {
 <div class="cs-story">${storyMarkup(stage, { brief: true })}</div>
 ${goals}
 <div class="cs-reward">${reward}<ul>${rows}</ul></div>
+<button type="button" class="launch-btn cs-deck">덱 편성 · ${this.actions.campaignDeckOf(stage).length} / ${CAMPAIGN_DECK_LIMIT}칸</button>
 <div class="cs-go-row"><div class="campaign-difficulty" role="group" aria-label="적 난이도"></div><button type="button" class="launch-btn primary cs-go">출격</button></div>`;
     }
 }

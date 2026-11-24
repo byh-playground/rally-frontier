@@ -28,6 +28,7 @@ export function newRosterRecord() {
             upgrades: [], // card ids whose upgrade is open
             regionOrder: [], // region ids in the order the player first cleared their first stage
             difficulty: DEFAULT_DIFFICULTY, // the enemy's difficulty the player picked last (campaign-pace.js)
+            decks: {}, // stage id -> the card ids the player picked for it (campaign-deck.js)
         },
     };
 }

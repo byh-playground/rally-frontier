@@ -248,6 +248,9 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   부채꼴 안의 다른 공중 표적에도 씨앗, 지상 표적은 그대로)·`chainLinks`(목화솜, 번개가 잇는 수 교체: 병사의 `chain.ids` 길이가 그 수)·
   `heavyShock`(검은콩, 착탄 충격의 피해 반경 배수, 피해량·넉백은 그대로)·`longCling`(찹쌀, 포구에 붙는 시간 교체, 재사용 대기는 그대로).
   강화가 꺼진 경기에는 이 상태 칸이 하나도 생기지 않는다.
+  캠페인에 들고 가는 덱은 유저가 판마다 편성한다(`src/definitions/campaign-deck.js`, 편성 창 `src/ui/campaign-deck.js`): 판의 `deck`은 추천 덱이고,
+  판이 가르치는 카드(`practice.card`·`rewardCard`)는 필수, 최대 8칸·영웅 1명, 고를 수 있는 카드는 가진 카드와 그 판의 추천 덱이다. 편성은 `roster.campaign.decks[판 id]`에
+  저장하고 경기는 시작 때 `resolveCampaignDeck`으로 정리한 덱을 한 번 복사한다. 병종 강화의 상태·열기는 이 편성 창에만 있고 대전 덱 화면에는 캠페인 요소가 없다.
   깜부기 감염(`src/sim/blight.js`)은 유닛 상태 한 칸 `unit.blighted = true`다(건물은 없음). 스테이지 정의가 `blight: true`를
   선언하면 그 경기에서 적 편(`Blight.ENEMY_SIDE`)으로 생기는 병사·영웅이 감염 상태로 생긴다(`StrategySim.spawnUnit`).
   선언은 `rules.campaign`에 실려 경기 시작 정보·snapshot·리플레이·롤백을 스테이지와 같이 타고, 선언이 없는 경기(대전·
@@ -944,6 +947,57 @@ END OF DEVELOPMENT CONTRACT
             </header>
             <div id="campaignScreenBody" class="cs-body"></div>
         </section>
+        <dialog id="campaignDeckDialog" class="deck-dialog" aria-labelledby="campaignDeckTitle">
+            <div class="deck-panel">
+                <header class="deck-header">
+                    <div>
+                        <p id="campaignDeckKicker" class="deck-kicker">캠페인 전용 덱</p>
+                        <h2 id="campaignDeckTitle">덱 편성</h2>
+                    </div>
+                    <span
+                        id="campaignDeckSunshine"
+                        class="sunshine-balance"
+                        aria-label="햇살"
+                    ></span>
+                    <button
+                        id="campaignDeckCloseBtn"
+                        class="deck-close"
+                        type="button"
+                        aria-label="캠페인 덱 닫기"
+                    >
+                        ×
+                    </button>
+                </header>
+                <p class="deck-intro">
+                    이 판에서만 쓰는 덱이고 대전 덱과 따로 저장돼요. 병종 강화는 햇살로 열며
+                    캠페인에서만 적용돼요. 필수 카드는 뺄 수 없어요.
+                </p>
+                <div class="deck-section-head">
+                    <h3>내 덱</h3>
+                    <span id="campaignDeckCount"></span>
+                </div>
+                <div
+                    id="campaignDeckSelected"
+                    class="deck-selected"
+                    role="group"
+                    aria-label="캠페인 덱"
+                ></div>
+                <div class="deck-section-head">
+                    <h3>카드 목록</h3>
+                    <span>눌러서 추가하거나 제외</span>
+                </div>
+                <div
+                    id="campaignDeckCollection"
+                    class="campaign-deck-collection"
+                    role="group"
+                    aria-label="카드 목록"
+                ></div>
+                <p id="campaignDeckNotice" class="deck-notice" aria-live="polite"></p>
+                <button id="campaignDeckDoneBtn" class="launch-btn primary deck-done" type="button">
+                    완료
+                </button>
+            </div>
+        </dialog>
         <dialog id="deckDialog" class="deck-dialog" aria-labelledby="deckTitle">
             <div class="deck-panel">
                 <header class="deck-header">
@@ -951,7 +1005,6 @@ END OF DEVELOPMENT CONTRACT
                         <p class="deck-kicker">나만의 전투 준비</p>
                         <h2 id="deckTitle">덱 편성</h2>
                     </div>
-                    <span id="deckSunshine" class="sunshine-balance" aria-label="햇살"></span>
                     <button
                         id="deckCloseBtn"
                         class="deck-close"
