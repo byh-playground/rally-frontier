@@ -79,8 +79,9 @@ const premiumFor = (type) => LaunchRules.payload(type).premiumCost;
 // The new campaign (재구성 초안 docs/campaign-stage-draft): act 1 in order, then act 2's three regions (a stage of
 // act 2 also declares `region`, campaign-pace.js), then act 3. Which stage is open is computed from these
 // declarations and the roster's cleared stages (src/ui/campaign-acts.js); a region with no stage here does not show.
-// Every stage of it declares its story for the briefing and the result: `story.text` the one-line story and
-// `story.captain` the captain's line, shown together (no dialogue to step through).
+// Every stage of it declares its story for the briefing and the result: `story.text` the story line that follows the
+// stage before it, `story.brief` the mission line (the rules this stage teaches; the briefing only) and
+// `story.captain` the commander's one-line tip, shown together (no dialogue to step through).
 export const CAMPAIGN_REGIONS = Object.freeze([
     // `theme` is the map look of the region's stages (map-themes.js); a region without one keeps its map's own.
     {
@@ -110,8 +111,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'small-field',
         title: '첫 발사',
         story: {
-            text: '정찰병이 첫 대포 투입으로 길을 연다.',
-            captain: '착지는 네 몫이다. 발사는 내 공이다!',
+            text: '깜부기가 논두렁의 곡식들을 감염시켰다. 정찰병 쌀이 첫 대포 투입으로 길을 연다.',
+            brief: '대포로 쏜 쌀은 적 위에 떨어지는 순간 주변 적에게 피해를 주고, 그 자리에서 병사로 싸운다. 앞 거점을 지으면 대포가 늘어난다. 거점을 지어 적 본진을 부순다.',
+            captain: '발사는 병력 투입 및 수비의 핵심입니다.',
         },
         deck: ['rice'],
         enemyDeck: ['rice'],
@@ -133,8 +135,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'small-field',
         title: '물든 콩밭',
         story: {
-            text: '콩밭의 포자 주머니를 깨자 콩들이 돌아온다.',
-            captain: '콩 심은 데 콩 나고, 주머니 깬 데 지원군 난다!',
+            text: '첫 거점을 되찾은 부대가 콩밭에 닿는다. 콩들이 포자 주머니에 묶여 있다.',
+            brief: '본진과 앞 거점의 대포 사거리가 겹치는 곳에 쏘면 대포가 최대 3문까지 함께 발사한다. 포자 주머니를 부수면 묶여 있던 콩이 아군이 된다.',
+            captain: '비용은 동일하고, 대포가 한 문 더해질 때마다 총병력이 20% 늘어납니다.',
         },
         deck: ['pea', 'rice'],
         enemyDeck: ['rice', 'millet'],
@@ -160,8 +163,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'twin-gates',
         title: '팥죽 고개',
         story: {
-            text: '고개 뒤 포대를 팥이 뛰어넘어 덮친다.',
-            captain: '고개는 숙이지 말고, 넘어가!',
+            text: '콩밭을 지난 부대 앞을 고개가 막아선다. 고개 뒤에 적 포대가 있다.',
+            brief: '팥은 같은 자리에 세 번 연달아 떨어지고, 병사는 적에게 뛰어올라 착지하며 충격을 준다. 해바라기씨는 멀리서 쏘는 병종이라 가까이 붙어야 한다.',
+            captain: '팥은 적 바로 앞에 떨어뜨리세요.',
         },
         deck: ['redbean', 'rice', 'pea'],
         enemyDeck: ['sunflower-seed', 'chestnut'],
@@ -197,8 +201,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'small-field',
         title: '논두렁 사수',
         story: {
-            text: '바람을 타고 온 첫 포자 구름을 막는다.',
-            captain: '하늘에서 오는 건 비만인 줄 알았는데!',
+            text: '고개를 넘자 바람이 포자를 실어 온다. 깜부기의 포자 구름이 처음 나타난다.',
+            brief: '조는 20명이 두 곳으로 나뉘어 떨어지고 걸음이 빠르다. 포자 구름이 세 방향에서 차례로 도착하며, 5초 전에 예고 표시가 뜬다. 120초 동안 앞 거점을 지킨다.',
+            captain: '구름이 내릴 자리에 포탄을 먼저 떨어뜨리세요.',
         },
         deck: ['millet', 'pea', 'redbean', 'rice'],
         enemyDeck: ['corn', 'rice'],
@@ -230,8 +235,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'twin-gates',
         title: '가시 초소',
         story: {
-            text: '밤톨 초소가 느린 감염 병력을 깎아낸다.',
-            captain: '가시 돋친 말은 금지다. 가시 돋친 탄은 허가!',
+            text: '첫 포자 구름을 막은 부대가 견과 숲 입구의 초소에 닿는다.',
+            brief: '상대 진영에서 감염 병력을 아군 본진 주변에 직접 투입해 공격한다. 원거리 병종인 밤톨로 막아야 한다.',
+            captain: '원거리 유닛은 모일수록 강합니다.',
         },
         deck: ['chestnut', 'pea', 'redbean', 'rice'],
         enemyDeck: ['pea', 'acorn'],
@@ -256,8 +262,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'small-field',
         title: '빙글 숲길',
         story: {
-            text: '도토리가 좁은 숲길의 떼를 쓸어낸다.',
-            captain: '돌아라! 내 월급 얘기는 돌리지 말고!',
+            text: '초소를 지나 숲길로 들어서자 좁은 길마다 감염 병력이 떼를 지어 있다.',
+            brief: '도토리는 한 발에 두 명씩, 범위가 좁아지는 3연사로 떨어진 뒤 회전하며 주변 적을 밀어낸다. 좁은 길에 뭉친 적을 노린다.',
+            captain: '뭉친 적일수록 회전 한 번에 많이 맞습니다.',
         },
         deck: ['acorn', 'chestnut', 'pea', 'rice', 'redbean'],
         enemyDeck: ['rice', 'millet'],
@@ -282,8 +289,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'artillery-basin',
         title: '껍질 문을 깨라',
         story: {
-            text: '땅콩 철거대가 포로를 가둔 문을 부순다.',
-            captain: '문 좀 열어 달랬더니 건물을 여는군!',
+            text: '숲길 끝의 문 안쪽에 포로들이 갇혀 있고, 문 앞을 적 거점들이 지키고 있다.',
+            brief: '땅콩은 적 병사를 공격하지 못하고 시야 안의 가까운 적 건물로 달려가 들이받는다. 병사가 길을 막으면 다른 병종이 엄호해야 한다. 포자 주머니를 부수면 땅콩 포로 5명이 합류한다.',
+            captain: '땅콩이 건물에 닿을 때까지 앞길을 먼저 치워 주세요.',
         },
         deck: ['peanut', 'acorn', 'chestnut', 'pea', 'rice'],
         enemyDeck: ['chestnut', 'rice'],
@@ -321,8 +329,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'causeway-flats',
         title: '마지막 껍질',
         story: {
-            text: '호두가 버티는 동안 화로로 둑길을 되찾는다.',
-            captain: '단단하다고 불판 위에서 낮잠 자진 마라.',
+            text: '문을 지나 둑길로 나서니 길목마다 감염 밭이 번져 있다.',
+            brief: '호두는 받는 피해가 절반인 탱커로, 앞줄을 맡고 맞은 적 둘레도 함께 친다. 감염 밭 위에서는 아군 지상 병력이 초당 피해를 입는다. 화로 자리를 아군이 점령하면 그 주변 밭이 정화된다.',
+            captain: '호두가 버티는 동안 화로를 켜세요.',
         },
         deck: ['walnut', 'chestnut', 'peanut', 'pea', 'rice', 'redbean'],
         enemyDeck: ['rice', 'buckwheat'],
@@ -348,8 +357,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'twin-gates',
         title: '굴러가는 골짜기',
         story: {
-            text: '코코넛이 관문 사이 감염 무리를 밀어낸다.',
-            captain: '이번 작전은 굴러가기만 해도 성공이다!',
+            text: '둑길을 되찾자 두 관문 사이 골짜기에 감염 병력이 줄지어 있다.',
+            brief: '코코넛은 착지하면 발사 방향으로 굴러 가속하며 닿는 적을 쳐서 날려 보낸다. 멈춰서 싸우지 않고, 가벼운 적일수록 멀리 날아간다.',
+            captain: '적이 일렬로 늘어선 곳을 향해 쏘세요.',
         },
         deck: ['coconut', 'walnut', 'chestnut', 'peanut', 'pea', 'redbean'],
         enemyDeck: ['rice', 'millet'],
@@ -374,8 +384,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'small-field',
         title: '수박 숲지기',
         story: {
-            text: '숲지기 수박의 깜부기를 떼어낸다.',
-            captain: '껍질은 두꺼워도 마음까지 닫힌 건 아니다!',
+            text: '견과 숲의 수호자 수박이 깜부기에 지배당해 숲 깊은 곳을 막고 있다.',
+            brief: '수박 수호자는 5레벨 영웅으로, 아군 병사를 30명 쓰러뜨리면 각성한다. 포자 주머니 세 개를 75초 안에 부수면 부순 개수만큼 지원군이 온다. 수호자를 쓰러뜨리면 해방된다.',
+            captain: '병력을 한꺼번에 투입하면 각성만 앞당깁니다. 나눠서 투입하세요.',
         },
         // The hero the stage frees is not lent beforehand: the guardian is its own lesson.
         deck: ['redbean', 'chestnut', 'walnut', 'peanut', 'pea', 'rice'],
@@ -410,8 +421,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'artillery-basin',
         title: '알맹이 비',
         story: {
-            text: '옥수수 곡사탄으로 분지의 밀집 진지를 연다.',
-            captain: '알알이 설명하겠다. 저기다 던져!',
+            text: '첫 포자 구름을 막은 부대가 밭 마을 어귀에 닿는다. 낮은 분지에 감염 병력이 모여 있다.',
+            brief: '옥수수는 높고 느린 곡사로 떨어진 뒤 알을 던져 지연 폭발을 일으킨다. 뭉친 적에게 맞고, 분지 가장자리 너머로도 쏠 수 있다.',
+            captain: '옥수수는 앞줄 뒤에서 쏘게 하세요.',
         },
         deck: ['corn', 'pea', 'redbean', 'rice'],
         enemyDeck: ['pea', 'rice'],
@@ -441,8 +453,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'small-field',
         title: '팡! 하고 빈틈',
         story: {
-            text: '팝콘이 막힌 전열에 틈을 만든다.',
-            captain: '작전명은 조용히… 취소다. 팡!',
+            text: '마을 안쪽에서 감염 병력이 전열을 이루고 길을 막고 있다.',
+            brief: '팝콘은 좌우로 5명씩 착지해 적에게 뛰어들어 자폭한다. 촘촘한 전열에 구멍을 낸다.',
+            captain: '팝콘으로 틈을 낸 뒤 바로 후속 병력을 투입하세요.',
         },
         deck: ['popcorn', 'corn', 'pea', 'redbean', 'rice'],
         enemyDeck: ['pea', 'millet'],
@@ -467,8 +480,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'artillery-basin',
         title: '한 발 더 앞으로',
         story: {
-            text: '감자 대포가 닿지 않던 고지까지 발사망을 잇는다.',
-            captain: '전진기지라더니 진짜 뿌리를 내렸군.',
+            text: '고지 위의 적 거점에는 아군 대포의 사거리가 닿지 않는다.',
+            brief: '감자는 착지한 자리에 파고들어 5초 뒤 전진 대포가 된다. 전진 대포는 체력이 줄어 약 15초 뒤 사라지고, 뿌리내리는 동안 쓰러지면 생기지 않는다. 먼 거점을 전진 대포로 노린다.',
+            captain: '사거리가 겹친 대포가 많을수록 전진 대포도 한꺼번에 늘어납니다.',
         },
         deck: ['potato', 'popcorn', 'corn', 'pea', 'redbean', 'rice'],
         enemyDeck: ['chestnut', 'rice'],
@@ -498,8 +512,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'standard',
         title: '깨알 공사대',
         story: {
-            text: '포로가 된 참깨 공사대를 되찾는다.',
-            captain: '작다고 얕보지 마라. 공사는 저 친구들이 다 한다.',
+            text: '마을 한쪽에서 포로가 된 참깨 공사대를 찾았다.',
+            brief: '참깨는 거점을 두 배 빠르게 짓고 건설 중 받는 피해가 4분의 1로 줄지만 싸우지 못한다. 포자 주머니를 부수면 참깨 30명이 합류한다.',
+            captain: '참깨는 빈 점령 지점에 내려 거점부터 지으세요.',
         },
         deck: ['sesame', 'potato', 'corn', 'pea', 'redbean', 'rice'],
         enemyDeck: ['rice', 'buckwheat'],
@@ -523,8 +538,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'small-field',
         title: '세모 탄막',
         story: {
-            text: '메밀 탄막으로 접근하는 작은 떼를 막는다.',
-            captain: '작은 세모도 모이면 큰 문제지. 적한테.',
+            text: '마을 외곽 언덕의 거점을 지키는 방어 임무가 시작된다.',
+            brief: '메밀은 20명이 착지해 가까운 적에게 0.5초마다 씨앗을 던진다. 원거리 병종 중 사거리가 가장 짧고 몸이 약하다. 적 본진이 30초마다 쌀과 조를 번갈아 쏘아 보내며, 150초 동안 앞 거점을 지킨다.',
+            captain: '메밀은 앞줄 뒤에서 쏘게 하세요.',
         },
         deck: ['buckwheat', 'sesame', 'corn', 'pea', 'redbean', 'rice'],
         enemyDeck: ['rice', 'millet'],
@@ -560,8 +576,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'causeway-flats',
         title: '불길로 낸 길',
         story: {
-            text: '고추가 감염 밭을 태워 마을 길을 되찾는다.',
-            captain: '매운맛은 적에게, 안전한 길은 우리에게!',
+            text: '마을 길목 두 곳이 감염 밭으로 막혀 있다.',
+            brief: '고추는 좁고 긴 불줄기를 뿜어 줄기 안의 적을 모두 태운다. 밭 위에서는 아군 지상 병력이 초당 피해를 입고, 고추는 적이 없으면 사거리 안의 밭을 스스로 태운다.',
+            captain: '불줄기는 옆이나 뒤로 돌아오는 적에 약합니다. 고추 옆을 지킬 병력을 두세요.',
         },
         deck: ['chili', 'pea', 'buckwheat', 'sesame', 'potato', 'redbean', 'rice'],
         enemyDeck: ['rice', 'millet'],
@@ -590,8 +607,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'small-field',
         title: '돌아오는 칼날',
         story: {
-            text: '바나나 수호자의 돌아오는 칼날을 버텨 해방한다.',
-            captain: '다녀온 칼날이 또 온다. 인사는 한 번만 해!',
+            text: '밭 마을의 수호자 바나나가 깜부기에 지배당해 길 끝을 막고 있다.',
+            brief: '바나나 수호자는 5레벨 영웅으로, 네 번째 평타의 부메랑이 적을 왕복 관통한다. 포자 주머니 세 개를 75초 안에 부수면 부순 개수만큼 지원군이 온다. 수호자를 쓰러뜨리면 해방된다.',
+            captain: '병력을 한 줄로 늘어세우지 마세요.',
         },
         deck: ['redbean', 'pea', 'buckwheat', 'corn', 'sesame', 'chili'],
         enemyDeck: ['banana', 'rice'],
@@ -624,8 +642,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'wind-ravines',
         title: '벽 너머 한 줌',
         story: {
-            text: '민들레씨가 오염된 우회로와 절벽을 넘어간다.',
-            captain: '길이 없으면 날아라. 나는 지도를 들고 갈 테니!',
+            text: '첫 포자 구름을 막은 부대가 바람 언덕에 닿는다. 절벽 너머에 감염 밭이 있다.',
+            brief: '민들레씨는 투입되면 떠올라 벽과 절벽을 곧장 넘고, 적이 사거리에 들어오면 내려앉아 땅에서 싸운다. 나는 동안에는 공격하지 않는다. 화로 자리를 아군이 점령하면 주변 밭이 정화된다.',
+            captain: '절벽 너머로 병력을 보낼 땐 민들레씨를 쓰세요.',
         },
         deck: ['dandelion', 'redbean', 'pea', 'rice'],
         enemyDeck: ['rice', 'pea'],
@@ -652,8 +671,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'small-field',
         title: '하늘을 지켜라',
         story: {
-            text: '해바라기씨가 구름에서 나온 비행 병력을 요격한다.',
-            captain: '해를 보랬더니 하늘 전체를 감시하는군!',
+            text: '바람 언덕에 포자 구름이 날아든다. 이번에는 구름에서 나는 병력이 내려온다.',
+            brief: '해바라기씨는 적 투입탄과 나는 적을 먼저 연사하고, 공중에 적이 없으면 지상을 쏜다. 구름은 5초 전에 예고되고 세 번 오며 갈수록 나는 병력이 늘어난다. 150초 동안 앞 거점을 지킨다.',
+            captain: '해바라기씨를 앞 거점 근처에 먼저 투입해 두세요.',
         },
         deck: ['sunflower-seed', 'pea', 'dandelion', 'redbean', 'rice'],
         enemyDeck: ['dandelion', 'rice'],
@@ -690,8 +710,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'kings-hill',
         title: '이어지는 번개',
         story: {
-            text: '목화솜의 번개가 공중과 지상을 이어 끊는다.',
-            captain: '줄은 잘 섰다. 적들이.',
+            text: '언덕 위에서 지상과 공중의 감염 병력이 함께 접근한다.',
+            brief: '목화솜의 번개는 가까운 적으로 튀어 4명까지 이어져 1초 동안 감전시키고 1초 쉰다. 나는 적에게도 닿는다. 몸이 약해 넘어지면 번개가 끊긴다.',
+            captain: '목화솜은 앞줄 뒤에 두세요.',
         },
         deck: ['cotton', 'sunflower-seed', 'pea', 'dandelion', 'redbean', 'rice'],
         enemyDeck: ['rice', 'dandelion'],
@@ -717,8 +738,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'artillery-basin',
         title: '대포 징검다리',
         story: {
-            text: '검은콩이 아군 대포를 타고 전선을 건넌다.',
-            captain: '환승은 빠르게, 하차는 적 한가운데!',
+            text: '언덕 사이 분지에 아군 거점이 둘 있다. 앞쪽 거점이 전선 가까이에 있다.',
+            brief: '검은콩은 적에게 떨어져 2.5초 싸운 뒤, 앞에 있는 아군 대포로 달려가 올라타고 다시 적 쪽으로 날아간다. 이때 비용과 재장전은 쓰지 않는다.',
+            captain: '아군 거점이 이어져 있을수록 검은콩이 멀리 갑니다.',
         },
         deck: ['black-bean', 'cotton', 'sunflower-seed', 'pea', 'redbean', 'rice'],
         enemyDeck: ['rice', 'millet'],
@@ -746,8 +768,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'artillery-basin',
         title: '입 다물 대포',
         story: {
-            text: '찹쌀이 적 포구를 막아 검은콩의 발사망을 끊는다.',
-            captain: '말 많은 대포에는 찹쌀 한 숟갈!',
+            text: '적 거점마다 대포가 있어 발사망이 촘촘하다.',
+            brief: '찹쌀은 시야 안의 적 건물로 달려가 완공된 거점의 포구에 1초 붙는다. 붙어 있는 동안 그 거점은 발사와 포탑 공격을 못 한다. 같은 병사는 5초 뒤 다시 붙을 수 있다.',
+            captain: '포구가 막힌 거점은 포탑도 멈춥니다. 그 사이 병력을 투입하세요.',
         },
         deck: ['sticky-rice', 'black-bean', 'cotton', 'sunflower-seed', 'redbean', 'pea', 'rice'],
         enemyDeck: ['black-bean', 'rice'],
@@ -777,8 +800,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'small-field',
         title: '보랏빛 왕관',
         story: {
-            text: '포도 수호자의 집중 포격을 뚫고 해방한다.',
-            captain: '한 송이씩 오면 좋겠는데, 늘 단체로 오는군!',
+            text: '바람 언덕의 수호자 포도가 깜부기에 지배당해 언덕 위에서 기다린다.',
+            brief: '포도 수호자는 5레벨 영웅으로, 네 번째 평타마다 표적의 앞·중앙·뒤에 곡사탄을 던진다. 포자 주머니 세 개를 75초 안에 부수면 부순 개수만큼 지원군이 온다. 수호자를 쓰러뜨리면 해방된다.',
+            captain: '병력이 뭉쳐 있으면 곡사탄 세 알에 한꺼번에 맞습니다. 나눠서 투입하세요.',
         },
         deck: ['redbean', 'sunflower-seed', 'cotton', 'sticky-rice', 'pea', 'rice'],
         enemyDeck: ['grape', 'rice'],
@@ -816,8 +840,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'small-field',
         title: '대장이 쓰러지다',
         story: {
-            text: '후미를 지키던 대장이 포자에 감염된다.',
-            captain: '먼저 가. 대장은… 마지막에 솥뚜껑 닫는 거다.',
+            text: '세 고장의 수호자를 해방한 부대가 후미와 합류한다. 포자 구름이 세 방향에서 몰려온다.',
+            brief: '포자 구름이 세 방향에서 차례로 도착하고, 구름마다 쌀·조·민들레씨가 섞여 있다. 5초 전에 예고 표시가 뜬다. 100초 동안 앞 거점을 지킨다.',
+            captain: '나는 병력은 해바라기씨와 목화솜으로 막으세요.',
         },
         deck: ['watermelon', 'pea', 'redbean', 'sunflower-seed', 'cotton', 'sesame', 'rice'],
         enemyDeck: ['rice', 'millet', 'dandelion'],
@@ -847,8 +872,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'twin-gates',
         title: '대장을 찾아서',
         story: {
-            text: '구출한 포로들이 대장이 끌려간 곳을 알려준다.',
-            captain: '(대장의 낡은 쪽지) 길을 잃으면 밥 냄새를 따라와라.',
+            text: '구출한 병사들이 대장이 끌려간 곳이 검은 곳간이라고 알려 준다. 가는 길목에도 포로가 있다.',
+            brief: '갈림길의 포자 주머니 세 개를 부수면 땅콩, 검은콩, 호두 포로가 각각 합류한다. 적은 두 관문을 나누어 지킨다.',
+            captain: '구출한 병종마다 역할이 다릅니다. 땅콩은 건물, 호두는 앞줄로 쓰세요.',
         },
         deck: ['banana', 'peanut', 'black-bean', 'walnut', 'chestnut', 'redbean', 'sesame', 'rice'],
         enemyDeck: ['chestnut', 'pea', 'rice'],
@@ -883,8 +909,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'causeway-flats',
         title: '까만 들판',
         story: {
-            text: '검은 곳간으로 향하는 마지막 통로를 정화한다.',
-            captain: '(대장의 무전) 아직… 밥은 식히지 마라.',
+            text: '검은 곳간으로 향하는 마지막 통로가 감염 밭으로 막혀 있고, 포자 구름이 계속 날아든다.',
+            brief: '고추 6명이 앞 거점 앞의 감염 밭을 태운다. 감염 밭 위에서는 아군 지상 병력이 초당 피해를 입는다. 구름은 5초 전에 예고되고 쌀·조·민들레씨가 차례로 온다. 180초 동안 앞 거점을 지킨다.',
+            captain: '고추가 밭을 태우는 동안 구름을 막아 주세요.',
         },
         deck: ['grape', 'chili', 'walnut', 'sesame', 'sunflower-seed', 'cotton', 'redbean', 'rice'],
         enemyDeck: ['rice', 'millet', 'dandelion'],
@@ -925,8 +952,9 @@ export const CAMPAIGN_ACT_STAGES = Object.freeze([
         map: 'kings-hill',
         title: '검은 이삭',
         story: {
-            text: '검은 이삭의 지배에서 대장을 구하고 햇볕 아래 돌아온다.',
-            captain: '오늘부터 지휘봉은 국자로 대체한다!',
+            text: '검은 이삭에게 지배당한 대장이 곳간 깊은 곳에서 기다린다.',
+            brief: '감염된 대장은 5레벨 영웅이다. 고추 6명이 진입로의 감염 밭을 태운 뒤 팥 100명과 호두 2명이 합류한다. 대장을 쓰러뜨리면 감염이 풀린다.',
+            captain: '밭은 10초마다 넓어집니다. 고추로 진입로를 먼저 여세요.',
         },
         deck: [
             'grape',
