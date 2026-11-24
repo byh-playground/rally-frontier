@@ -27,13 +27,17 @@ export function isDifficulty(id) {
 const round = (value) => Math.round(value * 10_000) / 10_000;
 
 // `place` is Roster.regionPlace of the stage's region: 1..3, or 0 for a stage with no region.
-export function campaignPace(difficultyId, place = 0) {
+// `stageScale` is the stage's own `paceScale` (1 when it declares none): a stage whose enemy plays harder than its
+// place in the story is eased here, for every difficulty alike.
+export function campaignPace(difficultyId, place = 0, stageScale = 1) {
     const difficulty = CAMPAIGN_DIFFICULTIES.find(({ id }) => id === difficultyId);
     if (!difficulty) throw new RangeError(`알 수 없는 난이도: ${difficultyId}`);
     if (!Number.isInteger(place) || place < 0 || place > REGION_STEPS.length)
         throw new RangeError(`고장 순번은 0~${REGION_STEPS.length}여야 합니다: ${place}`);
     const step = REGION_STEPS[Math.max(place, 1) - 1];
-    return { incomeScale: round(difficulty.incomeScale * step.incomeScale) };
+    if (!(Number.isFinite(stageScale) && stageScale > 0))
+        throw new RangeError(`스테이지 paceScale은 0보다 큰 수여야 합니다: ${stageScale}`);
+    return { incomeScale: round(difficulty.incomeScale * step.incomeScale * stageScale) };
 }
 
 // A defence wave's enemy formations with their head counts scaled by the pace's income multiplier (rounded, at
