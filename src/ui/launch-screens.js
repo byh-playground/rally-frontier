@@ -533,6 +533,37 @@ ${panels.map((body, index) => `<section class="unit-info-panel" role="tabpanel" 
                 `적 본진 ${Math.round(enemyDirection.distance).toLocaleString('ko-KR')}`;
         }
     }
+    // The spore clouds coming from off screen: one badge each on the screen edge, pointing at its place, with the
+    // seconds left; a tap moves the camera there. `alerts` = [{ id, left, top, angle, seconds, focus }] in page px
+    // of the battlefield box (left/top), or [] when no cloud is under warning off screen.
+    static renderCloudAlerts(alerts) {
+        const host = this.$('cloudAlerts');
+        const wanted = new Set(alerts.map((alert) => String(alert.id)));
+        for (const badge of [...host.children])
+            if (!wanted.has(badge.dataset.cloud)) badge.remove();
+        for (const alert of alerts) {
+            let badge = host.querySelector(`[data-cloud="${alert.id}"]`);
+            if (!badge) {
+                badge = document.createElement('button');
+                badge.type = 'button';
+                badge.className = 'cloud-alert';
+                badge.dataset.cloud = String(alert.id);
+                badge.innerHTML = '<i aria-hidden="true"></i><b></b>';
+                host.append(badge);
+            }
+            badge.onclick = alert.focus;
+            badge.style.left = `${alert.left}px`;
+            badge.style.top = `${alert.top}px`;
+            badge.querySelector('i').style.transform = `rotate(${alert.angle}rad)`;
+            const text = String(alert.seconds);
+            if (badge.querySelector('b').textContent !== text)
+                badge.querySelector('b').textContent = text;
+            badge.setAttribute(
+                'aria-label',
+                `포자 구름 ${alert.seconds}초 뒤 도착, 누르면 그 자리로 이동`,
+            );
+        }
+    }
     // Label over the landing ring while aiming; at is the ring centre in page pixels, or null when not aiming.
     static renderAimLabel(
         at,

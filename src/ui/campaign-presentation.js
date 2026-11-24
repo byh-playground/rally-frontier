@@ -103,6 +103,31 @@ function currentGoal(stage, snapshot) {
     return { key: 'attack', label: ATTACK_GOAL };
 }
 
+// The spore clouds under warning, one entry per arrival: the cloud's formations that come on the same tick are one
+// place (their mean), with the whole seconds left until its soldiers appear. Shared by the edge alert, the minimap
+// ping and the cue line, so all three tell the same thing.
+export function sporeCloudAlerts(snapshot, tps) {
+    const groups = new Map();
+    for (const cloud of snapshot?.sporeCloud?.coming ?? []) {
+        const group = groups.get(cloud.arriveTick) ?? {
+            x: 0,
+            y: 0,
+            n: 0,
+            arriveTick: cloud.arriveTick,
+        };
+        group.x += cloud.x;
+        group.y += cloud.y;
+        group.n++;
+        groups.set(cloud.arriveTick, group);
+    }
+    return [...groups.values()].map((group) => ({
+        x: group.x / group.n,
+        y: group.y / group.n,
+        arriveTick: group.arriveTick,
+        seconds: Math.max(0, Math.ceil((group.arriveTick - snapshot.tick) / tps)),
+    }));
+}
+
 export class CampaignPresentation {
     static install(find) {
         this.$ = find;
@@ -184,7 +209,7 @@ export class CampaignPresentation {
                     ? this.battle.cueText
                     : goalCue
                       ? goal.cue.text
-                      : '포자 구름이 몰려와요';
+                      : `포자 구름이 ${Math.min(...sporeCloudAlerts(snapshot, tps).map((alert) => alert.seconds))}초 뒤 도착해요`;
             if ($('campaignCueTitle').textContent !== title)
                 $('campaignCueTitle').textContent = title;
             if ($('campaignCueText').textContent !== text) $('campaignCueText').textContent = text;

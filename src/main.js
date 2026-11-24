@@ -98,7 +98,7 @@ import { CampaignUpgradeSheet } from './ui/campaign-upgrades.js';
 import { loadPlayerSave, openPlayerSaves, updatePlayerSave } from './ui/player-saves.js';
 import { CampaignProgress } from './ui/campaign-progress.js';
 import { Roster, clearRecord } from './ui/roster.js';
-import { CampaignPresentation } from './ui/campaign-presentation.js';
+import { CampaignPresentation, sporeCloudAlerts } from './ui/campaign-presentation.js';
 import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
 import { CampaignActs } from './ui/campaign-acts.js';
@@ -1492,6 +1492,19 @@ class GLRenderer {
             height = elevation ?? this.world.terrain.surfaces.heightAt(ax, az);
         const p = this.projectRenderWorldPosition({ x: ax, y: height, z: az, groundY: 0 });
         return [p.x, p.y];
+    }
+    // Moves the camera so the place (user-view world coordinates) is at the screen's centre.
+    focusViewWorld(viewWorldX, viewWorldY) {
+        const vw = this.viewWorldW(),
+            vh = this.viewWorldH();
+        this.cameraLeft = this.clampCameraLeft(viewWorldX - vw / 2);
+        const elevation = this.world.terrain.surfaces.heightAt(
+            this.viewX(viewWorldX),
+            this.viewY(viewWorldY),
+        );
+        this.cameraTop = this.clampCameraTop(
+            BattlefieldProjection.planarY(viewWorldY, elevation) - vh / 2,
+        );
     }
     stableCamera() {
         if (this._frameCamera) return this._frameCamera;
@@ -5745,7 +5758,7 @@ class GLRenderer {
         if (clouds?.length) this.drawSporeClouds(art, clouds);
     }
     // The spore clouds drifting in (SporeCloud, BlightLook.drawCloud), in the soot's own quad stream: each comes
-    // down the wind to its place and thickens until its soldiers appear. Hidden where the viewer cannot see.
+    // down the wind to its place and thickens until its soldiers appear. Shown in the fog too.
     drawSporeClouds(art, clouds) {
         const look = BLIGHT_LOOK.cloud,
             sc = this.sc(),
@@ -5753,7 +5766,7 @@ class GLRenderer {
             surfaces = this.world.terrain.surfaces;
         for (const cloud of clouds) {
             const { x, y, radius } = cloud;
-            if (!this.visibleRaw(x, y)) continue;
+            // A warning, not a unit: it shows in the fog too, or a cloud coming from the unseen would warn no one.
             const near = this.sporeCloudProgress(cloud, this.blightTimeMs),
                 // It slows as it comes in.
                 left = (1 - near) * (1 - near),
@@ -8523,16 +8536,7 @@ class MiniMap {
             const viewWorldY = (py / rect.height) * this.renderer.world.height;
 
             // 탭한 지점이 화면 중앙에 오도록 즉시 점프.
-            const vw = this.renderer.viewWorldW(),
-                vh = this.renderer.viewWorldH();
-            this.renderer.cameraLeft = this.renderer.clampCameraLeft(viewWorldX - vw / 2);
-            const elevation = this.renderer.world.terrain.surfaces.heightAt(
-                this.renderer.viewX(viewWorldX),
-                this.renderer.viewY(viewWorldY),
-            );
-            this.renderer.cameraTop = this.renderer.clampCameraTop(
-                BattlefieldProjection.planarY(viewWorldY, elevation) - vh / 2,
-            );
+            this.renderer.focusViewWorld(viewWorldX, viewWorldY);
 
             this.draw();
         };
@@ -8737,6 +8741,21 @@ class MiniMap {
                 col,
                 cp.owner == null && cp.enabled === false,
             );
+        }
+
+        // A spore cloud under warning pings its place: a ring that widens and fades, over the fog and the map.
+        const pingPhase = (performance.now() / 700) % 1;
+        for (const alert of sporeCloudAlerts(s, s.tps || ActiveSimulationTiming.tps())) {
+            const p = this.point(alert.x, alert.y);
+            c.strokeStyle = `rgba(255, 90, 90, ${1 - pingPhase})`;
+            c.lineWidth = Math.max(2, w * 0.012);
+            c.beginPath();
+            c.arc(p[0], p[1], w * (0.025 + 0.06 * pingPhase), 0, Math.PI * 2);
+            c.stroke();
+            c.fillStyle = '#ff5a5a';
+            c.beginPath();
+            c.arc(p[0], p[1], w * 0.022, 0, Math.PI * 2);
+            c.fill();
         }
 
         for (const m of LaunchPresentation.marks) {
@@ -11414,6 +11433,41 @@ class LaunchPresentation {
         counter.toggleAttribute('data-ready', count === required);
         return ` · 공격 연계 ${count}/${required}`;
     }
+    // The spore clouds under warning that are off screen, as badges on the screen edge (LaunchScreens.renderCloudAlerts).
+    static cloudEdgeAlerts(r, s, tps) {
+        if (!r || UiRuntimeState.value.screen !== 'game') return [];
+        const alerts = [];
+        const { width, height } = r.canvas,
+            kx = r.canvas.clientWidth / width,
+            ky = r.canvas.clientHeight / height,
+            inset = { left: 30, right: 30, top: 160, bottom: 30 };
+        for (const cloud of sporeCloudAlerts(s, tps)) {
+            const [x, y] = r.worldToPx(r.viewX(cloud.x), r.viewY(cloud.y));
+            // On screen (with room for its drawn cloud): the cloud itself tells.
+            if (x >= 40 && x <= width - 40 && y >= 40 && y <= height - 40) continue;
+            const cx = (width / 2) * kx,
+                cy = (height / 2) * ky,
+                dx = x * kx - cx,
+                dy = y * ky - cy;
+            // The point where the ray to the cloud leaves the box the badge may stand in.
+            const reachX = dx > 0 ? width * kx - inset.right - cx : cx - inset.left,
+                reachY = dy > 0 ? height * ky - inset.bottom - cy : cy - inset.top,
+                t = Math.min(
+                    1,
+                    dx ? reachX / Math.abs(dx) : Infinity,
+                    dy ? reachY / Math.abs(dy) : Infinity,
+                );
+            alerts.push({
+                id: cloud.arriveTick,
+                left: cx + dx * t,
+                top: cy + dy * t,
+                angle: Math.atan2(dy, dx) + Math.PI / 2,
+                seconds: cloud.seconds,
+                focus: () => r.focusViewWorld(r.viewX(cloud.x), r.viewY(cloud.y)),
+            });
+        }
+        return alerts;
+    }
     // Both main bases' health, elapsed time, and an edge arrow while the enemy base is off screen.
     static renderHud(s, side) {
         const main = BuildingDefinition.forRole('mainBase'),
@@ -11445,6 +11499,7 @@ class LaunchPresentation {
                 : null;
         const tps = s.tps || ActiveSimulationTiming.tps();
         CampaignPresentation.renderBattle(stage, s, tps);
+        LaunchScreens.renderCloudAlerts(this.cloudEdgeAlerts(r, s, tps));
         LaunchScreens.renderHud({
             myHpPct: hp(side),
             enemyHpPct: hp(1 - side),
