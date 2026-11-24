@@ -41,6 +41,8 @@ export class CampaignScreen {
         this.difficulty = difficulty;
         this.$ = (id) => document.getElementById(id);
         this.$('campaignScreenBack').onclick = () => this.back?.();
+        this.$('campaignScreenUpgradeBtn').onclick = () =>
+            this.actions.openCampaignUpgrades(() => this.paintSunshine());
     }
 
     static show(on) {
@@ -51,7 +53,7 @@ export class CampaignScreen {
     static render(item, query) {
         const roster = this.actions.roster;
         this.cleared = roster.clearedStages;
-        this.$('campaignScreenSunshine').textContent = `☀ ${roster.sunshine}`;
+        this.paintSunshine();
         if (!item) {
             this.renderHome();
             return true;
@@ -60,6 +62,10 @@ export class CampaignScreen {
         if (!chapter || !CampaignActs.isChapterOpen(chapter, this.cleared)) return false;
         this.renderChapter(chapter, query.get('stage'));
         return true;
+    }
+
+    static paintSunshine() {
+        this.$('campaignScreenSunshine').textContent = `☀ ${this.actions.roster.sunshine}`;
     }
 
     static header(title, back) {
@@ -206,6 +212,14 @@ export class CampaignScreen {
         ).join('')}</span>`;
     }
 
+    // The stage's current deck as a row of portraits; it opens the campaign deck editor.
+    static deckMarkup(stage) {
+        const deck = this.actions.campaignDeckOf(stage);
+        return `<button type="button" class="cs-deck" aria-label="이 판의 덱 편성, ${deck.length} / ${CAMPAIGN_DECK_LIMIT}칸"><b>내 덱</b><span class="cs-deck-row">${deck
+            .map((type) => this.portrait(type, { freed: true, size: 28 }))
+            .join('')}</span><em>${deck.length}/${CAMPAIGN_DECK_LIMIT} ✎</em></button>`;
+    }
+
     static briefMarkup(stage, index) {
         const got = this.marksOf(stage);
         const goals = `<ul class="cs-goals"><li><b>주 목표</b><span>${briefGoal(stage)}</span></li>${
@@ -226,7 +240,7 @@ export class CampaignScreen {
 <div class="cs-story">${storyMarkup(stage, { brief: true })}</div>
 ${goals}
 <div class="cs-reward">${reward}<ul>${rows}</ul></div>
-<button type="button" class="launch-btn cs-deck">덱 편성 · ${this.actions.campaignDeckOf(stage).length} / ${CAMPAIGN_DECK_LIMIT}칸</button>
+${this.deckMarkup(stage)}
 <div class="cs-go-row"><div class="campaign-difficulty" role="group" aria-label="적 난이도"></div><button type="button" class="launch-btn primary cs-go">출격</button></div>`;
     }
 }
