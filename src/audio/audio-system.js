@@ -16,6 +16,8 @@ export class AudioSystem {
             shot: { window: 80, max: 3, times: [] },
             explosion: { window: 120, max: 2, times: [] },
             death: { window: 100, max: 2, times: [] },
+            // Clouds warned on the same tick, or a second cloud right after, share one alert instead of stacking.
+            cloudWarning: { window: 1500, max: 1, times: [] },
         };
     }
 
@@ -231,6 +233,31 @@ export class AudioSystem {
         });
     }
 
+    // A spore cloud is coming (the warning begins): two falling pulses over a short wind, the same wherever the cloud is
+    // (it is often off screen, and the warning is for the player, not for a place).
+    cloudWarning(g = 0.8) {
+        if (!this.allow('cloudWarning')) return;
+        for (const when of [0, 0.24]) {
+            this.tone({
+                freq: 392,
+                endFreq: 311,
+                type: 'triangle',
+                gain: 0.075 * g,
+                duration: 0.2,
+                when,
+            });
+            this.tone({
+                freq: 523,
+                endFreq: 415,
+                type: 'sine',
+                gain: 0.05 * g,
+                duration: 0.22,
+                when: when + 0.03,
+            });
+        }
+        this.noise({ gain: 0.05 * g, duration: 0.55, lowpass: 700, when: 0.1 });
+    }
+
     buildingCollapse(g = 0.7) {
         this.noise({ gain: 0.2 * g, duration: 0.35, lowpass: 1000 });
         this.tone({ freq: 74, endFreq: 32, type: 'sine', gain: 0.25 * g, duration: 0.38 });
@@ -245,6 +272,10 @@ export class AudioSystem {
 
     playEvent(e, renderer) {
         if (!e || !this.enabled || !this.unlocked) return;
+        if (e.type === 'sporeCloudWarn') {
+            this.cloudWarning();
+            return;
+        }
         if (e.type === 'unitSelfDestruct' && !renderer.eventVisible(e)) return;
         const gain = this.spatialGain(
             e.x ?? renderer.world.center.x,

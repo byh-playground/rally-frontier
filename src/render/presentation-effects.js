@@ -281,9 +281,14 @@ function createPresentationView(owner, getRenderer, { hud = true, audio = true }
         hasAudio(event) {
             return (
                 audio &&
-                ['captureComplete', 'buildingDeath', 'death', 'hit', 'unitSelfDestruct'].includes(
-                    event.type,
-                )
+                [
+                    'captureComplete',
+                    'buildingDeath',
+                    'death',
+                    'hit',
+                    'unitSelfDestruct',
+                    'sporeCloudWarn',
+                ].includes(event.type)
             );
         },
         visibility(event) {
