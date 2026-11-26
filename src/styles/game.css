@@ -240,6 +240,11 @@ button:disabled {
     color: var(--muted);
 }
 .launch-icon-btn {
+    /* A long press is a command here, not a text selection or a callout. */
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
     position: absolute;
     top: 12px;
     right: 12px;

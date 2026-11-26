@@ -16,10 +16,12 @@ const SUNSHINE_LABELS = Object.freeze({
 });
 
 // Launch match screens (title, friend, help, in-game HUD and cards, match menu, result) and their addresses.
-// Routes: #/ title, #/friend, #/help, #/play, #/play/menu, #/play/help, #/play/<grain> card detail, #/result, and
+// Routes: #/ title, #/settings, #/friend, #/help, #/play, #/play/menu, #/play/help, #/play/<grain> card detail, #/result, and
 // and the campaign: #/campaign, #/campaign/<chapter>?stage=<id> (CampaignScreen).
 // The game owns matches; this module owns which screen and sheet the address shows, and asks the game through `actions`.
-const SCREENS = new Set(['', 'friend', 'help', 'play', 'result']);
+const SCREENS = new Set(['', 'settings', 'friend', 'help', 'play', 'result']);
+// Holding the settings button this long opens the debug mode, which is its own address (`?debug=1`).
+const DEBUG_HOLD_MS = 800;
 
 export class LaunchScreens {
     static grainInfo(type) {
@@ -147,6 +149,7 @@ export class LaunchScreens {
         CampaignScreen.show(CAMPAIGN);
         if (SCREEN === 'friend') this.syncFriendDeckChoice();
         this.showSheet('friendSheet', SCREEN === 'friend');
+        this.showSheet('settingsSheet', SCREEN === 'settings');
         this.showSheet(
             'launchHelpSheet',
             SCREEN === 'help' || (SCREEN === 'play' && ITEM === 'help'),
@@ -174,6 +177,27 @@ export class LaunchScreens {
             : '본인 덱 · 비어 있음';
         if (own.disabled) this.$('friendDeckRandom').checked = true;
     }
+    // A tap opens the settings; a long press goes to the debug mode's address.
+    static bindSettingsButton(button) {
+        let timer = 0,
+            held = false;
+        const release = () => clearTimeout(timer);
+        button.addEventListener('pointerdown', (event) => {
+            if (event.button !== 0) return;
+            held = false;
+            release();
+            timer = setTimeout(() => {
+                held = true;
+                location.assign(`${location.pathname}?debug=1`);
+            }, DEBUG_HOLD_MS);
+        });
+        for (const type of ['pointerup', 'pointercancel', 'pointerleave'])
+            button.addEventListener(type, release);
+        button.addEventListener('contextmenu', (event) => event.preventDefault());
+        button.onclick = () => {
+            if (!held) this.go('settings');
+        };
+    }
     static friendDeckMode() {
         return this.$('friendDeckRandom').checked ? 'random' : 'own';
     }
@@ -188,7 +212,8 @@ export class LaunchScreens {
         };
         $('campaignBtn').onclick = () => this.go('campaign');
         $('friendMatchBtn').onclick = () => this.go('friend');
-        $('titleHelpBtn').onclick = () => this.go('help');
+        this.bindSettingsButton($('titleSettingsBtn'));
+        $('settingsHelpBtn').onclick = () => this.go('help');
         $('friendCreateBtn').onclick = () => {
             const deckMode = this.friendDeckMode();
             this.replace('');
@@ -218,7 +243,7 @@ export class LaunchScreens {
         for (const id of ['matchMenuContinueBtn', 'matchMenuCloseBtn', 'matchMenuBackdrop']) {
             $(id).onclick = () => this.replace('play');
         }
-        for (const id of ['friendSheet', 'launchHelpSheet', 'cardSheet']) {
+        for (const id of ['friendSheet', 'settingsSheet', 'launchHelpSheet', 'cardSheet']) {
             $(id).addEventListener('click', (e) => {
                 if (e.target.id === id || e.target.closest('[data-sheet-close]')) {
                     this.closeSheet();

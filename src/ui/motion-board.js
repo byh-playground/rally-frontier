@@ -9,6 +9,7 @@ import { GRAIN_SPRITES } from '../render/grain-sprite-registry.js';
 import { StrategySim } from '../sim/strategy-sim.js';
 import { centerCamera, placeBlock, prepareSimScene } from './sim-scene.js';
 import { createShowcaseSurface } from './showcase-host.js';
+import { useDebugStyle } from './debug-style.js';
 
 const SEED = 12345,
     GROUP_SIZE = 6,
@@ -91,16 +92,18 @@ export function openMotionBoard({ createRenderer, createScenario, createPresenta
         owed = 0,
         last = null;
 
-    const style = document.createElement('link');
-    style.rel = 'stylesheet';
-    style.href = new URL('../styles/motion-board.css', import.meta.url).href;
-    document.head.append(style);
+    useDebugStyle();
 
     const page = document.createElement('div');
     page.className = 'motion-board';
     page.innerHTML = '<nav></nav><nav></nav><div class="mb-panels"></div>';
     document.body.append(page);
     const [pick, controls, panels] = page.children;
+    const back = document.createElement('a');
+    back.className = 'mb-back';
+    back.href = `${location.pathname}?debug=1`;
+    back.textContent = '‹ 디버그';
+    pick.append(back);
 
     const button = (bar, label, onClick) => {
         const b = document.createElement('button');

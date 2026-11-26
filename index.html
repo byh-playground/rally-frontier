@@ -875,8 +875,8 @@ END OF DEVELOPMENT CONTRACT
             </div>
         </div>
         <section id="lobby" class="title-screen launch-title">
-            <button id="titleHelpBtn" class="launch-icon-btn" type="button" aria-label="하는 법">
-                ?
+            <button id="titleSettingsBtn" class="launch-icon-btn" type="button" aria-label="설정">
+                ⚙&#xFE0E;
             </button>
             <div class="launch-hero">
                 <div class="launch-battle" aria-hidden="true">
@@ -1463,6 +1463,21 @@ END OF DEVELOPMENT CONTRACT
                         참가
                     </button>
                 </div>
+                <button class="launch-btn secondary" type="button" data-sheet-close>닫기</button>
+            </div>
+        </div>
+        <div
+            id="settingsSheet"
+            class="launch-sheet hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settingsTitle"
+        >
+            <div class="launch-sheet-panel">
+                <h2 id="settingsTitle">설정</h2>
+                <button id="settingsHelpBtn" class="launch-btn primary" type="button">
+                    하는 법
+                </button>
                 <button class="launch-btn secondary" type="button" data-sheet-close>닫기</button>
             </div>
         </div>
