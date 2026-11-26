@@ -4,7 +4,7 @@
  * 선언한 병종에서 만든다. 눈으로 보는 확인 도구이고 판정은 하지 않는다. 일반 실행에서는 불러오지 않는다.
  * 주소 선택: `unit=<id>`(한 병종), `group=<n>`(6병종씩), `speed=0.25`.
  */
-import { UNITS } from '../units/index.js';
+import { UNITS, unitCard } from '../units/index.js';
 import { GRAIN_SPRITES } from '../render/grain-sprite-registry.js';
 import { StrategySim } from '../sim/strategy-sim.js';
 import { UnitDefinition } from '../definitions/units.js';
@@ -64,7 +64,14 @@ function createLanes(units) {
     units.forEach((id, i) => {
         const cx = x + ((i % columns) - (columns - 1) / 2) * LANE_X,
             cy = y + (Math.floor(i / columns) - (rows - 1) / 2) * LANE_Y;
-        placeBlock(sim, 0, [id], COUNT, { x: cx - GAP, y: cy }, { x: 1, y: 0 });
+        placeBlock(
+            sim,
+            0,
+            [id],
+            unitCard(id).hero ? 1 : COUNT,
+            { x: cx - GAP, y: cy },
+            { x: 1, y: 0 },
+        );
         // A unit that only attacks buildings gets a silent enemy outpost to batter instead of soldiers.
         if (UnitDefinition.onlyAttacksBuildings(id)) {
             const outpost = buildOutpost(sim, { id: `board-${i}`, x: cx + GAP, y: cy }, 1);
@@ -82,9 +89,17 @@ function createLanes(units) {
 export function openMotionBoard({ createRenderer, createScenario, createPresentationView }) {
     const declared = UNITS.map((card) => card.id).filter((id) => GRAIN_SPRITES[id]?.motion),
         names = new Map(UNITS.map((card) => [card.id, card.unit.name])),
+        // A group is one match's deck, which holds one hero: each hero leads a group of its own.
+        heroes = declared.filter((id) => unitCard(id).hero),
+        others = declared.filter((id) => !unitCard(id).hero),
         groups = [];
-    for (let i = 0; i < declared.length; i += GROUP_SIZE)
-        groups.push(declared.slice(i, i + GROUP_SIZE));
+    while (others.length || heroes.length) {
+        const hero = heroes.shift();
+        groups.push([
+            ...(hero ? [hero] : []),
+            ...others.splice(0, hero ? GROUP_SIZE - 1 : GROUP_SIZE),
+        ]);
+    }
 
     const query = new URLSearchParams(location.search);
     // The scenes read a clock this page owns, so slow motion and pause slow everything they draw.

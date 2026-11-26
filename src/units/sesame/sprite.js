@@ -316,4 +316,10 @@ export const SPRITE = Object.freeze({
     shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     artScale: SESAME_ART_SCALE,
+    motion: Object.freeze({
+        juice: [0.93, 0.86, 0.68],
+        stain: [0.62, 0.52, 0.3],
+        spark: [0.66, 0.66, 0.74],
+        walkMs: 600,
+    }),
 });

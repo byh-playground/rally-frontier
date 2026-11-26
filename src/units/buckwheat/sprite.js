@@ -365,4 +365,10 @@ export const SPRITE = Object.freeze({
     groundY: 0,
     pose: 'thorn-thrower',
     artScale: BUCKWHEAT_ART_SCALE,
+    motion: Object.freeze({
+        juice: [0.62, 0.5, 0.38],
+        stain: [0.4, 0.3, 0.2],
+        spark: [0.12, 0.95, 0.78],
+        walkMs: 600,
+    }),
 });

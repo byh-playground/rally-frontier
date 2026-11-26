@@ -356,4 +356,13 @@ export const SPRITE = Object.freeze({
     shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     artScale: ballArtScale(Walnut.unit.size),
+    motion: Object.freeze({
+        juice: [0.8, 0.6, 0.36],
+        stain: [0.52, 0.36, 0.18],
+        spark: [0.95, 0.72, 0.42],
+        ownFacing: true,
+        lunge: 0.6,
+        bob: 9,
+        swing: 'smash',
+    }),
 });

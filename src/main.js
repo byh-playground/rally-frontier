@@ -875,6 +875,8 @@ const GRAIN_HIT_FLASH_MS = 60,
     }),
     // A pale body keeps its hat and face readable under a weaker wash.
     GRAIN_HIT_FLASH_PALE = Object.freeze({ ...GRAIN_HIT_FLASH, washAlpha: 0.3 }),
+    // Unit size from which a body is too large to flash (see motionHit).
+    LARGE_BODY_SIZE = 18,
     // The sprite scale the combat effect sizes were authored at: scale / this = one effect unit in pixels.
     MOTION_FX_ART_SCALE = 0.18;
 
@@ -2165,13 +2167,20 @@ class GLRenderer {
             // A larger body is struck on the attacker's side of it, not at its middle.
             reach = Math.max(0, struck.fxSize / size - 1) * 20;
         if (struck.sway) UnitMotionLook.struck(struck.sway, dir.x < 0 ? -1 : 1);
-        if (struck.sprite) {
+        // A large body (a hero, a nut shell) does not flash: the wash is laid over all its parts at once, so parts
+        // hidden behind others would show through it. It is only shoved.
+        if (struck.sprite && (UnitDefinition.get(e.targetType)?.size || 0) < LARGE_BODY_SIZE) {
             struck.flashUntil = this.presentationNow() + GRAIN_HIT_FLASH_MS;
             const juice = this.juiceOf(e.targetType);
             struck.flashPaint =
                 juice[0] + juice[1] + juice[2] > 2.4 ? GRAIN_HIT_FLASH_PALE : GRAIN_HIT_FLASH;
         }
-        if (style.swing === 'smash')
+        // One ground ring per attacker and tick, however many bodies that blow struck.
+        if (
+            style.swing === 'smash' &&
+            source.thudTick !== snapshot.tick &&
+            (source.thudTick = snapshot.tick)
+        )
             this.combatFxLook.thud({
                 at: { x: e.x, y: e.y, side: e.side },
                 size,
@@ -2191,13 +2200,14 @@ class GLRenderer {
         });
         return true;
     }
-    // A thorn that struck a soldier (unitThornHit: `side` is the thrower's, no unit types): the same blow as any
-    // other of its thrower's, read from the two bodies last drawn. The thorn's own burst still draws.
-    motionThornHit(e, snapshot, index) {
+    // A blow that comes as its own event (a thorn, a rolling body, a hero's roll: `side` is the attacker's, no
+    // unit types) because its damage turns the plain impact off: the same blow as any other of its attacker's,
+    // read from the two bodies last drawn. False: not such a blow.
+    motionEventHit(e, snapshot, index) {
         const source = this.grainActors.get(e.sourceId)?.lastUnit,
             struck = this.grainActors.get(e.targetId)?.lastUnit;
-        if (source?.id !== e.sourceId || struck?.id !== e.targetId) return;
-        this.motionHit(
+        if (source?.id !== e.sourceId || struck?.id !== e.targetId) return false;
+        return this.motionHit(
             {
                 sourceType: source.type,
                 targetType: struck.type,
@@ -2868,7 +2878,10 @@ class GLRenderer {
                               },
                     );
             } else if (e.type === 'heroRollHit') {
-                this.addClientFx('meleeImpact', e, snapshot, index, { impactScale: 1.5 });
+                if (!this.motionEventHit(e, snapshot, index))
+                    this.addClientFx('meleeImpact', e, snapshot, index, { impactScale: 1.5 });
+            } else if (e.type === 'rollingImpact') {
+                this.motionEventHit(e, snapshot, index);
             } else if (e.type === 'fruitBerryLand') {
                 this.addClientFx('fruitBerryImpact', e, snapshot, index);
             } else if (e.type === 'fruitProjectileHit' && e.echo) {
@@ -2901,7 +2914,7 @@ class GLRenderer {
                         index,
                     );
             } else if (e.type === 'unitThornHit') {
-                this.motionThornHit(e, snapshot, index);
+                this.motionEventHit(e, snapshot, index);
                 this.addClientFx('thornImpact', e, snapshot, index, {
                     id: 'thorn-impact:' + e.projectileId,
                     // A heavy thorn (campaign upgrade heavyThorn) bursts as much larger as it is thicker.
@@ -5336,7 +5349,12 @@ class GLRenderer {
             // Declared motion (UnitMotionLook): windup-timed attack, distance-driven walk, springs.
             const motionStyle = this.motionOf(u.type),
                 pop = motionStyle ? this.poppingUnits.get(u.id) : null;
-            const spinning = entity.spinAttack?.endTick > renderTick;
+            // A body busy with its own movement (a spin, a hero's roll) or art that is a rolling ball (`rigid`)
+            // takes no flip, brace, lunge or spring transform.
+            const spinning =
+                entity.spinAttack?.endTick > renderTick ||
+                !!entity.heroRoll?.phase ||
+                !!motionStyle?.rigid;
             let motionElapsed = null,
                 brace = 0,
                 facingSide = 0,
@@ -5712,6 +5730,7 @@ class GLRenderer {
             else if (milletFireMs !== null && clip === 'fire') actor.seekElapsed(milletFireMs);
             else if (
                 motionStyle &&
+                !motionStyle.rigid &&
                 (motionElapsed !== null || (clip === 'walk' && !work?.active))
             ) {
                 actor.startedAt =
@@ -5772,7 +5791,7 @@ class GLRenderer {
             m[4] = p.x + (work?.offsetX ?? 0) - m[0] * cx - m[2] * cy;
             m[5] = p.y + (work?.offsetY ?? 0) + r * 0.55 - 120 * scale - m[1] * cx - m[3] * cy;
             // Art that does not turn itself faces its target while it attacks.
-            if (facingSide < 0 && !GRAIN_SPRITES[u.type].pose) {
+            if (facingSide < 0 && !GRAIN_SPRITES[u.type].pose && !motionStyle.ownFacing) {
                 m[0] = -m[0];
                 m[1] = -m[1];
             }
@@ -5795,7 +5814,7 @@ class GLRenderer {
                 m[1] *= tall;
                 m[3] *= tall;
                 m[5] = ground + (m[5] - ground) * tall - 14 * Math.sin(t * Math.PI) * unit;
-            } else if (motionStyle && grounded && !impact.active && !work?.active)
+            } else if (motionStyle && !spinning && grounded && !impact.active && !work?.active)
                 UnitMotionLook.compose(
                     m,
                     p.x,
@@ -5805,6 +5824,9 @@ class GLRenderer {
                     brace,
                     facingSide || 1,
                     reach,
+                    moving && motionStyle.bob
+                        ? UnitMotionLook.hop(grain.sway) * motionStyle.bob
+                        : 0,
                 );
             grain.flash =
                 grain.sprite &&

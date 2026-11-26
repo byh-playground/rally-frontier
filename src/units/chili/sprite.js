@@ -1011,4 +1011,11 @@ export const SPRITE = Object.freeze({
     shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     breath: { drawFlame },
+    motion: Object.freeze({
+        juice: [0.88, 0.2, 0.14],
+        stain: [0.6, 0.08, 0.05],
+        spark: [1, 0.45, 0.2],
+        ownFacing: true,
+        walkMs: 600,
+    }),
 });

@@ -108,4 +108,10 @@ export const SPRITE = Object.freeze({
     groundY: 0,
     artScale: COCONUT_ART_SCALE,
     rolling: Object.freeze({ prepare: prepareRolling }),
+    motion: Object.freeze({
+        juice: [0.62, 0.42, 0.24],
+        stain: [0.4, 0.26, 0.12],
+        spark: [0.65, 0.92, 1],
+        rigid: true,
+    }),
 });
