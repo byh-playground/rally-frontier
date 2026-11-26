@@ -2176,6 +2176,7 @@ class GLRenderer {
                 at: { x: e.x, y: e.y, side: e.side },
                 size,
                 shift: { x: -dir.x * reach, y: -dir.y * reach },
+                color: style.spark,
                 clock: snapshot.presentationClock,
             });
         this.combatFxLook.hit({
@@ -2184,8 +2185,57 @@ class GLRenderer {
             shift: { x: -dir.x * (reach + 10), y: -dir.y * reach },
             dir,
             juice: this.juiceOf(e.targetType),
-            color: style.swing === 'smash' ? style.spark : null,
+            color: style.spark,
             clock: snapshot.presentationClock,
+            seed: HashUtil.hash(`${snapshot.tick}|${index}|${e.targetId}`),
+        });
+        return true;
+    }
+    // A thorn that struck a soldier (unitThornHit: `side` is the thrower's, no unit types): the same blow as any
+    // other of its thrower's, read from the two bodies last drawn. The thorn's own burst still draws.
+    motionThornHit(e, snapshot, index) {
+        const source = this.grainActors.get(e.sourceId)?.lastUnit,
+            struck = this.grainActors.get(e.targetId)?.lastUnit;
+        if (source?.id !== e.sourceId || struck?.id !== e.targetId) return;
+        this.motionHit(
+            {
+                sourceType: source.type,
+                targetType: struck.type,
+                sourceId: e.sourceId,
+                targetId: e.targetId,
+                side: struck.side,
+                x: struck.x,
+                y: struck.y,
+            },
+            snapshot,
+            index,
+        );
+    }
+    // A blow on a building by a unit whose `motion` declares `siege`: its spark and ground ring where it meets
+    // the wall, on the attacker's side. False: the plain impact draws.
+    motionSiege(e, snapshot, index) {
+        const style = this.motionOf(e.sourceType),
+            source = this.grainActors.get(e.sourceId),
+            unit = source?.lastUnit;
+        if (!style?.siege || !source?.fxSize || unit?.id !== e.sourceId) return false;
+        const dx = e.x - unit.x,
+            side = this.viewX(e.x) < this.viewX(unit.x) ? -1 : 1,
+            dy = e.y - unit.y,
+            length = Math.hypot(dx, dy) || 1,
+            dir = { x: side * Math.abs(dx / length), y: dy / length },
+            at = { x: unit.x, y: unit.y, side: unit.side },
+            shift = { x: dir.x * 34, y: dir.y * 12 },
+            size = source.fxSize * 1.25,
+            clock = snapshot.presentationClock;
+        this.combatFxLook.thud({ at, size, shift, color: style.spark, clock });
+        this.combatFxLook.hit({
+            at,
+            size,
+            shift,
+            dir: { x: -dir.x, y: -dir.y },
+            juice: [0.86, 0.8, 0.66],
+            color: style.spark,
+            clock,
             seed: HashUtil.hash(`${snapshot.tick}|${index}|${e.targetId}`),
         });
         return true;
@@ -2731,10 +2781,11 @@ class GLRenderer {
 
             if (e.type === 'hit') {
                 const motion =
-                    !e.isBuilding &&
                     !e.suppressImpactFx &&
                     !e.ambient &&
-                    this.motionHit(e, snapshot, index);
+                    (e.isBuilding
+                        ? this.motionSiege(e, snapshot, index)
+                        : this.motionHit(e, snapshot, index));
                 const sourceType = e.sourceType || '';
                 const attackVisual = AttackPresentationDefinition.forSource(sourceType),
                     impactPreset = AttackPresentationDefinition.impactPreset(sourceType);
@@ -2850,6 +2901,7 @@ class GLRenderer {
                         index,
                     );
             } else if (e.type === 'unitThornHit') {
+                this.motionThornHit(e, snapshot, index);
                 this.addClientFx('thornImpact', e, snapshot, index, {
                     id: 'thorn-impact:' + e.projectileId,
                     // A heavy thorn (campaign upgrade heavyThorn) bursts as much larger as it is thicker.
@@ -5284,6 +5336,7 @@ class GLRenderer {
             // Declared motion (UnitMotionLook): windup-timed attack, distance-driven walk, springs.
             const motionStyle = this.motionOf(u.type),
                 pop = motionStyle ? this.poppingUnits.get(u.id) : null;
+            const spinning = entity.spinAttack?.endTick > renderTick;
             let motionElapsed = null,
                 brace = 0,
                 facingSide = 0,
@@ -5296,13 +5349,13 @@ class GLRenderer {
                 if (pop) {
                     clip = 'hit';
                     motionElapsed = 35;
-                } else if (grounded && !impact.active && !work?.active) {
-                    // Art with its own attack timing (`pose`) keeps it.
-                    const ownTiming = !!GRAIN_SPRITES[u.type].pose,
+                } else if (grounded && !impact.active && !work?.active && !spinning) {
+                    // Only art that declares the grain rig's swing takes the shared attack timing.
+                    const sharedTiming = !!motionStyle.grainSwing,
                         contactAge = grain.attackUntil > now ? now - (grain.attackUntil - 425) : -1,
-                        attackMs = ownTiming
-                            ? null
-                            : UnitMotionLook.attackClipMs(entity.combat, renderTick, contactAge);
+                        attackMs = sharedTiming
+                            ? UnitMotionLook.attackClipMs(entity.combat, renderTick, contactAge)
+                            : null;
                     const combat = entity.combat,
                         from = combat?.attackWindupStartedAt,
                         until = combat?.attackWindupUntil,
@@ -5345,7 +5398,7 @@ class GLRenderer {
             if (motionStyle) {
                 const striking = grain.attackUntil > now || entity.combat?.attackWindupUntil > 0;
                 if (!striking && Math.hypot(delta.x, delta.y) > 1) grain.aimSide = 0;
-                facingSide = grain.aimSide || 0;
+                facingSide = spinning ? 0 : grain.aimSide || 0;
             }
             let cornElapsed = null;
             grain.holdsKernel = false;
@@ -5661,7 +5714,8 @@ class GLRenderer {
                 motionStyle &&
                 (motionElapsed !== null || (clip === 'walk' && !work?.active))
             ) {
-                actor.startedAt = now - (motionElapsed ?? UnitMotionLook.walkMs(grain.sway));
+                actor.startedAt =
+                    now - (motionElapsed ?? UnitMotionLook.walkMs(grain.sway, motionStyle.walkMs));
                 actor.seek(now);
             } else
                 actor.seek(
@@ -5724,13 +5778,14 @@ class GLRenderer {
             }
             // Where and how large this body is on screen, for the combat effects (CombatFxLook).
             grain.groundX = p.x;
-            if (motionStyle && !pop) grain.lastUnit = u;
+            if (!pop) grain.lastUnit = u;
             grain.groundY = p.y + r * 0.55;
-            grain.fxSize = scale / MOTION_FX_ART_SCALE / this.sc();
+            const bodyUnit = scale / (GRAIN_SPRITES[u.type]?.artScale || 1) / MOTION_FX_ART_SCALE;
+            grain.fxSize = bodyUnit / this.sc();
             if (pop) {
                 // The swell before the burst: wider, flatter, thrown a little way and lifted.
                 const t = Math.max(0, pop.clock.ageMs) / CombatFxLook.popMs,
-                    unit = scale / MOTION_FX_ART_SCALE,
+                    unit = bodyUnit,
                     ground = p.y + r * 0.55,
                     wide = 1 + 0.45 * t,
                     tall = 1 - 0.3 * t + 0.25 * Math.sin(t * Math.PI);
@@ -5746,7 +5801,7 @@ class GLRenderer {
                     p.x,
                     p.y + r * 0.55,
                     grain.sway,
-                    scale / MOTION_FX_ART_SCALE,
+                    bodyUnit,
                     brace,
                     facingSide || 1,
                     reach,

@@ -440,5 +440,10 @@ export const SPRITE = Object.freeze({
     renderer: AcornSpriteRenderer,
     portrait: acornSpritePortrait,
     groundY: 145,
+    motion: Object.freeze({
+        juice: [0.78, 0.55, 0.22],
+        stain: [0.5, 0.32, 0.1],
+        spark: [1, 0.8, 0.12],
+    }),
     shell: { draw: 'drawAmmo', turn: Math.PI / 4, flight: 'tumble' },
 });

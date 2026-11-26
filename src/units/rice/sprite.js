@@ -350,5 +350,10 @@ export const SPRITE = Object.freeze({
     renderer: RiceSpriteRenderer,
     portrait: riceSpritePortrait,
     groundY: 145,
-    motion: Object.freeze({ juice: [0.95, 0.91, 0.78], stain: [0.8, 0.7, 0.42], swing: 'slash' }),
+    motion: Object.freeze({
+        juice: [0.95, 0.91, 0.78],
+        stain: [0.8, 0.7, 0.42],
+        swing: 'slash',
+        grainSwing: true,
+    }),
 });

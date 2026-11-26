@@ -32,9 +32,7 @@ const LIFE = Object.freeze({
 });
 // The smallest effect unit on a 540px wide canvas: below it the shapes turn into specks at the default zoom.
 const MIN_UNIT = 0.68;
-const SMASH_FILL = Object.freeze([0.9, 1, 0.4, 1]),
-    THUD_EDGE = Object.freeze([0.25, 0.32, 0.08, 1]),
-    SPARK_FILL = Object.freeze([1, 0.98, 0.86, 1]),
+const SPARK_FILL = Object.freeze([1, 0.98, 0.86, 1]),
     SLASH_FILL = Object.freeze([1, 0.99, 0.92, 1]);
 const DROPS = 7,
     SHARDS = 9;
@@ -230,8 +228,10 @@ export class CombatFxLook {
     }
 
     // Where a smash lands: a flat ring thrown out over the ground under the struck body.
-    thud({ at, size, shift, clock }) {
-        this.add('thud', { at, size, shift }, clock, LIFE.thud);
+    thud({ at, size, shift, color, clock }) {
+        const fill = tint(color, 0),
+            edge = [color[0] * 0.3, color[1] * 0.3, color[2] * 0.3, 1];
+        this.add('thud', { at, size, shift, fill, edge }, clock, LIFE.thud);
     }
 
     death({ at, size, dir, juice, stain, clock, seed }) {
@@ -387,8 +387,8 @@ export class CombatFxLook {
                 width = (26 + 62 * eased) * s,
                 alpha = 1 - t * t;
             // Two passes: a wider dark edge under the bright one, so it reads on grass.
-            this.quad('ring', x, y, width * 1.12, width * 0.52, 0, THUD_EDGE, alpha * 0.8);
-            this.quad('ring', x, y - 1.5 * s, width, width * 0.46, 0, SMASH_FILL, alpha);
+            this.quad('ring', x, y, width * 1.12, width * 0.52, 0, e.edge, alpha * 0.8);
+            this.quad('ring', x, y - 1.5 * s, width, width * 0.46, 0, e.fill, alpha);
         });
         this.each(renderer, 'burst', LIFE.popMs + LIFE.burst, 0.0033, (e, raw, x, y, s) => {
             const age = raw - LIFE.popMs;

@@ -7,7 +7,8 @@
 import { UNITS } from '../units/index.js';
 import { GRAIN_SPRITES } from '../render/grain-sprite-registry.js';
 import { StrategySim } from '../sim/strategy-sim.js';
-import { centerCamera, placeBlock, prepareSimScene } from './sim-scene.js';
+import { UnitDefinition } from '../definitions/units.js';
+import { buildOutpost, centerCamera, placeBlock, prepareSimScene } from './sim-scene.js';
 import { createShowcaseSurface } from './showcase-host.js';
 import { useDebugStyle } from './debug-style.js';
 
@@ -64,7 +65,11 @@ function createLanes(units) {
         const cx = x + ((i % columns) - (columns - 1) / 2) * LANE_X,
             cy = y + (Math.floor(i / columns) - (rows - 1) / 2) * LANE_Y;
         placeBlock(sim, 0, [id], COUNT, { x: cx - GAP, y: cy }, { x: 1, y: 0 });
-        placeBlock(sim, 1, [foes[i]], FOES, { x: cx + GAP, y: cy }, { x: -1, y: 0 });
+        // A unit that only attacks buildings gets a silent enemy outpost to batter instead of soldiers.
+        if (UnitDefinition.onlyAttacksBuildings(id)) {
+            const outpost = buildOutpost(sim, { id: `board-${i}`, x: cx + GAP, y: cy }, 1);
+            outpost.cooldownUntil = Number.MAX_SAFE_INTEGER;
+        } else placeBlock(sim, 1, [foes[i]], FOES, { x: cx + GAP, y: cy }, { x: -1, y: 0 });
     });
     return {
         sim,
