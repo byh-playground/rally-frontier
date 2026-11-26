@@ -696,4 +696,10 @@ export const SPRITE = Object.freeze({
     // Stalk stub first along the flight.
     shell: { draw: 'drawAmmo', depthTest: true, turn: Math.PI / 2 },
     groundY: 0,
+    motion: Object.freeze({
+        juice: [0.95, 0.95, 0.82],
+        stain: [0.68, 0.66, 0.45],
+        spark: [0.7, 1, 0.9],
+        walkMs: 600,
+    }),
 });

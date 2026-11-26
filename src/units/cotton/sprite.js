@@ -743,4 +743,11 @@ export const SPRITE = Object.freeze({
     groundY: 0,
     artScale: COTTON_ART_SCALE,
     chain: { drawBolt, igniteGapMs: IGNITE_GAP_MS, fadeMs: FADE_MS, telegraphMs: TELEGRAPH_MS },
+    motion: Object.freeze({
+        juice: [0.97, 0.97, 0.95],
+        stain: [0.72, 0.74, 0.7],
+        spark: [0.75, 0.9, 1],
+        ownFacing: true,
+        walkMs: 600,
+    }),
 });

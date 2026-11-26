@@ -230,7 +230,7 @@ export class CombatFxLook {
     // Where a smash lands: a flat ring thrown out over the ground under the struck body.
     thud({ at, size, shift, color, clock }) {
         const fill = tint(color, 0),
-            edge = [color[0] * 0.3, color[1] * 0.3, color[2] * 0.3, 1];
+            edge = [color[0] * 0.45, color[1] * 0.45, color[2] * 0.45, 1];
         this.add('thud', { at, size, shift, fill, edge }, clock, LIFE.thud);
     }
 

@@ -390,4 +390,12 @@ export const SPRITE = Object.freeze({
     shell: { draw: 'drawAmmo', depthTest: true },
     groundY: SUNFLOWER_SEED_GROUND_Y,
     artScale: SUNFLOWER_SEED_ART_SCALE,
+    motion: Object.freeze({
+        juice: [0.4, 0.34, 0.26],
+        stain: [0.24, 0.2, 0.14],
+        spark: [0.18, 0.82, 1],
+        ownFacing: true,
+        walkMs: 700,
+        lunge: 0.3,
+    }),
 });

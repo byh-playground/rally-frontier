@@ -102,6 +102,11 @@ export class UnitMotionLook {
     }
 
     // `cycleMs`: the length of this rig's walk clip.
+    // The height of a hop (0..1) for art with no walk clip of its own (`bob`): one hop per half stride.
+    static hop(state) {
+        return Math.abs(Math.sin((state.walked / STRIDE) * Math.PI * 2));
+    }
+
     static walkMs(state, cycleMs = WALK_CYCLE_MS) {
         return ((state.walked / STRIDE) * cycleMs) % cycleMs;
     }
@@ -110,7 +115,7 @@ export class UnitMotionLook {
     // `unit` is the screen size of one push step.
     // `brace` 0..1: how far into its windup it is; it crouches and draws back from the target (`side`).
     // `reach`: how far it is thrown toward the target just after its blow lands, in push steps.
-    static compose(m, gx, gy, state, unit, brace = 0, side = 1, reach = 0) {
+    static compose(m, gx, gy, state, unit, brace = 0, side = 1, reach = 0, lift = 0) {
         const drawn = brace * brace,
             squash = Math.max(-SQUASH_LIMIT, Math.min(SQUASH_LIMIT, state.squash + 0.16 * drawn)),
             lean = state.lean - side * 0.2 * drawn,
@@ -131,6 +136,6 @@ export class UnitMotionLook {
         m[2] = a * m2 + c * m3;
         m[3] = b * m2 + d * m3;
         m[4] = a * tx + c * ty + gx + (state.push + side * (reach - 9 * drawn)) * unit;
-        m[5] = b * tx + d * ty + gy;
+        m[5] = b * tx + d * ty + gy - lift * unit;
     }
 }

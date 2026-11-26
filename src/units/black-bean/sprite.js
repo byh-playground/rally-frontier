@@ -503,4 +503,10 @@ export const SPRITE = Object.freeze({
     shell: { draw: 'drawAmmo', depthTest: true, flight: 'soldier' },
     groundY: 0,
     artScale: BLACK_BEAN_ART_SCALE,
+    motion: Object.freeze({
+        juice: [0.26, 0.22, 0.3],
+        stain: [0.14, 0.12, 0.18],
+        spark: [0.36, 0.48, 1],
+        walkMs: 600,
+    }),
 });

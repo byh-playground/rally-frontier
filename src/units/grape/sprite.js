@@ -21,4 +21,11 @@ export const SPRITE = Object.freeze({
     heroBasic: true,
     fruitAttack: true,
     groundY: 0,
+    motion: Object.freeze({
+        juice: [0.6, 0.32, 0.75],
+        stain: [0.4, 0.16, 0.55],
+        spark: [0.68, 0.38, 1],
+        ownFacing: true,
+        walkMs: 600,
+    }),
 });

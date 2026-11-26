@@ -355,4 +355,12 @@ export const SPRITE = Object.freeze({
     shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     artScale: STICKY_RICE_ART_SCALE,
+    motion: Object.freeze({
+        juice: [0.97, 0.93, 0.88],
+        stain: [0.78, 0.68, 0.62],
+        spark: [1, 0.68, 0.85],
+        walkMs: 600,
+        swing: 'smash',
+        siege: true,
+    }),
 });

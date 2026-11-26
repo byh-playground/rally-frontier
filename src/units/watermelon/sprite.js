@@ -372,4 +372,12 @@ export const SPRITE = Object.freeze({
         tuck: watermelonRollTuck,
         setMatrix: setWatermelonRollMatrix,
     }),
+    motion: Object.freeze({
+        juice: [0.9, 0.28, 0.32],
+        stain: [0.65, 0.12, 0.18],
+        spark: [1, 0.24, 0.68],
+        ownFacing: true,
+        walkMs: 680,
+        swing: 'smash',
+    }),
 });

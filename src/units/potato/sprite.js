@@ -476,4 +476,9 @@ export const SPRITE = Object.freeze({
     shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     artScale: POTATO_ART_SCALE,
+    motion: Object.freeze({
+        juice: [0.82, 0.62, 0.36],
+        stain: [0.55, 0.38, 0.18],
+        spark: [1, 0.8, 0.5],
+    }),
 });
