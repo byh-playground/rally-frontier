@@ -7,7 +7,7 @@ import { EffectObjectFactory } from './presentation-effects.js';
 const CELL = 64;
 // Atlas cells, in order. White fills tint per quad; a dark outline baked into the cell stays dark under any tint,
 // so a fading shape never turns into a dark blot (an outline drawn as a second quad showed through its fill).
-const SHAPES = Object.freeze(['star', 'drop', 'shard', 'arc', 'splat', 'ring']);
+const SHAPES = Object.freeze(['star', 'drop', 'shard', 'arc', 'splat', 'ring', 'chunk', 'puff']);
 const OUTLINE = '#4a2c14';
 // The most live effects of each kind; the oldest give way.
 const CAPS = Object.freeze({
@@ -18,6 +18,11 @@ const CAPS = Object.freeze({
     shards: 40,
     stain: 90,
     burst: 24,
+    boom: 24,
+    chips: 60,
+    puffs: 60,
+    scorch: 12,
+    shock: 16,
 });
 const LIFE = Object.freeze({
     spark: 130,
@@ -29,10 +34,15 @@ const LIFE = Object.freeze({
     burst: 220,
     shards: 1500,
     stain: 4500,
+    chips: 1300,
+    scorch: 3500,
+    shock: 560,
 });
 // The smallest effect unit on a 540px wide canvas: below it the shapes turn into specks at the default zoom.
 const MIN_UNIT = 0.68;
-const SPARK_FILL = Object.freeze([1, 0.98, 0.86, 1]),
+const SCORCH_FILL = Object.freeze([0.38, 0.3, 0.17, 1]),
+    DUST_LIGHT = Object.freeze([0.96, 0.9, 0.76, 1]),
+    SPARK_FILL = Object.freeze([1, 0.98, 0.86, 1]),
     SLASH_FILL = Object.freeze([1, 0.99, 0.92, 1]);
 const DROPS = 7,
     SHARDS = 9;
@@ -50,6 +60,13 @@ function trace(c, shape) {
         c.moveTo(-24, 0);
         c.quadraticCurveTo(0, -30, 24, 0);
         c.quadraticCurveTo(0, -4, -24, 0);
+    } else if (shape === 'chunk') {
+        c.moveTo(-24, -10);
+        c.lineTo(7, -20);
+        c.lineTo(24, 7);
+        c.lineTo(-10, 20);
+    } else if (shape === 'puff') {
+        c.arc(0, 0, 27, 0, Math.PI * 2);
     } else if (shape === 'arc') {
         c.arc(-8, 4, 34, -1.6, 0.9);
         c.arc(-17, 8, 27, 0.9, -1.6, true);
@@ -114,7 +131,7 @@ function atlasCanvas() {
                 c.restore();
                 return;
             }
-            if (name !== 'splat') {
+            if (name !== 'splat' && name !== 'puff') {
                 c.strokeStyle = OUTLINE;
                 c.lineWidth = 6;
                 c.stroke();
@@ -154,6 +171,11 @@ export class CombatFxLook {
             shards: [],
             stain: [],
             burst: [],
+            boom: [],
+            chips: [],
+            puffs: [],
+            scorch: [],
+            shock: [],
         };
         this.matrix = new Float64Array(6);
         this.options = { matrix: this.matrix };
@@ -241,6 +263,36 @@ export class CombatFxLook {
         this.add('stain', { ...effect, juice: stain }, clock, LIFE.popMs + LIFE.stain);
     }
 
+    // The pieces of buildings and earth (siege): `at` a ground position, `shift` from it in effect units.
+    // A big outlined flash of `reach` units for `life` ms.
+    boom({ at, size, shift, reach, life, clock, delay = 0, seed = 1 }) {
+        this.add('boom', { at, size, shift, reach, life, delay, seed }, clock, delay + life);
+    }
+
+    // `count` chunks thrown toward `dir` (-1|1; 0 all round) that fall to `drop` units below and lie there.
+    // `life`: how long the pieces stay once thrown.
+    chips({ at, size, shift, dir, color, count, speed, drop, clock, delay = 0, life, seed }) {
+        const effect = { at, size, shift, dir, juice: color, count, speed, drop, delay, seed };
+        effect.life = life ?? LIFE.chips;
+        this.add('chips', effect, clock, delay + effect.life);
+    }
+
+    // `count` round puffs of dust or smoke spreading `spread` units and rising `rise` units over `life` ms.
+    puffs({ at, size, shift, color, count, spread, rise, reach, life, clock, delay = 0, seed }) {
+        const effect = { at, size, shift, color, count, spread, rise, reach, life, delay, seed };
+        this.add('puffs', effect, clock, delay + life);
+    }
+
+    // A dark ragged mark left on the ground.
+    scorch({ at, size, clock, delay = 0, width = 90 }) {
+        this.add('scorch', { at, size, shift: null, delay, width }, clock, delay + LIFE.scorch);
+    }
+
+    // A flat ring racing out over the ground to `reach` units.
+    shock({ at, size, reach, clock, delay = 0 }) {
+        this.add('shock', { at, size, shift: null, reach, delay }, clock, delay + LIFE.shock);
+    }
+
     // Draws every live effect of a list: `paint(effect, ageMs, screenX, screenY, size)`.
     each(renderer, kind, lifeMs, bias, paint) {
         const list = this.lists[kind];
@@ -311,8 +363,15 @@ export class CombatFxLook {
 
     // The stains, on the ground under every ring and body.
     drawGround(renderer) {
-        if (!this.active('stain', 'shards')) return;
+        if (!this.active('stain', 'shards', 'scorch', 'chips')) return;
         this.begin(renderer);
+        this.each(renderer, 'scorch', Infinity, 0.0001, (e, raw, x, y, s) => {
+            const age = raw - e.delay;
+            if (age < 0) return;
+            const width = e.width * s * Math.min(1, 0.3 + age / 160),
+                fade = age > 2600 ? 1 - (age - 2600) / (LIFE.scorch - 2600) : 1;
+            this.quad('splat', x, y, width, width * 0.48, 0, SCORCH_FILL, fade * 0.45);
+        });
         this.each(renderer, 'stain', LIFE.popMs + LIFE.stain, 0.0002, (e, raw, x, y, s) => {
             const age = raw - LIFE.popMs;
             if (age < 0) return;
@@ -331,6 +390,7 @@ export class CombatFxLook {
             );
         });
         this.drawShards(renderer, true, -0.03);
+        this.drawChips(renderer, true, -0.03);
         this.end();
     }
 
@@ -358,9 +418,54 @@ export class CombatFxLook {
         });
     }
 
+    // The chips in the air (`landed` false) or those lying on the ground.
+    drawChips(renderer, landed, bias) {
+        this.each(renderer, 'chips', Infinity, bias, (e, raw, x, y, s) => {
+            const age = raw - e.delay;
+            if (age < 0 || age >= e.life) return;
+            const t = age / 1000,
+                g = 640,
+                alpha = age > e.life - 350 ? (e.life - age) / 350 : 1;
+            for (let i = 0; i < e.count; i++) {
+                const side = e.dir || (random(e.seed, i + 3) < 0.5 ? -1 : 1),
+                    vx = side * e.speed * (0.25 + random(e.seed, i + 20)),
+                    up = e.speed * (0.7 + random(e.seed, i + 40) * 1.4),
+                    drop = e.drop * (0.5 + random(e.seed, i + 60)),
+                    land = (up + Math.sqrt(up * up + 2 * g * drop)) / g;
+                if (t >= land !== landed) continue;
+                const q = Math.min(t, land),
+                    size = (7 + random(e.seed, i + 80) * 8) * s;
+                this.quad(
+                    'chunk',
+                    x + vx * q * s,
+                    y + (-up * q + 0.5 * g * q * q) * s,
+                    size,
+                    size,
+                    q * (random(e.seed, i + 90) - 0.5) * 16,
+                    e.juice,
+                    alpha,
+                );
+            }
+        });
+    }
+
     // Everything above the ground, over every body: a blow or a death in the back row must still be seen.
     drawAir(renderer) {
-        if (!this.active('spark', 'spray', 'slash', 'thud', 'shards', 'burst')) return;
+        if (
+            !this.active(
+                'spark',
+                'spray',
+                'slash',
+                'thud',
+                'shards',
+                'burst',
+                'boom',
+                'chips',
+                'puffs',
+                'shock',
+            )
+        )
+            return;
         this.begin(renderer);
         this.context.depthTest = false;
         this.each(renderer, 'slash', LIFE.slash, 0.003, (e, age, x, y, s) => {
@@ -449,6 +554,42 @@ export class CombatFxLook {
             );
         });
         this.drawShards(renderer, false, 0.0031);
+        this.each(renderer, 'shock', Infinity, 0.0031, (e, raw, x, y, s) => {
+            const age = raw - e.delay;
+            if (age < 0 || age >= LIFE.shock) return;
+            const t = age / LIFE.shock,
+                width = (36 + 2 * e.reach * (1 - (1 - t) ** 2)) * s;
+            this.quad('ring', x, y, width, width * 0.5, 0, DUST_LIGHT, 0.9 * (1 - t));
+        });
+        this.each(renderer, 'puffs', Infinity, 0.0032, (e, raw, x, y, s) => {
+            const age = raw - e.delay;
+            if (age < 0 || age >= e.life) return;
+            const t = age / e.life,
+                out = 1 - (1 - t) ** 2,
+                size = e.reach * (0.5 + out) * s;
+            for (let i = 0; i < e.count; i++) {
+                const a = ((i + random(e.seed, i)) / e.count) * Math.PI * 2,
+                    far = e.spread * out * (0.6 + random(e.seed, i + 11) * 0.6) * s;
+                this.quad(
+                    'puff',
+                    x + Math.cos(a) * far,
+                    y + Math.sin(a) * far * 0.5 - e.rise * t * s,
+                    size,
+                    size,
+                    0,
+                    e.color,
+                    0.72 * (1 - t),
+                );
+            }
+        });
+        this.drawChips(renderer, false, 0.0033);
+        this.each(renderer, 'boom', Infinity, 0.0034, (e, raw, x, y, s) => {
+            const age = raw - e.delay;
+            if (age < 0 || age >= e.life) return;
+            const t = age / e.life,
+                size = e.reach * (1 + t) * s;
+            this.quad('star', x, y, size, size, e.seed % 3, SPARK_FILL, 1 - t * 0.6);
+        });
         this.end();
     }
 }
