@@ -11181,8 +11181,16 @@ class AppLifecycle {
     static async openDebugScene(createRenderer) {
         AppLifecycle.setBootState('확인 장면 준비 중');
         try {
+            const query = new URLSearchParams(location.search);
+            // No scene and no page named: the debug mode's own page, which links to the others.
+            if (!query.has('scene') && !query.has('board')) {
+                const { openDebugMenu } = await import('./ui/debug-menu.js');
+                openDebugMenu();
+                AppLifecycle.finishBootGate();
+                return;
+            }
             // `board=motion`: a live page, not a tick-stepped scene.
-            if (new URLSearchParams(location.search).get('board') === 'motion') {
+            if (query.get('board') === 'motion') {
                 const { openMotionBoard } = await import('./ui/motion-board.js');
                 openMotionBoard({
                     createRenderer,
