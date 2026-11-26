@@ -2171,12 +2171,20 @@ class GLRenderer {
             struck.flashPaint =
                 juice[0] + juice[1] + juice[2] > 2.4 ? GRAIN_HIT_FLASH_PALE : GRAIN_HIT_FLASH;
         }
+        if (style.swing === 'smash')
+            this.combatFxLook.thud({
+                at: { x: e.x, y: e.y, side: e.side },
+                size,
+                shift: { x: -dir.x * reach, y: -dir.y * reach },
+                clock: snapshot.presentationClock,
+            });
         this.combatFxLook.hit({
             at: { x: e.x, y: e.y, side: e.side },
             size,
             shift: { x: -dir.x * (reach + 10), y: -dir.y * reach },
             dir,
             juice: this.juiceOf(e.targetType),
+            color: style.swing === 'smash' ? style.spark : null,
             clock: snapshot.presentationClock,
             seed: HashUtil.hash(`${snapshot.tick}|${index}|${e.targetId}`),
         });
@@ -6838,7 +6846,7 @@ class GLRenderer {
         }
     }
     renderCombatFxLook() {
-        if (!this.combatFxLook.active('spark', 'spray', 'slash', 'shards', 'burst')) return;
+        if (!this.combatFxLook.active('spark', 'spray', 'slash', 'thud', 'shards', 'burst')) return;
         this.begin();
         this.combatFxLook.drawAir(this);
         this.vectorContext.flush('combat-fx');
