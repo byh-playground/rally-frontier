@@ -87,10 +87,11 @@ export class UnitMotionLook {
         state[value] += state[velocity] * dt;
     }
 
-    // Its own blow lands: a short lunge toward the target (`dir`: screen side).
-    static strike(state, dir) {
-        state.pushV += dir * 120;
-        state.squashV -= 1.8;
+    // Its own blow lands: a lunge toward the target (`dir`: screen side).
+    static strike(state, dir, lunge = 1) {
+        state.pushV += dir * 380 * lunge;
+        state.squashV -= 3;
+        state.leanV += dir * 3;
     }
 
     // It is hit by a blow travelling to screen side `dir`.
@@ -106,10 +107,14 @@ export class UnitMotionLook {
 
     // Applies the springs to a sprite matrix [a, b, c, d, e, f] about the ground point (gx, gy) on screen.
     // `unit` is the screen size of one push step.
-    static compose(m, gx, gy, state, unit) {
-        const squash = Math.max(-SQUASH_LIMIT, Math.min(SQUASH_LIMIT, state.squash)),
-            cos = Math.cos(state.lean),
-            sin = Math.sin(state.lean),
+    // `brace` 0..1: how far into its windup it is; it crouches and draws back from the target (`side`).
+    // `reach`: how far it is thrown toward the target just after its blow lands, in push steps.
+    static compose(m, gx, gy, state, unit, brace = 0, side = 1, reach = 0) {
+        const drawn = brace * brace,
+            squash = Math.max(-SQUASH_LIMIT, Math.min(SQUASH_LIMIT, state.squash + 0.16 * drawn)),
+            lean = state.lean - side * 0.2 * drawn,
+            cos = Math.cos(lean),
+            sin = Math.sin(lean),
             a = cos * (1 + squash),
             b = sin * (1 + squash),
             c = -sin * (1 - squash),
@@ -124,7 +129,7 @@ export class UnitMotionLook {
         m[1] = b * m0 + d * m1;
         m[2] = a * m2 + c * m3;
         m[3] = b * m2 + d * m3;
-        m[4] = a * tx + c * ty + gx + state.push * unit;
+        m[4] = a * tx + c * ty + gx + (state.push + side * (reach - 9 * drawn)) * unit;
         m[5] = b * tx + d * ty + gy;
     }
 }

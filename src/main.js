@@ -871,8 +871,10 @@ const GRAIN_HIT_FLASH_MS = 60,
     GRAIN_HIT_FLASH = Object.freeze({
         alpha: 1,
         wash: Object.freeze([1, 1, 1, 1]),
-        washAlpha: 0.6,
+        washAlpha: 0.42,
     }),
+    // A pale body keeps its hat and face readable under a weaker wash.
+    GRAIN_HIT_FLASH_PALE = Object.freeze({ ...GRAIN_HIT_FLASH, washAlpha: 0.3 }),
     // The sprite scale the combat effect sizes were authored at: scale / this = one effect unit in pixels.
     MOTION_FX_ART_SCALE = 0.18;
 
@@ -2153,15 +2155,23 @@ class GLRenderer {
         const dx = struck.groundX - source.groundX,
             dy = struck.groundY - source.groundY,
             length = Math.hypot(dx, dy) || 1,
-            dir = { x: dx / length, y: dy / length };
+            dir = { x: dx / length, y: dy / length },
+            size = Math.min(struck.fxSize, source.fxSize),
+            // A larger body is struck on the attacker's side of it, not at its middle.
+            reach = Math.max(0, struck.fxSize / size - 1) * 20;
         if (struck.sway) UnitMotionLook.struck(struck.sway, dir.x < 0 ? -1 : 1);
-        if (struck.sprite) struck.flashUntil = this.presentationNow() + GRAIN_HIT_FLASH_MS;
+        if (struck.sprite) {
+            struck.flashUntil = this.presentationNow() + GRAIN_HIT_FLASH_MS;
+            const juice = this.juiceOf(e.targetType);
+            struck.flashPaint =
+                juice[0] + juice[1] + juice[2] > 2.4 ? GRAIN_HIT_FLASH_PALE : GRAIN_HIT_FLASH;
+        }
         this.combatFxLook.hit({
             at: { x: e.x, y: e.y, side: e.side },
-            size: struck.fxSize,
+            size,
+            shift: { x: -dir.x * (reach + 10), y: -dir.y * reach },
             dir,
             juice: this.juiceOf(e.targetType),
-            slash: style.swing === 'slash',
             clock: snapshot.presentationClock,
             seed: HashUtil.hash(`${snapshot.tick}|${index}|${e.targetId}`),
         });
@@ -2180,22 +2190,46 @@ class GLRenderer {
             // The displayed state may have dropped it already: the record it was last drawn from stands in.
             unit = this.renderState.entity('unit', e.id) || grain?.lastUnit;
         if (!style || !grain?.fxSize || unit?.id !== e.id) return false;
-        const clock = snapshot.presentationClock,
+        // A unit that blows up as it dies leaves no body to burst: the explosion draws.
+        if (UnitDefinition.get(e.entity)?.selfDestruct) return true;
+        this.burstBody(
+            unit,
+            grain,
+            { x: e.x, y: e.y },
+            snapshot.presentationClock,
+            HashUtil.hash(`${snapshot.tick}|${index}|${e.id}`),
+        );
+        return true;
+    }
+    // The swell and burst of a declared body at ground `at`, timed by `clock`.
+    burstBody(unit, grain, at, clock, seed) {
+        const style = GRAIN_SPRITES[unit.type].motion,
             // Thrown away from the side it was last shoved to.
             side = grain.sway && grain.sway.pushV + grain.sway.push * 20 < 0 ? -1 : 1,
             pop = { ghost: { ...unit, alive: false, impactMotion: null }, clock, dir: side };
         EffectObjectFactory.attachClock(pop, clock, CombatFxLook.popMs);
-        this.poppingUnits.set(e.id, pop);
+        this.poppingUnits.set(unit.id, pop);
         this.combatFxLook.death({
-            at: { x: e.x, y: e.y, side: e.side },
+            at: { x: at.x, y: at.y, side: unit.side },
             size: grain.fxSize,
             dir: { x: side, y: 0 },
-            juice: this.juiceOf(e.entity),
-            stain: style.stain || this.juiceOf(e.entity),
+            juice: this.juiceOf(unit.type),
+            stain: style.stain || this.juiceOf(unit.type),
             clock,
-            seed: HashUtil.hash(`${snapshot.tick}|${index}|${e.id}`),
+            seed,
         });
-        return true;
+    }
+    // An effect clock on the presentation time, for what no simulation event starts.
+    localClock() {
+        const born = this.presentationNow(),
+            renderer = this;
+        return {
+            expired: false,
+            lifeMs: 0,
+            get ageMs() {
+                return renderer.presentationNow() - born;
+            },
+        };
     }
     // Follows a dead unit the simulation still moves. While it moves it is drawn as it is; from the moment it stops
     // it is drawn from a frozen copy (the simulation may drop it any tick) until it has greyed and faded: the unit
@@ -2203,7 +2237,11 @@ class GLRenderer {
     corpseShown(u, now) {
         const entity = this.renderState.model('unit', u.id, now)?.entity || u;
         let track = this.corpseTracks.get(u.id);
-        if (!track) this.corpseTracks.set(u.id, (track = { stoppedAt: -1, frame: 0, ghost: null }));
+        if (!track)
+            this.corpseTracks.set(
+                u.id,
+                (track = { stoppedAt: -1, frame: 0, ghost: null, burst: false }),
+            );
         track.frame = this.corpseFrame;
         // The displayed sample can trail the death by a tick and not hold the motion yet: still in flight.
         if (!entity.impactMotion || !DeadUnitLook.landed(entity.impactMotion)) {
@@ -2211,6 +2249,17 @@ class GLRenderer {
             this.releaseCorpse(track);
             this.corpseIds.add(u.id);
             return u;
+        }
+        if (track.burst) {
+            this.corpseIds.add(u.id);
+            return null;
+        }
+        // A declared unit that flew and came to rest bursts where it lies instead of greying.
+        const grain = GRAIN_SPRITES[u.type]?.motion ? this.grainActors.get(u.id) : null;
+        if (grain?.fxSize && !UnitDefinition.get(u.type)?.selfDestruct) {
+            track.burst = true;
+            this.burstBody(u, grain, u, this.localClock(), HashUtil.hash(`rest|${u.id}`));
+            return null;
         }
         if (track.stoppedAt < 0) track.stoppedAt = now;
         if (now - track.stoppedAt >= DeadUnitLook.totalMs) return null;
@@ -5222,7 +5271,10 @@ class GLRenderer {
             // Declared motion (UnitMotionLook): windup-timed attack, distance-driven walk, springs.
             const motionStyle = GRAIN_SPRITES[u.type]?.motion,
                 pop = motionStyle ? this.poppingUnits.get(u.id) : null;
-            let motionElapsed = null;
+            let motionElapsed = null,
+                brace = 0,
+                facingSide = 0,
+                reach = 0;
             if (motionStyle) {
                 const sway = (grain.sway ??= UnitMotionLook.createState()),
                     screenDx = delta.x * (this.orientationRole() === 'guest' ? -1 : 1),
@@ -5232,20 +5284,55 @@ class GLRenderer {
                     clip = 'hit';
                     motionElapsed = 35;
                 } else if (grounded && !impact.active && !work?.active) {
-                    const contactAge =
-                            grain.attackUntil > now ? now - (grain.attackUntil - 425) : -1,
-                        attackMs = UnitMotionLook.attackClipMs(
-                            entity.combat,
-                            renderTick,
-                            contactAge,
-                        );
+                    // Art with its own attack timing (`pose`) keeps it.
+                    const ownTiming = !!GRAIN_SPRITES[u.type].pose,
+                        contactAge = grain.attackUntil > now ? now - (grain.attackUntil - 425) : -1,
+                        attackMs = ownTiming
+                            ? null
+                            : UnitMotionLook.attackClipMs(entity.combat, renderTick, contactAge);
+                    const combat = entity.combat,
+                        from = combat?.attackWindupStartedAt,
+                        until = combat?.attackWindupUntil,
+                        winding = until > from && renderTick >= from && renderTick < until;
                     if (attackMs !== null) {
                         clip = 'fire';
                         motionElapsed = attackMs;
-                        if (contactAge >= 0 && contactAge < 1)
-                            UnitMotionLook.strike(sway, heading || 1);
-                    } else if (clip === 'walk') motionElapsed = UnitMotionLook.walkMs(sway);
+                    }
+                    if (winding || contactAge >= 0) {
+                        // The side of its target on screen; kept while the blow plays out.
+                        const id = winding ? combat.attackWindupTargetId : entity.target,
+                            target =
+                                id &&
+                                (this.renderState.entity('unit', id) ||
+                                    this.snapshot.buildings.find((b) => b.id === id));
+                        if (target)
+                            grain.aimSide = this.viewX(target.x) < this.viewX(entity.x) ? -1 : 1;
+                    }
+                    if (contactAge >= 0 && contactAge < 220)
+                        reach = 15 * (motionStyle.lunge || 1) * (1 - contactAge / 220);
+                    if (winding) brace = (renderTick - from) / (until - from);
+                    // The blade starts to sweep shortly before the hit lands.
+                    if (winding && brace >= 0.45 && motionStyle.swing === 'slash') {
+                        if (grain.slashFor !== from && grain.fxSize) {
+                            grain.slashFor = from;
+                            this.combatFxLook.slash({
+                                at: { x: entity.x, y: entity.y, side: u.side },
+                                size: grain.fxSize,
+                                side: grain.aimSide || 1,
+                                clock: this.localClock(),
+                            });
+                        }
+                    }
+                    if (contactAge >= 0 && grain.strikeFor !== grain.attackUntil) {
+                        grain.strikeFor = grain.attackUntil;
+                        UnitMotionLook.strike(sway, grain.aimSide || 1, motionStyle.lunge || 1);
+                    }
                 }
+            }
+            if (motionStyle) {
+                const striking = grain.attackUntil > now || entity.combat?.attackWindupUntil > 0;
+                if (!striking && Math.hypot(delta.x, delta.y) > 1) grain.aimSide = 0;
+                facingSide = grain.aimSide || 0;
             }
             let cornElapsed = null;
             grain.holdsKernel = false;
@@ -5557,8 +5644,11 @@ class GLRenderer {
             else if (cornElapsed != null) actor.seekElapsed(cornElapsed);
             else if (chestnutFireMs !== null && clip === 'fire') actor.seekElapsed(chestnutFireMs);
             else if (milletFireMs !== null && clip === 'fire') actor.seekElapsed(milletFireMs);
-            else if (motionElapsed !== null) {
-                actor.startedAt = now - motionElapsed;
+            else if (
+                motionStyle &&
+                (motionElapsed !== null || (clip === 'walk' && !work?.active))
+            ) {
+                actor.startedAt = now - (motionElapsed ?? UnitMotionLook.walkMs(grain.sway));
                 actor.seek(now);
             } else
                 actor.seek(
@@ -5614,6 +5704,11 @@ class GLRenderer {
                 cy = record.ground[1] - 120;
             m[4] = p.x + (work?.offsetX ?? 0) - m[0] * cx - m[2] * cy;
             m[5] = p.y + (work?.offsetY ?? 0) + r * 0.55 - 120 * scale - m[1] * cx - m[3] * cy;
+            // Art that does not turn itself faces its target while it attacks.
+            if (facingSide < 0 && !GRAIN_SPRITES[u.type].pose) {
+                m[0] = -m[0];
+                m[1] = -m[1];
+            }
             // Where and how large this body is on screen, for the combat effects (CombatFxLook).
             grain.groundX = p.x;
             if (motionStyle && !pop) grain.lastUnit = u;
@@ -5639,6 +5734,9 @@ class GLRenderer {
                     p.y + r * 0.55,
                     grain.sway,
                     scale / MOTION_FX_ART_SCALE,
+                    brace,
+                    facingSide || 1,
+                    reach,
                 );
             grain.flash =
                 grain.sprite &&
@@ -5805,8 +5903,6 @@ class GLRenderer {
             const grain = this.grainActors.get(u.id);
             // A greying (see-through) corpse must not write depth: it is drawn in painter order (drawGrainUnit).
             if (!grain || grain.frame !== this.grainActorFrame || grain.stoppedMs >= 0) continue;
-            // A flashing body draws twice (its colours, then white), so it takes the painter path too.
-            if (grain.flash) continue;
             if (grain.sprite) {
                 this.riceBodyGroup.push(grain);
                 continue;
@@ -5826,7 +5922,9 @@ class GLRenderer {
                 grain.bodyDrawn = true;
             }
         for (const grain of this.riceBodyGroup) {
+            if (grain.flash) grain.compiled.paint = grain.flashPaint;
             grain.compiled.drawBody(grain.actor, grain.matrix, grain.depth);
+            grain.compiled.paint = null;
             grain.bodyDrawn = true;
         }
         C.depth = 0;
@@ -5994,7 +6092,7 @@ class GLRenderer {
             this.drawGrainCorpse(grain);
             return;
         }
-        if (grain.sprite && grain.flash) grain.compiled.paint = GRAIN_HIT_FLASH;
+        if (grain.sprite && grain.flash) grain.compiled.paint = grain.flashPaint;
         if (grain.sprite) {
             if (!grain.bodyDrawn) grain.compiled.drawBody(grain.actor, grain.matrix, grain.depth);
             // Effects that trail behind a body, drawn just behind it.
@@ -6090,6 +6188,8 @@ class GLRenderer {
             grain.flashUntil = 0;
             grain.sway = null;
             grain.lastUnit = null;
+            grain.aimSide = 0;
+            grain.slashFor = null;
             grain.cornFacing = undefined;
             grain.hidden = false;
         }
@@ -6733,7 +6833,7 @@ class GLRenderer {
         }
     }
     renderCombatFxLook() {
-        if (!this.combatFxLook.active('spark', 'spray', 'slash', 'shards')) return;
+        if (!this.combatFxLook.active('spark', 'spray', 'slash', 'shards', 'burst')) return;
         this.begin();
         this.combatFxLook.drawAir(this);
         this.vectorContext.flush('combat-fx');

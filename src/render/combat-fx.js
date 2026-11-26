@@ -5,35 +5,35 @@
 import { EffectObjectFactory } from './presentation-effects.js';
 
 const CELL = 64;
-// Atlas cells, in order. A `...Rim` cell is the same shape grown by a stroke, drawn first in a dark tint.
-const SHAPES = Object.freeze([
-    'star',
-    'starRim',
-    'drop',
-    'dropRim',
-    'shard',
-    'shardRim',
-    'arc',
-    'arcRim',
-    'splat',
-]);
+// Atlas cells, in order. White fills tint per quad; a dark outline baked into the cell stays dark under any tint,
+// so a fading shape never turns into a dark blot (an outline drawn as a second quad showed through its fill).
+const SHAPES = Object.freeze(['star', 'drop', 'shard', 'arc', 'splat', 'ring']);
+const OUTLINE = '#4a2c14';
 // The most live effects of each kind; the oldest give way.
-const CAPS = Object.freeze({ spark: 48, spray: 70, slash: 48, shards: 40, stain: 90 });
+const CAPS = Object.freeze({
+    spark: 48,
+    spray: 70,
+    slash: 48,
+    shards: 40,
+    stain: 90,
+    burst: 24,
+});
 const LIFE = Object.freeze({
-    spark: 110,
+    spark: 130,
     spray: 340,
-    slash: 130,
+    slash: 150,
     // Death effects start after the body's swell (popMs).
     popMs: 170,
+    burst: 220,
     shards: 1500,
     stain: 4500,
 });
-const SLASH_RIM = Object.freeze([0.36, 0.23, 0.06, 1]),
-    SLASH_FILL = Object.freeze([1, 0.98, 0.89, 1]),
-    SPARK_RIM = Object.freeze([0.29, 0.13, 0.03, 1]),
-    SPARK_FILL = Object.freeze([1, 0.99, 0.94, 1]);
-const DROPS = 6,
-    SHARDS = 7;
+// The smallest effect unit on a 540px wide canvas: below it the shapes turn into specks at the default zoom.
+const MIN_UNIT = 0.68;
+const SPARK_FILL = Object.freeze([1, 0.98, 0.86, 1]),
+    SLASH_FILL = Object.freeze([1, 0.99, 0.92, 1]);
+const DROPS = 7,
+    SHARDS = 9;
 
 function trace(c, shape) {
     c.beginPath();
@@ -83,17 +83,41 @@ function atlasCanvas() {
     canvas.width = CELL * SHAPES.length;
     canvas.height = CELL;
     const c = canvas.getContext('2d');
-    c.fillStyle = c.strokeStyle = '#fff';
     c.lineJoin = c.lineCap = 'round';
     SHAPES.forEach((name, i) => {
-        const rim = name.endsWith('Rim');
         c.save();
         c.translate(i * CELL + CELL / 2, CELL / 2);
-        trace(c, rim ? name.slice(0, -3) : name);
-        c.fill();
-        if (rim) {
-            c.lineWidth = 6;
+        c.fillStyle = c.strokeStyle = '#fff';
+        if (name === 'ring') {
+            c.lineWidth = 5;
+            c.beginPath();
+            c.arc(0, 0, 27, 0, Math.PI * 2);
             c.stroke();
+        } else {
+            trace(c, name);
+            if (name === 'arc') {
+                // The blade's trail: solid and outlined toward the edge that cuts, thinning out only over the
+                // third where the swing started.
+                const trail = (rgb) => {
+                    const gradient = c.createLinearGradient(0, -32, 0, 26);
+                    gradient.addColorStop(0, `rgba(${rgb},0)`);
+                    gradient.addColorStop(0.34, `rgba(${rgb},1)`);
+                    return gradient;
+                };
+                c.strokeStyle = trail('74,44,20');
+                c.lineWidth = 7;
+                c.stroke();
+                c.fillStyle = trail('255,255,255');
+                c.fill();
+                c.restore();
+                return;
+            }
+            if (name !== 'splat') {
+                c.strokeStyle = OUTLINE;
+                c.lineWidth = 6;
+                c.stroke();
+            }
+            c.fill();
         }
         c.restore();
     });
@@ -105,7 +129,6 @@ const random = (seed, i) => {
     h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
     return h / 4294967296;
 };
-const shade = (color, k) => [color[0] * k, color[1] * k, color[2] * k, 1];
 const tint = (color, mix) => [
     color[0] + (1 - color[0]) * mix,
     color[1] + (1 - color[1]) * mix,
@@ -121,9 +144,10 @@ export class CombatFxLook {
         this.context = context;
         this.region = null;
         this.quads = null;
-        this.lists = { spark: [], spray: [], slash: [], shards: [], stain: [] };
+        this.lists = { spark: [], spray: [], slash: [], shards: [], stain: [], burst: [] };
         this.matrix = new Float64Array(6);
         this.options = { matrix: this.matrix };
+        this.ringColor = [1, 1, 1, 1];
     }
 
     // Uploads the shape atlas (loading time, never on the first blow).
@@ -168,27 +192,35 @@ export class CombatFxLook {
         const list = this.lists[kind];
         EffectObjectFactory.attachClock(effect, clock, lifeMs);
         // Tints are made once here, never per frame.
-        const juice = [effect.juice[0], effect.juice[1], effect.juice[2], 1];
-        effect.juice = juice;
-        effect.rim = shade(juice, 0.36);
-        effect.mid = tint(juice, 0.15);
-        effect.bright = tint(juice, 0.6);
+        if (effect.juice) {
+            const juice = [effect.juice[0], effect.juice[1], effect.juice[2], 1];
+            effect.juice = juice;
+            effect.mid = tint(juice, 0.15);
+            effect.bright = tint(juice, 0.6);
+        }
         list.push(effect);
         if (list.length > CAPS[kind]) list.shift();
     }
 
-    // One landed blow. `at`: ground position of the struck body { x, y, side }, `size`: its screen size at sc() 1,
-    // `dir`: unit screen vector from the attacker, `juice`: the struck body's colour.
-    hit({ at, size, dir, juice, slash, clock, seed }) {
-        const effect = { at, size, dir, juice, seed };
+    // One landed blow. `at`: ground position of the struck body { x, y, side }, `size`: effect unit at sc() 1,
+    // `shift`: from that ground point toward the attacker's side of the body (effect units), `dir`: unit screen
+    // vector from the attacker, `juice`: the struck body's colour.
+    hit({ at, size, shift, dir, juice, clock, seed }) {
+        const effect = { at, size, shift, dir, juice, seed };
         this.add('spark', { ...effect }, clock, LIFE.spark);
         this.add('spray', { ...effect }, clock, LIFE.spray);
-        if (slash) this.add('slash', { ...effect }, clock, LIFE.slash);
+    }
+
+    // A blade sweeping in front of the attacker, started just before its blow lands. `side`: screen side (-1|1).
+    slash({ at, size, side, clock }) {
+        this.add('slash', { at, size, side, shift: null }, clock, LIFE.slash);
     }
 
     death({ at, size, dir, juice, stain, clock, seed }) {
-        this.add('shards', { at, size, dir, juice, seed }, clock, LIFE.popMs + LIFE.shards);
-        this.add('stain', { at, size, dir, juice: stain, seed }, clock, LIFE.popMs + LIFE.stain);
+        const effect = { at, size, shift: null, dir, seed };
+        this.add('burst', { ...effect, juice }, clock, LIFE.popMs + LIFE.burst);
+        this.add('shards', { ...effect, juice }, clock, LIFE.popMs + LIFE.shards);
+        this.add('stain', { ...effect, juice: stain }, clock, LIFE.popMs + LIFE.stain);
     }
 
     // Draws every live effect of a list: `paint(effect, ageMs, screenX, screenY, size)`.
@@ -204,7 +236,18 @@ export class CombatFxLook {
             const world = { x: effect.at.x, y: 0, z: effect.at.y },
                 point = renderer.projectRenderWorldPosition(world);
             this.context.depth = renderer.spriteDepthForWorld(point.world, bias);
-            paint(effect, age, point.x, point.y, effect.size * renderer.sc());
+            const unit = Math.max(
+                    effect.size * renderer.sc(),
+                    (MIN_UNIT * renderer.canvas.width) / 540,
+                ),
+                shift = effect.shift;
+            paint(
+                effect,
+                age,
+                point.x + (shift ? shift.x * unit : 0),
+                point.y + (shift ? shift.y * unit : 0),
+                unit,
+            );
         }
         list.length = write;
     }
@@ -250,7 +293,7 @@ export class CombatFxLook {
 
     // The stains, on the ground under every ring and body.
     drawGround(renderer) {
-        if (!this.active('stain')) return;
+        if (!this.active('stain', 'shards')) return;
         this.begin(renderer);
         this.each(renderer, 'stain', LIFE.popMs + LIFE.stain, 0.0002, (e, raw, x, y, s) => {
             const age = raw - LIFE.popMs;
@@ -266,65 +309,16 @@ export class CombatFxLook {
                 width * 0.5,
                 0,
                 e.juice,
-                fade * 0.65,
+                fade * 0.75,
             );
         });
+        this.drawShards(renderer, true, -0.03);
         this.end();
     }
 
-    // Everything above the ground, after the bodies.
-    drawAir(renderer) {
-        if (!this.active('spark', 'spray', 'slash', 'shards')) return;
-        this.begin(renderer);
-        this.each(renderer, 'slash', LIFE.slash, 0.003, (e, age, x, y, s) => {
-            const angle = Math.atan2(e.dir.y, e.dir.x),
-                size = (46 + 12 * Math.min(1, age / 60)) * s,
-                alpha = age < 50 ? 1 : 1 - (age - 50) / (LIFE.slash - 50),
-                cx = x - e.dir.x * 12 * s,
-                cy = y - 28 * s - e.dir.y * 12 * s,
-                // The blade keeps cutting downward on either side.
-                height = e.dir.x < 0 ? -size : size;
-            this.quad('arcRim', cx, cy, size, height, angle, SLASH_RIM, alpha);
-            this.quad('arc', cx, cy, size, height, angle, SLASH_FILL, alpha);
-        });
-        this.each(renderer, 'spray', LIFE.spray, 0.0032, (e, age, x, y, s) => {
-            const t = age / 1000,
-                life = LIFE.spray / 1000,
-                base = Math.atan2(e.dir.y, e.dir.x),
-                alpha = 1 - (t / life) ** 2,
-                length = (9 * (1 - t / life) + 5) * s;
-            for (let i = 0; i < DROPS; i++) {
-                const a = base + (random(e.seed, i) - 0.5) * 1.7,
-                    v = 90 + random(e.seed, i + 20) * 190,
-                    vx = Math.cos(a) * v,
-                    vy = Math.sin(a) * v * 0.55 - 90 - random(e.seed, i + 40) * 70,
-                    px = x + (vx * t - e.dir.x * 14) * s,
-                    py = y + (vy * t + 520 * t * t - 26) * s,
-                    angle = Math.atan2(vy + 1040 * t, vx);
-                this.quad('dropRim', px, py, length * 1.5, length, angle, e.rim, alpha);
-                this.quad(
-                    'drop',
-                    px,
-                    py,
-                    length * 1.5,
-                    length,
-                    angle,
-                    i % 3 ? e.mid : e.bright,
-                    alpha,
-                );
-            }
-        });
-        this.each(renderer, 'spark', LIFE.spark, 0.0034, (e, age, x, y, s) => {
-            const t = age / LIFE.spark,
-                size = (28 + 20 * t) * s,
-                angle = random(e.seed, 7) * 3,
-                px = x - e.dir.x * 14 * s,
-                py = y - 26 * s,
-                alpha = 1 - t * 0.6;
-            this.quad('starRim', px, py, size, size, angle, SPARK_RIM, alpha);
-            this.quad('star', px, py, size, size, angle, SPARK_FILL, alpha);
-        });
-        this.each(renderer, 'shards', LIFE.popMs + LIFE.shards, 0.0031, (e, raw, x, y, s) => {
+    // The shards in the air (`landed` false) or those that have come down.
+    drawShards(renderer, landed, bias) {
+        this.each(renderer, 'shards', LIFE.popMs + LIFE.shards, bias, (e, raw, x, y, s) => {
             const t = (raw - LIFE.popMs) / 1000;
             if (t < 0) return;
             const base = Math.atan2(e.dir.y, e.dir.x),
@@ -334,16 +328,89 @@ export class CombatFxLook {
                 const a = base + (random(e.seed, i + 60) - 0.5) * 3,
                     v = 50 + random(e.seed, i + 70) * 120,
                     up = 130 + random(e.seed, i + 80) * 110,
-                    land = (up + Math.sqrt(up * up + 2 * g * 24)) / g,
-                    q = Math.min(t, land),
+                    land = (up + Math.sqrt(up * up + 2 * g * 24)) / g;
+                if (t >= land !== landed) continue;
+                const q = Math.min(t, land),
                     px = x + Math.cos(a) * v * q * s,
                     py = y + (-24 + Math.sin(a) * v * 0.4 * q - up * q + 0.5 * g * q * q) * s,
                     angle = q * (random(e.seed, i) - 0.5) * 22,
-                    size = (14 + random(e.seed, i + 90) * 10) * s;
-                this.quad('shardRim', px, py, size, size, angle, e.rim, alpha);
+                    size = (17 + random(e.seed, i + 90) * 11) * s;
                 this.quad('shard', px, py, size, size, angle, i % 3 ? e.juice : e.bright, alpha);
             }
         });
+    }
+
+    // Everything above the ground, over every body: a blow or a death in the back row must still be seen.
+    drawAir(renderer) {
+        if (!this.active('spark', 'spray', 'slash', 'shards', 'burst')) return;
+        this.begin(renderer);
+        this.context.depthTest = false;
+        this.each(renderer, 'slash', LIFE.slash, 0.003, (e, age, x, y, s) => {
+            // The blade travels from over the shoulder to the ground in front, growing as it goes.
+            const t = Math.min(1, age / 95),
+                swept = 1 - (1 - t) * (1 - t),
+                angle = e.side * (-1.35 + 2.1 * swept),
+                size = (32 + 14 * swept) * s,
+                alpha = age < 105 ? 1 : 1 - (age - 105) / (LIFE.slash - 105);
+            this.quad(
+                'arc',
+                x + e.side * 26 * s,
+                y - 22 * s,
+                size * e.side,
+                size,
+                angle,
+                SLASH_FILL,
+                alpha,
+            );
+        });
+        this.each(renderer, 'burst', LIFE.popMs + LIFE.burst, 0.0033, (e, raw, x, y, s) => {
+            const age = raw - LIFE.popMs;
+            if (age < 0) return;
+            const t = age / LIFE.burst,
+                ring = (34 + 70 * t) * s,
+                color = this.ringColor;
+            color[0] = e.bright[0];
+            color[1] = e.bright[1];
+            color[2] = e.bright[2];
+            this.quad('ring', x, y - 24 * s, ring, ring * 0.8, 0, color, 0.9 * (1 - t));
+            if (t < 0.5) {
+                const size = (58 + 30 * t) * s;
+                this.quad('star', x, y - 26 * s, size, size, e.seed % 3, SPARK_FILL, 1 - t);
+            }
+        });
+        this.each(renderer, 'spray', LIFE.spray, 0.0032, (e, age, x, y, s) => {
+            const t = age / 1000,
+                life = LIFE.spray / 1000,
+                base = Math.atan2(e.dir.y, e.dir.x),
+                alpha = 1 - (t / life) ** 2,
+                length = (11 * (1 - t / life) + 7) * s;
+            for (let i = 0; i < DROPS; i++) {
+                const a = base + (random(e.seed, i) - 0.5) * 1.7,
+                    v = 90 + random(e.seed, i + 20) * 190,
+                    vx = Math.cos(a) * v,
+                    vy = Math.sin(a) * v * 0.55 - 90 - random(e.seed, i + 40) * 70,
+                    px = x + vx * t * s,
+                    py = y + (vy * t + 520 * t * t - 26) * s,
+                    angle = Math.atan2(vy + 1040 * t, vx);
+                this.quad(
+                    'drop',
+                    px,
+                    py,
+                    length * 1.6,
+                    length * 1.2,
+                    angle,
+                    i % 3 ? e.mid : e.bright,
+                    alpha,
+                );
+            }
+        });
+        this.each(renderer, 'spark', LIFE.spark, 0.0034, (e, age, x, y, s) => {
+            const t = age / LIFE.spark,
+                size = (32 + 22 * t) * s,
+                alpha = t < 0.6 ? 1 : (1 - t) / 0.4;
+            this.quad('star', x, y - 26 * s, size, size, e.juice[0] * 3, SPARK_FILL, alpha);
+        });
+        this.drawShards(renderer, false, 0.0031);
         this.end();
     }
 }

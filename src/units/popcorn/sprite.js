@@ -325,6 +325,7 @@ export const SPRITE = Object.freeze({
     renderer: PopcornSpriteRenderer,
     portrait: popcornSpritePortrait,
     groundY: 145,
+    motion: Object.freeze({ juice: [0.99, 0.94, 0.76], stain: [0.86, 0.7, 0.38] }),
     shell: { draw: 'drawAmmo', flight: 'cone', particleTrail: true },
     effectArt: ['self-destruct-burst'],
 });

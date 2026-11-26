@@ -330,6 +330,7 @@ export const SPRITE = Object.freeze({
     renderer: MilletSpriteRenderer,
     portrait: milletSpritePortrait,
     groundY: 151.5,
+    motion: Object.freeze({ juice: [0.93, 0.74, 0.28], stain: [0.72, 0.52, 0.1] }),
     artScale: MILLET_ART_SCALE,
     shell: { draw: 'drawEar', turn: 0.6, flight: 'ear', particleTrail: true },
     pose: 'body-charge',
