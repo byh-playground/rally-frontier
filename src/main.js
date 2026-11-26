@@ -59,6 +59,7 @@ import {
 } from './sim/navigation.js';
 import { HeroGrowth } from './sim/hero-growth.js';
 import { CombatFxLook } from './render/combat-fx.js';
+import { NumberLook } from './render/number-look.js';
 import { UnitMotionLook } from './render/unit-motion-look.js';
 import {
     BattlefieldProjection,
@@ -3327,6 +3328,10 @@ class GLRenderer {
                 text = '',
                 amount = 0;
 
+            // A death follows its killing blow: that blow's number becomes the larger, longer one.
+            if (e.type === 'death')
+                this.markKillingNumber(e.id, this.presentationEventTick(e, snapshot));
+
             // A burst and one burn of a flame each show one damage number (their hits follow in the same tick).
             if (
                 e.type === 'unitSelfDestruct' ||
@@ -3347,14 +3352,14 @@ class GLRenderer {
                 }
                 kind = e.side === side ? 'damageTaken' : 'damageDealt';
                 amount = e.amount;
-                text = `-${e.amount}`;
+                text = `${e.amount}`;
             } else if (e.type === 'dodge' || e.type === 'graze') {
                 if (!this.eventVisible(e)) {
                     index++;
                     continue;
                 }
                 kind = 'dodge';
-                text = 'MISS';
+                text = '빗나감';
             } else if (e.type === 'heroLevelUp') {
                 // A hero's level-up rises above it in gold (HeroGrowth).
                 if (!this.eventVisible(e)) {
@@ -3392,11 +3397,12 @@ class GLRenderer {
                 // One number per burst: "-40 ×6" (or the total when the amounts differ).
                 const f = group.float;
                 group.count++;
+                group.targets.add(e.targetId);
                 group.total += amount;
                 if (amount !== group.amount) group.amount = null;
                 f.amount = group.total;
                 f.text =
-                    group.amount == null ? `-${group.total}` : `-${group.amount} ×${group.count}`;
+                    group.amount == null ? `${group.total}` : `${group.amount} ×${group.count}`;
                 index++;
                 continue;
             }
@@ -3421,8 +3427,18 @@ class GLRenderer {
             f.kind = kind;
             f.text = text;
             f.amount = amount;
-            f.jitter = ((seed % 1000) / 1000 - 0.5) * 34;
-            f.lane = (seed >>> 10) % 4;
+            f.spread = (seed % 1000) / 1000 - 0.5;
+            f.dir = this.blowSide(e, seed);
+            f.targetId = e.targetId || null;
+            f.presentationTick = eventTick;
+            f.kill = false;
+            // In a crowded fight a body keeps only its newest ordinary number.
+            if (f.targetId && this.numbersCrowded) {
+                const old = this.floatFx.findIndex(
+                    (number) => number.targetId === f.targetId && NumberLook.ordinary(number),
+                );
+                if (old >= 0) this.floatFxPool.release(this.floatFx.splice(old, 1)[0]);
+            }
             if (kind === 'heroHeal') {
                 f.presentationTick = eventTick;
                 f.group = { sourceId: e.sourceId };
@@ -3430,10 +3446,11 @@ class GLRenderer {
             if (grouped) {
                 f.x = group.x;
                 f.y = group.y;
-                f.jitter = 0;
-                f.lane = 0;
+                f.lift = (seed >>> 12) % 3;
+                f.targetId = null;
                 f.group = group;
                 group.float = f;
+                group.targets = new Set([e.targetId]);
                 group.count = 1;
                 group.amount = amount;
                 group.total = amount;
@@ -3451,6 +3468,38 @@ class GLRenderer {
 
         // 화면을 숫자로 도배하지 않되, 최근 실제 타격 수치는 충분히 남긴다.
         while (this.floatFx.length > 72) this.floatFxPool.release(this.floatFx.shift());
+    }
+
+    // The screen side a blow travels to (-1|1): away from whoever dealt it, or either side when unknown.
+    blowSide(e, seed) {
+        const source =
+            e.sourceId &&
+            (this.renderState.entity('unit', e.sourceId) ||
+                this.grainActors.get(e.sourceId)?.lastUnit ||
+                this.snapshot?.buildings.find((building) => building.id === e.sourceId));
+        if (source && source.x !== e.x) return this.viewX(e.x) < this.viewX(source.x) ? -1 : 1;
+        return seed & 1 ? 1 : -1;
+    }
+
+    markKillingNumber(id, tick) {
+        // The blow of this tick that struck it: its own number, or the one number of the burst that caught it.
+        const f = this.floatFx.findLast(
+            (number) =>
+                number.presentationTick === tick &&
+                (number.kind === 'damageDealt' || number.kind === 'damageTaken') &&
+                (number.targetId === id || number.group?.targets?.has(id)),
+        );
+        if (!f || f.kill) return;
+        // A crowd falling at once keeps its ordinary numbers: only a few large ones are readable together.
+        // Only the viewer's own kills are the large gold ones, so only they count toward the most.
+        if (f.kind === 'damageDealt') {
+            let large = 0;
+            for (const number of this.floatFx)
+                if (number.kill && number.kind === 'damageDealt' && !number.clock.expired) large++;
+            if (large >= NumberLook.maxKillNumbers) return;
+        }
+        f.kill = true;
+        EffectObjectFactory.attachClock(f, f.clock, NumberLook.killLifeMs);
     }
 
     // A burst's hits arrive after its event in the same tick; they share one group keyed by the source.
@@ -4780,77 +4829,47 @@ class GLRenderer {
         // Persistent information is never hidden by combat density.
         this.drawWorldHudOverlay();
 
-        let write = 0;
-
+        let write = 0,
+            ordinary = 0;
         for (let read = 0; read < this.floatFx.length; read++) {
             const f = this.floatFx[read],
-                age = f.clock.ageMs,
-                preset = FloatingTextPresentationDefinition.get(f.kind);
-            const life = preset.lifeMs;
-            if (f.clock.expired || age >= life) {
+                preset = FloatingTextPresentationDefinition.get(f.kind),
+                life = f.kill ? NumberLook.killLifeMs : preset.lifeMs;
+            if (f.clock.expired || f.clock.ageMs >= life) {
                 this.floatFxPool.release(f);
                 continue;
             }
-
-            const t = age / life;
-            const viewX = this.viewX(f.x),
-                viewY = this.viewY(f.y);
-            let [x, y] = this.worldToPx(viewX, viewY);
-
-            // Combat numbers are a subordinate information layer. Low alpha means dense
-            // overlaps naturally become more legible/darker without explicit aggregation.
-            x += f.jitter * this.sc();
-            y -= (14 + (f.lane || 0) * 7 + preset.rise * t) * this.sc();
-
-            if (
-                x < -100 ||
-                x > this.fxCanvas.width + 100 ||
-                y < -100 ||
-                y > this.fxCanvas.height + 100
-            ) {
-                this.floatFx[write++] = f;
-                continue;
-            }
-
-            const fade = (t < 0.62 ? 1 : Math.max(0, 1 - (t - 0.62) / 0.38)) * preset.alpha;
-            const pop =
-                t < 0.12 ? 0.9 + (t / 0.12) * (preset.pop - 0.9) : preset.pop - (t - 0.12) * 0.04;
-            const fontSize = Math.max(preset.minSize, preset.baseSize * this.sc() * pop);
-
-            let fill = '#d7e9ff',
-                stroke = '#1a3d64';
-            if (f.kind === 'damageTaken') {
-                fill = '#ff6b6b';
-                stroke = '#4b0909';
-            } else if (f.kind === 'damageDealt') {
-                fill = '#fff0c2';
-                stroke = '#6d2c12';
-            } else if (f.kind === 'heroLevelUp') {
-                fill = '#ffe066';
-                stroke = '#5c3d00';
-            } else if (f.kind === 'heroHeal') {
-                fill = '#8ef08a';
-                stroke = '#124d16';
-            }
-
-            ctx.save();
-            ctx.font = `800 ${fontSize}px system-ui,-apple-system,"Segoe UI",sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.lineJoin = 'round';
-            ctx.lineWidth = Math.max(1, 2 * this.sc());
-            ctx.globalAlpha = fade * preset.strokeAlpha;
-            ctx.strokeStyle = stroke;
-            ctx.strokeText(f.text, x, y);
-            ctx.globalAlpha = fade;
-            ctx.fillStyle = fill;
-            ctx.fillText(f.text, x, y);
-            ctx.restore();
-
+            if (NumberLook.ordinary(f)) ordinary++;
             this.floatFx[write++] = f;
         }
-
         this.floatFx.length = write;
+        this.numbersCrowded = ordinary > NumberLook.crowdAt;
+
+        // Ordinary numbers first, so a killing number, a heal or a level is never under one of them.
+        const pixel = this.fxCanvas.width / Math.max(1, this.canvas.clientWidth);
+        for (const first of [true, false])
+            for (const f of this.floatFx) {
+                if (NumberLook.ordinary(f) !== first) continue;
+                const [x, y] = this.worldToPx(this.viewX(f.x), this.viewY(f.y));
+                if (
+                    x < -100 ||
+                    x > this.fxCanvas.width + 100 ||
+                    y < -100 ||
+                    y > this.fxCanvas.height + 100
+                )
+                    continue;
+                NumberLook.draw(
+                    ctx,
+                    f,
+                    FloatingTextPresentationDefinition.get(f.kind),
+                    x,
+                    y,
+                    this.sc(),
+                    f.clock.ageMs,
+                    pixel,
+                    this.numbersCrowded,
+                );
+            }
 
         // Keep selection and the current firing order readable over explosions.
         if (!this.showcase) {
