@@ -24,6 +24,7 @@ export const SPRITE = Object.freeze({
         stain: [0.43, 0.6, 0.12],
         lunge: 1.5,
         swing: 'smash',
+        grainSwing: true,
         spark: [0.84, 1, 0.22],
     }),
 });

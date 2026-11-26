@@ -401,5 +401,10 @@ export const SPRITE = Object.freeze({
     groundY: 145,
     shell: { draw: 'drawBurr', sheet: true },
     pose: 'thorn-thrower',
+    motion: Object.freeze({
+        juice: [0.72, 0.42, 0.2],
+        stain: [0.45, 0.24, 0.1],
+        spark: [1, 0.6, 0.18],
+    }),
     effectArt: ['thorn'],
 });

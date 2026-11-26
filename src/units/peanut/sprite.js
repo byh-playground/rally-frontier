@@ -265,4 +265,13 @@ export const SPRITE = Object.freeze({
     shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     artScale: PEANUT_ART_SCALE,
+    motion: Object.freeze({
+        juice: [0.86, 0.64, 0.36],
+        stain: [0.62, 0.4, 0.18],
+        spark: [1, 0.74, 0.5],
+        walkMs: 600,
+        lunge: 1.4,
+        swing: 'smash',
+        siege: true,
+    }),
 });

@@ -101,8 +101,9 @@ export class UnitMotionLook {
         state.leanV += dir * 3.5;
     }
 
-    static walkMs(state) {
-        return ((state.walked / STRIDE) * WALK_CYCLE_MS) % WALK_CYCLE_MS;
+    // `cycleMs`: the length of this rig's walk clip.
+    static walkMs(state, cycleMs = WALK_CYCLE_MS) {
+        return ((state.walked / STRIDE) * cycleMs) % cycleMs;
     }
 
     // Applies the springs to a sprite matrix [a, b, c, d, e, f] about the ground point (gx, gy) on screen.
