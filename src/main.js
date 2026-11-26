@@ -2142,13 +2142,18 @@ class GLRenderer {
         }
         return out;
     }
+    // The declared motion of a type's art (sprite `motion`), unless this renderer shows the game without it
+    // (the motion board's left side, src/ui/motion-board.js).
+    motionOf(type) {
+        return this.motionDisabled ? undefined : GRAIN_SPRITES[type]?.motion;
+    }
     combatFxVisible(at) {
         return at.side === this.mySide() || this.visibleRaw(at.x, at.y);
     }
     // A blow landed by a unit whose sprite declares `motion`: the struck body flashes and is shoved, and the
     // combat effects replace the plain impact. False: not such a blow (the plain impact draws).
     motionHit(e, snapshot, index) {
-        const style = GRAIN_SPRITES[e.sourceType]?.motion,
+        const style = this.motionOf(e.sourceType),
             struck = this.grainActors.get(e.targetId),
             source = this.grainActors.get(e.sourceId);
         if (!style || !struck?.fxSize || !source?.fxSize) return false;
@@ -2185,7 +2190,7 @@ class GLRenderer {
     }
     // The death of a unit whose sprite declares `motion`: its body swells and bursts into shards over a stain.
     motionDeath(e, snapshot, index) {
-        const style = GRAIN_SPRITES[e.entity]?.motion,
+        const style = this.motionOf(e.entity),
             grain = this.grainActors.get(e.id),
             // The displayed state may have dropped it already: the record it was last drawn from stands in.
             unit = this.renderState.entity('unit', e.id) || grain?.lastUnit;
@@ -2255,7 +2260,7 @@ class GLRenderer {
             return null;
         }
         // A declared unit that flew and came to rest bursts where it lies instead of greying.
-        const grain = GRAIN_SPRITES[u.type]?.motion ? this.grainActors.get(u.id) : null;
+        const grain = this.motionOf(u.type) ? this.grainActors.get(u.id) : null;
         if (grain?.fxSize && !UnitDefinition.get(u.type)?.selfDestruct) {
             track.burst = true;
             this.burstBody(u, grain, u, this.localClock(), HashUtil.hash(`rest|${u.id}`));
@@ -5269,7 +5274,7 @@ class GLRenderer {
                 restart = clip === 'fire' ? attackStarted : clip === 'hit' && hitStarted;
             }
             // Declared motion (UnitMotionLook): windup-timed attack, distance-driven walk, springs.
-            const motionStyle = GRAIN_SPRITES[u.type]?.motion,
+            const motionStyle = this.motionOf(u.type),
                 pop = motionStyle ? this.poppingUnits.get(u.id) : null;
             let motionElapsed = null,
                 brace = 0,
@@ -11176,6 +11181,17 @@ class AppLifecycle {
     static async openDebugScene(createRenderer) {
         AppLifecycle.setBootState('확인 장면 준비 중');
         try {
+            // `board=motion`: a live page, not a tick-stepped scene.
+            if (new URLSearchParams(location.search).get('board') === 'motion') {
+                const { openMotionBoard } = await import('./ui/motion-board.js');
+                openMotionBoard({
+                    createRenderer,
+                    createScenario: RallyGamekit.createScenario,
+                    createPresentationView,
+                });
+                AppLifecycle.finishBootGate();
+                return;
+            }
             const { createDebugScenes } = await import('./debug-scenes.js');
             const debug = RallyGamekit.installDebugHost({
                 scenes: createDebugScenes({
