@@ -107,6 +107,7 @@ import { grainPortrait } from './ui/grain-portrait.js';
 import { readDevQuery } from './ui/dev-query.js';
 import { CampaignActs } from './ui/campaign-acts.js';
 import { AudioSystem } from './audio/audio-system.js';
+import { MusicPlayer } from './audio/music.js';
 const {
     VisionField,
     VisionMap,
@@ -9537,6 +9538,19 @@ class MiniMap {
 }
 
 const audioSystem = new AudioSystem();
+const musicPlayer = new MusicPlayer(audioSystem);
+// A page may sound only after the player touches it; the music starts from that first touch. A touch screen
+// grants that on release (`pointerup`), a mouse already on press.
+for (const type of ['pointerdown', 'pointerup', 'keydown'])
+    document.addEventListener(
+        type,
+        () => {
+            audioSystem.unlock();
+            musicPlayer.sync();
+        },
+        { capture: true },
+    );
+document.addEventListener('visibilitychange', () => musicPlayer.sync());
 
 /* =========================
    7. UI wiring
@@ -9763,6 +9777,7 @@ class UiController {
         if (value !== 'game') CampaignPresentation.clearBattle();
         UiController.renderUiState();
         LaunchScreens.syncScreen(value);
+        musicPlayer.setScreen(value);
         return value;
     }
     static setUiModal(value) {
@@ -11023,6 +11038,8 @@ class MatchLifecycle {
             }
         }
         this.singleMatch = null;
+        // A match given up while it was being prepared leaves the screen's own tune.
+        musicPlayer.setScreen(UiRuntimeState.value.screen);
         ActiveViewState.session = null;
         ActiveViewState.transport = null;
         ActiveViewState.snap = null;
@@ -11109,6 +11126,7 @@ class MatchLifecycle {
         ActiveViewState.snap = null;
 
         UiController.setUiScreen('lobby');
+        musicPlayer.setScreen('game');
         UiRegistry.refs.singleStatus.textContent = `${humanRole.toUpperCase()} 테스트용 실제 WebRTC 양쪽 피어를 준비하고 있습니다…`;
         UiController.setElementVisible(UiRegistry.refs.singleStatus, true);
 
@@ -13364,8 +13382,11 @@ const debugAddress = new URLSearchParams(location.search).has('debug');
 const playerSaves = openPlayerSaves(RallyGamekit, {
     isolated: debugAddress || navigator.webdriver === true,
 });
-if (debugAddress) void AppLifecycle.openDebugScene(createShowcaseRenderer);
-else void startTitleApp();
+if (debugAddress) {
+    // Check screens have no switch for the music, so they stay without it.
+    musicPlayer.setEnabled(false);
+    void AppLifecycle.openDebugScene(createShowcaseRenderer);
+} else void startTitleApp();
 
 async function startTitleApp() {
     roster = new Roster(playerSaves.roster);
@@ -13375,7 +13396,19 @@ async function startTitleApp() {
         roster.load(),
         loadPlayerSave(playerSaves.decks, '덱 편성'),
         loadPlayerSave(playerSaves.hints, '안내 표시'),
+        loadPlayerSave(playerSaves.sound, '소리 설정'),
     ]);
+    // Only an off switch is applied here: turning on would open the audio before the first touch.
+    if (playerSaves.sound.data?.effects === false) audioSystem.setEnabled(false);
+    musicPlayer.setEnabled(playerSaves.sound.data?.music ?? true);
+    // Keeps a sound switch for the next visit; an unreadable record stays as it is.
+    const keepSound = (key, on) => {
+        const sound = playerSaves.sound;
+        if (sound.data && !sound.locked)
+            void updatePlayerSave(sound, (draft) => {
+                draft[key] = on;
+            }).catch((error) => console.warn('소리 설정 저장 실패', error));
+    };
     playerSaves.roster.onExternalChange(() => void roster.load());
     // Automated tests (navigator.webdriver) keep the batches in memory instead of the collection server.
     usageMetrics = new RallyUsageMetrics({
@@ -13498,8 +13531,16 @@ async function startTitleApp() {
                 return growth?.level ?? 1;
             },
             portraitSource: (t) => grainPortrait(t, window.RallyVectorAssets[t]),
-            toggleSound: () => audioSystem.setEnabled(!audioSystem.enabled),
-            soundOn: () => !!audioSystem.enabled,
+            toggleMusic: () => {
+                musicPlayer.setEnabled(!musicPlayer.enabled);
+                keepSound('music', musicPlayer.enabled);
+            },
+            musicOn: () => musicPlayer.enabled,
+            toggleEffects: () => {
+                audioSystem.setEnabled(!audioSystem.enabled);
+                keepSound('effects', audioSystem.enabled);
+            },
+            effectsOn: () => audioSystem.enabled,
             ownDeckSize: () => DeckEditor.getDeck().length,
             createRoom: (deckMode) => {
                 leaveSetup();

@@ -30,7 +30,6 @@ export class AudioSystem {
     }
 
     unlock() {
-        if (!this.enabled) return;
         try {
             if (!this.ctx) {
                 const AC = globalThis.AudioContext || globalThis.webkitAudioContext;
@@ -38,7 +37,7 @@ export class AudioSystem {
                 this.ctx = new AC();
 
                 this.master = this.ctx.createGain();
-                this.master.gain.value = 0.46;
+                this.master.gain.value = this.enabled ? 0.46 : 0;
 
                 this.compressor = this.ctx.createDynamicsCompressor();
                 this.compressor.threshold.value = -18;
@@ -60,7 +59,8 @@ export class AudioSystem {
                     data[i] = (state / 0xffffffff) * 2 - 1;
                 }
             }
-            if (this.ctx.state === 'suspended') this.ctx.resume();
+            // `suspended`, and iOS's `interrupted` after a call or another app.
+            if (this.ctx.state !== 'running') this.ctx.resume();
             this.unlocked = true;
         } catch (_) {}
     }
