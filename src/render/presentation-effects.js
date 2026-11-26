@@ -130,6 +130,8 @@ class EffectObjectFactory {
         launchBlast: 820,
         launchBundleBreak: 680,
         deathBurst: 480,
+        // Shards and the stain of a declared unit's death (CombatFxLook).
+        unitBurst: 4670,
         selfDestructBurst: EffectObjectFactory.selfDestructBurst.lifeMs,
     });
     static fireShakeDuration(power) {
