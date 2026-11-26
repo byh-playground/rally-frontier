@@ -259,6 +259,10 @@ function createPresentationView(owner, getRenderer, { hud = true, audio = true }
                     'hit',
                     'unitSelfDestruct',
                     'sporeCloudWarn',
+                    'launchFire',
+                    'mortarFire',
+                    'launchImpact',
+                    'mortarImpact',
                 ].includes(event.type)
             );
         },

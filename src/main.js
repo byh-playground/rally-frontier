@@ -11240,6 +11240,7 @@ class MatchLifecycle {
         ConnectionPresentation.setDisconnectPhase('hidden');
         const draw = reason === 'draw' || !winner,
             mine = !draw && winner === viewRole;
+        if (!draw) audioSystem.matchResult(mine);
         const stage = campaignStage(MatchLifecycle.selectedCampaign);
         const cleared = stage && mine && (reason === 'base-destroyed' || reason === 'boss-subdued');
         // The card a first clear rewards (Roster.recordClear grants it), told on the result.
