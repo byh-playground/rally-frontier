@@ -19,4 +19,5 @@ export const SPRITE = Object.freeze({
     art: RED_BEAN,
     portrait: (canvas, width) => beanSpritePortrait(canvas, RED_BEAN, width),
     groundY: 145,
+    motion: Object.freeze({ juice: [0.76, 0.27, 0.28], stain: [0.55, 0.16, 0.19] }),
 });
