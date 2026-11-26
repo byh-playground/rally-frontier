@@ -5,7 +5,7 @@ import { newRosterRecord } from '../definitions/roster.js';
 // a debug address (`?debug=1&scene=…`) and automated tests (navigator.webdriver) keep every record in memory,
 // so they neither read nor write the real saves.
 //   roster: the owned cards plus the new campaign's progress and sunshine (the single source of what is owned).
-//   decks: the three loadouts and the selected one. hints: one-time notices seen.
+//   decks: the three loadouts and the selected one. hints: one-time notices seen. sound: music and effects on or off.
 // Each record lives at `ssalkongpang/<key>` with the module's schema and revision. When it does not exist yet,
 // `create()` copies the record the game kept before the save module (the old keys stay untouched).
 const PREFIX = 'ssalkongpang/';
@@ -73,6 +73,11 @@ function validateHints(data) {
     if (typeof data.volleyAim !== 'boolean') throw new TypeError('hint record: volleyAim');
 }
 
+function validateSound(data) {
+    if (typeof data.music !== 'boolean' || typeof data.effects !== 'boolean')
+        throw new TypeError('sound record');
+}
+
 function openAdapter(gamekit, isolated) {
     if (isolated) return { adapter: gamekit.memoryAdapter(), legacy: () => null };
     try {
@@ -121,7 +126,14 @@ export function openPlayerSaves(gamekit, { isolated }) {
         create: newRosterRecord,
         validate: validateRoster,
     });
-    return { decks, hints, roster };
+    const sound = gamekit.createSave({
+        adapter,
+        key: 'sound',
+        version: 1,
+        create: () => ({ music: true, effects: true }),
+        validate: validateSound,
+    });
+    return { decks, hints, roster, sound };
 }
 
 // Loads a record; an unreadable one stays locked (the module never overwrites it) and the game runs on defaults.

@@ -1699,3 +1699,12 @@ body.result-mode .p2p-health {
     outline: 2px solid var(--green);
     outline-offset: 1px;
 }
+
+/* Three buttons share the match menu row, also on a narrow phone. */
+#matchMenuMusicBtn,
+#matchMenuEffectsBtn,
+#matchMenuHelpBtn {
+    padding-inline: 4px;
+    white-space: nowrap;
+    font-size: 15px;
+}

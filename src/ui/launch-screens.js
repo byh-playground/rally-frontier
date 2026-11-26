@@ -28,7 +28,7 @@ export class LaunchScreens {
         return unitCard(type)?.card || { role: '병사', feature: '', land: '', fire: '', notes: [] };
     }
     // actions: { onScreen(screen), inMatch(), hasResult(), startAiMatch(), openMenu(), closeMenu(), grains(), grainName(type), grainStats(type),
-    //           portraitSource(type), toggleSound(), soundOn(), createRoom(), joinRoom(code), leaveToTitle() }
+    //           portraitSource(type), toggleMusic(), musicOn(), toggleEffects(), effectsOn(), createRoom(), joinRoom(code), leaveToTitle() }
     static install({ createNavigation, showcaseSurface, actions }) {
         this.actions = actions;
         this.showcaseSurface = showcaseSurface;
@@ -140,7 +140,7 @@ export class LaunchScreens {
         } else {
             A.closeMenu();
         }
-        this.$('matchMenuSoundBtn').textContent = A.soundOn() ? '소리 끄기' : '소리 켜기';
+        this.renderSoundButtons();
         const CAMPAIGN = SCREEN === 'campaign';
         if (CAMPAIGN && !CampaignScreen.render(ITEM, route.query)) {
             this.replace('campaign');
@@ -164,6 +164,15 @@ export class LaunchScreens {
                 this.cardDetailTrigger.focus();
             this.cardDetailTrigger = null;
         }
+    }
+    // The music and effects switches, in the settings and in the match menu.
+    static renderSoundButtons() {
+        const A = this.actions,
+            music = A.musicOn() ? '음악 끄기' : '음악 켜기',
+            effects = A.effectsOn() ? '효과음 끄기' : '효과음 켜기';
+        for (const id of ['settingsMusicBtn', 'matchMenuMusicBtn']) this.$(id).textContent = music;
+        for (const id of ['settingsEffectsBtn', 'matchMenuEffectsBtn'])
+            this.$(id).textContent = effects;
     }
     static showSheet(id, on) {
         this.$(id).classList.toggle('hidden', !on);
@@ -236,10 +245,15 @@ export class LaunchScreens {
         $('matchMenuBtnGame').onclick = () =>
             this.navigation.snapshot().item === 'menu' ? A.openMenu() : this.go('play', 'menu');
         $('matchMenuHelpBtn').onclick = () => this.replace('play', 'help');
-        $('matchMenuSoundBtn').onclick = () => {
-            A.toggleSound();
-            $('matchMenuSoundBtn').textContent = A.soundOn() ? '소리 끄기' : '소리 켜기';
-        };
+        for (const [ids, toggle] of [
+            [['settingsMusicBtn', 'matchMenuMusicBtn'], () => A.toggleMusic()],
+            [['settingsEffectsBtn', 'matchMenuEffectsBtn'], () => A.toggleEffects()],
+        ])
+            for (const id of ids)
+                $(id).onclick = () => {
+                    toggle();
+                    this.renderSoundButtons();
+                };
         for (const id of ['matchMenuContinueBtn', 'matchMenuCloseBtn', 'matchMenuBackdrop']) {
             $(id).onclick = () => this.replace('play');
         }
