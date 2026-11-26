@@ -398,6 +398,7 @@ export const SPRITE = Object.freeze({
     renderer: CornSpriteRenderer,
     portrait: cornSpritePortrait,
     groundY: 148,
+    motion: Object.freeze({ juice: [0.98, 0.82, 0.28], stain: [0.8, 0.6, 0.1] }),
     shell: {
         draw: 'drawCone',
         turn: Math.PI / 4,
