@@ -3,52 +3,13 @@ import { AttackPresentationDefinition } from '../definitions/attack-presentation
 import { LaunchRules } from '../sim/launch-rules.js';
 
 class FloatingTextPresentationDefinition {
+    // How long each kind shows and how large it is (canvas px at sc() 1, and at least in CSS px); NumberLook owns its motion.
     static presets = Object.freeze({
-        damageTaken: Object.freeze({
-            lifeMs: 600,
-            baseSize: 15,
-            minSize: 10,
-            rise: 30,
-            alpha: 0.8,
-            strokeAlpha: 0.8,
-            pop: 1,
-        }),
-        damageDealt: Object.freeze({
-            lifeMs: 600,
-            baseSize: 15,
-            minSize: 10,
-            rise: 30,
-            alpha: 0.8,
-            strokeAlpha: 0.8,
-            pop: 1,
-        }),
-        heroHeal: Object.freeze({
-            lifeMs: 800,
-            baseSize: 17,
-            minSize: 11,
-            rise: 35,
-            alpha: 1,
-            strokeAlpha: 0.9,
-            pop: 1.15,
-        }),
-        heroLevelUp: Object.freeze({
-            lifeMs: 1200,
-            baseSize: 24,
-            minSize: 16,
-            rise: 45,
-            alpha: 1,
-            strokeAlpha: 1,
-            pop: 1.35,
-        }),
-        dodge: Object.freeze({
-            lifeMs: 750,
-            baseSize: 15,
-            minSize: 10,
-            rise: 30,
-            alpha: 0.8,
-            strokeAlpha: 0.8,
-            pop: 1,
-        }),
+        damageTaken: Object.freeze({ lifeMs: 620, baseSize: 12, minSize: 8 }),
+        damageDealt: Object.freeze({ lifeMs: 620, baseSize: 16, minSize: 10 }),
+        heroHeal: Object.freeze({ lifeMs: 900, baseSize: 18, minSize: 11 }),
+        heroLevelUp: Object.freeze({ lifeMs: 1300, baseSize: 15, minSize: 11 }),
+        dodge: Object.freeze({ lifeMs: 600, baseSize: 11, minSize: 8.5 }),
     });
     static get(kind) {
         return this.presets[kind] || this.presets.damageDealt;
@@ -183,8 +144,11 @@ class EffectObjectFactory {
             amount: 0,
             start: 0,
             presentationTick: null,
-            jitter: 0,
-            lane: 0,
+            dir: 1,
+            spread: 0,
+            lift: 0,
+            targetId: null,
+            kill: false,
             group: null,
         };
     }
@@ -197,8 +161,11 @@ class EffectObjectFactory {
         v.start = 0;
         v.presentationTick = null;
         v.clock = null;
-        v.jitter = 0;
-        v.lane = 0;
+        v.dir = 1;
+        v.spread = 0;
+        v.lift = 0;
+        v.targetId = null;
+        v.kill = false;
         v.group = null;
     }
     static makeShakeFx() {
