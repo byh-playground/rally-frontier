@@ -60,6 +60,7 @@ import {
 import { HeroGrowth } from './sim/hero-growth.js';
 import { CombatFxLook } from './render/combat-fx.js';
 import { NumberLook } from './render/number-look.js';
+import { SiegeLook } from './render/siege-look.js';
 import { UnitMotionLook } from './render/unit-motion-look.js';
 import {
     BattlefieldProjection,
@@ -881,6 +882,16 @@ const GRAIN_HIT_FLASH_MS = 60,
     // The sprite scale the combat effect sizes were authored at: scale / this = one effect unit in pixels.
     MOTION_FX_ART_SCALE = 0.18;
 
+// The colours of the cannons' smoke, dust and pieces.
+// The blast radius whose landing effects are drawn at full size.
+const SIEGE_FULL_BLAST = 150;
+const SIEGE_SMOKE = Object.freeze([0.52, 0.5, 0.46, 1]),
+    SIEGE_SMOKE_PALE = Object.freeze([0.87, 0.84, 0.77, 1]),
+    SIEGE_DUST = Object.freeze([0.82, 0.74, 0.55, 1]),
+    SIEGE_EARTH = Object.freeze([0.6, 0.47, 0.28, 1]),
+    SIEGE_STONE = Object.freeze([0.74, 0.68, 0.57, 1]),
+    SIEGE_WOOD = Object.freeze([0.58, 0.42, 0.24, 1]);
+
 class GLRenderer {
     // How much depth the rows of one bridge deck are spread over (bridgeRowDepth).
     static BRIDGE_ROW_DEPTH = 0.002;
@@ -977,6 +988,7 @@ class GLRenderer {
         }); // 메시 통계가 첫 유닛 그리기 전에도 null이 아니도록 미리 만든다.
         this.vectorUnitAssetCache = new Map();
         this.buildingArt = new BuildingArt(this);
+        this.siegeLook = new SiegeLook();
         // Per snapshot: which outposts a sticky-rice soldier holds, and each held cannon's frozen aim.
         this.stickyClingers = new Map();
         // Cannon riders sitting on a muzzle, by cannon id (CannonRider.boardedCannon).
@@ -1267,6 +1279,7 @@ class GLRenderer {
         for (const fx of this.combatFx) this.combatFxPool.release(fx);
         this.combatFxLook.reset();
         this.poppingUnits.clear();
+        this.siegeLook.reset();
         for (const fx of this.floatFx) this.floatFxPool.release(fx);
         for (const fx of this.shakeFx) this.shakeFxPool.release(fx);
         this.combatFx.length = 0;
@@ -2222,6 +2235,226 @@ class GLRenderer {
             index,
         );
     }
+    // The last drawn state of a standing cannon, kept so its fall can still be drawn; a badly damaged one smokes.
+    noteBuilding(b) {
+        const category = BuildingDefinition.get(b.type)?.visualCategory;
+        if (category !== 'base' && category !== 'outpost' && category !== 'forward-cannon') return;
+        this.siegeLook.note(b, this.cannonAim(b), this.presentationNow());
+        if (b.construction || !(b.hp * 2 < b.maxHp)) return;
+        if (!this.siegeLook.smokeDue(b.id, this.presentationNow())) return;
+        this.combatFxLook.puffs({
+            at: { x: b.x, y: b.y, side: b.side },
+            size: 1,
+            shift: { x: ((this.presentationNow() / 260) % 3) * 10 - 12, y: -44 },
+            color: SIEGE_SMOKE,
+            count: 3,
+            spread: 9,
+            rise: 50,
+            reach: 17,
+            life: 850,
+            clock: this.localClock(),
+            seed: HashUtil.hash(`${b.id}|${Math.floor(this.presentationNow() / 180)}`),
+        });
+    }
+
+    // A cannon fires: its recoil spring, a flash and smoke ring at the muzzle, dust at its foot.
+    siegeFire(e, snapshot, dx, dy) {
+        const cannon = this.snapshot?.buildings.find((b) => b.id === e.cannonId);
+        if (!cannon || !this.combatFxVisible(cannon)) return;
+        const clock = snapshot.presentationClock;
+        EffectObjectFactory.attachClock({}, clock, 700);
+        this.siegeLook.fired(e.cannonId, clock, this.orientationRole() === 'guest' ? -dx : dx, dy);
+        const options = this.cannonArtOptions(cannon, { aim: { dx, dy }, fireAgeMs: 0 }),
+            { muzzle, muzzleDir } = BuildingArt.pose(options),
+            [gx, gy] = this.worldToPx(this.viewX(cannon.x), this.viewY(cannon.y)),
+            s = Math.max(1e-3, this.sc()),
+            at = { x: cannon.x, y: cannon.y, side: cannon.side },
+            shift = { x: (muzzle.x - gx) / s, y: (muzzle.y - gy) / s },
+            seed = HashUtil.hash(`${snapshot.tick}|fire|${e.cannonId}`);
+        this.combatFxLook.boom({ at, size: 1, shift, reach: 40, life: 110, clock, seed });
+        this.combatFxLook.puffs({
+            at,
+            size: 1,
+            shift: { x: shift.x + muzzleDir.x * 34, y: shift.y + muzzleDir.y * 34 },
+            color: SIEGE_SMOKE_PALE,
+            count: 7,
+            spread: 22,
+            rise: 28,
+            reach: 22,
+            life: 800,
+            clock,
+            seed,
+        });
+        this.combatFxLook.puffs({
+            at,
+            size: 1,
+            shift: { x: 0, y: 4 },
+            color: SIEGE_DUST,
+            count: 4,
+            spread: 48,
+            rise: 4,
+            reach: 14,
+            life: 500,
+            clock,
+            seed: seed ^ 0x51,
+        });
+    }
+
+    // A shell lands: a mark in the ground, a flash, a ring of dust and clods of earth.
+    siegeLanding(e, snapshot, index) {
+        if (!(e.radius > 0) || !this.combatFxVisible(e)) return;
+        const at = { x: e.x, y: e.y, side: e.side },
+            clock = snapshot.presentationClock,
+            seed = HashUtil.hash(`${snapshot.tick}|land|${index}`),
+            // A small blast (one pellet of a shotgun) leaves a small mark: the effects follow its reach.
+            size = RangeUtil.clamp(e.radius / SIEGE_FULL_BLAST, 0.45, 1.2);
+        this.combatFxLook.scorch({ at, size, clock });
+        this.combatFxLook.boom({
+            at,
+            size,
+            shift: { x: 0, y: -10 },
+            reach: 56,
+            life: 130,
+            clock,
+            seed,
+        });
+        this.combatFxLook.puffs({
+            at,
+            size,
+            shift: { x: 0, y: -4 },
+            color: SIEGE_DUST,
+            count: 12,
+            spread: 66,
+            rise: 8,
+            reach: 22,
+            life: 700,
+            clock,
+            seed,
+        });
+        this.combatFxLook.chips({
+            at,
+            size,
+            shift: { x: 0, y: -6 },
+            dir: 0,
+            color: SIEGE_EARTH,
+            count: 11,
+            speed: 100,
+            drop: 18,
+            clock,
+            seed,
+        });
+    }
+
+    // A cannon is struck: it shakes and flashes, and chips fly from the side the blow came from.
+    siegeHit(e, snapshot, index) {
+        const building = this.snapshot?.buildings.find((b) => b.id === e.targetId);
+        if (!building || !this.siegeLook.drawn.has(e.targetId) || !this.combatFxVisible(e)) return;
+        const side = this.blowSide(e, index),
+            clock = snapshot.presentationClock,
+            seed = HashUtil.hash(`${snapshot.tick}|chip|${index}`);
+        EffectObjectFactory.attachClock({}, clock, 260);
+        const now = this.presentationNow();
+        this.siegeLook.struck(e.targetId, clock, side, now);
+        // Chips at most this often per building, however many strike it.
+        const record = this.siegeLook.drawn.get(e.targetId);
+        if (
+            record.chippedAt !== undefined &&
+            now - record.chippedAt >= 0 &&
+            now - record.chippedAt < 190
+        )
+            return;
+        record.chippedAt = now;
+        this.combatFxLook.chips({
+            at: { x: building.x, y: building.y, side: building.side },
+            size: 1,
+            shift: { x: -side * 26, y: -14 - (seed % 28) },
+            dir: -side,
+            color: seed & 1 ? SIEGE_STONE : SIEGE_WOOD,
+            count: 3,
+            speed: 90,
+            drop: 30,
+            clock,
+            seed,
+        });
+    }
+
+    // A cannon falls: it swells and bursts and its own parts fly apart. False: not one that was drawn.
+    siegeFall(e, snapshot, index) {
+        const clock = snapshot.presentationClock,
+            wreck = this.siegeLook.fell(e.x, e.y, clock);
+        if (!wreck) return false;
+        EffectObjectFactory.attachClock(wreck, clock, SiegeLook.wreckMs);
+        const at = { x: e.x, y: e.y, side: e.side },
+            seed = HashUtil.hash(`${snapshot.tick}|fall|${index}`),
+            delay = SiegeLook.swellMs,
+            high = { x: 0, y: -28 };
+        this.combatFxLook.scorch({ at, size: 1, clock, delay, width: 120 });
+        this.combatFxLook.boom({
+            at,
+            size: 1,
+            shift: high,
+            reach: 84,
+            life: 150,
+            clock,
+            delay,
+            seed,
+        });
+        this.combatFxLook.shock({ at, size: 1, reach: 130, clock, delay });
+        this.combatFxLook.puffs({
+            at,
+            size: 1,
+            shift: { x: 0, y: -10 },
+            color: SIEGE_DUST,
+            count: 16,
+            spread: 78,
+            rise: 30,
+            reach: 28,
+            life: 1400,
+            clock,
+            delay,
+            seed,
+        });
+        for (const [i, color] of [SIEGE_STONE, SIEGE_WOOD].entries())
+            this.combatFxLook.chips({
+                at,
+                size: 1,
+                shift: high,
+                dir: 0,
+                color,
+                count: 8,
+                speed: 140,
+                drop: 34,
+                clock,
+                delay,
+                life: SiegeLook.wreckMs - delay,
+                seed: seed ^ (i + 7),
+            });
+        this.triggerClientShake(7, 420, seed, e, snapshot);
+        return true;
+    }
+
+    // The fallen cannons still on screen: swelling, then in pieces.
+    drawWrecks() {
+        // A building the match has dropped stands as last drawn until its fall is presented: no empty frame.
+        const standing = (this._standingIds ??= new Set());
+        standing.clear();
+        for (const b of this.snapshot.buildings || [])
+            if (b.alive !== false && b.hp > 0) standing.add(b.id);
+        for (const record of this.siegeLook.pending(standing, this.presentationNow()))
+            this.drawFallen(record.building, record.aim, null);
+        for (const wreck of this.siegeLook.live()) {
+            const age = wreck.clock.ageMs,
+                b = wreck.building;
+            this.drawFallen(b, wreck.aim, SiegeLook.wreckPose(Math.max(0, age), wreck.aim));
+        }
+    }
+    drawFallen(b, aim, look) {
+        if (!this.combatFxVisible(b)) return;
+        const options = this.cannonArtOptions(b, { aim, fireAgeMs: Infinity });
+        this.withWorldSpriteDepth({ x: b.x, y: 0, z: b.y }, () =>
+            this.buildingArt.draw(b, { ...options, ...look }),
+        );
+    }
     // A blow on a building by a unit whose `motion` declares `siege`: its spark and ground ring where it meets
     // the wall, on the attacker's side. False: the plain impact draws.
     motionSiege(e, snapshot, index) {
@@ -2500,6 +2733,7 @@ class GLRenderer {
             this.corpseTracks.clear();
             this.combatFxLook.reset();
             this.poppingUnits.clear();
+            this.siegeLook.reset();
             this.blightFieldArt.reset();
         }
         if (snapTargets || !old) this.resetFogTransition();
@@ -2514,7 +2748,11 @@ class GLRenderer {
         this.syncMapLook();
         if (!old || old.mapDescriptor?.seed !== s.mapDescriptor?.seed)
             this.cameraTop = this.clampCameraTop(Infinity);
-        this.buildingArt.prune(s.buildings);
+        this.buildingArt.prune([
+            ...s.buildings,
+            ...this.siegeLook.live().map((wreck) => wreck.building),
+            ...[...this.siegeLook.drawn.values()].map((record) => record.building),
+        ]);
         this.stickyClingers.clear();
         this.mountedUnitIds.clear();
         for (const b of s.buildings) {
@@ -2791,6 +3029,7 @@ class GLRenderer {
             }
 
             if (e.type === 'hit') {
+                if (e.isBuilding && !e.ambient) this.siegeHit(e, snapshot, index);
                 const motion =
                     !e.suppressImpactFx &&
                     !e.ambient &&
@@ -2957,6 +3196,10 @@ class GLRenderer {
                 });
                 this.triggerSelfDestructShake(e, snapshot, index);
             } else if (e.type === 'buildingDeath') {
+                if (this.siegeFall(e, snapshot, index)) {
+                    index++;
+                    continue;
+                }
                 // A spore sac bursts into soot; every other building breaks into rubble.
                 this.addClientFx(
                     BuildingDefinition.get(e.entity)?.sporeSac ? 'sporeSacBurst' : 'buildingBurst',
@@ -3093,6 +3336,7 @@ class GLRenderer {
             EffectObjectFactory.attachClock(recoil, snapshot.presentationClock, 260);
             this.launchRecoil.set(e.cannonId, recoil);
         }
+        if (mode !== 'shotgun' || first) this.siegeFire(e, snapshot, dx / len, dy / len);
         if (mode !== 'shotgun' || first)
             this.addClientFx('launchMuzzle', { ...e, x2: e.aimX, y2: e.aimY }, snapshot, index, {
                 power,
@@ -3129,6 +3373,7 @@ class GLRenderer {
                 impactHeightFP: e.impactHeightFP,
             });
         }
+        this.siegeLanding(e, snapshot, index);
         this.addClientFx('launchBundleBreak', e, snapshot, index, {
             id: 'bundle:' + e.projectileId,
             grainType: e.unit,
@@ -3303,7 +3548,10 @@ class GLRenderer {
         const rider = this.cannonRiders.get(b.id),
             shownRider =
                 rider && (rider.side === this.mySide() || this.visibleRaw(rider.x, rider.y));
+        const siege = this.siegeLook.pose(b.id);
         return {
+            body: siege.body,
+            flash: siege.flash,
             ...(shownRider
                 ? { rider: (pose, part) => this.drawCannonRider(rider, pose, part) }
                 : {}),
@@ -5029,6 +5277,7 @@ class GLRenderer {
         if (!buildingVisual) throw new Error(`Missing building visual renderer for ${b.type}`);
         if (b.construction) this.drawConstructionScaffold(b);
         buildingVisual(this, { b });
+        this.noteBuilding(b);
         // The art owns its base and flag. Selection follows the visual footprint, never the collision radius.
         const r = 40 * sc;
         if (own && this.selectedBuildingId === b.id) {
@@ -6495,7 +6744,8 @@ class GLRenderer {
                 fx.clock.ageMs >= 0 &&
                 fx.clock.ageMs < lifeMs,
         );
-        if (!hit) return { angle, scaleX: 1, scaleY: 1 };
+        // In flight a shell stretches along its path; one just hit by anti-air flinches instead.
+        if (!hit) return { angle, scaleX: 1.24, scaleY: 0.86 };
         const t = hit.clock.ageMs / lifeMs,
             pulse = Math.sin(t * Math.PI * 2) * (1 - t),
             cross =
@@ -6942,7 +7192,19 @@ class GLRenderer {
         }
     }
     renderCombatFxLook() {
-        if (!this.combatFxLook.active('spark', 'spray', 'slash', 'thud', 'shards', 'burst')) return;
+        const air = [
+            'spark',
+            'spray',
+            'slash',
+            'thud',
+            'shards',
+            'burst',
+            'boom',
+            'chips',
+            'puffs',
+            'shock',
+        ];
+        if (!this.combatFxLook.active(...air)) return;
         this.begin();
         this.combatFxLook.drawAir(this);
         this.vectorContext.flush('combat-fx');
@@ -7814,6 +8076,7 @@ class GLRenderer {
         }
         this.drawGrainUnderlays(entries);
         this.drawGrainBodies(entries);
+        this.drawWrecks();
         for (const entry of entries) {
             const { kind, entity, world } = entry;
             if (!this.showcase && kind === 'projectile' && entity.payload) continue;

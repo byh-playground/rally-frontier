@@ -68,6 +68,27 @@ const matrixAt = (a, b, c, d, sx, sy, x, y) => [
     y - b * sx - d * sy,
 ];
 
+const FLASH_WHITE = Object.freeze([1, 1, 1, 1]);
+// An affine matrix [a, b, c, d, e, f] turned and scaled about a screen point, then moved.
+const moved = (m, pivot, turn, sx, sy, dx, dy) => {
+    const cos = Math.cos(turn),
+        sin = Math.sin(turn),
+        a = cos * sx,
+        b = sin * sx,
+        c = -sin * sy,
+        d = cos * sy,
+        tx = m[4] - pivot.x,
+        ty = m[5] - pivot.y;
+    return [
+        a * m[0] + c * m[1],
+        b * m[0] + d * m[1],
+        a * m[2] + c * m[3],
+        b * m[2] + d * m[3],
+        a * tx + c * ty + pivot.x + dx,
+        b * tx + d * ty + pivot.y + dy,
+    ];
+};
+
 // The same authored channel drives the actor and the projected muzzle. No independent VFX kick curve.
 function recoilAt(age, asset) {
     const clip = asset.metadata.clips.fire;
@@ -232,8 +253,41 @@ class BuildingArt {
             r.flush(r.frame, true);
             r.begin();
         }
-        const draw = (part, matrix) => {
-            const alpha = partOpacity(part);
+        // `body` moves the whole building about its ground point; `fling` throws its parts apart (SiegeLook).
+        const { body, fling, flash = 0, alpha: whole = 1 } = options,
+            unit = options.sc;
+        const placed = (part, matrix) => {
+            if (fling) {
+                const thrownPart = part.startsWith('cradle')
+                        ? fling.cradle
+                        : part === 'base'
+                          ? fling.base
+                          : fling.barrel,
+                    pivot = part === 'base' ? pose.ground : pose.trunnion;
+                return moved(
+                    matrix,
+                    pivot,
+                    thrownPart.turn,
+                    1,
+                    1,
+                    thrownPart.x * unit,
+                    thrownPart.y * unit,
+                );
+            }
+            if (!body) return matrix;
+            return moved(
+                matrix,
+                pose.ground,
+                body.lean,
+                1 + body.squash,
+                1 - body.squash,
+                body.x * unit,
+                0,
+            );
+        };
+        const draw = (part, partMatrix) => {
+            const alpha = partOpacity(part) * whole,
+                matrix = placed(part, partMatrix);
             if (alpha > 0)
                 context.drawVectorActor(actors[part], {
                     matrix,
@@ -261,6 +315,17 @@ class BuildingArt {
         if (rider) {
             if (options.aim.dy > 0) rider(pose, 'body');
             rider(pose, 'hands');
+        }
+        if (flash > 0) {
+            const color = context.forceColor,
+                opacity = context.globalAlpha;
+            context.forceColor = FLASH_WHITE;
+            context.globalAlpha = flash;
+            draw('base', pose.base);
+            draw('barrel', pose.barrel);
+            draw('cradle', pose.cradle);
+            context.forceColor = color;
+            context.globalAlpha = opacity;
         }
         r.flushVectorMesh('cannon-art');
         return pose;

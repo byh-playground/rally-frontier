@@ -93,6 +93,8 @@ class EffectObjectFactory {
         deathBurst: 480,
         // Shards and the stain of a declared unit's death (CombatFxLook).
         unitBurst: 4670,
+        // A fallen cannon's pieces and its ground mark (SiegeLook, CombatFxLook).
+        buildingWreck: 3740,
         selfDestructBurst: EffectObjectFactory.selfDestructBurst.lifeMs,
     });
     static fireShakeDuration(power) {
