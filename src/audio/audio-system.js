@@ -18,7 +18,15 @@ export class AudioSystem {
             death: { window: 100, max: 2, times: [] },
             // Clouds warned on the same tick, or a second cloud right after, share one alert instead of stacking.
             cloudWarning: { window: 1500, max: 1, times: [] },
+            // Cannons fire and shells land in volleys: a few voices at a time.
+            launch: { window: 140, max: 2, times: [] },
+            landing: { window: 140, max: 2, times: [] },
+            wall: { window: 150, max: 2, times: [] },
+            collapse: { window: 250, max: 1, times: [] },
+            result: { window: 5000, max: 1, times: [] },
         };
+        // Which of the small pitch steps the next repeated sound takes, so it does not machine-gun.
+        this.turn = 0;
     }
 
     unlock() {
@@ -258,10 +266,101 @@ export class AudioSystem {
         this.noise({ gain: 0.05 * g, duration: 0.55, lowpass: 700, when: 0.1 });
     }
 
+    vary() {
+        this.turn = (this.turn + 1) % 5;
+        return 0.93 + this.turn * 0.035;
+    }
+
+    // Small separate noise ticks, for pieces coming down one after another.
+    scatter(
+        count,
+        { from = 0, span = 0.25, highpass = 1500, lowpass = 6000, gain = 0.06, duration = 0.025 },
+    ) {
+        for (let i = 0; i < count; i++)
+            this.noise({
+                gain: gain * (1 - i / (count * 1.6)),
+                duration,
+                highpass,
+                lowpass,
+                when: from + (i / count) * span + ((i * 7) % 5) * 0.004,
+            });
+    }
+
+    // A cannon fires: a deep thump.
+    cannonFire(g = 0.8) {
+        if (!this.allow('launch')) return;
+        const k = this.vary();
+        this.tone({ freq: 150 * k, endFreq: 38, type: 'sine', gain: 0.34 * g, duration: 0.24 });
+        this.noise({ gain: 0.17 * g, duration: 0.18, lowpass: 900 });
+        this.noise({ gain: 0.08 * g, duration: 0.05, highpass: 1800, lowpass: 6000 });
+    }
+
+    // A shell lands: a thud and falling earth.
+    shellLand(g = 0.8) {
+        if (!this.allow('landing')) return;
+        const k = this.vary();
+        this.tone({ freq: 96 * k, endFreq: 34, type: 'sine', gain: 0.34 * g, duration: 0.26 });
+        this.noise({ gain: 0.16 * g, duration: 0.3, lowpass: 700 });
+        this.scatter(5, { from: 0.06, span: 0.2, highpass: 700, lowpass: 2600, gain: 0.04 * g });
+    }
+
+    // A building is struck: a wooden knock.
+    wallHit(g = 0.6) {
+        if (!this.allow('wall')) return;
+        const k = this.vary();
+        this.tone({
+            freq: 470 * k,
+            endFreq: 300 * k,
+            type: 'triangle',
+            gain: 0.12 * g,
+            duration: 0.07,
+        });
+        this.tone({ freq: 190 * k, endFreq: 130, type: 'sine', gain: 0.09 * g, duration: 0.08 });
+        this.noise({ gain: 0.05 * g, duration: 0.025, highpass: 900, lowpass: 3000 });
+    }
+
+    // A building falls: one big blow.
     buildingCollapse(g = 0.7) {
-        this.noise({ gain: 0.2 * g, duration: 0.35, lowpass: 1000 });
-        this.tone({ freq: 74, endFreq: 32, type: 'sine', gain: 0.25 * g, duration: 0.38 });
-        this.noise({ gain: 0.08 * g, duration: 0.22, highpass: 1200, lowpass: 3200, when: 0.08 });
+        if (!this.allow('collapse')) return;
+        this.tone({ freq: 70, endFreq: 26, type: 'sine', gain: 0.4 * g, duration: 0.65 });
+        this.tone({ freq: 42, endFreq: 28, type: 'sine', gain: 0.22 * g, duration: 0.7 });
+        this.noise({ gain: 0.28 * g, duration: 0.5, lowpass: 1800 });
+        this.noise({ gain: 0.09 * g, duration: 0.3, highpass: 1500, lowpass: 5000, when: 0.1 });
+    }
+
+    // The match is decided: `won` for the viewer; nothing for a draw (do not call).
+    matchResult(won) {
+        if (!this.enabled || !this.unlocked || !this.allow('result')) return;
+        if (won) {
+            [523, 659, 784, 1047].forEach((freq, i) => {
+                this.tone({ freq, type: 'triangle', gain: 0.14, duration: 0.3, when: i * 0.11 });
+                this.tone({
+                    freq: freq * 2,
+                    type: 'sine',
+                    gain: 0.04,
+                    duration: 0.2,
+                    when: i * 0.11,
+                });
+            });
+            return;
+        }
+        this.tone({
+            freq: 196,
+            endFreq: 98,
+            type: 'sine',
+            gain: 0.18,
+            duration: 0.9,
+            attack: 0.05,
+        });
+        this.tone({
+            freq: 233,
+            endFreq: 117,
+            type: 'sine',
+            gain: 0.1,
+            duration: 0.9,
+            attack: 0.05,
+        });
+        this.noise({ gain: 0.05, duration: 0.5, lowpass: 400 });
     }
 
     playHitForType(sourceType, gain) {
@@ -276,7 +375,16 @@ export class AudioSystem {
             this.cloudWarning();
             return;
         }
-        if (e.type === 'unitSelfDestruct' && !renderer.eventVisible(e)) return;
+        // A burst, a shot, a landing or a knock on a wall that the viewer cannot see says nothing about it.
+        const heard =
+            e.type === 'unitSelfDestruct' ||
+            e.type === 'buildingDeath' ||
+            e.type === 'launchFire' ||
+            e.type === 'mortarFire' ||
+            e.type === 'launchImpact' ||
+            e.type === 'mortarImpact' ||
+            (e.type === 'hit' && e.isBuilding);
+        if (heard && !renderer.eventVisible(e)) return;
         const gain = this.spatialGain(
             e.x ?? renderer.world.center.x,
             e.y ?? renderer.world.center.y,
@@ -287,7 +395,11 @@ export class AudioSystem {
         else if (e.type === 'unitSelfDestruct') this.explosion(gain * 0.65);
         else if (e.type === 'buildingDeath') this.buildingCollapse(gain);
         else if (e.type === 'death') this.death(gain);
-        else if (e.type === 'hit') this.playHitForType(e.sourceType || '', gain);
+        else if (e.type === 'launchFire' || e.type === 'mortarFire') this.cannonFire(gain * 0.8);
+        else if (e.type === 'launchImpact' || e.type === 'mortarImpact') this.shellLand(gain * 0.8);
+        else if (e.type === 'hit' && e.isBuilding) {
+            if (!e.ambient) this.wallHit(gain);
+        } else if (e.type === 'hit') this.playHitForType(e.sourceType || '', gain);
     }
 
     processSnapshot(snapshot, renderer) {
