@@ -85,7 +85,7 @@
 //              roll?       { progress, tuck, setMatrix }  (HeroRollAttack)
 //              rolling?    { prepare(grain, entity, world, renderTick, now, tps, orientation) }: the
 //                          self-propelled rolling body's per-frame art (RollingBody)
-//              motion?     { juice: rgb, stain: rgb, swing?: 'slash', lunge?: n } livelier motion and combat effects
+//              motion?     { juice: rgb, stain: rgb, swing?: 'slash'|'smash', spark?: rgb, lunge?: n } livelier motion and combat effects
 //                          (src/render/unit-motion-look.js, combat-fx.js); sprite renderers on the grain rig.
 //              effectArt?  ['grain-particles'|'self-destruct-burst'|'thorn']
 //              breath?     { drawFlame(ctx, flame) }: paints a breathAttack unit's flame (UnitBreathAttack)

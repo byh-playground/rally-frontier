@@ -14,6 +14,7 @@ const CAPS = Object.freeze({
     spark: 48,
     spray: 70,
     slash: 48,
+    thud: 36,
     shards: 40,
     stain: 90,
     burst: 24,
@@ -22,6 +23,7 @@ const LIFE = Object.freeze({
     spark: 130,
     spray: 340,
     slash: 150,
+    thud: 240,
     // Death effects start after the body's swell (popMs).
     popMs: 170,
     burst: 220,
@@ -30,7 +32,9 @@ const LIFE = Object.freeze({
 });
 // The smallest effect unit on a 540px wide canvas: below it the shapes turn into specks at the default zoom.
 const MIN_UNIT = 0.68;
-const SPARK_FILL = Object.freeze([1, 0.98, 0.86, 1]),
+const SMASH_FILL = Object.freeze([0.9, 1, 0.4, 1]),
+    THUD_EDGE = Object.freeze([0.25, 0.32, 0.08, 1]),
+    SPARK_FILL = Object.freeze([1, 0.98, 0.86, 1]),
     SLASH_FILL = Object.freeze([1, 0.99, 0.92, 1]);
 const DROPS = 7,
     SHARDS = 9;
@@ -144,7 +148,15 @@ export class CombatFxLook {
         this.context = context;
         this.region = null;
         this.quads = null;
-        this.lists = { spark: [], spray: [], slash: [], shards: [], stain: [], burst: [] };
+        this.lists = {
+            spark: [],
+            spray: [],
+            slash: [],
+            thud: [],
+            shards: [],
+            stain: [],
+            burst: [],
+        };
         this.matrix = new Float64Array(6);
         this.options = { matrix: this.matrix };
         this.ringColor = [1, 1, 1, 1];
@@ -205,15 +217,21 @@ export class CombatFxLook {
     // One landed blow. `at`: ground position of the struck body { x, y, side }, `size`: effect unit at sc() 1,
     // `shift`: from that ground point toward the attacker's side of the body (effect units), `dir`: unit screen
     // vector from the attacker, `juice`: the struck body's colour.
-    hit({ at, size, shift, dir, juice, clock, seed }) {
+    // `color`: only a blow that does not cut passes it; its spark is the larger, in the attacker's own colour.
+    hit({ at, size, shift, dir, juice, color, clock, seed }) {
         const effect = { at, size, shift, dir, juice, seed };
-        this.add('spark', { ...effect }, clock, LIFE.spark);
+        this.add('spark', { ...effect, color: color && tint(color, 0) }, clock, LIFE.spark);
         this.add('spray', { ...effect }, clock, LIFE.spray);
     }
 
     // A blade sweeping in front of the attacker, started just before its blow lands. `side`: screen side (-1|1).
     slash({ at, size, side, clock }) {
         this.add('slash', { at, size, side, shift: null }, clock, LIFE.slash);
+    }
+
+    // Where a smash lands: a flat ring thrown out over the ground under the struck body.
+    thud({ at, size, shift, clock }) {
+        this.add('thud', { at, size, shift }, clock, LIFE.thud);
     }
 
     death({ at, size, dir, juice, stain, clock, seed }) {
@@ -342,16 +360,16 @@ export class CombatFxLook {
 
     // Everything above the ground, over every body: a blow or a death in the back row must still be seen.
     drawAir(renderer) {
-        if (!this.active('spark', 'spray', 'slash', 'shards', 'burst')) return;
+        if (!this.active('spark', 'spray', 'slash', 'thud', 'shards', 'burst')) return;
         this.begin(renderer);
         this.context.depthTest = false;
         this.each(renderer, 'slash', LIFE.slash, 0.003, (e, age, x, y, s) => {
             // The blade travels from over the shoulder to the ground in front, growing as it goes.
             const t = Math.min(1, age / 95),
                 swept = 1 - (1 - t) * (1 - t),
-                angle = e.side * (-1.35 + 2.1 * swept),
-                size = (32 + 14 * swept) * s,
-                alpha = age < 105 ? 1 : 1 - (age - 105) / (LIFE.slash - 105);
+                fade = age < 105 ? 1 : 1 - (age - 105) / (LIFE.slash - 105);
+            const angle = e.side * (-1.35 + 2.1 * swept),
+                size = (32 + 14 * swept) * s;
             this.quad(
                 'arc',
                 x + e.side * 26 * s,
@@ -360,8 +378,17 @@ export class CombatFxLook {
                 size,
                 angle,
                 SLASH_FILL,
-                alpha,
+                fade,
             );
+        });
+        this.each(renderer, 'thud', LIFE.thud, 0.0033, (e, age, x, y, s) => {
+            const t = age / LIFE.thud,
+                eased = 1 - (1 - t) * (1 - t),
+                width = (26 + 62 * eased) * s,
+                alpha = 1 - t * t;
+            // Two passes: a wider dark edge under the bright one, so it reads on grass.
+            this.quad('ring', x, y, width * 1.12, width * 0.52, 0, THUD_EDGE, alpha * 0.8);
+            this.quad('ring', x, y - 1.5 * s, width, width * 0.46, 0, SMASH_FILL, alpha);
         });
         this.each(renderer, 'burst', LIFE.popMs + LIFE.burst, 0.0033, (e, raw, x, y, s) => {
             const age = raw - LIFE.popMs;
@@ -406,9 +433,20 @@ export class CombatFxLook {
         });
         this.each(renderer, 'spark', LIFE.spark, 0.0034, (e, age, x, y, s) => {
             const t = age / LIFE.spark,
-                size = (32 + 22 * t) * s,
-                alpha = t < 0.6 ? 1 : (1 - t) / 0.4;
-            this.quad('star', x, y - 26 * s, size, size, e.juice[0] * 3, SPARK_FILL, alpha);
+                size = (32 + 22 * t) * s * (e.color ? 1.3 : 1),
+                alpha = t < 0.6 ? 1 : (1 - t) / 0.4,
+                // A blunt blow lands low on the body.
+                lift = e.color ? 16 : 26;
+            this.quad(
+                'star',
+                x,
+                y - lift * s,
+                size,
+                size,
+                e.juice[0] * 3,
+                e.color || SPARK_FILL,
+                alpha,
+            );
         });
         this.drawShards(renderer, false, 0.0031);
         this.end();
