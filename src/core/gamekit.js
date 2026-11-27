@@ -1,4 +1,5 @@
 // Both realms load the pinned simulation and session SDK; the page also prepares its art.
+import { fetchAsset, requireAsset } from './required-asset.js';
 // prettier-ignore
 const RALLY_GAMEKIT_MODULES=Object.freeze({"rollback":"rollback.js","deterministic":"deterministic.js","simloop":"simloop.js","transport":"transport.js","interpolation":"interpolation.js","input":"input.js","rendering":"rendering.js","vectorAssets":"vector-assets.js","camera":"camera.js","events":"presentation-events.js","hud":"hud.js","debug":"debug-tools.js","vectorAssetsLoader":"vector-assets-loader.js","navigation":"navigation.js","objectPool":"object-pool.js","geometry":"geometry.js","spatial":"spatial.js","face":"face.js","pathfield":"pathfield.js","vision":"vision.js","contactSolver":"contact-solver.js","scenario":"scenario.js","boot":"boot.js","metrics":"metrics.js","save":"save.js"});
 const SESSION_MODULE_NAMES = new Set([
@@ -23,6 +24,7 @@ const RALLY_VECTOR_ASSET_MANIFEST_URL = new URL('assets/units/manifest.json', RA
     .href;
 let RALLY_NETCODE_URL = RALLY_GAMEKIT_SOURCE.lock;
 let RallyNetcode, RallyGamekit, RallyBoot;
+let sdkBase;
 // Boot stage id → { begin, end } in performance.now() ms, filled by a RallyBoot listener (page realm only).
 const RallyBootMarks = {};
 // Startup stages and their share of the bar: measured wall time on a desktop build, in tenths of a second, with the
@@ -60,8 +62,7 @@ async function importVerifiedModule(url, sha256, name) {
     }
 }
 async function loadRallyVectorAssets(loaderModule, boot) {
-    const response = await fetch(RALLY_VECTOR_ASSET_MANIFEST_URL, { cache: 'no-store' });
-    if (!response.ok) throw new Error('Unit SVG manifest를 불러오지 못했습니다.');
+    const response = await fetchAsset(RALLY_VECTOR_ASSET_MANIFEST_URL, { cache: 'no-store' });
     const manifest = await response.json();
     if (
         !manifest ||
@@ -101,14 +102,17 @@ async function loadRallyVectorAssets(loaderModule, boot) {
     // Preserve the pre-upgrade SVG geometry: curve16 and round-stroke arc12.
     const loaded = await Promise.all(
         manifest.assets.map(async (entry) => {
-            const asset = await loader.load(new URL(entry.sourcePath, RALLY_ASSET_ROOT).href, {
-                sourcePath: entry.sourcePath,
-                expectedSha256: entry.sha256,
-                maxBytes: entry.bytes,
-                curveSegments: 16,
-                strokeArcDivisions: 12,
-                includeSourcePaths: false,
-            });
+            const url = new URL(entry.sourcePath, RALLY_ASSET_ROOT).href;
+            const asset = await requireAsset(url, () =>
+                loader.load(url, {
+                    sourcePath: entry.sourcePath,
+                    expectedSha256: entry.sha256,
+                    maxBytes: entry.bytes,
+                    curveSegments: 16,
+                    strokeArcDivisions: 12,
+                    includeSourcePaths: false,
+                }),
+            );
             if (asset.sourceSha256 !== entry.sha256 || Object.hasOwn(asset, 'sourcePaths'))
                 throw new Error(
                     'Unit SVG 무결성 또는 compiler output 검증에 실패했습니다: ' + entry.id,
@@ -122,18 +126,23 @@ async function loadRallyVectorAssets(loaderModule, boot) {
     return { assets: Object.freeze(Object.fromEntries(loaded)), loader };
 }
 try {
-    const lockResponse = await fetch(RALLY_GAMEKIT_SOURCE.lock, { cache: 'no-store' });
-    if (!lockResponse.ok)
-        throw new Error(
-            'Gamekit lock를 불러오지 못했습니다. npm run setup:gamekit 후 HTTP 서버를 실행해 주세요.',
-        );
-    const gamekitLock = await lockResponse.json();
-    if (
-        gamekitLock.repository !== 'byh-playground/bloom-gamekit' ||
-        !/^[a-f0-9]{40}$/.test(gamekitLock.sourceCommit || '') ||
-        !/^[a-f0-9]{40}$/.test(gamekitLock.distCommit || '')
-    )
-        throw new Error('Gamekit lock 출처가 올바르지 않습니다.');
+    const gamekitLock = await requireAsset(RALLY_GAMEKIT_SOURCE.lock, async () => {
+        const response = await fetch(RALLY_GAMEKIT_SOURCE.lock, { cache: 'no-store' });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const lock = await response.json();
+        if (
+            lock?.repository !== 'byh-playground/bloom-gamekit' ||
+            !/^[a-f0-9]{40}$/.test(lock.sourceCommit || '') ||
+            !/^[a-f0-9]{40}$/.test(lock.distCommit || '')
+        )
+            throw new Error('Gamekit lock 출처가 올바르지 않습니다.');
+        for (const [name, file] of Object.entries(RALLY_GAMEKIT_MODULES)) {
+            const entry = lock.modules?.[name];
+            if (!entry || entry.file !== file || !/^[a-f0-9]{64}$/.test(entry.sha256 || ''))
+                throw new Error('Gamekit lock entry mismatch: ' + name);
+        }
+        return lock;
+    });
     const gamekitSource = Object.freeze({
         repository: gamekitLock.repository,
         sourceCommit: gamekitLock.sourceCommit,
@@ -144,21 +153,15 @@ try {
     const moduleFiles = Object.entries(RALLY_GAMEKIT_MODULES).filter(
         ([name]) => !SIM_WORKER || SESSION_MODULE_NAMES.has(name),
     );
-    for (const [name, file] of moduleFiles) {
-        const entry = gamekitLock.modules[name];
-        if (!entry || entry.file !== file || !/^[a-f0-9]{64}$/.test(entry.sha256 || ''))
-            throw new Error('Gamekit lock entry mismatch: ' + name);
-    }
-    const base =
+    const base = (sdkBase =
         'https://cdn.jsdelivr.net/gh/' +
         gamekitSource.repository +
         '@' +
         gamekitSource.distCommit +
-        '/';
-    const bootModule = await importVerifiedModule(
-        base + gamekitLock.modules.boot.file,
-        gamekitLock.modules.boot.sha256,
-        'boot',
+        '/');
+    const bootUrl = base + gamekitLock.modules.boot.file;
+    const bootModule = await requireAsset(bootUrl, () =>
+        importVerifiedModule(bootUrl, gamekitLock.modules.boot.sha256, 'boot'),
     );
     // The Worker realm only loads the session SDK; the page owns the visible bar and the art stages.
     RallyBoot = bootModule.createBoot({
@@ -198,7 +201,9 @@ try {
     };
     const modules = moduleFiles.map(([name]) => [name, namespaces[name]]);
     if (!SIM_WORKER) {
-        const loaded = await loadRallyVectorAssets(namespaces.vectorAssetsLoader, RallyBoot);
+        const loaded = await requireAsset(RALLY_VECTOR_ASSET_MANIFEST_URL, () =>
+            loadRallyVectorAssets(namespaces.vectorAssetsLoader, RallyBoot),
+        );
         const { loadGrainSpriteCanvases } = await import('../render/grain-sprite-registry.js');
         globalThis.RallyVectorAssets = loaded.assets;
         globalThis.RallyVectorAssetLoader = loaded.loader;
@@ -296,13 +301,20 @@ try {
     });
 } catch (error) {
     RallyBoot?.fail(error);
-    globalThis.__RALLY_PRESENT_FATAL__({
+    const message = String(error?.message || error);
+    const moduleName = /pinned module import failed[^:]*: ([^:]+):/.exec(message)?.[1];
+    const sdkFile = sdkBase && RALLY_GAMEKIT_MODULES[moduleName];
+    const diagnostic = {
         kind: 'RALLY_NETCODE_LOAD_FAILED',
-        message:
-            '넷코드 라이브러리를 불러오지 못해 게임을 시작할 수 없습니다. ' +
-            String(error?.message || error),
         url: RALLY_NETCODE_URL,
-    });
+    };
+    if (globalThis.__RALLY_STARTUP__)
+        globalThis.__RALLY_STARTUP__.fail(
+            error,
+            sdkFile ? sdkBase + sdkFile : undefined,
+            diagnostic,
+        );
+    else globalThis.__RALLY_PRESENT_FATAL__({ ...diagnostic, message });
     // Dependent modules never evaluate, as the old IIFE `return` stopped the app.
     await new Promise(() => {});
 }

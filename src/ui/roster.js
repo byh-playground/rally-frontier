@@ -143,7 +143,8 @@ export class Roster {
         opensRegion,
         grants = [],
     }) {
-        const result = { sunshine: 0, paid: [] };
+        const empty = () => ({ sunshine: 0, paid: [], granted: [] });
+        const result = empty();
         if (!cleared) return result;
         const saved = await this.#write((draft) => {
             result.sunshine = 0;
@@ -161,9 +162,9 @@ export class Roster {
             if (hard) mark(progress.hardCleared, 'hardFirstClear');
             if (opensRegion && !progress.regionOrder.includes(opensRegion))
                 progress.regionOrder.push(opensRegion);
-            this.#addOwned(draft, grants);
+            result.granted = this.#addOwned(draft, grants);
         });
-        return saved ? result : { sunshine: 0, paid: [] };
+        return saved ? result : empty();
     }
 
     // Opens the upgrade of an owned card for the sunshine price. Resolves false when it cannot be paid, is already
@@ -187,7 +188,13 @@ export class Roster {
     }
 
     #addOwned(draft, types) {
-        for (const type of types) if (!draft.owned.includes(type)) draft.owned.push(type);
+        const added = [];
+        for (const type of types) {
+            if (draft.owned.includes(type)) continue;
+            draft.owned.push(type);
+            added.push(type);
+        }
+        return added;
     }
 
     // Resolves whether the change reached the device save; the owned set follows the saved record only.

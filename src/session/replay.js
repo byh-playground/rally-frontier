@@ -1,3 +1,4 @@
+import { clampViewZoom } from '../render/view-zoom.js';
 // Browser replay playback and presentation.
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { StrategySim } from '../sim/strategy-sim.js';
@@ -273,7 +274,7 @@ class ReplayPlayer {
         this.refreshPresentation();
     }
     setZoom(value) {
-        this.zoom = RangeUtil.clamp(Number(value) || 1, 0.6, 1.8);
+        this.zoom = clampViewZoom(value);
         ReplayPresentation.applyReplayZoom(this.zoom);
         ReplayPresentation.syncReplayControls();
     }

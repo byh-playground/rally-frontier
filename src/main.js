@@ -64,6 +64,8 @@ import { NumberLook } from './render/number-look.js';
 import { SiegeLook } from './render/siege-look.js';
 import { UnitMotionLook } from './render/unit-motion-look.js';
 import { drawUnitHealthBar, UnitHealthLook } from './render/unit-health-look.js';
+import { HudOccupancy } from './render/hud-occupancy.js';
+import { clampViewZoom, DEFAULT_LIVE_ZOOM } from './render/view-zoom.js';
 import {
     BattlefieldProjection,
     TerrainSurfaceAtlas,
@@ -887,9 +889,6 @@ class FogVisibilityGrid {
     }
 }
 
-const DEFAULT_LIVE_ZOOM = 1.5;
-const MAX_LIVE_ZOOM = 2;
-
 const FOG_COLOR = Object.freeze({
     live: Object.freeze([0.025, 0.045, 0.048, 0.88]),
     replay: Object.freeze([0.008, 0.012, 0.018, 0.96]),
@@ -1227,6 +1226,9 @@ class GLRenderer {
         this.fxCanvas = fxCanvas;
         this.fxCtx = this.fxCanvas?.getContext('2d') || null;
         this.floatFx = [];
+        this.worldHudSpace = new HudOccupancy();
+        this.liftedDamageSpace = new HudOccupancy();
+        this.unitHudBars = [];
         this.areaHitGroups = new Map();
 
         // florr.io-inspired client-only combat feedback.
@@ -4825,13 +4827,13 @@ class GLRenderer {
         return y + height;
     }
 
-    drawWorldHudOverlay() {
+    drawWorldHudOverlay(pixelRatio) {
         const ctx = this.fxCtx,
             snap = this.snapshot;
         if (!ctx || !this.fxCanvas || !snap) return;
-        const side = this.mySide(),
-            sc = this.sc(),
-            pixelRatio = this.fxCanvas.width / Math.max(1, this.canvas.clientWidth);
+        const side = this.mySide();
+        const sc = this.sc();
+        const space = this.worldHudSpace;
 
         ctx.save();
         ctx.lineCap = 'round';
@@ -4875,6 +4877,13 @@ class GLRenderer {
                     pixelRatio,
                 );
                 by = counterBottom + gap + sc;
+                space.place(
+                    x - 35 * pixelRatio,
+                    by - 18 * pixelRatio,
+                    70 * pixelRatio,
+                    18 * pixelRatio,
+                    true,
+                );
             }
             if (damaged) {
                 const ratio = RangeUtil.clamp((b.hp || 0) / Math.max(1, b.maxHp || 1), 0, 1);
@@ -4882,10 +4891,13 @@ class GLRenderer {
                 ctx.fillRect(x - r - 1 * sc, by - 1 * sc, bw + 2 * sc, bh + 2 * sc);
                 ctx.fillStyle = ratio > 0.48 ? '#62c775' : '#f04d49';
                 ctx.fillRect(x - r, by, bw * ratio, bh);
+                space.place(x - r, by, bw, bh, true);
             }
         }
 
         const tickMs = this.presentationTargetIntervalMs(snap);
+        const bars = this.unitHudBars;
+        bars.length = 0;
         for (const u of snap.units || []) {
             const hero = LaunchRules.isHeroType(u.type);
             const bar = this.unitHealthLook.bar(u, snap.tick, tickMs, hero);
@@ -4909,7 +4921,8 @@ class GLRenderer {
             const height = Math.round(
                 Math.max((bar.mode === 'critical' ? 3 : 4) * pixelRatio, 3.2 * sc),
             );
-            drawUnitHealthBar(ctx, {
+            bars.push({
+                hero,
                 x: position.x,
                 y: position.y - radius * (hero ? 1.9 : 2.15) - 4 * pixelRatio,
                 width,
@@ -4917,7 +4930,22 @@ class GLRenderer {
                 pixelRatio,
                 ratio: bar.ratio,
                 opacity: bar.opacity,
+                faction: this.factionRelation(u.side),
             });
+        }
+        // Buildings and heroes keep their bars. When soldier bars overlap, the lower HP reads first.
+        bars.sort((a, b) => Number(b.hero) - Number(a.hero) || a.ratio - b.ratio);
+        for (const bar of bars) {
+            if (
+                space.place(
+                    bar.x - bar.width / 2 - 3 * pixelRatio,
+                    bar.y - pixelRatio,
+                    bar.width + 4 * pixelRatio,
+                    bar.height + 2 * pixelRatio,
+                    bar.hero,
+                )
+            )
+                drawUnitHealthBar(ctx, bar);
         }
 
         ctx.restore();
@@ -5235,8 +5263,10 @@ class GLRenderer {
         this.drawChainBolts(ctx);
         this.drawClientCombatFx();
 
-        // Persistent information is never hidden by combat density.
-        this.drawWorldHudOverlay();
+        const pixel = this.fxCanvas.width / Math.max(1, this.canvas.clientWidth);
+        this.worldHudSpace.reset(pixel);
+        this.liftedDamageSpace.reset(pixel);
+        this.drawWorldHudOverlay(pixel);
 
         let write = 0,
             ordinary = 0;
@@ -5254,11 +5284,12 @@ class GLRenderer {
         this.floatFx.length = write;
         this.numbersCrowded = ordinary > NumberLook.crowdAt;
 
-        // Ordinary numbers first, so a killing number, a heal or a level is never under one of them.
-        const pixel = this.fxCanvas.width / Math.max(1, this.canvas.clientWidth);
+        // Draw the latest ordinary numbers first within their free space, under kills, heals and burst totals.
+        const sc = this.sc();
         for (const first of [true, false])
-            for (const f of this.floatFx) {
-                if (NumberLook.ordinary(f) !== first) continue;
+            for (let i = 0; i < this.floatFx.length; i++) {
+                const f = this.floatFx[first ? this.floatFx.length - i - 1 : i];
+                if (NumberLook.isOrdinaryUnitDamage(f) !== first) continue;
                 const [x, y] = this.worldToPx(this.viewX(f.x), this.viewY(f.y));
                 if (
                     x < -100 ||
@@ -5267,16 +5298,56 @@ class GLRenderer {
                     y > this.fxCanvas.height + 100
                 )
                     continue;
+                const preset = FloatingTextPresentationDefinition.get(f.kind);
+                const age = f.clock.ageMs;
+                let placement = null;
+                if (first) {
+                    placement = NumberLook.damagePose(
+                        f,
+                        preset,
+                        x,
+                        y,
+                        sc,
+                        age,
+                        pixel,
+                        this.numbersCrowded,
+                    );
+                    const width = placement.size * f.text.length * 0.67 + placement.stroke * 2;
+                    const height = placement.size + placement.stroke * 2;
+                    const left = placement.x - width / 2,
+                        top = placement.y - height / 2;
+                    if (!this.worldHudSpace.place(left, top, width, height)) {
+                        // Keep one nearby damage cue above a pile, leaving the health bars readable.
+                        const vicinity = 42 * pixel;
+                        if (
+                            !this.liftedDamageSpace.place(
+                                placement.x - vicinity / 2,
+                                top,
+                                vicinity,
+                                vicinity,
+                            )
+                        )
+                            continue;
+                        const step = height + 3 * pixel;
+                        let line = 1;
+                        for (; line <= 3; line++)
+                            if (this.worldHudSpace.place(left, top - line * step, width, height))
+                                break;
+                        if (line > 3) continue;
+                        placement.y -= line * step;
+                    }
+                }
                 NumberLook.draw(
                     ctx,
                     f,
-                    FloatingTextPresentationDefinition.get(f.kind),
+                    preset,
                     x,
                     y,
-                    this.sc(),
-                    f.clock.ageMs,
+                    sc,
+                    age,
                     pixel,
                     this.numbersCrowded,
+                    placement,
                 );
             }
 
@@ -9713,7 +9784,6 @@ UiRegistry.refs.bootTitle = DomUtil.byId('bootTitle');
 UiRegistry.refs.bootStatus = DomUtil.byId('bootStatus');
 UiRegistry.refs.bootProgressBar = DomUtil.byId('bootProgressBar');
 UiRegistry.refs.bootBuild = DomUtil.byId('bootBuild');
-UiRegistry.refs.bootRetryBtn = DomUtil.byId('bootRetryBtn');
 
 UiRegistry.refs.replayOpenBtn = DomUtil.byId('replayOpenBtn');
 UiRegistry.refs.replayFileInput = DomUtil.byId('replayFileInput');
@@ -10627,7 +10697,7 @@ class ReplayPresentation {
             oldH = ActiveViewState.renderer.viewWorldH();
         const centerX = ActiveViewState.renderer.cameraLeft + oldW / 2,
             centerY = ActiveViewState.renderer.cameraTop + oldH / 2;
-        ActiveViewState.renderer.replayZoom = RangeUtil.clamp(Number(value) || 1, 0.6, 1.8);
+        ActiveViewState.renderer.replayZoom = clampViewZoom(value);
         ReplayPresentation.centerReplayCamera(centerX, centerY);
     }
     static centerReplayCamera(x, y) {
@@ -11465,14 +11535,6 @@ class MatchLifecycle {
         if (!draw) audioSystem.matchResult(mine);
         const stage = campaignStage(MatchLifecycle.selectedCampaign);
         const cleared = stage && mine && (reason === 'base-destroyed' || reason === 'boss-subdued');
-        // The card a first clear rewards (Roster.recordClear grants it), told on the result.
-        const reward =
-            cleared &&
-            stage.rewardCard &&
-            campaignProgress.records &&
-            !roster.clearedStages.has(stage.id)
-                ? stage.rewardCard
-                : null;
         const next = cleared ? campaignProgress.nextAfter(stage) : null;
         // A new-campaign stage (`act`) records its result in the roster and shows the sunshine it paid. The side goal
         // comes from the confirmed end state (SideGoal, the snapshot's `sideGoal`). The debug unlock records nothing.
@@ -11488,8 +11550,9 @@ class MatchLifecycle {
                     }),
                 )
                 .then((result) => {
-                    if (MatchLifecycle.sunshineToken === sunshineToken)
-                        LaunchScreens.renderCampaignSunshine(result);
+                    if (MatchLifecycle.sunshineToken !== sunshineToken) return;
+                    LaunchScreens.renderCampaignSunshine(result);
+                    LaunchScreens.renderCampaignReward(result.granted[0] ?? null);
                 });
         usageMetrics?.matchEnded(ActiveViewState.session, {
             result: draw ? 'draw' : mine ? 'win' : 'loss',
@@ -11497,7 +11560,7 @@ class MatchLifecycle {
             cleared: !!cleared,
         });
         // The story assumes the stage was won, so a loss shows no story.
-        LaunchScreens.renderCampaignResult(reward, next, cleared ? stage : null);
+        LaunchScreens.renderCampaignResult(next, cleared ? stage : null);
         UiRegistry.refs.resultTitle.textContent = draw ? '무승부' : mine ? '승리' : '패배';
         if (reason === 'surrender')
             UiRegistry.refs.resultText.textContent = mine
@@ -11545,6 +11608,7 @@ class MatchLifecycle {
         if (UiRegistry.refs.replaySaveBtn) UiRegistry.refs.replaySaveBtn.disabled = !replayReady;
         if (UiRegistry.refs.replayWatchBtn) UiRegistry.refs.replayWatchBtn.disabled = !replayReady;
         UiController.setUiScreen('result');
+        UiRegistry.refs.result.scrollTop = 0;
         requestAnimationFrame(() => UiRegistry.refs.result?.focus?.({ preventScroll: true }));
     }
     static openMatchMenu() {
@@ -11600,8 +11664,6 @@ class AppLifecycle {
             AppLifecycle.screenWakeLock = null;
         }
     }
-
-    static bootGateFinished = false;
 
     static pageHiddenAtWall = 0;
 
@@ -11707,24 +11769,20 @@ class AppLifecycle {
             }
         }
     }
-    // The bar and the stage text belong to GameKit boot (RallyBoot, bound in core/gamekit.js). This only sets the
-    // heading, the build line and the retry button.
-    static setBootState(title, retry = false) {
+    // GameKit owns progress within each load stage; the early startup controller owns the outcome.
+    static setBootLabel(title) {
         if (UiRegistry.refs.bootTitle) UiRegistry.refs.bootTitle.textContent = title;
         if (UiRegistry.refs.bootBuild)
             UiRegistry.refs.bootBuild.textContent = BUILD_META.commit
                 ? `v${PRODUCT_VERSION} · BUILD ${BUILD_META.commit.slice(0, 12)}`
                 : `v${PRODUCT_VERSION} · BUILD · 배포 정보 ${BUILD_META.status === 'pending' ? '확인 중' : '확인 불가'}`;
-        if (UiRegistry.refs.bootRetryBtn)
-            UiRegistry.refs.bootRetryBtn.classList.toggle('hidden', !retry);
-        UiRegistry.refs.bootGate?.classList.toggle('failed', retry);
     }
     static finishBootGate() {
-        if (AppLifecycle.bootGateFinished) return;
-        AppLifecycle.bootGateFinished = true;
+        if (!window.__RALLY_STARTUP__.finish()) return;
+        UiRegistry.refs.bootGate?.setAttribute('aria-busy', 'false');
         RallyBoot.complete();
         usageMetrics?.bootReady(RallyBootMarks);
-        AppLifecycle.setBootState('게임 준비 완료');
+        AppLifecycle.setBootLabel('게임 준비 완료');
         requestAnimationFrame(() => {
             UiRegistry.refs.bootGate?.classList.add('ready');
             setTimeout(() => {
@@ -11734,9 +11792,8 @@ class AppLifecycle {
         });
     }
     static async runBootAndStartApp() {
-        if (AppLifecycle.bootGateFinished || AppLifecycle.bootPreparing) return;
-        AppLifecycle.bootPreparing = true;
-        AppLifecycle.setBootState('게임 준비 중');
+        if (!window.__RALLY_STARTUP__.begin()) return;
+        AppLifecycle.setBootLabel('게임 준비 중');
         try {
             // Paint the stage change before the synchronous resource build blocks the thread.
             RallyBoot.begin('graphics');
@@ -11754,17 +11811,15 @@ class AppLifecycle {
             AppLifecycle.finishBootGate();
             NetworkModuleLoader.ensureReady();
         } catch (error) {
-            // A boot that failed is not reused: the retry button reloads the page.
             RallyBoot.fail(error);
-            AppLifecycle.setBootState('게임 준비 실패', true);
+            window.__RALLY_STARTUP__.fail(error);
             console.error(error);
-        } finally {
-            AppLifecycle.bootPreparing = false;
         }
     }
     // Installs the GameKit debug host on src/debug-scenes.js, loaded only for a debug address.
     static async openDebugScene(createRenderer) {
-        AppLifecycle.setBootState('확인 장면 준비 중');
+        if (!window.__RALLY_STARTUP__.begin()) return;
+        AppLifecycle.setBootLabel('확인 장면 준비 중');
         try {
             const query = new URLSearchParams(location.search);
             // No scene and no page named: the debug mode's own page, which links to the others.
@@ -11797,7 +11852,7 @@ class AppLifecycle {
             AppLifecycle.finishBootGate();
         } catch (error) {
             RallyBoot.fail(error);
-            AppLifecycle.setBootState('확인 장면 준비 실패', true);
+            window.__RALLY_STARTUP__.fail(error);
             console.error(error);
         }
     }
@@ -12704,7 +12759,7 @@ class BattlePresentation {
             const px = ((clientX - rect.left) / rect.width) * r.canvas.width;
             const py = ((clientY - rect.top) / rect.height) * r.canvas.height;
             const point = r.projectedCoordinatesAtScreen(px, py);
-            r.replayZoom = RangeUtil.clamp(value, 0.6, MAX_LIVE_ZOOM);
+            r.replayZoom = clampViewZoom(value);
             const scale = r.sc(),
                 vw = r.viewWorldW();
             r.cameraLeft = r.clampCameraLeft(point.x - (px - r.canvas.width / 2) / scale - vw / 2);
@@ -13550,8 +13605,6 @@ AppLifecycle.requestScreenWakeLock();
 BuildMetadataPresentation.renderBuildMetadata();
 void BUILD_META.load().then(() => BuildMetadataPresentation.renderBuildMetadata());
 
-if (UiRegistry.refs.bootRetryBtn)
-    UiController.bindImmediateButton(UiRegistry.refs.bootRetryBtn, () => location.reload());
 const createShowcaseRenderer = (canvas, fxCanvas) =>
     new GLRenderer(canvas, { deferLoop: true, showcase: true, fxCanvas });
 let campaignProgress;
@@ -13571,6 +13624,7 @@ if (debugAddress) {
 } else void startTitleApp();
 
 async function startTitleApp() {
+    if (window.__RALLY_STARTUP__.phase === 'failed') return;
     roster = new Roster(playerSaves.roster);
     campaignProgress = new CampaignProgress(roster, playerSaves.hints);
     // The title screens and the deck read the unlocks, so the records load before the boot and the screens start.

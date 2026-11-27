@@ -117,6 +117,11 @@ async function verifyOptionalMetadata(browser, server, routePinnedSDK, record) {
             record.commit,
         );
         const diagnostic = await page.evaluate(() => window.__RALLY_FATAL_DIAGNOSTIC__);
+        if (
+            !diagnostic.file?.endsWith('/rollback.js') ||
+            !(await page.locator('#bootGate.failed').isVisible())
+        )
+            throw new Error('Early SDK failure omitted its file or the retry screen');
         if (diagnostic.buildMetadata.productVersion !== record.productVersion)
             throw new Error('Early SDK failure omitted product version');
         if (diagnostic.build !== record.commit || diagnostic.buildMetadata.source !== 'build.json')
@@ -127,7 +132,7 @@ async function verifyOptionalMetadata(browser, server, routePinnedSDK, record) {
             page.waitForEvent('framenavigated', {
                 predicate: (frame) => frame === page.mainFrame(),
             }),
-            page.getByRole('button', { name: '새로고침', exact: true }).click(),
+            page.locator('#bootRetryBtn').click(),
         ]);
         await page.locator('#bootGate').waitFor({ state: 'hidden', timeout: 15_000 });
         if (await page.locator('#renderFatalOverlay').isVisible())
