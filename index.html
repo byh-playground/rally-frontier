@@ -453,11 +453,13 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   경기 시작 정보를 아직 못 받은 Guest는 로비 생존 확인 주기로 HELLO를 다시 보낸다.
 - 페이지 부팅은 로딩→준비→완료 또는 실패→다시 불러오기 중 하나의 상태를 가진다. 등록된 필수 CSS·ESM과 게임
   실행에 필요한 검증 파일 실패는 파일명과 다시 불러오기를 표시한다. 선택적 DOM 리소스 오류는 게임을 막지 않고,
-  실행 중 실제 JavaScript 예외는 런타임 진단 화면을 사용한다.
+  실행 중 실제 JavaScript 예외는 런타임 진단 화면을 사용한다. 모듈 묶음에서 실패 파일을 확인할 수 없으면
+  경로를 특정할 수 없다는 설명과 다시 불러오기를 표시한다.
 - 짧은 가로 화면의 타이틀은 그림과 메뉴가 별도 영역을 쓰고, 결과의 재대전·다음 전투·리플레이는 통계 앞에 둔다.
   보상 카드는 소유 기록에 실제로 추가된 경우에만 결과에 나타난다.
 - 전장 정보는 같은 화면 공간을 두고 겹치는 일반 병력 체력바와 피해 숫자를 정리한다. 거점·영웅 체력,
-  처치·회복·범위 공격 합계는 우선한다. 실시간 휠·핀치와 리플레이의 확대 상한은 3.5배다.
+  처치·회복·범위 공격 합계는 우선한다. 실시간 휠·핀치, 리플레이, 조작 도움말의 확대 상한은
+  view-zoom.js의 값을 공유한다.
 - 첫 발사 훈련은 전장 진입 시 아군 대포와 실제 표적의 투영 범위를 한 번 화면 가운데에 담는다.
   현재 보는 편의 병사는 둥근 파랑, 상대는 모난 빨강 발판으로 표시한다. 짧은 가로 화면은 전장 옆에 카드와 자원,
   또는 리플레이 조작을 배치한다.
@@ -601,14 +603,18 @@ END OF DEVELOPMENT CONTRACT
                 };
                 const failedSourceModule = () => {
                     const source = new URL('./src/', document.baseURI).href;
-                    return performance
+                    const failures = performance
                         .getEntriesByType('resource')
-                        .find(
+                        .filter(
                             (entry) =>
                                 entry.name.startsWith(source) &&
                                 new URL(entry.name).pathname.endsWith('.js') &&
                                 entry.responseStatus >= 400,
                         );
+                    const first = failures[0];
+                    return first && failures.every((entry) => entry.name === first.name)
+                        ? first
+                        : null;
                 };
                 const startupView = Object.freeze({
                     get phase() {
@@ -664,16 +670,20 @@ END OF DEVELOPMENT CONTRACT
                         if (e.target !== window) {
                             const node = e.target;
                             if (node?.hasAttribute?.('data-boot-required')) {
-                                const failed =
-                                    node.localName === 'script'
-                                        ? failedSourceModule()
-                                        : performance.getEntriesByName(node.href).at(-1);
-                                const file = failed?.name || node.src || node.href;
-                                const status = failed?.responseStatus;
-                                startupView.fail(
-                                    status >= 400 ? 'HTTP ' + status : '필수 파일 요청 실패',
-                                    file,
-                                );
+                                const module = node.localName === 'script';
+                                const requested = module ? node.src : node.href;
+                                const direct = performance
+                                    .getEntriesByName(requested)
+                                    .findLast((entry) => entry.responseStatus >= 400);
+                                const failed = direct ?? (module ? failedSourceModule() : null);
+                                // The script element only tells us the entry point for a failed import graph.
+                                const file = failed?.name ?? (module ? null : requested);
+                                const message = failed
+                                    ? 'HTTP ' + failed.responseStatus
+                                    : file
+                                      ? '필수 파일 요청 실패'
+                                      : '필수 모듈을 불러오지 못했어요. 실패한 파일 경로를 확인할 수 없어요. 다시 불러와 주세요.';
+                                startupView.fail(message, file);
                             }
                             return;
                         }
@@ -1823,9 +1833,10 @@ END OF DEVELOPMENT CONTRACT
                         <details>
                             <summary>화면 이동과 무승부</summary>
                             <p>
-                                경기는 아군 본진에서 150% 확대 상태로 시작해요. 드래그로 전장을
-                                이동하고, PC 휠이나 모바일 두 손가락으로 최대 200%까지 확대할 수
-                                있어요. 양쪽 본진이 같은 순간 파괴되면 무승부예요.
+                                경기는 아군 본진에서 <span data-help-start-zoom></span> 확대 상태로
+                                시작해요. 드래그로 전장을 이동하고, PC 휠이나 모바일 두 손가락으로
+                                최대 <span data-help-max-zoom></span>까지 확대할 수 있어요. 양쪽
+                                본진이 같은 순간 파괴되면 무승부예요.
                             </p>
                         </details>
                     </section>

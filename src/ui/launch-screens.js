@@ -7,6 +7,7 @@ import { CampaignScreen, storyMarkup } from './campaign-screen.js';
 import { unitCardStats } from './unit-card-stats.js';
 import './grain-portrait.js';
 import { UNITS, unitCard } from '../units/index.js';
+import { DEFAULT_LIVE_ZOOM, MAX_VIEW_ZOOM, formatViewZoom } from '../render/view-zoom.js';
 
 // The result line's name of each sunshine item (definitions/roster.js SUNSHINE).
 const SUNSHINE_LABELS = Object.freeze({
@@ -63,14 +64,17 @@ export class LaunchScreens {
             },
             difficulty: (host) => this.renderCampaignDifficulty(host),
         });
-        this.renderUnitHelp();
+        this.renderHelp();
         this.bindButtons();
         this.installTitleBattle();
         this.navigation.subscribe((route) => this.apply(route), { immediate: true });
     }
     // Unit-specific help lives with each unit (src/units/<id>/index.js `help`); the page holds only the slots.
-    static renderUnitHelp() {
+    static renderHelp() {
         const guide = document.querySelector('#launchHelpSheet .help-guide');
+        guide.querySelector('[data-help-start-zoom]').textContent =
+            formatViewZoom(DEFAULT_LIVE_ZOOM);
+        guide.querySelector('[data-help-max-zoom]').textContent = formatViewZoom(MAX_VIEW_ZOOM);
         const names = UNITS.filter((card) => card.hero).map((card) => card.unit.name);
         for (const slot of guide.querySelectorAll('[data-unit-hero-names]'))
             slot.replaceWith(names.join(', '));
