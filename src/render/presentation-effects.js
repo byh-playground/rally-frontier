@@ -177,11 +177,11 @@ class EffectObjectFactory {
             intensity: 0,
             seed: 0,
             presentationTick: null,
-            selfDestruct: false,
+            single: null,
         };
     }
     static resetShakeFx(v) {
-        v.selfDestruct = false;
+        v.single = null;
         v.start = 0;
         v.duration = 0;
         v.intensity = 0;
