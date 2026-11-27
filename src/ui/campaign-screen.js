@@ -6,8 +6,8 @@ import { briefGoal, sideGoalBrief } from './campaign-presentation.js';
 // The new campaign's screens (고장 카드형, docs/campaign-ux-mockup/b.html):
 //   #/campaign                       home: act 1's row, act 2's region cards, act 3's row (only chapters with stages)
 //   #/campaign/<chapter>?stage=<id>  one act or region: its stages as a row of dots and the picked stage's briefing
-// The page never scrolls: it fits by its layout (smaller pieces on a short screen), and the back button stays at
-// the header's top left. Which stage is open comes from CampaignActs; the roster holds what was cleared.
+// Chapter content scrolls when it exceeds the viewport. The header and sortie controls stay in view.
+// CampaignActs reads the roster's clear records to determine which stages are open.
 const MARKS = Object.freeze([
     ['✓', '클리어', 'firstClear'],
     ['◆', '보조 목표', 'sideGoal'],
@@ -156,7 +156,7 @@ export class CampaignScreen {
         return `<p class="cs-label"><b>2막 · 세 고장</b><span>늦게 가는 고장일수록 적이 세져요</span></p><div class="cs-regions">${cards.join('')}</div>`;
     }
 
-    static renderChapter(chapter, stageId) {
+    static renderChapter(chapter, stageId, scrollTop = 0) {
         this.header(chapter.title, () => this.nav.home());
         const stages = chapter.stages,
             picked =
@@ -181,15 +181,25 @@ export class CampaignScreen {
         });
         const body = this.$('campaignScreenBody');
         body.className = 'cs-body cs-chapter';
-        body.innerHTML = `<p class="cs-kicker">${kicker}</p><div class="cs-track">${nodes.join('')}</div><section class="cs-brief" aria-labelledby="csStageTitle">${this.briefMarkup(
+        body.innerHTML = `<div class="cs-chapter-content" role="region" aria-label="판 선택과 브리핑" tabindex="0"><p class="cs-kicker">${kicker}</p><div class="cs-track">${nodes.join('')}</div><section class="cs-brief" aria-labelledby="csStageTitle">${this.briefMarkup(
             picked,
             stages.indexOf(picked),
-        )}</section>`;
+        )}</section></div>
+<div class="cs-go-row"><div class="campaign-difficulty" role="group" aria-label="적 난이도"></div><button type="button" class="launch-btn primary cs-go">출격</button></div>`;
         for (const node of body.querySelectorAll('[data-stage]'))
             node.onclick = () => this.nav.chapter(chapter.id, node.dataset.stage);
         this.difficulty(body.querySelector('.campaign-difficulty'));
-        body.querySelector('.cs-deck').onclick = () =>
-            this.actions.openCampaignDeck(picked, () => this.renderChapter(chapter, picked.id));
+        const content = body.querySelector('.cs-chapter-content');
+        content.scrollTop = scrollTop;
+        const deck = body.querySelector('.cs-deck');
+        deck.onclick = () => {
+            const previousScrollTop = content.scrollTop;
+            this.actions.openCampaignDeck(picked, () => {
+                if (!deck.isConnected) return;
+                this.renderChapter(chapter, picked.id, previousScrollTop);
+                body.querySelector('.cs-deck').focus({ preventScroll: true });
+            });
+        };
         const launch = body.querySelector('.cs-go');
         launch.disabled = !CampaignActs.isOpen(picked, this.cleared);
         launch.onclick = () => this.actions.startCampaignStage(picked);
@@ -242,7 +252,6 @@ export class CampaignScreen {
 <div class="cs-story">${storyMarkup(stage, { brief: true })}</div>
 ${goals}
 <div class="cs-reward">${reward}<ul>${rows}</ul></div>
-${this.deckMarkup(stage)}
-<div class="cs-go-row"><div class="campaign-difficulty" role="group" aria-label="적 난이도"></div><button type="button" class="launch-btn primary cs-go">출격</button></div>`;
+${this.deckMarkup(stage)}`;
     }
 }
