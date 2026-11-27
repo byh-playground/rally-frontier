@@ -10,6 +10,7 @@ import {
 import './sim/strategy-sim.js';
 import { TerrainQuery, VisibilityPolicy } from './sim/entities.js';
 import { BotController } from './ai/bot-controller.js';
+import { soloBotProfileForSeed } from './ai/solo-bot-profiles.js';
 import { GameSession, RallySynctestDiagnostics } from './session/game-session.js';
 import { WorkerSessionProxy } from './session/worker-session-proxy.js';
 import { ReplayPlayer } from './session/replay.js';
@@ -11059,9 +11060,17 @@ class MatchLifecycle {
             stage ? CampaignDeck.deckOf(stage) : DeckEditor.getDeck(),
         );
         // CONFIG.single.botWorker runs the AI session in src/sim-worker.js; its WebRTC transport stays here.
-        const botDeck = stage?.enemyDeck;
+        const profile = stage ? null : soloBotProfileForSeed(GameSession.matchSeed(token));
+        const botDeck = stage?.enemyDeck ?? profile?.deck;
         const botSession = CONFIG.single.botWorker
-            ? new WorkerSessionProxy(botRole, botTransport, token, configFor(botRole), botDeck)
+            ? new WorkerSessionProxy(
+                  botRole,
+                  botTransport,
+                  token,
+                  configFor(botRole),
+                  botDeck,
+                  profile?.id,
+              )
             : MatchLifecycle.createSession(
                   botRole,
                   botTransport,
@@ -11070,7 +11079,9 @@ class MatchLifecycle {
                   botDeck,
               );
         const sessions = { [humanRole]: humanSession, [botRole]: botSession };
-        const bot = CONFIG.single.botWorker ? null : BotController.attach(botSession, botRole);
+        const bot = CONFIG.single.botWorker
+            ? null
+            : BotController.attach(botSession, botRole, profile?.id);
         if (CONFIG.single.botWorker)
             botSession.onFatal = (e) => {
                 if (e?.error) console.error('AI Worker 오류 원인:', e.error);

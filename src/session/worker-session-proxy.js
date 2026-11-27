@@ -10,7 +10,7 @@ export class WorkerSessionProxy {
         'rebuildRecoveryGuest',
         'forceReconnect',
     ]);
-    constructor(role, transport, token, config, deck) {
+    constructor(role, transport, token, config, deck, profileId) {
         this.role = role;
         this.roomCode = token;
         this.transport = transport;
@@ -71,6 +71,7 @@ export class WorkerSessionProxy {
                     netcodeState: transport.netcodeState,
                     netcodeMode: CONFIG.netcode.mode,
                     deck,
+                    profileId,
                 });
                 this.started = true;
                 for (const [message, transfer] of this.outbox)

@@ -78,6 +78,29 @@ const observer = `window.__simWorkerE2E={MatchLifecycle,RecoveryTelemetry,AppLif
             .workers()
             .find((worker) => new URL(worker.url()).pathname.endsWith('/src/sim-worker.js'));
         assert.ok(aiWorker, 'The dedicated AI worker entry is running');
+        const expectedBot = await page.evaluate(async () => {
+            const { GameSession } = await import('/src/session/game-session.js');
+            const { soloBotProfileForSeed } = await import('/src/ai/solo-bot-profiles.js');
+            const match = window.__simWorkerE2E.MatchLifecycle.singleMatch;
+            const profile = soloBotProfileForSeed(GameSession.matchSeed(match.roomCode));
+            return {
+                id: profile.id,
+                deck: profile.deck,
+                matchDeck: match.sessions.host.sim.decks[1],
+            };
+        });
+        const actualBot = await aiWorker.evaluate(async () => {
+            const { SimWorkerHost } = await import('/src/session/sim-worker-host.js');
+            return { id: SimWorkerHost.bot.profile?.id, deck: SimWorkerHost.session.sim.decks[1] };
+        });
+        assert.equal(actualBot.id, expectedBot.id, 'the Worker uses the selected solo profile');
+        assert.deepEqual(actualBot.deck, expectedBot.deck, 'the Worker uses the profile deck');
+        assert.deepEqual(
+            expectedBot.matchDeck,
+            expectedBot.deck,
+            'both peers see the same bot deck',
+        );
+
         const workerBoot = await aiWorker.evaluate(() => ({
             document: typeof globalThis.document,
             storage: typeof globalThis.localStorage,

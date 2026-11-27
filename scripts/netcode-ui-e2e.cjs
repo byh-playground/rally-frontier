@@ -184,6 +184,29 @@ async function runRole(browser, url, humanRole) {
             { timeout: 15000 },
         );
         const initial = await page.evaluate(() => window.__netcodeE2E.inspect());
+        const soloProfile = await page.evaluate(async () => {
+            const { GameSession } = await import('/src/session/game-session.js');
+            const { soloBotProfileForSeed } = await import('/src/ai/solo-bot-profiles.js');
+            const match = window.__netcodeE2E.MatchLifecycle.singleMatch;
+            const profile = soloBotProfileForSeed(GameSession.matchSeed(match.roomCode));
+            return {
+                actual: match.bot.profile?.id,
+                expected: profile.id,
+                deck: match.sessions[match.humanRole].sim.decks[match.bot.side],
+                expectedDeck: profile.deck,
+            };
+        });
+        assert.equal(
+            soloProfile.actual,
+            soloProfile.expected,
+            'the in-page opponent uses the selected profile',
+        );
+        assert.deepEqual(
+            soloProfile.deck,
+            soloProfile.expectedDeck,
+            'the in-page opponent uses the profile deck',
+        );
+
         fs.writeFileSync(
             path.join(output, humanRole + '-initial.json'),
             JSON.stringify(initial, null, 2),

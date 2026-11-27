@@ -18,6 +18,7 @@ import { LaunchRules } from './sim/launch-rules.js';
 import { HashUtil, MapGeneration } from './sim/map-generation.js';
 import { HERO_LEVEL_KILLS, RESOURCE_SCALE } from './units/baseline.js';
 import { BotController } from './ai/bot-controller.js';
+import { soloBotProfile } from './ai/solo-bot-profiles.js';
 import { Blight } from './sim/blight.js';
 import { BlightBoss } from './sim/blight-boss.js';
 import { BlightField } from './sim/blight-field.js';
@@ -839,9 +840,10 @@ function completeOutposts(sim) {
 
 // The match AI plays the given sides through the session surface BotController reads (as in the Worker host);
 // what it decides on a tick's state runs on the next tick. `fired[role]` counts each side's launched cards.
-function attachBots(sim, roles = ['host', 'guest']) {
+function attachBots(sim, roles = ['host', 'guest'], profiles = {}) {
     let sequence = 0;
     const fired = { host: {}, guest: {} };
+    const opening = { host: [], guest: [] };
     const bots = roles.map((role) => {
         const session = {
             role,
@@ -853,8 +855,16 @@ function attachBots(sim, roles = ['host', 'guest']) {
             getPendingCommandTickets: () => [],
             command(action) {
                 sequence++;
-                if (action.type === 'LAUNCH')
+                if (action.type === 'LAUNCH') {
                     fired[role][action.unitType] = (fired[role][action.unitType] || 0) + 1;
+                    if (opening[role].length < 4)
+                        opening[role].push({
+                            type: action.unitType,
+                            x: action.x,
+                            y: action.y,
+                            tick: sim.tick,
+                        });
+                }
                 sim.queueCommand({
                     tick: sim.tick + 1,
                     seq: sequence,
@@ -870,13 +880,14 @@ function attachBots(sim, roles = ['host', 'guest']) {
                 return true;
             },
         };
-        return new BotController(session, { role });
+        return new BotController(session, { role, profileId: profiles[role] });
     });
     const decide = () => {
         const snapshot = sim.snapshot();
         for (const bot of bots) bot.handleSnapshot(snapshot);
     };
     decide.fired = fired;
+    decide.opening = opening;
     decide.roles = Object.fromEntries(roles.map((role, i) => [role, bots[i]]));
     return decide;
 }
@@ -3664,8 +3675,20 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
          * 민들레씨 포함: `?debug=1&scene=ai-match&map=standard&seed=7&deck=watermelon,rice,pea,corn,popcorn,chestnut,sunflower-seed,dandelion&tick=6000`
          */
         'ai-match'(params) {
-            const sim = createMatchSim('ai-match', params.map, params.seed, params.deck);
-            const bots = attachBots(sim),
+            const profile = params.profile === undefined ? null : soloBotProfile(params.profile);
+            const sim = profile
+                ? new StrategySim(
+                      integer('ai-match', 'seed', params.seed),
+                      GameRuleRuntime.resolveMatchRules({ presetId: params.map }),
+                      [
+                          params.deck === undefined
+                              ? LaunchRules.starterDeck
+                              : params.deck.split(','),
+                          profile.deck,
+                      ],
+                  )
+                : createMatchSim('ai-match', params.map, params.seed, params.deck);
+            const bots = attachBots(sim, ['host', 'guest'], { guest: profile?.id }),
                 probe = createKnockbackProbe(sim, flag('ai-match', 'trace', params.trace)),
                 flight = createFlightProbe(sim),
                 rider = createRiderProbe(sim),
@@ -3692,6 +3715,17 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     wallet: sim.wallet.slice(),
                     premiumWallet: sim.premiumWallet.slice(),
                     launches: sim.launchStats.launches.slice(),
+                    ...(profile
+                        ? {
+                              profile: {
+                                  id: profile.id,
+                                  name: profile.name,
+                                  deck: profile.deck,
+                                  fired: bots.fired.guest,
+                                  opening: bots.opening.guest,
+                              },
+                          }
+                        : {}),
                     ammo: ammo.state(),
                     knockback: probe.state(),
                     outside: probe.outside(),

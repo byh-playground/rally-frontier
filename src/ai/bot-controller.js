@@ -11,6 +11,7 @@ import { UnitDefinition } from '../definitions/units.js';
 import { SimulationTiming } from '../core/simulation-timing.js';
 import { BOT_LAUNCH_RULES } from '../sim/capabilities/bot-launch-rules.js';
 import { UnitFlight } from '../sim/capabilities/unit-flight.js';
+import { soloBotProfile } from './solo-bot-profiles.js';
 
 // Tracks the bot's commands from offer to the sim's receipt, so a shot already paid for
 // is not paid again from a snapshot that predates it.
@@ -167,8 +168,8 @@ class AiCommandExecutor {
 const DECISION_INTERVAL_MS = 1_000;
 
 class BotController {
-    static attach(session, role) {
-        const bot = new BotController(session, { role });
+    static attach(session, role, profileId = null) {
+        const bot = new BotController(session, { role, profileId });
         session.publishConfirmedSnapshots = true;
         session.onSnapshot = (state) => bot.handleSnapshot(state);
         session.onLog = () => {};
@@ -178,6 +179,7 @@ class BotController {
     }
     constructor(session, options = {}) {
         this.session = session;
+        this.profile = options.profileId == null ? null : soloBotProfile(options.profileId);
         this.commandExecutor = new AiCommandExecutor(this);
         this.role = options.role || session.role || 'guest';
         this.side = ConnectionSideUtil.roleSide(this.role);
@@ -209,7 +211,9 @@ class BotController {
         try {
             this.decisionIntervalTicks = Math.max(
                 1,
-                SimulationTiming.time(tps).ceilTicks(DECISION_INTERVAL_MS),
+                SimulationTiming.time(tps).ceilTicks(
+                    this.profile?.decisionIntervalMs ?? DECISION_INTERVAL_MS,
+                ),
             );
             if (state.tick - this.lastLaunchTick >= this.decisionIntervalTicks) {
                 this.lastLaunchTick = state.tick;
@@ -289,7 +293,11 @@ class BotController {
         return (point?.production.premium?.incomePerSecond ?? 0) > 0;
     }
 
-    static captureShot(cannons, objectives, deck, level) {
+    static prefersResource(point, resource) {
+        return resource === 'basic' ? point.resourceType === 'basic' : this.hasOil(point);
+    }
+
+    static captureShot(cannons, objectives, deck, level, resource = 'premium') {
         const support = LaunchRules.captureHoldRadius - 100;
         const workers = deck.filter(({ type }) => {
             const unit = UnitDefinition.get(type);
@@ -304,8 +312,8 @@ class BotController {
             })
             .sort(
                 (a, b) =>
-                    Number(this.hasOil(b.target)) - Number(this.hasOil(a.target)) ||
-                    a.distance - b.distance,
+                    Number(this.prefersResource(b.target, resource)) -
+                        Number(this.prefersResource(a.target, resource)) || a.distance - b.distance,
             )[0];
     }
 
@@ -316,6 +324,13 @@ class BotController {
             if (shot && (!best || shot.distance < best.distance)) best = shot;
         }
         return best;
+    }
+
+    static advanceShot(cannons, target, units) {
+        const cannon = cannons.reduce((best, candidate) =>
+            this.distance(candidate, target) < this.distance(best, target) ? candidate : best,
+        );
+        return { cannon, target, units, distance: this.distance(cannon, target), kind: 'advance' };
     }
 
     fire(shot, unit, level, tick, aimExactly = false) {
@@ -347,9 +362,11 @@ class BotController {
                 3;
         const suitable = shot.units.filter((unit) => unit.premiumCost <= state.premiumWallet[side]);
         const specialists = suitable.filter((unit) => unit.premiumCost > 0);
-        const pool = !urgent && specialists.length ? specialists : suitable;
-        const deployedVolleys = ({ type, count }) => (stats[type]?.deployed || 0) / count;
+        const pool = !this.profile && !urgent && specialists.length ? specialists : suitable;
+        const weight = ({ type }) => this.profile?.weights[type] ?? 1;
+        const share = (unit) => (stats[unit.type]?.deployed || 0) / (unit.count * weight(unit));
         const effect = ({ type }) => {
+            if (this.profile && shot.kind === 'advance') return 0;
             const definition = UnitDefinition.get(type);
             // A flying unit is answered only by anti-air (UnitFlight): no ground card can hit it before it lands.
             if (UnitFlight.airborne(shot.target))
@@ -370,14 +387,21 @@ class BotController {
             if (BuildingDefinition.get(shot.target.type) && definition.role === 'ranged') return 1;
             return 0;
         };
-        const ranked = pool
-            .filter((unit) => (urgent || !hasIncome ? unit.cost <= budget : true))
-            .sort(
+        const flightTarget = UnitFlight.airborne(shot.target);
+        const costReady = ({ cost }) => (!urgent && hasIncome) || cost <= budget;
+        const ranked = pool.filter(costReady);
+        if (this.profile) {
+            // A target's best counter gets a larger share, while the profile still favors its main cards.
+            const nextShare = (unit) => (share(unit) + 1 / weight(unit)) / (1 + effect(unit) * 0.5);
+            ranked.sort(
                 (a, b) =>
-                    effect(b) - effect(a) ||
-                    deployedVolleys(a) - deployedVolleys(b) ||
+                    (flightTarget ? effect(b) - effect(a) : 0) ||
+                    nextShare(a) - nextShare(b) ||
+                    weight(b) - weight(a) ||
                     b.cost - a.cost,
             );
+        } else
+            ranked.sort((a, b) => effect(b) - effect(a) || share(a) - share(b) || b.cost - a.cost);
         const unit = ranked[0];
         return unit?.cost <= budget ? unit : null;
     }
@@ -478,20 +502,45 @@ class BotController {
                     sum + (b.construction ? b.construction.cost - b.construction.invested : 0),
                 0,
             );
+        if (
+            enemyBase &&
+            state.launchStats.launches[side] < (this.profile?.openingAdvanceVolleys ?? 0)
+        ) {
+            const shot = BotController.advanceShot(cannons, enemyBase, groundDeck);
+            const unit = this.chooseCombatUnit(shot, state, budget, hasIncome, enemies);
+            if (unit) {
+                this.fire(shot, unit, level, state.tick);
+                return;
+            }
+        }
+
         const objectives = this.captureObjectives(state);
-        const capture = BotController.captureShot(cannons, objectives, deck, level);
+        const preferredResource = this.profile?.preferredResource ?? 'premium';
+        const capture = BotController.captureShot(
+            cannons,
+            objectives,
+            deck,
+            level,
+            preferredResource,
+        );
         const premiumTargets = hostile.filter((b) =>
             state.capturePoints.some(
                 (point) => point.outpostId === b.id && BotController.hasOil(point),
             ),
         );
         if (level < 2) {
-            const nextCapture = BotController.captureShot(cannons, objectives, deck, level + 1);
+            const nextCapture = BotController.captureShot(
+                cannons,
+                objectives,
+                deck,
+                level + 1,
+                preferredResource,
+            );
             const unlocksCapture =
                 nextCapture &&
                 (!capture ||
-                    (BotController.hasOil(nextCapture.target) &&
-                        !BotController.hasOil(capture.target)));
+                    (BotController.prefersResource(nextCapture.target, preferredResource) &&
+                        !BotController.prefersResource(capture.target, preferredResource)));
             const unlocksPremiumAttack =
                 !capture &&
                 !BotController.nearestShot(cannons, premiumTargets, combatDeck, level) &&
@@ -544,21 +593,14 @@ class BotController {
             if (hasIncome) return;
         }
 
+        const engage = BotController.nearestShot(cannons, enemies, groundDeck, level);
+        const bombard = BotController.nearestShot(cannons, hostile, combatDeck, level);
         let shot =
-            BotController.nearestShot(cannons, enemies, groundDeck, level) ||
-            premiumShot ||
-            BotController.nearestShot(cannons, hostile, combatDeck, level);
-        if (!shot && enemyBase && !objectives.some(({ supported }) => supported)) {
-            const cannon = cannons.reduce((best, candidate) =>
-                distance(candidate, enemyBase) < distance(best, enemyBase) ? candidate : best,
-            );
-            shot = {
-                cannon,
-                target: enemyBase,
-                distance: distance(cannon, enemyBase),
-                units: combatDeck,
-            };
-        }
+            this.profile?.attackPriority === 'buildings'
+                ? premiumShot || bombard || engage
+                : engage || premiumShot || bombard;
+        if (!shot && enemyBase && !objectives.some(({ supported }) => supported))
+            shot = BotController.advanceShot(cannons, enemyBase, combatDeck);
         if (!shot) return;
         const unit = this.chooseCombatUnit(shot, state, budget, hasIncome, enemies);
         if (unit) this.fire(shot, unit, level, state.tick);
