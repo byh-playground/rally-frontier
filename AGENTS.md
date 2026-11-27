@@ -67,8 +67,8 @@ USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES 
 
 ## PR·머지·배포
 
-- 브랜치·PR·검증 후 머지는 PM-006과 [.agents/skills/rally-review-merge/SKILL.md](.agents/skills/rally-review-merge/SKILL.md)를 따른다. 검증한 구현 PR은 별도 확인 없이 머지한다. 등록·푸시·리뷰만 요청한 경우나 사용자가 직접 머지하겠다고 한 경우는 그 범위를 지킨다.
-- 이 저장소는 작업 커밋을 하나로 squash한 뒤 **Merge commit**으로 통합한다. 검증한 head SHA를 고정하고, 머지 후 로컬 `main` 동기화와 완료 브랜치 정리를 해당 스킬로 수행한다. 다른 담당자의 worktree와 미반영 변경은 보존한다.
+- 브랜치·PR·검증 후 머지는 공통 PM-006을 따른다. 검증한 구현 PR은 별도 확인 없이 머지한다. 등록·푸시·리뷰만 요청한 경우나 사용자가 직접 머지하겠다고 한 경우는 그 범위를 지킨다.
+- 이 저장소는 작업 커밋을 하나로 squash한 뒤 **Merge commit**으로 통합한다. 검증한 head SHA를 고정하고, 머지 후 로컬 `main`을 동기화하고 완료한 작업 브랜치를 정리한다. 다른 담당자의 worktree와 미반영 변경은 보존한다.
 - `main` 푸시는 Pages 배포와 Nightly 태그 생성을 유발한다. Stable은 PM-005에 따라 검증·승인한 커밋을 불변 태그로 명시 승격할 때만 만든다. 제품 버전·빌드 성공·배포 완료·검증 완료를 Stable과 동일시하지 않는다.
 - 개선 항목 등록·관리·배정·인계 요청은 [.agents/skills/pr-task-manager/SKILL.md](.agents/skills/pr-task-manager/SKILL.md)를 적용한다. 같은 업무의 의도·담당·상태는 PR 본문 하나에서 관리한다.
 
