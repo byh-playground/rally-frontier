@@ -65,7 +65,7 @@ import { SiegeLook } from './render/siege-look.js';
 import { UnitMotionLook } from './render/unit-motion-look.js';
 import { drawUnitHealthBar, UnitHealthLook } from './render/unit-health-look.js';
 import { HudOccupancy } from './render/hud-occupancy.js';
-import { clampViewZoom, DEFAULT_LIVE_ZOOM } from './render/view-zoom.js';
+import { clampViewZoom, DEFAULT_LIVE_ZOOM, formatViewZoom } from './render/view-zoom.js';
 import {
     BattlefieldProjection,
     TerrainSurfaceAtlas,
@@ -10791,7 +10791,9 @@ class ReplayPresentation {
         if (UiRegistry.refs.replaySpeed)
             UiRegistry.refs.replaySpeed.value = String(ReplayPresentation.replayPlayer.speed);
         if (UiRegistry.refs.replayZoomValue)
-            UiRegistry.refs.replayZoomValue.textContent = `${Math.round((ReplayPresentation.replayPlayer.zoom || 1) * 100)}%`;
+            UiRegistry.refs.replayZoomValue.textContent = formatViewZoom(
+                ReplayPresentation.replayPlayer.zoom || 1,
+            );
     }
     static replayImportFailureMessage(error) {
         const detail = String(error?.message || error || '');
