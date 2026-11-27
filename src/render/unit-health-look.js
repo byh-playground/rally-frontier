@@ -38,13 +38,20 @@ export class UnitHealthLook {
     }
 }
 
-export function drawUnitHealthBar(ctx, { x, y, width, height, pixelRatio, ratio, opacity }) {
+export function drawUnitHealthBar(
+    ctx,
+    { x, y, width, height, pixelRatio, ratio, opacity, faction },
+) {
     const left = Math.round(x - width / 2),
         top = Math.round(y),
         border = Math.max(1, pixelRatio);
     ctx.globalAlpha = opacity;
     ctx.fillStyle = '#12171b';
     ctx.fillRect(left - border, top - border, width + 2 * border, height + 2 * border);
+    if (faction === 'friendly' || faction === 'enemy') {
+        ctx.fillStyle = faction === 'friendly' ? '#76a9ff' : '#ff9088';
+        ctx.fillRect(left - 3 * border, top - border, 2 * border, height + 2 * border);
+    }
     ctx.fillStyle = '#475159';
     ctx.fillRect(left, top, width, height);
     ctx.fillStyle = ratio <= CRITICAL_RATIO ? '#ef7464' : '#8fe27e';

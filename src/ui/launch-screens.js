@@ -316,16 +316,21 @@ export class LaunchScreens {
         );
     }
     // `stage` is the won campaign stage (null outside the campaign or on a loss): a new-campaign stage shows its story.
-    static renderCampaignResult(reward, nextStage, stage = null) {
+    static renderCampaignResult(nextStage, stage = null) {
         const $ = this.$;
         const story = $('resultCampaignStory');
         story.hidden = !stage?.story;
         story.innerHTML = stage?.story ? storyMarkup(stage, { result: true }) : '';
-        this.resultReward = reward;
         this.resultNextStage = nextStage;
-        $('resultCampaignReward').hidden = !reward;
         $('resultNextCampaignBtn').hidden = !nextStage;
         $('rematchBtn').hidden = !!nextStage;
+        this.renderCampaignReward(null);
+    }
+
+    static renderCampaignReward(reward) {
+        const $ = this.$;
+        this.resultReward = reward;
+        $('resultCampaignReward').hidden = !reward;
         if (!reward) return;
         $('resultRewardText').textContent = `${this.actions.grainName(reward)} 카드를 얻었어요`;
         const portrait = $('resultRewardPortrait');

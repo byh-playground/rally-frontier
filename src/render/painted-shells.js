@@ -1,6 +1,8 @@
 // The launch shells painted as their own art: the crop bundled, wrapped or netted, never the soldier itself.
 // One atlas image (assets/shells/atlas.png) holds them all. Every picture points its front to +x, and the shell is
 // drawn nose first along its flight (and broken apart where it lands, like any launch shell).
+import { fetchAsset, requireAsset } from '../core/required-asset.js';
+
 const ROOT = new URL('../../assets/shells/', import.meta.url);
 const FILE = 'atlas.png';
 // Each shell's rectangle [x, y, width, height] in the atlas. Heroes' shells are drawn larger.
@@ -29,28 +31,33 @@ const WIDTH = 1.1,
 const HEROES = Object.freeze(['watermelon', 'banana', 'grape']);
 
 export async function loadPaintedShellImage() {
-    const response = await fetch(new URL('manifest.json', ROOT), { cache: 'no-store' });
-    if (!response.ok) throw new Error('포탄 그림 목록을 불러오지 못했습니다.');
-    const entry = (await response.json())?.assets?.[FILE];
-    if (!Number.isSafeInteger(entry?.bytes) || !/^[a-f0-9]{64}$/.test(entry.sha256 || ''))
-        throw new Error('포탄 그림 목록이 올바르지 않습니다.');
-    const imageResponse = await fetch(new URL(FILE, ROOT), { cache: 'no-cache' });
-    if (!imageResponse.ok) throw new Error('포탄 그림을 불러오지 못했습니다.');
-    const bytes = await imageResponse.arrayBuffer();
-    const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (v) =>
-        v.toString(16).padStart(2, '0'),
-    ).join('');
-    if (bytes.byteLength !== entry.bytes || hash !== entry.sha256)
-        throw new Error('포탄 그림 무결성 오류');
-    const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
-    try {
-        const image = new Image();
-        image.src = url;
-        await image.decode();
-        return image;
-    } finally {
-        URL.revokeObjectURL(url);
-    }
+    const manifest = new URL('manifest.json', ROOT);
+    const entry = await requireAsset(manifest, async () => {
+        const response = await fetchAsset(manifest, { cache: 'no-store' });
+        const entry = (await response.json())?.assets?.[FILE];
+        if (!Number.isSafeInteger(entry?.bytes) || !/^[a-f0-9]{64}$/.test(entry.sha256 || ''))
+            throw new Error('포탄 그림 목록이 올바르지 않습니다.');
+        return entry;
+    });
+    const atlas = new URL(FILE, ROOT);
+    return requireAsset(atlas, async () => {
+        const response = await fetchAsset(atlas, { cache: 'no-cache' });
+        const bytes = await response.arrayBuffer();
+        const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (v) =>
+            v.toString(16).padStart(2, '0'),
+        ).join('');
+        if (bytes.byteLength !== entry.bytes || hash !== entry.sha256)
+            throw new Error('포탄 그림 무결성 오류');
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+        try {
+            const image = new Image();
+            image.src = url;
+            await image.decode();
+            return image;
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    });
 }
 
 export class PaintedShells {

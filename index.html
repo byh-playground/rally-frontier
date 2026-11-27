@@ -451,6 +451,13 @@ PM-001~PM-014(버전·PR·검사·배포)을 이곳에 복제하지 않는다. �
   첫 진행 틱을 화면에 받을 때 시작을 확정한다. 준비와 연결에 각각 마감이 있고 실패·취소 시 시도를 먼저 폐기하고
   양쪽 세션을 닫는다. 다시 시도는 같은 캠페인과 역할로 새 연결을 만들며 늦게 도착한 이전 응답은 무시한다.
   경기 시작 정보를 아직 못 받은 Guest는 로비 생존 확인 주기로 HELLO를 다시 보낸다.
+- 페이지 부팅은 로딩→준비→완료 또는 실패→다시 불러오기 중 하나의 상태를 가진다. 등록된 필수 CSS·ESM과 게임
+  실행에 필요한 검증 파일 실패는 파일명과 다시 불러오기를 표시한다. 선택적 DOM 리소스 오류는 게임을 막지 않고,
+  실행 중 실제 JavaScript 예외는 런타임 진단 화면을 사용한다.
+- 짧은 가로 화면의 타이틀은 그림과 메뉴가 별도 영역을 쓰고, 결과의 재대전·다음 전투·리플레이는 통계 앞에 둔다.
+  보상 카드는 소유 기록에 실제로 추가된 경우에만 결과에 나타난다.
+- 전장 정보는 같은 화면 공간을 두고 겹치는 일반 병력 체력바와 피해 숫자를 정리한다. 거점·영웅 체력,
+  처치·회복·범위 공격 합계는 우선한다. 실시간 휠·핀치와 리플레이의 확대 상한은 3.5배다.
 - 첫 발사 훈련은 전장 진입 시 아군 대포와 실제 표적의 투영 범위를 한 번 화면 가운데에 담는다.
   현재 보는 편의 병사는 둥근 파랑, 상대는 모난 빨강 발판으로 표시한다. 짧은 가로 화면은 전장 옆에 카드와 자원,
   또는 리플레이 조작을 배치한다.
@@ -507,6 +514,285 @@ END OF DEVELOPMENT CONTRACT
             content="https://byh-playground.github.io/rally-frontier/assets/ssalkongpang-thumbnail.png?v=42f16222"
         />
         <title>쌀콩팡! | Rice, Beans &amp; Boom!</title>
+        <script id="rf-diagnostic-bootstrap">
+            (() => {
+                'use strict';
+                const state = (window.__RALLY_GLOBAL_ERROR_HANDLER__ = {
+                    installed: true,
+                    errors: [],
+                    last: null,
+                    sources: { windowError: 0, unhandledRejection: 0, diagnostic: 0 },
+                });
+                const text = (v) => {
+                    try {
+                        return typeof v === 'string' ? v : JSON.stringify(v, null, 2);
+                    } catch (_) {
+                        return String(v);
+                    }
+                };
+                const buildMetadata = () =>
+                    window.__RALLY_BUILD_METADATA__ || {
+                        id: 'unknown',
+                        commit: null,
+                        updatedAt: null,
+                        status: 'pending',
+                        source: 'build.json',
+                        executedSourceVerified: false,
+                        reason: null,
+                    };
+                const remember = (diag) => {
+                    const metadata = buildMetadata();
+                    diag = { ...diag, build: metadata.id, buildMetadata: metadata };
+                    state.last = diag;
+                    state.errors.push(diag);
+                    state.sources.diagnostic++;
+                    window.__RALLY_FATAL_DIAGNOSTIC__ = diag;
+                    return diag;
+                };
+                const present = (diag) => {
+                    diag = remember(diag);
+                    const show = () => {
+                        const overlay = document.getElementById('renderFatalOverlay');
+                        const summary = document.getElementById('renderFatalSummary');
+                        const copy = document.getElementById('renderFatalCopy');
+                        if (summary) summary.textContent = text(diag);
+                        if (copy) copy.textContent = '진단 정보 복사';
+                        if (overlay) {
+                            const firstShow = overlay.classList.contains('hidden');
+                            overlay.classList.remove('hidden');
+                            overlay.style.display = 'flex';
+                            overlay.style.visibility = 'visible';
+                            overlay.style.opacity = '1';
+                            overlay.style.zIndex = '2147483647';
+                            if (firstShow) document.getElementById('renderFatalReload')?.focus();
+                        }
+                    };
+                    show();
+                    if (document.readyState === 'loading')
+                        document.addEventListener('DOMContentLoaded', show, { once: true });
+                };
+                state.refreshBuildMetadata = () => {
+                    if (!state.last) return;
+                    const metadata = buildMetadata();
+                    for (const diag of state.errors) {
+                        diag.build = metadata.id;
+                        diag.buildMetadata = metadata;
+                    }
+                    const summary = document.getElementById('renderFatalSummary');
+                    if (summary) summary.textContent = text(state.last);
+                };
+                let startup = { phase: 'loading' };
+                document.documentElement.dataset.bootState = startup.phase;
+                const transition = (next) => {
+                    startup = next;
+                    document.documentElement.dataset.bootState = next.phase;
+                };
+                const fileName = (file) => {
+                    if (!file) return '';
+                    try {
+                        const url = new URL(file, document.baseURI);
+                        const folder = new URL('./', document.baseURI);
+                        return url.href.startsWith(folder.href)
+                            ? url.pathname.slice(folder.pathname.length)
+                            : url.href;
+                    } catch {
+                        return String(file);
+                    }
+                };
+                const failedSourceModule = () => {
+                    const source = new URL('./src/', document.baseURI).href;
+                    return performance
+                        .getEntriesByType('resource')
+                        .find(
+                            (entry) =>
+                                entry.name.startsWith(source) &&
+                                new URL(entry.name).pathname.endsWith('.js') &&
+                                entry.responseStatus >= 400,
+                        );
+                };
+                const startupView = Object.freeze({
+                    get phase() {
+                        return startup.phase;
+                    },
+                    begin() {
+                        if (startup.phase !== 'loading') return false;
+                        transition({ phase: 'preparing' });
+                        return true;
+                    },
+                    finish() {
+                        if (startup.phase !== 'preparing') return false;
+                        transition({ phase: 'ready' });
+                        return true;
+                    },
+                    fail(error, file, details = {}) {
+                        if (!['loading', 'preparing'].includes(startup.phase)) return false;
+                        const path = fileName(
+                            error?.assetUrl || file || failedSourceModule()?.name,
+                        );
+                        const diagnostic = remember({
+                            kind: 'SSALKONGPANG_BOOT_FAILED',
+                            ...details,
+                            file: path || null,
+                            message: String(error?.message || error || '게임 준비 실패'),
+                        });
+                        transition({ phase: 'failed', diagnostic });
+                        window.__RALLY_SOURCE_PROGRESS__?.disconnect();
+                        const show = () => {
+                            const { diagnostic } = startup;
+                            document.getElementById('bootTitle').textContent = path
+                                ? '필수 파일을 불러오지 못했어요'
+                                : '게임을 준비하지 못했어요';
+                            document.getElementById('bootFailure').textContent =
+                                path || diagnostic.message;
+                            const gate = document.getElementById('bootGate');
+                            gate.classList.add('failed');
+                            gate.setAttribute('aria-busy', 'false');
+                            const retry = document.getElementById('bootRetryBtn');
+                            retry.hidden = false;
+                            retry.focus();
+                        };
+                        if (document.getElementById('bootGate')) show();
+                        else document.addEventListener('DOMContentLoaded', show, { once: true });
+                        return true;
+                    },
+                });
+                window.__RALLY_STARTUP__ = startupView;
+                window.__RALLY_PRESENT_FATAL__ = present;
+                window.addEventListener(
+                    'error',
+                    (e) => {
+                        if (e.target !== window) {
+                            const node = e.target;
+                            if (node?.hasAttribute?.('data-boot-required')) {
+                                const failed =
+                                    node.localName === 'script'
+                                        ? failedSourceModule()
+                                        : performance.getEntriesByName(node.href).at(-1);
+                                const file = failed?.name || node.src || node.href;
+                                const status = failed?.responseStatus;
+                                startupView.fail(
+                                    status >= 400 ? 'HTTP ' + status : '필수 파일 요청 실패',
+                                    file,
+                                );
+                            }
+                            return;
+                        }
+                        state.sources.windowError++;
+                        if (startup.phase !== 'ready') {
+                            startupView.fail(e.error || e.message, e.filename);
+                            return;
+                        }
+                        present({
+                            kind: 'SSALKONGPANG_WINDOW_ERROR',
+                            build: document.documentElement.dataset.build || null,
+                            at: new Date().toISOString(),
+                            message: String(e?.message || e?.error?.message || 'window error'),
+                            source: e?.filename || null,
+                            line: e?.lineno || null,
+                            column: e?.colno || null,
+                            stack: String(e?.error?.stack || ''),
+                        });
+                    },
+                    true,
+                );
+                window.addEventListener('unhandledrejection', (e) => {
+                    state.sources.unhandledRejection++;
+                    const reason = e?.reason;
+                    if (startup.phase !== 'ready') {
+                        startupView.fail(reason);
+                        return;
+                    }
+                    present({
+                        kind: 'SSALKONGPANG_UNHANDLED_REJECTION',
+                        build: document.documentElement.dataset.build || null,
+                        at: new Date().toISOString(),
+                        message: String(reason?.message || reason || 'unhandled rejection'),
+                        stack: String(reason?.stack || ''),
+                    });
+                });
+
+                // No heuristic presentation watchdog. Only concrete exceptions/fatal paths reach the global diagnostic sink.
+
+                document.addEventListener(
+                    'click',
+                    async (e) => {
+                        if (e.target?.closest?.('#bootRetryBtn')) {
+                            if (startup.phase !== 'failed') return;
+                            transition({ phase: 'reloading', diagnostic: startup.diagnostic });
+                            e.target.closest('#bootRetryBtn').disabled = true;
+                            location.reload();
+                            return;
+                        }
+                        if (e.target?.closest?.('#renderFatalReload')) {
+                            location.reload();
+                            return;
+                        }
+                        const copy = e.target?.closest?.('#renderFatalCopy');
+                        const select = e.target?.closest?.('#renderFatalSelect');
+                        const summary = document.getElementById('renderFatalSummary');
+                        if (copy && summary) {
+                            const value = summary.textContent || '';
+                            try {
+                                await navigator.clipboard.writeText(value);
+                                copy.textContent = '복사됨';
+                            } catch (_) {
+                                const ta = document.createElement('textarea');
+                                ta.value = value;
+                                document.body.appendChild(ta);
+                                ta.select();
+                                try {
+                                    document.execCommand('copy');
+                                    copy.textContent = '복사됨';
+                                } finally {
+                                    ta.remove();
+                                }
+                            }
+                        }
+                        if (select && summary) {
+                            const range = document.createRange();
+                            range.selectNodeContents(summary);
+                            const sel = getSelection();
+                            sel.removeAllRanges();
+                            sel.addRange(range);
+                        }
+                    },
+                    true,
+                );
+            })();
+        </script>
+        <!-- A failed main stylesheet must still leave the startup error and retry readable. -->
+        <style>
+            :is([data-boot-state='failed'], [data-boot-state='reloading']) body > :not(#bootGate) {
+                display: none;
+            }
+            :is([data-boot-state='failed'], [data-boot-state='reloading']) #bootGate {
+                position: fixed;
+                inset: 0;
+                z-index: 2147483647;
+                display: grid;
+                place-items: center;
+                overflow: auto;
+                background: #162a1d;
+                color: #fff9e9;
+                font:
+                    16px system-ui,
+                    sans-serif;
+            }
+            :is([data-boot-state='failed'], [data-boot-state='reloading']) #bootGate .boot-card {
+                box-sizing: border-box;
+                max-width: calc(100% - 24px);
+                padding: 18px;
+            }
+            [data-boot-state='loading'] #bootFailure,
+            [data-boot-state='preparing'] #bootFailure,
+            .boot-gate.failed :is(#bootStatus, #bootProgressBar),
+            #bootRetryBtn[hidden] {
+                display: none;
+            }
+            #bootFailure {
+                overflow-wrap: anywhere;
+            }
+        </style>
         <link rel="manifest" href="./manifest.webmanifest" />
         <link
             rel="icon"
@@ -516,10 +802,10 @@ END OF DEVELOPMENT CONTRACT
         />
         <link rel="apple-touch-icon" href="./icons/ssalkongpang-180.png?v=17b3d3cd" />
 
-        <link rel="stylesheet" href="./src/styles/game.css" />
-        <link rel="stylesheet" href="./src/styles/deck.css" />
-        <link rel="stylesheet" href="./src/styles/campaign-presentation.css" />
-        <link rel="stylesheet" href="./src/styles/campaign-screen.css" />
+        <link rel="stylesheet" data-boot-required href="./src/styles/game.css" />
+        <link rel="stylesheet" data-boot-required href="./src/styles/deck.css" />
+        <link rel="stylesheet" data-boot-required href="./src/styles/campaign-presentation.css" />
+        <link rel="stylesheet" data-boot-required href="./src/styles/campaign-screen.css" />
         <link rel="stylesheet" href="./src/styles/help.css" />
         <link rel="stylesheet" href="./src/styles/result-stats.css" />
     </head>
@@ -554,7 +840,8 @@ END OF DEVELOPMENT CONTRACT
                 <div id="bootStatus" class="boot-status">게임을 준비합니다.</div>
                 <progress id="bootProgressBar" class="boot-progress" max="1" value="0"></progress>
                 <div id="bootBuild" class="boot-build">&nbsp;</div>
-                <button id="bootRetryBtn" class="boot-retry hidden" type="button">
+                <p id="bootFailure" role="alert"></p>
+                <button id="bootRetryBtn" class="boot-retry" type="button" hidden>
                     다시 불러오기
                 </button>
             </div>
@@ -574,7 +861,7 @@ END OF DEVELOPMENT CONTRACT
                         files++;
                         bytes += entry.encodedBodySize || 0;
                     }
-                    if (files)
+                    if (files && window.__RALLY_STARTUP__.phase === 'loading')
                         status.textContent =
                             `게임 파일 ${files}개 받는 중` +
                             (bytes ? ` · ${(bytes / 1024 / 1024).toFixed(1)}MB` : '');
@@ -1394,9 +1681,21 @@ END OF DEVELOPMENT CONTRACT
             tabindex="-1"
         >
             <div class="result-card">
-                <p id="resultText" class="result-why"></p>
                 <h2 id="resultTitle">승리</h2>
+                <p id="resultText" class="result-why"></p>
                 <p id="resultSunshine" class="result-sunshine" hidden></p>
+                <button id="resultNextCampaignBtn" class="launch-btn primary" type="button" hidden>
+                    다음 전투
+                </button>
+                <button id="rematchBtn" class="launch-btn primary" type="button">다시 대전</button>
+                <div class="launch-row">
+                    <button id="replayWatchBtn" class="launch-btn secondary" type="button">
+                        리플레이
+                    </button>
+                    <button id="resultTitleBtn" class="launch-btn secondary" type="button">
+                        타이틀
+                    </button>
+                </div>
                 <div id="resultCampaignStory" class="cs-story result-campaign-story" hidden></div>
                 <section id="resultCampaignReward" class="result-campaign-reward" hidden>
                     <img id="resultRewardPortrait" alt="" />
@@ -1407,9 +1706,6 @@ END OF DEVELOPMENT CONTRACT
                         </button>
                     </div>
                 </section>
-                <button id="resultNextCampaignBtn" class="launch-btn primary" type="button" hidden>
-                    다음 전투
-                </button>
                 <div id="resultStats" class="launch-stats"></div>
                 <section
                     id="resultByUnit"
@@ -1436,15 +1732,6 @@ END OF DEVELOPMENT CONTRACT
                     </table>
                     <p id="resultByUnitPartial" hidden>연결이 끊긴 시점까지 확인된 기록입니다.</p>
                 </section>
-                <button id="rematchBtn" class="launch-btn primary" type="button">다시 대전</button>
-                <div class="launch-row">
-                    <button id="replayWatchBtn" class="launch-btn secondary" type="button">
-                        리플레이
-                    </button>
-                    <button id="resultTitleBtn" class="launch-btn secondary" type="button">
-                        타이틀
-                    </button>
-                </div>
                 <button id="replaySaveBtn" class="hidden" type="button">⇩ 리플레이 저장</button>
             </div>
         </div>
@@ -1965,141 +2252,6 @@ END OF DEVELOPMENT CONTRACT
                 else bind();
             })();
         </script>
-        <script id="rf-diagnostic-bootstrap">
-            (() => {
-                'use strict';
-                const state = (window.__RALLY_GLOBAL_ERROR_HANDLER__ = {
-                    installed: true,
-                    errors: [],
-                    last: null,
-                    sources: { windowError: 0, unhandledRejection: 0, diagnostic: 0 },
-                });
-                const text = (v) => {
-                    try {
-                        return typeof v === 'string' ? v : JSON.stringify(v, null, 2);
-                    } catch (_) {
-                        return String(v);
-                    }
-                };
-                const buildMetadata = () =>
-                    window.__RALLY_BUILD_METADATA__ || {
-                        id: 'unknown',
-                        commit: null,
-                        updatedAt: null,
-                        status: 'pending',
-                        source: 'build.json',
-                        executedSourceVerified: false,
-                        reason: null,
-                    };
-                const present = (diag) => {
-                    const metadata = buildMetadata();
-                    diag = { ...diag, build: metadata.id, buildMetadata: metadata };
-                    state.last = diag;
-                    state.errors.push(diag);
-                    state.sources.diagnostic++;
-                    window.__RALLY_FATAL_DIAGNOSTIC__ = diag;
-                    const show = () => {
-                        const overlay = document.getElementById('renderFatalOverlay');
-                        const summary = document.getElementById('renderFatalSummary');
-                        const copy = document.getElementById('renderFatalCopy');
-                        if (summary) summary.textContent = text(diag);
-                        if (copy) copy.textContent = '진단 정보 복사';
-                        if (overlay) {
-                            const firstShow = overlay.classList.contains('hidden');
-                            overlay.classList.remove('hidden');
-                            overlay.style.display = 'flex';
-                            overlay.style.visibility = 'visible';
-                            overlay.style.opacity = '1';
-                            overlay.style.zIndex = '2147483647';
-                            if (firstShow) document.getElementById('renderFatalReload')?.focus();
-                        }
-                    };
-                    show();
-                    if (document.readyState === 'loading')
-                        document.addEventListener('DOMContentLoaded', show, { once: true });
-                };
-                state.refreshBuildMetadata = () => {
-                    if (!state.last) return;
-                    const metadata = buildMetadata();
-                    for (const diag of state.errors) {
-                        diag.build = metadata.id;
-                        diag.buildMetadata = metadata;
-                    }
-                    const summary = document.getElementById('renderFatalSummary');
-                    if (summary) summary.textContent = text(state.last);
-                };
-                window.__RALLY_PRESENT_FATAL__ = present;
-                window.addEventListener(
-                    'error',
-                    (e) => {
-                        state.sources.windowError++;
-                        present({
-                            kind: 'SSALKONGPANG_WINDOW_ERROR',
-                            build: document.documentElement.dataset.build || null,
-                            at: new Date().toISOString(),
-                            message: String(e?.message || e?.error?.message || 'window error'),
-                            source: e?.filename || null,
-                            line: e?.lineno || null,
-                            column: e?.colno || null,
-                            stack: String(e?.error?.stack || ''),
-                        });
-                    },
-                    true,
-                );
-                window.addEventListener('unhandledrejection', (e) => {
-                    state.sources.unhandledRejection++;
-                    const reason = e?.reason;
-                    present({
-                        kind: 'SSALKONGPANG_UNHANDLED_REJECTION',
-                        build: document.documentElement.dataset.build || null,
-                        at: new Date().toISOString(),
-                        message: String(reason?.message || reason || 'unhandled rejection'),
-                        stack: String(reason?.stack || ''),
-                    });
-                });
-
-                // No heuristic presentation watchdog. Only concrete exceptions/fatal paths reach the global diagnostic sink.
-
-                document.addEventListener(
-                    'click',
-                    async (e) => {
-                        if (e.target?.closest?.('#renderFatalReload')) {
-                            location.reload();
-                            return;
-                        }
-                        const copy = e.target?.closest?.('#renderFatalCopy');
-                        const select = e.target?.closest?.('#renderFatalSelect');
-                        const summary = document.getElementById('renderFatalSummary');
-                        if (copy && summary) {
-                            const value = summary.textContent || '';
-                            try {
-                                await navigator.clipboard.writeText(value);
-                                copy.textContent = '복사됨';
-                            } catch (_) {
-                                const ta = document.createElement('textarea');
-                                ta.value = value;
-                                document.body.appendChild(ta);
-                                ta.select();
-                                try {
-                                    document.execCommand('copy');
-                                    copy.textContent = '복사됨';
-                                } finally {
-                                    ta.remove();
-                                }
-                            }
-                        }
-                        if (select && summary) {
-                            const range = document.createRange();
-                            range.selectNodeContents(summary);
-                            const sel = getSelection();
-                            sel.removeAllRanges();
-                            sel.addRange(range);
-                        }
-                    },
-                    true,
-                );
-            })();
-        </script>
 
         <script type="module">
             import { BuildMetadata } from './src/core/build-metadata.js';
@@ -2109,6 +2261,6 @@ END OF DEVELOPMENT CONTRACT
                 window.__RALLY_GLOBAL_ERROR_HANDLER__?.refreshBuildMetadata?.();
             });
         </script>
-        <script type="module" src="./src/main.js"></script>
+        <script type="module" data-boot-required src="./src/main.js"></script>
     </body>
 </html>
