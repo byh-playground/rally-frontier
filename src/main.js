@@ -2788,19 +2788,13 @@ class GLRenderer {
             this.stickyClingers.set(b.id, clinger);
             this.mountedUnitIds.add(clinger.id);
         }
-        // Several beans may board one cannon on the same tick; the next to leave is the one shown.
+        // The snapshot has one authoritative rider per occupied muzzle.
         this.cannonRiders.clear();
         for (const u of s.units || []) {
             const cannon = CannonRider.boardedCannon(s, u);
             if (!cannon) continue;
             this.mountedUnitIds.add(u.id);
-            const shown = this.cannonRiders.get(cannon.id);
-            if (
-                !shown ||
-                u.cannonRide.launchTick < shown.cannonRide.launchTick ||
-                (u.cannonRide.launchTick === shown.cannonRide.launchTick && u.id < shown.id)
-            )
-                this.cannonRiders.set(cannon.id, u);
+            this.cannonRiders.set(cannon.id, u);
         }
         for (const id of this.stickyAims.keys())
             if (!this.stickyClingers.has(id)) this.stickyAims.delete(id);

@@ -236,6 +236,7 @@ class RallySimulationAdapter {
                 (Object.prototype.hasOwnProperty.call(this.identity, key) && key !== 'seed')
             )
                 throw new Error(`게임 snapshot에 runtime 필드 ${key}가 있습니다.`);
+        const occupiedMuzzles = new Set();
         for (const key of ['units', 'buildings', 'projectiles']) {
             const ids = new Set();
             for (const entity of state[key]) {
@@ -288,7 +289,7 @@ class RallySimulationAdapter {
                     HeroPassive.validateState(entity, state);
                     HeroAllyAura.validateState(entity, state);
                     HeroUltimate.validateState(entity, state);
-                    CannonRider.validateState(entity);
+                    CannonRider.validateState(entity, occupiedMuzzles);
                     RollingBody.validateState(entity, state);
                 }
                 if (key === 'projectiles') {

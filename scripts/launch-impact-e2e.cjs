@@ -30,6 +30,9 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
             const { StrategySim } = await import(
                 new URL('./src/sim/strategy-sim.js', location.href)
             );
+            const { GameRuleRuntime } = await import(
+                new URL('./src/core/game-rules.js', location.href)
+            );
             const { Building } = await import(new URL('./src/sim/entities.js', location.href));
             const { BuildingDefinition } = await import(
                 new URL('./src/definitions/buildings.js', location.href)
@@ -2323,6 +2326,92 @@ const htmlPath = path.resolve(process.argv[2] || path.join(root, 'index.html'));
                     checksum: sim.checksum(),
                 });
             }
+            // Repeated black-bean volleys used to create dozens of simultaneous riders when a target vanished.
+            {
+                const type = 'black-bean',
+                    rules = GameRuleRuntime.resolveMatchRules({ presetId: 'standard' }),
+                    sim = new StrategySim(1, rules, [[type], ['rice']]);
+                const cannon = sim.buildings.find((building) => building.id === 'base0'),
+                    enemyBase = sim.buildings.find((building) => building.id === 'base1'),
+                    distance = Math.hypot(enemyBase.x - cannon.x, enemyBase.y - cannon.y),
+                    dx = (enemyBase.x - cannon.x) / distance,
+                    dy = (enemyBase.y - cannon.y) / distance;
+                const action = {
+                    type: 'LAUNCH',
+                    cannonId: cannon.id,
+                    unitType: type,
+                    x: Math.round(cannon.x + dx * 290),
+                    y: Math.round(cannon.y + dy * 290),
+                    holdMs: Math.round(LaunchRules.holdFor(290, type, 0)),
+                };
+                sim.wallet[0] = sim.premiumWallet[0] = 1000000;
+                for (let i = 0; i < 8; i++) {
+                    const enemy = sim.spawnUnit(
+                        1,
+                        'walnut',
+                        cannon.x + dx * 335 - i * dy * 8,
+                        cannon.y + dy * 335 + i * dx * 8,
+                    );
+                    enemy.combat.cooldownUntil = enemy.combat.moveRecoveryUntil =
+                        Number.MAX_SAFE_INTEGER;
+                }
+                let commands = 0,
+                    fired = 0,
+                    landed = 0;
+                for (let tick = 0; tick < 520; tick++) {
+                    if (tick < 300 && tick % 5 === 0 && sim.applyCommand('host', action))
+                        commands++;
+                    sim.stepSimulation();
+                    const riders = sim.units.filter(
+                        (unit) =>
+                            unit.alive &&
+                            unit.cannonRide?.cannonId === cannon.id &&
+                            ['board', 'wait'].includes(unit.cannonRide.phase),
+                    );
+                    const shots = sim.events.filter(
+                        (event) => event.type === 'launchFire' && event.cannonId === cannon.id,
+                    );
+                    const returns = sim.events.filter(
+                        (event) =>
+                            event.type === 'launchLand' &&
+                            event.unit === type &&
+                            event.side === 0 &&
+                            event.totalCount === 1,
+                    );
+                    check(riders.length <= 1, 'only one black bean occupies the muzzle', {
+                        tick,
+                        riders: riders.length,
+                    });
+                    check(shots.length <= 1, 'only one black bean refires per cannon per tick', {
+                        tick,
+                        shots: shots.length,
+                    });
+                    check(
+                        returns.length <= 1,
+                        'riders using the same cannon do not land as a burst',
+                        { tick, returns: returns.length },
+                    );
+                    fired += shots.length;
+                    landed += returns.length;
+                }
+                check(
+                    commands === 7 && fired >= 10 && landed >= 10,
+                    'black beans continue cycling through the queue',
+                    { commands, fired, landed },
+                );
+                const copy = restored(sim);
+                check(
+                    JSON.stringify(trace(sim, 30)) === JSON.stringify(trace(copy, 30)),
+                    'the rider queue survives snapshot restore',
+                );
+                rows.push({
+                    scenario: 'black bean repeated volleys release one rider at a time',
+                    commands,
+                    fired,
+                    landed,
+                });
+            }
+
             // Identical mission inputs repeat exactly, including in-flight checkpoint restoration.
             const repeat = () => {
                 const { sim, x, y } = arena();
