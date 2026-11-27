@@ -892,6 +892,174 @@ function attachBots(sim, roles = ['host', 'guest'], profiles = {}) {
     return decide;
 }
 
+const AI_MATCH_FIXTURES = Object.freeze({
+    outpost: {
+        map: 'small-field',
+        cannon: [1500, 1400],
+        target: 'center-oil',
+        guard: [1500, 1650, 8],
+    },
+    'empty-outpost': { map: 'small-field', cannon: [1500, 1400], target: 'center-oil' },
+    bridge: { map: 'small-field', cannon: [1500, 1200], target: 'center-oil' },
+    relay: { map: 'small-field', cannon: [1500, 1770], relayRear: [1500, 1450] },
+    field: { map: 'small-field', cannon: [1500, 1425], guard: [1500, 1820, 10] },
+    ridge: { map: 'kings-hill', cannon: [1900, 1310], guard: [1900, 1740, 8] },
+    choke: { map: 'causeway-flats', cannon: [1460, 1298], guard: [1247, 1542, 18] },
+});
+
+// Keep the map and all gameplay rules. Only the initial positions, capture points and guest's oil differ.
+function prepareAiMatchFixture(sim, name, fixture) {
+    const [x, y] = fixture.cannon;
+    const cannon = buildOutpost(sim, { id: 'fixture-cannon', x, y }, 1);
+    if (fixture.relayRear) {
+        const [rearX, rearY] = fixture.relayRear;
+        buildOutpost(sim, { id: 'fixture-rear', x: rearX, y: rearY }, 1);
+    }
+    const target = sim.capturePoints.find((point) => point.id === fixture.target);
+    if (target && name !== 'empty-outpost') buildOutpost(sim, target, 0);
+    for (const point of sim.capturePoints) if (point !== target) point.enabled = false;
+    sim.premiumWallet[1] = LaunchRules.premiumWalletCap;
+    if (fixture.guard) {
+        const [guardX, guardY, count] = fixture.guard;
+        const { dir } = baseAxis(sim);
+        const first = sim.units.length;
+        placeBlock(sim, 0, ['rice', 'pea'], count, { x: guardX, y: guardY }, dir);
+        for (let i = first; i < sim.units.length; i++) {
+            const guard = sim.units[i];
+            guard.holdPost = { x: guard.x, y: guard.y };
+        }
+    }
+    const focus = target ?? (fixture.guard ? { x: fixture.guard[0], y: fixture.guard[1] } : cannon);
+    return { name, focus, cannon: cannon.id, target: target?.id ?? null };
+}
+
+// Read applied launch commands and the real shell and deployment events. One shell can release its
+// passengers over several ticks; follow those events by projectile id rather than counting a salvo as landings.
+function createAiMatchEvidence(sim) {
+    const MAX_RECORDS = 96;
+    const accepted = [],
+        fires = [],
+        rooted = [],
+        shells = new Map(),
+        landed = new Map(),
+        departed = new Map(),
+        flights = [],
+        destroyed = [],
+        impacts = { leap: 0, explosion: 0 };
+    let lastTick = -1;
+    function observe() {
+        if (sim.tick <= lastTick) return;
+        for (const receipt of sim.commandReceipts) {
+            if (
+                receipt.tick <= lastTick ||
+                receipt.actor !== 'guest' ||
+                receipt.type !== 'LAUNCH' ||
+                !receipt.applied ||
+                accepted.length >= MAX_RECORDS
+            )
+                continue;
+            const { cannonId, unitType, x, y } = JSON.parse(receipt.key);
+            accepted.push({ tick: receipt.tick, cannonId, unitType, x, y });
+        }
+        for (const unit of sim.units)
+            if (
+                unit.alive &&
+                unit.side === 1 &&
+                UnitFlight.airborne(unit) &&
+                !departed.has(unit.id)
+            )
+                departed.set(unit.id, { x: unit.x, y: unit.y });
+        for (const event of sim.events) {
+            if (
+                event.type === 'buildingDeath' &&
+                event.side === 0 &&
+                destroyed.length < MAX_RECORDS
+            )
+                destroyed.push({ tick: sim.tick, x: event.x, y: event.y });
+            if (event.side !== 1) continue;
+            if (event.type === 'leapLand') impacts.leap++;
+            if (event.type === 'unitSelfDestruct') impacts.explosion++;
+            if (event.type === 'flightLand' && flights.length < MAX_RECORDS) {
+                const from = departed.get(event.sourceId);
+                if (from)
+                    flights.push({
+                        tick: sim.tick,
+                        from,
+                        x: event.x,
+                        y: event.y,
+                        crossedTerrain: !sim.world.terrain.field.polygonSegmentClear(
+                            from.x,
+                            from.y,
+                            event.x,
+                            event.y,
+                            0,
+                        ),
+                    });
+            }
+            const { projectileId } = event;
+            if (event.type === 'launchFire' && fires.length < MAX_RECORDS) {
+                const payload = sim.projectiles.find(
+                    (projectile) => projectile.id === projectileId,
+                )?.payload;
+                const record = {
+                    tick: sim.tick,
+                    projectileId,
+                    cannonId: event.cannonId,
+                    unitType: payload?.type ?? null,
+                    ride: payload?.ride ?? null,
+                    x: round(event.aimX),
+                    y: round(event.aimY),
+                };
+                fires.push(record);
+                shells.set(projectileId, record);
+            } else if (event.type === 'launchLand') {
+                const fire = shells.get(projectileId);
+                if (fire && fire.unitType === null) fire.unitType = event.unit;
+                let landing = landed.get(projectileId);
+                if (!landing && landed.size < MAX_RECORDS) {
+                    landing = {
+                        projectileId,
+                        unitType: event.unit,
+                        firstTick: sim.tick,
+                        lastTick: sim.tick,
+                        count: 0,
+                        x: round(event.x),
+                        y: round(event.y),
+                    };
+                    landed.set(projectileId, landing);
+                }
+                if (landing) {
+                    landing.count += event.count;
+                    landing.lastTick = sim.tick;
+                }
+            } else if (event.type === 'forwardCannonRooted' && rooted.length < MAX_RECORDS) {
+                rooted.push({
+                    tick: sim.tick,
+                    buildingId: event.buildingId,
+                    x: round(event.x),
+                    y: round(event.y),
+                });
+            }
+        }
+        lastTick = sim.tick;
+    }
+    return {
+        observe,
+        state() {
+            observe();
+            return {
+                accepted,
+                fires,
+                landed: [...landed.values()],
+                rooted,
+                flights,
+                destroyed,
+                impacts,
+            };
+        },
+    };
+}
+
 // Card ammo (CardAmmo), read by `state().ammo` of `ai-match`·`campaign`: per side, per ammo card, `uses` (rounds
 // spent), `empties` (uses that left 0), `waits` (ticks from a use that left 0 to the card's next use, first 12),
 // `rejected` (launches refused as card-out-of-ammo). An independent model replays the observed spends with the
@@ -3672,14 +3840,28 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
         /**
          * 양쪽을 경기 AI(BotController)가 둔다. 덱은 둘 다 기본 덱(`deck`이 있으면 둘 다 그 카드들)이고, 한쪽 본진이
          * 무너지면 끝난다. 예: `?debug=1&scene=ai-match&map=standard&seed=7&tick=900`,
+         * `host=idle`이면 호스트는 투입 명령을 내리지 않는다. `fixture`는 지정 지도에서 초기 위치를 놓는다.
          * 민들레씨 포함: `?debug=1&scene=ai-match&map=standard&seed=7&deck=watermelon,rice,pea,corn,popcorn,chestnut,sunflower-seed,dandelion&tick=6000`
          */
         'ai-match'(params) {
             const profile = params.profile === undefined ? null : soloBotProfile(params.profile);
+            const fixture =
+                params.fixture === undefined
+                    ? null
+                    : Object.hasOwn(AI_MATCH_FIXTURES, params.fixture)
+                      ? AI_MATCH_FIXTURES[params.fixture]
+                      : null;
+            if (params.fixture !== undefined && !fixture)
+                throw new Error('ai-match fixture가 올바르지 않습니다: ' + params.fixture);
+            const map = params.map ?? fixture?.map;
+            if (fixture && map !== fixture.map)
+                throw new Error('ai-match fixture의 지도는 ' + fixture.map + '입니다.');
+            if (params.host !== undefined && params.host !== 'idle')
+                throw new Error('ai-match host에는 idle을 쓰거나 생략하세요.');
             const sim = profile
                 ? new StrategySim(
                       integer('ai-match', 'seed', params.seed),
-                      GameRuleRuntime.resolveMatchRules({ presetId: params.map }),
+                      GameRuleRuntime.resolveMatchRules({ presetId: map }),
                       [
                           params.deck === undefined
                               ? LaunchRules.starterDeck
@@ -3687,8 +3869,11 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                           profile.deck,
                       ],
                   )
-                : createMatchSim('ai-match', params.map, params.seed, params.deck);
-            const bots = attachBots(sim, ['host', 'guest'], { guest: profile?.id }),
+                : createMatchSim('ai-match', map, params.seed, params.deck);
+            const setup = fixture ? prepareAiMatchFixture(sim, params.fixture, fixture) : null;
+            const roles = params.host === 'idle' ? ['guest'] : ['host', 'guest'];
+            const evidence = profile || setup ? createAiMatchEvidence(sim) : null;
+            const bots = attachBots(sim, roles, { guest: profile?.id }),
                 probe = createKnockbackProbe(sim, flag('ai-match', 'trace', params.trace)),
                 flight = createFlightProbe(sim),
                 rider = createRiderProbe(sim),
@@ -3698,7 +3883,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 chain = chainProbe(sim, sim.decks.flat());
             return matchScene('ai-match', params, sim, {
                 zoom: 1,
-                focus: () => battleFocus(sim),
+                focus: () => setup?.focus ?? battleFocus(sim),
                 beforeStep: () => {
                     ammo.observe();
                     probe.observe();
@@ -3707,11 +3892,13 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     outposts.observe();
                     breath?.observe();
                     chain?.observe();
+                    evidence?.observe();
                     bots();
                 },
                 isComplete: () => sim.baseOutcome() !== null,
                 extra: () => ({
                     winner: sim.baseOutcome(),
+                    ...(setup ? { fixture: setup } : {}),
                     wallet: sim.wallet.slice(),
                     premiumWallet: sim.premiumWallet.slice(),
                     launches: sim.launchStats.launches.slice(),
@@ -3723,9 +3910,12 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                                   deck: profile.deck,
                                   fired: bots.fired.guest,
                                   opening: bots.opening.guest,
+                                  evidence: evidence.state(),
+                                  operation: bots.roles.guest.operation?.status?.() ?? null,
                               },
                           }
                         : {}),
+                    ...(!profile && evidence ? { evidence: evidence.state() } : {}),
                     ammo: ammo.state(),
                     knockback: probe.state(),
                     outside: probe.outside(),

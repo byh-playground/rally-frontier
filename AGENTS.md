@@ -30,6 +30,7 @@ USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES 
 - 디버그 모드: `?debug=1`(장면·페이지를 정하지 않은 주소)은 확인 화면 목록이다([src/ui/debug-menu.js](src/ui/debug-menu.js)). 게임에서는 타이틀 우측 상단 설정 버튼을 길게 누르면 이 주소로 간다. 진입 방식의 원본은 URL이고, 계속 재사용할 확인 화면은 목록에 주소를 더한다.
 - 병종 동작 디스플레이: `?debug=1&board=motion`(선택 `unit=<id>`·`group=<n>`·`speed=0.25`)은 판정 없이 눈으로 보는 실시간 페이지다([src/ui/motion-board.js](src/ui/motion-board.js)). 왼쪽은 선언형 동작을 끈 모습, 오른쪽은 지금 모습이고, 병종 목록은 sprite 계약에 `motion`을 선언한 병종에서 만든다. 병종 동작을 추가·수정하면 여기서 확인한다.
 - 실제 사례 주소:
+    - AI 작전형 검수는 `scene=ai-match&seed=1&host=idle&profile=demolition&fixture=outpost&tick=180`처럼 실행한다. 일반 맵은 `fixture`를 빼고 `map`을 고른다. 적용 명령·발사·착지·파괴·비행 착지·전진 대포는 `profile.evidence`, 실제 작전 전이는 `profile.operation`에서 읽는다.
     - 코코넛 난전(PR #327 재현 구성): `?debug=1&scene=coconut-melee&map=artillery-basin&seed=1&units=150&mix=rice,pea&coconuts=5&tick=300`
     - 코코넛 길찾기(가운데 바위벽): `?debug=1&scene=unit&map=twin-gates&seed=1&unit=coconut&count=1&x=1400&y=2900&tick=150`
     - 호두(탱커) 받는 피해 절반·평타 주변 피해(`fight.dealt`·`fight.end`): `?debug=1&scene=unit&map=standard&seed=1&unit=walnut&count=1&x=1400&y=2900&enemy=rice&enemyCount=20&gap=160&tick=300`
