@@ -17,7 +17,7 @@ const SUNSHINE_LABELS = Object.freeze({
 
 // Launch match screens (title, friend, help, in-game HUD and cards, match menu, result) and their addresses.
 // Routes: #/ title, #/settings, #/friend, #/help, #/play, #/play/menu, #/play/help, #/play/<grain> card detail, #/result, and
-// and the campaign: #/campaign, #/campaign/<chapter>?stage=<id> (CampaignScreen).
+// and the campaign: #/campaign/intro, #/campaign, #/campaign/<chapter>?stage=<id> (CampaignScreen).
 // The game owns matches; this module owns which screen and sheet the address shows, and asks the game through `actions`.
 const SCREENS = new Set(['', 'settings', 'friend', 'help', 'play', 'result']);
 // Holding the settings button this long opens the debug mode, which is its own address (`?debug=1`).
@@ -45,6 +45,11 @@ export class LaunchScreens {
             nav: {
                 title: () => this.go(''),
                 home: () => this.go('campaign'),
+                finishIntro: () => {
+                    const { screen, item } = this.navigation.snapshot();
+                    if (screen === 'campaign' && item === CampaignScreen.introRoute)
+                        this.replace('campaign');
+                },
                 // Picking another stage of the same chapter replaces the address; a new chapter is a step.
                 chapter: (id, stageId) => {
                     const route = {
@@ -219,7 +224,11 @@ export class LaunchScreens {
             if (this.navigation.snapshot().screen === 'play') A.startAiMatch();
             else this.go('play');
         };
-        $('campaignBtn').onclick = () => this.go('campaign');
+        $('campaignBtn').onclick = () =>
+            this.go(
+                'campaign',
+                A.campaignProgress.needsIntroduction ? CampaignScreen.introRoute : '',
+            );
         $('friendMatchBtn').onclick = () => this.go('friend');
         this.bindSettingsButton($('titleSettingsBtn'));
         $('settingsHelpBtn').onclick = () => this.go('help');

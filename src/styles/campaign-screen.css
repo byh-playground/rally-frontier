@@ -289,7 +289,7 @@
     font-weight: 800;
     color: #596d58;
 }
-.cs-chapter-content {
+.cs-scroll {
     flex: 1;
     min-height: 0;
     display: flex;
@@ -298,7 +298,7 @@
     overflow: auto;
     overscroll-behavior: contain;
 }
-.cs-chapter-content:focus-visible {
+.cs-scroll:focus-visible {
     outline: 2px solid #3e7447;
     outline-offset: -2px;
 }
@@ -312,6 +312,32 @@
     border-radius: 16px;
     background: #fffdf5;
 }
+
+.cs-prologue {
+    justify-content: center;
+    gap: 16px;
+    padding: 18px;
+    overflow-wrap: anywhere;
+}
+.cs-prologue-art {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px 0 16px;
+    border-bottom: 1px solid #c5d8b5;
+}
+.cs-prologue-art .cs-portrait {
+    max-width: 43%;
+}
+.cs-prologue p {
+    margin: 0;
+    line-height: 1.6;
+}
+.campaign-screen:has(.cs-intro) :is(#campaignScreenSunshine, #campaignScreenUpgradeBtn) {
+    display: none;
+}
+
 .cs-title {
     margin: 0;
     font-size: 23px;
@@ -512,8 +538,33 @@
     }
 }
 @media (orientation: landscape) and (max-height: 640px) {
-    .campaign-screen:has(.cs-chapter) {
+    .campaign-screen:has(.cs-chapter, .cs-intro) {
         width: min(100vw, 420px);
+    }
+    .cs-prologue {
+        display: grid;
+        grid-template-columns: 80px minmax(0, 1fr);
+        align-content: center;
+        gap: 6px 14px;
+        padding: 12px;
+    }
+    .cs-prologue-art {
+        grid-row: span 3;
+        align-self: center;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 0;
+        border: 0;
+    }
+    .cs-prologue-art .cs-portrait {
+        width: 54px;
+        height: 54px;
+        max-width: 100%;
+    }
+    .cs-prologue p {
+        font-size: 14px;
+        line-height: 1.45;
     }
 }
 .cs-disc .cs-portrait {

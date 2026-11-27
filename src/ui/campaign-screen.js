@@ -4,6 +4,7 @@ import { CampaignActs } from './campaign-acts.js';
 import { briefGoal, sideGoalBrief } from './campaign-presentation.js';
 
 // The new campaign's screens (고장 카드형, docs/campaign-ux-mockup/b.html):
+//   #/campaign/intro                 the world of the campaign before the first stage
 //   #/campaign                       home: act 1's row, act 2's region cards, act 3's row (only chapters with stages)
 //   #/campaign/<chapter>?stage=<id>  one act or region: its stages as a row of dots and the picked stage's briefing
 // Chapter content scrolls when it exceeds the viewport. The header and sortie controls stay in view.
@@ -35,8 +36,10 @@ export function storyMarkup(stage, { brief = false, result = false } = {}) {
 }
 
 export class CampaignScreen {
+    static introRoute = 'intro';
+
     // actions: the LaunchScreens actions (roster, grainName, portraitSource, startCampaignStage, …);
-    // nav: { home(), chapter(id, stageId), title() } address moves; difficulty(host): draws the difficulty toggle.
+    // nav: { home(), chapter(id, stageId), title(), finishIntro() } address moves; difficulty(host): draws the difficulty toggle.
     static install({ actions, nav, difficulty }) {
         this.actions = actions;
         this.nav = nav;
@@ -56,6 +59,10 @@ export class CampaignScreen {
         const roster = this.actions.roster;
         this.cleared = roster.clearedStages;
         this.paintSunshine();
+        if (item === this.introRoute) {
+            this.renderIntro();
+            return true;
+        }
         if (!item) {
             this.renderHome();
             return true;
@@ -93,6 +100,31 @@ export class CampaignScreen {
 
     static clearedCount(chapter) {
         return chapter.stages.filter((stage) => this.cleared.has(stage.id)).length;
+    }
+
+    static renderIntro() {
+        this.header('캠페인', () => this.nav.title());
+        const body = this.$('campaignScreenBody');
+        body.className = 'cs-body cs-intro';
+        body.innerHTML = `<div class="cs-scroll" role="region" aria-labelledby="csIntroTitle" tabindex="0">
+    <section class="cs-brief cs-prologue" aria-labelledby="csIntroTitle">
+        <div class="cs-prologue-art" aria-hidden="true">${this.portrait('rice', {
+            freed: true,
+            size: 96,
+        })}${this.portrait('rice', { freed: false, size: 96 })}</div>
+        <h3 id="csIntroTitle" class="cs-title">논두렁에 번진 깜부기</h3>
+        <p><strong>깜부기는 곡식에 번지는 병이다.</strong> 병에 걸린 곡식들은 깜부기에 지배당해 자기 동료까지 공격한다.</p>
+        <p>논두렁에도 깜부기가 번졌다. 정찰병 쌀은 논두렁을 되찾고 동료들을 구하러 나선다.</p>
+    </section>
+</div>
+<div class="cs-go-row"><button type="button" class="launch-btn primary cs-go">캠페인으로</button></div>`;
+        this.fillPortraits(body);
+        const next = body.querySelector('.cs-go');
+        next.onclick = async () => {
+            next.disabled = true;
+            await this.actions.campaignProgress.readIntroduction();
+            if (next.isConnected) this.nav.finishIntro();
+        };
     }
 
     static renderHome() {
@@ -181,7 +213,7 @@ export class CampaignScreen {
         });
         const body = this.$('campaignScreenBody');
         body.className = 'cs-body cs-chapter';
-        body.innerHTML = `<div class="cs-chapter-content" role="region" aria-label="판 선택과 브리핑" tabindex="0"><p class="cs-kicker">${kicker}</p><div class="cs-track">${nodes.join('')}</div><section class="cs-brief" aria-labelledby="csStageTitle">${this.briefMarkup(
+        body.innerHTML = `<div class="cs-scroll" role="region" aria-label="판 선택과 브리핑" tabindex="0"><p class="cs-kicker">${kicker}</p><div class="cs-track">${nodes.join('')}</div><section class="cs-brief" aria-labelledby="csStageTitle">${this.briefMarkup(
             picked,
             stages.indexOf(picked),
         )}</section></div>
@@ -189,7 +221,7 @@ export class CampaignScreen {
         for (const node of body.querySelectorAll('[data-stage]'))
             node.onclick = () => this.nav.chapter(chapter.id, node.dataset.stage);
         this.difficulty(body.querySelector('.campaign-difficulty'));
-        const content = body.querySelector('.cs-chapter-content');
+        const content = body.querySelector('.cs-scroll');
         content.scrollTop = scrollTop;
         const deck = body.querySelector('.cs-deck');
         deck.onclick = () => {
