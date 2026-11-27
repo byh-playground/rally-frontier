@@ -12,6 +12,7 @@ import { SimulationTiming } from '../core/simulation-timing.js';
 import { BOT_LAUNCH_RULES } from '../sim/capabilities/bot-launch-rules.js';
 import { UnitFlight } from '../sim/capabilities/unit-flight.js';
 import { soloBotProfile } from './solo-bot-profiles.js';
+import { SoloBotOperation } from './solo-bot-operation.js';
 
 // Tracks the bot's commands from offer to the sim's receipt, so a shot already paid for
 // is not paid again from a snapshot that predates it.
@@ -90,7 +91,7 @@ class AiCommandExecutor {
         this.state = view;
         return view;
     }
-    offer(action) {
+    offer(action, onSubmitted) {
         if (!this.state) return false;
         const session = this.bot.session;
         if (
@@ -121,7 +122,7 @@ class AiCommandExecutor {
                     !AiCommandExecutor.hasRound(this.state, side, action.unitType)))
         )
             return false;
-        this.queue.push({ key, action: StateValue.copy(action), cost, premiumCost });
+        this.queue.push({ key, action: StateValue.copy(action), cost, premiumCost, onSubmitted });
         this.state.wallet[side] -= cost;
         this.state.premiumWallet[side] -= premiumCost;
         if (action.type === 'UPGRADE_LAUNCH_RANGE') this.state.launchRangeLevel[side]++;
@@ -159,6 +160,8 @@ class AiCommandExecutor {
                 throw new Error('AI 명령의 Netcode 제출 영수증이 없습니다.');
             Object.assign(entry, { actor: ticket.actor, netcodeSequence: ticket.sequence });
             this.pending.push(entry);
+            entry.onSubmitted?.(ticket.sequence);
+            delete entry.onSubmitted;
         }
         this.queue = [];
         this.state = null;
@@ -180,6 +183,9 @@ class BotController {
     constructor(session, options = {}) {
         this.session = session;
         this.profile = options.profileId == null ? null : soloBotProfile(options.profileId);
+        this.operation = this.profile?.operation
+            ? new SoloBotOperation(this, this.profile.operation)
+            : null;
         this.commandExecutor = new AiCommandExecutor(this);
         this.role = options.role || session.role || 'guest';
         this.side = ConnectionSideUtil.roleSide(this.role);
@@ -207,6 +213,7 @@ class BotController {
         // A campaign enemy does not play while the stage's practice runs (CampaignMission.startTick is null then).
         if (campaign && CampaignMission.startTick(snapshot) === null) return;
 
+        this.operation?.observe(snapshot);
         const state = this.commandExecutor.begin(snapshot);
         try {
             this.decisionIntervalTicks = Math.max(
@@ -333,25 +340,28 @@ class BotController {
         return { cannon, target, units, distance: this.distance(cannon, target), kind: 'advance' };
     }
 
-    fire(shot, unit, level, tick, aimExactly = false) {
+    fire(shot, unit, level, tick, aimExactly = false, onSubmitted) {
         const { cannon, target, distance } = shot;
         const error = aimExactly
             ? 1
             : 1 + ((HashUtil.hash(`${tick}|${cannon.id}|err`) % 241) - 120) / 1000;
-        this.commandExecutor.offer({
-            type: 'LAUNCH',
-            cannonId: cannon.id,
-            x: Math.round(target.x),
-            y: Math.round(target.y),
-            holdMs: Math.round(
-                RangeUtil.clamp(
-                    LaunchRules.holdFor(distance, unit.type, level) * error,
-                    0,
-                    LaunchRules.chargeMs,
+        return this.commandExecutor.offer(
+            {
+                type: 'LAUNCH',
+                cannonId: cannon.id,
+                x: Math.round(target.x),
+                y: Math.round(target.y),
+                holdMs: Math.round(
+                    RangeUtil.clamp(
+                        LaunchRules.holdFor(distance, unit.type, level) * error,
+                        0,
+                        LaunchRules.chargeMs,
+                    ),
                 ),
-            ),
-            unitType: unit.type,
-        });
+                unitType: unit.type,
+            },
+            onSubmitted,
+        );
     }
 
     chooseCombatUnit(shot, state, budget, hasIncome, enemies, urgent = false) {
@@ -362,7 +372,17 @@ class BotController {
                 3;
         const suitable = shot.units.filter((unit) => unit.premiumCost <= state.premiumWallet[side]);
         const specialists = suitable.filter((unit) => unit.premiumCost > 0);
-        const pool = !this.profile && !urgent && specialists.length ? specialists : suitable;
+        const featured =
+            !urgent && this.profile?.kind === 'theme'
+                ? suitable.filter(
+                      (card) => this.profile.signature.includes(card.type) && card.cost <= budget,
+                  )
+                : [];
+        const pool = featured.length
+            ? featured
+            : !this.profile && !urgent && specialists.length
+              ? specialists
+              : suitable;
         const weight = ({ type }) => this.profile?.weights[type] ?? 1;
         const share = (unit) => (stats[unit.type]?.deployed || 0) / (unit.count * weight(unit));
         const effect = ({ type }) => {
@@ -459,7 +479,6 @@ class BotController {
         const cannons = buildings.filter(
             (b) => LaunchRules.readyToLaunch(state, b) && !busy.has(b.id),
         );
-        if (!cannons.length) return;
         const base = buildings.find((b) => b.type === main),
             // A spore sac's captive (`unit.sporeSac`) is no threat and no target while it is bound.
             enemies = state.units.filter(
@@ -480,6 +499,35 @@ class BotController {
                 groundDeck,
                 level,
             );
+        const budget =
+            state.wallet[side] -
+            buildings.reduce(
+                (sum, b) =>
+                    sum + (b.construction ? b.construction.cost - b.construction.invested : 0),
+                0,
+            );
+        if (this.operation) {
+            if (base && enemies.some((unit) => distance(unit, base) <= 235))
+                this.operation.stop(state, 'base-threat');
+            else if (
+                this.operation.decide({
+                    state,
+                    side,
+                    world: this.session.sim.world,
+                    cards,
+                    cannons,
+                    buildings,
+                    enemies,
+                    hostile,
+                    enemyBase,
+                    base,
+                    level,
+                    budget,
+                })
+            )
+                return;
+        }
+        if (!cannons.length) return;
         if (threat) {
             const unit = this.chooseCombatUnit(
                 threat,
@@ -492,27 +540,25 @@ class BotController {
             if (unit) this.fire(threat, unit, level, state.tick, true);
             return;
         }
-        const rules = { state, side, cards, cannons, hostile, enemyBase, level, distance };
-        if (this.runCapabilityLaunch('opening', rules)) return;
-
-        const budget =
-            state.wallet[side] -
-            buildings.reduce(
-                (sum, b) =>
-                    sum + (b.construction ? b.construction.cost - b.construction.invested : 0),
-                0,
-            );
         if (
             enemyBase &&
-            state.launchStats.launches[side] < (this.profile?.openingAdvanceVolleys ?? 0)
+            this.profile?.kind === 'theme' &&
+            state.launchStats.launches[side] < this.profile.introVolleys
         ) {
-            const shot = BotController.advanceShot(cannons, enemyBase, groundDeck);
-            const unit = this.chooseCombatUnit(shot, state, budget, hasIncome, enemies);
-            if (unit) {
-                this.fire(shot, unit, level, state.tick);
-                return;
+            const featured = groundDeck.filter(
+                (card) =>
+                    this.profile.signature.includes(card.type) &&
+                    card.cost <= budget &&
+                    card.premiumCost <= state.premiumWallet[side],
+            );
+            if (featured.length) {
+                const shot = BotController.advanceShot(cannons, enemyBase, featured);
+                const unit = this.chooseCombatUnit(shot, state, budget, false, []);
+                if (unit && this.fire(shot, unit, level, state.tick, true)) return;
             }
         }
+        const rules = { state, side, cards, cannons, hostile, enemyBase, level, distance };
+        if (!this.operation && this.runCapabilityLaunch('opening', rules)) return;
 
         const objectives = this.captureObjectives(state);
         const preferredResource = this.profile?.preferredResource ?? 'premium';
@@ -593,12 +639,10 @@ class BotController {
             if (hasIncome) return;
         }
 
-        const engage = BotController.nearestShot(cannons, enemies, groundDeck, level);
-        const bombard = BotController.nearestShot(cannons, hostile, combatDeck, level);
         let shot =
-            this.profile?.attackPriority === 'buildings'
-                ? premiumShot || bombard || engage
-                : engage || premiumShot || bombard;
+            BotController.nearestShot(cannons, enemies, groundDeck, level) ||
+            premiumShot ||
+            BotController.nearestShot(cannons, hostile, combatDeck, level);
         if (!shot && enemyBase && !objectives.some(({ supported }) => supported))
             shot = BotController.advanceShot(cannons, enemyBase, combatDeck);
         if (!shot) return;
