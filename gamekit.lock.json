@@ -1,19 +1,19 @@
 {
     "repository": "byh-playground/bloom-gamekit",
-    "sourceCommit": "4f03df515a9e64b22731129a4b229f285b8b7e1e",
-    "distCommit": "d63dce2301e5631adb11b855ef844394436b4d6a",
+    "sourceCommit": "9dd41e95f8064dc6c96f057d66f35ca9e9d690b4",
+    "distCommit": "10b27d8ea7f816586e41973d37d4bd2a01cc8755",
     "modules": {
         "rollback": {
             "file": "rollback.js",
-            "sha256": "ab2d576dd2684afda3fbd153d27ba35d688f27a1554194e042bae8b195c36bcb"
+            "sha256": "fce3064b6b322d0d46a18d5659827e769e5c1a9bb918d3c4515656743cefffa6"
         },
         "deterministic": {
             "file": "deterministic.js",
-            "sha256": "540b85c7dbd6eaba6724d82e4865c2784c68e799e75390ea1a56d20433fbe0ec"
+            "sha256": "270b8124ce6c4357667592d4c497bce6a64efb1d7886171d76d2803ac91cf4fd"
         },
         "simloop": {
             "file": "simloop.js",
-            "sha256": "c7595b1beb7c56b01061393429eb73a095c1126a9832a55069bd7bfaa0d75295"
+            "sha256": "3406ead823b166fa5f2ad8e1e1d8690d893990cc1321872901daa2e9284cea66"
         },
         "transport": {
             "file": "transport.js",
@@ -21,7 +21,7 @@
         },
         "interpolation": {
             "file": "interpolation.js",
-            "sha256": "9fd27192be7ab212cda052fb79076512ebc1d4a74485072e9ab02fe8794f1df0"
+            "sha256": "d56cfc3209898c9eb453ab29b563f39ee7f001c3993fe72b6572963d4d8b6c76"
         },
         "input": {
             "file": "input.js",
@@ -85,11 +85,11 @@
         },
         "contactSolver": {
             "file": "contact-solver.js",
-            "sha256": "56c52a07fcbb058b6cfefb3b81a456244331c5c0f8a48c214f47bb5000a29b7a"
+            "sha256": "33ded82f094647c2fb3fbaf30fea0138c034e3cde9d46bf12b91a4e5b5648bf0"
         },
         "scenario": {
             "file": "scenario.js",
-            "sha256": "44972ca8b0c410407e057385e64473fde51d98ae94819e9094011eb273830d0d"
+            "sha256": "396e41ccff13b09cf4405985a05ad68a8dce198f1541ce196a58a1e917a4640d"
         },
         "boot": {
             "file": "boot.js",
@@ -104,5 +104,5 @@
             "sha256": "540b2af25e91bd6b5683c3ae8f80484a951baea9dc90452233dd72c26a4696ed"
         }
     },
-    "distManifestSha256": "aca15465170a5b6c51f920f517c18dc9e184dbf28b137d1fd55063d141b41b69"
+    "distManifestSha256": "698ea9a57ac5433361914c4946007892ab6817db02095a174b58d48d6f1fd32c"
 }
