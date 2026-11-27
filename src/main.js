@@ -13315,7 +13315,7 @@ if (debugAddress) {
 
 async function startTitleApp() {
     roster = new Roster(playerSaves.roster);
-    campaignProgress = new CampaignProgress(roster);
+    campaignProgress = new CampaignProgress(roster, playerSaves.hints);
     // The title screens and the deck read the unlocks, so the records load before the boot and the screens start.
     await Promise.all([
         roster.load(),

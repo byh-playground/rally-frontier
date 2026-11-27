@@ -71,6 +71,8 @@ function validateRoster(data) {
 
 function validateHints(data) {
     if (typeof data.volleyAim !== 'boolean') throw new TypeError('hint record: volleyAim');
+    if (data.campaignIntroRead !== undefined && typeof data.campaignIntroRead !== 'boolean')
+        throw new TypeError('hint record: campaignIntroRead');
 }
 
 function validateSound(data) {
@@ -116,7 +118,10 @@ export function openPlayerSaves(gamekit, { isolated }) {
         adapter,
         key: 'hints',
         version: 1,
-        create: () => ({ volleyAim: legacy(LEGACY_KEYS.volleyAimHint) === 1 }),
+        create: () => ({
+            volleyAim: legacy(LEGACY_KEYS.volleyAimHint) === 1,
+            campaignIntroRead: false,
+        }),
         validate: validateHints,
     });
     const roster = gamekit.createSave({
