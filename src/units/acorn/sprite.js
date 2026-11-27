@@ -1,7 +1,7 @@
 import { drawUnitQuads } from '../../render/dead-unit-look.js';
 // Approved acorn artwork and motion, prepared once for GameKit GPU poses.
 const ROOT = new URL('../../../assets/sprites/acorn/', import.meta.url);
-const FILES = Object.freeze(['parts.png', 'ammo.png']);
+const FILES = Object.freeze(['parts.png']);
 const PIECES = Object.freeze({
     body: {
         crop: [45, 45, 480, 610],
@@ -50,13 +50,6 @@ const PIECES = Object.freeze({
         rect: [-77.5, -15, 155, 70],
         part: 5,
     },
-    ammo: {
-        file: 'ammo.png',
-        crop: [500, 195, 560, 630],
-        slot: [230, 76, 128, 144],
-        rect: [-4 / 9, -0.5, 8 / 9, 1],
-    },
-    teamMarker: { slot: [362, 76, 32, 32], rect: [-0.5, -0.5, 1, 1] },
 });
 const PARTS = [
     { id: 'body', parent: null, pivot: [0, 0] },
@@ -225,13 +218,7 @@ export async function loadAcornSpriteCanvas() {
     canvas.height = 364;
     const ctx = canvas.getContext('2d');
     for (const piece of Object.values(PIECES))
-        if (piece.crop)
-            ctx.drawImage(images[piece.file || 'parts.png'], ...piece.crop, ...piece.slot);
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    const [markerX, markerY, markerW, markerH] = PIECES.teamMarker.slot;
-    ctx.arc(markerX + markerW / 2, markerY + markerH / 2, 14.5, 0, Math.PI * 2);
-    ctx.fill();
+        if (piece.crop) ctx.drawImage(images['parts.png'], ...piece.crop, ...piece.slot);
     return canvas;
 }
 export function acornSpritePortrait(canvas, width) {
@@ -319,8 +306,6 @@ export class AcornSpriteRenderer {
                 right: build(['legL', 'legR', 'armR', 'body']),
             },
             front: {},
-            ammo: build(['ammo']),
-            teamMarker: build(['teamMarker']),
         };
         for (const [name, list] of Object.entries(faces))
             this.atlas.front[name] = {
@@ -397,19 +382,6 @@ export class AcornSpriteRenderer {
     drawBody(actor, matrix, depth) {
         this.draw(this.atlas.back[this.armBehind(actor)], actor, matrix, depth, 0.05);
     }
-    drawAmmo(matrix, depth) {
-        this.draw(this.atlas.ammo, null, matrix, depth);
-    }
-    drawTeamMarker(matrix, depth, own) {
-        this.context.depth = depth;
-        this.context.drawQuads({
-            layer: this.atlas.region.layer,
-            filter: this.atlas.region.filter,
-            ...this.atlas.teamMarker,
-            matrix,
-            color: own ? [0.3, 0.55, 1, 1] : [1, 0.36, 0.32, 1],
-        });
-    }
     drawFace(actor, matrix, depth, face) {
         const front = this.armBehind(actor) === 'left' ? 'right' : 'left';
         this.draw(
@@ -418,11 +390,6 @@ export class AcornSpriteRenderer {
             matrix,
             depth,
         );
-    }
-    // Start-screen warm-up of the shell's team marker.
-    prepareExtraArt(matrix) {
-        this.drawTeamMarker(matrix, 0, true);
-        this.drawTeamMarker(matrix, 0, false);
     }
     dispose() {
         if (this.disposed) return false;
@@ -445,5 +412,4 @@ export const SPRITE = Object.freeze({
         stain: [0.5, 0.32, 0.1],
         spark: [1, 0.8, 0.12],
     }),
-    shell: { draw: 'drawAmmo', turn: Math.PI / 4, flight: 'tumble' },
 });

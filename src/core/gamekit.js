@@ -204,6 +204,8 @@ try {
         globalThis.RallyVectorAssetLoader = loaded.loader;
         // Registry order matches atlas allocation order; shared canvases count once.
         globalThis.RallySpriteCanvases = await loadGrainSpriteCanvases(RallyBoot);
+        const { loadPaintedShellImage } = await import('../render/painted-shells.js');
+        globalThis.RallyShellImage = await loadPaintedShellImage();
     }
     RallyNetcode = Object.freeze({
         ...namespaces.rollback,

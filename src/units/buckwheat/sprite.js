@@ -187,8 +187,8 @@ export class BuckwheatSpriteRenderer {
         }
         this.region = region;
 
-        // Posed quads are in standing-art units; the shell's quads are around `origin` in units of `unit`, each
-        // scaled by its own `scale` about its position.
+        // Posed quads are in standing-art units, each scaled by its own `scale` about its position; the thrown seed's quad
+        // is around `origin` in units of `unit`.
         const build = (pieces, { origin = null, unit = 1 } = {}) => {
             const uvRects = [],
                 localRects = [],
@@ -230,14 +230,6 @@ export class BuckwheatSpriteRenderer {
                 face,
                 build(frontParts.map((part) => ({ ...part, cell: part.cell || face }))),
             ]),
-        );
-        // The launch shell: the buckwheat grain without feet and arms, about one unit wide.
-        this.ammo = build(
-            [
-                { cell: 'body', position: [0, 0] },
-                { cell: 'neutral', position: [-8, -64], scale: 0.7 },
-            ],
-            { origin: [0, -84], unit: 136 },
         );
         // The thrown seed, drawn with main.js drawThorn's matrix: its x axis runs along the flight and its unit is 32
         // world units. The seed is SEED_WORLD world units long.
@@ -326,10 +318,6 @@ export class BuckwheatSpriteRenderer {
         this.draw(this.front[face] || this.front.neutral, matrix, depth, actor);
     }
 
-    drawAmmo(matrix, depth) {
-        this.draw(this.ammo, matrix, depth);
-    }
-
     // Its own thornAttack shot (main.js drawThorn): the seed, tip up in the sheet, turned a quarter so its tip leads.
     drawThorn(matrix, depth) {
         const m = this.seedMatrix;
@@ -361,7 +349,6 @@ export const SPRITE = Object.freeze({
     load: loadBuckwheatSpriteCanvas,
     renderer: BuckwheatSpriteRenderer,
     portrait: buckwheatSpritePortrait,
-    shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     pose: 'thorn-thrower',
     artScale: BUCKWHEAT_ART_SCALE,

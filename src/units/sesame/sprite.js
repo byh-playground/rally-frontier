@@ -167,9 +167,8 @@ export class SesameSpriteRenderer {
         }
         this.region = region;
 
-        // Posed quads are in standing-art units; the shell's quads are around `origin` in units of `unit`, each
-        // scaled by its own `scale` about its position.
-        const build = (pieces, { origin = null, unit = 1 } = {}) => {
+        // Posed quads are in standing-art units, each scaled by its own `scale` about its position.
+        const build = (pieces) => {
             const uvRects = [],
                 localRects = [],
                 channels = [];
@@ -189,19 +188,13 @@ export class SesameSpriteRenderer {
                     w / region.atlas.width,
                     h / region.atlas.height,
                 );
-                const [ox, oy] = origin || [0, 0];
-                localRects.push(
-                    (x - px * scale - ox) / unit,
-                    (y - py * scale - oy) / unit,
-                    (w * scale) / unit,
-                    (h * scale) / unit,
-                );
-                if (!origin) channels.push(parts.findIndex((part) => part.id === id));
+                localRects.push(x - px * scale, y - py * scale, w * scale, h * scale);
+                channels.push(parts.findIndex((part) => part.id === id));
             }
             return {
                 uvRects: Float32Array.from(uvRects),
                 localRects: Float32Array.from(localRects),
-                ...(origin ? {} : { parts: Float32Array.from(channels) }),
+                parts: Float32Array.from(channels),
             };
         };
         this.body = build(bodyParts);
@@ -210,14 +203,6 @@ export class SesameSpriteRenderer {
                 face,
                 build(frontParts.map((part) => ({ ...part, cell: part.cell || face }))),
             ]),
-        );
-        // The launch shell: the sesame seed without feet, arms and hammer, about one unit wide.
-        this.ammo = build(
-            [
-                { cell: 'body', position: [0, 0] },
-                { cell: 'neutral', position: [0, -62], scale: 0.72 },
-            ],
-            { origin: [0, -83], unit: 120 },
         );
         context.onDispose(() => this.dispose());
     }
@@ -295,10 +280,6 @@ export class SesameSpriteRenderer {
         this.draw(this.front[face] || this.front.neutral, matrix, depth, actor);
     }
 
-    drawAmmo(matrix, depth) {
-        this.draw(this.ammo, matrix, depth);
-    }
-
     dispose() {
         if (this.disposed) return;
         this.disposed = true;
@@ -313,7 +294,6 @@ export const SPRITE = Object.freeze({
     load: loadSesameSpriteCanvas,
     renderer: SesameSpriteRenderer,
     portrait: sesameSpritePortrait,
-    shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     artScale: SESAME_ART_SCALE,
     motion: Object.freeze({

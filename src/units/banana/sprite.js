@@ -43,7 +43,6 @@ export const SPRITE = Object.freeze({
     load: () => loadFruitSpriteCanvas('banana', BANANA_RIG),
     renderer: FruitSpriteRenderer,
     portrait: fruitSpritePortrait,
-    shell: { draw: 'drawAmmo', depthTest: true },
     heroBasic: true,
     fruitAttack: true,
     groundY: 0,

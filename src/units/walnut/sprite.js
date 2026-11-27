@@ -167,7 +167,7 @@ export class WalnutSpriteRenderer {
         });
         context.device.textureAtlas.upload(region, canvas);
         this.region = region;
-        const build = (names, unit = 1) => {
+        const build = (names) => {
             const uvRects = [],
                 localRects = [];
             for (const name of names) {
@@ -178,7 +178,7 @@ export class WalnutSpriteRenderer {
                     w / region.atlas.width,
                     h / region.atlas.height,
                 );
-                localRects.push(-px / unit, -py / unit, w / unit, h / unit);
+                localRects.push(-px, -py, w, h);
             }
             return {
                 uvRects: Float32Array.from(uvRects),
@@ -186,10 +186,6 @@ export class WalnutSpriteRenderer {
             };
         };
         this.cells = Object.fromEntries(Object.keys(CELLS).map((name) => [name, build([name])]));
-        // Cannon ammo: the resting ball, one shell width per matrix unit.
-        this.ammo = build(['shell', 'shade', 'neutral'], 250);
-        this.ammo.localRects[8] += 14 / 250;
-        this.ammo.localRects[9] += 6 / 250;
         this.scratch = [1, 0, 0, 1, 0, 0];
         this.body = [1, 0, 0, 1, 0, 0];
         context.onDispose(() => this.dispose());
@@ -328,16 +324,6 @@ export class WalnutSpriteRenderer {
         }
     }
 
-    drawAmmo(matrix, depth) {
-        this.context.depth = depth;
-        this.context.drawQuads({
-            layer: this.region.layer,
-            filter: this.region.filter,
-            ...this.ammo,
-            matrix,
-        });
-    }
-
     dispose() {
         if (this.disposed) return false;
         this.disposed = true;
@@ -353,7 +339,6 @@ export const SPRITE = Object.freeze({
     load: loadWalnutSpriteCanvas,
     renderer: WalnutSpriteRenderer,
     portrait: walnutSpritePortrait,
-    shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     artScale: ballArtScale(Walnut.unit.size),
     motion: Object.freeze({

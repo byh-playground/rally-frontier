@@ -104,7 +104,6 @@ export const SPRITE = Object.freeze({
     load: loadCoconutSpriteCanvas,
     renderer: WalnutSpriteRenderer,
     portrait: walnutSpritePortrait,
-    shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     artScale: COCONUT_ART_SCALE,
     rolling: Object.freeze({ prepare: prepareRolling }),

@@ -9,10 +9,6 @@
         "hurt": { "slot": [230, 176, 102, 46], "pivot": [51, 25] },
         "berry": { "slot": [340, 80, 58, 58], "pivot": [28, 29] }
     },
-    "cannonAmmo": {
-        "part": "body",
-        "pivot": [108, 120]
-    },
     "standing": [
         { "id": "leftFoot", "part": "foot", "position": [-42, -7], "mirror": true },
         { "id": "rightFoot", "part": "foot", "position": [42, -7] },

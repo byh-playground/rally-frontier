@@ -242,7 +242,6 @@ export class FruitSpriteRenderer {
                 false,
             );
         };
-        this.ammo = loosePart(layout.cannonAmmo.part, layout.cannonAmmo.pivot);
         this.combatAmmo = loosePart(rig.combatAmmo);
         context.onDispose(() => this.dispose());
     }
@@ -320,10 +319,6 @@ export class FruitSpriteRenderer {
 
     drawFace(actor, matrix, depth, face) {
         this.draw(this.front[face] || this.front.neutral, matrix, depth, actor);
-    }
-
-    drawAmmo(matrix, depth) {
-        this.draw(this.ammo, matrix, depth);
     }
 
     drawCombatAmmo(matrix, depth) {
