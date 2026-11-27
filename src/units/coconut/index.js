@@ -73,7 +73,8 @@ export const Coconut = defineUnit({
         premiumCost: 15 * RESOURCE_SCALE,
         count: 1,
         shellHp: 25,
-        impact: 10,
+        impact: 15,
+        reach: 0.75,
         splash: 50,
     },
     // 초안: visualScale.

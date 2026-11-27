@@ -23,6 +23,18 @@ const identity = () => ({
 const DEFAULT_HUSK = Object.freeze(['#e8c078', '#bd8744']);
 
 class LaunchImpactArt {
+    static style(profile) {
+        if (!profile) return null;
+        // Ground damage can favor a building or a unit. The flash shows the stronger base damage,
+        // while the contact effects read the pop's independent shove speed.
+        return {
+            damage: clamp01(
+                Math.max(Number(profile.unitDamage) || 0, Number(profile.buildingDamage) || 0) / 50,
+            ),
+            shove: clamp01((Number(profile.shove) || 0) / 600),
+        };
+    }
+
     static unitPose(unit, renderTick, tps = 20) {
         const motion = unit?.impactMotion;
         if (!motion || !['deploy', 'knockback', 'leap'].includes(motion.kind)) return identity();
@@ -94,12 +106,13 @@ class LaunchImpactArt {
         };
     }
 
-    static drawBurst(ctx, { x, y, ageMs, scale = 1, seed = 0, grainType, power = 1 }) {
+    static drawBurst(ctx, { x, y, ageMs, scale = 1, seed = 0, grainType, impactStyle }) {
         const age = Number(ageMs) || 0;
         if (age < 0 || age > 680) return;
+        const shove = impactStyle?.shove ?? 1;
         const time = age / 1000,
             size = Math.max(0.01, scale),
-            strength = 0.8 + 0.2 * clamp01(Number(power) || 0);
+            strength = 0.55 + 0.45 * shove;
         const colors = UnitVisualDefinition.get(grainType)?.husk || DEFAULT_HUSK;
         ctx.save();
         ctx.translate(x, y);
@@ -112,7 +125,8 @@ class LaunchImpactArt {
             ctx.globalAlpha = 0.6 * fade;
             ctx.strokeStyle = '#7c623b';
             ctx.lineWidth = 2;
-            for (let i = 0; i < 7; i++) {
+            const marks = Math.round(2 + 5 * shove);
+            for (let i = 0; i < marks; i++) {
                 const a = (hash(seed, i) % 6283) / 1000,
                     r = 8 + ((hash(seed, i + 9) >>> 8) % 16);
                 ctx.beginPath();
@@ -123,9 +137,11 @@ class LaunchImpactArt {
         }
         // Packaging straps break radially and fall. The same seed and time always produce the same fragments.
         const fragmentAge = Math.max(0, age - 25),
-            ft = fragmentAge / 1000;
+            ft = fragmentAge / 1000,
+            fragments = Math.round(3 + 9 * shove),
+            straps = Math.ceil(fragments * 0.4);
         if (age >= 25)
-            for (let i = 0; i < 12; i++) {
+            for (let i = 0; i < fragments; i++) {
                 const h = hash(seed, i + 23),
                     a = (h % 6283) / 1000,
                     speed = (45 + ((h >>> 9) % 85)) * strength;
@@ -140,7 +156,7 @@ class LaunchImpactArt {
                 ctx.translate(px, py);
                 ctx.rotate(a + ft * (i % 2 ? 5 : -5));
                 ctx.globalAlpha = fade;
-                if (i < 5) {
+                if (i < straps) {
                     ctx.strokeStyle = '#75512c';
                     ctx.lineWidth = 3;
                     ctx.beginPath();
@@ -164,13 +180,14 @@ class LaunchImpactArt {
                 ctx.restore();
             }
         // Sparse low-opacity dust leaves gaps so the physical shove and rolling bodies stay readable.
-        for (let i = 0; i < 7; i++) {
+        const puffs = Math.round(7 * shove);
+        for (let i = 0; i < puffs; i++) {
             const h = hash(seed, i + 61),
                 a = (h % 6283) / 1000,
-                d = (12 + ((h >>> 10) % 27)) * (1 - Math.exp(-time * 6));
+                d = (12 + ((h >>> 10) % 27)) * (1 - Math.exp(-time * 6)) * strength;
             const radius = (3 + time * 9) * (1 + ((h >>> 20) % 5) / 5),
                 fade = 1 - smooth(age / 580);
-            ctx.globalAlpha = 0.19 * fade;
+            ctx.globalAlpha = 0.19 * fade * strength;
             ctx.fillStyle = i % 2 ? '#d5bd91' : '#aa8e63';
             ctx.beginPath();
             ctx.ellipse(

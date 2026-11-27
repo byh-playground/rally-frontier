@@ -70,6 +70,8 @@
 //   payload  the cannon shell that carries the unit (LaunchRules). A hero's shell has no landing shock (impact,
 //            splash) but `landingStrike { radius, damage, knockback?, scatter? { ring, count }, retreat { motion:
 //            'roll'|'hop', distance } }`, the hero's own strike when it lands (HeroLandingStrike)
+//            buildingImpact overrides a shell's base damage to buildings. cannonRider.relaunchImpact
+//            overrides the base impact of a soldier's solo return shot.
 //   visual   body scale, team accent, hit effect family, optional landing husk colors
 //   card     deck card and card detail copy
 //   help     optional in-game help entries { section, summary, paragraphs }; section names a
@@ -681,13 +683,29 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
     if (unit.workerCard && !unit.construction)
         throw new Error(`병종 ${id}의 workerCard는 construction이 필요합니다.`);
     // A hero's shell lands with the hero's landing strike in place of the shell's shock (HeroLandingStrike).
-    const strike = parts.payload.landingStrike;
+    const { impact, splash: shellSplash, buildingImpact, landingStrike: strike } = parts.payload;
+    const hasShellShock = !hero && impact > 0 && shellSplash > 0;
+    if (
+        buildingImpact !== undefined &&
+        !(hasShellShock && Number.isFinite(buildingImpact) && buildingImpact > 0)
+    )
+        throw new Error(
+            `병종 ${id}의 buildingImpact는 착탄 충격이 있는 포탄의 양수 위력이어야 합니다.`,
+        );
+    const relaunchImpact = unit.cannonRider?.relaunchImpact;
+    if (
+        relaunchImpact !== undefined &&
+        !(hasShellShock && Number.isFinite(relaunchImpact) && relaunchImpact > 0)
+    )
+        throw new Error(
+            `병종 ${id}의 relaunchImpact는 착탄 충격이 있는 재발사 포탄의 양수 위력이어야 합니다.`,
+        );
     if (hero !== !!strike)
         throw new Error(
             `병종 ${id}: 영웅 포탄만 landingStrike를 가지며 영웅 포탄에는 꼭 있어야 합니다.`,
         );
     if (strike) {
-        if (parts.payload.impact !== undefined || parts.payload.splash !== undefined)
+        if (impact !== undefined || shellSplash !== undefined)
             throw new Error(
                 `병종 ${id}의 영웅 포탄은 착탄 충격(impact·splash) 대신 landingStrike를 씁니다.`,
             );

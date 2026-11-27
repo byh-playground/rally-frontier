@@ -37,7 +37,7 @@ export const Walnut = defineUnit({
             shellShards: { takenRatio: 0.25, radius: 50, damage: 10 },
         },
     },
-    // 포탄 체력·위력·반경은 코코넛과 같은 초안이다. 탄약은 식량 카드 기본값.
+    // 포탄은 단발이다. 탄약은 식량 카드 기본값.
     payload: {
         ...SINGLE_BUNDLE_SHELL,
         cost: 40 * RESOURCE_SCALE,

@@ -3,6 +3,7 @@
 // of that upward, added to the velocity it already has (UnitMotion.applyImpulse). A target that dies from the
 // same hit is thrown too: the knockback does not look at hit points.
 import { KnockbackRules } from '../definitions/knockback-rules.js';
+import { LaunchImpactRules } from '../definitions/launch-impact-rules.js';
 import { HashUtil } from './map-generation.js';
 import { IndexList } from './index-list.js';
 import { LaunchImpact } from './launch-impact.js';
@@ -15,6 +16,12 @@ const IMPULSE = { x: 0, y: 0, z: 0 };
 const IMPACT = { kind: 'knockback', sourceId: null, originX: 0, originY: 0 };
 
 class Knockback {
+    // Ground speed a centered hit would give a target of standard mass, for impact presentation.
+    static referenceSpeed(mass, speed, gain) {
+        const targetMass = LaunchImpactRules.referenceMass;
+        return KnockbackRules.impulse(mass, speed, targetMass, gain) / targetMass;
+    }
+
     // One body (mass `mass`, at `speed`) striking `target` along (dx, dy). `strength` scales an area hit.
     static hit(
         sim,

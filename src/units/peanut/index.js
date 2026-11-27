@@ -39,6 +39,7 @@ export const Peanut = defineUnit({
         count: 5,
         shellHp: 25,
         impact: 10,
+        buildingImpact: 15,
         splash: 50,
         land: 'burst',
         spreadAcross: 1.5,

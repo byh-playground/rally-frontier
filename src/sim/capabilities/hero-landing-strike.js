@@ -107,6 +107,18 @@ export class HeroLandingStrike {
             y,
             impactHeightFP,
             damage,
+            impactProfile: {
+                unitDamage: damage,
+                buildingDamage: 0,
+                shove:
+                    !harmless && strike.knockback
+                        ? Knockback.referenceSpeed(
+                              sim.mass(unit),
+                              KnockbackRules.impactSpeed,
+                              KnockbackRules.gain[strike.knockback],
+                          )
+                        : 0,
+            },
             hits: blasts.reduce((sum, blast) => sum + blast.hits, 0),
             blasts,
         });

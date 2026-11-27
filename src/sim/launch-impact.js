@@ -86,7 +86,15 @@ class LaunchImpact {
     }
     // A launch shell lands as one body: everyone it carries, at the landing speed. `scale` is the share a repeated
     // shock keeps (UpgradeEchoShock).
+    static shellKnockback(sim, payload, scale = 1) {
+        return {
+            mass: payload.count * sim.mass(payload),
+            speed: KnockbackRules.impactSpeed,
+            gain: KnockbackRules.gain.area * scale,
+        };
+    }
     static blast(sim, p, x, y, radius, impactHeightFP, scale = 1) {
+        const body = this.shellKnockback(sim, p.payload, scale);
         Knockback.area(sim, {
             side: p.side,
             sourceId: p.id,
@@ -94,11 +102,9 @@ class LaunchImpact {
             y,
             radius,
             impactHeightFP,
-            // sim.mass reads the payload's unit type.
-            mass: p.payload.count * sim.mass(p.payload),
-            speed: KnockbackRules.impactSpeed,
-            gain: KnockbackRules.gain.area * scale,
+            ...body,
         });
+        return Knockback.referenceSpeed(body.mass, body.speed, body.gain);
     }
     static deploymentOrigin(sim, p, x, y) {
         const dx = p.lockedAimX - p.launchX,
@@ -245,6 +251,11 @@ class LaunchImpact {
         const radii = spots.map((spot) => Math.hypot(spot.x - group.x, spot.y - group.y)),
             closest = Math.min(...radii),
             radiusSpan = Math.max(...radii) - closest;
+        const body = this.shellKnockback(sim, group);
+        const shove =
+            group.emergencyDropHeightFP == null
+                ? Knockback.referenceSpeed(body.mass, body.speed, body.gain)
+                : 0;
         for (let i = 0; i < spots.length; i++) {
             const spot = spots[i],
                 u = sim.spawnUnit(group.side, group.type, spot.x, spot.y);
@@ -300,6 +311,7 @@ class LaunchImpact {
                 count: 1,
                 totalCount: group.count,
                 index: i,
+                ...(i === 0 ? { impactProfile: { shove } } : {}),
                 projectileId: group.projectileId,
                 unitIds: [u.id],
                 units: [{ id: u.id, x: u.x, y: u.y }],

@@ -229,6 +229,12 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
               ]
             : [
                   ['착탄 위력 · 발당', perShell(shots, 'impact')],
+                  ...(shots.some((shot) => shot.buildingImpact != null)
+                      ? [['건물 착탄 위력 · 발당', perShell(shots, 'buildingImpact')]]
+                      : []),
+                  ...(rider?.relaunchImpact != null
+                      ? [['재발사 착탄 위력 · 발당', number.format(rider.relaunchImpact)]]
+                      : []),
                   ['착탄 반경 · 발당', perShell(shots, 'splash')],
               ]),
     ];

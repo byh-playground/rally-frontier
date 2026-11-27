@@ -239,6 +239,9 @@ class LaunchRules {
             impact: shock
                 ? (fire.impacts?.[i] ?? Math.max(1, Math.round(g.impact * impactScale)))
                 : 0,
+            ...(shock && g.buildingImpact != null
+                ? { buildingImpact: Math.max(1, Math.round(g.buildingImpact * impactScale)) }
+                : {}),
             splash: shock
                 ? (fire.splashes?.[i] ?? Math.max(1, Math.round(g.splash * splashScale)))
                 : 0,

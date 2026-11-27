@@ -6,7 +6,7 @@ import { defineUnit } from '../define-unit.js';
 // 채널링 중 끊긴 줄은 그 줄부터 뒤를 끊고 다시 잇는다. 나는 적에도 닿고 땅↔공중으로 튄다(투입탄은 노리지 않음). 4명, 물몸,
 // 기름을 쓰는 고급 카드.
 // 초안(주인이 써 보고 조정): 틱 피해 3, 체력 30, 이속 50, 시야 275(사거리 + 25), 가격 식량 30 + 기름 10, 건물 피해 절반,
-// 튀는 거리 100, 포탄은 단발 기본값.
+// 튀는 거리 100, 포탄은 약한 충격으로 멀리 투입하는 단발.
 export const Cotton = defineUnit({
     id: 'cotton',
     unit: {
@@ -42,6 +42,8 @@ export const Cotton = defineUnit({
         premiumCost: 10 * RESOURCE_SCALE,
         count: 4,
         shellHp: 25,
+        impact: 15,
+        reach: 0.9,
     },
     visual: {
         family: 'grain',
