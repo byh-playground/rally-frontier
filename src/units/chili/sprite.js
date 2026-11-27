@@ -288,9 +288,8 @@ export class ChiliSpriteRenderer {
         }
         this.region = region;
 
-        // pieces: [cell, art position of its pivot, rig part]. Unposed quads (the shell) are placed around
-        // `origin` in units of `unit` art units.
-        const build = (pieces, { origin = null, unit = 1 } = {}) => {
+        // pieces: [cell, art position of its pivot, rig part].
+        const build = (pieces) => {
             const uvRects = [],
                 localRects = [],
                 parts = [];
@@ -303,14 +302,13 @@ export class ChiliSpriteRenderer {
                     (w * SHEET_SCALE) / region.atlas.width,
                     (h * SHEET_SCALE) / region.atlas.height,
                 );
-                const [ox, oy] = origin || [0, 0];
-                localRects.push((x - px - ox) / unit, (y - py - oy) / unit, w / unit, h / unit);
+                localRects.push(x - px, y - py, w, h);
                 parts.push(part);
             }
             return {
                 uvRects: Float32Array.from(uvRects),
                 localRects: Float32Array.from(localRects),
-                ...(origin ? {} : { parts: Float32Array.from(parts) }),
+                parts: Float32Array.from(parts),
             };
         };
         // Depth-written: the feet, the body and its stalk cap.
@@ -331,15 +329,6 @@ export class ChiliSpriteRenderer {
                     [CELL.hand, REST_HANDS[1], PART.rightHand],
                 ]),
             ]),
-        );
-        // The launch shell: the chili without feet and fists, nose first, about one unit long.
-        this.ammo = build(
-            [
-                [CELL.body, BODY],
-                [CELL.cap, CAP],
-                [CELL.neutral, FACE],
-            ],
-            { origin: [-70, -116], unit: 520 },
         );
         context.onDispose(() => this.dispose());
     }
@@ -539,10 +528,6 @@ export class ChiliSpriteRenderer {
 
     drawFace(actor, matrix, depth, face) {
         this.draw(this.front[actor.faceFor(face)] || this.front.neutral, matrix, depth, actor);
-    }
-
-    drawAmmo(matrix, depth) {
-        this.draw(this.ammo, matrix, depth);
     }
 
     dispose() {
@@ -1008,7 +993,6 @@ export const SPRITE = Object.freeze({
     renderer: ChiliSpriteRenderer,
     portrait: chiliSpritePortrait,
     // Nose first along the flight.
-    shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     breath: { drawFlame },
     motion: Object.freeze({

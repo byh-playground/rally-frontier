@@ -11,7 +11,6 @@ const cells = {
     neutral: { slot: [189, 91, 98, 45], pivot: [48, 22] },
     attack: { slot: [292, 91, 98, 45], pivot: [48, 22] },
     hurt: { slot: [395, 91, 98, 45], pivot: [48, 22] },
-    ammo: { slot: [325, 151, 165, 82], pivot: [82, 41] },
 };
 const bodyParts = [
     { cell: 'foot', id: 'leftFoot', position: [-32, -16], mirror: true },
@@ -131,7 +130,7 @@ export class PeanutSpriteRenderer {
         }
         this.region = region;
 
-        const build = (pieces, posed = true) => {
+        const build = (pieces) => {
             const uvRects = [],
                 localRects = [],
                 channels = [];
@@ -144,20 +143,19 @@ export class PeanutSpriteRenderer {
                     slot: [sx, sy, w, h],
                     pivot: [px, py],
                 } = cells[cell];
-                const divisor = posed ? 1 : w;
                 uvRects.push(
                     (region.x + sx) / region.atlas.width,
                     (region.y + sy) / region.atlas.height,
                     w / region.atlas.width,
                     h / region.atlas.height,
                 );
-                localRects.push((x - px) / divisor, (y - py) / divisor, w / divisor, h / divisor);
-                if (posed) channels.push(parts.findIndex((part) => part.id === id));
+                localRects.push(x - px, y - py, w, h);
+                channels.push(parts.findIndex((part) => part.id === id));
             }
             return {
                 uvRects: Float32Array.from(uvRects),
                 localRects: Float32Array.from(localRects),
-                ...(posed ? { parts: Float32Array.from(channels) } : {}),
+                parts: Float32Array.from(channels),
             };
         };
         this.body = build(bodyParts);
@@ -167,7 +165,6 @@ export class PeanutSpriteRenderer {
                 build(frontParts.map((part) => ({ ...part, cell: part.cell || face }))),
             ]),
         );
-        this.ammo = build([{ cell: 'ammo', position: [0, 0] }], false);
         context.onDispose(() => this.dispose());
     }
 
@@ -244,10 +241,6 @@ export class PeanutSpriteRenderer {
         this.draw(this.front[face] || this.front.neutral, matrix, depth, actor);
     }
 
-    drawAmmo(matrix, depth) {
-        this.draw(this.ammo, matrix, depth);
-    }
-
     dispose() {
         if (this.disposed) return;
         this.disposed = true;
@@ -262,7 +255,6 @@ export const SPRITE = Object.freeze({
     load: loadPeanutSpriteCanvas,
     renderer: PeanutSpriteRenderer,
     portrait: peanutSpritePortrait,
-    shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     artScale: PEANUT_ART_SCALE,
     motion: Object.freeze({

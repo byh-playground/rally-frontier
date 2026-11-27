@@ -76,6 +76,7 @@ import {
     FloatingTextPresentationDefinition,
 } from './render/presentation-effects.js';
 import { GRAIN_SPRITES } from './render/grain-sprite-registry.js';
+import { PaintedShells } from './render/painted-shells.js';
 import { heroBasicAttackElapsedMs } from './render/hero-basic-motion.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
 import { DEAD_UNIT_LOOK, DeadUnitLook } from './render/dead-unit-look.js';
@@ -346,7 +347,7 @@ class RenderPassProfiler {
 const PROJECTILE_VISUAL_RENDER_FNS = Object.freeze({
     launchAmmo: (rdr, c) => {
         const { p, sc, screenMotion, x, y } = c;
-        // Each grain flies as its own bundle SVG, nose along the screen-space flight direction.
+        // Each grain flies as its own shell art, nose along the screen-space flight direction.
         const record = rdr.launchAmmoRecord(p.payload?.type);
         if (!record) return;
         let dx = screenMotion?.valid ? screenMotion.dx : 1,
@@ -950,6 +951,7 @@ class GLRenderer {
                         [
                             ...RallyGamekit.VECTOR_RENDERER_ATLAS_REGIONS,
                             ...new Set(Object.values(globalThis.RallySpriteCanvases)),
+                            globalThis.RallyShellImage,
                         ],
                         { width: 2048, height: 1024, gutter: 1 },
                     ) + 1,
@@ -1006,6 +1008,7 @@ class GLRenderer {
         this.stickyAims = new Map();
         this.stickyWrapPoses = [];
         this.spriteRenderers = {};
+        this.paintedShells = null;
         this.effectArt = {};
         this.riceBodyGroup = [];
         // One actor per grain: a shared actor re-seeked per grain rewrites its pose row and splits the instanced batch.
@@ -1237,6 +1240,8 @@ class GLRenderer {
         this.grainFaces.dispose();
         for (const sprites of Object.values(this.spriteRenderers)) sprites.dispose();
         for (const hold of this.gameResourceHolds || []) hold.release();
+        this.paintedShells?.dispose();
+        this.paintedShells = null;
         this.spriteRenderers = {};
         this.effectArt = {};
         this.gameResourceHolds = null;
@@ -1355,6 +1360,7 @@ class GLRenderer {
                 for (const role of definition.effectArt || [])
                     this.effectArt[role] = this.spriteRenderers[type];
             }
+            this.paintedShells ||= new PaintedShells(C, globalThis.RallyShellImage);
             this.grainFaces.prepare();
             this.combatFxLook.prepare();
             if (!C.beginFrame()) throw new Error('그래픽 장치를 준비할 수 없습니다.');
@@ -1427,11 +1433,14 @@ class GLRenderer {
                 C.depthTest = true;
                 if (spec.shell) {
                     renderer[spec.shell.draw]([32, 0, 0, 32, 0, 0], 0);
-                    renderer.drawCombatAmmo?.([24, 0, 0, 24, 0, 0], 0);
                 }
+                renderer.drawCombatAmmo?.([24, 0, 0, 24, 0, 0], 0);
                 renderer.prepareExtraArt?.(matrix);
                 C.flush('grain-extra-resource-preparation');
             }
+            for (const type of PaintedShells.types)
+                this.paintedShells.record(type).renderer.drawAmmo([32, 0, 0, 32, 0, 0], 0);
+            C.flush('painted-shell-resource-preparation');
             C.depthTest = false;
             this.buildingArt.prune([]);
             C.endFrame();
@@ -1446,6 +1455,8 @@ class GLRenderer {
             this.buildingArt.prune([]);
             for (const hold of holds) hold.release();
             for (const sprites of Object.values(this.spriteRenderers)) sprites.dispose();
+            this.paintedShells?.dispose();
+            this.paintedShells = null;
             this.spriteRenderers = {};
             this.effectArt = {};
             throw error;
@@ -5380,29 +5391,14 @@ class GLRenderer {
     hasGrainArt(u) {
         return !!this.spriteRenderers[u?.type] || !!window.RallyVectorAssets?.[u?.type];
     }
+    // How a card's shell is drawn: its painted picture, else the art its own sprite renderer draws (sprite.shell).
     launchAmmoRecord(type) {
         if (!LaunchRules.grain(type)) return null;
-        const key = 'ammo|' + type;
-        let record = this.vectorUnitAssetCache.get(key);
-        if (record) return record;
+        if (PaintedShells.has(type)) return this.paintedShells.record(type);
         const shell = GRAIN_SPRITES[type]?.shell;
-        if (shell) {
-            record = { shell, renderer: this.spriteRenderers[type] };
-            this.vectorUnitAssetCache.set(key, record);
-            return record;
-        }
-        const source = window.RallyVectorAssets?.['ammo-' + type];
-        if (!source) return null;
-        const actor = RallyGamekit.createVectorActor(this.vectorContext, source, {
-            clip: 'idle',
-            startedAtMs: 0,
-        });
-        actor.setExpression('default').seek(0);
-        record = { actor, compiled: source };
-        this.vectorUnitAssetCache.set(key, record);
-        return record;
+        return shell ? { shell, renderer: this.spriteRenderers[type] } : null;
     }
-    // Draws a 256-canvas asset centred at (x,y), rotated and scaled, between frame batches.
+    // Draws a shell's art centred at (x, y), rotated and scaled, between frame batches.
     drawVectorBillboard(
         record,
         x,
@@ -5417,46 +5413,22 @@ class GLRenderer {
             this.begin();
         }
         const shell = record.shell,
-            // A sheet-framed shell (sprite.shell.sheet) draws in sheet units; the rest are centred.
-            centered = !!shell && !shell.sheet,
-            actualAngle = angle + (shell?.turn || 0),
-            actualScale = centered ? scale * 200 : scale,
+            actualAngle = angle + (shell.turn || 0),
+            // A sheet-framed shell (sprite.shell.sheet) draws in sheet units; the rest in shell lengths.
+            actualScale = shell.sheet ? scale * 256 : scale * 200,
             cos = Math.cos(actualAngle) * actualScale,
             sin = Math.sin(actualAngle) * actualScale,
             m = this._vectorUnitMatrix;
-        if (shell?.sheet) {
-            m[0] = cos * scaleX * 256;
-            m[1] = sin * scaleX * 256;
-            m[2] = -sin * scaleY * 256;
-            m[3] = cos * scaleY * 256;
-            m[4] = x;
-            m[5] = y;
-            this.vectorContext.depthTest = depthTest;
-            this.vectorContext.depthWrite = false;
-            record.renderer[shell.draw](m, this._renderDepth ?? 0);
-            this.flushVectorMesh('burr-billboard');
-            return;
-        }
         m[0] = cos * scaleX;
         m[1] = sin * scaleX;
         m[2] = -sin * scaleY;
         m[3] = cos * scaleY;
-        m[4] = centered ? x : x - m[0] * 128 - m[2] * 128;
-        m[5] = centered ? y : y - m[1] * 128 - m[3] * 128;
-        if (centered) {
-            this.vectorContext.depthTest = depthTest;
-            this.vectorContext.depthWrite = false;
-            record.renderer[shell.draw](m, this._renderDepth ?? 0);
-            return;
-        }
-        this.vectorContext.drawVectorActor(record.actor, {
-            matrix: m,
-            alpha: 1,
-            depth: this._renderDepth ?? 0,
-            depthTest,
-            depthWrite: false,
-        });
-        this.flushVectorMesh('vector-billboard');
+        m[4] = x;
+        m[5] = y;
+        this.vectorContext.depthTest = depthTest;
+        this.vectorContext.depthWrite = false;
+        record.renderer[shell.draw](m, this._renderDepth ?? 0);
+        if (shell.sheet) this.flushVectorMesh('burr-billboard');
     }
     landingBundlePose(fx) {
         const age = fx.clock.ageMs;
@@ -6748,46 +6720,6 @@ class GLRenderer {
         }
     }
 
-    drawTumblingShell(p, world, renderer) {
-        const point = this.projectRenderWorldPosition(world);
-        const stable = this.projectRenderWorldPositionStable(world);
-        const motion = this.projectileScreenMotion(p, stable.x, stable.y);
-        let dx = motion.valid ? motion.dx : 1,
-            dy = motion.valid ? motion.dy : 0;
-        if (!motion.valid && Number.isFinite(p.lockedAimX) && Number.isFinite(p.lockedAimY)) {
-            const target = this.worldToPx(this.viewX(p.lockedAimX), this.viewY(p.lockedAimY));
-            dx = target[0] - point.x;
-            dy = target[1] - point.y;
-        }
-        const pose = this.launchShellVisualPose(p, Math.atan2(dy, dx)),
-            angle = pose.angle + Math.PI / 4,
-            size = Math.max(30, 58 * this.sc());
-        const m = this._vectorUnitMatrix,
-            c = this.vectorContext,
-            a = Math.cos(angle) * size,
-            b = Math.sin(angle) * size;
-        m[0] = a * pose.scaleX;
-        m[1] = b * pose.scaleX;
-        m[2] = -b * pose.scaleY;
-        m[3] = a * pose.scaleY;
-        m[4] = point.x;
-        m[5] = point.y;
-        c.depthTest = !!this.passState.depthEnabled;
-        c.depthWrite = false;
-        c.depthFunc = this.passState.depthFunc || 'lequal';
-        renderer.drawAmmo(m, this._renderDepth ?? 0);
-        const marker = Math.max(4, 6 * this.sc());
-        m[0] = marker;
-        m[1] = 0;
-        m[2] = 0;
-        m[3] = marker;
-        renderer.drawTeamMarker(
-            m,
-            this._renderDepth ?? 0,
-            this.factionRelation(p.side) === 'friendly',
-        );
-    }
-
     drawUnit(u, renderOptions = null) {
         const own = u.side === this.mySide();
         if (!renderOptions?.visibilityChecked && !own && !this.visibleRaw(u.x, u.y)) return;
@@ -6988,7 +6920,7 @@ class GLRenderer {
             this.circle(x, y, radius * 1.55, [0.06, 0.08, 0.1, 0.08], 10);
         });
         const airY = this.projectRenderWorldPosition(world).y;
-        if (!particleTrail && shell?.flight !== 'tumble' && y - airY > 2.5)
+        if (!particleTrail && y - airY > 2.5)
             this.line(
                 x,
                 y - radius * 0.25,
@@ -7003,7 +6935,6 @@ class GLRenderer {
         // sprite.shell.flight picks how a shell flies; the shell's own renderer draws it.
         const shell = GRAIN_SPRITES[type]?.shell,
             shellArt = shell && this.spriteRenderers[type];
-        if (shell?.flight === 'tumble') return this.drawTumblingShell(p, world, shellArt);
         if (shell?.flight === 'ear') return this.drawEarShell(p, world, shellArt, shell);
         if (shell?.flight === 'cone') return this.drawConeShell(p, world, shellArt, shell);
 
@@ -8146,8 +8077,9 @@ class GLRenderer {
             const nextPainter =
                 kind === 'landingBundle' ||
                 (kind === 'projectile' &&
-                    GRAIN_SPRITES[entity.payload?.type]?.shell &&
-                    !GRAIN_SPRITES[entity.payload.type].shell.sheet) ||
+                    (PaintedShells.has(entity.payload?.type) ||
+                        (GRAIN_SPRITES[entity.payload?.type]?.shell &&
+                            !GRAIN_SPRITES[entity.payload.type].shell.sheet))) ||
                 kind === 'fruitProjectile' ||
                 kind === 'unitLob' ||
                 kind === 'thorn' ||

@@ -5,7 +5,7 @@ const crypto = require('node:crypto');
 function readAcornSpriteManifest(root = path.resolve(__dirname, '..')) {
     const dir = path.join(root, 'assets/sprites/acorn');
     const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
-    const files = ['ammo.png', 'parts.png'];
+    const files = ['parts.png'];
     if (
         manifest?.schemaVersion !== 1 ||
         JSON.stringify(Object.keys(manifest.assets || {}).sort()) !== JSON.stringify(files)

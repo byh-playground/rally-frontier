@@ -202,8 +202,8 @@ export class CottonSpriteRenderer {
         }
         this.region = region;
 
-        // Posed quads are in standing-art units; the shell's quads are around `origin` in units of `unit`.
-        const build = (pieces, { origin = null, unit = 1 } = {}) => {
+        // Posed quads are in standing-art units.
+        const build = (pieces) => {
             const uvRects = [],
                 localRects = [],
                 channels = [];
@@ -222,14 +222,13 @@ export class CottonSpriteRenderer {
                     w / region.atlas.width,
                     h / region.atlas.height,
                 );
-                const [ox, oy] = origin || [0, 0];
-                localRects.push((x - px - ox) / unit, (y - py - oy) / unit, w / unit, h / unit);
-                if (!origin) channels.push(parts.findIndex((part) => part.id === id));
+                localRects.push(x - px, y - py, w, h);
+                channels.push(parts.findIndex((part) => part.id === id));
             }
             return {
                 uvRects: Float32Array.from(uvRects),
                 localRects: Float32Array.from(localRects),
-                ...(origin ? {} : { parts: Float32Array.from(channels) }),
+                parts: Float32Array.from(channels),
             };
         };
         this.body = build(bodyParts);
@@ -238,15 +237,6 @@ export class CottonSpriteRenderer {
                 face,
                 build(frontParts.map((part) => ({ ...part, cell: part.cell || face }))),
             ]),
-        );
-        // The launch shell: the cotton puff without feet and arms, about one unit wide.
-        this.ammo = build(
-            [
-                { cell: 'body', position: [0, 0] },
-                { cell: 'cap', position: [0, 0] },
-                { cell: 'neutral', position: [0, -88] },
-            ],
-            { origin: [0, -108], unit: 190 },
         );
         context.onDispose(() => this.dispose());
     }
@@ -368,10 +358,6 @@ export class CottonSpriteRenderer {
 
     drawFace(actor, matrix, depth, face) {
         this.draw(this.front[actor.faceFor(face)] || this.front.neutral, matrix, depth, actor);
-    }
-
-    drawAmmo(matrix, depth) {
-        this.draw(this.ammo, matrix, depth);
     }
 
     dispose() {
@@ -739,7 +725,6 @@ export const SPRITE = Object.freeze({
     load: loadCottonSpriteCanvas,
     renderer: CottonSpriteRenderer,
     portrait: cottonSpritePortrait,
-    shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     artScale: COTTON_ART_SCALE,
     chain: { drawBolt, igniteGapMs: IGNITE_GAP_MS, fadeMs: FADE_MS, telegraphMs: TELEGRAPH_MS },

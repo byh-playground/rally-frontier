@@ -195,7 +195,7 @@ export class WatermelonSpriteRenderer {
         this.region = region;
         this.visible = PARTS.map(() => true);
         this.morph = [0, 0];
-        const build = (pieces, posed = true) => {
+        const build = (pieces) => {
             const uv = [],
                 local = [],
                 parts = [];
@@ -214,7 +214,7 @@ export class WatermelonSpriteRenderer {
             return {
                 uvRects: Float32Array.from(uv),
                 localRects: Float32Array.from(local),
-                ...(posed ? { parts: Float32Array.from(parts) } : {}),
+                parts: Float32Array.from(parts),
             };
         };
         this.body = [build([...FEET, LEFT, RIGHT, BODY]), build([...FEET, LEFT, BODY])];
@@ -225,7 +225,6 @@ export class WatermelonSpriteRenderer {
                 [build([part]), build([part, RIGHT])],
             ]),
         );
-        this.ammo = build([{ ...BODY, rect: [-0.5, -0.45, 1, 0.9] }], false);
         context.onDispose(() => this.dispose());
     }
 
@@ -344,10 +343,6 @@ export class WatermelonSpriteRenderer {
         );
     }
 
-    drawAmmo(matrix, depth) {
-        this.draw(this.ammo, matrix, depth);
-    }
-
     dispose() {
         if (this.disposed) return false;
         this.disposed = true;
@@ -364,7 +359,6 @@ export const SPRITE = Object.freeze({
     renderer: WatermelonSpriteRenderer,
     portrait: watermelonSpritePortrait,
     heroBasic: true,
-    shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 121,
     // The hero roll (HeroRollAttack): phase progress, body tuck and the rolling body matrix.
     roll: Object.freeze({

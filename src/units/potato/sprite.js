@@ -20,7 +20,6 @@ const cells = {
     effort: { slot: [325, 206, 98, 45], pivot: [49, 22] },
     moundBack: { slot: [10, 262, 224, 90], pivot: [112, 70] },
     moundFront: { slot: [242, 276, 224, 76], pivot: [112, 40] },
-    ammo: { slot: [474, 186, 124, 106], pivot: [62, 60] },
 };
 // Pose channels, shared by the three stages (GameKit allows 16). The trunk carries the body and
 // everything that leans with it; each stage gives every channel its own base pose.
@@ -323,17 +322,16 @@ export class PotatoSpriteRenderer {
         this.region = region;
 
         // Posed quads sit on their channel's pivot in standing-art units; the stage pose moves them.
-        // The ammo quad is unposed, in sheet units around its pivot.
-        const build = (pieces, posed = true) => {
+        const build = (pieces) => {
             const uvRects = [],
                 localRects = [],
                 channelIds = [];
-            for (const { cell, channel, position } of pieces) {
+            for (const { cell, channel } of pieces) {
                 const {
                     slot: [sx, sy, w, h],
                     pivot: [px, py],
                 } = cells[cell];
-                const [x, y] = posed ? channels[channelIndex.get(channel)].pivot : position;
+                const [x, y] = channels[channelIndex.get(channel)].pivot;
                 uvRects.push(
                     (region.x + sx) / region.atlas.width,
                     (region.y + sy) / region.atlas.height,
@@ -341,12 +339,12 @@ export class PotatoSpriteRenderer {
                     h / region.atlas.height,
                 );
                 localRects.push(x - px, y - py, w, h);
-                if (posed) channelIds.push(channelIndex.get(channel));
+                channelIds.push(channelIndex.get(channel));
             }
             return {
                 uvRects: Float32Array.from(uvRects),
                 localRects: Float32Array.from(localRects),
-                ...(posed ? { parts: Float32Array.from(channelIds) } : {}),
+                parts: Float32Array.from(channelIds),
             };
         };
         // Each stage draws only its own pieces: body first, then the face layer.
@@ -366,10 +364,6 @@ export class PotatoSpriteRenderer {
                 },
             ]),
         );
-        const ammo = cells.ammo.slot;
-        this.ammo = build([{ cell: 'ammo', position: [0, 0] }], false);
-        // Cannon ammo is drawn with a matrix whose unit is the shell width.
-        for (let i = 0; i < 4; i++) this.ammo.localRects[i] /= ammo[2];
         context.onDispose(() => this.dispose());
     }
 
@@ -455,10 +449,6 @@ export class PotatoSpriteRenderer {
         if (data) this.draw(data, matrix, depth, actor);
     }
 
-    drawAmmo(matrix, depth) {
-        this.draw(this.ammo, matrix, depth);
-    }
-
     dispose() {
         if (this.disposed) return;
         this.disposed = true;
@@ -473,7 +463,6 @@ export const SPRITE = Object.freeze({
     load: loadPotatoSpriteCanvas,
     renderer: PotatoSpriteRenderer,
     portrait: potatoSpritePortrait,
-    shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     artScale: POTATO_ART_SCALE,
     motion: Object.freeze({

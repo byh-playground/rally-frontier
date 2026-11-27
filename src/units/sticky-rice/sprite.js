@@ -19,7 +19,6 @@ const cells = {
     attack: { slot: [115, 205, 98, 45], pivot: [49, 22] },
     hurt: { slot: [220, 205, 98, 45], pivot: [49, 22] },
     hug: { slot: [325, 205, 98, 45], pivot: [49, 22] },
-    ammo: { slot: [450, 186, 120, 96], pivot: [60, 50] },
     wrapSleeve: { slot: [10, 262, 140, 196], pivot: [102, 98] },
     wrapBody: { slot: [200, 4, 176, 192], pivot: [88, 100] },
 };
@@ -174,7 +173,7 @@ export class StickyRiceSpriteRenderer {
         this.region = region;
 
         // Posed quads are in standing-art units; unposed quads are in sheet units around their pivot.
-        const build = (pieces, posed = true) => {
+        const build = (pieces) => {
             const uvRects = [],
                 localRects = [],
                 channels = [];
@@ -194,12 +193,12 @@ export class StickyRiceSpriteRenderer {
                     h / region.atlas.height,
                 );
                 localRects.push(x - px, y - py, w, h);
-                if (posed) channels.push(parts.findIndex((part) => part.id === id));
+                channels.push(parts.findIndex((part) => part.id === id));
             }
             return {
                 uvRects: Float32Array.from(uvRects),
                 localRects: Float32Array.from(localRects),
-                ...(posed ? { parts: Float32Array.from(channels) } : {}),
+                parts: Float32Array.from(channels),
             };
         };
         this.body = build(bodyParts);
@@ -209,10 +208,6 @@ export class StickyRiceSpriteRenderer {
                 build(frontParts.map((part) => ({ ...part, cell: part.cell || face }))),
             ]),
         );
-        const ammo = cells.ammo.slot;
-        this.ammo = build([{ cell: 'ammo', position: [0, 0] }], false);
-        // Cannon ammo is drawn with a matrix whose unit is the shell width.
-        for (let i = 0; i < 4; i++) this.ammo.localRects[i] /= ammo[2];
         // The muzzle wrap reads the same sheet on the 2D overlay (drawWrapOverlay).
         this.sheet = canvas;
         context.onDispose(() => this.dispose());
@@ -291,10 +286,6 @@ export class StickyRiceSpriteRenderer {
         this.draw(this.front[face] || this.front.neutral, matrix, depth, actor);
     }
 
-    drawAmmo(matrix, depth) {
-        this.draw(this.ammo, matrix, depth);
-    }
-
     // A soldier wrapped over a cannon's muzzle, from BuildingArt.pose: the sleeve turns with the
     // barrel around the muzzle socket, the round body stays upright just outside it.
     // The wrap is the only sign that an outpost cannot fire, so it is drawn on the 2D overlay above
@@ -352,7 +343,6 @@ export const SPRITE = Object.freeze({
     load: loadStickyRiceSpriteCanvas,
     renderer: StickyRiceSpriteRenderer,
     portrait: stickyRiceSpritePortrait,
-    shell: { draw: 'drawAmmo', depthTest: true },
     groundY: 0,
     artScale: STICKY_RICE_ART_SCALE,
     motion: Object.freeze({

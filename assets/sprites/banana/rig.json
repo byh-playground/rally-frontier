@@ -50,9 +50,5 @@
         "face": -0.06,
         "heldBoomerang": -0.65
     },
-    "mirrored": ["farBoot", "farArm"],
-    "cannonAmmo": {
-        "part": "body",
-        "pivot": [111, 120]
-    }
+    "mirrored": ["farBoot", "farArm"]
 }

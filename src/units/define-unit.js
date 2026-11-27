@@ -77,9 +77,9 @@
 //   sprite   () => Promise of the art contract (./<id>/sprite.js SPRITE), a lazy import so the
 //            simulation Worker never loads art. Fields:
 //              load, renderer, portrait, groundY, art?, artScale?, heroBasic?, fruitAttack?
-//              shell?      { draw, turn?, flight?: 'tumble'|'ear'|'cone'|'soldier', sheet?,
+//              shell?      { draw, turn?, flight?: 'ear'|'cone'|'soldier', sheet?,
 //                          particleTrail?, aimFallback?, depthTest? }; without it the cannon
-//                          shell is the vector asset 'ammo-<id>'
+//                          shell is its picture in src/render/painted-shells.js
 //              landing?    'ear-burst'
 //              pose?       'kernel-thrower'|'thorn-thrower'|'body-charge'
 //              roll?       { progress, tuck, setMatrix }  (HeroRollAttack)
