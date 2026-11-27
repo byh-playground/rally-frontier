@@ -12,26 +12,14 @@
 //   그 대포의 탑승 고리를 목표로 하는 공용 고정 흐름장(navigation field, 대포 중심이 키라 건물 배치가 바뀔 때만 다시 만듦)을 따른다.
 //   도착하면 한 명씩 탑승(phase 'board')해 조준을 고정하고, 탑승 시간 뒤 공용 fireLaunchShell로 자기 한 명
 //   (count 1, passengerHp=현재 체력, ride=비행 종류)을 비용·재장전 없이 쏜다. 탑승한 대포는 반드시 발사한다.
-// - 적을 노리는 비행('enemy')은 같은 대포에서 앞서 적을 노리고 쏜 검은콩 포탄이 아직 날고 있으면 포구에 앉은 채
-//   (phase 'board', waiting) 기다리고, 그 포탄이 착탄하거나 요격돼 사라진 틱에 표적을 다시 골라 탑승 시간 뒤 쏜다.
-//   다시 고른 비행이 'hop'·'front'면 기다리지 않는다. 그래서 첫 포탄이 밀어낸 적의 새 자리로 다음 검은콩이 날아간다.
-// - 비행 표적(대포 발사 사거리 안, 최소 사거리 없음): ① 보이는 가장 가까운 적 병사 ② 보이는 가장 가까운 적 건물
-//   ('enemy') ③ 현재 대포보다 적 본진에 가까운 아군 발사 대포 중 현재 대포에서 가장 가까운 것의 탑승 고리 안
-//   ('hop', 적 본진 반대쪽에 병사마다 결정론적으로 흩음) ④ 적 본진 방향 사거리 끝('front', 보정은 일반 발사와 같음).
-//   포구에 너무 가까운 표적은 같은 방향으로 포구 밖 MIN_FLIGHT만큼 떨어진 곳을 노린다.
-// - cannonRide 전체가 권위 상태다. 탑승 모습은 스냅샷의 cannonRide로 그리는 연출이며, 한 대포에 여러 명이면
-//   가장 먼저 발사할 한 명만 그린다.
-// Unit.cannonRide { readyTick, phase, cannonId, launchTick, aimX, aimY, flight, listKey, waiting } is the only state:
-//   phase null     fights normally; once readyTick has passed it picks the nearest cannon ahead, at most once
-//                  per change of its side's cannon list (listKey), ahead first and else the nearest behind;
-//                  none means it marches like any grain,
-//   phase 'return' runs to that cannon, faster than usual, even mid-fight,
-//   phase 'board'  sits on the muzzle until launchTick, then rides a shell of its own to the locked aim; an
-//                  enemy-bound ride waits (waiting) while the cannon's previous enemy-bound rider shell is still
-//                  in the air, then aims again and launches boardMs later.
-// The flight reuses the ordinary launch path: shell, flight, impact and landing. Only the issuer differs,
-// it costs nothing, ignores the cannon's reload, and the single passenger keeps its health (payload.passengerHp)
-// and how it flew (payload.ride), which decides when it picks a cannon again.
+// - 검은콩 상태는 'march'(일반 교전·재탑승 대기), 'return'(대포로 복귀), 'board'(탑승해 발사 준비),
+//   'wait'(앞서 발사한 적 조준탄이 끝나길 기다림) 중 하나다. 'board'와 'wait'가 포구를 점유하며,
+//   대포 하나에 한 명만 들어간다. 렌더와 발사 판정이 같은 점유 상태를 읽는다.
+// - 적을 노린 포탄이 남아 있으면 포구에서 기다린다. 앞 포탄이 착탄하거나 요격되면 조준을 다시 정하고 탑승 시간 뒤 쏜다.
+//   'hop'과 'front'는 앞서 쏜 포탄의 착탄을 기다리지 않는다.
+// - 비행 표적(대포 사거리 안)은 보이는 적 병사 → 보이는 적 건물 → 더 앞쪽 아군 대포('hop') → 적진 방향('front') 순이다.
+//   포구보다 너무 가까운 표적은 같은 방향으로 포구 밖 MIN_FLIGHT만큼 떨어진 곳을 노린다.
+// - 재발사는 공용 발사·비행·착지 경로를 쓰고 대포의 비용·재장전을 쓰지 않는다. 탄은 검은콩 한 명의 현재 체력을 보관한다.
 import { BuildingDefinition } from '../../definitions/buildings.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { LaunchRules } from '../launch-rules.js';
@@ -49,7 +37,13 @@ const MIN_FLIGHT = 40;
 // Hop landings fan out this far either side of the line from the next cannon away from the enemy base.
 const HOP_SPREAD = Math.PI / 4;
 
-const PHASES = Object.freeze([null, 'return', 'board']);
+const PHASE_FIELDS = Object.freeze({
+    march: ['phase', 'readyTick', 'listKey'],
+    return: ['phase', 'listKey', 'cannonId'],
+    board: ['phase', 'cannonId', 'launchTick', 'aimX', 'aimY', 'flight'],
+    wait: ['phase', 'cannonId', 'aimX', 'aimY'],
+});
+const MUZZLES = new WeakMap();
 // enemy: aimed at an enemy (or launched by the player), fights before picking a cannon again.
 // hop:   dropped beside a cannon further forward, picks a cannon again at once.
 // front: thrown toward the enemy base from the frontmost cannon, picks a cannon again at once.
@@ -63,70 +57,69 @@ const IN_FLIGHT = new WeakMap();
 class CannonRider {
     static FLIGHTS = FLIGHTS;
 
-    static initialState() {
-        return {
-            readyTick: 0,
-            phase: null,
-            cannonId: null,
-            launchTick: 0,
-            aimX: 0,
-            aimY: 0,
-            flight: null,
-            listKey: null,
-            waiting: false,
-        };
+    static initialState(readyTick = 0, listKey = null) {
+        return { phase: 'march', readyTick, listKey };
     }
 
-    static validateState(unit) {
+    static occupiesMuzzle(ride) {
+        return ride?.phase === 'board' || ride?.phase === 'wait';
+    }
+
+    static validateState(unit, occupiedMuzzles) {
         if (!UnitDefinition.get(unit.type)?.cannonRider) return;
         const ride = unit.cannonRide;
+        const fields = ride && Object.hasOwn(PHASE_FIELDS, ride.phase) && PHASE_FIELDS[ride.phase];
         if (
-            !ride ||
-            !PHASES.includes(ride.phase) ||
-            !Number.isSafeInteger(ride.readyTick) ||
-            !Number.isSafeInteger(ride.launchTick) ||
-            !Number.isSafeInteger(ride.aimX) ||
-            !Number.isSafeInteger(ride.aimY) ||
-            (ride.phase === null) !== (ride.cannonId === null) ||
-            (ride.cannonId !== null && typeof ride.cannonId !== 'string') ||
-            (ride.phase === 'board') !== FLIGHTS.includes(ride.flight) ||
-            (ride.phase !== 'board' && ride.flight !== null) ||
-            (ride.listKey !== null && (!Number.isSafeInteger(ride.listKey) || ride.listKey < 0)) ||
-            (ride.phase !== null && ride.listKey === null) ||
-            typeof ride.waiting !== 'boolean' ||
-            (ride.waiting && ride.flight !== 'enemy')
+            !fields ||
+            Object.keys(ride).length !== fields.length ||
+            !fields.every((field) => Object.hasOwn(ride, field)) ||
+            (fields.includes('listKey') &&
+                !(ride.listKey === null && ride.phase === 'march') &&
+                (!Number.isSafeInteger(ride.listKey) || ride.listKey < 0)) ||
+            (ride.phase === 'march'
+                ? !Number.isSafeInteger(ride.readyTick) || ride.readyTick < 0
+                : typeof ride.cannonId !== 'string' || !ride.cannonId) ||
+            (this.occupiesMuzzle(ride) &&
+                (!Number.isSafeInteger(ride.aimX) || !Number.isSafeInteger(ride.aimY))) ||
+            (ride.phase === 'board' &&
+                (!Number.isSafeInteger(ride.launchTick) ||
+                    ride.launchTick < 0 ||
+                    !FLIGHTS.includes(ride.flight)))
         )
             throw new Error('게임 snapshot의 검은콩 탑승 상태가 잘못되었습니다.');
+
+        if (!unit.alive || !this.occupiesMuzzle(ride)) return;
+        if (occupiedMuzzles.has(ride.cannonId))
+            throw new Error('게임 snapshot에서 한 포구에 검은콩이 중복 탑승했습니다.');
+        occupiedMuzzles.add(ride.cannonId);
     }
 
-    // Every landing picks a cannon again: after the fight delay, or at once after a hop or a forward throw.
+    // Enemy drops fight before seeking another ride; hops and forward throws can seek immediately.
     static land(sim, unit, spec, flight = 'enemy') {
-        unit.cannonRide = {
-            ...this.initialState(),
-            readyTick:
-                sim.tick +
-                (flight === 'hop' || flight === 'front'
-                    ? 0
-                    : sim.time.ceilTicks(spec.reboardDelayMs)),
-        };
+        const delay = flight === 'enemy' ? sim.time.ceilTicks(spec.reboardDelayMs) : 0;
+        unit.cannonRide = this.initialState(sim.tick + delay);
     }
 
-    static clear(ride) {
-        ride.phase = null;
-        ride.cannonId = null;
-        ride.launchTick = 0;
-        ride.aimX = 0;
-        ride.aimY = 0;
-        ride.flight = null;
-        ride.waiting = false;
+    // Derived from the unit phases. Preserve the index through this tick's claims, and rebuild it
+    // if rollback/import replaces the unit list at the same tick.
+    static muzzleOwners(sim) {
+        let memo = MUZZLES.get(sim);
+        if (memo?.tick === sim.tick && memo.units === sim.units) return memo.owners;
+        const owners = new Map();
+        for (const unit of sim.units)
+            if (unit.alive && this.occupiesMuzzle(unit.cannonRide))
+                owners.set(unit.cannonRide.cannonId, unit);
+        MUZZLES.set(sim, { tick: sim.tick, units: sim.units, owners });
+        return owners;
     }
 
     // True while a shell this cannon fired with an enemy-bound rider has neither struck nor been shot down.
     static shellInFlight(sim, cannon) {
         let memo = IN_FLIGHT.get(sim);
-        if (!memo) IN_FLIGHT.set(sim, (memo = { tick: -1, ids: new Set() }));
-        if (memo.tick !== sim.tick) {
+        if (!memo) IN_FLIGHT.set(sim, (memo = { tick: -1, projectiles: null, ids: new Set() }));
+        if (memo.tick !== sim.tick || memo.projectiles !== sim.projectiles) {
             memo.tick = sim.tick;
+            memo.projectiles = sim.projectiles;
             memo.ids.clear();
             for (const p of sim.projectiles)
                 if (p.alive && p.payload?.ride === 'enemy') memo.ids.add(p.owner);
@@ -145,15 +138,14 @@ class CannonRider {
     }
 
     static cannonOf(sim, unit) {
-        const id = unit.cannonRide.cannonId;
-        const cannon = id === null ? null : sim.buildingById.get(id);
+        const cannon = sim.buildingById.get(unit.cannonRide.cannonId);
         return this.rideable(sim, unit, cannon) ? cannon : null;
     }
 
     // The muzzle the snapshot shows this soldier riding, or null.
     static boardedCannon(state, unit) {
         const ride = unit.cannonRide;
-        if (unit.alive === false || ride?.phase !== 'board') return null;
+        if (unit.alive === false || !this.occupiesMuzzle(ride)) return null;
         const cannon = (state?.buildings || []).find((b) => b.id === ride.cannonId);
         return this.rideable(state, unit, cannon) ? cannon : null;
     }
@@ -350,16 +342,16 @@ class CannonRider {
         };
     }
 
-    // On the muzzle: lock the aim and launch after boardMs.
+    // The claimed muzzle holds one rider and one locked aim until its preparation is complete.
     static board(sim, unit, spec, cannon, target) {
-        const ride = unit.cannonRide;
-        ride.phase = 'board';
-        ride.cannonId = cannon.id;
-        ride.launchTick = sim.tick + sim.time.ceilTicks(spec.boardMs);
-        ride.aimX = target.x;
-        ride.aimY = target.y;
-        ride.flight = target.flight;
-        ride.waiting = false;
+        unit.cannonRide = {
+            phase: 'board',
+            cannonId: cannon.id,
+            launchTick: sim.tick + sim.time.ceilTicks(spec.boardMs),
+            aimX: target.x,
+            aimY: target.y,
+            flight: target.flight,
+        };
         unit.combat.cancelWindup();
         unit.constructionWork = null;
         unit.target = null;
@@ -407,17 +399,16 @@ class CannonRider {
     // True when the ride took this tick's combat action.
     static update(sim, unit, spec, sources) {
         const ride = unit.cannonRide;
-        if (ride.phase === 'board') {
+        if (this.occupiesMuzzle(ride)) {
             const cannon = this.cannonOf(sim, unit);
             if (!cannon) {
-                this.clear(ride);
-                ride.listKey = null;
+                unit.cannonRide = this.initialState();
                 return false;
             }
             unit.combat.cancelWindup();
             unit.target = null;
-            if (ride.waiting) {
-                // The shell ahead struck or was shot down: aim again where the enemies are now.
+            if (ride.phase === 'wait') {
+                // Aim again after the preceding enemy shot has struck or been intercepted.
                 if (!this.shellInFlight(sim, cannon))
                     this.board(
                         sim,
@@ -427,26 +418,29 @@ class CannonRider {
                         this.flightTarget(sim, unit, cannon, sources),
                     );
             } else if (sim.tick >= ride.launchTick) {
-                if (ride.flight === 'enemy' && this.shellInFlight(sim, cannon)) ride.waiting = true;
+                if (ride.flight === 'enemy' && this.shellInFlight(sim, cannon))
+                    unit.cannonRide = {
+                        phase: 'wait',
+                        cannonId: ride.cannonId,
+                        aimX: ride.aimX,
+                        aimY: ride.aimY,
+                    };
                 else this.launch(sim, unit, cannon);
             }
             return true;
         }
-        if (sim.tick < ride.readyTick) return false;
+
+        if (ride.phase === 'march' && sim.tick < ride.readyTick) return false;
         const key = this.cannonListKey(sim, unit.side);
         let cannon = ride.phase === 'return' ? this.cannonOf(sim, unit) : null;
         // Pick again only when there is no pick yet, the cannon list changed, or the picked cannon is gone.
         if (ride.listKey !== key || (ride.phase === 'return' && !cannon)) {
-            this.clear(ride);
-            ride.listKey = key;
             cannon = this.findCannon(sim, unit, spec);
-            if (cannon) {
-                ride.phase = 'return';
-                ride.cannonId = cannon.id;
-            }
+            unit.cannonRide = cannon
+                ? { phase: 'return', listKey: key, cannonId: cannon.id }
+                : this.initialState(0, key);
         }
-        if (!cannon) return false;
-        return this.walk(sim, unit, spec, cannon, sources);
+        return cannon ? this.walk(sim, unit, spec, cannon, sources) : false;
     }
 
     // The way to the cannon drops any fight; a cannon that cannot be reached is given up until the list changes.
@@ -460,12 +454,22 @@ class CannonRider {
         )
             return true;
         if (this.arrived(sim, unit, cannon)) {
+            const owners = this.muzzleOwners(sim),
+                owner = owners.get(cannon.id);
+            if (
+                owner?.alive &&
+                owner.side === cannon.side &&
+                this.occupiesMuzzle(owner.cannonRide) &&
+                owner.cannonRide.cannonId === cannon.id
+            )
+                return true;
             this.board(sim, unit, spec, cannon, this.flightTarget(sim, unit, cannon, sources));
+            owners.set(cannon.id, unit);
             return true;
         }
         const { goal } = this.goal(sim, unit, cannon);
         if (!sim.navigation.nextPoint(unit, goal, 'field')) {
-            this.clear(unit.cannonRide);
+            unit.cannonRide = this.initialState(0, unit.cannonRide.listKey);
             return false;
         }
         const definition = UnitDefinition.get(unit.type),
