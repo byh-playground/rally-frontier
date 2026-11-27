@@ -33,7 +33,7 @@ export class SimWorkerHost {
         };
         self.postMessage({ type: 'ready' });
     }
-    static start({ role, token, config, netcodeState, netcodeMode, deck }, reportFatal) {
+    static start({ role, token, config, netcodeState, netcodeMode, deck, profileId }, reportFatal) {
         if (netcodeMode) setNetcodeMode(netcodeMode);
         const transport = new WorkerRelayTransport(role, token, netcodeState),
             session = new GameSession(role, transport, token, config ?? undefined, deck);
@@ -42,7 +42,7 @@ export class SimWorkerHost {
         session.onSimulationStarted = () => this.startPulsing(session);
         session.onSimulationStopped = () => this.stopPulsing();
         session.onSimulationFatal = reportFatal;
-        this.bot = BotController.attach(session, role);
+        this.bot = BotController.attach(session, role, profileId);
         transport.onOpen = (visible) => {
             session.localVisible = visible;
             session.onTransportOpen();

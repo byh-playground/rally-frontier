@@ -41,6 +41,10 @@
 
 조작 설명은 인게임 도움말, 실제 수치는 [`LaunchRules`](src/sim/launch-rules.js)·[`ConstructionRules`](src/sim/construction-rules.js)·[`src/units/`](src/units/)(병종)·[`Definition`](src/definitions/)이 원본입니다.
 
+일반 1대1 AI 대전은 경기 시드로 상대 덱과 성향을 정합니다. 거점 선점형은 식량 거점과 참깨를 활용하고 메밀·쌀을 많이 투입합니다. 초반 압박형은 초반 병력을 전선에 먼저 보내고 조·팥·검은콩을 주로 사용합니다. 포격형은 기름 확보와 적 건물 포격을 우선하며 옥수수·밤톨을 자주 씁니다. 세 상대 모두 상황에 맞는 대응과 자원·탄약·사거리 조건을 따릅니다. 캠페인 상대는 스테이지에 지정된 편성을 사용합니다.
+
+디버그 AI 대전은 `scene=ai-match&map=small-field&seed=1&profile=expansion&tick=1200`처럼 상대를 고정할 수 있습니다. `profile`은 `expansion`, `pressure`, `siege` 중 하나입니다. 상태의 `profile`에 덱, 첫 4번의 투입 명령, 카드별 투입 명령 수가 나옵니다.
+
 ## 원본과 실행
 
 타이틀 뒤 전투는 저장 파일 없이 [`src/ui/title-scenes.js`](src/ui/title-scenes.js)가 매번 직접 배치한다. seed 12349 맵의 시뮬레이션 하나에 세 장면의 전투를 서로 다른 구역에 놓고, 각 장면이 화면에 나오기 직전 틱에 병력을 배치하거나 발사로 투입한다. 102틱을 반복해 돌리면서 카메라만 구역 사이로 옮긴다. 현행 엔진으로 실행되므로 `PRODUCT_VERSION`이 바뀌어도 다시 만들 파일이 없다. 화면은 `?debug=1&scene=title`로 확인한다.
