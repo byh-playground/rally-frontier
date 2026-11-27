@@ -62,6 +62,7 @@ import { CombatFxLook } from './render/combat-fx.js';
 import { NumberLook } from './render/number-look.js';
 import { SiegeLook } from './render/siege-look.js';
 import { UnitMotionLook } from './render/unit-motion-look.js';
+import { drawUnitHealthBar, UnitHealthLook } from './render/unit-health-look.js';
 import {
     BattlefieldProjection,
     TerrainSurfaceAtlas,
@@ -896,10 +897,6 @@ const SIEGE_SMOKE = Object.freeze([0.52, 0.5, 0.46, 1]),
     SIEGE_STONE = Object.freeze([0.74, 0.68, 0.57, 1]),
     SIEGE_WOOD = Object.freeze([0.58, 0.42, 0.24, 1]);
 
-// A soldier's health shows only just after it is hit (`showMs`, fading over its last `fadeMs`); after that a
-// badly hurt one (at most `low` of its health) keeps a short red mark. Heroes and buildings always show theirs.
-const SOLDIER_HEALTH = Object.freeze({ showMs: 1200, fadeMs: 400, low: 0.4 });
-
 class GLRenderer {
     // How much depth the rows of one bridge deck are spread over (bridgeRowDepth).
     static BRIDGE_ROW_DEPTH = 0.002;
@@ -998,13 +995,13 @@ class GLRenderer {
         this.vectorUnitAssetCache = new Map();
         this.buildingArt = new BuildingArt(this);
         this.siegeLook = new SiegeLook();
-        // Each damaged unit's health as last drawn and when it last dropped (presentation ms), for its health bar.
-        this.unitHealthSeen = new Map();
+        this.unitHealthLook = new UnitHealthLook();
         // Per snapshot: which outposts a sticky-rice soldier holds, and each held cannon's frozen aim.
         this.stickyClingers = new Map();
         // Cannon riders sitting on a muzzle, by cannon id (CannonRider.boardedCannon).
         this.cannonRiders = new Map();
         this.mountedUnitIds = new Set();
+        this.mountedUnitAnchors = new Map();
         this.stickyAims = new Map();
         this.stickyWrapPoses = [];
         this.spriteRenderers = {};
@@ -1294,7 +1291,7 @@ class GLRenderer {
         this.combatFxLook.reset();
         this.poppingUnits.clear();
         this.siegeLook.reset();
-        this.unitHealthSeen.clear();
+        this.unitHealthLook.reset();
         for (const fx of this.floatFx) this.floatFxPool.release(fx);
         for (const fx of this.shakeFx) this.shakeFxPool.release(fx);
         this.combatFx.length = 0;
@@ -2760,7 +2757,7 @@ class GLRenderer {
             this.combatFxLook.reset();
             this.poppingUnits.clear();
             this.siegeLook.reset();
-            this.unitHealthSeen.clear();
+            this.unitHealthLook.reset();
             this.blightFieldArt.reset();
         }
         if (snapTargets || !old) this.resetFogTransition();
@@ -2772,6 +2769,7 @@ class GLRenderer {
             );
         this.world = WorldContext.forState(s);
         this.snapshot = s;
+        this.unitHealthLook.observe(s.units || [], s.tick);
         this.syncMapLook();
         if (!old || old.mapDescriptor?.seed !== s.mapDescriptor?.seed)
             this.cameraTop = this.clampCameraTop(Infinity);
@@ -3433,7 +3431,7 @@ class GLRenderer {
         // The clinging soldier's own renderer draws the wrap; poses are stored as renderer, cannon pairs.
         if (clinger) {
             this.stickyWrapPoses.push(this.spriteRenderers[clinger.type], cannon);
-            this.noteMountedBlight(clinger, cannon);
+            this.noteMountedUnit(clinger, cannon);
         }
     }
     // The blight's spore sac (sim/spore-sac.js), a placeholder (BlightLook.drawSac): a pouch standing on its ground
@@ -3458,7 +3456,8 @@ class GLRenderer {
     // A blighted soldier on a muzzle (clinging to it or riding it) is not in the grain list: its soot is noted here
     // from the cannon's pose and drawn with every other mote (drawBlightSoot). It has no ring, as it does not stand
     // on the ground.
-    noteMountedBlight(u, cannon) {
+    noteMountedUnit(u, cannon) {
+        this.mountedUnitAnchors.set(u.id, cannon.muzzle);
         const freeing = this.blightFreeing(u);
         if (freeing < 0 || freeing >= 1) return;
         if (u.side !== this.mySide() && !this.visibleRaw(u.x, u.y)) return;
@@ -3485,7 +3484,7 @@ class GLRenderer {
     // BuildingArt.draw calls this inside the cannon's own part order: 'body' where the barrel
     // occludes it correctly, 'hands' on the rim after the whole cannon.
     drawCannonRider(rider, pose, part) {
-        if (part === 'body') this.noteMountedBlight(rider, pose);
+        if (part === 'body') this.noteMountedUnit(rider, pose);
         const C = this.vectorContext;
         C.depthTest = !!this.passState.depthEnabled;
         C.depthWrite = false;
@@ -4765,64 +4764,39 @@ class GLRenderer {
             }
         }
 
-        const now = this.presentationNow(),
-            healthSeen = this.unitHealthSeen;
-        // Drop the entries of units that are gone once they outnumber the units there are.
-        if (healthSeen.size > (snap.units?.length || 0) + 512) {
-            const present = new Set(snap.units.map((u) => u.id));
-            for (const id of healthSeen.keys()) if (!present.has(id)) healthSeen.delete(id);
-        }
+        const tickMs = this.presentationTargetIntervalMs(snap);
         for (const u of snap.units || []) {
-            const maxHp = Math.max(1, Number(u.maxHp) || 1);
-            if (!u.alive || (Number(u.hp) || 0) >= maxHp) {
-                healthSeen.delete(u.id);
-                continue;
-            }
+            const hero = LaunchRules.isHeroType(u.type);
+            const bar = this.unitHealthLook.bar(u, snap.tick, tickMs, hero);
+            if (!bar) continue;
             if (u.side !== side && !this.visibleRaw(u.x, u.y)) continue;
-            if (!this.onScreenAuth(u.x, u.y, (UnitDefinition.get(u.type)?.size || 15) + 100))
+
+            const mounted = this.mountedUnitIds.has(u.id);
+            const muzzle = mounted ? this.mountedUnitAnchors.get(u.id) : null;
+            if (
+                mounted
+                    ? !muzzle
+                    : !this.onScreenAuth(u.x, u.y, (UnitDefinition.get(u.type)?.size || 15) + 100)
+            )
                 continue;
-            const projected = this.projectRenderWorldPosition(
-                this.resolveRenderWorldPosition(u, 'unit'),
+
+            const position =
+                muzzle ??
+                this.projectRenderWorldPosition(this.resolveRenderWorldPosition(u, 'unit'));
+            const radius = this.unitRenderRadius(u);
+            const width = Math.round(Math.max(24 * pixelRatio, radius * (hero ? 2.2 : 1.7)));
+            const height = Math.round(
+                Math.max((bar.mode === 'critical' ? 3 : 4) * pixelRatio, 3.2 * sc),
             );
-            const r = this.unitRenderRadius(u),
-                bh = Math.max(2.2, 3.2 * sc),
-                x = projected.x,
-                y = projected.y - r * 1.58;
-            const ratio = RangeUtil.clamp((Number(u.hp) || 0) / maxHp, 0, 1);
-            if (LaunchRules.isHeroType(u.type)) {
-                const bw = r * 2.2;
-                ctx.fillStyle = 'rgba(7,10,12,.72)';
-                ctx.fillRect(x - bw / 2 - 1 * sc, y - 1 * sc, bw + 2 * sc, bh + 2 * sc);
-                ctx.fillStyle = ratio > 0.48 ? '#6fdf63' : '#f34d47';
-                ctx.fillRect(x - bw / 2, y, bw * ratio, bh);
-                continue;
-            }
-            // Any loss of health counts, whatever dealt it.
-            let seen = healthSeen.get(u.id);
-            if (!seen) healthSeen.set(u.id, (seen = { hp: u.hp, hurtAt: now }));
-            else if (u.hp < seen.hp) seen.hurtAt = now;
-            seen.hp = u.hp;
-            const since = now - seen.hurtAt,
-                low = ratio <= SOLDIER_HEALTH.low,
-                height = Math.max(2.8, 3 * sc),
-                // Above the head of a tall body, not across its face.
-                top = projected.y - r * 2.05;
-            if (since >= 0 && since < SOLDIER_HEALTH.showMs) {
-                const bw = Math.max(14, r * 1.7),
-                    fading = SOLDIER_HEALTH.showMs - since;
-                ctx.globalAlpha = Math.min(1, fading / SOLDIER_HEALTH.fadeMs);
-                ctx.fillStyle = 'rgba(7,10,12,.9)';
-                ctx.fillRect(x - bw / 2 - 1 * sc, top - 1, bw + 2 * sc, height + 2);
-                ctx.fillStyle = low ? '#ff6b5e' : '#8be37a';
-                ctx.fillRect(x - bw / 2, top, bw * ratio, height);
-                ctx.globalAlpha = 1;
-            } else if (low) {
-                const mark = Math.max(8, r);
-                ctx.fillStyle = 'rgba(7,10,12,.9)';
-                ctx.fillRect(x - mark / 2 - 1, top - 1, mark + 2, height + 2);
-                ctx.fillStyle = '#ff6b5e';
-                ctx.fillRect(x - mark / 2, top, mark, height);
-            }
+            drawUnitHealthBar(ctx, {
+                x: position.x,
+                y: position.y - radius * (hero ? 1.9 : 2.15) - 4 * pixelRatio,
+                width,
+                height,
+                pixelRatio,
+                ratio: bar.ratio,
+                opacity: bar.opacity,
+            });
         }
 
         ctx.restore();
@@ -9054,6 +9028,7 @@ class GLRenderer {
             });
 
             this.stickyWrapPoses.length = 0;
+            this.mountedUnitAnchors.clear();
             this.passProfiler.measure('ground', () => this.renderGroundPass());
             this.vectorAssetDrawnInstances = 0;
             this.vectorTerrainOcclusionTests = 0;
