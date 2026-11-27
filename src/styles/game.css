@@ -1,5 +1,5 @@
 /* 쌀콩팡! launch game (D-196, D-199, D-206).
-   Every screen lives in one portrait column: full width on a phone, centered 9:16 on a wide screen. */
+   The default layout is a portrait column. Short landscape battles use a separate side tray. */
 :root {
     --col-w: min(100vw, calc(100dvh * 9/16));
     --bg: #edf3da;
@@ -473,6 +473,33 @@ button:disabled {
     line-height: 1.5;
 }
 
+.single-start-dialog {
+    box-sizing: border-box;
+    width: min(360px, calc(100vw - 32px));
+    max-height: calc(100dvh - 32px);
+    padding: 20px;
+    border: 1px solid #afc39d;
+    border-radius: 18px;
+    background: #fff9e9;
+    color: #25422f;
+}
+.single-start-dialog::backdrop {
+    background: rgb(15 28 19 / 68%);
+}
+.single-start-dialog h2 {
+    margin: 0 0 8px;
+    font-size: 20px;
+}
+.single-start-dialog p {
+    margin: 0 0 16px;
+    line-height: 1.45;
+}
+.single-start-dialog .launch-btn {
+    min-height: 44px;
+}
+.single-start-dialog [hidden] {
+    display: none;
+}
 .launch-hand {
     display: flex;
     flex-direction: column;
@@ -1707,4 +1734,79 @@ body.result-mode .p2p-health {
     padding-inline: 4px;
     white-space: nowrap;
     font-size: 15px;
+}
+
+/* A short landscape viewport keeps the whole battlefield height. The controls
+   use the side of the screen and can scroll independently of the aim surface. */
+@media (orientation: landscape) and (max-height: 600px) {
+    #gameScreen {
+        display: grid;
+        width: 100%;
+        grid-template-columns: minmax(0, 1fr) clamp(220px, 31vw, 280px);
+        grid-template-rows: minmax(0, 1fr) auto;
+        padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
+    }
+    #gameScreen .canvas-wrap {
+        grid-area: 1 / 1 / -1 / 2;
+        min-width: 0;
+    }
+    #gameScreen :is(.launch-hand, .replay-dock) {
+        min-width: 0;
+        min-height: 0;
+        padding-inline: 8px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+    }
+    #gameScreen .launch-hand {
+        grid-area: 1 / 2;
+        border-top: 0;
+        border-left: 2px solid #a5c67e;
+    }
+    #gameScreen .launch-wallet-hints > span {
+        white-space: normal;
+    }
+    #gameScreen .launch-cards {
+        gap: 4px;
+    }
+    #gameScreen .launch-card {
+        border-radius: 10px;
+    }
+    #gameScreen .launch-card b {
+        font-size: 11px;
+    }
+    #gameScreen .hero-card-name {
+        flex-direction: column;
+        gap: 1px;
+    }
+    #gameScreen .launch-card em {
+        flex-wrap: wrap;
+        gap: 0 3px;
+        font-size: 10px;
+        line-height: 1;
+    }
+    #gameScreen .launch-card-info {
+        right: 2px;
+        width: 18px;
+        height: 18px;
+    }
+    #gameScreen .launch-resource {
+        padding-inline: 5px;
+        column-gap: 3px;
+        font-size: 11px;
+    }
+    #gameScreen .replay-dock {
+        grid-area: 2 / 2;
+        max-height: 62dvh;
+    }
+    #gameScreen :is(.replay-timeline-head, .replay-transport-row, .replay-bottom-row) {
+        flex-wrap: wrap;
+    }
+    #gameScreen .replay-btn {
+        padding-inline: 5px;
+        white-space: nowrap;
+    }
+    #result {
+        width: min(100vw, 560px);
+    }
 }
