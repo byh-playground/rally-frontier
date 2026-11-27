@@ -2,6 +2,12 @@
     max-height: calc(100dvh - 16px);
 }
 
+@media (orientation: landscape) and (max-height: 600px) {
+    #launchHelpSheet .launch-sheet-panel {
+        width: min(520px, calc(100% - 24px));
+    }
+}
+
 #launchHelpSheet .launch-btn {
     flex: 0 0 50px;
 }
