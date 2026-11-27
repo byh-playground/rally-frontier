@@ -1504,6 +1504,7 @@ class StrategySim {
         y,
         count,
         impact,
+        buildingImpact = impact,
         splash,
         passengerHp = null,
         ride = null,
@@ -1537,7 +1538,7 @@ class StrategySim {
             damage: impact,
             splash,
             splashUnitDamage: impact * LaunchRules.unitImpactScale,
-            splashBuildingDamage: impact,
+            splashBuildingDamage: buildingImpact,
             damageClass: 'normal',
             sourceDamageResolved: true,
             payload: passengerHp == null ? { type, count } : { type, count, passengerHp, ride },
@@ -2824,7 +2825,11 @@ class StrategySim {
     // heavyShock widens the damage's radius, not the shove's (UpgradeHeavyShock); the returned `radius` is the
     // damage's.
     landingShock(p, x, y, radius, impactHeightFP, scale = 1) {
-        if (!p.mortar) LaunchImpact.blast(this, p, x, y, radius, impactHeightFP, scale);
+        const shove = p.mortar
+            ? 0
+            : LaunchImpact.blast(this, p, x, y, radius, impactHeightFP, scale);
+        const unitDamage = (p.splashUnitDamage ?? p.damage) * scale,
+            buildingDamage = p.splashBuildingDamage ?? p.damage;
         const heavy = UpgradeHeavyShock.spec(this, p);
         if (heavy) radius *= heavy.radiusScale;
         const blast = this.applyAreaDamage({
@@ -2834,7 +2839,7 @@ class StrategySim {
             x: x,
             y: y,
             radius,
-            damage: (p.splashUnitDamage ?? p.damage) * scale,
+            damage: unitDamage,
             damageClass: p.damageClass || 'normal',
             damageDelivery: p.payload ? 'launch-shell' : undefined,
             suppressImpactFx: true,
@@ -2855,7 +2860,7 @@ class StrategySim {
                 p.type,
                 b,
                 true,
-                Math.max(1, Math.floor((p.splashBuildingDamage ?? p.damage) * mult * scale)),
+                Math.max(1, Math.floor(buildingDamage * mult * scale)),
                 p.owner || null,
                 {
                     damageClass: p.damageClass || 'normal',
@@ -2866,6 +2871,7 @@ class StrategySim {
         }
         blast.radius = radius;
         blast.heavy = !!heavy;
+        blast.impactProfile = { unitDamage, buildingDamage: buildingDamage * scale, shove };
         return blast;
     }
     updateProjectiles() {
@@ -2917,6 +2923,7 @@ class StrategySim {
                         (p.lockedAimY - p.launchY) /
                         (Math.hypot(p.lockedAimX - p.launchX, p.lockedAimY - p.launchY) || 1),
                 };
+                if (blast.impactProfile) impact.impactProfile = blast.impactProfile;
                 if (blast.heavy) impact.heavy = true;
                 this.events.push(impact);
                 continue;

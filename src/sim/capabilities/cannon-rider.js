@@ -357,7 +357,7 @@ class CannonRider {
         unit.target = null;
     }
 
-    static launch(sim, unit, cannon) {
+    static launch(sim, unit, cannon, spec) {
         const ride = unit.cannonRide,
             level = sim.launchRangeLevel[unit.side],
             holdMs = Math.round(
@@ -381,7 +381,8 @@ class CannonRider {
             x: ride.aimX,
             y: ride.aimY,
             count: 1,
-            impact: shot.impact,
+            impact: spec.relaunchImpact ?? shot.impact,
+            buildingImpact: shot.buildingImpact,
             splash: shot.splash,
             passengerHp: unit.hp,
             ride: ride.flight,
@@ -425,7 +426,7 @@ class CannonRider {
                         aimX: ride.aimX,
                         aimY: ride.aimY,
                     };
-                else this.launch(sim, unit, cannon);
+                else this.launch(sim, unit, cannon, spec);
             }
             return true;
         }

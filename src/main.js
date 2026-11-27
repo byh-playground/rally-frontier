@@ -887,8 +887,6 @@ const GRAIN_HIT_FLASH_MS = 60,
     MOTION_FX_ART_SCALE = 0.18;
 
 // The colours of the cannons' smoke, dust and pieces.
-// The blast radius whose landing effects are drawn at full size.
-const SIEGE_FULL_BLAST = 150;
 const SIEGE_SMOKE = Object.freeze([0.52, 0.5, 0.46, 1]),
     SIEGE_SMOKE_PALE = Object.freeze([0.87, 0.84, 0.77, 1]),
     SIEGE_DUST = Object.freeze([0.82, 0.74, 0.55, 1]),
@@ -2319,31 +2317,14 @@ class GLRenderer {
         });
     }
 
-    // A shell lands: a mark in the ground, a flash, two shock rings, dust with a column of earth rising out of it,
-    // clods thrown low and high, and a shake of the screen.
-    siegeLanding(e, snapshot, index) {
-        if (!(e.radius > 0) || !this.combatFxVisible(e)) return;
+    // A heavy shove sends clods of earth up and leaves a ground mark.
+    siegeLanding(e, snapshot, index, shove) {
+        if (shove < 0.65 || !this.combatFxVisible(e)) return;
         const at = { x: e.x, y: e.y, side: e.side },
             clock = snapshot.presentationClock,
             seed = HashUtil.hash(`${snapshot.tick}|land|${index}`),
-            // The effects and the shake follow the blast's reach; combat-fx keeps a smallest drawn size on screen,
-            // so a small shell's effects shrink less than its shake does.
-            size = RangeUtil.clamp(e.radius / SIEGE_FULL_BLAST, 0.45, 1.2),
+            size = 0.45 + 0.55 * shove,
             fx = this.combatFxLook;
-        const puffs = (color, shift, count, spread, rise, reach, life, salt) =>
-            fx.puffs({
-                at,
-                size,
-                shift: { x: 0, y: shift },
-                color,
-                count,
-                spread,
-                rise,
-                reach,
-                life,
-                clock,
-                seed: seed ^ salt,
-            });
         const clods = (color, scale, shift, count, speed, drop, salt) =>
             fx.chips({
                 at,
@@ -2351,22 +2332,28 @@ class GLRenderer {
                 shift: { x: 0, y: shift },
                 dir: 0,
                 color,
-                count,
+                count: Math.round(count * shove),
                 speed,
                 drop,
                 clock,
                 seed: seed ^ salt,
             });
-        fx.scorch({ at, size, clock, width: 170 });
-        fx.boom({ at, size, shift: { x: 0, y: -14 }, reach: 140, life: 200, clock, seed });
-        fx.shock({ at, size, reach: 140, clock });
-        fx.shock({ at, size, reach: 230, clock, delay: 90 });
-        puffs(SIEGE_SOIL, -6, 11, 84, 14, 28, 640, 0);
-        puffs(SIEGE_SAND, -12, 8, 40, 30, 30, 620, 77);
-        puffs(SIEGE_SOIL, -10, 7, 24, 120, 40, 760, 131);
-        clods(SIEGE_SOIL, 1.5, -8, 14, 120, 18, 0);
-        clods(SIEGE_SAND, 1.2, -10, 16, 220, 24, 311);
-        this.triggerSingleShake('landing', 3.2 * Math.min(1, size), 240, seed, e, snapshot);
+        fx.scorch({ at, size, clock, width: 105 });
+        fx.puffs({
+            at,
+            size,
+            shift: { x: 0, y: -6 },
+            color: SIEGE_SOIL,
+            count: Math.round(9 * shove),
+            spread: 55,
+            rise: 48,
+            reach: 26,
+            life: 640,
+            clock,
+            seed,
+        });
+        clods(SIEGE_SOIL, 1.2, -8, 8, 95, 18, 0);
+        clods(SIEGE_SAND, 1, -10, 8, 160, 24, 311);
     }
 
     // A cannon is struck: it shakes and flashes, and chips fly from the side the blow came from.
@@ -2974,6 +2961,7 @@ class GLRenderer {
                 y: event.y,
                 zFP: event.impactHeightFP,
                 side: event.side,
+                impactStyle: LaunchImpactArt.style(event.impactProfile),
             };
             EffectObjectFactory.attachClock(burst, clock, EffectObjectFactory.milletBurstLifeMs);
             this.milletBursts.push(burst);
@@ -3127,22 +3115,22 @@ class GLRenderer {
                 this.addClientFx('basicSplashImpact', e, snapshot, index);
             } else if (e.type === 'heroLandingStrike') {
                 // Each circle of a hero's landing strike: berries for a scattered strike, a shock ring otherwise.
-                const berries = !!LaunchRules.grain(e.unit)?.landingStrike?.scatter;
+                const berries = !!LaunchRules.grain(e.unit)?.landingStrike?.scatter,
+                    impactStyle = LaunchImpactArt.style(e.impactProfile);
                 for (const blast of e.blasts)
                     this.addClientFx(
                         berries ? 'fruitBerryImpact' : 'launchBlast',
                         { ...blast, unit: e.unit, sourceId: e.sourceId },
                         snapshot,
                         index,
-                        berries
-                            ? {}
-                            : {
-                                  peak: 1,
-                                  hits: blast.hits,
-                                  groundRing: true,
-                                  impactHeightFP: e.impactHeightFP,
-                              },
+                        {
+                            hits: blast.hits,
+                            groundRing: true,
+                            impactHeightFP: e.impactHeightFP,
+                            impactStyle,
+                        },
                     );
+                this.landingShake(e, snapshot, index, impactStyle);
             } else if (e.type === 'heroRollHit') {
                 if (!this.motionEventHit(e, snapshot, index))
                     this.addClientFx('meleeImpact', e, snapshot, index, { impactScale: 1.5 });
@@ -3270,11 +3258,14 @@ class GLRenderer {
                 this.launchImpactFx(e, snapshot, index);
             } else if (e.type === 'upgradeEchoShock') {
                 // A campaign upgrade's second landing shock (UpgradeEchoShock): the landing's blast ring again.
+                const impactStyle = LaunchImpactArt.style(e.impactProfile);
                 this.addClientFx('launchBlast', e, snapshot, index, {
                     peak: e.peak,
                     hits: e.hits,
                     impactHeightFP: e.impactHeightFP,
+                    impactStyle,
                 });
+                this.landingShake(e, snapshot, index, impactStyle);
             } else if (e.type === 'upgradeHitBlock') {
                 this.addClientFx('upgradeHitBlock', e, snapshot, index);
             } else if (e.type === 'upgradeChainCharge' || e.type === 'upgradeWallRebound') {
@@ -3292,12 +3283,15 @@ class GLRenderer {
                 e.type === 'heroRollLand' ||
                 e.type === 'mortarImpact'
             ) {
+                const impactStyle = LaunchImpactArt.style(e.impactProfile);
                 this.addClientFx('launchBlast', e, snapshot, index, {
                     peak: 1,
                     hits: e.hits ?? 1,
                     groundRing: e.type !== 'leapLand',
                     impactHeightFP: e.impactHeightFP,
+                    impactStyle,
                 });
+                this.landingShake(e, snapshot, index, impactStyle);
                 // A leap landing widened by its campaign upgrade also marks its whole reach on the ground.
                 if (e.widened) this.addClientFx('upgradeLeapRing', e, snapshot, index);
             } else if (e.type === 'launchOverheat') {
@@ -3383,34 +3377,46 @@ class GLRenderer {
             snapshot,
         );
     }
-    // The landing: a shock ring the size of the blast, dust, and a flash that grows when the strike was near the middle.
+    // The shell impact and its packaging opening are separate from the arriving soldiers.
     launchImpactFx(e, snapshot, index) {
-        const peak = Number(e.peak) || 1,
+        const impactStyle = LaunchImpactArt.style(e.impactProfile),
+            peak = Number(e.peak) || 1,
             hits = Number(e.hits) || 0;
         const dx = Number(e.dirX),
             dy = Number(e.dirY),
             angle = Number.isFinite(dx) && Number.isFinite(dy) ? Math.atan2(dy, dx) : 0;
-        // An ear-burst landing (sprite.landing) scatters instead of a blast ring and husk, and a shell without a
-        // landing shock (a hero's, radius 0) draws none: its hero's landing strike draws its own.
-        if (e.radius > 0 && GRAIN_SPRITES[e.unit]?.landing !== 'ear-burst') {
+        const earBurst = GRAIN_SPRITES[e.unit]?.landing === 'ear-burst';
+        // The hero draws its own landing strike. An ear-burst shows its damage ring here and scatters on deployment.
+        if (e.radius > 0) {
             this.addClientFx('launchBlast', e, snapshot, index, {
                 peak,
                 hits,
                 impactHeightFP: e.impactHeightFP,
+                impactStyle,
+                earBurst,
             });
+            if (!earBurst) this.siegeLanding(e, snapshot, index, impactStyle?.shove ?? 0.7);
+            this.landingShake(e, snapshot, index, impactStyle);
         }
-        this.siegeLanding(e, snapshot, index);
-        this.addClientFx('launchBundleBreak', e, snapshot, index, {
-            id: 'bundle:' + e.projectileId,
-            grainType: e.unit,
-            angle,
-            impactHeightFP: e.impactHeightFP,
-        });
-        const shake = hits > 0 ? 0.7 + 0.9 * peak : 0.5;
-        this.triggerClientShake(
-            shake,
-            EffectObjectFactory.impactShakeDuration(peak, hits),
-            HashUtil.hash(`${snapshot.tick}|blast|${index}`),
+        if (!earBurst)
+            this.addClientFx('launchBundleBreak', e, snapshot, index, {
+                id: 'bundle:' + e.projectileId,
+                grainType: e.unit,
+                angle,
+                impactHeightFP: e.impactHeightFP,
+                impactStyle,
+            });
+    }
+    landingShake(e, snapshot, index, impactStyle) {
+        const shove = impactStyle?.shove;
+        if (!shove) return;
+        const duration = Math.round(70 + 125 * shove);
+        if (snapshot.presentationClock.ageMs >= duration) return;
+        this.triggerSingleShake(
+            'landing',
+            0.45 + 2.5 * shove * shove,
+            duration,
+            HashUtil.hash(`${snapshot.tick}|landing|${index}`),
             e,
             snapshot,
         );
@@ -4075,12 +4081,15 @@ class GLRenderer {
             ctx.fill();
         };
 
-        const ring = (x, y, r, width, stroke, alpha = 1, yScale = 1) => {
+        const ring = (x, y, r, width, stroke, alpha = 1, yScale = 1, maxRadius = Infinity) => {
+            // Keep a bounded ring's stroke within its ground footprint at every angle.
+            const lineWidth = Math.max(1, Math.min(width, maxRadius * yScale * 0.4)),
+                radius = Math.min(Math.max(1, r), maxRadius - lineWidth / (2 * yScale));
+            if (radius < 1) return;
             ctx.globalAlpha = alpha;
             ctx.beginPath();
-            const radius = Math.max(1, r);
             ctx.ellipse(x, y, radius, radius * yScale, 0, 0, Math.PI * 2);
-            ctx.lineWidth = Math.max(1, width);
+            ctx.lineWidth = lineWidth;
             ctx.strokeStyle = stroke;
             ctx.stroke();
         };
@@ -4148,6 +4157,26 @@ class GLRenderer {
                     Math.max(0, 1 - t),
                 );
             }
+        };
+
+        const strongImpact = (x, y, radius, peak, t, ease, flashAlpha) => {
+            if (t < 0.12) {
+                ctx.globalAlpha = flashAlpha * (1 - t / 0.12);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, this.fxCanvas.width, this.fxCanvas.height);
+            }
+            // The strongest multiplier any enemy took.
+            ctx.globalAlpha = Math.min(1, (1 - t) * 2);
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = `900 ${Math.round(Math.max(18, 30 * sc * (1 + 0.25 * Math.min(2, peak - 2))))}px system-ui,sans-serif`;
+            ctx.lineWidth = Math.max(3, 5 * sc);
+            ctx.strokeStyle = 'rgba(60,20,0,.9)';
+            ctx.fillStyle = '#ffe27a';
+            const text = `강타 ×${peak.toFixed(1)}`,
+                ty = y - radius * 0.55 - 26 * sc * ease;
+            ctx.strokeText(text, x, ty);
+            ctx.fillText(text, x, ty);
         };
 
         for (let read = 0; read < this.combatFx.length; read++) {
@@ -4595,10 +4624,7 @@ class GLRenderer {
                         Math.max(0, 0.6 * (1 - t)),
                     );
                 }
-            } else if (
-                fx.kind === 'launchBundleBreak' &&
-                GRAIN_SPRITES[fx.grainType]?.landing !== 'ear-burst'
-            ) {
+            } else if (fx.kind === 'launchBundleBreak') {
                 LaunchImpactArt.drawBurst(ctx, {
                     x,
                     y,
@@ -4606,9 +4632,94 @@ class GLRenderer {
                     scale: sc,
                     seed: fx.seed,
                     grainType: fx.grainType,
+                    impactStyle: fx.impactStyle,
                 });
+            } else if (
+                fx.impactStyle &&
+                (fx.kind === 'launchBlast' || fx.kind === 'fruitBerryImpact')
+            ) {
+                const { damage, shove } = fx.impactStyle,
+                    berries = fx.kind === 'fruitBerryImpact',
+                    radius = fx.radius * sc,
+                    peak = Number(fx.peak) || 1,
+                    hits = Number(fx.hits) || 0,
+                    strong = peak >= 2 && hits > 0,
+                    yScale = BattlefieldProjection.groundScale;
+                const flashLife = 0.15 + 0.24 * damage;
+                if (damage > 0 && t < flashLife) {
+                    const fade = 1 - t / flashLife;
+                    dot(
+                        x,
+                        y,
+                        Math.min(radius * 0.43, (4 + 18 * damage) * sc) * (0.6 + 0.4 * fade),
+                        berries ? '#efd0ff' : '#fff1b8',
+                        (0.14 + 0.56 * damage) * fade,
+                    );
+                }
+                const ringFade = (1 - t) * (hits > 0 ? 1 : 0.8);
+                ring(
+                    x,
+                    y,
+                    radius * (0.18 + 0.82 * ease),
+                    (2.5 + 10 * damage) * (1 - 0.58 * t) * sc,
+                    berries ? '#cb86ff' : '#ffcf6a',
+                    (0.48 + 0.48 * damage) * ringFade,
+                    yScale,
+                    radius,
+                );
+                if (damage >= 0.5)
+                    ring(
+                        x,
+                        y,
+                        radius * (0.1 + 0.55 * ease),
+                        (1.2 + 3 * damage) * sc,
+                        berries ? '#a950ee' : '#ff9a3a',
+                        0.7 * damage * ringFade,
+                        yScale,
+                        radius,
+                    );
+                if (shove > 0 && !fx.earBurst) {
+                    burst(
+                        fx,
+                        x,
+                        y,
+                        t,
+                        Math.round(14 * shove),
+                        '#a9895c',
+                        20 + 110 * shove,
+                        2 + 5 * shove,
+                        0.62,
+                    );
+                    if (shove > 0.65)
+                        burst(
+                            fx,
+                            x,
+                            y,
+                            t,
+                            Math.round(8 * shove),
+                            '#e9dcc0',
+                            15 + 85 * shove,
+                            2 + 3 * shove,
+                            0.58,
+                            fx.seed ^ 0x51f1,
+                        );
+                }
+                if (strong) {
+                    if (t < 0.55)
+                        ring(
+                            x,
+                            y,
+                            radius * (0.4 + 0.6 * ease),
+                            3 * sc,
+                            '#ffffff',
+                            0.5 * (1 - t / 0.55),
+                            yScale,
+                            radius,
+                        );
+                    strongImpact(x, y, radius, peak, t, ease, 0.05 * damage);
+                }
             } else if (fx.kind === 'launchBlast') {
-                // Landing: shock ring the size of the blast, dust thrown outward and, near the middle, a hard white flash.
+                // Leap and roll landings use their original ability effect without an artillery impact profile.
                 const radius = Math.max(30, Number(fx.radius) || 100) * sc,
                     peak = Number(fx.peak) || 1,
                     hits = Number(fx.hits) || 0,
@@ -4653,25 +4764,7 @@ class GLRenderer {
                     );
                 burst(fx, x, y, t, hits > 0 ? 22 : 12, '#a9895c', (radius / sc) * 1.05, 8, 0.62);
                 burst(fx, x, y, t, 10, '#e9dcc0', (radius / sc) * 0.8, 5, 0.58, fx.seed ^ 0x51f1);
-                if (strong && hits > 0) {
-                    if (t < 0.12) {
-                        ctx.globalAlpha = 0.05 * (1 - t / 0.12);
-                        ctx.fillStyle = '#ffffff';
-                        ctx.fillRect(0, 0, this.fxCanvas.width, this.fxCanvas.height);
-                    }
-                    // The return on a good throw, in numbers: the strongest multiplier any enemy took.
-                    ctx.globalAlpha = Math.min(1, (1 - t) * 2);
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.font = `900 ${Math.round(Math.max(18, 30 * sc * (1 + 0.25 * Math.min(2, peak - 2))))}px system-ui,sans-serif`;
-                    ctx.lineWidth = Math.max(3, 5 * sc);
-                    ctx.strokeStyle = 'rgba(60,20,0,.9)';
-                    ctx.fillStyle = '#ffe27a';
-                    const text = `강타 ×${peak.toFixed(1)}`,
-                        ty = y - radius * 0.55 - 26 * sc * ease;
-                    ctx.strokeText(text, x, ty);
-                    ctx.fillText(text, x, ty);
-                }
+                if (strong && hits > 0) strongImpact(x, y, radius, peak, t, ease, 0.05);
             }
 
             ctx.restore();
@@ -7093,10 +7186,12 @@ class GLRenderer {
             this.milletBursts[write++] = burst;
             if (age < 0 || (burst.side !== this.mySide() && !this.visibleRaw(burst.x, burst.y)))
                 continue;
-            const t = age / life,
-                distance = 10 + 75 * t;
-            for (let i = 0; i < 12; i++) {
-                const angle = (i * Math.PI * 2) / 12,
+            const shove = burst.impactStyle?.shove ?? 1,
+                t = age / life,
+                distance = 10 + (25 + 50 * shove) * t,
+                count = Math.round(4 + 8 * shove);
+            for (let i = 0; i < count; i++) {
+                const angle = (i * Math.PI * 2) / count,
                     world = {
                         x: burst.x + Math.cos(angle) * distance,
                         z: burst.y + Math.sin(angle) * distance * 0.4,
@@ -7108,7 +7203,7 @@ class GLRenderer {
                     this.circle(
                         point.x,
                         point.y,
-                        Math.max(2, (3 + 3 * (1 - t)) * scale),
+                        Math.max(2, (2 + shove + 3 * (1 - t)) * scale),
                         [220 / 255, 165 / 255, 68 / 255, 1 - t],
                         8,
                     ),
@@ -8120,7 +8215,7 @@ class GLRenderer {
             }
             if (
                 (fx.kind !== 'basicSplashImpact' &&
-                    fx.kind !== 'fruitBerryImpact' &&
+                    !(fx.kind === 'fruitBerryImpact' && !fx.impactStyle) &&
                     fx.kind !== 'upgradeLeapRing' &&
                     fx.kind !== 'upgradeShardRing') ||
                 fx.clock.expired

@@ -22,6 +22,7 @@ export const BlackBean = defineUnit({
         cannonRider: Object.freeze({
             reboardDelayMs: 2500,
             boardMs: 500,
+            relaunchImpact: 15,
             returnSpeedMultiplier: 2,
             // 초안: 대포를 고르는 직선거리 상한은 그 진영 발사 사거리의 2배다.
             cannonSearchReachMultiplier: 2,
