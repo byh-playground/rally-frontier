@@ -1775,6 +1775,17 @@ body.result-mode .p2p-health {
     #gameScreen .launch-card b {
         font-size: 11px;
     }
+    #gameScreen .hero-card {
+        height: 96px;
+    }
+    #gameScreen .hero-card .launch-card-portrait {
+        height: 19px;
+    }
+    #gameScreen .hero-card-health {
+        width: calc(100% + 4px);
+        padding-inline: 0;
+        font-size: 8px;
+    }
     #gameScreen .hero-card-name {
         flex-direction: column;
         gap: 1px;
