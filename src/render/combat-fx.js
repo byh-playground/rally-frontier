@@ -21,8 +21,8 @@ const CAPS = Object.freeze({
     boom: 24,
     chips: 60,
     puffs: 60,
-    scorch: 12,
-    shock: 16,
+    scorch: 32,
+    shock: 32,
 });
 const LIFE = Object.freeze({
     spark: 130,

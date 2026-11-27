@@ -890,6 +890,8 @@ const SIEGE_SMOKE = Object.freeze([0.52, 0.5, 0.46, 1]),
     SIEGE_SMOKE_PALE = Object.freeze([0.87, 0.84, 0.77, 1]),
     SIEGE_DUST = Object.freeze([0.82, 0.74, 0.55, 1]),
     SIEGE_EARTH = Object.freeze([0.6, 0.47, 0.28, 1]),
+    SIEGE_SOIL = Object.freeze([0.66, 0.5, 0.29, 1]),
+    SIEGE_SAND = Object.freeze([0.93, 0.85, 0.64, 1]),
     SIEGE_STONE = Object.freeze([0.74, 0.68, 0.57, 1]),
     SIEGE_WOOD = Object.freeze([0.58, 0.42, 0.24, 1]);
 
@@ -2308,49 +2310,54 @@ class GLRenderer {
         });
     }
 
-    // A shell lands: a mark in the ground, a flash, a ring of dust and clods of earth.
+    // A shell lands: a mark in the ground, a flash, two shock rings, dust with a column of earth rising out of it,
+    // clods thrown low and high, and a shake of the screen.
     siegeLanding(e, snapshot, index) {
         if (!(e.radius > 0) || !this.combatFxVisible(e)) return;
         const at = { x: e.x, y: e.y, side: e.side },
             clock = snapshot.presentationClock,
             seed = HashUtil.hash(`${snapshot.tick}|land|${index}`),
-            // A small blast (one pellet of a shotgun) leaves a small mark: the effects follow its reach.
-            size = RangeUtil.clamp(e.radius / SIEGE_FULL_BLAST, 0.45, 1.2);
-        this.combatFxLook.scorch({ at, size, clock });
-        this.combatFxLook.boom({
-            at,
-            size,
-            shift: { x: 0, y: -10 },
-            reach: 56,
-            life: 130,
-            clock,
-            seed,
-        });
-        this.combatFxLook.puffs({
-            at,
-            size,
-            shift: { x: 0, y: -4 },
-            color: SIEGE_DUST,
-            count: 12,
-            spread: 66,
-            rise: 8,
-            reach: 22,
-            life: 700,
-            clock,
-            seed,
-        });
-        this.combatFxLook.chips({
-            at,
-            size,
-            shift: { x: 0, y: -6 },
-            dir: 0,
-            color: SIEGE_EARTH,
-            count: 11,
-            speed: 100,
-            drop: 18,
-            clock,
-            seed,
-        });
+            // The effects and the shake follow the blast's reach; combat-fx keeps a smallest drawn size on screen,
+            // so a small shell's effects shrink less than its shake does.
+            size = RangeUtil.clamp(e.radius / SIEGE_FULL_BLAST, 0.45, 1.2),
+            fx = this.combatFxLook;
+        const puffs = (color, shift, count, spread, rise, reach, life, salt) =>
+            fx.puffs({
+                at,
+                size,
+                shift: { x: 0, y: shift },
+                color,
+                count,
+                spread,
+                rise,
+                reach,
+                life,
+                clock,
+                seed: seed ^ salt,
+            });
+        const clods = (color, scale, shift, count, speed, drop, salt) =>
+            fx.chips({
+                at,
+                size: size * scale,
+                shift: { x: 0, y: shift },
+                dir: 0,
+                color,
+                count,
+                speed,
+                drop,
+                clock,
+                seed: seed ^ salt,
+            });
+        fx.scorch({ at, size, clock, width: 170 });
+        fx.boom({ at, size, shift: { x: 0, y: -14 }, reach: 140, life: 200, clock, seed });
+        fx.shock({ at, size, reach: 140, clock });
+        fx.shock({ at, size, reach: 230, clock, delay: 90 });
+        puffs(SIEGE_SOIL, -6, 11, 84, 14, 28, 640, 0);
+        puffs(SIEGE_SAND, -12, 8, 40, 30, 30, 620, 77);
+        puffs(SIEGE_SOIL, -10, 7, 24, 120, 40, 760, 131);
+        clods(SIEGE_SOIL, 1.5, -8, 14, 120, 18, 0);
+        clods(SIEGE_SAND, 1.2, -10, 16, 220, 24, 311);
+        this.triggerSingleShake('landing', 3.2 * Math.min(1, size), 240, seed, e, snapshot);
     }
 
     // A cannon is struck: it shakes and flashes, and chips fly from the side the blow came from.
@@ -2850,16 +2857,28 @@ class GLRenderer {
         return sh;
     }
 
-    // A popcorn burst on screen shakes lightly. Bursts in a row keep one shake: the new one replaces the
-    // previous at whichever is stronger now, so a chain never adds up past a single burst.
+    // A popcorn burst on screen shakes lightly.
     triggerSelfDestructShake(e, snapshot, index) {
         const { shakeIntensity, shakeMs } = EffectObjectFactory.selfDestructBurst;
+        this.triggerSingleShake(
+            'selfDestruct',
+            shakeIntensity,
+            shakeMs,
+            HashUtil.hash(`${snapshot.tick}|self-destruct|${index}`),
+            e,
+            snapshot,
+        );
+    }
+
+    // One shake of a `kind` at a time, only for what is on screen: the new one replaces the previous at whichever
+    // is stronger now, so a chain (popcorn) or a volley (landings) never adds up past a single one.
+    triggerSingleShake(kind, intensity, ms, seed, e, snapshot) {
         if (!this.onScreenAuth(e.x, e.y, 0)) return;
         const dpr = Math.min(1.6, devicePixelRatio || 1);
         let remaining = 0,
             write = 0;
         for (const sh of this.shakeFx) {
-            if (!sh.selfDestruct) {
+            if (sh.single !== kind) {
                 this.shakeFx[write++] = sh;
                 continue;
             }
@@ -2868,14 +2887,8 @@ class GLRenderer {
             this.shakeFxPool.release(sh);
         }
         this.shakeFx.length = write;
-        const sh = this.triggerClientShake(
-            Math.max(shakeIntensity, remaining),
-            shakeMs,
-            HashUtil.hash(`${snapshot.tick}|self-destruct|${index}`),
-            e,
-            snapshot,
-        );
-        if (sh) sh.selfDestruct = true;
+        const sh = this.triggerClientShake(Math.max(intensity, remaining), ms, seed, e, snapshot);
+        if (sh) sh.single = kind;
     }
 
     updateClientShake() {
