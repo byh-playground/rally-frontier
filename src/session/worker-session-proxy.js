@@ -42,6 +42,7 @@ export class WorkerSessionProxy {
             receivedPackets: 0,
             receivedPacketBytes: 0,
         };
+        this.worker = new Worker(new URL('../sim-worker.js', import.meta.url), { type: 'module' });
         transport.onMessage = (data) => {
             this.traffic.receivedMessages++;
             this.toTransport('message', { data });
@@ -57,10 +58,10 @@ export class WorkerSessionProxy {
                 this.toTransport('netcode-state', { state }),
             ),
         ];
-        this.worker = new Worker(new URL('../sim-worker.js', import.meta.url), { type: 'module' });
         this.worker.onmessage = (e) => {
+            if (this.disposed) return;
             const m = e.data;
-            if (m?.type === 'ready') {
+            if (m?.type === 'ready' && !this.started) {
                 // The WebRTC link may open before the Worker is ready; hold what it sent until then.
                 // The Worker realm has its own CONFIG: hand it the page's sync mode, or both peers fail the handshake.
                 this.worker.postMessage({
@@ -77,7 +78,7 @@ export class WorkerSessionProxy {
                 for (const [message, transfer] of this.outbox)
                     this.worker.postMessage(message, transfer);
                 this.outbox.length = 0;
-                this.resolveReady();
+                this.resolveReady(true);
             } else if (m?.type === 'transport') this.fromTransport(m);
             else if (m?.type === 'status') this.applyStatus(m);
             else if (m?.type === 'result') {
@@ -85,7 +86,9 @@ export class WorkerSessionProxy {
                 this.pending.delete(m.id);
             } else if (m?.type === 'fatal' || m?.type === 'error') this.onFatal(m);
         };
-        this.worker.onerror = (e) => this.onFatal({ message: e.message || 'worker error' });
+        this.worker.onerror = (e) => {
+            if (!this.disposed) this.onFatal({ message: e.message || 'worker error' });
+        };
     }
     post(message, transfer = []) {
         if (this.started) this.worker.postMessage(message, transfer);
@@ -167,6 +170,10 @@ export class WorkerSessionProxy {
     dispose(reason) {
         if (this.disposed) return false;
         this.disposed = true;
+        this.resolveReady(false);
+        this.outbox.length = 0;
+        this.worker.onmessage = null;
+        this.worker.onerror = null;
         this.worker.postMessage({ type: 'dispose', reason });
         for (const resolve of this.pending.values()) resolve(null);
         this.pending.clear();

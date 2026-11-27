@@ -949,6 +949,8 @@ class GameSession {
             // 로비 생존 확인일 뿐 simulation clock과 입력 지연은 Core가 측정한다.
             if (Date.now() - this.lastPingAt >= 1000) {
                 this.lastPingAt = Date.now();
+                // A guest that has not received GAME_START repeats its idempotent HELLO.
+                if (this.role === 'guest') this.start();
                 this.transport.send({ type: 'LOBBY_PING', ts: this.lastPingAt });
             }
         }, NETWORK_HEALTH_POLL_MS);

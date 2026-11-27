@@ -270,22 +270,44 @@ class GeometryTemplateCache {
     }
 }
 const SHARED_GEOMETRY_TEMPLATES = new GeometryTemplateCache();
-// GameKit's retained stroke offsets are in CSS pixels after the ellipse is projected.
-function buildGrainTeamRing() {
-    const segments = 14,
-        halfStrokePx = 1,
-        vertices = [],
-        indices = [];
+// Baked ownership colors keep one batchable footprint per soldier. Angular enemy plates
+// remain recognizable at the same zoom as rounded friendly plates, with a dark edge on bright ground.
+function buildGrainTeamRing(relation) {
+    const segments = 16;
+    const palette = UnitFactionPalette.get(relation);
+    const offsets = [-2, -1.1, 1.1, 2];
+    const vertices = [];
+    const indices = [];
+    const vertex = (x, y, color, alpha, tx, ty, offset = 0) =>
+        vertices.push(x, y, color[0], color[1], color[2], alpha, tx, ty, 0, offset, 0);
+    const outlineCount = segments * offsets.length;
+    vertex(0, 0, palette.body, 0.38, 0, 1);
     for (let i = 0; i < segments; i++) {
-        const angle = (i / segments) * Math.PI * 2,
-            x = Math.cos(angle),
-            y = Math.sin(angle);
-        // Position, RGBA, unit tangent, tangent/normal pixel offsets, part index.
-        for (const offset of [halfStrokePx, -halfStrokePx])
-            vertices.push(x, y, 1, 1, 1, 1, -y, x, 0, offset, 0);
-        const a = i * 2,
-            b = ((i + 1) % segments) * 2;
-        indices.push(a, b, b + 1, a, b + 1, a + 1);
+        const angle = (i / segments) * Math.PI * 2;
+        const cx = Math.cos(angle),
+            cy = Math.sin(angle);
+        const scale = relation === 'enemy' ? 1 / (Math.abs(cx) + Math.abs(cy)) : 1;
+        const x = cx * scale,
+            y = cy * scale;
+        const next = (i + 1) % segments;
+        vertex(x, y, palette.body, 0.38, -cy, cx);
+        indices.push(0, i + 1, next + 1);
+    }
+    const strokeStart = segments + 1;
+    for (let i = 0; i < segments; i++) {
+        const point = (i + 1) * 11;
+        const x = vertices[point],
+            y = vertices[point + 1];
+        const tx = vertices[point + 6],
+            ty = vertices[point + 7];
+        offsets.forEach((offset, band) => {
+            const edge = band === 0 || band === offsets.length - 1;
+            vertex(x, y, edge ? palette.dark : palette.body, 1, tx, ty, offset);
+        });
+        const a = i * offsets.length + strokeStart;
+        const b = (((i + 1) * offsets.length) % outlineCount) + strokeStart;
+        for (let band = 0; band < offsets.length - 1; band++)
+            indices.push(a + band, b + band, b + band + 1, a + band, b + band + 1, a + band + 1);
     }
     return {
         vertices: new Float32Array(vertices),
@@ -965,7 +987,12 @@ class GLRenderer {
             safeAlphaRunBatching: true,
         });
         this.vectorContext.acquireMeshRenderer();
-        this.grainTeamRing = this.vectorContext.createMesh(buildGrainTeamRing());
+        this.grainTeamRings = Object.fromEntries(
+            ['friendly', 'enemy', 'neutral'].map((relation) => [
+                relation,
+                this.vectorContext.createMesh(buildGrainTeamRing(relation)),
+            ]),
+        );
         this.grainTeamRingMatrix = new Float32Array(6);
         // The blight mark (BlightLook): units being freed (unit id -> { clock }), this frame's marked grains, and
         // this frame's rings as flat numbers (x, y, rx, ry, depth, seed, freeing) noted while the team rings draw.
@@ -1362,7 +1389,7 @@ class GLRenderer {
             if (!C.beginFrame()) throw new Error('그래픽 장치를 준비할 수 없습니다.');
             // A hidden boot canvas has no CSS viewport for the non-scaling stroke.
             if (this.canvas.clientWidth > 0 && this.canvas.clientHeight > 0) {
-                C.drawMesh(this.grainTeamRing);
+                for (const ring of Object.values(this.grainTeamRings)) C.drawMesh(ring);
                 C.flush('grain-team-ring-preparation');
                 this.blightArt.prepare(C);
                 C.flush('blight-ring-preparation');
@@ -2625,7 +2652,7 @@ class GLRenderer {
             shrink = 1 / (1 + height / 220),
             alpha = RangeUtil.clamp(0.17 - height / 850, 0.06, 0.17);
         if (this.usesTeamRing(u)) {
-            const team = UnitFactionPalette.get(this.factionRelation(u.side)).body,
+            const ring = this.grainTeamRings[this.factionRelation(u.side)],
                 rx = r * 1.05 * shrink,
                 ry = rx * BattlefieldProjection.groundScale,
                 C = this.vectorContext,
@@ -2650,10 +2677,10 @@ class GLRenderer {
             C.depthTest = !!this.passState.depthEnabled;
             C.depthWrite = false;
             C.depthFunc = this.passState.depthFunc || 'lequal';
-            C.forceColor = team;
-            C.globalAlpha = 0.85;
+            C.forceColor = null;
+            C.globalAlpha = 1;
             try {
-                C.drawMesh(this.grainTeamRing, { transform: m });
+                C.drawMesh(ring, { transform: m });
                 // The blight's ring lies around this one; it is drawn after every team ring (drawBlightRings).
                 const grain = this.blightShown ? this.grainActors.get(u.id) : null;
                 if (grain && grain.frame === this.grainActorFrame && grain.blight >= 0)
@@ -10796,7 +10823,96 @@ class SinglePlayerModeUtil {
 }
 
 class MatchLifecycle {
-    static singleMatch = null;
+    static singleWorkerTimeoutMs = 30000;
+    static singleStartTimeoutMs = 12000;
+    static singleStart = { phase: 'idle' };
+    static nextSingleStartPhase = Object.freeze({
+        preparing: 'openingHost',
+        openingHost: 'connecting',
+        connecting: 'syncing',
+        syncing: 'started',
+    });
+
+    static get singleMatch() {
+        return this.singleStart.attempt ?? null;
+    }
+
+    static moveSingleStart(attempt, phase) {
+        if (
+            this.singleMatch !== attempt ||
+            this.nextSingleStartPhase[this.singleStart.phase] !== phase
+        )
+            return false;
+        this.singleStart = { phase, attempt };
+        this.renderSingleStart();
+        return true;
+    }
+
+    static armSingleStart(attempt, ms) {
+        clearTimeout(attempt.startTimer);
+        attempt.startTimer = setTimeout(
+            () => this.failSinglePlayer(attempt, 'startup-timeout'),
+            ms,
+        );
+    }
+
+    static renderSingleStart() {
+        const state = this.singleStart;
+        const dialog = DomUtil.byId('singleStartDialog');
+        const message = {
+            preparing: '상대 AI를 준비하고 있어요.',
+            openingHost: '경기를 준비하고 있어요.',
+            connecting: '상대 AI를 연결하고 있어요.',
+            syncing: '전장을 불러오고 있어요.',
+            failed: state.message,
+        }[state.phase];
+        if (!message) {
+            if (dialog.open) dialog.close();
+            return;
+        }
+        DomUtil.byId('singleStartTitle').textContent =
+            state.phase === 'failed' ? '경기를 시작하지 못했어요' : '경기 준비 중';
+        DomUtil.byId('singleStartMessage').textContent = message;
+        DomUtil.byId('singleStartRetry').hidden = state.phase !== 'failed';
+        DomUtil.byId('singleStartCancel').textContent = state.phase === 'failed' ? '닫기' : '취소';
+        if (!dialog.open) dialog.showModal();
+        if (state.phase === 'failed') DomUtil.byId('singleStartRetry').focus();
+    }
+
+    static cancelSingleStart() {
+        if (['idle', 'started'].includes(this.singleStart.phase)) return;
+        this.disposeMatches('single-start-cancelled');
+    }
+
+    static retrySingleStart() {
+        if (this.singleStart.phase !== 'failed') return;
+        const { humanRole, stageId } = this.singleStart.intent;
+        this.startSinglePlayerWebRTC(humanRole, stageId);
+    }
+
+    static completeSingleStart(attempt, snapshot, sess) {
+        if (!sess.netcodeSession?.ready || !(snapshot.tick > 0)) return;
+        if (this.moveSingleStart(attempt, 'started')) clearTimeout(attempt.startTimer);
+    }
+
+    static failSinglePlayer(attempt, error) {
+        if (this.singleMatch !== attempt) return;
+        const { phase } = this.singleStart,
+            { intent } = attempt;
+        const detail = error?.message || error?.type || String(error);
+        LogUtil.status('싱글 경기 준비 실패 · ' + phase + ' · ' + detail);
+        try {
+            this.disposeMatches('single-start-failed');
+        } catch (disposeError) {
+            console.error('싱글 경기 정리 실패:', disposeError);
+        }
+        const message =
+            phase === 'preparing'
+                ? '상대 AI를 준비하지 못했어요. 같은 경기로 다시 시도할 수 있어요.'
+                : '경기 연결을 완료하지 못했어요. 같은 경기로 다시 시도할 수 있어요.';
+        this.singleStart = { phase: 'failed', intent, message };
+        this.renderSingleStart();
+    }
     static selectedCampaign = null;
     static campaignDifficulty = null;
     // The result screen whose sunshine line a pending save may still fill (presentMatchResult).
@@ -10847,7 +10963,7 @@ class MatchLifecycle {
         };
         return session;
     }
-    static wireSessionForView(r, sess, trans) {
+    static wireSessionForView(r, sess, trans, attempt = null) {
         const isCurrent = () =>
             !sess.disposed &&
             ActiveViewState.session === sess &&
@@ -10858,6 +10974,10 @@ class MatchLifecycle {
         );
         sess.onSnapshot = (state) => {
             if (!isCurrent()) return;
+            if (attempt && MatchLifecycle.singleStart.phase !== 'started') {
+                MatchLifecycle.completeSingleStart(attempt, state, sess);
+                if (MatchLifecycle.singleStart.phase !== 'started') return;
+            }
             if (ActiveViewState.renderer)
                 ActiveViewState.renderer.onPresentationFrame = (frame) => sess.presentFrame(frame);
             if (ActiveViewState.role === r) BattlePresentation.renderGame(state);
@@ -10927,6 +11047,7 @@ class MatchLifecycle {
             if (isCurrent()) MatchLifecycle.presentMatchResult(w, reason, r);
             if (sess.leaveAfterResult)
                 setTimeout(() => {
+                    if (!isCurrent()) return;
                     MatchLifecycle.leaveMatch();
                     LaunchScreens.replace('');
                 }, 0);
@@ -10935,11 +11056,7 @@ class MatchLifecycle {
         trans.onPeerReady = () => {
             if (!isCurrent()) return;
             if (ActiveViewState.role !== r) return;
-            if (SinglePlayerModeUtil.isSinglePlayer()) {
-                LogUtil.status('싱글 · AI WebRTC 연결 준비');
-                UiRegistry.refs.singleStatus.textContent = 'AI용 WebRTC 피어를 연결하고 있습니다…';
-                UiController.setElementVisible(UiRegistry.refs.singleStatus, true);
-            } else {
+            if (!attempt) {
                 LogUtil.status('방 ' + ActiveViewState.roomCode + ' · 상대 대기');
                 if (r === 'host') {
                     UiRegistry.refs.codeArea.classList.remove('hidden');
@@ -10950,10 +11067,12 @@ class MatchLifecycle {
         };
         trans.onOpen = () => {
             if (!isCurrent()) return;
+            if (attempt) MatchLifecycle.moveSingleStart(attempt, 'syncing');
             // DataChannel open is only transport readiness. During recovery the match
             // is NOT "connected" until Host snapshot READY/RUN finishes.
             sess.localVisible = document.visibilityState === 'visible';
             sess.onTransportOpen();
+            if (!isCurrent()) return;
 
             if (ActiveViewState.role === r) {
                 const recovering = !!(sess.sim && (sess.syncHold || sess.recoveryPhase !== 'idle'));
@@ -10972,10 +11091,9 @@ class MatchLifecycle {
                 UiController.closeUiModal('create');
                 UiController.closeUiModal('join');
 
-                if (SinglePlayerModeUtil.isSinglePlayer()) {
-                    UiRegistry.refs.singleStatus.textContent = recovering
-                        ? '새 WebRTC 채널 연결 완료 · Host 게임 상태 복원 중'
-                        : `내 역할 ${r.toUpperCase()} · AI ${(MatchLifecycle.singleMatch?.botRole || 'guest').toUpperCase()}와 실제 WebRTC 연결 완료`;
+                if (attempt && recovering) {
+                    UiRegistry.refs.singleStatus.textContent =
+                        '새 WebRTC 채널 연결 완료 · Host 게임 상태 복원 중';
                     UiController.setElementVisible(UiRegistry.refs.singleStatus, true);
                 }
             }
@@ -10985,6 +11103,10 @@ class MatchLifecycle {
         trans.onError = (e) => {
             if (!isCurrent()) return;
             if (e?.error) console.error('연결 오류 원인:', e.error);
+            if (attempt && MatchLifecycle.singleStart.phase !== 'started') {
+                if (!e?.nonFatal) MatchLifecycle.failSinglePlayer(attempt, e);
+                return;
+            }
             if (e?.type === 'version-mismatch') {
                 ConnectionPresentation.showVersionMismatch(e, r);
                 return;
@@ -10996,10 +11118,6 @@ class MatchLifecycle {
                     if (trans.everOpened) {
                         UiRegistry.refs.singleStatus.textContent = 'WebRTC 복구 중 · ' + message;
                         UiController.setElementVisible(UiRegistry.refs.singleStatus, true);
-                    } else {
-                        MatchLifecycle.failSinglePlayer(
-                            '싱글 WebRTC 연결 실패 · 다시 시도해 주세요: ' + message,
-                        );
                     }
                 } else if (r === 'host') {
                     UiRegistry.refs.createStatus.textContent = '방 연결에 실패했습니다: ' + message;
@@ -11014,8 +11132,12 @@ class MatchLifecycle {
                 }
             }
         };
-        trans.onClose = () => {
+        trans.onClose = (event) => {
             if (!isCurrent()) return;
+            if (attempt && MatchLifecycle.singleStart.phase !== 'started') {
+                if (!event?.recovering) MatchLifecycle.failSinglePlayer(attempt, event?.reason);
+                return;
+            }
             sess.onTransportClosed();
             if (ActiveViewState.role === r) {
                 LogUtil.status(
@@ -11033,12 +11155,19 @@ class MatchLifecycle {
         };
     }
     static disposeMatches(reason = 'mode-change') {
+        const attempt = this.singleMatch;
         const sessions = new Set(
-            [ActiveViewState.session, ...Object.values(this.singleMatch?.sessions || {})].filter(
-                Boolean,
-            ),
+            [ActiveViewState.session, ...Object.values(attempt?.sessions || {})].filter(Boolean),
         );
-        this.singleMatch?.bot?.stop();
+        // Invalidate the owner before closing transports or running disposal callbacks.
+        this.singleStart = { phase: 'idle' };
+        ActiveViewState.session = null;
+        ActiveViewState.transport = null;
+        ActiveViewState.snap = null;
+        clearTimeout(attempt?.startTimer);
+        if (attempt) ActiveViewState.roomCode = '';
+        this.renderSingleStart();
+        attempt?.bot?.stop();
         const errors = [];
         for (const session of sessions) {
             try {
@@ -11047,12 +11176,11 @@ class MatchLifecycle {
                 errors.push(error);
             }
         }
-        this.singleMatch = null;
-        // A match given up while it was being prepared leaves the screen's own tune.
+        // A partially constructed attempt may still own a transport without a session.
+        const owned = new Set([...sessions].map((session) => session.transport));
+        for (const transport of Object.values(attempt?.transports || {}))
+            if (!owned.has(transport)) transport.close();
         musicPlayer.setScreen(UiRuntimeState.value.screen);
-        ActiveViewState.session = null;
-        ActiveViewState.transport = null;
-        ActiveViewState.snap = null;
         if (errors.length)
             throw new AggregateError(errors, '세션 종료 처리 중 오류가 발생했습니다.');
     }
@@ -11089,7 +11217,6 @@ class MatchLifecycle {
     }
     static connect(r, c, deckMode = 'own') {
         MatchLifecycle.disposeMatches('online-start');
-        MatchLifecycle.singleMatch = null;
         ConnectionPresentation.hideP2PHealth();
         ActiveViewState.role = r;
         ActiveViewState.roomCode = c;
@@ -11115,49 +11242,64 @@ class MatchLifecycle {
         if (!this.singleMatch) return;
         MatchLifecycle.disposeMatches('single-stop');
     }
-    static startSinglePlayerWebRTC(humanRole = 'guest') {
-        if (MatchLifecycle.singleMatch) return;
-        const stage = campaignStage(this.selectedCampaign);
-        if (this.selectedCampaign && (!stage || !campaignProgress.canStart(stage))) return;
-        MatchLifecycle.disposeMatches('single-start');
+    static startSinglePlayerWebRTC(humanRole = 'guest', stageId = this.selectedCampaign) {
+        if (this.singleMatch) return;
+        const stage = campaignStage(stageId);
+        if (stageId && (!stage || !campaignProgress.canStart(stage))) return;
+        this.disposeMatches('single-start');
 
         humanRole = humanRole === 'host' ? 'host' : 'guest';
         const botRole = humanRole === 'host' ? 'guest' : 'host';
-
+        const token = this.singleRoomToken();
+        const attempt = {
+            intent: { humanRole, stageId, route: location.hash },
+            roomCode: token,
+            humanRole,
+            botRole,
+            transports: {},
+            sessions: {},
+            bot: null,
+        };
+        this.singleStart = { phase: 'preparing', attempt };
+        this.armSingleStart(attempt, this.singleWorkerTimeoutMs);
+        this.selectedCampaign = stageId;
+        if (stage) this.campaignDifficulty = roster.difficulty;
         ConnectionPresentation.hideP2PHealth();
         NetworkModuleLoader.pendingPeerAction = null;
         UiController.closeUiModal('create');
         UiController.closeUiModal('join');
-
-        const token = MatchLifecycle.singleRoomToken();
         ActiveViewState.roomCode = token;
         ActiveViewState.role = humanRole;
-
-        ActiveViewState.snap = null;
-
         UiController.setUiScreen('lobby');
         musicPlayer.setScreen('game');
-        UiRegistry.refs.singleStatus.textContent = `${humanRole.toUpperCase()} 테스트용 실제 WebRTC 양쪽 피어를 준비하고 있습니다…`;
-        UiController.setElementVisible(UiRegistry.refs.singleStatus, true);
+        this.renderSingleStart();
 
-        const hostTransport = new RoomTransport('host', token, { signalMode: 'local' });
-        const guestTransport = new RoomTransport('guest', token, { signalMode: 'local' });
-        const transports = { host: hostTransport, guest: guestTransport };
-        const humanTransport = transports[humanRole];
-        const botTransport = transports[botRole];
-        const config = MatchLifecycle.currentMatchConfig(stage),
-            configFor = (role) => (role === 'host' ? config : undefined);
-        const humanSession = MatchLifecycle.createSession(
+        try {
+            this.connectSingleAttempt(attempt, stage);
+        } catch (error) {
+            this.failSinglePlayer(attempt, error);
+        }
+    }
+
+    static connectSingleAttempt(attempt, stage) {
+        const { roomCode: token, humanRole, botRole, transports, sessions } = attempt;
+        transports.host = new RoomTransport('host', token, { signalMode: 'local' });
+        transports.guest = new RoomTransport('guest', token, { signalMode: 'local' });
+        const { host, guest } = transports;
+        const humanTransport = transports[humanRole],
+            botTransport = transports[botRole];
+        const config = this.currentMatchConfig(stage);
+        const configFor = (role) => (role === 'host' ? config : undefined);
+        const humanSession = (sessions[humanRole] = this.createSession(
             humanRole,
             humanTransport,
             token,
             configFor(humanRole),
             stage ? CampaignDeck.deckOf(stage) : DeckEditor.getDeck(),
-        );
-        // CONFIG.single.botWorker runs the AI session in src/sim-worker.js; its WebRTC transport stays here.
+        ));
         const profile = stage ? null : soloBotProfileForSeed(GameSession.matchSeed(token));
         const botDeck = stage?.enemyDeck ?? profile?.deck;
-        const botSession = CONFIG.single.botWorker
+        const botSession = (sessions[botRole] = CONFIG.single.botWorker
             ? new WorkerSessionProxy(
                   botRole,
                   botTransport,
@@ -11166,81 +11308,79 @@ class MatchLifecycle {
                   botDeck,
                   profile?.id,
               )
-            : MatchLifecycle.createSession(
-                  botRole,
-                  botTransport,
-                  token,
-                  configFor(botRole),
-                  botDeck,
-              );
-        const sessions = { [humanRole]: humanSession, [botRole]: botSession };
-        const bot = CONFIG.single.botWorker
-            ? null
-            : BotController.attach(botSession, botRole, profile?.id);
-        if (CONFIG.single.botWorker)
-            botSession.onFatal = (e) => {
-                if (e?.error) console.error('AI Worker 오류 원인:', e.error);
-                MatchLifecycle.failSinglePlayer(
-                    `AI ${botRole.toUpperCase()} Worker 오류 · ${e.message}`,
-                );
+            : this.createSession(botRole, botTransport, token, configFor(botRole), botDeck));
+        if (botSession instanceof WorkerSessionProxy) {
+            botSession.onFatal = (event) => {
+                if (this.singleMatch !== attempt) return;
+                if (event?.error) console.error('AI Worker 오류 원인:', event.error);
+                if (this.singleStart.phase === 'started') {
+                    LogUtil.status('AI Worker 오류 · 경기가 중단됨');
+                    UiController.setUiScreen('lobby');
+                }
+                this.failSinglePlayer(attempt, event);
             };
-
-        MatchLifecycle.singleMatch = {
-            roomCode: token,
-            humanRole,
-            botRole,
-            recoveryInitiatorRole: humanRole,
-            transports,
-            sessions,
-            bot,
-        };
+        } else {
+            attempt.bot = BotController.attach(botSession, botRole, profile?.id);
+        }
 
         ActiveViewState.session = humanSession;
         ActiveViewState.transport = humanTransport;
-        MatchLifecycle.wireSessionForView(humanRole, humanSession, humanTransport);
-
+        this.wireSessionForView(humanRole, humanSession, humanTransport, attempt);
+        const showSimulationFatal = humanSession.onSimulationFatal;
+        humanSession.onSimulationFatal = (info) => {
+            if (this.singleMatch !== attempt) return;
+            if (this.singleStart.phase === 'started') showSimulationFatal(info);
+            else this.failSinglePlayer(attempt, info);
+        };
         botTransport.onOpen = () => {
+            if (this.singleMatch !== attempt) return;
+            this.moveSingleStart(attempt, 'syncing');
             botSession.localVisible = document.visibilityState === 'visible';
             botSession.onTransportOpen();
             AppLifecycle.requestScreenWakeLock();
         };
-
-        botTransport.onError = (e) => {
-            if (e?.error) console.error('AI 연결 오류 원인:', e.error);
-            if (e?.type === 'version-mismatch') {
-                ConnectionPresentation.showVersionMismatch(e, botRole);
-                return;
-            }
-            const message = e?.type || e?.message || `AI ${botRole.toUpperCase()} 연결 오류`;
-            if (botTransport.everOpened) {
-                UiRegistry.refs.singleStatus.textContent = `AI ${botRole.toUpperCase()} WebRTC 복구 필요 · ${message}`;
+        botTransport.onError = (event) => {
+            if (this.singleMatch !== attempt) return;
+            if (event?.error) console.error('AI 연결 오류 원인:', event.error);
+            if (this.singleStart.phase !== 'started') {
+                if (!event?.nonFatal) this.failSinglePlayer(attempt, event);
+            } else if (event?.type === 'version-mismatch') {
+                ConnectionPresentation.showVersionMismatch(event, botRole);
+            } else {
+                UiRegistry.refs.singleStatus.textContent =
+                    'AI 연결 복구 필요 · ' + (event?.type || event?.message || '연결 오류');
                 UiController.setElementVisible(UiRegistry.refs.singleStatus, true);
-            } else {
-                MatchLifecycle.failSinglePlayer(
-                    `AI ${botRole.toUpperCase()} WebRTC 연결 실패 · 다시 시도해 주세요: ${message}`,
-                );
             }
         };
-        botTransport.onClose = () => botSession.onTransportClosed();
-
-        // 싱글은 Host RTCPeerConnection signaling endpoint를 먼저 연 뒤 Guest가 참가한다.
-        hostTransport.onPeerReady = () => {
-            if (humanRole === 'host') {
-                UiRegistry.refs.singleStatus.textContent =
-                    '내 Host 방 준비 완료 · AI Guest가 실제 WebRTC로 참가 중…';
-            } else {
-                UiRegistry.refs.singleStatus.textContent =
-                    'AI Host 준비 완료 · 내 Guest가 실제 WebRTC로 참가 중…';
-            }
-            guestTransport.open();
+        botTransport.onClose = (event) => {
+            if (this.singleMatch !== attempt) return;
+            if (this.singleStart.phase === 'started') botSession.onTransportClosed();
+            else if (!event?.recovering) this.failSinglePlayer(attempt, event?.reason);
         };
 
-        // Open the link once the AI worker is ready to answer its first peer message.
-        if (CONFIG.single.botWorker)
-            void botSession.ready.then(() => {
-                if (!botSession.disposed) hostTransport.open();
+        const open = (transport) => {
+            void transport
+                .open()
+                .then((opened) => {
+                    if (!opened && this.singleStart.phase !== 'started')
+                        this.failSinglePlayer(attempt, 'room-open-failed');
+                })
+                .catch((error) => this.failSinglePlayer(attempt, error));
+        };
+        host.onPeerReady = () => {
+            if (this.moveSingleStart(attempt, 'connecting')) open(guest);
+        };
+        const openHost = () => {
+            if (this.moveSingleStart(attempt, 'openingHost')) {
+                this.armSingleStart(attempt, this.singleStartTimeoutMs);
+                open(host);
+            }
+        };
+        if (botSession instanceof WorkerSessionProxy) {
+            void botSession.ready.then((ready) => {
+                if (ready) openHost();
             });
-        else hostTransport.open();
+        } else openHost();
     }
     static beginCreateRoom(deckMode = this.onlineDeckMode ?? 'own') {
         if (this.singleMatch || ActiveViewState.session?.sim) return false;
@@ -11309,11 +11449,8 @@ class MatchLifecycle {
     }
     static startCampaignStage(stage) {
         if (!stage || !campaignProgress.canStart(stage)) return;
-        this.disposeMatches('campaign-stage-change');
-        this.selectedCampaign = stage.id;
-        // The difficulty the match starts on: a result on hard pays its sunshine (clearRecord).
-        this.campaignDifficulty = roster.difficulty;
-        this.startSinglePlayerWebRTC('host');
+        if (UiRuntimeState.value.screen === 'result') this.leaveMatch();
+        this.startSinglePlayerWebRTC('host', stage.id);
     }
     static presentMatchResult(winner, reason = 'base-destroyed', sourceRole = null) {
         const humanRole = SinglePlayerModeUtil.isSinglePlayer()
@@ -11409,11 +11546,6 @@ class MatchLifecycle {
         if (UiRegistry.refs.replayWatchBtn) UiRegistry.refs.replayWatchBtn.disabled = !replayReady;
         UiController.setUiScreen('result');
         requestAnimationFrame(() => UiRegistry.refs.result?.focus?.({ preventScroll: true }));
-    }
-    static failSinglePlayer(message) {
-        MatchLifecycle.disposeMatches('single-start-failed');
-        UiRegistry.refs.singleStatus.textContent = message;
-        UiController.setElementVisible(UiRegistry.refs.singleStatus, true);
     }
     static openMatchMenu() {
         if (ReplayPresentation.replayPlayer) {
@@ -12725,6 +12857,35 @@ class BattlePresentation {
         });
     }
 
+    // Frame the first practice once. Player pan and zoom take over immediately.
+    static frameOpening(renderer, side, targets) {
+        const base = renderer.world.bases[side];
+        renderer.replayZoom = DEFAULT_LIVE_ZOOM;
+        renderer.resize();
+        const points = [base, ...targets];
+        const xs = points.map((point) => renderer.viewX(point.x));
+        const ys = points.map((point) =>
+            BattlefieldProjection.planarY(
+                renderer.viewY(point.y),
+                renderer.world.terrain.surfaces.heightAt(point.x, point.y),
+            ),
+        );
+        const left = Math.min(...xs),
+            right = Math.max(...xs);
+        const top = Math.min(...ys),
+            bottom = Math.max(...ys);
+        if (targets.length) {
+            const margin = 110;
+            renderer.replayZoom *= Math.min(
+                1,
+                renderer.canvas.width / renderer.sc() / (right - left + margin * 2),
+                renderer.viewWorldH() / (bottom - top + margin * 2),
+            );
+        }
+        renderer.cameraLeft = renderer.clampCameraLeft((left + right - renderer.viewWorldW()) / 2);
+        renderer.cameraTop = renderer.clampCameraTop((top + bottom - renderer.viewWorldH()) / 2);
+    }
+
     static renderGame(s) {
         // An already queued snapshot must never switch Result back to Game.
         if (UiRuntimeState.value.screen === 'result') return;
@@ -12775,23 +12936,10 @@ class BattlePresentation {
         MatchLifecycle.activeSession()?.flushPresentationEvents(s);
         LaunchPresentation.render(s, side);
         if (enteringGame) {
-            const r = ActiveViewState.renderer;
-            const base = r.world.bases[side];
-            r.replayZoom = DEFAULT_LIVE_ZOOM;
-            r.resize();
-            const points = [base],
-                middle = (key) => {
-                    const values = points.map((point) => point[key]);
-                    return (Math.min(...values) + Math.max(...values)) / 2;
-                },
-                width = r.viewWorldW(),
-                x = middle('x'),
-                y = middle('y'),
-                height = r.world.terrain.surfaces.heightAt(x, y);
-            r.cameraLeft = r.clampCameraLeft(r.viewX(x) - width / 2);
-            r.cameraTop = r.clampCameraTop(
-                BattlefieldProjection.planarY(r.viewY(y), height) - r.viewWorldH() / 2,
-            );
+            const renderer = ActiveViewState.renderer;
+            const session = MatchLifecycle.activeSession();
+            const stage = campaignStage(session.matchConfig?.campaignStage);
+            this.frameOpening(renderer, side, CampaignPresentation.openingTargets(stage, s));
         }
         ActiveViewState.minimap.set(ActiveViewState.renderer, s);
         ActiveViewState.minimap.draw();
@@ -13071,6 +13219,20 @@ UiRegistry.refs.replayZoomInBtn?.addEventListener('click', () =>
 UiRegistry.refs.replayExitBtn?.addEventListener('click', ReplayPresentation.stopReplay);
 
 // A rematch of the AI starts a fresh match on the same page; a friend match goes back to the friend sheet.
+DomUtil.byId('singleStartCancel').addEventListener('click', () =>
+    MatchLifecycle.cancelSingleStart(),
+);
+DomUtil.byId('singleStartRetry').addEventListener('click', () => MatchLifecycle.retrySingleStart());
+DomUtil.byId('singleStartDialog').addEventListener('cancel', (event) => {
+    event.preventDefault();
+    MatchLifecycle.cancelSingleStart();
+});
+window.addEventListener('hashchange', () => {
+    const attempt = MatchLifecycle.singleMatch;
+    const intent = attempt?.intent ?? MatchLifecycle.singleStart.intent;
+    if (intent && intent.route !== location.hash) MatchLifecycle.cancelSingleStart();
+});
+
 UiController.bindImmediateButton(UiRegistry.refs.rematch, () => {
     const stage = campaignStage(MatchLifecycle.selectedCampaign);
     if (stage) MatchLifecycle.startCampaignStage(stage);

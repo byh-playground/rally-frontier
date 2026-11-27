@@ -53,6 +53,10 @@ function sideGoalLine(goal, tick, tps) {
     return text;
 }
 
+function firstShotPractice(stage, snapshot) {
+    return stage?.id === 'paddy-first-shot' && snapshot.campaignPractice?.doneTick === null;
+}
+
 function currentGoal(stage, snapshot) {
     // A practice (CampaignPractice, the snapshot's `campaignPractice`) comes before every other goal: its cue stays
     // on the battle screen until the last target is down.
@@ -61,7 +65,9 @@ function currentGoal(stage, snapshot) {
         return {
             key: 'practice',
             label: `써 보기 · 남은 표적 ${practice.left}`,
-            cue: { title: '써 보기', text: stage.practice.cue },
+            cue: firstShotPractice(stage, snapshot)
+                ? { title: '첫 발사', text: '표적 쪽을 길게 누르고, 조준 원이 닿으면 떼세요.' }
+                : { title: '써 보기', text: stage.practice.cue },
         };
     // The boss (BlightBoss, the snapshot's `blightBoss`): the objective's second line counts the kills left to its
     // awakening, and the awakening is the next goal with its own cue.
@@ -129,6 +135,12 @@ export function sporeCloudAlerts(snapshot, tps) {
 }
 
 export class CampaignPresentation {
+    static openingTargets(stage, snapshot) {
+        return firstShotPractice(stage, snapshot)
+            ? snapshot.units.filter((unit) => unit.alive !== false && unit.practiceTarget)
+            : [];
+    }
+
     static install(find) {
         this.$ = find;
     }
