@@ -277,13 +277,15 @@ const SHARED_GEOMETRY_TEMPLATES = new GeometryTemplateCache();
 function buildGrainTeamRing(relation) {
     const segments = 16;
     const palette = UnitFactionPalette.get(relation);
-    const offsets = [-2, -1.1, 1.1, 2];
+    // The outline is part of the footprint geometry, so both project at the same scale.
+    const bandRadii = [0.88, 0.94, 1.06, 1.12];
     const vertices = [];
     const indices = [];
-    const vertex = (x, y, color, alpha, tx, ty, offset = 0) =>
-        vertices.push(x, y, color[0], color[1], color[2], alpha, tx, ty, 0, offset, 0);
-    const outlineCount = segments * offsets.length;
-    vertex(0, 0, palette.body, 0.38, 0, 1);
+    const stride = 11;
+    const vertex = (x, y, color, alpha) =>
+        vertices.push(x, y, color[0], color[1], color[2], alpha, 0, 0, 0, 0, 0);
+    const outlineCount = segments * bandRadii.length;
+    vertex(0, 0, palette.body, 0.38);
     for (let i = 0; i < segments; i++) {
         const angle = (i / segments) * Math.PI * 2;
         const cx = Math.cos(angle),
@@ -292,32 +294,29 @@ function buildGrainTeamRing(relation) {
         const x = cx * scale,
             y = cy * scale;
         const next = (i + 1) % segments;
-        vertex(x, y, palette.body, 0.38, -cy, cx);
+        vertex(x, y, palette.body, 0.38);
         indices.push(0, i + 1, next + 1);
     }
     const strokeStart = segments + 1;
     for (let i = 0; i < segments; i++) {
-        const point = (i + 1) * 11;
+        const point = (i + 1) * stride;
         const x = vertices[point],
             y = vertices[point + 1];
-        const tx = vertices[point + 6],
-            ty = vertices[point + 7];
-        offsets.forEach((offset, band) => {
-            const edge = band === 0 || band === offsets.length - 1;
-            vertex(x, y, edge ? palette.dark : palette.body, 1, tx, ty, offset);
+        bandRadii.forEach((radius, band) => {
+            const edge = band === 0 || band === bandRadii.length - 1;
+            vertex(x * radius, y * radius, edge ? palette.dark : palette.body, 1);
         });
-        const a = i * offsets.length + strokeStart;
-        const b = (((i + 1) * offsets.length) % outlineCount) + strokeStart;
-        for (let band = 0; band < offsets.length - 1; band++)
+        const a = i * bandRadii.length + strokeStart;
+        const b = (((i + 1) * bandRadii.length) % outlineCount) + strokeStart;
+        for (let band = 0; band < bandRadii.length - 1; band++)
             indices.push(a + band, b + band, b + band + 1, a + band, b + band + 1, a + band + 1);
     }
     return {
         vertices: new Float32Array(vertices),
         indices: new Uint16Array(indices),
-        strideFloats: 11,
+        strideFloats: stride,
         partCount: 1,
         morphCount: 0,
-        nonScalingStroke: true,
     };
 }
 // Depth gap between consecutive grains in painter order: a few 24-bit depth steps, so 500 grains shift terrain occlusion by ~2e-4.
@@ -1389,7 +1388,7 @@ class GLRenderer {
             this.grainFaces.prepare();
             this.combatFxLook.prepare();
             if (!C.beginFrame()) throw new Error('그래픽 장치를 준비할 수 없습니다.');
-            // A hidden boot canvas has no CSS viewport for the non-scaling stroke.
+            // The blight ring's screen-width stroke needs a real CSS viewport.
             if (this.canvas.clientWidth > 0 && this.canvas.clientHeight > 0) {
                 for (const ring of Object.values(this.grainTeamRings)) C.drawMesh(ring);
                 C.flush('grain-team-ring-preparation');
