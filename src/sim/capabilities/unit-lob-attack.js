@@ -12,6 +12,8 @@ import { Knockback } from '../knockback.js';
 import { IndexList } from '../index-list.js';
 import { CampaignUpgrades } from '../campaign-upgrades.js';
 import { UnitFlight } from './unit-flight.js';
+import { UnitDefinition } from '../../definitions/units.js';
+import { GinkgoCloud } from './ginkgo-cloud.js';
 
 const EXPLOSION_BUILDING_QUERY = new IndexList();
 // A blocked shot pair is retried once either shot changes: both revisions as one number. A revision counts the
@@ -252,11 +254,16 @@ export class UnitLobAttack {
             });
         return true;
     }
-    // Campaign upgrade `contactFuse { buildings }` (옥수수 · 접촉 신관): is `hit` an enemy body that sets the egg off
-    // at once? An enemy soldier the blast can hurt does (not a flying one: area damage passes it by), wherever the
-    // egg is; an enemy building when `buildings`.
+    // Ginkgo seeds burst on enemy ground bodies. Corn's campaign contact fuse
+    // also bursts on an enemy soldier the blast can hurt, and optionally on buildings.
     static contactFuse(sim, shot, hit) {
         if (hit.kind !== 'body') return false;
+        if (UnitDefinition.get(shot.sourceType)?.ginkgoCloud) {
+            if (hit.isBuilding)
+                return sim.isHostileCombatBuilding(shot.side, sim.buildingById.get(hit.id));
+            const target = sim.unitById.get(hit.id);
+            return sim.isHostileCombatUnit(shot.side, target) && UnitMotion.isGrounded(target);
+        }
         const spec = CampaignUpgrades.effect(sim, shot.side, shot.sourceType, 'contactFuse');
         if (!spec) return false;
         if (hit.isBuilding)
@@ -273,7 +280,8 @@ export class UnitLobAttack {
         const x = shot.x,
             y = shot.y,
             radius = shot.spec.explosionRadius,
-            damage = shot.damage;
+            damage = shot.damage,
+            leavesCloud = !!UnitDefinition.get(shot.sourceType)?.ginkgoCloud;
         sim.events.push({
             type: 'unitLobExplosion',
             side: shot.side,
@@ -287,18 +295,20 @@ export class UnitLobAttack {
             radius,
             ...(contact ? { contact: true } : null),
         });
-        // The egg bursts: a small throw, since the egg weighs little.
-        Knockback.area(sim, {
-            side: shot.side,
-            sourceId: shot.id,
-            x,
-            y,
-            radius,
-            impactHeightFP: shot.zFP,
-            mass: shot.spec.mass,
-            speed: KnockbackRules.impactSpeed,
-            gain: KnockbackRules.gain.burst,
-        });
+        // The burst of an egg throws nearby bodies. Ginkgo's splat defines a slowing area.
+        if (leavesCloud) GinkgoCloud.create(sim, shot);
+        else
+            Knockback.area(sim, {
+                side: shot.side,
+                sourceId: shot.id,
+                x,
+                y,
+                radius,
+                impactHeightFP: shot.zFP,
+                mass: shot.spec.mass,
+                speed: KnockbackRules.impactSpeed,
+                gain: KnockbackRules.gain.burst,
+            });
         sim.applyAreaDamage({
             sourceSide: shot.side,
             sourceType: shot.sourceType,
@@ -733,19 +743,15 @@ export class UnitLobAttack {
                 if (e.kind === 'contact') {
                     const hit = e.hit,
                         key = shot.id + '|' + hit.key;
-                    if (this.contactFuse(sim, shot, hit)) {
-                        this.explode(
-                            sim,
-                            shot,
-                            Math.max(
-                                0,
-                                Math.min(
-                                    1000000,
-                                    Math.round(((sub * slice + e.at) / dt) * 1000000),
-                                ),
-                            ),
-                            true,
+                    const instantLand = hit.kind === 'ground' && shot.spec.fuseMs === 0;
+                    if (instantLand || this.contactFuse(sim, shot, hit)) {
+                        const elapsed = (sub * slice + e.at) / dt;
+                        if (instantLand) this.registerGround(sim, shot, shot.spec, elapsed);
+                        const subtick = Math.max(
+                            0,
+                            Math.min(1000000, Math.round(elapsed * 1000000)),
                         );
+                        this.explode(sim, shot, subtick, !instantLand);
                         shot.expired = true;
                         a.rev++;
                         continue;

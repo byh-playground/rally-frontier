@@ -87,6 +87,7 @@ import { heroBasicAttackElapsedMs } from './render/hero-basic-motion.js';
 import { LaunchImpactArt } from './render/launch-impact-art.js';
 import { DEAD_UNIT_LOOK, DeadUnitLook } from './render/dead-unit-look.js';
 import { BLIGHT_LOOK, BlightFieldLook, BlightLook } from './render/blight-look.js';
+import { GinkgoLook } from './render/ginkgo-look.js';
 import { mapLookFor } from './render/map-look.js';
 import {
     CONFIG,
@@ -1218,6 +1219,7 @@ class GLRenderer {
         this.cornTrails = new Map();
         this.cornTrailAnchors = new Map();
         this.cornBursts = [];
+        this.ginkgoLook = new GinkgoLook();
         this.milletBursts = [];
         this.cornQuadMatrix = new Float32Array(6);
         // Reused by the self-destruct burst each frame (renderCornParticles).
@@ -1318,6 +1320,7 @@ class GLRenderer {
         this.cornTrails.clear();
         this.cornTrailAnchors.clear();
         this.cornBursts.length = 0;
+        this.ginkgoLook.reset();
         this.milletBursts.length = 0;
         this.particles.length = 0;
         this.bundleBreakIds.clear();
@@ -1926,6 +1929,8 @@ class GLRenderer {
         }
 
         this.renderState.capture(source, now, snap, targetIntervalMs);
+        if (snap) this.ginkgoLook.reset();
+        this.ginkgoLook.observe(source.ginkgoClouds ?? source.ginkgoEffect?.clouds);
         const liveFacingIds = new Set(units.filter((u) => u?.alive !== false).map((u) => u.id));
         for (const id of this.unitFacingStates.keys())
             if (!liveFacingIds.has(id)) this.unitFacingStates.delete(id);
@@ -2775,6 +2780,7 @@ class GLRenderer {
             this.cornTrails.clear();
             this.cornTrailAnchors.clear();
             this.cornBursts.length = 0;
+            this.ginkgoLook.reset();
             this.milletBursts.length = 0;
             for (const track of this.corpseTracks.values()) this.releaseCorpse(track);
             this.corpseTracks.clear();
@@ -2793,6 +2799,7 @@ class GLRenderer {
             );
         this.world = WorldContext.forState(s);
         this.snapshot = s;
+        this.ginkgoLook.observe(s.ginkgoClouds);
         this.unitHealthLook.observe(s.units || [], s.tick);
         this.syncMapLook();
         if (!old || old.mapDescriptor?.seed !== s.mapDescriptor?.seed)
@@ -2855,7 +2862,7 @@ class GLRenderer {
         const snapshot = { ...this.snapshot, events: [event], presentationClock: clock };
         this.processFloatingEvents(snapshot);
         this.processClientCombatEffects(snapshot);
-        this.processCornEvents(snapshot);
+        this.processLobImpactEvents(snapshot);
         this.processMilletEvents(snapshot);
         if (hud) LaunchPresentation.presentEvents(snapshot, this.mySide());
         return clock;
@@ -2948,11 +2955,18 @@ class GLRenderer {
         this.frameShakeY = sy;
     }
 
-    processCornEvents(snapshot) {
+    processLobImpactEvents(snapshot) {
         if (!snapshot) return;
         for (const event of snapshot.events || []) {
             if (event.type !== 'unitLobExplosion' && event.type !== 'unitSelfDestruct') continue;
             if (!this.eventVisible(event)) continue;
+            if (
+                event.type === 'unitLobExplosion' &&
+                UnitDefinition.get(event.sourceType)?.ginkgoCloud
+            ) {
+                this.ginkgoLook.impact(event, snapshot.presentationClock);
+                continue;
+            }
             const tick = Number.isFinite(Number(event.presentationTick))
                 ? Number(event.presentationTick)
                 : snapshot.tick;
@@ -3654,6 +3668,7 @@ class GLRenderer {
                 e.type === 'unitSelfDestruct' ||
                 e.type === 'breathPulse' ||
                 e.type === 'chainPulse' ||
+                e.type === 'ginkgoCloudPulse' ||
                 // The blight field's harm (BlightField): one number for everything it hurt this second.
                 e.type === 'blightFieldPulse'
             ) {
@@ -7129,7 +7144,7 @@ class GLRenderer {
         const screenMotion = this.projectileScreenMotion(p, x, y);
         PROJECTILE_VISUAL_RENDER_FNS.launchAmmo(this, { p, sc, x, y, screenMotion });
     }
-    sampleCornTrail(id, side, world) {
+    sampleCornTrail(id, side, world, tint = null) {
         const displayMs = this.cornPresentationTime();
         if (!Number.isFinite(displayMs)) return;
         const anchor = this.cornTrailAnchors.get(id);
@@ -7162,7 +7177,7 @@ class GLRenderer {
                 this.cornTrails.delete(this.cornTrails.keys().next().value);
             this.cornTrails.set(id, (trail = []));
         }
-        trail.push({ ...anchor, at: displayMs, side });
+        trail.push({ ...anchor, at: displayMs, side, tint });
         if (trail.length > 6) trail.shift();
         anchor.x = world.x;
         anchor.y = world.y;
@@ -7270,18 +7285,26 @@ class GLRenderer {
         if (!renderer) throw new Error(translate('곡사 투사체 자원이 준비되지 않았습니다.'));
         const now = this.presentationNow(),
             model = this.renderState.model('unitLob', projectile.id, now),
-            sampled = model?.entity || projectile;
+            sampled = model?.entity || projectile,
+            definition = UnitDefinition.get(projectile.sourceType),
+            cloudShot = !!definition?.ginkgoCloud;
         if (!sampled.grounded && world.y > world.groundY + 1)
-            this.sampleCornTrail('lob:' + projectile.id, projectile.side, world);
+            this.sampleCornTrail(
+                'lob:' + projectile.id,
+                projectile.side,
+                world,
+                cloudShot ? [0.97, 0.76, 0.29] : null,
+            );
         const point = this.projectRenderWorldPosition(world),
-            radius = Number(UnitDefinition.get(projectile.sourceType)?.lobAttack?.radius) || 5,
+            radius = Number(definition?.lobAttack?.radius) || 5,
             size = Math.max(3, radius * 2 * this.sc()),
             matrix = this.cornQuadMatrix,
+            angle = cloudShot ? ((this.cornPresentationTime() || 0) / 160) % (Math.PI * 2) : 0,
             C = this.vectorContext;
-        matrix[0] = size;
-        matrix[1] = 0;
-        matrix[2] = 0;
-        matrix[3] = size;
+        matrix[0] = Math.cos(angle) * size;
+        matrix[1] = Math.sin(angle) * size;
+        matrix[2] = -matrix[1];
+        matrix[3] = matrix[0];
         matrix[4] = point.x;
         matrix[5] = point.y;
         C.depthTest = !!this.passState.depthEnabled;
@@ -7407,7 +7430,7 @@ class GLRenderer {
                         point.x,
                         point.y,
                         Math.max(1, (2 + 2 * fade) * sc),
-                        [1, 0.73, 0.16, 0.55 * fade],
+                        [...(p.tint || [1, 0.73, 0.16]), 0.55 * fade],
                         8,
                     ),
                 );
@@ -7810,6 +7833,11 @@ class GLRenderer {
         // The blight field and its braziers go into this same triangle stream: no draw of their own.
         this.drawBlightField();
         this.drawSporeCloudGround();
+        this.ginkgoLook.drawGround(
+            this,
+            this.cornPresentationTime(),
+            this.presentationTargetIntervalMs(),
+        );
         this.flush();
         this.passState.depthWrite = true;
     }
@@ -9249,6 +9277,7 @@ class GLRenderer {
             this.passProfiler.measure('world', () => {
                 this.renderWorldPass(visibleUnits);
                 this.renderCornParticles();
+                this.ginkgoLook.drawImpacts(this);
                 this.renderMilletParticles();
                 this.renderCombatFxLook();
             });

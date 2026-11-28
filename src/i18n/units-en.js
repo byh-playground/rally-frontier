@@ -1,5 +1,26 @@
 // English at the presentation boundary. The unit and map definitions keep their source text.
 export default {
+    은행: 'Ginkgo',
+    '장거리 곡사': 'Long-Range Lobber',
+    '높은 새총 곡사 · 감속과 지속 피해': 'High slingshot arc · slows and damages',
+    '새총으로 은행알을 멀리 쏴요. 떨어진 자리에 남은 악취가 적의 발을 느리게 해요.':
+        'Lobs ginkgo nuts with a slingshot. The stench left where they land slows enemies.',
+    '악취는 범위 안의 적 지상 병력에게만 피해를 줘요. 구름이 겹쳐도 피해와 감속은 한 번씩만 적용돼요.':
+        'The stench damages enemy ground units in the cloud. Overlapping clouds apply a single slow and damage effect.',
+    '앞줄이 시야를 열어 주면 멀리서 쏠 수 있어요. 적이 너무 가까이 붙으면 쏘지 못해요.':
+        'A front line can spot distant targets for it. It cannot fire at enemies that get too close.',
+    '은행의 새총과 악취': 'Ginkgo’s Slingshot and Stench',
+    '은행알이 땅에 떨어지면 노란 겉껍질이 터져요. 남은 악취는 잠시 적 지상 병력을 느리게 하고 다치게 해요. 구름에서 벗어나면 효과가 끝나요.':
+        'The yellow coat bursts when a ginkgo nut lands. The lingering stench slows and damages enemy ground units until they leave the cloud.',
+    '아군 앞줄이나 거점으로 시야를 확보한 뒤, 먼 길목이나 적이 모인 자리를 노려요.':
+        'Use your front line or an outpost to spot distant chokepoints and groups of enemies.',
+    '공격 착탄 피해': 'Shot Impact Damage',
+    '최소 사거리': 'Minimum Range',
+    '공격 착탄 반경': 'Impact Radius',
+    악취: 'Stench',
+    '악취 반경': 'Stench Radius',
+    '이동 감속': 'Move Slow',
+    '장판 최대 피해': 'Max Cloud Damage',
     수박: 'Watermelon',
     '범위 근접 영웅': 'Area melee hero',
     '범위 평타 4회 → 양팔 360도 휩쓸기': '4 area hits → 360° sweep',

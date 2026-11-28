@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="576" height="304" viewBox="0 0 576 304">
+  <!-- Parts are composed in sprite.js. The soldier stands at the ground pivot, with a separate seed in the sling. -->
+  <defs>
+    <linearGradient id="ginkgo-husk" x1=".18" y1=".08" x2=".74" y2="1">
+      <stop stop-color="#ffe07b"/>
+      <stop offset=".57" stop-color="#f3bb46"/>
+      <stop offset="1" stop-color="#d78b34"/>
+    </linearGradient>
+    <linearGradient id="ginkgo-limb" x1=".16" y1=".07" x2=".84" y2=".9">
+      <stop stop-color="#ffe496"/>
+      <stop offset="1" stop-color="#d39746"/>
+    </linearGradient>
+    <radialGradient id="ripe-coat" cx=".33" cy=".26" r=".77">
+      <stop stop-color="#ffde78"/>
+      <stop offset=".52" stop-color="#eac257"/>
+      <stop offset=".87" stop-color="#d69b3e"/>
+      <stop offset="1" stop-color="#b47b35"/>
+    </radialGradient>
+    <path id="ginkgo-outline" d="M-1-162C18-161 44-145 56-128C73-104 76-75 66-49C54-22 31-10 0-10C-29-10-55-25-65-49C-78-78-68-106-56-126C-40-149-21-161-1-162Z"/>
+    <path id="fan" d="M0 0C-14-4-25-12-34-24Q-37-31-28-39Q-20-46-14-43Q-5-49 0-43Q5-49 14-43Q20-46 28-39Q37-31 34-24C25-12 14-4 0 0Z"/>
+    <g id="ripe-ginkgo">
+      <path d="M-62-7C-62-22-55-37-41-45C-27-54-14-54 0-53C25-55 43-44 53-29C63-14 65 0 60 17C55 38 35 51 15 54C5 55-5 54-15 53C-42 50-55 37-61 18C-64 9-64 1-62-7Z" fill="url(#ripe-coat)" stroke="#62442c" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M-48-27Q-31-46-12-45" fill="none" stroke="#fff0a7" stroke-width="5" stroke-linecap="round" opacity=".73"/>
+      <path d="M-35 34Q-16 48 13 47" fill="none" stroke="#e6ab58" stroke-width="4" stroke-linecap="round" opacity=".57"/>
+      <ellipse cx="-54" cy="-2" rx="4" ry="6" fill="#866638" opacity=".78"/>
+      <path d="M-56-9q8 0 9 6" fill="none" stroke="#c09445" stroke-width="2.5" stroke-linecap="round"/>
+      <g fill="#895b31" opacity=".56">
+        <circle cx="21" cy="-35" r="2.1"/><circle cx="37" cy="-27" r="1.6"/>
+        <circle cx="47" cy="-8" r="2.4"/><circle cx="35" cy="28" r="1.7"/>
+        <circle cx="15" cy="37" r="2.2"/><circle cx="-10" cy="29" r="1.7"/>
+      </g>
+    </g>
+    <g id="eyes" fill="#3a291e">
+      <ellipse cx="30" cy="19" rx="7.6" ry="9.8"/>
+      <ellipse cx="70" cy="19" rx="7.6" ry="9.8"/>
+      <g fill="#fff9e8"><circle cx="28" cy="16" r="2.9"/><circle cx="68" cy="16" r="2.9"/></g>
+    </g>
+    <g id="cheeks" fill="#e6806f">
+      <ellipse cx="15" cy="29" rx="7.5" ry="4.7"/>
+      <ellipse cx="84" cy="29" rx="7.5" ry="4.7"/>
+    </g>
+  </defs>
+
+  <!-- Body: ripe ginkgo seed with a rounded shoulder and a subtly shaded lower-right flank. -->
+  <g id="body" transform="translate(86 198)">
+    <use href="#ginkgo-outline" fill="url(#ginkgo-husk)" stroke="#573624" stroke-width="5.5" stroke-linejoin="round"/>
+    <path d="M13-157C50-148 69-116 70-86C71-61 59-36 37-23C29-18 19-15 8-14C46-33 53-77 44-105C38-127 31-144 13-157Z" fill="#c78131" opacity=".38"/>
+    <path d="M-42-117Q-37-130-24-138" fill="none" stroke="#fff1ad" stroke-width="5.5" stroke-linecap="round"/>
+    <path d="M-48-100L-46-107" fill="none" stroke="#fff1ad" stroke-width="3.5" stroke-linecap="round" opacity=".8"/>
+    <path d="M-49-50Q-43-43-37-39M-39-35l4 2" fill="none" stroke="#b87536" stroke-width="3" stroke-linecap="round" opacity=".64"/>
+    <path d="M-38-32Q-3-15 31-26" fill="none" stroke="#ffd779" stroke-width="3.5" stroke-linecap="round" opacity=".72"/>
+    <path d="M-9-15q10-3 18 0" fill="none" stroke="#a66937" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- Ginkgo's cleft leaf: mounted behind the seed and tilted toward the sling. -->
+  <g id="crest" transform="translate(212 62)">
+    <path d="M1 5-1-8" stroke="#685035" stroke-width="4.5" stroke-linecap="round"/>
+    <use href="#fan" fill="#edc13c" stroke="#6e4d2a" stroke-width="4.5" stroke-linejoin="round"/>
+    <path d="M0-3Q-2-25-15-40M1-4Q7-28 18-39M0-3Q-12-18-27-23M1-4Q14-17 27-23" fill="none" stroke="#b88432" stroke-width="2" stroke-linecap="round"/>
+    <path d="M-29-31q6-8 13-9M6-41q11-2 17 4" fill="none" stroke="#fff19c" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <g id="foot" transform="translate(260 10)" stroke="#573624" stroke-width="4" stroke-linejoin="round">
+    <path d="M9 12q14-8 29-2 8 6 8 16-1 7-9 8H12q-8-1-8-7 0-8 5-15Z" fill="url(#ginkgo-limb)"/>
+    <path d="M12 14q7-4 15-4" fill="none" stroke="#fff1ba" stroke-width="2.6" stroke-linecap="round"/>
+  </g>
+  <g id="arm" transform="translate(319 10)">
+    <path d="M7 17q5-9 15-9 10 0 14 11 5 13 2 28-3 8-10 8-10 0-18-12Q0 27 7 17Z" fill="url(#ginkgo-limb)" stroke="#573624" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M12 18q5-5 11-5" fill="none" stroke="#fff1ba" stroke-width="2.7" stroke-linecap="round"/>
+  </g>
+  <g id="bag" transform="translate(405 61)" stroke="#573624" stroke-linejoin="round">
+    <path d="M-21-31Q-16-38-4-34L18-18Q25-12 23 9Q20 30-2 29Q-24 29-27 11Q-28-13-21-31Z" fill="#a6724c" stroke-width="4.5"/>
+    <path d="M-24-15Q-2-15 22-5L21 4Q8 10-18 2Z" fill="#d8a86e" stroke-width="3.8"/>
+    <path d="M-12-10q-9-5-6-14 4-10 11-7 6 3 5 10 0 7-10 11Z" fill="#f7c14e" stroke-width="3"/>
+    <path d="M1-8q-5-6-2-12 5-8 11-3 5 5 1 13-3 6-10 2Z" fill="#f6cf68" stroke-width="3"/>
+    <path d="M-1 14l8 1" fill="none" stroke="#f1ca91" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- Slingshot: heavy, rounded fork with bindings on both tips, drawn on its grip pivot. -->
+  <g id="fork" transform="translate(50 275)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M-1 14Q-1-4 3-22M3-22Q-13-31-21-59M3-22Q18-37 24-66" fill="none" stroke="#523427" stroke-width="17"/>
+    <path d="M-1 14Q-1-4 3-22M3-22Q-13-31-21-59M3-22Q18-37 24-66" fill="none" stroke="#a66c3c" stroke-width="10"/>
+    <path d="M-4-4Q-2-13 1-20M-1-25Q-11-33-15-43M5-23Q17-38 20-49" fill="none" stroke="#e7b477" stroke-width="3"/>
+    <path d="M-25-55l9-4M20-59l8 1" fill="none" stroke="#6e5540" stroke-width="7"/>
+    <path d="M-25-56l9-4M20-60l8 1" fill="none" stroke="#efe0ac" stroke-width="3"/>
+    <path d="M-6 3h8M-5 9h8M-5 15h7" fill="none" stroke="#6a4b38" stroke-width="3.5"/>
+  </g>
+  <g id="band" transform="translate(177 181)">
+    <path d="M0 0h40" stroke="#534036" stroke-width="5" stroke-linecap="round"/>
+    <path d="M0-1h40" stroke="#c3966f" stroke-width="2" stroke-linecap="round"/>
+  </g>
+
+  <g id="neutral" transform="translate(168 110)">
+    <use href="#eyes"/><use href="#cheeks"/>
+    <path d="M45 31q5 5 10 0" fill="none" stroke="#543425" stroke-width="3.4" stroke-linecap="round"/>
+  </g>
+  <g id="attack" transform="translate(280 110)">
+    <use href="#eyes"/><use href="#cheeks"/>
+    <path d="m23 7 12 5m40-5-10 5" fill="none" stroke="#3a291e" stroke-width="3.3" stroke-linecap="round"/>
+    <path d="M46 31q5-3 10 0" fill="none" stroke="#543425" stroke-width="3.4" stroke-linecap="round"/>
+  </g>
+  <g id="hurt" transform="translate(392 110)">
+    <use href="#cheeks"/>
+    <path d="m24 14 13 5-13 5m52-10-13 5 13 5m-30 10q4-5 9 0" fill="none" stroke="#543425" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Combat ammo: soft golden coat, separate pale pit and peel for the landing beat. -->
+  <g id="kernel" transform="translate(468 42)">
+    <use href="#ripe-ginkgo" transform="scale(.34)"/>
+  </g>
+  <g id="pit" transform="translate(539 42)">
+    <path d="M4-16q9 3 11 15 2 10-6 15-8 4-17-1-7-6-4-17 4-11 16-12Z" fill="#f9e8ba" stroke="#79563e" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M-6 8Q-2 2 3-10" fill="none" stroke="#c9ad7f" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <g id="husk" transform="translate(468 84)">
+    <path d="M-21 9q9-19 29-21 12 4 12 10-5 3-12 2-14 1-25 12Z" fill="#d99538" stroke="#7e512b" stroke-width="3.3" stroke-linejoin="round"/>
+    <path d="M-9 1Q3-7 11-6" fill="none" stroke="#ffe186" stroke-width="2.5" stroke-linecap="round"/>
+  </g>
+
+</svg>

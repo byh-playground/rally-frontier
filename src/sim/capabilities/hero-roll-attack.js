@@ -17,6 +17,7 @@ import { HeroGrowth } from '../hero-growth.js';
 import { HeroLandingStrike } from './hero-landing-strike.js';
 import { UnitMotion } from '../navigation.js';
 import { IndexList } from '../index-list.js';
+import { GinkgoCloud } from './ginkgo-cloud.js';
 
 const SWEEP_QUERY = new IndexList(),
     BUILDING_QUERY = new IndexList();
@@ -130,7 +131,8 @@ export class HeroRollAttack {
         const { dx, dy } = roll;
         const terrainRadius = sim.unitRadius(unit);
         const rollHitRadius = spec.hitRadius;
-        const step = Math.min(spec.speed / sim.tps, roll.length - roll.distance);
+        const speed = spec.speed * GinkgoCloud.moveScale(sim, unit);
+        const step = Math.min(speed / sim.tps, roll.length - roll.distance);
         const vx = dx * step;
         const vy = dy * step;
         const motion = sim.navigation.motion;

@@ -3594,7 +3594,9 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
             });
         },
         /**
-         * 완성된 아군 거점 대포 하나가 `unit` 한 발을 쏘아 착지시킨다. 착지점은 맵 가운데에서 본진 축의 옆으로
+         * 완성된 아군 거점 대포가 `unit` 한 발을 쏘아 착지시킨다. `cannons=2|3`이면 추가 대포도 사거리 안에
+         * 세워 실제 일제 발사로 보낸다. 상태의 `deployment`에 첫 투입의 발사 대포와 착지 인원을 기록한다.
+         * 착지점은 맵 가운데에서 본진 축의 옆으로
          * `across`(기본 400) 비킨 곳(가운데 점령 지점과 맵 가장자리를 피함)이고, 대포는 그 아군 본진 쪽
          * `distance`(기본 300)에 있다. `x`·`y`를 주면 그곳에 착지하고 대포는 그 아군 본진 쪽에 선다. 발사는 10틱이고
          * 그 한 발 값은 지갑에 채워 둔다. `enemy`·`enemyCount`가 있으면 그 적 무리가 착지점에 서 있다(난전 한가운데
@@ -3654,6 +3656,42 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 { id: 'launch', x: target.x + back.x * distance, y: target.y + back.y * distance },
                 0,
             );
+            const cannons =
+                params.cannons === undefined ? 1 : integer(scene, 'cannons', params.cannons);
+            if (cannons < 1 || cannons > LaunchRules.maxVolleyCannons)
+                throw new Error(`launch needs cannons in 1..${LaunchRules.maxVolleyCannons}`);
+            const angle = Math.atan2(back.y, back.x);
+            for (let i = 1; i < cannons; i++) {
+                const bearing = angle + (i === 1 ? -0.4 : 0.4);
+                buildOutpost(
+                    sim,
+                    {
+                        id: `launch-${i}`,
+                        x: target.x + Math.cos(bearing) * distance,
+                        y: target.y + Math.sin(bearing) * distance,
+                    },
+                    0,
+                );
+            }
+            const launchTick = 10;
+            const deployedShells = new Map();
+            let lastDeploymentTick = -1;
+            const observeDeployment = () => {
+                if (sim.tick === lastDeploymentTick) return;
+                lastDeploymentTick = sim.tick;
+                for (const event of sim.events) {
+                    if (event.side !== 0) continue;
+                    if (event.type === 'launchFire' && sim.tick === launchTick)
+                        deployedShells.set(event.projectileId, {
+                            cannonId: event.cannonId,
+                            count: 0,
+                        });
+                    if (event.type === 'launchLand') {
+                        const shell = deployedShells.get(event.projectileId);
+                        if (shell) shell.count += event.count;
+                    }
+                }
+            };
             const grain = LaunchRules.grain(type);
             sim.wallet[0] = Math.max(sim.wallet[0], grain.cost);
             sim.premiumWallet[0] = Math.max(sim.premiumWallet[0], grain.premiumCost || 0);
@@ -3712,7 +3750,14 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     startedAtTick: null,
                 };
             }
-            queueLaunch(sim, { tick: 10, seq: 1, side: 0, cannon, unitType: type, ...target });
+            queueLaunch(sim, {
+                tick: launchTick,
+                seq: 1,
+                side: 0,
+                cannon,
+                unitType: type,
+                ...target,
+            });
             const hero = LaunchRules.isHeroType(type) ? heroProbe(sim, type) : null;
             const recallTick =
                 params.recallMs === undefined
@@ -3784,6 +3829,7 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                 zoom: params.zoom === undefined ? 3 : positive(scene, 'zoom', params.zoom),
                 focus: flag(scene, 'follow', params.follow) ? follow : () => target,
                 beforeStep: () => {
+                    observeDeployment();
                     if (landTick === null && sim.events.some((e) => e.type === 'launchLand'))
                         landTick = sim.tick;
                     hero?.observe();
@@ -3822,11 +3868,20 @@ export function createDebugScenes({ createRenderer, createScenario, createPresen
                     sac?.observe();
                 },
                 extra: () => {
+                    observeDeployment();
                     const squad = sim.units.filter(
                         (u) => u.alive && u.side === 0 && u.type === type,
                     );
                     return {
                         ...(sac ? { sporeSac: sac.state() } : {}),
+                        deployment: {
+                            cannons,
+                            shells: [...deployedShells.values()],
+                            passengers: [...deployedShells.values()].reduce(
+                                (total, shell) => total + shell.count,
+                                0,
+                            ),
+                        },
                         landing: { tick: landTick, units: squad.length, ...spreadOf(squad) },
                         ...(hero ? { hero: hero.state() } : {}),
                         flight: flight.state(),

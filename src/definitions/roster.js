@@ -11,10 +11,10 @@ export const SUNSHINE = Object.freeze({
     openUpgrade: 100,
 });
 
-// The one place that says what a player with no save owns: the first card of the campaign (rice). Every other card
-// joins when a stage that rewards it (`rewardCard`) is first cleared.
+// Cards available from the beginning. Ginkgo joins the collection so players can equip it without a new stage.
+// Campaign rewards grant the rest of the roster.
 export function startingOwned() {
-    return [CAMPAIGN_ACT_STAGES[0].rewardCard];
+    return [CAMPAIGN_ACT_STAGES[0].rewardCard, 'ginkgo'];
 }
 
 export function newRosterRecord() {

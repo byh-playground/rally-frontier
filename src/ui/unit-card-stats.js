@@ -27,7 +27,8 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
         payload = LaunchRules.payload(type),
         burst = unit.burstAttack,
         suicide = unit.selfDestruct,
-        spin = unit.spinAttack;
+        spin = unit.spinAttack,
+        cloud = unit.ginkgoCloud;
 
     const movement = [
         ...(hero ? [['레벨', msg('{0}레벨', number.format(heroLevel))]] : []),
@@ -73,7 +74,13 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
             ]
           : [
                 [
-                    suicide ? '자폭 피해' : siege ? '건물 공격력' : '기본 공격력',
+                    suicide
+                        ? '자폭 피해'
+                        : siege
+                          ? '건물 공격력'
+                          : cloud
+                            ? '공격 착탄 피해'
+                            : '기본 공격력',
                     number.format(suicide?.damage ?? atk),
                 ],
                 [
@@ -100,6 +107,11 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
                 number.format(unit.basicSplash.damageRatio * 100),
             ),
         ]);
+    if (cloud)
+        attack.push(
+            ['최소 사거리', number.format(unit.minRange)],
+            ['공격 착탄 반경', number.format(unit.lobAttack.explosionRadius)],
+        );
 
     const grows = unit.growsCannon,
         cannon = grows && BuildingDefinition.get(grows.building);
@@ -128,6 +140,23 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
               ['생존·기동', movement],
               ['공격', attack, chain ? copy.notes.slice(1) : []],
           ];
+    if (cloud)
+        troop.push([
+            '악취',
+            [
+                ['악취 반경', number.format(cloud.radius)],
+                ['지속 시간', seconds(cloud.durationMs)],
+                ['이동 감속', `${number.format(cloud.slowPct)}%`],
+                [
+                    '피해 간격',
+                    `${seconds(cloud.tickMs)} · ${number.format(
+                        cloud.totalDamage / 2 / (cloud.durationMs / cloud.tickMs),
+                    )}`,
+                ],
+                ['장판 최대 피해', number.format(cloud.totalDamage / 2)],
+            ],
+            copy.notes.slice(1),
+        ]);
     if (unit.stickyCling)
         troop.push([
             '스킬',

@@ -8,6 +8,7 @@ YOU ARE AN AUTONOMOUS CODING AGENT. EXECUTE TASKS TO COMPLETION WITHOUT ASKING F
 DO NOT STOP TO ASK "SHOULD I PROCEED?" — PROCEED. DO NOT WAIT FOR CONFIRMATION ON OBVIOUS NEXT STEPS.
 IF BLOCKED, TRY AN ALTERNATIVE APPROACH. ONLY ASK WHEN TRULY AMBIGUOUS OR DESTRUCTIVE.
 USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES THROUGHPUT.
+
 <!-- END AUTONOMY DIRECTIVE -->
 
 ## 저장소와 개발 계약
@@ -34,6 +35,7 @@ USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES 
 - `window.__bloomDebug.state()`는 마지막으로 그린 프레임의 제출량(`render`: GL 장치가 낸 드로우콜 `deviceDraws`·그중 인스턴스 `instancedDraws`·정점 `vertices`, 렌더러 자체 집계 `draws`(GameKit 스프라이트 제출이 빠져 적음), 지금 살아 있는 GPU 자원 `programs`·`textures`·`textureBytes`(같은 장면의 두 틱 사이에 늘면 경기 중 첫 사용 로드), 맵의 겉모습 `mapLook`(모든 맵이 테마([src/definitions/map-themes.js](src/definitions/map-themes.js))로 바닥·지형·물·다리를 그린다: 바닥 정적 메시의 정점 수 `groundVertices`·바이트 `groundBytes`·서 있는 장식 수 `props`(바위·울타리·다리 난간 포함)·배치 수 `layout`(물 `water`·물결 `ripples`·다리 `bridges` 등), [src/render/map-look.js](src/render/map-look.js)), GameKit 메시 몫 `vectorDraws`, 메시 끊김 사유 `flushReasons`·`drawDispatchReasons`)·틱·체크섬·장면을 만드는 데 든 실제 시간(`openMs`: 배치·미리 돌린 틱 포함)·진영별 유닛 수, 틱 시간(평균·p95·최대·최대 틱), 1초마다 1틱 표본의 단계별 시간(`stageMs`: 교전·표적 선택·충돌·충돌 풀이 등, 길찾기는 교전 안에 포함), 접촉 통계(예산 초과로 건너뛴 쌍 합·최대 등), 지금 겹친 유닛 쌍과 지형·건물에 반 단위 넘게 박힌 유닛 수(`overlap.embedded`)를 돌려준다. `march`는 행군 진척(`march`: 출발 방향 평균·선두 거리, 적 본진까지 가장 가까운 거리), `melee`·`coconut-melee`·`title`은 굴러가는 코코넛 수와 평균·최고 속도(`coconuts`)를 함께 낸다. 모든 장면은 죽은 수와 넉백 움직임이 남아 죽은 채 화면에 남은 유닛의 틱 수(`corpses`: 공중·땅에서 미끄러짐·멈춰 대기·합계별 평균·p95·최대)를 낸다. `__bloomDebug.step(n)`은 정확히 n틱 진행한다. 표시는 가상 시계, 틱 시간은 실제 시계다.
 - 디버그 모드: `?debug=1`(장면·페이지를 정하지 않은 주소)은 확인 화면 목록이다([src/ui/debug-menu.js](src/ui/debug-menu.js)). 게임에서는 타이틀 우측 상단 설정 버튼을 길게 누르면 이 주소로 간다. 진입 방식의 원본은 URL이고, 계속 재사용할 확인 화면은 목록에 주소를 더한다.
 - 병종 동작 디스플레이: `?debug=1&board=motion`(선택 `unit=<id>`·`group=<n>`·`speed=0.25`)은 판정 없이 눈으로 보는 실시간 페이지다([src/ui/motion-board.js](src/ui/motion-board.js)). 왼쪽은 선언형 동작을 끈 모습, 오른쪽은 지금 모습이고, 병종 목록은 sprite 계약에 `motion`을 선언한 병종에서 만든다. 병종 동작을 추가·수정하면 여기서 확인한다.
+- 실제 대포 일제 투입과 착탄 비교는 `scene=launch`에서 `cannons=1|2|3`을 지정한다. 상태의 `deployment`는 첫 명령에서 쏜 대포별 포탄과 실제 방출 인원을 기록한다. 은행 7명 예시: `?debug=1&scene=launch&map=causeway-flats&seed=1&unit=ginkgo&cannons=3&x=1055&y=1762&enemy=walnut&enemyCount=1&enemyX=1247&enemyY=1542&zoom=1.25&tick=75`.
 - 실제 사례 주소:
     - AI 작전형 검수는 `scene=ai-match&seed=1&host=idle&profile=demolition&fixture=outpost&tick=180`처럼 실행한다. 일반 맵은 `fixture`를 빼고 `map`을 고른다. 적용 명령·발사·착지·파괴·비행 착지·전진 대포는 `profile.evidence`, 실제 작전 전이는 `profile.operation`에서 읽는다.
     - 코코넛 난전(PR #327 재현 구성): `?debug=1&scene=coconut-melee&map=artillery-basin&seed=1&units=150&mix=rice,pea&coconuts=5&tick=300`

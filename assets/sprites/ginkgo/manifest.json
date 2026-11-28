@@ -1,0 +1,13 @@
+{
+    "schemaVersion": 1,
+    "assets": {
+        "parts.svg": {
+            "bytes": 7935,
+            "sha256": "6677c3bb60f44d4036a9db3c419375e6025cfe4cdd0eb8dc35e586409bf661ca"
+        },
+        "shell.png": {
+            "bytes": 365706,
+            "sha256": "3aaf7ec242d1dec203454e0cb55928c8e2aa4ee91c63ce7e854e6bb16866134d"
+        }
+    }
+}

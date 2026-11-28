@@ -39,6 +39,7 @@ import { EntityKey } from '../entities.js';
 import { InteractionGeometry, NavigationGoal, UnitMotion } from '../navigation.js';
 import { RallyGamekit } from '../../core/gamekit.js';
 import { IndexList } from '../index-list.js';
+import { GinkgoCloud } from './ginkgo-cloud.js';
 const { RESPONSE_BOUNCE } = RallyGamekit;
 
 const DEGREE = Math.PI / 180;
@@ -178,6 +179,8 @@ class RollingBody {
         let vx = (m?.vxFP || 0) / FP,
             vy = (m?.vyFP || 0) / FP,
             speed = Math.hypot(vx, vy);
+        const slowScale = GinkgoCloud.moveScale(sim, unit);
+        const topSpeed = spec.topSpeed * slowScale;
         const goal = this.steerPoint(sim, unit, vision);
         let gx = (goal?.x ?? unit.x) - unit.x,
             gy = (goal?.y ?? unit.y) - unit.y;
@@ -198,7 +201,7 @@ class RollingBody {
         if (!state.kicked) {
             // Landing: half the top speed along the launch direction.
             state.kicked = true;
-            speed = spec.topSpeed * spec.launchSpeedRatio;
+            speed = topSpeed * spec.launchSpeedRatio;
         } else if (goalLength > 1e-9) {
             // The turn rate falls from turnRateSlow at rest to turnRateTop at full speed. The rotation
             // is the rational half-angle form, so it uses only basic arithmetic.
@@ -226,11 +229,12 @@ class RollingBody {
             // Drive pushes only along the heading's share of the goal: a coconut facing away coasts
             // and turns, it never drives away from what it chases.
             const along = Math.max(0, hx * gx + hy * gy),
-                drive = spec.topSpeed * spec.drag * along;
+                drive = topSpeed * spec.drag * along;
             speed = Math.max(0, speed + (drive - spec.drag * speed) / tps);
         }
         state.dx = hx;
         state.dy = hy;
+        if (slowScale < 1) speed = Math.min(speed, topSpeed);
         const tx = Math.round(hx * speed * FP),
             ty = Math.round(hy * speed * FP);
         if (!m)
