@@ -16,9 +16,15 @@ export class PlumLook {
     static trail = TRAIL;
 
     #impacts = [];
+    #badgeLayouts = new Map();
+    #activeMarks = new Set();
+    #pendingBadges = [];
 
     reset() {
         this.#impacts.length = 0;
+        this.#badgeLayouts.clear();
+        this.#activeMarks.clear();
+        this.#pendingBadges.length = 0;
     }
 
     impact(event, clock) {
@@ -91,7 +97,13 @@ export class PlumLook {
             timeMs = renderer.renderState.frame(now)?.timeMs,
             tick = timeMs / renderer.presentationTargetIntervalMs(),
             tracked = renderer.renderState.displayed('plumUnits', now);
-        if (!tracked.length || !Number.isFinite(tick)) return;
+        if (!Number.isFinite(tick)) return;
+        if (!tracked.length) {
+            this.#badgeLayouts.clear();
+            return;
+        }
+        this.#activeMarks.clear();
+        this.#pendingBadges.length = 0;
         const width = BADGE_W * pixelRatio,
             height = BADGE_H * pixelRatio;
         ctx.save();
@@ -99,16 +111,14 @@ export class PlumLook {
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'center';
         for (const unit of tracked) {
-            if (
-                !unit.alive ||
-                (unit.side !== renderer.mySide() && !renderer.visibleRaw(unit.x, unit.y))
-            )
-                continue;
+            if (!unit.alive) continue;
             const model = renderer.renderState.model('unit', unit.id, now),
                 expires = model?.plumExpires;
             let count = 0;
             for (const expiry of expires || []) if (expiry > tick) count++;
             if (!count) continue;
+            this.#activeMarks.add(unit.id);
+            if (unit.side !== renderer.mySide() && !renderer.visibleRaw(unit.x, unit.y)) continue;
             const mounted = renderer.mountedUnitIds.has(unit.id),
                 anchor = mounted
                     ? renderer.mountedUnitAnchors.get(unit.id)
@@ -123,36 +133,66 @@ export class PlumLook {
             )
                 continue;
 
-            // The bubbles sit against the sides of the shell, below its health bar.
-            for (let i = 0; i < 3; i++) {
-                const age = (timeMs * 0.0015 + i * 0.39) % 1,
-                    side = i === 1 ? -1 : 1,
-                    size = Math.max(1.25 * pixelRatio, radius * 0.13);
-                ctx.globalAlpha = Math.min(1, age * 6, 3 * (1 - age));
+            // Slightly out-of-phase bubbles avoid a whole group pulsing together.
+            const phase = (HashUtil.hash(String(unit.id)) % 256) / 256;
+            for (const side of [-1, 1]) {
+                const age = (timeMs / 1150 + phase + (side === 1 ? 0.5 : 0)) % 1,
+                    size = Math.max(1.25 * pixelRatio, radius * 0.12);
+                ctx.globalAlpha = 0.68 * Math.min(1, age * 4, 3 * (1 - age));
                 this.#bubble(
                     ctx,
-                    anchor.x + side * radius * (0.65 + i * 0.17),
-                    anchor.y - radius * (0.35 + age * 1.05),
-                    size * (0.65 + age * 0.45),
+                    anchor.x + side * radius * 0.8,
+                    anchor.y - radius * (0.35 + age * 0.85),
+                    size * (0.8 + age * 0.2),
                 );
             }
             ctx.globalAlpha = 1;
-            const badge = this.#placeBadge(renderer, anchor, radius, width, height, pixelRatio);
-            if (badge) this.#badge(ctx, badge, anchor, radius, width, height, pixelRatio, count);
+            const layout = this.#badgeLayouts.get(unit.id);
+            if (!layout) {
+                this.#pendingBadges.push({ id: unit.id, anchor, radius, count });
+                continue;
+            }
+            const badge = this.#projectBadge(anchor, radius, width, height, pixelRatio, layout);
+            renderer.worldHudSpace.place(badge.x, badge.y, width, height, true);
+            this.#badge(ctx, badge, anchor, radius, width, height, pixelRatio, count);
         }
+        for (const id of this.#badgeLayouts.keys()) {
+            if (!this.#activeMarks.has(id)) this.#badgeLayouts.delete(id);
+        }
+        // Only a badge about to appear may search for room. Visible badges have already reserved their lane.
+        for (const { id, anchor, radius, count } of this.#pendingBadges) {
+            const placed = this.#placeBadge(renderer, anchor, radius, width, height, pixelRatio);
+            if (!placed) continue;
+            this.#badgeLayouts.set(id, placed.layout);
+            this.#badge(ctx, placed, anchor, radius, width, height, pixelRatio, count);
+        }
+        this.#pendingBadges.length = 0;
         ctx.restore();
     }
 
-    #placeBadge(renderer, anchor, radius, width, height, pixelRatio) {
+    #projectBadge(anchor, radius, width, height, pixelRatio, layout) {
+        const { col, row, side } = layout;
         const offset = Math.max(15 * pixelRatio, radius) + 2 * pixelRatio,
-            top = anchor.y - radius * 2.15 - 5 * pixelRatio;
-        // Bars have already reserved their cells. Side placement keeps the damage fly-up centred.
+            top = anchor.y - radius * 2.15 - 5 * pixelRatio,
+            reach = offset + col * (width + 3 * pixelRatio);
+        return {
+            x: anchor.x + side * reach - (side < 0 ? width : 0),
+            y: top + row * (height + 3 * pixelRatio),
+            tether: col > 0 || Math.abs(row) > 1,
+            layout,
+        };
+    }
+
+    #placeBadge(renderer, anchor, radius, width, height, pixelRatio) {
         for (const col of [0, 1])
             for (const row of [0, 1, -1, 2, -2])
                 for (const side of [1, -1]) {
-                    const reach = offset + col * (width + 3 * pixelRatio),
-                        x = anchor.x + side * reach - (side < 0 ? width : 0),
-                        y = top + row * (height + 3 * pixelRatio);
+                    const badge = this.#projectBadge(anchor, radius, width, height, pixelRatio, {
+                        col,
+                        row,
+                        side,
+                    });
+                    const { x, y } = badge;
                     if (
                         x < 0 ||
                         y < 0 ||
@@ -160,8 +200,7 @@ export class PlumLook {
                         y + height > renderer.fxCanvas.height
                     )
                         continue;
-                    if (renderer.worldHudSpace.place(x, y, width, height))
-                        return { x, y, tether: col > 0 || Math.abs(row) > 1 };
+                    if (renderer.worldHudSpace.place(x, y, width, height)) return badge;
                 }
         return null;
     }
@@ -180,7 +219,7 @@ export class PlumLook {
         ctx.roundRect(x, y, width, height, 4 * pixelRatio);
         ctx.fillStyle = '#283a23';
         ctx.fill();
-        ctx.strokeStyle = count === 5 ? '#e9e785' : '#b8ce70';
+        ctx.strokeStyle = '#b8ce70';
         ctx.lineWidth = pixelRatio;
         ctx.stroke();
 

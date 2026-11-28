@@ -920,6 +920,8 @@ const SIEGE_SMOKE = Object.freeze([0.52, 0.5, 0.46, 1]),
     SIEGE_STONE = Object.freeze([0.74, 0.68, 0.57, 1]),
     SIEGE_WOOD = Object.freeze([0.58, 0.42, 0.24, 1]);
 
+const MORTAR_COUNTER_HEIGHT = 12;
+
 class GLRenderer {
     // How much depth the rows of one bridge deck are spread over (bridgeRowDepth).
     static BRIDGE_ROW_DEPTH = 0.002;
@@ -1239,6 +1241,7 @@ class GLRenderer {
         this.worldHudSpace = new HudOccupancy();
         this.liftedDamageSpace = new HudOccupancy();
         this.visibleDamageTargets = new Set();
+        this.buildingHud = [];
         this.unitHudBars = [];
         this.areaHitGroups = new Map();
 
@@ -4839,7 +4842,7 @@ class GLRenderer {
         const spacing = 7 * pixelRatio,
             radius = 2.25 * pixelRatio,
             width = required * spacing + 6 * pixelRatio,
-            height = 12 * pixelRatio,
+            height = MORTAR_COUNTER_HEIGHT * pixelRatio,
             centerY = y + height / 2,
             firstX = x - ((required - 1) * spacing) / 2;
         ctx.fillStyle = ready ? '#725018' : '#274c36';
@@ -4855,7 +4858,6 @@ class GLRenderer {
             if (i < count) ctx.fill();
             else ctx.stroke();
         }
-        return y + height;
     }
 
     drawWorldHudOverlay(pixelRatio) {
@@ -4865,6 +4867,8 @@ class GLRenderer {
         const side = this.mySide();
         const sc = this.sc();
         const space = this.worldHudSpace;
+        const buildingHud = this.buildingHud;
+        buildingHud.length = 0;
 
         ctx.save();
         ctx.lineCap = 'round';
@@ -4896,18 +4900,17 @@ class GLRenderer {
             const bw = r * 2,
                 bh = Math.max(2.4, 3.2 * sc);
             let by = y + r + 3 * sc;
+            let counter = null;
             if (mortar) {
                 const required = mortar.attackInterval - 1,
                     gap = 3 * pixelRatio;
-                const counterBottom = this.drawMortarCounter(
-                    ctx,
-                    x,
-                    BuildingArt.baseBottomY(y, sc) + gap,
-                    RangeUtil.clamp(b.attacksSinceMortar ?? 0, 0, required),
+                const top = BuildingArt.baseBottomY(y, sc) + gap;
+                counter = {
+                    top,
                     required,
-                    pixelRatio,
-                );
-                by = counterBottom + gap + sc;
+                    count: RangeUtil.clamp(b.attacksSinceMortar ?? 0, 0, required),
+                };
+                by = top + MORTAR_COUNTER_HEIGHT * pixelRatio + gap + sc;
                 space.place(
                     x - 35 * pixelRatio,
                     by - 18 * pixelRatio,
@@ -4916,14 +4919,18 @@ class GLRenderer {
                     true,
                 );
             }
-            if (damaged) {
-                const ratio = RangeUtil.clamp((b.hp || 0) / Math.max(1, b.maxHp || 1), 0, 1);
-                ctx.fillStyle = 'rgba(18,24,28,.72)';
-                ctx.fillRect(x - r - 1 * sc, by - 1 * sc, bw + 2 * sc, bh + 2 * sc);
-                ctx.fillStyle = ratio > 0.48 ? '#62c775' : '#f04d49';
-                ctx.fillRect(x - r, by, bw * ratio, bh);
-                space.place(x - r, by, bw, bh, true);
-            }
+            if (damaged) space.place(x - r, by, bw, bh, true);
+            buildingHud.push({
+                x,
+                barX: x - r,
+                barY: by,
+                width: bw,
+                height: bh,
+                ratio: damaged
+                    ? RangeUtil.clamp((b.hp || 0) / Math.max(1, b.maxHp || 1), 0, 1)
+                    : null,
+                counter,
+            });
         }
 
         const tickMs = this.presentationTargetIntervalMs(snap);
@@ -4966,6 +4973,7 @@ class GLRenderer {
         }
         // Buildings and heroes keep their bars. When soldier bars overlap, the lower HP reads first.
         bars.sort((a, b) => Number(b.hero) - Number(a.hero) || a.ratio - b.ratio);
+        let write = 0;
         for (const bar of bars) {
             if (
                 space.place(
@@ -4976,8 +4984,28 @@ class GLRenderer {
                     bar.hero,
                 )
             )
-                drawUnitHealthBar(ctx, bar);
+                bars[write++] = bar;
         }
+        bars.length = write;
+        // Marks reserve their place against HP and stay attached to the unit. HP remains in front.
+        this.plumLook.drawMarks(this, ctx, pixelRatio);
+        for (const { x, barX, barY, width, height, ratio, counter } of buildingHud) {
+            if (counter)
+                this.drawMortarCounter(
+                    ctx,
+                    x,
+                    counter.top,
+                    counter.count,
+                    counter.required,
+                    pixelRatio,
+                );
+            if (ratio == null) continue;
+            ctx.fillStyle = 'rgba(18,24,28,.72)';
+            ctx.fillRect(barX - sc, barY - sc, width + 2 * sc, height + 2 * sc);
+            ctx.fillStyle = ratio > 0.48 ? '#62c775' : '#f04d49';
+            ctx.fillRect(barX, barY, width * ratio, height);
+        }
+        for (const bar of bars) drawUnitHealthBar(ctx, bar);
 
         ctx.restore();
     }
@@ -5299,7 +5327,6 @@ class GLRenderer {
         this.worldHudSpace.reset(pixel);
         this.liftedDamageSpace.reset(pixel);
         this.drawWorldHudOverlay(pixel);
-        this.plumLook.drawMarks(this, ctx, pixel);
 
         let write = 0,
             ordinary = 0,
