@@ -85,6 +85,23 @@ const PLUM = Object.freeze({
     height: 39,
     target: [178, 7],
 });
+// Soft targets in two ranks show the squad firing and moving on to the next living target.
+const PINE_NUT = Object.freeze({
+    durationMs: 6600,
+    camera: [-125, 53],
+    cameraMs: [380, 930],
+    frameWidth: 460,
+    frameHeight: 320,
+    height: 39,
+    defenders: [
+        ['rice', 163, -33],
+        ['rice', 155, 0],
+        ['rice', 163, 34],
+        ['rice', 190, -19],
+        ['rice', 190, 19],
+        ['pea', 213, 0],
+    ],
+});
 
 function createArena(unitType, interception) {
     const sim = new StrategySim(SEED, undefined, [[unitType], [interception?.launchType ?? 'pea']]);
@@ -96,7 +113,8 @@ function createArena(unitType, interception) {
         roller = UnitDefinition.get(unitType)?.rolling ? ROLLER : null,
         ginkgo = UnitDefinition.get(unitType)?.ginkgoCloud ? GINKGO : null,
         plum = UnitDefinition.get(unitType)?.plumAcid ? PLUM : null,
-        framed = ginkgo ?? plum;
+        pineNut = UnitDefinition.get(unitType)?.rapidHitscan ? PINE_NUT : null,
+        framed = ginkgo ?? plum ?? pineNut;
     // A muzzle-wrapping unit can only hold a completed outpost, so the main base moves out of its sight.
     const wrapsOutpost = !!UnitDefinition.get(unitType)?.stickyCling;
     const host = { x: x - VOLLEY_DISTANCE, y };
@@ -184,6 +202,12 @@ function createArena(unitType, interception) {
         const [dx, dy] = plum.target;
         const walnut = sim.spawnUnit(1, 'walnut', x + dx, y + dy);
         walnut.combat.moveRecoveryUntil = walnut.combat.cooldownUntil = Number.MAX_SAFE_INTEGER;
+    } else if (pineNut) {
+        for (const [type, dx, dy] of pineNut.defenders) {
+            const defender = sim.spawnUnit(1, type, x + dx, y + dy);
+            defender.combat.moveRecoveryUntil = defender.combat.cooldownUntil =
+                Number.MAX_SAFE_INTEGER;
+        }
     } else if (!siege && !grows) {
         for (const [dx, dy] of DEFENDERS) sim.spawnUnit(1, 'pea', x + dx, y + dy);
     }

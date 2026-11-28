@@ -1,5 +1,17 @@
 // English at the presentation boundary. The unit and map definitions keep their source text.
 export default {
+    잣: 'Pine Nut',
+    '물량 사수': 'Light Riflemen',
+    '빠른 단발 · 발사 즉시 명중': 'Fast single shots · instant hits',
+    '쏘는 순간 적에게 피해를 줘요. 앞선 사격에 표적이 쓰러지면, 발사할 차례인 잣은 곧바로 다른 적을 겨눠요.':
+        'Shots hit the instant they’re fired. If a squadmate drops their target first, the next Pine Nut ready to fire immediately aims at another enemy.',
+    '한 발은 약해요. 여럿이 모이면 사거리 안에 들어온 앞줄부터 빠르게 쓰러뜨려요.':
+        'Each shot deals light damage. In a group, Pine Nuts can quickly take down front-line enemies as they come into range.',
+    '잣의 즉시 사격': 'Pine Nut’s Instant Shots',
+    '잣의 탄은 쏘는 순간 맞아요. 사격할 적이 쓰러지면 발사할 차례인 잣은 사거리 안의 살아 있는 적을 다시 겨눠요.':
+        'Pine Nut shots hit immediately. When their target falls, Pine Nuts ready to fire pick another living enemy in range.',
+    '여럿을 앞줄 뒤에 모으면, 적이 가까이 오기 전에 짧은 단발을 집중할 수 있어요.':
+        'Group them behind your front line to focus quick single shots on approaching enemies.',
     매실: 'Green Plum',
     '산성 지원': 'Acid Support',
     '매실즙 범위 타격 · 명중당 추가 피해': 'Acid splash · bonus damage per hit',
