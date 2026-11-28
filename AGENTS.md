@@ -80,6 +80,11 @@ USE CODEX NATIVE SUBAGENTS FOR INDEPENDENT PARALLEL SUBTASKS WHEN THAT IMPROVES 
 - `main` 푸시는 Pages 배포와 Nightly 태그 생성을 유발한다. Stable은 PM-005에 따라 검증·승인한 커밋을 불변 태그로 명시 승격할 때만 만든다. 제품 버전·빌드 성공·배포 완료·검증 완료를 Stable과 동일시하지 않는다.
 - 개선 항목 등록·관리·배정·인계 요청은 [.agents/skills/pr-task-manager/SKILL.md](.agents/skills/pr-task-manager/SKILL.md)를 적용한다. 같은 업무의 의도·담당·상태는 PR 본문 하나에서 관리한다.
 
+## 중간 작업물과 목업
+
+- 중간 작업물·목업·실험적 시안은 `.scratch/<주제>/`에서 만들고 Git에서 제외한다. 승인돼 게임이 읽는 원본만 `assets/`로 옮긴다.
+- `.scratch/`는 로컬 임시 공간이라 백업하지 않으며 `git clean -fdX`로 사라질 수 있다.
+
 ## 보존하는 작업 공간
 
 - 블룸 세계관의 새 작품·파생 실험은 주 작업 폴더의 `.temp-projects/<프로젝트명>/`에서 시작한다. `.temp-projects/README.md`가 있으면 먼저 읽고 참고 저장소·재사용 원칙을 확인한다. 원본·도구·실행 결과물을 해당 폴더에 모으고 중첩 Git 저장소를 만들지 않는다.
