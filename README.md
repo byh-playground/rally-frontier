@@ -84,7 +84,6 @@ src/ui/                    자원 HUD·쇼케이스·화면 전환
 src/audio/                 효과음 재생
 assets/units/              원본 SVG·크기와 SHA-256 manifest
 scripts/                   SDK 준비·원본 복사·고정 시나리오 검사
-legacy/                    현재 실행·배포에서 제외한 과거 코드 보관소
 ```
 
 저장소를 정적 HTTP 서버로 제공하면 빌드 없이 실행할 수 있습니다. 예: `python -m http.server 8000` 후 `http://localhost:8000/`. `file://` 실행이나 단일 HTML 오프라인 실행을 보장하지 않습니다. 최초 제품 부팅은 lock으로 고정한 CDN에 접속합니다.

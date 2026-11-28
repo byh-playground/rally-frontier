@@ -1,5 +1,5 @@
 // Single-player launch bot. It plays through the same GameSession command interface as a human,
-// whether it runs in the page or in src/sim-worker.js. The old RTS bot lives in legacy/rts-sim/ai/.
+// whether it runs in the page or in src/sim-worker.js.
 import { RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { StateValue } from '../sim/components.js';
 import { LaunchRules } from '../sim/launch-rules.js';

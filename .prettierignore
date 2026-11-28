@@ -20,7 +20,5 @@ assets/generated/
 .cache/
 .qa/
 _site/
-legacy/
 .temp-projects/
-docs/handoff/
 package-lock.json
