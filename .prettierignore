@@ -21,4 +21,5 @@ assets/generated/
 .qa/
 _site/
 .temp-projects/
+.scratch/
 package-lock.json
