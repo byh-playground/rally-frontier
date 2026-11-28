@@ -37,12 +37,13 @@ const RALLY_BOOT_STAGES = Object.freeze([
     { id: 'graphics', weight: 12 },
     { id: 'title', weight: 5 },
 ]);
+const bootCopy = globalThis.__RALLY_LANGUAGE__?.copy ?? ((ko) => ko);
 const RALLY_BOOT_LABELS = Object.freeze({
-    sdk: '게임 모듈',
-    units: '유닛 그림',
-    sprites: '병종 스프라이트',
-    graphics: '그래픽 준비 중',
-    title: '타이틀 장면 준비 중',
+    sdk: bootCopy('게임 모듈', 'Game modules'),
+    units: bootCopy('유닛 그림', 'Unit artwork'),
+    sprites: bootCopy('병종 스프라이트', 'Unit sprites'),
+    graphics: bootCopy('그래픽 준비 중', 'Preparing graphics'),
+    title: bootCopy('타이틀 장면 준비 중', 'Preparing the title screen'),
 });
 // boot.js itself has to arrive before it can report anything: verify and import this one file here.
 async function importVerifiedModule(url, sha256, name) {
@@ -181,7 +182,7 @@ try {
             progress: document.getElementById('bootProgressBar'),
             label: document.getElementById('bootStatus'),
             labels: RALLY_BOOT_LABELS,
-            done: '준비 완료',
+            done: bootCopy('준비 완료', 'Ready'),
         });
     }
     // boot receives, verifies (SHA-256) and imports the rest, advancing once per module.

@@ -1,3 +1,4 @@
+import { t, msg } from '../i18n/locale.js';
 import {
     CAMPAIGN_DECK_HERO_LIMIT,
     CAMPAIGN_DECK_LIMIT,
@@ -58,8 +59,12 @@ export class CampaignDeck {
     }
 
     static paint() {
-        this.$('campaignDeckKicker').textContent = `${this.stage.title} · 캠페인 전용 덱`;
-        this.$('campaignDeckCount').textContent = `${this.slots.length} / ${CAMPAIGN_DECK_LIMIT}칸`;
+        this.$('campaignDeckKicker').textContent = msg('{0} · 캠페인 전용 덱', t(this.stage.title));
+        this.$('campaignDeckCount').textContent = msg(
+            '{0} / {1}칸',
+            this.slots.length,
+            CAMPAIGN_DECK_LIMIT,
+        );
         this.paintSlots();
         this.paintCards();
     }
@@ -78,19 +83,26 @@ export class CampaignDeck {
             if (type) {
                 const name = document.createElement('span'),
                     locked = required.includes(type);
-                name.textContent = locked ? `${this.nameOf(type)} · 필수` : this.nameOf(type);
+                name.textContent = locked
+                    ? msg('{0} · 필수', t(this.nameOf(type)))
+                    : t(this.nameOf(type));
                 slot.toggleAttribute('data-hero', this.isHero(type));
                 slot.setAttribute(
                     'aria-label',
-                    `${index + 1}번 칸 ${this.nameOf(type)}${locked ? ' · 이 판의 필수 카드' : ' · 덱에서 제외'}`,
+                    msg(
+                        '{0}번 칸 {1} · {2}',
+                        index + 1,
+                        t(this.nameOf(type)),
+                        t(locked ? '이 판의 필수 카드' : '덱에서 제외'),
+                    ),
                 );
                 slot.append(this.portrait(type), name);
                 slot.addEventListener('click', () => this.toggle(type));
             } else {
                 slot.classList.add('deck-slot-empty');
                 slot.disabled = true;
-                slot.textContent = '빈 칸';
-                slot.setAttribute('aria-label', `${index + 1}번 빈 칸`);
+                slot.textContent = t('빈 칸');
+                slot.setAttribute('aria-label', msg('{0}번 빈 칸', index + 1));
             }
             tile.append(slot);
             host.append(tile);
@@ -115,18 +127,20 @@ export class CampaignDeck {
             button.dataset.deckType = type;
             button.toggleAttribute('data-required', locked);
             button.setAttribute('aria-pressed', String(chosen));
-            name.textContent = this.nameOf(type);
+            name.textContent = t(this.nameOf(type));
             detail.innerHTML = this.isHero(type)
-                ? '영웅'
+                ? t('영웅')
                 : ResourceDisplay.costMarkup(this.statsOf(type));
             check.className = 'deck-card-check';
             check.setAttribute('aria-hidden', 'true');
-            check.textContent = locked ? '필수' : chosen ? '✓' : '+';
+            check.textContent = locked ? t('필수') : chosen ? '✓' : '+';
             button.setAttribute(
                 'aria-label',
-                `${this.nameOf(type)}, ${locked ? '이 판의 필수 카드' : chosen ? '덱에서 제외' : '덱에 추가'}${
-                    this.roster.hasUpgrade(type) ? ', 캠페인 강화 열림' : ''
-                }`,
+                msg(
+                    '{0}, {1}',
+                    t(this.nameOf(type)),
+                    t(locked ? '이 판의 필수 카드' : chosen ? '덱에서 제외' : '덱에 추가'),
+                ) + (this.roster.hasUpgrade(type) ? t(', 캠페인 강화 열림') : ''),
             );
             button.append(this.portrait(type), name, detail, check);
             button.addEventListener('click', () => this.toggle(type));
@@ -134,7 +148,7 @@ export class CampaignDeck {
             if (!this.isHero(type) && this.roster.hasUpgrade(type)) {
                 const star = document.createElement('i');
                 star.className = 'campaign-deck-star';
-                star.title = '캠페인 강화 열림';
+                star.title = t('캠페인 강화 열림');
                 star.setAttribute('aria-hidden', 'true');
                 star.textContent = '★';
                 tile.append(star);
@@ -145,24 +159,27 @@ export class CampaignDeck {
 
     static additionBlock(type) {
         if (this.slots.length >= CAMPAIGN_DECK_LIMIT)
-            return `덱은 최대 ${CAMPAIGN_DECK_LIMIT}칸이에요. 카드 한 장을 먼저 빼 주세요.`;
+            return msg('덱은 최대 {0}칸이에요. 카드 한 장을 먼저 빼 주세요.', CAMPAIGN_DECK_LIMIT);
         if (
             this.isHero(type) &&
             this.slots.filter((card) => this.isHero(card)).length >= CAMPAIGN_DECK_HERO_LIMIT
         )
-            return `영웅은 최대 ${CAMPAIGN_DECK_HERO_LIMIT}명이에요. 장착한 영웅을 먼저 빼 주세요.`;
+            return msg(
+                '영웅은 최대 {0}명이에요. 장착한 영웅을 먼저 빼 주세요.',
+                CAMPAIGN_DECK_HERO_LIMIT,
+            );
         return '';
     }
 
     static async toggle(type) {
         const notice = this.$('campaignDeckNotice');
         if (campaignDeckRequired(this.stage).includes(type)) {
-            notice.textContent = '이 판의 필수 카드는 뺄 수 없어요.';
+            notice.textContent = t('이 판의 필수 카드는 뺄 수 없어요.');
             return;
         }
         if (this.slots.includes(type)) {
             if (this.slots.length === 1) {
-                notice.textContent = '카드를 한 장 이상 골라야 해요.';
+                notice.textContent = t('카드를 한 장 이상 골라야 해요.');
                 return;
             }
             this.slots = this.slots.filter((card) => card !== type);
@@ -188,11 +205,11 @@ export class CampaignDeck {
     static async persist(save) {
         const notice = this.$('campaignDeckNotice');
         if (this.temporary()) {
-            notice.textContent = '디버그 편성은 이번 접속에서만 유지돼요.';
+            notice.textContent = t('디버그 편성은 이번 접속에서만 유지돼요.');
             return;
         }
         notice.textContent = (await save())
-            ? '이 기기에 저장됐어요.'
-            : '이 기기에 저장할 수 없어 이번에만 유지돼요.';
+            ? t('이 기기에 저장됐어요.')
+            : t('이 기기에 저장할 수 없어 이번에만 유지돼요.');
     }
 }

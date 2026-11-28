@@ -39,6 +39,7 @@ import {
 } from '../core/session-timing.js';
 import { netcodeMode } from '../core/config.js';
 import { PRODUCT_VERSION } from '../core/product-version.js';
+import { msg, t } from '../i18n/locale.js';
 import { RallyStateCodec } from '../core/rally-state-codec.js';
 import {
     createFramePresentationJournal,
@@ -1010,7 +1011,11 @@ class GameSession {
                 nonFatal: true,
                 expectedVersion: PRODUCT_VERSION,
                 remoteVersion: m.gameVersion,
-                message: `게임 버전이 다릅니다. 내 v${PRODUCT_VERSION} / 상대 ${m.gameVersion ?? '확인 불가'}. 양쪽 모두 같은 최신 게임으로 새로고침하세요.`,
+                message: msg(
+                    '게임 버전이 다릅니다. 내 v{0} / 상대 {1}. 양쪽 모두 같은 최신 게임으로 새로고침하세요.',
+                    PRODUCT_VERSION,
+                    m.gameVersion ?? t('확인 불가'),
+                ),
             });
             return;
         }

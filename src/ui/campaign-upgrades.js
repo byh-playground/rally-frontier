@@ -1,3 +1,4 @@
+import { t, msg } from '../i18n/locale.js';
 import { SUNSHINE } from '../definitions/roster.js';
 
 // The campaign's upgrade sheet: every upgrade of the cards the player owns, with its state or the sunshine price to
@@ -37,7 +38,7 @@ export class CampaignUpgradeSheet {
         if (!listed.length) {
             const empty = document.createElement('p');
             empty.className = 'campaign-upgrade-empty';
-            empty.textContent = '병종을 얻으면 그 병종의 강화가 여기에 나와요.';
+            empty.textContent = t('병종을 얻으면 그 병종의 강화가 여기에 나와요.');
             host.append(empty);
             return;
         }
@@ -57,13 +58,13 @@ export class CampaignUpgradeSheet {
             (src) => (image.src = src),
             () => image.remove(),
         );
-        name.textContent = `${this.nameOf(type)} · ${upgrade.name}`;
-        summary.textContent = upgrade.summary;
+        name.textContent = `${t(this.nameOf(type))} · ${t(upgrade.name)}`;
+        summary.textContent = t(upgrade.summary);
         text.append(name, summary);
         row.append(image, text);
         if (this.roster.hasUpgrade(type)) {
             const state = document.createElement('em');
-            state.textContent = '열림';
+            state.textContent = t('열림');
             row.append(state);
             return row;
         }
@@ -73,12 +74,13 @@ export class CampaignUpgradeSheet {
         button.type = 'button';
         button.className = 'launch-btn campaign-upgrade-open';
         button.disabled = missing > 0 || this.temporary();
-        button.textContent = missing > 0 ? `☀ ${price} · ${missing} 모자라요` : `☀ ${price} · 열기`;
+        button.textContent =
+            missing > 0 ? msg('☀ {0} · {1} 모자라요', price, missing) : msg('☀ {0} · 열기', price);
         button.addEventListener('click', async () => {
             button.disabled = true;
             this.$('campaignUpgradeNotice').textContent = (await this.roster.openUpgrade(type))
-                ? `${this.nameOf(type)} 강화를 열었어요.`
-                : '강화를 열지 못했어요.';
+                ? msg('{0} 강화를 열었어요.', t(this.nameOf(type)))
+                : t('강화를 열지 못했어요.');
             this.paint();
         });
         row.append(button);

@@ -1,3 +1,4 @@
+import { msg, t } from '../i18n/locale.js';
 import { ResourceDisplay } from './resource-display.js';
 import { updatePlayerSave } from './player-saves.js';
 
@@ -29,14 +30,14 @@ export class DeckEditor {
         this.starter = starter;
         this.limit = limit;
         this.heroLimit = heroLimit;
-        this.nameOf = nameOf;
+        this.nameOf = (type) => t(nameOf(type));
         this.statsOf = statsOf;
         this.portraitOf = portraitOf;
         this.infoOf = infoOf;
         this.renderDetails = renderDetails;
         this.isUnlocked = isUnlocked;
         this.isTemporary = isTemporary;
-        this.unlockHint = unlockHint;
+        this.unlockHint = (type) => t(unlockHint(type));
         this.store = store;
         this.filter = 'grain';
         this.selectedSlot = null;
@@ -140,14 +141,22 @@ export class DeckEditor {
     static refresh() {
         const deck = this.getDeck(),
             tabs = document.getElementById('deckTabs');
-        document.getElementById('deckSummary').textContent =
-            `덱 ${this.state.selected + 1} · ${deck.length}/${this.limit}칸`;
-        document.getElementById('deckCount').textContent = `${deck.length} / ${this.limit}칸`;
+        document.getElementById('deckSummary').textContent = msg(
+            '덱 {0} · {1}/{2}칸',
+            this.state.selected + 1,
+            deck.length,
+            this.limit,
+        );
+        document.getElementById('deckCount').textContent = msg(
+            '{0} / {1}칸',
+            deck.length,
+            this.limit,
+        );
         tabs.replaceChildren();
         for (let index = 0; index < DECK_COUNT; index++) {
             const button = document.createElement('button');
             button.type = 'button';
-            button.textContent = `덱 ${index + 1}`;
+            button.textContent = msg('덱 {0}', index + 1);
             button.dataset.deckIndex = String(index);
             button.setAttribute('aria-pressed', String(index === this.state.selected));
             button.addEventListener('click', () => {
@@ -177,12 +186,12 @@ export class DeckEditor {
         button.type = 'button';
         button.className = 'launch-card-info deck-card-info';
         button.dataset.deckCardInfo = type;
-        button.setAttribute('aria-label', `${this.nameOf(type)} 상세`);
+        button.setAttribute('aria-label', msg('{0} 상세', this.nameOf(type)));
         button.setAttribute('aria-haspopup', 'dialog');
         button.textContent = 'i';
         button.addEventListener('click', () => {
             this.detailTrigger = button;
-            this.details.setAttribute('aria-label', `${this.nameOf(type)} 상세`);
+            this.details.setAttribute('aria-label', msg('{0} 상세', this.nameOf(type)));
             this.closeDetails = this.renderDetails(type, this.detailsContent);
             this.details.showModal();
             this.detailsContent.querySelector('[data-sheet-close]')?.focus();
@@ -206,7 +215,7 @@ export class DeckEditor {
                 slot.toggleAttribute('data-hero', this.heroes().includes(type));
                 slot.setAttribute(
                     'aria-label',
-                    `${index + 1}번 칸 ${this.nameOf(type)} · 덱에서 제외`,
+                    msg('{0}번 칸 {1} · 덱에서 제외', index + 1, this.nameOf(type)),
                 );
                 const name = document.createElement('span');
                 name.textContent = this.nameOf(type);
@@ -214,8 +223,8 @@ export class DeckEditor {
                 tile.append(this.infoButton(type));
             } else {
                 slot.classList.add('deck-slot-empty');
-                slot.textContent = '빈 칸';
-                slot.setAttribute('aria-label', `${index + 1}번 빈 칸 선택`);
+                slot.textContent = t('빈 칸');
+                slot.setAttribute('aria-label', msg('{0}번 빈 칸 선택', index + 1));
                 slot.setAttribute('aria-pressed', String(this.selectedSlot === index));
             }
             slot.addEventListener('click', () => {
@@ -224,8 +233,10 @@ export class DeckEditor {
                 } else {
                     this.selectedSlot = index;
                     this.renderSlots();
-                    document.getElementById('deckNotice').textContent =
-                        `${index + 1}번 칸에 넣을 카드를 골라 주세요.`;
+                    document.getElementById('deckNotice').textContent = msg(
+                        '{0}번 칸에 넣을 카드를 골라 주세요.',
+                        index + 1,
+                    );
                 }
                 selected.querySelector(`[data-deck-slot-index="${index}"]`)?.focus();
             });
@@ -265,18 +276,26 @@ export class DeckEditor {
                 const hint = this.unlockHint(type);
                 detail.textContent = hint;
                 button.title = hint;
-                button.setAttribute('aria-label', `${this.nameOf(type)} 잠김 · ${hint}`);
+                button.setAttribute('aria-label', msg('{0} 잠김 · {1}', this.nameOf(type), hint));
             } else {
-                detail.innerHTML = heroCatalog ? '영웅' : ResourceDisplay.costMarkup(stats);
-                button.title = blockReason || `${info.role} · ${info.feature}`;
+                detail.innerHTML = heroCatalog ? t('영웅') : ResourceDisplay.costMarkup(stats);
+                button.title = blockReason || `${t(info.role)} · ${t(info.feature)}`;
                 button.setAttribute(
                     'aria-label',
-                    `${this.nameOf(type)}, ${info.role}, 비용 ${ResourceDisplay.costText(stats, true)}, ${stats.count}명, ${info.feature}, ${chosen ? '덱에서 제외' : blockReason || '덱에 추가'}`,
+                    msg(
+                        '{0}, {1}, 비용 {2}, {3}명, {4}, {5}',
+                        this.nameOf(type),
+                        t(info.role),
+                        ResourceDisplay.costText(stats, true),
+                        stats.count,
+                        t(info.feature),
+                        chosen ? t('덱에서 제외') : blockReason || t('덱에 추가'),
+                    ),
                 );
             }
             check.className = 'deck-card-check';
             check.setAttribute('aria-hidden', 'true');
-            check.textContent = locked ? '잠김' : chosen ? '✓' : '+';
+            check.textContent = locked ? t('잠김') : chosen ? '✓' : '+';
             button.append(this.makePortrait(type), name, detail, check);
             button.addEventListener('click', () => {
                 if (this.toggleCard(type))
@@ -295,9 +314,9 @@ export class DeckEditor {
             heroes.includes(type) &&
             deck.filter((card) => heroes.includes(card)).length >= this.heroLimit
         )
-            return `영웅은 최대 ${this.heroLimit}명이에요. 장착한 영웅을 먼저 빼 주세요.`;
+            return msg('영웅은 최대 {0}명이에요. 장착한 영웅을 먼저 빼 주세요.', this.heroLimit);
         if (deck.length >= this.limit)
-            return `덱은 최대 ${this.limit}칸이에요. 카드 한 장을 먼저 빼 주세요.`;
+            return msg('덱은 최대 {0}칸이에요. 카드 한 장을 먼저 빼 주세요.', this.limit);
         return '';
     }
 
@@ -311,7 +330,7 @@ export class DeckEditor {
             index = slots.indexOf(type);
         if (index >= 0) {
             if (this.getDeck().length === 1) {
-                notice.textContent = '카드를 한 장 이상 골라야 해요.';
+                notice.textContent = t('카드를 한 장 이상 골라야 해요.');
                 return false;
             }
             slots[index] = null;
@@ -336,15 +355,15 @@ export class DeckEditor {
         const notice = document.getElementById('deckNotice');
         this.refresh();
         if (this.isTemporary()) {
-            notice.textContent = '디버그 덱은 이번 접속에서만 유지돼요.';
+            notice.textContent = t('디버그 덱은 이번 접속에서만 유지돼요.');
             return;
         }
         const pending = (this.pendingSave = this.save());
         void pending.then((saved) => {
             if (pending !== this.pendingSave) return;
             notice.textContent = saved
-                ? '이 기기에 저장됐어요.'
-                : '이 기기에 저장할 수 없어 이번에만 유지돼요.';
+                ? t('이 기기에 저장됐어요.')
+                : t('이 기기에 저장할 수 없어 이번에만 유지돼요.');
         });
     }
 }

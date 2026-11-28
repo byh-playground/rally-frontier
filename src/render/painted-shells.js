@@ -1,6 +1,7 @@
 // The launch shells painted as their own art: the crop bundled, wrapped or netted, never the soldier itself.
 // One atlas image (assets/shells/atlas.png) holds them all. Every picture points its front to +x, and the shell is
 // drawn nose first along its flight (and broken apart where it lands, like any launch shell).
+import { t } from '../i18n/locale.js';
 import { fetchAsset, requireAsset } from '../core/required-asset.js';
 
 const ROOT = new URL('../../assets/shells/', import.meta.url);
@@ -36,7 +37,7 @@ export async function loadPaintedShellImage() {
         const response = await fetchAsset(manifest, { cache: 'no-store' });
         const entry = (await response.json())?.assets?.[FILE];
         if (!Number.isSafeInteger(entry?.bytes) || !/^[a-f0-9]{64}$/.test(entry.sha256 || ''))
-            throw new Error('포탄 그림 목록이 올바르지 않습니다.');
+            throw new Error(t('포탄 그림 목록이 올바르지 않습니다.'));
         return entry;
     });
     const atlas = new URL(FILE, ROOT);
@@ -47,7 +48,7 @@ export async function loadPaintedShellImage() {
             v.toString(16).padStart(2, '0'),
         ).join('');
         if (bytes.byteLength !== entry.bytes || hash !== entry.sha256)
-            throw new Error('포탄 그림 무결성 오류');
+            throw new Error(t('포탄 그림 무결성 오류'));
         const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
         try {
             const image = new Image();

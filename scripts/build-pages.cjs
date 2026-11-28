@@ -14,6 +14,7 @@ const sourcePaths = [
     'index.html',
     'gamekit.lock.json',
     'manifest.webmanifest',
+    'manifest.en.webmanifest',
     'src',
     'assets',
     'icons',

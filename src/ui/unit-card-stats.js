@@ -3,10 +3,11 @@ import { KnockbackRules } from '../definitions/knockback-rules.js';
 import { UnitDefinition } from '../definitions/units.js';
 import { HeroGrowth } from '../sim/hero-growth.js';
 import { LaunchRules } from '../sim/launch-rules.js';
+import { locale, msg, t } from '../i18n/locale.js';
 import { ResourceDisplay } from './resource-display.js';
 
-const number = new Intl.NumberFormat('ko-KR');
-const seconds = (ms) => `${number.format(ms / 1000)}초`;
+const number = new Intl.NumberFormat(locale === 'en' ? 'en-US' : 'ko-KR');
+const seconds = (ms) => msg('{0}초', number.format(ms / 1000));
 const perShell = (shots, key) => {
     const values = shots.map((shot) => shot[key]);
     return values.every((value) => value === values[0])
@@ -29,7 +30,7 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
         spin = unit.spinAttack;
 
     const movement = [
-        ...(hero ? [['레벨', `${number.format(heroLevel)}레벨`]] : []),
+        ...(hero ? [['레벨', msg('{0}레벨', number.format(heroLevel))]] : []),
         ['체력', number.format(hp)],
         ['이동속도', number.format(unit.speed)],
     ];
@@ -58,7 +59,7 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
     const attack = chain
         ? [
               ['번개 사거리', number.format(unit.range)],
-              ['연결 수', `${number.format(chain.links)}명`],
+              ['연결 수', msg('{0}명', number.format(chain.links))],
               ['튀는 거리', number.format(chain.bounceRange)],
               ['건물 피해', `${number.format(chain.buildingDamageScale * 100)}%`],
               ['대공', '나는 적에 닿음 · 투입탄 제외'],
@@ -67,7 +68,7 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
           ? [
                 ['불줄기 길이', number.format(breath.length)],
                 ['불줄기 각도', `${number.format(breath.arcDegrees)}°`],
-                ['방향 전환', `초당 ${number.format(breath.turnDegreesPerSecond)}°`],
+                ['방향 전환', msg('초당 {0}°', number.format(breath.turnDegreesPerSecond))],
                 ['건물 피해', `${number.format(breath.buildingDamageScale * 100)}%`],
             ]
           : [
@@ -93,7 +94,11 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
     if (unit.basicSplash)
         attack.push([
             '평타 주변 피해',
-            `반경 ${number.format(unit.basicSplash.radius)} · ${number.format(unit.basicSplash.damageRatio * 100)}%`,
+            msg(
+                '반경 {0} · {1}%',
+                number.format(unit.basicSplash.radius),
+                number.format(unit.basicSplash.damageRatio * 100),
+            ),
         ]);
 
     const grows = unit.growsCannon,
@@ -111,7 +116,7 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
               [
                   '변신',
                   [
-                      [cannon.name + '까지', seconds(grows.delayMs)],
+                      [msg('{0}까지', t(cannon.name)), seconds(grows.delayMs)],
                       ['대포 체력', number.format(cannon.hp)],
                       ['초당 체력 감소', number.format(cannon.decay.hpPerSecond)],
                       ['유지 시간', seconds((cannon.hp / cannon.decay.hpPerSecond) * 1000)],
@@ -187,7 +192,7 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
                             rider.cannonSearchReachMultiplier,
                     ),
                 ],
-                ['재발사 인원', '1명'],
+                ['재발사 인원', msg('{0}명', 1)],
                 ['재발사 비용', '무료'],
             ],
             copy.notes.slice(1),
@@ -195,7 +200,7 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
 
     const deployment = [
         ['투입 비용', ResourceDisplay.costText(payload, true)],
-        ['투입 인원', `${number.format(payload.count)}명`],
+        ['투입 인원', msg('{0}명', number.format(payload.count))],
         ['착지 배치', copy.land],
     ];
     // Card ammo (CardAmmo); a hero has none.
@@ -203,11 +208,11 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
     if (ammo)
         deployment.splice(1, 0, [
             '탄약',
-            `${number.format(ammo.max)}발 · 한 발 충전 ${seconds(ammo.rechargeMs)}`,
+            msg('{0}발 · 한 발 충전 {1}', number.format(ammo.max), seconds(ammo.rechargeMs)),
         ]);
     const firing = [
         ['발사 방식', copy.fire],
-        ['포탄 수', `${number.format(shots.length)}발`],
+        ['포탄 수', msg('{0}발', number.format(shots.length))],
         ['최대 발사 거리', number.format(LaunchRules.maxReachOf(type, rangeLevel))],
     ];
     if (grain.fire.mode === 'burst') firing.push(['발사 간격', seconds(grain.fire.gapMs)]);
@@ -220,11 +225,23 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
             ? [
                   [
                       '착지 공격',
-                      `${strike.scatter ? `${number.format(strike.scatter.count + 1)}곳 · ` : ''}반경 ${number.format(strike.radius)} · 피해 ${strike.atkRatio ? `공격 ×${number.format(strike.atkRatio)}` : number.format(strike.damage)}`,
+                      msg(
+                          '{0}반경 {1} · 피해 {2}',
+                          strike.scatter
+                              ? msg('{0}곳 · ', number.format(strike.scatter.count + 1))
+                              : '',
+                          number.format(strike.radius),
+                          strike.atkRatio
+                              ? msg('공격 ×{0}', number.format(strike.atkRatio))
+                              : number.format(strike.damage),
+                      ),
                   ],
                   [
                       '착지 뒤 빠지기',
-                      `${strike.retreat.motion === 'roll' ? '굴러서' : '뛰어서'} ${number.format(Math.round(strike.retreat.distance))}`,
+                      msg(
+                          strike.retreat.motion === 'roll' ? '굴러서 {0}' : '뛰어서 {0}',
+                          number.format(Math.round(strike.retreat.distance)),
+                      ),
                   ],
               ]
             : [
@@ -243,5 +260,11 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
         ['발사', firing],
         ['포탄 성능', shellStats],
     ];
-    return { troop, shell };
+    const localized = (groups) =>
+        groups.map(([title, rows, notes]) => [
+            t(title),
+            rows.map(([label, value]) => [t(label), t(value)]),
+            notes?.map((note) => t(note)),
+        ]);
+    return { troop: localized(troop), shell: localized(shell) };
 }
