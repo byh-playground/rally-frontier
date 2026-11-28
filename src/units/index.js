@@ -23,6 +23,7 @@ import { Cotton } from './cotton/index.js';
 import { Sesame } from './sesame/index.js';
 import { Buckwheat } from './buckwheat/index.js';
 import { Walnut } from './walnut/index.js';
+import { Ginkgo } from './ginkgo/index.js';
 
 export const UNITS = Object.freeze([
     Watermelon,
@@ -48,6 +49,7 @@ export const UNITS = Object.freeze([
     Sesame,
     Buckwheat,
     Walnut,
+    Ginkgo,
 ]);
 
 const byId = new Map();

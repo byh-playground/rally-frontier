@@ -1,4 +1,5 @@
 import { UnitLobAttack } from './capabilities/unit-lob-attack.js';
+import { GinkgoCloud } from './capabilities/ginkgo-cloud.js';
 // The deterministic lockstep strategy simulation.
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { HeroDeployment } from './hero-deployment.js';
@@ -2338,7 +2339,8 @@ class StrategySim {
             pct = Math.max(pct, 100 + (one - 100) * stacks);
         }
         // A hero's ally aura (HeroAllyAura movePct) counts as one more move speed modifier.
-        if (field === 'movePct') pct = Math.max(pct, HeroAllyAura.movePct(this, u));
+        if (field === 'movePct')
+            pct = Math.max(pct, HeroAllyAura.movePct(this, u)) * GinkgoCloud.moveScale(this, u);
         return pct;
     }
     engagementGoal(u, target, attackRange) {
@@ -3175,6 +3177,7 @@ class StrategySim {
             }
         winner = this.updateProjectiles() || winner;
         UnitLobAttack.step(this);
+        GinkgoCloud.update(this);
         UnitThornAttack.update(this);
         LaunchImpact.deploy(this);
         this.resolveConstructionHits();
@@ -3287,6 +3290,7 @@ class StrategySim {
     }
     importState(s, { rollback = false } = {}) {
         UnitResultStats.validate(s.unitResultStats);
+        GinkgoCloud.validate(s);
         CampaignMission.validate(s, s.rules?.campaign?.mission);
         const retained = {
             mapDescriptor: this.mapDescriptor,
@@ -3368,6 +3372,7 @@ class StrategySim {
                 mapDescriptor: this.mapDescriptor,
                 launchDeployments: StateValue.copy(this.launchDeployments),
                 campaignMission: CampaignMission.snapshot(this.campaignMission),
+                ginkgoClouds: GinkgoCloud.view(this),
                 blightField: BlightField.view(this),
                 sporeCloud: SporeCloud.view(this),
                 sporeReinforce: SporeSac.view(this),

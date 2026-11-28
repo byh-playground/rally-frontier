@@ -29,7 +29,7 @@ export class Roster {
     // Takes the loaded record (another tab may have changed it).
     sync() {
         const saved = this.save?.data;
-        if (saved) this.#owned = new Set(saved.owned);
+        if (saved) this.#owned = new Set([...startingOwned(), ...saved.owned]);
     }
 
     async load() {

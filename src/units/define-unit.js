@@ -672,6 +672,29 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
         !(Number(splash.radius) > 0 && Number(splash.damageRatio) > 0 && unit.atk > 0)
     )
         throw new Error(`병종 ${id}의 basicSplash는 양수 radius·damageRatio와 atk가 필요합니다.`);
+    if (unit.ginkgoCloud) {
+        const { radius, durationMs, tickMs, totalDamage, slowPct } = unit.ginkgoCloud;
+        if (
+            !unit.lobAttack ||
+            unit.lobAttack.fuseMs !== 0 ||
+            hero ||
+            !Number.isInteger(radius) ||
+            radius <= 0 ||
+            !Number.isInteger(durationMs) ||
+            !Number.isInteger(tickMs) ||
+            tickMs <= 0 ||
+            durationMs < tickMs ||
+            durationMs % tickMs !== 0 ||
+            !Number.isInteger(unit.atk) ||
+            unit.atk <= 0 ||
+            totalDamage !== unit.atk * 2 ||
+            unit.atk % (durationMs / tickMs) !== 0 ||
+            !(slowPct > 0 && slowPct < 100)
+        )
+            throw new Error(
+                `병종 ${id}의 ginkgoCloud에는 즉시 착탄과 같은 크기의 착탄·장판 피해가 필요합니다.`,
+            );
+    }
     if (unit.growth !== undefined) validateGrowth(id, unit.growth, unit, hero);
     if (unit.campaignUpgrade !== undefined)
         unit.campaignUpgrade = validateCampaignUpgrade(
