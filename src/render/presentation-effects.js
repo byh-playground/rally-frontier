@@ -80,6 +80,7 @@ class EffectObjectFactory {
         upgradeWallRebound: 320,
         constructionHit: 220,
         hitscanTravel: 180,
+        rapidHitscanTravel: 125,
         antiAirHit: 320,
         unitBurstShot: 160,
         shellIntercepted: 420,

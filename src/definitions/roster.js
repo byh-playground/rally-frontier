@@ -14,7 +14,7 @@ export const SUNSHINE = Object.freeze({
 // Cards available from the beginning, including new cards that have no campaign reward stage yet.
 // Campaign rewards grant the rest of the roster.
 export function startingOwned() {
-    return [CAMPAIGN_ACT_STAGES[0].rewardCard, 'ginkgo', 'plum'];
+    return [CAMPAIGN_ACT_STAGES[0].rewardCard, 'ginkgo', 'plum', 'pine-nut'];
 }
 
 export function newRosterRecord() {

@@ -3110,6 +3110,17 @@ class GLRenderer {
             }
 
             if (e.type === 'hit') {
+                if (UnitDefinition.get(e.sourceType)?.rapidHitscan) {
+                    // Light infantry fire owns a short cue, shared with the hit's presentation clock.
+                    if (!e.suppressImpactFx && !e.ambient)
+                        this.addClientFx('rapidHitscanTravel', e, snapshot, index, {
+                            fromX: e.presentationSource?.x,
+                            fromY: e.presentationSource?.y,
+                            sourceSide: e.sourceSide,
+                        });
+                    index++;
+                    continue;
+                }
                 if (e.isBuilding && !e.ambient) this.siegeHit(e, snapshot, index);
                 const motion =
                     !e.suppressImpactFx &&
@@ -4260,11 +4271,21 @@ class GLRenderer {
             }
             const t = age / life;
             const ease = 1 - Math.pow(1 - t, 3);
-            let [x, y] = this.worldToPx(
-                this.viewX(fx.x),
-                this.viewY(fx.y),
-                Number.isFinite(fx.impactHeightFP) ? fx.impactHeightFP / FP : null,
-            );
+            let x, y;
+            if (fx.kind === 'rapidHitscanTravel') {
+                const groundY = this.world.terrain.surfaces.heightAt(fx.x, fx.y);
+                ({ x, y } = this.projectRenderWorldPosition({
+                    x: fx.x,
+                    z: fx.y,
+                    y: groundY + (fx.isBuilding ? 22 : 9),
+                    groundY,
+                }));
+            } else
+                [x, y] = this.worldToPx(
+                    this.viewX(fx.x),
+                    this.viewY(fx.y),
+                    Number.isFinite(fx.impactHeightFP) ? fx.impactHeightFP / FP : null,
+                );
 
             if (
                 x < -160 ||
@@ -4549,6 +4570,36 @@ class GLRenderer {
                     paid ? '#ffe1a1' : '#f2d39a',
                     0.5 * (1 - t),
                 );
+            } else if (fx.kind === 'rapidHitscanTravel') {
+                const fade = 1 - t;
+                // The flash follows the drawn weapon. A hidden shooter does not reveal its point of fire.
+                const shooter = this.grainActors.get(fx.sourceId),
+                    mouth = GRAIN_SPRITES[fx.sourceType]?.hitscanMuzzle;
+                if (
+                    shooter?.frame === this.grainActorFrame &&
+                    mouth &&
+                    Number.isFinite(fx.fromX) &&
+                    Number.isFinite(fx.fromY) &&
+                    (fx.sourceSide === this.mySide() || this.visibleRaw(fx.fromX, fx.fromY))
+                ) {
+                    const [xx, xy, yx, yy, ox, oy] = shooter.matrix,
+                        sx = ox + mouth.x * xx + mouth.y * yx,
+                        sy = oy + mouth.x * xy + mouth.y * yy,
+                        dx = x - sx,
+                        dy = y - sy,
+                        length = Math.hypot(dx, dy),
+                        segment = length > 0 ? Math.min((26 * sc) / length, 0.75) : 0;
+                    ctx.globalAlpha = 0.58 * fade;
+                    ctx.strokeStyle = '#dfb879';
+                    ctx.lineWidth = Math.max(0.8, 1.25 * sc);
+                    ctx.beginPath();
+                    ctx.moveTo(sx, sy);
+                    ctx.lineTo(sx + dx * segment, sy + dy * segment);
+                    ctx.stroke();
+                    dot(sx, sy, 2.6 * sc, '#efce90', 0.58 * fade);
+                }
+                if (fx.side === this.mySide() || this.visibleRaw(fx.x, fx.y))
+                    dot(x, y, 1.9 * sc, '#dfb879', 0.5 * fade);
             } else if (fx.kind === 'hitscanTravel') {
                 const source = { id: fx.sourceId, x: fx.x, y: fx.y, side: fx.side };
                 const pose = BuildingArt.pose(
@@ -5837,6 +5888,7 @@ class GLRenderer {
             if (!record) continue;
             const grain = this.grainActor(u, record),
                 actor = grain.actor,
+                sprite = GRAIN_SPRITES[u.type],
                 delta = this.renderTrackedDelta(u, 'unit'),
                 moving = Math.hypot(delta.x, delta.y) > 0.01;
             const model = this.renderState.model('unit', u.id, now),
@@ -5864,7 +5916,7 @@ class GLRenderer {
                     hit = !!(chestnut ? entity.hitFlash : u.hitFlash),
                     attackStarted = attack && !grain.attackLatch,
                     hitStarted = hit && !grain.hitLatch;
-                if (attackStarted) grain.attackUntil = now + 425;
+                if (attackStarted) grain.attackUntil = now + (sprite?.fireHoldMs ?? 425);
                 if (hitStarted) grain.hitUntil = now + 295;
                 grain.attackLatch = attack;
                 grain.hitLatch = hit;
@@ -5904,7 +5956,13 @@ class GLRenderer {
                 if (pop) {
                     clip = 'hit';
                     motionElapsed = 35;
-                } else if (grounded && !impact.active && !work?.active && !spinning) {
+                } else if (
+                    grounded &&
+                    !impact.active &&
+                    !work?.active &&
+                    !spinning &&
+                    !sprite?.hitscanMuzzle
+                ) {
                     // Only art that declares the grain rig's swing takes the shared attack timing.
                     const sharedTiming = !!motionStyle.grainSwing,
                         contactAge = grain.attackUntil > now ? now - (grain.attackUntil - 425) : -1,
@@ -5954,6 +6012,20 @@ class GLRenderer {
                 const striking = grain.attackUntil > now || entity.combat?.attackWindupUntil > 0;
                 if (!striking && Math.hypot(delta.x, delta.y) > 1) grain.aimSide = 0;
                 facingSide = spinning ? 0 : grain.aimSide || 0;
+            }
+            let rapidFireMs = null;
+            if (sprite?.hitscanMuzzle && grounded && !impact.active && !work?.active) {
+                const shot = entity.combat?.basicAttackTick,
+                    ageMs = ((renderTick - shot) * 1000) / (this.snapshot.tps || SIM_TPS);
+                if (shot != null && ageMs >= 0 && ageMs < sprite.fireHoldMs) {
+                    rapidFireMs = ageMs;
+                    clip = 'fire';
+                    const target =
+                        this.renderState.entity('unit', entity.target) ||
+                        (this.snapshot.buildings || []).find((b) => b.id === entity.target);
+                    if (Number.isFinite(target?.x))
+                        grain.hitscanFacing = this.viewX(target.x) < this.viewX(entity.x) ? -1 : 1;
+                } else if (clip === 'fire') clip = moving ? 'walk' : 'idle';
             }
             let cornElapsed = null;
             grain.holdsKernel = false;
@@ -6080,7 +6152,6 @@ class GLRenderer {
             const rollProgress = roll?.phase ? rollArt.progress(roll, renderTick) : 0;
             const selfDestruct =
                 entity.selfDestruct?.phase === 'windup' ? entity.selfDestruct : null;
-            const sprite = GRAIN_SPRITES[u.type];
             const heroBasic =
                 sprite?.heroBasic && grounded && !impact.active && !work?.active
                     ? heroBasicAttackElapsedMs(
@@ -6261,7 +6332,8 @@ class GLRenderer {
                 actor.seekElapsed(
                     1000 * RangeUtil.clamp((renderTick - selfDestruct.startTick) / duration, 0, 1),
                 );
-            } else if (heroBasic != null) actor.seekElapsed(heroBasic);
+            } else if (rapidFireMs != null) actor.seekElapsed(rapidFireMs);
+            else if (heroBasic != null) actor.seekElapsed(heroBasic);
             else if (cornElapsed != null) actor.seekElapsed(cornElapsed);
             else if (chestnutFireMs !== null && clip === 'fire') actor.seekElapsed(chestnutFireMs);
             else if (milletFireMs !== null && clip === 'fire') actor.seekElapsed(milletFireMs);
@@ -6312,11 +6384,13 @@ class GLRenderer {
                         (sprite?.fruitAttack ||
                         (sprite?.heroBasic && heroBasic != null && !spin && !roll)
                             ? grain.heroFacing || 1
-                            : cornElapsed != null
-                              ? grain.cornFacing || 1
-                              : milletFireMs != null
-                                ? milletFacing
-                                : chestnutFacing * burstFacing * aimFacing)) *
+                            : sprite?.hitscanMuzzle
+                              ? grain.hitscanFacing || 1
+                              : cornElapsed != null
+                                ? grain.cornFacing || 1
+                                : milletFireMs != null
+                                  ? milletFacing
+                                  : chestnutFacing * burstFacing * aimFacing)) *
                     (work?.scaleX ?? 1),
                 sy = scale * impact.scaleY * (work?.scaleY ?? 1);
             m[0] = cos * sx;
@@ -6818,6 +6892,7 @@ class GLRenderer {
             grain.aimSide = 0;
             grain.slashFor = null;
             grain.cornFacing = undefined;
+            grain.hitscanFacing = undefined;
             grain.hidden = false;
         }
         grain.frame = this.grainActorFrame;

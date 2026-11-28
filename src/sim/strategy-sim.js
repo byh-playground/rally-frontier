@@ -1182,6 +1182,7 @@ class StrategySim {
     }
 
     attackWindupTicksFor(d) {
+        if (d?.rapidHitscan) return 0;
         const ms = Number.isFinite(Number(d?.attackWindupMs))
             ? Math.max(0, Math.round(Number(d.attackWindupMs)))
             : DEFAULT_ATTACK_WINDUP_MS;
@@ -1224,6 +1225,7 @@ class StrategySim {
         return this.tick >= u.combat.attackWindupUntil;
     }
     attackReadyAfterWindup(u, target, targetKind, d) {
+        if (d.rapidHitscan) return !this.attackCoolingDown(u, d);
         if ((u.combat.attackWindupUntil || 0) > 0) {
             if (!this.tickAttackWindup(u)) return false;
             u.combat.cancelWindup();
@@ -1270,7 +1272,7 @@ class StrategySim {
         const windupTicks = d.attackIntervalMs == null ? 0 : this.attackWindupTicksFor(d);
         u.combat.cooldownUntil = this.tick + Math.max(1, scheduled.ticks - windupTicks);
         u.combat.moveRecoveryUntil = this.tick + this.attackMoveRecoveryDurationTicks(u, d);
-        if (d.rollAttack || d.fruitAttack) u.combat.basicAttackTick = this.tick;
+        if (d.rollAttack || d.fruitAttack || d.rapidHitscan) u.combat.basicAttackTick = this.tick;
         u.attackFlash = 1;
     }
 
@@ -2620,14 +2622,23 @@ class StrategySim {
             }
         }
         if (!activeSite && !found) {
-            if (this.combatTargetRefreshDue(u)) {
+            const refreshDue = this.combatTargetRefreshDue(u);
+            if (!refreshDue) found = this.retainedCombatTarget(u, vision[u.side]);
+            // A ready marksman can replace a target killed earlier in this tick, or acquire
+            // again when its cooldown ends if it lost the target while cooling down.
+            const readyRetarget =
+                d.rapidHitscan &&
+                !found &&
+                !this.attackCoolingDown(u, d) &&
+                (u.target != null || u.combat.cooldownUntil === this.tick);
+            if (refreshDue || readyRetarget) {
                 const pickStarted = this._perfCollect ? performance.now() : 0;
                 found = this.pickCombatTarget(u, vision[u.side]);
                 if (this._perfCollect) {
                     this._perfCollect.combatTargetPickMs += performance.now() - pickStarted;
                     this._perfCollect.combatTargetPickCalls++;
                 }
-            } else found = this.retainedCombatTarget(u, vision[u.side]);
+            }
         }
 
         // A chain reaches flying enemies too: with no ground target in reach it takes the nearest one in reach.

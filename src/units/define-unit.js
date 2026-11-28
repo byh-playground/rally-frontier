@@ -710,6 +710,20 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
                 `병종 ${id}의 plumAcid는 즉시 터지는 즙탄과 양의 정수 설정이 필요합니다.`,
             );
     }
+    if (
+        unit.rapidHitscan &&
+        (hero ||
+            unit.attackVisual?.travel !== 'hitscan' ||
+            !(unit.attackIntervalMs > 0) ||
+            !(unit.atk > 0) ||
+            unit.lobAttack ||
+            unit.thornAttack ||
+            unit.sustain ||
+            unit.canAttackAir)
+    )
+        throw new Error(
+            `병종 ${id}의 rapidHitscan에는 주기와 피해를 가진 지상 즉시 사격이 필요합니다.`,
+        );
     if (unit.growth !== undefined) validateGrowth(id, unit.growth, unit, hero);
     if (unit.campaignUpgrade !== undefined)
         unit.campaignUpgrade = validateCampaignUpgrade(
