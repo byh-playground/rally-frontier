@@ -152,6 +152,7 @@ class EffectObjectFactory {
             targetId: null,
             kill: false,
             group: null,
+            numberLayout: null,
         };
     }
     static resetFloatFx(v) {
@@ -169,6 +170,7 @@ class EffectObjectFactory {
         v.targetId = null;
         v.kill = false;
         v.group = null;
+        v.numberLayout = null;
     }
     static makeShakeFx() {
         return {

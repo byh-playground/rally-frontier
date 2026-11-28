@@ -14,9 +14,9 @@ export class NumberLook {
     static killLifeMs = 850;
     // The most large (killing) numbers on screen at once.
     static maxKillNumbers = 4;
-    // Past this number of active labels, individual damage becomes quieter. Screen-space overlap is resolved separately.
-    // In a crowded fight, unit damage may also
-    // keep one per body, so bodies and blows stay visible.
+    static maxOrdinaryNumbers = 72;
+    static fadeStart = 0.7;
+    // Past this number of active labels, newly placed individual damage is quieter.
     static crowdAt = 14;
 
     static ordinary(f) {
@@ -80,7 +80,7 @@ export class NumberLook {
                 pose.size,
                 age < 60 ? '#ffffff' : taken ? '#ff8a8a' : gold ? '#ffcc1f' : '#fffdf0',
                 taken ? '#4b0909' : gold ? '#5e2a00' : '#3f2a14',
-                (t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3) * (quiet ? 0.6 : 1),
+                (t < this.fadeStart ? 1 : (1 - t) / (1 - this.fadeStart)) * (quiet ? 0.6 : 1),
                 pose.stroke,
             );
         } else if (f.kind === 'heroHeal') {

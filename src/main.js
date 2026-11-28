@@ -1234,6 +1234,7 @@ class GLRenderer {
         this.floatFx = [];
         this.worldHudSpace = new HudOccupancy();
         this.liftedDamageSpace = new HudOccupancy();
+        this.visibleDamageTargets = new Set();
         this.unitHudBars = [];
         this.areaHitGroups = new Map();
 
@@ -3748,13 +3749,6 @@ class GLRenderer {
             f.targetId = e.targetId || null;
             f.presentationTick = eventTick;
             f.kill = false;
-            // In a crowded fight a body keeps only its newest ordinary number.
-            if (f.targetId && this.numbersCrowded) {
-                const old = this.floatFx.findIndex(
-                    (number) => number.targetId === f.targetId && NumberLook.ordinary(number),
-                );
-                if (old >= 0) this.floatFxPool.release(this.floatFx.splice(old, 1)[0]);
-            }
             if (kind === 'heroHeal') {
                 f.presentationTick = eventTick;
                 f.group = { sourceId: e.sourceId };
@@ -3781,9 +3775,6 @@ class GLRenderer {
             this.floatFx.push(f);
             index++;
         }
-
-        // 화면을 숫자로 도배하지 않되, 최근 실제 타격 수치는 충분히 남긴다.
-        while (this.floatFx.length > 72) this.floatFxPool.release(this.floatFx.shift());
     }
 
     // The screen side a blow travels to (-1|1): away from whoever dealt it, or either side when unknown.
@@ -5280,7 +5271,8 @@ class GLRenderer {
         this.drawWorldHudOverlay(pixel);
 
         let write = 0,
-            ordinary = 0;
+            ordinary = 0,
+            placed = 0;
         for (let read = 0; read < this.floatFx.length; read++) {
             const f = this.floatFx[read],
                 preset = FloatingTextPresentationDefinition.get(f.kind),
@@ -5289,18 +5281,27 @@ class GLRenderer {
                 this.floatFxPool.release(f);
                 continue;
             }
-            if (NumberLook.ordinary(f)) ordinary++;
+            if (NumberLook.isOrdinaryUnitDamage(f)) {
+                ordinary++;
+                if (f.numberLayout) placed++;
+            }
             this.floatFx[write++] = f;
         }
         this.floatFx.length = write;
-        this.numbersCrowded = ordinary > NumberLook.crowdAt;
+        const crowded = ordinary > NumberLook.crowdAt;
+        const targets = this.visibleDamageTargets;
+        targets.clear();
 
-        // Draw the latest ordinary numbers first within their free space, under kills, heals and burst totals.
+        // Existing numbers keep the lane they appeared in. Only new numbers compete for remaining space.
         const sc = this.sc();
-        for (const first of [true, false])
+        for (const pass of ['placed', 'new', 'priority'])
             for (let i = 0; i < this.floatFx.length; i++) {
-                const f = this.floatFx[first ? this.floatFx.length - i - 1 : i];
-                if (NumberLook.isOrdinaryUnitDamage(f) !== first) continue;
+                const f = this.floatFx[pass === 'new' ? this.floatFx.length - i - 1 : i];
+                const ordinaryDamage = NumberLook.isOrdinaryUnitDamage(f);
+                if (pass === 'priority' ? ordinaryDamage : !ordinaryDamage) continue;
+                if (pass === 'placed' && !f.numberLayout) continue;
+                if (pass === 'new' && (f.numberLayout || placed >= NumberLook.maxOrdinaryNumbers))
+                    continue;
                 const [x, y] = this.worldToPx(this.viewX(f.x), this.viewY(f.y));
                 if (
                     x < -100 ||
@@ -5312,54 +5313,42 @@ class GLRenderer {
                 const preset = FloatingTextPresentationDefinition.get(f.kind);
                 const age = f.clock.ageMs;
                 let placement = null;
-                if (first) {
-                    placement = NumberLook.damagePose(
-                        f,
-                        preset,
-                        x,
-                        y,
-                        sc,
-                        age,
-                        pixel,
-                        this.numbersCrowded,
-                    );
+                const quiet = ordinaryDamage && (f.numberLayout?.quiet ?? crowded);
+                if (pass === 'new') {
+                    if (age >= preset.lifeMs * NumberLook.fadeStart) continue;
+                    if (crowded && f.targetId != null && targets.has(f.targetId)) continue;
+                }
+                if (ordinaryDamage || f.numberLayout) {
+                    placement = NumberLook.damagePose(f, preset, x, y, sc, age, pixel, quiet);
                     const width = placement.size * f.text.length * 0.67 + placement.stroke * 2;
                     const height = placement.size + placement.stroke * 2;
-                    const left = placement.x - width / 2,
-                        top = placement.y - height / 2;
-                    if (!this.worldHudSpace.place(left, top, width, height)) {
-                        // Keep one nearby damage cue above a pile, leaving the health bars readable.
-                        const vicinity = 42 * pixel;
+                    const left = placement.x - width / 2;
+                    const top = placement.y - height / 2;
+                    if (pass === 'new') {
                         if (
-                            !this.liftedDamageSpace.place(
-                                placement.x - vicinity / 2,
-                                top,
-                                vicinity,
-                                vicinity,
-                            )
+                            placement.x < 0 ||
+                            placement.x >= this.fxCanvas.width ||
+                            placement.y < 0 ||
+                            placement.y >= this.fxCanvas.height
                         )
                             continue;
-                        const step = height + 3 * pixel;
-                        let line = 1;
-                        for (; line <= 3; line++)
-                            if (this.worldHudSpace.place(left, top - line * step, width, height))
-                                break;
-                        if (line > 3) continue;
-                        placement.y -= line * step;
+                        const lift = this.placeNewDamageNumber(left, top, width, height, pixel);
+                        if (lift == null) continue;
+                        f.numberLayout = { liftCss: lift / pixel, quiet };
+                        placed++;
+                    } else if (pass === 'placed') {
+                        this.worldHudSpace.place(
+                            left,
+                            top - f.numberLayout.liftCss * pixel,
+                            width,
+                            height,
+                            true,
+                        );
                     }
+                    if (ordinaryDamage && f.targetId != null) targets.add(f.targetId);
+                    placement.y -= f.numberLayout.liftCss * pixel;
                 }
-                NumberLook.draw(
-                    ctx,
-                    f,
-                    preset,
-                    x,
-                    y,
-                    sc,
-                    age,
-                    pixel,
-                    this.numbersCrowded,
-                    placement,
-                );
+                NumberLook.draw(ctx, f, preset, x, y, sc, age, pixel, quiet, placement);
             }
 
         // Keep selection and the current firing order readable over explosions.
@@ -5367,6 +5356,24 @@ class GLRenderer {
             this.drawSelectedBuildingOverlay();
             this.drawLaunchAimOrder();
         }
+    }
+
+    placeNewDamageNumber(left, top, width, height, pixel) {
+        if (this.worldHudSpace.place(left, top, width, height)) return 0;
+
+        // Allow one nearby lift above a pile. Reserve that allowance only when a lane actually fits.
+        const vicinity = 42 * pixel;
+        const center = left + width / 2;
+        const reserveLift = () =>
+            this.liftedDamageSpace.place(center - vicinity / 2, top, vicinity, vicinity);
+        const step = height + 3 * pixel;
+        for (let line = 1; line <= 3; line++) {
+            const lift = line * step;
+            if (top - lift + height / 2 < 0) break;
+            if (this.worldHudSpace.place(left, top - lift, width, height, false, reserveLift))
+                return lift;
+        }
+        return null;
     }
 
     drawLaunchAimOrder() {
