@@ -35,7 +35,7 @@ async function verifyOptionalMetadata(browser, server, routePinnedSDK, record) {
         'network-failure',
         'timeout',
     ]) {
-        const page = await browser.newPage(),
+        const page = await browser.newPage({ locale: 'ko-KR' }),
             errors = [];
         let requests = 0;
         page.on('pageerror', (error) => errors.push(error.message));
@@ -84,7 +84,7 @@ async function verifyOptionalMetadata(browser, server, routePinnedSDK, record) {
             await page.close();
         }
     }
-    const page = await browser.newPage();
+    const page = await browser.newPage({ locale: 'ko-KR' });
     try {
         await routePinnedSDK(page);
         let metadataRoute;
@@ -167,7 +167,7 @@ async function main(htmlPath = path.resolve(process.argv[2] || '_site/index.html
             headless: true,
             channel: process.env.QA_BROWSER_CHANNEL || 'msedge',
         });
-        const page = await browser.newPage();
+        const page = await browser.newPage({ locale: 'ko-KR' });
         await routePinnedSDK(page);
         const pageErrors = [];
         const relativeRequests = [];

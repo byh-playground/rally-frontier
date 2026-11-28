@@ -1,3 +1,4 @@
+import { t, msg } from '../i18n/locale.js';
 import { CampaignMission } from '../sim/campaign-mission.js';
 
 const CUE_SECONDS = 3;
@@ -9,48 +10,69 @@ function formatCountdown(seconds) {
 }
 
 function missionGoal(stage) {
-    if (stage.boss) return `${BOSS_GOAL} · 본진 사수`;
+    if (stage.boss) return t('깜부기에 지배당한 영웅 쓰러뜨리기 · 본진 사수');
     if (stage.mission?.surviveMs)
-        return `${formatCountdown(stage.mission.surviveMs / 1000)} 버티기 · 본진과 지킬 거점 사수`;
-    if (stage.mission?.firstCapture) return '전진 거점 완공';
-    return ATTACK_GOAL;
+        return msg(
+            '{0} 버티기 · 본진과 지킬 거점 사수',
+            formatCountdown(stage.mission.surviveMs / 1000),
+        );
+    if (stage.mission?.firstCapture) return t('전진 거점 완공');
+    return t(ATTACK_GOAL);
 }
 
 // The main goal on the new campaign's briefing: a stage that asks for the first outpost first still ends on the base.
 export function briefGoal(stage) {
-    return stage.mission?.firstCapture ? `전진 거점 짓고 ${ATTACK_GOAL}` : missionGoal(stage);
+    return stage.mission?.firstCapture ? t('전진 거점 짓고 적 본진 파괴') : missionGoal(stage);
 }
 
 // The side goal as the briefing states it, before the match (the declaration, campaign.js `sideGoal`).
 export function sideGoalBrief(goal) {
     if (goal.kind === 'freeCaptives')
-        return goal.count === undefined ? '포로 모두 구하기' : `포로 ${goal.count}명 구하기`;
-    if (goal.kind === 'burnFields') return '감염 밭 모두 태우기';
-    if (goal.kind === 'withinMs') return `${formatCountdown(goal.ms / 1000)} 안에 이기기`;
-    if (goal.kind === 'lossesAtMost') return `병력 손실 ${goal.count}명 이하로 이기기`;
-    if (goal.kind === 'allReinforcements') return '주머니를 모두 깨서 증원 가득 받기';
-    return `${goal.point === undefined ? '본진' : '지킬 거점'} 체력 ${Math.round(goal.hpRatio * 100)}% 넘게 지키기`;
+        return goal.count === undefined
+            ? t('포로 모두 구하기')
+            : msg('포로 {0}명 구하기', goal.count);
+    if (goal.kind === 'burnFields') return t('감염 밭 모두 태우기');
+    if (goal.kind === 'withinMs') return msg('{0} 안에 이기기', formatCountdown(goal.ms / 1000));
+    if (goal.kind === 'lossesAtMost') return msg('병력 손실 {0}명 이하로 이기기', goal.count);
+    if (goal.kind === 'allReinforcements') return t('주머니를 모두 깨서 증원 가득 받기');
+    return msg(
+        goal.point === undefined ? '본진 체력 {0}% 넘게 지키기' : '지킬 거점 체력 {0}% 넘게 지키기',
+        Math.round(goal.hpRatio * 100),
+    );
 }
 
 // The side goal's line under the objective (SideGoal, the snapshot's `sideGoal`): what it asks and how far it is.
 function sideGoalLine(goal, tick, tps) {
     const percent = (ratio) => `${Math.round(ratio * 100)}%`;
-    let text;
-    if (goal.kind === 'freeCaptives') text = `포로 구하기 ${goal.freed}/${goal.need}`;
-    else if (goal.kind === 'burnFields')
-        text = goal.blighted ? `감염 밭 태우기 · 남은 ${goal.blighted}칸` : '감염 밭 태우기';
-    else if (goal.kind === 'withinMs')
-        text = `${formatCountdown(goal.ms / 1000)} 안에 이기기 · 남은 ${formatCountdown(
-            goal.deadlineTick === null ? goal.ms / 1000 : (goal.deadlineTick - tick) / tps,
-        )}`;
-    else if (goal.kind === 'allReinforcements') text = `증원 주머니 ${goal.broken}/${goal.total}`;
-    else if (goal.kind === 'lossesAtMost')
-        text = `병력 손실 ${goal.count}명 이하 · 지금 ${goal.lost}명`;
-    else
-        text = `${goal.point === undefined ? '본진' : '거점'} ${percent(goal.hpRatio)} 지키기 · 지금 ${percent(goal.hpNow)}`;
-    if (goal.status === 'met') return `✓ ${text.split(' · ')[0]}`;
-    if (goal.status === 'missed') return `✗ ${text.split(' · ')[0]}`;
-    return text;
+    let text, detail;
+    if (goal.kind === 'freeCaptives') {
+        text = msg('포로 구하기 {0}/{1}', goal.freed, goal.need);
+    } else if (goal.kind === 'burnFields') {
+        text = t('감염 밭 태우기');
+        if (goal.blighted) detail = msg('남은 {0}칸', goal.blighted);
+    } else if (goal.kind === 'withinMs') {
+        text = msg('{0} 안에 이기기', formatCountdown(goal.ms / 1000));
+        detail = msg(
+            '남은 {0}',
+            formatCountdown(
+                goal.deadlineTick === null ? goal.ms / 1000 : (goal.deadlineTick - tick) / tps,
+            ),
+        );
+    } else if (goal.kind === 'allReinforcements') {
+        text = msg('증원 주머니 {0}/{1}', goal.broken, goal.total);
+    } else if (goal.kind === 'lossesAtMost') {
+        text = msg('병력 손실 {0}명 이하', goal.count);
+        detail = msg('지금 {0}명', goal.lost);
+    } else {
+        text = msg(
+            goal.point === undefined ? '본진 {0} 지키기' : '거점 {0} 지키기',
+            percent(goal.hpRatio),
+        );
+        detail = msg('지금 {0}', percent(goal.hpNow));
+    }
+    if (goal.status === 'met') return `✓ ${text}`;
+    if (goal.status === 'missed') return `✗ ${text}`;
+    return detail ? `${text} · ${detail}` : text;
 }
 
 function firstShotPractice(stage, snapshot) {
@@ -64,49 +86,55 @@ function currentGoal(stage, snapshot) {
     if (practice && practice.doneTick === null)
         return {
             key: 'practice',
-            label: `써 보기 · 남은 표적 ${practice.left}`,
+            label: msg('써 보기 · 남은 표적 {0}', practice.left),
             cue: firstShotPractice(stage, snapshot)
-                ? { title: '첫 발사', text: '표적 쪽을 길게 누르고, 조준 원이 닿으면 떼세요.' }
-                : { title: '써 보기', text: stage.practice.cue },
+                ? {
+                      title: t('첫 발사'),
+                      text: t('표적 쪽을 길게 누르고, 조준 원이 닿으면 떼세요.'),
+                  }
+                : { title: t('써 보기'), text: t(stage.practice.cue) },
         };
     // The boss (BlightBoss, the snapshot's `blightBoss`): the objective's second line counts the kills left to its
     // awakening, and the awakening is the next goal with its own cue.
     if (stage.boss) {
         const left = snapshot.blightBoss?.untilAwaken ?? 0;
         return left
-            ? { key: 'boss', label: BOSS_GOAL, detail: `각성까지 ${left}명` }
+            ? { key: 'boss', label: t(BOSS_GOAL), detail: msg('각성까지 {0}명', left) }
             : {
                   key: 'boss-awakened',
-                  label: BOSS_GOAL,
-                  detail: '각성했어요',
-                  cue: { title: '영웅 각성', text: '깜부기 영웅이 각성했어요. 계속 몰아붙이세요!' },
+                  label: t(BOSS_GOAL),
+                  detail: t('각성했어요'),
+                  cue: {
+                      title: t('영웅 각성'),
+                      text: t('깜부기 영웅이 각성했어요. 계속 몰아붙이세요!'),
+                  },
               };
     }
     const mission = snapshot.campaignMission;
     if (stage.mission?.surviveMs) {
-        if (mission?.phase === 'complete') return { key: 'complete', label: '버티기 성공' };
+        if (mission?.phase === 'complete') return { key: 'complete', label: t('버티기 성공') };
         const count = stage.mission.waves.length,
             wave = (mission?.waveIndex ?? -1) + 1;
         return {
             key: `wave-${wave}`,
             // A defence whose attacks all come by spore cloud (SporeCloud) has no waves to count.
-            label: wave ? `${wave} / ${count}차 공격` : count ? '공격 대기' : '버티기',
+            label: wave ? msg('{0} / {1}차 공격', wave, count) : t(count ? '공격 대기' : '버티기'),
             // Ticks left on the mission's clock (held while a practice runs).
             timerTicks: mission ? mission.endTick - CampaignMission.clock(snapshot) : null,
             ...(wave && {
                 cue: {
-                    title: `${wave}차 공격`,
+                    title: msg('{0}차 공격', wave),
                     text:
                         wave === count
-                            ? '마지막 공격이에요. 끝까지 버티세요!'
-                            : '지킬 거점을 막으세요.',
+                            ? t('마지막 공격이에요. 끝까지 버티세요!')
+                            : t('지킬 거점을 막으세요.'),
                 },
             }),
         };
     }
     if (stage.mission?.firstCapture && !mission?.firstCaptureComplete)
-        return { key: 'first-capture', label: '전진 거점 완공' };
-    return { key: 'attack', label: ATTACK_GOAL };
+        return { key: 'first-capture', label: t('전진 거점 완공') };
+    return { key: 'attack', label: t(ATTACK_GOAL) };
 }
 
 // The spore clouds under warning, one entry per arrival: the cloud's formations that come on the same tick are one
@@ -166,16 +194,16 @@ export class CampaignPresentation {
             };
             $('campaignObjective').classList.remove('hidden');
             if (goal.key === 'practice') this.showCue(goal.cue.title, goal.cue.text, tick, tps);
-            else this.showCue('전투 목표', missionGoal(stage), tick, tps);
+            else this.showCue(t('전투 목표'), missionGoal(stage), tick, tps);
         } else if (this.battle.goal !== goal.key) {
             const after = this.battle.goal;
             this.battle.goal = goal.key;
             // The practice is over: the stage's own mission starts now.
-            if (after === 'practice') this.showCue('전투 목표', missionGoal(stage), tick, tps);
+            if (after === 'practice') this.showCue(t('전투 목표'), missionGoal(stage), tick, tps);
             else if (!this.battle.announced.has(goal.key)) {
                 this.battle.announced.add(goal.key);
                 this.showCue(
-                    goal.cue?.title ?? '다음 목표',
+                    goal.cue?.title ?? t('다음 목표'),
                     goal.cue?.text ?? goal.label,
                     tick,
                     tps,
@@ -192,7 +220,7 @@ export class CampaignPresentation {
             detail =
                 goal.timerTicks == null
                     ? goal.detail
-                    : `남은 시간 ${formatCountdown(goal.timerTicks / tps)}`;
+                    : msg('남은 시간 {0}', formatCountdown(goal.timerTicks / tps));
         timer.hidden = detail == null;
         if (!timer.hidden && timer.textContent !== detail) timer.textContent = detail;
         // The side goal's own line, and a short cue the moment it is met.
@@ -206,7 +234,12 @@ export class CampaignPresentation {
         if (side && side.status !== this.battle.sideStatus) {
             this.battle.sideStatus = side.status;
             if (side.status === 'met')
-                this.showCue('보조 목표 달성', sideGoalLine(side, tick, tps).slice(2), tick, tps);
+                this.showCue(
+                    t('보조 목표 달성'),
+                    sideGoalLine(side, tick, tps).slice(2),
+                    tick,
+                    tps,
+                );
         }
         // The cue line shows the goal's cue while that runs. After it, a spore cloud drifting in (SporeCloud, the
         // snapshot's `sporeCloud.coming`) is announced for as long as any cloud is under warning. The cloud keeps
@@ -216,12 +249,21 @@ export class CampaignPresentation {
             goalCue = shortCue || goal.key === 'practice',
             cloudCue = !goalCue && snapshot.sporeCloud?.coming.length > 0;
         if (goalCue || cloudCue) {
-            const title = shortCue ? this.battle.cueTitle : goalCue ? goal.cue.title : '포자 구름',
+            const title = shortCue
+                    ? this.battle.cueTitle
+                    : goalCue
+                      ? goal.cue.title
+                      : t('포자 구름'),
                 text = shortCue
                     ? this.battle.cueText
                     : goalCue
                       ? goal.cue.text
-                      : `포자 구름이 ${Math.min(...sporeCloudAlerts(snapshot, tps).map((alert) => alert.seconds))}초 뒤 도착해요`;
+                      : msg(
+                            '포자 구름이 {0}초 뒤 도착해요',
+                            Math.min(
+                                ...sporeCloudAlerts(snapshot, tps).map((alert) => alert.seconds),
+                            ),
+                        );
             if ($('campaignCueTitle').textContent !== title)
                 $('campaignCueTitle').textContent = title;
             if ($('campaignCueText').textContent !== text) $('campaignCueText').textContent = text;

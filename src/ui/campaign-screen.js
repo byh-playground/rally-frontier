@@ -1,3 +1,4 @@
+import { t, msg } from '../i18n/locale.js';
 import { SUNSHINE } from '../definitions/roster.js';
 import { CAMPAIGN_DECK_LIMIT } from '../definitions/campaign-deck.js';
 import { CampaignActs } from './campaign-acts.js';
@@ -30,9 +31,9 @@ const escape = (text) =>
 // The result (`result: true`) tells the stage's `after` as the main story when it declares one.
 export function storyMarkup(stage, { brief = false, result = false } = {}) {
     const { text, brief: mission, captain, after } = stage.story;
-    if (result && after) return `<p class="cs-main">${escape(after)}</p>`;
-    const sub = `${brief ? `<p class="cs-brief-line"><b>작전</b><span>${escape(mission)}</span></p>` : ''}<p class="cs-say">${CAPTAIN_MARKUP}<span><b>사령관</b>${escape(captain)}</span></p>`;
-    return `<p class="cs-main">${escape(text)}</p><div class="cs-sub">${sub}</div>`;
+    if (result && after) return `<p class="cs-main">${escape(t(after))}</p>`;
+    const sub = `${brief ? `<p class="cs-brief-line"><b>${escape(t('작전'))}</b><span>${escape(t(mission))}</span></p>` : ''}<p class="cs-say">${CAPTAIN_MARKUP}<span><b>${escape(t('사령관'))}</b>${escape(t(captain))}</span></p>`;
+    return `<p class="cs-main">${escape(t(text))}</p><div class="cs-sub">${sub}</div>`;
 }
 
 export class CampaignScreen {
@@ -52,6 +53,7 @@ export class CampaignScreen {
 
     static show(on) {
         this.$('campaignScreen').classList.toggle('hidden', !on);
+        this.$('lobby').inert = on;
     }
 
     // Draws the screen of one address. Returns false for an address that cannot open (a locked chapter).
@@ -103,7 +105,7 @@ export class CampaignScreen {
     }
 
     static renderIntro() {
-        this.header('캠페인', () => this.nav.title());
+        this.header(t('캠페인'), () => this.nav.title());
         const body = this.$('campaignScreenBody');
         body.className = 'cs-body cs-intro';
         body.innerHTML = `<div class="cs-scroll" role="region" aria-labelledby="csIntroTitle" tabindex="0">
@@ -112,12 +114,12 @@ export class CampaignScreen {
             freed: true,
             size: 96,
         })}${this.portrait('rice', { freed: false, size: 96 })}</div>
-        <h3 id="csIntroTitle" class="cs-title">논두렁에 번진 깜부기</h3>
-        <p><strong>깜부기는 곡식에 번지는 병이다.</strong> 병에 걸린 곡식들은 깜부기에 지배당해 자기 동료까지 공격한다.</p>
-        <p>논두렁에도 깜부기가 번졌다. 정찰병 쌀은 논두렁을 되찾고 동료들을 구하러 나선다.</p>
+        <h3 id="csIntroTitle" class="cs-title">${escape(t('논두렁에 번진 깜부기'))}</h3>
+        <p><strong>${escape(t('깜부기는 곡식에 번지는 병이다.'))}</strong> ${escape(t('병에 걸린 곡식들은 깜부기에 지배당해 자기 동료까지 공격한다.'))}</p>
+        <p>${escape(t('논두렁에도 깜부기가 번졌다. 정찰병 쌀은 논두렁을 되찾고 동료들을 구하러 나선다.'))}</p>
     </section>
 </div>
-<div class="cs-go-row"><button type="button" class="launch-btn primary cs-go">캠페인으로</button></div>`;
+<div class="cs-go-row"><button type="button" class="launch-btn primary cs-go">${escape(t('캠페인으로'))}</button></div>`;
         this.fillPortraits(body);
         const next = body.querySelector('.cs-go');
         next.onclick = async () => {
@@ -128,7 +130,7 @@ export class CampaignScreen {
     }
 
     static renderHome() {
-        this.header('캠페인', () => this.nav.title());
+        this.header(t('캠페인'), () => this.nav.title());
         const parts = [];
         const regions = CampaignActs.chapters.filter((chapter) => chapter.region);
         for (const chapter of CampaignActs.chapters) {
@@ -149,13 +151,13 @@ export class CampaignScreen {
     static actRowMarkup(chapter) {
         const open = CampaignActs.isChapterOpen(chapter, this.cleared);
         if (!open)
-            return `<div class="cs-act is-locked"><span class="cs-lock" aria-hidden="true">?</span><div><h3>${chapter.title}</h3><p class="cs-meta">${
-                chapter.act === 3 ? '세 고장을 모두 해방하면 열려요' : '앞 막을 해방하면 열려요'
-            }</p></div></div>`;
+            return `<div class="cs-act is-locked"><span class="cs-lock" aria-hidden="true">?</span><div><h3>${escape(t(chapter.title))}</h3><p class="cs-meta">${escape(
+                t(chapter.act === 3 ? '세 고장을 모두 해방하면 열려요' : '앞 막을 해방하면 열려요'),
+            )}</p></div></div>`;
         const done = this.clearedCount(chapter),
             total = chapter.stages.length;
-        return `<button type="button" class="cs-act" data-chapter="${chapter.id}"><div><h3>${chapter.title}</h3><p class="cs-meta">${done} / ${total}${
-            done === total ? ' · 해방 완료' : ''
+        return `<button type="button" class="cs-act" data-chapter="${chapter.id}"><div><h3>${escape(t(chapter.title))}</h3><p class="cs-meta">${done} / ${total}${
+            done === total ? escape(t(' · 해방 완료')) : ''
         }</p></div><span class="cs-row">${chapter.stages
             .map((stage) =>
                 this.portrait(this.stageArt(stage), {
@@ -175,21 +177,21 @@ export class CampaignScreen {
                 total = chapter.stages.length,
                 boss = chapter.stages.at(-1),
                 place = roster.regionPlace(chapter.id);
-            const order = place ? `${place}번째` : `지금 가면 ${nextPlace}번째`;
+            const order = place ? msg('{0}번째', place) : msg('지금 가면 {0}번째', nextPlace);
             return `<button type="button" class="cs-region${done === total ? ' is-freed' : ''}" ${
                 open ? `data-chapter="${chapter.id}"` : 'disabled'
-            }><span class="cs-band">${chapter.title}</span><span class="cs-blurb">${chapter.region.blurb}</span><span class="cs-boss">${this.portrait(
+            }><span class="cs-band">${escape(t(chapter.title))}</span><span class="cs-blurb">${escape(t(chapter.region.blurb))}</span><span class="cs-boss">${this.portrait(
                 this.stageArt(boss),
                 { freed: this.cleared.has(boss.id), size: 96 },
             )}</span><span class="cs-prog">${done} / ${total}</span><span class="cs-bar"><i style="width:${
                 (done / total) * 100
-            }%"></i></span><span class="cs-order">${open ? order : '1막을 해방하면 열려요'}</span></button>`;
+            }%"></i></span><span class="cs-order">${escape(open ? order : t('1막을 해방하면 열려요'))}</span></button>`;
         });
-        return `<p class="cs-label"><b>2막 · 세 고장</b><span>늦게 가는 고장일수록 적이 세져요</span></p><div class="cs-regions">${cards.join('')}</div>`;
+        return `<p class="cs-label"><b>${escape(t('2막 · 세 고장'))}</b><span>${escape(t('늦게 가는 고장일수록 적이 세져요'))}</span></p><div class="cs-regions">${cards.join('')}</div>`;
     }
 
     static renderChapter(chapter, stageId, scrollTop = 0) {
-        this.header(chapter.title, () => this.nav.home());
+        this.header(t(chapter.title), () => this.nav.home());
         const stages = chapter.stages,
             picked =
                 stages.find((stage) => stage.id === stageId) ??
@@ -198,26 +200,31 @@ export class CampaignScreen {
         const roster = this.actions.roster,
             done = this.clearedCount(chapter);
         const kicker = chapter.region
-            ? `2막 · ${roster.regionPlace(chapter.id) || (roster.campaign?.regionOrder.length ?? 0) + 1}번째 고장 · ${done}/${stages.length} 해방`
-            : `${chapter.act}막 · ${done}/${stages.length} 해방`;
+            ? msg(
+                  '2막 · {0}번째 고장 · {1}/{2} 해방',
+                  roster.regionPlace(chapter.id) || (roster.campaign?.regionOrder.length ?? 0) + 1,
+                  done,
+                  stages.length,
+              )
+            : msg('{0}막 · {1}/{2} 해방', chapter.act, done, stages.length);
         const nodes = stages.map((stage, index) => {
             const cleared = this.cleared.has(stage.id),
                 open = CampaignActs.isOpen(stage, this.cleared),
                 last = chapter.region && index === stages.length - 1;
             return `<button type="button" class="cs-node${cleared ? ' is-done' : ''}${stage === picked ? ' is-picked' : ''}" data-stage="${stage.id}" ${
                 open ? '' : 'disabled'
-            } aria-label="${index + 1}판 ${escape(stage.title)}${cleared ? ', 해방' : open ? '' : ', 잠김'}"><span class="cs-disc">${this.portrait(
+            } aria-label="${escape(msg('{0}판 {1}', index + 1, t(stage.title)) + (cleared ? t(', 해방') : open ? '' : t(', 잠김')))}"><span class="cs-disc">${this.portrait(
                 this.stageArt(stage),
                 { freed: cleared, size: 38 },
-            )}</span>${cleared ? this.marksMarkup(stage, true) : `<span class="cs-num">${last ? '보스' : index + 1}</span>`}</button>`;
+            )}</span>${cleared ? this.marksMarkup(stage, true) : `<span class="cs-num">${last ? escape(t('보스')) : index + 1}</span>`}</button>`;
         });
         const body = this.$('campaignScreenBody');
         body.className = 'cs-body cs-chapter';
-        body.innerHTML = `<div class="cs-scroll" role="region" aria-label="판 선택과 브리핑" tabindex="0"><p class="cs-kicker">${kicker}</p><div class="cs-track">${nodes.join('')}</div><section class="cs-brief" aria-labelledby="csStageTitle">${this.briefMarkup(
+        body.innerHTML = `<div class="cs-scroll" role="region" aria-label="${escape(t('판 선택과 브리핑'))}" tabindex="0"><p class="cs-kicker">${escape(kicker)}</p><div class="cs-track">${nodes.join('')}</div><section class="cs-brief" aria-labelledby="csStageTitle">${this.briefMarkup(
             picked,
             stages.indexOf(picked),
         )}</section></div>
-<div class="cs-go-row"><div class="campaign-difficulty" role="group" aria-label="적 난이도"></div><button type="button" class="launch-btn primary cs-go">출격</button></div>`;
+<div class="cs-go-row"><div class="campaign-difficulty" role="group" aria-label="${escape(t('적 난이도'))}"></div><button type="button" class="launch-btn primary cs-go">${escape(t('출격'))}</button></div>`;
         for (const node of body.querySelectorAll('[data-stage]'))
             node.onclick = () => this.nav.chapter(chapter.id, node.dataset.stage);
         this.difficulty(body.querySelector('.campaign-difficulty'));
@@ -252,35 +259,35 @@ export class CampaignScreen {
         const got = this.marksOf(stage);
         return `<span class="cs-pips${small ? ' is-small' : ''}">${MARKS.map(
             ([glyph, label], i) =>
-                `<i class="cs-pip${got[i] ? ' is-on' : ''}" title="${label}">${glyph}</i>`,
+                `<i class="cs-pip${got[i] ? ' is-on' : ''}" title="${escape(t(label))}">${glyph}</i>`,
         ).join('')}</span>`;
     }
 
     // The stage's current deck as a row of portraits; it opens the campaign deck editor.
     static deckMarkup(stage) {
         const deck = this.actions.campaignDeckOf(stage);
-        return `<button type="button" class="cs-deck" aria-label="이 판의 덱 편성, ${deck.length} / ${CAMPAIGN_DECK_LIMIT}칸"><b>내 덱</b><span class="cs-deck-row">${deck
+        return `<button type="button" class="cs-deck" aria-label="${escape(msg('이 판의 덱 편성, {0} / {1}칸', deck.length, CAMPAIGN_DECK_LIMIT))}"><b>${escape(t('내 덱'))}</b><span class="cs-deck-row">${deck
             .map((type) => this.portrait(type, { freed: true, size: 28 }))
             .join('')}</span><em>${deck.length}/${CAMPAIGN_DECK_LIMIT} ✎</em></button>`;
     }
 
     static briefMarkup(stage, index) {
         const got = this.marksOf(stage);
-        const goals = `<ul class="cs-goals"><li><b>주 목표</b><span>${briefGoal(stage)}</span></li>${
+        const goals = `<ul class="cs-goals"><li><b>${escape(t('주 목표'))}</b><span>${escape(briefGoal(stage))}</span></li>${
             stage.sideGoal
-                ? `<li><b class="is-side">보조</b><span>${sideGoalBrief(stage.sideGoal)}</span></li>`
+                ? `<li><b class="is-side">${escape(t('보조'))}</b><span>${escape(sideGoalBrief(stage.sideGoal))}</span></li>`
                 : ''
         }</ul>`;
         const reward = stage.rewardCard
-            ? `<div class="cs-join">${this.portrait(stage.rewardCard, { freed: got[0], size: 48 })}<span>${
-                  got[0] ? '합류함' : '합류'
-              }<b>${this.actions.grainName(stage.rewardCard)}</b></span></div>`
+            ? `<div class="cs-join">${this.portrait(stage.rewardCard, { freed: got[0], size: 48 })}<span>${escape(
+                  t(got[0] ? '합류함' : '합류'),
+              )}<b>${escape(t(this.actions.grainName(stage.rewardCard)))}</b></span></div>`
             : '';
         const rows = MARKS.map(
             ([glyph, label, key], i) =>
-                `<li class="${got[i] ? 'is-got' : ''}"><i class="cs-pip${got[i] ? ' is-on' : ''}">${glyph}</i><span>${label}</span><em>☀ ${SUNSHINE[key]}</em></li>`,
+                `<li class="${got[i] ? 'is-got' : ''}"><i class="cs-pip${got[i] ? ' is-on' : ''}">${glyph}</i><span>${escape(t(label))}</span><em>☀ ${SUNSHINE[key]}</em></li>`,
         ).join('');
-        return `<div><p class="cs-kicker">${index + 1}판</p><h3 id="csStageTitle" class="cs-title">${escape(stage.title)}</h3></div>
+        return `<div><p class="cs-kicker">${escape(msg('{0}판', index + 1))}</p><h3 id="csStageTitle" class="cs-title">${escape(t(stage.title))}</h3></div>
 <div class="cs-story">${storyMarkup(stage, { brief: true })}</div>
 ${goals}
 <div class="cs-reward">${reward}<ul>${rows}</ul></div>

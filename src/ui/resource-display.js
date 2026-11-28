@@ -1,3 +1,4 @@
+import { locale, msg, t } from '../i18n/locale.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 
 // Shared display rules for both currencies. Amounts are owned by the simulation.
@@ -6,12 +7,25 @@ export const RESOURCES = Object.freeze([
     { key: 'premium', name: '기름', symbol: '✦', color: '#f6ca76', costKey: 'premiumCost' },
 ]);
 
+function translatePointLabel(label) {
+    const numbered = /^(.+) (\d+)$/.exec(label);
+    return numbered ? `${t(numbered[1])} ${numbered[2]}` : t(label);
+}
+
 export class ResourceDisplay {
+    static pointLabel(point) {
+        return translatePointLabel(point.label || point.lane);
+    }
+
     static depositName(point, kind) {
         // Map descriptors are part of match identity, so translate their stored names at display time.
         const label = point.label || point.lane;
         const name = kind.key === 'basic' ? label.replace(/보급(?= 거점$)/, kind.name) : label;
-        return name.includes(kind.name) ? name : `${name} ${kind.name} 거점`;
+        const display = translatePointLabel(name);
+        if (name.includes(kind.name)) return display;
+        return locale === 'en' && / 거점(?: \d+)?$/.test(name)
+            ? `${display} · ${t(kind.name)}`
+            : msg('{0} {1} 거점', display, t(kind.name));
     }
 
     static rateText(rate) {
@@ -22,13 +36,16 @@ export class ResourceDisplay {
         if (!host.childElementCount) {
             host.innerHTML = RESOURCES.map(
                 ({ key, symbol, name }) =>
-                    `<div class="launch-resource" data-resource="${key}"><span class="launch-resource-name">${symbol} ${name}</span><b class="launch-resource-balance"></b><span class="launch-resource-meter" aria-hidden="true"><span></span></span><span class="launch-resource-state"></span>${key === 'basic' ? '<span class="launch-resource-state launch-base-income"></span>' : ''}</div>`,
+                    `<div class="launch-resource" data-resource="${key}"><span class="launch-resource-name">${symbol} ${t(name)}</span><b class="launch-resource-balance"></b><span class="launch-resource-meter" aria-hidden="true"><span></span></span><span class="launch-resource-state"></span>${key === 'basic' ? '<span class="launch-resource-state launch-base-income"></span>' : ''}</div>`,
             ).join('');
         }
         const producers = [...s.baseProducers, ...s.capturePoints];
         const base = s.baseProducers[side];
-        host.querySelector('.launch-base-income').textContent =
-            `본진 효율 ${LaunchRules.productionEfficiency(base)}% · +${this.rateText(LaunchRules.productionRate(base, 'basic'))}/초`;
+        host.querySelector('.launch-base-income').textContent = msg(
+            '본진 효율 {0}% · +{1}/초',
+            LaunchRules.productionEfficiency(base),
+            this.rateText(LaunchRules.productionRate(base, 'basic')),
+        );
         for (const [index, { key }] of RESOURCES.entries()) {
             const panel = host.children[index];
             const cap = key === 'premium' ? LaunchRules.premiumWalletCap : LaunchRules.walletCap;
@@ -41,10 +58,10 @@ export class ResourceDisplay {
             );
             panel.querySelector('.launch-resource-state').textContent =
                 rate > 0
-                    ? `+${this.rateText(rate)}/초${amount >= cap ? ' · 한도 대기' : ''}`
+                    ? msg('+{0}/초', this.rateText(rate)) + (amount >= cap ? t(' · 한도 대기') : '')
                     : key === 'premium'
-                      ? '기름 거점 필요'
-                      : '수입 없음';
+                      ? t('기름 거점 필요')
+                      : t('수입 없음');
         }
     }
 
@@ -86,8 +103,8 @@ export class ResourceDisplay {
     static costText(price, named = false) {
         return (
             this.costs(price)
-                .map(({ name, symbol, amount }) => `${named ? name : symbol} ${amount}`)
-                .join(' · ') || '무료'
+                .map(({ name, symbol, amount }) => `${named ? t(name) : symbol} ${amount}`)
+                .join(' · ') || t('무료')
         );
     }
 
@@ -97,7 +114,7 @@ export class ResourceDisplay {
 
     static shortageText(price, balance) {
         return this.shortfalls(price, balance)
-            .map(({ key, name, amount }) => `${name} ${amount - balance[key]} 부족`)
+            .map(({ key, name, amount }) => msg('{0} {1} 부족', t(name), amount - balance[key]))
             .join(' · ');
     }
 
@@ -108,7 +125,7 @@ export class ResourceDisplay {
                     ({ key, symbol, amount }) =>
                         `<span data-cost-resource="${key}">${symbol} ${amount}</span>`,
                 )
-                .join('') || '무료'
+                .join('') || t('무료')
         );
     }
 }

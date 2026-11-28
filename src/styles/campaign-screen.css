@@ -28,6 +28,10 @@
     margin: 0;
     font-size: 21px;
 }
+#campaignScreenSunshine {
+    flex: none;
+    white-space: nowrap;
+}
 .cs-back {
     font-size: 28px;
     line-height: 1;
@@ -538,8 +542,45 @@
     }
 }
 @media (orientation: landscape) and (max-height: 640px) {
-    .campaign-screen:has(.cs-chapter, .cs-intro) {
+    .campaign-screen {
         width: min(100vw, 420px);
+    }
+    .cs-home {
+        overflow: auto;
+        overscroll-behavior: contain;
+    }
+    .cs-regions {
+        flex-basis: 78px;
+        flex-shrink: 0;
+    }
+    .cs-region {
+        display: grid;
+        grid-template-columns: 38px minmax(0, 1fr);
+        grid-template-rows: auto 1fr auto auto;
+        column-gap: 4px;
+        row-gap: 2px;
+        padding-bottom: 4px;
+    }
+    .cs-region .cs-band {
+        grid-column: 1 / -1;
+        padding: 4px;
+        font-size: 13px;
+    }
+    .cs-boss {
+        grid-row: 2 / 5;
+        place-self: center;
+    }
+    .cs-boss .cs-portrait {
+        width: 38px;
+        height: 38px;
+    }
+    .cs-prog,
+    .cs-bar,
+    .cs-order {
+        grid-column: 2;
+    }
+    .cs-bar {
+        height: 4px;
     }
     .cs-prologue {
         display: grid;
@@ -629,6 +670,15 @@
     font-size: 12px;
     font-weight: 800;
 }
+#campaignDeckDialog:lang(en) .deck-card b,
+#campaignDeckDialog:lang(en) .deck-slot span {
+    overflow-wrap: anywhere;
+}
+@media (max-width: 400px) {
+    #campaignDeckDialog:lang(en) .deck-card b {
+        font-size: 11px;
+    }
+}
 .deck-card[data-required] {
     border-color: #8aa87a;
     background: #e6efd6;
@@ -691,8 +741,21 @@
     padding: 0 10px;
     font-size: 13px;
 }
+@media (max-width: 400px) {
+    #campaignUpgradeDialog:lang(en) .campaign-upgrade-open.launch-btn {
+        max-width: 80px;
+        height: auto;
+        min-height: 32px;
+        padding: 4px 7px;
+        text-wrap: balance;
+    }
+}
 .campaign-upgrade-empty {
     margin: 0;
     color: #5d7050;
     font-size: 14px;
+}
+
+#lobby[inert] {
+    visibility: hidden;
 }

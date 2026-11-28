@@ -1,4 +1,5 @@
 // Approved bean artwork is assembled once into a shared texture; poses are evaluated by GameKit.
+import { msg, t } from '../i18n/locale.js';
 import { GRAIN_RIG as RICE_RIG } from './grain-rig.js';
 import { drawUnitQuads } from './dead-unit-look.js';
 const root = new URL('../../assets/sprites/beans/', import.meta.url);
@@ -21,7 +22,7 @@ const slots = Object.freeze({
 const cache = new WeakMap();
 export async function loadBeanSpriteCanvases() {
     const response = await fetch(new URL('manifest.json', root), { cache: 'no-store' });
-    if (!response.ok) throw new Error('콩·팥 스프라이트 목록을 불러오지 못했습니다.');
+    if (!response.ok) throw new Error(t('콩·팥 스프라이트 목록을 불러오지 못했습니다.'));
     const manifest = await response.json();
     const expected = Object.keys(slots)
         .map((name) => name + '.png')
@@ -31,7 +32,7 @@ export async function loadBeanSpriteCanvases() {
         !manifest.assets ||
         JSON.stringify(Object.keys(manifest.assets).sort()) !== JSON.stringify(expected)
     )
-        throw new Error('콩·팥 스프라이트 목록이 올바르지 않습니다.');
+        throw new Error(t('콩·팥 스프라이트 목록이 올바르지 않습니다.'));
     const images = await Promise.all(
         Object.keys(slots).map(async (name) => {
             const file = name + '.png',
@@ -43,16 +44,17 @@ export async function loadBeanSpriteCanvases() {
                 entry.bytes > 524288 ||
                 !/^[a-f0-9]{64}$/.test(entry.sha256 || '')
             )
-                throw new Error('콩·팥 스프라이트 정보가 잘못되었습니다: ' + name);
+                throw new Error(msg('콩·팥 스프라이트 정보가 잘못되었습니다: {0}', name));
             const result = await fetch(new URL(file, root), { cache: 'no-cache' });
-            if (!result.ok) throw new Error('콩·팥 스프라이트를 불러오지 못했습니다: ' + name);
+            if (!result.ok)
+                throw new Error(msg('콩·팥 스프라이트를 불러오지 못했습니다: {0}', name));
             const bytes = await result.arrayBuffer();
             const hash = Array.from(
                 new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
                 (b) => b.toString(16).padStart(2, '0'),
             ).join('');
             if (bytes.byteLength !== entry.bytes || hash !== entry.sha256)
-                throw new Error('콩·팥 스프라이트 무결성 오류: ' + name);
+                throw new Error(msg('콩·팥 스프라이트 무결성 오류: {0}', name));
             const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
             try {
                 const image = new Image();
@@ -102,7 +104,7 @@ export function beanSpritePortrait(canvas, bean, width) {
 function acquire(context, canvas) {
     let entry = cache.get(context);
     if (entry) {
-        if (entry.canvas !== canvas) throw new Error('콩·팥 공유 아틀라스가 일치하지 않습니다.');
+        if (entry.canvas !== canvas) throw new Error(t('콩·팥 공유 아틀라스가 일치하지 않습니다.'));
         entry.refs++;
         return entry;
     }
@@ -205,7 +207,7 @@ export class BeanSpriteRenderer {
                     morph: owner.morph,
                 });
                 if (!this.pose)
-                    throw new Error('콩·팥 스프라이트에 GPU 포즈를 사용할 수 없습니다.');
+                    throw new Error(t('콩·팥 스프라이트에 GPU 포즈를 사용할 수 없습니다.'));
                 return this.pose;
             },
             dispose() {

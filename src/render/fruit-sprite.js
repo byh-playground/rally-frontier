@@ -1,3 +1,4 @@
+import { msg, t } from '../i18n/locale.js';
 import { createHeroBasicAttackClip } from './hero-basic-motion.js';
 import { drawUnitQuads } from './dead-unit-look.js';
 
@@ -70,7 +71,7 @@ function fruitRig(layers, armId) {
 
 async function readAsset(root, name) {
     const response = await fetch(new URL(name, root), { cache: 'no-cache' });
-    if (!response.ok) throw new Error('과일 영웅 스프라이트를 불러오지 못했습니다: ' + name);
+    if (!response.ok) throw new Error(msg('과일 영웅 스프라이트를 불러오지 못했습니다: {0}', name));
     return response;
 }
 
@@ -92,7 +93,7 @@ export async function loadFruitSpriteCanvas(type, rig) {
         spec.bytes !== bytes.byteLength ||
         spec.sha256 !== hash
     )
-        throw new Error('과일 영웅 SVG 무결성 오류: ' + type);
+        throw new Error(msg('과일 영웅 SVG 무결성 오류: {0}', type));
     const url = URL.createObjectURL(new Blob([bytes], { type: 'image/svg+xml' }));
     try {
         const image = new Image();
@@ -102,7 +103,7 @@ export async function loadFruitSpriteCanvas(type, rig) {
         canvas.width = image.naturalWidth;
         canvas.height = image.naturalHeight;
         if (canvas.width !== layout.sheet[0] || canvas.height !== layout.sheet[1])
-            throw new Error('과일 영웅 스프라이트 시트 크기가 다릅니다: ' + type);
+            throw new Error(msg('과일 영웅 스프라이트 시트 크기가 다릅니다: {0}', type));
         const layers = rig.layers(layout);
         for (const {
             slot: [x, y, width, height],
@@ -115,7 +116,7 @@ export async function loadFruitSpriteCanvas(type, rig) {
                 x + width > canvas.width ||
                 y + height > canvas.height
             )
-                throw new Error('과일 영웅 스프라이트 파츠가 시트를 벗어났습니다: ' + type);
+                throw new Error(msg('과일 영웅 스프라이트 파츠가 시트를 벗어났습니다: {0}', type));
         }
         canvas.getContext('2d').drawImage(image, 0, 0);
         artwork.set(canvas, { rig, layout, layers });
@@ -287,7 +288,7 @@ export class FruitSpriteRenderer {
                     visible,
                     morph: [0, 0],
                 });
-                if (!this.pose) throw new Error('과일 영웅의 GPU 포즈를 준비하지 못했습니다.');
+                if (!this.pose) throw new Error(t('과일 영웅의 GPU 포즈를 준비하지 못했습니다.'));
                 return this.pose;
             },
             dispose() {

@@ -1,5 +1,6 @@
 // Background tick sessions, the active view and the network module loader.
 import { LogUtil, UiController, UiRegistry } from '../main.js';
+import { msg, t } from '../i18n/locale.js';
 
 /* =========================
    Background simulation ticker
@@ -35,16 +36,20 @@ class NetworkModuleLoader {
             return true;
         }
         NetworkModuleLoader.networkLoadState = 'error';
-        NetworkModuleLoader.networkLoadError = 'URL 네트워크 모듈이 준비되지 않았습니다.';
+        NetworkModuleLoader.networkLoadError = t('URL 네트워크 모듈이 준비되지 않았습니다.');
         LogUtil.status('온라인 네트워크 모듈 준비 실패');
         if (UiRegistry.refs.createDialog.open) {
-            UiRegistry.refs.createStatus.textContent =
-                NetworkModuleLoader.networkLoadError + ' 최신 HTML을 다시 열어 주세요.';
+            UiRegistry.refs.createStatus.textContent = msg(
+                '{0} 최신 HTML을 다시 열어 주세요.',
+                NetworkModuleLoader.networkLoadError,
+            );
             UiController.setElementVisible(UiRegistry.refs.createRetry, true);
         }
         if (UiRegistry.refs.joinDialog.open)
-            UiRegistry.refs.joinError.textContent =
-                NetworkModuleLoader.networkLoadError + ' 최신 HTML을 다시 열어 주세요.';
+            UiRegistry.refs.joinError.textContent = msg(
+                '{0} 최신 HTML을 다시 열어 주세요.',
+                NetworkModuleLoader.networkLoadError,
+            );
         return false;
     }
 

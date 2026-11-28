@@ -1,3 +1,5 @@
+import './i18n/shell.js';
+import { locale, msg, t as translate } from './i18n/locale.js';
 import { RESOURCES, ResourceDisplay } from './ui/resource-display.js';
 import { campaignStage } from './definitions/campaign.js';
 import { PVP_MAP_POOL, RangeUtil, SIM_TPS } from './core/game-rules.js';
@@ -978,7 +980,11 @@ class GLRenderer {
             const limit = this.device.maxArrayTextureLayers;
             this.device.dispose();
             throw new Error(
-                `게임 그래픽을 준비하려면 텍스처 레이어 ${this.webglAttrs.textureAtlas.layers}장이 필요하지만 이 기기는 ${limit}장까지 지원합니다.`,
+                msg(
+                    '게임 그래픽을 준비하려면 텍스처 레이어 {0}장이 필요하지만 이 기기는 {1}장까지 지원합니다.',
+                    this.webglAttrs.textureAtlas.layers,
+                    limit,
+                ),
             );
         }
         this.vectorContext = new RallyGamekit.VectorContext(this.device, {
@@ -1047,7 +1053,8 @@ class GLRenderer {
             stencil: false,
             colorMask: [true, true, true, true],
         };
-        if (!this.gl) throw new Error('쌀콩팡! requires WebGL for battlefield rendering.');
+        if (!this.gl)
+            throw new Error(translate('쌀콩팡! requires WebGL for battlefield rendering.'));
         this.backend = 'WebGL';
         this.canvas.dataset.rendererBackend = this.backend;
 
@@ -1387,7 +1394,7 @@ class GLRenderer {
             this.paintedShells ||= new PaintedShells(C, globalThis.RallyShellImage);
             this.grainFaces.prepare();
             this.combatFxLook.prepare();
-            if (!C.beginFrame()) throw new Error('그래픽 장치를 준비할 수 없습니다.');
+            if (!C.beginFrame()) throw new Error(translate('그래픽 장치를 준비할 수 없습니다.'));
             // The blight ring's screen-width stroke needs a real CSS viewport.
             if (this.canvas.clientWidth > 0 && this.canvas.clientHeight > 0) {
                 for (const ring of Object.values(this.grainTeamRings)) C.drawMesh(ring);
@@ -1472,7 +1479,7 @@ class GLRenderer {
             this.device.clear({ color: [0, 0, 0, 0] });
             this.gl.finish();
             if (this.device.state !== 'ready' || this.gl.isContextLost())
-                throw new Error('그래픽 장치 연결이 끊겼습니다.');
+                throw new Error(translate('그래픽 장치 연결이 끊겼습니다.'));
             this.gameResourceHolds = holds;
         } catch (error) {
             if (C.active) C.endFrame();
@@ -3668,7 +3675,7 @@ class GLRenderer {
                     continue;
                 }
                 kind = 'dodge';
-                text = '빗나감';
+                text = translate('빗나감');
             } else if (e.type === 'heroLevelUp') {
                 // A hero's level-up rises above it in gold (HeroGrowth).
                 if (!this.eventVisible(e)) {
@@ -3957,15 +3964,15 @@ class GLRenderer {
             );
             const owner = visibleConstruction
                 ? outpost.side === side
-                    ? '아군 건설 중'
-                    : '적 건설 중'
+                    ? translate('아군 건설 중')
+                    : translate('적 건설 중')
                 : cp.owner === side
-                  ? '아군 거점'
+                  ? translate('아군 거점')
                   : cp.owner == null
                     ? locked
-                        ? '오브젝트 잠금'
-                        : '점령 가능'
-                    : '적 거점';
+                        ? translate('오브젝트 잠금')
+                        : translate('점령 가능')
+                    : translate('적 거점');
             ctx.font = `900 ${Math.max(9, 11 * sc)}px system-ui,sans-serif`;
             ctx.lineWidth = Math.max(2, 3 * sc);
             ctx.strokeStyle = 'rgba(0,0,0,.60)';
@@ -3973,7 +3980,7 @@ class GLRenderer {
             const siteName = ResourceDisplay.depositName(cp, kind);
             const efficiency = LaunchRules.productionEfficiency(cp);
             const previousUse =
-                cp.owner == null && efficiency < 100 ? ` · 효율 ${efficiency}%` : '';
+                cp.owner == null && efficiency < 100 ? msg(' · 효율 {0}%', efficiency) : '';
             const text = `${kind.symbol} ${siteName} · ${owner}${previousUse}`,
                 lineGap = Math.max(14, 15 * sc);
             const workers = visibleConstruction
@@ -3988,28 +3995,33 @@ class GLRenderer {
                 ? ''
                 : !workers.length
                   ? outpost.side === side
-                      ? '작업자 필요'
-                      : '작업자 미확인'
+                      ? translate('작업자 필요')
+                      : translate('작업자 미확인')
                   : workers.every((u) => u.constructionWork.phase === 'waiting')
-                    ? '자원 대기'
+                    ? translate('자원 대기')
                     : workers.every((u) => u.constructionWork.phase === 'defend')
-                      ? `${workers.length}명 응전 중`
+                      ? msg('{0}명 응전 중', workers.length)
                       : workers.every((u) => u.constructionWork.phase === 'approach')
-                        ? `${workers.length}명 접근 중`
-                        : `${workers.length}명 작업 중`;
+                        ? msg('{0}명 접근 중', workers.length)
+                        : msg('{0}명 작업 중', workers.length);
             const cost = BuildingDefinition.get(BuildingDefinition.forRole('outpost')).construction
                 .cost;
             const production = RESOURCES.flatMap(({ key, symbol }) => {
                 const rate = LaunchRules.productionRate(cp, key);
-                return rate > 0 ? [`${symbol} +${ResourceDisplay.rateText(rate)}/초`] : [];
+                return rate > 0 ? [msg('{0} +{1}/초', symbol, ResourceDisplay.rateText(rate))] : [];
             });
             const guide = visibleConstruction
-                ? `건설 ${Math.round(ConstructionRules.progress(construction) * 1000) / 10}% · ◆ ${construction.invested}/${construction.cost}`
+                ? msg(
+                      '건설 {0}% · ◆ {1}/{2}',
+                      Math.round(ConstructionRules.progress(construction) * 1000) / 10,
+                      construction.invested,
+                      construction.cost,
+                  )
                 : cp.owner != null
-                  ? [`효율 ${efficiency}%`, ...production].join(' · ')
+                  ? [msg('효율 {0}%', efficiency), ...production].join(' · ')
                   : locked
-                    ? '연결 전술 오브젝트 처치 필요'
-                    : `병력으로 건설 · ◆ ${cost}`;
+                    ? translate('연결 전술 오브젝트 처치 필요')
+                    : msg('병력으로 건설 · ◆ {0}', cost);
             const label = labelPosition(
                 px,
                 py,
@@ -4053,8 +4065,8 @@ class GLRenderer {
                     impact?.fx.spend > 0
                         ? `◆ −${impact.fx.spend}`
                         : next
-                          ? `다음 ◆ ${next.amount}`
-                          : '추가 지출 없음';
+                          ? msg('다음 ◆ {0}', next.amount)
+                          : translate('추가 지출 없음');
                 ctx.font = `800 ${Math.max(9, 9 * sc)}px system-ui,sans-serif`;
                 ctx.strokeText(`${payment} · ${workState}`, x, barY + 28, width);
                 ctx.fillStyle = impact?.fx.spend > 0 ? '#ffe1a1' : '#d8ebff';
@@ -4081,7 +4093,7 @@ class GLRenderer {
             ctx.strokeStyle = held ? '#8fd3ff' : '#ff7a6b';
             ctx.stroke();
             ctx.setLineDash([]);
-            const text = held ? '지킬 거점' : '지킬 거점 함락';
+            const text = held ? translate('지킬 거점') : translate('지킬 거점 함락');
             ctx.font = `900 ${14 * ratio}px system-ui,sans-serif`;
             const label = labelPosition(x, y, y - radiusY - 10 * ratio, [text], 8 * ratio);
             if (label) {
@@ -4201,7 +4213,7 @@ class GLRenderer {
             ctx.lineWidth = Math.max(3, 5 * sc);
             ctx.strokeStyle = 'rgba(60,20,0,.9)';
             ctx.fillStyle = '#ffe27a';
-            const text = `강타 ×${peak.toFixed(1)}`,
+            const text = msg('강타 ×{0}', peak.toFixed(1)),
                 ty = y - radius * 0.55 - 26 * sc * ease;
             ctx.strokeText(text, x, ty);
             ctx.fillText(text, x, ty);
@@ -7248,7 +7260,7 @@ class GLRenderer {
     }
     drawLobKernel(projectile, world) {
         const renderer = this.spriteRenderers[projectile.sourceType];
-        if (!renderer) throw new Error('곡사 투사체 자원이 준비되지 않았습니다.');
+        if (!renderer) throw new Error(translate('곡사 투사체 자원이 준비되지 않았습니다.'));
         const now = this.presentationNow(),
             model = this.renderState.model('unitLob', projectile.id, now),
             sampled = model?.entity || projectile;
@@ -9946,7 +9958,7 @@ class UiController {
         UiRegistry.refs.joinError.textContent = '';
         UiRegistry.refs.room.value = '';
         UiRegistry.refs.joinConfirm.disabled = false;
-        UiRegistry.refs.joinConfirm.textContent = '참가하기';
+        UiRegistry.refs.joinConfirm.textContent = translate('참가하기');
 
         UiController.openUiModal('join');
 
@@ -10009,9 +10021,18 @@ class DebugFormatUtil {
 
 class ConnectionPresentation {
     static showVersionMismatch(info, role) {
-        const message = String(
-            info.message || '게임 버전이 다릅니다. 양쪽 모두 같은 최신 HTML을 사용하세요.',
-        );
+        const message = info.expectedVersion
+            ? msg(
+                  '게임 버전이 다릅니다. 내 v{0} / 상대 {1}. 양쪽 모두 같은 최신 게임으로 새로고침하세요.',
+                  info.expectedVersion,
+                  info.remoteVersion ?? translate('확인 불가'),
+              )
+            : translate(
+                  String(
+                      info.message ||
+                          '게임 버전이 다릅니다. 양쪽 모두 같은 최신 HTML을 사용하세요.',
+                  ),
+              );
         LogUtil.status(message);
         if (SinglePlayerModeUtil.isSinglePlayer()) {
             UiRegistry.refs.singleStatus.textContent = message;
@@ -10019,7 +10040,7 @@ class ConnectionPresentation {
             MatchLifecycle.stopSinglePlayer();
         } else if (role === 'host') {
             UiRegistry.refs.createStatus.textContent =
-                message + ' · 현재 방은 참가 대기를 유지합니다.';
+                message + translate(' · 현재 방은 참가 대기를 유지합니다.');
         } else {
             UiRegistry.refs.joinError.textContent = message;
             MatchLifecycle.setJoinBusy(false);
@@ -10070,11 +10091,12 @@ class ConnectionPresentation {
         );
         const state = info.state || 'connected';
         UiRegistry.refs.p2pHealth.classList.add(state === 'fatal' ? 'disconnected' : state);
-        if (state === 'fatal') UiRegistry.refs.p2pHealthText.textContent = '오류';
-        else if (state === 'disconnected') UiRegistry.refs.p2pHealthText.textContent = '끊김';
+        if (state === 'fatal') UiRegistry.refs.p2pHealthText.textContent = translate('오류');
+        else if (state === 'disconnected')
+            UiRegistry.refs.p2pHealthText.textContent = translate('끊김');
         else if (state === 'unstable')
             UiRegistry.refs.p2pHealthText.textContent =
-                info.rtt == null ? '불안정' : `⚠ ${Math.round(info.rtt)}ms`;
+                info.rtt == null ? translate('불안정') : `⚠ ${Math.round(info.rtt)}ms`;
         else
             UiRegistry.refs.p2pHealthText.textContent =
                 info.rtt == null ? (isLocal ? '● LOCAL' : '● P2P') : `● ${Math.round(info.rtt)}ms`;
@@ -10089,7 +10111,7 @@ class ConnectionPresentation {
                 `${ActiveSimulationTiming.tps()} TPS`,
             );
         if (rp?.fps > 0) detail.push(`${Math.round(rp.fps)} FPS`);
-        UiRegistry.refs.p2pHealth.title = detail.join(' · ') || '동기화 진단 열기';
+        UiRegistry.refs.p2pHealth.title = detail.join(' · ') || translate('동기화 진단 열기');
         ConnectionPresentation.positionP2PHealthNextToMenu();
     }
     static renderLockstepDebugPanel() {
@@ -10101,8 +10123,9 @@ class ConnectionPresentation {
                 '#performanceTimingPanel b',
             ))
                 el.textContent = '-';
-            UiRegistry.refs.lockstepDebugSummary.textContent =
-                '활성 경기에서 확정 입력을 검사할 수 있습니다.';
+            UiRegistry.refs.lockstepDebugSummary.textContent = translate(
+                '활성 경기에서 확정 입력을 검사할 수 있습니다.',
+            );
             UiRegistry.refs.synctestRunBtn.disabled = true;
             return;
         }
@@ -10113,7 +10136,7 @@ class ConnectionPresentation {
         const text = (id, value) => {
             UiRegistry.refs[id].textContent = value;
         };
-        text('dbgSyncStatus', report?.status || '미실행');
+        text('dbgSyncStatus', report?.status || translate('미실행'));
         text('dbgSyncChecked', sync ? String(sync.checkedTicks) : '-');
         text('dbgSyncResimulated', sync ? String(sync.resimulatedTicks) : '-');
         text('dbgSyncDistance', sync ? String(sync.checkDistance) : '-');
@@ -10135,7 +10158,7 @@ class ConnectionPresentation {
                       failure.expectedHash.toString(16).padStart(8, '0') +
                       ' / ' +
                       failure.actualHash.toString(16).padStart(8, '0')
-                : failure?.message || report?.error || '없음',
+                : translate(failure?.message || report?.error || '없음'),
         );
         text(
             'dbgCoreLatency',
@@ -10187,7 +10210,7 @@ class ConnectionPresentation {
         UiRegistry.refs.dbgPerfTail.textContent = `${fmtMs(perf.projectileMs)} / ${fmtMs(perf.collisionMs)} / ${fmtMs(perf.postMs)}`;
         UiRegistry.refs.dbgPerfSnapshot.textContent = perf.snapshotSamples
             ? `${fmtMs(perf.snapshotMs)} / ${fmtMs(perf.maxSnapshotMs)}`
-            : '표본 수집 중';
+            : translate('표본 수집 중');
         UiRegistry.refs.dbgPerfEntities.textContent = `${perf.aliveUnits || 0} / ${perf.combatUnits || 0} / ${perf.projectiles || 0}`;
         UiRegistry.refs.dbgPerfSpatial.textContent = `${perf.spatialQueries || 0} / ${perf.spatialCandidates || 0} (${avgCandidates.toFixed(1)})`;
         UiRegistry.refs.dbgPerfTarget.textContent = `target ${perf.targetQueries || 0} · reject ${perf.targetVisibilityRejects || 0} / vis ${perf.visibilityChecks || 0} · sideQ ${perf.sideSpatialQueries || 0}`;
@@ -10204,7 +10227,7 @@ class ConnectionPresentation {
         const timing = (row) =>
             row?.samples
                 ? `${fmtMs(row.currentMs)} / ${fmtMs(row.ewmaMs)} / ${fmtMs(row.maxMs)}`
-                : '표본 수집 중';
+                : translate('표본 수집 중');
         PerformanceTelemetry.sampleConnection(active);
         text(
             'dbgPerfInputDelay',
@@ -10212,7 +10235,7 @@ class ConnectionPresentation {
         );
         text(
             'dbgPerfCommandConfirm',
-            t.commandConfirm?.samples ? timing(t.commandConfirm) : '입력 없음',
+            t.commandConfirm?.samples ? timing(t.commandConfirm) : translate('입력 없음'),
         );
         const commandNow = performance.now();
         let pendingCommandMs = 0;
@@ -10221,28 +10244,33 @@ class ConnectionPresentation {
                 pendingCommandMs = Math.max(pendingCommandMs, commandNow - ticket.submittedAt);
         text(
             'dbgPerfCommandPending',
-            `${active.pendingNetcodeCommands.size}개 · ${fmtMs(pendingCommandMs)}`,
+            msg('{0}개 · {1}', active.pendingNetcodeCommands.size, fmtMs(pendingCommandMs)),
         );
         const iceAge = stats.iceFetchedAt === null ? null : performance.now() - stats.iceFetchedAt;
         text(
             'dbgPerfIceRtt',
             !active.transport?.room?.peerConnection?.getStats
-                ? '지원 안 됨'
+                ? translate('지원 안 됨')
                 : stats.iceError
-                  ? '조회 실패'
+                  ? translate('조회 실패')
                   : stats.iceRttMs === null
-                    ? 'ICE RTT 표본 없음'
-                    : `${fmtMs(stats.iceRttMs)} · ${fmtMs(iceAge)} 전 조회`,
+                    ? translate('ICE RTT 표본 없음')
+                    : msg('{0} · {1} 전 조회', fmtMs(stats.iceRttMs), fmtMs(iceAge)),
         );
         text(
             'dbgPerfEventLoop',
-            timing(m?.timings.eventLoop) + (document.hidden ? ' · 백그라운드' : ''),
+            timing(m?.timings.eventLoop) + (document.hidden ? translate(' · 백그라운드') : ''),
         );
         text(
             'dbgPerfLongTask',
             !m?.observer
-                ? '지원 안 됨'
-                : `${m.longTasks}회 · 최근 ${fmtMs(m.longTaskMs)} / 최대 ${fmtMs(m.maxLongTaskMs)}`,
+                ? translate('지원 안 됨')
+                : msg(
+                      '{0}회 · 최근 {1} / 최대 {2}',
+                      m.longTasks,
+                      fmtMs(m.longTaskMs),
+                      fmtMs(m.maxLongTaskMs),
+                  ),
         );
         text('dbgPerfPulseGap', timing(t.pulseGap));
         text('dbgPerfPulse', timing(t.pulse));
@@ -10251,7 +10279,7 @@ class ConnectionPresentation {
             'dbgPerfResimulation',
             metrics.resimulatedTicks
                 ? `${fmtMs(metrics.latestResimulationMs)} / ${fmtMs(metrics.resimulationCostMs)}`
-                : '미실행',
+                : translate('미실행'),
         );
         text(
             'dbgPerfPresentation',
@@ -10261,7 +10289,7 @@ class ConnectionPresentation {
             'dbgPerfFrameInterval',
             rp
                 ? `${fmtMs(rp.frameIntervalMs)} / ${fmtMs(rp.ewmaFrameIntervalMs)} / ${fmtMs(rp.maxFrameIntervalMs)}`
-                : '표본 수집 중',
+                : translate('표본 수집 중'),
         );
         const pass = (name) => rp?.passes?.[name],
             passMs = (name) => (pass(name) ? fmtMs(pass(name).ms) : '-'),
@@ -10270,7 +10298,7 @@ class ConnectionPresentation {
             'dbgPerfDeviceBegin',
             begin
                 ? `${fmtMs(begin.ms)} / ${fmtMs(begin.ewmaMs)} / ${fmtMs(begin.maxMs)}`
-                : '표본 수집 중',
+                : translate('표본 수집 중'),
         );
         text(
             'dbgPerfRenderPasses',
@@ -10292,32 +10320,41 @@ class ConnectionPresentation {
         text('dbgPerfProjection', nav ? `${nav.rayHits} / ${nav.nextCalls}` : '-');
         text(
             'dbgPerfDrawCalls',
-            `${rp?.drawCalls || 0} / ${DebugFormatUtil.formatDebugBytes(rp?.bufferUploadBytes || 0)} · 전송 대기 ${DebugFormatUtil.formatDebugBytes(active.transport?.netcodeBufferedAmount || 0)}`,
+            msg(
+                '{0} / {1} · 전송 대기 {2}',
+                rp?.drawCalls || 0,
+                DebugFormatUtil.formatDebugBytes(rp?.bufferUploadBytes || 0),
+                DebugFormatUtil.formatDebugBytes(active.transport?.netcodeBufferedAmount || 0),
+            ),
         );
         const activeTps = ActiveSimulationTiming.tps(),
             allowanceMs = 1000 / activeTps,
             isSingle = SinglePlayerModeUtil.isSinglePlayer();
-        UiRegistry.refs.dbgPerfAllowanceLabel.textContent = activeTps + ' TPS 틱 허용시간';
+        UiRegistry.refs.dbgPerfAllowanceLabel.textContent =
+            activeTps + translate(' TPS 틱 허용시간');
         UiRegistry.refs.dbgPerfAllowance.textContent = fmtMs(allowanceMs);
         UiRegistry.refs.dbgPerfUsedLabel.textContent = isSingle
-            ? '사용시간 · 싱글 두 세션 step EWMA'
-            : '사용시간 · 현재 세션 step EWMA';
+            ? translate('사용시간 · 싱글 두 세션 step EWMA')
+            : translate('사용시간 · 현재 세션 step EWMA');
         const sampled = perf.stepSamples > 0 && (!isSingle || peerPerf?.stepSamples > 0);
         if (!sampled) {
             UiRegistry.refs.dbgPerfUsed.textContent = UiRegistry.refs.dbgPerfBudget.textContent =
-                '표본 수집 중';
+                translate('표본 수집 중');
         } else {
             const usedMs = perf.ewmaStepMs + (isSingle ? peerPerf.ewmaStepMs : 0),
                 remainingMs = Math.max(0, allowanceMs - usedMs),
                 overrunMs = Math.max(0, usedMs - allowanceMs);
             UiRegistry.refs.dbgPerfUsed.textContent =
-                fmtMs(usedMs) + ' · ' + ((usedMs / allowanceMs) * 100).toFixed(1) + '% 사용';
+                fmtMs(usedMs) +
+                ' · ' +
+                ((usedMs / allowanceMs) * 100).toFixed(1) +
+                translate('% 사용');
             UiRegistry.refs.dbgPerfBudget.textContent =
                 fmtMs(remainingMs) +
                 ' · ' +
                 ((remainingMs / allowanceMs) * 100).toFixed(1) +
-                '% 남음' +
-                (overrunMs > 0 ? ' · ' + fmtMs(overrunMs) + ' 초과' : '');
+                translate('% 남음') +
+                (overrunMs > 0 ? ' · ' + fmtMs(overrunMs) + translate(' 초과') : '');
         }
         UiRegistry.refs.dbgEndurancePeaks.textContent = `${perf.peakAliveUnits || 0} / ${perf.peakBuildings || 0} / ${perf.peakProjectiles || 0}`;
 
@@ -10326,7 +10363,7 @@ class ConnectionPresentation {
             t == null ? '-' : `${ActiveSimulationTiming.ticksToSeconds(t).toFixed(1)}s`;
         const pairTicks = (a) => `${formatTickTime(a?.[0])} / ${formatTickTime(a?.[1])}`;
         const avgArmy = [0, 1].map((side) => (bs.samples ? bs.armyTotal[side] / bs.samples : 0));
-        UiRegistry.refs.dbgBalanceTime.textContent = `${formatTickTime(active.sim?.tick)} / ${bs.gameEndTick == null ? '진행 중' : `${formatTickTime(bs.gameEndTick)} · ${bs.winner || '-'}`}`;
+        UiRegistry.refs.dbgBalanceTime.textContent = `${formatTickTime(active.sim?.tick)} / ${bs.gameEndTick == null ? translate('진행 중') : `${formatTickTime(bs.gameEndTick)} · ${bs.winner || '-'}`}`;
         UiRegistry.refs.dbgBalanceCombat.textContent = formatTickTime(bs.firstCombatTick);
         UiRegistry.refs.dbgBalanceCapture.textContent = pairTicks(bs.firstCaptureTick);
         UiRegistry.refs.dbgBalanceArmy.textContent = `${bs.currentArmy[0]}/${avgArmy[0].toFixed(1)}/${bs.armyPeak[0]} · ${bs.currentArmy[1]}/${avgArmy[1].toFixed(1)}/${bs.armyPeak[1]}`;
@@ -10343,10 +10380,10 @@ class ConnectionPresentation {
             // Recovery itself is restartable from zero with the same button.
             UiRegistry.refs.manualRecoveryBtn.disabled = !active.sim || active.simEnded;
             UiRegistry.refs.manualRecoveryBtn.textContent = recovering
-                ? '복구 처음부터 다시 시작'
+                ? translate('복구 처음부터 다시 시작')
                 : active.simpleRecoveryNeedsManual || active.recoveryPhase === 'needs-manual'
-                  ? '복구 필요 · 입력 이력으로 재접속'
-                  : '입력 이력으로 연결 복구';
+                  ? translate('복구 필요 · 입력 이력으로 재접속')
+                  : translate('입력 이력으로 연결 복구');
         }
 
         if (UiRegistry.refs.fullConnectionResetBtn) {
@@ -10355,8 +10392,8 @@ class ConnectionPresentation {
         }
 
         UiRegistry.refs.lockstepDebugSummary.textContent =
-            '확정 입력 Synctest · ' +
-            (sync ? 'S[0]~S[' + sync.tick + ']' : '미실행') +
+            translate('확정 입력 Synctest · ') +
+            (sync ? 'S[0]~S[' + sync.tick + ']' : translate('미실행')) +
             ' · ' +
             core.profile.mode +
             ' · Core ' +
@@ -10366,12 +10403,12 @@ class ConnectionPresentation {
             (report?.status === 'failed' ? 'bad' : report?.status === 'passed' ? 'ok' : 'warn');
         UiRegistry.refs.lockstepDebugVerdict.textContent =
             report?.status === 'passed'
-                ? '검사한 입력 구간의 저장·복원·재실행 결과가 일치했습니다.'
+                ? translate('검사한 입력 구간의 저장·복원·재실행 결과가 일치했습니다.')
                 : report?.status === 'failed'
-                  ? 'Synctest가 실패했습니다. 위 라이브러리 실패 정보를 확인하세요.'
+                  ? translate('Synctest가 실패했습니다. 위 라이브러리 실패 정보를 확인하세요.')
                   : report?.status === 'running'
-                    ? '공통 Synctest 검사 중…'
-                    : 'Synctest를 실행하면 라이브러리가 측정한 결과를 표시합니다.';
+                    ? translate('공통 Synctest 검사 중…')
+                    : translate('Synctest를 실행하면 라이브러리가 측정한 결과를 표시합니다.');
     }
     static renderConnectionGate() {
         if (!UiRegistry.refs.disconnectGate || ReplayPresentation.replayPlayer) {
@@ -10392,17 +10429,18 @@ class ConnectionPresentation {
             UiController.openUiModal('disconnect');
             ConnectionPresentation.setDisconnectPhase('resuming');
             const n = Math.max(1, Math.ceil((active.postRecoveryResumeAt - now) / 1000));
-            UiRegistry.refs.disconnectGateTitle.textContent = '연결 복구 완료';
+            UiRegistry.refs.disconnectGateTitle.textContent = translate('연결 복구 완료');
             UiRegistry.refs.disconnectGateCount.textContent = String(n);
             UiRegistry.refs.disconnectGateCount.classList.add('resume');
-            UiRegistry.refs.disconnectGateCopy.textContent =
-                '권위 상태 검증 완료 · 게임을 곧 재개합니다.';
+            UiRegistry.refs.disconnectGateCopy.textContent = translate(
+                '권위 상태 검증 완료 · 게임을 곧 재개합니다.',
+            );
             UiRegistry.refs.disconnectGateActions.classList.add('hidden');
             return;
         }
         if (active.disconnectGraceDeadlineAt > now) {
             UiController.openUiModal('disconnect');
-            UiRegistry.refs.disconnectGateTitle.textContent = '상대와 연결이 끊겼습니다';
+            UiRegistry.refs.disconnectGateTitle.textContent = translate('상대와 연결이 끊겼습니다');
             UiRegistry.refs.disconnectGateCount.textContent = GraceTimeFormatUtil.formatGraceTime(
                 active.disconnectGraceDeadlineAt - now,
             );
@@ -10413,13 +10451,13 @@ class ConnectionPresentation {
                 active.recoveryPhase !== 'needs-manual';
             ConnectionPresentation.setDisconnectPhase(recovering ? 'recovering' : 'grace');
             UiRegistry.refs.disconnectGateCopy.textContent = recovering
-                ? '재접속 및 Host 권위 상태 복구 중입니다.'
-                : '게임은 현재 정지되어 있습니다. 제한시간 안에 재접속할 수 있습니다.';
+                ? translate('재접속 및 Host 권위 상태 복구 중입니다.')
+                : translate('게임은 현재 정지되어 있습니다. 제한시간 안에 재접속할 수 있습니다.');
             UiRegistry.refs.disconnectGateActions.classList.remove('hidden');
             UiRegistry.refs.disconnectReconnectBtn.disabled = !!recovering;
             UiRegistry.refs.disconnectReconnectBtn.textContent = recovering
-                ? '재접속 중…'
-                : '재접속 시도';
+                ? translate('재접속 중…')
+                : translate('재접속 시도');
             return;
         }
         ConnectionPresentation.setDisconnectPhase('hidden');
@@ -10480,13 +10518,15 @@ class ConnectionPresentation {
         if (NetworkModuleLoader.networkLoadState === 'error') {
             if (onWaiting)
                 onWaiting(
-                    NetworkModuleLoader.networkLoadError ||
-                        'URL 네트워크 모듈이 준비되지 않았습니다.',
+                    translate(
+                        NetworkModuleLoader.networkLoadError ||
+                            'URL 네트워크 모듈이 준비되지 않았습니다.',
+                    ),
                     true,
                 );
             return;
         }
-        if (onWaiting) onWaiting('네트워크 모듈을 준비하고 있습니다…', false);
+        if (onWaiting) onWaiting(translate('네트워크 모듈을 준비하고 있습니다…'), false);
     }
 }
 
@@ -10631,9 +10671,9 @@ class ReplayPresentation {
             const captures = (snapshot.capturePoints || []).filter(
                 (cp) => cp.owner === side,
             ).length;
-            return `<div class="replay-side-card ${side === 0 ? 'host' : 'guest'}"><div class="replay-side-name">${side === 0 ? 'HOST' : 'GUEST'}</div><div class="replay-side-line"><span>◆ 자원</span><b>${Math.floor(snapshot.wallet?.[side] || 0)}</b></div><div class="replay-side-line"><span>⚔ 병력</span><b>${army}</b></div><div class="replay-side-line"><span>⌂ 건물 · 거점</span><b>${buildings} · ${captures}</b></div></div>`;
+            return `<div class="replay-side-card ${side === 0 ? 'host' : 'guest'}"><div class="replay-side-name">${side === 0 ? 'HOST' : 'GUEST'}</div><div class="replay-side-line"><span>◆ ${translate('자원')}</span><b>${Math.floor(snapshot.wallet?.[side] || 0)}</b></div><div class="replay-side-line"><span>⚔ ${translate('병력')}</span><b>${army}</b></div><div class="replay-side-line"><span>⌂ ${translate('건물 · 거점')}</span><b>${buildings} · ${captures}</b></div></div>`;
         };
-        return `<div class="replay-stats-title">REPLAY · 양측 현황</div><div class="replay-stats-grid">${card(0)}${card(1)}</div>`;
+        return `<div class="replay-stats-title">${translate('REPLAY · 양측 현황')}</div><div class="replay-stats-grid">${card(0)}${card(1)}</div>`;
     }
     static applyReplayPerspective({ preserveCenter = false } = {}) {
         if (!ReplayPresentation.replayPlayer || !ActiveViewState.renderer) return;
@@ -10785,8 +10825,8 @@ class ReplayPresentation {
             UiRegistry.refs.replayTime.textContent = `${ReplayPresentation.formatReplayTime(tick)} / ${ReplayPresentation.formatReplayTime(end)}`;
         if (UiRegistry.refs.replayPlayPauseBtn)
             UiRegistry.refs.replayPlayPauseBtn.textContent = ReplayPresentation.replayPlayer.playing
-                ? '⏸ 일시정지'
-                : '▶ 재생';
+                ? translate('⏸ 일시정지')
+                : translate('▶ 재생');
         if (UiRegistry.refs.replaySpeed)
             UiRegistry.refs.replaySpeed.value = String(ReplayPresentation.replayPlayer.speed);
         if (UiRegistry.refs.replayZoomValue)
@@ -10796,20 +10836,29 @@ class ReplayPresentation {
     }
     static replayImportFailureMessage(error) {
         const detail = String(error?.message || error || '');
-        let reason =
-            '파일을 읽거나 검증하지 못했습니다. JSON 형식과 필수 데이터가 올바른지 확인하세요.';
+        let reason = translate(
+            '파일을 읽거나 검증하지 못했습니다. JSON 형식과 필수 데이터가 올바른지 확인하세요.',
+        );
         if (error instanceof SyntaxError || /json|unexpected token|unexpected end/i.test(detail))
-            reason = 'JSON으로 읽을 수 없습니다. 파일이 잘렸거나 JSON 형식이 아닙니다.';
+            reason = translate('JSON으로 읽을 수 없습니다. 파일이 잘렸거나 JSON 형식이 아닙니다.');
         else if (/version|sim_version|버전/i.test(detail))
-            reason =
-                '다른 게임 버전에서 저장한 리플레이입니다. 현재 게임 버전과 맞는 파일을 선택하세요.';
+            reason = translate(
+                '다른 게임 버전에서 저장한 리플레이입니다. 현재 게임 버전과 맞는 파일을 선택하세요.',
+            );
         else if (/checksum|check.?point|체크포인트|체크섬/i.test(detail))
-            reason = '시작 상태 체크포인트 검증에 실패했습니다. 파일이 손상되었을 수 있습니다.';
+            reason = translate(
+                '시작 상태 체크포인트 검증에 실패했습니다. 파일이 손상되었을 수 있습니다.',
+            );
         else if (/protocol|쌀콩팡|형식/i.test(detail))
-            reason = '지원하지 않는 형식입니다. 쌀콩팡!에서 저장한 리플레이 JSON을 선택하세요.';
+            reason = translate(
+                '지원하지 않는 형식입니다. 쌀콩팡!에서 저장한 리플레이 JSON을 선택하세요.',
+            );
         else if (/command|payload|초기 상태|리플레이 데이터|손상/i.test(detail))
-            reason = '리플레이의 명령 기록이나 초기 상태가 없거나 손상되었습니다.';
-        return `리플레이를 열지 못했습니다. ${reason} 현재 화면은 유지했습니다. 정상 파일을 선택해 다시 시도하세요.`;
+            reason = translate('리플레이의 명령 기록이나 초기 상태가 없거나 손상되었습니다.');
+        return msg(
+            '리플레이를 열지 못했습니다. {0} 현재 화면은 유지했습니다. 정상 파일을 선택해 다시 시도하세요.',
+            reason,
+        );
     }
     static showReplayImportError(error) {
         const status = UiRegistry.refs.singleStatus;
@@ -10931,10 +10980,10 @@ class MatchLifecycle {
         const state = this.singleStart;
         const dialog = DomUtil.byId('singleStartDialog');
         const message = {
-            preparing: '상대 AI를 준비하고 있어요.',
-            openingHost: '경기를 준비하고 있어요.',
-            connecting: '상대 AI를 연결하고 있어요.',
-            syncing: '전장을 불러오고 있어요.',
+            preparing: translate('상대 AI를 준비하고 있어요.'),
+            openingHost: translate('경기를 준비하고 있어요.'),
+            connecting: translate('상대 AI를 연결하고 있어요.'),
+            syncing: translate('전장을 불러오고 있어요.'),
             failed: state.message,
         }[state.phase];
         if (!message) {
@@ -10942,10 +10991,13 @@ class MatchLifecycle {
             return;
         }
         DomUtil.byId('singleStartTitle').textContent =
-            state.phase === 'failed' ? '경기를 시작하지 못했어요' : '경기 준비 중';
+            state.phase === 'failed'
+                ? translate('경기를 시작하지 못했어요')
+                : translate('경기 준비 중');
         DomUtil.byId('singleStartMessage').textContent = message;
         DomUtil.byId('singleStartRetry').hidden = state.phase !== 'failed';
-        DomUtil.byId('singleStartCancel').textContent = state.phase === 'failed' ? '닫기' : '취소';
+        DomUtil.byId('singleStartCancel').textContent =
+            state.phase === 'failed' ? translate('닫기') : translate('취소');
         if (!dialog.open) dialog.showModal();
         if (state.phase === 'failed') DomUtil.byId('singleStartRetry').focus();
     }
@@ -10979,8 +11031,8 @@ class MatchLifecycle {
         }
         const message =
             phase === 'preparing'
-                ? '상대 AI를 준비하지 못했어요. 같은 경기로 다시 시도할 수 있어요.'
-                : '경기 연결을 완료하지 못했어요. 같은 경기로 다시 시도할 수 있어요.';
+                ? translate('상대 AI를 준비하지 못했어요. 같은 경기로 다시 시도할 수 있어요.')
+                : translate('경기 연결을 완료하지 못했어요. 같은 경기로 다시 시도할 수 있어요.');
         this.singleStart = { phase: 'failed', intent, message };
         this.renderSingleStart();
     }
@@ -11070,8 +11122,9 @@ class MatchLifecycle {
                 const fatal = info.simulationFatalInfo || {};
                 LogUtil.status('시뮬레이션 오류로 일시 중단됨');
                 if (SinglePlayerModeUtil.isSinglePlayer()) {
-                    UiRegistry.refs.singleStatus.textContent =
-                        '시뮬레이션 오류 · 안전을 위해 경기를 중단했습니다.';
+                    UiRegistry.refs.singleStatus.textContent = translate(
+                        '시뮬레이션 오류 · 안전을 위해 경기를 중단했습니다.',
+                    );
                     UiController.setElementVisible(UiRegistry.refs.singleStatus, true);
                 }
                 LogUtil.log(
@@ -11093,7 +11146,10 @@ class MatchLifecycle {
                 );
 
                 if (SinglePlayerModeUtil.isSinglePlayer()) {
-                    UiRegistry.refs.singleStatus.textContent = `복구 완료 · ${r === 'host' ? '내' : 'AI'} Host 권위 상태와 일치 · 게임 재개`;
+                    UiRegistry.refs.singleStatus.textContent = msg(
+                        '복구 완료 · {0} Host 권위 상태와 일치 · 게임 재개',
+                        r === 'host' ? translate('내') : 'AI',
+                    );
                     UiController.setElementVisible(UiRegistry.refs.singleStatus, true);
                 }
             }
@@ -11132,7 +11188,7 @@ class MatchLifecycle {
                 if (r === 'host') {
                     UiRegistry.refs.codeArea.classList.remove('hidden');
                     UiRegistry.refs.createStatus.textContent =
-                        '방이 열렸습니다. 상대 참가를 기다립니다.';
+                        translate('방이 열렸습니다. 상대 참가를 기다립니다.');
                 }
             }
         };
@@ -11163,8 +11219,9 @@ class MatchLifecycle {
                 UiController.closeUiModal('join');
 
                 if (attempt && recovering) {
-                    UiRegistry.refs.singleStatus.textContent =
-                        '새 WebRTC 채널 연결 완료 · Host 게임 상태 복원 중';
+                    UiRegistry.refs.singleStatus.textContent = translate(
+                        '새 WebRTC 채널 연결 완료 · Host 게임 상태 복원 중',
+                    );
                     UiController.setElementVisible(UiRegistry.refs.singleStatus, true);
                 }
             }
@@ -11183,21 +11240,26 @@ class MatchLifecycle {
                 return;
             }
             if (ActiveViewState.role === r) {
-                const message = e.message || e.type || '연결 오류';
+                const detail = e.message || e.type || '연결 오류';
+                const message = translate(detail);
                 LogUtil.status('연결 오류');
                 if (SinglePlayerModeUtil.isSinglePlayer()) {
                     if (trans.everOpened) {
-                        UiRegistry.refs.singleStatus.textContent = 'WebRTC 복구 중 · ' + message;
+                        UiRegistry.refs.singleStatus.textContent =
+                            translate('WebRTC 복구 중 · ') + message;
                         UiController.setElementVisible(UiRegistry.refs.singleStatus, true);
                     }
                 } else if (r === 'host') {
-                    UiRegistry.refs.createStatus.textContent = '방 연결에 실패했습니다: ' + message;
+                    UiRegistry.refs.createStatus.textContent =
+                        translate('방 연결에 실패했습니다: ') + message;
                     UiController.setElementVisible(UiRegistry.refs.createRetry, true);
                 } else {
                     const friendly =
-                        message === 'signal-timeout' || message === 'nostr-module-unavailable'
-                            ? '해당 방을 찾을 수 없습니다. 방 코드와 방장이 아직 접속 중인지 확인해 주세요.'
-                            : '연결에 실패했습니다: ' + message;
+                        detail === 'signal-timeout' || detail === 'nostr-module-unavailable'
+                            ? translate(
+                                  '해당 방을 찾을 수 없습니다. 방 코드와 방장이 아직 접속 중인지 확인해 주세요.',
+                              )
+                            : translate('연결에 실패했습니다: ') + message;
                     UiRegistry.refs.joinError.textContent = friendly;
                     MatchLifecycle.setJoinBusy(false);
                 }
@@ -11218,8 +11280,9 @@ class MatchLifecycle {
                 );
 
                 if (SinglePlayerModeUtil.isSinglePlayer()) {
-                    UiRegistry.refs.singleStatus.textContent =
-                        '연결이 끊겼습니다 · 복구 버튼으로 Host 권위 스냅샷을 기준으로 새 연결을 만드세요.';
+                    UiRegistry.refs.singleStatus.textContent = translate(
+                        '연결이 끊겼습니다 · 복구 버튼으로 Host 권위 스냅샷을 기준으로 새 연결을 만드세요.',
+                    );
                     UiController.setElementVisible(UiRegistry.refs.singleStatus, true);
                 }
             }
@@ -11273,7 +11336,9 @@ class MatchLifecycle {
     static setJoinBusy(busy) {
         this.joinBusy = !!busy;
         UiRegistry.refs.joinConfirm.disabled = this.joinBusy;
-        UiRegistry.refs.joinConfirm.textContent = this.joinBusy ? '연결 중…' : '참가하기';
+        UiRegistry.refs.joinConfirm.textContent = this.joinBusy
+            ? translate('연결 중…')
+            : translate('참가하기');
     }
     static cancelOnlinePreparation() {
         NetworkModuleLoader.pendingPeerAction = null;
@@ -11419,7 +11484,8 @@ class MatchLifecycle {
                 ConnectionPresentation.showVersionMismatch(event, botRole);
             } else {
                 UiRegistry.refs.singleStatus.textContent =
-                    'AI 연결 복구 필요 · ' + (event?.type || event?.message || '연결 오류');
+                    translate('AI 연결 복구 필요 · ') +
+                    translate(event?.type || event?.message || '연결 오류');
                 UiController.setElementVisible(UiRegistry.refs.singleStatus, true);
             }
         };
@@ -11462,12 +11528,13 @@ class MatchLifecycle {
         UiRegistry.refs.code.textContent = c;
         UiRegistry.refs.codeArea.classList.add('hidden');
         UiController.setElementVisible(UiRegistry.refs.createRetry, false);
-        UiRegistry.refs.createStatus.textContent = '방을 준비하고 있습니다…';
+        UiRegistry.refs.createStatus.textContent = translate('방을 준비하고 있습니다…');
 
         ConnectionPresentation.runWhenNetworkReady(
             () => {
                 NetworkModuleLoader.pendingPeerAction = null;
-                UiRegistry.refs.createStatus.textContent = '방 코드를 확보하고 있습니다…';
+                UiRegistry.refs.createStatus.textContent =
+                    translate('방 코드를 확보하고 있습니다…');
                 MatchLifecycle.connect('host', c, deckMode);
             },
             (msg, failed) => {
@@ -11482,7 +11549,7 @@ class MatchLifecycle {
         UiRegistry.refs.room.value = c;
 
         if (c.length !== 4) {
-            UiRegistry.refs.joinError.textContent = '4자리 숫자 코드를 입력해 주세요.';
+            UiRegistry.refs.joinError.textContent = translate('4자리 숫자 코드를 입력해 주세요.');
             return;
         }
 
@@ -11509,8 +11576,8 @@ class MatchLifecycle {
         if (!active || active.simEnded) return false;
         const ok = window.confirm(
             leave
-                ? '진행 중인 게임에서 나가면 패배 처리됩니다. 나갈까요?'
-                : '항복하면 패배 처리됩니다. 항복할까요?',
+                ? translate('진행 중인 게임에서 나가면 패배 처리됩니다. 나갈까요?')
+                : translate('항복하면 패배 처리됩니다. 항복할까요?'),
         );
         if (!ok) return false;
         if (!active.surrender()) return false;
@@ -11562,32 +11629,40 @@ class MatchLifecycle {
         });
         // The story assumes the stage was won, so a loss shows no story.
         LaunchScreens.renderCampaignResult(next, cleared ? stage : null);
-        UiRegistry.refs.resultTitle.textContent = draw ? '무승부' : mine ? '승리' : '패배';
+        UiRegistry.refs.resultTitle.textContent = draw
+            ? translate('무승부')
+            : mine
+              ? translate('승리')
+              : translate('패배');
         if (reason === 'surrender')
             UiRegistry.refs.resultText.textContent = mine
-                ? '상대가 항복했습니다.'
-                : '항복했습니다.';
+                ? translate('상대가 항복했습니다.')
+                : translate('항복했습니다.');
         else if (reason === 'disconnect-timeout')
-            UiRegistry.refs.resultText.textContent =
-                '연결을 60초 안에 복구하지 못해 경기가 중단되었습니다.';
+            UiRegistry.refs.resultText.textContent = translate(
+                '연결을 60초 안에 복구하지 못해 경기가 중단되었습니다.',
+            );
         // A stage won on its boss (BlightBoss) says so first: it outranks the defence and every other text.
         else if (reason === 'boss-subdued')
-            UiRegistry.refs.resultText.textContent =
-                '깜부기가 떨어져 나가 영웅이 정신을 차렸습니다.';
+            UiRegistry.refs.resultText.textContent = translate(
+                '깜부기가 떨어져 나가 영웅이 정신을 차렸습니다.',
+            );
         else if (reason === 'draw')
-            UiRegistry.refs.resultText.textContent = '양쪽 메인 거점이 같은 tick에 파괴되었습니다.';
+            UiRegistry.refs.resultText.textContent = translate(
+                '양쪽 메인 거점이 같은 tick에 파괴되었습니다.',
+            );
         else
             UiRegistry.refs.resultText.textContent = mine
-                ? '적 메인 거점을 파괴했습니다.'
-                : '내 메인 거점이 파괴되었습니다.';
+                ? translate('적 메인 거점을 파괴했습니다.')
+                : translate('내 메인 거점이 파괴되었습니다.');
         if (stage?.mission?.surviveMs && reason === 'base-destroyed')
             UiRegistry.refs.resultText.textContent = mine
-                ? '제한 시간 동안 본진과 지킬 거점을 지켰습니다.'
+                ? translate('제한 시간 동안 본진과 지킬 거점을 지켰습니다.')
                 : ActiveViewState.snap?.campaignMission?.guardLost
-                  ? '지킬 거점이 무너졌습니다.'
-                  : '내 메인 거점이 파괴되었습니다.';
+                  ? translate('지킬 거점이 무너졌습니다.')
+                  : translate('내 메인 거점이 파괴되었습니다.');
         if (cleared && !next && !stage.act && reason !== 'boss-subdued')
-            UiRegistry.refs.resultText.textContent = '캠페인을 모두 완료했습니다.';
+            UiRegistry.refs.resultText.textContent = translate('캠페인을 모두 완료했습니다.');
         const end = ActiveViewState.snap,
             stats = end?.launchStats,
             mySide = ConnectionSideUtil.roleSide(viewRole);
@@ -11620,11 +11695,12 @@ class MatchLifecycle {
                 UiRegistry.refs.matchMenuSurrenderBtn.classList.add('hidden');
             if (UiRegistry.refs.matchMenuLeaveBtn) {
                 UiRegistry.refs.matchMenuLeaveBtn.classList.remove('hidden');
-                UiRegistry.refs.matchMenuLeaveBtn.textContent = '리플레이 종료';
+                UiRegistry.refs.matchMenuLeaveBtn.textContent = translate('리플레이 종료');
             }
             if (UiRegistry.refs.matchMenuWarning)
-                UiRegistry.refs.matchMenuWarning.textContent =
-                    '리플레이 재생은 경기 결과에 영향을 주지 않습니다.';
+                UiRegistry.refs.matchMenuWarning.textContent = translate(
+                    '리플레이 재생은 경기 결과에 영향을 주지 않습니다.',
+                );
             UiController.openUiModal('match-menu');
             return;
         }
@@ -11639,8 +11715,8 @@ class MatchLifecycle {
             UiRegistry.refs.matchMenuReplaySaveBtn.disabled = !replayReady;
         if (UiRegistry.refs.matchMenuWarning)
             UiRegistry.refs.matchMenuWarning.textContent = active.sim
-                ? '진행 중인 경기에서 항복하거나 나가면 패배 처리됩니다.'
-                : '드래프트 중 항복하거나 나가도 패배 처리됩니다.';
+                ? translate('진행 중인 경기에서 항복하거나 나가면 패배 처리됩니다.')
+                : translate('드래프트 중 항복하거나 나가도 패배 처리됩니다.');
         UiController.openUiModal('match-menu');
     }
     static closeMatchMenu() {
@@ -11776,14 +11852,20 @@ class AppLifecycle {
         if (UiRegistry.refs.bootBuild)
             UiRegistry.refs.bootBuild.textContent = BUILD_META.commit
                 ? `v${PRODUCT_VERSION} · BUILD ${BUILD_META.commit.slice(0, 12)}`
-                : `v${PRODUCT_VERSION} · BUILD · 배포 정보 ${BUILD_META.status === 'pending' ? '확인 중' : '확인 불가'}`;
+                : msg(
+                      'v{0} · BUILD · 배포 정보 {1}',
+                      PRODUCT_VERSION,
+                      BUILD_META.status === 'pending'
+                          ? translate('확인 중')
+                          : translate('확인 불가'),
+                  );
     }
     static finishBootGate() {
         if (!window.__RALLY_STARTUP__.finish()) return;
         UiRegistry.refs.bootGate?.setAttribute('aria-busy', 'false');
         RallyBoot.complete();
         usageMetrics?.bootReady(RallyBootMarks);
-        AppLifecycle.setBootLabel('게임 준비 완료');
+        AppLifecycle.setBootLabel(translate('게임 준비 완료'));
         requestAnimationFrame(() => {
             UiRegistry.refs.bootGate?.classList.add('ready');
             setTimeout(() => {
@@ -11794,7 +11876,7 @@ class AppLifecycle {
     }
     static async runBootAndStartApp() {
         if (!window.__RALLY_STARTUP__.begin()) return;
-        AppLifecycle.setBootLabel('게임 준비 중');
+        AppLifecycle.setBootLabel(translate('게임 준비 중'));
         try {
             // Paint the stage change before the synchronous resource build blocks the thread.
             RallyBoot.begin('graphics');
@@ -11820,7 +11902,7 @@ class AppLifecycle {
     // Installs the GameKit debug host on src/debug-scenes.js, loaded only for a debug address.
     static async openDebugScene(createRenderer) {
         if (!window.__RALLY_STARTUP__.begin()) return;
-        AppLifecycle.setBootLabel('확인 장면 준비 중');
+        AppLifecycle.setBootLabel(translate('확인 장면 준비 중'));
         try {
             const query = new URLSearchParams(location.search);
             // No scene and no page named: the debug mode's own page, which links to the others.
@@ -12018,21 +12100,21 @@ class BuildMetadataPresentation {
                 : null;
             const buildTimeZone = 'Asia/Seoul';
             const hm = validUpdated
-                ? new Intl.DateTimeFormat('ko-KR', {
+                ? new Intl.DateTimeFormat(locale, {
                       timeZone: buildTimeZone,
                       hour: '2-digit',
                       minute: '2-digit',
                       hour12: false,
                   }).format(updated)
-                : '시간 미상';
+                : translate('시간 미상');
             let label;
-            if (BUILD_META.status === 'pending') label = '배포 정보 확인 중';
-            else if (BUILD_META.status !== 'available') label = '배포 정보 확인 불가';
-            else if (!validUpdated) label = '업데이트 시간 미상';
-            else if (dayDiff === 0) label = `오늘 ${hm}`;
-            else if (dayDiff === 1) label = `어제 ${hm}`;
+            if (BUILD_META.status === 'pending') label = translate('배포 정보 확인 중');
+            else if (BUILD_META.status !== 'available') label = translate('배포 정보 확인 불가');
+            else if (!validUpdated) label = translate('업데이트 시간 미상');
+            else if (dayDiff === 0) label = msg('오늘 {0}', hm);
+            else if (dayDiff === 1) label = msg('어제 {0}', hm);
             else
-                label = new Intl.DateTimeFormat('ko-KR', {
+                label = new Intl.DateTimeFormat(locale, {
                     timeZone: 'Asia/Seoul',
                     year: 'numeric',
                     month: 'numeric',
@@ -12041,28 +12123,50 @@ class BuildMetadataPresentation {
                     minute: '2-digit',
                     hour12: false,
                 }).format(updated);
-            el.textContent = `v${PRODUCT_VERSION} · 최근 업데이트 · ${label}${BUILD_META.commit ? ` · ${BUILD_META.commit.slice(0, 12)}` : ''}`;
+            el.textContent = msg(
+                'v{0} · 최근 업데이트 · {1}{2}',
+                PRODUCT_VERSION,
+                label,
+                BUILD_META.commit ? ` · ${BUILD_META.commit.slice(0, 12)}` : '',
+            );
             el.title = BUILD_META.updatedAt
-                ? `제품 v${PRODUCT_VERSION} · 배포 기록 ${BUILD_META.commit} · 복사 시각 ${BUILD_META.updatedAt} · build.json`
-                : `제품 v${PRODUCT_VERSION} · 배포 정보 ${BUILD_META.status === 'pending' ? '확인 중' : '확인 불가'}`;
+                ? msg(
+                      '제품 v{0} · 배포 기록 {1} · 복사 시각 {2} · build.json',
+                      PRODUCT_VERSION,
+                      BUILD_META.commit,
+                      BUILD_META.updatedAt,
+                  )
+                : msg(
+                      '제품 v{0} · 배포 정보 {1}',
+                      PRODUCT_VERSION,
+                      BUILD_META.status === 'pending'
+                          ? translate('확인 중')
+                          : translate('확인 불가'),
+                  );
         }
         if (UiRegistry.refs.bootBuild)
             UiRegistry.refs.bootBuild.textContent = BUILD_META.commit
                 ? `v${PRODUCT_VERSION} · BUILD ${BUILD_META.commit.slice(0, 12)}`
-                : `v${PRODUCT_VERSION} · BUILD · 배포 정보 ${BUILD_META.status === 'pending' ? '확인 중' : '확인 불가'}`;
+                : msg(
+                      'v{0} · BUILD · 배포 정보 {1}',
+                      PRODUCT_VERSION,
+                      BUILD_META.status === 'pending'
+                          ? translate('확인 중')
+                          : translate('확인 불가'),
+                  );
     }
 }
 
 // 조준 중 예상 착지와 최대 사거리를 표시하고, 실제 착탄 흔적은 권위 사건을 따른다.
 class LaunchPresentation {
-    static premiumResourceHint = '미니맵의 ✦ 기름 거점을 확보하세요.';
+    static premiumResourceHint = translate('미니맵의 ✦ 기름 거점을 확보하세요.');
     static card = null;
     static deckKey = '';
     static lastPower = null;
     static marks = [];
     static hold = null;
     static feedbackTimer = 0;
-    static jammedMessage = '적 찹쌀이 포구를 막고 있어 이 대포는 쏠 수 없어요.';
+    static jammedMessage = translate('적 찹쌀이 포구를 막고 있어 이 대포는 쏠 수 없어요.');
     static feedback(message) {
         const el = DomUtil.byId('launchFeedback');
         if (!el) return;
@@ -12124,7 +12228,7 @@ class LaunchPresentation {
     static ammoWarning(s, side, type) {
         const ammo = this.ammoState(s, side, type);
         if (!ammo || ammo.rounds > 0) return '';
-        return `탄약 충전 중 · ${(ammo.waitTicks / (s.tps || SIM_TPS)).toFixed(1)}초 뒤 1발`;
+        return msg('탄약 충전 중 · {0}초 뒤 1발', (ammo.waitTicks / (s.tps || SIM_TPS)).toFixed(1));
     }
     static renderAmmo(el, ammo) {
         const dots = el.querySelectorAll('.launch-card-rounds i');
@@ -12175,7 +12279,14 @@ class LaunchPresentation {
                 if (ammo) this.renderAmmo(el, ammo);
                 el.setAttribute(
                     'aria-label',
-                    `${UnitDefinition.get(t).name} ${payload.count}명 · ${ResourceDisplay.costText(payload, true)}${ammo ? ` · 탄약 ${ammo.rounds}/${ammo.max}` : ''}${empty || warning ? ' · ' + (empty || warning) : ''}`,
+                    msg(
+                        '{0} {1}명 · {2}{3}{4}',
+                        translate(UnitDefinition.get(t).name),
+                        payload.count,
+                        ResourceDisplay.costText(payload, true),
+                        ammo ? msg(' · 탄약 {0}/{1}', ammo.rounds, ammo.max) : '',
+                        empty || warning ? ' · ' + (empty || warning) : '',
+                    ),
                 );
                 el.title = empty || warning;
             }
@@ -12184,8 +12295,13 @@ class LaunchPresentation {
         const limit = LaunchRules.populationLimit,
             atLimit = population.total >= limit,
             populationText = UiRegistry.refs.launchPopulationText,
-            breakdown = `전장 ${population.alive}명 · 출격 대기 ${population.reserved}명`;
-        populationText.textContent = `인구 ${population.total} / ${limit}${atLimit ? ' · 출격 한도' : ''}`;
+            breakdown = msg('전장 {0}명 · 출격 대기 {1}명', population.alive, population.reserved);
+        populationText.textContent = msg(
+            '인구 {0} / {1}{2}',
+            population.total,
+            limit,
+            atLimit ? translate(' · 출격 한도') : '',
+        );
         populationText.title = breakdown;
         populationText.setAttribute('aria-label', `${populationText.textContent} · ${breakdown}`);
         populationText.toggleAttribute('data-limit', atLimit);
@@ -12197,13 +12313,21 @@ class LaunchPresentation {
             warning = maxed ? '' : this.resourceWarning(s, side, price),
             rangeButton = UiRegistry.refs.launchRangeBtn;
         UiRegistry.refs.launchReachText.textContent = this.card
-            ? `${UnitDefinition.get(this.card).name} 최대 발사 ${LaunchRules.maxReachOf(this.card, level).toLocaleString('ko-KR')}`
-            : '발사할 카드 없음';
+            ? msg(
+                  '{0} 최대 발사 {1}',
+                  translate(UnitDefinition.get(this.card).name),
+                  LaunchRules.maxReachOf(this.card, level).toLocaleString(locale),
+              )
+            : translate('발사할 카드 없음');
         UiRegistry.refs.launchRangeText.textContent = maxed
-            ? `사거리 ×${LaunchRules.rangeMultiplier(level)} · 최대`
-            : `사거리 ×${LaunchRules.rangeMultiplier(level)} → ×${LaunchRules.rangeMultiplier(level + 1)}`;
+            ? msg('사거리 ×{0} · 최대', LaunchRules.rangeMultiplier(level))
+            : msg(
+                  '사거리 ×{0} → ×{1}',
+                  LaunchRules.rangeMultiplier(level),
+                  LaunchRules.rangeMultiplier(level + 1),
+              );
         UiRegistry.refs.launchRangeCost.textContent = maxed
-            ? '강화 완료'
+            ? translate('강화 완료')
             : ResourceDisplay.costText(price);
         UiRegistry.refs.launchRangeStatus.hidden = !warning;
         UiRegistry.refs.launchRangeStatus.textContent = warning
@@ -12214,24 +12338,34 @@ class LaunchPresentation {
         rangeButton.title =
             warning ||
             (maxed
-                ? '모든 대포의 발사 사거리가 최대로 강화됐습니다.'
-                : `모든 대포의 발사 사거리 강화 · ${ResourceDisplay.costText(price, true)}`);
+                ? translate('모든 대포의 발사 사거리가 최대로 강화됐습니다.')
+                : msg('모든 대포의 발사 사거리 강화 · {0}', ResourceDisplay.costText(price, true)));
         this.renderHud(s, side);
         for (const event of s.events || [])
             if (event.type === 'launchRejected' && event.side === side)
                 this.feedback(
                     {
-                        reloading: '대포가 재장전 중입니다.',
+                        reloading: translate('대포가 재장전 중입니다.'),
                         'cannon-jammed': LaunchPresentation.jammedMessage,
-                        'insufficient-basic-resources': `${RESOURCES[0].name}이 부족합니다.`,
-                        'insufficient-premium-resources': `기름이 부족합니다. ${LaunchPresentation.premiumResourceHint}`,
-                        'card-out-of-ammo': '이 카드의 탄약이 없습니다. 충전을 기다려 주세요.',
-                        'population-limit': '인구가 가득 찼습니다.',
-                        'hero-already-deployed': '영웅이 이미 출격 중입니다.',
-                        'hero-unavailable': '전사한 영웅은 이번 경기에 다시 출격할 수 없습니다.',
-                        'cannon-unavailable': '사용할 수 있는 대포가 없습니다.',
-                        'invalid-unit': '발사할 병종을 확인해 주세요.',
-                    }[event.reason] || '발사할 수 없습니다.',
+                        'insufficient-basic-resources': msg(
+                            '{0}이 부족합니다.',
+                            translate(RESOURCES[0].name),
+                        ),
+                        'insufficient-premium-resources': msg(
+                            '기름이 부족합니다. {0}',
+                            LaunchPresentation.premiumResourceHint,
+                        ),
+                        'card-out-of-ammo': translate(
+                            '이 카드의 탄약이 없습니다. 충전을 기다려 주세요.',
+                        ),
+                        'population-limit': translate('인구가 가득 찼습니다.'),
+                        'hero-already-deployed': translate('영웅이 이미 출격 중입니다.'),
+                        'hero-unavailable': translate(
+                            '전사한 영웅은 이번 경기에 다시 출격할 수 없습니다.',
+                        ),
+                        'cannon-unavailable': translate('사용할 수 있는 대포가 없습니다.'),
+                        'invalid-unit': translate('발사할 병종을 확인해 주세요.'),
+                    }[event.reason] || translate('발사할 수 없습니다.'),
                 );
         this.marks = this.marks.filter(
             (m) => !m.clock.expired && m.clock.ageMs < LaunchRules.landingMarkMs,
@@ -12247,8 +12381,8 @@ class LaunchPresentation {
                 continue;
             }
             if (event.type === 'heroRecovered' && event.side === side && this.active(snapshot)) {
-                const name = UnitDefinition.get(event.heroType)?.name ?? '영웅';
-                this.feedback(`${name} 회수 · 다시 출격할 수 있습니다.`);
+                const name = translate(UnitDefinition.get(event.heroType)?.name ?? '영웅');
+                this.feedback(msg('{0} 회수 · 다시 출격할 수 있습니다.', name));
                 continue;
             }
             if (event.type !== 'launchImpact' || event.side !== side) continue;
@@ -12282,10 +12416,13 @@ class LaunchPresentation {
             mode = hero?.mode;
         el.disabled = mode === 'dead' || !this.active(s);
         const label = {
-            advance: ['ON · 진격', '영웅 복귀시키기'],
-            return: ['OFF · 복귀', '영웅 진격 재개'],
-            dead: ['전사', '전사한 영웅은 이번 경기에 다시 출격할 수 없습니다.'],
-        }[mode] ?? ['무료', '영웅 발사'];
+            advance: [translate('ON · 진격'), translate('영웅 복귀시키기')],
+            return: [translate('OFF · 복귀'), translate('영웅 진격 재개')],
+            dead: [
+                translate('전사'),
+                translate('전사한 영웅은 이번 경기에 다시 출격할 수 없습니다.'),
+            ],
+        }[mode] ?? [translate('무료'), translate('영웅 발사')];
         badge.textContent = label[0];
         const definition = UnitDefinition.get(type),
             unit = hero?.unitId ? s.units?.find((entry) => entry.id === hero.unitId) : null,
@@ -12308,7 +12445,7 @@ class LaunchPresentation {
             el,
             mode === 'dead' ? null : (unit?.heroGrowth ?? s.heroGrowth?.[side]?.[type]),
         );
-        el.title = `${label[1]}${recovering ? ' · 회복 중' : ''}${levelHint}`;
+        el.title = `${label[1]}${recovering ? translate(' · 회복 중') : ''}${levelHint}`;
         // The counter's length as the hero's level has it (an awakening can shorten it, HeroGrowth.spec).
         const fruitSpec = unit ? HeroGrowth.spec(unit, 'fruitAttack') : definition.fruitAttack,
             spinSpec = unit ? HeroGrowth.spec(unit, 'spinAttack') : definition.spinAttack;
@@ -12319,7 +12456,15 @@ class LaunchPresentation {
         );
         el.setAttribute(
             'aria-label',
-            `${definition.name} · ${label[0]} · 체력 ${hpText}${recovering ? ' · 회복 중' : ''}${attackCounter}${levelHint}`,
+            msg(
+                '{0} · {1} · 체력 {2}{3}{4}{5}',
+                translate(definition.name),
+                label[0],
+                hpText,
+                recovering ? translate(' · 회복 중') : '',
+                attackCounter,
+                levelHint,
+            ),
         );
         el.classList.toggle('hero-dead', mode === 'dead');
         if (mode === 'advance' || mode === 'return')
@@ -12354,8 +12499,8 @@ class LaunchPresentation {
             next === null ? '100%' : `${(100 * growth.kills) / next}%`,
         );
         return next === null
-            ? ` · ${growth.level}레벨 · 처치 ${growth.kills}`
-            : ` · ${growth.level}레벨 · 처치 ${growth.kills}/${next}`;
+            ? msg(' · {0}레벨 · 처치 {1}', growth.level, growth.kills)
+            : msg(' · {0}레벨 · 처치 {1}/{2}', growth.level, growth.kills, next);
     }
     static renderAttackCounter(el, current, required) {
         let counter = el.querySelector('.hero-card-counter');
@@ -12373,7 +12518,7 @@ class LaunchPresentation {
         counter.hidden = false;
         counter.textContent = attackCounterDots(count, required);
         counter.toggleAttribute('data-ready', count === required);
-        return ` · 공격 연계 ${count}/${required}`;
+        return msg(' · 공격 연계 {0}/{1}', count, required);
     }
     // The spore clouds under warning that are off screen, as badges on the screen edge (LaunchScreens.renderCloudAlerts).
     static cloudEdgeAlerts(r, s, tps) {
@@ -12463,7 +12608,7 @@ class LaunchPresentation {
                     sortieId: hero.sortieId,
                 })
             )
-                this.feedback('영웅 명령을 접수할 수 없습니다.');
+                this.feedback(translate('영웅 명령을 접수할 수 없습니다.'));
             return;
         }
         // An empty card is not selected: the press only says when its next round arrives.
@@ -12513,13 +12658,16 @@ class LaunchPresentation {
             cannon = s && this.nearestCannon(s, side, a.x, a.y);
         if (!cannon || !this.card) return null;
         if (LaunchRules.population(s, side).total >= LaunchRules.populationLimit) {
-            this.feedback('인구가 가득 찼습니다.');
+            this.feedback(translate('인구가 가득 찼습니다.'));
             return null;
         }
         const wait = Math.max(0, (Number(cannon.launchReadyTick) || 0) - s.tick);
         if (wait > 0) {
             this.feedback(
-                `대포 재장전 중 · ${(wait / (s.tps || ActiveSimulationTiming.tps())).toFixed(1)}초`,
+                msg(
+                    '대포 재장전 중 · {0}초',
+                    (wait / (s.tps || ActiveSimulationTiming.tps())).toFixed(1),
+                ),
             );
             return null;
         }
@@ -12711,11 +12859,11 @@ class LaunchPresentation {
             unitType: hold.card,
         });
         if (!accepted) {
-            this.feedback('연결을 확인한 뒤 다시 발사해 주세요.');
+            this.feedback(translate('연결을 확인한 뒤 다시 발사해 주세요.'));
             return;
         }
         if (LaunchRules.overheated(holdMs)) {
-            this.feedback(`과열! 대포가 ${LaunchRules.overheatMs / 1000}초 멈춥니다.`);
+            this.feedback(msg('과열! 대포가 {0}초 멈춥니다.', LaunchRules.overheatMs / 1000));
             if (navigator.vibrate) navigator.vibrate([30, 40, 30]);
             return;
         }
@@ -13649,6 +13797,7 @@ async function startTitleApp() {
     playerSaves.roster.onExternalChange(() => void roster.load());
     // Automated tests (navigator.webdriver) keep the batches in memory instead of the collection server.
     usageMetrics = new RallyUsageMetrics({
+        locale,
         gamekit: RallyGamekit,
         version: PRODUCT_VERSION,
         isolated: navigator.webdriver === true,
@@ -13670,14 +13819,14 @@ async function startTitleApp() {
         starter: () => LaunchRules.starterDeck,
         limit: LaunchRules.deckLimit,
         heroLimit: LaunchRules.deckHeroLimit,
-        nameOf: (type) => UnitDefinition.get(type)?.name || type,
+        nameOf: (type) => translate(UnitDefinition.get(type)?.name || type),
         statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
         infoOf: (type) => LaunchScreens.grainInfo(type),
         isUnlocked: (type) => campaignProgress.debugUnlocked || roster.owns(type),
         isTemporary: () => campaignProgress.debugUnlocked,
         unlockHint: (type) => {
             const stage = campaignProgress.unlockStage(type);
-            return stage ? `${stage.title} 클리어 시 해금` : '';
+            return stage ? msg('{0} 클리어 시 해금', translate(stage.title)) : '';
         },
         renderDetails: (type, host) => LaunchScreens.renderCardDetail(type, host),
         portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
@@ -13687,7 +13836,7 @@ async function startTitleApp() {
         owns: (type) => campaignProgress.debugUnlocked || roster.owns(type),
         temporary: () => campaignProgress.debugUnlocked,
         heroTypes: LaunchRules.heroTypes,
-        nameOf: (type) => UnitDefinition.get(type)?.name || type,
+        nameOf: (type) => translate(UnitDefinition.get(type)?.name || type),
         statsOf: (type) => ({ ...LaunchRules.payload(type), ...UnitDefinition.get(type) }),
         portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
     });
@@ -13696,7 +13845,7 @@ async function startTitleApp() {
         owns: (type) => campaignProgress.debugUnlocked || roster.owns(type),
         temporary: () => campaignProgress.debugUnlocked,
         heroTypes: LaunchRules.heroTypes,
-        nameOf: (type) => UnitDefinition.get(type)?.name || type,
+        nameOf: (type) => translate(UnitDefinition.get(type)?.name || type),
         portraitOf: (type) => grainPortrait(type, window.RallyVectorAssets[type]),
         upgradeOf: (type) => UnitDefinition.get(type)?.campaignUpgrade ?? null,
         cards: () => LaunchRules.deck,
@@ -13751,7 +13900,7 @@ async function startTitleApp() {
                 if (UiRuntimeState.value.modal === 'match-menu') MatchLifecycle.closeMatchMenu();
             },
             grains: () => [...LaunchRules.heroTypes, ...LaunchRules.deck],
-            grainName: (t) => UnitDefinition.get(t)?.name || t,
+            grainName: (t) => translate(UnitDefinition.get(t)?.name || t),
             grainStats: (t) => ({ ...LaunchRules.payload(t), ammo: LaunchRules.ammo(t) }),
             grainRangeLevel: () =>
                 ActiveViewState.snap?.launchRangeLevel?.[

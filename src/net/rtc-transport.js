@@ -5,6 +5,7 @@ import { recordRecovery } from '../diagnostics/recovery-flight-recorder.js';
 import { LobbyControlCodec } from './lobby-codec.js';
 import { P2P_CONNECT_ATTEMPT_TIMEOUT_MS } from '../core/session-timing.js';
 import { PRODUCT_VERSION } from '../core/product-version.js';
+import { msg, t } from '../i18n/locale.js';
 
 const RALLY_NOSTR_NAMESPACE = 'ssalkongpang';
 const RALLY_NOSTR_RELAYS = ['wss://nos.lol', 'wss://relay.damus.io', 'wss://relay.snort.social'];
@@ -72,7 +73,7 @@ class RoomTransport {
         ) {
             this.onError({
                 type: 'nostr-module-unavailable',
-                message: 'Nostr 모듈이 준비되지 않았습니다.',
+                message: t('Nostr 모듈이 준비되지 않았습니다.'),
             });
             return false;
         }
@@ -101,7 +102,7 @@ class RoomTransport {
                     type: error?.code || 'room-create-failed',
                     message:
                         error?.code === 'room-in-use'
-                            ? '이미 사용 중인 방 코드입니다. 다른 코드로 다시 만들어 주세요.'
+                            ? t('이미 사용 중인 방 코드입니다. 다른 코드로 다시 만들어 주세요.')
                             : String(error?.message || error),
                     error,
                 });
@@ -155,7 +156,9 @@ class RoomTransport {
             this.onError({
                 type: event.code || 'room-error',
                 nonFatal: true,
-                message: String(event.error?.message || event.message || event.code || '연결 오류'),
+                message: t(
+                    String(event.error?.message || event.message || event.code || '연결 오류'),
+                ),
                 error: event.error,
             });
     }
@@ -188,7 +191,11 @@ class RoomTransport {
             nonFatal: true,
             expectedVersion: PRODUCT_VERSION,
             remoteVersion: remote,
-            message: `게임 버전이 다릅니다. 내 v${PRODUCT_VERSION} / 상대 ${remote ?? '확인 불가'}. 양쪽 모두 같은 최신 게임으로 새로고침하세요.`,
+            message: msg(
+                '게임 버전이 다릅니다. 내 v{0} / 상대 {1}. 양쪽 모두 같은 최신 게임으로 새로고침하세요.',
+                PRODUCT_VERSION,
+                remote ?? t('확인 불가'),
+            ),
         });
     }
 

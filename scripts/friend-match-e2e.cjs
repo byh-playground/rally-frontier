@@ -44,6 +44,7 @@ RoomCodeUtil.randomCode=()=>window.__friend.generatedCodes.shift()||window.__fri
     try {
         for (let i = 0; i < 2; i++) {
             const context = await browser.newContext({
+                locale: 'ko-KR',
                 viewport: { width: 412, height: 915 },
                 ignoreHTTPSErrors: true,
             });

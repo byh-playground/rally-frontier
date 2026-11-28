@@ -18,7 +18,7 @@ window.__economyE2E={ActiveViewState,MatchLifecycle,ready:true};`;
     const browser = await chromium.launch({
         channel: process.env.QA_BROWSER_CHANNEL || 'chromium',
     });
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } }),
+    const page = await browser.newPage({ locale: 'ko-KR', viewport: { width: 1280, height: 800 } }),
         pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
     try {

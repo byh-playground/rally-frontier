@@ -21,11 +21,11 @@ const round100 = (ms) => Math.max(0, Math.round(ms / 100) * 100);
 
 export class RallyUsageMetrics {
     // gamekit: RallyGamekit (createMetrics·HttpAdapter·MemoryAdapter), version: PRODUCT_VERSION.
-    constructor({ gamekit, version, isolated }) {
+    constructor({ gamekit, version, isolated, locale = 'ko' }) {
         this.metrics = gamekit.createMetrics({
             game: RALLY_METRICS_GAME,
             version,
-            locale: 'ko',
+            locale,
             adapter: isolated
                 ? new gamekit.MemoryAdapter()
                 : new gamekit.HttpAdapter(RALLY_METRICS_ENDPOINT),
