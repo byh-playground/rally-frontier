@@ -75,6 +75,16 @@ const GINKGO = Object.freeze({
         [310, 45],
     ],
 });
+// A stationary front-line target keeps the hit and the accumulating status in the card frame.
+const PLUM = Object.freeze({
+    durationMs: 6200,
+    camera: [-125, 67],
+    cameraMs: [420, 900],
+    frameWidth: 410,
+    frameHeight: 218,
+    height: 39,
+    target: [178, 7],
+});
 
 function createArena(unitType, interception) {
     const sim = new StrategySim(SEED, undefined, [[unitType], [interception?.launchType ?? 'pea']]);
@@ -84,7 +94,9 @@ function createArena(unitType, interception) {
         grows = UnitDefinition.get(unitType)?.growsCannon,
         rider = UnitDefinition.get(unitType)?.cannonRider ? CANNON_RIDER : null,
         roller = UnitDefinition.get(unitType)?.rolling ? ROLLER : null,
-        ginkgo = UnitDefinition.get(unitType)?.ginkgoCloud ? GINKGO : null;
+        ginkgo = UnitDefinition.get(unitType)?.ginkgoCloud ? GINKGO : null,
+        plum = UnitDefinition.get(unitType)?.plumAcid ? PLUM : null,
+        framed = ginkgo ?? plum;
     // A muzzle-wrapping unit can only hold a completed outpost, so the main base moves out of its sight.
     const wrapsOutpost = !!UnitDefinition.get(unitType)?.stickyCling;
     const host = { x: x - VOLLEY_DISTANCE, y };
@@ -129,9 +141,9 @@ function createArena(unitType, interception) {
         Object.assign(building, building.side === 0 ? host : base);
         // The showcase's artillery is available to launch, while its automatic fire stays quiet.
         // A rooting potato is left alone for the whole preview.
-        if (interception || siege || grows || rider || roller || ginkgo)
+        if (interception || siege || grows || rider || roller || framed)
             building.cooldownUntil =
-                grows || rider || roller || ginkgo
+                grows || rider || roller || framed
                     ? Number.MAX_SAFE_INTEGER
                     : sim.time.ceilTicks(
                           interception?.durationMs ?? Math.round(DURATION_SECONDS * 1000),
@@ -168,10 +180,14 @@ function createArena(unitType, interception) {
             const target = sim.spawnUnit(1, 'pea', x + dx, y + dy);
             target.combat.moveRecoveryUntil = target.combat.cooldownUntil = Number.MAX_SAFE_INTEGER;
         }
+    } else if (plum) {
+        const [dx, dy] = plum.target;
+        const walnut = sim.spawnUnit(1, 'walnut', x + dx, y + dy);
+        walnut.combat.moveRecoveryUntil = walnut.combat.cooldownUntil = Number.MAX_SAFE_INTEGER;
     } else if (!siege && !grows) {
         for (const [dx, dy] of DEFENDERS) sim.spawnUnit(1, 'pea', x + dx, y + dy);
     }
-    return { sim, x, y, host, target, rider, roller, ginkgo };
+    return { sim, x, y, host, target, rider, roller, framed };
 }
 
 // Card previews use an isolated showcase run with the same commands and rendering as a match.
@@ -190,7 +206,7 @@ function prepareVolleyShowcase({
     if (!LaunchRules.grain(unitType)) throw new Error('알 수 없는 병종 소개 장면입니다.');
     const unit = UnitDefinition.get(unitType);
     const interception = unit?.burstAttack && unit.canAttackAir ? INTERCEPTION : null;
-    const { sim, x, y, host, target, rider, roller, ginkgo } = createArena(unitType, interception);
+    const { sim, x, y, host, target, rider, roller, framed } = createArena(unitType, interception);
     const side = interception ? 1 : 0;
     const cannon = sim.launchCannons(side)[0];
     const launchTarget = interception ? { x: x + interception.aimOffset, y } : target;
@@ -203,7 +219,7 @@ function prepareVolleyShowcase({
             interception?.durationMs ??
                 rider?.durationMs ??
                 roller?.durationMs ??
-                ginkgo?.durationMs ??
+                framed?.durationMs ??
                 Math.max(
                     DURATION_SECONDS * 1000,
                     unit?.growsCannon
@@ -216,23 +232,22 @@ function prepareVolleyShowcase({
         ),
     );
     const frameCamera = (timeMs) => {
-        if (ginkgo && renderer.baseSc() > 0) {
-            const widthScale = renderer.canvas.width / ginkgo.frameWidth;
-            const heightScale = renderer.canvas.height / ginkgo.frameHeight;
+        if (framed && renderer.baseSc() > 0) {
+            const widthScale = renderer.canvas.width / framed.frameWidth;
+            const heightScale = renderer.canvas.height / framed.frameHeight;
             renderer.replayZoom = Math.min(widthScale, heightScale) / renderer.baseSc();
         }
-        const progress = roller
-            ? Math.max(0, Math.min(1, (timeMs - roller.cameraMs[0]) / roller.cameraMs[1]))
-            : Math.max(0, Math.min(1, (timeMs - 600) / 1000));
+        const [cameraStart, cameraDuration] = framed?.cameraMs ?? roller?.cameraMs ?? [600, 1000];
+        const progress = Math.max(0, Math.min(1, (timeMs - cameraStart) / cameraDuration));
         // A rider's loop stays between its cannon and the enemy, so its camera holds still.
         // A roller's camera runs from its landing point to the base it bounces off.
-        const [fromX, toX] = ginkgo?.camera ?? roller?.camera ?? [-120, 125];
+        const [fromX, toX] = framed?.camera ?? roller?.camera ?? [-120, 125];
         const focusX = interception
             ? x + interception.cameraOffset
             : rider
               ? host.x + rider.cameraOffset
               : x + fromX + (toX - fromX) * progress * progress * (3 - 2 * progress);
-        centerCamera(renderer, focusX, y, ginkgo?.height ?? interception?.cameraHeight ?? 0);
+        centerCamera(renderer, focusX, y, framed?.height ?? interception?.cameraHeight ?? 0);
     };
 
     renderer.role = 'host';

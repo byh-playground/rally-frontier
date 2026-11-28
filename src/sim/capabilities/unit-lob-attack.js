@@ -14,6 +14,7 @@ import { CampaignUpgrades } from '../campaign-upgrades.js';
 import { UnitFlight } from './unit-flight.js';
 import { UnitDefinition } from '../../definitions/units.js';
 import { GinkgoCloud } from './ginkgo-cloud.js';
+import { PlumAcid } from './plum-acid.js';
 
 const EXPLOSION_BUILDING_QUERY = new IndexList();
 // A blocked shot pair is retried once either shot changes: both revisions as one number. A revision counts the
@@ -254,11 +255,12 @@ export class UnitLobAttack {
             });
         return true;
     }
-    // Ginkgo seeds burst on enemy ground bodies. Corn's campaign contact fuse
+    // Ginkgo seeds and plum drops burst on enemy ground bodies. Corn's campaign contact fuse
     // also bursts on an enemy soldier the blast can hurt, and optionally on buildings.
     static contactFuse(sim, shot, hit) {
         if (hit.kind !== 'body') return false;
-        if (UnitDefinition.get(shot.sourceType)?.ginkgoCloud) {
+        const source = UnitDefinition.get(shot.sourceType);
+        if (source?.ginkgoCloud || source?.plumAcid) {
             if (hit.isBuilding)
                 return sim.isHostileCombatBuilding(shot.side, sim.buildingById.get(hit.id));
             const target = sim.unitById.get(hit.id);
@@ -281,7 +283,7 @@ export class UnitLobAttack {
             y = shot.y,
             radius = shot.spec.explosionRadius,
             damage = shot.damage,
-            leavesCloud = !!UnitDefinition.get(shot.sourceType)?.ginkgoCloud;
+            source = UnitDefinition.get(shot.sourceType);
         sim.events.push({
             type: 'unitLobExplosion',
             side: shot.side,
@@ -296,8 +298,8 @@ export class UnitLobAttack {
             ...(contact ? { contact: true } : null),
         });
         // The burst of an egg throws nearby bodies. Ginkgo's splat defines a slowing area.
-        if (leavesCloud) GinkgoCloud.create(sim, shot);
-        else
+        if (source?.ginkgoCloud) GinkgoCloud.create(sim, shot);
+        else if (!source?.plumAcid)
             Knockback.area(sim, {
                 side: shot.side,
                 sourceId: shot.id,
@@ -309,18 +311,20 @@ export class UnitLobAttack {
                 speed: KnockbackRules.impactSpeed,
                 gain: KnockbackRules.gain.burst,
             });
-        sim.applyAreaDamage({
-            sourceSide: shot.side,
-            sourceType: shot.sourceType,
-            sourceEntityId: shot.sourceId,
-            x,
-            y,
-            radius,
-            damage,
-            damageClass: 'normal',
-            impactHeightFP: shot.zFP,
-            suppressImpactFx: true,
-        });
+        if (source?.plumAcid) PlumAcid.splash(sim, shot, source.plumAcid);
+        else
+            sim.applyAreaDamage({
+                sourceSide: shot.side,
+                sourceType: shot.sourceType,
+                sourceEntityId: shot.sourceId,
+                x,
+                y,
+                radius,
+                damage,
+                damageClass: 'normal',
+                impactHeightFP: shot.zFP,
+                suppressImpactFx: true,
+            });
         const buildingCount = sim.nearbyBuildingIndices(
             x,
             y,

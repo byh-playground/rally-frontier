@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="280" viewBox="0 0 512 280">
+  <!-- Body, leaves, limbs, bottle, expression cells, combat drop and deployment round. -->
+  <defs>
+    <linearGradient id="plum-skin" x1=".21" y1=".12" x2=".79" y2=".94">
+      <stop stop-color="#c8d98a"/><stop offset=".52" stop-color="#a9c16b"/><stop offset="1" stop-color="#7d9a56"/>
+    </linearGradient>
+    <radialGradient id="plum-blush" cx=".35" cy=".38" r=".68">
+      <stop stop-color="#efa780" stop-opacity=".64"/><stop offset="1" stop-color="#efa780" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="leaf" x1=".25" y1=".1" x2=".75" y2=".85">
+      <stop stop-color="#a9be69"/><stop offset="1" stop-color="#58743a"/>
+    </linearGradient>
+    <linearGradient id="juice" x1=".32" y1=".14" x2=".76" y2=".86">
+      <stop stop-color="#e0eb90"/><stop offset=".68" stop-color="#b4cf54"/><stop offset="1" stop-color="#8dac4b"/>
+    </linearGradient>
+    <g id="fruit">
+      <path d="M-1-160c20-3 38 7 51 24 16 21 24 50 20 71-5 31-21 49-43 54-14 3-19-2-28-2-10 1-16 5-30 1-25-8-40-31-42-62-2-29 8-55 22-69 13-13 31-21 50-17Z" fill="url(#plum-skin)" stroke="#434a31" stroke-width="5.5" stroke-linejoin="round"/>
+      <path d="M-68-80c4-23 16-44 33-50 18-4 27 9 24 31-2 18-14 37-31 43-11 2-22-6-26-24Z" fill="url(#plum-blush)"/>
+      <path d="M45-133c15 24 23 41 21 67-4 28-23 48-41 50-10 1-17 0-24-3 37-21 54-61 44-114Z" fill="#6c8650" opacity=".29"/>
+      <path d="M-34-136q-13 5-20 18" fill="none" stroke="#f6f0c1" stroke-width="5.4" stroke-linecap="round"/>
+      <path d="M-56-106l-2 8" fill="none" stroke="#ebefbf" stroke-width="3.3" stroke-linecap="round"/>
+      <path d="M7-149q21 13 28 36t8 48q-2 27-14 42" fill="none" stroke="#769251" stroke-width="3.2" stroke-linecap="round" opacity=".7"/>
+      <path d="M-48-49q5 10 11 14m-6 7 4 2" fill="none" stroke="#d1dc8e" stroke-width="2.8" opacity=".66" stroke-linecap="round"/>
+      <path d="M-8-146q8 4 17 1" fill="none" stroke="#69814b" stroke-width="3.4" stroke-linecap="round"/>
+      <g fill="#788e4f" opacity=".54">
+        <circle cx="42" cy="-112" r="2"/><circle cx="56" cy="-91" r="1.9"/>
+        <circle cx="53" cy="-50" r="1.7"/><circle cx="-43" cy="-92" r="2"/>
+      </g>
+    </g>
+    <g id="eyes" fill="#3e392a">
+      <ellipse cx="30" cy="19" rx="7.2" ry="9.4"/>
+      <ellipse cx="70" cy="19" rx="7.2" ry="9.4"/>
+      <g fill="#fff9e8"><circle cx="28" cy="15.5" r="2.7"/><circle cx="68" cy="15.5" r="2.7"/></g>
+    </g>
+    <g id="cheeks" fill="#dc8d6f">
+      <ellipse cx="14" cy="29" rx="7" ry="4.5"/><ellipse cx="85" cy="29" rx="7" ry="4.5"/>
+    </g>
+  </defs>
+  <g id="body" transform="translate(86 198)"><use href="#fruit"/></g>
+  <g id="crest" transform="translate(194 62)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 6Q2-12-3-22" fill="none" stroke="#625139" stroke-width="5"/>
+    <path d="M-2-12C9-39 28-47 52-40C44-19 24-11-2-12Z" fill="url(#leaf)" stroke="#445337" stroke-width="4"/>
+    <path d="M4-14Q25-31 46-37M19-25l14 1m-8-3 5-7" fill="none" stroke="#d1d68c" stroke-width="2.1"/>
+  </g>
+  <g id="foot" transform="translate(260 10)" stroke="#434a31" stroke-width="4" stroke-linejoin="round">
+    <path d="M9 12q14-8 29-2 8 6 8 16-1 7-9 8H12q-8-1-8-7 0-8 5-15Z" fill="#9fb765"/>
+    <path d="M12 14q7-4 15-4" fill="none" stroke="#e3e7a0" stroke-width="2.6" stroke-linecap="round"/>
+  </g>
+  <g id="arm" transform="translate(311 10)" stroke-linejoin="round">
+    <path d="M7 17q5-9 15-9 10 0 14 11 5 13 2 28-3 8-10 8-10 0-18-12Q0 27 7 17Z" fill="#a8be69" stroke="#434a31" stroke-width="4"/>
+    <path d="M12 18q5-5 11-5" fill="none" stroke="#e6e9aa" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <g id="bottle" transform="translate(409 77)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M-15 19q-13-3-15-15-3-18 13-27 17-11 34-16 6-8 18-13l8 11q-8 8-15 10-3 10-7 24Q13 14-2 19Z" fill="#eac992" stroke="#665038" stroke-width="5"/>
+    <path d="M-23 7q-2-8 4-18 8-10 23-13 1 13-9 24-8 9-18 7Z" fill="url(#juice)" stroke="#9f9d57" stroke-width="2"/>
+    <path d="M-24-1q3-16 21-24" fill="none" stroke="#fff0b0" stroke-width="3" opacity=".9"/>
+    <path d="M12-32q1 12 13 17l-6 12q-15-2-19-20Z" fill="#bf8254" stroke="#71513a" stroke-width="3.4"/>
+    <path d="M27-41l9 12 8-8q7-4 10-10l-8-11q-11 2-19 17Z" fill="#bc8260" stroke="#624b36" stroke-width="4"/>
+    <path d="M36-44l6 9m0-14 6 9" fill="none" stroke="#e3b17e" stroke-width="2.5"/>
+  </g>
+  <g id="neutral" transform="translate(172 110)">
+    <use href="#eyes"/><use href="#cheeks"/>
+    <path d="M45 31q5 4 10 0" fill="none" stroke="#534333" stroke-width="3.3" stroke-linecap="round"/>
+  </g>
+  <g id="attack" transform="translate(278 110)">
+    <use href="#eyes"/><use href="#cheeks"/>
+    <path d="m23 7 12 5m40-5-10 5" fill="none" stroke="#3e392a" stroke-width="3.1" stroke-linecap="round"/>
+    <path d="M45 31q5-2 10 0" fill="none" stroke="#534333" stroke-width="3.5" stroke-linecap="round"/>
+  </g>
+  <g id="hurt" transform="translate(386 110)">
+    <use href="#cheeks"/>
+    <path d="m24 14 13 5-13 5m52-10-13 5 13 5m-30 10q4-5 9 0" fill="none" stroke="#534333" stroke-width="3.3" stroke-linecap="round"/>
+  </g>
+  <!-- Loaded bead and flying drop use the same isolated cutout. -->
+  <g id="drop" transform="translate(198 191)">
+    <path d="M-17 9q-7-10-1-18 5-7 19-10t19-5q-4 13-5 23-2 14-15 17-10 2-17-7Z" fill="url(#juice)" stroke="#56673d" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M-14-4q4-10 16-11" fill="none" stroke="#f8f2a8" stroke-width="3.3" stroke-linecap="round"/>
+  </g>
+  <!-- The load shell still looks like a real green plum, with its leaf and visible fruit seam. -->
+  <g id="shell" transform="translate(385 222) rotate(-21)">
+    <use href="#fruit" transform="translate(0 50) scale(.61)"/>
+    <path d="M0-43q-2-10 7-16" fill="none" stroke="#625139" stroke-width="4" stroke-linecap="round"/>
+    <path d="M4-54q14-15 30-8-9 14-30 8Z" fill="url(#leaf)" stroke="#445337" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M8-54q12-5 22-6" fill="none" stroke="#d3d98d" stroke-width="1.9" stroke-linecap="round"/>
+  </g>
+</svg>

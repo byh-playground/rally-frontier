@@ -142,6 +142,7 @@ export class HeroPassive {
                 impactHeightFP: puddle.zFP,
                 // The hero's own damage class (as its landing strike), not the splash class: 3 is 3 on any body.
                 damageClass: UnitDefinition.damageClass(unit.type),
+                damageDelivery: 'status',
                 suppressImpactFx: true,
             });
             sim.events.push({

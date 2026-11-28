@@ -17,6 +17,7 @@ const CHAIN_LINKS = Math.max(
 class UnitRenderObject extends RenderField {
     static renderSchema = {
         tick: RenderField.LINEAR,
+        plumExpires: RenderField.STEP,
         'entity.impactMotion.heightFP': RenderField.LINEAR,
         'entity.heroRoll.distance': RenderField.LINEAR,
         'entity.flight.altitudeFP': RenderField.LINEAR,

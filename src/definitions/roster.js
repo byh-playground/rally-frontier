@@ -11,10 +11,10 @@ export const SUNSHINE = Object.freeze({
     openUpgrade: 100,
 });
 
-// Cards available from the beginning. Ginkgo joins the collection so players can equip it without a new stage.
+// Cards available from the beginning, including new cards that have no campaign reward stage yet.
 // Campaign rewards grant the rest of the roster.
 export function startingOwned() {
-    return [CAMPAIGN_ACT_STAGES[0].rewardCard, 'ginkgo'];
+    return [CAMPAIGN_ACT_STAGES[0].rewardCard, 'ginkgo', 'plum'];
 }
 
 export function newRosterRecord() {

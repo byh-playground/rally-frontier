@@ -28,7 +28,8 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
         burst = unit.burstAttack,
         suicide = unit.selfDestruct,
         spin = unit.spinAttack,
-        cloud = unit.ginkgoCloud;
+        cloud = unit.ginkgoCloud,
+        acid = unit.plumAcid;
 
     const movement = [
         ...(hero ? [['레벨', msg('{0}레벨', number.format(heroLevel))]] : []),
@@ -78,7 +79,7 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
                         ? '자폭 피해'
                         : siege
                           ? '건물 공격력'
-                          : cloud
+                          : cloud || acid
                             ? '공격 착탄 피해'
                             : '기본 공격력',
                     number.format(suicide?.damage ?? atk),
@@ -112,6 +113,7 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
             ['최소 사거리', number.format(unit.minRange)],
             ['공격 착탄 반경', number.format(unit.lobAttack.explosionRadius)],
         );
+    if (acid) attack.push(['공격 착탄 반경', number.format(acid.radius)]);
 
     const grows = unit.growsCannon,
         cannon = grows && BuildingDefinition.get(grows.building);
@@ -154,6 +156,17 @@ export function unitCardStats(type, rangeLevel, copy, heroLevel = 1) {
                     )}`,
                 ],
                 ['장판 최대 피해', number.format(cloud.totalDamage / 2)],
+            ],
+            copy.notes.slice(1),
+        ]);
+    if (acid)
+        troop.push([
+            '산성 표식',
+            [
+                ['최대 중첩', number.format(acid.maxStacks)],
+                ['지속 시간', seconds(acid.durationMs)],
+                ['중첩당 추가 피해', number.format(acid.bonusPerStack)],
+                ['타격당 최대 추가 피해', number.format(acid.bonusPerStack * acid.maxStacks)],
             ],
             copy.notes.slice(1),
         ]);

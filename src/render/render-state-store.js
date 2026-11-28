@@ -15,7 +15,15 @@ export class RenderStateStore {
         this.playbackRate = playbackRate;
         this.records = new Map();
         this.zeroDelta = Object.freeze({ x: 0, y: 0 });
-        this.lists = { unit: [], projectile: [], unitLob: [], thorn: [], flag: [], bundle: [] };
+        this.lists = {
+            unit: [],
+            projectile: [],
+            unitLob: [],
+            thorn: [],
+            flag: [],
+            bundle: [],
+            plumUnits: [],
+        };
         this.reset();
     }
     time(now) {
@@ -61,6 +69,9 @@ export class RenderStateStore {
         for (const event of source.renderEvents || source.events || [])
             if (event.type === 'unitLobLaunch')
                 (lobLaunches ||= new Map()).set(event.projectileId, event);
+        const plumMarks = source.plumMarks?.length
+            ? new Map(source.plumMarks.map((mark) => [mark.targetId, mark.expires]))
+            : null;
         const add = (kind, id, value) => {
             const key = kind + ':' + id,
                 def = RENDER_TRACKS[kind];
@@ -97,7 +108,14 @@ export class RenderStateStore {
                 id: key,
                 generation: record.generation,
                 type: def.type,
-                source: { entity: value, tick, delta: record.delta },
+                source: {
+                    entity: value,
+                    tick,
+                    delta: record.delta,
+                    ...(kind === 'unit' && {
+                        plumExpires: plumMarks?.get(id) ?? source.plumAcid?.[id]?.expires ?? null,
+                    }),
+                },
                 teleport,
             };
             if (value.heroRoll) {
@@ -272,6 +290,8 @@ export class RenderStateStore {
                 displayed.add(key);
                 record.model = model;
                 this.lists[record.kind].push(record.entity);
+                if (record.kind === 'unit' && model.plumExpires?.length)
+                    this.lists.plumUnits.push(record.entity);
             }
         });
         for (const [key, record] of this.records) {
