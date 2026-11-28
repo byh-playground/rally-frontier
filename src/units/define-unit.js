@@ -695,6 +695,21 @@ export function defineUnit({ id, hero = false, help = [], ...parts }) {
                 `병종 ${id}의 ginkgoCloud에는 즉시 착탄과 같은 크기의 착탄·장판 피해가 필요합니다.`,
             );
     }
+    if (unit.plumAcid) {
+        const { radius, durationMs, maxStacks, bonusPerStack } = unit.plumAcid;
+        if (
+            hero ||
+            unit.ginkgoCloud ||
+            unit.lobAttack?.fuseMs !== 0 ||
+            unit.lobAttack?.explosionRadius !== radius ||
+            ![radius, durationMs, maxStacks, bonusPerStack].every(
+                (value) => Number.isSafeInteger(value) && value > 0,
+            )
+        )
+            throw new Error(
+                `병종 ${id}의 plumAcid는 즉시 터지는 즙탄과 양의 정수 설정이 필요합니다.`,
+            );
+    }
     if (unit.growth !== undefined) validateGrowth(id, unit.growth, unit, hero);
     if (unit.campaignUpgrade !== undefined)
         unit.campaignUpgrade = validateCampaignUpgrade(

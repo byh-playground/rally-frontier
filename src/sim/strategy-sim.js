@@ -1,5 +1,6 @@
 import { UnitLobAttack } from './capabilities/unit-lob-attack.js';
 import { GinkgoCloud } from './capabilities/ginkgo-cloud.js';
+import { PlumAcid } from './capabilities/plum-acid.js';
 // The deterministic lockstep strategy simulation.
 import { GameRuleDefinition, RangeUtil, SIM_TPS } from '../core/game-rules.js';
 import { HeroDeployment } from './hero-deployment.js';
@@ -1913,7 +1914,9 @@ class StrategySim {
                 return;
             }
             if (dist <= max) {
-                const rank = isBuilding ? 2 : 0;
+                const armored =
+                    d.plumAcid && def.damageTaken?.scale < 1 && !def.damageTaken.whileBuilding;
+                const rank = isBuilding ? 2 : armored ? -1 : 0;
                 const score = (d2 * 100) / this.targetPriorityFactor(u, def);
                 if (entity.id === u.target) currentInRange = { candidate, rank };
                 if (
@@ -2155,6 +2158,12 @@ class StrategySim {
             }
         }
 
+        const plumBonus =
+            !isBuilding && rawAmount > 0 && this.plumAcid
+                ? PlumAcid.bonus(this, target, sourceSide, sourceType, options)
+                : 0;
+        dmg += plumBonus;
+
         const hpBefore = Math.max(0, target.hp || 0);
         target.hp -= dmg;
         const dealt = Math.min(hpBefore, dmg);
@@ -2190,6 +2199,7 @@ class StrategySim {
             x: target.x,
             y: target.y,
             amount: dmg,
+            ...(plumBonus > 0 && { plumBonus }),
             sourceSide,
             sourceType,
             sourceId: sourceEntityId || null,
@@ -3201,6 +3211,7 @@ class StrategySim {
         SideGoal.update(this, winner);
         this.updateBalanceTelemetry(winner);
         this.cleanupDeadEntities();
+        PlumAcid.update(this);
         const postMs = profile ? now() - mark : 0;
 
         if (profile) {
@@ -3291,6 +3302,7 @@ class StrategySim {
     importState(s, { rollback = false } = {}) {
         UnitResultStats.validate(s.unitResultStats);
         GinkgoCloud.validate(s);
+        PlumAcid.validate(s);
         CampaignMission.validate(s, s.rules?.campaign?.mission);
         const retained = {
             mapDescriptor: this.mapDescriptor,
@@ -3373,6 +3385,7 @@ class StrategySim {
                 launchDeployments: StateValue.copy(this.launchDeployments),
                 campaignMission: CampaignMission.snapshot(this.campaignMission),
                 ginkgoClouds: GinkgoCloud.view(this),
+                plumMarks: PlumAcid.view(this),
                 blightField: BlightField.view(this),
                 sporeCloud: SporeCloud.view(this),
                 sporeReinforce: SporeSac.view(this),

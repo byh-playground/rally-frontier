@@ -1,5 +1,23 @@
 // English at the presentation boundary. The unit and map definitions keep their source text.
 export default {
+    매실: 'Green Plum',
+    '산성 지원': 'Acid Support',
+    '매실즙 범위 타격 · 명중당 추가 피해': 'Acid splash · bonus damage per hit',
+    '산성 매실즙을 뿌려 적에게 표식을 남겨요. 표식이 묻은 적은 아군의 직접 공격에 맞을 때마다 더 크게 다쳐요.':
+        'Splashes enemies with sour plum juice. Marked enemies take extra damage from each direct hit by allies.',
+    '즙탄이 맞을 때 표식이 하나씩 붙어요. 표식마다 따로 사라지고, 최대 중첩에서는 가장 먼저 끝날 표식의 시간만 갱신돼요.':
+        'Each shot adds one mark. Marks expire separately. At the limit, a new hit refreshes the mark that would expire first.',
+    '한 발씩 자주 쏘는 병사와 함께 쓰면 강해요. 사거리 안에서 단단한 껍질을 가진 적을 먼저 노려요.':
+        'Pair it with fast attackers. It targets enemies with protective shells first when they are in range.',
+    '매실의 산성 표식': 'Green Plum’s Acid Marks',
+    '매실즙이 튄 범위 안의 적 지상 병력에게 표식이 하나씩 붙어요. 지글거리는 산성 기포와 숫자로 표식 수를 확인할 수 있어요.':
+        'Enemy ground troops caught in the splash gain one mark. Look for sizzling bubbles and a number showing the stack count.',
+    '메밀이나 해바라기씨가 표식이 붙은 적을 직접 맞히면 타격마다 추가 피해를 줘요.':
+        'Each direct hit from Buckwheat or Sunflower Seed deals extra damage against marked targets.',
+    '산성 표식': 'Acid Marks',
+    '최대 중첩': 'Max Stacks',
+    '중첩당 추가 피해': 'Bonus Damage per Stack',
+    '타격당 최대 추가 피해': 'Max Bonus per Hit',
     은행: 'Ginkgo',
     '장거리 곡사': 'Long-Range Lobber',
     '높은 새총 곡사 · 감속과 지속 피해': 'High slingshot arc · slows and damages',

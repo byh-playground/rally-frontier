@@ -15,6 +15,7 @@ import { HeroUltimate } from '../sim/capabilities/hero-ultimate.js';
 import { CannonRider } from '../sim/capabilities/cannon-rider.js';
 import { RollingBody } from '../sim/capabilities/rolling-body.js';
 import { GinkgoCloud } from '../sim/capabilities/ginkgo-cloud.js';
+import { PlumAcid } from '../sim/capabilities/plum-acid.js';
 import { LaunchRules } from '../sim/launch-rules.js';
 import { StateValue } from '../sim/components.js';
 import { ReplayRecorder } from './replay-recording.js';
@@ -209,6 +210,7 @@ class RallySimulationAdapter {
             throw new Error('게임 snapshot의 병종 강화가 경기 시작과 다릅니다.');
         UnitResultStats.validate(state.unitResultStats);
         GinkgoCloud.validate(state);
+        PlumAcid.validate(state);
         for (const [key, shape] of Object.entries(this.rootShape)) {
             if (!Object.prototype.hasOwnProperty.call(state, key))
                 throw new Error(`게임 snapshot의 ${key} 필드가 없습니다.`);

@@ -88,6 +88,7 @@ import { LaunchImpactArt } from './render/launch-impact-art.js';
 import { DEAD_UNIT_LOOK, DeadUnitLook } from './render/dead-unit-look.js';
 import { BLIGHT_LOOK, BlightFieldLook, BlightLook } from './render/blight-look.js';
 import { GinkgoLook } from './render/ginkgo-look.js';
+import { PlumLook } from './render/plum-look.js';
 import { mapLookFor } from './render/map-look.js';
 import {
     CONFIG,
@@ -1220,6 +1221,7 @@ class GLRenderer {
         this.cornTrailAnchors = new Map();
         this.cornBursts = [];
         this.ginkgoLook = new GinkgoLook();
+        this.plumLook = new PlumLook();
         this.milletBursts = [];
         this.cornQuadMatrix = new Float32Array(6);
         // Reused by the self-destruct burst each frame (renderCornParticles).
@@ -1321,6 +1323,7 @@ class GLRenderer {
         this.cornTrailAnchors.clear();
         this.cornBursts.length = 0;
         this.ginkgoLook.reset();
+        this.plumLook.reset();
         this.milletBursts.length = 0;
         this.particles.length = 0;
         this.bundleBreakIds.clear();
@@ -1929,7 +1932,10 @@ class GLRenderer {
         }
 
         this.renderState.capture(source, now, snap, targetIntervalMs);
-        if (snap) this.ginkgoLook.reset();
+        if (snap) {
+            this.ginkgoLook.reset();
+            this.plumLook.reset();
+        }
         this.ginkgoLook.observe(source.ginkgoClouds ?? source.ginkgoEffect?.clouds);
         const liveFacingIds = new Set(units.filter((u) => u?.alive !== false).map((u) => u.id));
         for (const id of this.unitFacingStates.keys())
@@ -2781,6 +2787,7 @@ class GLRenderer {
             this.cornTrailAnchors.clear();
             this.cornBursts.length = 0;
             this.ginkgoLook.reset();
+            this.plumLook.reset();
             this.milletBursts.length = 0;
             for (const track of this.corpseTracks.values()) this.releaseCorpse(track);
             this.corpseTracks.clear();
@@ -2960,6 +2967,13 @@ class GLRenderer {
         for (const event of snapshot.events || []) {
             if (event.type !== 'unitLobExplosion' && event.type !== 'unitSelfDestruct') continue;
             if (!this.eventVisible(event)) continue;
+            if (
+                event.type === 'unitLobExplosion' &&
+                UnitDefinition.get(event.sourceType)?.plumAcid
+            ) {
+                this.plumLook.impact(event, snapshot.presentationClock);
+                continue;
+            }
             if (
                 event.type === 'unitLobExplosion' &&
                 UnitDefinition.get(event.sourceType)?.ginkgoCloud
@@ -5279,11 +5293,13 @@ class GLRenderer {
         this.drawBreathFlames(ctx);
         this.drawChainBolts(ctx);
         this.drawClientCombatFx();
+        this.plumLook.drawImpacts(this, ctx);
 
         const pixel = this.fxCanvas.width / Math.max(1, this.canvas.clientWidth);
         this.worldHudSpace.reset(pixel);
         this.liftedDamageSpace.reset(pixel);
         this.drawWorldHudOverlay(pixel);
+        this.plumLook.drawMarks(this, ctx, pixel);
 
         let write = 0,
             ordinary = 0,
@@ -7287,17 +7303,18 @@ class GLRenderer {
             model = this.renderState.model('unitLob', projectile.id, now),
             sampled = model?.entity || projectile,
             definition = UnitDefinition.get(projectile.sourceType),
-            cloudShot = !!definition?.ginkgoCloud;
+            cloudShot = !!definition?.ginkgoCloud,
+            acidShot = !!definition?.plumAcid;
         if (!sampled.grounded && world.y > world.groundY + 1)
             this.sampleCornTrail(
                 'lob:' + projectile.id,
                 projectile.side,
                 world,
-                cloudShot ? [0.97, 0.76, 0.29] : null,
+                cloudShot ? [0.97, 0.76, 0.29] : acidShot ? PlumLook.trail : null,
             );
         const point = this.projectRenderWorldPosition(world),
             radius = Number(definition?.lobAttack?.radius) || 5,
-            size = Math.max(3, radius * 2 * this.sc()),
+            size = Math.max(acidShot ? 5 : 3, radius * 2 * this.sc()),
             matrix = this.cornQuadMatrix,
             angle = cloudShot ? ((this.cornPresentationTime() || 0) / 160) % (Math.PI * 2) : 0,
             C = this.vectorContext;
@@ -7310,7 +7327,8 @@ class GLRenderer {
         C.depthTest = !!this.passState.depthEnabled;
         C.depthWrite = false;
         C.depthFunc = this.passState.depthFunc || 'lequal';
-        renderer.drawKernel(matrix, this._renderDepth ?? 0);
+        if (acidShot) renderer.drawJuiceDrop(matrix, this._renderDepth ?? 0);
+        else renderer.drawKernel(matrix, this._renderDepth ?? 0);
     }
     renderMilletParticles() {
         if (!this.milletBursts.length) return;
